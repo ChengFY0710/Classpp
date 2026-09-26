@@ -73,10 +73,10 @@ fun CourseCard(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .padding(start = 5.dp, end = 6.dp),
+                .padding(start = 5.dp, end = 6.dp, top = 3.dp, bottom = 3.dp),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                 Text(
                     text = slot.startTime,
                     color = barColor,
@@ -84,8 +84,7 @@ fun CourseCard(
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     textAlign = TextAlign.Start,
-                    modifier = Modifier.height(18.dp),
-                    lineHeight = 18.sp,
+                    lineHeight = 12.sp,
                 )
                 Column() {
                     Text(
@@ -104,7 +103,7 @@ fun CourseCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Start,
-                        lineHeight = 16.sp,
+                        lineHeight = 11.sp,
                     )
                     // 上课地点，统一一行
                     Text(
@@ -123,8 +122,7 @@ fun CourseCard(
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 textAlign = TextAlign.Start,
-                modifier = Modifier.height(18.dp),
-                lineHeight = 18.sp,
+                lineHeight = 12.sp,
             )
         }
     }
