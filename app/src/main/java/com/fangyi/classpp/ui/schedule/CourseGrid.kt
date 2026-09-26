@@ -32,8 +32,8 @@ import com.fangyi.classpp.ui.theme.Outline
 import java.util.Date
 import kotlin.math.roundToInt
 
-/** 日期带高度（滚动渐隐的参考高度） */
-private val DateBandHeight = 44.dp
+/** 日期带高度（滚动渐隐的参考高度，模糊进度也以此为刻度） */
+internal val DateBandHeight = 44.dp
 
 /** 每个节次行的固定高度（容纳两行课程名 + 教师/地点/房间 + 起止时间） */
 private val GridRowHeight = 150.dp
@@ -45,11 +45,22 @@ private val CellPadding = 3.dp
 private val GridLineWidth = 1.dp
 
 /**
+ * 末行之后的尾部留白：扩大课表的可滚动范围（含原 8dp 间距）。
+ * 节次少时也能有足够的滚动行程展示折叠/模糊过渡，按需调整此常量即可。
+ */
+private val TrailingScrollSpace = 120.dp
+
+/** 日期带渐隐速率：值越大消失越快；1.0f 为原始速度（滚完自身高度才消失） */
+private const val DateBandFadeSpeed = 3.0f
+
+
+/**
  * 课表网格：顶部日期数字带（第 [weekDates] 对应周，今天高亮，上滑渐隐）
  * + 按节次分行的 5 列课程格。
  *
  * 与 [ScheduleHeader] 星期行同为零水平边距五等分，天然列对齐。
  * 折叠通过外部 modifier.nestedScroll 接入，本组件不感知折叠状态。
+ * 列表状态由调用方持有（供模糊进度计算），顶部偏移由 contentPadding.top 跟随顶栏高度。
  */
 @Composable
 fun CourseGrid(
@@ -58,12 +69,11 @@ fun CourseGrid(
     weekDates: List<Date>,
     today: Date,
     modifier: Modifier = Modifier,
+    state: LazyListState = rememberLazyListState(),
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
-    val listState = rememberLazyListState()
-
     LazyColumn(
-        state = listState,
+        state = state,
         contentPadding = contentPadding,
         modifier = modifier.background(MaterialTheme.colorScheme.surfaceContainer),
     ) {
@@ -71,7 +81,7 @@ fun CourseGrid(
             DateBand(
                 weekDates = weekDates,
                 today = today,
-                listState = listState,
+                listState = state,
             )
         }
         items(timeSlots, key = { it.id }) { slot ->
@@ -80,7 +90,7 @@ fun CourseGrid(
                 courses = courses,
             )
         }
-        item { Box(modifier = Modifier.height(8.dp)) }
+        item { Box(modifier = Modifier.height(TrailingScrollSpace)) }
     }
 }
 
@@ -101,9 +111,12 @@ private fun DateBand(
             // 在 draw 阶段读滚动偏移，滚动时不触发整列重组：
             // offset = 0 全显，≥ bandHeight 全隐
             .graphicsLayer {
-                alpha = (1f - listState.firstVisibleItemScrollOffset / bandHeightPx)
+                // 给滚动偏移乘上速率倍数，让渐隐进度更快达到 1
+                val fadeProgress = (listState.firstVisibleItemScrollOffset * DateBandFadeSpeed / bandHeightPx)
                     .coerceIn(0f, 1f)
+                alpha = 1f - fadeProgress
             }
+
             .background(MaterialTheme.colorScheme.surfaceContainer)
             // 网格线画在 graphicsLayer 之后（更内层），随日期带渐隐一起淡出；
             // 画在 background 之后，线条压在带底色之上

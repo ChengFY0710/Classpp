@@ -32,10 +32,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
@@ -48,11 +48,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import dev.chrisbanes.haze.HazeProgressive
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
 import java.util.Calendar
 import java.util.Date
 import kotlin.math.roundToInt
 
-private val IconTint = Color(0xFF212121)
+private val IconTint = Color(0xFF000000)
 
 /** 顶栏行自然高度，也是最大折叠量 */
 internal val TopBarHeight = 56.dp
@@ -68,6 +72,11 @@ private val PillEndPadding = 24.dp
  * 顶栏行高度收缩为 0，编辑/设置渐隐，日期行与星期行自然上移，
  * 周数胶囊从中央平移到日期行右端（与日期同一行右对齐）。
  * fraction 外置便于 @Preview 直接预览两态。
+ *
+ * [blurProgress] ∈ [0,1]（与日期带渐隐同步）：>0 时头部背景改为
+ * Haze 背景模糊（叠在 surface 兜底色之上），顶部最强、向下渐弱；
+ * 同时驱动周数胶囊从扁平灰底过渡到半透明白 + 投影。
+ * [hazeState] 为 null（如 @Preview）时保持不透明背景。
  */
 @Composable
 fun ScheduleHeader(
@@ -78,10 +87,13 @@ fun ScheduleHeader(
     onEditClick: () -> Unit,
     onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier,
+    blurProgress: Float = 0f,
+    hazeState: HazeState? = null,
     weekRange: IntRange = 1..20,
     onMenuExpandedChange: (Boolean) -> Unit = {},
 ) {
     val fraction = collapseFraction.coerceIn(0f, 1f)
+    val progress = blurProgress.coerceIn(0f, 1f)
     val iconAlpha = 1f - fraction
     val iconsEnabled = fraction < 0.5f
 
@@ -167,18 +179,37 @@ fun ScheduleHeader(
                 }
             }
 
-            // 4) 周数胶囊：顶层 overlay，在两锚点间插值
+            // 4) 周数胶囊：顶层 overlay，在两锚点间插值；模糊激活时材质同步变化
             WeekPill(
                 selectedWeek = selectedWeek,
                 weekRange = weekRange,
                 onWeekSelected = onWeekSelected,
                 enabled = iconsEnabled,
+                blurProgress = progress,
                 onMenuExpandedChange = onMenuExpandedChange,
             )
         },
         modifier = modifier
             .fillMaxWidth()
+            // surface 兜底：progress≈0 时与原不透明背景逐帧一致
             .background(MaterialTheme.colorScheme.surface)
+            .then(
+                if (hazeState != null && progress > 0f) {
+                    // 背景模糊画在兜底色之上、内容之下；alpha 随进度渐入实现无缝衔接
+                    Modifier.hazeEffect(hazeState) {
+                        alpha = progress
+                        blurRadius = 36.dp
+                        progressive = HazeProgressive.verticalGradient(
+                            startIntensity = 1f,
+                            endIntensity = 0f,
+                        )
+                        tints = listOf(HazeTint(Color.White.copy(alpha = 0.30f)))
+                        noiseFactor = 0f
+                    }
+                } else {
+                    Modifier
+                },
+            )
             .windowInsetsPadding(WindowInsets.statusBars),
     ) { measurables, constraints ->
         val childConstraints = constraints.copy(minHeight = 0)
@@ -230,6 +261,7 @@ private fun WeekPill(
     onWeekSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    blurProgress: Float = 0f,
     onMenuExpandedChange: (Boolean) -> Unit = {},
 ) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
@@ -243,8 +275,21 @@ private fun WeekPill(
         Row(
             modifier = Modifier
                 .height(WeekPillHeight)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.background)
+                // 投影随模糊进度长出；graphicsLayer 在 draw 阶段读值，不引发重组
+                .graphicsLayer {
+                    shape = CircleShape
+                    clip = true
+                    shadowElevation = 45.dp.toPx() * blurProgress
+                    spotShadowColor = Color.Black.copy(alpha = 0.2f)
+                }
+                // 扁平灰底 → 半透明白，与顶栏模糊同步过渡
+                .background(
+                    lerp(
+                        MaterialTheme.colorScheme.background,
+                        Color.White,
+                        blurProgress,
+                    ),
+                )
                 .clickable(enabled = enabled) {
                     menuExpanded = true
                     onMenuExpandedChange(true)
