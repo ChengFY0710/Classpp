@@ -20,11 +20,10 @@ import kotlin.math.min
 /**
  * 头部折叠状态：collapseOffsetPx ∈ [0, maxCollapsePx]，0 = 完全展开，max = 完全折叠。
  *
- * 消费规则（跟手）：
- * - 上滑（delta < 0）优先折叠，剩余交给子列表；
- * - 下滑（delta > 0）优先展开，剩余交给子列表；
- * - 子列表滚到边缘后的剩余滚动继续按同规则消费；
- * - fling 剩余速度用 decay 惯性走完，Animatable 边界 clamp 越界自动停止（过顶回弹）。
+ * 消费规则（跟手，顺序刻意不对称）：
+ * - 上滑（delta < 0）在 pre 阶段优先折叠，折叠满后子列表才滚动（图标渐隐/胶囊移位先于日期带渐隐）；
+ * - 下滑（delta > 0）子列表先滚回顶部，列表到顶后的剩余才在 post 阶段展开（日期带先恢复，顶栏图标后恢复）；
+ * - fling 逐帧同走 pre/post，剩余速度用 decay 收尾，Animatable 边界 clamp 越界自动停止（过顶回弹）。
  */
 @Stable
 class CollapseState(
@@ -49,13 +48,16 @@ class CollapseState(
 
     val nestedScrollConnection: NestedScrollConnection = object : NestedScrollConnection {
         override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset =
-            consumeDelta(available.y)
+            // 折叠先手：上滑在子列表消费前抢折叠；展开不在 pre 消费，让给下滑恢复顺序
+            if (available.y < 0f) consumeDelta(available.y) else Offset.Zero
 
         override fun onPostScroll(
             consumed: Offset,
             available: Offset,
             source: NestedScrollSource,
-        ): Offset = consumeDelta(available.y)
+        ): Offset =
+            // 展开后手：下滑先让子列表滚回顶部（日期带恢复），列表到顶后的剩余才用于展开
+            if (available.y > 0f) consumeDelta(available.y) else Offset.Zero
 
         override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
             val velocity = available.y
