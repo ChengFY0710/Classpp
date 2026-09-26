@@ -111,9 +111,17 @@ private fun DateBand(
             // 在 draw 阶段读滚动偏移，滚动时不触发整列重组：
             // offset = 0 全显，≥ bandHeight 全隐
             .graphicsLayer {
-                // 给滚动偏移乘上速率倍数，让渐隐进度更快达到 1
-                val fadeProgress = (listState.firstVisibleItemScrollOffset * DateBandFadeSpeed / bandHeightPx)
-                    .coerceIn(0f, 1f)
+                // LazyList 在带完全滚入顶部 contentPadding（藏进顶栏背后）后会把
+                // firstVisibleItem 切到下一项、offset 归零重计；不加 index 守卫会让
+                // alpha 在顶栏后跳回 1，被 Haze 模糊重新捕捉到。
+                // 与 ScheduleScreen.blurProgress 的守卫保持一致：
+                // index==0 时随 offset 爬升（乘速率倍数更快渐隐），否则带已滚过 → 恒全隐。
+                val fadeProgress = if (listState.firstVisibleItemIndex == 0) {
+                    (listState.firstVisibleItemScrollOffset * DateBandFadeSpeed / bandHeightPx)
+                        .coerceIn(0f, 1f)
+                } else {
+                    1f
+                }
                 alpha = 1f - fadeProgress
             }
 
