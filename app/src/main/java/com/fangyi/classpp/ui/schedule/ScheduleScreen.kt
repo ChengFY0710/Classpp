@@ -3,8 +3,10 @@ package com.fangyi.classpp.ui.schedule
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -42,10 +44,8 @@ fun ScheduleScreen(modifier: Modifier = Modifier) {
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        // 顶部状态栏 inset 由头部自行吸收，这里只保留横向与底部
-        contentWindowInsets = WindowInsets.safeDrawing.only(
-            WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
-        ),
+        // 顶部状态栏 inset 由头部自行吸收；底部不留白，网格直接延伸到导航栏（小白条）之下
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -66,6 +66,10 @@ fun ScheduleScreen(modifier: Modifier = Modifier) {
                 timeSlots = timeSlots,
                 weekDates = weekDates,
                 today = today,
+                // 滚动到底时最后一行可停在小白条上方，网格背景仍铺满屏幕底缘
+                contentPadding = WindowInsets.navigationBars
+                    .only(WindowInsetsSides.Bottom)
+                    .asPaddingValues(),
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()

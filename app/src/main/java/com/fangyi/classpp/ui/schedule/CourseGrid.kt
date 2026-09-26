@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.schedule
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -57,11 +58,13 @@ fun CourseGrid(
     weekDates: List<Date>,
     today: Date,
     modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
     val listState = rememberLazyListState()
 
     LazyColumn(
         state = listState,
+        contentPadding = contentPadding,
         modifier = modifier.background(MaterialTheme.colorScheme.surfaceContainer),
     ) {
         item(key = "dateBand") {
