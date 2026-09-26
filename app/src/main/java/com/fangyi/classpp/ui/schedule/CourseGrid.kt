@@ -17,6 +17,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -25,16 +27,21 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.Outline
 import java.util.Date
+import kotlin.math.roundToInt
 
 /** 日期带高度（滚动渐隐的参考高度） */
 private val DateBandHeight = 44.dp
 
 /** 每个节次行的固定高度（容纳两行课程名 + 教师/地点/房间 + 起止时间） */
-private val GridRowHeight = 165.dp
+private val GridRowHeight = 150.dp
 
 /** 单元格内边距，卡片间形成网格沟槽 */
-private val CellPadding = 4.dp
+private val CellPadding = 3.dp
+
+/** 网格线笔宽 */
+private val GridLineWidth = 1.dp
 
 /**
  * 课表网格：顶部日期数字带（第 [weekDates] 对应周，今天高亮，上滑渐隐）
@@ -94,7 +101,23 @@ private fun DateBand(
                 alpha = (1f - listState.firstVisibleItemScrollOffset / bandHeightPx)
                     .coerceIn(0f, 1f)
             }
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            // 网格线画在 graphicsLayer 之后（更内层），随日期带渐隐一起淡出；
+            // 画在 background 之后，线条压在带底色之上
+            .drawBehind {
+                val stroke = GridLineWidth.toPx()
+                for (i in 1..4) {
+                    val x = (size.width * i / 5f).roundToInt().toFloat()
+                    drawLine(Outline, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
+                }
+                // 顶部横线：星期行与网格的分隔线；底部不画（与首行之间无线）
+                drawLine(
+                    Outline,
+                    Offset(0f, stroke / 2),
+                    Offset(size.width, stroke / 2),
+                    strokeWidth = stroke,
+                )
+            },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         weekDates.forEach { date ->
@@ -102,7 +125,7 @@ private fun DateBand(
             Text(
                 text = date.dayOfMonth().toString(),
                 modifier = Modifier.weight(1f),
-                fontSize = 17.sp,
+                fontSize = 18.sp,
                 fontWeight = if (isToday) FontWeight.SemiBold else FontWeight.Medium,
                 textAlign = TextAlign.Center,
                 color = if (isToday) {
@@ -124,7 +147,17 @@ private fun GridRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(GridRowHeight),
+            .height(GridRowHeight)
+            .drawBehind {
+                val stroke = GridLineWidth.toPx()
+                for (i in 1..4) {
+                    val x = (size.width * i / 5f).roundToInt().toFloat()
+                    drawLine(Outline, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
+                }
+                // 底部横线：行间分隔；顶部不画（与日期带之间无线）
+                val y = size.height - stroke / 2
+                drawLine(Outline, Offset(0f, y), Offset(size.width, y), strokeWidth = stroke)
+            },
     ) {
         for (day in 1..5) {
             val course = courses.findAt(day, slot.id)

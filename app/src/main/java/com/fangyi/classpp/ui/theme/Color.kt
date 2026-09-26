@@ -8,7 +8,7 @@ val BrandBlue = Color(0xFF0077FF) // 品牌原色，仅无文字承载场景（�
 
 val Primary = Color(0xFF006FEF)
 val OnPrimary = Color(0xFFFFFFFF)
-val PrimaryContainer = Color(0xFFD6E3FF)
+val PrimaryContainer = Color(0x1F006FEF)
 val OnPrimaryContainer = Color(0xFF001F4D)
 
 val Secondary = Color(0xFF4D5A68)
@@ -37,7 +37,7 @@ val SurfaceContainer = Color(0xFFF2F4F6)
 val SurfaceContainerHigh = Color(0xFFEAEDF1)
 val SurfaceContainerHighest = Color(0xFFE4E7EB)
 
-val Outline = Color(0xFF6E7379)
+val Outline = Color(0xFFDCE2E7)
 val OutlineVariant = Color(0xFFC4C9CF)
 
 val InverseSurface = Color(0xFF303033)
