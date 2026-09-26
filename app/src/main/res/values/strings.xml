@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">Classpp</string>
+    <string name="week_format">第 %1$d 周</string>
+    <string name="cd_edit_schedule">编辑或切换课表</string>
+    <string name="cd_settings">设置</string>
+    <string name="month_day_format">%1$d月%2$d日</string>
+    <string name="date_title_format">%1$s %2$s</string>
+    <string-array name="weekdays">
+        <item>周一</item>
+        <item>周二</item>
+        <item>周三</item>
+        <item>周四</item>
+        <item>周五</item>
+        <item>周六</item>
+        <item>周日</item>
+    </string-array>
+</resources>

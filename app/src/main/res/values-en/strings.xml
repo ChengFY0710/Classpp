@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">Classpp</string>
+    <string name="week_format">Week %1$d</string>
+    <string name="cd_edit_schedule">Edit or switch schedule</string>
+    <string name="cd_settings">Settings</string>
+    <string name="month_day_format">%1$d/%2$d</string>
+    <string name="date_title_format">%1$s %2$s</string>
+    <string-array name="weekdays">
+        <item>Mon</item>
+        <item>Tue</item>
+        <item>Wed</item>
+        <item>Thu</item>
+        <item>Fri</item>
+        <item>Sat</item>
+        <item>Sun</item>
+    </string-array>
+</resources>
