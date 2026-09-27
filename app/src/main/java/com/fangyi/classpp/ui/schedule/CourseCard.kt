@@ -5,10 +5,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -73,7 +75,7 @@ fun CourseCard(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .padding(start = 5.dp, end = 6.dp, top = 3.dp, bottom = 3.dp),
+                .padding(start = 4.dp, end = 2.dp, top = 3.dp, bottom = 3.dp),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
@@ -93,9 +95,11 @@ fun CourseCard(
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         lineHeight = 16.sp,
-                        maxLines = 2,
+                        maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
+                        letterSpacing = (-0.1).sp,
                     )
+                    Spacer(modifier = Modifier.size(1.dp))
                     Text(
                         text = course.teacher,
                         color = SecondaryTextColor,
@@ -103,7 +107,8 @@ fun CourseCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Start,
-                        lineHeight = 11.sp,
+                        lineHeight = 12.sp,
+                        fontWeight = FontWeight.Medium,
                     )
                     // 上课地点，统一一行
                     Text(
@@ -111,7 +116,8 @@ fun CourseCard(
                         color = SecondaryTextColor,
                         fontSize = 11.sp,
                         textAlign = TextAlign.Start,
-                        lineHeight = 16.sp,
+                        lineHeight = 14.sp,
+                        fontWeight = FontWeight.Medium,
                     )
                 }
             }

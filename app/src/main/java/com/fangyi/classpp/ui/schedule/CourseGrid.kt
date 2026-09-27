@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -33,7 +34,7 @@ import java.util.Date
 import kotlin.math.roundToInt
 
 /** 日期带高度（滚动渐隐的参考高度，模糊进度也以此为刻度） */
-internal val DateBandHeight = 44.dp
+internal val DateBandHeight = 40.dp
 
 /** 每个节次行的固定高度（容纳两行课程名 + 教师/地点/房间 + 起止时间） */
 private val GridRowHeight = 150.dp
@@ -148,7 +149,7 @@ private fun DateBand(
             val isToday = date.isSameDay(today)
             Text(
                 text = date.dayOfMonth().toString(),
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).offset(y = 2.dp),
                 fontSize = 18.sp,
                 fontWeight = if (isToday) FontWeight.SemiBold else FontWeight.Medium,
                 textAlign = TextAlign.Center,

@@ -87,7 +87,7 @@ val MockCourses: List<Course> = listOf(
     Course("形式与政策", "XX老师", "@学武楼 B101", 1, 4, CourseColor.Purple),
     Course("学术沟通之道", "XX老师", "@学武楼", 2, 4, CourseColor.Pink),
     // 第 5 节 19:10-20:50
-    Course("大学英语", "XX老师", "@学武楼 C205", 3, 5, CourseColor.Green),
+    Course("中国古代文学史与作品精读", "XX老师", "@西部片区#4 208", 3, 5, CourseColor.Green),
     Course("程序设计研讨", "XX老师", "@学武楼 B203", 4, 5, CourseColor.Blue),
 )
 
