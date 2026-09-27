@@ -2,52 +2,61 @@ package com.fangyi.classpp.ui.schedule
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.OnPrimaryContainer
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
@@ -58,12 +67,26 @@ import kotlin.math.roundToInt
 
 private val IconTint = Color(0xFF000000)
 
-/** 顶栏行自然高度，也是最大折叠量 */
-internal val TopBarHeight = 56.dp
+internal val TopBarHeight = 56.dp  //顶栏行自然高度，也是最大折叠量
 
 private val WeekPillHeight = 40.dp
 private val HeaderEdgePadding = 33.dp
 private val PillEndPadding = 24.dp
+
+private val WeekPickerGap = 16.dp  //周数选择器顶部与胶囊底部的固定垂直间距（展开/折叠态一致）
+
+private val CardShadowPadding = 16.dp
+
+/** 投影向下延伸最多，底部单独加大透明留白，防止被 Popup 窗口下缘裁切 */
+private val CardShadowBottomPadding = 48.dp
+
+private val WeekPickerCellSpace = 8.dp // 周数选择器里小方块间距
+
+/** 小方块边长（宽高相同，恒为正方形）。弹窗宽度由此固定、不随屏宽变化；
+ *  整宽 ≈ 6×边长 + 102dp，360dp 屏上边长建议 ≤43dp */
+private val WeekCellSize = 47.dp
+
+
 
 /**
  * 可折叠课表头部：顶栏行（编辑 | 周数胶囊 | 设置）+ 日期行 + 星期行。
@@ -83,6 +106,7 @@ fun ScheduleHeader(
     collapseFraction: Float,
     date: Date,
     selectedWeek: Int,
+    currentWeek: Int? = null,
     onWeekSelected: (Int) -> Unit,
     onEditClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -162,7 +186,9 @@ fun ScheduleHeader(
             )
 
             // 3) 星期行：五等分，今天高亮（周起始下标与日期行一致）
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 7.dp)) {
+            Row(modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp, bottom = 7.dp)) {
                 for (i in 0..4) {
                     Text(
                         text = weekdays[i].substring(1),
@@ -180,11 +206,12 @@ fun ScheduleHeader(
             }
 
             // 4) 周数胶囊：顶层 overlay，在两锚点间插值；模糊激活时材质同步变化
+            // 始终可点（折叠态也要能打开周数菜单），图标仍随折叠禁用
             WeekPill(
                 selectedWeek = selectedWeek,
+                currentWeek = currentWeek,
                 weekRange = weekRange,
                 onWeekSelected = onWeekSelected,
-                enabled = iconsEnabled,
                 blurProgress = progress,
                 onMenuExpandedChange = onMenuExpandedChange,
             )
@@ -257,10 +284,10 @@ fun ScheduleHeader(
 @Composable
 private fun WeekPill(
     selectedWeek: Int,
+    currentWeek: Int?,
     weekRange: IntRange,
     onWeekSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true,
     blurProgress: Float = 0f,
     onMenuExpandedChange: (Boolean) -> Unit = {},
 ) {
@@ -290,7 +317,7 @@ private fun WeekPill(
                         blurProgress,
                     ),
                 )
-                .clickable(enabled = enabled) {
+                .clickable {
                     menuExpanded = true
                     onMenuExpandedChange(true)
                 }
@@ -313,46 +340,146 @@ private fun WeekPill(
             )
         }
 
-        val weeks = remember(weekRange) { weekRange.toList() }
-        val listState = rememberLazyListState()
-
-        LaunchedEffect(menuExpanded, selectedWeek) {
-            if (menuExpanded) {
-                listState.scrollToItem(selectedWeek - weekRange.first)
+        // 屏幕水平居中 + 垂直固定：卡片顶部落在胶囊底部下方 WeekPickerGap（展开/折叠态一致）。
+        // DropdownMenu 的位置策略锚定胶囊左缘无法满足居中，故用自定义定位器。
+        // 窗口含 CardShadowPadding 透明留白，定位按窗口计算需将其扣除
+        val density = LocalDensity.current
+        val gapPx = with(density) { (WeekPickerGap - CardShadowPadding).roundToPx() }
+        val positionProvider = remember(gapPx) {
+            object : PopupPositionProvider {
+                override fun calculatePosition(
+                    anchorBounds: IntRect,
+                    windowSize: IntSize,
+                    layoutDirection: LayoutDirection,
+                    popupContentSize: IntSize,
+                ): IntOffset = IntOffset(
+                    x = (windowSize.width - popupContentSize.width) / 2,
+                    y = anchorBounds.bottom + gapPx,
+                )
             }
         }
 
-        DropdownMenu(
-            expanded = menuExpanded,
-            onDismissRequest = { closeMenu() },
-            modifier = Modifier.heightIn(max = 320.dp),
-        ) {
-            LazyColumn(state = listState) {
-                items(weeks, key = { it }) { week ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = stringResource(R.string.week_format, week),
-                                fontWeight = if (week == selectedWeek) {
-                                    FontWeight.SemiBold
-                                } else {
-                                    FontWeight.Normal
-                                },
-                                color = if (week == selectedWeek) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                },
-                            )
-                        },
-                        onClick = {
-                            onWeekSelected(week)
-                            closeMenu()
-                        },
+        if (menuExpanded) {
+            Popup(
+                onDismissRequest = { closeMenu() },
+                popupPositionProvider = positionProvider,
+                // focusable：返回键收起；dismissOnClickOutside 默认开启
+                properties = PopupProperties(focusable = true),
+            ) {
+                WeekPickerCardSurface(
+                    selectedWeek = selectedWeek,
+                    currentWeek = currentWeek,
+                    weekRange = weekRange,
+                    onWeekSelected = {
+                        onWeekSelected(it)
+                        closeMenu()
+                    },
+                )
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun WeekPickerCard(
+    selectedWeek: Int,
+    currentWeek: Int?,
+    weekRange: IntRange,
+    onWeekSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val weeks = remember(weekRange) { weekRange.toList() }
+
+    Column(
+        modifier = modifier.padding(horizontal = WeekPickerCellSpace, vertical = WeekPickerCellSpace),
+        verticalArrangement = Arrangement.spacedBy(WeekPickerCellSpace),
+    ) {
+        weeks.chunked(6).forEach { rowWeeks ->
+            Row(horizontalArrangement = Arrangement.spacedBy(WeekPickerCellSpace)) {
+                rowWeeks.forEach { week ->
+                    WeekCell(
+                        week = week,
+                        selected = week == selectedWeek,
+                        isCurrent = week == currentWeek,
+                        size = WeekCellSize,
+                        onClick = { onWeekSelected(week) },
                     )
                 }
             }
         }
+    }
+}
+
+/** 弹窗卡片外壳：四周 [CardShadowPadding] 透明留白容纳投影，避免被 Popup 窗口边界裁剪 */
+@Composable
+private fun WeekPickerCardSurface(
+    selectedWeek: Int,
+    currentWeek: Int?,
+    weekRange: IntRange,
+    onWeekSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .padding(
+                start = CardShadowPadding,
+                top = CardShadowPadding,
+                end = CardShadowPadding,
+                bottom = CardShadowBottomPadding,
+            )
+            .graphicsLayer {
+                shape = RoundedCornerShape(20.dp)
+                clip = true
+                shadowElevation = 45.dp.toPx()
+                spotShadowColor = Color.Black.copy(alpha = 0.2f)
+            },
+    ) {
+        WeekPickerCard(
+            selectedWeek = selectedWeek,
+            currentWeek = currentWeek,
+            weekRange = weekRange,
+            onWeekSelected = onWeekSelected,
+        )
+    }
+}
+
+/** 周数网格中的一格：方形圆角；选中态主色底白字，本周（未选中）浅蓝底蓝字 */
+@Composable
+private fun WeekCell(
+    week: Int,
+    selected: Boolean,
+    isCurrent: Boolean,
+    size: Dp,
+    onClick: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val description = stringResource(R.string.week_format, week)
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(RoundedCornerShape(11.dp))
+            .background(
+                when {
+                    selected -> colors.primary
+                    isCurrent -> colors.primaryContainer
+                    else -> OnPrimaryContainer
+                },
+            )
+            .semantics { contentDescription = description }
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = week.toString(),
+            fontSize = 22.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = when {
+                selected -> Color.White
+                isCurrent -> colors.primary
+                else -> colors.onSurfaceVariant
+            },
+        )
     }
 }
 

@@ -94,6 +94,15 @@ fun ScheduleScreen(
         if (selectedWeek != week) selectedWeek = week
     }
 
+    // 本周（仅学期中有）：供周数弹窗「本周」方块浅蓝高亮；学期起止变更随 schedule 换新而重算
+    val currentWeek: Int? = if (schedule != null) {
+        remember(schedule) {
+            (repository.termPosition(schedule.id) as? TermPosition.InTerm)?.week
+        }
+    } else {
+        null
+    }
+
     // 三路取数（纯函数、无 I/O）：key=schedule 覆盖置灰开关/时段/学期等全部变更源——
     // 任意 mutator 成功都会发布新的 Schedule 实例，记忆随之失效、同帧刷新
     val courses = if (schedule != null) {
@@ -179,6 +188,7 @@ fun ScheduleScreen(
                     collapseFraction = collapseState.collapseFraction,
                     date = today,
                     selectedWeek = week,
+                    currentWeek = currentWeek,
                     onWeekSelected = { selectedWeek = it },
                     onEditClick = { /* TODO: 编辑/切换课表 */ },
                     onSettingsClick = onOpenSettings,
