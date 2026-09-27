@@ -51,12 +51,12 @@ enum class AppTab(
 }
 
 internal val PillHeight = 56.dp
-internal val PillBottomOffset = 12.dp
-private val PillSpacing = 14.dp
+internal val PillBottomOffset = 8.dp
+private val PillSpacing = 18.dp
 private val PillShadowElevation = 8.dp
 /** 选中指示器相对白胶囊边缘的内缩 */
 private val PillIndicatorInset = 3.dp
-private val PillHorizontalPadding = 40.dp
+private val PillHorizontalPadding = 33.dp
 private val GradientOverhang = 24.dp
 
 /** 课表网格等内容需为导航栏预留的底部高度（不含系统导航栏 inset） */
@@ -83,7 +83,7 @@ fun BottomNavBar(
             .fillMaxWidth()
             .height(navBarTotalHeight()),
     ) {
-        // 渐变遮罩：不拦截点击，内容从其后滚过时渐隐为背景色
+        // 渐变遮罩
         Box(
             Modifier
                 .matchParentSize()
