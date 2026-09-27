@@ -56,10 +56,11 @@ private const val DateBandFadeSpeed = 3.0f
 
 
 /**
- * 课表网格：顶部日期数字带（第 [weekDates] 对应周，今天高亮，上滑渐隐）
+ * 课表网格：顶部日期数字带（第 [weekDates] 对应周，[highlightDate] 同日高亮，上滑渐隐）
  * + 按节次分行的 5 列课程格。
  *
- * 与 [ScheduleHeader] 星期行同为零水平边距五等分，天然列对齐。
+ * 与 [ScheduleHeader] 星期行同为零水平边距五等分，天然列对齐，
+ * 日期带高亮列与星期行高亮列同源（均由顶栏日期推导）。
  * 折叠通过外部 modifier.nestedScroll 接入，本组件不感知折叠状态。
  * 列表状态由调用方持有（供模糊进度计算），顶部偏移由 contentPadding.top 跟随顶栏高度。
  */
@@ -68,7 +69,7 @@ fun CourseGrid(
     courses: List<Course>,
     timeSlots: List<TimeSlot>,
     weekDates: List<Date>,
-    today: Date,
+    highlightDate: Date,
     modifier: Modifier = Modifier,
     state: LazyListState = rememberLazyListState(),
     contentPadding: PaddingValues = PaddingValues(0.dp),
@@ -81,7 +82,7 @@ fun CourseGrid(
         item(key = "dateBand") {
             DateBand(
                 weekDates = weekDates,
-                today = today,
+                highlightDate = highlightDate,
                 listState = state,
             )
         }
@@ -95,11 +96,11 @@ fun CourseGrid(
     }
 }
 
-/** 日期数字带：5 天日号，今天 primary 高亮；随自身滚出量渐隐 */
+/** 日期数字带：5 天日号，与顶栏日期同日 primary 高亮；随自身滚出量渐隐 */
 @Composable
 private fun DateBand(
     weekDates: List<Date>,
-    today: Date,
+    highlightDate: Date,
     listState: LazyListState,
 ) {
     val density = LocalDensity.current
@@ -146,14 +147,14 @@ private fun DateBand(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         weekDates.forEach { date ->
-            val isToday = date.isSameDay(today)
+            val highlighted = date.isSameDay(highlightDate)
             Text(
                 text = date.dayOfMonth().toString(),
                 modifier = Modifier.weight(1f).offset(y = 2.dp),
                 fontSize = 18.sp,
-                fontWeight = if (isToday) FontWeight.SemiBold else FontWeight.Medium,
+                fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Medium,
                 textAlign = TextAlign.Center,
-                color = if (isToday) {
+                color = if (highlighted) {
                     MaterialTheme.colorScheme.primary
                 } else {
                     MaterialTheme.colorScheme.onSurface
@@ -212,7 +213,7 @@ private fun CourseGridPreview() {
             courses = MockCourses,
             timeSlots = DefaultTimeSlots,
             weekDates = datesForWeek(2),
-            today = java.util.Calendar.getInstance().apply {
+            highlightDate = java.util.Calendar.getInstance().apply {
                 set(2026, java.util.Calendar.MARCH, 10)
             }.time,
         )

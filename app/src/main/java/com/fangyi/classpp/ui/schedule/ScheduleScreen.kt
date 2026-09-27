@@ -103,6 +103,16 @@ fun ScheduleScreen(
         null
     }
 
+    // 顶栏日期：查看本周显示今天，查看其它周（学期外一律算「其它周」）显示该周周一；
+    // 头部日期标题与星期高亮均由 date 驱动，随之联动（格式仍为 #月#日 周X）
+    val headerDate = if (schedule != null && week != currentWeek) {
+        remember(schedule, week) {
+            repository.datesForWeek(schedule.id, week).first().toUiDate()
+        }
+    } else {
+        today
+    }
+
     // 三路取数（纯函数、无 I/O）：key=schedule 覆盖置灰开关/时段/学期等全部变更源——
     // 任意 mutator 成功都会发布新的 Schedule 实例，记忆随之失效、同帧刷新
     val courses = if (schedule != null) {
@@ -168,7 +178,7 @@ fun ScheduleScreen(
                     courses = courses,
                     timeSlots = timeSlots,
                     weekDates = weekDates,
-                    today = today,
+                    highlightDate = headerDate,
                     state = listState,
                     // 滚动到底时最后一行可停在导航栏胶囊上方，网格背景仍铺满屏幕底缘；
                     // top 跟随顶栏高度，折叠期视觉与原先 Column 上推一致
@@ -186,7 +196,7 @@ fun ScheduleScreen(
                 )
                 ScheduleHeader(
                     collapseFraction = collapseState.collapseFraction,
-                    date = today,
+                    date = headerDate,
                     selectedWeek = week,
                     currentWeek = currentWeek,
                     onWeekSelected = { selectedWeek = it },

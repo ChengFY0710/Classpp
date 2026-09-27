@@ -131,6 +131,9 @@ fun ScheduleHeader(
     val weekdays = stringArrayResource(R.array.weekdays)
     val dateTitle = stringResource(R.string.date_title_format, monthDay, weekdays[weekIndex])
 
+    // 仅学期内且查看非本周时，日期行右侧显示「返回本周」
+    val showBackToCurrent = currentWeek != null && selectedWeek != currentWeek
+
     Layout(
         content = {
             // 1) 顶栏行：高度随折叠收缩，图标渐隐
@@ -172,17 +175,34 @@ fun ScheduleHeader(
                 }
             }
 
-            // 2) 日期行
-            Text(
-                text = dateTitle,
+            // 2) 日期行：左侧日期，右侧按需附带返回本周按钮（随图标一同渐隐）
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = HeaderEdgePadding, top = 12.dp, bottom = 12.dp),
-                fontSize = 23.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                letterSpacing = (-0.3).sp,
-            )
+                    .padding(
+                        start = HeaderEdgePadding,
+                        top = 12.dp,
+                        bottom = 12.dp,
+                        end = 27.dp,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = dateTitle,
+                    fontSize = 23.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    letterSpacing = (-0.3).sp,
+                )
+                Spacer(Modifier.weight(1f))
+                if (showBackToCurrent) {
+                    BackToCurrentButton(
+                        onClick = { currentWeek?.let(onWeekSelected) },
+                        enabled = iconsEnabled,
+                        alpha = iconAlpha,
+                    )
+                }
+            }
 
             // 3) 星期行：五等分，今天高亮（周起始下标与日期行一致）
             Row(modifier = Modifier
@@ -278,6 +298,41 @@ fun ScheduleHeader(
                 (pillCenterY - pillHeight / 2f).roundToInt(),
             )
         }
+    }
+}
+
+/**
+ * 日期行右侧「返回本周」按钮：非本周时显示，点按触发 [onClick] 跳回本周。
+ * [alpha]/[enabled] 吃编辑/设置图标同款折叠渐隐值，上滑时随顶栏一同消失。
+ */
+@Composable
+private fun BackToCurrentButton(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    alpha: Float,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .graphicsLayer { this.alpha = alpha }
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_arrow_circle_left),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(24.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = stringResource(R.string.back_to_current_week),
+            fontSize = 17.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+        )
     }
 }
 
