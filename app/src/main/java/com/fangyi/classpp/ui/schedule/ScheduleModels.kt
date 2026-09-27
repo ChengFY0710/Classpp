@@ -14,6 +14,8 @@ data class Course(
     /** 所属节次 id（本阶段不支持跨节次） */
     val slotId: Int,
     val color: CourseColor,
+    /** 本周是否上课；false 时卡片按规格置灰（底 #cbcbcb、课名 #737a83） */
+    val active: Boolean = true,
 )
 
 /** 一个固定节次；起止时间直接以卡片上显示的字符串形式保存 */

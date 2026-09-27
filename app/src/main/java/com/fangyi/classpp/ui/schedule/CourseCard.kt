@@ -45,6 +45,10 @@ private val CourseColor.barColor: Color
 
 private val SecondaryTextColor = Color(0xFFABAFB4)
 
+/** 置灰规范色（需求 7）：卡片底 #cbcbcb、课名 #737a83（教师/地点同用后者，避免低对比度） */
+private val InactiveCardBackground = Color(0xFFCBCBCB)
+private val InactiveTextColor = Color(0xFF737A83)
+
 /**
  * 课程卡片：白底圆角卡 + 左侧彩色竖条。
  *
@@ -58,11 +62,18 @@ fun CourseCard(
     modifier: Modifier = Modifier,
 ) {
     val barColor = course.color.barColor
+    // 本周不上的课：整体灰显（竖条与起止时间保留彩色，保留节次识别度）
+    val cardBackground = if (course.active) {
+        MaterialTheme.colorScheme.surface
+    } else {
+        InactiveCardBackground
+    }
+    val secondaryColor = if (course.active) SecondaryTextColor else InactiveTextColor
 
     Row(
         modifier = modifier
             .clip(CardShape)
-            .background(MaterialTheme.colorScheme.surface),
+            .background(cardBackground),
     ) {
         // 左侧彩色竖条
         Box(
@@ -91,7 +102,11 @@ fun CourseCard(
                 Column() {
                     Text(
                         text = course.name,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = if (course.active) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            InactiveTextColor
+                        },
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         lineHeight = 16.sp,
@@ -102,7 +117,7 @@ fun CourseCard(
                     Spacer(modifier = Modifier.size(1.dp))
                     Text(
                         text = course.teacher,
-                        color = SecondaryTextColor,
+                        color = secondaryColor,
                         fontSize = 11.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -113,7 +128,7 @@ fun CourseCard(
                     // 上课地点，统一一行
                     Text(
                         text = course.location,
-                        color = SecondaryTextColor,
+                        color = secondaryColor,
                         fontSize = 11.sp,
                         textAlign = TextAlign.Start,
                         lineHeight = 14.sp,
