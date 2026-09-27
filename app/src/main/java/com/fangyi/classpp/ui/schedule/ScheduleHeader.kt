@@ -198,7 +198,7 @@ fun ScheduleHeader(
                     // 背景模糊画在兜底色之上、内容之下；alpha 随进度渐入实现无缝衔接
                     Modifier.hazeEffect(hazeState) {
                         alpha = progress
-                        blurRadius = 36.dp
+                        blurRadius = 32.dp
                         progressive = HazeProgressive.verticalGradient(
                             startIntensity = 1f,
                             endIntensity = 0f,
