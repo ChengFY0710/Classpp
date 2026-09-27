@@ -57,7 +57,7 @@ private val PillShadowElevation = 8.dp
 /** 选中指示器相对白胶囊边缘的内缩 */
 private val PillIndicatorInset = 3.dp
 private val PillHorizontalPadding = 33.dp
-private val GradientOverhang = 24.dp
+private val GradientOverhang = 40.dp
 
 /** 课表网格等内容需为导航栏预留的底部高度（不含系统导航栏 inset） */
 val NavReserve = PillBottomOffset + PillHeight
@@ -132,7 +132,7 @@ private fun NavPill(
                 shape = CircleShape
                 clip = true
                 shadowElevation = 45.dp.toPx()
-                spotShadowColor = Color.Black.copy(alpha = 0.2f)
+                spotShadowColor = Color.Black.copy(alpha = 0.3f)
             }
             // 白底必须不透明：PrimaryContainer 仅 12% alpha，若直接铺在胶囊上，
             // graphicsLayer 的投影会从半透明底里透上来，在图标后形成一条淡横线
