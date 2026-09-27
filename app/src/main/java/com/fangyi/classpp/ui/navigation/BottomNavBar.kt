@@ -54,6 +54,8 @@ internal val PillHeight = 56.dp
 internal val PillBottomOffset = 12.dp
 private val PillSpacing = 14.dp
 private val PillShadowElevation = 8.dp
+/** 选中指示器相对白胶囊边缘的内缩 */
+private val PillIndicatorInset = 3.dp
 private val PillHorizontalPadding = 40.dp
 private val GradientOverhang = 24.dp
 
@@ -123,7 +125,7 @@ private fun NavPill(
 ) {
     val contentColor =
         if (selected) MaterialTheme.colorScheme.primary else Color.Black
-    Column(
+    Box(
         modifier = modifier
             .height(PillHeight)
             .graphicsLayer {
@@ -132,38 +134,49 @@ private fun NavPill(
                 shadowElevation = 45.dp.toPx()
                 spotShadowColor = Color.Black.copy(alpha = 0.2f)
             }
-            .background(
-                if (selected) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surface
-                },
-                CircleShape,
-            )
+            // 白底必须不透明：PrimaryContainer 仅 12% alpha，若直接铺在胶囊上，
+            // graphicsLayer 的投影会从半透明底里透上来，在图标后形成一条淡横线
+            .background(MaterialTheme.colorScheme.surface, CircleShape)
             .selectable(
                 selected = selected,
                 role = Role.Tab,
                 onClick = onClick,
-            )
-            .padding(horizontal = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            ),
+        contentAlignment = Alignment.Center,
     ) {
-        Spacer(Modifier.height(5.dp))
-        Icon(
-            painter = painterResource(tab.iconRes),
-            contentDescription = null,
-            tint = contentColor,
-            modifier = Modifier.size(32.dp),
-        )
-        Text(
-            text = stringResource(tab.labelRes),
-            fontSize = 11.sp,
-            lineHeight = 11.sp,
-            fontWeight = FontWeight.Medium,
-            color = contentColor,
-            modifier = Modifier.offset(y = - 1.dp),
-        )
-        Spacer(Modifier.height(6.dp))
+        // 选中指示器：浮在白胶囊内侧，四周内缩 PillIndicatorInset
+        if (selected) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .padding(PillIndicatorInset)
+                    .background(
+                        MaterialTheme.colorScheme.primaryContainer,
+                        CircleShape,
+                    ),
+            )
+        }
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.height(5.dp))
+            Icon(
+                painter = painterResource(tab.iconRes),
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(32.dp),
+            )
+            Text(
+                text = stringResource(tab.labelRes),
+                fontSize = 11.sp,
+                lineHeight = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = contentColor,
+                modifier = Modifier.offset(y = - 1.dp),
+            )
+            Spacer(Modifier.height(6.dp))
+        }
     }
 }
 
