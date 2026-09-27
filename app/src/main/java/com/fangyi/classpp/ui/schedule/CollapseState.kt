@@ -9,6 +9,8 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -90,10 +92,25 @@ class CollapseState(
         collapseOffsetPx = if (deltaY < 0f) current + consumed else current - consumed
         return Offset(0f, if (deltaY < 0f) -consumed else consumed)
     }
+
+    /** 供 [rememberCollapseState] 的 Saver 恢复折叠偏移 */
+    internal fun restore(offset: Float) {
+        collapseOffsetPx = offset.coerceIn(0f, maxCollapsePx)
+    }
 }
 
 @Composable
 fun rememberCollapseState(maxCollapsePx: Float): CollapseState {
     val decaySpec = remember { exponentialDecay<Float>() }
-    return remember(maxCollapsePx, decaySpec) { CollapseState(maxCollapsePx, decaySpec) }
+    // saveable：切 tab（SaveableStateHolder）/ 进程重建后折叠状态不丢失
+    return rememberSaveable(
+        maxCollapsePx,
+        decaySpec,
+        saver = Saver(
+            save = { it.collapseOffsetPx },
+            restore = { offset ->
+                CollapseState(maxCollapsePx, decaySpec).also { it.restore(offset) }
+            },
+        ),
+    ) { CollapseState(maxCollapsePx, decaySpec) }
 }

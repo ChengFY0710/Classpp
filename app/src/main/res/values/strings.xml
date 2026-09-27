@@ -3,6 +3,9 @@
     <string name="week_format">第 %1$d 周</string>
     <string name="cd_edit_schedule">编辑或切换课表</string>
     <string name="cd_settings">设置</string>
+    <string name="nav_schedule">日程</string>
+    <string name="nav_timetable">课表</string>
+    <string name="nav_todo">待办</string>
     <string name="month_day_format">%1$d月%2$d日</string>
     <string name="date_title_format">%1$s %2$s</string>
     <string-array name="weekdays">

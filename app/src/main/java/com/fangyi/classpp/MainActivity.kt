@@ -6,6 +6,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import com.fangyi.classpp.ui.navigation.AppTab
+import com.fangyi.classpp.ui.navigation.BottomNavBar
+import com.fangyi.classpp.ui.placeholder.AgendaScreen
+import com.fangyi.classpp.ui.placeholder.TodoScreen
 import com.fangyi.classpp.ui.schedule.ScheduleScreen
 import com.fangyi.classpp.ui.theme.ClassppTheme
 
@@ -21,7 +34,23 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             ClassppTheme {
-                ScheduleScreen()
+                var selectedTab by rememberSaveable { mutableStateOf(AppTab.Timetable) }
+                // 各 tab 状态（滚动位置、选中周等）切换后保留
+                val stateHolder = rememberSaveableStateHolder()
+                Box(Modifier.fillMaxSize()) {
+                    stateHolder.SaveableStateProvider(selectedTab) {
+                        when (selectedTab) {
+                            AppTab.Agenda -> AgendaScreen()
+                            AppTab.Timetable -> ScheduleScreen()
+                            AppTab.Todo -> TodoScreen()
+                        }
+                    }
+                    BottomNavBar(
+                        selectedTab = selectedTab,
+                        onTabSelected = { selectedTab = it },
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
+                }
             }
         }
     }

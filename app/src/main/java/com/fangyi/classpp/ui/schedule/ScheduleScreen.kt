@@ -27,6 +27,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -88,14 +89,14 @@ fun ScheduleScreen(modifier: Modifier = Modifier) {
                 weekDates = weekDates,
                 today = today,
                 state = listState,
-                // 滚动到底时最后一行可停在小白条上方，网格背景仍铺满屏幕底缘；
+                // 滚动到底时最后一行可停在导航栏胶囊上方，网格背景仍铺满屏幕底缘；
                 // top 跟随顶栏高度，折叠期视觉与原先 Column 上推一致
                 contentPadding = PaddingValues(
                     top = headerHeight,
                     bottom = WindowInsets.navigationBars
                         .only(WindowInsetsSides.Bottom)
                         .asPaddingValues()
-                        .calculateBottomPadding(),
+                        .calculateBottomPadding() + NavReserve,
                 ),
                 modifier = Modifier
                     .fillMaxSize()
