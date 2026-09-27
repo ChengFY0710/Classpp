@@ -11,10 +11,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import com.fangyi.classpp.ui.navigation.AppTab
 import com.fangyi.classpp.ui.navigation.BottomNavBar
 import com.fangyi.classpp.ui.placeholder.AgendaScreen
@@ -35,16 +36,25 @@ class MainActivity : ComponentActivity() {
         setContent {
             ClassppTheme {
                 var selectedTab by rememberSaveable { mutableStateOf(AppTab.Timetable) }
-                // 各 tab 状态（滚动位置、选中周等）切换后保留
-                val stateHolder = rememberSaveableStateHolder()
                 Box(Modifier.fillMaxSize()) {
-                    stateHolder.SaveableStateProvider(selectedTab) {
-                        when (selectedTab) {
-                            AppTab.Agenda -> AgendaScreen()
-                            AppTab.Timetable -> ScheduleScreen()
-                            AppTab.Todo -> TodoScreen()
-                        }
-                    }
+                    // 三个页面常驻组合，切 tab 仅将非选中页移出窗口。
+                    // 若用 SaveableStateProvider 按 key 重建课表页，首帧 headerHeight
+                    // 回落到估算值再被校正，紧贴头部的日期带会明显跳闪一次。
+                    AgendaScreen(
+                        Modifier
+                            .fillMaxSize()
+                            .offscreenWhenHidden(selectedTab != AppTab.Agenda),
+                    )
+                    ScheduleScreen(
+                        Modifier
+                            .fillMaxSize()
+                            .offscreenWhenHidden(selectedTab != AppTab.Timetable),
+                    )
+                    TodoScreen(
+                        Modifier
+                            .fillMaxSize()
+                            .offscreenWhenHidden(selectedTab != AppTab.Todo),
+                    )
                     BottomNavBar(
                         selectedTab = selectedTab,
                         onTabSelected = { selectedTab = it },
@@ -55,3 +65,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+/**
+ * 隐藏页面时把该页整体放置到窗口之外：组合状态全程存活（切 tab 不重建、不闪烁），
+ * 离屏位置不参与绘制（被窗口裁剪）也不参与命中测试（后台页收不到点击/滚动）。
+ */
+private fun Modifier.offscreenWhenHidden(hidden: Boolean): Modifier =
+    if (!hidden) {
+        this
+    } else {
+        this
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints)
+                layout(placeable.width, placeable.height) {
+                    placeable.place(placeable.width * 2, 0)
+                }
+            }
+            // 屏幕外的内容对 TalkBack 隐藏
+            .clearAndSetSemantics {}
+    }
