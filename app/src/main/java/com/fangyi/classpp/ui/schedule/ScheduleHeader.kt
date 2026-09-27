@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -213,6 +212,7 @@ fun ScheduleHeader(
                 weekRange = weekRange,
                 onWeekSelected = onWeekSelected,
                 blurProgress = progress,
+                hazeState = hazeState,
                 onMenuExpandedChange = onMenuExpandedChange,
             )
         },
@@ -287,6 +287,7 @@ private fun WeekPill(
     currentWeek: Int?,
     weekRange: IntRange,
     onWeekSelected: (Int) -> Unit,
+    hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
     blurProgress: Float = 0f,
     onMenuExpandedChange: (Boolean) -> Unit = {},
@@ -366,10 +367,11 @@ private fun WeekPill(
                 // focusable：返回键收起；dismissOnClickOutside 默认开启
                 properties = PopupProperties(focusable = true),
             ) {
-                WeekPickerCardSurface(
+                WeekPickerCardShell(
                     selectedWeek = selectedWeek,
                     currentWeek = currentWeek,
                     weekRange = weekRange,
+                    hazeState = hazeState,
                     onWeekSelected = {
                         onWeekSelected(it)
                         closeMenu()
@@ -411,16 +413,20 @@ private fun WeekPickerCard(
     }
 }
 
-/** 弹窗卡片外壳：四周 [CardShadowPadding] 透明留白容纳投影，避免被 Popup 窗口边界裁剪 */
+/**
+ * 弹窗卡片外壳：四周 [CardShadowPadding] 透明留白容纳投影，避免被 Popup 窗口边界裁剪。
+ * [hazeState] 非空时在白底之上叠加 Haze 毛玻璃（采样课表网格 hazeSource，跨窗口生效）。
+ */
 @Composable
-private fun WeekPickerCardSurface(
+private fun WeekPickerCardShell(
     selectedWeek: Int,
     currentWeek: Int?,
     weekRange: IntRange,
+    hazeState: HazeState?,
     onWeekSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
+    Box(
         modifier = modifier
             .padding(
                 start = CardShadowPadding,
@@ -428,12 +434,24 @@ private fun WeekPickerCardSurface(
                 end = CardShadowPadding,
                 bottom = CardShadowBottomPadding,
             )
-            .graphicsLayer {
+            .graphicsLayer { //阴影和窗口圆角效果
                 shape = RoundedCornerShape(20.dp)
                 clip = true
                 shadowElevation = 45.dp.toPx()
                 spotShadowColor = Color.Black.copy(alpha = 0.2f)
-            },
+            }
+            .background(MaterialTheme.colorScheme.surface)
+            .then(
+                if (hazeState != null) {
+                    Modifier.hazeEffect(hazeState) {
+                        blurRadius = 12.dp
+                        tints = listOf(HazeTint(Color.White.copy(alpha = 0.6f)))
+                        noiseFactor = 0f
+                    }
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         WeekPickerCard(
             selectedWeek = selectedWeek,
