@@ -1,5 +1,10 @@
 package com.fangyi.classpp.ui.schedule
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.Layout
@@ -316,19 +322,19 @@ private fun BackToCurrentButton(
         modifier = modifier
             .graphicsLayer { this.alpha = alpha }
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 4.dp, vertical = 4.dp),
+            .padding(horizontal = 4.dp, vertical = 0.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             painter = painterResource(R.drawable.ic_arrow_circle_left),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(20.dp),
         )
         Spacer(Modifier.width(6.dp))
         Text(
             text = stringResource(R.string.back_to_current_week),
-            fontSize = 17.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary,
             maxLines = 1,
@@ -349,6 +355,9 @@ private fun WeekPill(
 ) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         var menuExpanded by remember { mutableStateOf(false) }
+        // 收起动画期间保持 Popup 在场：targetState（开）或 currentState（关动画未完）任一为真
+        val expandedState = remember { MutableTransitionState(false) }
+        expandedState.targetState = menuExpanded
 
         fun closeMenu() {
             menuExpanded = false
@@ -415,7 +424,19 @@ private fun WeekPill(
             }
         }
 
-        if (menuExpanded) {
+        // M3 DropdownMenu 同款开关动画：scale 0.8→1（200ms）、alpha 0→1（120ms），
+        // 以顶部中心（≈胶囊所在）为缩放锚点；收起反向播放，播完才移除 Popup
+        if (expandedState.currentState || expandedState.targetState) {
+            val transition = updateTransition(expandedState, label = "WeekPicker")
+            val scale by transition.animateFloat(
+                transitionSpec = { tween(200, easing = FastOutSlowInEasing) },
+                label = "scale",
+            ) { expanded -> if (expanded) 1f else 0.8f }
+            val alpha by transition.animateFloat(
+                transitionSpec = { tween(120, easing = FastOutSlowInEasing) },
+                label = "alpha",
+            ) { expanded -> if (expanded) 1f else 0f }
+
             Popup(
                 onDismissRequest = { closeMenu() },
                 popupPositionProvider = positionProvider,
@@ -427,6 +448,13 @@ private fun WeekPill(
                     currentWeek = currentWeek,
                     weekRange = weekRange,
                     hazeState = hazeState,
+                    // 排在外壳 padding/裁剪/投影/毛玻璃之外：整卡一起缩放淡入
+                    modifier = Modifier.graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        this.alpha = alpha
+                        transformOrigin = TransformOrigin(0.5f, 0f)
+                    },
                     onWeekSelected = {
                         onWeekSelected(it)
                         closeMenu()
