@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -49,6 +51,7 @@ import com.fangyi.classpp.ui.theme.ClassppTheme
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import java.util.Date
+import kotlin.math.abs
 
 /**
  * 课表页：可折叠头部（顶栏行/日期行/星期行）+ 课表网格。
@@ -56,6 +59,9 @@ import java.util.Date
  *
  * 网格与顶栏为叠层（Box）：网格铺满全屏并经 contentPadding.top 让位于顶栏，
  * 折叠后内容从顶栏背后滚过，顶栏通过 Haze 对其做背景模糊（随日期带渐隐同步渐入）。
+ *
+ * 网格内容区是横向 Pager（每周一页，见 [CourseGrid]）：左右滑动跟手翻上一周/下一周，
+ * 顶栏是叠层里的独立一层，翻页期间位置与内容均不动，只在拖动过半时随周次更新文案。
  *
  * 数据来自 [repository]（null = 尚未加载完成，显示指示器）；
  * 无激活课表时显示空状态，经 [onOpenSettings] 引导至设置页新建。
@@ -77,7 +83,9 @@ fun ScheduleScreen(
     var selectedWeek by rememberSaveable { mutableIntStateOf(0) }
     val today = remember { Date() }
 
-    val schedule = repository.activeSchedule.collectAsState().value
+    // State 对象本身稳定（remember），供 Pager 的 pageCount 闭包长期读取；schedule 为当前值
+    val scheduleState = repository.activeSchedule.collectAsState()
+    val schedule = scheduleState.value
 
     // 选周：0=未初始化 → 学期中取当前周、学期后取末周、学期前取第 1 周；
     // 学期起止被设置页修改后自动钳制到新范围
@@ -113,21 +121,9 @@ fun ScheduleScreen(
         today
     }
 
-    // 三路取数（纯函数、无 I/O）：key=schedule 覆盖置灰开关/时段/学期等全部变更源——
-    // 任意 mutator 成功都会发布新的 Schedule 实例，记忆随之失效、同帧刷新
-    val courses = if (schedule != null) {
-        remember(schedule, week) {
-            repository.visibleCoursesForWeek(schedule.id, week).map { it.toUiCourse() }
-        }
-    } else {
-        emptyList()
-    }
-    val timeSlots = schedule?.slots?.toUiSlots().orEmpty()
-    val weekDates = if (schedule != null) {
-        remember(schedule, week) {
-            // 7 天模式只渲染前 5 天（网格仍为 5 列硬编码，视图批次再扩展）
-            repository.datesForWeek(schedule.id, week).take(5).map { it.toUiDate() }
-        }
+    // 节次：结构性数据，随 schedule 换新而变；实例只建一次，避免翻页期三页无谓重组
+    val timeSlots = if (schedule != null) {
+        remember(schedule) { schedule.slots.toUiSlots() }
     } else {
         emptyList()
     }
@@ -169,16 +165,64 @@ fun ScheduleScreen(
                     .padding(innerPadding),
             )
         } else {
+            // ——— 内容区横向翻周 ———
+            // 初始页即目标周：Pager 只在有课表时创建，避免首帧从第 1 周跳变到当前周。
+            // pageCount 刻意读 State 而非局部值：该闭包在创建时被 Pager 捕获，
+            // 读局部值会让学期起止修改后的周数变化（如 20 → 25 周）不再生效
+            val pagerState = rememberPagerState(initialPage = week - 1) {
+                scheduleState.value?.totalWeeks ?: 1
+            }
+
+            // 每周页内容（纯函数、无 I/O）：key=schedule 覆盖置灰开关/时段/学期等全部变更源——
+            // 任意 mutator 成功都会发布新的 Schedule 实例，记忆随之失效、同帧刷新
+            val contentForWeek: (Int) -> WeekPageContent = remember(schedule, currentWeek, today) {
+                { pageWeek ->
+                    val dates = repository.datesForWeek(schedule.id, pageWeek)
+                    WeekPageContent(
+                        week = pageWeek,
+                        courses = repository.visibleCoursesForWeek(schedule.id, pageWeek)
+                            .map { it.toUiCourse() },
+                        // 7 天模式只渲染前 5 天（网格仍为 5 列硬编码，视图批次再扩展）
+                        dates = dates.take(5).map { it.toUiDate() },
+                        // 与顶栏日期同规则：查看本周高亮今天，其它周高亮该周周一
+                        highlightDate = if (pageWeek == currentWeek) {
+                            today
+                        } else {
+                            dates.first().toUiDate()
+                        },
+                    )
+                }
+            }
+
+            // 手势 → 周次：currentPage 在拖动过半时即翻转，顶栏周数胶囊与日期随之切换；
+            // 写回同值时 State 自身忽略，不产生额外重组
+            LaunchedEffect(pagerState) {
+                snapshotFlow { pagerState.currentPage }.collect { selectedWeek = it + 1 }
+            }
+
+            // 周次 → 翻页：周数弹窗、返回本周、学期范围钳制触发的换周。
+            // 相邻周走滑动动画（与手势翻页连贯），跨多周直接落位（与原先的瞬时换周一致）
+            LaunchedEffect(week) {
+                val target = week - 1
+                val current = pagerState.currentPage
+                if (current != target) {
+                    if (abs(current - target) == 1) {
+                        pagerState.animateScrollToPage(target)
+                    } else {
+                        pagerState.scrollToPage(target)
+                    }
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
             ) {
                 CourseGrid(
-                    courses = courses,
+                    pagerState = pagerState,
                     timeSlots = timeSlots,
-                    weekDates = weekDates,
-                    highlightDate = headerDate,
+                    contentForWeek = contentForWeek,
                     state = listState,
                     // 滚动到底时最后一行可停在导航栏胶囊上方，网格背景仍铺满屏幕底缘；
                     // top 跟随顶栏高度，折叠期视觉与原先 Column 上推一致

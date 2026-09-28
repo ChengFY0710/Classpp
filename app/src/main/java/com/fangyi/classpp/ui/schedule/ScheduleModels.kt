@@ -28,6 +28,19 @@ data class TimeSlot(
 /** 课程卡片配色；映射到 Color 收在 CourseCard.kt，模型保持零 Compose 依赖 */
 enum class CourseColor { Blue, Green, Greentwo , Yellow, Orange, Purple, Teal, Pink }
 
+/**
+ * 一周的整页渲染数据：日期带 + 该周课程。
+ * 横向翻周时每周一页（见 CourseGrid 的 Pager），按页周号现取，无需预先算好相邻周。
+ */
+data class WeekPageContent(
+    val week: Int,
+    val courses: List<Course>,
+    /** 该周周一至周五的日期（日期带显示日号） */
+    val dates: List<Date>,
+    /** 日期带高亮列：与顶栏日期同规则（查看本周 = 今天，其它周 = 该周周一） */
+    val highlightDate: Date,
+)
+
 /** 学期第一个教学周一（2026-03-02 周一 = 第 1 周周一） */
 val TermStart: Date = Calendar.getInstance().apply {
     set(2026, Calendar.MARCH, 2, 0, 0, 0)

@@ -2,8 +2,10 @@ package com.fangyi.classpp.ui.schedule
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,12 +13,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerSnapDistance
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -56,43 +63,101 @@ private const val DateBandFadeSpeed = 3.0f
 
 
 /**
- * 课表网格：顶部日期数字带（第 [weekDates] 对应周，[highlightDate] 同日高亮，上滑渐隐）
- * + 按节次分行的 5 列课程格。
+ * 课表网格：整块内容区是一个横向 Pager，**每周一页**（日期数字带 + 按节次分行的 5 列课程格）。
+ * 左右滑动即切换上一周/下一周，卡片与网格线跟手横移，顶栏不动。
+ *
+ * 关键结构：Pager 是列表里的**唯一 item**，纵向滚动留在 Pager 之外——
+ * 三页因此共享同一纵向位置与折叠状态，拖动途中相邻周与当前周严格对齐；
+ * 每页高度固定（日期带 + 各行 + 尾部留白），故给 Pager 显式高度，避开 item 纵向约束无界。
  *
  * 与 [ScheduleHeader] 星期行同为零水平边距五等分，天然列对齐，
- * 日期带高亮列与星期行高亮列同源（均由顶栏日期推导）。
+ * 日期带高亮列与星期行高亮列同源（均由顶栏日期推导，见 [WeekPageContent.highlightDate]）。
  * 折叠通过外部 modifier.nestedScroll 接入，本组件不感知折叠状态。
- * 列表状态由调用方持有（供模糊进度计算），顶部偏移由 contentPadding.top 跟随顶栏高度。
+ * 列表状态由调用方持有（供模糊进度与日期带渐隐计算），顶部偏移由 contentPadding.top 跟随顶栏高度；
+ * Pager 状态同样由调用方持有（供周次 ↔ 翻页双向同步）。
  */
 @Composable
 fun CourseGrid(
-    courses: List<Course>,
+    pagerState: PagerState,
     timeSlots: List<TimeSlot>,
-    weekDates: List<Date>,
-    highlightDate: Date,
+    contentForWeek: (Int) -> WeekPageContent,
     modifier: Modifier = Modifier,
     state: LazyListState = rememberLazyListState(),
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
+    val pageHeight = DateBandHeight + GridRowHeight * timeSlots.size + TrailingScrollSpace
     LazyColumn(
         state = state,
         contentPadding = contentPadding,
         modifier = modifier.background(MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        item(key = "dateBand") {
-            DateBand(
-                weekDates = weekDates,
-                highlightDate = highlightDate,
-                listState = state,
-            )
+        item(key = "weekPager") {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(pageHeight),
+                // 预组合左右邻页：手势起始帧即已有相邻周内容，不会先露一片空白
+                beyondViewportPageCount = 1,
+                // 一次手势最多翻一周（对应「上一周/下一周」），甩动不跨周跳
+                flingBehavior = PagerDefaults.flingBehavior(
+                    state = pagerState,
+                    pagerSnapDistance = PagerSnapDistance.atMost(1),
+                ),
+            ) { page ->
+                WeekPage(
+                    // 按页周号记忆：内容只在周号或数据源变化时重算
+                    content = remember(page, contentForWeek) { contentForWeek(page + 1) },
+                    timeSlots = timeSlots,
+                    pagerState = pagerState,
+                    listState = state,
+                )
+            }
         }
-        items(timeSlots, key = { it.id }) { slot ->
+    }
+}
+
+/**
+ * 一周的整页：日期带 + 各节次行 + 尾部留白。
+ *
+ * 页右缘补一条竖线：静止时页右缘与屏幕右缘重合、无需补；翻页/拖动途中它正是相邻周的分界，
+ * 不补会让分界处两列并成一宽列。翻页进度在 draw 阶段读取（当前页偏移非零即途中），
+ * 只在需要时重绘、不触发重组；线只画到最后一个节次行（不含尾部留白）。
+ */
+@Composable
+private fun WeekPage(
+    content: WeekPageContent,
+    timeSlots: List<TimeSlot>,
+    pagerState: PagerState,
+    listState: LazyListState,
+) {
+    val trailingPx = with(LocalDensity.current) { TrailingScrollSpace.toPx() }
+    Column(
+        modifier = Modifier.drawBehind {
+            if (pagerState.currentPageOffsetFraction != 0f) {
+                val stroke = GridLineWidth.toPx()
+                val x = size.width - stroke / 2f
+                drawLine(
+                    Outline,
+                    Offset(x, 0f),
+                    Offset(x, size.height - trailingPx),
+                    strokeWidth = stroke,
+                )
+            }
+        },
+    ) {
+        DateBand(
+            weekDates = content.dates,
+            highlightDate = content.highlightDate,
+            listState = listState,
+        )
+        timeSlots.forEach { slot ->
             GridRow(
                 slot = slot,
-                courses = courses,
+                courses = content.courses,
             )
         }
-        item { Box(modifier = Modifier.height(TrailingScrollSpace)) }
+        Spacer(modifier = Modifier.height(TrailingScrollSpace))
     }
 }
 
@@ -210,12 +275,19 @@ private fun GridRow(
 private fun CourseGridPreview() {
     ClassppTheme {
         CourseGrid(
-            courses = MockCourses,
+            pagerState = rememberPagerState(initialPage = 1) { 20 },
             timeSlots = DefaultTimeSlots,
-            weekDates = datesForWeek(2),
-            highlightDate = java.util.Calendar.getInstance().apply {
-                set(2026, java.util.Calendar.MARCH, 10)
-            }.time,
+            contentForWeek = { pageWeek ->
+                val dates = datesForWeek(pageWeek)
+                WeekPageContent(
+                    week = pageWeek,
+                    // 预览仍用单周 mock：每周显示同一份课程
+                    courses = MockCourses,
+                    dates = dates,
+                    // 与旧预览一致：高亮所看周的周二
+                    highlightDate = dates[1],
+                )
+            },
         )
     }
 }
