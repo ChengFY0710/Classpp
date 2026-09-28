@@ -379,6 +379,9 @@ fun ScheduleScreen(
                         // 本轮置空：切换课表后续再做
                         onSwitchSchedule = {},
                         onCancel = { onEditingChange(false) },
+                        // 与折叠后的原顶栏同一套背景模糊：内容滚到栏下时渐入
+                        blurProgress = blurProgress,
+                        hazeState = hazeState,
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .onGloballyPositioned { coords ->

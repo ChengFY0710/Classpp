@@ -36,14 +36,18 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.CancelRed
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.SaveGreen
+import dev.chrisbanes.haze.HazeProgressive
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
 
-private val EditActionTextSize = 17.sp
+private val EditActionTextSize = 18.sp
 private val EditActionIconSize = 30.dp
 private val EditActionGap = 6.dp
 private val EditActionInnerPadding = 8.dp
 
 /** 动作块离屏幕边的距离 = 顶栏图标内缩 20dp − 动作块自身水平内缩 → 图标仍落在 20dp 上 */
-private val EditBarEdgePadding = 12.dp
+private val EditBarEdgePadding = 20.dp
 
 private val EditActionShape = RoundedCornerShape(10.dp)
 
@@ -56,6 +60,9 @@ private val EditActionShape = RoundedCornerShape(10.dp)
  *
  * 两侧的动作各自是"图标 + 文字"整块可点（设计稿里图标与文字同色成对），
  * 中间的"切换课表"是纯文字。
+ *
+ * [blurProgress] / [hazeState]：与 [ScheduleHeader] 折叠后同一套背景模糊——
+ * 内容滚到编辑栏下方时按 [blurProgress] 渐入，顶部最强、向下渐弱；回到顶部恢复不透明。
  */
 @Composable
 fun ScheduleEditBar(
@@ -63,12 +70,33 @@ fun ScheduleEditBar(
     onSwitchSchedule: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    blurProgress: Float = 0f,
+    hazeState: HazeState? = null,
 ) {
     val weekdays = stringArrayResource(R.array.weekdays)
+    val progress = blurProgress.coerceIn(0f, 1f)
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
+            // surface 兜底：progress≈0 时与原不透明背景逐帧一致
+            .background(Color.Transparent)
+            .then(
+                if (hazeState != null && progress > 0f) {
+                    // 背景模糊画在兜底色之上、内容之下；alpha 随进度渐入实现无缝衔接
+                    Modifier.hazeEffect(hazeState) {
+                        alpha = progress
+                        blurRadius = 32.dp
+                        progressive = HazeProgressive.verticalGradient(
+                            startIntensity = 1f,
+                            endIntensity = 0f,
+                        )
+                        tints = listOf(HazeTint(Color.White.copy(alpha = 0.30f)))
+                        noiseFactor = 0f
+                    }
+                } else {
+                    Modifier
+                },
+            )
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
         Box(
