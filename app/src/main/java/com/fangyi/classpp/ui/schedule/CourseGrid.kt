@@ -43,13 +43,14 @@ import java.util.Date
 import kotlin.math.roundToInt
 
 /** 日期带高度（滚动渐隐的参考高度，模糊进度也以此为刻度） */
-internal val DateBandHeight = 40.dp
+internal val DateBandHeight = 41.dp
 
 /** 每个节次行的固定高度（容纳两行课程名 + 教师/地点/房间 + 起止时间） */
 private val GridRowHeight = 150.dp
 
 /** 单元格内边距，卡片间形成网格沟槽 */
 private val CellPadding = 3.dp
+private val CellPaddingTop = 2.dp //用于平衡网格线带来的视觉偏差
 
 /** 网格线笔宽 */
 private val GridLineWidth = 1.dp
@@ -270,7 +271,7 @@ private fun DateBand(
             val highlighted = date.isSameDay(highlightDate)
             Text(
                 text = date.dayOfMonth().toString(),
-                modifier = Modifier.weight(1f).offset(y = 2.dp),
+                modifier = Modifier.weight(1f).offset(y = 1.dp),
                 fontSize = 18.sp,
                 fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Medium,
                 textAlign = TextAlign.Center,
@@ -323,7 +324,7 @@ private fun GridRow(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .padding(CellPadding),
+                    .padding(start = CellPadding, end = CellPadding, bottom = CellPadding, top = CellPaddingTop),
             ) {
                 when {
                     course == null && add != null -> AddCourseCard(
