@@ -23,6 +23,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,6 +88,13 @@ fun CourseGrid(
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
     val pageHeight = DateBandHeight + GridRowHeight * timeSlots.size + TrailingScrollSpace
+    // 接缝竖线是否要画：派生成布尔 state —— 拖动中恒为真，只在起手/落位翻转一次。
+    // 切不可让 draw 直接读 currentPageOffsetFraction（拖动中逐帧都变）：那会让页面图层
+    // 被逐帧判为失效、整页绘制指令（日期带 + 各行卡片）跟着重录一遍，图层也就白加了。
+    // 派生 state 只在结果翻转时通知读者，与"是否滚过阈值"是同一用法。
+    val seamVisible: State<Boolean> = remember(pagerState) {
+        derivedStateOf { pagerState.isSeamVisible }
+    }
     LazyColumn(
         state = state,
         contentPadding = contentPadding,
@@ -109,7 +118,7 @@ fun CourseGrid(
                     // 按页周号记忆：内容只在周号或数据源变化时重算
                     content = remember(page, contentForWeek) { contentForWeek(page + 1) },
                     timeSlots = timeSlots,
-                    pagerState = pagerState,
+                    seamVisible = seamVisible,
                     listState = state,
                 )
             }
@@ -129,37 +138,44 @@ private val PagerState.isSeamVisible: Boolean
  *
  * 页右缘的接缝竖线分两段补：课程行区由本页补（行内无底色，画在身后即可），
  * 日期带区由 [DateBand] 自己补（带的底色会盖住身后画的线），两段同 x 同笔宽、接成一条。
- * 翻页进度都在 draw 阶段读取，只在需要时重绘、不触发重组。
+ * 开关取自派生后的布尔 state（见 [CourseGrid]），只在起手/落位翻转，不随逐帧偏移抖动。
+ *
+ * 本页自带**独立图层**（空 `graphicsLayer` 即可）：周 Pager 靠放置（placement）移动页面，
+ * 页面若没有自己的图层，其绘制指令会被录进 Pager 那一层——每帧位移都要把整页
+ * （日期带 + 各行卡片）的指令重录一遍，翻周时就掉帧；有图层后每帧只更新"这一层画在哪"，
+ * 页面内容的指令表保持缓存（与 tab 平移同一手法，见 MainActivity.tabPage）。
  */
 @Composable
 private fun WeekPage(
     content: WeekPageContent,
     timeSlots: List<TimeSlot>,
-    pagerState: PagerState,
+    seamVisible: State<Boolean>,
     listState: LazyListState,
 ) {
     val density = LocalDensity.current
     val bandPx = with(density) { DateBandHeight.toPx() }
     val trailingPx = with(density) { TrailingScrollSpace.toPx() }
     Column(
-        modifier = Modifier.drawBehind {
-            if (pagerState.isSeamVisible) {
-                val stroke = GridLineWidth.toPx()
-                val x = size.width - stroke / 2f
-                drawLine(
-                    Outline,
-                    Offset(x, bandPx),
-                    Offset(x, size.height - trailingPx),
-                    strokeWidth = stroke,
-                )
-            }
-        },
+        modifier = Modifier
+            .graphicsLayer { }
+            .drawBehind {
+                if (seamVisible.value) {
+                    val stroke = GridLineWidth.toPx()
+                    val x = size.width - stroke / 2f
+                    drawLine(
+                        Outline,
+                        Offset(x, bandPx),
+                        Offset(x, size.height - trailingPx),
+                        strokeWidth = stroke,
+                    )
+                }
+            },
     ) {
         DateBand(
             weekDates = content.dates,
             highlightDate = content.highlightDate,
             listState = listState,
-            pagerState = pagerState,
+            seamVisible = seamVisible,
         )
         timeSlots.forEach { slot ->
             GridRow(
@@ -175,14 +191,15 @@ private fun WeekPage(
  * 日期数字带：5 天日号，与顶栏日期同日 primary 高亮；随自身滚出量渐隐。
  *
  * 翻页途中页右缘的接缝竖线由本带自己补（页级 drawBehind 补的那段会被带的底色盖住），
- * 画在自身 drawBehind 内 ⇒ 与带内其它竖线一同渐隐，不会在滚过顶栏后留一截浮线。
+ * 画在自身 drawBehind 内 ⇒ 与带内其它竖线一同渐隐，不会在滚过顶栏后留一截浮线；
+ * 开关同样取自派生后的布尔 state，避免拖动中逐帧重录本层指令。
  */
 @Composable
 private fun DateBand(
     weekDates: List<Date>,
     highlightDate: Date,
     listState: LazyListState,
-    pagerState: PagerState,
+    seamVisible: State<Boolean>,
 ) {
     val density = LocalDensity.current
     val bandHeightPx = with(density) { DateBandHeight.toPx() }
@@ -225,7 +242,7 @@ private fun DateBand(
                     strokeWidth = stroke,
                 )
                 // 右缘接缝竖线：与下方课程行的补线接成一条（同一 x、同一笔宽）
-                if (pagerState.isSeamVisible) {
+                if (seamVisible.value) {
                     val x = size.width - stroke / 2f
                     drawLine(Outline, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
                 }

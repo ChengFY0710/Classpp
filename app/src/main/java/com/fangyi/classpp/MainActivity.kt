@@ -22,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -87,8 +88,8 @@ class MainActivity : ComponentActivity() {
                             .fillMaxSize()
                             .tabPage(
                                 tab = AppTab.Agenda,
+                                selectedTab = selectedTab,
                                 progress = tabProgress,
-                                selected = selectedTab == AppTab.Agenda,
                             ),
                     )
                     ScheduleScreen(
@@ -96,8 +97,8 @@ class MainActivity : ComponentActivity() {
                             .fillMaxSize()
                             .tabPage(
                                 tab = AppTab.Timetable,
+                                selectedTab = selectedTab,
                                 progress = tabProgress,
-                                selected = selectedTab == AppTab.Timetable,
                             ),
                         repository = repository,
                         onOpenSettings = { showSettings = true },
@@ -107,8 +108,8 @@ class MainActivity : ComponentActivity() {
                             .fillMaxSize()
                             .tabPage(
                                 tab = AppTab.Todo,
+                                selectedTab = selectedTab,
                                 progress = tabProgress,
-                                selected = selectedTab == AppTab.Todo,
                             ),
                     )
                     BottomNavBar(
@@ -145,29 +146,42 @@ private fun rememberScheduleRepository(): ScheduleRepository? {
 }
 
 /**
- * tab 平移时长：先快后慢的减速曲线下，位移的大部分集中在开头，
+ * tab 平移时长：先快后慢的减速曲线下，位移的大部分集中在开头，末尾只是缓慢收住。
+ * 想让节奏更利落可下调（300ms 左右），曲线不变。
  */
 private const val TabTransitionMillis = 400
 
 /**
- * tab 页横向平移：按「自身序号 − 动画进度」× 页宽 定位，选中页恒在 0，
- * 三页像一条连续带子一起平移——旧页滑出、新页滑入；跨两个 tab 时中间页会扫过。
+ * tab 页横向平移：视觉位置 = (自身序号 − 动画进度) × 页宽，三页像一条连续带子——
+ * 旧页滑出、新页滑入；跨两个 tab 时中间页会扫过。它拆成两半、各司其职：
+ *
+ * - **布局槽位**取"最终"位置（选中页 0，其余按序号差 ±N 屏）：命中测试、滚动、语义都由
+ *   布局决定，离屏页自然收不到点击，与切 tab 前后一致；
+ * - **layer 平移**只承担动画中的追赶位移（起始 ±N 屏 → 收尾 0）。
+ *
+ * 拆开是为了帧率：布局位移会改变节点在父层绘制指令里的位置，父层必须把三页的绘制指令
+ * 整段重录（课表页含日期带 + 三个周页 × 每行五格卡片，一帧重录一次就掉帧）；
+ * layer 平移只更新变换矩阵，子树布局、绘制指令、文字排版一概不动，离屏层还能被整层剔除。
+ * 两半相加仍是连续带子：槽位 (序号 − 目标) × 页宽 + layer (目标 − 进度) × 页宽
+ * = (序号 − 进度) × 页宽。
  *
  * 三页常驻组合、只挪位置、不重建（见调用处注释：重建会让课表页首帧跳闪）。
- * 非选中页落在屏幕外：被窗口裁剪故不参与绘制，位置不在命中范围内故收不到点击/滚动，
- * 且对 TalkBack 隐藏。
- *
- * [progress] 以 [State] 传入并在 measure 阶段读取：动画期间只重排，不重组。
+ * [progress] 以 [State] 传入、在布局与 layer 阶段读取：动画期间不重组、不重排。
  */
 private fun Modifier.tabPage(
     tab: AppTab,
+    selectedTab: AppTab,
     progress: State<Float>,
-    selected: Boolean,
 ): Modifier {
+    val target = selectedTab.ordinal
     val placed = this.layout { measurable, constraints ->
         val placeable = measurable.measure(constraints)
-        val x = ((tab.ordinal - progress.value) * placeable.width).roundToInt()
-        layout(placeable.width, placeable.height) { placeable.place(x, 0) }
+        val slotX = (tab.ordinal - target) * placeable.width
+        layout(placeable.width, placeable.height) { placeable.place(slotX, 0) }
     }
-    return if (selected) placed else placed.clearAndSetSemantics {}
+    val animated = placed.graphicsLayer {
+        // 取整到整像素：动画期间文字不糊，收尾正好归 0 与原位重合
+        translationX = ((target - progress.value) * size.width).roundToInt().toFloat()
+    }
+    return if (tab == selectedTab) animated else animated.clearAndSetSemantics {}
 }
