@@ -22,7 +22,6 @@ val TertiaryContainer = Color(0xFFCFEBED)
 val OnTertiaryContainer = Color(0xFF002022)
 
 val Background = Color(0xFFF2F4F6)
-val TextBackgroundBlue = Color(0xFFA3C8FA)
 val OnBackground = Color(0xFF000000)
 
 val Surface = Color(0xFFFFFFFF)
@@ -42,7 +41,7 @@ val OutlineVariant = Color(0xFFC4C9CF)
 
 val InverseSurface = Color(0xFF303033)
 val InverseOnSurface = Color(0xFFF5F6F8)
-val InversePrimary = Color(0xFFA6C8FF)
+val InversePrimary = Color(0xFFA3C8FA)
 
 val Error = Color(0xFFB3261E)
 val OnError = Color(0xFFFFFFFF)

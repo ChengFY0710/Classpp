@@ -34,7 +34,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.TextBackgroundBlue
 
 private val CardShape = RoundedCornerShape(6.dp)
 private val BarWidth = 3.dp
@@ -209,7 +208,7 @@ fun AddCourseCard(
 private fun AddCardTime(text: String) {
     Text(
         text = text,
-        color = TextBackgroundBlue,
+        color = MaterialTheme.colorScheme.inversePrimary,
         fontSize = 11.sp,
         fontWeight = FontWeight.Medium,
         maxLines = 1,
