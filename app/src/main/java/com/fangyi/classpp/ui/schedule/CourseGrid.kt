@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -241,9 +242,13 @@ private fun WeekPage(
                                     slot = slot,
                                     endTime = timeSlots[lastIdx].endTime,
                                     // 必须 required：单元格内容区最高只有一行（145dp），
-                                    // 普通 height() 会被父约束钳回单行高度，跨不出去
+                                    // 普通 height() 会被父约束钳回单行高度，跨不出去。
+                                    // requiredHeight 对被钳掉的超高内容默认居中放置（卡顶偏上 (H−145)/2），
+                                    // 先放开高度约束（无钳制即无居中），再按 Top 钉在格顶、向下溢出，
+                                    // 卡顶/卡底与普通卡四边内缩一致，任意 span 成立
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .wrapContentHeight(align = Alignment.Top, unbounded = true)
                                         .requiredHeight(GridRowHeight * effSpan - CellPaddingTop - CellPadding),
                                     onClick = if (!course.active && editMode && onAddClick != null) {
                                         { onAddClick(day, slot) }
