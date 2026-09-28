@@ -118,11 +118,18 @@ fun CourseGrid(
 }
 
 /**
+ * 翻页/拖动途中（当前页偏移非零）→ 页右缘正是相邻周的分界，需要补一条竖线。
+ * 静止时页右缘与屏幕右缘重合，补线只会贴着屏幕边缘，故不画。
+ */
+private val PagerState.isSeamVisible: Boolean
+    get() = currentPageOffsetFraction != 0f
+
+/**
  * 一周的整页：日期带 + 各节次行 + 尾部留白。
  *
- * 页右缘补一条竖线：静止时页右缘与屏幕右缘重合、无需补；翻页/拖动途中它正是相邻周的分界，
- * 不补会让分界处两列并成一宽列。翻页进度在 draw 阶段读取（当前页偏移非零即途中），
- * 只在需要时重绘、不触发重组；线只画到最后一个节次行（不含尾部留白）。
+ * 页右缘的接缝竖线分两段补：课程行区由本页补（行内无底色，画在身后即可），
+ * 日期带区由 [DateBand] 自己补（带的底色会盖住身后画的线），两段同 x 同笔宽、接成一条。
+ * 翻页进度都在 draw 阶段读取，只在需要时重绘、不触发重组。
  */
 @Composable
 private fun WeekPage(
@@ -131,15 +138,17 @@ private fun WeekPage(
     pagerState: PagerState,
     listState: LazyListState,
 ) {
-    val trailingPx = with(LocalDensity.current) { TrailingScrollSpace.toPx() }
+    val density = LocalDensity.current
+    val bandPx = with(density) { DateBandHeight.toPx() }
+    val trailingPx = with(density) { TrailingScrollSpace.toPx() }
     Column(
         modifier = Modifier.drawBehind {
-            if (pagerState.currentPageOffsetFraction != 0f) {
+            if (pagerState.isSeamVisible) {
                 val stroke = GridLineWidth.toPx()
                 val x = size.width - stroke / 2f
                 drawLine(
                     Outline,
-                    Offset(x, 0f),
+                    Offset(x, bandPx),
                     Offset(x, size.height - trailingPx),
                     strokeWidth = stroke,
                 )
@@ -150,6 +159,7 @@ private fun WeekPage(
             weekDates = content.dates,
             highlightDate = content.highlightDate,
             listState = listState,
+            pagerState = pagerState,
         )
         timeSlots.forEach { slot ->
             GridRow(
@@ -161,12 +171,18 @@ private fun WeekPage(
     }
 }
 
-/** 日期数字带：5 天日号，与顶栏日期同日 primary 高亮；随自身滚出量渐隐 */
+/**
+ * 日期数字带：5 天日号，与顶栏日期同日 primary 高亮；随自身滚出量渐隐。
+ *
+ * 翻页途中页右缘的接缝竖线由本带自己补（页级 drawBehind 补的那段会被带的底色盖住），
+ * 画在自身 drawBehind 内 ⇒ 与带内其它竖线一同渐隐，不会在滚过顶栏后留一截浮线。
+ */
 @Composable
 private fun DateBand(
     weekDates: List<Date>,
     highlightDate: Date,
     listState: LazyListState,
+    pagerState: PagerState,
 ) {
     val density = LocalDensity.current
     val bandHeightPx = with(density) { DateBandHeight.toPx() }
@@ -208,6 +224,11 @@ private fun DateBand(
                     Offset(size.width, stroke / 2),
                     strokeWidth = stroke,
                 )
+                // 右缘接缝竖线：与下方课程行的补线接成一条（同一 x、同一笔宽）
+                if (pagerState.isSeamVisible) {
+                    val x = size.width - stroke / 2f
+                    drawLine(Outline, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
+                }
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
