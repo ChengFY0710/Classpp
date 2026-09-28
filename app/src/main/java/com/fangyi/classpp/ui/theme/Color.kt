@@ -49,4 +49,8 @@ val OnError = Color(0xFFFFFFFF)
 val ErrorContainer = Color(0xFFF9DEDC)
 val OnErrorContainer = Color(0xFF410E0B)
 
+// 课表编辑态的动作色（取自设计稿的近似值；"切换课表"沿用 Primary）
+val SaveGreen = Color(0xFF22B14C)
+val CancelRed = Color(0xFFF5222D)
+
 val Scrim = Color(0xFF000000)

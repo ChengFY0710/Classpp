@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.schedule
 
 import com.fangyi.classpp.data.CourseOccurrence
+import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.TimeSlotDef
 import java.util.Calendar
@@ -14,18 +15,24 @@ import java.util.Date
  */
 
 /**
+ * 课程条目 → 渲染课程：[active] = 本周是否上课，false 时卡片按规格置灰。
+ * 编辑态的草稿直接喂 [CourseEntry]，与仓库路径共用同一个映射。
+ */
+internal fun CourseEntry.toUiCourse(active: Boolean): Course = Course(
+    name = name,
+    teacher = teacher,
+    location = location,
+    dayOfWeek = dayOfWeek,
+    slotId = startSlot,
+    color = CourseColor.valueOf(color.name),
+    active = active,
+)
+
+/**
  * 课程呈现 → 渲染课程：跨节次课程本批只落起始格，故 [Course.slotId] 取 startSlot；
  * [CourseColor] 两枚举同名同值，经 name 直转；[CourseOccurrence.active] 随行作置灰标志。
  */
-internal fun CourseOccurrence.toUiCourse(): Course = Course(
-    name = course.name,
-    teacher = course.teacher,
-    location = course.location,
-    dayOfWeek = course.dayOfWeek,
-    slotId = course.startSlot,
-    color = CourseColor.valueOf(course.color.name),
-    active = active,
-)
+internal fun CourseOccurrence.toUiCourse(): Course = course.toUiCourse(active)
 
 /** 节次定义列表 → 渲染节次：数据层列表位置即节次编号，转成 1-based id（与网格 key 一致） */
 internal fun List<TimeSlotDef>.toUiSlots(): List<TimeSlot> =

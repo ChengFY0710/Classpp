@@ -52,6 +52,8 @@ class MainActivity : ComponentActivity() {
                 var selectedTab by rememberSaveable { mutableStateOf(AppTab.Timetable) }
                 // 设置页开关（全屏覆盖层，见 Box 内组合顺序）
                 var showSettings by rememberSaveable { mutableStateOf(false) }
+                // 课表编辑态：由课表页的编辑按钮进入，编辑期间隐藏底部导航栏
+                var editing by rememberSaveable { mutableStateOf(false) }
                 val repository = rememberScheduleRepository()
 
                 // tab 平移进度（浮点序号）：只在各页 measure 阶段被读取，
@@ -101,6 +103,8 @@ class MainActivity : ComponentActivity() {
                                 progress = tabProgress,
                             ),
                         repository = repository,
+                        editing = editing,
+                        onEditingChange = { editing = it },
                         onOpenSettings = { showSettings = true },
                     )
                     TodoScreen(
@@ -112,11 +116,14 @@ class MainActivity : ComponentActivity() {
                                 progress = tabProgress,
                             ),
                     )
-                    BottomNavBar(
-                        selectedTab = selectedTab,
-                        onTabSelected = { selectedTab = it },
-                        modifier = Modifier.align(Alignment.BottomCenter),
-                    )
+                    // 编辑态隐藏底部导航栏（设计稿如此，也避免编辑中途被切走）
+                    if (!editing) {
+                        BottomNavBar(
+                            selectedTab = selectedTab,
+                            onTabSelected = { selectedTab = it },
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                        )
+                    }
                     // 最后组合 ⇒ 绘制与命中测试覆盖三屏与底部导航（课表页仅被覆盖、不重建）
                     if (showSettings) {
                         SettingsScreen(

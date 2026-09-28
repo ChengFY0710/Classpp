@@ -57,4 +57,31 @@
     <string name="error_generic">操作失败：%1$s</string>
     <string name="load_state_restored">已从备份恢复课表数据</string>
     <string name="load_state_reset">课表数据损坏，已重置</string>
+
+    <!-- 课表编辑 -->
+    <string name="edit_save">保存</string>
+    <string name="edit_switch_schedule">切换课表</string>
+    <string name="edit_cancel">取消</string>
+    <string name="edit_add_course">添加课程</string>
+    <string name="edit_cell_info">%1$s · %2$s · %3$s</string>
+    <string name="edit_course_name">课程名</string>
+    <string name="edit_course_teacher">教师</string>
+    <string name="edit_course_location">上课地点</string>
+    <string name="edit_course_weeks">上课周数</string>
+    <string name="edit_course_color">颜色</string>
+    <string name="edit_weeks_all">全选</string>
+    <string name="edit_weeks_odd">单周</string>
+    <string name="edit_weeks_even">双周</string>
+    <string name="edit_weeks_none">尚未选择</string>
+    <string name="edit_weeks_separator">、</string>
+    <string name="edit_weeks_summary">已选：%1$s</string>
+    <string name="edit_weeks_one">第 %1$d 周</string>
+    <string name="edit_weeks_range">第 %1$d-%2$d 周</string>
+    <string name="edit_weeks_suffix_odd">（单周）</string>
+    <string name="edit_weeks_suffix_even">（双周）</string>
+    <string name="cd_add_course">添加课程</string>
+    <string name="error_course_name_blank">课程名不能为空</string>
+    <string name="error_weeks_empty">请至少选择一周</string>
+    <string name="error_weeks_beyond_term">周数超出学期范围</string>
+    <string name="error_grid_conflict">与「%1$s」时间冲突</string>
 </resources>

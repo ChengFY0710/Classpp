@@ -57,4 +57,31 @@
     <string name="error_generic">Operation failed: %1$s</string>
     <string name="load_state_restored">Schedule data restored from backup</string>
     <string name="load_state_reset">Schedule data was corrupted and reset</string>
+
+    <!-- Schedule edit -->
+    <string name="edit_save">Save</string>
+    <string name="edit_switch_schedule">Switch schedule</string>
+    <string name="edit_cancel">Cancel</string>
+    <string name="edit_add_course">Add course</string>
+    <string name="edit_cell_info">%1$s · %2$s · %3$s</string>
+    <string name="edit_course_name">Course name</string>
+    <string name="edit_course_teacher">Teacher</string>
+    <string name="edit_course_location">Location</string>
+    <string name="edit_course_weeks">Weeks</string>
+    <string name="edit_course_color">Colour</string>
+    <string name="edit_weeks_all">All</string>
+    <string name="edit_weeks_odd">Odd</string>
+    <string name="edit_weeks_even">Even</string>
+    <string name="edit_weeks_none">Nothing selected</string>
+    <string name="edit_weeks_separator">, </string>
+    <string name="edit_weeks_summary">Selected: %1$s</string>
+    <string name="edit_weeks_one">Week %1$d</string>
+    <string name="edit_weeks_range">Weeks %1$d-%2$d</string>
+    <string name="edit_weeks_suffix_odd"> (odd)</string>
+    <string name="edit_weeks_suffix_even"> (even)</string>
+    <string name="cd_add_course">Add course</string>
+    <string name="error_course_name_blank">Course name must not be blank</string>
+    <string name="error_weeks_empty">Select at least one week</string>
+    <string name="error_weeks_beyond_term">Weeks exceed the term</string>
+    <string name="error_grid_conflict">Conflicts with “%1$s”</string>
 </resources>

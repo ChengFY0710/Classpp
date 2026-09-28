@@ -86,8 +86,12 @@ fun CourseGrid(
     modifier: Modifier = Modifier,
     state: LazyListState = rememberLazyListState(),
     contentPadding: PaddingValues = PaddingValues(0.dp),
+    editMode: Boolean = false,
+    showDates: Boolean = true,
+    onAddClick: ((day: Int, slot: TimeSlot) -> Unit)? = null,
 ) {
-    val pageHeight = DateBandHeight + GridRowHeight * timeSlots.size + TrailingScrollSpace
+    val pageHeight = (if (showDates) DateBandHeight else 0.dp) +
+        GridRowHeight * timeSlots.size + TrailingScrollSpace
     // 接缝竖线是否要画：派生成布尔 state —— 拖动中恒为真，只在起手/落位翻转一次。
     // 切不可让 draw 直接读 currentPageOffsetFraction（拖动中逐帧都变）：那会让页面图层
     // 被逐帧判为失效、整页绘制指令（日期带 + 各行卡片）跟着重录一遍，图层也就白加了。
@@ -106,8 +110,10 @@ fun CourseGrid(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(pageHeight),
-                // 预组合左右邻页：手势起始帧即已有相邻周内容，不会先露一片空白
-                beyondViewportPageCount = 1,
+                // 编辑态固定当前周（设计稿里编辑态没有周次指示，翻周无从判断），
+                // 顺带不必预组合邻页
+                beyondViewportPageCount = if (editMode) 0 else 1,
+                userScrollEnabled = !editMode,
                 // 一次手势最多翻一周（对应「上一周/下一周」），甩动不跨周跳
                 flingBehavior = PagerDefaults.flingBehavior(
                     state = pagerState,
@@ -115,11 +121,15 @@ fun CourseGrid(
                 ),
             ) { page ->
                 WeekPage(
-                    // 按页周号记忆：内容只在周号或数据源变化时重算
-                    content = remember(page, contentForWeek) { contentForWeek(page + 1) },
+                    // 这里刻意不 remember：编辑态的 provider 会读草稿 state，
+                    // 记忆会让"刚加的课"刷不出来（key 没变 → 计算不重跑）
+                    content = contentForWeek(page + 1),
                     timeSlots = timeSlots,
                     seamVisible = seamVisible,
                     listState = state,
+                    showDates = showDates,
+                    editMode = editMode,
+                    onAddClick = onAddClick,
                 )
             }
         }
@@ -151,6 +161,9 @@ private fun WeekPage(
     timeSlots: List<TimeSlot>,
     seamVisible: State<Boolean>,
     listState: LazyListState,
+    showDates: Boolean,
+    editMode: Boolean,
+    onAddClick: ((day: Int, slot: TimeSlot) -> Unit)?,
 ) {
     val density = LocalDensity.current
     val bandPx = with(density) { DateBandHeight.toPx() }
@@ -171,16 +184,20 @@ private fun WeekPage(
                 }
             },
     ) {
-        DateBand(
-            weekDates = content.dates,
-            highlightDate = content.highlightDate,
-            listState = listState,
-            seamVisible = seamVisible,
-        )
+        if (showDates) {
+            DateBand(
+                weekDates = content.dates,
+                highlightDate = content.highlightDate,
+                listState = listState,
+                seamVisible = seamVisible,
+            )
+        }
         timeSlots.forEach { slot ->
             GridRow(
                 slot = slot,
                 courses = content.courses,
+                editMode = editMode,
+                onAddClick = onAddClick,
             )
         }
         Spacer(modifier = Modifier.height(TrailingScrollSpace))
@@ -267,11 +284,17 @@ private fun DateBand(
     }
 }
 
-/** 一个节次行：5 个等宽单元格，有课渲染卡片，无课露网格背景 */
+/**
+ * 一个节次行：5 个等宽单元格。
+ * 普通态有课渲染课程卡片、无课露网格背景；编辑态空位渲染添加卡片，
+ * 且"本周不上"的置灰卡片也可点（那一格本周空着，点它去添加，否则永远加不进去）。
+ */
 @Composable
 private fun GridRow(
     slot: TimeSlot,
     courses: List<Course>,
+    editMode: Boolean,
+    onAddClick: ((day: Int, slot: TimeSlot) -> Unit)?,
 ) {
     Row(
         modifier = Modifier
@@ -290,17 +313,29 @@ private fun GridRow(
     ) {
         for (day in 1..5) {
             val course = courses.findAt(day, slot.id)
+            // 编辑态才有添加回调；同一个回调也给置灰卡片用
+            val add: (() -> Unit)? = if (editMode && onAddClick != null) {
+                { onAddClick(day, slot) }
+            } else {
+                null
+            }
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
                     .padding(CellPadding),
             ) {
-                if (course != null) {
-                    CourseCard(
+                when {
+                    course == null && add != null -> AddCourseCard(
+                        slot = slot,
+                        onClick = add,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    course != null -> CourseCard(
                         course = course,
                         slot = slot,
                         modifier = Modifier.fillMaxSize(),
+                        onClick = if (!course.active) add else null,
                     )
                 }
             }

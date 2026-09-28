@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.schedule
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,25 +14,30 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
 
 private val CardShape = RoundedCornerShape(6.dp)
 private val BarWidth = 3.dp
 
-/** [CourseColor] 到卡片竖条/时间文字颜色的映射 */
-private val CourseColor.barColor: Color
+/** [CourseColor] 到卡片竖条/时间文字颜色的映射（编辑弹窗的色块也用它） */
+internal val CourseColor.barColor: Color
     get() = when (this) {
         CourseColor.Blue -> Color(0xFFB1C4EE)
         CourseColor.Green -> Color(0xFF81D689)
@@ -54,12 +60,15 @@ private val InactiveTextColor = Color(0xFF737A83)
  *
  * 自上而下：开始时间（竖条同色）→ 课程名（两行截断）→ 教师 → @楼名 房间，
  * 底部对齐结束时间。
+ *
+ * [onClick] 仅编辑态会传：给"本周不上"的置灰卡片用（那一格本周空着，点它去添加）。
  */
 @Composable
 fun CourseCard(
     course: Course,
     slot: TimeSlot,
     modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
 ) {
     val barColor = course.color.barColor
     // 本周不上的课：整体灰显（竖条与起止时间保留彩色，保留节次识别度）
@@ -73,7 +82,9 @@ fun CourseCard(
     Row(
         modifier = modifier
             .clip(CardShape)
-            .background(cardBackground),
+            .background(cardBackground)
+            // 水波纹在 clip 之内：圆角外的点击/涟漪都被裁掉
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
     ) {
         // 左侧彩色竖条
         Box(
@@ -147,6 +158,65 @@ fun CourseCard(
             )
         }
     }
+}
+
+/** 添加卡片起止时间的浅蓝（设计稿取值，与 Blue 配色同值） */
+private val AddCardTimeColor = Color(0xFFB1C4EE)
+
+/** 添加卡片中间加号的尺寸（设计稿里占卡片中部一大块） */
+private val AddIconSize = 40.dp
+
+/** 添加卡片左侧内缩 = 课程卡片的色条 3dp + 内缩 4dp，使两者起止时间同一条竖线 */
+private val AddCardStartPadding = 7.dp
+
+/**
+ * 编辑态空位上的「添加卡片」：与 [CourseCard] 同骨架——上开始时间、下结束时间，
+ * 中间是加号；无左侧色条。点整卡打开添加课程弹窗。
+ */
+@Composable
+fun AddCourseCard(
+    slot: TimeSlot,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .clip(CardShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick)
+            .padding(
+                start = AddCardStartPadding,
+                end = 2.dp,
+                top = 3.dp,
+                bottom = 3.dp,
+            ),
+        verticalArrangement = Arrangement.SpaceBetween,
+        horizontalAlignment = Alignment.Start,
+    ) {
+        AddCardTime(text = slot.startTime)
+        Icon(
+            painter = painterResource(R.drawable.ic_add),
+            contentDescription = stringResource(R.string.cd_add_course),
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .size(AddIconSize),
+        )
+        AddCardTime(text = slot.endTime)
+    }
+}
+
+/** 添加卡片上的起止时间（与课程卡片的时间同字号/同基线） */
+@Composable
+private fun AddCardTime(text: String) {
+    Text(
+        text = text,
+        color = AddCardTimeColor,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Medium,
+        maxLines = 1,
+        lineHeight = 12.sp,
+    )
 }
 
 @Preview(showBackground = true, name = "常规卡片")
