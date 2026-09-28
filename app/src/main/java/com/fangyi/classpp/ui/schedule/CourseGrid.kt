@@ -32,7 +32,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -80,6 +83,9 @@ private const val DateBandFadeSpeed = 3.0f
  * 折叠通过外部 modifier.nestedScroll 接入，本组件不感知折叠状态。
  * 列表状态由调用方持有（供模糊进度与日期带渐隐计算），顶部偏移由 contentPadding.top 跟随顶栏高度；
  * Pager 状态同样由调用方持有（供周次 ↔ 翻页双向同步）。
+ *
+ * 喂进来的 [WeekPageContent.courses] 已由 resolveWeekCards 解析过：每格至多一张卡
+ * （交替课程只画当周那门），非本周的交替课只剩卡片底部 1/4 色条。
  */
 @Composable
 fun CourseGrid(
@@ -93,6 +99,7 @@ fun CourseGrid(
     showDates: Boolean = true,
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)? = null,
     onEditClick: ((courseId: String) -> Unit)? = null,
+    onCourseLongClick: ((courseId: String, anchor: Rect) -> Unit)? = null,
 ) {
     val pageHeight = (if (showDates) DateBandHeight else 0.dp) +
         GridRowHeight * timeSlots.size + TrailingScrollSpace
@@ -135,6 +142,7 @@ fun CourseGrid(
                     editMode = editMode,
                     onAddClick = onAddClick,
                     onEditClick = onEditClick,
+                    onCourseLongClick = onCourseLongClick,
                 )
             }
         }
@@ -162,7 +170,7 @@ private val PagerState.isSeamVisible: Boolean
  *
  * **跨节卡叠加层**：[Box] 内第二层镜像复刻行/列结构（同 weight 分列、同行高、同 CellPadding），
  * 后绘制故不透明卡片压过行分界网格线；空节点无 pointerInput，点击穿透回底层网格。
- * 编辑态跨节卡整卡可点（含续格覆盖区域）→ 编辑该课。
+ * 编辑态跨节卡整卡可点（含续格覆盖区域）→ 编辑该课；长按 → 交替课程菜单。
  * 底层 [GridRow] 对起始格与续格留空（见其注释），两层分工不重叠。
  */
 @Composable
@@ -175,6 +183,7 @@ private fun WeekPage(
     editMode: Boolean,
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)?,
     onEditClick: ((courseId: String) -> Unit)?,
+    onCourseLongClick: ((courseId: String, anchor: Rect) -> Unit)?,
 ) {
     val density = LocalDensity.current
     val bandPx = with(density) { DateBandHeight.toPx() }
@@ -211,6 +220,7 @@ private fun WeekPage(
                     editMode = editMode,
                     onAddClick = onAddClick,
                     onEditClick = onEditClick,
+                    onCourseLongClick = onCourseLongClick,
                 )
             }
             Spacer(modifier = Modifier.height(TrailingScrollSpace))
@@ -227,6 +237,7 @@ private fun WeekPage(
                 ) {
                     for (day in 1..5) {
                         val course = content.courses.findAt(day, slot.id)
+                        val cardBounds = remember(day) { BoundsHolder() }
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -254,10 +265,18 @@ private fun WeekPage(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .wrapContentHeight(align = Alignment.Top, unbounded = true)
-                                        .requiredHeight(GridRowHeight * effSpan - CellPaddingTop - CellPadding),
+                                        .requiredHeight(GridRowHeight * effSpan - CellPaddingTop - CellPadding)
+                                        // 长按菜单的锚点取卡片自身窗口坐标（溢出部分按整卡算）
+                                        .onGloballyPositioned { cardBounds.value = it.boundsInWindow() },
                                     // 编辑态整张跨节卡可点（含续格覆盖区域）→ 编辑这门课
                                     onClick = if (editMode && onEditClick != null) {
                                         { onEditClick(course.id) }
+                                    } else {
+                                        null
+                                    },
+                                    // 编辑态长按 → 以这门课为基准新建交替课程
+                                    onLongClick = if (editMode && onCourseLongClick != null) {
+                                        { onCourseLongClick(course.id, cardBounds.value) }
                                     } else {
                                         null
                                     },
@@ -354,7 +373,7 @@ private fun DateBand(
 /**
  * 一个节次行：5 个等宽单元格。
  * 普通态有课渲染课程卡片、无课露网格背景；编辑态空位渲染添加卡片，
- * 已有课程卡（含本周不上的置灰卡）点击进编辑。
+ * 已有课程卡（含本周不上的置灰卡）点击进编辑、长按出交替课程菜单。
  * 跨节课的起始格与续格都留空——卡片由 [WeekPage] 的叠加层跨行绘制。
  */
 @Composable
@@ -364,6 +383,7 @@ private fun GridRow(
     editMode: Boolean,
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)?,
     onEditClick: ((courseId: String) -> Unit)?,
+    onCourseLongClick: ((courseId: String, anchor: Rect) -> Unit)?,
 ) {
     Row(
         modifier = Modifier
@@ -390,6 +410,7 @@ private fun GridRow(
             } else {
                 null
             }
+            val cardBounds = remember(day) { BoundsHolder() }
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -405,9 +426,17 @@ private fun GridRow(
                     course != null && course.span == 1 -> CourseCard(
                         course = course,
                         slot = slot,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            // 长按菜单的锚点取卡片自身窗口坐标（填满格 = 格坐标）
+                            .onGloballyPositioned { cardBounds.value = it.boundsInWindow() },
                         onClick = if (editMode && onEditClick != null) {
                             { onEditClick(course.id) }
+                        } else {
+                            null
+                        },
+                        onLongClick = if (editMode && onCourseLongClick != null) {
+                            { onCourseLongClick(course.id, cardBounds.value) }
                         } else {
                             null
                         },
@@ -417,6 +446,14 @@ private fun GridRow(
             }
         }
     }
+}
+
+/**
+ * 卡片窗口坐标（长按弹菜单的锚点）：只在长按回调里读，故存普通字段而非 Compose state
+ * ——写在 onGloballyPositioned 里也不会像 state 那样让布局阶段触发重组。
+ */
+private class BoundsHolder {
+    var value: Rect = Rect.Zero
 }
 
 @Preview(showBackground = true, name = "课表网格")

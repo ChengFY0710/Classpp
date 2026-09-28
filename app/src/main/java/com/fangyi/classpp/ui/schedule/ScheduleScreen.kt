@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -64,6 +65,7 @@ import com.fangyi.classpp.data.ScheduleError
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.ScheduleValidator
 import com.fangyi.classpp.data.TermPosition
+import com.fangyi.classpp.data.model.cellCourses
 import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import dev.chrisbanes.haze.hazeSource
@@ -208,8 +210,10 @@ fun ScheduleScreen(
                     val dates = repository.datesForWeek(schedule.id, pageWeek)
                     WeekPageContent(
                         week = pageWeek,
-                        courses = repository.visibleCoursesForWeek(schedule.id, pageWeek)
-                            .map { it.toUiCourse() },
+                        // 先解析再按开关过滤：同格只留当周那张卡，非本周的交替课只剩色条，
+                        // 关掉「显示本周不上的课」也照旧看得到这格还有别的课
+                        courses = repository.coursesForWeek(schedule.id, pageWeek)
+                            .toWeekCards(schedule.showInactiveCourses),
                         // 7 天模式只渲染前 5 天（网格仍为 5 列硬编码，视图批次再扩展）
                         dates = dates.take(5).map { it.toUiDate() },
                         // 与顶栏日期同规则：查看本周高亮今天，其它周高亮该周周一
@@ -223,13 +227,13 @@ fun ScheduleScreen(
             }
 
             // ——— 编辑态：草稿只活在 UI 层，点保存才写回仓库 ———
-            // 会话随 editing 重开（进来时快照当前课表），退出即换成占位会话、草稿丢弃；
+            // 会话随 editing 重开（进来时取当前课表），退出即换成占位会话、草稿丢弃；
             // Saver 连 active 一起存，故旋转/进程重建不会把恢复出来的草稿清掉
             val session: ScheduleEditSession = rememberSaveable(
                 editing,
                 saver = ScheduleEditSession.Saver,
             ) {
-                if (editing) ScheduleEditSession(schedule.courses) else ScheduleEditSession.Inactive
+                if (editing) ScheduleEditSession(draft = schedule.courses) else ScheduleEditSession.Inactive
             }
             val editSession: ScheduleEditSession? = session.takeIf { it.active }
             // 待添加的格子：[dayOfWeek, slotId]；空 = 添加面板未打开
@@ -237,6 +241,13 @@ fun ScheduleScreen(
             // 正在编辑的课程 id（点已有课卡进入）；空 = 编辑面板未打开。
             // 编辑条目从草稿反查，删除后反查落空 → 面板自动关闭
             var editTargetId by rememberSaveable { mutableStateOf("") }
+            // 长按菜单：被长按卡的 id + 窗口坐标；空 = 菜单未打开。
+            // 刻意不 rememberSaveable——菜单是瞬时 UI，旋转重建就收起（Rect 也不可存）
+            var menuAnchor by remember { mutableStateOf<CardMenuAnchor?>(null) }
+            // 选择要编辑的交替课程：被点卡片的 id；空 = 弹窗未打开
+            var chooserSourceId by rememberSaveable { mutableStateOf("") }
+            // 新建交替课程：源课 id（长按菜单进来）；空 = 面板未打开
+            var alternateSourceId by rememberSaveable { mutableStateOf("") }
             // 编辑态的网格数据源：草稿 → 渲染模型（复用仓库路径同一套映射与置灰规则）
             val displayedContentForWeek: (Int) -> WeekPageContent =
                 if (editSession != null) {
@@ -248,8 +259,7 @@ fun ScheduleScreen(
                                 // 编辑态**一律显示全部课程**（非本周的照旧置灰），不受
                                 // 「显示本周不上的课」开关影响：开关关掉时若把它们藏起来，
                                 // 用户看不见"占着这一格但本周不上"的课，加课撞上冲突却找不到原因
-                                courses = editSession.courses
-                                    .map { it.toUiCourse(active = it.weeks.contains(pageWeek)) },
+                                courses = editSession.courses.toWeekCards(pageWeek),
                                 dates = dates.take(5).map { it.toUiDate() },
                                 highlightDate = if (pageWeek == currentWeek) {
                                     today
@@ -265,8 +275,22 @@ fun ScheduleScreen(
             val onAddClick: (Int, TimeSlot) -> Unit = remember {
                 { day, slot -> addTarget = listOf(day, slot.id) }
             }
-            val onEditClick: (String) -> Unit = remember {
-                { courseId -> editTargetId = courseId }
+            // 点已有课卡：同格只有一门 → 直接开编辑面板；多门（交替课程）→ 先让用户点名要编辑哪门，
+            // 否则其余几门永远进不去（它们不在本周的网格上）
+            val onEditClick: (String) -> Unit = remember(editSession) {
+                { courseId ->
+                    val draft = editSession?.courses.orEmpty()
+                    val entry = draft.firstOrNull { it.id == courseId }
+                    if (entry != null && draft.cellCourses(entry.dayOfWeek, entry.startSlot).size > 1) {
+                        chooserSourceId = courseId
+                    } else {
+                        editTargetId = courseId
+                    }
+                }
+            }
+            // 长按已有课卡 → 弹「新建交替课程」菜单，锚点用卡片自己的窗口坐标
+            val onCourseLongClick: (String, Rect) -> Unit = remember {
+                { courseId, anchor -> menuAnchor = CardMenuAnchor(courseId, anchor) }
             }
 
             // 手势 → 周次：currentPage 在拖动过半时即翻转，顶栏周数胶囊与日期随之切换；
@@ -292,8 +316,12 @@ fun ScheduleScreen(
             val scope = rememberCoroutineScope()
             val context = LocalContext.current
 
-            // 保存：先拿"草稿 + 快照"整份预检（挡掉部分落盘），再按 diff 逐条写回
-            // （新增/修改 upsert 按 id 覆盖，删除逐条 remove）；全成功才退出编辑态，失败留在原地提示
+            // 保存：先拿"草稿 + 快照"整份预检（给用户可读的原因），再整份写回仓库。
+            //
+            // 必须整份替换，不能按 diff 逐条 upsert：逐条写在中间态短暂非法时就整轮失败，
+            // 而合法的草稿常常必然经过非法中间态——典型的是"把原课周数缩成单周 + 同格再加一门
+            // 双周的交替课"：先写新课那一步，仓库里的原课还占着全部周数，于是弹出一场
+            // 最终并不存在的"与「原课」时间冲突"。
             val onSaveEdit: () -> Unit = {
                 val session = editSession
                 if (session != null) {
@@ -307,30 +335,12 @@ fun ScheduleScreen(
                             Toast.LENGTH_SHORT,
                         ).show()
                     } else {
-                        val pending = session.addedCourses() + session.updatedCourses()
-                        val removals = session.removedCourseIds()
                         scope.launch {
-                            var failure: ScheduleError? = null
-                            for (course in pending) {
-                                val result = repository.upsertCourse(schedule.id, course)
-                                if (result is OpResult.Err) {
-                                    failure = result.error
-                                    break
-                                }
-                            }
-                            if (failure == null) {
-                                for (id in removals) {
-                                    val result = repository.removeCourse(schedule.id, id)
-                                    if (result is OpResult.Err) {
-                                        failure = result.error
-                                        break
-                                    }
-                                }
-                            }
-                            if (failure != null) {
+                            val result = repository.replaceCourses(schedule.id, session.courses)
+                            if (result is OpResult.Err) {
                                 Toast.makeText(
                                     context,
-                                    failure.toEditMessage(context),
+                                    result.error.toEditMessage(context),
                                     Toast.LENGTH_SHORT,
                                 ).show()
                             } else {
@@ -368,6 +378,7 @@ fun ScheduleScreen(
                     showDates = editSession == null,
                     onAddClick = onAddClick,
                     onEditClick = onEditClick,
+                    onCourseLongClick = onCourseLongClick,
                     modifier = Modifier
                         .fillMaxSize()
                         // 编辑态不折叠：顶栏换成了固定编辑栏，滚动连接不参与
@@ -440,6 +451,14 @@ fun ScheduleScreen(
             val targetSlot = addTarget.getOrNull(1)?.let { id -> timeSlots.firstOrNull { it.id == id } }
             val editingEntry = editSession?.courses?.firstOrNull { it.id == editTargetId }
             val editingSlot = editingEntry?.let { e -> timeSlots.firstOrNull { it.id == e.startSlot } }
+            // 新建交替课程的源课与它的起始节（新面板沿用同一格的位置）
+            val alternateSource = editSession?.courses?.firstOrNull { it.id == alternateSourceId }
+            val alternateSlot = alternateSource?.let { e -> timeSlots.firstOrNull { it.id == e.startSlot } }
+            // 选择弹窗的候选：被点卡片所在格的全部课程（从草稿反查，条目没了弹窗自然关闭）
+            val chooserCourses = editSession?.let { draft ->
+                draft.courses.firstOrNull { it.id == chooserSourceId }
+                    ?.let { draft.courses.cellCourses(it.dayOfWeek, it.startSlot) }
+            }.orEmpty()
             if (editSession != null && editingEntry != null && editingSlot != null) {
                 AddCoursePanel(
                     day = editingEntry.dayOfWeek,
@@ -469,6 +488,44 @@ fun ScheduleScreen(
                         addTarget = emptyList()
                     },
                 )
+            } else if (editSession != null && alternateSource != null && alternateSlot != null) {
+                // 长按已有课 → 新建交替课程：星期/起始节/跨度跟随源课，周数默认取没被占用的
+                AddCoursePanel(
+                    day = alternateSource.dayOfWeek,
+                    slot = alternateSlot,
+                    schedule = schedule,
+                    draftCourses = editSession.courses,
+                    alternateFrom = alternateSource,
+                    onDismiss = { alternateSourceId = "" },
+                    onConfirm = { course ->
+                        editSession.add(course)
+                        alternateSourceId = ""
+                    },
+                )
+            }
+
+            // 交替课程选择弹窗：同格多门时才出现（见 onEditClick），选完开那一门的编辑面板
+            if (editSession != null && chooserCourses.size > 1) {
+                AlternatePickerDialog(
+                    courses = chooserCourses,
+                    onDismiss = { chooserSourceId = "" },
+                    onPick = { entry ->
+                        chooserSourceId = ""
+                        editTargetId = entry.id
+                    },
+                )
+            }
+
+            // 长按卡片的上下文菜单（Popup 独立窗口，位置由卡片坐标决定）
+            menuAnchor?.let { anchor ->
+                CourseContextMenu(
+                    anchor = anchor.rect,
+                    onDismiss = { menuAnchor = null },
+                    onNewAlternate = {
+                        alternateSourceId = anchor.courseId
+                        menuAnchor = null
+                    },
+                )
             }
         }
     }
@@ -479,6 +536,12 @@ private val HeaderHeightGuess = 168.dp
 
 /** 编辑栏总高估算（状态栏 + 按钮行 + 星期行），首帧后由实测值覆盖 */
 private val EditBarHeightGuess = 112.dp
+
+/**
+ * 长按菜单的锚点：被长按卡的 id（菜单动作用它回查草稿）与卡片的窗口坐标（菜单贴卡片定位）。
+ * 非 saveable 的瞬时状态，见 [ScheduleScreen] 里的 menuAnchor。
+ */
+private data class CardMenuAnchor(val courseId: String, val rect: Rect)
 
 /** 数据层错误 → 用户可读文案（编辑流程用；未覆盖的错误落到"操作失败：…"） */
 private fun ScheduleError.toEditMessage(context: Context): String = when (this) {

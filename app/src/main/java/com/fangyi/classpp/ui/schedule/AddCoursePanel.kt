@@ -64,8 +64,11 @@ import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.Parity
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.WeekPattern
+import com.fangyi.classpp.data.model.cellCourses
+import com.fangyi.classpp.data.model.firstUnusedColor
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.data.model.weeksFromSelection
+import com.fangyi.classpp.data.model.weeksTakenByOthers
 import com.fangyi.classpp.ui.theme.OnPrimaryContainer
 import com.fangyi.classpp.ui.theme.Scrim
 
@@ -85,6 +88,11 @@ private val PanelShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
  * 标题切换、显示删除按钮；[onDelete] 点删除即回调（直接删草稿，无二次确认——
  * 取消编辑即可整体撤销）。两者都只作用于草稿，保存时才落库。
  *
+ * [alternateFrom] 非空 = 长按已有课新建**交替课程**（与 [existing] 互斥）：同格同节次，
+ * 结束节次锁定跟随源课，周数默认取该格还没被占用的周、配色取组内没用过的第一个；
+ * 同格其它课已占的周在方格里灰显不可点——交替课程的周数不能重合。
+ * 编辑已有课时同样灰显其它交替课占用的周。
+ *
  * **刻意不用 AlertDialog**：对话框是独立窗口，本机（Android 15+/16 的 edge-to-edge + 该 ROM）
  * 输入法接不进去（点了输入框不弹键盘）。改成和设置页同一条路——页内覆盖层，
  * 输入法行为与设置页一致，并且顺手解决了两件事：
@@ -102,24 +110,47 @@ fun AddCoursePanel(
     onConfirm: (CourseEntry) -> Unit,
     existing: CourseEntry? = null,
     onDelete: (() -> Unit)? = null,
+    alternateFrom: CourseEntry? = null,
 ) {
+    // 同格的其它交替课程（排除正在编辑的这门自己）
+    val groupOthers = draftCourses.cellCourses(day, slot.id).filterNot { it.id == existing?.id }
+    // 其它交替课占用的周：不能选（周数重合即冲突），新建时把整组都算作占用
+    val blockedWeeks = draftCourses.weeksTakenByOthers(
+        selfId = existing?.id ?: "",
+        dayOfWeek = day,
+        startSlot = slot.id,
+        totalWeeks = schedule.totalWeeks,
+    )
     // 编辑态从 existing 预填；面板随 if 离开组合即销毁，重开时初值重新生效
     var name by rememberSaveable { mutableStateOf(existing?.name ?: "") }
     var teacher by rememberSaveable { mutableStateOf(existing?.teacher ?: "") }
     var location by rememberSaveable { mutableStateOf(existing?.location ?: "") }
     var selectedWeeks by rememberSaveable {
         mutableStateOf(
-            existing?.let { e -> (1..schedule.totalWeeks).filter { e.weeks.contains(it) } }
-                ?: (1..schedule.totalWeeks).toList(),
+            when {
+                existing != null -> (1..schedule.totalWeeks).filter { existing.weeks.contains(it) }
+                // 新建交替课：默认取互补的那些周（单周 ↔ 双周这类交替一步到位）
+                alternateFrom != null -> (1..schedule.totalWeeks).filterNot { it in blockedWeeks }
+                else -> (1..schedule.totalWeeks).toList()
+            },
         )
     }
-    // 色块用渲染层枚举，落库时按 name 桥接（同 ScheduleAdapters）
+    // 色块用渲染层枚举，落库时按 name 桥接（同 ScheduleAdapters）。
+    // 新建交替课时取组内没用过的首个配色：与当周课同色的话，上下两段色条分辨不出来
     var color by rememberSaveable {
-        mutableStateOf(existing?.let { CourseColor.valueOf(it.color.name) } ?: CourseColor.Blue)
+        mutableStateOf(
+            when {
+                existing != null -> CourseColor.valueOf(existing.color.name)
+                alternateFrom != null -> draftCourses.firstUnusedColor(day, slot.id)
+                else -> CourseColor.Blue
+            },
+        )
     }
     // 结束节次：key=slot.id，重开面板（或旋转恢复后目标格变化）即复位；
-    // 编辑态初值取被编辑课的末节
-    var endSlotId by rememberSaveable(slot.id) { mutableStateOf(existing?.endSlot ?: slot.id) }
+    // 编辑态初值取被编辑课的末节，新建交替课时跟随源课（同一位置）
+    var endSlotId by rememberSaveable(slot.id) {
+        mutableStateOf(existing?.endSlot ?: alternateFrom?.endSlot ?: slot.id)
+    }
     var error by remember { mutableStateOf<String?>(null) }
 
     val weekdays = stringArrayResource(R.array.weekdays)
@@ -142,6 +173,7 @@ fun AddCoursePanel(
     // 文案先取出来：校验发生在 lambda 里，那里不能再调 stringResource
     val errorNameBlank = stringResource(R.string.error_course_name_blank)
     val errorWeeksEmpty = stringResource(R.string.error_weeks_empty)
+    val errorWeeksTaken = stringResource(R.string.error_alternate_weeks_taken)
     val errorWeeksBeyondTerm = stringResource(R.string.error_weeks_beyond_term)
     val errorConflictFormat = stringResource(R.string.error_grid_conflict)
     val errorGenericFormat = stringResource(R.string.error_generic)
@@ -167,6 +199,11 @@ fun AddCoursePanel(
     fun submit() {
         if (selectedWeeks.isEmpty()) {
             error = errorWeeksEmpty
+            return
+        }
+        // 交替课程的周数不能重合：方格里已灰显点不动，这里兜住进程重建后恢复出的越界选择
+        if (selectedWeeks.any { it in blockedWeeks }) {
+            error = errorWeeksTaken
             return
         }
         // 结束节次已在芯片层限制，这里再钳一次（跨度 ≤ MAX_SPAN 且不超总节数）
@@ -247,7 +284,11 @@ fun AddCoursePanel(
                 ) {
                     Text(
                         text = stringResource(
-                            if (existing != null) R.string.edit_edit_course else R.string.edit_add_course,
+                            when {
+                                existing != null -> R.string.edit_edit_course
+                                alternateFrom != null -> R.string.edit_new_alternate
+                                else -> R.string.edit_add_course
+                            },
                         ),
                         fontSize = 20.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -295,6 +336,8 @@ fun AddCoursePanel(
                             startId = slot.id,
                             total = schedule.slotCount,
                             selected = endSlotId,
+                            // 交替课程与源课同一位置：跨度随源课锁定，只能选那一个末节
+                            enabledRange = alternateFrom?.let { it.endSlot..it.endSlot },
                             onSelect = { id ->
                                 endSlotId = id
                                 error = null
@@ -305,6 +348,7 @@ fun AddCoursePanel(
                         WeekSelectionGrid(
                             totalWeeks = schedule.totalWeeks,
                             selected = selectedWeeks,
+                            blockedWeeks = blockedWeeks,
                             onToggle = { week ->
                                 selectedWeeks = if (week in selectedWeeks) {
                                     selectedWeeks - week
@@ -318,22 +362,37 @@ fun AddCoursePanel(
                             WeekShortcut(
                                 text = stringResource(R.string.edit_weeks_all),
                                 onClick = {
-                                    selectedWeeks = (1..schedule.totalWeeks).toList()
-                                    error = null
+                                    applyShortcut(
+                                        weeks = (1..schedule.totalWeeks).toList(),
+                                        blocked = blockedWeeks,
+                                        errorText = errorWeeksTaken,
+                                        apply = { selectedWeeks = it },
+                                        onError = { error = it },
+                                    )
                                 },
                             )
                             WeekShortcut(
                                 text = stringResource(R.string.edit_weeks_odd),
                                 onClick = {
-                                    selectedWeeks = (1..schedule.totalWeeks).filter { it % 2 == 1 }
-                                    error = null
+                                    applyShortcut(
+                                        weeks = (1..schedule.totalWeeks).filter { it % 2 == 1 },
+                                        blocked = blockedWeeks,
+                                        errorText = errorWeeksTaken,
+                                        apply = { selectedWeeks = it },
+                                        onError = { error = it },
+                                    )
                                 },
                             )
                             WeekShortcut(
                                 text = stringResource(R.string.edit_weeks_even),
                                 onClick = {
-                                    selectedWeeks = (1..schedule.totalWeeks).filter { it % 2 == 0 }
-                                    error = null
+                                    applyShortcut(
+                                        weeks = (1..schedule.totalWeeks).filter { it % 2 == 0 },
+                                        blocked = blockedWeeks,
+                                        errorText = errorWeeksTaken,
+                                        apply = { selectedWeeks = it },
+                                        onError = { error = it },
+                                    )
                                 },
                             )
                         }
@@ -342,6 +401,18 @@ fun AddCoursePanel(
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        // 同格的其它交替课占了哪些周：说清灰显方格是被谁占的
+                        groupOthers.forEach { other ->
+                            Text(
+                                text = stringResource(
+                                    R.string.edit_alternate_taken_hint,
+                                    other.name,
+                                    weeksSummary(other.weeks),
+                                ),
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
 
                         SectionLabel(stringResource(R.string.edit_course_color))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -455,7 +526,8 @@ private fun SectionLabel(text: String) {
 
 /**
  * 结束节次芯片：分行排布，与周数方格同款视觉。
- * 只有 [startId]..min(total, startId + MAX_SPAN - 1) 可选（起始之前 / 跨度过长的置灰不可点）。
+ * 默认只有 [startId]..min(total, startId + MAX_SPAN - 1) 可选（起始之前 / 跨度过长的置灰不可点）；
+ * [enabledRange] 非空时改按它判定——新建交替课程沿用源课的跨度，只能选那一个末节。
  */
 @Composable
 private fun EndSlotChips(
@@ -463,13 +535,15 @@ private fun EndSlotChips(
     total: Int,
     selected: Int,
     onSelect: (Int) -> Unit,
+    enabledRange: IntRange? = null,
 ) {
     val maxEnd = minOf(total, startId + ScheduleValidator.MAX_SPAN - 1)
+    val range = enabledRange ?: (startId..maxEnd)
     Column(verticalArrangement = Arrangement.spacedBy(WeekCellGap)) {
         (1..total).chunked(WeeksPerRow).forEach { rowSlots ->
             Row(horizontalArrangement = Arrangement.spacedBy(WeekCellGap)) {
                 rowSlots.forEach { id ->
-                    val enabled = id in startId..maxEnd
+                    val enabled = id in range
                     val isSelected = id == selected
                     Box(
                         modifier = Modifier
@@ -516,11 +590,12 @@ private fun EndSlotChips(
     }
 }
 
-/** 周数方格：点一下选中 / 取消 */
+/** 周数方格：点一下选中 / 取消；[blockedWeeks] 里的周已被同格其它交替课占用，灰显不可点 */
 @Composable
 private fun WeekSelectionGrid(
     totalWeeks: Int,
     selected: List<Int>,
+    blockedWeeks: Set<Int>,
     onToggle: (Int) -> Unit,
 ) {
     val selectedSet = selected.toSet()
@@ -529,29 +604,30 @@ private fun WeekSelectionGrid(
             Row(horizontalArrangement = Arrangement.spacedBy(WeekCellGap)) {
                 rowWeeks.forEach { week ->
                     val isSelected = week in selectedSet
+                    val blocked = week in blockedWeeks
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .aspectRatio(1f)
                             .clip(WeekCellShape)
                             .background(
-                                if (isSelected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    OnPrimaryContainer
+                                when {
+                                    isSelected -> MaterialTheme.colorScheme.primary
+                                    blocked -> OnPrimaryContainer.copy(alpha = 0.4f)
+                                    else -> OnPrimaryContainer
                                 },
                             )
-                            .clickable { onToggle(week) },
+                            .then(if (blocked) Modifier else Modifier.clickable { onToggle(week) }),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             text = week.toString(),
                             fontSize = 18.sp,
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (isSelected) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
+                            color = when {
+                                isSelected -> MaterialTheme.colorScheme.onPrimary
+                                blocked -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
                             },
                         )
                     }
@@ -573,6 +649,21 @@ private fun WeekShortcut(text: String, onClick: () -> Unit) {
     TextButton(onClick = onClick) {
         Text(text, fontSize = 14.sp)
     }
+}
+
+/**
+ * 周数快捷（全选/单周/双周）：先按快捷取周，再剔掉被同格其它交替课占用的周；
+ * 剔完为空就不改选择、只报错——否则点一下会落到"尚未选择"的空状态，反而更费解。
+ */
+private fun applyShortcut(
+    weeks: List<Int>,
+    blocked: Set<Int>,
+    errorText: String,
+    apply: (List<Int>) -> Unit,
+    onError: (String) -> Unit,
+) {
+    val usable = weeks.filterNot { it in blocked }
+    if (usable.isEmpty()) onError(errorText) else apply(usable)
 }
 
 /** 已选周数的可读文案：`第 1-12 周`、`第 1-15 周（单周）`；空选择给"尚未选择" */

@@ -83,9 +83,15 @@
     <string name="edit_weeks_range">Weeks %1$d-%2$d</string>
     <string name="edit_weeks_suffix_odd"> (odd)</string>
     <string name="edit_weeks_suffix_even"> (even)</string>
+    <string name="edit_new_alternate">New alternating course</string>
+    <string name="edit_alternate_pick_title">Choose which alternating course to edit</string>
+    <!-- Quoted so the surrounding spaces survive resource compilation -->
+    <string name="edit_alternate_meta_separator">" | "</string>
+    <string name="edit_alternate_taken_hint">Taken by “%1$s”: %2$s</string>
     <string name="cd_add_course">Add course</string>
     <string name="error_course_name_blank">Course name must not be blank</string>
     <string name="error_weeks_empty">Select at least one week</string>
     <string name="error_weeks_beyond_term">Weeks exceed the term</string>
     <string name="error_grid_conflict">Conflicts with “%1$s”</string>
+    <string name="error_alternate_weeks_taken">Those weeks are taken by an alternating course</string>
 </resources>

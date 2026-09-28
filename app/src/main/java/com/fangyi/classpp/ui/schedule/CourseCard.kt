@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.schedule
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,7 +64,12 @@ private val InactiveTextColor = Color(0xFFCBCBCB)
  * 自上而下：开始时间（竖条同色）→ 课程名（两行截断）→ 教师 → @楼名 房间，
  * 底部对齐结束时间。
  *
- * [onClick] 仅编辑态会传：点已有课程卡进编辑（含本周不上的置灰卡），普通态不传。
+ * 竖条分两段表示交替课程：本周上的那门占上 3/4，非本周的交替课占下 1/4
+ * （见 [Course.alternateBar]）；组内非本周的课再多也只占这 1/4、只用一个颜色。
+ * 整卡置灰（本周不上）时竖条全灰、不分段。
+ *
+ * [onClick] / [onLongClick] 仅编辑态会传：点已有课程卡进编辑（含本周不上的置灰卡），
+ * 长按出"新建交替课程"菜单；普通态都不传。
  * [endTime] 覆盖底部结束时间：跨节卡传末结束节次的时间，单节默认取 [slot] 的结束时间。
  */
 @Composable
@@ -72,6 +78,7 @@ fun CourseCard(
     slot: TimeSlot,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
     endTime: String = slot.endTime,
 ) {
     val barColor = if (course.active) {
@@ -80,21 +87,45 @@ fun CourseCard(
         InactiveTextColor
     }
     val secondaryColor = if (course.active) SecondaryTextColor else InactiveTextColor
+    // 长按与点击同源：都在 clip 之内（圆角外的点击/涟漪被裁掉）
+    val clickModifier = when {
+        onLongClick != null -> Modifier.combinedClickable(
+            onClick = onClick ?: {},
+            onLongClick = onLongClick,
+        )
+        onClick != null -> Modifier.clickable(onClick = onClick)
+        else -> Modifier
+    }
 
     Row(
         modifier = modifier
             .clip(CardShape)
             .background(MaterialTheme.colorScheme.surface)
             // 水波纹在 clip 之内：圆角外的点击/涟漪都被裁掉
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+            .then(clickModifier),
     ) {
-        // 左侧彩色竖条
-        Box(
+        // 左侧彩色竖条：3:1 分段对单节卡与跨节卡（requiredHeight 撑出的整卡高度）都成立
+        Column(
             modifier = Modifier
                 .width(BarWidth)
-                .fillMaxHeight()
-                .background(barColor),
-        )
+                .fillMaxHeight(),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(3f)
+                    .background(barColor),
+            )
+            val alternate = course.alternateBar
+            if (course.active && alternate != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(alternate.barColor),
+                )
+            }
+        }
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -312,5 +343,43 @@ private fun CourseCardLongNamePreview() {
             slot = DefaultTimeSlots[0],
             modifier = Modifier.fillMaxWidth().height(150.dp),
         )
+    }
+}
+
+@Preview(showBackground = true, name = "交替课程卡片", widthDp = 360)
+@Composable
+private fun CourseCardAlternatePreview() {
+    ClassppTheme {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(GridRowHeight)
+                .background(MaterialTheme.colorScheme.surfaceContainer),
+        ) {
+            // 普通单课：竖条整条同色
+            GridCell {
+                CourseCard(
+                    course = MockCourses[4],
+                    slot = DefaultTimeSlots[1],
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            // 交替课程：本周课占上 3/4，非本周的交替课占下 1/4
+            GridCell {
+                CourseCard(
+                    course = MockCourses[6].copy(alternateBar = CourseColor.Green),
+                    slot = DefaultTimeSlots[1],
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            // 本周不上：整卡置灰，色条不分段
+            GridCell {
+                CourseCard(
+                    course = MockCourses[6].copy(active = false, alternateBar = CourseColor.Green),
+                    slot = DefaultTimeSlots[1],
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
     }
 }

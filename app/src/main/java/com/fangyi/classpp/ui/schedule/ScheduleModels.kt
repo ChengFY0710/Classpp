@@ -20,6 +20,12 @@ data class Course(
     val span: Int = 1,
     /** 数据层 CourseEntry 的 id；编辑态点击卡片靠它回查草稿条目（mock/预览无 id、不可点） */
     val id: String = "",
+    /**
+     * 非本周交替课的配色 → 卡片左侧色条的下 1/4（见 CourseCard）；
+     * null = 该格没有交替课，或本卡本周不上（整卡置灰时不上色）。
+     * 由 [resolveWeekCards] 解析填入。
+     */
+    val alternateBar: CourseColor? = null,
 )
 
 /** 一个固定节次；起止时间直接以卡片上显示的字符串形式保存 */
@@ -109,7 +115,30 @@ val MockCourses: List<Course> = listOf(
     Course("程序设计研讨", "XX老师", "@学武楼 B203", 4, 5, CourseColor.Blue),
 )
 
-/** 查找某格的课程（同格冲突时取第一门，mock 数据保证唯一）；跨节课程只在起始格命中 */
+/**
+ * 每周渲染解析：**一格只画一张卡**。
+ *
+ * 同格（同一天 + 同一起始节）的课程互为交替课程，周数互不重合（由校验保证），故本周
+ * 只画在课的那门；非本周的组员不画卡，只把**非本周里最先添加的那门**的配色记到
+ * [Course.alternateBar] 上——卡片底部 1/4 色条（见 CourseCard），组内再多门也只占 1/4。
+ * 全组本周都不上课时退回列表首项（照旧置灰，且不画色条）。结果保持原列表顺序。
+ *
+ * 附带修掉"同格另一门被整卡盖住"的老问题：喂给网格的列表已只剩每格一张卡，
+ * [findAt] 与 [isContinuationAt] 因此都只看到本周真正要画的那门。
+ */
+fun List<Course>.resolveWeekCards(): List<Course> =
+    groupBy { it.dayOfWeek to it.slotId }.values.map { group ->
+        val primary = group.firstOrNull { it.active } ?: group.first()
+        val alternate = if (primary.active) {
+            group.firstOrNull { it !== primary && !it.active }
+        } else {
+            // 整卡置灰时不掺彩色，色条保持全灰
+            null
+        }
+        primary.copy(alternateBar = alternate?.color)
+    }
+
+/** 查找某格的课程（解析后每格至多一张）；跨节课程只在起始格命中 */
 fun List<Course>.findAt(dayOfWeek: Int, slotId: Int): Course? =
     firstOrNull { it.dayOfWeek == dayOfWeek && it.slotId == slotId }
 

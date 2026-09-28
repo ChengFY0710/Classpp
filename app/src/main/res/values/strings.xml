@@ -83,9 +83,15 @@
     <string name="edit_weeks_range">第 %1$d-%2$d 周</string>
     <string name="edit_weeks_suffix_odd">（单周）</string>
     <string name="edit_weeks_suffix_even">（双周）</string>
+    <string name="edit_new_alternate">新建交替课程</string>
+    <string name="edit_alternate_pick_title">请选择要编辑的交替课程</string>
+    <!-- 双引号包住以保留两侧空格，否则会被资源编译器裁掉 -->
+    <string name="edit_alternate_meta_separator">" | "</string>
+    <string name="edit_alternate_taken_hint">「%1$s」已占用：%2$s</string>
     <string name="cd_add_course">添加课程</string>
     <string name="error_course_name_blank">课程名不能为空</string>
     <string name="error_weeks_empty">请至少选择一周</string>
     <string name="error_weeks_beyond_term">周数超出学期范围</string>
     <string name="error_grid_conflict">与「%1$s」时间冲突</string>
+    <string name="error_alternate_weeks_taken">该周数已被交替课程占用</string>
 </resources>

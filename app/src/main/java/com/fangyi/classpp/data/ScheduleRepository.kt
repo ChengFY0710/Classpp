@@ -264,6 +264,24 @@ class ScheduleRepository internal constructor(
         commit(fileState.value.replace(target, target.copy(courses = target.courses.filterNot { it.id in drop })))
     }
 
+    /**
+     * 整份替换课程列表（编辑态保存走这条）：单次校验 + 单次提交，草稿要么整体生效要么原样不动。
+     *
+     * 不能用逐条 [upsertCourse]/[removeCourse] 拼出同样的结果——每条都拿"当时的仓库"做全量校验，
+     * 中间态一旦非法就整轮失败，而合法的草稿经常要经过非法中间态：例如把原课周数缩成单周、
+     * 同格再加一门双周的交替课，先写新课那一刻原课还占着全部周数，于是报出一场最终并不存在的冲突。
+     *
+     * id 由调用方保证（草稿条目都带 id）。与其它 mutator 一致：失败时内存态零变更。
+     */
+    suspend fun replaceCourses(scheduleId: String, courses: List<CourseEntry>): OpResult = mutex.withLock {
+        val target = scheduleOrNull(scheduleId)
+            ?: return@withLock OpResult.Err(ScheduleError.NotFound(scheduleId))
+        val updated = target.copy(courses = courses)
+        val errors = ScheduleValidator.validateCourses(updated)
+        if (errors.isNotEmpty()) return@withLock OpResult.Err(errors.first())
+        commit(fileState.value.replace(target, updated))
+    }
+
     // ---------- 按周查询（替代 mock 的 findAt/datesForWeek） ----------
 
     /** 第 [week] 周全部课程及活跃标记；课表不存在或周越界返回空（宽松读，不抛错） */
