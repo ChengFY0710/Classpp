@@ -7,9 +7,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -116,12 +122,25 @@ class MainActivity : ComponentActivity() {
                                 progress = tabProgress,
                             ),
                     )
-                    // 编辑态隐藏底部导航栏（设计稿如此，也避免编辑中途被切走）
-                    if (!editing) {
+                    // 编辑态隐藏底部导航栏（设计稿如此，也避免编辑中途被切走）：
+                    // 下移出屏 / 上移入屏，与顶栏的编辑栏过渡（ScheduleScreen 内 AnimatedContent）
+                    // 共用 [EditTransitionMillis] 规格，同一个 editing 翻转同帧启动，两侧严格同步
+                    AnimatedVisibility(
+                        visible = !editing,
+                        enter = slideInVertically(
+                            // 从自身高度下方起步：上移入
+                            animationSpec = tween(EditTransitionMillis, easing = FastOutSlowInEasing),
+                        ) { it } + fadeIn(tween(EditTransitionMillis)),
+                        exit = slideOutVertically(
+                            // 滑向自身高度下方：下移出
+                            animationSpec = tween(EditTransitionMillis, easing = FastOutSlowInEasing),
+                        ) { it } + fadeOut(tween(EditTransitionMillis)),
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    ) {
                         BottomNavBar(
                             selectedTab = selectedTab,
-                            onTabSelected = { selectedTab = it },
-                            modifier = Modifier.align(Alignment.BottomCenter),
+                            // 退场动画期间仍在组合中，挡掉点击：编辑中途不许切 tab
+                            onTabSelected = { if (!editing) selectedTab = it },
                         )
                     }
                     // 最后组合 ⇒ 绘制与命中测试覆盖三屏与底部导航（课表页仅被覆盖、不重建）
@@ -157,6 +176,14 @@ private fun rememberScheduleRepository(): ScheduleRepository? {
  * 想让节奏更利落可下调（300ms 左右），曲线不变。
  */
 private const val TabTransitionMillis = 400
+
+/**
+ * 编辑态过渡时长：顶栏 ↔ 编辑栏（ScheduleScreen 内 AnimatedContent）与底部导航栏
+ * 的 AnimatedVisibility 共用同一规格（配合 FastOutSlowInEasing），同一个 editing
+ * 翻转同帧启动，两侧才能严格同步；internal 供 ScheduleScreen 引用，避免数值漂移。
+ * 想更快收场可下调（300ms 左右），曲线不变。
+ */
+internal const val EditTransitionMillis = 360
 
 /**
  * tab 页横向平移：视觉位置 = (自身序号 − 动画进度) × 页宽，三页像一条连续带子——

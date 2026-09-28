@@ -3,6 +3,14 @@ package com.fangyi.classpp.ui.schedule
 import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +56,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fangyi.classpp.EditTransitionMillis
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.FieldReason
 import com.fangyi.classpp.data.OpResult
@@ -371,40 +380,56 @@ fun ScheduleScreen(
                         )
                         .hazeSource(hazeState),
                 )
-                if (editSession == null) {
-                    ScheduleHeader(
-                        collapseFraction = collapseState.collapseFraction,
-                        date = headerDate,
-                        selectedWeek = week,
-                        currentWeek = currentWeek,
-                        onWeekSelected = { selectedWeek = it },
-                        onEditClick = { onEditingChange(true) },
-                        onSettingsClick = onOpenSettings,
-                        onMenuExpandedChange = { collapseState.menuOpen = it },
-                        weekRange = 1..schedule.totalWeeks,
-                        blurProgress = blurProgress,
-                        hazeState = hazeState,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .onGloballyPositioned { coords ->
+                // 顶栏 ↔ 编辑栏进出场：新内容自顶部滑入淡入、旧内容向上滑出淡出，进退对称，
+                // 与底部导航栏的 AnimatedVisibility 共用 [EditTransitionMillis] 规格，
+                // 同一个 editing 翻转同帧启动，两侧严格同步。
+                // 内容读 lambda 参数而非外层 editSession：会话翻转时若读外层值，
+                // 退场中的旧槽位也会跟着渲染成新内容
+                AnimatedContent(
+                    targetState = editSession == null,
+                    contentAlignment = Alignment.TopStart,
+                    transitionSpec = {
+                        (slideInVertically(
+                            animationSpec = tween(EditTransitionMillis, easing = FastOutSlowInEasing),
+                        ) { -it } + fadeIn(tween(EditTransitionMillis))) togetherWith
+                            (slideOutVertically(
+                                animationSpec = tween(EditTransitionMillis, easing = FastOutSlowInEasing),
+                            ) { -it } + fadeOut(tween(EditTransitionMillis)))
+                    },
+                    modifier = Modifier.align(Alignment.TopStart),
+                    label = "topBarSwap",
+                ) { viewing ->
+                    if (viewing) {
+                        ScheduleHeader(
+                            collapseFraction = collapseState.collapseFraction,
+                            date = headerDate,
+                            selectedWeek = week,
+                            currentWeek = currentWeek,
+                            onWeekSelected = { selectedWeek = it },
+                            onEditClick = { onEditingChange(true) },
+                            onSettingsClick = onOpenSettings,
+                            onMenuExpandedChange = { collapseState.menuOpen = it },
+                            weekRange = 1..schedule.totalWeeks,
+                            blurProgress = blurProgress,
+                            hazeState = hazeState,
+                            modifier = Modifier.onGloballyPositioned { coords ->
                                 headerHeight = with(density) { coords.size.height.toFloat().toDp() }
                             },
-                    )
-                } else {
-                    ScheduleEditBar(
-                        onSave = onSaveEdit,
-                        // 本轮置空：切换课表后续再做
-                        onSwitchSchedule = {},
-                        onCancel = { onEditingChange(false) },
-                        // 与折叠后的原顶栏同一套背景模糊：内容滚到栏下时渐入
-                        blurProgress = blurProgress,
-                        hazeState = hazeState,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .onGloballyPositioned { coords ->
+                        )
+                    } else {
+                        ScheduleEditBar(
+                            onSave = onSaveEdit,
+                            // 本轮置空：切换课表后续再做
+                            onSwitchSchedule = {},
+                            onCancel = { onEditingChange(false) },
+                            // 与折叠后的原顶栏同一套背景模糊：内容滚到栏下时渐入
+                            blurProgress = blurProgress,
+                            hazeState = hazeState,
+                            modifier = Modifier.onGloballyPositioned { coords ->
                                 editBarHeight = with(density) { coords.size.height.toFloat().toDp() }
                             },
-                    )
+                        )
+                    }
                 }
             }
 
