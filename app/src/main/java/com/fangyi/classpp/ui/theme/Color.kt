@@ -22,7 +22,7 @@ val TertiaryContainer = Color(0xFFCFEBED)
 val OnTertiaryContainer = Color(0xFF002022)
 
 val Background = Color(0xFFF2F4F6)
-val BackgroundBlue = Color(0xFFE2EBF7) // 浅蓝色背景，用于分区/强调区块
+val TextBackgroundBlue = Color(0xFFA3C8FA)
 val OnBackground = Color(0xFF000000)
 
 val Surface = Color(0xFFFFFFFF)

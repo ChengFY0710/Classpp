@@ -119,6 +119,7 @@ fun ScheduleEditBar(
                 color = MaterialTheme.colorScheme.primary,
                 fontSize = EditActionTextSize,
                 fontWeight = FontWeight.SemiBold,
+                lineHeight = 30.sp,
                 modifier = Modifier
                     .align(Alignment.Center)
                     .clip(EditActionShape)

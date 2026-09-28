@@ -233,10 +233,10 @@ fun ScheduleScreen(
                             val dates = repository.datesForWeek(schedule.id, pageWeek)
                             WeekPageContent(
                                 week = pageWeek,
+                                // 编辑态**一律显示全部课程**（非本周的照旧置灰），不受
+                                // 「显示本周不上的课」开关影响：开关关掉时若把它们藏起来，
+                                // 用户看不见"占着这一格但本周不上"的课，加课撞上冲突却找不到原因
                                 courses = editSession.courses
-                                    .filter {
-                                        schedule.showInactiveCourses || it.weeks.contains(pageWeek)
-                                    }
                                     .map { it.toUiCourse(active = it.weeks.contains(pageWeek)) },
                                 dates = dates.take(5).map { it.toUiDate() },
                                 highlightDate = if (pageWeek == currentWeek) {

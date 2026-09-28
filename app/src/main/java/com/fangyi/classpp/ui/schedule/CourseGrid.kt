@@ -45,12 +45,12 @@ import kotlin.math.roundToInt
 /** 日期带高度（滚动渐隐的参考高度，模糊进度也以此为刻度） */
 internal val DateBandHeight = 41.dp
 
-/** 每个节次行的固定高度（容纳两行课程名 + 教师/地点/房间 + 起止时间） */
-private val GridRowHeight = 150.dp
+/** 每个节次行的固定高度（容纳两行课程名 + 教师/地点/房间 + 起止时间；@Preview 也按它量尺寸） */
+internal val GridRowHeight = 150.dp
 
-/** 单元格内边距，卡片间形成网格沟槽 */
-private val CellPadding = 3.dp
-private val CellPaddingTop = 2.dp //用于平衡网格线带来的视觉偏差
+/** 单元格内边距，卡片间形成网格沟槽（@Preview 与网格保持一致） */
+internal val CellPadding = 3.dp
+internal val CellPaddingTop = 2.dp //用于平衡网格线带来的视觉偏差
 
 /** 网格线笔宽 */
 private val GridLineWidth = 1.dp

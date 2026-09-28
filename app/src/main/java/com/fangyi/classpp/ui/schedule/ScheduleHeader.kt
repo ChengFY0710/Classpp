@@ -89,7 +89,7 @@ private val WeekPickerCellSpace = 8.dp // 周数选择器里小方块间距
 
 /** 小方块边长（宽高相同，恒为正方形）。弹窗宽度由此固定、不随屏宽变化；
  *  整宽 ≈ 6×边长 + 102dp，360dp 屏上边长建议 ≤43dp */
-private val WeekCellSize = 47.dp
+private val WeekCellSize = 48.dp
 
 
 
@@ -321,6 +321,7 @@ private fun BackToCurrentButton(
     Row(
         modifier = modifier
             .graphicsLayer { this.alpha = alpha }
+            .clip(RoundedCornerShape(6.dp))
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 0.dp),
         verticalAlignment = Alignment.CenterVertically,
