@@ -7,7 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
@@ -57,9 +57,10 @@ class MainActivity : ComponentActivity() {
                 // 整段动画每帧只重排、不重组
                 val tabProgress = animateFloatAsState(
                     targetValue = selectedTab.ordinal.toFloat(),
+                    // 先快后慢：LinearOutSlowIn 起点即全速、此后单调减速收尾；
                     animationSpec = tween(
                         durationMillis = TabTransitionMillis,
-                        easing = FastOutSlowInEasing,
+                        easing = LinearOutSlowInEasing,
                     ),
                     label = "tabProgress",
                 )
@@ -143,8 +144,10 @@ private fun rememberScheduleRepository(): ScheduleRepository? {
     return repository
 }
 
-/** tab 平移时长：Material shared axis 同量级 */
-private const val TabTransitionMillis = 300
+/**
+ * tab 平移时长：先快后慢的减速曲线下，位移的大部分集中在开头，
+ */
+private const val TabTransitionMillis = 400
 
 /**
  * tab 页横向平移：按「自身序号 − 动画进度」× 页宽 定位，选中页恒在 0，
