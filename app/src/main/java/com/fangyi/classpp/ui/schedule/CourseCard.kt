@@ -64,6 +64,7 @@ private val InactiveTextColor = Color(0xFFCBCBCB)
  * 底部对齐结束时间。
  *
  * [onClick] 仅编辑态会传：给"本周不上"的置灰卡片用（那一格本周空着，点它去添加）。
+ * [endTime] 覆盖底部结束时间：跨节卡传末结束节次的时间，单节默认取 [slot] 的结束时间。
  */
 @Composable
 fun CourseCard(
@@ -71,6 +72,7 @@ fun CourseCard(
     slot: TimeSlot,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    endTime: String = slot.endTime,
 ) {
     val barColor = if (course.active) {
         course.color.barColor
@@ -148,7 +150,7 @@ fun CourseCard(
                 }
             }
             Text(
-                text = slot.endTime,
+                text = endTime,
                 color = barColor,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,

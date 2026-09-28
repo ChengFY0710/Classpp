@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -155,6 +156,10 @@ private val PagerState.isSeamVisible: Boolean
  * 页面若没有自己的图层，其绘制指令会被录进 Pager 那一层——每帧位移都要把整页
  * （日期带 + 各行卡片）的指令重录一遍，翻周时就掉帧；有图层后每帧只更新"这一层画在哪"，
  * 页面内容的指令表保持缓存（与 tab 平移同一手法，见 MainActivity.tabPage）。
+ *
+ * **跨节卡叠加层**：[Box] 内第二层镜像复刻行/列结构（同 weight 分列、同行高、同 CellPadding），
+ * 后绘制故不透明卡片压过行分界网格线；空节点无 pointerInput，点击穿透回底层网格。
+ * 底层 [GridRow] 对起始格与续格留空（见其注释），两层分工不重叠。
  */
 @Composable
 private fun WeekPage(
@@ -169,7 +174,7 @@ private fun WeekPage(
     val density = LocalDensity.current
     val bandPx = with(density) { DateBandHeight.toPx() }
     val trailingPx = with(density) { TrailingScrollSpace.toPx() }
-    Column(
+    Box(
         modifier = Modifier
             .graphicsLayer { }
             .drawBehind {
@@ -185,23 +190,73 @@ private fun WeekPage(
                 }
             },
     ) {
-        if (showDates) {
-            DateBand(
-                weekDates = content.dates,
-                highlightDate = content.highlightDate,
-                listState = listState,
-                seamVisible = seamVisible,
-            )
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (showDates) {
+                DateBand(
+                    weekDates = content.dates,
+                    highlightDate = content.highlightDate,
+                    listState = listState,
+                    seamVisible = seamVisible,
+                )
+            }
+            timeSlots.forEach { slot ->
+                GridRow(
+                    slot = slot,
+                    courses = content.courses,
+                    editMode = editMode,
+                    onAddClick = onAddClick,
+                )
+            }
+            Spacer(modifier = Modifier.height(TrailingScrollSpace))
         }
-        timeSlots.forEach { slot ->
-            GridRow(
-                slot = slot,
-                courses = content.courses,
-                editMode = editMode,
-                onAddClick = onAddClick,
-            )
+
+        // ——— 跨节卡叠加层：y 偏移由镜像 Spacer(日期带) + 行高自然对齐 ———
+        Column(modifier = Modifier.matchParentSize()) {
+            if (showDates) Spacer(modifier = Modifier.height(DateBandHeight))
+            timeSlots.forEach { slot ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(GridRowHeight),
+                ) {
+                    for (day in 1..5) {
+                        val course = content.courses.findAt(day, slot.id)
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .padding(
+                                    start = CellPadding,
+                                    end = CellPadding,
+                                    top = CellPaddingTop,
+                                    bottom = CellPadding,
+                                ),
+                        ) {
+                            if (course != null && course.span > 1) {
+                                val lastIdx = (slot.id - 1 + course.span - 1)
+                                    .coerceAtMost(timeSlots.lastIndex)
+                                val effSpan = lastIdx - (slot.id - 1) + 1
+                                CourseCard(
+                                    course = course,
+                                    slot = slot,
+                                    endTime = timeSlots[lastIdx].endTime,
+                                    // 必须 required：单元格内容区最高只有一行（145dp），
+                                    // 普通 height() 会被父约束钳回单行高度，跨不出去
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .requiredHeight(GridRowHeight * effSpan - CellPaddingTop - CellPadding),
+                                    onClick = if (!course.active && editMode && onAddClick != null) {
+                                        { onAddClick(day, slot) }
+                                    } else {
+                                        null
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
-        Spacer(modifier = Modifier.height(TrailingScrollSpace))
     }
 }
 
@@ -289,6 +344,7 @@ private fun DateBand(
  * 一个节次行：5 个等宽单元格。
  * 普通态有课渲染课程卡片、无课露网格背景；编辑态空位渲染添加卡片，
  * 且"本周不上"的置灰卡片也可点（那一格本周空着，点它去添加，否则永远加不进去）。
+ * 跨节课的起始格与续格都留空——卡片由 [WeekPage] 的叠加层跨行绘制。
  */
 @Composable
 private fun GridRow(
@@ -314,8 +370,10 @@ private fun GridRow(
     ) {
         for (day in 1..5) {
             val course = courses.findAt(day, slot.id)
+            // 续格（被跨节课覆盖）：不画课卡也不画添加卡，点击自然落空
+            val covered = courses.isContinuationAt(day, slot.id)
             // 编辑态才有添加回调；同一个回调也给置灰卡片用
-            val add: (() -> Unit)? = if (editMode && onAddClick != null) {
+            val add: (() -> Unit)? = if (editMode && onAddClick != null && !covered) {
                 { onAddClick(day, slot) }
             } else {
                 null
@@ -332,12 +390,13 @@ private fun GridRow(
                         onClick = add,
                         modifier = Modifier.fillMaxSize(),
                     )
-                    course != null -> CourseCard(
+                    course != null && course.span == 1 -> CourseCard(
                         course = course,
                         slot = slot,
                         modifier = Modifier.fillMaxSize(),
                         onClick = if (!course.active) add else null,
                     )
+                    // span > 1 的起始格与 covered 格：留空，卡片由叠加层绘制
                 }
             }
         }

@@ -10,8 +10,8 @@ import java.util.Date
 /**
  * 数据层模型 → UI 渲染模型的适配层（happy-rocket 计划《后续 UI 接入路径》固化）。
  *
- * 本批视图能力为"仅换数据源"：网格保持 5 列单格渲染，
- * span>1 的课程只在起始格出现（续格由 findAt 自然留空）。
+ * 本批视图能力为"仅换数据源"：网格保持 5 列布局，
+ * span>1 的课程在起始格命中（续格由 isContinuationAt 抑制，卡片由叠加层跨行绘制）。
  */
 
 /**
@@ -26,10 +26,11 @@ internal fun CourseEntry.toUiCourse(active: Boolean): Course = Course(
     slotId = startSlot,
     color = CourseColor.valueOf(color.name),
     active = active,
+    span = span,
 )
 
 /**
- * 课程呈现 → 渲染课程：跨节次课程本批只落起始格，故 [Course.slotId] 取 startSlot；
+ * 课程呈现 → 渲染课程：跨节次课程只在起始格命中，故 [Course.slotId] 取 startSlot；
  * [CourseColor] 两枚举同名同值，经 name 直转；[CourseOccurrence.active] 随行作置灰标志。
  */
 internal fun CourseOccurrence.toUiCourse(): Course = course.toUiCourse(active)

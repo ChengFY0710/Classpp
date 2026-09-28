@@ -102,15 +102,24 @@ fun AddCoursePanel(
     var location by rememberSaveable { mutableStateOf("") }
     var selectedWeeks by rememberSaveable { mutableStateOf((1..schedule.totalWeeks).toList()) }
     var color by rememberSaveable { mutableStateOf(CourseColor.Blue) }
+    // 结束节次：key=slot.id，重开面板（或旋转恢复后目标格变化）即复位为起始节 → 默认跨 1 节
+    var endSlotId by rememberSaveable(slot.id) { mutableStateOf(slot.id) }
     var error by remember { mutableStateOf<String?>(null) }
 
     val weekdays = stringArrayResource(R.array.weekdays)
     val weekdayName = weekdays[(day - 1).coerceIn(weekdays.indices)]
+    val slotLabel = if (endSlotId == slot.id) {
+        stringResource(R.string.slot_format, slot.id)
+    } else {
+        stringResource(R.string.slot_range_format, slot.id, endSlotId)
+    }
+    // 恢复的 endSlotId 理论上不越界，仍钳一下防进程重建后的极端情况
+    val endDef = schedule.slots[(endSlotId - 1).coerceIn(schedule.slots.indices)]
     val cellInfo = stringResource(
         R.string.edit_cell_info,
         weekdayName,
-        stringResource(R.string.slot_format, slot.id),
-        "${slot.startTime}-${slot.endTime}",
+        slotLabel,
+        "${slot.startTime}-${endDef.endTime}",
     )
     val weeks = weeksFromSelection(selectedWeeks)
 
@@ -144,6 +153,11 @@ fun AddCoursePanel(
             error = errorWeeksEmpty
             return
         }
+        // 结束节次已在芯片层限制，这里再钳一次（跨度 ≤ MAX_SPAN 且不超总节数）
+        val end = endSlotId.coerceIn(
+            slot.id,
+            minOf(schedule.slotCount, slot.id + ScheduleValidator.MAX_SPAN - 1),
+        )
         val entry = CourseEntry(
             id = newUuid(),
             name = name.trim(),
@@ -151,7 +165,7 @@ fun AddCoursePanel(
             location = location.trim(),
             dayOfWeek = day,
             startSlot = slot.id,
-            span = 1,
+            span = end - slot.id + 1,
             weeks = weeks,
             // 色块用的是渲染层的 CourseColor（同包、自带配色），落库时按 name 桥接（同 ScheduleAdapters）
             color = DataCourseColor.valueOf(color.name),
@@ -253,6 +267,17 @@ fun AddCoursePanel(
                             label = stringResource(R.string.edit_course_location),
                             imeAction = ImeAction.Done,
                             onImeAction = { focusManager.clearFocus() },
+                        )
+
+                        SectionLabel(stringResource(R.string.edit_end_slot))
+                        EndSlotChips(
+                            startId = slot.id,
+                            total = schedule.slotCount,
+                            selected = endSlotId,
+                            onSelect = { id ->
+                                endSlotId = id
+                                error = null
+                            },
                         )
 
                         SectionLabel(stringResource(R.string.edit_course_weeks))
@@ -396,6 +421,69 @@ private fun SectionLabel(text: String) {
         fontWeight = FontWeight.Medium,
         color = MaterialTheme.colorScheme.primary,
     )
+}
+
+/**
+ * 结束节次芯片：分行排布，与周数方格同款视觉。
+ * 只有 [startId]..min(total, startId + MAX_SPAN - 1) 可选（起始之前 / 跨度过长的置灰不可点）。
+ */
+@Composable
+private fun EndSlotChips(
+    startId: Int,
+    total: Int,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    val maxEnd = minOf(total, startId + ScheduleValidator.MAX_SPAN - 1)
+    Column(verticalArrangement = Arrangement.spacedBy(WeekCellGap)) {
+        (1..total).chunked(WeeksPerRow).forEach { rowSlots ->
+            Row(horizontalArrangement = Arrangement.spacedBy(WeekCellGap)) {
+                rowSlots.forEach { id ->
+                    val enabled = id in startId..maxEnd
+                    val isSelected = id == selected
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp)
+                            .clip(WeekCellShape)
+                            .background(
+                                when {
+                                    isSelected -> MaterialTheme.colorScheme.primary
+                                    enabled -> OnPrimaryContainer
+                                    else -> OnPrimaryContainer.copy(alpha = 0.4f)
+                                },
+                            )
+                            .then(
+                                if (enabled) {
+                                    Modifier.clickable { onSelect(id) }
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = id.toString(),
+                            fontSize = 15.sp,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                            color = when {
+                                isSelected -> MaterialTheme.colorScheme.onPrimary
+                                enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                            },
+                        )
+                    }
+                }
+                repeat(WeeksPerRow - rowSlots.size) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp),
+                    )
+                }
+            }
+        }
+    }
 }
 
 /** 周数方格：点一下选中 / 取消 */

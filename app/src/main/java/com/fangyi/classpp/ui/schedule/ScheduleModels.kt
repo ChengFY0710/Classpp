@@ -11,11 +11,13 @@ data class Course(
     val location: String,
     /** 星期：1 = 周一 … 5 = 周五 */
     val dayOfWeek: Int,
-    /** 所属节次 id（本阶段不支持跨节次） */
+    /** 所属节次 id（起始节次；跨节课程从这里开始向下占据 [span] 行） */
     val slotId: Int,
     val color: CourseColor,
     /** 本周是否上课；false 时卡片按规格置灰（底 #cbcbcb、课名 #737a83） */
     val active: Boolean = true,
+    /** 连续占用节数（1 = 单节）；跨节卡由网格叠加层绘制，见 CourseGrid */
+    val span: Int = 1,
 )
 
 /** 一个固定节次；起止时间直接以卡片上显示的字符串形式保存 */
@@ -82,14 +84,13 @@ fun Date.dayOfMonth(): Int =
 
 /** 示例课表：覆盖截图中的课程分布（单周 mock，选周时暂显示同一份） */
 val MockCourses: List<Course> = listOf(
-    // 第 1 节 8:00-9:40
+    // 第 1 节 8:00-9:40（周三微积分跨到第 2 节，对应设计稿）
     Course("体育舞蹈-拉丁舞", "XX老师", "@爱秋体育馆", 2, 1, CourseColor.Pink),
-    Course("微积分 I-2", "XX老师", "@学武楼 C201", 3, 1, CourseColor.Green),
+    Course("微积分 I-2", "XX老师", "@学武楼 C201", 3, 1, CourseColor.Green, span = 2),
     Course("微积分 I-2", "XX老师", "@学武楼 C201", 5, 1, CourseColor.Green),
     // 第 2 节 10:10-11:50
     Course("微积分 I-2", "XX老师", "@学武楼 C201", 1, 2, CourseColor.Green),
     Course("电路原理", "XX老师", "@学武楼 C404", 2, 2, CourseColor.Yellow),
-    Course("概率统计", "XX老师", "@学武楼 C404", 3, 2, CourseColor.Blue),
     Course("面向对象程序设计", "XX老师", "@学武楼 C304", 4, 2, CourseColor.Orange),
     Course("概率统计", "XX老师", "@学武楼 C404", 5, 2, CourseColor.Blue),
     // 第 3 节 14:30-16:10
@@ -106,6 +107,16 @@ val MockCourses: List<Course> = listOf(
     Course("程序设计研讨", "XX老师", "@学武楼 B203", 4, 5, CourseColor.Blue),
 )
 
-/** 查找某格的课程（同格冲突时取第一门，mock 数据保证唯一） */
+/** 查找某格的课程（同格冲突时取第一门，mock 数据保证唯一）；跨节课程只在起始格命中 */
 fun List<Course>.findAt(dayOfWeek: Int, slotId: Int): Course? =
     firstOrNull { it.dayOfWeek == dayOfWeek && it.slotId == slotId }
+
+/**
+ * 被跨节课覆盖但非其起始格：渲染层既不画课卡也不画添加卡
+ * （跨节卡由 WeekPage 的叠加层绘制，见 CourseGrid）。
+ */
+fun List<Course>.isContinuationAt(dayOfWeek: Int, slotId: Int): Boolean =
+    any {
+        it.dayOfWeek == dayOfWeek && it.span > 1 &&
+            slotId in (it.slotId + 1)..(it.slotId + it.span - 1)
+    }

@@ -38,6 +38,7 @@
     <string name="slot_count_format">每天 %1$d 节</string>
     <string name="slot_reset_desc">调整节数将重置各节时间</string>
     <string name="slot_format">第 %1$d 节</string>
+    <string name="slot_range_format">第 %1$d-%2$d 节</string>
     <string name="show_inactive">显示本周不上的课</string>
     <string name="show_inactive_desc">关闭后隐藏，开启后以灰色显示</string>
     <string name="settings_confirm">确定</string>
@@ -64,6 +65,7 @@
     <string name="edit_cancel">取消</string>
     <string name="edit_add_course">添加课程</string>
     <string name="edit_cell_info">%1$s · %2$s · %3$s</string>
+    <string name="edit_end_slot">结束节次</string>
     <string name="edit_course_name">课程名</string>
     <string name="edit_course_teacher">教师</string>
     <string name="edit_course_location">上课地点</string>

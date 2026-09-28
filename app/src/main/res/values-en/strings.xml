@@ -38,6 +38,7 @@
     <string name="slot_count_format">%1$d periods per day</string>
     <string name="slot_reset_desc">Changing the period count resets period times</string>
     <string name="slot_format">Period %1$d</string>
+    <string name="slot_range_format">Periods %1$d-%2$d</string>
     <string name="show_inactive">Show classes not held this week</string>
     <string name="show_inactive_desc">Hidden when off; greyed out when on</string>
     <string name="settings_confirm">Confirm</string>
@@ -64,6 +65,7 @@
     <string name="edit_cancel">Cancel</string>
     <string name="edit_add_course">Add course</string>
     <string name="edit_cell_info">%1$s · %2$s · %3$s</string>
+    <string name="edit_end_slot">End period</string>
     <string name="edit_course_name">Course name</string>
     <string name="edit_course_teacher">Teacher</string>
     <string name="edit_course_location">Location</string>
