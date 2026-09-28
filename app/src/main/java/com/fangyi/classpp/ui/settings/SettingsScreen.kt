@@ -60,6 +60,10 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeSlotDef
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.defaultSlotsFor
+import com.fangyi.classpp.ui.schedule.DateTarget
+import com.fangyi.classpp.ui.schedule.TERM_DEFAULT_DAYS
+import com.fangyi.classpp.ui.schedule.snapTermEnd
+import com.fangyi.classpp.ui.schedule.snapToMonday
 import com.fangyi.classpp.ui.schedule.toPickerMillis
 import com.fangyi.classpp.ui.schedule.toIsoDate
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -582,24 +586,8 @@ private fun SectionCard(
     }
 }
 
-/** 学期日期选择目标 */
-private enum class DateTarget { Start, End }
-
 /** 正在编辑的节次时间：第 [index] 节的起（true）或止（false） */
 private data class SlotEdit(val index: Int, val isStart: Boolean)
-
-/** 学期默认长度：16 周 = 15×7 + 4 天（周五结尾） */
-private const val TERM_DEFAULT_DAYS = 109
-
-/** 吸附到所在 ISO 周的周一（周日回退到本周一） */
-private fun snapToMonday(date: IsoDate): IsoDate = date + (1 - date.isoDayOfWeek())
-
-/** 吸附到合法结束日：5 天模式→周五、7 天模式→周日（同周回退或顺延） */
-private fun snapTermEnd(date: IsoDate, daysPerWeek: Int): IsoDate = if (daysPerWeek == 7) {
-    date + (7 - date.isoDayOfWeek())
-} else {
-    date + (5 - date.isoDayOfWeek())
-}
 
 /**
  * [ScheduleError] → 本地化文案。覆盖设置页可达全集：

@@ -1,8 +1,12 @@
 package com.fangyi.classpp.ui.schedule
 
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -61,10 +65,12 @@ import com.fangyi.classpp.EditTransitionMillis
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.FieldReason
 import com.fangyi.classpp.data.OpResult
+import com.fangyi.classpp.data.ReadResult
 import com.fangyi.classpp.data.ScheduleError
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.ScheduleValidator
 import com.fangyi.classpp.data.TermPosition
+import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.cellCourses
 import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -228,9 +234,12 @@ fun ScheduleScreen(
 
             // ——— 编辑态：草稿只活在 UI 层，点保存才写回仓库 ———
             // 会话随 editing 重开（进来时取当前课表），退出即换成占位会话、草稿丢弃；
-            // Saver 连 active 一起存，故旋转/进程重建不会把恢复出来的草稿清掉
+            // Saver 连 active 一起存，故旋转/进程重建不会把恢复出来的草稿清掉。
+            // inputs 含 schedule.id：切换激活课表时 inputs 变化 → 旧会话连同草稿一起
+            // 被丢弃、以新课表的课程快照重建——切换即隐式"丢弃旧草稿、开始编辑新课表"
             val session: ScheduleEditSession = rememberSaveable(
                 editing,
+                schedule.id,
                 saver = ScheduleEditSession.Saver,
             ) {
                 if (editing) ScheduleEditSession(draft = schedule.courses) else ScheduleEditSession.Inactive
@@ -248,6 +257,11 @@ fun ScheduleScreen(
             var chooserSourceId by rememberSaveable { mutableStateOf("") }
             // 新建交替课程：源课 id（长按菜单进来）；空 = 面板未打开
             var alternateSourceId by rememberSaveable { mutableStateOf("") }
+            // 切换课表浮层：开关、待切换目标（非空 = 脏草稿确认打开）、新建表单态与内联错误
+            var switcherVisible by rememberSaveable { mutableStateOf(false) }
+            var pendingSwitchId by rememberSaveable { mutableStateOf("") }
+            var createMode by rememberSaveable { mutableStateOf(false) }
+            var switcherError by remember { mutableStateOf<String?>(null) }
             // 编辑态的网格数据源：草稿 → 渲染模型（复用仓库路径同一套映射与置灰规则）
             val displayedContentForWeek: (Int) -> WeekPageContent =
                 if (editSession != null) {
@@ -351,6 +365,116 @@ fun ScheduleScreen(
                 }
             }
 
+            // 切换激活课表：关浮层、清脏确认，并把依赖旧草稿的瞬时状态全部复位——
+            // 旧草稿的格子/编辑目标 id 在新课表里没有意义；selectedWeek 归零让选周逻辑
+            // （week 计算）重新按新课表的学期位置落周
+            val performSwitch: (String) -> Unit = { id ->
+                pendingSwitchId = ""
+                switcherVisible = false
+                createMode = false
+                switcherError = null
+                addTarget = emptyList()
+                editTargetId = ""
+                chooserSourceId = ""
+                alternateSourceId = ""
+                menuAnchor = null
+                selectedWeek = 0
+                scope.launch {
+                    // 先关浮层再落盘：id 取自列表故 NotFound 不可达，落盘失败提示后重开浮层即可重试
+                    val r = repository.setActiveSchedule(id)
+                    if (r is OpResult.Err) {
+                        Toast.makeText(
+                            context,
+                            r.error.toEditMessage(context),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+            }
+            // 统一切换入口（行点击 / 导入 / 新建成功）：草稿有改动先弹丢弃确认
+            val requestSwitch: (String) -> Unit = { id ->
+                if (id != schedule.id) {
+                    if (editSession != null && editSession.courses != schedule.courses) {
+                        pendingSwitchId = id
+                    } else {
+                        performSwitch(id)
+                    }
+                }
+            }
+            // 导出：当前激活课表 → pretty JSON → 系统分享面板。
+            // 读的是仓库已保存状态，草稿里未保存的改动不包含在内（已接受的限制）
+            val onExport: () -> Unit = {
+                scope.launch {
+                    when (val r = repository.exportSchedule(schedule.id)) {
+                        is ReadResult.Ok -> {
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/json"
+                                putExtra(Intent.EXTRA_TEXT, r.value)
+                            }
+                            try {
+                                context.startActivity(Intent.createChooser(send, null))
+                            } catch (e: ActivityNotFoundException) {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.error_generic, e.message ?: ""),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        }
+                        is ReadResult.Err -> Toast.makeText(
+                            context,
+                            r.error.toEditMessage(context),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+            }
+            // 新建：成功先回列表态再走切换（脏则弹确认；取消确认也不会停在表单里重复点创建）
+            val onCreateConfirm: (String, IsoDate, IsoDate) -> Unit = { name, start, end ->
+                scope.launch {
+                    when (val r = repository.createSchedule(name, start, end)) {
+                        is ReadResult.Ok -> {
+                            createMode = false
+                            switcherError = null
+                            requestSwitch(r.value)
+                        }
+                        is ReadResult.Err -> switcherError = r.error.toEditMessage(context)
+                    }
+                }
+            }
+            // 导入：系统文件选择器读 JSON → 仓库导入（新 id、名称去重、不自动激活）→
+            // 走统一切换路径（含脏确认）；取消确认则新课表留在列表里但不激活
+            val importLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.OpenDocument(),
+            ) { uri ->
+                if (uri != null) {
+                    scope.launch {
+                        val json = try {
+                            context.contentResolver.openInputStream(uri)
+                                ?.bufferedReader()?.use { it.readText() }
+                        } catch (_: Exception) {
+                            null
+                        }
+                        if (json == null) {
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.import_read_failed),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        } else {
+                            when (val r = repository.importSchedule(json)) {
+                                is ReadResult.Ok -> requestSwitch(r.value)
+                                is ReadResult.Err -> Toast.makeText(
+                                    context,
+                                    r.error.toEditMessage(context),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        }
+                    }
+                }
+            }
+
             // 编辑态的返回键 = 取消（保存有独立按钮，故这里直接丢弃草稿）
             BackHandler(enabled = editSession != null) { onEditingChange(false) }
 
@@ -430,8 +554,7 @@ fun ScheduleScreen(
                     } else {
                         ScheduleEditBar(
                             onSave = onSaveEdit,
-                            // 本轮置空：切换课表后续再做
-                            onSwitchSchedule = {},
+                            onSwitchSchedule = { switcherVisible = true },
                             onCancel = { onEditingChange(false) },
                             // 与折叠后的原顶栏同一套背景模糊：内容滚到栏下时渐入
                             blurProgress = blurProgress,
@@ -516,6 +639,44 @@ fun ScheduleScreen(
                 )
             }
 
+            // 切换课表浮层：列表/新建 + 底部导出导入；脏草稿确认叠在其上——
+            // 组合顺序保证返回键优先级：确认 → 浮层（表单态先回列表）→ 编辑取消
+            if (switcherVisible) {
+                ScheduleSwitcherSheet(
+                    schedules = repository.schedules.collectAsState().value,
+                    activeScheduleId = schedule.id,
+                    createMode = createMode,
+                    createError = switcherError,
+                    onCreateModeChange = {
+                        createMode = it
+                        switcherError = null
+                    },
+                    onDismiss = {
+                        switcherVisible = false
+                        createMode = false
+                        switcherError = null
+                    },
+                    onSwitch = requestSwitch,
+                    onExport = onExport,
+                    onImport = {
+                        importLauncher.launch(
+                            arrayOf(
+                                "application/json",
+                                "text/plain",
+                                "application/octet-stream",
+                            ),
+                        )
+                    },
+                    onCreateConfirm = onCreateConfirm,
+                )
+                if (pendingSwitchId.isNotEmpty()) {
+                    DiscardSwitchConfirmDialog(
+                        onCancel = { pendingSwitchId = "" },
+                        onConfirm = { performSwitch(pendingSwitchId) },
+                    )
+                }
+            }
+
             // 长按卡片的上下文菜单（Popup 独立窗口，位置由卡片坐标决定）
             menuAnchor?.let { anchor ->
                 CourseContextMenu(
@@ -554,6 +715,9 @@ private fun ScheduleError.toEditMessage(context: Context): String = when (this) 
     is ScheduleError.GridConflict -> context.getString(R.string.error_grid_conflict, a.name)
     is ScheduleError.PersistFailed -> context.getString(R.string.error_persist_failed)
     is ScheduleError.NotFound -> context.getString(R.string.error_not_found)
+    is ScheduleError.ImportFormatInvalid -> context.getString(R.string.error_import_format)
+    is ScheduleError.ImportVersionUnsupported -> context.getString(R.string.error_import_version)
+    is ScheduleError.ImportKindMismatch -> context.getString(R.string.error_import_kind)
     else -> context.getString(R.string.error_generic, message)
 }
 

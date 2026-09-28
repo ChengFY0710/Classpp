@@ -94,4 +94,19 @@
     <string name="error_weeks_beyond_term">Weeks exceed the term</string>
     <string name="error_grid_conflict">Conflicts with “%1$s”</string>
     <string name="error_alternate_weeks_taken">Those weeks are taken by an alternating course</string>
+
+    <!-- Schedule switcher sheet -->
+    <string name="switcher_export">Export</string>
+    <string name="switcher_import">Import</string>
+    <string name="switcher_new">New schedule</string>
+    <string name="date_cn_format">%2$d/%3$d/%1$d</string>
+    <string name="switcher_date_range">%1$s – %2$s</string>
+    <string name="switcher_discard_title">Discard unsaved changes?</string>
+    <string name="switcher_discard_message">Switching will discard your unsaved edits</string>
+    <string name="switcher_discard_confirm">Discard &amp; switch</string>
+    <string name="switcher_discard_cancel">Cancel</string>
+    <string name="import_read_failed">Failed to read file</string>
+    <string name="error_import_format">Invalid file format</string>
+    <string name="error_import_version">Unsupported file version</string>
+    <string name="error_import_kind">Not a schedule file</string>
 </resources>
