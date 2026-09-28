@@ -92,6 +92,7 @@ fun CourseGrid(
     editMode: Boolean = false,
     showDates: Boolean = true,
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)? = null,
+    onEditClick: ((courseId: String) -> Unit)? = null,
 ) {
     val pageHeight = (if (showDates) DateBandHeight else 0.dp) +
         GridRowHeight * timeSlots.size + TrailingScrollSpace
@@ -133,6 +134,7 @@ fun CourseGrid(
                     showDates = showDates,
                     editMode = editMode,
                     onAddClick = onAddClick,
+                    onEditClick = onEditClick,
                 )
             }
         }
@@ -160,6 +162,7 @@ private val PagerState.isSeamVisible: Boolean
  *
  * **跨节卡叠加层**：[Box] 内第二层镜像复刻行/列结构（同 weight 分列、同行高、同 CellPadding），
  * 后绘制故不透明卡片压过行分界网格线；空节点无 pointerInput，点击穿透回底层网格。
+ * 编辑态跨节卡整卡可点（含续格覆盖区域）→ 编辑该课。
  * 底层 [GridRow] 对起始格与续格留空（见其注释），两层分工不重叠。
  */
 @Composable
@@ -171,6 +174,7 @@ private fun WeekPage(
     showDates: Boolean,
     editMode: Boolean,
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)?,
+    onEditClick: ((courseId: String) -> Unit)?,
 ) {
     val density = LocalDensity.current
     val bandPx = with(density) { DateBandHeight.toPx() }
@@ -206,6 +210,7 @@ private fun WeekPage(
                     courses = content.courses,
                     editMode = editMode,
                     onAddClick = onAddClick,
+                    onEditClick = onEditClick,
                 )
             }
             Spacer(modifier = Modifier.height(TrailingScrollSpace))
@@ -250,8 +255,9 @@ private fun WeekPage(
                                         .fillMaxWidth()
                                         .wrapContentHeight(align = Alignment.Top, unbounded = true)
                                         .requiredHeight(GridRowHeight * effSpan - CellPaddingTop - CellPadding),
-                                    onClick = if (!course.active && editMode && onAddClick != null) {
-                                        { onAddClick(day, slot) }
+                                    // 编辑态整张跨节卡可点（含续格覆盖区域）→ 编辑这门课
+                                    onClick = if (editMode && onEditClick != null) {
+                                        { onEditClick(course.id) }
                                     } else {
                                         null
                                     },
@@ -348,7 +354,7 @@ private fun DateBand(
 /**
  * 一个节次行：5 个等宽单元格。
  * 普通态有课渲染课程卡片、无课露网格背景；编辑态空位渲染添加卡片，
- * 且"本周不上"的置灰卡片也可点（那一格本周空着，点它去添加，否则永远加不进去）。
+ * 已有课程卡（含本周不上的置灰卡）点击进编辑。
  * 跨节课的起始格与续格都留空——卡片由 [WeekPage] 的叠加层跨行绘制。
  */
 @Composable
@@ -357,6 +363,7 @@ private fun GridRow(
     courses: List<Course>,
     editMode: Boolean,
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)?,
+    onEditClick: ((courseId: String) -> Unit)?,
 ) {
     Row(
         modifier = Modifier
@@ -377,7 +384,7 @@ private fun GridRow(
             val course = courses.findAt(day, slot.id)
             // 续格（被跨节课覆盖）：不画课卡也不画添加卡，点击自然落空
             val covered = courses.isContinuationAt(day, slot.id)
-            // 编辑态才有添加回调；同一个回调也给置灰卡片用
+            // 编辑态才有添加回调（只给空位添加卡用；已有课卡点击走 onEditClick）
             val add: (() -> Unit)? = if (editMode && onAddClick != null && !covered) {
                 { onAddClick(day, slot) }
             } else {
@@ -399,7 +406,11 @@ private fun GridRow(
                         course = course,
                         slot = slot,
                         modifier = Modifier.fillMaxSize(),
-                        onClick = if (!course.active) add else null,
+                        onClick = if (editMode && onEditClick != null) {
+                            { onEditClick(course.id) }
+                        } else {
+                            null
+                        },
                     )
                     // span > 1 的起始格与 covered 格：留空，卡片由叠加层绘制
                 }

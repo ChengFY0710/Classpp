@@ -64,6 +64,8 @@
     <string name="edit_switch_schedule">Switch schedule</string>
     <string name="edit_cancel">Cancel</string>
     <string name="edit_add_course">Add course</string>
+    <string name="edit_edit_course">Edit course</string>
+    <string name="edit_delete">Delete</string>
     <string name="edit_cell_info">%1$s · %2$s · %3$s</string>
     <string name="edit_end_slot">End period</string>
     <string name="edit_course_name">Course name</string>

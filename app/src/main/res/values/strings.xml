@@ -64,6 +64,8 @@
     <string name="edit_switch_schedule">切换课表</string>
     <string name="edit_cancel">取消</string>
     <string name="edit_add_course">添加课程</string>
+    <string name="edit_edit_course">编辑课程</string>
+    <string name="edit_delete">删除</string>
     <string name="edit_cell_info">%1$s · %2$s · %3$s</string>
     <string name="edit_end_slot">结束节次</string>
     <string name="edit_course_name">课程名</string>

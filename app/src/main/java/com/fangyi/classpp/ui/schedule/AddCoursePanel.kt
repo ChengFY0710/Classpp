@@ -77,9 +77,13 @@ private val ColorSwatchSize = 36.dp
 private val PanelShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
 
 /**
- * 添加课程面板：[day] / [slot] 是点中的那一格；[schedule] 提供总周数与校验上下文；
- * [draftCourses] 是编辑态草稿——冲突校验针对"草稿 + 新课"，所以刚加、还没保存的课
- * 也能立刻报出冲突。
+ * 添加/编辑课程面板：[day] / [slot] 是点中的那一格（编辑态传被编辑课的星期与起始节）；
+ * [schedule] 提供总周数与校验上下文；[draftCourses] 是编辑态草稿——冲突校验针对
+ * "草稿 + 面板内容"，所以刚加、还没保存的课也能立刻报出冲突。
+ *
+ * [existing] 非空 = 编辑已有课程：字段预填、星期/起始节次锁定（仅内容可改）、
+ * 标题切换、显示删除按钮；[onDelete] 点删除即回调（直接删草稿，无二次确认——
+ * 取消编辑即可整体撤销）。两者都只作用于草稿，保存时才落库。
  *
  * **刻意不用 AlertDialog**：对话框是独立窗口，本机（Android 15+/16 的 edge-to-edge + 该 ROM）
  * 输入法接不进去（点了输入框不弹键盘）。改成和设置页同一条路——页内覆盖层，
@@ -96,14 +100,26 @@ fun AddCoursePanel(
     draftCourses: List<CourseEntry>,
     onDismiss: () -> Unit,
     onConfirm: (CourseEntry) -> Unit,
+    existing: CourseEntry? = null,
+    onDelete: (() -> Unit)? = null,
 ) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var teacher by rememberSaveable { mutableStateOf("") }
-    var location by rememberSaveable { mutableStateOf("") }
-    var selectedWeeks by rememberSaveable { mutableStateOf((1..schedule.totalWeeks).toList()) }
-    var color by rememberSaveable { mutableStateOf(CourseColor.Blue) }
-    // 结束节次：key=slot.id，重开面板（或旋转恢复后目标格变化）即复位为起始节 → 默认跨 1 节
-    var endSlotId by rememberSaveable(slot.id) { mutableStateOf(slot.id) }
+    // 编辑态从 existing 预填；面板随 if 离开组合即销毁，重开时初值重新生效
+    var name by rememberSaveable { mutableStateOf(existing?.name ?: "") }
+    var teacher by rememberSaveable { mutableStateOf(existing?.teacher ?: "") }
+    var location by rememberSaveable { mutableStateOf(existing?.location ?: "") }
+    var selectedWeeks by rememberSaveable {
+        mutableStateOf(
+            existing?.let { e -> (1..schedule.totalWeeks).filter { e.weeks.contains(it) } }
+                ?: (1..schedule.totalWeeks).toList(),
+        )
+    }
+    // 色块用渲染层枚举，落库时按 name 桥接（同 ScheduleAdapters）
+    var color by rememberSaveable {
+        mutableStateOf(existing?.let { CourseColor.valueOf(it.color.name) } ?: CourseColor.Blue)
+    }
+    // 结束节次：key=slot.id，重开面板（或旋转恢复后目标格变化）即复位；
+    // 编辑态初值取被编辑课的末节
+    var endSlotId by rememberSaveable(slot.id) { mutableStateOf(existing?.endSlot ?: slot.id) }
     var error by remember { mutableStateOf<String?>(null) }
 
     val weekdays = stringArrayResource(R.array.weekdays)
@@ -159,7 +175,8 @@ fun AddCoursePanel(
             minOf(schedule.slotCount, slot.id + ScheduleValidator.MAX_SPAN - 1),
         )
         val entry = CourseEntry(
-            id = newUuid(),
+            // 编辑态沿用原 id（写回时按 id 覆盖），添加态生成新 id
+            id = existing?.id ?: newUuid(),
             name = name.trim(),
             teacher = teacher.trim(),
             location = location.trim(),
@@ -170,8 +187,10 @@ fun AddCoursePanel(
             // 色块用的是渲染层的 CourseColor（同包、自带配色），落库时按 name 桥接（同 ScheduleAdapters）
             color = DataCourseColor.valueOf(color.name),
         )
+        // 校验集合排除被编辑的课自己：草稿里它还是旧内容，不排除会跟新内容自相冲突
+        val others = draftCourses.filterNot { it.id == existing?.id }
         val conflict = ScheduleValidator
-            .validateCourses(schedule.copy(courses = draftCourses + entry))
+            .validateCourses(schedule.copy(courses = others + entry))
             .firstOrNull()
         error = when (conflict) {
             null -> null
@@ -227,7 +246,9 @@ fun AddCoursePanel(
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 12.dp),
                 ) {
                     Text(
-                        text = stringResource(R.string.edit_add_course),
+                        text = stringResource(
+                            if (existing != null) R.string.edit_edit_course else R.string.edit_add_course,
+                        ),
                         fontSize = 20.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -359,9 +380,18 @@ fun AddCoursePanel(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        // 编辑态左侧删除（红色文字、直接生效：只删草稿，取消编辑可整体还原）
+                        if (existing != null && onDelete != null) {
+                            TextButton(onClick = onDelete) {
+                                Text(
+                                    text = stringResource(R.string.edit_delete),
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.weight(1f))
                         TextButton(onClick = onDismiss) {
                             Text(stringResource(R.string.settings_cancel))
                         }

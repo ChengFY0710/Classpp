@@ -223,8 +223,11 @@ fun ScheduleScreen(
                 if (editing) ScheduleEditSession(schedule.courses) else ScheduleEditSession.Inactive
             }
             val editSession: ScheduleEditSession? = session.takeIf { it.active }
-            // 待添加的格子：[dayOfWeek, slotId]；空 = 弹窗未打开
+            // 待添加的格子：[dayOfWeek, slotId]；空 = 添加面板未打开
             var addTarget by rememberSaveable { mutableStateOf(listOf<Int>()) }
+            // 正在编辑的课程 id（点已有课卡进入）；空 = 编辑面板未打开。
+            // 编辑条目从草稿反查，删除后反查落空 → 面板自动关闭
+            var editTargetId by rememberSaveable { mutableStateOf("") }
             // 编辑态的网格数据源：草稿 → 渲染模型（复用仓库路径同一套映射与置灰规则）
             val displayedContentForWeek: (Int) -> WeekPageContent =
                 if (editSession != null) {
@@ -253,6 +256,9 @@ fun ScheduleScreen(
             val onAddClick: (Int, TimeSlot) -> Unit = remember {
                 { day, slot -> addTarget = listOf(day, slot.id) }
             }
+            val onEditClick: (String) -> Unit = remember {
+                { courseId -> editTargetId = courseId }
+            }
 
             // 手势 → 周次：currentPage 在拖动过半时即翻转，顶栏周数胶囊与日期随之切换；
             // 写回同值时 State 自身忽略，不产生额外重组
@@ -277,8 +283,8 @@ fun ScheduleScreen(
             val scope = rememberCoroutineScope()
             val context = LocalContext.current
 
-            // 保存：先拿"草稿 + 快照"整份预检（挡掉部分落盘），再逐条写回新增的课；
-            // 全成功才退出编辑态，失败留在原地提示
+            // 保存：先拿"草稿 + 快照"整份预检（挡掉部分落盘），再按 diff 逐条写回
+            // （新增/修改 upsert 按 id 覆盖，删除逐条 remove）；全成功才退出编辑态，失败留在原地提示
             val onSaveEdit: () -> Unit = {
                 val session = editSession
                 if (session != null) {
@@ -292,7 +298,8 @@ fun ScheduleScreen(
                             Toast.LENGTH_SHORT,
                         ).show()
                     } else {
-                        val pending = session.addedCourses()
+                        val pending = session.addedCourses() + session.updatedCourses()
+                        val removals = session.removedCourseIds()
                         scope.launch {
                             var failure: ScheduleError? = null
                             for (course in pending) {
@@ -300,6 +307,15 @@ fun ScheduleScreen(
                                 if (result is OpResult.Err) {
                                     failure = result.error
                                     break
+                                }
+                            }
+                            if (failure == null) {
+                                for (id in removals) {
+                                    val result = repository.removeCourse(schedule.id, id)
+                                    if (result is OpResult.Err) {
+                                        failure = result.error
+                                        break
+                                    }
                                 }
                             }
                             if (failure != null) {
@@ -342,6 +358,7 @@ fun ScheduleScreen(
                     // 编辑态没有日期层（设计稿里日期带消失），页高相应少一条
                     showDates = editSession == null,
                     onAddClick = onAddClick,
+                    onEditClick = onEditClick,
                     modifier = Modifier
                         .fillMaxSize()
                         // 编辑态不折叠：顶栏换成了固定编辑栏，滚动连接不参与
@@ -391,11 +408,31 @@ fun ScheduleScreen(
                 }
             }
 
-            // 添加课程面板：目标格子能对上就显示（进度 / 旋转重建后 slotId 仍有效）。
-            // 页内覆盖层而非 Dialog 窗口——输入法要接得进来（见 AddCoursePanel 注释）
+            // 添加/编辑课程面板：页内覆盖层而非 Dialog 窗口——输入法要接得进来（见 AddCoursePanel 注释）。
+            // 添加：目标格子能对上就显示（进度 / 旋转重建后 slotId 仍有效）；
+            // 编辑：反查草稿条目，命中才显示（删除后条目消失 → 面板自动关闭）
             val targetDay = addTarget.firstOrNull()
             val targetSlot = addTarget.getOrNull(1)?.let { id -> timeSlots.firstOrNull { it.id == id } }
-            if (editSession != null && targetDay != null && targetSlot != null) {
+            val editingEntry = editSession?.courses?.firstOrNull { it.id == editTargetId }
+            val editingSlot = editingEntry?.let { e -> timeSlots.firstOrNull { it.id == e.startSlot } }
+            if (editSession != null && editingEntry != null && editingSlot != null) {
+                AddCoursePanel(
+                    day = editingEntry.dayOfWeek,
+                    slot = editingSlot,
+                    schedule = schedule,
+                    draftCourses = editSession.courses,
+                    existing = editingEntry,
+                    onDismiss = { editTargetId = "" },
+                    onConfirm = { entry ->
+                        editSession.update(entry.id, entry)
+                        editTargetId = ""
+                    },
+                    onDelete = {
+                        editSession.remove(editingEntry.id)
+                        editTargetId = ""
+                    },
+                )
+            } else if (editSession != null && targetDay != null && targetSlot != null) {
                 AddCoursePanel(
                     day = targetDay,
                     slot = targetSlot,

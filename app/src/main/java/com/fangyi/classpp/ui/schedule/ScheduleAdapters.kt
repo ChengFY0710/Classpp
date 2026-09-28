@@ -27,6 +27,7 @@ internal fun CourseEntry.toUiCourse(active: Boolean): Course = Course(
     color = CourseColor.valueOf(color.name),
     active = active,
     span = span,
+    id = id,
 )
 
 /**

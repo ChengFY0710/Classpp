@@ -18,6 +18,8 @@ data class Course(
     val active: Boolean = true,
     /** 连续占用节数（1 = 单节）；跨节卡由网格叠加层绘制，见 CourseGrid */
     val span: Int = 1,
+    /** 数据层 CourseEntry 的 id；编辑态点击卡片靠它回查草稿条目（mock/预览无 id、不可点） */
+    val id: String = "",
 )
 
 /** 一个固定节次；起止时间直接以卡片上显示的字符串形式保存 */
