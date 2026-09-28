@@ -1,122 +1,77 @@
-# 课表左右滑动翻周（跟手动画）
+# 底部导航切 tab · 内容平移切换
 
 ## 需求与已定选择
 
-- 在课表**内容区**左右滑动 → 切换上一周 / 下一周；**上一周、本周、下一周**的课程卡片与网格线随手指横向移动；**顶栏完全不动**。
-- 已确认：① 顶栏周数与日期在**拖动过半时**即切换；② 边界（第 1 周右滑 / 末周左滑）沿用 **Pager 系统默认拉伸反馈**，不写自定义回弹。
-- 不需要新增依赖：`HorizontalPager` 位于 `androidx.compose.foundation`，项目已在用该 artifact 的 `LazyColumn`/`background`，编译类路径已具备。
+点按底部导航栏 → 三页内容横向平移切换。已确认：
 
-## 方案：内容区套一层 Pager，每周一页
+- **连续平移**：三页像一条连续带子一起平移；跨两个 tab（日程 ⇄ 待办）时中间的课表页会快速扫过；
+- **300ms + FastOutSlowInEasing**（M3 shared axis 量级）；
+- **仅点按触发**，不加 tab 间的滑动手势——既不与刚做的「内容区左右滑动翻周」抢手势，也免掉外层可滚动容器的嵌套。
 
-关键取舍——**Pager 放在 LazyColumn 的唯一 item 里，而不是把整个网格塞进 Pager 的每一页**：
+## 现状与切入点
 
-- 纵向滚动（头部折叠、日期带渐隐、Haze 模糊）必须由三页共享。若每页各自持有 LazyColumn，拖动时相邻周会停在自己的滚动位置，与当前周错位，"跟手"就会露馅。
-- 因此 Pager 的每页 = 「日期带 + 各节次行 + 尾部留白」，**不含纵向滚动**；外层仍是一个 LazyColumn（`state` 与 `contentPadding` 原样保留）滚动整个 Pager。
-- 这样三页永远共享同一纵向位置与折叠状态，顶栏在 Pager 之外纹丝不动。
-- 副产品：现有日期带渐隐 / `blurProgress` / 折叠逻辑**逐帧等价**，无需改动（Pager 恒为唯一可视 item，`firstVisibleItemIndex == 0` 的守卫语义不变，`firstVisibleItemScrollOffset` 仍是"内容上滚量"）。
+`MainActivity` 里三页常驻组合，非选中页由 `offscreenWhenHidden` 硬放到 `width * 2` 处；`AppTab` 的枚举顺序 = 导航栏渲染顺序 = 组合顺序（Agenda 0 / Timetable 1 / Todo 2）。所以只要把"硬放的固定偏移"换成"按序号差的动态偏移"，平移就自然成立。
 
-## 改动清单（4 个文件）
+## 实现（只改 `MainActivity.kt`）
 
-### 1. `ui/schedule/ScheduleModels.kt` — 新增页面数据模型
+1. `offscreenWhenHidden` → 新 helper `tabPage(tab, progress, selected)`：偏移 = `(tab.ordinal - progress.value) * 页宽`，用 `place()` 落到该位置；未选中页仍 `clearAndSetSemantics {}`（离屏页对 TalkBack 隐藏）。
+2. 进度由 `animateFloatAsState(targetValue = selectedTab.ordinal.toFloat(), tween(300, FastOutSlowInEasing))` 提供；`selectedTab` 仍是 `rememberSaveable`，进程重建后直接落在该 tab、不补播动画。
 
 ```kotlin
-/** 一周的整页渲染数据：日期带 + 该周课程；每周一页，由 Pager 按页号取用 */
-data class WeekPageContent(
-    val week: Int,
-    val courses: List<Course>,
-    val dates: List<Date>,
-    val highlightDate: Date,
+val tabProgress = animateFloatAsState(
+    targetValue = selectedTab.ordinal.toFloat(),
+    animationSpec = tween(TabTransitionMillis, easing = FastOutSlowInEasing),
+    label = "tabProgress",
 )
-```
 
-### 2. `ui/schedule/CourseGrid.kt` — 单 item LazyColumn + Pager
-
-签名改为：
-
-```kotlin
-fun CourseGrid(
-    pagerState: PagerState,
-    timeSlots: List<TimeSlot>,
-    contentForWeek: (Int) -> WeekPageContent,   // 页周号(1..totalWeeks) → 该周内容
-    modifier: Modifier = Modifier,
-    state: LazyListState = rememberLazyListState(),
-    contentPadding: PaddingValues = PaddingValues(0.dp),
-)
-```
-
-- LazyColumn 内容从「日期带 + `items(timeSlots)` + 尾部留白」变成**单个 item**：
-  ```kotlin
-  val pageHeight = DateBandHeight + GridRowHeight * timeSlots.size + TrailingScrollSpace
-  item(key = "weekPager") {
-      HorizontalPager(
-          state = pagerState,
-          modifier = Modifier.fillMaxWidth().height(pageHeight),  // 显式高度：LazyColumn item 纵向约束无界
-          beyondViewportPageCount = 1,                             // 拖动起始帧即有相邻周内容，无空白闪跳
-          flingBehavior = PagerDefaults.flingBehavior(
-              state = pagerState,
-              pagerSnapDistance = PagerSnapDistance.atMost(1),      // 一次手势最多翻一周
-          ),
-      ) { page -> WeekPage(page + 1, remember(page, contentForWeek) { contentForWeek(page + 1) }, timeSlots, state) }
-  }
-  ```
-- `WeekPage`（新私有）：`Column { DateBand(...); timeSlots.forEach { GridRow(...) }; Spacer(TrailingScrollSpace) }`。`DateBand`/`GridRow` 内部绘制逻辑不改。
-- **接缝线**：静止时页右缘＝屏幕右缘不必画；拖动/翻页途中页右缘正是相邻周的分界，缺线会让分界处两列并成一宽列。在页级 `drawBehind` 里用 **draw 阶段**读 `pagerState.currentPageOffsetFraction`（≠0 才画）补一条右缘竖线，高度只到最后一个节次行（不含尾部留白）。draw 阶段读取不触发重组。
-- `CourseGridPreview` 改用 `WeekPageContent` + `rememberPagerState`。
-
-### 3. `ui/schedule/ScheduleScreen.kt` — Pager 状态、双向同步、内容提供者
-
-- 删除顶层 `courses`/`weekDates`（改为下面的 `contentForWeek`）；`timeSlots` 加 `remember(schedule)` 稳定实例，避免拖动期三页无谓重组。
-- 在 `else`（`schedule != null`）分支内新增：
-
-```kotlin
-// 初始页即当前周；pager 只在有课表时创建，避免首帧从第 1 周跳变到当前周
-val pagerState = rememberPagerState(initialPage = week - 1) {
-    // 刻意读 StateFlow 的 State：pageCount 闭包在创建时被捕获，读局部值会拿到过期周数
-    scheduleState.value?.totalWeeks ?: 1
+Box(Modifier.fillMaxSize()) {
+    AgendaScreen(Modifier.fillMaxSize().tabPage(AppTab.Agenda, tabProgress, selectedTab == AppTab.Agenda))
+    ScheduleScreen(modifier = Modifier.fillMaxSize().tabPage(AppTab.Timetable, tabProgress, selectedTab == AppTab.Timetable), …)
+    TodoScreen(Modifier.fillMaxSize().tabPage(AppTab.Todo, tabProgress, selectedTab == AppTab.Todo))
+    BottomNavBar(…)          // 在页之上，位置不动
+    if (showSettings) SettingsScreen(…)
 }
 
-// 每周页内容：纯内存读（无 I/O），provider 随 schedule 重建
-val contentForWeek: (Int) -> WeekPageContent = remember(schedule, currentWeek, today) {
-    { pageWeek -> WeekPageContent(...) }
-}
+/**
+ * tab 页横向平移：按「自身序号 − 动画进度」× 页宽 定位，选中页恒在 0，
+ * 三页因此像一条带子一起平移（旧页滑出、新页滑入，跨两 tab 时中间页扫过）。
+ *
+ * 三页常驻组合、只挪位置，不重建：若按 key 重建课表页，首帧 headerHeight
+ * 回落到估算值再被校正，紧贴头部的日期带会明显跳闪一次。
+ * 屏幕外的页面被窗口裁剪（不参与绘制），位置不在命中范围内（收不到点击/滚动），
+ * 且对 TalkBack 隐藏。
+ *
+ * 动画值以 [State] 传入并在 measure 阶段读取：整段动画只重排，不重组（不带着三页调用点一起重组）。
+ */
+private const val TabTransitionMillis = 300
 
-// 手势 → 周次：currentPage 在拖动过半时翻转（已确认），顶栏周数/日期随之切换；
-// 值未变时写回被 State 自身忽略，不产生额外重组
-LaunchedEffect(pagerState) {
-    snapshotFlow { pagerState.currentPage }.collect { selectedWeek = it + 1 }
-}
-
-// 周次 → 翻页：周数弹窗、返回本周、学期范围钳制；相邻周做动画，跨多周直接落位
-LaunchedEffect(week) {
-    val target = week - 1
-    val current = pagerState.currentPage
-    if (current != target) {
-        if (abs(current - target) == 1) pagerState.animateScrollToPage(target) else pagerState.scrollToPage(target)
+private fun Modifier.tabPage(tab: AppTab, progress: State<Float>, selected: Boolean): Modifier {
+    val placed = this.layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints)
+        val x = ((tab.ordinal - progress.value) * placeable.width).roundToInt()
+        layout(placeable.width, placeable.height) { placeable.place(x, 0) }
     }
+    return if (selected) placed else placed.clearAndSetSemantics {}
 }
 ```
 
-- 页内 `highlightDate` 规则与顶栏 `headerDate` 一致（本周＝今天、其它周＝该周周一），按 `pageWeek == currentWeek` 判定，保证选中页高亮列与顶栏一致。
-- 现有 `LaunchedEffect(week) { if (selectedWeek != week) selectedWeek = week }`（初始化 + 钳制）保留不动。
+要点说明：
 
-### 4. 明确的设计决定
-
-- **日期带跟手滑动**（不留在顶栏）。它是每周数据（日号每周不同），且它画的竖线正属于"边线"；若它不动，拖动时它的竖线会与各行竖线在接缝处断开。顶栏的星期行（周一…周五）保持不动，拖动时表现为日号从固定星期标签下滑过。
-- 一次手势最多翻一周（`atMost(1)`），对应"上一周/下一周"；若该 API 在本版本签名不符，则退回默认 fling（默认同样限一周），编译期即可确认。
+- 用 `place()` 而不是 `graphicsLayer { translationX }`：placement 是真实布局属性，坐标上报与 Haze 的背景采样都会跟着走，不会出现"页面动了、模糊背景没动"的错位。
+- 动画值以 `State<Float>` 传进 modifier 内读取，而非在组合作用域里读后当参数传：否则每帧会重组整个 `MainActivity` 内容（连带三页调用点）。
+- 新增导入：`animation.core.{animateFloatAsState, tween, FastOutSlowInEasing}`、`runtime.State`、`kotlin.math.roundToInt`；`offscreenWhenHidden` 连同其注释一并迁移删除（全项目仅此处引用）。
 
 ## 验证
 
-1. `.\gradlew.bat :app:compileDebugKotlin`（若有 API 签名差异，在此暴露并修正）。
-2. 手动清单：
-   - 慢拖：卡片与网格线跟手横移，顶栏（图标行/日期行/星期行/胶囊）纹丝不动；拖过一半时顶栏周数与日期切换；松手回弹 / 落位两种走向都对。
-   - 接缝：拖动途中相邻周分界处有竖线，两列不被并成一宽列；落位后无多余边线闪动。
-   - 纵向不回归：上滑折叠头部 + 日期带渐隐 + 模糊渐入；下滑展开顺序（列表先到顶、日期带先恢复）不变；滚动范围与改动前一致。
-   - 三页共享滚动：滚到中段再左右拖动，相邻周与当前周处于同一纵向位置。
-   - 联动：周数弹窗选远处周（直接落位）、选相邻周（滑动动画）、返回本周；学期末/学期前首屏落在正确周且不闪跳。
-   - 边界：第 1 周右滑 / 末周左滑表现为系统拉伸反馈，不越界。
+1. `.\gradlew.bat :app:compileDebugKotlin`、`:app:testDebugUnitTest`。
+2. 重新打包并就地安装到已连接设备（沿用 `adb install -r`，不清数据）。
+3. 上机清单：
+   - 点相邻 tab：方向与 tab 左右一致，旧页滑出、新页滑入；导航栏自身不动。
+   - 点日程 ⇄ 待办：课表页快速扫过（预期）。
+   - 课表页在滚动/折叠状态下切走再切回：滚动位置、折叠、周次都不丢，回来不闪。
+   - 滚动过（头部已模糊）再切 tab：Haze 背景模糊不对齐/拖影则反馈，我改用另一种偏移方式。
+   - 设置页覆盖层打开时切 tab 不受影响。
 
-## 风险与回退
+## 备注
 
-- 若本版本 `PagerState.currentPage` 不在拖动过半时翻转（而在落位后），顶栏就退化为"停稳后更新"；届时改用 `currentPageOffsetFraction` 推导预测周号，一处改动的回退路径。
-- 不涉及数据层与既有单元测试；仅 3 个 UI 文件 + 1 个模型文件。
-- 可选收尾：按本仓库既有约定，把本计划落到 `.mimocode/plans/`。
+若之后觉得"跨两 tab 时中间页扫过"不舒服，可改为只走一屏的 shared axis 风格（旧页滑出一屏、新页滑入一屏、中间页不出场），代价是多一层显隐与层级处理；随时可换。

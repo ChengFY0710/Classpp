@@ -7,10 +7,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +34,7 @@ import com.fangyi.classpp.ui.placeholder.TodoScreen
 import com.fangyi.classpp.ui.schedule.ScheduleScreen
 import com.fangyi.classpp.ui.settings.SettingsScreen
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,6 +53,17 @@ class MainActivity : ComponentActivity() {
                 var showSettings by rememberSaveable { mutableStateOf(false) }
                 val repository = rememberScheduleRepository()
 
+                // tab 平移进度（浮点序号）：只在各页 measure 阶段被读取，
+                // 整段动画每帧只重排、不重组
+                val tabProgress = animateFloatAsState(
+                    targetValue = selectedTab.ordinal.toFloat(),
+                    animationSpec = tween(
+                        durationMillis = TabTransitionMillis,
+                        easing = FastOutSlowInEasing,
+                    ),
+                    label = "tabProgress",
+                )
+
                 // 一次性存储降级提示：get() 返回即 bootstrap 完成，loadState 已定型
                 LaunchedEffect(repository) {
                     val repo = repository ?: return@LaunchedEffect
@@ -62,25 +78,37 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Box(Modifier.fillMaxSize()) {
-                    // 三个页面常驻组合，切 tab 仅将非选中页移出窗口。
+                    // 三个页面常驻组合，切 tab 只横向平移（见 tabPage）：
                     // 若用 SaveableStateProvider 按 key 重建课表页，首帧 headerHeight
                     // 回落到估算值再被校正，紧贴头部的日期带会明显跳闪一次。
                     AgendaScreen(
                         Modifier
                             .fillMaxSize()
-                            .offscreenWhenHidden(selectedTab != AppTab.Agenda),
+                            .tabPage(
+                                tab = AppTab.Agenda,
+                                progress = tabProgress,
+                                selected = selectedTab == AppTab.Agenda,
+                            ),
                     )
                     ScheduleScreen(
                         modifier = Modifier
                             .fillMaxSize()
-                            .offscreenWhenHidden(selectedTab != AppTab.Timetable),
+                            .tabPage(
+                                tab = AppTab.Timetable,
+                                progress = tabProgress,
+                                selected = selectedTab == AppTab.Timetable,
+                            ),
                         repository = repository,
                         onOpenSettings = { showSettings = true },
                     )
                     TodoScreen(
                         Modifier
                             .fillMaxSize()
-                            .offscreenWhenHidden(selectedTab != AppTab.Todo),
+                            .tabPage(
+                                tab = AppTab.Todo,
+                                progress = tabProgress,
+                                selected = selectedTab == AppTab.Todo,
+                            ),
                     )
                     BottomNavBar(
                         selectedTab = selectedTab,
@@ -115,21 +143,28 @@ private fun rememberScheduleRepository(): ScheduleRepository? {
     return repository
 }
 
+/** tab 平移时长：Material shared axis 同量级 */
+private const val TabTransitionMillis = 300
+
 /**
- * 隐藏页面时把该页整体放置到窗口之外：组合状态全程存活（切 tab 不重建、不闪烁），
- * 离屏位置不参与绘制（被窗口裁剪）也不参与命中测试（后台页收不到点击/滚动）。
+ * tab 页横向平移：按「自身序号 − 动画进度」× 页宽 定位，选中页恒在 0，
+ * 三页像一条连续带子一起平移——旧页滑出、新页滑入；跨两个 tab 时中间页会扫过。
+ *
+ * 三页常驻组合、只挪位置、不重建（见调用处注释：重建会让课表页首帧跳闪）。
+ * 非选中页落在屏幕外：被窗口裁剪故不参与绘制，位置不在命中范围内故收不到点击/滚动，
+ * 且对 TalkBack 隐藏。
+ *
+ * [progress] 以 [State] 传入并在 measure 阶段读取：动画期间只重排，不重组。
  */
-private fun Modifier.offscreenWhenHidden(hidden: Boolean): Modifier =
-    if (!hidden) {
-        this
-    } else {
-        this
-            .layout { measurable, constraints ->
-                val placeable = measurable.measure(constraints)
-                layout(placeable.width, placeable.height) {
-                    placeable.place(placeable.width * 2, 0)
-                }
-            }
-            // 屏幕外的内容对 TalkBack 隐藏
-            .clearAndSetSemantics {}
+private fun Modifier.tabPage(
+    tab: AppTab,
+    progress: State<Float>,
+    selected: Boolean,
+): Modifier {
+    val placed = this.layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints)
+        val x = ((tab.ordinal - progress.value) * placeable.width).roundToInt()
+        layout(placeable.width, placeable.height) { placeable.place(x, 0) }
     }
+    return if (selected) placed else placed.clearAndSetSemantics {}
+}
