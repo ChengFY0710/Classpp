@@ -76,6 +76,9 @@ import kotlinx.coroutines.launch
 
 private val SectionSpacing = 20.dp
 
+/** 底部额外留白：末屏内容可继续上滑一段（滑到顶栏之后仍有一段余量） */
+private val BottomScrollSlack = 120.dp
+
 /**
  * 设置页：全屏覆盖层（由 MainActivity 组合在底部导航之后），返回键/关闭按钮经 [onClose] 退出。
  *
@@ -143,7 +146,10 @@ fun SettingsScreen(
                             .hazeSource(hazeState)
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = SectionSpacing)
-                            .padding(top = topBarHeight, bottom = navBarPadding + SectionSpacing),
+                            .padding(
+                                top = topBarHeight,
+                                bottom = navBarPadding + SectionSpacing + BottomScrollSlack,
+                            ),
                         verticalArrangement = Arrangement.spacedBy(SectionSpacing),
                     ) {
                         error?.let { ErrorBox(it.toMessage(schedule?.daysPerWeek ?: 5)) }

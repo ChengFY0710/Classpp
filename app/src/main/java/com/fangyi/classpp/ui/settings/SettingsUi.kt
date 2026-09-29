@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -105,10 +106,17 @@ internal fun SettingsTopBar(
             IconButton(
                 onClick = onBack,
                 modifier = Modifier
-                    .padding(start = 18.dp)
+                    .padding(start = 20.dp)
                     .size(40.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                    // 圆形投影（同 BottomNavBar 胶囊）：graphicsLayer 在 draw 阶段读值，不引发重组；
+                    // clip 收在 layer 内，投影才不会被外层裁掉
+                    .graphicsLayer {
+                        shape = CircleShape
+                        clip = true
+                        shadowElevation = 45.dp.toPx()
+                        spotShadowColor = Color.Black.copy(alpha = 0.2f)
+                    }
+                    .background(MaterialTheme.colorScheme.surface, CircleShape),
             ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_arrow_left),
