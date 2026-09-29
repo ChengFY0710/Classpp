@@ -4,6 +4,7 @@ import com.fangyi.classpp.data.model.DEFAULT_SLOTS
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeSlotDef
+import com.fangyi.classpp.data.model.appendSlot
 import com.fangyi.classpp.data.model.defaultSlotsFor
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
@@ -196,6 +197,35 @@ class ScheduleRepositoryTest {
         // 周二起始
         val err = r.setTerm(id, IsoDate.parse("2026-03-03"), TestTermEnd).assertErr()
         assertTrue(err is ScheduleError.TermNotMonday)
+    }
+
+    @Test
+    fun `setTerm extending weeks keeps courses and raises totalWeeks`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+        r.upsertCourse(id, testCourse(id = "c")).assertOk()
+
+        r.setTerm(id, TestTermStart, TestTermEnd + 14 * 7).assertOk()
+
+        val s = r.schedules.value.single()
+        assertEquals(30, s.totalWeeks)
+        assertEquals(TestTermStart, s.termStart)
+        assertEquals(1, s.courses.size)
+        // 落盘后重开一致
+        assertEquals(30, repo().schedules.value.single().totalWeeks)
+    }
+
+    @Test
+    fun `setSlots appending sixth period succeeds`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+
+        r.setSlots(id, appendSlot(DEFAULT_SLOTS)!!).assertOk()
+
+        val s = r.schedules.value.single()
+        assertEquals(6, s.slotCount)
+        assertEquals(DEFAULT_SLOTS, s.slots.take(5))
+        assertEquals(TimeSlotDef("21:20", "23:00"), s.slots.last())
     }
 
     @Test

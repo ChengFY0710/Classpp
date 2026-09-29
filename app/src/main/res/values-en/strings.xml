@@ -18,7 +18,7 @@
         <item>Sat</item>
         <item>Sun</item>
     </string-array>
-    <string name="settings_title">Settings</string>
+    <string name="settings_title">Schedule settings</string>
     <string name="cd_settings_close">Close</string>
     <string name="empty_title">No schedule yet</string>
     <string name="empty_desc">Create a schedule to start recording classes</string>
@@ -27,16 +27,17 @@
     <string name="schedule_name_hint">e.g. Spring 2026</string>
     <string name="term_start">Term start</string>
     <string name="term_end">Term end</string>
+    <string name="term_weeks">Total weeks</string>
+    <string name="term_weeks_value">%1$d weeks</string>
+    <string name="term_weeks_range">1–30 weeks</string>
     <string name="section_term">Term</string>
     <string name="section_days">Days per week</string>
     <string name="section_slots">Slots and times</string>
     <string name="section_display">Display</string>
     <string name="days_5">5 days</string>
     <string name="days_7">7 days</string>
-    <string name="days_5_desc">Mon–Fri</string>
-    <string name="days_7_desc">Mon–Sun</string>
     <string name="slot_count_format">%1$d periods per day</string>
-    <string name="slot_reset_desc">Changing the period count resets period times</string>
+    <string name="slot_overflow_desc">Not enough room in the day to add another period</string>
     <string name="slot_format">Period %1$d</string>
     <string name="slot_range_format">Periods %1$d-%2$d</string>
     <string name="show_inactive">Show classes not held this week</string>

@@ -17,3 +17,16 @@ fun snapTermEnd(date: IsoDate, daysPerWeek: Int): IsoDate = if (daysPerWeek == 7
 } else {
     date + (5 - date.isoDayOfWeek())
 }
+
+/** 学期周数选择允许范围（周数对话框的数字校验边界） */
+const val TERM_WEEKS_MIN = 1
+const val TERM_WEEKS_MAX = 30
+
+/**
+ * 保持开始日不变，把结束日换算到 [weeks] 整周：结束日只整周平移，
+ * 星期几不变（周五仍周五、周日仍周日），整周边界天然保持。
+ */
+fun endForTotalWeeks(start: IsoDate, end: IsoDate, weeks: Int): IsoDate {
+    val currentWeeks = ((end - start).toInt() / 7) + 1   // 与 Schedule.totalWeeks 同式
+    return end + (weeks - currentWeeks) * 7
+}

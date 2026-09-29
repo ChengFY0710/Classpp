@@ -163,5 +163,24 @@ fun defaultSlotsFor(count: Int): List<TimeSlotDef> {
     }
 }
 
+/** 一天最后一分钟数（23:59）；追加节的结束不得越过 */
+private const val LAST_MINUTE_OF_DAY = 1439
+
+/** 追加节时长（分钟），与 [DEFAULT_SLOTS] 各节一致 */
+private const val APPEND_SLOT_MINUTES = 100
+
+/**
+ * 保留现有 [slots] 并在末尾追加一节：新节开始 = 上一节结束 + [DEFAULT_BREAK_MINUTES]，
+ * 时长 [APPEND_SLOT_MINUTES]。空表、末节时间文本非法、或新节结束晚于 23:59 时返回 null
+ * （调用方据此禁用「＋」；节数上限由调用方按 ScheduleValidator.MAX_SLOTS 把控）。
+ */
+fun appendSlot(slots: List<TimeSlotDef>): List<TimeSlotDef>? {
+    val lastEnd = slots.lastOrNull()?.let { TimeText.parseMinutes(it.endTime) } ?: return null
+    val start = lastEnd + DEFAULT_BREAK_MINUTES
+    val end = start + APPEND_SLOT_MINUTES
+    if (end > LAST_MINUTE_OF_DAY) return null
+    return slots + TimeSlotDef(TimeText.format(start), TimeText.format(end))
+}
+
 /** 新 UUID（课表 id / 课程 id 统一来源） */
 fun newUuid(): String = UUID.randomUUID().toString()
