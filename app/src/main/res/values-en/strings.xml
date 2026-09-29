@@ -37,6 +37,8 @@
     <string name="days_5">5 days</string>
     <string name="days_7">7 days</string>
     <string name="slot_count_format">%1$d periods per day</string>
+    <string name="slot_decrease">Remove one</string>
+    <string name="slot_increase">Add one</string>
     <string name="slot_overflow_desc">Not enough room in the day to add another period</string>
     <string name="slot_format">Period %1$d</string>
     <string name="slot_range_format">Periods %1$d-%2$d</string>
@@ -101,6 +103,7 @@
     <string name="switcher_import">Import</string>
     <string name="switcher_new">New schedule</string>
     <string name="date_cn_format">%2$d/%3$d/%1$d</string>
+    <string name="date_hyphen_format">%1$d-%2$d-%3$d</string>
     <string name="switcher_date_range">%1$s – %2$s</string>
     <string name="switcher_discard_title">Discard unsaved changes?</string>
     <string name="switcher_discard_message">Switching will discard your unsaved edits</string>

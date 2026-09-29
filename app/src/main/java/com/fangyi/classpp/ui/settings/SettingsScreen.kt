@@ -2,41 +2,30 @@ package com.fangyi.classpp.ui.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
@@ -48,6 +37,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
@@ -72,9 +63,12 @@ import com.fangyi.classpp.ui.schedule.snapToMonday
 import com.fangyi.classpp.ui.schedule.toPickerMillis
 import com.fangyi.classpp.ui.schedule.toIsoDate
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.SecondaryTextColor
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
 
-private val SectionSpacing = 16.dp
+private val SectionSpacing = 20.dp
 
 /**
  * 设置页：全屏覆盖层（由 MainActivity 组合在底部导航之后），返回键/关闭按钮经 [onClose] 退出。
@@ -105,26 +99,24 @@ fun SettingsScreen(
 
     Scaffold(
         modifier = modifier,
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.settings_title)) },
-                navigationIcon = {
-                    // 零新依赖（项目无 material-icons）：文本返回按钮
-                    TextButton(onClick = onClose) {
-                        Text(stringResource(R.string.cd_settings_close))
-                    }
-                },
-            )
-        },
     ) { innerPadding ->
-        Column(
+        // 顶栏叠在内容之上：内容整屏铺开（hazeSource），首屏经 topBarHeight 内缩到顶栏之下，
+        // 上滑时从顶栏背后滚过，顶栏用 Haze 对其做自上而下的渐变背景模糊
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
+            val hazeState = rememberHazeState()
+            var topBarHeight by remember { mutableStateOf(0.dp) }
+            val density = LocalDensity.current
+
             when {
+                // 采样源始终存在：加载态也挂 hazeSource，避免顶栏背后无源可采
                 repository == null -> Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .hazeSource(hazeState),
                     contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator()
@@ -132,60 +124,82 @@ fun SettingsScreen(
 
                 else -> {
                     val schedule = repository.activeSchedule.collectAsState().value
-                    error?.let { ErrorBox(it.toMessage(schedule?.daysPerWeek ?: 5)) }
-                    if (schedule == null) {
-                        CreateScheduleContent(
-                            onConfirm = { name, start, end ->
-                                error = null
-                                scope.launch {
-                                    when (val result = repository.createSchedule(name, start, end)) {
-                                        is ReadResult.Ok -> onClose()
-                                        is ReadResult.Err -> error = result.error
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .hazeSource(hazeState)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = SectionSpacing)
+                            .padding(top = topBarHeight, bottom = SectionSpacing),
+                        verticalArrangement = Arrangement.spacedBy(SectionSpacing),
+                    ) {
+                        error?.let { ErrorBox(it.toMessage(schedule?.daysPerWeek ?: 5)) }
+                        if (schedule == null) {
+                            CreateScheduleContent(
+                                onConfirm = { name, start, end ->
+                                    error = null
+                                    scope.launch {
+                                        when (val result = repository.createSchedule(name, start, end)) {
+                                            is ReadResult.Ok -> onClose()
+                                            is ReadResult.Err -> error = result.error
+                                        }
                                     }
-                                }
-                            },
-                        )
-                    } else {
-                        val current = schedule
-                        SettingsContent(
-                            schedule = current,
-                            onTerm = { start, end ->
-                                error = null
-                                scope.launch { submit(repository.setTerm(current.id, start, end)) }
-                            },
-                            onDays = { days ->
-                                error = null
-                                scope.launch {
-                                    // 切 7 天而结束日非周日：先仅延长至同周周日（只加周不缩周，
-                                    // 结构上不可能波及已有课程），再切天数，免去用户两步操作
-                                    val endSunday = current.termEnd.isoDayOfWeek() != 7 &&
-                                        days == 7
-                                    if (endSunday) {
-                                        val extended = current.termEnd +
-                                            (7 - current.termEnd.isoDayOfWeek())
-                                        submit(repository.setTerm(current.id, current.termStart, extended))
-                                        if (error == null) {
+                                },
+                            )
+                        } else {
+                            val current = schedule
+                            SettingsContent(
+                                schedule = current,
+                                onTerm = { start, end ->
+                                    error = null
+                                    scope.launch { submit(repository.setTerm(current.id, start, end)) }
+                                },
+                                onDays = { days ->
+                                    error = null
+                                    scope.launch {
+                                        // 切 7 天而结束日非周日：先仅延长至同周周日（只加周不缩周，
+                                        // 结构上不可能波及已有课程），再切天数，免去用户两步操作
+                                        val endSunday = current.termEnd.isoDayOfWeek() != 7 &&
+                                            days == 7
+                                        if (endSunday) {
+                                            val extended = current.termEnd +
+                                                (7 - current.termEnd.isoDayOfWeek())
+                                            submit(repository.setTerm(current.id, current.termStart, extended))
+                                            if (error == null) {
+                                                submit(repository.setDaysPerWeek(current.id, days))
+                                            }
+                                        } else {
                                             submit(repository.setDaysPerWeek(current.id, days))
                                         }
-                                    } else {
-                                        submit(repository.setDaysPerWeek(current.id, days))
                                     }
-                                }
-                            },
-                            onSlots = { slots ->
-                                error = null
-                                scope.launch { submit(repository.setSlots(current.id, slots)) }
-                            },
-                            onShowInactive = { show ->
-                                error = null
-                                scope.launch {
-                                    submit(repository.setShowInactiveCourses(current.id, show))
-                                }
-                            },
-                        )
+                                },
+                                onSlots = { slots ->
+                                    error = null
+                                    scope.launch { submit(repository.setSlots(current.id, slots)) }
+                                },
+                                onShowInactive = { show ->
+                                    error = null
+                                    scope.launch {
+                                        submit(repository.setShowInactiveCourses(current.id, show))
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             }
+
+            SettingsTopBar(
+                title = stringResource(R.string.settings_title),
+                onBack = onClose,
+                hazeState = hazeState,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .onGloballyPositioned { coords ->
+                        // 顶栏实测高度 = 内容首屏内缩量（px → dp）
+                        topBarHeight = with(density) { coords.size.height.toFloat().toDp() }
+                    },
+            )
         }
     }
 }
@@ -220,11 +234,9 @@ private fun CreateScheduleContent(
     var end by remember { mutableStateOf(defaultStart + TERM_DEFAULT_DAYS) }
     var picking by remember { mutableStateOf<DateTarget?>(null) }
 
+    // 滚动与页面内边距统一由 SettingsScreen 外层承担（顶栏需整屏采样）
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = SectionSpacing, vertical = SectionSpacing),
+        modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(SectionSpacing),
     ) {
         OutlinedTextField(
@@ -299,14 +311,12 @@ private fun SettingsContent(
     // 正在编辑的节次时间；null = 无弹窗（每次确认/取消都回到 null，保证重开时状态新鲜）
     var editingSlot by remember { mutableStateOf<SlotEdit?>(null) }
 
+    // 滚动与页面内边距统一由 SettingsScreen 外层承担（顶栏需整屏采样）
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = SectionSpacing, vertical = SectionSpacing),
+        modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(SectionSpacing),
     ) {
-        // TermDatesCard 自带 SectionCard 容器，勿再包一层（否则标题重复）
+        // TermDatesCard 自带分组与卡片，勿再包一层（否则标题重复）
         TermDatesCard(
             start = schedule.termStart,
             end = schedule.termEnd,
@@ -317,122 +327,88 @@ private fun SettingsContent(
             },
         )
 
-        SectionCard(title = stringResource(R.string.section_days)) {
-            val days = schedule.daysPerWeek
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = days == 5,
-                    onClick = { if (days != 5) onDays(5) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                ) {
-                    Text(stringResource(R.string.days_5))
-                }
-                SegmentedButton(
-                    selected = days == 7,
-                    onClick = { if (days != 7) onDays(7) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                ) {
-                    Text(stringResource(R.string.days_7))
-                }
+        SettingsSection(title = stringResource(R.string.section_days)) {
+            SettingsCard {
+                SegmentedChoice(
+                    options = listOf(
+                        stringResource(R.string.days_5),
+                        stringResource(R.string.days_7),
+                    ),
+                    selectedIndex = if (schedule.daysPerWeek == 7) 1 else 0,
+                    onSelect = { index -> onDays(if (index == 1) 7 else 5) },
+                )
             }
         }
 
-        SectionCard(title = stringResource(R.string.section_slots)) {
-            // ＋：保留现有 slots 追加一节（上一节结束 +30 分钟课间、时长 100 分钟）；
-            // －：保留前缀裁剪（合法表的前缀必合法，且保留用户已改时间）
+        SettingsSection(title = stringResource(R.string.section_slots)) {
+            // 加：保留现有 slots 追加一节（上一节结束 +30 分钟课间、时长 100 分钟）；
+            // 减：保留前缀裁剪（合法表的前缀必合法，且保留用户已改时间）
             val appended = appendSlot(schedule.slots)
             val canAdd = appended != null && schedule.slotCount < 12   // 上限沿用 R5
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.slot_count_format, schedule.slotCount),
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                OutlinedButton(
-                    onClick = {
-                        if (schedule.slotCount > 1) onSlots(schedule.slots.dropLast(1))
+            SettingsCard {
+                SettingRow(
+                    label = stringResource(R.string.slot_count_format, schedule.slotCount),
+                    showChevron = false,
+                    trailing = {
+                        TextButton(
+                            onClick = {
+                                if (schedule.slotCount > 1) onSlots(schedule.slots.dropLast(1))
+                            },
+                            enabled = schedule.slotCount > 1,
+                        ) {
+                            Text(stringResource(R.string.slot_decrease))
+                        }
+                        TextButton(
+                            onClick = { appended?.let { s -> if (schedule.slotCount < 12) onSlots(s) } },
+                            enabled = canAdd,
+                        ) {
+                            Text(stringResource(R.string.slot_increase))
+                        }
                     },
-                    enabled = schedule.slotCount > 1,
-                ) {
-                    Text("－")
-                }
-                Spacer(Modifier.padding(horizontal = 4.dp))
-                OutlinedButton(
-                    onClick = { appended?.let { s -> if (schedule.slotCount < 12) onSlots(s) } },
-                    enabled = canAdd,
-                ) {
-                    Text("＋")
-                }
-            }
-            // 仅在无法再加节（新节会越过 23:59）时提示禁用原因
-            if (appended == null) {
-                Text(
-                    text = stringResource(R.string.slot_overflow_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
                 )
+                // 仅在无法再加节（新节会越过 23:59）时提示禁用原因
+                if (appended == null) {
+                    Text(
+                        text = stringResource(R.string.slot_overflow_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
-            HorizontalDivider()
-            schedule.slots.forEachIndexed { index, slot ->
-                if (index > 0) Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.slot_format, index + 1),
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        text = slot.startTime,
-                        modifier = Modifier
-                            .clickable { editingSlot = SlotEdit(index, isStart = true) }
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        text = " – ",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = slot.endTime,
-                        modifier = Modifier
-                            .clickable { editingSlot = SlotEdit(index, isStart = false) }
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
+            SettingsCard {
+                schedule.slots.forEachIndexed { index, slot ->
+                    SettingRow(
+                        label = stringResource(R.string.slot_format, index + 1),
+                        showChevron = false,
+                        trailing = {
+                            TimeChip(slot.startTime) { editingSlot = SlotEdit(index, isStart = true) }
+                            Spacer(Modifier.width(8.dp))
+                            TimeChip(slot.endTime) { editingSlot = SlotEdit(index, isStart = false) }
+                        },
                     )
                 }
             }
         }
 
-        SectionCard(title = stringResource(R.string.section_display)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.show_inactive),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    Text(
-                        text = stringResource(R.string.show_inactive_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = schedule.showInactiveCourses,
-                    onCheckedChange = onShowInactive,
+        SettingsSection(title = stringResource(R.string.section_display)) {
+            SettingsCard {
+                SettingRow(
+                    label = stringResource(R.string.show_inactive),
+                    showChevron = false,
+                    trailing = {
+                        Switch(
+                            checked = schedule.showInactiveCourses,
+                            onCheckedChange = onShowInactive,
+                        )
+                    },
                 )
             }
+            Text(
+                text = stringResource(R.string.show_inactive_desc),
+                modifier = Modifier.padding(start = 4.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = SecondaryTextColor,
+            )
         }
     }
 
@@ -524,24 +500,24 @@ private fun TermDatesCard(
     val totalWeeks = ((end - start).toInt() / 7) + 1
     var pickingWeeks by remember { mutableStateOf(false) }
 
-    SectionCard(title = stringResource(R.string.section_term)) {
-        DateRow(
-            label = stringResource(R.string.term_start),
-            value = start.toString(),
-            onClick = onPickStart,
-        )
-        Spacer(Modifier.height(8.dp))
-        DateRow(
-            label = stringResource(R.string.term_end),
-            value = end.toString(),
-            onClick = onPickEnd,
-        )
-        Spacer(Modifier.height(8.dp))
-        DateRow(
-            label = stringResource(R.string.term_weeks),
-            value = stringResource(R.string.term_weeks_value, totalWeeks),
-            onClick = { pickingWeeks = true },
-        )
+    SettingsSection(title = stringResource(R.string.section_term)) {
+        SettingsCard {
+            SettingRow(
+                label = stringResource(R.string.term_start),
+                value = start.toSettingsDateText(),
+                onClick = onPickStart,
+            )
+            SettingRow(
+                label = stringResource(R.string.term_end),
+                value = end.toSettingsDateText(),
+                onClick = onPickEnd,
+            )
+            SettingRow(
+                label = stringResource(R.string.term_weeks),
+                value = stringResource(R.string.term_weeks_value, totalWeeks),
+                onClick = { pickingWeeks = true },
+            )
+        }
     }
 
     // 周数对话框：仅打开期间进入组合（关闭即出组合，重开以当前周数重置输入）；
@@ -583,62 +559,6 @@ private fun TermDatesCard(
                 }
             },
         )
-    }
-}
-
-/** 设置行：左标签、右日期值，整行可点 */
-@Composable
-private fun DateRow(
-    label: String,
-    value: String,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-/** 分区卡片：标题 + 圆角卡容器（内容自带排版） */
-@Composable
-private fun SectionCard(
-    title: String,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = title,
-            modifier = Modifier.padding(bottom = 8.dp),
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                content = content,
-            )
-        }
     }
 }
 

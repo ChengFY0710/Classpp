@@ -9,13 +9,14 @@ val BrandBlue = Color(0xFF0077FF) // 品牌原色，仅无文字承载场景（�
 val Primary = Color(0xFF006FEF)
 val OnPrimary = Color(0xFFFFFFFF)
 val PrimaryContainer = Color(0x1F006FEF)
+val PrimaryContainerNontrans = Color(0xFFE0EDFD)
 val OnPrimaryContainer = Color(0x1A000000)
 
 val Secondary = Color(0xFF4D5A68)
 val OnSecondary = Color(0xFFFFFFFF)
 val SecondaryContainer = Color(0xFFDFE4EA)
 val OnSecondaryContainer = Color(0xFF101820)
-
+val SecondaryTextColor = Color(0xFFABAFB4)
 val Tertiary = Color(0xFF00696E)
 val OnTertiary = Color(0xFFFFFFFF)
 val TertiaryContainer = Color(0xFFCFEBED)

@@ -367,7 +367,7 @@ private fun CreateScheduleForm(
     }
 }
 
-/** 表单日期行：左标签、右日期值，整行可点（同设置页 DateRow） */
+/** 表单日期行：左标签、右日期值，整行可点 */
 @Composable
 private fun FormDateRow(
     label: String,
