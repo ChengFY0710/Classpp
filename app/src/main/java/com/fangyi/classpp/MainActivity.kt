@@ -14,7 +14,9 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -143,8 +145,21 @@ class MainActivity : ComponentActivity() {
                             onTabSelected = { if (!editing) selectedTab = it },
                         )
                     }
-                    // 最后组合 ⇒ 绘制与命中测试覆盖三屏与底部导航（课表页仅被覆盖、不重建）
-                    if (showSettings) {
+                    // 最后组合 ⇒ 绘制与命中测试覆盖三屏与底部导航（课表页仅被覆盖、不重建）。
+                    // 进场整页从右缘滑入 + 淡入（页面 push 转场，呼应左上角返回箭头的子页语义）；
+                    // AnimatedVisibility 退场期间仍保持组合，返回键/返回按钮经 onClose 幂等关闭
+                    AnimatedVisibility(
+                        visible = showSettings,
+                        enter = slideInHorizontally(
+                            // 从自身宽度右侧起步：整页右进
+                            animationSpec = tween(SettingsEnterMillis, easing = FastOutSlowInEasing),
+                        ) { it } + fadeIn(tween(SettingsEnterMillis)),
+                        exit = slideOutHorizontally(
+                            // 滑向自身宽度右侧：整页右出；退场略快于进场，收场更利落
+                            animationSpec = tween(SettingsExitMillis, easing = FastOutSlowInEasing),
+                        ) { it } + fadeOut(tween(SettingsExitMillis)),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
                         SettingsScreen(
                             onClose = { showSettings = false },
                             repository = repository,
@@ -184,6 +199,12 @@ private const val TabTransitionMillis = 400
  * 想更快收场可下调（300ms 左右），曲线不变。
  */
 internal const val EditTransitionMillis = 360
+
+/** 设置页进场时长：整页右滑入 + 淡入，与编辑栏同节奏（FastOutSlowIn 360ms） */
+private const val SettingsEnterMillis = 360
+
+/** 设置页退场时长：同方向右滑出，比进场短一些，返回更利落 */
+private const val SettingsExitMillis = 250
 
 /**
  * tab 页横向平移：视觉位置 = (自身序号 − 动画进度) × 页宽，三页像一条连续带子——
