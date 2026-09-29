@@ -6,9 +6,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -99,6 +105,8 @@ fun SettingsScreen(
 
     Scaffold(
         modifier = modifier,
+        // 沉浸式：只吃左右 inset，状态栏/手势条区域交给内容与顶栏自己铺满
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
         // 顶栏叠在内容之上：内容整屏铺开（hazeSource），首屏经 topBarHeight 内缩到顶栏之下，
         // 上滑时从顶栏背后滚过，顶栏用 Haze 对其做自上而下的渐变背景模糊
@@ -110,6 +118,11 @@ fun SettingsScreen(
             val hazeState = rememberHazeState()
             var topBarHeight by remember { mutableStateOf(0.dp) }
             val density = LocalDensity.current
+            // 手势条（小白条）区域：内容可铺到屏幕底，末尾留出这段避免被遮挡
+            val navBarPadding = WindowInsets.navigationBars
+                .only(WindowInsetsSides.Bottom)
+                .asPaddingValues()
+                .calculateBottomPadding()
 
             when {
                 // 采样源始终存在：加载态也挂 hazeSource，避免顶栏背后无源可采
@@ -130,7 +143,7 @@ fun SettingsScreen(
                             .hazeSource(hazeState)
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = SectionSpacing)
-                            .padding(top = topBarHeight, bottom = SectionSpacing),
+                            .padding(top = topBarHeight, bottom = navBarPadding + SectionSpacing),
                         verticalArrangement = Arrangement.spacedBy(SectionSpacing),
                     ) {
                         error?.let { ErrorBox(it.toMessage(schedule?.daysPerWeek ?: 5)) }

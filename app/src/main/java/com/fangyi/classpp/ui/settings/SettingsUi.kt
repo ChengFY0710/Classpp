@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -119,8 +118,7 @@ internal fun SettingsTopBar(
                 )
             }
         },
-        // 状态栏 inset 由外层 Scaffold 的 contentWindowInsets 吸收，这里不再叠一层
-        windowInsets = WindowInsets(0, 0, 0, 0),
+        // 状态栏 inset 由顶栏自己吸收：磨砂背景一直铺到屏幕顶（沉浸式）
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
     )
 }
