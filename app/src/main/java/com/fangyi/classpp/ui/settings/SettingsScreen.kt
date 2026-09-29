@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -275,7 +278,7 @@ private fun CreateScheduleContent(
         )
         Button(
             onClick = { onConfirm(name, start, end) },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().height(50.dp),
         ) {
             Text(stringResource(R.string.create_schedule))
         }
@@ -347,7 +350,8 @@ private fun SettingsContent(
         )
 
         SettingsSection(title = stringResource(R.string.section_days)) {
-            SettingsCard {
+            // 分段控件四边同为 6dp：蓝块左内缩 = 上内缩，且与卡片首尾 6dp 节奏一致
+            SettingsCard(contentPadding = PaddingValues(6.dp)) {
                 SegmentedChoice(
                     options = listOf(
                         stringResource(R.string.days_5),
@@ -364,24 +368,33 @@ private fun SettingsContent(
             // 减：保留前缀裁剪（合法表的前缀必合法，且保留用户已改时间）
             val appended = appendSlot(schedule.slots)
             val canAdd = appended != null && schedule.slotCount < 12   // 上限沿用 R5
-            SettingsCard {
+            // 常态 = 纯单行卡（6dp 首尾，与「显示非本周课程」卡同为 60dp 等高）；仅提示出现时切多行预设
+            SettingsCard(
+                contentPadding = if (appended == null) SingleLineCardPadding else MultiLineCardPadding,
+            ) {
                 SettingRow(
                     label = stringResource(R.string.slot_count_format, schedule.slotCount),
                     showChevron = false,
                     trailing = {
-                        TextButton(
-                            onClick = {
-                                if (schedule.slotCount > 1) onSlots(schedule.slots.dropLast(1))
-                            },
-                            enabled = schedule.slotCount > 1,
+                        // 撑到 48dp 与 Switch 等高（按钮本体仍 40dp，垂直居中）→ 两卡整高等于 60dp
+                        Row(
+                            modifier = Modifier.height(48.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(stringResource(R.string.slot_decrease))
-                        }
-                        TextButton(
-                            onClick = { appended?.let { s -> if (schedule.slotCount < 12) onSlots(s) } },
-                            enabled = canAdd,
-                        ) {
-                            Text(stringResource(R.string.slot_increase))
+                            TextButton(
+                                onClick = {
+                                    if (schedule.slotCount > 1) onSlots(schedule.slots.dropLast(1))
+                                },
+                                enabled = schedule.slotCount > 1,
+                            ) {
+                                Text(stringResource(R.string.slot_decrease))
+                            }
+                            TextButton(
+                                onClick = { appended?.let { s -> if (schedule.slotCount < 12) onSlots(s) } },
+                                enabled = canAdd,
+                            ) {
+                                Text(stringResource(R.string.slot_increase))
+                            }
                         }
                     },
                 )
@@ -389,6 +402,8 @@ private fun SettingsContent(
                 if (appended == null) {
                     Text(
                         text = stringResource(R.string.slot_overflow_desc),
+                        // 提示态卡片为 MultiLineCardPadding（垂直 6）：行自带 6 + 此处 6 = 行文↔提示 12dp，提示↔卡底 6+6=12dp
+                        modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -520,7 +535,11 @@ private fun TermDatesCard(
     var pickingWeeks by remember { mutableStateOf(false) }
 
     SettingsSection(title = stringResource(R.string.section_term)) {
-        SettingsCard {
+        // 三行信息卡比单行卡松一档：首尾 12（行自带 6 + 此处 6）、行间 18（12 + rowSpacing 6）
+        SettingsCard(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+            rowSpacing = 6.dp,
+        ) {
             SettingRow(
                 label = stringResource(R.string.term_start),
                 value = start.toSettingsDateText(),

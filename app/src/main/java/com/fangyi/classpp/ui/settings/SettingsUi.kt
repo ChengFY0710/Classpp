@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +34,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
@@ -53,6 +55,9 @@ import dev.chrisbanes.haze.hazeEffect
  *
  * 配色约定：页面底 [Background]、卡底 [Surface]、强调 [Primary]、
  * 浅蓝容器 [PrimaryContainerNontrans]、次级文字 [SecondaryTextColor]。
+ *
+ * 卡内留白按内容选预设：纯行卡用默认（[SingleLineCardPadding]），
+ * 行下带说明/提示文字的卡传 [MultiLineCardPadding]。
  */
 
 private val CardShape = RoundedCornerShape(16.dp)
@@ -152,10 +157,28 @@ internal fun SettingsSection(
     }
 }
 
-/** 设置页白色卡片：圆角 16dp、无投影、无分割线 */
+/**
+ * 卡内留白两预设（6/12 网格；[SettingRow] 自带 6dp，垂直值叠加其上）：
+ * - [SingleLineCardPadding]（默认）：水平 16、垂直 0 → 首尾 6dp、行间 12dp。
+ *   适用：纯行卡（行标签 + 右侧控件）。
+ * - [MultiLineCardPadding]：水平 16、垂直 6 → 卡内所有间隙统一 12dp
+ *   （首尾 12、行↔提示 12、提示↔卡底 12）。适用：行下方另带说明/提示文字的卡。
+ *
+ * 两个间距旋钮相互独立：
+ * - **首尾距卡边** = [SettingRow] 自带的 6dp + [SettingsCard] 的 `contentPadding` 垂直值
+ * - **相邻子内容间距** = 12dp（两行各 6dp）+ [SettingsCard] 的 `rowSpacing`
+ */
+internal val SingleLineCardPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+
+internal val MultiLineCardPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+
+/** 设置页白色卡片：圆角 16dp、无投影、无分割线，留白经 [contentPadding] 选单行/多行预设 */
 @Composable
 internal fun SettingsCard(
     modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = SingleLineCardPadding,
+    /** 行与行之间的额外间距（实际行间 = 12dp + 此值），不影响首尾距卡边 */
+    rowSpacing: Dp = 0.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(
@@ -165,7 +188,8 @@ internal fun SettingsCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            modifier = Modifier.padding(contentPadding),
+            verticalArrangement = Arrangement.spacedBy(rowSpacing),
             content = content,
         )
     }
@@ -191,7 +215,8 @@ internal fun SettingRow(
         modifier = modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(vertical = 12.dp),
+            // 行自带 6dp：提供首尾距卡边的 6dp（行间额外间距由 SettingsCard.rowSpacing 提供）
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
