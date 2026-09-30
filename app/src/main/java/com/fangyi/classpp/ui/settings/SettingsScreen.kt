@@ -462,7 +462,7 @@ private fun SettingsContent(
                             // 参与行高与两行间距（同学期卡节奏），蓝底垂直居中向上下各溢出 4dp
                             OverflowHeightBox(ChipRowHeight) {
                                 TimeChip(slot.startTime) { editingSlot = SlotEdit(index, isStart = true) }
-                                Spacer(Modifier.width(16.dp))
+                                Spacer(Modifier.width(15.dp))
                                 TimeChip(slot.endTime) { editingSlot = SlotEdit(index, isStart = false) }
                             }
                         },

@@ -43,7 +43,7 @@ import dev.chrisbanes.haze.hazeEffect
 
 private val EditActionTextSize = 18.sp
 private val EditActionIconSize = 30.dp
-private val EditActionGap = 6.dp
+private val EditActionGap = 10.dp
 private val EditActionInnerPadding = 8.dp
 
 /** 动作块离屏幕边的距离 = 顶栏图标内缩 20dp − 动作块自身水平内缩 → 图标仍落在 20dp 上 */

@@ -194,7 +194,7 @@ fun CourseCard(
 }
 
 /** 添加卡片中间加号的尺寸（设计稿里占卡片中部一大块） */
-private val AddIconSize = 40.dp
+private val AddIconSize = 30.dp
 
 /** 添加卡片左侧内缩 = 课程卡片的色条 3dp + 内缩 4dp，使两者起止时间同一条竖线 */
 private val AddCardStartPadding = 7.dp
