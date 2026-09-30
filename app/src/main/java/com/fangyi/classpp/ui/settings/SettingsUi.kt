@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.ui.theme.Background
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.OnBackground
 import com.fangyi.classpp.ui.theme.Primary
@@ -243,7 +244,10 @@ internal fun SettingRow(
     }
 }
 
-/** 时间胶囊：浅蓝底、Primary 字，点击弹时间选择 */
+/**
+ * 时间胶囊：Background灰底、Primary 字，点击弹时间选择。
+ * 文字启用等宽数字（tnum）：所有时间同为 00:00 五字符，数字位等宽后各胶囊文字宽度天然一致。
+ */
 @Composable
 internal fun TimeChip(
     text: String,
@@ -254,10 +258,10 @@ internal fun TimeChip(
         text = text,
         modifier = modifier
             .clip(ChipShape)
-            .background(PrimaryContainerNontrans)
+            .background(Background)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        style = MaterialTheme.typography.bodyMedium,
+            .padding(horizontal = 18.dp, vertical = 9.dp),
+        style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
         color = Primary,
     )
 }

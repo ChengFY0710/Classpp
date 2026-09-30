@@ -4,8 +4,9 @@ package com.fangyi.classpp.data.model
  * 大课起止时间文本（`"8:00"` 形态，与现有 UI 显示串一致）的解析/格式化工具。
  *
  * - 合法格式：`^([01]?\d|2[0-3]):[0-5]\d$`（接受 `8:00` 与 `08:00`）
- * - 归一化：一律输出**无前导零小时**（`8:00`）
- * - 比较用分钟数（`hour * 60 + minute`），本对象不承担显示逻辑
+ * - 归一化：一律输出**无前导零小时**（`8:00`），存储/校验/课程卡显示沿用此形态
+ * - 需要前导零的显示走 [formatDisplay]（`8:00` → `08:00`），目前仅设置页时间胶囊使用
+ * - 比较用分钟数（`hour * 60 + minute`）
  */
 object TimeText {
 
@@ -28,6 +29,13 @@ object TimeText {
 
     /** 合法则归一化（`08:00` → `8:00`），非法返回 null */
     fun normalize(text: String): String? = parseMinutes(text)?.let { format(it) }
+
+    /** 显示用：小时补前导零（`8:00` → `08:00`）；非法文本原样返回 */
+    fun formatDisplay(text: String): String {
+        val minutes = parseMinutes(text) ?: return text
+        return "${(minutes / 60).toString().padStart(2, '0')}" +
+            ":${(minutes % 60).toString().padStart(2, '0')}"
+    }
 
     private val PATTERN = Regex("""([01]?\d|2[0-3]):[0-5]\d""")
 }

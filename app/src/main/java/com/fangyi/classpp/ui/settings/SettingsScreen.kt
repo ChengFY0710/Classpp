@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -47,6 +48,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -273,8 +275,10 @@ private fun ErrorBox(message: String) {
         text = message,
         modifier = Modifier
             .fillMaxWidth()
+            // 圆角卡片式（同设置卡 16dp 圆角语言）；clip 须在 background 之前才裁得到背景
+            .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.errorContainer)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 16.dp),
         color = MaterialTheme.colorScheme.onErrorContainer,
         style = MaterialTheme.typography.bodyMedium,
     )
@@ -458,12 +462,16 @@ private fun SettingsContent(
                         label = stringResource(R.string.slot_format, index + 1),
                         showChevron = false,
                         trailing = {
-                            // chip 蓝底保持 32dp 原高，但不计入行高：容器只按标签行高 24dp
+                            // chip Background灰底保持 32dp 原高，但不计入行高：容器只按标签行高 24dp
                             // 参与行高与两行间距（同学期卡节奏），蓝底垂直居中向上下各溢出 4dp
                             OverflowHeightBox(ChipRowHeight) {
-                                TimeChip(slot.startTime) { editingSlot = SlotEdit(index, isStart = true) }
-                                Spacer(Modifier.width(15.dp))
-                                TimeChip(slot.endTime) { editingSlot = SlotEdit(index, isStart = false) }
+                                TimeChip(TimeText.formatDisplay(slot.startTime)) {
+                                    editingSlot = SlotEdit(index, isStart = true)
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                TimeChip(TimeText.formatDisplay(slot.endTime)) {
+                                    editingSlot = SlotEdit(index, isStart = false)
+                                }
                             }
                         },
                     )
