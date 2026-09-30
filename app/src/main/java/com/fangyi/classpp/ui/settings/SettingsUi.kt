@@ -59,7 +59,7 @@ import dev.chrisbanes.haze.hazeEffect
  * 浅蓝容器 [PrimaryContainerNontrans]、次级文字 [SecondaryTextColor]。
  *
  * 卡内间距按行数分两类：单行卡（一行「文字+控件」）用默认 [CardContentPadding]；
- * 多行卡（多行「文字+控件」）另传 [MultiLineRowSpacing]，行间 12 → 18dp。
+ * 多行卡（多行「文字+控件」）另传 [MultiLineRowSpacing]。
  */
 
 private val CardShape = RoundedCornerShape(16.dp)
@@ -69,10 +69,7 @@ private val SegmentShape = RoundedCornerShape(12.dp)
 /**
  * 设置页顶栏：左侧圆形返回按钮 + 居中加粗标题。
  *
- * 返回按钮叠放在 TopAppBar 之上、不进 navigationIcon 槽位：槽位位于 TopAppBarLayout 的
- * clipToBounds() 内，圆形投影会贴着顶栏底边被裁断；标题按顶栏全宽居中（与槽位宽度无关，
- * 见 M3 placeTopAppBar），移除槽位不改变标题位置。
- *
+ * 返回按钮叠放在 TopAppBar 之上、不进 navigationIcon 槽位：
  * [hazeState] 非空时对顶栏背后的滚动内容做背景模糊——顶部最强、向下渐弱（渐变模糊），
  * 与 ScheduleHeader 同一套 Haze 规格，兜底色画在模糊层之下；
  * null（如 @Preview）时退化为不透明背景。
@@ -122,13 +119,11 @@ internal fun SettingsTopBar(
             onClick = onBack,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                // 与顶栏同套 inset + 8dp 顶距 = 原槽位内垂直居中（(56−40)/2）
+                //原槽位内垂直居中
                 .windowInsetsPadding(TopAppBarDefaults.windowInsets)
-                .padding(start = 20.dp, top = 12.dp)
+                .padding(start = 24.dp, top = 12.dp)  // 返回按钮位置
                 .size(40.dp)
-                // 圆形投影（同 BottomNavBar 胶囊）：graphicsLayer 在 draw 阶段读值，不引发重组；
-                // clip 收在 layer 内，投影才不会被外层裁掉
-                .graphicsLayer {
+                .graphicsLayer {    // 返回按钮投影
                     shape = CircleShape
                     clip = true
                     shadowElevation = 45.dp.toPx()
@@ -167,22 +162,11 @@ internal fun SettingsSection(
     }
 }
 
-/**
- * 卡内基础留白：水平 16、垂直 6（6 网格；[SettingRow] 自带 6dp，垂直值叠加其上）
- * → 首尾 12dp、行间 12dp；行下的说明/提示文字距卡底同样 12dp（自带 6 + 此处 6）。
- *
- * 卡内间距按行数分两类：
- * - **单行卡**（一行「文字+控件」：显示开关、每天 N 节）→ 用默认；
- * - **多行卡**（多行「文字+控件」：学期三行、节次时间）→ 另传
- *   `rowSpacing = `[MultiLineRowSpacing]，行间 = 12 + 6 = 18dp。
- *
- * 两个间距旋钮相互独立：
- * - **首尾距卡边** = [SettingRow] 自带的 6dp + [SettingsCard] 的 `contentPadding` 垂直值
- * - **相邻子内容间距** = 12dp（两行各 6dp）+ [SettingsCard] 的 `rowSpacing`
- */
-internal val CardContentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+// 默认间距：卡片内容左右padding：horizontal,卡片内容首尾间距：vertical.
+// 另外，对于单行文字加控件内容，卡片内容高度SettingsScreen里oneLineControlHeight参数进行了严格控制。
+internal val CardContentPadding = PaddingValues(horizontal = 15.dp, vertical = 13.dp)
 
-/** 多行卡（多行「文字+控件」）行间额外间距：实际行间 = 12dp + 此值 = 18dp，学期与节次时间两卡共用 */
+// 多行卡片行与行间距增值，要修改调这个MultiLineRowSpacing,传入rowSpacing
 internal val MultiLineRowSpacing = 10.dp
 
 /** 设置页白色卡片：圆角 16dp、无投影、无分割线，默认留白 [CardContentPadding]，多行卡另传 [rowSpacing] */
@@ -190,7 +174,7 @@ internal val MultiLineRowSpacing = 10.dp
 internal fun SettingsCard(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = CardContentPadding,
-    /** 行与行之间的额外间距（实际行间 = 12dp + 此值），不影响首尾距卡边 */
+    // 行与行之间的额外间距
     rowSpacing: Dp = 0.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {

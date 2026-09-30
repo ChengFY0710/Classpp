@@ -81,7 +81,7 @@ import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
 
-private val SectionSpacing = 20.dp
+private val SectionSpacing = 18.dp
 
 /** 底部额外留白：末屏内容可继续上滑一段（滑到顶栏之后仍有一段余量） */
 private val BottomScrollSlack = 120.dp
@@ -92,7 +92,7 @@ private val BottomScrollSlack = 120.dp
  */
 private val ChipRowHeight = 24.dp
 
-private val oneLineControlHeight = 40.dp
+private val oneLineControlHeight = 37.dp
 
 /**
  * chip 容器：整体只占 [height] 参与父行行高与行间距；子项放开高度约束按实际尺寸
