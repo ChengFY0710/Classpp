@@ -56,8 +56,8 @@ import dev.chrisbanes.haze.hazeEffect
  * 配色约定：页面底 [Background]、卡底 [Surface]、强调 [Primary]、
  * 浅蓝容器 [PrimaryContainerNontrans]、次级文字 [SecondaryTextColor]。
  *
- * 卡内留白按内容选预设：纯行卡用默认（[SingleLineCardPadding]），
- * 行下带说明/提示文字的卡传 [MultiLineCardPadding]。
+ * 卡内间距按行数分两类：单行卡（一行「文字+控件」）用默认 [CardContentPadding]；
+ * 多行卡（多行「文字+控件」）另传 [MultiLineRowSpacing]，行间 12 → 18dp。
  */
 
 private val CardShape = RoundedCornerShape(16.dp)
@@ -158,25 +158,28 @@ internal fun SettingsSection(
 }
 
 /**
- * 卡内留白两预设（6/12 网格；[SettingRow] 自带 6dp，垂直值叠加其上）：
- * - [SingleLineCardPadding]（默认）：水平 16、垂直 0 → 首尾 6dp、行间 12dp。
- *   适用：纯行卡（行标签 + 右侧控件）。
- * - [MultiLineCardPadding]：水平 16、垂直 6 → 卡内所有间隙统一 12dp
- *   （首尾 12、行↔提示 12、提示↔卡底 12）。适用：行下方另带说明/提示文字的卡。
+ * 卡内基础留白：水平 16、垂直 6（6 网格；[SettingRow] 自带 6dp，垂直值叠加其上）
+ * → 首尾 12dp、行间 12dp；行下的说明/提示文字距卡底同样 12dp（自带 6 + 此处 6）。
+ *
+ * 卡内间距按行数分两类：
+ * - **单行卡**（一行「文字+控件」：显示开关、每天 N 节）→ 用默认；
+ * - **多行卡**（多行「文字+控件」：学期三行、节次时间）→ 另传
+ *   `rowSpacing = `[MultiLineRowSpacing]，行间 = 12 + 6 = 18dp。
  *
  * 两个间距旋钮相互独立：
  * - **首尾距卡边** = [SettingRow] 自带的 6dp + [SettingsCard] 的 `contentPadding` 垂直值
  * - **相邻子内容间距** = 12dp（两行各 6dp）+ [SettingsCard] 的 `rowSpacing`
  */
-internal val SingleLineCardPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+internal val CardContentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
 
-internal val MultiLineCardPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+/** 多行卡（多行「文字+控件」）行间额外间距：实际行间 = 12dp + 此值 = 18dp，学期与节次时间两卡共用 */
+internal val MultiLineRowSpacing = 10.dp
 
-/** 设置页白色卡片：圆角 16dp、无投影、无分割线，留白经 [contentPadding] 选单行/多行预设 */
+/** 设置页白色卡片：圆角 16dp、无投影、无分割线，默认留白 [CardContentPadding]，多行卡另传 [rowSpacing] */
 @Composable
 internal fun SettingsCard(
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = SingleLineCardPadding,
+    contentPadding: PaddingValues = CardContentPadding,
     /** 行与行之间的额外间距（实际行间 = 12dp + 此值），不影响首尾距卡边 */
     rowSpacing: Dp = 0.dp,
     content: @Composable ColumnScope.() -> Unit,
@@ -259,7 +262,7 @@ internal fun TimeChip(
             .clip(ChipShape)
             .background(PrimaryContainerNontrans)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         style = MaterialTheme.typography.bodyMedium,
         color = Primary,
     )

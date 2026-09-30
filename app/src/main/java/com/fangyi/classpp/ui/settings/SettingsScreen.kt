@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -46,11 +47,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.OpResult
@@ -81,6 +85,41 @@ private val SectionSpacing = 20.dp
 
 /** 底部额外留白：末屏内容可继续上滑一段（滑到顶栏之后仍有一段余量） */
 private val BottomScrollSlack = 120.dp
+
+/**
+ * 时间行 chip 容器高度 = 标签行高（bodyLarge lineHeight 24dp）：
+ * 行高与两行间距按标签节奏计算，32dp 的 chip 蓝底保持原高、不计入行高。
+ */
+private val ChipRowHeight = 24.dp
+
+private val oneLineControlHeight = 40.dp
+
+/**
+ * chip 容器：整体只占 [height] 参与父行行高与行间距；子项放开高度约束按实际尺寸
+ * 测量、垂直居中向上下溢出——蓝底保持原高不被压扁，其高度不影响两行间距。
+ * （固定高度的 Row/Box 会把约束收紧到容器高、子项被压扁，故用自定义测量。）
+ */
+@Composable
+private fun OverflowHeightBox(height: Dp, content: @Composable () -> Unit) {
+    Layout(
+        content = content,
+        measurePolicy = { measurables, constraints ->
+            // 放开高度约束测量子项（宽度约束保持原样），容器高度固定为 height
+            val placeables = measurables.map {
+                it.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+            }
+            val containerHeight = height.roundToPx()
+            layout(placeables.sumOf { it.width }, containerHeight) {
+                var x = 0
+                for (placeable in placeables) {
+                    // 垂直居中：32dp 子项在 24dp 容器内上下各溢出 4dp（负值放置不裁剪）
+                    placeable.place(x, (containerHeight - placeable.height) / 2)
+                    x += placeable.width
+                }
+            }
+        },
+    )
+}
 
 /**
  * 设置页：全屏覆盖层（由 MainActivity 组合在底部导航之后），返回键/关闭按钮经 [onClose] 退出。
@@ -150,7 +189,8 @@ fun SettingsScreen(
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = SectionSpacing)
                             .padding(
-                                top = topBarHeight,
+                                // 首项距顶栏留 20dp（SectionSpacing），与页面其余间距同源
+                                top = topBarHeight + SectionSpacing,
                                 bottom = navBarPadding + SectionSpacing + BottomScrollSlack,
                             ),
                         verticalArrangement = Arrangement.spacedBy(SectionSpacing),
@@ -350,7 +390,7 @@ private fun SettingsContent(
         )
 
         SettingsSection(title = stringResource(R.string.section_days)) {
-            // 分段控件四边同为 6dp：蓝块左内缩 = 上内缩，且与卡片首尾 6dp 节奏一致
+            // 分段控件四边同为 6dp：蓝块左内缩 = 上内缩（控件卡单独覆盖，不走基础留白）
             SettingsCard(contentPadding = PaddingValues(6.dp)) {
                 SegmentedChoice(
                     options = listOf(
@@ -368,17 +408,15 @@ private fun SettingsContent(
             // 减：保留前缀裁剪（合法表的前缀必合法，且保留用户已改时间）
             val appended = appendSlot(schedule.slots)
             val canAdd = appended != null && schedule.slotCount < 12   // 上限沿用 R5
-            // 常态 = 纯单行卡（6dp 首尾，与「显示非本周课程」卡同为 60dp 等高）；仅提示出现时切多行预设
-            SettingsCard(
-                contentPadding = if (appended == null) SingleLineCardPadding else MultiLineCardPadding,
-            ) {
+            // 单行卡：与「显示非本周课程」卡同一基础留白 → 两卡整高等高；
+            // 溢出提示出现时，行↔提示、提示↔卡底也都是 12dp（见 CardContentPadding 公式）
+            SettingsCard {
                 SettingRow(
                     label = stringResource(R.string.slot_count_format, schedule.slotCount),
                     showChevron = false,
                     trailing = {
-                        // 撑到 48dp 与 Switch 等高（按钮本体仍 40dp，垂直居中）→ 两卡整高等于 60dp
                         Row(
-                            modifier = Modifier.height(48.dp),
+                            //modifier = Modifier.height(36.dp),  // 学期设置增删卡片文字按钮布局高度（并非实际高度+UIL173 vertical）
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             TextButton(
@@ -386,38 +424,47 @@ private fun SettingsContent(
                                     if (schedule.slotCount > 1) onSlots(schedule.slots.dropLast(1))
                                 },
                                 enabled = schedule.slotCount > 1,
+                                contentPadding = PaddingValues(0.dp),
                             ) {
                                 Text(stringResource(R.string.slot_decrease))
                             }
+                            Spacer(modifier = Modifier.size(12.dp))
                             TextButton(
                                 onClick = { appended?.let { s -> if (schedule.slotCount < 12) onSlots(s) } },
                                 enabled = canAdd,
+                                contentPadding = PaddingValues(0.dp),
                             ) {
                                 Text(stringResource(R.string.slot_increase))
                             }
                         }
                     },
+                    modifier = Modifier.height(oneLineControlHeight),
                 )
                 // 仅在无法再加节（新节会越过 23:59）时提示禁用原因
                 if (appended == null) {
                     Text(
                         text = stringResource(R.string.slot_overflow_desc),
-                        // 提示态卡片为 MultiLineCardPadding（垂直 6）：行自带 6 + 此处 6 = 行文↔提示 12dp，提示↔卡底 6+6=12dp
+                        // 基础留白垂直 6：行自带 6 + 此处 6 = 行文↔提示 12dp，提示↔卡底 6+6=12dp
                         modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
             }
-            SettingsCard {
+            // 多行卡（每节一行「文字 + 时间控件」）：与学期卡共用 MultiLineRowSpacing → 行间 18dp
+            SettingsCard(rowSpacing = MultiLineRowSpacing) {
                 schedule.slots.forEachIndexed { index, slot ->
                     SettingRow(
                         label = stringResource(R.string.slot_format, index + 1),
                         showChevron = false,
                         trailing = {
-                            TimeChip(slot.startTime) { editingSlot = SlotEdit(index, isStart = true) }
-                            Spacer(Modifier.width(8.dp))
-                            TimeChip(slot.endTime) { editingSlot = SlotEdit(index, isStart = false) }
+                            // chip 蓝底保持 32dp 原高，但不计入行高：容器只按标签行高 24dp
+                            // 参与行高与两行间距（同学期卡节奏），蓝底垂直居中向上下各溢出 4dp
+                            OverflowHeightBox(ChipRowHeight) {
+                                TimeChip(slot.startTime) { editingSlot = SlotEdit(index, isStart = true) }
+                                Spacer(Modifier.width(16.dp))
+                                TimeChip(slot.endTime) { editingSlot = SlotEdit(index, isStart = false) }
+                            }
                         },
                     )
                 }
@@ -435,6 +482,7 @@ private fun SettingsContent(
                             onCheckedChange = onShowInactive,
                         )
                     },
+                    modifier = Modifier.height(oneLineControlHeight),
                 )
             }
             Text(
@@ -535,11 +583,8 @@ private fun TermDatesCard(
     var pickingWeeks by remember { mutableStateOf(false) }
 
     SettingsSection(title = stringResource(R.string.section_term)) {
-        // 三行信息卡比单行卡松一档：首尾 12（行自带 6 + 此处 6）、行间 18（12 + rowSpacing 6）
-        SettingsCard(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-            rowSpacing = 6.dp,
-        ) {
+        // 多行卡（三行「文字 + 值/箭头」）：首尾 12、行间 18（12 + MultiLineRowSpacing 6），与节次时间卡同一档
+        SettingsCard(rowSpacing = MultiLineRowSpacing) {
             SettingRow(
                 label = stringResource(R.string.term_start),
                 value = start.toSettingsDateText(),
