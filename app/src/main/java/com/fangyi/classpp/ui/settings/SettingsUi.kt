@@ -165,7 +165,7 @@ internal fun SettingsSection(
 
 // 默认间距：卡片内容左右padding：horizontal,卡片内容首尾间距：vertical.
 // 另外，对于单行文字加控件内容，卡片内容高度SettingsScreen里oneLineControlHeight参数进行了严格控制。
-internal val CardContentPadding = PaddingValues(horizontal = 15.dp, vertical = 13.dp)
+internal val CardContentPadding = PaddingValues(start = 17.dp, end = 13.dp, top = 13.dp, bottom = 13.dp)
 
 // 多行卡片行与行间距增值，要修改调这个MultiLineRowSpacing,传入rowSpacing
 internal val MultiLineRowSpacing = 10.dp
