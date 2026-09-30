@@ -3,6 +3,7 @@ package com.fangyi.classpp.ui.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -67,6 +69,10 @@ private val SegmentShape = RoundedCornerShape(12.dp)
 /**
  * 设置页顶栏：左侧圆形返回按钮 + 居中加粗标题。
  *
+ * 返回按钮叠放在 TopAppBar 之上、不进 navigationIcon 槽位：槽位位于 TopAppBarLayout 的
+ * clipToBounds() 内，圆形投影会贴着顶栏底边被裁断；标题按顶栏全宽居中（与槽位宽度无关，
+ * 见 M3 placeTopAppBar），移除槽位不改变标题位置。
+ *
  * [hazeState] 非空时对顶栏背后的滚动内容做背景模糊——顶部最强、向下渐弱（渐变模糊），
  * 与 ScheduleHeader 同一套 Haze 规格，兜底色画在模糊层之下；
  * null（如 @Preview）时退化为不透明背景。
@@ -79,7 +85,7 @@ internal fun SettingsTopBar(
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
 ) {
-    CenterAlignedTopAppBar(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             // 兜底色：与页面同色，画在模糊层之下（背后无内容时逐帧一致）
@@ -99,41 +105,45 @@ internal fun SettingsTopBar(
                     Modifier
                 },
             ),
-        title = {
-            Text(
-                text = title,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = OnBackground,
-            )
-        },
-        navigationIcon = {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .padding(start = 20.dp)
-                    .size(40.dp)
-                    // 圆形投影（同 BottomNavBar 胶囊）：graphicsLayer 在 draw 阶段读值，不引发重组；
-                    // clip 收在 layer 内，投影才不会被外层裁掉
-                    .graphicsLayer {
-                        shape = CircleShape
-                        clip = true
-                        shadowElevation = 45.dp.toPx()
-                        spotShadowColor = Color.Black.copy(alpha = 0.2f)
-                    }
-                    .background(MaterialTheme.colorScheme.surface, CircleShape),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_arrow_left),
-                    contentDescription = stringResource(R.string.cd_settings_close),
-                    tint = OnBackground,
-                    modifier = Modifier.size(22.dp),
+    ) {
+        CenterAlignedTopAppBar(
+            title = {
+                Text(
+                    text = title,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = OnBackground,
                 )
-            }
-        },
-        // 状态栏 inset 由顶栏自己吸收：磨砂背景一直铺到屏幕顶（沉浸式）
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
-    )
+            },
+            // 状态栏 inset 由顶栏自己吸收：磨砂背景一直铺到屏幕顶（沉浸式）
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+        )
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                // 与顶栏同套 inset + 8dp 顶距 = 原槽位内垂直居中（(56−40)/2）
+                .windowInsetsPadding(TopAppBarDefaults.windowInsets)
+                .padding(start = 20.dp, top = 12.dp)
+                .size(40.dp)
+                // 圆形投影（同 BottomNavBar 胶囊）：graphicsLayer 在 draw 阶段读值，不引发重组；
+                // clip 收在 layer 内，投影才不会被外层裁掉
+                .graphicsLayer {
+                    shape = CircleShape
+                    clip = true
+                    shadowElevation = 45.dp.toPx()
+                    spotShadowColor = Color.Black.copy(alpha = 0.2f)
+                }
+                .background(MaterialTheme.colorScheme.surface, CircleShape),
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_arrow_left),
+                contentDescription = stringResource(R.string.cd_settings_close),
+                tint = OnBackground,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+    }
 }
 
 /** 分组：灰色小标题（卡片外）+ 下方一组卡片，卡间距 8dp */
