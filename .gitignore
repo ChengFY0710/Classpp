@@ -13,3 +13,6 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# 本地工具产物：Windows 文件权限修复记录/报告 + 临时量距脚本（不属于项目代码）
+.dsh-acl-reports/
