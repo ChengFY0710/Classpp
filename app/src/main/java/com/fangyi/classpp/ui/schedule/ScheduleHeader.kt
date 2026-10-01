@@ -83,30 +83,44 @@ private val PillEndPadding = 30.dp
 
 private val WeekPickerGap = 16.dp  //周数选择器顶部与胶囊底部的固定垂直间距（展开/折叠态一致）
 
-private val CardShadowPadding = 16.dp
+internal val CardShadowPadding = 16.dp
 
 /** 投影向下延伸最多，底部单独加大透明留白，防止被 Popup 窗口下缘裁切 */
 private val CardShadowBottomPadding = 48.dp
 
-private val WeekPickerCellSpace = 8.dp // 周数选择器里小方块间距
+internal val WeekPickerCellSpace = 8.dp // 周数选择器里小方块间距
 
 /** 弹窗目标：距屏幕左右两侧各 [WeekPickerEdgeMargin]（按 Popup 窗口边缘计，即含四周投影留白） */
-private val WeekPickerEdgeMargin = 6.dp
+internal val WeekPickerEdgeMargin = 6.dp
 
-/** 拿不到宿主窗口宽度时的兜底边长（理论上只在首帧之前发生），与旧的固定值一致 */
-private val WeekCellSizeFallback = 48.dp
+/**
+ * 方格边长上限：窗口宽度达到 [WeekCellSizeCapMinWidth]（横屏/平板）起封顶，弹窗保持自然宽度居中；
+ * 同时也是拿不到宿主窗口宽度时（理论上只在首帧之前）的兜底边长，与旧的固定值一致。
+ */
+internal val WeekCellSizeMax = 48.dp
+
+/**
+ * [WeekCellSizeMax] 开始生效的窗口宽度：600dp 以下完全按留白反推（弹窗几乎贴屏幕两侧），
+ * 达到 600dp（横屏/平板）才封顶——避免大屏上出现巨大方格。
+ *
+ * 注意：这条边界是**硬阈值**，600dp 前后弹窗宽度会跳变（阈值处留白由 6dp 变为 ≈112dp），
+ * 见 WeekPickerGeometryTest.theCapStartsExactlyAtTheCapWidth。
+ */
+internal val WeekCellSizeCapMinWidth = 600.dp
 
 /**
  * 周数方格边长（dp）：由可用宽度反推。
  *
- * 六列、正方形、列间距与卡片内边距全部不变，只让边长随屏宽伸缩，
- * 于是弹窗（卡片＋四周投影留白＝Popup 窗口）距屏幕左右两侧恒为 [edgeMarginDp]：
+ * 六列、正方形、列间距与卡片内边距全部不变，只让边长随屏宽伸缩：
  *
- *     可用宽度 − 2×外边距 − 2×投影留白 − 2×卡片内边距 − (列数−1)×列间距
- *     边长 = ────────────────────────────────────────────────────────────
- *                                   列数
+ *   · 窗口 < [capMinWidthDp]：完全按留白反推，弹窗距屏幕左右两侧恒为 [edgeMarginDp]
  *
- * 例如 427dp 屏 → 边长 ≈ 48dp（与旧的固定 48dp 观感一致）；360dp 屏 → ≈ 37dp，不再顶到屏幕边。
+ *         可用宽度 − 2×外边距 − 2×投影留白 − 2×卡片内边距 − (列数−1)×列间距
+ *         边长 = ────────────────────────────────────────────────────────────
+ *                                       列数
+ *
+ *   · 窗口 ≥ [capMinWidthDp]（横屏/平板）：上式结果封顶在 [maxCellSizeDp]，
+ *     弹窗保持自然宽度居中，留白自然变宽——不会出现巨大的方格。
  */
 internal fun weekCellSizeDp(
     availableWidthDp: Float,
@@ -114,11 +128,19 @@ internal fun weekCellSizeDp(
     shadowPaddingDp: Float,
     cardPaddingDp: Float,
     cellSpaceDp: Float,
+    maxCellSizeDp: Float,
+    capMinWidthDp: Float,
     columns: Int = 6,
 ): Float {
     val cardWidth = availableWidthDp - 2f * edgeMarginDp - 2f * shadowPaddingDp
     val gridWidth = cardWidth - 2f * cardPaddingDp
-    return ((gridWidth - (columns - 1) * cellSpaceDp) / columns).coerceAtLeast(0f)
+    val fitted = (gridWidth - (columns - 1) * cellSpaceDp) / columns
+    val capped = if (availableWidthDp >= capMinWidthDp) {
+        fitted.coerceAtMost(maxCellSizeDp)
+    } else {
+        fitted
+    }
+    return capped.coerceAtLeast(0f)
 }
 
 /**
@@ -417,9 +439,10 @@ private fun WeekPill(
             onMenuExpandedChange(false)
         }
 
-        // 弹窗宽度随宿主窗口自适应：方格边长由可用宽度反推（六列/正方形/间距都不变），
-        // 于是不论机型宽窄，弹窗距屏幕左右两侧都是 WeekPickerEdgeMargin。
-        // 多窗口/分屏下 containerDpSize 是当前窗口而非整块屏幕，与定位用的窗口尺寸一致
+        // 弹窗宽度随宿主窗口自适应：方格边长由可用宽度反推（六列/正方形/间距都不变）。
+        // 600dp 以下完全按留白反推（弹窗几乎贴屏幕两侧）；≥600dp（横屏/平板）封顶 48dp，
+        // 弹窗保持自然宽度居中。多窗口/分屏下 containerDpSize 是当前窗口而非整块屏幕，
+        // 与定位用的窗口尺寸一致
         val availableWidthDp = LocalWindowInfo.current.containerDpSize.width.value
         val weekCellSize = remember(availableWidthDp) {
             if (availableWidthDp > 0f) {
@@ -429,9 +452,11 @@ private fun WeekPill(
                     shadowPaddingDp = CardShadowPadding.value,
                     cardPaddingDp = WeekPickerCellSpace.value,
                     cellSpaceDp = WeekPickerCellSpace.value,
+                    maxCellSizeDp = WeekCellSizeMax.value,
+                    capMinWidthDp = WeekCellSizeCapMinWidth.value,
                 ).dp
             } else {
-                WeekCellSizeFallback
+                WeekCellSizeMax
             }
         }
 
