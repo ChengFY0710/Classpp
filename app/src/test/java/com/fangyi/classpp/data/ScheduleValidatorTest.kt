@@ -222,15 +222,17 @@ class ScheduleValidatorTest {
     // ---------- 课程字段 ----------
 
     @Test
-    fun `R9 day of week range respects daysPerWeek`() {
-        // 5 天模式不允许周六/周日：课程星期越界单独成 DayOutOfWeek，便于 UI 说清"切5天被谁挡住"
-        assertHas<ScheduleError.DayOutOfWeek>(
+    fun `R9 weekend courses are kept when the view only has five days`() {
+        // 5 天视图里的周六/周日课：保留、放行、只是不画 → 切回 7 天原样出现
+        assertEquals(
+            emptyList<ScheduleError>(),
             ScheduleValidator.validate(schedule(courses = listOf(course(day = 6)))),
         )
-        assertHas<ScheduleError.DayOutOfWeek>(
+        assertEquals(
+            emptyList<ScheduleError>(),
             ScheduleValidator.validate(schedule(courses = listOf(course(day = 7)))),
         )
-        // 7 天模式允许周末（结束日改到周日，免得撞上"课排在学期结束之后"）
+        // 7 天模式同样放行（结束日改到周日，免得撞上"课排在学期结束之后"）
         val ok = ScheduleValidator.validate(
             schedule(
                 courses = listOf(course(day = 7, weeks = WeekPattern.everyWeek(16))),
@@ -239,6 +241,27 @@ class ScheduleValidatorTest {
             ),
         )
         assertEquals(emptyList<ScheduleError>(), ok)
+    }
+
+    /**
+     * 藏起来的课（落在当前天数之外）连学期边界都不校验：
+     * 7 天课表把结束日收成周三后切 5 天，周日那门课的"最后一天"其实晚于 termEnd，
+     * 但它当前视图看不到 —— 若照常报错，7→5 就会被自己的课挡住，再也切不回去。
+     */
+    @Test
+    fun `R14 hidden weekend courses are exempt from term end checks`() {
+        val sevenDayEndWednesday = schedule(
+            daysPerWeek = 7,
+            end = IsoDate.parse("2026-06-17"),
+            courses = listOf(course(day = 7, weeks = WeekPattern.everyWeek(16))),
+        )
+        assertHas<ScheduleError.TermEndInvalid>(ScheduleValidator.validate(sevenDayEndWednesday))
+
+        // 同一个课表切到 5 天：该课被藏起来，不再有任何错误（切换因此永远可逆）
+        assertEquals(
+            emptyList<ScheduleError>(),
+            ScheduleValidator.validate(sevenDayEndWednesday.copy(daysPerWeek = 5)),
+        )
     }
 
     @Test

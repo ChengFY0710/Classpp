@@ -17,7 +17,7 @@ data class CourseRef(
     }
 }
 
-/** [ScheduleError.CourseFieldInvalid] 的具体原因（星期越界另有 [ScheduleError.DayOutOfWeek]） */
+/** [ScheduleError.CourseFieldInvalid] 的具体原因 */
 enum class FieldReason { BlankName, SpanOutOfRange }
 
 /**
@@ -52,10 +52,6 @@ sealed class ScheduleError(val message: String) {
 
     data class CourseFieldInvalid(val courseId: String, val reason: FieldReason) :
         ScheduleError("course $courseId invalid: $reason")
-
-    /** 课程星期超出当前每周天数：切到 5 天视图而仍留有周六/周日的课时整体拒绝 */
-    data class DayOutOfWeek(val courseId: String, val dayOfWeek: Int, val daysPerWeek: Int) :
-        ScheduleError("course $courseId is on day $dayOfWeek, beyond daysPerWeek=$daysPerWeek")
 
     data class WeekSegmentInvalid(val courseId: String, val index: Int) :
         ScheduleError("course $courseId week segment #$index invalid (start > end or start < 1)")

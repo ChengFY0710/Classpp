@@ -13,8 +13,13 @@ import com.fangyi.classpp.data.model.TimeText
  *  R5 节数 ∈ 1..12                  R6 时间格式
  *  R7 时间有序不重叠                R8 课表名非空白
  *  R9-R12 课程字段/周数范围          R13 同一天 span 相交且周数相交 ⇒ 冲突
- *  R14 课程最后一次上课不得晚于 termEnd（不再要求 termEnd 是周五/周日，
- *      改为按**日期**判定；切到 5 天后仍留周六/周日的课即在此被拒）
+ *  R14 课程最后一次上课不得晚于 termEnd（按**日期**判定；termEnd 可停在周中）
+ *
+ * 另有两条"视图切换友好"约定：
+ *  · termEnd 用**真实日期**判定课程落点，不再要求它是周五/周日；
+ *  · 落在当前每周天数之外的课（5 天课表里的周六/周日课）视为"当前视图看不到"，
+ *    **保留在数据里**且不参与 R10/R11/R14——5 天视图只是不画它们，切回 7 天即原样出现，
+ *    所以 5/7 天切换永远不会因为课程而失败。
  */
 object ScheduleValidator {
 
@@ -97,15 +102,11 @@ object ScheduleValidator {
             if (course.name.isBlank()) {
                 errors += ScheduleError.CourseFieldInvalid(course.id, FieldReason.BlankName)
             }
-            if (settingsValid) {
-                // R9 星期超出当前每周天数（7 天模式才允许 6/7；切到 5 天即在此被拒）
-                if (course.dayOfWeek !in 1..schedule.daysPerWeek) {
-                    errors += ScheduleError.DayOutOfWeek(
-                        courseId = course.id,
-                        dayOfWeek = course.dayOfWeek,
-                        daysPerWeek = schedule.daysPerWeek,
-                    )
-                }
+            // 落在当前每周天数之外的课（5 天课表里的周六/周日课）：切视图时**保留不删**，
+            // 只是当前视图看不到，故不参与任何与天数/学期边界相关的校验——
+            // 否则 7→5 的切换会被这些"藏起来的课"挡住，再切回 7 天就永远看不到了。
+            val hidden = course.dayOfWeek !in 1..schedule.daysPerWeek
+            if (settingsValid && !hidden) {
                 // R10 起始节/跨度/末节
                 val spanOk = course.span in 1..MAX_SPAN &&
                     course.startSlot in 1..schedule.slotCount &&
@@ -121,8 +122,8 @@ object ScheduleValidator {
                     errors += ScheduleError.WeekSegmentInvalid(course.id, index)
                 }
             }
-            // R11 周数不超学期总周数（依赖合法学期）
-            if (settingsValid) {
+            // R11/R14 周数与学期边界（依赖合法学期）：藏起来的课不校验（见上）
+            if (settingsValid && !hidden) {
                 val maxWeek = course.weeks.maxWeek()
                 if (maxWeek != null && maxWeek > schedule.totalWeeks) {
                     // 顺带给出"按当前排课，这门课最后一次会上到哪天"，供 UI 直接说清原因

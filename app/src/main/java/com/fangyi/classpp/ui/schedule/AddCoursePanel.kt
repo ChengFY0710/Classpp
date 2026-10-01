@@ -177,7 +177,6 @@ fun AddCoursePanel(
     val errorWeeksBeyondTermFormat = stringResource(R.string.error_weeks_beyond_term_course)
     val errorTermEndFormat = stringResource(R.string.error_term_end_course)
     val errorSpanFormat = stringResource(R.string.error_span_out_of_range)
-    val errorDayFormat = stringResource(R.string.error_day_out_of_week)
     val errorConflictFormat = stringResource(R.string.error_grid_conflict)
     val errorUnexpected = stringResource(R.string.error_unexpected)
 
@@ -238,7 +237,6 @@ fun AddCoursePanel(
             val errorCourse = draft.courses.firstOrNull { c ->
                 when (e) {
                     is ScheduleError.CourseFieldInvalid -> c.id == e.courseId
-                    is ScheduleError.DayOutOfWeek -> c.id == e.courseId
                     is ScheduleError.WeeksBeyondTerm -> c.id == e.courseId
                     is ScheduleError.TermEndInvalid -> c.id == e.courseId
                     else -> false
@@ -255,8 +253,6 @@ fun AddCoursePanel(
                 // 末周只上到某天时，晚于它的那天就放不下：按日期说清楚，不打印 UUID
                 is ScheduleError.TermEndInvalid ->
                     errorTermEndFormat.format(courseName, e.date)
-                is ScheduleError.DayOutOfWeek ->
-                    errorDayFormat.format(courseName, e.dayOfWeek)
                 is ScheduleError.GridConflict -> {
                     // 新课是列表里最后一个，冲突对里另一个就是已存在的课
                     val other = if (e.a.id == entry.id) e.b else e.a

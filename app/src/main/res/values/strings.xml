@@ -99,10 +99,8 @@
     <string name="error_weeks_beyond_term_course">「%1$s」会上到 %2$s，超出学期范围（本学期共 %3$d 周），请缩短周数或调整学期结束</string>
     <string name="error_term_end_course">「%1$s」最后一次上课是 %2$s，已晚于学期结束日，请缩短周数或调整学期结束</string>
     <string name="error_span_out_of_range">「%1$s」的节次超出当天范围，请重新选择结束节次</string>
-    <string name="error_day_out_of_week">「%1$s」在星期 %2$d，超出当前每周天数，请先切换到 7 天视图</string>
     <string name="error_grid_conflict">与「%1$s」时间冲突</string>
     <string name="error_alternate_weeks_taken">该周数已被交替课程占用</string>
-    <string name="error_weekend_courses_block_days5">周六/周日还有 %1$d 门课，无法切到 5 天视图：%2$s</string>
 
     <!-- 切换课表浮层 -->
     <string name="switcher_export">导出课表</string>

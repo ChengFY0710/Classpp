@@ -219,9 +219,8 @@ fun SettingsScreen(
                                 },
                                 onDays = { days ->
                                     error = null
-                                    // 天数与学期结束日的收拢都在仓库里一次完成
-                                    // （setDaysPerWeek 会把结束日收进新天数的列范围，再整体校验）：
-                                    // 只有"周六/周日还留着课"才会被拒绝，绝不静默删课
+                                    // 只改天数：周六/周日的课保留在数据里，5 天视图只是不画它们，
+                                    // 切回 7 天原样出现——故切换不会失败，也无需联动改学期结束日
                                     scope.launch { submit(repository.setDaysPerWeek(current.id, days)) }
                                 },
                                 onSlots = { slots ->
@@ -654,10 +653,7 @@ private fun ScheduleError.toMessage(): String = when (this) {
     is ScheduleError.TermNotMonday -> stringResource(R.string.error_term_not_monday)
     // 结束日可落任意一天（含周中），只剩"早于开始日"一种非法
     is ScheduleError.TermRangeInvalid -> stringResource(R.string.error_term_range)
-    is ScheduleError.TermEndInvalid -> stringResource(R.string.error_term_end_short)
     is ScheduleError.DaysPerWeekInvalid -> stringResource(R.string.error_days_per_week)
-    is ScheduleError.DayOutOfWeek ->
-        stringResource(R.string.error_day_out_of_week, "", dayOfWeek)
     is ScheduleError.SlotCountInvalid -> stringResource(R.string.error_slot_count)
     is ScheduleError.SlotTimeFormatInvalid -> stringResource(R.string.error_slot_time_format)
     is ScheduleError.SlotOrderInvalid -> stringResource(R.string.error_slot_order)
