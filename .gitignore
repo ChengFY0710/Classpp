@@ -16,3 +16,14 @@ local.properties
 
 # 本地工具产物：Windows 文件权限修复记录/报告 + 临时量距脚本（不属于项目代码）
 .dsh-acl-reports/
+
+# 本地 AI 编码工具产物（plans/、node_modules 等，不属于项目代码）
+.mimocode/
+.zcode/
+
+# Android Studio / IDEA 本地状态：设备选择、设备列表、工程 SDK 名、跑测偏好——
+# 逐机器/逐会话变化，且可能带上本机绝对路径（workspace.xml 已在上方忽略）
+/.idea/deploymentTargetSelector.xml
+/.idea/deviceManager.xml
+/.idea/misc.xml
+/.idea/runConfigurations.xml
