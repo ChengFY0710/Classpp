@@ -56,7 +56,19 @@ import dev.chrisbanes.haze.hazeSource
 val SheetTopInset: Dp = 56.dp
 
 /** 浮层卡片形状（上圆角）；模糊与内容都被它裁剪收敛。 */
-val SheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+val SheetShape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
+
+/**
+ * 浮层内容的横向边距与卡片纵向间距——与课表设置页同源
+ * （设置页 `SettingsScreen.SectionSpacing = 18.dp`），保证两处卡片宽度、节奏一致。
+ */
+val SheetSectionSpacing: Dp = 18.dp
+
+/**
+ * 内容末尾的额外滚动余量（对应设置页 `BottomScrollSlack = 120.dp`）：
+ * 拉大可滑动范围，末尾的卡片能滑得更高、离底边更远。想调滑动上限改这一个值。
+ */
+val SheetBottomSlack: Dp = 120.dp
 
 private val HandleColor = Color(0xFFD9DDE1)
 
@@ -159,12 +171,14 @@ fun OverlaySheet(
                             // 顶栏模糊的采样源：滚动内容从顶栏底下滚过时被渐变模糊
                             .hazeSource(hazeState)
                             .verticalScroll(scrollState)
-                            .padding(horizontal = 20.dp),
+                            // 横向 18dp = 设置页同款页边距，卡片宽度与设置页一致
+                            .padding(horizontal = SheetSectionSpacing),
                     ) {
                         // 为叠在上方的顶栏留位；滚动后内容进入顶栏区域并被模糊
                         Spacer(Modifier.height(TopBarHeight))
                         content()
-                        Spacer(Modifier.height(bottomInsetDp + 16.dp))
+                        // 尾部余量 = 键盘/导航让位 + 可调滚动余量，拉大可滑动范围
+                        Spacer(Modifier.height(bottomInsetDp + SheetBottomSlack))
                     }
                     OverlaySheetTopBar(
                         title = title,
@@ -281,10 +295,10 @@ fun SheetPillButton(
 ) {
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(100))
             .background(containerColor)
             .clickable(onClick = onClick)
-            .padding(start = 10.dp, end = 16.dp, top = 9.dp, bottom = 9.dp),
+            .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -293,7 +307,7 @@ fun SheetPillButton(
                 painter = painterResource(icon),
                 contentDescription = null,
                 tint = contentColor,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(30.dp),
             )
         }
         if (!iconAtEnd) iconComposable()
@@ -307,7 +321,7 @@ fun SheetPillButton(
     }
 }
 
-/** 分组标题：浅灰大字（区别于旧版 14sp 蓝字）。 */
+/** 分组标题：浅灰大字（区别于旧版 14sp 蓝字）；左缩进 4dp 与设置页 SettingsSection 标题一致。 */
 @Composable
 fun SheetSectionLabel(
     text: String,
@@ -317,6 +331,6 @@ fun SheetSectionLabel(
         text = text,
         fontSize = 18.sp,
         color = SecondaryTextColor,
-        modifier = modifier,
+        modifier = modifier.padding(start = 4.dp),
     )
 }

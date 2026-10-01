@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
@@ -40,6 +41,13 @@ import com.fangyi.classpp.ui.theme.Error
 import com.fangyi.classpp.ui.theme.OnSurface
 import com.fangyi.classpp.ui.theme.Primary
 import com.fangyi.classpp.ui.theme.SecondaryTextColor
+
+/**
+ * 浮层「行卡」统一行高：上下内距 14×2 + 文字行高 24 = 52dp。
+ * 输入框与浮层选择卡片都按它取 `heightIn(min)`，保证两张卡永远等高；
+ * 系统字体放大时两者行高同步增长，等高关系依旧成立。
+ */
+val SheetFieldHeight = 60.dp
 
 /**
  * 浮层内全新输入框：白卡片 + 左侧黑色粗体 label + 右对齐可编辑值。
@@ -82,6 +90,7 @@ fun SheetTextField(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = SheetFieldHeight)
             .clip(SheetCardShape)
             .background(MaterialTheme.colorScheme.surface)
             .border(width = 2.dp, color = borderColor, shape = SheetCardShape)

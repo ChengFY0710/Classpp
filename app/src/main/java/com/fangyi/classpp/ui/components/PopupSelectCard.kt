@@ -3,6 +3,7 @@ package com.fangyi.classpp.ui.components
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,7 +51,10 @@ fun PopupSelectCard(
     val keyboard = LocalSoftwareKeyboardController.current
 
     SheetCard(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            // 与输入框共用 SheetFieldHeight，保证同行卡等高
+            .heightIn(min = SheetFieldHeight),
         onClick = {
             focusManager.clearFocus()
             keyboard?.hide()
@@ -62,6 +66,7 @@ fun PopupSelectCard(
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
             color = OnSurface,
+            lineHeight = 16.sp,
         )
         Spacer(Modifier.weight(1f))
         Text(
@@ -69,6 +74,7 @@ fun PopupSelectCard(
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
             color = Primary,
+            lineHeight = 16.sp,
         )
         // 菜单锚点：上缘与卡片内容顶对齐（卡片内距 14 + 图标上缘），下弹后被 offset 抬回卡片顶
         Box {
@@ -96,6 +102,7 @@ fun PopupSelectCard(
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = OnSurface,
+                                lineHeight = 16.sp,
                             )
                         },
                         onClick = {
