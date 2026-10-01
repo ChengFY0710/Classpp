@@ -30,6 +30,14 @@ data class IsoDate(val epochDay: Long) {
     /** ISO 星期：1 = 周一 … 7 = 周日。1970-01-01 是周四（=4） */
     fun isoDayOfWeek(): Int = Math.floorMod(epochDay + 3, 7L).toInt() + 1
 
+    /**
+     * 取本日期或它之前最近的一个"每周第 [daysPerWeek] 天以内"的日期
+     * （如 5 天模式下周日 → 同周周五、周三 → 周三）。
+     * 用于把学期结束日收进 `1..daysPerWeek` 的列范围，结束日仍可停在周中。
+     */
+    fun lastTeachingDayOnOrBefore(daysPerWeek: Int): IsoDate =
+        this - (isoDayOfWeek() - daysPerWeek).coerceAtLeast(0)
+
     override fun toString(): String {
         val cal = GregorianCalendar(UTC).apply { timeInMillis = epochDay * MILLIS_PER_DAY }
         return String.format(

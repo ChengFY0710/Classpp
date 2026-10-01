@@ -177,9 +177,19 @@ class ScheduleRepository internal constructor(
         commit(fileState.value.replace(target, updated))
     }
 
+    /**
+     * 切换每周天数。termEnd 允许停在周中，但必须落在新天数的列范围内，故先只收不放地把
+     * 结束日收进"该周最后一个教学日"（7→5 时周日 → 同周周五；5→7 时保持不动），再整体校验。
+     *
+     * 被拒的两种情形都归并成 [ScheduleError.CoursesOutOfRange]（见 [rejection]），**绝不静默删课**：
+     *  - 周六/周日仍有课 → [ScheduleError.DayOutOfWeek]：5 天视图没有这两列；
+     *  - 末周被收掉后越界的课 → [ScheduleError.WeeksBeyondTerm]：结束日提前了，有些课没了落点。
+     */
     suspend fun setDaysPerWeek(id: String, days: Int): OpResult = mutex.withLock {
         val target = scheduleOrNull(id) ?: return@withLock OpResult.Err(ScheduleError.NotFound(id))
-        val updated = target.copy(daysPerWeek = days)
+        // 只收不放：结束日已在范围内时保持用户选的那一天不动
+        val clampedEnd = target.termEnd.lastTeachingDayOnOrBefore(days)
+        val updated = target.copy(daysPerWeek = days, termEnd = clampedEnd)
         val errors = ScheduleValidator.validate(updated)
         if (errors.isNotEmpty()) return@withLock OpResult.Err(rejection(updated, errors))
         commit(fileState.value.replace(target, updated))
@@ -212,6 +222,9 @@ class ScheduleRepository internal constructor(
                     is ScheduleError.CourseFieldInvalid -> add(e.courseId)
                     is ScheduleError.WeekSegmentInvalid -> add(e.courseId)
                     is ScheduleError.WeeksBeyondTerm -> add(e.courseId)
+                    // 切天数时周六/周日的课没了列、末周被收掉后越界的课：都归到具体课程上
+                    is ScheduleError.DayOutOfWeek -> add(e.courseId)
+                    is ScheduleError.TermEndInvalid -> add(e.courseId)
                     is ScheduleError.GridConflict -> {
                         add(e.a.id); add(e.b.id)
                     }

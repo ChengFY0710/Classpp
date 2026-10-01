@@ -71,14 +71,16 @@ private const val DateBandFadeSpeed = 3.0f
 
 
 /**
- * 课表网格：整块内容区是一个横向 Pager，**每周一页**（日期数字带 + 按节次分行的 5 列课程格）。
+ * 课表网格：整块内容区是一个横向 Pager，**每周一页**（日期数字带 + 按节次分行的课程格）。
  * 左右滑动即切换上一周/下一周，卡片与网格线跟手横移，顶栏不动。
+ *
+ * 列数由 [daysPerWeek] 决定（5 = 周一~五，7 = 周一~日），行/列结构与顶栏星期行同为零水平边距
+ * 等分，天然列对齐；每周页里 `content.dates` 的个数应与 [daysPerWeek] 一致（见 ScheduleScreen）。
  *
  * 关键结构：Pager 是列表里的**唯一 item**，纵向滚动留在 Pager 之外——
  * 三页因此共享同一纵向位置与折叠状态，拖动途中相邻周与当前周严格对齐；
  * 每页高度固定（日期带 + 各行 + 尾部留白），故给 Pager 显式高度，避开 item 纵向约束无界。
  *
- * 与 [ScheduleHeader] 星期行同为零水平边距五等分，天然列对齐，
  * 日期带高亮列与星期行高亮列同源（均由顶栏日期推导，见 [WeekPageContent.highlightDate]）。
  * 折叠通过外部 modifier.nestedScroll 接入，本组件不感知折叠状态。
  * 列表状态由调用方持有（供模糊进度与日期带渐隐计算），顶部偏移由 contentPadding.top 跟随顶栏高度；
@@ -97,10 +99,13 @@ fun CourseGrid(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     editMode: Boolean = false,
     showDates: Boolean = true,
+    daysPerWeek: Int = 5,
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)? = null,
     onEditClick: ((courseId: String) -> Unit)? = null,
     onCourseLongClick: ((courseId: String, anchor: Rect) -> Unit)? = null,
 ) {
+    // 列数至少 1（0/负值理论上被校验挡住，这里兜一下避免算出空页宽或除零）
+    val days = daysPerWeek.coerceAtLeast(1)
     val pageHeight = (if (showDates) DateBandHeight else 0.dp) +
         GridRowHeight * timeSlots.size + TrailingScrollSpace
     // 接缝竖线是否要画：派生成布尔 state —— 拖动中恒为真，只在起手/落位翻转一次。
@@ -136,6 +141,7 @@ fun CourseGrid(
                     // 记忆会让"刚加的课"刷不出来（key 没变 → 计算不重跑）
                     content = contentForWeek(page + 1),
                     timeSlots = timeSlots,
+                    days = days,
                     seamVisible = seamVisible,
                     listState = state,
                     showDates = showDates,
@@ -177,6 +183,7 @@ private val PagerState.isSeamVisible: Boolean
 private fun WeekPage(
     content: WeekPageContent,
     timeSlots: List<TimeSlot>,
+    days: Int,
     seamVisible: State<Boolean>,
     listState: LazyListState,
     showDates: Boolean,
@@ -194,6 +201,7 @@ private fun WeekPage(
             .drawBehind {
                 if (seamVisible.value) {
                     val stroke = GridLineWidth.toPx()
+                    // 页右缘正是最后一列的边界（列按宽度等分）→ 与末尾接缝线同一条
                     val x = size.width - stroke / 2f
                     drawLine(
                         Outline,
@@ -208,6 +216,7 @@ private fun WeekPage(
             if (showDates) {
                 DateBand(
                     weekDates = content.dates,
+                    days = days,
                     highlightDate = content.highlightDate,
                     listState = listState,
                     seamVisible = seamVisible,
@@ -217,6 +226,7 @@ private fun WeekPage(
                 GridRow(
                     slot = slot,
                     courses = content.courses,
+                    days = days,
                     editMode = editMode,
                     onAddClick = onAddClick,
                     onEditClick = onEditClick,
@@ -235,7 +245,7 @@ private fun WeekPage(
                         .fillMaxWidth()
                         .height(GridRowHeight),
                 ) {
-                    for (day in 1..5) {
+                    for (day in 1..days) {
                         val course = content.courses.findAt(day, slot.id)
                         val cardBounds = remember(day) { BoundsHolder() }
                         Box(
@@ -291,7 +301,8 @@ private fun WeekPage(
 }
 
 /**
- * 日期数字带：5 天日号，与顶栏日期同日 primary 高亮；随自身滚出量渐隐。
+ * 日期数字带：各上课日一行日号，与顶栏日期同日 primary 高亮；随自身滚出量渐隐。
+ * 列数与 [days]（5/7）一致，竖分隔线由 [columnDividerXs] 与课程行同源计算。
  *
  * 翻页途中页右缘的接缝竖线由本带自己补（页级 drawBehind 补的那段会被带的底色盖住），
  * 画在自身 drawBehind 内 ⇒ 与带内其它竖线一同渐隐，不会在滚过顶栏后留一截浮线；
@@ -300,6 +311,7 @@ private fun WeekPage(
 @Composable
 private fun DateBand(
     weekDates: List<Date>,
+    days: Int,
     highlightDate: Date,
     listState: LazyListState,
     seamVisible: State<Boolean>,
@@ -333,8 +345,8 @@ private fun DateBand(
             // 画在 background 之后，线条压在带底色之上
             .drawBehind {
                 val stroke = GridLineWidth.toPx()
-                for (i in 1..4) {
-                    val x = (size.width * i / 5f).roundToInt().toFloat()
+                // 各列内部边界（共 days-1 条）；末列右界即页右缘，与接缝线同一条故不重复画
+                columnDividerXs(size.width, days).forEach { x ->
                     drawLine(Outline, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
                 }
                 // 顶部横线：星期行与网格的分隔线；底部不画（与首行之间无线）
@@ -344,7 +356,7 @@ private fun DateBand(
                     Offset(size.width, stroke / 2),
                     strokeWidth = stroke,
                 )
-                // 右缘接缝竖线：与下方课程行的补线接成一条（同一 x、同一笔宽）
+                // 右缘接缝竖线：仅在翻页途中出现，与下方课程行的补线接成一条（同一 x、同一笔宽）
                 if (seamVisible.value) {
                     val x = size.width - stroke / 2f
                     drawLine(Outline, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
@@ -371,7 +383,7 @@ private fun DateBand(
 }
 
 /**
- * 一个节次行：5 个等宽单元格。
+ * 一个节次行：按 [days] 等分（5 或 7）的等宽单元格。
  * 普通态有课渲染课程卡片、无课露网格背景；编辑态空位渲染添加卡片，
  * 已有课程卡（含本周不上的置灰卡）点击进编辑、长按出交替课程菜单。
  * 跨节课的起始格与续格都留空——卡片由 [WeekPage] 的叠加层跨行绘制。
@@ -380,6 +392,7 @@ private fun DateBand(
 private fun GridRow(
     slot: TimeSlot,
     courses: List<Course>,
+    days: Int,
     editMode: Boolean,
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)?,
     onEditClick: ((courseId: String) -> Unit)?,
@@ -391,8 +404,7 @@ private fun GridRow(
             .height(GridRowHeight)
             .drawBehind {
                 val stroke = GridLineWidth.toPx()
-                for (i in 1..4) {
-                    val x = (size.width * i / 5f).roundToInt().toFloat()
+                columnDividerXs(size.width, days).forEach { x ->
                     drawLine(Outline, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
                 }
                 // 底部横线：行间分隔；顶部不画（与日期带之间无线）
@@ -400,7 +412,7 @@ private fun GridRow(
                 drawLine(Outline, Offset(0f, y), Offset(size.width, y), strokeWidth = stroke)
             },
     ) {
-        for (day in 1..5) {
+        for (day in 1..days) {
             val course = courses.findAt(day, slot.id)
             // 续格（被跨节课覆盖）：不画课卡也不画添加卡，点击自然落空
             val covered = courses.isContinuationAt(day, slot.id)
@@ -471,6 +483,28 @@ private fun CourseGridPreview() {
                     courses = MockCourses,
                     dates = dates,
                     // 与旧预览一致：高亮所看周的周二
+                    highlightDate = dates[1],
+                )
+            },
+        )
+    }
+}
+
+/** 7 天视图预览：7 列（含周六/周日）与日期带 7 个日号同屏 */
+@Preview(showBackground = true, name = "课表网格 · 7 天", widthDp = 411)
+@Composable
+private fun CourseGridSevenDayPreview() {
+    ClassppTheme {
+        CourseGrid(
+            pagerState = rememberPagerState(initialPage = 1) { 20 },
+            timeSlots = DefaultTimeSlots,
+            daysPerWeek = 7,
+            contentForWeek = { pageWeek ->
+                val dates = datesForWeek(pageWeek, daysPerWeek = 7)
+                WeekPageContent(
+                    week = pageWeek,
+                    courses = MockCoursesWeekend,
+                    dates = dates,
                     highlightDate = dates[1],
                 )
             },

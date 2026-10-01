@@ -74,44 +74,99 @@ class ScheduleValidatorTest {
     }
 
     @Test
-    fun `R2 end must be friday or sunday`() {
-        assertHas<ScheduleError.TermEndInvalid>(
-            ScheduleValidator.validate(schedule(end = IsoDate.parse("2026-06-17"))), // 周三
+    fun `R2 term end may fall on any weekday`() {
+        // 周三结尾也合法：学期末周只上到周三
+        assertEquals(
+            emptyList<ScheduleError>(),
+            ScheduleValidator.validate(schedule(end = IsoDate.parse("2026-06-17"))),
         )
-        // 周五结尾合法
-        assertNo<ScheduleError.TermEndInvalid>(
+        // 周五、周日同样合法
+        assertEquals(
+            emptyList<ScheduleError>(),
             ScheduleValidator.validate(schedule(end = IsoDate.parse("2026-06-19"))),
         )
-        // 周日结尾在 5 天模式也合法
-        assertNo<ScheduleError.TermEndInvalid>(
+        assertEquals(
+            emptyList<ScheduleError>(),
             ScheduleValidator.validate(schedule(end = IsoDate.parse("2026-06-21"))),
         )
     }
 
     @Test
-    fun `R2b seven day mode requires sunday end`() {
-        // 2026-06-19 周五 + daysPerWeek=7 → 拒
-        assertHas<ScheduleError.TermEndInvalid>(
+    fun `R2 seven day mode may end on any weekday too`() {
+        // 7 天模式不再要求周日结尾
+        assertEquals(
+            emptyList<ScheduleError>(),
             ScheduleValidator.validate(schedule(daysPerWeek = 7, end = IsoDate.parse("2026-06-19"))),
         )
-        // 2026-06-21 周日 + daysPerWeek=7 → 过
-        assertNo<ScheduleError.TermEndInvalid>(
+        assertEquals(
+            emptyList<ScheduleError>(),
             ScheduleValidator.validate(schedule(daysPerWeek = 7, end = IsoDate.parse("2026-06-21"))),
         )
     }
 
     @Test
-    fun `R3 range must end on whole week boundary`() {
-        // 周一~周六（diff=5）→ 非整周
-        assertHas<ScheduleError.TermRangeInvalid>(
-            ScheduleValidator.validate(schedule(end = IsoDate.parse("2026-06-20"))),
-        )
-        // end 早于 start → 拒
+    fun `R3 only rejects an end before the start`() {
         assertHas<ScheduleError.TermRangeInvalid>(
             ScheduleValidator.validate(
                 schedule(start = IsoDate.parse("2026-03-02"), end = IsoDate.parse("2026-02-27")),
             ),
         )
+        // 周三结尾不再算"非整周"
+        assertNo<ScheduleError.TermRangeInvalid>(
+            ScheduleValidator.validate(schedule(end = IsoDate.parse("2026-06-17"))),
+        )
+    }
+
+    @Test
+    fun `totalWeeks counts the week the end date falls in`() {
+        // 周中结尾也归到它所在的教学周：周一是第 1 周的第 0 天，周三仍是第 1 周
+        assertEquals(1, schedule(end = IsoDate.parse("2026-03-04")).totalWeeks)   // 周三
+        assertEquals(1, schedule(end = IsoDate.parse("2026-03-08")).totalWeeks)   // 周日
+        // 跨到下一周的第一天（周一）= 第 2 周
+        assertEquals(2, schedule(end = IsoDate.parse("2026-03-09")).totalWeeks)
+        // 16 周学期的周三 / 周日结尾都仍是第 16 周（周三停在周中，不额外多出一周）
+        assertEquals(16, schedule(end = IsoDate.parse("2026-06-17")).totalWeeks)
+        assertEquals(16, schedule(end = IsoDate.parse("2026-06-21")).totalWeeks)
+    }
+
+    @Test
+    fun `R14 a course may not end after the term end`() {
+        // 末周只上到周三（2026-06-17）：同周周五的课没了落点
+        val wednesdayEnd = schedule(
+            end = IsoDate.parse("2026-06-17"),
+            courses = listOf(course(day = 5, weeks = WeekPattern.everyWeek(16))),
+        )
+        assertHas<ScheduleError.TermEndInvalid>(ScheduleValidator.validate(wednesdayEnd))
+
+        // 周一/周三的课仍放得下
+        assertNo<ScheduleError.TermEndInvalid>(
+            ScheduleValidator.validate(
+                wednesdayEnd.copy(
+                    courses = listOf(course(day = 3, weeks = WeekPattern.everyWeek(16))),
+                ),
+            ),
+        )
+    }
+
+    /**
+     * 学期结束日提前后，课程"最后一次上到哪天"必须能报给用户：
+     * 7 天课表把结束日收成周三时，周日那门课要能报出 2026-06-21，
+     * 否则界面只剩一句没有日期的错误（这里曾经直接把内部 id / 英文 message 漏给用户）。
+     */
+    @Test
+    fun `term end error reports the real last class date`() {
+        val errors = ScheduleValidator.validate(
+            schedule(
+                daysPerWeek = 7,
+                end = IsoDate.parse("2026-06-17"),
+                courses = listOf(course(day = 7, weeks = WeekPattern.everyWeek(16))),
+            ),
+        )
+        val termEndError = errors.filterIsInstance<ScheduleError.TermEndInvalid>().single()
+
+        assertEquals(IsoDate.parse("2026-06-21"), termEndError.date)
+        assertEquals(7, termEndError.dayOfWeek)
+        assertEquals("c1", termEndError.courseId)
     }
 
     @Test
@@ -168,22 +223,22 @@ class ScheduleValidatorTest {
 
     @Test
     fun `R9 day of week range respects daysPerWeek`() {
-        // 5 天模式不允许周六/周日
-        assertHas<ScheduleError.CourseFieldInvalid>(
+        // 5 天模式不允许周六/周日：课程星期越界单独成 DayOutOfWeek，便于 UI 说清"切5天被谁挡住"
+        assertHas<ScheduleError.DayOutOfWeek>(
             ScheduleValidator.validate(schedule(courses = listOf(course(day = 6)))),
         )
-        assertHas<ScheduleError.CourseFieldInvalid>(
+        assertHas<ScheduleError.DayOutOfWeek>(
             ScheduleValidator.validate(schedule(courses = listOf(course(day = 7)))),
         )
-        // 7 天模式允许
+        // 7 天模式允许周末（结束日改到周日，免得撞上"课排在学期结束之后"）
         val ok = ScheduleValidator.validate(
             schedule(
-                courses = listOf(course(day = 7)),
+                courses = listOf(course(day = 7, weeks = WeekPattern.everyWeek(16))),
                 daysPerWeek = 7,
                 end = IsoDate.parse("2026-06-21"),
             ),
         )
-        assertNo<ScheduleError.CourseFieldInvalid>(ok)
+        assertEquals(emptyList<ScheduleError>(), ok)
     }
 
     @Test

@@ -55,8 +55,8 @@ private val EditActionShape = RoundedCornerShape(10.dp)
  * 编辑态顶栏：保存 / 切换课表 / 取消 + 星期行，取代可折叠的 [ScheduleHeader]。
  *
  * 三按钮一行高 [TopBarHeight]，与顶栏行等高，两侧图标内缩也与顶栏图标一致，
- * 进出编辑态时图标位置不跳。星期行沿用头部同款 padding 与字号，保证与网格列对齐；
- * 编辑态没有"今天"语义，故不做今日高亮。
+ * 进出编辑态时图标位置不跳。星期行沿用头部同款 padding 与字号、按 [daysPerWeek] 等分
+ * （5/7 列），保证与网格列对齐；编辑态没有"今天"语义，故不做今日高亮。
  *
  * 两侧的动作各自是"图标 + 文字"整块可点（设计稿里图标与文字同色成对），
  * 中间的"切换课表"是纯文字。
@@ -72,8 +72,12 @@ fun ScheduleEditBar(
     modifier: Modifier = Modifier,
     blurProgress: Float = 0f,
     hazeState: HazeState? = null,
+    daysPerWeek: Int = 5,
 ) {
-    val weekdays = stringArrayResource(R.array.weekdays)
+    // 列数只认资源里真有的星期名（同 ScheduleHeader）
+    val weekdayNames = stringArrayResource(R.array.weekdays)
+    val days = daysPerWeek.coerceIn(1, weekdayNames.size)
+    val weekdays = weekdayNames.take(days)
     val progress = blurProgress.coerceIn(0f, 1f)
     Column(
         modifier = modifier
@@ -137,13 +141,13 @@ fun ScheduleEditBar(
                     .padding(end = EditBarEdgePadding),
             )
         }
-        // 星期行：与 ScheduleHeader 同几何（零水平边距五等分），列宽与网格天然对齐
+        // 星期行：与 ScheduleHeader 同几何（零水平边距按天数等分），列宽与网格天然对齐
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 10.dp, bottom = 7.dp),
         ) {
-            for (i in 0..4) {
+            for (i in weekdays.indices) {
                 Text(
                     text = weekdays[i].substring(1),
                     modifier = Modifier.weight(1f),

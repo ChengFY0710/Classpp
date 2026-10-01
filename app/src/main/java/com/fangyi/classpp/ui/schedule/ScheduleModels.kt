@@ -9,7 +9,7 @@ data class Course(
     val teacher: String,
     /** 上课地点，如 "@学武楼 C201" */
     val location: String,
-    /** 星期：1 = 周一 … 5 = 周五 */
+    /** 星期：1 = 周一 … 5 = 周五（7 天课表另有 6 = 周六、7 = 周日） */
     val dayOfWeek: Int,
     /** 所属节次 id（起始节次；跨节课程从这里开始向下占据 [span] 行） */
     val slotId: Int,
@@ -45,7 +45,7 @@ enum class CourseColor { Blue, Green, Greentwo , Yellow, Orange, Purple, Teal, P
 data class WeekPageContent(
     val week: Int,
     val courses: List<Course>,
-    /** 该周周一至周五的日期（日期带显示日号） */
+    /** 该周各上课日的日期（5 天视图 5 个、7 天视图 7 个；日期带显示日号） */
     val dates: List<Date>,
     /** 日期带高亮列：与顶栏日期同规则（查看本周 = 今天，其它周 = 该周周一） */
     val highlightDate: Date,
@@ -66,16 +66,29 @@ val DefaultTimeSlots = listOf(
     TimeSlot(5, "19:10", "20:50"),
 )
 
-/** 第 [week] 周周一至周五的日期（周数从 1 开始） */
-fun datesForWeek(week: Int): List<Date> {
+/**
+ * 第 [week] 周周一至周 [daysPerWeek] 的日期（周数从 1 开始）。
+ * 默认 5 天；7 天视图下多出周六/周日两列。
+ */
+fun datesForWeek(week: Int, daysPerWeek: Int = 5): List<Date> {
     val base = Calendar.getInstance().apply {
         time = TermStart
         add(Calendar.DAY_OF_YEAR, (week - 1) * 7)
     }
-    return (0..4).map { day ->
+    return (0 until daysPerWeek).map { day ->
         (base.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, day) }.time
     }
 }
+
+/**
+ * 课表网格的竖分隔线 x 坐标：把宽度等分成 [days] 列，取**内部**的列边界（共 days-1 条）。
+ *
+ * 与布局同源：网格用 `Modifier.weight(1f)` 把宽度等分成 days 列，分隔线必须按同一套划分计算，
+ * 否则线会落在格子中间。日期带、课程行、页右缘接缝线都用它，三者保证接成同一条线。
+ * `days = 1`（无内部边界）或宽度未测量出来时返回空列表。
+ */
+fun columnDividerXs(widthPx: Float, days: Int): List<Float> =
+    if (days < 2) emptyList() else (1 until days).map { widthPx * it / days }
 
 /** 是否同一天（年月日） */
 fun Date.isSameDay(other: Date): Boolean {
@@ -113,6 +126,12 @@ val MockCourses: List<Course> = listOf(
     // 第 5 节 19:10-20:50
     Course("中国古代文学史与作品精读", "XX老师", "@西部片区#4 208", 3, 5, CourseColor.Green),
     Course("程序设计研讨", "XX老师", "@学武楼 B203", 4, 5, CourseColor.Blue),
+)
+
+/** 7 天视图预览用 mock：5 天那份再加两门落在周六/周日的课（6/7 列只有 7 天课表才会有） */
+val MockCoursesWeekend: List<Course> = MockCourses + listOf(
+    Course("大学英语（听说）", "XX老师", "@学武楼 B105", 6, 2, CourseColor.Teal),
+    Course("工程训练", "XX老师", "@工程训练中心", 7, 4, CourseColor.Orange),
 )
 
 /**

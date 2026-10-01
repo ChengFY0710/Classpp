@@ -116,7 +116,7 @@ data class Schedule(
     val name: String,
     /** 第一周周一 */
     val termStart: IsoDate,
-    /** 最后一周的周五（或周日） */
+    /** 学期结束日：最后一周的最后一个教学日，**可落在周中**（如某学期只上到周三） */
     val termEnd: IsoDate,
     /** 每周上课天数：5（周一~五）或 7（周一~日） */
     val daysPerWeek: Int = 5,
@@ -125,7 +125,10 @@ data class Schedule(
     /** 本周不上的课是否显示（显示时 UI 置灰）——课表级全局开关 */
     val showInactiveCourses: Boolean = true,
 ) {
-    /** 学期总周数（起止已由校验保证落在整周边界） */
+    /**
+     * 学期总周数 = termEnd 落在第几个教学周。termEnd 可停在周中，
+     * 故按**天数**取整（第 0..6 天都是第 1 周），不再要求整周边界。
+     */
     val totalWeeks: Int get() = ((termEnd - termStart).toInt() / 7) + 1
 
     /** 每天大课节数（= slots.size） */

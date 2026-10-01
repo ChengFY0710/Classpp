@@ -173,6 +173,44 @@ class ScheduleRepositoryTest {
     }
 
     @Test
+    fun `setDaysPerWeek 7 to 5 pulls the sunday end back to friday`() = runBlocking {
+        val r = repo()
+        // TestTermEnd7 是周日收尾；切 5 天后结束日应收到同周周五（2026-06-19）
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd7, daysPerWeek = 7).okId()
+
+        r.setDaysPerWeek(id, 5).assertOk()
+
+        val s = r.schedules.value.single()
+        assertEquals(5, s.daysPerWeek)
+        assertEquals(IsoDate.parse("2026-06-19"), s.termEnd)
+        // 只收不放：总周数不变
+        assertEquals(16, s.totalWeeks)
+    }
+
+    @Test
+    fun `setDaysPerWeek keeps a mid week end and accepts the weekend course in 7 days`() =
+        runBlocking {
+            val r = repo()
+            // 学期末周只上到周三，且周日有一门课：5 天模式下它越界，7 天模式加周日结尾后正好放下
+            val id = r.createSchedule(
+                "A", TestTermStart, IsoDate.parse("2026-06-17"),
+                daysPerWeek = 5,
+            ).okId()
+            val weekend = testCourse(id = "sun", day = 7)
+            assertTrue(r.upsertCourse(id, weekend).assertErr() is ScheduleError.DayOutOfWeek)
+
+            // 先补到周日结尾（termEnd 不再强制周五/周日，任意一天都行）
+            r.setTerm(id, TestTermStart, TestTermEnd7).assertOk()
+            r.setDaysPerWeek(id, 7).assertOk()
+            r.upsertCourse(id, weekend).assertOk()
+
+            val s = r.schedules.value.single()
+            assertEquals(7, s.daysPerWeek)
+            assertEquals(TestTermEnd7, s.termEnd)
+            assertEquals(1, s.courses.size)
+        }
+
+    @Test
     fun `setTerm shortening beyond course weeks is rejected losslessly`() = runBlocking {
         val r = repo()
         val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()

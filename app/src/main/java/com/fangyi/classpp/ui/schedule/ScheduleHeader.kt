@@ -170,6 +170,12 @@ internal fun collapsedPillX(
  * 周数胶囊从中央平移到日期行右端（与日期同一行右对齐）。
  * fraction 外置便于 @Preview 直接预览两态。
  *
+ * 星期行按 [daysPerWeek] 等分（5 或 7 列），与网格列硬对齐；
+ * 7 天视图下多出周六/周日两列，高亮列仍由顶栏日期推导。
+ * [onDaysPerWeekToggle] 非空时整行可点：点一下在 5 天 / 7 天视图间切换
+ * （把「每周上课天数」从设置深处搬到课表首屏——7 天课表的学期结束日是周日，
+ * 不先改回周五就无法从设置页切回 5 天，这个开关是那条退路）。
+ *
  * [blurProgress] ∈ [0,1]（与日期带渐隐同步）：>0 时头部背景改为
  * Haze 背景模糊（叠在 surface 兜底色之上），顶部最强、向下渐弱；
  * 同时驱动周数胶囊从扁平灰底过渡到半透明白 + 投影。
@@ -188,6 +194,8 @@ fun ScheduleHeader(
     blurProgress: Float = 0f,
     hazeState: HazeState? = null,
     weekRange: IntRange = 1..20,
+    daysPerWeek: Int = 5,
+    onDaysPerWeekToggle: (() -> Unit)? = null,
     onMenuExpandedChange: (Boolean) -> Unit = {},
 ) {
     val fraction = collapseFraction.coerceIn(0f, 1f)
@@ -203,8 +211,15 @@ fun ScheduleHeader(
     )
     // Calendar 以周日为 1，转成周一起始的下标（周一 = 0）
     val weekIndex = (calendar.get(Calendar.DAY_OF_WEEK) + 5) % 7
-    val weekdays = stringArrayResource(R.array.weekdays)
-    val dateTitle = stringResource(R.string.date_title_format, monthDay, weekdays[weekIndex])
+    val weekdayNames = stringArrayResource(R.array.weekdays)
+    // 列数只认资源里真有的星期名：7 天视图展示周一~周日，5 天视图只到周五
+    val days = daysPerWeek.coerceIn(1, weekdayNames.size)
+    val weekdays = weekdayNames.take(days)
+    val dateTitle = stringResource(R.string.date_title_format, monthDay, weekdays[weekIndex % days])
+    // 无障碍文案：点整行是切换视图，读屏用户看不到"行可点"这回事，故显式说明
+    val daysToggleDescription = stringResource(
+        if (days == 7) R.string.cd_switch_to_5_days else R.string.cd_switch_to_7_days,
+    )
 
     // 仅学期内且查看非本周时，日期行右侧显示「返回本周」
     val showBackToCurrent = currentWeek != null && selectedWeek != currentWeek
@@ -279,11 +294,24 @@ fun ScheduleHeader(
                 }
             }
 
-            // 3) 星期行：五等分，今天高亮（周起始下标与日期行一致）
-            Row(modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp, bottom = 7.dp)) {
-                for (i in 0..4) {
+            // 3) 星期行：按 daysPerWeek 等分（5/7 列），今天高亮（周起始下标与日期行一致）；
+            //    传了 onDaysPerWeekToggle 时整行可点 → 5 天 / 7 天视图互切
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp, bottom = 7.dp)
+                    .then(
+                        if (onDaysPerWeekToggle != null) {
+                            Modifier
+                                .clickable(onClick = onDaysPerWeekToggle)
+                                .semantics { contentDescription = daysToggleDescription }
+                                .padding(vertical = 4.dp)
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
+                for (i in weekdays.indices) {
                     Text(
                         text = weekdays[i].substring(1),
                         modifier = Modifier.weight(1f),
@@ -711,6 +739,23 @@ private fun ScheduleHeaderCollapsedPreview() {
             onWeekSelected = {},
             onEditClick = {},
             onSettingsClick = {},
+        )
+    }
+}
+
+/** 7 天视图：星期行七等分（含周六/周日），与 7 列网格对齐 */
+@Preview(showBackground = true, name = "展开态 · 7 天", widthDp = 411)
+@Composable
+private fun ScheduleHeaderSevenDayPreview() {
+    ClassppTheme {
+        ScheduleHeader(
+            collapseFraction = 0f,
+            date = previewDate(),
+            selectedWeek = 2,
+            onWeekSelected = {},
+            onEditClick = {},
+            onSettingsClick = {},
+            daysPerWeek = 7,
         )
     }
 }

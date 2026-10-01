@@ -9,6 +9,8 @@
     <string name="month_day_format">%1$d月%2$d日</string>
     <string name="date_title_format">%1$s %2$s</string>
     <string name="back_to_current_week">返回本周</string>
+    <string name="cd_switch_to_5_days">切换到 5 天视图</string>
+    <string name="cd_switch_to_7_days">切换到 7 天视图</string>
     <string-array name="weekdays">
         <item>周一</item>
         <item>周二</item>
@@ -47,9 +49,8 @@
     <string name="settings_confirm">确定</string>
     <string name="settings_cancel">取消</string>
     <string name="error_term_not_monday">学期开始必须是周一</string>
-    <string name="error_term_end">学期结束必须是周五或周日</string>
-    <string name="error_term_end_days7">7 天模式下学期结束必须是周日，请先调整学期结束</string>
-    <string name="error_term_range">学期结束须与开始对齐整周且不早于开始</string>
+    <string name="error_term_range">学期结束不能早于学期开始</string>
+    <string name="error_term_end_short">学期末周放不下这些课，请缩短课程周数或把学期结束往后调</string>
     <string name="error_days_per_week">每周天数只能是 5 或 7</string>
     <string name="error_slot_count">节数须在 1–12 之间</string>
     <string name="error_slot_time_format">时间格式须为 8:00 形式</string>
@@ -58,7 +59,7 @@
     <string name="error_courses_out_of_range">有 %1$d 门课超出新范围，已取消修改：%2$s</string>
     <string name="error_not_found">课表不存在</string>
     <string name="error_persist_failed">保存失败</string>
-    <string name="error_generic">操作失败：%1$s</string>
+    <string name="error_unexpected">操作失败，请重试</string>
     <string name="load_state_restored">已从备份恢复课表数据</string>
     <string name="load_state_reset">课表数据损坏，已重置</string>
 
@@ -95,8 +96,13 @@
     <string name="error_course_name_blank">课程名不能为空</string>
     <string name="error_weeks_empty">请至少选择一周</string>
     <string name="error_weeks_beyond_term">周数超出学期范围</string>
+    <string name="error_weeks_beyond_term_course">「%1$s」会上到 %2$s，超出学期范围（本学期共 %3$d 周），请缩短周数或调整学期结束</string>
+    <string name="error_term_end_course">「%1$s」最后一次上课是 %2$s，已晚于学期结束日，请缩短周数或调整学期结束</string>
+    <string name="error_span_out_of_range">「%1$s」的节次超出当天范围，请重新选择结束节次</string>
+    <string name="error_day_out_of_week">「%1$s」在星期 %2$d，超出当前每周天数，请先切换到 7 天视图</string>
     <string name="error_grid_conflict">与「%1$s」时间冲突</string>
     <string name="error_alternate_weeks_taken">该周数已被交替课程占用</string>
+    <string name="error_weekend_courses_block_days5">周六/周日还有 %1$d 门课，无法切到 5 天视图：%2$s</string>
 
     <!-- 切换课表浮层 -->
     <string name="switcher_export">导出课表</string>

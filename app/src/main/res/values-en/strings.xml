@@ -9,6 +9,8 @@
     <string name="month_day_format">%1$d/%2$d</string>
     <string name="date_title_format">%1$s %2$s</string>
     <string name="back_to_current_week">Back to this week</string>
+    <string name="cd_switch_to_5_days">Switch to the 5-day view</string>
+    <string name="cd_switch_to_7_days">Switch to the 7-day view</string>
     <string-array name="weekdays">
         <item>Mon</item>
         <item>Tue</item>
@@ -47,9 +49,8 @@
     <string name="settings_confirm">Confirm</string>
     <string name="settings_cancel">Cancel</string>
     <string name="error_term_not_monday">Term start must be a Monday</string>
-    <string name="error_term_end">Term end must be Friday or Sunday</string>
-    <string name="error_term_end_days7">With 7 days, term end must be Sunday — change the term end first</string>
-    <string name="error_term_range">Term end must align to whole weeks after start</string>
+    <string name="error_term_range">Term end must not be before term start</string>
+    <string name="error_term_end_short">These courses no longer fit in the last week — shorten their weeks or move the term end later</string>
     <string name="error_days_per_week">Days per week must be 5 or 7</string>
     <string name="error_slot_count">Period count must be 1–12</string>
     <string name="error_slot_time_format">Time must look like 8:00</string>
@@ -58,7 +59,7 @@
     <string name="error_courses_out_of_range">%1$d course(s) outside the new range; change rejected: %2$s</string>
     <string name="error_not_found">Schedule not found</string>
     <string name="error_persist_failed">Failed to save</string>
-    <string name="error_generic">Operation failed: %1$s</string>
+    <string name="error_unexpected">Operation failed, please try again</string>
     <string name="load_state_restored">Schedule data restored from backup</string>
     <string name="load_state_reset">Schedule data was corrupted and reset</string>
 
@@ -95,8 +96,13 @@
     <string name="error_course_name_blank">Course name must not be blank</string>
     <string name="error_weeks_empty">Select at least one week</string>
     <string name="error_weeks_beyond_term">Weeks exceed the term</string>
+    <string name="error_weeks_beyond_term_course">“%1$s” would run until %2$s, past the term (this term has %3$d weeks) — shorten its weeks or move the term end</string>
+    <string name="error_term_end_course">“%1$s” would last run on %2$s, after the term end — shorten its weeks or move the term end</string>
+    <string name="error_span_out_of_range">“%1$s” spans more periods than the day has — pick another end period</string>
+    <string name="error_day_out_of_week">“%1$s” is on day %2$d, beyond the current days per week — switch to the 7-day view first</string>
     <string name="error_grid_conflict">Conflicts with “%1$s”</string>
     <string name="error_alternate_weeks_taken">Those weeks are taken by an alternating course</string>
+    <string name="error_weekend_courses_block_days5">%1$d course(s) still sit on Saturday/Sunday, so the 5-day view is not possible: %2$s</string>
 
     <!-- Schedule switcher sheet -->
     <string name="switcher_export">Export</string>

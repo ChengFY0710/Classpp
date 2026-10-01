@@ -174,9 +174,12 @@ fun AddCoursePanel(
     val errorNameBlank = stringResource(R.string.error_course_name_blank)
     val errorWeeksEmpty = stringResource(R.string.error_weeks_empty)
     val errorWeeksTaken = stringResource(R.string.error_alternate_weeks_taken)
-    val errorWeeksBeyondTerm = stringResource(R.string.error_weeks_beyond_term)
+    val errorWeeksBeyondTermFormat = stringResource(R.string.error_weeks_beyond_term_course)
+    val errorTermEndFormat = stringResource(R.string.error_term_end_course)
+    val errorSpanFormat = stringResource(R.string.error_span_out_of_range)
+    val errorDayFormat = stringResource(R.string.error_day_out_of_week)
     val errorConflictFormat = stringResource(R.string.error_grid_conflict)
-    val errorGenericFormat = stringResource(R.string.error_generic)
+    val errorUnexpected = stringResource(R.string.error_unexpected)
 
     val nameFocus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
@@ -226,24 +229,41 @@ fun AddCoursePanel(
         )
         // 校验集合排除被编辑的课自己：草稿里它还是旧内容，不排除会跟新内容自相冲突
         val others = draftCourses.filterNot { it.id == existing?.id }
-        val conflict = ScheduleValidator
-            .validateCourses(schedule.copy(courses = others + entry))
-            .firstOrNull()
-        error = when (conflict) {
-            null -> null
-            is ScheduleError.CourseFieldInvalid ->
-                if (conflict.reason == FieldReason.BlankName) {
-                    errorNameBlank
-                } else {
-                    errorGenericFormat.format(conflict.message)
+        val draft = schedule.copy(courses = others + entry)
+        val conflict = ScheduleValidator.validateCourses(draft).firstOrNull()
+        // 课程类错误一律点名到课程，别把内部 id / 英文 message 漏给用户；
+        // 报错的那门不一定是面板正在编辑的这门——学期被改短后，可能是草稿里另一门先越界，
+        // 所以按 courseId 回查草稿拿它自己的名字（新课的 id 刚生成，回查必落空 → 用输入框的值）。
+        error = conflict?.let { e ->
+            val errorCourse = draft.courses.firstOrNull { c ->
+                when (e) {
+                    is ScheduleError.CourseFieldInvalid -> c.id == e.courseId
+                    is ScheduleError.DayOutOfWeek -> c.id == e.courseId
+                    is ScheduleError.WeeksBeyondTerm -> c.id == e.courseId
+                    is ScheduleError.TermEndInvalid -> c.id == e.courseId
+                    else -> false
                 }
-            is ScheduleError.WeeksBeyondTerm -> errorWeeksBeyondTerm
-            is ScheduleError.GridConflict -> {
-                // 新课是列表里最后一个，冲突对里另一个就是已存在的课
-                val other = if (conflict.a.id == entry.id) conflict.b else conflict.a
-                errorConflictFormat.format(other.name)
             }
-            else -> errorGenericFormat.format(conflict.message)
+            val courseName = errorCourse?.name ?: entry.name.ifBlank { existing?.name ?: "" }
+            when (e) {
+                is ScheduleError.CourseFieldInvalid -> when (e.reason) {
+                    FieldReason.BlankName -> errorNameBlank
+                    FieldReason.SpanOutOfRange -> errorSpanFormat.format(courseName)
+                }
+                is ScheduleError.WeeksBeyondTerm ->
+                    errorWeeksBeyondTermFormat.format(courseName, e.lastDate, schedule.totalWeeks)
+                // 末周只上到某天时，晚于它的那天就放不下：按日期说清楚，不打印 UUID
+                is ScheduleError.TermEndInvalid ->
+                    errorTermEndFormat.format(courseName, e.date)
+                is ScheduleError.DayOutOfWeek ->
+                    errorDayFormat.format(courseName, e.dayOfWeek)
+                is ScheduleError.GridConflict -> {
+                    // 新课是列表里最后一个，冲突对里另一个就是已存在的课
+                    val other = if (e.a.id == entry.id) e.b else e.a
+                    errorConflictFormat.format(other.name)
+                }
+                else -> errorUnexpected
+            }
         }
         if (error == null) onConfirm(entry)
     }

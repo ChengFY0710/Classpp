@@ -17,8 +17,8 @@ data class CourseRef(
     }
 }
 
-/** [ScheduleError.CourseFieldInvalid] 的具体原因 */
-enum class FieldReason { BlankName, DayOutOfRange, SpanOutOfRange }
+/** [ScheduleError.CourseFieldInvalid] 的具体原因（星期越界另有 [ScheduleError.DayOutOfWeek]） */
+enum class FieldReason { BlankName, SpanOutOfRange }
 
 /**
  * 数据层全部结构化错误。message 供日志/断言，未来 UI 按子类模式匹配出文案。
@@ -29,11 +29,12 @@ sealed class ScheduleError(val message: String) {
     data class TermNotMonday(val date: IsoDate) :
         ScheduleError("termStart $date is not a Monday")
 
-    data class TermEndInvalid(val date: IsoDate) :
-        ScheduleError("termEnd $date must be Friday or Sunday")
-
     data class TermRangeInvalid(val start: IsoDate, val end: IsoDate) :
-        ScheduleError("termEnd $end must end the last week of $start (diff % 7 in {4,6})")
+        ScheduleError("termEnd $end must not be before termStart $start (may end mid week)")
+
+    /** 课程最后一次上课落在学期结束日之后（如切到 5 天后周六/周日的课没了落点） */
+    data class TermEndInvalid(val courseId: String, val dayOfWeek: Int, val date: IsoDate) :
+        ScheduleError("course $courseId ends on $date, after termEnd")
 
     data class DaysPerWeekInvalid(val value: Int) :
         ScheduleError("daysPerWeek must be 5 or 7, got $value")
@@ -52,11 +53,16 @@ sealed class ScheduleError(val message: String) {
     data class CourseFieldInvalid(val courseId: String, val reason: FieldReason) :
         ScheduleError("course $courseId invalid: $reason")
 
+    /** 课程星期超出当前每周天数：切到 5 天视图而仍留有周六/周日的课时整体拒绝 */
+    data class DayOutOfWeek(val courseId: String, val dayOfWeek: Int, val daysPerWeek: Int) :
+        ScheduleError("course $courseId is on day $dayOfWeek, beyond daysPerWeek=$daysPerWeek")
+
     data class WeekSegmentInvalid(val courseId: String, val index: Int) :
         ScheduleError("course $courseId week segment #$index invalid (start > end or start < 1)")
 
-    data class WeeksBeyondTerm(val courseId: String, val maxWeek: Int) :
-        ScheduleError("course $courseId weeks exceed term (max $maxWeek)")
+    /** 课程周数超出学期总周数；[lastDate] = 它按当前排课会上的最后一个日期 */
+    data class WeeksBeyondTerm(val courseId: String, val maxWeek: Int, val lastDate: IsoDate) :
+        ScheduleError("course $courseId weeks exceed term (max $maxWeek, last day $lastDate)")
 
     data class GridConflict(val dayOfWeek: Int, val a: CourseRef, val b: CourseRef) :
         ScheduleError("courses ${a.id} and ${b.id} overlap on day $dayOfWeek with intersecting weeks")

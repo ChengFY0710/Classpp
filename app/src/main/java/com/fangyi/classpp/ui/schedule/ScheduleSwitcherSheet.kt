@@ -166,7 +166,7 @@ internal fun ScheduleSwitcherSheet(
         }
     }
 
-    // 选日对话框：与设置页同一套吸附（开始→周一并平移结束日；结束→周五）
+    // 选日对话框：与设置页同一套吸附（开始→周一并平移结束日；结束日不吸附，任意一天都合法）
     picking?.let { target ->
         val initial = if (target == DateTarget.Start) start else end
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initial.toPickerMillis())
@@ -181,7 +181,7 @@ internal fun ScheduleSwitcherSheet(
                             end = end + (snapped - start).toInt()
                             start = snapped
                         } else {
-                            end = snapTermEnd(picked, daysPerWeek = 5)
+                            end = picked
                         }
                     }
                     picking = null

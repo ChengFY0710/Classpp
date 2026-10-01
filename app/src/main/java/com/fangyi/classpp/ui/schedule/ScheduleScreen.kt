@@ -209,7 +209,7 @@ fun ScheduleScreen(
                 scheduleState.value?.totalWeeks ?: 1
             }
 
-            // 每周页内容（纯函数、无 I/O）：key=schedule 覆盖置灰开关/时段/学期等全部变更源——
+            // 每周页内容（纯函数、无 I/O）：key=schedule 覆盖置灰开关/时段/天数/学期等全部变更源——
             // 任意 mutator 成功都会发布新的 Schedule 实例，记忆随之失效、同帧刷新
             val contentForWeek: (Int) -> WeekPageContent = remember(schedule, currentWeek, today) {
                 { pageWeek ->
@@ -220,13 +220,14 @@ fun ScheduleScreen(
                         // 关掉「显示本周不上的课」也照旧看得到这格还有别的课
                         courses = repository.coursesForWeek(schedule.id, pageWeek)
                             .toWeekCards(schedule.showInactiveCourses),
-                        // 7 天模式只渲染前 5 天（网格仍为 5 列硬编码，视图批次再扩展）
-                        dates = dates.take(5).map { it.toUiDate() },
+                        // 天数即列数：仓库按 daysPerWeek 返回 5 或 7 个日期，网格与星期行同步列数
+                        dates = dates.map { it.toUiDate() },
                         // 与顶栏日期同规则：查看本周高亮今天，其它周高亮该周周一
+                        // （越界周 dates 为空时退回今天，页内无日期带可高亮）
                         highlightDate = if (pageWeek == currentWeek) {
                             today
                         } else {
-                            dates.first().toUiDate()
+                            (dates.firstOrNull() ?: IsoDate.today()).toUiDate()
                         },
                     )
                 }
@@ -274,11 +275,11 @@ fun ScheduleScreen(
                                 // 「显示本周不上的课」开关影响：开关关掉时若把它们藏起来，
                                 // 用户看不见"占着这一格但本周不上"的课，加课撞上冲突却找不到原因
                                 courses = editSession.courses.toWeekCards(pageWeek),
-                                dates = dates.take(5).map { it.toUiDate() },
+                                dates = dates.map { it.toUiDate() },
                                 highlightDate = if (pageWeek == currentWeek) {
                                     today
                                 } else {
-                                    dates.first().toUiDate()
+                                    (dates.firstOrNull() ?: IsoDate.today()).toUiDate()
                                 },
                             )
                         }
@@ -329,6 +330,24 @@ fun ScheduleScreen(
 
             val scope = rememberCoroutineScope()
             val context = LocalContext.current
+
+            // 点顶栏星期行 = 5 天 / 7 天视图互切（等价于设置页的「每周上课天数」）。
+            // 学期结束日的收拢与整体校验都在仓库里一次完成：只有"周六/周日还留着课"才会
+            // 被拒绝，那时把原因提示出来、天数保持原样。列数随 schedule.daysPerWeek
+            // 同帧变化（见 contentForWeek 与 CourseGrid.daysPerWeek）。
+            val onToggleDaysPerWeek: () -> Unit = {
+                val targetDays = if (schedule.daysPerWeek == 7) 5 else 7
+                scope.launch {
+                    val result = repository.setDaysPerWeek(schedule.id, targetDays)
+                    if (result is OpResult.Err) {
+                        Toast.makeText(
+                            context,
+                            result.error.toEditMessage(context),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+            }
 
             // 保存：先拿"草稿 + 快照"整份预检（给用户可读的原因），再整份写回仓库。
             //
@@ -416,7 +435,7 @@ fun ScheduleScreen(
                             } catch (e: ActivityNotFoundException) {
                                 Toast.makeText(
                                     context,
-                                    context.getString(R.string.error_generic, e.message ?: ""),
+                                    context.getString(R.string.error_unexpected),
                                     Toast.LENGTH_SHORT,
                                 ).show()
                             }
@@ -500,6 +519,8 @@ fun ScheduleScreen(
                     editMode = editSession != null,
                     // 编辑态没有日期层（设计稿里日期带消失），页高相应少一条
                     showDates = editSession == null,
+                    // 列数：5 天课表 5 列、7 天课表 7 列（含周六/周日），与顶栏星期行/日期带同源
+                    daysPerWeek = schedule.daysPerWeek,
                     onAddClick = onAddClick,
                     onEditClick = onEditClick,
                     onCourseLongClick = onCourseLongClick,
@@ -545,6 +566,8 @@ fun ScheduleScreen(
                             onSettingsClick = onOpenSettings,
                             onMenuExpandedChange = { collapseState.menuOpen = it },
                             weekRange = 1..schedule.totalWeeks,
+                            daysPerWeek = schedule.daysPerWeek,
+                            onDaysPerWeekToggle = onToggleDaysPerWeek,
                             blurProgress = blurProgress,
                             hazeState = hazeState,
                             modifier = Modifier.onGloballyPositioned { coords ->
@@ -559,6 +582,8 @@ fun ScheduleScreen(
                             // 与折叠后的原顶栏同一套背景模糊：内容滚到栏下时渐入
                             blurProgress = blurProgress,
                             hazeState = hazeState,
+                            // 编辑态的星期行同样按课表天数分列，与网格列对齐
+                            daysPerWeek = schedule.daysPerWeek,
                             modifier = Modifier.onGloballyPositioned { coords ->
                                 editBarHeight = with(density) { coords.size.height.toFloat().toDp() }
                             },
@@ -704,13 +729,37 @@ private val EditBarHeightGuess = 112.dp
  */
 private data class CardMenuAnchor(val courseId: String, val rect: Rect)
 
-/** 数据层错误 → 用户可读文案（编辑流程用；未覆盖的错误落到"操作失败：…"） */
+/**
+ * 数据层错误 → 用户可读文案（编辑流程的 Toast 用）。课程类错误一律点名到课程或给中文结论，
+ * 绝不把内部 id / 英文 message 直接抛给用户；真正没覆盖到的形态才落到通用文案。
+ */
 private fun ScheduleError.toEditMessage(context: Context): String = when (this) {
     is ScheduleError.CourseFieldInvalid -> when (reason) {
         FieldReason.BlankName -> context.getString(R.string.error_course_name_blank)
-        else -> context.getString(R.string.error_generic, message)
+        else -> context.getString(R.string.error_unexpected)
     }
     is ScheduleError.WeeksBeyondTerm -> context.getString(R.string.error_weeks_beyond_term)
+    // 末周只上到某天时放不下的课、以及切 5 天后没有列的课：都给中文结论（课程名请去网格里看）
+    is ScheduleError.TermEndInvalid -> context.getString(R.string.error_term_end_short)
+    is ScheduleError.DayOutOfWeek -> context.getString(R.string.error_day_out_of_week, "", dayOfWeek)
+    // 切 5 天时周末的课被归并成"超出范围"：直接说清是哪几门（收拢后的学期结束日
+    // 只到周五，周六/周日的课两种成因都会落到这条文案上）
+    is ScheduleError.CoursesOutOfRange -> {
+        val weekend = affected.filter { it.dayOfWeek > 5 }
+        if (weekend.isNotEmpty()) {
+            context.getString(
+                R.string.error_weekend_courses_block_days5,
+                weekend.size,
+                weekend.take(3).joinToString { it.name },
+            )
+        } else {
+            context.getString(
+                R.string.error_courses_out_of_range,
+                affected.size,
+                affected.take(3).joinToString { it.name },
+            )
+        }
+    }
     // 冲突对里 a 是列表靠前的那门（新增的课总在末尾），故指它
     is ScheduleError.GridConflict -> context.getString(R.string.error_grid_conflict, a.name)
     is ScheduleError.PersistFailed -> context.getString(R.string.error_persist_failed)
@@ -718,7 +767,8 @@ private fun ScheduleError.toEditMessage(context: Context): String = when (this) 
     is ScheduleError.ImportFormatInvalid -> context.getString(R.string.error_import_format)
     is ScheduleError.ImportVersionUnsupported -> context.getString(R.string.error_import_version)
     is ScheduleError.ImportKindMismatch -> context.getString(R.string.error_import_kind)
-    else -> context.getString(R.string.error_generic, message)
+    // 真正没覆盖到的形态：不把内部 message 抛给用户
+    else -> context.getString(R.string.error_unexpected)
 }
 
 /** 无激活课表时的空状态：标题 + 说明 + 新建按钮（打开设置页） */

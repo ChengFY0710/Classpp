@@ -73,7 +73,6 @@ import com.fangyi.classpp.ui.schedule.TERM_DEFAULT_DAYS
 import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MIN
 import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MAX
 import com.fangyi.classpp.ui.schedule.endForTotalWeeks
-import com.fangyi.classpp.ui.schedule.snapTermEnd
 import com.fangyi.classpp.ui.schedule.snapToMonday
 import com.fangyi.classpp.ui.schedule.toPickerMillis
 import com.fangyi.classpp.ui.schedule.toIsoDate
@@ -197,7 +196,7 @@ fun SettingsScreen(
                             ),
                         verticalArrangement = Arrangement.spacedBy(SectionSpacing),
                     ) {
-                        error?.let { ErrorBox(it.toMessage(schedule?.daysPerWeek ?: 5)) }
+                        error?.let { ErrorBox(it.toMessage()) }
                         if (schedule == null) {
                             CreateScheduleContent(
                                 onConfirm = { name, start, end ->
@@ -220,22 +219,10 @@ fun SettingsScreen(
                                 },
                                 onDays = { days ->
                                     error = null
-                                    scope.launch {
-                                        // 切 7 天而结束日非周日：先仅延长至同周周日（只加周不缩周，
-                                        // 结构上不可能波及已有课程），再切天数，免去用户两步操作
-                                        val endSunday = current.termEnd.isoDayOfWeek() != 7 &&
-                                            days == 7
-                                        if (endSunday) {
-                                            val extended = current.termEnd +
-                                                (7 - current.termEnd.isoDayOfWeek())
-                                            submit(repository.setTerm(current.id, current.termStart, extended))
-                                            if (error == null) {
-                                                submit(repository.setDaysPerWeek(current.id, days))
-                                            }
-                                        } else {
-                                            submit(repository.setDaysPerWeek(current.id, days))
-                                        }
-                                    }
+                                    // 天数与学期结束日的收拢都在仓库里一次完成
+                                    // （setDaysPerWeek 会把结束日收进新天数的列范围，再整体校验）：
+                                    // 只有"周六/周日还留着课"才会被拒绝，绝不静默删课
+                                    scope.launch { submit(repository.setDaysPerWeek(current.id, days)) }
                                 },
                                 onSlots = { slots ->
                                     error = null
@@ -343,7 +330,8 @@ private fun CreateScheduleContent(
                             end = end + (snapped - start).toInt()
                             start = snapped
                         } else {
-                            end = snapTermEnd(picked, daysPerWeek = 5)
+                            // 结束日想选哪天就哪天，不必落在周五/周日
+                            end = picked
                         }
                     }
                     picking = null
@@ -502,7 +490,8 @@ private fun SettingsContent(
         }
     }
 
-    // 学期日期选择：开始吸附周一并平移结束日；结束按当前天数吸附（5→周五、7→周日）
+    // 学期日期选择：开始吸附周一并平移结束日（保持周数）；结束日**不吸附**，
+    // 任意一天都合法（可停在周中，末周就只上到那一天）
     picking?.let { target ->
         val initial = if (target == DateTarget.Start) schedule.termStart else schedule.termEnd
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initial.toPickerMillis())
@@ -517,7 +506,7 @@ private fun SettingsContent(
                             val newEnd = schedule.termEnd + (snapped - schedule.termStart).toInt()
                             onTerm(snapped, newEnd)
                         } else {
-                            onTerm(schedule.termStart, snapTermEnd(picked, schedule.daysPerWeek))
+                            onTerm(schedule.termStart, picked)
                         }
                     }
                     picking = null
@@ -657,21 +646,18 @@ private fun TermDatesCard(
 private data class SlotEdit(val index: Int, val isStart: Boolean)
 
 /**
- * [ScheduleError] → 本地化文案。覆盖设置页可达全集：
- * 课程类错误经仓库 rejection() 必归并为 CoursesOutOfRange，故其余分支只需兜底。
+ * [ScheduleError] → 本地化文案。课程类错误正常都经仓库 rejection() 归并为 CoursesOutOfRange，
+ * 但兜底分支同样给中文结论，绝不把内部 id / 英文 message 直接显示给用户。
  */
 @Composable
-private fun ScheduleError.toMessage(daysPerWeek: Int): String = when (this) {
+private fun ScheduleError.toMessage(): String = when (this) {
     is ScheduleError.TermNotMonday -> stringResource(R.string.error_term_not_monday)
-    is ScheduleError.TermEndInvalid ->
-        if (daysPerWeek == 7) {
-            stringResource(R.string.error_term_end_days7)
-        } else {
-            stringResource(R.string.error_term_end)
-        }
-
+    // 结束日可落任意一天（含周中），只剩"早于开始日"一种非法
     is ScheduleError.TermRangeInvalid -> stringResource(R.string.error_term_range)
+    is ScheduleError.TermEndInvalid -> stringResource(R.string.error_term_end_short)
     is ScheduleError.DaysPerWeekInvalid -> stringResource(R.string.error_days_per_week)
+    is ScheduleError.DayOutOfWeek ->
+        stringResource(R.string.error_day_out_of_week, "", dayOfWeek)
     is ScheduleError.SlotCountInvalid -> stringResource(R.string.error_slot_count)
     is ScheduleError.SlotTimeFormatInvalid -> stringResource(R.string.error_slot_time_format)
     is ScheduleError.SlotOrderInvalid -> stringResource(R.string.error_slot_order)
@@ -684,7 +670,8 @@ private fun ScheduleError.toMessage(daysPerWeek: Int): String = when (this) {
 
     is ScheduleError.NotFound -> stringResource(R.string.error_not_found)
     is ScheduleError.PersistFailed -> stringResource(R.string.error_persist_failed)
-    else -> stringResource(R.string.error_generic, message)
+    // 真正没覆盖到的形态：不暴露内部 message，只给通用提示（细节进日志由调用方决定）
+    else -> stringResource(R.string.error_unexpected)
 }
 
 @Preview(showBackground = true, name = "新建课表表单")
