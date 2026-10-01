@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -89,9 +90,36 @@ private val CardShadowBottomPadding = 48.dp
 
 private val WeekPickerCellSpace = 8.dp // 周数选择器里小方块间距
 
-/** 小方块边长（宽高相同，恒为正方形）。弹窗宽度由此固定、不随屏宽变化；
- *  整宽 ≈ 6×边长 + 102dp，360dp 屏上边长建议 ≤43dp */
-private val WeekCellSize = 48.dp
+/** 弹窗目标：距屏幕左右两侧各 [WeekPickerEdgeMargin]（按 Popup 窗口边缘计，即含四周投影留白） */
+private val WeekPickerEdgeMargin = 6.dp
+
+/** 拿不到宿主窗口宽度时的兜底边长（理论上只在首帧之前发生），与旧的固定值一致 */
+private val WeekCellSizeFallback = 48.dp
+
+/**
+ * 周数方格边长（dp）：由可用宽度反推。
+ *
+ * 六列、正方形、列间距与卡片内边距全部不变，只让边长随屏宽伸缩，
+ * 于是弹窗（卡片＋四周投影留白＝Popup 窗口）距屏幕左右两侧恒为 [edgeMarginDp]：
+ *
+ *     可用宽度 − 2×外边距 − 2×投影留白 − 2×卡片内边距 − (列数−1)×列间距
+ *     边长 = ────────────────────────────────────────────────────────────
+ *                                   列数
+ *
+ * 例如 427dp 屏 → 边长 ≈ 48dp（与旧的固定 48dp 观感一致）；360dp 屏 → ≈ 37dp，不再顶到屏幕边。
+ */
+internal fun weekCellSizeDp(
+    availableWidthDp: Float,
+    edgeMarginDp: Float,
+    shadowPaddingDp: Float,
+    cardPaddingDp: Float,
+    cellSpaceDp: Float,
+    columns: Int = 6,
+): Float {
+    val cardWidth = availableWidthDp - 2f * edgeMarginDp - 2f * shadowPaddingDp
+    val gridWidth = cardWidth - 2f * cardPaddingDp
+    return ((gridWidth - (columns - 1) * cellSpaceDp) / columns).coerceAtLeast(0f)
+}
 
 /**
  * 折叠态（fraction = 1）周数胶囊的左缘坐标：胶囊「结束侧」边缘距屏幕同侧边缘恒为 [endPadPx]，
@@ -389,6 +417,24 @@ private fun WeekPill(
             onMenuExpandedChange(false)
         }
 
+        // 弹窗宽度随宿主窗口自适应：方格边长由可用宽度反推（六列/正方形/间距都不变），
+        // 于是不论机型宽窄，弹窗距屏幕左右两侧都是 WeekPickerEdgeMargin。
+        // 多窗口/分屏下 containerDpSize 是当前窗口而非整块屏幕，与定位用的窗口尺寸一致
+        val availableWidthDp = LocalWindowInfo.current.containerDpSize.width.value
+        val weekCellSize = remember(availableWidthDp) {
+            if (availableWidthDp > 0f) {
+                weekCellSizeDp(
+                    availableWidthDp = availableWidthDp,
+                    edgeMarginDp = WeekPickerEdgeMargin.value,
+                    shadowPaddingDp = CardShadowPadding.value,
+                    cardPaddingDp = WeekPickerCellSpace.value,
+                    cellSpaceDp = WeekPickerCellSpace.value,
+                ).dp
+            } else {
+                WeekCellSizeFallback
+            }
+        }
+
         Row(
             modifier = Modifier
                 .height(WeekPillHeight)
@@ -432,7 +478,8 @@ private fun WeekPill(
 
         // 屏幕水平居中 + 垂直固定：卡片顶部落在胶囊底部下方 WeekPickerGap（展开/折叠态一致）。
         // DropdownMenu 的位置策略锚定胶囊左缘无法满足居中，故用自定义定位器。
-        // 窗口含 CardShadowPadding 透明留白，定位按窗口计算需将其扣除
+        // 窗口含 CardShadowPadding 透明留白，定位按窗口计算需将其扣除。
+        // 窗口宽度由 weekCellSize 反推，居中后左右各留 WeekPickerEdgeMargin
         val density = LocalDensity.current
         val gapPx = with(density) { (WeekPickerGap - CardShadowPadding).roundToPx() }
         val positionProvider = remember(gapPx) {
@@ -473,6 +520,7 @@ private fun WeekPill(
                     currentWeek = currentWeek,
                     weekRange = weekRange,
                     hazeState = hazeState,
+                    cellSize = weekCellSize,
                     // 排在外壳 padding/裁剪/投影/毛玻璃之外：整卡一起缩放淡入
                     modifier = Modifier.graphicsLayer {
                         scaleX = scale
@@ -496,6 +544,7 @@ private fun WeekPickerCard(
     selectedWeek: Int,
     currentWeek: Int?,
     weekRange: IntRange,
+    cellSize: Dp,
     onWeekSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -512,7 +561,7 @@ private fun WeekPickerCard(
                         week = week,
                         selected = week == selectedWeek,
                         isCurrent = week == currentWeek,
-                        size = WeekCellSize,
+                        size = cellSize,
                         onClick = { onWeekSelected(week) },
                     )
                 }
@@ -531,6 +580,7 @@ private fun WeekPickerCardShell(
     currentWeek: Int?,
     weekRange: IntRange,
     hazeState: HazeState?,
+    cellSize: Dp,
     onWeekSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -565,6 +615,7 @@ private fun WeekPickerCardShell(
             selectedWeek = selectedWeek,
             currentWeek = currentWeek,
             weekRange = weekRange,
+            cellSize = cellSize,
             onWeekSelected = onWeekSelected,
         )
     }
