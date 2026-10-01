@@ -383,3 +383,40 @@ private fun CourseCardAlternatePreview() {
         }
     }
 }
+
+/**
+ * 7 天视图的整行实际尺寸：固定放 7 门各具代表性的课（正常 / 跨节 / 交替 / 置灰 / 周末课），
+ * 用来看 7 列窄卡下课程名与教师、地点的排版。行高取 [gridRowHeight]，与网格同源。
+ */
+@Preview(showBackground = true, name = "7 天视图 · 整行实际尺寸", widthDp = 411)
+@Composable
+private fun SevenDayRowPreview() {
+    val weekend = MockCoursesWeekend.takeLast(2)
+    val row = listOf(
+        MockCourses[4],                                            // 常规课
+        MockCourses[1],                                            // 跨节（span = 2）
+        MockCourses[6].copy(alternateBar = CourseColor.Green),      // 交替课程
+        MockCourses[7],                                            // 长课名
+        MockCourses[12].copy(active = false),                      // 本周不上（置灰）
+        weekend[0],                                                // 周六
+        weekend[1],                                                // 周日
+    )
+    ClassppTheme {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(gridRowHeight(daysPerWeek = 7))
+                .background(MaterialTheme.colorScheme.surfaceContainer),
+        ) {
+            row.forEach { course ->
+                GridCell {
+                    CourseCard(
+                        course = course,
+                        slot = DefaultTimeSlots[1],
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
+    }
+}
