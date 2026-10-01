@@ -2,37 +2,17 @@ package com.fangyi.classpp.ui.schedule
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -69,15 +50,21 @@ import com.fangyi.classpp.data.model.firstUnusedColor
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.data.model.weeksFromSelection
 import com.fangyi.classpp.data.model.weeksTakenByOthers
+import com.fangyi.classpp.ui.components.ColorSwatchCard
+import com.fangyi.classpp.ui.components.OverlaySheet
+import com.fangyi.classpp.ui.components.PopupSelectCard
+import com.fangyi.classpp.ui.components.RowChoiceCard
+import com.fangyi.classpp.ui.components.SheetSectionLabel
+import com.fangyi.classpp.ui.components.SheetTextField
+import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.theme.CancelRed
 import com.fangyi.classpp.ui.theme.OnPrimaryContainer
-import com.fangyi.classpp.ui.theme.Scrim
+import com.fangyi.classpp.ui.theme.SecondaryTextColor
 
 /** 周数方格：每行 6 个，宽度均分（末行补空位，保证每格同宽同高） */
 private const val WeeksPerRow = 6
 private val WeekCellGap = 6.dp
 private val WeekCellShape = RoundedCornerShape(11.dp)
-private val ColorSwatchSize = 36.dp
-private val PanelShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
 
 /**
  * 添加/编辑课程面板：[day] / [slot] 是点中的那一格（编辑态传被编辑课的星期与起始节）；
@@ -93,12 +80,15 @@ private val PanelShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
  * 同格其它课已占的周在方格里灰显不可点——交替课程的周数不能重合。
  * 编辑已有课时同样灰显其它交替课占用的周。
  *
+ * **UI 层已按设计稿改造为顶栏浮层（见 [OverlaySheet]）**：
+ * - 浮层距屏幕顶端固定（`SheetTopInset` 变量），**键盘弹起不改变浮层位置与高度**——
+ *   让位发生在滚动内容末尾，容器本身不动；
+ * - 顶栏 = 左确认 / 中标题 / 右取消（编辑态删除），背景对滚动内容做渐变模糊并收敛在圆角内；
+ * - 表单控件全部抽成可复用组件（输入框/行选择/浮层选择/颜色选择卡片）。
+ *
  * **刻意不用 AlertDialog**：对话框是独立窗口，本机（Android 15+/16 的 edge-to-edge + 该 ROM）
  * 输入法接不进去（点了输入框不弹键盘）。改成和设置页同一条路——页内覆盖层，
- * 输入法行为与设置页一致，并且顺手解决了两件事：
- * - `imePadding()`：Android 15+ 已不再响应 `adjustSoftInputMode=adjustResize`，
- *   键盘会直接盖住内容，必须按 IME inset 自己让位；
- * - 打开即自动聚焦课程名并唤起键盘，用户可以直接打字，不必先点输入框。
+ * 输入法行为与设置页一致，并且打开即自动聚焦课程名并唤起键盘。
  */
 @Composable
 fun AddCoursePanel(
@@ -170,6 +160,12 @@ fun AddCoursePanel(
     )
     val weeks = weeksFromSelection(selectedWeeks)
 
+    // 结束节次菜单：只列合法项（起始之前 / 跨度过长的不出现）；
+    // 交替课程与源课同位置，跨度锁定后菜单里只剩那一个末节
+    val maxEnd = minOf(schedule.slotCount, slot.id + ScheduleValidator.MAX_SPAN - 1)
+    val endRange = alternateFrom?.let { it.endSlot..it.endSlot } ?: (slot.id..maxEnd)
+    val endMenuItems = endRange.map { id -> id to stringResource(R.string.slot_format, id) }
+
     // 文案先取出来：校验发生在 lambda 里，那里不能再调 stringResource
     val errorNameBlank = stringResource(R.string.error_course_name_blank)
     val errorWeeksEmpty = stringResource(R.string.error_weeks_empty)
@@ -195,9 +191,6 @@ fun AddCoursePanel(
         if (imeInsets.getBottom(density) > 0) keyboard?.hide() else onDismiss()
     }
 
-    val scrimInteraction = remember { MutableInteractionSource() }
-    val panelInteraction = remember { MutableInteractionSource() }
-
     fun submit() {
         if (selectedWeeks.isEmpty()) {
             error = errorWeeksEmpty
@@ -208,7 +201,7 @@ fun AddCoursePanel(
             error = errorWeeksTaken
             return
         }
-        // 结束节次已在芯片层限制，这里再钳一次（跨度 ≤ MAX_SPAN 且不超总节数）
+        // 结束节次已在菜单层限制，这里再钳一次（跨度 ≤ MAX_SPAN 且不超总节数）
         val end = endSlotId.coerceIn(
             slot.id,
             minOf(schedule.slotCount, slot.id + ScheduleValidator.MAX_SPAN - 1),
@@ -264,349 +257,187 @@ fun AddCoursePanel(
         if (error == null) onConfirm(entry)
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Scrim.copy(alpha = 0.32f))
-            // 点空白处收起（无涟漪）
-            .clickable(
-                interactionSource = scrimInteraction,
-                indication = null,
+    // 行选择卡片高亮：跟随实际周数选择——全部 / 全奇数 / 全偶数，自定义组合不高亮
+    val weekChoiceIndex = when {
+        selectedWeeks.isEmpty() -> null
+        selectedWeeks.size == schedule.totalWeeks -> 0
+        selectedWeeks.size == (schedule.totalWeeks + 1) / 2 &&
+            selectedWeeks.all { it % 2 == 1 } -> 1
+        selectedWeeks.size == schedule.totalWeeks / 2 &&
+            selectedWeeks.all { it % 2 == 0 } && schedule.totalWeeks >= 2 -> 2
+        else -> null
+    }
+
+    OverlaySheet(
+        title = stringResource(
+            when {
+                existing != null -> R.string.edit_edit_course
+                alternateFrom != null -> R.string.edit_new_alternate
+                else -> R.string.edit_add_course
+            },
+        ),
+        confirmLabel = stringResource(R.string.edit_confirm),
+        onConfirm = { submit() },
+        rightAction = if (existing != null && onDelete != null) {
+            SheetTopAction(
+                label = stringResource(R.string.edit_delete),
+                icon = R.drawable.ic_delete_dismiss,
+                containerColor = CancelRed,
+                contentColor = Color.White,
+                onClick = onDelete,
+            )
+        } else {
+            SheetTopAction(
+                label = stringResource(R.string.settings_cancel),
+                icon = R.drawable.ic_dismiss_circle,
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = Color(0xFF212121),
                 onClick = onDismiss,
-            ),
+            )
+        },
+        onDismiss = onDismiss,
     ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                // 键盘弹起时整块面板抬到键盘之上
-                .imePadding(),
-        ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // 吃掉落在面板上的点击，避免穿透到遮罩把面板关掉（输入框/按钮的消费优先）
-                    .clickable(
-                        interactionSource = panelInteraction,
-                        indication = null,
-                        onClick = {},
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                text = cellInfo,
+                fontSize = 13.sp,
+                color = SecondaryTextColor,
+            )
+
+            SheetTextField(
+                label = stringResource(R.string.edit_course_name),
+                value = name,
+                onValueChange = { name = it; error = null },
+                placeholder = stringResource(R.string.edit_course_name_ph),
+                isError = error == errorNameBlank,
+                imeAction = ImeAction.Next,
+                onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                focusRequester = nameFocus,
+            )
+            SheetTextField(
+                label = stringResource(R.string.edit_course_teacher),
+                value = teacher,
+                onValueChange = { teacher = it; error = null },
+                placeholder = stringResource(R.string.edit_course_teacher_ph),
+                imeAction = ImeAction.Next,
+                onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+            )
+            SheetTextField(
+                label = stringResource(R.string.edit_course_location),
+                value = location,
+                onValueChange = { location = it; error = null },
+                placeholder = stringResource(R.string.edit_course_location_ph),
+                imeAction = ImeAction.Done,
+                onImeAction = { focusManager.clearFocus() },
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SheetSectionLabel(stringResource(R.string.edit_end_slot_section))
+                PopupSelectCard(
+                    title = stringResource(R.string.edit_end_slot),
+                    valueText = endSlotId.toString(),
+                    items = endMenuItems,
+                    selectedId = endSlotId,
+                    onPick = { id ->
+                        endSlotId = id
+                        error = null
+                    },
+                )
+                Text(
+                    text = stringResource(
+                        R.string.edit_span_hint,
+                        slot.id,
+                        endSlotId,
+                        endSlotId - slot.id + 1,
                     ),
-                shape = PanelShape,
-                color = MaterialTheme.colorScheme.surface,
-                shadowElevation = 8.dp,
-            ) {
-                Column(
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 12.dp),
-                ) {
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SheetSectionLabel(stringResource(R.string.edit_course_weeks))
+                WeekSelectionGrid(
+                    totalWeeks = schedule.totalWeeks,
+                    selected = selectedWeeks,
+                    blockedWeeks = blockedWeeks,
+                    onToggle = { week ->
+                        selectedWeeks = if (week in selectedWeeks) {
+                            selectedWeeks - week
+                        } else {
+                            (selectedWeeks + week).sorted()
+                        }
+                        error = null
+                    },
+                )
+                RowChoiceCard(
+                    options = listOf(
+                        stringResource(R.string.edit_weeks_all),
+                        stringResource(R.string.edit_weeks_odd),
+                        stringResource(R.string.edit_weeks_even),
+                    ),
+                    selectedIndex = weekChoiceIndex,
+                    onSelect = { index ->
+                        val weeksForChoice = when (index) {
+                            0 -> (1..schedule.totalWeeks).toList()
+                            1 -> (1..schedule.totalWeeks).filter { it % 2 == 1 }
+                            else -> (1..schedule.totalWeeks).filter { it % 2 == 0 }
+                        }
+                        applyShortcut(
+                            weeks = weeksForChoice,
+                            blocked = blockedWeeks,
+                            errorText = errorWeeksTaken,
+                            apply = { selectedWeeks = it },
+                            onError = { error = it },
+                        )
+                    },
+                )
+                Text(
+                    text = stringResource(R.string.edit_weeks_summary, weeksSummary(weeks)),
+                    fontSize = 13.sp,
+                    color = SecondaryTextColor,
+                )
+                // 同格的其它交替课占了哪些周：说清灰显方格是被谁占的
+                groupOthers.forEach { other ->
                     Text(
                         text = stringResource(
-                            when {
-                                existing != null -> R.string.edit_edit_course
-                                alternateFrom != null -> R.string.edit_new_alternate
-                                else -> R.string.edit_add_course
-                            },
+                            R.string.edit_alternate_taken_hint,
+                            other.name,
+                            weeksSummary(other.weeks),
                         ),
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = cellInfo,
                         fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = SecondaryTextColor,
                     )
-
-                    // 内容超出可用高度时就地滚动（fill = false：内容少时面板不撑高）
-                    Column(
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .verticalScroll(rememberScrollState())
-                            .padding(top = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        CourseField(
-                            value = name,
-                            onValueChange = { name = it; error = null },
-                            label = stringResource(R.string.edit_course_name),
-                            imeAction = ImeAction.Next,
-                            onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
-                            modifier = Modifier.focusRequester(nameFocus),
-                        )
-                        CourseField(
-                            value = teacher,
-                            onValueChange = { teacher = it; error = null },
-                            label = stringResource(R.string.edit_course_teacher),
-                            imeAction = ImeAction.Next,
-                            onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
-                        )
-                        CourseField(
-                            value = location,
-                            onValueChange = { location = it; error = null },
-                            label = stringResource(R.string.edit_course_location),
-                            imeAction = ImeAction.Done,
-                            onImeAction = { focusManager.clearFocus() },
-                        )
-
-                        SectionLabel(stringResource(R.string.edit_end_slot))
-                        EndSlotChips(
-                            startId = slot.id,
-                            total = schedule.slotCount,
-                            selected = endSlotId,
-                            // 交替课程与源课同一位置：跨度随源课锁定，只能选那一个末节
-                            enabledRange = alternateFrom?.let { it.endSlot..it.endSlot },
-                            onSelect = { id ->
-                                endSlotId = id
-                                error = null
-                            },
-                        )
-
-                        SectionLabel(stringResource(R.string.edit_course_weeks))
-                        WeekSelectionGrid(
-                            totalWeeks = schedule.totalWeeks,
-                            selected = selectedWeeks,
-                            blockedWeeks = blockedWeeks,
-                            onToggle = { week ->
-                                selectedWeeks = if (week in selectedWeeks) {
-                                    selectedWeeks - week
-                                } else {
-                                    (selectedWeeks + week).sorted()
-                                }
-                                error = null
-                            },
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            WeekShortcut(
-                                text = stringResource(R.string.edit_weeks_all),
-                                onClick = {
-                                    applyShortcut(
-                                        weeks = (1..schedule.totalWeeks).toList(),
-                                        blocked = blockedWeeks,
-                                        errorText = errorWeeksTaken,
-                                        apply = { selectedWeeks = it },
-                                        onError = { error = it },
-                                    )
-                                },
-                            )
-                            WeekShortcut(
-                                text = stringResource(R.string.edit_weeks_odd),
-                                onClick = {
-                                    applyShortcut(
-                                        weeks = (1..schedule.totalWeeks).filter { it % 2 == 1 },
-                                        blocked = blockedWeeks,
-                                        errorText = errorWeeksTaken,
-                                        apply = { selectedWeeks = it },
-                                        onError = { error = it },
-                                    )
-                                },
-                            )
-                            WeekShortcut(
-                                text = stringResource(R.string.edit_weeks_even),
-                                onClick = {
-                                    applyShortcut(
-                                        weeks = (1..schedule.totalWeeks).filter { it % 2 == 0 },
-                                        blocked = blockedWeeks,
-                                        errorText = errorWeeksTaken,
-                                        apply = { selectedWeeks = it },
-                                        onError = { error = it },
-                                    )
-                                },
-                            )
-                        }
-                        Text(
-                            text = stringResource(R.string.edit_weeks_summary, weeksSummary(weeks)),
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        // 同格的其它交替课占了哪些周：说清灰显方格是被谁占的
-                        groupOthers.forEach { other ->
-                            Text(
-                                text = stringResource(
-                                    R.string.edit_alternate_taken_hint,
-                                    other.name,
-                                    weeksSummary(other.weeks),
-                                ),
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        SectionLabel(stringResource(R.string.edit_course_color))
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            CourseColor.entries.forEach { entry ->
-                                Box(
-                                    modifier = Modifier
-                                        .size(ColorSwatchSize)
-                                        .clip(CircleShape)
-                                        .background(entry.barColor)
-                                        .then(
-                                            if (entry == color) {
-                                                Modifier.border(
-                                                    2.dp,
-                                                    MaterialTheme.colorScheme.primary,
-                                                    CircleShape,
-                                                )
-                                            } else {
-                                                Modifier
-                                            },
-                                        )
-                                        .clickable { color = entry },
-                                )
-                            }
-                        }
-
-                        error?.let {
-                            Text(
-                                text = it,
-                                color = MaterialTheme.colorScheme.error,
-                                fontSize = 13.sp,
-                            )
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // 编辑态左侧删除（红色文字、直接生效：只删草稿，取消编辑可整体还原）
-                        if (existing != null && onDelete != null) {
-                            TextButton(onClick = onDelete) {
-                                Text(
-                                    text = stringResource(R.string.edit_delete),
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                            }
-                        }
-                        Spacer(Modifier.weight(1f))
-                        TextButton(onClick = onDismiss) {
-                            Text(stringResource(R.string.settings_cancel))
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Button(onClick = { submit() }) {
-                            Text(stringResource(R.string.settings_confirm))
-                        }
-                    }
                 }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SheetSectionLabel(stringResource(R.string.edit_course_color))
+                ColorSwatchCard(
+                    colors = CourseColor.entries.map { it.barColor },
+                    selectedIndex = CourseColor.entries.indexOf(color),
+                    onSelect = { index ->
+                        CourseColor.entries.getOrNull(index)?.let { color = it }
+                        error = null
+                    },
+                )
+            }
+
+            error?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp,
+                )
             }
         }
     }
 }
 
 /**
- * 一行课程输入框。除键盘动作外还做一件必要的事：**点了就重新 show 一次键盘**。
- * Compose 的输入框只在"获得焦点"时拉起键盘，已聚焦时再点它不会有任何反应，
- * 于是键盘一旦被收起（返回键收键盘、系统收起、误触遮罩）就再也唤不回来——
- * 上机实测踩到过。这里监听点按（交互源）主动补一次 show；键盘已在时该调用是空操作。
+ * 周数方格：点一下选中 / 取消；[blockedWeeks] 里的周已被同格其它交替课占用，灰显不可点。
+ * 选中蓝底白字、未选中白底黑字（对齐设计稿），布局与旧版一致（6/行、等宽等高）。
  */
-@Composable
-private fun CourseField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    imeAction: ImeAction,
-    onImeAction: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(interactionSource) {
-        interactionSource.interactions.collect { interaction ->
-            if (interaction is PressInteraction.Release) keyboard?.show()
-        }
-    }
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        singleLine = true,
-        interactionSource = interactionSource,
-        keyboardOptions = KeyboardOptions(imeAction = imeAction),
-        keyboardActions = KeyboardActions(
-            onNext = { onImeAction() },
-            onDone = { onImeAction() },
-        ),
-        modifier = modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text = text,
-        fontSize = 14.sp,
-        fontWeight = FontWeight.Medium,
-        color = MaterialTheme.colorScheme.primary,
-    )
-}
-
-/**
- * 结束节次芯片：分行排布，与周数方格同款视觉。
- * 默认只有 [startId]..min(total, startId + MAX_SPAN - 1) 可选（起始之前 / 跨度过长的置灰不可点）；
- * [enabledRange] 非空时改按它判定——新建交替课程沿用源课的跨度，只能选那一个末节。
- */
-@Composable
-private fun EndSlotChips(
-    startId: Int,
-    total: Int,
-    selected: Int,
-    onSelect: (Int) -> Unit,
-    enabledRange: IntRange? = null,
-) {
-    val maxEnd = minOf(total, startId + ScheduleValidator.MAX_SPAN - 1)
-    val range = enabledRange ?: (startId..maxEnd)
-    Column(verticalArrangement = Arrangement.spacedBy(WeekCellGap)) {
-        (1..total).chunked(WeeksPerRow).forEach { rowSlots ->
-            Row(horizontalArrangement = Arrangement.spacedBy(WeekCellGap)) {
-                rowSlots.forEach { id ->
-                    val enabled = id in range
-                    val isSelected = id == selected
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(36.dp)
-                            .clip(WeekCellShape)
-                            .background(
-                                when {
-                                    isSelected -> MaterialTheme.colorScheme.primary
-                                    enabled -> OnPrimaryContainer
-                                    else -> OnPrimaryContainer.copy(alpha = 0.4f)
-                                },
-                            )
-                            .then(
-                                if (enabled) {
-                                    Modifier.clickable { onSelect(id) }
-                                } else {
-                                    Modifier
-                                },
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = id.toString(),
-                            fontSize = 15.sp,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = when {
-                                isSelected -> MaterialTheme.colorScheme.onPrimary
-                                enabled -> MaterialTheme.colorScheme.onSurfaceVariant
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                            },
-                        )
-                    }
-                }
-                repeat(WeeksPerRow - rowSlots.size) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(36.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** 周数方格：点一下选中 / 取消；[blockedWeeks] 里的周已被同格其它交替课占用，灰显不可点 */
 @Composable
 private fun WeekSelectionGrid(
     totalWeeks: Int,
@@ -630,7 +461,7 @@ private fun WeekSelectionGrid(
                                 when {
                                     isSelected -> MaterialTheme.colorScheme.primary
                                     blocked -> OnPrimaryContainer.copy(alpha = 0.4f)
-                                    else -> OnPrimaryContainer
+                                    else -> MaterialTheme.colorScheme.surface
                                 },
                             )
                             .then(if (blocked) Modifier else Modifier.clickable { onToggle(week) }),
@@ -643,7 +474,7 @@ private fun WeekSelectionGrid(
                             color = when {
                                 isSelected -> MaterialTheme.colorScheme.onPrimary
                                 blocked -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                else -> MaterialTheme.colorScheme.onSurface
                             },
                         )
                     }
@@ -657,13 +488,6 @@ private fun WeekSelectionGrid(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun WeekShortcut(text: String, onClick: () -> Unit) {
-    TextButton(onClick = onClick) {
-        Text(text, fontSize = 14.sp)
     }
 }
 
