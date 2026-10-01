@@ -305,7 +305,7 @@ fun ScheduleHeader(
                             Modifier
                                 .clickable(onClick = onDaysPerWeekToggle)
                                 .semantics { contentDescription = daysToggleDescription }
-                                .padding(vertical = 4.dp)
+                                //.padding(vertical = 4.dp) 顶栏周数行暂不需要padding
                         } else {
                             Modifier
                         },
