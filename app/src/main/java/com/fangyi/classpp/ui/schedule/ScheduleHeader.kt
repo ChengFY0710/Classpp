@@ -76,7 +76,9 @@ internal val TopBarHeight = 56.dp  //顶栏行自然高度，也是最大折叠�
 
 private val WeekPillHeight = 40.dp
 private val HeaderEdgePadding = 33.dp
-private val PillEndPadding = 24.dp
+
+/** 折叠态胶囊右缘距屏幕右侧的距离（与顶栏设置图标右缘 ~29dp 基本对齐） */
+private val PillEndPadding = 30.dp
 
 private val WeekPickerGap = 16.dp  //周数选择器顶部与胶囊底部的固定垂直间距（展开/折叠态一致）
 
@@ -91,7 +93,24 @@ private val WeekPickerCellSpace = 8.dp // 周数选择器里小方块间距
  *  整宽 ≈ 6×边长 + 102dp，360dp 屏上边长建议 ≤43dp */
 private val WeekCellSize = 48.dp
 
-
+/**
+ * 折叠态（fraction = 1）周数胶囊的左缘坐标：胶囊「结束侧」边缘距屏幕同侧边缘恒为 [endPadPx]，
+ * 由胶囊实测宽度反推左缘位置。
+ *
+ * 宽度必须参与计算：折叠终点不能只用固定偏移量判定，否则不同字宽的周数
+ * （如「第 9 周」与「第 10 周」实测宽度不同）会停在距屏幕右侧不同的距离上，甚至整体滑出屏幕。
+ * RTL 下结束侧在左，轴对称处理。
+ */
+internal fun collapsedPillX(
+    widthPx: Int,
+    pillWidthPx: Int,
+    endPadPx: Int,
+    isRtl: Boolean,
+): Float = if (isRtl) {
+    endPadPx.toFloat()
+} else {
+    (widthPx - pillWidthPx - endPadPx).toFloat()
+}
 
 /**
  * 可折叠课表头部：顶栏行（编辑 | 周数胶囊 | 设置）+ 日期行 + 星期行。
@@ -265,7 +284,11 @@ fun ScheduleHeader(
             )
             .windowInsetsPadding(WindowInsets.statusBars),
     ) { measurables, constraints ->
-        val childConstraints = constraints.copy(minHeight = 0)
+        // 本 Layout 自身用了 fillMaxWidth → 收到的约束是 minWidth == maxWidth，
+        // 若原样下发给子项，每个子项都会被撑满整屏（周数胶囊实测宽度也会变成屏宽，
+        // 于是任何按「胶囊实际宽度」算出的定位全部失真）。故测量子项前清掉 minWidth：
+        // 顶栏行/日期行/星期行各自声明了 fillMaxWidth，仍是满宽；只有胶囊按内容收窄。
+        val childConstraints = constraints.copy(minWidth = 0, minHeight = 0)
         val topBarPlaceable = measurables[0].measure(childConstraints)
         val datePlaceable = measurables[1].measure(childConstraints)
         val weekdayPlaceable = measurables[2].measure(childConstraints)
@@ -278,14 +301,15 @@ fun ScheduleHeader(
         // 胶囊位置：x 居中 → 右对齐，y 顶栏中心 → 日期行中心
         val pillWidth = pillPlaceable.width
         val pillHeight = pillPlaceable.height
-        val collapsedEndPad = 110.dp.roundToPx()
         val endPad = PillEndPadding.roundToPx()
         val centerX = (width - pillWidth) / 2f
-        val endX = if (layoutDirection == LayoutDirection.Rtl) {
-            endPad.toFloat()
-        } else {
-            (width - pillWidth + collapsedEndPad).toFloat()
-        }
+        // 折叠终点交给 collapsedPillX：由胶囊实测宽度反推，右缘距屏幕右侧恒为 PillEndPadding
+        val endX = collapsedPillX(
+            widthPx = width,
+            pillWidthPx = pillWidth,
+            endPadPx = endPad,
+            isRtl = layoutDirection == LayoutDirection.Rtl,
+        )
         val pillX = centerX + (endX - centerX) * fraction
         val topBarCenterY = TopBarHeight.roundToPx() / 2f
         val dateCenterY = topBarPlaceable.height + datePlaceable.height / 2f
