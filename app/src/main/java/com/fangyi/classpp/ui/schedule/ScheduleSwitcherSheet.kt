@@ -125,7 +125,7 @@ internal fun ScheduleSwitcherSheet(
             {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
+                    horizontalArrangement = Arrangement.spacedBy(30.dp, Alignment.CenterHorizontally),
                 ) {
                     SheetPillButton(
                         label = stringResource(R.string.switcher_export),
@@ -133,7 +133,11 @@ internal fun ScheduleSwitcherSheet(
                         containerColor = MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.primary,
                         onClick = onExport,
-                        iconSize = 24.dp,
+                        iconSize = 25.dp,
+                        topPadding = 10.dp,
+                        bottomPadding = 10.dp,
+                        startPadding = 15.dp,
+                        endPadding = 10.dp,
                     )
                     SheetPillButton(
                         label = stringResource(R.string.switcher_import),
@@ -141,7 +145,11 @@ internal fun ScheduleSwitcherSheet(
                         containerColor = MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.primary,
                         onClick = onImport,
-                        iconSize = 24.dp,
+                        iconSize = 25.dp,
+                        topPadding = 10.dp,
+                        bottomPadding = 10.dp,
+                        startPadding = 15.dp,
+                        endPadding = 10.dp,
                     )
                 }
             }

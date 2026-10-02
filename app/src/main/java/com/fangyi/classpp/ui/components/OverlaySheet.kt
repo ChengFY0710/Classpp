@@ -466,6 +466,10 @@ fun SheetPillButton(
     modifier: Modifier = Modifier,
     iconAtEnd: Boolean = false,
     iconSize: Dp = 30.dp,
+    topPadding: Dp = 8.dp,
+    bottomPadding: Dp = 8.dp,
+    startPadding: Dp = 13.dp,  // 文字加宽宽度改这里，文字所在那侧的外边距比图标侧多 5dp（8+5）：图标在左(确认)加宽右侧，图标在右(删除/取消)加宽左侧
+    endPadding: Dp = 8.dp,
 ) {
     Row(
         modifier = modifier
@@ -479,13 +483,11 @@ fun SheetPillButton(
             }
             .background(containerColor, PillShape)
             .clickable(onClick = onClick)
-            // 文字所在那侧的外边距比图标侧多 3dp：图标在左(确认)加宽右侧，
-            // 图标在右(取消/删除)加宽左侧
             .padding(
-                start = if (iconAtEnd) 13.dp else 8.dp,
-                end = if (iconAtEnd) 8.dp else 13.dp,
-                top = 8.dp,
-                bottom = 8.dp,
+                start = if (iconAtEnd) startPadding else endPadding,
+                end = if (iconAtEnd) endPadding else startPadding,
+                top = topPadding,
+                bottom = bottomPadding,
             ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
