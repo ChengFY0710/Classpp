@@ -328,7 +328,7 @@ fun SheetPillButton(
     }
 }
 
-/** 分组标题：浅灰大字（区别于旧版 14sp 蓝字）；左缩进 4dp 与设置页 SettingsSection 标题一致。 */
+/** 分组标题：浅灰字（区别于旧版 14sp 蓝字）；左缩进 4dp 与设置页 SettingsSection 标题一致。 */
 @Composable
 fun SheetSectionLabel(
     text: String,
@@ -336,7 +336,7 @@ fun SheetSectionLabel(
 ) {
     Text(
         text = text,
-        fontSize = 18.sp,
+        fontSize = 16.sp,
         color = MaterialTheme.classppColors.secondaryText,
         modifier = modifier.padding(start = 4.dp),
     )
