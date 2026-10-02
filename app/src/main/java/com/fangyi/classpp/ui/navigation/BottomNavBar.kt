@@ -124,7 +124,7 @@ private fun NavPill(
     modifier: Modifier = Modifier,
 ) {
     val contentColor =
-        if (selected) MaterialTheme.colorScheme.primary else Color.Black
+        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
     Box(
         modifier = modifier
             .height(PillHeight)

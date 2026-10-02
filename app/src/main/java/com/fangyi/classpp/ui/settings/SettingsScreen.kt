@@ -77,7 +77,7 @@ import com.fangyi.classpp.ui.schedule.snapToMonday
 import com.fangyi.classpp.ui.schedule.toPickerMillis
 import com.fangyi.classpp.ui.schedule.toIsoDate
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.SecondaryTextColor
+import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
@@ -484,7 +484,7 @@ private fun SettingsContent(
                 text = stringResource(R.string.show_inactive_desc),
                 modifier = Modifier.padding(start = 4.dp),
                 style = MaterialTheme.typography.bodySmall,
-                color = SecondaryTextColor,
+                color = MaterialTheme.classppColors.secondaryText,
             )
         }
     }

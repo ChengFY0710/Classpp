@@ -37,10 +37,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fangyi.classpp.ui.theme.Error
-import com.fangyi.classpp.ui.theme.OnSurface
-import com.fangyi.classpp.ui.theme.Primary
-import com.fangyi.classpp.ui.theme.SecondaryTextColor
+import com.fangyi.classpp.ui.theme.classppColors
 
 /**
  * 浮层「行卡」统一行高：上下内距 14×2 + 文字行高 24 = 52dp。
@@ -82,8 +79,8 @@ fun SheetTextField(
         }
     }
     val borderColor = when {
-        isError -> Error
-        focused -> Primary
+        isError -> MaterialTheme.colorScheme.error
+        focused -> MaterialTheme.colorScheme.primary
         else -> Color.Transparent
     }
 
@@ -101,7 +98,7 @@ fun SheetTextField(
             text = label,
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
-            color = OnSurface,
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.width(12.dp))
         BasicTextField(
@@ -109,12 +106,14 @@ fun SheetTextField(
             onValueChange = onValueChange,
             textStyle = TextStyle(
                 // 空值本身不可见，占位由 decorationBox 负责
-                color = if (value.isEmpty()) Color.Transparent else Primary,
+                color = if (value.isEmpty()) Color.Transparent else MaterialTheme.colorScheme.primary,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.End,
             ),
-            cursorBrush = SolidColor(if (isError) Error else Primary),
+            cursorBrush = SolidColor(
+                if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            ),
             singleLine = true,
             interactionSource = interactionSource,
             keyboardOptions = KeyboardOptions(imeAction = imeAction),
@@ -137,7 +136,7 @@ fun SheetTextField(
                             text = placeholder,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = SecondaryTextColor,
+                            color = MaterialTheme.classppColors.secondaryText,
                             textAlign = TextAlign.End,
                             modifier = Modifier.fillMaxWidth(),
                         )

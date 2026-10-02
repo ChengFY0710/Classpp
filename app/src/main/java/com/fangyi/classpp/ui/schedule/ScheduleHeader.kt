@@ -62,7 +62,6 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.OnPrimaryContainer
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
@@ -70,8 +69,6 @@ import dev.chrisbanes.haze.hazeEffect
 import java.util.Calendar
 import java.util.Date
 import kotlin.math.roundToInt
-
-private val IconTint = Color(0xFF000000)
 
 internal val TopBarHeight = 56.dp  //顶栏行自然高度，也是最大折叠量
 
@@ -244,7 +241,7 @@ fun ScheduleHeader(
                     Icon(
                         painter = painterResource(R.drawable.ic_calendar_edit),
                         contentDescription = stringResource(R.string.cd_edit_schedule),
-                        tint = IconTint,
+                        tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(30.dp)
                     )
                 }
@@ -259,7 +256,7 @@ fun ScheduleHeader(
                     Icon(
                         painter = painterResource(R.drawable.ic_settings),
                         contentDescription = stringResource(R.string.cd_settings),
-                        tint = IconTint,
+                        tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(30.dp)
                     )
                 }
@@ -525,7 +522,7 @@ private fun WeekPill(
                 painter = painterResource(R.drawable.ic_chevron_down),
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
-                tint = IconTint,
+                tint = MaterialTheme.colorScheme.onSurface,
             )
         }
 
@@ -693,7 +690,7 @@ private fun WeekCell(
                 when {
                     selected -> colors.primary
                     isCurrent -> colors.primaryContainer
-                    else -> OnPrimaryContainer
+                    else -> MaterialTheme.colorScheme.onPrimaryContainer
                 },
             )
             .semantics { contentDescription = description }
@@ -705,7 +702,7 @@ private fun WeekCell(
             fontSize = 22.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             color = when {
-                selected -> Color.White
+                selected -> colors.onPrimary
                 isCurrent -> colors.primary
                 else -> colors.onSurfaceVariant
             },

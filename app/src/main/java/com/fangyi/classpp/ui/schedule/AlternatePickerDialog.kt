@@ -29,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.CourseEntry
-import com.fangyi.classpp.ui.theme.Scrim
 
 private val DialogShape = RoundedCornerShape(24.dp)
 private val RowShape = RoundedCornerShape(12.dp)
@@ -54,7 +53,7 @@ internal fun AlternatePickerDialog(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Scrim.copy(alpha = 0.32f))
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
             // 点空白处收起（无涟漪）
             .clickable(
                 interactionSource = scrimInteraction,

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -22,9 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
-import com.fangyi.classpp.ui.theme.OnSurface
-import com.fangyi.classpp.ui.theme.Primary
-import com.fangyi.classpp.ui.theme.PrimaryContainerNontrans
+import com.fangyi.classpp.ui.theme.classppColors
 
 private val ChoicePillShape = RoundedCornerShape(12.dp)
 
@@ -41,6 +40,7 @@ fun RowChoiceCard(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = MaterialTheme.colorScheme
     SheetCard(modifier = modifier, contentPadding = PaddingValues(6.dp)) {
         options.forEachIndexed { index, label ->
             val selected = index == selectedIndex
@@ -48,7 +48,10 @@ fun RowChoiceCard(
                 modifier = Modifier
                     .weight(1f)
                     .clip(ChoicePillShape)
-                    .background(if (selected) PrimaryContainerNontrans else Color.Transparent)
+                    .background(
+                        if (selected) MaterialTheme.classppColors.primaryContainerNontrans
+                        else Color.Transparent,
+                    )
                     .clickable { onSelect(index) }
                     .padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center,
@@ -61,7 +64,7 @@ fun RowChoiceCard(
                         Icon(
                             painter = painterResource(R.drawable.ic_checkmark),
                             contentDescription = null,
-                            tint = Primary,
+                            tint = colors.primary,
                             modifier = Modifier.size(18.dp),
                         )
                     }
@@ -69,7 +72,7 @@ fun RowChoiceCard(
                         text = label,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium,
-                        color = if (selected) Primary else OnSurface,
+                        color = if (selected) colors.primary else colors.onSurface,
                     )
                 }
             }

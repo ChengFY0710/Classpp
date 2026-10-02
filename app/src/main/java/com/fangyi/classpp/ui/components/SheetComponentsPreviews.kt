@@ -13,7 +13,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.CancelRed
 
 /** 设计稿四态与各卡片的快速预览（Android Studio 中直接查看）。 */
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
@@ -124,22 +123,22 @@ private fun ColorSwatchCardPreview() = ClassppTheme {
             label = "确认",
             icon = R.drawable.ic_checkmark_circle,
             containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = Color.White,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
             onClick = {},
         )
         SheetPillButton(
             label = "取消",
             icon = R.drawable.ic_dismiss_circle,
-            containerColor = Color.White,
-            contentColor = Color(0xFF212121),
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
             iconAtEnd = true,
             onClick = {},
         )
         SheetPillButton(
             label = "删除",
             icon = R.drawable.ic_delete_dismiss,
-            containerColor = CancelRed,
-            contentColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.error,
+            contentColor = MaterialTheme.colorScheme.onError,
             iconAtEnd = true,
             onClick = {},
         )

@@ -60,9 +60,7 @@ import com.fangyi.classpp.ui.components.RowChoiceCard
 import com.fangyi.classpp.ui.components.SheetSectionLabel
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
-import com.fangyi.classpp.ui.theme.CancelRed
-import com.fangyi.classpp.ui.theme.OnPrimaryContainer
-import com.fangyi.classpp.ui.theme.SecondaryTextColor
+import com.fangyi.classpp.ui.theme.classppColors
 
 /** 周数方格：每行 6 个，宽度均分（末行补空位，保证每格同宽同高） */
 private const val WeeksPerRow = 6
@@ -287,8 +285,8 @@ fun AddCoursePanel(
             SheetTopAction(
                 label = stringResource(R.string.edit_delete),
                 icon = R.drawable.ic_delete_dismiss,
-                containerColor = CancelRed,
-                contentColor = Color.White,
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
                 onClick = onDelete,
             )
         } else {
@@ -296,7 +294,7 @@ fun AddCoursePanel(
                 label = stringResource(R.string.settings_cancel),
                 icon = R.drawable.ic_dismiss_circle,
                 containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = Color(0xFF212121),
+                contentColor = MaterialTheme.colorScheme.onSurface,
                 onClick = onDismiss,
             )
         },
@@ -306,7 +304,7 @@ fun AddCoursePanel(
             Text(
                 text = cellInfo,
                 fontSize = secondaryTextSize,
-                color = SecondaryTextColor,
+                color = MaterialTheme.classppColors.secondaryText,
                 modifier = Modifier.padding(textStartPadding),
             )
 
@@ -416,7 +414,7 @@ fun AddCoursePanel(
                             weeksSummary(other.weeks),
                         ),
                         fontSize = 13.sp,
-                        color = SecondaryTextColor,
+                        color = MaterialTheme.classppColors.secondaryText,
                     )
                 }
             }
@@ -470,7 +468,7 @@ private fun WeekSelectionGrid(
                             .background(
                                 when {
                                     isSelected -> MaterialTheme.colorScheme.primary
-                                    blocked -> OnPrimaryContainer.copy(alpha = 0.4f)
+                                    blocked -> MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.4f)
                                     else -> MaterialTheme.colorScheme.surface
                                 },
                             )

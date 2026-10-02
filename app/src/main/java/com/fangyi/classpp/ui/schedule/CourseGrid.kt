@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.Outline
 import java.util.Date
 import kotlin.math.roundToInt
 
@@ -211,6 +210,7 @@ private fun WeekPage(
     val density = LocalDensity.current
     val bandPx = with(density) { DateBandHeight.toPx() }
     val trailingPx = with(density) { TrailingScrollSpace.toPx() }
+    val outline = MaterialTheme.colorScheme.outline
     Box(
         modifier = Modifier
             .graphicsLayer { }
@@ -220,7 +220,7 @@ private fun WeekPage(
                     // 页右缘正是最后一列的边界（列按宽度等分）→ 与末尾接缝线同一条
                     val x = size.width - stroke / 2f
                     drawLine(
-                        Outline,
+                        outline,
                         Offset(x, bandPx),
                         Offset(x, size.height - trailingPx),
                         strokeWidth = stroke,
@@ -335,6 +335,7 @@ private fun DateBand(
 ) {
     val density = LocalDensity.current
     val bandHeightPx = with(density) { DateBandHeight.toPx() }
+    val outline = MaterialTheme.colorScheme.outline
 
     Row(
         modifier = Modifier
@@ -364,11 +365,11 @@ private fun DateBand(
                 val stroke = GridLineWidth.toPx()
                 // 各列内部边界（共 days-1 条）；末列右界即页右缘，与接缝线同一条故不重复画
                 columnDividerXs(size.width, days).forEach { x ->
-                    drawLine(Outline, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
+                    drawLine(outline, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
                 }
                 // 顶部横线：星期行与网格的分隔线；底部不画（与首行之间无线）
                 drawLine(
-                    Outline,
+                    outline,
                     Offset(0f, stroke / 2),
                     Offset(size.width, stroke / 2),
                     strokeWidth = stroke,
@@ -376,7 +377,7 @@ private fun DateBand(
                 // 右缘接缝竖线：仅在翻页途中出现，与下方课程行的补线接成一条（同一 x、同一笔宽）
                 if (seamVisible.value) {
                     val x = size.width - stroke / 2f
-                    drawLine(Outline, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
+                    drawLine(outline, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
                 }
             },
         verticalAlignment = Alignment.CenterVertically,
@@ -416,6 +417,7 @@ private fun GridRow(
     onEditClick: ((courseId: String) -> Unit)?,
     onCourseLongClick: ((courseId: String, anchor: Rect) -> Unit)?,
 ) {
+    val outline = MaterialTheme.colorScheme.outline
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -423,11 +425,11 @@ private fun GridRow(
             .drawBehind {
                 val stroke = GridLineWidth.toPx()
                 columnDividerXs(size.width, days).forEach { x ->
-                    drawLine(Outline, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
+                    drawLine(outline, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
                 }
                 // 底部横线：行间分隔；顶部不画（与日期带之间无线）
                 val y = size.height - stroke / 2
-                drawLine(Outline, Offset(0f, y), Offset(size.width, y), strokeWidth = stroke)
+                drawLine(outline, Offset(0f, y), Offset(size.width, y), strokeWidth = stroke)
             },
     ) {
         for (day in 1..days) {

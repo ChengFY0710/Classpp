@@ -2,23 +2,15 @@ package com.fangyi.classpp.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// 品牌：蓝 #0077FF / 黑 #000000 / 白 #FFFFFF / 背景浅灰 #F2F4F6（浅色专用）
+// 品牌：蓝 #0077FF（见 res/values/colors.xml brand_blue）/ 黑 #000000 / 白 #FFFFFF / 背景浅灰 #F2F4F6（浅色专用）
 // Primary 微调为 #006FEF，使白字对比度达到 4.65:1（WCAG AA）
-val BrandBlue = Color(0xFF0077FF) // 品牌原色，仅无文字承载场景（图标等）
-
 val Primary = Color(0xFF006FEF)
 val OnPrimary = Color(0xFFFFFFFF)
 val PrimaryContainer = Color(0x1F006FEF)
-val PrimaryContainerNontrans = Color(0xFFE0EDFD)
 val OnPrimaryContainer = Color(0x1A000000)
 
-val Secondary = Color(0xFF4D5A68)
-val OnSecondary = Color(0xFFFFFFFF)
 val SecondaryContainer = Color(0xFFDFE4EA)
 val OnSecondaryContainer = Color(0xFF101820)
-val SecondaryTextColor = Color(0xFFABAFB4)
-val Tertiary = Color(0xFF00696E)
-val OnTertiary = Color(0xFFFFFFFF)
 val TertiaryContainer = Color(0xFFCFEBED)
 val OnTertiaryContainer = Color(0xFF002022)
 
@@ -27,30 +19,18 @@ val OnBackground = Color(0xFF000000)
 
 val Surface = Color(0xFFFFFFFF)
 val OnSurface = Color(0xFF000000)
-val SurfaceVariant = Color(0xFFE4E7EB)
 val OnSurfaceVariant = Color(0xFF444746)
 
-val SurfaceDim = Color(0xFFDFE3E7)
-val SurfaceContainerLowest = Color(0xFFFFFFFF)
-val SurfaceContainerLow = Color(0xFFF7F8FA)
 val SurfaceContainer = Color(0xFFF2F4F6)
 val SurfaceContainerHigh = Color(0xFFEAEDF1)
 val SurfaceContainerHighest = Color(0xFFE4E7EB)
 
 val Outline = Color(0xFFDCE2E7)
-val OutlineVariant = Color(0xFFC4C9CF)
 
-val InverseSurface = Color(0xFF303033)
-val InverseOnSurface = Color(0xFFF5F6F8)
 val InversePrimary = Color(0xFFA3C8FA)
 
 val Error = Color(0xFFF44336)
-val OnError = Color(0xFFFFFFFF)
 val ErrorContainer = Color(0xFFF9DEDC)
 val OnErrorContainer = Color(0xFF410E0B)
-
-// 课表编辑态的动作色（取自设计稿的近似值；"切换课表"沿用 Primary）
-val SaveGreen = Color(0xFF22B14C)
-val CancelRed = Color(0xFFF44336)
 
 val Scrim = Color(0xFF000000)

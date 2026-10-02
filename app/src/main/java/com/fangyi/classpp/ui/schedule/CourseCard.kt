@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.classppColors
 
 private val CardShape = RoundedCornerShape(6.dp)
 private val BarWidth = 3.dp
@@ -51,8 +52,6 @@ internal val CourseColor.barColor: Color
         CourseColor.Teal -> Color(0xFF7CD3D0)
         CourseColor.Pink -> Color(0xFFEDB5C9)
     }
-
-private val SecondaryTextColor = Color(0xFFABAFB4)
 
 /** 置灰规范色（需求 7）：卡片底 #cbcbcb、课名 #737a83（教师/地点同用后者，避免低对比度） */
 private val InactiveBarColor = Color(0xFFCBCBCB)
@@ -86,7 +85,7 @@ fun CourseCard(
     } else {
         InactiveTextColor
     }
-    val secondaryColor = if (course.active) SecondaryTextColor else InactiveTextColor
+    val secondaryColor = if (course.active) MaterialTheme.classppColors.secondaryText else InactiveTextColor
     // 长按与点击同源：都在 clip 之内（圆角外的点击/涟漪被裁掉）
     val clickModifier = when {
         onLongClick != null -> Modifier.combinedClickable(

@@ -27,8 +27,6 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
-import com.fangyi.classpp.ui.theme.OnSurface
-import com.fangyi.classpp.ui.theme.Primary
 
 /**
  * 浮层选择卡片：白卡片「标题 + 右侧蓝色值 + 上下箭头」，点按在卡片右上方弹出菜单选择。
@@ -65,7 +63,7 @@ fun PopupSelectCard(
             text = title,
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
-            color = OnSurface,
+            color = MaterialTheme.colorScheme.onSurface,
             lineHeight = 16.sp,
         )
         Spacer(Modifier.weight(1f))
@@ -73,7 +71,7 @@ fun PopupSelectCard(
             text = valueText,
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
-            color = Primary,
+            color = MaterialTheme.colorScheme.primary,
             lineHeight = 16.sp,
         )
         // 菜单锚点：上缘与卡片内容顶对齐（卡片内距 14 + 图标上缘），下弹后被 offset 抬回卡片顶
@@ -81,7 +79,7 @@ fun PopupSelectCard(
             Icon(
                 painter = painterResource(R.drawable.ic_chevron_up_down),
                 contentDescription = null,
-                tint = Primary,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
                     .padding(start = 8.dp)
                     .size(20.dp),
@@ -101,7 +99,7 @@ fun PopupSelectCard(
                                 text = label,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = OnSurface,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 lineHeight = 16.sp,
                             )
                         },

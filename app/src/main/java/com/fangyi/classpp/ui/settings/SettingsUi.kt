@@ -41,12 +41,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
-import com.fangyi.classpp.ui.theme.Background
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.OnBackground
-import com.fangyi.classpp.ui.theme.Primary
-import com.fangyi.classpp.ui.theme.PrimaryContainerNontrans
-import com.fangyi.classpp.ui.theme.SecondaryTextColor
+import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
@@ -56,8 +52,8 @@ import dev.chrisbanes.haze.hazeEffect
  * 设置页视觉模板：分组标题 + 白色圆角卡 + 设置行 + 时间胶囊 + 分段选择。
  * 后续设置详情页直接复用这些组件，保持同一套配色与间距。
  *
- * 配色约定：页面底 [Background]、卡底 [Surface]、强调 [Primary]、
- * 浅蓝容器 [PrimaryContainerNontrans]、次级文字 [SecondaryTextColor]。
+ * 配色约定：页面底 `colorScheme.background`、卡底 `Surface`、强调 `colorScheme.primary`、
+ * 浅蓝容器 `classppColors.primaryContainerNontrans`、次级文字 `classppColors.secondaryText`。
  *
  * 卡内间距按行数分两类：单行卡（一行「文字+控件」）用默认 [CardContentPadding]；
  * 多行卡（多行「文字+控件」）另传 [MultiLineRowSpacing]。
@@ -110,7 +106,7 @@ internal fun SettingsTopBar(
                     text = title,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
-                    color = OnBackground,
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
             },
             // 状态栏 inset 由顶栏自己吸收：磨砂背景一直铺到屏幕顶（沉浸式）
@@ -135,7 +131,7 @@ internal fun SettingsTopBar(
             Icon(
                 painter = painterResource(R.drawable.ic_arrow_left),
                 contentDescription = stringResource(R.string.cd_settings_close),
-                tint = OnBackground,
+                tint = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.size(22.dp),
             )
         }
@@ -157,7 +153,7 @@ internal fun SettingsSection(
             text = title,
             modifier = Modifier.padding(start = 4.dp),
             style = MaterialTheme.typography.bodyLarge,
-            color = SecondaryTextColor,
+            color = MaterialTheme.classppColors.secondaryText,
         )
         content()
     }
@@ -196,7 +192,7 @@ internal fun SettingsCard(
 /**
  * 通用设置行：左标签 + 右侧内容。
  * - [onClick] 非空 → 整行可点
- * - [value] 非空 → 显示 Primary 色数值（日期、周数等）
+ * - [value] 非空 → 显示 primary 色数值（日期、周数等）
  * - [trailing] 非空 → 右侧自定义槽（Switch、时间 chip、文字按钮等）
  * - [showChevron] 默认随 [onClick]；置 false 可去掉行尾箭头
  */
@@ -228,7 +224,7 @@ internal fun SettingRow(
             Text(
                 text = value,
                 style = MaterialTheme.typography.bodyLarge,
-                color = Primary,
+                color = MaterialTheme.colorScheme.primary,
             )
         }
         trailing?.invoke(this)
@@ -237,7 +233,7 @@ internal fun SettingRow(
             Icon(
                 painter = painterResource(R.drawable.ic_chevron_right),
                 contentDescription = null,
-                tint = SecondaryTextColor,
+                tint = MaterialTheme.classppColors.secondaryText,
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -245,7 +241,7 @@ internal fun SettingRow(
 }
 
 /**
- * 时间胶囊：Background灰底、Primary 字，点击弹时间选择。
+ * 时间胶囊：背景灰底、primary 字，点击弹时间选择。
  * 文字启用等宽数字（tnum）：所有时间同为 00:00 五字符，数字位等宽后各胶囊文字宽度天然一致。
  */
 @Composable
@@ -258,16 +254,16 @@ internal fun TimeChip(
         text = text,
         modifier = modifier
             .clip(ChipShape)
-            .background(Background)
+            .background(MaterialTheme.colorScheme.background)
             .clickable(onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 9.dp),
         style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
-        color = Primary,
+        color = MaterialTheme.colorScheme.primary,
     )
 }
 
 /**
- * 分段单选：等分选项，选中项浅蓝圆角块 + 勾选 + Primary 字。
+ * 分段单选：等分选项，选中项浅蓝圆角块 + 勾选 + primary 字。
  * 自绘而非 M3 SegmentedButton：设计稿是简单圆角块而非缺角分段外形，
  * 且可避免各版本 itemColors 参数名差异。
  */
@@ -285,7 +281,10 @@ internal fun SegmentedChoice(
                 modifier = Modifier
                     .weight(1f)
                     .clip(SegmentShape)
-                    .background(if (selected) PrimaryContainerNontrans else Color.Transparent)
+                    .background(
+                        if (selected) MaterialTheme.classppColors.primaryContainerNontrans
+                        else Color.Transparent,
+                    )
                     .clickable { onSelect(index) }
                     .padding(vertical = 12.dp),
                 horizontalArrangement = Arrangement.Center,
@@ -295,7 +294,7 @@ internal fun SegmentedChoice(
                     Icon(
                         painter = painterResource(R.drawable.ic_checkmark),
                         contentDescription = null,
-                        tint = Primary,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(6.dp))
@@ -303,7 +302,7 @@ internal fun SegmentedChoice(
                 Text(
                     text = label,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = if (selected) Primary else MaterialTheme.colorScheme.onSurface,
+                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     fontWeight = if(selected) FontWeight.SemiBold else FontWeight.Normal,
                 )
             }

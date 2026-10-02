@@ -38,10 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fangyi.classpp.ui.theme.Background
-import com.fangyi.classpp.ui.theme.OnSurface
-import com.fangyi.classpp.ui.theme.Scrim
-import com.fangyi.classpp.ui.theme.SecondaryTextColor
+import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
@@ -140,7 +137,7 @@ fun OverlaySheet(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Scrim.copy(alpha = 0.32f))
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
             .clickable(
                 interactionSource = scrimInteraction,
                 indication = null,
@@ -161,7 +158,7 @@ fun OverlaySheet(
                         onClick = {},
                     ),
                 shape = SheetShape,
-                color = Background,
+                color = MaterialTheme.colorScheme.background,
                 shadowElevation = 8.dp,
             ) {
                 Box {
@@ -216,7 +213,10 @@ private fun OverlaySheetTopBar(
             // 也保证 haze 不可用时顶栏文字依然可读
             .background(
                 androidx.compose.ui.graphics.Brush.verticalGradient(
-                    listOf(Background.copy(alpha = 0.92f), Background.copy(alpha = 0f)),
+                    listOf(
+                    MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                    MaterialTheme.colorScheme.background.copy(alpha = 0f),
+                ),
                 ),
             )
             .hazeEffect(hazeState) {
@@ -258,7 +258,7 @@ private fun OverlaySheetTopBar(
                     label = confirmLabel,
                     icon = com.fangyi.classpp.R.drawable.ic_checkmark_circle,
                     containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = Color.White,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                     onClick = onConfirm,
                 )
                 SheetPillButton(
@@ -274,7 +274,7 @@ private fun OverlaySheetTopBar(
                 text = title,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = OnSurface,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.align(Alignment.Center),
             )
         }
@@ -337,7 +337,7 @@ fun SheetSectionLabel(
     Text(
         text = text,
         fontSize = 18.sp,
-        color = SecondaryTextColor,
+        color = MaterialTheme.classppColors.secondaryText,
         modifier = modifier.padding(start = 4.dp),
     )
 }

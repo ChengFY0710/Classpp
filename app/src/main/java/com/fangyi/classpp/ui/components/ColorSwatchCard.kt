@@ -11,13 +11,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.fangyi.classpp.ui.theme.Primary
 
 /** 色球直径（选中环在其外侧，格子统一 46dp 保证行列对齐）。 */
 private val BallSize = 36.dp
@@ -64,7 +64,7 @@ fun ColorSwatchCard(
                             modifier = Modifier
                                 .size(CellSize)
                                 .clip(CircleShape)
-                                .border(RingWidth, Primary, CircleShape)
+                                .border(RingWidth, MaterialTheme.colorScheme.primary, CircleShape)
                                 .padding(RingWidth + RingGap),
                         ) {
                             Box(

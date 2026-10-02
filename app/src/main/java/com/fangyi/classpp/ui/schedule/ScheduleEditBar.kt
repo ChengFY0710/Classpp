@@ -33,9 +33,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
-import com.fangyi.classpp.ui.theme.CancelRed
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.SaveGreen
+import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
@@ -111,7 +110,7 @@ fun ScheduleEditBar(
             EditAction(
                 text = stringResource(R.string.edit_save),
                 iconRes = R.drawable.ic_calendar_checkmark,
-                color = SaveGreen,
+                color = MaterialTheme.classppColors.saveGreen,
                 iconAtStart = true,
                 onClick = onSave,
                 modifier = Modifier
@@ -133,7 +132,7 @@ fun ScheduleEditBar(
             EditAction(
                 text = stringResource(R.string.edit_cancel),
                 iconRes = R.drawable.ic_calendar_cancel,
-                color = CancelRed,
+                color = MaterialTheme.colorScheme.error,
                 iconAtStart = false,
                 onClick = onCancel,
                 modifier = Modifier
