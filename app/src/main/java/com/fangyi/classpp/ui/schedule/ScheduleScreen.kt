@@ -699,10 +699,16 @@ fun ScheduleScreen(
                 }
             }
 
-            // 交替课程选择弹窗：同格多门时才出现（见 onEditClick），选完开那一门的编辑面板
-            if (editSession != null && chooserCourses.size > 1) {
+            // 交替课程选择弹窗：同格多门时才出现（见 onEditClick），选完开那一门的编辑面板。
+            // 挂载与可见性分离（同浮层两段式关闭）：选完/关闭先播淡出，播完（onDismissed）才卸载
+            var chooserMounted by remember { mutableStateOf(false) }
+            val chooserVisible = editSession != null && chooserCourses.size > 1
+            if (chooserVisible) chooserMounted = true
+            if (chooserMounted) {
                 AlternatePickerDialog(
                     courses = chooserCourses,
+                    visible = chooserVisible,
+                    onDismissed = { chooserMounted = false },
                     onDismiss = { chooserSourceId = "" },
                     onPick = { entry ->
                         chooserSourceId = ""
@@ -745,8 +751,14 @@ fun ScheduleScreen(
                     },
                     onCreateConfirm = onCreateConfirm,
                 )
-                if (pendingSwitchId.isNotEmpty()) {
+                // 脏草稿确认叠在浮层之上，同样两段式：取消/确认先播淡出，播完才卸载
+                var discardMounted by remember { mutableStateOf(false) }
+                val discardVisible = pendingSwitchId.isNotEmpty()
+                if (discardVisible) discardMounted = true
+                if (discardMounted) {
                     DiscardSwitchConfirmDialog(
+                        visible = discardVisible,
+                        onDismissed = { discardMounted = false },
                         onCancel = { pendingSwitchId = "" },
                         onConfirm = { performSwitch(pendingSwitchId) },
                     )

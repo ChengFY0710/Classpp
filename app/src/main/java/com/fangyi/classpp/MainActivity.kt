@@ -215,7 +215,7 @@ class MainActivity : ComponentActivity() {
                         var cornersOn by remember { mutableStateOf(true) }
                         LaunchedEffect(settled) {
                             if (settled) {
-                                delay(500)
+                                delay(100)
                                 cornersOn = false
                             } else {
                                 cornersOn = true

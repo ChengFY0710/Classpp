@@ -1,15 +1,10 @@
 package com.fangyi.classpp.ui.schedule
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -20,7 +15,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -41,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Schedule
+import com.fangyi.classpp.ui.components.FadeOverlayDialog
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
@@ -50,7 +45,6 @@ import com.fangyi.classpp.ui.components.SheetSectionSpacingBottom
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.settings.TermDatesCard
-import com.fangyi.classpp.ui.theme.DialogShape
 import com.fangyi.classpp.ui.theme.classppColors
 
 /**
@@ -215,14 +209,21 @@ internal fun ScheduleSwitcherSheet(
         }
     }
 
-    // 删除确认框：后注册 BackHandler，返回键优先于浮层的回列表/关闭
-    deletingId?.let { id ->
+    // 删除确认框：后注册 BackHandler，返回键优先于浮层的回列表/关闭。
+    // 挂载与可见性分离（同浮层两段式关闭）：确认/取消先清 deletingId 播淡出，播完才卸载
+    var deleteDialogMounted by remember { mutableStateOf(false) }
+    val deleteDialogVisible = deletingId != null
+    if (deleteDialogVisible) deleteDialogMounted = true
+    if (deleteDialogMounted) {
         DeleteScheduleConfirmDialog(
-            scheduleName = schedules.firstOrNull { it.id == id }?.name.orEmpty(),
+            scheduleName = schedules.firstOrNull { it.id == deletingId }?.name.orEmpty(),
+            visible = deleteDialogVisible,
+            onDismissed = { deleteDialogMounted = false },
             onCancel = { deletingId = null },
             onConfirm = {
+                val id = deletingId
                 deletingId = null
-                onDelete(id)
+                id?.let(onDelete)
             },
         )
     }
@@ -315,69 +316,53 @@ private fun CreateScheduleContent(
 /**
  * 删除课表确认框：页内居中卡片（视觉同 [DiscardSwitchConfirmDialog]），点名课表并说明不可恢复。
  * 确认键用错误色标 destructive；返回键与遮罩点击都只取消。
+ * 两段式关闭见 [FadeOverlayDialog]：确认/取消即清 deletingId（名称随之为空），
+ * [shownName] 留住最后一份文案，淡出期间不闪空。
  */
 @Composable
 private fun DeleteScheduleConfirmDialog(
     scheduleName: String,
+    visible: Boolean,
+    onDismissed: () -> Unit,
     onCancel: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    val scrimInteraction = remember { MutableInteractionSource() }
-    BackHandler { onCancel() }
+    var shownName by remember { mutableStateOf(scheduleName) }
+    if (scheduleName.isNotEmpty()) shownName = scheduleName
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
-            .clickable(
-                interactionSource = scrimInteraction,
-                indication = null,
-                onClick = onCancel,
-            ),
-        contentAlignment = Alignment.Center,
+    FadeOverlayDialog(
+        visible = visible,
+        onDismiss = onCancel,
+        onDismissed = onDismissed,
+        cardHorizontalPadding = 32.dp,
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 32.dp)
-                // 吃掉落在卡片上的点击，避免穿透到遮罩
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {},
-                ),
-            shape = DialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
-        ) {
-            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
-                Text(
-                    text = stringResource(R.string.switcher_delete_title),
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.switcher_delete_message, scheduleName),
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    TextButton(onClick = onCancel) {
-                        Text(stringResource(R.string.settings_cancel))
-                    }
-                    TextButton(onClick = onConfirm) {
-                        Text(
-                            text = stringResource(R.string.edit_delete),
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
+            Text(
+                text = stringResource(R.string.switcher_delete_title),
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.switcher_delete_message, shownName),
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = onCancel, enabled = visible) {
+                    Text(stringResource(R.string.settings_cancel))
+                }
+                TextButton(onClick = onConfirm, enabled = visible) {
+                    Text(
+                        text = stringResource(R.string.edit_delete),
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             }
         }
@@ -400,64 +385,43 @@ private fun IsoDate.toSlashText(): String {
  */
 @Composable
 internal fun DiscardSwitchConfirmDialog(
+    visible: Boolean,
+    onDismissed: () -> Unit,
     onCancel: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    val scrimInteraction = remember { MutableInteractionSource() }
-    BackHandler { onCancel() }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
-            .clickable(
-                interactionSource = scrimInteraction,
-                indication = null,
-                onClick = onCancel,
-            ),
-        contentAlignment = Alignment.Center,
+    FadeOverlayDialog(
+        visible = visible,
+        onDismiss = onCancel,
+        onDismissed = onDismissed,
+        cardHorizontalPadding = 32.dp,
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 32.dp)
-                // 吃掉落在卡片上的点击，避免穿透到遮罩
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {},
-                ),
-            shape = DialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
-        ) {
-            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
-                Text(
-                    text = stringResource(R.string.switcher_discard_title),
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.switcher_discard_message),
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    TextButton(onClick = onCancel) {
-                        Text(stringResource(R.string.switcher_discard_cancel))
-                    }
-                    TextButton(onClick = onConfirm) {
-                        Text(
-                            text = stringResource(R.string.switcher_discard_confirm),
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
+            Text(
+                text = stringResource(R.string.switcher_discard_title),
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.switcher_discard_message),
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = onCancel, enabled = visible) {
+                    Text(stringResource(R.string.switcher_discard_cancel))
+                }
+                TextButton(onClick = onConfirm, enabled = visible) {
+                    Text(
+                        text = stringResource(R.string.switcher_discard_confirm),
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
             }
         }
