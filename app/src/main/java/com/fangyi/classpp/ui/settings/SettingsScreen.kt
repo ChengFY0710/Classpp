@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -52,7 +51,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -70,8 +68,6 @@ import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.appendSlot
 import com.fangyi.classpp.ui.schedule.DateTarget
 import com.fangyi.classpp.ui.schedule.TERM_DEFAULT_DAYS
-import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MIN
-import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MAX
 import com.fangyi.classpp.ui.schedule.endForTotalWeeks
 import com.fangyi.classpp.ui.schedule.snapToMonday
 import com.fangyi.classpp.ui.schedule.toPickerMillis
@@ -541,82 +537,6 @@ private fun SettingsContent(
             },
             dismissButton = {
                 TextButton(onClick = { editingSlot = null }) {
-                    Text(stringResource(R.string.settings_cancel))
-                }
-            },
-        )
-    }
-}
-
-/** 学期起止 + 总周数三行（起止弹 DatePicker、周数弹输入对话框），单独成组件供创建表单复用 */
-@Composable
-private fun TermDatesCard(
-    start: IsoDate,
-    end: IsoDate,
-    onPickStart: () -> Unit,
-    onPickEnd: () -> Unit,
-    onSetWeeks: (weeks: Int) -> Unit,
-) {
-    // 与 Schedule.totalWeeks 同式；起止经吸附/校验保证整周边界，此值必为整数周
-    val totalWeeks = ((end - start).toInt() / 7) + 1
-    var pickingWeeks by remember { mutableStateOf(false) }
-
-    SettingsSection(title = stringResource(R.string.section_term)) {
-        // 多行卡（三行「文字 + 值/箭头」）：首尾 12、行间 18（12 + MultiLineRowSpacing 6），与节次时间卡同一档
-        SettingsCard(rowSpacing = MultiLineRowSpacing) {
-            SettingRow(
-                label = stringResource(R.string.term_start),
-                value = start.toSettingsDateText(),
-                onClick = onPickStart,
-            )
-            SettingRow(
-                label = stringResource(R.string.term_end),
-                value = end.toSettingsDateText(),
-                onClick = onPickEnd,
-            )
-            SettingRow(
-                label = stringResource(R.string.term_weeks),
-                value = stringResource(R.string.term_weeks_value, totalWeeks),
-                onClick = { pickingWeeks = true },
-            )
-        }
-    }
-
-    // 周数对话框：仅打开期间进入组合（关闭即出组合，重开以当前周数重置输入）；
-    // 非法输入（空/0/>30）→ 字段 isError + 确定禁用；取消/外部点击丢弃
-    if (pickingWeeks) {
-        var input by remember { mutableStateOf(totalWeeks.toString()) }
-        val weeks = input.toIntOrNull()?.takeIf { it in TERM_WEEKS_MIN..TERM_WEEKS_MAX }
-        AlertDialog(
-            onDismissRequest = { pickingWeeks = false },
-            title = {
-                Text(stringResource(R.string.term_weeks))
-            },
-            text = {
-                OutlinedTextField(
-                    value = input,
-                    // 只留 ASCII 数字并截 2 位（1..30 至多两位），结构性杜绝 "-5"/"abc"/全角数字
-                    onValueChange = { input = it.filter { c -> c in '0'..'9' }.take(2) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    isError = weeks == null,
-                    supportingText = { Text(stringResource(R.string.term_weeks_range)) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = weeks != null,
-                    onClick = {
-                        weeks?.let(onSetWeeks)
-                        pickingWeeks = false
-                    },
-                ) {
-                    Text(stringResource(R.string.settings_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pickingWeeks = false }) {
                     Text(stringResource(R.string.settings_cancel))
                 }
             },

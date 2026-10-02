@@ -453,6 +453,23 @@ fun ScheduleScreen(
                     }
                 }
             }
+            // 删除课表：仓库删除（删激活项自动回落到剩余第一张，全部数据层校验已就绪）；
+            // 删的是当前激活课表时周选择归零防越界（同 performSwitch 的复位思路）；
+            // 删空则关浮层回无课表空态（新建课表页）
+            val onDeleteSchedule: (String) -> Unit = { id ->
+                scope.launch {
+                    when (val r = repository.deleteSchedule(id)) {
+                        is OpResult.Ok -> {
+                            if (id == schedule.id) selectedWeek = 0
+                            if (repository.schedules.value.isEmpty()) {
+                                switcherVisible = false
+                                createMode = false
+                            }
+                        }
+                        is OpResult.Err -> AppToasts.show(context, r.error.toEditMessage(context))
+                    }
+                }
+            }
             // 导入：系统文件选择器读 JSON → 仓库导入（新 id、名称去重、不自动激活）→
             // 走统一切换路径（含脏确认）；取消确认则新课表留在列表里但不激活
             val importLauncher = rememberLauncherForActivityResult(
@@ -669,9 +686,15 @@ fun ScheduleScreen(
             }
 
             // 切换课表浮层：列表/新建 + 底部导出导入；脏草稿确认叠在其上——
-            // 组合顺序保证返回键优先级：确认 → 浮层（表单态先回列表）→ 编辑取消
-            if (switcherVisible) {
+            // 组合顺序保证返回键优先级：确认 → 浮层（表单态先回列表）→ 编辑取消。
+            // 挂载与可见性分离（同课程面板的两段式关闭）：关闭先播浮层出场动画，
+            // 播完（onDismissed）才真正卸载
+            var switcherMounted by remember { mutableStateOf(false) }
+            if (switcherVisible) switcherMounted = true
+            if (switcherMounted) {
                 ScheduleSwitcherSheet(
+                    visible = switcherVisible,
+                    onDismissed = { switcherMounted = false },
                     schedules = repository.schedules.collectAsState().value,
                     activeScheduleId = schedule.id,
                     createMode = createMode,
@@ -683,6 +706,7 @@ fun ScheduleScreen(
                         createMode = false
                     },
                     onSwitch = requestSwitch,
+                    onDelete = onDeleteSchedule,
                     onExport = onExport,
                     onImport = {
                         importLauncher.launch(

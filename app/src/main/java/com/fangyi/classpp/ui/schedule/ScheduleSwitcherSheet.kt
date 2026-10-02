@@ -12,19 +12,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,128 +32,140 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Schedule
-
-private val SheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-private val ListContainerShape = RoundedCornerShape(16.dp)
-private val RowShape = RoundedCornerShape(12.dp)
+import com.fangyi.classpp.ui.components.OverlaySheet
+import com.fangyi.classpp.ui.components.SheetCard
+import com.fangyi.classpp.ui.components.SheetImeBehavior
+import com.fangyi.classpp.ui.components.SheetPillButton
+import com.fangyi.classpp.ui.components.SheetSectionSpacing
+import com.fangyi.classpp.ui.components.SheetTextField
+import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.settings.TermDatesCard
+import com.fangyi.classpp.ui.theme.classppColors
 
 /**
- * 「切换课表」底部浮层（编辑栏中间按钮打开）：
- * - 列表态：全部课表（名称 + 学期起止），当前课表主色高亮 + 对勾，点其它行切换；
- * - 底部三按钮：导出 / 导入 / 新建；新建在**同一浮层内**切到表单态（返回/遮罩先回列表）。
+ * 「切换课表」浮层（编辑栏中间按钮打开）——容器为 [OverlaySheet]，进出场动画与
+ * 顶栏拖拽关闭由它提供，与课程编辑浮层同一套交互语言：
+ * - 列表态：每张课表一张白卡（名称 + 学期起止 + 删除），当前课表主色高亮 + 对勾，
+ *   点卡片切换（脏草稿走确认）；底部钉「导出 / 导入」两颗胶囊；左上「新建」进表单态；
+ * - 表单态：课表名输入 + 学期三行卡（[TermDatesCard]，与设置页同款），
+ *   「取消」胶囊/返回键先回列表。
  *
- * 与 [AddCoursePanel] 同一约定：页内覆盖层而非 AlertDialog（对话框是独立窗口，
- * 该 ROM 上输入法与它有兼容问题）——新建表单有输入框，键盘必须接得进来。
- * 脏草稿确认、切换/导出/导入的实际执行由调用方（ScheduleScreen）负责，这里纯 UI；
+ * 切换/导出/导入/删除的实际执行由调用方（ScheduleScreen）负责，这里纯 UI；
  * [createMode] 也由调用方持有：创建成功后先回列表态再走切换确认，避免重复点创建。
+ * 删除先弹 [DeleteScheduleConfirmDialog] 确认（破坏性操作），确认后才回调 [onDelete]。
+ *
+ * 与 [com.fangyi.classpp.ui.components.OverlaySheet] 同一约定：页内覆盖层而非窗口类对话框，
+ * 键盘接得进来（表单态走 ContentScroll 让位）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ScheduleSwitcherSheet(
+    visible: Boolean,
+    onDismissed: () -> Unit,
     schedules: List<Schedule>,
     activeScheduleId: String,
     createMode: Boolean,
     onCreateModeChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     onSwitch: (String) -> Unit,
+    onDelete: (String) -> Unit,
     onExport: () -> Unit,
     onImport: () -> Unit,
     onCreateConfirm: (name: String, start: IsoDate, end: IsoDate) -> Unit,
 ) {
-    // 表单字段随浮层销毁而复位（与设置页新建表单同为 remember，旋转重建回默认值）
+    // 表单字段随浮层卸载而复位（remember，旋转重建回默认值）
     var picking by remember { mutableStateOf<DateTarget?>(null) }
     var name by remember { mutableStateOf("") }
     val defaultStart = remember { snapToMonday(IsoDate.today()) }
     var start by remember { mutableStateOf(defaultStart) }
     var end by remember { mutableStateOf(defaultStart + TERM_DEFAULT_DAYS) }
+    // 待删除的课表 id（非空 = 删除确认框打开）
+    var deletingId by remember { mutableStateOf<String?>(null) }
 
-    // 返回键/遮罩：表单态先回列表，列表态才关浮层
+    // 返回键：表单态先回列表，列表态才关浮层
     BackHandler(enabled = true) {
         if (createMode) onCreateModeChange(false) else onDismiss()
     }
 
-    val scrimInteraction = remember { MutableInteractionSource() }
-    val panelInteraction = remember { MutableInteractionSource() }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
-            // 点空白处收起（无涟漪）；表单态回列表
-            .clickable(
-                interactionSource = scrimInteraction,
-                indication = null,
-                onClick = { if (createMode) onCreateModeChange(false) else onDismiss() },
-            ),
-    ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .imePadding()
-                .navigationBarsPadding(),
-        ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // 吃掉落在面板上的点击，避免穿透到遮罩把面板关掉（按钮的消费优先）
-                    .clickable(
-                        interactionSource = panelInteraction,
-                        indication = null,
-                        onClick = {},
-                    ),
-                shape = SheetShape,
-                color = MaterialTheme.colorScheme.surface,
-                shadowElevation = 8.dp,
-            ) {
-                Column(
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 12.dp),
+    OverlaySheet(
+        title = stringResource(if (createMode) R.string.switcher_new else R.string.switcher_title),
+        confirmLabel = stringResource(if (createMode) R.string.edit_confirm else R.string.switcher_new_action),
+        confirmIcon = if (createMode) {
+            R.drawable.ic_checkmark_circle
+        } else {
+            R.drawable.ic_add_circle
+        },
+        onConfirm = {
+            if (createMode) onCreateConfirm(name.trim(), start, end) else onCreateModeChange(true)
+        },
+        rightAction = SheetTopAction(
+            label = stringResource(R.string.settings_cancel),
+            icon = R.drawable.ic_dismiss_circle,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            onClick = { if (createMode) onCreateModeChange(false) else onDismiss() },
+        ),
+        onDismiss = onDismiss,
+        visible = visible,
+        onDismissed = onDismissed,
+        // 列表态没有输入框，键盘不必让位；表单态与课程面板同策略
+        imeBehavior = if (createMode) SheetImeBehavior.ContentScroll else SheetImeBehavior.IgnoreIme,
+        bottomContent = if (!createMode) {
+            {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
                 ) {
-                    if (createMode) {
-                        CreateScheduleForm(
-                            name = name,
-                            onNameChange = { name = it },
-                            start = start,
-                            end = end,
-                            onPickStart = { picking = DateTarget.Start },
-                            onPickEnd = { picking = DateTarget.End },
-                            onCancel = { onCreateModeChange(false) },
-                            onConfirm = { onCreateConfirm(name.trim(), start, end) },
-                        )
-                    } else {
-                        ScheduleList(
-                            schedules = schedules,
-                            activeScheduleId = activeScheduleId,
-                            onSwitch = onSwitch,
-                        )
-                        Spacer(Modifier.height(20.dp))
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            SheetActionButton(
-                                label = stringResource(R.string.switcher_export),
-                                modifier = Modifier.weight(1f),
-                                onClick = onExport,
-                            )
-                            SheetActionButton(
-                                label = stringResource(R.string.switcher_import),
-                                modifier = Modifier.weight(1f),
-                                onClick = onImport,
-                            )
-                            SheetActionButton(
-                                label = stringResource(R.string.switcher_new),
-                                modifier = Modifier.weight(1f),
-                                onClick = { onCreateModeChange(true) },
-                            )
-                        }
-                    }
+                    SheetPillButton(
+                        label = stringResource(R.string.switcher_export),
+                        icon = R.drawable.ic_arrow_export_up,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.primary,
+                        onClick = onExport,
+                    )
+                    SheetPillButton(
+                        label = stringResource(R.string.switcher_import),
+                        icon = R.drawable.ic_arrow_download,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.primary,
+                        onClick = onImport,
+                    )
+                }
+            }
+        } else {
+            null
+        },
+    ) {
+        if (createMode) {
+            CreateScheduleContent(
+                name = name,
+                onNameChange = { name = it },
+                start = start,
+                end = end,
+                onPickStart = { picking = DateTarget.Start },
+                onPickEnd = { picking = DateTarget.End },
+                // 改周数 → 结束日整周平移（星期几不变），与设置页同一联动
+                onSetWeeks = { weeks -> end = endForTotalWeeks(start, end, weeks) },
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacing)) {
+                schedules.forEach { schedule ->
+                    ScheduleCard(
+                        schedule = schedule,
+                        isActive = schedule.id == activeScheduleId,
+                        onClick = { if (schedule.id != activeScheduleId) onSwitch(schedule.id) },
+                        onDelete = { deletingId = schedule.id },
+                    )
                 }
             }
         }
@@ -195,51 +203,29 @@ internal fun ScheduleSwitcherSheet(
             DatePicker(state = datePickerState)
         }
     }
-}
 
-/** 课表列表：浅灰圆角容器内逐行列出，列表超高内滚动（三按钮固定在容器之外） */
-@Composable
-private fun ScheduleList(
-    schedules: List<Schedule>,
-    activeScheduleId: String,
-    onSwitch: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(max = 360.dp)
-            .clip(ListContainerShape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        schedules.forEach { schedule ->
-            ScheduleRow(
-                schedule = schedule,
-                isActive = schedule.id == activeScheduleId,
-                onClick = { if (schedule.id != activeScheduleId) onSwitch(schedule.id) },
-            )
-        }
+    // 删除确认框：后注册 BackHandler，返回键优先于浮层的回列表/关闭
+    deletingId?.let { id ->
+        DeleteScheduleConfirmDialog(
+            scheduleName = schedules.firstOrNull { it.id == id }?.name.orEmpty(),
+            onCancel = { deletingId = null },
+            onConfirm = {
+                deletingId = null
+                onDelete(id)
+            },
+        )
     }
 }
 
-/** 一行课表：名称 + 学期起止；当前课表名称主色高亮、右侧对勾 */
+/** 一张课表卡：名称 + 学期起止 + 删除；当前课表名称主色高亮、尾部带对勾（点击切换） */
 @Composable
-private fun ScheduleRow(
+private fun ScheduleCard(
     schedule: Schedule,
     isActive: Boolean,
     onClick: () -> Unit,
+    onDelete: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RowShape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    SheetCard(onClick = onClick) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = schedule.name,
@@ -253,141 +239,152 @@ private fun ScheduleRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(3.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 text = stringResource(
                     R.string.switcher_date_range,
-                    schedule.termStart.toDisplayText(),
-                    schedule.termEnd.toDisplayText(),
+                    schedule.termStart.toSlashText(),
+                    schedule.termEnd.toSlashText(),
                 ),
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 14.sp,
+                color = MaterialTheme.classppColors.secondaryText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
+            Icon(
+                painter = painterResource(R.drawable.ic_delete),
+                contentDescription = stringResource(R.string.edit_delete),
+                tint = MaterialTheme.colorScheme.error,
+            )
+        }
         if (isActive) {
-            Text(
-                text = "✓",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
+            Icon(
+                painter = painterResource(R.drawable.ic_checkmark),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 4.dp),
             )
         }
     }
 }
 
-/** 底部三按钮之一：主色文字、等宽均分 */
-@Composable
-private fun SheetActionButton(
-    label: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = modifier
-            .clip(RowShape)
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary,
-        )
-    }
-}
-
 /**
- * 新建课表紧凑表单（浮层内二级形态）：名称 + 学期起止 + 创建。
- * 日期吸附规则与设置页一致（开始→周一、结束→周五），默认值同为“本周一 ~ 16 周后的周五”。
+ * 新建课表表单（浮层内二级形态）：课表名输入 + 学期三行卡（设置页同款 [TermDatesCard]）。
+ * 日期吸附规则与设置页一致（开始→周一并平移结束日），默认值同为“本周一 ~ 16 周后的周五”。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CreateScheduleForm(
+private fun CreateScheduleContent(
     name: String,
     onNameChange: (String) -> Unit,
     start: IsoDate,
     end: IsoDate,
     onPickStart: () -> Unit,
     onPickEnd: () -> Unit,
-    onCancel: () -> Unit,
-    onConfirm: () -> Unit,
+    onSetWeeks: (Int) -> Unit,
 ) {
-    Text(
-        text = stringResource(R.string.switcher_new),
-        fontSize = 20.sp,
-        fontWeight = FontWeight.SemiBold,
-    )
-    Spacer(Modifier.height(12.dp))
-    OutlinedTextField(
+    SheetTextField(
+        label = stringResource(R.string.schedule_name_label),
         value = name,
         onValueChange = onNameChange,
-        label = { Text(stringResource(R.string.schedule_name_label)) },
-        placeholder = { Text(stringResource(R.string.schedule_name_hint)) },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
+        placeholder = stringResource(R.string.schedule_name_hint),
+        imeAction = ImeAction.Done,
     )
-    Spacer(Modifier.height(8.dp))
-    FormDateRow(
-        label = stringResource(R.string.term_start),
-        value = start.toDisplayText(),
-        onClick = onPickStart,
+    TermDatesCard(
+        start = start,
+        end = end,
+        onPickStart = onPickStart,
+        onPickEnd = onPickEnd,
+        onSetWeeks = onSetWeeks,
     )
-    FormDateRow(
-        label = stringResource(R.string.term_end),
-        value = end.toDisplayText(),
-        onClick = onPickEnd,
-    )
-    Spacer(Modifier.height(16.dp))
-    Row(modifier = Modifier.fillMaxWidth()) {
-        TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
-            Text(stringResource(R.string.settings_cancel))
-        }
-        Button(
-            onClick = onConfirm,
-            modifier = Modifier.weight(1f),
-        ) {
-            Text(stringResource(R.string.create_schedule))
-        }
-    }
-}
-
-/** 表单日期行：左标签、右日期值，整行可点 */
-@Composable
-private fun FormDateRow(
-    label: String,
-    value: String,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RowShape)
-            .clickable(onClick = onClick)
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            fontSize = 15.sp,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Text(
-            text = value,
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
 }
 
 /**
- * 「放弃未保存的修改？」确认（切换课表时草稿有改动才出现）：
- * 与 [AlternatePickerDialog] 同一约定的页内居中卡片，组合在 [ScheduleSwitcherSheet]
- * 之后——返回键时后注册的它先收到，优先于浮层与编辑取消。
+ * 删除课表确认框：页内居中卡片（视觉同 [DiscardSwitchConfirmDialog]），点名课表并说明不可恢复。
+ * 确认键用错误色标 destructive；返回键与遮罩点击都只取消。
+ */
+@Composable
+private fun DeleteScheduleConfirmDialog(
+    scheduleName: String,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val scrimInteraction = remember { MutableInteractionSource() }
+    BackHandler { onCancel() }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
+            .clickable(
+                interactionSource = scrimInteraction,
+                indication = null,
+                onClick = onCancel,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 32.dp)
+                // 吃掉落在卡片上的点击，避免穿透到遮罩
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                ),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 8.dp,
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
+                Text(
+                    text = stringResource(R.string.switcher_delete_title),
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.switcher_delete_message, scheduleName),
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onCancel) {
+                        Text(stringResource(R.string.settings_cancel))
+                    }
+                    TextButton(onClick = onConfirm) {
+                        Text(
+                            text = stringResource(R.string.edit_delete),
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 日期 → `2026/9/7`（无前导零斜杠格式，列表副行用），走 [R.string.date_slash_format] */
+@Composable
+private fun IsoDate.toSlashText(): String {
+    val parts = toString().split('-')
+    val year = parts.getOrNull(0)?.toIntOrNull() ?: 0
+    val month = parts.getOrNull(1)?.toIntOrNull() ?: 0
+    val day = parts.getOrNull(2)?.toIntOrNull() ?: 0
+    return stringResource(R.string.date_slash_format, year, month, day)
+}
+
+/**
+ * 脏草稿切换确认框：页内居中卡片 + 遮罩，叠加在浮层**之后**组合——
+ * 返回键时后注册的它先收到，优先于浮层与编辑取消。
  */
 @Composable
 internal fun DiscardSwitchConfirmDialog(
@@ -453,17 +450,4 @@ internal fun DiscardSwitchConfirmDialog(
             }
         }
     }
-}
-
-/**
- * 日期 → 展示文本：`IsoDate.toString()` 是 `yyyy-MM-dd`，按 locale 走
- * [R.string.date_cn_format]（中文 `2026年03月02日`、英文 `3/2/2026`）。
- */
-@Composable
-private fun IsoDate.toDisplayText(): String {
-    val parts = toString().split('-')
-    val year = parts.getOrNull(0)?.toIntOrNull() ?: 0
-    val month = parts.getOrNull(1)?.toIntOrNull() ?: 0
-    val day = parts.getOrNull(2)?.toIntOrNull() ?: 0
-    return stringResource(R.string.date_cn_format, year, month, day)
 }

@@ -112,8 +112,13 @@
     <string name="switcher_export">Export</string>
     <string name="switcher_import">Import</string>
     <string name="switcher_new">New schedule</string>
+    <string name="switcher_new_action">New</string>
+    <string name="switcher_title">Switch Schedule</string>
+    <string name="switcher_delete_title">Delete Schedule</string>
+    <string name="switcher_delete_message">“%1$s” and all of its courses will be deleted. This can\'t be undone.</string>
     <string name="date_cn_format">%2$d/%3$d/%1$d</string>
     <string name="date_hyphen_format">%1$d-%2$d-%3$d</string>
+    <string name="date_slash_format">%1$d/%2$d/%3$d</string>
     <string name="switcher_date_range">%1$s – %2$s</string>
     <string name="switcher_discard_title">Discard unsaved changes?</string>
     <string name="switcher_discard_message">Switching will discard your unsaved edits</string>

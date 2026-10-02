@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -24,9 +26,15 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,12 +43,15 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MAX
+import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MIN
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazeProgressive
@@ -318,6 +329,87 @@ internal fun IsoDate.toSettingsDateText(): String {
     val month = parts.getOrNull(1)?.toIntOrNull() ?: 0
     val day = parts.getOrNull(2)?.toIntOrNull() ?: 0
     return stringResource(R.string.date_hyphen_format, year, month, day)
+}
+
+/**
+ * 学期起止 + 总周数三行卡（起止弹外部传入的 DatePicker、周数弹输入对话框），
+ * 顶部带「学期」分组标签。设置页与切换课表浮层的新建表单共用（见 [SettingRow]）：
+ * [onPickStart] / [onPickEnd] 由调用方挂各自的日期选择，[onSetWeeks] 收到合法周数
+ * （已按 TERM_WEEKS_MIN..MAX 校验），调用方自行联动结束日（endForTotalWeeks）。
+ */
+@Composable
+internal fun TermDatesCard(
+    start: IsoDate,
+    end: IsoDate,
+    onPickStart: () -> Unit,
+    onPickEnd: () -> Unit,
+    onSetWeeks: (weeks: Int) -> Unit,
+) {
+    // 与 Schedule.totalWeeks 同式；起止经吸附/校验保证整周边界，此值必为整数周
+    val totalWeeks = ((end - start).toInt() / 7) + 1
+    var pickingWeeks by remember { mutableStateOf(false) }
+
+    SettingsSection(title = stringResource(R.string.section_term)) {
+        // 多行卡（三行「文字 + 值/箭头」）：首尾 12、行间 18（12 + MultiLineRowSpacing 6），与节次时间卡同一档
+        SettingsCard(rowSpacing = MultiLineRowSpacing) {
+            SettingRow(
+                label = stringResource(R.string.term_start),
+                value = start.toSettingsDateText(),
+                onClick = onPickStart,
+            )
+            SettingRow(
+                label = stringResource(R.string.term_end),
+                value = end.toSettingsDateText(),
+                onClick = onPickEnd,
+            )
+            SettingRow(
+                label = stringResource(R.string.term_weeks),
+                value = stringResource(R.string.term_weeks_value, totalWeeks),
+                onClick = { pickingWeeks = true },
+            )
+        }
+    }
+
+    // 周数对话框：仅打开期间进入组合（关闭即出组合，重开以当前周数重置输入）；
+    // 非法输入（空/0/>30）→ 字段 isError + 确定禁用；取消/外部点击丢弃
+    if (pickingWeeks) {
+        var input by remember { mutableStateOf(totalWeeks.toString()) }
+        val weeks = input.toIntOrNull()?.takeIf { it in TERM_WEEKS_MIN..TERM_WEEKS_MAX }
+        AlertDialog(
+            onDismissRequest = { pickingWeeks = false },
+            title = {
+                Text(stringResource(R.string.term_weeks))
+            },
+            text = {
+                OutlinedTextField(
+                    value = input,
+                    // 只留 ASCII 数字并截 2 位（1..30 至多两位），结构性杜绝 "-5"/"abc"/全角数字
+                    onValueChange = { input = it.filter { c -> c in '0'..'9' }.take(2) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    isError = weeks == null,
+                    supportingText = { Text(stringResource(R.string.term_weeks_range)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = weeks != null,
+                    onClick = {
+                        weeks?.let(onSetWeeks)
+                        pickingWeeks = false
+                    },
+                ) {
+                    Text(stringResource(R.string.settings_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pickingWeeks = false }) {
+                    Text(stringResource(R.string.settings_cancel))
+                }
+            },
+        )
+    }
 }
 
 /** 顶栏单独预览：底色取自 colorScheme.background（= 页面底 #F2F4F6），与实际渲染一致 */

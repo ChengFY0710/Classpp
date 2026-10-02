@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -143,6 +144,9 @@ data class SheetTopAction(
  *   收场期间内容保持原样不闪空；
  * - 顶栏整条可垂直拖拽、浮层跟手下移，遮罩跟着变淡；松手超过位移/速度阈值走关闭，否则弹回。
  *
+ * [confirmIcon] 配置左胶囊图标（默认对勾）；[bottomContent] 可选钉底槽位——画在导航栏上方、
+ * 带自底向上渐变兜底，滚动内容从其下淡出（如切换课表浮层底部常驻的导出/导入按钮）。
+ *
  * haze 的采样源挂在浮层内部的滚动列上：浮层被遮罩盖住后背后的课表网格对顶栏不可见，
  * 只需模糊浮层自身内容，因此容器内自建 hazeState，调用方无需传任何模糊状态。
  */
@@ -156,8 +160,10 @@ fun OverlaySheet(
     modifier: Modifier = Modifier,
     visible: Boolean = true,
     onDismissed: () -> Unit = {},
+    confirmIcon: Int = com.fangyi.classpp.R.drawable.ic_checkmark_circle,
     topInset: Dp = SheetTopInset,
     imeBehavior: SheetImeBehavior = SheetImeBehavior.ContentScroll,
+    bottomContent: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val hazeState = rememberHazeState()
@@ -316,12 +322,33 @@ fun OverlaySheet(
                     OverlaySheetTopBar(
                         title = title,
                         confirmLabel = confirmLabel,
+                        confirmIcon = confirmIcon,
                         onConfirm = { if (!closeRequested) onConfirm() },
                         rightAction = guardedRightAction,
                         hazeState = hazeState,
                         dragModifier = topBarDragModifier,
                         modifier = Modifier.align(Alignment.TopCenter),
                     )
+                    // 钉底内容槽（可选）：渐变兜底让滚动内容从其下淡出，导航栏留白由 inset 吃掉
+                    bottomContent?.let { slot ->
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .background(
+                                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                                        listOf(
+                                            MaterialTheme.colorScheme.background.copy(alpha = 0f),
+                                            MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                                        ),
+                                    ),
+                                )
+                                .navigationBarsPadding()
+                                .padding(top = 12.dp, bottom = 24.dp),
+                        ) {
+                            slot()
+                        }
+                    }
                 }
             }
         }
@@ -338,6 +365,7 @@ fun OverlaySheet(
 private fun OverlaySheetTopBar(
     title: String,
     confirmLabel: String,
+    confirmIcon: Int,
     onConfirm: () -> Unit,
     rightAction: SheetTopAction,
     hazeState: HazeState,
@@ -397,7 +425,7 @@ private fun OverlaySheetTopBar(
             ) {
                 SheetPillButton(
                     label = confirmLabel,
-                    icon = com.fangyi.classpp.R.drawable.ic_checkmark_circle,
+                    icon = confirmIcon,
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     onClick = onConfirm,
