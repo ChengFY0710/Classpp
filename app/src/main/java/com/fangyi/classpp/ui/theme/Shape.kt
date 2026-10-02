@@ -33,3 +33,6 @@ val RowShape = RoundedRectangle(12.dp)
 
 /** 课表编辑条操作按钮 */
 val EditActionShape = RoundedRectangle(10.dp)
+
+/** 选周格子（添加课程面板、周选择浮层的周数方格） */
+val WeekCellShape = RoundedRectangle(11.dp)

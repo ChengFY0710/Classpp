@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -63,12 +62,12 @@ import com.fangyi.classpp.ui.components.SheetSectionLabel
 import com.fangyi.classpp.ui.components.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.theme.WeekCellShape
 import com.fangyi.classpp.ui.theme.classppColors
 
 /** 周数方格：每行 6 个，宽度均分（末行补空位，保证每格同宽同高） */
 private const val WeeksPerRow = 6
 private val WeekCellGap = 6.dp
-private val WeekCellShape = RoundedCornerShape(11.dp)
 private val textStartPadding = PaddingValues(start = 12.dp) // 描述性文字统一左移，视觉上更有层次
 private val secondaryTextSize = 15.sp // 描述性文字统一大小
 

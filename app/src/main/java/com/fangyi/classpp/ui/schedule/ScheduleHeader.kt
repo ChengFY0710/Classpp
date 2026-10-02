@@ -63,6 +63,7 @@ import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.SettingsCardShape
+import com.fangyi.classpp.ui.theme.WeekCellShape
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
@@ -686,7 +687,7 @@ private fun WeekCell(
     Box(
         modifier = Modifier
             .size(size)
-            .clip(RoundedCornerShape(11.dp))
+            .clip(WeekCellShape)
             .background(
                 when {
                     selected -> colors.primary
