@@ -94,6 +94,9 @@
     <string name="edit_weeks_suffix_odd">（单周）</string>
     <string name="edit_weeks_suffix_even">（双周）</string>
     <string name="edit_new_alternate">新建交替课程</string>
+    <string name="edit_copy_course">复制课程</string>
+    <string name="edit_paste_course">粘贴课程</string>
+    <string name="toast_course_copied">已复制，长按空白格子可粘贴</string>
     <string name="edit_alternate_pick_title">请选择要编辑的交替课程</string>
     <!-- 双引号包住以保留两侧空格，否则会被资源编译器裁掉 -->
     <string name="edit_alternate_meta_separator">" | "</string>

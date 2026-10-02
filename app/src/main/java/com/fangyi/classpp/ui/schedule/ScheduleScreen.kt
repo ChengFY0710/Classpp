@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -69,12 +70,14 @@ import com.fangyi.classpp.data.FieldReason
 import com.fangyi.classpp.data.OpResult
 import com.fangyi.classpp.data.ReadResult
 import com.fangyi.classpp.data.ScheduleError
+import com.fangyi.classpp.data.ScheduleJson
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.ScheduleValidator
 import com.fangyi.classpp.data.TermPosition
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.cellCourses
+import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import dev.chrisbanes.haze.hazeSource
@@ -267,6 +270,14 @@ fun ScheduleScreen(
             var chooserSourceId by rememberSaveable { mutableStateOf("") }
             // 新建交替课程：源课 id（长按菜单进来）；空 = 面板未打开
             var alternateSourceId by rememberSaveable { mutableStateOf("") }
+            // 课程剪贴板：被复制课程的完整快照。不随编辑会话/课表清除——退出编辑再进、
+            // 甚至切换课表后仍可粘贴；源课被删不受影响（快照语义），再复制即覆盖
+            var copiedEntry by rememberSaveable(stateSaver = CopiedEntrySaver) {
+                mutableStateOf<CourseEntry?>(null)
+            }
+            // 空位长按菜单：被长按格 [dayOfWeek, slotId] + 格子窗口坐标；空 = 菜单未打开。
+            // 刻意不 rememberSaveable——菜单是瞬时 UI，旋转重建就收起（Rect 也不可存），同 menuAnchor
+            var pasteAnchor by remember { mutableStateOf<SlotMenuAnchor?>(null) }
             // 切换课表浮层：开关、待切换目标（非空 = 脏草稿确认打开）、新建表单态
             // （新建失败走系统 Toast，不再有表单内联错误）
             var switcherVisible by rememberSaveable { mutableStateOf(false) }
@@ -315,6 +326,13 @@ fun ScheduleScreen(
             // 长按已有课卡 → 弹「新建交替课程」菜单，锚点用卡片自己的窗口坐标
             val onCourseLongClick: (String, Rect) -> Unit = remember {
                 { courseId, anchor -> menuAnchor = CardMenuAnchor(courseId, anchor) }
+            }
+            // 长按空位 → 弹「粘贴课程」菜单；剪贴板为空时无响应（没东西可粘贴）。
+            // lambda 里读的是 copiedEntry 的 state 本体，弹出与否始终跟随当前剪贴板
+            val onSlotLongClick: (Int, TimeSlot, Rect) -> Unit = remember {
+                { day, slot, anchor ->
+                    if (copiedEntry != null) pasteAnchor = SlotMenuAnchor(day, slot.id, anchor)
+                }
             }
 
             // 手势 → 周次：currentPage 在拖动过半时即翻转，顶栏周数胶囊与日期随之切换；
@@ -539,6 +557,7 @@ fun ScheduleScreen(
                     onAddClick = onAddClick,
                     onEditClick = onEditClick,
                     onCourseLongClick = onCourseLongClick,
+                    onSlotLongClick = onSlotLongClick,
                     modifier = Modifier
                         .fillMaxSize()
                         // 编辑态不折叠：顶栏换成了固定编辑栏，滚动连接不参与
@@ -733,14 +752,57 @@ fun ScheduleScreen(
                 }
             }
 
-            // 长按卡片的上下文菜单（Popup 独立窗口，位置由卡片坐标决定）
+            // 长按卡片的上下文菜单（Popup 独立窗口，位置由卡片坐标决定）。
+            // 复制项仅单节课程（span == 1）显示——跨节课程暂不支持复制，菜单退化为只有新建交替课程
             menuAnchor?.let { anchor ->
+                val copiedToast = stringResource(R.string.toast_course_copied)
+                val source = editSession?.courses?.firstOrNull { it.id == anchor.courseId }
                 CourseContextMenu(
                     anchor = anchor.rect,
                     onDismiss = { menuAnchor = null },
+                    onCopy = source?.takeIf { it.span == 1 }?.let { entry ->
+                        {
+                            copiedEntry = entry
+                            AppToasts.show(context, copiedToast)
+                            menuAnchor = null
+                        }
+                    },
                     onNewAlternate = {
                         alternateSourceId = anchor.courseId
                         menuAnchor = null
+                    },
+                )
+            }
+
+            // 空位长按的粘贴菜单：只有剪贴板有课时才会被 onSlotLongClick 打开。
+            // 粘贴 = 以快照为模板在长按格新建一门课（星期/起始节换成目标格、跨度恒 1），
+            // 其余参数原样保留；剪贴板不清空，可连续粘贴多格
+            pasteAnchor?.let { anchor ->
+                SlotContextMenu(
+                    anchor = anchor.rect,
+                    onDismiss = { pasteAnchor = null },
+                    onPaste = {
+                        pasteAnchor = null
+                        val session = editSession
+                        val source = copiedEntry
+                        if (session != null && source != null) {
+                            val entry = source.copy(
+                                id = newUuid(),
+                                dayOfWeek = anchor.day,
+                                startSlot = anchor.slotId,
+                                span = 1,
+                            )
+                            // 空位不可能与现有课同格冲突（添加卡只在格内无任何课程重叠时才出现），
+                            // 这里的整份预检兜住的是跨课表粘贴时的周次超学期 / 末周越界
+                            val blocking = ScheduleValidator
+                                .validateCourses(schedule.copy(courses = session.courses + entry))
+                                .firstOrNull()
+                            if (blocking != null) {
+                                AppToasts.show(context, blocking.toEditMessage(context))
+                            } else {
+                                session.add(entry)
+                            }
+                        }
                     },
                 )
             }
@@ -759,6 +821,21 @@ private val EditBarHeightGuess = 112.dp
  * 非 saveable 的瞬时状态，见 [ScheduleScreen] 里的 menuAnchor。
  */
 private data class CardMenuAnchor(val courseId: String, val rect: Rect)
+
+/**
+ * 空位长按菜单的锚点：被长按格的星期与节次（粘贴动作以这格为目标建课）+ 格子的窗口坐标
+ * （菜单贴格子定位）。非 saveable 的瞬时状态，同 [CardMenuAnchor]。
+ */
+private data class SlotMenuAnchor(val day: Int, val slotId: Int, val rect: Rect)
+
+/**
+ * 课程剪贴板的 Saver：CourseEntry 走存储 JSON 序列化（同 [ScheduleEditSession.Saver] 存草稿），
+ * 旋转 / 进程重建后剪贴板不丢；空串表示「没有复制」。
+ */
+private val CopiedEntrySaver: Saver<CourseEntry?, String> = Saver(
+    save = { entry -> entry?.let { ScheduleJson.encodeStorage<CourseEntry>(it) } ?: "" },
+    restore = { text -> if (text.isEmpty()) null else ScheduleJson.decodeStorage<CourseEntry>(text) },
+)
 
 /**
  * 课程面板请求：三种入口（点课卡编辑 / 空格新建 / 长按新建交替课）归一后的参数快照。

@@ -94,6 +94,9 @@
     <string name="edit_weeks_suffix_odd"> (odd)</string>
     <string name="edit_weeks_suffix_even"> (even)</string>
     <string name="edit_new_alternate">New alternating course</string>
+    <string name="edit_copy_course">Copy course</string>
+    <string name="edit_paste_course">Paste course</string>
+    <string name="toast_course_copied">Copied. Long-press an empty cell to paste</string>
     <string name="edit_alternate_pick_title">Choose which alternating course to edit</string>
     <!-- Quoted so the surrounding spaces survive resource compilation -->
     <string name="edit_alternate_meta_separator">" | "</string>

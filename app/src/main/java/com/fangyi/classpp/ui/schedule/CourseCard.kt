@@ -201,18 +201,27 @@ private val AddCardStartPadding = 7.dp
 /**
  * 编辑态空位上的「添加卡片」：与 [CourseCard] 同骨架——上开始时间、下结束时间，
  * 中间是加号；无左侧色条。点整卡打开添加课程弹窗。
+ *
+ * [onLongClick] 仅编辑态且剪贴板有课时会传（长按出"粘贴课程"菜单，见 ScheduleScreen）；
+ * 与 [CourseCard] 同源：长按与点击都在 clip 之内（圆角外的点击/涟漪被裁掉）。
  */
 @Composable
 fun AddCourseCard(
     slot: TimeSlot,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
 ) {
+    val clickModifier = if (onLongClick != null) {
+        Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
     Column(
         modifier = modifier
             .clip(CardShape)
             .background(MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onClick)
+            .then(clickModifier)
             .padding(
                 start = AddCardStartPadding,
                 end = 5.dp,

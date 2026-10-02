@@ -114,6 +114,7 @@ fun CourseGrid(
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)? = null,
     onEditClick: ((courseId: String) -> Unit)? = null,
     onCourseLongClick: ((courseId: String, anchor: Rect) -> Unit)? = null,
+    onSlotLongClick: ((day: Int, slot: TimeSlot, anchor: Rect) -> Unit)? = null,
 ) {
     // 列数至少 1（0/负值理论上被校验挡住，这里兜一下避免算出空页宽或除零）
     val days = daysPerWeek.coerceAtLeast(1)
@@ -163,6 +164,7 @@ fun CourseGrid(
                     onAddClick = onAddClick,
                     onEditClick = onEditClick,
                     onCourseLongClick = onCourseLongClick,
+                    onSlotLongClick = onSlotLongClick,
                 )
             }
         }
@@ -192,6 +194,9 @@ private val PagerState.isSeamVisible: Boolean
  * 后绘制故不透明卡片压过行分界网格线；空节点无 pointerInput，点击穿透回底层网格。
  * 编辑态跨节卡整卡可点（含续格覆盖区域）→ 编辑该课；长按 → 交替课程菜单。
  * 底层 [GridRow] 对起始格与续格留空（见其注释），两层分工不重叠。
+ *
+ * 编辑态空位的添加卡片：点击 → 新建课程；长按 → 粘贴课程菜单（[onSlotLongClick]，
+ * 仅剪贴板有课时调用方才弹菜单，见 ScheduleScreen）。
  */
 @Composable
 private fun WeekPage(
@@ -206,6 +211,7 @@ private fun WeekPage(
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)?,
     onEditClick: ((courseId: String) -> Unit)?,
     onCourseLongClick: ((courseId: String, anchor: Rect) -> Unit)?,
+    onSlotLongClick: ((day: Int, slot: TimeSlot, anchor: Rect) -> Unit)?,
 ) {
     val density = LocalDensity.current
     val bandPx = with(density) { DateBandHeight.toPx() }
@@ -248,6 +254,7 @@ private fun WeekPage(
                     onAddClick = onAddClick,
                     onEditClick = onEditClick,
                     onCourseLongClick = onCourseLongClick,
+                    onSlotLongClick = onSlotLongClick,
                 )
             }
             Spacer(modifier = Modifier.height(TrailingScrollSpace))
@@ -402,8 +409,8 @@ private fun DateBand(
 
 /**
  * 一个节次行：按 [days] 等分（5 或 7）的等宽单元格，行高 [rowHeight]（7 天视图更高，见 [gridRowHeight]）。
- * 普通态有课渲染课程卡片、无课露网格背景；编辑态空位渲染添加卡片，
- * 已有课程卡（含本周不上的置灰卡）点击进编辑、长按出交替课程菜单。
+ * 普通态有课渲染课程卡片、无课露网格背景；编辑态空位渲染添加卡片（点击新建、长按出粘贴菜单），
+ * 已有课程卡（含本周不上的置灰卡）点击进编辑、长按出课程菜单。
  * 跨节课的起始格与续格都留空——卡片由 [WeekPage] 的叠加层跨行绘制。
  */
 @Composable
@@ -416,6 +423,7 @@ private fun GridRow(
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)?,
     onEditClick: ((courseId: String) -> Unit)?,
     onCourseLongClick: ((courseId: String, anchor: Rect) -> Unit)?,
+    onSlotLongClick: ((day: Int, slot: TimeSlot, anchor: Rect) -> Unit)?,
 ) {
     val outline = MaterialTheme.colorScheme.outline
     Row(
@@ -453,7 +461,16 @@ private fun GridRow(
                     course == null && add != null -> AddCourseCard(
                         slot = slot,
                         onClick = add,
-                        modifier = Modifier.fillMaxSize(),
+                        // 长按粘贴菜单的锚点取添加卡片自身窗口坐标（填满格 = 格坐标）；
+                        // 回调仅在编辑态传入（同下方课程卡），菜单是否弹出由调用方按剪贴板决定
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .onGloballyPositioned { cardBounds.value = it.boundsInWindow() },
+                        onLongClick = if (editMode && onSlotLongClick != null) {
+                            { onSlotLongClick(day, slot, cardBounds.value) }
+                        } else {
+                            null
+                        },
                     )
                     course != null && course.span == 1 -> CourseCard(
                         course = course,
