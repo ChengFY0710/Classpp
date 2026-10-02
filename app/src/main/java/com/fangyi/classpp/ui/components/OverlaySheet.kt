@@ -83,7 +83,7 @@ val SheetShape = RoundedCornerShape(topStart = 36.dp, topEnd = 36.dp)
 val SheetSectionSpacing: Dp = 18.dp
 
 val SheetSectionSpacingBetween: Dp = 12.dp // 卡片与卡片间的间距
-val SheetSectionSpacingBottom:Dp = 14.dp  // 卡片组底与下一个卡片组间距
+val SheetSectionSpacingBottom:Dp = 14.dp  // 卡片组底与下一个卡片组间距（如果需要）
 
 /**
  * 内容末尾的额外滚动余量（对应设置页 `BottomScrollSlack = 120.dp`）：

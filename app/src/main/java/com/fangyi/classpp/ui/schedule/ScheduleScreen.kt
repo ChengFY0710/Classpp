@@ -123,6 +123,12 @@ fun ScheduleScreen(
     val scheduleState = repository.activeSchedule.collectAsState()
     val schedule = scheduleState.value
 
+    // 无激活课表（如从切换浮层删空全部课表）时编辑态已无意义：网格与编辑栏都随之消失，
+    // 若停留在编辑态，底部导航栏会一直隐藏（它的显隐跟着编辑态走）——这里自动退出编辑
+    LaunchedEffect(schedule) {
+        if (schedule == null && editing) onEditingChange(false)
+    }
+
     // 选周：0=未初始化 → 学期中取当前周、学期后取末周、学期前取第 1 周；
     // 学期起止被设置页修改后自动钳制到新范围
     val week = when {
