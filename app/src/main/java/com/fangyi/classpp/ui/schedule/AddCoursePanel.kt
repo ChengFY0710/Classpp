@@ -133,7 +133,8 @@ fun AddCoursePanel(
                 existing != null -> (1..schedule.totalWeeks).filter { existing.weeks.contains(it) }
                 // 新建交替课：默认取互补的那些周（单周 ↔ 双周这类交替一步到位）
                 alternateFrom != null -> (1..schedule.totalWeeks).filterNot { it in blockedWeeks }
-                else -> (1..schedule.totalWeeks).toList()
+                // 新建普通课程：默认不选，让用户主动勾选——确认时没选会被校验拦下并 toast
+                else -> emptyList()
             },
         )
     }
