@@ -46,11 +46,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -72,6 +75,7 @@ import com.fangyi.classpp.ui.schedule.endForTotalWeeks
 import com.fangyi.classpp.ui.schedule.snapToMonday
 import com.fangyi.classpp.ui.schedule.toPickerMillis
 import com.fangyi.classpp.ui.schedule.toIsoDate
+import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.hazeSource
@@ -212,6 +216,9 @@ fun SettingsScreen(
                             val current = schedule
                             SettingsContent(
                                 schedule = current,
+                                onRename = { name ->
+                                    scope.launch { submit(repository.renameSchedule(current.id, name)) }
+                                },
                                 onTerm = { start, end ->
                                     scope.launch { submit(repository.setTerm(current.id, start, end)) }
                                 },
@@ -328,11 +335,47 @@ private fun CreateScheduleContent(
     }
 }
 
-/** 当前课表全套设置：学期 / 每周天数 / 节数与时间 / 显示。数据变更经回调即时提交仓库。 */
+/**
+ * 课表名输入（设置页首项）：[SheetTextField] 卡片 + 本地草稿。
+ * 焦点离开（点别处或键盘「完成」收起）时提交：清空视为放弃、静默回当前名；
+ * 名字有变才回调 [onRename]——仓库校验失败走统一 toast，输入框保留用户文字便于修改。
+ */
+@Composable
+private fun ScheduleNameField(name: String, onRename: (String) -> Unit) {
+    // 草稿以当前名为 key：改名成功/切课表导致 name 变化时草稿归位，旋转重建同 current
+    var draft by remember(name) { mutableStateOf(name) }
+    var hadFocus by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+
+    SheetTextField(
+        label = stringResource(R.string.schedule_name_label),
+        value = draft,
+        onValueChange = { draft = it },
+        placeholder = stringResource(R.string.schedule_name_hint),
+        imeAction = ImeAction.Done,
+        // 键盘「完成」收起焦点 → 走下面的失焦提交
+        onImeAction = { focusManager.clearFocus() },
+        modifier = Modifier.onFocusEvent { state ->
+            if (state.hasFocus) {
+                hadFocus = true
+            } else if (hadFocus) {
+                hadFocus = false
+                val trimmed = draft.trim()
+                when {
+                    trimmed.isEmpty() -> draft = name
+                    trimmed != name -> onRename(trimmed)
+                }
+            }
+        },
+    )
+}
+
+/** 当前课表全套设置：课表名 / 学期 / 每周天数 / 节数与时间 / 显示。数据变更经回调即时提交仓库。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsContent(
     schedule: Schedule,
+    onRename: (name: String) -> Unit,
     onTerm: (start: IsoDate, end: IsoDate) -> Unit,
     onDays: (days: Int) -> Unit,
     onSlots: (slots: List<TimeSlotDef>) -> Unit,
@@ -348,6 +391,9 @@ private fun SettingsContent(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(SectionSpacing),
     ) {
+        // 课表名：独立输入卡（SheetTextField 自带「课表名称」标签，不需要分组标题）
+        ScheduleNameField(name = schedule.name, onRename = onRename)
+
         // TermDatesCard 自带分组与卡片，勿再包一层（否则标题重复）
         TermDatesCard(
             start = schedule.termStart,
@@ -592,6 +638,7 @@ private fun SettingsContentPreview() {
                 termStart = IsoDate.parse("2026-03-02"),
                 termEnd = IsoDate.parse("2026-06-19"),
             ),
+            onRename = {},
             onTerm = { _, _ -> },
             onDays = {},
             onSlots = {},
