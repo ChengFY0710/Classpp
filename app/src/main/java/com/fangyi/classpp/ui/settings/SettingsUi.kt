@@ -177,7 +177,8 @@ internal val CardContentPadding = PaddingValues(start = 17.dp, end = 13.dp, top 
 // 多行卡片行与行间距增值，要修改调这个MultiLineRowSpacing,传入rowSpacing
 internal val MultiLineRowSpacing = 10.dp
 
-/** 设置页白色卡片：圆角 16dp、无投影、无分割线，默认留白 [CardContentPadding]，多行卡另传 [rowSpacing] */
+/** 设置页白色卡片：[SettingsCardShape] 平滑圆角、无投影、无分割线，默认留白 [CardContentPadding]，多行卡另传 [rowSpacing]。
+ *  内层显式裁剪到卡片形状：通栏行（见 [TermDatesCard]）的涟漪铺满整卡宽时，圆角处不溢出卡外。 */
 @Composable
 internal fun SettingsCard(
     modifier: Modifier = Modifier,
@@ -193,7 +194,9 @@ internal fun SettingsCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
-            modifier = Modifier.padding(contentPadding),
+            modifier = Modifier
+                .clip(SettingsCardShape)
+                .padding(contentPadding),
             verticalArrangement = Arrangement.spacedBy(rowSpacing),
             content = content,
         )
@@ -206,6 +209,9 @@ internal fun SettingsCard(
  * - [value] 非空 → 显示 primary 色数值（日期、周数等）
  * - [trailing] 非空 → 右侧自定义槽（Switch、时间 chip、文字按钮等）
  * - [showChevron] 默认随 [onClick]；置 false 可去掉行尾箭头
+ * - [contentPadding] 画在 clickable **内侧**：默认 0（横向内缩由 SettingsCard.contentPadding 提供）；
+ *   通栏行（卡片 contentPadding 归零，见 [TermDatesCard]）用它自带内缩——
+ *   padding 在涟漪边界之内，行按压时涟漪铺满整个白块并被卡片圆角裁剪
  */
 @Composable
 internal fun SettingRow(
@@ -215,11 +221,13 @@ internal fun SettingRow(
     value: String? = null,
     showChevron: Boolean = onClick != null,
     trailing: (@Composable RowScope.() -> Unit)? = null,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(contentPadding)
             // 行自带 6dp：提供首尾距卡边的 6dp（行间额外间距由 SettingsCard.rowSpacing 提供）
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -336,6 +344,11 @@ internal fun IsoDate.toSettingsDateText(): String {
  * 顶部带「学期」分组标签。设置页与切换课表浮层的新建表单共用（见 [SettingRow]）：
  * [onPickStart] / [onPickEnd] 由调用方挂各自的日期选择，[onSetWeeks] 收到合法周数
  * （已按 TERM_WEEKS_MIN..MAX 校验），调用方自行联动结束日（endForTotalWeeks）。
+ *
+ * 通栏行：卡片 contentPadding 归零，横向 17/13 与首尾 13 下沉到各行 [SettingRow.contentPadding]
+ * （clickable 内侧）→ 每行涟漪铺满整个白块、由卡片圆角裁剪；文字位置与原布局完全一致。
+ * 行间不留死区：rowSpacing 归零，10dp 行距同样下沉到中间行的 contentPadding（上下各 +10），
+ * 中间行涟漪与首末行无缝接轨；视觉行距不变（仍为 6+10+6=22dp），间隙处按压落在中间行上。
  */
 @Composable
 internal fun TermDatesCard(
@@ -350,22 +363,31 @@ internal fun TermDatesCard(
     var pickingWeeks by remember { mutableStateOf(false) }
 
     SettingsSection(title = stringResource(R.string.section_term)) {
-        // 多行卡（三行「文字 + 值/箭头」）：首尾 12、行间 18（12 + MultiLineRowSpacing 6），与节次时间卡同一档
-        SettingsCard(rowSpacing = MultiLineRowSpacing) {
+        SettingsCard(contentPadding = PaddingValues(0.dp)) {
             SettingRow(
                 label = stringResource(R.string.term_start),
                 value = start.toSettingsDateText(),
                 onClick = onPickStart,
+                contentPadding = PaddingValues(start = 17.dp, end = 13.dp, top = 13.dp),
             )
             SettingRow(
                 label = stringResource(R.string.term_end),
                 value = end.toSettingsDateText(),
                 onClick = onPickEnd,
+                // 吸收原 rowSpacing 的 10dp 行距（上下各 +10，另加行自带 6dp）：
+                // 涟漪向上接首行、向下接末行，文字位置不变
+                contentPadding = PaddingValues(
+                    start = 17.dp,
+                    end = 13.dp,
+                    top = MultiLineRowSpacing,
+                    bottom = MultiLineRowSpacing,
+                ),
             )
             SettingRow(
                 label = stringResource(R.string.term_weeks),
                 value = stringResource(R.string.term_weeks_value, totalWeeks),
                 onClick = { pickingWeeks = true },
+                contentPadding = PaddingValues(start = 17.dp, end = 13.dp, bottom = 13.dp),
             )
         }
     }
