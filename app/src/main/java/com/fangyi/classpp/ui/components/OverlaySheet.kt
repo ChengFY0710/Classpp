@@ -454,7 +454,8 @@ private fun OverlaySheetTopBar(
 }
 
 /** 顶栏胶囊按钮。图标为「实心圆+镂空图形」，整体 tint 后即得设计稿效果（确认图标在前，
- *  取消/删除文字在前——见 [iconAtEnd]）；投影同设置页返回按钮的大柔影做法（形状为胶囊）。 */
+ *  取消/删除文字在前——见 [iconAtEnd]）；投影同设置页返回按钮的大柔影做法（形状为胶囊）；
+ *  [iconSize] 独立控制图标大小（顶栏钮与底部常驻钮可各配各的）。 */
 @Composable
 fun SheetPillButton(
     label: String,
@@ -464,6 +465,7 @@ fun SheetPillButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     iconAtEnd: Boolean = false,
+    iconSize: Dp = 30.dp,
 ) {
     Row(
         modifier = modifier
@@ -493,7 +495,7 @@ fun SheetPillButton(
                 painter = painterResource(icon),
                 contentDescription = null,
                 tint = contentColor,
-                modifier = Modifier.size(30.dp),
+                modifier = Modifier.size(iconSize),
             )
         }
         if (!iconAtEnd) iconComposable()

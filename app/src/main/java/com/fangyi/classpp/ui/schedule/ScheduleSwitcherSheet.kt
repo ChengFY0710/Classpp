@@ -133,6 +133,7 @@ internal fun ScheduleSwitcherSheet(
                         containerColor = MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.primary,
                         onClick = onExport,
+                        iconSize = 24.dp,
                     )
                     SheetPillButton(
                         label = stringResource(R.string.switcher_import),
@@ -140,6 +141,7 @@ internal fun ScheduleSwitcherSheet(
                         containerColor = MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.primary,
                         onClick = onImport,
+                        iconSize = 24.dp,
                     )
                 }
             }
