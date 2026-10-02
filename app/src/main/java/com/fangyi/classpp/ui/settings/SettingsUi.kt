@@ -314,7 +314,7 @@ internal fun SegmentedChoice(
                     text = label,
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    fontWeight = if(selected) FontWeight.SemiBold else FontWeight.Normal,
+                    fontWeight = if(selected) FontWeight.SemiBold else FontWeight.Medium,
                 )
             }
         }

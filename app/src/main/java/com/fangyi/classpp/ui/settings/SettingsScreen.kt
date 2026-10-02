@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Constraints
@@ -294,7 +295,9 @@ private fun CreateScheduleContent(
         )
         Button(
             onClick = { onConfirm(name, start, end) },
-            modifier = Modifier.fillMaxWidth().height(50.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
         ) {
             Text(stringResource(R.string.create_schedule))
         }
@@ -442,7 +445,10 @@ private fun SettingsContent(
                                 enabled = schedule.slotCount > 1,
                                 contentPadding = PaddingValues(0.dp),
                             ) {
-                                Text(stringResource(R.string.slot_decrease))
+                                Text(
+                                    stringResource(R.string.slot_decrease),
+                                    fontWeight = FontWeight.SemiBold,
+                                )
                             }
                             Spacer(modifier = Modifier.size(12.dp))
                             TextButton(
@@ -450,7 +456,10 @@ private fun SettingsContent(
                                 enabled = canAdd,
                                 contentPadding = PaddingValues(0.dp),
                             ) {
-                                Text(stringResource(R.string.slot_increase))
+                                Text(
+                                    stringResource(R.string.slot_increase),
+                                    fontWeight = FontWeight.SemiBold,
+                                )
                             }
                         }
                     },
