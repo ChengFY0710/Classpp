@@ -1,13 +1,16 @@
 package com.fangyi.classpp
 
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
+import android.view.RoundedCorner
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -18,8 +21,11 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -30,10 +36,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.ui.navigation.AppTab
@@ -43,6 +53,7 @@ import com.fangyi.classpp.ui.placeholder.TodoScreen
 import com.fangyi.classpp.ui.schedule.ScheduleScreen
 import com.fangyi.classpp.ui.settings.SettingsScreen
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -145,25 +156,88 @@ class MainActivity : ComponentActivity() {
                             onTabSelected = { if (!editing) selectedTab = it },
                         )
                     }
+                    // 设置页背景压暗：与设置页同节奏（进 360 / 出 250）的纯淡入淡出遮罩，
+                    // 规格同浮层遮罩（32% 黑）——进场时压暗背景提供进深，退场时随滑出恢复。
+                    // 只画不拦截点击：覆盖层全可见时遮罩被完全盖住，仅转场期间透出
+                    AnimatedVisibility(
+                        visible = showSettings,
+                        enter = fadeIn(tween(SettingsEnterMillis, easing = FastOutSlowInEasing)),
+                        exit = fadeOut(tween(SettingsExitMillis, easing = FastOutSlowInEasing)),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f)),
+                        )
+                    }
                     // 最后组合 ⇒ 绘制与命中测试覆盖三屏与底部导航（课表页仅被覆盖、不重建）。
-                    // 进场整页从右缘滑入 + 淡入（页面 push 转场，呼应左上角返回箭头的子页语义）；
+                    // 进场整页从右缘滑入（不叠淡入淡出，进深感交给背后的压暗遮罩），
+                    // 呼应左上角返回箭头的子页语义；
                     // AnimatedVisibility 退场期间仍保持组合，返回键/返回按钮经 onClose 幂等关闭
                     AnimatedVisibility(
                         visible = showSettings,
                         enter = slideInHorizontally(
                             // 从自身宽度右侧起步：整页右进
                             animationSpec = tween(SettingsEnterMillis, easing = FastOutSlowInEasing),
-                        ) { it } + fadeIn(tween(SettingsEnterMillis)),
+                        ) { it },
                         exit = slideOutHorizontally(
                             // 滑向自身宽度右侧：整页右出；退场略快于进场，收场更利落
                             animationSpec = tween(SettingsExitMillis, easing = FastOutSlowInEasing),
-                        ) { it } + fadeOut(tween(SettingsExitMillis)),
+                        ) { it },
                         modifier = Modifier.fillMaxSize(),
                     ) {
+                        // 左缘圆角只存在于转场期间：滑入/滑出时左上/左下裁出与机身 R 角一致的
+                        // 圆角（API 31+ 读系统真实半径，低版本退化 24dp 近似），与压暗遮罩配合
+                        // 让页面像一张卡片滑过背景；完全就位后恢复矩形贴边、零裁剪开销
+                        val view = LocalView.current
+                        val density = LocalDensity.current
+                        val leftCornerPx = remember {
+                            val insets = view.rootWindowInsets
+                            val tl = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                insets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius ?: 0
+                            } else {
+                                0
+                            }
+                            val bl = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)?.radius ?: 0
+                            } else {
+                                0
+                            }
+                            maxOf(tl, bl).takeIf { it > 0 }?.toFloat()
+                                ?: with(density) { 24.dp.toPx() }
+                        }
+                        // 圆角开关：内容首帧必然处于转场中，初始即为开（圆角恒定全开、
+                        // 不随滑动插值收放）；完全就位（当前态与目标态都是 Visible）后
+                        // 保持 500ms 圆角，画面彻底静止再恢复矩形贴边并摘掉裁剪层
+                        val settled = transition.currentState == EnterExitState.Visible &&
+                            transition.targetState == EnterExitState.Visible
+                        var cornersOn by remember { mutableStateOf(true) }
+                        LaunchedEffect(settled) {
+                            if (settled) {
+                                delay(500)
+                                cornersOn = false
+                            } else {
+                                cornersOn = true
+                            }
+                        }
                         SettingsScreen(
                             onClose = { showSettings = false },
                             repository = repository,
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    if (cornersOn) {
+                                        shape = RoundedCornerShape(
+                                            topStart = leftCornerPx,
+                                            bottomStart = leftCornerPx,
+                                        )
+                                        clip = true
+                                    } else {
+                                        shape = RectangleShape
+                                        clip = false
+                                    }
+                                },
                         )
                     }
                 }
