@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.theme
 
 import androidx.compose.ui.unit.dp
+import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
 import com.kyant.shapes.UnevenRoundedRectangle
 
@@ -36,3 +37,6 @@ val EditActionShape = RoundedRectangle(10.dp)
 
 /** 选周格子（添加课程面板、周选择浮层的周数方格） */
 val WeekCellShape = RoundedRectangle(11.dp)
+
+/** 顶栏胶囊按钮（全圆角）；投影与背景共用同一个形状 */
+val PillShape = Capsule()

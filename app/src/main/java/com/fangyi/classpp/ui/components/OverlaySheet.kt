@@ -58,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetShape
 import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazeProgressive
@@ -90,9 +91,6 @@ val SheetSectionSpacingBottom:Dp = 14.dp  // 卡片组底与下一个卡片组�
 val SheetBottomSlack: Dp = 120.dp
 
 private val HandleColor = Color(0xFFD9DDE1)
-
-/** 顶栏胶囊按钮形状（全圆角）；投影与背景共用同一个形状。 */
-private val PillShape = RoundedCornerShape(100)
 
 /** 入场时长：从屏幕底部滑入，减速曲线（先快后慢） */
 private const val SheetEnterMillis = 320

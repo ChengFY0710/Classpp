@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -40,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.PillShape
 
 enum class AppTab(
     @DrawableRes val iconRes: Int,
@@ -129,14 +129,14 @@ private fun NavPill(
         modifier = modifier
             .height(PillHeight)
             .graphicsLayer {
-                shape = CircleShape
+                shape = PillShape
                 clip = true
                 shadowElevation = 45.dp.toPx()
                 spotShadowColor = Color.Black.copy(alpha = 0.3f)
             }
             // 白底必须不透明：PrimaryContainer 仅 12% alpha，若直接铺在胶囊上，
             // graphicsLayer 的投影会从半透明底里透上来，在图标后形成一条淡横线
-            .background(MaterialTheme.colorScheme.surface, CircleShape)
+            .background(MaterialTheme.colorScheme.surface, PillShape)
             .selectable(
                 selected = selected,
                 role = Role.Tab,
@@ -152,7 +152,7 @@ private fun NavPill(
                     .padding(PillIndicatorInset)
                     .background(
                         MaterialTheme.colorScheme.primaryContainer,
-                        CircleShape,
+                        PillShape,
                     ),
             )
         }
