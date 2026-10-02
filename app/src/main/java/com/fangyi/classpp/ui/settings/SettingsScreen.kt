@@ -1,7 +1,7 @@
 package com.fangyi.classpp.ui.settings
 
+import android.content.Context
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -48,9 +47,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -58,6 +57,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.OpResult
 import com.fangyi.classpp.data.ReadResult
@@ -130,7 +130,7 @@ private fun OverflowHeightBox(height: Dp, content: @Composable () -> Unit) {
  *   避免在无切换入口时创建出到不了的第二份课表）；
  * - 有激活课表 → 当前课表全套设置（学期/天数/节数时间/置灰开关）。
  *
- * 每项修改即时提交仓库：Ok → 清错误；Err → 顶部内联错误框（拒绝策略结构化提示）。
+ * 每项修改即时提交仓库：Err → 系统 Toast 弹出拒绝原因（拒绝策略结构化提示），不占版面。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -141,12 +141,17 @@ fun SettingsScreen(
 ) {
     BackHandler { onClose() }
 
-    var error by remember { mutableStateOf<ScheduleError?>(null) }
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // 统一提交入口：Ok 清错误，Err 存错误对象（展示时才译文案，见 toMessage）
+    // 错误一律走系统 Toast，不占版面；同一条出口会刷新上一条，连点不排队（见 AppToasts）
+    fun showError(error: ScheduleError) {
+        AppToasts.show(context, error.toMessage(context))
+    }
+
+    // 统一提交入口：Err 即时 toast，Ok 无事
     fun submit(result: OpResult) {
-        error = (result as? OpResult.Err)?.error
+        (result as? OpResult.Err)?.let { showError(it.error) }
     }
 
     Scaffold(
@@ -196,15 +201,13 @@ fun SettingsScreen(
                             ),
                         verticalArrangement = Arrangement.spacedBy(SectionSpacing),
                     ) {
-                        error?.let { ErrorBox(it.toMessage()) }
                         if (schedule == null) {
                             CreateScheduleContent(
                                 onConfirm = { name, start, end ->
-                                    error = null
                                     scope.launch {
                                         when (val result = repository.createSchedule(name, start, end)) {
                                             is ReadResult.Ok -> onClose()
-                                            is ReadResult.Err -> error = result.error
+                                            is ReadResult.Err -> showError(result.error)
                                         }
                                     }
                                 },
@@ -214,21 +217,17 @@ fun SettingsScreen(
                             SettingsContent(
                                 schedule = current,
                                 onTerm = { start, end ->
-                                    error = null
                                     scope.launch { submit(repository.setTerm(current.id, start, end)) }
                                 },
                                 onDays = { days ->
-                                    error = null
                                     // 只改天数：周六/周日的课保留在数据里，5 天视图只是不画它们，
                                     // 切回 7 天原样出现——故切换不会失败，也无需联动改学期结束日
                                     scope.launch { submit(repository.setDaysPerWeek(current.id, days)) }
                                 },
                                 onSlots = { slots ->
-                                    error = null
                                     scope.launch { submit(repository.setSlots(current.id, slots)) }
                                 },
                                 onShowInactive = { show ->
-                                    error = null
                                     scope.launch {
                                         submit(repository.setShowInactiveCourses(current.id, show))
                                     }
@@ -252,22 +251,6 @@ fun SettingsScreen(
             )
         }
     }
-}
-
-/** 内联错误框：拒绝策略（如 CoursesOutOfRange）的结构化提示，新操作成功即由调用方清空 */
-@Composable
-private fun ErrorBox(message: String) {
-    Text(
-        text = message,
-        modifier = Modifier
-            .fillMaxWidth()
-            // 圆角卡片式（同设置卡 16dp 圆角语言）；clip 须在 background 之前才裁得到背景
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.errorContainer)
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        color = MaterialTheme.colorScheme.onErrorContainer,
-        style = MaterialTheme.typography.bodyMedium,
-    )
 }
 
 /**
@@ -647,27 +630,27 @@ private data class SlotEdit(val index: Int, val isStart: Boolean)
 /**
  * [ScheduleError] → 本地化文案。课程类错误正常都经仓库 rejection() 归并为 CoursesOutOfRange，
  * 但兜底分支同样给中文结论，绝不把内部 id / 英文 message 直接显示给用户。
+ * 非 Composable（context 版）：供 showError 在回调/协程里调用，结果走系统 Toast。
  */
-@Composable
-private fun ScheduleError.toMessage(): String = when (this) {
-    is ScheduleError.TermNotMonday -> stringResource(R.string.error_term_not_monday)
+private fun ScheduleError.toMessage(context: Context): String = when (this) {
+    is ScheduleError.TermNotMonday -> context.getString(R.string.error_term_not_monday)
     // 结束日可落任意一天（含周中），只剩"早于开始日"一种非法
-    is ScheduleError.TermRangeInvalid -> stringResource(R.string.error_term_range)
-    is ScheduleError.DaysPerWeekInvalid -> stringResource(R.string.error_days_per_week)
-    is ScheduleError.SlotCountInvalid -> stringResource(R.string.error_slot_count)
-    is ScheduleError.SlotTimeFormatInvalid -> stringResource(R.string.error_slot_time_format)
-    is ScheduleError.SlotOrderInvalid -> stringResource(R.string.error_slot_order)
-    ScheduleError.InvalidScheduleName -> stringResource(R.string.error_schedule_name)
-    is ScheduleError.CoursesOutOfRange -> stringResource(
+    is ScheduleError.TermRangeInvalid -> context.getString(R.string.error_term_range)
+    is ScheduleError.DaysPerWeekInvalid -> context.getString(R.string.error_days_per_week)
+    is ScheduleError.SlotCountInvalid -> context.getString(R.string.error_slot_count)
+    is ScheduleError.SlotTimeFormatInvalid -> context.getString(R.string.error_slot_time_format)
+    is ScheduleError.SlotOrderInvalid -> context.getString(R.string.error_slot_order)
+    ScheduleError.InvalidScheduleName -> context.getString(R.string.error_schedule_name)
+    is ScheduleError.CoursesOutOfRange -> context.getString(
         R.string.error_courses_out_of_range,
         affected.size,
         affected.take(3).joinToString { it.name },
     )
 
-    is ScheduleError.NotFound -> stringResource(R.string.error_not_found)
-    is ScheduleError.PersistFailed -> stringResource(R.string.error_persist_failed)
+    is ScheduleError.NotFound -> context.getString(R.string.error_not_found)
+    is ScheduleError.PersistFailed -> context.getString(R.string.error_persist_failed)
     // 真正没覆盖到的形态：不暴露内部 message，只给通用提示（细节进日志由调用方决定）
-    else -> stringResource(R.string.error_unexpected)
+    else -> context.getString(R.string.error_unexpected)
 }
 
 @Preview(showBackground = true, name = "新建课表表单")

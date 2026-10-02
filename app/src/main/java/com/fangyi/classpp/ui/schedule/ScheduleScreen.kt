@@ -62,6 +62,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.EditTransitionMillis
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.FieldReason
@@ -260,11 +261,11 @@ fun ScheduleScreen(
             var chooserSourceId by rememberSaveable { mutableStateOf("") }
             // 新建交替课程：源课 id（长按菜单进来）；空 = 面板未打开
             var alternateSourceId by rememberSaveable { mutableStateOf("") }
-            // 切换课表浮层：开关、待切换目标（非空 = 脏草稿确认打开）、新建表单态与内联错误
+            // 切换课表浮层：开关、待切换目标（非空 = 脏草稿确认打开）、新建表单态
+            // （新建失败走系统 Toast，不再有表单内联错误）
             var switcherVisible by rememberSaveable { mutableStateOf(false) }
             var pendingSwitchId by rememberSaveable { mutableStateOf("") }
             var createMode by rememberSaveable { mutableStateOf(false) }
-            var switcherError by remember { mutableStateOf<String?>(null) }
             // 编辑态的网格数据源：草稿 → 渲染模型（复用仓库路径同一套映射与置灰规则）
             val displayedContentForWeek: (Int) -> WeekPageContent =
                 if (editSession != null) {
@@ -383,7 +384,6 @@ fun ScheduleScreen(
                 pendingSwitchId = ""
                 switcherVisible = false
                 createMode = false
-                switcherError = null
                 addTarget = emptyList()
                 editTargetId = ""
                 chooserSourceId = ""
@@ -440,16 +440,16 @@ fun ScheduleScreen(
                     }
                 }
             }
-            // 新建：成功先回列表态再走切换（脏则弹确认；取消确认也不会停在表单里重复点创建）
+            // 新建：成功先回列表态再走切换（脏则弹确认；取消确认也不会停在表单里重复点创建）；
+            // 失败走系统 Toast（新建失败多为重名/名称非法，表单内容无需改动引导）
             val onCreateConfirm: (String, IsoDate, IsoDate) -> Unit = { name, start, end ->
                 scope.launch {
                     when (val r = repository.createSchedule(name, start, end)) {
                         is ReadResult.Ok -> {
                             createMode = false
-                            switcherError = null
                             requestSwitch(r.value)
                         }
-                        is ReadResult.Err -> switcherError = r.error.toEditMessage(context)
+                        is ReadResult.Err -> AppToasts.show(context, r.error.toEditMessage(context))
                     }
                 }
             }
@@ -675,15 +675,12 @@ fun ScheduleScreen(
                     schedules = repository.schedules.collectAsState().value,
                     activeScheduleId = schedule.id,
                     createMode = createMode,
-                    createError = switcherError,
                     onCreateModeChange = {
                         createMode = it
-                        switcherError = null
                     },
                     onDismiss = {
                         switcherVisible = false
                         createMode = false
-                        switcherError = null
                     },
                     onSwitch = requestSwitch,
                     onExport = onExport,

@@ -30,6 +30,7 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.FieldReason
 import com.fangyi.classpp.data.ScheduleError
@@ -191,6 +193,14 @@ fun AddCoursePanel(
     val keyboard = LocalSoftwareKeyboardController.current
     val imeInsets = WindowInsets.ime
     val density = LocalDensity.current
+    val context = LocalContext.current
+
+    // 校验失败 = 系统 Toast（不占版面）+ error 状态（驱动课程名红框）。
+    // 同一条出口会刷新上一条，连点确认不会排队刷屏（见 AppToasts）
+    fun fail(message: String) {
+        error = message
+        AppToasts.show(context, message)
+    }
     // 打开面板就把光标放进课程名并唤起输入法
     LaunchedEffect(Unit) {
         nameFocus.requestFocus()
@@ -203,12 +213,12 @@ fun AddCoursePanel(
 
     fun submit() {
         if (selectedWeeks.isEmpty()) {
-            error = errorWeeksEmpty
+            fail(errorWeeksEmpty)
             return
         }
         // 交替课程的周数不能重合：方格里已灰显点不动，这里兜住进程重建后恢复出的越界选择
         if (selectedWeeks.any { it in blockedWeeks }) {
-            error = errorWeeksTaken
+            fail(errorWeeksTaken)
             return
         }
         // 结束节次已在菜单层限制，这里再钳一次（跨度 ≤ MAX_SPAN 且不超总节数）
@@ -236,7 +246,7 @@ fun AddCoursePanel(
         // 课程类错误一律点名到课程，别把内部 id / 英文 message 漏给用户；
         // 报错的那门不一定是面板正在编辑的这门——学期被改短后，可能是草稿里另一门先越界，
         // 所以按 courseId 回查草稿拿它自己的名字（新课的 id 刚生成，回查必落空 → 用输入框的值）。
-        error = conflict?.let { e ->
+        val message = conflict?.let { e ->
             val errorCourse = draft.courses.firstOrNull { c ->
                 when (e) {
                     is ScheduleError.CourseFieldInvalid -> c.id == e.courseId
@@ -264,7 +274,13 @@ fun AddCoursePanel(
                 else -> errorUnexpected
             }
         }
-        if (error == null) onConfirm(entry)
+        if (message == null) {
+            // 无冲突 = 校验通过：顺手清掉上一轮的红框
+            error = null
+            onConfirm(entry)
+        } else {
+            fail(message)
+        }
     }
 
     // 行选择卡片高亮：跟随实际周数选择——全部 / 全奇数 / 全偶数，自定义组合不高亮
@@ -402,7 +418,7 @@ fun AddCoursePanel(
                             blocked = blockedWeeks,
                             errorText = errorWeeksTaken,
                             apply = { selectedWeeks = it },
-                            onError = { error = it },
+                            onError = { fail(it) },
                         )
                     },
                 )
@@ -437,14 +453,6 @@ fun AddCoursePanel(
                         CourseColor.entries.getOrNull(index)?.let { color = it }
                         error = null
                     },
-                )
-            }
-
-            error?.let {
-                Text(
-                    text = it,
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 13.sp,
                 )
             }
         }

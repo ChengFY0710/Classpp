@@ -66,7 +66,6 @@ internal fun ScheduleSwitcherSheet(
     schedules: List<Schedule>,
     activeScheduleId: String,
     createMode: Boolean,
-    createError: String?,
     onCreateModeChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     onSwitch: (String) -> Unit,
@@ -129,7 +128,6 @@ internal fun ScheduleSwitcherSheet(
                             onNameChange = { name = it },
                             start = start,
                             end = end,
-                            error = createError,
                             onPickStart = { picking = DateTarget.Start },
                             onPickEnd = { picking = DateTarget.End },
                             onCancel = { onCreateModeChange(false) },
@@ -313,7 +311,6 @@ private fun CreateScheduleForm(
     onNameChange: (String) -> Unit,
     start: IsoDate,
     end: IsoDate,
-    error: String?,
     onPickStart: () -> Unit,
     onPickEnd: () -> Unit,
     onCancel: () -> Unit,
@@ -344,14 +341,6 @@ private fun CreateScheduleForm(
         value = end.toDisplayText(),
         onClick = onPickEnd,
     )
-    if (error != null) {
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = error,
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.error,
-        )
-    }
     Spacer(Modifier.height(16.dp))
     Row(modifier = Modifier.fillMaxWidth()) {
         TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
