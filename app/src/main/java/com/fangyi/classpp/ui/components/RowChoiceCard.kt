@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -23,9 +22,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.theme.RowShape
 import com.fangyi.classpp.ui.theme.classppColors
-
-private val ChoicePillShape = RoundedCornerShape(12.dp)
 
 /**
  * 行选择卡片：白卡片内一行均分的选项（如 全选 / 单周 / 双周）。
@@ -47,7 +45,7 @@ fun RowChoiceCard(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(ChoicePillShape)
+                    .clip(RowShape)
                     .background(
                         if (selected) MaterialTheme.classppColors.primaryContainerNontrans
                         else Color.Transparent,

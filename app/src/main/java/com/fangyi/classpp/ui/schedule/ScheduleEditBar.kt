@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.EditActionShape
 import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
@@ -47,8 +47,6 @@ private val EditActionInnerPadding = 8.dp
 
 /** 动作块离屏幕边的距离 = 顶栏图标内缩 20dp − 动作块自身水平内缩 → 图标仍落在 20dp 上 */
 private val EditBarEdgePadding = 20.dp
-
-private val EditActionShape = RoundedCornerShape(10.dp)
 
 /**
  * 编辑态顶栏：保存 / 切换课表 / 取消 + 星期行，取代可折叠的 [ScheduleHeader]。

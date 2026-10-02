@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -15,9 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-
-/** 浮层内白卡片的统一圆角。 */
-val SheetCardShape = RoundedCornerShape(20.dp)
+import com.fangyi.classpp.ui.theme.SheetCardShape
 
 /** 白卡片默认内距：左右 16、上下 14（约 52dp 行高，对齐设计稿）。 */
 val SheetCardPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)

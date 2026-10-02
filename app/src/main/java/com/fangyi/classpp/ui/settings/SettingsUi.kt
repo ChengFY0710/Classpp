@@ -53,6 +53,8 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MAX
 import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MIN
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.SegmentShape
+import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
@@ -70,9 +72,7 @@ import dev.chrisbanes.haze.hazeEffect
  * 多行卡（多行「文字+控件」）另传 [MultiLineRowSpacing]。
  */
 
-private val CardShape = RoundedCornerShape(20.dp)
 private val ChipShape = RoundedCornerShape(8.dp)
-private val SegmentShape = RoundedCornerShape(14.dp)
 
 /**
  * 设置页顶栏：左侧圆形返回按钮 + 居中加粗标题。
@@ -188,7 +188,7 @@ internal fun SettingsCard(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = CardShape,
+        shape = SettingsCardShape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {

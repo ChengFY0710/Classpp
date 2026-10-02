@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,6 +50,7 @@ import com.fangyi.classpp.ui.components.SheetSectionSpacingBottom
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.settings.TermDatesCard
+import com.fangyi.classpp.ui.theme.DialogShape
 import com.fangyi.classpp.ui.theme.classppColors
 
 /**
@@ -346,7 +346,7 @@ private fun DeleteScheduleConfirmDialog(
                     indication = null,
                     onClick = {},
                 ),
-            shape = RoundedCornerShape(24.dp),
+            shape = DialogShape,
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 8.dp,
         ) {
@@ -427,7 +427,7 @@ internal fun DiscardSwitchConfirmDialog(
                     indication = null,
                     onClick = {},
                 ),
-            shape = RoundedCornerShape(24.dp),
+            shape = DialogShape,
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 8.dp,
         ) {

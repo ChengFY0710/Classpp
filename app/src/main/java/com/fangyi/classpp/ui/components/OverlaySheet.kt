@@ -58,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fangyi.classpp.ui.theme.SheetShape
 import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
@@ -72,9 +73,6 @@ import kotlinx.coroutines.launch
  * 键盘弹起不会改变浮层的位置与高度（见 [SheetImeBehavior.ContentScroll]）。
  */
 val SheetTopInset: Dp = 56.dp
-
-/** 浮层卡片形状（上圆角）；模糊与内容都被它裁剪收敛。 */
-val SheetShape = RoundedCornerShape(topStart = 36.dp, topEnd = 36.dp)
 
 /**
  * 浮层内容的横向边距与卡片纵向间距——与课表设置页同源

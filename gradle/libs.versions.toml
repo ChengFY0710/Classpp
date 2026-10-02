@@ -10,6 +10,9 @@ kotlin = "2.2.10"
 composeBom = "2026.02.01"
 haze = "1.6.10"
 kotlinxSerialization = "1.9.0"
+# Shapes 1.2.1 由 Kotlin 2.4 编译（元数据 2.4.0），需项目 Kotlin ≥2.3 才能读取；
+# 当前项目 Kotlin 2.2.10，固定用 1.2.0（API 相同，仅依赖版本不同）。升级 Kotlin 后可跟进最新版。
+kyantShapes = "1.2.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -27,6 +30,7 @@ androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 haze = { group = "dev.chrisbanes.haze", name = "haze", version.ref = "haze" }
+kyant-shapes = { group = "io.github.kyant0", name = "shapes", version.ref = "kyantShapes" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 
 [plugins]

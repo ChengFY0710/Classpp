@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -38,9 +37,8 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.theme.MenuShape
 import kotlin.math.roundToInt
-
-private val MenuShape = RoundedCornerShape(16.dp)
 
 /** 菜单上缘压进卡片底部的量：菜单贴着卡片长出来，而不是悬空在下方 */
 private val MenuOverlap = 12.dp

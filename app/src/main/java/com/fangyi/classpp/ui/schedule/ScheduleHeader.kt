@@ -62,6 +62,7 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.SettingsCardShape
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
@@ -643,7 +644,7 @@ private fun WeekPickerCardShell(
                 bottom = CardShadowBottomPadding,
             )
             .graphicsLayer { //阴影和窗口圆角效果
-                shape = RoundedCornerShape(20.dp)
+                shape = SettingsCardShape
                 clip = true
                 shadowElevation = 45.dp.toPx()
                 spotShadowColor = Color.Black.copy(alpha = 0.2f)

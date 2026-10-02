@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -27,6 +26,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.theme.MenuShape
 
 /**
  * 浮层选择卡片：白卡片「标题 + 右侧蓝色值 + 上下箭头」，点按在卡片右上方弹出菜单选择。
@@ -89,7 +89,7 @@ fun PopupSelectCard(
                 onDismissRequest = { expanded = false },
                 // 锚点底缘 ≈ 卡片顶 + 14 + 20；上移 34dp 使菜单顶边贴卡片顶边（对齐设计稿）
                 offset = DpOffset(x = 0.dp, y = (-34).dp),
-                shape = RoundedCornerShape(16.dp),
+                shape = MenuShape,
                 containerColor = MaterialTheme.colorScheme.surface,
             ) {
                 items.forEach { (id, label) ->

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -29,9 +28,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.CourseEntry
-
-private val DialogShape = RoundedCornerShape(24.dp)
-private val RowShape = RoundedCornerShape(12.dp)
+import com.fangyi.classpp.ui.theme.DialogShape
+import com.fangyi.classpp.ui.theme.RowShape
 
 /**
  * 「请选择要编辑的交替课程」选择弹窗（设计稿三）：同一格上的多门课先让用户点名，
