@@ -298,7 +298,14 @@ fun SheetPillButton(
             .clip(RoundedCornerShape(100))
             .background(containerColor)
             .clickable(onClick = onClick)
-            .padding(8.dp),
+            // 文字所在那侧的外边距比图标侧多 3dp：图标在左(确认)加宽右侧，
+            // 图标在右(取消/删除)加宽左侧
+            .padding(
+                start = if (iconAtEnd) 13.dp else 8.dp,
+                end = if (iconAtEnd) 8.dp else 13.dp,
+                top = 8.dp,
+                bottom = 8.dp,
+            ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {

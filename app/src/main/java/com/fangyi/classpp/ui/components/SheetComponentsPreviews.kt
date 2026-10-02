@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -90,7 +91,7 @@ private fun PopupSelectCardPreview() = ClassppTheme {
         androidx.compose.material3.Text(
             text = "课程占 1 - 2 节，跨 2 节",
             fontSize = 14.sp,
-            color = com.fangyi.classpp.ui.theme.Primary,
+            color = MaterialTheme.colorScheme.primary,
         )
     }
 }
@@ -122,7 +123,7 @@ private fun ColorSwatchCardPreview() = ClassppTheme {
         SheetPillButton(
             label = "确认",
             icon = R.drawable.ic_checkmark_circle,
-            containerColor = androidx.compose.ui.graphics.Color(0xFF006FEF),
+            containerColor = MaterialTheme.colorScheme.primary,
             contentColor = Color.White,
             onClick = {},
         )

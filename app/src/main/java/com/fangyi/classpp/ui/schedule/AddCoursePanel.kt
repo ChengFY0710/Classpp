@@ -6,10 +6,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -65,6 +68,8 @@ import com.fangyi.classpp.ui.theme.SecondaryTextColor
 private const val WeeksPerRow = 6
 private val WeekCellGap = 6.dp
 private val WeekCellShape = RoundedCornerShape(11.dp)
+private val textStartPadding = PaddingValues(start = 12.dp) // 描述性文字统一左移，视觉上更有层次
+private val secondaryTextSize = 15.sp // 描述性文字统一大小
 
 /**
  * 添加/编辑课程面板：[day] / [slot] 是点中的那一格（编辑态传被编辑课的星期与起始节）；
@@ -300,8 +305,9 @@ fun AddCoursePanel(
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
                 text = cellInfo,
-                fontSize = 13.sp,
+                fontSize = secondaryTextSize,
                 color = SecondaryTextColor,
+                modifier = Modifier.padding(textStartPadding),
             )
 
             SheetTextField(
@@ -350,12 +356,13 @@ fun AddCoursePanel(
                         endSlotId,
                         endSlotId - slot.id + 1,
                     ),
-                    fontSize = 14.sp,
+                    fontSize = secondaryTextSize,
                     color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(textStartPadding),
                 )
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SheetSectionLabel(stringResource(R.string.edit_course_weeks))
                 WeekSelectionGrid(
                     totalWeeks = schedule.totalWeeks,
@@ -394,8 +401,11 @@ fun AddCoursePanel(
                 )
                 Text(
                     text = stringResource(R.string.edit_weeks_summary, weeksSummary(weeks)),
-                    fontSize = 13.sp,
-                    color = SecondaryTextColor,
+                    fontSize = secondaryTextSize,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .padding(textStartPadding)
+                        .offset(y = -4.dp),
                 )
                 // 同格的其它交替课占了哪些周：说清灰显方格是被谁占的
                 groupOthers.forEach { other ->

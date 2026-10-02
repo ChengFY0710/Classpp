@@ -63,9 +63,9 @@ import dev.chrisbanes.haze.hazeEffect
  * 多行卡（多行「文字+控件」）另传 [MultiLineRowSpacing]。
  */
 
-private val CardShape = RoundedCornerShape(16.dp)
+private val CardShape = RoundedCornerShape(20.dp)
 private val ChipShape = RoundedCornerShape(8.dp)
-private val SegmentShape = RoundedCornerShape(12.dp)
+private val SegmentShape = RoundedCornerShape(14.dp)
 
 /**
  * 设置页顶栏：左侧圆形返回按钮 + 居中加粗标题。
