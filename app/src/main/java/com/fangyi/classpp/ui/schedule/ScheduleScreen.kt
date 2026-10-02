@@ -79,6 +79,7 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.cellCourses
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.ui.navigation.NavReserve
+import com.fangyi.classpp.ui.theme.ButtonShape
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -902,7 +903,10 @@ private fun EmptyScheduleContent(
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(24.dp))
-        Button(onClick = onOpenSettings) {
+        Button(
+            onClick = onOpenSettings,
+            shape = ButtonShape,
+        ) {
             Text(stringResource(R.string.create_schedule))
         }
     }

@@ -109,7 +109,7 @@ fun SheetTextField(
                 // 空值本身不可见，占位由 decorationBox 负责
                 color = if (value.isEmpty()) Color.Transparent else MaterialTheme.colorScheme.primary,
                 fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Medium,
                 textAlign = TextAlign.End,
             ),
             cursorBrush = SolidColor(
@@ -136,7 +136,7 @@ fun SheetTextField(
                         Text(
                             text = placeholder,
                             fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            fontWeight = FontWeight.Medium,
                             color = MaterialTheme.classppColors.secondaryText,
                             textAlign = TextAlign.End,
                             modifier = Modifier.fillMaxWidth(),

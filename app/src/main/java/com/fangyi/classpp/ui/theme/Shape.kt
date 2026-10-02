@@ -40,3 +40,6 @@ val WeekCellShape = RoundedRectangle(11.dp)
 
 /** 顶栏胶囊按钮（全圆角）；投影与背景共用同一个形状 */
 val PillShape = Capsule()
+
+/** 主操作大按钮（创建课表等 M3 Button） */
+val ButtonShape = Capsule()

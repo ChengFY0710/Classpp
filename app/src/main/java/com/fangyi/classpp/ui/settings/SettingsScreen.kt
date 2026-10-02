@@ -77,6 +77,7 @@ import com.fangyi.classpp.ui.schedule.snapToMonday
 import com.fangyi.classpp.ui.schedule.toPickerMillis
 import com.fangyi.classpp.ui.schedule.toIsoDate
 import com.fangyi.classpp.ui.components.SheetTextField
+import com.fangyi.classpp.ui.theme.ButtonShape
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.hazeSource
@@ -297,6 +298,7 @@ private fun CreateScheduleContent(
         )
         Button(
             onClick = { onConfirm(name, start, end) },
+            shape = ButtonShape,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp),
