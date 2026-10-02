@@ -29,7 +29,6 @@ import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -59,6 +58,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.OpResult
@@ -272,19 +272,21 @@ private fun CreateScheduleContent(
     var start by remember { mutableStateOf(defaultStart) }
     var end by remember { mutableStateOf(defaultStart + TERM_DEFAULT_DAYS) }
     var picking by remember { mutableStateOf<DateTarget?>(null) }
+    val focusManager = LocalFocusManager.current
 
     // 滚动与页面内边距统一由 SettingsScreen 外层承担（顶栏需整屏采样）
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(SectionSpacing),
     ) {
-        OutlinedTextField(
+        SheetTextField(
+            label = stringResource(R.string.schedule_name_label),
             value = name,
             onValueChange = { name = it },
-            label = { Text(stringResource(R.string.schedule_name_label)) },
-            placeholder = { Text(stringResource(R.string.schedule_name_hint)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
+            placeholder = stringResource(R.string.schedule_name_hint),
+            imeAction = ImeAction.Done,
+            // 键盘「完成」收起键盘，创建仍走下方按钮
+            onImeAction = { focusManager.clearFocus() },
         )
         TermDatesCard(
             start = start,
@@ -299,7 +301,10 @@ private fun CreateScheduleContent(
                 .fillMaxWidth()
                 .height(50.dp),
         ) {
-            Text(stringResource(R.string.create_schedule))
+            Text(
+                stringResource(R.string.create_schedule), fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 
