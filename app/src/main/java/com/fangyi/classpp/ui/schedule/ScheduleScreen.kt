@@ -41,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +71,7 @@ import com.fangyi.classpp.data.ScheduleError
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.ScheduleValidator
 import com.fangyi.classpp.data.TermPosition
+import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.cellCourses
 import com.fangyi.classpp.ui.navigation.NavReserve
@@ -582,14 +584,12 @@ fun ScheduleScreen(
                 }
             }
 
-            // 添加/编辑课程面板：页内覆盖层而非 Dialog 窗口——输入法要接得进来（见 AddCoursePanel 注释）。
-            // 添加：目标格子能对上就显示（进度 / 旋转重建后 slotId 仍有效）；
-            // 编辑：反查草稿条目，命中才显示（删除后条目消失 → 面板自动关闭）
+            // 面板目标反查：添加=目标格子（进度 / 旋转重建后 slotId 仍有效）；编辑=草稿反查条目；
+            // 交替课=源课与它的起始节（新面板沿用同一格的位置）
             val targetDay = addTarget.firstOrNull()
             val targetSlot = addTarget.getOrNull(1)?.let { id -> timeSlots.firstOrNull { it.id == id } }
             val editingEntry = editSession?.courses?.firstOrNull { it.id == editTargetId }
             val editingSlot = editingEntry?.let { e -> timeSlots.firstOrNull { it.id == e.startSlot } }
-            // 新建交替课程的源课与它的起始节（新面板沿用同一格的位置）
             val alternateSource = editSession?.courses?.firstOrNull { it.id == alternateSourceId }
             val alternateSlot = alternateSource?.let { e -> timeSlots.firstOrNull { it.id == e.startSlot } }
             // 选择弹窗的候选：被点卡片所在格的全部课程（从草稿反查，条目没了弹窗自然关闭）
@@ -597,49 +597,63 @@ fun ScheduleScreen(
                 draft.courses.firstOrNull { it.id == chooserSourceId }
                     ?.let { draft.courses.cellCourses(it.dayOfWeek, it.startSlot) }
             }.orEmpty()
-            if (editSession != null && editingEntry != null && editingSlot != null) {
-                AddCoursePanel(
+
+            // 添加/编辑课程面板：页内覆盖层而非 Dialog 窗口——输入法要接得进来（见 AddCoursePanel 注释）。
+            // 三种入口互斥：点已有课卡编辑 / 点空格新建 / 长按已有课新建交替课，归一成一个面板请求。
+            // 编辑态从草稿反查条目，命中才给请求（删除后条目消失 → 请求清空 → 面板自动关闭）。
+            // 收场动画期间请求已清空但面板还在组合里——mountedRequest 记住最后一次请求，
+            // 参数保持稳定让面板带着原内容滑出；动画播完（onDismissed）才真正卸载。
+            // key() 保证换目标时面板整体重建（表单初值复位，与旧的 if 分支行为一致）。
+            val panelRequest = when {
+                editingEntry != null && editingSlot != null -> AddCourseRequest(
                     day = editingEntry.dayOfWeek,
                     slot = editingSlot,
-                    schedule = schedule,
-                    draftCourses = editSession.courses,
                     existing = editingEntry,
-                    onDismiss = { editTargetId = "" },
-                    onConfirm = { entry ->
-                        editSession.update(entry.id, entry)
-                        editTargetId = ""
-                    },
-                    onDelete = {
-                        editSession.remove(editingEntry.id)
-                        editTargetId = ""
-                    },
                 )
-            } else if (editSession != null && targetDay != null && targetSlot != null) {
-                AddCoursePanel(
+                targetDay != null && targetSlot != null -> AddCourseRequest(
                     day = targetDay,
                     slot = targetSlot,
-                    schedule = schedule,
-                    draftCourses = editSession.courses,
-                    onDismiss = { addTarget = emptyList() },
-                    onConfirm = { course ->
-                        editSession.add(course)
-                        addTarget = emptyList()
-                    },
                 )
-            } else if (editSession != null && alternateSource != null && alternateSlot != null) {
-                // 长按已有课 → 新建交替课程：星期/起始节/跨度跟随源课，周数默认取没被占用的
-                AddCoursePanel(
+                alternateSource != null && alternateSlot != null -> AddCourseRequest(
                     day = alternateSource.dayOfWeek,
                     slot = alternateSlot,
-                    schedule = schedule,
-                    draftCourses = editSession.courses,
                     alternateFrom = alternateSource,
-                    onDismiss = { alternateSourceId = "" },
-                    onConfirm = { course ->
-                        editSession.add(course)
-                        alternateSourceId = ""
-                    },
                 )
+                else -> null
+            }
+            var mountedRequest by remember { mutableStateOf<AddCourseRequest?>(null) }
+            if (panelRequest != null) mountedRequest = panelRequest
+            mountedRequest?.let { request ->
+                key(request) {
+                    AddCoursePanel(
+                        visible = panelRequest != null,
+                        day = request.day,
+                        slot = request.slot,
+                        schedule = schedule,
+                        draftCourses = editSession?.courses.orEmpty(),
+                        existing = request.existing,
+                        alternateFrom = request.alternateFrom,
+                        onDismiss = {
+                            editTargetId = ""
+                            addTarget = emptyList()
+                            alternateSourceId = ""
+                        },
+                        onDismissed = { mountedRequest = null },
+                        onConfirm = { entry ->
+                            val existingId = request.existing?.id
+                            if (existingId != null) editSession?.update(existingId, entry) else editSession?.add(entry)
+                            editTargetId = ""
+                            addTarget = emptyList()
+                            alternateSourceId = ""
+                        },
+                        onDelete = request.existing?.let { existing ->
+                            {
+                                editSession?.remove(existing.id)
+                                editTargetId = ""
+                            }
+                        },
+                    )
+                }
             }
 
             // 交替课程选择弹窗：同格多门时才出现（见 onEditClick），选完开那一门的编辑面板
@@ -718,6 +732,17 @@ private val EditBarHeightGuess = 112.dp
  * 非 saveable 的瞬时状态，见 [ScheduleScreen] 里的 menuAnchor。
  */
 private data class CardMenuAnchor(val courseId: String, val rect: Rect)
+
+/**
+ * 课程面板请求：三种入口（点课卡编辑 / 空格新建 / 长按新建交替课）归一后的参数快照。
+ * 三个入口互斥；数据类相等性配合 key() 使用——同一目标重组合不重建面板，换目标才重建。
+ */
+private data class AddCourseRequest(
+    val day: Int,
+    val slot: TimeSlot,
+    val existing: CourseEntry? = null,
+    val alternateFrom: CourseEntry? = null,
+)
 
 /**
  * 数据层错误 → 用户可读文案（编辑流程的 Toast 用）。课程类错误一律点名到课程或给中文结论，

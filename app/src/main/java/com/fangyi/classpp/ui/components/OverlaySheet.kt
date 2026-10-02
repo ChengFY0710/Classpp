@@ -1,8 +1,17 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,12 +36,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -45,6 +63,7 @@ import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.rememberHazeState
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
+import kotlinx.coroutines.launch
 
 /**
  * 距屏幕顶端的距离——**后期调整浮层位置只改这一个变量**。
@@ -68,6 +87,21 @@ val SheetSectionSpacing: Dp = 18.dp
 val SheetBottomSlack: Dp = 120.dp
 
 private val HandleColor = Color(0xFFD9DDE1)
+
+/** 入场时长：从屏幕底部滑入，减速曲线（先快后慢） */
+private const val SheetEnterMillis = 320
+
+/** 出场时长：向下滑出，加速曲线（先慢后快） */
+private const val SheetExitMillis = 280
+
+/** 拖拽关闭的位移阈值：下拉超过浮层自身高度的这么多比例即关闭 */
+private const val DragDismissFraction = 0.25f
+
+/** 拖拽关闭的速度阈值：松手时下滑速度超过它（快速一甩）也直接关闭 */
+private val DragDismissVelocity: Dp = 800.dp
+
+/** 浮层完全显示时的遮罩强度（与全 app 浮层遮罩同一规格） */
+private const val ScrimAlpha = 0.32f
 
 /** 顶栏总高（拖拽条 + 按钮行），滚动内容顶部为它留位。 */
 private val TopBarHeight = 80.dp
@@ -97,6 +131,14 @@ data class SheetTopAction(
  * 用 haze 对其下的滚动内容做**渐变模糊**——照搬课表设置页顶栏的规格，
  * 并由 Surface 的 shape clip 收敛在圆角内，不溢出卡片。
  *
+ * 进出场与拖拽关闭由组件自己完成：
+ * - 挂载即入场：从屏幕底部滑入（先快后慢），遮罩同步压暗；
+ * - 关闭是「两段式」——[onDismiss]（遮罩点击 / 返回 / 确认 / 顶栏动作 / 下拉松手超过阈值）
+ *   只表示**请求关闭**，调用方收到后清掉自己的状态使 [visible] 变 false，组件随即向下滑出
+ *   （先慢后快）、遮罩同步变淡，**播完后才回调 [onDismissed]**，调用方在这一刻把浮层移出组合，
+ *   收场期间内容保持原样不闪空；
+ * - 顶栏整条可垂直拖拽、浮层跟手下移，遮罩跟着变淡；松手超过位移/速度阈值走关闭，否则弹回。
+ *
  * haze 的采样源挂在浮层内部的滚动列上：浮层被遮罩盖住后背后的课表网格对顶栏不可见，
  * 只需模糊浮层自身内容，因此容器内自建 hazeState，调用方无需传任何模糊状态。
  */
@@ -108,6 +150,8 @@ fun OverlaySheet(
     rightAction: SheetTopAction,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    visible: Boolean = true,
+    onDismissed: () -> Unit = {},
     topInset: Dp = SheetTopInset,
     imeBehavior: SheetImeBehavior = SheetImeBehavior.ContentScroll,
     content: @Composable ColumnScope.() -> Unit,
@@ -134,20 +178,108 @@ fun OverlaySheet(
     // 吃掉落在卡片上的点击，避免穿透到遮罩把浮层关掉（卡内控件的消费优先）
     val cardInteraction = remember { MutableInteractionSource() }
 
+    // ——— 进出场与拖拽共用一条进度：0 = 完全显示，1 = 完全滑出屏幕下方 ———
+    // 拖拽直接改写它（跟手），浮层位移与遮罩透明度都从它派生，各段动画之间天然连续
+    val hiddenFraction = remember { Animatable(1f) }
+    // 滑动全程 = 浮层自身高度；layout 先于 draw 测出，首帧不会闪现在最终位置
+    var travelPx by remember { mutableStateOf(0) }
+    // 已决定关闭（收场动画可能被中途拖拽打断，打断后松手要能续播而不是卡死在半路）
+    var exiting by remember { mutableStateOf(false) }
+    // 关闭已受理：出场期间面板仍在组合里，确认/顶栏动作/遮罩的二次点击一律不放行
+    //（防双击「确认」把新建课程存两次）；表单校验失败不会置位，修正后还能再点确认
+    var closeRequested by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val keyboard = LocalSoftwareKeyboardController.current
+    val scrimColor = MaterialTheme.colorScheme.scrim
+    val dismissVelocityPx = with(density) { DragDismissVelocity.toPx() }
+
+    // 收场动画本体：从当前进度继续滑到全隐（拖拽中断后重入，也是从当前位置接着走）
+    suspend fun runExit() {
+        hiddenFraction.animateTo(1f, tween(SheetExitMillis, easing = FastOutLinearInEasing))
+        onDismissed()
+    }
+
+    // 开始收场：幂等。可见性驱动的关闭（调用方清状态）与拖拽关闭最终都汇到这里
+    fun beginExit() {
+        if (exiting) return
+        exiting = true
+        closeRequested = true
+        keyboard?.hide()
+        scope.launch { runExit() }
+    }
+
+    // 打开滑入 / 关闭滑出；关闭入口全部汇到 beginExit，调用方只负责清状态
+    LaunchedEffect(visible) {
+        if (visible) {
+            exiting = false
+            closeRequested = false
+            hiddenFraction.animateTo(0f, tween(SheetEnterMillis, easing = LinearOutSlowInEasing))
+        } else {
+            beginExit()
+        }
+    }
+
+    // 顶栏整条可拖拽：跟手改写进度；松手超过位移/速度阈值 → 走关闭（清状态 → 统一出场），
+    // 否则弹回。拖拽与顶栏按钮点击互不干扰（点击不产生滑动位移）
+    val dragState = rememberDraggableState { delta ->
+        scope.launch {
+            hiddenFraction.snapTo(
+                (hiddenFraction.value + delta / travelPx.coerceAtLeast(1)).coerceIn(0f, 1f),
+            )
+        }
+    }
+    val topBarDragModifier = Modifier.draggable(
+        orientation = Orientation.Vertical,
+        state = dragState,
+        onDragStopped = { velocity ->
+            when {
+                // 收场途中被拖拽打断：从当前位置续播收场
+                exiting -> scope.launch { runExit() }
+                hiddenFraction.value >= DragDismissFraction || velocity >= dismissVelocityPx -> {
+                    if (!closeRequested) {
+                        closeRequested = true
+                        onDismiss()
+                    }
+                }
+                else -> scope.launch {
+                    hiddenFraction.animateTo(
+                        0f,
+                        spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow,
+                        ),
+                    )
+                }
+            }
+        },
+    )
+
+    // 出场期间面板还在组合里：顶栏动作与确认按钮都过一遍闸门，防二次触发
+    val guardedRightAction = rightAction.copy(
+        onClick = { if (!closeRequested) rightAction.onClick() },
+    )
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
+            // 遮罩随进度压暗：完全显示时 0.32，拖拽下拉/滑出时跟手变淡到全透明
+            .drawBehind {
+                val alpha = ScrimAlpha * (1f - hiddenFraction.value)
+                if (alpha > 0f) drawRect(color = scrimColor, alpha = alpha)
+            }
             .clickable(
                 interactionSource = scrimInteraction,
                 indication = null,
-                onClick = onDismiss,
+                onClick = { if (!closeRequested) onDismiss() },
             ),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = topInset),
+                .padding(top = topInset)
+                .onSizeChanged { travelPx = it.height }
+                // 滑动位移只打在浮层这层：遮罩留在原地，卡片连阴影带模糊一起动
+                .graphicsLayer { translationY = hiddenFraction.value * travelPx },
         ) {
             Surface(
                 modifier = Modifier
@@ -180,9 +312,10 @@ fun OverlaySheet(
                     OverlaySheetTopBar(
                         title = title,
                         confirmLabel = confirmLabel,
-                        onConfirm = onConfirm,
-                        rightAction = rightAction,
+                        onConfirm = { if (!closeRequested) onConfirm() },
+                        rightAction = guardedRightAction,
                         hazeState = hazeState,
+                        dragModifier = topBarDragModifier,
                         modifier = Modifier.align(Alignment.TopCenter),
                     )
                 }
@@ -195,6 +328,7 @@ fun OverlaySheet(
  * 顶栏：拖拽条 + 左「确认」胶囊 + 居中标题 + 右动作胶囊。
  * hazeEffect 打在这层上（渐变 1→0、白 30% tint，与设置页同规格），
  * 按钮与标题画在模糊层之上保持清晰；整层被 Surface 裁进浮层圆角。
+ * 整条顶栏是下拉关闭的手势区（[dragModifier] 挂垂直拖拽），按钮点击不受影响。
  */
 @Composable
 private fun OverlaySheetTopBar(
@@ -203,6 +337,7 @@ private fun OverlaySheetTopBar(
     onConfirm: () -> Unit,
     rightAction: SheetTopAction,
     hazeState: HazeState,
+    dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -227,9 +362,10 @@ private fun OverlaySheetTopBar(
                 )
                 tints = listOf(HazeTint(Color.White.copy(alpha = 0.30f)))
                 noiseFactor = 0f
-            },
+            }
+            .then(dragModifier),
     ) {
-        // 拖拽小横条（装饰，不响应手势）
+        // 拖拽小横条：提示整条顶栏可下拉关闭（手势区域为整条顶栏）
         Box(
             modifier = Modifier
                 .fillMaxWidth()

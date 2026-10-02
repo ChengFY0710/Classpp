@@ -89,17 +89,24 @@ private val secondaryTextSize = 15.sp // 描述性文字统一大小
  * - 顶栏 = 左确认 / 中标题 / 右取消（编辑态删除），背景对滚动内容做渐变模糊并收敛在圆角内；
  * - 表单控件全部抽成可复用组件（输入框/行选择/浮层选择/颜色选择卡片）。
  *
+ * **生命周期**：[visible] 为 true 时面板从底部滑入；关闭流程是两段式——所有关闭入口
+ * （确认/删除/返回/点遮罩/下拉）只回调 [onDismiss]（调用方据此清状态 → visible 变 false），
+ * 浮层播完滑出动画后回调 [onDismissed]，调用方在这一刻才把面板移出组合，
+ * 收场期间表单内容保持原样不闪空。
+ *
  * **刻意不用 AlertDialog**：对话框是独立窗口，本机（Android 15+/16 的 edge-to-edge + 该 ROM）
  * 输入法接不进去（点了输入框不弹键盘）。改成和设置页同一条路——页内覆盖层，
  * 输入法行为与设置页一致，并且打开即自动聚焦课程名并唤起键盘。
  */
 @Composable
 fun AddCoursePanel(
+    visible: Boolean,
     day: Int,
     slot: TimeSlot,
     schedule: Schedule,
     draftCourses: List<CourseEntry>,
     onDismiss: () -> Unit,
+    onDismissed: () -> Unit,
     onConfirm: (CourseEntry) -> Unit,
     existing: CourseEntry? = null,
     onDelete: (() -> Unit)? = null,
@@ -299,6 +306,8 @@ fun AddCoursePanel(
             )
         },
         onDismiss = onDismiss,
+        visible = visible,
+        onDismissed = onDismissed,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
