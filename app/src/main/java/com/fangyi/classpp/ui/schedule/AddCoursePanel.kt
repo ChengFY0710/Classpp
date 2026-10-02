@@ -412,18 +412,24 @@ fun AddCoursePanel(
                     ),
                     selectedIndex = weekChoiceIndex,
                     onSelect = { index ->
-                        val weeksForChoice = when (index) {
-                            0 -> (1..schedule.totalWeeks).toList()
-                            1 -> (1..schedule.totalWeeks).filter { it % 2 == 1 }
-                            else -> (1..schedule.totalWeeks).filter { it % 2 == 0 }
+                        // 再按一下已选中的快捷 = 取消选中：清空回到「尚未选中」，可重新勾选
+                        if (index == weekChoiceIndex) {
+                            selectedWeeks = emptyList()
+                            error = null
+                        } else {
+                            val weeksForChoice = when (index) {
+                                0 -> (1..schedule.totalWeeks).toList()
+                                1 -> (1..schedule.totalWeeks).filter { it % 2 == 1 }
+                                else -> (1..schedule.totalWeeks).filter { it % 2 == 0 }
+                            }
+                            applyShortcut(
+                                weeks = weeksForChoice,
+                                blocked = blockedWeeks,
+                                errorText = errorWeeksTaken,
+                                apply = { selectedWeeks = it },
+                                onError = { fail(it) },
+                            )
                         }
-                        applyShortcut(
-                            weeks = weeksForChoice,
-                            blocked = blockedWeeks,
-                            errorText = errorWeeksTaken,
-                            apply = { selectedWeeks = it },
-                            onError = { fail(it) },
-                        )
                     },
                 )
                 Text(
@@ -525,7 +531,8 @@ private fun WeekSelectionGrid(
 
 /**
  * 周数快捷（全选/单周/双周）：先按快捷取周，再剔掉被同格其它交替课占用的周；
- * 剔完为空就不改选择、只报错——否则点一下会落到"尚未选择"的空状态，反而更费解。
+ * 剔完为空说明这个快捷下没有任何可选的周，报错而不动当前选择
+ * （取消选中的空选择由"再次点击已高亮项"提供，见调用处的 onSelect）。
  */
 private fun applyShortcut(
     weeks: List<Int>,
