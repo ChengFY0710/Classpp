@@ -46,7 +46,8 @@ import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetPillButton
-import com.fangyi.classpp.ui.components.SheetSectionSpacing
+import com.fangyi.classpp.ui.components.SheetSectionSpacingBetween
+import com.fangyi.classpp.ui.components.SheetSectionSpacingBottom
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.settings.TermDatesCard
@@ -158,7 +159,7 @@ internal fun ScheduleSwitcherSheet(
                 onSetWeeks = { weeks -> end = endForTotalWeeks(start, end, weeks) },
             )
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacing)) {
+            Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
                 schedules.forEach { schedule ->
                     ScheduleCard(
                         schedule = schedule,
@@ -291,6 +292,7 @@ private fun CreateScheduleContent(
         placeholder = stringResource(R.string.schedule_name_hint),
         imeAction = ImeAction.Done,
     )
+    Spacer(Modifier.height(SheetSectionSpacingBottom))
     TermDatesCard(
         start = start,
         end = end,

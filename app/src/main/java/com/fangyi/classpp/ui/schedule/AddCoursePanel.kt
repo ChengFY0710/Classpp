@@ -60,6 +60,7 @@ import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.PopupSelectCard
 import com.fangyi.classpp.ui.components.RowChoiceCard
 import com.fangyi.classpp.ui.components.SheetSectionLabel
+import com.fangyi.classpp.ui.components.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.theme.classppColors
@@ -326,7 +327,7 @@ fun AddCoursePanel(
         visible = visible,
         onDismissed = onDismissed,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
             Text(
                 text = cellInfo,
                 fontSize = secondaryTextSize,
@@ -388,7 +389,7 @@ fun AddCoursePanel(
                 )
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
                 SheetSectionLabel(stringResource(R.string.edit_course_weeks))
                 WeekSelectionGrid(
                     totalWeeks = schedule.totalWeeks,
