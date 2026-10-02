@@ -88,6 +88,9 @@ val SheetBottomSlack: Dp = 120.dp
 
 private val HandleColor = Color(0xFFD9DDE1)
 
+/** 顶栏胶囊按钮形状（全圆角）；投影与背景共用同一个形状。 */
+private val PillShape = RoundedCornerShape(100)
+
 /** 入场时长：从屏幕底部滑入，减速曲线（先快后慢） */
 private const val SheetEnterMillis = 320
 
@@ -418,7 +421,7 @@ private fun OverlaySheetTopBar(
 }
 
 /** 顶栏胶囊按钮。图标为「实心圆+镂空图形」，整体 tint 后即得设计稿效果（确认图标在前，
- *  取消/删除文字在前——见 [iconAtEnd]）。 */
+ *  取消/删除文字在前——见 [iconAtEnd]）；投影同设置页返回按钮的大柔影做法（形状为胶囊）。 */
 @Composable
 fun SheetPillButton(
     label: String,
@@ -431,8 +434,15 @@ fun SheetPillButton(
 ) {
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(100))
-            .background(containerColor)
+            // 大柔影：高 shadowElevation 撑开模糊半径，低透明度阴影色压住存在感
+            //（同设置页返回按钮的投影做法）
+            .graphicsLayer {
+                shape = PillShape
+                clip = true
+                shadowElevation = 45.dp.toPx()
+                spotShadowColor = Color.Black.copy(alpha = 0.3f)
+            }
+            .background(containerColor, PillShape)
             .clickable(onClick = onClick)
             // 文字所在那侧的外边距比图标侧多 3dp：图标在左(确认)加宽右侧，
             // 图标在右(取消/删除)加宽左侧
