@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -72,7 +73,7 @@ import kotlinx.coroutines.launch
 val SheetTopInset: Dp = 56.dp
 
 /** 浮层卡片形状（上圆角）；模糊与内容都被它裁剪收敛。 */
-val SheetShape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
+val SheetShape = RoundedCornerShape(topStart = 36.dp, topEnd = 36.dp)
 
 /**
  * 浮层内容的横向边距与卡片纵向间距——与课表设置页同源
@@ -372,7 +373,8 @@ private fun OverlaySheetTopBar(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 10.dp),
+                .padding(top = 4.dp)
+                .offset(y = 6.dp),
             contentAlignment = Alignment.Center,
         ) {
             Box(
@@ -386,7 +388,7 @@ private fun OverlaySheetTopBar(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 10.dp),
+                .padding(start = 18.dp, end = 18.dp, top = 10.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),

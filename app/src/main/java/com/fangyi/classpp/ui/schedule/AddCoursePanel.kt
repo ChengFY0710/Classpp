@@ -330,7 +330,9 @@ fun AddCoursePanel(
                 text = cellInfo,
                 fontSize = secondaryTextSize,
                 color = MaterialTheme.classppColors.secondaryText,
-                modifier = Modifier.padding(textStartPadding),
+                modifier = Modifier
+                    .padding(textStartPadding)
+                    .offset(y = 2.dp),
             )
 
             SheetTextField(
@@ -485,7 +487,10 @@ private fun WeekSelectionGrid(
                             .background(
                                 when {
                                     isSelected -> MaterialTheme.colorScheme.primary
-                                    blocked -> MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.4f)
+                                    blocked -> MaterialTheme.colorScheme.onPrimaryContainer.copy(
+                                        alpha = 0.4f
+                                    )
+
                                     else -> MaterialTheme.colorScheme.surface
                                 },
                             )
