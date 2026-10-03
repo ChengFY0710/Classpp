@@ -286,6 +286,12 @@ fun ScheduleHeader(
                 Spacer(Modifier.weight(1f))
                 if (showBackToCurrent) {
                     BackToCurrentButton(
+                        // 箭头指向"回到本周"的方向：查看更后的周 → 左箭头往回，更前的周 → 右箭头往前
+                        icon = if (currentWeek == null || selectedWeek > currentWeek) {
+                            R.drawable.ic_arrow_circle_left
+                        } else {
+                            R.drawable.ic_arrow_circle_right
+                        },
                         onClick = { currentWeek?.let(onWeekSelected) },
                         enabled = iconsEnabled,
                         alpha = iconAlpha,
@@ -410,10 +416,12 @@ fun ScheduleHeader(
 
 /**
  * 日期行右侧「返回本周」按钮：非本周时显示，点按触发 [onClick] 跳回本周。
+ * [icon] 由调用方按方向给出（左箭头 = 从更后的周往回，右箭头 = 从更前的周往前）。
  * [alpha]/[enabled] 吃编辑/设置图标同款折叠渐隐值，上滑时随顶栏一同消失。
  */
 @Composable
 private fun BackToCurrentButton(
+    icon: Int,
     onClick: () -> Unit,
     enabled: Boolean,
     alpha: Float,
@@ -428,7 +436,7 @@ private fun BackToCurrentButton(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            painter = painterResource(R.drawable.ic_arrow_circle_left),
+            painter = painterResource(icon),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(20.dp),
