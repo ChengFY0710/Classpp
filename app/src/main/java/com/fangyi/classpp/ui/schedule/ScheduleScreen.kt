@@ -8,7 +8,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -53,6 +55,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -336,6 +339,14 @@ fun ScheduleScreen(
                 }
             }
 
+            val scope = rememberCoroutineScope()
+
+            // 跨多周跳转的单页滑入进度：1 = 整块网格从右侧一页宽处入场（跳向更后的周）、
+            // -1 = 从左侧（跳向更前的周）、0 = 落定。存"页宽倍数"而非像素，图层里乘自身宽度即
+            // 得位移，跳多远都恒定一页宽——不途经中间页（途经页的组合成本随距离线性涨，
+            // 超远跳转峰值帧会吃紧）
+            val jumpSlideFraction = remember { Animatable(0f) }
+
             // 手势 → 周次：currentPage 在拖动过半时即翻转，顶栏周数胶囊与日期随之切换；
             // 写回同值时 State 自身忽略，不产生额外重组
             LaunchedEffect(pagerState) {
@@ -343,7 +354,10 @@ fun ScheduleScreen(
             }
 
             // 周次 → 翻页：周数弹窗、返回本周、学期范围钳制触发的换周。
-            // 相邻周走滑动动画（与手势翻页连贯），跨多周直接落位（与原先的瞬时换周一致）
+            // 相邻周走 Pager 原生滑动（与手势翻页连贯）；跨多周先瞬移落位、再让整块网格从
+            // 手势方向滑入一页宽。滑入动画挂在 scope 上而非本效果里：week 途中再变时本效果
+            // 会重启，滑入不能被连带取消、停在半程偏移上；snapTo 同时会打断上一次未完成的
+            // 滑入，连续跳转天然收敛到最后一次
             LaunchedEffect(week) {
                 val target = week - 1
                 val current = pagerState.currentPage
@@ -351,12 +365,19 @@ fun ScheduleScreen(
                     if (abs(current - target) == 1) {
                         pagerState.animateScrollToPage(target)
                     } else {
+                        val forward = target > current
                         pagerState.scrollToPage(target)
+                        scope.launch {
+                            jumpSlideFraction.snapTo(if (forward) 1f else -1f)
+                            jumpSlideFraction.animateTo(
+                                0f,
+                                tween(durationMillis = 240, easing = LinearOutSlowInEasing),
+                            )
+                        }
                     }
                 }
             }
 
-            val scope = rememberCoroutineScope()
             val context = LocalContext.current
 
             // 点顶栏星期行 = 5 天 / 7 天视图互切（等价于设置页的「每周上课天数」）。
@@ -561,6 +582,8 @@ fun ScheduleScreen(
                     onSlotLongClick = onSlotLongClick,
                     modifier = Modifier
                         .fillMaxSize()
+                        // 跨多周跳转的单页滑入：位移 = 滑入进度 × 自身宽度（即页宽），只动图层不触发布局
+                        .graphicsLayer { translationX = jumpSlideFraction.value * size.width }
                         // 编辑态不折叠：顶栏换成了固定编辑栏，滚动连接不参与
                         .then(
                             if (editSession == null) {
