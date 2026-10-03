@@ -425,13 +425,14 @@ private fun ConfirmDialogCard(
     buttons: @Composable RowScope.() -> Unit,
 ) {
     Column(
-        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 24.dp),
+        modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 24.dp, bottom = 12.dp),
     ) {
         Text(
             text = title,
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp),
         )
         Spacer(Modifier.height(10.dp))
         Text(
@@ -439,6 +440,7 @@ private fun ConfirmDialogCard(
             fontSize = 15.sp,
             lineHeight = 22.sp,
             color = MaterialTheme.classppColors.secondaryText,
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp),
         )
         Spacer(Modifier.height(28.dp))
         Row(

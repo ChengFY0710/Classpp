@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -29,7 +28,7 @@ private const val DialogFadeMillis = 200
 
 /**
  * 页内居中弹窗基座（[com.fangyi.classpp.ui.schedule.AlternatePickerDialog] 等共用）：
- * 全屏遮罩压暗 + 居中白卡（[DialogShape] 平滑圆角、8dp 投影、左右 [cardHorizontalPadding] 边距）。
+ * 全屏遮罩压暗 + 居中白卡（[DialogShape] 平滑圆角、scrim 染色的 8dp 柔影、左右 [cardHorizontalPadding] 边距）。
  *
  * 与 [OverlaySheet] 同一约定：页内覆盖层而非窗口类对话框；**挂载与可见性分离**——
  * 调用方在 [visible] 置 false 后保持本组件在组合里，内容淡出（遮罩同步变淡），
@@ -74,7 +73,10 @@ fun FadeOverlayDialog(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Surface(
+        // 白卡：graphicsLayer 画法替代 Surface，阴影可染主题 scrim 色（深色模式只动 theme）；
+        // 不 clip：内容由 padding 收边，同时放行卡内胶囊按钮溢出卡缘的淡影（同 Surface 行为）
+        val cardShadowColor = MaterialTheme.colorScheme.scrim
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = cardHorizontalPadding)
@@ -83,10 +85,14 @@ fun FadeOverlayDialog(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = {},
-                ),
-            shape = DialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
+                )
+                .graphicsLayer {
+                    shape = DialogShape
+                    shadowElevation = 36.dp.toPx()
+                    spotShadowColor = cardShadowColor.copy(alpha = 0.2f)
+                    ambientShadowColor = cardShadowColor.copy(alpha = 0.05f)
+                }
+                .background(MaterialTheme.colorScheme.surface, DialogShape),
         ) {
             content()
         }
