@@ -316,23 +316,32 @@ class ScheduleRepository internal constructor(
         return if (s.showInactiveCourses) all else all.filter { it.active }
     }
 
-    /** 第 [week] 周各上课日日期（5 天模式 5 个、7 天模式 7 个）；越界返回空 */
+    /**
+     * 第 [week] 周各上课日日期（5 天模式 5 个、7 天模式 7 个）；越界返回空。
+     * 周按**日历周**对齐：第 1 周 = termStart 所在的周一~周日周（开学日可为任意星期几，
+     * 开学前的那几天也落在第 1 周内），第 N 周周一 = 第 1 周周一 + (N-1)*7。
+     */
     fun datesForWeek(scheduleId: String, week: Int): List<IsoDate> {
         val s = scheduleOrNull(scheduleId) ?: return emptyList()
         if (week !in 1..s.totalWeeks) return emptyList()
-        val base = s.termStart + (week - 1) * 7
+        val base = s.termStart.mondayOfWeek() + (week - 1) * 7
         return (0 until s.daysPerWeek).map { base + it }
     }
 
     // ---------- 当前周 ----------
 
-    /** [today] 相对学期位置；课表不存在返回 null。不钳制、不抛错 */
+    /**
+     * [today] 相对学期位置；课表不存在返回 null。不钳制、不抛错。
+     * 位置按**日历周**判定（与 [datesForWeek] 同一对齐）：今天所在周早于开学周 → Before，
+     * 晚于结束周 → After，否则 InTerm(周号)——开学日是周中某天时，其所在周的
+     * 前几天（尚未开学）也已算入第 1 周，与"第 N 周 = 第 N 个日历周"自洽。
+     */
     fun termPosition(scheduleId: String, today: IsoDate = clock.today()): TermPosition? {
         val s = scheduleOrNull(scheduleId) ?: return null
-        val diff = today - s.termStart
+        val diff = today.mondayOfWeek() - s.termStart.mondayOfWeek()
         return when {
             diff < 0 -> TermPosition.BeforeTerm
-            diff > s.termEnd - s.termStart -> TermPosition.AfterTerm
+            diff > s.termEnd.mondayOfWeek() - s.termStart.mondayOfWeek() -> TermPosition.AfterTerm
             else -> TermPosition.InTerm((diff / 7).toInt() + 1)
         }
     }

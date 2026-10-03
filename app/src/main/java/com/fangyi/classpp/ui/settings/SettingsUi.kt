@@ -309,8 +309,8 @@ internal fun TermDatesCard(
     onPickEnd: () -> Unit,
     onSetWeeks: (weeks: Int) -> Unit,
 ) {
-    // 与 Schedule.totalWeeks 同式；起止经吸附/校验保证整周边界，此值必为整数周
-    val totalWeeks = ((end - start).toInt() / 7) + 1
+    // 与 Schedule.totalWeeks 同式：两端各取所在日历周的周一相减（开学日可为任意星期几）
+    val totalWeeks = ((end.mondayOfWeek() - start.mondayOfWeek()).toInt() / 7) + 1
     var pickingWeeks by remember { mutableStateOf(false) }
 
     SettingsSection(title = stringResource(R.string.section_term)) {

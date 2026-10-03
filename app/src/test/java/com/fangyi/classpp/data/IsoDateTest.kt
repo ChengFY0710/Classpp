@@ -46,6 +46,18 @@ class IsoDateTest {
     }
 
     @Test
+    fun `mondayOfWeek maps any day to its calendar week's monday`() {
+        // 周一不动，周中/周日都回到同一周的周一
+        assertEquals("2026-03-02", IsoDate.parse("2026-03-02").mondayOfWeek().toString())
+        assertEquals("2026-03-02", IsoDate.parse("2026-03-04").mondayOfWeek().toString())  // 周三
+        assertEquals("2026-03-02", IsoDate.parse("2026-03-08").mondayOfWeek().toString())  // 周日
+        assertEquals("2026-03-09", IsoDate.parse("2026-03-13").mondayOfWeek().toString())  // 下周周五
+        // 跨月/跨年
+        assertEquals("2026-02-23", IsoDate.parse("2026-03-01").mondayOfWeek().toString())  // 周日
+        assertEquals("2025-12-29", IsoDate.parse("2026-01-01").mondayOfWeek().toString())  // 周四
+    }
+
+    @Test
     fun `day arithmetic across months and years`() {
         val a = IsoDate.parse("2026-03-02")
         val b = IsoDate.parse("2026-06-19")

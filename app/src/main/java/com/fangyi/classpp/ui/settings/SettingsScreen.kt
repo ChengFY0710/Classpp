@@ -73,7 +73,6 @@ import com.fangyi.classpp.data.model.appendSlot
 import com.fangyi.classpp.ui.schedule.DateTarget
 import com.fangyi.classpp.ui.schedule.TERM_DEFAULT_DAYS
 import com.fangyi.classpp.ui.schedule.endForTotalWeeks
-import com.fangyi.classpp.ui.schedule.snapToMonday
 import com.fangyi.classpp.ui.schedule.toPickerMillis
 import com.fangyi.classpp.ui.schedule.toIsoDate
 import com.fangyi.classpp.ui.components.RowChoiceCard
@@ -261,15 +260,15 @@ fun SettingsScreen(
 
 /**
  * 新建课表表单（仅无激活课表时出现）：名称 + 学期起止 + 创建。
- * 起止日期经 DatePicker 选择并**自动吸附**硬性校验规则（开始→周一、结束→周五），
- * 默认值为"今天所在周的周一 ~ 16 周后的周五"。
+ * 起止日期经 DatePicker 选择，开学日可为任意星期几（结束日同理，只要求不早于开始日），
+ * 默认值为"今天 ~ 16 周后"。
  */
 @Composable
 private fun CreateScheduleContent(
     onConfirm: (name: String, start: IsoDate, end: IsoDate) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val defaultStart = remember { snapToMonday(IsoDate.today()) }
+    val defaultStart = remember { IsoDate.today() }
     var name by remember { mutableStateOf("") }
     var start by remember { mutableStateOf(defaultStart) }
     var end by remember { mutableStateOf(defaultStart + TERM_DEFAULT_DAYS) }
@@ -311,7 +310,7 @@ private fun CreateScheduleContent(
         }
     }
 
-    // 选日对话框：开始吸附周一并整体平移结束日（保持整周对齐与学期长度）；结束按吸附规则
+    // 选日对话框：开始日任意一天可选，平移结束日保持学期长度；结束日同样任意一天都合法
     picking?.let { target ->
         val initial = if (target == DateTarget.Start) start else end
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initial.toPickerMillis())
@@ -322,9 +321,8 @@ private fun CreateScheduleContent(
                     datePickerState.selectedDateMillis?.let { millis ->
                         val picked = millis.toIsoDate()
                         if (target == DateTarget.Start) {
-                            val snapped = snapToMonday(picked)
-                            end = end + (snapped - start).toInt()
-                            start = snapped
+                            end = end + (picked - start).toInt()
+                            start = picked
                         } else {
                             // 结束日想选哪天就哪天，不必落在周五/周日
                             end = picked
@@ -530,7 +528,7 @@ private fun SettingsContent(
         }
     }
 
-    // 学期日期选择：开始吸附周一并平移结束日（保持周数）；结束日**不吸附**，
+    // 学期日期选择：开始日任意一天可选，平移结束日保持学期长度；结束日同样
     // 任意一天都合法（可停在周中，末周就只上到那一天）
     picking?.let { target ->
         val initial = if (target == DateTarget.Start) schedule.termStart else schedule.termEnd
@@ -542,9 +540,8 @@ private fun SettingsContent(
                     datePickerState.selectedDateMillis?.let { millis ->
                         val picked = millis.toIsoDate()
                         if (target == DateTarget.Start) {
-                            val snapped = snapToMonday(picked)
-                            val newEnd = schedule.termEnd + (snapped - schedule.termStart).toInt()
-                            onTerm(snapped, newEnd)
+                            val newEnd = schedule.termEnd + (picked - schedule.termStart).toInt()
+                            onTerm(picked, newEnd)
                         } else {
                             onTerm(schedule.termStart, picked)
                         }
@@ -615,8 +612,7 @@ private data class SlotEdit(val index: Int, val isStart: Boolean)
  * 非 Composable（context 版）：供 showError 在回调/协程里调用，结果走系统 Toast。
  */
 private fun ScheduleError.toMessage(context: Context): String = when (this) {
-    is ScheduleError.TermNotMonday -> context.getString(R.string.error_term_not_monday)
-    // 结束日可落任意一天（含周中），只剩"早于开始日"一种非法
+    // 起止日任意星期几都合法（开学日不再要求周一），只剩"早于开始日"一种非法
     is ScheduleError.TermRangeInvalid -> context.getString(R.string.error_term_range)
     is ScheduleError.DaysPerWeekInvalid -> context.getString(R.string.error_days_per_week)
     is ScheduleError.SlotCountInvalid -> context.getString(R.string.error_slot_count)

@@ -26,9 +26,6 @@ enum class FieldReason { BlankName, SpanOutOfRange }
  */
 sealed class ScheduleError(val message: String) {
 
-    data class TermNotMonday(val date: IsoDate) :
-        ScheduleError("termStart $date is not a Monday")
-
     data class TermRangeInvalid(val start: IsoDate, val end: IsoDate) :
         ScheduleError("termEnd $end must not be before termStart $start (may end mid week)")
 

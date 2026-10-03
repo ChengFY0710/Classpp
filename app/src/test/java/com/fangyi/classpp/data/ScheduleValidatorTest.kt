@@ -67,9 +67,19 @@ class ScheduleValidatorTest {
     }
 
     @Test
-    fun `R1 start must be monday`() {
-        assertHas<ScheduleError.TermNotMonday>(
+    fun `term start may be any weekday`() {
+        // 原 R1「必须周一」已取消：周二、周三、周日开学都合法（第 1 周 = 开学日所在日历周）
+        assertEquals(
+            emptyList<ScheduleError>(),
             ScheduleValidator.validate(schedule(start = IsoDate.parse("2026-03-03"))),
+        )
+        assertEquals(
+            emptyList<ScheduleError>(),
+            ScheduleValidator.validate(schedule(start = IsoDate.parse("2026-03-04"))),
+        )
+        assertEquals(
+            emptyList<ScheduleError>(),
+            ScheduleValidator.validate(schedule(start = IsoDate.parse("2026-03-08"))),
         )
     }
 
@@ -119,7 +129,7 @@ class ScheduleValidatorTest {
 
     @Test
     fun `totalWeeks counts the week the end date falls in`() {
-        // 周中结尾也归到它所在的教学周：周一是第 1 周的第 0 天，周三仍是第 1 周
+        // 周中结尾也归到它所在的日历周：周一是第 1 周的第 0 天，周三仍是第 1 周
         assertEquals(1, schedule(end = IsoDate.parse("2026-03-04")).totalWeeks)   // 周三
         assertEquals(1, schedule(end = IsoDate.parse("2026-03-08")).totalWeeks)   // 周日
         // 跨到下一周的第一天（周一）= 第 2 周
@@ -127,6 +137,27 @@ class ScheduleValidatorTest {
         // 16 周学期的周三 / 周日结尾都仍是第 16 周（周三停在周中，不额外多出一周）
         assertEquals(16, schedule(end = IsoDate.parse("2026-06-17")).totalWeeks)
         assertEquals(16, schedule(end = IsoDate.parse("2026-06-21")).totalWeeks)
+    }
+
+    /**
+     * 开学日不是周一时，周数按**日历周**对齐：两端各取所在周的周一相减。
+     * 2026-03-04 周三开学 ~ 2026-06-19 周五结束：第 1 周 = 03-02~03-08（含开学前的周一周二），
+     * 末周 = 06-15~06-21，仍为 16 周。
+     */
+    @Test
+    fun `totalWeeks aligns to calendar weeks for a non-monday start`() {
+        val wednesday = schedule(start = IsoDate.parse("2026-03-04"), end = IsoDate.parse("2026-06-19"))
+        assertEquals(16, wednesday.totalWeeks)
+
+        // 结束日跨过整周边界（周二 06-16 所在周仍是 06-15 那周）不增周
+        assertEquals(16, wednesday.copy(termEnd = IsoDate.parse("2026-06-16")).totalWeeks)
+        // 结束日进入下一周（06-22 周一）即多出一周
+        assertEquals(17, wednesday.copy(termEnd = IsoDate.parse("2026-06-22")).totalWeeks)
+        // 单周学期：周六开学、同周周五结束 → 1 周
+        assertEquals(
+            1,
+            schedule(start = IsoDate.parse("2026-03-07"), end = IsoDate.parse("2026-03-08")).totalWeeks,
+        )
     }
 
     @Test
@@ -385,12 +416,12 @@ class ScheduleValidatorTest {
             schedule(
                 name = "  ",
                 daysPerWeek = 6,
-                start = IsoDate.parse("2026-03-03"),
+                end = IsoDate.parse("2026-02-27"),
                 courses = listOf(course(name = "")),
             ),
         )
         assertHas<ScheduleError.InvalidScheduleName>(errors)
-        assertHas<ScheduleError.TermNotMonday>(errors)
+        assertHas<ScheduleError.TermRangeInvalid>(errors)
         assertHas<ScheduleError.DaysPerWeekInvalid>(errors)
         assertHas<ScheduleError.CourseFieldInvalid>(errors)
         assertTrue("expected multiple errors, got $errors", errors.size >= 3)

@@ -87,7 +87,7 @@ internal fun ScheduleSwitcherSheet(
     // 表单字段随浮层卸载而复位（remember，旋转重建回默认值）
     var picking by remember { mutableStateOf<DateTarget?>(null) }
     var name by remember { mutableStateOf("") }
-    val defaultStart = remember { snapToMonday(IsoDate.today()) }
+    val defaultStart = remember { IsoDate.today() }
     var start by remember { mutableStateOf(defaultStart) }
     var end by remember { mutableStateOf(defaultStart + TERM_DEFAULT_DAYS) }
     // 待删除的课表 id（非空 = 删除确认框打开）
@@ -182,7 +182,8 @@ internal fun ScheduleSwitcherSheet(
         }
     }
 
-    // 选日对话框：与设置页同一套吸附（开始→周一并平移结束日；结束日不吸附，任意一天都合法）
+    // 选日对话框：与设置页同一套联动（开始日任意一天可选、平移结束日保持学期长度；
+    // 结束日同样任意一天都合法）
     picking?.let { target ->
         val initial = if (target == DateTarget.Start) start else end
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initial.toPickerMillis())
@@ -193,9 +194,8 @@ internal fun ScheduleSwitcherSheet(
                     datePickerState.selectedDateMillis?.let { millis ->
                         val picked = millis.toIsoDate()
                         if (target == DateTarget.Start) {
-                            val snapped = snapToMonday(picked)
-                            end = end + (snapped - start).toInt()
-                            start = snapped
+                            end = end + (picked - start).toInt()
+                            start = picked
                         } else {
                             end = picked
                         }
@@ -290,7 +290,7 @@ private fun ScheduleCard(
 
 /**
  * 新建课表表单（浮层内二级形态）：课表名输入 + 学期三行卡（设置页同款 [TermDatesCard]）。
- * 日期吸附规则与设置页一致（开始→周一并平移结束日），默认值同为“本周一 ~ 16 周后的周五”。
+ * 日期联动规则与设置页一致（开始日任意一天可选并平移结束日），默认值为"今天 ~ 16 周后"。
  */
 @Composable
 private fun CreateScheduleContent(

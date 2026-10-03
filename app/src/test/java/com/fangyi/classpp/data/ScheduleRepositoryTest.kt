@@ -232,9 +232,24 @@ class ScheduleRepositoryTest {
     fun `invalid term settings rejected with settings error not CoursesOutOfRange`() = runBlocking {
         val r = repo()
         val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
-        // 周二起始
-        val err = r.setTerm(id, IsoDate.parse("2026-03-03"), TestTermEnd).assertErr()
-        assertTrue(err is ScheduleError.TermNotMonday)
+        // 结束早于开始（开学日任意星期几都合法，不再有"必须周一"的设置错误）
+        val err = r.setTerm(id, TestTermEnd, TestTermStart).assertErr()
+        assertTrue(err is ScheduleError.TermRangeInvalid)
+    }
+
+    @Test
+    fun `setTerm to a non-monday start succeeds and shifts week grid`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+
+        // 开学改到周三 03-04（结束日同步平移 2 天 = 06-21，仍 16 周）
+        r.setTerm(id, IsoDate.parse("2026-03-04"), IsoDate.parse("2026-06-21")).assertOk()
+
+        val s = r.schedules.value.single()
+        assertEquals(16, s.totalWeeks)
+        // 第 1 周 = 03-04 所在日历周：周一 03-02（开学前）起
+        assertEquals(IsoDate.parse("2026-03-02"), r.datesForWeek(id, 1).first())
+        assertEquals(IsoDate.parse("2026-03-09"), r.datesForWeek(id, 2).first())
     }
 
     @Test
@@ -388,11 +403,34 @@ class ScheduleRepositoryTest {
     @Test
     fun `invalid schedule rejected on create`() = runBlocking {
         val r = repo()
-        // 周三起始
-        val res = r.createSchedule("X", IsoDate.parse("2026-03-04"), TestTermEnd)
+        // 结束早于开始
+        val res = r.createSchedule("X", TestTermEnd, TestTermStart)
         assertTrue(res is ReadResult.Err)
-        assertTrue((res as ReadResult.Err).error is ScheduleError.TermNotMonday)
+        assertTrue((res as ReadResult.Err).error is ScheduleError.TermRangeInvalid)
         assertTrue(r.schedules.value.isEmpty())
+    }
+
+    @Test
+    fun `non-monday start accepted on create with calendar-week math`() = runBlocking {
+        val r = repo()
+        // 周六 03-07 开学 ~ 周五 06-19 结束：第 1 周 = 03-02~03-08（仅周日上课），
+        // 共 16 个日历周
+        val id = r.createSchedule("X", IsoDate.parse("2026-03-07"), TestTermEnd).okId()
+
+        val s = r.schedules.value.single()
+        assertEquals(16, s.totalWeeks)
+        assertEquals(IsoDate.parse("2026-03-02"), r.datesForWeek(id, 1).first())
+        assertEquals(IsoDate.parse("2026-03-06"), r.datesForWeek(id, 1).last())  // 5 天视图：周一~周五
+        assertEquals(IsoDate.parse("2026-06-15"), r.datesForWeek(id, 16).first())
+
+        // 学期外/第 1 周的当前周判定也按日历周：03-01（开学前一天，周日）在前一周 → Before；
+        // 03-05（开学前、但已在开学周）→ 第 1 周
+        clock.date = IsoDate.parse("2026-03-01")
+        assertEquals(TermPosition.BeforeTerm, r.termPosition(id))
+        clock.date = IsoDate.parse("2026-03-05")
+        assertEquals(TermPosition.InTerm(1), r.termPosition(id))
+        clock.date = IsoDate.parse("2026-06-19")
+        assertEquals(TermPosition.InTerm(16), r.termPosition(id))
     }
 
     // ---------- 按周查询 ----------
@@ -481,7 +519,12 @@ class ScheduleRepositoryTest {
         assertEquals(TermPosition.InTerm(16), r.termPosition(id))
         assertEquals(16, r.currentWeek(id))
 
-        clock.date = IsoDate.parse("2026-06-20") // 次日
+        // 结束周还没过完：同一日历周的周六/周日仍属第 16 周
+        clock.date = IsoDate.parse("2026-06-20") // 次日（周六）
+        assertEquals(TermPosition.InTerm(16), r.termPosition(id))
+        assertEquals(16, r.currentWeek(id))
+
+        clock.date = IsoDate.parse("2026-06-22") // 下周一，进入新的一周
         assertEquals(TermPosition.AfterTerm, r.termPosition(id))
         assertNull(r.currentWeek(id))
 

@@ -114,7 +114,10 @@ data class CourseEntry(
 data class Schedule(
     val id: String,
     val name: String,
-    /** 第一周周一 */
+    /**
+     * 学期开始日：可为任意星期几，第 1 周 = 它所在的日历周（周一~周日），
+     * 开学日之前的几天属于第 1 周但尚未开学。
+     */
     val termStart: IsoDate,
     /** 学期结束日：最后一周的最后一个教学日，**可落在周中**（如某学期只上到周三） */
     val termEnd: IsoDate,
@@ -126,10 +129,12 @@ data class Schedule(
     val showInactiveCourses: Boolean = true,
 ) {
     /**
-     * 学期总周数 = termEnd 落在第几个教学周。termEnd 可停在周中，
-     * 故按**天数**取整（第 0..6 天都是第 1 周），不再要求整周边界。
+     * 学期总周数 = termEnd 落在第几个日历周（周一~周日）：
+     * 两端各取所在周的周一，相隔几整周即几周。开学日是任意星期几时同样成立——
+     * 第 1 周是它所在的日历周（可能只含开学日之后几天）；termEnd 可停在周中，
+     * 末周同理只数到它所在的那一周为止。
      */
-    val totalWeeks: Int get() = ((termEnd - termStart).toInt() / 7) + 1
+    val totalWeeks: Int get() = ((termEnd.mondayOfWeek() - termStart.mondayOfWeek()).toInt() / 7) + 1
 
     /** 每天大课节数（= slots.size） */
     val slotCount: Int get() = slots.size

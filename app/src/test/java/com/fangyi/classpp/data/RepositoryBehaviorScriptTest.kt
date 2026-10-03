@@ -94,7 +94,10 @@ class RepositoryBehaviorScriptTest {
         assertEquals(TermPosition.BeforeTerm, repo.termPosition(idA))
         clock.date = IsoDate.parse("2026-06-19")
         assertEquals(TermPosition.InTerm(16), repo.termPosition(idA))
+        // 结束日所在日历周未过完：周六仍属第 16 周，下周一才算学期后
         clock.date = IsoDate.parse("2026-06-20")
+        assertEquals(TermPosition.InTerm(16), repo.termPosition(idA))
+        clock.date = IsoDate.parse("2026-06-22")
         assertEquals(TermPosition.AfterTerm, repo.termPosition(idA))
         clock.date = IsoDate.parse("2026-03-09") // 回到第 2 周供后续断言
 

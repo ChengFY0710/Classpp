@@ -4,16 +4,17 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeText
 
 /**
- * 课表纯函数校验（R1–R13）。无 I/O、不修改输入，返回**全部**错误而非 fail-fast，
+ * 课表纯函数校验（R2–R14）。无 I/O、不修改输入，返回**全部**错误而非 fail-fast，
  * 供未来 UI 一次展示。
  *
  * 规则一览：
- *  R1 termStart 必须周一            R2 termEnd 可落在任意一天（可半个教学周）
+ *  R2 termEnd 可落在任意一天（可半个教学周；termStart 同样可为任意星期几）
  *  R3 end≥start                     R4 daysPerWeek ∈ {5,7}
  *  R5 节数 ∈ 1..12                  R6 时间格式
  *  R7 时间有序不重叠                R8 课表名非空白
  *  R9-R12 课程字段/周数范围          R13 同一天 span 相交且周数相交 ⇒ 冲突
  *  R14 课程最后一次上课不得晚于 termEnd（按**日期**判定；termEnd 可停在周中）
+ * （原 R1「termStart 必须周一」已取消：开学日可为任意一天，周数一律按日历周对齐。）
  *
  * 另有两条"视图切换友好"约定：
  *  · termEnd 用**真实日期**判定课程落点，不再要求它是周五/周日；
@@ -41,13 +42,8 @@ object ScheduleValidator {
         // R8 课表名
         if (s.name.isBlank()) errors += ScheduleError.InvalidScheduleName
 
-        // R1 起始必须周一
-        if (s.termStart.isoDayOfWeek() != 1) {
-            errors += ScheduleError.TermNotMonday(s.termStart)
-        }
-
-        // R2/R3 结束日晚于开始日即可：**任意星期几都合法**（可落在教学周中间），
-        // 不再要求周五/周日，也不再要求整周边界——末周即便只上到周三也是合法学期
+        // R2/R3 起止任意星期几都合法（开学日不再要求周一，结束日可停在周中），
+        // 只要求结束日不早于开始日
         if (s.termEnd.epochDay < s.termStart.epochDay) {
             errors += ScheduleError.TermRangeInvalid(s.termStart, s.termEnd)
         }
@@ -127,7 +123,9 @@ object ScheduleValidator {
                 val maxWeek = course.weeks.maxWeek()
                 if (maxWeek != null && maxWeek > schedule.totalWeeks) {
                     // 顺带给出"按当前排课，这门课最后一次会上到哪天"，供 UI 直接说清原因
-                    val lastDate = schedule.termStart + (maxWeek - 1) * 7 + (course.dayOfWeek - 1)
+                    // （第 N 周的某天 = 第 1 周所在日历周的周一 + (N-1)*7 + 星期偏移）
+                    val lastDate = schedule.termStart.mondayOfWeek() +
+                        (maxWeek - 1) * 7 + (course.dayOfWeek - 1)
                     errors += ScheduleError.WeeksBeyondTerm(
                         courseId = course.id,
                         maxWeek = maxWeek,
@@ -139,7 +137,8 @@ object ScheduleValidator {
                 // 周四/周五的课即越界）。用真实日期判定，与"末周可只上一部分"完全自洽。
                 val lastWeek = course.weeks.maxWeek()
                 if (lastWeek != null && lastWeek in 1..schedule.totalWeeks) {
-                    val lastDay = schedule.termStart + (lastWeek - 1) * 7 + (course.dayOfWeek - 1)
+                    val lastDay = schedule.termStart.mondayOfWeek() +
+                        (lastWeek - 1) * 7 + (course.dayOfWeek - 1)
                     if (lastDay.epochDay > schedule.termEnd.epochDay) {
                         errors += ScheduleError.TermEndInvalid(
                             courseId = course.id,
