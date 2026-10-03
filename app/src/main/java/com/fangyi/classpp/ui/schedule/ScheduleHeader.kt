@@ -218,11 +218,13 @@ fun ScheduleHeader(
     // 列数只认资源里真有的星期名：7 天视图展示周一~周日，5 天视图只到周五
     val days = daysPerWeek.coerceIn(1, weekdayNames.size)
     val weekdays = weekdayNames.take(days)
-    // 学期未开始时日期标题让位给状态文案（星期高亮仍走 date → weekIndex）
+    // 学期未开始时日期标题让位给状态文案（星期高亮仍走 date → weekIndex）。
+    // 标题读的是**真实日期的真实星期**：周末在 5 天视图下没有对应列（weekIndex ≥ days），
+    // 也不能对截断后的 weekdays 取模——那会把周六/周日回绕成周一/周二
     val dateTitle = if (termNotStarted) {
         stringResource(R.string.term_not_started)
     } else {
-        stringResource(R.string.date_title_format, monthDay, weekdays[weekIndex % days])
+        stringResource(R.string.date_title_format, monthDay, weekdayNames[weekIndex])
     }
     // 无障碍文案：点整行是切换视图，读屏用户看不到"行可点"这回事，故显式说明
     val daysToggleDescription = stringResource(
