@@ -62,6 +62,8 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.Correct
+import com.fangyi.classpp.ui.theme.Error
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.WeekCellShape
 import dev.chrisbanes.haze.HazeProgressive
@@ -179,6 +181,11 @@ internal fun collapsedPillX(
  * Haze 背景模糊（叠在 surface 兜底色之上），顶部最强、向下渐弱；
  * 同时驱动周数胶囊从扁平灰底过渡到半透明白 + 投影。
  * [hazeState] 为 null（如 @Preview）时保持不透明背景。
+ *
+ * [termStartWeekdayIndex]/[termEndWeekdayIndex] 非空时星期行的对应列绿（Correct）/红（Error）：
+ * 查看开学/结课所在周时由调用方传入该日期的星期下标（周一起始，与 [weekIndex] 同规则），
+ * 与日期带的学期起止日标记上下对齐；起止日恰为「今天」时调用方传 null，
+ * 让位给「今天/查看日」的蓝字高亮。
  */
 @Composable
 fun ScheduleHeader(
@@ -196,6 +203,8 @@ fun ScheduleHeader(
     daysPerWeek: Int = 5,
     onDaysPerWeekToggle: (() -> Unit)? = null,
     onMenuExpandedChange: (Boolean) -> Unit = {},
+    termStartWeekdayIndex: Int? = null,
+    termEndWeekdayIndex: Int? = null,
 ) {
     val fraction = collapseFraction.coerceIn(0f, 1f)
     val progress = blurProgress.coerceIn(0f, 1f)
@@ -326,10 +335,14 @@ fun ScheduleHeader(
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
-                        color = if (i == weekIndex) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
+                        // 学期起止日标记优先于「今天/查看日」高亮：与下方日期带的同日标记
+                        // 同列同色（开始日绿、结束日红）；为今天时调用方已传 null，蓝字保留。
+                        // 下标越界（5 天视图里开学/结课在周六日）时列不存在，自然不标
+                        color = when {
+                            i == termStartWeekdayIndex -> Correct
+                            i == termEndWeekdayIndex -> Error
+                            i == weekIndex -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.onSurface
                         },
                     )
                 }

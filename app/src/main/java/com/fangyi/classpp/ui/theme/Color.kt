@@ -34,3 +34,5 @@ val ErrorContainer = Color(0xFFF9DEDC)
 val OnErrorContainer = Color(0xFF410E0B)
 
 val Scrim = Color(0xFF000000)
+
+val Correct = Color(0xFF22B14C)

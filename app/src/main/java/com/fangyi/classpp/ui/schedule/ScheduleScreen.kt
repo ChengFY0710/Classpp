@@ -306,6 +306,9 @@ fun ScheduleScreen(
                         },
                         // 高亮列是今天 → 日期带给它垫胶囊底；浏览其它周只变色不加底
                         highlightIsToday = pageWeek == todayWeek,
+                        // 学期起止日标记：日期带里出现时绿/红字（恰为今天时带内自动让位给蓝字胶囊底）
+                        termStartDate = schedule.termStart.toUiDate(),
+                        termEndDate = schedule.termEnd.toUiDate(),
                     )
                 }
             }
@@ -371,12 +374,34 @@ fun ScheduleScreen(
                                 },
                                 // 高亮列是今天 → 日期带给它垫胶囊底；浏览其它周只变色不加底
                                 highlightIsToday = pageWeek == todayWeek,
+                                // 编辑态日期带隐藏（showDates=false），标记随数据一起带上保持同构
+                                termStartDate = schedule.termStart.toUiDate(),
+                                termEndDate = schedule.termEnd.toUiDate(),
                             )
                         }
                     }
                 } else {
                     contentForPage
                 }
+
+            // 星期行学期标记：查看第 1 周时开学日的星期列绿（Correct）、最后一周时结束日的
+            // 星期列红（Error），与下方日期带的同日标记上下对齐（星期行在日期带正上方）。
+            // 开始日恒在第 1 周、结束日恒在第 totalWeeks 周（totalWeeks 按所在日历周的周一
+            // 相减计）；起止日恰为今天时传 null——星期列让位给「今天」的蓝字高亮。
+            // 下标与顶栏 weekIndex 同为周一起始（isoDayOfWeek 1 = 周一）
+            val termStartWeekdayIndex: Int? =
+                if (week == 1 && schedule.termStart != todayIso) {
+                    schedule.termStart.isoDayOfWeek() - 1
+                } else {
+                    null
+                }
+            val termEndWeekdayIndex: Int? =
+                if (week == schedule.totalWeeks && schedule.termEnd != todayIso) {
+                    schedule.termEnd.isoDayOfWeek() - 1
+                } else {
+                    null
+                }
+
             val onAddClick: (Int, TimeSlot) -> Unit = remember {
                 { day, slot -> addTarget = listOf(day, slot.id) }
             }
@@ -697,6 +722,8 @@ fun ScheduleScreen(
                             onDaysPerWeekToggle = onToggleDaysPerWeek,
                             blurProgress = blurProgress,
                             hazeState = hazeState,
+                            termStartWeekdayIndex = termStartWeekdayIndex,
+                            termEndWeekdayIndex = termEndWeekdayIndex,
                             modifier = Modifier.onGloballyPositioned { coords ->
                                 headerHeight = with(density) { coords.size.height.toFloat().toDp() }
                             },

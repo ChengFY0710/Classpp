@@ -54,6 +54,12 @@ data class WeekPageContent(
      * primaryContainer 胶囊底；浏览其它周高亮该周周一，只变色不加底。
      */
     val highlightIsToday: Boolean = false,
+    /**
+     * 学期开始/结束日：日期带里出现时分别给绿（Correct）/红（Error）字标记；
+     * 恰为「今天」时让位给蓝字胶囊底（见 DateBand）。null = 无学期上下文（@Preview）。
+     */
+    val termStartDate: Date? = null,
+    val termEndDate: Date? = null,
 )
 
 /** 学期第一个教学周一（2026-03-02 周一 = 第 1 周周一） */

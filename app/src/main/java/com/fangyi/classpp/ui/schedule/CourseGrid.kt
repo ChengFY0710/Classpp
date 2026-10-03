@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.Correct
+import com.fangyi.classpp.ui.theme.Error
 import com.fangyi.classpp.ui.theme.PillShape
 import java.util.Date
 import kotlin.math.roundToInt
@@ -243,6 +245,8 @@ private fun WeekPage(
                     days = days,
                     highlightDate = content.highlightDate,
                     highlightIsToday = content.highlightIsToday,
+                    termStartDate = content.termStartDate,
+                    termEndDate = content.termEndDate,
                     listState = listState,
                     seamVisible = seamVisible,
                 )
@@ -333,6 +337,9 @@ private fun WeekPage(
  * [highlightIsToday] = 高亮列是今天（查看今周）：该日号垫主题 primaryContainer 胶囊底；
  * 浏览其它周高亮该周周一，只变色不加底。
  *
+ * 学期起止日标记（[termStartDate]/[termEndDate] 落在带内时）：绿（Correct）/红（Error）字，
+ * 标出学期的头尾；起止日恰为「今天」时不标记——今天样式（蓝字 + 胶囊底）优先。
+ *
  * 翻页途中页右缘的接缝竖线由本带自己补（页级 drawBehind 补的那段会被带的底色盖住），
  * 画在自身 drawBehind 内 ⇒ 与带内其它竖线一同渐隐，不会在滚过顶栏后留一截浮线；
  * 开关同样取自派生后的布尔 state，避免拖动中逐帧重录本层指令。
@@ -343,6 +350,8 @@ private fun DateBand(
     days: Int,
     highlightDate: Date,
     highlightIsToday: Boolean,
+    termStartDate: Date?,
+    termEndDate: Date?,
     listState: LazyListState,
     seamVisible: State<Boolean>,
 ) {
@@ -397,6 +406,10 @@ private fun DateBand(
     ) {
         weekDates.forEach { date ->
             val highlighted = date.isSameDay(highlightDate)
+            // 今天样式 = 高亮列是今天（垫胶囊底的那种）：学期起止日恰为今天时绿/红让位
+            val isTodayStyle = highlighted && highlightIsToday
+            val isTermStart = !isTodayStyle && termStartDate != null && date.isSameDay(termStartDate)
+            val isTermEnd = !isTodayStyle && termEndDate != null && date.isSameDay(termEndDate)
             // 当今日期（仅查看今周时高亮列是今天）：日号垫主题 primaryContainer 胶囊底——
             // 背景写在 padding 之前（包住文字与内边距），文字保持原字号原色，只多一层底；
             // 浏览其它周（高亮该周周一）只变色不加底。文字由等宽 Box 居中，非今天格视觉不变
@@ -408,7 +421,7 @@ private fun DateBand(
             ) {
                 Text(
                     text = date.dayOfMonth().toString(),
-                    modifier = if (highlighted && highlightIsToday) {
+                    modifier = if (isTodayStyle) {
                         Modifier
                             .background(MaterialTheme.colorScheme.primaryContainer, PillShape)
                             .padding(horizontal = 14.dp, vertical = 3.dp)
@@ -416,11 +429,18 @@ private fun DateBand(
                         Modifier
                     },
                     fontSize = 18.sp,
-                    fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Medium,
-                    color = if (highlighted) {
-                        MaterialTheme.colorScheme.primary
+                    fontWeight = if (highlighted || isTermStart || isTermEnd) {
+                        FontWeight.SemiBold
                     } else {
-                        MaterialTheme.colorScheme.onSurface
+                        FontWeight.Medium
+                    },
+                    // 学期起止日标记优先于普通高亮（今天样式已在上游让位）：
+                    // 开始日绿、结束日红；一日起止的极端学期按开始日（绿）计
+                    color = when {
+                        isTermStart -> Correct
+                        isTermEnd -> Error
+                        highlighted -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.onSurface
                     },
                 )
             }
