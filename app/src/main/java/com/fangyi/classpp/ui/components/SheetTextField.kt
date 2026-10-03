@@ -1,5 +1,8 @@
 package com.fangyi.classpp.ui.components
 
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -56,6 +59,11 @@ val SheetFieldHeight = 60.dp
  * - 输入中：2dp 蓝色描边 + 蓝色光标；
  * - 报错（如课程名为空）：2dp 红色描边 + 红色光标，压过聚焦态。
  *
+ * 描边的宽度与不透明度同走一条 0→1 进度动画（单动画源，两条曲线严格同步）：
+ * 聚焦从 0 生长并淡入到 2dp 全显，失焦从当前值萎缩并淡出（报错同走该动画，仅颜色压过聚焦蓝）。
+ * 颜色恒取目标色、浓度由进度控制——若中途切透明，收回途中描边会先隐身，萎缩过程看不见；
+ * 进度归 0 后干脆不挂 border（0 宽描边会画成 1px 发丝线）。
+ *
  * 除键盘动作外还做一件必要的事：**点了就重新 show 一次键盘**——
  * Compose 输入框已聚焦时再点不会拉起键盘，键盘一旦被收起就唤不回来（上机踩过）。
  */
@@ -79,11 +87,18 @@ fun SheetTextField(
             if (interaction is PressInteraction.Release) keyboard?.show()
         }
     }
-    val borderColor = when {
-        isError -> MaterialTheme.colorScheme.error
-        focused -> MaterialTheme.colorScheme.primary
-        else -> Color.Transparent
+    val strokeColor = if (isError) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.primary
     }
+    // 描边进度：宽度与透明度共用同一条 0→1 动画，聚焦"生长+淡入"、失焦"萎缩+淡出"严格同步
+    val strokeProgress by animateFloatAsState(
+        targetValue = if (focused || isError) 1f else 0f,
+        animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+        label = "sheetFieldStroke",
+    )
+    val strokeWidth = 2.dp * strokeProgress
 
     Row(
         modifier = modifier
@@ -91,7 +106,18 @@ fun SheetTextField(
             .heightIn(min = SheetFieldHeight)
             .clip(SheetCardShape)
             .background(MaterialTheme.colorScheme.surface)
-            .border(width = 2.dp, color = borderColor, shape = SheetCardShape)
+            .then(
+                // 进度归 0 后干脆不挂 border：0 宽描边会被 Skia 画成 1px 发丝线而非不可见（上机踩过）
+                if (strokeWidth > 0.dp) {
+                    Modifier.border(
+                        width = strokeWidth,
+                        color = strokeColor.copy(alpha = strokeColor.alpha * strokeProgress),
+                        shape = SheetCardShape,
+                    )
+                } else {
+                    Modifier
+                },
+            )
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
