@@ -76,6 +76,7 @@ import com.fangyi.classpp.ui.schedule.endForTotalWeeks
 import com.fangyi.classpp.ui.schedule.snapToMonday
 import com.fangyi.classpp.ui.schedule.toPickerMillis
 import com.fangyi.classpp.ui.schedule.toIsoDate
+import com.fangyi.classpp.ui.components.RowChoiceCard
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.theme.ButtonShape
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -416,17 +417,16 @@ private fun SettingsContent(
         )
 
         SettingsSection(title = stringResource(R.string.section_days)) {
-            // 分段控件四边同为 6dp：蓝块左内缩 = 上内缩（控件卡单独覆盖，不走基础留白）
-            SettingsCard(contentPadding = PaddingValues(6.dp)) {
-                SegmentedChoice(
-                    options = listOf(
-                        stringResource(R.string.days_5),
-                        stringResource(R.string.days_7),
-                    ),
-                    selectedIndex = if (schedule.daysPerWeek == 7) 1 else 0,
-                    onSelect = { index -> onDays(if (index == 1) 7 else 5) },
-                )
-            }
+            // RowChoiceCard 自带白卡与滑动蓝底动效，无需再套 SettingsCard；
+            // selectedIndex 由状态推导恒非空 → 必有选中、无“再点取消”交互（点已选项 = 写回同值）
+            RowChoiceCard(
+                options = listOf(
+                    stringResource(R.string.days_5),
+                    stringResource(R.string.days_7),
+                ),
+                selectedIndex = if (schedule.daysPerWeek == 7) 1 else 0,
+                onSelect = { index -> onDays(if (index == 1) 7 else 5) },
+            )
         }
 
         SettingsSection(title = stringResource(R.string.section_slots)) {

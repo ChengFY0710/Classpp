@@ -53,7 +53,6 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MAX
 import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MIN
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.SegmentShape
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazeProgressive
@@ -62,7 +61,7 @@ import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 
 /**
- * 设置页视觉模板：分组标题 + 白色圆角卡 + 设置行 + 时间胶囊 + 分段选择。
+ * 设置页视觉模板：分组标题 + 白色圆角卡 + 设置行 + 时间胶囊。
  * 后续设置详情页直接复用这些组件，保持同一套配色与间距。
  *
  * 配色约定：页面底 `colorScheme.background`、卡底 `Surface`、强调 `colorScheme.primary`、
@@ -279,54 +278,6 @@ internal fun TimeChip(
         style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
         color = MaterialTheme.colorScheme.primary,
     )
-}
-
-/**
- * 分段单选：等分选项，选中项浅蓝圆角块 + 勾选 + primary 字。
- * 自绘而非 M3 SegmentedButton：设计稿是简单圆角块而非缺角分段外形，
- * 且可避免各版本 itemColors 参数名差异。
- */
-@Composable
-internal fun SegmentedChoice(
-    options: List<String>,
-    selectedIndex: Int,
-    onSelect: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(modifier = modifier.fillMaxWidth()) {
-        options.forEachIndexed { index, label ->
-            val selected = index == selectedIndex
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(SegmentShape)
-                    .background(
-                        if (selected) MaterialTheme.classppColors.primaryContainerNontrans
-                        else Color.Transparent,
-                    )
-                    .clickable { onSelect(index) }
-                    .padding(vertical = 12.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (selected) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_checkmark),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                }
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    fontWeight = if(selected) FontWeight.SemiBold else FontWeight.Medium,
-                )
-            }
-        }
-    }
 }
 
 /** 日期 → `2026-9-7`（无前导零），走 [R.string.date_hyphen_format] */
