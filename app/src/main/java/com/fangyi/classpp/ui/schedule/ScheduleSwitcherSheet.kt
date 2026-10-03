@@ -229,7 +229,7 @@ internal fun ScheduleSwitcherSheet(
     }
 }
 
-/** 一张课表卡：名称 + 学期起止 + 删除；当前课表名称主色高亮、尾部带对勾（点击切换） */
+/** 一张课表卡：名称 + 学期起止 + 删除；当前课表名称主色高亮、删除键左侧带对勾（点击切换） */
 @Composable
 private fun ScheduleCard(
     schedule: Schedule,
@@ -264,19 +264,19 @@ private fun ScheduleCard(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
-            Icon(
-                painter = painterResource(R.drawable.ic_delete),
-                contentDescription = stringResource(R.string.edit_delete),
-                tint = MaterialTheme.colorScheme.error,
-            )
-        }
         if (isActive) {
             Icon(
                 painter = painterResource(R.drawable.ic_checkmark),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(start = 4.dp),
+                modifier = Modifier.padding(end = 12.dp),
+            )
+        }
+        IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
+            Icon(
+                painter = painterResource(R.drawable.ic_delete),
+                contentDescription = stringResource(R.string.edit_delete),
+                tint = MaterialTheme.colorScheme.error,
             )
         }
     }
