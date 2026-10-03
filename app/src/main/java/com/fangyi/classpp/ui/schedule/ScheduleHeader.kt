@@ -525,7 +525,8 @@ private fun WeekPill(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = stringResource(R.string.week_format, selectedWeek),
+                // 学期前有多页「第 0 周」（原始周号 ≤ 0：今周~开学前一周），胶囊一律显示「第 0 周」
+                text = stringResource(R.string.week_format, selectedWeek.coerceAtLeast(0)),
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,

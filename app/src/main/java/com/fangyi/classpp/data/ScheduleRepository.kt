@@ -295,13 +295,13 @@ class ScheduleRepository internal constructor(
 
     /**
      * 第 [week] 周全部课程及活跃标记；课表不存在或周越界返回空（宽松读，不抛错）。
-     * 第 0 周（开学前的当今周）一律视为不上课：全部课程 `active = false`——
-     * UI 据此整页置灰，或按课表开关整页隐藏。
+     * 开学前的周（原始周号 ≤ 0，见 [calendarWeek]）一律视为不上课：全部课程
+     * `active = false`——UI 据此整页置灰，或按课表开关整页隐藏。
      */
     fun coursesForWeek(scheduleId: String, week: Int): List<CourseOccurrence> {
         val s = scheduleOrNull(scheduleId) ?: return emptyList()
-        if (week == 0) return s.courses.map { CourseOccurrence(it, active = false) }
-        if (week !in 1..s.totalWeeks) return emptyList()
+        if (week < 1) return s.courses.map { CourseOccurrence(it, active = false) }
+        if (week > s.totalWeeks) return emptyList()
         return s.courses.map { CourseOccurrence(it, active = it.weeks.contains(week)) }
     }
 
@@ -322,22 +322,31 @@ class ScheduleRepository internal constructor(
     }
 
     /**
-     * 第 [week] 周各上课日日期（5 天模式 5 个、7 天模式 7 个）；越界返回空。
+     * 第 [week] 周各上课日日期（5 天模式 5 个、7 天模式 7 个）；周越界返回空。
      * 周按**日历周**对齐：第 1 周 = termStart 所在的周一~周日周（开学日可为任意星期几，
      * 开学前的那几天也落在第 1 周内），第 N 周周一 = 第 1 周周一 + (N-1)*7。
-     * 第 0 周 = 开学前的当今周：日期取「今天」所在的日历周，与学期起止无关。
+     * 同一公式向负数延伸：第 0 周 = 开学前一个日历周，第 -1 周再往前一周……
+     * （学期前的周页即由此取日期，与「今天」无关）。
      */
     fun datesForWeek(scheduleId: String, week: Int): List<IsoDate> {
         val s = scheduleOrNull(scheduleId) ?: return emptyList()
-        val base = when (week) {
-            0 -> clock.today().mondayOfWeek()
-            in 1..s.totalWeeks -> s.termStart.mondayOfWeek() + (week - 1) * 7
-            else -> return emptyList()
-        }
+        if (week > s.totalWeeks) return emptyList()
+        val base = s.termStart.mondayOfWeek() + (week - 1) * 7
         return (0 until s.daysPerWeek).map { base + it }
     }
 
     // ---------- 当前周 ----------
+
+    /**
+     * [today] 按日历周对齐的**原始周号**：第 1 周 = termStart 所在日历周（周一~周日）。
+     * 开学前为 0、-1、-2…（开学前的每个日历周在 UI 上都是一页「第 0 周」），
+     * 学期中 1..totalWeeks，学期后 > totalWeeks；课表不存在返回 null。
+     * 与 [termPosition] 的周号同源，只是不钳制、不区分学期前后。
+     */
+    fun calendarWeek(scheduleId: String, today: IsoDate = clock.today()): Int? {
+        val s = scheduleOrNull(scheduleId) ?: return null
+        return ((today.mondayOfWeek() - s.termStart.mondayOfWeek()) / 7).toInt() + 1
+    }
 
     /**
      * [today] 相对学期位置；课表不存在返回 null。不钳制、不抛错。

@@ -501,22 +501,41 @@ class ScheduleRepositoryTest {
     }
 
     @Test
-    fun `week zero follows the clock and greys out courses`() = runBlocking {
+    fun `pre term weeks are greyed and date the term aligned calendar`() = runBlocking {
         val r = repo()
-        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId() // 03-02 周一开学
         r.upsertCourse(id, testCourse(id = "c")).assertOk()
 
-        // 开学前两周的周三（02-11）：第 0 周 = 今天所在日历周，与学期起止无关
-        clock.date = IsoDate.parse("2026-02-11")
-        val dates = r.datesForWeek(id, 0)
-        assertEquals(IsoDate.parse("2026-02-09"), dates.first())
-        assertEquals(IsoDate.parse("2026-02-13"), dates.last())
+        // 第 0 周 = 开学前一个日历周（02-23~02-27），第 -1 周再往前一周：
+        // 日期带按 termStart 对齐的日历周取，与「今天」无关
+        assertEquals(IsoDate.parse("2026-02-23"), r.datesForWeek(id, 0).first())
+        assertEquals(IsoDate.parse("2026-02-27"), r.datesForWeek(id, 0).last())
+        assertEquals(IsoDate.parse("2026-02-16"), r.datesForWeek(id, -1).first())
 
-        // 课程一律不活跃：开关开 = 全灰显示，关 = 隐藏
+        // 开学前的周课程一律不活跃：开关开 = 全灰显示，关 = 隐藏
         assertTrue(r.coursesForWeek(id, 0).all { !it.active })
+        assertTrue(r.coursesForWeek(id, -2).all { !it.active })
         assertEquals(1, r.visibleCoursesForWeek(id, 0).size)
         r.setShowInactiveCourses(id, false).assertOk()
         assertTrue(r.visibleCoursesForWeek(id, 0).isEmpty())
+    }
+
+    @Test
+    fun `calendarWeek aligns to calendar weeks including pre term`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId() // 03-02 ~ 06-19, 16 周
+
+        clock.date = IsoDate.parse("2026-02-11") // 开学前两周的周三 → 第 -2 周
+        assertEquals(-2, r.calendarWeek(id))
+        clock.date = IsoDate.parse("2026-02-25") // 开学前一周的周三 → 第 0 周
+        assertEquals(0, r.calendarWeek(id))
+        clock.date = TestTermStart
+        assertEquals(1, r.calendarWeek(id))
+        clock.date = IsoDate.parse("2026-06-20") // 末周周六仍属第 16 周
+        assertEquals(16, r.calendarWeek(id))
+        clock.date = IsoDate.parse("2026-06-22") // 下周一 → 学期后
+        assertEquals(17, r.calendarWeek(id))
+        assertNull(r.calendarWeek("missing"))
     }
 
     // ---------- 当前周 ----------

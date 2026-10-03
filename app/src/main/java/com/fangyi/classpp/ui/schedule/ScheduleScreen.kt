@@ -76,7 +76,6 @@ import com.fangyi.classpp.data.ScheduleError
 import com.fangyi.classpp.data.ScheduleJson
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.ScheduleValidator
-import com.fangyi.classpp.data.TermPosition
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.cellCourses
@@ -90,16 +89,16 @@ import java.util.Date
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 
-/** [selectedWeek] 的「未初始化」哨兵：0 是合法周号（开学前的当今周），故取 -1 */
-private const val WEEK_UNSET = -1
+/** [selectedWeek] 的「未初始化」哨兵：0 与负数都是合法周号（开学前的日历周），故取最小值 */
+private const val WEEK_UNSET = Int.MIN_VALUE
 
 /**
- * 页索引 ↔ 周号换算：第 0 周（开学前的当今周）作为最左页存在时，页 i = 第 i 周
- * （页 0 = 第 0 周，且天然不能左滑）；第 0 周页不存在（学期中/后）时，页 i = 第 i+1 周。
+ * 页索引 ↔ 周号换算：最左页（页 0）= [firstPageWeek]——开学前是今周所在的日历周
+ * （原始周号 ≤ 0，天然不可左越），学期中/后是第 1 周——向右每周一页直到学期最后一周。
  */
-private fun pageOfWeek(week: Int, beforeTerm: Boolean): Int = if (beforeTerm) week else week - 1
+private fun pageOfWeek(week: Int, firstPageWeek: Int): Int = week - firstPageWeek
 
-private fun weekOfPage(page: Int, beforeTerm: Boolean): Int = if (beforeTerm) page else page + 1
+private fun weekOfPage(page: Int, firstPageWeek: Int): Int = page + firstPageWeek
 
 /**
  * 课表页：可折叠头部（顶栏行/日期行/星期行）+ 课表网格。
@@ -148,26 +147,21 @@ fun ScheduleScreen(
         if (schedule == null && editing) onEditingChange(false)
     }
 
-    // 学期位置（随课表换新重算）：今周 = 学期前第 0 周（当今周）/ 学期中第 N 周 /
-    // 学期后无今周（视图默认停在末周）
-    val position = if (schedule != null) {
-        remember(schedule) { repository.termPosition(schedule.id, todayIso) }
-    } else {
-        null
+    // 今周原始周号（按日历周对齐，第 1 周 = 开学所在日历周）：开学前 ≤ 0——开学前的每个
+    // 日历周都是一页「第 0 周」，最左页始终是当今周；学期后 > 总周数 → 无今周（默认停末周）
+    val todayWeek: Int? = schedule?.let { s ->
+        (((todayIso.mondayOfWeek() - s.termStart.mondayOfWeek()) / 7).toInt() + 1)
+            .takeIf { it <= s.totalWeeks }
     }
-    val todayWeek: Int? = when (position) {
-        is TermPosition.InTerm -> position.week
-        TermPosition.BeforeTerm -> 0
-        else -> null
-    }
-    val beforeTerm = todayWeek == 0
+    // 最左页的周号：开学前 = 今周（第 0 周区段的第一页），学期中/后 = 第 1 周
+    val firstPageWeek: Int = if (todayWeek != null && todayWeek < 1) todayWeek else 1
 
     // 选周：WEEK_UNSET=未初始化 → 落到今周（学期后取末周）；学期起止被设置页修改后
-    // 自动钳制到新范围（开学前允许第 0 周）
+    // 自动钳制到新范围（下界 = 最左页的周号）
     val week = when {
         schedule == null -> 1
         selectedWeek == WEEK_UNSET -> todayWeek ?: schedule.totalWeeks
-        else -> selectedWeek.coerceIn(if (beforeTerm) 0 else 1, schedule.totalWeeks)
+        else -> selectedWeek.coerceIn(firstPageWeek, schedule.totalWeeks)
     }
     LaunchedEffect(week) {
         if (selectedWeek != week) selectedWeek = week
@@ -234,13 +228,13 @@ fun ScheduleScreen(
             // 初始页即目标周：Pager 只在有课表时创建，避免首帧从第 1 周跳变到当前周。
             // pageCount 刻意读 State 而非局部值：该闭包在创建时被 Pager 捕获，
             // 读局部值会让学期起止修改后的周数变化（如 20 → 25 周）不再生效
-            val pagerState = rememberPagerState(initialPage = pageOfWeek(week, beforeTerm)) {
-                // 闭包创建时捕获：读 State + 现算学期位置，总周数与第 0 周页的增减才跟得上
-                // 学期起止修改与开学/放假的状态翻转（第 0 周页仅开学前存在，位于最左不可左越）
+            val pagerState = rememberPagerState(initialPage = pageOfWeek(week, firstPageWeek)) {
+                // 闭包创建时捕获：读 State + 现算最左页，页数才跟得上学期起止修改与开学翻转
+                // （开学前 = 今周~第 1 周之间的每个日历周 + 第 1..N 周，最左页不可左越）
                 scheduleState.value?.let { s ->
-                    s.totalWeeks + if (
-                        repository.termPosition(s.id, todayIso) is TermPosition.BeforeTerm
-                    ) 1 else 0
+                    val cw = repository.calendarWeek(s.id, todayIso)
+                    val first = if (cw != null && cw < 1) cw else 1
+                    s.totalWeeks - first + 1
                 } ?: 1
             }
 
@@ -249,7 +243,7 @@ fun ScheduleScreen(
             // 入参是**页索引**：页 → 周的换算在此处做（CourseGrid 不感知周号）
             val contentForPage: (Int) -> WeekPageContent = remember(schedule, todayWeek, today) {
                 { page ->
-                    val pageWeek = weekOfPage(page, beforeTerm)
+                    val pageWeek = weekOfPage(page, firstPageWeek)
                     val dates = repository.datesForWeek(schedule.id, pageWeek)
                     WeekPageContent(
                         week = pageWeek,
@@ -315,7 +309,7 @@ fun ScheduleScreen(
                 if (editSession != null) {
                     remember(editSession, schedule, todayWeek, today) {
                         { page ->
-                            val pageWeek = weekOfPage(page, beforeTerm)
+                            val pageWeek = weekOfPage(page, firstPageWeek)
                             val dates = repository.datesForWeek(schedule.id, pageWeek)
                             WeekPageContent(
                                 week = pageWeek,
@@ -374,10 +368,10 @@ fun ScheduleScreen(
 
             // 手势 → 周次：currentPage 在拖动过半时即翻转，顶栏周数胶囊与日期随之切换；
             // 写回同值时 State 自身忽略，不产生额外重组。
-            // 页 → 周换算依赖 beforeTerm（第 0 周页存在与否），把它挂进 key 防闭包捕获过期
-            LaunchedEffect(pagerState, beforeTerm) {
+            // 页 → 周换算依赖最左页（随开学状态/学期日期变化），把它挂进 key 防闭包捕获过期
+            LaunchedEffect(pagerState, firstPageWeek) {
                 snapshotFlow { pagerState.currentPage }.collect { page ->
-                    selectedWeek = weekOfPage(page, beforeTerm)
+                    selectedWeek = weekOfPage(page, firstPageWeek)
                 }
             }
 
@@ -386,8 +380,8 @@ fun ScheduleScreen(
             // 手势方向滑入一页宽。滑入动画挂在 scope 上而非本效果里：week 途中再变时本效果
             // 会重启，滑入不能被连带取消、停在半程偏移上；snapTo 同时会打断上一次未完成的
             // 滑入，连续跳转天然收敛到最后一次
-            LaunchedEffect(week, beforeTerm) {
-                val target = pageOfWeek(week, beforeTerm)
+            LaunchedEffect(week, firstPageWeek) {
+                val target = pageOfWeek(week, firstPageWeek)
                 val current = pagerState.currentPage
                 if (current != target) {
                     if (abs(current - target) == 1) {
