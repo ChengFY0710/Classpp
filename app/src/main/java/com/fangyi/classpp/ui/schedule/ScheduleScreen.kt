@@ -90,6 +90,17 @@ import java.util.Date
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 
+/** [selectedWeek] 的「未初始化」哨兵：0 是合法周号（开学前的当今周），故取 -1 */
+private const val WEEK_UNSET = -1
+
+/**
+ * 页索引 ↔ 周号换算：第 0 周（开学前的当今周）作为最左页存在时，页 i = 第 i 周
+ * （页 0 = 第 0 周，且天然不能左滑）；第 0 周页不存在（学期中/后）时，页 i = 第 i+1 周。
+ */
+private fun pageOfWeek(week: Int, beforeTerm: Boolean): Int = if (beforeTerm) week else week - 1
+
+private fun weekOfPage(page: Int, beforeTerm: Boolean): Int = if (beforeTerm) page else page + 1
+
 /**
  * 课表页：可折叠头部（顶栏行/日期行/星期行）+ 课表网格。
  * 折叠状态由 [CollapseState] 的 NestedScrollConnection 驱动，跟手折叠/展开。
@@ -123,8 +134,9 @@ fun ScheduleScreen(
         return
     }
 
-    var selectedWeek by rememberSaveable { mutableIntStateOf(0) }
+    var selectedWeek by rememberSaveable { mutableIntStateOf(WEEK_UNSET) }
     val today = remember { Date() }
+    val todayIso = remember(today) { IsoDate.today(today.time) }
 
     // State 对象本身稳定（remember），供 Pager 的 pageCount 闭包长期读取；schedule 为当前值
     val scheduleState = repository.activeSchedule.collectAsState()
@@ -136,44 +148,40 @@ fun ScheduleScreen(
         if (schedule == null && editing) onEditingChange(false)
     }
 
-    // 选周：0=未初始化 → 学期中取当前周、学期后取末周、学期前取第 1 周；
-    // 学期起止被设置页修改后自动钳制到新范围
+    // 学期位置（随课表换新重算）：今周 = 学期前第 0 周（当今周）/ 学期中第 N 周 /
+    // 学期后无今周（视图默认停在末周）
+    val position = if (schedule != null) {
+        remember(schedule) { repository.termPosition(schedule.id, todayIso) }
+    } else {
+        null
+    }
+    val todayWeek: Int? = when (position) {
+        is TermPosition.InTerm -> position.week
+        TermPosition.BeforeTerm -> 0
+        else -> null
+    }
+    val beforeTerm = todayWeek == 0
+
+    // 选周：WEEK_UNSET=未初始化 → 落到今周（学期后取末周）；学期起止被设置页修改后
+    // 自动钳制到新范围（开学前允许第 0 周）
     val week = when {
         schedule == null -> 1
-        selectedWeek == 0 -> when (val position = repository.termPosition(schedule.id)) {
-            is TermPosition.InTerm -> position.week
-            TermPosition.AfterTerm -> schedule.totalWeeks
-            else -> 1
-        }
-        else -> selectedWeek.coerceIn(1, schedule.totalWeeks)
+        selectedWeek == WEEK_UNSET -> todayWeek ?: schedule.totalWeeks
+        else -> selectedWeek.coerceIn(if (beforeTerm) 0 else 1, schedule.totalWeeks)
     }
     LaunchedEffect(week) {
         if (selectedWeek != week) selectedWeek = week
     }
 
-    // 本周（仅学期中有）：供周数弹窗「本周」方块浅蓝高亮；学期起止变更随 schedule 换新而重算
-    val currentWeek: Int? = if (schedule != null) {
-        remember(schedule) {
-            (repository.termPosition(schedule.id) as? TermPosition.InTerm)?.week
-        }
-    } else {
-        null
-    }
-
-    // 顶栏日期：查看本周显示今天，查看其它周（学期外一律算「其它周」）显示该周周一；
+    // 顶栏日期：查看今周（含开学前的第 0 周）显示今天，其它周显示该周周一；
     // 头部日期标题与星期高亮均由 date 驱动，随之联动（格式仍为 #月#日 周X）
-    val headerDate = if (schedule != null && week != currentWeek) {
+    val headerDate = if (schedule != null && week != todayWeek) {
         remember(schedule, week) {
             repository.datesForWeek(schedule.id, week).first().toUiDate()
         }
     } else {
         today
     }
-
-    // 今日早于开学日（按日历日比较，开学日当天起恢复日期标题）→ 顶栏日期标题
-    // 位置显示「学期还未开始」；星期高亮仍由 headerDate 驱动，联动不变
-    val termNotStarted = schedule != null &&
-        IsoDate.today(today.time).epochDay < schedule.termStart.epochDay
 
     // 节次：结构性数据，随 schedule 换新而变；实例只建一次，避免翻页期三页无谓重组
     val timeSlots = if (schedule != null) {
@@ -226,26 +234,35 @@ fun ScheduleScreen(
             // 初始页即目标周：Pager 只在有课表时创建，避免首帧从第 1 周跳变到当前周。
             // pageCount 刻意读 State 而非局部值：该闭包在创建时被 Pager 捕获，
             // 读局部值会让学期起止修改后的周数变化（如 20 → 25 周）不再生效
-            val pagerState = rememberPagerState(initialPage = week - 1) {
-                scheduleState.value?.totalWeeks ?: 1
+            val pagerState = rememberPagerState(initialPage = pageOfWeek(week, beforeTerm)) {
+                // 闭包创建时捕获：读 State + 现算学期位置，总周数与第 0 周页的增减才跟得上
+                // 学期起止修改与开学/放假的状态翻转（第 0 周页仅开学前存在，位于最左不可左越）
+                scheduleState.value?.let { s ->
+                    s.totalWeeks + if (
+                        repository.termPosition(s.id, todayIso) is TermPosition.BeforeTerm
+                    ) 1 else 0
+                } ?: 1
             }
 
             // 每周页内容（纯函数、无 I/O）：key=schedule 覆盖置灰开关/时段/天数/学期等全部变更源——
-            // 任意 mutator 成功都会发布新的 Schedule 实例，记忆随之失效、同帧刷新
-            val contentForWeek: (Int) -> WeekPageContent = remember(schedule, currentWeek, today) {
-                { pageWeek ->
+            // 任意 mutator 成功都会发布新的 Schedule 实例，记忆随之失效、同帧刷新。
+            // 入参是**页索引**：页 → 周的换算在此处做（CourseGrid 不感知周号）
+            val contentForPage: (Int) -> WeekPageContent = remember(schedule, todayWeek, today) {
+                { page ->
+                    val pageWeek = weekOfPage(page, beforeTerm)
                     val dates = repository.datesForWeek(schedule.id, pageWeek)
                     WeekPageContent(
                         week = pageWeek,
                         // 先解析再按开关过滤：同格只留当周那张卡，非本周的交替课只剩色条，
                         // 关掉「显示本周不上的课」也照旧看得到这格还有别的课
+                        // （第 0 周 = 开学前的当今周，整页视为不上课 → 全灰/按开关隐藏）
                         courses = repository.coursesForWeek(schedule.id, pageWeek)
                             .toWeekCards(schedule.showInactiveCourses),
                         // 天数即列数：仓库按 daysPerWeek 返回 5 或 7 个日期，网格与星期行同步列数
                         dates = dates.map { it.toUiDate() },
-                        // 与顶栏日期同规则：查看本周高亮今天，其它周高亮该周周一
+                        // 与顶栏日期同规则：查看今周（含第 0 周）高亮今天，其它周高亮该周周一
                         // （越界周 dates 为空时退回今天，页内无日期带可高亮）
-                        highlightDate = if (pageWeek == currentWeek) {
+                        highlightDate = if (pageWeek == todayWeek) {
                             today
                         } else {
                             (dates.firstOrNull() ?: IsoDate.today()).toUiDate()
@@ -292,20 +309,23 @@ fun ScheduleScreen(
             var switcherVisible by rememberSaveable { mutableStateOf(false) }
             var pendingSwitchId by rememberSaveable { mutableStateOf("") }
             var createMode by rememberSaveable { mutableStateOf(false) }
-            // 编辑态的网格数据源：草稿 → 渲染模型（复用仓库路径同一套映射与置灰规则）
-            val displayedContentForWeek: (Int) -> WeekPageContent =
+            // 编辑态的网格数据源：草稿 → 渲染模型（复用仓库路径同一套映射与置灰规则）。
+            // 同样收**页索引**，页 → 周换算在 lambda 内做
+            val displayedContentForPage: (Int) -> WeekPageContent =
                 if (editSession != null) {
-                    remember(editSession, schedule, currentWeek, today) {
-                        { pageWeek ->
+                    remember(editSession, schedule, todayWeek, today) {
+                        { page ->
+                            val pageWeek = weekOfPage(page, beforeTerm)
                             val dates = repository.datesForWeek(schedule.id, pageWeek)
                             WeekPageContent(
                                 week = pageWeek,
                                 // 编辑态**一律显示全部课程**（非本周的照旧置灰），不受
                                 // 「显示本周不上的课」开关影响：开关关掉时若把它们藏起来，
                                 // 用户看不见"占着这一格但本周不上"的课，加课撞上冲突却找不到原因
+                                // （第 0 周 = 开学前的当今周，整页课程全部置灰）
                                 courses = editSession.courses.toWeekCards(pageWeek),
                                 dates = dates.map { it.toUiDate() },
-                                highlightDate = if (pageWeek == currentWeek) {
+                                highlightDate = if (pageWeek == todayWeek) {
                                     today
                                 } else {
                                     (dates.firstOrNull() ?: IsoDate.today()).toUiDate()
@@ -314,7 +334,7 @@ fun ScheduleScreen(
                         }
                     }
                 } else {
-                    contentForWeek
+                    contentForPage
                 }
             val onAddClick: (Int, TimeSlot) -> Unit = remember {
                 { day, slot -> addTarget = listOf(day, slot.id) }
@@ -353,9 +373,12 @@ fun ScheduleScreen(
             val jumpSlideFraction = remember { Animatable(0f) }
 
             // 手势 → 周次：currentPage 在拖动过半时即翻转，顶栏周数胶囊与日期随之切换；
-            // 写回同值时 State 自身忽略，不产生额外重组
-            LaunchedEffect(pagerState) {
-                snapshotFlow { pagerState.currentPage }.collect { selectedWeek = it + 1 }
+            // 写回同值时 State 自身忽略，不产生额外重组。
+            // 页 → 周换算依赖 beforeTerm（第 0 周页存在与否），把它挂进 key 防闭包捕获过期
+            LaunchedEffect(pagerState, beforeTerm) {
+                snapshotFlow { pagerState.currentPage }.collect { page ->
+                    selectedWeek = weekOfPage(page, beforeTerm)
+                }
             }
 
             // 周次 → 翻页：周数弹窗、返回本周、学期范围钳制触发的换周。
@@ -363,8 +386,8 @@ fun ScheduleScreen(
             // 手势方向滑入一页宽。滑入动画挂在 scope 上而非本效果里：week 途中再变时本效果
             // 会重启，滑入不能被连带取消、停在半程偏移上；snapTo 同时会打断上一次未完成的
             // 滑入，连续跳转天然收敛到最后一次
-            LaunchedEffect(week) {
-                val target = week - 1
+            LaunchedEffect(week, beforeTerm) {
+                val target = pageOfWeek(week, beforeTerm)
                 val current = pagerState.currentPage
                 if (current != target) {
                     if (abs(current - target) == 1) {
@@ -429,8 +452,8 @@ fun ScheduleScreen(
             }
 
             // 切换激活课表：关浮层、清脏确认，并把依赖旧草稿的瞬时状态全部复位——
-            // 旧草稿的格子/编辑目标 id 在新课表里没有意义；selectedWeek 归零让选周逻辑
-            // （week 计算）重新按新课表的学期位置落周
+            // 旧草稿的格子/编辑目标 id 在新课表里没有意义；selectedWeek 复位为未初始化，
+            // 让选周逻辑（week 计算）重新按新课表的学期位置落周
             val performSwitch: (String) -> Unit = { id ->
                 pendingSwitchId = ""
                 switcherVisible = false
@@ -440,7 +463,7 @@ fun ScheduleScreen(
                 chooserSourceId = ""
                 alternateSourceId = ""
                 menuAnchor = null
-                selectedWeek = 0
+                selectedWeek = WEEK_UNSET
                 scope.launch {
                     // 先关浮层再落盘：id 取自列表故 NotFound 不可达，落盘失败提示后重开浮层即可重试
                     val r = repository.setActiveSchedule(id)
@@ -505,13 +528,13 @@ fun ScheduleScreen(
                 }
             }
             // 删除课表：仓库删除（删激活项自动回落到剩余第一张，全部数据层校验已就绪）；
-            // 删的是当前激活课表时周选择归零防越界（同 performSwitch 的复位思路）；
+            // 删的是当前激活课表时周选择复位防越界（同 performSwitch 的复位思路）；
             // 删空则关浮层回无课表空态（新建课表页）
             val onDeleteSchedule: (String) -> Unit = { id ->
                 scope.launch {
                     when (val r = repository.deleteSchedule(id)) {
                         is OpResult.Ok -> {
-                            if (id == schedule.id) selectedWeek = 0
+                            if (id == schedule.id) selectedWeek = WEEK_UNSET
                             if (repository.schedules.value.isEmpty()) {
                                 switcherVisible = false
                                 createMode = false
@@ -565,7 +588,7 @@ fun ScheduleScreen(
                 CourseGrid(
                     pagerState = pagerState,
                     timeSlots = timeSlots,
-                    contentForWeek = displayedContentForWeek,
+                    contentForPage = displayedContentForPage,
                     state = listState,
                     // 滚动到底时最后一行可停在导航栏胶囊上方，网格背景仍铺满屏幕底缘；
                     // top 跟随顶栏高度，折叠期视觉与原先 Column 上推一致
@@ -623,14 +646,13 @@ fun ScheduleScreen(
                             collapseFraction = collapseState.collapseFraction,
                             date = headerDate,
                             selectedWeek = week,
-                            currentWeek = currentWeek,
+                            todayWeek = todayWeek,
                             onWeekSelected = { selectedWeek = it },
                             onEditClick = { onEditingChange(true) },
                             onSettingsClick = onOpenSettings,
                             onMenuExpandedChange = { collapseState.menuOpen = it },
                             weekRange = 1..schedule.totalWeeks,
                             daysPerWeek = schedule.daysPerWeek,
-                            termNotStarted = termNotStarted,
                             onDaysPerWeekToggle = onToggleDaysPerWeek,
                             blurProgress = blurProgress,
                             hazeState = hazeState,

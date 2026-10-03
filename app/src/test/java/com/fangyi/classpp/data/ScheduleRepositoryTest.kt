@@ -448,8 +448,11 @@ class ScheduleRepositoryTest {
         val w2 = r.coursesForWeek(id, 2).associate { it.course.id to it.active }
         assertEquals(mapOf("odd" to false, "even" to true), w2)
 
+        // 第 0 周（开学前的当今周）：全部课程出现、一律不活跃（置灰候选）
+        val week0 = r.coursesForWeek(id, 0).associate { it.course.id to it.active }
+        assertEquals(mapOf("odd" to false, "even" to false), week0)
+
         // 越界周宽松返回空
-        assertTrue(r.coursesForWeek(id, 0).isEmpty())
         assertTrue(r.coursesForWeek(id, 17).isEmpty())
         assertTrue(r.coursesForWeek("missing", 1).isEmpty())
     }
@@ -495,6 +498,25 @@ class ScheduleRepositoryTest {
         // 第 1 周周日 = termStart + 6
         assertEquals(TestTermStart + 6, r.datesForWeek(id7, 1).last())
         assertTrue(r.datesForWeek(id5, 99).isEmpty())
+    }
+
+    @Test
+    fun `week zero follows the clock and greys out courses`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+        r.upsertCourse(id, testCourse(id = "c")).assertOk()
+
+        // 开学前两周的周三（02-11）：第 0 周 = 今天所在日历周，与学期起止无关
+        clock.date = IsoDate.parse("2026-02-11")
+        val dates = r.datesForWeek(id, 0)
+        assertEquals(IsoDate.parse("2026-02-09"), dates.first())
+        assertEquals(IsoDate.parse("2026-02-13"), dates.last())
+
+        // 课程一律不活跃：开关开 = 全灰显示，关 = 隐藏
+        assertTrue(r.coursesForWeek(id, 0).all { !it.active })
+        assertEquals(1, r.visibleCoursesForWeek(id, 0).size)
+        r.setShowInactiveCourses(id, false).assertOk()
+        assertTrue(r.visibleCoursesForWeek(id, 0).isEmpty())
     }
 
     // ---------- 当前周 ----------

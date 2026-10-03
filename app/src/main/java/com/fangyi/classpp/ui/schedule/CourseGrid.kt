@@ -104,7 +104,7 @@ private const val DateBandFadeSpeed = 3.0f
 fun CourseGrid(
     pagerState: PagerState,
     timeSlots: List<TimeSlot>,
-    contentForWeek: (Int) -> WeekPageContent,
+    contentForPage: (Int) -> WeekPageContent,
     modifier: Modifier = Modifier,
     state: LazyListState = rememberLazyListState(),
     contentPadding: PaddingValues = PaddingValues(0.dp),
@@ -152,8 +152,10 @@ fun CourseGrid(
             ) { page ->
                 WeekPage(
                     // 这里刻意不 remember：编辑态的 provider 会读草稿 state，
-                    // 记忆会让"刚加的课"刷不出来（key 没变 → 计算不重跑）
-                    content = contentForWeek(page + 1),
+                    // 记忆会让"刚加的课"刷不出来（key 没变 → 计算不重跑）。
+                    // 入参是**页索引**：页 0 = 最左页（学期前为第 0 周/当今周，学期后为
+                    // 第 1 周），页 → 周的换算由调用方在 contentForPage 内完成
+                    content = contentForPage(page),
                     timeSlots = timeSlots,
                     days = days,
                     rowHeight = rowHeight,
@@ -512,7 +514,8 @@ private fun CourseGridPreview() {
         CourseGrid(
             pagerState = rememberPagerState(initialPage = 1) { 20 },
             timeSlots = DefaultTimeSlots,
-            contentForWeek = { pageWeek ->
+            contentForPage = { page ->
+                val pageWeek = page + 1
                 val dates = datesForWeek(pageWeek)
                 WeekPageContent(
                     week = pageWeek,
@@ -536,7 +539,8 @@ private fun CourseGridSevenDayPreview() {
             pagerState = rememberPagerState(initialPage = 1) { 20 },
             timeSlots = DefaultTimeSlots,
             daysPerWeek = 7,
-            contentForWeek = { pageWeek ->
+            contentForPage = { page ->
+                val pageWeek = page + 1
                 val dates = datesForWeek(pageWeek, daysPerWeek = 7)
                 WeekPageContent(
                     week = pageWeek,

@@ -175,9 +175,6 @@ internal fun collapsedPillX(
  * （把「每周上课天数」从设置深处搬到课表首屏——7 天课表的学期结束日是周日，
  * 不先改回周五就无法从设置页切回 5 天，这个开关是那条退路）。
  *
- * [termNotStarted] = 今天早于开学日：日期标题位置改显示「学期还未开始」，
- * 星期高亮仍由 [date] 驱动（日期带/星期行的联动不受影响）。
- *
  * [blurProgress] ∈ [0,1]（与日期带渐隐同步）：>0 时头部背景改为
  * Haze 背景模糊（叠在 surface 兜底色之上），顶部最强、向下渐弱；
  * 同时驱动周数胶囊从扁平灰底过渡到半透明白 + 投影。
@@ -188,7 +185,7 @@ fun ScheduleHeader(
     collapseFraction: Float,
     date: Date,
     selectedWeek: Int,
-    currentWeek: Int? = null,
+    todayWeek: Int? = null,
     onWeekSelected: (Int) -> Unit,
     onEditClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -197,7 +194,6 @@ fun ScheduleHeader(
     hazeState: HazeState? = null,
     weekRange: IntRange = 1..20,
     daysPerWeek: Int = 5,
-    termNotStarted: Boolean = false,
     onDaysPerWeekToggle: (() -> Unit)? = null,
     onMenuExpandedChange: (Boolean) -> Unit = {},
 ) {
@@ -218,21 +214,17 @@ fun ScheduleHeader(
     // 列数只认资源里真有的星期名：7 天视图展示周一~周日，5 天视图只到周五
     val days = daysPerWeek.coerceIn(1, weekdayNames.size)
     val weekdays = weekdayNames.take(days)
-    // 学期未开始时日期标题让位给状态文案（星期高亮仍走 date → weekIndex）。
     // 标题读的是**真实日期的真实星期**：周末在 5 天视图下没有对应列（weekIndex ≥ days），
     // 也不能对截断后的 weekdays 取模——那会把周六/周日回绕成周一/周二
-    val dateTitle = if (termNotStarted) {
-        stringResource(R.string.term_not_started)
-    } else {
-        stringResource(R.string.date_title_format, monthDay, weekdayNames[weekIndex])
-    }
+    val dateTitle = stringResource(R.string.date_title_format, monthDay, weekdayNames[weekIndex])
     // 无障碍文案：点整行是切换视图，读屏用户看不到"行可点"这回事，故显式说明
     val daysToggleDescription = stringResource(
         if (days == 7) R.string.cd_switch_to_5_days else R.string.cd_switch_to_7_days,
     )
 
-    // 仅学期内且查看非本周时，日期行右侧显示「返回本周」
-    val showBackToCurrent = currentWeek != null && selectedWeek != currentWeek
+    // 「返回本周」= 回到今周：学期前今周是第 0 周（当今周），学期中是当前周，
+    // 学期后没有今周页（不显示）。查看的周与今周相同则按钮隐藏
+    val showBackToCurrent = todayWeek != null && selectedWeek != todayWeek
 
     Layout(
         content = {
@@ -298,12 +290,12 @@ fun ScheduleHeader(
                 if (showBackToCurrent) {
                     BackToCurrentButton(
                         // 箭头指向"回到本周"的方向：查看更后的周 → 左箭头往回，更前的周 → 右箭头往前
-                        icon = if (currentWeek == null || selectedWeek > currentWeek) {
+                        icon = if (todayWeek == null || selectedWeek > todayWeek) {
                             R.drawable.ic_arrow_circle_left
                         } else {
                             R.drawable.ic_arrow_circle_right
                         },
-                        onClick = { currentWeek?.let(onWeekSelected) },
+                        onClick = { todayWeek?.let(onWeekSelected) },
                         enabled = iconsEnabled,
                         alpha = iconAlpha,
                     )
@@ -344,10 +336,11 @@ fun ScheduleHeader(
             }
 
             // 4) 周数胶囊：顶层 overlay，在两锚点间插值；模糊激活时材质同步变化
-            // 始终可点（折叠态也要能打开周数菜单），图标仍随折叠禁用
+            // 始终可点（折叠态也要能打开周数菜单），图标仍随折叠禁用。
+            // 「本周」高亮传今周：开学前今周是第 0 周，弹窗里没有 0 格 → 自然无高亮
             WeekPill(
                 selectedWeek = selectedWeek,
-                currentWeek = currentWeek,
+                currentWeek = todayWeek,
                 weekRange = weekRange,
                 onWeekSelected = onWeekSelected,
                 blurProgress = progress,
