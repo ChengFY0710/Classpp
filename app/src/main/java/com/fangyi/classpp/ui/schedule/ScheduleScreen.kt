@@ -170,6 +170,11 @@ fun ScheduleScreen(
         today
     }
 
+    // 今日早于开学日（按日历日比较，开学日当天起恢复日期标题）→ 顶栏日期标题
+    // 位置显示「学期还未开始」；星期高亮仍由 headerDate 驱动，联动不变
+    val termNotStarted = schedule != null &&
+        IsoDate.today(today.time).epochDay < schedule.termStart.epochDay
+
     // 节次：结构性数据，随 schedule 换新而变；实例只建一次，避免翻页期三页无谓重组
     val timeSlots = if (schedule != null) {
         remember(schedule) { schedule.slots.toUiSlots() }
@@ -625,6 +630,7 @@ fun ScheduleScreen(
                             onMenuExpandedChange = { collapseState.menuOpen = it },
                             weekRange = 1..schedule.totalWeeks,
                             daysPerWeek = schedule.daysPerWeek,
+                            termNotStarted = termNotStarted,
                             onDaysPerWeekToggle = onToggleDaysPerWeek,
                             blurProgress = blurProgress,
                             hazeState = hazeState,

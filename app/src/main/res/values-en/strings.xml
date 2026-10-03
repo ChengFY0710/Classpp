@@ -8,6 +8,7 @@
     <string name="nav_todo">Todo</string>
     <string name="month_day_format">%1$d/%2$d</string>
     <string name="date_title_format">%1$s %2$s</string>
+    <string name="term_not_started">Term hasn\'t started yet</string>
     <string name="back_to_current_week">Back to this week</string>
     <string name="cd_switch_to_5_days">Switch to the 5-day view</string>
     <string name="cd_switch_to_7_days">Switch to the 7-day view</string>
@@ -48,7 +49,6 @@
     <string name="show_inactive_desc">Hidden when off; greyed out when on</string>
     <string name="settings_confirm">Confirm</string>
     <string name="settings_cancel">Cancel</string>
-    <string name="error_term_not_monday">Term start must be a Monday</string>
     <string name="error_term_range">Term end must not be before term start</string>
     <string name="error_term_end_short">These courses no longer fit in the last week — shorten their weeks or move the term end later</string>
     <string name="error_days_per_week">Days per week must be 5 or 7</string>

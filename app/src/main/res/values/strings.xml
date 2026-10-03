@@ -8,6 +8,7 @@
     <string name="nav_todo">待办</string>
     <string name="month_day_format">%1$d月%2$d日</string>
     <string name="date_title_format">%1$s %2$s</string>
+    <string name="term_not_started">学期还未开始</string>
     <string name="back_to_current_week">返回本周</string>
     <string name="cd_switch_to_5_days">切换到 5 天视图</string>
     <string name="cd_switch_to_7_days">切换到 7 天视图</string>
@@ -48,7 +49,6 @@
     <string name="show_inactive_desc">关闭后隐藏，开启后以灰色显示</string>
     <string name="settings_confirm">确定</string>
     <string name="settings_cancel">取消</string>
-    <string name="error_term_not_monday">学期开始必须是周一</string>
     <string name="error_term_range">学期结束不能早于学期开始</string>
     <string name="error_term_end_short">学期末周放不下这些课，请缩短课程周数或把学期结束往后调</string>
     <string name="error_days_per_week">每周天数只能是 5 或 7</string>

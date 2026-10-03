@@ -175,6 +175,9 @@ internal fun collapsedPillX(
  * （把「每周上课天数」从设置深处搬到课表首屏——7 天课表的学期结束日是周日，
  * 不先改回周五就无法从设置页切回 5 天，这个开关是那条退路）。
  *
+ * [termNotStarted] = 今天早于开学日：日期标题位置改显示「学期还未开始」，
+ * 星期高亮仍由 [date] 驱动（日期带/星期行的联动不受影响）。
+ *
  * [blurProgress] ∈ [0,1]（与日期带渐隐同步）：>0 时头部背景改为
  * Haze 背景模糊（叠在 surface 兜底色之上），顶部最强、向下渐弱；
  * 同时驱动周数胶囊从扁平灰底过渡到半透明白 + 投影。
@@ -194,6 +197,7 @@ fun ScheduleHeader(
     hazeState: HazeState? = null,
     weekRange: IntRange = 1..20,
     daysPerWeek: Int = 5,
+    termNotStarted: Boolean = false,
     onDaysPerWeekToggle: (() -> Unit)? = null,
     onMenuExpandedChange: (Boolean) -> Unit = {},
 ) {
@@ -214,7 +218,12 @@ fun ScheduleHeader(
     // 列数只认资源里真有的星期名：7 天视图展示周一~周日，5 天视图只到周五
     val days = daysPerWeek.coerceIn(1, weekdayNames.size)
     val weekdays = weekdayNames.take(days)
-    val dateTitle = stringResource(R.string.date_title_format, monthDay, weekdays[weekIndex % days])
+    // 学期未开始时日期标题让位给状态文案（星期高亮仍走 date → weekIndex）
+    val dateTitle = if (termNotStarted) {
+        stringResource(R.string.term_not_started)
+    } else {
+        stringResource(R.string.date_title_format, monthDay, weekdays[weekIndex % days])
+    }
     // 无障碍文案：点整行是切换视图，读屏用户看不到"行可点"这回事，故显式说明
     val daysToggleDescription = stringResource(
         if (days == 7) R.string.cd_switch_to_5_days else R.string.cd_switch_to_7_days,
