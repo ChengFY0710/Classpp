@@ -158,16 +158,19 @@ fun CourseCard(
                         letterSpacing = (-0.1).sp,
                     )
                     Spacer(modifier = Modifier.size(1.dp))
-                    Text(
-                        text = course.teacher,
-                        color = secondaryColor,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Start,
-                        lineHeight = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
+                    // 教师留空时不占位，地点直接上移
+                    if (course.teacher.isNotBlank()) {
+                        Text(
+                            text = course.teacher,
+                            color = secondaryColor,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Start,
+                            lineHeight = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
                     // 上课地点，统一一行
                     Text(
                         text = course.location,
