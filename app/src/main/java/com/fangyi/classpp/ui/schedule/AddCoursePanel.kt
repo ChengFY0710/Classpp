@@ -1,6 +1,9 @@
 package com.fangyi.classpp.ui.schedule
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -470,7 +473,8 @@ fun AddCoursePanel(
 
 /**
  * 周数方格：点一下选中 / 取消；[blockedWeeks] 里的周已被同格其它交替课占用，灰显不可点。
- * 选中蓝底白字、未选中白底黑字（对齐设计稿），布局与旧版一致（6/行、等宽等高）。
+ * 选中蓝底白字、未选中白底黑字（对齐设计稿），选中/取消走 150ms 颜色渐变、背景与字色同步过渡；
+ * 布局与旧版一致（6/行、等宽等高）。
  */
 @Composable
 private fun WeekSelectionGrid(
@@ -486,21 +490,35 @@ private fun WeekSelectionGrid(
                 rowWeeks.forEach { week ->
                     val isSelected = week in selectedSet
                     val blocked = week in blockedWeeks
+                    // 背景/字色各走一条渐变：点选渐变变蓝、再点渐变回白，字色同步渐变
+                    //（150ms 先快后慢，与 SheetTextField 描边动画同一节奏）
+                    val cellColor by animateColorAsState(
+                        targetValue = when {
+                            isSelected -> MaterialTheme.colorScheme.primary
+                            blocked -> MaterialTheme.colorScheme.onPrimaryContainer.copy(
+                                alpha = 0.4f
+                            )
+
+                            else -> MaterialTheme.colorScheme.surface
+                        },
+                        animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+                        label = "weekCellColor",
+                    )
+                    val numberColor by animateColorAsState(
+                        targetValue = when {
+                            isSelected -> MaterialTheme.colorScheme.onPrimary
+                            blocked -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                            else -> MaterialTheme.colorScheme.onSurface
+                        },
+                        animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+                        label = "weekCellNumber",
+                    )
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .aspectRatio(1f)
                             .clip(WeekCellShape)
-                            .background(
-                                when {
-                                    isSelected -> MaterialTheme.colorScheme.primary
-                                    blocked -> MaterialTheme.colorScheme.onPrimaryContainer.copy(
-                                        alpha = 0.4f
-                                    )
-
-                                    else -> MaterialTheme.colorScheme.surface
-                                },
-                            )
+                            .background(cellColor)
                             .then(if (blocked) Modifier else Modifier.clickable { onToggle(week) }),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -508,11 +526,7 @@ private fun WeekSelectionGrid(
                             text = week.toString(),
                             fontSize = 18.sp,
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = when {
-                                isSelected -> MaterialTheme.colorScheme.onPrimary
-                                blocked -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                else -> MaterialTheme.colorScheme.onSurface
-                            },
+                            color = numberColor,
                         )
                     }
                 }
