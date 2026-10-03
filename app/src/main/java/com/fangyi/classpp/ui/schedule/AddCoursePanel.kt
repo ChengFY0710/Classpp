@@ -101,7 +101,7 @@ private val secondaryTextSize = 15.sp // 描述性文字统一大小
  *
  * **刻意不用 AlertDialog**：对话框是独立窗口，本机（Android 15+/16 的 edge-to-edge + 该 ROM）
  * 输入法接不进去（点了输入框不弹键盘）。改成和设置页同一条路——页内覆盖层，
- * 输入法行为与设置页一致，并且打开即自动聚焦课程名并唤起键盘。
+ * 输入法行为与设置页一致，新建时打开即自动聚焦课程名并唤起键盘（编辑已有课不聚焦不弹键盘）。
  */
 @Composable
 fun AddCoursePanel(
@@ -205,10 +205,13 @@ fun AddCoursePanel(
         error = message
         AppToasts.show(context, message)
     }
-    // 打开面板就把光标放进课程名并唤起输入法
-    LaunchedEffect(Unit) {
-        nameFocus.requestFocus()
-        keyboard?.show()
+    // 新建（含长按新建交替课）打开面板就把光标放进课程名并唤起输入法；
+    // 编辑已有课程不自动聚焦——进来多半只想改周数/配色这类开关，别急着弹键盘打扰
+    if (existing == null) {
+        LaunchedEffect(Unit) {
+            nameFocus.requestFocus()
+            keyboard?.show()
+        }
     }
     // 返回键优先收键盘（键盘收起后不返回给应用），键盘已收起时才关面板
     BackHandler {
