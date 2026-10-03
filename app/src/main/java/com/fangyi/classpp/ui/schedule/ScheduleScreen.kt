@@ -304,6 +304,8 @@ fun ScheduleScreen(
                         } else {
                             (dates.firstOrNull() ?: IsoDate.today()).toUiDate()
                         },
+                        // 高亮列是今天 → 日期带给它垫胶囊底；浏览其它周只变色不加底
+                        highlightIsToday = pageWeek == todayWeek,
                     )
                 }
             }
@@ -367,6 +369,8 @@ fun ScheduleScreen(
                                 } else {
                                     (dates.firstOrNull() ?: IsoDate.today()).toUiDate()
                                 },
+                                // 高亮列是今天 → 日期带给它垫胶囊底；浏览其它周只变色不加底
+                                highlightIsToday = pageWeek == todayWeek,
                             )
                         }
                     }

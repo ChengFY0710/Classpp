@@ -38,12 +38,12 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.PillShape
 import java.util.Date
 import kotlin.math.roundToInt
 
@@ -242,6 +242,7 @@ private fun WeekPage(
                     weekDates = content.dates,
                     days = days,
                     highlightDate = content.highlightDate,
+                    highlightIsToday = content.highlightIsToday,
                     listState = listState,
                     seamVisible = seamVisible,
                 )
@@ -329,6 +330,8 @@ private fun WeekPage(
 /**
  * 日期数字带：各上课日一行日号，与顶栏日期同日 primary 高亮；随自身滚出量渐隐。
  * 列数与 [days]（5/7）一致，竖分隔线由 [columnDividerXs] 与课程行同源计算。
+ * [highlightIsToday] = 高亮列是今天（查看今周）：该日号垫主题 primaryContainer 胶囊底；
+ * 浏览其它周高亮该周周一，只变色不加底。
  *
  * 翻页途中页右缘的接缝竖线由本带自己补（页级 drawBehind 补的那段会被带的底色盖住），
  * 画在自身 drawBehind 内 ⇒ 与带内其它竖线一同渐隐，不会在滚过顶栏后留一截浮线；
@@ -339,6 +342,7 @@ private fun DateBand(
     weekDates: List<Date>,
     days: Int,
     highlightDate: Date,
+    highlightIsToday: Boolean,
     listState: LazyListState,
     seamVisible: State<Boolean>,
 ) {
@@ -393,18 +397,33 @@ private fun DateBand(
     ) {
         weekDates.forEach { date ->
             val highlighted = date.isSameDay(highlightDate)
-            Text(
-                text = date.dayOfMonth().toString(),
-                modifier = Modifier.weight(1f).offset(y = 1.dp),
-                fontSize = 18.sp,
-                fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Medium,
-                textAlign = TextAlign.Center,
-                color = if (highlighted) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-            )
+            // 当今日期（仅查看今周时高亮列是今天）：日号垫主题 primaryContainer 胶囊底——
+            // 背景写在 padding 之前（包住文字与内边距），文字保持原字号原色，只多一层底；
+            // 浏览其它周（高亮该周周一）只变色不加底。文字由等宽 Box 居中，非今天格视觉不变
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .offset(y = 1.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = date.dayOfMonth().toString(),
+                    modifier = if (highlighted && highlightIsToday) {
+                        Modifier
+                            .background(MaterialTheme.colorScheme.primaryContainer, PillShape)
+                            .padding(horizontal = 14.dp, vertical = 3.dp)
+                    } else {
+                        Modifier
+                    },
+                    fontSize = 18.sp,
+                    fontWeight = if (highlighted) FontWeight.SemiBold else FontWeight.Medium,
+                    color = if (highlighted) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                )
+            }
         }
     }
 }

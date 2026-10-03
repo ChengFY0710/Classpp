@@ -49,6 +49,11 @@ data class WeekPageContent(
     val dates: List<Date>,
     /** 日期带高亮列：与顶栏日期同规则（查看本周 = 今天，其它周 = 该周周一） */
     val highlightDate: Date,
+    /**
+     * [highlightDate] 是否为今天（查看今周时为 true）：true 时日期带给它垫主题
+     * primaryContainer 胶囊底；浏览其它周高亮该周周一，只变色不加底。
+     */
+    val highlightIsToday: Boolean = false,
 )
 
 /** 学期第一个教学周一（2026-03-02 周一 = 第 1 周周一） */
