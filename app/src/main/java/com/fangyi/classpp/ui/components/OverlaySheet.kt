@@ -375,16 +375,10 @@ private fun OverlaySheetTopBar(
         modifier = modifier
             .fillMaxWidth()
             .height(TopBarHeight)
-            // 渐变兜底画在模糊层之下：顶强底弱，既贴近设计稿（顶部内容几乎不可见）
-            // 也保证 haze 不可用时顶栏文字依然可读
-            .background(
-                androidx.compose.ui.graphics.Brush.verticalGradient(
-                    listOf(
-                    MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
-                    MaterialTheme.colorScheme.background.copy(alpha = 0f),
-                ),
-                ),
-            )
+            // 不透明兜底（同设置页顶栏）：haze 的渐进模糊是"均匀模糊层 × 渐变透明度"的混合，
+            // 兜底若带透明度，锐利内容会从透明处透出、与模糊层叠成重影（蓝描边/蓝格子最明显）；
+            // 不透明兜底让混合只发生在"模糊 vs 平色"之间，锐利内容被完全挡住
+            .background(MaterialTheme.colorScheme.background)
             .hazeEffect(hazeState) {
                 blurRadius = 32.dp
                 progressive = HazeProgressive.verticalGradient(
