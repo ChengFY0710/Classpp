@@ -18,7 +18,7 @@ val SheetShape = UnevenRoundedRectangle(topStart = 36.dp, topEnd = 36.dp)
 val SheetCardShape = RoundedRectangle(20.dp)
 
 /** 页内对话框卡片（换课选择、切换器删除/放弃确认框） */
-val DialogShape = RoundedRectangle(24.dp)
+val DialogShape = RoundedRectangle(32.dp)
 
 /** 长按/右键菜单、弹出选择卡 */
 val MenuShape = RoundedRectangle(16.dp)

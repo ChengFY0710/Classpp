@@ -1,9 +1,12 @@
 package com.fangyi.classpp.ui.schedule
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +28,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -45,6 +50,7 @@ import com.fangyi.classpp.ui.components.SheetSectionSpacingBottom
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.settings.TermDatesCard
+import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
 
 /**
@@ -314,8 +320,8 @@ private fun CreateScheduleContent(
 }
 
 /**
- * 删除课表确认框：页内居中卡片（视觉同 [DiscardSwitchConfirmDialog]），点名课表并说明不可恢复。
- * 确认键用错误色标 destructive；返回键与遮罩点击都只取消。
+ * 删除课表确认框：页内居中白卡（[ConfirmDialogCard]），点名课表并说明不可恢复。
+ * 确认胶囊 error 红底白字标 destructive；返回键与遮罩点击都只取消。
  * 两段式关闭见 [FadeOverlayDialog]：确认/取消即清 deletingId（名称随之为空），
  * [shownName] 留住最后一份文案，淡出期间不闪空。
  */
@@ -336,35 +342,26 @@ private fun DeleteScheduleConfirmDialog(
         onDismissed = onDismissed,
         cardHorizontalPadding = 32.dp,
     ) {
-        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
-            Text(
-                text = stringResource(R.string.switcher_delete_title),
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
+        ConfirmDialogCard(
+            title = stringResource(R.string.switcher_delete_title),
+            message = stringResource(R.string.switcher_delete_message, shownName),
+        ) {
+            DialogPillButton(
+                label = stringResource(R.string.settings_cancel),
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+                enabled = visible,
+                onClick = onCancel,
             )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.switcher_delete_message, shownName),
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            DialogPillButton(
+                label = stringResource(R.string.edit_delete),
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+                modifier = Modifier.weight(1f),
+                enabled = visible,
+                onClick = onConfirm,
             )
-            Spacer(Modifier.height(16.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = onCancel, enabled = visible) {
-                    Text(stringResource(R.string.settings_cancel))
-                }
-                TextButton(onClick = onConfirm, enabled = visible) {
-                    Text(
-                        text = stringResource(R.string.edit_delete),
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
         }
     }
 }
@@ -380,8 +377,8 @@ private fun IsoDate.toSlashText(): String {
 }
 
 /**
- * 脏草稿切换确认框：页内居中卡片 + 遮罩，叠加在浮层**之后**组合——
- * 返回键时后注册的它先收到，优先于浮层与编辑取消。
+ * 脏草稿切换确认框：页内居中白卡（[ConfirmDialogCard]）+ 遮罩，叠加在浮层**之后**组合——
+ * 返回键时后注册的它先收到，优先于浮层与编辑取消。确认胶囊走主色（非 destructive，区别于删除框）。
  */
 @Composable
 internal fun DiscardSwitchConfirmDialog(
@@ -396,34 +393,96 @@ internal fun DiscardSwitchConfirmDialog(
         onDismissed = onDismissed,
         cardHorizontalPadding = 32.dp,
     ) {
-        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
-            Text(
-                text = stringResource(R.string.switcher_discard_title),
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
+        ConfirmDialogCard(
+            title = stringResource(R.string.switcher_discard_title),
+            message = stringResource(R.string.switcher_discard_message),
+        ) {
+            DialogPillButton(
+                label = stringResource(R.string.switcher_discard_cancel),
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+                enabled = visible,
+                onClick = onCancel,
             )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.switcher_discard_message),
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            DialogPillButton(
+                label = stringResource(R.string.switcher_discard_confirm),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.weight(1f),
+                enabled = visible,
+                onClick = onConfirm,
             )
-            Spacer(Modifier.height(16.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = onCancel, enabled = visible) {
-                    Text(stringResource(R.string.switcher_discard_cancel))
-                }
-                TextButton(onClick = onConfirm, enabled = visible) {
-                    Text(
-                        text = stringResource(R.string.switcher_discard_confirm),
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-            }
         }
+    }
+}
+
+/** 确认框白卡内容：左对齐大标题 + 浅灰说明 + 底部两颗等宽胶囊，删除/放弃确认框共用 */
+@Composable
+private fun ConfirmDialogCard(
+    title: String,
+    message: String,
+    buttons: @Composable RowScope.() -> Unit,
+) {
+    Column(
+        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 24.dp),
+    ) {
+        Text(
+            text = title,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = message,
+            fontSize = 15.sp,
+            lineHeight = 22.sp,
+            color = MaterialTheme.classppColors.secondaryText,
+        )
+        Spacer(Modifier.height(28.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            content = buttons,
+        )
+    }
+}
+
+/**
+ * 确认框胶囊按钮：文字居中的全圆角胶囊（[PillShape]），高 52dp；
+ * 大柔影配方同 [SheetPillButton]（高 elevation 撑模糊半径、低透明度压存在感），
+ * 阴影色取主题 scrim；配色由调用方传 theme 槽位，本组件不含任何硬编码色值。
+ */
+@Composable
+private fun DialogPillButton(
+    label: String,
+    containerColor: Color,
+    contentColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val shadowColor = MaterialTheme.colorScheme.scrim
+    Row(
+        modifier = modifier
+            .height(52.dp)
+            .graphicsLayer {
+                shape = PillShape
+                clip = true
+                shadowElevation = 36.dp.toPx()
+                spotShadowColor = shadowColor.copy(alpha = 0.3f)
+            }
+            .background(containerColor, PillShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = label,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = contentColor,
+        )
     }
 }
