@@ -20,7 +20,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.RowShape
 import com.fangyi.classpp.ui.theme.classppColors
@@ -68,8 +67,7 @@ fun RowChoiceCard(
                     }
                     Text(
                         text = label,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                         color = if (selected) colors.primary else colors.onSurface,
                     )
                 }
