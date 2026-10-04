@@ -101,7 +101,7 @@ private val DragDismissVelocity: Dp = 800.dp
 private const val ScrimAlpha = 0.32f
 
 /** 顶栏总高（拖拽条 + 按钮行），滚动内容顶部为它留位。 */
-private val TopBarHeight = 80.dp
+private val TopBarHeight = 77.dp
 
 /**
  * 顶栏按钮行（把手下的关闭/确认胶囊）的横向边距：刻意大于内容卡片的
