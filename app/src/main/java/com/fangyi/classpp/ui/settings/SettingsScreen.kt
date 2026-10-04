@@ -77,6 +77,7 @@ import com.fangyi.classpp.ui.schedule.toPickerMillis
 import com.fangyi.classpp.ui.schedule.toIsoDate
 import com.fangyi.classpp.ui.components.RowChoiceCard
 import com.fangyi.classpp.ui.components.SheetTextField
+import com.fangyi.classpp.ui.components.clearFocusOnTap
 import com.fangyi.classpp.ui.theme.ButtonShape
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
@@ -195,6 +196,9 @@ fun SettingsScreen(
                             .fillMaxSize()
                             .hazeSource(hazeState)
                             .verticalScroll(rememberScrollState())
+                            // 点空白（卡片间隙/留白）取消聚焦收起键盘；课表名的失焦提交
+                            // （ScheduleNameField）也由这次清焦触发
+                            .clearFocusOnTap()
                             .padding(horizontal = SectionSpacing)
                             .padding(
                                 // 首项距顶栏留 20dp（SectionSpacing），与页面其余间距同源

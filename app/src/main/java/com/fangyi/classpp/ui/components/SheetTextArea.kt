@@ -50,6 +50,9 @@ import com.fangyi.classpp.ui.theme.classppColors
  *
  * 同样做「点了就重新 show 一次键盘」：Compose 输入框已聚焦时再点不会拉起键盘，
  * 键盘一旦被收起就唤不回来（上机踩过）。
+ *
+ * 「聚焦后点空白取消聚焦（收起键盘）」与 [SheetTextField] 同款，由宿主容器的
+ * `clearFocusOnTap` 提供（OverlaySheet 内容列已内置），字段自身无需处理。
  */
 @Composable
 fun SheetTextArea(

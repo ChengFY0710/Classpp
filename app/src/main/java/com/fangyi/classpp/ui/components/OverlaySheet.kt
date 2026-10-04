@@ -310,6 +310,9 @@ fun OverlaySheet(
                             // 顶栏模糊的采样源：滚动内容从顶栏底下滚过时被渐变模糊
                             .hazeSource(hazeState)
                             .verticalScroll(scrollState)
+                            // 点空白（卡片间隙/留白/尾部余量）取消聚焦收起键盘：
+                            // SheetTextField / SheetTextArea 一族的通用宿主行为
+                            .clearFocusOnTap()
                             // 横向 18dp = 设置页同款页边距，卡片宽度与设置页一致
                             .padding(horizontal = SheetSectionSpacing),
                     ) {
