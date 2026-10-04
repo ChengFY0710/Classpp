@@ -167,6 +167,20 @@ class ScheduleRepository internal constructor(
         commit(fileState.value.copy(activeScheduleId = id))
     }
 
+    // ---------- 编辑态事务（保存提交 / 取消整库回滚） ----------
+
+    /**
+     * 编辑态事务基线：进入编辑时整库快照一次，取消时经 [restoreAll] 原样恢复。
+     * mutex 下读取，与写路径看到的状态严格一致（schedules + activeScheduleId 不会错位）。
+     */
+    suspend fun snapshot(): ScheduleFile = mutex.withLock { fileState.value }
+
+    /**
+     * 整库恢复快照（编辑态取消）：一次落盘 + 一次发布，天然原子；落盘失败内存零变更。
+     * 快照取自先前合法的库态，此处不再校验。
+     */
+    suspend fun restoreAll(file: ScheduleFile): OpResult = mutex.withLock { commit(file) }
+
     // ---------- 设置变更（波及课程则整体拒绝） ----------
 
     suspend fun setTerm(id: String, start: IsoDate, end: IsoDate): OpResult = mutex.withLock {

@@ -81,6 +81,7 @@ import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.ScheduleValidator
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.cellCourses
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.ui.navigation.NavReserve
@@ -188,11 +189,51 @@ fun ScheduleScreen(
     // State 对象本身稳定（remember），供 Pager 的 pageCount 闭包长期读取；schedule 为当前值
     val scheduleState = repository.activeSchedule.collectAsState()
     val schedule = scheduleState.value
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // ——— 编辑态事务：保存提交 / 取消整库回滚 ———
+    // 进入编辑时整库快照一次（全部课表 + 激活 id；JSON 存 saveable，进程重建后取消仍可回滚）。
+    // 编辑期间的切换/设置/新建/删除/导入照旧即时落库，取消时以快照一次性恢复，保存则自然保留
+    var editBaselineJson by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(editing) {
+        if (editing) {
+            // 进程死亡重建：基线已随 saveable 回来，不重拍（重拍会把切换/设置的中间态固化为基线）
+            if (editBaselineJson.isEmpty()) {
+                editBaselineJson = ScheduleJson.encodeStorage(repository.snapshot())
+            }
+        } else {
+            editBaselineJson = ""
+        }
+    }
+
+    // 取消编辑：恢复进入编辑前的整库快照（切换/设置/新建/删除/导入一并回滚），再退出编辑态。
+    // 基线先置空：连点取消/返回不会触发两次恢复；恢复失败仅 Toast（磁盘写失败极罕见），仍退出
+    fun cancelEdit() {
+        val baseline = editBaselineJson
+        editBaselineJson = ""
+        if (baseline.isEmpty()) {
+            onEditingChange(false)
+            return
+        }
+        scope.launch {
+            val restored = repository.restoreAll(ScheduleJson.decodeStorage<ScheduleFile>(baseline))
+            if (restored is OpResult.Err) {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.error_persist_failed),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+            onEditingChange(false)
+        }
+    }
 
     // 无激活课表（如从切换浮层删空全部课表）时编辑态已无意义：网格与编辑栏都随之消失，
-    // 若停留在编辑态，底部导航栏会一直隐藏（它的显隐跟着编辑态走）——这里自动退出编辑
+    // 若停留在编辑态，底部导航栏会一直隐藏（它的显隐跟着编辑态走）——走取消路径自动退出，
+    // 删空的课表随快照恢复而复活
     LaunchedEffect(schedule) {
-        if (schedule == null && editing) onEditingChange(false)
+        if (schedule == null && editing) cancelEdit()
     }
 
     // 今周原始周号（按日历周对齐，第 1 周 = 开学所在日历周）：开学前 ≤ 0——开学前的每个
@@ -322,7 +363,9 @@ fun ScheduleScreen(
             // 会话随 editing 重开（进来时取当前课表），退出即换成占位会话、草稿丢弃；
             // Saver 连 active 一起存，故旋转/进程重建不会把恢复出来的草稿清掉。
             // inputs 含 schedule.id：切换激活课表时 inputs 变化 → 旧会话连同草稿一起
-            // 被丢弃、以新课表的课程快照重建——切换即隐式"丢弃旧草稿、开始编辑新课表"
+            // 被丢弃、以新课表的课程快照重建——切换即隐式"丢弃旧草稿、开始编辑新课表"。
+            // 会话处于编辑态事务内（见顶部 editBaselineJson）：其余课表/设置的改动虽即时
+            // 落库，取消时都会随整库快照一并回滚，保存则随课程草稿一起保留
             val session: ScheduleEditSession = rememberSaveable(
                 editing,
                 schedule.id,
@@ -444,8 +487,6 @@ fun ScheduleScreen(
                 }
             }
 
-            val scope = rememberCoroutineScope()
-
             // 跨多周跳转的单页滑入进度：1 = 整块网格从右侧一页宽处入场（跳向更后的周）、
             // -1 = 从左侧（跳向更前的周）、0 = 落定。存"页宽倍数"而非像素，图层里乘自身宽度即
             // 得位移，跳多远都恒定一页宽——不途经中间页（途经页的组合成本随距离线性涨，
@@ -485,8 +526,6 @@ fun ScheduleScreen(
                     }
                 }
             }
-
-            val context = LocalContext.current
 
             // 点顶栏星期行 = 5 天 / 7 天视图互切（等价于设置页的「每周上课天数」）。
             // 只改天数：周六/周日的课保留在数据里、5 天视图只是不画它们，切回 7 天原样出现，
@@ -657,8 +696,8 @@ fun ScheduleScreen(
                 }
             }
 
-            // 编辑态的返回键 = 取消（保存有独立按钮，故这里直接丢弃草稿）
-            BackHandler(enabled = editSession != null) { onEditingChange(false) }
+            // 编辑态的返回键 = 取消：整库恢复进入编辑前的快照（同取消按钮），再退出编辑态
+            BackHandler(enabled = editSession != null) { cancelEdit() }
 
             Box(
                 modifier = Modifier
@@ -748,7 +787,8 @@ fun ScheduleScreen(
                             onSwitchSchedule = { switcherVisible = true },
                             // 课表设置：唤起课表设置浮层（原设置页内容迁入）
                             onScheduleSettings = { settingsSheetVisible = true },
-                            onCancel = { onEditingChange(false) },
+                            // 取消：整库恢复进入编辑前的快照（切换/设置一并回滚）
+                            onCancel = { cancelEdit() },
                             // 与折叠后的原顶栏同一套背景模糊：内容滚到栏下时渐入
                             blurProgress = blurProgress,
                             hazeState = hazeState,
