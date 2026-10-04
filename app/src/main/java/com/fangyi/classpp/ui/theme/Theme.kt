@@ -42,14 +42,11 @@ class ClassppColors(
     val secondaryText: Color,
     /** 选中态浅蓝容器（不透明） */
     val primaryContainerNontrans: Color,
-    /** 课表编辑态的保存动作色（取自设计稿；"切换课表"沿用 primary） */
-    val saveGreen: Color,
 )
 
 private val LightClassppColors = ClassppColors(
     secondaryText = Color(0xFFABAFB4),
     primaryContainerNontrans = Color(0xFFE0EDFD),
-    saveGreen = Color(0xFF22B14C),
 )
 
 private val LocalClassppColors = staticCompositionLocalOf { LightClassppColors }

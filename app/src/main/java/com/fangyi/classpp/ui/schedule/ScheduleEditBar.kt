@@ -3,7 +3,6 @@ package com.fangyi.classpp.ui.schedule
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,8 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,29 +33,26 @@ import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.EditActionShape
-import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 
-private val EditActionTextSize = 18.sp
 private val EditActionIconSize = 30.dp
-private val EditActionGap = 10.dp
+private val EditActionLabelTextSize = 13.sp
+private val EditActionLabelGap = 2.dp
 private val EditActionInnerPadding = 8.dp
 
-/** 动作块离屏幕边的距离 = 顶栏图标内缩 20dp − 动作块自身水平内缩 → 图标仍落在 20dp 上 */
-private val EditBarEdgePadding = 20.dp
+/** 动作行高度：纵向"图标 + 标签"块在其中垂直居中，上下留出呼吸空间 */
+private val EditActionBarHeight = 64.dp
 
 /**
- * 编辑态顶栏：保存 / 切换课表 / 取消 + 星期行，取代可折叠的 [ScheduleHeader]。
+ * 编辑态顶栏：保存 / 切换课表 / 课表设置 / 取消 + 星期行，取代可折叠的 [ScheduleHeader]。
  *
- * 三按钮一行高 [TopBarHeight]，与顶栏行等高，两侧图标内缩也与顶栏图标一致，
- * 进出编辑态时图标位置不跳。星期行沿用头部同款 padding 与字号、按 [daysPerWeek] 等分
- * （5/7 列），保证与网格列对齐；编辑态没有"今天"语义，故不做今日高亮。
- *
- * 两侧的动作各自是"图标 + 文字"整块可点（设计稿里图标与文字同色成对），
- * 中间的"切换课表"是纯文字。
+ * 四个动作块等距一行（各占一等份），每块为"图标在上、文字在下"的纵向组合，
+ * 文字 13sp Medium、与图标水平居中对齐；保存/取消分居最左/最右。
+ * 星期行沿用头部同款 padding 与字号、按 [daysPerWeek] 等分（5/7 列），
+ * 保证与网格列对齐；编辑态没有"今天"语义，故不做今日高亮。
  *
  * [blurProgress] / [hazeState]：与 [ScheduleHeader] 折叠后同一套背景模糊——
  * 内容滚到编辑栏下方时按 [blurProgress] 渐入，顶部最强、向下渐弱；回到顶部恢复不透明。
@@ -65,6 +61,7 @@ private val EditBarEdgePadding = 20.dp
 fun ScheduleEditBar(
     onSave: () -> Unit,
     onSwitchSchedule: () -> Unit,
+    onScheduleSettings: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
     blurProgress: Float = 0f,
@@ -100,42 +97,48 @@ fun ScheduleEditBar(
             )
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
-        Box(
+        Spacer(modifier = Modifier.fillMaxWidth().height(6.dp)) //调整icon到屏幕顶端距离
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(TopBarHeight),
+                .height(EditActionBarHeight),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             EditAction(
                 text = stringResource(R.string.edit_save),
                 iconRes = R.drawable.ic_calendar_checkmark,
-                color = MaterialTheme.classppColors.saveGreen,
-                iconAtStart = true,
+                color = MaterialTheme.colorScheme.primary,
                 onClick = onSave,
                 modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = EditBarEdgePadding),
+                    .weight(1f)
+                    .wrapContentWidth(Alignment.CenterHorizontally),
             )
-            Text(
+            EditAction(
                 text = stringResource(R.string.edit_switch_schedule),
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = EditActionTextSize,
-                fontWeight = FontWeight.SemiBold,
-                lineHeight = 30.sp,
+                iconRes = R.drawable.ic_calendar_multiple,
+                color = MaterialTheme.colorScheme.onSurface,
+                onClick = onSwitchSchedule,
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .clip(EditActionShape)
-                    .clickable(onClick = onSwitchSchedule)
-                    .padding(horizontal = EditActionInnerPadding, vertical = 6.dp),
+                    .weight(1f)
+                    .wrapContentWidth(Alignment.CenterHorizontally),
+            )
+            EditAction(
+                text = stringResource(R.string.edit_schedule_settings),
+                iconRes = R.drawable.ic_calendar_settings,
+                color = MaterialTheme.colorScheme.onSurface,
+                onClick = onScheduleSettings,
+                modifier = Modifier
+                    .weight(1f)
+                    .wrapContentWidth(Alignment.CenterHorizontally),
             )
             EditAction(
                 text = stringResource(R.string.edit_cancel),
                 iconRes = R.drawable.ic_calendar_cancel,
                 color = MaterialTheme.colorScheme.error,
-                iconAtStart = false,
                 onClick = onCancel,
                 modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = EditBarEdgePadding),
+                    .weight(1f)
+                    .wrapContentWidth(Alignment.CenterHorizontally),
             )
         }
         // 星期行：与 ScheduleHeader 同几何（零水平边距按天数等分），列宽与网格天然对齐
@@ -147,7 +150,9 @@ fun ScheduleEditBar(
             for (i in weekdays.indices) {
                 Text(
                     text = weekdays[i].substring(1),
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .wrapContentWidth(Alignment.CenterHorizontally),
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
@@ -158,37 +163,30 @@ fun ScheduleEditBar(
     }
 }
 
-/** 编辑栏两侧的"图标 + 文字"动作块（[iconAtStart] 决定图标在文字左还是右） */
+/** 编辑栏的纵向动作块：图标在上、13sp Medium 标签在下，两者水平居中对齐，整块可点 */
 @Composable
 private fun EditAction(
     text: String,
     @DrawableRes iconRes: Int,
     color: Color,
-    iconAtStart: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    Column(
         modifier = modifier
             .clip(EditActionShape)
             .clickable(onClick = onClick)
-            .padding(horizontal = EditActionInnerPadding, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = EditActionInnerPadding, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        if (iconAtStart) {
-            EditActionIcon(iconRes = iconRes, color = color)
-            Spacer(Modifier.width(EditActionGap))
-        }
+        EditActionIcon(iconRes = iconRes, color = color)
+        Spacer(Modifier.height(EditActionLabelGap))
         Text(
             text = text,
             color = color,
-            fontSize = EditActionTextSize,
-            fontWeight = FontWeight.SemiBold,
+            fontSize = EditActionLabelTextSize,
+            fontWeight = FontWeight.Medium,
         )
-        if (!iconAtStart) {
-            Spacer(Modifier.width(EditActionGap))
-            EditActionIcon(iconRes = iconRes, color = color)
-        }
     }
 }
 
@@ -207,6 +205,6 @@ private fun EditActionIcon(@DrawableRes iconRes: Int, color: Color) {
 @Composable
 private fun ScheduleEditBarPreview() {
     ClassppTheme {
-        ScheduleEditBar(onSave = {}, onSwitchSchedule = {}, onCancel = {})
+        ScheduleEditBar(onSave = {}, onSwitchSchedule = {}, onScheduleSettings = {}, onCancel = {})
     }
 }

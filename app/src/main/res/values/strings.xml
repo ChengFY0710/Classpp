@@ -65,6 +65,7 @@
     <!-- 课表编辑 -->
     <string name="edit_save">保存</string>
     <string name="edit_switch_schedule">切换课表</string>
+    <string name="edit_schedule_settings">课表设置</string>
     <string name="edit_cancel">取消</string>
     <string name="edit_add_course">添加课程</string>
     <string name="edit_edit_course">编辑课程</string>

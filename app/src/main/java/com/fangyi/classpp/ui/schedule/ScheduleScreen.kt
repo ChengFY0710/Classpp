@@ -744,6 +744,8 @@ fun ScheduleScreen(
                         ScheduleEditBar(
                             onSave = onSaveEdit,
                             onSwitchSchedule = { switcherVisible = true },
+                            // 课表设置：入口先占位，功能暂未开放
+                            onScheduleSettings = {},
                             onCancel = { onEditingChange(false) },
                             // 与折叠后的原顶栏同一套背景模糊：内容滚到栏下时渐入
                             blurProgress = blurProgress,

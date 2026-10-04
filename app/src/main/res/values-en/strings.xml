@@ -64,7 +64,8 @@
 
     <!-- Schedule edit -->
     <string name="edit_save">Save</string>
-    <string name="edit_switch_schedule">Switch schedule</string>
+    <string name="edit_switch_schedule">Switch</string>
+    <string name="edit_schedule_settings">Settings</string>
     <string name="edit_cancel">Cancel</string>
     <string name="edit_add_course">Add course</string>
     <string name="edit_edit_course">Edit course</string>
