@@ -128,6 +128,34 @@ private fun SheetInfoCardPreview() = ClassppTheme {
 
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
 @Composable
+private fun SheetTextAreaPreview() = ClassppTheme {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SheetTextArea(
+            value = "",
+            onValueChange = {},
+            placeholder = "点击输入添加备注",
+        )
+        SheetTextArea(
+            value = "",
+            onValueChange = {},
+            isError = true,
+        )
+        SheetTextArea(
+            value = "这是备注这是备注这是备注这是备注这是备注这是备注这是备注这是备注" +
+                "这是备注这是备注这是备注这是备注这是备注这是备注这是备注这是备注这是备注" +
+                "这是备注这是备注这是备注",
+            onValueChange = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
 private fun ColorSwatchCardPreview() = ClassppTheme {
     Column(
         modifier = Modifier

@@ -62,14 +62,14 @@ fun SheetInfoCard(
                 Text(
                     text = entry.label,
                     fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.classppColors.secondaryText,
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
                     text = entry.value,
                     fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.End,
                     modifier = Modifier.weight(1f),
