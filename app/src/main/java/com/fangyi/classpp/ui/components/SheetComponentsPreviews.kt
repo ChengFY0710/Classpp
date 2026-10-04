@@ -103,6 +103,31 @@ private fun PopupSelectCardPreview() = ClassppTheme {
 
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
 @Composable
+private fun SheetInfoCardPreview() = ClassppTheme {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SheetInfoCard(
+            entries = listOf(
+                SheetInfoEntry("任课教师", "XX 老师"),
+                SheetInfoEntry("上课地点", "学武楼 C201"),
+            ),
+        )
+        // 值超宽自动换行：卡片长高、上下边距不变、label 垂直居中
+        SheetInfoCard(
+            entries = listOf(
+                SheetInfoEntry("任课教师", "XX 老师"),
+                SheetInfoEntry("上课地点", "学武楼学武楼学武楼学武楼学武楼学武楼学武楼学武楼"),
+            ),
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
 private fun ColorSwatchCardPreview() = ClassppTheme {
     Column(
         modifier = Modifier
