@@ -65,7 +65,7 @@ import dev.chrisbanes.haze.hazeEffect
  * 后续设置详情页直接复用这些组件，保持同一套配色与间距。
  *
  * 配色约定：页面底 `colorScheme.background`、卡底 `Surface`、强调 `colorScheme.primary`、
- * 浅蓝容器 `classppColors.primaryContainerNontrans`、次级文字 `classppColors.secondaryText`。
+ * 浅蓝容器 `colorScheme.primaryContainer`、次级文字 `classppColors.secondaryText`。
  *
  * 卡内间距按行数分两类：单行卡（一行「文字+控件」）用默认 [CardContentPadding]；
  * 多行卡（多行「文字+控件」）另传 [MultiLineRowSpacing]。
@@ -118,7 +118,7 @@ internal fun SettingsTopBar(
                     text = title,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             },
             // 状态栏 inset 由顶栏自己吸收：磨砂背景一直铺到屏幕顶（沉浸式）
@@ -143,7 +143,7 @@ internal fun SettingsTopBar(
             Icon(
                 painter = painterResource(R.drawable.ic_arrow_left),
                 contentDescription = stringResource(R.string.cd_settings_close),
-                tint = MaterialTheme.colorScheme.onBackground,
+                tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(22.dp),
             )
         }

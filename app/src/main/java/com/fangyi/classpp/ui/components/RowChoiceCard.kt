@@ -32,7 +32,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.RowShape
-import com.fangyi.classpp.ui.theme.classppColors
 
 /**
  * 行选择卡片：白卡片内一行均分的选项（如 全选 / 单周 / 双周）。
@@ -81,7 +80,7 @@ fun RowChoiceCard(
                         .fillMaxWidth(1f / options.size)
                         .fillMaxHeight()
                         .graphicsLayer { translationX = pillOffset * size.width }
-                        .background(MaterialTheme.classppColors.primaryContainerNontrans, RowShape),
+                        .background(MaterialTheme.colorScheme.primaryContainer, RowShape),
                 )
             }
             Row(modifier = Modifier.fillMaxWidth()) {

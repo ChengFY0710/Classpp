@@ -285,7 +285,7 @@ private fun AddCourseCardRowPreview() {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(GridRowHeight)
-                .background(MaterialTheme.colorScheme.surfaceContainer),
+                .background(MaterialTheme.colorScheme.background),
         ) {
             repeat(5) {
                 GridCell {
@@ -308,7 +308,7 @@ private fun AddCourseCardComparePreview() {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(GridRowHeight)
-                .background(MaterialTheme.colorScheme.surfaceContainer),
+                .background(MaterialTheme.colorScheme.background),
         ) {
             // 正常课程卡片：起止时间应与右侧添加卡片落在同一条竖线上
             GridCell {
@@ -369,7 +369,7 @@ private fun CourseCardAlternatePreview() {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(GridRowHeight)
-                .background(MaterialTheme.colorScheme.surfaceContainer),
+                .background(MaterialTheme.colorScheme.background),
         ) {
             // 普通单课：竖条整条同色
             GridCell {
@@ -421,7 +421,7 @@ private fun SevenDayRowPreview() {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(gridRowHeight(daysPerWeek = 7))
-                .background(MaterialTheme.colorScheme.surfaceContainer),
+                .background(MaterialTheme.colorScheme.background),
         ) {
             row.forEach { course ->
                 GridCell {

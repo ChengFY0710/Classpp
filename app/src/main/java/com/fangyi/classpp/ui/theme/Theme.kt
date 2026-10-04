@@ -16,18 +16,13 @@ private val LightColorScheme = lightColorScheme(
     primaryContainer = PrimaryContainer,
     onPrimaryContainer = OnPrimaryContainer,
     inversePrimary = InversePrimary,
-    secondaryContainer = SecondaryContainer,
-    onSecondaryContainer = OnSecondaryContainer,
-    tertiaryContainer = TertiaryContainer,
-    onTertiaryContainer = OnTertiaryContainer,
     background = Background,
-    onBackground = OnBackground,
     surface = Surface,
     onSurface = OnSurface,
     onSurfaceVariant = OnSurfaceVariant,
-    surfaceContainer = SurfaceContainer,
+    // M3 对话框（AlertDialog/DatePickerDialog）的默认底色就是它，不可省：
+    // 不传会静默回退库默认的淡紫灰 baseline
     surfaceContainerHigh = SurfaceContainerHigh,
-    surfaceContainerHighest = SurfaceContainerHighest,
     outline = Outline,
     error = Error,
     errorContainer = ErrorContainer,
@@ -41,18 +36,11 @@ private val DarkColorScheme = darkColorScheme(
     primaryContainer = DarkPrimaryContainer,
     onPrimaryContainer = DarkOnPrimaryContainer,
     inversePrimary = DarkInversePrimary,
-    secondaryContainer = DarkSecondaryContainer,
-    onSecondaryContainer = DarkOnSecondaryContainer,
-    tertiaryContainer = DarkTertiaryContainer,
-    onTertiaryContainer = DarkOnTertiaryContainer,
     background = DarkBackground,
-    onBackground = DarkOnBackground,
     surface = DarkSurface,
     onSurface = DarkOnSurface,
     onSurfaceVariant = DarkOnSurfaceVariant,
-    surfaceContainer = DarkSurfaceContainer,
     surfaceContainerHigh = DarkSurfaceContainerHigh,
-    surfaceContainerHighest = DarkSurfaceContainerHighest,
     outline = DarkOutline,
     error = DarkError,
     errorContainer = DarkErrorContainer,
@@ -68,8 +56,6 @@ private val DarkColorScheme = darkColorScheme(
 class ClassppColors(
     /** 次级说明文字灰 */
     val secondaryText: Color,
-    /** 选中态浅蓝容器（不透明） */
-    val primaryContainerNontrans: Color,
     /**
      * 顶栏等 Haze 磨砂的叠加基础色（浅色 = 白提亮、深色 = 深底色压暗）。
      * 调用处按强度 copy(alpha)——各磨砂位强度不同（0.30f / 0.6f），基础色只有一个来源。
@@ -79,13 +65,11 @@ class ClassppColors(
 
 private val LightClassppColors = ClassppColors(
     secondaryText = Color(0xFFABAFB4),
-    primaryContainerNontrans = Color(0xFFE0EDFD),
     hazeTint = Color.White,
 )
 
 private val DarkClassppColors = ClassppColors(
     secondaryText = Color(0xFF7E858D),
-    primaryContainerNontrans = Color(0xFF1E3A5E),
     hazeTint = Color.Black,
 )
 

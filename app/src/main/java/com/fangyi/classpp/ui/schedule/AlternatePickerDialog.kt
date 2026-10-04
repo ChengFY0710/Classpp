@@ -90,7 +90,7 @@ private fun AlternateCourseRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RowShape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .background(MaterialTheme.colorScheme.background)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {

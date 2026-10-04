@@ -134,7 +134,7 @@ fun CourseGrid(
     LazyColumn(
         state = state,
         contentPadding = contentPadding,
-        modifier = modifier.background(MaterialTheme.colorScheme.surfaceContainer),
+        modifier = modifier.background(MaterialTheme.colorScheme.background),
     ) {
         item(key = "weekPager") {
             HorizontalPager(
@@ -381,7 +381,7 @@ private fun DateBand(
                 alpha = 1f - fadeProgress
             }
 
-            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .background(MaterialTheme.colorScheme.background)
             // 网格线画在 graphicsLayer 之后（更内层），随日期带渐隐一起淡出；
             // 画在 background 之后，线条压在带底色之上
             .drawBehind {

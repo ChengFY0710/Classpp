@@ -9,21 +9,14 @@ val OnPrimary = Color(0xFFFFFFFF)
 val PrimaryContainer = Color(0x1F006FEF)
 val OnPrimaryContainer = Color(0x1A000000)
 
-val SecondaryContainer = Color(0xFFDFE4EA)
-val OnSecondaryContainer = Color(0xFF101820)
-val TertiaryContainer = Color(0xFFCFEBED)
-val OnTertiaryContainer = Color(0xFF002022)
-
 val Background = Color(0xFFF2F4F6)
-val OnBackground = Color(0xFF000000)
 
 val Surface = Color(0xFFFFFFFF)
 val OnSurface = Color(0xFF000000)
 val OnSurfaceVariant = Color(0xFF444746)
 
-val SurfaceContainer = Color(0xFFF2F4F6)
+// M3 对话框（AlertDialog/DatePickerDialog）的默认"高一级表面"底色，不可省
 val SurfaceContainerHigh = Color(0xFFEAEDF1)
-val SurfaceContainerHighest = Color(0xFFE4E7EB)
 
 val Outline = Color(0xFFDCE2E7)
 
@@ -46,22 +39,13 @@ val DarkOnPrimary = Color(0xFF003062)
 val DarkPrimaryContainer = Color(0x45338FFF)
 val DarkOnPrimaryContainer = Color(0x339AA2AC)
 
-val DarkSecondaryContainer = Color(0xFF2B323A)
-val DarkOnSecondaryContainer = Color(0xFFE1E7ED)
-val DarkTertiaryContainer = Color(0xFF1E3C3F)
-val DarkOnTertiaryContainer = Color(0xFFC9EAED)
-
 val DarkBackground = Color(0xFF0F1114)
-val DarkOnBackground = Color(0xFFE4E7EA)
 
 val DarkSurface = Color(0xFF292D32)
 val DarkOnSurface = Color(0xFFE4E7EA)
 val DarkOnSurfaceVariant = Color(0xFF9BA2AB)
 
-// 网格底与页面底同色，与浅色（SurfaceContainer = Background）同构
-val DarkSurfaceContainer = Color(0xFF0F1114)
 val DarkSurfaceContainerHigh = Color(0xFF1E2227)
-val DarkSurfaceContainerHighest = Color(0xFF282D33)
 
 val DarkOutline = Color(0xFF2A2F36)
 
