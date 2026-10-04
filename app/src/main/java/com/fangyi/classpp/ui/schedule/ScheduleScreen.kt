@@ -359,6 +359,8 @@ fun ScheduleScreen(
             var switcherVisible by rememberSaveable { mutableStateOf(false) }
             var pendingSwitchId by rememberSaveable { mutableStateOf("") }
             var createMode by rememberSaveable { mutableStateOf(false) }
+            // 课表设置浮层：编辑栏按钮打开（内容自原设置页迁入，见 ScheduleSettingsSheet）
+            var settingsSheetVisible by rememberSaveable { mutableStateOf(false) }
             // 编辑态的网格数据源：草稿 → 渲染模型（复用仓库路径同一套映射与置灰规则）。
             // 同样收**页索引**，页 → 周换算在 lambda 内做
             val displayedContentForPage: (Int) -> WeekPageContent =
@@ -744,8 +746,8 @@ fun ScheduleScreen(
                         ScheduleEditBar(
                             onSave = onSaveEdit,
                             onSwitchSchedule = { switcherVisible = true },
-                            // 课表设置：入口先占位，功能暂未开放
-                            onScheduleSettings = {},
+                            // 课表设置：唤起课表设置浮层（原设置页内容迁入）
+                            onScheduleSettings = { settingsSheetVisible = true },
                             onCancel = { onEditingChange(false) },
                             // 与折叠后的原顶栏同一套背景模糊：内容滚到栏下时渐入
                             blurProgress = blurProgress,
@@ -934,6 +936,21 @@ fun ScheduleScreen(
                         onConfirm = { performSwitch(pendingSwitchId) },
                     )
                 }
+            }
+
+            // 课表设置浮层：内容自设置页迁入（改即时提交仓库，失败 Toast）。
+            // 挂载与可见性分离（同切换课表浮层的两段式关闭）：关闭先播浮层出场动画，
+            // 播完（onDismissed）才真正卸载
+            var settingsSheetMounted by remember { mutableStateOf(false) }
+            if (settingsSheetVisible) settingsSheetMounted = true
+            if (settingsSheetMounted) {
+                ScheduleSettingsSheet(
+                    schedule = schedule,
+                    repository = repository,
+                    visible = settingsSheetVisible,
+                    onDismissed = { settingsSheetMounted = false },
+                    onDismiss = { settingsSheetVisible = false },
+                )
             }
 
             // 长按卡片的上下文菜单（Popup 独立窗口，位置由卡片坐标决定）。
