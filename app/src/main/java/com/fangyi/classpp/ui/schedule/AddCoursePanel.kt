@@ -310,6 +310,8 @@ fun AddCoursePanel(
             },
         ),
         confirmLabel = stringResource(R.string.edit_confirm),
+        // 确认在右、取消/删除在左（顶栏胶囊随位置镜像图标排布）
+        confirmAtEnd = true,
         onConfirm = { submit() },
         rightAction = if (existing != null && onDelete != null) {
             SheetTopAction(

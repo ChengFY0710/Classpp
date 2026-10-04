@@ -131,7 +131,7 @@ data class SheetTopAction(
  * 浮层卡片容器：贯穿整个 app 的浮层设计元素。
  *
  * 结构：全屏遮罩（点按关闭）→ 距顶 [topInset] 定位 → 上圆角 [SheetShape] 卡片撑到屏幕底。
- * 顶栏（拖拽条 + 居中标题 + 左确认/右自定义动作）叠在滚动内容之上，
+ * 顶栏（拖拽条 + 居中标题 + 确认/动作双胶囊，[confirmAtEnd] 可对调左右）叠在滚动内容之上，
  * 用 haze 对其下的滚动内容做**渐变模糊**——照搬课表设置页顶栏的规格，
  * 并由 Surface 的 shape clip 收敛在圆角内，不溢出卡片。
  *
@@ -161,6 +161,9 @@ fun OverlaySheet(
     visible: Boolean = true,
     onDismissed: () -> Unit = {},
     confirmIcon: Int = com.fangyi.classpp.R.drawable.ic_checkmark_circle,
+    // true = 确认胶囊到右侧、动作胶囊（取消/删除）到左侧，两颗胶囊的图标排布随位置镜像
+    // （左颗图标在前、右颗文字在前，图标始终落在胶囊外侧）
+    confirmAtEnd: Boolean = false,
     topInset: Dp = SheetTopInset,
     imeBehavior: SheetImeBehavior = SheetImeBehavior.ContentScroll,
     bottomContent: (@Composable () -> Unit)? = null,
@@ -328,6 +331,7 @@ fun OverlaySheet(
                         confirmIcon = confirmIcon,
                         onConfirm = { if (!closeRequested) onConfirm() },
                         rightAction = guardedRightAction,
+                        confirmAtEnd = confirmAtEnd,
                         hazeState = hazeState,
                         dragModifier = topBarDragModifier,
                         modifier = Modifier.align(Alignment.TopCenter),
@@ -359,7 +363,7 @@ fun OverlaySheet(
 }
 
 /**
- * 顶栏：拖拽条 + 左「确认」胶囊 + 居中标题 + 右动作胶囊。
+ * 顶栏：拖拽条 + 确认胶囊 + 居中标题 + 动作胶囊（默认左确认右动作，[confirmAtEnd] 时对调）。
  * hazeEffect 打在这层上（渐变 1→0、白 30% tint，与设置页同规格），
  * 按钮与标题画在模糊层之上保持清晰；整层被 Surface 裁进浮层圆角。
  * 整条顶栏是下拉关闭的手势区（[dragModifier] 挂垂直拖拽），按钮点击不受影响。
@@ -371,6 +375,7 @@ private fun OverlaySheetTopBar(
     confirmIcon: Int,
     onConfirm: () -> Unit,
     rightAction: SheetTopAction,
+    confirmAtEnd: Boolean = false,
     hazeState: HazeState,
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
@@ -425,7 +430,36 @@ private fun OverlaySheetTopBar(
                     Arrangement.SpaceBetween
                 },
             ) {
-                if (confirmLabel != null) {
+                if (confirmLabel == null) {
+                    // 仅动作胶囊：保持右位、文字在前图标在后
+                    SheetPillButton(
+                        label = rightAction.label,
+                        icon = rightAction.icon,
+                        containerColor = rightAction.containerColor,
+                        contentColor = rightAction.contentColor,
+                        iconAtEnd = true,
+                        onClick = rightAction.onClick,
+                    )
+                } else if (confirmAtEnd) {
+                    // 确认在右、动作（取消/删除）在左：图标排布随位置镜像，
+                    // 两颗胶囊的图标始终落在各自外侧（左颗图标在前、右颗文字在前）
+                    SheetPillButton(
+                        label = rightAction.label,
+                        icon = rightAction.icon,
+                        containerColor = rightAction.containerColor,
+                        contentColor = rightAction.contentColor,
+                        iconAtEnd = false,
+                        onClick = rightAction.onClick,
+                    )
+                    SheetPillButton(
+                        label = confirmLabel,
+                        icon = confirmIcon,
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        iconAtEnd = true,
+                        onClick = onConfirm,
+                    )
+                } else {
                     SheetPillButton(
                         label = confirmLabel,
                         icon = confirmIcon,
@@ -433,15 +467,15 @@ private fun OverlaySheetTopBar(
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                         onClick = onConfirm,
                     )
+                    SheetPillButton(
+                        label = rightAction.label,
+                        icon = rightAction.icon,
+                        containerColor = rightAction.containerColor,
+                        contentColor = rightAction.contentColor,
+                        iconAtEnd = true,
+                        onClick = rightAction.onClick,
+                    )
                 }
-                SheetPillButton(
-                    label = rightAction.label,
-                    icon = rightAction.icon,
-                    containerColor = rightAction.containerColor,
-                    contentColor = rightAction.contentColor,
-                    iconAtEnd = true,
-                    onClick = rightAction.onClick,
-                )
             }
             Text(
                 text = title,
