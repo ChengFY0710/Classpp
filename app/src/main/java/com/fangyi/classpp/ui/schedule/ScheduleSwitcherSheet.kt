@@ -110,7 +110,8 @@ internal fun ScheduleSwitcherSheet(
             if (createMode) onCreateConfirm(name.trim(), start, end) else onCreateModeChange(true)
         },
         rightAction = SheetTopAction(
-            label = stringResource(R.string.settings_cancel),
+            // 列表态是「关闭」；新建表单态的右上按钮语义是放弃表单回列表，仍为「取消」
+            label = stringResource(if (createMode) R.string.settings_cancel else R.string.switcher_close),
             icon = R.drawable.ic_dismiss_circle,
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.onSurface,
@@ -320,7 +321,7 @@ private fun CreateScheduleContent(
 }
 
 /**
- * 删除课表确认框：页内居中白卡（[ConfirmDialogCard]），点名课表并说明不可恢复。
+ * 删除课表确认框：页内居中白卡（[ConfirmDialogCard]），点名课表并说明可在取消编辑后撤销。
  * 确认胶囊 error 红底白字标 destructive；返回键与遮罩点击都只取消。
  * 两段式关闭见 [FadeOverlayDialog]：确认/取消即清 deletingId（名称随之为空），
  * [shownName] 留住最后一份文案，淡出期间不闪空。

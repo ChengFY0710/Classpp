@@ -123,8 +123,9 @@
     <string name="switcher_new">新建课表</string>
     <string name="switcher_new_action">新建</string>
     <string name="switcher_title">切换课表</string>
+    <string name="switcher_close">关闭</string>
     <string name="switcher_delete_title">删除课表</string>
-    <string name="switcher_delete_message">「%1$s」及其全部课程将被删除，此操作无法撤销。</string>
+    <string name="switcher_delete_message">「%1$s」及其全部课程将被删除，此操作可在取消编辑后撤销。</string>
     <string name="date_cn_format">%1$d年%2$d月%3$d日</string>
     <string name="date_hyphen_format">%1$d-%2$d-%3$d</string>
     <string name="date_slash_format">%1$d/%2$d/%3$d</string>
