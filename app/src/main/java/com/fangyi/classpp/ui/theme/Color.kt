@@ -65,7 +65,7 @@ val DarkSurfaceContainerHighest = Color(0xFF282D33)
 
 val DarkOutline = Color(0xFF2A2F36)
 
-val DarkInversePrimary = Color(0xFF006FEF)
+val DarkInversePrimary = Color(0xFF3391FF)
 
 val DarkError = Color(0xFFFF5449)
 val DarkErrorContainer = Color(0xFF4A1C18)
