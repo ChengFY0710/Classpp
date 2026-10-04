@@ -500,9 +500,7 @@ private fun WeekSelectionGrid(
                     val cellColor by animateColorAsState(
                         targetValue = when {
                             isSelected -> MaterialTheme.colorScheme.primary
-                            blocked -> MaterialTheme.colorScheme.onPrimaryContainer.copy(
-                                alpha = 0.4f
-                            )
+                            blocked -> MaterialTheme.colorScheme.onPrimaryContainer
 
                             else -> MaterialTheme.colorScheme.surface
                         },
