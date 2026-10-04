@@ -35,6 +35,12 @@ private fun SheetTextFieldPreview() = ClassppTheme {
             value = "微积分 I-2",
             onValueChange = {},
         )
+        // 超宽自动换行：值区宽度固定，行卡长高、上下内距不变
+        SheetTextField(
+            label = "课程名",
+            value = "微积分 I-2微积分 I-2微积分 I-2微积分 I-2微积分 I-2",
+            onValueChange = {},
+        )
         SheetTextField(
             label = "课程名",
             value = "",

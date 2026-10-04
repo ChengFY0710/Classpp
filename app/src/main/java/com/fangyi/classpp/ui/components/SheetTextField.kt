@@ -47,6 +47,7 @@ import com.fangyi.classpp.ui.theme.classppColors
  * 浮层「行卡」统一行高：上下内距 14×2 + 文字行高 24 = 52dp。
  * 输入框与浮层选择卡片都按它取 `heightIn(min)`，保证两张卡永远等高；
  * 系统字体放大时两者行高同步增长，等高关系依旧成立。
+ * 例外：输入值超宽自动换行时输入行卡按行数长高（上下内距不变），选择卡维持此高度。
  */
 val SheetFieldHeight = 60.dp
 
@@ -64,8 +65,13 @@ val SheetFieldHeight = 60.dp
  * 颜色恒取目标色、浓度由进度控制——若中途切透明，收回途中描边会先隐身，萎缩过程看不见；
  * 进度归 0 后干脆不挂 border（0 宽描边会画成 1px 发丝线）。
  *
- * 除键盘动作外还做一件必要的事：**点了就重新 show 一次键盘**——
- * Compose 输入框已聚焦时再点不会拉起键盘，键盘一旦被收起就唤不回来（上机踩过）。
+ * 除键盘动作外还做两件事：
+ * - **点了就重新 show 一次键盘**——Compose 输入框已聚焦时再点不会拉起键盘，
+ *   键盘一旦被收起就唤不回来（上机踩过）；
+ * - **值区宽度固定 + 超宽自动换行**——值区宽度恒为 label 之外的剩余宽度，
+ *   不随内容伸缩；内容超过此宽度走视觉换行而非横向滚动，行卡随行数长高，
+ *   文本与白底上下边缘的 14dp 间距不变。值仍是逻辑单行：键盘/粘贴带入的
+ *   换行符一律滤掉。
  */
 @Composable
 fun SheetTextField(
@@ -130,7 +136,8 @@ fun SheetTextField(
         Spacer(Modifier.width(12.dp))
         BasicTextField(
             value = value,
-            onValueChange = onValueChange,
+            // 多行输入会引入换行符；值是逻辑单行，滤掉保证只有视觉换行
+            onValueChange = { onValueChange(it.filterNot { ch -> ch == '\n' || ch == '\r' }) },
             textStyle = TextStyle(
                 // 空值本身不可见，占位由 decorationBox 负责
                 color = if (value.isEmpty()) Color.Transparent else MaterialTheme.colorScheme.primary,
@@ -141,7 +148,7 @@ fun SheetTextField(
             cursorBrush = SolidColor(
                 if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
             ),
-            singleLine = true,
+            // 不挂 singleLine：值区宽度固定（weight 占满 label 外剩余空间），超宽自动换行而非横向滚动
             interactionSource = interactionSource,
             keyboardOptions = KeyboardOptions(imeAction = imeAction),
             keyboardActions = KeyboardActions(
