@@ -71,7 +71,7 @@ class ClassppColors(
     /** 选中态浅蓝容器（不透明） */
     val primaryContainerNontrans: Color,
     /**
-     * 顶栏等 Haze 磨砂的叠加基础色（浅色 = 白、深色 = 浅灰蓝）。
+     * 顶栏等 Haze 磨砂的叠加基础色（浅色 = 白提亮、深色 = 深底色压暗）。
      * 调用处按强度 copy(alpha)——各磨砂位强度不同（0.30f / 0.6f），基础色只有一个来源。
      */
     val hazeTint: Color,
@@ -86,7 +86,7 @@ private val LightClassppColors = ClassppColors(
 private val DarkClassppColors = ClassppColors(
     secondaryText = Color(0xFF7E858D),
     primaryContainerNontrans = Color(0xFF1E3A5E),
-    hazeTint = Color(0xFFD9E1EA),
+    hazeTint = Color.Black,
 )
 
 private val LocalClassppColors = staticCompositionLocalOf { LightClassppColors }
