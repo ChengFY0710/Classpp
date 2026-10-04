@@ -112,14 +112,14 @@ private fun SheetInfoCardPreview() = ClassppTheme {
     ) {
         SheetInfoCard(
             entries = listOf(
-                SheetInfoEntry("任课教师", "XX 老师"),
+                SheetInfoEntry("教师", "XX 老师"),
                 SheetInfoEntry("上课地点", "学武楼 C201"),
             ),
         )
         // 值超宽自动换行：卡片长高、上下边距不变、label 垂直居中
         SheetInfoCard(
             entries = listOf(
-                SheetInfoEntry("任课教师", "XX 老师"),
+                SheetInfoEntry("教师", "XX 老师"),
                 SheetInfoEntry("上课地点", "学武楼学武楼学武楼学武楼学武楼学武楼学武楼学武楼"),
             ),
         )

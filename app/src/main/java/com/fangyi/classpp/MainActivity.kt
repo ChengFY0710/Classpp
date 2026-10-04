@@ -73,6 +73,10 @@ class MainActivity : ComponentActivity() {
                 var showSettings by rememberSaveable { mutableStateOf(false) }
                 // 课表编辑态：由课表页的编辑按钮进入，编辑期间隐藏底部导航栏
                 var editing by rememberSaveable { mutableStateOf(false) }
+                // 课表页的全屏浮层（课程详情）在场时同样藏导航栏：导航栏在组合顺序上
+                // 画在页面（连同页内浮层）之上，只能以「藏」实现浮层「盖住」它。
+                // saveable 记住：旋转重建时浮层若开着，导航栏首帧就不闪现
+                var navBarHiddenByOverlay by rememberSaveable { mutableStateOf(false) }
                 val repository = rememberScheduleRepository()
 
                 // tab 平移进度（浮点序号）：只在各页 measure 阶段被读取，
@@ -124,6 +128,7 @@ class MainActivity : ComponentActivity() {
                         repository = repository,
                         editing = editing,
                         onEditingChange = { editing = it },
+                        onOverlayOverNavBarChange = { navBarHiddenByOverlay = it },
                         onOpenSettings = { showSettings = true },
                     )
                     TodoScreen(
@@ -135,11 +140,11 @@ class MainActivity : ComponentActivity() {
                                 progress = tabProgress,
                             ),
                     )
-                    // 编辑态隐藏底部导航栏（设计稿如此，也避免编辑中途被切走）：
+                    // 编辑态或课表页全屏浮层在场时隐藏底部导航栏（设计稿如此，也避免编辑中途被切走）：
                     // 下移出屏 / 上移入屏，与顶栏的编辑栏过渡（ScheduleScreen 内 AnimatedContent）
                     // 共用 [EditTransitionMillis] 规格，同一个 editing 翻转同帧启动，两侧严格同步
                     AnimatedVisibility(
-                        visible = !editing,
+                        visible = !editing && !navBarHiddenByOverlay,
                         enter = slideInVertically(
                             // 从自身高度下方起步：上移入
                             animationSpec = tween(EditTransitionMillis, easing = FastOutSlowInEasing),
@@ -152,8 +157,8 @@ class MainActivity : ComponentActivity() {
                     ) {
                         BottomNavBar(
                             selectedTab = selectedTab,
-                            // 退场动画期间仍在组合中，挡掉点击：编辑中途不许切 tab
-                            onTabSelected = { if (!editing) selectedTab = it },
+                            // 退场动画期间仍在组合中，挡掉点击：编辑中途或浮层打开时不许切 tab
+                            onTabSelected = { if (!editing && !navBarHiddenByOverlay) selectedTab = it },
                         )
                     }
                     // 设置页背景压暗：与设置页同节奏（进 360 / 出 250）的纯淡入淡出遮罩，

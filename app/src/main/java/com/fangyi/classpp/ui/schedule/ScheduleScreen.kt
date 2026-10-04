@@ -153,6 +153,10 @@ private fun rememberTodayIso(): State<IsoDate> {
  * 底部导航栏由调用方隐藏；空位渲染添加卡片，点它开弹窗加课。改动只落进
  * [ScheduleEditSession] 的草稿，点保存才写回仓库，取消（或返回键）整份丢弃。
  *
+ * [onOverlayOverNavBarChange]：需要盖住底部导航栏的全屏浮层（课程详情）在场与否。
+ * 导航栏在组合顺序上位于本页之上、会画在浮层头顶，故由调用方以「藏」实现「盖」——
+ * 浮层入场即上报、退场动画播完（卸载）才解除。
+ *
  * 数据来自 [repository]（null = 尚未加载完成，显示指示器）；
  * 无激活课表时显示空状态，经 [onOpenSettings] 引导至设置页新建。
  */
@@ -162,6 +166,7 @@ fun ScheduleScreen(
     repository: ScheduleRepository? = null,
     editing: Boolean = false,
     onEditingChange: (Boolean) -> Unit = {},
+    onOverlayOverNavBarChange: (Boolean) -> Unit = {},
     onOpenSettings: () -> Unit = {},
 ) {
     // get() 返回即 bootstrap 完成，此分支仅首帧毫秒级；早返回后下方 smart cast 为非空
@@ -856,6 +861,11 @@ fun ScheduleScreen(
                         onDismissed = { detailMounted = null },
                     )
                 }
+            }
+            // 浮层在场（含收场动画期间）就请调用方藏导航栏；onDismissed 卸载后才放回来，
+            // 导航栏不会在浮层还挂着出场时提前滑回
+            LaunchedEffect(detailMounted != null) {
+                onOverlayOverNavBarChange(detailMounted != null)
             }
 
             // 交替课程选择弹窗：同格多门时才出现（见 onEditClick），选完开那一门的编辑面板。
