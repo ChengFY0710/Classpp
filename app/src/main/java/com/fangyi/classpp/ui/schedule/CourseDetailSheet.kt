@@ -95,6 +95,7 @@ fun CourseDetailSheet(
                 text = entry.name,
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(start = 12.dp, end = 12.dp),
             )
             Text(
                 text = cellInfo,
