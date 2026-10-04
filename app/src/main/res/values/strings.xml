@@ -99,6 +99,7 @@
     <string name="edit_alternate_pick_title">请选择要编辑的交替课程</string>
     <!-- 课程详情浮层 -->
     <string name="detail_title">课程详情</string>
+    <string name="detail_close">关闭</string>
     <string name="detail_teacher">教师</string>
     <string name="detail_location">上课地点</string>
     <string name="detail_note_ph">点击输入添加备注</string>

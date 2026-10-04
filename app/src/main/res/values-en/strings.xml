@@ -99,6 +99,7 @@
     <string name="edit_alternate_pick_title">Choose which alternating course to edit</string>
     <!-- Course details sheet -->
     <string name="detail_title">Course details</string>
+    <string name="detail_close">Close</string>
     <string name="detail_teacher">Teacher</string>
     <string name="detail_location">Location</string>
     <string name="detail_note_ph">Tap to add a note</string>
