@@ -34,14 +34,11 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.ui.theme.SheetCardShape
-import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /**
  * 浮层「行卡」统一行高：上下内距 14×2 + 文字行高 24 = 52dp。
@@ -108,6 +105,8 @@ fun SheetTextField(
         label = "sheetFieldStroke",
     )
     val strokeWidth = 2.dp * strokeProgress
+    // 值区文字样式（角色样式）：空值不可见时要取它的色再置透明，故先取值
+    val valueStyle = MaterialTheme.classppTextStyles.fieldValue
 
     Row(
         modifier = modifier
@@ -132,20 +131,16 @@ fun SheetTextField(
     ) {
         Text(
             text = label,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.classppTextStyles.fieldLabel,
         )
         Spacer(Modifier.width(12.dp))
         BasicTextField(
             value = value,
             // 多行输入会引入换行符；值是逻辑单行，滤掉保证只有视觉换行
             onValueChange = { onValueChange(it.filterNot { ch -> ch == '\n' || ch == '\r' }) },
-            textStyle = TextStyle(
+            textStyle = valueStyle.copy(
                 // 空值本身不可见，占位由 decorationBox 负责
-                color = if (value.isEmpty()) Color.Transparent else MaterialTheme.colorScheme.primary,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
+                color = if (value.isEmpty()) Color.Transparent else valueStyle.color,
                 textAlign = TextAlign.End,
             ),
             cursorBrush = SolidColor(
@@ -171,9 +166,7 @@ fun SheetTextField(
                     if (value.isEmpty() && !focused && placeholder.isNotEmpty()) {
                         Text(
                             text = placeholder,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.classppColors.secondaryText,
+                            style = MaterialTheme.classppTextStyles.fieldPlaceholder,
                             textAlign = TextAlign.End,
                             modifier = Modifier.fillMaxWidth(),
                         )

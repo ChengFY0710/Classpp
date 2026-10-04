@@ -27,12 +27,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.ui.theme.SheetCardShape
-import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /**
  * 浮层「大量文字输入框」（备注等长文本用）：一张白卡，文本顶左对齐、可换行。
@@ -46,7 +43,7 @@ import com.fangyi.classpp.ui.theme.classppColors
  * - 多行：允许换行，键盘回车即插入换行（不设 imeAction，故无 Next/Done 动作）；
  * - 无 label，占位顶左对齐；未聚焦且为空时显示灰色占位，聚焦时光标可见、不显占位；
  * - 空态最小 3 行高（minLines），内容超出后卡片随行数长高；
- * - 已输入文字为 onSurface 黑色（设计稿如此），非输入框的 primary 蓝。
+ * - 已输入文字与 [SheetTextField] 的值同款（fieldValue 角色样式：16sp Medium primary 蓝）。
  *
  * 同样做「点了就重新 show 一次键盘」：Compose 输入框已聚焦时再点不会拉起键盘，
  * 键盘一旦被收起就唤不回来（上机踩过）。
@@ -83,15 +80,15 @@ fun SheetTextArea(
         label = "sheetTextAreaStroke",
     )
     val strokeWidth = 2.dp * strokeProgress
+    // 值区文字样式（角色样式）：空值不可见时要取它的色再置透明，故先取值（同 SheetTextField）
+    val valueStyle = MaterialTheme.classppTextStyles.fieldValue
 
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
-        textStyle = TextStyle(
+        textStyle = valueStyle.copy(
             // 空值本身不可见，占位由 decorationBox 负责
-            color = if (value.isEmpty()) Color.Transparent else MaterialTheme.colorScheme.onSurface,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
+            color = if (value.isEmpty()) Color.Transparent else valueStyle.color,
         ),
         cursorBrush = SolidColor(
             if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
@@ -123,9 +120,7 @@ fun SheetTextArea(
                 if (value.isEmpty() && !focused && placeholder.isNotEmpty()) {
                     Text(
                         text = placeholder,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.classppColors.secondaryText,
+                        style = MaterialTheme.classppTextStyles.fieldPlaceholder,
                     )
                 }
                 innerTextField()

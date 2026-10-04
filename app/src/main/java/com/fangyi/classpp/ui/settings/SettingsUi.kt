@@ -42,7 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -55,6 +55,7 @@ import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MIN
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.classppTextStyles
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
@@ -72,6 +73,12 @@ import dev.chrisbanes.haze.hazeEffect
  */
 
 private val ChipShape = RoundedCornerShape(8.dp)
+
+/**
+ * 设置页行内文字（分组标题 / 行 label / 行值）的行高与字距：沿用原 bodyLarge 的取值，
+ * 换成角色化样式后设置页的行距节奏保持不变（角色样式本身只统一字号 / 粗细 / 颜色）。
+ */
+private fun TextStyle.settingsRowMetrics() = copy(lineHeight = 24.sp, letterSpacing = 0.5.sp)
 
 /**
  * 设置页顶栏：左侧圆形返回按钮 + 居中加粗标题。
@@ -116,9 +123,7 @@ internal fun SettingsTopBar(
             title = {
                 Text(
                     text = title,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.classppTextStyles.topBarTitle,
                 )
             },
             // 状态栏 inset 由顶栏自己吸收：磨砂背景一直铺到屏幕顶（沉浸式）
@@ -164,8 +169,7 @@ internal fun SettingsSection(
         Text(
             text = title,
             modifier = Modifier.padding(start = 4.dp),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.classppColors.secondaryText,
+            style = MaterialTheme.classppTextStyles.sectionTitle.settingsRowMetrics(),
         )
         content()
     }
@@ -236,15 +240,12 @@ internal fun SettingRow(
         Text(
             text = label,
             modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.classppTextStyles.fieldLabel.settingsRowMetrics(),
         )
         if (value != null) {
             Text(
                 text = value,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.classppTextStyles.fieldValue.settingsRowMetrics(),
             )
         }
         trailing?.invoke(this)

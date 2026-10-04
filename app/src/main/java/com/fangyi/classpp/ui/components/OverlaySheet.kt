@@ -54,14 +54,13 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetShape
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.classppTextStyles
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
@@ -485,9 +484,7 @@ private fun OverlaySheetTopBar(
             }
             Text(
                 text = title,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.classppTextStyles.topBarTitle,
                 modifier = Modifier.align(Alignment.Center),
             )
         }
@@ -544,15 +541,15 @@ fun SheetPillButton(
         if (!iconAtEnd) iconComposable()
         Text(
             text = label,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.classppTextStyles.pillButton,
             color = contentColor,
         )
         if (iconAtEnd) iconComposable()
     }
 }
 
-/** 分组标题：浅灰字（区别于旧版 14sp 蓝字）；左缩进 4dp 与设置页 SettingsSection 标题一致。 */
+/** 分组标题：浅灰字，走统一角色样式（16sp Medium secondaryText，与设置页 SettingsSection 同款）；
+ *  左缩进 4dp 与设置页 SettingsSection 标题一致。 */
 @Composable
 fun SheetSectionLabel(
     text: String,
@@ -560,8 +557,7 @@ fun SheetSectionLabel(
 ) {
     Text(
         text = text,
-        fontSize = 16.sp,
-        color = MaterialTheme.classppColors.secondaryText,
+        style = MaterialTheme.classppTextStyles.sectionTitle,
         modifier = modifier.padding(start = 4.dp),
     )
 }

@@ -21,12 +21,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.MenuShape
+import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /**
  * 浮层选择卡片：白卡片「标题 + 右侧蓝色值 + 上下箭头」，点按在卡片右上方弹出菜单选择。
@@ -61,17 +61,13 @@ fun PopupSelectCard(
     ) {
         Text(
             text = title,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.classppTextStyles.fieldLabel,
             lineHeight = 16.sp,
         )
         Spacer(Modifier.weight(1f))
         Text(
             text = valueText,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.classppTextStyles.fieldValue,
             lineHeight = 16.sp,
         )
         // 菜单锚点：上缘与卡片内容顶对齐（卡片内距 14 + 图标上缘），下弹后被 offset 抬回卡片顶
@@ -97,9 +93,7 @@ fun PopupSelectCard(
                         text = {
                             Text(
                                 text = label,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.classppTextStyles.menuItem,
                                 lineHeight = 16.sp,
                             )
                         },

@@ -7,6 +7,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
@@ -75,11 +76,20 @@ private val DarkClassppColors = ClassppColors(
 
 private val LocalClassppColors = staticCompositionLocalOf { LightClassppColors }
 
+/** 默认 = 浅色一组（与 [ClassppColors] 同一约定），未包 [ClassppTheme] 时预览不崩 */
+private val LocalClassppTextStyles = staticCompositionLocalOf {
+    classppTextStyles(LightColorScheme, LightClassppColors)
+}
+
 private val LocalClassppDarkTheme = staticCompositionLocalOf { false }
 
 /** 主题自定义色访问入口，用法：`MaterialTheme.classppColors.secondaryText` */
 val MaterialTheme.classppColors: ClassppColors
     @Composable get() = LocalClassppColors.current
+
+/** 角色化文字样式访问入口，用法：`MaterialTheme.classppTextStyles.fieldLabel`（定义见 Type.kt） */
+val MaterialTheme.classppTextStyles: ClassppTextStyles
+    @Composable get() = LocalClassppTextStyles.current
 
 /**
  * 当前是否深色主题：跟随 [ClassppTheme] 的入参（含设置页的手动覆盖），
@@ -94,8 +104,14 @@ fun ClassppTheme(
     content: @Composable () -> Unit,
 ) {
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val classppColors = if (darkTheme) DarkClassppColors else LightClassppColors
+    // 角色化文字样式由主题色派生：深浅切换时重建，同一主题下实例稳定（static local 不额外失效）
+    val textStyles = remember(colorScheme, classppColors) {
+        classppTextStyles(colorScheme, classppColors)
+    }
     CompositionLocalProvider(
-        LocalClassppColors provides if (darkTheme) DarkClassppColors else LightClassppColors,
+        LocalClassppColors provides classppColors,
+        LocalClassppTextStyles provides textStyles,
         LocalClassppDarkTheme provides darkTheme,
     ) {
         MaterialTheme(
