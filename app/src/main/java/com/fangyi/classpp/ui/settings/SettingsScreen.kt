@@ -66,11 +66,14 @@ import com.fangyi.classpp.ui.schedule.toMessage
 import com.fangyi.classpp.ui.schedule.toPickerMillis
 import com.fangyi.classpp.ui.theme.ButtonShape
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
 
+// 纵向节奏（分组间距、首项距顶栏、尾部余量）。横向边距走 ui.theme 的 PageHorizontalSpacing
+// （与浮层同源），不在此列
 private val SectionSpacing = 18.dp
 
 /** 底部额外留白：末屏内容可继续上滑一段（滑到顶栏之后仍有一段余量） */
@@ -147,7 +150,7 @@ fun SettingsScreen(
                             // 点空白（卡片间隙/留白）取消聚焦收起键盘；课表名的失焦提交
                             // （SheetTextField）也由这次清焦触发
                             .clearFocusOnTap()
-                            .padding(horizontal = SectionSpacing)
+                            .padding(horizontal = PageHorizontalSpacing)
                             .padding(
                                 // 首项距顶栏留 20dp（SectionSpacing），与页面其余间距同源
                                 top = topBarHeight + SectionSpacing,

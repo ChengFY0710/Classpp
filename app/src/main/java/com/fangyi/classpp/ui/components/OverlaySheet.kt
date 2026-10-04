@@ -58,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetShape
 import com.fangyi.classpp.ui.theme.classppColors
@@ -74,12 +75,6 @@ import kotlinx.coroutines.launch
  * 键盘弹起不会改变浮层的位置与高度（见 [SheetImeBehavior.ContentScroll]）。
  */
 val SheetTopInset: Dp = 56.dp
-
-/**
- * 浮层内容的横向边距与卡片纵向间距——与课表设置页同源
- * （设置页 `SettingsScreen.SectionSpacing = 18.dp`），保证两处卡片宽度、节奏一致。
- */
-val SheetSectionSpacing: Dp = 18.dp
 
 val SheetSectionSpacingBetween: Dp = 12.dp // 卡片与卡片间的间距
 val SheetSectionSpacingBottom:Dp = 14.dp  // 卡片组底与下一个卡片组间距（如果需要）
@@ -107,6 +102,12 @@ private const val ScrimAlpha = 0.32f
 
 /** 顶栏总高（拖拽条 + 按钮行），滚动内容顶部为它留位。 */
 private val TopBarHeight = 80.dp
+
+/**
+ * 顶栏按钮行（把手下的关闭/确认胶囊）的横向边距：刻意大于内容卡片的
+ * [PageHorizontalSpacing]（15dp），胶囊贴边更收、与卡片左缘不齐平（设计如此）。
+ */
+private val TopBarRowHorizontalPadding: Dp = 15.dp
 
 /**
  * 键盘与浮层的关系（未来不同浮层可选不同行为）：
@@ -314,8 +315,8 @@ fun OverlaySheet(
                             // 点空白（卡片间隙/留白/尾部余量）取消聚焦收起键盘：
                             // SheetTextField / SheetTextArea 一族的通用宿主行为
                             .clearFocusOnTap()
-                            // 横向 18dp = 设置页同款页边距，卡片宽度与设置页一致
-                            .padding(horizontal = SheetSectionSpacing),
+                            // 横向边距 = 设置页同款页边距（PageHorizontalSpacing），卡片宽度与设置页一致
+                            .padding(horizontal = PageHorizontalSpacing),
                     ) {
                         // 为叠在上方的顶栏留位；滚动后内容进入顶栏区域并被模糊
                         Spacer(Modifier.height(TopBarHeight))
@@ -419,7 +420,11 @@ private fun OverlaySheetTopBar(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 18.dp, end = 18.dp, top = 10.dp),
+                .padding(
+                    start = TopBarRowHorizontalPadding,
+                    end = TopBarRowHorizontalPadding,
+                    top = 7.dp,
+                ),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
