@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="background">#F2F4F6</color>
+    <!-- 手动浅/深主题（Theme.Classpp.Light/Dark）的窗口背景：显式取色，不随 night 限定符翻转 -->
+    <color name="background_light">#F2F4F6</color>
+    <color name="background_dark">#0F1114</color>
     <color name="background_blue">#E2EBF7</color>
     <color name="brand_blue">#0077FF</color>
 </resources>

@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.EditActionShape
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
@@ -73,6 +74,8 @@ fun ScheduleEditBar(
     val days = daysPerWeek.coerceIn(1, weekdayNames.size)
     val weekdays = weekdayNames.take(days)
     val progress = blurProgress.coerceIn(0f, 1f)
+    // hazeEffect 的 block 在绘制期执行、非 composable 上下文：tint 取值提到 modifier 之前
+    val hazeTint = MaterialTheme.classppColors.hazeTint
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -88,7 +91,7 @@ fun ScheduleEditBar(
                             startIntensity = 1f,
                             endIntensity = 0f,
                         )
-                        tints = listOf(HazeTint(Color.White.copy(alpha = 0.30f)))
+                        tints = listOf(HazeTint(hazeTint.copy(alpha = 0.30f)))
                         noiseFactor = 0f
                     }
                 } else {

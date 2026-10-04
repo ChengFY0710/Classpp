@@ -33,6 +33,12 @@
     <string name="term_weeks_value">%1$d weeks</string>
     <string name="term_weeks_range">1–30 weeks</string>
     <string name="section_term">Term</string>
+    <!-- 外观 -->
+    <string name="section_appearance">Appearance</string>
+    <string name="appearance_theme_mode">Dark mode</string>
+    <string name="appearance_theme_system">Follow system</string>
+    <string name="appearance_theme_light">Light</string>
+    <string name="appearance_theme_dark">Dark</string>
     <string name="section_days">Days per week</string>
     <string name="section_slots">Slots and times</string>
     <string name="section_display">Display</string>

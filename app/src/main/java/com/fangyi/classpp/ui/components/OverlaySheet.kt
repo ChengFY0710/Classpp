@@ -90,8 +90,6 @@ val SheetSectionSpacingBottom:Dp = 14.dp  // 卡片组底与下一个卡片组�
  */
 val SheetBottomSlack: Dp = 120.dp
 
-private val HandleColor = Color(0xFFD9DDE1)
-
 /** 入场时长：从屏幕底部滑入，减速曲线（先快后慢） */
 private const val SheetEnterMillis = 320
 
@@ -380,6 +378,8 @@ private fun OverlaySheetTopBar(
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
 ) {
+    // hazeEffect 的 block 在绘制期执行、非 composable 上下文：tint 取值提到 modifier 之前
+    val hazeTint = MaterialTheme.classppColors.hazeTint
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -394,7 +394,7 @@ private fun OverlaySheetTopBar(
                     startIntensity = 1f,
                     endIntensity = 0f,
                 )
-                tints = listOf(HazeTint(Color.White.copy(alpha = 0.30f)))
+                tints = listOf(HazeTint(hazeTint.copy(alpha = 0.30f)))
                 noiseFactor = 0f
             }
             .then(dragModifier),
@@ -407,13 +407,14 @@ private fun OverlaySheetTopBar(
                 .offset(y = 6.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier
-                    .width(40.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(HandleColor),
-            )
+                Box(
+                    modifier = Modifier
+                        .width(40.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        // 把手色 = 网格线 outline：同「底上略凸出一线」的弱对比语义，深浅主题各自成立
+                        .background(MaterialTheme.colorScheme.outline),
+                )
         }
         Box(
             modifier = Modifier

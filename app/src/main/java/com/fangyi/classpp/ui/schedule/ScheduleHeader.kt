@@ -62,6 +62,7 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.Correct
 import com.fangyi.classpp.ui.theme.Error
 import com.fangyi.classpp.ui.theme.SettingsCardShape
@@ -235,6 +236,9 @@ fun ScheduleHeader(
     // 学期后没有今周页（不显示）。查看的周与今周相同则按钮隐藏
     val showBackToCurrent = todayWeek != null && selectedWeek != todayWeek
 
+    // hazeEffect 的 block 在绘制期执行、非 composable 上下文：tint 取值提到 Layout 之前
+    val hazeTint = MaterialTheme.classppColors.hazeTint
+
     Layout(
         content = {
             // 1) 顶栏行：高度随折叠收缩，图标渐隐
@@ -375,7 +379,7 @@ fun ScheduleHeader(
                             startIntensity = 1f,
                             endIntensity = 0f,
                         )
-                        tints = listOf(HazeTint(Color.White.copy(alpha = 0.30f)))
+                        tints = listOf(HazeTint(hazeTint.copy(alpha = 0.30f)))
                         noiseFactor = 0f
                     }
                 } else {
@@ -522,11 +526,11 @@ private fun WeekPill(
                     shadowElevation = 45.dp.toPx() * blurProgress
                     spotShadowColor = Color.Black.copy(alpha = 0.2f)
                 }
-                // 扁平灰底 → 半透明白，与顶栏模糊同步过渡
+                // 扁平灰底 → 表面亮色，与顶栏模糊同步过渡（深色主题下即「深底 → 更亮一档」）
                 .background(
                     lerp(
                         MaterialTheme.colorScheme.background,
-                        Color.White,
+                        MaterialTheme.colorScheme.surface,
                         blurProgress,
                     ),
                 )
@@ -662,6 +666,8 @@ private fun WeekPickerCardShell(
     onWeekSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // hazeEffect 的 block 在绘制期执行、非 composable 上下文：tint 取值提到 modifier 之前
+    val hazeTint = MaterialTheme.classppColors.hazeTint
     Box(
         modifier = modifier
             .padding(
@@ -681,7 +687,7 @@ private fun WeekPickerCardShell(
                 if (hazeState != null) {
                     Modifier.hazeEffect(hazeState) {
                         blurRadius = 12.dp
-                        tints = listOf(HazeTint(Color.White.copy(alpha = 0.6f)))
+                        tints = listOf(HazeTint(hazeTint.copy(alpha = 0.6f)))
                         noiseFactor = 0f
                     }
                 } else {

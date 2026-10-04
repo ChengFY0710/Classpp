@@ -1,5 +1,6 @@
 package com.fangyi.classpp
 
+import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -9,6 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -28,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,21 +56,54 @@ import com.fangyi.classpp.ui.placeholder.TodoScreen
 import com.fangyi.classpp.ui.schedule.ScheduleScreen
 import com.fangyi.classpp.ui.settings.SettingsScreen
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.ThemeMode
+import com.fangyi.classpp.ui.theme.ThemePreferences
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 外观模式真源：冷启动只读这一次，早于 super.onCreate，下面的 setTheme 才能生效
+        val savedThemeMode = ThemePreferences.load(this)
+        // 手动浅色/深色时覆盖窗口背景主题：Compose 首帧之前窗口底色就是对的，不闪白。
+        // 跟随系统不 setTheme：manifest 的 Theme.Classpp + values-night 已按系统深浅自动选中
+        when (savedThemeMode) {
+            ThemeMode.System -> Unit
+            ThemeMode.Light -> setTheme(R.style.Theme_Classpp_Light)
+            ThemeMode.Dark -> setTheme(R.style.Theme_Classpp_Dark)
+        }
         super.onCreate(savedInstanceState)
-        // 固定浅色系统栏外观：状态栏/导航栏全透明、深色前景。
-        // 必须用 light 而非 auto：auto 会把 isNavigationBarContrastEnforced 置为 true，
-        // 三键导航下系统会自动垫一层灰色遮罩
+        // 系统栏外观随主题：状态栏/导航栏全透明、前景图标深浅按模式切换。
+        // 必须显式 light 而非 auto：auto 会把 isNavigationBarContrastEnforced 置为 true，
+        // 三键导航下系统会自动垫一层灰色遮罩。Compose 首帧后由 SideEffect 随 darkTheme
+        // 维护（见下），这里只兜首帧，darkTheme 初值与组合内计算同源
+        val initialDark = when (savedThemeMode) {
+            ThemeMode.System ->
+                (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                    Configuration.UI_MODE_NIGHT_YES
+            ThemeMode.Light -> false
+            ThemeMode.Dark -> true
+        }
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+            statusBarStyle = systemBarStyle(initialDark),
+            navigationBarStyle = systemBarStyle(initialDark),
         )
         setContent {
-            ClassppTheme {
+            // 外观模式状态：prefs 是真源，旋转/系统深色切换等重建时 onCreate 重读，无需 saveable
+            var themeMode by remember { mutableStateOf(savedThemeMode) }
+            val darkTheme = when (themeMode) {
+                ThemeMode.System -> isSystemInDarkTheme()
+                ThemeMode.Light -> false
+                ThemeMode.Dark -> true
+            }
+            ClassppTheme(darkTheme = darkTheme) {
+                // 主题切换（含设置页即时改选）后重设系统栏外观；enableEdgeToEdge 幂等
+                SideEffect {
+                    this@MainActivity.enableEdgeToEdge(
+                        statusBarStyle = systemBarStyle(darkTheme),
+                        navigationBarStyle = systemBarStyle(darkTheme),
+                    )
+                }
                 var selectedTab by rememberSaveable { mutableStateOf(AppTab.Timetable) }
                 // 设置页开关（全屏覆盖层，见 Box 内组合顺序）
                 var showSettings by rememberSaveable { mutableStateOf(false) }
@@ -229,6 +265,11 @@ class MainActivity : ComponentActivity() {
                         SettingsScreen(
                             onClose = { showSettings = false },
                             repository = repository,
+                            themeMode = themeMode,
+                            onThemeModeChange = { mode ->
+                                themeMode = mode
+                                ThemePreferences.save(this@MainActivity, mode)
+                            },
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer {
@@ -284,6 +325,17 @@ private const val SettingsEnterMillis = 360
 
 /** 设置页退场时长：同方向右滑出，比进场短一些，返回更利落 */
 private const val SettingsExitMillis = 250
+
+/**
+ * 系统栏样式按主题二选一：全透明底，前景图标深色（浅色主题）/浅色（深色主题）。
+ * 两处调用（onCreate 兜首帧 + SideEffect 随主题维护）同源，规格不漂移。
+ */
+private fun systemBarStyle(dark: Boolean): SystemBarStyle =
+    if (dark) {
+        SystemBarStyle.dark(Color.TRANSPARENT)
+    } else {
+        SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+    }
 
 /**
  * tab 页横向平移：视觉位置 = (自身序号 − 动画进度) × 页宽，三页像一条连续带子——

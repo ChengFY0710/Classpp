@@ -36,3 +36,39 @@ val OnErrorContainer = Color(0xFF410E0B)
 val Scrim = Color(0xFF000000)
 
 val Correct = Color(0xFF22B14C)
+
+// ===== 深色模式 =====
+// 与浅色同构的冷灰阶梯：Background 最深、Surface（卡片）亮一档、容器再亮——
+// 对应浅色「页面灰底 → 白卡」的层级关系反转。Primary 提亮为 tonal 80（#A3C8FA，
+// 与浅色 InversePrimary 同源），保证深底上文字/图标对比达标。
+val DarkPrimary = Color(0xFFA3C8FA)
+val DarkOnPrimary = Color(0xFF003062)
+val DarkPrimaryContainer = Color(0x337CB4FA)
+val DarkOnPrimaryContainer = Color(0xFFD6E5FF)
+
+val DarkSecondaryContainer = Color(0xFF2B323A)
+val DarkOnSecondaryContainer = Color(0xFFE1E7ED)
+val DarkTertiaryContainer = Color(0xFF1E3C3F)
+val DarkOnTertiaryContainer = Color(0xFFC9EAED)
+
+val DarkBackground = Color(0xFF0F1114)
+val DarkOnBackground = Color(0xFFE4E7EA)
+
+val DarkSurface = Color(0xFF181C21)
+val DarkOnSurface = Color(0xFFE4E7EA)
+val DarkOnSurfaceVariant = Color(0xFF9BA2AB)
+
+// 网格底与页面底同色，与浅色（SurfaceContainer = Background）同构
+val DarkSurfaceContainer = Color(0xFF0F1114)
+val DarkSurfaceContainerHigh = Color(0xFF1E2227)
+val DarkSurfaceContainerHighest = Color(0xFF282D33)
+
+val DarkOutline = Color(0xFF2A2F36)
+
+val DarkInversePrimary = Color(0xFF006FEF)
+
+val DarkError = Color(0xFFFF5449)
+val DarkErrorContainer = Color(0xFF4A1C18)
+val DarkOnErrorContainer = Color(0xFFFFD9D4)
+
+val DarkScrim = Color(0xFF000000)

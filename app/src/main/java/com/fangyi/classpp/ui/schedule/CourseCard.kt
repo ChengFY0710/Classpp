@@ -36,11 +36,13 @@ import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.isDarkTheme
 
 private val CardShape = RoundedCornerShape(6.dp)
 private val BarWidth = 3.dp
 
-/** [CourseColor] 到卡片竖条/时间文字颜色的映射（编辑弹窗的色块也用它） */
+/** [CourseColor] 到卡片竖条/时间文字颜色的映射（编辑弹窗的色块也用它）。
+ *  马卡龙系内容色在浅色白卡与深色深卡上对比都成立，深浅共用一套 */
 internal val CourseColor.barColor: Color
     get() = when (this) {
         CourseColor.Blue -> Color(0xFFB1C4EE)
@@ -53,9 +55,10 @@ internal val CourseColor.barColor: Color
         CourseColor.Pink -> Color(0xFFEDB5C9)
     }
 
-/** 置灰规范色（需求 7）：卡片底 #cbcbcb、课名 #737a83（教师/地点同用后者，避免低对比度） */
-private val InactiveBarColor = Color(0xFFCBCBCB)
-private val InactiveTextColor = Color(0xFFCBCBCB)
+/** 置灰规范色（需求 7）：卡片底 #cbcbcb、课名 #737a83（教师/地点同用后者，避免低对比度）。
+ *  深色卡底上取更暗的灰，保持同等「刻意弱化」的视觉强度 */
+private val InactiveColorLight = Color(0xFFCBCBCB)
+private val InactiveColorDark = Color(0xFF5C6269)
 
 /**
  * 课程卡片：白底圆角卡 + 左侧彩色竖条。
@@ -80,12 +83,13 @@ fun CourseCard(
     onLongClick: (() -> Unit)? = null,
     endTime: String = slot.endTime,
 ) {
+    val inactiveColor = if (MaterialTheme.isDarkTheme) InactiveColorDark else InactiveColorLight
     val barColor = if (course.active) {
         course.color.barColor
     } else {
-        InactiveTextColor
+        inactiveColor
     }
-    val secondaryColor = if (course.active) MaterialTheme.classppColors.secondaryText else InactiveTextColor
+    val secondaryColor = if (course.active) MaterialTheme.classppColors.secondaryText else inactiveColor
     // 长按与点击同源：都在 clip 之内（圆角外的点击/涟漪被裁掉）
     val clickModifier = when {
         onLongClick != null -> Modifier.combinedClickable(
@@ -148,7 +152,7 @@ fun CourseCard(
                         color = if (course.active) {
                             MaterialTheme.colorScheme.onSurface
                         } else {
-                            InactiveTextColor
+                            inactiveColor
                         },
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,

@@ -1,9 +1,12 @@
 package com.fangyi.classpp.ui.settings
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
@@ -14,12 +17,16 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -59,6 +66,7 @@ import com.fangyi.classpp.ui.schedule.toMessage
 import com.fangyi.classpp.ui.schedule.toPickerMillis
 import com.fangyi.classpp.ui.theme.ButtonShape
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.ThemeMode
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
@@ -72,17 +80,20 @@ private val BottomScrollSlack = 120.dp
  * 设置页：全屏覆盖层（由 MainActivity 组合在底部导航之后），返回键/关闭按钮经 [onClose] 退出。
  *
  * 课表级设置（课表名/学期/天数/节数时间/显示开关）已整体迁往编辑态的「课表设置」浮层
- * （见 Schedule ui 的 [com.fangyi.classpp.ui.schedule.ScheduleSettingsSheet]），本页只剩壳：
+ * （见 Schedule ui 的 [com.fangyi.classpp.ui.schedule.ScheduleSettingsSheet]），本页只剩：
+ * - app 级设置「深色模式」三选一（[themeMode] / [onThemeModeChange]，任何状态下都显示）；
  * - [repository] = null → 加载指示（仅首帧毫秒级）；
  * - 无激活课表 → 仅"新建课表"表单（首次使用的创建入口：课表页空态引导至此；
  *   创建入口随激活课表出现而消失，避免在无切换入口时创建出到不了的第二份课表）；
- * - 有激活课表 → 空白正文，仅保留顶栏（返回按钮 + 标题 + 渐变模糊）。
+ * - 有激活课表 → 上述之外正文留空，仅保留顶栏（返回按钮 + 标题 + 渐变模糊）。
  */
 @Composable
 fun SettingsScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     repository: ScheduleRepository? = null,
+    themeMode: ThemeMode = ThemeMode.System,
+    onThemeModeChange: (ThemeMode) -> Unit = {},
 ) {
     BackHandler { onClose() }
 
@@ -144,6 +155,11 @@ fun SettingsScreen(
                             ),
                         verticalArrangement = Arrangement.spacedBy(SectionSpacing),
                     ) {
+                        // app 级设置不依赖课表数据：无激活课表（新建表单态）同样可用
+                        AppearanceSection(
+                            mode = themeMode,
+                            onSelect = onThemeModeChange,
+                        )
                         if (schedule == null) {
                             CreateScheduleContent(
                                 onConfirm = { name, start, end ->
@@ -156,8 +172,8 @@ fun SettingsScreen(
                                 },
                             )
                         }
-                        // 有激活课表：设置项已迁往「课表设置」浮层，正文留空（顶栏模糊的
-                        // 采样源仍由本列承担，不可省）
+                        // 课表级设置已迁往「课表设置」浮层，激活课表本身不再有专属设置项
+                        // （顶栏模糊的采样源仍由本列承担，不可省）
                     }
                 }
             }
@@ -260,6 +276,69 @@ private fun CreateScheduleContent(
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+}
+
+/**
+ * 外观设置：app 级「深色模式」三选一（跟随系统/浅色/深色），行尾显示当前模式。
+ * 点行弹选择对话框，点选项即时生效并关闭——对话框下方的页面同步变色，反馈直观，
+ * 无需「确定」一步。
+ */
+@Composable
+private fun AppearanceSection(
+    mode: ThemeMode,
+    onSelect: (ThemeMode) -> Unit,
+) {
+    var picking by remember { mutableStateOf(false) }
+    SettingsSection(title = stringResource(R.string.section_appearance)) {
+        SettingsCard {
+            SettingRow(
+                label = stringResource(R.string.appearance_theme_mode),
+                value = stringResource(mode.labelRes),
+                onClick = { picking = true },
+            )
+        }
+    }
+
+    if (picking) {
+        AlertDialog(
+            onDismissRequest = { picking = false },
+            title = {
+                Text(stringResource(R.string.appearance_theme_mode))
+            },
+            text = {
+                Column {
+                    ThemeMode.entries.forEach { candidate ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onSelect(candidate)
+                                    picking = false
+                                }
+                                // 行高给足触达面积；radio 与文字的间距随行内边距统一
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            // 点击由整行承担：radio 本身 onClick = null，只做状态展示
+                            RadioButton(selected = candidate == mode, onClick = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(candidate.labelRes),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
+            },
+            // 即时生效交互：唯一的按钮承担「关闭」，与设置页既有对话框的取消位一致
+            confirmButton = {
+                TextButton(onClick = { picking = false }) {
+                    Text(stringResource(R.string.settings_cancel))
+                }
+            },
+        )
     }
 }
 

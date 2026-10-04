@@ -89,6 +89,8 @@ internal fun SettingsTopBar(
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
 ) {
+    // 磨砂 tint 随主题（hazeEffect 的 block 在绘制期执行、非 composable 上下文，取值提到 Box 之前）
+    val hazeTint = MaterialTheme.classppColors.hazeTint
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -102,7 +104,7 @@ internal fun SettingsTopBar(
                             startIntensity = 1f,
                             endIntensity = 0f,
                         )
-                        tints = listOf(HazeTint(Color.White.copy(alpha = 0.30f)))
+                        tints = listOf(HazeTint(hazeTint.copy(alpha = 0.30f)))
                         noiseFactor = 0f
                     }
                 } else {

@@ -1,7 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
+    <!-- 默认主题（跟随系统）：windowBackground 指向 background，深色下由 values-night 覆盖为深色 -->
     <style name="Theme.Classpp" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/background</item>
+    </style>
+
+    <!-- 手动浅色：任何系统外观下恒为浅色窗口背景（MainActivity 按偏好 setTheme） -->
+    <style name="Theme.Classpp.Light" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/background_light</item>
+    </style>
+
+    <!-- 手动深色：任何系统外观下恒为深色窗口背景；parent 换深色原生主题，系统控件外观一致 -->
+    <style name="Theme.Classpp.Dark" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/background_dark</item>
     </style>
 </resources>
