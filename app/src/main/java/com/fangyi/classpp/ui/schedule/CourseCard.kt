@@ -67,8 +67,8 @@ private val InactiveTextColor = Color(0xFFCBCBCB)
  * （见 [Course.alternateBar]）；组内非本周的课再多也只占这 1/4、只用一个颜色。
  * 整卡置灰（本周不上）时竖条全灰、不分段。
  *
- * [onClick] / [onLongClick] 仅编辑态会传：点已有课程卡进编辑（含本周不上的置灰卡），
- * 长按出"新建交替课程"菜单；普通态都不传。
+ * [onLongClick] 仅编辑态会传：长按出"新建交替课程"菜单。[onClick] 编辑态与浏览态都会传
+ * （编辑态进编辑面板、浏览态开课程详情浮层，由调用方路由），仅当调用方根本不响应点击时为 null。
  * [endTime] 覆盖底部结束时间：跨节卡传末结束节次的时间，单节默认取 [slot] 的结束时间。
  */
 @Composable

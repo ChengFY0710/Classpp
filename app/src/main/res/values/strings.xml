@@ -97,6 +97,11 @@
     <string name="edit_paste_course">粘贴课程</string>
     <string name="toast_course_copied">已复制，长按空白格子可粘贴</string>
     <string name="edit_alternate_pick_title">请选择要编辑的交替课程</string>
+    <!-- 课程详情浮层 -->
+    <string name="detail_title">课程详情</string>
+    <string name="detail_teacher">任课教师</string>
+    <string name="detail_location">上课地点</string>
+    <string name="detail_note_ph">点击输入添加备注</string>
     <!-- 双引号包住以保留两侧空格，否则会被资源编译器裁掉 -->
     <string name="edit_alternate_meta_separator">" | "</string>
     <string name="edit_alternate_taken_hint">「%1$s」已占用：%2$s</string>

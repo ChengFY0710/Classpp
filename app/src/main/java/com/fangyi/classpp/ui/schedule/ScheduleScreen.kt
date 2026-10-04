@@ -331,6 +331,9 @@ fun ScheduleScreen(
             // 正在编辑的课程 id（点已有课卡进入）；空 = 编辑面板未打开。
             // 编辑条目从草稿反查，删除后反查落空 → 面板自动关闭
             var editTargetId by rememberSaveable { mutableStateOf("") }
+            // 课程详情浮层：被点课程 id（浏览态点课卡进入）；空 = 未打开。
+            // 编辑态点课卡仍开编辑面板，路由见 onEditClick；条目从当前课表反查
+            var detailTargetId by rememberSaveable { mutableStateOf("") }
             // 长按菜单：被长按卡的 id + 窗口坐标；空 = 菜单未打开。
             // 刻意不 rememberSaveable——菜单是瞬时 UI，旋转重建就收起（Rect 也不可存）
             var menuAnchor by remember { mutableStateOf<CardMenuAnchor?>(null) }
@@ -405,16 +408,20 @@ fun ScheduleScreen(
             val onAddClick: (Int, TimeSlot) -> Unit = remember {
                 { day, slot -> addTarget = listOf(day, slot.id) }
             }
-            // 点已有课卡：同格只有一门 → 直接开编辑面板；多门（交替课程）→ 先让用户点名要编辑哪门，
-            // 否则其余几门永远进不去（它们不在本周的网格上）
+            // 点已有课卡：浏览态 → 课程详情浮层；编辑态：同格只有一门 → 直接开编辑面板，
+            // 多门（交替课程）→ 先让用户点名要编辑哪门，否则其余几门永远进不去（它们不在本周的网格上）
             val onEditClick: (String) -> Unit = remember(editSession) {
                 { courseId ->
-                    val draft = editSession?.courses.orEmpty()
-                    val entry = draft.firstOrNull { it.id == courseId }
-                    if (entry != null && draft.cellCourses(entry.dayOfWeek, entry.startSlot).size > 1) {
-                        chooserSourceId = courseId
+                    val session = editSession
+                    if (session == null) {
+                        detailTargetId = courseId
                     } else {
-                        editTargetId = courseId
+                        val entry = session.courses.firstOrNull { it.id == courseId }
+                        if (entry != null && session.courses.cellCourses(entry.dayOfWeek, entry.startSlot).size > 1) {
+                            chooserSourceId = courseId
+                        } else {
+                            editTargetId = courseId
+                        }
                     }
                 }
             }
@@ -814,6 +821,39 @@ fun ScheduleScreen(
                                 editTargetId = ""
                             }
                         },
+                    )
+                }
+            }
+
+            // 课程详情浮层：浏览态点课卡进入。条目从当前课表反查（浏览态无草稿），
+            // 课程被删/切课表后反查落空 → 请求清空 → 浮层自动关闭。
+            // 挂载/可见两段式与面板相同：收场动画期间 mountedDetail 保持内容稳定不闪空
+            val detailEntry = schedule.courses.firstOrNull { it.id == detailTargetId }
+            var detailMounted by remember { mutableStateOf<CourseEntry?>(null) }
+            if (detailEntry != null) detailMounted = detailEntry
+            detailMounted?.let { detail ->
+                key(detail.id) {
+                    CourseDetailSheet(
+                        visible = detailEntry != null,
+                        entry = detail,
+                        schedule = schedule,
+                        onNoteSave = { note ->
+                            val cleaned = note.trim()
+                            if (cleaned != detail.note) {
+                                scope.launch {
+                                    val result = repository.upsertCourse(schedule.id, detail.copy(note = cleaned))
+                                    if (result is OpResult.Err) {
+                                        Toast.makeText(
+                                            context,
+                                            result.error.toEditMessage(context),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                }
+                            }
+                        },
+                        onDismiss = { detailTargetId = "" },
+                        onDismissed = { detailMounted = null },
                     )
                 }
             }

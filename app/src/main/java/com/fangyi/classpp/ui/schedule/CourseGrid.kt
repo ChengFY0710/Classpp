@@ -309,8 +309,9 @@ private fun WeekPage(
                                         .requiredHeight(rowHeight * effSpan - CellPaddingTop - CellPadding)
                                         // 长按菜单的锚点取卡片自身窗口坐标（溢出部分按整卡算）
                                         .onGloballyPositioned { cardBounds.value = it.boundsInWindow() },
-                                    // 编辑态整张跨节卡可点（含续格覆盖区域）→ 编辑这门课
-                                    onClick = if (editMode && onEditClick != null) {
+                                    // 整张跨节卡可点（含续格覆盖区域）→ 编辑态开编辑面板、
+                                    // 浏览态开课程详情浮层，含义由调用方的回调路由
+                                    onClick = if (onEditClick != null) {
                                         { onEditClick(course.id) }
                                     } else {
                                         null
@@ -520,11 +521,13 @@ private fun GridRow(
                             .fillMaxSize()
                             // 长按菜单的锚点取卡片自身窗口坐标（填满格 = 格坐标）
                             .onGloballyPositioned { cardBounds.value = it.boundsInWindow() },
-                        onClick = if (editMode && onEditClick != null) {
+                        // 点击：编辑态开编辑面板、浏览态开课程详情浮层（回调路由见 ScheduleScreen）
+                        onClick = if (onEditClick != null) {
                             { onEditClick(course.id) }
                         } else {
                             null
                         },
+                        // 长按菜单仅编辑态传入（复制/新建交替都是编辑动作）
                         onLongClick = if (editMode && onCourseLongClick != null) {
                             { onCourseLongClick(course.id, cardBounds.value) }
                         } else {

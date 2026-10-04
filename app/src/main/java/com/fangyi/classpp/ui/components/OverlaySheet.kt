@@ -143,8 +143,9 @@ data class SheetTopAction(
  *   收场期间内容保持原样不闪空；
  * - 顶栏整条可垂直拖拽、浮层跟手下移，遮罩跟着变淡；松手超过位移/速度阈值走关闭，否则弹回。
  *
- * [confirmIcon] 配置左胶囊图标（默认对勾）；[bottomContent] 可选钉底槽位——画在导航栏上方、
- * 带自底向上渐变兜底，滚动内容从其下淡出（如切换课表浮层底部常驻的导出/导入按钮）。
+ * [confirmIcon] 配置左胶囊图标（默认对勾）；[confirmLabel] 传 null 时**不渲染**左侧确认
+ * 胶囊（纯展示浮层用，如课程详情），[onConfirm] 随之闲置；[bottomContent] 可选钉底槽位——
+ * 画在导航栏上方、带自底向上渐变兜底，滚动内容从其下淡出（如切换课表浮层底部常驻的导出/导入按钮）。
  *
  * haze 的采样源挂在浮层内部的滚动列上：浮层被遮罩盖住后背后的课表网格对顶栏不可见，
  * 只需模糊浮层自身内容，因此容器内自建 hazeState，调用方无需传任何模糊状态。
@@ -152,8 +153,8 @@ data class SheetTopAction(
 @Composable
 fun OverlaySheet(
     title: String,
-    confirmLabel: String,
-    onConfirm: () -> Unit,
+    confirmLabel: String? = null,
+    onConfirm: () -> Unit = {},
     rightAction: SheetTopAction,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -363,7 +364,7 @@ fun OverlaySheet(
 @Composable
 private fun OverlaySheetTopBar(
     title: String,
-    confirmLabel: String,
+    confirmLabel: String?,
     confirmIcon: Int,
     onConfirm: () -> Unit,
     rightAction: SheetTopAction,
@@ -414,15 +415,22 @@ private fun OverlaySheetTopBar(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+                // 无确认胶囊时改右对齐：SpaceBetween 会把唯一的右侧按钮推到左边
+                horizontalArrangement = if (confirmLabel == null) {
+                    Arrangement.End
+                } else {
+                    Arrangement.SpaceBetween
+                },
             ) {
-                SheetPillButton(
-                    label = confirmLabel,
-                    icon = confirmIcon,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    onClick = onConfirm,
-                )
+                if (confirmLabel != null) {
+                    SheetPillButton(
+                        label = confirmLabel,
+                        icon = confirmIcon,
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        onClick = onConfirm,
+                    )
+                }
                 SheetPillButton(
                     label = rightAction.label,
                     icon = rightAction.icon,

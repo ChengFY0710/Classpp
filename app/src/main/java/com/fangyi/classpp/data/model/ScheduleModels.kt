@@ -100,6 +100,9 @@ data class CourseEntry(
     val span: Int = 1,
     val weeks: WeekPattern,
     val color: CourseColor,
+    // 课程备注（课程详情浮层可编辑，关闭浮层时落盘）；默认空串，旧文件缺该字段照常
+    // 反序列化，旧版本 app 读新文件由 ignoreUnknownKeys 忽略，无版本号变更
+    val note: String = "",
 ) {
     val endSlot: Int get() = startSlot + span - 1
 
