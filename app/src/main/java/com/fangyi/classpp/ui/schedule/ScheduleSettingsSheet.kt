@@ -6,24 +6,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,7 +37,6 @@ import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -72,10 +65,6 @@ import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.settings.TermDatesCard
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.SettingsCardShape
-import com.fangyi.classpp.ui.theme.classppColors
-import com.fangyi.classpp.ui.theme.classppTextStyles
-import com.fangyi.classpp.ui.theme.settingsRowMetrics
 import kotlinx.coroutines.launch
 
 private val SectionSpacing = 18.dp
@@ -85,8 +74,6 @@ private val SectionSpacing = 18.dp
  * 行高与两行间距按标签节奏计算，32dp 的 chip 蓝底保持原高、不计入行高。
  */
 private val ChipRowHeight = 24.dp
-
-private val oneLineControlHeight = 37.dp
 
 /**
  * 「课表设置」浮层（编辑栏按钮打开）——原课表设置页的课表级设置整体迁入：
@@ -217,63 +204,64 @@ private fun SettingsContent(
             // 减：保留前缀裁剪（合法表的前缀必合法，且保留用户已改时间）
             val appended = appendSlot(schedule.slots)
             val canAdd = appended != null && schedule.slotCount < 12   // 上限沿用 R5
-            // 单行卡：基础留白 13dp（行高 37dp）；
-            // 溢出提示出现时，行↔提示、提示↔卡底也都是 12dp（见 CardContentPadding 公式）
-            LegacySettingsCard {
-                SettingRow(
-                    label = stringResource(R.string.slot_count_format, schedule.slotCount),
-                    showChevron = false,
-                    trailing = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            TextButton(
-                                onClick = {
-                                    if (schedule.slotCount > 1) onSlots(schedule.slots.dropLast(1))
-                                },
-                                enabled = schedule.slotCount > 1,
-                                contentPadding = PaddingValues(0.dp),
+            // 单行卡（自定义行：尾部槽放加减按钮）；无法再加节时溢出提示经 footer 画在行下
+            SettingsCard(
+                items = listOf(
+                    SettingsCardItem.Custom(
+                        label = stringResource(R.string.slot_count_format, schedule.slotCount),
+                        trailing = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                TextButton(
+                                    onClick = {
+                                        if (schedule.slotCount > 1) onSlots(schedule.slots.dropLast(1))
+                                    },
+                                    enabled = schedule.slotCount > 1,
+                                    contentPadding = PaddingValues(0.dp),
+                                ) {
+                                    Text(
+                                        stringResource(R.string.slot_decrease),
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                                Spacer(modifier = Modifier.size(12.dp))
+                                TextButton(
+                                    onClick = { appended?.let { s -> if (schedule.slotCount < 12) onSlots(s) } },
+                                    enabled = canAdd,
+                                    contentPadding = PaddingValues(0.dp),
+                                ) {
+                                    Text(
+                                        stringResource(R.string.slot_increase),
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                            }
+                        },
+                        footer = if (appended == null) {
+                            {
                                 Text(
-                                    stringResource(R.string.slot_decrease),
-                                    fontWeight = FontWeight.SemiBold,
+                                    text = stringResource(R.string.slot_overflow_desc),
+                                    // 行自带 14dp 底距：提示再补左右 16 / 底 14 与行节奏对齐
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
                                 )
                             }
-                            Spacer(modifier = Modifier.size(12.dp))
-                            TextButton(
-                                onClick = { appended?.let { s -> if (schedule.slotCount < 12) onSlots(s) } },
-                                enabled = canAdd,
-                                contentPadding = PaddingValues(0.dp),
-                            ) {
-                                Text(
-                                    stringResource(R.string.slot_increase),
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                            }
-                        }
-                    },
-                    modifier = Modifier.height(oneLineControlHeight),
-                )
-                // 仅在无法再加节（新节会越过 23:59）时提示禁用原因
-                if (appended == null) {
-                    Text(
-                        text = stringResource(R.string.slot_overflow_desc),
-                        // 基础留白垂直 6：行自带 6 + 此处 6 = 行文↔提示 12dp，提示↔卡底 6+6=12dp
-                        modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
-            // 多行卡（每节一行「文字 + 时间控件」）：与学期卡共用 MultiLineRowSpacing → 行间 18dp
-            LegacySettingsCard(rowSpacing = MultiLineRowSpacing) {
-                schedule.slots.forEachIndexed { index, slot ->
-                    SettingRow(
+                        } else null,
+                    ),
+                ),
+            )
+            // 多行卡（每节一行「文字 + 时间胶囊」），行内建 60dp 行高、无缝堆叠
+            SettingsCard(
+                items = schedule.slots.mapIndexed { index, slot ->
+                    SettingsCardItem.Custom(
                         label = stringResource(R.string.slot_format, index + 1),
-                        showChevron = false,
                         trailing = {
                             // chip Background灰底保持 32dp 原高，但不计入行高：容器只按标签行高 24dp
-                            // 参与行高与两行间距（同学期卡节奏），蓝底垂直居中向上下各溢出 4dp
+                            // 参与行高，垂直居中向上下各溢出 4dp
                             OverflowHeightBox(ChipRowHeight) {
                                 TimeChip(TimeText.formatDisplay(slot.startTime)) {
                                     editingSlot = SlotEdit(index, isStart = true)
@@ -285,8 +273,8 @@ private fun SettingsContent(
                             }
                         },
                     )
-                }
-            }
+                },
+            )
         }
 
         CardSection(title = stringResource(R.string.section_display)) {
@@ -417,97 +405,10 @@ private fun ScheduleNameField(name: String, onRename: (String) -> Unit) {
 /** 正在编辑的节次时间：第 [index] 节的起（true）或止（false） */
 private data class SlotEdit(val index: Int, val isStart: Boolean)
 
-// ===== 旧版设置卡（自 SettingsUi 随迁并私有化）：仅剩节次两张卡在用，
-// 待节次卡迁到新 SettingsCard（需自定义尾部槽位）后整段删除 =====
-
-/** 旧版卡默认内距：左右 17/13、上下 13 */
-private val CardContentPadding = PaddingValues(start = 17.dp, end = 13.dp, top = 13.dp, bottom = 13.dp)
-
-// 多行卡片行与行间距增值，要修改调这个MultiLineRowSpacing,传入rowSpacing
-private val MultiLineRowSpacing = 10.dp
-
 private val ChipShape = RoundedCornerShape(8.dp)
 
-/** 旧版白色设置卡：[SettingsCardShape] 平滑圆角、无投影、无分割线，默认留白 [CardContentPadding]，多行卡另传 [rowSpacing]。
- *  内层显式裁剪到卡片形状：行涟漪铺满整卡宽时，圆角处不溢出卡外。 */
-@Composable
-private fun LegacySettingsCard(
-    modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = CardContentPadding,
-    // 行与行之间的额外间距
-    rowSpacing: Dp = 0.dp,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = SettingsCardShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Column(
-            modifier = Modifier
-                .clip(SettingsCardShape)
-                .padding(contentPadding),
-            verticalArrangement = Arrangement.spacedBy(rowSpacing),
-            content = content,
-        )
-    }
-}
-
 /**
- * 通用设置行：左标签 + 右侧内容。
- * - [onClick] 非空 → 整行可点
- * - [value] 非空 → 显示 primary 色数值（日期、周数等）
- * - [trailing] 非空 → 右侧自定义槽（Switch、时间 chip、文字按钮等）
- * - [showChevron] 默认随 [onClick]；置 false 可去掉行尾箭头
- * - [contentPadding] 画在 clickable **内侧**：默认 0（横向内缩由 [LegacySettingsCard] 的 contentPadding 提供）——
- *   padding 在涟漪边界之内，行按压时涟漪铺满整个白块并被卡片圆角裁剪
- */
-@Composable
-private fun SettingRow(
-    label: String,
-    modifier: Modifier = Modifier,
-    onClick: (() -> Unit)? = null,
-    value: String? = null,
-    showChevron: Boolean = onClick != null,
-    trailing: (@Composable RowScope.() -> Unit)? = null,
-    contentPadding: PaddingValues = PaddingValues(0.dp),
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(contentPadding)
-            // 行自带 6dp：提供首尾距卡边的 6dp（行间额外间距由 LegacySettingsCard.rowSpacing 提供）
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.classppTextStyles.fieldLabel.settingsRowMetrics(),
-        )
-        if (value != null) {
-            Text(
-                text = value,
-                style = MaterialTheme.classppTextStyles.fieldValue.settingsRowMetrics(),
-            )
-        }
-        trailing?.invoke(this)
-        if (showChevron) {
-            Spacer(Modifier.width(6.dp))
-            Icon(
-                painter = painterResource(R.drawable.ic_chevron_right),
-                contentDescription = null,
-                tint = MaterialTheme.classppColors.secondaryText,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-    }
-}
-
-/**
- * 时间胶囊：背景灰底、primary 字，点击弹时间选择。
+ * 时间胶囊：背景灰底、primary 字，点击弹时间选择（节次行尾部控件）。
  * 文字启用等宽数字（tnum）：所有时间同为 00:00 五字符，数字位等宽后各胶囊文字宽度天然一致。
  */
 @Composable

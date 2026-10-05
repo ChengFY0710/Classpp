@@ -174,7 +174,7 @@ private fun ClassppSwitchPreview() = ClassppTheme {
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 900)
 @Composable
 private fun SettingsCardPreview() = ClassppTheme {
     Column(
@@ -214,6 +214,20 @@ private fun SettingsCardPreview() = ClassppTheme {
                     items = (1..5).map { it to "第 $it 节" },
                     selectedId = 2,
                     onPick = {},
+                ),
+            ),
+        )
+        // 自定义行：尾部槽位放任意控件（节次卡加减按钮 / 时间胶囊同款）
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Custom(
+                    label = "设置项label",
+                    trailing = {
+                        androidx.compose.material3.Text(
+                            text = "操作",
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    },
                 ),
             ),
         )

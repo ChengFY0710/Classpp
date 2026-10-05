@@ -101,6 +101,6 @@ fun classppTextStyles(colorScheme: ColorScheme, colors: ClassppColors) = Classpp
 /**
  * 行卡类文字（分组标题 / 行 label / 行值）的行高与字距：沿用原 bodyLarge 的取值，
  * 换成角色化样式后行距节奏保持不变（角色样式本身只统一字号 / 粗细 / 颜色）。
- * 设置页 SettingRow 与通用分组 CardSection 共用，改这里两处同步生效。
+ * 通用分组 CardSection 使用，改这里同步生效。
  */
 internal fun TextStyle.settingsRowMetrics() = copy(lineHeight = 24.sp, letterSpacing = 0.5.sp)

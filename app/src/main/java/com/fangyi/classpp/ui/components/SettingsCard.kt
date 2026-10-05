@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -38,9 +39,9 @@ import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /**
- * 设置卡条目：导航行（label + 蓝色箭头）、开关行（label + [ClassppSwitch]）或
- * 选择行（label + 蓝色当前值 + 上下箭头，点行弹菜单），均可带灰色描述文字
- * （自动换行、行卡随之长高）。
+ * 设置卡条目：导航行（label + 蓝色箭头）、开关行（label + [ClassppSwitch]）、
+ * 选择行（label + 蓝色当前值 + 上下箭头，点行弹菜单）或自定义行（尾部槽位放任意控件），
+ * 前三者均可带灰色描述文字（自动换行、行卡随之长高）。
  */
 sealed interface SettingsCardItem {
     val label: String
@@ -74,6 +75,18 @@ sealed interface SettingsCardItem {
         val selectedId: Int,
         val onPick: (Int) -> Unit,
     ) : SettingsCardItem
+
+    /**
+     * 自定义行：label（+ 可选描述）与 [trailing] 同行垂直居中，无整行点击（尾部控件自理）。
+     * 供暂未收敛为标准行型的控件使用（如节次卡的加减按钮、时间胶囊）；
+     * [footer] 可选，画在整行之下、占满行宽（如节次上限的溢出提示），内距由内容自理。
+     */
+    data class Custom(
+        override val label: String,
+        override val description: String? = null,
+        val trailing: @Composable RowScope.() -> Unit,
+        val footer: (@Composable () -> Unit)? = null,
+    ) : SettingsCardItem
 }
 
 /**
@@ -99,7 +112,7 @@ fun SettingsCard(
             .background(MaterialTheme.colorScheme.surface),
     ) {
         items.forEach { item ->
-            SettingsCardRow(item)
+            if (item is SettingsCardItem.Custom) CustomRow(item) else SettingsCardRow(item)
         }
     }
 }
@@ -124,11 +137,13 @@ private fun SettingsCardRow(item: SettingsCardItem) {
             keyboard?.hide()
             menuExpanded = true
         }
+        // 自定义行无整行点击（尾部控件自理）
+        is SettingsCardItem.Custom -> Modifier
     }
     val rowValue = when (item) {
         is SettingsCardItem.Nav -> item.value
         is SettingsCardItem.Select -> item.value
-        is SettingsCardItem.Toggle -> null
+        is SettingsCardItem.Toggle, is SettingsCardItem.Custom -> null
     }
     Row(
         modifier = Modifier
@@ -154,7 +169,27 @@ private fun SettingsCardRow(item: SettingsCardItem) {
                 expanded = menuExpanded,
                 onDismiss = { menuExpanded = false },
             )
+            // 自定义行由 CustomRow 渲染，走不到这里
+            is SettingsCardItem.Custom -> Unit
         }
+    }
+}
+
+/** 自定义行渲染：文字块与尾部槽同行居中，[SettingsCardItem.Custom.footer] 画在行下、占满行宽 */
+@Composable
+private fun CustomRow(item: SettingsCardItem.Custom) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = SheetFieldHeight)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SettingsRowText(label = item.label, description = item.description, modifier = Modifier.weight(1f))
+            item.trailing(this)
+        }
+        item.footer?.invoke()
     }
 }
 

@@ -50,9 +50,8 @@ import dev.chrisbanes.haze.hazeEffect
 
 /**
  * 设置页组件：顶栏 [SettingsTopBar] 与学期设置卡 [TermDatesCard]。
- * 通用卡片已收敛到 components 的新版 SettingsCard（导航/开关/选择三种行型）；
- * 旧版 SettingsCard / SettingRow / TimeChip 仅剩课表设置浮层的节次卡在用，
- * 已随迁至该文件私有化（LegacySettingsCard）。
+ * 通用卡片已收敛到 components 的新版 SettingsCard（导航/开关/选择/自定义四种行型），
+ * 旧版 SettingsCard / SettingRow 已随节次卡迁移删除。
  *
  * 配色约定：页面底 `colorScheme.background`、卡底 `Surface`、强调 `colorScheme.primary`、
  * 次级文字 `classppColors.secondaryText`。
