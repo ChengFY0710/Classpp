@@ -95,13 +95,16 @@ sealed interface SettingsCardItem {
  * 设置卡片：白底（surface）+ [SettingsCardShape] 连续曲率圆角，内含一至多行 [SettingsCardItem]。
  * [rowSpacing] = 0（默认）时行与行无缝堆叠，整行涟漪铺满行宽后被卡片圆角裁剪（对齐设计稿
  * 「点击涟漪」）；需要行间留白时传正值（间隙不可点，四周边距不受影响）。
+ * [rowMinHeight] 为行高下限（默认 [SheetFieldHeight]）：多行内容卡要收紧行距时传小值，
+ * 行高回落为自然高（上下内距 14×2 + 内容高），只影响传入该参数的卡片。
+ * [contentVerticalPadding] 为卡内首行之前 / 末行之后的额外留白（默认 0）。
  *
  * 规格（对齐 [SheetTextField]）：
  * - 字体：label 走 fieldLabel（16sp SemiBold onSurface），描述走 fieldPlaceholder
  *   （16sp Medium secondaryText）；
- * - 间距：行高下限 60dp（[SheetFieldHeight]）判在**整卡**而非单行，整卡内容不足时差额
- *   均摊给各行撑高（单行卡与旧「行高 min 60」规格渲染一致）；行内左右 16，内距画在
- *   交互区**内侧**；[SettingsCardItem.Custom] 行仍自带 60dp 兜底；
+ * - 间距：行高下限 [rowMinHeight]（默认 60dp = [SheetFieldHeight]）判在**整卡**而非单行，
+ *   整卡内容不足时差额均摊给各行撑高（单行卡与旧「行高 min 60」规格渲染一致）；行内
+ *   左右 16，内距画在交互区**内侧**；[SettingsCardItem.Custom] 行仍自带该下限兜底；
  * - 颜色只取四处主题色：surface（卡底）、onSurface（label）、primary（箭头/开关轨道/行值，
  *   值经 fieldValue 角色）、classppColors.secondaryText（描述），深浅模式自动适配。
  */
@@ -111,14 +114,23 @@ fun SettingsCard(
     modifier: Modifier = Modifier,
     // 行与行之间的额外间距：默认 0 = 无缝堆叠（涟漪区域连贯），> 0 = 行间留白
     rowSpacing: Dp = 0.dp,
+    // 行高下限：默认 60dp（对齐 SheetTextField）；多行卡收紧行距时传小值，
+    // 行高回落为自然高（上下内距 14×2 + 内容），不传则其余卡片渲染不变
+    rowMinHeight: Dp = SheetFieldHeight,
+    // 卡内内容的上下内距：首行之前与末行之后各留一份（默认 0，卡外四周不受影响）
+    contentVerticalPadding: Dp = 0.dp,
 ) {
-    // 60dp 行高下限判在整卡而非单行：先按内容自然高度测各行，整卡不足 [SheetFieldHeight]
+    // 行高下限判在整卡而非单行：先按内容自然高度测各行，整卡不足 [rowMinHeight]
     // 时把差额均摊给各行撑高——行变高后涟漪仍铺满整卡、内容仍居中，单行卡与旧的
     // 「行高 min 60dp」规格渲染一致；内容超出下限后各行保持自然高度
     Layout(
         content = {
             items.forEach { item ->
-                if (item is SettingsCardItem.Custom) CustomRow(item) else SettingsCardRow(item)
+                if (item is SettingsCardItem.Custom) {
+                    CustomRow(item, rowMinHeight)
+                } else {
+                    SettingsCardRow(item)
+                }
             }
         },
         modifier = modifier
@@ -127,15 +139,18 @@ fun SettingsCard(
             .background(MaterialTheme.colorScheme.surface),
     ) { measurables, constraints ->
         val spacingPx = rowSpacing.roundToPx()
+        val minHeightPx = rowMinHeight.roundToPx()
+        val insetPx = contentVerticalPadding.roundToPx()
         // 同一个 Measurable 一次布局只允许 measure() 一次：各行自然高度先用 intrinsic 查询
         // （不产生正式测量），再带着算好的下限一次性正式测量
         val width = constraints.maxWidth
         val naturals = measurables.map { it.minIntrinsicHeight(width) }
-        val contentHeight = naturals.sum() + spacingPx * (naturals.size - 1).coerceAtLeast(0)
+        val contentHeight = naturals.sum() + spacingPx * (naturals.size - 1).coerceAtLeast(0) +
+            insetPx * 2
         // 空卡片不兜底；已达下限或超出的卡片各行维持自然高度
         val cardHeight = if (naturals.isEmpty()) 0 else
-            contentHeight.coerceAtLeast(SheetFieldHeight.roundToPx()).coerceAtMost(constraints.maxHeight)
-        // 整卡不足 60dp 时把差额均摊给各行（余数按行序 +1px 补齐），行高 = max(自然高, 均摊份额)；
+            contentHeight.coerceAtLeast(minHeightPx).coerceAtMost(constraints.maxHeight)
+        // 整卡不足下限时把差额均摊给各行（余数按行序 +1px 补齐），行高 = max(自然高, 均摊份额)；
         // 行被撑高后涟漪仍铺满整卡、内容仍居中，单行卡与旧「行高 min 60dp」规格渲染一致
         val extra = cardHeight - contentHeight
         val placeables = measurables.mapIndexed { index, measurable ->
@@ -148,7 +163,7 @@ fun SettingsCard(
             )
         }
         layout(width, cardHeight) {
-            var y = 0
+            var y = insetPx
             placeables.forEach { placeable ->
                 placeable.place(0, y)
                 y += placeable.height + spacingPx
@@ -217,14 +232,14 @@ private fun SettingsCardRow(item: SettingsCardItem) {
     }
 }
 
-/** 自定义行渲染：文字块与尾部槽同行居中，[SettingsCardItem.Custom.footer] 画在行下、占满行宽 */
+/** 自定义行渲染：文字块与尾部槽同行居中，[SettingsCardItem.Custom.footer] 画在行下、占满行宽；行高下限随 [minHeight] */
 @Composable
-private fun CustomRow(item: SettingsCardItem.Custom) {
+private fun CustomRow(item: SettingsCardItem.Custom, minHeight: Dp) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = SheetFieldHeight)
+                .heightIn(min = minHeight)
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

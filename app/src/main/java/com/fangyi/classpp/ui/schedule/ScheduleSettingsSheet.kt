@@ -244,8 +244,12 @@ private fun SettingsContent(
                     ),
                 ),
             )
-            // 多行卡（每节一行「文字 + 时间胶囊」），行内建 60dp 行高、无缝堆叠
+            // 多行卡（每节一行「文字 + 时间胶囊」），无缝堆叠；行距只在本卡收紧：行高下限调低
+            // （默认 60）后各行回落为自然高（上下内距 14×2 + 内容 24 = 52，下限再小行高不变），
+            // 胶囊上下留白随之减小；卡内首行前 / 末行后各补 6dp，首尾不被收得比行间更挤
             SettingsCard(
+                rowMinHeight = 38.dp,
+                contentVerticalPadding = 8.dp,
                 items = schedule.slots.mapIndexed { index, slot ->
                     SettingsCardItem.Custom(
                         label = stringResource(R.string.slot_format, index + 1),
