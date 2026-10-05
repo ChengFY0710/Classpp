@@ -62,16 +62,23 @@ class ClassppColors(
      * 调用处按强度 copy(alpha)——各磨砂位强度不同（0.30f / 0.6f），基础色只有一个来源。
      */
     val hazeTint: Color,
+    /**
+     * 置灰规范色（需求 7）：本周不上的课等「刻意弱化」场景。
+     * 浅色 = 卡片底 #CBCBCB；深色卡底上取更暗的灰，保持同等弱化的视觉强度。
+     */
+    val negative: Color,
 )
 
 private val LightClassppColors = ClassppColors(
     secondaryText = Color(0xFFABAFB4),
     hazeTint = Color.White,
+    negative = Color(0xFFCBCBCB),
 )
 
 private val DarkClassppColors = ClassppColors(
     secondaryText = Color(0xFF7E858D),
     hazeTint = Color.Black,
+    negative = Color(0xFF5C6269),
 )
 
 private val LocalClassppColors = staticCompositionLocalOf { LightClassppColors }

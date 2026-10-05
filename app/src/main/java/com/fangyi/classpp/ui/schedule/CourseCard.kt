@@ -36,7 +36,6 @@ import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
-import com.fangyi.classpp.ui.theme.isDarkTheme
 
 private val CardShape = RoundedCornerShape(6.dp)
 private val BarWidth = 3.dp
@@ -54,11 +53,6 @@ internal val CourseColor.barColor: Color
         CourseColor.Teal -> Color(0xFF7CD3D0)
         CourseColor.Pink -> Color(0xFFEDB5C9)
     }
-
-/** 置灰规范色（需求 7）：卡片底 #cbcbcb、课名 #737a83（教师/地点同用后者，避免低对比度）。
- *  深色卡底上取更暗的灰，保持同等「刻意弱化」的视觉强度 */
-private val InactiveColorLight = Color(0xFFCBCBCB)
-private val InactiveColorDark = Color(0xFF5C6269)
 
 /**
  * 课程卡片：白底圆角卡 + 左侧彩色竖条。
@@ -83,7 +77,7 @@ fun CourseCard(
     onLongClick: (() -> Unit)? = null,
     endTime: String = slot.endTime,
 ) {
-    val inactiveColor = if (MaterialTheme.isDarkTheme) InactiveColorDark else InactiveColorLight
+    val inactiveColor = MaterialTheme.classppColors.negative
     val barColor = if (course.active) {
         course.color.barColor
     } else {

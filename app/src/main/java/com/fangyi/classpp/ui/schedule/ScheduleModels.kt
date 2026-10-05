@@ -14,7 +14,7 @@ data class Course(
     /** 所属节次 id（起始节次；跨节课程从这里开始向下占据 [span] 行） */
     val slotId: Int,
     val color: CourseColor,
-    /** 本周是否上课；false 时卡片按规格置灰（底 #cbcbcb、课名 #737a83） */
+    /** 本周是否上课；false 时卡片按规格置灰（theme.kt negative色） */
     val active: Boolean = true,
     /** 连续占用节数（1 = 单节）；跨节卡由网格叠加层绘制，见 CourseGrid */
     val span: Int = 1,
