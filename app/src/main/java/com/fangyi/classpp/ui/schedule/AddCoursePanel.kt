@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -67,10 +68,12 @@ import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.theme.WeekCellShape
 import com.fangyi.classpp.ui.theme.classppColors
+import kotlin.math.ceil
 
-/** 周数方格：每行 6 个，宽度均分（末行补空位，保证每格同宽同高） */
-private const val WeeksPerRow = 6
+/** 周数方格：每行最少 6 个，均分后单格宽于上限就加列（末行补空位，保证每格同宽同高） */
+private const val WeeksPerRowMin = 6
 private val WeekCellGap = 6.dp
+private val WeekCellMaxWidth = 60.dp
 private val textStartPadding = PaddingValues(start = 12.dp) // 描述性文字统一左移，视觉上更有层次
 private val secondaryTextSize = 15.sp // 描述性文字统一大小
 
@@ -489,56 +492,64 @@ private fun WeekSelectionGrid(
     onToggle: (Int) -> Unit,
 ) {
     val selectedSet = selected.toSet()
-    Column(verticalArrangement = Arrangement.spacedBy(WeekCellGap)) {
-        (1..totalWeeks).chunked(WeeksPerRow).forEach { rowWeeks ->
-            Row(horizontalArrangement = Arrangement.spacedBy(WeekCellGap)) {
-                rowWeeks.forEach { week ->
-                    val isSelected = week in selectedSet
-                    val blocked = week in blockedWeeks
-                    // 背景/字色各走一条渐变：点选渐变变蓝、再点渐变回白，字色同步渐变
-                    //（150ms 先快后慢，与 SheetTextField 描边动画同一节奏）
-                    val cellColor by animateColorAsState(
-                        targetValue = when {
-                            isSelected -> MaterialTheme.colorScheme.primary
-                            blocked -> MaterialTheme.colorScheme.onPrimaryContainer
+    BoxWithConstraints {
+        // 列数取"均分后单格不超上限"的最小值，但不低于下限：
+        // (宽 − (n−1)×格距)/n ≤ 上限 ⟺ n ≥ (宽 + 格距)/(上限 + 格距)
+        val columns = maxOf(
+            WeeksPerRowMin,
+            ceil((maxWidth + WeekCellGap) / (WeekCellMaxWidth + WeekCellGap)).toInt(),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(WeekCellGap)) {
+            (1..totalWeeks).chunked(columns).forEach { rowWeeks ->
+                Row(horizontalArrangement = Arrangement.spacedBy(WeekCellGap)) {
+                    rowWeeks.forEach { week ->
+                        val isSelected = week in selectedSet
+                        val blocked = week in blockedWeeks
+                        // 背景/字色各走一条渐变：点选渐变变蓝、再点渐变回白，字色同步渐变
+                        //（150ms 先快后慢，与 SheetTextField 描边动画同一节奏）
+                        val cellColor by animateColorAsState(
+                            targetValue = when {
+                                isSelected -> MaterialTheme.colorScheme.primary
+                                blocked -> MaterialTheme.colorScheme.onPrimaryContainer
 
-                            else -> MaterialTheme.colorScheme.surface
-                        },
-                        animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
-                        label = "weekCellColor",
-                    )
-                    val numberColor by animateColorAsState(
-                        targetValue = when {
-                            isSelected -> MaterialTheme.colorScheme.onPrimary
-                            blocked -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                            else -> MaterialTheme.colorScheme.onSurface
-                        },
-                        animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
-                        label = "weekCellNumber",
-                    )
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .aspectRatio(1f)
-                            .clip(WeekCellShape)
-                            .background(cellColor)
-                            .then(if (blocked) Modifier else Modifier.clickable { onToggle(week) }),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = week.toString(),
-                            fontSize = 18.sp,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = numberColor,
+                                else -> MaterialTheme.colorScheme.surface
+                            },
+                            animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+                            label = "weekCellColor",
+                        )
+                        val numberColor by animateColorAsState(
+                            targetValue = when {
+                                isSelected -> MaterialTheme.colorScheme.onPrimary
+                                blocked -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                else -> MaterialTheme.colorScheme.onSurface
+                            },
+                            animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+                            label = "weekCellNumber",
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(1f)
+                                .clip(WeekCellShape)
+                                .background(cellColor)
+                                .then(if (blocked) Modifier else Modifier.clickable { onToggle(week) }),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = week.toString(),
+                                fontSize = 18.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                color = numberColor,
+                            )
+                        }
+                    }
+                    repeat(columns - rowWeeks.size) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(1f),
                         )
                     }
-                }
-                repeat(WeeksPerRow - rowWeeks.size) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .aspectRatio(1f),
-                    )
                 }
             }
         }
