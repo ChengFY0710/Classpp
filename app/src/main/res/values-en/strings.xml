@@ -31,6 +31,10 @@
         <item>Sun</item>
     </string-array>
     <string name="settings_title">Schedule Settings</string>
+    <string name="settings_root_title">Settings</string>
+    <string name="settings_personalization">Personalization</string>
+    <string name="settings_data_management">Data management</string>
+    <string name="settings_about">About</string>
     <string name="cd_settings_close">Close</string>
     <string name="empty_title">No schedule yet</string>
     <string name="empty_desc">Create a schedule to start recording classes</string>
@@ -44,8 +48,7 @@
     <string name="term_weeks_range">1–30 weeks</string>
     <string name="section_term">Term</string>
     <!-- 外观 -->
-    <string name="section_appearance">Appearance</string>
-    <string name="appearance_theme_mode">Dark mode</string>
+    <string name="appearance_theme_mode">Color mode</string>
     <string name="appearance_theme_system">Follow system</string>
     <string name="appearance_theme_light">Light</string>
     <string name="appearance_theme_dark">Dark</string>

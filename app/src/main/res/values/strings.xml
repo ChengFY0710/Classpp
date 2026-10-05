@@ -31,6 +31,10 @@
         <item>日</item>
     </string-array>
     <string name="settings_title">课表设置</string>
+    <string name="settings_root_title">设置</string>
+    <string name="settings_personalization">个性化</string>
+    <string name="settings_data_management">数据管理</string>
+    <string name="settings_about">关于</string>
     <string name="cd_settings_close">关闭</string>
     <string name="empty_title">还没有课表</string>
     <string name="empty_desc">创建一份课表，开始记录课程</string>
@@ -44,8 +48,7 @@
     <string name="term_weeks_range">1–30 周</string>
     <string name="section_term">学期</string>
     <!-- 外观 -->
-    <string name="section_appearance">外观</string>
-    <string name="appearance_theme_mode">深色模式</string>
+    <string name="appearance_theme_mode">颜色模式</string>
     <string name="appearance_theme_system">跟随系统</string>
     <string name="appearance_theme_light">浅色</string>
     <string name="appearance_theme_dark">深色</string>
