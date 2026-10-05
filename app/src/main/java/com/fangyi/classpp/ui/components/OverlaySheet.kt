@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -68,12 +69,6 @@ import dev.chrisbanes.haze.rememberHazeState
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
-
-/**
- * 距屏幕顶端的距离——**后期调整浮层位置只改这一个变量**。
- * 键盘弹起不会改变浮层的位置与高度（见 [SheetImeBehavior.ContentScroll]）。
- */
-val SheetTopInset: Dp = 56.dp
 
 val SheetSectionSpacingBetween: Dp = 12.dp // 卡片与卡片间的间距
 val SheetSectionSpacingBottom:Dp = 14.dp  // 卡片组底与下一个卡片组间距（如果需要）
@@ -162,7 +157,8 @@ fun OverlaySheet(
     // true = 确认胶囊到右侧、动作胶囊（取消/删除）到左侧，两颗胶囊的图标排布随位置镜像
     // （左颗图标在前、右颗文字在前，图标始终落在胶囊外侧）
     confirmAtEnd: Boolean = false,
-    topInset: Dp = SheetTopInset,
+    // 距屏幕顶端：默认 = 状态栏（顶部信息栏）实际高度；要钉成固定值时显式传 Dp
+    topInset: Dp = Dp.Unspecified,
     imeBehavior: SheetImeBehavior = SheetImeBehavior.ContentScroll,
     bottomContent: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -170,6 +166,13 @@ fun OverlaySheet(
     val hazeState = rememberHazeState()
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
+    // 距屏幕顶端 = 状态栏（顶部信息栏）实际高度；调用方显式传 topInset 时用传入值。
+    // 键盘弹起仍不改变浮层位置——让位只发生在滚动内容末尾
+    val resolvedTopInset = if (topInset != Dp.Unspecified) {
+        topInset
+    } else {
+        with(density) { WindowInsets.statusBars.getTop(density).toDp() }
+    }
     // 内容让位键盘：取 IME 与导航栏的较大者（键盘弹起时 IME 已包含导航区），
     // 挂在滚动内容末尾而非容器上——容器的位置与高度因此不随键盘变化。
     val bottomInsetDp = when (imeBehavior) {
@@ -287,7 +290,7 @@ fun OverlaySheet(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = topInset)
+                .padding(top = resolvedTopInset)
                 .onSizeChanged { travelPx = it.height }
                 // 滑动位移只打在浮层这层：遮罩留在原地，卡片连阴影带模糊一起动
                 .graphicsLayer { translationY = hiddenFraction.value * travelPx },
