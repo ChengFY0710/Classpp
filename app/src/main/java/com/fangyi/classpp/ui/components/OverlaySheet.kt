@@ -91,9 +91,6 @@ private const val DragDismissFraction = 0.25f
 /** 拖拽关闭的速度阈值：松手时下滑速度超过它（快速一甩）也直接关闭 */
 private val DragDismissVelocity: Dp = 800.dp
 
-/** 浮层完全显示时的遮罩强度（与全 app 浮层遮罩同一规格） */
-private const val ScrimAlpha = 0.32f
-
 /** 顶栏总高（拖拽条 + 按钮行），滚动内容顶部为它留位。 */
 private val TopBarHeight = 78.dp
 
@@ -276,9 +273,10 @@ fun OverlaySheet(
     Box(
         modifier = modifier
             .fillMaxSize()
-            // 遮罩随进度压暗：完全显示时 0.32，拖拽下拉/滑出时跟手变淡到全透明
+            // 遮罩随进度压暗：完全显示时用 scrim 色自带的透明度（强度已按深浅模式烘进
+            // 色值，此处不再叠加），拖拽下拉/滑出时跟手变淡到全透明
             .drawBehind {
-                val alpha = ScrimAlpha * (1f - hiddenFraction.value)
+                val alpha = 1f - hiddenFraction.value
                 if (alpha > 0f) drawRect(color = scrimColor, alpha = alpha)
             }
             .clickable(

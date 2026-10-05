@@ -63,7 +63,7 @@ fun FadeOverlayDialog(
         modifier = modifier
             .fillMaxSize()
             .graphicsLayer { this.alpha = alpha.value }
-            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
+            .background(MaterialTheme.colorScheme.scrim)
             // 点空白处收起（无涟漪）；出场期间禁用
             .clickable(
                 interactionSource = scrimInteraction,

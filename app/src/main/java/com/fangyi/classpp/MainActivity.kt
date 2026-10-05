@@ -107,6 +107,17 @@ class MainActivity : ComponentActivity() {
                 var selectedTab by rememberSaveable { mutableStateOf(AppTab.Timetable) }
                 // 设置页开关（全屏覆盖层，见 Box 内组合顺序）
                 var showSettings by rememberSaveable { mutableStateOf(false) }
+                // 设置页视差进度：与覆盖层滑入/滑出同规格（进 360 / 出 250 + FastOutSlowIn），
+                // 同帧启动、同曲线推进——滑入时原页面向左微微让位，滑出时向右滑回原位。
+                // 只在 layer 阶段被读取：动画期间不重组、不重排（同 tabProgress）
+                val settingsProgress by animateFloatAsState(
+                    targetValue = if (showSettings) 1f else 0f,
+                    animationSpec = tween(
+                        durationMillis = if (showSettings) SettingsEnterMillis else SettingsExitMillis,
+                        easing = FastOutSlowInEasing,
+                    ),
+                    label = "settingsProgress",
+                )
                 // 课表编辑态：由课表页的编辑按钮进入，编辑期间隐藏底部导航栏
                 var editing by rememberSaveable { mutableStateOf(false) }
                 // 课表页的全屏浮层（课程详情）在场时同样藏导航栏：导航栏在组合顺序上
@@ -141,64 +152,76 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Box(Modifier.fillMaxSize()) {
-                    // 三个页面常驻组合，切 tab 只横向平移（见 tabPage）：
-                    // 若用 SaveableStateProvider 按 key 重建课表页，首帧 headerHeight
-                    // 回落到估算值再被校正，紧贴头部的日期带会明显跳闪一次。
-                    AgendaScreen(
+                    // 原页面容器：设置页滑入时整体向左微微滑出让位、滑出时向右滑回原位（视差，
+                    // 见 settingsProgress）。位移挂在独立 layer 上，动画期间子树布局与绘制指令
+                    // 一概不动，与 tabPage 的 layer 平移各管一层互不干扰；转场中设置页页缘
+                    // 始终压住本容器右缘，不会露出底缝
+                    Box(
                         Modifier
                             .fillMaxSize()
-                            .tabPage(
-                                tab = AppTab.Agenda,
-                                selectedTab = selectedTab,
-                                progress = tabProgress,
-                            ),
-                    )
-                    ScheduleScreen(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .tabPage(
-                                tab = AppTab.Timetable,
-                                selectedTab = selectedTab,
-                                progress = tabProgress,
-                            ),
-                        repository = repository,
-                        editing = editing,
-                        onEditingChange = { editing = it },
-                        onOverlayOverNavBarChange = { navBarHiddenByOverlay = it },
-                        onOpenSettings = { showSettings = true },
-                    )
-                    TodoScreen(
-                        Modifier
-                            .fillMaxSize()
-                            .tabPage(
-                                tab = AppTab.Todo,
-                                selectedTab = selectedTab,
-                                progress = tabProgress,
-                            ),
-                    )
-                    // 编辑态或课表页全屏浮层在场时隐藏底部导航栏（设计稿如此，也避免编辑中途被切走）：
-                    // 下移出屏 / 上移入屏，与顶栏的编辑栏过渡（ScheduleScreen 内 AnimatedContent）
-                    // 共用 [EditTransitionMillis] 规格，同一个 editing 翻转同帧启动，两侧严格同步
-                    AnimatedVisibility(
-                        visible = !editing && !navBarHiddenByOverlay,
-                        enter = slideInVertically(
-                            // 从自身高度下方起步：上移入
-                            animationSpec = tween(EditTransitionMillis, easing = FastOutSlowInEasing),
-                        ) { it } + fadeIn(tween(EditTransitionMillis)),
-                        exit = slideOutVertically(
-                            // 滑向自身高度下方：下移出
-                            animationSpec = tween(EditTransitionMillis, easing = FastOutSlowInEasing),
-                        ) { it } + fadeOut(tween(EditTransitionMillis)),
-                        modifier = Modifier.align(Alignment.BottomCenter),
+                            .graphicsLayer {
+                                translationX = -settingsProgress * size.width * SettingsParallaxFraction
+                            },
                     ) {
-                        BottomNavBar(
-                            selectedTab = selectedTab,
-                            // 退场动画期间仍在组合中，挡掉点击：编辑中途或浮层打开时不许切 tab
-                            onTabSelected = { if (!editing && !navBarHiddenByOverlay) selectedTab = it },
+                        // 三个页面常驻组合，切 tab 只横向平移（见 tabPage）：
+                        // 若用 SaveableStateProvider 按 key 重建课表页，首帧 headerHeight
+                        // 回落到估算值再被校正，紧贴头部的日期带会明显跳闪一次。
+                        AgendaScreen(
+                            Modifier
+                                .fillMaxSize()
+                                .tabPage(
+                                    tab = AppTab.Agenda,
+                                    selectedTab = selectedTab,
+                                    progress = tabProgress,
+                                ),
                         )
+                        ScheduleScreen(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .tabPage(
+                                    tab = AppTab.Timetable,
+                                    selectedTab = selectedTab,
+                                    progress = tabProgress,
+                                ),
+                            repository = repository,
+                            editing = editing,
+                            onEditingChange = { editing = it },
+                            onOverlayOverNavBarChange = { navBarHiddenByOverlay = it },
+                            onOpenSettings = { showSettings = true },
+                        )
+                        TodoScreen(
+                            Modifier
+                                .fillMaxSize()
+                                .tabPage(
+                                    tab = AppTab.Todo,
+                                    selectedTab = selectedTab,
+                                    progress = tabProgress,
+                                ),
+                        )
+                        // 编辑态或课表页全屏浮层在场时隐藏底部导航栏（设计稿如此，也避免编辑中途被切走）：
+                        // 下移出屏 / 上移入屏，与顶栏的编辑栏过渡（ScheduleScreen 内 AnimatedContent）
+                        // 共用 [EditTransitionMillis] 规格，同一个 editing 翻转同帧启动，两侧严格同步
+                        AnimatedVisibility(
+                            visible = !editing && !navBarHiddenByOverlay,
+                            enter = slideInVertically(
+                                // 从自身高度下方起步：上移入
+                                animationSpec = tween(EditTransitionMillis, easing = FastOutSlowInEasing),
+                            ) { it } + fadeIn(tween(EditTransitionMillis)),
+                            exit = slideOutVertically(
+                                // 滑向自身高度下方：下移出
+                                animationSpec = tween(EditTransitionMillis, easing = FastOutSlowInEasing),
+                            ) { it } + fadeOut(tween(EditTransitionMillis)),
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                        ) {
+                            BottomNavBar(
+                                selectedTab = selectedTab,
+                                // 退场动画期间仍在组合中，挡掉点击：编辑中途或浮层打开时不许切 tab
+                                onTabSelected = { if (!editing && !navBarHiddenByOverlay) selectedTab = it },
+                            )
+                        }
                     }
-                    // 设置页背景压暗：与设置页同节奏（进 360 / 出 250）的纯淡入淡出遮罩，
-                    // 规格同浮层遮罩（32% 黑）——进场时压暗背景提供进深，退场时随滑出恢复。
+                    // 设置页背景压暗：与设置页同节奏（进 360 / 出 250）的纯淡入淡出遮罩（60% 黑）
+                    // ——进场时压暗背景提供进深，退场时随滑出恢复。
                     // 只画不拦截点击：覆盖层全可见时遮罩被完全盖住，仅转场期间透出
                     AnimatedVisibility(
                         visible = showSettings,
@@ -209,12 +232,12 @@ class MainActivity : ComponentActivity() {
                         Box(
                             Modifier
                                 .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f)),
+                                .background(MaterialTheme.colorScheme.scrim),
                         )
                     }
                     // 最后组合 ⇒ 绘制与命中测试覆盖三屏与底部导航（课表页仅被覆盖、不重建）。
-                    // 进场整页从右缘滑入（不叠淡入淡出，进深感交给背后的压暗遮罩），
-                    // 呼应左上角返回箭头的子页语义；
+                    // 进场整页从右缘滑入（不叠淡入淡出，进深感交给背后的压暗遮罩与
+                    // 原页面的左移让位视差），呼应左上角返回箭头的子页语义；
                     // AnimatedVisibility 退场期间仍保持组合，返回键/返回按钮经 onClose 幂等关闭
                     AnimatedVisibility(
                         visible = showSettings,
@@ -325,6 +348,13 @@ private const val SettingsEnterMillis = 360
 
 /** 设置页退场时长：同方向右滑出，比进场短一些，返回更利落 */
 private const val SettingsExitMillis = 250
+
+/**
+ * 设置页转场的背景视差位移比例：滑入时原页面向左挪自身宽度的这个比例让位，滑出时滑回。
+ * 与设置页转场同规格推进（见 settingsProgress），量级「微微」即可——iOS push 是 1/3 宽，
+ * 明显重于本效果；想更含蓄可下调至 0.06 左右
+ */
+private const val SettingsParallaxFraction = 0.1f
 
 /**
  * 系统栏样式按主题二选一：全透明底，前景图标深色（浅色主题）/浅色（深色主题）。
