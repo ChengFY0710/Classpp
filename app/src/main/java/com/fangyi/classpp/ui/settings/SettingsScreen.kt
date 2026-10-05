@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.ui.components.CardSection
+import com.fangyi.classpp.ui.components.SettingsCard
+import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.clearFocusOnTap
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
@@ -160,13 +162,15 @@ private fun AppearanceSection(
 ) {
     var picking by remember { mutableStateOf(false) }
     CardSection(title = stringResource(R.string.section_appearance)) {
-        SettingsCard {
-            SettingRow(
-                label = stringResource(R.string.appearance_theme_mode),
-                value = stringResource(mode.labelRes),
-                onClick = { picking = true },
-            )
-        }
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Nav(
+                    label = stringResource(R.string.appearance_theme_mode),
+                    value = stringResource(mode.labelRes),
+                    onClick = { picking = true },
+                ),
+            ),
+        )
     }
 
     if (picking) {

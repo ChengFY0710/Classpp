@@ -2,20 +2,28 @@ package com.fangyi.classpp.ui.schedule
 
 import android.content.Context
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -30,10 +38,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -60,13 +70,12 @@ import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SheetTopAction
-import com.fangyi.classpp.ui.settings.MultiLineRowSpacing
-import com.fangyi.classpp.ui.settings.SettingRow
-// 旧版设置卡（节次两张卡仍在用，待迁移）：与新 SettingsCard 同名，别名区分
-import com.fangyi.classpp.ui.settings.SettingsCard as LegacySettingsCard
 import com.fangyi.classpp.ui.settings.TermDatesCard
-import com.fangyi.classpp.ui.settings.TimeChip
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.SettingsCardShape
+import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.fangyi.classpp.ui.theme.settingsRowMetrics
 import kotlinx.coroutines.launch
 
 private val SectionSpacing = 18.dp
@@ -407,6 +416,117 @@ private fun ScheduleNameField(name: String, onRename: (String) -> Unit) {
 
 /** 正在编辑的节次时间：第 [index] 节的起（true）或止（false） */
 private data class SlotEdit(val index: Int, val isStart: Boolean)
+
+// ===== 旧版设置卡（自 SettingsUi 随迁并私有化）：仅剩节次两张卡在用，
+// 待节次卡迁到新 SettingsCard（需自定义尾部槽位）后整段删除 =====
+
+/** 旧版卡默认内距：左右 17/13、上下 13 */
+private val CardContentPadding = PaddingValues(start = 17.dp, end = 13.dp, top = 13.dp, bottom = 13.dp)
+
+// 多行卡片行与行间距增值，要修改调这个MultiLineRowSpacing,传入rowSpacing
+private val MultiLineRowSpacing = 10.dp
+
+private val ChipShape = RoundedCornerShape(8.dp)
+
+/** 旧版白色设置卡：[SettingsCardShape] 平滑圆角、无投影、无分割线，默认留白 [CardContentPadding]，多行卡另传 [rowSpacing]。
+ *  内层显式裁剪到卡片形状：行涟漪铺满整卡宽时，圆角处不溢出卡外。 */
+@Composable
+private fun LegacySettingsCard(
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = CardContentPadding,
+    // 行与行之间的额外间距
+    rowSpacing: Dp = 0.dp,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = SettingsCardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .clip(SettingsCardShape)
+                .padding(contentPadding),
+            verticalArrangement = Arrangement.spacedBy(rowSpacing),
+            content = content,
+        )
+    }
+}
+
+/**
+ * 通用设置行：左标签 + 右侧内容。
+ * - [onClick] 非空 → 整行可点
+ * - [value] 非空 → 显示 primary 色数值（日期、周数等）
+ * - [trailing] 非空 → 右侧自定义槽（Switch、时间 chip、文字按钮等）
+ * - [showChevron] 默认随 [onClick]；置 false 可去掉行尾箭头
+ * - [contentPadding] 画在 clickable **内侧**：默认 0（横向内缩由 [LegacySettingsCard] 的 contentPadding 提供）——
+ *   padding 在涟漪边界之内，行按压时涟漪铺满整个白块并被卡片圆角裁剪
+ */
+@Composable
+private fun SettingRow(
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    value: String? = null,
+    showChevron: Boolean = onClick != null,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(contentPadding)
+            // 行自带 6dp：提供首尾距卡边的 6dp（行间额外间距由 LegacySettingsCard.rowSpacing 提供）
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.classppTextStyles.fieldLabel.settingsRowMetrics(),
+        )
+        if (value != null) {
+            Text(
+                text = value,
+                style = MaterialTheme.classppTextStyles.fieldValue.settingsRowMetrics(),
+            )
+        }
+        trailing?.invoke(this)
+        if (showChevron) {
+            Spacer(Modifier.width(6.dp))
+            Icon(
+                painter = painterResource(R.drawable.ic_chevron_right),
+                contentDescription = null,
+                tint = MaterialTheme.classppColors.secondaryText,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+/**
+ * 时间胶囊：背景灰底、primary 字，点击弹时间选择。
+ * 文字启用等宽数字（tnum）：所有时间同为 00:00 五字符，数字位等宽后各胶囊文字宽度天然一致。
+ */
+@Composable
+private fun TimeChip(
+    text: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = text,
+        modifier = modifier
+            .clip(ChipShape)
+            .background(MaterialTheme.colorScheme.background)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 9.dp),
+        style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+        color = MaterialTheme.colorScheme.primary,
+    )
+}
 
 /**
  * chip 容器：整体只占 [height] 参与父行行高与行间距；子项放开高度约束按实际尺寸

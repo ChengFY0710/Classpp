@@ -1,26 +1,15 @@
 package com.fangyi.classpp.ui.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -37,14 +26,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
@@ -54,28 +41,22 @@ import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MAX
 import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MIN
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
-import com.fangyi.classpp.ui.theme.settingsRowMetrics
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 
 /**
- * 设置页视觉模板：白色圆角卡 + 设置行 + 时间胶囊。分组标题组件已上移为
- * components 的 [com.fangyi.classpp.ui.components.CardSection]（设置页与浮层共用）。
- * 后续设置详情页直接复用这些组件，保持同一套配色与间距。
+ * 设置页组件：顶栏 [SettingsTopBar] 与学期设置卡 [TermDatesCard]。
+ * 通用卡片已收敛到 components 的新版 SettingsCard（导航/开关/选择三种行型）；
+ * 旧版 SettingsCard / SettingRow / TimeChip 仅剩课表设置浮层的节次卡在用，
+ * 已随迁至该文件私有化（LegacySettingsCard）。
  *
  * 配色约定：页面底 `colorScheme.background`、卡底 `Surface`、强调 `colorScheme.primary`、
- * 浅蓝容器 `colorScheme.primaryContainer`、次级文字 `classppColors.secondaryText`。
- *
- * 卡内间距按行数分两类：单行卡（一行「文字+控件」）用默认 [CardContentPadding]；
- * 多行卡（多行「文字+控件」）另传 [MultiLineRowSpacing]。
+ * 次级文字 `classppColors.secondaryText`。
  */
-
-private val ChipShape = RoundedCornerShape(8.dp)
 
 /**
  * 设置页顶栏：左侧圆形返回按钮 + 居中加粗标题。
@@ -150,114 +131,6 @@ internal fun SettingsTopBar(
             )
         }
     }
-}
-
-// 默认间距：卡片内容左右padding：horizontal,卡片内容首尾间距：vertical.
-// 另外，对于单行文字加控件内容，卡片内容高度SettingsScreen里oneLineControlHeight参数进行了严格控制。
-internal val CardContentPadding = PaddingValues(start = 17.dp, end = 13.dp, top = 13.dp, bottom = 13.dp)
-
-// 多行卡片行与行间距增值，要修改调这个MultiLineRowSpacing,传入rowSpacing
-internal val MultiLineRowSpacing = 10.dp
-
-/** 设置页白色卡片：[SettingsCardShape] 平滑圆角、无投影、无分割线，默认留白 [CardContentPadding]，多行卡另传 [rowSpacing]。
- *  内层显式裁剪到卡片形状：通栏行（见 [TermDatesCard]）的涟漪铺满整卡宽时，圆角处不溢出卡外。 */
-@Composable
-internal fun SettingsCard(
-    modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = CardContentPadding,
-    // 行与行之间的额外间距
-    rowSpacing: Dp = 0.dp,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = SettingsCardShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Column(
-            modifier = Modifier
-                .clip(SettingsCardShape)
-                .padding(contentPadding),
-            verticalArrangement = Arrangement.spacedBy(rowSpacing),
-            content = content,
-        )
-    }
-}
-
-/**
- * 通用设置行：左标签 + 右侧内容。
- * - [onClick] 非空 → 整行可点
- * - [value] 非空 → 显示 primary 色数值（日期、周数等）
- * - [trailing] 非空 → 右侧自定义槽（Switch、时间 chip、文字按钮等）
- * - [showChevron] 默认随 [onClick]；置 false 可去掉行尾箭头
- * - [contentPadding] 画在 clickable **内侧**：默认 0（横向内缩由 SettingsCard.contentPadding 提供）；
- *   通栏行（卡片 contentPadding 归零，见 [TermDatesCard]）用它自带内缩——
- *   padding 在涟漪边界之内，行按压时涟漪铺满整个白块并被卡片圆角裁剪
- */
-@Composable
-internal fun SettingRow(
-    label: String,
-    modifier: Modifier = Modifier,
-    onClick: (() -> Unit)? = null,
-    value: String? = null,
-    showChevron: Boolean = onClick != null,
-    trailing: (@Composable RowScope.() -> Unit)? = null,
-    contentPadding: PaddingValues = PaddingValues(0.dp),
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(contentPadding)
-            // 行自带 6dp：提供首尾距卡边的 6dp（行间额外间距由 SettingsCard.rowSpacing 提供）
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.classppTextStyles.fieldLabel.settingsRowMetrics(),
-        )
-        if (value != null) {
-            Text(
-                text = value,
-                style = MaterialTheme.classppTextStyles.fieldValue.settingsRowMetrics(),
-            )
-        }
-        trailing?.invoke(this)
-        if (showChevron) {
-            Spacer(Modifier.width(6.dp))
-            Icon(
-                painter = painterResource(R.drawable.ic_chevron_right),
-                contentDescription = null,
-                tint = MaterialTheme.classppColors.secondaryText,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-    }
-}
-
-/**
- * 时间胶囊：背景灰底、primary 字，点击弹时间选择。
- * 文字启用等宽数字（tnum）：所有时间同为 00:00 五字符，数字位等宽后各胶囊文字宽度天然一致。
- */
-@Composable
-internal fun TimeChip(
-    text: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    Text(
-        text = text,
-        modifier = modifier
-            .clip(ChipShape)
-            .background(MaterialTheme.colorScheme.background)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 9.dp),
-        style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
-        color = MaterialTheme.colorScheme.primary,
-    )
 }
 
 /** 日期 → `2026-9-7`（无前导零），走 [R.string.date_hyphen_format] */
