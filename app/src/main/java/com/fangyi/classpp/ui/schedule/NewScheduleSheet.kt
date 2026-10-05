@@ -1,7 +1,10 @@
 package com.fangyi.classpp.ui.schedule
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -14,7 +17,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import com.fangyi.classpp.R
@@ -49,6 +54,14 @@ internal fun NewScheduleSheet(
     var end by remember { mutableStateOf(defaultStart + TERM_DEFAULT_DAYS) }
     var picking by remember { mutableStateOf<DateTarget?>(null) }
     val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val imeInsets = WindowInsets.ime
+    val density = LocalDensity.current
+
+    // 返回键优先收键盘（键盘收起后不返回给应用），键盘已收起时才关浮层
+    BackHandler {
+        if (imeInsets.getBottom(density) > 0) keyboard?.hide() else onDismiss()
+    }
 
     OverlaySheet(
         title = stringResource(R.string.switcher_new),
