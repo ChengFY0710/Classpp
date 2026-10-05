@@ -176,6 +176,67 @@ private fun ClassppSwitchPreview() = ClassppTheme {
 
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
 @Composable
+private fun SettingsCardPreview() = ClassppTheme {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // 单行导航
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Nav("设置项label") {},
+            ),
+        )
+        // 单行开关
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Toggle("设置项label", checked = true, onCheckedChange = {}),
+            ),
+        )
+        // 多行导航
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Nav("设置项label") {},
+                SettingsCardItem.Nav("设置项label") {},
+            ),
+        )
+        // 多行开关
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Toggle("设置项label", checked = true, onCheckedChange = {}),
+                SettingsCardItem.Toggle("设置项label", checked = true, onCheckedChange = {}),
+                SettingsCardItem.Toggle("设置项label", checked = true, onCheckedChange = {}),
+            ),
+        )
+        // 描述 + 导航
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Nav(
+                    label = "设置项label",
+                    description = "描述性文字描述性文字描述性文字",
+                    onClick = {},
+                ),
+            ),
+        )
+        // 描述 + 开关：描述超宽自动换行，行卡长高
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Toggle(
+                    label = "设置项label",
+                    description = "描述性文字描述性文字描述性文字描述性文" +
+                        "字描述性文字描述性文字",
+                    checked = true,
+                    onCheckedChange = {},
+                ),
+            ),
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
 private fun ColorSwatchCardPreview() = ClassppTheme {
     Column(
         modifier = Modifier
