@@ -174,7 +174,7 @@ private fun ClassppSwitchPreview() = ClassppTheme {
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 900)
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 1100)
 @Composable
 private fun SettingsCardPreview() = ClassppTheme {
     Column(
@@ -245,6 +245,14 @@ private fun SettingsCardPreview() = ClassppTheme {
                 SettingsCardItem.Toggle("设置项label", checked = true, onCheckedChange = {}),
                 SettingsCardItem.Toggle("设置项label", checked = true, onCheckedChange = {}),
             ),
+        )
+        // 多行导航 + 行距：rowSpacing > 0 时行间留白（四周边距不变，间隙不可点）
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Nav("设置项label") {},
+                SettingsCardItem.Nav("设置项label") {},
+            ),
+            rowSpacing = 12.dp,
         )
         // 描述 + 导航
         SettingsCard(
