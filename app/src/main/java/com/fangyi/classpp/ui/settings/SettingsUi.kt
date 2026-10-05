@@ -49,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.components.CardSection
+import com.fangyi.classpp.ui.components.SettingsCard
+import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MAX
 import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MIN
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -270,14 +272,13 @@ internal fun IsoDate.toSettingsDateText(): String {
 
 /**
  * 学期起止 + 总周数三行卡（起止弹外部传入的 DatePicker、周数弹输入对话框），
- * 顶部带「学期」分组标签。设置页与切换课表浮层的新建表单共用（见 [SettingRow]）：
+ * 顶部带「学期」分组标签。设置页与切换课表浮层的新建表单共用：
  * [onPickStart] / [onPickEnd] 由调用方挂各自的日期选择，[onSetWeeks] 收到合法周数
  * （已按 TERM_WEEKS_MIN..MAX 校验），调用方自行联动结束日（endForTotalWeeks）。
  *
- * 通栏行：卡片 contentPadding 归零，横向 17/13 与首尾 13 下沉到各行 [SettingRow.contentPadding]
- * （clickable 内侧）→ 每行涟漪铺满整个白块、由卡片圆角裁剪；文字位置与原布局完全一致。
- * 行间不留死区：rowSpacing 归零，10dp 行距同样下沉到中间行的 contentPadding（上下各 +10），
- * 中间行涟漪与首末行无缝接轨；视觉行距不变（仍为 6+10+6=22dp），间隙处按压落在中间行上。
+ * 卡体是 components 的新版 [com.fangyi.classpp.ui.components.SettingsCard]
+ * （三枚导航行：行内建 16/14 内距与 60dp 行高、涟漪通栏满行由卡片圆角裁剪），
+ * 此前「contentPadding 下沉到各行」的通栏手法不再需要。
  */
 @Composable
 internal fun TermDatesCard(
@@ -292,33 +293,25 @@ internal fun TermDatesCard(
     var pickingWeeks by remember { mutableStateOf(false) }
 
     CardSection(title = stringResource(R.string.section_term)) {
-        SettingsCard(contentPadding = PaddingValues(0.dp)) {
-            SettingRow(
-                label = stringResource(R.string.term_start),
-                value = start.toSettingsDateText(),
-                onClick = onPickStart,
-                contentPadding = PaddingValues(start = 17.dp, end = 13.dp, top = 13.dp),
-            )
-            SettingRow(
-                label = stringResource(R.string.term_end),
-                value = end.toSettingsDateText(),
-                onClick = onPickEnd,
-                // 吸收原 rowSpacing 的 10dp 行距（上下各 +10，另加行自带 6dp）：
-                // 涟漪向上接首行、向下接末行，文字位置不变
-                contentPadding = PaddingValues(
-                    start = 17.dp,
-                    end = 13.dp,
-                    top = MultiLineRowSpacing,
-                    bottom = MultiLineRowSpacing,
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Nav(
+                    label = stringResource(R.string.term_start),
+                    value = start.toSettingsDateText(),
+                    onClick = onPickStart,
                 ),
-            )
-            SettingRow(
-                label = stringResource(R.string.term_weeks),
-                value = stringResource(R.string.term_weeks_value, totalWeeks),
-                onClick = { pickingWeeks = true },
-                contentPadding = PaddingValues(start = 17.dp, end = 13.dp, bottom = 13.dp),
-            )
-        }
+                SettingsCardItem.Nav(
+                    label = stringResource(R.string.term_end),
+                    value = end.toSettingsDateText(),
+                    onClick = onPickEnd,
+                ),
+                SettingsCardItem.Nav(
+                    label = stringResource(R.string.term_weeks),
+                    value = stringResource(R.string.term_weeks_value, totalWeeks),
+                    onClick = { pickingWeeks = true },
+                ),
+            ),
+        )
     }
 
     // 周数对话框：仅打开期间进入组合（关闭即出组合，重开以当前周数重置输入）；
@@ -372,5 +365,22 @@ private fun SettingsTopBarPreview() {
             title = stringResource(R.string.settings_title),
             onBack = {},
         )
+    }
+}
+
+/** 学期设置卡预览：新 SettingsCard 三行导航（值 + 蓝色箭头），对照设计稿 */
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, name = "学期设置卡")
+@Composable
+private fun TermDatesCardPreview() {
+    ClassppTheme {
+        Column(modifier = Modifier.padding(16.dp)) {
+            TermDatesCard(
+                start = IsoDate.of(2026, 9, 7),
+                end = IsoDate.of(2027, 1, 17),
+                onPickStart = {},
+                onPickEnd = {},
+                onSetWeeks = {},
+            )
+        }
     }
 }
