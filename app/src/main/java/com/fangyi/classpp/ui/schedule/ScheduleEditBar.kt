@@ -72,7 +72,8 @@ fun ScheduleEditBar(
     // 列数只认资源里真有的星期名（同 ScheduleHeader）
     val weekdayNames = stringArrayResource(R.array.weekdays)
     val days = daysPerWeek.coerceIn(1, weekdayNames.size)
-    val weekdays = weekdayNames.take(days)
+    // 星期行的列标签用单字简称资源（同 ScheduleHeader），勿对全名做字符串假设
+    val weekdays = stringArrayResource(R.array.weekdays_short).take(days)
     val progress = blurProgress.coerceIn(0f, 1f)
     // hazeEffect 的 block 在绘制期执行、非 composable 上下文：tint 取值提到 modifier 之前
     val hazeTint = MaterialTheme.classppColors.hazeTint
@@ -152,7 +153,7 @@ fun ScheduleEditBar(
         ) {
             for (i in weekdays.indices) {
                 Text(
-                    text = weekdays[i].substring(1),
+                    text = weekdays[i],
                     modifier = Modifier
                         .weight(1f)
                         .wrapContentWidth(Alignment.CenterHorizontally),

@@ -20,6 +20,16 @@
         <item>Sat</item>
         <item>Sun</item>
     </string-array>
+    <!-- Column labels of the weekday row in the header/edit bar, aligned with `weekdays` -->
+    <string-array name="weekdays_short">
+        <item>Mon</item>
+        <item>Tue</item>
+        <item>Wed</item>
+        <item>Thu</item>
+        <item>Fri</item>
+        <item>Sat</item>
+        <item>Sun</item>
+    </string-array>
     <string name="settings_title">Schedule settings</string>
     <string name="cd_settings_close">Close</string>
     <string name="empty_title">No schedule yet</string>

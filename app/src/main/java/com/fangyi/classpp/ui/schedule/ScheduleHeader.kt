@@ -223,7 +223,8 @@ fun ScheduleHeader(
     val weekdayNames = stringArrayResource(R.array.weekdays)
     // 列数只认资源里真有的星期名：7 天视图展示周一~周日，5 天视图只到周五
     val days = daysPerWeek.coerceIn(1, weekdayNames.size)
-    val weekdays = weekdayNames.take(days)
+    // 星期行的列标签用单字简称资源（中文「周X」→「X」，英文 Mon/Tue/…），勿再对全名做字符串假设
+    val weekdays = stringArrayResource(R.array.weekdays_short).take(days)
     // 标题读的是**真实日期的真实星期**：周末在 5 天视图下没有对应列（weekIndex ≥ days），
     // 也不能对截断后的 weekdays 取模——那会把周六/周日回绕成周一/周二
     val dateTitle = stringResource(R.string.date_title_format, monthDay, weekdayNames[weekIndex])
@@ -334,7 +335,7 @@ fun ScheduleHeader(
             ) {
                 for (i in weekdays.indices) {
                     Text(
-                        text = weekdays[i].substring(1),
+                        text = weekdays[i],
                         modifier = Modifier.weight(1f),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,

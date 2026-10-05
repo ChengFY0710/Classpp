@@ -20,6 +20,16 @@
         <item>周六</item>
         <item>周日</item>
     </string-array>
+    <!-- 顶栏/编辑栏星期行的列标签：周X 的单字简称，与 weekdays 一一对应 -->
+    <string-array name="weekdays_short">
+        <item>一</item>
+        <item>二</item>
+        <item>三</item>
+        <item>四</item>
+        <item>五</item>
+        <item>六</item>
+        <item>日</item>
+    </string-array>
     <string name="settings_title">课表设置</string>
     <string name="cd_settings_close">关闭</string>
     <string name="empty_title">还没有课表</string>
