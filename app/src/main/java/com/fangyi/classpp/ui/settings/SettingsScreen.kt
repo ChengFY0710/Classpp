@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.settings
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,9 +32,8 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.ui.components.SettingsCardwithIcon
 import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
+import com.fangyi.classpp.ui.motion.PageOverlayTransition
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
-import com.fangyi.classpp.ui.motion.pageSlideIn
-import com.fangyi.classpp.ui.motion.pageSlideOut
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
@@ -55,7 +53,7 @@ private val EntryCardSpacing = 12.dp
 /**
  * 设置页：全屏覆盖层（由 MainActivity 组合在底部导航之后），返回键/关闭按钮经 [onClose] 退出。
  *
- * 结构 = 设置根页 + 子页右滑覆盖层（转场节奏同设置页本身：进 360 / 出 250）：
+ * 结构 = 设置根页 + 子页覆盖层（完整转场与设置页覆盖层同源，ui.motion 的 [PageOverlayTransition]）：
  * - 根页（[SettingsHomePage]）标题「设置」，正文三张独立入口卡：个性化 / 数据管理 / 关于；
  * - 「个性化」子页（[PersonalizationScreen]）承载 app 级外观设置，已实装；
  *   「数据管理」「关于」入口本次仅占位（点击暂无响应，子页后续接入）；
@@ -81,18 +79,19 @@ fun SettingsScreen(
         // 无过冲弹回。平移露出的是 Scaffold 同色底（background）；顶栏 haze 毛玻璃条固定
         // 不动、内容从其后滚过/弹回，即 iOS 大标题页的手感
         ProvideOverscroll {
-            SettingsHomePage(
-                onClose = onClose,
-                onOpenPersonalization = { showPersonalization = true },
-                repository = repository,
-                modifier = Modifier.fillMaxSize(),
-            )
-            // 子页整页从右缘滑入盖住根页（根页本身是不透明整页，无需压暗遮罩），退场右滑出；
-            // 转场节奏与设置页覆盖层本身一致（ui.motion 的 pageSlideIn/Out），同源才有连续感
-            AnimatedVisibility(
+            // 子页以与设置页覆盖层完全相同的完整转场盖住根页（ui.motion 的 PageOverlayTransition：
+            // 让位视差 + 压暗遮罩 + 右滑进出场 + 转场期左缘圆角）——共用同一实现，两层观感严格一致
+            PageOverlayTransition(
                 visible = showPersonalization,
-                enter = pageSlideIn(),
-                exit = pageSlideOut(),
+                modifier = Modifier.fillMaxSize(),
+                behind = {
+                    SettingsHomePage(
+                        onClose = onClose,
+                        onOpenPersonalization = { showPersonalization = true },
+                        repository = repository,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                },
             ) {
                 PersonalizationScreen(
                     onBack = { showPersonalization = false },

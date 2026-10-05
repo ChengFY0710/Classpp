@@ -37,13 +37,13 @@ object Motion {
     const val EditMillis = 360
 
     /**
-     * 整页覆盖层（设置页、个性化子页）进场时长：整页右滑入，与编辑栏同节奏（[Standard]）。
+     * 整页覆盖层（设置页、个性化子页）进场时长：整页右滑入，配合 [Standard]。
      * 子页转场必须与设置页覆盖层本身同源，同源才有连续感。
      */
-    const val PageEnterMillis = 360
+    const val PageEnterMillis = 440
 
     /** 整页覆盖层退场时长：同方向右滑出，比进场短一些，返回更利落。 */
-    const val PageExitMillis = 250
+    const val PageExitMillis = 320
 
     /** 浮层（OverlaySheet）入场时长：从屏幕底部滑入，配合 [Decelerate]。 */
     const val SheetEnterMillis = 320

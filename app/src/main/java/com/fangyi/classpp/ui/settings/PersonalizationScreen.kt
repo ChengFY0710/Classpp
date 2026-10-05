@@ -45,8 +45,8 @@ import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 
 /**
- * 个性化子页（设置 → 个性化）：由 [SettingsScreen] 以右滑覆盖层组合在根页之上，
- * 返回按钮/返回键经 [onBack] 回到设置根页。
+ * 个性化子页（设置 → 个性化）：由 [SettingsScreen] 以整页覆盖转场组合在根页之上
+ * （与设置页覆盖层同源，见 ui.motion 的 PageOverlayTransition），返回按钮/返回键经 [onBack] 回到设置根页。
  *
  * 骨架与设置根页同构（Scaffold + 滚动内容列 + 顶栏叠加），正文承载 app 级外观设置：
  * 「颜色模式」三选一（跟随系统/浅色/深色，[themeMode] / [onThemeModeChange]），

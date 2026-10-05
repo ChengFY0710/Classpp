@@ -2,28 +2,21 @@ package com.fangyi.classpp
 
 import android.content.res.Configuration
 import android.graphics.Color
-import android.os.Build
 import android.os.Bundle
-import android.view.RoundedCorner
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -35,19 +28,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.ui.motion.Motion
-import com.fangyi.classpp.ui.motion.pageSlideIn
-import com.fangyi.classpp.ui.motion.pageSlideOut
+import com.fangyi.classpp.ui.motion.PageOverlayTransition
 import com.fangyi.classpp.ui.navigation.AppTab
 import com.fangyi.classpp.ui.navigation.BottomNavBar
 import com.fangyi.classpp.ui.placeholder.AgendaScreen
@@ -57,7 +45,6 @@ import com.fangyi.classpp.ui.settings.SettingsScreen
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.ThemeMode
 import com.fangyi.classpp.ui.theme.ThemePreferences
-import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -104,19 +91,8 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 var selectedTab by rememberSaveable { mutableStateOf(AppTab.Timetable) }
-                // 设置页开关（全屏覆盖层，见 Box 内组合顺序）
+                // 设置页开关（全屏覆盖层，经下方 PageOverlayTransition 盖在三屏与底部导航之上）
                 var showSettings by rememberSaveable { mutableStateOf(false) }
-                // 设置页视差进度：与覆盖层滑入/滑出同规格（Motion.PageEnter/PageExitMillis +
-                // Motion.Standard），同帧启动、同曲线推进——滑入时原页面向左微微让位，滑出时向右滑回原位。
-                // 只在 layer 阶段被读取：动画期间不重组、不重排（同 tabProgress）
-                val settingsProgress by animateFloatAsState(
-                    targetValue = if (showSettings) 1f else 0f,
-                    animationSpec = tween(
-                        durationMillis = if (showSettings) Motion.PageEnterMillis else Motion.PageExitMillis,
-                        easing = Motion.Standard,
-                    ),
-                    label = "settingsProgress",
-                )
                 // 课表编辑态：由课表页的编辑按钮进入，编辑期间隐藏底部导航栏
                 var editing by rememberSaveable { mutableStateOf(false) }
                 // 课表页的全屏浮层（课程详情）在场时同样藏导航栏：导航栏在组合顺序上
@@ -150,18 +126,12 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                Box(Modifier.fillMaxSize()) {
-                    // 原页面容器：设置页滑入时整体向左微微滑出让位、滑出时向右滑回原位（视差，
-                    // 见 settingsProgress）。位移挂在独立 layer 上，动画期间子树布局与绘制指令
-                    // 一概不动，与 tabPage 的 layer 平移各管一层互不干扰；转场中设置页页缘
-                    // 始终压住本容器右缘，不会露出底缝
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                translationX = -settingsProgress * size.width * SettingsParallaxFraction
-                            },
-                    ) {
+                // 设置页覆盖层完整转场（ui.motion 的 PageOverlayTransition）：下层让位视差、
+                // 压暗遮罩、右滑进出场与转场期左缘圆角都在其中，与个性化子页共用同一实现
+                PageOverlayTransition(
+                    visible = showSettings,
+                    modifier = Modifier.fillMaxSize(),
+                    behind = {
                         // 三个页面常驻组合，切 tab 只横向平移（见 tabPage）：
                         // 若用 SaveableStateProvider 按 key 重建课表页，首帧 headerHeight
                         // 回落到估算值再被校正，紧贴头部的日期带会明显跳闪一次。
@@ -218,90 +188,18 @@ class MainActivity : ComponentActivity() {
                                 onTabSelected = { if (!editing && !navBarHiddenByOverlay) selectedTab = it },
                             )
                         }
-                    }
-                    // 设置页背景压暗：与设置页同节奏（进 360 / 出 250）的纯淡入淡出遮罩（60% 黑）
-                    // ——进场时压暗背景提供进深，退场时随滑出恢复。
-                    // 只画不拦截点击：覆盖层全可见时遮罩被完全盖住，仅转场期间透出
-                    AnimatedVisibility(
-                        visible = showSettings,
-                        enter = fadeIn(tween(Motion.PageEnterMillis, easing = Motion.Standard)),
-                        exit = fadeOut(tween(Motion.PageExitMillis, easing = Motion.Standard)),
+                    },
+                ) {
+                    SettingsScreen(
+                        onClose = { showSettings = false },
+                        repository = repository,
+                        themeMode = themeMode,
+                        onThemeModeChange = { mode ->
+                            themeMode = mode
+                            ThemePreferences.save(this@MainActivity, mode)
+                        },
                         modifier = Modifier.fillMaxSize(),
-                    ) {
-                        Box(
-                            Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.scrim),
-                        )
-                    }
-                    // 最后组合 ⇒ 绘制与命中测试覆盖三屏与底部导航（课表页仅被覆盖、不重建）。
-                    // 进场整页从右缘滑入（不叠淡入淡出，进深感交给背后的压暗遮罩与
-                    // 原页面的左移让位视差），呼应左上角返回箭头的子页语义；
-                    // AnimatedVisibility 退场期间仍保持组合，返回键/返回按钮经 onClose 幂等关闭
-                    AnimatedVisibility(
-                        visible = showSettings,
-                        enter = pageSlideIn(),
-                        exit = pageSlideOut(),
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        // 左缘圆角只存在于转场期间：滑入/滑出时左上/左下裁出与机身 R 角一致的
-                        // 圆角（API 31+ 读系统真实半径，低版本退化 24dp 近似），与压暗遮罩配合
-                        // 让页面像一张卡片滑过背景；完全就位后恢复矩形贴边、零裁剪开销
-                        val view = LocalView.current
-                        val density = LocalDensity.current
-                        val leftCornerPx = remember {
-                            val insets = view.rootWindowInsets
-                            val tl = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                insets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius ?: 0
-                            } else {
-                                0
-                            }
-                            val bl = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)?.radius ?: 0
-                            } else {
-                                0
-                            }
-                            maxOf(tl, bl).takeIf { it > 0 }?.toFloat()
-                                ?: with(density) { 24.dp.toPx() }
-                        }
-                        // 圆角开关：内容首帧必然处于转场中，初始即为开（圆角恒定全开、
-                        // 不随滑动插值收放）；完全就位（当前态与目标态都是 Visible）后
-                        // 保持 500ms 圆角，画面彻底静止再恢复矩形贴边并摘掉裁剪层
-                        val settled = transition.currentState == EnterExitState.Visible &&
-                            transition.targetState == EnterExitState.Visible
-                        var cornersOn by remember { mutableStateOf(true) }
-                        LaunchedEffect(settled) {
-                            if (settled) {
-                                delay(100)
-                                cornersOn = false
-                            } else {
-                                cornersOn = true
-                            }
-                        }
-                        SettingsScreen(
-                            onClose = { showSettings = false },
-                            repository = repository,
-                            themeMode = themeMode,
-                            onThemeModeChange = { mode ->
-                                themeMode = mode
-                                ThemePreferences.save(this@MainActivity, mode)
-                            },
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    if (cornersOn) {
-                                        shape = RoundedCornerShape(
-                                            topStart = leftCornerPx,
-                                            bottomStart = leftCornerPx,
-                                        )
-                                        clip = true
-                                    } else {
-                                        shape = RectangleShape
-                                        clip = false
-                                    }
-                                },
-                        )
-                    }
+                    )
                 }
             }
         }
@@ -321,13 +219,6 @@ private fun rememberScheduleRepository(): ScheduleRepository? {
     }
     return repository
 }
-
-/**
- * 设置页转场的背景视差位移比例：滑入时原页面向左挪自身宽度的这个比例让位，滑出时滑回。
- * 与设置页转场同规格推进（见 settingsProgress），量级「微微」即可——iOS push 是 1/3 宽，
- * 明显重于本效果；想更含蓄可下调至 0.06 左右
- */
-private const val SettingsParallaxFraction = 0.1f
 
 /**
  * 系统栏样式按主题二选一：全透明底，前景图标深色（浅色主题）/浅色（深色主题）。
