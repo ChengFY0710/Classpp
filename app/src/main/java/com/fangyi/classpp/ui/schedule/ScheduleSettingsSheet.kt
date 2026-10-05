@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,6 +37,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
@@ -65,6 +65,7 @@ import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.settings.TermDatesCard
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.classppTextStyles
 import kotlinx.coroutines.launch
 
 private val SectionSpacing = 18.dp
@@ -213,29 +214,18 @@ private fun SettingsContent(
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                TextButton(
-                                    onClick = {
-                                        if (schedule.slotCount > 1) onSlots(schedule.slots.dropLast(1))
-                                    },
+                                TextAction(
+                                    text = stringResource(R.string.slot_decrease),
                                     enabled = schedule.slotCount > 1,
-                                    contentPadding = PaddingValues(0.dp),
-                                ) {
-                                    Text(
-                                        stringResource(R.string.slot_decrease),
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                }
-                                Spacer(modifier = Modifier.size(12.dp))
-                                TextButton(
-                                    onClick = { appended?.let { s -> if (schedule.slotCount < 12) onSlots(s) } },
+                                    onClick = { onSlots(schedule.slots.dropLast(1)) },
+                                )
+                                Spacer(modifier = Modifier.size(24.dp))
+                                TextAction(
+                                    text = stringResource(R.string.slot_increase),
                                     enabled = canAdd,
-                                    contentPadding = PaddingValues(0.dp),
-                                ) {
-                                    Text(
-                                        stringResource(R.string.slot_increase),
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                }
+                                    onClick = { appended?.let { s -> onSlots(s) } },
+                                )
+                                Spacer(modifier = Modifier.size(6.dp))
                             }
                         },
                         footer = if (appended == null) {
@@ -266,7 +256,7 @@ private fun SettingsContent(
                                 TimeChip(TimeText.formatDisplay(slot.startTime)) {
                                     editingSlot = SlotEdit(index, isStart = true)
                                 }
-                                Spacer(Modifier.width(12.dp))
+                                Spacer(Modifier.width(16.dp))
                                 TimeChip(TimeText.formatDisplay(slot.endTime)) {
                                     editingSlot = SlotEdit(index, isStart = false)
                                 }
@@ -407,6 +397,8 @@ private data class SlotEdit(val index: Int, val isStart: Boolean)
 
 private val ChipShape = RoundedCornerShape(8.dp)
 
+private val TextActionShape = RoundedCornerShape(8.dp)
+
 /**
  * 时间胶囊：背景灰底、primary 字，点击弹时间选择（节次行尾部控件）。
  * 文字启用等宽数字（tnum）：所有时间同为 00:00 五字符，数字位等宽后各胶囊文字宽度天然一致。
@@ -426,6 +418,31 @@ private fun TimeChip(
             .padding(horizontal = 18.dp, vertical = 9.dp),
         style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
         color = MaterialTheme.colorScheme.primary,
+    )
+}
+
+/**
+ * 行尾文字动作（加减一节）：无底色、无内距，可点区域就是文字本身——高度即文字高度，
+ * 与行 label 同一排版节奏（fieldValue 角色 + SemiBold）。primary 色提示可点，
+ * 禁用降为 M3 禁用灰（onSurface 38%）且不可点；涟漪经 [TextActionShape] 圆角裁剪不越界。
+ */
+@Composable
+private fun TextAction(
+    text: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .clip(TextActionShape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+        style = MaterialTheme.classppTextStyles.fieldValue.copy(fontWeight = FontWeight.SemiBold),
+        color = if (enabled) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        },
     )
 }
 

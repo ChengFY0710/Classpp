@@ -91,9 +91,9 @@ class ClassppTextStyles(
 fun classppTextStyles(colorScheme: ColorScheme, colors: ClassppColors) = ClassppTextStyles(
     topBarTitle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold, color = colorScheme.onSurface),
     sectionTitle = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colors.secondaryText),
-    fieldLabel = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = colorScheme.onSurface),
-    fieldPlaceholder = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Medium, color = colors.secondaryText),
-    fieldValue = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Medium, color = colorScheme.primary),
+    fieldLabel = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colorScheme.onSurface),
+    fieldPlaceholder = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colors.secondaryText),
+    fieldValue = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colorScheme.primary),
     pillButton = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
     menuItem = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colorScheme.onSurface),
 )
