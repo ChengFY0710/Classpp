@@ -33,6 +33,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.ui.components.SettingsCardwithIcon
 import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
+import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.pageSlideIn
 import com.fangyi.classpp.ui.motion.pageSlideOut
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
@@ -74,25 +75,31 @@ fun SettingsScreen(
     }
 
     Box(modifier.fillMaxSize()) {
-        SettingsHomePage(
-            onClose = onClose,
-            onOpenPersonalization = { showPersonalization = true },
-            repository = repository,
-            modifier = Modifier.fillMaxSize(),
-        )
-        // 子页整页从右缘滑入盖住根页（根页本身是不透明整页，无需压暗遮罩），退场右滑出；
-        // 转场节奏与设置页覆盖层本身一致（ui.motion 的 pageSlideIn/Out），同源才有连续感
-        AnimatedVisibility(
-            visible = showPersonalization,
-            enter = pageSlideIn(),
-            exit = pageSlideOut(),
-        ) {
-            PersonalizationScreen(
-                onBack = { showPersonalization = false },
-                themeMode = themeMode,
-                onThemeModeChange = onThemeModeChange,
+        // 整页（根页 + 个性化子页）滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的
+        // ProvideOverscroll）：滚到顶/底后继续拖动，内容整块被拉出边缘、越拉越硬，松手
+        // 无过冲弹回。平移露出的是 Scaffold 同色底（background）；顶栏 haze 毛玻璃条固定
+        // 不动、内容从其后滚过/弹回，即 iOS 大标题页的手感
+        ProvideOverscroll {
+            SettingsHomePage(
+                onClose = onClose,
+                onOpenPersonalization = { showPersonalization = true },
+                repository = repository,
                 modifier = Modifier.fillMaxSize(),
             )
+            // 子页整页从右缘滑入盖住根页（根页本身是不透明整页，无需压暗遮罩），退场右滑出；
+            // 转场节奏与设置页覆盖层本身一致（ui.motion 的 pageSlideIn/Out），同源才有连续感
+            AnimatedVisibility(
+                visible = showPersonalization,
+                enter = pageSlideIn(),
+                exit = pageSlideOut(),
+            ) {
+                PersonalizationScreen(
+                    onBack = { showPersonalization = false },
+                    themeMode = themeMode,
+                    onThemeModeChange = onThemeModeChange,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }

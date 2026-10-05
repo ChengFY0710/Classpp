@@ -54,6 +54,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetShape
@@ -291,54 +292,61 @@ fun OverlaySheet(
                 color = MaterialTheme.colorScheme.background,
                 shadowElevation = 8.dp,
             ) {
-                Box {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            // 顶栏模糊的采样源：滚动内容从顶栏底下滚过时被渐变模糊
-                            .hazeSource(hazeState)
-                            .verticalScroll(scrollState)
-                            // 点空白（卡片间隙/留白/尾部余量）取消聚焦收起键盘：
-                            // SheetTextField / SheetTextArea 一族的通用宿主行为
-                            .clearFocusOnTap()
-                            // 横向边距 = 设置页同款页边距（PageHorizontalSpacing），卡片宽度与设置页一致
-                            .padding(horizontal = PageHorizontalSpacing),
-                    ) {
-                        // 为叠在上方的顶栏留位；滚动后内容进入顶栏区域并被模糊
-                        Spacer(Modifier.height(TopBarHeight))
-                        content()
-                        // 尾部余量 = 键盘/导航让位 + 可调滚动余量，拉大可滑动范围
-                        Spacer(Modifier.height(bottomInsetDp + SheetBottomSlack))
-                    }
-                    OverlaySheetTopBar(
-                        title = title,
-                        confirmLabel = confirmLabel,
-                        confirmIcon = confirmIcon,
-                        onConfirm = { if (!closeRequested) onConfirm() },
-                        rightAction = guardedRightAction,
-                        confirmAtEnd = confirmAtEnd,
-                        hazeState = hazeState,
-                        dragModifier = topBarDragModifier,
-                        modifier = Modifier.align(Alignment.TopCenter),
-                    )
-                    // 钉底内容槽（可选）：渐变兜底让滚动内容从其下淡出，导航栏留白由 inset 吃掉
-                    bottomContent?.let { slot ->
-                        Box(
+                // 卡内滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的 ProvideOverscroll）：
+                // 滚到顶/底后继续拖动，内容整块被拉出边缘、越拉越硬，松手无过冲弹回；在边缘
+                // 直接甩动时拉出量与速度成正比。平移露出的是 Surface 同色底（background），
+                // 且被 SheetShape 圆角裁剪收敛在卡内，边缘处看不出破绽。顶栏下拉关闭走的是
+                // draggable 手势、不属于本作用域的滚动容器，与 overscroll 互不干扰
+                ProvideOverscroll {
+                    Box {
+                        Column(
                             modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                                .background(
-                                    androidx.compose.ui.graphics.Brush.verticalGradient(
-                                        listOf(
-                                            MaterialTheme.colorScheme.background.copy(alpha = 0f),
-                                            MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
-                                        ),
-                                    ),
-                                )
-                                .navigationBarsPadding()
-                                .padding(top = 12.dp, bottom = 24.dp),
+                                .fillMaxSize()
+                                // 顶栏模糊的采样源：滚动内容从顶栏底下滚过时被渐变模糊
+                                .hazeSource(hazeState)
+                                .verticalScroll(scrollState)
+                                // 点空白（卡片间隙/留白/尾部余量）取消聚焦收起键盘：
+                                // SheetTextField / SheetTextArea 一族的通用宿主行为
+                                .clearFocusOnTap()
+                                // 横向边距 = 设置页同款页边距（PageHorizontalSpacing），卡片宽度与设置页一致
+                                .padding(horizontal = PageHorizontalSpacing),
                         ) {
-                            slot()
+                            // 为叠在上方的顶栏留位；滚动后内容进入顶栏区域并被模糊
+                            Spacer(Modifier.height(TopBarHeight))
+                            content()
+                            // 尾部余量 = 键盘/导航让位 + 可调滚动余量，拉大可滑动范围
+                            Spacer(Modifier.height(bottomInsetDp + SheetBottomSlack))
+                        }
+                        OverlaySheetTopBar(
+                            title = title,
+                            confirmLabel = confirmLabel,
+                            confirmIcon = confirmIcon,
+                            onConfirm = { if (!closeRequested) onConfirm() },
+                            rightAction = guardedRightAction,
+                            confirmAtEnd = confirmAtEnd,
+                            hazeState = hazeState,
+                            dragModifier = topBarDragModifier,
+                            modifier = Modifier.align(Alignment.TopCenter),
+                        )
+                        // 钉底内容槽（可选）：渐变兜底让滚动内容从其下淡出，导航栏留白由 inset 吃掉
+                        bottomContent?.let { slot ->
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .fillMaxWidth()
+                                    .background(
+                                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                                            listOf(
+                                                MaterialTheme.colorScheme.background.copy(alpha = 0f),
+                                                MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                                            ),
+                                        ),
+                                    )
+                                    .navigationBarsPadding()
+                                    .padding(top = 12.dp, bottom = 24.dp),
+                            ) {
+                                slot()
+                            }
                         }
                     }
                 }
