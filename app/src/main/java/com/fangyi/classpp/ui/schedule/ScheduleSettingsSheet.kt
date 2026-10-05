@@ -52,20 +52,21 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeSlotDef
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.appendSlot
-import com.fangyi.classpp.ui.components.ClassppSwitch
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.RowChoiceCard
+import com.fangyi.classpp.ui.components.SettingsCard
+import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.settings.MultiLineRowSpacing
 import com.fangyi.classpp.ui.settings.SettingRow
-import com.fangyi.classpp.ui.settings.SettingsCard
+// 旧版设置卡（节次两张卡仍在用，待迁移）：与新 SettingsCard 同名，别名区分
+import com.fangyi.classpp.ui.settings.SettingsCard as LegacySettingsCard
 import com.fangyi.classpp.ui.settings.TermDatesCard
 import com.fangyi.classpp.ui.settings.TimeChip
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.classppColors
 import kotlinx.coroutines.launch
 
 private val SectionSpacing = 18.dp
@@ -207,9 +208,9 @@ private fun SettingsContent(
             // 减：保留前缀裁剪（合法表的前缀必合法，且保留用户已改时间）
             val appended = appendSlot(schedule.slots)
             val canAdd = appended != null && schedule.slotCount < 12   // 上限沿用 R5
-            // 单行卡：与「显示非本周课程」卡同一基础留白 → 两卡整高等高；
+            // 单行卡：基础留白 13dp（行高 37dp）；
             // 溢出提示出现时，行↔提示、提示↔卡底也都是 12dp（见 CardContentPadding 公式）
-            SettingsCard {
+            LegacySettingsCard {
                 SettingRow(
                     label = stringResource(R.string.slot_count_format, schedule.slotCount),
                     showChevron = false,
@@ -256,7 +257,7 @@ private fun SettingsContent(
                 }
             }
             // 多行卡（每节一行「文字 + 时间控件」）：与学期卡共用 MultiLineRowSpacing → 行间 18dp
-            SettingsCard(rowSpacing = MultiLineRowSpacing) {
+            LegacySettingsCard(rowSpacing = MultiLineRowSpacing) {
                 schedule.slots.forEachIndexed { index, slot ->
                     SettingRow(
                         label = stringResource(R.string.slot_format, index + 1),
@@ -280,24 +281,16 @@ private fun SettingsContent(
         }
 
         CardSection(title = stringResource(R.string.section_display)) {
-            SettingsCard {
-                SettingRow(
-                    label = stringResource(R.string.show_inactive),
-                    showChevron = false,
-                    trailing = {
-                        ClassppSwitch(
-                            checked = schedule.showInactiveCourses,
-                            onCheckedChange = onShowInactive,
-                        )
-                    },
-                    modifier = Modifier.height(oneLineControlHeight),
-                )
-            }
-            Text(
-                text = stringResource(R.string.show_inactive_desc),
-                modifier = Modifier.padding(start = 4.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.classppColors.secondaryText,
+            // 新版 SettingsCard 开关行：整行可点切换（涟漪铺满整行），说明文字在卡内 label 下方
+            SettingsCard(
+                items = listOf(
+                    SettingsCardItem.Toggle(
+                        label = stringResource(R.string.show_inactive),
+                        description = stringResource(R.string.show_inactive_desc),
+                        checked = schedule.showInactiveCourses,
+                        onCheckedChange = onShowInactive,
+                    ),
+                ),
             )
         }
     }
