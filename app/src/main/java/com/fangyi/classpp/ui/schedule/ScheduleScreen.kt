@@ -235,8 +235,8 @@ fun ScheduleScreen(
     }
 
     // 无激活课表（如从切换浮层删空全部课表）时编辑态已无意义：网格与编辑栏都随之消失，
-    // 若停留在编辑态，底部导航栏会一直隐藏（它的显隐跟着编辑态走）——走取消路径自动退出，
-    // 删空的课表随快照恢复而复活
+    // 若停留在编辑态，底部导航栏会一直隐藏（它的显隐跟着编辑态走）——走取消路径自动退出。
+    // 删除已同步移出编辑基线（不可撤销），回滚不会使被删课表复活，退出后直接落空态
     LaunchedEffect(schedule) {
         if (schedule == null && editing) cancelEdit()
     }
@@ -653,7 +653,9 @@ fun ScheduleScreen(
             }
             // 删除课表：仓库删除（删激活项自动回落到剩余第一张，全部数据层校验已就绪）；
             // 删的是当前激活课表时周选择复位防越界（同 performSwitch 的复位思路）；
-            // 删空则关浮层回无课表空态（新建课表页）
+            // 删空则关浮层回无课表空态（新建课表页）。
+            // 删除为最终态（弹窗已告知不可撤销）：同步把被删课表从编辑基线里移除——
+            // 取消编辑的整库回滚因此不会复活它，其余改动照旧可回滚
             val onDeleteSchedule: (String) -> Unit = { id ->
                 scope.launch {
                     when (val r = repository.deleteSchedule(id)) {
@@ -662,6 +664,17 @@ fun ScheduleScreen(
                             if (repository.schedules.value.isEmpty()) {
                                 switcherVisible = false
                                 createMode = false
+                            }
+                            if (editing && editBaselineJson.isNotEmpty()) {
+                                val baseline = ScheduleJson.decodeStorage<ScheduleFile>(editBaselineJson)
+                                editBaselineJson = ScheduleJson.encodeStorage(
+                                    baseline.copy(
+                                        schedules = baseline.schedules.filterNot { it.id == id },
+                                        // 基线激活 id 指向被删课表时回落到剩余第一张（同仓库语义）
+                                        activeScheduleId = baseline.activeScheduleId?.takeIf { it != id }
+                                            ?: baseline.schedules.firstOrNull { it.id != id }?.id,
+                                    ),
+                                )
                             }
                         }
                         is OpResult.Err -> AppToasts.show(context, r.error.toEditMessage(context))

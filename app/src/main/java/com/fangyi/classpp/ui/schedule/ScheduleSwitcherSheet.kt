@@ -321,7 +321,7 @@ private fun CreateScheduleContent(
 }
 
 /**
- * 删除课表确认框：页内居中白卡（[ConfirmDialogCard]），点名课表并说明可在取消编辑后撤销。
+ * 删除课表确认框：页内居中白卡（[ConfirmDialogCard]），点名课表并告知删除不可撤销。
  * 确认胶囊 error 红底白字标 destructive；返回键与遮罩点击都只取消。
  * 两段式关闭见 [FadeOverlayDialog]：确认/取消即清 deletingId（名称随之为空），
  * [shownName] 留住最后一份文案，淡出期间不闪空。
