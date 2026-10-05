@@ -387,7 +387,8 @@ private fun OverlaySheetTopBar(
             // 不透明兜底让混合只发生在"模糊 vs 平色"之间，锐利内容被完全挡住
             .background(MaterialTheme.colorScheme.background)
             .hazeEffect(hazeState) {
-                blurRadius = 32.dp
+                // 25dp：与设置页顶栏同规格的模糊预算（转场逐帧重合成，模糊不宜过重）
+                blurRadius = 25.dp
                 progressive = HazeProgressive.verticalGradient(
                     startIntensity = 1f,
                     endIntensity = 0f,

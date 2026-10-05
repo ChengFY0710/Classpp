@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +33,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.ui.components.SettingsCardwithIcon
 import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
+import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
@@ -69,8 +71,15 @@ fun SettingsScreen(
     onThemeModeChange: (ThemeMode) -> Unit = {},
 ) {
     var showPersonalization by rememberSaveable { mutableStateOf(false) }
-    BackHandler {
+    // 覆盖层内容常驻组合（ui.motion 的 PageOverlayTransition）：隐藏态下页面只是停在
+    // 屏外、返回键处理必须让位给系统（否则主界面按返回会被吃掉）；转场彻底结束后把
+    // 子页复位到根页——与此前 AnimatedVisibility「关闭即销毁」的重开语义一致
+    val overlayActive = LocalPageOverlayActive.current
+    BackHandler(enabled = overlayActive) {
         if (showPersonalization) showPersonalization = false else onClose()
+    }
+    LaunchedEffect(overlayActive) {
+        if (!overlayActive) showPersonalization = false
     }
 
     Box(modifier.fillMaxSize()) {

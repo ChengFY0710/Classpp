@@ -43,6 +43,7 @@ import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MIN
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
@@ -82,12 +83,17 @@ internal fun SettingsTopBar(
             .background(MaterialTheme.colorScheme.background)
             .then(
                 if (hazeState != null) {
+                    // 转场性能规格：25dp + 半分辨率输入（Fixed(0.5)）+ mask 渐变
+                    // （preferPerformance）——整页覆盖层转场逐帧重合成毛玻璃，模糊预算
+                    // 必须收紧（32dp 全分辨率 progressive 的 GPU 成本压不住帧预算）
                     Modifier.hazeEffect(hazeState) {
-                        blurRadius = 32.dp
+                        blurRadius = 25.dp
                         progressive = HazeProgressive.verticalGradient(
                             startIntensity = 1f,
                             endIntensity = 0f,
+                            preferPerformance = true,
                         )
+                        inputScale = HazeInputScale.Fixed(0.5f)
                         tints = listOf(HazeTint(hazeTint.copy(alpha = 0.30f)))
                         noiseFactor = 0f
                     }
