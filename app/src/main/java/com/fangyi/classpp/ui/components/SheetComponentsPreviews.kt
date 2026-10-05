@@ -156,6 +156,26 @@ private fun SheetTextAreaPreview() = ClassppTheme {
 
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
 @Composable
+private fun ClassppSwitchPreview() = ClassppTheme {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        ClassppSwitch(
+            checked = true,
+            onCheckedChange = {},
+        )
+        ClassppSwitch(
+            checked = false,
+            onCheckedChange = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
 private fun ColorSwatchCardPreview() = ClassppTheme {
     Column(
         modifier = Modifier

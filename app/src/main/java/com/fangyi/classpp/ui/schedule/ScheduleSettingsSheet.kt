@@ -17,7 +17,6 @@ import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -53,6 +52,7 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeSlotDef
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.appendSlot
+import com.fangyi.classpp.ui.components.ClassppSwitch
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.RowChoiceCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
@@ -285,7 +285,7 @@ private fun SettingsContent(
                     label = stringResource(R.string.show_inactive),
                     showChevron = false,
                     trailing = {
-                        Switch(
+                        ClassppSwitch(
                             checked = schedule.showInactiveCourses,
                             onCheckedChange = onShowInactive,
                         )
