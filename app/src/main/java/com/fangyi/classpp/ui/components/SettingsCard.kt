@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,24 +12,35 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.theme.MenuShape
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /**
- * 设置卡条目：导航行（label + 蓝色箭头）或开关行（label + [ClassppSwitch]），
- * 均可带灰色描述文字（自动换行、行卡随之长高）。
+ * 设置卡条目：导航行（label + 蓝色箭头）、开关行（label + [ClassppSwitch]）或
+ * 选择行（label + 蓝色当前值 + 上下箭头，点行弹菜单），均可带灰色描述文字
+ * （自动换行、行卡随之长高）。
  */
 sealed interface SettingsCardItem {
     val label: String
@@ -48,6 +60,19 @@ sealed interface SettingsCardItem {
         override val description: String? = null,
         val checked: Boolean,
         val onCheckedChange: (Boolean) -> Unit,
+    ) : SettingsCardItem
+
+    /**
+     * 选择行：整行可点弹出菜单（同 [PopupSelectCard]，打开前自动收起键盘与焦点），
+     * [value] 为当前值的展示文字，[items] 只传合法选项（由调用方裁剪）。
+     */
+    data class Select(
+        override val label: String,
+        override val description: String? = null,
+        val value: String,
+        val items: List<Pair<Int, String>>,
+        val selectedId: Int,
+        val onPick: (Int) -> Unit,
     ) : SettingsCardItem
 }
 
@@ -82,6 +107,10 @@ fun SettingsCard(
 /** 单行渲染：padding 在 clickable/toggleable 内侧，涟漪（或开关整行点区）铺满整行宽 */
 @Composable
 private fun SettingsCardRow(item: SettingsCardItem) {
+    // 菜单开合只有选择行用得到，其余行型状态恒为 false 不产生行为
+    var menuExpanded by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     val interactionModifier = when (item) {
         is SettingsCardItem.Nav -> Modifier.clickable(onClick = item.onClick)
         is SettingsCardItem.Toggle -> Modifier.toggleable(
@@ -89,6 +118,17 @@ private fun SettingsCardRow(item: SettingsCardItem) {
             role = Role.Switch,
             onValueChange = item.onCheckedChange,
         )
+        is SettingsCardItem.Select -> Modifier.clickable {
+            // 打开菜单前先收起键盘与焦点：键盘若开着，菜单会被盖住、焦点还留在原输入框上
+            focusManager.clearFocus()
+            keyboard?.hide()
+            menuExpanded = true
+        }
+    }
+    val rowValue = when (item) {
+        is SettingsCardItem.Nav -> item.value
+        is SettingsCardItem.Select -> item.value
+        is SettingsCardItem.Toggle -> null
     }
     Row(
         modifier = Modifier
@@ -99,18 +139,21 @@ private fun SettingsCardRow(item: SettingsCardItem) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SettingsRowText(label = item.label, description = item.description, modifier = Modifier.weight(1f))
+        if (rowValue != null) {
+            Text(
+                text = rowValue,
+                style = MaterialTheme.classppTextStyles.fieldValue,
+            )
+            Spacer(Modifier.width(6.dp))
+        }
         when (item) {
-            is SettingsCardItem.Nav -> {
-                if (item.value != null) {
-                    Text(
-                        text = item.value,
-                        style = MaterialTheme.classppTextStyles.fieldValue,
-                    )
-                    Spacer(Modifier.width(6.dp))
-                }
-                Chevron()
-            }
+            is SettingsCardItem.Nav -> Chevron()
             is SettingsCardItem.Toggle -> ClassppSwitch(checked = item.checked, onCheckedChange = null)
+            is SettingsCardItem.Select -> SelectMenu(
+                item = item,
+                expanded = menuExpanded,
+                onDismiss = { menuExpanded = false },
+            )
         }
     }
 }
@@ -145,4 +188,47 @@ private fun Chevron() {
         tint = MaterialTheme.colorScheme.primary,
         modifier = Modifier.size(20.dp),
     )
+}
+
+/**
+ * 选择行尾部：上下箭头 + 锚在其上的弹出菜单（独立 Popup 窗口，不受卡片圆角裁剪）。
+ * offset 上移 34dp 使菜单顶边贴行卡顶边（对齐设计稿），自 PopupSelectCard 沿袭。
+ */
+@Composable
+private fun SelectMenu(
+    item: SettingsCardItem.Select,
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+) {
+    Box {
+        Icon(
+            painter = painterResource(R.drawable.ic_chevron_up_down),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp),
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = onDismiss,
+            offset = DpOffset(x = 0.dp, y = (-34).dp),
+            shape = MenuShape,
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            item.items.forEach { (id, label) ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.classppTextStyles.menuItem,
+                            lineHeight = 16.sp,
+                        )
+                    },
+                    onClick = {
+                        onDismiss()
+                        if (id != item.selectedId) item.onPick(id)
+                    },
+                )
+            }
+        }
+    }
 }

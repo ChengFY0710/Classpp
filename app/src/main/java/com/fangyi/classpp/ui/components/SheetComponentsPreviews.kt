@@ -205,6 +205,18 @@ private fun SettingsCardPreview() = ClassppTheme {
                 ),
             ),
         )
+        // 选择行：点行弹出菜单（PopupSelectCard 同款交互）
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Select(
+                    label = "结束节次",
+                    value = "2",
+                    items = (1..5).map { it to "第 $it 节" },
+                    selectedId = 2,
+                    onPick = {},
+                ),
+            ),
+        )
         // 多行导航
         SettingsCard(
             items = listOf(
