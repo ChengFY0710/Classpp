@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
+import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
 import dev.chrisbanes.haze.hazeSource
@@ -85,7 +86,9 @@ fun PersonalizationScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .hazeSource(hazeState)
-                    .verticalScroll(rememberScrollState())
+                    // 橡皮筋增强版 verticalScroll：内容不足一屏时也能拉出橡皮筋
+                    // （ui.motion 的 rubberBandVerticalScroll）
+                    .rubberBandVerticalScroll(rememberScrollState())
                     .padding(horizontal = PageHorizontalSpacing)
                     .padding(
                         // 首项距顶栏留 SectionSpacing，与设置根页节奏同源

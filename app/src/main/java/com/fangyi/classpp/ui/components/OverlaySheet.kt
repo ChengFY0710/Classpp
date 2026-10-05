@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
+import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetShape
@@ -304,7 +305,9 @@ fun OverlaySheet(
                                 .fillMaxSize()
                                 // 顶栏模糊的采样源：滚动内容从顶栏底下滚过时被渐变模糊
                                 .hazeSource(hazeState)
-                                .verticalScroll(scrollState)
+                                // 橡皮筋增强版 verticalScroll：内容不足一屏（如课程详情等
+                                // 短浮层）时也能拉出橡皮筋（ui.motion 的 rubberBandVerticalScroll）
+                                .rubberBandVerticalScroll(scrollState)
                                 // 点空白（卡片间隙/留白/尾部余量）取消聚焦收起键盘：
                                 // SheetTextField / SheetTextArea 一族的通用宿主行为
                                 .clearFocusOnTap()

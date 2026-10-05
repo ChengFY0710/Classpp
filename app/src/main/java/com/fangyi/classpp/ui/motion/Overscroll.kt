@@ -24,6 +24,15 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.OverscrollEffect
 import androidx.compose.foundation.OverscrollFactory
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.gestures.FlingBehavior
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.ScrollScope
+import androidx.compose.foundation.gestures.ScrollableState
+import androidx.compose.foundation.gestures.scrollable
+import androidx.compose.foundation.overscroll
+import androidx.compose.foundation.rememberOverscrollEffect
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -389,4 +398,66 @@ class OffsetOverscrollFactory(
 fun ProvideOverscroll(content: @Composable () -> Unit) {
     val overscrollFactory = rememberOffsetOverscrollFactory()
     CompositionLocalProvider(LocalOverscrollFactory provides overscrollFactory, content = content)
+}
+
+/**
+ * [Modifier.verticalScroll] 的橡皮筋增强版：内容超出屏幕时行为与原版完全一致（边缘橡皮筋
+ * 由注入的 [OffsetOverscrollEffect] 承担）；内容不足一屏时也能拉出橡皮筋——这是原版
+ * 做不到的：foundation 在滚动范围为 0（canScrollForward 与 canScrollBackward 均为 false）
+ * 时不向 overscroll 派发任何 delta（Scrollable.kt 的 shouldDispatchOverscroll 门槛），
+ * 短页面/短浮层因此拉不出橡皮筋。
+ *
+ * 放宽方式：仅在「上下都不可滚」时追加一层兜底——
+ * - 手势层在 verticalScroll 之内（更内层）：[ScrollableState] 不消费任何滚动量、
+ *   [FlingBehavior] 把速度原速放行，拖拽 delta 与松手速度全部进入环境 OverscrollEffect
+ *   （[ProvideOverscroll] 作用域内即 iOS 式橡皮筋），由它完成「拉出 → 软着陆回弹」以及
+ *   速度正比的甩动拉出。若用默认 spline 惯性衰减，速度会被一场「无位移的惯性动画」
+ *   吃光，甩动拉出就不会发生，所以必须放行；
+ * - 效果渲染节点（[Modifier.overscroll]）则在 verticalScroll 之外（更外层）：滚动布局
+ *   以「高度无穷」测量内层内容，节点在里层会把阻尼曲线的容器尺寸取成 Int.MAX_VALUE，
+ *   32 位浮点下渲染位移被量化成上百像素的台阶（一顿一顿）；外层拿真实视口尺寸，
+ *   阻尼与连续性才正确。外层平移的整组内容里自带滚动裁剪，视觉与正常路径一致；
+ * - 手势接管：兜底层位于 verticalScroll 手势检测器的内层（Main pass 冒泡派发、内层
+ *   先于外层），slop 触发后由它接管拖拽，外层检测器因 change 已被消费而退出；
+ * - 内容一旦变得可滚（如浮层内键盘弹出使内容超高），canScroll 翻转、兜底层自动摘除，
+ *   滚动路径回到与原版完全一致的状态。canScrollForward/Backward 本身是 derivedStateOf
+ *   推导，滚动过程中只在进出边缘的瞬间翻转一次，不产生逐帧重组。
+ *
+ * 效果实例经 [rememberOverscrollEffect] 从环境工厂取（注入作用域内即
+ * [OffsetOverscrollEffect] 的独立实例，与 verticalScroll 自建实例互不复用）；
+ * 未注入任何工厂时退回系统 stretch，本修饰符仍可用。
+ */
+@Composable
+fun Modifier.rubberBandVerticalScroll(state: ScrollState): Modifier {
+    val effect = rememberOverscrollEffect()
+    val unscrollable = !state.canScrollForward && !state.canScrollBackward
+    return if (effect != null && unscrollable) {
+        // 不消费任何滚动量的状态：canScrollForward/Backward 默认恒为 true，恰好绕过
+        // foundation 的派发门槛，让全部 delta 进入 overscroll
+        val passthroughState = remember { ScrollableState { 0f } }
+        // 原速放行 fling：不产生任何惯性位移，速度原样交还效果实例（见上）
+        val passthroughFling = remember {
+            object : FlingBehavior {
+                override suspend fun ScrollScope.performFling(initialVelocity: Float): Float =
+                    initialVelocity
+            }
+        }
+        this
+            // 效果渲染节点必须挂在 verticalScroll 的滚动布局之外（更外层）：滚动布局给
+            // 内层内容的测量约束是高度无穷（Constraints.Infinity = Int.MAX_VALUE），节点
+            // 若在里层会把「容器尺寸」取成约 21 亿像素——阻尼曲线 f(p) = 1 − e^(−p·k) 中
+            // p ≈ 拖动量 / 21亿 ≈ 1e-8，32 位浮点下 e^(−1e-8) 直接舍入成 1.0，渲染位移
+            // 被量化成上百像素一级的台阶（拖动一顿一顿）。挂在外层拿到真实视口尺寸，
+            // 阻尼饱和与连续性都正确——层级与 scrollableArea 自挂效果节点的位置一致
+            .overscroll(effect)
+            .verticalScroll(state)
+            .scrollable(
+                state = passthroughState,
+                orientation = Orientation.Vertical,
+                overscrollEffect = effect,
+                flingBehavior = passthroughFling,
+            )
+    } else {
+        this.verticalScroll(state)
+    }
 }

@@ -36,6 +36,7 @@ import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.pageSlideIn
 import com.fangyi.classpp.ui.motion.pageSlideOut
+import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
 import dev.chrisbanes.haze.hazeSource
@@ -156,7 +157,9 @@ private fun SettingsHomePage(
                         modifier = Modifier
                             .fillMaxSize()
                             .hazeSource(hazeState)
-                            .verticalScroll(rememberScrollState())
+                            // 橡皮筋增强版 verticalScroll：入口卡不足一屏的大屏上也能拉出
+                            // 橡皮筋（ui.motion 的 rubberBandVerticalScroll）
+                            .rubberBandVerticalScroll(rememberScrollState())
                             .padding(horizontal = PageHorizontalSpacing)
                             .padding(
                                 // 首项距顶栏留 SectionSpacing，与页面其余间距同源
