@@ -195,6 +195,16 @@ private fun SettingsCardPreview() = ClassppTheme {
                 SettingsCardItem.Toggle("设置项label", checked = true, onCheckedChange = {}),
             ),
         )
+        // 值 + 导航：右侧展示当前设置项的值（primary 色）
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Nav(
+                    label = "设置项label",
+                    value = "设置项的值",
+                    onClick = {},
+                ),
+            ),
+        )
         // 多行导航
         SettingsCard(
             items = listOf(

@@ -4,10 +4,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,10 +34,11 @@ sealed interface SettingsCardItem {
     val label: String
     val description: String?
 
-    /** 导航行：整行可点，尾部蓝色箭头 */
+    /** 导航行：整行可点，右侧可带 primary 色当前值，尾部蓝色箭头 */
     data class Nav(
         override val label: String,
         override val description: String? = null,
+        val value: String? = null,
         val onClick: () -> Unit,
     ) : SettingsCardItem
 
@@ -56,8 +59,8 @@ sealed interface SettingsCardItem {
  * - 字体：label 走 fieldLabel（16sp SemiBold onSurface），描述走 fieldPlaceholder
  *   （16sp Medium secondaryText）；
  * - 间距：行高 min 60dp（[SheetFieldHeight]），行内左右 16 / 上下 14，内距画在交互区**内侧**；
- * - 颜色只取四处主题色：surface（卡底）、onSurface（label）、primary（箭头/开关轨道）、
- *   classppColors.secondaryText（描述），深浅模式自动适配。
+ * - 颜色只取四处主题色：surface（卡底）、onSurface（label）、primary（箭头/开关轨道/行值，
+ *   值经 fieldValue 角色）、classppColors.secondaryText（描述），深浅模式自动适配。
  */
 @Composable
 fun SettingsCard(
@@ -97,7 +100,16 @@ private fun SettingsCardRow(item: SettingsCardItem) {
     ) {
         SettingsRowText(label = item.label, description = item.description, modifier = Modifier.weight(1f))
         when (item) {
-            is SettingsCardItem.Nav -> Chevron()
+            is SettingsCardItem.Nav -> {
+                if (item.value != null) {
+                    Text(
+                        text = item.value,
+                        style = MaterialTheme.classppTextStyles.fieldValue,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Chevron()
+            }
             is SettingsCardItem.Toggle -> ClassppSwitch(checked = item.checked, onCheckedChange = null)
         }
     }
