@@ -9,8 +9,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -70,7 +68,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.AppToasts
-import com.fangyi.classpp.EditTransitionMillis
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.FieldReason
 import com.fangyi.classpp.data.OpResult
@@ -84,6 +81,7 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.cellCourses
 import com.fangyi.classpp.data.model.newUuid
+import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.theme.ButtonShape
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -525,7 +523,7 @@ fun ScheduleScreen(
                             jumpSlideFraction.snapTo(if (forward) 1f else -1f)
                             jumpSlideFraction.animateTo(
                                 0f,
-                                tween(durationMillis = 240, easing = LinearOutSlowInEasing),
+                                tween(durationMillis = 240, easing = Motion.Decelerate),
                             )
                         }
                     }
@@ -760,7 +758,7 @@ fun ScheduleScreen(
                         .hazeSource(hazeState),
                 )
                 // 顶栏 ↔ 编辑栏进出场：新内容自顶部滑入淡入、旧内容向上滑出淡出，进退对称，
-                // 与底部导航栏的 AnimatedVisibility 共用 [EditTransitionMillis] 规格，
+                // 与底部导航栏的 AnimatedVisibility 共用 [Motion.EditMillis] 规格，
                 // 同一个 editing 翻转同帧启动，两侧严格同步。
                 // 内容读 lambda 参数而非外层 editSession：会话翻转时若读外层值，
                 // 退场中的旧槽位也会跟着渲染成新内容
@@ -769,11 +767,11 @@ fun ScheduleScreen(
                     contentAlignment = Alignment.TopStart,
                     transitionSpec = {
                         (slideInVertically(
-                            animationSpec = tween(EditTransitionMillis, easing = FastOutSlowInEasing),
-                        ) { -it } + fadeIn(tween(EditTransitionMillis))) togetherWith
+                            animationSpec = tween(Motion.EditMillis, easing = Motion.Standard),
+                        ) { -it } + fadeIn(tween(Motion.EditMillis))) togetherWith
                             (slideOutVertically(
-                                animationSpec = tween(EditTransitionMillis, easing = FastOutSlowInEasing),
-                            ) { -it } + fadeOut(tween(EditTransitionMillis)))
+                                animationSpec = tween(Motion.EditMillis, easing = Motion.Standard),
+                            ) { -it } + fadeOut(tween(Motion.EditMillis)))
                     },
                     modifier = Modifier.align(Alignment.TopStart),
                     label = "topBarSwap",

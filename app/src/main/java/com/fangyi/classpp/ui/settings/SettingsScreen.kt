@@ -2,10 +2,6 @@ package com.fangyi.classpp.ui.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +33,8 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.ui.components.SettingsCardwithIcon
 import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
+import com.fangyi.classpp.ui.motion.pageSlideIn
+import com.fangyi.classpp.ui.motion.pageSlideOut
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
 import dev.chrisbanes.haze.hazeSource
@@ -51,10 +49,6 @@ internal val BottomScrollSlack = 120.dp
 
 /** 根页三张入口卡之间的间距（设计稿：独立卡片、留缝堆叠） */
 private val EntryCardSpacing = 12.dp
-
-// 子页转场节奏与设置页覆盖层本身一致（进 360 / 出 250，FastOutSlowIn），同源才有连续感
-private const val SubPageEnterMillis = 360
-private const val SubPageExitMillis = 250
 
 /**
  * 设置页：全屏覆盖层（由 MainActivity 组合在底部导航之后），返回键/关闭按钮经 [onClose] 退出。
@@ -86,15 +80,12 @@ fun SettingsScreen(
             repository = repository,
             modifier = Modifier.fillMaxSize(),
         )
-        // 子页整页从右缘滑入盖住根页（根页本身是不透明整页，无需压暗遮罩），退场右滑出
+        // 子页整页从右缘滑入盖住根页（根页本身是不透明整页，无需压暗遮罩），退场右滑出；
+        // 转场节奏与设置页覆盖层本身一致（ui.motion 的 pageSlideIn/Out），同源才有连续感
         AnimatedVisibility(
             visible = showPersonalization,
-            enter = slideInHorizontally(
-                animationSpec = tween(SubPageEnterMillis, easing = FastOutSlowInEasing),
-            ) { it },
-            exit = slideOutHorizontally(
-                animationSpec = tween(SubPageExitMillis, easing = FastOutSlowInEasing),
-            ) { it },
+            enter = pageSlideIn(),
+            exit = pageSlideOut(),
         ) {
             PersonalizationScreen(
                 onBack = { showPersonalization = false },

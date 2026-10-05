@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -31,6 +30,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.RowShape
 import com.fangyi.classpp.ui.theme.classppTextStyles
 
@@ -40,7 +40,7 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  * 选中态 = 浅蓝胶囊 + 蓝色勾 + 蓝字；未选中 = 黑字。[selectedIndex] 为 null 表示
  * 「无匹配项不高亮」（如周数为自定义组合时）。
  *
- * 选中动效（所有过渡同走 150ms 先快后慢，与 SheetTextField 描边、周数方格渐变同一节奏）：
+ * 选中动效（所有过渡同走 Motion.FastMillis 先快后慢，与 SheetTextField 描边、周数方格渐变同一节奏）：
  * - 浅蓝胶囊是一整块滑动层：换选时从旧位**平移**到新位，取消选中时原地淡出；
  * - 对勾随选中缩放出现/消失，占位宽度同步伸缩、推动文字平移；
  * - 文字颜色随选中渐变。
@@ -58,12 +58,12 @@ fun RowChoiceCard(
     if (selectedIndex != null) lastSelected = selectedIndex
     val pillOffset by animateFloatAsState(
         targetValue = lastSelected.toFloat(),
-        animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+        animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
         label = "rowChoicePillOffset",
     )
     val pillAlpha by animateFloatAsState(
         targetValue = if (selectedIndex != null) 1f else 0f,
-        animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+        animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
         label = "rowChoicePillAlpha",
     )
 
@@ -90,17 +90,17 @@ fun RowChoiceCard(
                     // 对勾缩放出现/消失；占位宽同步伸缩（勾 18dp + 间距 6dp），文字位置随之平移
                     val iconScale by animateFloatAsState(
                         targetValue = if (selected) 1f else 0f,
-                        animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+                        animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
                         label = "rowChoiceIconScale",
                     )
                     val iconSlot by animateDpAsState(
                         targetValue = if (selected) 24.dp else 0.dp,
-                        animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+                        animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
                         label = "rowChoiceIconSlot",
                     )
                     val textColor by animateColorAsState(
                         targetValue = if (selected) colors.primary else colors.onSurface,
-                        animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+                        animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
                         label = "rowChoiceText",
                     )
                     Box(

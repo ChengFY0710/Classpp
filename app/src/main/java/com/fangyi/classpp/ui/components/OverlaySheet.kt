@@ -2,10 +2,6 @@ package com.fangyi.classpp.ui.components
 
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -57,6 +53,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetShape
@@ -78,12 +75,6 @@ val SheetSectionSpacingBottom:Dp = 14.dp  // 卡片组底与下一个卡片组�
  * 拉大可滑动范围，末尾的卡片能滑得更高、离底边更远。想调滑动上限改这一个值。
  */
 val SheetBottomSlack: Dp = 120.dp
-
-/** 入场时长：从屏幕底部滑入，减速曲线（先快后慢） */
-private const val SheetEnterMillis = 320
-
-/** 出场时长：向下滑出，加速曲线（先慢后快） */
-private const val SheetExitMillis = 280
 
 /** 拖拽关闭的位移阈值：下拉超过浮层自身高度的这么多比例即关闭 */
 private const val DragDismissFraction = 0.25f
@@ -206,7 +197,7 @@ fun OverlaySheet(
 
     // 收场动画本体：从当前进度继续滑到全隐（拖拽中断后重入，也是从当前位置接着走）
     suspend fun runExit() {
-        hiddenFraction.animateTo(1f, tween(SheetExitMillis, easing = FastOutLinearInEasing))
+        hiddenFraction.animateTo(1f, tween(Motion.SheetExitMillis, easing = Motion.Accelerate))
         onDismissed()
     }
 
@@ -224,7 +215,7 @@ fun OverlaySheet(
         if (visible) {
             exiting = false
             closeRequested = false
-            hiddenFraction.animateTo(0f, tween(SheetEnterMillis, easing = LinearOutSlowInEasing))
+            hiddenFraction.animateTo(0f, tween(Motion.SheetEnterMillis, easing = Motion.Decelerate))
         } else {
             beginExit()
         }
@@ -253,13 +244,8 @@ fun OverlaySheet(
                     }
                 }
                 else -> scope.launch {
-                    hiddenFraction.animateTo(
-                        0f,
-                        spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessMediumLow,
-                        ),
-                    )
+                    // 松手回弹归位：无过冲弹簧（ui.motion 的 Motion.Settle）
+                    hiddenFraction.animateTo(0f, Motion.Settle)
                 }
             }
         },

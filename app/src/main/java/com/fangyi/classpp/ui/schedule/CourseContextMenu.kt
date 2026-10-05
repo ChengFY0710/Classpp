@@ -1,6 +1,5 @@
 package com.fangyi.classpp.ui.schedule
 
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.rememberTransition
@@ -37,6 +36,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.MenuShape
 import kotlin.math.roundToInt
 
@@ -93,7 +93,7 @@ internal fun SlotContextMenu(
  * [anchor] 是长按那张卡/那格的窗口坐标（见 CourseGrid 的 BoundsHolder），菜单贴在它的左下角，
  * 越界时钳进窗口。
  *
- * 进场与周数弹窗同规格：scale 0.8→1（200ms）+ alpha 0→1（120ms）。
+ * 进场与周数弹窗同规格（Motion.PopupScale/PopupFadeMillis）：scale 0.8→1 + alpha 0→1。
  * 收起不做退场动画——动作（复制/开面板）与移除在同一帧发生，面板随即从底部升起来，
  * 视觉上接得住；也避免"动画没播完就点"时动作被吞掉。
  */
@@ -130,11 +130,11 @@ private fun ContextMenuPopup(
 
     val transition = rememberTransition(visibleState, label = "ContextMenu")
     val scale by transition.animateFloat(
-        transitionSpec = { tween(200, easing = FastOutSlowInEasing) },
+        transitionSpec = { tween(Motion.PopupScaleMillis, easing = Motion.Standard) },
         label = "scale",
     ) { expanded -> if (expanded) 1f else 0.8f }
     val alpha by transition.animateFloat(
-        transitionSpec = { tween(120, easing = FastOutSlowInEasing) },
+        transitionSpec = { tween(Motion.PopupFadeMillis, easing = Motion.Standard) },
         label = "alpha",
     ) { expanded -> if (expanded) 1f else 0f }
 

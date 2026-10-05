@@ -2,7 +2,6 @@ package com.fangyi.classpp.ui.schedule
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -66,6 +65,7 @@ import com.fangyi.classpp.ui.components.RowChoiceCard
 import com.fangyi.classpp.ui.components.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.WeekCellShape
 import com.fangyi.classpp.ui.theme.classppColors
 import kotlin.math.ceil
@@ -507,7 +507,7 @@ private fun WeekSelectionGrid(
                         val isSelected = week in selectedSet
                         val blocked = week in blockedWeeks
                         // 背景/字色各走一条渐变：点选渐变变蓝、再点渐变回白，字色同步渐变
-                        //（150ms 先快后慢，与 SheetTextField 描边动画同一节奏）
+                        //（Motion.FastMillis 先快后慢，与 SheetTextField 描边动画同一节奏）
                         val cellColor by animateColorAsState(
                             targetValue = when {
                                 isSelected -> MaterialTheme.colorScheme.primary
@@ -515,7 +515,7 @@ private fun WeekSelectionGrid(
 
                                 else -> MaterialTheme.colorScheme.surface
                             },
-                            animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+                            animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
                             label = "weekCellColor",
                         )
                         val numberColor by animateColorAsState(
@@ -524,7 +524,7 @@ private fun WeekSelectionGrid(
                                 blocked -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                                 else -> MaterialTheme.colorScheme.onSurface
                             },
-                            animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+                            animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
                             label = "weekCellNumber",
                         )
                         Box(

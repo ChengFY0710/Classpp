@@ -1,6 +1,5 @@
 package com.fangyi.classpp.ui.components
 
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -37,6 +36,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.classppTextStyles
 
@@ -101,7 +101,7 @@ fun SheetTextField(
     // 描边进度：宽度与透明度共用同一条 0→1 动画，聚焦"生长+淡入"、失焦"萎缩+淡出"严格同步
     val strokeProgress by animateFloatAsState(
         targetValue = if (focused || isError) 1f else 0f,
-        animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+        animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
         label = "sheetFieldStroke",
     )
     val strokeWidth = 2.dp * strokeProgress

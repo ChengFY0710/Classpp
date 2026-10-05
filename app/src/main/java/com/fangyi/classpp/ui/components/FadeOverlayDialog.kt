@@ -2,8 +2,6 @@ package com.fangyi.classpp.ui.components
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutLinearInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,10 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.DialogShape
-
-/** 弹窗淡入淡出时长：遮罩与卡片同一条透明度，进减速、出加速（与浮层曲线同一族） */
-private const val DialogFadeMillis = 200
 
 /**
  * 页内居中弹窗基座（[com.fangyi.classpp.ui.schedule.AlternatePickerDialog] 等共用）：
@@ -51,8 +47,9 @@ fun FadeOverlayDialog(
         alpha.animateTo(
             if (visible) 1f else 0f,
             tween(
-                DialogFadeMillis,
-                easing = if (visible) LinearOutSlowInEasing else FastOutLinearInEasing,
+                Motion.DialogMillis,
+                // 进减速、出加速（与浮层曲线同一族，见 Motion.Decelerate/Accelerate）
+                easing = if (visible) Motion.Decelerate else Motion.Accelerate,
             ),
         )
         if (!visible) onDismissed()

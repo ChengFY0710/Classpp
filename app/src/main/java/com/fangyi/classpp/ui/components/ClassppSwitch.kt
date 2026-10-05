@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -21,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
 
@@ -39,7 +39,7 @@ private val ThumbInset = 4.dp
  * 形状与全局胶囊按钮（顶栏按钮、确认框按钮等）同源：轨道走 [PillShape] 连续曲率胶囊，
  * 圆角与直边平滑过渡；圆点为纯圆形（CircleShape）。
  *
- * 动效（与 RowChoiceCard 等同一节奏，150ms 先快后慢）：圆点平移滑动、轨道颜色渐变，
+ * 动效（与 RowChoiceCard 等同一节奏，Motion.FastMillis 先快后慢）：圆点平移滑动、轨道颜色渐变，
  * 按压涟漪被胶囊圆角裁剪。[onCheckedChange] 为 null 时不可交互（语义与 M3 Switch 一致）。
  */
 @Composable
@@ -50,12 +50,12 @@ fun ClassppSwitch(
 ) {
     val trackColor by animateColorAsState(
         targetValue = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.classppColors.negative,
-        animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+        animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
         label = "classppSwitchTrack",
     )
     val thumbOffset: Dp by animateDpAsState(
         targetValue = if (checked) TrackWidth - ThumbSize - ThumbInset * 2 else 0.dp,
-        animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+        animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
         label = "classppSwitchThumb",
     )
     Box(

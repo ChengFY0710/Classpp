@@ -13,15 +13,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterExitState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -49,6 +45,9 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.ScheduleRepository
+import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.pageSlideIn
+import com.fangyi.classpp.ui.motion.pageSlideOut
 import com.fangyi.classpp.ui.navigation.AppTab
 import com.fangyi.classpp.ui.navigation.BottomNavBar
 import com.fangyi.classpp.ui.placeholder.AgendaScreen
@@ -107,14 +106,14 @@ class MainActivity : ComponentActivity() {
                 var selectedTab by rememberSaveable { mutableStateOf(AppTab.Timetable) }
                 // 设置页开关（全屏覆盖层，见 Box 内组合顺序）
                 var showSettings by rememberSaveable { mutableStateOf(false) }
-                // 设置页视差进度：与覆盖层滑入/滑出同规格（进 360 / 出 250 + FastOutSlowIn），
-                // 同帧启动、同曲线推进——滑入时原页面向左微微让位，滑出时向右滑回原位。
+                // 设置页视差进度：与覆盖层滑入/滑出同规格（Motion.PageEnter/PageExitMillis +
+                // Motion.Standard），同帧启动、同曲线推进——滑入时原页面向左微微让位，滑出时向右滑回原位。
                 // 只在 layer 阶段被读取：动画期间不重组、不重排（同 tabProgress）
                 val settingsProgress by animateFloatAsState(
                     targetValue = if (showSettings) 1f else 0f,
                     animationSpec = tween(
-                        durationMillis = if (showSettings) SettingsEnterMillis else SettingsExitMillis,
-                        easing = FastOutSlowInEasing,
+                        durationMillis = if (showSettings) Motion.PageEnterMillis else Motion.PageExitMillis,
+                        easing = Motion.Standard,
                     ),
                     label = "settingsProgress",
                 )
@@ -130,10 +129,10 @@ class MainActivity : ComponentActivity() {
                 // 整段动画每帧只重排、不重组
                 val tabProgress = animateFloatAsState(
                     targetValue = selectedTab.ordinal.toFloat(),
-                    // 先快后慢：LinearOutSlowIn 起点即全速、此后单调减速收尾；
+                    // 先快后慢：Motion.Decelerate 起点即全速、此后单调减速收尾；
                     animationSpec = tween(
-                        durationMillis = TabTransitionMillis,
-                        easing = LinearOutSlowInEasing,
+                        durationMillis = Motion.TabMillis,
+                        easing = Motion.Decelerate,
                     ),
                     label = "tabProgress",
                 )
@@ -200,17 +199,17 @@ class MainActivity : ComponentActivity() {
                         )
                         // 编辑态或课表页全屏浮层在场时隐藏底部导航栏（设计稿如此，也避免编辑中途被切走）：
                         // 下移出屏 / 上移入屏，与顶栏的编辑栏过渡（ScheduleScreen 内 AnimatedContent）
-                        // 共用 [EditTransitionMillis] 规格，同一个 editing 翻转同帧启动，两侧严格同步
+                        // 共用 [Motion.EditMillis] 规格，同一个 editing 翻转同帧启动，两侧严格同步
                         AnimatedVisibility(
                             visible = !editing && !navBarHiddenByOverlay,
                             enter = slideInVertically(
                                 // 从自身高度下方起步：上移入
-                                animationSpec = tween(EditTransitionMillis, easing = FastOutSlowInEasing),
-                            ) { it } + fadeIn(tween(EditTransitionMillis)),
+                                animationSpec = tween(Motion.EditMillis, easing = Motion.Standard),
+                            ) { it } + fadeIn(tween(Motion.EditMillis)),
                             exit = slideOutVertically(
                                 // 滑向自身高度下方：下移出
-                                animationSpec = tween(EditTransitionMillis, easing = FastOutSlowInEasing),
-                            ) { it } + fadeOut(tween(EditTransitionMillis)),
+                                animationSpec = tween(Motion.EditMillis, easing = Motion.Standard),
+                            ) { it } + fadeOut(tween(Motion.EditMillis)),
                             modifier = Modifier.align(Alignment.BottomCenter),
                         ) {
                             BottomNavBar(
@@ -225,8 +224,8 @@ class MainActivity : ComponentActivity() {
                     // 只画不拦截点击：覆盖层全可见时遮罩被完全盖住，仅转场期间透出
                     AnimatedVisibility(
                         visible = showSettings,
-                        enter = fadeIn(tween(SettingsEnterMillis, easing = FastOutSlowInEasing)),
-                        exit = fadeOut(tween(SettingsExitMillis, easing = FastOutSlowInEasing)),
+                        enter = fadeIn(tween(Motion.PageEnterMillis, easing = Motion.Standard)),
+                        exit = fadeOut(tween(Motion.PageExitMillis, easing = Motion.Standard)),
                         modifier = Modifier.fillMaxSize(),
                     ) {
                         Box(
@@ -241,14 +240,8 @@ class MainActivity : ComponentActivity() {
                     // AnimatedVisibility 退场期间仍保持组合，返回键/返回按钮经 onClose 幂等关闭
                     AnimatedVisibility(
                         visible = showSettings,
-                        enter = slideInHorizontally(
-                            // 从自身宽度右侧起步：整页右进
-                            animationSpec = tween(SettingsEnterMillis, easing = FastOutSlowInEasing),
-                        ) { it },
-                        exit = slideOutHorizontally(
-                            // 滑向自身宽度右侧：整页右出；退场略快于进场，收场更利落
-                            animationSpec = tween(SettingsExitMillis, easing = FastOutSlowInEasing),
-                        ) { it },
+                        enter = pageSlideIn(),
+                        exit = pageSlideOut(),
                         modifier = Modifier.fillMaxSize(),
                     ) {
                         // 左缘圆角只存在于转场期间：滑入/滑出时左上/左下裁出与机身 R 角一致的
@@ -328,26 +321,6 @@ private fun rememberScheduleRepository(): ScheduleRepository? {
     }
     return repository
 }
-
-/**
- * tab 平移时长：先快后慢的减速曲线下，位移的大部分集中在开头，末尾只是缓慢收住。
- * 想让节奏更利落可下调（300ms 左右），曲线不变。
- */
-private const val TabTransitionMillis = 400
-
-/**
- * 编辑态过渡时长：顶栏 ↔ 编辑栏（ScheduleScreen 内 AnimatedContent）与底部导航栏
- * 的 AnimatedVisibility 共用同一规格（配合 FastOutSlowInEasing），同一个 editing
- * 翻转同帧启动，两侧才能严格同步；internal 供 ScheduleScreen 引用，避免数值漂移。
- * 想更快收场可下调（300ms 左右），曲线不变。
- */
-internal const val EditTransitionMillis = 360
-
-/** 设置页进场时长：整页右滑入 + 淡入，与编辑栏同节奏（FastOutSlowIn 360ms） */
-private const val SettingsEnterMillis = 360
-
-/** 设置页退场时长：同方向右滑出，比进场短一些，返回更利落 */
-private const val SettingsExitMillis = 250
 
 /**
  * 设置页转场的背景视差位移比例：滑入时原页面向左挪自身宽度的这个比例让位，滑出时滑回。

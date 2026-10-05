@@ -1,6 +1,5 @@
 package com.fangyi.classpp.ui.schedule
 
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
@@ -61,6 +60,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.Correct
@@ -579,16 +579,17 @@ private fun WeekPill(
             }
         }
 
-        // M3 DropdownMenu 同款开关动画：scale 0.8→1（200ms）、alpha 0→1（120ms），
-        // 以顶部中心（≈胶囊所在）为缩放锚点；收起反向播放，播完才移除 Popup
+        // M3 DropdownMenu 同款开关动画：scale 0.8→1（Motion.PopupScaleMillis）、
+        // alpha 0→1（Motion.PopupFadeMillis），以顶部中心（≈胶囊所在）为缩放锚点；
+        // 收起反向播放，播完才移除 Popup
         if (expandedState.currentState || expandedState.targetState) {
             val transition = updateTransition(expandedState, label = "WeekPicker")
             val scale by transition.animateFloat(
-                transitionSpec = { tween(200, easing = FastOutSlowInEasing) },
+                transitionSpec = { tween(Motion.PopupScaleMillis, easing = Motion.Standard) },
                 label = "scale",
             ) { expanded -> if (expanded) 1f else 0.8f }
             val alpha by transition.animateFloat(
-                transitionSpec = { tween(120, easing = FastOutSlowInEasing) },
+                transitionSpec = { tween(Motion.PopupFadeMillis, easing = Motion.Standard) },
                 label = "alpha",
             ) { expanded -> if (expanded) 1f else 0f }
 

@@ -1,6 +1,5 @@
 package com.fangyi.classpp.ui.components
 
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -22,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
+import com.fangyi.classpp.ui.motion.Motion
 
 /** 色球直径（选中环在其外侧，格子统一 46dp 保证行列对齐）。 */
 private val BallSize = 36.dp
@@ -34,7 +34,7 @@ private val RingGap = 2.5.dp
  * 色球固定尺寸、不参与权重，保证不被挤压、完整展示。
  * 选中态 = 外圈蓝环 + 白缝 + 色球。
  *
- * 选中动效：蓝环随选中渐隐渐现（150ms 先快后慢，与全局动效同一节奏）；
+ * 选中动效：蓝环随选中渐隐渐现（Motion.FastMillis 先快后慢，与全局动效同一节奏）；
  * 色球在选中/未选中两态下是同一布局（恒 [BallSize] 居中），环常驻叠加、只动透明度，
  * 切换时色球位置零位移。
  */
@@ -63,7 +63,7 @@ fun ColorSwatchCard(
                 // 选中环透明度：选中渐现、取消渐隐（环始终在场，宽 2.5dp 恒定、只动 alpha）
                 val ringAlpha by animateFloatAsState(
                     targetValue = if (selected) 1f else 0f,
-                    animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing),
+                    animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
                     label = "colorSwatchRing",
                 )
                 Box(
