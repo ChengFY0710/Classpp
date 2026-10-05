@@ -58,11 +58,11 @@ import com.fangyi.classpp.data.model.firstUnusedColor
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.data.model.weeksFromSelection
 import com.fangyi.classpp.data.model.weeksTakenByOthers
+import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ColorSwatchCard
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.PopupSelectCard
 import com.fangyi.classpp.ui.components.RowChoiceCard
-import com.fangyi.classpp.ui.components.SheetSectionLabel
 import com.fangyi.classpp.ui.components.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
@@ -375,8 +375,7 @@ fun AddCoursePanel(
                 onImeAction = { focusManager.clearFocus() },
             )
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SheetSectionLabel(stringResource(R.string.edit_end_slot_section))
+            CardSection(title = stringResource(R.string.edit_end_slot_section)) {
                 PopupSelectCard(
                     title = stringResource(R.string.edit_end_slot),
                     valueText = endSlotId.toString(),
@@ -400,8 +399,10 @@ fun AddCoursePanel(
                 )
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
-                SheetSectionLabel(stringResource(R.string.edit_course_weeks))
+            CardSection(
+                title = stringResource(R.string.edit_course_weeks),
+                spacing = SheetSectionSpacingBetween,
+            ) {
                 WeekSelectionGrid(
                     totalWeeks = schedule.totalWeeks,
                     selected = selectedWeeks,
@@ -465,8 +466,7 @@ fun AddCoursePanel(
                 }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SheetSectionLabel(stringResource(R.string.edit_course_color))
+            CardSection(title = stringResource(R.string.edit_course_color)) {
                 ColorSwatchCard(
                     colors = CourseColor.entries.map { it.barColor },
                     selectedIndex = CourseColor.entries.indexOf(color),

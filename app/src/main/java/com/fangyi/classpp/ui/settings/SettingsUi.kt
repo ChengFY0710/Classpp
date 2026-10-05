@@ -42,27 +42,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MAX
 import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MIN
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.fangyi.classpp.ui.theme.settingsRowMetrics
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 
 /**
- * 设置页视觉模板：分组标题 + 白色圆角卡 + 设置行 + 时间胶囊。
+ * 设置页视觉模板：白色圆角卡 + 设置行 + 时间胶囊。分组标题组件已上移为
+ * components 的 [com.fangyi.classpp.ui.components.CardSection]（设置页与浮层共用）。
  * 后续设置详情页直接复用这些组件，保持同一套配色与间距。
  *
  * 配色约定：页面底 `colorScheme.background`、卡底 `Surface`、强调 `colorScheme.primary`、
@@ -73,12 +74,6 @@ import dev.chrisbanes.haze.hazeEffect
  */
 
 private val ChipShape = RoundedCornerShape(8.dp)
-
-/**
- * 设置页行内文字（分组标题 / 行 label / 行值）的行高与字距：沿用原 bodyLarge 的取值，
- * 换成角色化样式后设置页的行距节奏保持不变（角色样式本身只统一字号 / 粗细 / 颜色）。
- */
-private fun TextStyle.settingsRowMetrics() = copy(lineHeight = 24.sp, letterSpacing = 0.5.sp)
 
 /**
  * 设置页顶栏：左侧圆形返回按钮 + 居中加粗标题。
@@ -152,26 +147,6 @@ internal fun SettingsTopBar(
                 modifier = Modifier.size(22.dp),
             )
         }
-    }
-}
-
-/** 分组：灰色小标题（卡片外）+ 下方一组卡片，卡间距 8dp */
-@Composable
-internal fun SettingsSection(
-    title: String,
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            text = title,
-            modifier = Modifier.padding(start = 4.dp),
-            style = MaterialTheme.classppTextStyles.sectionTitle.settingsRowMetrics(),
-        )
-        content()
     }
 }
 
@@ -316,7 +291,7 @@ internal fun TermDatesCard(
     val totalWeeks = ((end.mondayOfWeek() - start.mondayOfWeek()).toInt() / 7) + 1
     var pickingWeeks by remember { mutableStateOf(false) }
 
-    SettingsSection(title = stringResource(R.string.section_term)) {
+    CardSection(title = stringResource(R.string.section_term)) {
         SettingsCard(contentPadding = PaddingValues(0.dp)) {
             SettingRow(
                 label = stringResource(R.string.term_start),

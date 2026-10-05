@@ -67,7 +67,7 @@ val Typography = Typography(
  *
  * 颜色取自当前主题（onSurface / primary / secondaryText），随 [ClassppTheme] 深浅切换；
  * 只统一字号 / 粗细 / 颜色——行高与字距留给调用处按各自既有的排版节奏给出
- * （设置页行内的 24sp / 0.5sp 见 SettingsUi 的 settingsRowMetrics）。
+ * （行卡类文字的 24sp / 0.5sp 用文件尾的 [settingsRowMetrics] 一行补齐）。
  */
 @Immutable
 class ClassppTextStyles(
@@ -97,3 +97,10 @@ fun classppTextStyles(colorScheme: ColorScheme, colors: ClassppColors) = Classpp
     pillButton = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
     menuItem = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colorScheme.onSurface),
 )
+
+/**
+ * 行卡类文字（分组标题 / 行 label / 行值）的行高与字距：沿用原 bodyLarge 的取值，
+ * 换成角色化样式后行距节奏保持不变（角色样式本身只统一字号 / 粗细 / 颜色）。
+ * 设置页 SettingRow 与通用分组 CardSection 共用，改这里两处同步生效。
+ */
+internal fun TextStyle.settingsRowMetrics() = copy(lineHeight = 24.sp, letterSpacing = 0.5.sp)

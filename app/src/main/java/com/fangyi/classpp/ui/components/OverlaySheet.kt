@@ -550,17 +550,3 @@ fun SheetPillButton(
         if (iconAtEnd) iconComposable()
     }
 }
-
-/** 分组标题：浅灰字，走统一角色样式（16sp Medium secondaryText，与设置页 SettingsSection 同款）；
- *  左缩进 4dp 与设置页 SettingsSection 标题一致。 */
-@Composable
-fun SheetSectionLabel(
-    text: String,
-    modifier: Modifier = Modifier,
-) {
-    Text(
-        text = text,
-        style = MaterialTheme.classppTextStyles.sectionTitle,
-        modifier = modifier.padding(start = 4.dp),
-    )
-}

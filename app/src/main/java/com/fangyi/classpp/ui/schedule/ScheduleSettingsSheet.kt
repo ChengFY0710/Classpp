@@ -57,11 +57,11 @@ import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.RowChoiceCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTextField
+import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.settings.MultiLineRowSpacing
 import com.fangyi.classpp.ui.settings.SettingRow
 import com.fangyi.classpp.ui.settings.SettingsCard
-import com.fangyi.classpp.ui.settings.SettingsSection
 import com.fangyi.classpp.ui.settings.TermDatesCard
 import com.fangyi.classpp.ui.settings.TimeChip
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -189,7 +189,7 @@ private fun SettingsContent(
             },
         )
 
-        SettingsSection(title = stringResource(R.string.section_days)) {
+        CardSection(title = stringResource(R.string.section_days)) {
             // RowChoiceCard 自带白卡与滑动蓝底动效，无需再套 SettingsCard；
             // selectedIndex 由状态推导恒非空 → 必有选中、无“再点取消”交互（点已选项 = 写回同值）
             RowChoiceCard(
@@ -202,7 +202,7 @@ private fun SettingsContent(
             )
         }
 
-        SettingsSection(title = stringResource(R.string.section_slots)) {
+        CardSection(title = stringResource(R.string.section_slots)) {
             // 加：保留现有 slots 追加一节（上一节结束 +30 分钟课间、时长 100 分钟）；
             // 减：保留前缀裁剪（合法表的前缀必合法，且保留用户已改时间）
             val appended = appendSlot(schedule.slots)
@@ -279,7 +279,7 @@ private fun SettingsContent(
             }
         }
 
-        SettingsSection(title = stringResource(R.string.section_display)) {
+        CardSection(title = stringResource(R.string.section_display)) {
             SettingsCard {
                 SettingRow(
                     label = stringResource(R.string.show_inactive),
