@@ -279,6 +279,62 @@ private fun SettingsCardPreview() = ClassppTheme {
     }
 }
 
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 640)
+@Composable
+private fun SettingsCardwithIconPreview() = ClassppTheme {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // 单行导航
+        SettingsCardwithIcon(
+            items = listOf(
+                SettingsCardwithIconItem(R.drawable.ic_paint_brush, "设置项label") {},
+            ),
+        )
+        // 双行导航
+        SettingsCardwithIcon(
+            items = listOf(
+                SettingsCardwithIconItem(R.drawable.ic_paint_brush, "设置项label") {},
+                SettingsCardwithIconItem(R.drawable.ic_paint_brush, "设置项label") {},
+            ),
+        )
+        // 三行导航
+        SettingsCardwithIcon(
+            items = listOf(
+                SettingsCardwithIconItem(R.drawable.ic_paint_brush, "设置项label") {},
+                SettingsCardwithIconItem(R.drawable.ic_paint_brush, "设置项label") {},
+                SettingsCardwithIconItem(R.drawable.ic_paint_brush, "设置项label") {},
+            ),
+        )
+        // 值 + 导航：右侧展示当前设置项的值（primary 色）
+        SettingsCardwithIcon(
+            items = listOf(
+                SettingsCardwithIconItem(
+                    icon = R.drawable.ic_paint_brush,
+                    label = "设置项label",
+                    value = "设置项的值",
+                    onClick = {},
+                ),
+            ),
+        )
+        // 描述 + 导航：描述超宽自动换行，行卡长高
+        SettingsCardwithIcon(
+            items = listOf(
+                SettingsCardwithIconItem(
+                    icon = R.drawable.ic_paint_brush,
+                    label = "设置项label",
+                    description = "描述性文字描述性文字描述性文字描述性文" +
+                        "字描述性文字描述性文字",
+                    onClick = {},
+                ),
+            ),
+        )
+    }
+}
+
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
 @Composable
 private fun ColorSwatchCardPreview() = ClassppTheme {
