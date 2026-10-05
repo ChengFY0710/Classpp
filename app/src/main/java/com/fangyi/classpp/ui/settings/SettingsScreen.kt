@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -21,57 +20,30 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
-import com.fangyi.classpp.data.ReadResult
-import com.fangyi.classpp.data.ScheduleError
 import com.fangyi.classpp.data.ScheduleRepository
-import com.fangyi.classpp.data.model.IsoDate
-import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.clearFocusOnTap
-import com.fangyi.classpp.ui.schedule.DateTarget
-import com.fangyi.classpp.ui.schedule.TERM_DEFAULT_DAYS
-import com.fangyi.classpp.ui.schedule.endForTotalWeeks
-import com.fangyi.classpp.ui.schedule.toIsoDate
-import com.fangyi.classpp.ui.schedule.toMessage
-import com.fangyi.classpp.ui.schedule.toPickerMillis
-import com.fangyi.classpp.ui.theme.ButtonShape
-import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
-import com.fangyi.classpp.ui.theme.classppTextStyles
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
-import kotlinx.coroutines.launch
 
 // 纵向节奏（分组间距、首项距顶栏、尾部余量）。横向边距走 ui.theme 的 PageHorizontalSpacing
 // （与浮层同源），不在此列
@@ -87,9 +59,8 @@ private val BottomScrollSlack = 120.dp
  * （见 Schedule ui 的 [com.fangyi.classpp.ui.schedule.ScheduleSettingsSheet]），本页只剩：
  * - app 级设置「深色模式」三选一（[themeMode] / [onThemeModeChange]，任何状态下都显示）；
  * - [repository] = null → 加载指示（仅首帧毫秒级）；
- * - 无激活课表 → 仅"新建课表"表单（首次使用的创建入口：课表页空态引导至此；
- *   创建入口随激活课表出现而消失，避免在无切换入口时创建出到不了的第二份课表）；
- * - 有激活课表 → 上述之外正文留空，仅保留顶栏（返回按钮 + 标题 + 渐变模糊）。
+ * - 新建课表已迁至课表页空态的「新建课表」浮层（NewScheduleSheet），本页不再承载创建入口；
+ * - 有激活课表 → 正文留空，仅保留顶栏（返回按钮 + 标题 + 渐变模糊）。
  */
 @Composable
 fun SettingsScreen(
@@ -100,14 +71,6 @@ fun SettingsScreen(
     onThemeModeChange: (ThemeMode) -> Unit = {},
 ) {
     BackHandler { onClose() }
-
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-
-    // 错误一律走系统 Toast，不占版面；同一条出口会刷新上一条，连点不排队（见 AppToasts）
-    fun showError(error: ScheduleError) {
-        AppToasts.show(context, error.toMessage(context))
-    }
 
     Scaffold(
         modifier = modifier,
@@ -142,7 +105,6 @@ fun SettingsScreen(
                 }
 
                 else -> {
-                    val schedule = repository.activeSchedule.collectAsState().value
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -159,25 +121,13 @@ fun SettingsScreen(
                             ),
                         verticalArrangement = Arrangement.spacedBy(SectionSpacing),
                     ) {
-                        // app 级设置不依赖课表数据：无激活课表（新建表单态）同样可用
+                        // app 级设置不依赖课表数据：无激活课表时同样可用
                         AppearanceSection(
                             mode = themeMode,
                             onSelect = onThemeModeChange,
                         )
-                        if (schedule == null) {
-                            CreateScheduleContent(
-                                onConfirm = { name, start, end ->
-                                    scope.launch {
-                                        when (val result = repository.createSchedule(name, start, end)) {
-                                            is ReadResult.Ok -> onClose()
-                                            is ReadResult.Err -> showError(result.error)
-                                        }
-                                    }
-                                },
-                            )
-                        }
                         // 课表级设置已迁往「课表设置」浮层，激活课表本身不再有专属设置项
-                        // （顶栏模糊的采样源仍由本列承担，不可省）
+                        //（顶栏模糊的采样源仍由本列承担，不可省）
                     }
                 }
             }
@@ -193,92 +143,6 @@ fun SettingsScreen(
                         topBarHeight = with(density) { coords.size.height.toFloat().toDp() }
                     },
             )
-        }
-    }
-}
-
-/**
- * 新建课表表单（仅无激活课表时出现）：名称 + 学期起止 + 创建。
- * 起止日期经 DatePicker 选择，开学日可为任意星期几（结束日同理，只要求不早于开始日），
- * 默认值为"今天 ~ 16 周后"。
- */
-@Composable
-private fun CreateScheduleContent(
-    onConfirm: (name: String, start: IsoDate, end: IsoDate) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val defaultStart = remember { IsoDate.today() }
-    var name by remember { mutableStateOf("") }
-    var start by remember { mutableStateOf(defaultStart) }
-    var end by remember { mutableStateOf(defaultStart + TERM_DEFAULT_DAYS) }
-    var picking by remember { mutableStateOf<DateTarget?>(null) }
-    val focusManager = LocalFocusManager.current
-
-    // 滚动与页面内边距统一由 SettingsScreen 外层承担（顶栏需整屏采样）
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(SectionSpacing),
-    ) {
-        SheetTextField(
-            label = stringResource(R.string.schedule_name_label),
-            value = name,
-            onValueChange = { name = it },
-            placeholder = stringResource(R.string.schedule_name_hint),
-            imeAction = ImeAction.Done,
-            // 键盘「完成」收起键盘，创建仍走下方按钮
-            onImeAction = { focusManager.clearFocus() },
-        )
-        TermDatesCard(
-            start = start,
-            end = end,
-            onPickStart = { picking = DateTarget.Start },
-            onPickEnd = { picking = DateTarget.End },
-            onSetWeeks = { weeks -> end = endForTotalWeeks(start, end, weeks) },
-        )
-        Button(
-            onClick = { onConfirm(name, start, end) },
-            shape = ButtonShape,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp),
-        ) {
-            Text(
-                stringResource(R.string.create_schedule),
-                style = MaterialTheme.classppTextStyles.pillButton,
-            )
-        }
-    }
-
-    // 选日对话框：开始日任意一天可选，平移结束日保持学期长度；结束日同样任意一天都合法
-    picking?.let { target ->
-        val initial = if (target == DateTarget.Start) start else end
-        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initial.toPickerMillis())
-        DatePickerDialog(
-            onDismissRequest = { picking = null },
-            confirmButton = {
-                TextButton(onClick = {
-                    datePickerState.selectedDateMillis?.let { millis ->
-                        val picked = millis.toIsoDate()
-                        if (target == DateTarget.Start) {
-                            end = end + (picked - start).toInt()
-                            start = picked
-                        } else {
-                            // 结束日想选哪天就哪天，不必落在周五/周日
-                            end = picked
-                        }
-                    }
-                    picking = null
-                }) {
-                    Text(stringResource(R.string.settings_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { picking = null }) {
-                    Text(stringResource(R.string.settings_cancel))
-                }
-            },
-        ) {
-            DatePicker(state = datePickerState)
         }
     }
 }
@@ -343,13 +207,5 @@ private fun AppearanceSection(
                 }
             },
         )
-    }
-}
-
-@Preview(showBackground = true, name = "新建课表表单")
-@Composable
-private fun CreateScheduleContentPreview() {
-    ClassppTheme {
-        CreateScheduleContent(onConfirm = { _, _, _ -> })
     }
 }

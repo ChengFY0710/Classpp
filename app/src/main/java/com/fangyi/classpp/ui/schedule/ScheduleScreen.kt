@@ -154,12 +154,12 @@ private fun rememberTodayIso(): State<IsoDate> {
  * 底部导航栏由调用方隐藏；空位渲染添加卡片，点它开弹窗加课。改动只落进
  * [ScheduleEditSession] 的草稿，点保存才写回仓库，取消（或返回键）整份丢弃。
  *
- * [onOverlayOverNavBarChange]：需要盖住底部导航栏的全屏浮层（课程详情）在场与否。
+ * [onOverlayOverNavBarChange]：需要盖住底部导航栏的全屏浮层（课程详情/新建课表）在场与否。
  * 导航栏在组合顺序上位于本页之上、会画在浮层头顶，故由调用方以「藏」实现「盖」——
  * 浮层入场即上报、退场动画播完（卸载）才解除。
  *
  * 数据来自 [repository]（null = 尚未加载完成，显示指示器）；
- * 无激活课表时显示空状态，经 [onOpenSettings] 引导至设置页新建。
+ * 无激活课表时显示空状态，「创建课表」按钮打开 [NewScheduleSheet] 新建首份课表。
  */
 @Composable
 fun ScheduleScreen(
@@ -191,6 +191,11 @@ fun ScheduleScreen(
     val schedule = scheduleState.value
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // 新建课表浮层（无激活课表的空态专用）：开关在空态分支（按钮打开）与 Scaffold 末尾
+    // （承载块关闭）两处读写，挂在页面顶层；挂载与可见性分离的两段式关闭同其他浮层
+    var newScheduleVisible by rememberSaveable { mutableStateOf(false) }
+    var newScheduleMounted by remember { mutableStateOf(false) }
 
     // ——— 编辑态事务：保存提交 / 取消整库回滚 ———
     // 进入编辑时整库快照一次（全部课表 + 激活 id；JSON 存 saveable，进程重建后取消仍可回滚）。
@@ -305,9 +310,9 @@ fun ScheduleScreen(
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
         if (schedule == null) {
-            // 空状态：不组合头部与网格，经按钮引导至设置页新建课表
+            // 空状态：不组合头部与网格，「创建课表」按钮打开新建课表浮层
             EmptyScheduleContent(
-                onOpenSettings = onOpenSettings,
+                onCreateSchedule = { newScheduleVisible = true },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
@@ -1048,6 +1053,31 @@ fun ScheduleScreen(
                 )
             }
         }
+
+        // 新建课表浮层：无激活课表的空态经「创建课表」按钮打开。挂在空态/网格 if-else 之外——
+        // 创建成功瞬间新课表就位、空态翻转为网格，浮层照常播完出场动画（onDismissed）才卸载
+        if (newScheduleVisible) newScheduleMounted = true
+        if (newScheduleMounted) {
+            NewScheduleSheet(
+                visible = newScheduleVisible,
+                onDismissed = { newScheduleMounted = false },
+                onDismiss = { newScheduleVisible = false },
+                onConfirm = { name, start, end ->
+                    scope.launch {
+                        when (val r = repository.createSchedule(name, start, end)) {
+                            // 无激活课表时 createSchedule 自动激活新课表，空态自行翻转为网格
+                            is ReadResult.Ok -> newScheduleVisible = false
+                            // 失败（名称非法等）走系统 Toast，表单保持原样便于修正
+                            is ReadResult.Err -> AppToasts.show(context, r.error.toEditMessage(context))
+                        }
+                    }
+                },
+            )
+        }
+        // 浮层在场（含收场动画期间）就藏底部导航栏，onDismissed 卸载后才放回（同课程详情浮层）
+        LaunchedEffect(newScheduleMounted) {
+            onOverlayOverNavBarChange(newScheduleMounted)
+        }
     }
 }
 
@@ -1118,10 +1148,10 @@ private fun ScheduleError.toEditMessage(context: Context): String = when (this) 
     else -> context.getString(R.string.error_unexpected)
 }
 
-/** 无激活课表时的空状态：标题 + 说明 + 新建按钮（打开设置页） */
+/** 无激活课表时的空状态：标题 + 说明 + 新建按钮（打开 [NewScheduleSheet]） */
 @Composable
 private fun EmptyScheduleContent(
-    onOpenSettings: () -> Unit,
+    onCreateSchedule: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -1144,7 +1174,7 @@ private fun EmptyScheduleContent(
         )
         Spacer(Modifier.height(24.dp))
         Button(
-            onClick = onOpenSettings,
+            onClick = onCreateSchedule,
             shape = ButtonShape,
         ) {
             Text(stringResource(R.string.create_schedule))
