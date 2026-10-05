@@ -30,16 +30,16 @@
         <item>Sat</item>
         <item>Sun</item>
     </string-array>
-    <string name="settings_title">Schedule settings</string>
+    <string name="settings_title">Schedule Settings</string>
     <string name="cd_settings_close">Close</string>
     <string name="empty_title">No schedule yet</string>
     <string name="empty_desc">Create a schedule to start recording classes</string>
-    <string name="create_schedule">Create schedule</string>
-    <string name="schedule_name_label">Schedule name</string>
+    <string name="create_schedule">Create Schedule</string>
+    <string name="schedule_name_label">Schedule Name</string>
     <string name="schedule_name_hint">e.g. Spring 2026</string>
-    <string name="term_start">Term start</string>
-    <string name="term_end">Term end</string>
-    <string name="term_weeks">Total weeks</string>
+    <string name="term_start">Term Start</string>
+    <string name="term_end">Term End</string>
+    <string name="term_weeks">Total Weeks</string>
     <string name="term_weeks_value">%1$d weeks</string>
     <string name="term_weeks_range">1–30 weeks</string>
     <string name="section_term">Term</string>
@@ -83,8 +83,8 @@
     <string name="edit_switch_schedule">Switch</string>
     <string name="edit_schedule_settings">Settings</string>
     <string name="edit_cancel">Cancel</string>
-    <string name="edit_add_course">Add course</string>
-    <string name="edit_edit_course">Edit course</string>
+    <string name="edit_add_course">Add Course</string>
+    <string name="edit_edit_course">Edit Course</string>
     <string name="edit_confirm">Confirm</string>
     <string name="edit_delete">Delete</string>
     <string name="edit_cell_info">Now: %1$s | %2$s | %3$s</string>
@@ -115,7 +115,7 @@
     <string name="toast_course_copied">Copied. Long-press an empty cell to paste</string>
     <string name="edit_alternate_pick_title">Choose which alternating course to edit</string>
     <!-- Course details sheet -->
-    <string name="detail_title">Course details</string>
+    <string name="detail_title">Course Details</string>
     <string name="detail_close">Close</string>
     <string name="detail_teacher">Teacher</string>
     <string name="detail_location">Location</string>
@@ -136,7 +136,7 @@
     <!-- Schedule switcher sheet -->
     <string name="switcher_export">Export</string>
     <string name="switcher_import">Import</string>
-    <string name="switcher_new">New schedule</string>
+    <string name="switcher_new">New Schedule</string>
     <string name="switcher_new_action">New</string>
     <string name="switcher_title">Switch Schedule</string>
     <string name="switcher_close">Close</string>
