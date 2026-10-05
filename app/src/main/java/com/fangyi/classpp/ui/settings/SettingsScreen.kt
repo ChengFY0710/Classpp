@@ -68,6 +68,7 @@ import com.fangyi.classpp.ui.theme.ButtonShape
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
+import com.fangyi.classpp.ui.theme.classppTextStyles
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
@@ -242,8 +243,8 @@ private fun CreateScheduleContent(
                 .height(50.dp),
         ) {
             Text(
-                stringResource(R.string.create_schedule), fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
+                stringResource(R.string.create_schedule),
+                style = MaterialTheme.classppTextStyles.pillButton,
             )
         }
     }

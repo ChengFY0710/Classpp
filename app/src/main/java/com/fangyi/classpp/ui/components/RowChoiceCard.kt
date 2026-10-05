@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.RowShape
+import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /**
  * 行选择卡片：白卡片内一行均分的选项（如 全选 / 单周 / 双周）。
@@ -131,7 +132,7 @@ fun RowChoiceCard(
                             }
                             Text(
                                 text = label,
-                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                                style = MaterialTheme.classppTextStyles.fieldLabel,
                                 color = textColor,
                             )
                         }
