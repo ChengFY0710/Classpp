@@ -82,6 +82,7 @@ import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.cellCourses
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.theme.ButtonShape
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -156,6 +157,10 @@ private fun rememberTodayIso(): State<IsoDate> {
  * 导航栏在组合顺序上位于本页之上、会画在浮层头顶，故由调用方以「藏」实现「盖」——
  * 浮层入场即上报、退场动画播完（卸载）才解除。
  *
+ * [tabTransition]：tab 转场状态只读视图（MainActivity 的 TabPageState）。非空时顶栏与
+ * 编辑栏启用「转场冻结层」——转场进行中重放就位帧、绕开 haze 对中间态几何的重采样，
+ * 杜绝快速切 tab 时顶栏毛玻璃闪白/闪黑（详见 ScheduleHeader.tabTransitionFreeze）。
+ *
  * 数据来自 [repository]（null = 尚未加载完成，显示指示器）；
  * 无激活课表时显示空状态，「创建课表」按钮打开 [NewScheduleSheet] 新建首份课表。
  */
@@ -167,6 +172,7 @@ fun ScheduleScreen(
     onEditingChange: (Boolean) -> Unit = {},
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    tabTransition: TabTransitionState? = null,
 ) {
     // get() 返回即 bootstrap 完成，此分支仅首帧毫秒级；早返回后下方 smart cast 为非空
     if (repository == null) {
@@ -791,6 +797,7 @@ fun ScheduleScreen(
                             onDaysPerWeekToggle = onToggleDaysPerWeek,
                             blurProgress = blurProgress,
                             hazeState = hazeState,
+                            tabTransition = tabTransition,
                             termStartWeekdayIndex = termStartWeekdayIndex,
                             termEndWeekdayIndex = termEndWeekdayIndex,
                             modifier = Modifier.onGloballyPositioned { coords ->
@@ -808,6 +815,7 @@ fun ScheduleScreen(
                             // 与折叠后的原顶栏同一套背景模糊：内容滚到栏下时渐入
                             blurProgress = blurProgress,
                             hazeState = hazeState,
+                            tabTransition = tabTransition,
                             // 编辑态的星期行同样按课表天数分列，与网格列对齐
                             daysPerWeek = schedule.daysPerWeek,
                             modifier = Modifier.onGloballyPositioned { coords ->

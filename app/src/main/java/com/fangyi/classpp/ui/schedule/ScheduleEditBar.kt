@@ -22,6 +22,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -31,6 +33,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.EditActionShape
@@ -57,6 +60,10 @@ private val EditActionBarHeight = 64.dp
  *
  * [blurProgress] / [hazeState]：与 [ScheduleHeader] 折叠后同一套背景模糊——
  * 内容滚到编辑栏下方时按 [blurProgress] 渐入，顶部最强、向下渐弱；回到顶部恢复不透明。
+ *
+ * [tabTransition] 非 null 时启用同款转场冻结层（[ScheduleHeader.tabTransitionFreeze]）：
+ * 覆盖「转场中途点编辑」的边角情况——编辑栏在转场结束前进场时同样重放就位帧，
+ * 不让 haze 用中间态几何重采样。
  */
 @Composable
 fun ScheduleEditBar(
@@ -68,6 +75,7 @@ fun ScheduleEditBar(
     blurProgress: Float = 0f,
     hazeState: HazeState? = null,
     daysPerWeek: Int = 5,
+    tabTransition: TabTransitionState? = null,
 ) {
     // 列数只认资源里真有的星期名（同 ScheduleHeader）
     val weekdayNames = stringArrayResource(R.array.weekdays)
@@ -77,9 +85,18 @@ fun ScheduleEditBar(
     val progress = blurProgress.coerceIn(0f, 1f)
     // hazeEffect 的 block 在绘制期执行、非 composable 上下文：tint 取值提到 modifier 之前
     val hazeTint = MaterialTheme.classppColors.hazeTint
+    // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场期间整帧重放
+    val transitionFreezeLayer = rememberGraphicsLayer()
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .then(
+                if (tabTransition != null) {
+                    Modifier.tabTransitionFreeze(transitionFreezeLayer, tabTransition)
+                } else {
+                    Modifier
+                },
+            )
             // surface 兜底：progress≈0 时与原不透明背景逐帧一致
             .background(Color.Transparent)
             .then(

@@ -38,10 +38,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -65,6 +69,7 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.Correct
@@ -193,6 +198,10 @@ internal fun collapsedPillX(
  * 同时驱动周数胶囊从扁平灰底过渡到半透明白 + 投影。
  * [hazeState] 为 null（如 @Preview）时保持不透明背景。
  *
+ * [tabTransition] 非 null 时启用转场冻结层（[tabTransitionFreeze]）：tab 转场进行中
+ * 整帧重放就位时录制的画面（含模糊输出），绕开 Haze 对转场中间态几何的重采样，
+ * 杜绝快速切 tab 时顶栏闪出展开态的白/黑帧。
+ *
  * [termStartWeekdayIndex]/[termEndWeekdayIndex] 非空时星期行的对应列绿（Correct）/红（Error）：
  * 查看开学/结课所在周时由调用方传入该日期的星期下标（周一起始，与 [weekIndex] 同规则），
  * 与日期带的学期起止日标记上下对齐；起止日恰为「今天」时调用方传 null，
@@ -216,6 +225,7 @@ fun ScheduleHeader(
     onMenuExpandedChange: (Boolean) -> Unit = {},
     termStartWeekdayIndex: Int? = null,
     termEndWeekdayIndex: Int? = null,
+    tabTransition: TabTransitionState? = null,
 ) {
     val fraction = collapseFraction.coerceIn(0f, 1f)
     val progress = blurProgress.coerceIn(0f, 1f)
@@ -249,6 +259,8 @@ fun ScheduleHeader(
 
     // hazeEffect 的 block 在绘制期执行、非 composable 上下文：tint 取值提到 Layout 之前
     val hazeTint = MaterialTheme.classppColors.hazeTint
+    // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场期间整帧重放
+    val transitionFreezeLayer = rememberGraphicsLayer()
 
     Layout(
         content = {
@@ -397,6 +409,13 @@ fun ScheduleHeader(
         },
         modifier = modifier
             .fillMaxWidth()
+            .then(
+                if (tabTransition != null) {
+                    Modifier.tabTransitionFreeze(transitionFreezeLayer, tabTransition)
+                } else {
+                    Modifier
+                },
+            )
             // surface 兜底：progress≈0 时与原不透明背景逐帧一致
             .background(MaterialTheme.colorScheme.surface)
             .then(
@@ -467,6 +486,36 @@ fun ScheduleHeader(
             )
         }
     }
+}
+
+/**
+ * tab 转场冻结层：转场进行中（[TabTransitionState.isTransitioning]，绘制期读取快照值，
+ * 每帧只失效绘制）整帧重放 [layer] 里录制的最后一帧就位画面（含 Haze 模糊输出），
+ * 不再执行内部绘制链；就位时照常绘制，并把本帧录进 [layer] 供下次转场重放。
+ *
+ * 为什么需要：tab 转场用祖先 graphicsLayer 平移/缩放整页，Compose 会在动画的每一帧向
+ * 整棵子树派发 onGloballyPositioned（图层位置属性一变即递归派发），Haze 的源/效果节点
+ * 随之把滑入起点、屏外停靠位等**中间态窗口坐标**写进记账状态并逐帧失效重采样——
+ * 重采样按窗口坐标取几何、画布却已被祖先变换叠加，滑入起点/屏外停靠处效果层与屏幕
+ * 交集为空、尺寸归零，模糊整层不画，顶栏只剩 surface 兜底色，即快速切 tab 时闪出的
+ * 展开态白（深色为黑）帧。转场期间页面内容本就不变，重放就位帧与实时绘制逐像素一致，
+ * 且转场期零模糊重采样开销。
+ */
+internal fun Modifier.tabTransitionFreeze(
+    layer: GraphicsLayer,
+    transition: TabTransitionState,
+): Modifier = drawWithContent {
+    val transitioning = transition.isTransitioning
+    if (transitioning) {
+        // 冻结层尚无内容（理论上不可能：转场前至少绘制过一帧）时退回实时绘制
+        if (layer.size.width >= 1 && layer.size.height >= 1) {
+            drawLayer(layer)
+            return@drawWithContent
+        }
+    } else {
+        layer.record { this@drawWithContent.drawContent() }
+    }
+    drawContent()
 }
 
 /**

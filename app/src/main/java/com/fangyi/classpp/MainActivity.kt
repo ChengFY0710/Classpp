@@ -45,6 +45,7 @@ import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
+import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.rememberDeviceCornerRadius
 import com.fangyi.classpp.ui.navigation.AppTab
 import com.fangyi.classpp.ui.navigation.BottomNavBar
@@ -255,6 +256,7 @@ class MainActivity : ComponentActivity() {
                                             onEditingChange = onEditingChange,
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                             onOpenSettings = onOpenSettings,
+                                            tabTransition = pageStates.getValue(AppTab.Timetable).transition,
                                         )
                                         AppTab.Todo -> TodoScreen(
                                             modifier = pageModifier,
@@ -376,6 +378,12 @@ private class TabPageState(initialX: Float) {
 
     /** 转场协程代号：淡出协程收尾（停靠屏外）前校验，被新协程取代即放弃。 */
     var generation = 0
+
+    /**
+     * 转场状态只读视图：课表页顶栏的转场冻结层据此在绘制期判定转场是否进行中
+     * （转场期间重放就位帧、绕开 haze 的中间态几何重采样，见 ScheduleHeader）。
+     */
+    val transition = TabTransitionState(x, scale)
 }
 
 /** 旧页淡出后的屏外停靠位：多留 0.2 屏余量，任何缩放与像素圆整下都不会露边。 */

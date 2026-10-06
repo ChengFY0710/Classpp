@@ -3,6 +3,7 @@ package com.fangyi.classpp.ui.motion
 import android.os.Build
 import android.view.RoundedCorner
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -140,6 +141,20 @@ fun PageOverlayTransition(
             }
         }
     }
+}
+
+/**
+ * tab 转场状态的最小只读视图：持有与 [MainActivity.TabPageState] 同源的 x/scale 动画值，
+ * 供页内需要在转场期间冻结 haze 模糊的组件（顶栏/编辑栏）在**绘制期**读取——Animatable
+ * 值是快照状态，绘制块里读取只逐帧失效绘制、不触发重组。判定规则：x ≠ 0（滑入途中或
+ * 屏外停靠）或 scale ≠ 1（缩小淡出/唤回途中）即转场进行中。
+ */
+class TabTransitionState(
+    val x: Animatable<Float, AnimationVector1D>,
+    val scale: Animatable<Float, AnimationVector1D>,
+) {
+    val isTransitioning: Boolean
+        get() = x.value != 0f || scale.value != 1f
 }
 
 /**
