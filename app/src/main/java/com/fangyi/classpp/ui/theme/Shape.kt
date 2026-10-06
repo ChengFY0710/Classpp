@@ -26,6 +26,9 @@ val MenuShape = RoundedRectangle(16.dp)
 /** 设置页卡片、周选择卡片容器 */
 val SettingsCardShape = RoundedRectangle(20.dp)
 
+/** 待办卡片（NoteCard） */
+val NoteCardShape = RoundedRectangle(20.dp)
+
 /** 对话框行、选择卡行 */
 val RowShape = RoundedRectangle(12.dp)
 

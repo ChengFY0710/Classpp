@@ -85,6 +85,8 @@ class ClassppTextStyles(
     val pillButton: TextStyle,
     /** 浮层下拉菜单项：16sp Medium onSurface */
     val menuItem: TextStyle,
+    /** 待办卡片属性行（时间、标签文字）：15sp Normal secondaryText */
+    val noteProperty: TextStyle,
 )
 
 /** 按当前 colorScheme 与自定义色构造一组角色化文字样式（由 [ClassppTheme] 提供） */
@@ -96,6 +98,7 @@ fun classppTextStyles(colorScheme: ColorScheme, colors: ClassppColors) = Classpp
     fieldValue = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colorScheme.primary),
     pillButton = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
     menuItem = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colorScheme.onSurface),
+    noteProperty = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Normal, color = colors.secondaryText),
 )
 
 /**
