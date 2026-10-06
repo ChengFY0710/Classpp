@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -34,7 +33,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
@@ -48,7 +46,13 @@ import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollFactory
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
+import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import dev.chrisbanes.haze.HazeInputScale
+import dev.chrisbanes.haze.HazeProgressive
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
 
 /** 顶栏胶囊高度（与 ScheduleHeader 的 WeekPill 同款 40dp） */
 private val TopBarPillHeight = 40.dp
@@ -60,19 +64,24 @@ private val PillSpacing = 12.dp
 private val PillInnerPadding = 16.dp
 
 /** 胶囊内图标边长 */
-private val PillIconSize = 20.dp
+private val PillIconSize = 24.dp
 
 /** 左侧常驻图标胶囊宽度（图标 + 左右内边距） */
 private val IconPillWidth = PillIconSize + PillInnerPadding * 2
 
-/** 左侧常驻群总宽：文件夹 + 间距 + 排序 */
-private val LeftClusterWidth = IconPillWidth * 2 + PillSpacing
+/** 排序按钮右缘在顶栏坐标系里的位置：固定行自带 15dp 页边距（PageHorizontalSpacing） */
+private val SortPillRightEdge = PageHorizontalSpacing + IconPillWidth * 2 + PillSpacing
 
 /**
- * 首粒「全部」的静止位：常驻群右缘 + 一个胶囊间距。
- * 渐隐遮罩的透明端正是这里——静止时首粒恰好落在遮罩之外，零渐隐伪影。
+ * 裁切线：分组条视口左边界相对排序按钮右缘的偏移（与静止间距 [RestGap] 互相独立）。
+ * 默认 -[TopBarPillHeight] / 2（半枚胶囊）：切割边完全藏进按钮不透明底之下——胶囊
+ * 滑到按钮右缘即视觉消失，且按钮四角的胶囊曲率收缩区也不会露出裁切残影；
+ * 调到 0 = 贴缘裁（按钮圆角附近可能看到细缝残影），正值 = 在按钮右侧空隙中悬空切割。
  */
-private val FirstPillRest = LeftClusterWidth + PillSpacing
+private val ClipLineOffset = -TopBarPillHeight / 2
+
+/** 首粒「全部」静止位与排序按钮右缘的间距（不影响裁切线位置） */
+private val RestGap = PillSpacing
 
 /** 阴影呼吸位：胶囊柔影上下各留一份，防 LazyRow 视口把阴影裁掉 */
 private val ShadowOverhang = 8.dp
@@ -82,20 +91,25 @@ private val PillShadowElevation = 45.dp
 private val PillShadowColor = Color.Black.copy(alpha = 0.2f)
 
 /** 顶栏与状态栏的间距 */
-private val TopBarTopPadding = 12.dp
+private val TopBarTopPadding = 3.dp
 
 /**
  * 待办页顶栏：左侧常驻图标胶囊（文件夹、排序）+ 右侧可滑动的分组胶囊条
  * （「全部」常驻首位 + 用户自定义分组）。
  *
- * 三层 z 序：底层 LazyRow 视口横贯整行，首粒「全部」经 contentPadding 停在排序
- * 按钮右侧——向左滑动时分组胶囊从排序按钮背后穿行；中层渐隐遮罩以 background
- * 色在常驻群区完全遮蔽（盖住两枚常驻胶囊间的缝隙防穿帮）、到首粒静止位线性
- * 渐隐至全透明；顶层是 surface 不透明的常驻胶囊，压住穿行的分组胶囊。
+ * 布局：左侧常驻群浮在上层；右侧分组条的视口左边界即裁切线（[ClipLineOffset]，
+ * 相对排序按钮右缘），首粒「全部」静止位与按钮右缘保持 [RestGap] 间距——向左滑动
+ * 时越过分界线的部分被视口直接裁掉，即「滑入排序按钮背后」（常驻群不透明，无缝隙穿帮）。
  *
  * 极限橡皮筋：经 LocalOverscrollFactory 注入 iOS 式橡皮筋效果，回弹弹簧取全局
  * [Motion.Settle]（与浮层拖拽松手回位同一令牌）。内容不溢出时 foundation 不派发
  * overscroll（无滚动范围即无极限），属预期行为。
+ *
+ * 材质：顶栏容器叠设置页同款的整条渐变模糊（SettingsTopBar 配方：25dp + 半分辨率
+ * 输入 + 垂直渐变 mask，顶部最强向下渐弱，兜底色 background 画在模糊层之下）——
+ * 模糊层从屏幕顶铺下，状态栏区域沉浸式覆盖；胶囊一律实心 surface（选中 primary），
+ * 与课表页 WeekPill 浮在毛玻璃顶栏上同一套材质关系；[hazeState] 为 null（如
+ * @Preview）时容器退化为不透明兜底色。
  *
  * 纯 UI：分组点击只切选中高亮（过滤由调用方后续接入）；文件夹/排序回调本期空置。
  */
@@ -107,79 +121,100 @@ fun TodoTopBar(
     onFolderClick: () -> Unit,
     onSortClick: () -> Unit,
     modifier: Modifier = Modifier,
+    hazeState: HazeState? = null,
 ) {
     val overscrollFactory = rememberOffsetOverscrollFactory(animationSpec = Motion.Settle)
+    // 磨砂 tint 随主题（hazeEffect 的 block 在绘制期执行、非 composable 上下文，取值提到 Box 之前）
+    val hazeTint = MaterialTheme.classppColors.hazeTint
     CompositionLocalProvider(LocalOverscrollFactory provides overscrollFactory) {
-        Column(
+        Box(
             modifier = modifier
                 .fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(top = TopBarTopPadding),
+                // 兜底色：与页面同色，画在模糊层之下（背后无内容时逐帧一致）
+                .background(MaterialTheme.colorScheme.background)
+                .then(
+                    if (hazeState != null) {
+                        // 设置页顶栏同款渐变模糊：25dp + 半分辨率输入（Fixed(0.5)）+ mask
+                        // 渐变（preferPerformance）——整页覆盖层转场逐帧重合成毛玻璃，
+                        // 模糊预算必须收紧（SettingsTopBar 同一转场性能规格）
+                        Modifier.hazeEffect(hazeState) {
+                            blurRadius = 25.dp
+                            progressive = HazeProgressive.verticalGradient(
+                                startIntensity = 1f,
+                                endIntensity = 0f,
+                                preferPerformance = true,
+                            )
+                            inputScale = HazeInputScale.Fixed(0.5f)
+                            tints = listOf(HazeTint(hazeTint.copy(alpha = 0.30f)))
+                            noiseFactor = 0f
+                        }
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
-            Box(
-                Modifier
+            Column(
+                modifier = Modifier
                     .fillMaxWidth()
-                    .height(TopBarPillHeight + ShadowOverhang * 2),
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(top = TopBarTopPadding),
             ) {
-                val listState = rememberLazyListState()
-                LazyRow(
-                    state = listState,
-                    modifier = Modifier.matchParentSize(),
-                    contentPadding = PaddingValues(
-                        start = PageHorizontalSpacing + FirstPillRest,
-                        top = ShadowOverhang,
-                        end = PageHorizontalSpacing,
-                        bottom = ShadowOverhang,
-                    ),
-                    horizontalArrangement = Arrangement.spacedBy(PillSpacing),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    item {
-                        GroupPill(
-                            label = stringResource(R.string.todo_group_all),
-                            selected = selectedGroupIndex == 0,
-                            onClick = { onGroupSelect(0) },
-                        )
-                    }
-                    itemsIndexed(groups) { index, group ->
-                        GroupPill(
-                            label = group,
-                            selected = selectedGroupIndex == index + 1,
-                            onClick = { onGroupSelect(index + 1) },
-                        )
-                    }
-                }
-                // 渐隐遮罩：常驻群区全不透明，到首粒静止位线性渐隐至透明
-                val scrimColor = MaterialTheme.colorScheme.background
                 Box(
                     Modifier
-                        .align(Alignment.CenterStart)
-                        .fillMaxHeight()
-                        .width(FirstPillRest)
-                        .background(
-                            Brush.horizontalGradient(
-                                0f to scrimColor,
-                                (LeftClusterWidth / FirstPillRest) to scrimColor,
-                                1f to Color.Transparent,
-                            ),
-                        ),
-                )
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(start = PageHorizontalSpacing),
-                    horizontalArrangement = Arrangement.spacedBy(PillSpacing),
+                        .fillMaxWidth()
+                        .height(TopBarPillHeight + ShadowOverhang * 2),
                 ) {
-                    IconPill(
-                        iconRes = R.drawable.ic_folder,
-                        contentDescription = stringResource(R.string.cd_todo_folder),
-                        onClick = onFolderClick,
-                    )
-                    IconPill(
-                        iconRes = R.drawable.ic_arrow_sort,
-                        contentDescription = stringResource(R.string.cd_todo_sort),
-                        onClick = onSortClick,
-                    )
+                    val listState = rememberLazyListState()
+                    // 视口左边界 = 裁切线（SortPillRightEdge + ClipLineOffset）；contentPadding
+                    // 反向补偿裁切偏移，让静止间距只由 RestGap 决定——两个旋钮互不干扰
+                    LazyRow(
+                        state = listState,
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .fillMaxHeight()
+                            .padding(start = SortPillRightEdge + ClipLineOffset)
+                            .fillMaxWidth(),
+                        contentPadding = PaddingValues(
+                            start = RestGap - ClipLineOffset,
+                            top = ShadowOverhang,
+                            end = PageHorizontalSpacing,
+                            bottom = ShadowOverhang,
+                        ),
+                        horizontalArrangement = Arrangement.spacedBy(PillSpacing),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        item {
+                            GroupPill(
+                                label = stringResource(R.string.todo_group_all),
+                                selected = selectedGroupIndex == 0,
+                                onClick = { onGroupSelect(0) },
+                            )
+                        }
+                        itemsIndexed(groups) { index, group ->
+                            GroupPill(
+                                label = group,
+                                selected = selectedGroupIndex == index + 1,
+                                onClick = { onGroupSelect(index + 1) },
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .padding(start = PageHorizontalSpacing),
+                        horizontalArrangement = Arrangement.spacedBy(PillSpacing),
+                    ) {
+                        IconPill(
+                            iconRes = R.drawable.ic_folder,
+                            contentDescription = stringResource(R.string.cd_todo_folder),
+                            onClick = onFolderClick,
+                        )
+                        IconPill(
+                            iconRes = R.drawable.ic_arrow_sort,
+                            contentDescription = stringResource(R.string.cd_todo_sort),
+                            onClick = onSortClick,
+                        )
+                    }
                 }
             }
         }

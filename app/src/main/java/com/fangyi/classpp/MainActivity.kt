@@ -15,9 +15,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -200,7 +202,13 @@ class MainActivity : ComponentActivity() {
                 // 压暗遮罩、右滑进出场与转场期左缘圆角都在其中，与个性化子页共用同一实现
                 PageOverlayTransition(
                     visible = showSettings,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        // 页面世界的基础底色，随主题即时切换：窗口 windowBackground（XML
+                        // 主题）只在 Activity 重建时更新，应用内切颜色模式后仍是旧色；
+                        // tab 转场旧页淡出、设置页转场视差让位时都会露出页面背后的底色，
+                        // 用这层 Compose background 兜住，转场底色才跟着主题走
+                        .background(MaterialTheme.colorScheme.background),
                     behind = {
                         // 已挂载的页面层（见上方 mountedTabs 注释）：每页包一层 Box 承载
                         // 转场变换（tabLayer），key(tab) 保证新增页面插队时已有页面的
