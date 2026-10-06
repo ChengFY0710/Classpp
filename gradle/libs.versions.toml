@@ -8,7 +8,10 @@ lifecycleRuntimeKtx = "2.6.1"
 activityCompose = "1.8.0"
 kotlin = "2.2.10"
 composeBom = "2026.02.01"
-haze = "1.6.10"
+# 1.7.0 修复了效果节点不随源位置变化而失效的问题（#812，tab 转场滑入滑出时
+# 顶栏模糊闪帧的关键修复），并新增 forceInvalidateOnPreDraw 兜底开关；
+# 1.7.2 为最后一个稳定 1.x（2.0 仍是 alpha）
+haze = "1.7.2"
 kotlinxSerialization = "1.9.0"
 # Shapes 1.2.1 由 Kotlin 2.4 编译（元数据 2.4.0），需项目 Kotlin ≥2.3 才能读取；
 # 当前项目 Kotlin 2.2.10，固定用 1.2.0（API 相同，仅依赖版本不同）。升级 Kotlin 后可跟进最新版。
