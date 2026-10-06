@@ -31,12 +31,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
@@ -91,6 +98,32 @@ private val PillShadowColor = Color.Black.copy(alpha = 0.2f)
 
 /** 顶栏与状态栏的间距 */
 private val TopBarTopPadding = 3.dp
+
+/** 裁剪形状纵向的外扩量：容纳 45dp elevation 柔影的可见扩散范围 */
+private val ShadowBleed = 200.dp
+
+/**
+ * 分组条的裁剪形状：左右封闭在节点边界（左 = 裁切线）、上下向外扩 [ShadowBleed]。
+ * horizontalScroll 不自带视口裁剪，不裁则滑向排序按钮的胶囊会画进常驻区；但整体
+ * clipToBounds 会把 45dp 柔影上下切平——故只封水平方向，纵向放行柔影。
+ */
+private val HorizontalClipShape = object : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density,
+    ): Outline {
+        val bleed = with(density) { ShadowBleed.toPx() }
+        return Outline.Rectangle(
+            Rect(
+                left = 0f,
+                top = -bleed,
+                right = size.width + bleed,
+                bottom = size.height + bleed,
+            ),
+        )
+    }
+}
 
 /**
  * 待办页顶栏：左侧常驻图标胶囊（文件夹、排序）+ 右侧可滑动的分组胶囊条
@@ -167,13 +200,17 @@ fun TodoTopBar(
                     val scrollState = rememberScrollState()
                     // 视口左边界 = 裁切线（SortPillRightEdge + ClipLineOffset）；contentPadding
                     // 反向补偿裁切偏移，让静止间距只由 RestGap 决定——两个旋钮互不干扰。
-                    // 分组条用橡皮筋增强版 horizontalScroll：不足一行时也能拉出橡皮筋
+                    // 分组条用橡皮筋增强版 horizontalScroll：不足一行时也能拉出橡皮筋。
+                    // horizontalScroll 不自带视口裁剪（LazyRow 自带），须补裁剪——但整体
+                    // clipToBounds 会把 45dp 柔影上下切平，故用只封水平方向的形状：
+                    // 左缘 = 裁切线照常切割，纵向外扩放行柔影
                     Row(
                         modifier = Modifier
                             .align(Alignment.CenterStart)
                             .fillMaxHeight()
                             .padding(start = SortPillRightEdge + ClipLineOffset)
                             .fillMaxWidth()
+                            .clip(HorizontalClipShape)
                             .rubberBandHorizontalScroll(scrollState)
                             .padding(
                                 start = RestGap - ClipLineOffset,
