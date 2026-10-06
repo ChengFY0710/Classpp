@@ -10,6 +10,8 @@
     <string name="month_day_format">%1$d月%2$d日</string>
     <string name="date_title_format">%1$s %2$s</string>
     <string name="back_to_current_week">返回本周</string>
+    <string name="cd_section_collapse">收起</string>
+    <string name="cd_section_expand">展开</string>
     <string name="cd_switch_to_5_days">切换到 5 天视图</string>
     <string name="cd_switch_to_7_days">切换到 7 天视图</string>
     <string-array name="weekdays">

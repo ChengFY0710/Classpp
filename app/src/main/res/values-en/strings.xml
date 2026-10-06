@@ -10,6 +10,8 @@
     <string name="month_day_format">%1$d/%2$d</string>
     <string name="date_title_format">%1$s %2$s</string>
     <string name="back_to_current_week">Back to this week</string>
+    <string name="cd_section_collapse">Collapse</string>
+    <string name="cd_section_expand">Expand</string>
     <string name="cd_switch_to_5_days">Switch to the 5-day view</string>
     <string name="cd_switch_to_7_days">Switch to the 7-day view</string>
     <string-array name="weekdays">
