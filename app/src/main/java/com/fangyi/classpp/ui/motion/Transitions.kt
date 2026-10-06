@@ -32,7 +32,7 @@ import kotlinx.coroutines.delay
 /**
  * 整页覆盖层转场（设置页覆盖层与个性化子页共用，两层转场同源）：[overlay] 整页从右缘
  * 滑入盖住 [behind]。完整动效四件套同帧启动、同一节奏（[Motion.PageEnterMillis] /
- * [Motion.PageExitMillis] + [Motion.PageTransition]）：
+ * [Motion.PageExitMillis] + [Motion.Overlay]）：
  * - 背后整页左移让位视差（比例 [PageOverlayParallaxFraction]，layer 平移，动画期间
  *   子树布局与绘制指令一概不动）；
  * - 压暗遮罩淡入淡出（Material scrim）：进场时压暗下层提供进深，退场时随滑出恢复；
@@ -66,7 +66,7 @@ fun PageOverlayTransition(
             targetValue = if (visible) 1f else 0f,
             animationSpec = tween(
                 durationMillis = if (visible) Motion.PageEnterMillis else Motion.PageExitMillis,
-                easing = Motion.PageTransition,
+                easing = Motion.Overlay,
             ),
         )
     }

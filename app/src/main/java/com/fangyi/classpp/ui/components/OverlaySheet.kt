@@ -119,10 +119,11 @@ data class SheetTopAction(
  * 并由 Surface 的 shape clip 收敛在圆角内，不溢出卡片。
  *
  * 进出场与拖拽关闭由组件自己完成：
- * - 挂载即入场：从屏幕底部滑入（先快后慢），遮罩同步压暗；
+ * - 挂载即入场：从屏幕底部滑入（起步即快、长尾缓收，ui.motion 的 Motion.Overlay），
+ *   遮罩同步压暗；
  * - 关闭是「两段式」——[onDismiss]（遮罩点击 / 返回 / 确认 / 顶栏动作 / 下拉松手超过阈值）
  *   只表示**请求关闭**，调用方收到后清掉自己的状态使 [visible] 变 false，组件随即向下滑出
- *   （先慢后快）、遮罩同步变淡，**播完后才回调 [onDismissed]**，调用方在这一刻把浮层移出组合，
+ *   （与入场同一条曲线，只是时长更短）、遮罩同步变淡，**播完后才回调 [onDismissed]**，调用方在这一刻把浮层移出组合，
  *   收场期间内容保持原样不闪空；
  * - 顶栏整条可垂直拖拽、浮层跟手下移，遮罩跟着变淡；松手超过位移/速度阈值走关闭，否则弹回。
  *
@@ -199,7 +200,7 @@ fun OverlaySheet(
 
     // 收场动画本体：从当前进度继续滑到全隐（拖拽中断后重入，也是从当前位置接着走）
     suspend fun runExit() {
-        hiddenFraction.animateTo(1f, tween(Motion.SheetExitMillis, easing = Motion.Accelerate))
+        hiddenFraction.animateTo(1f, tween(Motion.SheetExitMillis, easing = Motion.Overlay))
         onDismissed()
     }
 
@@ -217,7 +218,7 @@ fun OverlaySheet(
         if (visible) {
             exiting = false
             closeRequested = false
-            hiddenFraction.animateTo(0f, tween(Motion.SheetEnterMillis, easing = Motion.Decelerate))
+            hiddenFraction.animateTo(0f, tween(Motion.SheetEnterMillis, easing = Motion.Overlay))
         } else {
             beginExit()
         }
