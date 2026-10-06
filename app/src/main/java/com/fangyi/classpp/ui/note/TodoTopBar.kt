@@ -7,7 +7,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -18,9 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollFactory
+import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
@@ -102,8 +101,9 @@ private val TopBarTopPadding = 3.dp
  * 时越过分界线的部分被视口直接裁掉，即「滑入排序按钮背后」（常驻群不透明，无缝隙穿帮）。
  *
  * 极限橡皮筋：经 LocalOverscrollFactory 注入 iOS 式橡皮筋效果，回弹弹簧取全局
- * [Motion.Settle]（与浮层拖拽松手回位同一令牌）。内容不溢出时 foundation 不派发
- * overscroll（无滚动范围即无极限），属预期行为。
+ * [Motion.Settle]（与浮层拖拽松手回位同一令牌）；分组条用橡皮筋增强版
+ * horizontalScroll（[rubberBandHorizontalScroll]）——分组不足一行、本无滚动范围时
+ * 也能拉出橡皮筋，任何状态下滑动都有反馈。
  *
  * 材质：顶栏容器叠设置页同款的整条渐变模糊（SettingsTopBar 配方：25dp + 半分辨率
  * 输入 + 垂直渐变 mask，顶部最强向下渐弱，兜底色 background 画在模糊层之下）——
@@ -164,33 +164,32 @@ fun TodoTopBar(
                         .fillMaxWidth()
                         .height(TopBarPillHeight + ShadowOverhang * 2),
                 ) {
-                    val listState = rememberLazyListState()
+                    val scrollState = rememberScrollState()
                     // 视口左边界 = 裁切线（SortPillRightEdge + ClipLineOffset）；contentPadding
-                    // 反向补偿裁切偏移，让静止间距只由 RestGap 决定——两个旋钮互不干扰
-                    LazyRow(
-                        state = listState,
+                    // 反向补偿裁切偏移，让静止间距只由 RestGap 决定——两个旋钮互不干扰。
+                    // 分组条用橡皮筋增强版 horizontalScroll：不足一行时也能拉出橡皮筋
+                    Row(
                         modifier = Modifier
                             .align(Alignment.CenterStart)
                             .fillMaxHeight()
                             .padding(start = SortPillRightEdge + ClipLineOffset)
-                            .fillMaxWidth(),
-                        contentPadding = PaddingValues(
-                            start = RestGap - ClipLineOffset,
-                            top = ShadowOverhang,
-                            end = PageHorizontalSpacing,
-                            bottom = ShadowOverhang,
-                        ),
+                            .fillMaxWidth()
+                            .rubberBandHorizontalScroll(scrollState)
+                            .padding(
+                                start = RestGap - ClipLineOffset,
+                                top = ShadowOverhang,
+                                end = PageHorizontalSpacing,
+                                bottom = ShadowOverhang,
+                            ),
                         horizontalArrangement = Arrangement.spacedBy(PillSpacing),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        item {
-                            GroupPill(
-                                label = stringResource(R.string.todo_group_all),
-                                selected = selectedGroupIndex == 0,
-                                onClick = { onGroupSelect(0) },
-                            )
-                        }
-                        itemsIndexed(groups) { index, group ->
+                        GroupPill(
+                            label = stringResource(R.string.todo_group_all),
+                            selected = selectedGroupIndex == 0,
+                            onClick = { onGroupSelect(0) },
+                        )
+                        groups.forEachIndexed { index, group ->
                             GroupPill(
                                 label = group,
                                 selected = selectedGroupIndex == index + 1,

@@ -30,6 +30,7 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.ScrollScope
 import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.gestures.scrollable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.overscroll
 import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.foundation.verticalScroll
@@ -459,5 +460,46 @@ fun Modifier.rubberBandVerticalScroll(state: ScrollState): Modifier {
             )
     } else {
         this.verticalScroll(state)
+    }
+}
+
+/**
+ * [Modifier.horizontalScroll] 的橡皮筋增强版：与 [rubberBandVerticalScroll] 完全同构
+ * （同一套「兜底手势层在内、效果渲染节点在外」的接管与量化规避手段），仅方向为水平。
+ *
+ * 内容超出一行时行为与原版一致（边缘橡皮筋由注入的 [OffsetOverscrollEffect] 承担）；
+ * 内容不足一行（横向两个方向都不可滚）时原版拉不出橡皮筋——foundation 的派发门槛
+ * （Scrollable.kt 的 shouldDispatchOverscroll）——此辅助在内层追加一层零消费
+ * scrollable + 原速 fling 兜底，把拖拽 delta 与松手速度全部交给环境 OverscrollEffect
+ * （[ProvideOverscroll] 作用域内即 iOS 式橡皮筋），由它完成「拉出 → 软着陆回弹」。
+ */
+@Composable
+fun Modifier.rubberBandHorizontalScroll(state: ScrollState): Modifier {
+    val effect = rememberOverscrollEffect()
+    val unscrollable = !state.canScrollForward && !state.canScrollBackward
+    return if (effect != null && unscrollable) {
+        // 与 vertical 兜底同一套构件：零消费状态（canScroll 默认 true，绕过派发门槛）
+        val passthroughState = remember { ScrollableState { 0f } }
+        // 原速放行 fling：不产生任何惯性位移，速度原样交还效果实例
+        val passthroughFling = remember {
+            object : FlingBehavior {
+                override suspend fun ScrollScope.performFling(initialVelocity: Float): Float =
+                    initialVelocity
+            }
+        }
+        this
+            // 效果渲染节点在 horizontalScroll 之外（更外层）：滚动布局以「宽度无穷」测量
+            // 内层内容，节点在里层会把「容器尺寸」取成 Int.MAX_VALUE，阻尼渲染位移被
+            // 量化成台阶；外层拿真实视口尺寸，阻尼与连续性才正确
+            .overscroll(effect)
+            .horizontalScroll(state)
+            .scrollable(
+                state = passthroughState,
+                orientation = Orientation.Horizontal,
+                overscrollEffect = effect,
+                flingBehavior = passthroughFling,
+            )
+    } else {
+        this.horizontalScroll(state)
     }
 }
