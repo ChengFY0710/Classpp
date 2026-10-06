@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.theme.SheetCardShape
+import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /** 单条信息：左侧 label + 右侧值（均走统一角色样式，见 classppTextStyles）。 */

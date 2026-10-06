@@ -38,15 +38,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.SheetCardShape
+import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
-
-/**
- * 浮层「行卡」统一行高：上下内距 14×2 + 文字行高 24 = 52dp。
- * 输入框与浮层选择卡片都按它取 `heightIn(min)`，保证两张卡永远等高；
- * 系统字体放大时两者行高同步增长，等高关系依旧成立。
- * 例外：输入值超宽自动换行时输入行卡按行数长高（上下内距不变），选择卡维持此高度。
- */
-val SheetFieldHeight = 60.dp
 
 /**
  * 浮层内全新输入框：白卡片 + 左侧黑色粗体 label + 右对齐可编辑值。
