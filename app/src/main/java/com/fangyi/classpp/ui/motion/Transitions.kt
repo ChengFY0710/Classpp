@@ -78,7 +78,7 @@ fun PageOverlayTransition(
     // 完全就位后再保持一小段，画面彻底静止再恢复矩形贴边并摘掉裁剪。
     // 圆角走全局同款连续曲率形状（UnevenRoundedRectangle 默认 Continuous，圆滑圆角），
     // 转场期页面像一张圆滑卡片滑过背景，与全局卡片形状风格一致
-    val leftCornerRadius = rememberLeftCornerRadius()
+    val leftCornerRadius = rememberDeviceCornerRadius()
     val leftCornerShape = remember(leftCornerRadius) {
         UnevenRoundedRectangle(topStart = leftCornerRadius, bottomStart = leftCornerRadius)
     }
@@ -156,24 +156,28 @@ val LocalPageOverlayActive = compositionLocalOf { true }
  */
 private const val PageOverlayParallaxFraction = 0.1f
 
-/** 左缘圆角半径：API 31+ 读系统真实 R 角，低版本退化 24dp 近似。 */
+/**
+ * 机身圆角半径：API 31+ 读系统真实 R 角、四角取最大，低版本退化 24dp 近似。
+ * 两处共用：覆盖层转场的左缘圆角（本文件）与 tab 淡出页的整卡圆角（MainActivity）。
+ */
 @Composable
-private fun rememberLeftCornerRadius(): Dp {
+fun rememberDeviceCornerRadius(): Dp {
     val view = LocalView.current
     val density = LocalDensity.current
     return remember {
         val insets = view.rootWindowInsets
-        val tl = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            insets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius ?: 0
-        } else {
-            0
-        }
-        val bl = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)?.radius ?: 0
-        } else {
-            0
-        }
-        maxOf(tl, bl).takeIf { it > 0 }
+        fun corner(position: Int): Int =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                insets.getRoundedCorner(position)?.radius ?: 0
+            } else {
+                0
+            }
+        maxOf(
+            corner(RoundedCorner.POSITION_TOP_LEFT),
+            corner(RoundedCorner.POSITION_TOP_RIGHT),
+            corner(RoundedCorner.POSITION_BOTTOM_LEFT),
+            corner(RoundedCorner.POSITION_BOTTOM_RIGHT),
+        ).takeIf { it > 0 }
             ?.let { with(density) { it.toFloat().toDp() } }
             ?: 24.dp
     }

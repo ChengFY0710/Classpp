@@ -32,6 +32,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -40,6 +42,7 @@ import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
+import com.fangyi.classpp.ui.motion.rememberDeviceCornerRadius
 import com.fangyi.classpp.ui.navigation.AppTab
 import com.fangyi.classpp.ui.navigation.BottomNavBar
 import com.fangyi.classpp.ui.placeholder.AgendaScreen
@@ -49,6 +52,7 @@ import com.fangyi.classpp.ui.settings.SettingsScreen
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.ThemeMode
 import com.fangyi.classpp.ui.theme.ThemePreferences
+import com.kyant.shapes.UnevenRoundedRectangle
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
@@ -114,6 +118,18 @@ class MainActivity : ComponentActivity() {
                 // 透明度、缩放，动画全走 Animatable、每帧只更新 layer 矩阵
                 val pageStates = remember {
                     mutableMapOf<AppTab, TabPageState>().apply { put(selectedTab, TabPageState(0f)) }
+                }
+                // 机身圆角卡片形状：淡出中的旧页缩成卡片时裁出与机身 R 角一致的圆滑圆角
+                // （shapes 库连续曲率，与设置页覆盖层转场同款）。圆角定义在 layer 本地坐标，
+                // 随页面缩放等比变小——满屏时正好贴合机身 R 角，卡片化后保持同比例
+                val deviceCornerRadius = rememberDeviceCornerRadius()
+                val cardShape = remember(deviceCornerRadius) {
+                    UnevenRoundedRectangle(
+                        topStart = deviceCornerRadius,
+                        topEnd = deviceCornerRadius,
+                        bottomStart = deviceCornerRadius,
+                        bottomEnd = deviceCornerRadius,
+                    )
                 }
                 // 递增 z 序：最新选中的页取最高值，永远盖住正在淡出的旧页；
                 // 底部导航栏另用极大值压在所有页面之上（见下）
@@ -208,7 +224,7 @@ class MainActivity : ComponentActivity() {
                                             if (tab == selectedTab) Modifier
                                             else Modifier.clearAndSetSemantics { },
                                         )
-                                        .tabLayer(state),
+                                        .tabLayer(state, cardShape),
                                 ) {
                                     when (tab) {
                                         AppTab.Agenda -> AgendaScreen(Modifier.fillMaxSize())
@@ -320,8 +336,12 @@ private const val TabParkFraction = 1.2f
  * tab 页转场层：z 序 + 转场矩阵（平移/透明度/缩放）合并进同一个 graphicsLayer，
  * 动画每帧只更新这一个矩阵；隐藏页停靠屏外，渲染线程整层剔除。
  * translationX 取整到整像素：动画期间文字不糊，收尾正好归 0 与原位重合。
+ *
+ * 卡片圆角：缩放一旦小于 1（旧页淡出、或被中途唤回的页长回全屏途中）即裁
+ * [cardShape]——机身 R 角连续曲率，随缩放等比缩小，卡片化观感自然；缩放回 1
+ * （全屏就位、屏外停靠复位）自动恢复矩形并摘掉裁剪，无需额外开关状态。
  */
-private fun Modifier.tabLayer(state: TabPageState): Modifier = this
+private fun Modifier.tabLayer(state: TabPageState, cardShape: Shape): Modifier = this
     .zIndex(state.zIndex)
     .graphicsLayer {
         translationX = (state.x.value * size.width).roundToInt().toFloat()
@@ -329,4 +349,11 @@ private fun Modifier.tabLayer(state: TabPageState): Modifier = this
         val shrink = state.scale.value
         scaleX = shrink
         scaleY = shrink
+        if (shrink < 1f) {
+            shape = cardShape
+            clip = true
+        } else {
+            shape = RectangleShape
+            clip = false
+        }
     }
