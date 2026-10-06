@@ -33,10 +33,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.zIndex
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.ScheduleRepository
@@ -119,18 +119,11 @@ class MainActivity : ComponentActivity() {
                 val pageStates = remember {
                     mutableMapOf<AppTab, TabPageState>().apply { put(selectedTab, TabPageState(0f)) }
                 }
-                // 机身圆角卡片形状：淡出中的旧页缩成卡片时裁出与机身 R 角一致的圆滑圆角
-                // （shapes 库连续曲率，与设置页覆盖层转场同款）。圆角定义在 layer 本地坐标，
-                // 随页面缩放等比变小——满屏时正好贴合机身 R 角，卡片化后保持同比例
+                // tab 页转场圆角：滑入途中裁前缘两角、卡片化（缩小淡出）裁四角，全部取
+                // 机身 R 角（shapes 库连续曲率，与设置页覆盖层转场同款）。圆角定义在
+                // layer 本地坐标，随页面缩放等比变小——满屏时正好贴合机身 R 角
                 val deviceCornerRadius = rememberDeviceCornerRadius()
-                val cardShape = remember(deviceCornerRadius) {
-                    UnevenRoundedRectangle(
-                        topStart = deviceCornerRadius,
-                        topEnd = deviceCornerRadius,
-                        bottomStart = deviceCornerRadius,
-                        bottomEnd = deviceCornerRadius,
-                    )
-                }
+                val tabShapes = remember(deviceCornerRadius) { TabShapes(deviceCornerRadius) }
                 // 递增 z 序：最新选中的页取最高值，永远盖住正在淡出的旧页；
                 // 底部导航栏另用极大值压在所有页面之上（见下）
                 var zIndexTick by remember { mutableFloatStateOf(0f) }
@@ -224,7 +217,7 @@ class MainActivity : ComponentActivity() {
                                             if (tab == selectedTab) Modifier
                                             else Modifier.clearAndSetSemantics { },
                                         )
-                                        .tabLayer(state, cardShape),
+                                        .tabLayer(state, tabShapes),
                                 ) {
                                     when (tab) {
                                         AppTab.Agenda -> AgendaScreen(Modifier.fillMaxSize())
@@ -337,11 +330,14 @@ private const val TabParkFraction = 1.2f
  * 动画每帧只更新这一个矩阵；隐藏页停靠屏外，渲染线程整层剔除。
  * translationX 取整到整像素：动画期间文字不糊，收尾正好归 0 与原位重合。
  *
- * 卡片圆角：缩放一旦小于 1（旧页淡出、或被中途唤回的页长回全屏途中）即裁
- * [cardShape]——机身 R 角连续曲率，随缩放等比缩小，卡片化观感自然；缩放回 1
- * （全屏就位、屏外停靠复位）自动恢复矩形并摘掉裁剪，无需额外开关状态。
+ * 圆角裁剪（[TabShapes]，机身 R 角连续曲率），按优先级取用：
+ * - 缩放 < 1（卡片化：淡出中、或被中途唤回长回全屏途中）→ 裁四角；
+ * - 缩放 = 1 且 x ≠ 0（滑入途中，前缘露在屏内、后缘贴着屏外）→ 裁前缘两角，
+ *   x > 0 从右滑入裁左缘、x < 0 从左滑入裁右缘；
+ * - 就位（x = 0、缩放 = 1）→ 恢复矩形：前缘两角此时正贴机身 R 角，摘掉裁剪无跳变；
+ * 停靠屏外的隐藏页也命中"前缘两角"分支，但 alpha=0 不可见，无碍。
  */
-private fun Modifier.tabLayer(state: TabPageState, cardShape: Shape): Modifier = this
+private fun Modifier.tabLayer(state: TabPageState, shapes: TabShapes): Modifier = this
     .zIndex(state.zIndex)
     .graphicsLayer {
         translationX = (state.x.value * size.width).roundToInt().toFloat()
@@ -349,11 +345,38 @@ private fun Modifier.tabLayer(state: TabPageState, cardShape: Shape): Modifier =
         val shrink = state.scale.value
         scaleX = shrink
         scaleY = shrink
-        if (shrink < 1f) {
-            shape = cardShape
-            clip = true
-        } else {
-            shape = RectangleShape
-            clip = false
+        when {
+            shrink < 1f -> {
+                shape = shapes.card
+                clip = true
+            }
+            state.x.value != 0f -> {
+                shape = if (state.x.value > 0f) shapes.leftCorners else shapes.rightCorners
+                clip = true
+            }
+            else -> {
+                shape = RectangleShape
+                clip = false
+            }
         }
     }
+
+/**
+ * tab 页转场期的圆角裁剪形状：全部取机身 R 角、连续曲率（shapes 库
+ * [UnevenRoundedRectangle]，与设置页覆盖层转场同款），只按裁剪位置区分。
+ */
+private class TabShapes(corner: Dp) {
+    /** 左缘两角圆滑：页面停在右侧屏外或从右滑入时，露出的前缘是左缘。 */
+    val leftCorners = UnevenRoundedRectangle(topStart = corner, bottomStart = corner)
+
+    /** 右缘两角圆滑：从左滑入时露出的前缘是右缘。 */
+    val rightCorners = UnevenRoundedRectangle(topEnd = corner, bottomEnd = corner)
+
+    /** 四角全圆：缩小淡出的卡片，以及被中途唤回后长回全屏的途中。 */
+    val card = UnevenRoundedRectangle(
+        topStart = corner,
+        topEnd = corner,
+        bottomStart = corner,
+        bottomEnd = corner,
+    )
+}
