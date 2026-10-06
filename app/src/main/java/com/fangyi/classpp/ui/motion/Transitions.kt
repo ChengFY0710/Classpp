@@ -94,8 +94,9 @@ fun PageOverlayTransition(
 
     Box(modifier) {
         // 下层整页容器：覆盖层滑入时整体向左微微滑出让位、滑出时向右滑回原位（视差，
-        // 比例见 [PageOverlayParallaxFraction]）。位移挂在独立 layer 上，与 tabPage 的
-        // layer 平移各管一层互不干扰；转场中覆盖层页缘始终压住本容器右缘，不会露出底缝
+        // 比例见 [PageOverlayParallaxFraction]）。位移挂在独立 layer 上，与各 tab 页
+        // 转场层（MainActivity.tabLayer）各管一层互不干扰；转场中覆盖层页缘始终压住
+        // 本容器右缘，不会露出底缝
         Box(
             Modifier
                 .fillMaxSize()

@@ -26,10 +26,17 @@ object Motion {
     const val FastMillis = 150
 
     /**
-     * tab 平移时长：先快后慢的减速曲线下，位移的大部分集中在开头，末尾只是缓慢收住。
-     * 想让节奏更利落可下调（300ms 左右），曲线不变。
+     * tab 转场时长：旧页居中缩小淡出、新页从相对方向整屏滑入，新旧页所有属性共用
+     * [Overlay] 一条曲线、同帧启动。时长与 [PageEnterMillis] 同值——tab 切换与
+     * 设置页覆盖层进场保持同一套整页手感。想让节奏更利落可下调（440ms 左右），曲线不变。
      */
-    const val TabMillis = 400
+    const val TabMillis = 520
+
+    /**
+     * tab 转场旧页缩小目标：居中缩到该倍率、同时淡出至透明。越小收缩感越强
+     * （iOS 风格 0.9；想更含蓄可上调至 0.94 左右）。
+     */
+    const val TabShrinkScale = 0.9f
 
     /**
      * 编辑态过渡时长：顶栏 ↔ 编辑栏（ScheduleScreen 内 AnimatedContent）与底部导航栏

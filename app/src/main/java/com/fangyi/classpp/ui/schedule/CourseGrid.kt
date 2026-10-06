@@ -192,7 +192,7 @@ private val PagerState.isSeamVisible: Boolean
  * 本页自带**独立图层**（空 `graphicsLayer` 即可）：周 Pager 靠放置（placement）移动页面，
  * 页面若没有自己的图层，其绘制指令会被录进 Pager 那一层——每帧位移都要把整页
  * （日期带 + 各行卡片）的指令重录一遍，翻周时就掉帧；有图层后每帧只更新"这一层画在哪"，
- * 页面内容的指令表保持缓存（与 tab 平移同一手法，见 MainActivity.tabPage）。
+ * 页面内容的指令表保持缓存（与 tab 页转场层同一手法，见 MainActivity.tabLayer）。
  *
  * **跨节卡叠加层**：[Box] 内第二层镜像复刻行/列结构（同 weight 分列、同行高、同 CellPadding），
  * 后绘制故不透明卡片压过行分界网格线；空节点无 pointerInput，点击穿透回底层网格。

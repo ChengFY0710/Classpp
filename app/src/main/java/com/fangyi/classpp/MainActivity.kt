@@ -9,29 +9,33 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.zIndex
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.ui.motion.Motion
@@ -46,6 +50,7 @@ import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.ThemeMode
 import com.fangyi.classpp.ui.theme.ThemePreferences
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -101,17 +106,73 @@ class MainActivity : ComponentActivity() {
                 var navBarHiddenByOverlay by rememberSaveable { mutableStateOf(false) }
                 val repository = rememberScheduleRepository()
 
-                // tab 平移进度（浮点序号）：只在各页 measure 阶段被读取，
-                // 整段动画每帧只重排、不重组
-                val tabProgress = animateFloatAsState(
-                    targetValue = selectedTab.ordinal.toFloat(),
-                    // 先快后慢：Motion.Decelerate 起点即全速、此后单调减速收尾；
-                    animationSpec = tween(
-                        durationMillis = Motion.TabMillis,
-                        easing = Motion.Decelerate,
-                    ),
-                    label = "tabProgress",
-                )
+                // 惰性挂载：启动只组合默认页，其余页首次选中才进组合，挂载成本推迟到
+                // 第一次访问。挂载后常驻（切走时停靠屏外、渲染层剔除，不销毁）——按 key
+                // 重建课表页会首帧 headerHeight 跳闪，常驻保住状态，惰性省掉启动开销
+                val mountedTabs = remember { mutableStateListOf(selectedTab) }
+                // 每页一份的转场状态（首选取值即原位）：x 页宽分数（0=原位、±1=相邻屏外）、
+                // 透明度、缩放，动画全走 Animatable、每帧只更新 layer 矩阵
+                val pageStates = remember {
+                    mutableMapOf<AppTab, TabPageState>().apply { put(selectedTab, TabPageState(0f)) }
+                }
+                // 递增 z 序：最新选中的页取最高值，永远盖住正在淡出的旧页；
+                // 底部导航栏另用极大值压在所有页面之上（见下）
+                var zIndexTick by remember { mutableFloatStateOf(0f) }
+                val scope = rememberCoroutineScope()
+
+                // 切 tab：旧页居中缩小淡出、新页从相对方向整屏滑入（无压暗、无圆角裁切，
+                // 那是设置页覆盖层的专属效果）。方向由序号差决定；所有属性同一条 spec
+                // （Motion.TabMillis + Motion.Overlay，与设置页进场同一节奏）同帧启动
+                fun selectTab(tab: AppTab) {
+                    if (tab == selectedTab) return
+                    val from = selectedTab
+                    // 新页在右则从右缘滑入，在左则从左缘滑入
+                    val dir = if (tab.ordinal > from.ordinal) 1f else -1f
+                    selectedTab = tab
+                    if (tab !in mountedTabs) {
+                        mountedTabs.add(tab)
+                        // 与组合同帧生效：初始 x 即滑入起点，首帧就在屏外、不会闪现原位
+                        pageStates[tab] = TabPageState(dir)
+                    }
+                    zIndexTick += 1f
+                    pageStates.getValue(tab).zIndex = zIndexTick
+                    val spec = tween<Float>(durationMillis = Motion.TabMillis, easing = Motion.Overlay)
+                    val incoming = pageStates.getValue(tab)
+                    scope.launch {
+                        val gen = ++incoming.generation
+                        if (incoming.alpha.value <= 0f) {
+                            // 隐藏页停靠屏外：先把三属性摆到滑入起点（此刻不可见，无跳变），
+                            // 再整屏滑入——滑入全程不透明，不叠淡入淡出
+                            incoming.x.snapTo(dir)
+                            incoming.alpha.snapTo(1f)
+                            incoming.scale.snapTo(1f)
+                            incoming.x.animateTo(0f, spec)
+                        } else {
+                            // 转场中途被再次选中：从当前值就地淡回原位，不重新定位
+                            launch { incoming.x.animateTo(0f, spec) }
+                            launch { incoming.alpha.animateTo(1f, spec) }
+                            incoming.scale.animateTo(1f, spec)
+                        }
+                    }
+                    pageStates.getValue(from).let { outgoing ->
+                        scope.launch {
+                            val gen = ++outgoing.generation
+                            // 旧页原位不动（x 归 0 兜住中途被切换的残位）、居中缩小淡出，
+                            // 与新页滑入同 spec 同帧；Animatable 互斥保证连点时各属性
+                            // 一律从当前值继续，任何连点序列都无跳变
+                            launch { outgoing.x.animateTo(0f, spec) }
+                            launch { outgoing.scale.animateTo(Motion.TabShrinkScale, spec) }
+                            outgoing.alpha.animateTo(0f, spec)
+                            if (outgoing.generation == gen) {
+                                // 彻底淡出后停靠屏外：命中测试收不到、渲染线程整层剔除。
+                                // generation 守卫：若淡出途中该页又被选中，本协程已随
+                                // Animatable 互斥被取消，不会走到这里
+                                outgoing.x.snapTo(dir * TabParkFraction)
+                                outgoing.scale.snapTo(1f)
+                            }
+                        }
+                    }
+                }
 
                 // 一次性存储降级提示：get() 返回即 bootstrap 完成，loadState 已定型
                 LaunchedEffect(repository) {
@@ -132,41 +193,38 @@ class MainActivity : ComponentActivity() {
                     visible = showSettings,
                     modifier = Modifier.fillMaxSize(),
                     behind = {
-                        // 三个页面常驻组合，切 tab 只横向平移（见 tabPage）：
-                        // 若用 SaveableStateProvider 按 key 重建课表页，首帧 headerHeight
-                        // 回落到估算值再被校正，紧贴头部的日期带会明显跳闪一次。
-                        AgendaScreen(
-                            Modifier
-                                .fillMaxSize()
-                                .tabPage(
-                                    tab = AppTab.Agenda,
-                                    selectedTab = selectedTab,
-                                    progress = tabProgress,
-                                ),
-                        )
-                        ScheduleScreen(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .tabPage(
-                                    tab = AppTab.Timetable,
-                                    selectedTab = selectedTab,
-                                    progress = tabProgress,
-                                ),
-                            repository = repository,
-                            editing = editing,
-                            onEditingChange = { editing = it },
-                            onOverlayOverNavBarChange = { navBarHiddenByOverlay = it },
-                            onOpenSettings = { showSettings = true },
-                        )
-                        TodoScreen(
-                            Modifier
-                                .fillMaxSize()
-                                .tabPage(
-                                    tab = AppTab.Todo,
-                                    selectedTab = selectedTab,
-                                    progress = tabProgress,
-                                ),
-                        )
+                        // 已挂载的页面层（见上方 mountedTabs 注释）：每页包一层 Box 承载
+                        // 转场变换（tabLayer），key(tab) 保证新增页面插队时已有页面的
+                        // 节点与状态原样保留。页面内容仅组合一次、之后常驻
+                        mountedTabs.forEach { tab ->
+                            key(tab) {
+                                val state = pageStates.getValue(tab)
+                                Box(
+                                    Modifier
+                                        .fillMaxSize()
+                                        // 非选中页清空语义：屏外/淡出中的页面不该被
+                                        // 无障碍、自动化视为可达内容
+                                        .then(
+                                            if (tab == selectedTab) Modifier
+                                            else Modifier.clearAndSetSemantics { },
+                                        )
+                                        .tabLayer(state),
+                                ) {
+                                    when (tab) {
+                                        AppTab.Agenda -> AgendaScreen(Modifier.fillMaxSize())
+                                        AppTab.Timetable -> ScheduleScreen(
+                                            modifier = Modifier.fillMaxSize(),
+                                            repository = repository,
+                                            editing = editing,
+                                            onEditingChange = { editing = it },
+                                            onOverlayOverNavBarChange = { navBarHiddenByOverlay = it },
+                                            onOpenSettings = { showSettings = true },
+                                        )
+                                        AppTab.Todo -> TodoScreen(Modifier.fillMaxSize())
+                                    }
+                                }
+                            }
+                        }
                         // 编辑态或课表页全屏浮层在场时隐藏底部导航栏（设计稿如此，也避免编辑中途被切走）：
                         // 下移出屏 / 上移入屏，与顶栏的编辑栏过渡（ScheduleScreen 内 AnimatedContent）
                         // 共用 [Motion.EditMillis] 规格，同一个 editing 翻转同帧启动，两侧严格同步
@@ -180,12 +238,16 @@ class MainActivity : ComponentActivity() {
                                 // 滑向自身高度下方：下移出
                                 animationSpec = tween(Motion.EditMillis, easing = Motion.Standard),
                             ) { it } + fadeOut(tween(Motion.EditMillis)),
-                            modifier = Modifier.align(Alignment.BottomCenter),
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                // 导航栏永远压在所有页面之上：页面 z 序随选中递增无上界，
+                                // 用极大值一劳永逸——切 tab 转场中新页从它下方滑过，它纹丝不动
+                                .zIndex(Float.MAX_VALUE),
                         ) {
                             BottomNavBar(
                                 selectedTab = selectedTab,
                                 // 退场动画期间仍在组合中，挡掉点击：编辑中途或浮层打开时不许切 tab
-                                onTabSelected = { if (!editing && !navBarHiddenByOverlay) selectedTab = it },
+                                onTabSelected = { if (!editing && !navBarHiddenByOverlay) selectTab(it) },
                             )
                         }
                     },
@@ -232,36 +294,39 @@ private fun systemBarStyle(dark: Boolean): SystemBarStyle =
     }
 
 /**
- * tab 页横向平移：视觉位置 = (自身序号 − 动画进度) × 页宽，三页像一条连续带子——
- * 旧页滑出、新页滑入；跨两个 tab 时中间页会扫过。它拆成两半、各司其职：
- *
- * - **布局槽位**取"最终"位置（选中页 0，其余按序号差 ±N 屏）：命中测试、滚动、语义都由
- *   布局决定，离屏页自然收不到点击，与切 tab 前后一致；
- * - **layer 平移**只承担动画中的追赶位移（起始 ±N 屏 → 收尾 0）。
- *
- * 拆开是为了帧率：布局位移会改变节点在父层绘制指令里的位置，父层必须把三页的绘制指令
- * 整段重录（课表页含日期带 + 三个周页 × 每行五格卡片，一帧重录一次就掉帧）；
- * layer 平移只更新变换矩阵，子树布局、绘制指令、文字排版一概不动，离屏层还能被整层剔除。
- * 两半相加仍是连续带子：槽位 (序号 − 目标) × 页宽 + layer (目标 − 进度) × 页宽
- * = (序号 − 进度) × 页宽。
- *
- * 三页常驻组合、只挪位置、不重建（见调用处注释：重建会让课表页首帧跳闪）。
- * [progress] 以 [State] 传入、在布局与 layer 阶段读取：动画期间不重组、不重排。
+ * tab 页的转场状态（每页一份，见 [selectTab]）：动画全走 Animatable，在
+ * [tabLayer] 的 graphicsLayer 块内读取——每帧只更新变换矩阵，子树布局、绘制指令、
+ * 文字排版一概不动，与 PageOverlayTransition 同一性能形态。
  */
-private fun Modifier.tabPage(
-    tab: AppTab,
-    selectedTab: AppTab,
-    progress: State<Float>,
-): Modifier {
-    val target = selectedTab.ordinal
-    val placed = this.layout { measurable, constraints ->
-        val placeable = measurable.measure(constraints)
-        val slotX = (tab.ordinal - target) * placeable.width
-        layout(placeable.width, placeable.height) { placeable.place(slotX, 0) }
-    }
-    val animated = placed.graphicsLayer {
-        // 取整到整像素：动画期间文字不糊，收尾正好归 0 与原位重合
-        translationX = ((target - progress.value) * size.width).roundToInt().toFloat()
-    }
-    return if (tab == selectedTab) animated else animated.clearAndSetSemantics {}
+private class TabPageState(initialX: Float) {
+    /** 页宽分数：0=原位、±1=相邻一屏外、淡出后停靠 ±[TabParkFraction]。 */
+    val x = Animatable(initialX)
+
+    val alpha = Animatable(1f)
+
+    val scale = Animatable(1f)
+
+    /** 绘制层级：每次选中递增（[selectTab]），最新页盖住正在淡出的旧页。 */
+    var zIndex by mutableFloatStateOf(0f)
+
+    /** 转场协程代号：淡出协程收尾（停靠屏外）前校验，被新协程取代即放弃。 */
+    var generation = 0
 }
+
+/** 旧页淡出后的屏外停靠位：多留 0.2 屏余量，任何缩放与像素圆整下都不会露边。 */
+private const val TabParkFraction = 1.2f
+
+/**
+ * tab 页转场层：z 序 + 转场矩阵（平移/透明度/缩放）合并进同一个 graphicsLayer，
+ * 动画每帧只更新这一个矩阵；隐藏页停靠屏外，渲染线程整层剔除。
+ * translationX 取整到整像素：动画期间文字不糊，收尾正好归 0 与原位重合。
+ */
+private fun Modifier.tabLayer(state: TabPageState): Modifier = this
+    .zIndex(state.zIndex)
+    .graphicsLayer {
+        translationX = (state.x.value * size.width).roundToInt().toFloat()
+        alpha = state.alpha.value
+        val shrink = state.scale.value
+        scaleX = shrink
+        scaleY = shrink
+    }
