@@ -72,8 +72,8 @@ class ScheduleRepository internal constructor(
             LoadIssue.ResetAfterCorruption -> LoadState.ResetAfterCorruption
         }
         val file = when (outcome) {
-            is LoadOutcome.Loaded -> outcome.file
-            is LoadOutcome.Fresh -> outcome.file
+            is LoadOutcome.Loaded<ScheduleFile> -> outcome.file
+            is LoadOutcome.Fresh<ScheduleFile> -> outcome.file
         }
         val activeExists = file.activeScheduleId != null &&
             file.schedules.any { it.id == file.activeScheduleId }

@@ -113,10 +113,11 @@ class ScheduleRepositoryTest {
         val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
 
         val failing = object : ScheduleStore {
-            override fun load(): LoadOutcome = LoadOutcome.Fresh(
-                com.fangyi.classpp.data.model.ScheduleFile(),
-                LoadIssue.None,
-            )
+            override fun load(): LoadOutcome<com.fangyi.classpp.data.model.ScheduleFile> =
+                LoadOutcome.Fresh(
+                    com.fangyi.classpp.data.model.ScheduleFile(),
+                    LoadIssue.None,
+                )
             override fun save(file: com.fangyi.classpp.data.model.ScheduleFile): StoreResult =
                 StoreResult.Failed("disk full")
         }

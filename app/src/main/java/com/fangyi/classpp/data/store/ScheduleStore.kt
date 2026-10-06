@@ -5,18 +5,21 @@ import com.fangyi.classpp.data.model.SCHEDULE_FORMAT_VERSION
 import com.fangyi.classpp.data.model.ScheduleFile
 import java.io.File
 
-/** 整库文件的读取结果 */
-sealed class LoadOutcome {
+/**
+ * 整库文件的读取结果；[F] 为各域的文件信封类型（课表 ScheduleFile / 待办 TodoFile），
+ * 读写协议（tmp+bak+rename、损坏降级）在两个域间完全共享。
+ */
+sealed class LoadOutcome<out F> {
     abstract val issue: LoadIssue
 
     /** 解析成功（[issue] 标注是否从备份恢复） */
-    data class Loaded(
-        val file: ScheduleFile,
+    data class Loaded<F>(
+        val file: F,
         override val issue: LoadIssue = LoadIssue.None,
-    ) : LoadOutcome()
+    ) : LoadOutcome<F>()
 
     /** 新起点：首次安装，或数据全损后重置 */
-    data class Fresh(val file: ScheduleFile, override val issue: LoadIssue) : LoadOutcome()
+    data class Fresh<F>(val file: F, override val issue: LoadIssue) : LoadOutcome<F>()
 }
 
 /** 读取过程中发现的数据问题（映射为仓库的 LoadState 供 UI 提示） */
@@ -33,7 +36,7 @@ sealed class StoreResult {
  * 单文件方案：`activeScheduleId` 与课表列表必须原子一致。
  */
 interface ScheduleStore {
-    fun load(): LoadOutcome
+    fun load(): LoadOutcome<ScheduleFile>
     fun save(file: ScheduleFile): StoreResult
 }
 
@@ -55,7 +58,7 @@ class FileScheduleStore(private val dir: File) : ScheduleStore {
     private val tmp = File(dir, TMP_NAME)
     private val bak = File(dir, BAK_NAME)
 
-    override fun load(): LoadOutcome {
+    override fun load(): LoadOutcome<ScheduleFile> {
         if (!dir.exists()) dir.mkdirs()
 
         if (!main.exists()) {
