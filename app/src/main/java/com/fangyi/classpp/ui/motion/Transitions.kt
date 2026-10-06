@@ -8,7 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -25,13 +24,15 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.kyant.shapes.UnevenRoundedRectangle
 import kotlinx.coroutines.delay
 
 /**
  * 整页覆盖层转场（设置页覆盖层与个性化子页共用，两层转场同源）：[overlay] 整页从右缘
  * 滑入盖住 [behind]。完整动效四件套同帧启动、同一节奏（[Motion.PageEnterMillis] /
- * [Motion.PageExitMillis] + [Motion.Standard]）：
+ * [Motion.PageExitMillis] + [Motion.PageTransition]）：
  * - 背后整页左移让位视差（比例 [PageOverlayParallaxFraction]，layer 平移，动画期间
  *   子树布局与绘制指令一概不动）；
  * - 压暗遮罩淡入淡出（Material scrim）：进场时压暗下层提供进深，退场时随滑出恢复；
@@ -65,7 +66,7 @@ fun PageOverlayTransition(
             targetValue = if (visible) 1f else 0f,
             animationSpec = tween(
                 durationMillis = if (visible) Motion.PageEnterMillis else Motion.PageExitMillis,
-                easing = Motion.Standard,
+                easing = Motion.PageTransition,
             ),
         )
     }
@@ -74,8 +75,13 @@ fun PageOverlayTransition(
     val settled by remember { derivedStateOf { progress.value >= 1f } }
 
     // 左缘圆角开关：内容首帧必然不在场，初始即为开（圆角恒定全开、不随滑动插值收放）；
-    // 完全就位后再保持一小段，画面彻底静止再恢复矩形贴边并摘掉裁剪
-    val leftCornerPx = rememberLeftCornerPx()
+    // 完全就位后再保持一小段，画面彻底静止再恢复矩形贴边并摘掉裁剪。
+    // 圆角走全局同款连续曲率形状（UnevenRoundedRectangle 默认 Continuous，圆滑圆角），
+    // 转场期页面像一张圆滑卡片滑过背景，与全局卡片形状风格一致
+    val leftCornerRadius = rememberLeftCornerRadius()
+    val leftCornerShape = remember(leftCornerRadius) {
+        UnevenRoundedRectangle(topStart = leftCornerRadius, bottomStart = leftCornerRadius)
+    }
     var cornersOn by remember { mutableStateOf(true) }
     LaunchedEffect(settled) {
         if (settled) {
@@ -118,10 +124,7 @@ fun PageOverlayTransition(
                 .graphicsLayer {
                     translationX = (1f - progress.value) * size.width
                     if (cornersOn) {
-                        shape = RoundedCornerShape(
-                            topStart = leftCornerPx,
-                            bottomStart = leftCornerPx,
-                        )
+                        shape = leftCornerShape
                         clip = true
                     } else {
                         shape = RectangleShape
@@ -152,9 +155,9 @@ val LocalPageOverlayActive = compositionLocalOf { true }
  */
 private const val PageOverlayParallaxFraction = 0.1f
 
-/** 左缘圆角半径（px）：API 31+ 读系统真实 R 角，低版本退化 24dp 近似。 */
+/** 左缘圆角半径：API 31+ 读系统真实 R 角，低版本退化 24dp 近似。 */
 @Composable
-private fun rememberLeftCornerPx(): Float {
+private fun rememberLeftCornerRadius(): Dp {
     val view = LocalView.current
     val density = LocalDensity.current
     return remember {
@@ -169,6 +172,8 @@ private fun rememberLeftCornerPx(): Float {
         } else {
             0
         }
-        maxOf(tl, bl).takeIf { it > 0 }?.toFloat() ?: with(density) { 24.dp.toPx() }
+        maxOf(tl, bl).takeIf { it > 0 }
+            ?.let { with(density) { it.toFloat().toDp() } }
+            ?: 24.dp
     }
 }

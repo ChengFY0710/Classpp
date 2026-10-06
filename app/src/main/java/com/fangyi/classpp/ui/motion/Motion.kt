@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.motion
 
 import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -12,7 +13,8 @@ import androidx.compose.animation.core.spring
  * 全局动效规格（时长 / 曲线 / 弹簧）的唯一定义点：动画调用点从这里取 token，
  * 调整节奏只动这一个文件。曲线名沿用 Material Motion 语义——[Standard] 标准
  * （先加速后减速）、[Decelerate] 减速（起点即全速、单调收慢，用于进场与微交互）、
- * [Accelerate] 加速（先慢后快，用于退场收场）。
+ * [Accelerate] 加速（先慢后快，用于退场收场）；另有整页覆盖层专用的
+ * [PageTransition]（iOS 风格强非线性，前重后轻）。
  *
  * 仅供单一效果使用的参数（视差比例、手势阈值等）不在此列，留在各效果文件内。
  */
@@ -37,7 +39,7 @@ object Motion {
     const val EditMillis = 360
 
     /**
-     * 整页覆盖层（设置页、个性化子页）进场时长：整页右滑入，配合 [Standard]。
+     * 整页覆盖层（设置页、个性化子页）进场时长：整页右滑入，配合 [PageTransition]。
      * 子页转场必须与设置页覆盖层本身同源，同源才有连续感。
      */
     const val PageEnterMillis = 440
@@ -74,6 +76,15 @@ object Motion {
 
     /** 加速曲线：先慢后快，退场收场用，与 [Decelerate] 成「同族曲线对」。 */
     val Accelerate: Easing = FastOutLinearInEasing
+
+    /**
+     * 整页覆盖层转场曲线（设置页、个性化子页共用）：iOS 风格强非线性
+     * cubic-bezier(0.32, 0.72, 0, 1)（UIKit 弹层/push 同款）——起步即接近全速、
+     * 大部分位移集中在开头，长尾缓慢收住，比 [Standard] 更「前重后轻」。
+     * 进场与退场同一条曲线（退场只是时长更短，同 iOS pop），下层视差与压暗遮罩
+     * 随同一条进度推进。
+     */
+    val PageTransition: Easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
 
     /**
      * 松手回弹归位弹簧：无过冲（NoBouncy）、中低刚度，接近终点自然减速停住。
