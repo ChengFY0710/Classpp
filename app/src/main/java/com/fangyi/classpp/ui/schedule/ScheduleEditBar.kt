@@ -1,8 +1,6 @@
 package com.fangyi.classpp.ui.schedule
 
 import androidx.annotation.DrawableRes
-import androidx.compose.animation.core.AnimationVector1D
-import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -59,8 +57,6 @@ private val EditActionBarHeight = 64.dp
  *
  * [blurProgress] / [hazeState]：与 [ScheduleHeader] 折叠后同一套背景模糊——
  * 内容滚到编辑栏下方时按 [blurProgress] 渐入，顶部最强、向下渐弱；回到顶部恢复不透明。
- * [blurReveal] 为毛玻璃渐入系数（0~1），tab 转场滑入期间由调用方从 0 渐回 1，
- * 乘进模糊 alpha 掩护重新可见首帧可能过期的采样；常态为 1。
  */
 @Composable
 fun ScheduleEditBar(
@@ -71,7 +67,6 @@ fun ScheduleEditBar(
     modifier: Modifier = Modifier,
     blurProgress: Float = 0f,
     hazeState: HazeState? = null,
-    blurReveal: Animatable<Float, AnimationVector1D> = Animatable(1f),
     daysPerWeek: Int = 5,
 ) {
     // 列数只认资源里真有的星期名（同 ScheduleHeader）
@@ -80,8 +75,6 @@ fun ScheduleEditBar(
     // 星期行的列标签用单字简称资源（同 ScheduleHeader），勿对全名做字符串假设
     val weekdays = stringArrayResource(R.array.weekdays_short).take(days)
     val progress = blurProgress.coerceIn(0f, 1f)
-    // 毛玻璃渐入系数：本组件内读取（tab 转场滑入期间逐帧重组只波及编辑栏自身）
-    val reveal = blurReveal.value.coerceIn(0f, 1f)
     // hazeEffect 的 block 在绘制期执行、非 composable 上下文：tint 取值提到 modifier 之前
     val hazeTint = MaterialTheme.classppColors.hazeTint
     Column(
@@ -90,11 +83,12 @@ fun ScheduleEditBar(
             // surface 兜底：progress≈0 时与原不透明背景逐帧一致
             .background(Color.Transparent)
             .then(
-                if (hazeState != null && progress > 0f && reveal > 0f) {
-                    // 背景模糊画在兜底色之上、内容之下；alpha 随进度渐入实现无缝衔接，
-                    // 再乘毛玻璃渐入系数（tab 转场滑入期间从 0 渐回 1，掩护重进首帧采样）
+                if (hazeState != null && progress > 0f) {
+                    // 背景模糊画在兜底色之上、内容之下；alpha 随进度渐入实现无缝衔接。
+                    // forceInvalidateOnPreDraw 与 ScheduleHeader 同款：源重画后强制重采样，
+                    // 杜绝快速切 tab 后首帧画出空内容（只剩白底）的闪帧
                     Modifier.hazeEffect(hazeState) {
-                        alpha = progress * reveal
+                        alpha = progress
                         blurRadius = 32.dp
                         progressive = HazeProgressive.verticalGradient(
                             startIntensity = 1f,
@@ -102,6 +96,7 @@ fun ScheduleEditBar(
                         )
                         tints = listOf(HazeTint(hazeTint.copy(alpha = 0.30f)))
                         noiseFactor = 0f
+                        forceInvalidateOnPreDraw = true
                     }
                 } else {
                     Modifier

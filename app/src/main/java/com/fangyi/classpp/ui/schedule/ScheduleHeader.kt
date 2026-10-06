@@ -1,8 +1,6 @@
 package com.fangyi.classpp.ui.schedule
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.AnimationVector1D
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
@@ -194,8 +192,6 @@ internal fun collapsedPillX(
  * Haze 背景模糊（叠在 surface 兜底色之上），顶部最强、向下渐弱；
  * 同时驱动周数胶囊从扁平灰底过渡到半透明白 + 投影。
  * [hazeState] 为 null（如 @Preview）时保持不透明背景。
- * [blurReveal] 为毛玻璃渐入系数（0~1）：tab 转场滑入期间由调用方从 0 渐回 1，
- * 乘进模糊 alpha 掩护重新可见首帧可能过期的采样；常态为 1，逐帧读取只重组本组件。
  *
  * [termStartWeekdayIndex]/[termEndWeekdayIndex] 非空时星期行的对应列绿（Correct）/红（Error）：
  * 查看开学/结课所在周时由调用方传入该日期的星期下标（周一起始，与 [weekIndex] 同规则），
@@ -214,7 +210,6 @@ fun ScheduleHeader(
     modifier: Modifier = Modifier,
     blurProgress: Float = 0f,
     hazeState: HazeState? = null,
-    blurReveal: Animatable<Float, AnimationVector1D> = Animatable(1f),
     weekRange: IntRange = 1..20,
     daysPerWeek: Int = 5,
     onDaysPerWeekToggle: (() -> Unit)? = null,
@@ -224,8 +219,6 @@ fun ScheduleHeader(
 ) {
     val fraction = collapseFraction.coerceIn(0f, 1f)
     val progress = blurProgress.coerceIn(0f, 1f)
-    // 毛玻璃渐入系数：本组件内读取（tab 转场滑入期间逐帧重组只波及顶栏自身）
-    val reveal = blurReveal.value.coerceIn(0f, 1f)
     val iconAlpha = 1f - fraction
     val iconsEnabled = fraction < 0.5f
 
@@ -407,11 +400,13 @@ fun ScheduleHeader(
             // surface 兜底：progress≈0 时与原不透明背景逐帧一致
             .background(MaterialTheme.colorScheme.surface)
             .then(
-                if (hazeState != null && progress > 0f && reveal > 0f) {
-                    // 背景模糊画在兜底色之上、内容之下；alpha 随进度渐入实现无缝衔接，
-                    // 再乘毛玻璃渐入系数（tab 转场滑入期间从 0 渐回 1，掩护重进首帧采样）
+                if (hazeState != null && progress > 0f) {
+                    // 背景模糊画在兜底色之上、内容之下；alpha 随进度渐入实现无缝衔接。
+                    // forceInvalidateOnPreDraw：源网格重画后（含捕获层重建的场合）强制本
+                    // 效果重采样，杜绝快速切 tab 后首帧画出空内容（只剩白底）的闪帧——
+                    // Haze 在 API<32 上本来就强制此行为，这里对齐到所有版本
                     Modifier.hazeEffect(hazeState) {
-                        alpha = progress * reveal
+                        alpha = progress
                         blurRadius = 32.dp
                         progressive = HazeProgressive.verticalGradient(
                             startIntensity = 1f,
@@ -419,6 +414,7 @@ fun ScheduleHeader(
                         )
                         tints = listOf(HazeTint(hazeTint.copy(alpha = 0.30f)))
                         noiseFactor = 0f
+                        forceInvalidateOnPreDraw = true
                     }
                 } else {
                     Modifier

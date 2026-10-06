@@ -8,7 +8,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -157,11 +156,6 @@ private fun rememberTodayIso(): State<IsoDate> {
  * 导航栏在组合顺序上位于本页之上、会画在浮层头顶，故由调用方以「藏」实现「盖」——
  * 浮层入场即上报、退场动画播完（卸载）才解除。
  *
- * [blurReveal]：顶栏毛玻璃渐入系数（0~1），由调用方（MainActivity 的 TabPageState）在
- * tab 转场时驱动——页面停靠屏外期间 haze 源停止绘制，重新滑入首帧的模糊采样可能过期，
- * 滑入全程把模糊从 0 渐入掩护。仅透传给顶栏/编辑栏、不在本组件读取值，
- * 渐入动画的逐帧重组只波及顶栏自身。
- *
  * 数据来自 [repository]（null = 尚未加载完成，显示指示器）；
  * 无激活课表时显示空状态，「创建课表」按钮打开 [NewScheduleSheet] 新建首份课表。
  */
@@ -173,7 +167,6 @@ fun ScheduleScreen(
     onEditingChange: (Boolean) -> Unit = {},
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
     onOpenSettings: () -> Unit = {},
-    blurReveal: Animatable<Float, AnimationVector1D> = Animatable(1f),
 ) {
     // get() 返回即 bootstrap 完成，此分支仅首帧毫秒级；早返回后下方 smart cast 为非空
     if (repository == null) {
@@ -798,7 +791,6 @@ fun ScheduleScreen(
                             onDaysPerWeekToggle = onToggleDaysPerWeek,
                             blurProgress = blurProgress,
                             hazeState = hazeState,
-                            blurReveal = blurReveal,
                             termStartWeekdayIndex = termStartWeekdayIndex,
                             termEndWeekdayIndex = termEndWeekdayIndex,
                             modifier = Modifier.onGloballyPositioned { coords ->
@@ -816,7 +808,6 @@ fun ScheduleScreen(
                             // 与折叠后的原顶栏同一套背景模糊：内容滚到栏下时渐入
                             blurProgress = blurProgress,
                             hazeState = hazeState,
-                            blurReveal = blurReveal,
                             // 编辑态的星期行同样按课表天数分列，与网格列对齐
                             daysPerWeek = schedule.daysPerWeek,
                             modifier = Modifier.onGloballyPositioned { coords ->

@@ -121,6 +121,9 @@ class MainActivity : ComponentActivity() {
                 val onOverlayOverNavBarChange =
                     remember { { value: Boolean -> navBarHiddenByOverlay = value } }
                 val onOpenSettings = remember { { showSettings = true } }
+                // 页面 modifier 同理记忆化：Modifier.fillMaxSize() 每次调用都是新实例，
+                // 内联写在调用点上会让三页在每次切 tab 时都白重组一遍
+                val pageModifier = remember { Modifier.fillMaxSize() }
 
                 // 惰性挂载：启动只组合默认页，其余页首次选中才进组合，挂载成本推迟到
                 // 第一次访问。挂载后常驻（切走时停靠屏外、渲染层剔除，不销毁）——按 key
@@ -162,22 +165,17 @@ class MainActivity : ComponentActivity() {
                     scope.launch {
                         val gen = ++incoming.generation
                         if (incoming.alpha.value <= 0f) {
-                            // 隐藏页停靠屏外：先把属性摆到滑入起点（此刻不可见，无跳变），
-                            // 再整屏滑入——滑入全程不透明，不叠淡入淡出。毛玻璃渐入系数同步
-                            // 归零后与滑入同 spec 渐回 1：停靠期间 haze 源停止绘制，重新可见
-                            // 首帧的模糊采样可能过期，渐入的起步帧正好掩护
+                            // 隐藏页停靠屏外：先把三属性摆到滑入起点（此刻不可见，无跳变），
+                            // 再整屏滑入——滑入全程不透明，不叠淡入淡出。转场全程只有图层
+                            // 矩阵在动，页面显示列表（含顶栏已画好的模糊）原样复用，不重画
                             incoming.x.snapTo(dir)
                             incoming.alpha.snapTo(1f)
                             incoming.scale.snapTo(1f)
-                            incoming.blurReveal.snapTo(0f)
-                            launch { incoming.blurReveal.animateTo(1f, spec) }
                             incoming.x.animateTo(0f, spec)
                         } else {
-                            // 转场中途被再次选中：从当前值就地淡回原位，不重新定位；
-                            // 渐入系数也就地拉回（连点打断渐入时可能停在中间值）
+                            // 转场中途被再次选中：从当前值就地淡回原位，不重新定位
                             launch { incoming.x.animateTo(0f, spec) }
                             launch { incoming.alpha.animateTo(1f, spec) }
-                            launch { incoming.blurReveal.animateTo(1f, spec) }
                             incoming.scale.animateTo(1f, spec)
                         }
                     }
@@ -196,8 +194,6 @@ class MainActivity : ComponentActivity() {
                                 // Animatable 互斥被取消，不会走到这里
                                 outgoing.x.snapTo(dir * TabParkFraction)
                                 outgoing.scale.snapTo(1f)
-                                // 毛玻璃渐入系数归零：此刻不可见无跳变，下次滑入从纯色渐入
-                                outgoing.blurReveal.snapTo(0f)
                             }
                         }
                     }
@@ -246,17 +242,16 @@ class MainActivity : ComponentActivity() {
                                         .tabLayer(state, tabShapes),
                                 ) {
                                     when (tab) {
-                                        AppTab.Agenda -> AgendaScreen(Modifier.fillMaxSize())
+                                        AppTab.Agenda -> AgendaScreen(pageModifier)
                                         AppTab.Timetable -> ScheduleScreen(
-                                            modifier = Modifier.fillMaxSize(),
+                                            modifier = pageModifier,
                                             repository = repository,
                                             editing = editing,
                                             onEditingChange = onEditingChange,
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                             onOpenSettings = onOpenSettings,
-                                            blurReveal = pageStates.getValue(AppTab.Timetable).blurReveal,
                                         )
-                                        AppTab.Todo -> TodoScreen(Modifier.fillMaxSize())
+                                        AppTab.Todo -> TodoScreen(pageModifier)
                                     }
                                 }
                             }
@@ -341,13 +336,6 @@ private class TabPageState(initialX: Float) {
     val alpha = Animatable(1f)
 
     val scale = Animatable(1f)
-
-    /**
-     * 顶栏毛玻璃渐入系数（1=全模糊、0=纯色兜底），仅课表页消费（其余页持有不用）：
-     * 页面停靠屏外期间 haze 源停止绘制，重新滑入的首帧模糊采样可能过期——
-     * 滑入全程把模糊从 0 渐入掩护，落位正好到位；淡出方向不打折，模糊随整层淡出。
-     */
-    val blurReveal = Animatable(1f)
 
     /** 绘制层级：每次选中递增（[selectTab]），最新页盖住正在淡出的旧页。 */
     var zIndex by mutableFloatStateOf(0f)
