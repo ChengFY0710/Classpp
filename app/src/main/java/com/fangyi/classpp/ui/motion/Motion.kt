@@ -96,7 +96,8 @@ object Motion {
 
     /**
      * 松手回弹归位弹簧：无过冲（NoBouncy）、中低刚度，接近终点自然减速停住。
-     * 当前用于浮层拖拽松手后的回位（跟手 snapTo 之后的收尾）。
+     * 当前用于浮层拖拽松手后的回位（跟手 snapTo 之后的收尾），
+     * 以及待办顶栏分组条的极限橡皮筋回弹（Overscroll 效果的回弹 spec）。
      */
     val Settle: AnimationSpec<Float> =
         spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)

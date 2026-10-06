@@ -7,6 +7,9 @@
     <string name="nav_timetable">Timetable</string>
     <string name="nav_todo">Todo</string>
     <string name="nav_todo_create">New</string>
+    <string name="todo_group_all">All</string>
+    <string name="cd_todo_folder">Folders</string>
+    <string name="cd_todo_sort">Sort</string>
     <string name="month_day_format">%1$d/%2$d</string>
     <string name="date_title_format">%1$s %2$s</string>
     <string name="back_to_current_week">Back to this week</string>
