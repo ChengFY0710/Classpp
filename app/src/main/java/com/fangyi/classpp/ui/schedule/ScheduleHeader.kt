@@ -1,9 +1,12 @@
 package com.fangyi.classpp.ui.schedule
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -315,10 +318,22 @@ fun ScheduleHeader(
                     letterSpacing = (-0.3).sp,
                 )
                 Spacer(Modifier.weight(1f))
+                // 箭头方向只在按钮可见时更新：跳回今周后 selectedWeek == todayWeek，
+                // 渐隐退场若沿用实时方向会当场翻面（左箭头变右箭头）
+                val backLookingForward = todayWeek != null && selectedWeek > todayWeek
+                var backLookingForwardShown by remember { mutableStateOf(backLookingForward) }
                 if (showBackToCurrent) {
+                    backLookingForwardShown = backLookingForward
+                }
+                // 渐隐出现/渐隐消失（Motion 微交互节奏：进场减速、退场加速）
+                AnimatedVisibility(
+                    visible = showBackToCurrent,
+                    enter = fadeIn(tween(Motion.FastMillis, easing = Motion.Decelerate)),
+                    exit = fadeOut(tween(Motion.FastMillis, easing = Motion.Accelerate)),
+                ) {
                     BackToCurrentButton(
                         // 箭头指向"回到本周"的方向：查看更后的周 → 左箭头往回，更前的周 → 右箭头往前
-                        icon = if (todayWeek == null || selectedWeek > todayWeek) {
+                        icon = if (backLookingForwardShown) {
                             R.drawable.ic_arrow_circle_left
                         } else {
                             R.drawable.ic_arrow_circle_right
