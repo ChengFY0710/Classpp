@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -79,6 +80,12 @@ internal val TopBarHeight = 56.dp  //顶栏行自然高度，也是最大折叠�
 
 private val WeekPillHeight = 40.dp
 private val HeaderEdgePadding = 33.dp
+
+/**
+ * 图标中心距屏幕边缘恒为 44dp（原实现 = 20dp 留白 + 48dp 按钮盒的一半），盒宽取其两倍、
+ * IconButton 内容居中 → 图标原位不动，只有热区变大（40×40 → 64×40）。
+ */
+private val TopBarIconTouchWidth = 64.dp
 
 /** 折叠态胶囊右缘距屏幕右侧的距离（与顶栏设置图标右缘 ~29dp 基本对齐） */
 private val PillEndPadding = 30.dp
@@ -246,6 +253,7 @@ fun ScheduleHeader(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp)
                     .height(TopBarHeight * (1f - fraction))
                     .clipToBounds(),
             ) {
@@ -254,7 +262,10 @@ fun ScheduleHeader(
                     enabled = iconsEnabled,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
-                        .padding(start = 20.dp)
+                        // 盒子从屏幕左缘铺起并铺满行高，热区随之扩大；内容居中，图标原位不动
+                        .fillMaxHeight()
+                        .padding(top = 8.dp, bottom = 8.dp)
+                        .width(TopBarIconTouchWidth)
                         .graphicsLayer { alpha = iconAlpha },
                 ) {
                     Icon(
@@ -269,7 +280,10 @@ fun ScheduleHeader(
                     enabled = iconsEnabled,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
-                        .padding(end = 20.dp)
+                        // 同编辑按钮：热区铺到屏幕右缘，图标居中原位
+                        .fillMaxHeight()
+                        .padding(top = 8.dp, bottom = 8.dp)
+                        .width(TopBarIconTouchWidth)
                         .graphicsLayer { alpha = iconAlpha },
                 ) {
                     Icon(
