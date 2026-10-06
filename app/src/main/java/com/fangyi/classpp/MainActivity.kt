@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.zIndex
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.ScheduleRepository
+import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
 import com.fangyi.classpp.ui.motion.rememberDeviceCornerRadius
@@ -110,7 +111,10 @@ class MainActivity : ComponentActivity() {
                 // 画在页面（连同页内浮层）之上，只能以「藏」实现浮层「盖住」它。
                 // saveable 记住：旋转重建时浮层若开着，导航栏首帧就不闪现
                 var navBarHiddenByOverlay by rememberSaveable { mutableStateOf(false) }
+                // 新建待办浮层开关：待办页已选中时再点底部导航的「新建」胶囊置真
+                var showNewTodoSheet by rememberSaveable { mutableStateOf(false) }
                 val repository = rememberScheduleRepository()
+                val todoRepository = rememberTodoRepository()
 
                 // 回调记忆化：ScheduleScreen 的其余入参都稳定（repository 单例、editing 仅
                 // 编辑翻转才变），回调若每次重组都是新实例，切 tab 改 selectedTab 就会连带
@@ -121,6 +125,7 @@ class MainActivity : ComponentActivity() {
                 val onOverlayOverNavBarChange =
                     remember { { value: Boolean -> navBarHiddenByOverlay = value } }
                 val onOpenSettings = remember { { showSettings = true } }
+                val onNewTodoSheetDismiss = remember { { showNewTodoSheet = false } }
                 // 页面 modifier 同理记忆化：Modifier.fillMaxSize() 每次调用都是新实例，
                 // 内联写在调用点上会让三页在每次切 tab 时都白重组一遍
                 val pageModifier = remember { Modifier.fillMaxSize() }
@@ -251,7 +256,13 @@ class MainActivity : ComponentActivity() {
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                             onOpenSettings = onOpenSettings,
                                         )
-                                        AppTab.Todo -> TodoScreen(pageModifier)
+                                        AppTab.Todo -> TodoScreen(
+                                            modifier = pageModifier,
+                                            repository = todoRepository,
+                                            showNewTodoSheet = showNewTodoSheet,
+                                            onNewTodoSheetDismiss = onNewTodoSheetDismiss,
+                                            onOverlayOverNavBarChange = onOverlayOverNavBarChange,
+                                        )
                                     }
                                 }
                             }
@@ -277,8 +288,17 @@ class MainActivity : ComponentActivity() {
                         ) {
                             BottomNavBar(
                                 selectedTab = selectedTab,
-                                // 退场动画期间仍在组合中，挡掉点击：编辑中途或浮层打开时不许切 tab
-                                onTabSelected = { if (!editing && !navBarHiddenByOverlay) selectTab(it) },
+                                // 退场动画期间仍在组合中，挡掉点击：编辑中途或浮层打开时不许切 tab。
+                                // 待办页已选中时胶囊即「新建」入口：再点呼起新建待办浮层
+                                onTabSelected = { tab ->
+                                    if (!editing && !navBarHiddenByOverlay) {
+                                        if (tab == selectedTab && tab == AppTab.Todo) {
+                                            showNewTodoSheet = true
+                                        } else {
+                                            selectTab(tab)
+                                        }
+                                    }
+                                },
                             )
                         }
                     },
@@ -309,6 +329,20 @@ private fun rememberScheduleRepository(): ScheduleRepository? {
     val context = LocalContext.current
     LaunchedEffect(context) {
         repository = ScheduleRepository.get(context.applicationContext)
+    }
+    return repository
+}
+
+/**
+ * 进程级待办仓库：remember 持有、LaunchedEffect 内调起 suspend [TodoRepository.get]。
+ * 返回即磁盘加载完成 ⇒ 非 null 即数据就绪；null 仅首帧毫秒级（各屏自行显示加载态）。
+ */
+@Composable
+private fun rememberTodoRepository(): TodoRepository? {
+    var repository by remember { mutableStateOf<TodoRepository?>(null) }
+    val context = LocalContext.current
+    LaunchedEffect(context) {
+        repository = TodoRepository.get(context.applicationContext)
     }
     return repository
 }
