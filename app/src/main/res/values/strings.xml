@@ -6,6 +6,7 @@
     <string name="nav_schedule">日程</string>
     <string name="nav_timetable">课表</string>
     <string name="nav_todo">待办</string>
+    <string name="nav_todo_create">新建</string>
     <string name="month_day_format">%1$d月%2$d日</string>
     <string name="date_title_format">%1$s %2$s</string>
     <string name="back_to_current_week">返回本周</string>

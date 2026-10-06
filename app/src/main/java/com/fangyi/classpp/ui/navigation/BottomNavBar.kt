@@ -44,10 +44,19 @@ import com.fangyi.classpp.ui.theme.PillShape
 enum class AppTab(
     @DrawableRes val iconRes: Int,
     @StringRes val labelRes: Int,
+    /** 选中态改用的图标：待办页选中后胶囊变为「新建待办」入口，null 表示不变 */
+    @DrawableRes val selectedIconRes: Int? = null,
+    /** 选中态改用的文案，null 表示不变 */
+    @StringRes val selectedLabelRes: Int? = null,
 ) {
     Agenda(R.drawable.ic_day, R.string.nav_schedule),
     Timetable(R.drawable.ic_calendar, R.string.nav_timetable),
-    Todo(R.drawable.ic_notes, R.string.nav_todo),
+    Todo(
+        iconRes = R.drawable.ic_notes,
+        labelRes = R.string.nav_todo,
+        selectedIconRes = R.drawable.ic_note_add,
+        selectedLabelRes = R.string.nav_todo_create,
+    ),
 }
 
 internal val PillHeight = 56.dp
@@ -125,6 +134,9 @@ private fun NavPill(
 ) {
     val contentColor =
         if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+    // 选中态的胶囊内容可整体换装（待办 → 新建入口），未定义则与常态相同
+    val iconRes = if (selected) tab.selectedIconRes ?: tab.iconRes else tab.iconRes
+    val labelRes = if (selected) tab.selectedLabelRes ?: tab.labelRes else tab.labelRes
     Box(
         modifier = modifier
             .height(PillHeight)
@@ -162,13 +174,13 @@ private fun NavPill(
         ) {
             Spacer(Modifier.height(5.dp))
             Icon(
-                painter = painterResource(tab.iconRes),
+                painter = painterResource(iconRes),
                 contentDescription = null,
                 tint = contentColor,
                 modifier = Modifier.size(32.dp),
             )
             Text(
-                text = stringResource(tab.labelRes),
+                text = stringResource(labelRes),
                 fontSize = 11.sp,
                 lineHeight = 11.sp,
                 fontWeight = FontWeight.Medium,
