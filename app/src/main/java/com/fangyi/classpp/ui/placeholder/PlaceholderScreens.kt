@@ -20,14 +20,3 @@ fun AgendaScreen(modifier: Modifier = Modifier) {
         )
     }
 }
-
-/** 待办页占位：真实内容后续实现 */
-@Composable
-fun TodoScreen(modifier: Modifier = Modifier) {
-    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = stringResource(R.string.nav_todo),
-            style = MaterialTheme.typography.titleLarge,
-        )
-    }
-}

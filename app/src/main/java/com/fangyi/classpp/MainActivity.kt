@@ -45,8 +45,8 @@ import com.fangyi.classpp.ui.motion.PageOverlayTransition
 import com.fangyi.classpp.ui.motion.rememberDeviceCornerRadius
 import com.fangyi.classpp.ui.navigation.AppTab
 import com.fangyi.classpp.ui.navigation.BottomNavBar
+import com.fangyi.classpp.ui.note.TodoScreen
 import com.fangyi.classpp.ui.placeholder.AgendaScreen
-import com.fangyi.classpp.ui.placeholder.TodoScreen
 import com.fangyi.classpp.ui.schedule.ScheduleScreen
 import com.fangyi.classpp.ui.settings.SettingsScreen
 import com.fangyi.classpp.ui.theme.ClassppTheme
