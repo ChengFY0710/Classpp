@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,7 +14,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -112,27 +112,30 @@ internal fun SettingsTopBar(
             // 状态栏 inset 由顶栏自己吸收：磨砂背景一直铺到屏幕顶（沉浸式）
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
         )
-        IconButton(
-            onClick = onBack,
+        // 不用 IconButton：其内部涟漪以按压点为圆心、20dp 半径封顶，偏心按压盖不满圆钮；
+        // 有界涟漪铺满 40dp 边界，再被上面的圆形 clip 裁成整圆（与 ScheduleHeader 周数胶囊同法）
+        Box(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 //原槽位内垂直居中
                 .windowInsetsPadding(TopAppBarDefaults.windowInsets)
-                .padding(start = 24.dp, top = 12.dp)  // 返回按钮位置
-                .size(40.dp)
+                .padding(start = 24.dp, top = 8.dp)  // 返回按钮位置
+                .size(47.dp)
                 .graphicsLayer {    // 返回按钮投影
                     shape = CircleShape
                     clip = true
                     shadowElevation = 45.dp.toPx()
                     spotShadowColor = Color.Black.copy(alpha = 0.2f)
                 }
-                .background(MaterialTheme.colorScheme.surface, CircleShape),
+                .background(MaterialTheme.colorScheme.surface, CircleShape)
+                .clickable(onClick = onBack),
+            contentAlignment = Alignment.Center,
         ) {
             Icon(
                 painter = painterResource(R.drawable.ic_arrow_left),
                 contentDescription = stringResource(R.string.cd_settings_close),
                 tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(23.dp),
             )
         }
     }
