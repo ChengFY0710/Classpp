@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
@@ -40,6 +41,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.zIndex
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.TodoRepository
@@ -196,6 +199,9 @@ class MainActivity : ComponentActivity() {
                             outgoing.alpha.animateTo(0f, spec)
                             if (outgoing.generation == gen) {
                                 // 彻底淡出后停靠屏外：命中测试收不到、渲染线程整层剔除。
+                                // 停靠期间顶栏冻结层只重放、不重录；进多任务等场景系统
+                                // 会丢弃不可见窗口的 RenderNode 显示列表，故回前台时由
+                                // 上方 LaunchedEffect 回位一帧重录，冻结层跨后台保持有效。
                                 // generation 守卫：若淡出途中该页又被选中，本协程已随
                                 // Animatable 互斥被取消，不会走到这里
                                 outgoing.x.snapTo(dir * TabParkFraction)
@@ -215,6 +221,40 @@ class MainActivity : ComponentActivity() {
                     }
                     if (message != null) {
                         Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                // 回前台重录顶栏转场冻结帧：进多任务/回桌面时窗口不可见，系统会丢弃
+                // RenderNode 的显示列表（haze 为同一问题在 onStop 释放捕获层，
+                // chrisbanes/haze#497），tabTransitionFreeze 录制的就位帧随之清空。
+                // 可见页回前台全量重画即自愈（就位分支照常重录）；停靠页（x=±1.2、
+                // alpha=0）永远处于「转场中」判定（x≠0），冻结层只重放、从不重录，
+                // 空帧会一直带进下次切回课表页的滑入——顶栏整条空白露出底色。
+                // 这里给停靠页造一帧原位绘制时机：x 归零（alpha=0 且压在当前页之下，
+                // 不可见、无实际命中风险）→ 位置回调把 haze 几何刷回就位值 → 该帧绘制
+                // 照常走录制分支、冻结帧恢复 → 再弹回停靠位。两次 withFrameNanos：
+                // 第一次恢复在下一帧的动画相位（早于其绘制），第二次恢复时中间那帧
+                // 已完成绘制并重录完毕，回弹才安全
+                val lifecycleOwner = LocalLifecycleOwner.current
+                LaunchedEffect(lifecycleOwner) {
+                    lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
+                        if (state != Lifecycle.State.RESUMED) return@collect
+                        mountedTabs.forEach { tab ->
+                            if (tab == selectedTab) return@forEach
+                            val page = pageStates.getValue(tab)
+                            if (page.alpha.value > 0f) return@forEach
+                            scope.launch {
+                                val parkX = page.x.value
+                                page.x.snapTo(0f)
+                                withFrameNanos { }
+                                withFrameNanos { }
+                                // 这一帧内该页被再次选中（转场已接管 x、alpha=1）时不再回弹；
+                                // 此时冻结帧刚录好，该次转场正好直接受保护
+                                if (page.alpha.value <= 0f && page.x.value == 0f) {
+                                    page.x.snapTo(parkX)
+                                }
+                            }
+                        }
                     }
                 }
 
