@@ -3,11 +3,13 @@ package com.fangyi.classpp.ui.components
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -17,6 +19,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
@@ -56,17 +60,30 @@ data class PopupMenuSection(
  * 弹出选择菜单卡（设计稿：白圆角卡 + 左侧勾选行 + 按压涟漪 + 组间可选分割线）。
  * [MenuShape] 卡壳 + [PopupMenuContent] 内容；自带容器的宿主（如 DropdownMenu）
  * 直接用 [PopupMenuContent] 铺内容，避免双层卡片。
+ *
+ * 宽度：默认收窄到最宽行；要固定/铺满宽度给 [modifier] 加 width/widthIn/fillMaxWidth，
+ * 行是 fillMaxWidth 会跟着撑开。
+ *
+ * 阴影走 graphicsLayer（WeekPill 同款）：形状必须与 [MenuShape] 一致——
+ * CircleShape 是「短边一半」圆角，宽卡上会变成胶囊轮廓并裁掉四角内容。
+ * [blurProgress] ∈ [0,1] 缩放投影强度，默认 1f（完整阴影）；
+ * 宿主想跟弹出动画联动时可传入过渡进度。
  */
 @Composable
 fun PopupMenuCard(
     sections: List<PopupMenuSection>,
     modifier: Modifier = Modifier,
+    blurProgress: Float = 1f,
 ) {
     Surface(
         shape = MenuShape,
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 8.dp,
-        modifier = modifier,
+        modifier = modifier.graphicsLayer {
+            shape = MenuShape
+            clip = true
+            shadowElevation = 45.dp.toPx() * blurProgress
+            spotShadowColor = Color.Black.copy(alpha = 0.2f)
+        },
     ) {
         PopupMenuContent(sections = sections)
     }
@@ -79,6 +96,8 @@ fun PopupMenuCard(
  *   未勾选行 = onSurface、勾选槽占位保文字对齐；点击走默认按压涟漪；
  * - 分组：[PopupMenuSection.showDivider] 控制与上一分组之间的 [HorizontalDivider]
  *   （outlineVariant）——单组菜单不传分割线即为设计稿中右两态的无缝形态；
+ * - 宽度：收窄到最宽行（IntrinsicSize.Max，CourseContextMenu 同款），各行等宽、
+ *   分割线贯通；宿主用 modifier 给固定宽度（width/widthIn/fillMaxWidth）时以其为准；
  * - 收起由调用方与动作一起处理（这里只管渲染）。
  */
 @Composable
@@ -86,7 +105,7 @@ fun PopupMenuContent(
     sections: List<PopupMenuSection>,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier) {
+    Column(modifier = modifier.width(IntrinsicSize.Max)) {
         sections.forEachIndexed { index, section ->
             if (index > 0 && section.showDivider) {
                 HorizontalDivider(

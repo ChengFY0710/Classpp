@@ -36,7 +36,6 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSection
-import com.fangyi.classpp.ui.components.PopupMenuContent
 import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.PopupMenuSection
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
@@ -123,74 +122,70 @@ fun TodoScreen(
             groups = DemoGroups,
             selectedGroupIndex = selectedGroupIndex,
             onGroupSelect = { selectedGroupIndex = it },
-            // 文件夹操作后续接入；排序点击展开菜单（DropdownMenu 挂在胶囊处）
+            // 文件夹操作后续接入；排序点击展开菜单（SortMenuPopup 挂在胶囊处）
             onFolderClick = {},
             onSortClick = { sortMenuExpanded = true },
             sortMenuExpanded = sortMenuExpanded,
             onSortMenuDismiss = { sortMenuExpanded = false },
-            sortMenuContent = {
-                PopupMenuContent(
-                    sections = listOf(
-                        PopupMenuSection(
-                            items = listOf(
-                                PopupMenuItem(
-                                    label = stringResource(R.string.sort_created),
-                                    checked = sort == TodoSort.Created,
-                                    onClick = {
-                                        sort = TodoSort.Created
-                                        sortMenuExpanded = false
-                                    },
-                                ),
-                                PopupMenuItem(
-                                    label = stringResource(R.string.sort_deadline),
-                                    checked = sort == TodoSort.Deadline,
-                                    onClick = {
-                                        sort = TodoSort.Deadline
-                                        sortMenuExpanded = false
-                                    },
-                                ),
-                                PopupMenuItem(
-                                    label = stringResource(R.string.sort_urgency),
-                                    checked = sort == TodoSort.Urgency,
-                                    onClick = {
-                                        sort = TodoSort.Urgency
-                                        sortMenuExpanded = false
-                                    },
-                                ),
-                                PopupMenuItem(
-                                    label = stringResource(R.string.sort_name),
-                                    checked = sort == TodoSort.Name,
-                                    onClick = {
-                                        sort = TodoSort.Name
-                                        sortMenuExpanded = false
-                                    },
-                                ),
-                            ),
+            sortMenuSections = listOf(
+                PopupMenuSection(
+                    items = listOf(
+                        PopupMenuItem(
+                            label = stringResource(R.string.sort_created),
+                            checked = sort == TodoSort.Created,
+                            onClick = {
+                                sort = TodoSort.Created
+                                sortMenuExpanded = false
+                            },
                         ),
-                        PopupMenuSection(
-                            showDivider = true,
-                            items = listOf(
-                                PopupMenuItem(
-                                    label = stringResource(R.string.sort_ascending),
-                                    checked = !sortDescending,
-                                    onClick = {
-                                        sortDescending = false
-                                        sortMenuExpanded = false
-                                    },
-                                ),
-                                PopupMenuItem(
-                                    label = stringResource(R.string.sort_descending),
-                                    checked = sortDescending,
-                                    onClick = {
-                                        sortDescending = true
-                                        sortMenuExpanded = false
-                                    },
-                                ),
-                            ),
+                        PopupMenuItem(
+                            label = stringResource(R.string.sort_deadline),
+                            checked = sort == TodoSort.Deadline,
+                            onClick = {
+                                sort = TodoSort.Deadline
+                                sortMenuExpanded = false
+                            },
+                        ),
+                        PopupMenuItem(
+                            label = stringResource(R.string.sort_urgency),
+                            checked = sort == TodoSort.Urgency,
+                            onClick = {
+                                sort = TodoSort.Urgency
+                                sortMenuExpanded = false
+                            },
+                        ),
+                        PopupMenuItem(
+                            label = stringResource(R.string.sort_name),
+                            checked = sort == TodoSort.Name,
+                            onClick = {
+                                sort = TodoSort.Name
+                                sortMenuExpanded = false
+                            },
                         ),
                     ),
-                )
-            },
+                ),
+                PopupMenuSection(
+                    showDivider = true,
+                    items = listOf(
+                        PopupMenuItem(
+                            label = stringResource(R.string.sort_ascending),
+                            checked = !sortDescending,
+                            onClick = {
+                                sortDescending = false
+                                sortMenuExpanded = false
+                            },
+                        ),
+                        PopupMenuItem(
+                            label = stringResource(R.string.sort_descending),
+                            checked = sortDescending,
+                            onClick = {
+                                sortDescending = true
+                                sortMenuExpanded = false
+                            },
+                        ),
+                    ),
+                ),
+            ),
             modifier = Modifier.align(Alignment.TopCenter),
             hazeState = hazeState,
         )
@@ -201,6 +196,9 @@ fun TodoScreen(
     var newTodoMounted by remember { mutableStateOf(false) }
     if (showNewTodoSheet) newTodoMounted = true
     if (newTodoMounted) {
+        // 回调（协程）里不是组合上下文，字符串在组合期解析——lint 不允许经
+        // LocalContext 查资源值（AddCoursePanel 同款做法）
+        val saveFailedMessage = stringResource(R.string.todo_error_save_failed)
         NewTodoSheet(
             visible = showNewTodoSheet,
             onDismissed = { newTodoMounted = false },
@@ -210,10 +208,7 @@ fun TodoScreen(
                     // 空名已在浮层内拦截，Err 仅剩落盘失败等异常，Toast 提示、表单保持原样
                     when (repository.addTodo(Todo(id = "", name = name))) {
                         is TodoReadResult.Ok -> onNewTodoSheetDismiss()
-                        is TodoReadResult.Err -> AppToasts.show(
-                            context,
-                            context.getString(R.string.todo_error_save_failed),
-                        )
+                        is TodoReadResult.Err -> AppToasts.show(context, saveFailedMessage)
                     }
                 }
             },

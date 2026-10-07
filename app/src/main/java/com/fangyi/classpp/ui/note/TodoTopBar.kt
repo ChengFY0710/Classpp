@@ -1,13 +1,16 @@
 package com.fangyi.classpp.ui.note
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.rememberTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -21,7 +24,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,20 +41,31 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.components.PopupMenuCard
+import com.fangyi.classpp.ui.components.PopupMenuSection
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollFactory
 import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
+import com.fangyi.classpp.ui.schedule.CardShadowBottomPadding
+import com.fangyi.classpp.ui.schedule.CardShadowPadding
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.MenuShape
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
@@ -149,9 +162,9 @@ private val HorizontalClipShape = object : Shape {
  *
  * 纯 UI：分组点击只切选中高亮（过滤由调用方后续接入）；文件夹回调本期空置；
  * 排序胶囊点击回调 [onSortClick]（宿主置展开态）；排序菜单经 [sortMenuExpanded]/
- * [onSortMenuDismiss]/[sortMenuContent] 三件套下发，DropdownMenu 挂在胶囊同一 Box 里
- * （父布局即锚点，PopupSelectCard 同款——锚定/收起/反复开关由 M3 托管，自定义锚定
- * Popup 的状态与窗口失同步问题不复现）。
+ * [onSortMenuDismiss]/[sortMenuSections] 三件套下发，[SortMenuPopup] 挂在胶囊同一
+ * Box 里（父布局即锚点）：内容走 [PopupMenuCard] 白卡，壳用自定义锚定 Popup——
+ * DropdownMenu 的壳自带默认阴影且换不掉，换壳才能吃上菜单卡的柔影。
  */
 @Composable
 fun TodoTopBar(
@@ -164,7 +177,7 @@ fun TodoTopBar(
     hazeState: HazeState? = null,
     sortMenuExpanded: Boolean = false,
     onSortMenuDismiss: () -> Unit = {},
-    sortMenuContent: @Composable ColumnScope.() -> Unit = {},
+    sortMenuSections: List<PopupMenuSection> = emptyList(),
 ) {
     val overscrollFactory = rememberOffsetOverscrollFactory(animationSpec = Motion.Settle)
     // 磨砂 tint 随主题（hazeEffect 的 block 在绘制期执行、非 composable 上下文，取值提到 Box 之前）
@@ -255,25 +268,103 @@ fun TodoTopBar(
                             contentDescription = stringResource(R.string.cd_todo_folder),
                             onClick = onFolderClick,
                         )
-                        // 排序胶囊 + 锚定其下的排序菜单：DropdownMenu 挂在胶囊同一 Box 里
-                        // （父布局即锚点），展开态与内容由宿主下发
+                        // 排序胶囊 + 锚定其下的排序菜单：SortMenuPopup 挂在胶囊同一 Box 里
+                        // （父布局即锚点），展开态与菜单分组内容由宿主下发
                         Box {
                             IconPill(
                                 iconRes = R.drawable.ic_arrow_sort,
                                 contentDescription = stringResource(R.string.cd_todo_sort),
                                 onClick = onSortClick,
                             )
-                            DropdownMenu(
+                            SortMenuPopup(
                                 expanded = sortMenuExpanded,
-                                onDismissRequest = onSortMenuDismiss,
-                                shape = MenuShape,
-                                containerColor = MaterialTheme.colorScheme.surface,
-                                content = sortMenuContent,
+                                onDismiss = onSortMenuDismiss,
+                                sections = sortMenuSections,
                             )
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * 排序菜单弹层：[PopupMenuCard] 白卡 + 自定义锚定 Popup（WeekPicker 周数弹窗同款范式）。
+ *
+ * 定位：卡片左缘对齐排序胶囊左缘、顶缘贴胶囊底缘（DropdownMenu 原位），越界钳进窗口；
+ * Popup 内容四周含透明投影留白（左右上 [CardShadowPadding]、底部 [CardShadowBottomPadding]，
+ * 45dp 柔影向下坠得最远）防被窗口边界裁剪，定位时只反向扣除左/上留白，让卡片视觉
+ * 位置与留白无关。
+ *
+ * 动画：scale 0.8→1（Motion.PopupScaleMillis）+ alpha 0→1（Motion.PopupFadeMillis），
+ * 自胶囊所在的左上角长出；收起反向播放，播完才移除弹层。
+ */
+@Composable
+private fun SortMenuPopup(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    sections: List<PopupMenuSection>,
+) {
+    // 收起动画期间保持弹层在场：targetState（开）或 currentState（关动画未完）任一为真
+    val expandedState = remember { MutableTransitionState(false) }
+    expandedState.targetState = expanded
+
+    val density = LocalDensity.current
+    val shadowPaddingPx = with(density) { CardShadowPadding.roundToPx() }
+    val positionProvider = remember(shadowPaddingPx) {
+        object : PopupPositionProvider {
+            override fun calculatePosition(
+                anchorBounds: IntRect,
+                windowSize: IntSize,
+                layoutDirection: LayoutDirection,
+                popupContentSize: IntSize,
+            ): IntOffset = IntOffset(
+                // 锚点坐标先扣投影留白，让「卡片」而非「含留白的内容」对齐胶囊；越界钳进窗口
+                x = (anchorBounds.left - shadowPaddingPx)
+                    .coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)),
+                y = (anchorBounds.bottom - shadowPaddingPx)
+                    .coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0)),
+            )
+        }
+    }
+
+    if (expandedState.currentState || expandedState.targetState) {
+        val transition = rememberTransition(expandedState, label = "SortMenu")
+        val scale by transition.animateFloat(
+            transitionSpec = { tween(Motion.PopupScaleMillis, easing = Motion.Standard) },
+            label = "scale",
+        ) { visible -> if (visible) 1f else 0.8f }
+        val alpha by transition.animateFloat(
+            transitionSpec = { tween(Motion.PopupFadeMillis, easing = Motion.Standard) },
+            label = "alpha",
+        ) { visible -> if (visible) 1f else 0f }
+
+        Popup(
+            onDismissRequest = onDismiss,
+            popupPositionProvider = positionProvider,
+            // focusable：返回键收起；dismissOnClickOutside 默认开启
+            properties = PopupProperties(focusable = true),
+        ) {
+            PopupMenuCard(
+                sections = sections,
+                // 投影留白垫在卡外（裁切线 = Popup 窗口边缘，留白多大柔影就有多少活动空间）：
+                // 左右上 16dp、底部 48dp——光源在上投影向下坠得最远（WeekPicker 同款配方）；
+                // 缩放/淡入排在其外，整卡（含柔影）一起变换
+                modifier = Modifier
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        this.alpha = alpha
+                        transformOrigin = TransformOrigin(0f, 0f)
+                    }
+                    .padding(
+                        start = CardShadowPadding,
+                        top = CardShadowPadding,
+                        end = CardShadowPadding,
+                        bottom = CardShadowBottomPadding,
+                    ),
+            )
         }
     }
 }

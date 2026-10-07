@@ -103,7 +103,7 @@ private val WeekPickerGap = 16.dp  //周数选择器顶部与胶囊底部的固�
 internal val CardShadowPadding = 16.dp
 
 /** 投影向下延伸最多，底部单独加大透明留白，防止被 Popup 窗口下缘裁切 */
-private val CardShadowBottomPadding = 48.dp
+internal val CardShadowBottomPadding = 48.dp
 
 internal val WeekPickerCellSpace = 8.dp // 周数选择器里小方块间距
 
