@@ -416,8 +416,18 @@ fun ScheduleHeader(
                     Modifier
                 },
             )
-            // surface 兜底：progress≈0 时与原不透明背景逐帧一致
-            .background(MaterialTheme.colorScheme.surface)
+            // 兜底色随模糊进度由 surface 渐向 background：progress≈0 时与原不透明背景逐帧一致；
+            // 模糊激活后，模糊输出盖不到的区域（跨多周跳转整块平移网格时的覆盖缺口、
+            // progressive 渐弱到 0 的顶栏底缘）露出的就是这层兜底——对齐到下方页面基础底色
+            // background，缺口才不会以亮一档的 surface 闪出白块（深色主题同理）。
+            // 稳态下源图层满屏、兜底色完全被模糊盖住，此渐变对正常观感无影响
+            .background(
+                lerp(
+                    MaterialTheme.colorScheme.surface,
+                    MaterialTheme.colorScheme.background,
+                    progress,
+                ),
+            )
             .then(
                 if (hazeState != null && progress > 0f) {
                     // 背景模糊画在兜底色之上、内容之下；alpha 随进度渐入实现无缝衔接。
