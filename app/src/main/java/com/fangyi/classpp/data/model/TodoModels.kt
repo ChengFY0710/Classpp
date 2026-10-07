@@ -9,9 +9,9 @@ const val TODO_FORMAT_VERSION = 1
 @Serializable
 enum class TodoTimeKind { AllDay, Period, None }
 
-/** 待办紧急程度：非常急 / 很急 / 急 / 不急（默认不急） */
+/** 待办紧急程度：非常急 / 很急 / 急 / 不急 / 无（默认无） */
 @Serializable
-enum class TodoUrgency { Critical, High, Medium, Low }
+enum class TodoUrgency { Critical, High, Medium, Low, None }
 
 /** 一条待办步骤（小待办）：可勾选的子项，标题必填 */
 @Serializable
@@ -52,7 +52,7 @@ data class Todo(
     val deadlineMinute: Int? = null,
     val location: String = "",
     val tags: List<String> = emptyList(),
-    val urgency: TodoUrgency = TodoUrgency.Low,
+    val urgency: TodoUrgency = TodoUrgency.None,
     val note: String = "",
     val steps: List<TodoStep> = emptyList(),
     val completed: Boolean = false,

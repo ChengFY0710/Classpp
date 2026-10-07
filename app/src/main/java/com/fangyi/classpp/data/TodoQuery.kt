@@ -64,7 +64,7 @@ fun List<Todo>.filterTodos(filter: TodoFilter): List<Todo> {
 /**
  * 待办排序键。各 comparator 均稳定（同键保持原列表次序）：
  * - [Deadline]：按截止时刻升序，无截止的排最后；
- * - [Urgency]：紧急程度降序（非常急在前），同度按截止时刻；
+ * - [Urgency]：紧急程度降序（非常急在前、无最后），同度按截止时刻；
  * - [Created]：按创建时间降序（新在前）；
  * - [Name]：按名称字典序。
  */
@@ -75,12 +75,13 @@ enum class TodoSort {
     Name,
 }
 
-/** 紧急程度排序权重：Critical 最小（最靠前） */
+/** 紧急程度排序权重：Critical 最小（最靠前）、None 最大（最靠后） */
 private val URGENCY_RANK: Map<TodoUrgency, Int> = mapOf(
     TodoUrgency.Critical to 0,
     TodoUrgency.High to 1,
     TodoUrgency.Medium to 2,
     TodoUrgency.Low to 3,
+    TodoUrgency.None to 4,
 )
 
 /** [TodoSort] 对应的 comparator */

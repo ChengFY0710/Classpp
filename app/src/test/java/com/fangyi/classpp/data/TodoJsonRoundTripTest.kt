@@ -59,7 +59,7 @@ class TodoJsonRoundTripTest {
         assertNull(todo.startMinute)
         assertNull(todo.deadlineDate)
         assertEquals("", todo.note)
-        assertEquals(com.fangyi.classpp.data.model.TodoUrgency.Low, todo.urgency)
+        assertEquals(com.fangyi.classpp.data.model.TodoUrgency.None, todo.urgency)
         assertEquals(false, todo.completed)
         assertEquals(0L, todo.createdAtMillis)
     }

@@ -30,6 +30,12 @@ val Scrim = Color(0x52000000)
 
 val Correct = Color(0xFF22B14C)
 
+// ===== 紧急程度旗标（UrgentFlagCard）：红用 Error、灰用 classppColors.secondaryText，橙/黄/绿在此 =====
+// 对齐设计稿马卡龙外一档的高饱和取色；深色按 DarkPrimary 的提亮惯例整体浅一档，保深卡对比
+val UrgentOrange = Color(0xFFF2921B)
+val UrgentYellow = Color(0xFFF2C11C)
+val UrgentGreen = Color(0xFF3BC222)
+
 // ===== 深色模式 =====
 // 与浅色同构的冷灰阶梯：Background 最深、Surface（卡片）亮一档、容器再亮——
 // 对应浅色「页面灰底 → 白卡」的层级关系反转。Primary 提亮为 tonal 80（#A3C8FA，
@@ -54,5 +60,9 @@ val DarkInversePrimary = Color(0x99479CFF)
 val DarkError = Color(0xFFFF5449)
 val DarkErrorContainer = Color(0xFF4A1C18)
 val DarkOnErrorContainer = Color(0xFFFFD9D4)
+
+val DarkUrgentOrange = Color(0xFFF6A94C)
+val DarkUrgentYellow = Color(0xFFF6CE52)
+val DarkUrgentGreen = Color(0xFF67D257)
 
 val DarkScrim = Color(0xBF000000)

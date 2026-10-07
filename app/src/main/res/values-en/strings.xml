@@ -168,4 +168,11 @@
     <!-- Tag choosing card -->
     <string name="tag_choosing_input_hint">Tap to add a tag</string>
     <string name="tag_choosing_course_title">Course tags</string>
+
+    <!-- Todo urgency -->
+    <string name="urgency_critical">Critical</string>
+    <string name="urgency_high">Very urgent</string>
+    <string name="urgency_medium">Urgent</string>
+    <string name="urgency_low">Not urgent</string>
+    <string name="urgency_none">None</string>
 </resources>

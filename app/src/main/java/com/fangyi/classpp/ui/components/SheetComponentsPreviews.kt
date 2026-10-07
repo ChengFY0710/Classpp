@@ -17,6 +17,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.theme.ClassppTheme
 
 /** 设计稿四态与各卡片的快速预览（Android Studio 中直接查看）。 */
@@ -450,5 +451,21 @@ private fun TagChoosingCardPreview() = ClassppTheme {
             onDeleteTag = onDeleteTag,
             initialCourseExpanded = true,
         )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
+private fun UrgentFlagCardPreview() = ClassppTheme {
+    // 设计稿五态：每张卡固定一个当前档位，右侧展示其余四档旗标
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        TodoUrgency.entries.forEach { urgency ->
+            UrgentFlagCard(selected = urgency, onSelect = {})
+        }
     }
 }

@@ -67,18 +67,31 @@ class ClassppColors(
      * 浅色 = 卡片底 #CBCBCB；深色卡底上取更暗的灰，保持同等弱化的视觉强度。
      */
     val negative: Color,
+    /**
+     * 紧急程度旗标三色（UrgentFlagCard）：橙 = 很急、黄 = 急、绿 = 不急；
+     * 红 = colorScheme.error、灰 = [secondaryText]，不在此列。深浅各一套。
+     */
+    val urgentOrange: Color,
+    val urgentYellow: Color,
+    val urgentGreen: Color,
 )
 
 private val LightClassppColors = ClassppColors(
     secondaryText = Color(0xFFABAFB4),
     hazeTint = Color.White,
     negative = Color(0xFFCBCBCB),
+    urgentOrange = UrgentOrange,
+    urgentYellow = UrgentYellow,
+    urgentGreen = UrgentGreen,
 )
 
 private val DarkClassppColors = ClassppColors(
     secondaryText = Color(0xFF7E858D),
     hazeTint = Color.Black,
     negative = Color(0xFF5C6269),
+    urgentOrange = DarkUrgentOrange,
+    urgentYellow = DarkUrgentYellow,
+    urgentGreen = DarkUrgentGreen,
 )
 
 private val LocalClassppColors = staticCompositionLocalOf { LightClassppColors }

@@ -174,4 +174,11 @@
     <!-- Tag choosing card -->
     <string name="tag_choosing_input_hint">点击输入添加标签</string>
     <string name="tag_choosing_course_title">课程标签</string>
+
+    <!-- Todo urgency -->
+    <string name="urgency_critical">非常紧急</string>
+    <string name="urgency_high">很紧急</string>
+    <string name="urgency_medium">紧急</string>
+    <string name="urgency_low">不紧急</string>
+    <string name="urgency_none">无</string>
 </resources>
