@@ -87,6 +87,10 @@ fun PopupMenuCard(
 ) {
     val hazeTint = MaterialTheme.classppColors.hazeTint
     Box(
+        // propagateMinConstraints：卡被外部 modifier 撑宽（如固定 200dp）时，内容 Column
+        // 至少跟着撑满——否则 Column 仍收在 IntrinsicSize 宽度，右侧卡面成为涟漪/点击断区
+        //（Surface 内部同款行为，换壳时不能丢）
+        propagateMinConstraints = true,
         modifier = modifier
             .graphicsLayer {
                 shape = MenuShape

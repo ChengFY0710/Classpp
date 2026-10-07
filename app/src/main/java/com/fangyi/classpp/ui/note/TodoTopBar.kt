@@ -373,7 +373,7 @@ private fun SortMenuPopup(
                         this.alpha = alpha
                         transformOrigin = TransformOrigin(0f, 0f)
                     }
-                    .width(200.dp)
+                    //.width(190.dp) 如果想单独调弹出菜单宽度时使用
                     .padding(
                         start = CardShadowPadding,
                         top = CardShadowPadding,
