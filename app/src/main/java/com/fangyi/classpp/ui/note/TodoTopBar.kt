@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -111,6 +112,12 @@ private val ShadowOverhang = 8.dp
 /** 胶囊柔影（WeekPill 同款）：大 elevation 换软边、低透明 spot 压深浅 */
 private val PillShadowElevation = 45.dp
 private val PillShadowColor = Color.Black.copy(alpha = 0.2f)
+
+/**
+ * 排序菜单卡顶缘与排序胶囊底缘的视觉间距。
+ * 只管视觉值：上方 16dp 投影留白在定位时自动扣除，改这里不会牵动阴影活动空间。
+ */
+private val SortMenuPopupGap = 12.dp
 
 /** 顶栏与状态栏的间距 */
 private val TopBarTopPadding = 3.dp
@@ -292,7 +299,8 @@ fun TodoTopBar(
 /**
  * 排序菜单弹层：[PopupMenuCard] 白卡 + 自定义锚定 Popup（WeekPicker 周数弹窗同款范式）。
  *
- * 定位：卡片左缘对齐排序胶囊左缘、顶缘贴胶囊底缘（DropdownMenu 原位），越界钳进窗口；
+ * 定位：卡片左缘对齐排序胶囊左缘、顶缘与胶囊底缘保持 [SortMenuPopupGap] 间距（0 = 贴住，
+ * DropdownMenu 原位），越界钳进窗口；
  * Popup 内容四周含透明投影留白（左右上 [CardShadowPadding]、底部 [CardShadowBottomPadding]，
  * 45dp 柔影向下坠得最远）防被窗口边界裁剪，定位时只反向扣除左/上留白，让卡片视觉
  * 位置与留白无关。
@@ -312,7 +320,9 @@ private fun SortMenuPopup(
 
     val density = LocalDensity.current
     val shadowPaddingPx = with(density) { CardShadowPadding.roundToPx() }
-    val positionProvider = remember(shadowPaddingPx) {
+    // 视觉间距换算成内容坐标：Popup 内容含上方投影留白，定位时一并扣掉（WeekPicker 同款）
+    val gapPx = with(density) { (SortMenuPopupGap - CardShadowPadding).roundToPx() }
+    val positionProvider = remember(gapPx, shadowPaddingPx) {
         object : PopupPositionProvider {
             override fun calculatePosition(
                 anchorBounds: IntRect,
@@ -323,7 +333,7 @@ private fun SortMenuPopup(
                 // 锚点坐标先扣投影留白，让「卡片」而非「含留白的内容」对齐胶囊；越界钳进窗口
                 x = (anchorBounds.left - shadowPaddingPx)
                     .coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)),
-                y = (anchorBounds.bottom - shadowPaddingPx)
+                y = (anchorBounds.bottom + gapPx)
                     .coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0)),
             )
         }
@@ -358,6 +368,7 @@ private fun SortMenuPopup(
                         this.alpha = alpha
                         transformOrigin = TransformOrigin(0f, 0f)
                     }
+                    .width(200.dp)
                     .padding(
                         start = CardShadowPadding,
                         top = CardShadowPadding,
