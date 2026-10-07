@@ -185,4 +185,17 @@
     <string name="sort_name">Name</string>
     <string name="sort_ascending">Ascending</string>
     <string name="sort_descending">Descending</string>
+
+    <!-- Date selection card -->
+    <string name="date_card_label">Date</string>
+    <string name="date_card_none">None</string>
+    <string name="date_card_today">Today</string>
+    <string name="date_card_tomorrow">Tomorrow</string>
+    <string name="date_card_custom">Custom</string>
+    <string name="date_card_custom_date">Custom date</string>
+    <string name="date_card_repeat">Repeat</string>
+    <string name="repeat_daily">Every day</string>
+    <string name="repeat_weekly">Every week</string>
+    <string name="repeat_monthly">Every month</string>
+    <string name="repeat_yearly">Every year</string>
 </resources>

@@ -191,4 +191,17 @@
     <string name="sort_name">名称</string>
     <string name="sort_ascending">升序</string>
     <string name="sort_descending">降序</string>
+
+    <!-- Date selection card -->
+    <string name="date_card_label">日期</string>
+    <string name="date_card_none">无</string>
+    <string name="date_card_today">今天</string>
+    <string name="date_card_tomorrow">明天</string>
+    <string name="date_card_custom">自定义</string>
+    <string name="date_card_custom_date">自定义日期</string>
+    <string name="date_card_repeat">重复</string>
+    <string name="repeat_daily">每天</string>
+    <string name="repeat_weekly">每周</string>
+    <string name="repeat_monthly">每月</string>
+    <string name="repeat_yearly">每年</string>
 </resources>

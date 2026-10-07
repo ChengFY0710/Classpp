@@ -18,6 +18,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.theme.ClassppTheme
 
@@ -558,6 +559,47 @@ private fun PopupMenuCardPreview() = ClassppTheme {
                     ),
                 ),
             ),
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
+private fun DateSelectionCardPreview() = ClassppTheme {
+    // 设计稿四态：无（值模式）/ 快捷选项（选项模式）/ 自定义+每周 / 自定义+每天（全交互）
+    var interactiveValue by remember {
+        mutableStateOf<DateSelection>(DateSelection.Custom(IsoDate.of(2026, 10, 3), RepeatFrequency.Daily))
+    }
+    var interactiveExpanded by remember { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        DateSelectionCard(
+            value = DateSelection.None,
+            expanded = false,
+            onValueChange = {},
+            onExpandedChange = {},
+        )
+        DateSelectionCard(
+            value = DateSelection.None,
+            expanded = true,
+            onValueChange = {},
+            onExpandedChange = {},
+        )
+        DateSelectionCard(
+            value = DateSelection.Custom(IsoDate.of(2026, 10, 3), RepeatFrequency.Weekly),
+            expanded = false,
+            onValueChange = {},
+            onExpandedChange = {},
+        )
+        DateSelectionCard(
+            value = interactiveValue,
+            expanded = interactiveExpanded,
+            onValueChange = { interactiveValue = it },
+            onExpandedChange = { interactiveExpanded = it },
         )
     }
 }
