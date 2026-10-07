@@ -69,6 +69,8 @@
     <string name="slot_overflow_desc">Not enough room in the day to add another period</string>
     <string name="slot_format">Period %1$d</string>
     <string name="slot_range_format">Periods %1$d-%2$d</string>
+    <string name="time_range_start">Start time</string>
+    <string name="time_range_end">End time</string>
     <string name="show_inactive">Show classes not held this week</string>
     <string name="show_inactive_desc">Hidden when off; greyed out when on</string>
     <string name="settings_confirm">Confirm</string>

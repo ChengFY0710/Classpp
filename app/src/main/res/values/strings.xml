@@ -75,6 +75,8 @@
     <string name="slot_overflow_desc">当天时间不足以再增加节次</string>
     <string name="slot_format">第 %1$d 节</string>
     <string name="slot_range_format">第 %1$d-%2$d 节</string>
+    <string name="time_range_start">开始时间</string>
+    <string name="time_range_end">结束时间</string>
     <string name="show_inactive">显示非本周课程</string>
     <string name="show_inactive_desc">关闭后隐藏，开启后以灰色显示</string>
     <string name="settings_confirm">确定</string>

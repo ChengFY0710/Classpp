@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -80,6 +81,54 @@ private fun RowChoiceCardPreview() = ClassppTheme {
             selectedIndex = null,
             onSelect = {},
         )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
+private fun TimeRangeChoicePreview() = ClassppTheme {
+    // 「无 / 全天 / 时段」整卡可交互：选「时段」展开滑块（RowChoiceCard 展开插槽的实际用法）；
+    // 下方两张静态卡对照设计稿：常规间距 8:00–18:00、贴靠态 17:59–18:00
+    var choice by remember { mutableStateOf(2) }
+    var range by remember { mutableStateOf(780 to 1260) } // 13:00–21:00
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        RowChoiceCard(
+            options = listOf("无", "全天", "时段"),
+            selectedIndex = choice,
+            onSelect = { choice = it },
+            expandContent = if (choice == 2) {
+                {
+                    TimeRangeSlider(
+                        startMinutes = range.first,
+                        endMinutes = range.second,
+                        onRangeChange = { start, end -> range = start to end },
+                    )
+                }
+            } else {
+                null
+            },
+        )
+        SheetCard(modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(6.dp)) {
+            TimeRangeSlider(
+                startMinutes = 480,
+                endMinutes = 1080,
+                onRangeChange = { _, _ -> },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        SheetCard(modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(6.dp)) {
+            TimeRangeSlider(
+                startMinutes = 1079,
+                endMinutes = 1080,
+                onRangeChange = { _, _ -> },
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
