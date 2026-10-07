@@ -54,15 +54,8 @@ data class PopupMenuSection(
 
 /**
  * 弹出选择菜单卡（设计稿：白圆角卡 + 左侧勾选行 + 按压涟漪 + 组间可选分割线）。
- *
- * - 行：fieldLabel（16sp SemiBold）；勾选行 = primary 色 + 左侧 ic_checkmark，
- *   未勾选行 = onSurface、勾选槽占位保文字对齐；点击走默认按压涟漪，
- *   [Surface] 裁剪到 [MenuShape]，越界涟漪不溢出卡片；
- * - 分组：[PopupMenuSection.showDivider] 控制与上一分组之间的 [HorizontalDivider]
- *   （outlineVariant）——单组菜单不传分割线即为设计稿中右两态的无缝形态；
- * - 宽度：取最宽行的内容宽（Surface wrap），与设计稿的窄卡一致。
- *
- * 只管卡片本体：锚定/挂载/收起由宿主负责（自定义锚定 Popup 或 DropdownMenu）。
+ * [MenuShape] 卡壳 + [PopupMenuContent] 内容；自带容器的宿主（如 DropdownMenu）
+ * 直接用 [PopupMenuContent] 铺内容，避免双层卡片。
  */
 @Composable
 fun PopupMenuCard(
@@ -75,19 +68,36 @@ fun PopupMenuCard(
         shadowElevation = 8.dp,
         modifier = modifier,
     ) {
-        Column {
-            sections.forEachIndexed { index, section ->
-                if (index > 0 && section.showDivider) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(
-                            horizontal = DividerHorizontalInset,
-                            vertical = DividerVerticalPadding,
-                        ),
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                    )
-                }
-                section.items.forEach { item -> PopupMenuRow(item) }
+        PopupMenuContent(sections = sections)
+    }
+}
+
+/**
+ * 弹出选择菜单的内容（无卡片壳）：勾选行 + 组间可选分割线。
+ *
+ * - 行：fieldLabel（16sp SemiBold）；勾选行 = primary 色 + 左侧 ic_checkmark，
+ *   未勾选行 = onSurface、勾选槽占位保文字对齐；点击走默认按压涟漪；
+ * - 分组：[PopupMenuSection.showDivider] 控制与上一分组之间的 [HorizontalDivider]
+ *   （outlineVariant）——单组菜单不传分割线即为设计稿中右两态的无缝形态；
+ * - 收起由调用方与动作一起处理（这里只管渲染）。
+ */
+@Composable
+fun PopupMenuContent(
+    sections: List<PopupMenuSection>,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        sections.forEachIndexed { index, section ->
+            if (index > 0 && section.showDivider) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(
+                        horizontal = DividerHorizontalInset,
+                        vertical = DividerVerticalPadding,
+                    ),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
             }
+            section.items.forEach { item -> PopupMenuRow(item) }
         }
     }
 }

@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -38,8 +40,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -52,6 +52,7 @@ import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollFactory
 import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.MenuShape
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
@@ -101,11 +102,6 @@ private val PillShadowColor = Color.Black.copy(alpha = 0.2f)
 /** 顶栏与状态栏的间距 */
 private val TopBarTopPadding = 3.dp
 
-/** 排序胶囊的窗口坐标暂存：onGloballyPositioned 写、点击时读（布局期不触发重组） */
-private class SortAnchorHolder {
-    var value: Rect = Rect.Zero
-}
-
 /** 裁剪形状纵向的外扩量：容纳 45dp elevation 柔影的可见扩散范围 */
 private val ShadowBleed = 200.dp
 
@@ -152,8 +148,10 @@ private val HorizontalClipShape = object : Shape {
  * @Preview）时容器退化为不透明兜底色。
  *
  * 纯 UI：分组点击只切选中高亮（过滤由调用方后续接入）；文件夹回调本期空置；
- * 排序回调携带排序胶囊的窗口坐标（锚定弹出菜单用，TodoScreen 接线，同课程卡长按菜单
- * 上报 anchor 的做法）。
+ * 排序胶囊点击回调 [onSortClick]（宿主置展开态）；排序菜单经 [sortMenuExpanded]/
+ * [onSortMenuDismiss]/[sortMenuContent] 三件套下发，DropdownMenu 挂在胶囊同一 Box 里
+ * （父布局即锚点，PopupSelectCard 同款——锚定/收起/反复开关由 M3 托管，自定义锚定
+ * Popup 的状态与窗口失同步问题不复现）。
  */
 @Composable
 fun TodoTopBar(
@@ -161,14 +159,16 @@ fun TodoTopBar(
     selectedGroupIndex: Int,
     onGroupSelect: (Int) -> Unit,
     onFolderClick: () -> Unit,
-    onSortClick: (anchor: Rect) -> Unit,
+    onSortClick: () -> Unit,
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
+    sortMenuExpanded: Boolean = false,
+    onSortMenuDismiss: () -> Unit = {},
+    sortMenuContent: @Composable ColumnScope.() -> Unit = {},
 ) {
     val overscrollFactory = rememberOffsetOverscrollFactory(animationSpec = Motion.Settle)
     // 磨砂 tint 随主题（hazeEffect 的 block 在绘制期执行、非 composable 上下文，取值提到 Box 之前）
     val hazeTint = MaterialTheme.classppColors.hazeTint
-    val sortAnchorHolder = remember { SortAnchorHolder() }
     CompositionLocalProvider(LocalOverscrollFactory provides overscrollFactory) {
         Box(
             modifier = modifier
@@ -255,16 +255,22 @@ fun TodoTopBar(
                             contentDescription = stringResource(R.string.cd_todo_folder),
                             onClick = onFolderClick,
                         )
-                        // 排序胶囊：窗口坐标经 holder 暂存、点击时读出上报（不在布局期写
-                        // state 触发重组——同 CourseGrid 的 BoundsHolder 思路）
-                        IconPill(
-                            iconRes = R.drawable.ic_arrow_sort,
-                            contentDescription = stringResource(R.string.cd_todo_sort),
-                            onClick = { onSortClick(sortAnchorHolder.value) },
-                            modifier = Modifier.onGloballyPositioned { coords ->
-                                sortAnchorHolder.value = coords.boundsInWindow()
-                            },
-                        )
+                        // 排序胶囊 + 锚定其下的排序菜单：DropdownMenu 挂在胶囊同一 Box 里
+                        // （父布局即锚点），展开态与内容由宿主下发
+                        Box {
+                            IconPill(
+                                iconRes = R.drawable.ic_arrow_sort,
+                                contentDescription = stringResource(R.string.cd_todo_sort),
+                                onClick = onSortClick,
+                            )
+                            DropdownMenu(
+                                expanded = sortMenuExpanded,
+                                onDismissRequest = onSortMenuDismiss,
+                                shape = MenuShape,
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                content = sortMenuContent,
+                            )
+                        }
                     }
                 }
             }
@@ -367,7 +373,7 @@ private fun TodoTopBarPreviewContent() {
             selectedGroupIndex = selected,
             onGroupSelect = { selected = it },
             onFolderClick = {},
-            onSortClick = { _ -> },
+            onSortClick = {},
         )
     }
 }
