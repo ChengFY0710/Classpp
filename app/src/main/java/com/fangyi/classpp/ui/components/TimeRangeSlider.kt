@@ -6,7 +6,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,9 +27,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TimeText
@@ -64,6 +63,10 @@ private val DotGap = 6.dp
  *   位置上必然相撞，故最近动过的胶囊锚定在自己的时间位置上，另一个被平推到「贴在一起」
  *   （只让位置、不改时间）；右端挤不下时（如 23:58/23:59）开始钮位置让位。
  *
+ * 位置解算放在自定义 [Layout] 的同一次测量里：先实测两个胶囊宽度再算位置、直接摆放，
+ * 不经状态回写，首帧即正确（预览单帧渲染也不会叠在原点）。手势换算另用尺寸快照
+ * （拖动必然发生在布局稳定后，首帧为 0 无碍）。
+ *
  * 无状态受控组件：分钟数由调用方持有，每次变化经 [onRangeChange] 整体提交。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -76,34 +79,37 @@ fun TimeRangeSlider(
 ) {
     val colors = MaterialTheme.colorScheme
     var trackWidthPx by remember { mutableIntStateOf(0) }
-    var startWidthPx by remember { mutableIntStateOf(0) }
-    var endWidthPx by remember { mutableIntStateOf(0) }
     // 最近一次被拖动/设定的按钮：贴靠时它锚定在自己的时间位置，另一个让位
     var lastMovedIsStart by remember { mutableStateOf(false) }
     // 正在通过弹窗自定义时间的胶囊（null = 无）
     var editingIsStart by remember { mutableStateOf<Boolean?>(null) }
 
-    val trackW = trackWidthPx.toFloat()
-    val startW = startWidthPx.toFloat()
-    val endW = endWidthPx.toFloat()
-    // 时间 → 胶囊左缘位置：0:00 贴轨道左端、23:59 右缘贴轨道右端（未量宽前先放原点）
-    val rawStartX = if (trackW > 0f) startMinutes / DAY_LAST_MINUTE.toFloat() * (trackW - startW) else 0f
-    val rawEndX = if (trackW > 0f) endMinutes / DAY_LAST_MINUTE.toFloat() * (trackW - endW) else 0f
-    val startX: Float
-    val endX: Float
-    if (lastMovedIsStart) {
-        var s = rawStartX.coerceIn(0f, (trackW - startW).coerceAtLeast(0f))
-        var e = max(rawEndX, s + startW)
-        if (e > trackW - endW) e = (trackW - endW).coerceAtLeast(0f)
-        if (e - s < startW) s = (e - startW).coerceAtLeast(0f)
-        startX = s
-        endX = e
-    } else {
-        endX = rawEndX.coerceIn(0f, (trackW - endW).coerceAtLeast(0f))
-        startX = min(rawStartX, endX - startW).coerceAtLeast(0f)
-    }
-
-    Box(
+    Layout(
+        content = {
+            // 顺序即上方 measurables 顺序：开始在前、结束在后
+            TimeHandle(
+                minutes = startMinutes,
+                minMinutes = 0,
+                maxMinutes = endMinutes - 1,
+                trackWidthPx = trackWidthPx,
+                onChange = { newStart ->
+                    lastMovedIsStart = true
+                    onRangeChange(newStart, endMinutes)
+                },
+                onTap = { editingIsStart = true },
+            )
+            TimeHandle(
+                minutes = endMinutes,
+                minMinutes = startMinutes + 1,
+                maxMinutes = DAY_LAST_MINUTE,
+                trackWidthPx = trackWidthPx,
+                onChange = { newEnd ->
+                    lastMovedIsStart = false
+                    onRangeChange(startMinutes, newEnd)
+                },
+                onTap = { editingIsStart = false },
+            )
+        },
         modifier = modifier
             .fillMaxWidth()
             .height(SliderHeight)
@@ -120,35 +126,41 @@ fun TimeRangeSlider(
                     x += step
                 }
             },
-    ) {
-        TimeHandle(
-            minutes = startMinutes,
-            minMinutes = 0,
-            maxMinutes = endMinutes - 1,
-            xOffsetPx = startX,
-            trackWidthPx = trackWidthPx,
-            onWidthChanged = { startWidthPx = it },
-            onChange = { newStart ->
-                lastMovedIsStart = true
-                onRangeChange(newStart, endMinutes)
-            },
-            onTap = { editingIsStart = true },
-            modifier = Modifier.align(Alignment.CenterStart),
-        )
-        TimeHandle(
-            minutes = endMinutes,
-            minMinutes = startMinutes + 1,
-            maxMinutes = DAY_LAST_MINUTE,
-            xOffsetPx = endX,
-            trackWidthPx = trackWidthPx,
-            onWidthChanged = { endWidthPx = it },
-            onChange = { newEnd ->
-                lastMovedIsStart = false
-                onRangeChange(startMinutes, newEnd)
-            },
-            onTap = { editingIsStart = false },
-            modifier = Modifier.align(Alignment.CenterStart),
-        )
+    ) { measurables, constraints ->
+        val trackW = constraints.maxWidth.toFloat()
+        // 胶囊宽度自适应文字：松约束实测宽度后，同一次布局里解算位置
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val startPlaceable = measurables[0].measure(loose)
+        val endPlaceable = measurables[1].measure(loose)
+        val startW = startPlaceable.width.toFloat()
+        val endW = endPlaceable.width.toFloat()
+        // 时间 → 胶囊左缘：0:00 贴轨道左端、23:59 右缘贴轨道右端
+        val rawStartX = startMinutes / DAY_LAST_MINUTE.toFloat() * (trackW - startW)
+        val rawEndX = endMinutes / DAY_LAST_MINUTE.toFloat() * (trackW - endW)
+        val startX: Float
+        val endX: Float
+        if (lastMovedIsStart) {
+            var s = rawStartX.coerceIn(0f, (trackW - startW).coerceAtLeast(0f))
+            var e = max(rawEndX, s + startW)
+            if (e > trackW - endW) e = (trackW - endW).coerceAtLeast(0f)
+            if (e - s < startW) s = (e - startW).coerceAtLeast(0f)
+            startX = s
+            endX = e
+        } else {
+            endX = rawEndX.coerceIn(0f, (trackW - endW).coerceAtLeast(0f))
+            startX = min(rawStartX, endX - startW).coerceAtLeast(0f)
+        }
+
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            startPlaceable.placeRelative(
+                startX.roundToInt(),
+                (constraints.maxHeight - startPlaceable.height) / 2,
+            )
+            endPlaceable.placeRelative(
+                endX.roundToInt(),
+                (constraints.maxHeight - endPlaceable.height) / 2,
+            )
+        }
     }
 
     // 点按胶囊 → 钟表弹窗精确设置（TimePicker 结构性杜绝格式错误）；确认时同样夹紧先后顺序
@@ -193,16 +205,14 @@ fun TimeRangeSlider(
 
 /**
  * 单个时间胶囊：灰底蓝字（tnum 等宽数字，拖动中数字位宽稳定不抖），可点按、可横向拖动。
- * [xOffsetPx] 由 [TimeRangeSlider] 解算（含贴靠推挤），这里只负责摆放与手势。
+ * 摆放位置由 [TimeRangeSlider] 的 Layout 解算，这里只负责自身尺寸与手势。
  */
 @Composable
 private fun TimeHandle(
     minutes: Int,
     minMinutes: Int,
     maxMinutes: Int,
-    xOffsetPx: Float,
     trackWidthPx: Int,
-    onWidthChanged: (Int) -> Unit,
     onChange: (Int) -> Unit,
     onTap: () -> Unit,
     modifier: Modifier = Modifier,
@@ -220,14 +230,10 @@ private fun TimeHandle(
 
     Box(
         modifier = modifier
-            .offset { IntOffset(xOffsetPx.roundToInt(), 0) }
             .height(HandleHeight)
             .clip(RowShape)
             .background(colors.background)
-            .onSizeChanged {
-                widthPx = it.width
-                onWidthChanged(it.width)
-            }
+            .onSizeChanged { widthPx = it.width }
             .pointerInput(Unit) {
                 detectTapGestures { currentOnTap() }
             }
