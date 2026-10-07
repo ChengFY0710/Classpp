@@ -104,6 +104,7 @@
     <string name="edit_delete">删除</string>
     <string name="edit_cell_info">当前：%1$s｜%2$s｜%3$s</string>
     <string name="edit_end_slot_section">上课节次</string>
+    <string name="edit_start_slot">开始节次</string>
     <string name="edit_end_slot">结束节次</string>
     <string name="edit_span_hint">课程占 %1$d - %2$d 节，跨 %3$d 节</string>
     <string name="edit_course_name">课程名</string>

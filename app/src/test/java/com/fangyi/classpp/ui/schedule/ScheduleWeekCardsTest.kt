@@ -121,4 +121,53 @@ class ScheduleWeekCardsTest {
         assertFalse(bWeek.isContinuationAt(3, 2))
         assertNull(bWeek.findAt(3, 2))
     }
+
+    @Test
+    fun continuationSlotCourseShowsWhenSpanningCourseIsOff() {
+        // 起始节不同的两门：跨节的 A 占第 1-2 节（绿），单节的 B 占第 2 节（橙）。
+        // 轮到 B 的周：B 正常显示、A 让位——A 本周不上，它的跨节卡不能再盖住 B
+        val spanning = course("span", slot = 1, color = CourseColor.Green, active = false, span = 2)
+        val single = course("single", slot = 2, color = CourseColor.Orange, active = true)
+
+        val bWeek = listOf(spanning, single).resolveWeekCards()
+        assertEquals(listOf(single.copy(alternateBar = CourseColor.Green)), bWeek)
+        assertFalse(bWeek.isContinuationAt(3, 2))
+        assertNull(bWeek.findAt(3, 1))
+    }
+
+    @Test
+    fun spanningCardCoversContinuationMateOnlyInItsOwnWeeks() {
+        // 轮到 A 的周：跨节卡照常从第 1 节跨到第 2 节，B（本周不上）被盖住，只剩色条
+        val spanning = course("span", slot = 1, color = CourseColor.Green, active = true, span = 2)
+        val single = course("single", slot = 2, color = CourseColor.Orange, active = false)
+
+        val aWeek = listOf(spanning, single).resolveWeekCards()
+        assertEquals(spanning.copy(alternateBar = CourseColor.Orange), aWeek.single())
+        assertTrue(aWeek.isContinuationAt(3, 2))
+    }
+
+    @Test
+    fun offWeeksOfCrossSlotGroupFallBackToFirstAddedWithoutOverlap() {
+        // 全组本周都不上：回退最先添加的 A（整卡置灰），B 不再画出第二张重叠的置灰卡
+        val spanning = course("span", slot = 1, color = CourseColor.Green, active = false, span = 2)
+        val single = course("single", slot = 2, color = CourseColor.Orange, active = false)
+
+        assertEquals(listOf(spanning), listOf(spanning, single).resolveWeekCards())
+    }
+
+    @Test
+    fun unrelatedCellsStayVisibleAroundSpanningCard() {
+        // 跨节卡盖住的只是它的续格；不相交的另一格课照常显示，也吃不到色条
+        val spanning = course("span", slot = 1, color = CourseColor.Green, active = true, span = 2)
+        val covered = course("cov", slot = 2, color = CourseColor.Orange, active = false)
+        val below = course("below", slot = 4, color = CourseColor.Blue, active = true)
+
+        assertEquals(
+            listOf(
+                spanning.copy(alternateBar = CourseColor.Orange),
+                below,
+            ),
+            listOf(spanning, covered, below).resolveWeekCards(),
+        )
+    }
 }

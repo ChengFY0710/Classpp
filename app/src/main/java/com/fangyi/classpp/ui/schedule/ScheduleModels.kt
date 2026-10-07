@@ -146,29 +146,59 @@ val MockCoursesWeekend: List<Course> = MockCourses + listOf(
 )
 
 /**
- * 每周渲染解析：**一格只画一张卡**。
+ * 每周渲染解析：**输出的卡片两两不重叠**。
  *
- * 同格（同一天 + 同一起始节）的课程互为交替课程，周数互不重合（由校验保证），故本周
- * 只画在课的那门；非本周的组员不画卡，只把**非本周里最先添加的那门**的配色记到
- * [Course.alternateBar] 上——卡片底部 1/4 色条（见 CourseCard），组内再多门也只占 1/4。
- * 全组本周都不上课时退回列表首项（照旧置灰，且不画色条）。结果保持原列表顺序。
+ * 交替课程 = 同一天里 span 相交（占用节次有重合）的课程，周数互不重合（由校验保证），
+ * 故本周至多一门在课。交替课的起止节次可以不一致（跨节课程与它续格上的单节课就是一组），
+ * 不能再按"同起始节"分组，改为**按天两轮贪心**：
  *
- * 附带修掉"同格另一门被整卡盖住"的老问题：喂给网格的列表已只剩每格一张卡，
- * [findAt] 与 [isContinuationAt] 因此都只看到本周真正要画的那门。
+ * 1. 当周在课（[Course.active]）的卡全部显示——校验保证它们互不重叠；
+ * 2. 非在课的按添加顺序补位：卡范围（[slotId, slotId+span-1]）与已显示卡相交的跳过
+ *    （它本周不上，且画出来会被跨节卡盖住，正是"跨节覆盖续格课"的来源）。
+ *
+ * 全组本周都不上课时，最先添加的那门补位显示（照旧置灰，且不画色条）。
+ * 在课卡的 [Course.alternateBar] 记**与其 span 相交的第一门非在课课**的配色——
+ * 卡片底部 1/4 色条（见 CourseCard），组内再多门也只占 1/4；整卡置灰时不掺彩色。
+ * 结果保持原列表顺序。
+ *
+ * 喂给网格的列表已只剩互不重叠的卡，[findAt] 与 [isContinuationAt] 因此都只看到
+ * 本周真正要画的那门；被盖住的交替课靠色条与编辑选择弹窗触达（见 ScheduleScreen）。
  */
-fun List<Course>.resolveWeekCards(): List<Course> =
-    groupBy { it.dayOfWeek to it.slotId }.values.map { group ->
-        val primary = group.firstOrNull { it.active } ?: group.first()
-        val alternate = if (primary.active) {
-            group.firstOrNull { it !== primary && !it.active }
-        } else {
-            // 整卡置灰时不掺彩色，色条保持全灰
-            null
+fun List<Course>.resolveWeekCards(): List<Course> {
+    val shown = BooleanArray(size)
+    for ((_, dayIndices) in mapIndexed { index, course -> course.dayOfWeek to index }
+        .groupBy(keySelector = { it.first }, valueTransform = { it.second })
+    ) {
+        // 已显示卡占用的节次范围；新卡与任一范围相交即视为重叠
+        val occupied = mutableListOf<IntRange>()
+        fun tryShow(index: Int) {
+            val course = this[index]
+            val range = course.slotId..(course.slotId + course.span - 1)
+            if (occupied.none { range.first <= it.last && it.first <= range.last }) {
+                occupied += range
+                shown[index] = true
+            }
         }
-        primary.copy(alternateBar = alternate?.color)
+        dayIndices.filter { this[it].active }.forEach(::tryShow)
+        dayIndices.filterNot { this[it].active }.forEach(::tryShow)
     }
+    return mapIndexed { index, course ->
+        course.takeIf { shown[index] }?.let { card ->
+            if (!card.active) {
+                card
+            } else {
+                val bar = firstOrNull { other ->
+                    !other.active && other.dayOfWeek == card.dayOfWeek &&
+                        other.slotId <= card.slotId + card.span - 1 &&
+                        card.slotId <= other.slotId + other.span - 1
+                }?.color
+                card.copy(alternateBar = bar)
+            }
+        }
+    }.filterNotNull()
+}
 
-/** 查找某格的课程（解析后每格至多一张）；跨节课程只在起始格命中 */
+/** 查找某格起始的课程（解析后各卡互不重叠，同一格至多一张）；跨节课程只在起始格命中 */
 fun List<Course>.findAt(dayOfWeek: Int, slotId: Int): Course? =
     firstOrNull { it.dayOfWeek == dayOfWeek && it.slotId == slotId }
 

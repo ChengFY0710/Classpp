@@ -99,8 +99,8 @@ private const val DateBandFadeSpeed = 3.0f
  * 列表状态由调用方持有（供模糊进度与日期带渐隐计算），顶部偏移由 contentPadding.top 跟随顶栏高度；
  * Pager 状态同样由调用方持有（供周次 ↔ 翻页双向同步）。
  *
- * 喂进来的 [WeekPageContent.courses] 已由 resolveWeekCards 解析过：每格至多一张卡
- * （交替课程只画当周那门），非本周的交替课只剩卡片底部 1/4 色条。
+ * 喂进来的 [WeekPageContent.courses] 已由 resolveWeekCards 解析过：各卡两两不重叠
+ * （交替课程只画当周那门，起止节次可以不一致），非本周的交替课只剩卡片底部 1/4 色条。
  */
 @Composable
 fun CourseGrid(

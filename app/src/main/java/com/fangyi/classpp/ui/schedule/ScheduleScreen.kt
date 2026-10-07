@@ -79,8 +79,8 @@ import com.fangyi.classpp.data.ScheduleValidator
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.ScheduleFile
-import com.fangyi.classpp.data.model.cellCourses
 import com.fangyi.classpp.data.model.newUuid
+import com.fangyi.classpp.data.model.overlappingCourses
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.navigation.NavReserve
@@ -467,8 +467,9 @@ fun ScheduleScreen(
             val onAddClick: (Int, TimeSlot) -> Unit = remember {
                 { day, slot -> addTarget = listOf(day, slot.id) }
             }
-            // 点已有课卡：浏览态 → 课程详情浮层；编辑态：同格只有一门 → 直接开编辑面板，
-            // 多门（交替课程）→ 先让用户点名要编辑哪门，否则其余几门永远进不去（它们不在本周的网格上）
+            // 点已有课卡：浏览态 → 课程详情浮层；编辑态：与之相交的只有一门 → 直接开编辑面板，
+            // 多门（span 相交的交替课程，含跨节覆盖的续格课）→ 先让用户点名要编辑哪门，
+            // 否则被跨节卡盖住的那几门永远进不去（它们不在本周的网格上）
             val onEditClick: (String) -> Unit = remember(editSession) {
                 { courseId ->
                     val session = editSession
@@ -476,7 +477,12 @@ fun ScheduleScreen(
                         detailTargetId = courseId
                     } else {
                         val entry = session.courses.firstOrNull { it.id == courseId }
-                        if (entry != null && session.courses.cellCourses(entry.dayOfWeek, entry.startSlot).size > 1) {
+                        if (entry != null && session.courses.overlappingCourses(
+                                entry.dayOfWeek,
+                                entry.startSlot,
+                                entry.endSlot,
+                            ).size > 1
+                        ) {
                             chooserSourceId = courseId
                         } else {
                             editTargetId = courseId
@@ -834,10 +840,12 @@ fun ScheduleScreen(
             val editingSlot = editingEntry?.let { e -> timeSlots.firstOrNull { it.id == e.startSlot } }
             val alternateSource = editSession?.courses?.firstOrNull { it.id == alternateSourceId }
             val alternateSlot = alternateSource?.let { e -> timeSlots.firstOrNull { it.id == e.startSlot } }
-            // 选择弹窗的候选：被点卡片所在格的全部课程（从草稿反查，条目没了弹窗自然关闭）
+            // 选择弹窗的候选：被点课程 span 相交的同天课程（交替组，含跨节卡覆盖的续格课）。
+            // 从草稿反查，条目没了弹窗自然关闭
             val chooserCourses = editSession?.let { draft ->
-                draft.courses.firstOrNull { it.id == chooserSourceId }
-                    ?.let { draft.courses.cellCourses(it.dayOfWeek, it.startSlot) }
+                draft.courses.firstOrNull { it.id == chooserSourceId }?.let { entry ->
+                    draft.courses.overlappingCourses(entry.dayOfWeek, entry.startSlot, entry.endSlot)
+                }
             }.orEmpty()
 
             // 添加/编辑课程面板：页内覆盖层而非 Dialog 窗口——输入法要接得进来（见 AddCoursePanel 注释）。

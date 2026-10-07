@@ -52,9 +52,9 @@ import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.Parity
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.WeekPattern
-import com.fangyi.classpp.data.model.cellCourses
 import com.fangyi.classpp.data.model.firstUnusedColor
 import com.fangyi.classpp.data.model.newUuid
+import com.fangyi.classpp.data.model.overlappingCourses
 import com.fangyi.classpp.data.model.weeksFromSelection
 import com.fangyi.classpp.data.model.weeksTakenByOthers
 import com.fangyi.classpp.ui.components.CardSection
@@ -86,10 +86,12 @@ private val secondaryTextSize = 15.sp // 描述性文字统一大小
  * 标题切换、显示删除按钮；[onDelete] 点删除即回调（直接删草稿，无二次确认——
  * 取消编辑即可整体撤销）。两者都只作用于草稿，保存时才落库。
  *
- * [alternateFrom] 非空 = 长按已有课新建**交替课程**（与 [existing] 互斥）：同格同节次，
- * 结束节次锁定跟随源课，周数默认取该格还没被占用的周、配色取组内没用过的第一个；
- * 同格其它课已占的周在方格里灰显不可点——交替课程的周数不能重合。
- * 编辑已有课时同样灰显其它交替课占用的周。
+ * [alternateFrom] 非空 = 长按已有课新建**交替课程**（与 [existing] 互斥）：默认与源课同起止
+ * （"默认一致"），结束节次锁定跟随源课，周数默认取该组还没被占用的周、配色取组内没用过的
+ * 第一个；组内其它课（含被源课跨节覆盖的续格课）已占的周在方格里灰显不可点——交替课程的
+ * 周数不能重合。组内有跨节课程（span ≥ 2）时出现「开始节次」选择：组员的起止节次可以
+ * 不一致，开始节次最早可选到组的最早节次。
+ * 编辑已有课时同样灰显组内其它课占用的周。
  *
  * **UI 层已按设计稿改造为顶栏浮层（见 [OverlaySheet]）**：
  * - 浮层距屏幕顶端 = 设备状态栏高度（`OverlaySheet` 默认读取 `WindowInsets.statusBars`），
@@ -121,19 +123,33 @@ fun AddCoursePanel(
     onDelete: (() -> Unit)? = null,
     alternateFrom: CourseEntry? = null,
 ) {
-    // 同格的其它交替课程（排除正在编辑的这门自己）
-    val groupOthers = draftCourses.cellCourses(day, slot.id).filterNot { it.id == existing?.id }
-    // 其它交替课占用的周：不能选（周数重合即冲突），新建时把整组都算作占用
-    val blockedWeeks = draftCourses.weeksTakenByOthers(
-        selfId = existing?.id ?: "",
-        dayOfWeek = day,
-        startSlot = slot.id,
-        totalWeeks = schedule.totalWeeks,
-    )
     // 编辑态从 existing 预填；面板随 if 离开组合即销毁，重开时初值重新生效
     var name by rememberSaveable { mutableStateOf(existing?.name ?: "") }
     var teacher by rememberSaveable { mutableStateOf(existing?.teacher ?: "") }
     var location by rememberSaveable { mutableStateOf(existing?.location ?: "") }
+    // 开始节次：仅新建交替课程面板出现选择项（组内有跨节课时，见 showStartSlot），
+    // 默认与源课同起止（"默认一致"）；编辑/新建普通课程锁定为所在格
+    var startSlotId by rememberSaveable(slot.id) {
+        mutableStateOf(existing?.startSlot ?: alternateFrom?.startSlot ?: slot.id)
+    }
+    // 结束节次：key=slot.id，重开面板（或旋转恢复后目标格变化）即复位；
+    // 编辑态初值取被编辑课的末节，新建交替课时跟随源课（默认同起止）
+    var endSlotId by rememberSaveable(slot.id) {
+        mutableStateOf(existing?.endSlot ?: alternateFrom?.endSlot ?: slot.id)
+    }
+    // 与草稿当前范围（开始节次..结束节次）相交的同天其它课 = 交替面（排除正在编辑的这门自己）：
+    // 跨节吞掉的续格课也在内——它们一起成为交替课程，起止节次各自不变
+    val groupOthers = draftCourses.overlappingCourses(day, startSlotId, endSlotId)
+        .filterNot { it.id == existing?.id }
+    // 交替面占用的周：不能选（周数重合即冲突），新建时把整组都算作占用。
+    // 随节次选择即时变化：把结束节次拉到某门课上，那一课的周就地灰显
+    val blockedWeeks = draftCourses.weeksTakenByOthers(
+        selfId = existing?.id ?: "",
+        dayOfWeek = day,
+        startSlot = startSlotId,
+        endSlot = endSlotId,
+        totalWeeks = schedule.totalWeeks,
+    )
     var selectedWeeks by rememberSaveable {
         mutableStateOf(
             when {
@@ -151,37 +167,48 @@ fun AddCoursePanel(
         mutableStateOf(
             when {
                 existing != null -> CourseColor.valueOf(existing.color.name)
-                alternateFrom != null -> draftCourses.firstUnusedColor(day, slot.id)
+                alternateFrom != null -> draftCourses.firstUnusedColor(day, startSlotId, endSlotId)
                 else -> CourseColor.Blue
             },
         )
     }
-    // 结束节次：key=slot.id，重开面板（或旋转恢复后目标格变化）即复位；
-    // 编辑态初值取被编辑课的末节，新建交替课时跟随源课（同一位置）
-    var endSlotId by rememberSaveable(slot.id) {
-        mutableStateOf(existing?.endSlot ?: alternateFrom?.endSlot ?: slot.id)
-    }
     var error by remember { mutableStateOf<String?>(null) }
+
+    // 新建交替课的"组"：与源课 span 相交的同天课程（含源课自己）
+    val alternateGroup = alternateFrom?.let { source ->
+        draftCourses.overlappingCourses(day, source.startSlot, source.endSlot)
+    }.orEmpty()
+    // 组内有一门跨节（span ≥ 2）时组员的起止节次可能不一致，开始节次才需要可选——
+    // 让新交替课对齐到不同成员（如源课只占第 4 节、组里的跨节课占 3-4 节，可选 3 或 4 起始）
+    val showStartSlot = alternateFrom != null && alternateGroup.any { it.span >= 2 }
+    // 开始节次菜单：下限取组的最早节次（新交替课不能探出组的占用范围顶端）与跨度上限，
+    // 上限 = 结束节次（交替模式锁定为源课末节）
+    val groupEarliestSlot = alternateGroup.minOfOrNull { it.startSlot } ?: slot.id
+    val startMenuItems = run {
+        val minSlot = maxOf(groupEarliestSlot, endSlotId - ScheduleValidator.MAX_SPAN + 1, 1)
+        (minSlot..endSlotId).map { id -> id to stringResource(R.string.slot_format, id) }
+    }
 
     val weekdays = stringArrayResource(R.array.weekdays)
     val weekdayName = weekdays[(day - 1).coerceIn(weekdays.indices)]
-    val slotLabel = if (endSlotId == slot.id) {
-        stringResource(R.string.slot_format, slot.id)
+    val slotLabel = if (endSlotId == startSlotId) {
+        stringResource(R.string.slot_format, startSlotId)
     } else {
-        stringResource(R.string.slot_range_format, slot.id, endSlotId)
+        stringResource(R.string.slot_range_format, startSlotId, endSlotId)
     }
-    // 恢复的 endSlotId 理论上不越界，仍钳一下防进程重建后的极端情况
+    // 恢复的节次理论上不越界，仍钳一下防进程重建后的极端情况
+    val startDef = schedule.slots[(startSlotId - 1).coerceIn(schedule.slots.indices)]
     val endDef = schedule.slots[(endSlotId - 1).coerceIn(schedule.slots.indices)]
     val cellInfo = stringResource(
         R.string.edit_cell_info,
         weekdayName,
         slotLabel,
-        "${slot.startTime}-${endDef.endTime}",
+        "${startDef.startTime}-${endDef.endTime}",
     )
     val weeks = weeksFromSelection(selectedWeeks)
 
     // 结束节次菜单：只列合法项（起始之前 / 跨度过长的不出现）；
-    // 交替课程与源课同位置，跨度锁定后菜单里只剩那一个末节
+    // 交替课程默认与源课同起止，跨度锁定后菜单里只剩那一个末节
     val maxEnd = minOf(schedule.slotCount, slot.id + ScheduleValidator.MAX_SPAN - 1)
     val endRange = alternateFrom?.let { it.endSlot..it.endSlot } ?: (slot.id..maxEnd)
     val endMenuItems = endRange.map { id -> id to stringResource(R.string.slot_format, id) }
@@ -195,6 +222,16 @@ fun AddCoursePanel(
     val errorSpanFormat = stringResource(R.string.error_span_out_of_range)
     val errorConflictFormat = stringResource(R.string.error_grid_conflict)
     val errorUnexpected = stringResource(R.string.error_unexpected)
+
+    // 节次选择与已选周数的联合校验：把范围调成 [start..end] 后若与某门被涉课的周数重合，
+    // 点名报冲突——"周数冲突的不能设置跨节"在选择层就拦下，不用等确认时的整草稿校验
+    fun spanConflictMessage(start: Int, end: Int): String? =
+        draftCourses.firstOrNull { course ->
+            course.id != existing?.id &&
+                course.dayOfWeek == day &&
+                course.startSlot <= end && course.endSlot >= start &&
+                selectedWeeks.any { course.weeks.contains(it) }
+        }?.let { errorConflictFormat.format(it.name) }
 
     val nameFocus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
@@ -233,9 +270,10 @@ fun AddCoursePanel(
             return
         }
         // 结束节次已在菜单层限制，这里再钳一次（跨度 ≤ MAX_SPAN 且不超总节数）
+        val start = startSlotId.coerceIn(1, schedule.slotCount)
         val end = endSlotId.coerceIn(
-            slot.id,
-            minOf(schedule.slotCount, slot.id + ScheduleValidator.MAX_SPAN - 1),
+            start,
+            minOf(schedule.slotCount, start + ScheduleValidator.MAX_SPAN - 1),
         )
         val entry = CourseEntry(
             // 编辑态沿用原 id（写回时按 id 覆盖），添加态生成新 id
@@ -244,8 +282,8 @@ fun AddCoursePanel(
             teacher = teacher.trim(),
             location = location.trim(),
             dayOfWeek = day,
-            startSlot = slot.id,
-            span = end - slot.id + 1,
+            startSlot = start,
+            span = end - start + 1,
             weeks = weeks,
             // 色块用的是渲染层的 CourseColor（同包、自带配色），落库时按 name 桥接（同 ScheduleAdapters）
             color = DataCourseColor.valueOf(color.name),
@@ -376,22 +414,45 @@ fun AddCoursePanel(
             )
 
             CardSection(title = stringResource(R.string.edit_end_slot_section)) {
+                // 开始节次：仅组内有跨节课时出现（组员起止可以不一致），与结束节次同一套选择卡
+                if (showStartSlot) {
+                    PopupSelectCard(
+                        title = stringResource(R.string.edit_start_slot),
+                        valueText = startSlotId.toString(),
+                        items = startMenuItems,
+                        selectedId = startSlotId,
+                        onPick = { id ->
+                            val message = spanConflictMessage(id, endSlotId)
+                            if (message == null) {
+                                startSlotId = id
+                                error = null
+                            } else {
+                                fail(message)
+                            }
+                        },
+                    )
+                }
                 PopupSelectCard(
                     title = stringResource(R.string.edit_end_slot),
                     valueText = endSlotId.toString(),
                     items = endMenuItems,
                     selectedId = endSlotId,
                     onPick = { id ->
-                        endSlotId = id
-                        error = null
+                        val message = spanConflictMessage(startSlotId, id)
+                        if (message == null) {
+                            endSlotId = id
+                            error = null
+                        } else {
+                            fail(message)
+                        }
                     },
                 )
                 Text(
                     text = stringResource(
                         R.string.edit_span_hint,
-                        slot.id,
+                        startSlotId,
                         endSlotId,
-                        endSlotId - slot.id + 1,
+                        endSlotId - startSlotId + 1,
                     ),
                     fontSize = secondaryTextSize,
                     color = MaterialTheme.colorScheme.primary,
