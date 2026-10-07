@@ -29,6 +29,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.ScheduleRepository
+import com.fangyi.classpp.data.TagRepository
 import com.fangyi.classpp.data.TodoReadResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.TodoSort
@@ -76,6 +78,8 @@ private val SectionSpacing = 20.dp
 fun TodoScreen(
     modifier: Modifier = Modifier,
     repository: TodoRepository? = null,
+    tagRepository: TagRepository? = null,
+    scheduleRepository: ScheduleRepository? = null,
     showNewTodoSheet: Boolean = false,
     onNewTodoSheetDismiss: () -> Unit = {},
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
@@ -203,10 +207,12 @@ fun TodoScreen(
             visible = showNewTodoSheet,
             onDismissed = { newTodoMounted = false },
             onDismiss = onNewTodoSheetDismiss,
-            onConfirm = { name ->
+            tagRepository = tagRepository,
+            scheduleRepository = scheduleRepository,
+            onConfirm = { todo ->
                 scope.launch {
-                    // 空名已在浮层内拦截，Err 仅剩落盘失败等异常，Toast 提示、表单保持原样
-                    when (repository.addTodo(Todo(id = "", name = name))) {
+                    // 空名等非法值已在浮层内拦截，Err 仅剩落盘失败等异常，Toast 提示、表单保持原样
+                    when (repository.addTodo(todo)) {
                         is TodoReadResult.Ok -> onNewTodoSheetDismiss()
                         is TodoReadResult.Err -> AppToasts.show(context, saveFailedMessage)
                     }

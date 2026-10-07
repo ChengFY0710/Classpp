@@ -120,7 +120,7 @@ class MainActivity : ComponentActivity() {
                 var showNewTodoSheet by rememberSaveable { mutableStateOf(false) }
                 val repository = rememberScheduleRepository()
                 val todoRepository = rememberTodoRepository()
-                // 标签宿主（待办编辑浮层的标签选择卡）接入时传入；先装配让 tags.json 随启动建库
+                // 标签宿主（新建待办浮层的标签选择卡）：连同课表仓库（课程标签由课表派生）一起传入
                 val tagRepository = rememberTagRepository()
 
                 // 回调记忆化：ScheduleScreen 的其余入参都稳定（repository 单例、editing 仅
@@ -304,6 +304,8 @@ class MainActivity : ComponentActivity() {
                                         AppTab.Todo -> TodoScreen(
                                             modifier = pageModifier,
                                             repository = todoRepository,
+                                            tagRepository = tagRepository,
+                                            scheduleRepository = repository,
                                             showNewTodoSheet = showNewTodoSheet,
                                             onNewTodoSheetDismiss = onNewTodoSheetDismiss,
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,

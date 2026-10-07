@@ -603,3 +603,26 @@ private fun DateSelectionCardPreview() = ClassppTheme {
         )
     }
 }
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
+private fun DeadlineCardPreview() = ClassppTheme {
+    // 两态：未设置（灰「无」）/ 已设置（2026-9-7 8:00，全交互：日期弹窗 → 时刻弹窗）
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        DeadlineCard(
+            deadlineDate = null,
+            deadlineMinute = null,
+            onChange = { _, _ -> },
+        )
+        DeadlineCard(
+            deadlineDate = IsoDate.of(2026, 9, 7),
+            deadlineMinute = 8 * 60,
+            onChange = { _, _ -> },
+        )
+    }
+}

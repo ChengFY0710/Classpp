@@ -16,6 +16,19 @@
     <string name="todo_section_undated">无日期</string>
     <string name="todo_section_completed">已完成</string>
     <string name="todo_error_save_failed">保存失败，请稍后重试</string>
+    <!-- 新建待办浮层：分组标题与表单字段 -->
+    <string name="todo_section_reminder">提醒与优先级</string>
+    <string name="todo_section_date_time">日期与时间</string>
+    <string name="todo_section_tags">标签</string>
+    <string name="todo_section_more">更多</string>
+    <string name="todo_location_label">待办地点</string>
+    <string name="todo_location_hint">待办地点</string>
+    <string name="todo_note_hint">点击输入添加备注</string>
+    <!-- 时刻形态三选项（RowChoiceCard） -->
+    <string name="todo_time_none">无</string>
+    <string name="todo_time_all_day">全天</string>
+    <string name="todo_time_period">时段</string>
+    <string name="todo_error_dates_required">请先选择日期</string>
     <string name="month_day_format">%1$d月%2$d日</string>
     <string name="date_title_format">%1$s %2$s</string>
     <string name="back_to_current_week">返回本周</string>
@@ -200,6 +213,11 @@
     <string name="date_card_custom">自定义</string>
     <string name="date_card_custom_date">自定义日期</string>
     <string name="date_card_repeat">重复</string>
+    <!-- 截止日期卡（DeadlineCard）：单行直入选择器 -->
+    <string name="deadline_card_label">截止日期</string>
+    <string name="deadline_card_none">无</string>
+    <string name="deadline_card_time_title">截止时刻</string>
+    <string name="deadline_card_clear">清除</string>
     <string name="repeat_daily">每天</string>
     <string name="repeat_weekly">每周</string>
     <string name="repeat_monthly">每月</string>
