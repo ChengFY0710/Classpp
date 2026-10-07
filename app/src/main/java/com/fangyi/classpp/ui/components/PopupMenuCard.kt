@@ -1,5 +1,6 @@
 package com.fangyi.classpp.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,11 +11,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -25,7 +24,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.MenuShape
+import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
 
 /** 勾选图标边长；未勾选行保留同宽空槽，勾选/未勾选的文字左缘对齐（设计稿） */
 private val CheckIconSize = 20.dp
@@ -68,22 +71,41 @@ data class PopupMenuSection(
  * CircleShape 是「短边一半」圆角，宽卡上会变成胶囊轮廓并裁掉四角内容。
  * [blurProgress] ∈ [0,1] 缩放投影强度，默认 1f（完整阴影）；
  * 宿主想跟弹出动画联动时可传入过渡进度。
+ *
+ * 材质：默认不透明白卡；[hazeState] 非空时白底之上叠 Haze 毛玻璃（WeekPickerCardShell
+ * 同款配方，跨 Popup 窗口采样宿主页面的 hazeSource）——hazeEffect 须画在背景之上、
+ * 内容之下，故壳用 Box + background 而非 Surface（其 modifier 链插不进这一层）；
+ * 圆角由投影层 clip 统一裁剪。 hazeEffect 的 block 在绘制期执行、非 composable 上下文，
+ * tint 取值提前到 modifier 之前。
  */
 @Composable
 fun PopupMenuCard(
     sections: List<PopupMenuSection>,
     modifier: Modifier = Modifier,
     blurProgress: Float = 1f,
+    hazeState: HazeState? = null,
 ) {
-    Surface(
-        shape = MenuShape,
-        color = MaterialTheme.colorScheme.surface,
-        modifier = modifier.graphicsLayer {
-            shape = MenuShape
-            clip = true
-            shadowElevation = 45.dp.toPx() * blurProgress
-            spotShadowColor = Color.Black.copy(alpha = 0.2f)
-        },
+    val hazeTint = MaterialTheme.classppColors.hazeTint
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                shape = MenuShape
+                clip = true
+                shadowElevation = 36.dp.toPx() * blurProgress
+                spotShadowColor = Color.Black.copy(alpha = 0.15f)
+            }
+            .background(MaterialTheme.colorScheme.surface)
+            .then(
+                if (hazeState != null) {
+                    Modifier.hazeEffect(hazeState) {
+                        blurRadius = 12.dp
+                        tints = listOf(HazeTint(hazeTint.copy(alpha = 0.6f)))
+                        noiseFactor = 0f
+                    }
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         PopupMenuContent(sections = sections)
     }

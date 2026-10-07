@@ -287,6 +287,7 @@ fun TodoTopBar(
                                 expanded = sortMenuExpanded,
                                 onDismiss = onSortMenuDismiss,
                                 sections = sortMenuSections,
+                                hazeState = hazeState,
                             )
                         }
                     }
@@ -304,6 +305,8 @@ fun TodoTopBar(
  * Popup 内容四周含透明投影留白（左右上 [CardShadowPadding]、底部 [CardShadowBottomPadding]，
  * 45dp 柔影向下坠得最远）防被窗口边界裁剪，定位时只反向扣除左/上留白，让卡片视觉
  * 位置与留白无关。
+ * [hazeState] 下发给 [PopupMenuCard] 做毛玻璃（跨窗口采样页面 hazeSource，WeekPicker
+ * 周数弹窗同款），null（如 @Preview）退化为不透明白卡。
  *
  * 动画：scale 0.8→1（Motion.PopupScaleMillis）+ alpha 0→1（Motion.PopupFadeMillis），
  * 自胶囊所在的左上角长出；收起反向播放，播完才移除弹层。
@@ -313,6 +316,7 @@ private fun SortMenuPopup(
     expanded: Boolean,
     onDismiss: () -> Unit,
     sections: List<PopupMenuSection>,
+    hazeState: HazeState? = null,
 ) {
     // 收起动画期间保持弹层在场：targetState（开）或 currentState（关动画未完）任一为真
     val expandedState = remember { MutableTransitionState(false) }
@@ -358,6 +362,7 @@ private fun SortMenuPopup(
         ) {
             PopupMenuCard(
                 sections = sections,
+                hazeState = hazeState,
                 // 投影留白垫在卡外（裁切线 = Popup 窗口边缘，留白多大柔影就有多少活动空间）：
                 // 左右上 16dp、底部 48dp——光源在上投影向下坠得最远（WeekPicker 同款配方）；
                 // 缩放/淡入排在其外，整卡（含柔影）一起变换
