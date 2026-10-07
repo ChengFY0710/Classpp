@@ -6,6 +6,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
@@ -381,6 +386,69 @@ private fun ColorSwatchCardPreview() = ClassppTheme {
             contentColor = MaterialTheme.colorScheme.onError,
             iconAtEnd = true,
             onClick = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
+private fun TagChoosingCardPreview() = ClassppTheme {
+    // 预览内模拟宿主数据流：标签列表/选中集合都在内存，输入新增、点击选中、长按删除皆可交互。
+    // 新增标签恒用 Primary（颜色选择器接入前的默认色）。
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val errorColor = MaterialTheme.colorScheme.error
+    val userTags = remember {
+        mutableStateListOf(
+            TagItem("紧急", primaryColor),
+            TagItem("本周", Color(0xFF22B14C)),
+            TagItem("实验报告", Color(0xFFE3C160)),
+            TagItem("复习", errorColor),
+        )
+    }
+    // 课程标签的宿主映射示例：激活课表课程按名去重 + 课程卡配色（CourseColor.barColor 的色值）
+    val courseTags = listOf(
+        TagItem("高等数学", Color(0xFFB1C4EE)),
+        TagItem("大学英语", Color(0xFF81D689)),
+        TagItem("数据结构", Color(0xFF98D651)),
+        TagItem("大学物理", Color(0xFFE3C160)),
+        TagItem("有机化学", Color(0xFFEBB8A7)),
+        TagItem("毛概", Color(0xFFCBBCF0)),
+    )
+    var selected by remember { mutableStateOf(setOf("紧急")) }
+    val onAddTag: (String) -> Unit = { name ->
+        userTags.add(TagItem(name, primaryColor))
+    }
+    // 删除时同步从选中集合移除：选中键是标签名，残留会让同名新标签带着选中态复活
+    val onDeleteTag: (String) -> Unit = { name ->
+        userTags.removeAll { it.name == name }
+        selected = selected - name
+    }
+
+    // clearFocusOnTap：点空白失焦提交输入（真实宿主 OverlaySheet 内容列已内置，此处对齐）
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .clearFocusOnTap(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        TagChoosingCard(
+            userTags = userTags,
+            courseTags = courseTags,
+            selectedNames = selected,
+            onSelectionChange = { selected = it },
+            onAddTag = onAddTag,
+            onDeleteTag = onDeleteTag,
+        )
+        // 展开态：课程标签 FlowRow 换行显示
+        TagChoosingCard(
+            userTags = userTags,
+            courseTags = courseTags,
+            selectedNames = selected,
+            onSelectionChange = { selected = it },
+            onAddTag = onAddTag,
+            onDeleteTag = onDeleteTag,
+            initialCourseExpanded = true,
         )
     }
 }

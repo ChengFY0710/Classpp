@@ -164,4 +164,8 @@
     <string name="error_import_format">Invalid file format</string>
     <string name="error_import_version">Unsupported file version</string>
     <string name="error_import_kind">Not a schedule file</string>
+
+    <!-- Tag choosing card -->
+    <string name="tag_choosing_input_hint">Tap to add a tag</string>
+    <string name="tag_choosing_course_title">Course tags</string>
 </resources>

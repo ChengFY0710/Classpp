@@ -170,4 +170,8 @@
     <string name="error_import_format">文件格式无效</string>
     <string name="error_import_version">不支持的文件版本</string>
     <string name="error_import_kind">不是课表文件</string>
+
+    <!-- Tag choosing card -->
+    <string name="tag_choosing_input_hint">点击输入添加标签</string>
+    <string name="tag_choosing_course_title">课程标签</string>
 </resources>
