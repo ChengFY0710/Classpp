@@ -175,4 +175,12 @@
     <string name="urgency_medium">Urgent</string>
     <string name="urgency_low">Not urgent</string>
     <string name="urgency_none">None</string>
+
+    <!-- Todo sort menu -->
+    <string name="sort_created">Time</string>
+    <string name="sort_deadline">Deadline</string>
+    <string name="sort_urgency">Urgency</string>
+    <string name="sort_name">Name</string>
+    <string name="sort_ascending">Ascending</string>
+    <string name="sort_descending">Descending</string>
 </resources>

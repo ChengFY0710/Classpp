@@ -62,11 +62,13 @@ fun List<Todo>.filterTodos(filter: TodoFilter): List<Todo> {
 }
 
 /**
- * 待办排序键。各 comparator 均稳定（同键保持原列表次序）：
- * - [Deadline]：按截止时刻升序，无截止的排最后；
- * - [Urgency]：紧急程度降序（非常急在前、无最后），同度按截止时刻；
- * - [Created]：按创建时间降序（新在前）；
- * - [Name]：按名称字典序。
+ * 待办排序键。各 comparator 均稳定（同键保持原列表次序）。降序（默认）按各字段
+ * 「更要紧的在前」定义：
+ * - [Urgency]：紧急度高在前（非常急 → … → 不急 → 无）；
+ * - [Deadline]：截止早的在前，无截止的排最后（升序整体反序，无截止改排最前）；
+ * - [Created]：创建早的在前（等得久的排前面）；
+ * - [Name]：名称字典序（A→Z）。
+ * 升序 = 降序整体反序（[comparator] 的 descending = false）。
  */
 enum class TodoSort {
     Deadline,
@@ -75,7 +77,7 @@ enum class TodoSort {
     Name,
 }
 
-/** 紧急程度排序权重：Critical 最小（最靠前）、None 最大（最靠后） */
+/** 紧急程度权重：数值越大紧急度越低（Critical 最小、None 最大） */
 private val URGENCY_RANK: Map<TodoUrgency, Int> = mapOf(
     TodoUrgency.Critical to 0,
     TodoUrgency.High to 1,
@@ -84,18 +86,24 @@ private val URGENCY_RANK: Map<TodoUrgency, Int> = mapOf(
     TodoUrgency.None to 4,
 )
 
-/** [TodoSort] 对应的 comparator */
-fun TodoSort.comparator(): Comparator<Todo> = when (this) {
-    TodoSort.Deadline -> compareBy<Todo>(
-        { it.deadlineDate?.epochDay ?: Long.MAX_VALUE },
-        { it.deadlineMinute ?: Int.MAX_VALUE },
-    )
-    TodoSort.Urgency -> compareBy<Todo> { URGENCY_RANK.getValue(it.urgency) }
-        .thenBy { it.deadlineDate?.epochDay ?: Long.MAX_VALUE }
-        .thenBy { it.deadlineMinute ?: Int.MAX_VALUE }
-    TodoSort.Created -> compareByDescending<Todo> { it.createdAtMillis }
-    TodoSort.Name -> compareBy<Todo> { it.name }
+/**
+ * [TodoSort] 对应的 comparator（[descending] = 降序，默认 true）。
+ * 各字段的降序定义见 [TodoSort] 注释。
+ */
+fun TodoSort.comparator(descending: Boolean = true): Comparator<Todo> {
+    val base = when (this) {
+        TodoSort.Deadline -> compareBy<Todo>(
+            { it.deadlineDate?.epochDay ?: Long.MAX_VALUE },
+            { it.deadlineMinute ?: Int.MAX_VALUE },
+        )
+        // 降序 = 紧急度高在前 = 权重值小（Critical=0）的在前
+        TodoSort.Urgency -> compareBy { URGENCY_RANK.getValue(it.urgency) }
+        TodoSort.Created -> compareBy { it.createdAtMillis }
+        TodoSort.Name -> compareBy { it.name }
+    }
+    return if (descending) base else base.reversed()
 }
 
-/** 过滤后的常用入口：按 [sort] 排序返回新列表 */
-fun List<Todo>.sortedFor(sort: TodoSort): List<Todo> = sortedWith(sort.comparator())
+/** 过滤后的常用入口：按 [sort] 与方向排序返回新列表 */
+fun List<Todo>.sortedFor(sort: TodoSort, descending: Boolean = true): List<Todo> =
+    sortedWith(sort.comparator(descending))

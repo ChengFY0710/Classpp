@@ -118,15 +118,21 @@ class TodoQueryTest {
     }
 
     @Test
-    fun `sort by urgency puts critical first`() {
+    fun `sort by urgency direction`() {
         val list = listOf(done1, essay, lab)
-        assertEquals(listOf(lab, essay, done1), list.sortedFor(TodoSort.Urgency)) // Critical > Medium > Low
+        // 降序 = 紧急度高在前（Critical > Medium > Low）
+        assertEquals(listOf(lab, essay, done1), list.sortedFor(TodoSort.Urgency))
+        // 升序 = 紧急度低在前
+        assertEquals(listOf(done1, essay, lab), list.sortedFor(TodoSort.Urgency, descending = false))
     }
 
     @Test
-    fun `sort by created newest first`() {
-        val list = listOf(lab, essay, done1)
-        assertEquals(listOf(essay, done1, lab), list.sortedFor(TodoSort.Created)) // 300 > 200 > 100
+    fun `sort by created direction`() {
+        val list = listOf(lab, essay, done1) // 创建时刻 100 / 300 / 200
+        // 降序 = 创建早的在前
+        assertEquals(listOf(lab, done1, essay), list.sortedFor(TodoSort.Created))
+        // 升序 = 新在前
+        assertEquals(listOf(essay, done1, lab), list.sortedFor(TodoSort.Created, descending = false))
     }
 
     @Test

@@ -469,3 +469,46 @@ private fun UrgentFlagCardPreview() = ClassppTheme {
         }
     }
 }
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
+private fun PopupMenuCardPreview() = ClassppTheme {
+    // 设计稿左图：排序菜单两分组（组间分割线）；下方附单组形态（无分割线）
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        PopupMenuCard(
+            sections = listOf(
+                PopupMenuSection(
+                    items = listOf(
+                        PopupMenuItem("时间", checked = true, onClick = {}),
+                        PopupMenuItem("截止日期", onClick = {}),
+                        PopupMenuItem("地点", onClick = {}),
+                        PopupMenuItem("标签", onClick = {}),
+                        PopupMenuItem("紧急程度", onClick = {}),
+                    ),
+                ),
+                PopupMenuSection(
+                    showDivider = true,
+                    items = listOf(
+                        PopupMenuItem("升序", checked = true, onClick = {}),
+                        PopupMenuItem("降序", onClick = {}),
+                    ),
+                ),
+            ),
+        )
+        PopupMenuCard(
+            sections = listOf(
+                PopupMenuSection(
+                    items = listOf(
+                        PopupMenuItem("时间", checked = true, onClick = {}),
+                        PopupMenuItem("截止日期", onClick = {}),
+                    ),
+                ),
+            ),
+        )
+    }
+}

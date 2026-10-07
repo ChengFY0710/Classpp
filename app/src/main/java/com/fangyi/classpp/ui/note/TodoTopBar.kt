@@ -38,6 +38,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -99,6 +101,11 @@ private val PillShadowColor = Color.Black.copy(alpha = 0.2f)
 /** 顶栏与状态栏的间距 */
 private val TopBarTopPadding = 3.dp
 
+/** 排序胶囊的窗口坐标暂存：onGloballyPositioned 写、点击时读（布局期不触发重组） */
+private class SortAnchorHolder {
+    var value: Rect = Rect.Zero
+}
+
 /** 裁剪形状纵向的外扩量：容纳 45dp elevation 柔影的可见扩散范围 */
 private val ShadowBleed = 200.dp
 
@@ -144,7 +151,9 @@ private val HorizontalClipShape = object : Shape {
  * 与课表页 WeekPill 浮在毛玻璃顶栏上同一套材质关系；[hazeState] 为 null（如
  * @Preview）时容器退化为不透明兜底色。
  *
- * 纯 UI：分组点击只切选中高亮（过滤由调用方后续接入）；文件夹/排序回调本期空置。
+ * 纯 UI：分组点击只切选中高亮（过滤由调用方后续接入）；文件夹回调本期空置；
+ * 排序回调携带排序胶囊的窗口坐标（锚定弹出菜单用，TodoScreen 接线，同课程卡长按菜单
+ * 上报 anchor 的做法）。
  */
 @Composable
 fun TodoTopBar(
@@ -152,13 +161,14 @@ fun TodoTopBar(
     selectedGroupIndex: Int,
     onGroupSelect: (Int) -> Unit,
     onFolderClick: () -> Unit,
-    onSortClick: () -> Unit,
+    onSortClick: (anchor: Rect) -> Unit,
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
 ) {
     val overscrollFactory = rememberOffsetOverscrollFactory(animationSpec = Motion.Settle)
     // 磨砂 tint 随主题（hazeEffect 的 block 在绘制期执行、非 composable 上下文，取值提到 Box 之前）
     val hazeTint = MaterialTheme.classppColors.hazeTint
+    val sortAnchorHolder = remember { SortAnchorHolder() }
     CompositionLocalProvider(LocalOverscrollFactory provides overscrollFactory) {
         Box(
             modifier = modifier
@@ -245,10 +255,15 @@ fun TodoTopBar(
                             contentDescription = stringResource(R.string.cd_todo_folder),
                             onClick = onFolderClick,
                         )
+                        // 排序胶囊：窗口坐标经 holder 暂存、点击时读出上报（不在布局期写
+                        // state 触发重组——同 CourseGrid 的 BoundsHolder 思路）
                         IconPill(
                             iconRes = R.drawable.ic_arrow_sort,
                             contentDescription = stringResource(R.string.cd_todo_sort),
-                            onClick = onSortClick,
+                            onClick = { onSortClick(sortAnchorHolder.value) },
+                            modifier = Modifier.onGloballyPositioned { coords ->
+                                sortAnchorHolder.value = coords.boundsInWindow()
+                            },
                         )
                     }
                 }
@@ -352,7 +367,7 @@ private fun TodoTopBarPreviewContent() {
             selectedGroupIndex = selected,
             onGroupSelect = { selected = it },
             onFolderClick = {},
-            onSortClick = {},
+            onSortClick = { _ -> },
         )
     }
 }
