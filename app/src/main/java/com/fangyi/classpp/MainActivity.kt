@@ -45,6 +45,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.ScheduleRepository
+import com.fangyi.classpp.data.TagRepository
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
@@ -119,6 +120,8 @@ class MainActivity : ComponentActivity() {
                 var showNewTodoSheet by rememberSaveable { mutableStateOf(false) }
                 val repository = rememberScheduleRepository()
                 val todoRepository = rememberTodoRepository()
+                // 标签宿主（待办编辑浮层的标签选择卡）接入时传入；先装配让 tags.json 随启动建库
+                val tagRepository = rememberTagRepository()
 
                 // 回调记忆化：ScheduleScreen 的其余入参都稳定（repository 单例、editing 仅
                 // 编辑翻转才变），回调若每次重组都是新实例，切 tab 改 selectedTab 就会连带
@@ -385,6 +388,20 @@ private fun rememberTodoRepository(): TodoRepository? {
     val context = LocalContext.current
     LaunchedEffect(context) {
         repository = TodoRepository.get(context.applicationContext)
+    }
+    return repository
+}
+
+/**
+ * 进程级标签仓库：remember 持有、LaunchedEffect 内调起 suspend [TagRepository.get]。
+ * 返回即磁盘加载完成 ⇒ 非 null 即数据就绪；null 仅首帧毫秒级（各屏自行显示加载态）。
+ */
+@Composable
+private fun rememberTagRepository(): TagRepository? {
+    var repository by remember { mutableStateOf<TagRepository?>(null) }
+    val context = LocalContext.current
+    LaunchedEffect(context) {
+        repository = TagRepository.get(context.applicationContext)
     }
     return repository
 }
