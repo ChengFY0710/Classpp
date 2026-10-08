@@ -109,9 +109,9 @@ private val RestGap = PillSpacing
 /** 阴影呼吸位：胶囊柔影上下各留一份，防 LazyRow 视口把阴影裁掉 */
 private val ShadowOverhang = 8.dp
 
-/** 胶囊柔影（WeekPill 同款）：大 elevation 换软边、低透明 spot 压深浅 */
-private val PillShadowElevation = 45.dp
-private val PillShadowColor = Color.Black.copy(alpha = 0.2f)
+/** 胶囊柔影：大 elevation 换软边、低透明 spot 压深浅 */
+private val PillShadowElevation = 30.dp
+private val PillShadowColor = Color.Black.copy(alpha = 0.1f)
 
 /**
  * 排序菜单卡顶缘与排序胶囊底缘的视觉间距。
@@ -120,7 +120,7 @@ private val PillShadowColor = Color.Black.copy(alpha = 0.2f)
 private val SortMenuPopupGap = 12.dp
 
 /** 顶栏与状态栏的间距 */
-private val TopBarTopPadding = 3.dp
+private val TopBarTopPadding = 0.dp
 
 /** 裁剪形状纵向的外扩量：容纳 45dp elevation 柔影的可见扩散范围 */
 private val ShadowBleed = 200.dp
