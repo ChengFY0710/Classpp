@@ -11,7 +11,9 @@
 //
 // 接入方式：在需要生效的作用域根部用 [ProvideOverscroll] 包一层，作用域内所有可滚动容器
 // （verticalScroll / LazyColumn 等）自动生效（经 LocalOverscrollFactory 逐容器创建独立
-// 效果实例，首次手势按 delta 主分量锁定单轴）。注意内容平移会把边缘外区域露出来——
+// 效果实例，首次手势按 delta 主分量锁定单轴）；内容不足一屏（无滚动范围）的容器拉不出
+// 橡皮筋（foundation 派发门槛），改用 rubberBandVerticalScroll / rubberBandHorizontalScroll /
+// RubberBandLazyColumn 这三个增强版。注意内容平移会把边缘外区域露出来——
 // 滚动容器背后需要是可接受的底色（同色背景即可，边缘处看不出破绽）。
 package com.fangyi.classpp.ui.motion
 
@@ -28,9 +30,16 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.ScrollScope
+import androidx.compose.foundation.gestures.ScrollableDefaults
 import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.overscroll
 import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.foundation.verticalScroll
@@ -41,6 +50,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -62,6 +72,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastRoundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -501,5 +512,91 @@ fun Modifier.rubberBandHorizontalScroll(state: ScrollState): Modifier {
             )
     } else {
         this.horizontalScroll(state)
+    }
+}
+
+/**
+ * [LazyColumn] 的橡皮筋增强版：内容超出一屏时行为与原版完全一致（边缘橡皮筋由注入的
+ * [OffsetOverscrollEffect] 承担，渲染节点在列表自带的 scrollableArea 里，容器尺寸就是视口）；
+ * 内容不足一屏（上下都不可滚）时原版拉不出橡皮筋——foundation 的派发门槛
+ * （Scrollable.kt 的 shouldDispatchOverscroll = canScrollForward || canScrollBackward），
+ * 本辅助此时把拖拽 delta 与甩动速度全部交给环境 OverscrollEffect（[ProvideOverscroll] 作用域内
+ * 即 iOS 式橡皮筋），由它完成「拉出 → 软着陆回弹」以及速度正比的甩动拉出。
+ *
+ * 与 [rubberBandVerticalScroll] 的差异：LazyColumn 是组合函数而非修饰符，且它的手势层
+ * （scrollableArea）由列表内部自带、挂在调用方 modifier 之后（更内层）——内层先收到指针事件，
+ * 外挂的兜底手势层会被它先吞掉 change 而收不到拖拽。所以兜底分支要关掉列表自身手势
+ * （userScrollEnabled = false：DragGestureNode 在 enabled=false 时不处理任何指针事件），
+ * 内容一旦变得可滚（如勾选完成使分组变高）canScroll 翻转，关手势与兜底层一并摘除，
+ * 滚动路径回到与原版完全一致的状态；canScrollForward/Backward 本身是 mutableState，
+ * 翻转在进出边缘的瞬间各触发一次重组，不产生逐帧重组。
+ *
+ * 零消费状态与原速放行 fling 的作用同 [rubberBandVerticalScroll]（绕过派发门槛、
+ * 不让「无位移的惯性动画」吃掉甩动速度）；效果渲染节点（[Modifier.overscroll]）挂在
+ * 列表滚动布局之外，拿真实视口做阻尼分母（同 [rubberBandVerticalScroll] 的量化规避），
+ * 平移露出的边缘外区域是容器背后底色。
+ */
+@Composable
+fun RubberBandLazyColumn(
+    modifier: Modifier = Modifier,
+    state: LazyListState = rememberLazyListState(),
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    reverseLayout: Boolean = false,
+    verticalArrangement: Arrangement.Vertical =
+        if (!reverseLayout) Arrangement.Top else Arrangement.Bottom,
+    horizontalAlignment: Alignment.Horizontal = Alignment.Start,
+    flingBehavior: FlingBehavior = ScrollableDefaults.flingBehavior(),
+    userScrollEnabled: Boolean = true,
+    content: LazyListScope.() -> Unit,
+) {
+    val effect = rememberOverscrollEffect()
+    val unscrollable = !state.canScrollForward && !state.canScrollBackward
+    if (effect != null && userScrollEnabled && unscrollable) {
+        // 不消费任何滚动量的状态：canScrollForward/Backward 默认恒为 true，恰好绕过
+        // foundation 的派发门槛，让全部 delta 进入 overscroll
+        val passthroughState = remember { ScrollableState { 0f } }
+        // 原速放行 fling：不产生任何惯性位移，速度原样交还效果实例
+        val passthroughFling = remember {
+            object : FlingBehavior {
+                override suspend fun ScrollScope.performFling(initialVelocity: Float): Float =
+                    initialVelocity
+            }
+        }
+        LazyColumn(
+            modifier = modifier
+                // 效果渲染节点：挂在列表外侧（更外层），按真实视口尺寸做阻尼分母
+                // （同 rubberBandVerticalScroll 的量化规避）
+                .overscroll(effect)
+                // 兜底手势层：列表自带手势层关掉后由它接管拖拽（内层先于外层派发）
+                .scrollable(
+                    state = passthroughState,
+                    orientation = Orientation.Vertical,
+                    overscrollEffect = effect,
+                    flingBehavior = passthroughFling,
+                ),
+            state = state,
+            contentPadding = contentPadding,
+            reverseLayout = reverseLayout,
+            verticalArrangement = verticalArrangement,
+            horizontalAlignment = horizontalAlignment,
+            flingBehavior = flingBehavior,
+            // 关掉列表自带手势层（更内层、会先吞掉拖拽 change）；它的 overscroll 实例
+            // 永远收不到 delta，一并摘除，只留外侧兜底这一个
+            userScrollEnabled = false,
+            overscrollEffect = null,
+            content = content,
+        )
+    } else {
+        LazyColumn(
+            modifier = modifier,
+            state = state,
+            contentPadding = contentPadding,
+            reverseLayout = reverseLayout,
+            verticalArrangement = verticalArrangement,
+            horizontalAlignment = horizontalAlignment,
+            flingBehavior = flingBehavior,
+            userScrollEnabled = userScrollEnabled,
+            content = content,
+        )
     }
 }

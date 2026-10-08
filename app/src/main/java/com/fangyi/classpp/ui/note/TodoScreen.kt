@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -43,6 +42,8 @@ import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSection
 import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.PopupMenuSection
+import com.fangyi.classpp.ui.motion.ProvideOverscroll
+import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
@@ -111,97 +112,103 @@ fun TodoScreen(
     // 排序菜单展开态（DropdownMenu 挂在 TodoTopBar 的排序胶囊处）
     var sortMenuExpanded by rememberSaveable { mutableStateOf(false) }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-    ) {
-        // 内容层：待办列表从顶栏毛玻璃下滚过（列表滚动到顶栏之下时被渐变模糊）
+    // 整页（列表 + 顶栏）滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的
+    // ProvideOverscroll）：列表滚到顶/底后继续拖动，内容整块被拉出边缘、越拉越硬，
+    // 松手无过冲弹回；顶栏分组胶囊（rubberBandHorizontalScroll）同享。平移露出的是
+    // 页面底色（background 同色，边缘看不出破绽）
+    ProvideOverscroll {
         Box(
-            Modifier
-                .matchParentSize()
-                .hazeSource(hazeState),
+            modifier = modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
         ) {
-            TodoList(
-                todos = todos,
-                sort = sort,
-                sortDescending = sortDescending,
-                onToggleCompleted = { id, completed ->
-                    scope.launch { repository.setCompleted(id, completed) }
-                },
+            // 内容层：待办列表从顶栏毛玻璃下滚过（列表滚动到顶栏之下时被渐变模糊）
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .hazeSource(hazeState),
+            ) {
+                TodoList(
+                    todos = todos,
+                    sort = sort,
+                    sortDescending = sortDescending,
+                    onToggleCompleted = { id, completed ->
+                        scope.launch { repository.setCompleted(id, completed) }
+                    },
+                )
+            }
+            TodoTopBar(
+                groups = DemoGroups,
+                selectedGroupIndex = selectedGroupIndex,
+                onGroupSelect = { selectedGroupIndex = it },
+                // 文件夹操作后续接入；排序点击展开菜单（SortMenuPopup 挂在胶囊处）
+                onFolderClick = {},
+                onSortClick = { sortMenuExpanded = true },
+                sortMenuExpanded = sortMenuExpanded,
+                onSortMenuDismiss = { sortMenuExpanded = false },
+                sortMenuSections = listOf(
+                    PopupMenuSection(
+                        items = listOf(
+                            PopupMenuItem(
+                                label = stringResource(R.string.sort_created),
+                                checked = sort == TodoSort.Created,
+                                onClick = {
+                                    sort = TodoSort.Created
+                                    sortMenuExpanded = false
+                                },
+                            ),
+                            PopupMenuItem(
+                                label = stringResource(R.string.sort_deadline),
+                                checked = sort == TodoSort.Deadline,
+                                onClick = {
+                                    sort = TodoSort.Deadline
+                                    sortMenuExpanded = false
+                                },
+                            ),
+                            PopupMenuItem(
+                                label = stringResource(R.string.sort_urgency),
+                                checked = sort == TodoSort.Urgency,
+                                onClick = {
+                                    sort = TodoSort.Urgency
+                                    sortMenuExpanded = false
+                                },
+                            ),
+                            PopupMenuItem(
+                                label = stringResource(R.string.sort_name),
+                                checked = sort == TodoSort.Name,
+                                onClick = {
+                                    sort = TodoSort.Name
+                                    sortMenuExpanded = false
+                                },
+                            ),
+                        ),
+                    ),
+                    PopupMenuSection(
+                        showDivider = true,
+                        items = listOf(
+                            PopupMenuItem(
+                                label = stringResource(R.string.sort_ascending),
+                                checked = !sortDescending,
+                                onClick = {
+                                    sortDescending = false
+                                    sortMenuExpanded = false
+                                },
+                            ),
+                            PopupMenuItem(
+                                label = stringResource(R.string.sort_descending),
+                                checked = sortDescending,
+                                onClick = {
+                                    sortDescending = true
+                                    sortMenuExpanded = false
+                                },
+                            ),
+                        ),
+                    ),
+                ),
+                modifier = Modifier.align(Alignment.TopCenter),
+                hazeState = hazeState,
             )
         }
-        TodoTopBar(
-            groups = DemoGroups,
-            selectedGroupIndex = selectedGroupIndex,
-            onGroupSelect = { selectedGroupIndex = it },
-            // 文件夹操作后续接入；排序点击展开菜单（SortMenuPopup 挂在胶囊处）
-            onFolderClick = {},
-            onSortClick = { sortMenuExpanded = true },
-            sortMenuExpanded = sortMenuExpanded,
-            onSortMenuDismiss = { sortMenuExpanded = false },
-            sortMenuSections = listOf(
-                PopupMenuSection(
-                    items = listOf(
-                        PopupMenuItem(
-                            label = stringResource(R.string.sort_created),
-                            checked = sort == TodoSort.Created,
-                            onClick = {
-                                sort = TodoSort.Created
-                                sortMenuExpanded = false
-                            },
-                        ),
-                        PopupMenuItem(
-                            label = stringResource(R.string.sort_deadline),
-                            checked = sort == TodoSort.Deadline,
-                            onClick = {
-                                sort = TodoSort.Deadline
-                                sortMenuExpanded = false
-                            },
-                        ),
-                        PopupMenuItem(
-                            label = stringResource(R.string.sort_urgency),
-                            checked = sort == TodoSort.Urgency,
-                            onClick = {
-                                sort = TodoSort.Urgency
-                                sortMenuExpanded = false
-                            },
-                        ),
-                        PopupMenuItem(
-                            label = stringResource(R.string.sort_name),
-                            checked = sort == TodoSort.Name,
-                            onClick = {
-                                sort = TodoSort.Name
-                                sortMenuExpanded = false
-                            },
-                        ),
-                    ),
-                ),
-                PopupMenuSection(
-                    showDivider = true,
-                    items = listOf(
-                        PopupMenuItem(
-                            label = stringResource(R.string.sort_ascending),
-                            checked = !sortDescending,
-                            onClick = {
-                                sortDescending = false
-                                sortMenuExpanded = false
-                            },
-                        ),
-                        PopupMenuItem(
-                            label = stringResource(R.string.sort_descending),
-                            checked = sortDescending,
-                            onClick = {
-                                sortDescending = true
-                                sortMenuExpanded = false
-                            },
-                        ),
-                    ),
-                ),
-            ),
-            modifier = Modifier.align(Alignment.TopCenter),
-            hazeState = hazeState,
-        )
     }
 
     // 新建待办浮层：两段式挂载（同 ScheduleScreen 的浮层接线）。画在页面内容之后
@@ -240,6 +247,10 @@ fun TodoScreen(
  * 组内按顶栏选定的排序与方向（默认创建时间降序——创建早的在前）。卡片经 [TodoCard]
  * 接模型字段（时间文本 [cardTimeText]、标签、紧急旗）。列表从顶栏与浮动导航栏下滚过，
  * 上下各留出让位。
+ *
+ * 滚动容器为 [RubberBandLazyColumn]（页面 [ProvideOverscroll] 作用域内）：内容超一屏
+ * 时滚到边缘拉出橡皮筋，待办很少、不足一屏时同样能拉——短内容是 foundation 派发门槛
+ * 拦下的场景，由该封装的兜底手势层接管。
  */
 @Composable
 private fun TodoList(
@@ -258,7 +269,7 @@ private fun TodoList(
     val density = LocalDensity.current
     val topInset = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
     val bottomInset = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
-    LazyColumn(
+    RubberBandLazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(
             top = topInset + TopBarRowSpace + ListTopSpacing,
