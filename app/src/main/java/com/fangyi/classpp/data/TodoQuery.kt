@@ -107,3 +107,20 @@ fun TodoSort.comparator(descending: Boolean = true): Comparator<Todo> {
 /** 过滤后的常用入口：按 [sort] 与方向排序返回新列表 */
 fun List<Todo>.sortedFor(sort: TodoSort, descending: Boolean = true): List<Todo> =
     sortedWith(sort.comparator(descending))
+
+/**
+ * 是否已逾期：只有截止日期能判定——截止日早于 [today]，或正是 [today] 且截止时刻
+ * 已过（[nowMinute] 为当天分钟数 0..1439）。无截止日期、或截止日当天无时刻（按全天算，
+ * 当天未过完）都不算逾期；已完成的待办也不逾期（完成态优先于过期）。
+ *
+ * [today]/[nowMinute] 由调用方取（UI 在组合期取当前时刻，测试注入固定值）。
+ */
+fun Todo.isOverdue(today: IsoDate, nowMinute: Int): Boolean {
+    if (completed) return false
+    val deadline = deadlineDate ?: return false
+    return when {
+        deadline.epochDay < today.epochDay -> true
+        deadline.epochDay > today.epochDay -> false
+        else -> deadlineMinute != null && deadlineMinute < nowMinute
+    }
+}

@@ -54,6 +54,7 @@ private val FlagIconSize = 25.dp
  *   第一项，缺席时由标签补位；属性行整体走 FlowRow，放不下自动换行；
  * - [urgency] 紧急档位：非 None 才画旗，None 不画（列表默认形态无旗）；
  * - [completed] 完成态：标题划线置灰（时间/标签/旗帜不变），勾选框选中；
+ * - [overdue] 逾期态：标题标红（theme 的 error，时间/标签/旗帜不变）；完成态优先于逾期态；
  * - 时间与标签全缺席时卡片仍有 60dp 最小高度，不塌成纯文字高度。
  */
 @Composable
@@ -64,16 +65,19 @@ fun NoteCard(
     tags: List<String> = emptyList(),
     urgency: TodoUrgency = TodoUrgency.None,
     completed: Boolean = false,
+    overdue: Boolean = false,
     onCheckedChange: ((Boolean) -> Unit)? = null,
     onClick: (() -> Unit)? = null,
 ) {
-    val titleStyle = if (completed) {
-        MaterialTheme.classppTextStyles.fieldLabel.copy(
+    val titleStyle = when {
+        completed -> MaterialTheme.classppTextStyles.fieldLabel.copy(
             color = MaterialTheme.classppColors.secondaryText,
             textDecoration = TextDecoration.LineThrough,
         )
-    } else {
-        MaterialTheme.classppTextStyles.fieldLabel
+        overdue -> MaterialTheme.classppTextStyles.fieldLabel.copy(
+            color = MaterialTheme.colorScheme.error,
+        )
+        else -> MaterialTheme.classppTextStyles.fieldLabel
     }
     Row(
         modifier = modifier
@@ -221,5 +225,6 @@ private fun NoteCardShowcase() {
         NoteCard(title = "户口乔迁材料报送", tags = listOf("待办标签"), urgency = TodoUrgency.Medium, onCheckedChange = {})
         NoteCard(title = "户口乔迁材料报送", urgency = TodoUrgency.Low, onCheckedChange = {})
         NoteCard(title = "户口乔迁材料报送", time = "6月18日 14:30", onCheckedChange = {})
+        NoteCard(title = "户口乔迁材料报送", time = "6月18日 14:30", overdue = true, onCheckedChange = {})
     }
 }

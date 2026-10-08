@@ -4,6 +4,8 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TodoQueryTest {
@@ -141,5 +143,41 @@ class TodoQueryTest {
         val a = testTodo(id = "a", name = "Beta")
         val b = testTodo(id = "b", name = "Alpha2")
         assertEquals(listOf(c, b, a), listOf(a, b, c).sortedFor(TodoSort.Name))
+    }
+
+    // ---------- 逾期判定 ----------
+
+    @Test
+    fun `overdue when deadline date has passed`() {
+        // 截止 06-18 10:00：次日即逾期，当天时刻未到不算
+        assertTrue(lab.isOverdue(IsoDate.parse("2026-06-19"), nowMinute = 0))
+        assertFalse(lab.isOverdue(d0618, nowMinute = 599))
+        assertFalse(essay.isOverdue(d0618, nowMinute = 1439)) // 截止 06-20，未到
+    }
+
+    @Test
+    fun `overdue on deadline day only after the minute`() {
+        val todo = testTodo(deadlineDate = d0618, deadlineMinute = 600)
+        assertFalse(todo.isOverdue(d0618, nowMinute = 599))
+        assertFalse(todo.isOverdue(d0618, nowMinute = 600)) // 截止那一分钟还没过
+        assertTrue(todo.isOverdue(d0618, nowMinute = 601))
+    }
+
+    @Test
+    fun `deadline day without minute is not overdue that day`() {
+        val todo = testTodo(deadlineDate = d0618)
+        assertFalse(todo.isOverdue(d0618, nowMinute = 1439))
+        assertTrue(todo.isOverdue(IsoDate.parse("2026-06-19"), nowMinute = 0))
+    }
+
+    @Test
+    fun `no deadline is never overdue`() {
+        assertFalse(testTodo().isOverdue(d0618, nowMinute = 1439))
+    }
+
+    @Test
+    fun `completed todo is never overdue`() {
+        val todo = testTodo(deadlineDate = d0610, completed = true, completedAtMillis = 1)
+        assertFalse(todo.isOverdue(d0618, nowMinute = 0))
     }
 }

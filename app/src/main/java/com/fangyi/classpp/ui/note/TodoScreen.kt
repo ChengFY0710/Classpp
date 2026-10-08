@@ -37,6 +37,7 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoTimeKind
+import com.fangyi.classpp.data.isOverdue
 import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSection
@@ -71,7 +72,7 @@ private val ListTopSpacing = 12.dp
 /** 列表尾部余量：列表从浮动导航栏下滚过，末张卡片能滚离底边更远 */
 private val ListBottomSlack = 96.dp
 
-/** 两组卡片（未完成/已完成）之间的间距 */
+/** 相邻两组卡片（已逾期/未完成/已完成）之间的间距 */
 private val SectionSpacing = 20.dp
 
 /**
@@ -79,8 +80,9 @@ private val SectionSpacing = 20.dp
  * 内容层为待办列表（[hazeSource] 采样源：列表滚动到顶栏之下时透出毛玻璃），
  * 顶栏浮在上层；选中态在此持有，分组胶囊过滤后续接入。
  *
- * 列表分「未完成」与「已完成」两组，未完成在上、已完成在下（默认收起），
- * 组内按创建时间（创建早的在前）；勾选切换写回仓库，完成即移组。
+ * 列表分「已逾期」「未完成」「已完成」三组，已逾期在最上、已完成在下（默认收起），
+ * 组内按创建时间（创建早的在前）；勾选切换写回仓库，完成即移组，
+ * 截止日期已过的待办移入已逾期组、标题标红。
  * 新建待办浮层（[NewTodoSheet]）两段式挂载：[showNewTodoSheet] 置真即挂载滑入，
  * 关闭先清 visible 播完出场，onDismissed 才卸载；浮层在场时经
  * [onOverlayOverNavBarChange] 请求藏底部导航栏（同课表页全屏浮层）。
@@ -249,8 +251,26 @@ fun TodoScreen(
     }
 }
 
+/** 列表分组：已逾期在最上、未完成居中、已完成在下（默认收起），空组不渲染 */
+private enum class TodoSection { Overdue, Active, Done }
+
+/** 分组 → 分组标题文案资源（标题在组合期经 stringResource 解析，故只存资源 id） */
+private val TodoSection.titleRes: Int
+    get() = when (this) {
+        TodoSection.Overdue -> R.string.todo_section_overdue
+        TodoSection.Active -> R.string.todo_section_incomplete
+        TodoSection.Done -> R.string.todo_section_completed
+    }
+
+/** 当前时刻的当天分钟数 0..1439（[Todo.isOverdue] 的 nowMinute 入参） */
+private fun currentMinuteOfDay(): Int {
+    val now = GregorianCalendar()
+    return now.get(GregorianCalendar.HOUR_OF_DAY) * 60 + now.get(GregorianCalendar.MINUTE)
+}
+
 /**
- * 待办列表：未完成、已完成各归一组——未完成组在上、已完成组在下（默认收起），空组不渲染；
+ * 待办列表：已逾期、未完成、已完成各归一组——已逾期组在最上（标题标红的卡片，
+ * 截止日期已过且未完成）、未完成居中、已完成在下（默认收起），空组不渲染；
  * 组内按顶栏选定的排序与方向（默认创建时间降序——创建早的在前）。卡片经 [TodoCard]
  * 接模型字段（时间文本 [cardTimeText]、标签、紧急旗）。列表从顶栏与浮动导航栏下滚过，
  * 上下各留出让位。
@@ -267,11 +287,19 @@ private fun TodoList(
     onToggleCompleted: (id: String, completed: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val active = remember(todos, sort, sortDescending) {
-        todos.filter { !it.completed }.sortedFor(sort, sortDescending)
-    }
-    val done = remember(todos, sort, sortDescending) {
-        todos.filter { it.completed }.sortedFor(sort, sortDescending)
+    // 逾期判定的"此刻"：当日/分钟随重组取值——跨过截止时刻后，任何一次重组都会重算分组
+    val today = IsoDate.today()
+    val nowMinute = currentMinuteOfDay()
+    val sections = remember(todos, sort, sortDescending, today, nowMinute) {
+        val overdue = todos.filter { it.isOverdue(today, nowMinute) }.sortedFor(sort, sortDescending)
+        val active = todos.filter { !it.completed && !it.isOverdue(today, nowMinute) }
+            .sortedFor(sort, sortDescending)
+        val done = todos.filter { it.completed }.sortedFor(sort, sortDescending)
+        listOfNotNull(
+            overdue.takeIf { it.isNotEmpty() }?.let { TodoSection.Overdue to it },
+            active.takeIf { it.isNotEmpty() }?.let { TodoSection.Active to it },
+            done.takeIf { it.isNotEmpty() }?.let { TodoSection.Done to it },
+        )
     }
     val density = LocalDensity.current
     val topInset = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
@@ -285,26 +313,20 @@ private fun TodoList(
             end = PageHorizontalSpacing,
         ),
     ) {
-        if (active.isNotEmpty()) {
-            item(key = "active") {
-                NoteCardSection(title = stringResource(R.string.todo_section_incomplete)) {
-                    active.forEach { todo ->
-                        TodoCard(todo, sort) { onToggleCompleted(todo.id, it) }
-                    }
-                }
-            }
-        }
-        if (done.isNotEmpty()) {
-            item(key = "done") {
+        sections.forEachIndexed { index, (section, group) ->
+            item(key = section.name) {
                 NoteCardSection(
-                    title = stringResource(R.string.todo_section_completed),
-                    initiallyExpanded = false,
-                    // 组间距只在上面还有未完成组时给：已完成组独占列表时它就是首组，
-                    // 再加顶部间距会比未完成组的起点低一截
-                    modifier = if (active.isNotEmpty()) Modifier.padding(top = SectionSpacing) else Modifier,
+                    title = stringResource(section.titleRes),
+                    initiallyExpanded = section != TodoSection.Done,
+                    // 组间距给首组之外的每组：首组贴列表起点，再加间距会比下面的组低一截
+                    modifier = if (index > 0) Modifier.padding(top = SectionSpacing) else Modifier,
                 ) {
-                    done.forEach { todo ->
-                        TodoCard(todo, sort) { onToggleCompleted(todo.id, it) }
+                    group.forEach { todo ->
+                        TodoCard(
+                            todo = todo,
+                            sort = sort,
+                            overdue = section == TodoSection.Overdue,
+                        ) { onToggleCompleted(todo.id, it) }
                     }
                 }
             }
@@ -315,16 +337,17 @@ private fun TodoList(
 /**
  * 单条待办卡片：[Todo] → [NoteCard] 的字段接线——标题、完成态与勾选直通，
  * 时间走 [cardTimeText] 映射（跟随顶栏排序键 [sort]，选「截止日期」时该位置改显截止日期），
- * 标签与紧急旗按模型透传。
+ * 标签与紧急旗按模型透传；[overdue] 为真（在已逾期组）时标题标红。
  */
 @Composable
-private fun TodoCard(todo: Todo, sort: TodoSort, onCheckedChange: (Boolean) -> Unit) {
+private fun TodoCard(todo: Todo, sort: TodoSort, overdue: Boolean, onCheckedChange: (Boolean) -> Unit) {
     NoteCard(
         title = todo.name,
         time = todo.cardTimeText(sort),
         tags = todo.tags,
         urgency = todo.urgency,
         completed = todo.completed,
+        overdue = overdue,
         onCheckedChange = onCheckedChange,
     )
 }
