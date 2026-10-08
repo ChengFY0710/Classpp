@@ -31,7 +31,7 @@ import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /** 旗标图标尺寸（设计稿左右两处同尺寸） */
-private val FlagIconSize = 24.dp
+private val FlagIconSize = 25.dp
 
 /** 右侧切换旗标的触控热区：40dp 相接 = 中心间距 40dp、图标视觉空隙 16dp，复刻设计稿节奏 */
 private val FlagTouchTarget = 40.dp

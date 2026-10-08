@@ -8,10 +8,13 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
@@ -22,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
@@ -31,8 +35,10 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.NoteCardShape
+import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.kyant.shapes.RoundedRectangle
 
 private val PropertySpacing = 12.dp
 private val TagIconSize = 17.dp
@@ -72,7 +78,7 @@ fun NoteCard(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 60.dp)
+            .heightIn(min = SheetFieldHeight)
             .clip(NoteCardShape)
             .background(MaterialTheme.colorScheme.surface)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
@@ -127,19 +133,35 @@ fun NoteCard(
                 tint = urgency.flagColor(),
                 modifier = Modifier.size(FlagIconSize),
             )
-            Spacer(Modifier.width(PropertySpacing))
+            Spacer(Modifier.width(16.dp))
         }
         // M3 Checkbox 占位（后续按设计稿自绘）：颜色先取主题 primary——未选 = 蓝描边框，
         // 已选 = 蓝底白勾。组件自带 48dp 最小触控区，布局高度按 48dp 计，会撑起卡片高度
-        Checkbox(
-            checked = completed,
-            onCheckedChange = onCheckedChange,
-            colors = CheckboxDefaults.colors(
-                checkedColor = MaterialTheme.colorScheme.primary,
-                uncheckedColor = MaterialTheme.colorScheme.primary,
-                checkmarkColor = MaterialTheme.colorScheme.onPrimary,
-            ),
-        )
+        Row(
+            modifier = Modifier
+                .clip(RoundedRectangle(6.dp))
+                .toggleable(
+                    value = completed,
+                    onValueChange = { onCheckedChange?.invoke(it) }, // 安全调用
+                    role = Role.Checkbox
+                )
+                .height(36.dp)  //定义checkBox热区高度
+                .width(36.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Checkbox(
+                checked = completed,
+                onCheckedChange = null, // 事件交给外层，这里固定null
+                colors = CheckboxDefaults.colors(
+                    checkedColor = MaterialTheme.colorScheme.primary,
+                    uncheckedColor = MaterialTheme.colorScheme.primary,
+                    checkmarkColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            )
+        }
+
+
     }
 }
 
