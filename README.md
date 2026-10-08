@@ -25,3 +25,16 @@ Developing...
 ---
 
 如您发现本项目存在任何侵权情形，请及时与我联系；一经核实，将立即移除本项目相关内容。
+
+---
+
+## 协议：
+
+本项目采用 [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) 发布，完整条文见 [LICENSE](LICENSE)。
+
++ 允许任何**非商业目的**的使用、修改与分发（个人学习、研究、爱好项目、非营利组织等均属非商业用途）；
++ **禁止**将本项目（含基于本项目的修改版、衍生作品）用于任何商业用途。
+
+Copyright (c) 2026 ChengFY
+
+本项目依赖的第三方组件（haze、Cresto、Shapes、AndroidX、kotlinx.serialization 等）均遵循其各自的 Apache-2.0 协议。
