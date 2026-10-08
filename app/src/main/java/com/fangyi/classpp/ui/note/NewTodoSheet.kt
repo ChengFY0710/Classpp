@@ -43,7 +43,6 @@ import com.fangyi.classpp.ui.components.DeadlineCard
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.RowChoiceCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
-import com.fangyi.classpp.ui.components.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.components.SheetTextArea
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
@@ -53,6 +52,7 @@ import com.fangyi.classpp.ui.components.TimeRangeSlider
 import com.fangyi.classpp.ui.components.UrgentFlagCard
 import com.fangyi.classpp.ui.schedule.CourseColor
 import com.fangyi.classpp.ui.schedule.barColor
+import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 

@@ -26,10 +26,10 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetImeBehavior
-import com.fangyi.classpp.ui.components.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.settings.TermDatesCard
+import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 
 /**
  * 新建课表浮层（无激活课表的空态经「创建课表」按钮打开）：容器为 [OverlaySheet]，

@@ -73,10 +73,6 @@ import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
 
-// 浮层里卡片组（CardSection 分组 / 单卡）之间的间距；组内卡间距走 ui.theme 的 CardSectionSpacing（10dp）
-val SheetSectionSpacingBetween: Dp = 12.dp
-val SheetSectionSpacingBottom:Dp = 14.dp  // 卡片组底与下一个卡片组间距（如果需要）
-
 /**
  * 内容末尾的额外滚动余量（对应设置页 `BottomScrollSlack = 120.dp`）：
  * 拉大可滑动范围，末尾的卡片能滑得更高、离底边更远。想调滑动上限改这一个值。

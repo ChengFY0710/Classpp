@@ -45,12 +45,12 @@ import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetPillButton
-import com.fangyi.classpp.ui.components.SheetSectionSpacingBetween
-import com.fangyi.classpp.ui.components.SheetSectionSpacingBottom
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.settings.TermDatesCard
 import com.fangyi.classpp.ui.theme.PillShape
+import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
+import com.fangyi.classpp.ui.theme.SheetSectionSpacingBottom
 import com.fangyi.classpp.ui.theme.classppColors
 
 /**

@@ -18,6 +18,23 @@ val PageHorizontalSpacing: Dp = 15.dp
 val CardSectionSpacing: Dp = 10.dp
 
 /**
+ * 浮层滚动内容里**顶层块之间的间距**：OverlaySheet 的 content 里那些「没被 CardSection
+ * 收进分组」的块——输入框、文本块、单张卡片，也包括直接排成一列的卡片列表（切换课表浮层）。
+ * 新建待办、新建课表、课程详情、切换课表四个浮层共用。
+ *
+ * 与 [CardSectionSpacing] 的分工：分组的**组内**「卡↔卡」是 10dp，这里是**组与组之间**
+ * （以及组与组外孤块之间）的 12dp——一个管组内节奏，一个管组间节奏。
+ */
+val SheetSectionSpacingBetween: Dp = 12.dp
+
+/**
+ * [SheetSectionSpacingBetween] 的「手写 Spacer」版本：某段内容没套
+ * `Column(verticalArrangement = spacedBy(...))` 时，用它自己补一份同样的顶层块留白。
+ * 目前只有切换课表浮层的 CreateScheduleContent（课表名输入框 ↔ 学期日期卡）。
+ */
+val SheetSectionSpacingBottom: Dp = 14.dp
+
+/**
  * 浮层行卡与设置卡统一行高（行高下限）：输入框（SheetTextField）与信息展示框
  * （SheetInfoCard）按它取 `heightIn(min)`，设置卡（SettingsCard、SettingsCardwithIcon，
  * PopupSelectCard 选择行随之）以它为整卡行高下限，保证各卡等高；
