@@ -316,7 +316,7 @@ private fun QuickOptionText(
         modifier = modifier
             .clip(RowShape)
             .clickable(onClick = onClick)
-            .padding(vertical = 6.dp),
+            .padding(vertical = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(

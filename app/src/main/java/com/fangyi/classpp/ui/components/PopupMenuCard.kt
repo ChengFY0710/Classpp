@@ -33,7 +33,7 @@ import dev.chrisbanes.haze.hazeEffect
 /** 勾选图标边长；未勾选行保留同宽空槽，勾选/未勾选的文字左缘对齐（设计稿） */
 private val CheckIconSize = 20.dp
 
-private val RowHorizontalPadding = 24.dp
+private val RowHorizontalPadding = 25.dp
 private val RowVerticalPadding = 12.dp
 
 /** 勾选图标与文字的间距 */
@@ -153,7 +153,7 @@ private fun PopupMenuRow(item: PopupMenuItem) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = item.onClick)
-            .padding(horizontal = RowHorizontalPadding, vertical = RowVerticalPadding),
+            .padding(start = 20.dp, end = RowHorizontalPadding, top = RowVerticalPadding, bottom = RowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(CheckIconSize), contentAlignment = Alignment.CenterStart) {

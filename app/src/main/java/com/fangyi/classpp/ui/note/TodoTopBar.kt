@@ -392,7 +392,6 @@ private fun SortMenuPopup(
                         this.alpha = alpha
                         transformOrigin = TransformOrigin(0f, 0f)
                     }
-                    .width(185.dp)
                     .padding(
                         start = CardShadowPadding,
                         top = CardShadowPadding,
