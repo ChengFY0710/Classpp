@@ -40,6 +40,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.settingsRowMetrics
@@ -154,8 +155,8 @@ private fun NoteCardSectionShowcase() {
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 15.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+            .padding(horizontal = PageHorizontalSpacing, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         NoteCardSection(title = "今天") {
             NoteCard(title = "户口乔迁材料报送", time = "12:30", onCheckedChange = {})
