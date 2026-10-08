@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -62,8 +63,10 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.PopupMenuCard
 import com.fangyi.classpp.ui.components.PopupMenuSection
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollFactory
 import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
+import com.fangyi.classpp.ui.motion.tabTransitionFreeze
 import com.fangyi.classpp.ui.schedule.CardShadowBottomPadding
 import com.fangyi.classpp.ui.schedule.CardShadowPadding
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -110,7 +113,7 @@ private val RestGap = PillSpacing
 private val ShadowOverhang = 8.dp
 
 /** 胶囊柔影：大 elevation 换软边、低透明 spot 压深浅 */
-private val PillShadowElevation = 30.dp
+private val PillShadowElevation = 36.dp
 private val PillShadowColor = Color.Black.copy(alpha = 0.1f)
 
 /**
@@ -167,6 +170,10 @@ private val HorizontalClipShape = object : Shape {
  * 与课表页 WeekPill 浮在毛玻璃顶栏上同一套材质关系；[hazeState] 为 null（如
  * @Preview）时容器退化为不透明兜底色。
  *
+ * [tabTransition] 非 null 时启用转场冻结层（[tabTransitionFreeze]）：tab 转场进行中
+ * 整帧重放就位时录制的栏面（含模糊输出），绕开 Haze 对转场中间态几何的重采样——
+ * 与课表页顶栏同一机制，杜绝快速切 tab 时毛玻璃闪缺、露出纯兜底色帧。
+ *
  * 纯 UI：分组点击只切选中高亮（过滤由调用方后续接入）；文件夹回调本期空置；
  * 排序胶囊点击回调 [onSortClick]（宿主置展开态）；排序菜单经 [sortMenuExpanded]/
  * [onSortMenuDismiss]/[sortMenuSections] 三件套下发，[SortMenuPopup] 挂在胶囊同一
@@ -182,6 +189,7 @@ fun TodoTopBar(
     onSortClick: () -> Unit,
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
+    tabTransition: TabTransitionState? = null,
     sortMenuExpanded: Boolean = false,
     onSortMenuDismiss: () -> Unit = {},
     sortMenuSections: List<PopupMenuSection> = emptyList(),
@@ -189,10 +197,21 @@ fun TodoTopBar(
     val overscrollFactory = rememberOffsetOverscrollFactory(animationSpec = Motion.Settle)
     // 磨砂 tint 随主题（hazeEffect 的 block 在绘制期执行、非 composable 上下文，取值提到 Box 之前）
     val hazeTint = MaterialTheme.classppColors.hazeTint
+    // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场期间整帧重放
+    val transitionFreezeLayer = rememberGraphicsLayer()
     CompositionLocalProvider(LocalOverscrollFactory provides overscrollFactory) {
         Box(
             modifier = modifier
                 .fillMaxWidth()
+                // 转场冻结层包在兜底色与 hazeEffect 之外（最外层 draw）：录制帧才是
+                // 「兜底色 + 模糊 + 内容」的完整栏面，转场期间整条重放、不重采样
+                .then(
+                    if (tabTransition != null) {
+                        Modifier.tabTransitionFreeze(transitionFreezeLayer, tabTransition)
+                    } else {
+                        Modifier
+                    },
+                )
                 // 兜底色：与页面同色，画在模糊层之下（背后无内容时逐帧一致）
                 .background(MaterialTheme.colorScheme.background)
                 .then(

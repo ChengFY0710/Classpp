@@ -20,8 +20,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -155,6 +158,41 @@ class TabTransitionState(
 ) {
     val isTransitioning: Boolean
         get() = x.value != 0f || scale.value != 1f
+}
+
+/**
+ * 顶栏级转场冻结层：转场进行中（[TabTransitionState.isTransitioning]，绘制期读取快照值，
+ * 每帧只失效绘制、不触发重组）整帧重放 [layer] 里录制的最后一帧就位画面（含 Haze
+ * 模糊输出），不再执行内部绘制链；就位时照常绘制，并把本帧录进 [layer] 供下次转场重放。
+ *
+ * 挂在「承载 Haze 模糊、且位于 tab 页内」的顶栏组件最外层（兜底色与 hazeEffect 之外），
+ * 页内 x/scale 转场状态由调用方（MainActivity 的 TabPageState.transition）透传。
+ * 课表页顶栏/编辑栏与待办页顶栏共用本机制。
+ *
+ * 为什么需要：tab 转场用祖先 graphicsLayer 平移/缩放整页，Compose 会在动画的每一帧向
+ * 整棵子树派发 onGloballyPositioned（图层位置属性一变即递归派发），Haze 的源/效果节点
+ * 随之把滑入起点、屏外停靠位等**中间态窗口坐标**写进记账状态并逐帧失效重采样——
+ * 重采样按窗口坐标取几何、画布却已被祖先变换叠加，滑入起点/屏外停靠处效果层与屏幕
+ * 交集为空、尺寸归零，模糊整层不画，顶栏只剩兜底色，即快速切 tab 时闪出的纯色帧。
+ * 转场期间页面内容本就不变，重放就位帧与实时绘制逐像素一致，且转场期零模糊重采样开销。
+ * 停靠页（x = ±1.2 的屏外停靠位）只重放、不重录，其冻结帧由 MainActivity 的
+ * 「回前台回位重录」维持有效（进多任务时系统会丢弃不可见窗口的 RenderNode 显示列表）。
+ */
+fun Modifier.tabTransitionFreeze(
+    layer: GraphicsLayer,
+    transition: TabTransitionState,
+): Modifier = drawWithContent {
+    val transitioning = transition.isTransitioning
+    if (transitioning) {
+        // 冻结层尚无内容（理论上不可能：转场前至少绘制过一帧）时退回实时绘制
+        if (layer.size.width >= 1 && layer.size.height >= 1) {
+            drawLayer(layer)
+            return@drawWithContent
+        }
+    } else {
+        layer.record { this@drawWithContent.drawContent() }
+    }
+    drawContent()
 }
 
 /**

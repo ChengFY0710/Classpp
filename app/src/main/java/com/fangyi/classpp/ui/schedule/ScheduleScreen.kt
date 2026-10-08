@@ -159,7 +159,7 @@ private fun rememberTodayIso(): State<IsoDate> {
  *
  * [tabTransition]：tab 转场状态只读视图（MainActivity 的 TabPageState）。非空时顶栏与
  * 编辑栏启用「转场冻结层」——转场进行中重放就位帧、绕开 haze 对中间态几何的重采样，
- * 杜绝快速切 tab 时顶栏毛玻璃闪白/闪黑（详见 ScheduleHeader.tabTransitionFreeze）。
+ * 杜绝快速切 tab 时顶栏毛玻璃闪白/闪黑（详见 ui.motion 的 tabTransitionFreeze）。
  *
  * 数据来自 [repository]（null = 尚未加载完成，显示指示器）；
  * 无激活课表时显示空状态，「创建课表」按钮打开 [NewScheduleSheet] 新建首份课表。

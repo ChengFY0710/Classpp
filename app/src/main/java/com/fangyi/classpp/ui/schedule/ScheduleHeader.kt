@@ -38,12 +38,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.layer.GraphicsLayer
-import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.Layout
@@ -70,6 +67,7 @@ import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.TabTransitionState
+import com.fangyi.classpp.ui.motion.tabTransitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.Correct
@@ -496,36 +494,6 @@ fun ScheduleHeader(
             )
         }
     }
-}
-
-/**
- * tab 转场冻结层：转场进行中（[TabTransitionState.isTransitioning]，绘制期读取快照值，
- * 每帧只失效绘制）整帧重放 [layer] 里录制的最后一帧就位画面（含 Haze 模糊输出），
- * 不再执行内部绘制链；就位时照常绘制，并把本帧录进 [layer] 供下次转场重放。
- *
- * 为什么需要：tab 转场用祖先 graphicsLayer 平移/缩放整页，Compose 会在动画的每一帧向
- * 整棵子树派发 onGloballyPositioned（图层位置属性一变即递归派发），Haze 的源/效果节点
- * 随之把滑入起点、屏外停靠位等**中间态窗口坐标**写进记账状态并逐帧失效重采样——
- * 重采样按窗口坐标取几何、画布却已被祖先变换叠加，滑入起点/屏外停靠处效果层与屏幕
- * 交集为空、尺寸归零，模糊整层不画，顶栏只剩 surface 兜底色，即快速切 tab 时闪出的
- * 展开态白（深色为黑）帧。转场期间页面内容本就不变，重放就位帧与实时绘制逐像素一致，
- * 且转场期零模糊重采样开销。
- */
-internal fun Modifier.tabTransitionFreeze(
-    layer: GraphicsLayer,
-    transition: TabTransitionState,
-): Modifier = drawWithContent {
-    val transitioning = transition.isTransitioning
-    if (transitioning) {
-        // 冻结层尚无内容（理论上不可能：转场前至少绘制过一帧）时退回实时绘制
-        if (layer.size.width >= 1 && layer.size.height >= 1) {
-            drawLayer(layer)
-            return@drawWithContent
-        }
-    } else {
-        layer.record { this@drawWithContent.drawContent() }
-    }
-    drawContent()
 }
 
 /**

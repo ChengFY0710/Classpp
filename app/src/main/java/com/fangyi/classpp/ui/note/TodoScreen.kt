@@ -44,6 +44,7 @@ import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.PopupMenuSection
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
+import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
@@ -83,6 +84,10 @@ private val SectionSpacing = 20.dp
  * 新建待办浮层（[NewTodoSheet]）两段式挂载：[showNewTodoSheet] 置真即挂载滑入，
  * 关闭先清 visible 播完出场，onDismissed 才卸载；浮层在场时经
  * [onOverlayOverNavBarChange] 请求藏底部导航栏（同课表页全屏浮层）。
+ *
+ * [tabTransition]：tab 转场状态只读视图（MainActivity 的 TabPageState），透传给
+ * [TodoTopBar] 启用转场冻结层——与课表页顶栏同一机制，杜绝快速切 tab 时顶栏
+ * 毛玻璃闪缺（详见 tabTransitionFreeze）。
  */
 @Composable
 fun TodoScreen(
@@ -93,6 +98,7 @@ fun TodoScreen(
     showNewTodoSheet: Boolean = false,
     onNewTodoSheetDismiss: () -> Unit = {},
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
+    tabTransition: TabTransitionState? = null,
 ) {
     // get() 返回即 bootstrap 完成，此分支仅首帧毫秒级；早返回后下方 smart cast 为非空
     if (repository == null) {
@@ -207,6 +213,7 @@ fun TodoScreen(
                 ),
                 modifier = Modifier.align(Alignment.TopCenter),
                 hazeState = hazeState,
+                tabTransition = tabTransition,
             )
         }
     }

@@ -309,6 +309,7 @@ class MainActivity : ComponentActivity() {
                                             showNewTodoSheet = showNewTodoSheet,
                                             onNewTodoSheetDismiss = onNewTodoSheetDismiss,
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,
+                                            tabTransition = pageStates.getValue(AppTab.Todo).transition,
                                         )
                                     }
                                 }

@@ -22,7 +22,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
@@ -34,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.TabTransitionState
+import com.fangyi.classpp.ui.motion.tabTransitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.EditActionShape
@@ -61,7 +61,7 @@ private val EditActionBarHeight = 64.dp
  * [blurProgress] / [hazeState]：与 [ScheduleHeader] 折叠后同一套背景模糊——
  * 内容滚到编辑栏下方时按 [blurProgress] 渐入，顶部最强、向下渐弱；回到顶部恢复不透明。
  *
- * [tabTransition] 非 null 时启用同款转场冻结层（[ScheduleHeader.tabTransitionFreeze]）：
+ * [tabTransition] 非 null 时启用同款转场冻结层（[tabTransitionFreeze]）：
  * 覆盖「转场中途点编辑」的边角情况——编辑栏在转场结束前进场时同样重放就位帧，
  * 不让 haze 用中间态几何重采样。
  */
