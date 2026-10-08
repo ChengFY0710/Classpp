@@ -289,7 +289,7 @@ private fun TodoList(
             item(key = "active") {
                 NoteCardSection(title = stringResource(R.string.todo_section_incomplete)) {
                     active.forEach { todo ->
-                        TodoCard(todo) { onToggleCompleted(todo.id, it) }
+                        TodoCard(todo, sort) { onToggleCompleted(todo.id, it) }
                     }
                 }
             }
@@ -304,7 +304,7 @@ private fun TodoList(
                     modifier = if (active.isNotEmpty()) Modifier.padding(top = SectionSpacing) else Modifier,
                 ) {
                     done.forEach { todo ->
-                        TodoCard(todo) { onToggleCompleted(todo.id, it) }
+                        TodoCard(todo, sort) { onToggleCompleted(todo.id, it) }
                     }
                 }
             }
@@ -314,13 +314,14 @@ private fun TodoList(
 
 /**
  * 单条待办卡片：[Todo] → [NoteCard] 的字段接线——标题、完成态与勾选直通，
- * 时间走 [cardTimeText] 映射，标签与紧急旗按模型透传。
+ * 时间走 [cardTimeText] 映射（跟随顶栏排序键 [sort]，选「截止日期」时该位置改显截止日期），
+ * 标签与紧急旗按模型透传。
  */
 @Composable
-private fun TodoCard(todo: Todo, onCheckedChange: (Boolean) -> Unit) {
+private fun TodoCard(todo: Todo, sort: TodoSort, onCheckedChange: (Boolean) -> Unit) {
     NoteCard(
         title = todo.name,
-        time = todo.cardTimeText(),
+        time = todo.cardTimeText(sort),
         tags = todo.tags,
         urgency = todo.urgency,
         completed = todo.completed,
@@ -329,14 +330,19 @@ private fun TodoCard(todo: Todo, onCheckedChange: (Boolean) -> Unit) {
 }
 
 /**
- * 待办 → NoteCard 属性行的时间文本（KDoc 形态："12:30"、"6月18日 14:30"）：
+ * 待办 → NoteCard 属性行的时间文本（KDoc 形态："12:30"、"6月18日 14:30"）。
+ *
+ * 与顶栏排序按钮联动：排序键为 [TodoSort.Deadline] 时，这一位让给截止日期
+ * （[deadlineCardText]——列表正按截止日期排，卡片就显所排的字段）；其余排序键
+ * 一律显待办时间：
  *
  * - 有日期：今天只显时刻段，非今天前置日期段；全天显「全天」，无时刻只显日期段；
  * - 无日期时刻时兜底截止值（同格式；截止日期与时刻成对，TodoValidator 约束）；
  * - 均无返回 null，NoteCard 缺席该属性（标签前无空位）。
  */
 @Composable
-private fun Todo.cardTimeText(): String? {
+private fun Todo.cardTimeText(sort: TodoSort): String? {
+    if (sort == TodoSort.Deadline) return deadlineCardText()
     val timePart = when (timeKind) {
         TodoTimeKind.Period -> {
             val start = startMinute
@@ -353,6 +359,19 @@ private fun Todo.cardTimeText(): String? {
     // 截止兜底：今天不显日期段（时刻即全部信息），跨天显「6月18日 14:30」
     return listOfNotNull(
         deadlineDate?.takeUnless { it == IsoDate.today() }?.toCardDateText(),
+        deadlineMinute?.let(TimeText::format),
+    ).joinToString(" ").takeIf { it.isNotEmpty() }
+}
+
+/**
+ * 截止日期文本（排序=截止日期时占据属性行首位）：日期段「6月18日」+ 时刻，
+ * 今天不显日期段（时刻即全部信息，同待办时间的今天规则）。
+ * 无截止日期返回 null——这一位缺席，卡片只剩标签；标签也没有则整行不渲染。
+ */
+private fun Todo.deadlineCardText(): String? {
+    val date = deadlineDate ?: return null
+    return listOfNotNull(
+        date.takeUnless { it == IsoDate.today() }?.toCardDateText(),
         deadlineMinute?.let(TimeText::format),
     ).joinToString(" ").takeIf { it.isNotEmpty() }
 }
