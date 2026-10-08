@@ -60,8 +60,12 @@ private val DotGap = 6.dp
  * - 点按：单独点某个胶囊弹钟表 TimePicker 精确设置（与设置页「第 N 节」同一交互）；
  * - 顺序约束：开始时间恒早于结束时间（最小间隔 1 分钟）；
  * - 位置约束：两胶囊不重叠、最多贴在一起——时间差最小 1 分钟（约 0.2px）远小于胶囊宽度，
- *   位置上必然相撞，故最近动过的胶囊锚定在自己的时间位置上，另一个被平推到「贴在一起」
- *   （只让位置、不改时间）；右端挤不下时（如 23:58/23:59）开始钮位置让位。
+ *   位置上必然相撞，故重叠时两胶囊各从自己的时间位置向内让开重叠量的一半（只让位置、
+ *   不改时间），时间拉开后各自回到时间位置；轨道两端挤不下时（如 0:01、23:59 附近）
+ *   由越界一侧让位、另一侧贴合补足。
+ *
+ * 让位量只由当前时间对解出、不记「最近动过哪个胶囊」，位置是 (startMinutes, endMinutes)
+ * 的连续函数：换手去拖另一个胶囊时布局结果不变，拖动从指尖处直接继续，不会整体跳开。
  *
  * 位置解算放在自定义 [Layout] 的同一次测量里：先实测两个胶囊宽度再算位置、直接摆放，
  * 不经状态回写，首帧即正确（预览单帧渲染也不会叠在原点）。手势换算另用尺寸快照
@@ -79,8 +83,6 @@ fun TimeRangeSlider(
 ) {
     val colors = MaterialTheme.colorScheme
     var trackWidthPx by remember { mutableIntStateOf(0) }
-    // 最近一次被拖动/设定的按钮：贴靠时它锚定在自己的时间位置，另一个让位
-    var lastMovedIsStart by remember { mutableStateOf(false) }
     // 正在通过弹窗自定义时间的胶囊（null = 无）
     var editingIsStart by remember { mutableStateOf<Boolean?>(null) }
 
@@ -92,10 +94,7 @@ fun TimeRangeSlider(
                 minMinutes = 0,
                 maxMinutes = endMinutes - 1,
                 trackWidthPx = trackWidthPx,
-                onChange = { newStart ->
-                    lastMovedIsStart = true
-                    onRangeChange(newStart, endMinutes)
-                },
+                onChange = { newStart -> onRangeChange(newStart, endMinutes) },
                 onTap = { editingIsStart = true },
             )
             TimeHandle(
@@ -103,10 +102,7 @@ fun TimeRangeSlider(
                 minMinutes = startMinutes + 1,
                 maxMinutes = DAY_LAST_MINUTE,
                 trackWidthPx = trackWidthPx,
-                onChange = { newEnd ->
-                    lastMovedIsStart = false
-                    onRangeChange(startMinutes, newEnd)
-                },
+                onChange = { newEnd -> onRangeChange(startMinutes, newEnd) },
                 onTap = { editingIsStart = false },
             )
         },
@@ -137,19 +133,14 @@ fun TimeRangeSlider(
         // 时间 → 胶囊左缘：0:00 贴轨道左端、23:59 右缘贴轨道右端
         val rawStartX = startMinutes / DAY_LAST_MINUTE.toFloat() * (trackW - startW)
         val rawEndX = endMinutes / DAY_LAST_MINUTE.toFloat() * (trackW - endW)
-        val startX: Float
-        val endX: Float
-        if (lastMovedIsStart) {
-            var s = rawStartX.coerceIn(0f, (trackW - startW).coerceAtLeast(0f))
-            var e = max(rawEndX, s + startW)
-            if (e > trackW - endW) e = (trackW - endW).coerceAtLeast(0f)
-            if (e - s < startW) s = (e - startW).coerceAtLeast(0f)
-            startX = s
-            endX = e
-        } else {
-            endX = rawEndX.coerceIn(0f, (trackW - endW).coerceAtLeast(0f))
-            startX = min(rawStartX, endX - startW).coerceAtLeast(0f)
-        }
+        // 时间位置相撞时两胶囊各让一半（只让位置、不改时间），让位量随时间对连续增减
+        val overlap = max(0f, rawStartX + startW - rawEndX)
+        // 全程只做 min/max 夹紧：位置是时间的连续函数，任何拖动都不会产生位置突变
+        var startX = max(0f, rawStartX - overlap / 2f)
+        var endX = min((trackW - endW).coerceAtLeast(0f), rawEndX + overlap / 2f)
+        // 轨道两端挤不下时（如 0:01/0:02、23:58/23:59）让位：先收回越界的左钮，仍不够再把右钮推回
+        if (endX - startX < startW) startX = max(0f, endX - startW)
+        if (endX - startX < startW) endX = min((trackW - endW).coerceAtLeast(0f), startX + startW)
 
         layout(constraints.maxWidth, constraints.maxHeight) {
             startPlaceable.placeRelative(
@@ -180,10 +171,8 @@ fun TimeRangeSlider(
                 TextButton(onClick = {
                     val picked = timeState.hour * 60 + timeState.minute
                     if (isStart) {
-                        lastMovedIsStart = true
                         onRangeChange(picked.coerceAtMost(endMinutes - 1).coerceAtLeast(0), endMinutes)
                     } else {
-                        lastMovedIsStart = false
                         onRangeChange(
                             startMinutes,
                             picked.coerceAtLeast(startMinutes + 1).coerceAtMost(DAY_LAST_MINUTE),

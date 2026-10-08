@@ -256,7 +256,7 @@ fun TagChoosingCard(
                     .rubberBandHorizontalScroll(rememberScrollState())
                     // padding 在滚动之内 = 两端内容边距：静止时与输入文字左缘对齐，
                     // 滑到头也能停在 16dp 上；视觉裁切由外卡 clip 承担
-                    .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 8.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = if (courseTags.isNotEmpty()) 0.dp else 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 userTags.forEach { tag ->

@@ -2,12 +2,15 @@ package com.fangyi.classpp.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -15,6 +18,7 @@ import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,6 +45,7 @@ import com.fangyi.classpp.ui.theme.MenuShape
 import com.fangyi.classpp.ui.theme.RowShape
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
+import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import java.util.GregorianCalendar
 import java.util.Locale
@@ -178,11 +183,16 @@ fun DateSelectionCard(
             }
         }
         if (custom != null && !expanded) {
+            HorizontalDivider(
+                thickness = 1.dp,   // 线粗细
+                color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(horizontal = 16.dp).offset(y = (-3).dp),
+            )
             // 自定义日期行：点按弹 M3 DatePickerDialog
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = SheetFieldHeight)
+                    //.heightIn(min = SheetFieldHeight)
                     .clickable {
                         focusManager.clearFocus()
                         keyboard?.hide()
@@ -212,7 +222,7 @@ fun DateSelectionCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = SheetFieldHeight)
+                    //.heightIn(min = SheetFieldHeight)
                     .clickable {
                         focusManager.clearFocus()
                         keyboard?.hide()
@@ -306,7 +316,7 @@ private fun QuickOptionText(
         modifier = modifier
             .clip(RowShape)
             .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
+            .padding(vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
