@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +32,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.TagRepository
 import com.fangyi.classpp.data.TodoReadResult
+import com.fangyi.classpp.data.TodoOpResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.TodoSort
 import com.fangyi.classpp.data.model.IsoDate
@@ -84,7 +86,8 @@ private val SectionSpacing = 20.dp
  * 组内按创建时间（创建早的在前）；勾选切换写回仓库，完成即移组，
  * 截止日期已过的待办移入已逾期组、标题标红。
  * 新建待办浮层（[NewTodoSheet]）两段式挂载：[showNewTodoSheet] 置真即挂载滑入，
- * 关闭先清 visible 播完出场，onDismissed 才卸载；浮层在场时经
+ * 关闭先清 visible 播完出场，onDismissed 才卸载；点卡片拉起待办详情浮层
+ * （[TodoDetailSheet]，挂载接线同课表页课程详情）。任一浮层在场时经
  * [onOverlayOverNavBarChange] 请求藏底部导航栏（同课表页全屏浮层）。
  *
  * [tabTransition]：tab 转场状态只读视图（MainActivity 的 TabPageState），透传给
@@ -119,6 +122,8 @@ fun TodoScreen(
     var sortDescending by rememberSaveable { mutableStateOf(true) }
     // 排序菜单展开态（DropdownMenu 挂在 TodoTopBar 的排序胶囊处）
     var sortMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    // 详情浮层：被点待办 id（点卡片进入），空 = 未打开（同课表页 detailTargetId）
+    var detailTargetId by rememberSaveable { mutableStateOf("") }
 
     // 整页（列表 + 顶栏）滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的
     // ProvideOverscroll）：列表滚到顶/底后继续拖动，内容整块被拉出边缘、越拉越硬，
@@ -143,6 +148,7 @@ fun TodoScreen(
                     onToggleCompleted = { id, completed ->
                         scope.launch { repository.setCompleted(id, completed) }
                     },
+                    onTodoClick = { detailTargetId = it.id },
                 )
             }
             TodoTopBar(
@@ -245,9 +251,41 @@ fun TodoScreen(
             },
         )
     }
-    // 浮层在场（含收场动画期间）就藏底部导航栏，onDismissed 卸载后才放回（同课表页全屏浮层）
-    LaunchedEffect(newTodoMounted) {
-        onOverlayOverNavBarChange(newTodoMounted)
+    // 待办详情浮层：两段式挂载与课表页课程详情同款——detailTargetId 是期望目标（空 = 关），
+    // detailMounted 在收场动画期间保持内容稳定不闪空，onDismissed 才卸载。
+    // 条目从当前列表反查：待办在浮层开着时被删则反查落空 → visible 转 false 自动收起。
+    // 画在新建浮层之后（组合顺序即绘制顺序），两者都盖住页面内容
+    val detailEntry = todos.firstOrNull { it.id == detailTargetId }
+    var detailMounted by remember { mutableStateOf<Todo?>(null) }
+    if (detailEntry != null) detailMounted = detailEntry
+    detailMounted?.let { detail ->
+        // 回调（协程）里不是组合上下文，字符串在组合期解析（同 NewTodoSheet 的 saveFailedMessage）
+        val saveFailedMessage = stringResource(R.string.todo_error_save_failed)
+        key(detail.id) {
+            TodoDetailSheet(
+                visible = detailEntry != null,
+                todo = detail,
+                onDismiss = { detailTargetId = "" },
+                onDismissed = { detailMounted = null },
+                // 备注随任意关闭路径落盘：未改动零开销；Err 仅剩校验不过等异常（Toast 提示）
+                onNoteSave = { note ->
+                    val cleaned = note.trim()
+                    if (cleaned != detail.note) {
+                        scope.launch {
+                            val result = repository.updateTodo(detail.copy(note = cleaned))
+                            if (result is TodoOpResult.Err) AppToasts.show(context, saveFailedMessage)
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    // 浮层在场（含收场动画期间）就藏底部导航栏，onDismissed 卸载后才放回（同课表页全屏浮层）；
+    // 两个浮层任一在场都算，避免详情浮层开着时导航栏提前露回
+    val anyOverlayMounted = newTodoMounted || detailMounted != null
+    LaunchedEffect(anyOverlayMounted) {
+        onOverlayOverNavBarChange(anyOverlayMounted)
     }
 }
 
@@ -285,6 +323,7 @@ private fun TodoList(
     sort: TodoSort,
     sortDescending: Boolean,
     onToggleCompleted: (id: String, completed: Boolean) -> Unit,
+    onTodoClick: (todo: Todo) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // 逾期判定的"此刻"：当日/分钟随重组取值——跨过截止时刻后，任何一次重组都会重算分组
@@ -326,6 +365,7 @@ private fun TodoList(
                             todo = todo,
                             sort = sort,
                             overdue = section == TodoSection.Overdue,
+                            onClick = { onTodoClick(todo) },
                         ) { onToggleCompleted(todo.id, it) }
                     }
                 }
@@ -338,9 +378,16 @@ private fun TodoList(
  * 单条待办卡片：[Todo] → [NoteCard] 的字段接线——标题、完成态与勾选直通，
  * 时间走 [cardTimeText] 映射（跟随顶栏排序键 [sort]，选「截止日期」时该位置改显截止日期），
  * 标签与紧急旗按模型透传；[overdue] 为真（在已逾期组）时标题标红。
+ * 点卡片（非勾选框）经 [onClick] 拉起详情浮层——勾选框是独立 toggleable，不会误触。
  */
 @Composable
-private fun TodoCard(todo: Todo, sort: TodoSort, overdue: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun TodoCard(
+    todo: Todo,
+    sort: TodoSort,
+    overdue: Boolean,
+    onClick: () -> Unit,
+    onCheckedChange: (Boolean) -> Unit,
+) {
     NoteCard(
         title = todo.name,
         time = todo.cardTimeText(sort),
@@ -348,6 +395,7 @@ private fun TodoCard(todo: Todo, sort: TodoSort, overdue: Boolean, onCheckedChan
         urgency = todo.urgency,
         completed = todo.completed,
         overdue = overdue,
+        onClick = onClick,
         onCheckedChange = onCheckedChange,
     )
 }
@@ -399,15 +447,15 @@ private fun Todo.deadlineCardText(): String? {
     ).joinToString(" ").takeIf { it.isNotEmpty() }
 }
 
-/** 日期段：空缺席；单日为今天不显（时刻即全部信息）；否则「6月18日、6月20日」 */
-private fun List<IsoDate>.cardDatePart(): String? {
+/** 日期段：空缺席；单日为今天不显（时刻即全部信息）；否则「6月18日、6月20日」。待办详情浮层复用 */
+internal fun List<IsoDate>.cardDatePart(): String? {
     if (isEmpty()) return null
     if (size == 1 && single() == IsoDate.today()) return null
     return joinToString("、") { it.toCardDateText() }
 }
 
-/** 日期段文本 `6月18日`（月/日不补零，NoteCard KDoc 形态；换算同 IsoDate.toString 的 UTC 整数天） */
-private fun IsoDate.toCardDateText(): String {
+/** 日期段文本 `6月18日`（月/日不补零，NoteCard KDoc 形态；换算同 IsoDate.toString 的 UTC 整数天）。待办详情浮层复用 */
+internal fun IsoDate.toCardDateText(): String {
     val calendar = GregorianCalendar(TimeZone.getTimeZone("UTC")).apply {
         timeInMillis = epochDay * MILLIS_PER_DAY
     }

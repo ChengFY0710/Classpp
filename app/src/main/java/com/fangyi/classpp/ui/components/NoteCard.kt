@@ -45,6 +45,30 @@ private val TagIconSize = 17.dp
 private val FlagIconSize = 25.dp
 
 /**
+ * 单枚标签胶囊：ic_tag 图标 + 标签名（均取 primary），图标与文字相距 4dp。
+ * 卡片属性行（[NoteCard]）与待办详情浮层共用同一形态；外层间距由调用方排布。
+ */
+@Composable
+internal fun TagChip(tag: String) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_tag),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(TagIconSize),
+        )
+        Text(
+            text = tag,
+            style = MaterialTheme.classppTextStyles.noteProperty
+                .copy(color = MaterialTheme.colorScheme.primary),
+        )
+    }
+}
+
+/**
  * 待办卡片：标题 + 属性行（时间、标签，自动换行）+ 右侧紧急旗帜与勾选框。
  *
  * - 颜色全部取自主题：卡片底 surface，标题 fieldLabel（onSurface），时间与标签文字
@@ -110,22 +134,7 @@ fun NoteCard(
                         )
                     }
                     tags.forEach { tag ->
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_tag),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(TagIconSize),
-                            )
-                            Text(
-                                text = tag,
-                                style = MaterialTheme.classppTextStyles.noteProperty
-                                    .copy(color = MaterialTheme.colorScheme.primary),
-                            )
-                        }
+                        TagChip(tag)
                     }
                 }
             }

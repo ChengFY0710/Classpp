@@ -196,8 +196,8 @@ private fun IsoDate.toPickerMillis(): Long = epochDay * MILLIS_PER_DAY
 
 private fun Long.toPickerIsoDate(): IsoDate = IsoDate(Math.floorDiv(this, MILLIS_PER_DAY))
 
-/** 截止值展示的日期段 `2026-9-7`（横杠不补零，同设计稿）；换算同 [IsoDate.toString] 的 UTC 整数天 */
-private fun IsoDate?.toDeadlineText(): String {
+/** 截止值展示的日期段 `2026-9-7`（横杠不补零，同设计稿）；换算同 [IsoDate.toString] 的 UTC 整数天。待办详情浮层复用 */
+internal fun IsoDate?.toDeadlineText(): String {
     if (this == null) return ""
     val calendar = GregorianCalendar(TimeZone.getTimeZone("UTC")).apply {
         timeInMillis = epochDay * MILLIS_PER_DAY

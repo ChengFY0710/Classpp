@@ -176,6 +176,9 @@
     <string name="todo_section_completed">Completed</string>
     <string name="todo_section_overdue">Overdue</string>
 
+    <string name="todo_detail_title">Todo Details</string>
+    <string name="todo_detail_time_label">Time</string>
+
     <!-- Todo urgency -->
     <string name="urgency_critical">Critical</string>
     <string name="urgency_high">Very urgent</string>
