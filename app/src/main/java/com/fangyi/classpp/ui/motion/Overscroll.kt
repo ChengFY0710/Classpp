@@ -531,6 +531,11 @@ fun Modifier.rubberBandHorizontalScroll(state: ScrollState): Modifier {
  * 滚动路径回到与原版完全一致的状态；canScrollForward/Backward 本身是 mutableState，
  * 翻转在进出边缘的瞬间各触发一次重组，不产生逐帧重组。
  *
+ * 这一开关只改同一个 LazyColumn 调用点的 modifier 与参数，不写成 if/else 两处调用：
+ * canScroll 翻转并不罕见（内容高度正好跨过一屏——如展开一个可收起分组），而列表整体重建
+ * 会连它内部保存列表项状态的容器一起丢掉，列表项里 rememberSaveable 的展开态等会被重置
+ * 回初值（原因与后果见下方实现处的注释）。
+ *
  * 零消费状态与原速放行 fling 的作用同 [rubberBandVerticalScroll]（绕过派发门槛、
  * 不让「无位移的惯性动画」吃掉甩动速度）；效果渲染节点（[Modifier.overscroll]）挂在
  * 列表滚动布局之外，拿真实视口做阻尼分母（同 [rubberBandVerticalScroll] 的量化规避），
@@ -550,53 +555,54 @@ fun RubberBandLazyColumn(
     content: LazyListScope.() -> Unit,
 ) {
     val effect = rememberOverscrollEffect()
+    // 兜底路径之外、列表自带手势层用的效果实例：与兜底实例分开持有（两个 remember 各
+    // 建一个），两条路径切换时不会出现同一实例被两处同时挂载
+    val listEffect = rememberOverscrollEffect()
     val unscrollable = !state.canScrollForward && !state.canScrollBackward
-    if (effect != null && userScrollEnabled && unscrollable) {
-        // 不消费任何滚动量的状态：canScrollForward/Backward 默认恒为 true，恰好绕过
-        // foundation 的派发门槛，让全部 delta 进入 overscroll
-        val passthroughState = remember { ScrollableState { 0f } }
-        // 原速放行 fling：不产生任何惯性位移，速度原样交还效果实例
-        val passthroughFling = remember {
-            object : FlingBehavior {
-                override suspend fun ScrollScope.performFling(initialVelocity: Float): Float =
-                    initialVelocity
-            }
+    // 兜底判据：有环境效果实例、调用方允许手势、且列表上下都不可滚
+    val fallbackEffect = effect?.takeIf { userScrollEnabled && unscrollable }
+    // 不消费任何滚动量的状态：canScrollForward/Backward 默认恒为 true，恰好绕过
+    // foundation 的派发门槛，让全部 delta 进入 overscroll
+    val passthroughState = remember { ScrollableState { 0f } }
+    // 原速放行 fling：不产生任何惯性位移，速度原样交还效果实例
+    val passthroughFling = remember {
+        object : FlingBehavior {
+            override suspend fun ScrollScope.performFling(initialVelocity: Float): Float =
+                initialVelocity
         }
-        LazyColumn(
-            modifier = modifier
+    }
+    // 单一调用点：兜底开关只改 modifier 与参数，绝不写成 if/else 两个 LazyColumn。
+    // 列表整体重建会连它内部保存列表项状态的容器一起丢掉（LazyLayout 的可保存状态容器
+    // 建在列表里），列表项中 rememberSaveable 持有的状态——如可收起分组的展开态——会被
+    // 重置回初值；而内容高度恰好跨过「不足一屏 ↔ 可滚」时兜底判据会翻转，于是展开
+    // 可收起分组这类操作会立刻被重置回收起，再点再重置（表现为怎么点都展不开）
+    LazyColumn(
+        modifier = if (fallbackEffect != null) {
+            modifier
                 // 效果渲染节点：挂在列表外侧（更外层），按真实视口尺寸做阻尼分母
                 // （同 rubberBandVerticalScroll 的量化规避）
-                .overscroll(effect)
+                .overscroll(fallbackEffect)
                 // 兜底手势层：列表自带手势层关掉后由它接管拖拽（内层先于外层派发）
                 .scrollable(
                     state = passthroughState,
                     orientation = Orientation.Vertical,
-                    overscrollEffect = effect,
+                    overscrollEffect = fallbackEffect,
                     flingBehavior = passthroughFling,
-                ),
-            state = state,
-            contentPadding = contentPadding,
-            reverseLayout = reverseLayout,
-            verticalArrangement = verticalArrangement,
-            horizontalAlignment = horizontalAlignment,
-            flingBehavior = flingBehavior,
-            // 关掉列表自带手势层（更内层、会先吞掉拖拽 change）；它的 overscroll 实例
-            // 永远收不到 delta，一并摘除，只留外侧兜底这一个
-            userScrollEnabled = false,
-            overscrollEffect = null,
-            content = content,
-        )
-    } else {
-        LazyColumn(
-            modifier = modifier,
-            state = state,
-            contentPadding = contentPadding,
-            reverseLayout = reverseLayout,
-            verticalArrangement = verticalArrangement,
-            horizontalAlignment = horizontalAlignment,
-            flingBehavior = flingBehavior,
-            userScrollEnabled = userScrollEnabled,
-            content = content,
-        )
-    }
+                )
+        } else {
+            modifier
+        },
+        state = state,
+        contentPadding = contentPadding,
+        reverseLayout = reverseLayout,
+        verticalArrangement = verticalArrangement,
+        horizontalAlignment = horizontalAlignment,
+        flingBehavior = flingBehavior,
+        // 兜底时关掉列表自带手势层（更内层、会先吞掉拖拽 change）；平时原样透传
+        userScrollEnabled = if (fallbackEffect == null) userScrollEnabled else false,
+        // 兜底时摘掉列表自带的效果实例（它永远收不到 delta），只留外侧兜底那一个；
+        // 平时用列表自己的实例
+        overscrollEffect = if (fallbackEffect == null) listEffect else null,
+        content = content,
+    )
 }
