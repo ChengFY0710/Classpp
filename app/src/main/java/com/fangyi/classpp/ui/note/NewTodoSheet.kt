@@ -237,7 +237,9 @@ internal fun NewTodoSheet(
                             else -> TodoTimeKind.None
                         }
                     },
-                    // 选「时段」展开滑块（RowChoiceCard 展开插槽，SheetComponentsPreviews 同款接法）
+                    // 选「时段」展开滑块（RowChoiceCard 展开插槽，SheetComponentsPreviews 同款接法）；
+                    // 滑块无状态：分钟数由本浮层持有（0 ≤ 开始 < 结束 ≤ 1439 由滑块保证），
+                    // 每次拖动/钟表确认都整体提交开始与结束两个值
                     expandContent = if (timeKind == TodoTimeKind.Period) {
                         {
                             TimeRangeSlider(
