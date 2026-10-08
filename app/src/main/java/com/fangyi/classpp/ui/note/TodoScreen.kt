@@ -78,8 +78,8 @@ private val SectionSpacing = 20.dp
  * 内容层为待办列表（[hazeSource] 采样源：列表滚动到顶栏之下时透出毛玻璃），
  * 顶栏浮在上层；选中态在此持有，分组胶囊过滤后续接入。
  *
- * 列表分「无日期」（未完成，本期新建的待办均无日期属性归此组）与「已完成」
- * （默认收起）两组，组内按创建时间新在前；勾选切换写回仓库，完成即移组。
+ * 列表分「未完成」与「已完成」两组，未完成在上、已完成在下（默认收起），
+ * 组内按创建时间（创建早的在前）；勾选切换写回仓库，完成即移组。
  * 新建待办浮层（[NewTodoSheet]）两段式挂载：[showNewTodoSheet] 置真即挂载滑入，
  * 关闭先清 visible 播完出场，onDismissed 才卸载；浮层在场时经
  * [onOverlayOverNavBarChange] 请求藏底部导航栏（同课表页全屏浮层）。
@@ -243,7 +243,7 @@ fun TodoScreen(
 }
 
 /**
- * 待办列表：未完成归「无日期」组、已完成归「已完成」组（默认收起），空组不渲染；
+ * 待办列表：未完成、已完成各归一组——未完成组在上、已完成组在下（默认收起），空组不渲染；
  * 组内按顶栏选定的排序与方向（默认创建时间降序——创建早的在前）。卡片经 [TodoCard]
  * 接模型字段（时间文本 [cardTimeText]、标签、紧急旗）。列表从顶栏与浮动导航栏下滚过，
  * 上下各留出让位。
@@ -280,7 +280,7 @@ private fun TodoList(
     ) {
         if (active.isNotEmpty()) {
             item(key = "active") {
-                NoteCardSection(title = stringResource(R.string.todo_section_undated)) {
+                NoteCardSection(title = stringResource(R.string.todo_section_incomplete)) {
                     active.forEach { todo ->
                         TodoCard(todo) { onToggleCompleted(todo.id, it) }
                     }
@@ -292,7 +292,9 @@ private fun TodoList(
                 NoteCardSection(
                     title = stringResource(R.string.todo_section_completed),
                     initiallyExpanded = false,
-                    modifier = Modifier.padding(top = SectionSpacing),
+                    // 组间距只在上面还有未完成组时给：已完成组独占列表时它就是首组，
+                    // 再加顶部间距会比未完成组的起点低一截
+                    modifier = if (active.isNotEmpty()) Modifier.padding(top = SectionSpacing) else Modifier,
                 ) {
                     done.forEach { todo ->
                         TodoCard(todo) { onToggleCompleted(todo.id, it) }

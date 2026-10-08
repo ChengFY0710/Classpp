@@ -171,6 +171,10 @@
     <string name="tag_choosing_input_hint">Tap to add a tag</string>
     <string name="tag_choosing_course_title">Course tags</string>
 
+    <!-- Todo list sections -->
+    <string name="todo_section_incomplete">Incomplete</string>
+    <string name="todo_section_completed">Completed</string>
+
     <!-- Todo urgency -->
     <string name="urgency_critical">Critical</string>
     <string name="urgency_high">Very urgent</string>
