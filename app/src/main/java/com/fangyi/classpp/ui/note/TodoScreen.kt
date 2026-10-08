@@ -34,7 +34,10 @@ import com.fangyi.classpp.data.TagRepository
 import com.fangyi.classpp.data.TodoReadResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.TodoSort
+import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSection
@@ -44,9 +47,15 @@ import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
+import java.util.GregorianCalendar
+import java.util.Locale
+import java.util.TimeZone
 
 /** 演示分组：数据层接入后由用户自定义分组替换 */
 private val DemoGroups = listOf("作业", "日常琐事")
+
+/** epochDay → millis 的换算步长（同 IsoDate/DeadlineCard 的私有常量） */
+private const val MILLIS_PER_DAY = 86_400_000L
 
 /**
  * 顶栏在内容坐标系里的占位高：TodoTopBar 的私有常量镜像（状态栏之上另算）——
@@ -228,8 +237,9 @@ fun TodoScreen(
 
 /**
  * 待办列表：未完成归「无日期」组、已完成归「已完成」组（默认收起），空组不渲染；
- * 组内按顶栏选定的排序与方向（默认创建时间降序——创建早的在前）。列表从顶栏与浮动
- * 导航栏下滚过，上下各留出让位。
+ * 组内按顶栏选定的排序与方向（默认创建时间降序——创建早的在前）。卡片经 [TodoCard]
+ * 接模型字段（时间文本 [cardTimeText]、标签、紧急旗）。列表从顶栏与浮动导航栏下滚过，
+ * 上下各留出让位。
  */
 @Composable
 private fun TodoList(
@@ -261,11 +271,7 @@ private fun TodoList(
             item(key = "active") {
                 NoteCardSection(title = stringResource(R.string.todo_section_undated)) {
                     active.forEach { todo ->
-                        NoteCard(
-                            title = todo.name,
-                            completed = todo.completed,
-                            onCheckedChange = { onToggleCompleted(todo.id, it) },
-                        )
+                        TodoCard(todo) { onToggleCompleted(todo.id, it) }
                     }
                 }
             }
@@ -278,14 +284,75 @@ private fun TodoList(
                     modifier = Modifier.padding(top = SectionSpacing),
                 ) {
                     done.forEach { todo ->
-                        NoteCard(
-                            title = todo.name,
-                            completed = todo.completed,
-                            onCheckedChange = { onToggleCompleted(todo.id, it) },
-                        )
+                        TodoCard(todo) { onToggleCompleted(todo.id, it) }
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * 单条待办卡片：[Todo] → [NoteCard] 的字段接线——标题、完成态与勾选直通，
+ * 时间走 [cardTimeText] 映射，标签与紧急旗按模型透传。
+ */
+@Composable
+private fun TodoCard(todo: Todo, onCheckedChange: (Boolean) -> Unit) {
+    NoteCard(
+        title = todo.name,
+        time = todo.cardTimeText(),
+        tags = todo.tags,
+        urgency = todo.urgency,
+        completed = todo.completed,
+        onCheckedChange = onCheckedChange,
+    )
+}
+
+/**
+ * 待办 → NoteCard 属性行的时间文本（KDoc 形态："12:30"、"6月18日 14:30"）：
+ *
+ * - 有日期：今天只显时刻段，非今天前置日期段；全天显「全天」，无时刻只显日期段；
+ * - 无日期时刻时兜底截止值（同格式；截止日期与时刻成对，TodoValidator 约束）；
+ * - 均无返回 null，NoteCard 缺席该属性（标签前无空位）。
+ */
+@Composable
+private fun Todo.cardTimeText(): String? {
+    val timePart = when (timeKind) {
+        TodoTimeKind.Period -> {
+            val start = startMinute
+            val end = endMinute
+            if (start != null && end != null) "${TimeText.format(start)}-${TimeText.format(end)}" else null
+        }
+        TodoTimeKind.AllDay -> stringResource(R.string.todo_time_all_day)
+        TodoTimeKind.None -> null
+    }
+    val scheduled = listOfNotNull(dates.cardDatePart(), timePart)
+        .joinToString(" ")
+        .takeIf { it.isNotEmpty() }
+    if (scheduled != null) return scheduled
+    // 截止兜底：今天不显日期段（时刻即全部信息），跨天显「6月18日 14:30」
+    return listOfNotNull(
+        deadlineDate?.takeUnless { it == IsoDate.today() }?.toCardDateText(),
+        deadlineMinute?.let(TimeText::format),
+    ).joinToString(" ").takeIf { it.isNotEmpty() }
+}
+
+/** 日期段：空缺席；单日为今天不显（时刻即全部信息）；否则「6月18日、6月20日」 */
+private fun List<IsoDate>.cardDatePart(): String? {
+    if (isEmpty()) return null
+    if (size == 1 && single() == IsoDate.today()) return null
+    return joinToString("、") { it.toCardDateText() }
+}
+
+/** 日期段文本 `6月18日`（月/日不补零，NoteCard KDoc 形态；换算同 IsoDate.toString 的 UTC 整数天） */
+private fun IsoDate.toCardDateText(): String {
+    val calendar = GregorianCalendar(TimeZone.getTimeZone("UTC")).apply {
+        timeInMillis = epochDay * MILLIS_PER_DAY
+    }
+    return String.format(
+        Locale.ROOT,
+        "%d月%d日",
+        calendar.get(GregorianCalendar.MONTH) + 1,
+        calendar.get(GregorianCalendar.DAY_OF_MONTH),
+    )
 }

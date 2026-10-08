@@ -37,6 +37,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
@@ -162,7 +163,7 @@ private fun NoteCardSectionShowcase() {
                 title = "户口乔迁材料报送",
                 time = "12:30",
                 tags = listOf("待办标签"),
-                flagged = true,
+                urgency = TodoUrgency.Critical,
                 onCheckedChange = {},
             )
             NoteCard(title = "户口乔迁材料报送", time = "6月18日 14:30", onCheckedChange = {})

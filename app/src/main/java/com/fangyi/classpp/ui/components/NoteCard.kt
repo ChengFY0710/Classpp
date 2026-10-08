@@ -28,6 +28,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.NoteCardShape
 import com.fangyi.classpp.ui.theme.classppColors
@@ -41,9 +42,11 @@ private val FlagIconSize = 25.dp
  * 待办卡片：标题 + 属性行（时间、标签，自动换行）+ 右侧紧急旗帜与勾选框。
  *
  * - 颜色全部取自主题：卡片底 surface，标题 fieldLabel（onSurface），时间与标签文字
- *   noteProperty（secondaryText），标签着 primary，旗帜 error，勾选框 primary；
- * - [time] 为已格式化的文本（"12:30"、"6月18日 14:30"），作为属性行第一项，
- *   缺席时由标签补位；属性行整体走 FlowRow，放不下自动换行；
+ *   noteProperty（secondaryText），标签着 primary，旗帜按 [urgency] 档位取色
+ *   （[TodoUrgency.flagColor]，同 UrgentFlagCard），勾选框 primary；
+ * - [time] 为已格式化的文本（"12:30"、"14:00-16:00"、"6月18日 14:30"），作为属性行
+ *   第一项，缺席时由标签补位；属性行整体走 FlowRow，放不下自动换行；
+ * - [urgency] 紧急档位：非 None 才画旗，None 不画（列表默认形态无旗）；
  * - [completed] 完成态：标题划线置灰（时间/标签/旗帜不变），勾选框选中；
  * - 时间与标签全缺席时卡片仍有 60dp 最小高度，不塌成纯文字高度。
  */
@@ -53,7 +56,7 @@ fun NoteCard(
     modifier: Modifier = Modifier,
     time: String? = null,
     tags: List<String> = emptyList(),
-    flagged: Boolean = false,
+    urgency: TodoUrgency = TodoUrgency.None,
     completed: Boolean = false,
     onCheckedChange: ((Boolean) -> Unit)? = null,
     onClick: (() -> Unit)? = null,
@@ -117,11 +120,11 @@ fun NoteCard(
                 }
             }
         }
-        if (flagged) {
+        if (urgency != TodoUrgency.None) {
             Icon(
                 painter = painterResource(R.drawable.ic_flag),
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
+                tint = urgency.flagColor(),
                 modifier = Modifier.size(FlagIconSize),
             )
             Spacer(Modifier.width(PropertySpacing))
@@ -183,19 +186,19 @@ private fun NoteCardShowcase() {
             title = "户口乔迁材料报送",
             time = "12:30",
             tags = listOf("待办标签"),
-            flagged = true,
+            urgency = TodoUrgency.High,
             onCheckedChange = {},
         )
         NoteCard(
             title = "户口乔迁材料报送",
             time = "12:30",
             tags = listOf("待办标签"),
-            flagged = true,
+            urgency = TodoUrgency.Critical,
             completed = true,
             onCheckedChange = {},
         )
-        NoteCard(title = "户口乔迁材料报送", tags = listOf("待办标签"), flagged = true, onCheckedChange = {})
-        NoteCard(title = "户口乔迁材料报送", flagged = true, onCheckedChange = {})
+        NoteCard(title = "户口乔迁材料报送", tags = listOf("待办标签"), urgency = TodoUrgency.Medium, onCheckedChange = {})
+        NoteCard(title = "户口乔迁材料报送", urgency = TodoUrgency.Low, onCheckedChange = {})
         NoteCard(title = "户口乔迁材料报送", time = "6月18日 14:30", onCheckedChange = {})
     }
 }
