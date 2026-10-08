@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.settingsRowMetrics
 
@@ -27,8 +28,8 @@ import com.fangyi.classpp.ui.theme.settingsRowMetrics
 fun CardSection(
     title: String,
     modifier: Modifier = Modifier,
-    // 覆盖示例：周数选择区沿用浮层的 SheetSectionSpacingBetween（12dp）
-    spacing: Dp = 8.dp,
+    // 卡间距统一走 ui.theme 的 CardSectionSpacing（10dp），调用点无需覆盖
+    spacing: Dp = CardSectionSpacing,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(

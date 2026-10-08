@@ -11,6 +11,13 @@ import androidx.compose.ui.unit.dp
 val PageHorizontalSpacing: Dp = 15.dp
 
 /**
+ * 卡片分组（CardSection、NoteCardSection）内的纵向卡间距：标题↔首卡、卡↔卡同一个值。
+ * 两个组件共用它作默认值，设置页与各浮层（加课面板、新建待办、课表设置）都取默认，
+ * 不再逐处覆盖——改这一个值，全局卡片节奏同步。
+ */
+val CardSectionSpacing: Dp = 10.dp
+
+/**
  * 浮层行卡与设置卡统一行高（行高下限）：输入框（SheetTextField）与信息展示框
  * （SheetInfoCard）按它取 `heightIn(min)`，设置卡（SettingsCard、SettingsCardwithIcon，
  * PopupSelectCard 选择行随之）以它为整卡行高下限，保证各卡等高；

@@ -66,6 +66,7 @@ import com.fangyi.classpp.ui.components.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.WeekCellShape
 import com.fangyi.classpp.ui.theme.classppColors
 import kotlin.math.ceil
@@ -376,7 +377,7 @@ fun AddCoursePanel(
         visible = visible,
         onDismissed = onDismissed,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
+        Column(verticalArrangement = Arrangement.spacedBy(CardSectionSpacing)) {
             Text(
                 text = cellInfo,
                 fontSize = secondaryTextSize,
@@ -460,10 +461,7 @@ fun AddCoursePanel(
                 )
             }
 
-            CardSection(
-                title = stringResource(R.string.edit_course_weeks),
-                spacing = SheetSectionSpacingBetween,
-            ) {
+            CardSection(title = stringResource(R.string.edit_course_weeks)) {
                 WeekSelectionGrid(
                     totalWeeks = schedule.totalWeeks,
                     selected = selectedWeeks,

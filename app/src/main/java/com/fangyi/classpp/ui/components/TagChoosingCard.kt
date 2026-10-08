@@ -221,6 +221,8 @@ fun TagChoosingCard(
                 interactionSource = interactionSource,
                 modifier = Modifier
                     .weight(1f)
+                    // 参与宿主的「键盘弹起把输入框滚到键盘上方」（OverlaySheet 的 ImeScrollTracker）
+                    .imeFieldTracking()
                     .onFocusChanged { focused = it.isFocused },
                 decorationBox = { innerTextField ->
                     Box(

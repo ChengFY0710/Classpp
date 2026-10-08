@@ -11,6 +11,7 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -29,7 +30,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -37,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,9 +46,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -69,7 +73,8 @@ import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
 
-val SheetSectionSpacingBetween: Dp = 12.dp // 卡片与卡片间的间距
+// 浮层里卡片组（CardSection 分组 / 单卡）之间的间距；组内卡间距走 ui.theme 的 CardSectionSpacing（10dp）
+val SheetSectionSpacingBetween: Dp = 12.dp
 val SheetSectionSpacingBottom:Dp = 14.dp  // 卡片组底与下一个卡片组间距（如果需要）
 
 /**
@@ -95,9 +100,10 @@ private val TopBarRowHorizontalPadding: Dp = 15.dp
 
 /**
  * 键盘与浮层的关系（未来不同浮层可选不同行为）：
- * - [ContentScroll]：浮层本体不动，**滚动内容末尾**按键盘高度追加 Spacer 让位——
- *   本次添加/编辑课程面板用这个（距顶固定、不随键盘改变位置和高度）；
- * - [IgnoreIme]：完全不理会键盘，键盘盖住哪里算哪里。
+ * - [ContentScroll]：浮层本体不动，**滚动内容末尾**按键盘高度追加 Spacer 让位，并让正在
+ *   编辑的输入框随内容滚到键盘上方、收起键盘再滚回原位（添加/编辑课程面板、新建待办浮层
+ *   等表单用这个；距顶固定、不随键盘改变位置和高度）；
+ * - [IgnoreIme]：完全不理会键盘，键盘盖住哪里算哪里（也自动不参与输入框让位）。
  */
 enum class SheetImeBehavior { ContentScroll, IgnoreIme }
 
@@ -131,6 +137,11 @@ data class SheetTopAction(
  * 胶囊（纯展示浮层用，如课程详情），[onConfirm] 随之闲置；[bottomContent] 可选钉底槽位——
  * 画在导航栏上方、带自底向上渐变兜底，滚动内容从其下淡出（如切换课表浮层底部常驻的导出/导入按钮）。
  *
+ * [imeBehavior] 决定键盘与滚动内容的关系（见 [SheetImeBehavior]）：[SheetImeBehavior.ContentScroll]
+ * 下键盘弹起时正在编辑的输入框会随内容滚到键盘上方、键盘收起再滚回原位（能力做在
+ * [ImeScrollTracker] 里，参与方式是给输入控件挂 [Modifier.imeFieldTracking]——
+ * [SheetTextField] / [SheetTextArea] / [TagChoosingCard] 已内置）。
+ *
  * haze 的采样源挂在浮层内部的滚动列上：浮层被遮罩盖住后背后的课表网格对顶栏不可见，
  * 只需模糊浮层自身内容，因此容器内自建 hazeState，调用方无需传任何模糊状态。
  */
@@ -152,6 +163,7 @@ fun OverlaySheet(
     topInset: Dp = Dp.Unspecified,
     imeBehavior: SheetImeBehavior = SheetImeBehavior.ContentScroll,
     bottomContent: (@Composable () -> Unit)? = null,
+    // 内容列的作用域由卡片内的 SheetScrollHost 显式转交（那里不在 Column 的接收者作用域里）
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val hazeState = rememberHazeState()
@@ -164,19 +176,31 @@ fun OverlaySheet(
     } else {
         with(density) { WindowInsets.statusBars.getTop(density).toDp() }
     }
-    // 内容让位键盘：取 IME 与导航栏的较大者（键盘弹起时 IME 已包含导航区），
-    // 挂在滚动内容末尾而非容器上——容器的位置与高度因此不随键盘变化。
-    val bottomInsetDp = when (imeBehavior) {
-        SheetImeBehavior.ContentScroll -> {
-            val imeBottom = WindowInsets.ime.getBottom(density)
-            val navBottom = WindowInsets.navigationBars.getBottom(density)
-            with(density) { maxOf(imeBottom, navBottom).toDp() }
-        }
-        SheetImeBehavior.IgnoreIme -> {
-            val navBottom = WindowInsets.navigationBars.getBottom(density)
-            with(density) { navBottom.toDp() }
-        }
+    // 内容让位键盘：取 IME 与导航栏的较大者（键盘弹起时 IME 已包含导航区）。让位挂在
+    // 滚动内容末尾而非容器上——容器的位置与高度因此不随键盘变化。键盘收起时 IME 让位部分
+    // 按 TailReserveMillis 缩回（rememberTailReservePx），缩回过程即「内容滚回原位」的可见部分
+    val imeBottomPx = WindowInsets.ime.getBottom(density)
+    val navBottomPx = WindowInsets.navigationBars.getBottom(density)
+    val imeVisible = when (imeBehavior) {
+        SheetImeBehavior.ContentScroll -> rememberImeVisible()
+        SheetImeBehavior.IgnoreIme -> false
     }
+    // 键盘超出导航栏的高度：内容尾部要额外撑出来的余量（滚动范围不够时靠下的输入框滚不上来）
+    val tailReservePx = rememberTailReservePx(
+        target = (imeBottomPx - navBottomPx).coerceAtLeast(0),
+        imeVisible = imeVisible,
+    )
+    val bottomInsetDp = with(density) {
+        when (imeBehavior) {
+            SheetImeBehavior.ContentScroll -> navBottomPx + tailReservePx
+            SheetImeBehavior.IgnoreIme -> navBottomPx
+        }.toDp()
+    }
+    // 滚动视口尺寸与位置：键盘让位与「输入框滚到键盘上方」的换算依据（滚动列被
+    // fillMaxSize 撑满卡片，量它与量视口等价）。位置取滚动列自身在根坐标系里的 y——
+    // 滚动列自己的放置位置不随其内容滚动而变，是内容坐标系的稳定原点
+    var viewportHeightPx by remember { mutableIntStateOf(0) }
+    var viewportTopInRootPx by remember { mutableIntStateOf(0) }
 
     // 点空白处收起（无涟漪）
     val scrimInteraction = remember { MutableInteractionSource() }
@@ -300,56 +324,81 @@ fun OverlaySheet(
                 // 且被 SheetShape 圆角裁剪收敛在卡内，边缘处看不出破绽。顶栏下拉关闭走的是
                 // draggable 手势、不属于本作用域的滚动容器，与 overscroll 互不干扰
                 ProvideOverscroll {
-                    Box {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                // 顶栏模糊的采样源：滚动内容从顶栏底下滚过时被渐变模糊
-                                .hazeSource(hazeState)
-                                // 橡皮筋增强版 verticalScroll：内容不足一屏（如课程详情等
-                                // 短浮层）时也能拉出橡皮筋（ui.motion 的 rubberBandVerticalScroll）
-                                .rubberBandVerticalScroll(scrollState)
-                                // 点空白（卡片间隙/留白/尾部余量）取消聚焦收起键盘：
-                                // SheetTextField / SheetTextArea 一族的通用宿主行为
-                                .clearFocusOnTap()
-                                // 横向边距 = 设置页同款页边距（PageHorizontalSpacing），卡片宽度与设置页一致
-                                .padding(horizontal = PageHorizontalSpacing),
-                        ) {
-                            // 为叠在上方的顶栏留位；滚动后内容进入顶栏区域并被模糊
-                            Spacer(Modifier.height(TopBarHeight))
-                            content()
-                            // 尾部余量 = 键盘/导航让位 + 可调滚动余量，拉大可滑动范围
-                            Spacer(Modifier.height(bottomInsetDp + SheetBottomSlack))
-                        }
-                        OverlaySheetTopBar(
-                            title = title,
-                            confirmLabel = confirmLabel,
-                            confirmIcon = confirmIcon,
-                            onConfirm = { if (!closeRequested) onConfirm() },
-                            rightAction = guardedRightAction,
-                            confirmAtEnd = confirmAtEnd,
-                            hazeState = hazeState,
-                            dragModifier = topBarDragModifier,
-                            modifier = Modifier.align(Alignment.TopCenter),
-                        )
-                        // 钉底内容槽（可选）：渐变兜底让滚动内容从其下淡出，导航栏留白由 inset 吃掉
-                        bottomContent?.let { slot ->
-                            Box(
+                    BoxWithConstraints {
+                        // 滚动视口 = 这张卡片（滚动列被 fillMaxSize 撑满它）；键盘让位与
+                        // 「输入框滚到键盘上方」的换算都以它为准，量不了就没有依据
+                        viewportHeightPx = constraints.maxHeight
+                        Box {
+                            Column(
                                 modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .fillMaxWidth()
-                                    .background(
-                                        androidx.compose.ui.graphics.Brush.verticalGradient(
-                                            listOf(
-                                                MaterialTheme.colorScheme.background.copy(alpha = 0f),
-                                                MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
-                                            ),
-                                        ),
-                                    )
-                                    .navigationBarsPadding()
-                                    .padding(top = 12.dp, bottom = 24.dp),
+                                    .fillMaxSize()
+                                    // 顶栏模糊的采样源：滚动内容从顶栏底下滚过时被渐变模糊
+                                    .hazeSource(hazeState)
+                                    // 滚动列自身在根坐标系里的位置：内容坐标系的稳定原点
+                                    //（滚动列自己的放置位置不随其内容滚动而变）
+                                    .onGloballyPositioned {
+                                        viewportTopInRootPx = it.positionInRoot().y.toInt()
+                                    }
+                                    // 橡皮筋增强版 verticalScroll：内容不足一屏（如课程详情等
+                                    // 短浮层）时也能拉出橡皮筋（ui.motion 的 rubberBandVerticalScroll）
+                                    .rubberBandVerticalScroll(scrollState)
+                                    // 点空白（卡片间隙/留白/尾部余量）取消聚焦收起键盘：
+                                    // SheetTextField / SheetTextArea 一族的通用宿主行为
+                                    .clearFocusOnTap()
+                                    // 横向边距 = 设置页同款页边距（PageHorizontalSpacing），卡片宽度与设置页一致
+                                    .padding(horizontal = PageHorizontalSpacing),
                             ) {
-                                slot()
+                                // 为叠在上方的顶栏留位；滚动后内容进入顶栏区域并被模糊
+                                Spacer(Modifier.height(TopBarHeight))
+                                // 键盘弹起时把正在编辑的输入框滚到键盘上方、收起后把内容滚回原位。
+                                // 不理会键盘的浮层（IgnoreIme）不接线：字段照旧只渲染
+                                SheetScrollHost(
+                                    enabled = imeBehavior == SheetImeBehavior.ContentScroll,
+                                    scrollState = scrollState,
+                                    viewportHeightPx = viewportHeightPx,
+                                    viewportTopInRootPx = viewportTopInRootPx,
+                                    imeInsetPx = imeBottomPx,
+                                    imeVisible = imeVisible,
+                                    // 滚动列本体的接收者：这里正处在 Column 的接收者作用域里
+                                    scope = this,
+                                    content = content,
+                                )
+                                // 尾部余量 = 键盘让位 + 可调滚动余量，拉大可滑动范围
+                                Spacer(Modifier.height(bottomInsetDp + SheetBottomSlack))
+                                // 键盘弹起时额外撑出的那一截（收起键盘逐帧缩回）：键盘让位
+                                // 的可见部分——缩回吃掉的是多出来的空白，不产生位移
+                                TailReserveSpacer(tailReservePx)
+                            }
+                            OverlaySheetTopBar(
+                                title = title,
+                                confirmLabel = confirmLabel,
+                                confirmIcon = confirmIcon,
+                                onConfirm = { if (!closeRequested) onConfirm() },
+                                rightAction = guardedRightAction,
+                                confirmAtEnd = confirmAtEnd,
+                                hazeState = hazeState,
+                                dragModifier = topBarDragModifier,
+                                modifier = Modifier.align(Alignment.TopCenter),
+                            )
+                            // 钉底内容槽（可选）：渐变兜底让滚动内容从其下淡出，导航栏留白由 inset 吃掉
+                            bottomContent?.let { slot ->
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .fillMaxWidth()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(
+                                                    MaterialTheme.colorScheme.background.copy(alpha = 0f),
+                                                    MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                                                ),
+                                            ),
+                                        )
+                                        .navigationBarsPadding()
+                                        .padding(top = 12.dp, bottom = 24.dp),
+                                ) {
+                                    slot()
+                                }
                             }
                         }
                     }

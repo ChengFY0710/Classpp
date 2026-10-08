@@ -200,7 +200,7 @@ private fun SettingsContent(
             )
         }
 
-        CardSection(title = stringResource(R.string.section_slots),spacing = 12.dp) {
+        CardSection(title = stringResource(R.string.section_slots)) {
             // 加：保留现有 slots 追加一节（上一节结束 +30 分钟课间、时长 100 分钟）；
             // 减：保留前缀裁剪（合法表的前缀必合法，且保留用户已改时间）
             val appended = appendSlot(schedule.slots)

@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
@@ -62,7 +63,8 @@ private val SectionButtonSize = 32.dp
 fun NoteCardSection(
     title: String,
     modifier: Modifier = Modifier,
-    spacing: Dp = 8.dp,
+    // 卡间距与 CardSection 同源：ui.theme 的 CardSectionSpacing（10dp）
+    spacing: Dp = CardSectionSpacing,
     initiallyExpanded: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {

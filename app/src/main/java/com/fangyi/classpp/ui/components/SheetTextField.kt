@@ -149,6 +149,9 @@ fun SheetTextField(
             modifier = Modifier
                 .weight(1f)
                 .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+                // 参与宿主的「键盘弹起把输入框滚到键盘上方」（OverlaySheet 的 ImeScrollTracker）：
+                // 宿主没这项能力时（设置页等直排表单）此修饰符空转
+                .imeFieldTracking()
                 .onFocusChanged { focused = it.isFocused },
             decorationBox = { innerTextField ->
                 Box(

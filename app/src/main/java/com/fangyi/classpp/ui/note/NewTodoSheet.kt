@@ -195,10 +195,7 @@ internal fun NewTodoSheet(
                 isError = nameBlank,
             )
 
-            CardSection(
-                title = stringResource(R.string.todo_section_reminder),
-                spacing = SheetSectionSpacingBetween,
-            ) {
+            CardSection(title = stringResource(R.string.todo_section_reminder)) {
                 DeadlineCard(
                     deadlineDate = deadlineDate,
                     deadlineMinute = deadlineMinute,
@@ -213,10 +210,7 @@ internal fun NewTodoSheet(
                 )
             }
 
-            CardSection(
-                title = stringResource(R.string.todo_section_date_time),
-                spacing = SheetSectionSpacingBetween,
-            ) {
+            CardSection(title = stringResource(R.string.todo_section_date_time)) {
                 DateSelectionCard(
                     value = dateSelection,
                     expanded = dateExpanded,
@@ -286,10 +280,7 @@ internal fun NewTodoSheet(
                 )
             }
 
-            CardSection(
-                title = stringResource(R.string.todo_section_more),
-                spacing = SheetSectionSpacingBetween,
-            ) {
+            CardSection(title = stringResource(R.string.todo_section_more)) {
                 SheetTextField(
                     label = stringResource(R.string.todo_location_label),
                     value = location,
