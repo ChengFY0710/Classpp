@@ -227,38 +227,53 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                // 停靠页顶栏冻结帧回位重录（回前台与深浅主题切换共用）：给停靠页造一帧
+                // 原位绘制时机——x 归零（alpha=0 且压在当前页之下，不可见、无实际命中
+                // 风险）→ 位置回调把 haze 几何刷回就位值 → 该帧绘制照常走录制分支、
+                // 冻结帧重录 → 再弹回停靠位。两次 withFrameNanos：第一次恢复在下一帧的
+                // 动画相位（早于其绘制），第二次恢复时中间那帧已完成绘制并重录完毕，
+                // 回弹才安全。就位页（被选中）逐帧自录、淡出中页（alpha>0）由转场协程
+                // 管理，均跳过
+                fun reRecordParkedTabs() {
+                    mountedTabs.forEach { tab ->
+                        if (tab == selectedTab) return@forEach
+                        val page = pageStates.getValue(tab)
+                        if (page.alpha.value > 0f) return@forEach
+                        scope.launch {
+                            val parkX = page.x.value
+                            page.x.snapTo(0f)
+                            withFrameNanos { }
+                            withFrameNanos { }
+                            // 这一帧内该页被再次选中（转场已接管 x、alpha=1）时不再回弹；
+                            // 此时冻结帧刚录好，该次转场正好直接受保护
+                            if (page.alpha.value <= 0f && page.x.value == 0f) {
+                                page.x.snapTo(parkX)
+                            }
+                        }
+                    }
+                }
+
                 // 回前台重录顶栏转场冻结帧：进多任务/回桌面时窗口不可见，系统会丢弃
                 // RenderNode 的显示列表（haze 为同一问题在 onStop 释放捕获层，
                 // chrisbanes/haze#497），tabTransitionFreeze 录制的就位帧随之清空。
                 // 可见页回前台全量重画即自愈（就位分支照常重录）；停靠页（x=±1.2、
                 // alpha=0）永远处于「转场中」判定（x≠0），冻结层只重放、从不重录，
-                // 空帧会一直带进下次切回课表页的滑入——顶栏整条空白露出底色。
-                // 这里给停靠页造一帧原位绘制时机：x 归零（alpha=0 且压在当前页之下，
-                // 不可见、无实际命中风险）→ 位置回调把 haze 几何刷回就位值 → 该帧绘制
-                // 照常走录制分支、冻结帧恢复 → 再弹回停靠位。两次 withFrameNanos：
-                // 第一次恢复在下一帧的动画相位（早于其绘制），第二次恢复时中间那帧
-                // 已完成绘制并重录完毕，回弹才安全
+                // 空帧会一直带进下次切回课表页的滑入——顶栏整条空白露出底色
                 val lifecycleOwner = LocalLifecycleOwner.current
                 LaunchedEffect(lifecycleOwner) {
                     lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
                         if (state != Lifecycle.State.RESUMED) return@collect
-                        mountedTabs.forEach { tab ->
-                            if (tab == selectedTab) return@forEach
-                            val page = pageStates.getValue(tab)
-                            if (page.alpha.value > 0f) return@forEach
-                            scope.launch {
-                                val parkX = page.x.value
-                                page.x.snapTo(0f)
-                                withFrameNanos { }
-                                withFrameNanos { }
-                                // 这一帧内该页被再次选中（转场已接管 x、alpha=1）时不再回弹；
-                                // 此时冻结帧刚录好，该次转场正好直接受保护
-                                if (page.alpha.value <= 0f && page.x.value == 0f) {
-                                    page.x.snapTo(parkX)
-                                }
-                            }
-                        }
+                        reRecordParkedTabs()
                     }
+                }
+
+                // 深浅主题切换后重录停靠页冻结帧：冻结帧录的是录制当时主题的整条栏面
+                // （兜底色 + Haze 模糊输出 + 胶囊），停靠页只重放不重录——切完主题再
+                // 切回该页，滑入全程整帧重放旧主题栏面，落定那帧才换新（顶栏模糊慢半拍
+                // 才变色，旧深色栏面压在浅色页上穿帮一瞬，反之亦然）。切主题即回位
+                // 重录新主题帧，后续滑入重放的就是新帧
+                LaunchedEffect(darkTheme) {
+                    reRecordParkedTabs()
                 }
 
                 // 设置页覆盖层完整转场（ui.motion 的 PageOverlayTransition）：下层让位视差、
