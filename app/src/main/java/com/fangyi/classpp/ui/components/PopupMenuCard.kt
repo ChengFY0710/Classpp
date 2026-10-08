@@ -33,9 +33,8 @@ import dev.chrisbanes.haze.hazeEffect
 /** 勾选图标边长；未勾选行保留同宽空槽，勾选/未勾选的文字左缘对齐（设计稿） */
 private val CheckIconSize = 20.dp
 
-/** 菜单行内边距（CourseContextMenu 同款 24/14 节奏） */
 private val RowHorizontalPadding = 24.dp
-private val RowVerticalPadding = 14.dp
+private val RowVerticalPadding = 12.dp
 
 /** 勾选图标与文字的间距 */
 private val CheckLabelSpacing = 12.dp

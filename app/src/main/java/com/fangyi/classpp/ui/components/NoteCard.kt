@@ -135,8 +135,7 @@ fun NoteCard(
             )
             Spacer(Modifier.width(16.dp))
         }
-        // M3 Checkbox 占位（后续按设计稿自绘）：颜色先取主题 primary——未选 = 蓝描边框，
-        // 已选 = 蓝底白勾。组件自带 48dp 最小触控区，布局高度按 48dp 计，会撑起卡片高度
+        // M3 Checkbox 占位（后续按设计稿自绘）：颜色先取主题 primary——未选 = 蓝描边框，已选，蓝底白勾。
         Row(
             modifier = Modifier
                 .clip(RoundedRectangle(6.dp))
