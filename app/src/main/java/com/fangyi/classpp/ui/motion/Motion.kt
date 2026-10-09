@@ -76,6 +76,13 @@ object Motion {
     /** 弹出菜单 alpha 时长（alpha 0→1），与 [PopupScaleMillis] 同帧启动、同曲线。 */
     const val PopupFadeMillis = 120
 
+    /**
+     * 内容区展开/收起时长（Expandable 高度动画）：与配套的淡入淡出、头部 chevron
+     * 旋转共用同一条时长，同一个展开开关翻转同帧启动、同帧收尾。
+     * 进场配合 [Decelerate]、退场配合 [Accelerate]。
+     */
+    const val ExpandMillis = 300
+
     /** 标准曲线：先加速后减速，页面级进出场与弹出菜单的主曲线。 */
     val Standard: Easing = FastOutSlowInEasing
 

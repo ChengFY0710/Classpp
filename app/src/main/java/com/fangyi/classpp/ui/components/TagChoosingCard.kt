@@ -64,6 +64,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.Expandable
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
 import com.fangyi.classpp.ui.theme.MenuShape
@@ -95,7 +96,8 @@ private val DeletePopupGap = 8.dp
  * - 已有标签：标签行横向排列，超宽横向滑动、多余裁切（不足一行也能拉出橡皮筋）；
  * - 聚焦：整卡 2dp 蓝色描边（SheetTextField 同款单动画源），光标可见；
  * - 提交：失焦（点空白/其他地方）或 IME Done 时把输入建成标签，重名静默忽略；
- * - 长按用户标签弹「删除」层；课程标签区默认收起，点头部行展开（本次无动画）。
+ * - 长按用户标签弹「删除」层；课程标签区默认收起，点头部行展开——高度动画复用
+ *   motion 层 [Expandable]（展开/收起时下方内容实时让位），chevron 同步 180° 旋转。
  *
  * 描边宽度与不透明度同走一条 0→1 进度动画（单动画源，两条曲线严格同步），
  * 进度归 0 后干脆不挂 border——0 宽描边会被 Skia 画成 1px 发丝线（SheetTextField 踩过）。
@@ -137,7 +139,7 @@ fun TagChoosingCard(
     var focused by remember { mutableStateOf(false) }
     // 长按待删除的用户标签名（非空 = 删除弹层打开），同时只开一个
     var deleteTarget by remember { mutableStateOf<String?>(null) }
-    // 课程标签区展开状态：默认收起；本次不做展开动画，直接切换显隐
+    // 课程标签区展开状态：默认收起；展开/收起动画走 motion 层 Expandable（下方部分实时让位）
     var courseExpanded by rememberSaveable { mutableStateOf(initialCourseExpanded) }
 
     val focusManager = LocalFocusManager.current
@@ -280,6 +282,13 @@ fun TagChoosingCard(
 
         // —— 课程标签区：头部行可点展开/收起；展开后 FlowRow 换行，颜色=课程卡片配色 ——
         if (courseTags.isNotEmpty()) {
+            // chevron 旋转：固定一张 down 图转 180° 当 up 用，时长与 Expandable 高度
+            // 动画同值（ExpandMillis），同帧启动、同帧收尾
+            val chevronRotation by animateFloatAsState(
+                targetValue = if (courseExpanded) 180f else 0f,
+                animationSpec = tween(Motion.ExpandMillis, easing = Motion.Standard),
+                label = "tagCardChevron",
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -296,15 +305,15 @@ fun TagChoosingCard(
                 )
                 Spacer(Modifier.weight(1f))
                 Icon(
-                    painter = painterResource(
-                        if (courseExpanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down,
-                    ),
+                    painter = painterResource(R.drawable.ic_chevron_down),
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier
+                        .size(20.dp)
+                        .graphicsLayer { rotationZ = chevronRotation },
                 )
             }
-            if (courseExpanded) {
+            Expandable(expanded = courseExpanded) {
                 FlowRow(
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
