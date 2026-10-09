@@ -1,12 +1,9 @@
 package com.fangyi.classpp.ui.schedule
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,8 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -40,6 +35,8 @@ import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Schedule
+import com.fangyi.classpp.ui.components.ConfirmDialogCard
+import com.fangyi.classpp.ui.components.DialogPillButton
 import com.fangyi.classpp.ui.components.FadeOverlayDialog
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetCard
@@ -48,7 +45,6 @@ import com.fangyi.classpp.ui.components.SheetPillButton
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.settings.TermDatesCard
-import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBottom
 import com.fangyi.classpp.ui.theme.classppColors
@@ -63,7 +59,9 @@ import com.fangyi.classpp.ui.theme.classppColors
  *
  * 切换/导出/导入/删除的实际执行由调用方（ScheduleScreen）负责，这里纯 UI；
  * [createMode] 也由调用方持有：创建成功后先回列表态再走切换确认，避免重复点创建。
- * 删除先弹 [DeleteScheduleConfirmDialog] 确认（破坏性操作），确认后才回调 [onDelete]。
+ * 删除先弹 [DeleteScheduleConfirmDialog] 确认（破坏性操作），确认后才回调 [onDelete]——
+ * 确认框挂载在 OverlaySheet 之后（画到浮层卡片之上、后注册返回键），取消/返回只关它、
+ * 留在浮层；关掉之后返回键才轮到浮层的「表单态回列表、列表态关浮层」。
  *
  * 与 [com.fangyi.classpp.ui.components.OverlaySheet] 同一约定：页内覆盖层而非窗口类对话框，
  * 键盘接得进来（表单态走 ContentScroll 让位）。
@@ -93,7 +91,8 @@ internal fun ScheduleSwitcherSheet(
     // 待删除的课表 id（非空 = 删除确认框打开）
     var deletingId by remember { mutableStateOf<String?>(null) }
 
-    // 返回键：表单态先回列表，列表态才关浮层
+    // 返回键（删除确认框不在场时）：表单态先回列表，列表态才关浮层；
+    // 删除确认框在场时它后注册、先收到（见函数尾挂载处）
     BackHandler(enabled = true) {
         if (createMode) onCreateModeChange(false) else onDismiss()
     }
@@ -216,7 +215,8 @@ internal fun ScheduleSwitcherSheet(
         }
     }
 
-    // 删除确认框：后注册 BackHandler，返回键优先于浮层的回列表/关闭。
+    // 删除确认框：挂在 OverlaySheet 调用之后（画到浮层卡片之上），后注册 BackHandler——
+    // 返回键先到它：取消/返回只关确认框、留在浮层，关掉后才轮到浮层的回列表/关闭。
     // 挂载与可见性分离（同浮层两段式关闭）：确认/取消先清 deletingId 播淡出，播完才卸载
     var deleteDialogMounted by remember { mutableStateOf(false) }
     val deleteDialogVisible = deletingId != null
@@ -415,77 +415,5 @@ internal fun DiscardSwitchConfirmDialog(
                 onClick = onConfirm,
             )
         }
-    }
-}
-
-/** 确认框白卡内容：左对齐大标题 + 浅灰说明 + 底部两颗等宽胶囊，删除/放弃确认框共用 */
-@Composable
-private fun ConfirmDialogCard(
-    title: String,
-    message: String,
-    buttons: @Composable RowScope.() -> Unit,
-) {
-    Column(
-        modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 24.dp, bottom = 12.dp),
-    ) {
-        Text(
-            text = title,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(start = 12.dp, end = 12.dp),
-        )
-        Spacer(Modifier.height(10.dp))
-        Text(
-            text = message,
-            fontSize = 15.sp,
-            lineHeight = 22.sp,
-            color = MaterialTheme.classppColors.secondaryText,
-            modifier = Modifier.padding(start = 12.dp, end = 12.dp),
-        )
-        Spacer(Modifier.height(28.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            content = buttons,
-        )
-    }
-}
-
-/**
- * 确认框胶囊按钮：文字居中的全圆角胶囊（[PillShape]），高 52dp；
- * 大柔影配方同 [SheetPillButton]（高 elevation 撑模糊半径、低透明度压存在感），
- * 阴影色取主题 scrim；配色由调用方传 theme 槽位，本组件不含任何硬编码色值。
- */
-@Composable
-private fun DialogPillButton(
-    label: String,
-    containerColor: Color,
-    contentColor: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-) {
-    val shadowColor = MaterialTheme.colorScheme.scrim
-    Row(
-        modifier = modifier
-            .height(52.dp)
-            .graphicsLayer {
-                shape = PillShape
-                clip = true
-                shadowElevation = 36.dp.toPx()
-                spotShadowColor = shadowColor.copy(alpha = 0.3f)
-            }
-            .background(containerColor, PillShape)
-            .clickable(enabled = enabled, onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            text = label,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = contentColor,
-        )
     }
 }

@@ -14,6 +14,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
@@ -40,11 +41,13 @@ private val TagRowSpacing = 12.dp
  * （[SheetInfoCard]：截止日期 / 紧急程度 / 待办时间 / 待办地点，四行常显，
  * 空值显灰「无」）与备注输入（[SheetTextArea]）。
  *
- * 备注没有显式保存按钮（顶栏只有"关闭"）：**任意关闭路径**（关闭胶囊 / 系统返回 /
- * 下拉 / 点遮罩）都会先经 [onNoteSave] 落盘再关，输入不丢；调用方负责实际持久化与去重。
+ * 顶栏左「编辑」右「关闭」：编辑把**最新快照**（备注 trim 后、可尚未落盘）经 [onEdit] 交回调用方，
+ * 据此打开编辑待办浮层（叠在本浮层之上，本浮层保持打开）；备注在任意关闭路径
+ * （关闭胶囊 / 系统返回 / 下拉 / 点遮罩）先经 [onNoteSave] 落盘再关，输入不丢；
+ * 调用方负责实际持久化与去重。
  *
- * 浮层框架是 [OverlaySheet]：两段式关闭（visible / onDismissed），confirmLabel 传 null
- * 隐藏左侧确认胶囊；键盘避让走默认的 ContentScroll（备注聚焦时内容滚动让位）。
+ * 浮层框架是 [OverlaySheet]：两段式关闭（visible / onDismissed）；键盘避让走默认的
+ * ContentScroll（备注聚焦时内容滚动让位）。
  */
 @Composable
 internal fun TodoDetailSheet(
@@ -53,10 +56,12 @@ internal fun TodoDetailSheet(
     onDismiss: () -> Unit,
     onDismissed: () -> Unit,
     onNoteSave: (String) -> Unit,
+    onEdit: (Todo) -> Unit,
 ) {
-    // 备注本地态：键在待办 id 上，换目标浮层重建时初值跟着换；
-    // 保存后仓库回流同 id 条目不重置（值本就一致）
-    var note by rememberSaveable(todo.id) { mutableStateOf(todo.note) }
+    // 备注本地态：键在待办 id + 仓库 note 上——换目标重建时初值跟着换；编辑浮层改了备注
+    // 并确认（仓库 note 变化）也触发重初始化，否则残留旧值会在关闭时把新值覆盖回去。
+    // 打字不回流仓库（值未变不重置）；落盘后回流同值同样不重置
+    var note by rememberSaveable(todo.id, todo.note) { mutableStateOf(todo.note) }
     val closeWithSave = {
         onNoteSave(note.trim())
         onDismiss()
@@ -64,10 +69,19 @@ internal fun TodoDetailSheet(
     // 系统返回 = 收起浮层而非退出 app；与关闭/下拉同走 closeWithSave，备注照常先落盘。
     // enabled 跟 visible：出场动画期间不再拦截（visible 已 false，重复提交被挡在门外）
     BackHandler(enabled = visible, onBack = closeWithSave)
+    // 点「编辑」先收键盘：详情还挂在编辑浮层下层，焦点不清会把键盘带进编辑表单
+    val focusManager = LocalFocusManager.current
 
     OverlaySheet(
         title = stringResource(R.string.todo_detail_title),
-        confirmLabel = null,
+        confirmLabel = stringResource(R.string.detail_edit),
+        confirmIcon = R.drawable.ic_edit,
+        // 编辑图标单独调到 24dp（其余浮层维持默认 30dp）
+        confirmIconSize = 24.dp,
+        onConfirm = {
+            focusManager.clearFocus()
+            onEdit(todo.copy(note = note.trim()))
+        },
         rightAction = SheetTopAction(
             label = stringResource(R.string.detail_close),
             icon = R.drawable.ic_dismiss_circle,
@@ -91,6 +105,7 @@ internal fun TodoDetailSheet(
                     horizontalArrangement = Arrangement.spacedBy(TagRowSpacing),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     itemVerticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 8.dp),
                 ) {
                     todo.tags.forEach { tag -> TagChip(tag) }
                 }

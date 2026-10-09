@@ -11,6 +11,7 @@
     <string name="cd_todo_folder">文件夹</string>
     <string name="cd_todo_sort">排序</string>
     <string name="todo_new_title">新建待办</string>
+    <string name="todo_edit_title">编辑待办</string>
     <string name="todo_name_label">待办名</string>
     <string name="todo_name_hint">如：户口乔迁材料报送</string>
     <string name="todo_section_incomplete">未完成</string>
@@ -19,6 +20,9 @@
     <string name="todo_error_save_failed">保存失败，请稍后重试</string>
     <string name="todo_detail_title">待办详情</string>
     <string name="todo_detail_time_label">待办时间</string>
+    <!-- 编辑待办浮层：删除二次确认 -->
+    <string name="todo_delete_title">删除待办</string>
+    <string name="todo_delete_message">「%1$s」将被删除，此操作不可撤销。</string>
     <!-- 新建待办浮层：分组标题与表单字段 -->
     <string name="todo_section_reminder">提醒与优先级</string>
     <string name="todo_section_date_time">日期与时间</string>
@@ -151,6 +155,7 @@
     <!-- 课程详情浮层 -->
     <string name="detail_title">课程详情</string>
     <string name="detail_close">关闭</string>
+    <string name="detail_edit">编辑</string>
     <string name="detail_teacher">教师</string>
     <string name="detail_location">上课地点</string>
     <string name="detail_note_ph">点击输入添加备注</string>

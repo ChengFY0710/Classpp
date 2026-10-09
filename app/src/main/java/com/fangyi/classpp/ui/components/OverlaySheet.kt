@@ -95,6 +95,13 @@ private val TopBarHeight = 78.dp
 private val TopBarRowHorizontalPadding: Dp = 15.dp
 
 /**
+ * 顶栏胶囊固定高度 = 默认图标 30dp + 上下 padding 各 8dp（[SheetPillButton] 的自然高）。
+ * 锚死后图标单独调小（如待办详情「编辑」24dp）两颗胶囊仍等高——余量由行内垂直居中消化；
+ * 图标不要调到 30dp 以上，否则会顶破固定高。
+ */
+private val TopBarPillHeight: Dp = 46.dp
+
+/**
  * 键盘与浮层的关系（未来不同浮层可选不同行为）：
  * - [ContentScroll]：浮层本体不动，**滚动内容末尾**按键盘高度追加 Spacer 让位，并让正在
  *   编辑的输入框随内容滚到键盘上方、收起键盘再滚回原位（添加/编辑课程面板、新建待办浮层
@@ -129,7 +136,8 @@ data class SheetTopAction(
  *   收场期间内容保持原样不闪空；
  * - 顶栏整条可垂直拖拽、浮层跟手下移，遮罩跟着变淡；松手超过位移/速度阈值走关闭，否则弹回。
  *
- * [confirmIcon] 配置左胶囊图标（默认对勾）；[confirmLabel] 传 null 时**不渲染**左侧确认
+ * [confirmIcon] / [confirmIconSize] 配置左胶囊图标与尺寸（默认对勾、30dp，可按浮层单独调）；
+ * [confirmLabel] 传 null 时**不渲染**左侧确认
  * 胶囊（纯展示浮层用，如课程详情），[onConfirm] 随之闲置；[bottomContent] 可选钉底槽位——
  * 画在导航栏上方、带自底向上渐变兜底，滚动内容从其下淡出（如切换课表浮层底部常驻的导出/导入按钮）。
  *
@@ -152,6 +160,8 @@ fun OverlaySheet(
     visible: Boolean = true,
     onDismissed: () -> Unit = {},
     confirmIcon: Int = com.fangyi.classpp.R.drawable.ic_checkmark_circle,
+    // 左胶囊图标尺寸（默认同 SheetPillButton 的 30dp）；只影响确认胶囊，单独调某浮层时传值
+    confirmIconSize: Dp = 30.dp,
     // true = 确认胶囊到右侧、动作胶囊（取消/删除）到左侧，两颗胶囊的图标排布随位置镜像
     // （左颗图标在前、右颗文字在前，图标始终落在胶囊外侧）
     confirmAtEnd: Boolean = false,
@@ -369,6 +379,7 @@ fun OverlaySheet(
                                 title = title,
                                 confirmLabel = confirmLabel,
                                 confirmIcon = confirmIcon,
+                                confirmIconSize = confirmIconSize,
                                 onConfirm = { if (!closeRequested) onConfirm() },
                                 rightAction = guardedRightAction,
                                 confirmAtEnd = confirmAtEnd,
@@ -415,6 +426,7 @@ private fun OverlaySheetTopBar(
     title: String,
     confirmLabel: String?,
     confirmIcon: Int,
+    confirmIconSize: Dp = 30.dp,
     onConfirm: () -> Unit,
     rightAction: SheetTopAction,
     confirmAtEnd: Boolean = false,
@@ -487,6 +499,7 @@ private fun OverlaySheetTopBar(
                         icon = rightAction.icon,
                         containerColor = rightAction.containerColor,
                         contentColor = rightAction.contentColor,
+                        modifier = Modifier.height(TopBarPillHeight),
                         iconAtEnd = true,
                         onClick = rightAction.onClick,
                     )
@@ -498,6 +511,7 @@ private fun OverlaySheetTopBar(
                         icon = rightAction.icon,
                         containerColor = rightAction.containerColor,
                         contentColor = rightAction.contentColor,
+                        modifier = Modifier.height(TopBarPillHeight),
                         iconAtEnd = false,
                         onClick = rightAction.onClick,
                     )
@@ -506,6 +520,8 @@ private fun OverlaySheetTopBar(
                         icon = confirmIcon,
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.height(TopBarPillHeight),
+                        iconSize = confirmIconSize,
                         iconAtEnd = true,
                         onClick = onConfirm,
                     )
@@ -515,6 +531,8 @@ private fun OverlaySheetTopBar(
                         icon = confirmIcon,
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.height(TopBarPillHeight),
+                        iconSize = confirmIconSize,
                         onClick = onConfirm,
                     )
                     SheetPillButton(
@@ -522,6 +540,7 @@ private fun OverlaySheetTopBar(
                         icon = rightAction.icon,
                         containerColor = rightAction.containerColor,
                         contentColor = rightAction.contentColor,
+                        modifier = Modifier.height(TopBarPillHeight),
                         iconAtEnd = true,
                         onClick = rightAction.onClick,
                     )

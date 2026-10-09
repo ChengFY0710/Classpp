@@ -124,6 +124,8 @@ fun TodoScreen(
     var sortMenuExpanded by rememberSaveable { mutableStateOf(false) }
     // 详情浮层：被点待办 id（点卡片进入），空 = 未打开（同课表页 detailTargetId）
     var detailTargetId by rememberSaveable { mutableStateOf("") }
+    // 编辑浮层：被编辑待办 id（详情顶栏「编辑」进入），空 = 未打开（两段式挂载见浮层处）
+    var editTargetId by rememberSaveable { mutableStateOf("") }
 
     // 整页（列表 + 顶栏）滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的
     // ProvideOverscroll）：列表滚到顶/底后继续拖动，内容整块被拉出边缘、越拉越硬，
@@ -258,6 +260,9 @@ fun TodoScreen(
     val detailEntry = todos.firstOrNull { it.id == detailTargetId }
     var detailMounted by remember { mutableStateOf<Todo?>(null) }
     if (detailEntry != null) detailMounted = detailEntry
+    // 编辑浮层挂载快照：只在详情「编辑」回调里取一次、不跟随仓库回流（表单是快照语义，
+    // 同 AddCoursePanel 草稿）；visible 走反查，待办被删则反查落空自动收起
+    var editMounted by remember { mutableStateOf<Todo?>(null) }
     detailMounted?.let { detail ->
         // 回调（协程）里不是组合上下文，字符串在组合期解析（同 NewTodoSheet 的 saveFailedMessage）
         val saveFailedMessage = stringResource(R.string.todo_error_save_failed)
@@ -277,13 +282,58 @@ fun TodoScreen(
                         }
                     }
                 },
+                // 详情保留在下层不关：最新快照（含未落盘备注）直接当表单初值挂载编辑浮层
+                // （叠在详情之上），确认/取消后回到详情；不等落盘——备注不丢、打开零延迟
+                onEdit = { latest ->
+                    editMounted = latest
+                    editTargetId = latest.id
+                },
+            )
+        }
+    }
+    // 编辑待办浮层：两段式挂载同详情，画在详情之后（组合顺序即绘制顺序）叠在详情之上。
+    // editTargetId 是期望目标（空 = 关），editMounted 是挂载时的快照（表单初值只取这一次）；
+    // visible 从当前列表反查：待办被删反查落空 → 自动收起（与删除确认的级联一致）
+    val editEntry = todos.firstOrNull { it.id == editTargetId }
+    editMounted?.let { initial ->
+        // 回调（协程）里不是组合上下文，字符串在组合期解析（同 NewTodoSheet 的 saveFailedMessage）
+        val editFailedMessage = stringResource(R.string.todo_error_save_failed)
+        key(initial.id) {
+            NewTodoSheet(
+                visible = editEntry != null,
+                onDismissed = { editMounted = null },
+                onDismiss = { editTargetId = "" },
+                tagRepository = tagRepository,
+                scheduleRepository = scheduleRepository,
+                existing = initial,
+                onConfirm = { todo ->
+                    scope.launch {
+                        // 空名等非法值已在浮层内拦截，Err 仅剩落盘失败等异常，Toast 提示、表单保持原样
+                        when (repository.updateTodo(todo)) {
+                            TodoOpResult.Ok -> editTargetId = ""
+                            is TodoOpResult.Err -> AppToasts.show(context, editFailedMessage)
+                        }
+                    }
+                },
+                onDelete = {
+                    scope.launch {
+                        when (repository.removeTodo(initial.id)) {
+                            TodoOpResult.Ok -> {
+                                // 反查落空本会让两个浮层自动收起，这里显式清 id 收尾
+                                editTargetId = ""
+                                detailTargetId = ""
+                            }
+                            is TodoOpResult.Err -> AppToasts.show(context, editFailedMessage)
+                        }
+                    }
+                },
             )
         }
     }
 
     // 浮层在场（含收场动画期间）就藏底部导航栏，onDismissed 卸载后才放回（同课表页全屏浮层）；
-    // 两个浮层任一在场都算，避免详情浮层开着时导航栏提前露回
-    val anyOverlayMounted = newTodoMounted || detailMounted != null
+    // 三个浮层任一在场都算，避免详情/编辑浮层开着时导航栏提前露回
+    val anyOverlayMounted = newTodoMounted || detailMounted != null || editMounted != null
     LaunchedEffect(anyOverlayMounted) {
         onOverlayOverNavBarChange(anyOverlayMounted)
     }
