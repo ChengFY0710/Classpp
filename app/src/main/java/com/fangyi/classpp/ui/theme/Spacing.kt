@@ -28,13 +28,6 @@ val CardSectionSpacing: Dp = 10.dp
 val SheetSectionSpacingBetween: Dp = 12.dp
 
 /**
- * [SheetSectionSpacingBetween] 的「手写 Spacer」版本：某段内容没套
- * `Column(verticalArrangement = spacedBy(...))` 时，用它自己补一份同样的顶层块留白。
- * 目前只有切换课表浮层的 CreateScheduleContent（课表名输入框 ↔ 学期日期卡）。
- */
-val SheetSectionSpacingBottom: Dp = 14.dp
-
-/**
  * 浮层行卡与设置卡统一行高（行高下限）：输入框（SheetTextField）与信息展示框
  * （SheetInfoCard）按它取 `heightIn(min)`，设置卡（SettingsCard、SettingsCardwithIcon，
  * PopupSelectCard 选择行随之）以它为整卡行高下限，保证各卡等高；

@@ -406,11 +406,11 @@ fun ScheduleScreen(
             // 空位长按菜单：被长按格 [dayOfWeek, slotId] + 格子窗口坐标；空 = 菜单未打开。
             // 刻意不 rememberSaveable——菜单是瞬时 UI，旋转重建就收起（Rect 也不可存），同 menuAnchor
             var pasteAnchor by remember { mutableStateOf<SlotMenuAnchor?>(null) }
-            // 切换课表浮层：开关、待切换目标（非空 = 脏草稿确认打开）、新建表单态
-            // （新建失败走系统 Toast，不再有表单内联错误）
+            // 切换课表浮层：开关、待切换目标（非空 = 脏草稿确认打开）、新建表单浮层开关
+            //（叠在切换课表上，两段式挂载见浮层处；新建失败走系统 Toast，无表单内联错误）
             var switcherVisible by rememberSaveable { mutableStateOf(false) }
             var pendingSwitchId by rememberSaveable { mutableStateOf("") }
-            var createMode by rememberSaveable { mutableStateOf(false) }
+            var switcherCreateVisible by rememberSaveable { mutableStateOf(false) }
             // 课表设置浮层：编辑栏按钮打开（内容自原设置页迁入，见 ScheduleSettingsSheet）
             var settingsSheetVisible by rememberSaveable { mutableStateOf(false) }
             // 编辑态的网格数据源：草稿 → 渲染模型（复用仓库路径同一套映射与置灰规则）。
@@ -591,7 +591,7 @@ fun ScheduleScreen(
             val performSwitch: (String) -> Unit = { id ->
                 pendingSwitchId = ""
                 switcherVisible = false
-                createMode = false
+                switcherCreateVisible = false
                 addTarget = emptyList()
                 editTargetId = ""
                 chooserSourceId = ""
@@ -648,13 +648,13 @@ fun ScheduleScreen(
                     }
                 }
             }
-            // 新建：成功先回列表态再走切换（脏则弹确认；取消确认也不会停在表单里重复点创建）；
-            // 失败走系统 Toast（新建失败多为重名/名称非法，表单内容无需改动引导）
+            // 新建：成功先关表单浮层回切换列表再走切换（脏则弹确认；取消确认也不会停在
+            // 表单里重复点创建）；失败走系统 Toast（新建失败多为重名/名称非法，表单内容无需改动引导）
             val onCreateConfirm: (String, IsoDate, IsoDate) -> Unit = { name, start, end ->
                 scope.launch {
                     when (val r = repository.createSchedule(name, start, end)) {
                         is ReadResult.Ok -> {
-                            createMode = false
+                            switcherCreateVisible = false
                             requestSwitch(r.value)
                         }
                         is ReadResult.Err -> AppToasts.show(context, r.error.toEditMessage(context))
@@ -673,7 +673,7 @@ fun ScheduleScreen(
                             if (id == schedule.id) selectedWeek = WEEK_UNSET
                             if (repository.schedules.value.isEmpty()) {
                                 switcherVisible = false
-                                createMode = false
+                                switcherCreateVisible = false
                             }
                             if (editing && editBaselineJson.isNotEmpty()) {
                                 val baseline = ScheduleJson.decodeStorage<ScheduleFile>(editBaselineJson)
@@ -962,8 +962,8 @@ fun ScheduleScreen(
                 )
             }
 
-            // 切换课表浮层：列表/新建 + 底部导出导入；脏草稿确认叠在其上——
-            // 组合顺序保证返回键优先级：确认 → 浮层（表单态先回列表）→ 编辑取消。
+            // 切换课表浮层：列表 + 底部导出导入；新建表单与脏草稿确认都叠在它之上——
+            // 组合顺序保证返回键优先级：脏草稿确认 → 新建表单 → 切换浮层 → 编辑取消。
             // 挂载与可见性分离（同课程面板的两段式关闭）：关闭先播浮层出场动画，
             // 播完（onDismissed）才真正卸载
             var switcherMounted by remember { mutableStateOf(false) }
@@ -974,14 +974,11 @@ fun ScheduleScreen(
                     onDismissed = { switcherMounted = false },
                     schedules = repository.schedules.collectAsState().value,
                     activeScheduleId = schedule.id,
-                    createMode = createMode,
-                    onCreateModeChange = {
-                        createMode = it
-                    },
-                    onDismiss = {
-                        switcherVisible = false
-                        createMode = false
-                    },
+                    // 「新建」= 打开表单浮层（复用 NewScheduleSheet）；盖上来时本浮层经
+                    // covered 缩小后退，清开关（取消/确认）的瞬间同步回位
+                    onCreate = { switcherCreateVisible = true },
+                    covered = switcherCreateVisible,
+                    onDismiss = { switcherVisible = false },
                     onSwitch = requestSwitch,
                     onDelete = onDeleteSchedule,
                     onExport = onExport,
@@ -994,9 +991,20 @@ fun ScheduleScreen(
                             ),
                         )
                     },
-                    onCreateConfirm = onCreateConfirm,
                 )
-                // 脏草稿确认叠在浮层之上，同样两段式：取消/确认先播淡出，播完才卸载
+                // 新建表单浮层：叠在切换课表之上（同待办详情→编辑的接线与动效）。
+                // 确认创建 → 关表单回列表再走切换（脏则弹确认）；取消/返回只收表单
+                var switcherCreateMounted by remember { mutableStateOf(false) }
+                if (switcherCreateVisible) switcherCreateMounted = true
+                if (switcherCreateMounted) {
+                    NewScheduleSheet(
+                        visible = switcherCreateVisible,
+                        onDismissed = { switcherCreateMounted = false },
+                        onDismiss = { switcherCreateVisible = false },
+                        onConfirm = onCreateConfirm,
+                    )
+                }
+                // 脏草稿确认叠在最上，同样两段式：取消/确认先播淡出，播完才卸载
                 var discardMounted by remember { mutableStateOf(false) }
                 val discardVisible = pendingSwitchId.isNotEmpty()
                 if (discardVisible) discardMounted = true

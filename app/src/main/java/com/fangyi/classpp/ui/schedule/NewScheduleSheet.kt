@@ -32,9 +32,10 @@ import com.fangyi.classpp.ui.settings.TermDatesCard
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 
 /**
- * 新建课表浮层（无激活课表的空态经「创建课表」按钮打开）：容器为 [OverlaySheet]，
- * 与课程编辑/切换课表浮层同一套交互语言。表单只保留课表名与学期设置（[TermDatesCard]，
- * 设置页同款三行卡：开学日/结束日弹日期选择、总周数弹输入框）。
+ * 新建课表浮层：两个入口——无激活课表的空态经「创建课表」按钮打开；切换课表浮层的
+ * 「新建」打开时**叠在切换课表之上**（调用方负责挂载与 covered 接线，动效同待办详情→编辑）。
+ * 容器为 [OverlaySheet]，与课程编辑/切换课表浮层同一套交互语言。表单只保留课表名与
+ * 学期设置（[TermDatesCard]，设置页同款三行卡：开学日/结束日弹日期选择、总周数弹输入框）。
  * 「确认」胶囊在右上、「取消」在左上（confirmAtEnd，同课程编辑面板的顶栏排布）；
  * 创建的实际执行由调用方负责（createSchedule 在无激活课表时自动激活新课表），这里纯 UI。
  *
