@@ -74,7 +74,8 @@ private const val INITIAL_END_MINUTE = 1080
  *
  * 模式差异：标题「新建待办」/「编辑待办」；左上胶囊「取消」/ 红色「删除」（[onDelete] 非空时，
  * 同 AddCoursePanel）。删除先弹 [DeleteTodoConfirmDialog] 应用内二次确认（破坏性操作，
- * 同课表删除确认），确认才回调 [onDelete]。编辑初值整体回填。
+ * 同课表删除确认），确认才回调 [onDelete]；弹窗在场时本浮层经 [OverlaySheet] 的 covered
+ * 缩小后退（同分层动效）。编辑初值整体回填。
  *
  * 表单分组（CardSection）：待办名 → 提醒与优先级（截止日期 + 紧急旗帜）→ 日期与时间
  * （DateSelectionCard + 无/全天/时段，选「时段」展开 TimeRangeSlider）→ 标签 →
@@ -143,6 +144,12 @@ internal fun NewTodoSheet(
         if (imeInsets.getBottom(density) > 0) keyboard?.hide() else onDismiss()
     }
 
+    // 删除二次确认：期望态 + 挂载态两段式（同浮层）；确认/取消先清请求播淡出，播完才卸载。
+    // 声明在 OverlaySheet 之前：确认框在场时经 covered 让本浮层缩小后退（分层动效）
+    var deleteRequested by remember { mutableStateOf(false) }
+    var deleteMounted by remember { mutableStateOf(false) }
+    if (deleteRequested) deleteMounted = true
+
     OverlaySheet(
         title = stringResource(if (existing == null) R.string.todo_new_title else R.string.todo_edit_title),
         confirmLabel = stringResource(R.string.edit_confirm),
@@ -201,6 +208,7 @@ internal fun NewTodoSheet(
         },
         onDismiss = onDismiss,
         visible = visible,
+        covered = deleteRequested,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
     ) {
@@ -322,12 +330,8 @@ internal fun NewTodoSheet(
         }
     }
 
-    // 删除二次确认：期望态 + 挂载态两段式（同浮层）；确认/取消先清请求播淡出，播完才卸载。
-    // 画在表单浮层之后（组合顺序即绘制顺序）；后注册 BackHandler，返回键先关确认框、
-    // 再关浮层（编辑叠在详情上时最后才轮到详情）
-    var deleteRequested by remember { mutableStateOf(false) }
-    var deleteMounted by remember { mutableStateOf(false) }
-    if (deleteRequested) deleteMounted = true
+    // 删除确认框画在表单浮层之后（组合顺序即绘制顺序）；后注册 BackHandler，
+    // 返回键先关确认框、再关浮层（编辑叠在详情上时最后才轮到详情）
     if (deleteMounted) {
         DeleteTodoConfirmDialog(
             todoName = existing?.name.orEmpty(),

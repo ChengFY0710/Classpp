@@ -48,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -102,6 +103,13 @@ private val TopBarRowHorizontalPadding: Dp = 15.dp
 private val TopBarPillHeight: Dp = 46.dp
 
 /**
+ * 被上层盖住时本层卡片的缩放系数（分层 sheet 后退动效）：以**底边中心**为锚等比缩放——
+ * 底边不离屏（弹窗叠浮层时底部不露缝），顶边随之后退（≈ 卡高 × 6%）、左右等比内收，
+ * 上层滑入/滑出同帧反向播放（见 OverlaySheet 的 coveredFraction）。
+ */
+private const val CoveredCardScale = 0.94f
+
+/**
  * 键盘与浮层的关系（未来不同浮层可选不同行为）：
  * - [ContentScroll]：浮层本体不动，**滚动内容末尾**按键盘高度追加 Spacer 让位，并让正在
  *   编辑的输入框随内容滚到键盘上方、收起键盘再滚回原位（添加/编辑课程面板、新建待办浮层
@@ -135,6 +143,9 @@ data class SheetTopAction(
  *   （与入场同一条曲线，只是时长更短）、遮罩同步变淡，**播完后才回调 [onDismissed]**，调用方在这一刻把浮层移出组合，
  *   收场期间内容保持原样不闪空；
  * - 顶栏整条可垂直拖拽、浮层跟手下移，遮罩跟着变淡；松手超过位移/速度阈值走关闭，否则弹回。
+ * - 被上层盖住（[covered]）：本层卡片以底边为锚缩小后退（[CoveredCardScale]），与上层滑入/
+ *   滑出**同帧启动、同一条 [Motion.Overlay] 曲线**（进 400ms / 出 340ms），两层像一个整体在动；
+ *   上层的遮罩本就压在本层之上，无需再叠压暗。无叠层场景恒不触发，现有浮层零变化。
  *
  * [confirmIcon] / [confirmIconSize] 配置左胶囊图标与尺寸（默认对勾、30dp，可按浮层单独调）；
  * [confirmLabel] 传 null 时**不渲染**左侧确认
@@ -158,6 +169,8 @@ fun OverlaySheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     visible: Boolean = true,
+    // 被上层浮层/弹窗盖住：本层卡片缩小后退（分层动效），与上层进出场同帧同曲线反向播放
+    covered: Boolean = false,
     onDismissed: () -> Unit = {},
     confirmIcon: Int = com.fangyi.classpp.R.drawable.ic_checkmark_circle,
     // 左胶囊图标尺寸（默认同 SheetPillButton 的 30dp）；只影响确认胶囊，单独调某浮层时传值
@@ -254,6 +267,19 @@ fun OverlaySheet(
         }
     }
 
+    // 被覆盖后退：0 = 正常位，1 = 后退到位。调用方在同一帧翻转上层的 visible 与本层的
+    // covered → 两层同帧启动同曲线：上层滑入 ↔ 本层后退（400ms）、上层滑出 ↔ 本层回位（340ms）
+    val coveredFraction = remember { Animatable(0f) }
+    LaunchedEffect(covered) {
+        coveredFraction.animateTo(
+            if (covered) 1f else 0f,
+            tween(
+                if (covered) Motion.SheetEnterMillis else Motion.SheetExitMillis,
+                easing = Motion.Overlay,
+            ),
+        )
+    }
+
     // 顶栏整条可拖拽：跟手改写进度；松手超过位移/速度阈值 → 走关闭（清状态 → 统一出场），
     // 否则弹回。拖拽与顶栏按钮点击互不干扰（点击不产生滑动位移）
     val dragState = rememberDraggableState { delta ->
@@ -310,7 +336,15 @@ fun OverlaySheet(
                 .padding(top = resolvedTopInset)
                 .onSizeChanged { travelPx = it.height }
                 // 滑动位移只打在浮层这层：遮罩留在原地，卡片连阴影带模糊一起动
-                .graphicsLayer { translationY = hiddenFraction.value * travelPx },
+                .graphicsLayer {
+                    translationY = hiddenFraction.value * travelPx
+                    // 被上层盖住时后退：等比缩小、底边中心为锚（底边不离屏，顶边随之后退）；
+                    // scale = 1 时 transformOrigin 无效果，未叠层场景恒等、零变化
+                    val scale = 1f - (1f - CoveredCardScale) * coveredFraction.value
+                    scaleX = scale
+                    scaleY = scale
+                    transformOrigin = TransformOrigin(0.5f, 1f)
+                },
         ) {
             Surface(
                 modifier = Modifier

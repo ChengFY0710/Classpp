@@ -57,6 +57,8 @@ internal fun TodoDetailSheet(
     onDismissed: () -> Unit,
     onNoteSave: (String) -> Unit,
     onEdit: (Todo) -> Unit,
+    // 被编辑浮层盖住：本层缩小后退（透传 OverlaySheet 的分层动效）
+    covered: Boolean = false,
 ) {
     // 备注本地态：键在待办 id + 仓库 note 上——换目标重建时初值跟着换；编辑浮层改了备注
     // 并确认（仓库 note 变化）也触发重初始化，否则残留旧值会在关闭时把新值覆盖回去。
@@ -91,6 +93,7 @@ internal fun TodoDetailSheet(
         ),
         onDismiss = closeWithSave,
         visible = visible,
+        covered = covered,
         onDismissed = onDismissed,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {

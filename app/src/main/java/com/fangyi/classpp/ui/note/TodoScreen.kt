@@ -269,6 +269,8 @@ fun TodoScreen(
         key(detail.id) {
             TodoDetailSheet(
                 visible = detailEntry != null,
+                // 编辑浮层盖上来时本层缩小后退，清 id（确认/取消/删除）的瞬间同步回位
+                covered = editTargetId != "",
                 todo = detail,
                 onDismiss = { detailTargetId = "" },
                 onDismissed = { detailMounted = null },
