@@ -78,8 +78,8 @@ internal fun TodoDetailSheet(
         title = stringResource(R.string.todo_detail_title),
         confirmLabel = stringResource(R.string.detail_edit),
         confirmIcon = R.drawable.ic_edit,
-        // 编辑图标单独调到 24dp（其余浮层维持默认 30dp）
-        confirmIconSize = 24.dp,
+        // 编辑图标单独调到 26dp（其余浮层维持默认 30dp）
+        confirmIconSize = 26.dp,
         onConfirm = {
             focusManager.clearFocus()
             onEdit(todo.copy(note = note.trim()))

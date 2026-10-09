@@ -631,9 +631,9 @@ private fun applyShortcut(
     if (usable.isEmpty()) onError(errorText) else apply(usable)
 }
 
-/** 已选周数的可读文案：`第 1-12 周`、`第 1-15 周（单周）`；空选择给"尚未选择" */
+/** 已选周数的可读文案：`第 1-12 周`、`第 1-15 周（单周）`；空选择给"尚未选择"（课程详情复用） */
 @Composable
-private fun weeksSummary(pattern: WeekPattern): String {
+internal fun weeksSummary(pattern: WeekPattern): String {
     val noneText = stringResource(R.string.edit_weeks_none)
     if (pattern.segments.isEmpty()) return noneText
     val separator = stringResource(R.string.edit_weeks_separator)

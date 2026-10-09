@@ -310,6 +310,7 @@ class MainActivity : ComponentActivity() {
                                         AppTab.Timetable -> ScheduleScreen(
                                             modifier = pageModifier,
                                             repository = repository,
+                                            todoRepository = todoRepository,
                                             editing = editing,
                                             onEditingChange = onEditingChange,
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,

@@ -76,11 +76,16 @@ import com.fangyi.classpp.data.ScheduleError
 import com.fangyi.classpp.data.ScheduleJson
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.ScheduleValidator
+import com.fangyi.classpp.data.TodoFilter
+import com.fangyi.classpp.data.TodoRepository
+import com.fangyi.classpp.data.TodoSort
+import com.fangyi.classpp.data.filterTodos
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.data.model.overlappingCourses
+import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.navigation.NavReserve
@@ -168,6 +173,7 @@ private fun rememberTodayIso(): State<IsoDate> {
 fun ScheduleScreen(
     modifier: Modifier = Modifier,
     repository: ScheduleRepository? = null,
+    todoRepository: TodoRepository? = null,
     editing: Boolean = false,
     onEditingChange: (Boolean) -> Unit = {},
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
@@ -193,6 +199,9 @@ fun ScheduleScreen(
     // State 对象本身稳定（remember），供 Pager 的 pageCount 闭包长期读取；schedule 为当前值
     val scheduleState = repository.activeSchedule.collectAsState()
     val schedule = scheduleState.value
+    // 待办仓库仅供课程详情浮层展示该课程标签下的待办；未注入（预览/首帧）视为空列表
+    val todosState = todoRepository?.todos?.collectAsState()
+    val todos = todosState?.value ?: emptyList()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -913,11 +922,22 @@ fun ScheduleScreen(
             var detailMounted by remember { mutableStateOf<CourseEntry?>(null) }
             if (detailEntry != null) detailMounted = detailEntry
             detailMounted?.let { detail ->
+                // 该课程标签（=课程名）命中的全部待办：标签语义走 filterTodos 的"任一重合"，
+                // 排序与待办页默认一致（创建时间降序）；todos 回流时列表实时刷新。
+                // "只显未完成"与"本次勾选的保留显示"的区分在浮层内做（见 CourseDetailSheet）
+                val courseTodos = todos
+                    .filterTodos(TodoFilter(tags = setOf(detail.name)))
+                    .sortedFor(TodoSort.Created, descending = true)
                 key(detail.id) {
                     CourseDetailSheet(
                         visible = detailEntry != null,
                         entry = detail,
                         schedule = schedule,
+                        todos = courseTodos,
+                        onTodoCheckedChange = { id, checked ->
+                            // 同 TodoScreen：异步提交，Err（如已被删）静默忽略
+                            scope.launch { todoRepository?.setCompleted(id, checked) }
+                        },
                         onNoteSave = { note ->
                             val cleaned = note.trim()
                             if (cleaned != detail.note) {

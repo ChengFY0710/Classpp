@@ -352,8 +352,8 @@ private val TodoSection.titleRes: Int
         TodoSection.Done -> R.string.todo_section_completed
     }
 
-/** 当前时刻的当天分钟数 0..1439（[Todo.isOverdue] 的 nowMinute 入参） */
-private fun currentMinuteOfDay(): Int {
+/** 当前时刻的当天分钟数 0..1439（[Todo.isOverdue] 的 nowMinute 入参；课表页课程详情复用） */
+internal fun currentMinuteOfDay(): Int {
     val now = GregorianCalendar()
     return now.get(GregorianCalendar.HOUR_OF_DAY) * 60 + now.get(GregorianCalendar.MINUTE)
 }
@@ -464,7 +464,7 @@ private fun TodoCard(
  * - 均无返回 null，NoteCard 缺席该属性（标签前无空位）。
  */
 @Composable
-private fun Todo.cardTimeText(sort: TodoSort): String? {
+internal fun Todo.cardTimeText(sort: TodoSort): String? {
     if (sort == TodoSort.Deadline) return deadlineCardText()
     val timePart = when (timeKind) {
         TodoTimeKind.Period -> {
