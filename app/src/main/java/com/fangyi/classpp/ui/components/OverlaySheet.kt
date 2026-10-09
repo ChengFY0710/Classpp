@@ -356,7 +356,7 @@ fun OverlaySheet(
                     ),
                 shape = SheetShape,
                 color = MaterialTheme.colorScheme.background,
-                shadowElevation = 8.dp,
+                shadowElevation = 32.dp,
             ) {
                 // 卡内滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的 ProvideOverscroll）：
                 // 滚到顶/底后继续拖动，内容整块被拉出边缘、越拉越硬，松手无过冲弹回；在边缘
