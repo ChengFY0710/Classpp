@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.ui.motion.Expandable
 import com.fangyi.classpp.ui.theme.MenuShape
 import com.fangyi.classpp.ui.theme.RowShape
 import com.fangyi.classpp.ui.theme.SheetCardShape
@@ -70,13 +71,18 @@ sealed interface DateSelection {
 enum class RepeatFrequency { Daily, Weekly, Monthly, Yearly }
 
 /**
- * 日期选择卡片：白卡主行整行可点，在两种模式间切换（暂不做展开动画）——
+ * 日期选择卡片：白卡主行整行可点，在两种模式间切换——
  *
  * - 值模式（[expanded] = false）：`日期 + 当前值 + <>`；值为 [DateSelection.Custom]
  *   时主行下方追加「自定义日期 / 重复」两行（设计稿卡一、卡三、卡四）。
  * - 选项模式（[expanded] = true）：主行变为 `日期 + 无/今天/明天/自定义 快捷选项 + 收起
  *   图标`（[R.drawable.ic_chevron_down_up] 旋转 90°，尖角向内），自定义子行随之隐藏
  *   （设计稿卡二）。
+ *
+ * 「自定义日期 / 重复」子行的出现/隐藏复用 motion 层 [Expandable]：高度动画期间卡片
+ * 下方的兄弟内容逐帧实时让位。收起当帧 value 可能已被切成非自定义，展示用上一份
+ * 自定义值的快照撑到退场缩完（结束即移出组合、快照失效），交互回调仍以当前值守卫
+ * ——动画期间点到残留行直接忽略，避免弹窗状态卡死。
  *
  * 快捷选项点按后回写 [onValueChange] 并退回值模式；选「自定义」沿用上一次的自定义
  * 日期与重复（没有则今天 / 每周），子行随之展开。「重复」行点按弹系统菜单（选中项
@@ -100,6 +106,10 @@ fun DateSelectionCard(
     var repeatMenuExpanded by remember { mutableStateOf(false) }
     var datePicking by remember { mutableStateOf(false) }
     val custom = value as? DateSelection.Custom
+    // 收起动画当帧 value 可能已被切成非自定义（子行正在退场）：记住上一份自定义值把
+    // 子行撑到行块平滑缩完；展示用快照，交互回调仍以当前 custom 守卫
+    var lastCustom by remember { mutableStateOf(custom) }
+    if (custom != null) lastCustom = custom
 
     Column(
         modifier = modifier
@@ -182,81 +192,85 @@ fun DateSelectionCard(
                 )
             }
         }
-        if (custom != null && !expanded) {
-            HorizontalDivider(
-                thickness = 1.dp,   // 线粗细
-                color = MaterialTheme.colorScheme.outline,
-                modifier = Modifier.padding(horizontal = 16.dp).offset(y = (-3).dp),
-            )
-            // 自定义日期行：点按弹 M3 DatePickerDialog
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    //.heightIn(min = SheetFieldHeight)
-                    .clickable {
-                        focusManager.clearFocus()
-                        keyboard?.hide()
-                        datePicking = true
-                    }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.date_card_custom_date),
-                    style = MaterialTheme.classppTextStyles.fieldLabel,
-                    modifier = Modifier.weight(1f),
+        Expandable(expanded = custom != null && !expanded) {
+            // 退场动画期间 value 可能已被切成非自定义：展示字段用上一份快照撑到缩完
+            val shownCustom = lastCustom
+            if (shownCustom != null) {
+                HorizontalDivider(
+                    thickness = 1.dp,   // 线粗细
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(horizontal = 16.dp).offset(y = (-3).dp),
                 )
-                Text(
-                    text = custom.date.toCardText(),
-                    style = MaterialTheme.classppTextStyles.fieldValue,
-                )
-                Spacer(Modifier.width(6.dp))
-                Icon(
-                    painter = painterResource(R.drawable.ic_chevron_right),
-                    contentDescription = null,
-                    tint = colors.primary,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            // 重复行：点按弹系统菜单（同 SettingsCard 选择行，菜单顶边贴行顶边）
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    //.heightIn(min = SheetFieldHeight)
-                    .clickable {
-                        focusManager.clearFocus()
-                        keyboard?.hide()
-                        repeatMenuExpanded = true
-                    }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.date_card_repeat),
-                    style = MaterialTheme.classppTextStyles.fieldLabel,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = custom.repeat.label(),
-                    style = MaterialTheme.classppTextStyles.fieldValue,
-                )
-                Spacer(Modifier.width(6.dp))
-                Box {
+                // 自定义日期行：点按弹 M3 DatePickerDialog（退场动画中 custom 已为空时忽略点击）
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        //.heightIn(min = SheetFieldHeight)
+                        .clickable {
+                            focusManager.clearFocus()
+                            keyboard?.hide()
+                            if (custom != null) datePicking = true
+                        }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.date_card_custom_date),
+                        style = MaterialTheme.classppTextStyles.fieldLabel,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = shownCustom.date.toCardText(),
+                        style = MaterialTheme.classppTextStyles.fieldValue,
+                    )
+                    Spacer(Modifier.width(6.dp))
                     Icon(
-                        painter = painterResource(R.drawable.ic_chevron_up_down),
+                        painter = painterResource(R.drawable.ic_chevron_right),
                         contentDescription = null,
                         tint = colors.primary,
                         modifier = Modifier.size(20.dp),
                     )
-                    RepeatMenu(
-                        expanded = repeatMenuExpanded,
-                        selected = custom.repeat,
-                        onDismiss = { repeatMenuExpanded = false },
-                        onPick = {
-                            repeatMenuExpanded = false
-                            onValueChange(custom.copy(repeat = it))
-                        },
+                }
+                // 重复行：点按弹系统菜单（同 SettingsCard 选择行，菜单顶边贴行顶边）
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        //.heightIn(min = SheetFieldHeight)
+                        .clickable {
+                            focusManager.clearFocus()
+                            keyboard?.hide()
+                            if (custom != null) repeatMenuExpanded = true
+                        }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.date_card_repeat),
+                        style = MaterialTheme.classppTextStyles.fieldLabel,
+                        modifier = Modifier.weight(1f),
                     )
+                    Text(
+                        text = shownCustom.repeat.label(),
+                        style = MaterialTheme.classppTextStyles.fieldValue,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Box {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_chevron_up_down),
+                            contentDescription = null,
+                            tint = colors.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        RepeatMenu(
+                            expanded = repeatMenuExpanded,
+                            selected = shownCustom.repeat,
+                            onDismiss = { repeatMenuExpanded = false },
+                            onPick = {
+                                repeatMenuExpanded = false
+                                if (custom != null) onValueChange(custom.copy(repeat = it))
+                            },
+                        )
+                    }
                 }
             }
         }

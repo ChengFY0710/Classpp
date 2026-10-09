@@ -31,6 +31,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.Expandable
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.RowShape
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -43,7 +44,9 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  *
  * [expandContent] 可选：画在选项行下方的展开内容（如「时段」选中后的
  * [TimeRangeSlider]），内距由内容自理；显示/收起由调用方按选中态决定（传 null 即
- * 收起），暂不做展开动画。
+ * 收起），高度动画复用 motion 层 [Expandable]——展开/收起时行块实时改变上报高度，
+ * 卡片下方的兄弟内容逐帧让位。收起当帧插槽已被调用方置空，组件记住上一份内容把
+ * 画面撑到退场动画缩完（AnimatedVisibility 结束即把内容移出组合，快照随之失效）。
  *
  * 选中动效（所有过渡同走 Motion.FastMillis 先快后慢，与 SheetTextField 描边、周数方格渐变同一节奏）：
  * - 浅蓝胶囊是一整块滑动层：换选时从旧位**平移**到新位，取消选中时原地淡出；
@@ -72,6 +75,11 @@ fun RowChoiceCard(
         animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
         label = "rowChoicePillAlpha",
     )
+
+    // 收起动画当帧 expandContent 已被调用方置空（传 null）：记住上一份内容把滑块
+    // 撑到行块平滑缩完，避免「内容瞬间消失、空白条再慢慢收」的断裂感
+    var lastExpandContent by remember { mutableStateOf(expandContent) }
+    if (expandContent != null) lastExpandContent = expandContent
 
     SheetCard(modifier = modifier, contentPadding = PaddingValues(6.dp)) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -147,7 +155,9 @@ fun RowChoiceCard(
                     }
                 }
             }
-            expandContent?.invoke()
+            Expandable(expanded = expandContent != null) {
+                lastExpandContent?.invoke()
+            }
         }
     }
 }

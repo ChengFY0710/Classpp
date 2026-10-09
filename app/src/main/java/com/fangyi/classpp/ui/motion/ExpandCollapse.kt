@@ -7,6 +7,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,7 +29,9 @@ import androidx.compose.ui.Modifier
  * 从上缘拉开（expandFrom = Top），与卡片内自上而下的展开方向一致。
  *
  * [content] 拿到的是 [AnimatedVisibilityScope]，需要错峰/联动的子项可用
- * `animateEnterExit` 跟随展开进度。
+ * `animateEnterExit` 跟随展开进度。多个子项直接并列即可——AnimatedVisibility 的
+ * 测量策略把直接子项全部叠放在同一原点（Box 式 place(0,0)），本组件内部包了一层
+ * Column 保证内容按纵向依次排列。
  *
  * @param expanded 展开态；翻转即启动动画，动画中途再翻转则从当前值反向
  * @param content 折叠内容，收起时被裁切并最终退出组合（不接收命中测试）
@@ -50,6 +53,7 @@ fun Expandable(
             animationSpec = tween(Motion.ExpandMillis, easing = Motion.Accelerate),
             shrinkTowards = Alignment.Top,
         ) + fadeOut(tween(Motion.ExpandMillis, easing = Motion.Accelerate)),
-        content = content,
-    )
+    ) {
+        Column { content() }
+    }
 }
