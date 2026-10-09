@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,16 +25,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
-import com.fangyi.classpp.ui.theme.MenuShape
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -286,8 +284,9 @@ private fun Chevron() {
 }
 
 /**
- * 选择行尾部：上下箭头 + 锚在其上的弹出菜单（独立 Popup 窗口，不受卡片圆角裁剪）。
- * offset 上移 34dp 使菜单顶边贴行卡顶边（对齐设计稿），自 PopupSelectCard 沿袭。
+ * 选择行尾部：上下箭头 + 锚在其上的弹出菜单（[PopupMenuPopup] 独立 Popup 窗口，
+ * 不受卡片圆角裁剪；PopupMenuCard 白卡 + 柔影，与排序/重复/右键菜单同材质）。
+ * 卡片顶边贴行卡顶边（对齐设计稿），自 PopupSelectCard 沿袭。
  */
 @Composable
 private fun SelectMenu(
@@ -295,6 +294,8 @@ private fun SelectMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
 ) {
+    val density = LocalDensity.current
+    val topAlignLiftPx = with(density) { MenuTopAlignLift.roundToPx() }
     Box {
         Icon(
             painter = painterResource(R.drawable.ic_chevron_up_down),
@@ -302,28 +303,27 @@ private fun SelectMenu(
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(20.dp),
         )
-        DropdownMenu(
+        PopupMenuPopup(
             expanded = expanded,
-            onDismissRequest = onDismiss,
-            offset = DpOffset(x = 0.dp, y = (-34).dp),
-            shape = MenuShape,
-            containerColor = MaterialTheme.colorScheme.surface,
-        ) {
-            item.items.forEach { (id, label) ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.classppTextStyles.menuItem,
-                            lineHeight = 16.sp,
+            onDismiss = onDismiss,
+            sections = listOf(
+                PopupMenuSection(
+                    items = item.items.map { (id, label) ->
+                        PopupMenuItem(
+                            label = label,
+                            checked = id == item.selectedId,
+                            onClick = {
+                                onDismiss()
+                                if (id != item.selectedId) item.onPick(id)
+                            },
                         )
                     },
-                    onClick = {
-                        onDismiss()
-                        if (id != item.selectedId) item.onPick(id)
-                    },
-                )
-            }
-        }
+                ),
+            ),
+            // 卡片左缘对齐图标左缘（DropdownMenu 原位），上移量使卡顶边贴行顶边
+            cardPosition = { anchorBounds, _, _ ->
+                IntOffset(anchorBounds.left, anchorBounds.bottom - topAlignLiftPx)
+            },
+        )
     }
 }

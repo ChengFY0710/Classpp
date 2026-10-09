@@ -1072,6 +1072,7 @@ fun ScheduleScreen(
                         alternateSourceId = anchor.courseId
                         menuAnchor = null
                     },
+                    hazeState = hazeState,
                 )
             }
 
@@ -1082,6 +1083,7 @@ fun ScheduleScreen(
                 SlotContextMenu(
                     anchor = anchor.rect,
                     onDismiss = { pasteAnchor = null },
+                    hazeState = hazeState,
                     onPaste = {
                         pasteAnchor = null
                         val session = editSession

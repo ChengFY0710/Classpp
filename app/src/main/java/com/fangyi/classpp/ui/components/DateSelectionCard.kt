@@ -16,8 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -33,16 +31,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.motion.Expandable
-import com.fangyi.classpp.ui.theme.MenuShape
 import com.fangyi.classpp.ui.theme.RowShape
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
@@ -85,8 +83,8 @@ enum class RepeatFrequency { Daily, Weekly, Monthly, Yearly }
  * ——动画期间点到残留行直接忽略，避免弹窗状态卡死。
  *
  * 快捷选项点按后回写 [onValueChange] 并退回值模式；选「自定义」沿用上一次的自定义
- * 日期与重复（没有则今天 / 每周），子行随之展开。「重复」行点按弹系统菜单（选中项
- * 前置勾），「自定义日期」行点按弹 M3 [DatePickerDialog]。
+ * 日期与重复（没有则今天 / 每周），子行随之展开。「重复」行点按弹 [PopupMenuPopup]
+ * 菜单（选中项前置勾），「自定义日期」行点按弹 M3 [DatePickerDialog]。
  *
  * 规格：白卡 [SheetCardShape] 连续圆角，行高下限 [SheetFieldHeight]，行内距 16/14 画在
  * clickable 内侧（涟漪铺满整行，对齐设计稿「点按涟漪」）；label 走 fieldLabel，值与
@@ -231,7 +229,7 @@ fun DateSelectionCard(
                         modifier = Modifier.size(20.dp),
                     )
                 }
-                // 重复行：点按弹系统菜单（同 SettingsCard 选择行，菜单顶边贴行顶边）
+                // 重复行：点按弹菜单（同 SettingsCard 选择行，菜单顶边贴行顶边）
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -342,9 +340,9 @@ private fun QuickOptionText(
 }
 
 /**
- * 「重复」的系统弹出菜单：M3 [DropdownMenu] 锚在行尾上下箭头上（offset 上移 34dp 使
- * 菜单顶边贴行顶边，自 SettingsCard 选择行沿袭）；每项 20dp 前置勾槽保证文字对齐，
- * 选中项显示勾并蓝字。
+ * 「重复」的弹出菜单：[PopupMenuPopup] 锚在行尾上下箭头上（[PopupMenuCard] 白卡 +
+ * 柔影，同 SettingsCard 选择行菜单），卡顶边贴行顶边（[MenuTopAlignLift]）；
+ * 选中项经勾选槽显示勾并蓝字（PopupMenuCard 原生行样式）。
  */
 @Composable
 private fun RepeatMenu(
@@ -353,46 +351,30 @@ private fun RepeatMenu(
     onDismiss: () -> Unit,
     onPick: (RepeatFrequency) -> Unit,
 ) {
-    DropdownMenu(
+    val density = LocalDensity.current
+    val topAlignLiftPx = with(density) { MenuTopAlignLift.roundToPx() }
+    PopupMenuPopup(
         expanded = expanded,
-        onDismissRequest = onDismiss,
-        offset = DpOffset(x = 0.dp, y = (-34).dp),
-        shape = MenuShape,
-        containerColor = MaterialTheme.colorScheme.surface,
-    ) {
-        RepeatFrequency.entries.forEach { frequency ->
-            DropdownMenuItem(
-                leadingIcon = {
-                    // 勾槽恒占 20dp：未选中留空，各菜单项文字对齐（同 PopupMenuCard）
-                    Box(modifier = Modifier.width(20.dp)) {
-                        if (frequency == selected) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_checkmark),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                    }
-                },
-                text = {
-                    Text(
-                        text = frequency.label(),
-                        style = MaterialTheme.classppTextStyles.menuItem,
-                        color = if (frequency == selected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
+        onDismiss = onDismiss,
+        sections = listOf(
+            PopupMenuSection(
+                items = RepeatFrequency.entries.map { frequency ->
+                    PopupMenuItem(
+                        label = frequency.label(),
+                        checked = frequency == selected,
+                        onClick = {
+                            onDismiss()
+                            if (frequency != selected) onPick(frequency)
                         },
                     )
                 },
-                onClick = {
-                    onDismiss()
-                    if (frequency != selected) onPick(frequency)
-                },
-            )
-        }
-    }
+            ),
+        ),
+        // 卡片左缘对齐图标左缘（DropdownMenu 原位），上移量使卡顶边贴行顶边
+        cardPosition = { anchorBounds, _, _ ->
+            IntOffset(anchorBounds.left, anchorBounds.bottom - topAlignLiftPx)
+        },
+    )
 }
 
 @Composable

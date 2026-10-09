@@ -1,10 +1,6 @@
 package com.fangyi.classpp.ui.note
 
 import androidx.annotation.DrawableRes
-import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.rememberTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,7 +38,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -52,23 +47,17 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntRect
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupPositionProvider
-import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.PopupMenuCard
+import com.fangyi.classpp.ui.components.PopupMenuPopup
 import com.fangyi.classpp.ui.components.PopupMenuSection
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollFactory
 import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
 import com.fangyi.classpp.ui.motion.tabTransitionFreeze
-import com.fangyi.classpp.ui.schedule.CardShadowBottomPadding
-import com.fangyi.classpp.ui.schedule.CardShadowPadding
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
@@ -177,7 +166,7 @@ private val HorizontalClipShape = object : Shape {
  * 纯 UI：分组点击只切选中高亮（过滤由调用方后续接入）；文件夹回调本期空置；
  * 排序胶囊点击回调 [onSortClick]（宿主置展开态）；排序菜单经 [sortMenuExpanded]/
  * [onSortMenuDismiss]/[sortMenuSections] 三件套下发，[SortMenuPopup] 挂在胶囊同一
- * Box 里（父布局即锚点）：内容走 [PopupMenuCard] 白卡，壳用自定义锚定 Popup——
+ * Box 里（父布局即锚点）：走 [PopupMenuPopup] 共享弹层（[PopupMenuCard] 白卡）——
  * DropdownMenu 的壳自带默认阴影且换不掉，换壳才能吃上菜单卡的柔影。
  */
 @Composable
@@ -317,18 +306,13 @@ fun TodoTopBar(
 }
 
 /**
- * 排序菜单弹层：[PopupMenuCard] 白卡 + 自定义锚定 Popup（WeekPicker 周数弹窗同款范式）。
+ * 排序菜单弹层：[PopupMenuPopup] 共享弹层宿主（[PopupMenuCard] 白卡 + 自定义锚定
+ * Popup），投影留白、越界钳制与 scale/alpha 进出场均由宿主处理（见 [PopupMenuPopup]）。
  *
- * 定位：卡片左缘对齐排序胶囊左缘、顶缘与胶囊底缘保持 [SortMenuPopupGap] 间距（0 = 贴住，
- * DropdownMenu 原位），越界钳进窗口；
- * Popup 内容四周含透明投影留白（左右上 [CardShadowPadding]、底部 [CardShadowBottomPadding]，
- * 45dp 柔影向下坠得最远）防被窗口边界裁剪，定位时只反向扣除左/上留白，让卡片视觉
- * 位置与留白无关。
+ * 定位：卡片左缘对齐排序胶囊左缘、顶缘与胶囊底缘保持 [SortMenuPopupGap] 间距
+ * （0 = 贴住，DropdownMenu 原位）。
  * [hazeState] 下发给 [PopupMenuCard] 做毛玻璃（跨窗口采样页面 hazeSource，WeekPicker
  * 周数弹窗同款），null（如 @Preview）退化为不透明白卡。
- *
- * 动画：scale 0.8→1（Motion.PopupScaleMillis）+ alpha 0→1（Motion.PopupFadeMillis），
- * 自胶囊所在的左上角长出；收起反向播放，播完才移除弹层。
  */
 @Composable
 private fun SortMenuPopup(
@@ -337,70 +321,17 @@ private fun SortMenuPopup(
     sections: List<PopupMenuSection>,
     hazeState: HazeState? = null,
 ) {
-    // 收起动画期间保持弹层在场：targetState（开）或 currentState（关动画未完）任一为真
-    val expandedState = remember { MutableTransitionState(false) }
-    expandedState.targetState = expanded
-
     val density = LocalDensity.current
-    val shadowPaddingPx = with(density) { CardShadowPadding.roundToPx() }
-    // 视觉间距换算成内容坐标：Popup 内容含上方投影留白，定位时一并扣掉（WeekPicker 同款）
-    val gapPx = with(density) { (SortMenuPopupGap - CardShadowPadding).roundToPx() }
-    val positionProvider = remember(gapPx, shadowPaddingPx) {
-        object : PopupPositionProvider {
-            override fun calculatePosition(
-                anchorBounds: IntRect,
-                windowSize: IntSize,
-                layoutDirection: LayoutDirection,
-                popupContentSize: IntSize,
-            ): IntOffset = IntOffset(
-                // 锚点坐标先扣投影留白，让「卡片」而非「含留白的内容」对齐胶囊；越界钳进窗口
-                x = (anchorBounds.left - shadowPaddingPx)
-                    .coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)),
-                y = (anchorBounds.bottom + gapPx)
-                    .coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0)),
-            )
-        }
-    }
-
-    if (expandedState.currentState || expandedState.targetState) {
-        val transition = rememberTransition(expandedState, label = "SortMenu")
-        val scale by transition.animateFloat(
-            transitionSpec = { tween(Motion.PopupScaleMillis, easing = Motion.Standard) },
-            label = "scale",
-        ) { visible -> if (visible) 1f else 0.8f }
-        val alpha by transition.animateFloat(
-            transitionSpec = { tween(Motion.PopupFadeMillis, easing = Motion.Standard) },
-            label = "alpha",
-        ) { visible -> if (visible) 1f else 0f }
-
-        Popup(
-            onDismissRequest = onDismiss,
-            popupPositionProvider = positionProvider,
-            // focusable：返回键收起；dismissOnClickOutside 默认开启
-            properties = PopupProperties(focusable = true),
-        ) {
-            PopupMenuCard(
-                sections = sections,
-                hazeState = hazeState,
-                // 投影留白垫在卡外（裁切线 = Popup 窗口边缘，留白多大柔影就有多少活动空间）：
-                // 左右上 16dp、底部 48dp——光源在上投影向下坠得最远（WeekPicker 同款配方）；
-                // 缩放/淡入排在其外，整卡（含柔影）一起变换
-                modifier = Modifier
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        this.alpha = alpha
-                        transformOrigin = TransformOrigin(0f, 0f)
-                    }
-                    .padding(
-                        start = CardShadowPadding,
-                        top = CardShadowPadding,
-                        end = CardShadowPadding,
-                        bottom = CardShadowBottomPadding,
-                    ),
-            )
-        }
-    }
+    val gapPx = with(density) { SortMenuPopupGap.roundToPx() }
+    PopupMenuPopup(
+        expanded = expanded,
+        onDismiss = onDismiss,
+        sections = sections,
+        hazeState = hazeState,
+        cardPosition = { anchorBounds, _, _ ->
+            IntOffset(anchorBounds.left, anchorBounds.bottom + gapPx)
+        },
+    )
 }
 
 /** 顶栏胶囊的柔影：graphicsLayer 定形状投影（与 WeekPill / NavPill 同款范式） */
