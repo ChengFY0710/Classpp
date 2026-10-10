@@ -230,6 +230,35 @@ private fun ClassppSwitchPreview() = ClassppTheme {
     }
 }
 
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
+private fun ClassppSliderPreview() = ClassppTheme {
+    // 受控组件：预览自持状态，可直接拖动
+    var middleDefault by remember { mutableStateOf(0.25f) }
+    var quarterDefault by remember { mutableStateOf(0.55f) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
+    ) {
+        // 默认值在中点
+        ClassppSlider(
+            value = middleDefault,
+            onValueChange = { middleDefault = it },
+            defaultValue = 0.5f,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        // 默认值在 1/4 处
+        ClassppSlider(
+            value = quarterDefault,
+            onValueChange = { quarterDefault = it },
+            defaultValue = 0.25f,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 1100)
 @Composable
 private fun SettingsCardPreview() = ClassppTheme {
