@@ -6,10 +6,9 @@ import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -24,6 +23,8 @@ import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 /**
  * 按压反馈：按下时组件整体放大、主体提亮，松手还原。
@@ -31,6 +32,13 @@ import androidx.compose.ui.semantics.Role
  * 按压态的唯一来源是调用方与 clickable/combinedClickable/selectable 共用的
  * [interactionSource]——禁止点击时点击修饰符不发按压事件、嵌套子控件按下时只有
  * 真正处理点击的那一层亮起，都由这一点自动成立。
+ *
+ * 动画**逐事件**驱动（直接消费 interactions 流，对标官方 RippleNode），不走
+ * collectIsPressedAsState 的布尔中转：快速点按的 Press/Release 会落在同一帧窗口
+ * （可滚动容器内 clickable 对 <100ms 的点按就是背靠背发射），布尔态被合并成 false、
+ * LaunchedEffect(pressed) 从未以 true 运行，按压动画会整段丢失。Release 不打断上行——
+ * 先等按压动画完整播完再回弹，保证每次按下都完整可见（对标系统 ripple 的最短可见
+ * 时长做法）；Cancel（拖动被滚动抢走）则立即回弹，列表起手不闪。
  *
  * 时长与曲线取 ui.motion 的公共 token：按下 [Motion.FastMillis] + [Motion.Decelerate]
  * （起步即全速，无迟滞感），松手 [Motion.Settle] 弹簧回位。放大倍率、提亮幅度等
@@ -60,13 +68,44 @@ fun Modifier.pressFeedback(
     shape: Shape,
     scale: Float = DefaultPressScale,
 ): Modifier {
-    val pressed by interactionSource.collectIsPressedAsState()
     val progress = remember { Animatable(0f) }
-    LaunchedEffect(pressed) {
-        if (pressed) {
-            progress.animateTo(1f, tween(Motion.FastMillis, easing = Motion.Decelerate))
-        } else {
-            progress.animateTo(0f, Motion.Settle)
+    // 逐事件驱动（见 KDoc）：pressJob = 上行，exitJob = 回弹。每个事件只做 Job 切换、
+    // 不挂起——事件流（replay 0 + 16 槽 DROP_OLDEST）不会积压，快速连点时最新事件立即生效
+    LaunchedEffect(interactionSource) {
+        var pressJob: Job? = null
+        var exitJob: Job? = null
+        interactionSource.interactions.collect { interaction ->
+            when (interaction) {
+                is PressInteraction.Press -> {
+                    // 新按下立即接管：打断在播回弹与上一轮上行，从当前值接着亮
+                    exitJob?.cancel()
+                    pressJob?.cancel()
+                    pressJob = launch {
+                        progress.animateTo(1f, tween(Motion.FastMillis, easing = Motion.Decelerate))
+                    }
+                }
+                is PressInteraction.Release -> {
+                    // 抬起不打断上行：先等按下动画完整播完（join）再回弹——短按的
+                    // Press/Release 常在同一帧批次到达，这样每次按下都保证完整可见。
+                    // 先捕获引用再 launch，避免与后续新按下的 pressJob 串扰
+                    exitJob?.cancel()
+                    val pressAnim = pressJob
+                    exitJob = launch {
+                        pressAnim?.join()
+                        progress.animateTo(0f, Motion.Settle)
+                    }
+                }
+                is PressInteraction.Cancel -> {
+                    // 取消（拖动被滚动抢走等）：立刻回弹、不等上行，列表起手不闪
+                    pressJob?.cancel()
+                    exitJob?.cancel()
+                    exitJob = launch {
+                        progress.animateTo(0f, Motion.Settle)
+                    }
+                }
+                // Interaction 是普通接口（非 sealed，官方留的扩展点）：Hover/Focus/Drag 与按压无关
+                else -> Unit
+            }
         }
     }
     val layoutDirection = LocalLayoutDirection.current
