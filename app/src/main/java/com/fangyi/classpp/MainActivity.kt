@@ -67,6 +67,12 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 
+/**
+ * 课程卡片高度的「滑动结束」判定：值停顿此时长即视为结束——落盘与课表网格跟进共用
+ * 同一拍（拖动中每次变化都重置计时、全程不触发，松手后一次性补最终值）。
+ */
+private const val CardHeightSettleMillis = 300L
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // 外观模式真源：冷启动只读这一次，早于 super.onCreate，下面的 setTheme 才能生效
@@ -107,8 +113,17 @@ class MainActivity : ComponentActivity() {
             // 停顿 300ms 才写 SharedPreferences（避免每帧 apply）
             LaunchedEffect(cardHeightsState) {
                 snapshotFlow { cardHeightsState.value }
-                    .debounce(300)
+                    .debounce(CardHeightSettleMillis)
                     .collect { heights -> CardHeightPreferences.save(this@MainActivity, heights) }
+            }
+            // 课表网格跟随态：滑条与值文字读上方即时态（全程跟手），CourseGrid 只读这份——
+            // debounce 以「变化停顿」为准：拖动中每次变化都重置计时、全程不触发，
+            // 松手（含吸附归位动画收尾）停顿后一次性补最终值，课表滑动期间零重排
+            val gridCardHeightsState = remember { mutableStateOf(savedCardHeights) }
+            LaunchedEffect(cardHeightsState, gridCardHeightsState) {
+                snapshotFlow { cardHeightsState.value }
+                    .debounce(CardHeightSettleMillis)
+                    .collect { gridCardHeightsState.value = it }
             }
             val darkTheme = when (themeMode) {
                 ThemeMode.System -> isSystemInDarkTheme()
@@ -332,7 +347,8 @@ class MainActivity : ComponentActivity() {
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                             onOpenSettings = onOpenSettings,
                                             tabTransition = pageStates.getValue(AppTab.Timetable).transition,
-                                            cardHeights = cardHeightsState,
+                                            // 网格读降频态（即时态只喂个性化页滑条）
+                                            cardHeights = gridCardHeightsState,
                                         )
                                         AppTab.Todo -> TodoScreen(
                                             modifier = pageModifier,
