@@ -25,6 +25,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,7 +71,9 @@ fun PersonalizationScreen(
     themeMode: ThemeMode = ThemeMode.System,
     onThemeModeChange: (ThemeMode) -> Unit = {},
     repository: ScheduleRepository? = null,
-    cardHeights: CardHeights = CardHeights(),
+    // State 实例透传（本层不读 .value，值只在 ScheduleSection 叶子内读）：
+    // 拖动滑条时本页整体 skip，只有滑条卡片子树每帧重组
+    cardHeights: State<CardHeights> = mutableStateOf(CardHeights()),
     onCardHeightsChange: (CardHeights) -> Unit = {},
 ) {
     // 当前激活课表决定滑条走 5 天还是 7 天的范围/默认值；无课表（加载中/空）回退 5 天
@@ -149,12 +152,13 @@ fun PersonalizationScreen(
 @Composable
 private fun ScheduleSection(
     daysPerWeek: Int,
-    cardHeights: CardHeights,
+    cardHeights: State<CardHeights>,
     onCardHeightsChange: (CardHeights) -> Unit,
 ) {
+    // 值读取点（叶子）：拖动时只有本函数及其子树（卡片/滑条）每帧重组
     val sevenDay = daysPerWeek > 5
     val default = if (sevenDay) CardHeightPreferences.Default7 else CardHeightPreferences.Default5
-    val height = if (sevenDay) cardHeights.seven else cardHeights.five
+    val height = if (sevenDay) cardHeights.value.seven else cardHeights.value.five
     CardSection(title = stringResource(R.string.section_schedule)) {
         SettingsCard(
             items = listOf(
@@ -163,9 +167,11 @@ private fun ScheduleSection(
                     value = height.toFloat(),
                     onValueChange = { value ->
                         val newHeight = value.roundToInt()
+                        // 事件回调里读 .value 不订阅组合，无重组开销
+                        val current = cardHeights.value
                         onCardHeightsChange(
-                            if (sevenDay) cardHeights.copy(seven = newHeight)
-                            else cardHeights.copy(five = newHeight),
+                            if (sevenDay) current.copy(seven = newHeight)
+                            else current.copy(five = newHeight),
                         )
                     },
                     valueText = if (height == default) {

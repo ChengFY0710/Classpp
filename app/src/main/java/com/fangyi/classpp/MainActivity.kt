@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +64,7 @@ import com.fangyi.classpp.ui.theme.ThemeMode
 import com.fangyi.classpp.ui.theme.ThemePreferences
 import com.kyant.shapes.UnevenRoundedRectangle
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -97,8 +99,17 @@ class MainActivity : ComponentActivity() {
         setContent {
             // 外观模式状态：prefs 是真源，旋转/系统深色切换等重建时 onCreate 重读，无需 saveable
             var themeMode by remember { mutableStateOf(savedThemeMode) }
-            // 课程卡片高度状态：同 themeMode，prefs 真源、重建时重读
-            var cardHeights by remember { mutableStateOf(savedCardHeights) }
+            // 课程卡片高度状态：同 themeMode，prefs 真源、重建时重读。
+            // 以 State 实例向下传递（实参不读 .value）：拖动滑条只失效真正消费值的
+            // 叶子（个性化页滑条卡片、CourseGrid），根 lambda 与两块屏幕全部 skip
+            val cardHeightsState = remember { mutableStateOf(savedCardHeights) }
+            // 落盘去抖：拖动中只改内存，snapshotFlow 在协程内读值不参与组合，
+            // 停顿 300ms 才写 SharedPreferences（避免每帧 apply）
+            LaunchedEffect(cardHeightsState) {
+                snapshotFlow { cardHeightsState.value }
+                    .debounce(300)
+                    .collect { heights -> CardHeightPreferences.save(this@MainActivity, heights) }
+            }
             val darkTheme = when (themeMode) {
                 ThemeMode.System -> isSystemInDarkTheme()
                 ThemeMode.Light -> false
@@ -321,7 +332,7 @@ class MainActivity : ComponentActivity() {
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                             onOpenSettings = onOpenSettings,
                                             tabTransition = pageStates.getValue(AppTab.Timetable).transition,
-                                            cardHeights = cardHeights,
+                                            cardHeights = cardHeightsState,
                                         )
                                         AppTab.Todo -> TodoScreen(
                                             modifier = pageModifier,
@@ -381,10 +392,10 @@ class MainActivity : ComponentActivity() {
                             themeMode = mode
                             ThemePreferences.save(this@MainActivity, mode)
                         },
-                        cardHeights = cardHeights,
+                        cardHeights = cardHeightsState,
                         onCardHeightsChange = { heights ->
-                            cardHeights = heights
-                            CardHeightPreferences.save(this@MainActivity, heights)
+                            // 只改内存即时生效；落盘由上方 LaunchedEffect 去抖完成
+                            cardHeightsState.value = heights
                         },
                         modifier = Modifier.fillMaxSize(),
                     )

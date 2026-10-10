@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -113,9 +114,10 @@ fun CourseGrid(
     editMode: Boolean = false,
     showDates: Boolean = true,
     daysPerWeek: Int = 5,
-    // 用户自定义行高（个性化页「课程卡片高度」，已按模式钳在范围内）；null = 默认 gridRowHeight。
+    // 课程卡片高度状态（个性化页滑条，State 实例传递：值只在下方 rowHeight 处读取，
+    // 拖动时上游全部 skip、本组件每帧重组重排——行高变化的本质需求）。
     // 只换行高本体：单元格内边距、网格线、日期带等间距常量一律不动
-    customRowHeight: Dp? = null,
+    cardHeights: State<CardHeights> = mutableStateOf(CardHeights()),
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)? = null,
     onEditClick: ((courseId: String) -> Unit)? = null,
     onCourseLongClick: ((courseId: String, anchor: Rect) -> Unit)? = null,
@@ -124,8 +126,10 @@ fun CourseGrid(
     // 列数至少 1（0/负值理论上被校验挡住，这里兜一下避免算出空页宽或除零）
     val days = daysPerWeek.coerceAtLeast(1)
     // 行高随列数变（7 天视图更高）：页高、每行、跨节卡三处都取自同一个值，否则卡片会溢出格子；
-    // 自定义行高（设置页滑条）优先，null 回落默认派生值
-    val rowHeight = customRowHeight ?: gridRowHeight(days)
+    // 值取自个性化页滑条（读 .value → 本组件随拖动每帧重组重排），默认 CardHeights 与
+    // gridRowHeight 恒等（5 天 150 / 7 天 160），默认渲染无差异
+    val heights = cardHeights.value
+    val rowHeight = (if (days > 5) heights.seven else heights.five).dp
     val pageHeight = (if (showDates) DateBandHeight else 0.dp) +
         rowHeight * timeSlots.size + TrailingScrollSpace
     // 接缝竖线是否要画：派生成布尔 state —— 拖动中恒为真，只在起手/落位翻转一次。
@@ -302,9 +306,6 @@ private fun WeekPage(
                                     course = course,
                                     slot = slot,
                                     endTime = timeSlots[lastIdx].endTime,
-                                    // 行数增长门槛按模式默认行高（非自定义值）：跨节卡远高于它，天然启用增长
-                                    defaultCardHeight =
-                                    gridRowHeight(days) - CellPaddingTop - CellPadding,
                                     // 必须 required：单元格内容区最高只有一行（rowHeight − 内边距），
                                     // 普通 height() 会被父约束钳回单行高度，跨不出去。
                                     // requiredHeight 对被钳掉的超高内容默认居中放置（卡顶偏上 (H−行高)/2），
@@ -524,9 +525,6 @@ private fun GridRow(
                     course != null && course.span == 1 -> CourseCard(
                         course = course,
                         slot = slot,
-                        // 行数增长门槛 = 该模式默认单卡高（145/155dp）：自定义行高恰好等于默认时恒 3/3
-                        defaultCardHeight =
-                        gridRowHeight(days) - CellPaddingTop - CellPadding,
                         modifier = Modifier
                             .fillMaxSize()
                             // 长按菜单的锚点取卡片自身窗口坐标（填满格 = 格坐标）

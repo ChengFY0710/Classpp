@@ -18,6 +18,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,7 +71,8 @@ fun SettingsScreen(
     repository: ScheduleRepository? = null,
     themeMode: ThemeMode = ThemeMode.System,
     onThemeModeChange: (ThemeMode) -> Unit = {},
-    cardHeights: CardHeights = CardHeights(),
+    // State 实例透传（本层不读 .value）：滑条拖动时本屏与个性化页整体 skip，只重组值的叶子
+    cardHeights: State<CardHeights> = mutableStateOf(CardHeights()),
     onCardHeightsChange: (CardHeights) -> Unit = {},
 ) {
     var showPersonalization by rememberSaveable { mutableStateOf(false) }

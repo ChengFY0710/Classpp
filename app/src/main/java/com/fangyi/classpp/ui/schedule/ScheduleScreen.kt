@@ -179,8 +179,9 @@ fun ScheduleScreen(
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
     onOpenSettings: () -> Unit = {},
     tabTransition: TabTransitionState? = null,
-    // 课程卡片高度全局偏好（MainActivity 持有、个性化页写入）：按当前课表 5/7 天模式取对应值
-    cardHeights: CardHeights = CardHeights(),
+    // 课程卡片高度状态（MainActivity 持有、个性化页写入）：State 实例透传给 CourseGrid，
+    // 本屏不读 .value——滑条拖动时 ScheduleScreen 整体 skip，只有 CourseGrid 重组重排
+    cardHeights: State<CardHeights> = mutableStateOf(CardHeights()),
 ) {
     // get() 返回即 bootstrap 完成，此分支仅首帧毫秒级；早返回后下方 smart cast 为非空
     if (repository == null) {
@@ -762,10 +763,8 @@ fun ScheduleScreen(
                     showDates = editSession == null,
                     // 列数：5 天课表 5 列、7 天课表 7 列（含周六/周日），与顶栏星期行/日期带同源
                     daysPerWeek = schedule.daysPerWeek,
-                    // 自定义行高按模式取值（默认值 = 现行 gridRowHeight，渲染无差异；只改高度不改间距）
-                    customRowHeight = (
-                        if (schedule.daysPerWeek > 5) cardHeights.seven else cardHeights.five
-                        ).dp,
+                    // State 实例透传，值在 CourseGrid 内读取（拖动时本屏 skip 的关键）
+                    cardHeights = cardHeights,
                     onAddClick = onAddClick,
                     onEditClick = onEditClick,
                     onCourseLongClick = onCourseLongClick,

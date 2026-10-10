@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
@@ -51,9 +52,11 @@ private val MarkerSize = 8.dp
 private val MarkerPassedColor = Color(0x66FFFFFF)
 
 /**
- * 滑动选择条：胶囊轨道 + 与 [ClassppSwitch] 同尺寸的白色圆球，整条轨道任意位置按住
- * 拖动即跟手连续取值（[valueRange] 内任意 Float，无档位），宽度由调用方 modifier 决定
- * （需给定宽度，推荐 `Modifier.fillMaxWidth()`）。
+ * 滑动选择条：胶囊轨道 + 与 [ClassppSwitch] 同尺寸的白色圆球，宽度由调用方 modifier
+ * 决定（需给定宽度，推荐 `Modifier.fillMaxWidth()`）。两种交互：
+ * - **拖动**：整条轨道任意位置按住拖动，跟手连续取值（[valueRange] 内任意 Float，无档位）；
+ * - **点击跳转**：点轨道任意位置，圆球以 Motion.FastMillis 节奏动画滑到点击处；
+ *   落进默认值吸附半径则吸附到默认值，动画到位补一次震动。
  *
  * 颜色严格取自 theme：已填充轨道 = [MaterialTheme.colorScheme.primary]，未填充轨道 =
  * [MaterialTheme.colorScheme.onPrimaryContainer]，默认值标记小球未越过默认值时 =
@@ -106,6 +109,32 @@ fun ClassppSlider(
     val markerSizePx = with(density) { MarkerSize.toPx() }
     val travelPx = (trackWidthPx - thumbInsetPx * 2 - thumbSizePx).coerceAtLeast(0f)
 
+    // 点击跳转 / 松手归位共用的动画任务：拖动起手、再次点击都会先取消它
+    var settleJob by remember { mutableStateOf<Job?>(null) }
+
+    // 以下槽几何供点击与拖动两套手势共用，轨道实测宽由各自手势作用域给出：
+    // 值 → 圆球中心 x（px）
+    fun centerPx(trackWidth: Int, v: Float): Float {
+        val r = currentRange.endInclusive - currentRange.start
+        if (r <= 0f) return thumbInsetPx + thumbSizePx / 2
+        val travel = (trackWidth - thumbInsetPx * 2 - thumbSizePx).coerceAtLeast(1f)
+        val p = ((v - currentRange.start) / r).coerceIn(0f, 1f)
+        return thumbInsetPx + p * travel + thumbSizePx / 2
+    }
+
+    // 点击 x → 目标值（圆球中心对齐点击点，两端钳制在行程内）
+    fun valueAt(trackWidth: Int, x: Float): Float {
+        val r = currentRange.endInclusive - currentRange.start
+        if (r <= 0f) return currentRange.start
+        val travel = (trackWidth - thumbInsetPx * 2 - thumbSizePx).coerceAtLeast(1f)
+        val p = ((x - thumbInsetPx - thumbSizePx / 2) / travel).coerceIn(0f, 1f)
+        return currentRange.start + p * r
+    }
+
+    // 圆球中心到默认值标记的中心距（px），拖动吸附与点击吸附共用
+    fun distanceToDefaultPx(trackWidth: Int, v: Float): Float =
+        abs(centerPx(trackWidth, v) - centerPx(trackWidth, currentDefault))
+
     val range = valueRange.endInclusive - valueRange.start
     val progress =
         if (range > 0f) ((value - valueRange.start) / range).coerceIn(0f, 1f) else 0f
@@ -122,23 +151,37 @@ fun ClassppSlider(
             .onSizeChanged { trackWidthPx = it.width }
             .clip(PillShape)
             .background(trackColor)
+            // 点击跳转：点轨道任意位置，圆球以微交互节奏动画滑过去；落进默认值吸附半径则
+            // 吸附到默认值、动画到位补一次震动。移动超出 touch slop 时拖动检测器接管，
+            // 本检测器随消费事件取消（与 TimeRangeSlider 的 tap/drag 双 pointerInput 同款接法）
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    val r = currentRange.endInclusive - currentRange.start
+                    if (r <= 0f) return@detectTapGestures
+                    settleJob?.cancel()
+                    var target = valueAt(size.width, offset.x)
+                    // 落点在吸附半径内 → 吸附默认值（震动等动画到位再补，落定感更实）
+                    val snap = abs(
+                        centerPx(size.width, target) - centerPx(size.width, currentDefault),
+                    ) <= currentSnapThreshold.toPx()
+                    if (snap) target = currentDefault
+                    if (target == currentValue) return@detectTapGestures
+                    settleJob = scope.launch {
+                        animate(
+                            initialValue = currentValue,
+                            targetValue = target,
+                            animationSpec = tween(Motion.FastMillis, easing = Motion.Decelerate),
+                        ) { v, _ -> currentOnValueChange(v) }
+                        if (snap) {
+                            currentHaptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
+                    }
+                }
+            }
             .pointerInput(Unit) {
                 // 拖动手势内的持久局部：吸附态与手指位置不参与组合
                 var snapped = false
                 var freeValue = 0f
-                var settleJob: Job? = null
-
-                // 手指位置（未吸附时的连续值）到默认值标记的中心距（px）
-                fun distanceToDefaultPx(v: Float): Float {
-                    val r = currentRange.endInclusive - currentRange.start
-                    if (r <= 0f) return Float.MAX_VALUE
-                    val travel = (size.width - thumbInsetPx * 2 - thumbSizePx).coerceAtLeast(1f)
-                    val p = ((v - currentRange.start) / r).coerceIn(0f, 1f)
-                    val dp = ((currentDefault - currentRange.start) / r).coerceIn(0f, 1f)
-                    val center = thumbInsetPx + p * travel + thumbSizePx / 2
-                    val defaultCenter = thumbInsetPx + dp * travel + thumbSizePx / 2
-                    return abs(center - defaultCenter)
-                }
 
                 detectHorizontalDragGestures(
                     onDragStart = {
@@ -151,7 +194,8 @@ fun ClassppSlider(
                     onDragEnd = {
                         // 松手仍在吸附区内（外部置值等路径的兜底）：动画归位、到位补一次震动
                         if (!snapped &&
-                            distanceToDefaultPx(currentValue) <= currentSnapThreshold.toPx() &&
+                            distanceToDefaultPx(size.width, currentValue) <=
+                            currentSnapThreshold.toPx() &&
                             currentValue != currentDefault
                         ) {
                             settleJob = scope.launch {
@@ -180,7 +224,7 @@ fun ClassppSlider(
                         freeValue = (freeValue + dragAmount / travel * r)
                             .coerceIn(currentRange.start, currentRange.endInclusive)
                         val snapPx = currentSnapThreshold.toPx()
-                        val dist = distanceToDefaultPx(freeValue)
+                        val dist = distanceToDefaultPx(size.width, freeValue)
                         var next = freeValue
                         if (snapped) {
                             // 迟滞：拖出 1.5 倍半径才脱离，避免边界抖动反复吸附震动
