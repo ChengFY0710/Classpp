@@ -1,7 +1,7 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -21,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TodoUrgency
+import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.NoteCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
@@ -107,9 +110,13 @@ fun NoteCard(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = SheetFieldHeight)
+            // 按压反馈同 SheetCard「可点才挂」：位置在 clip 之前（缩放作用于整卡、不被圆角
+            // 裁掉），提亮范围与 NoteCardShape 对齐；null = 静态卡，涟漪由按压反馈取代
+            .then(
+                if (onClick != null) Modifier.pressClickable(NoteCardShape, onClick = onClick) else Modifier,
+            )
             .clip(NoteCardShape)
             .background(MaterialTheme.colorScheme.surface)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -149,13 +156,19 @@ fun NoteCard(
             Spacer(Modifier.width(16.dp))
         }
         // M3 Checkbox 占位（后续按设计稿自绘）：颜色先取主题 primary——未选 = 蓝描边框，已选，蓝底白勾。
+        // 按压源由 pressFeedback 与 toggleable 共用（indication 置 null，涟漪由按压反馈取代）
+        val checkboxPress = remember { MutableInteractionSource() }
         Row(
             modifier = Modifier
+                // 按压反馈在 clip 之前：缩放作用于整个触控区，提亮范围与勾选框圆角对齐
+                .pressFeedback(checkboxPress, RoundedRectangle(6.dp))
                 .clip(RoundedRectangle(6.dp))
                 .toggleable(
                     value = completed,
+                    interactionSource = checkboxPress,
+                    indication = null,
                     onValueChange = { onCheckedChange?.invoke(it) }, // 安全调用
-                    role = Role.Checkbox
+                    role = Role.Checkbox,
                 )
                 .height(36.dp)  //定义checkBox热区高度
                 .width(36.dp),

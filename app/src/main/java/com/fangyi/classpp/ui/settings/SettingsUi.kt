@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -38,6 +40,7 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MAX
 import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MIN
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -112,8 +115,10 @@ internal fun SettingsTopBar(
             // 状态栏 inset 由顶栏自己吸收：磨砂背景一直铺到屏幕顶（沉浸式）
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
         )
-        // 不用 IconButton：其内部涟漪以按压点为圆心、20dp 半径封顶，偏心按压盖不满圆钮；
-        // 有界涟漪铺满 40dp 边界，再被上面的圆形 clip 裁成整圆（与 ScheduleHeader 周数胶囊同法）
+        // 不用 IconButton：其内部涟漪以按压点为圆心、20dp 半径封顶，偏心按压盖不满圆钮。
+        // 圆钮改用按压反馈（ui.motion 的 pressFeedback，放大 + 提亮取代涟漪）：pressFeedback
+        // 放在柔影 graphicsLayer 之前，缩放连投影一起放大；按压源与点击共用，indication 置 null
+        val press = remember { MutableInteractionSource() }
         Box(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -121,6 +126,8 @@ internal fun SettingsTopBar(
                 .windowInsetsPadding(TopAppBarDefaults.windowInsets)
                 .padding(start = 24.dp, top = 8.dp)  // 返回按钮位置
                 .size(47.dp)
+                // 按压反馈接在柔影图层之前：缩放连投影一起放大，提亮对齐 CircleShape
+                .pressFeedback(press, CircleShape)
                 .graphicsLayer {    // 返回按钮投影
                     shape = CircleShape
                     clip = true
@@ -128,7 +135,7 @@ internal fun SettingsTopBar(
                     spotShadowColor = Color.Black.copy(alpha = 0.2f)
                 }
                 .background(MaterialTheme.colorScheme.surface, CircleShape)
-                .clickable(onClick = onBack),
+                .clickable(interactionSource = press, indication = null, onClick = onBack),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -218,18 +225,29 @@ internal fun TermDatesCard(
                 )
             },
             confirmButton = {
+                // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
+                // 按压源交给按钮形参，pressFeedback 接在 modifier 链末尾（贴按钮本体，对齐 textShape）
+                val press = remember { MutableInteractionSource() }
                 TextButton(
                     enabled = weeks != null,
                     onClick = {
                         weeks?.let(onSetWeeks)
                         pickingWeeks = false
                     },
+                    interactionSource = press,
+                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
                 ) {
                     Text(stringResource(R.string.settings_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pickingWeeks = false }) {
+                // 叠按压反馈：M3 涟漪在按钮内部、调用侧去不掉（按压源与按钮共用）
+                val press = remember { MutableInteractionSource() }
+                TextButton(
+                    onClick = { pickingWeeks = false },
+                    interactionSource = press,
+                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                ) {
                     Text(stringResource(R.string.settings_cancel))
                 }
             },

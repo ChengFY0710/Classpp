@@ -4,7 +4,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -22,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.pressClickable
 
 /** 色球直径（选中环在其外侧，格子统一 46dp 保证行列对齐）。 */
 private val BallSize = 36.dp
@@ -69,8 +69,9 @@ fun ColorSwatchCard(
                 Box(
                     modifier = Modifier
                         .size(CellSize)
-                        .clip(CircleShape)
-                        .clickable { onSelect(index) },
+                        // 按压反馈在 clip 之前：缩放不被圆形裁掉，提亮范围与 CircleShape 对齐
+                        .pressClickable(CircleShape) { onSelect(index) }
+                        .clip(CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     // 色球恒 36dp 居中：选中/未选中同一布局，切换时零位移

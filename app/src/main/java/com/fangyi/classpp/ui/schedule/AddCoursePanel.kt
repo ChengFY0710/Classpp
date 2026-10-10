@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -65,6 +64,7 @@ import com.fangyi.classpp.ui.components.RowChoiceCard
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.WeekCellShape
 import com.fangyi.classpp.ui.theme.classppColors
@@ -589,9 +589,12 @@ private fun WeekSelectionGrid(
                             modifier = Modifier
                                 .weight(1f)
                                 .aspectRatio(1f)
+                                // 按压反馈（自带按压源 + 点击，涟漪由其取代）整体放在 clip 之前：
+                                // blocked 走 enabled=false，点击与反馈一起失效，原 then(clickable)
+                                // 条件块因此移除
+                                .pressClickable(WeekCellShape, enabled = !blocked, onClick = { onToggle(week) })
                                 .clip(WeekCellShape)
-                                .background(cellColor)
-                                .then(if (blocked) Modifier else Modifier.clickable { onToggle(week) }),
+                                .background(cellColor),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(

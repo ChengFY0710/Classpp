@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -24,6 +23,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TodoUrgency
+import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
@@ -65,7 +65,7 @@ fun TodoUrgency.flagLabel(): String = stringResource(
  *
  * - 左：当前档旗标 + 档位名，同取档位色（[fieldLabel] 字号字重 + 颜色覆写）；
  * - 右：除当前档外的全部档位（按枚举固定顺序 Critical→High→Medium→Low→None），
- *   每档 [FlagTouchTarget] 触控热区（胶囊 ripple、中心 24dp 旗标），点按回调 [onSelect]；
+ *   每档 [FlagTouchTarget] 触控热区（胶囊按压反馈、中心 24dp 旗标），点按回调 [onSelect]；
  * - 无选中描边等特殊态：切换即整卡换色，反馈足够直接。
  *
  * 卡片容器对齐行卡家族：SheetCardShape + surface 底 + 16/14 内距 + 60dp 行高下限，无阴影。
@@ -110,8 +110,9 @@ fun UrgentFlagCard(
                 Box(
                     modifier = Modifier
                         .size(FlagTouchTarget)
-                        .clip(PillShape)
-                        .clickable { onSelect(option) },
+                        // 按压反馈在 clip 之前：缩放不被胶囊裁掉，提亮范围与 PillShape 对齐
+                        .pressClickable(PillShape) { onSelect(option) }
+                        .clip(PillShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(

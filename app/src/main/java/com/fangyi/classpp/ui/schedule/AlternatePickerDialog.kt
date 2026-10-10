@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.schedule
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -26,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.ui.components.FadeOverlayDialog
+import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.RowShape
 
 /**
@@ -89,9 +89,10 @@ private fun AlternateCourseRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // 按压反馈在 clip 之前：缩放作用于整行、不被 RowShape 裁掉；涟漪由其取代
+            .pressClickable(RowShape, enabled = enabled, onClick = onClick)
             .clip(RowShape)
             .background(MaterialTheme.colorScheme.background)
-            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Text(

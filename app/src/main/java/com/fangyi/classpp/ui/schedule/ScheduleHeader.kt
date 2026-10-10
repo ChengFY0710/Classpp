@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -272,16 +274,22 @@ fun ScheduleHeader(
                     .height(TopBarHeight * (1f - fraction))
                     .clipToBounds(),
             ) {
+                // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
+                // 按压源经 interactionSource 形参交给按钮，pressFeedback 追加在 modifier 链末尾
+                // （最靠近按钮本体：缩放不裹挟外层 padding/alpha，还随折叠渐隐一起淡出）
+                val editPress = remember { MutableInteractionSource() }
                 IconButton(
                     onClick = onEditClick,
                     enabled = iconsEnabled,
+                    interactionSource = editPress,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         // 盒子从屏幕左缘铺起并铺满行高，热区随之扩大；内容居中，图标原位不动
                         .fillMaxHeight()
                         .padding(top = 8.dp, bottom = 8.dp)
                         .width(TopBarIconTouchWidth)
-                        .graphicsLayer { alpha = iconAlpha },
+                        .graphicsLayer { alpha = iconAlpha }
+                        .pressFeedback(editPress, CircleShape),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_calendar_edit),
@@ -290,16 +298,19 @@ fun ScheduleHeader(
                         modifier = Modifier.size(30.dp)
                     )
                 }
+                val settingsPress = remember { MutableInteractionSource() }
                 IconButton(
                     onClick = onSettingsClick,
                     enabled = iconsEnabled,
+                    interactionSource = settingsPress,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         // 同编辑按钮：热区铺到屏幕右缘，图标居中原位
                         .fillMaxHeight()
                         .padding(top = 8.dp, bottom = 8.dp)
                         .width(TopBarIconTouchWidth)
-                        .graphicsLayer { alpha = iconAlpha },
+                        .graphicsLayer { alpha = iconAlpha }
+                        .pressFeedback(settingsPress, CircleShape),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_settings),
@@ -365,8 +376,17 @@ fun ScheduleHeader(
                     .padding(top = 10.dp, bottom = 7.dp)
                     .then(
                         if (onDaysPerWeekToggle != null) {
+                            // 条件挂载 → 按压源也只在条件内创建（同 SheetCard 的写法）：
+                            // pressFeedback 与 clickable 共用它，按压放大提亮取代涟漪
+                            val press = remember { MutableInteractionSource() }
                             Modifier
-                                .clickable(onClick = onDaysPerWeekToggle)
+                                // 本行没有 clip：反馈原位放最外侧，整行按下都有响应
+                                .pressFeedback(press, RectangleShape)
+                                .clickable(
+                                    interactionSource = press,
+                                    indication = null,
+                                    onClick = onDaysPerWeekToggle,
+                                )
                                 .semantics { contentDescription = daysToggleDescription }
                                 .padding(bottom = 3.dp)
                         } else {
@@ -511,11 +531,23 @@ private fun BackToCurrentButton(
     alpha: Float,
     modifier: Modifier = Modifier,
 ) {
+    // 圆角只声明一次：按压反馈与 clip 共用同一形状，反馈范围与裁剪完全对齐
+    val shape = RoundedCornerShape(6.dp)
+    // 按压态的唯一来源：pressFeedback 与 clickable 共用（涟漪由按压反馈取代，故 clickable 不再要 Indication）
+    val press = remember { MutableInteractionSource() }
     Row(
         modifier = modifier
             .graphicsLayer { this.alpha = alpha }
-            .clip(RoundedCornerShape(6.dp))
-            .clickable(enabled = enabled, onClick = onClick)
+            // 按压反馈插在 alpha 图层与 clip 之间：缩放/提亮发生在裁剪之前（clip 不影响点击输入），
+            // 外层 alpha 照常生效 → 反馈随折叠与按钮一同渐隐
+            .pressFeedback(press, shape)
+            .clip(shape)
+            .clickable(
+                interactionSource = press,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+            )
             .padding(horizontal = 4.dp, vertical = 0.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -792,9 +824,13 @@ private fun WeekCell(
 ) {
     val colors = MaterialTheme.colorScheme
     val description = stringResource(R.string.week_format, week)
+    // 按压态的唯一来源：pressFeedback 与 clickable 共用（涟漪由按压反馈取代，故 clickable 不再要 Indication）
+    val press = remember { MutableInteractionSource() }
     Box(
         modifier = Modifier
             .size(size)
+            // 按压反馈接在 clip 之前：缩放/提亮作用于整格，圆角裁剪在其内侧
+            .pressFeedback(press, WeekCellShape)
             .clip(WeekCellShape)
             .background(
                 when {
@@ -804,7 +840,7 @@ private fun WeekCell(
                 },
             )
             .semantics { contentDescription = description }
-            .clickable(onClick = onClick),
+            .clickable(interactionSource = press, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(

@@ -3,7 +3,7 @@ package com.fangyi.classpp.ui.schedule
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -63,6 +64,8 @@ import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.settings.TermDatesCard
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -294,23 +297,36 @@ private fun SettingsContent(
         DatePickerDialog(
             onDismissRequest = { picking = null },
             confirmButton = {
-                TextButton(onClick = {
-                    datePickerState.selectedDateMillis?.let { millis ->
-                        val picked = millis.toIsoDate()
-                        if (target == DateTarget.Start) {
-                            val newEnd = schedule.termEnd + (picked - schedule.termStart).toInt()
-                            onTerm(picked, newEnd)
-                        } else {
-                            onTerm(schedule.termStart, picked)
+                // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
+                // 按压源交给按钮形参，pressFeedback 接在 modifier 链末尾（贴按钮本体，对齐 textShape）
+                val press = remember { MutableInteractionSource() }
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            val picked = millis.toIsoDate()
+                            if (target == DateTarget.Start) {
+                                val newEnd = schedule.termEnd + (picked - schedule.termStart).toInt()
+                                onTerm(picked, newEnd)
+                            } else {
+                                onTerm(schedule.termStart, picked)
+                            }
                         }
-                    }
-                    picking = null
-                }) {
+                        picking = null
+                    },
+                    interactionSource = press,
+                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                ) {
                     Text(stringResource(R.string.settings_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { picking = null }) {
+                // 叠按压反馈：M3 涟漪在按钮内部、调用侧去不掉（按压源与按钮共用）
+                val press = remember { MutableInteractionSource() }
+                TextButton(
+                    onClick = { picking = null },
+                    interactionSource = press,
+                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                ) {
                     Text(stringResource(R.string.settings_cancel))
                 }
             },
@@ -336,24 +352,35 @@ private fun SettingsContent(
                 TimePicker(state = timeState)
             },
             confirmButton = {
-                TextButton(onClick = {
-                    val formatted = TimeText.format(timeState.hour * 60 + timeState.minute)
-                    val updated = schedule.slots.toMutableList().also { list ->
-                        val old = list[edit.index]
-                        list[edit.index] = if (edit.isStart) {
-                            old.copy(startTime = formatted)
-                        } else {
-                            old.copy(endTime = formatted)
+                // 叠按压反馈（同上：按压源交按钮形参，反馈贴住按钮本体）
+                val press = remember { MutableInteractionSource() }
+                TextButton(
+                    onClick = {
+                        val formatted = TimeText.format(timeState.hour * 60 + timeState.minute)
+                        val updated = schedule.slots.toMutableList().also { list ->
+                            val old = list[edit.index]
+                            list[edit.index] = if (edit.isStart) {
+                                old.copy(startTime = formatted)
+                            } else {
+                                old.copy(endTime = formatted)
+                            }
                         }
-                    }
-                    onSlots(updated)
-                    editingSlot = null
-                }) {
+                        onSlots(updated)
+                        editingSlot = null
+                    },
+                    interactionSource = press,
+                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                ) {
                     Text(stringResource(R.string.settings_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { editingSlot = null }) {
+                val press = remember { MutableInteractionSource() }
+                TextButton(
+                    onClick = { editingSlot = null },
+                    interactionSource = press,
+                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                ) {
                     Text(stringResource(R.string.settings_cancel))
                 }
             },
@@ -416,9 +443,11 @@ private fun TimeChip(
     Text(
         text = text,
         modifier = modifier
+            // 按压反馈（自带按压源 + 点击，涟漪由其取代）放在 clip 之前：
+            // 缩放/提亮作用于整枚 chip，ChipShape 圆角裁剪在其内侧
+            .pressClickable(ChipShape, onClick = onClick)
             .clip(ChipShape)
             .background(MaterialTheme.colorScheme.background)
-            .clickable(onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 9.dp),
         style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
         color = MaterialTheme.colorScheme.primary,
@@ -428,7 +457,8 @@ private fun TimeChip(
 /**
  * 行尾文字动作（加减一节）：无底色、无内距，可点区域就是文字本身——高度即文字高度，
  * 与行 label 同一排版节奏（fieldValue 角色 + SemiBold）。primary 色提示可点，
- * 禁用降为 M3 禁用灰（onSurface 38%）且不可点；涟漪经 [TextActionShape] 圆角裁剪不越界。
+ * 禁用降为 M3 禁用灰（onSurface 38%）且不可点；按压反馈（ui.motion 的 pressClickable，
+ * 自带按压源 + 点击）接在 clip 之前，放大/提亮按 [TextActionShape] 圆角收边不越界。
  */
 @Composable
 private fun TextAction(
@@ -438,9 +468,10 @@ private fun TextAction(
 ) {
     Text(
         text = text,
+        // 反馈放在 clip 之前；enabled 原样传透——禁用时点击不发按压事件，反馈一起消失
         modifier = Modifier
-            .clip(TextActionShape)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+            .pressClickable(TextActionShape, enabled = enabled, role = Role.Button, onClick = onClick)
+            .clip(TextActionShape),
         style = MaterialTheme.classppTextStyles.fieldValue.copy(fontWeight = FontWeight.SemiBold),
         color = if (enabled) {
             MaterialTheme.colorScheme.primary

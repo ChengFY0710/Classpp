@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -88,6 +89,7 @@ import com.fangyi.classpp.data.model.overlappingCourses
 import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.TabTransitionState
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.theme.ButtonShape
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -1235,9 +1237,15 @@ private fun EmptyScheduleContent(
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(24.dp))
+        // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
+        // 按压源交给按钮形参，pressFeedback 追加在 modifier 链末尾（最靠近按钮本体）；
+        // shape 双侧同传 ButtonShape，提亮轮廓与按钮自身胶囊轮廓完全一致
+        val press = remember { MutableInteractionSource() }
         Button(
             onClick = onCreateSchedule,
             shape = ButtonShape,
+            interactionSource = press,
+            modifier = Modifier.pressFeedback(press, ButtonShape),
         ) {
             Text(stringResource(R.string.create_schedule))
         }

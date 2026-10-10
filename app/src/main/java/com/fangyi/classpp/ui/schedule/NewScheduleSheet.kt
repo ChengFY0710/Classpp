@@ -1,10 +1,12 @@
 package com.fangyi.classpp.ui.schedule
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -17,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -28,6 +31,7 @@ import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.settings.TermDatesCard
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 
@@ -111,23 +115,36 @@ internal fun NewScheduleSheet(
         DatePickerDialog(
             onDismissRequest = { picking = null },
             confirmButton = {
-                TextButton(onClick = {
-                    datePickerState.selectedDateMillis?.let { millis ->
-                        val picked = millis.toIsoDate()
-                        if (target == DateTarget.Start) {
-                            end = end + (picked - start).toInt()
-                            start = picked
-                        } else {
-                            end = picked
+                // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
+                // 按压源交给按钮形参，pressFeedback 接在 modifier 链末尾（贴按钮本体，对齐 textShape）
+                val press = remember { MutableInteractionSource() }
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            val picked = millis.toIsoDate()
+                            if (target == DateTarget.Start) {
+                                end = end + (picked - start).toInt()
+                                start = picked
+                            } else {
+                                end = picked
+                            }
                         }
-                    }
-                    picking = null
-                }) {
+                        picking = null
+                    },
+                    interactionSource = press,
+                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                ) {
                     Text(stringResource(R.string.settings_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { picking = null }) {
+                // 叠按压反馈：M3 涟漪在按钮内部、调用侧去不掉（按压源与按钮共用）
+                val press = remember { MutableInteractionSource() }
+                TextButton(
+                    onClick = { picking = null },
+                    interactionSource = press,
+                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                ) {
                     Text(stringResource(R.string.settings_cancel))
                 }
             },

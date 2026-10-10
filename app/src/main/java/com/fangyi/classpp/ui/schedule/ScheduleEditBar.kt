@@ -2,7 +2,6 @@ package com.fangyi.classpp.ui.schedule
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.TabTransitionState
+import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.tabTransitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
@@ -198,8 +198,10 @@ private fun EditAction(
 ) {
     Column(
         modifier = modifier
+            // 按压反馈（自带按压源 + 点击，涟漪由其取代）放在 clip 之前：
+            // 缩放/提亮作用于整块动作区，EditActionShape 圆角裁剪在其内侧
+            .pressClickable(EditActionShape, onClick = onClick)
             .clip(EditActionShape)
-            .clickable(onClick = onClick)
             .padding(horizontal = EditActionInnerPadding, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

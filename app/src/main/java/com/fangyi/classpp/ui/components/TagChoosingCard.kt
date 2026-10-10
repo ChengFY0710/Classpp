@@ -7,7 +7,6 @@ import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
@@ -43,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -66,6 +66,8 @@ import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Expandable
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
 import com.fangyi.classpp.ui.theme.MenuShape
 import com.fangyi.classpp.ui.theme.PillShape
@@ -292,7 +294,9 @@ fun TagChoosingCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable {
+                    // 行无自有 clip：矩形提亮原位接上（不可复用卡片级按压源——那个用于
+                    // PressInteraction 唤起键盘，pressClickable 内部自建独立源）
+                    .pressClickable(RectangleShape) {
                         focusManager.clearFocus()
                         courseExpanded = !courseExpanded
                     }
@@ -347,13 +351,23 @@ private fun TagCapsule(
     onDelete: () -> Unit = {},
 ) {
     val contentColor = if (selected) Color.White else item.color
+    // 按压源新建（不碰卡片级键盘唤起源）：pressFeedback 与 combinedClickable 共用，
+    // indication 置 null——涟漪由按压反馈取代，长按 onLongClick 语义不变
+    val press = remember { MutableInteractionSource() }
     // Box 兼作删除弹层的锚：Popup 挂在它下面，anchorBounds 即胶囊的窗口坐标
     Box {
         Row(
             modifier = Modifier
+                // 按压反馈在 clip 之前：缩放作用于整枚胶囊，提亮范围与 PillShape 对齐
+                .pressFeedback(press, PillShape)
                 .clip(PillShape)
                 .background(if (selected) item.color else item.color.copy(alpha = 0.3f))
-                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                .combinedClickable(
+                    interactionSource = press,
+                    indication = null,
+                    onClick = onClick,
+                    onLongClick = onLongClick,
+                )
                 .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -449,7 +463,8 @@ private fun TagDeletePopup(
         ) {
             Row(
                 modifier = Modifier
-                    .clickable(onClick = onDelete)
+                    // 删除钮行无自有 clip：矩形提亮原位接上（卡壳 MenuShape 在祖先层兜住溢出）
+                    .pressClickable(RectangleShape, onClick = onDelete)
                     .padding(horizontal = 20.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),

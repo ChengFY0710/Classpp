@@ -1,6 +1,8 @@
 package com.fangyi.classpp.ui.theme
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -10,6 +12,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import com.fangyi.classpp.ui.motion.NoOpIndication
 
 private val LightColorScheme = lightColorScheme(
     primary = Primary,
@@ -137,7 +140,17 @@ fun ClassppTheme(
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,
-            content = content,
-        )
+        ) {
+            // 涟漪整体退场：点击反馈统一由 ui.motion 的按压反馈（放大 + 提亮）接管。
+            // 两路涟漪各走一个开关——裸 clickable 读 LocalIndication；M3 按钮内部是
+            // 硬编码 ripple()、只看 LocalRippleConfiguration（提供 null 即彻底不画，
+            // 官方注释明示）。两者都必须嵌在 MaterialTheme 之内，才盖得住它提供的默认值。
+            // 已知取舍：M3 DatePicker/TimePicker 内部格子同属硬编码 ripple，会一并失去
+            // 涟漪，靠选中态变色反馈；如需恢复可在这些弹层外局部提供回原配置。
+            CompositionLocalProvider(
+                LocalIndication provides NoOpIndication,
+                LocalRippleConfiguration provides null,
+            ) { content() }
+        }
     }
 }

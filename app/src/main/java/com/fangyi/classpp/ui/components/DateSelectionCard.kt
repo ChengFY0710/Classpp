@@ -1,7 +1,7 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.HorizontalDivider
@@ -31,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -41,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.motion.Expandable
+import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.RowShape
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
@@ -87,8 +91,8 @@ enum class RepeatFrequency { Daily, Weekly, Monthly, Yearly }
  * 菜单（选中项前置勾），「自定义日期」行点按弹 M3 [DatePickerDialog]。
  *
  * 规格：白卡 [SheetCardShape] 连续圆角，行高下限 [SheetFieldHeight]，行内距 16/14 画在
- * clickable 内侧（涟漪铺满整行，对齐设计稿「点按涟漪」）；label 走 fieldLabel，值与
- * 快捷选项走 fieldValue，尾部图标 20dp primary。
+ * 点击区内侧（按压反馈铺满整行，ui.motion 的 pressClickable 取代涟漪）；label 走 fieldLabel，
+ * 值与快捷选项走 fieldValue，尾部图标 20dp primary。
  */
 @Composable
 fun DateSelectionCard(
@@ -115,12 +119,14 @@ fun DateSelectionCard(
             .clip(SheetCardShape)
             .background(colors.surface),
     ) {
-        // 主行：整行可点切换 值模式 ↔ 选项模式（涟漪铺满整行）
+        // 主行：整行可点切换 值模式 ↔ 选项模式。行上无 clip，原位把 clickable 换成
+        // pressClickable（自带按压源 = pressFeedback + indication 置 null 的 clickable，
+        // 按压反馈取代涟漪），通栏行用 RectangleShape
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = SheetFieldHeight)
-                .clickable {
+                .pressClickable(RectangleShape) {
                     focusManager.clearFocus()
                     keyboard?.hide()
                     onExpandedChange(!expanded)
@@ -199,12 +205,13 @@ fun DateSelectionCard(
                     color = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.padding(horizontal = 16.dp).offset(y = (-3).dp),
                 )
-                // 自定义日期行：点按弹 M3 DatePickerDialog（退场动画中 custom 已为空时忽略点击）
+                // 自定义日期行：点按弹 M3 DatePickerDialog（退场动画中 custom 已为空时忽略点击）。
+                // 行上无 clip，原位换 pressClickable：独立按压源，与主行/重复行互不串亮
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         //.heightIn(min = SheetFieldHeight)
-                        .clickable {
+                        .pressClickable(RectangleShape) {
                             focusManager.clearFocus()
                             keyboard?.hide()
                             if (custom != null) datePicking = true
@@ -229,12 +236,13 @@ fun DateSelectionCard(
                         modifier = Modifier.size(20.dp),
                     )
                 }
-                // 重复行：点按弹菜单（同 SettingsCard 选择行，菜单顶边贴行顶边）
+                // 重复行：点按弹菜单（同 SettingsCard 选择行，菜单顶边贴行顶边）；
+                // 行上无 clip，原位换 pressClickable（独立按压源，不与相邻行双亮）
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         //.heightIn(min = SheetFieldHeight)
-                        .clickable {
+                        .pressClickable(RectangleShape) {
                             focusManager.clearFocus()
                             keyboard?.hide()
                             if (custom != null) repeatMenuExpanded = true
@@ -280,17 +288,30 @@ fun DateSelectionCard(
         DatePickerDialog(
             onDismissRequest = { datePicking = false },
             confirmButton = {
-                TextButton(onClick = {
-                    datePicking = false
-                    datePickerState.selectedDateMillis?.let { millis ->
-                        onValueChange(custom.copy(date = millis.toPickerIsoDate()))
-                    }
-                }) {
+                // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
+                // 按压源交给按钮形参，pressFeedback 接在 modifier 链末尾（贴按钮本体，对齐 textShape）
+                val press = remember { MutableInteractionSource() }
+                TextButton(
+                    onClick = {
+                        datePicking = false
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            onValueChange(custom.copy(date = millis.toPickerIsoDate()))
+                        }
+                    },
+                    interactionSource = press,
+                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                ) {
                     Text(stringResource(R.string.settings_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { datePicking = false }) {
+                // 叠按压反馈：M3 涟漪在按钮内部、调用侧去不掉（按压源与按钮共用）
+                val press = remember { MutableInteractionSource() }
+                TextButton(
+                    onClick = { datePicking = false },
+                    interactionSource = press,
+                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                ) {
                     Text(stringResource(R.string.settings_cancel))
                 }
             },
@@ -317,7 +338,7 @@ private fun quickOptionLabels(): List<Pair<DateSelection, String>> = listOf(
     DateSelection.Tomorrow to stringResource(R.string.date_card_tomorrow),
 )
 
-/** 快捷选项文字按钮：蓝字居中，行形圆角涟漪（同 RowChoiceCard 的选项行） */
+/** 快捷选项文字按钮：蓝字居中，按压反馈取行形圆角 RowShape（同 RowChoiceCard 的选项行） */
 @Composable
 private fun QuickOptionText(
     label: String,
@@ -326,8 +347,9 @@ private fun QuickOptionText(
 ) {
     Box(
         modifier = modifier
+            // 按压反馈放 clip 之前：缩放作用于整块、提亮与 RowShape 圆角对齐（clip 不挡点击输入）
+            .pressClickable(RowShape, onClick = onClick)
             .clip(RowShape)
-            .clickable(onClick = onClick)
             .padding(vertical = 4.dp),
         contentAlignment = Alignment.Center,
     ) {

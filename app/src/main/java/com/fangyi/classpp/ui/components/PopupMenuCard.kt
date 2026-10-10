@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -19,10 +18,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.MenuShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -59,7 +60,7 @@ data class PopupMenuSection(
 )
 
 /**
- * 弹出选择菜单卡（设计稿：白圆角卡 + 左侧勾选行 + 按压涟漪 + 组间可选分割线）。
+ * 弹出选择菜单卡（设计稿：白圆角卡 + 左侧勾选行 + 按压反馈 + 组间可选分割线）。
  * [MenuShape] 卡壳 + [PopupMenuContent] 内容；自带容器的宿主（如 DropdownMenu）
  * 直接用 [PopupMenuContent] 铺内容，避免双层卡片。
  *
@@ -87,7 +88,7 @@ fun PopupMenuCard(
     val hazeTint = MaterialTheme.classppColors.hazeTint
     Box(
         // propagateMinConstraints：卡被外部 modifier 撑宽（如固定 200dp）时，内容 Column
-        // 至少跟着撑满——否则 Column 仍收在 IntrinsicSize 宽度，右侧卡面成为涟漪/点击断区
+        // 至少跟着撑满——否则 Column 仍收在 IntrinsicSize 宽度，右侧卡面成为点按断区
         //（Surface 内部同款行为，换壳时不能丢）
         propagateMinConstraints = true,
         modifier = modifier
@@ -118,7 +119,7 @@ fun PopupMenuCard(
  * 弹出选择菜单的内容（无卡片壳）：勾选行 + 组间可选分割线。
  *
  * - 行：fieldLabel（16sp SemiBold）；勾选行 = primary 色 + 左侧 ic_checkmark，
- *   未勾选行 = onSurface、勾选槽占位保文字对齐；点击走默认按压涟漪；
+ *   未勾选行 = onSurface、勾选槽占位保文字对齐；点击走按压反馈（放大 + 提亮）；
  * - 分组：[PopupMenuSection.showDivider] 控制与上一分组之间的 [HorizontalDivider]
  *   （outlineVariant）——单组菜单不传分割线即为设计稿中右两态的无缝形态；
  * - 宽度：收窄到最宽行（IntrinsicSize.Max，CourseContextMenu 同款），各行等宽、
@@ -152,7 +153,8 @@ private fun PopupMenuRow(item: PopupMenuItem) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = item.onClick)
+            // 行无自有 clip：矩形提亮原位接在行上，卡壳 MenuShape clip（祖先）兜住缩放溢出
+            .pressClickable(RectangleShape, onClick = item.onClick)
             .padding(start = 20.dp, end = RowHorizontalPadding, top = RowVerticalPadding, bottom = RowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {

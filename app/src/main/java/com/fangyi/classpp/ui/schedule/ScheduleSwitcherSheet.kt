@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.schedule
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +39,7 @@ import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetPillButton
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 
@@ -207,7 +210,17 @@ private fun ScheduleCard(
                 modifier = Modifier.padding(end = 12.dp),
             )
         }
-        IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
+        // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
+        // 删除钮用独立按压源（宿主 SheetCard 的反馈是它自己的源，共享源规则下子钮不会跟着双亮），
+        // pressFeedback 追加在 size 之后、最靠近按钮本体
+        val press = remember { MutableInteractionSource() }
+        IconButton(
+            onClick = onDelete,
+            interactionSource = press,
+            modifier = Modifier
+                .size(40.dp)
+                .pressFeedback(press, CircleShape),
+        ) {
             Icon(
                 painter = painterResource(R.drawable.ic_delete),
                 contentDescription = stringResource(R.string.edit_delete),

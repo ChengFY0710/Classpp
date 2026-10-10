@@ -1,7 +1,7 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.TimeText
+import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -56,7 +59,7 @@ private const val MILLIS_PER_DAY = 86_400_000L
  * 成对出现或同时为空（TodoValidator）。
  *
  * 行规格与 [DateSelectionCard] 的「自定义日期」子行同款：[SheetCardShape] 连续圆角、
- * 行高下限 [SheetFieldHeight]、行内距 16/14 画在 clickable 内侧（涟漪铺满整行），
+ * 行高下限 [SheetFieldHeight]、行内距 16/14 画在点击区内侧（按压反馈铺满整行，取代涟漪），
  * label 走 fieldLabel、已设值走 fieldValue，未设显示灰「无」（fieldPlaceholder），
  * 尾部 20dp 右箭头 primary。展示格式 `2026-9-7 8:00`（横杠不补零，时刻归一化走
  * [TimeText.format]）。
@@ -84,14 +87,16 @@ fun DeadlineCard(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(SheetCardShape)
-            .background(colors.surface)
-            .heightIn(min = SheetFieldHeight)
-            .clickable {
+            // 按压反馈放 clip 之前：缩放作用于整行、提亮与 SheetCardShape 圆角对齐
+            // （pressClickable 自带按压源，涟漪由按压反馈取代；clip 不挡点击输入）
+            .pressClickable(SheetCardShape) {
                 focusManager.clearFocus()
                 keyboard?.hide()
                 datePicking = true
             }
+            .clip(SheetCardShape)
+            .background(colors.surface)
+            .heightIn(min = SheetFieldHeight)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -128,28 +133,46 @@ fun DeadlineCard(
         DatePickerDialog(
             onDismissRequest = { datePicking = false },
             confirmButton = {
-                TextButton(onClick = {
-                    datePicking = false
-                    datePickerState.selectedDateMillis?.let { millis ->
-                        pendingDate = millis.toPickerIsoDate()
-                        timePicking = true
-                    }
-                }) {
+                // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
+                // 按压源交给按钮形参，pressFeedback 接在 modifier 链末尾（贴按钮本体，对齐 textShape）
+                val press = remember { MutableInteractionSource() }
+                TextButton(
+                    onClick = {
+                        datePicking = false
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            pendingDate = millis.toPickerIsoDate()
+                            timePicking = true
+                        }
+                    },
+                    interactionSource = press,
+                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                ) {
                     Text(stringResource(R.string.settings_confirm))
                 }
             },
             dismissButton = {
                 Row {
                     if (isSet) {
-                        TextButton(onClick = {
-                            datePicking = false
-                            pendingDate = null
-                            onChange(null, null)
-                        }) {
+                        // 叠按压反馈：M3 涟漪在按钮内部、调用侧去不掉（按压源与按钮共用）
+                        val pressClear = remember { MutableInteractionSource() }
+                        TextButton(
+                            onClick = {
+                                datePicking = false
+                                pendingDate = null
+                                onChange(null, null)
+                            },
+                            interactionSource = pressClear,
+                            modifier = Modifier.pressFeedback(pressClear, ButtonDefaults.textShape),
+                        ) {
                             Text(stringResource(R.string.deadline_card_clear))
                         }
                     }
-                    TextButton(onClick = { datePicking = false }) {
+                    val pressCancel = remember { MutableInteractionSource() }
+                    TextButton(
+                        onClick = { datePicking = false },
+                        interactionSource = pressCancel,
+                        modifier = Modifier.pressFeedback(pressCancel, ButtonDefaults.textShape),
+                    ) {
                         Text(stringResource(R.string.settings_cancel))
                     }
                 }
@@ -170,20 +193,31 @@ fun DeadlineCard(
             },
             text = { TimePicker(state = timeState) },
             confirmButton = {
-                TextButton(onClick = {
-                    timePicking = false
-                    val minute = timeState.hour * 60 + timeState.minute
-                    pendingDate?.let { date -> onChange(date, minute) }
-                    pendingDate = null
-                }) {
+                // 叠按压反馈：M3 涟漪在按钮内部、调用侧去不掉（按压源与按钮共用）
+                val press = remember { MutableInteractionSource() }
+                TextButton(
+                    onClick = {
+                        timePicking = false
+                        val minute = timeState.hour * 60 + timeState.minute
+                        pendingDate?.let { date -> onChange(date, minute) }
+                        pendingDate = null
+                    },
+                    interactionSource = press,
+                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                ) {
                     Text(stringResource(R.string.settings_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    timePicking = false
-                    pendingDate = null
-                }) {
+                val press = remember { MutableInteractionSource() }
+                TextButton(
+                    onClick = {
+                        timePicking = false
+                        pendingDate = null
+                    },
+                    interactionSource = press,
+                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                ) {
                     Text(stringResource(R.string.settings_cancel))
                 }
             },

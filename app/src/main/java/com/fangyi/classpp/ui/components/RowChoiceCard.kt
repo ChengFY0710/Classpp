@@ -5,7 +5,6 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -33,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Expandable
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.RowShape
 import com.fangyi.classpp.ui.theme.classppTextStyles
 
@@ -121,8 +121,9 @@ fun RowChoiceCard(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
+                                // 按压反馈在 clip 之前：缩放作用于整个选项格，提亮范围与 RowShape 对齐
+                                .pressClickable(RowShape) { onSelect(index) }
                                 .clip(RowShape)
-                                .clickable { onSelect(index) }
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center,
                         ) {

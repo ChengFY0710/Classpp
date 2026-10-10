@@ -8,7 +8,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
@@ -89,12 +89,13 @@ fun NoteCardSection(
                 style = MaterialTheme.classppTextStyles.sectionTitle.settingsRowMetrics(),
             )
             // 手写触控区而非 IconButton：M3 IconButton 强制 48dp 最小触控区，
-            // 对 24dp 的 chevron 视觉留白过大；32dp 圆形区 + 圆形 ripple 紧凑且够点
+            // 对 24dp 的 chevron 视觉留白过大；32dp 圆形区 + 圆形按压反馈紧凑且够点
             Box(
                 modifier = Modifier
                     .size(SectionButtonSize)
-                    .clip(CircleShape)
-                    .clickable(onClick = { expanded = !expanded }),
+                    // 按压反馈在 clip 之前：缩放不被圆形裁掉，提亮范围与 CircleShape 对齐
+                    .pressClickable(CircleShape) { expanded = !expanded }
+                    .clip(CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 ChevronIcon(expanded = expanded, rotation = chevronRotation)

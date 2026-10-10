@@ -1,7 +1,7 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -36,6 +37,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -58,7 +61,7 @@ sealed interface SettingsCardItem {
         val onClick: () -> Unit,
     ) : SettingsCardItem
 
-    /** 开关行：整行可点切换（涟漪铺满整行），尾部 [ClassppSwitch] 只作视觉件 */
+    /** 开关行：整行可点切换（按压反馈铺满整行），尾部 [ClassppSwitch] 只作视觉件 */
     data class Toggle(
         override val label: String,
         override val description: String? = null,
@@ -129,8 +132,8 @@ sealed interface SettingsCardItem {
 
 /**
  * 设置卡片：白底（surface）+ [SettingsCardShape] 连续曲率圆角，内含一至多行 [SettingsCardItem]。
- * [rowSpacing] = 0（默认）时行与行无缝堆叠，整行涟漪铺满行宽后被卡片圆角裁剪（对齐设计稿
- * 「点击涟漪」）；需要行间留白时传正值（间隙不可点，四周边距不受影响）。
+ * [rowSpacing] = 0（默认）时行与行无缝堆叠，整行按压反馈（放大 + 提亮）铺满行宽、溢出被
+ * 卡片圆角裁剪（对齐设计稿「点击反馈」）；需要行间留白时传正值（间隙不可点，四周边距不受影响）。
  * [rowMinHeight] 为行高下限（默认 [SheetFieldHeight]）：多行内容卡要收紧行距时传小值，
  * 行高回落为自然高（上下内距 14×2 + 内容高），只影响传入该参数的卡片。
  * [contentVerticalPadding] 为卡内首行之前 / 末行之后的额外留白（默认 0）。
@@ -148,7 +151,7 @@ sealed interface SettingsCardItem {
 fun SettingsCard(
     items: List<SettingsCardItem>,
     modifier: Modifier = Modifier,
-    // 行与行之间的额外间距：默认 0 = 无缝堆叠（涟漪区域连贯），> 0 = 行间留白
+    // 行与行之间的额外间距：默认 0 = 无缝堆叠（各行点区相接），> 0 = 行间留白
     rowSpacing: Dp = 0.dp,
     // 行高下限：默认 60dp（对齐 SheetTextField）；多行卡收紧行距时传小值，
     // 行高回落为自然高（上下内距 14×2 + 内容），不传则其余卡片渲染不变
@@ -157,7 +160,7 @@ fun SettingsCard(
     contentVerticalPadding: Dp = 0.dp,
 ) {
     // 行高下限判在整卡而非单行：先按内容自然高度测各行，整卡不足 [rowMinHeight]
-    // 时把差额均摊给各行撑高——行变高后涟漪仍铺满整卡、内容仍居中，单行卡与旧的
+    // 时把差额均摊给各行撑高——行变高后按压反馈仍铺满整卡、内容仍居中，单行卡与旧的
     // 「行高 min 60dp」规格渲染一致；内容超出下限后各行保持自然高度
     Layout(
         content = {
@@ -188,7 +191,7 @@ fun SettingsCard(
         val cardHeight = if (naturals.isEmpty()) 0 else
             contentHeight.coerceAtLeast(minHeightPx).coerceAtMost(constraints.maxHeight)
         // 整卡不足下限时把差额均摊给各行（余数按行序 +1px 补齐），行高 = max(自然高, 均摊份额)；
-        // 行被撑高后涟漪仍铺满整卡、内容仍居中，单行卡与旧「行高 min 60dp」规格渲染一致
+        // 行被撑高后按压反馈仍铺满整卡、内容仍居中，单行卡与旧「行高 min 60dp」规格渲染一致
         val extra = cardHeight - contentHeight
         val placeables = measurables.mapIndexed { index, measurable ->
             val share = if (extra > 0) {
@@ -210,7 +213,7 @@ fun SettingsCard(
 }
 
 /**
- * 单行渲染：padding 在 clickable/toggleable 内侧，涟漪（或开关整行点区）铺满整行宽。
+ * 单行渲染：padding 在按压反馈/点区内侧，放大提亮（或开关整行点区）铺满整行宽。
  * 行高随内容，不再自行兜底 60dp——下限由 [SettingsCard] 判在整卡上。
  */
 @Composable
@@ -219,14 +222,22 @@ private fun SettingsCardRow(item: SettingsCardItem) {
     var menuExpanded by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    // 行的按压反馈：Nav/Select 用 pressClickable 一行接入（内部自建按压源）；
+    // Toggle 要与 toggleable 共享按压源，故手动配对（indication 置 null，涟漪由按压反馈取代）
+    val togglePress = remember { MutableInteractionSource() }
     val interactionModifier = when (item) {
-        is SettingsCardItem.Nav -> Modifier.clickable(onClick = item.onClick)
-        is SettingsCardItem.Toggle -> Modifier.toggleable(
-            value = item.checked,
-            role = Role.Switch,
-            onValueChange = item.onCheckedChange,
-        )
-        is SettingsCardItem.Select -> Modifier.clickable {
+        is SettingsCardItem.Nav -> Modifier.pressClickable(RectangleShape, onClick = item.onClick)
+        is SettingsCardItem.Toggle -> Modifier
+            // 按压反馈在点区之前：整行放大 + 提亮，行无自有 clip（溢出由卡片圆角壳兜住）
+            .pressFeedback(togglePress, RectangleShape)
+            .toggleable(
+                value = item.checked,
+                interactionSource = togglePress,
+                indication = null,
+                role = Role.Switch,
+                onValueChange = item.onCheckedChange,
+            )
+        is SettingsCardItem.Select -> Modifier.pressClickable(RectangleShape) {
             // 打开菜单前先收起键盘与焦点：键盘若开着，菜单会被盖住、焦点还留在原输入框上
             focusManager.clearFocus()
             keyboard?.hide()

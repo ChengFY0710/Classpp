@@ -2,7 +2,6 @@ package com.fangyi.classpp.ui.components
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,12 +16,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -42,8 +43,8 @@ data class SettingsCardwithIconItem(
 /**
  * 带图标设置卡片：[SettingsCard] 导航行加行首图标的变体，卡体与整卡行高均摊逻辑一致——
  * 白底（surface）+ [SettingsCardShape] 连续曲率圆角，内含一至多行 [SettingsCardwithIconItem]。
- * [rowSpacing] = 0（默认）时行与行无缝堆叠，整行涟漪铺满行宽后被卡片圆角裁剪（对齐设计稿
- * 「点击涟漪」）；需要行间留白时传正值（间隙不可点，四周边距不受影响）。
+ * [rowSpacing] = 0（默认）时行与行无缝堆叠，整行按压反馈（放大 + 提亮）铺满行宽、溢出被
+ * 卡片圆角裁剪（对齐设计稿「点击反馈」）；需要行间留白时传正值（间隙不可点，四周边距不受影响）。
  * [rowMinHeight] 为行高下限（默认 [SheetFieldHeight]）：多行内容卡要收紧行距时传小值，
  * 行高回落为自然高（上下内距 14×2 + 内容高），只影响传入该参数的卡片。
  * [contentVerticalPadding] 为卡内首行之前 / 末行之后的额外留白（默认 0）。
@@ -62,7 +63,7 @@ data class SettingsCardwithIconItem(
 fun SettingsCardwithIcon(
     items: List<SettingsCardwithIconItem>,
     modifier: Modifier = Modifier,
-    // 行与行之间的额外间距：默认 0 = 无缝堆叠（涟漪区域连贯），> 0 = 行间留白
+    // 行与行之间的额外间距：默认 0 = 无缝堆叠（各行点区相接），> 0 = 行间留白
     rowSpacing: Dp = 0.dp,
     // 行高下限：默认 60dp（对齐 SheetTextField）；多行卡收紧行距时传小值，
     // 行高回落为自然高（上下内距 14×2 + 内容），不传则其余卡片渲染不变
@@ -71,7 +72,7 @@ fun SettingsCardwithIcon(
     contentVerticalPadding: Dp = 0.dp,
 ) {
     // 行高下限判在整卡而非单行：先按内容自然高度测各行，整卡不足 [rowMinHeight]
-    // 时把差额均摊给各行撑高——行变高后涟漪仍铺满整卡、内容仍居中，单行卡与旧的
+    // 时把差额均摊给各行撑高——行变高后按压反馈仍铺满整卡、内容仍居中，单行卡与旧的
     // 「行高 min 60dp」规格渲染一致；内容超出下限后各行保持自然高度
     Layout(
         content = {
@@ -97,7 +98,7 @@ fun SettingsCardwithIcon(
         val cardHeight = if (naturals.isEmpty()) 0 else
             contentHeight.coerceAtLeast(minHeightPx).coerceAtMost(constraints.maxHeight)
         // 整卡不足下限时把差额均摊给各行（余数按行序 +1px 补齐），行高 = max(自然高, 均摊份额)；
-        // 行被撑高后涟漪仍铺满整卡、内容仍居中，单行卡与旧「行高 min 60dp」规格渲染一致
+        // 行被撑高后按压反馈仍铺满整卡、内容仍居中，单行卡与旧「行高 min 60dp」规格渲染一致
         val extra = cardHeight - contentHeight
         val placeables = measurables.mapIndexed { index, measurable ->
             val share = if (extra > 0) {
@@ -119,7 +120,7 @@ fun SettingsCardwithIcon(
 }
 
 /**
- * 单行渲染：padding 在 clickable 内侧，涟漪铺满整行宽。行高随内容，
+ * 单行渲染：padding 在按压反馈内侧，放大提亮铺满整行宽。行高随内容，
  * 不再自行兜底 60dp——下限由 [SettingsCardwithIcon] 判在整卡上。
  */
 @Composable
@@ -127,7 +128,8 @@ private fun SettingsCardwithIconRow(item: SettingsCardwithIconItem) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = item.onClick)
+            // 行无自有 clip，矩形提亮原位接在行上；溢出由卡片圆角壳兜住
+            .pressClickable(RectangleShape, onClick = item.onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
