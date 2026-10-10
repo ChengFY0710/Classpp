@@ -48,7 +48,8 @@ import kotlinx.coroutines.launch
  * 渲染进一张与图层同尺寸的离屏缓冲（RenderNode 合成层），子树里向轮廓外溢出的投影
  * （如胶囊按钮的大柔影）会被缓冲边缘裁断——表现为按下时阴影四角出现直线切口。
  * 这里改为沿组件轮廓叠一层加色白（[BlendMode.Plus]，即 PorterDuff ADD，硬件画布通用），
- * 全程不建图层，投影完整。
+ * 全程不建图层，投影完整；[shade] 可切换方向——[PressShade.Darken] 用低透明度黑
+ * SrcOver 压暗（白色底在浅色模式下加色白无感），同样不建图层。
  *
  * 用法：接在调用方自己的 modifier 链上即可，[shape] 传组件自身的形状
  * （提亮范围与投影形状都以下它为准）：
@@ -67,6 +68,7 @@ fun Modifier.pressFeedback(
     interactionSource: InteractionSource,
     shape: Shape,
     scale: Float = DefaultPressScale,
+    shade: PressShade = PressShade.Brighten,
 ): Modifier {
     val progress = remember { Animatable(0f) }
     // 逐事件驱动（见 KDoc）：pressJob = 上行，exitJob = 回弹。每个事件只做 Job 切换、
@@ -116,20 +118,28 @@ fun Modifier.pressFeedback(
             scaleX = s
             scaleY = s
         }
-        // 提亮画在内容之上、且只落在组件轮廓内：加色白把底色和图文一起抬亮，
-        // 轮廓之外（投影所在区域）不沾边
+        // 明暗层画在内容之上、且只落在组件轮廓内，轮廓之外（投影所在区域）不沾边：
+        // Brighten = 加色白把底色和图文一起抬亮（深色/彩色底）；
+        // Darken = 低透明度黑 SrcOver（视觉上即乘法压暗），白底浅色模式下提亮无感的替代
         .drawWithContent {
             drawContent()
             val p = progress.value
             if (p > BrightnessThreshold) {
                 val outline = shape.createOutline(size, layoutDirection, this@drawWithContent)
                 val path = Path().apply { addOutline(outline) }
-                drawPath(
-                    path = path,
-                    color = Color.White,
-                    alpha = BrightnessLift * p,
-                    blendMode = BlendMode.Plus,
-                )
+                when (shade) {
+                    PressShade.Brighten -> drawPath(
+                        path = path,
+                        color = Color.White,
+                        alpha = BrightnessLift * p,
+                        blendMode = BlendMode.Plus,
+                    )
+                    PressShade.Darken -> drawPath(
+                        path = path,
+                        color = Color.Black,
+                        alpha = DarkenShade * p,
+                    )
+                }
             }
         }
 }
@@ -143,6 +153,16 @@ private const val BrightnessLift = 0.15f
 /** 低于该进度不再绘制提亮：弹簧收尾是渐近的，防止停在极小值上每帧空画。 */
 private const val BrightnessThreshold = 0.004f
 
+/** 压暗幅度（黑罩峰值透明度）：微微压暗，深色图文几乎不受影响、白底明显降一档。 */
+private const val DarkenShade = 0.06f
+
+/**
+ * 按压明暗层的方向：[Brighten] 加色白提亮（深色/彩色底，默认）；
+ * [Darken] 低透明度黑压暗——白色底在浅色模式下物理上无法更亮，
+ * 由调用方按主题选它（如设置行浅色模式压暗、深色模式照常提亮）。
+ */
+enum class PressShade { Brighten, Darken }
+
 /**
  * [pressFeedback] + clickable 三件套的便捷封装：内部自建按压源，同时交给
  * [pressFeedback]（观察按压）与 clickable（indication 置 null，涟漪由按压反馈取代），
@@ -155,6 +175,7 @@ private const val BrightnessThreshold = 0.004f
 fun Modifier.pressClickable(
     shape: Shape,
     scale: Float = DefaultPressScale,
+    shade: PressShade = PressShade.Brighten,
     enabled: Boolean = true,
     role: Role? = null,
     onClick: () -> Unit,
@@ -164,6 +185,7 @@ fun Modifier.pressClickable(
         interactionSource = press,
         shape = shape,
         scale = scale,
+        shade = shade,
     ).clickable(
         interactionSource = press,
         indication = null,

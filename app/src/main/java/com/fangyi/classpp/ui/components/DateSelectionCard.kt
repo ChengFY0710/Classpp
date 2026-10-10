@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.motion.Expandable
+import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.RowShape
@@ -50,6 +51,7 @@ import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.fangyi.classpp.ui.theme.isDarkTheme
 import java.util.GregorianCalendar
 import java.util.Locale
 import java.util.TimeZone
@@ -103,6 +105,8 @@ fun DateSelectionCard(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
+    // 浅色模式下白底行加色白提亮无感（白色无法更亮），改用微微压暗表达按压；深色模式仍提亮
+    val rowShade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     var repeatMenuExpanded by remember { mutableStateOf(false) }
@@ -126,7 +130,7 @@ fun DateSelectionCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = SheetFieldHeight)
-                .pressClickable(RectangleShape) {
+                .pressClickable(RectangleShape, shade = rowShade) {
                     focusManager.clearFocus()
                     keyboard?.hide()
                     onExpandedChange(!expanded)
@@ -211,7 +215,7 @@ fun DateSelectionCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         //.heightIn(min = SheetFieldHeight)
-                        .pressClickable(RectangleShape) {
+                        .pressClickable(RectangleShape, shade = rowShade) {
                             focusManager.clearFocus()
                             keyboard?.hide()
                             if (custom != null) datePicking = true
@@ -242,7 +246,7 @@ fun DateSelectionCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         //.heightIn(min = SheetFieldHeight)
-                        .pressClickable(RectangleShape) {
+                        .pressClickable(RectangleShape, shade = rowShade) {
                             focusManager.clearFocus()
                             keyboard?.hide()
                             if (custom != null) repeatMenuExpanded = true
@@ -345,10 +349,12 @@ private fun QuickOptionText(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 快捷选项与卡片各行同款：浅色压暗、深色提亮
+    val shade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
     Box(
         modifier = modifier
-            // 按压反馈放 clip 之前：缩放作用于整块、提亮与 RowShape 圆角对齐（clip 不挡点击输入）
-            .pressClickable(RowShape, onClick = onClick)
+            // 按压反馈放 clip 之前：缩放作用于整块、明暗与 RowShape 圆角对齐（clip 不挡点击输入）
+            .pressClickable(RowShape, shade = shade, onClick = onClick)
             .clip(RowShape)
             .padding(vertical = 4.dp),
         contentAlignment = Alignment.Center,

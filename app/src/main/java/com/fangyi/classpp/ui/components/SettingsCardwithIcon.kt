@@ -23,10 +23,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.fangyi.classpp.ui.theme.isDarkTheme
 
 /**
  * 带图标设置卡条目：导航行（左侧图标 + label + 蓝色箭头），
@@ -125,11 +127,13 @@ fun SettingsCardwithIcon(
  */
 @Composable
 private fun SettingsCardwithIconRow(item: SettingsCardwithIconItem) {
+    // 浅色模式下白底行加色白提亮无感（白色无法更亮），改用微微压暗表达按压；深色模式仍提亮
+    val rowShade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            // 行无自有 clip，矩形提亮原位接在行上；溢出由卡片圆角壳兜住
-            .pressClickable(RectangleShape, onClick = item.onClick)
+            // 行无自有 clip，矩形明暗原位接在行上；溢出由卡片圆角壳兜住
+            .pressClickable(RectangleShape, shade = rowShade, onClick = item.onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

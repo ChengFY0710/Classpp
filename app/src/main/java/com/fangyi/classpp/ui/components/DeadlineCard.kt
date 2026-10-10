@@ -37,11 +37,13 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.TimeText
+import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.fangyi.classpp.ui.theme.isDarkTheme
 import java.util.GregorianCalendar
 import java.util.Locale
 import java.util.TimeZone
@@ -76,6 +78,8 @@ fun DeadlineCard(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
+    // 浅色模式下白底卡加色白提亮无感（白色无法更亮），改用微微压暗表达按压；深色模式仍提亮
+    val rowShade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     var datePicking by remember { mutableStateOf(false) }
@@ -87,9 +91,9 @@ fun DeadlineCard(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            // 按压反馈放 clip 之前：缩放作用于整行、提亮与 SheetCardShape 圆角对齐
+            // 按压反馈放 clip 之前：缩放作用于整行、明暗与 SheetCardShape 圆角对齐
             // （pressClickable 自带按压源，涟漪由按压反馈取代；clip 不挡点击输入）
-            .pressClickable(SheetCardShape) {
+            .pressClickable(SheetCardShape, shade = rowShade) {
                 focusManager.clearFocus()
                 keyboard?.hide()
                 datePicking = true

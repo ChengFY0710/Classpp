@@ -37,11 +37,13 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.fangyi.classpp.ui.theme.isDarkTheme
 
 /**
  * 设置卡条目：导航行（label + 蓝色箭头）、开关行（label + [ClassppSwitch]）、
@@ -223,13 +225,19 @@ private fun SettingsCardRow(item: SettingsCardItem) {
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     // 行的按压反馈：Nav/Select 用 pressClickable 一行接入（内部自建按压源）；
-    // Toggle 要与 toggleable 共享按压源，故手动配对（indication 置 null，涟漪由按压反馈取代）
+    // Toggle 要与 toggleable 共享按压源，故手动配对（indication 置 null，涟漪由按压反馈取代）。
+    // 浅色模式下白底行加色白提亮无感（白色无法更亮），改用微微压暗表达按压；深色模式仍提亮
+    val rowShade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
     val togglePress = remember { MutableInteractionSource() }
     val interactionModifier = when (item) {
-        is SettingsCardItem.Nav -> Modifier.pressClickable(RectangleShape, onClick = item.onClick)
+        is SettingsCardItem.Nav -> Modifier.pressClickable(
+            RectangleShape,
+            shade = rowShade,
+            onClick = item.onClick,
+        )
         is SettingsCardItem.Toggle -> Modifier
-            // 按压反馈在点区之前：整行放大 + 提亮，行无自有 clip（溢出由卡片圆角壳兜住）
-            .pressFeedback(togglePress, RectangleShape)
+            // 按压反馈在点区之前：整行放大 + 明暗，行无自有 clip（溢出由卡片圆角壳兜住）
+            .pressFeedback(togglePress, RectangleShape, shade = rowShade)
             .toggleable(
                 value = item.checked,
                 interactionSource = togglePress,
@@ -237,7 +245,7 @@ private fun SettingsCardRow(item: SettingsCardItem) {
                 role = Role.Switch,
                 onValueChange = item.onCheckedChange,
             )
-        is SettingsCardItem.Select -> Modifier.pressClickable(RectangleShape) {
+        is SettingsCardItem.Select -> Modifier.pressClickable(RectangleShape, shade = rowShade) {
             // 打开菜单前先收起键盘与焦点：键盘若开着，菜单会被盖住、焦点还留在原输入框上
             focusManager.clearFocus()
             keyboard?.hide()
