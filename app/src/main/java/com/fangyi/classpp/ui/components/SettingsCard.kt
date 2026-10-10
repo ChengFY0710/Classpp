@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -41,8 +42,9 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /**
  * 设置卡条目：导航行（label + 蓝色箭头）、开关行（label + [ClassppSwitch]）、
- * 选择行（label + 蓝色当前值 + 上下箭头，点行弹菜单）或自定义行（尾部槽位放任意控件），
- * 前三者均可带灰色描述文字（自动换行、行卡随之长高）。
+ * 选择行（label + 蓝色当前值 + 上下箭头，点行弹菜单）、滑块行（label + 右上当前值 +
+ * 整宽 [ClassppSlider]）、滑块组（label + 多行「当前值 + 滑条」）或自定义行（尾部槽位
+ * 放任意控件），均可带灰色描述文字（自动换行、行卡随之长高）。
  */
 sealed interface SettingsCardItem {
     val label: String
@@ -88,6 +90,41 @@ sealed interface SettingsCardItem {
         val trailing: @Composable RowScope.() -> Unit,
         val footer: (@Composable () -> Unit)? = null,
     ) : SettingsCardItem
+
+    /**
+     * 滑块行：label（+ 可选描述）与右上蓝色当前值 [valueText] 同行，下方整宽 [ClassppSlider]。
+     * 无整行点击，拖动滑条即改值；[defaultValue] 为吸附默认值（灰色标记球位置），
+     * [valueText] 由调用方格式化（同 Nav/Select 的 value 惯例）。
+     */
+    data class Slider(
+        override val label: String,
+        override val description: String? = null,
+        val value: Float,
+        val onValueChange: (Float) -> Unit,
+        val valueText: String,
+        val defaultValue: Float,
+        val valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
+        val snapThreshold: Dp = 10.dp,
+    ) : SettingsCardItem
+
+    /**
+     * 滑块组：label（+ 可选描述）下挂多行「左当前值 + 右滑条」，[lines] 逐行渲染；
+     * 值文字槽与滑条按 1:3 分宽，多行滑条左缘对齐。参数语义同 [Slider]。
+     */
+    data class SliderGroup(
+        override val label: String,
+        override val description: String? = null,
+        val lines: List<Line>,
+    ) : SettingsCardItem {
+        data class Line(
+            val value: Float,
+            val onValueChange: (Float) -> Unit,
+            val valueText: String,
+            val defaultValue: Float,
+            val valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
+            val snapThreshold: Dp = 10.dp,
+        )
+    }
 }
 
 /**
@@ -125,10 +162,11 @@ fun SettingsCard(
     Layout(
         content = {
             items.forEach { item ->
-                if (item is SettingsCardItem.Custom) {
-                    CustomRow(item, rowMinHeight)
-                } else {
-                    SettingsCardRow(item)
+                when (item) {
+                    is SettingsCardItem.Custom -> CustomRow(item, rowMinHeight)
+                    is SettingsCardItem.Slider -> SliderRow(item)
+                    is SettingsCardItem.SliderGroup -> SliderGroupRow(item)
+                    else -> SettingsCardRow(item)
                 }
             }
         },
@@ -196,11 +234,17 @@ private fun SettingsCardRow(item: SettingsCardItem) {
         }
         // 自定义行无整行点击（尾部控件自理）
         is SettingsCardItem.Custom -> Modifier
+        // 滑块行/滑块组由各自渲染器渲染，走不到这里
+        is SettingsCardItem.Slider, is SettingsCardItem.SliderGroup -> Modifier
     }
     val rowValue = when (item) {
         is SettingsCardItem.Nav -> item.value
         is SettingsCardItem.Select -> item.value
-        is SettingsCardItem.Toggle, is SettingsCardItem.Custom -> null
+        is SettingsCardItem.Toggle,
+        is SettingsCardItem.Custom,
+        is SettingsCardItem.Slider,
+        is SettingsCardItem.SliderGroup,
+        -> null
     }
     Row(
         modifier = Modifier
@@ -227,6 +271,8 @@ private fun SettingsCardRow(item: SettingsCardItem) {
             )
             // 自定义行由 CustomRow 渲染，走不到这里
             is SettingsCardItem.Custom -> Unit
+            // 滑块行/滑块组由各自渲染器渲染，走不到这里
+            is SettingsCardItem.Slider, is SettingsCardItem.SliderGroup -> Unit
         }
     }
 }
@@ -246,6 +292,69 @@ private fun CustomRow(item: SettingsCardItem.Custom, minHeight: Dp) {
             item.trailing(this)
         }
         item.footer?.invoke()
+    }
+}
+
+/** 滑块行渲染：label + 右上当前值同行，下方整宽滑条；内距同普通行（16/14），label↔滑条 14 复用行纵向内距节奏 */
+@Composable
+private fun SliderRow(item: SettingsCardItem.Slider) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SettingsRowText(label = item.label, description = item.description, modifier = Modifier.weight(1f))
+            Text(
+                text = item.valueText,
+                style = MaterialTheme.classppTextStyles.fieldValue,
+            )
+        }
+        Spacer(modifier = Modifier.height(14.dp))
+        ClassppSlider(
+            value = item.value,
+            onValueChange = item.onValueChange,
+            valueRange = item.valueRange,
+            defaultValue = item.defaultValue,
+            snapThreshold = item.snapThreshold,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/**
+ * 滑块组渲染：label（+ 描述）在上，下方逐行「左当前值 + 右滑条」；
+ * 值槽 weight(1f) / 滑条 weight(3f) 使多行滑条左缘对齐，值↔滑条 6 复用 value→尾部间距，
+ * 行距 14 复用行纵向内距节奏。
+ */
+@Composable
+private fun SliderGroupRow(item: SettingsCardItem.SliderGroup) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        SettingsRowText(label = item.label, description = item.description)
+        Spacer(modifier = Modifier.height(14.dp))
+        item.lines.forEachIndexed { index, line ->
+            if (index > 0) Spacer(modifier = Modifier.height(14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = line.valueText,
+                    style = MaterialTheme.classppTextStyles.fieldValue,
+                    modifier = Modifier.width(36.dp),
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                ClassppSlider(
+                    value = line.value,
+                    onValueChange = line.onValueChange,
+                    valueRange = line.valueRange,
+                    defaultValue = line.defaultValue,
+                    snapThreshold = line.snapThreshold,
+                    modifier = Modifier.weight(3f),
+                )
+            }
+        }
     }
 }
 

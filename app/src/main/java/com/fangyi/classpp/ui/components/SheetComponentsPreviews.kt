@@ -21,6 +21,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import kotlin.math.roundToInt
 
 /** 设计稿四态与各卡片的快速预览（Android Studio 中直接查看）。 */
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
@@ -255,6 +256,55 @@ private fun ClassppSliderPreview() = ClassppTheme {
             onValueChange = { quarterDefault = it },
             defaultValue = 0.25f,
             modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
+private fun SettingsCardSliderPreview() = ClassppTheme {
+    // 复刻设计图：卡一单滑块行（label + 右上当前值），卡二滑块组（label + 两行「值 + 滑条」）
+    var single by remember { mutableStateOf(0.35f) }
+    var volume by remember { mutableStateOf(0.6f) }
+    var brightness by remember { mutableStateOf(0.4f) }
+    fun percent(v: Float) = "${(v * 100).roundToInt()}%"
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Slider(
+                    label = "设置项label",
+                    value = single,
+                    onValueChange = { single = it },
+                    valueText = percent(single),
+                    defaultValue = 0.5f,
+                ),
+            ),
+        )
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.SliderGroup(
+                    label = "设置项label",
+                    lines = listOf(
+                        SettingsCardItem.SliderGroup.Line(
+                            value = volume,
+                            onValueChange = { volume = it },
+                            valueText = percent(volume),
+                            defaultValue = 0.5f,
+                        ),
+                        SettingsCardItem.SliderGroup.Line(
+                            value = brightness,
+                            onValueChange = { brightness = it },
+                            valueText = percent(brightness),
+                            defaultValue = 0.75f,
+                        ),
+                    ),
+                ),
+            ),
         )
     }
 }
