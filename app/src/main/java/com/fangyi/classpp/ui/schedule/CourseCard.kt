@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -25,12 +26,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
@@ -54,11 +57,38 @@ internal val CourseColor.barColor: Color
         CourseColor.Pink -> Color(0xFFEDB5C9)
     }
 
+/** 卡内文本行数分配结果：[name] 课程名、[location] 地点（教师恒 1 行，不参与分配） */
+internal data class CardLines(val name: Int, val location: Int)
+
+/**
+ * 行数分配：给定 [budgetPx]（卡高扣掉起止时间行、教师行、内边距与安全余量后的剩余预算），
+ * 按**课程名先降**的档位顺序取第一个放得下的：(3,3) → (2,3) → (1,3) → (1,2) → 保底 (1,1)。
+ * 行成本 = 各自 Text 的 lineHeight px（[nameLinePx] 16sp、[locationLinePx] 14sp，
+ * 调用处已乘 fontScale）；连保底档都装不下也返回 (1,1)，溢出交给 maxLines + 省略号。
+ */
+internal fun allocateCardLines(
+    budgetPx: Float,
+    nameLinePx: Float,
+    locationLinePx: Float,
+): CardLines {
+    val tiers = listOf(
+        CardLines(3, 3),
+        CardLines(2, 3),
+        CardLines(1, 3),
+        CardLines(1, 2),
+        CardLines(1, 1),
+    )
+    return tiers.firstOrNull { it.name * nameLinePx + it.location * locationLinePx <= budgetPx }
+        ?: CardLines(1, 1)
+}
+
 /**
  * 课程卡片：白底圆角卡 + 左侧彩色竖条。
  *
- * 自上而下：开始时间（竖条同色）→ 课程名（两行截断）→ 教师 → @楼名 房间，
- * 底部对齐结束时间。
+ * 自上而下：开始时间（竖条同色）→ 课程名 → 教师 → @楼名 房间，底部对齐结束时间。
+ * 课程名/地点默认各 3 行、教师 1 行；卡高不足（行高预算装不下）时按**课程名先降**的
+ * 档位动态收缩（[allocateCardLines]），超行省略号截断——设置页把行高调小后文本随之变密，
+ * 调大（含跨节卡）则回到满档。
  *
  * 竖条分两段表示交替课程：本周上的那门占上 3/4，非本周的交替课占下 1/4
  * （见 [Course.alternateBar]）；组内非本周的课再多也只占这 1/4、只用一个颜色。
@@ -123,16 +153,88 @@ fun CourseCard(
                 )
             }
         }
-        Column(
+        // 内容区包一层 BoxWithConstraints：卡高约束首帧组合期即可用（无先溢出后修正的闪跳），
+        // 行预算按起止时间行(12sp) + 教师行(12sp，留空则不扣) + 内边距(6dp) + 1dp 安全余量扣除，
+        // 行成本取各 Text 的 lineHeight（16sp/14sp）× fontScale × density
+        BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxHeight()
-                .padding(start = 4.dp, end = 2.dp, top = 3.dp, bottom = 3.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
+                .fillMaxHeight(),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            val hasTeacher = course.teacher.isNotBlank()
+            val lines = if (constraints.maxHeight == Constraints.Infinity) {
+                CardLines(3, 3)
+            } else {
+                val localDensity = LocalDensity.current
+                val spPx = { sp: Float -> sp * localDensity.fontScale * localDensity.density }
+                val fixedPx = with(localDensity) { 6.dp.toPx() + 1.dp.toPx() } +
+                    spPx(12f) * (if (hasTeacher) 3f else 2f)
+                allocateCardLines(
+                    budgetPx = constraints.maxHeight - fixedPx,
+                    nameLinePx = spPx(16f),
+                    locationLinePx = spPx(14f),
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = 4.dp, end = 2.dp, top = 3.dp, bottom = 3.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                    Text(
+                        text = slot.startTime,
+                        color = barColor,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        textAlign = TextAlign.Start,
+                        lineHeight = 12.sp,
+                    )
+                    Column() {
+                        Text(
+                            text = course.name,
+                            color = if (course.active) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                inactiveColor
+                            },
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 16.sp,
+                            maxLines = lines.name,
+                            overflow = TextOverflow.Ellipsis,
+                            letterSpacing = (-0.1).sp,
+                        )
+                        Spacer(modifier = Modifier.size(1.dp))
+                        // 教师留空时不占位，地点直接上移
+                        if (hasTeacher) {
+                            Text(
+                                text = course.teacher,
+                                color = secondaryColor,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Start,
+                                lineHeight = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
+                        // 上课地点：默认三行，课程名降到底（1 行）后才轮到它降（见 allocateCardLines）
+                        Text(
+                            text = course.location,
+                            color = secondaryColor,
+                            fontSize = 11.sp,
+                            textAlign = TextAlign.Start,
+                            lineHeight = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = lines.location,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
                 Text(
-                    text = slot.startTime,
+                    text = endTime,
                     color = barColor,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
@@ -140,55 +242,7 @@ fun CourseCard(
                     textAlign = TextAlign.Start,
                     lineHeight = 12.sp,
                 )
-                Column() {
-                    Text(
-                        text = course.name,
-                        color = if (course.active) {
-                            MaterialTheme.colorScheme.onSurface
-                        } else {
-                            inactiveColor
-                        },
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        lineHeight = 16.sp,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        letterSpacing = (-0.1).sp,
-                    )
-                    Spacer(modifier = Modifier.size(1.dp))
-                    // 教师留空时不占位，地点直接上移
-                    if (course.teacher.isNotBlank()) {
-                        Text(
-                            text = course.teacher,
-                            color = secondaryColor,
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Start,
-                            lineHeight = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
-                    // 上课地点，统一一行
-                    Text(
-                        text = course.location,
-                        color = secondaryColor,
-                        fontSize = 11.sp,
-                        textAlign = TextAlign.Start,
-                        lineHeight = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                }
             }
-            Text(
-                text = endTime,
-                color = barColor,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                textAlign = TextAlign.Start,
-                lineHeight = 12.sp,
-            )
         }
     }
 }
