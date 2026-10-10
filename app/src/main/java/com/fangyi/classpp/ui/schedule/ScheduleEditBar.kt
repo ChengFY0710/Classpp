@@ -199,8 +199,9 @@ private fun EditAction(
     Column(
         modifier = modifier
             // 按压反馈（自带按压源 + 点击，涟漪由其取代）放在 clip 之前：
-            // 缩放/提亮作用于整块动作区，EditActionShape 圆角裁剪在其内侧
-            .pressClickable(EditActionShape, onClick = onClick)
+            // 缩放/提亮作用于整块动作区，EditActionShape 圆角裁剪在其内侧；
+            // 放大倍率与课表顶栏图标钮同规格单独调大到 1.10（不随全局默认）
+            .pressClickable(EditActionShape, scale = 1.10f, onClick = onClick)
             .clip(EditActionShape)
             .padding(horizontal = EditActionInnerPadding, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

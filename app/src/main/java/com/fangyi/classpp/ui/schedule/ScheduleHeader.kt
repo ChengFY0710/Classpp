@@ -289,7 +289,8 @@ fun ScheduleHeader(
                         .padding(top = 8.dp, bottom = 8.dp)
                         .width(TopBarIconTouchWidth)
                         .graphicsLayer { alpha = iconAlpha }
-                        .pressFeedback(editPress, CircleShape),
+                        // 顶栏图标钮视觉尺寸小，按压放大单独调大到 1.10（不随全局默认）
+                        .pressFeedback(editPress, CircleShape, scale = 1.10f),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_calendar_edit),
@@ -310,7 +311,8 @@ fun ScheduleHeader(
                         .padding(top = 8.dp, bottom = 8.dp)
                         .width(TopBarIconTouchWidth)
                         .graphicsLayer { alpha = iconAlpha }
-                        .pressFeedback(settingsPress, CircleShape),
+                        // 与编辑钮同规格：小按钮按压放大单独调大到 1.10（不随全局默认）
+                        .pressFeedback(settingsPress, CircleShape, scale = 1.10f),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_settings),
@@ -617,10 +619,12 @@ private fun WeekPill(
             modifier = Modifier
                 .height(WeekPillHeight)
                 // 按压反馈：整体放大 + 主体提亮；形状与本胶囊的 clip 一致，
-                // 接在带 clip 的图层之前，投影照常生长
+                // 接在带 clip 的图层之前，投影照常生长。
+                // 顶栏周数胶囊按压放大单独调大到 1.10（与顶栏图标钮同规格，不随全局默认）
                 .pressFeedback(
                     interactionSource = pressInteraction,
                     shape = PillShape,
+                    scale = 1.10f,
                 )
                 // 投影随模糊进度长出；graphicsLayer 在 draw 阶段读值，不引发重组
                 .graphicsLayer {

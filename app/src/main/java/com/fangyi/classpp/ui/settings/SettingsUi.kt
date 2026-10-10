@@ -126,8 +126,9 @@ internal fun SettingsTopBar(
                 .windowInsetsPadding(TopAppBarDefaults.windowInsets)
                 .padding(start = 24.dp, top = 8.dp)  // 返回按钮位置
                 .size(47.dp)
-                // 按压反馈接在柔影图层之前：缩放连投影一起放大，提亮对齐 CircleShape
-                .pressFeedback(press, CircleShape)
+                // 按压反馈接在柔影图层之前：缩放连投影一起放大，提亮对齐 CircleShape；
+                // 顶栏返回钮按压放大单独调大到 1.10（与课表/待办顶栏同规格，不随全局默认）
+                .pressFeedback(press, CircleShape, scale = 1.10f)
                 .graphicsLayer {    // 返回按钮投影
                     shape = CircleShape
                     clip = true

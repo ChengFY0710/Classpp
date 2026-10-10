@@ -96,7 +96,7 @@ fun Modifier.pressFeedback(
 }
 
 /** 默认按压放大倍率：中小控件够用；大卡片可传更小值、小图标钮可传更大值。 */
-private const val DefaultPressScale = 1.10f
+private const val DefaultPressScale = 1.04f
 
 /** 提亮幅度（加色白的峰值透明度）。白底组件物理上无法更亮，反馈由缩放承担。 */
 private const val BrightnessLift = 0.15f

@@ -593,7 +593,8 @@ private fun OverlaySheetTopBar(
 /** 顶栏胶囊按钮。图标为「实心圆+镂空图形」，整体 tint 后即得设计稿效果（确认图标在前，
  *  取消/删除文字在前——见 [iconAtEnd]）；投影同设置页返回按钮的大柔影做法（形状为胶囊）；
  *  [iconSize] 独立控制图标大小（顶栏钮与底部常驻钮可各配各的）。
- *  按压反馈：整体放大 + 主体提亮（ui.motion 的 pressFeedback）。 */
+ *  按压反馈：整体放大 + 主体提亮（ui.motion 的 pressFeedback），按压放大固定 1.10f
+ *  （本组件统一值，顶栏与底部常驻钮一视同仁，不随全局默认）。 */
 @Composable
 fun SheetPillButton(
     label: String,
@@ -616,6 +617,8 @@ fun SheetPillButton(
             .pressFeedback(
                 interactionSource = pressInteraction,
                 shape = PillShape,
+                // 胶囊按钮统一 1.10（见 KDoc）：不随全局默认，调这里一处生效
+                scale = 1.10f,
             )
             // 大柔影：高 shadowElevation 撑开模糊半径，低透明度阴影色压住存在感
             //（同设置页返回按钮的投影做法）

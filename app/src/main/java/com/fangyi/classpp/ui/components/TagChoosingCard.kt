@@ -358,8 +358,9 @@ private fun TagCapsule(
     Box {
         Row(
             modifier = Modifier
-                // 按压反馈在 clip 之前：缩放作用于整枚胶囊，提亮范围与 PillShape 对齐
-                .pressFeedback(press, PillShape)
+                // 按压反馈在 clip 之前：缩放作用于整枚胶囊，提亮范围与 PillShape 对齐；
+                // 标签胶囊按压放大单独调大到 1.10（与顶栏按钮同规格，不随全局默认）
+                .pressFeedback(press, PillShape, scale = 1.10f)
                 .clip(PillShape)
                 .background(if (selected) item.color else item.color.copy(alpha = 0.3f))
                 .combinedClickable(

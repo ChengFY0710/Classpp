@@ -361,10 +361,12 @@ private fun GroupPill(
     Box(
         modifier = modifier
             .height(TopBarPillHeight)
-            // 按压反馈：整体放大 + 主体提亮；接在柔影图层之前，投影随组件一起放大
+            // 按压反馈：整体放大 + 主体提亮；接在柔影图层之前，投影随组件一起放大。
+            // 顶栏胶囊按压放大单独调大到 1.10（与课表顶栏同规格，不随全局默认）
             .pressFeedback(
                 interactionSource = pressInteraction,
                 shape = PillShape,
+                scale = 1.10f,
             )
             .topBarPillShadow()
             .background(background, PillShape)
@@ -400,10 +402,12 @@ private fun IconPill(
     Box(
         modifier = modifier
             .size(width = IconPillWidth, height = TopBarPillHeight)
-            // 按压反馈：整体放大 + 主体提亮；接在柔影图层之前，投影随组件一起放大
+            // 按压反馈：整体放大 + 主体提亮；接在柔影图层之前，投影随组件一起放大。
+            // 顶栏胶囊按压放大单独调大到 1.10（与分组胶囊同规格，不随全局默认）
             .pressFeedback(
                 interactionSource = pressInteraction,
                 shape = PillShape,
+                scale = 1.10f,
             )
             .topBarPillShadow()
             .background(MaterialTheme.colorScheme.surface, PillShape)
