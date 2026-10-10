@@ -59,6 +59,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
@@ -591,7 +592,8 @@ private fun OverlaySheetTopBar(
 
 /** 顶栏胶囊按钮。图标为「实心圆+镂空图形」，整体 tint 后即得设计稿效果（确认图标在前，
  *  取消/删除文字在前——见 [iconAtEnd]）；投影同设置页返回按钮的大柔影做法（形状为胶囊）；
- *  [iconSize] 独立控制图标大小（顶栏钮与底部常驻钮可各配各的）。 */
+ *  [iconSize] 独立控制图标大小（顶栏钮与底部常驻钮可各配各的）。
+ *  按压反馈：整体放大 + 主体提亮（ui.motion 的 pressFeedback）。 */
 @Composable
 fun SheetPillButton(
     label: String,
@@ -607,8 +609,14 @@ fun SheetPillButton(
     startPadding: Dp = 13.dp,  // 文字加宽宽度改这里，文字所在那侧的外边距比图标侧多 5dp（8+5）：图标在左(确认)加宽右侧，图标在右(删除/取消)加宽左侧
     endPadding: Dp = 8.dp,
 ) {
+    // 按压态的唯一来源：pressFeedback 与 clickable 共用（涟漪由按压反馈取代，故 clickable 不再要 Indication）
+    val pressInteraction = remember { MutableInteractionSource() }
     Row(
         modifier = modifier
+            .pressFeedback(
+                interactionSource = pressInteraction,
+                shape = PillShape,
+            )
             // 大柔影：高 shadowElevation 撑开模糊半径，低透明度阴影色压住存在感
             //（同设置页返回按钮的投影做法）
             .graphicsLayer {
@@ -618,7 +626,11 @@ fun SheetPillButton(
                 spotShadowColor = Color.Black.copy(alpha = 0.3f)
             }
             .background(containerColor, PillShape)
-            .clickable(onClick = onClick)
+            .clickable(
+                interactionSource = pressInteraction,
+                indication = null,
+                onClick = onClick,
+            )
             .padding(
                 start = if (iconAtEnd) startPadding else endPadding,
                 end = if (iconAtEnd) endPadding else startPadding,
