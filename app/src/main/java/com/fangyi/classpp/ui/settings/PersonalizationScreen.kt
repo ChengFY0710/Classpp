@@ -25,6 +25,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,22 +37,31 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.ScheduleRepository
+import com.fangyi.classpp.data.model.Schedule
+import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
+import com.fangyi.classpp.ui.schedule.CardHeightPreferences
+import com.fangyi.classpp.ui.schedule.CardHeights
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlin.math.roundToInt
 
 /**
  * 个性化子页（设置 → 个性化）：由 [SettingsScreen] 以整页覆盖转场组合在根页之上
  * （与设置页覆盖层同源，见 ui.motion 的 PageOverlayTransition），返回按钮/返回键经 [onBack] 回到设置根页。
  *
- * 骨架与设置根页同构（Scaffold + 滚动内容列 + 顶栏叠加），正文承载 app 级外观设置：
+ * 骨架与设置根页同构（Scaffold + 滚动内容列 + 顶栏叠加），正文承载 app 级外观与个性化设置：
  * 「颜色模式」三选一（跟随系统/浅色/深色，[themeMode] / [onThemeModeChange]），
  * 行尾显示当前模式，点行弹选择对话框，点选项即时生效并关闭——对话框下方的页面同步变色，
- * 反馈直观，无需「确定」一步。后续外观类设置项（字号、图标风格等）继续加入本页。
+ * 反馈直观，无需「确定」一步；「课表」分组为课程卡片高度滑条（[cardHeights] /
+ * [onCardHeightsChange]，范围与默认值随 [repository] 激活课表的 5/7 天模式切换）。
+ * 后续外观类设置项（字号、图标风格等）继续加入本页。
  */
 @Composable
 fun PersonalizationScreen(
@@ -59,7 +69,15 @@ fun PersonalizationScreen(
     modifier: Modifier = Modifier,
     themeMode: ThemeMode = ThemeMode.System,
     onThemeModeChange: (ThemeMode) -> Unit = {},
+    repository: ScheduleRepository? = null,
+    cardHeights: CardHeights = CardHeights(),
+    onCardHeightsChange: (CardHeights) -> Unit = {},
 ) {
+    // 当前激活课表决定滑条走 5 天还是 7 天的范围/默认值；无课表（加载中/空）回退 5 天
+    val schedule by remember(repository) {
+        repository?.activeSchedule ?: MutableStateFlow<Schedule?>(null)
+    }.collectAsState()
+    val daysPerWeek = schedule?.daysPerWeek ?: 5
     Scaffold(
         modifier = modifier,
         // 沉浸式：只吃左右 inset，状态栏/手势条区域交给内容与顶栏自己铺满（同设置根页）
@@ -101,6 +119,11 @@ fun PersonalizationScreen(
                     mode = themeMode,
                     onSelect = onThemeModeChange,
                 )
+                ScheduleSection(
+                    daysPerWeek = daysPerWeek,
+                    cardHeights = cardHeights,
+                    onCardHeightsChange = onCardHeightsChange,
+                )
             }
 
             SettingsTopBar(
@@ -115,6 +138,50 @@ fun PersonalizationScreen(
                     },
             )
         }
+    }
+}
+
+/**
+ * 「课表」分组：课程卡片高度滑条。范围与默认值随 [daysPerWeek] 切换——5 天 100–200
+ * 默认 150、7 天 160–300 默认 160（[CardHeightPreferences]，默认值即现行行高），
+ * 滑至默认值附近自动吸附并震动；值等于默认时右上显示「默认」，否则显示具体 dp 值。
+ */
+@Composable
+private fun ScheduleSection(
+    daysPerWeek: Int,
+    cardHeights: CardHeights,
+    onCardHeightsChange: (CardHeights) -> Unit,
+) {
+    val sevenDay = daysPerWeek > 5
+    val default = if (sevenDay) CardHeightPreferences.Default7 else CardHeightPreferences.Default5
+    val height = if (sevenDay) cardHeights.seven else cardHeights.five
+    CardSection(title = stringResource(R.string.section_schedule)) {
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Slider(
+                    label = stringResource(R.string.card_height_label),
+                    value = height.toFloat(),
+                    onValueChange = { value ->
+                        val newHeight = value.roundToInt()
+                        onCardHeightsChange(
+                            if (sevenDay) cardHeights.copy(seven = newHeight)
+                            else cardHeights.copy(five = newHeight),
+                        )
+                    },
+                    valueText = if (height == default) {
+                        stringResource(R.string.card_height_default)
+                    } else {
+                        stringResource(R.string.card_height_value, height)
+                    },
+                    defaultValue = default.toFloat(),
+                    valueRange = if (sevenDay) {
+                        CardHeightPreferences.Range7
+                    } else {
+                        CardHeightPreferences.Range5
+                    },
+                ),
+            ),
+        )
     }
 }
 

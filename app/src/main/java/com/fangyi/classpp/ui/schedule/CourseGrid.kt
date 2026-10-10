@@ -113,6 +113,9 @@ fun CourseGrid(
     editMode: Boolean = false,
     showDates: Boolean = true,
     daysPerWeek: Int = 5,
+    // 用户自定义行高（个性化页「课程卡片高度」，已按模式钳在范围内）；null = 默认 gridRowHeight。
+    // 只换行高本体：单元格内边距、网格线、日期带等间距常量一律不动
+    customRowHeight: Dp? = null,
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)? = null,
     onEditClick: ((courseId: String) -> Unit)? = null,
     onCourseLongClick: ((courseId: String, anchor: Rect) -> Unit)? = null,
@@ -120,8 +123,9 @@ fun CourseGrid(
 ) {
     // 列数至少 1（0/负值理论上被校验挡住，这里兜一下避免算出空页宽或除零）
     val days = daysPerWeek.coerceAtLeast(1)
-    // 行高随列数变（7 天视图更高）：页高、每行、跨节卡三处都取自同一个值，否则卡片会溢出格子
-    val rowHeight = gridRowHeight(days)
+    // 行高随列数变（7 天视图更高）：页高、每行、跨节卡三处都取自同一个值，否则卡片会溢出格子；
+    // 自定义行高（设置页滑条）优先，null 回落默认派生值
+    val rowHeight = customRowHeight ?: gridRowHeight(days)
     val pageHeight = (if (showDates) DateBandHeight else 0.dp) +
         rowHeight * timeSlots.size + TrailingScrollSpace
     // 接缝竖线是否要画：派生成布尔 state —— 拖动中恒为真，只在起手/落位翻转一次。

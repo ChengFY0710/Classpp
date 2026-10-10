@@ -55,6 +55,7 @@ import com.fangyi.classpp.ui.navigation.AppTab
 import com.fangyi.classpp.ui.navigation.BottomNavBar
 import com.fangyi.classpp.ui.note.TodoScreen
 import com.fangyi.classpp.ui.placeholder.AgendaScreen
+import com.fangyi.classpp.ui.schedule.CardHeightPreferences
 import com.fangyi.classpp.ui.schedule.ScheduleScreen
 import com.fangyi.classpp.ui.settings.SettingsScreen
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -75,6 +76,8 @@ class MainActivity : ComponentActivity() {
             ThemeMode.Light -> setTheme(R.style.Theme_Classpp_Light)
             ThemeMode.Dark -> setTheme(R.style.Theme_Classpp_Dark)
         }
+        // 课程卡片高度：与主题同为 SharedPreferences 真源，冷启动读一次（load 内按范围钳制）
+        val savedCardHeights = CardHeightPreferences.load(this)
         super.onCreate(savedInstanceState)
         // 系统栏外观随主题：状态栏/导航栏全透明、前景图标深浅按模式切换。
         // 必须显式 light 而非 auto：auto 会把 isNavigationBarContrastEnforced 置为 true，
@@ -94,6 +97,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             // 外观模式状态：prefs 是真源，旋转/系统深色切换等重建时 onCreate 重读，无需 saveable
             var themeMode by remember { mutableStateOf(savedThemeMode) }
+            // 课程卡片高度状态：同 themeMode，prefs 真源、重建时重读
+            var cardHeights by remember { mutableStateOf(savedCardHeights) }
             val darkTheme = when (themeMode) {
                 ThemeMode.System -> isSystemInDarkTheme()
                 ThemeMode.Light -> false
@@ -316,6 +321,7 @@ class MainActivity : ComponentActivity() {
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                             onOpenSettings = onOpenSettings,
                                             tabTransition = pageStates.getValue(AppTab.Timetable).transition,
+                                            cardHeights = cardHeights,
                                         )
                                         AppTab.Todo -> TodoScreen(
                                             modifier = pageModifier,
@@ -374,6 +380,11 @@ class MainActivity : ComponentActivity() {
                         onThemeModeChange = { mode ->
                             themeMode = mode
                             ThemePreferences.save(this@MainActivity, mode)
+                        },
+                        cardHeights = cardHeights,
+                        onCardHeightsChange = { heights ->
+                            cardHeights = heights
+                            CardHeightPreferences.save(this@MainActivity, heights)
                         },
                         modifier = Modifier.fillMaxSize(),
                     )

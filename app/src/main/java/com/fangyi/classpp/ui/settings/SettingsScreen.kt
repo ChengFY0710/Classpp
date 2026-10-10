@@ -37,6 +37,7 @@ import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
+import com.fangyi.classpp.ui.schedule.CardHeights
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
 import dev.chrisbanes.haze.hazeSource
@@ -69,6 +70,8 @@ fun SettingsScreen(
     repository: ScheduleRepository? = null,
     themeMode: ThemeMode = ThemeMode.System,
     onThemeModeChange: (ThemeMode) -> Unit = {},
+    cardHeights: CardHeights = CardHeights(),
+    onCardHeightsChange: (CardHeights) -> Unit = {},
 ) {
     var showPersonalization by rememberSaveable { mutableStateOf(false) }
     // 覆盖层内容常驻组合（ui.motion 的 PageOverlayTransition）：隐藏态下页面只是停在
@@ -106,6 +109,9 @@ fun SettingsScreen(
                     onBack = { showPersonalization = false },
                     themeMode = themeMode,
                     onThemeModeChange = onThemeModeChange,
+                    repository = repository,
+                    cardHeights = cardHeights,
+                    onCardHeightsChange = onCardHeightsChange,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
