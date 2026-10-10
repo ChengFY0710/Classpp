@@ -3,6 +3,7 @@ package com.fangyi.classpp.ui.schedule
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -22,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,6 +39,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
 
@@ -126,21 +129,34 @@ fun CourseCard(
         inactiveColor
     }
     val secondaryColor = if (course.active) MaterialTheme.classppColors.secondaryText else inactiveColor
-    // 长按与点击同源：都在 clip 之内（圆角外的点击/涟漪被裁掉）
+    // 长按与点击同源：都在 clip 之内（圆角外的点击被裁掉），按压反馈与它们共用按压源
+    val pressInteraction = remember { MutableInteractionSource() }
     val clickModifier = when {
         onLongClick != null -> Modifier.combinedClickable(
+            interactionSource = pressInteraction,
+            indication = null,
             onClick = onClick ?: {},
             onLongClick = onLongClick,
         )
-        onClick != null -> Modifier.clickable(onClick = onClick)
+        onClick != null -> Modifier.clickable(
+            interactionSource = pressInteraction,
+            indication = null,
+            onClick = onClick,
+        )
         else -> Modifier
+    }
+    // 按压反馈只在真的可点时接，且接在 clip 之前：缩放连圆角裁剪一起放大，提亮范围与 CardShape 对齐
+    val pressModifier = if (onLongClick != null || onClick != null) {
+        Modifier.pressFeedback(interactionSource = pressInteraction, shape = CardShape)
+    } else {
+        Modifier
     }
 
     Row(
         modifier = modifier
+            .then(pressModifier)
             .clip(CardShape)
             .background(MaterialTheme.colorScheme.surface)
-            // 水波纹在 clip 之内：圆角外的点击/涟漪都被裁掉
             .then(clickModifier),
     ) {
         // 左侧彩色竖条：3:1 分段对单节卡与跨节卡（requiredHeight 撑出的整卡高度）都成立
@@ -270,7 +286,7 @@ private val AddCardStartPadding = 7.dp
  * 中间是加号；无左侧色条。点整卡打开添加课程弹窗。
  *
  * [onLongClick] 仅编辑态且剪贴板有课时会传（长按出"粘贴课程"菜单，见 ScheduleScreen）；
- * 与 [CourseCard] 同源：长按与点击都在 clip 之内（圆角外的点击/涟漪被裁掉）。
+ * 与 [CourseCard] 同源：长按与点击都在 clip 之内（圆角外的点击被裁掉），按压反馈共用按压源。
  */
 @Composable
 fun AddCourseCard(
@@ -279,13 +295,29 @@ fun AddCourseCard(
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
 ) {
+    // 按压与点击同源共用按压源（涟漪由按压反馈取代）
+    val pressInteraction = remember { MutableInteractionSource() }
     val clickModifier = if (onLongClick != null) {
-        Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+        Modifier.combinedClickable(
+            interactionSource = pressInteraction,
+            indication = null,
+            onClick = onClick,
+            onLongClick = onLongClick,
+        )
     } else {
-        Modifier.clickable(onClick = onClick)
+        Modifier.clickable(
+            interactionSource = pressInteraction,
+            indication = null,
+            onClick = onClick,
+        )
     }
     Column(
         modifier = modifier
+            // 按压反馈接在 clip 之前：缩放连圆角裁剪一起放大，提亮范围与 CardShape 对齐
+            .pressFeedback(
+                interactionSource = pressInteraction,
+                shape = CardShape,
+            )
             .clip(CardShape)
             .background(MaterialTheme.colorScheme.surface)
             .then(clickModifier)

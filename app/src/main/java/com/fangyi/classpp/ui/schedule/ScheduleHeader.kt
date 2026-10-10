@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +24,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -66,12 +66,14 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.tabTransitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.Correct
 import com.fangyi.classpp.ui.theme.Error
+import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.WeekCellShape
 import dev.chrisbanes.haze.HazeProgressive
@@ -577,12 +579,20 @@ private fun WeekPill(
             }
         }
 
+        // 按压态的唯一来源：pressFeedback 与 clickable 共用（涟漪由按压反馈取代，故 clickable 不再要 Indication）
+        val pressInteraction = remember { MutableInteractionSource() }
         Row(
             modifier = Modifier
                 .height(WeekPillHeight)
+                // 按压反馈：整体放大 + 主体提亮；形状与本胶囊的 clip 一致，
+                // 接在带 clip 的图层之前，投影照常生长
+                .pressFeedback(
+                    interactionSource = pressInteraction,
+                    shape = PillShape,
+                )
                 // 投影随模糊进度长出；graphicsLayer 在 draw 阶段读值，不引发重组
                 .graphicsLayer {
-                    shape = CircleShape
+                    shape = PillShape
                     clip = true
                     shadowElevation = 45.dp.toPx() * blurProgress
                     spotShadowColor = Color.Black.copy(alpha = 0.2f)
@@ -595,10 +605,14 @@ private fun WeekPill(
                         blurProgress,
                     ),
                 )
-                .clickable {
-                    menuExpanded = true
-                    onMenuExpandedChange(true)
-                }
+                .clickable(
+                    interactionSource = pressInteraction,
+                    indication = null,
+                    onClick = {
+                        menuExpanded = true
+                        onMenuExpandedChange(true)
+                    },
+                )
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

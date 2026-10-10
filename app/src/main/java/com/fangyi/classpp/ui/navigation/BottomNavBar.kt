@@ -3,6 +3,7 @@ package com.fangyi.classpp.ui.navigation
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -38,6 +40,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.PillShape
 
@@ -137,9 +140,17 @@ private fun NavPill(
     // 选中态的胶囊内容可整体换装（待办 → 新建入口），未定义则与常态相同
     val iconRes = if (selected) tab.selectedIconRes ?: tab.iconRes else tab.iconRes
     val labelRes = if (selected) tab.selectedLabelRes ?: tab.labelRes else tab.labelRes
+    // 按压态的唯一来源：pressFeedback 与 selectable 共用（涟漪由按压反馈取代，故 selectable 不再要 Indication）
+    val pressInteraction = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
             .height(PillHeight)
+            // 按压反馈：整体放大 + 主体提亮，光晕式的柔影按原样保留（接在带 clip 的图层之前）
+            .pressFeedback(
+                interactionSource = pressInteraction,
+                shape = PillShape,
+                scale = 1.15f,
+            )
             .graphicsLayer {
                 shape = PillShape
                 clip = true
@@ -151,6 +162,8 @@ private fun NavPill(
             .background(MaterialTheme.colorScheme.surface, PillShape)
             .selectable(
                 selected = selected,
+                interactionSource = pressInteraction,
+                indication = null,
                 role = Role.Tab,
                 onClick = onClick,
             ),

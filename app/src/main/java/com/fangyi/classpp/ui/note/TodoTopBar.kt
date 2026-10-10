@@ -4,6 +4,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,6 +55,7 @@ import com.fangyi.classpp.ui.components.PopupMenuCard
 import com.fangyi.classpp.ui.components.PopupMenuPopup
 import com.fangyi.classpp.ui.components.PopupMenuSection
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollFactory
 import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
@@ -354,12 +356,25 @@ private fun GroupPill(
         if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
     val contentColor =
         if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    // 按压态的唯一来源：pressFeedback 与 selectable 共用（涟漪由按压反馈取代，故 selectable 不再要 Indication）
+    val pressInteraction = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
             .height(TopBarPillHeight)
+            // 按压反馈：整体放大 + 主体提亮；接在柔影图层之前，投影随组件一起放大
+            .pressFeedback(
+                interactionSource = pressInteraction,
+                shape = PillShape,
+            )
             .topBarPillShadow()
             .background(background, PillShape)
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .selectable(
+                selected = selected,
+                interactionSource = pressInteraction,
+                indication = null,
+                role = Role.Tab,
+                onClick = onClick,
+            )
             .padding(horizontal = PillInnerPadding),
         contentAlignment = Alignment.Center,
     ) {
@@ -380,12 +395,24 @@ private fun IconPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 按压态的唯一来源：pressFeedback 与 clickable 共用（涟漪由按压反馈取代，故 clickable 不再要 Indication）
+    val pressInteraction = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
             .size(width = IconPillWidth, height = TopBarPillHeight)
+            // 按压反馈：整体放大 + 主体提亮；接在柔影图层之前，投影随组件一起放大
+            .pressFeedback(
+                interactionSource = pressInteraction,
+                shape = PillShape,
+            )
             .topBarPillShadow()
             .background(MaterialTheme.colorScheme.surface, PillShape)
-            .clickable(onClick = onClick, role = Role.Button)
+            .clickable(
+                interactionSource = pressInteraction,
+                indication = null,
+                role = Role.Button,
+                onClick = onClick,
+            )
             .padding(horizontal = PillInnerPadding),
         contentAlignment = Alignment.Center,
     ) {
