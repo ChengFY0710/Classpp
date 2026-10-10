@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
@@ -62,7 +63,11 @@ internal data class CardLines(val name: Int, val location: Int)
 
 /**
  * 行数分配：给定 [budgetPx]（卡高扣掉起止时间行、教师行、内边距与安全余量后的剩余预算），
- * 按**课程名先降**的档位顺序取第一个放得下的：(3,3) → (2,3) → (1,3) → (1,2) → 保底 (1,1)。
+ * 在偏好序（好→差）里取第一个放得下的档位：
+ * - [allowGrowth] 为 true（卡高超过该模式默认行高，调用处判定）：先走**地点先涨**的增长段
+ *   (6,6) → (5,6) → (4,6) → (3,6) → (3,5) → (3,4)，封顶 6/6；
+ * - 其下为默认段 (3,3)，再往下是**课程名先降**的降级段 (2,3) → (1,3) → (1,2) → 保底 (1,1)。
+ *
  * 行成本 = 各自 Text 的 lineHeight px（[nameLinePx] 16sp、[locationLinePx] 14sp，
  * 调用处已乘 fontScale）；连保底档都装不下也返回 (1,1)，溢出交给 maxLines + 省略号。
  */
@@ -70,14 +75,24 @@ internal fun allocateCardLines(
     budgetPx: Float,
     nameLinePx: Float,
     locationLinePx: Float,
+    allowGrowth: Boolean,
 ): CardLines {
-    val tiers = listOf(
+    val growth = listOf(
+        CardLines(6, 6),
+        CardLines(5, 6),
+        CardLines(4, 6),
+        CardLines(3, 6),
+        CardLines(3, 5),
+        CardLines(3, 4),
+    )
+    val base = listOf(
         CardLines(3, 3),
         CardLines(2, 3),
         CardLines(1, 3),
         CardLines(1, 2),
         CardLines(1, 1),
     )
+    val tiers = if (allowGrowth) growth + base else base
     return tiers.firstOrNull { it.name * nameLinePx + it.location * locationLinePx <= budgetPx }
         ?: CardLines(1, 1)
 }
@@ -86,9 +101,10 @@ internal fun allocateCardLines(
  * 课程卡片：白底圆角卡 + 左侧彩色竖条。
  *
  * 自上而下：开始时间（竖条同色）→ 课程名 → 教师 → @楼名 房间，底部对齐结束时间。
- * 课程名/地点默认各 3 行、教师 1 行；卡高不足（行高预算装不下）时按**课程名先降**的
- * 档位动态收缩（[allocateCardLines]），超行省略号截断——设置页把行高调小后文本随之变密，
- * 调大（含跨节卡）则回到满档。
+ * 课程名/地点默认各 3 行、教师 1 行；行数随卡高双向伸缩（[allocateCardLines]）：
+ * 卡高不足时按**课程名先降**收缩，卡高超过该模式默认行高（[defaultCardHeight]，由
+ * CourseGrid 传 gridRowHeight − 单元格内边距）时按**地点先涨**增长、封顶 6/6——
+ * 设置页调小行高文本变密、调大变疏，多节卡因远高于默认天然启用增长。
  *
  * 竖条分两段表示交替课程：本周上的那门占上 3/4，非本周的交替课占下 1/4
  * （见 [Course.alternateBar]）；组内非本周的课再多也只占这 1/4、只用一个颜色。
@@ -106,6 +122,9 @@ fun CourseCard(
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     endTime: String = slot.endTime,
+    // 该模式的默认单卡高（默认行高 − 单元格内边距）：实测卡高超过它才允许行数增长，
+    // 默认行高下恒为 3/3；预览不传时按 5 天默认（145dp）
+    defaultCardHeight: Dp = GridRowHeight - CellPaddingTop - CellPadding,
 ) {
     val inactiveColor = MaterialTheme.classppColors.negative
     val barColor = if (course.active) {
@@ -169,10 +188,14 @@ fun CourseCard(
                 val spPx = { sp: Float -> sp * localDensity.fontScale * localDensity.density }
                 val fixedPx = with(localDensity) { 6.dp.toPx() + 1.dp.toPx() } +
                     spPx(12f) * (if (hasTeacher) 3f else 2f)
+                // 增长开关：严格高于该模式默认单卡高才涨（恰好等于默认 → 恒 3/3）
+                val allowGrowth = constraints.maxHeight >
+                    with(localDensity) { defaultCardHeight.toPx() }
                 allocateCardLines(
                     budgetPx = constraints.maxHeight - fixedPx,
                     nameLinePx = spPx(16f),
                     locationLinePx = spPx(14f),
+                    allowGrowth = allowGrowth,
                 )
             }
             Column(

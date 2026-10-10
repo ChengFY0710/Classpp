@@ -302,6 +302,9 @@ private fun WeekPage(
                                     course = course,
                                     slot = slot,
                                     endTime = timeSlots[lastIdx].endTime,
+                                    // 行数增长门槛按模式默认行高（非自定义值）：跨节卡远高于它，天然启用增长
+                                    defaultCardHeight =
+                                    gridRowHeight(days) - CellPaddingTop - CellPadding,
                                     // 必须 required：单元格内容区最高只有一行（rowHeight − 内边距），
                                     // 普通 height() 会被父约束钳回单行高度，跨不出去。
                                     // requiredHeight 对被钳掉的超高内容默认居中放置（卡顶偏上 (H−行高)/2），
@@ -521,6 +524,9 @@ private fun GridRow(
                     course != null && course.span == 1 -> CourseCard(
                         course = course,
                         slot = slot,
+                        // 行数增长门槛 = 该模式默认单卡高（145/155dp）：自定义行高恰好等于默认时恒 3/3
+                        defaultCardHeight =
+                        gridRowHeight(days) - CellPaddingTop - CellPadding,
                         modifier = Modifier
                             .fillMaxSize()
                             // 长按菜单的锚点取卡片自身窗口坐标（填满格 = 格坐标）
