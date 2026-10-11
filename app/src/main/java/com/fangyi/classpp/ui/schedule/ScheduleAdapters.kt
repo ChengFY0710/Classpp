@@ -73,9 +73,3 @@ internal fun IsoDate.toUiDate(): Date {
         set(Calendar.MILLISECOND, 0)
     }.time
 }
-
-/** DatePicker 互转：Material3 selectedDateMillis 语义为 UTC 零点毫秒，与 epochDay 纯整数天等价 */
-internal fun IsoDate.toPickerMillis(): Long = epochDay * 86_400_000L
-
-/** UTC 零点毫秒 → 数据层日期（floorDiv 保证负值方向正确） */
-internal fun Long.toIsoDate(): IsoDate = IsoDate(Math.floorDiv(this, 86_400_000L))

@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,20 +8,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,7 +25,6 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
-import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -51,12 +39,12 @@ private const val DEFAULT_DEADLINE_MINUTE = 480
 private const val MILLIS_PER_DAY = 86_400_000L
 
 /**
- * 截止日期卡：单行「截止日期 + 日期时刻值 + >」白卡，整行可点，点按先弹 M3
- * [DatePickerDialog] 选日期，确认后经 [onTimePickRequest] 请求宿主弹出时刻选择
- * （BottomTimeSelectCard 滚轮，页内覆盖层画不进卡片里——浮层内容会被 Surface 裁剪，
- * 由宿主组合在浮层级），两步都确认才经 [onChange] 回写（任一步取消 = 不变更，
- * 暂存日期由内部持有）。已设截止时日期弹窗多一枚「清除」，点按回写 null 对——
- * 模型约束截止日期与时刻成对出现或同时为空（TodoValidator）。
+ * 截止日期卡：单行「截止日期 + 日期时刻值 + >」白卡，整行可点，点按先经
+ * [onDatePickRequest] 请求宿主弹日期轮（BottomDateSelectCard，页内覆盖层画不进卡片里
+ * ——浮层内容会被 Surface 裁剪，由宿主组合在浮层级），确认后接着经 [onTimePickRequest]
+ * 弹时刻轮，两步都确认才经 [onChange] 回写（任一步取消 = 不变更，日期在链式闭包间传递）。
+ * 已设截止时日期轮带一枚「清除」第三动作（宿主经 neutralAction 下发），点按回写 null 对
+ * ——模型约束截止日期与时刻成对出现或同时为空（TodoValidator）。
  *
  * 行规格与 [DateSelectionCard] 的「自定义日期」子行同款：[SheetCardShape] 连续圆角、
  * 行高下限 [SheetFieldHeight]、行内距 16/14 画在点击区内侧（按压反馈铺满整行，取代涟漪），
@@ -64,17 +52,17 @@ private const val MILLIS_PER_DAY = 86_400_000L
  * 尾部 20dp 右箭头 primary。展示格式 `2026-9-7 8:00`（横杠不补零，时刻归一化走
  * [TimeText.format]）。
  *
- * 无状态受控组件：截止值由调用方持有。UTC 毫秒换算与 [DateSelectionCard] 的
- * DatePicker 同一套算法（epochDay 纯整数天）。
+ * 无状态受控组件：截止值由调用方持有。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeadlineCard(
     deadlineDate: IsoDate?,
     deadlineMinute: Int?,
     onChange: (date: IsoDate?, minute: Int?) -> Unit,
+    // 日期步上报：初值为当前截止日（未设时今天），[onPicked] 收确认的日期后接时刻步
+    onDatePickRequest: (initialDate: IsoDate, onPicked: (IsoDate) -> Unit) -> Unit,
     // 时刻步上报：初值为待选时刻（分钟数，一天内），[onPicked] 收用户确认的分钟数
-    // 并在此完成 onChange 回写；弹窗本体由宿主（NewTodoSheet）组合在浮层之后
+    // 并在此完成 onChange 回写；两个弹窗本体都由宿主（NewTodoSheet）组合在浮层之后
     onTimePickRequest: (initialMinute: Int, onPicked: (minuteOfDay: Int) -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -83,10 +71,6 @@ fun DeadlineCard(
     val rowShade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    var datePicking by remember { mutableStateOf(false) }
-    // 日期弹窗确认后暂存：等时刻也确认才一并回写（任一步取消 = 不变更）
-    var pendingDate by remember { mutableStateOf<IsoDate?>(null) }
-    val isSet = deadlineDate != null && deadlineMinute != null
 
     Row(
         modifier = modifier
@@ -96,7 +80,12 @@ fun DeadlineCard(
             .pressClickable(SheetCardShape, shade = rowShade) {
                 focusManager.clearFocus()
                 keyboard?.hide()
-                datePicking = true
+                // 日期轮 → 确认 → 时刻轮：日期在链式闭包间传递，两步都确认才 onChange
+                onDatePickRequest(deadlineDate ?: IsoDate.today()) { pickedDate ->
+                    onTimePickRequest(deadlineMinute ?: DEFAULT_DEADLINE_MINUTE) { pickedMinute ->
+                        onChange(pickedDate, pickedMinute)
+                    }
+                }
             }
             .clip(SheetCardShape)
             .background(colors.surface)
@@ -129,73 +118,7 @@ fun DeadlineCard(
             modifier = Modifier.size(20.dp),
         )
     }
-
-    if (datePicking) {
-        val datePickerState = rememberDatePickerState(
-            initialSelectedDateMillis = (deadlineDate ?: IsoDate.today()).toPickerMillis(),
-        )
-        DatePickerDialog(
-            onDismissRequest = { datePicking = false },
-            confirmButton = {
-                // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
-                // 按压源交给按钮形参，pressFeedback 接在 modifier 链末尾（贴按钮本体，对齐 textShape）
-                val press = remember { MutableInteractionSource() }
-                TextButton(
-                    onClick = {
-                        datePicking = false
-                        datePickerState.selectedDateMillis?.let { millis ->
-                            pendingDate = millis.toPickerIsoDate()
-                            // 时刻步交给宿主的滚轮弹窗：初值取当前截止时刻（未设时 8:00），
-                            // 选中回调把暂存日期一并回写（取消 = 不变更）
-                            onTimePickRequest(deadlineMinute ?: DEFAULT_DEADLINE_MINUTE) { picked ->
-                                pendingDate?.let { date -> onChange(date, picked) }
-                                pendingDate = null
-                            }
-                        }
-                    },
-                    interactionSource = press,
-                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
-                ) {
-                    Text(stringResource(R.string.settings_confirm))
-                }
-            },
-            dismissButton = {
-                Row {
-                    if (isSet) {
-                        // 叠按压反馈：M3 涟漪在按钮内部、调用侧去不掉（按压源与按钮共用）
-                        val pressClear = remember { MutableInteractionSource() }
-                        TextButton(
-                            onClick = {
-                                datePicking = false
-                                pendingDate = null
-                                onChange(null, null)
-                            },
-                            interactionSource = pressClear,
-                            modifier = Modifier.pressFeedback(pressClear, ButtonDefaults.textShape),
-                        ) {
-                            Text(stringResource(R.string.deadline_card_clear))
-                        }
-                    }
-                    val pressCancel = remember { MutableInteractionSource() }
-                    TextButton(
-                        onClick = { datePicking = false },
-                        interactionSource = pressCancel,
-                        modifier = Modifier.pressFeedback(pressCancel, ButtonDefaults.textShape),
-                    ) {
-                        Text(stringResource(R.string.settings_cancel))
-                    }
-                }
-            },
-        ) {
-            DatePicker(state = datePickerState)
-        }
-    }
 }
-
-/** Material3 DatePicker 的 selectedDateMillis 语义为 UTC 零点毫秒，与 epochDay 纯整数天等价（同 DateSelectionCard 换算） */
-private fun IsoDate.toPickerMillis(): Long = epochDay * MILLIS_PER_DAY
-
-private fun Long.toPickerIsoDate(): IsoDate = IsoDate(Math.floorDiv(this, MILLIS_PER_DAY))
 
 /** 截止值展示的日期段 `2026-9-7`（横杠不补零，同设计稿）；换算同 [IsoDate.toString] 的 UTC 整数天。待办详情浮层复用 */
 internal fun IsoDate?.toDeadlineText(): String {

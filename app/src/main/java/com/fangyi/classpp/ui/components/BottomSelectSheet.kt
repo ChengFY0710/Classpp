@@ -86,6 +86,8 @@ private val CardShadowElevation: Dp = 32.dp
  *
  * [cancelLabel] / [confirmLabel] 默认取全局「取消/确认」文案；确认按钮的点击回调
  * [onConfirm] 只在非收场状态下放行（防双击重复提交）。
+ * [neutralAction] 为可选第三动作（截止日期的「清除」等）：内容槽下方整宽胶囊，
+ * 收场闸门同确认键。
  * 卡片投影是一层大柔影：模糊半径由 CardShadowElevation 撑开、浓度由 [shadowAlpha] 调
  * （0 = 无影），同 [SheetPillButton] 的投影做法。
  */
@@ -101,6 +103,8 @@ fun BottomSelectSheet(
     onConfirm: () -> Unit = {},
     // 卡片投影浓度：只调透明度（0 = 无影，1 = 纯黑最浓），模糊半径由 CardShadowElevation 撑
     shadowAlpha: Float = 0.3f,
+    // 可选第三动作（如截止日期的「清除」）：内容槽下方整宽胶囊，规格同顶栏胶囊；null = 不渲染
+    neutralAction: SheetTopAction? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     // 点空白处收起（无涟漪）
@@ -253,6 +257,25 @@ fun BottomSelectSheet(
                         ),
                     ) {
                         content()
+                    }
+                    // 第三动作整宽胶囊（日期轮的「清除」等）：与内容间隔 = 内容槽自带的
+                    // 底部内距；收场闸门与确认键一致，防出场期间触发
+                    neutralAction?.let { action ->
+                        SheetPillButton(
+                            label = action.label,
+                            icon = action.icon,
+                            containerColor = action.containerColor,
+                            contentColor = action.contentColor,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(
+                                    start = TopBarRowHorizontalPadding,
+                                    end = TopBarRowHorizontalPadding,
+                                    bottom = ContentBottomPadding,
+                                ),
+                            iconAtEnd = true,
+                            onClick = { if (!closeRequested) action.onClick },
+                        )
                     }
                 }
             }

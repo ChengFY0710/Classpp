@@ -36,6 +36,7 @@ import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
+import com.fangyi.classpp.ui.components.BottomDateSelectCard
 import com.fangyi.classpp.ui.components.BottomTimeSelectCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
@@ -158,6 +159,19 @@ internal fun NewTodoSheet(
     var deadlineTimeInitial by remember { mutableIntStateOf(0) }
     var deadlineTimeCallback by remember { mutableStateOf<((Int) -> Unit)?>(null) }
 
+    // 截止日期滚轮弹窗（BottomDateSelectCard）：确认把日期交回 DeadlineCard 的链式
+    // 流程再弹时刻轮；「清除」把截止回写为 null 对（模型约束成对出现/同时为空）
+    var deadlineDateVisible by remember { mutableStateOf(false) }
+    var deadlineDateMounted by remember { mutableStateOf(false) }
+    var deadlineDateInitial by remember { mutableStateOf(IsoDate.today()) }
+    var deadlineDateCallback by remember { mutableStateOf<((IsoDate) -> Unit)?>(null) }
+
+    // 待办「自定义日期」滚轮弹窗（DateSelectionCard 的自定义行上报）
+    var customDateVisible by remember { mutableStateOf(false) }
+    var customDateMounted by remember { mutableStateOf(false) }
+    var customDateInitial by remember { mutableStateOf(IsoDate.today()) }
+    var customDateCallback by remember { mutableStateOf<((IsoDate) -> Unit)?>(null) }
+
     OverlaySheet(
         title = stringResource(if (existing == null) R.string.todo_new_title else R.string.todo_edit_title),
         confirmLabel = stringResource(R.string.edit_confirm),
@@ -216,7 +230,7 @@ internal fun NewTodoSheet(
         },
         onDismiss = onDismiss,
         visible = visible,
-        covered = deleteRequested || deadlineTimeVisible,
+        covered = deleteRequested || deadlineDateVisible || customDateVisible || deadlineTimeVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
     ) {
@@ -243,7 +257,14 @@ internal fun NewTodoSheet(
                         deadlineDate = date
                         deadlineMinute = minute
                     },
-                    // 时刻步：挂载滚轮弹窗（画在本浮层之后），初值由卡片给出
+                    // 日期步：挂载日期轮（画在本浮层之后），初值由卡片给出
+                    onDatePickRequest = { initialDate, onPicked ->
+                        deadlineDateInitial = initialDate
+                        deadlineDateCallback = onPicked
+                        deadlineDateMounted = true
+                        deadlineDateVisible = true
+                    },
+                    // 时刻步：挂载时刻轮（画在本浮层之后），初值由卡片给出
                     onTimePickRequest = { initialMinute, onPicked ->
                         deadlineTimeInitial = initialMinute
                         deadlineTimeCallback = onPicked
@@ -263,6 +284,13 @@ internal fun NewTodoSheet(
                     expanded = dateExpanded,
                     onValueChange = { dateSelection = it },
                     onExpandedChange = { dateExpanded = it },
+                    // 自定义日期步：挂载日期轮（画在本浮层之后），初值由卡片给出
+                    onCustomDatePickRequest = { initialDate, onPicked ->
+                        customDateInitial = initialDate
+                        customDateCallback = onPicked
+                        customDateMounted = true
+                        customDateVisible = true
+                    },
                 )
                 RowChoiceCard(
                     options = listOf(
@@ -343,6 +371,62 @@ internal fun NewTodoSheet(
                 )
             }
         }
+    }
+
+    // 截止日期滚轮弹窗画在表单浮层之后（组合顺序即绘制顺序）。确认把日期交回
+    // DeadlineCard 的链式流程再弹时刻轮；「清除」直接回写 null 对并关闭（取消/遮罩/
+    // 返回只请求关闭，播完退场才卸载——两段式，同下方的时刻轮）
+    if (deadlineDateMounted) {
+        BottomDateSelectCard(
+            visible = deadlineDateVisible,
+            onDismiss = { deadlineDateVisible = false },
+            onDismissed = {
+                deadlineDateMounted = false
+                deadlineDateCallback = null
+            },
+            title = stringResource(R.string.deadline_card_label),
+            initialDate = deadlineDateInitial,
+            // 已设截止才出现「清除」：回写 null 对（约束成对出现/同时为空）
+            neutralAction = if (deadlineDate != null && deadlineMinute != null) {
+                SheetTopAction(
+                    label = stringResource(R.string.deadline_card_clear),
+                    icon = R.drawable.ic_delete_dismiss,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    onClick = {
+                        deadlineDateVisible = false
+                        deadlineDateCallback = null
+                        deadlineDate = null
+                        deadlineMinute = null
+                    },
+                )
+            } else {
+                null
+            },
+            onConfirm = { date ->
+                deadlineDateVisible = false
+                deadlineDateCallback?.invoke(date)
+                deadlineDateCallback = null
+            },
+        )
+    }
+
+    // 待办「自定义日期」滚轮弹窗：确认经 DateSelectionCard 的回调回写
+    if (customDateMounted) {
+        BottomDateSelectCard(
+            visible = customDateVisible,
+            onDismiss = { customDateVisible = false },
+            onDismissed = {
+                customDateMounted = false
+                customDateCallback = null
+            },
+            initialDate = customDateInitial,
+            onConfirm = { date ->
+                customDateVisible = false
+                customDateCallback?.invoke(date)
+                customDateCallback = null
+            },
+        )
     }
 
     // 截止时刻滚轮弹窗画在表单浮层之后（组合顺序即绘制顺序）；后注册 BackHandler，

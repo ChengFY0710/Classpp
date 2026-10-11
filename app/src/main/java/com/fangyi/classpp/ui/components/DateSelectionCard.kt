@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,15 +13,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,7 +39,6 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.motion.Expandable
 import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
-import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.RowShape
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
@@ -90,7 +83,9 @@ enum class RepeatFrequency { Daily, Weekly, Monthly, Yearly }
  *
  * 快捷选项点按后回写 [onValueChange] 并退回值模式；选「自定义」沿用上一次的自定义
  * 日期与重复（没有则今天 / 每周），子行随之展开。「重复」行点按弹 [PopupMenuPopup]
- * 菜单（选中项前置勾），「自定义日期」行点按弹 M3 [DatePickerDialog]。
+ * 菜单（选中项前置勾），「自定义日期」行点按经 [onCustomDatePickRequest] 请求宿主弹
+ * 滚轮日期弹窗（BottomDateSelectCard，页内覆盖层画不进卡片里——浮层内容会被 Surface
+ * 裁剪，由宿主组合在浮层级）。
  *
  * 规格：白卡 [SheetCardShape] 连续圆角，行高下限 [SheetFieldHeight]，行内距 16/14 画在
  * 点击区内侧（按压反馈铺满整行，ui.motion 的 pressClickable 取代涟漪）；label 走 fieldLabel，
@@ -102,6 +97,9 @@ fun DateSelectionCard(
     expanded: Boolean,
     onValueChange: (DateSelection) -> Unit,
     onExpandedChange: (Boolean) -> Unit,
+    // 「自定义日期」行上报：初值为当前自定义日期，[onPicked] 收确认日期后经
+    // [onValueChange] 回写；弹窗本体由宿主（NewTodoSheet）组合在浮层之后
+    onCustomDatePickRequest: (initialDate: IsoDate, onPicked: (IsoDate) -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -110,7 +108,6 @@ fun DateSelectionCard(
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     var repeatMenuExpanded by remember { mutableStateOf(false) }
-    var datePicking by remember { mutableStateOf(false) }
     val custom = value as? DateSelection.Custom
     // 收起动画当帧 value 可能已被切成非自定义（子行正在退场）：记住上一份自定义值把
     // 子行撑到行块平滑缩完；展示用快照，交互回调仍以当前 custom 守卫
@@ -218,7 +215,12 @@ fun DateSelectionCard(
                         .pressClickable(RectangleShape, shade = rowShade) {
                             focusManager.clearFocus()
                             keyboard?.hide()
-                            if (custom != null) datePicking = true
+                            // 自定义日期行 → 宿主的滚轮日期弹窗（退场动画中 custom 已为空时忽略点击）
+                            if (custom != null) {
+                                onCustomDatePickRequest(custom.date) { picked ->
+                                    onValueChange(custom.copy(date = picked))
+                                }
+                            }
                         }
                         .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -283,44 +285,6 @@ fun DateSelectionCard(
                     }
                 }
             }
-        }
-    }
-    if (datePicking && custom != null) {
-        val datePickerState = rememberDatePickerState(
-            initialSelectedDateMillis = custom.date.toPickerMillis(),
-        )
-        DatePickerDialog(
-            onDismissRequest = { datePicking = false },
-            confirmButton = {
-                // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
-                // 按压源交给按钮形参，pressFeedback 接在 modifier 链末尾（贴按钮本体，对齐 textShape）
-                val press = remember { MutableInteractionSource() }
-                TextButton(
-                    onClick = {
-                        datePicking = false
-                        datePickerState.selectedDateMillis?.let { millis ->
-                            onValueChange(custom.copy(date = millis.toPickerIsoDate()))
-                        }
-                    },
-                    interactionSource = press,
-                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
-                ) {
-                    Text(stringResource(R.string.settings_confirm))
-                }
-            },
-            dismissButton = {
-                // 叠按压反馈：M3 涟漪在按钮内部、调用侧去不掉（按压源与按钮共用）
-                val press = remember { MutableInteractionSource() }
-                TextButton(
-                    onClick = { datePicking = false },
-                    interactionSource = press,
-                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
-                ) {
-                    Text(stringResource(R.string.settings_cancel))
-                }
-            },
-        ) {
-            DatePicker(state = datePickerState)
         }
     }
 }
@@ -414,11 +378,6 @@ private fun RepeatFrequency.label(): String = when (this) {
 }
 
 private const val MILLIS_PER_DAY = 86_400_000L
-
-/** Material3 DatePicker 的 selectedDateMillis 语义为 UTC 零点毫秒，与 epochDay 纯整数天等价（同 ScheduleAdapters 换算） */
-private fun IsoDate.toPickerMillis(): Long = epochDay * MILLIS_PER_DAY
-
-private fun Long.toPickerIsoDate(): IsoDate = IsoDate(Math.floorDiv(this, MILLIS_PER_DAY))
 
 /** 设计稿展示格式 `2026/10/3`（不补零）；换算同 [IsoDate.toString] 的 UTC 整数天 */
 private fun IsoDate.toCardText(): String {

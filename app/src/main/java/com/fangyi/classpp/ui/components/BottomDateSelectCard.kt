@@ -67,6 +67,8 @@ fun BottomDateSelectCard(
     initialDate: IsoDate = IsoDate.today(),
     yearRange: IntRange = defaultYearRange(),
     shadowAlpha: Float = 0.3f,
+    // 可选第三动作（截止日期流程的「清除」等），透传给 [BottomSelectSheet]
+    neutralAction: SheetTopAction? = null,
     onConfirm: (date: IsoDate) -> Unit,
     onDismissed: () -> Unit = {},
 ) {
@@ -105,6 +107,7 @@ fun BottomDateSelectCard(
         onDismiss = onDismiss,
         onDismissed = onDismissed,
         shadowAlpha = shadowAlpha,
+        neutralAction = neutralAction,
         modifier = modifier,
         onConfirm = {
             // 兜底收敛：格数联动的副作用晚于滚动一拍时，防 31 日 + 30 天月这类非法组合

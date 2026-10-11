@@ -15,14 +15,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -56,6 +53,7 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeSlotDef
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.appendSlot
+import com.fangyi.classpp.ui.components.BottomDateSelectCard
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.RowChoiceCard
 import com.fangyi.classpp.ui.components.SettingsCard
@@ -116,6 +114,13 @@ internal fun ScheduleSettingsSheet(
     // 返回键关浮层（同切换课表浮层：组合顺序上晚于编辑态的取消 BackHandler，优先接管）
     BackHandler(enabled = true) { onDismiss() }
 
+    // 学期起止日期滚轮弹窗（BottomDateSelectCard）：期望态 + 挂载态两段式（同新建待办
+    // 的各滚轮弹窗）——弹窗在场时经 covered 让本浮层缩小后退（分层动效）
+    var pickerVisible by remember { mutableStateOf(false) }
+    var pickerMounted by remember { mutableStateOf(false) }
+    var pickerInitial by remember { mutableStateOf(IsoDate.today()) }
+    var pickerCallback by remember { mutableStateOf<((IsoDate) -> Unit)?>(null) }
+
     OverlaySheet(
         title = stringResource(R.string.settings_title),
         confirmLabel = null,
@@ -128,12 +133,20 @@ internal fun ScheduleSettingsSheet(
         ),
         onDismiss = onDismiss,
         visible = visible,
+        covered = pickerVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
         modifier = modifier,
     ) {
         SettingsContent(
             schedule = schedule,
+            // 学期起止步：挂载日期轮（画在本浮层之后），初值由设置卡给出
+            onDatePickRequest = { initialDate, onPicked ->
+                pickerInitial = initialDate
+                pickerCallback = onPicked
+                pickerMounted = true
+                pickerVisible = true
+            },
             onRename = { name ->
                 scope.launch { submit(repository.renameSchedule(schedule.id, name)) }
             },
@@ -153,6 +166,25 @@ internal fun ScheduleSettingsSheet(
             },
         )
     }
+
+    // 学期日期滚轮弹窗画在浮层之后（组合顺序即绘制顺序）；确认沿用同一套联动：
+    // 开始日任意一天可选、平移结束日保持学期长度；结束日同样任意一天都合法
+    if (pickerMounted) {
+        BottomDateSelectCard(
+            visible = pickerVisible,
+            onDismiss = { pickerVisible = false },
+            onDismissed = {
+                pickerMounted = false
+                pickerCallback = null
+            },
+            initialDate = pickerInitial,
+            onConfirm = { picked ->
+                pickerVisible = false
+                pickerCallback?.invoke(picked)
+                pickerCallback = null
+            },
+        )
+    }
 }
 
 /** 当前课表全套设置：课表名 / 学期 / 每周天数 / 节数与时间 / 显示。数据变更经回调即时提交仓库。 */
@@ -160,6 +192,9 @@ internal fun ScheduleSettingsSheet(
 @Composable
 private fun SettingsContent(
     schedule: Schedule,
+    // 学期起止步上报：初值为当前起止日，[onPicked] 收确认日期后经 [onTerm] 提交仓库；
+    // 弹窗本体（BottomDateSelectCard）由 ScheduleSettingsSheet 组合在浮层之后
+    onDatePickRequest: (initialDate: IsoDate, onPicked: (IsoDate) -> Unit) -> Unit,
     onRename: (name: String) -> Unit,
     onTerm: (start: IsoDate, end: IsoDate) -> Unit,
     onDays: (days: Int) -> Unit,
@@ -167,7 +202,6 @@ private fun SettingsContent(
     onShowInactive: (show: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var picking by remember { mutableStateOf<DateTarget?>(null) }
     // 正在编辑的节次时间；null = 无弹窗（每次确认/取消都回到 null，保证重开时状态新鲜）
     var editingSlot by remember { mutableStateOf<SlotEdit?>(null) }
 
@@ -183,8 +217,16 @@ private fun SettingsContent(
         TermDatesCard(
             start = schedule.termStart,
             end = schedule.termEnd,
-            onPickStart = { picking = DateTarget.Start },
-            onPickEnd = { picking = DateTarget.End },
+            // 改开始日 → 平移结束日保持学期长度（星期几不变）；结束日任意一天都合法
+            //（可停在周中，末周就只上到那一天）
+            onPickStart = {
+                onDatePickRequest(schedule.termStart) { picked ->
+                    onTerm(picked, schedule.termEnd + (picked - schedule.termStart).toInt())
+                }
+            },
+            onPickEnd = {
+                onDatePickRequest(schedule.termEnd) { picked -> onTerm(schedule.termStart, picked) }
+            },
             onSetWeeks = { weeks ->
                 onTerm(schedule.termStart, endForTotalWeeks(schedule.termStart, schedule.termEnd, weeks))
             },
@@ -286,52 +328,6 @@ private fun SettingsContent(
                     ),
                 ),
             )
-        }
-    }
-
-    // 学期日期选择：开始日任意一天可选，平移结束日保持学期长度；结束日同样
-    // 任意一天都合法（可停在周中，末周就只上到那一天）
-    picking?.let { target ->
-        val initial = if (target == DateTarget.Start) schedule.termStart else schedule.termEnd
-        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initial.toPickerMillis())
-        DatePickerDialog(
-            onDismissRequest = { picking = null },
-            confirmButton = {
-                // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
-                // 按压源交给按钮形参，pressFeedback 接在 modifier 链末尾（贴按钮本体，对齐 textShape）
-                val press = remember { MutableInteractionSource() }
-                TextButton(
-                    onClick = {
-                        datePickerState.selectedDateMillis?.let { millis ->
-                            val picked = millis.toIsoDate()
-                            if (target == DateTarget.Start) {
-                                val newEnd = schedule.termEnd + (picked - schedule.termStart).toInt()
-                                onTerm(picked, newEnd)
-                            } else {
-                                onTerm(schedule.termStart, picked)
-                            }
-                        }
-                        picking = null
-                    },
-                    interactionSource = press,
-                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
-                ) {
-                    Text(stringResource(R.string.settings_confirm))
-                }
-            },
-            dismissButton = {
-                // 叠按压反馈：M3 涟漪在按钮内部、调用侧去不掉（按压源与按钮共用）
-                val press = remember { MutableInteractionSource() }
-                TextButton(
-                    onClick = { picking = null },
-                    interactionSource = press,
-                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
-                ) {
-                    Text(stringResource(R.string.settings_cancel))
-                }
-            },
-        ) {
-            DatePicker(state = datePickerState)
         }
     }
 
@@ -545,6 +541,7 @@ private fun SettingsContentPreview() {
                 termStart = IsoDate.parse("2026-03-02"),
                 termEnd = IsoDate.parse("2026-06-19"),
             ),
+            onDatePickRequest = { _, _ -> },
             onRename = {},
             onTerm = { _, _ -> },
             onDays = {},

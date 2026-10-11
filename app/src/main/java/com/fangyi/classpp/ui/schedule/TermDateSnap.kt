@@ -2,9 +2,6 @@ package com.fangyi.classpp.ui.schedule
 
 import com.fangyi.classpp.data.model.IsoDate
 
-/** 学期日期选择目标 */
-enum class DateTarget { Start, End }
-
 /** 学期默认长度：16 周 = 15×7 + 4 天（任一星期几开学，总周数都落在 16 周） */
 const val TERM_DEFAULT_DAYS = 109
 

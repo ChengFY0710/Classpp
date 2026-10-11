@@ -24,6 +24,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.components.SheetTopAction
 import kotlin.math.roundToInt
 
 /** 设计稿四态与各卡片的快速预览（Android Studio 中直接查看）。 */
@@ -645,54 +646,91 @@ private fun PopupMenuCardPreview() = ClassppTheme {
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 640)
 @Composable
 private fun DateSelectionCardPreview() = ClassppTheme {
-    // 设计稿四态：无（值模式）/ 快捷选项（选项模式）/ 自定义+每周 / 自定义+每天（全交互）
+    // 设计稿四态：无（值模式）/ 快捷选项（选项模式）/ 自定义+每周（静态）/ 自定义+每天（全交互，
+    // 自定义日期行接真实的滚轮日期弹窗托管，代码同 NewTodoSheet）
     var interactiveValue by remember {
         mutableStateOf<DateSelection>(DateSelection.Custom(IsoDate.of(2026, 10, 3), RepeatFrequency.Daily))
     }
     var interactiveExpanded by remember { mutableStateOf(false) }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        DateSelectionCard(
-            value = DateSelection.None,
-            expanded = false,
-            onValueChange = {},
-            onExpandedChange = {},
-        )
-        DateSelectionCard(
-            value = DateSelection.None,
-            expanded = true,
-            onValueChange = {},
-            onExpandedChange = {},
-        )
-        DateSelectionCard(
-            value = DateSelection.Custom(IsoDate.of(2026, 10, 3), RepeatFrequency.Weekly),
-            expanded = false,
-            onValueChange = {},
-            onExpandedChange = {},
-        )
-        DateSelectionCard(
-            value = interactiveValue,
-            expanded = interactiveExpanded,
-            onValueChange = { interactiveValue = it },
-            onExpandedChange = { interactiveExpanded = it },
-        )
+    var dateMounted by remember { mutableStateOf(false) }
+    var dateVisible by remember { mutableStateOf(false) }
+    var dateInitial by remember { mutableStateOf(IsoDate.today()) }
+    var dateCallback by remember { mutableStateOf<((IsoDate) -> Unit)?>(null) }
+    Box {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            DateSelectionCard(
+                value = DateSelection.None,
+                expanded = false,
+                onValueChange = {},
+                onExpandedChange = {},
+                // 静态展示卡：不接弹窗
+                onCustomDatePickRequest = { _, _ -> },
+            )
+            DateSelectionCard(
+                value = DateSelection.None,
+                expanded = true,
+                onValueChange = {},
+                onExpandedChange = {},
+                onCustomDatePickRequest = { _, _ -> },
+            )
+            DateSelectionCard(
+                value = DateSelection.Custom(IsoDate.of(2026, 10, 3), RepeatFrequency.Weekly),
+                expanded = false,
+                onValueChange = {},
+                onExpandedChange = {},
+                onCustomDatePickRequest = { _, _ -> },
+            )
+            DateSelectionCard(
+                value = interactiveValue,
+                expanded = interactiveExpanded,
+                onValueChange = { interactiveValue = it },
+                onExpandedChange = { interactiveExpanded = it },
+                onCustomDatePickRequest = { initialDate, onPicked ->
+                    dateInitial = initialDate
+                    dateCallback = onPicked
+                    dateMounted = true
+                    dateVisible = true
+                },
+            )
+        }
+        if (dateMounted) {
+            BottomDateSelectCard(
+                visible = dateVisible,
+                onDismiss = { dateVisible = false },
+                onDismissed = {
+                    dateMounted = false
+                    dateCallback = null
+                },
+                initialDate = dateInitial,
+                onConfirm = { date ->
+                    dateVisible = false
+                    dateCallback?.invoke(date)
+                    dateCallback = null
+                },
+            )
+        }
     }
 }
 
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 640)
 @Composable
 private fun DeadlineCardPreview() = ClassppTheme {
-    // 截止日期卡全交互（初始已设：2026-9-7 8:00，可走清除/重选全流程）。时刻步托管代码
-    // 同 NewTodoSheet：挂载/可见两段式，滚轮弹窗与卡片并列组合（页内覆盖层画不进卡片里）
+    // 截止日期卡全交互（初始已设：2026-9-7 8:00，可走清除/重选全流程）。日期/时刻两步的
+    // 托管代码同 NewTodoSheet：挂载/可见两段式，滚轮弹窗与卡片并列组合（页内覆盖层画不进卡片里）
     var deadlineDate by remember { mutableStateOf<IsoDate?>(IsoDate.of(2026, 9, 7)) }
     var deadlineMinute by remember { mutableStateOf<Int?>(8 * 60) }
+    var dateMounted by remember { mutableStateOf(false) }
+    var dateVisible by remember { mutableStateOf(false) }
+    var dateInitial by remember { mutableStateOf(IsoDate.today()) }
+    var dateCallback by remember { mutableStateOf<((IsoDate) -> Unit)?>(null) }
     var timeMounted by remember { mutableStateOf(false) }
     var timeVisible by remember { mutableStateOf(false) }
     var timeInitialMinute by remember { mutableStateOf(0) }
@@ -711,11 +749,51 @@ private fun DeadlineCardPreview() = ClassppTheme {
                     deadlineDate = date
                     deadlineMinute = minute
                 },
+                onDatePickRequest = { initialDate, onPicked ->
+                    dateInitial = initialDate
+                    dateCallback = onPicked
+                    dateMounted = true
+                    dateVisible = true
+                },
                 onTimePickRequest = { initialMinute, onPicked ->
                     timeInitialMinute = initialMinute
                     timeCallback = onPicked
                     timeMounted = true
                     timeVisible = true
+                },
+            )
+        }
+        if (dateMounted) {
+            BottomDateSelectCard(
+                visible = dateVisible,
+                onDismiss = { dateVisible = false },
+                onDismissed = {
+                    dateMounted = false
+                    dateCallback = null
+                },
+                title = "截止日期",
+                initialDate = dateInitial,
+                // 已设截止才出现「清除」：回写 null 对（约束成对出现/同时为空）
+                neutralAction = if (deadlineDate != null && deadlineMinute != null) {
+                    SheetTopAction(
+                        label = "清除",
+                        icon = R.drawable.ic_delete_dismiss,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        onClick = {
+                            dateVisible = false
+                            dateCallback = null
+                            deadlineDate = null
+                            deadlineMinute = null
+                        },
+                    )
+                } else {
+                    null
+                },
+                onConfirm = { date ->
+                    dateVisible = false
+                    dateCallback?.invoke(date)
+                    dateCallback = null
                 },
             )
         }
