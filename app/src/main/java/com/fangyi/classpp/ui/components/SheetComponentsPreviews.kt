@@ -766,3 +766,15 @@ private fun BottomTimeSelectCardPreview() = ClassppTheme {
         onConfirm = { _, _ -> },
     )
 }
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 500)
+@Composable
+private fun BottomDateSelectCardPreview() = ClassppTheme {
+    // 日期选择弹窗：日轮天数随年月联动（滚到 4 月看 30 天），确认回调 IsoDate
+    BottomDateSelectCard(
+        visible = true,
+        onDismiss = {},
+        initialDate = IsoDate.of(2026, 8, 27),
+        onConfirm = { },
+    )
+}
