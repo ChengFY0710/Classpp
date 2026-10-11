@@ -156,10 +156,17 @@ object NotificationScheduler {
         ensureNotificationChannels(appContext)
         val manager = NotificationManagerCompat.from(appContext)
         if (!manager.areNotificationsEnabled()) return false
+        val settings = NotificationPreferences.load(appContext)
         val title = appContext.getString(R.string.notification_test_course)
         val time = appContext.getString(R.string.notification_test_time)
         val location = appContext.getString(R.string.notification_test_location)
         val text = appContext.getString(R.string.notification_course_text).format(time, location)
+        // chip 文字跟随「实时通知显示信息」口径（课程名/上课地点），与真实课程提醒同规则
+        val chipText = if (settings.liveInfo == NotificationSettings.LIVE_INFO_LOCATION) {
+            location
+        } else {
+            title
+        }
         val id = TEST_KEY.hashCode()
         val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
             NotificationPoster.buildLiveUpdate(
@@ -167,7 +174,7 @@ object NotificationScheduler {
                 CHANNEL_COURSE,
                 title,
                 text,
-                chipText = title,
+                chipText = chipText,
                 isCourse = true,
             )
         } else {
