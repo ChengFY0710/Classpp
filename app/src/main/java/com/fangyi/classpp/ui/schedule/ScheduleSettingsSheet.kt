@@ -274,6 +274,7 @@ internal fun ScheduleSettingsSheet(
             title = stringResource(R.string.weeks_select_title),
             valueRange = TERM_WEEKS_MIN..TERM_WEEKS_MAX,
             initialValue = weeksInitial,
+            unit = stringResource(R.string.unit_week),
             hazeState = sheetHazeState,
             onConfirm = { weeks ->
                 weeksVisible = false
@@ -301,6 +302,7 @@ internal fun ScheduleSettingsSheet(
             title = stringResource(R.string.slot_count_select_title),
             valueRange = ScheduleValidator.MIN_SLOTS..ScheduleValidator.MAX_SLOTS,
             initialValue = slotCountInitial,
+            unit = stringResource(R.string.unit_slot),
             hazeState = sheetHazeState,
             onConfirm = { count ->
                 slotCountVisible = false
@@ -328,6 +330,7 @@ internal fun ScheduleSettingsSheet(
             title = stringResource(R.string.slot_duration_select_title),
             valueRange = MIN_SLOT_DURATION..MAX_SLOT_DURATION,
             initialValue = slotDurationInitial,
+            unit = stringResource(R.string.unit_min),
             hazeState = sheetHazeState,
             onConfirm = { minutes ->
                 slotDurationVisible = false

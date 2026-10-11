@@ -204,7 +204,7 @@ fun NotificationScreen(
             title = stringResource(R.string.notification_lead_time),
             valueRange = NotificationPreferences.LEAD_RANGE,
             initialValue = leadPickerInitial,
-            unit = stringResource(R.string.notification_unit_min),
+            unit = stringResource(R.string.unit_min),
             hazeState = hazeState,
             onConfirm = { minutes ->
                 leadPickerVisible = false
