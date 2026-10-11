@@ -127,6 +127,12 @@ data class Schedule(
     /** 每周上课天数：5（周一~五）或 7（周一~日） */
     val daysPerWeek: Int = 5,
     val slots: List<TimeSlotDef> = DEFAULT_SLOTS,
+    /**
+     * 每节课时长（分钟）：设置页「每节课时间」。改某节**开始时间**时结束按它自动推算，
+     * 与下一节冲突则后续节级联顺延（见 [slotsWithAdjustedStart]）；改结束时间不联动。
+     * 「加节」生成新节同样用它（见 [appendSlot]）。
+     */
+    val slotDurationMinutes: Int = 100,
     val courses: List<CourseEntry> = emptyList(),
     /** 本周不上的课是否显示（显示时 UI 置灰）——课表级全局开关 */
     val showInactiveCourses: Boolean = true,
@@ -174,23 +180,84 @@ fun defaultSlotsFor(count: Int): List<TimeSlotDef> {
     }
 }
 
-/** 一天最后一分钟数（23:59）；追加节的结束不得越过 */
+/** 一天最后一分钟数（23:59）；追加节与级联顺延的结束不得越过 */
 private const val LAST_MINUTE_OF_DAY = 1439
 
-/** 追加节时长（分钟），与 [DEFAULT_SLOTS] 各节一致 */
-private const val APPEND_SLOT_MINUTES = 100
+/** 每节课时长的缺省值（分钟）：与 [DEFAULT_SLOTS] 各节一致，新表与旧数据（无该字段）的初值 */
+const val DEFAULT_SLOT_DURATION_MINUTES = 100
+
+/** 每节课时长的可选范围（分钟）：设置页「每节课时间」滚轮的边界 */
+const val MIN_SLOT_DURATION = 10
+const val MAX_SLOT_DURATION = 200
 
 /**
  * 保留现有 [slots] 并在末尾追加一节：新节开始 = 上一节结束 + [DEFAULT_BREAK_MINUTES]，
- * 时长 [APPEND_SLOT_MINUTES]。空表、末节时间文本非法、或新节结束晚于 23:59 时返回 null
- * （调用方据此禁用「＋」；节数上限由调用方按 ScheduleValidator.MAX_SLOTS 把控）。
+ * 时长 [durationMinutes]（缺省与 [DEFAULT_SLOTS] 各节一致）。空表、末节时间文本非法、
+ * 或新节结束晚于 23:59 时返回 null（节数上限由调用方按 ScheduleValidator.MAX_SLOTS 把控）。
  */
-fun appendSlot(slots: List<TimeSlotDef>): List<TimeSlotDef>? {
+fun appendSlot(
+    slots: List<TimeSlotDef>,
+    durationMinutes: Int = DEFAULT_SLOT_DURATION_MINUTES,
+): List<TimeSlotDef>? {
     val lastEnd = slots.lastOrNull()?.let { TimeText.parseMinutes(it.endTime) } ?: return null
     val start = lastEnd + DEFAULT_BREAK_MINUTES
-    val end = start + APPEND_SLOT_MINUTES
+    val end = start + durationMinutes
     if (end > LAST_MINUTE_OF_DAY) return null
     return slots + TimeSlotDef(TimeText.format(start), TimeText.format(end))
+}
+
+/**
+ * 把第 [index] 节的**开始时间**改为 [startMinutes]，结束时间按 [durationMinutes] 自动推算
+ * （开始 + 时长）；若新结束越过下一节的开始，下一节开始顺延为该结束、结束同样按时长重推，
+ * 级联到某节不再冲突为止——未冲突的后续节保持原样。任一时间越过当天末尾（23:59）返回
+ * null（当天放不下，调用方提示后放弃本次修改，不产生部分生效的中间态）。
+ * 与**上一节**的冲突（开始早于其结束）不在此处理：结束时间是用户自留的，交由仓库校验拒绝。
+ */
+fun slotsWithAdjustedStart(
+    slots: List<TimeSlotDef>,
+    index: Int,
+    startMinutes: Int,
+    durationMinutes: Int,
+): List<TimeSlotDef>? {
+    require(index in slots.indices) { "slot index out of range: $index" }
+    val result = slots.toMutableList()
+    var start = startMinutes
+    var i = index
+    while (true) {
+        val end = start + durationMinutes
+        if (end > LAST_MINUTE_OF_DAY) return null
+        result[i] = result[i].copy(
+            startTime = TimeText.format(start),
+            endTime = TimeText.format(end),
+        )
+        val next = i + 1
+        if (next == result.size) return result
+        val nextStart = TimeText.parseMinutes(result[next].startTime) ?: return result
+        if (nextStart >= end) return result
+        // 冲突：下一节开始顶到本节新结束，整节顺延后继续看它的下一节
+        start = end
+        i = next
+    }
+}
+
+/**
+ * 把节数调整为 [count]（设置页「总节数」滚轮）：小于现有 → 前缀裁剪（保留用户已改时间）；
+ * 大于现有 → 循环 [appendSlot] 在末尾生成（课间 30 分钟、时长 [durationMinutes]）。
+ * 当天放不下目标节数时返回 null（调用方提示后放弃，不提交截断结果）。
+ */
+fun slotsWithCount(
+    slots: List<TimeSlotDef>,
+    count: Int,
+    durationMinutes: Int,
+): List<TimeSlotDef>? {
+    require(count >= 1) { "slot count must be positive: $count" }
+    if (count == slots.size) return slots
+    if (count < slots.size) return slots.take(count)
+    var current = slots
+    while (current.size < count) {
+        current = appendSlot(current, durationMinutes) ?: return null
+    }
+    return current
 }
 
 /** 新 UUID（课表 id / 课程 id 统一来源） */

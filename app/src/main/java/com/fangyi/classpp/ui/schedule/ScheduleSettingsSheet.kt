@@ -29,8 +29,6 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Constraints
@@ -42,11 +40,16 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.OpResult
 import com.fangyi.classpp.data.ScheduleError
 import com.fangyi.classpp.data.ScheduleRepository
+import com.fangyi.classpp.data.ScheduleValidator
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeSlotDef
 import com.fangyi.classpp.data.model.TimeText
-import com.fangyi.classpp.data.model.appendSlot
+import com.fangyi.classpp.data.model.DEFAULT_SLOT_DURATION_MINUTES
+import com.fangyi.classpp.data.model.MAX_SLOT_DURATION
+import com.fangyi.classpp.data.model.MIN_SLOT_DURATION
+import com.fangyi.classpp.data.model.slotsWithAdjustedStart
+import com.fangyi.classpp.data.model.slotsWithCount
 import com.fangyi.classpp.ui.components.BottomDateSelectCard
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.BottomTimeSelectCard
@@ -131,6 +134,16 @@ internal fun ScheduleSettingsSheet(
     var weeksMounted by remember { mutableStateOf(false) }
     var weeksInitial by remember { mutableIntStateOf(TERM_WEEKS_MIN) }
 
+    // 总节数横向滚轮弹窗（BottomNumberSelectCard）：两段式同上；初值在请求时快照
+    var slotCountVisible by remember { mutableStateOf(false) }
+    var slotCountMounted by remember { mutableStateOf(false) }
+    var slotCountInitial by remember { mutableIntStateOf(1) }
+
+    // 每节课时间横向滚轮弹窗（BottomNumberSelectCard）：两段式同上
+    var slotDurationVisible by remember { mutableStateOf(false) }
+    var slotDurationMounted by remember { mutableStateOf(false) }
+    var slotDurationInitial by remember { mutableIntStateOf(DEFAULT_SLOT_DURATION_MINUTES) }
+
     // 设置内容的 haze 采样源：OverlaySheet 顶栏磨砂用，叠在其上的学期日期/节次时刻
     // 滚轮弹窗也拿它做卡片磨砂背景模糊——同一状态同源采样
     val sheetHazeState = rememberHazeState()
@@ -147,7 +160,8 @@ internal fun ScheduleSettingsSheet(
         ),
         onDismiss = onDismiss,
         visible = visible,
-        covered = pickerVisible || slotTimeVisible || weeksVisible,
+        covered = pickerVisible || slotTimeVisible || weeksVisible ||
+            slotCountVisible || slotDurationVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
         // 共享采样源：叠在本浮层上的两枚滚轮弹窗拿它做卡片磨砂背景模糊（见 sheetHazeState 声明处）
@@ -176,6 +190,17 @@ internal fun ScheduleSettingsSheet(
                 weeksInitial = totalWeeks(schedule.termStart, schedule.termEnd)
                 weeksMounted = true
                 weeksVisible = true
+            },
+            // 总节数 / 每节课时间：挂载横向滚轮弹窗（画在本浮层之后），初值请求时快照
+            onPickSlotCount = {
+                slotCountInitial = schedule.slotCount
+                slotCountMounted = true
+                slotCountVisible = true
+            },
+            onPickSlotDuration = {
+                slotDurationInitial = schedule.slotDurationMinutes
+                slotDurationMounted = true
+                slotDurationVisible = true
             },
             onRename = { name ->
                 scope.launch { submit(repository.renameSchedule(schedule.id, name)) }
@@ -264,6 +289,52 @@ internal fun ScheduleSettingsSheet(
             },
         )
     }
+
+    // 总节数横向滚轮弹窗画在浮层之后：小于现有 → 前缀裁剪；大于现有 → 末尾按每节课
+    // 时长生成（课间 30 分钟）。当天放不下目标节数（slotsWithCount 返回 null）时 toast
+    // 并保持原值，不提交截断结果
+    if (slotCountMounted) {
+        BottomNumberSelectCard(
+            visible = slotCountVisible,
+            onDismiss = { slotCountVisible = false },
+            onDismissed = { slotCountMounted = false },
+            title = stringResource(R.string.slot_count_select_title),
+            valueRange = ScheduleValidator.MIN_SLOTS..ScheduleValidator.MAX_SLOTS,
+            initialValue = slotCountInitial,
+            hazeState = sheetHazeState,
+            onConfirm = { count ->
+                slotCountVisible = false
+                val adjusted = slotsWithCount(
+                    schedule.slots,
+                    count,
+                    schedule.slotDurationMinutes,
+                )
+                if (adjusted != null) {
+                    scope.launch { submit(repository.setSlots(schedule.id, adjusted)) }
+                } else {
+                    AppToasts.show(context, context.getString(R.string.slot_overflow_desc))
+                }
+            },
+        )
+    }
+
+    // 每节课时间横向滚轮弹窗画在浮层之后：提交后即作为改开始时间自动推算结束/
+    // 级联顺延的依据（slotsWithAdjustedStart），不改写现有各节时间
+    if (slotDurationMounted) {
+        BottomNumberSelectCard(
+            visible = slotDurationVisible,
+            onDismiss = { slotDurationVisible = false },
+            onDismissed = { slotDurationMounted = false },
+            title = stringResource(R.string.slot_duration_select_title),
+            valueRange = MIN_SLOT_DURATION..MAX_SLOT_DURATION,
+            initialValue = slotDurationInitial,
+            hazeState = sheetHazeState,
+            onConfirm = { minutes ->
+                slotDurationVisible = false
+                scope.launch { submit(repository.setSlotDuration(schedule.id, minutes)) }
+            },
+        )
+    }
 }
 
 /** 当前课表全套设置：课表名 / 学期 / 每周天数 / 节数与时间 / 显示。数据变更经回调即时提交仓库。 */
@@ -278,6 +349,9 @@ private fun SettingsContent(
     onSlotTimePickRequest: (initialMinute: Int, title: String, onPicked: (minuteOfDay: Int) -> Unit) -> Unit,
     // 学期周数步上报：挂载周数滚轮弹窗（BottomNumberSelectCard，画在本浮层之后）
     onPickWeeks: () -> Unit,
+    // 总节数 / 每节课时间：挂载横向滚轮弹窗（BottomNumberSelectCard，画在本浮层之后）
+    onPickSlotCount: () -> Unit,
+    onPickSlotDuration: () -> Unit,
     onRename: (name: String) -> Unit,
     onTerm: (start: IsoDate, end: IsoDate) -> Unit,
     onDays: (days: Int) -> Unit,
@@ -285,6 +359,8 @@ private fun SettingsContent(
     onShowInactive: (show: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 开始时间级联放不下当天时，就地 toast 拒绝（与仓库拒绝同一条出口）
+    val context = LocalContext.current
     // 滚动由 OverlaySheet 的内容列承担，这里只排内容
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -327,46 +403,22 @@ private fun SettingsContent(
         }
 
         CardSection(title = stringResource(R.string.section_slots)) {
-            // 加：保留现有 slots 追加一节（上一节结束 +30 分钟课间、时长 100 分钟）；
-            // 减：保留前缀裁剪（合法表的前缀必合法，且保留用户已改时间）
-            val appended = appendSlot(schedule.slots)
-            val canAdd = appended != null && schedule.slotCount < 12   // 上限沿用 R5
-            // 单行卡（自定义行：尾部槽放加减按钮）；无法再加节时溢出提示经 footer 画在行下
+            // 总节数 + 每节课时间：一张 SettingsCard 双导航行（蓝字数值 + 箭头），点击各自
+            // 挂横向滚轮（1..30 / 10..200）；实际生成/裁剪与「当天放不下」的拒绝在宿主的
+            // 确认回调里（slotsWithCount）。每节课时间行带描述：改开始时间自动推算结束的
+            // 联动依据（slotsWithAdjustedStart），改结束时间不联动
             SettingsCard(
                 items = listOf(
-                    SettingsCardItem.Custom(
-                        label = stringResource(R.string.slot_count_format, schedule.slotCount),
-                        trailing = {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                TextAction(
-                                    text = stringResource(R.string.slot_decrease),
-                                    enabled = schedule.slotCount > 1,
-                                    onClick = { onSlots(schedule.slots.dropLast(1)) },
-                                )
-                                Spacer(modifier = Modifier.size(24.dp))
-                                TextAction(
-                                    text = stringResource(R.string.slot_increase),
-                                    enabled = canAdd,
-                                    onClick = { appended?.let { s -> onSlots(s) } },
-                                )
-                                Spacer(modifier = Modifier.size(6.dp))
-                            }
-                        },
-                        footer = if (appended == null) {
-                            {
-                                Text(
-                                    text = stringResource(R.string.slot_overflow_desc),
-                                    // 行自带 14dp 底距：提示再补左右 16 / 底 14 与行节奏对齐
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                            }
-                        } else null,
+                    SettingsCardItem.Nav(
+                        label = stringResource(R.string.slot_count_label),
+                        value = schedule.slotCount.toString(),
+                        onClick = onPickSlotCount,
+                    ),
+                    SettingsCardItem.Nav(
+                        label = stringResource(R.string.slot_duration_label),
+                        description = stringResource(R.string.slot_duration_desc),
+                        value = stringResource(R.string.slot_duration_value, schedule.slotDurationMinutes),
+                        onClick = onPickSlotDuration,
                     ),
                 ),
             )
@@ -386,21 +438,29 @@ private fun SettingsContent(
                             // 参与行高，垂直居中向上下各溢出 4dp
                             OverflowHeightBox(ChipRowHeight) {
                                 // 点胶囊：挂载时刻轮（画在本浮层之后），初值 = 当前时刻；
-                                // 确认分钟数折算 HH:mm 后整表提交（顺序合法性由仓库校验）
+                                // 确认分钟数后整表提交。开始时间走 slotsWithAdjustedStart：
+                                // 结束 = 开始 + 每节课时长，与下一节冲突则后续节级联顺延
+                                //（结束时间不走联动，顺序合法性仍由仓库校验）
                                 TimeChip(TimeText.formatDisplay(slot.startTime)) {
                                     onSlotTimePickRequest(
                                         TimeText.parseMinutes(slot.startTime) ?: 8 * 60,
                                         slotTitle,
                                     ) { picked ->
-                                        onSlots(
-                                            schedule.slots.mapIndexed { i, s ->
-                                                if (i == index) {
-                                                    s.copy(startTime = TimeText.format(picked))
-                                                } else {
-                                                    s
-                                                }
-                                            },
+                                        val adjusted = slotsWithAdjustedStart(
+                                            schedule.slots,
+                                            index,
+                                            picked,
+                                            schedule.slotDurationMinutes,
                                         )
+                                        if (adjusted != null) {
+                                            onSlots(adjusted)
+                                        } else {
+                                            // 当天放不下：提示后放弃本次修改，不产生部分生效的中间态
+                                            AppToasts.show(
+                                                context,
+                                                context.getString(R.string.error_slot_day_overflow),
+                                            )
+                                        }
                                     }
                                 }
                                 Spacer(Modifier.width(16.dp))
@@ -481,8 +541,6 @@ private fun ScheduleNameField(name: String, onRename: (String) -> Unit) {
 
 private val ChipShape = RoundedCornerShape(8.dp)
 
-private val TextActionShape = RoundedCornerShape(8.dp)
-
 /**
  * 时间胶囊：背景灰底、primary 字，点击弹时间选择（节次行尾部控件）。
  * 文字启用等宽数字（tnum）：所有时间同为 00:00 五字符，数字位等宽后各胶囊文字宽度天然一致。
@@ -504,33 +562,6 @@ private fun TimeChip(
             .padding(horizontal = 18.dp, vertical = 9.dp),
         style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
         color = MaterialTheme.colorScheme.primary,
-    )
-}
-
-/**
- * 行尾文字动作（加减一节）：无底色、无内距，可点区域就是文字本身——高度即文字高度，
- * 与行 label 同一排版节奏（fieldValue 角色 + SemiBold）。primary 色提示可点，
- * 禁用降为 M3 禁用灰（onSurface 38%）且不可点；按压反馈（ui.motion 的 pressClickable，
- * 自带按压源 + 点击）接在 clip 之前，放大/提亮按 [TextActionShape] 圆角收边不越界。
- */
-@Composable
-private fun TextAction(
-    text: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    Text(
-        text = text,
-        // 反馈放在 clip 之前；enabled 原样传透——禁用时点击不发按压事件，反馈一起消失
-        modifier = Modifier
-            .pressClickable(TextActionShape, enabled = enabled, role = Role.Button, onClick = onClick)
-            .clip(TextActionShape),
-        style = MaterialTheme.classppTextStyles.fieldValue.copy(fontWeight = FontWeight.SemiBold),
-        color = if (enabled) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-        },
     )
 }
 
@@ -601,6 +632,8 @@ private fun SettingsContentPreview() {
             onDatePickRequest = { _, _ -> },
             onSlotTimePickRequest = { _, _, _ -> },
             onPickWeeks = {},
+            onPickSlotCount = {},
+            onPickSlotDuration = {},
             onRename = {},
             onTerm = { _, _ -> },
             onDays = {},

@@ -214,6 +214,12 @@ class ScheduleRepository internal constructor(
         commit(fileState.value.replace(target, updated))
     }
 
+    /** 每节课时长（分钟）：改开始时间自动推算结束/级联顺延的依据（范围由 UI 侧约束 10..200） */
+    suspend fun setSlotDuration(id: String, minutes: Int): OpResult = mutex.withLock {
+        val target = scheduleOrNull(id) ?: return@withLock OpResult.Err(ScheduleError.NotFound(id))
+        commit(fileState.value.replace(target, target.copy(slotDurationMinutes = minutes)))
+    }
+
     suspend fun setShowInactiveCourses(id: String, show: Boolean): OpResult = mutex.withLock {
         val target = scheduleOrNull(id) ?: return@withLock OpResult.Err(ScheduleError.NotFound(id))
         commit(fileState.value.replace(target, target.copy(showInactiveCourses = show)))

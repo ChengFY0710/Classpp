@@ -71,6 +71,13 @@
     <string name="slot_overflow_desc">Not enough room in the day to add another period</string>
     <string name="slot_format">Period %1$d</string>
     <string name="slot_range_format">Periods %1$d-%2$d</string>
+    <!-- Periods & times (schedule settings): total-count / per-class-duration nav rows + their wheel sheets -->
+    <string name="slot_count_label">Total Periods</string>
+    <string name="slot_count_select_title">Select Periods</string>
+    <string name="slot_duration_label">Class Duration</string>
+    <string name="slot_duration_desc">End time is derived from the start time</string>
+    <string name="slot_duration_value">%1$dmin</string>
+    <string name="slot_duration_select_title">Select Class Duration</string>
     <!-- Timetable (Personalization) -->
     <string name="section_schedule">Timetable</string>
     <string name="card_height_label">Course card height</string>
@@ -85,9 +92,10 @@
     <string name="error_term_range">Term end must not be before term start</string>
     <string name="error_term_end_short">These courses no longer fit in the last week — shorten their weeks or move the term end later</string>
     <string name="error_days_per_week">Days per week must be 5 or 7</string>
-    <string name="error_slot_count">Period count must be 1–12</string>
+    <string name="error_slot_count">Period count must be 1–30</string>
     <string name="error_slot_time_format">Time must look like 8:00</string>
     <string name="error_slot_order">Periods must be ordered without overlap</string>
+    <string name="error_slot_day_overflow">Adjusted times exceed the day</string>
     <string name="error_schedule_name">Schedule name must not be blank</string>
     <string name="error_courses_out_of_range">%1$d course(s) outside the new range; change rejected: %2$s</string>
     <string name="error_not_found">Schedule not found</string>

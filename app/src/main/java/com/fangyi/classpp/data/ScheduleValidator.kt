@@ -25,7 +25,7 @@ import com.fangyi.classpp.data.model.TimeText
 object ScheduleValidator {
 
     const val MIN_SLOTS = 1
-    const val MAX_SLOTS = 12
+    const val MAX_SLOTS = 30
     const val MAX_SPAN = 5
 
     /** 全量校验：设置 + 课程（含同格周数重叠） */

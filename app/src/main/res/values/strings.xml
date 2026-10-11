@@ -95,6 +95,13 @@
     <string name="slot_overflow_desc">当天时间不足以再增加节次</string>
     <string name="slot_format">第 %1$d 节</string>
     <string name="slot_range_format">第 %1$d-%2$d 节</string>
+    <!-- 节数与时间（课表设置）：总节数与每节课时间导航行 + 各自的横向滚轮弹窗 -->
+    <string name="slot_count_label">总节数</string>
+    <string name="slot_count_select_title">选择节数</string>
+    <string name="slot_duration_label">每节课时间</string>
+    <string name="slot_duration_desc">根据开始时间自动推算结束时间</string>
+    <string name="slot_duration_value">%1$dmin</string>
+    <string name="slot_duration_select_title">选择每节课时间</string>
     <!-- 课表（个性化页） -->
     <string name="section_schedule">课表</string>
     <string name="card_height_label">课程卡片高度</string>
@@ -109,9 +116,10 @@
     <string name="error_term_range">学期结束不能早于学期开始</string>
     <string name="error_term_end_short">学期末周放不下这些课，请缩短课程周数或把学期结束往后调</string>
     <string name="error_days_per_week">每周天数只能是 5 或 7</string>
-    <string name="error_slot_count">节数须在 1–12 之间</string>
+    <string name="error_slot_count">节数须在 1–30 之间</string>
     <string name="error_slot_time_format">时间格式须为 8:00 形式</string>
     <string name="error_slot_order">各节时间须先后有序不重叠</string>
+    <string name="error_slot_day_overflow">调整后超出当天时间范围</string>
     <string name="error_schedule_name">课表名称不能为空</string>
     <string name="error_courses_out_of_range">有 %1$d 门课超出新范围，已取消修改：%2$s</string>
     <string name="error_not_found">课表不存在</string>
