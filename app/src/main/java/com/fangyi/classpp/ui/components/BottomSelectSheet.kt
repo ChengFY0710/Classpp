@@ -40,7 +40,11 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.BottomSelectSheetShape
+import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
 import kotlinx.coroutines.launch
 
 /** 卡片距屏幕左右/底缘的边距：私有值，不随全局页边距走（卡片悬浮感与内容节奏解耦） */
@@ -65,6 +69,11 @@ private val ContentBottomPadding: Dp = 20.dp
 private val CardShadowElevation: Dp = 32.dp
 
 /**
+ * 卡片磨砂的模糊半径：
+ */
+private val CardBlurRadius: Dp = 20.dp
+
+/**
  * 底部弹出选择卡：内容高度不固定的白卡片弹窗，各种选择器的宿主容器（选择日期、
  * 选择时间、选择周数、每节课时间、选择总节数……）。只负责骨架——顶栏 + 内容槽；
  * 具体选择器作为 [content] 塞进来。
@@ -83,6 +92,12 @@ private val CardShadowElevation: Dp = 32.dp
  *   [visible] 变 false，组件随即向下滑出（[Motion.Overlay]，退场不带回弹）、遮罩同步变淡，
  *   **播完后才回调 [onDismissed]**，调用方在这一刻把弹窗移出组合；
  * - 不做拖拽关闭（卡片矮、内容少，点遮罩/按钮足够）。
+ *
+ * 遮罩随进度压暗不变；卡片本体是一块**磨砂玻璃**：[hazeState] 非空时在 surface 底色之上
+ * 叠加背景模糊（hazeEffect 画在底色之上、内容之下，同 [PopupMenuCard] /
+ * WeekPickerCardShell 的白卡毛玻璃配方：CardBlurRadius 12dp + hazeTint 60%），背后的
+ * hazeSource 内容透出毛玻璃质感；null = 纯 surface 平底卡。宿主把页面/浮层内容挂
+ * hazeSource 后将同一状态传进来。
  *
  * [cancelLabel] / [confirmLabel] 默认取全局「取消/确认」文案；确认按钮的点击回调
  * [onConfirm] 只在非收场状态下放行（防双击重复提交）。
@@ -103,6 +118,9 @@ fun BottomSelectSheet(
     onConfirm: () -> Unit = {},
     // 卡片投影浓度：只调透明度（0 = 无影，1 = 纯黑最浓），模糊半径由 CardShadowElevation 撑
     shadowAlpha: Float = 0.3f,
+    // 卡片磨砂的采样源：非空时卡片在 surface 底色之上叠背景模糊（见 KDoc），
+    // null = 纯 surface 平底卡。宿主把页面/浮层内容挂 hazeSource 后将同一状态传进来
+    hazeState: HazeState? = null,
     // 可选第三动作（如截止日期的「清除」）：内容槽下方整宽胶囊，规格同顶栏胶囊；null = 不渲染
     neutralAction: SheetTopAction? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -124,6 +142,8 @@ fun BottomSelectSheet(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val scrimColor = MaterialTheme.colorScheme.scrim
+    // hazeEffect 的 block 在绘制期执行、非 composable 上下文：tint 取值提到 modifier 之前
+    val cardHazeTint = MaterialTheme.classppColors.hazeTint
     val bottomClearancePx =
         WindowInsets.navigationBars.getBottom(density) + with(density) { CardEdgeMargin.toPx() }
 
@@ -205,9 +225,24 @@ fun BottomSelectSheet(
                     spotShadowColor = Color.Black.copy(alpha = shadowAlpha.coerceIn(0f, 1f))
                 },
                 shape = BottomSelectSheetShape,
-                color = MaterialTheme.colorScheme.background,
+                color = MaterialTheme.colorScheme.surface,
             ) {
-                Column {
+                Column(
+                    modifier = Modifier
+                        // 卡片磨砂（hazeState 非空时）：hazeEffect 画在 Surface 底色之上、
+                        // 内容之下（同 PopupMenuCard 白卡毛玻璃配方），玻璃感由 tint 统一
+                        .then(
+                            if (hazeState != null) {
+                                Modifier.hazeEffect(hazeState) {
+                                    blurRadius = CardBlurRadius
+                                    tints = listOf(HazeTint(cardHazeTint.copy(alpha = 0.6f)))
+                                    noiseFactor = 0f
+                                }
+                            } else {
+                                Modifier
+                            },
+                        ),
+                ) {
                     // 顶栏：取消胶囊 + 居中标题 + 确认胶囊（同 OverlaySheet 顶栏的按钮行，
                     // 标题以整行宽度居中、叠在按钮行之上）
                     Box(

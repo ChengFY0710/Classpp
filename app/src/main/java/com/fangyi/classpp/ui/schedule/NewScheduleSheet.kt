@@ -26,6 +26,7 @@ import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.settings.TermDatesCard
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
+import dev.chrisbanes.haze.rememberHazeState
 
 /**
  * 新建课表浮层：两个入口——无激活课表的空态经「创建课表」按钮打开；切换课表浮层的
@@ -65,6 +66,10 @@ internal fun NewScheduleSheet(
         if (imeInsets.getBottom(density) > 0) keyboard?.hide() else onDismiss()
     }
 
+    // 表单内容的 haze 采样源：OverlaySheet 顶栏磨砂用，叠在其上的开学/结束日期滚轮弹窗
+    // 也拿它做卡片磨砂背景模糊——同一状态同源采样
+    val sheetHazeState = rememberHazeState()
+
     OverlaySheet(
         title = stringResource(R.string.switcher_new),
         confirmLabel = stringResource(R.string.edit_confirm),
@@ -83,6 +88,8 @@ internal fun NewScheduleSheet(
         covered = pickerVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
+        // 共享采样源：叠在本浮层上的日期滚轮弹窗拿它做卡片磨砂背景模糊（见 sheetHazeState 声明处）
+        hazeState = sheetHazeState,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
             SheetTextField(
@@ -130,6 +137,7 @@ internal fun NewScheduleSheet(
                 pickerMounted = false
                 pickerCallback = null
             },
+            hazeState = sheetHazeState,
             initialDate = pickerInitial,
             onConfirm = { picked ->
                 pickerVisible = false

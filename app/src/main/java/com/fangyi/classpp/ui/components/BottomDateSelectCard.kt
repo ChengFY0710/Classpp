@@ -15,6 +15,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
+import dev.chrisbanes.haze.HazeState
 import java.util.GregorianCalendar
 import java.util.TimeZone
 
@@ -59,8 +60,8 @@ private fun IsoDate.toYearMonthDay(): Triple<Int, Int, Int> {
  *
  * [onConfirm]（确认胶囊）回调当前吸附的 [IsoDate]；滚轮在弹窗保持组合期间记住上次
  * 选择，移出组合（[onDismissed] 之后）重建时回到 [initialDate]。[initialDate] 的年份
- * 落在 [yearRange] 之外时年轮停在最近边界。其余行为（两段式关闭、遮罩、阴影参数
- * [shadowAlpha]）同 [BottomSelectSheet]。
+ * 落在 [yearRange] 之外时年轮停在最近边界。其余行为（两段式关闭、遮罩、卡片磨砂
+ * [hazeState]、阴影参数 [shadowAlpha]）同 [BottomSelectSheet]。
  */
 @Composable
 fun BottomDateSelectCard(
@@ -71,6 +72,7 @@ fun BottomDateSelectCard(
     initialDate: IsoDate = IsoDate.today(),
     yearRange: IntRange = defaultYearRange(),
     shadowAlpha: Float = 0.3f,
+    hazeState: HazeState? = null,
     // 可选第三动作（截止日期流程的「清除」等），透传给 [BottomSelectSheet]
     neutralAction: SheetTopAction? = null,
     onConfirm: (date: IsoDate) -> Unit,
@@ -111,6 +113,7 @@ fun BottomDateSelectCard(
         onDismiss = onDismiss,
         onDismissed = onDismissed,
         shadowAlpha = shadowAlpha,
+        hazeState = hazeState,
         neutralAction = neutralAction,
         modifier = modifier,
         onConfirm = {

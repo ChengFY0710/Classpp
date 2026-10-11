@@ -160,7 +160,9 @@ data class SheetTopAction(
  * [SheetTextField] / [SheetTextArea] / [TagChoosingCard] 已内置）。
  *
  * haze 的采样源挂在浮层内部的滚动列上：浮层被遮罩盖住后背后的课表网格对顶栏不可见，
- * 只需模糊浮层自身内容，因此容器内自建 hazeState，调用方无需传任何模糊状态。
+ * 只需模糊浮层自身内容。容器默认自建 hazeState（调用方无需传任何模糊状态）；宿主若要给
+ * 叠在本浮层**之上**的弹层（BottomSelectSheet 一族）做背景模糊，可传入共享 [hazeState]——
+ * 滚动内容仍是它的采样源，顶栏磨砂与上层弹窗的背景模糊同源。
  */
 @Composable
 fun OverlaySheet(
@@ -183,11 +185,15 @@ fun OverlaySheet(
     // 距屏幕顶端：默认 = 状态栏（顶部信息栏）实际高度；要钉成固定值时显式传 Dp
     topInset: Dp = Dp.Unspecified,
     imeBehavior: SheetImeBehavior = SheetImeBehavior.ContentScroll,
+    // 共享 hazeState（可选）：给叠在本浮层之上的弹层做背景模糊时由宿主传入，见 KDoc；
+    // null = 自建，仅供顶栏磨砂
+    hazeState: HazeState? = null,
     bottomContent: (@Composable () -> Unit)? = null,
     // 内容列的作用域由卡片内的 SheetScrollHost 显式转交（那里不在 Column 的接收者作用域里）
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val hazeState = rememberHazeState()
+    // 采样源状态：调用方传入共享 hazeState 则复用（叠层弹窗同源采样），否则自建
+    val sheetHazeState = hazeState ?: rememberHazeState()
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
     // 距屏幕顶端 = 状态栏（顶部信息栏）实际高度；调用方显式传 topInset 时用传入值。
@@ -375,7 +381,7 @@ fun OverlaySheet(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     // 顶栏模糊的采样源：滚动内容从顶栏底下滚过时被渐变模糊
-                                    .hazeSource(hazeState)
+                                    .hazeSource(sheetHazeState)
                                     // 滚动列自身在根坐标系里的位置：内容坐标系的稳定原点
                                     //（滚动列自己的放置位置不随其内容滚动而变）
                                     .onGloballyPositioned {
@@ -419,7 +425,7 @@ fun OverlaySheet(
                                 onConfirm = { if (!closeRequested) onConfirm() },
                                 rightAction = guardedRightAction,
                                 confirmAtEnd = confirmAtEnd,
-                                hazeState = hazeState,
+                                hazeState = sheetHazeState,
                                 dragModifier = topBarDragModifier,
                                 modifier = Modifier.align(Alignment.TopCenter),
                             )

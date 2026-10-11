@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import com.fangyi.classpp.R
+import dev.chrisbanes.haze.HazeState
 
 /** 时/分两位补零显示（08 时 40 分） */
 private fun pad2(value: Int): String = value.toString().padStart(2, '0')
@@ -24,7 +25,8 @@ private fun pad2(value: Int): String = value.toString().padStart(2, '0')
  *
  * [onConfirm]（确认胶囊）回调当前吸附最近的两格值；滚轮在弹窗保持组合期间记住上次
  * 选择，移出组合（[onDismissed] 之后）重建时回到 [initialHour] / [initialMinute]。
- * 其余行为（两段式关闭、遮罩、阴影参数 [shadowAlpha]）同 [BottomSelectSheet]。
+ * 其余行为（两段式关闭、遮罩、卡片磨砂 [hazeState]、阴影参数 [shadowAlpha]）同
+ * [BottomSelectSheet]。
  */
 @Composable
 fun BottomTimeSelectCard(
@@ -35,6 +37,7 @@ fun BottomTimeSelectCard(
     initialHour: Int = 8,
     initialMinute: Int = 40,
     shadowAlpha: Float = 0.3f,
+    hazeState: HazeState? = null,
     onConfirm: (hour: Int, minute: Int) -> Unit,
     onDismissed: () -> Unit = {},
 ) {
@@ -53,6 +56,7 @@ fun BottomTimeSelectCard(
         onDismiss = onDismiss,
         onDismissed = onDismissed,
         shadowAlpha = shadowAlpha,
+        hazeState = hazeState,
         modifier = modifier,
         onConfirm = { onConfirm(hourState.selectedIndex, minuteState.selectedIndex) },
     ) {

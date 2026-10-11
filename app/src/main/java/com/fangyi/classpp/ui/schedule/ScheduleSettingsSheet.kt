@@ -61,6 +61,7 @@ import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.settings.TermDatesCard
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
 
 private val SectionSpacing = 18.dp
@@ -123,6 +124,10 @@ internal fun ScheduleSettingsSheet(
     var slotTimeTitle by remember { mutableStateOf("") }
     var slotTimeCallback by remember { mutableStateOf<((Int) -> Unit)?>(null) }
 
+    // 设置内容的 haze 采样源：OverlaySheet 顶栏磨砂用，叠在其上的学期日期/节次时刻
+    // 滚轮弹窗也拿它做卡片磨砂背景模糊——同一状态同源采样
+    val sheetHazeState = rememberHazeState()
+
     OverlaySheet(
         title = stringResource(R.string.settings_title),
         confirmLabel = null,
@@ -138,6 +143,8 @@ internal fun ScheduleSettingsSheet(
         covered = pickerVisible || slotTimeVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
+        // 共享采样源：叠在本浮层上的两枚滚轮弹窗拿它做卡片磨砂背景模糊（见 sheetHazeState 声明处）
+        hazeState = sheetHazeState,
         modifier = modifier,
     ) {
         SettingsContent(
@@ -187,6 +194,7 @@ internal fun ScheduleSettingsSheet(
                 pickerMounted = false
                 pickerCallback = null
             },
+            hazeState = sheetHazeState,
             initialDate = pickerInitial,
             onConfirm = { picked ->
                 pickerVisible = false
@@ -208,6 +216,7 @@ internal fun ScheduleSettingsSheet(
             title = slotTimeTitle,
             initialHour = slotTimeInitial / 60,
             initialMinute = slotTimeInitial % 60,
+            hazeState = sheetHazeState,
             onConfirm = { hour, minute ->
                 slotTimeVisible = false
                 slotTimeCallback?.invoke(hour * 60 + minute)

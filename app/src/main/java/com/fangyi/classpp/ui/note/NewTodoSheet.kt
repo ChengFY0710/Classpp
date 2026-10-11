@@ -59,6 +59,7 @@ import com.fangyi.classpp.ui.components.UrgentFlagCard
 import com.fangyi.classpp.ui.schedule.CourseColor
 import com.fangyi.classpp.ui.schedule.barColor
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
+import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
@@ -152,6 +153,10 @@ internal fun NewTodoSheet(
     var deleteMounted by remember { mutableStateOf(false) }
     if (deleteRequested) deleteMounted = true
 
+    // 表单内容的 haze 采样源：OverlaySheet 顶栏磨砂用，叠在其上的四枚滚轮弹窗
+    // （截止日期/自定义日期/截止时刻/时段时刻）也拿它做卡片磨砂背景模糊——同一状态同源采样
+    val sheetHazeState = rememberHazeState()
+
     // 截止时刻滚轮弹窗（BottomTimeSelectCard）：期望态 + 挂载态两段式（同删除确认框），
     // 声明在 OverlaySheet 之前——弹窗在场时经 covered 让本浮层缩小后退（分层动效）
     var deadlineTimeVisible by remember { mutableStateOf(false) }
@@ -241,6 +246,8 @@ internal fun NewTodoSheet(
             deadlineTimeVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
+        // 共享采样源：叠在本浮层上的滚轮弹窗拿它做卡片磨砂背景模糊（见 sheetHazeState 声明处）
+        hazeState = sheetHazeState,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
             SheetTextField(
@@ -400,6 +407,7 @@ internal fun NewTodoSheet(
                 deadlineDateMounted = false
                 deadlineDateCallback = null
             },
+            hazeState = sheetHazeState,
             title = stringResource(R.string.deadline_card_label),
             initialDate = deadlineDateInitial,
             // 已设截止才出现「清除」：回写 null 对（约束成对出现/同时为空）
@@ -436,6 +444,7 @@ internal fun NewTodoSheet(
                 customDateMounted = false
                 customDateCallback = null
             },
+            hazeState = sheetHazeState,
             initialDate = customDateInitial,
             onConfirm = { date ->
                 customDateVisible = false
@@ -459,6 +468,7 @@ internal fun NewTodoSheet(
             title = stringResource(R.string.deadline_card_time_title),
             initialHour = deadlineTimeInitial / 60,
             initialMinute = deadlineTimeInitial % 60,
+            hazeState = sheetHazeState,
             onConfirm = { hour, minute ->
                 deadlineTimeVisible = false
                 deadlineTimeCallback?.invoke(hour * 60 + minute)
@@ -479,6 +489,7 @@ internal fun NewTodoSheet(
             },
             initialHour = rangeTimeInitial / 60,
             initialMinute = rangeTimeInitial % 60,
+            hazeState = sheetHazeState,
             onConfirm = { hour, minute ->
                 rangeTimeVisible = false
                 rangeTimeCallback?.invoke(hour * 60 + minute)
