@@ -856,3 +856,17 @@ private fun BottomDateSelectCardPreview() = ClassppTheme {
         onConfirm = { },
     )
 }
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 500)
+@Composable
+private fun BottomNumberSelectCardPreview() = ClassppTheme {
+    // 数值选择弹窗（横向滚轮）：左右拖动看渐隐缩放与橡皮筋，范围可调（此处 1..30 周）
+    BottomNumberSelectCard(
+        visible = true,
+        onDismiss = {},
+        title = "选择周数",
+        valueRange = 1..30,
+        initialValue = 16,
+        onConfirm = { },
+    )
+}

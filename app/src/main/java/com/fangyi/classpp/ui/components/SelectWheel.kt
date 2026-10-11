@@ -45,13 +45,13 @@ private const val WheelVisibleItems = 3
 private val WheelWidth: Dp = 120.dp
 
 /** 邻格数字相对选中数字的缩放（对齐设计稿：上下灰格约为中间的 0.6 倍） */
-private const val AdjacentScale = 0.62f
+internal const val AdjacentScale = 0.62f
 
 /** 渐隐结束的距离（格）：1 = 邻格，到它时 alpha 归零（早于视口裁剪边 1.5 格） */
 private const val FadeOutItems = 1.4f
 
 /** 渐隐段里数字额外缩到多少（邻格基础上再缩） */
-private const val FadeOutScale = 0.8f
+internal const val FadeOutScale = 0.8f
 
 /** 拖出首尾边界的阻尼：越界位移只按此比例跟手（橡皮筋，不会越拉越远） */
 private const val OvershootResistance = 0.25f
@@ -59,8 +59,8 @@ private const val OvershootResistance = 0.25f
 /** 滚轮数字字号（对齐设计稿量得的中格大小） */
 private val WheelNumberFontSize = 36.sp
 
-/** 单位（时/分、年/月/日）字号 */
-private val WheelUnitFontSize = 18.sp
+/** 单位（时/分、年/月/日）字号（横向轮的单位标签同样取这一档） */
+internal val WheelUnitFontSize = 18.sp
 
 /** 数字右缘到单位的间距 */
 private val UnitGap: Dp = 10.dp
@@ -75,28 +75,32 @@ private val UnitGap: Dp = 10.dp
  */
 
 /**
- * 单个滚轮的状态：[scroll] 是内容滚动量（px，数值 i 画在 `i × 格高 − scroll` 的偏移处，
+ * 单个滚轮的状态：[scroll] 是内容滚动量（px，数值 i 画在 `i × 格距 − scroll` 的偏移处，
  * 正 = 内容下移 = 选中更小的值）。拖拽、惯性、吸附全部收在这里，确认按钮随时可读
  * [selectedIndex]（跟手/吸附过渡中取最近的整格）。
  *
  * 格数可变（日期选择器的「日」轮随年月天数增减，见 [updateCount]）。
+ * 滚动数学与轴向无关：竖向轮用默认格距 [WheelItemHeight]，横向轮（SelectWheelHorizontal）
+ * 传格宽 [itemSize] 即可复用同一套拖拽/惯性/吸附/橡皮筋。
  */
 internal class WheelState(
     count: Int,
     initialIndex: Int,
     density: Density,
     private val scope: CoroutineScope,
+    // 格距（相邻两个数值的中心间距）：竖向轮 = 格高 WheelItemHeight，横向轮 = 格宽
+    itemSize: Dp = WheelItemHeight,
 ) {
-    private val itemHeightPx = with(density) { WheelItemHeight.toPx() }
+    private val itemSizePx = with(density) { itemSize.toPx() }
 
     /** 格数（1 起） */
     var count: Int = count.coerceAtLeast(1)
         private set
 
-    private var maxScroll = (count - 1) * itemHeightPx
+    private var maxScroll = (count - 1) * itemSizePx
 
     // 未阻尼的滚动量：越界段的橡皮筋映射以它为输入，避免逐帧折叠阻尼导致回拉
-    private var raw = initialIndex.coerceIn(0, count - 1) * itemHeightPx
+    private var raw = initialIndex.coerceIn(0, count - 1) * itemSizePx
 
     // 松手的惯性+吸附动画：再次拖拽/增减格数要先取消它并放开边界，否则 snapTo 会被界夹住
     private var settleJob: Job? = null
@@ -105,7 +109,7 @@ internal class WheelState(
 
     /** 当前选中索引（0..count-1） */
     val selectedIndex: Int
-        get() = (scroll.value / itemHeightPx).roundToInt().coerceIn(0, count - 1)
+        get() = (scroll.value / itemSizePx).roundToInt().coerceIn(0, count - 1)
 
     /**
      * 增减格数（日轮 1..31 → 1..30）：取消收尾动画、收紧边界，当前值越界时**就地折回**
@@ -115,7 +119,7 @@ internal class WheelState(
         val target = newCount.coerceAtLeast(1)
         if (target == count) return
         count = target
-        maxScroll = (count - 1) * itemHeightPx
+        maxScroll = (count - 1) * itemSizePx
         settleJob?.cancel()
         settleJob = null
         scope.launch {
@@ -152,7 +156,7 @@ internal class WheelState(
             scroll.animateDecay(initialVelocityPx, decay)
             scroll.updateBounds(Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY)
             val target =
-                (scroll.value / itemHeightPx).roundToInt().coerceIn(0, count - 1) * itemHeightPx
+                (scroll.value / itemSizePx).roundToInt().coerceIn(0, count - 1) * itemSizePx
             raw = target
             scroll.animateTo(target, Motion.Settle)
         }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -20,6 +21,7 @@ import androidx.compose.ui.text.input.ImeAction
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.components.BottomDateSelectCard
+import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTextField
@@ -56,6 +58,12 @@ internal fun NewScheduleSheet(
     var pickerMounted by remember { mutableStateOf(false) }
     var pickerInitial by remember { mutableStateOf(IsoDate.today()) }
     var pickerCallback by remember { mutableStateOf<((IsoDate) -> Unit)?>(null) }
+
+    // 学期周数横向滚轮弹窗（BottomNumberSelectCard）：两段式同上；初值在请求时快照
+    // （挂载期间表单的起止日不会再变）
+    var weeksVisible by remember { mutableStateOf(false) }
+    var weeksMounted by remember { mutableStateOf(false) }
+    var weeksInitial by remember { mutableIntStateOf(TERM_WEEKS_MIN) }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val imeInsets = WindowInsets.ime
@@ -85,7 +93,7 @@ internal fun NewScheduleSheet(
         ),
         onDismiss = onDismiss,
         visible = visible,
-        covered = pickerVisible,
+        covered = pickerVisible || weeksVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
         // 共享采样源：叠在本浮层上的日期滚轮弹窗拿它做卡片磨砂背景模糊（见 sheetHazeState 声明处）
@@ -121,7 +129,13 @@ internal fun NewScheduleSheet(
                     pickerMounted = true
                     pickerVisible = true
                 },
-                // 改周数 → 结束日整周平移（星期几不变），与设置页同一联动
+                // 改周数 → 挂横向滚轮弹窗（画在本浮层之后）；确认后结束日整周平移
+                // （星期几不变），与设置页同一联动
+                onPickWeeks = {
+                    weeksInitial = totalWeeks(start, end)
+                    weeksMounted = true
+                    weeksVisible = true
+                },
                 onSetWeeks = { weeks -> end = endForTotalWeeks(start, end, weeks) },
             )
         }
@@ -143,6 +157,25 @@ internal fun NewScheduleSheet(
                 pickerVisible = false
                 pickerCallback?.invoke(picked)
                 pickerCallback = null
+            },
+        )
+    }
+
+    // 学期周数横向滚轮弹窗（BottomNumberSelectCard）画在浮层之后（组合顺序即绘制顺序）；
+    // 确认把结束日整周平移到目标周数（星期几不变），取消/遮罩/返回只请求关闭，
+    // 播完退场才卸载（两段式，同日期轮）
+    if (weeksMounted) {
+        BottomNumberSelectCard(
+            visible = weeksVisible,
+            onDismiss = { weeksVisible = false },
+            onDismissed = { weeksMounted = false },
+            title = stringResource(R.string.weeks_select_title),
+            valueRange = TERM_WEEKS_MIN..TERM_WEEKS_MAX,
+            initialValue = weeksInitial,
+            hazeState = sheetHazeState,
+            onConfirm = { weeks ->
+                weeksVisible = false
+                end = endForTotalWeeks(start, end, weeks)
             },
         )
     }

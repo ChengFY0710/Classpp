@@ -48,6 +48,7 @@ import com.fangyi.classpp.data.model.TimeSlotDef
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.appendSlot
 import com.fangyi.classpp.ui.components.BottomDateSelectCard
+import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.BottomTimeSelectCard
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.RowChoiceCard
@@ -124,6 +125,12 @@ internal fun ScheduleSettingsSheet(
     var slotTimeTitle by remember { mutableStateOf("") }
     var slotTimeCallback by remember { mutableStateOf<((Int) -> Unit)?>(null) }
 
+    // 学期周数横向滚轮弹窗（BottomNumberSelectCard）：期望态 + 挂载态两段式（同日期轮）；
+    // 初值在请求时快照（挂载期间本浮层的起止日不会再变）
+    var weeksVisible by remember { mutableStateOf(false) }
+    var weeksMounted by remember { mutableStateOf(false) }
+    var weeksInitial by remember { mutableIntStateOf(TERM_WEEKS_MIN) }
+
     // 设置内容的 haze 采样源：OverlaySheet 顶栏磨砂用，叠在其上的学期日期/节次时刻
     // 滚轮弹窗也拿它做卡片磨砂背景模糊——同一状态同源采样
     val sheetHazeState = rememberHazeState()
@@ -140,7 +147,7 @@ internal fun ScheduleSettingsSheet(
         ),
         onDismiss = onDismiss,
         visible = visible,
-        covered = pickerVisible || slotTimeVisible,
+        covered = pickerVisible || slotTimeVisible || weeksVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
         // 共享采样源：叠在本浮层上的两枚滚轮弹窗拿它做卡片磨砂背景模糊（见 sheetHazeState 声明处）
@@ -163,6 +170,12 @@ internal fun ScheduleSettingsSheet(
                 slotTimeCallback = onPicked
                 slotTimeMounted = true
                 slotTimeVisible = true
+            },
+            // 学期周数：挂载横向滚轮弹窗（画在本浮层之后），初值 = 当前起止日的日历周数
+            onPickWeeks = {
+                weeksInitial = totalWeeks(schedule.termStart, schedule.termEnd)
+                weeksMounted = true
+                weeksVisible = true
             },
             onRename = { name ->
                 scope.launch { submit(repository.renameSchedule(schedule.id, name)) }
@@ -224,6 +237,33 @@ internal fun ScheduleSettingsSheet(
             },
         )
     }
+
+    // 学期周数横向滚轮弹窗（BottomNumberSelectCard）画在浮层之后（组合顺序即绘制顺序）；
+    // 确认把结束日整周平移到目标周数（endForTotalWeeks）并整表提交仓库（学期起止同一条
+    // 提交通道），取消/遮罩/返回只请求关闭，播完退场才卸载（两段式，同日期轮）
+    if (weeksMounted) {
+        BottomNumberSelectCard(
+            visible = weeksVisible,
+            onDismiss = { weeksVisible = false },
+            onDismissed = { weeksMounted = false },
+            title = stringResource(R.string.weeks_select_title),
+            valueRange = TERM_WEEKS_MIN..TERM_WEEKS_MAX,
+            initialValue = weeksInitial,
+            hazeState = sheetHazeState,
+            onConfirm = { weeks ->
+                weeksVisible = false
+                scope.launch {
+                    submit(
+                        repository.setTerm(
+                            schedule.id,
+                            schedule.termStart,
+                            endForTotalWeeks(schedule.termStart, schedule.termEnd, weeks),
+                        ),
+                    )
+                }
+            },
+        )
+    }
 }
 
 /** 当前课表全套设置：课表名 / 学期 / 每周天数 / 节数与时间 / 显示。数据变更经回调即时提交仓库。 */
@@ -236,6 +276,8 @@ private fun SettingsContent(
     // 节次起止步上报：初值为当前时刻（分钟数）、title 为「第 N 节」，[onPicked] 收确认的
     // 分钟数后在此折算 HH:mm 整表提交；弹窗本体（BottomTimeSelectCard）同在浮层之后
     onSlotTimePickRequest: (initialMinute: Int, title: String, onPicked: (minuteOfDay: Int) -> Unit) -> Unit,
+    // 学期周数步上报：挂载周数滚轮弹窗（BottomNumberSelectCard，画在本浮层之后）
+    onPickWeeks: () -> Unit,
     onRename: (name: String) -> Unit,
     onTerm: (start: IsoDate, end: IsoDate) -> Unit,
     onDays: (days: Int) -> Unit,
@@ -265,6 +307,7 @@ private fun SettingsContent(
             onPickEnd = {
                 onDatePickRequest(schedule.termEnd) { picked -> onTerm(schedule.termStart, picked) }
             },
+            onPickWeeks = onPickWeeks,
             onSetWeeks = { weeks ->
                 onTerm(schedule.termStart, endForTotalWeeks(schedule.termStart, schedule.termEnd, weeks))
             },
@@ -557,6 +600,7 @@ private fun SettingsContentPreview() {
             ),
             onDatePickRequest = { _, _ -> },
             onSlotTimePickRequest = { _, _, _ -> },
+            onPickWeeks = {},
             onRename = {},
             onTerm = { _, _ -> },
             onDays = {},

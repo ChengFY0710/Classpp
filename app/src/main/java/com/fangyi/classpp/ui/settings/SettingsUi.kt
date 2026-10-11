@@ -10,16 +10,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,7 +27,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
@@ -41,8 +35,7 @@ import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.motion.pressFeedback
-import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MAX
-import com.fangyi.classpp.ui.schedule.TERM_WEEKS_MIN
+import com.fangyi.classpp.ui.schedule.totalWeeks
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -160,10 +153,10 @@ internal fun IsoDate.toSettingsDateText(): String {
 }
 
 /**
- * 学期起止 + 总周数三行卡（起止弹外部传入的 DatePicker、周数弹输入对话框），
- * 顶部带「学期」分组标签。设置页与切换课表浮层的新建表单共用：
- * [onPickStart] / [onPickEnd] 由调用方挂各自的日期选择，[onSetWeeks] 收到合法周数
- * （已按 TERM_WEEKS_MIN..MAX 校验），调用方自行联动结束日（endForTotalWeeks）。
+ * 学期起止 + 总周数三行卡，顶部带「学期」分组标签。设置页与切换课表浮层的新建表单共用：
+ * [onPickStart] / [onPickEnd] / [onPickWeeks] 均为请求回调，由调用方在浮层**之后**挂各自的
+ * 选择弹窗（页内覆盖层画不进卡片里——浮层内容会被 Surface 裁剪，同日期轮的挂载约定）；
+ * [onSetWeeks] 收到合法周数，调用方自行联动结束日（endForTotalWeeks）。
  *
  * 卡体是 components 的新版 [com.fangyi.classpp.ui.components.SettingsCard]
  * （三枚导航行：行内建 16/14 内距与 60dp 行高、涟漪通栏满行由卡片圆角裁剪），
@@ -175,11 +168,11 @@ internal fun TermDatesCard(
     end: IsoDate,
     onPickStart: () -> Unit,
     onPickEnd: () -> Unit,
+    onPickWeeks: () -> Unit,
     onSetWeeks: (weeks: Int) -> Unit,
 ) {
-    // 与 Schedule.totalWeeks 同式：两端各取所在日历周的周一相减（开学日可为任意星期几）
-    val totalWeeks = ((end.mondayOfWeek() - start.mondayOfWeek()).toInt() / 7) + 1
-    var pickingWeeks by remember { mutableStateOf(false) }
+    // 与 Schedule.totalWeeks 同式（收拢在 totalWeeks 助手）：按所在周的周一相减
+    val currentWeeks = totalWeeks(start, end)
 
     CardSection(title = stringResource(R.string.section_term)) {
         SettingsCard(
@@ -196,62 +189,10 @@ internal fun TermDatesCard(
                 ),
                 SettingsCardItem.Nav(
                     label = stringResource(R.string.term_weeks),
-                    value = stringResource(R.string.term_weeks_value, totalWeeks),
-                    onClick = { pickingWeeks = true },
+                    value = stringResource(R.string.term_weeks_value, currentWeeks),
+                    onClick = onPickWeeks,
                 ),
             ),
-        )
-    }
-
-    // 周数对话框：仅打开期间进入组合（关闭即出组合，重开以当前周数重置输入）；
-    // 非法输入（空/0/>30）→ 字段 isError + 确定禁用；取消/外部点击丢弃
-    if (pickingWeeks) {
-        var input by remember { mutableStateOf(totalWeeks.toString()) }
-        val weeks = input.toIntOrNull()?.takeIf { it in TERM_WEEKS_MIN..TERM_WEEKS_MAX }
-        AlertDialog(
-            onDismissRequest = { pickingWeeks = false },
-            title = {
-                Text(stringResource(R.string.term_weeks))
-            },
-            text = {
-                OutlinedTextField(
-                    value = input,
-                    // 只留 ASCII 数字并截 2 位（1..30 至多两位），结构性杜绝 "-5"/"abc"/全角数字
-                    onValueChange = { input = it.filter { c -> c in '0'..'9' }.take(2) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    isError = weeks == null,
-                    supportingText = { Text(stringResource(R.string.term_weeks_range)) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            },
-            confirmButton = {
-                // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
-                // 按压源交给按钮形参，pressFeedback 接在 modifier 链末尾（贴按钮本体，对齐 textShape）
-                val press = remember { MutableInteractionSource() }
-                TextButton(
-                    enabled = weeks != null,
-                    onClick = {
-                        weeks?.let(onSetWeeks)
-                        pickingWeeks = false
-                    },
-                    interactionSource = press,
-                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
-                ) {
-                    Text(stringResource(R.string.settings_confirm))
-                }
-            },
-            dismissButton = {
-                // 叠按压反馈：M3 涟漪在按钮内部、调用侧去不掉（按压源与按钮共用）
-                val press = remember { MutableInteractionSource() }
-                TextButton(
-                    onClick = { pickingWeeks = false },
-                    interactionSource = press,
-                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
-                ) {
-                    Text(stringResource(R.string.settings_cancel))
-                }
-            },
         )
     }
 }
@@ -279,6 +220,7 @@ private fun TermDatesCardPreview() {
                 end = IsoDate.of(2027, 1, 17),
                 onPickStart = {},
                 onPickEnd = {},
+                onPickWeeks = {},
                 onSetWeeks = {},
             )
         }

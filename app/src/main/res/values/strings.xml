@@ -246,4 +246,7 @@
     <string name="date_unit_year">年</string>
     <string name="date_unit_month">月</string>
     <string name="date_unit_day">日</string>
+
+    <!-- 数值选择弹窗（BottomNumberSelectCard）：横向滚轮选整数（学期周数等） -->
+    <string name="weeks_select_title">选择周数</string>
 </resources>

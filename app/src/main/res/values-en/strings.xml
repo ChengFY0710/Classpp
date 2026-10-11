@@ -53,6 +53,8 @@
     <string name="term_weeks_value">%1$d weeks</string>
     <string name="term_weeks_range">1–30 weeks</string>
     <string name="section_term">Term</string>
+    <!-- BottomNumberSelectCard (horizontal number wheel, e.g. term weeks) -->
+    <string name="weeks_select_title">Select Weeks</string>
     <!-- 外观 -->
     <string name="appearance_theme_mode">Color mode</string>
     <string name="appearance_theme_system">Follow system</string>
