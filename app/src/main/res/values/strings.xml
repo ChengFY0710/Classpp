@@ -8,8 +8,12 @@
     <string name="nav_todo">待办</string>
     <string name="nav_todo_create">新建</string>
     <string name="todo_group_all">全部</string>
-    <string name="cd_todo_folder">文件夹</string>
-    <string name="cd_todo_sort">排序</string>
+    <string name="cd_todo_more">更多</string>
+    <string name="todo_action_group">分组</string>
+    <string name="todo_action_sort">排序</string>
+    <string name="todo_action_category">分类</string>
+    <string name="todo_action_view">视图</string>
+    <string name="todo_action_overview">概览</string>
     <string name="todo_new_title">新建待办</string>
     <string name="todo_edit_title">编辑待办</string>
     <string name="todo_name_label">待办名</string>

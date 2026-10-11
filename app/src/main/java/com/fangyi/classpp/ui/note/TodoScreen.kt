@@ -1,5 +1,7 @@
 package com.fangyi.classpp.ui.note
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -26,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
@@ -45,6 +48,7 @@ import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSection
 import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.PopupMenuSection
+import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.motion.TabTransitionState
@@ -120,8 +124,22 @@ fun TodoScreen(
     // 排序状态：默认创建时间降序（创建早的在前）
     var sort by rememberSaveable { mutableStateOf(TodoSort.Created) }
     var sortDescending by rememberSaveable { mutableStateOf(true) }
-    // 排序菜单展开态（DropdownMenu 挂在 TodoTopBar 的排序胶囊处）
+    // 排序菜单展开态（DropdownMenu 挂在 TodoTopBar 展开动作行的排序块处）
     var sortMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    // 顶栏「更多」展开态：翻转展开/收起动作行（分组/排序/分类/视图/概览）
+    var menuExpanded by rememberSaveable { mutableStateOf(false) }
+    // 列表让位与顶栏展开同帧同曲线：动作行展开/收起都是 Motion.ExpandMillis 一条时长，
+    // 进场 Decelerate、退场 Accelerate——与 TodoTopBar 的 AnimatedVisibility 同规格，
+    // 顶栏长高的同时列表同步下移，两者之间不露缝也不重叠
+    val topBarExtraSpace by animateDpAsState(
+        targetValue = if (menuExpanded) TopBarActionRowSpace else 0.dp,
+        animationSpec = if (menuExpanded) {
+            tween(Motion.ExpandMillis, easing = Motion.Decelerate)
+        } else {
+            tween(Motion.ExpandMillis, easing = Motion.Accelerate)
+        },
+        label = "todoTopBarActionSpace",
+    )
     // 详情浮层：被点待办 id（点卡片进入），空 = 未打开（同课表页 detailTargetId）
     var detailTargetId by rememberSaveable { mutableStateOf("") }
     // 编辑浮层：被编辑待办 id（详情顶栏「编辑」进入），空 = 未打开（两段式挂载见浮层处）
@@ -147,6 +165,7 @@ fun TodoScreen(
                     todos = todos,
                     sort = sort,
                     sortDescending = sortDescending,
+                    topBarExtraSpace = topBarExtraSpace,
                     onToggleCompleted = { id, completed ->
                         scope.launch { repository.setCompleted(id, completed) }
                     },
@@ -157,9 +176,15 @@ fun TodoScreen(
                 groups = DemoGroups,
                 selectedGroupIndex = selectedGroupIndex,
                 onGroupSelect = { selectedGroupIndex = it },
-                // 文件夹操作后续接入；排序点击展开菜单（SortMenuPopup 挂在胶囊处）
-                onFolderClick = {},
+                // 更多点击翻转展开态;收起时顺带关排序菜单——菜单锚在展开动作行的
+                // 排序块上,行收起锚点即消失,不先关会悬空
+                onMoreClick = {
+                    if (menuExpanded) sortMenuExpanded = false
+                    menuExpanded = !menuExpanded
+                },
+                // 排序块点击展开菜单(SortMenuPopup 挂在动作块处)
                 onSortClick = { sortMenuExpanded = true },
+                menuExpanded = menuExpanded,
                 sortMenuExpanded = sortMenuExpanded,
                 onSortMenuDismiss = { sortMenuExpanded = false },
                 sortMenuSections = listOf(
@@ -363,7 +388,7 @@ internal fun currentMinuteOfDay(): Int {
  * 截止日期已过且未完成）、未完成居中、已完成在下（默认收起），空组不渲染；
  * 组内按顶栏选定的排序与方向（默认创建时间降序——创建早的在前）。卡片经 [TodoCard]
  * 接模型字段（时间文本 [cardTimeText]、标签、紧急旗）。列表从顶栏与浮动导航栏下滚过，
- * 上下各留出让位。
+ * 上下各留出让位；顶栏展开动作行时按 [topBarExtraSpace] 额外让位（宿主动画下发）。
  *
  * 滚动容器为 [RubberBandLazyColumn]（页面 [ProvideOverscroll] 作用域内）：内容超一屏
  * 时滚到边缘拉出橡皮筋，待办很少、不足一屏时同样能拉——短内容是 foundation 派发门槛
@@ -374,6 +399,7 @@ private fun TodoList(
     todos: List<Todo>,
     sort: TodoSort,
     sortDescending: Boolean,
+    topBarExtraSpace: Dp,
     onToggleCompleted: (id: String, completed: Boolean) -> Unit,
     onTodoClick: (todo: Todo) -> Unit,
     modifier: Modifier = Modifier,
@@ -398,7 +424,7 @@ private fun TodoList(
     RubberBandLazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            top = topInset + TopBarRowSpace + ListTopSpacing,
+            top = topInset + TopBarRowSpace + ListTopSpacing + topBarExtraSpace,
             bottom = bottomInset + ListBottomSlack,
             start = PageHorizontalSpacing,
             end = PageHorizontalSpacing,

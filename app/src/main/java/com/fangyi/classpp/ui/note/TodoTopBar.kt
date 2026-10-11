@@ -1,6 +1,12 @@
 package com.fangyi.classpp.ui.note
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -9,6 +15,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -29,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -45,22 +54,26 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.PopupMenuCard
 import com.fangyi.classpp.ui.components.PopupMenuPopup
 import com.fangyi.classpp.ui.components.PopupMenuSection
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollFactory
 import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
 import com.fangyi.classpp.ui.motion.tabTransitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.EditActionShape
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
@@ -86,18 +99,18 @@ private val PillIconSize = 24.dp
 /** 左侧常驻图标胶囊宽度（图标 + 左右内边距） */
 private val IconPillWidth = PillIconSize + PillInnerPadding * 2
 
-/** 排序按钮右缘在顶栏坐标系里的位置：固定行自带 15dp 页边距（PageHorizontalSpacing） */
-private val SortPillRightEdge = PageHorizontalSpacing + IconPillWidth * 2 + PillSpacing
+/** 更多按钮右缘在顶栏坐标系里的位置：固定行自带 15dp 页边距（PageHorizontalSpacing） */
+private val MorePillRightEdge = PageHorizontalSpacing + IconPillWidth
 
 /**
- * 裁切线：分组条视口左边界相对排序按钮右缘的偏移（与静止间距 [RestGap] 互相独立）。
+ * 裁切线：分组条视口左边界相对更多按钮右缘的偏移（与静止间距 [RestGap] 互相独立）。
  * 默认 -[TopBarPillHeight] / 2（半枚胶囊）：切割边完全藏进按钮不透明底之下——胶囊
  * 滑到按钮右缘即视觉消失，且按钮四角的胶囊曲率收缩区也不会露出裁切残影；
  * 调到 0 = 贴缘裁（按钮圆角附近可能看到细缝残影），正值 = 在按钮右侧空隙中悬空切割。
  */
 private val ClipLineOffset = -TopBarPillHeight / 2
 
-/** 首粒「全部」静止位与排序按钮右缘的间距（不影响裁切线位置） */
+/** 首粒「全部」静止位与更多按钮右缘的间距（不影响裁切线位置） */
 private val RestGap = PillSpacing
 
 /** 阴影呼吸位：胶囊柔影上下各留一份，防 LazyRow 视口把阴影裁掉 */
@@ -118,6 +131,24 @@ private val TopBarTopPadding = 0.dp
 
 /** 裁剪形状纵向的外扩量：容纳 45dp elevation 柔影的可见扩散范围 */
 private val ShadowBleed = 200.dp
+
+/** 展开动作行高度：纵向「图标 + 标签」块在其中垂直居中（课表编辑栏 EditActionBarHeight 同规格） */
+private val TopBarActionBarHeight = 64.dp
+
+/** 动作行与上方胶囊行的间距（课表编辑栏状态栏下留白同款 6dp） */
+private val TopBarActionBarTopGap = 6.dp
+
+/** 动作块图标边长 / 标签字号 / 图标与标签间距 / 块内水平边距（课表编辑栏 EditAction 同规格） */
+private val TopBarActionIconSize = 30.dp
+private val TopBarActionLabelTextSize = 13.sp
+private val TopBarActionLabelGap = 2.dp
+private val TopBarActionInnerPadding = 8.dp
+
+/**
+ * 展开动作行的总占位高（上方留白 + 行高）：宿主列表让位用。公开 internal 让
+ * [com.fangyi.classpp.ui.note.TodoScreen] 直接引用，不再走手工镜像常量。
+ */
+internal val TopBarActionRowSpace = TopBarActionBarTopGap + TopBarActionBarHeight
 
 /**
  * 分组条的裁剪形状：左右封闭在节点边界（左 = 裁切线）、上下向外扩 [ShadowBleed]。
@@ -143,12 +174,20 @@ private val HorizontalClipShape = object : Shape {
 }
 
 /**
- * 待办页顶栏：左侧常驻图标胶囊（文件夹、排序）+ 右侧可滑动的分组胶囊条
+ * 待办页顶栏：左侧常驻「更多」胶囊（•••）+ 右侧可滑动的分组胶囊条
  * （「全部」常驻首位 + 用户自定义分组）。
  *
  * 布局：左侧常驻群浮在上层；右侧分组条的视口左边界即裁切线（[ClipLineOffset]，
- * 相对排序按钮右缘），首粒「全部」静止位与按钮右缘保持 [RestGap] 间距——向左滑动
- * 时越过分界线的部分被视口直接裁掉，即「滑入排序按钮背后」（常驻群不透明，无缝隙穿帮）。
+ * 相对更多按钮右缘），首粒「全部」静止位与按钮右缘保持 [RestGap] 间距——向左滑动
+ * 时越过分界线的部分被视口直接裁掉，即「滑入更多按钮背后」（常驻群不透明，无缝隙穿帮）。
+ *
+ * 展开：点击更多胶囊翻转 [menuExpanded]，胶囊行之下展开一条动作行（分组 / 排序 /
+ * 分类 / 视图 / 概览，「图标在上、标签在下」，课表编辑栏 EditAction 同规格）——
+ * 动作行画在顶栏模糊层之上，模糊 Box 包裹整条 Column、随展开自动长高覆盖；
+ * 进出场 expand/shrink + 淡入淡出（Motion.ExpandMillis，进场 Decelerate、退场
+ * Accelerate，NoteCardSection 同款），列表让位由宿主按 [TopBarActionRowSpace]
+ * 同步让出。收起更多胶囊即收起动作行——排序菜单锚在动作行的排序块上，宿主收起时
+ * 应同步关闭菜单（锚点随行消失）。
  *
  * 极限橡皮筋：经 LocalOverscrollFactory 注入 iOS 式橡皮筋效果，回弹弹簧取全局
  * [Motion.Settle]（与浮层拖拽松手回位同一令牌）；分组条用橡皮筋增强版
@@ -165,22 +204,25 @@ private val HorizontalClipShape = object : Shape {
  * 整帧重放就位时录制的栏面（含模糊输出），绕开 Haze 对转场中间态几何的重采样——
  * 与课表页顶栏同一机制，杜绝快速切 tab 时毛玻璃闪缺、露出纯兜底色帧。
  *
- * 纯 UI：分组点击只切选中高亮（过滤由调用方后续接入）；文件夹回调本期空置；
- * 排序胶囊点击回调 [onSortClick]（宿主置展开态）；排序菜单经 [sortMenuExpanded]/
- * [onSortMenuDismiss]/[sortMenuSections] 三件套下发，[SortMenuPopup] 挂在胶囊同一
- * Box 里（父布局即锚点）：走 [PopupMenuPopup] 共享弹层（[PopupMenuCard] 白卡）——
- * DropdownMenu 的壳自带默认阴影且换不掉，换壳才能吃上菜单卡的柔影。
+ * 纯 UI：分组点击只切选中高亮（过滤由调用方后续接入）；更多胶囊点击回调
+ * [onMoreClick]（宿主翻转展开态）；展开后排序块点击回调 [onSortClick]（宿主置
+ * 菜单展开态），分组/分类/视图/概览回调本期空置（接入功能时再加参数）；排序菜单
+ * 经 [sortMenuExpanded]/[onSortMenuDismiss]/[sortMenuSections] 三件套下发，
+ * [SortMenuPopup] 挂在排序块同一 Box 里（父布局即锚点）：走 [PopupMenuPopup]
+ * 共享弹层（[PopupMenuCard] 白卡）——DropdownMenu 的壳自带默认阴影且换不掉，
+ * 换壳才能吃上菜单卡的柔影。
  */
 @Composable
 fun TodoTopBar(
     groups: List<String>,
     selectedGroupIndex: Int,
     onGroupSelect: (Int) -> Unit,
-    onFolderClick: () -> Unit,
+    onMoreClick: () -> Unit,
     onSortClick: () -> Unit,
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
     tabTransition: TabTransitionState? = null,
+    menuExpanded: Boolean = false,
     sortMenuExpanded: Boolean = false,
     onSortMenuDismiss: () -> Unit = {},
     sortMenuSections: List<PopupMenuSection> = emptyList(),
@@ -238,7 +280,7 @@ fun TodoTopBar(
                         .height(TopBarPillHeight + ShadowOverhang * 2),
                 ) {
                     val scrollState = rememberScrollState()
-                    // 视口左边界 = 裁切线（SortPillRightEdge + ClipLineOffset）；contentPadding
+                    // 视口左边界 = 裁切线（MorePillRightEdge + ClipLineOffset）；contentPadding
                     // 反向补偿裁切偏移，让静止间距只由 RestGap 决定——两个旋钮互不干扰。
                     // 分组条用橡皮筋增强版 horizontalScroll：不足一行时也能拉出橡皮筋。
                     // horizontalScroll 不自带视口裁剪（LazyRow 自带），须补裁剪——但整体
@@ -248,7 +290,7 @@ fun TodoTopBar(
                         modifier = Modifier
                             .align(Alignment.CenterStart)
                             .fillMaxHeight()
-                            .padding(start = SortPillRightEdge + ClipLineOffset)
+                            .padding(start = MorePillRightEdge + ClipLineOffset)
                             .fillMaxWidth()
                             .clip(HorizontalClipShape)
                             .rubberBandHorizontalScroll(scrollState)
@@ -278,28 +320,92 @@ fun TodoTopBar(
                         modifier = Modifier
                             .align(Alignment.CenterStart)
                             .padding(start = PageHorizontalSpacing),
-                        horizontalArrangement = Arrangement.spacedBy(PillSpacing),
                     ) {
                         IconPill(
-                            iconRes = R.drawable.ic_folder,
-                            contentDescription = stringResource(R.string.cd_todo_folder),
-                            onClick = onFolderClick,
+                            iconRes = R.drawable.ic_more_horizontal,
+                            contentDescription = stringResource(R.string.cd_todo_more),
+                            onClick = onMoreClick,
                         )
-                        // 排序胶囊 + 锚定其下的排序菜单：SortMenuPopup 挂在胶囊同一 Box 里
-                        // （父布局即锚点），展开态与菜单分组内容由宿主下发
-                        Box {
-                            IconPill(
-                                iconRes = R.drawable.ic_arrow_sort,
-                                contentDescription = stringResource(R.string.cd_todo_sort),
-                                onClick = onSortClick,
-                            )
-                            SortMenuPopup(
-                                expanded = sortMenuExpanded,
-                                onDismiss = onSortMenuDismiss,
-                                sections = sortMenuSections,
-                                hazeState = hazeState,
-                            )
+                    }
+                }
+                // 展开动作行：画在顶栏模糊层之上（外层 Box 包裹整条 Column、随展开自动
+                // 长高，模糊跟着覆盖）；进出场同 NoteCardSection——expand/shrink + 淡入
+                // 淡出，Motion.ExpandMillis 一条时长，进场 Decelerate、退场 Accelerate。
+                // 列表让位由宿主按 TopBarActionRowSpace 用同帧同曲线动画同步让出
+                AnimatedVisibility(
+                    visible = menuExpanded,
+                    enter = expandVertically(
+                        animationSpec = tween(Motion.ExpandMillis, easing = Motion.Decelerate),
+                        expandFrom = Alignment.Top,
+                    ) + fadeIn(tween(Motion.ExpandMillis, easing = Motion.Decelerate)),
+                    exit = shrinkVertically(
+                        animationSpec = tween(Motion.ExpandMillis, easing = Motion.Accelerate),
+                        shrinkTowards = Alignment.Top,
+                    ) + fadeOut(tween(Motion.ExpandMillis, easing = Motion.Accelerate)),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = TopBarActionBarTopGap)
+                            .height(TopBarActionBarHeight),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // 占位四块（分组/分类/视图/概览）本期无功能：保留按压反馈，
+                        // 接入功能时再加回调参数
+                        TodoBarAction(
+                            label = stringResource(R.string.todo_action_group),
+                            iconRes = R.drawable.ic_folder,
+                            onClick = {},
+                            modifier = Modifier
+                                .weight(1f)
+                                .wrapContentWidth(Alignment.CenterHorizontally),
+                        )
+                        // 排序块 + 锚定其下的排序菜单：SortMenuPopup 挂在动作块同一 Box 里
+                        // （内层 Box 包住动作块即锚点，菜单卡左缘对齐动作块左缘，与原先
+                        // 锚定常驻胶囊的行为一致），展开态与菜单分组内容由宿主下发。
+                        // 外层 Box 只负责占一等份格槽并居中，避免锚点扩大到整格
+                        Box(
+                            modifier = Modifier.weight(1f),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box {
+                                TodoBarAction(
+                                    label = stringResource(R.string.todo_action_sort),
+                                    iconRes = R.drawable.ic_arrow_sort,
+                                    onClick = onSortClick,
+                                )
+                                SortMenuPopup(
+                                    expanded = sortMenuExpanded,
+                                    onDismiss = onSortMenuDismiss,
+                                    sections = sortMenuSections,
+                                    hazeState = hazeState,
+                                )
+                            }
                         }
+                        TodoBarAction(
+                            label = stringResource(R.string.todo_action_category),
+                            iconRes = R.drawable.ic_filter,
+                            onClick = {},
+                            modifier = Modifier
+                                .weight(1f)
+                                .wrapContentWidth(Alignment.CenterHorizontally),
+                        )
+                        TodoBarAction(
+                            label = stringResource(R.string.todo_action_view),
+                            iconRes = R.drawable.ic_layout_row_three,
+                            onClick = {},
+                            modifier = Modifier
+                                .weight(1f)
+                                .wrapContentWidth(Alignment.CenterHorizontally),
+                        )
+                        TodoBarAction(
+                            label = stringResource(R.string.todo_action_overview),
+                            iconRes = R.drawable.ic_clipboard_task,
+                            onClick = {},
+                            modifier = Modifier
+                                .weight(1f)
+                                .wrapContentWidth(Alignment.CenterHorizontally),
+                        )
                     }
                 }
             }
@@ -311,7 +417,7 @@ fun TodoTopBar(
  * 排序菜单弹层：[PopupMenuPopup] 共享弹层宿主（[PopupMenuCard] 白卡 + 自定义锚定
  * Popup），投影留白、越界钳制与 scale/alpha 进出场均由宿主处理（见 [PopupMenuPopup]）。
  *
- * 定位：卡片左缘对齐排序胶囊左缘、顶缘与胶囊底缘保持 [SortMenuPopupGap] 间距
+ * 定位：卡片左缘对齐排序动作块左缘、顶缘与动作块底缘保持 [SortMenuPopupGap] 间距
  * （0 = 贴住，DropdownMenu 原位）。
  * [hazeState] 下发给 [PopupMenuCard] 做毛玻璃（跨窗口采样页面 hazeSource，WeekPicker
  * 周数弹窗同款），null（如 @Preview）退化为不透明白卡。
@@ -429,6 +535,44 @@ private fun IconPill(
     }
 }
 
+/**
+ * 顶栏展开动作块：图标在上、13sp Medium 标签在下（课表编辑栏 EditAction 同规格），
+ * 两者水平居中对齐，整块可点；图标与标签同色（onSurface，设计图深色）。
+ * 文字已承载语义，故图标 contentDescription 为空（同 EditAction）。
+ */
+@Composable
+private fun TodoBarAction(
+    label: String,
+    @DrawableRes iconRes: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            // 按压反馈（自带按压源 + 点击，涟漪由其取代）放在 clip 之前：
+            // 缩放/提亮作用于整块动作区，EditActionShape 圆角裁剪在其内侧；
+            // 放大倍率与课表编辑栏动作块同规格单独调大到 1.10（不随全局默认）
+            .pressClickable(EditActionShape, scale = 1.10f, onClick = onClick)
+            .clip(EditActionShape)
+            .padding(horizontal = TopBarActionInnerPadding, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(TopBarActionIconSize),
+        )
+        Spacer(Modifier.height(TopBarActionLabelGap))
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = TopBarActionLabelTextSize,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
 private val PreviewGroups = listOf("作业", "日常琐事", "考试复习", "社团活动", "购物清单", "长期计划")
 
 @Preview(showBackground = true, widthDp = 412, name = "待办顶栏")
@@ -439,17 +583,26 @@ private fun TodoTopBarPreview() {
     }
 }
 
-@Preview(showBackground = true, widthDp = 412, name = "待办顶栏（深色）")
+@Preview(showBackground = true, widthDp = 412, name = "待办顶栏（展开）")
+@Composable
+private fun TodoTopBarExpandedPreview() {
+    ClassppTheme {
+        TodoTopBarPreviewContent(initialMenuExpanded = true)
+    }
+}
+
+@Preview(showBackground = true, widthDp = 412, name = "待办顶栏（深色，展开）")
 @Composable
 private fun TodoTopBarDarkPreview() {
     ClassppTheme(darkTheme = true) {
-        TodoTopBarPreviewContent()
+        TodoTopBarPreviewContent(initialMenuExpanded = true)
     }
 }
 
 @Composable
-private fun TodoTopBarPreviewContent() {
+private fun TodoTopBarPreviewContent(initialMenuExpanded: Boolean = false) {
     var selected by remember { mutableIntStateOf(0) }
+    var menuExpanded by remember { mutableStateOf(initialMenuExpanded) }
     Box(
         Modifier
             .fillMaxSize()
@@ -459,8 +612,9 @@ private fun TodoTopBarPreviewContent() {
             groups = PreviewGroups,
             selectedGroupIndex = selected,
             onGroupSelect = { selected = it },
-            onFolderClick = {},
+            onMoreClick = { menuExpanded = !menuExpanded },
             onSortClick = {},
+            menuExpanded = menuExpanded,
         )
     }
 }
