@@ -1,0 +1,253 @@
+package com.fangyi.classpp.ui.components
+
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.theme.BottomSelectSheetShape
+import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
+import com.fangyi.classpp.ui.theme.classppTextStyles
+import kotlinx.coroutines.launch
+
+/** 顶栏按钮行距卡片顶缘：与按钮行横向边距（[PageHorizontalSpacing]）同一节奏 */
+private val TopBarTopPadding: Dp = 15.dp
+
+/** 内容距顶栏按钮底缘的距离 */
+private val ContentTopSpacing: Dp = 15.dp
+
+/** 内容距卡片底缘的距离 */
+private val ContentBottomPadding: Dp = 20.dp
+
+/** 卡片距屏幕底缘的边距：与左右边距统一取 [PageHorizontalSpacing] */
+private val CardBottomMargin: Dp = PageHorizontalSpacing
+
+/**
+ * 卡片投影的 elevation：只负责撑开柔影的模糊半径，浓淡由 BottomSelectSheet 的
+ * shadowAlpha 参数调（同 [SheetPillButton] 的大柔影做法：高 elevation + 低透明度阴影色）。
+ */
+private val CardShadowElevation: Dp = 32.dp
+
+/**
+ * 底部弹出选择卡：内容高度不固定的白卡片弹窗，各种选择器的宿主容器（选择日期、
+ * 选择时间、选择周数、每节课时间、选择总节数……）。只负责骨架——顶栏 + 内容槽；
+ * 具体选择器作为 [content] 塞进来。
+ *
+ * 结构：全屏遮罩（点按关闭）→ 底部居中的卡片（左右/底部边距统一取 [PageHorizontalSpacing]，
+ * 底部再让开导航栏；[BottomSelectSheetShape] 四角 36dp 平滑圆角，与浮层顶部圆角一致）→
+ * 顶栏（取消胶囊 + 居中标题 + 确认胶囊，按钮同 OverlaySheet 顶栏的 [SheetPillButton]，
+ * 确认在右、取消在左，图标落各自外侧）→ 内容槽（距按钮底缘 [ContentTopSpacing]、
+ * 距卡片底缘 [ContentBottomPadding]，两个间距都收在文件顶部的常量里，改一处全局生效）。
+ *
+ * 进出场由组件自己完成，与 OverlaySheet 同一套两段式关闭：
+ * - 挂载即入场：从屏幕底部滑入（ui.motion 的 [Motion.OverlayOvershoot]，与浮层同一条
+ *   非线性曲线、末端冲过终位约 4~5% 再落回的一次超出回弹），遮罩同步压暗；
+ * - [onDismiss]（遮罩点击 / 取消 / 确认）只表示**请求关闭**，调用方收到后清掉自己的状态使
+ *   [visible] 变 false，组件随即向下滑出（[Motion.Overlay]，退场不带回弹）、遮罩同步变淡，
+ *   **播完后才回调 [onDismissed]**，调用方在这一刻把弹窗移出组合；
+ * - 不做拖拽关闭（卡片矮、内容少，点遮罩/按钮足够）。
+ *
+ * [cancelLabel] / [confirmLabel] 默认取全局「取消/确认」文案；确认按钮的点击回调
+ * [onConfirm] 只在非收场状态下放行（防双击重复提交）。
+ * 卡片投影是一层大柔影：模糊半径由 CardShadowElevation 撑开、浓度由 [shadowAlpha] 调
+ * （0 = 无影），同 [SheetPillButton] 的投影做法。
+ */
+@Composable
+fun BottomSelectSheet(
+    title: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    visible: Boolean = true,
+    onDismissed: () -> Unit = {},
+    cancelLabel: String = stringResource(R.string.settings_cancel),
+    confirmLabel: String = stringResource(R.string.edit_confirm),
+    onConfirm: () -> Unit = {},
+    // 卡片投影浓度：只调透明度（0 = 无影，1 = 纯黑最浓），模糊半径由 CardShadowElevation 撑
+    shadowAlpha: Float = 0.3f,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    // 点空白处收起（无涟漪）
+    val scrimInteraction = remember { MutableInteractionSource() }
+    // 吃掉落在卡片上的点击，避免穿透到遮罩把弹窗关掉（卡内控件的消费优先）
+    val cardInteraction = remember { MutableInteractionSource() }
+
+    // ——— 进出场共用一条进度：0 = 完全显示，1 = 完全滑出屏幕下方 ———
+    // 进场回弹会冲过 0（负值），位移与遮罩透明度都从它派生
+    val hiddenFraction = remember { Animatable(1f) }
+    // 滑动全程 = 卡片自身高度 + 底部让位（导航栏 inset + 底部边距）；layout 先于 draw
+    // 测出，首帧不会闪现在最终位置
+    var travelPx by remember { mutableStateOf(0f) }
+    // 收场已启动：出场期间面板仍在组合里，确认/取消/遮罩的二次点击一律不放行
+    var exiting by remember { mutableStateOf(false) }
+    var closeRequested by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val scrimColor = MaterialTheme.colorScheme.scrim
+    val bottomClearancePx =
+        WindowInsets.navigationBars.getBottom(density) + with(density) { CardBottomMargin.toPx() }
+
+    // 收场动画本体：从当前进度滑到全隐，播完才回调 onDismissed
+    suspend fun runExit() {
+        hiddenFraction.animateTo(1f, tween(Motion.SheetExitMillis, easing = Motion.Overlay))
+        onDismissed()
+    }
+
+    // 开始收场：幂等。可见性驱动的关闭（调用方清状态）最终都汇到这里
+    fun beginExit() {
+        if (exiting) return
+        exiting = true
+        closeRequested = true
+        scope.launch { runExit() }
+    }
+
+    // 打开滑入（带超出回弹）/ 关闭滑出（不带回弹）；关闭入口全部汇到 beginExit，
+    // 调用方只负责清状态
+    LaunchedEffect(visible) {
+        if (visible) {
+            exiting = false
+            closeRequested = false
+            hiddenFraction.animateTo(
+                0f,
+                tween(Motion.SheetEnterMillis, easing = Motion.OverlayOvershoot),
+            )
+        } else {
+            beginExit()
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            // 遮罩随进度压暗：完全显示时用 scrim 色自带的透明度（强度已按深浅模式烘进
+            // 色值，此处不再叠加）；进场回弹期间进度为负，alpha 收在 1 以内
+            .drawBehind {
+                val alpha = (1f - hiddenFraction.value).coerceIn(0f, 1f)
+                if (alpha > 0f) drawRect(color = scrimColor, alpha = alpha)
+            }
+            .clickable(
+                interactionSource = scrimInteraction,
+                indication = null,
+                onClick = { if (!closeRequested) onDismiss() },
+            ),
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(
+                    start = PageHorizontalSpacing,
+                    end = PageHorizontalSpacing,
+                    bottom = CardBottomMargin,
+                )
+                .onSizeChanged { travelPx = it.height + bottomClearancePx }
+                // 滑动位移只打在卡片这层：遮罩留在原地；hiddenFraction 冲过 0
+                // （回弹段）即卡片越过终位再落回
+                .graphicsLayer { translationY = hiddenFraction.value * travelPx }
+                .clickable(
+                    interactionSource = cardInteraction,
+                    indication = null,
+                    onClick = {},
+                ),
+        ) {
+            Surface(
+                modifier = Modifier.graphicsLayer {
+                    shape = BottomSelectSheetShape
+                    clip = true
+                    // 大柔影（同 SheetPillButton）：elevation 撑开模糊半径、阴影色 alpha 压浓淡；
+                    // 只调透明度改 shadowAlpha（0 = 无影），想更散改 CardShadowElevation
+                    shadowElevation = CardShadowElevation.toPx()
+                    ambientShadowColor = Color.Black.copy(alpha = shadowAlpha.coerceIn(0f, 1f))
+                    spotShadowColor = Color.Black.copy(alpha = shadowAlpha.coerceIn(0f, 1f))
+                },
+                shape = BottomSelectSheetShape,
+                color = MaterialTheme.colorScheme.background,
+            ) {
+                Column {
+                    // 顶栏：取消胶囊 + 居中标题 + 确认胶囊（同 OverlaySheet 顶栏的按钮行，
+                    // 标题以整行宽度居中、叠在按钮行之上）
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                start = PageHorizontalSpacing,
+                                end = PageHorizontalSpacing,
+                                top = TopBarTopPadding,
+                            ),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            SheetPillButton(
+                                label = cancelLabel,
+                                icon = R.drawable.ic_dismiss_circle,
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.height(TopBarPillHeight),
+                                onClick = { if (!closeRequested) onDismiss() },
+                            )
+                            SheetPillButton(
+                                label = confirmLabel,
+                                icon = R.drawable.ic_checkmark_circle,
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.height(TopBarPillHeight),
+                                iconAtEnd = true,
+                                onClick = { if (!closeRequested) onConfirm() },
+                            )
+                        }
+                        Text(
+                            text = title,
+                            style = MaterialTheme.classppTextStyles.topBarTitle,
+                            modifier = Modifier.align(Alignment.Center),
+                        )
+                    }
+                    // 内容槽：距顶栏按钮底缘 [ContentTopSpacing]、距卡片底缘
+                    // [ContentBottomPadding]，卡片高度随内容自适应
+                    Column(
+                        modifier = Modifier.padding(
+                            top = ContentTopSpacing,
+                            bottom = ContentBottomPadding,
+                        ),
+                    ) {
+                        content()
+                    }
+                }
+            }
+        }
+    }
+}

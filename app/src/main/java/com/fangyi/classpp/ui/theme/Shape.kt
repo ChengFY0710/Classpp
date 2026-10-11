@@ -14,6 +14,9 @@ import com.kyant.shapes.UnevenRoundedRectangle
 /** 底部浮层：顶部 36dp 平滑圆角，模糊与内容裁剪共用 */
 val SheetShape = UnevenRoundedRectangle(topStart = 36.dp, topEnd = 36.dp)
 
+/** 底部弹出选择卡（BottomSelectSheet）：四角 36dp 平滑圆角，与浮层顶部圆角一致 */
+val BottomSelectSheetShape = RoundedRectangle(36.dp)
+
 /** 浮层内卡片 */
 val SheetCardShape = RoundedRectangle(20.dp)
 

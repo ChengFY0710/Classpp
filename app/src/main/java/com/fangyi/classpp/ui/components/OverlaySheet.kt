@@ -100,8 +100,9 @@ private val TopBarRowHorizontalPadding: Dp = 15.dp
  * 顶栏胶囊固定高度 = 默认图标 30dp + 上下 padding 各 8dp（[SheetPillButton] 的自然高）。
  * 锚死后图标单独调小（如待办详情「编辑」26dp）两颗胶囊仍等高——余量由行内垂直居中消化；
  * 图标不要调到 30dp 以上，否则会顶破固定高。
+ * BottomSelectSheet（底部弹出选择卡）顶栏与浮层顶栏同款按钮，共用此高度。
  */
-private val TopBarPillHeight: Dp = 46.dp
+val TopBarPillHeight: Dp = 46.dp
 
 /**
  * 被上层盖住时本层卡片的缩放系数（分层 sheet 后退动效）：以**底边中心**为锚等比缩放——

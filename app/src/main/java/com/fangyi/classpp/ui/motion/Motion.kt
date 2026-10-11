@@ -102,6 +102,12 @@ object Motion {
     val Overlay: Easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
 
     /**
+     * 弹窗选择卡（BottomSelectSheet）进场曲线：[Overlay] 的前半段不变，把第二控制点抬到
+     * 1.2，进度冲过终点约 4~5% 再落回——底部滑入带一次超出回弹。调 y2 即调回弹幅度。
+     */
+    val OverlayOvershoot: Easing = CubicBezierEasing(0.32f, 0.72f, 0.28f, 1.2f)
+
+    /**
      * 松手回弹归位弹簧：无过冲（NoBouncy）、中低刚度，接近终点自然减速停住。
      * 当前用于浮层拖拽松手后的回位（跟手 snapTo 之后的收尾），
      * 以及待办顶栏分组条的极限橡皮筋回弹（Overscroll 效果的回弹 spec）。

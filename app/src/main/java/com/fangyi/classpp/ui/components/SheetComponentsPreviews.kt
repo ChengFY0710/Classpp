@@ -3,7 +3,9 @@ package com.fangyi.classpp.ui.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -704,4 +706,21 @@ private fun DeadlineCardPreview() = ClassppTheme {
             onChange = { _, _ -> },
         )
     }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 500)
+@Composable
+private fun BottomSelectSheetPreview() = ClassppTheme {
+    // 骨架预览：内容槽放一个占位块，看顶栏双胶囊、居中标题、圆角与上下间距
+    BottomSelectSheet(
+        title = "标题",
+        onDismiss = {},
+        content = {
+            Spacer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp),
+            )
+        },
+    )
 }
