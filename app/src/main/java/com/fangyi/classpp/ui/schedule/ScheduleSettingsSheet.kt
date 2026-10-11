@@ -3,7 +3,6 @@ package com.fangyi.classpp.ui.schedule
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,16 +12,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,6 +48,7 @@ import com.fangyi.classpp.data.model.TimeSlotDef
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.appendSlot
 import com.fangyi.classpp.ui.components.BottomDateSelectCard
+import com.fangyi.classpp.ui.components.BottomTimeSelectCard
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.RowChoiceCard
 import com.fangyi.classpp.ui.components.SettingsCard
@@ -63,7 +58,6 @@ import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.pressClickable
-import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.settings.TermDatesCard
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -121,6 +115,14 @@ internal fun ScheduleSettingsSheet(
     var pickerInitial by remember { mutableStateOf(IsoDate.today()) }
     var pickerCallback by remember { mutableStateOf<((IsoDate) -> Unit)?>(null) }
 
+    // 节次起止时刻滚轮弹窗（TimeChip 点按上报）：确认分钟数经 onPicked 原路交回设置卡，
+    // 由它折算 HH:mm 后整表提交仓库（先后顺序合法性由仓库校验、Err 走统一 toast）
+    var slotTimeVisible by remember { mutableStateOf(false) }
+    var slotTimeMounted by remember { mutableStateOf(false) }
+    var slotTimeInitial by remember { mutableIntStateOf(0) }
+    var slotTimeTitle by remember { mutableStateOf("") }
+    var slotTimeCallback by remember { mutableStateOf<((Int) -> Unit)?>(null) }
+
     OverlaySheet(
         title = stringResource(R.string.settings_title),
         confirmLabel = null,
@@ -133,7 +135,7 @@ internal fun ScheduleSettingsSheet(
         ),
         onDismiss = onDismiss,
         visible = visible,
-        covered = pickerVisible,
+        covered = pickerVisible || slotTimeVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
         modifier = modifier,
@@ -146,6 +148,14 @@ internal fun ScheduleSettingsSheet(
                 pickerCallback = onPicked
                 pickerMounted = true
                 pickerVisible = true
+            },
+            // 节次起止步：挂载时刻轮（画在本浮层之后），初值与「第 N 节」标题由设置卡给出
+            onSlotTimePickRequest = { initialMinute, title, onPicked ->
+                slotTimeInitial = initialMinute
+                slotTimeTitle = title
+                slotTimeCallback = onPicked
+                slotTimeMounted = true
+                slotTimeVisible = true
             },
             onRename = { name ->
                 scope.launch { submit(repository.renameSchedule(schedule.id, name)) }
@@ -185,16 +195,38 @@ internal fun ScheduleSettingsSheet(
             },
         )
     }
+
+    // 节次起止时刻滚轮弹窗：确认分钟数经 onPicked 原路交回设置卡（折算 HH:mm 整表提交）
+    if (slotTimeMounted) {
+        BottomTimeSelectCard(
+            visible = slotTimeVisible,
+            onDismiss = { slotTimeVisible = false },
+            onDismissed = {
+                slotTimeMounted = false
+                slotTimeCallback = null
+            },
+            title = slotTimeTitle,
+            initialHour = slotTimeInitial / 60,
+            initialMinute = slotTimeInitial % 60,
+            onConfirm = { hour, minute ->
+                slotTimeVisible = false
+                slotTimeCallback?.invoke(hour * 60 + minute)
+                slotTimeCallback = null
+            },
+        )
+    }
 }
 
 /** 当前课表全套设置：课表名 / 学期 / 每周天数 / 节数与时间 / 显示。数据变更经回调即时提交仓库。 */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsContent(
     schedule: Schedule,
     // 学期起止步上报：初值为当前起止日，[onPicked] 收确认日期后经 [onTerm] 提交仓库；
     // 弹窗本体（BottomDateSelectCard）由 ScheduleSettingsSheet 组合在浮层之后
     onDatePickRequest: (initialDate: IsoDate, onPicked: (IsoDate) -> Unit) -> Unit,
+    // 节次起止步上报：初值为当前时刻（分钟数）、title 为「第 N 节」，[onPicked] 收确认的
+    // 分钟数后在此折算 HH:mm 整表提交；弹窗本体（BottomTimeSelectCard）同在浮层之后
+    onSlotTimePickRequest: (initialMinute: Int, title: String, onPicked: (minuteOfDay: Int) -> Unit) -> Unit,
     onRename: (name: String) -> Unit,
     onTerm: (start: IsoDate, end: IsoDate) -> Unit,
     onDays: (days: Int) -> Unit,
@@ -202,9 +234,6 @@ private fun SettingsContent(
     onShowInactive: (show: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 正在编辑的节次时间；null = 无弹窗（每次确认/取消都回到 null，保证重开时状态新鲜）
-    var editingSlot by remember { mutableStateOf<SlotEdit?>(null) }
-
     // 滚动由 OverlaySheet 的内容列承担，这里只排内容
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -299,15 +328,45 @@ private fun SettingsContent(
                     SettingsCardItem.Custom(
                         label = stringResource(R.string.slot_format, index + 1),
                         trailing = {
+                            // 弹窗标题「第 N 节」：stringResource 是 Composable 调用，先取好再进点击闭包
+                            val slotTitle = stringResource(R.string.slot_format, index + 1)
                             // chip Background灰底保持 32dp 原高，但不计入行高：容器只按标签行高 24dp
                             // 参与行高，垂直居中向上下各溢出 4dp
                             OverflowHeightBox(ChipRowHeight) {
+                                // 点胶囊：挂载时刻轮（画在本浮层之后），初值 = 当前时刻；
+                                // 确认分钟数折算 HH:mm 后整表提交（顺序合法性由仓库校验）
                                 TimeChip(TimeText.formatDisplay(slot.startTime)) {
-                                    editingSlot = SlotEdit(index, isStart = true)
+                                    onSlotTimePickRequest(
+                                        TimeText.parseMinutes(slot.startTime) ?: 8 * 60,
+                                        slotTitle,
+                                    ) { picked ->
+                                        onSlots(
+                                            schedule.slots.mapIndexed { i, s ->
+                                                if (i == index) {
+                                                    s.copy(startTime = TimeText.format(picked))
+                                                } else {
+                                                    s
+                                                }
+                                            },
+                                        )
+                                    }
                                 }
                                 Spacer(Modifier.width(16.dp))
                                 TimeChip(TimeText.formatDisplay(slot.endTime)) {
-                                    editingSlot = SlotEdit(index, isStart = false)
+                                    onSlotTimePickRequest(
+                                        TimeText.parseMinutes(slot.endTime) ?: 8 * 60,
+                                        slotTitle,
+                                    ) { picked ->
+                                        onSlots(
+                                            schedule.slots.mapIndexed { i, s ->
+                                                if (i == index) {
+                                                    s.copy(endTime = TimeText.format(picked))
+                                                } else {
+                                                    s
+                                                }
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         },
@@ -331,57 +390,6 @@ private fun SettingsContent(
         }
     }
 
-    // 单节起止时间选择：TimePicker 结构性杜绝格式错误，确认后整表提交
-    editingSlot?.let { edit ->
-        val slot = schedule.slots[edit.index]
-        val initialMinutes = TimeText.parseMinutes(if (edit.isStart) slot.startTime else slot.endTime) ?: 8 * 60
-        val timeState = rememberTimePickerState(
-            initialHour = initialMinutes / 60,
-            initialMinute = initialMinutes % 60,
-        )
-        AlertDialog(
-            onDismissRequest = { editingSlot = null },
-            title = {
-                Text(stringResource(R.string.slot_format, edit.index + 1))
-            },
-            text = {
-                TimePicker(state = timeState)
-            },
-            confirmButton = {
-                // 叠按压反馈（同上：按压源交按钮形参，反馈贴住按钮本体）
-                val press = remember { MutableInteractionSource() }
-                TextButton(
-                    onClick = {
-                        val formatted = TimeText.format(timeState.hour * 60 + timeState.minute)
-                        val updated = schedule.slots.toMutableList().also { list ->
-                            val old = list[edit.index]
-                            list[edit.index] = if (edit.isStart) {
-                                old.copy(startTime = formatted)
-                            } else {
-                                old.copy(endTime = formatted)
-                            }
-                        }
-                        onSlots(updated)
-                        editingSlot = null
-                    },
-                    interactionSource = press,
-                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
-                ) {
-                    Text(stringResource(R.string.settings_confirm))
-                }
-            },
-            dismissButton = {
-                val press = remember { MutableInteractionSource() }
-                TextButton(
-                    onClick = { editingSlot = null },
-                    interactionSource = press,
-                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
-                ) {
-                    Text(stringResource(R.string.settings_cancel))
-                }
-            },
-        )
-    }
 }
 
 /**
@@ -418,9 +426,6 @@ private fun ScheduleNameField(name: String, onRename: (String) -> Unit) {
         },
     )
 }
-
-/** 正在编辑的节次时间：第 [index] 节的起（true）或止（false） */
-private data class SlotEdit(val index: Int, val isStart: Boolean)
 
 private val ChipShape = RoundedCornerShape(8.dp)
 
@@ -542,6 +547,7 @@ private fun SettingsContentPreview() {
                 termEnd = IsoDate.parse("2026-06-19"),
             ),
             onDatePickRequest = { _, _ -> },
+            onSlotTimePickRequest = { _, _, _ -> },
             onRename = {},
             onTerm = { _, _ -> },
             onDays = {},

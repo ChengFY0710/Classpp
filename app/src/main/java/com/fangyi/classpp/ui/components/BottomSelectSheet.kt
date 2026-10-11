@@ -77,8 +77,8 @@ private val CardShadowElevation: Dp = 32.dp
  * 距卡片底缘 [ContentBottomPadding]，两个间距都收在文件顶部的常量里，改一处全局生效）。
  *
  * 进出场由组件自己完成，与 OverlaySheet 同一套两段式关闭：
- * - 挂载即入场：从屏幕底部滑入（ui.motion 的 [Motion.OverlayOvershoot]，与浮层同一条
- *   非线性曲线、末端冲过终位约 4~5% 再落回的一次超出回弹），遮罩同步压暗；
+ * - 挂载即入场：从屏幕底部滑入（ui.motion 的 [Motion.Overlay]，与浮层同一条非线性
+ *   曲线，退场同曲线、时长更短），遮罩同步压暗；
  * - [onDismiss]（遮罩点击 / 返回键 / 取消 / 确认）只表示**请求关闭**，调用方收到后清掉自己的状态使
  *   [visible] 变 false，组件随即向下滑出（[Motion.Overlay]，退场不带回弹）、遮罩同步变淡，
  *   **播完后才回调 [onDismissed]**，调用方在这一刻把弹窗移出组合；
@@ -113,7 +113,7 @@ fun BottomSelectSheet(
     val cardInteraction = remember { MutableInteractionSource() }
 
     // ——— 进出场共用一条进度：0 = 完全显示，1 = 完全滑出屏幕下方 ———
-    // 进场回弹会冲过 0（负值），位移与遮罩透明度都从它派生
+    // 滑动位移与遮罩透明度都从它派生
     val hiddenFraction = remember { Animatable(1f) }
     // 滑动全程 = 卡片自身高度 + 底部让位（导航栏 inset + 底部边距）；layout 先于 draw
     // 测出，首帧不会闪现在最终位置
@@ -149,7 +149,7 @@ fun BottomSelectSheet(
             closeRequested = false
             hiddenFraction.animateTo(
                 0f,
-                tween(Motion.SheetEnterMillis, easing = Motion.OverlayOvershoot),
+                tween(Motion.SheetEnterMillis, easing = Motion.Overlay),
             )
         } else {
             beginExit()
@@ -164,9 +164,9 @@ fun BottomSelectSheet(
         modifier = modifier
             .fillMaxSize()
             // 遮罩随进度压暗：完全显示时用 scrim 色自带的透明度（强度已按深浅模式烘进
-            // 色值，此处不再叠加）；进场回弹期间进度为负，alpha 收在 1 以内
+            // 色值，此处不再叠加），滑出时跟手变淡到全透明
             .drawBehind {
-                val alpha = (1f - hiddenFraction.value).coerceIn(0f, 1f)
+                val alpha = 1f - hiddenFraction.value
                 if (alpha > 0f) drawRect(color = scrimColor, alpha = alpha)
             }
             .clickable(

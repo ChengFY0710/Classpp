@@ -154,7 +154,8 @@ internal fun timeRangeDragPxPerMinute(
  *
  * - 拖动：胶囊跟手——手指横向走多少像素、胶囊就走多少像素（换算斜率见
  *   [timeRangeDragPxPerMinute]，贴靠段同样 1:1，不会半速落后）；
- * - 点按：单独点某个胶囊弹钟表 TimePicker 精确设置（与设置页「第 N 节」同一交互）；
+ * - 点按：单独点某个胶囊精确设置——宿主接管（[onTimePickRequest]）时弹 BottomTimeSelectCard
+ *   滚轮，未接管时保留内置钟表 TimePicker（与设置页「第 N 节」同一交互）；
  * - 顺序约束：开始时间恒早于结束时间（最小间隔 1 分钟），拖到边界即顶住（不推走另一端）；
  * - 位置约束：两胶囊不重叠、最多贴在一起——时间差最小 1 分钟（约 0.2px）远小于胶囊宽度，
  *   位置上必然相撞，故重叠时两胶囊各从自己的时间位置向内让开重叠量的一半（只让位置、
@@ -189,6 +190,10 @@ fun TimeRangeSlider(
     endMinutes: Int,
     onRangeChange: (startMinutes: Int, endMinutes: Int) -> Unit,
     modifier: Modifier = Modifier,
+    // 点按胶囊的精确设置上报：初值 + 目标端（true = 开始），[onPicked] 收确认的分钟数后
+    // 由滑块按顺序约束夹紧并经 [onRangeChange] 提交；弹窗本体（BottomTimeSelectCard）
+    // 由宿主组合在浮层之后。null = 未接管，保留内置 M3 钟表兜底（预览等场景）
+    onTimePickRequest: ((initialMinute: Int, isStart: Boolean, onPicked: (minuteOfDay: Int) -> Unit) -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     // 正在通过弹窗自定义时间的胶囊（null = 无）
@@ -302,54 +307,73 @@ fun TimeRangeSlider(
         }
     }
 
-    // 点按胶囊 → 钟表弹窗精确设置（TimePicker 结构性杜绝格式错误）；确认时同样夹紧先后顺序
+    // 点按胶囊 → 精确设置：宿主接管（onTimePickRequest）时上报滚轮弹窗，确认的分钟数经
+    // onPicked 原路交回，这里按顺序约束夹紧后整体提交；未接管时保留内置 M3 钟表兜底
     editingIsStart?.let { isStart ->
-        val initial = if (isStart) startMinutes else endMinutes
-        val timeState = rememberTimePickerState(
-            initialHour = initial / 60,
-            initialMinute = initial % 60,
-        )
-        AlertDialog(
-            onDismissRequest = { editingIsStart = null },
-            title = {
-                Text(stringResource(if (isStart) R.string.time_range_start else R.string.time_range_end))
-            },
-            text = { TimePicker(state = timeState) },
-            confirmButton = {
-                // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
-                // 按压源交给按钮形参，pressFeedback 接在 modifier 链末尾（贴按钮本体，对齐 textShape）
-                val press = remember { MutableInteractionSource() }
-                TextButton(
-                    onClick = {
-                        val picked = timeState.hour * 60 + timeState.minute
-                        if (isStart) {
-                            onRangeChange(picked.coerceAtMost(endMinutes - 1).coerceAtLeast(0), endMinutes)
-                        } else {
-                            onRangeChange(
-                                startMinutes,
-                                picked.coerceAtLeast(startMinutes + 1).coerceAtMost(TimeRangeLastMinute),
-                            )
-                        }
-                        editingIsStart = null
-                    },
-                    interactionSource = press,
-                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
-                ) {
-                    Text(stringResource(R.string.settings_confirm))
+        val request = onTimePickRequest
+        if (request != null) {
+            request(
+                if (isStart) startMinutes else endMinutes,
+                isStart,
+            ) { picked ->
+                if (isStart) {
+                    onRangeChange(picked.coerceAtMost(endMinutes - 1).coerceAtLeast(0), endMinutes)
+                } else {
+                    onRangeChange(
+                        startMinutes,
+                        picked.coerceAtLeast(startMinutes + 1).coerceAtMost(TimeRangeLastMinute),
+                    )
                 }
-            },
-            dismissButton = {
-                // 叠按压反馈：M3 涟漪在按钮内部、调用侧去不掉（按压源与按钮共用）
-                val press = remember { MutableInteractionSource() }
-                TextButton(
-                    onClick = { editingIsStart = null },
-                    interactionSource = press,
-                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
-                ) {
-                    Text(stringResource(R.string.settings_cancel))
-                }
-            },
-        )
+            }
+            editingIsStart = null
+        } else {
+            val initial = if (isStart) startMinutes else endMinutes
+            val timeState = rememberTimePickerState(
+                initialHour = initial / 60,
+                initialMinute = initial % 60,
+            )
+            AlertDialog(
+                onDismissRequest = { editingIsStart = null },
+                title = {
+                    Text(stringResource(if (isStart) R.string.time_range_start else R.string.time_range_end))
+                },
+                text = { TimePicker(state = timeState) },
+                confirmButton = {
+                    // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
+                    // 按压源交给按钮形参，pressFeedback 接在 modifier 链末尾（贴按钮本体，对齐 textShape）
+                    val press = remember { MutableInteractionSource() }
+                    TextButton(
+                        onClick = {
+                            val picked = timeState.hour * 60 + timeState.minute
+                            if (isStart) {
+                                onRangeChange(picked.coerceAtMost(endMinutes - 1).coerceAtLeast(0), endMinutes)
+                            } else {
+                                onRangeChange(
+                                    startMinutes,
+                                    picked.coerceAtLeast(startMinutes + 1).coerceAtMost(TimeRangeLastMinute),
+                                )
+                            }
+                            editingIsStart = null
+                        },
+                        interactionSource = press,
+                        modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                    ) {
+                        Text(stringResource(R.string.settings_confirm))
+                    }
+                },
+                dismissButton = {
+                    // 叠按压反馈：M3 涟漪在按钮内部、调用侧去不掉（按压源与按钮共用）
+                    val press = remember { MutableInteractionSource() }
+                    TextButton(
+                        onClick = { editingIsStart = null },
+                        interactionSource = press,
+                        modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                    ) {
+                        Text(stringResource(R.string.settings_cancel))
+                    }
+                },
+            )
+        }
     }
 }
 

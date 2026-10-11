@@ -12,12 +12,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import java.util.GregorianCalendar
 import java.util.TimeZone
 
 private const val MILLIS_PER_DAY = 86_400_000L
+
+/** 日期轮数字字号：年/月/日三列比时间轮的两列挤（年轮还是 4 位），比共享默认 48sp 小一档 */
+private val WheelNumberFontSize = 36.sp
 
 /** 月/日两位补零显示（08 月 27 日） */
 private fun pad2(value: Int): String = value.toString().padStart(2, '0')
@@ -121,23 +125,26 @@ fun BottomDateSelectCard(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            WheelGroup(
+            NumberWheel(
                 state = yearState,
-                unit = stringResource(R.string.date_unit_year),
                 format = { (yearRange.first + it).toString() },
                 modifier = Modifier.weight(1f),
+                fontSize = WheelNumberFontSize,
+                unit = stringResource(R.string.date_unit_year),
             )
-            WheelGroup(
+            NumberWheel(
                 state = monthState,
+                format = { pad2(it + 1) },
+                modifier = Modifier.weight(1f),
+                fontSize = WheelNumberFontSize,
                 unit = stringResource(R.string.date_unit_month),
-                format = { pad2(it + 1) },
-                modifier = Modifier.weight(1f),
             )
-            WheelGroup(
+            NumberWheel(
                 state = dayState,
-                unit = stringResource(R.string.date_unit_day),
                 format = { pad2(it + 1) },
                 modifier = Modifier.weight(1f),
+                fontSize = WheelNumberFontSize,
+                unit = stringResource(R.string.date_unit_day),
             )
         }
     }

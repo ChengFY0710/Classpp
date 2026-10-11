@@ -172,6 +172,13 @@ internal fun NewTodoSheet(
     var customDateInitial by remember { mutableStateOf(IsoDate.today()) }
     var customDateCallback by remember { mutableStateOf<((IsoDate) -> Unit)?>(null) }
 
+    // 时段起止时刻滚轮弹窗（TimeRangeSlider 的胶囊点按上报）：确认的分钟数经 onPicked
+    // 原路交回滑块，由它按顺序约束夹紧后经 onRangeChange 提交
+    var rangeTimeVisible by remember { mutableStateOf(false) }
+    var rangeTimeMounted by remember { mutableStateOf(false) }
+    var rangeTimeInitial by remember { mutableIntStateOf(0) }
+    var rangeTimeCallback by remember { mutableStateOf<((Int) -> Unit)?>(null) }
+
     OverlaySheet(
         title = stringResource(if (existing == null) R.string.todo_new_title else R.string.todo_edit_title),
         confirmLabel = stringResource(R.string.edit_confirm),
@@ -230,7 +237,8 @@ internal fun NewTodoSheet(
         },
         onDismiss = onDismiss,
         visible = visible,
-        covered = deleteRequested || deadlineDateVisible || customDateVisible || deadlineTimeVisible,
+        covered = deleteRequested || deadlineDateVisible || customDateVisible || rangeTimeVisible ||
+            deadlineTimeVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
     ) {
@@ -322,6 +330,14 @@ internal fun NewTodoSheet(
                                 onRangeChange = { start, end ->
                                     startMinute = start
                                     endMinute = end
+                                },
+                                // 点按胶囊：挂载时刻轮（画在本浮层之后），初值由滑块给出；
+                                // 确认的分钟数经 onPicked 原路交回滑块夹紧后提交
+                                onTimePickRequest = { initialMinute, _, onPicked ->
+                                    rangeTimeInitial = initialMinute
+                                    rangeTimeCallback = onPicked
+                                    rangeTimeMounted = true
+                                    rangeTimeVisible = true
                                 },
                             )
                         }
@@ -447,6 +463,26 @@ internal fun NewTodoSheet(
                 deadlineTimeVisible = false
                 deadlineTimeCallback?.invoke(hour * 60 + minute)
                 deadlineTimeCallback = null
+            },
+        )
+    }
+
+    // 时段起止时刻滚轮弹窗：确认分钟数经 onPicked 原路交回 TimeRangeSlider（夹紧后提交），
+    // 取消/遮罩/返回只请求关闭，播完退场才卸载（两段式，同删除确认框）
+    if (rangeTimeMounted) {
+        BottomTimeSelectCard(
+            visible = rangeTimeVisible,
+            onDismiss = { rangeTimeVisible = false },
+            onDismissed = {
+                rangeTimeMounted = false
+                rangeTimeCallback = null
+            },
+            initialHour = rangeTimeInitial / 60,
+            initialMinute = rangeTimeInitial % 60,
+            onConfirm = { hour, minute ->
+                rangeTimeVisible = false
+                rangeTimeCallback?.invoke(hour * 60 + minute)
+                rangeTimeCallback = null
             },
         )
     }

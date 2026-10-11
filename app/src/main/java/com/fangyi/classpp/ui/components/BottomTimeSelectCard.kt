@@ -60,17 +60,17 @@ fun BottomTimeSelectCard(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            WheelGroup(
+            NumberWheel(
                 state = hourState,
+                format = ::pad2,
+                modifier = Modifier.weight(1f),
                 unit = stringResource(R.string.time_unit_hour),
-                format = ::pad2,
-                modifier = Modifier.weight(1f),
             )
-            WheelGroup(
+            NumberWheel(
                 state = minuteState,
-                unit = stringResource(R.string.time_unit_minute),
                 format = ::pad2,
                 modifier = Modifier.weight(1f),
+                unit = stringResource(R.string.time_unit_minute),
             )
         }
     }

@@ -7,15 +7,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -27,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
@@ -61,10 +57,13 @@ private const val FadeOutScale = 0.8f
 private const val OvershootResistance = 0.25f
 
 /** 滚轮数字字号（对齐设计稿量得的中格大小） */
-private val WheelNumberFontSize = 48.sp
+private val WheelNumberFontSize = 45.sp
 
 /** 单位（时/分、年/月/日）字号 */
 private val WheelUnitFontSize = 18.sp
+
+/** 数字右缘到单位的间距 */
+private val UnitGap: Dp = 8.dp
 
 /**
  * 数字滚轮积木（BottomTimeSelectCard / BottomDateSelectCard 共用）：垂直 draggable 的
@@ -162,13 +161,19 @@ internal class WheelState(
 
 /**
  * 单列数字滚轮：Canvas 自绘（数字按离中心的距离定位、缩放、混色、渐隐），垂直 draggable
- * 手势接 [WheelState]。[format] 把索引换成展示文本（年轮加基准年、月/日轮 +1 补零）。
+ * 手势接 [WheelState]。[format] 把索引换成展示文本（年轮加基准年、月/日轮 +1 补零）；
+ * [fontSize] 为数字基准字号（邻格按 [AdjacentScale] 比例随它缩放），默认共享规格；
+ * [unit] 为数字右缘的单位（时/分、年/月/日）——画在中心数字右侧 [UnitGap] 处、钉在
+ * 轮子中线，静态不随滚动位移/缩放（年轮恒 4 位、其余恒 2 位补零，数字宽度恒定，
+ * 单位横向位置稳定不抖），null = 无单位。
  */
 @Composable
 internal fun NumberWheel(
     state: WheelState,
     format: (Int) -> String,
     modifier: Modifier = Modifier,
+    fontSize: TextUnit = WheelNumberFontSize,
+    unit: String? = null,
 ) {
     val density = LocalDensity.current
     val decay = remember(density) { splineBasedDecay<Float>(density) }
@@ -178,8 +183,16 @@ internal fun NumberWheel(
     val textMeasurer = rememberTextMeasurer()
     val onSurface = MaterialTheme.colorScheme.onSurface
     val sideColor = MaterialTheme.classppColors.secondaryText
-    // 数字样式不设色：颜色随离中心的距离在 draw 期逐帧混出（onSurface→secondaryText）
-    val numberStyle = TextStyle(fontSize = WheelNumberFontSize, fontWeight = FontWeight.Medium)
+    // 数字样式不设色：颜色随离中心的距离在 draw 期逐帧混出（onSurface→secondaryText）。
+    // fontFeatureSettings "tnum" = 等宽数字（tabular figures）：1/0 等数字同宽，滚动换值、
+    // 中心数字宽度与单位位置都不抖动（字体不支持该特性时自动忽略，无副作用）
+    val numberStyle = TextStyle(
+        fontSize = fontSize,
+        fontWeight = FontWeight.Medium,
+        fontFeatureSettings = "tnum",
+    )
+    // 单位样式：静态灰字（secondaryText），不随滚动缩放/渐隐
+    val unitStyle = TextStyle(fontSize = WheelUnitFontSize, fontWeight = FontWeight.Medium)
 
     Canvas(
         modifier = modifier
@@ -219,28 +232,20 @@ internal fun NumberWheel(
                 )
             }
         }
+        // 单位：贴中心数字右缘 [UnitGap]、钉在轮子中线——静态标签，不随滚动位移或缩放
+        unit?.let { unitText ->
+            val centerIndex = (scrollValue / item).roundToInt().coerceIn(0, state.count - 1)
+            val numberLayout = textMeasurer.measure(format(centerIndex), numberStyle)
+            val unitLayout = textMeasurer.measure(unitText, unitStyle)
+            drawText(
+                unitLayout,
+                color = sideColor,
+                topLeft = Offset(
+                    size.width / 2f + numberLayout.size.width / 2f + UnitGap.toPx(),
+                    half - unitLayout.size.height / 2f,
+                ),
+            )
+        }
     }
 }
 
-/** 滚轮组：滚轮 + 右侧单位（时/分、年/月/日），单位与中间选中数字垂直居中对齐 */
-@Composable
-internal fun WheelGroup(
-    state: WheelState,
-    unit: String,
-    format: (Int) -> String,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        NumberWheel(state = state, format = format)
-        Text(
-            text = unit,
-            style = TextStyle(fontSize = WheelUnitFontSize, fontWeight = FontWeight.Medium),
-            color = MaterialTheme.classppColors.secondaryText,
-            modifier = Modifier.padding(start = 8.dp),
-        )
-    }
-}
