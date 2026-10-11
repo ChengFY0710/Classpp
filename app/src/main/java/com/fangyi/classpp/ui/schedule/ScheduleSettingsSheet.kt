@@ -64,11 +64,10 @@ import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.settings.TermDatesCard
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
-
-private val SectionSpacing = 18.dp
 
 /**
  * 时间行 chip 容器高度 = 标签行高（bodyLarge lineHeight 24dp）：
@@ -367,7 +366,7 @@ private fun SettingsContent(
     // 滚动由 OverlaySheet 的内容列承担，这里只排内容
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(SectionSpacing),
+        verticalArrangement = Arrangement.spacedBy(SettingsSectionSpacing),
     ) {
         // 课表名：独立输入卡（SheetTextField 自带「课表名称」标签，不需要分组标题）
         ScheduleNameField(name = schedule.name, onRename = onRename)

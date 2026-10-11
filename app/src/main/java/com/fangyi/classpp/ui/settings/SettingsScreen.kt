@@ -45,10 +45,11 @@ import com.fangyi.classpp.ui.theme.ThemeMode
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 
-// 纵向节奏：首项距顶栏为页自有节奏（18dp）；分组间距与尾部余量对齐 overlay 浮层——
-// 直接复用 ui.components 的 SheetSectionSpacingBetween / SheetBottomSlack，与各浮层
-// 同源同值（浮层调节奏时这里自动跟随）。横向边距走 ui.theme 的 PageHorizontalSpacing
-// （与浮层同源），不在此列。子页（PersonalizationScreen / NotificationScreen）复用同一节奏
+// 纵向节奏：首项距顶栏为页自有节奏（18dp）；分组间距与课表设置浮层同源
+// （ui.theme 的 SettingsSectionSpacing），尾部余量与 overlay 浮层同源
+// （ui.components 的 SheetBottomSlack）——浮层调节奏这里自动跟随。横向边距走
+// ui.theme 的 PageHorizontalSpacing（与浮层同源），不在此列。
+// 子页（PersonalizationScreen / NotificationScreen）复用同一节奏
 internal val TopBarContentGap = 18.dp
 
 /** 根页三张入口卡之间的间距（设计稿：独立卡片、留缝堆叠） */

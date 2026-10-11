@@ -34,7 +34,7 @@ import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetBottomSlack
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
-import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
+import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 
@@ -121,7 +121,7 @@ fun NotificationScreen(
                         top = topBarHeight + TopBarContentGap,
                         bottom = navBarPadding + SheetBottomSlack,
                     ),
-                verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween),
+                verticalArrangement = Arrangement.spacedBy(SettingsSectionSpacing),
             ) {
                 SettingsCard(
                     items = listOf(

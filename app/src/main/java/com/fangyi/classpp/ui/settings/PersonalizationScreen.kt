@@ -52,7 +52,7 @@ import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.schedule.CardHeightPreferences
 import com.fangyi.classpp.ui.schedule.CardHeights
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
-import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
+import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -122,7 +122,7 @@ fun PersonalizationScreen(
                         top = topBarHeight + TopBarContentGap,
                         bottom = navBarPadding + SheetBottomSlack,
                     ),
-                verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween),
+                verticalArrangement = Arrangement.spacedBy(SettingsSectionSpacing),
             ) {
                 ColorModeSection(
                     mode = themeMode,

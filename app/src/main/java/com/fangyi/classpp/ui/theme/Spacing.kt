@@ -28,6 +28,16 @@ val CardSectionSpacing: Dp = 10.dp
 val SheetSectionSpacingBetween: Dp = 12.dp
 
 /**
+ * 设置类页面的**分组间距**：设置根页/个性化/通知与提醒的内容分组之间，以及课表设置
+ * 浮层（OverlaySheet）内容列的分组节奏——同一常量，改一处全局同步。
+ *
+ * 三档分工：分组内「标题↔首卡」「卡↔卡」是 [CardSectionSpacing]（10dp）；表单类浮层
+ * （新建待办/新建课表/课程详情/切换课表）顶层块之间是 [SheetSectionSpacingBetween]
+ * （12dp）；设置类页面组与组之间的留白最大，取本值（18dp）。
+ */
+val SettingsSectionSpacing: Dp = 18.dp
+
+/**
  * 浮层行卡与设置卡统一行高（行高下限）：输入框（SheetTextField）与信息展示框
  * （SheetInfoCard）按它取 `heightIn(min)`，设置卡（SettingsCard、SettingsCardwithIcon，
  * PopupSelectCard 选择行随之）以它为整卡行高下限，保证各卡等高；
