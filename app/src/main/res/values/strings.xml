@@ -97,11 +97,15 @@
     <string name="slot_range_format">第 %1$d-%2$d 节</string>
     <!-- 节数与时间（课表设置）：总节数与每节课时间导航行 + 各自的横向滚轮弹窗 -->
     <string name="slot_count_label">总节数</string>
-    <string name="slot_count_select_title">选择节数</string>
+    <string name="slot_count_select_title">总节数</string>
     <string name="slot_duration_label">每节课时间</string>
     <string name="slot_duration_desc">根据开始时间自动推算结束时间</string>
     <string name="slot_duration_value">%1$dmin</string>
-    <string name="slot_duration_select_title">选择每节课时间</string>
+    <string name="slot_duration_select_title">每节课时间</string>
+    <!-- 调课与调休（课表设置）：占位导航行，功能待接入 -->
+    <string name="section_adjustment">调课与调休</string>
+    <string name="adjust_course_label">设置调课</string>
+    <string name="adjust_holiday_label">设置调休</string>
     <!-- 课表（个性化页） -->
     <string name="section_schedule">课表</string>
     <string name="card_height_label">课程卡片高度</string>

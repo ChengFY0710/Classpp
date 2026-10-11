@@ -487,6 +487,23 @@ private fun SettingsContent(
             )
         }
 
+        CardSection(title = stringResource(R.string.section_adjustment)) {
+            // 调课 / 调休入口：占位导航行（暂无功能，点击不响应），接入时把 onClick
+            // 换成各自的挂载请求回调（同 onPickSlotCount 的模式）
+            SettingsCard(
+                items = listOf(
+                    SettingsCardItem.Nav(
+                        label = stringResource(R.string.adjust_course_label),
+                        onClick = {},
+                    ),
+                    SettingsCardItem.Nav(
+                        label = stringResource(R.string.adjust_holiday_label),
+                        onClick = {},
+                    ),
+                ),
+            )
+        }
+
         CardSection(title = stringResource(R.string.section_display)) {
             // 新版 SettingsCard 开关行：整行可点切换（涟漪铺满整行），说明文字在卡内 label 下方
             SettingsCard(
