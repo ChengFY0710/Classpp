@@ -18,7 +18,8 @@ internal object NotificationPoster {
     /**
      * 实况通知（Live Updates，API 36+）：持续驻留，状态栏 chip 显示事件名
      * （[Notification.Builder.setShortCriticalText]：≤7 字符完整显示，超出按 chip 宽度
-     * 截断），不做倒计时。
+     * 截断），不做倒计时。smallIcon 按提醒类别取专属彩色 drawable（课程 = 日历、
+     * 待办 = 笔记，自带 #479CFF 原色）——chip 表面按原色渲染该图标。
      *
      * 平台 [Notification.Builder] 直用：NotificationCompat 1.10.x 不含 Live Updates API。
      * promoted ongoing 的硬性条件（官方文档）：ongoing + setRequestPromotedOngoing +
@@ -36,7 +37,11 @@ internal object NotificationPoster {
         isCourse: Boolean,
     ): Notification {
         val builder = Notification.Builder(context, channel)
-            .setSmallIcon(R.drawable.ic_alert)
+            // chip 上的彩色图标：按提醒类别取专属 drawable（自带 #479CFF 原色）——
+            // chip 表面按原色渲染；通知栏头部等经典表面仍会套成单色剪影（形状不变）
+            .setSmallIcon(
+                if (isCourse) R.drawable.ic_calendar_liveupdates else R.drawable.ic_note_liveupdates,
+            )
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))
