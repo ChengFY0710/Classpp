@@ -270,9 +270,13 @@ fun ScheduleHeader(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp)
                     .height(TopBarHeight * (1f - fraction))
-                    .clipToBounds(),
+                    .clipToBounds()
+                    // 水平留白必须在裁剪之内（clipToBounds 之后）：裁剪线随之外移到屏幕
+                    // 边缘，按压放大 1.10 的左右外扩（64→70.4dp，各 3.2dp）才不会在按钮
+                    // 外缘被裁成直边；垂直裁剪照旧——折叠时行高收缩，图标溢出部分仍被裁掉。
+                    // 两种顺序的子项约束与本 Box 尺寸一致，按钮原位不动。
+                    .padding(start = 12.dp, end = 12.dp),
             ) {
                 // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
                 // 按压源经 interactionSource 形参交给按钮，pressFeedback 追加在 modifier 链末尾
