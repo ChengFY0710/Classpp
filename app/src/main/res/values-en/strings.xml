@@ -49,6 +49,7 @@
     <string name="notification_method">Notification method</string>
     <string name="notification_method_normal">Normal</string>
     <string name="notification_method_live">Live Updates</string>
+    <string name="notification_method_desc">Live Updates need Android 16+; older versions fall back to standard notifications</string>
     <string name="section_course_notifications">Course notifications</string>
     <string name="section_todo_notifications">Todo notifications</string>
     <string name="notification_enable_course">Enable course notifications</string>
@@ -72,6 +73,14 @@
     <string name="notification_todo_end_text">Ends %1$s</string>
     <string name="notification_date_prefix">%1$d/%2$d </string>
     <string name="notification_permission_denied_toast">Notification permission denied — turned off</string>
+    <!-- Live update preview (test entry) -->
+    <string name="notification_test_label">Test Live Updates</string>
+    <string name="notification_test_desc">Post a test live update; auto-dismissed after 60 s</string>
+    <string name="notification_test_publish">Post</string>
+    <string name="notification_test_course">Test Course</string>
+    <string name="notification_test_time">Test Time</string>
+    <string name="notification_test_location">Test Location</string>
+    <string name="notification_test_permission_toast">Notification permission denied — cannot preview</string>
     <string name="empty_title">No schedule yet</string>
     <string name="empty_desc">Create a schedule to start recording classes</string>
     <string name="create_schedule">Create Schedule</string>

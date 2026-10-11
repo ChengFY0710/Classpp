@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +18,11 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +46,7 @@ import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetBottomSlack
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
@@ -188,10 +194,43 @@ fun NotificationScreen(
                         items = listOf(
                             SettingsCardItem.Select(
                                 label = stringResource(R.string.notification_method),
+                                description = stringResource(R.string.notification_method_desc),
                                 value = methodItems.first { it.first == prefs.method }.second,
                                 items = methodItems,
                                 selectedId = prefs.method,
                                 onPick = { id -> setPrefs(prefs.copy(method = id)) },
+                            ),
+                        ),
+                    )
+                    SettingsCard(
+                        items = listOf(
+                            // 测试入口：与真实提醒完全同款的实况预览（60 秒自动移除），
+                            // 不受当前通知方式约束——目的是随时能看 chip 效果
+                            SettingsCardItem.Custom(
+                                label = stringResource(R.string.notification_test_label),
+                                description = stringResource(R.string.notification_test_desc),
+                                trailing = {
+                                    val testPress = remember { MutableInteractionSource() }
+                                    TextButton(
+                                        onClick = {
+                                            scope.launch {
+                                                if (!NotificationScheduler.postTestLiveUpdate(context)) {
+                                                    AppToasts.show(
+                                                        context,
+                                                        context.getString(R.string.notification_test_permission_toast),
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        interactionSource = testPress,
+                                        modifier = Modifier.pressFeedback(testPress, ButtonDefaults.textShape),
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.notification_test_publish),
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                },
                             ),
                         ),
                     )

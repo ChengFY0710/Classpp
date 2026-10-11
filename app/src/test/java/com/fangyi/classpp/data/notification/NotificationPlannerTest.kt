@@ -52,6 +52,7 @@ class NotificationPlannerTest {
             localMillis(today, 8 * 60 - 30), // 8:00 上课，提前 30 分钟
             planned[0].triggerAtMillis,
         )
+        assertEquals(localMillis(today, 8 * 60), planned[0].eventAtMillis) // 实况倒计时目标
         assertEquals(NotificationKind.Course, planned[0].kind)
         assertEquals("数学", planned[0].title)
         assertEquals("8:00-9:40 上课 · A101", planned[0].text)
@@ -166,6 +167,7 @@ class NotificationPlannerTest {
         assertEquals(1, planned.size)
         assertEquals("T:t1:${IsoDate.of(2026, 10, 14).epochDay}:D", planned[0].key)
         assertEquals(localMillis(IsoDate.of(2026, 10, 14), 17 * 60 - 30), planned[0].triggerAtMillis)
+        assertEquals(localMillis(IsoDate.of(2026, 10, 14), 17 * 60), planned[0].eventAtMillis)
         assertEquals(NotificationKind.TodoDeadline, planned[0].kind)
         assertEquals("10月14日 17:00 截止", planned[0].text)
     }
@@ -196,6 +198,8 @@ class NotificationPlannerTest {
         )
         assertEquals(localMillis(IsoDate.of(2026, 10, 13), 14 * 60 - 30), planned[0].triggerAtMillis)
         assertEquals(localMillis(IsoDate.of(2026, 10, 13), 16 * 60 - 30), planned[1].triggerAtMillis)
+        assertEquals(localMillis(IsoDate.of(2026, 10, 13), 14 * 60), planned[0].eventAtMillis)
+        assertEquals(localMillis(IsoDate.of(2026, 10, 13), 16 * 60), planned[1].eventAtMillis)
     }
 
     @Test

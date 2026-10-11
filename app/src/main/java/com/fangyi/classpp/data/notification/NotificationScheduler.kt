@@ -5,6 +5,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import androidx.core.app.NotificationManagerCompat
+import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.ui.settings.NotificationPreferences
@@ -31,6 +33,9 @@ object NotificationScheduler {
     private const val PREFS_NAME = "notification_alarms"
     private const val KEY_SCHEDULED = "scheduled_keys"
 
+    /** cancel 闹钟在持久化 key 集里的前缀（与 fire key 同源加前缀，requestCode 同 hash） */
+    private const val CANCEL_KEY_PREFIX = "X:"
+
     /** 读设置与两个仓库的当前数据 → 排期 → 整体替换系统闹钟。设置全关时计划为空 = 全部取消。 */
     suspend fun reschedule(context: Context) {
         val appContext = context.applicationContext
@@ -50,51 +55,132 @@ object NotificationScheduler {
     /**
      * 整体替换：先按持久化的 key 集取消全部旧闹钟，再注册新计划、回写 key 集。
      * 取消用的 PendingIntent 与注册的 filterEquals（action + 组件）一致、requestCode 同源
-     * （extras 不参与匹配），旧闹钟必能精确命中取消。
+     * （extras 不参与匹配），旧闹钟必能精确命中取消。key 集混合 fire / cancel 两类
+     * （cancel 带 [CANCEL_KEY_PREFIX] 前缀），按前缀分派取消。
      */
     private fun replaceAll(context: Context, planned: List<PlannedNotification>) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         for (key in prefs.getStringSet(KEY_SCHEDULED, emptySet()).orEmpty()) {
-            alarmManager.cancel(firePendingIntent(context, key.hashCode()))
+            if (key.startsWith(CANCEL_KEY_PREFIX)) {
+                alarmManager.cancel(
+                    cancelPendingIntent(context, key.removePrefix(CANCEL_KEY_PREFIX).hashCode()),
+                )
+            } else {
+                alarmManager.cancel(firePendingIntent(context, key.hashCode()))
+            }
         }
+        val scheduledKeys = HashSet<String>(planned.size * 2)
         for (item in planned) {
-            registerAlarm(
+            scheduleExact(
                 alarmManager,
-                item,
+                item.triggerAtMillis,
                 firePendingIntent(context, item.key.hashCode(), item),
                 showPendingIntent(context),
             )
+            // 倒计时实况的到点清理：事件时刻移除持续通知。两种通知方式都常排此闹钟
+            // （method 可随时切换，到点行为由 receiver 按当前设置决定；普通方式下空转无害）
+            scheduleExact(
+                alarmManager,
+                item.eventAtMillis,
+                cancelPendingIntent(context, item.key.hashCode()),
+                showPi = null,
+            )
+            scheduledKeys += item.key
+            scheduledKeys += cancelKey(item.key)
         }
-        prefs.edit().putStringSet(KEY_SCHEDULED, planned.map { it.key }.toSet()).apply()
+        prefs.edit().putStringSet(KEY_SCHEDULED, scheduledKeys).apply()
     }
 
+    private fun cancelKey(key: String): String = CANCEL_KEY_PREFIX + key
+
     /**
-     * 注册单条精确闹钟：优先 [AlarmManager.setAlarmClock]；canScheduleExactAlarms 为 false
-     * 或调用抛 SecurityException（ROM 层额外校验）时，降级为 setAndAllowWhileIdle——
-     * 触发可能有偏差（doze 节流下最坏分钟级），但任何权限状况都不允许崩掉调用方。
+     * 注册单条精确闹钟：showIntent 非 null 走 [AlarmManager.setAlarmClock]（系统级精确 +
+     * 状态栏闹钟指示），null 走 [AlarmManager.setExactAndAllowWhileIdle]（纯精确触发）。
+     * canScheduleExactAlarms 为 false 或调用抛 SecurityException（ROM 层额外校验）时，
+     * 降级为 setAndAllowWhileIdle——触发可能有偏差（doze 节流下最坏分钟级），
+     * 但任何权限状况都不允许崩掉调用方。
      */
-    private fun registerAlarm(
+    private fun scheduleExact(
         alarmManager: AlarmManager,
-        item: PlannedNotification,
-        firePi: PendingIntent,
-        showPi: PendingIntent,
+        triggerAtMillis: Long,
+        pi: PendingIntent,
+        showPi: PendingIntent?,
     ) {
         val exactAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
             alarmManager.canScheduleExactAlarms()
         if (exactAllowed) {
             try {
-                alarmManager.setAlarmClock(
-                    // showIntent：点系统闹钟指示（状态栏图标/锁屏“下一个闹钟”）时打开 app
-                    AlarmManager.AlarmClockInfo(item.triggerAtMillis, showPi),
-                    firePi,
-                )
+                if (showPi != null) {
+                    alarmManager.setAlarmClock(
+                        // showIntent：点系统闹钟指示（状态栏图标/锁屏“下一个闹钟”）时打开 app
+                        AlarmManager.AlarmClockInfo(triggerAtMillis, showPi),
+                        pi,
+                    )
+                } else {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi)
+                }
                 return
             } catch (_: SecurityException) {
                 // 落到下方非精确降级
             }
         }
-        alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, item.triggerAtMillis, firePi)
+        alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi)
+    }
+
+    /** 实况到点清理闹钟：移除倒计时通知（receiver 侧按当前通知方式决定是否真删） */
+    private fun cancelPendingIntent(context: Context, notificationId: Int, force: Boolean = false): PendingIntent =
+        PendingIntent.getBroadcast(
+            context,
+            notificationId,
+            Intent(context, NotificationAlarmReceiver::class.java)
+                .setAction(NotificationAlarmReceiver.ACTION_CANCEL)
+                .putExtra(NotificationAlarmReceiver.EXTRA_ID, notificationId)
+                .putExtra(NotificationAlarmReceiver.EXTRA_FORCE, force),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+    /** 测试实况的稳定 key（固定 id：重复点击覆盖同一条；60 秒后由强制清理闹钟移除） */
+    private const val TEST_KEY = "TEST_LIVE"
+    private const val TEST_CLEANUP_DELAY_MILLIS = 60_000L
+
+    /**
+     * 测试入口（通知页「测试 Live Updates」按钮）：立即发布一条实况预览——测试课程 /
+     * 测试时间 / 测试地点，样式与真实提醒完全一致（API 36- 回退普通通知形态），
+     * 60 秒后由强制清理闹钟移除（不受当前通知方式影响）。
+     *
+     * @return false = 通知未开启（权限被撤/渠道全关），未发布；调用方可据此提示
+     */
+    fun postTestLiveUpdate(context: Context): Boolean {
+        val appContext = context.applicationContext
+        ensureNotificationChannels(appContext)
+        val manager = NotificationManagerCompat.from(appContext)
+        if (!manager.areNotificationsEnabled()) return false
+        val title = appContext.getString(R.string.notification_test_course)
+        val time = appContext.getString(R.string.notification_test_time)
+        val location = appContext.getString(R.string.notification_test_location)
+        val text = appContext.getString(R.string.notification_course_text).format(time, location)
+        val id = TEST_KEY.hashCode()
+        val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+            NotificationPoster.buildLiveUpdate(appContext, CHANNEL_COURSE, title, text, isCourse = true)
+        } else {
+            NotificationPoster.buildStandard(appContext, CHANNEL_COURSE, title, text, isCourse = true)
+        }
+        try {
+            manager.notify(id, notification)
+        } catch (_: SecurityException) {
+            return false
+        }
+        val alarmManager = appContext.getSystemService(AlarmManager::class.java)
+        if (alarmManager != null) {
+            scheduleExact(
+                alarmManager,
+                System.currentTimeMillis() + TEST_CLEANUP_DELAY_MILLIS,
+                cancelPendingIntent(appContext, id, force = true),
+                showPi = null,
+            )
+        }
+        return true
     }
 
     /** 到点广播：extras 携带文案快照（排期即定格，后续编辑经重排刷新），key 供取消/去重 */

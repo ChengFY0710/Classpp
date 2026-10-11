@@ -75,6 +75,7 @@
     <string name="notification_method">通知方式</string>
     <string name="notification_method_normal">普通通知</string>
     <string name="notification_method_live">Live Updates</string>
+    <string name="notification_method_desc">Live Updates 需 Android 16+，旧系统以普通通知呈现</string>
     <string name="section_course_notifications">课程通知</string>
     <string name="section_todo_notifications">待办通知</string>
     <string name="notification_enable_course">启用课程通知</string>
@@ -98,6 +99,14 @@
     <string name="notification_todo_end_text">%1$s 结束</string>
     <string name="notification_date_prefix">%1$d月%2$d日 </string>
     <string name="notification_permission_denied_toast">未授予通知权限，已关闭通知</string>
+    <!-- 实况预览（测试入口） -->
+    <string name="notification_test_label">测试 Live Updates</string>
+    <string name="notification_test_desc">发布一条测试实况，60 秒后自动移除</string>
+    <string name="notification_test_publish">发布</string>
+    <string name="notification_test_course">测试课程</string>
+    <string name="notification_test_time">测试时间</string>
+    <string name="notification_test_location">测试地点</string>
+    <string name="notification_test_permission_toast">未授予通知权限，无法预览</string>
     <string name="empty_title">还没有课表</string>
     <string name="empty_desc">创建一份课表，开始记录课程</string>
     <string name="create_schedule">创建课表</string>

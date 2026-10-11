@@ -8,13 +8,16 @@
 
     <!-- 通知与提醒：发系统通知（API 33+ 运行时授权，UI 层请求）、开机后重排提醒闹钟。
          精确闹钟：SCHEDULE_EXACT_ALARM 覆盖 12/12L（彼时声明即默认授予）；USE_EXACT_ALARM
-         覆盖 13+（自动授予，适用类目即日历/闹钟/日程提醒类应用，无需用户操作） -->
+         覆盖 13+（自动授予，适用类目即日历/闹钟/日程提醒类应用，无需用户操作）。
+         POST_PROMOTED_NOTIFICATIONS：Live Updates 状态栏 chip（promoted ongoing）的
+         非运行时权限，缺失则实况通知退化为普通持续通知 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission
         android:name="android.permission.SCHEDULE_EXACT_ALARM"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
