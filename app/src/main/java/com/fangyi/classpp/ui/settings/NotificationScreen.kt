@@ -1,5 +1,10 @@
 package com.fangyi.classpp.ui.settings
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -26,7 +32,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.notification.NotificationScheduler
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
@@ -37,6 +46,7 @@ import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import kotlinx.coroutines.launch
 
 /**
  * 通知与提醒子页（设置 → 通知与提醒）：由 [SettingsScreen] 以整页覆盖转场组合在根页之上
@@ -49,8 +59,9 @@ import dev.chrisbanes.haze.rememberHazeState
  * 一行通知类型）。总开关为同步语义：变化时两个子开关一并置同值。提前时间点行弹
  * [BottomNumberSelectCard] 横向滚轮（0–60 分钟，两处入口共用一个弹窗）。
  *
- * 具体通知功能尚未实装：本页只承载设置项 UI 与偏好存取（[NotificationPreferences]，
- * 进页 load 一次、每次变更即时落盘），开关/选项暂不驱动任何系统通知行为。
+ * 普通通知已实装（data/notification 的 NotificationScheduler）：每次变更即时落盘并
+ * 整体重排系统闹钟；总开关打开且未授权（API 33+）时请求 POST_NOTIFICATIONS，
+ * 拒绝则整体回退为关——「启用通知」语义 = 已授权且已开启。
  */
 @Composable
 fun NotificationScreen(
@@ -60,9 +71,28 @@ fun NotificationScreen(
     val context = LocalContext.current
     // 偏好真源：进页 load 一次，此后每次变更即时落盘（apply 异步，同 themeMode 模式）
     var prefs by remember { mutableStateOf(NotificationPreferences.load(context)) }
+    val scope = rememberCoroutineScope()
     val setPrefs: (NotificationSettings) -> Unit = { value ->
         prefs = value
         NotificationPreferences.save(context, value)
+        // 设置变化即时反映到系统闹钟：整体重排（幂等；总开关全关 = 全部取消）
+        scope.launch { NotificationScheduler.reschedule(context) }
+    }
+    // 通知运行时权限（API 33+）：总开关打开且未授权时请求；拒绝则整体回退为关——
+    // 「启用通知」语义 = 已授权且已开启，避免开关开着但系统侧一条也发不出来
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        setPrefs(
+            if (granted) {
+                prefs.copy(enabled = true, courseEnabled = true, todoEnabled = true)
+            } else {
+                prefs.copy(enabled = false, courseEnabled = false, todoEnabled = false)
+            },
+        )
+        if (!granted) {
+            AppToasts.show(context, context.getString(R.string.notification_permission_denied_toast))
+        }
     }
 
     // 提前时间滚轮（课程/待办两处入口共用一个弹窗）：点行记下目标与初值再挂载，确认
@@ -132,11 +162,24 @@ fun NotificationScreen(
                                 label = stringResource(R.string.notification_enable),
                                 description = stringResource(R.string.notification_permission_desc),
                                 checked = prefs.enabled,
-                                // 同步语义：总开关变化把两个子开关一并置为同值（关→全关、开→全开）
                                 onCheckedChange = { on ->
-                                    setPrefs(
-                                        prefs.copy(enabled = on, courseEnabled = on, todoEnabled = on),
-                                    )
+                                    when {
+                                        // 关：同步语义，两个子开关一并置同值
+                                        !on -> setPrefs(
+                                            prefs.copy(enabled = false, courseEnabled = false, todoEnabled = false),
+                                        )
+                                        // 开且未授权（API 33+）：先请求，落盘交给授权回调
+                                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                            ContextCompat.checkSelfPermission(
+                                                context,
+                                                Manifest.permission.POST_NOTIFICATIONS,
+                                            ) != PackageManager.PERMISSION_GRANTED ->
+                                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        // 开且已授权（或低版本无运行时权限）：照常同步全开
+                                        else -> setPrefs(
+                                            prefs.copy(enabled = true, courseEnabled = true, todoEnabled = true),
+                                        )
+                                    }
                                 },
                             ),
                         ),

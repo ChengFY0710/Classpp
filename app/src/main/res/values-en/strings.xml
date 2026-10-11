@@ -62,6 +62,16 @@
     <string name="notification_todo_type_deadline">Deadline</string>
     <string name="notification_todo_type_start">Start time</string>
     <string name="notification_todo_type_end">End time</string>
+    <!-- Notification content & channels -->
+    <string name="notification_channel_course">Class reminders</string>
+    <string name="notification_channel_todo">Todo reminders</string>
+    <string name="notification_course_text">Class %1$s · %2$s</string>
+    <string name="notification_course_text_no_location">Class %1$s</string>
+    <string name="notification_todo_deadline_text">Due %1$s</string>
+    <string name="notification_todo_start_text">Starts %1$s</string>
+    <string name="notification_todo_end_text">Ends %1$s</string>
+    <string name="notification_date_prefix">%1$d/%2$d </string>
+    <string name="notification_permission_denied_toast">Notification permission denied — turned off</string>
     <string name="empty_title">No schedule yet</string>
     <string name="empty_desc">Create a schedule to start recording classes</string>
     <string name="create_schedule">Create Schedule</string>

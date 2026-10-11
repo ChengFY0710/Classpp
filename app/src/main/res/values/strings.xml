@@ -88,6 +88,16 @@
     <string name="notification_todo_type_deadline">截止日期</string>
     <string name="notification_todo_type_start">待办开始时间</string>
     <string name="notification_todo_type_end">待办结束时间</string>
+    <!-- 通知内容与渠道 -->
+    <string name="notification_channel_course">课程提醒</string>
+    <string name="notification_channel_todo">待办提醒</string>
+    <string name="notification_course_text">%1$s 上课 · %2$s</string>
+    <string name="notification_course_text_no_location">%1$s 上课</string>
+    <string name="notification_todo_deadline_text">%1$s 截止</string>
+    <string name="notification_todo_start_text">%1$s 开始</string>
+    <string name="notification_todo_end_text">%1$s 结束</string>
+    <string name="notification_date_prefix">%1$d月%2$d日 </string>
+    <string name="notification_permission_denied_toast">未授予通知权限，已关闭通知</string>
     <string name="empty_title">还没有课表</string>
     <string name="empty_desc">创建一份课表，开始记录课程</string>
     <string name="create_schedule">创建课表</string>

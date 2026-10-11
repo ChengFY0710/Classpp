@@ -1,5 +1,6 @@
 package com.fangyi.classpp
 
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
@@ -48,6 +49,8 @@ import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.TagRepository
 import com.fangyi.classpp.data.TodoRepository
+import com.fangyi.classpp.data.notification.NotificationAlarmReceiver
+import com.fangyi.classpp.data.notification.NotificationScheduler
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
 import com.fangyi.classpp.ui.motion.TabTransitionState
@@ -64,6 +67,7 @@ import com.fangyi.classpp.ui.theme.ThemeMode
 import com.fangyi.classpp.ui.theme.ThemePreferences
 import com.kyant.shapes.UnevenRoundedRectangle
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 
@@ -74,6 +78,26 @@ import kotlinx.coroutines.launch
 private const val CardHeightSettleMillis = 300L
 
 class MainActivity : ComponentActivity() {
+
+    /**
+     * 通知点击的落页 tab：冷启动读 intent extras、应用在前台被复用时 onNewIntent 写入；
+     * 组合内的 LaunchedEffect 消费（切 tab）后清空。null = 无待落页。
+     */
+    private val pendingNotificationTab = mutableStateOf<AppTab?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        pendingNotificationTab.value = notificationTabOf(intent)
+    }
+
+    /** 通知 extras → 落页 tab：课程提醒进课表、待办提醒进待办；无标记返回 null */
+    private fun notificationTabOf(intent: Intent?): AppTab? =
+        when (intent?.getStringExtra(NotificationAlarmReceiver.EXTRA_NOTIFICATION_TAB)) {
+            NotificationAlarmReceiver.TAB_COURSE -> AppTab.Timetable
+            NotificationAlarmReceiver.TAB_TODO -> AppTab.Todo
+            else -> null
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // 外观模式真源：冷启动只读这一次，早于 super.onCreate，下面的 setTheme 才能生效
         val savedThemeMode = ThemePreferences.load(this)
@@ -102,6 +126,10 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = systemBarStyle(initialDark),
             navigationBarStyle = systemBarStyle(initialDark),
         )
+        // 通知点击冷启动：extras 指定落页 tab（旋转等重建不复读，避免把用户已切走的 tab 拉回）
+        if (savedInstanceState == null) {
+            pendingNotificationTab.value = notificationTabOf(intent)
+        }
         setContent {
             // 外观模式状态：prefs 是真源，旋转/系统深色切换等重建时 onCreate 重读，无需 saveable
             var themeMode by remember { mutableStateOf(savedThemeMode) }
@@ -245,6 +273,15 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                // 通知点击落页：消费 pendingNotificationTab（冷启动 extras / onNewIntent 写入）
+                // 切到对应 tab；target 与当前一致时 selectTab 幂等直接返回
+                LaunchedEffect(pendingNotificationTab.value) {
+                    pendingNotificationTab.value?.let { target ->
+                        selectTab(target)
+                        pendingNotificationTab.value = null
+                    }
+                }
+
                 // 一次性存储降级提示：get() 返回即 bootstrap 完成，loadState 已定型
                 LaunchedEffect(repository) {
                     val repo = repository ?: return@LaunchedEffect
@@ -256,6 +293,19 @@ class MainActivity : ComponentActivity() {
                     if (message != null) {
                         Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
                     }
+                }
+
+                // 通知续排：课表/待办数据首次加载完成与每次变化（编辑课程、增删改待办等）
+                // 都整体重排提醒闹钟（首条 emit 即冷启动排闹）；通知设置的变化由通知页自己
+                // 触发重排，不经过这里。debounce 合并连发的数据变更，只重排一次
+                LaunchedEffect(repository, todoRepository) {
+                    val scheduleRepository = repository ?: return@LaunchedEffect
+                    val todoRepository = todoRepository ?: return@LaunchedEffect
+                    combine(scheduleRepository.activeSchedule, todoRepository.todos) { _, _ -> }
+                        .debounce(500)
+                        .collect {
+                            NotificationScheduler.reschedule(this@MainActivity.applicationContext)
+                        }
                 }
 
                 // 停靠页顶栏冻结帧回位重录（回前台与深浅主题切换共用）：给停靠页造一帧
