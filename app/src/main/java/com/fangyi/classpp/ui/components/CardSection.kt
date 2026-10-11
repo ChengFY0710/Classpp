@@ -21,12 +21,12 @@ import com.fangyi.classpp.ui.theme.settingsRowMetrics
  * 保持同一套标题样式与间距节奏；组件只管纵向排版，横向边距与卡片本体由调用方提供
  * （典型搭配：卡内放 SettingsCard / PopupSelectCard 等）。
  *
- * 标题走 sectionTitle 角色样式再叠 [settingsRowMetrics]（24sp 行高 / 0.5sp 字距），
- * 左缩进 4dp 与卡内 label 视觉对齐。
+ * [title] 可空：null（默认）不渲染标题，组件退化为纯分组容器——组内仍走 [spacing]
+ * 节奏（无题卡组与带题分组的纵向节奏因此一致）。
  */
 @Composable
 fun CardSection(
-    title: String,
+    title: String? = null,
     modifier: Modifier = Modifier,
     // 卡间距统一走 ui.theme 的 CardSectionSpacing（10dp），调用点无需覆盖
     spacing: Dp = CardSectionSpacing,
@@ -36,11 +36,13 @@ fun CardSection(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(spacing),
     ) {
-        Text(
-            text = title,
-            modifier = Modifier.padding(start = 4.dp),
-            style = MaterialTheme.classppTextStyles.sectionTitle.settingsRowMetrics(),
-        )
+        if (title != null) {
+            Text(
+                text = title,
+                modifier = Modifier.padding(start = 4.dp),
+                style = MaterialTheme.classppTextStyles.sectionTitle.settingsRowMetrics(),
+            )
+        }
         content()
     }
 }

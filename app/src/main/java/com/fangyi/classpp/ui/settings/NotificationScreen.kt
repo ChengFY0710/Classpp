@@ -44,10 +44,10 @@ import dev.chrisbanes.haze.rememberHazeState
  * 回到设置根页。
  *
  * 骨架与个性化页同构（Scaffold + 滚动内容列 + 顶栏叠加），正文全部用 [SettingsCard]：
- * 「启用通知」总开关（同步语义：变化时两个子开关一并置同值）、「通知方式」选择行、
- * 「课程通知」「待办通知」两个分组（分组内子开关 + 提前时间导航行，待办组另有一行
- * 通知类型）。提前时间点行弹 [BottomNumberSelectCard] 横向滚轮（0–60 分钟，两处入口
- * 共用一个弹窗）。
+ * 顶部「启用通知」「通知方式」两卡收进无题分组（组内 10dp 卡间距与带题分组一致），
+ * 其后「课程通知」「待办通知」两个分组（分组内子开关 + 提前时间导航行，待办组另有
+ * 一行通知类型）。总开关为同步语义：变化时两个子开关一并置同值。提前时间点行弹
+ * [BottomNumberSelectCard] 横向滚轮（0–60 分钟，两处入口共用一个弹窗）。
  *
  * 具体通知功能尚未实装：本页只承载设置项 UI 与偏好存取（[NotificationPreferences]，
  * 进页 load 一次、每次变更即时落盘），开关/选项暂不驱动任何系统通知行为。
@@ -123,32 +123,36 @@ fun NotificationScreen(
                     ),
                 verticalArrangement = Arrangement.spacedBy(SettingsSectionSpacing),
             ) {
-                SettingsCard(
-                    items = listOf(
-                        SettingsCardItem.Toggle(
-                            label = stringResource(R.string.notification_enable),
-                            description = stringResource(R.string.notification_permission_desc),
-                            checked = prefs.enabled,
-                            // 同步语义：总开关变化把两个子开关一并置为同值（关→全关、开→全开）
-                            onCheckedChange = { on ->
-                                setPrefs(
-                                    prefs.copy(enabled = on, courseEnabled = on, todoEnabled = on),
-                                )
-                            },
+                // 顶部两卡不带分组标题：无题 CardSection 收拢成组，组内 10dp 卡间距与
+                // 下方两个带题分组同节奏；组与组之间仍走页面的 SettingsSectionSpacing
+                CardSection {
+                    SettingsCard(
+                        items = listOf(
+                            SettingsCardItem.Toggle(
+                                label = stringResource(R.string.notification_enable),
+                                description = stringResource(R.string.notification_permission_desc),
+                                checked = prefs.enabled,
+                                // 同步语义：总开关变化把两个子开关一并置为同值（关→全关、开→全开）
+                                onCheckedChange = { on ->
+                                    setPrefs(
+                                        prefs.copy(enabled = on, courseEnabled = on, todoEnabled = on),
+                                    )
+                                },
+                            ),
                         ),
-                    ),
-                )
-                SettingsCard(
-                    items = listOf(
-                        SettingsCardItem.Select(
-                            label = stringResource(R.string.notification_method),
-                            value = methodItems.first { it.first == prefs.method }.second,
-                            items = methodItems,
-                            selectedId = prefs.method,
-                            onPick = { id -> setPrefs(prefs.copy(method = id)) },
+                    )
+                    SettingsCard(
+                        items = listOf(
+                            SettingsCardItem.Select(
+                                label = stringResource(R.string.notification_method),
+                                value = methodItems.first { it.first == prefs.method }.second,
+                                items = methodItems,
+                                selectedId = prefs.method,
+                                onPick = { id -> setPrefs(prefs.copy(method = id)) },
+                            ),
                         ),
-                    ),
-                )
+                    )
+                }
                 CardSection(title = stringResource(R.string.section_course_notifications)) {
                     CourseNotificationCard(
                         enabled = prefs.courseEnabled,
