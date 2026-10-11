@@ -17,8 +17,12 @@ enum class NotificationKind { Course, TodoDeadline, TodoStart, TodoEnd }
  * （同一门课同一天、同一条待办同一天同一种时刻），不同提醒之间互不相同。
  *
  * [eventAtMillis] = 提醒的事件时刻（上课开始 / 待办截止·开始·结束），与 [triggerAtMillis]
- * 的差即提前量。通知方式为 Live Updates 时，它是倒计时实况的计时目标、也是持续通知的
- * 自动移除时刻（见 [NotificationAlarmReceiver] 的 ACTION_CANCEL）。
+ * 的差即提前量。通知方式为 Live Updates 时，它是持续通知的移除时刻（见
+ * [NotificationAlarmReceiver] 的 ACTION_CANCEL）。
+ *
+ * [chipText] = 实况状态栏 chip 上的文字（[Notification.Builder.setShortCriticalText]），
+ * 口径由 [NotificationSettings.liveInfo] 决定且仅对课程提醒生效（课程名 / 上课地点，
+ * 地点为空回退课程名）；待办提醒恒为待办名。
  */
 data class PlannedNotification(
     val key: String,
@@ -27,6 +31,7 @@ data class PlannedNotification(
     val kind: NotificationKind,
     val title: String,
     val text: String,
+    val chipText: String,
 )
 
 /**
@@ -89,7 +94,7 @@ object NotificationPlanner {
         if (!settings.enabled) return emptyList()
         val planned = buildList {
             if (settings.courseEnabled && schedule != null) {
-                addAll(planCourses(schedule, settings.courseLeadMinutes, texts, nowMillis, today))
+                addAll(planCourses(schedule, settings, texts, nowMillis, today))
             }
             if (settings.todoEnabled) {
                 addAll(planTodos(todos, settings.todoType, settings.todoLeadMinutes, texts, nowMillis, today))
@@ -101,11 +106,12 @@ object NotificationPlanner {
     /** 课程提醒：窗口内每天按「周号 + 星期 + 周规律」匹配课程，触发点 = 上课开始 − 提前量 */
     private fun planCourses(
         schedule: Schedule,
-        leadMinutes: Int,
+        settings: NotificationSettings,
         texts: NotificationTexts,
         nowMillis: Long,
         today: IsoDate,
     ): List<PlannedNotification> {
+        val leadMinutes = settings.courseLeadMinutes
         val result = ArrayList<PlannedNotification>()
         val termStartMonday = schedule.termStart.mondayOfWeek().epochDay
         for (dayOffset in 0 until WINDOW_DAYS) {
@@ -131,6 +137,14 @@ object NotificationPlanner {
                 } else {
                     texts.courseText.format(timeRange, course.location)
                 }
+                // chip 文字口径：上课地点（地点为空回退课程名）/ 课程名
+                val chipText = if (settings.liveInfo == NotificationSettings.LIVE_INFO_LOCATION &&
+                    course.location.isNotBlank()
+                ) {
+                    course.location
+                } else {
+                    course.name
+                }
                 result += PlannedNotification(
                     key = "C:${course.id}:${date.epochDay}",
                     triggerAtMillis = trigger,
@@ -138,6 +152,7 @@ object NotificationPlanner {
                     kind = NotificationKind.Course,
                     title = course.name,
                     text = text,
+                    chipText = chipText,
                 )
             }
         }
@@ -172,6 +187,7 @@ object NotificationPlanner {
                             kind = NotificationKind.TodoDeadline,
                             title = todo.name,
                             text = texts.todoDeadlineText.format(timeText(date, minute, texts, today)),
+                            chipText = todo.name,
                         )
                     }
                 }
@@ -195,6 +211,7 @@ object NotificationPlanner {
                                 kind = NotificationKind.TodoStart,
                                 title = todo.name,
                                 text = texts.todoStartText.format(timeText(date, startMinute, texts, today)),
+                                chipText = todo.name,
                             )
                         }
                     }
@@ -213,6 +230,7 @@ object NotificationPlanner {
                                 kind = NotificationKind.TodoEnd,
                                 title = todo.name,
                                 text = texts.todoEndText.format(timeText(date, endMinute, texts, today)),
+                                chipText = todo.name,
                             )
                         }
                     }

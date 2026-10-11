@@ -53,6 +53,7 @@ class NotificationPlannerTest {
             planned[0].triggerAtMillis,
         )
         assertEquals(localMillis(today, 8 * 60), planned[0].eventAtMillis) // 实况倒计时目标
+        assertEquals("数学", planned[0].chipText) // 默认口径 = 课程名
         assertEquals(NotificationKind.Course, planned[0].kind)
         assertEquals("数学", planned[0].title)
         assertEquals("8:00-9:40 上课 · A101", planned[0].text)
@@ -148,6 +149,46 @@ class NotificationPlannerTest {
         assertEquals("C:c1:${today.plus(8).epochDay}", planned[1].key)
     }
 
+    @Test
+    fun chipTextFollowsLiveInfoSetting() {
+        val schedule = schedule(
+            termStart = IsoDate.of(2026, 10, 12),
+            termEnd = IsoDate.of(2026, 11, 8),
+            course = course(name = "数学", dayOfWeek = 1, weeks = WeekPattern.everyWeek(4), location = "A101"),
+        )
+        // 课程名口径 → chip = 课程名；上课地点口径 → chip = 地点
+        val byName = plan(
+            schedule,
+            emptyList(),
+            settings(lead = 0, liveInfo = NotificationSettings.LIVE_INFO_COURSE),
+            now,
+        )
+        assertEquals("数学", byName[0].chipText)
+        val byLocation = plan(
+            schedule,
+            emptyList(),
+            settings(lead = 0, liveInfo = NotificationSettings.LIVE_INFO_LOCATION),
+            now,
+        )
+        assertEquals("A101", byLocation[0].chipText)
+    }
+
+    @Test
+    fun blankLocationFallsBackToCourseName() {
+        val planned = plan(
+            schedule(
+                termStart = IsoDate.of(2026, 10, 12),
+                termEnd = IsoDate.of(2026, 11, 8),
+                course = course(name = "数学", dayOfWeek = 1, weeks = WeekPattern.everyWeek(4), location = ""),
+            ),
+            emptyList(),
+            settings(lead = 0, liveInfo = NotificationSettings.LIVE_INFO_LOCATION),
+            now,
+        )
+        // 地点为空时 chip 回退课程名，避免发出空标签
+        assertEquals("数学", planned[0].chipText)
+    }
+
     // ——— 待办 ———
 
     @Test
@@ -168,6 +209,7 @@ class NotificationPlannerTest {
         assertEquals("T:t1:${IsoDate.of(2026, 10, 14).epochDay}:D", planned[0].key)
         assertEquals(localMillis(IsoDate.of(2026, 10, 14), 17 * 60 - 30), planned[0].triggerAtMillis)
         assertEquals(localMillis(IsoDate.of(2026, 10, 14), 17 * 60), planned[0].eventAtMillis)
+        assertEquals("测试待办", planned[0].chipText) // 待办实况 chip 恒为待办名
         assertEquals(NotificationKind.TodoDeadline, planned[0].kind)
         assertEquals("10月14日 17:00 截止", planned[0].text)
     }
@@ -309,6 +351,7 @@ class NotificationPlannerTest {
         todoType: Int = NotificationSettings.TODO_TYPE_ALL,
         courseEnabled: Boolean = true,
         todoEnabled: Boolean = true,
+        liveInfo: Int = NotificationSettings.LIVE_INFO_COURSE,
     ) = NotificationSettings(
         enabled = enabled,
         courseEnabled = courseEnabled,
@@ -316,6 +359,7 @@ class NotificationPlannerTest {
         todoEnabled = todoEnabled,
         todoLeadMinutes = lead,
         todoType = todoType,
+        liveInfo = liveInfo,
     )
 
     private fun schedule(

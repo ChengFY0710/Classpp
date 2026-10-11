@@ -34,6 +34,7 @@ internal object NotificationPoster {
         channel: String,
         title: String,
         text: String,
+        chipText: String,
         isCourse: Boolean,
     ): Notification {
         val builder = Notification.Builder(context, channel)
@@ -46,10 +47,10 @@ internal object NotificationPoster {
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))
             .setContentIntent(contentIntent(context, isCourse, title.hashCode()))
-            // 持续驻留 + 进度类目 + chip 内容 = 事件名（不做倒计时）
+            // 持续驻留 + 进度类目 + chip 内容 = 展示信息（课程名/上课地点口径，不做倒计时）
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_PROGRESS)
-            .setShortCriticalText(title)
+            .setShortCriticalText(chipText)
         try {
             builder.setRequestPromotedOngoing(true)
         } catch (_: NoSuchMethodError) {

@@ -75,7 +75,10 @@
     <string name="notification_method">通知方式</string>
     <string name="notification_method_normal">普通通知</string>
     <string name="notification_method_live">Live Updates</string>
-    <string name="notification_method_desc">Live Updates 需 Android 16+，旧系统以普通通知呈现</string>
+    <string name="notification_live_info_label">实时通知显示信息</string>
+    <string name="notification_live_info_desc">需 Android 16 及以上</string>
+    <string name="notification_live_info_course">课程名</string>
+    <string name="notification_live_info_location">上课地点</string>
     <string name="section_course_notifications">课程通知</string>
     <string name="section_todo_notifications">待办通知</string>
     <string name="notification_enable_course">启用课程通知</string>

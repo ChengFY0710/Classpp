@@ -62,13 +62,14 @@ class NotificationAlarmReceiver : BroadcastReceiver() {
         val key = intent.getStringExtra(EXTRA_KEY) ?: return
         val title = intent.getStringExtra(EXTRA_TITLE) ?: return
         val text = intent.getStringExtra(EXTRA_TEXT).orEmpty()
+        val chipText = intent.getStringExtra(EXTRA_CHIP_TEXT) ?: title
         val isCourse = intent.getStringExtra(EXTRA_KIND) == NotificationKind.Course.name
         val channel = if (isCourse) CHANNEL_COURSE else CHANNEL_TODO
         // Live Updates 仅 API 36+ 存在；低版本设备按普通通知呈现（回退语义）
         val live = NotificationPreferences.load(context).method == NotificationSettings.METHOD_LIVE &&
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA
         val notification = if (live) {
-            NotificationPoster.buildLiveUpdate(context, channel, title, text, isCourse)
+            NotificationPoster.buildLiveUpdate(context, channel, title, text, chipText, isCourse)
         } else {
             NotificationPoster.buildStandard(context, channel, title, text, isCourse)
         }
@@ -90,6 +91,9 @@ class NotificationAlarmReceiver : BroadcastReceiver() {
         const val EXTRA_KIND = "kind"
         const val EXTRA_TITLE = "title"
         const val EXTRA_TEXT = "text"
+
+        /** 实况 chip 的文字（课程名/上课地点口径在排期时已定）：Live Updates 专用 */
+        const val EXTRA_CHIP_TEXT = "chip_text"
 
         /** 实况清理目标的通知 id（= key.hashCode()，与发通知侧同源） */
         const val EXTRA_ID = "id"

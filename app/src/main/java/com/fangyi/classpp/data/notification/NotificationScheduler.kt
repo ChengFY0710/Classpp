@@ -162,7 +162,14 @@ object NotificationScheduler {
         val text = appContext.getString(R.string.notification_course_text).format(time, location)
         val id = TEST_KEY.hashCode()
         val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
-            NotificationPoster.buildLiveUpdate(appContext, CHANNEL_COURSE, title, text, isCourse = true)
+            NotificationPoster.buildLiveUpdate(
+                appContext,
+                CHANNEL_COURSE,
+                title,
+                text,
+                chipText = title,
+                isCourse = true,
+            )
         } else {
             NotificationPoster.buildStandard(appContext, CHANNEL_COURSE, title, text, isCourse = true)
         }
@@ -197,6 +204,7 @@ object NotificationScheduler {
                 .putExtra(NotificationAlarmReceiver.EXTRA_KIND, item.kind.name)
                 .putExtra(NotificationAlarmReceiver.EXTRA_TITLE, item.title)
                 .putExtra(NotificationAlarmReceiver.EXTRA_TEXT, item.text)
+                .putExtra(NotificationAlarmReceiver.EXTRA_CHIP_TEXT, item.chipText)
         }
         return PendingIntent.getBroadcast(
             context,

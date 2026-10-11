@@ -49,7 +49,10 @@
     <string name="notification_method">Notification method</string>
     <string name="notification_method_normal">Normal</string>
     <string name="notification_method_live">Live Updates</string>
-    <string name="notification_method_desc">Live Updates need Android 16+; older versions fall back to standard notifications</string>
+    <string name="notification_live_info_label">Live update display info</string>
+    <string name="notification_live_info_desc">Requires Android 16+</string>
+    <string name="notification_live_info_course">Course name</string>
+    <string name="notification_live_info_location">Class location</string>
     <string name="section_course_notifications">Course notifications</string>
     <string name="section_todo_notifications">Todo notifications</string>
     <string name="notification_enable_course">Enable course notifications</string>

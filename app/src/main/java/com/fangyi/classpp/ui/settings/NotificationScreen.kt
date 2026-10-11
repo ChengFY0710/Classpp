@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,6 +48,7 @@ import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetBottomSlack
+import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
@@ -113,6 +116,10 @@ fun NotificationScreen(
     val methodItems = listOf(
         NotificationSettings.METHOD_NORMAL to stringResource(R.string.notification_method_normal),
         NotificationSettings.METHOD_LIVE to stringResource(R.string.notification_method_live),
+    )
+    val liveInfoItems = listOf(
+        NotificationSettings.LIVE_INFO_COURSE to stringResource(R.string.notification_live_info_course),
+        NotificationSettings.LIVE_INFO_LOCATION to stringResource(R.string.notification_live_info_location),
     )
     val todoTypeItems = listOf(
         NotificationSettings.TODO_TYPE_ALL to stringResource(R.string.notification_todo_type_all),
@@ -191,16 +198,33 @@ fun NotificationScreen(
                         ),
                     )
                     SettingsCard(
-                        items = listOf(
-                            SettingsCardItem.Select(
-                                label = stringResource(R.string.notification_method),
-                                description = stringResource(R.string.notification_method_desc),
-                                value = methodItems.first { it.first == prefs.method }.second,
-                                items = methodItems,
-                                selectedId = prefs.method,
-                                onPick = { id -> setPrefs(prefs.copy(method = id)) },
-                            ),
-                        ),
+                        modifier = Modifier
+                            // 行数随通知方式增减：卡片高度走 motion 层的展开令牌动画
+                            .animateContentSize(tween(Motion.ExpandMillis, easing = Motion.Decelerate)),
+                        items = buildList {
+                            add(
+                                SettingsCardItem.Select(
+                                    label = stringResource(R.string.notification_method),
+                                    value = methodItems.first { it.first == prefs.method }.second,
+                                    items = methodItems,
+                                    selectedId = prefs.method,
+                                    onPick = { id -> setPrefs(prefs.copy(method = id)) },
+                                ),
+                            )
+                            // 选 Live Updates 才展开：实况 chip 的展示信息口径
+                            if (prefs.method == NotificationSettings.METHOD_LIVE) {
+                                add(
+                                    SettingsCardItem.Select(
+                                        label = stringResource(R.string.notification_live_info_label),
+                                        description = stringResource(R.string.notification_live_info_desc),
+                                        value = liveInfoItems.first { it.first == prefs.liveInfo }.second,
+                                        items = liveInfoItems,
+                                        selectedId = prefs.liveInfo,
+                                        onPick = { id -> setPrefs(prefs.copy(liveInfo = id)) },
+                                    ),
+                                )
+                            }
+                        },
                     )
                     SettingsCard(
                         items = listOf(

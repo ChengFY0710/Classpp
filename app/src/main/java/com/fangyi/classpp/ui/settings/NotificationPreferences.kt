@@ -17,6 +17,8 @@ data class NotificationSettings(
     val enabled: Boolean = true,
     // 通知方式：普通通知 / Live Updates，二选一
     val method: Int = METHOD_NORMAL,
+    // 实况 chip 的展示信息（仅 Live Updates 生效）：课程名 / 上课地点
+    val liveInfo: Int = LIVE_INFO_COURSE,
     val courseEnabled: Boolean = true,
     val courseLeadMinutes: Int = DefaultLeadMinutes,
     val todoEnabled: Boolean = true,
@@ -27,6 +29,9 @@ data class NotificationSettings(
     companion object {
         const val METHOD_NORMAL = 0
         const val METHOD_LIVE = 1
+
+        const val LIVE_INFO_COURSE = 0
+        const val LIVE_INFO_LOCATION = 1
 
         const val TODO_TYPE_ALL = 0
         const val TODO_TYPE_DEADLINE = 1
@@ -47,6 +52,7 @@ object NotificationPreferences {
     private const val FILE_NAME = "notification_prefs"
     private const val KEY_ENABLED = "enabled"
     private const val KEY_METHOD = "method"
+    private const val KEY_LIVE_INFO = "live_info"
     private const val KEY_COURSE_ENABLED = "course_enabled"
     private const val KEY_COURSE_LEAD = "course_lead_minutes"
     private const val KEY_TODO_ENABLED = "todo_enabled"
@@ -64,6 +70,8 @@ object NotificationPreferences {
             enabled = prefs.getBoolean(KEY_ENABLED, defaults.enabled),
             method = prefs.getInt(KEY_METHOD, defaults.method)
                 .coerceIn(NotificationSettings.METHOD_NORMAL, NotificationSettings.METHOD_LIVE),
+            liveInfo = prefs.getInt(KEY_LIVE_INFO, defaults.liveInfo)
+                .coerceIn(NotificationSettings.LIVE_INFO_COURSE, NotificationSettings.LIVE_INFO_LOCATION),
             courseEnabled = prefs.getBoolean(KEY_COURSE_ENABLED, defaults.courseEnabled),
             courseLeadMinutes = prefs.getInt(KEY_COURSE_LEAD, defaults.courseLeadMinutes)
                 .coerceIn(LEAD_RANGE.first, LEAD_RANGE.last),
@@ -81,6 +89,7 @@ object NotificationPreferences {
             .edit()
             .putBoolean(KEY_ENABLED, settings.enabled)
             .putInt(KEY_METHOD, settings.method)
+            .putInt(KEY_LIVE_INFO, settings.liveInfo)
             .putBoolean(KEY_COURSE_ENABLED, settings.courseEnabled)
             .putInt(KEY_COURSE_LEAD, settings.courseLeadMinutes)
             .putBoolean(KEY_TODO_ENABLED, settings.todoEnabled)
