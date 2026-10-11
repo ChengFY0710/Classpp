@@ -31,8 +31,10 @@ import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
+import com.fangyi.classpp.ui.components.SheetBottomSlack
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
+import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 
@@ -115,11 +117,11 @@ fun NotificationScreen(
                     .rubberBandVerticalScroll(rememberScrollState())
                     .padding(horizontal = PageHorizontalSpacing)
                     .padding(
-                        // 首项距顶栏留 SectionSpacing，与设置根页/个性化页节奏同源
-                        top = topBarHeight + SectionSpacing,
-                        bottom = navBarPadding + SectionSpacing + BottomScrollSlack,
+                        // 首项距顶栏留 TopBarContentGap（页自有节奏），尾部余量与浮层同源
+                        top = topBarHeight + TopBarContentGap,
+                        bottom = navBarPadding + SheetBottomSlack,
                     ),
-                verticalArrangement = Arrangement.spacedBy(SectionSpacing),
+                verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween),
             ) {
                 SettingsCard(
                     items = listOf(

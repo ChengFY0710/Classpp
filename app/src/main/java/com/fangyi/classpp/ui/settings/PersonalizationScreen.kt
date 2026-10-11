@@ -45,12 +45,14 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
+import com.fangyi.classpp.ui.components.SheetBottomSlack
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.schedule.CardHeightPreferences
 import com.fangyi.classpp.ui.schedule.CardHeights
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
+import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.ThemeMode
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -116,11 +118,11 @@ fun PersonalizationScreen(
                     .rubberBandVerticalScroll(rememberScrollState())
                     .padding(horizontal = PageHorizontalSpacing)
                     .padding(
-                        // 首项距顶栏留 SectionSpacing，与设置根页节奏同源
-                        top = topBarHeight + SectionSpacing,
-                        bottom = navBarPadding + SectionSpacing + BottomScrollSlack,
+                        // 首项距顶栏留 TopBarContentGap（页自有节奏），尾部余量与浮层同源
+                        top = topBarHeight + TopBarContentGap,
+                        bottom = navBarPadding + SheetBottomSlack,
                     ),
-                verticalArrangement = Arrangement.spacedBy(SectionSpacing),
+                verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween),
             ) {
                 ColorModeSection(
                     mode = themeMode,

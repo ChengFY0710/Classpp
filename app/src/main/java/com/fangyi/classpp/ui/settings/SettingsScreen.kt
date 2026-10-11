@@ -34,6 +34,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.ui.components.SettingsCardwithIcon
 import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
+import com.fangyi.classpp.ui.components.SheetBottomSlack
 import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
@@ -44,12 +45,11 @@ import com.fangyi.classpp.ui.theme.ThemeMode
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 
-// 纵向节奏（分组间距、首项距顶栏、尾部余量）。横向边距走 ui.theme 的 PageHorizontalSpacing
-// （与浮层同源），不在此列。子页（PersonalizationScreen）复用同一节奏
-internal val SectionSpacing = 18.dp
-
-/** 底部额外留白：末屏内容可继续上滑一段（滑到顶栏之后仍有一段余量） */
-internal val BottomScrollSlack = 120.dp
+// 纵向节奏：首项距顶栏为页自有节奏（18dp）；分组间距与尾部余量对齐 overlay 浮层——
+// 直接复用 ui.components 的 SheetSectionSpacingBetween / SheetBottomSlack，与各浮层
+// 同源同值（浮层调节奏时这里自动跟随）。横向边距走 ui.theme 的 PageHorizontalSpacing
+// （与浮层同源），不在此列。子页（PersonalizationScreen / NotificationScreen）复用同一节奏
+internal val TopBarContentGap = 18.dp
 
 /** 根页三张入口卡之间的间距（设计稿：独立卡片、留缝堆叠） */
 private val EntryCardSpacing = 12.dp
@@ -207,9 +207,9 @@ private fun SettingsHomePage(
                             .rubberBandVerticalScroll(rememberScrollState())
                             .padding(horizontal = PageHorizontalSpacing)
                             .padding(
-                                // 首项距顶栏留 SectionSpacing，与页面其余间距同源
-                                top = topBarHeight + SectionSpacing,
-                                bottom = navBarPadding + SectionSpacing + BottomScrollSlack,
+                                // 首项距顶栏留 TopBarContentGap（页自有节奏），尾部余量与浮层同源
+                                top = topBarHeight + TopBarContentGap,
+                                bottom = navBarPadding + SheetBottomSlack,
                             ),
                         verticalArrangement = Arrangement.spacedBy(EntryCardSpacing),
                     ) {
