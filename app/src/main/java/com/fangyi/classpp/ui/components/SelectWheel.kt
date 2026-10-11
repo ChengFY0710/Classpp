@@ -57,13 +57,13 @@ private const val FadeOutScale = 0.8f
 private const val OvershootResistance = 0.25f
 
 /** 滚轮数字字号（对齐设计稿量得的中格大小） */
-private val WheelNumberFontSize = 45.sp
+private val WheelNumberFontSize = 36.sp
 
 /** 单位（时/分、年/月/日）字号 */
 private val WheelUnitFontSize = 18.sp
 
 /** 数字右缘到单位的间距 */
-private val UnitGap: Dp = 8.dp
+private val UnitGap: Dp = 10.dp
 
 /**
  * 数字滚轮积木（BottomTimeSelectCard / BottomDateSelectCard 共用）：垂直 draggable 的

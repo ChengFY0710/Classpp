@@ -21,8 +21,8 @@ import java.util.TimeZone
 
 private const val MILLIS_PER_DAY = 86_400_000L
 
-/** 日期轮数字字号：年/月/日三列比时间轮的两列挤（年轮还是 4 位），比共享默认 48sp 小一档 */
-private val WheelNumberFontSize = 36.sp
+/** 日期轮数字字号：年/月/日三列比时间轮的两列挤（年轮还是 4 位），比共享默认小一档 */
+private val WheelNumberFontSize = 32.sp
 
 /** 月/日两位补零显示（08 月 27 日） */
 private fun pad2(value: Int): String = value.toString().padStart(2, '0')
