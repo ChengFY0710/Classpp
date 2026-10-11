@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -18,9 +17,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -55,10 +52,11 @@ private const val MILLIS_PER_DAY = 86_400_000L
 
 /**
  * 截止日期卡：单行「截止日期 + 日期时刻值 + >」白卡，整行可点，点按先弹 M3
- * [DatePickerDialog] 选日期、确认后接着弹 M3 [TimePickerDialog]（钟表）选时刻，
- * 两步都确认才经 [onChange] 回写（任一步取消 = 不变更，暂存日期由内部持有）。
- * 已设截止时日期弹窗多一枚「清除」，点按回写 null 对——模型约束截止日期与时刻
- * 成对出现或同时为空（TodoValidator）。
+ * [DatePickerDialog] 选日期，确认后经 [onTimePickRequest] 请求宿主弹出时刻选择
+ * （BottomTimeSelectCard 滚轮，页内覆盖层画不进卡片里——浮层内容会被 Surface 裁剪，
+ * 由宿主组合在浮层级），两步都确认才经 [onChange] 回写（任一步取消 = 不变更，
+ * 暂存日期由内部持有）。已设截止时日期弹窗多一枚「清除」，点按回写 null 对——
+ * 模型约束截止日期与时刻成对出现或同时为空（TodoValidator）。
  *
  * 行规格与 [DateSelectionCard] 的「自定义日期」子行同款：[SheetCardShape] 连续圆角、
  * 行高下限 [SheetFieldHeight]、行内距 16/14 画在点击区内侧（按压反馈铺满整行，取代涟漪），
@@ -75,6 +73,9 @@ fun DeadlineCard(
     deadlineDate: IsoDate?,
     deadlineMinute: Int?,
     onChange: (date: IsoDate?, minute: Int?) -> Unit,
+    // 时刻步上报：初值为待选时刻（分钟数，一天内），[onPicked] 收用户确认的分钟数
+    // 并在此完成 onChange 回写；弹窗本体由宿主（NewTodoSheet）组合在浮层之后
+    onTimePickRequest: (initialMinute: Int, onPicked: (minuteOfDay: Int) -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -83,7 +84,6 @@ fun DeadlineCard(
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     var datePicking by remember { mutableStateOf(false) }
-    var timePicking by remember { mutableStateOf(false) }
     // 日期弹窗确认后暂存：等时刻也确认才一并回写（任一步取消 = 不变更）
     var pendingDate by remember { mutableStateOf<IsoDate?>(null) }
     val isSet = deadlineDate != null && deadlineMinute != null
@@ -145,7 +145,12 @@ fun DeadlineCard(
                         datePicking = false
                         datePickerState.selectedDateMillis?.let { millis ->
                             pendingDate = millis.toPickerIsoDate()
-                            timePicking = true
+                            // 时刻步交给宿主的滚轮弹窗：初值取当前截止时刻（未设时 8:00），
+                            // 选中回调把暂存日期一并回写（取消 = 不变更）
+                            onTimePickRequest(deadlineMinute ?: DEFAULT_DEADLINE_MINUTE) { picked ->
+                                pendingDate?.let { date -> onChange(date, picked) }
+                                pendingDate = null
+                            }
                         }
                     },
                     interactionSource = press,
@@ -184,48 +189,6 @@ fun DeadlineCard(
         ) {
             DatePicker(state = datePickerState)
         }
-    }
-    if (timePicking) {
-        val timeState = rememberTimePickerState(
-            initialHour = (deadlineMinute ?: DEFAULT_DEADLINE_MINUTE) / 60,
-            initialMinute = (deadlineMinute ?: DEFAULT_DEADLINE_MINUTE) % 60,
-        )
-        AlertDialog(
-            onDismissRequest = { timePicking = false },
-            title = {
-                Text(stringResource(R.string.deadline_card_time_title))
-            },
-            text = { TimePicker(state = timeState) },
-            confirmButton = {
-                // 叠按压反馈：M3 涟漪在按钮内部、调用侧去不掉（按压源与按钮共用）
-                val press = remember { MutableInteractionSource() }
-                TextButton(
-                    onClick = {
-                        timePicking = false
-                        val minute = timeState.hour * 60 + timeState.minute
-                        pendingDate?.let { date -> onChange(date, minute) }
-                        pendingDate = null
-                    },
-                    interactionSource = press,
-                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
-                ) {
-                    Text(stringResource(R.string.settings_confirm))
-                }
-            },
-            dismissButton = {
-                val press = remember { MutableInteractionSource() }
-                TextButton(
-                    onClick = {
-                        timePicking = false
-                        pendingDate = null
-                    },
-                    interactionSource = press,
-                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
-                ) {
-                    Text(stringResource(R.string.settings_cancel))
-                }
-            },
-        )
     }
 }
 

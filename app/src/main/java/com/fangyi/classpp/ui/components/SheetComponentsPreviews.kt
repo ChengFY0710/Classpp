@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -685,26 +686,56 @@ private fun DateSelectionCardPreview() = ClassppTheme {
     }
 }
 
-@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 640)
 @Composable
 private fun DeadlineCardPreview() = ClassppTheme {
-    // 两态：未设置（灰「无」）/ 已设置（2026-9-7 8:00，全交互：日期弹窗 → 时刻弹窗）
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        DeadlineCard(
-            deadlineDate = null,
-            deadlineMinute = null,
-            onChange = { _, _ -> },
-        )
-        DeadlineCard(
-            deadlineDate = IsoDate.of(2026, 9, 7),
-            deadlineMinute = 8 * 60,
-            onChange = { _, _ -> },
-        )
+    // 截止日期卡全交互（初始已设：2026-9-7 8:00，可走清除/重选全流程）。时刻步托管代码
+    // 同 NewTodoSheet：挂载/可见两段式，滚轮弹窗与卡片并列组合（页内覆盖层画不进卡片里）
+    var deadlineDate by remember { mutableStateOf<IsoDate?>(IsoDate.of(2026, 9, 7)) }
+    var deadlineMinute by remember { mutableStateOf<Int?>(8 * 60) }
+    var timeMounted by remember { mutableStateOf(false) }
+    var timeVisible by remember { mutableStateOf(false) }
+    var timeInitialMinute by remember { mutableStateOf(0) }
+    var timeCallback by remember { mutableStateOf<((Int) -> Unit)?>(null) }
+    Box {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            DeadlineCard(
+                deadlineDate = deadlineDate,
+                deadlineMinute = deadlineMinute,
+                onChange = { date, minute ->
+                    deadlineDate = date
+                    deadlineMinute = minute
+                },
+                onTimePickRequest = { initialMinute, onPicked ->
+                    timeInitialMinute = initialMinute
+                    timeCallback = onPicked
+                    timeMounted = true
+                    timeVisible = true
+                },
+            )
+        }
+        if (timeMounted) {
+            BottomTimeSelectCard(
+                visible = timeVisible,
+                onDismiss = { timeVisible = false },
+                onDismissed = {
+                    timeMounted = false
+                    timeCallback = null
+                },
+                initialHour = timeInitialMinute / 60,
+                initialMinute = timeInitialMinute % 60,
+                onConfirm = { hour, minute ->
+                    timeVisible = false
+                    timeCallback?.invoke(hour * 60 + minute)
+                    timeCallback = null
+                },
+            )
+        }
     }
 }
 
@@ -722,5 +753,16 @@ private fun BottomSelectSheetPreview() = ClassppTheme {
                     .height(120.dp),
             )
         },
+    )
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 500)
+@Composable
+private fun BottomTimeSelectCardPreview() = ClassppTheme {
+    // 时间选择弹窗：拖动滚轮可看渐隐缩放与橡皮筋，确认/取消走 BottomSelectSheet 顶栏
+    BottomTimeSelectCard(
+        visible = true,
+        onDismiss = {},
+        onConfirm = { _, _ -> },
     )
 }

@@ -36,6 +36,7 @@ import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
+import com.fangyi.classpp.ui.components.BottomTimeSelectCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
 import com.fangyi.classpp.ui.components.DateSelection
@@ -150,6 +151,13 @@ internal fun NewTodoSheet(
     var deleteMounted by remember { mutableStateOf(false) }
     if (deleteRequested) deleteMounted = true
 
+    // 截止时刻滚轮弹窗（BottomTimeSelectCard）：期望态 + 挂载态两段式（同删除确认框），
+    // 声明在 OverlaySheet 之前——弹窗在场时经 covered 让本浮层缩小后退（分层动效）
+    var deadlineTimeVisible by remember { mutableStateOf(false) }
+    var deadlineTimeMounted by remember { mutableStateOf(false) }
+    var deadlineTimeInitial by remember { mutableIntStateOf(0) }
+    var deadlineTimeCallback by remember { mutableStateOf<((Int) -> Unit)?>(null) }
+
     OverlaySheet(
         title = stringResource(if (existing == null) R.string.todo_new_title else R.string.todo_edit_title),
         confirmLabel = stringResource(R.string.edit_confirm),
@@ -208,7 +216,7 @@ internal fun NewTodoSheet(
         },
         onDismiss = onDismiss,
         visible = visible,
-        covered = deleteRequested,
+        covered = deleteRequested || deadlineTimeVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
     ) {
@@ -234,6 +242,13 @@ internal fun NewTodoSheet(
                     onChange = { date, minute ->
                         deadlineDate = date
                         deadlineMinute = minute
+                    },
+                    // 时刻步：挂载滚轮弹窗（画在本浮层之后），初值由卡片给出
+                    onTimePickRequest = { initialMinute, onPicked ->
+                        deadlineTimeInitial = initialMinute
+                        deadlineTimeCallback = onPicked
+                        deadlineTimeMounted = true
+                        deadlineTimeVisible = true
                     },
                 )
                 UrgentFlagCard(
@@ -328,6 +343,28 @@ internal fun NewTodoSheet(
                 )
             }
         }
+    }
+
+    // 截止时刻滚轮弹窗画在表单浮层之后（组合顺序即绘制顺序）；后注册 BackHandler，
+    // 返回键先关弹窗、再关浮层。确认把时/分折算成一天内的分钟数交回 DeadlineCard 的
+    // 暂存流程一并回写；取消/遮罩/返回只请求关闭，播完退场才卸载（两段式，同删除确认框）
+    if (deadlineTimeMounted) {
+        BottomTimeSelectCard(
+            visible = deadlineTimeVisible,
+            onDismiss = { deadlineTimeVisible = false },
+            onDismissed = {
+                deadlineTimeMounted = false
+                deadlineTimeCallback = null
+            },
+            title = stringResource(R.string.deadline_card_time_title),
+            initialHour = deadlineTimeInitial / 60,
+            initialMinute = deadlineTimeInitial % 60,
+            onConfirm = { hour, minute ->
+                deadlineTimeVisible = false
+                deadlineTimeCallback?.invoke(hour * 60 + minute)
+                deadlineTimeCallback = null
+            },
+        )
     }
 
     // 删除确认框画在表单浮层之后（组合顺序即绘制顺序）；后注册 BackHandler，

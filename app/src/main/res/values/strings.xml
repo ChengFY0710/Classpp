@@ -235,4 +235,9 @@
     <string name="repeat_weekly">每周</string>
     <string name="repeat_monthly">每月</string>
     <string name="repeat_yearly">每年</string>
+
+    <!-- 时间选择弹窗（BottomTimeSelectCard）：滚轮选时/分 -->
+    <string name="time_select_title">选择时间</string>
+    <string name="time_unit_hour">时</string>
+    <string name="time_unit_minute">分</string>
 </resources>

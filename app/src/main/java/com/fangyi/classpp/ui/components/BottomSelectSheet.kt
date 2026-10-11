@@ -1,5 +1,6 @@
 package com.fangyi.classpp.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -39,11 +40,16 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.BottomSelectSheetShape
-import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import kotlinx.coroutines.launch
 
-/** 顶栏按钮行距卡片顶缘：与按钮行横向边距（[PageHorizontalSpacing]）同一节奏 */
+/** 卡片距屏幕左右/底缘的边距：私有值，不随全局页边距走（卡片悬浮感与内容节奏解耦） */
+private val CardEdgeMargin: Dp = 12.dp
+
+/** 顶栏按钮行距卡片左右缘：与浮层顶栏按钮行同款 15dp（不随 [CardEdgeMargin] 联动） */
+private val TopBarRowHorizontalPadding: Dp = 15.dp
+
+/** 顶栏按钮行距卡片顶缘：与按钮行横向边距同一节奏 */
 private val TopBarTopPadding: Dp = 15.dp
 
 /** 内容距顶栏按钮底缘的距离 */
@@ -51,9 +57,6 @@ private val ContentTopSpacing: Dp = 15.dp
 
 /** 内容距卡片底缘的距离 */
 private val ContentBottomPadding: Dp = 20.dp
-
-/** 卡片距屏幕底缘的边距：与左右边距统一取 [PageHorizontalSpacing] */
-private val CardBottomMargin: Dp = PageHorizontalSpacing
 
 /**
  * 卡片投影的 elevation：只负责撑开柔影的模糊半径，浓淡由 BottomSelectSheet 的
@@ -66,8 +69,9 @@ private val CardShadowElevation: Dp = 32.dp
  * 选择时间、选择周数、每节课时间、选择总节数……）。只负责骨架——顶栏 + 内容槽；
  * 具体选择器作为 [content] 塞进来。
  *
- * 结构：全屏遮罩（点按关闭）→ 底部居中的卡片（左右/底部边距统一取 [PageHorizontalSpacing]，
- * 底部再让开导航栏；[BottomSelectSheetShape] 四角 36dp 平滑圆角，与浮层顶部圆角一致）→
+ * 结构：全屏遮罩（点按关闭）→ 底部居中的卡片（左右/底部边距统一为私有常量 12dp
+ * [CardEdgeMargin]，底部再让开导航栏；[BottomSelectSheetShape] 四角 36dp 平滑圆角，
+ * 与浮层顶部圆角一致）→
  * 顶栏（取消胶囊 + 居中标题 + 确认胶囊，按钮同 OverlaySheet 顶栏的 [SheetPillButton]，
  * 确认在右、取消在左，图标落各自外侧）→ 内容槽（距按钮底缘 [ContentTopSpacing]、
  * 距卡片底缘 [ContentBottomPadding]，两个间距都收在文件顶部的常量里，改一处全局生效）。
@@ -75,7 +79,7 @@ private val CardShadowElevation: Dp = 32.dp
  * 进出场由组件自己完成，与 OverlaySheet 同一套两段式关闭：
  * - 挂载即入场：从屏幕底部滑入（ui.motion 的 [Motion.OverlayOvershoot]，与浮层同一条
  *   非线性曲线、末端冲过终位约 4~5% 再落回的一次超出回弹），遮罩同步压暗；
- * - [onDismiss]（遮罩点击 / 取消 / 确认）只表示**请求关闭**，调用方收到后清掉自己的状态使
+ * - [onDismiss]（遮罩点击 / 返回键 / 取消 / 确认）只表示**请求关闭**，调用方收到后清掉自己的状态使
  *   [visible] 变 false，组件随即向下滑出（[Motion.Overlay]，退场不带回弹）、遮罩同步变淡，
  *   **播完后才回调 [onDismissed]**，调用方在这一刻把弹窗移出组合；
  * - 不做拖拽关闭（卡片矮、内容少，点遮罩/按钮足够）。
@@ -117,7 +121,7 @@ fun BottomSelectSheet(
     val density = LocalDensity.current
     val scrimColor = MaterialTheme.colorScheme.scrim
     val bottomClearancePx =
-        WindowInsets.navigationBars.getBottom(density) + with(density) { CardBottomMargin.toPx() }
+        WindowInsets.navigationBars.getBottom(density) + with(density) { CardEdgeMargin.toPx() }
 
     // 收场动画本体：从当前进度滑到全隐，播完才回调 onDismissed
     suspend fun runExit() {
@@ -148,6 +152,10 @@ fun BottomSelectSheet(
         }
     }
 
+    // 返回键同遮罩点击（只请求关闭）：只在可见时注册生效，组合顺序靠后的覆盖层先收到
+    // 返回键（同 FadeOverlayDialog），收场期间自动让路
+    BackHandler(enabled = visible, onBack = onDismiss)
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -168,9 +176,9 @@ fun BottomSelectSheet(
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
                 .padding(
-                    start = PageHorizontalSpacing,
-                    end = PageHorizontalSpacing,
-                    bottom = CardBottomMargin,
+                    start = CardEdgeMargin,
+                    end = CardEdgeMargin,
+                    bottom = CardEdgeMargin,
                 )
                 .onSizeChanged { travelPx = it.height + bottomClearancePx }
                 // 滑动位移只打在卡片这层：遮罩留在原地；hiddenFraction 冲过 0
@@ -202,8 +210,8 @@ fun BottomSelectSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(
-                                start = PageHorizontalSpacing,
-                                end = PageHorizontalSpacing,
+                                start = TopBarRowHorizontalPadding,
+                                end = TopBarRowHorizontalPadding,
                                 top = TopBarTopPadding,
                             ),
                     ) {
