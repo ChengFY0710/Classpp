@@ -68,6 +68,27 @@
     <string name="settings_data_management">数据管理</string>
     <string name="settings_about">关于</string>
     <string name="cd_settings_close">关闭</string>
+    <!-- 通知与提醒 -->
+    <string name="settings_notifications">通知与提醒</string>
+    <string name="notification_enable">启用通知</string>
+    <string name="notification_permission_desc">需授予通知权限</string>
+    <string name="notification_method">通知方式</string>
+    <string name="notification_method_normal">普通通知</string>
+    <string name="notification_method_live">Live Updates</string>
+    <string name="section_course_notifications">课程通知</string>
+    <string name="section_todo_notifications">待办通知</string>
+    <string name="notification_enable_course">启用课程通知</string>
+    <string name="notification_enable_todo">启用待办通知</string>
+    <string name="notification_lead_time">通知提前时间</string>
+    <string name="notification_lead_course_desc">将于课程开始前该时间提前通知</string>
+    <string name="notification_lead_todo_desc">将于待办开始/结束前该时间提前通知</string>
+    <string name="notification_lead_value">%1$dmin</string>
+    <string name="notification_unit_min">min</string>
+    <string name="notification_todo_type">通知类型</string>
+    <string name="notification_todo_type_all">全部</string>
+    <string name="notification_todo_type_deadline">截止日期</string>
+    <string name="notification_todo_type_start">待办开始时间</string>
+    <string name="notification_todo_type_end">待办结束时间</string>
     <string name="empty_title">还没有课表</string>
     <string name="empty_desc">创建一份课表，开始记录课程</string>
     <string name="create_schedule">创建课表</string>

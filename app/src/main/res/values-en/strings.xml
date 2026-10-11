@@ -42,6 +42,27 @@
     <string name="settings_data_management">Data management</string>
     <string name="settings_about">About</string>
     <string name="cd_settings_close">Close</string>
+    <!-- Notifications & reminders -->
+    <string name="settings_notifications">Notifications &amp; reminders</string>
+    <string name="notification_enable">Enable notifications</string>
+    <string name="notification_permission_desc">Notification permission required</string>
+    <string name="notification_method">Notification method</string>
+    <string name="notification_method_normal">Normal</string>
+    <string name="notification_method_live">Live Updates</string>
+    <string name="section_course_notifications">Course notifications</string>
+    <string name="section_todo_notifications">Todo notifications</string>
+    <string name="notification_enable_course">Enable course notifications</string>
+    <string name="notification_enable_todo">Enable todo notifications</string>
+    <string name="notification_lead_time">Lead time</string>
+    <string name="notification_lead_course_desc">Notify this many minutes before a class starts</string>
+    <string name="notification_lead_todo_desc">Notify this many minutes before a todo starts/ends</string>
+    <string name="notification_lead_value">%1$dmin</string>
+    <string name="notification_unit_min">min</string>
+    <string name="notification_todo_type">Notification type</string>
+    <string name="notification_todo_type_all">All</string>
+    <string name="notification_todo_type_deadline">Deadline</string>
+    <string name="notification_todo_type_start">Start time</string>
+    <string name="notification_todo_type_end">End time</string>
     <string name="empty_title">No schedule yet</string>
     <string name="empty_desc">Create a schedule to start recording classes</string>
     <string name="create_schedule">Create Schedule</string>

@@ -58,11 +58,17 @@ private val EntryCardSpacing = 12.dp
  * 设置页：全屏覆盖层（由 MainActivity 组合在底部导航之后），返回键/关闭按钮经 [onClose] 退出。
  *
  * 结构 = 设置根页 + 子页覆盖层（完整转场与设置页覆盖层同源，ui.motion 的 [PageOverlayTransition]）：
- * - 根页（[SettingsHomePage]）标题「设置」，正文三张独立入口卡：个性化 / 数据管理 / 关于；
+ * - 根页（[SettingsHomePage]）标题「设置」，正文四张独立入口卡：
+ *   个性化 / 通知与提醒 / 数据管理 / 关于；
  * - 「个性化」子页（[PersonalizationScreen]）承载 app 级外观设置，已实装；
+ *   「通知与提醒」子页（[NotificationScreen]）承载通知设置项 UI，已实装；
  *   「数据管理」「关于」入口本次仅占位（点击暂无响应，子页后续接入）；
- * - 返回键优先关子页；无子页时经 [onClose] 退出设置。子页退场动画期间 [showPersonalization]
- *   已复位，此时再按返回会直接退出设置——与设置页覆盖层「退场中幂等关闭」同语义。
+ * - 两个子页互斥（各自从根页打开、经根页返回，永不同屏）：通知页覆盖层嵌在外层，
+ *   「个性化页 + 根页」整体作为它的 behind——根页仍只组合一次，嵌套层的让位视差与
+ *   压暗遮罩把下层两层内容当一个整体对待；
+ * - 返回键优先关子页（通知页 → 个性化页）；无子页时经 [onClose] 退出设置。子页退场
+ *   动画期间标志已复位，此时再按返回会直接退出设置——与设置页覆盖层「退场中幂等
+ *   关闭」同语义。
  */
 @Composable
 fun SettingsScreen(
@@ -76,15 +82,24 @@ fun SettingsScreen(
     onCardHeightsChange: (CardHeights) -> Unit = {},
 ) {
     var showPersonalization by rememberSaveable { mutableStateOf(false) }
+    var showNotifications by rememberSaveable { mutableStateOf(false) }
     // 覆盖层内容常驻组合（ui.motion 的 PageOverlayTransition）：隐藏态下页面只是停在
     // 屏外、返回键处理必须让位给系统（否则主界面按返回会被吃掉）；转场彻底结束后把
     // 子页复位到根页——与此前 AnimatedVisibility「关闭即销毁」的重开语义一致
     val overlayActive = LocalPageOverlayActive.current
     BackHandler(enabled = overlayActive) {
-        if (showPersonalization) showPersonalization = false else onClose()
+        when {
+            // 子页逐层退：通知页在最外层，优先于个性化页
+            showNotifications -> showNotifications = false
+            showPersonalization -> showPersonalization = false
+            else -> onClose()
+        }
     }
     LaunchedEffect(overlayActive) {
-        if (!overlayActive) showPersonalization = false
+        if (!overlayActive) {
+            showPersonalization = false
+            showNotifications = false
+        }
     }
 
     Box(modifier.fillMaxSize()) {
@@ -94,26 +109,39 @@ fun SettingsScreen(
         // 不动、内容从其后滚过/弹回，即 iOS 大标题页的手感
         ProvideOverscroll {
             // 子页以与设置页覆盖层完全相同的完整转场盖住根页（ui.motion 的 PageOverlayTransition：
-            // 让位视差 + 压暗遮罩 + 右滑进出场 + 转场期左缘圆角）——共用同一实现，两层观感严格一致
+            // 让位视差 + 压暗遮罩 + 右滑进出场 + 转场期左缘圆角）——共用同一实现，两层观感严格一致。
+            // 通知与提醒嵌在外层：「个性化 + 根页」整体作为它的 behind，两个子页永不同屏
             PageOverlayTransition(
-                visible = showPersonalization,
+                visible = showNotifications,
                 modifier = Modifier.fillMaxSize(),
                 behind = {
-                    SettingsHomePage(
-                        onClose = onClose,
-                        onOpenPersonalization = { showPersonalization = true },
-                        repository = repository,
+                    PageOverlayTransition(
+                        visible = showPersonalization,
                         modifier = Modifier.fillMaxSize(),
-                    )
+                        behind = {
+                            SettingsHomePage(
+                                onClose = onClose,
+                                onOpenPersonalization = { showPersonalization = true },
+                                onOpenNotifications = { showNotifications = true },
+                                repository = repository,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        },
+                    ) {
+                        PersonalizationScreen(
+                            onBack = { showPersonalization = false },
+                            themeMode = themeMode,
+                            onThemeModeChange = onThemeModeChange,
+                            repository = repository,
+                            cardHeights = cardHeights,
+                            onCardHeightsChange = onCardHeightsChange,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 },
             ) {
-                PersonalizationScreen(
-                    onBack = { showPersonalization = false },
-                    themeMode = themeMode,
-                    onThemeModeChange = onThemeModeChange,
-                    repository = repository,
-                    cardHeights = cardHeights,
-                    onCardHeightsChange = onCardHeightsChange,
+                NotificationScreen(
+                    onBack = { showNotifications = false },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -122,17 +150,18 @@ fun SettingsScreen(
 }
 
 /**
- * 设置根页：顶栏（标题「设置」+ 圆形返回按钮 + 渐变模糊）+ 三张独立入口卡。
+ * 设置根页：顶栏（标题「设置」+ 圆形返回按钮 + 渐变模糊）+ 四张独立入口卡。
  *
  * 课表级设置（课表名/学期/天数/节数时间/显示开关）在编辑态的「课表设置」浮层
  * （见 Schedule ui 的 [com.fangyi.classpp.ui.schedule.ScheduleSettingsSheet]），
- * 外观设置已迁往「个性化」子页，本页只承担导航分发。
+ * 外观设置在「个性化」子页、通知设置在「通知与提醒」子页，本页只承担导航分发。
  * [repository] = null → 加载指示（仅首帧毫秒级）。
  */
 @Composable
 private fun SettingsHomePage(
     onClose: () -> Unit,
     onOpenPersonalization: () -> Unit,
+    onOpenNotifications: () -> Unit,
     repository: ScheduleRepository?,
     modifier: Modifier = Modifier,
 ) {
@@ -184,13 +213,22 @@ private fun SettingsHomePage(
                             ),
                         verticalArrangement = Arrangement.spacedBy(EntryCardSpacing),
                     ) {
-                        // 三张独立入口卡（设计稿形态）；数据管理/关于子页待实装，入口先占位
+                        // 四张独立入口卡（设计稿形态）；数据管理/关于子页待实装，入口先占位
                         SettingsCardwithIcon(
                             items = listOf(
                                 SettingsCardwithIconItem(
                                     icon = R.drawable.ic_paint_brush,
                                     label = stringResource(R.string.settings_personalization),
                                     onClick = onOpenPersonalization,
+                                ),
+                            ),
+                        )
+                        SettingsCardwithIcon(
+                            items = listOf(
+                                SettingsCardwithIconItem(
+                                    icon = R.drawable.ic_alert,
+                                    label = stringResource(R.string.settings_notifications),
+                                    onClick = onOpenNotifications,
                                 ),
                             ),
                         )
