@@ -109,7 +109,7 @@ val TopBarPillHeight: Dp = 46.dp
  * 底边不离屏（弹窗叠浮层时底部不露缝），顶边随之后退（≈ 卡高 × 6%）、左右等比内收，
  * 上层滑入/滑出同帧反向播放（见 OverlaySheet 的 coveredFraction）。
  */
-private const val CoveredCardScale = 0.94f
+private const val CoveredCardScale = 0.92f
 
 /**
  * 键盘与浮层的关系（未来不同浮层可选不同行为）：
