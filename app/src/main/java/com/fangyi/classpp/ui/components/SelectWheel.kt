@@ -120,19 +120,29 @@ internal class WheelState(
         if (target == count) return
         count = target
         maxScroll = (count - 1) * itemSizePx
-        settleJob?.cancel()
-        settleJob = null
+        interruptSettle()
         scope.launch {
             val coerced = scroll.value.coerceIn(0f, maxScroll)
-            raw = raw.coerceIn(0f, maxScroll)
+            raw = coerced
             if (coerced != scroll.value) scroll.snapTo(coerced)
         }
     }
 
+    /**
+     * 打断进行中的惯性/吸附动画。惯性期间 raw 不跟随动画（只在 settle 收尾回写），
+     * 打断时必须先把 raw 对齐到动画实际位置 scroll.value，否则后续拖拽以松手时的
+     * 旧基准叠加增量，snapTo 会把滚轮瞬移回上一次拖拽的起点（惯性中反向滑动失效的根因）。
+     */
+    private fun interruptSettle() {
+        val job = settleJob ?: return
+        job.cancel()
+        settleJob = null
+        raw = scroll.value
+    }
+
     /** 跟手滚动：正 deltaPx = 手指向下 = 内容下移 = 选中变小；越界只按阻尼比例跟手 */
     fun dragBy(deltaPx: Float) {
-        settleJob?.cancel()
-        settleJob = null
+        interruptSettle()
         scope.launch {
             scroll.updateBounds(Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY)
             raw -= deltaPx
@@ -150,7 +160,7 @@ internal class WheelState(
      * 边界；随后放开边界，把最近的整格吸到中心（无过冲弹簧，ui.motion 的 Motion.Settle）
      */
     fun settle(initialVelocityPx: Float, decay: DecayAnimationSpec<Float>) {
-        settleJob?.cancel()
+        interruptSettle()
         settleJob = scope.launch {
             scroll.updateBounds(0f, maxScroll)
             scroll.animateDecay(initialVelocityPx, decay)
