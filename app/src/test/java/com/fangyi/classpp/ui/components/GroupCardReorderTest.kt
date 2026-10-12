@@ -12,7 +12,9 @@ import org.junit.Test
  *   两者必须逐像素相等，否则落位瞬间会跳一下——下面用「把 from 挪到 target 后的新顺序」独立
  *   算一遍提交后各行的位置，与预览逐行比对；
  * - 均高与变高（含行距）两种列表都成立：变高列表向下拖时落点要补上两者高度差，才不会留缝或压住邻行；
- * - [groupCardTarget] 的槽位翻转点：相邻两槽的中点即为翻转点，且随浮层中心单调不减。
+ * - [groupCardTarget] 的槽位翻转点：相邻两槽的中点即为翻转点，且随浮层中心单调不减；
+ * - **置顶锁序**：落点下限（[groupCardTarget] 的 minTargetIndex）把置顶前缀排除在候选之外，
+ *   目标钳在置顶区之后时置顶行让位恒 0——普通行怎么拖都动不了置顶区。
  *
  * 断言直接引用 GroupCard.kt 里的 internal 纯函数，调参时这里同步生效。
  */
@@ -172,5 +174,32 @@ class GroupCardReorderTest {
             center += 3f
         }
         assertEquals(mixedHeights.size - 1, previous)
+    }
+
+    /** 置顶锁序（让位侧）：落点钳在置顶区（槽 0、1）之后时，置顶前缀让位恒 0 */
+    @Test
+    fun pinnedPrefixNeverShiftsWhenTargetClampedAfterIt() {
+        for (target in 2..3) {
+            for (pinnedIndex in 0..1) {
+                assertEquals(
+                    "置顶行 $pinnedIndex 不该被普通行（from=2）的拖拽影响",
+                    0,
+                    groupCardShift(pinnedIndex, from = 2, target = target, draggedHeight = 60, spacingPx = 0),
+                )
+            }
+        }
+    }
+
+    /** 置顶锁序（落点侧）：minTargetIndex 之后的槽位才有资格；越界（全置顶）退回原槽，默认下限行为不变 */
+    @Test
+    fun targetExcludesPinnedPrefixSlots() {
+        // 浮层中心停在置顶槽 0 的中心：候选只剩槽 2、3，最近的是槽 2
+        assertEquals(2, groupCardTarget(uniformTops, uniformHeights, from = 2, floatCenterY = 30f, minTargetIndex = 2))
+        // 槽 3 拖起、浮层拖到卡顶：仍钳在置顶区之后的第一槽
+        assertEquals(2, groupCardTarget(uniformTops, uniformHeights, from = 3, floatCenterY = 0f, minTargetIndex = 2))
+        // 置顶区吞掉整卡（全置顶）：无候选槽，退回原槽不乱跳
+        assertEquals(3, groupCardTarget(uniformTops, uniformHeights, from = 3, floatCenterY = 999f, minTargetIndex = 4))
+        // 默认下限 0：全槽候选，与原规格一致（浮层在卡顶落槽 0）
+        assertEquals(0, groupCardTarget(uniformTops, uniformHeights, from = 2, floatCenterY = 0f))
     }
 }

@@ -62,6 +62,7 @@ import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
@@ -104,6 +105,10 @@ private val ValueTrailingSpacing = 6.dp
 /** 编辑态勾选标记尺寸：与 [Chevron] 同 20dp，也和 PopupMenuCard 的勾选图标同规格 */
 private val CheckMarkSize = 20.dp
 
+/** 置顶标记：行首 pin 图标尺寸同 [Chevron] 20dp、色取 primary 对齐设计稿，与标题间距同带图标行的 12dp */
+private val PinMarkSize = 20.dp
+private val PinMarkSpacing = 12.dp
+
 /** 拖拽浮层起手放大倍率：比按压反馈（1.04）再大一点，读作「被拾起」 */
 private const val DraggedFloatScale = 1.05f
 
@@ -117,12 +122,16 @@ private const val FloatBorderAlpha = 0.35f
  *
  * [id] 是条目身份键：拖拽排序与多选都按它匹配——重排后各行状态（让位位移、选中标记）跟着条目
  * 走，不会串到邻行，因此同一列表内 id 必须唯一。
+ *
+ * [pinned] 是置顶标记：行首挂 primary 色 pin 图标（`cd_pinned`），普通态、编辑态与拖拽浮层同步
+ * 显示；同时置顶项在编辑态锁序——不可起手拖拽，见 [GroupCard] 的置顶契约。
  */
 data class GroupCardItem(
     val id: String,
     val label: String,
     val description: String? = null,
     val value: String? = null,
+    val pinned: Boolean = false,
 )
 
 /**
@@ -141,6 +150,18 @@ data class GroupCardItem(
  *   淡出/横向收放换为勾选标记——未选 `ic_checkbox_unchecked`（灰）、选中 `ic_checkbox_checked`
  *   （蓝 primary）。
  *
+ * ## 置顶
+ * [GroupCardItem.pinned] 的条目行首挂 pin 标记（编辑态与拖拽浮层都保留），并被锁序：
+ *
+ * - 置顶项不可起手拖拽（编辑态长按无响应，点击多选不受影响）——置顶项之间的顺序由调用方的
+ *   置顶操作顺序决定，组件只锁不排；
+ * - 落点槽位排除置顶区：置顶区 = 列表开头的连续 pinned 前缀（调用方须把置顶项排在最前），
+ *   [groupCardTarget] 只在置顶区之后的槽位里选落点——普通行拖不进置顶区，置顶前缀因此不会
+ *   被打散；浮层拖到置顶区上方时，落点与让位都钳在置顶区末槽。
+ *
+ * 置顶/取消置顶的入口与数据逻辑也由调用方自备（同「批量操作入口」约定）：编辑态选中 → 调用方
+ * 的动作入口（如浮层顶栏）→ 调用方按置顶操作顺序把 [items] 同步重排为「置顶前缀 + 其余」。
+ *
  * ## 拖拽排序
  * [onMove] 为 null 时编辑态内不启动拖拽（该行为退化为纯多选列表）。拖拽过程：
  * 长按到点即拾起（浮层放大 [DraggedFloatScale] 上浮 + 一次长按触感），浮层纵向跟手，
@@ -154,7 +175,7 @@ data class GroupCardItem(
  *
  * 长列表请自行留意：卡片是内容高度、不滚动，超过一屏的条目拖到屏幕外不会自动滚动。
  *
- * @param items 显示顺序即列表顺序；id 需唯一，重排后由调用方重新传入
+ * @param items 显示顺序即列表顺序；id 需唯一，置顶项须作为连续前缀排在最前，重排后由调用方重新传入
  * @param editing 编辑态（长按条目后由调用方置 true；拖拽期间被置回 false 会立即收场回位）
  * @param selectedIds 编辑态下亮起勾选标记的条目 id
  * @param onEnterEdit 非编辑态长按条目
@@ -217,14 +238,22 @@ fun GroupCard(
                             editing = editing,
                             selected = item.id in selectedIds,
                             dragState = dragState,
-                            canDrag = canDrag,
+                            // 置顶项锁序：不可起手拖拽（点击多选不受影响）
+                            canDrag = canDrag && !item.pinned,
                             pressScope = scope,
                             onItemClick = onItemClick,
                             onEnterEdit = onEnterEdit,
                             onToggleSelect = onToggleSelect,
                             startDrag = { id ->
                                 registry.snapshot(latestItems.value.map { it.id }, spacingPx)
-                                    ?.let { snapshot -> dragState.start(id, snapshot) }
+                                    ?.let { snapshot ->
+                                        dragState.start(
+                                            itemId = id,
+                                            snapshot = snapshot,
+                                            // 与槽位快照同帧取置顶区长度：普通行落点槽位下限
+                                            minTargetIndex = latestItems.value.takeWhile { it.pinned }.count(),
+                                        )
+                                    }
                                     ?: false
                             },
                             dragBy = { deltaY -> dragState.dragBy(deltaY) },
@@ -367,7 +396,7 @@ private fun GroupCardRow(
     )
 }
 
-/** 行内容：标题块 + 尾部（编辑态勾选标记 / 普通态值文字 + 箭头）；浮层复用同一份，保证落位前后像素一致 */
+/** 行内容：（置顶标记）+ 标题块 + 尾部（编辑态勾选标记 / 普通态值文字 + 箭头）；浮层复用同一份，保证落位前后像素一致 */
 @Composable
 private fun GroupCardRowContent(
     item: GroupCardItem,
@@ -381,6 +410,15 @@ private fun GroupCardRowContent(
             .padding(horizontal = RowHorizontalPadding, vertical = RowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (item.pinned) {
+            Icon(
+                painter = painterResource(R.drawable.ic_pin),
+                contentDescription = stringResource(R.string.cd_pinned),
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(PinMarkSize),
+            )
+            Spacer(Modifier.width(PinMarkSpacing))
+        }
         SettingsRowText(label = item.label, description = item.description, modifier = Modifier.weight(1f))
         GroupCardRowTrailing(item = item, editing = editing, selected = selected)
     }
@@ -601,6 +639,8 @@ private class GroupCardDragSession(
     val tops: List<Int>,
     val heights: List<Int>,
     val spacingPx: Int,
+    /** 落点槽位下限 = 置顶区长度（起手时随槽位快照同帧取值）；起手槽位在其内即置顶项，[start] 会拒绝 */
+    val minTargetIndex: Int,
 ) {
     /** 浮层当前目标槽位（跟手期间随最近的落点变化） */
     var targetIndex by mutableIntStateOf(fromIndex)
@@ -662,17 +702,21 @@ private class GroupCardDragState(private val scope: CoroutineScope) {
         return current.shifts[id]?.value ?: 0f
     }
 
-    /** 起手：建会话、浮层放大上浮、每条目一条让位动画；已有会话在飞则拒绝 */
-    fun start(itemId: String, snapshot: GroupCardDragSnapshot): Boolean {
+    /**
+     * 起手：建会话、浮层放大上浮、每条目一条让位动画；已有会话在飞、id 不在快照、或起手槽位
+     * 落在置顶区内（[minTargetIndex] 之前 = 置顶项，锁序不可拖）则拒绝
+     */
+    fun start(itemId: String, snapshot: GroupCardDragSnapshot, minTargetIndex: Int): Boolean {
         if (session != null) return false
         val fromIndex = snapshot.ids.indexOf(itemId)
-        if (fromIndex < 0) return false
+        if (fromIndex < 0 || fromIndex < minTargetIndex) return false
         val current = GroupCardDragSession(
             fromIndex = fromIndex,
             ids = snapshot.ids,
             tops = snapshot.tops,
             heights = snapshot.heights,
             spacingPx = snapshot.spacingPx,
+            minTargetIndex = minTargetIndex,
         )
         current.ids.forEach { current.shifts[it] = Animatable(0f) }
         session = current
@@ -714,6 +758,7 @@ private class GroupCardDragState(private val scope: CoroutineScope) {
             from = current.fromIndex,
             floatCenterY = current.tops.getOrElse(current.fromIndex) { 0 } + offset +
                 current.heights.getOrElse(current.fromIndex) { 0 } / 2f,
+            minTargetIndex = current.minTargetIndex,
         )
     }
 
@@ -852,13 +897,22 @@ internal fun groupCardShift(
 /**
  * 目标槽位：取「该槽落点处条目的中心」离浮层中心最近的槽。相邻两槽的翻转点正好是两者落点的
  * 中点，跟手时槽位切换与视觉位置一致；变高列表按各自落点算，不会偏向矮行。
+ *
+ * [minTargetIndex] 起的槽位才有落点资格（置顶区锁序，见 [GroupCard]）：浮层拖进置顶区时取
+ * 其后第一槽，置顶前缀永不参与让位；下限越界（置顶区吞掉整卡）时无候选，退回原槽。
  */
-internal fun groupCardTarget(tops: List<Int>, heights: List<Int>, from: Int, floatCenterY: Float): Int {
+internal fun groupCardTarget(
+    tops: List<Int>,
+    heights: List<Int>,
+    from: Int,
+    floatCenterY: Float,
+    minTargetIndex: Int = 0,
+): Int {
     if (tops.isEmpty()) return from.coerceAtLeast(0)
     val draggedHeight = heights.getOrElse(from) { 0 }
-    var best = 0
+    var best = -1
     var bestDistance = Float.MAX_VALUE
-    for (target in tops.indices) {
+    for (target in minTargetIndex.coerceAtLeast(0) until tops.size) {
         val center = groupCardLandingTop(tops, heights, from, target) + draggedHeight / 2f
         val distance = abs(center - floatCenterY)
         if (distance < bestDistance) {
@@ -866,11 +920,11 @@ internal fun groupCardTarget(tops: List<Int>, heights: List<Int>, from: Int, flo
             best = target
         }
     }
-    return best
+    return if (best >= 0) best else from.coerceAtLeast(0)
 }
 
 private val PreviewItems = listOf(
-    GroupCardItem(id = "homework", label = "作业", value = "12"),
+    GroupCardItem(id = "homework", label = "作业", value = "12", pinned = true),
     GroupCardItem(id = "daily", label = "日常琐事", value = "5"),
     GroupCardItem(id = "ideas", label = "灵感", description = "随手记下的想法", value = "3"),
     GroupCardItem(id = "archive", label = "归档"),

@@ -54,6 +54,7 @@
     <string name="cd_section_expand">展开</string>
     <string name="cd_switch_to_5_days">切换到 5 天视图</string>
     <string name="cd_switch_to_7_days">切换到 7 天视图</string>
+    <string name="cd_pinned">已置顶</string>
     <string-array name="weekdays">
         <item>周一</item>
         <item>周二</item>

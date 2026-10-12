@@ -26,6 +26,7 @@
     <string name="cd_section_expand">Expand</string>
     <string name="cd_switch_to_5_days">Switch to the 5-day view</string>
     <string name="cd_switch_to_7_days">Switch to the 7-day view</string>
+    <string name="cd_pinned">Pinned</string>
     <string-array name="weekdays">
         <item>Mon</item>
         <item>Tue</item>
