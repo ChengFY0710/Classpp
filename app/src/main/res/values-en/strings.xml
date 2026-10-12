@@ -19,6 +19,10 @@
     <string name="todo_groups_title">Todo Groups</string>
     <string name="todo_groups_create">New</string>
     <string name="todo_groups_close">Close</string>
+    <!-- Todo groups sheet: edit-mode delete confirmation (groups only, todos untouched) -->
+    <string name="todo_groups_delete_title">Delete Group</string>
+    <string name="todo_groups_delete_message">“%1$s” will be deleted. This cannot be undone.</string>
+    <string name="todo_groups_delete_message_multi">%1$d selected groups will be deleted. This cannot be undone.</string>
     <string name="month_day_format">%1$d/%2$d</string>
     <string name="date_title_format">%1$s %2$s</string>
     <string name="back_to_current_week">Back to this week</string>
@@ -172,6 +176,8 @@
     <string name="edit_edit_course">Edit Course</string>
     <string name="edit_confirm">Confirm</string>
     <string name="edit_delete">Delete</string>
+    <string name="edit_pin">Pin</string>
+    <string name="edit_rename">Rename</string>
     <string name="edit_cell_info">Now: %1$s | %2$s | %3$s</string>
     <string name="edit_end_slot_section">Periods</string>
     <string name="edit_start_slot">Start period</string>

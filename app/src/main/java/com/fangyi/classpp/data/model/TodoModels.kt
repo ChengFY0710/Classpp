@@ -66,3 +66,17 @@ data class TodoFile(
     val formatVersion: Int = TODO_FORMAT_VERSION,
     val todos: List<Todo> = emptyList(),
 )
+
+/**
+ * 一个待办分组：[name] 即身份键（当前以名字唯一，多选/重排/删除都按它匹配），[pinned] 为置顶标记。
+ *
+ * **不变式**：分组列表里 [pinned] 的项必须构成**连续前缀**（GroupCard 的置顶契约——置顶区锁序、
+ * 落点槽位排除置顶区）。持有方每次置顶/取消置顶后用稳定划分（`filter { pinned } + filter { !pinned }`）
+ * 维护该不变式：新置顶项落前缀尾部（顺序即置顶操作顺序），取消置顶项原位不动。
+ *
+ * 演示阶段为进程内状态（TodoScreen 持有），尚未入库；数据层接入后再落盘。
+ */
+data class TodoGroup(
+    val name: String,
+    val pinned: Boolean = false,
+)

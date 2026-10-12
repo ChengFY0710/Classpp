@@ -152,7 +152,11 @@ data class SheetTopAction(
  * [confirmIcon] / [confirmIconSize] 配置左胶囊图标与尺寸（默认对勾、30dp，可按浮层单独调）；
  * [confirmLabel] 传 null 时**不渲染**左侧确认
  * 胶囊（纯展示浮层用，如课程详情），[onConfirm] 随之闲置；[bottomContent] 可选钉底槽位——
- * 画在导航栏上方、带自底向上渐变兜底，滚动内容从其下淡出（如切换课表浮层底部常驻的导出/导入按钮）。
+ * 画在导航栏上方、带自底向上渐变兜底，滚动内容从其下淡出（如切换课表浮层底部常驻的导出/导入按钮）；
+ * [bottomScrim] = false 关掉钉底容器的整套内置规格（渐变/导航栏留白/内距），退化为纯钉底定位——
+ * 槽内容自带进出场动画时由调用方把这三样包进动画层，规格才不脱离动画（见 TodoGroupsSheet 编辑态底栏）。
+ * [dragDismissEnabled] = false 关掉下拉关闭（超阈值松手回弹归位）：编辑态把下拉拦成
+ * 「退出编辑」的场景必须用它——只拦 [onDismiss] 不拦手势会把浮层卡在半拖出位置。
  *
  * [imeBehavior] 决定键盘与滚动内容的关系（见 [SheetImeBehavior]）：[SheetImeBehavior.ContentScroll]
  * 下键盘弹起时正在编辑的输入框会随内容滚到键盘上方、键盘收起再滚回原位（能力做在
@@ -175,6 +179,9 @@ fun OverlaySheet(
     visible: Boolean = true,
     // 被上层浮层/弹窗盖住：本层卡片缩小后退（分层动效），与上层进出场同帧同曲线反向播放
     covered: Boolean = false,
+    // false = 下拉超过阈值也不触发关闭（松手原路弹回，不置闸门）：编辑态等需要把下拉
+    // 拦成「退出编辑而非关浮层」的场景传——拦了 onDismiss 却不复位闸门会让浮层卡在半拖出位置
+    dragDismissEnabled: Boolean = true,
     onDismissed: () -> Unit = {},
     confirmIcon: Int = com.fangyi.classpp.R.drawable.ic_checkmark_circle,
     // 左胶囊图标尺寸（默认同 SheetPillButton 的 30dp）；只影响确认胶囊，单独调某浮层时传值
@@ -188,6 +195,9 @@ fun OverlaySheet(
     // 共享 hazeState（可选）：给叠在本浮层之上的弹层做背景模糊时由宿主传入，见 KDoc；
     // null = 自建，仅供顶栏磨砂
     hazeState: HazeState? = null,
+    // 钉底槽的渐变兜底：false = 槽内不画（内容随 AnimatedVisibility 进出场时由调用方自绘，
+    // 渐变才能跟着一起滑入滑出，而不是在非编辑态常驻一条底部薄纱）
+    bottomScrim: Boolean = true,
     bottomContent: (@Composable () -> Unit)? = null,
     // 内容列的作用域由卡片内的 SheetScrollHost 显式转交（那里不在 Column 的接收者作用域里）
     content: @Composable ColumnScope.() -> Unit,
@@ -304,7 +314,10 @@ fun OverlaySheet(
             when {
                 // 收场途中被拖拽打断：从当前位置续播收场
                 exiting -> scope.launch { runExit() }
-                hiddenFraction.value >= DragDismissFraction || velocity >= dismissVelocityPx -> {
+                // 下拉关闭被禁用（编辑态拦成「退出编辑」的场景）：超阈值也走回弹，
+                // 不置 closeRequested、不回调——否则闸门落下却没人真的关浮层，整层卡死
+                dragDismissEnabled &&
+                    (hiddenFraction.value >= DragDismissFraction || velocity >= dismissVelocityPx) -> {
                     if (!closeRequested) {
                         closeRequested = true
                         onDismiss()
@@ -429,22 +442,32 @@ fun OverlaySheet(
                                 dragModifier = topBarDragModifier,
                                 modifier = Modifier.align(Alignment.TopCenter),
                             )
-                            // 钉底内容槽（可选）：渐变兜底让滚动内容从其下淡出，导航栏留白由 inset 吃掉
+                            // 钉底内容槽（可选）：渐变兜底让滚动内容从其下淡出，导航栏留白由 inset 吃掉。
+                            // bottomScrim = false 时容器退化为纯钉底定位：渐变/导航栏留白/12-24 内距
+                            // 整体由槽内容自理——钉底规格要随进出场动画整体移动时（编辑态底栏），
+                            // 调用方把这三样包进自己的动画层里，渐变才不会在动画之外常驻或断层
                             bottomContent?.let { slot ->
                                 Box(
                                     modifier = Modifier
                                         .align(Alignment.BottomCenter)
                                         .fillMaxWidth()
-                                        .background(
-                                            Brush.verticalGradient(
-                                                listOf(
-                                                    MaterialTheme.colorScheme.background.copy(alpha = 0f),
-                                                    MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
-                                                ),
-                                            ),
-                                        )
-                                        .navigationBarsPadding()
-                                        .padding(top = 12.dp, bottom = 24.dp),
+                                        .then(
+                                            if (bottomScrim) {
+                                                Modifier
+                                                    .background(
+                                                        Brush.verticalGradient(
+                                                            listOf(
+                                                                MaterialTheme.colorScheme.background.copy(alpha = 0f),
+                                                                MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                                                            ),
+                                                        ),
+                                                    )
+                                                    .navigationBarsPadding()
+                                                    .padding(top = 12.dp, bottom = 24.dp)
+                                            } else {
+                                                Modifier
+                                            },
+                                        ),
                                 ) {
                                     slot()
                                 }
@@ -601,7 +624,9 @@ private fun OverlaySheetTopBar(
  *  取消/删除文字在前——见 [iconAtEnd]）；投影同设置页返回按钮的大柔影做法（形状为胶囊）；
  *  [iconSize] 独立控制图标大小（顶栏钮与底部常驻钮可各配各的）。
  *  按压反馈：整体放大 + 主体提亮（ui.motion 的 pressFeedback），按压放大固定 1.10f
- *  （本组件统一值，顶栏与底部常驻钮一视同仁，不随全局默认）。 */
+ *  （本组件统一值，顶栏与底部常驻钮一视同仁，不随全局默认）。
+ *  [enabled] = false 时点击与按压反馈一并失效（点击源不派发即无反馈）；置灰颜色由调用方
+ *  传 contentColor（如 theme 的 negative），组件不自动改色。 */
 @Composable
 fun SheetPillButton(
     label: String,
@@ -616,6 +641,7 @@ fun SheetPillButton(
     bottomPadding: Dp = 8.dp,
     startPadding: Dp = 13.dp,  // 文字加宽宽度改这里，文字所在那侧的外边距比图标侧多 5dp（8+5）：图标在左(确认)加宽右侧，图标在右(删除/取消)加宽左侧
     endPadding: Dp = 8.dp,
+    enabled: Boolean = true,
 ) {
     // 按压态的唯一来源：pressFeedback 与 clickable 共用（涟漪由按压反馈取代，故 clickable 不再要 Indication）
     val pressInteraction = remember { MutableInteractionSource() }
@@ -639,6 +665,7 @@ fun SheetPillButton(
             .clickable(
                 interactionSource = pressInteraction,
                 indication = null,
+                enabled = enabled,
                 onClick = onClick,
             )
             .padding(

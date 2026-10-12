@@ -41,6 +41,7 @@ import com.fangyi.classpp.data.TodoSort
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.isOverdue
 import com.fangyi.classpp.data.sortedFor
@@ -60,8 +61,8 @@ import java.util.GregorianCalendar
 import java.util.Locale
 import java.util.TimeZone
 
-/** 演示分组：数据层接入后由用户自定义分组替换 */
-private val DemoGroups = listOf("作业", "日常琐事")
+/** 演示分组初值：数据层接入后由用户自定义分组替换（运行期由 groups 状态持有） */
+private val DemoGroups = listOf(TodoGroup("作业"), TodoGroup("日常琐事"))
 
 /** epochDay → millis 的换算步长（同 IsoDate/DeadlineCard 的私有常量） */
 private const val MILLIS_PER_DAY = 86_400_000L
@@ -146,6 +147,18 @@ fun TodoScreen(
     var editTargetId by rememberSaveable { mutableStateOf("") }
     // 分组浮层：待办分组（顶栏展开动作行的分组块进入），空 = 未打开（两段式挂载见浮层处）
     var groupsVisible by rememberSaveable { mutableStateOf(false) }
+    // 自定义分组列表（顺序 + 置顶标记）：进程内状态——顶栏分组胶囊与分组浮层共享同一份，
+    // 置顶/删除/重排后胶囊行同步；数据层接入后由分组仓库替换（DemoGroups 仅作初值）
+    var groups by remember { mutableStateOf(DemoGroups) }
+    // 分组写回统一入口：确认（置顶/重排草稿）与删除共用——整表替换后让顶栏过滤下标跟随
+    // 原组名（下标按位置存，重排后不跟随会指错组；组被删则 indexOfFirst 得 0 = 回到全部）
+    val commitGroups: (List<TodoGroup>) -> Unit = { newGroups ->
+        val selectedName = groups.getOrNull(selectedGroupIndex - 1)?.name
+        groups = newGroups
+        selectedGroupIndex = selectedName
+            ?.let { name -> newGroups.indexOfFirst { it.name == name } + 1 }
+            ?: selectedGroupIndex
+    }
 
     // 整页（列表 + 顶栏）滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的
     // ProvideOverscroll）：列表滚到顶/底后继续拖动，内容整块被拉出边缘、越拉越硬，
@@ -175,7 +188,7 @@ fun TodoScreen(
                 )
             }
             TodoTopBar(
-                groups = DemoGroups,
+                groups = groups.map { it.name },
                 selectedGroupIndex = selectedGroupIndex,
                 onGroupSelect = { selectedGroupIndex = it },
                 // 更多点击翻转展开态;收起时顺带关排序菜单——菜单锚在展开动作行的
@@ -363,16 +376,19 @@ fun TodoScreen(
     }
 
     // 待办分组浮层：顶栏展开动作行的分组块进入（两段式挂载，同上）；
-    // DemoGroups 仍保持私有，由宿主下发给浮层做分组行与计数
+    // 编辑态在浮层内自治：顶栏「确认」经 onGroupsChange 写回（置顶/重排），
+    // 底栏「删除」经 onDeleteGroups 立即从 groups 移除（不可经确认框取消撤销）
     var groupsMounted by remember { mutableStateOf(false) }
     if (groupsVisible) groupsMounted = true
     if (groupsMounted) {
         TodoGroupsSheet(
             todos = todos,
-            groups = DemoGroups,
+            groups = groups,
             visible = groupsVisible,
             onDismiss = { groupsVisible = false },
             onDismissed = { groupsMounted = false },
+            onGroupsChange = commitGroups,
+            onDeleteGroups = { names -> commitGroups(groups.filterNot { it.name in names }) },
         )
     }
 

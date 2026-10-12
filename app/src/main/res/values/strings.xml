@@ -19,6 +19,10 @@
     <string name="todo_groups_title">待办分组</string>
     <string name="todo_groups_create">新建</string>
     <string name="todo_groups_close">关闭</string>
+    <!-- 待办分组浮层：编辑态删除二次确认（仅删分组，不联动待办） -->
+    <string name="todo_groups_delete_title">删除分组</string>
+    <string name="todo_groups_delete_message">「%1$s」将被删除，此操作不可撤销。</string>
+    <string name="todo_groups_delete_message_multi">所选 %1$d 个分组将被删除，此操作不可撤销。</string>
     <string name="todo_new_title">新建待办</string>
     <string name="todo_edit_title">编辑待办</string>
     <string name="todo_name_label">待办名</string>
@@ -195,6 +199,8 @@
     <string name="edit_edit_course">编辑课程</string>
     <string name="edit_confirm">确认</string>
     <string name="edit_delete">删除</string>
+    <string name="edit_pin">置顶</string>
+    <string name="edit_rename">重命名</string>
     <string name="edit_cell_info">当前：%1$s｜%2$s｜%3$s</string>
     <string name="edit_end_slot_section">上课节次</string>
     <string name="edit_start_slot">开始节次</string>
