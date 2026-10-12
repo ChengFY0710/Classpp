@@ -226,7 +226,7 @@ internal fun NewTodoSheet(
             // 编辑模式左上改红色「删除」（同 AddCoursePanel）；关闭改走返回/下拉/点遮罩
             SheetTopAction(
                 label = stringResource(R.string.edit_delete),
-                icon = R.drawable.ic_delete_dismiss,
+                icon = R.drawable.ic_delete_filled,
                 containerColor = MaterialTheme.colorScheme.error,
                 contentColor = MaterialTheme.colorScheme.onError,
                 onClick = onDelete,
@@ -414,7 +414,7 @@ internal fun NewTodoSheet(
             neutralAction = if (deadlineDate != null && deadlineMinute != null) {
                 SheetTopAction(
                     label = stringResource(R.string.deadline_card_clear),
-                    icon = R.drawable.ic_delete_dismiss,
+                    icon = R.drawable.ic_delete_filled,
                     containerColor = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                     onClick = {

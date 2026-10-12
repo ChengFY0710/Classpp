@@ -515,7 +515,7 @@ private fun ColorSwatchCardPreview() = ClassppTheme {
         )
         SheetPillButton(
             label = "删除",
-            icon = R.drawable.ic_delete_dismiss,
+            icon = R.drawable.ic_delete_filled,
             containerColor = MaterialTheme.colorScheme.error,
             contentColor = MaterialTheme.colorScheme.onError,
             iconAtEnd = true,
@@ -777,7 +777,7 @@ private fun DeadlineCardPreview() = ClassppTheme {
                 neutralAction = if (deadlineDate != null && deadlineMinute != null) {
                     SheetTopAction(
                         label = "清除",
-                        icon = R.drawable.ic_delete_dismiss,
+                        icon = R.drawable.ic_delete_filled,
                         containerColor = MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.onSurface,
                         onClick = {

@@ -358,7 +358,7 @@ fun AddCoursePanel(
         rightAction = if (existing != null && onDelete != null) {
             SheetTopAction(
                 label = stringResource(R.string.edit_delete),
-                icon = R.drawable.ic_delete_dismiss,
+                icon = R.drawable.ic_delete_filled,
                 containerColor = MaterialTheme.colorScheme.error,
                 contentColor = MaterialTheme.colorScheme.onError,
                 onClick = onDelete,
