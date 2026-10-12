@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.BottomSelectSheetShape
@@ -279,7 +280,7 @@ fun BottomSelectSheet(
                         }
                         Text(
                             text = title,
-                            style = MaterialTheme.classppTextStyles.topBarTitle,
+                            style = MaterialTheme.classppTextStyles.topBarTitle.copy(fontSize = 18.sp),
                             modifier = Modifier.align(Alignment.Center),
                         )
                     }

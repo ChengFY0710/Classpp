@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
@@ -89,6 +90,9 @@ fun NotificationScreen(
     }
     // 通知运行时权限（API 33+）：总开关打开且未授权时请求；拒绝则整体回退为关——
     // 「启用通知」语义 = 已授权且已开启，避免开关开着但系统侧一条也发不出来
+    // 授权回调（非组合上下文）里要弹的 Toast 文案：字符串在组合期经 stringResource 解析，
+    // 不经 LocalContext 查资源值（lint：Querying resource values，TodoScreen 同款做法）
+    val permissionDeniedToast = stringResource(R.string.notification_permission_denied_toast)
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -100,7 +104,7 @@ fun NotificationScreen(
             },
         )
         if (!granted) {
-            AppToasts.show(context, context.getString(R.string.notification_permission_denied_toast))
+            AppToasts.show(context, permissionDeniedToast)
         }
     }
 
@@ -234,15 +238,15 @@ fun NotificationScreen(
                                 label = stringResource(R.string.notification_test_label),
                                 description = stringResource(R.string.notification_test_desc),
                                 trailing = {
+                                    // 点击回调（协程）里不是组合上下文，字符串在组合期解析
+                                    // （同 TodoScreen 的 saveFailedMessage，不经 LocalContext 查资源值）
+                                    val permissionToast = stringResource(R.string.notification_test_permission_toast)
                                     val testPress = remember { MutableInteractionSource() }
                                     TextButton(
                                         onClick = {
                                             scope.launch {
                                                 if (!NotificationScheduler.postTestLiveUpdate(context)) {
-                                                    AppToasts.show(
-                                                        context,
-                                                        context.getString(R.string.notification_test_permission_toast),
-                                                    )
+                                                    AppToasts.show(context, permissionToast)
                                                 }
                                             }
                                         },
@@ -252,6 +256,7 @@ fun NotificationScreen(
                                         Text(
                                             text = stringResource(R.string.notification_test_publish),
                                             color = MaterialTheme.colorScheme.primary,
+                                            fontSize = 16.sp,
                                         )
                                     }
                                 },

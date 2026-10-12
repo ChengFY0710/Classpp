@@ -2,13 +2,24 @@ package com.fangyi.classpp.ui.components
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
+
+/**
+ * 内容（横向滚轮）相对默认位置的上抬量：滚轮画布 128dp 高、数字画在画布正中，
+ * 而单位标签钉在数字下方——内容的视觉重心整体偏下（上留白明显大于下留白）。
+ * 在本卡内容处整体上抬以平衡上下留白，只影响这张卡，不动 BottomSelectSheet
+ * 的共享间距（其他选择卡不受牵连）。想再高/再低就调这个值。
+ */
+private val ContentLift: Dp = 8.dp
 
 /**
  * 数值选择弹窗（BottomSelectSheet 变体之三）：单列**横向**滚轮，左右滑动选择，
@@ -62,6 +73,8 @@ fun BottomNumberSelectCard(
                 state = state,
                 format = { (valueRange.first + it).toString() },
                 unit = unit,
+                // 上抬见 [ContentLift]：offset 只挪绘制与触控区，不改布局占位（卡高不变）
+                modifier = Modifier.offset(y = -ContentLift),
             )
         }
     }
