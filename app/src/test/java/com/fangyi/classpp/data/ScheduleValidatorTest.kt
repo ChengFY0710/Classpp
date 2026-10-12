@@ -208,11 +208,27 @@ class ScheduleValidatorTest {
             end = IsoDate.parse("2026-06-21"))))
     }
 
+    /**
+     * 节数边界样本：只看条数、不看时间内容（时间格式与顺序由 R6/R7 专测）。
+     * 不用 [defaultSlotsFor]——它在 8:00–22:30 + 30 分钟课间的窗口里最多只能生成 28 节，
+     * 撑不到 30 的上界，再高会 `require` 抛异常。
+     */
+    private fun slotsOf(count: Int) = List(count) { TimeSlotDef("8:00", "9:00") }
+
     @Test
     fun `R5 slot count bounds`() {
+        // 上下界直接引 ScheduleValidator 的常量：节数上限曾按写死的 1–12 断言，上限放宽到
+        // 30 后这条就过期了（13 节早已合法、断言却要它报错）。引常量后调边界这里自动同步
         assertHas<ScheduleError.SlotCountInvalid>(ScheduleValidator.validate(schedule(slots = emptyList())))
-        assertHas<ScheduleError.SlotCountInvalid>(ScheduleValidator.validate(schedule(slots = defaultSlotsFor(13))))
-        assertNo<ScheduleError.SlotCountInvalid>(ScheduleValidator.validate(schedule(slots = defaultSlotsFor(12))))
+        assertHas<ScheduleError.SlotCountInvalid>(
+            ScheduleValidator.validate(schedule(slots = slotsOf(ScheduleValidator.MAX_SLOTS + 1))),
+        )
+        assertNo<ScheduleError.SlotCountInvalid>(
+            ScheduleValidator.validate(schedule(slots = slotsOf(ScheduleValidator.MAX_SLOTS))),
+        )
+        assertNo<ScheduleError.SlotCountInvalid>(
+            ScheduleValidator.validate(schedule(slots = slotsOf(ScheduleValidator.MIN_SLOTS))),
+        )
     }
 
     @Test

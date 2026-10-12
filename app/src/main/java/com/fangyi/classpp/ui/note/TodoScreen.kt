@@ -144,6 +144,8 @@ fun TodoScreen(
     var detailTargetId by rememberSaveable { mutableStateOf("") }
     // 编辑浮层：被编辑待办 id（详情顶栏「编辑」进入），空 = 未打开（两段式挂载见浮层处）
     var editTargetId by rememberSaveable { mutableStateOf("") }
+    // 分组浮层：待办分组（顶栏展开动作行的分组块进入），空 = 未打开（两段式挂载见浮层处）
+    var groupsVisible by rememberSaveable { mutableStateOf(false) }
 
     // 整页（列表 + 顶栏）滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的
     // ProvideOverscroll）：列表滚到顶/底后继续拖动，内容整块被拉出边缘、越拉越硬，
@@ -184,6 +186,8 @@ fun TodoScreen(
                 },
                 // 排序块点击展开菜单(SortMenuPopup 挂在动作块处)
                 onSortClick = { sortMenuExpanded = true },
+                // 分组块打开待办分组浮层（动作行保持展开，关浮层回到原状，不额外折叠）
+                onGroupClick = { groupsVisible = true },
                 menuExpanded = menuExpanded,
                 sortMenuExpanded = sortMenuExpanded,
                 onSortMenuDismiss = { sortMenuExpanded = false },
@@ -358,9 +362,24 @@ fun TodoScreen(
         }
     }
 
+    // 待办分组浮层：顶栏展开动作行的分组块进入（两段式挂载，同上）；
+    // DemoGroups 仍保持私有，由宿主下发给浮层做分组行与计数
+    var groupsMounted by remember { mutableStateOf(false) }
+    if (groupsVisible) groupsMounted = true
+    if (groupsMounted) {
+        TodoGroupsSheet(
+            todos = todos,
+            groups = DemoGroups,
+            visible = groupsVisible,
+            onDismiss = { groupsVisible = false },
+            onDismissed = { groupsMounted = false },
+        )
+    }
+
     // 浮层在场（含收场动画期间）就藏底部导航栏，onDismissed 卸载后才放回（同课表页全屏浮层）；
-    // 三个浮层任一在场都算，避免详情/编辑浮层开着时导航栏提前露回
-    val anyOverlayMounted = newTodoMounted || detailMounted != null || editMounted != null
+    // 四个浮层任一在场都算，避免分组/详情/编辑浮层开着时导航栏提前露回
+    val anyOverlayMounted = newTodoMounted || detailMounted != null || editMounted != null ||
+        groupsMounted
     LaunchedEffect(anyOverlayMounted) {
         onOverlayOverNavBarChange(anyOverlayMounted)
     }

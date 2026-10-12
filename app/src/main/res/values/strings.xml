@@ -8,12 +8,17 @@
     <string name="nav_todo">待办</string>
     <string name="nav_todo_create">新建</string>
     <string name="todo_group_all">全部</string>
+    <string name="todo_group_ungrouped">未分组</string>
     <string name="cd_todo_more">更多</string>
     <string name="todo_action_group">分组</string>
     <string name="todo_action_sort">排序</string>
     <string name="todo_action_category">分类</string>
     <string name="todo_action_view">视图</string>
     <string name="todo_action_overview">概览</string>
+    <!-- 待办分组浮层：顶栏（左新建 / 居中标题 / 右关闭） -->
+    <string name="todo_groups_title">待办分组</string>
+    <string name="todo_groups_create">新建</string>
+    <string name="todo_groups_close">关闭</string>
     <string name="todo_new_title">新建待办</string>
     <string name="todo_edit_title">编辑待办</string>
     <string name="todo_name_label">待办名</string>
@@ -21,6 +26,8 @@
     <string name="todo_section_incomplete">未完成</string>
     <string name="todo_section_completed">已完成</string>
     <string name="todo_section_overdue">已逾期</string>
+    <string name="todo_section_archived">已归档</string>
+    <string name="todo_section_trash">最近删除</string>
     <string name="todo_error_save_failed">保存失败，请稍后重试</string>
     <string name="todo_detail_title">待办详情</string>
     <string name="todo_detail_time_label">待办时间</string>

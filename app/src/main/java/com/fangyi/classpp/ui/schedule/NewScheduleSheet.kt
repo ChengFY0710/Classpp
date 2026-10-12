@@ -172,6 +172,7 @@ internal fun NewScheduleSheet(
             title = stringResource(R.string.weeks_select_title),
             valueRange = TERM_WEEKS_MIN..TERM_WEEKS_MAX,
             initialValue = weeksInitial,
+            unit = stringResource(R.string.unit_week),
             hazeState = sheetHazeState,
             onConfirm = { weeks ->
                 weeksVisible = false

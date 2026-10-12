@@ -206,7 +206,8 @@ private val HorizontalClipShape = object : Shape {
  *
  * 纯 UI：分组点击只切选中高亮（过滤由调用方后续接入）；更多胶囊点击回调
  * [onMoreClick]（宿主翻转展开态）；展开后排序块点击回调 [onSortClick]（宿主置
- * 菜单展开态），分组/分类/视图/概览回调本期空置（接入功能时再加参数）；排序菜单
+ * 菜单展开态），分组块点击回调 [onGroupClick]（宿主打开待办分组浮层），
+ * 分类/视图/概览回调本期空置（接入功能时再加参数）；排序菜单
  * 经 [sortMenuExpanded]/[onSortMenuDismiss]/[sortMenuSections] 三件套下发，
  * [SortMenuPopup] 挂在排序块同一 Box 里（父布局即锚点）：走 [PopupMenuPopup]
  * 共享弹层（[PopupMenuCard] 白卡）——DropdownMenu 的壳自带默认阴影且换不掉，
@@ -219,6 +220,7 @@ fun TodoTopBar(
     onGroupSelect: (Int) -> Unit,
     onMoreClick: () -> Unit,
     onSortClick: () -> Unit,
+    onGroupClick: () -> Unit,
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
     tabTransition: TabTransitionState? = null,
@@ -350,12 +352,12 @@ fun TodoTopBar(
                             .height(TopBarActionBarHeight),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // 占位四块（分组/分类/视图/概览）本期无功能：保留按压反馈，
-                        // 接入功能时再加回调参数
+                        // 分组块打开待办分组浮层；同排的分类/视图/概览仍是占位
+                        // （保留按压反馈，接入功能时再加回调参数）
                         TodoBarAction(
                             label = stringResource(R.string.todo_action_group),
                             iconRes = R.drawable.ic_folder,
-                            onClick = {},
+                            onClick = onGroupClick,
                             modifier = Modifier
                                 .weight(1f)
                                 .wrapContentWidth(Alignment.CenterHorizontally),
@@ -614,6 +616,7 @@ private fun TodoTopBarPreviewContent(initialMenuExpanded: Boolean = false) {
             onGroupSelect = { selected = it },
             onMoreClick = { menuExpanded = !menuExpanded },
             onSortClick = {},
+            onGroupClick = {},
             menuExpanded = menuExpanded,
         )
     }

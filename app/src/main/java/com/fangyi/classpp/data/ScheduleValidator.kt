@@ -10,7 +10,7 @@ import com.fangyi.classpp.data.model.TimeText
  * 规则一览：
  *  R2 termEnd 可落在任意一天（可半个教学周；termStart 同样可为任意星期几）
  *  R3 end≥start                     R4 daysPerWeek ∈ {5,7}
- *  R5 节数 ∈ 1..12                  R6 时间格式
+ *  R5 节数 ∈ [MIN_SLOTS]..[MAX_SLOTS]   R6 时间格式
  *  R7 时间有序不重叠                R8 课表名非空白
  *  R9-R12 课程字段/周数范围          R13 同一天 span 相交且周数相交 ⇒ 冲突
  *  R14 课程最后一次上课不得晚于 termEnd（按**日期**判定；termEnd 可停在周中）
