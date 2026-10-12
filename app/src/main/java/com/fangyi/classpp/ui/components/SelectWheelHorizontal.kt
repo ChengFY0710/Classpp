@@ -4,6 +4,7 @@ import androidx.compose.animation.splineBasedDecay
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
@@ -13,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -47,9 +49,10 @@ private const val HorizontalFadeOutItems = 2.4f
 private val UnitGapBelow: Dp = 8.dp
 
 /**
- * 横向数字滚轮积木（[BottomNumberSelectCard] 宿主）：水平 draggable 的自绘选择轮，
- * 竖向 [NumberWheel] 的横向孪生——滚动状态直接复用 [WheelState]（传格宽 itemSize），
- * 拖拽跟手、惯性滑行、Motion.Settle 吸附、越界橡皮筋与竖向完全同一份代码；缩放/混色/
+ * 横向数字滚轮积木（[BottomNumberSelectCard] 宿主）：水平 draggable + 点选（点哪格吸哪格）
+ * 的自绘选择轮，竖向 [NumberWheel] 的横向孪生——滚动状态直接复用 [WheelState]（传格宽
+ * itemSize），拖拽跟手、惯性滑行、Motion.Settle 吸附、点选吸附、越界橡皮筋与竖向完全同一份代码；
+ * 缩放/混色/
  * 渐隐公式逐条照搬，仅坐标轴换成 x（可见格数与渐隐尾按设计稿放宽到 ±2 格）。
  * 符号约定同竖向：往左滑 = 内容左移 = 选中更大的值（数字随手指方向滚动）。
  * 滚动期零重组：位移、颜色、透明度都是 draw 期从滚动量算出的纯函数。
@@ -91,7 +94,18 @@ internal fun HorizontalNumberWheel(
                     // 负号同竖向：手指右滑（velocity > 0）→ 内容右移 → scroll 减小
                     state.settle(-velocity, decay)
                 },
-            ),
+            )
+            // 点选同竖向 [NumberWheel]：按下先抓住滚轮（停住惯性），松手在哪格就把哪格吸到中心；
+            // 与 draggable 共存——拖过触摸侦测距离时点选自动取消，纯点按才触发 onTap
+            .pointerInput(state) {
+                detectTapGestures(
+                    onPress = { state.press() },
+                    onTap = { offset ->
+                        val contentPx = state.scroll.value + (offset.x - size.width / 2f)
+                        state.select(state.itemIndexAt(contentPx))
+                    },
+                )
+            },
     ) {
         val item = WheelItemWidth.toPx()
         val half = size.height / 2f

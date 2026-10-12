@@ -6,6 +6,7 @@ import androidx.compose.animation.splineBasedDecay
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
@@ -15,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -76,7 +78,7 @@ private val UnitGap: Dp = 10.dp
 
 /**
  * 单个滚轮的状态：[scroll] 是内容滚动量（px，数值 i 画在 `i × 格距 − scroll` 的偏移处，
- * 正 = 内容下移 = 选中更小的值）。拖拽、惯性、吸附全部收在这里，确认按钮随时可读
+ * 正 = 内容下移 = 选中更小的值）。拖拽、惯性、吸附、点选全部收在这里，确认按钮随时可读
  * [selectedIndex]（跟手/吸附过渡中取最近的整格）。
  *
  * 格数可变（日期选择器的「日」轮随年月天数增减，见 [updateCount]）。
@@ -171,11 +173,35 @@ internal class WheelState(
             scroll.animateTo(target, Motion.Settle)
         }
     }
+
+    /**
+     * 触摸按下：立刻停住惯性/点选动画并同步基准（抓住滚轮）。点选、后续拖拽都从按下
+     * 时的实际位置出发——否则惯性中途点按，从按下到抬起滚轮仍在飞，松手时指下的
+     * 数字已经变了，点到的不是看见的那格。
+     */
+    fun press() {
+        interruptSettle()
+    }
+
+    /** 内容坐标（px，同 [scroll] 坐标系）落在哪一格：四舍五入取最近格，夹回 0..count-1 */
+    fun itemIndexAt(contentPx: Float): Int =
+        (contentPx / itemSizePx).roundToInt().coerceIn(0, count - 1)
+
+    /** 点选第 [index] 格：从当前位置以 Motion.Settle 吸附到中心（无过冲，与松手吸附同手感） */
+    fun select(index: Int) {
+        val target = index.coerceIn(0, count - 1) * itemSizePx
+        interruptSettle()
+        settleJob = scope.launch {
+            scroll.updateBounds(Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY)
+            raw = target
+            scroll.animateTo(target, Motion.Settle)
+        }
+    }
 }
 
 /**
- * 单列数字滚轮：Canvas 自绘（数字按离中心的距离定位、缩放、混色、渐隐），垂直 draggable
- * 手势接 [WheelState]。[format] 把索引换成展示文本（年轮加基准年、月/日轮 +1 补零）；
+ * 单列数字滚轮：Canvas 自绘（数字按离中心的距离定位、缩放、混色、渐隐），垂直 draggable +
+ * 点选（点哪格吸哪格）手势接 [WheelState]。[format] 把索引换成展示文本（年轮加基准年、月/日轮 +1 补零）；
  * [fontSize] 为数字基准字号（邻格按 [AdjacentScale] 比例随它缩放），默认共享规格；
  * [unit] 为数字右缘的单位（时/分、年/月/日）——画在中心数字右侧 [UnitGap] 处、钉在
  * 轮子中线，静态不随滚动位移/缩放（年轮恒 4 位、其余恒 2 位补零，数字宽度恒定，
@@ -218,7 +244,19 @@ internal fun NumberWheel(
                     // 负号：手指下滑（velocity > 0）→ 内容向下移 → scroll 减小
                     state.settle(-velocity, decay)
                 },
-            ),
+            )
+            // 点选：按下先抓住滚轮（停住惯性），松手在哪格就把哪格吸到中心。
+            // 与 draggable 共存：拖过触摸侦测距离时位移被拖拽消费、点选自动取消，
+            // 纯点按才触发 onTap
+            .pointerInput(state) {
+                detectTapGestures(
+                    onPress = { state.press() },
+                    onTap = { offset ->
+                        val contentPx = state.scroll.value + (offset.y - size.height / 2f)
+                        state.select(state.itemIndexAt(contentPx))
+                    },
+                )
+            },
     ) {
         val item = WheelItemHeight.toPx()
         val half = size.height / 2f
