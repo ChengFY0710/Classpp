@@ -155,37 +155,3 @@ private fun SettingsCardwithIconRow(item: SettingsCardwithIconItem) {
         Chevron()
     }
 }
-
-/** label + 可选灰色描述：无描述时单行垂直居中，有描述时整块随行数长高、与尾部控件垂直居中 */
-@Composable
-private fun SettingsRowText(
-    label: String,
-    description: String?,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier) {
-        Text(
-            text = label,
-            style = MaterialTheme.classppTextStyles.fieldLabel,
-        )
-        if (description != null) {
-            Spacer(modifier = Modifier.size(3.dp))
-            Text(
-                text = description,
-                // 描述可能多行换行：补 20sp 行高，多行时行间节奏与 16sp 字号匹配
-                style = MaterialTheme.classppTextStyles.fieldPlaceholder.copy(lineHeight = 20.sp, fontSize = 13.sp),
-                modifier = Modifier.padding(end = 10.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun Chevron() {
-    Icon(
-        painter = painterResource(R.drawable.ic_chevron_right),
-        contentDescription = null,
-        tint = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.size(20.dp),
-    )
-}

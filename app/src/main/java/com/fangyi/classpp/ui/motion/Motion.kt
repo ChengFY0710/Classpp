@@ -83,6 +83,14 @@ object Motion {
      */
     const val ExpandMillis = 300
 
+    /**
+     * 拖拽重排时长：条目避让位移（长按拖拽排序时其余条目让位）、拖拽浮层落位与缩放
+     * 三条动画共用同一条时长——同一个松手事件触发的动画同帧启动、同帧收尾，
+     * 浮层落点与其余条目就位才会严格对齐；配合 [Decelerate]。
+     * 无效区域回弹例外：走 [Settle] 弹簧（无过冲），不走这条时长。
+     */
+    const val ReorderMillis = 220
+
     /** 标准曲线：先加速后减速，页面级进出场与弹出菜单的主曲线。 */
     val Standard: Easing = FastOutSlowInEasing
 

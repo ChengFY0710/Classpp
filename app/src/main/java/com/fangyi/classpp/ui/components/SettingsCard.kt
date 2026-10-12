@@ -377,9 +377,9 @@ private fun SliderGroupRow(item: SettingsCardItem.SliderGroup) {
     }
 }
 
-/** label + 可选灰色描述：无描述时单行垂直居中，有描述时整块随行数长高、与尾部控件垂直居中 */
+/** label + 可选灰色描述：无描述时单行垂直居中，有描述时整块随行数长高、与尾部控件垂直居中（internal：分组卡同规格复用） */
 @Composable
-private fun SettingsRowText(
+internal fun SettingsRowText(
     label: String,
     description: String?,
     modifier: Modifier = Modifier,
@@ -401,8 +401,9 @@ private fun SettingsRowText(
     }
 }
 
+/** 尾部蓝色右箭头（20dp，primary 着色）（internal：分组卡 Nav 行同款复用） */
 @Composable
-private fun Chevron() {
+internal fun Chevron() {
     Icon(
         painter = painterResource(R.drawable.ic_chevron_right),
         contentDescription = null,
