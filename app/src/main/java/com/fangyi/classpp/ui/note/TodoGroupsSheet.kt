@@ -47,6 +47,7 @@ import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
+import dev.chrisbanes.haze.rememberHazeState
 
 /**
  * 待办分组浮层：待办页顶栏「更多 → 分组」进入，内容分两部分——
@@ -62,6 +63,9 @@ import com.fangyi.classpp.ui.theme.classppColors
  * 浮层框架 [OverlaySheet]：两段式关闭（visible / onDismissed），系统返回与点遮罩、下拉、
  * 关闭胶囊同走 [requestClose]；列表型浮层走 [SheetImeBehavior.IgnoreIme]，内容列由浮层
  * 自带的橡皮筋滚动接管，这里不再加滚动。
+ * **弹卡磨砂**：本组件自建 hazeState 一并交给 [OverlaySheet] 与新建 / 重命名弹卡——浮层滚动
+ * 列作采样源，顶栏磨砂与弹卡背景模糊同源（同 NewTodoSheet 的接法），弹卡因此是磨砂玻璃
+ * 质感而不是平底卡。
  *
  * ## 编辑态（长按 [GroupCard] 条目进入）
  * 编辑态状态（editing / selectedIds / 草稿）全部在本组件内 remember：进程重建即草稿丢失，
@@ -144,6 +148,12 @@ internal fun TodoGroupsSheet(
     var renameFrom by remember { mutableStateOf("") }
     var renameDraft by remember { mutableStateOf("") }
     if (renameVisible) renameMounted = true
+
+    // haze 采样源：自建后同时交给本浮层（[OverlaySheet] 的共享 hazeState 槽）与叠在其上的
+    // 新建/重命名弹卡——浮层滚动列是采样源，顶栏磨砂与弹卡的背景模糊同源（同 NewTodoSheet
+    // 的 sheetHazeState 接法）。不交给弹卡的话弹卡按 BottomSelectSheet 的默认平底渲染，
+    // 与日期轮等其他 Bottom* 弹卡的磨砂玻璃质感不一致
+    val sheetHazeState = rememberHazeState()
 
     val displayGroups = if (editing) draft else groups
 
@@ -230,6 +240,8 @@ internal fun TodoGroupsSheet(
         dragDismissEnabled = !editing,
         // 列表型浮层：没有输入框，键盘不必让位（同课表切换浮层）
         imeBehavior = SheetImeBehavior.IgnoreIme,
+        // 采样源交给容器（见 sheetHazeState 声明处）：顶栏磨砂与叠层弹卡的背景模糊同源
+        hazeState = sheetHazeState,
         // 钉底规格由底栏动画层自持（见 EditActionRow），容器只给钉底定位
         bottomScrim = false,
         bottomContent = {
@@ -406,6 +418,8 @@ internal fun TodoGroupsSheet(
             onValueChange = { createDraft = it },
             // 实时校验：空名或与现有分组重名时确认钮置灰（同前一版居中弹窗约定）
             confirmEnabled = createName.isNotEmpty() && createName !in groups.map { it.name },
+            // 卡片磨砂：采样源同本浮层顶栏（见 sheetHazeState 声明处）
+            hazeState = sheetHazeState,
             onConfirm = {
                 createRequested = false
                 onGroupsChange(groups + TodoGroup(createName), emptyMap())
@@ -431,6 +445,8 @@ internal fun TodoGroupsSheet(
             onValueChange = { renameDraft = it },
             confirmEnabled = renameName.isNotEmpty() &&
                 groups.none { it.name == renameName && it.name != renameFrom },
+            // 卡片磨砂：采样源同本浮层顶栏（见 sheetHazeState 声明处）
+            hazeState = sheetHazeState,
             onConfirm = {
                 renameVisible = false
                 val to = renameDraft.trim()

@@ -463,8 +463,8 @@ internal fun NewTodoSheet(
     // 选择分组浮层画在表单浮层之后（组合顺序即绘制顺序），叠在表单之上；后注册 BackHandler，
     // 返回键先关选择浮层、再轮到表单出口。选中任意分组/未分组即回写入口值并请求关闭；
     // 点遮罩、下拉、关闭胶囊、返回同走 onDismiss（两段式，同滚轮弹窗）。
-    // 不传共享 hazeState：顶栏磨砂自建采样源、只模糊自身内容——共享表单的采样源会把
-    // 下拖时露出的表单内容模糊进本层顶栏（OverlaySheet 的 hazeState 是给上层弹窗用的）
+    // 不传表单的 sheetHazeState：本浮层（含其上的命名卡）自建采样源、只模糊自身内容——
+    // 共享表单的采样源会把下拖时露出的表单内容模糊进本层顶栏（见 GroupPickSheet 的 KDoc）
     if (groupPickMounted) {
         GroupPickSheet(
             todos = todos,
@@ -660,9 +660,9 @@ private fun DeleteTodoConfirmDialog(
  *
  * 两段式关闭（visible / onDismissed），系统返回与点遮罩、下拉、关闭胶囊同走 [onDismiss]；
  * 列表型浮层走 [SheetImeBehavior.IgnoreIme]（命名卡的键盘让位由弹卡框架自己接管），返回键
- * 由本组合的 BackHandler 接（后注册，先于表单浮层的出口）。顶栏磨砂不传共享 hazeState、
- * 由 [OverlaySheet] 自建采样源只模糊自身内容——共享表单的采样源会把下拖时露出的表单内容
- * 模糊进本层顶栏。
+ * 由本组合的 BackHandler 接（后注册，先于表单浮层的出口）。**弹卡磨砂**：本组件自建 hazeState
+ * 一并交给 [OverlaySheet] 与命名卡——浮层滚动列作采样源，顶栏磨砂与命名卡背景模糊同源；
+ * 刻意不复用表单浮层的 sheetHazeState，那样顶栏会把下拖时露出的表单内容模糊进来。
  *
  * **计数口径**同 [TodoGroupsSheet]：未分组 = `group == null` 的待办数、
  * 自定义分组 = 该组名的待办数（新建即得 0）。
@@ -687,6 +687,11 @@ private fun GroupPickSheet(
     var createMounted by remember { mutableStateOf(false) }
     var createDraft by remember { mutableStateOf("") }
     if (createRequested) createMounted = true
+
+    // haze 采样源：自建（见类 KDoc 为何不复用表单浮层的 sheetHazeState）后同时交给本浮层
+    // 与命名卡——浮层滚动列作采样源，顶栏磨砂与弹卡背景模糊同源（同 TodoGroupsSheet 的接法），
+    // 命名卡因此是磨砂玻璃质感而不是平底卡
+    val pickHazeState = rememberHazeState()
 
     BackHandler(enabled = visible, onBack = onDismiss)
 
@@ -716,7 +721,8 @@ private fun GroupPickSheet(
         onDismissed = onDismissed,
         // 列表型浮层：没有输入框，键盘不必让位（同 TodoGroupsSheet）
         imeBehavior = SheetImeBehavior.IgnoreIme,
-        // 不传 hazeState：自建采样源，顶栏磨砂只模糊自身内容（见类 KDoc）
+        // 采样源交给容器（见 pickHazeState 声明处）：顶栏磨砂与命名卡的背景模糊同源
+        hazeState = pickHazeState,
     ) {
         // 分区小标题与卡间距同 TodoGroupsSheet 的分组区
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
@@ -766,6 +772,8 @@ private fun GroupPickSheet(
             onValueChange = { createDraft = it },
             // 实时校验：空名或与现有分组重名时确认钮置灰（同 TodoGroupsSheet 的新建弹卡）
             confirmEnabled = createName.isNotEmpty() && createName !in groups.map { it.name },
+            // 卡片磨砂：采样源同本浮层顶栏（见 pickHazeState 声明处）
+            hazeState = pickHazeState,
             onConfirm = {
                 createRequested = false
                 onGroupsChange(groups + TodoGroup(createName), emptyMap())

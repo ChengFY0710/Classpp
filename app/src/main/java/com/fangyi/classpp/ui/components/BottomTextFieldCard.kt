@@ -42,7 +42,8 @@ import dev.chrisbanes.haze.HazeState
 /**
  * 底部输入弹卡：单行文本输入的底部弹出卡，框架为 [BottomSelectSheet]——
  * 顶栏（左「取消」+ 居中标题 + 右「确认」蓝色胶囊）、遮罩、进出场两段式动画、
- * 返回键、**键盘让位**（弹起时整卡抬到键盘上方不遮挡、收起后缓回）全部由框架内置。
+ * 返回键、**键盘让位**（弹起时整卡抬到键盘上方不遮挡、收起后缓回）、**卡片磨砂**
+ * （[hazeState] 非空时，同 [BottomSelectSheet] 的背景模糊）全部由框架内置。
  *
  * 输入框为私有化的 [SheetTextField] 副本 [BottomCardTextField]（见其 KDoc 的三处差异：
  * 背景取 background、无 label、占位与值左对齐）。挂载即自动聚焦并拉起键盘；退场
@@ -66,6 +67,10 @@ fun BottomTextFieldCard(
     // 确认胶囊可用态：false 时点击/按压失效、胶囊置灰（如空名或重名时）
     confirmEnabled: Boolean = true,
     shadowAlpha: Float = 0.3f,
+    // 卡片磨砂的采样源（透传 [BottomSelectSheet]）：宿主把自己浮层的 [HazeState] 交给
+    // OverlaySheet 作采样源后，必须把**同一个状态**传进来，卡片才是磨砂玻璃质感；
+    // null = 平底卡（与日期轮等其他 Bottom* 弹卡的观感不一致）。宿主漏传是这套接法
+    // 最容易踩的坑——组件自身拿不到采样源，无法自建
     hazeState: HazeState? = null,
     onDismissed: () -> Unit = {},
 ) {
