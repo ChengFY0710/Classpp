@@ -38,6 +38,7 @@ import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.components.BottomDateSelectCard
+import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.BottomTimeSelectCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
@@ -93,6 +94,8 @@ private const val INITIAL_END_MINUTE = 1080
  * 分组选择随表单落库：编辑初值从 [Todo.group] 回填，选中值进 [onConfirm] 组装的 [Todo]
  * （引用不存在的组由仓库归一化清回 null）；未选 = 「未分组」。计数口径与 [TodoGroupsSheet]
  * 一致（未分组 = `group == null` 的待办数、自定义分组 = 该组名的待办数）。
+ * 选择分组浮层的左上「新建」可当场建组（命名卡 → 追加分组，**[onGroupsChange] 交给宿主落库**），
+ * 建完留在列表里等用户点选，不自动选中。
  *
  * 待办名为空时点「确认」不创建：输入卡红描边报错（AddCoursePanel 同款交互），输入即清除。
  * 选了「全天/时段」但没选日期时点「确认」Toast 提示不关浮层（TodoValidator 的
@@ -111,6 +114,10 @@ internal fun NewTodoSheet(
     // 由宿主从 TodoRepository 的 StateFlow 传入（同 TodoGroupsSheet）
     groups: List<TodoGroup> = emptyList(),
     todos: List<Todo> = emptyList(),
+    // 分组整表写回入口（同 TodoGroupsSheet 的同名参数，宿主可直接传 commitGroups）：
+    // 选择分组浮层的左上「新建」经它把「分组表 + 新组」落库；本浮层只追加不重命名，
+    // renames 恒传空表。缺省空实现（预览等无需落库的场景）
+    onGroupsChange: (groups: List<TodoGroup>, renames: Map<String, String>) -> Unit = { _, _ -> },
     onConfirm: (todo: Todo) -> Unit,
     existing: Todo? = null,
     onDelete: (() -> Unit)? = null,
@@ -465,6 +472,7 @@ internal fun NewTodoSheet(
             visible = groupPickVisible,
             onDismiss = { groupPickVisible = false },
             onDismissed = { groupPickMounted = false },
+            onGroupsChange = onGroupsChange,
             onPick = { name ->
                 selectedGroupName = name
                 groupPickVisible = false
@@ -639,16 +647,28 @@ private fun DeleteTodoConfirmDialog(
 /**
  * 选择分组浮层：编辑/新建浮层「待办分组」入口进入，内容结构参考 [TodoGroupsSheet] 的分组区——
  * 「分组」小标题下未分组单行卡（[SettingsCardwithIcon]）+ 自定义分组 [GroupCard]（非编辑态，
- * 长按不进编辑）。**点击任意行即选中并关闭**（[onPick] 带回组名，null = 未分组），顶栏无
- * 确认胶囊（[OverlaySheet] 的 confirmLabel 传 null）、右侧「关闭」胶囊同 [TodoGroupsSheet]
- * 普通态样式。两段式关闭（visible / onDismissed），系统返回与点遮罩、下拉、关闭胶囊同走
- * [onDismiss]；列表型浮层走 [SheetImeBehavior.IgnoreIme]，返回键由本组合的 BackHandler 接
- * （后注册，先于表单浮层的出口）。顶栏磨砂不传共享 hazeState、由 [OverlaySheet] 自建采样源
- * 只模糊自身内容——共享表单的采样源会把下拖时露出的表单内容模糊进本层顶栏。
+ * 长按不进编辑）。**点击任意行即选中并关闭**（[onPick] 带回组名，null = 未分组）。
+ * 顶栏左上「新建」蓝胶囊（[OverlaySheet] 的确认槽，同 [TodoGroupsSheet] 普通态的新建按钮：
+ * 文案「新建」+ ic_add_circle + primary 底）、右上「关闭」白胶囊同 [TodoGroupsSheet] 普通态样式。
+ *
+ * 「新建」走 [BottomTextFieldCard] 命名卡（两段式挂载，同 [TodoGroupsSheet] 的新建流程）：
+ * 挂载即聚焦弹键盘、确认 = 追加 `TodoGroup(name)`（pinned = false，落列表末尾——保持置顶项
+ * 构成连续前缀的 [TodoGroup] 不变式）经 [onGroupsChange] 整表写回，落库失败的 Toast 由宿主
+ * 统一弹；**建完留在列表里等用户点选，不自动选中**。空名/重名时确认胶囊置灰（点击与键盘
+ * Done 同一闸门）。命名卡画在本浮层之后（组合顺序即绘制顺序），在场时本浮层经 covered
+ * 缩小后退（同 [TodoGroupsSheet] 的层级动效）；它的 BackHandler 后注册，返回键先关命名卡。
+ *
+ * 两段式关闭（visible / onDismissed），系统返回与点遮罩、下拉、关闭胶囊同走 [onDismiss]；
+ * 列表型浮层走 [SheetImeBehavior.IgnoreIme]（命名卡的键盘让位由弹卡框架自己接管），返回键
+ * 由本组合的 BackHandler 接（后注册，先于表单浮层的出口）。顶栏磨砂不传共享 hazeState、
+ * 由 [OverlaySheet] 自建采样源只模糊自身内容——共享表单的采样源会把下拖时露出的表单内容
+ * 模糊进本层顶栏。
  *
  * **计数口径**同 [TodoGroupsSheet]：未分组 = `group == null` 的待办数、
- * 自定义分组 = 该组名的待办数。
+ * 自定义分组 = 该组名的待办数（新建即得 0）。
  *
+ * @param onGroupsChange 分组整表写回入口（同 [TodoGroupsSheet] 的同名参数）：本浮层只追加
+ *   分组，[Map] 形参恒传空表
  * @param onPick 选中回调：组名（null = 未分组），由调用方回写入口值并请求关闭
  */
 @Composable
@@ -658,14 +678,29 @@ private fun GroupPickSheet(
     visible: Boolean,
     onDismiss: () -> Unit,
     onDismissed: () -> Unit,
+    onGroupsChange: (groups: List<TodoGroup>, renames: Map<String, String>) -> Unit,
     onPick: (String?) -> Unit,
 ) {
+    // 新建分组弹卡：期望态 + 挂载态两段式（同 TodoGroupsSheet），普通态顶栏「新建」触发；
+    // createDraft 是受控草稿（打开时清空），确认才追加进分组表并交 [onGroupsChange] 落库
+    var createRequested by remember { mutableStateOf(false) }
+    var createMounted by remember { mutableStateOf(false) }
+    var createDraft by remember { mutableStateOf("") }
+    if (createRequested) createMounted = true
+
     BackHandler(enabled = visible, onBack = onDismiss)
 
     OverlaySheet(
         title = stringResource(R.string.todo_group_pick_title),
-        // 点击即选，无确认胶囊；「关闭」胶囊同 TodoGroupsSheet 普通态（白胶囊深色 ✕ 圆）
-        confirmLabel = null,
+        // 左上「新建」（同 TodoGroupsSheet 普通态）：点开命名卡，不当作确认语义——本浮层
+        // 没有需要确认的动作，确认槽只借位置与配色（与分组浮层一致的蓝胶囊）
+        confirmLabel = stringResource(R.string.todo_groups_create),
+        confirmIcon = R.drawable.ic_add_circle,
+        onConfirm = {
+            createDraft = ""
+            createMounted = true
+            createRequested = true
+        },
         rightAction = SheetTopAction(
             label = stringResource(R.string.todo_groups_close),
             icon = R.drawable.ic_dismiss_circle,
@@ -675,6 +710,9 @@ private fun GroupPickSheet(
         ),
         onDismiss = onDismiss,
         visible = visible,
+        // 命名卡在场时本浮层缩小后退（用可见请求态而非挂载态，退场时与上层收场同帧反向恢复，
+        // 同 TodoGroupsSheet 的 covered 约定）
+        covered = createRequested,
         onDismissed = onDismissed,
         // 列表型浮层：没有输入框，键盘不必让位（同 TodoGroupsSheet）
         imeBehavior = SheetImeBehavior.IgnoreIme,
@@ -711,5 +749,27 @@ private fun GroupPickSheet(
                 }
             }
         }
+    }
+
+    // 新建分组命名卡画在本浮层之后（组合顺序即绘制顺序），叠在浮层之上：挂载即自动聚焦
+    // 弹键盘、整卡被键盘顶起（BottomTextFieldCard 框架自带）；确认 = 追加分组经
+    // [onGroupsChange] 整表写回落库，落库失败的 Toast 由宿主统一处理
+    if (createMounted) {
+        val createName = createDraft.trim()
+        BottomTextFieldCard(
+            visible = createRequested,
+            onDismiss = { createRequested = false },
+            onDismissed = { createMounted = false },
+            title = stringResource(R.string.todo_group_create_title),
+            placeholder = stringResource(R.string.todo_group_create_hint),
+            value = createDraft,
+            onValueChange = { createDraft = it },
+            // 实时校验：空名或与现有分组重名时确认钮置灰（同 TodoGroupsSheet 的新建弹卡）
+            confirmEnabled = createName.isNotEmpty() && createName !in groups.map { it.name },
+            onConfirm = {
+                createRequested = false
+                onGroupsChange(groups + TodoGroup(createName), emptyMap())
+            },
+        )
     }
 }

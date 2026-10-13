@@ -157,7 +157,7 @@ fun BottomDateSelectCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 6.dp, end = 8.dp),
+                .padding(start = 6.dp, end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             NumberWheel(

@@ -298,6 +298,8 @@ fun TodoScreen(
             scheduleRepository = scheduleRepository,
             groups = groups,
             todos = todos,
+            // 选择分组浮层的「新建」走同一套整表写回（落盘失败 Toast 由 commitGroups 统一弹）
+            onGroupsChange = commitGroups,
             onConfirm = { todo ->
                 scope.launch {
                     // 空名等非法值已在浮层内拦截，Err 仅剩落盘失败等异常，Toast 提示、表单保持原样
@@ -365,6 +367,8 @@ fun TodoScreen(
                 scheduleRepository = scheduleRepository,
                 groups = groups,
                 todos = todos,
+                // 选择分组浮层的「新建」走同一套整表写回（落盘失败 Toast 由 commitGroups 统一弹）
+                onGroupsChange = commitGroups,
                 existing = initial,
                 onConfirm = { todo ->
                     scope.launch {
