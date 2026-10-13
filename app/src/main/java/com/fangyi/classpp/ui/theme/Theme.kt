@@ -71,6 +71,11 @@ class ClassppColors(
      */
     val negative: Color,
     /**
+     * 底部弹出选择卡（BottomSelectSheet）卡底色：浅色 = 白卡浮于浅灰页面；
+     * 深色与页面背景同值（最深一档），不再像 surface 那样比页面亮一档。
+     */
+    val bottomSheetColor: Color,
+    /**
      * 紧急程度旗标三色（UrgentFlagCard）：橙 = 很急、黄 = 急、绿 = 不急；
      * 红 = colorScheme.error、灰 = [secondaryText]，不在此列。深浅各一套。
      */
@@ -83,6 +88,7 @@ private val LightClassppColors = ClassppColors(
     secondaryText = Color(0xFFABAFB4),
     hazeTint = Color.White,
     negative = Color(0xFFCBCBCB),
+    bottomSheetColor = BottomSheetColor,
     urgentOrange = UrgentOrange,
     urgentYellow = UrgentYellow,
     urgentGreen = UrgentGreen,
@@ -92,6 +98,7 @@ private val DarkClassppColors = ClassppColors(
     secondaryText = Color(0xFF7E858D),
     hazeTint = Color.Black,
     negative = Color(0xFF5C6269),
+    bottomSheetColor = DarkBottomSheetColor,
     urgentOrange = DarkUrgentOrange,
     urgentYellow = DarkUrgentYellow,
     urgentGreen = DarkUrgentGreen,

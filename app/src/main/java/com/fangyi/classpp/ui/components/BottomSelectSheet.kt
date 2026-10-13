@@ -95,10 +95,10 @@ private val CardBlurRadius: Dp = 20.dp
  *   **播完后才回调 [onDismissed]**，调用方在这一刻把弹窗移出组合；
  * - 不做拖拽关闭（卡片矮、内容少，点遮罩/按钮足够）。
  *
- * 遮罩随进度压暗不变；卡片本体是一块**磨砂玻璃**：[hazeState] 非空时在 surface 底色之上
- * 叠加背景模糊（hazeEffect 画在底色之上、内容之下，同 [PopupMenuCard] /
+ * 遮罩随进度压暗不变；卡片本体是一块**磨砂玻璃**：[hazeState] 非空时在 bottomSheetColor
+ * 底色之上叠加背景模糊（hazeEffect 画在底色之上、内容之下，同 [PopupMenuCard] /
  * WeekPickerCardShell 的白卡毛玻璃配方：CardBlurRadius 12dp + hazeTint 60%），背后的
- * hazeSource 内容透出毛玻璃质感；null = 纯 surface 平底卡。宿主把页面/浮层内容挂
+ * hazeSource 内容透出毛玻璃质感；null = 纯 bottomSheetColor 平底卡。宿主把页面/浮层内容挂
  * hazeSource 后将同一状态传进来。
  *
  * [cancelLabel] / [confirmLabel] 默认取全局「取消/确认」文案；确认按钮的点击回调
@@ -128,8 +128,8 @@ fun BottomSelectSheet(
     confirmEnabled: Boolean = true,
     // 卡片投影浓度：只调透明度（0 = 无影，1 = 纯黑最浓），模糊半径由 CardShadowElevation 撑
     shadowAlpha: Float = 0.3f,
-    // 卡片磨砂的采样源：非空时卡片在 surface 底色之上叠背景模糊（见 KDoc），
-    // null = 纯 surface 平底卡。宿主把页面/浮层内容挂 hazeSource 后将同一状态传进来
+    // 卡片磨砂的采样源：非空时卡片在 bottomSheetColor 底色之上叠背景模糊（见 KDoc），
+    // null = 纯 bottomSheetColor 平底卡。宿主把页面/浮层内容挂 hazeSource 后将同一状态传进来
     hazeState: HazeState? = null,
     // 可选第三动作（如截止日期的「清除」）：内容槽下方整宽胶囊，规格同顶栏胶囊；null = 不渲染
     neutralAction: SheetTopAction? = null,
@@ -248,7 +248,7 @@ fun BottomSelectSheet(
                     spotShadowColor = Color.Black.copy(alpha = shadowAlpha.coerceIn(0f, 1f))
                 },
                 shape = BottomSelectSheetShape,
-                color = MaterialTheme.colorScheme.surface,
+                color = MaterialTheme.classppColors.bottomSheetColor,
             ) {
                 Column(
                     modifier = Modifier

@@ -15,6 +15,9 @@ val Surface = Color(0xFFFFFFFF)
 val OnSurface = Color(0xFF000000)
 val OnSurfaceVariant = Color(0xFF444746)
 
+//BottomSelectSheet专属背景色，用于掩盖Haze 的 effect 图层内容被多缩了一次，左侧的亮边问题。
+val BottomSheetColor = Color(0xFFFFFFFF)
+
 // M3 对话框（AlertDialog/DatePickerDialog）的默认"高一级表面"底色，不可省
 val SurfaceContainerHigh = Color(0xFFEAEDF1)
 
@@ -50,6 +53,8 @@ val DarkBackground = Color(0xFF0F1114)
 val DarkSurface = Color(0xFF292D32)
 val DarkOnSurface = Color(0xFFE4E7EA)
 val DarkOnSurfaceVariant = Color(0xFF9BA2AB)
+
+val DarkBottomSheetColor = Color(0xFF0F1114)
 
 val DarkSurfaceContainerHigh = Color(0xFF1E2227)
 
