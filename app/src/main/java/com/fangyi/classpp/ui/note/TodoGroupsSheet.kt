@@ -17,14 +17,18 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.isOverdue
@@ -42,6 +46,7 @@ import com.fangyi.classpp.ui.components.SettingsCardwithIcon
 import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetPillButton
+import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
@@ -56,8 +61,8 @@ import com.fangyi.classpp.ui.theme.classppColors
  *   用户自定义分组一张 [GroupCard]——自定义分组无行首图标，与带图标的固定行区分
  *   （正是 [GroupCard] 与 [SettingsCardwithIcon] 的行型差异）。
  *
- * **顶栏普通态**：左蓝「新建」（`ic_add_circle`，**占位**：onConfirm 暂为空实现，数据层
- * 接入后挂新建表单浮层）+ 居中标题 + 右白「关闭」，与课表切换浮层同款顶栏排布。
+ * **顶栏普通态**：左蓝「新建」（`ic_add_circle` → [CreateGroupDialog] 输入分组名，经
+ * [onGroupsChange] 整表写回落库）+ 居中标题 + 右白「关闭」，与课表切换浮层同款顶栏排布。
  * 浮层框架 [OverlaySheet]：两段式关闭（visible / onDismissed），系统返回与点遮罩、下拉、
  * 关闭胶囊同走 [requestClose]；列表型浮层走 [SheetImeBehavior.IgnoreIme]，内容列由浮层
  * 自带的橡皮筋滚动接管，这里不再加滚动。
@@ -83,15 +88,16 @@ import com.fangyi.classpp.ui.theme.classppColors
  *   系统返回 = 丢草稿退编辑（[requestClose] 三分支合一）；编辑态下拉关闭被 dragDismissEnabled
  *   禁用（松手回弹，不关浮层——只拦回调会把浮层卡在半拖出位置）。
  *
- * **计数口径**（数据层接入后替换，各行注释标明）：已完成 / 未完成 / 已逾期 实时从 [todos]
- * 统计，逾期判定与列表同一份（[IsoDate.today] + [currentMinuteOfDay]）；已归档 /
- * 最近删除数据层暂无该概念（`removeTodo` 是硬删，无回收站），恒 0；未分组 = [Todo] 尚无
- * 分组字段 ⇒ 全部待办都未分组，全部 = 待办总数；自定义分组计数恒 0（分组数据模型尚未落库）。
+ * **计数口径**：已完成 / 未完成 / 已逾期 实时从 [todos] 统计，逾期判定与列表同一份
+ * （[IsoDate.today] + [currentMinuteOfDay]）；已归档 / 最近删除数据层暂无该概念
+ * （`removeTodo` 是硬删，无回收站），恒 0；未分组 = `group == null` 的待办数、
+ * 全部 = 待办总数、自定义分组 = 该组名的待办数（分组数据已入 [TodoFile.groups]，
+ * 引用完整性由仓库归一化维护）。
  *
- * 第一部分各行与「新建」按钮的点击仍为空占位（导航/过滤等数据层接好后再实装）。
+ * 第一部分各行的点击仍为空占位（导航/过滤等接好后再实装）。
  *
  * @param groups 分组列表：顺序即显示序，置顶项须构成连续前缀（[TodoGroup] 不变式）
- * @param onGroupsChange 确认：写回编辑草稿（顺序 + 置顶标记）
+ * @param onGroupsChange 整表写回统一入口：编辑态确认（顺序 + 置顶）、普通态新建（追加分组）
  * @param onDeleteGroups 删除：立即从真实列表移除选中分组，不可经顶栏「取消」撤销
  */
 @Composable
@@ -112,6 +118,10 @@ internal fun TodoGroupsSheet(
     var draft by remember { mutableStateOf(emptyList<TodoGroup>()) }
     // 删除确认请求：非空 = 对话框打开（值为按显示顺序快照的选中组名）
     var deleteTargets by remember { mutableStateOf<List<String>?>(null) }
+    // 新建分组弹窗：期望态 + 挂载态两段式（同删除确认框），普通态顶栏「新建」触发
+    var createRequested by remember { mutableStateOf(false) }
+    var createMounted by remember { mutableStateOf(false) }
+    if (createRequested) createMounted = true
 
     val displayGroups = if (editing) draft else groups
 
@@ -147,6 +157,8 @@ internal fun TodoGroupsSheet(
     val incompleteCount = todos.count { !it.completed }
     val overdueCount = todos.count { it.isOverdue(today, nowMinute) }
     val totalCount = todos.size
+    // 未分组 = group == null（引用完整性由仓库归一化维护，读侧无需容错）
+    val ungroupedCount = todos.count { it.group == null }
 
     // 置顶按钮三态（读草稿 + 选中集，编辑态内每次变化重组刷新）
     val currentPinAction = pinAction(displayGroups, selectedIds)
@@ -166,8 +178,13 @@ internal fun TodoGroupsSheet(
             if (editing) R.string.edit_confirm else R.string.todo_groups_create,
         ),
         confirmIcon = if (editing) R.drawable.ic_checkmark_circle else R.drawable.ic_add_circle,
-        // 编辑态确认 = 提交草稿并退编辑；普通态「新建」仍是占位（数据层接入后挂新建表单浮层）
-        onConfirm = { if (editing) confirmEdit() },
+        // 编辑态确认 = 提交草稿并退编辑；普通态「新建」= 挂载输入弹窗（两段式，同删除确认框）
+        onConfirm = {
+            if (editing) confirmEdit() else {
+                createMounted = true
+                createRequested = true
+            }
+        },
         rightAction = SheetTopAction(
             label = stringResource(
                 if (editing) R.string.settings_cancel else R.string.todo_groups_close,
@@ -254,13 +271,13 @@ internal fun TodoGroupsSheet(
             }
             // 第二部分：分组。标题复用顶栏动作块的「分组」文案（同一语义词）
             CardSection(title = stringResource(R.string.todo_action_group)) {
-                // 未分组单行卡：Todo 还没有分组字段 ⇒ 全部待办都算未分组
+                // 未分组单行卡：group == null 的待办数（引用完整性由仓库归一化维护）
                 SettingsCardwithIcon(
                     items = listOf(
                         SettingsCardwithIconItem(
                             icon = R.drawable.ic_folder_hint,
                             label = stringResource(R.string.todo_group_ungrouped),
-                            value = totalCount.toString(),
+                            value = ungroupedCount.toString(),
                             onClick = {},
                         ),
                     ),
@@ -276,8 +293,8 @@ internal fun TodoGroupsSheet(
                         ),
                     ),
                 )
-                // 用户自定义分组：GroupCard（无图标行）；计数恒 0——分组数据模型尚未落库，
-                // 数据层接入后由分组统计替换。编辑态显示草稿、普通态显示真实列表
+                // 用户自定义分组：GroupCard（无图标行），计数 = 该组名的待办数；
+                // 编辑态显示草稿、普通态显示真实列表
                 if (displayGroups.isNotEmpty()) {
                     GroupCard(
                         items = displayGroups.map { group ->
@@ -285,7 +302,7 @@ internal fun TodoGroupsSheet(
                             GroupCardItem(
                                 id = group.name,
                                 label = group.name,
-                                value = "0",
+                                value = todos.count { it.group == group.name }.toString(),
                                 pinned = group.pinned,
                             )
                         },
@@ -330,6 +347,22 @@ internal fun TodoGroupsSheet(
                     selectedIds = selectedIds - nameSet
                     if (draft.isEmpty()) exitEdit()
                 }
+            },
+        )
+    }
+
+    // 新建分组弹窗：叠加在浮层之后组合（画到浮层之上），返回键/遮罩点击由 FadeOverlayDialog 接管；
+    // 挂载与可见性分离（同删除确认框）。确认 = 追加分组经 onGroupsChange 整表写回落库，
+    // 落库失败的 Toast 由宿主（TodoScreen 的 commitGroups）统一处理
+    if (createMounted) {
+        CreateGroupDialog(
+            existingNames = groups.map { it.name },
+            visible = createRequested,
+            onDismissed = { createMounted = false },
+            onCancel = { createRequested = false },
+            onCreate = { name ->
+                createRequested = false
+                onGroupsChange(groups + TodoGroup(name))
             },
         )
     }
@@ -429,8 +462,8 @@ private fun EditActionRow(
 
 /**
  * 删除分组确认框：[ConfirmDialogCard] 白卡 + 遮罩，叠加在浮层**之后**组合——返回键时后注册的
- * 它先收到，优先于浮层出口。仅删分组、不联动待办（Todo 无分组字段，见需求决策），
- * 文案只提分组；删除钮走 error（同删除课表/删除待办确认框先例）。
+ * 它先收到，优先于浮层出口。仅删分组：该组待办由仓库在同一次 setGroups 提交里级联
+ * 置回未分组（不删除待办本身），文案只提分组；删除钮走 error（同删除课表/删除待办确认框先例）。
  */
 @Composable
 private fun DeleteGroupConfirmDialog(
@@ -469,6 +502,74 @@ private fun DeleteGroupConfirmDialog(
                 modifier = Modifier.weight(1f),
                 enabled = visible,
                 onClick = onConfirm,
+            )
+        }
+    }
+}
+
+/**
+ * 新建分组弹窗：[ConfirmDialogCard]（content 插槽版）+ 单行输入 + 取消/确认两颗胶囊，
+ * 叠加在分组浮层**之后**组合（画到浮层之上，同 [DeleteGroupConfirmDialog]）；遮罩点击与
+ * 返回键由 [FadeOverlayDialog] 内置 BackHandler 接管（后注册，先于浮层出口）。
+ * 挂载即自动聚焦弹键盘（adjustResize 下窗口收缩，居中卡片自然避让键盘）。
+ * **实时校验**：输入 trim 后为空或与 [existingNames] 重名时确认钮禁用（无需错误文案）。
+ */
+@Composable
+private fun CreateGroupDialog(
+    existingNames: List<String>,
+    visible: Boolean,
+    onDismissed: () -> Unit,
+    onCancel: () -> Unit,
+    onCreate: (String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(visible) {
+        if (visible) {
+            focusRequester.requestFocus()
+            keyboard?.show()
+        } else {
+            keyboard?.hide()
+        }
+    }
+    val trimmed = name.trim()
+    val valid = trimmed.isNotEmpty() && trimmed !in existingNames
+    FadeOverlayDialog(
+        visible = visible,
+        onDismiss = onCancel,
+        onDismissed = onDismissed,
+        cardHorizontalPadding = 32.dp,
+    ) {
+        ConfirmDialogCard(
+            title = stringResource(R.string.todo_group_create_title),
+            buttons = {
+                DialogPillButton(
+                    label = stringResource(R.string.settings_cancel),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                    enabled = visible,
+                    onClick = onCancel,
+                )
+                DialogPillButton(
+                    label = stringResource(R.string.edit_confirm),
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.weight(1f),
+                    enabled = visible && valid,
+                    onClick = { onCreate(trimmed) },
+                )
+            },
+        ) {
+            SheetTextField(
+                label = stringResource(R.string.todo_group_create_hint),
+                value = name,
+                onValueChange = { name = it },
+                imeAction = ImeAction.Done,
+                // 键盘「完成」等价点确认（同样受实时校验闸门）
+                onImeAction = { if (valid) onCreate(trimmed) },
+                focusRequester = focusRequester,
             )
         }
     }

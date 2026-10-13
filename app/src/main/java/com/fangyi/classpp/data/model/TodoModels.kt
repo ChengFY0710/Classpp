@@ -35,6 +35,8 @@ data class TodoStep(
  * @param deadlineDate 截止日期（只此一天）与 [deadlineMinute] 成对出现或同时为空
  * @param deadlineMinute 截止时刻（当天分钟数）
  * @param tags 纯字符串标签；与课表课程标签的联动后续再做
+ * @param group 所属分组名（[TodoGroup] 的身份键），null = 未分组。引用完整性由仓库在
+ *   归一化时维护：trim、空串与引用不存在的组一律清回 null
  * @param completed 完成情况，新建默认 false
  * @param completedAtMillis 完成时刻（epoch millis），不变式：completed=false 时必为 null，
  *   由仓库在归一化时维护
@@ -58,13 +60,21 @@ data class Todo(
     val completed: Boolean = false,
     val completedAtMillis: Long? = null,
     val createdAtMillis: Long = 0,
+    val group: String? = null,
 )
 
-/** 待办整库文件信封：todos.json 的内容 */
+/**
+ * 待办整库文件信封：todos.json 的内容（分组与待办同文件——删除分组时级联把该组待办置回
+ * 未分组，同文件单次提交原子完成）。
+ *
+ * [formatVersion] 不随 [groups] 增设而升版：纯增量字段，旧版本靠 ignoreUnknownKeys + 默认值
+ * 兼容读（降级只丢分组、不触发损坏闸门），与 Todo 字段的前向兼容策略一致。
+ */
 @Serializable
 data class TodoFile(
     val formatVersion: Int = TODO_FORMAT_VERSION,
     val todos: List<Todo> = emptyList(),
+    val groups: List<TodoGroup> = emptyList(),
 )
 
 /**
@@ -74,8 +84,9 @@ data class TodoFile(
  * 落点槽位排除置顶区）。持有方每次置顶/取消置顶后用稳定划分（`filter { pinned } + filter { !pinned }`）
  * 维护该不变式：新置顶项落前缀尾部（顺序即置顶操作顺序），取消置顶项原位不动。
  *
- * 演示阶段为进程内状态（TodoScreen 持有），尚未入库；数据层接入后再落盘。
+ * 随 [TodoFile.groups] 落盘（TodoRepository.setGroups 统一写入，写入前做同样的归一化划分）。
  */
+@Serializable
 data class TodoGroup(
     val name: String,
     val pinned: Boolean = false,

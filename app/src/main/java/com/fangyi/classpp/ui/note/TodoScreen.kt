@@ -61,9 +61,6 @@ import java.util.GregorianCalendar
 import java.util.Locale
 import java.util.TimeZone
 
-/** 演示分组初值：数据层接入后由用户自定义分组替换（运行期由 groups 状态持有） */
-private val DemoGroups = listOf(TodoGroup("作业"), TodoGroup("日常琐事"))
-
 /** epochDay → millis 的换算步长（同 IsoDate/DeadlineCard 的私有常量） */
 private const val MILLIS_PER_DAY = 86_400_000L
 
@@ -85,7 +82,7 @@ private val SectionSpacing = 20.dp
 /**
  * 待办页：页面底色铺 background（tab 转场缩小淡出时不透出其他层）。
  * 内容层为待办列表（[hazeSource] 采样源：列表滚动到顶栏之下时透出毛玻璃），
- * 顶栏浮在上层；选中态在此持有，分组胶囊过滤后续接入。
+ * 顶栏浮在上层；选中态在此持有，可见列表由 [filterTodosByGroup] 按选中分组下标派生。
  *
  * 列表分「已逾期」「未完成」「已完成」三组，已逾期在最上、已完成在下（默认收起），
  * 组内按创建时间（创建早的在前）；勾选切换写回仓库，完成即移组，
@@ -147,18 +144,31 @@ fun TodoScreen(
     var editTargetId by rememberSaveable { mutableStateOf("") }
     // 分组浮层：待办分组（顶栏展开动作行的分组块进入），空 = 未打开（两段式挂载见浮层处）
     var groupsVisible by rememberSaveable { mutableStateOf(false) }
-    // 自定义分组列表（顺序 + 置顶标记）：进程内状态——顶栏分组胶囊与分组浮层共享同一份，
-    // 置顶/删除/重排后胶囊行同步；数据层接入后由分组仓库替换（DemoGroups 仅作初值）
-    var groups by remember { mutableStateOf(DemoGroups) }
-    // 分组写回统一入口：确认（置顶/重排草稿）与删除共用——整表替换后让顶栏过滤下标跟随
-    // 原组名（下标按位置存，重排后不跟随会指错组；组被删则 indexOfFirst 得 0 = 回到全部）
+    // 分组列表（顺序 + 置顶标记）：仓库 todos.json 持久化，顶栏胶囊与分组浮层共享同一份；
+    // 分组写回失败的 Toast 文案在组合期解析（commitGroups 回调里非组合上下文，同编辑浮层约定）
+    val groups by repository.groups.collectAsState()
+    val groupSaveFailedMessage = stringResource(R.string.todo_error_save_failed)
+    // 分组写回统一入口：新建（浮层追加）、确认（置顶/重排草稿）、删除（滤除）共用——
+    // 整表交仓库 setGroups 落盘（被删组的待办由仓库级联回未分组）；顶栏过滤下标按原组名
+    // 跟随（下标按位置存，重排后不跟随会指错组）：仅 2 起的用户分组下标需要跟随，
+    // 0（全部）/1（未分组）与分组编辑无关；组被删则 indexOfFirst 得 -1 → 回 0（全部）
     val commitGroups: (List<TodoGroup>) -> Unit = { newGroups ->
-        val selectedName = groups.getOrNull(selectedGroupIndex - 1)?.name
-        groups = newGroups
-        selectedGroupIndex = selectedName
-            ?.let { name -> newGroups.indexOfFirst { it.name == name } + 1 }
-            ?: selectedGroupIndex
+        if (selectedGroupIndex >= 2) {
+            val selectedName = groups.getOrNull(selectedGroupIndex - 2)?.name
+            val newIndex = selectedName
+                ?.let { name -> newGroups.indexOfFirst { it.name == name } }
+                ?: -1
+            selectedGroupIndex = if (newIndex >= 0) newIndex + 2 else 0
+        }
+        scope.launch {
+            if (repository.setGroups(newGroups) is TodoOpResult.Err) {
+                AppToasts.show(context, groupSaveFailedMessage)
+            }
+        }
     }
+
+    // 按选中分组派生可见列表（0 = 全部、1 = 未分组、2 起 = 用户分组）；排序/分区不受影响
+    val visibleTodos = filterTodosByGroup(todos, selectedGroupIndex, groups)
 
     // 整页（列表 + 顶栏）滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的
     // ProvideOverscroll）：列表滚到顶/底后继续拖动，内容整块被拉出边缘、越拉越硬，
@@ -177,7 +187,7 @@ fun TodoScreen(
                     .hazeSource(hazeState),
             ) {
                 TodoList(
-                    todos = todos,
+                    todos = visibleTodos,
                     sort = sort,
                     sortDescending = sortDescending,
                     topBarExtraSpace = topBarExtraSpace,
@@ -284,6 +294,8 @@ fun TodoScreen(
             onDismiss = onNewTodoSheetDismiss,
             tagRepository = tagRepository,
             scheduleRepository = scheduleRepository,
+            groups = groups,
+            todos = todos,
             onConfirm = { todo ->
                 scope.launch {
                     // 空名等非法值已在浮层内拦截，Err 仅剩落盘失败等异常，Toast 提示、表单保持原样
@@ -349,6 +361,8 @@ fun TodoScreen(
                 onDismiss = { editTargetId = "" },
                 tagRepository = tagRepository,
                 scheduleRepository = scheduleRepository,
+                groups = groups,
+                todos = todos,
                 existing = initial,
                 onConfirm = { todo ->
                     scope.launch {
@@ -416,6 +430,24 @@ private val TodoSection.titleRes: Int
 internal fun currentMinuteOfDay(): Int {
     val now = GregorianCalendar()
     return now.get(GregorianCalendar.HOUR_OF_DAY) * 60 + now.get(GregorianCalendar.MINUTE)
+}
+
+/**
+ * 按顶栏分组下标派生可见待办：0 = 全部、1 = 未分组（group == null）、
+ * 2 起 = 用户分组（[groups] 下标偏移 2，与 TodoTopBar 的胶囊下标一致）。
+ * 下标越界（组被删后残留的保存态等）兜底回全部；未分组判定只需 null——
+ * 引用完整性由仓库在写入归一化时维护。
+ */
+internal fun filterTodosByGroup(
+    todos: List<Todo>,
+    selectedGroupIndex: Int,
+    groups: List<TodoGroup>,
+): List<Todo> = when {
+    selectedGroupIndex == 0 -> todos
+    selectedGroupIndex == 1 -> todos.filter { it.group == null }
+    else -> groups.getOrNull(selectedGroupIndex - 2)
+        ?.let { group -> todos.filter { it.group == group.name } }
+        ?: todos
 }
 
 /**

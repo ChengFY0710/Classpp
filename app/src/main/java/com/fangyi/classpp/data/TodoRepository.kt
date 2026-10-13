@@ -4,6 +4,7 @@ import android.content.Context
 import com.fangyi.classpp.data.export.TodoShareCodec
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoFile
+import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.data.store.FileTodoStore
 import com.fangyi.classpp.data.store.LoadIssue
@@ -20,6 +21,8 @@ import kotlinx.coroutines.withContext
 
 /**
  * 待办仓库：内存真源（StateFlow）+ 磁盘持久化（[TodoStore]），与 ScheduleRepository 同构。
+ * 同时持有**待办分组**（[TodoFile.groups]）：与待办同文件、同 mutex 原子写入，
+ * 删除分组经 [setGroups] 级联把该组待办置回未分组。
  *
  * - 读：StateFlow 直接 collect，无 I/O；
  * - 写：Mutex 串行化，流程 = 归一化 → 校验 → `store.save` → 成功才发布到 StateFlow
@@ -38,6 +41,10 @@ class TodoRepository internal constructor(
 
     private val _todos = MutableStateFlow<List<Todo>>(emptyList())
     val todos: StateFlow<List<Todo>> = _todos.asStateFlow()
+
+    // 分组列表（顺序即显示序，置顶项构成连续前缀）：与 todos 同文件、同 commit 原子写入
+    private val _groups = MutableStateFlow<List<TodoGroup>>(emptyList())
+    val groups: StateFlow<List<TodoGroup>> = _groups.asStateFlow()
 
     private val _loadState = MutableStateFlow(LoadState.Ready)
     val loadState: StateFlow<LoadState> = _loadState.asStateFlow()
@@ -63,6 +70,7 @@ class TodoRepository internal constructor(
     private fun publish(file: TodoFile) {
         fileState.value = file
         _todos.value = file.todos
+        _groups.value = file.groups
     }
 
     /** 落盘成功才发布内存态 */
@@ -82,15 +90,51 @@ class TodoRepository internal constructor(
 
     /**
      * 写入前归一化：名称/标签/步骤标题 trim、标签去空、日期 distinct + 排序；
-     * 完成不变式：completed=true 时 completedAtMillis 缺省补当前，false 时清空。
+     * 完成不变式：completed=true 时 completedAtMillis 缺省补当前，false 时清空；
+     * 分组引用完整性：group trim、空串与引用不存在的组一律清回 null（未分组）——
+     * 由此读侧只需判 `group == null`，导入的带组名待办同此规则落为未分组。
+     * 在 mutex 内调用，读 [fileState] 的分组表安全。
      */
-    private fun normalize(todo: Todo): Todo = todo.copy(
-        name = todo.name.trim(),
-        dates = todo.dates.distinct().sortedBy { it.epochDay },
-        tags = todo.tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
-        steps = todo.steps.map { it.copy(title = it.title.trim()) },
-        completedAtMillis = if (todo.completed) todo.completedAtMillis ?: nowMillis() else null,
-    )
+    private fun normalize(todo: Todo): Todo {
+        val groupNames = fileState.value.groups.mapTo(mutableSetOf()) { it.name }
+        return todo.copy(
+            name = todo.name.trim(),
+            dates = todo.dates.distinct().sortedBy { it.epochDay },
+            tags = todo.tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
+            steps = todo.steps.map { it.copy(title = it.title.trim()) },
+            completedAtMillis = if (todo.completed) todo.completedAtMillis ?: nowMillis() else null,
+            group = todo.group?.trim()?.takeIf { it.isNotEmpty() && it in groupNames },
+        )
+    }
+
+    /**
+     * 分组整表替换：新建（追加）、置顶/重排（调用方重排后写回）、删除（滤除）共用这一个入口。
+     *
+     * 归一化：name trim、空白丢弃、按名去重（保留首个），并做置顶连续前缀稳定划分
+     * （`filter { pinned } + filter { !pinned }`，维持 TodoGroup/GroupCard 契约）。
+     * 级联：本次被移除的组，其待办的 group 一并清回 null——与分组表**同一次 commit 原子落盘**，
+     * 不会出现悬挂引用。失败内存零变更（同其余写 API）。
+     */
+    suspend fun setGroups(newGroups: List<TodoGroup>): TodoOpResult = mutex.withLock {
+        val normalized = normalizeGroups(newGroups)
+        val kept = normalized.mapTo(mutableSetOf()) { it.name }
+        val current = fileState.value
+        // 级联 = 对每条待办做一次分组引用归一化（trim + 成员检查，同 normalize 的 group 规则）
+        val cascaded = current.todos.map { todo ->
+            val group = todo.group?.trim()?.takeIf { it in kept }
+            if (group != todo.group) todo.copy(group = group) else todo
+        }
+        commit(current.copy(groups = normalized, todos = cascaded))
+    }
+
+    /** 分组归一化：trim → 空白丢弃 → 按名去重 → 置顶连续前缀稳定划分（见 [setGroups]） */
+    private fun normalizeGroups(groups: List<TodoGroup>): List<TodoGroup> {
+        val cleaned = groups
+            .map { it.copy(name = it.name.trim()) }
+            .filter { it.name.isNotEmpty() }
+            .distinctBy { it.name }
+        return cleaned.filter { it.pinned } + cleaned.filter { !it.pinned }
+    }
 
     // ---------- 待办 CRUD ----------
 
@@ -107,7 +151,7 @@ class TodoRepository internal constructor(
         if (fileState.value.todos.any { it.id == prepared.id }) {
             return@withLock TodoReadResult.Err(TodoError.DuplicateId(prepared.id))
         }
-        when (val r = commit(TodoFile(fileState.value.formatVersion, fileState.value.todos + prepared))) {
+        when (val r = commit(fileState.value.copy(todos = fileState.value.todos + prepared))) {
             TodoOpResult.Ok -> TodoReadResult.Ok(prepared.id)
             is TodoOpResult.Err -> TodoReadResult.Err(r.error)
         }
@@ -119,25 +163,25 @@ class TodoRepository internal constructor(
         val prepared = normalize(todo)
         val errors = TodoValidator.validate(prepared)
         if (errors.isNotEmpty()) return@withLock TodoOpResult.Err(errors.first())
-        commit(TodoFile(fileState.value.formatVersion, fileState.value.todos.map { if (it.id == prepared.id) prepared else it }))
+        commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == prepared.id) prepared else it }))
     }
 
     suspend fun removeTodo(id: String): TodoOpResult = mutex.withLock {
         if (todoOrNull(id) == null) return@withLock TodoOpResult.Err(TodoError.NotFound(id))
-        commit(TodoFile(fileState.value.formatVersion, fileState.value.todos.filterNot { it.id == id }))
+        commit(fileState.value.copy(todos = fileState.value.todos.filterNot { it.id == id }))
     }
 
     /** 批量删除；未知 id 宽容忽略（批量语义，同 removeCourses） */
     suspend fun removeTodos(ids: List<String>): TodoOpResult = mutex.withLock {
         val drop = ids.toSet()
-        commit(TodoFile(fileState.value.formatVersion, fileState.value.todos.filterNot { it.id in drop }))
+        commit(fileState.value.copy(todos = fileState.value.todos.filterNot { it.id in drop }))
     }
 
     /** 切换完成状态并维护 completedAtMillis；其余字段不动 */
     suspend fun setCompleted(id: String, completed: Boolean): TodoOpResult = mutex.withLock {
         val target = todoOrNull(id) ?: return@withLock TodoOpResult.Err(TodoError.NotFound(id))
         val updated = normalize(target.copy(completed = completed))
-        commit(fileState.value.let { f -> TodoFile(f.formatVersion, f.todos.map { if (it.id == id) updated else it }) })
+        commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == id) updated else it }))
     }
 
     /** 勾选/取消一条步骤；步骤不存在返回 NotFound */
@@ -147,7 +191,7 @@ class TodoRepository internal constructor(
             return@withLock TodoOpResult.Err(TodoError.NotFound(stepId))
         }
         val updated = target.copy(steps = target.steps.map { if (it.id == stepId) it.copy(done = done) else it })
-        commit(fileState.value.let { f -> TodoFile(f.formatVersion, f.todos.map { if (it.id == todoId) updated else it }) })
+        commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == todoId) updated else it }))
     }
 
     // ---------- 分享 ----------
@@ -173,7 +217,7 @@ class TodoRepository internal constructor(
                 if (todo.createdAtMillis == 0L) todo.copy(createdAtMillis = nowMillis()) else todo,
             )
         }
-        when (val r = commit(TodoFile(fileState.value.formatVersion, fileState.value.todos + prepared))) {
+        when (val r = commit(fileState.value.copy(todos = fileState.value.todos + prepared))) {
             TodoOpResult.Ok -> TodoReadResult.Ok(prepared.size)
             is TodoOpResult.Err -> TodoReadResult.Err(r.error)
         }

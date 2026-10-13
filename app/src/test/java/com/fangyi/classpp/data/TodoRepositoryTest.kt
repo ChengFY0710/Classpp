@@ -1,6 +1,7 @@
 package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoSharePayload
 import com.fangyi.classpp.data.store.StoreResult
@@ -8,6 +9,7 @@ import com.fangyi.classpp.data.store.TodoStore
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -165,6 +167,89 @@ class TodoRepositoryTest {
 
         assertTrue(r.setStepDone(id, "ghost", done = true).assertErr() is TodoError.NotFound)
         assertTrue(r.setStepDone("ghost", "s1", done = true).assertErr() is TodoError.NotFound)
+    }
+
+    // ---------- 分组 ----------
+
+    @Test
+    fun `setGroups persists and survives reopen`() = runBlocking {
+        val r = repo()
+        r.setGroups(listOf(TodoGroup("作业", pinned = true), TodoGroup("日常琐事"))).assertOk()
+
+        val reopened = repo()
+        assertEquals(listOf("作业", "日常琐事"), reopened.groups.value.map { it.name })
+        assertEquals(listOf(true, false), reopened.groups.value.map { it.pinned })
+    }
+
+    @Test
+    fun `setGroups normalizes blank trim dedupe and pinned prefix`() = runBlocking {
+        val r = repo()
+        r.setGroups(
+            listOf(
+                TodoGroup("作业", pinned = true),
+                TodoGroup("   "),
+                TodoGroup("  日常  "),
+                TodoGroup("日常"), // trim 后与上一条重名 → 保留首个
+                TodoGroup("灵感", pinned = true),
+            ),
+        ).assertOk()
+
+        // 空白丢弃、trim、去重；置顶连续前缀由稳定划分维持（置顶项保持原相对序在前）
+        assertEquals(listOf("作业", "灵感", "日常"), r.groups.value.map { it.name })
+        assertEquals(listOf(true, true, false), r.groups.value.map { it.pinned })
+    }
+
+    @Test
+    fun `removing group cascades its todos to ungrouped in same commit`() = runBlocking {
+        val r = repo()
+        r.setGroups(listOf(TodoGroup("作业"), TodoGroup("日常琐事"))).assertOk()
+        val a = r.addTodo(testTodo(name = "A", group = "作业")).okId()
+        val b = r.addTodo(testTodo(name = "B", group = "日常琐事")).okId()
+        r.addTodo(testTodo(name = "C")).okId()
+
+        r.setGroups(listOf(TodoGroup("日常琐事"))).assertOk()
+
+        val byName = r.todos.value.associateBy { it.name }
+        assertNull(byName.getValue("A").group)
+        assertEquals("日常琐事", byName.getValue("B").group)
+        assertNull(byName.getValue("C").group)
+
+        // 原子性：级联结果与分组表同一份文件落盘，重载后一致
+        val reopened = repo()
+        assertEquals(listOf("日常琐事"), reopened.groups.value.map { it.name })
+        assertNull(reopened.todos.value.single { it.id == a }.group)
+        assertEquals("日常琐事", reopened.todos.value.single { it.id == b }.group)
+    }
+
+    @Test
+    fun `todo writes do not lose groups`() = runBlocking {
+        val r = repo()
+        r.setGroups(listOf(TodoGroup("作业"))).assertOk()
+        val id = r.addTodo(testTodo(name = "A", group = "作业")).okId()
+
+        // 任意待办写路径都不得清空分组表（TodoFile copy 改造的回归防线）
+        r.setCompleted(id, completed = true).assertOk()
+        assertEquals(listOf("作业"), r.groups.value.map { it.name })
+        r.updateTodo(testTodo(id = id, name = "A2", group = "作业")).assertOk()
+        assertEquals(listOf("作业"), r.groups.value.map { it.name })
+        r.removeTodo(id).assertOk()
+        assertEquals(listOf("作业"), r.groups.value.map { it.name })
+    }
+
+    @Test
+    fun `normalize clears unknown blank or stale group reference`() = runBlocking {
+        val r = repo()
+        r.setGroups(listOf(TodoGroup("作业"))).assertOk()
+
+        // 引用不存在的组 → 未分组
+        val a = r.addTodo(testTodo(name = "A", group = "不存在")).okId()
+        assertNull(r.todos.value.single { it.id == a }.group)
+        // 合法引用保留
+        val b = r.addTodo(testTodo(name = "B", group = "作业")).okId()
+        assertEquals("作业", r.todos.value.single { it.id == b }.group)
+        // 更新时携带已删除/不存在的组名 → 清回未分组
+        r.updateTodo(testTodo(id = b, name = "B2", group = "已删组")).assertOk()
+        assertNull(r.todos.value.single { it.id == b }.group)
     }
 
     // ---------- 导入导出 ----------

@@ -204,7 +204,8 @@ private val HorizontalClipShape = object : Shape {
  * 整帧重放就位时录制的栏面（含模糊输出），绕开 Haze 对转场中间态几何的重采样——
  * 与课表页顶栏同一机制，杜绝快速切 tab 时毛玻璃闪缺、露出纯兜底色帧。
  *
- * 纯 UI：分组点击只切选中高亮（过滤由调用方后续接入）；更多胶囊点击回调
+ * 分组胶囊下标语义：0 = 全部、1 = 未分组、2 起 = 用户分组（[groups] 下标偏移 2）。
+ * 点击切选中高亮，可见列表由宿主（TodoScreen）按下标派生过滤；更多胶囊点击回调
  * [onMoreClick]（宿主翻转展开态）；展开后排序块点击回调 [onSortClick]（宿主置
  * 菜单展开态），分组块点击回调 [onGroupClick]（宿主打开待办分组浮层），
  * 分类/视图/概览回调本期空置（接入功能时再加参数）；排序菜单
@@ -310,11 +311,17 @@ fun TodoTopBar(
                             selected = selectedGroupIndex == 0,
                             onClick = { onGroupSelect(0) },
                         )
+                        // 未分组固定占下标 1（全部之后、用户分组之前），与用户分组编辑无关
+                        GroupPill(
+                            label = stringResource(R.string.todo_group_ungrouped),
+                            selected = selectedGroupIndex == 1,
+                            onClick = { onGroupSelect(1) },
+                        )
                         groups.forEachIndexed { index, group ->
                             GroupPill(
                                 label = group,
-                                selected = selectedGroupIndex == index + 1,
-                                onClick = { onGroupSelect(index + 1) },
+                                selected = selectedGroupIndex == index + 2,
+                                onClick = { onGroupSelect(index + 2) },
                             )
                         }
                     }

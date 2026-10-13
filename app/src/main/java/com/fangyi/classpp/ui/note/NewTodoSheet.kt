@@ -34,6 +34,7 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.components.BottomDateSelectCard
@@ -45,9 +46,13 @@ import com.fangyi.classpp.ui.components.DateSelectionCard
 import com.fangyi.classpp.ui.components.DeadlineCard
 import com.fangyi.classpp.ui.components.DialogPillButton
 import com.fangyi.classpp.ui.components.FadeOverlayDialog
+import com.fangyi.classpp.ui.components.GroupCard
+import com.fangyi.classpp.ui.components.GroupCardItem
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.RepeatFrequency
 import com.fangyi.classpp.ui.components.RowChoiceCard
+import com.fangyi.classpp.ui.components.SettingsCardwithIcon
+import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTextArea
 import com.fangyi.classpp.ui.components.SheetTextField
@@ -80,9 +85,14 @@ private const val INITIAL_END_MINUTE = 1080
  * 同课表删除确认），确认才回调 [onDelete]；弹窗在场时本浮层经 [OverlaySheet] 的 covered
  * 缩小后退（同分层动效）。编辑初值整体回填。
  *
- * 表单分组（CardSection）：待办名 → 提醒与优先级（截止日期 + 紧急旗帜）→ 日期与时间
+ * 表单分组（CardSection）：待办名 → 分组（[SettingsCardwithIcon] 待办分组入口 →
+ * [GroupPickSheet] 选择分组浮层）→ 提醒与优先级（截止日期 + 紧急旗帜）→ 日期与时间
  * （DateSelectionCard + 无/全天/时段，选「时段」展开 TimeRangeSlider）→ 标签 →
  * 更多（待办地点 + 备注）。
+ *
+ * 分组选择随表单落库：编辑初值从 [Todo.group] 回填，选中值进 [onConfirm] 组装的 [Todo]
+ * （引用不存在的组由仓库归一化清回 null）；未选 = 「未分组」。计数口径与 [TodoGroupsSheet]
+ * 一致（未分组 = `group == null` 的待办数、自定义分组 = 该组名的待办数）。
  *
  * 待办名为空时点「确认」不创建：输入卡红描边报错（AddCoursePanel 同款交互），输入即清除。
  * 选了「全天/时段」但没选日期时点「确认」Toast 提示不关浮层（TodoValidator 的
@@ -97,6 +107,10 @@ internal fun NewTodoSheet(
     onDismiss: () -> Unit,
     tagRepository: TagRepository?,
     scheduleRepository: ScheduleRepository?,
+    // 分组列表（顺序即显示序，置顶项须构成连续前缀）与待办列表（计数用）：
+    // 由宿主从 TodoRepository 的 StateFlow 传入（同 TodoGroupsSheet）
+    groups: List<TodoGroup> = emptyList(),
+    todos: List<Todo> = emptyList(),
     onConfirm: (todo: Todo) -> Unit,
     existing: Todo? = null,
     onDelete: (() -> Unit)? = null,
@@ -184,6 +198,13 @@ internal fun NewTodoSheet(
     var rangeTimeInitial by remember { mutableIntStateOf(0) }
     var rangeTimeCallback by remember { mutableStateOf<((Int) -> Unit)?>(null) }
 
+    // 待办分组选择：selectedGroupName 为 null = 未分组，编辑模式从 existing.group 回填，
+    // 确认时随 Todo 组装落库（引用完整性由仓库归一化维护）。选择分组浮层期望态 + 挂载态
+    // 两段式（同滚轮弹窗），声明在 OverlaySheet 之前——浮层在场时经 covered 让本浮层缩小后退
+    var selectedGroupName by remember { mutableStateOf(existing?.group) }
+    var groupPickVisible by remember { mutableStateOf(false) }
+    var groupPickMounted by remember { mutableStateOf(false) }
+
     OverlaySheet(
         title = stringResource(if (existing == null) R.string.todo_new_title else R.string.todo_edit_title),
         confirmLabel = stringResource(R.string.edit_confirm),
@@ -217,6 +238,7 @@ internal fun NewTodoSheet(
                             tags = selectedTagNames.toList(),
                             urgency = urgency,
                             note = note,
+                            group = selectedGroupName,
                         ),
                     )
                 }
@@ -243,7 +265,7 @@ internal fun NewTodoSheet(
         onDismiss = onDismiss,
         visible = visible,
         covered = deleteRequested || deadlineDateVisible || customDateVisible || rangeTimeVisible ||
-            deadlineTimeVisible,
+            deadlineTimeVisible || groupPickVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
         // 共享采样源：叠在本浮层上的滚轮弹窗拿它做卡片磨砂背景模糊（见 sheetHazeState 声明处）
@@ -263,6 +285,26 @@ internal fun NewTodoSheet(
                 onImeAction = { focusManager.clearFocus() },
                 isError = nameBlank,
             )
+
+            CardSection(title = stringResource(R.string.todo_action_group)) {
+                SettingsCardwithIcon(
+                    items = listOf(
+                        SettingsCardwithIconItem(
+                            icon = R.drawable.ic_folder,
+                            label = stringResource(R.string.todo_groups_title),
+                            // 右侧当前分组：未选 = 默认「未分组」（选中值随确认落库，见类 KDoc）
+                            value = selectedGroupName ?: stringResource(R.string.todo_group_ungrouped),
+                            onClick = {
+                                // 同卡片行进弹层前收键盘（DeadlineCard 同款），再挂载选择分组浮层
+                                focusManager.clearFocus()
+                                keyboard?.hide()
+                                groupPickMounted = true
+                                groupPickVisible = true
+                            },
+                        ),
+                    ),
+                )
+            }
 
             CardSection(title = stringResource(R.string.todo_section_reminder)) {
                 DeadlineCard(
@@ -394,6 +436,25 @@ internal fun NewTodoSheet(
                 )
             }
         }
+    }
+
+    // 选择分组浮层画在表单浮层之后（组合顺序即绘制顺序），叠在表单之上；后注册 BackHandler，
+    // 返回键先关选择浮层、再轮到表单出口。选中任意分组/未分组即回写入口值并请求关闭；
+    // 点遮罩、下拉、关闭胶囊、返回同走 onDismiss（两段式，同滚轮弹窗）。
+    // 不传共享 hazeState：顶栏磨砂自建采样源、只模糊自身内容——共享表单的采样源会把
+    // 下拖时露出的表单内容模糊进本层顶栏（OverlaySheet 的 hazeState 是给上层弹窗用的）
+    if (groupPickMounted) {
+        GroupPickSheet(
+            todos = todos,
+            groups = groups,
+            visible = groupPickVisible,
+            onDismiss = { groupPickVisible = false },
+            onDismissed = { groupPickMounted = false },
+            onPick = { name ->
+                selectedGroupName = name
+                groupPickVisible = false
+            },
+        )
     }
 
     // 截止日期滚轮弹窗画在表单浮层之后（组合顺序即绘制顺序）。确认把日期交回
@@ -569,6 +630,84 @@ private fun DeleteTodoConfirmDialog(
                 enabled = visible,
                 onClick = onConfirm,
             )
+        }
+    }
+}
+
+/**
+ * 选择分组浮层：编辑/新建浮层「待办分组」入口进入，内容结构参考 [TodoGroupsSheet] 的分组区——
+ * 「分组」小标题下未分组单行卡（[SettingsCardwithIcon]）+ 自定义分组 [GroupCard]（非编辑态，
+ * 长按不进编辑）。**点击任意行即选中并关闭**（[onPick] 带回组名，null = 未分组），顶栏无
+ * 确认胶囊（[OverlaySheet] 的 confirmLabel 传 null）、右侧「关闭」胶囊同 [TodoGroupsSheet]
+ * 普通态样式。两段式关闭（visible / onDismissed），系统返回与点遮罩、下拉、关闭胶囊同走
+ * [onDismiss]；列表型浮层走 [SheetImeBehavior.IgnoreIme]，返回键由本组合的 BackHandler 接
+ * （后注册，先于表单浮层的出口）。顶栏磨砂不传共享 hazeState、由 [OverlaySheet] 自建采样源
+ * 只模糊自身内容——共享表单的采样源会把下拖时露出的表单内容模糊进本层顶栏。
+ *
+ * **计数口径**同 [TodoGroupsSheet]：未分组 = `group == null` 的待办数、
+ * 自定义分组 = 该组名的待办数。
+ *
+ * @param onPick 选中回调：组名（null = 未分组），由调用方回写入口值并请求关闭
+ */
+@Composable
+private fun GroupPickSheet(
+    todos: List<Todo>,
+    groups: List<TodoGroup>,
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    onDismissed: () -> Unit,
+    onPick: (String?) -> Unit,
+) {
+    BackHandler(enabled = visible, onBack = onDismiss)
+
+    OverlaySheet(
+        title = stringResource(R.string.todo_group_pick_title),
+        // 点击即选，无确认胶囊；「关闭」胶囊同 TodoGroupsSheet 普通态（白胶囊深色 ✕ 圆）
+        confirmLabel = null,
+        rightAction = SheetTopAction(
+            label = stringResource(R.string.todo_groups_close),
+            icon = R.drawable.ic_dismiss_circle,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            onClick = onDismiss,
+        ),
+        onDismiss = onDismiss,
+        visible = visible,
+        onDismissed = onDismissed,
+        // 列表型浮层：没有输入框，键盘不必让位（同 TodoGroupsSheet）
+        imeBehavior = SheetImeBehavior.IgnoreIme,
+        // 不传 hazeState：自建采样源，顶栏磨砂只模糊自身内容（见类 KDoc）
+    ) {
+        // 分区小标题与卡间距同 TodoGroupsSheet 的分组区
+        Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
+            CardSection(title = stringResource(R.string.todo_action_group)) {
+                // 未分组单行卡：group == null 的待办数（引用完整性由仓库归一化维护）
+                SettingsCardwithIcon(
+                    items = listOf(
+                        SettingsCardwithIconItem(
+                            icon = R.drawable.ic_folder_hint,
+                            label = stringResource(R.string.todo_group_ungrouped),
+                            value = todos.count { it.group == null }.toString(),
+                            onClick = { onPick(null) },
+                        ),
+                    ),
+                )
+                // 自定义分组：GroupCard 非编辑态（长按不进编辑），点击即选择；
+                // 分组以名字为身份键，计数 = 该组名的待办数
+                if (groups.isNotEmpty()) {
+                    GroupCard(
+                        items = groups.map { group ->
+                            GroupCardItem(
+                                id = group.name,
+                                label = group.name,
+                                value = todos.count { it.group == group.name }.toString(),
+                                pinned = group.pinned,
+                            )
+                        },
+                        onItemClick = { onPick(it) },
+                    )
+                }
+            }
         }
     }
 }

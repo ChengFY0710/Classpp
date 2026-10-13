@@ -23,6 +23,11 @@
     <string name="todo_groups_delete_title">删除分组</string>
     <string name="todo_groups_delete_message">「%1$s」将被删除，此操作不可撤销。</string>
     <string name="todo_groups_delete_message_multi">所选 %1$d 个分组将被删除，此操作不可撤销。</string>
+    <!-- 编辑待办浮层：待办分组入口 → 选择分组浮层 -->
+    <string name="todo_group_pick_title">选择分组</string>
+    <!-- 待办分组浮层：新建分组输入弹窗 -->
+    <string name="todo_group_create_title">新建分组</string>
+    <string name="todo_group_create_hint">输入分组名</string>
     <string name="todo_new_title">新建待办</string>
     <string name="todo_edit_title">编辑待办</string>
     <string name="todo_name_label">待办名</string>

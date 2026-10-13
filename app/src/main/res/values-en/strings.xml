@@ -23,6 +23,11 @@
     <string name="todo_groups_delete_title">Delete Group</string>
     <string name="todo_groups_delete_message">“%1$s” will be deleted. This cannot be undone.</string>
     <string name="todo_groups_delete_message_multi">%1$d selected groups will be deleted. This cannot be undone.</string>
+    <!-- Edit todo sheet: group entry → group picker sheet -->
+    <string name="todo_group_pick_title">Choose Group</string>
+    <!-- Todo groups sheet: create-group input dialog -->
+    <string name="todo_group_create_title">New Group</string>
+    <string name="todo_group_create_hint">Enter group name</string>
     <string name="month_day_format">%1$d/%2$d</string>
     <string name="date_title_format">%1$s %2$s</string>
     <string name="back_to_current_week">Back to this week</string>
