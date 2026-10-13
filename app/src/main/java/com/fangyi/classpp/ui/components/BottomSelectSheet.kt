@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -101,11 +102,16 @@ private val CardBlurRadius: Dp = 20.dp
  * hazeSource 后将同一状态传进来。
  *
  * [cancelLabel] / [confirmLabel] 默认取全局「取消/确认」文案；确认按钮的点击回调
- * [onConfirm] 只在非收场状态下放行（防双击重复提交）。
+ * [onConfirm] 只在非收场状态下放行（防双击重复提交），[confirmEnabled] = false 时点击与
+ * 按压反馈一并失效、胶囊按项目置灰语义着色（输入类弹卡的实时校验用）。
  * [neutralAction] 为可选第三动作（截止日期的「清除」等）：内容槽下方整宽胶囊，
  * 收场闸门同确认键。
  * 卡片投影是一层大柔影：模糊半径由 CardShadowElevation 撑开、浓度由 [shadowAlpha] 调
  * （0 = 无影），同 [SheetPillButton] 的投影做法。
+ *
+ * **键盘让位**：卡片底部除导航栏外还让开键盘（只补 ime 超出导航栏的差值）——键盘弹起时
+ * 整卡抬到键盘上方不被遮住，弹起当帧就位、收起后 600ms 缓回（同 OverlaySheet 尾部余量
+ * 的机制）；出场滑出量程同步计入让位量。滚轮卡族键盘恒收起，渲染与动画行为不变。
  */
 @Composable
 fun BottomSelectSheet(
@@ -117,6 +123,9 @@ fun BottomSelectSheet(
     cancelLabel: String = stringResource(R.string.settings_cancel),
     confirmLabel: String = stringResource(R.string.edit_confirm),
     onConfirm: () -> Unit = {},
+    // 确认胶囊可用态：false 时点击与按压反馈一并失效，胶囊按项目置灰语义着色
+    // （白色底 + negative 内容色，同 EditActionRow 禁用钮先例）
+    confirmEnabled: Boolean = true,
     // 卡片投影浓度：只调透明度（0 = 无影，1 = 纯黑最浓），模糊半径由 CardShadowElevation 撑
     shadowAlpha: Float = 0.3f,
     // 卡片磨砂的采样源：非空时卡片在 surface 底色之上叠背景模糊（见 KDoc），
@@ -145,8 +154,18 @@ fun BottomSelectSheet(
     val scrimColor = MaterialTheme.colorScheme.scrim
     // hazeEffect 的 block 在绘制期执行、非 composable 上下文：tint 取值提到 modifier 之前
     val cardHazeTint = MaterialTheme.classppColors.hazeTint
+    // 键盘让位：键盘弹起时整卡抬到键盘上方（只补 ime 超出导航栏的差值，不与
+    // navigationBarsPadding 双计；弹起当帧就位、收起后 600ms 缓回，复用 OverlaySheet
+    // 尾部余量的同一机制）。滚轮卡族键盘恒收起 → 让位量恒 0，渲染与动画不变。
+    // 让位量必须同时计入 bottomClearancePx：出场滑出量程 = 卡高 + 底部让位，
+    // 不含键盘高度的话带键盘收场会滑不到底、卡在半途
+    val navBottomPx = WindowInsets.navigationBars.getBottom(density)
+    val imeLiftPx = rememberTailReservePx(
+        target = (WindowInsets.ime.getBottom(density) - navBottomPx).coerceAtLeast(0),
+        imeVisible = rememberImeVisible(),
+    )
     val bottomClearancePx =
-        WindowInsets.navigationBars.getBottom(density) + with(density) { CardEdgeMargin.toPx() }
+        navBottomPx + with(density) { CardEdgeMargin.toPx() } + imeLiftPx
 
     // 收场动画本体：从当前进度滑到全隐，播完才回调 onDismissed
     suspend fun runExit() {
@@ -200,6 +219,9 @@ fun BottomSelectSheet(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
+                // 键盘让位（见 imeLiftPx 声明处）：键盘在场时把卡片整体抬到键盘上方，
+                // 键盘收起后缓回——输入类弹卡因此不会被键盘遮住
+                .padding(bottom = with(density) { imeLiftPx.toDp() })
                 .padding(
                     start = CardEdgeMargin,
                     end = CardEdgeMargin,
@@ -271,11 +293,21 @@ fun BottomSelectSheet(
                             SheetPillButton(
                                 label = confirmLabel,
                                 icon = R.drawable.ic_checkmark_circle,
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                // 禁用态用项目置灰语义（白底 + negative 内容色，同 EditActionRow）
+                                containerColor = if (confirmEnabled) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.surface
+                                },
+                                contentColor = if (confirmEnabled) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.classppColors.negative
+                                },
                                 modifier = Modifier.height(TopBarPillHeight),
                                 iconAtEnd = true,
-                                onClick = { if (!closeRequested) onConfirm() },
+                                enabled = confirmEnabled,
+                                onClick = { if (!closeRequested && confirmEnabled) onConfirm() },
                             )
                         }
                         Text(

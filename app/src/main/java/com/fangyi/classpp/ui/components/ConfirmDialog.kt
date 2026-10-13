@@ -5,7 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -27,39 +26,12 @@ import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
 
-/**
- * 确认框白卡内容：左对齐大标题 + 浅灰说明 + 底部两颗等宽胶囊，删除/放弃确认框共用。
- * 说明文字版委托到 [ConfirmDialogCard] 的 content 插槽版，两版排版同源。
- */
+/** 确认框白卡内容：左对齐大标题 + 浅灰说明 + 底部两颗等宽胶囊，删除/放弃确认框共用 */
 @Composable
 fun ConfirmDialogCard(
     title: String,
     message: String,
     buttons: @Composable RowScope.() -> Unit,
-) {
-    ConfirmDialogCard(
-        title = title,
-        buttons = buttons,
-    ) {
-        Text(
-            text = message,
-            fontSize = 15.sp,
-            lineHeight = 22.sp,
-            color = MaterialTheme.classppColors.secondaryText,
-            modifier = Modifier.padding(start = 12.dp, end = 12.dp),
-        )
-    }
-}
-
-/**
- * content 插槽版：标题之下由调用方自绘（输入框等自定义内容），底部按钮行与
- * message 版同规格（等宽两颗、12dp 间距）。需要在确认框里放交互内容时用这版。
- */
-@Composable
-fun ConfirmDialogCard(
-    title: String,
-    buttons: @Composable RowScope.() -> Unit,
-    content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
         modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 24.dp, bottom = 12.dp),
@@ -72,7 +44,13 @@ fun ConfirmDialogCard(
             modifier = Modifier.padding(start = 12.dp, end = 12.dp),
         )
         Spacer(Modifier.height(10.dp))
-        content()
+        Text(
+            text = message,
+            fontSize = 15.sp,
+            lineHeight = 22.sp,
+            color = MaterialTheme.classppColors.secondaryText,
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp),
+        )
         Spacer(Modifier.height(28.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),

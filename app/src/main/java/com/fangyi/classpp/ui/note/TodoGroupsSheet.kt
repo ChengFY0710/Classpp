@@ -17,24 +17,21 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.isOverdue
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
+import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
 import com.fangyi.classpp.ui.components.DialogPillButton
@@ -46,7 +43,6 @@ import com.fangyi.classpp.ui.components.SettingsCardwithIcon
 import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetPillButton
-import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
@@ -61,8 +57,8 @@ import com.fangyi.classpp.ui.theme.classppColors
  *   用户自定义分组一张 [GroupCard]——自定义分组无行首图标，与带图标的固定行区分
  *   （正是 [GroupCard] 与 [SettingsCardwithIcon] 的行型差异）。
  *
- * **顶栏普通态**：左蓝「新建」（`ic_add_circle` → [CreateGroupDialog] 输入分组名，经
- * [onGroupsChange] 整表写回落库）+ 居中标题 + 右白「关闭」，与课表切换浮层同款顶栏排布。
+ * **顶栏普通态**：左蓝「新建」（`ic_add_circle` → [BottomTextFieldCard] 底部输入弹卡，
+ * 经 [onGroupsChange] 整表写回落库）+ 居中标题 + 右白「关闭」，与课表切换浮层同款顶栏排布。
  * 浮层框架 [OverlaySheet]：两段式关闭（visible / onDismissed），系统返回与点遮罩、下拉、
  * 关闭胶囊同走 [requestClose]；列表型浮层走 [SheetImeBehavior.IgnoreIme]，内容列由浮层
  * 自带的橡皮筋滚动接管，这里不再加滚动。
@@ -118,9 +114,11 @@ internal fun TodoGroupsSheet(
     var draft by remember { mutableStateOf(emptyList<TodoGroup>()) }
     // 删除确认请求：非空 = 对话框打开（值为按显示顺序快照的选中组名）
     var deleteTargets by remember { mutableStateOf<List<String>?>(null) }
-    // 新建分组弹窗：期望态 + 挂载态两段式（同删除确认框），普通态顶栏「新建」触发
+    // 新建分组弹卡：期望态 + 挂载态两段式（同删除确认框），普通态顶栏「新建」触发；
+    // createDraft 是受控草稿（打开时清空），确认才追加进分组表
     var createRequested by remember { mutableStateOf(false) }
     var createMounted by remember { mutableStateOf(false) }
+    var createDraft by remember { mutableStateOf("") }
     if (createRequested) createMounted = true
 
     val displayGroups = if (editing) draft else groups
@@ -178,9 +176,10 @@ internal fun TodoGroupsSheet(
             if (editing) R.string.edit_confirm else R.string.todo_groups_create,
         ),
         confirmIcon = if (editing) R.drawable.ic_checkmark_circle else R.drawable.ic_add_circle,
-        // 编辑态确认 = 提交草稿并退编辑；普通态「新建」= 挂载输入弹窗（两段式，同删除确认框）
+        // 编辑态确认 = 提交草稿并退编辑；普通态「新建」= 挂载底部输入弹卡（两段式，同删除确认框）
         onConfirm = {
             if (editing) confirmEdit() else {
+                createDraft = ""
                 createMounted = true
                 createRequested = true
             }
@@ -351,18 +350,25 @@ internal fun TodoGroupsSheet(
         )
     }
 
-    // 新建分组弹窗：叠加在浮层之后组合（画到浮层之上），返回键/遮罩点击由 FadeOverlayDialog 接管；
-    // 挂载与可见性分离（同删除确认框）。确认 = 追加分组经 onGroupsChange 整表写回落库，
+    // 新建分组弹卡（[BottomTextFieldCard]）：叠加在浮层之后组合（画到浮层之上），
+    // 返回键/遮罩点击/键盘让位由弹卡框架接管；挂载与可见性分离（同删除确认框）。
+    // 挂载即自动聚焦弹键盘、整卡被键盘顶起；确认 = 追加分组经 onGroupsChange 整表写回落库，
     // 落库失败的 Toast 由宿主（TodoScreen 的 commitGroups）统一处理
     if (createMounted) {
-        CreateGroupDialog(
-            existingNames = groups.map { it.name },
+        val createName = createDraft.trim()
+        BottomTextFieldCard(
             visible = createRequested,
+            onDismiss = { createRequested = false },
             onDismissed = { createMounted = false },
-            onCancel = { createRequested = false },
-            onCreate = { name ->
+            title = stringResource(R.string.todo_group_create_title),
+            placeholder = stringResource(R.string.todo_group_create_hint),
+            value = createDraft,
+            onValueChange = { createDraft = it },
+            // 实时校验：空名或与现有分组重名时确认钮置灰（同前一版居中弹窗约定）
+            confirmEnabled = createName.isNotEmpty() && createName !in groups.map { it.name },
+            onConfirm = {
                 createRequested = false
-                onGroupsChange(groups + TodoGroup(name))
+                onGroupsChange(groups + TodoGroup(createName))
             },
         )
     }
@@ -502,74 +508,6 @@ private fun DeleteGroupConfirmDialog(
                 modifier = Modifier.weight(1f),
                 enabled = visible,
                 onClick = onConfirm,
-            )
-        }
-    }
-}
-
-/**
- * 新建分组弹窗：[ConfirmDialogCard]（content 插槽版）+ 单行输入 + 取消/确认两颗胶囊，
- * 叠加在分组浮层**之后**组合（画到浮层之上，同 [DeleteGroupConfirmDialog]）；遮罩点击与
- * 返回键由 [FadeOverlayDialog] 内置 BackHandler 接管（后注册，先于浮层出口）。
- * 挂载即自动聚焦弹键盘（adjustResize 下窗口收缩，居中卡片自然避让键盘）。
- * **实时校验**：输入 trim 后为空或与 [existingNames] 重名时确认钮禁用（无需错误文案）。
- */
-@Composable
-private fun CreateGroupDialog(
-    existingNames: List<String>,
-    visible: Boolean,
-    onDismissed: () -> Unit,
-    onCancel: () -> Unit,
-    onCreate: (String) -> Unit,
-) {
-    var name by remember { mutableStateOf("") }
-    val focusRequester = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(visible) {
-        if (visible) {
-            focusRequester.requestFocus()
-            keyboard?.show()
-        } else {
-            keyboard?.hide()
-        }
-    }
-    val trimmed = name.trim()
-    val valid = trimmed.isNotEmpty() && trimmed !in existingNames
-    FadeOverlayDialog(
-        visible = visible,
-        onDismiss = onCancel,
-        onDismissed = onDismissed,
-        cardHorizontalPadding = 32.dp,
-    ) {
-        ConfirmDialogCard(
-            title = stringResource(R.string.todo_group_create_title),
-            buttons = {
-                DialogPillButton(
-                    label = stringResource(R.string.settings_cancel),
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                    enabled = visible,
-                    onClick = onCancel,
-                )
-                DialogPillButton(
-                    label = stringResource(R.string.edit_confirm),
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.weight(1f),
-                    enabled = visible && valid,
-                    onClick = { onCreate(trimmed) },
-                )
-            },
-        ) {
-            SheetTextField(
-                label = stringResource(R.string.todo_group_create_hint),
-                value = name,
-                onValueChange = { name = it },
-                imeAction = ImeAction.Done,
-                // 键盘「完成」等价点确认（同样受实时校验闸门）
-                onImeAction = { if (valid) onCreate(trimmed) },
-                focusRequester = focusRequester,
             )
         }
     }
