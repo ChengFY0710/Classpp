@@ -28,6 +28,8 @@
     <!-- 待办分组浮层：新建分组输入弹窗 -->
     <string name="todo_group_create_title">新建分组</string>
     <string name="todo_group_create_hint">输入分组名</string>
+    <!-- 待办分组浮层：编辑态重命名弹卡 -->
+    <string name="todo_group_rename_title">重命名分组</string>
     <string name="todo_new_title">新建待办</string>
     <string name="todo_edit_title">编辑待办</string>
     <string name="todo_name_label">待办名</string>

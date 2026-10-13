@@ -79,7 +79,12 @@ import com.fangyi.classpp.ui.theme.classppColors
  *   [GroupCard] 的置顶前缀契约。
  * - **删除**：底栏「删除」（空选择置灰）→ [DeleteGroupConfirmDialog] 两段式确认 → **立即生效**
  *   （[onDeleteGroups]，仅删分组），同时从草稿移除；不经顶栏「取消」撤销，删空自动退编辑。
- * - **重命名**：底栏按钮渲染但恒置灰占位（本次不做）。
+ * - **重命名**：底栏「重命名」（仅选中恰好一个时可点，可点 = primary 着色）→
+ *   [BottomTextFieldCard] 输入新名（空名/与其它组重名时确认置灰，同名 = 无操作可确认）→
+ *   **确认即立即生效**：真实列表改名经 [onGroupsChange] 写回（宿主按 renames 映射让顶栏
+ *   胶囊跟随到新名），草稿与选中集同步改名——**不经顶栏「取消」撤销**，同删除的立即生效
+ *   模型；弹卡「取消」/遮罩/返回 = 不改名。立即生效使草稿与真实列表的名字集合始终一致，
+ *   删除/拖拽等按名对齐的流程不会失配。
  * - **退出**：顶栏「确认」= [onGroupsChange] 写回草稿（顺序 + 置顶）并退编辑；「取消」/ 点遮罩 /
  *   系统返回 = 丢草稿退编辑（[requestClose] 三分支合一）；编辑态下拉关闭被 dragDismissEnabled
  *   禁用（松手回弹，不关浮层——只拦回调会把浮层卡在半拖出位置）。
@@ -90,11 +95,18 @@ import com.fangyi.classpp.ui.theme.classppColors
  * 全部 = 待办总数、自定义分组 = 该组名的待办数（分组数据已入 [TodoFile.groups]，
  * 引用完整性由仓库归一化维护）。
  *
- * 第一部分各行的点击仍为空占位（导航/过滤等接好后再实装）。
+ * 第一部分（状态/留存）各行点击仍为空占位（导航等接好后再实装）；普通态点击自定义分组 /
+ * 「未分组」/「全部」= 跳转对应过滤（[onOpenGroup] / [onOpenUngrouped] / [onOpenAll]：
+ * 宿主收起浮层并切顶栏胶囊）。
  *
  * @param groups 分组列表：顺序即显示序，置顶项须构成连续前缀（[TodoGroup] 不变式）
- * @param onGroupsChange 整表写回统一入口：编辑态确认（顺序 + 置顶）、普通态新建（追加分组）
+ * @param onGroupsChange 整表写回统一入口：编辑态确认（顺序 + 置顶）、普通态新建（追加分组）、
+ *   重命名（立即生效）；[renames] 为本次操作的重命名映射（原名 → 新名，供宿主让顶栏选中
+ *   跟随到新名），无重命名时传空表
  * @param onDeleteGroups 删除：立即从真实列表移除选中分组，不可经顶栏「取消」撤销
+ * @param onOpenGroup 普通态点击自定义分组：宿主收起浮层并把顶栏胶囊切到该分组
+ * @param onOpenUngrouped 普通态点击「未分组」行：宿主收起浮层并把顶栏胶囊切到「未分组」
+ * @param onOpenAll 普通态点击「全部」行：宿主收起浮层并把顶栏胶囊切回「全部」
  */
 @Composable
 internal fun TodoGroupsSheet(
@@ -103,11 +115,16 @@ internal fun TodoGroupsSheet(
     visible: Boolean,
     onDismiss: () -> Unit,
     onDismissed: () -> Unit,
-    onGroupsChange: (List<TodoGroup>) -> Unit,
+    onGroupsChange: (groups: List<TodoGroup>, renames: Map<String, String>) -> Unit,
     onDeleteGroups: (List<String>) -> Unit,
+    onOpenGroup: (String) -> Unit,
+    onOpenUngrouped: () -> Unit,
+    onOpenAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // ——— 编辑态状态机（全 remember：进程重建 = 草稿丢 = 等价取消，无数据损失）———
+    // ——— 编辑态状态机（全 remember：进程重建 = 草稿丢 = 等价取消，无数据损失；
+    // 例外：重命名确认即立即生效，不经顶栏「取消」撤销——同删除的立即生效模型，
+    // 详见重命名弹卡处注释）———
     var editing by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(emptySet<String>()) }
     // 编辑态显示源：进入时快照 groups，置顶/拖拽只改它，确认才写回
@@ -120,6 +137,13 @@ internal fun TodoGroupsSheet(
     var createMounted by remember { mutableStateOf(false) }
     var createDraft by remember { mutableStateOf("") }
     if (createRequested) createMounted = true
+    // 重命名弹卡：编辑态底栏「重命名」触发（选中恰好一个时可用）；renameFrom 是打开时的
+    // 原组名快照（校验与确认都以它对齐），renameDraft 是受控草稿（打开时填原组名）
+    var renameVisible by remember { mutableStateOf(false) }
+    var renameMounted by remember { mutableStateOf(false) }
+    var renameFrom by remember { mutableStateOf("") }
+    var renameDraft by remember { mutableStateOf("") }
+    if (renameVisible) renameMounted = true
 
     val displayGroups = if (editing) draft else groups
 
@@ -136,7 +160,8 @@ internal fun TodoGroupsSheet(
     }
 
     fun confirmEdit() {
-        onGroupsChange(draft)
+        // 草稿写回无重命名映射（重命名在弹卡确认时已立即生效）
+        onGroupsChange(draft, emptyMap())
         exitEdit()
     }
 
@@ -196,6 +221,9 @@ internal fun TodoGroupsSheet(
         ),
         onDismiss = requestClose,
         visible = visible,
+        // 层级动效：新建/重命名弹卡或删除确认框在场时，本浮层缩小后退（同 NewTodoSheet
+        // 的 covered 约定，用可见请求态而非挂载态——退场时与上层收场同帧反向恢复）
+        covered = createRequested || renameVisible || deleteTargets != null,
         onDismissed = onDismissed,
         // 编辑态禁用下拉关闭：下拉手势只回弹不触发关闭（拦成「退编辑」会与手势语义打架，
         // 只拦回调则闸门落下没人真关浮层、整层卡在半拖出位置）
@@ -209,9 +237,18 @@ internal fun TodoGroupsSheet(
                 editing = editing,
                 pinAction = currentPinAction,
                 hasSelection = selectedIds.isNotEmpty(),
+                // 重命名仅选中恰好一个时可用（多选无语义、空选择无处下手）
+                renameEnabled = selectedIds.size == 1,
                 onPin = onPin,
-                // 重命名恒置灰占位（本次不做），点击到不了这里
-                onRename = {},
+                onRename = {
+                    // 目标 = 草稿里选中的那个组（改名立即生效，快照原组名与草稿初值）
+                    displayGroups.firstOrNull { it.name in selectedIds }?.let { target ->
+                        renameFrom = target.name
+                        renameDraft = target.name
+                        renameMounted = true
+                        renameVisible = true
+                    }
+                },
                 onDelete = { deleteTargets = displayGroups.filter { it.name in selectedIds }.map { it.name } },
             )
         },
@@ -270,25 +307,27 @@ internal fun TodoGroupsSheet(
             }
             // 第二部分：分组。标题复用顶栏动作块的「分组」文案（同一语义词）
             CardSection(title = stringResource(R.string.todo_action_group)) {
-                // 未分组单行卡：group == null 的待办数（引用完整性由仓库归一化维护）
+                // 未分组单行卡：group == null 的待办数（引用完整性由仓库归一化维护）；
+                // 点击 = 跳转「未分组」过滤（宿主收起浮层并切顶栏胶囊）——编辑态不触发
+                // （与 GroupCard 编辑态点击 = 多选对齐，避免静默丢弃草稿）
                 SettingsCardwithIcon(
                     items = listOf(
                         SettingsCardwithIconItem(
                             icon = R.drawable.ic_folder_hint,
                             label = stringResource(R.string.todo_group_ungrouped),
                             value = ungroupedCount.toString(),
-                            onClick = {},
+                            onClick = { if (!editing) onOpenUngrouped() },
                         ),
                     ),
                 )
-                // 全部单行卡：待办总数
+                // 全部单行卡：待办总数；点击 = 跳转「全部」过滤（同未分组，编辑态不触发）
                 SettingsCardwithIcon(
                     items = listOf(
                         SettingsCardwithIconItem(
                             icon = R.drawable.ic_folder,
                             label = stringResource(R.string.todo_group_all),
                             value = totalCount.toString(),
-                            onClick = {},
+                            onClick = { if (!editing) onOpenAll() },
                         ),
                     ),
                 )
@@ -308,7 +347,8 @@ internal fun TodoGroupsSheet(
                         editing = editing,
                         selectedIds = selectedIds,
                         onEnterEdit = { enterEdit(it) },
-                        onItemClick = {},
+                        // 普通态点击 = 跳转该分组（宿主收起浮层并切顶栏胶囊）；编辑态点击是多选切换
+                        onItemClick = { onOpenGroup(it) },
                         onToggleSelect = { id ->
                             selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
                         },
@@ -368,14 +408,52 @@ internal fun TodoGroupsSheet(
             confirmEnabled = createName.isNotEmpty() && createName !in groups.map { it.name },
             onConfirm = {
                 createRequested = false
-                onGroupsChange(groups + TodoGroup(createName))
+                onGroupsChange(groups + TodoGroup(createName), emptyMap())
+            },
+        )
+    }
+
+    // 重命名弹卡（[BottomTextFieldCard]，编辑态底栏「重命名」触发）：位置同新建弹卡。
+    // **确认即立即生效**（同删除的模型，不经顶栏「取消」撤销）：真实列表改名写回
+    // （顶栏经 renames 映射跟随到新名），草稿与选中集同步改名——草稿与真实列表的名字
+    // 集合因此始终一致，删除/拖拽等按名对齐的流程不会失配；「取消」/遮罩/返回只关弹卡
+    // 不改名。校验基准取真实分组表（名字集合与草稿一致，仅顺序/置顶可不同）：
+    // 空名禁用；与原组同名 = 无操作（允许确认）；与其它组重名禁用
+    if (renameMounted) {
+        val renameName = renameDraft.trim()
+        BottomTextFieldCard(
+            visible = renameVisible,
+            onDismiss = { renameVisible = false },
+            onDismissed = { renameMounted = false },
+            title = stringResource(R.string.todo_group_rename_title),
+            placeholder = stringResource(R.string.todo_group_create_hint),
+            value = renameDraft,
+            onValueChange = { renameDraft = it },
+            confirmEnabled = renameName.isNotEmpty() &&
+                groups.none { it.name == renameName && it.name != renameFrom },
+            onConfirm = {
+                renameVisible = false
+                val to = renameDraft.trim()
+                if (to.isNotEmpty() && to != renameFrom) {
+                    // 立即生效：真实列表改名写回 + 草稿/选中集同步（保持名字集合一致）
+                    onGroupsChange(
+                        groups.map { g -> if (g.name == renameFrom) g.copy(name = to) else g },
+                        mapOf(renameFrom to to),
+                    )
+                    draft = draft.map { g -> if (g.name == renameFrom) g.copy(name = to) else g }
+                    selectedIds = selectedIds.mapTo(mutableSetOf()) { if (it == renameFrom) to else it }
+                }
             },
         )
     }
 }
 
 /**
- * 编辑态底部操作栏：置顶 / 重命名（恒置灰占位）/ 删除三颗胶囊，整块从底部滑入滑出。
+ * 编辑态底部操作栏：置顶 / 重命名 / 删除三颗胶囊，整块从底部滑入滑出。
+ *
+ * 置顶与重命名按可用性着色（可点 = primary、置灰 = negative）：置顶三态由 [pinAction]
+ * 判定，重命名仅"选中恰好一个"时可用（[renameEnabled]，多选/空选置灰）；删除按
+ * [hasSelection] 着色。三颗胶囊的点击都只上报，行为由调用方接管。
  *
  * 进出场 = 浮层同源的 [Motion.Overlay] 非线性曲线（进 [Motion.SheetEnterMillis]、
  * 出 [Motion.SheetExitMillis]），与浮层本体同一套手感。渐变兜底 + 12/24 内距 +
@@ -387,6 +465,7 @@ private fun EditActionRow(
     editing: Boolean,
     pinAction: PinAction,
     hasSelection: Boolean,
+    renameEnabled: Boolean,
     onPin: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
@@ -439,9 +518,9 @@ private fun EditActionRow(
                     label = stringResource(R.string.edit_rename),
                     icon = R.drawable.ic_rename,
                     containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = negative,
+                    contentColor = if (renameEnabled) MaterialTheme.colorScheme.primary else negative,
                     onClick = onRename,
-                    enabled = false,
+                    enabled = renameEnabled,
                     iconSize = 25.dp,
                     topPadding = 10.dp,
                     bottomPadding = 10.dp,

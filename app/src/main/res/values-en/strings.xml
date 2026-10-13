@@ -28,6 +28,8 @@
     <!-- Todo groups sheet: create-group input dialog -->
     <string name="todo_group_create_title">New Group</string>
     <string name="todo_group_create_hint">Enter group name</string>
+    <!-- Todo groups sheet: edit-mode rename card -->
+    <string name="todo_group_rename_title">Rename Group</string>
     <string name="month_day_format">%1$d/%2$d</string>
     <string name="date_title_format">%1$s %2$s</string>
     <string name="back_to_current_week">Back to this week</string>
