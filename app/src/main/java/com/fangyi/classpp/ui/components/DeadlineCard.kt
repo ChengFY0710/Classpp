@@ -43,14 +43,15 @@ private const val MILLIS_PER_DAY = 86_400_000L
  * [onDatePickRequest] 请求宿主弹日期轮（BottomDateSelectCard，页内覆盖层画不进卡片里
  * ——浮层内容会被 Surface 裁剪，由宿主组合在浮层级），确认后接着经 [onTimePickRequest]
  * 弹时刻轮，两步都确认才经 [onChange] 回写（任一步取消 = 不变更，日期在链式闭包间传递）。
- * 已设截止时日期轮带一枚「清除」第三动作（宿主经 neutralAction 下发），点按回写 null 对
- * ——模型约束截止日期与时刻成对出现或同时为空（TodoValidator）。
+ * 已设截止时日期轮带一枚整宽「清除」胶囊（弹卡私有的 ClearPillButton，宿主经
+ * BottomDateSelectCard 的 onClear 下发），点按回写 null 对——模型约束截止日期与时刻
+ * 成对出现或同时为空（TodoValidator）。
  *
  * 行规格与 [DateSelectionCard] 的「自定义日期」子行同款：[SheetCardShape] 连续圆角、
  * 行高下限 [SheetFieldHeight]、行内距 16/14 画在点击区内侧（按压反馈铺满整行，取代涟漪），
- * label 走 fieldLabel、已设值走 fieldValue，未设显示灰「无」（fieldPlaceholder），
- * 尾部 20dp 右箭头 primary。展示格式 `2026-9-7 8:00`（横杠不补零，时刻归一化走
- * [TimeText.format]）。
+ * label 走 fieldLabel，值（含未设的「无」）一律走 fieldValue——未设也显 Primary，
+ * 与已设值同色；尾部 20dp 右箭头 primary。展示格式 `2026-9-7 8:00`（横杠不补零，
+ * 时刻归一化走 [TimeText.format]）。
  *
  * 无状态受控组件：截止值由调用方持有。
  */
@@ -104,11 +105,9 @@ fun DeadlineCard(
             } else {
                 stringResource(R.string.deadline_card_none)
             },
-            style = if (deadlineDate != null && deadlineMinute != null) {
-                MaterialTheme.classppTextStyles.fieldValue
-            } else {
-                MaterialTheme.classppTextStyles.fieldPlaceholder
-            },
+            // 未设的「无」同已设值一样走 fieldValue（Primary 色）：这一位是「当前截止」的值位，
+            // 无色占位会让右侧看起来缺了一块（置灰是输入占位语义，见 fieldPlaceholder）
+            style = MaterialTheme.classppTextStyles.fieldValue,
         )
         Spacer(Modifier.width(6.dp))
         Icon(

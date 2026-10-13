@@ -179,11 +179,23 @@ internal fun NewTodoSheet(
     var deadlineTimeCallback by remember { mutableStateOf<((Int) -> Unit)?>(null) }
 
     // 截止日期滚轮弹窗（BottomDateSelectCard）：确认把日期交回 DeadlineCard 的链式
-    // 流程再弹时刻轮；「清除」把截止回写为 null 对（模型约束成对出现/同时为空）
+    // 流程再弹时刻轮；「清除」把截止回写为 null 对（模型约束成对出现/同时为空）并关闭。
+    // 「清除」胶囊的在场与否取挂载时的快照（deadlineClearAvailable，见下）：它跟着截止
+    // 状态派生的话，点按清空后胶囊会在出场滑出中途凭空消失
     var deadlineDateVisible by remember { mutableStateOf(false) }
     var deadlineDateMounted by remember { mutableStateOf(false) }
     var deadlineDateInitial by remember { mutableStateOf(IsoDate.today()) }
     var deadlineDateCallback by remember { mutableStateOf<((IsoDate) -> Unit)?>(null) }
+    var deadlineClearAvailable by remember { mutableStateOf(false) }
+
+    // 「清除」回调：回写 null 对（模型约束截止日期与时刻成对出现/同时为空）并停掉日期步的
+    // 待确认回调——清除即终态，不会再接着弹时刻轮；请求关闭后由弹卡两段式播完出场
+    val clearDeadline: () -> Unit = {
+        deadlineDateVisible = false
+        deadlineDateCallback = null
+        deadlineDate = null
+        deadlineMinute = null
+    }
 
     // 待办「自定义日期」滚轮弹窗（DateSelectionCard 的自定义行上报）
     var customDateVisible by remember { mutableStateOf(false) }
@@ -318,6 +330,9 @@ internal fun NewTodoSheet(
                     onDatePickRequest = { initialDate, onPicked ->
                         deadlineDateInitial = initialDate
                         deadlineDateCallback = onPicked
+                        // 「清除」胶囊的在场快照：此刻截止已设才给清除（整个弹窗生命周期内
+                        // 稳定，见声明处）
+                        deadlineClearAvailable = deadlineDate != null && deadlineMinute != null
                         deadlineDateMounted = true
                         deadlineDateVisible = true
                     },
@@ -458,8 +473,9 @@ internal fun NewTodoSheet(
     }
 
     // 截止日期滚轮弹窗画在表单浮层之后（组合顺序即绘制顺序）。确认把日期交回
-    // DeadlineCard 的链式流程再弹时刻轮；「清除」直接回写 null 对并关闭（取消/遮罩/
-    // 返回只请求关闭，播完退场才卸载——两段式，同下方的时刻轮）
+    // DeadlineCard 的链式流程再弹时刻轮；「清除」回写 null 对（模型约束成对出现/同时为空）
+    // 后关闭，截止卡随即显示「无」；取消/遮罩/返回只请求关闭，播完退场才卸载
+    // （两段式，同下方的时刻轮）
     if (deadlineDateMounted) {
         BottomDateSelectCard(
             visible = deadlineDateVisible,
@@ -471,23 +487,9 @@ internal fun NewTodoSheet(
             hazeState = sheetHazeState,
             title = stringResource(R.string.deadline_card_label),
             initialDate = deadlineDateInitial,
-            // 已设截止才出现「清除」：回写 null 对（约束成对出现/同时为空）
-            neutralAction = if (deadlineDate != null && deadlineMinute != null) {
-                SheetTopAction(
-                    label = stringResource(R.string.deadline_card_clear),
-                    icon = R.drawable.ic_delete_filled,
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    onClick = {
-                        deadlineDateVisible = false
-                        deadlineDateCallback = null
-                        deadlineDate = null
-                        deadlineMinute = null
-                    },
-                )
-            } else {
-                null
-            },
+            // 已设截止才出现「清除」（挂载快照，见声明处）：弹卡在滚轮下方私有渲染那枚
+            // 整宽白胶囊，点按只把回调交上来（见 clearDeadline）
+            onClear = if (deadlineClearAvailable) clearDeadline else null,
             onConfirm = { date ->
                 deadlineDateVisible = false
                 deadlineDateCallback?.invoke(date)

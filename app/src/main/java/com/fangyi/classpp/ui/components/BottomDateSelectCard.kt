@@ -1,8 +1,15 @@
 package com.fangyi.classpp.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -11,12 +18,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.theme.PillShape
+import com.fangyi.classpp.ui.theme.classppTextStyles
 import dev.chrisbanes.haze.HazeState
 import java.util.GregorianCalendar
 import java.util.TimeZone
@@ -25,6 +38,18 @@ private const val MILLIS_PER_DAY = 86_400_000L
 
 /** 日期轮数字字号：年/月/日三列比时间轮的两列挤（年轮还是 4 位），比共享默认小一档 */
 private val WheelNumberFontSize = 32.sp
+
+/** 「清除」宽胶囊的内距 8/13、图标 30dp、图文间距 6dp：同顶栏 [SheetPillButton] 的规格 */
+private val ClearPillVerticalPadding = 8.dp
+private val ClearPillHorizontalPadding = 13.dp
+private val ClearPillIconSize = 30.dp
+private val ClearPillIconTextSpacing = 6.dp
+
+/** 「清除」宽胶囊距卡片左右缘 15dp、距滚轮 20dp：分别对齐 BottomSelectSheet 顶栏按钮行的
+ *  15dp 与内容槽自带的底部内距 20dp——胶囊与滚轮、卡片底缘的位置关系因此与旧的第三动作
+ *  槽位完全一致 */
+private val ClearPillHorizontalMargin = 15.dp
+private val ClearPillTopSpacing = 20.dp
 
 /** 月/日两位补零显示（08 月 27 日） */
 private fun pad2(value: Int): String = value.toString().padStart(2, '0')
@@ -64,6 +89,10 @@ private fun IsoDate.toYearMonthDay(): Triple<Int, Int, Int> {
  * 选择，移出组合（[onDismissed] 之后）重建时回到 [initialDate]。[initialDate] 的年份
  * 落在 [yearRange] 之外时年轮停在最近边界。其余行为（两段式关闭、遮罩、卡片磨砂
  * [hazeState]、阴影参数 [shadowAlpha]）同 [BottomSelectSheet]。
+ *
+ * [onClear] 非空时在滚轮下方多画一枚整宽的「清除」白胶囊（[ClearPillButton]，本组件私有）：
+ * 点按只经它回调，清除后的回写与关闭都由宿主在回调里完成（清除是终态，不会接着弹时刻轮）；
+ * null = 不渲染（未设截止时没有可清除的值）。
  */
 @Composable
 fun BottomDateSelectCard(
@@ -75,8 +104,8 @@ fun BottomDateSelectCard(
     yearRange: IntRange = defaultYearRange(),
     shadowAlpha: Float = 0.3f,
     hazeState: HazeState? = null,
-    // 可选第三动作（截止日期流程的「清除」等），透传给 [BottomSelectSheet]
-    neutralAction: SheetTopAction? = null,
+    // 可选「清除」动作：非空时在滚轮下方渲染本组件私有的整宽白胶囊（见 [ClearPillButton]）
+    onClear: (() -> Unit)? = null,
     onConfirm: (date: IsoDate) -> Unit,
     onDismissed: () -> Unit = {},
 ) {
@@ -116,7 +145,6 @@ fun BottomDateSelectCard(
         onDismissed = onDismissed,
         shadowAlpha = shadowAlpha,
         hazeState = hazeState,
-        neutralAction = neutralAction,
         modifier = modifier,
         onConfirm = {
             // 兜底收敛：格数联动的副作用晚于滚动一拍时，防 31 日 + 30 天月这类非法组合
@@ -154,5 +182,72 @@ fun BottomDateSelectCard(
                 unit = stringResource(R.string.date_unit_day),
             )
         }
+        // 「清除」宽胶囊（可选，见 [onClear]）：上方与滚轮留 [ClearPillTopSpacing]（20dp，
+        // 与内容槽的底部内距同值），下方则是内容槽自带的底部内距——这枚胶囊原本挂在内容槽
+        // 之外（BottomSelectSheet 的第三动作槽位），两个 20dp 的分工刚好对调，位置关系不变
+        onClear?.let { clear ->
+            Spacer(Modifier.size(ClearPillTopSpacing))
+            ClearPillButton(
+                // 收场滑出期间（visible 已 false）点击与按压反馈一并失效：与弹卡顶栏
+                // 各按钮的收场闸门同效，这里没有 closeRequested 可读，用可见态顶替
+                enabled = visible,
+                modifier = Modifier.padding(horizontal = ClearPillHorizontalMargin),
+                onClick = clear,
+            )
+        }
+    }
+}
+
+/**
+ * 「清除」宽胶囊（本组件私有）：整宽白胶囊，图标在左、文字在右、「图标 + 文字」落在胶囊
+ * 正中，整行可点（按压反馈铺满整行、取代涟漪）。
+ *
+ * 规格与顶栏 [SheetPillButton] 一致——[PillShape] 形状、surface 底 onSurface 内容色、
+ * [classppTextStyles.pillButton] 文字、图标 30dp、45dp 撑开的大柔影与 1.10f 按压放大；
+ * 差别只在排布：那一枚的宽度随内容自适应、内容靠起始侧，这一枚是整宽使用场景，故收在
+ * 本组件内私有实现，不给共享组件开参数（该改动会波及所有顶栏胶囊）。
+ *
+ * [enabled] 传宿主的可见态（见调用处）：出场滑出期间点击与按压反馈一并失效。
+ */
+@Composable
+private fun ClearPillButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val contentColor = MaterialTheme.colorScheme.onSurface
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .pressClickable(PillShape, scale = 1.10f, enabled = enabled, onClick = onClick)
+            .graphicsLayer {
+                shape = PillShape
+                clip = true
+                // 大柔影：同顶栏胶囊（高 elevation 撑开模糊半径、低透明度阴影色压存在感）
+                shadowElevation = 45.dp.toPx()
+                spotShadowColor = Color.Black.copy(alpha = 0.3f)
+            }
+            .background(MaterialTheme.colorScheme.surface, PillShape)
+            .padding(
+                horizontal = ClearPillHorizontalPadding,
+                vertical = ClearPillVerticalPadding,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(
+            ClearPillIconTextSpacing,
+            Alignment.CenterHorizontally,
+        ),
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_delete_filled),
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier.size(ClearPillIconSize),
+        )
+        Text(
+            text = stringResource(R.string.deadline_card_clear),
+            style = MaterialTheme.classppTextStyles.pillButton,
+            color = contentColor,
+        )
     }
 }

@@ -735,6 +735,15 @@ private fun DeadlineCardPreview() = ClassppTheme {
     var timeVisible by remember { mutableStateOf(false) }
     var timeInitialMinute by remember { mutableStateOf(0) }
     var timeCallback by remember { mutableStateOf<((Int) -> Unit)?>(null) }
+    // 「清除」胶囊的在场快照（同 NewTodoSheet）：挂载时定，点按清空后出场期间不消失
+    var clearAvailable by remember { mutableStateOf(false) }
+    // 「清除」回调（同 NewTodoSheet）：回写 null 对并停掉日期步的待确认回调
+    val clearDeadline: () -> Unit = {
+        dateVisible = false
+        dateCallback = null
+        deadlineDate = null
+        deadlineMinute = null
+    }
     Box {
         Column(
             modifier = Modifier
@@ -752,6 +761,7 @@ private fun DeadlineCardPreview() = ClassppTheme {
                 onDatePickRequest = { initialDate, onPicked ->
                     dateInitial = initialDate
                     dateCallback = onPicked
+                    clearAvailable = deadlineDate != null && deadlineMinute != null
                     dateMounted = true
                     dateVisible = true
                 },
@@ -773,23 +783,8 @@ private fun DeadlineCardPreview() = ClassppTheme {
                 },
                 title = "截止日期",
                 initialDate = dateInitial,
-                // 已设截止才出现「清除」：回写 null 对（约束成对出现/同时为空）
-                neutralAction = if (deadlineDate != null && deadlineMinute != null) {
-                    SheetTopAction(
-                        label = "清除",
-                        icon = R.drawable.ic_delete_filled,
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                        onClick = {
-                            dateVisible = false
-                            dateCallback = null
-                            deadlineDate = null
-                            deadlineMinute = null
-                        },
-                    )
-                } else {
-                    null
-                },
+                // 已设截止才出现「清除」（挂载快照）：弹卡在滚轮下方私有渲染那枚整宽白胶囊
+                onClear = if (clearAvailable) clearDeadline else null,
                 onConfirm = { date ->
                     dateVisible = false
                     dateCallback?.invoke(date)
