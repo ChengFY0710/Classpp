@@ -18,7 +18,8 @@ https://github.com/Kyant0/Shapes
 Developing...
 
 已知bug：
-+ 课表内跨节课程所占用节数内周数不冲突的课程会被直接覆盖。
++ OverlaySheet组件，向下拖动手势线但未超出退出阈值时，返回动画有跳变。
++ 待办编辑页，键盘聚焦滚动性能待优化。
 + 浮层内输入框唤起输入法后，点击popupSelectCard组件，键盘闪烁退出。
 + 设置页入场动画性能待优化。
 
