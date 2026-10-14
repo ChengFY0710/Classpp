@@ -30,6 +30,10 @@
     <string name="todo_group_create_hint">Enter group name</string>
     <!-- Todo groups sheet: edit-mode rename card -->
     <string name="todo_group_rename_title">Rename Group</string>
+    <string name="todo_new_title">New Todo</string>
+    <string name="todo_edit_title">Edit Todo</string>
+    <string name="todo_name_label">Todo name</string>
+    <string name="todo_name_hint">e.g. Renew passport</string>
     <string name="month_day_format">%1$d/%2$d</string>
     <string name="date_title_format">%1$s %2$s</string>
     <string name="back_to_current_week">Back to this week</string>
@@ -216,6 +220,7 @@
     <!-- Course details sheet -->
     <string name="detail_title">Course Details</string>
     <string name="detail_close">Close</string>
+    <string name="detail_edit">Edit</string>
     <string name="detail_teacher">Teacher</string>
     <string name="detail_location">Location</string>
     <string name="detail_note_ph">Tap to add a note</string>
@@ -264,9 +269,26 @@
     <string name="todo_section_overdue">Overdue</string>
     <string name="todo_section_archived">Archived</string>
     <string name="todo_section_trash">Recently Deleted</string>
+    <string name="todo_error_save_failed">Save failed, please try again later</string>
 
     <string name="todo_detail_title">Todo Details</string>
     <string name="todo_detail_time_label">Time</string>
+    <!-- Edit todo sheet: delete confirmation -->
+    <string name="todo_delete_title">Delete Todo</string>
+    <string name="todo_delete_message">“%1$s” will be deleted. This cannot be undone.</string>
+    <!-- New todo sheet: section titles and form fields -->
+    <string name="todo_section_reminder">Reminders &amp; priority</string>
+    <string name="todo_section_date_time">Date &amp; time</string>
+    <string name="todo_section_tags">Tags</string>
+    <string name="todo_section_more">More</string>
+    <string name="todo_location_label">Location</string>
+    <string name="todo_location_hint">Location</string>
+    <string name="todo_note_hint">Tap to add a note</string>
+    <!-- Time kind three options (RowChoiceCard) -->
+    <string name="todo_time_none">None</string>
+    <string name="todo_time_all_day">All day</string>
+    <string name="todo_time_period">Time range</string>
+    <string name="todo_error_dates_required">Select a date first</string>
 
     <!-- Todo urgency -->
     <string name="urgency_critical">Critical</string>
@@ -295,4 +317,21 @@
     <string name="repeat_weekly">Every week</string>
     <string name="repeat_monthly">Every month</string>
     <string name="repeat_yearly">Every year</string>
+
+    <!-- Deadline card (DeadlineCard): single-tap picker row -->
+    <string name="deadline_card_label">Deadline</string>
+    <string name="deadline_card_none">None</string>
+    <string name="deadline_card_time_title">Due Time</string>
+    <string name="deadline_card_clear">Clear</string>
+
+    <!-- Time selection sheet (BottomTimeSelectCard): hour/minute wheels -->
+    <string name="time_select_title">Select Time</string>
+    <string name="time_unit_hour">Hour</string>
+    <string name="time_unit_minute">Minute</string>
+
+    <!-- Date selection sheet (BottomDateSelectCard): year/month/day wheels -->
+    <string name="date_select_title">Select Date</string>
+    <string name="date_unit_year">Year</string>
+    <string name="date_unit_month">Month</string>
+    <string name="date_unit_day">Day</string>
 </resources>

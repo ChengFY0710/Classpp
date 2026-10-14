@@ -39,7 +39,7 @@ private const val DEFAULT_DEADLINE_MINUTE = 480
 private const val MILLIS_PER_DAY = 86_400_000L
 
 /**
- * 截止日期卡：单行「截止日期 + 日期时刻值 + >」白卡，整行可点，点按先经
+ * 截止日期卡：单行「行首闹钟图标 + 截止日期 + 日期时刻值 + >」白卡，整行可点，点按先经
  * [onDatePickRequest] 请求宿主弹日期轮（BottomDateSelectCard，页内覆盖层画不进卡片里
  * ——浮层内容会被 Surface 裁剪，由宿主组合在浮层级），确认后接着经 [onTimePickRequest]
  * 弹时刻轮，两步都确认才经 [onChange] 回写（任一步取消 = 不变更，日期在链式闭包间传递）。
@@ -49,6 +49,7 @@ private const val MILLIS_PER_DAY = 86_400_000L
  *
  * 行规格与 [DateSelectionCard] 的「自定义日期」子行同款：[SheetCardShape] 连续圆角、
  * 行高下限 [SheetFieldHeight]、行内距 16/14 画在点击区内侧（按压反馈铺满整行，取代涟漪），
+ * 行首 ic_clock_alarm 图标 24dp onSurface、与 label 间距 12dp（同 [SettingsCardwithIcon]），
  * label 走 fieldLabel，值（含未设的「无」）一律走 fieldValue——未设也显 Primary，
  * 与已设值同色；尾部 20dp 右箭头 primary。展示格式 `2026-9-7 8:00`（横杠不补零，
  * 时刻归一化走 [TimeText.format]）。
@@ -94,6 +95,13 @@ fun DeadlineCard(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_clock_alarm),
+            contentDescription = null,
+            tint = colors.onSurface,
+            modifier = Modifier.size(24.dp),
+        )
+        Spacer(Modifier.width(12.dp))
         Text(
             text = stringResource(R.string.deadline_card_label),
             style = MaterialTheme.classppTextStyles.fieldLabel,

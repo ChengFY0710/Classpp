@@ -68,7 +68,8 @@ sealed interface DateSelection {
 enum class RepeatFrequency { Daily, Weekly, Monthly, Yearly }
 
 /**
- * 日期选择卡片：白卡主行整行可点，在两种模式间切换——
+ * 日期选择卡片：白卡主行整行可点（行首 ic_clock 图标 24dp onSurface + 12dp 间距，同
+ * [SettingsCardwithIcon]），在两种模式间切换——
  *
  * - 值模式（[expanded] = false）：`日期 + 当前值 + <>`；值为 [DateSelection.Custom]
  *   时主行下方追加「自定义日期 / 重复」两行（设计稿卡一、卡三、卡四）。
@@ -88,7 +89,8 @@ enum class RepeatFrequency { Daily, Weekly, Monthly, Yearly }
  * 裁剪，由宿主组合在浮层级）。
  *
  * 规格：白卡 [SheetCardShape] 连续圆角，行高下限 [SheetFieldHeight]，行内距 16/14 画在
- * 点击区内侧（按压反馈铺满整行，ui.motion 的 pressClickable 取代涟漪）；label 走 fieldLabel，
+ * 点击区内侧（按压反馈铺满整行，ui.motion 的 pressClickable 取代涟漪）；行首 ic_clock
+ * 图标 24dp onSurface、与 label 间距 12dp（同 [SettingsCardwithIcon]），label 走 fieldLabel，
  * 值与快捷选项走 fieldValue，尾部图标 20dp primary。
  */
 @Composable
@@ -135,6 +137,13 @@ fun DateSelectionCard(
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_clock),
+                contentDescription = null,
+                tint = colors.onSurface,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(12.dp))
             Text(
                 text = stringResource(R.string.date_card_label),
                 style = MaterialTheme.classppTextStyles.fieldLabel,
