@@ -54,7 +54,7 @@ val DarkSurface = Color(0xFF292D32)
 val DarkOnSurface = Color(0xFFE4E7EA)
 val DarkOnSurfaceVariant = Color(0xFF9BA2AB)
 
-val DarkBottomSheetColor = Color(0xFF0F1114)
+val DarkBottomSheetColor = Color(0xFF0B0C0F)
 
 val DarkSurfaceContainerHigh = Color(0xFF1E2227)
 

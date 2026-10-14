@@ -69,7 +69,8 @@ private val UnitGap: Dp = 10.dp
 
 /**
  * 数字滚轮积木（BottomTimeSelectCard / BottomDateSelectCard 共用）：垂直 draggable 的
- * 自绘选择轮。选中数字 onSurface 全尺寸；离中心越远逐帧混向 classppColors.secondaryText、
+ * 自绘选择轮。选中数字 onSurface 全尺寸、字重 SemiBold，未选中字重 Medium（字重离散，
+ * 跨半格直接切换，不随距离插值）；离中心越远逐帧混向 classppColors.secondaryText、
  * 缩小（邻格 [AdjacentScale] 倍）并渐隐（[FadeOutItems] 格处完全消失，早于视口裁剪边），
  * 数字跟手移动时上下格连续插值——上面的渐隐缩小消失、下面的渐隐放大出现。
  * 滚动期零重组：位移、颜色、透明度都是 draw 期从滚动量算出的纯函数（常驻组合零重组哲学）。
@@ -231,6 +232,9 @@ internal fun NumberWheel(
         fontWeight = FontWeight.Medium,
         fontFeatureSettings = "tnum",
     )
+    // 选中格字重 SemiBold、未选中 Medium：字重离散（两档字形轮廓不同，不像颜色能插值），
+    // 跨半格直接切换；单位锚点量宽也用它，与循环里 centerIndex 判据保持一致
+    val selectedStyle = numberStyle.copy(fontWeight = FontWeight.SemiBold)
     // 单位样式：静态灰字（secondaryText），不随滚动缩放/渐隐
     val unitStyle = TextStyle(fontSize = WheelUnitFontSize, fontWeight = FontWeight.Medium)
 
@@ -263,6 +267,7 @@ internal fun NumberWheel(
         val scrollValue = state.scroll.value
         val lo = floor((scrollValue - half - item) / item).toInt().coerceAtLeast(0)
         val hi = floor((scrollValue + half + item) / item).toInt().coerceAtMost(state.count - 1)
+        val centerIndex = (scrollValue / item).roundToInt().coerceIn(0, state.count - 1)
         for (i in lo..hi) {
             // 该数值格中心相对滚轮中心的偏移；d = 离中心的距离（格）
             val y = i * item - scrollValue
@@ -271,7 +276,8 @@ internal fun NumberWheel(
             val fade = ((d - 1f) / (FadeOutItems - 1f)).coerceIn(0f, 1f)
             val scale = lerp(1f, AdjacentScale, d.coerceAtMost(1f)) * lerp(1f, FadeOutScale, fade)
             val color = lerp(onSurface, sideColor, d.coerceAtMost(1f))
-            val layout = textMeasurer.measure(format(i), numberStyle)
+            val layout =
+                textMeasurer.measure(format(i), if (i == centerIndex) selectedStyle else numberStyle)
             withTransform({
                 translate(size.width / 2f, half + y)
                 scale(scale, scale, pivot = Offset.Zero)
@@ -284,10 +290,10 @@ internal fun NumberWheel(
                 )
             }
         }
-        // 单位：贴中心数字右缘 [UnitGap]、钉在轮子中线——静态标签，不随滚动位移或缩放
+        // 单位：贴中心数字右缘 [UnitGap]、钉在轮子中线——静态标签，不随滚动位移或缩放；
+        // 中心数字恒为选中格（SemiBold），量宽用 selectedStyle 才和画出来的对齐
         unit?.let { unitText ->
-            val centerIndex = (scrollValue / item).roundToInt().coerceIn(0, state.count - 1)
-            val numberLayout = textMeasurer.measure(format(centerIndex), numberStyle)
+            val numberLayout = textMeasurer.measure(format(centerIndex), selectedStyle)
             val unitLayout = textMeasurer.measure(unitText, unitStyle)
             drawText(
                 unitLayout,

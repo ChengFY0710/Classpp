@@ -52,8 +52,8 @@ private val UnitGapBelow: Dp = 8.dp
  * 横向数字滚轮积木（[BottomNumberSelectCard] 宿主）：水平 draggable + 点选（点哪格吸哪格）
  * 的自绘选择轮，竖向 [NumberWheel] 的横向孪生——滚动状态直接复用 [WheelState]（传格宽
  * itemSize），拖拽跟手、惯性滑行、Motion.Settle 吸附、点选吸附、越界橡皮筋与竖向完全同一份代码；
- * 缩放/混色/
- * 渐隐公式逐条照搬，仅坐标轴换成 x（可见格数与渐隐尾按设计稿放宽到 ±2 格）。
+ * 字重/缩放/混色/渐隐公式逐条照搬（选中格 SemiBold、未选中 Medium，跨半格切换），
+ * 仅坐标轴换成 x（可见格数与渐隐尾按设计稿放宽到 ±2 格）。
  * 符号约定同竖向：往左滑 = 内容左移 = 选中更大的值（数字随手指方向滚动）。
  * 滚动期零重组：位移、颜色、透明度都是 draw 期从滚动量算出的纯函数。
  * [unit] 为可选单位标签：钉在中线数字下方静态绘制，不随滚动位移/缩放，null = 无单位。
@@ -81,6 +81,9 @@ internal fun HorizontalNumberWheel(
         fontWeight = FontWeight.Medium,
         fontFeatureSettings = "tnum",
     )
+    // 选中格字重 SemiBold、未选中 Medium：字重离散（两档字形轮廓不同，不像颜色能插值），
+    // 跨半格直接切换；单位锚点量宽也用它，与循环里 centerIndex 判据保持一致
+    val selectedStyle = numberStyle.copy(fontWeight = FontWeight.SemiBold)
     // 单位样式：静态灰字（secondaryText），不随滚动缩放/渐隐
     val unitStyle = TextStyle(fontSize = WheelUnitFontSize, fontWeight = FontWeight.Medium)
 
@@ -113,6 +116,7 @@ internal fun HorizontalNumberWheel(
         val scrollValue = state.scroll.value
         val lo = floor((scrollValue - halfWidth - item) / item).toInt().coerceAtLeast(0)
         val hi = floor((scrollValue + halfWidth + item) / item).toInt().coerceAtMost(state.count - 1)
+        val centerIndex = (scrollValue / item).roundToInt().coerceIn(0, state.count - 1)
         for (i in lo..hi) {
             // 该数值格中心相对滚轮中心的偏移；d = 离中心的距离（格）
             val x = i * item - scrollValue
@@ -121,7 +125,8 @@ internal fun HorizontalNumberWheel(
             val fade = ((d - 1f) / (HorizontalFadeOutItems - 1f)).coerceIn(0f, 1f)
             val scale = lerp(1f, AdjacentScale, d.coerceAtMost(1f)) * lerp(1f, FadeOutScale, fade)
             val color = lerp(onSurface, sideColor, d.coerceAtMost(1f))
-            val layout = textMeasurer.measure(format(i), numberStyle)
+            val layout =
+                textMeasurer.measure(format(i), if (i == centerIndex) selectedStyle else numberStyle)
             withTransform({
                 translate(halfWidth + x, half)
                 scale(scale, scale, pivot = Offset.Zero)
@@ -134,10 +139,10 @@ internal fun HorizontalNumberWheel(
                 )
             }
         }
-        // 单位：钉在中线数字下方 [UnitGapBelow] 处——静态标签，不随滚动位移或缩放
+        // 单位：钉在中线数字下方 [UnitGapBelow] 处——静态标签，不随滚动位移或缩放；
+        // 中心数字恒为选中格（SemiBold），量宽用 selectedStyle 才和画出来的对齐
         unit?.let { unitText ->
-            val centerIndex = (scrollValue / item).roundToInt().coerceIn(0, state.count - 1)
-            val numberLayout = textMeasurer.measure(format(centerIndex), numberStyle)
+            val numberLayout = textMeasurer.measure(format(centerIndex), selectedStyle)
             val unitLayout = textMeasurer.measure(unitText, unitStyle)
             drawText(
                 unitLayout,
