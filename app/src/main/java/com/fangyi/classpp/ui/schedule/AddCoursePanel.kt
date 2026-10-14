@@ -65,7 +65,7 @@ import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
-import com.fangyi.classpp.ui.theme.CardSectionSpacing
+import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.WeekCellShape
 import com.fangyi.classpp.ui.theme.classppColors
 import kotlin.math.ceil
@@ -98,7 +98,10 @@ private val secondaryTextSize = 15.sp // 描述性文字统一大小
  *   **键盘弹起不改变浮层位置与高度**——
  *   让位发生在滚动内容末尾，容器本身不动；
  * - 顶栏 = 左确认 / 中标题 / 右取消（编辑态删除），背景对滚动内容做渐变模糊并收敛在圆角内；
- * - 表单控件全部抽成可复用组件（输入框/行选择/浮层选择/颜色选择卡片）。
+ * - 表单控件全部抽成可复用组件（输入框/行选择/浮层选择/颜色选择卡片）；
+ * - 表单内容按浮层内容规范排版：顶层块一律 [CardSection]——课程名/教师/地点三张连续输入卡
+ *   合成一个无题分组，其余是带题分组；灰色信息行是唯一的裸元素（规范里的直接文本例外）。
+ *   顶层块间距走 [SheetSectionSpacingBetween]（12dp），组内卡间距由 CardSection 默认值负责。
  *
  * **生命周期**：[visible] 为 true 时面板从底部滑入；关闭流程是两段式——所有关闭入口
  * （确认/删除/返回/点遮罩/下拉）只回调 [onDismiss]（调用方据此清状态 → visible 变 false），
@@ -376,7 +379,8 @@ fun AddCoursePanel(
         visible = visible,
         onDismissed = onDismissed,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(CardSectionSpacing)) {
+        Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
+            // 灰色信息行是浮层规范里的"直接文本"例外，不包分组
             Text(
                 text = cellInfo,
                 fontSize = secondaryTextSize,
@@ -386,32 +390,35 @@ fun AddCoursePanel(
                     .offset(y = 2.dp),
             )
 
-            SheetTextField(
-                label = stringResource(R.string.edit_course_name),
-                value = name,
-                onValueChange = { name = it; error = null },
-                placeholder = stringResource(R.string.edit_course_name_ph),
-                isError = error == errorNameBlank,
-                imeAction = ImeAction.Next,
-                onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
-                focusRequester = nameFocus,
-            )
-            SheetTextField(
-                label = stringResource(R.string.edit_course_teacher),
-                value = teacher,
-                onValueChange = { teacher = it; error = null },
-                placeholder = stringResource(R.string.edit_course_teacher_ph),
-                imeAction = ImeAction.Next,
-                onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
-            )
-            SheetTextField(
-                label = stringResource(R.string.edit_course_location),
-                value = location,
-                onValueChange = { location = it; error = null },
-                placeholder = stringResource(R.string.edit_course_location_ph),
-                imeAction = ImeAction.Done,
-                onImeAction = { focusManager.clearFocus() },
-            )
+            // 三张连续输入卡（课程名 / 教师 / 地点）同型：合成一个无题分组，组内 10dp 卡间距
+            CardSection {
+                SheetTextField(
+                    label = stringResource(R.string.edit_course_name),
+                    value = name,
+                    onValueChange = { name = it; error = null },
+                    placeholder = stringResource(R.string.edit_course_name_ph),
+                    isError = error == errorNameBlank,
+                    imeAction = ImeAction.Next,
+                    onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                    focusRequester = nameFocus,
+                )
+                SheetTextField(
+                    label = stringResource(R.string.edit_course_teacher),
+                    value = teacher,
+                    onValueChange = { teacher = it; error = null },
+                    placeholder = stringResource(R.string.edit_course_teacher_ph),
+                    imeAction = ImeAction.Next,
+                    onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                )
+                SheetTextField(
+                    label = stringResource(R.string.edit_course_location),
+                    value = location,
+                    onValueChange = { location = it; error = null },
+                    placeholder = stringResource(R.string.edit_course_location_ph),
+                    imeAction = ImeAction.Done,
+                    onImeAction = { focusManager.clearFocus() },
+                )
+            }
 
             CardSection(title = stringResource(R.string.edit_end_slot_section)) {
                 // 开始节次：仅组内有跨节课时出现（组员起止可以不一致），与结束节次同一套选择卡

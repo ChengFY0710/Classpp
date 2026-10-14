@@ -26,6 +26,7 @@ import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetInfoCard
@@ -46,6 +47,10 @@ import com.fangyi.classpp.ui.theme.classppColors
  * 待办，空列表则整块不出现）。默认只显未完成；勾选框可切换完成（经 [onTodoCheckedChange]
  * 交调用方落盘），**本次打开期间勾选的**卡片原地变划线置灰并保留到关闭，重开才消失；
  * 打开时即已完成的不显示。卡片整卡点击无动作（不进待办详情）。
+ *
+ * 正文按浮层内容规范排版：课程名与灰色信息行保持裸元素，信息卡、备注、待办卡列表各收进
+ * 一个无题 [CardSection]（后两者是列表，组内卡间距走 CardSection 默认的 10dp）；
+ * 顶层块间距走 [SheetSectionSpacingBetween]。
  *
  * 备注没有显式保存按钮（设计稿顶栏只有"关闭"）：**任意关闭路径**（关闭胶囊 / 系统返回 /
  * 下拉 / 点遮罩）都会先经 [onNoteSave] 落盘再关，输入不丢；调用方负责实际持久化与去重。
@@ -139,14 +144,19 @@ fun CourseDetailSheet(
                 // 上课周数：文案与编辑面板的周数摘要同款（weeksSummary，如「第 1-16 周」）
                 add(SheetInfoEntry(stringResource(R.string.edit_course_weeks), weeksSummary(entry.weeks)))
             }
+            // 判空留在分组之外：三项都缺时不出现空分组、也不多出一段 12dp 间隔
             if (infoEntries.isNotEmpty()) {
-                SheetInfoCard(entries = infoEntries)
+                CardSection {
+                    SheetInfoCard(entries = infoEntries)
+                }
             }
-            SheetTextArea(
-                value = note,
-                onValueChange = { note = it },
-                placeholder = stringResource(R.string.detail_note_ph),
-            )
+            CardSection {
+                SheetTextArea(
+                    value = note,
+                    onValueChange = { note = it },
+                    placeholder = stringResource(R.string.detail_note_ph),
+                )
+            }
             // 该课程标签下的待办：打开时即已完成的不显示；本次会话勾选的
             // （checkedThisSession）保留在列——StateFlow 回流后 completed=true，
             // 卡片转划线置灰而非消失，关闭浮层重开才移除。
@@ -158,33 +168,37 @@ fun CourseDetailSheet(
             if (visibleTodos.isNotEmpty()) {
                 val today = IsoDate.today()
                 val nowMinute = currentMinuteOfDay()
-                visibleTodos.forEach { todo ->
-                    key(todo.id) {
-                        // 取消勾选的摘 id 延迟到回流确认：setCompleted 异步落盘，点击瞬间
-                        // completed 仍为 true，此刻摘会让 !completed 与会话集同时踩空、
-                        // 卡片闪没一下。等 StateFlow 回流 completed=false（卡片本就靠
-                        // !completed 可见）再摘，任意时序都无空档；落盘失败则 completed
-                        // 恒为 true、id 保留，与勾选样式自洽
-                        LaunchedEffect(todo.completed) {
-                            if (!todo.completed) checkedThisSession = checkedThisSession - todo.id
+                // 待办卡是直接排成一列的同型卡列表：整列收进一个无题 CardSection
+                //（组内 10dp 卡间距，与待办页 NoteCardSection 的节奏一致）
+                CardSection {
+                    visibleTodos.forEach { todo ->
+                        key(todo.id) {
+                            // 取消勾选的摘 id 延迟到回流确认：setCompleted 异步落盘，点击瞬间
+                            // completed 仍为 true，此刻摘会让 !completed 与会话集同时踩空、
+                            // 卡片闪没一下。等 StateFlow 回流 completed=false（卡片本就靠
+                            // !completed 可见）再摘，任意时序都无空档；落盘失败则 completed
+                            // 恒为 true、id 保留，与勾选样式自洽
+                            LaunchedEffect(todo.completed) {
+                                if (!todo.completed) checkedThisSession = checkedThisSession - todo.id
+                            }
+                            NoteCard(
+                                title = todo.name,
+                                time = todo.cardTimeText(),
+                                deadline = todo.deadlineCardText(),
+                                deadlineColor = todo.deadlineColor(),
+                                tags = todo.tags,
+                                urgency = todo.urgency,
+                                completed = todo.completed,
+                                overdue = todo.isOverdue(today, nowMinute),
+                                onCheckedChange = { checked ->
+                                    // 只记"勾上"（先于回流，保勾选方向无空档）；"取消"的摘除
+                                    // 交给上面的 LaunchedEffect 等回流确认后再做
+                                    if (checked) checkedThisSession = checkedThisSession + todo.id
+                                    onTodoCheckedChange?.invoke(todo.id, checked)
+                                },
+                                onClick = null,
+                            )
                         }
-                        NoteCard(
-                            title = todo.name,
-                            time = todo.cardTimeText(),
-                            deadline = todo.deadlineCardText(),
-                            deadlineColor = todo.deadlineColor(),
-                            tags = todo.tags,
-                            urgency = todo.urgency,
-                            completed = todo.completed,
-                            overdue = todo.isOverdue(today, nowMinute),
-                            onCheckedChange = { checked ->
-                                // 只记"勾上"（先于回流，保勾选方向无空档）；"取消"的摘除
-                                // 交给上面的 LaunchedEffect 等回流确认后再做
-                                if (checked) checkedThisSession = checkedThisSession + todo.id
-                                onTodoCheckedChange?.invoke(todo.id, checked)
-                            },
-                            onClick = null,
-                        )
                     }
                 }
             }

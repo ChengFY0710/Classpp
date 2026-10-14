@@ -86,10 +86,11 @@ private const val INITIAL_END_MINUTE = 1080
  * 同课表删除确认），确认才回调 [onDelete]；弹窗在场时本浮层经 [OverlaySheet] 的 covered
  * 缩小后退（同分层动效）。编辑初值整体回填。
  *
- * 表单分组（CardSection）：待办名 → 分组（[SettingsCardwithIcon] 待办分组入口 →
- * [GroupPickSheet] 选择分组浮层）→ 提醒与优先级（截止日期 + 紧急旗帜）→ 日期与时间
- * （DateSelectionCard + 无/全天/时段，选「时段」展开 TimeRangeSlider）→ 标签 →
- * 更多（待办地点 + 备注）。
+ * 表单按浮层内容规范排版：顶层块一律 [CardSection]——待办名是孤立的输入卡，收进无题分组；
+ * 其余按语义分组：分组（[SettingsCardwithIcon] 待办分组入口 → [GroupPickSheet] 选择分组浮层）→
+ * 提醒与优先级（截止日期 + 紧急旗帜）→ 日期与时间（DateSelectionCard + 无/全天/时段，
+ * 选「时段」展开 TimeRangeSlider）→ 标签 → 更多（待办地点 + 备注）。顶层块间距走
+ * [SheetSectionSpacingBetween]（12dp），组内卡间距由 CardSection 默认值负责（10dp）。
  *
  * 分组选择随表单落库：编辑初值从 [Todo.group] 回填，选中值进 [onConfirm] 组装的 [Todo]
  * （引用不存在的组由仓库归一化清回 null）；未选 = 「未分组」。计数口径与 [TodoGroupsSheet]
@@ -291,19 +292,22 @@ internal fun NewTodoSheet(
         hazeState = sheetHazeState,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
-            SheetTextField(
-                label = stringResource(R.string.todo_name_label),
-                value = name,
-                onValueChange = {
-                    name = it
-                    nameBlank = false
-                },
-                placeholder = stringResource(R.string.todo_name_hint),
-                imeAction = ImeAction.Done,
-                // 键盘「完成」收起键盘，创建走右上「确认」
-                onImeAction = { focusManager.clearFocus() },
-                isError = nameBlank,
-            )
+            // 待办名是孤立的输入卡：无题 CardSection 收拢（单子项，卡内间距不生效）
+            CardSection {
+                SheetTextField(
+                    label = stringResource(R.string.todo_name_label),
+                    value = name,
+                    onValueChange = {
+                        name = it
+                        nameBlank = false
+                    },
+                    placeholder = stringResource(R.string.todo_name_hint),
+                    imeAction = ImeAction.Done,
+                    // 键盘「完成」收起键盘，创建走右上「确认」
+                    onImeAction = { focusManager.clearFocus() },
+                    isError = nameBlank,
+                )
+            }
 
             CardSection(title = stringResource(R.string.todo_action_group)) {
                 SettingsCardwithIcon(

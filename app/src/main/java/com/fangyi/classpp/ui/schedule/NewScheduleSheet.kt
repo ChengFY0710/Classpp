@@ -22,6 +22,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.components.BottomDateSelectCard
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
+import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTextField
@@ -100,15 +101,19 @@ internal fun NewScheduleSheet(
         hazeState = sheetHazeState,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
-            SheetTextField(
-                label = stringResource(R.string.schedule_name_label),
-                value = name,
-                onValueChange = { name = it },
-                placeholder = stringResource(R.string.schedule_name_hint),
-                imeAction = ImeAction.Done,
-                // 键盘「完成」收起键盘，创建走右上「确认」
-                onImeAction = { focusManager.clearFocus() },
-            )
+            // 课表名是孤立的输入卡：无题 CardSection 收拢（单子项，卡内间距不生效）
+            CardSection {
+                SheetTextField(
+                    label = stringResource(R.string.schedule_name_label),
+                    value = name,
+                    onValueChange = { name = it },
+                    placeholder = stringResource(R.string.schedule_name_hint),
+                    imeAction = ImeAction.Done,
+                    // 键盘「完成」收起键盘，创建走右上「确认」
+                    onImeAction = { focusManager.clearFocus() },
+                )
+            }
+            // 学期三行卡：TermDatesCard 自带带题 CardSection，勿再包一层（否则标题重复）
             TermDatesCard(
                 start = start,
                 end = end,

@@ -157,6 +157,9 @@ data class SheetTopAction(
  * 槽内容自带进出场动画时由调用方把这三样包进动画层，规格才不脱离动画（见 TodoGroupsSheet 编辑态底栏）。
  * [dragDismissEnabled] = false 关掉下拉关闭（超阈值松手回弹归位）：编辑态把下拉拦成
  * 「退出编辑」的场景必须用它——只拦 [onDismiss] 不拦手势会把浮层卡在半拖出位置。
+ * [shadowAlpha] 调卡片投影的透明度（0f~1f，默认 1f 与原样纯黑投影一致）：Surface 的
+ * shadowElevation 不暴露投影颜色，投影改由卡片 graphicsLayer 的 spot/ambientShadowColor
+ * 绘制（同 SheetPillButton 的做法），强度才可按浮层单独调。
  *
  * [imeBehavior] 决定键盘与滚动内容的关系（见 [SheetImeBehavior]）：[SheetImeBehavior.ContentScroll]
  * 下键盘弹起时正在编辑的输入框会随内容滚到键盘上方、键盘收起再滚回原位（能力做在
@@ -186,6 +189,9 @@ fun OverlaySheet(
     confirmIcon: Int = com.fangyi.classpp.R.drawable.ic_checkmark_circle,
     // 左胶囊图标尺寸（默认同 SheetPillButton 的 30dp）；只影响确认胶囊，单独调某浮层时传值
     confirmIconSize: Dp = 30.dp,
+    // 卡片投影透明度（0f~1f）：投影不走 Surface 的 shadowElevation（不带颜色参数），改由
+    // 卡片 graphicsLayer 的 spot/ambientShadowColor 画，透明度才可调；默认 = 原样纯黑
+    shadowAlpha: Float = 0.6f,
     // true = 确认胶囊到右侧、动作胶囊（取消/删除）到左侧，两颗胶囊的图标排布随位置镜像
     // （左颗图标在前、右颗文字在前，图标始终落在胶囊外侧）
     confirmAtEnd: Boolean = false,
@@ -370,6 +376,16 @@ fun OverlaySheet(
             Surface(
                 modifier = Modifier
                     .fillMaxSize()
+                    // 投影画在 graphicsLayer 上而非 Surface 的 shadowElevation——后者不暴露
+                    // 投影颜色；32dp 撑开模糊半径，spot/ambientShadowColor 统一按 shadowAlpha
+                    // 压透明度（同 SheetPillButton 的大柔影做法）
+                    .graphicsLayer {
+                        shape = SheetShape
+                        clip = true
+                        shadowElevation = 32.dp.toPx()
+                        spotShadowColor = Color.Black.copy(alpha = shadowAlpha)
+                        ambientShadowColor = Color.Black.copy(alpha = shadowAlpha)
+                    }
                     .clickable(
                         interactionSource = cardInteraction,
                         indication = null,
@@ -377,7 +393,6 @@ fun OverlaySheet(
                     ),
                 shape = SheetShape,
                 color = MaterialTheme.colorScheme.background,
-                shadowElevation = 32.dp,
             ) {
                 // 卡内滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的 ProvideOverscroll）：
                 // 滚到顶/底后继续拖动，内容整块被拉出边缘、越拉越硬，松手无过冲弹回；在边缘

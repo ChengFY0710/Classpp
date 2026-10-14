@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Schedule
+import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
 import com.fangyi.classpp.ui.components.DialogPillButton
 import com.fangyi.classpp.ui.components.FadeOverlayDialog
@@ -135,13 +136,16 @@ internal fun ScheduleSwitcherSheet(
         },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
-            schedules.forEach { schedule ->
-                ScheduleCard(
-                    schedule = schedule,
-                    isActive = schedule.id == activeScheduleId,
-                    onClick = { if (schedule.id != activeScheduleId) onSwitch(schedule.id) },
-                    onDelete = { deletingId = schedule.id },
-                )
+            // 课表卡是直接排成一列的同型卡列表：整列收进一个无题 CardSection（组内 10dp 卡间距）
+            CardSection {
+                schedules.forEach { schedule ->
+                    ScheduleCard(
+                        schedule = schedule,
+                        isActive = schedule.id == activeScheduleId,
+                        onClick = { if (schedule.id != activeScheduleId) onSwitch(schedule.id) },
+                        onDelete = { deletingId = schedule.id },
+                    )
+                }
             }
         }
     }

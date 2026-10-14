@@ -23,6 +23,10 @@ import com.fangyi.classpp.ui.theme.settingsRowMetrics
  *
  * [title] 可空：null（默认）不渲染标题，组件退化为纯分组容器——组内仍走 [spacing]
  * 节奏（无题卡组与带题分组的纵向节奏因此一致）。
+ *
+ * **浮层（OverlaySheet）侧约定**：内容列的顶层块一律用它——成组的卡片列表与孤块
+ * （输入框、单张卡片）都收进分组（无标题 = 不渲染标题行），唯二的例外是直接的文本内容
+ * 与待办标签行；顶层块之间走 `SheetSectionSpacingBetween`（12dp），由调用方的内容列给出。
  */
 @Composable
 fun CardSection(

@@ -21,6 +21,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoTimeKind
+import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetInfoCard
 import com.fangyi.classpp.ui.components.SheetInfoEntry
@@ -40,6 +41,9 @@ private val TagRowSpacing = 12.dp
  * 正文为待办标题、标题下方的标签行（[TagChip]，空标签不渲染）、四行只读信息
  * （[SheetInfoCard]：截止日期 / 紧急程度 / 待办时间 / 待办地点，四行常显，
  * 空值显灰「无」）与备注输入（[SheetTextArea]）。
+ *
+ * 正文按浮层内容规范排版：标题与标签行保持裸元素（规范里唯二的例外），信息卡与备注各收进
+ * 一个无题 [CardSection]；顶层块间距走 [SheetSectionSpacingBetween]。
  *
  * 顶栏左「编辑」右「关闭」：编辑把**最新快照**（备注 trim 后、可尚未落盘）经 [onEdit] 交回调用方，
  * 据此打开编辑待办浮层（叠在本浮层之上，本浮层保持打开）；备注在任意关闭路径
@@ -116,31 +120,36 @@ internal fun TodoDetailSheet(
             // 四行常显：截止日期与紧急程度是结构化字段（未设也占位），时间/地点同理——
             // 值一律右对齐走 fieldValue，空值占位灰字「无」（同 DeadlineCard 的未设态文案）
             val noneText = stringResource(R.string.deadline_card_none)
-            SheetInfoCard(
-                entries = listOf(
-                    SheetInfoEntry(
-                        label = stringResource(R.string.deadline_card_label),
-                        value = todo.deadlineText() ?: noneText,
+            // 单张信息卡与备注输入都是浮层规范里的"孤块"，各收进一个无题 CardSection
+            CardSection {
+                SheetInfoCard(
+                    entries = listOf(
+                        SheetInfoEntry(
+                            label = stringResource(R.string.deadline_card_label),
+                            value = todo.deadlineText() ?: noneText,
+                        ),
+                        SheetInfoEntry(
+                            label = stringResource(R.string.sort_urgency),
+                            value = todo.urgency.flagLabel(),
+                        ),
+                        SheetInfoEntry(
+                            label = stringResource(R.string.todo_detail_time_label),
+                            value = todo.scheduledText() ?: noneText,
+                        ),
+                        SheetInfoEntry(
+                            label = stringResource(R.string.todo_location_label),
+                            value = todo.location.ifBlank { noneText },
+                        ),
                     ),
-                    SheetInfoEntry(
-                        label = stringResource(R.string.sort_urgency),
-                        value = todo.urgency.flagLabel(),
-                    ),
-                    SheetInfoEntry(
-                        label = stringResource(R.string.todo_detail_time_label),
-                        value = todo.scheduledText() ?: noneText,
-                    ),
-                    SheetInfoEntry(
-                        label = stringResource(R.string.todo_location_label),
-                        value = todo.location.ifBlank { noneText },
-                    ),
-                ),
-            )
-            SheetTextArea(
-                value = note,
-                onValueChange = { note = it },
-                placeholder = stringResource(R.string.detail_note_ph),
-            )
+                )
+            }
+            CardSection {
+                SheetTextArea(
+                    value = note,
+                    onValueChange = { note = it },
+                    placeholder = stringResource(R.string.detail_note_ph),
+                )
+            }
         }
     }
 }

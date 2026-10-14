@@ -64,7 +64,7 @@ import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.settings.TermDatesCard
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
+import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
@@ -85,7 +85,9 @@ private val ChipRowHeight = 24.dp
  * 无确认/取消语义，故无左确认胶囊，右上只留「关闭」。
  *
  * 滚动、键盘让位（课表名输入框在场 → ContentScroll）由 OverlaySheet 内建，
- * 这里只负责内容与日期/时间对话框。
+ * 这里只负责内容与日期/时间对话框。内容列按浮层规范排版：顶层块一律 [CardSection]——
+ * 课表名是孤立的输入卡、收进无题分组，其余是带题分组；顶层块间距走
+ * [SheetSectionSpacingBetween]（12dp，改走浮层节奏，不再与设置页面的 18dp 分组间距同步）。
  */
 @Composable
 internal fun ScheduleSettingsSheet(
@@ -363,13 +365,16 @@ private fun SettingsContent(
 ) {
     // 开始时间级联放不下当天时，就地 toast 拒绝（与仓库拒绝同一条出口）
     val context = LocalContext.current
-    // 滚动由 OverlaySheet 的内容列承担，这里只排内容
+    // 滚动由 OverlaySheet 的内容列承担，这里只排内容；顶层块间距 = 浮层统一值（12dp）
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(SettingsSectionSpacing),
+        verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween),
     ) {
-        // 课表名：独立输入卡（SheetTextField 自带「课表名称」标签，不需要分组标题）
-        ScheduleNameField(name = schedule.name, onRename = onRename)
+        // 课表名是孤立的输入卡：无题 CardSection 收拢（SheetTextField 自带「课表名称」标签，
+        // 不需要分组标题）
+        CardSection {
+            ScheduleNameField(name = schedule.name, onRename = onRename)
+        }
 
         // TermDatesCard 自带分组与卡片，勿再包一层（否则标题重复）
         TermDatesCard(
