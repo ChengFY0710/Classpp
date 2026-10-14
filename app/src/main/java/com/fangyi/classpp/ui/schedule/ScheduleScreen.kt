@@ -230,6 +230,8 @@ fun ScheduleScreen(
         }
     }
 
+    val persistFailedToast = stringResource(R.string.error_persist_failed)
+
     // 取消编辑：恢复进入编辑前的整库快照（切换/设置/新建/删除/导入一并回滚），再退出编辑态。
     // 基线先置空：连点取消/返回不会触发两次恢复；恢复失败仅 Toast（磁盘写失败极罕见），仍退出
     fun cancelEdit() {
@@ -244,7 +246,7 @@ fun ScheduleScreen(
             if (restored is OpResult.Err) {
                 Toast.makeText(
                     context,
-                    context.getString(R.string.error_persist_failed),
+                    persistFailedToast,
                     Toast.LENGTH_SHORT,
                 ).show()
             }
@@ -636,6 +638,7 @@ fun ScheduleScreen(
             }
             // 导出：当前激活课表 → pretty JSON → 系统分享面板。
             // 读的是仓库已保存状态，草稿里未保存的改动不包含在内（已接受的限制）
+            val exportFailedToast = stringResource(R.string.error_unexpected)
             val onExport: () -> Unit = {
                 scope.launch {
                     when (val r = repository.exportSchedule(schedule.id)) {
@@ -649,7 +652,7 @@ fun ScheduleScreen(
                             } catch (e: ActivityNotFoundException) {
                                 Toast.makeText(
                                     context,
-                                    context.getString(R.string.error_unexpected),
+                                    exportFailedToast,
                                     Toast.LENGTH_SHORT,
                                 ).show()
                             }
@@ -707,6 +710,7 @@ fun ScheduleScreen(
             }
             // 导入：系统文件选择器读 JSON → 仓库导入（新 id、名称去重、不自动激活）→
             // 走统一切换路径（含脏确认）；取消确认则新课表留在列表里但不激活
+            val importReadFailedToast = stringResource(R.string.import_read_failed)
             val importLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.OpenDocument(),
             ) { uri ->
@@ -721,7 +725,7 @@ fun ScheduleScreen(
                         if (json == null) {
                             Toast.makeText(
                                 context,
-                                context.getString(R.string.import_read_failed),
+                                importReadFailedToast,
                                 Toast.LENGTH_SHORT,
                             ).show()
                         } else {

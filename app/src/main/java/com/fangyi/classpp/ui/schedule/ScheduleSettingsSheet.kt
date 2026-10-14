@@ -296,6 +296,8 @@ internal fun ScheduleSettingsSheet(
     // 时长生成（课间 30 分钟）。当天放不下目标节数（slotsWithCount 返回 null）时 toast
     // 并保持原值，不提交截断结果
     if (slotCountMounted) {
+        // stringResource 是 Composable 调用，先取好再进确认闭包
+        val slotOverflowToast = stringResource(R.string.slot_overflow_desc)
         BottomNumberSelectCard(
             visible = slotCountVisible,
             onDismiss = { slotCountVisible = false },
@@ -315,7 +317,7 @@ internal fun ScheduleSettingsSheet(
                 if (adjusted != null) {
                     scope.launch { submit(repository.setSlots(schedule.id, adjusted)) }
                 } else {
-                    AppToasts.show(context, context.getString(R.string.slot_overflow_desc))
+                    AppToasts.show(context, slotOverflowToast)
                 }
             },
         )
@@ -441,6 +443,8 @@ private fun SettingsContent(
                         trailing = {
                             // 弹窗标题「第 N 节」：stringResource 是 Composable 调用，先取好再进点击闭包
                             val slotTitle = stringResource(R.string.slot_format, index + 1)
+                            // 当天放不下的拒绝提示同理：先取好文案再进点击闭包
+                            val dayOverflowToast = stringResource(R.string.error_slot_day_overflow)
                             // chip Background灰底保持 32dp 原高，但不计入行高：容器只按标签行高 24dp
                             // 参与行高，垂直居中向上下各溢出 4dp
                             OverflowHeightBox(ChipRowHeight) {
@@ -465,7 +469,7 @@ private fun SettingsContent(
                                             // 当天放不下：提示后放弃本次修改，不产生部分生效的中间态
                                             AppToasts.show(
                                                 context,
-                                                context.getString(R.string.error_slot_day_overflow),
+                                                dayOverflowToast,
                                             )
                                         }
                                     }

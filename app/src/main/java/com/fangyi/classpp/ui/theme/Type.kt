@@ -92,7 +92,7 @@ class ClassppTextStyles(
 /** 按当前 colorScheme 与自定义色构造一组角色化文字样式（由 [ClassppTheme] 提供） */
 fun classppTextStyles(colorScheme: ColorScheme, colors: ClassppColors) = ClassppTextStyles(
     topBarTitle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold, color = colorScheme.onSurface),
-    sectionTitle = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colors.secondaryText),
+    sectionTitle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Medium, color = colors.secondaryText),
     fieldLabel = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colorScheme.onSurface),
     fieldPlaceholder = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colors.secondaryText),
     fieldValue = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colorScheme.primary),
