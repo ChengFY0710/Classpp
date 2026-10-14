@@ -40,15 +40,32 @@ import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.NoteCardShape
+import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.kyant.shapes.RoundedRectangle
 
+/**
+ * 属性行横向间距：时间项之间、时间项与首个标签之间取 [PropertySpacing]（12dp）；
+ * 标签之间取 [TagSpacing]（8dp，标签带底更耐紧）。FlowRow 的行距只能统一一个值，
+ * 所以行距取 TagSpacing、时间项各带 [TimeItemEndPadding] 末位内距把间距补回 PropertySpacing。
+ */
 private val PropertySpacing = 12.dp
-private val TagIconSize = 17.dp
+private val TagSpacing = 4.dp
+private val TimeItemEndPadding = PropertySpacing - TagSpacing
+
+private val TagIconSize = 15.dp
 private val TimeIconSize = 18.dp
 private val FlagIconSize = 25.dp
+
+/** 标签胶囊底 **/
+private val TagChipShape = PillShape
+private val TagChipPadding = 8.dp
+
+/** 标题与属性行的纵向间距：常规 [TitlePropertySpacing]；有标签时收紧到 [TitlePropertySpacingWithTags]（标签带底视觉体量更满，与标题贴紧） */
+private val TitlePropertySpacing = 4.dp
+private val TitlePropertySpacingWithTags = 1.dp
 
 /**
  * 时间/截止属性项：18dp 图标 + 文本（同色），图标与文字相距 4dp（同 TagChip）。
@@ -60,8 +77,10 @@ internal fun TimeProperty(
     @DrawableRes icon: Int,
     text: String,
     tint: Color,
+    modifier: Modifier = Modifier,
 ) {
     Row(
+        modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -79,12 +98,17 @@ internal fun TimeProperty(
 }
 
 /**
- * 单枚标签胶囊：ic_tag 图标 + 标签名（均取 primary），图标与文字相距 4dp。
+ * 单枚标签胶囊：primaryContainer 圆角底 + ic_tag 图标 + 标签名（图标与文字均取 primary），
+ * 图标与文字相距 4dp。底只加水平内距（8dp）
  * 卡片属性行（[NoteCard]）与待办详情浮层共用同一形态；外层间距由调用方排布。
  */
 @Composable
 internal fun TagChip(tag: String) {
     Row(
+        modifier = Modifier
+            .clip(TagChipShape)
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .padding(start = TagChipPadding, end = TagChipPadding, top = 3.dp, bottom = 3.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -97,7 +121,7 @@ internal fun TagChip(tag: String) {
         Text(
             text = tag,
             style = MaterialTheme.classppTextStyles.noteProperty
-                .copy(color = MaterialTheme.colorScheme.primary),
+                .copy(color = MaterialTheme.colorScheme.primary, fontSize = 12.sp),
         )
     }
 }
@@ -112,6 +136,9 @@ internal fun TagChip(tag: String) {
  * - [deadline] 截止时间（已格式化文本，如 "今天 8:00"、"3/12 6:00"）：ic_clock_alarm
  *   图标 18dp + 文本，图标与文字同取 [deadlineColor]（调用方按剩余天数映射紧急色）；
  * - 两个时间项缺席时均不占位，属性行整体走 FlowRow，放不下自动换行；
+ * - 行内横向间距：时间项之间、时间项与首个标签之间 12dp，标签之间 8dp（见 [PropertySpacing] /
+ *   [TagSpacing]——FlowRow 行距统一取后者，时间项靠末位内距补差）；
+ * - 有标签时标题与属性行贴紧一点（见 [TitlePropertySpacing] / [TitlePropertySpacingWithTags]）；
  * - [urgency] 紧急档位：非 None 才画旗，None 不画（列表默认形态无旗）；
  * - [completed] 完成态：标题划线置灰（时间/标签/旗帜不变），勾选框选中；
  * - [overdue] 逾期态：标题标红（theme 的 error，时间/标签/旗帜不变）；完成态优先于逾期态；
@@ -131,6 +158,10 @@ fun NoteCard(
     onCheckedChange: ((Boolean) -> Unit)? = null,
     onClick: (() -> Unit)? = null,
 ) {
+    // 有标签时标签带底、视觉体量更大：标题与属性行贴紧一点
+    val titlePropertySpacing =
+        if (tags.isNotEmpty()) TitlePropertySpacingWithTags else TitlePropertySpacing
+
     val titleStyle = when {
         completed -> MaterialTheme.classppTextStyles.fieldLabel.copy(
             color = MaterialTheme.classppColors.secondaryText,
@@ -157,7 +188,7 @@ fun NoteCard(
     ) {
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(titlePropertySpacing),
         ) {
             Text(
                 text = title,
@@ -165,7 +196,8 @@ fun NoteCard(
             )
             if (time != null || deadline != null || tags.isNotEmpty()) {
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(PropertySpacing),
+                    // 行距取标签间距；时间项各带末位内距，把与后续项（含首个标签）的间距补到 PropertySpacing
+                    horizontalArrangement = Arrangement.spacedBy(TagSpacing),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     itemVerticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -174,6 +206,7 @@ fun NoteCard(
                             icon = R.drawable.ic_clock,
                             text = time,
                             tint = MaterialTheme.classppColors.secondaryText,
+                            modifier = Modifier.padding(end = TimeItemEndPadding),
                         )
                     }
                     if (deadline != null) {
@@ -181,6 +214,7 @@ fun NoteCard(
                             icon = R.drawable.ic_clock_alarm,
                             text = deadline,
                             tint = deadlineColor,
+                            modifier = Modifier.padding(end = TimeItemEndPadding),
                         )
                     }
                     tags.forEach { tag ->
