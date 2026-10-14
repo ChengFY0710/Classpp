@@ -1,5 +1,6 @@
 package com.fangyi.classpp.ui.components
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -45,7 +47,36 @@ import com.kyant.shapes.RoundedRectangle
 
 private val PropertySpacing = 12.dp
 private val TagIconSize = 17.dp
+private val TimeIconSize = 18.dp
 private val FlagIconSize = 25.dp
+
+/**
+ * 时间/截止属性项：18dp 图标 + 文本（同色），图标与文字相距 4dp（同 TagChip）。
+ * 待办时间固定 secondaryText（ic_clock）；截止时间按剩余天数取紧急色（ic_clock_alarm），
+ * 图标与文字颜色始终一致。
+ */
+@Composable
+internal fun TimeProperty(
+    @DrawableRes icon: Int,
+    text: String,
+    tint: Color,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(icon),
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(TimeIconSize),
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.classppTextStyles.noteProperty.copy(color = tint),
+        )
+    }
+}
 
 /**
  * 单枚标签胶囊：ic_tag 图标 + 标签名（均取 primary），图标与文字相距 4dp。
@@ -72,23 +103,27 @@ internal fun TagChip(tag: String) {
 }
 
 /**
- * 待办卡片：标题 + 属性行（时间、标签，自动换行）+ 右侧紧急旗帜与勾选框。
+ * 待办卡片：标题 + 属性行（待办时间、截止时间、标签，自动换行）+ 右侧紧急旗帜与勾选框。
  *
- * - 颜色全部取自主题：卡片底 surface，标题 fieldLabel（onSurface），时间与标签文字
- *   noteProperty（secondaryText），标签着 primary，旗帜按 [urgency] 档位取色
- *   （[TodoUrgency.flagColor]，同 UrgentFlagCard），勾选框 primary；
- * - [time] 为已格式化的文本（"12:30"、"14:00-16:00"、"6月18日 14:30"），作为属性行
- *   第一项，缺席时由标签补位；属性行整体走 FlowRow，放不下自动换行；
+ * - 颜色全部取自主题：卡片底 surface，标题 fieldLabel（onSurface），标签着 primary，
+ *   旗帜按 [urgency] 档位取色（[TodoUrgency.flagColor]，同 UrgentFlagCard），勾选框 primary；
+ * - [time] 待办时间（已格式化文本，如 "12:30"、"明天 14:00-16:00"）：ic_clock 图标
+ *   18dp + 文本，图标与文字均 secondaryText；
+ * - [deadline] 截止时间（已格式化文本，如 "今天 8:00"、"3/12 6:00"）：ic_clock_alarm
+ *   图标 18dp + 文本，图标与文字同取 [deadlineColor]（调用方按剩余天数映射紧急色）；
+ * - 两个时间项缺席时均不占位，属性行整体走 FlowRow，放不下自动换行；
  * - [urgency] 紧急档位：非 None 才画旗，None 不画（列表默认形态无旗）；
  * - [completed] 完成态：标题划线置灰（时间/标签/旗帜不变），勾选框选中；
  * - [overdue] 逾期态：标题标红（theme 的 error，时间/标签/旗帜不变）；完成态优先于逾期态；
- * - 时间与标签全缺席时卡片仍有 60dp 最小高度，不塌成纯文字高度。
+ * - 时间、截止与标签全缺席时卡片仍有 60dp 最小高度，不塌成纯文字高度。
  */
 @Composable
 fun NoteCard(
     title: String,
     modifier: Modifier = Modifier,
     time: String? = null,
+    deadline: String? = null,
+    deadlineColor: Color = MaterialTheme.colorScheme.primary,
     tags: List<String> = emptyList(),
     urgency: TodoUrgency = TodoUrgency.None,
     completed: Boolean = false,
@@ -128,16 +163,24 @@ fun NoteCard(
                 text = title,
                 style = titleStyle,
             )
-            if (time != null || tags.isNotEmpty()) {
+            if (time != null || deadline != null || tags.isNotEmpty()) {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(PropertySpacing),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     itemVerticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (time != null) {
-                        Text(
+                        TimeProperty(
+                            icon = R.drawable.ic_clock,
                             text = time,
-                            style = MaterialTheme.classppTextStyles.noteProperty,
+                            tint = MaterialTheme.classppColors.secondaryText,
+                        )
+                    }
+                    if (deadline != null) {
+                        TimeProperty(
+                            icon = R.drawable.ic_clock_alarm,
+                            text = deadline,
+                            tint = deadlineColor,
                         )
                     }
                     tags.forEach { tag ->
@@ -206,7 +249,7 @@ private fun NoteCardVariantsDarkPreview() {
     }
 }
 
-/** 预览内容：设计稿的全部 9 个形态（基础、换行、标签、多标签、红旗、完成、补位、最小高、全日期） */
+/** 预览内容：设计稿的全部形态（基础、换行、标签、多标签、红旗、完成、补位、最小高、日期形态与截止各色） */
 @Composable
 private fun NoteCardShowcase() {
     Column(
@@ -246,7 +289,48 @@ private fun NoteCardShowcase() {
         )
         NoteCard(title = "户口乔迁材料报送", tags = listOf("待办标签"), urgency = TodoUrgency.Medium, onCheckedChange = {})
         NoteCard(title = "户口乔迁材料报送", urgency = TodoUrgency.Low, onCheckedChange = {})
-        NoteCard(title = "户口乔迁材料报送", time = "6月18日 14:30", onCheckedChange = {})
-        NoteCard(title = "户口乔迁材料报送", time = "6月18日 14:30", overdue = true, onCheckedChange = {})
+        NoteCard(title = "户口乔迁材料报送", time = "6/18 14:30", onCheckedChange = {})
+        NoteCard(title = "户口乔迁材料报送", time = "6/18 14:30", overdue = true, onCheckedChange = {})
+        // 待办时间 + 截止时间同排：截止按剩余天数取色（>2 天 primary）
+        NoteCard(
+            title = "户口乔迁材料报送",
+            time = "12:30",
+            deadline = "2027/3/12 6:00",
+            deadlineColor = MaterialTheme.colorScheme.primary,
+            onCheckedChange = {},
+        )
+        NoteCard(title = "户口乔迁材料报送", time = "12:30", deadline = "3/12 6:00", onCheckedChange = {})
+        NoteCard(
+            title = "户口乔迁材料报送",
+            deadline = "后天 8:00",
+            deadlineColor = MaterialTheme.classppColors.urgentYellow,
+            onCheckedChange = {},
+        )
+        NoteCard(
+            title = "户口乔迁材料报送",
+            deadline = "明天 8:00",
+            deadlineColor = MaterialTheme.classppColors.urgentOrange,
+            onCheckedChange = {},
+        )
+        NoteCard(
+            title = "户口乔迁材料报送",
+            deadline = "今天 8:00",
+            deadlineColor = MaterialTheme.colorScheme.error,
+            onCheckedChange = {},
+        )
+        NoteCard(
+            title = "户口乔迁材料报送",
+            deadline = "昨天 8:00",
+            deadlineColor = MaterialTheme.colorScheme.error,
+            overdue = true,
+            onCheckedChange = {},
+        )
+        NoteCard(
+            title = "户口乔迁材料报送",
+            deadline = "前天 8:00",
+            deadlineColor = MaterialTheme.colorScheme.error,
+            overdue = true,
+            onCheckedChange = {},
+        )
     }
 }

@@ -21,7 +21,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
-import com.fangyi.classpp.data.TodoSort
 import com.fangyi.classpp.data.isOverdue
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.Schedule
@@ -35,6 +34,8 @@ import com.fangyi.classpp.ui.components.SheetTextArea
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.note.cardTimeText
 import com.fangyi.classpp.ui.note.currentMinuteOfDay
+import com.fangyi.classpp.ui.note.deadlineCardText
+import com.fangyi.classpp.ui.note.deadlineColor
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 
@@ -169,7 +170,9 @@ fun CourseDetailSheet(
                         }
                         NoteCard(
                             title = todo.name,
-                            time = todo.cardTimeText(TodoSort.Created),
+                            time = todo.cardTimeText(),
+                            deadline = todo.deadlineCardText(),
+                            deadlineColor = todo.deadlineColor(),
                             tags = todo.tags,
                             urgency = todo.urgency,
                             completed = todo.completed,

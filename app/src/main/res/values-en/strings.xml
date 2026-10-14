@@ -310,6 +310,9 @@
     <string name="date_card_none">None</string>
     <string name="date_card_today">Today</string>
     <string name="date_card_tomorrow">Tomorrow</string>
+    <string name="date_card_day_after_tomorrow">Day after tomorrow</string>
+    <string name="date_card_yesterday">Yesterday</string>
+    <string name="date_card_day_before_yesterday">Day before yesterday</string>
     <string name="date_card_custom">Custom</string>
     <string name="date_card_custom_date">Custom date</string>
     <string name="date_card_repeat">Repeat</string>

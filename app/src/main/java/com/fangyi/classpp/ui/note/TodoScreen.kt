@@ -25,6 +25,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -54,6 +55,7 @@ import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
+import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
@@ -529,7 +531,6 @@ private fun TodoList(
                     group.forEach { todo ->
                         TodoCard(
                             todo = todo,
-                            sort = sort,
                             overdue = section == TodoSection.Overdue,
                             onClick = { onTodoClick(todo) },
                         ) { onToggleCompleted(todo.id, it) }
@@ -542,21 +543,22 @@ private fun TodoList(
 
 /**
  * 单条待办卡片：[Todo] → [NoteCard] 的字段接线——标题、完成态与勾选直通，
- * 时间走 [cardTimeText] 映射（跟随顶栏排序键 [sort]，选「截止日期」时该位置改显截止日期），
- * 标签与紧急旗按模型透传；[overdue] 为真（在已逾期组）时标题标红。
+ * 待办时间走 [cardTimeText]、截止时间走 [deadlineCardText]（颜色由 [deadlineColor]
+ * 按剩余天数映射），标签与紧急旗按模型透传；[overdue] 为真（在已逾期组）时标题标红。
  * 点卡片（非勾选框）经 [onClick] 拉起详情浮层——勾选框是独立 toggleable，不会误触。
  */
 @Composable
 private fun TodoCard(
     todo: Todo,
-    sort: TodoSort,
     overdue: Boolean,
     onClick: () -> Unit,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     NoteCard(
         title = todo.name,
-        time = todo.cardTimeText(sort),
+        time = todo.cardTimeText(),
+        deadline = todo.deadlineCardText(),
+        deadlineColor = todo.deadlineColor(),
         tags = todo.tags,
         urgency = todo.urgency,
         completed = todo.completed,
@@ -567,19 +569,13 @@ private fun TodoCard(
 }
 
 /**
- * 待办 → NoteCard 属性行的时间文本（KDoc 形态："12:30"、"6月18日 14:30"）。
+ * 待办 → NoteCard 待办时间项的文本（"12:30"、"明天 14:00-16:00"、"6/18 全天"）。
  *
- * 与顶栏排序按钮联动：排序键为 [TodoSort.Deadline] 时，这一位让给截止日期
- * （[deadlineCardText]——列表正按截止日期排，卡片就显所排的字段）；其余排序键
- * 一律显待办时间：
- *
- * - 有日期：今天只显时刻段，非今天前置日期段；全天显「全天」，无时刻只显日期段；
- * - 无日期时刻时兜底截止值（同格式；截止日期与时刻成对，TodoValidator 约束）；
- * - 均无返回 null，NoteCard 缺席该属性（标签前无空位）。
+ * 日期段走 [cardDatePart]（±2 天内显相对词），时刻段按 [TodoTimeKind] 拼接：
+ * 全天显「全天」，无时刻只显日期段；均无返回 null，NoteCard 缺席该属性。
  */
 @Composable
-internal fun Todo.cardTimeText(sort: TodoSort): String? {
-    if (sort == TodoSort.Deadline) return deadlineCardText()
+internal fun Todo.cardTimeText(): String? {
     val timePart = when (timeKind) {
         TodoTimeKind.Period -> {
             val start = startMinute
@@ -589,38 +585,50 @@ internal fun Todo.cardTimeText(sort: TodoSort): String? {
         TodoTimeKind.AllDay -> stringResource(R.string.todo_time_all_day)
         TodoTimeKind.None -> null
     }
-    val scheduled = listOfNotNull(dates.cardDatePart(), timePart)
+    return listOfNotNull(dates.cardDatePart(), timePart)
         .joinToString(" ")
         .takeIf { it.isNotEmpty() }
-    if (scheduled != null) return scheduled
-    // 截止兜底：今天不显日期段（时刻即全部信息），跨天显「6月18日 14:30」
-    return listOfNotNull(
-        deadlineDate?.takeUnless { it == IsoDate.today() }?.toCardDateText(),
-        deadlineMinute?.let(TimeText::format),
-    ).joinToString(" ").takeIf { it.isNotEmpty() }
 }
 
 /**
- * 截止日期文本（排序=截止日期时占据属性行首位）：日期段「6月18日」+ 时刻，
- * 今天不显日期段（时刻即全部信息，同待办时间的今天规则）。
- * 无截止日期返回 null——这一位缺席，卡片只剩标签；标签也没有则整行不渲染。
+ * 截止时间文本：日期段（[toCardDateLabel]——今天显「今天」）+ 时刻。
+ * 无截止日期返回 null——这一位缺席；截止日期与时刻成对出现（TodoValidator 约束）。
  */
-private fun Todo.deadlineCardText(): String? {
+@Composable
+internal fun Todo.deadlineCardText(): String? {
     val date = deadlineDate ?: return null
     return listOfNotNull(
-        date.takeUnless { it == IsoDate.today() }?.toCardDateText(),
+        date.toCardDateLabel(),
         deadlineMinute?.let(TimeText::format),
-    ).joinToString(" ").takeIf { it.isNotEmpty() }
+    ).joinToString(" ")
 }
 
-/** 日期段：空缺席；单日为今天不显（时刻即全部信息）；否则「6月18日、6月20日」。待办详情浮层复用 */
+/**
+ * 截止时间取色（NoteCard 图标与文字同用）：距截止剩余 >2 天 primary；剩 2 天
+ * urgentYellow；剩 1 天 urgentOrange；当天及已过期 error。截止缺席时返回
+ * primary（调用方仅在有截止文本时消费该色）。
+ */
+@Composable
+internal fun Todo.deadlineColor(): Color {
+    val date = deadlineDate ?: return MaterialTheme.colorScheme.primary
+    return when (val days = date - IsoDate.today()) {
+        0L -> MaterialTheme.colorScheme.error
+        1L -> MaterialTheme.classppColors.urgentOrange
+        2L -> MaterialTheme.classppColors.urgentYellow
+        else -> if (days > 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+    }
+}
+
+/** 日期段：空缺席；否则逐日走 [toCardDateLabel]，多日以「、」连接（详情浮层不复用——它要确定日期） */
+@Composable
 internal fun List<IsoDate>.cardDatePart(): String? {
     if (isEmpty()) return null
-    if (size == 1 && single() == IsoDate.today()) return null
-    return joinToString("、") { it.toCardDateText() }
+    val labels = mutableListOf<String>()
+    for (date in this) labels += date.toCardDateLabel()
+    return labels.joinToString("、")
 }
 
-/** 日期段文本 `6月18日`（月/日不补零，NoteCard KDoc 形态；换算同 IsoDate.toString 的 UTC 整数天）。待办详情浮层复用 */
+/** 日期段文本 `6月18日`（月/日不补零；换算同 IsoDate.toString 的 UTC 整数天）。待办详情浮层复用——详情页要给出确定日期 */
 internal fun IsoDate.toCardDateText(): String {
     val calendar = GregorianCalendar(TimeZone.getTimeZone("UTC")).apply {
         timeInMillis = epochDay * MILLIS_PER_DAY
@@ -631,4 +639,34 @@ internal fun IsoDate.toCardDateText(): String {
         calendar.get(GregorianCalendar.MONTH) + 1,
         calendar.get(GregorianCalendar.DAY_OF_MONTH),
     )
+}
+
+/**
+ * 卡片日期段：距今天 ±2 天内显相对词（后天/明天/今天/昨天/前天），更远显绝对日期——
+ * 非本年 `2027/3/12`（YYYY/M/D），本年 `3/12`（M/D），月/日不补零。
+ * 待办时间与截止时间共用；详情浮层不复用（走 [toCardDateText] 的确定日期）。
+ */
+@Composable
+internal fun IsoDate.toCardDateLabel(): String {
+    when (epochDay - IsoDate.today().epochDay) {
+        2L -> return stringResource(R.string.date_card_day_after_tomorrow)
+        1L -> return stringResource(R.string.date_card_tomorrow)
+        0L -> return stringResource(R.string.date_card_today)
+        -1L -> return stringResource(R.string.date_card_yesterday)
+        -2L -> return stringResource(R.string.date_card_day_before_yesterday)
+    }
+    val calendar = GregorianCalendar(TimeZone.getTimeZone("UTC")).apply {
+        timeInMillis = epochDay * MILLIS_PER_DAY
+    }
+    val year = calendar.get(GregorianCalendar.YEAR)
+    val month = calendar.get(GregorianCalendar.MONTH) + 1
+    val day = calendar.get(GregorianCalendar.DAY_OF_MONTH)
+    val todayYear = GregorianCalendar(TimeZone.getTimeZone("UTC")).apply {
+        timeInMillis = IsoDate.today().epochDay * MILLIS_PER_DAY
+    }.get(GregorianCalendar.YEAR)
+    return if (year == todayYear) {
+        String.format(Locale.ROOT, "%d/%d", month, day)
+    } else {
+        String.format(Locale.ROOT, "%d/%d/%d", year, month, day)
+    }
 }

@@ -166,11 +166,13 @@ private fun NoteCardSectionShowcase() {
             NoteCard(
                 title = "户口乔迁材料报送",
                 time = "12:30",
+                deadline = "明天 8:00",
+                deadlineColor = MaterialTheme.classppColors.urgentOrange,
                 tags = listOf("待办标签"),
                 urgency = TodoUrgency.Critical,
                 onCheckedChange = {},
             )
-            NoteCard(title = "户口乔迁材料报送", time = "6月18日 14:30", onCheckedChange = {})
+            NoteCard(title = "户口乔迁材料报送", time = "6/18 14:30", onCheckedChange = {})
         }
         NoteCardSection(title = "已完成", initiallyExpanded = false) {
             NoteCard(
