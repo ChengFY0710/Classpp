@@ -152,7 +152,7 @@ fun PersonalizationScreen(
 
 /**
  * 「课表」分组：课程卡片高度滑条。范围与默认值随 [daysPerWeek] 切换——5 天 100–200
- * 默认 150、7 天 160–300 默认 160（[CardHeightPreferences]，默认值即现行行高），
+ * 默认 150、7 天 120–300 默认 160（[CardHeightPreferences]，默认值即现行行高），
  * 滑至默认值附近自动吸附并震动；值等于默认时右上显示「默认」，否则显示具体 dp 值。
  */
 @Composable

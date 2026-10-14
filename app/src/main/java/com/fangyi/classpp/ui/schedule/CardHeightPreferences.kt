@@ -28,7 +28,7 @@ object CardHeightPreferences {
 
     /** 可调范围（dp）：个性化页滑条 valueRange 与 load 钳制共用 */
     val Range5 = 100f..200f
-    val Range7 = 160f..300f
+    val Range7 = 120f..300f
 
     /** 读取两个模式的高度；无记录回退默认值，越界值钳回范围 */
     fun load(context: Context): CardHeights {
