@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -40,6 +42,7 @@ import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
+import com.fangyi.classpp.ui.theme.CardSectionTitleSpacing
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
@@ -57,7 +60,8 @@ private val SectionButtonSize = 32.dp
  *   ic_chevron_up/down 两个图标本就互为 180° 旋转，旋转切换比换图无跳变；
  * - 内容进出场 expand/shrink + 淡入淡出：Motion.FastMillis 微交互节奏，
  *   进场 Decelerate、退场 Accelerate（与全局曲线族约定一致）；
- * - 标题样式、左缩进与 [spacing]（标题↔首卡、卡↔卡）与 CardSection 完全一致。
+ * - 标题样式、左缩进与 CardSection 完全一致；组内两条纵向间距同样独立：卡↔卡走 [spacing]，
+ *   标题↔首卡走 [titleSpacing]（默认各取 ui.theme 的 CardSectionSpacing / CardSectionTitleSpacing）。
  */
 @Composable
 fun NoteCardSection(
@@ -65,6 +69,8 @@ fun NoteCardSection(
     modifier: Modifier = Modifier,
     // 卡间距与 CardSection 同源：ui.theme 的 CardSectionSpacing（10dp）
     spacing: Dp = CardSectionSpacing,
+    // 标题↔首卡独立于卡间距，与 CardSection 同源：CardSectionTitleSpacing
+    titleSpacing: Dp = CardSectionTitleSpacing,
     initiallyExpanded: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -74,10 +80,7 @@ fun NoteCardSection(
         animationSpec = tween(Motion.FastMillis, easing = Motion.Standard),
         label = "noteCardSectionChevron",
     )
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(spacing),
-    ) {
+    Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -85,7 +88,7 @@ fun NoteCardSection(
         ) {
             Text(
                 text = title,
-                modifier = Modifier.padding(start = 4.dp),
+                modifier = Modifier.padding(start = 6.dp),
                 style = MaterialTheme.classppTextStyles.sectionTitle.settingsRowMetrics(),
             )
             // 手写触控区而非 IconButton：M3 IconButton 强制 48dp 最小触控区，
@@ -101,6 +104,8 @@ fun NoteCardSection(
                 ChevronIcon(expanded = expanded, rotation = chevronRotation)
             }
         }
+        // 标题↔内容用显式留白，与 CardSection 同构；下面 content 的 spacedBy 只管卡↔卡
+        Spacer(Modifier.height(titleSpacing))
         AnimatedVisibility(
             visible = expanded,
             enter = expandVertically(

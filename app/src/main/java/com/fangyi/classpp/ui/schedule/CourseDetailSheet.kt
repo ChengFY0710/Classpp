@@ -118,7 +118,7 @@ fun CourseDetailSheet(
         visible = visible,
         onDismissed = onDismissed,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
+        Column(verticalArrangement = Arrangement.spacedBy(/**SheetSectionSpacingBetween 课程详情卡片单独设置，其余统一使用SheetSectionSpacingBetween变量**/10.dp)) {
             Text(
                 text = entry.name,
                 style = MaterialTheme.typography.titleLarge,
