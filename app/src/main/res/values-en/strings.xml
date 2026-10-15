@@ -289,8 +289,9 @@
     <string name="todo_countdown_overdue">"Overdue "</string>
     <string name="todo_countdown_day_unit">" days"</string>
     <string name="todo_detail_time_label">Time</string>
-    <!-- Todo details sheet: created & completed section -->
-    <string name="todo_section_created_completed">Created &amp; completed</string>
+    <!-- Todo details sheet: more info section -->
+    <string name="todo_section_more_info">More info</string>
+    <string name="todo_detail_group_label">Group</string>
     <string name="todo_created_label">Created</string>
     <string name="todo_completed_label">Completed</string>
     <!-- Todo details sheet: steps section (list + add-step row; dialog shares the action label) -->

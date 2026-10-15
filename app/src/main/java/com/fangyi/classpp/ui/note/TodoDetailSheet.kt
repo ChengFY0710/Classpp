@@ -271,10 +271,15 @@ internal fun TodoDetailSheet(
                     placeholder = stringResource(R.string.detail_note_ph),
                 )
             }
-            // 创建与完成时间：只读时刻戳，无图标槽；值色固定 Primary（不传 valueColor 即默认）
-            CardSection(title = stringResource(R.string.todo_section_created_completed)) {
+            // 更多信息：分组 + 只读时刻戳，无图标槽；值色固定 Primary（不传 valueColor 即默认）
+            CardSection(title = stringResource(R.string.todo_section_more_info)) {
                 SheetInfoCard(
                     entries = listOfNotNull(
+                        // 分组：group 即分组名，null（未分组）显既有「未分组」文案
+                        SheetInfoEntry(
+                            label = stringResource(R.string.todo_detail_group_label),
+                            value = todo.group ?: stringResource(R.string.todo_group_ungrouped),
+                        ),
                         SheetInfoEntry(
                             label = stringResource(R.string.todo_created_label),
                             // 旧数据文件缺 createdAt 时仓库尚未补齐（0）：仍占位显「无」，不显 1970 假数据
