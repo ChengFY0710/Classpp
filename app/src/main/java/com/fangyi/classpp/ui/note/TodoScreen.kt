@@ -350,6 +350,20 @@ fun TodoScreen(
                     editMounted = latest
                     editTargetId = latest.id
                 },
+                // 步骤新增/勾选：各自落库（addStep 现铸步骤 id、setStepDone 按 id 定点切换），
+                // Err（待办已删 / 空标题等异常）Toast 提示；列表随仓库回流自动刷新
+                onStepAdd = { title ->
+                    scope.launch {
+                        val result = repository.addStep(detail.id, title)
+                        if (result is TodoOpResult.Err) AppToasts.show(context, saveFailedMessage)
+                    }
+                },
+                onStepToggle = { stepId, done ->
+                    scope.launch {
+                        val result = repository.setStepDone(detail.id, stepId, done)
+                        if (result is TodoOpResult.Err) AppToasts.show(context, saveFailedMessage)
+                    }
+                },
             )
         }
     }

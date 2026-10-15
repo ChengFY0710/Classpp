@@ -46,6 +46,10 @@
     <string name="todo_section_created_completed">创建与完成时间</string>
     <string name="todo_created_label">创建时间</string>
     <string name="todo_completed_label">完成时间</string>
+    <!-- 待办详情浮层：步骤分组（列表 + 添加步骤按钮，弹卡共用同一动作文案） -->
+    <string name="todo_section_steps">步骤</string>
+    <string name="todo_step_add">添加步骤</string>
+    <string name="todo_step_create_hint">输入步骤名称</string>
     <!-- 编辑待办浮层：删除二次确认 -->
     <string name="todo_delete_title">删除待办</string>
     <string name="todo_delete_message">「%1$s」将被删除，此操作不可撤销。</string>

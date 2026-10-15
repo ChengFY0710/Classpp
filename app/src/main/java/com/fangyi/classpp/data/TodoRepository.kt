@@ -5,6 +5,7 @@ import com.fangyi.classpp.data.export.TodoShareCodec
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoFile
 import com.fangyi.classpp.data.model.TodoGroup
+import com.fangyi.classpp.data.model.TodoStep
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.data.store.FileTodoStore
 import com.fangyi.classpp.data.store.LoadIssue
@@ -191,6 +192,23 @@ class TodoRepository internal constructor(
             return@withLock TodoOpResult.Err(TodoError.NotFound(stepId))
         }
         val updated = target.copy(steps = target.steps.map { if (it.id == stepId) it.copy(done = done) else it })
+        commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == todoId) updated else it }))
+    }
+
+    /**
+     * 追加一条步骤（标题 trim 后追加，id 现铸，同 [TodoShareCodec] 的步骤 id 规则）；
+     * 标题 trim 后为空返回 [TodoError.StepInvalid]（同校验器的 BlankTitle 规则），
+     * 待办不存在返回 NotFound。
+     */
+    suspend fun addStep(todoId: String, title: String): TodoOpResult = mutex.withLock {
+        val target = todoOrNull(todoId) ?: return@withLock TodoOpResult.Err(TodoError.NotFound(todoId))
+        val trimmed = title.trim()
+        if (trimmed.isEmpty()) {
+            return@withLock TodoOpResult.Err(
+                TodoError.StepInvalid(target.steps.size, TodoStepReason.BlankTitle),
+            )
+        }
+        val updated = target.copy(steps = target.steps + TodoStep(id = newUuid(), title = trimmed))
         commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == todoId) updated else it }))
     }
 

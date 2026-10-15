@@ -277,6 +277,10 @@
     <string name="todo_section_created_completed">Created &amp; completed</string>
     <string name="todo_created_label">Created</string>
     <string name="todo_completed_label">Completed</string>
+    <!-- Todo details sheet: steps section (list + add-step row; dialog shares the action label) -->
+    <string name="todo_section_steps">Steps</string>
+    <string name="todo_step_add">Add step</string>
+    <string name="todo_step_create_hint">Enter step name</string>
     <!-- Edit todo sheet: delete confirmation -->
     <string name="todo_delete_title">Delete Todo</string>
     <string name="todo_delete_message">“%1$s” will be deleted. This cannot be undone.</string>

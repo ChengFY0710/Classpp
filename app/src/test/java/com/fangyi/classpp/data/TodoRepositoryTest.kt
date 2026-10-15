@@ -169,6 +169,28 @@ class TodoRepositoryTest {
         assertTrue(r.setStepDone("ghost", "s1", done = true).assertErr() is TodoError.NotFound)
     }
 
+    @Test
+    fun `addStep trims title, mints id, rejects blank and survives reopen`() = runBlocking {
+        val r = repo()
+        val id = r.addTodo(testTodo(name = "作业", steps = listOf(testStep("s1")))).okId()
+
+        r.addStep(id, "  交材料  ").assertOk()
+        val steps = r.todos.value.single().steps
+        assertEquals(listOf("做第 1 题", "交材料"), steps.map { it.title })
+        // 现铸 id：非空且与既有步骤不撞
+        assertEquals(2, steps.map { it.id }.toSet().size)
+        assertTrue(steps[1].id.isNotBlank())
+
+        // 空白标题拒绝且不落库（同校验器的 BlankTitle 规则；索引 = 追加位置）
+        val blankErr = r.addStep(id, "   ").assertErr()
+        assertEquals(TodoError.StepInvalid(2, TodoStepReason.BlankTitle), blankErr)
+        assertEquals(2, r.todos.value.single().steps.size)
+
+        assertTrue(r.addStep("ghost", "x").assertErr() is TodoError.NotFound)
+
+        assertEquals(2, repo().todos.value.single().steps.size)
+    }
+
     // ---------- 分组 ----------
 
     @Test

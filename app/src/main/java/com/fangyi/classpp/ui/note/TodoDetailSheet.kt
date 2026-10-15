@@ -2,21 +2,29 @@ package com.fangyi.classpp.ui.note
 
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -25,7 +33,9 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoTimeKind
+import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.CardSection
+import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetInfoCard
 import com.fangyi.classpp.ui.components.SheetInfoEntry
@@ -34,8 +44,13 @@ import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.TagChip
 import com.fangyi.classpp.ui.components.flagColor
 import com.fangyi.classpp.ui.components.flagLabel
+import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.theme.NoteCardShape
+import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.classppTextStyles
+import dev.chrisbanes.haze.rememberHazeState
 
 /** 标签行内胶囊间距（同 NoteCard 属性行）；胶囊与文字的 4dp 在 TagChip 内部 */
 private val TagRowSpacing = 12.dp
@@ -44,8 +59,9 @@ private val TagRowSpacing = 12.dp
  * 待办详情浮层：点待办卡弹出，结构对标 [com.fangyi.classpp.ui.schedule.CourseDetailSheet]——
  * 正文为待办标题、标题下方的标签行（[TagChip]，空标签不渲染）、四行只读信息
  * （[SheetInfoCard]：截止日期 / 紧急程度 / 待办时间 / 待办地点，四行常显，
- * 空值显灰「无」）、备注输入（[SheetTextArea]）与带标题的「创建与完成时间」分组
- * （[SheetInfoCard] 两条时刻戳：创建时间常显、完成时间仅已完成时渲染）。
+ * 空值显灰「无」）、备注输入（[SheetTextArea]）、带标题的「创建与完成时间」分组
+ * （[SheetInfoCard] 两条时刻戳：创建时间常显、完成时间仅已完成时渲染）与「步骤」分组
+ * （列表走 [NoteCard] 右侧勾选框，其下是等高的「添加步骤」行卡 [AddStepCard]）。
  *
  * 信息行行首各带 24dp onSurface 图标（[InfoRowIcon]），值色两处按紧急度取色、与
  * 列表卡同源：截止值走 [deadlineColor]（剩 2 天黄 / 1 天橙 / 当天及逾期红 / 其余 primary）、
@@ -71,6 +87,10 @@ internal fun TodoDetailSheet(
     onDismissed: () -> Unit,
     onNoteSave: (String) -> Unit,
     onEdit: (Todo) -> Unit,
+    // 新增一条步骤（标题已 trim、非空）；勾选/取消一条步骤——两者都由宿主落库，
+    // 失败 Toast 也由宿主提示
+    onStepAdd: (String) -> Unit,
+    onStepToggle: (String, Boolean) -> Unit,
     // 被编辑浮层盖住：本层缩小后退（透传 OverlaySheet 的分层动效）
     covered: Boolean = false,
 ) {
@@ -78,6 +98,14 @@ internal fun TodoDetailSheet(
     // 并确认（仓库 note 变化）也触发重初始化，否则残留旧值会在关闭时把新值覆盖回去。
     // 打字不回流仓库（值未变不重置）；落盘后回流同值同样不重置
     var note by rememberSaveable(todo.id, todo.note) { mutableStateOf(todo.note) }
+    // 新增步骤弹卡的草稿与两段式挂载（同 TodoGroupsSheet 的命名卡）：挂载与可见性分离，
+    // 打开时清草稿；确认即关、由宿主落库
+    var stepDraft by remember { mutableStateOf("") }
+    var stepRequested by remember { mutableStateOf(false) }
+    var stepMounted by remember { mutableStateOf(false) }
+    // haze 采样源：自建后同时交给本浮层容器（顶栏磨砂）与叠在其上的输入弹卡
+    // （弹卡背景模糊）——两者必须同一个实例，否则弹卡按默认平底渲染（见 BottomTextFieldCard KDoc）
+    val sheetHazeState = rememberHazeState()
     val closeWithSave = {
         onNoteSave(note.trim())
         onDismiss()
@@ -109,6 +137,8 @@ internal fun TodoDetailSheet(
         visible = visible,
         covered = covered,
         onDismissed = onDismissed,
+        // 采样源交给容器（见 sheetHazeState 声明处）：顶栏磨砂与叠层弹卡的背景模糊同源
+        hazeState = sheetHazeState,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
             Text(
@@ -192,7 +222,79 @@ internal fun TodoDetailSheet(
                     ),
                 )
             }
+            // 步骤：列表走 NoteCard（右侧勾选框、完成态划线置灰），其下是等高的
+            // 「添加步骤」行卡；步骤为空时只有按钮卡（列表不占位）
+            CardSection(title = stringResource(R.string.todo_section_steps)) {
+                todo.steps.forEach { step ->
+                    NoteCard(
+                        title = step.title,
+                        completed = step.done,
+                        // 卡片本身静态（不传 onClick）：勾选框是唯一交互位
+                        onCheckedChange = { onStepToggle(step.id, it) },
+                    )
+                }
+                AddStepCard(
+                    onClick = {
+                        stepDraft = ""
+                        stepMounted = true
+                        stepRequested = true
+                    },
+                )
+            }
         }
+    }
+    // 新增步骤弹卡（[BottomTextFieldCard]）：组合在浮层之后（画到浮层之上），返回键/遮罩/
+    // 键盘让位由弹卡框架接管；确认即关并交宿主落库，空名时确认钮置灰
+    if (stepMounted) {
+        BottomTextFieldCard(
+            visible = stepRequested,
+            onDismiss = { stepRequested = false },
+            onDismissed = { stepMounted = false },
+            title = stringResource(R.string.todo_step_add),
+            placeholder = stringResource(R.string.todo_step_create_hint),
+            value = stepDraft,
+            onValueChange = { stepDraft = it },
+            confirmEnabled = stepDraft.isNotBlank(),
+            // 卡片磨砂：采样源同本浮层顶栏（见 sheetHazeState 声明处）
+            hazeState = sheetHazeState,
+            onConfirm = {
+                stepRequested = false
+                onStepAdd(stepDraft.trim())
+            },
+        )
+    }
+}
+
+/**
+ * 「添加步骤」行卡（本文件私有）：白底 + [NoteCardShape]（与步骤卡同形），
+ * 行高下限同步骤卡（[SheetFieldHeight]），内容居中——primary 着色的 ic_add_circle
+ * 24dp 与文案（[classppTextStyles] 的 fieldValue），两者间距 12dp。
+ */
+@Composable
+private fun AddStepCard(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = SheetFieldHeight)
+            .clip(NoteCardShape)
+            .background(MaterialTheme.colorScheme.surface)
+            // 按压反馈同 NoteCard 的可点态：位置在 clip 之前（缩放作用于整卡、不被圆角裁掉）
+            .pressClickable(NoteCardShape, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_add_circle),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(24.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = stringResource(R.string.todo_step_add),
+            style = MaterialTheme.classppTextStyles.fieldValue,
+        )
     }
 }
 
