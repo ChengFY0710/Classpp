@@ -57,14 +57,17 @@ private val SwipeActionGap = 10.dp
 /** 展开阈值：松手时绝对位移达到它吸附为展开态（按钮保持呼出、可直接点按），不足则回弹复位 */
 private val SwipeOpenOffset = SwipeActionWidth + SwipeActionGap
 
-/** 执行阈值：松手时绝对位移达到它直接执行对应动作（松手即执行，不再确认） */
-private val SwipeActionThreshold = 160.dp
+/** 填充起始阈值：越过它开始背景填充与图标变色（此段松手不执行，只作视觉预警） */
+private val SwipeFillStartOffset = 160.dp
 
-/** 填充跨度：越过执行阈值后再拖该距离，动作卡背景与图标颜色过渡到位 */
+/** 填充跨度：越过起始阈值后再拖该距离，动作卡背景与图标颜色过渡到位 */
 private val SwipeFillSpan = 56.dp
 
-/** 拖拽上限：绝对位移的钳制值（颜色填充与动作卡变长在此封顶） */
-private val SwipeMaxOffset = SwipeActionThreshold + SwipeFillSpan
+/** 执行阈值 = 填充起始 + 跨度：拖到按钮完全变色后松手才执行动作，变色前的松手不执行 */
+private val SwipeExecuteOffset = SwipeFillStartOffset + SwipeFillSpan
+
+/** 拖拽上限：与执行阈值同值——完全变色即到顶，钳制停住提示「松手即执行」 */
+private val SwipeMaxOffset = SwipeExecuteOffset
 
 /** 动作卡图标尺寸；滑出不足 [SwipeIconRevealSpan] 时图标按比例淡入，避免窄缝里生硬裁切 */
 private val SwipeActionIconSize = 24.dp
@@ -117,16 +120,17 @@ class SwipeCoordinator {
 /**
  * NoteCard 侧滑层：包住卡片内容，提供左滑/右滑呼出动作卡的手势与视觉反馈。
  *
- * 交互模型（双阈值，位移符号约定：正 = 卡片右移呼出左侧动作、负 = 左移呼出右侧动作）：
+ * 交互模型（双阈值 + 满填充执行，位移符号约定：正 = 卡片右移呼出左侧动作、负 = 左移呼出右侧动作）：
  * - 拖拽跟手：动作卡宽度实时 = |位移| − [SwipeActionGap]（随拖拽变长，间距恒定），
  *   高度经 matchParentSize 撑满卡片实测高度，圆角与卡片一致（[NoteCardShape]）；
  * - 松手 |位移| < [SwipeOpenOffset]：弹簧回弹复位；
- * - 松手 [SwipeOpenOffset] ≤ |位移| < [SwipeActionThreshold]：吸附为展开态（surface 底 +
+ * - 松手 [SwipeOpenOffset] ≤ |位移| < [SwipeExecuteOffset]：吸附为展开态（surface 底 +
  *   彩色图标，即初次滑出的形态），动作卡可直接点按执行，点卡片主体收起；
- * - 松手 |位移| ≥ [SwipeActionThreshold]：执行动作——删除侧整卡飞出屏幕后回调
- *   （落盘失败仍在本组合时延时滑回复位），置顶侧先回弹归位再回调（卡片随后移组）；
- * - 越过执行阈值后继续拖拽：背景 surface → [SwipeAction.activeColor]、图标动作色 →
- *   [SwipeAction.onActiveColor] 随幅度渐变（[SwipeFillSpan] 内过渡到位），越过瞬间触发一次长按触感。
+ * - 拖过 [SwipeFillStartOffset]：背景 surface → [SwipeAction.activeColor]、图标动作色 →
+ *   [SwipeAction.onActiveColor] 随幅度渐变（[SwipeFillSpan] 内过渡到位）——拖到
+ *   [SwipeExecuteOffset]（= 拖拽上限，按钮完全变色）触发一次长按触感，此后松手才执行：
+ *   删除侧整卡飞出屏幕后回调（落盘失败仍在本组合时延时滑回复位），置顶侧先回弹归位
+ *   再回调（卡片随后移组）；完全变色前的松手一律不执行（按上面的展开/回弹结算）。
  *
  * 手势用 [detectHorizontalDragGestures]，与纵向滚动按触控斜率自然让位；位移经 lambda 式
  * offset 应用，拖拽全程卡片内容零重组。互斥经 [SwipeCoordinator]：起手即清掉他卡展开态、
@@ -151,15 +155,17 @@ fun NoteCardSwipeLayer(
     val currentSwipe by rememberUpdatedState(swipe)
 
     val openPx = with(density) { SwipeOpenOffset.toPx() }
-    val thresholdPx = with(density) { SwipeActionThreshold.toPx() }
+    val fillStartPx = with(density) { SwipeFillStartOffset.toPx() }
+    val executePx = with(density) { SwipeExecuteOffset.toPx() }
     val maxPx = with(density) { SwipeMaxOffset.toPx() }
     val gapPx = with(density) { SwipeActionGap.toPx() }
-    val fillSpanPx = maxPx - thresholdPx
+    val fillSpanPx = maxPx - fillStartPx
     val iconRevealPx = with(density) { SwipeIconRevealSpan.toPx() }
 
     // 位移（px）：正 = 右移呼出删除侧、负 = 左移呼出置顶侧；拖拽 snapTo 跟手、松手 animateTo 收场
     val offset = remember(swipe.key) { Animatable(0f) }
-    // 本次拖拽是否已越过执行阈值（越过瞬间震一次，拖回阈值内复位允许再次触发）
+    // 本次拖拽是否已拖到执行阈值（完全变色，越过瞬间震一次；退回填充起始段才复位——
+    // 顶格处手指抖动不反复触发触感）
     var crossedAction by remember(swipe.key) { mutableStateOf(false) }
     // 动作执行中（飞出/回弹 + 回调）：屏蔽协调器联动收起，避免执行途中被拽回
     var executing by remember(swipe.key) { mutableStateOf(false) }
@@ -209,14 +215,14 @@ fun NoteCardSwipeLayer(
         }
     }
 
-    // 松手结算：按位移落进的双阈值区间决定回弹 / 吸附展开 / 执行
+    // 松手结算：只有拖到执行阈值（完全变色）才执行；变色中的松手按位移落点展开或回弹
     suspend fun settle() {
         val s = currentSwipe
         val value = offset.value
         val sign = if (value > 0f) 1f else -1f
         val action = if (sign > 0) s.delete else s.pin
         when {
-            abs(value) >= thresholdPx && action != null -> execute(action, sign)
+            abs(value) >= executePx && action != null -> execute(action, sign)
             abs(value) >= openPx && action != null -> openTo(sign)
             else -> collapse()
         }
@@ -245,12 +251,13 @@ fun NoteCardSwipeLayer(
                                 raw < 0f && s.pin == null -> 0f
                                 else -> raw.coerceIn(-maxPx, maxPx)
                             }
-                            if (abs(clamped) >= thresholdPx) {
+                            if (abs(clamped) >= executePx) {
                                 if (!crossedAction) {
                                     crossedAction = true
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                 }
-                            } else {
+                            } else if (abs(clamped) < fillStartPx) {
+                                // 退回填充起始段才解除「已到顶」标记：顶格抖动不反复触发触感
                                 crossedAction = false
                             }
                             offset.snapTo(clamped)
@@ -287,7 +294,7 @@ fun NoteCardSwipeLayer(
                 SwipeActionButton(
                     action = action,
                     revealedPx = value.coerceIn(0f, maxPx) - gapPx,
-                    fillProgress = ((value.coerceIn(0f, maxPx) - thresholdPx) / fillSpanPx)
+                    fillProgress = ((value.coerceIn(0f, maxPx) - fillStartPx) / fillSpanPx)
                         .coerceIn(0f, 1f),
                     surfaceColor = MaterialTheme.colorScheme.surface,
                     iconRevealPx = iconRevealPx,
@@ -299,7 +306,7 @@ fun NoteCardSwipeLayer(
                 SwipeActionButton(
                     action = action,
                     revealedPx = (-value).coerceIn(0f, maxPx) - gapPx,
-                    fillProgress = (((-value).coerceIn(0f, maxPx) - thresholdPx) / fillSpanPx)
+                    fillProgress = (((-value).coerceIn(0f, maxPx) - fillStartPx) / fillSpanPx)
                         .coerceIn(0f, 1f),
                     surfaceColor = MaterialTheme.colorScheme.surface,
                     iconRevealPx = iconRevealPx,
@@ -322,9 +329,9 @@ fun NoteCardSwipeLayer(
 
 /**
  * 单个动作卡：宽度 = 当前呼出量（随拖拽变长、间距外恒定），高度撑满父层（与卡片同高）；
- * 圆角与待办卡片一致；未越执行阈值时 surface 底 + 彩色图标，越过随 [fillProgress]
- * 过渡为动作色底 + 白图标；图标随呼出宽度渐显（[SwipeIconRevealSpan] 内淡入）。
- * 整卡可点按直接执行动作（展开态下点按的入口）。
+ * 圆角与待办卡片一致；未越填充起始阈值时 surface 底 + 彩色图标，拖过随 [fillProgress]
+ * 渐变为动作色底 + on 色图标（拖到顶 = 完全变色，松手即执行）；图标随呼出宽度渐显
+ * （[SwipeIconRevealSpan] 内淡入）。整卡可点按直接执行动作（展开态下点按的入口）。
  */
 @Composable
 private fun SwipeActionButton(

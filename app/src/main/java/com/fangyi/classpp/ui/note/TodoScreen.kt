@@ -259,7 +259,8 @@ fun TodoScreen(
                             }
                         }
                     },
-                    // 侧滑删除：松手即删（无确认框，飞出动画本身就是强确认）；失败 Toast、卡片自动滑回
+                    // 侧滑删除：拖到按钮完全变色后松手才删（无确认框，满填充就是强确认）；
+                    // 失败 Toast、卡片自动滑回
                     onDeleteTodo = { id ->
                         scope.launch {
                             when (repository.removeTodo(id)) {
@@ -793,7 +794,7 @@ private fun TodoList(
  * [Todo.countdown] 开启时把剩余天数交给 [NoteCard.countdownDays]，卡片左区显示倒计时
  * （天数口径与截止配色同源，见 [deadlineDaysLeft]）。
  * 点卡片（非勾选框）经 [onClick] 拉起详情浮层——勾选框是独立 toggleable，不会误触。
- * 侧滑动作：左侧删除（error 红，松手过阈值即删）、右侧置顶（primary 蓝；已置顶卡
+ * 侧滑动作：左侧删除（error 红，拖到完全变色后松手即删）、右侧置顶（primary 蓝；已置顶卡
  * 显示 ic_pin_off、执行取消置顶），动作卡语义见 [NoteCardSwipe]。
  */
 @Composable
