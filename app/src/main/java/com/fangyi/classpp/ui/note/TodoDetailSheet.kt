@@ -318,6 +318,7 @@ internal fun TodoDetailSheet(
                                 iconRes = R.drawable.ic_delete,
                                 tint = MaterialTheme.colorScheme.error,
                                 activeColor = MaterialTheme.colorScheme.error,
+                                onActiveColor = MaterialTheme.colorScheme.onError,
                                 contentDescription = stringResource(R.string.todo_swipe_delete),
                                 onAction = { onStepDelete(step.id) },
                             ),

@@ -826,6 +826,7 @@ private fun TodoCard(
                 iconRes = R.drawable.ic_delete,
                 tint = MaterialTheme.colorScheme.error,
                 activeColor = MaterialTheme.colorScheme.error,
+                onActiveColor = MaterialTheme.colorScheme.onError,
                 contentDescription = stringResource(R.string.todo_swipe_delete),
                 onAction = onDelete,
             ),
@@ -833,6 +834,7 @@ private fun TodoCard(
                 iconRes = if (todo.pinned) R.drawable.ic_pin_off else R.drawable.ic_pin,
                 tint = MaterialTheme.colorScheme.primary,
                 activeColor = MaterialTheme.colorScheme.primary,
+                onActiveColor = MaterialTheme.colorScheme.onPrimary,
                 contentDescription = stringResource(
                     if (todo.pinned) R.string.todo_swipe_unpin else R.string.todo_swipe_pin,
                 ),

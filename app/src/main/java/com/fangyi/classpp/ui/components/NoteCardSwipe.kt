@@ -78,7 +78,9 @@ private const val SwipeDeleteRestoreDelayMillis = 400L
  *
  * @property iconRes 图标资源（删除 ic_delete；置顶 ic_pin、取消置顶 ic_pin_off）
  * @property tint 未越过执行阈值时的图标色（theme 的 error / primary）
- * @property activeColor 越过执行阈值后背景填充的目标色（与 [tint] 同色，图标同步过渡为白色）
+ * @property activeColor 越过执行阈值后背景填充的目标色（与 [tint] 同色）
+ * @property onActiveColor 背景填充到位后的图标色——取 theme 的 onError / onPrimary，
+ * 同 Overlay 顶栏删除/确认胶囊的 contentColor 处理（浅深主题各自成立，不硬编码白色）
  * @property contentDescription 动作卡的无障碍描述
  * @property onAction 松手越过执行阈值（或展开态直接点按动作卡）时执行的业务回调
  */
@@ -86,6 +88,7 @@ class SwipeAction(
     @DrawableRes val iconRes: Int,
     val tint: Color,
     val activeColor: Color,
+    val onActiveColor: Color,
     val contentDescription: String,
     val onAction: () -> Unit,
 )
@@ -122,8 +125,8 @@ class SwipeCoordinator {
  *   彩色图标，即初次滑出的形态），动作卡可直接点按执行，点卡片主体收起；
  * - 松手 |位移| ≥ [SwipeActionThreshold]：执行动作——删除侧整卡飞出屏幕后回调
  *   （落盘失败仍在本组合时延时滑回复位），置顶侧先回弹归位再回调（卡片随后移组）；
- * - 越过执行阈值后继续拖拽：背景 surface → [SwipeAction.activeColor]、图标动作色 → 白色
- *   随幅度渐变（[SwipeFillSpan] 内过渡到位），越过瞬间触发一次长按触感。
+ * - 越过执行阈值后继续拖拽：背景 surface → [SwipeAction.activeColor]、图标动作色 →
+ *   [SwipeAction.onActiveColor] 随幅度渐变（[SwipeFillSpan] 内过渡到位），越过瞬间触发一次长按触感。
  *
  * 手势用 [detectHorizontalDragGestures]，与纵向滚动按触控斜率自然让位；位移经 lambda 式
  * offset 应用，拖拽全程卡片内容零重组。互斥经 [SwipeCoordinator]：起手即清掉他卡展开态、
@@ -335,7 +338,8 @@ private fun SwipeActionButton(
 ) {
     val density = LocalDensity.current
     val backgroundColor = lerp(surfaceColor, action.activeColor, fillProgress)
-    val iconTint = lerp(action.tint, Color.White, fillProgress)
+    // 填充到位的图标色由调用方按容器色配 on 色（onError/onPrimary，同 Overlay 顶栏胶囊）
+    val iconTint = lerp(action.tint, action.onActiveColor, fillProgress)
     val iconAlpha = (revealedPx / iconRevealPx).coerceIn(0f, 1f)
     Box(
         modifier = modifier
