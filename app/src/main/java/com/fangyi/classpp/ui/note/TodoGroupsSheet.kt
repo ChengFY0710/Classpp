@@ -101,9 +101,11 @@ import dev.chrisbanes.haze.rememberHazeState
  * 全部 = 待办总数、自定义分组 = 该组名的待办数（分组数据已入 [TodoFile.groups]，
  * 引用完整性由仓库归一化维护）。
  *
- * 第一部分（状态/留存）各行点击仍为空占位（导航等接好后再实装）；普通态点击自定义分组 /
- * 「未分组」/「全部」= 跳转对应过滤（[onOpenGroup] / [onOpenUngrouped] / [onOpenAll]：
- * 宿主收起浮层并切顶栏胶囊）。
+ * 第一部分（状态/留存）各行点击 = 跳转对应特殊分组页（[onOpenSpecial]：宿主收起浮层、
+ * 顶栏分组条首位出现对应胶囊并常驻——再点已选胶囊退出关闭、点未选胶囊回页；已归档/
+ * 最近删除本期仅 UI）；普通态点击
+ * 自定义分组 /「未分组」/「全部」= 跳转对应过滤（[onOpenGroup] / [onOpenUngrouped] /
+ * [onOpenAll]：宿主收起浮层并切顶栏胶囊）。
  *
  * @param groups 分组列表：顺序即显示序，置顶项须构成连续前缀（[TodoGroup] 不变式）
  * @param onGroupsChange 整表写回统一入口：编辑态确认（顺序 + 置顶）、普通态新建（追加分组）、
@@ -113,6 +115,8 @@ import dev.chrisbanes.haze.rememberHazeState
  * @param onOpenGroup 普通态点击自定义分组：宿主收起浮层并把顶栏胶囊切到该分组
  * @param onOpenUngrouped 普通态点击「未分组」行：宿主收起浮层并把顶栏胶囊切到「未分组」
  * @param onOpenAll 普通态点击「全部」行：宿主收起浮层并把顶栏胶囊切回「全部」
+ * @param onOpenSpecial 点击第一部分（状态/留存）行：宿主收起浮层并打开对应特殊分组页
+ *   （编辑态不触发——同第二部分行，避免静默丢弃草稿）
  */
 @Composable
 internal fun TodoGroupsSheet(
@@ -126,6 +130,7 @@ internal fun TodoGroupsSheet(
     onOpenGroup: (String) -> Unit,
     onOpenUngrouped: () -> Unit,
     onOpenAll: () -> Unit,
+    onOpenSpecial: (TodoSpecialSection) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // ——— 编辑态状态机（全 remember：进程重建 = 草稿丢 = 等价取消，无数据损失；
@@ -273,56 +278,58 @@ internal fun TodoGroupsSheet(
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
             // 第一部分：状态与留存。设计稿无小标题，CardSection 退化为纯分组容器
             CardSection {
-                // 状态三行同卡：计数实时来自待办列表（值右对齐走 fieldValue）
+                // 状态三行同卡：计数实时来自待办列表（值右对齐走 fieldValue）；
+                // 点击 = 跳转对应特殊分组页（已完成/未完成/已逾期，编辑态不触发）
                 SettingsCardwithIcon(
                     items = listOf(
                         SettingsCardwithIconItem(
                             icon = R.drawable.ic_checkbox_checked,
                             label = stringResource(R.string.todo_section_completed),
                             value = completedCount.toString(),
-                            // 点击本期空置（行右侧箭头是设计语言，导航后续接入）
-                            onClick = {},
+                            // 行右侧箭头是设计语言；点击跳转由宿主收起浮层 + 顶栏首位出胶囊
+                            onClick = { if (!editing) onOpenSpecial(TodoSpecialSection.Completed) },
                         ),
                         SettingsCardwithIconItem(
                             icon = R.drawable.ic_checkbox_unchecked,
                             label = stringResource(R.string.todo_section_incomplete),
                             value = incompleteCount.toString(),
-                            onClick = {},
+                            onClick = { if (!editing) onOpenSpecial(TodoSpecialSection.Incomplete) },
                         ),
                         SettingsCardwithIconItem(
                             icon = R.drawable.ic_checkbox_warning,
                             label = stringResource(R.string.todo_section_overdue),
                             value = overdueCount.toString(),
-                            onClick = {},
+                            onClick = { if (!editing) onOpenSpecial(TodoSpecialSection.Overdue) },
                         ),
                     ),
                 )
                 // 已置顶 + 已归档一张两行卡：置顶计数实时来自待办列表；归档数据层暂无概念，恒 0
-                // （接入后由归档统计替换）
+                // （接入后由归档统计替换）；已置顶页内可单卡侧滑撤销置顶，归档页本期仅 UI
                 SettingsCardwithIcon(
                     items = listOf(
                         SettingsCardwithIconItem(
                             icon = R.drawable.ic_pin,
                             label = stringResource(R.string.todo_section_pinned),
                             value = pinnedCount.toString(),
-                            onClick = {},
+                            onClick = { if (!editing) onOpenSpecial(TodoSpecialSection.Pinned) },
                         ),
                         SettingsCardwithIconItem(
                             icon = R.drawable.ic_archive,
                             label = stringResource(R.string.todo_section_archived),
                             value = "0",
-                            onClick = {},
+                            onClick = { if (!editing) onOpenSpecial(TodoSpecialSection.Archived) },
                         ),
                     ),
                 )
-                // 最近删除单行卡：无回收站（removeTodo 硬删），计数恒 0（接入软删后替换）
+                // 最近删除单行卡：无回收站（removeTodo 硬删），计数恒 0（接入软删后替换）；
+                // 点击跳转仅 UI 的空页（空状态文案占位）
                 SettingsCardwithIcon(
                     items = listOf(
                         SettingsCardwithIconItem(
                             icon = R.drawable.ic_delete,
                             label = stringResource(R.string.todo_section_trash),
                             value = "0",
-                            onClick = {},
+                            onClick = { if (!editing) onOpenSpecial(TodoSpecialSection.Trash) },
                         ),
                     ),
                 )

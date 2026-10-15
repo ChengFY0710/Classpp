@@ -40,6 +40,13 @@
     <string name="todo_section_overdue">已逾期</string>
     <string name="todo_section_archived">已归档</string>
     <string name="todo_section_trash">最近删除</string>
+    <!-- 待办特殊分组页（顶栏首位胶囊跳转）空列表占位 -->
+    <string name="todo_empty_completed">还没有已完成的待办</string>
+    <string name="todo_empty_incomplete">所有待办都已完成</string>
+    <string name="todo_empty_overdue">没有已逾期的待办</string>
+    <string name="todo_empty_pinned">还没有置顶的待办</string>
+    <string name="todo_empty_archived">暂无已归档的待办</string>
+    <string name="todo_empty_trash">暂无最近删除的待办</string>
     <string name="todo_error_save_failed">保存失败，请稍后重试</string>
     <string name="todo_detail_title">待办详情</string>
     <!-- 待办详情浮层：标题行更多菜单 -->

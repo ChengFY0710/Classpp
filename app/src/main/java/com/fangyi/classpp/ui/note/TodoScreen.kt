@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -32,6 +33,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
@@ -133,6 +135,13 @@ fun TodoScreen(
         swipeCoordinator.activeKey = null
     }
     var selectedGroupIndex by rememberSaveable { mutableIntStateOf(0) }
+    // 特殊分组页（已完成/未完成/已逾期/已置顶/已归档/最近删除）：分组浮层第一部分跳转进入，
+    // 顶栏分组条首位出现对应胶囊并**常驻**——specialSection 记胶囊存在，specialActive 记
+    // 页面在场（胶囊选中态）：切常规分组只离页不清胶囊（转未选态），再点未选胶囊回页、
+    // 点已选胶囊才退出关闭。二者独立于 [selectedGroupIndex] 保存——进入不动常规选中，
+    // 关闭后自动回到进入前的常规分组
+    var specialSection by rememberSaveable { mutableStateOf<TodoSpecialSection?>(null) }
+    var specialActive by rememberSaveable { mutableStateOf(false) }
     val hazeState = remember { HazeState() }
     val todos by repository.todos.collectAsState()
     // 排序状态：默认创建时间降序（创建早的在前）
@@ -198,8 +207,16 @@ fun TodoScreen(
         }
     }
 
-    // 按选中分组派生可见列表（0 = 全部、1 = 未分组、2 起 = 用户分组）；排序/分区不受影响
-    val visibleTodos = filterTodosByGroup(todos, selectedGroupIndex, groups)
+    // 按选中分组派生可见列表（0 = 全部、1 = 未分组、2 起 = 用户分组）；特殊分组页在场时
+    // 改按特殊页口径过滤（已归档/最近删除恒空，仅 UI），离页（胶囊保留未选）回常规过滤
+    val today = LocalToday
+    val nowMinute = currentMinuteOfDay()
+    val special = if (specialActive) specialSection else null
+    val visibleTodos = if (special != null) {
+        filterTodosBySpecial(todos, special, today, nowMinute)
+    } else {
+        filterTodosByGroup(todos, selectedGroupIndex, groups)
+    }
 
     // 整页（列表 + 顶栏）滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的
     // ProvideOverscroll）：列表滚到顶/底后继续拖动，内容整块被拉出边缘、越拉越硬，
@@ -221,7 +238,12 @@ fun TodoScreen(
                     todos = visibleTodos,
                     sort = sort,
                     sortDescending = sortDescending,
-                    visibleSections = visibleSections,
+                    // 特殊分组页 = 该页本身就是过滤口径，分类菜单的分组显隐不再参与（全组可见）
+                    visibleSections =
+                        if (special != null) TodoSection.entries.toSet() else visibleSections,
+                    // 特殊页分组头全部默认展开（常规列表「已完成默认收起」不适用）；空页给占位文案
+                    expandAllSections = special != null,
+                    emptyHint = special?.let { stringResource(it.emptyHintRes) },
                     topBarExtraSpace = topBarExtraSpace,
                     swipeCoordinator = swipeCoordinator,
                     onToggleCompleted = { id, completed ->
@@ -254,8 +276,23 @@ fun TodoScreen(
                 // 置顶分组数：仓库维持「置顶构成连续前缀」不变式，顶栏按此把前 N 粒胶囊
                 // 固定最前（行首图钉）；下标语义不受视觉前移影响（仍按 groups 原序偏移）
                 pinnedGroupCount = groups.count { it.pinned },
+                // 特殊分组页胶囊（分组条首位，常驻）+ 点击切换：已选中 = 退出关闭（胶囊消失），
+                // 未选中 = 回到该页；切任何常规胶囊 = 离开特殊页（胶囊保留、转未选态）
+                specialSection = specialSection,
+                specialSectionSelected = specialActive,
+                onSpecialSectionClick = {
+                    if (specialActive) {
+                        specialSection = null
+                        specialActive = false
+                    } else {
+                        specialActive = true
+                    }
+                },
                 selectedGroupIndex = selectedGroupIndex,
-                onGroupSelect = { selectedGroupIndex = it },
+                onGroupSelect = {
+                    specialActive = false
+                    selectedGroupIndex = it
+                },
                 // 更多点击翻转展开态;收起时顺带关排序/分类菜单——菜单锚在展开动作行的
                 // 动作块上,行收起锚点即消失,不先关会悬空
                 onMoreClick = {
@@ -526,7 +563,9 @@ fun TodoScreen(
     // 编辑态在浮层内自治：顶栏「确认」经 onGroupsChange 写回（置顶/重排），
     // 底栏「删除」经 onDeleteGroups 立即从 groups 移除（不可经确认框取消撤销）、
     // 「重命名」经 onGroupsChange（立即生效，renames 映射让顶栏跟随新名）；
-    // 普通态点击分组/「未分组」/「全部」经 onOpen* 跳转：顶栏胶囊切到对应下标 + 收起浮层
+    // 普通态点击分组/「未分组」/「全部」经 onOpen* 跳转：顶栏胶囊切到对应下标 + 收起浮层；
+    // 第一部分（状态/留存）行经 onOpenSpecial 打开对应特殊分组页（顶栏首位出胶囊，收起浮层）
+    // ——切常规分组只离页（胶囊保留、转未选态），再点未选胶囊回页、点已选胶囊才退出关闭
     var groupsMounted by remember { mutableStateOf(false) }
     if (groupsVisible) groupsMounted = true
     if (groupsMounted) {
@@ -541,14 +580,23 @@ fun TodoScreen(
             onOpenGroup = { name ->
                 val index = groups.indexOfFirst { it.name == name }
                 if (index >= 0) selectedGroupIndex = index + 2
+                specialActive = false
                 groupsVisible = false
             },
             onOpenUngrouped = {
                 selectedGroupIndex = 1
+                specialActive = false
                 groupsVisible = false
             },
             onOpenAll = {
                 selectedGroupIndex = 0
+                specialActive = false
+                groupsVisible = false
+            },
+            // 第一部分（状态/留存）行：打开对应特殊分组页（顶栏首位出胶囊并置为选中），收起浮层
+            onOpenSpecial = { section ->
+                specialSection = section
+                specialActive = true
                 groupsVisible = false
             },
         )
@@ -600,6 +648,26 @@ internal fun filterTodosByGroup(
 }
 
 /**
+ * 按特殊分组页（[TodoSpecialSection]）口径派生可见待办：已完成/未完成/已逾期/已置顶
+ * 实时过滤；已归档/最近删除数据层暂无该概念（removeTodo 硬删、无归档），恒空仅 UI。
+ * 逾期判定与列表同一份（[today] 取 [LocalToday]、[nowMinute] 重组时现取，同 TodoList）。
+ * 页内仍按置顶/逾期/未完成/已完成分区展示（置顶收编语义不变——「已置顶」页单卡侧滑
+ * 即可撤销置顶）。
+ */
+internal fun filterTodosBySpecial(
+    todos: List<Todo>,
+    section: TodoSpecialSection,
+    today: IsoDate,
+    nowMinute: Int,
+): List<Todo> = when (section) {
+    TodoSpecialSection.Completed -> todos.filter { it.completed }
+    TodoSpecialSection.Incomplete -> todos.filter { !it.completed }
+    TodoSpecialSection.Overdue -> todos.filter { it.isOverdue(today, nowMinute) }
+    TodoSpecialSection.Pinned -> todos.filter { it.pinned }
+    TodoSpecialSection.Archived, TodoSpecialSection.Trash -> emptyList()
+}
+
+/**
  * 待办列表：已置顶、已逾期、未完成、已完成各归一组——已置顶组在最上（所有置顶待办，
  * 无置顶待办时整组不渲染）、已逾期组次之（标题标红的卡片，截止日期已过且未完成）、
  * 未完成居中、已完成在下（默认收起），空组不渲染；
@@ -611,6 +679,11 @@ internal fun filterTodosByGroup(
  * 互斥），展开态按系统返回自动收起（页面层 BackHandler）。列表从顶栏与浮动导航栏下滚过，
  * 上下各留出让位；顶栏展开动作行时按 [topBarExtraSpace] 额外让位（宿主动画下发）。
  *
+ * 特殊分组页（分组浮层第一部分跳转）复用同一渲染：[expandAllSections] = 分组头全部
+ * 默认展开（规避「已完成默认收起」把整页收起来）；[emptyHint] = 过滤结果为空时的
+ * 居中占位文案（已归档/最近删除恒空）。「已置顶」页的卡片照常支持侧滑——单卡撤销
+ * 置顶即从该页消失。
+ *
  * 滚动容器为 [RubberBandLazyColumn]（页面 [ProvideOverscroll] 作用域内）：内容超一屏
  * 时滚到边缘拉出橡皮筋，待办很少、不足一屏时同样能拉——短内容是 foundation 派发门槛
  * 拦下的场景，由该封装的兜底手势层接管。
@@ -621,6 +694,10 @@ private fun TodoList(
     sort: TodoSort,
     sortDescending: Boolean,
     visibleSections: Set<TodoSection>,
+    // 特殊分组页：分组头全部默认展开（常规列表「已完成默认收起」不适用）
+    expandAllSections: Boolean = false,
+    // 列表为空时的居中占位文案（特殊分组页传入）；null = 维持空白（常规列表行为不变）
+    emptyHint: String? = null,
     topBarExtraSpace: Dp,
     swipeCoordinator: SwipeCoordinator,
     onToggleCompleted: (id: String, completed: Boolean) -> Unit,
@@ -665,11 +742,27 @@ private fun TodoList(
             end = PageHorizontalSpacing,
         ),
     ) {
+        // 空列表占位：特殊分组页过滤结果为空（含恒空的已归档/最近删除）时给居中文案；
+        // 常规列表不传 emptyHint，全组被分类菜单隐藏时维持原空白行为
+        if (sections.isEmpty() && emptyHint != null) {
+            item(key = "emptyHint") {
+                Box(
+                    Modifier.fillParentMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = emptyHint,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.classppColors.secondaryText,
+                    )
+                }
+            }
+        }
         sections.forEachIndexed { index, (section, group) ->
             item(key = section.name) {
                 NoteCardSection(
                     title = stringResource(section.titleRes),
-                    initiallyExpanded = section != TodoSection.Done,
+                    initiallyExpanded = expandAllSections || section != TodoSection.Done,
                     // 组间距给首组之外的每组：首组贴列表起点，再加间距会比下面的组低一截
                     modifier = if (index > 0) Modifier.padding(top = SectionSpacing) else Modifier,
                 ) {

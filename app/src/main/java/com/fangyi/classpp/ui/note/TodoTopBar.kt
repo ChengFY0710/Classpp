@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.note
 
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -35,6 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -96,11 +98,11 @@ private val PillInnerPadding = 16.dp
 /** 胶囊内图标边长 */
 private val PillIconSize = 24.dp
 
-/** 置顶分组胶囊行首图钉边长（GroupCard 置顶标记同款 20dp） */
-private val GroupPinIconSize = 20.dp
+/** 分组条胶囊行首图标边长：置顶图钉与特殊分组页图标同款（GroupCard 置顶标记同款 20dp） */
+private val GroupTabIconSize = 20.dp
 
-/** 置顶分组胶囊内图钉与文字的间距（GroupCard 置顶标记同款 12dp） */
-private val GroupPinIconSpacing = 12.dp
+/** 分组条胶囊内行首图标与文字的间距（GroupCard 置顶标记同款 12dp） */
+private val GroupTabIconSpacing = 12.dp
 
 /** 左侧常驻图标胶囊宽度（图标 + 左右内边距） */
 private val IconPillWidth = PillIconSize + PillInnerPadding * 2
@@ -180,6 +182,40 @@ private val HorizontalClipShape = object : Shape {
 }
 
 /**
+ * 待办特殊分组页：分组浮层第一部分（状态/留存）的六个入口——点入后宿主收起浮层，
+ * 顶栏分组条首位出现对应胶囊（[SpecialGroupPill]），再点一次胶囊退出。已归档/最近
+ * 删除数据层暂无该概念，本期仅 UI（列表恒空、空状态文案占位）。
+ *
+ * [iconRes]/[labelRes] 供胶囊渲染，[emptyHintRes] 供空列表占位；强调色不在枚举里
+ * 存死（Color 非资源语义），按条目在 [SpecialGroupPill] 处映射：已完成 = 绿
+ * （urgentGreen）、已逾期/最近删除 = 红（error）、其余 = primary 蓝。
+ */
+internal enum class TodoSpecialSection(
+    @DrawableRes val iconRes: Int,
+    @StringRes val labelRes: Int,
+    @StringRes val emptyHintRes: Int,
+) {
+    Completed(
+        R.drawable.ic_checkbox_checked,
+        R.string.todo_section_completed,
+        R.string.todo_empty_completed,
+    ),
+    Incomplete(
+        R.drawable.ic_checkbox_unchecked,
+        R.string.todo_section_incomplete,
+        R.string.todo_empty_incomplete,
+    ),
+    Overdue(
+        R.drawable.ic_checkbox_warning,
+        R.string.todo_section_overdue,
+        R.string.todo_empty_overdue,
+    ),
+    Pinned(R.drawable.ic_pin, R.string.todo_section_pinned, R.string.todo_empty_pinned),
+    Archived(R.drawable.ic_archive, R.string.todo_section_archived, R.string.todo_empty_archived),
+    Trash(R.drawable.ic_delete, R.string.todo_section_trash, R.string.todo_empty_trash),
+}
+
+/**
  * 待办页顶栏：左侧常驻「更多」胶囊（•••）+ 右侧可滑动的分组胶囊条
  * （置顶分组固定最前 + 「全部」/「未分组」常驻 + 其余用户自定义分组）。
  *
@@ -187,6 +223,12 @@ private val HorizontalClipShape = object : Shape {
  * 标记同款规格，未选 primary 蓝 / 选中 onPrimary 白）→「全部」→「未分组」→ 未置顶
  * 分组（各段内部保持 [groups] 原序）；仓库维持置顶分组构成 [groups] 连续前缀的不变式，
  * 前 [pinnedGroupCount] 个即置顶组。
+ *
+ * 特殊分组页（[specialSection] 非 null）：分组条最前再插一粒对应胶囊（[SpecialGroupPill]），
+ * 位于置顶自定义分组之前，打开后**常驻**——[specialSectionSelected] = 页面在场（强调色
+ * 整粒底 + 白内容）；false = 页面已离开但胶囊保留（surface 底 + 强调色内容，设计图未选
+ * 样式），此时常规胶囊恢复选中态高亮。点击已选中的特殊胶囊 = 退出关闭（[onSpecialSectionClick]，
+ * 胶囊一并消失）；点击未选中的 = 回到该特殊分组页。
  *
  * 布局：左侧常驻群浮在上层；右侧分组条的视口左边界即裁切线（[ClipLineOffset]，
  * 相对更多按钮右缘），首粒胶囊（置顶分组或「全部」）静止位与按钮右缘保持 [RestGap]
@@ -231,7 +273,7 @@ private val HorizontalClipShape = object : Shape {
  * 默认阴影且换不掉，换壳才能吃上菜单卡的柔影。
  */
 @Composable
-fun TodoTopBar(
+internal fun TodoTopBar(
     groups: List<String>,
     pinnedGroupCount: Int,
     selectedGroupIndex: Int,
@@ -239,6 +281,9 @@ fun TodoTopBar(
     onMoreClick: () -> Unit,
     onSortClick: () -> Unit,
     onGroupClick: () -> Unit,
+    specialSection: TodoSpecialSection? = null,
+    specialSectionSelected: Boolean = false,
+    onSpecialSectionClick: () -> Unit = {},
     onCategoryClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
@@ -304,6 +349,11 @@ fun TodoTopBar(
                         .height(TopBarPillHeight + ShadowOverhang * 2),
                 ) {
                     val scrollState = rememberScrollState()
+                    // 特殊分组页胶囊在分组条首位：打开时若分组条停在右侧滚动位，首粒胶囊会
+                    // 藏在更多按钮背后看不见——跳转打开即滚回首位（切常规 tab 不动滚动位）
+                    LaunchedEffect(specialSection) {
+                        if (specialSection != null) scrollState.animateScrollTo(0)
+                    }
                     // 视口左边界 = 裁切线（MorePillRightEdge + ClipLineOffset）；contentPadding
                     // 反向补偿裁切偏移，让静止间距只由 RestGap 决定——两个旋钮互不干扰。
                     // 分组条用橡皮筋增强版 horizontalScroll：不足一行时也能拉出橡皮筋。
@@ -327,36 +377,50 @@ fun TodoTopBar(
                         horizontalArrangement = Arrangement.spacedBy(PillSpacing),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // 视觉顺序：置顶分组固定最前（更多按钮之后、「全部」之前，行首图钉），
+                        // 特殊分组页胶囊：被跳转的特殊页打开后固定分组条最前（置顶自定义分组
+                        // 之前）且常驻——选中（页面在场）= 整粒一色，未选 = 白底彩字；再点
+                        // 已选中的退出关闭、点未选中的回到该页（行为由宿主按状态接管）
+                        specialSection?.let { section ->
+                            SpecialGroupPill(
+                                section = section,
+                                selected = specialSectionSelected,
+                                onClick = onSpecialSectionClick,
+                            )
+                        }
+                        // 视觉顺序：置顶分组固定最前（特殊胶囊之后、「全部」之前，行首图钉），
                         // 之后依次「全部」「未分组」与未置顶分组，各段内部保持 [groups] 原序。
                         // 下标语义不变（0 = 全部、1 = 未分组、2 起按 [groups] 原序偏移 2）：
                         // 置顶组占 [groups] 前缀，其原下标恰好就是视觉最前段的 i + 2；未置顶段
-                        // 整体后移 [pinnedGroupCount] 个位置补回原下标
+                        // 整体后移 [pinnedGroupCount] 个位置补回原下标。
+                        // 特殊页在场时常规胶囊一律不亮选中态（高亮由首位特殊胶囊独占）；
+                        // 离开页面（胶囊保留未选）后常规选中态恢复
+                        val regularSelection =
+                            if (specialSectionSelected) Int.MIN_VALUE else selectedGroupIndex
                         val pinnedGroups = groups.take(pinnedGroupCount)
                         val unpinnedGroups = groups.drop(pinnedGroupCount)
                         pinnedGroups.forEachIndexed { index, group ->
                             GroupPill(
                                 label = group,
                                 pinned = true,
-                                selected = selectedGroupIndex == index + 2,
+                                selected = regularSelection == index + 2,
                                 onClick = { onGroupSelect(index + 2) },
                             )
                         }
                         GroupPill(
                             label = stringResource(R.string.todo_group_all),
-                            selected = selectedGroupIndex == 0,
+                            selected = regularSelection == 0,
                             onClick = { onGroupSelect(0) },
                         )
                         // 未分组固定占下标 1（全部之后、用户分组之前），与用户分组编辑无关
                         GroupPill(
                             label = stringResource(R.string.todo_group_ungrouped),
-                            selected = selectedGroupIndex == 1,
+                            selected = regularSelection == 1,
                             onClick = { onGroupSelect(1) },
                         )
                         unpinnedGroups.forEachIndexed { index, group ->
                             GroupPill(
                                 label = group,
-                                selected = selectedGroupIndex == index + 2 + pinnedGroupCount,
+                                selected = regularSelection == index + 2 + pinnedGroupCount,
                                 onClick = { onGroupSelect(index + 2 + pinnedGroupCount) },
                             )
                         }
@@ -560,15 +624,93 @@ private fun GroupPill(
                     } else {
                         MaterialTheme.colorScheme.primary
                     },
-                    modifier = Modifier.size(GroupPinIconSize),
-                )
-                Spacer(Modifier.width(GroupPinIconSpacing))
+                modifier = Modifier.size(GroupTabIconSize),
+            )
+            Spacer(Modifier.width(GroupTabIconSpacing))
             }
             Text(
                 text = label,
                 style = MaterialTheme.classppTextStyles.pillButton,
                 color = contentColor,
                 maxLines = 1,
+            )
+        }
+    }
+}
+
+/**
+ * 特殊分组页强调色：已完成 = 绿（[com.fangyi.classpp.ui.theme.ClassppColors.urgentGreen]）、
+ * 已逾期/最近删除 = 红（colorScheme.error），未完成/已置顶/已归档 = primary 蓝（设计图六色）。
+ */
+@Composable
+private fun TodoSpecialSection.accentColor(): Color = when (this) {
+    TodoSpecialSection.Completed -> MaterialTheme.classppColors.urgentGreen
+    TodoSpecialSection.Overdue, TodoSpecialSection.Trash -> MaterialTheme.colorScheme.error
+    TodoSpecialSection.Incomplete, TodoSpecialSection.Pinned, TodoSpecialSection.Archived ->
+        MaterialTheme.colorScheme.primary
+}
+
+/**
+ * 特殊分组页胶囊（已完成/未完成/已逾期/已置顶/已归档/最近删除）：行首语义图标 + 标签 +
+ * 尾部关闭✕（ic_dismiss），整粒同色——[selected]（页面在场）= 强调色底 + 白内容，
+ * 未选 = surface 底 + 强调色内容（设计图两种形态）。打开后常驻分组条首位，点击整粒
+ * 切换：已选中 = 退出关闭（胶囊一并消失）、未选中 = 回到该页——行为由宿主按选中态
+ * 接管（✕ 不单设命中区，同 [GroupPill] 的整粒点击语义）；图标与✕纯装饰不进语义树，
+ * 标签文字已承载胶囊语义。规格同 [GroupPill]（40dp 高、16dp 内距、20dp 图标 + 12dp
+ * 间距、按压放大 1.10 + 柔影）。
+ */
+@Composable
+private fun SpecialGroupPill(
+    section: TodoSpecialSection,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val accent = section.accentColor()
+    val background = if (selected) accent else MaterialTheme.colorScheme.surface
+    val contentColor = if (selected) Color.White else accent
+    // 按压态的唯一来源：pressFeedback 与 selectable 共用（涟漪由按压反馈取代，故 selectable 不再要 Indication）
+    val pressInteraction = remember { MutableInteractionSource() }
+    Box(
+        modifier = modifier
+            .height(TopBarPillHeight)
+            .pressFeedback(
+                interactionSource = pressInteraction,
+                shape = PillShape,
+                scale = 1.10f,
+            )
+            .topBarPillShadow()
+            .background(background, PillShape)
+            .selectable(
+                selected = selected,
+                interactionSource = pressInteraction,
+                indication = null,
+                role = Role.Tab,
+                onClick = onClick,
+            )
+            .padding(horizontal = PillInnerPadding),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                painter = painterResource(section.iconRes),
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(GroupTabIconSize),
+            )
+            Spacer(Modifier.width(GroupTabIconSpacing))
+            Text(
+                text = stringResource(section.labelRes),
+                style = MaterialTheme.classppTextStyles.pillButton,
+                color = contentColor,
+                maxLines = 1,
+            )
+            Spacer(Modifier.width(GroupTabIconSpacing))
+            Icon(
+                painter = painterResource(R.drawable.ic_dismiss),
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(GroupTabIconSize),
             )
         }
     }
@@ -662,6 +804,26 @@ private fun TodoTopBarPreview() {
     }
 }
 
+@Preview(showBackground = true, widthDp = 412, name = "待办顶栏（特殊分组页）")
+@Composable
+private fun TodoTopBarSpecialPreview() {
+    ClassppTheme {
+        TodoTopBarPreviewContent(specialSection = TodoSpecialSection.Completed)
+    }
+}
+
+@Preview(showBackground = true, widthDp = 412, name = "待办顶栏（特殊胶囊未选中）")
+@Composable
+private fun TodoTopBarSpecialInactivePreview() {
+    ClassppTheme {
+        // 胶囊常驻但页面已离开：白底彩字形态，常规选中态恢复（选中「全部」）
+        TodoTopBarPreviewContent(
+            specialSection = TodoSpecialSection.Completed,
+            specialSectionSelected = false,
+        )
+    }
+}
+
 @Preview(showBackground = true, widthDp = 412, name = "待办顶栏（展开）")
 @Composable
 private fun TodoTopBarExpandedPreview() {
@@ -679,7 +841,11 @@ private fun TodoTopBarDarkPreview() {
 }
 
 @Composable
-private fun TodoTopBarPreviewContent(initialMenuExpanded: Boolean = false) {
+private fun TodoTopBarPreviewContent(
+    initialMenuExpanded: Boolean = false,
+    specialSection: TodoSpecialSection? = null,
+    specialSectionSelected: Boolean = true,
+) {
     var selected by remember { mutableIntStateOf(0) }
     var menuExpanded by remember { mutableStateOf(initialMenuExpanded) }
     Box(
@@ -691,6 +857,9 @@ private fun TodoTopBarPreviewContent(initialMenuExpanded: Boolean = false) {
             groups = PreviewGroups,
             // 预览固定 1 个置顶分组（首组「作业」行首图钉），覆盖置顶最前的排布分支
             pinnedGroupCount = 1,
+            specialSection = specialSection,
+            specialSectionSelected = specialSectionSelected,
+            onSpecialSectionClick = {},
             selectedGroupIndex = selected,
             onGroupSelect = { selected = it },
             onMoreClick = { menuExpanded = !menuExpanded },

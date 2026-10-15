@@ -270,6 +270,13 @@
     <string name="todo_section_overdue">Overdue</string>
     <string name="todo_section_archived">Archived</string>
     <string name="todo_section_trash">Recently Deleted</string>
+    <!-- Empty states for the special todo sections (top-bar first pill) -->
+    <string name="todo_empty_completed">No completed todos yet</string>
+    <string name="todo_empty_incomplete">All todos are completed</string>
+    <string name="todo_empty_overdue">No overdue todos</string>
+    <string name="todo_empty_pinned">No pinned todos yet</string>
+    <string name="todo_empty_archived">No archived todos yet</string>
+    <string name="todo_empty_trash">Nothing recently deleted</string>
     <string name="todo_error_save_failed">Save failed, please try again later</string>
 
     <string name="todo_detail_title">Todo Details</string>
