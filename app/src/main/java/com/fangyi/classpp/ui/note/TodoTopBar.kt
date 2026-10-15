@@ -265,7 +265,9 @@ internal enum class TodoSpecialSection(
  * [onMoreClick]（宿主翻转展开态）；展开后排序块点击回调 [onSortClick]（宿主置
  * 菜单展开态），分组块点击回调 [onGroupClick]（宿主打开待办分组浮层），
  * 分类块点击回调 [onCategoryClick]（宿主置分类菜单展开态），
- * 视图/概览回调本期空置（接入功能时再加参数）；排序菜单
+ * 视图/概览回调本期空置（接入功能时再加参数）；分类块配色/可用性经
+ * [categoryEnabled]/[categoryFiltered] 下发——特殊分组页在场置灰（negative）不可点，
+ * 分组显隐未全选（有分组被隐藏）时 primary 提示；排序菜单
  * 经 [sortMenuExpanded]/[onSortMenuDismiss]/[sortMenuSections] 三件套下发，
  * 分类菜单经 [categoryMenuExpanded]/[onCategoryMenuDismiss]/[categoryMenuSections]
  * 同款三件套下发；[BarActionMenuPopup] 挂在动作块同一 Box 里（父布局即锚点）：
@@ -284,6 +286,10 @@ internal fun TodoTopBar(
     specialSection: TodoSpecialSection? = null,
     specialSectionSelected: Boolean = false,
     onSpecialSectionClick: () -> Unit = {},
+    // 分类块状态配色：false = 置灰（negative）不可点；true 且 [categoryFiltered] = primary 提示
+    categoryEnabled: Boolean = true,
+    // 分组显隐过滤生效中（四组未全选）= 分类块 primary 提示有分组被隐藏
+    categoryFiltered: Boolean = false,
     onCategoryClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
@@ -492,7 +498,10 @@ internal fun TodoTopBar(
                             }
                         }
                         // 分类块 + 锚定其下的分类菜单：与排序块同构（外层占格槽、内层锚点），
-                        // 菜单项是分组显隐的多选开关，展开态与勾选内容由宿主下发
+                        // 菜单项是分组显隐的多选开关，展开态与勾选内容由宿主下发。
+                        // 块色随状态：特殊分组页在场 = negative 置灰不可点（该页本身就是
+                        // 过滤口径，显隐开关无意义）；四组未全选 = primary 提示有分组被隐藏；
+                        // 其余默认 onSurface
                         Box(
                             modifier = Modifier.weight(1f),
                             contentAlignment = Alignment.Center,
@@ -502,6 +511,12 @@ internal fun TodoTopBar(
                                     label = stringResource(R.string.todo_action_category),
                                     iconRes = R.drawable.ic_filter,
                                     onClick = onCategoryClick,
+                                    contentColor = when {
+                                        !categoryEnabled -> MaterialTheme.classppColors.negative
+                                        categoryFiltered -> MaterialTheme.colorScheme.primary
+                                        else -> MaterialTheme.colorScheme.onSurface
+                                    },
+                                    enabled = categoryEnabled,
                                 )
                                 BarActionMenuPopup(
                                     expanded = categoryMenuExpanded,
@@ -758,8 +773,10 @@ private fun IconPill(
 
 /**
  * 顶栏展开动作块：图标在上、13sp Medium 标签在下（课表编辑栏 EditAction 同规格），
- * 两者水平居中对齐，整块可点；图标与标签同色（onSurface，设计图深色）。
- * 文字已承载语义，故图标 contentDescription 为空（同 EditAction）。
+ * 两者水平居中对齐，整块可点。图标与标签同色（[contentColor]，默认 onSurface 设计图
+ * 深色；分类块用它表达状态——分组显隐过滤生效中 = primary、特殊分组页在场 = negative
+ * 置灰）。[enabled] = false 时整块不可点，点击与按压反馈一并停。文字已承载语义，
+ * 故图标 contentDescription 为空（同 EditAction）。
  */
 @Composable
 private fun TodoBarAction(
@@ -767,13 +784,15 @@ private fun TodoBarAction(
     @DrawableRes iconRes: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    enabled: Boolean = true,
 ) {
     Column(
         modifier = modifier
             // 按压反馈（自带按压源 + 点击，涟漪由其取代）放在 clip 之前：
             // 缩放/提亮作用于整块动作区，EditActionShape 圆角裁剪在其内侧；
             // 放大倍率与课表编辑栏动作块同规格单独调大到 1.10（不随全局默认）
-            .pressClickable(EditActionShape, scale = 1.10f, onClick = onClick)
+            .pressClickable(EditActionShape, scale = 1.10f, enabled = enabled, onClick = onClick)
             .clip(EditActionShape)
             .padding(horizontal = TopBarActionInnerPadding, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -781,13 +800,13 @@ private fun TodoBarAction(
         Icon(
             painter = painterResource(iconRes),
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurface,
+            tint = contentColor,
             modifier = Modifier.size(TopBarActionIconSize),
         )
         Spacer(Modifier.height(TopBarActionLabelGap))
         Text(
             text = label,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = contentColor,
             fontSize = TopBarActionLabelTextSize,
             fontWeight = FontWeight.Medium,
         )

@@ -320,6 +320,10 @@ fun TodoScreen(
                 onSortMenuDismiss = { sortMenuExpanded = false },
                 categoryMenuExpanded = categoryMenuExpanded,
                 onCategoryMenuDismiss = { categoryMenuExpanded = false },
+                // 分类块状态：特殊分组页在场 = 置灰不可点（该页本身就是过滤口径，显隐开关
+                // 无意义）；其余页面四组未全选（有分组被隐藏）= primary 提示过滤生效中
+                categoryEnabled = special == null,
+                categoryFiltered = visibleSections.size < TodoSection.entries.size,
                 // 分类菜单：四个分组显隐开关，勾选态即分组可见性；点选只切换不收起，
                 // 便于连续勾选多项（收起靠点菜单外区域）
                 categoryMenuSections = listOf(
