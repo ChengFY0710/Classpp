@@ -231,6 +231,16 @@ class TodoRepository internal constructor(
         commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == todoId) updated else it }))
     }
 
+    /** 删除一条步骤（侧滑删除走这条）；待办或步骤不存在返回 NotFound */
+    suspend fun removeStep(todoId: String, stepId: String): TodoOpResult = mutex.withLock {
+        val target = todoOrNull(todoId) ?: return@withLock TodoOpResult.Err(TodoError.NotFound(todoId))
+        if (target.steps.none { it.id == stepId }) {
+            return@withLock TodoOpResult.Err(TodoError.NotFound(stepId))
+        }
+        val updated = target.copy(steps = target.steps.filterNot { it.id == stepId })
+        commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == todoId) updated else it }))
+    }
+
     // ---------- 分享 ----------
 
     /** 导出全部待办为 pretty JSON 文本（分享载荷），供系统分享面板发送 */

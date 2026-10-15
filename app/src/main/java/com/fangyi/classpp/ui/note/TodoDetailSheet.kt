@@ -42,6 +42,7 @@ import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.MenuGrowth
 import com.fangyi.classpp.ui.components.NoteCard
+import com.fangyi.classpp.ui.components.NoteCardSwipe
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.PopupMenuPopup
@@ -50,6 +51,8 @@ import com.fangyi.classpp.ui.components.SheetInfoCard
 import com.fangyi.classpp.ui.components.SheetInfoEntry
 import com.fangyi.classpp.ui.components.SheetTextArea
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.components.SwipeAction
+import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.components.TagChip
 import com.fangyi.classpp.ui.components.flagColor
 import com.fangyi.classpp.ui.components.flagLabel
@@ -80,7 +83,9 @@ private val TitleMenuGap = 12.dp
  * （[SheetInfoCard]：截止日期 / 紧急程度 / 待办时间 / 待办地点，四行常显，
  * 空值显灰「无」）、备注输入（[SheetTextArea]）、带标题的「创建与完成时间」分组
  * （[SheetInfoCard] 两条时刻戳：创建时间常显、完成时间仅已完成时渲染）与「步骤」分组
- * （列表走 [NoteCard] 右侧勾选框，其下是等高的「添加步骤」行卡 [AddStepCard]）。
+ * （列表走 [NoteCard] 右侧勾选框、支持向右滑呼出删除动作卡（双阈值手势见
+ * [com.fangyi.classpp.ui.components.NoteCardSwipeLayer]），其下是等高的
+ * 「添加步骤」行卡 [AddStepCard]）。
  *
  * 信息行行首各带 24dp onSurface 图标（[InfoRowIcon]），值色两处按紧急度取色、与
  * 列表卡同源：截止值走 [deadlineColor]（剩 2 天黄 / 1 天橙 / 当天及逾期红 / 其余 primary）、
@@ -110,6 +115,8 @@ internal fun TodoDetailSheet(
     // 失败 Toast 也由宿主提示
     onStepAdd: (String) -> Unit,
     onStepToggle: (String, Boolean) -> Unit,
+    // 侧滑删除一条步骤（松手过阈值即删，无确认框）；由宿主落库、失败 Toast
+    onStepDelete: (stepId: String) -> Unit,
     // 开关列表卡倒计时（true = 开启）；落库后本层菜单文案随传入的 todo 自动回流
     onCountdownToggle: (Boolean) -> Unit,
     // 被编辑浮层盖住：本层缩小后退（透传 OverlaySheet 的分层动效）
@@ -136,6 +143,13 @@ internal fun TodoDetailSheet(
     // 系统返回 = 收起浮层而非退出 app；与关闭/下拉同走 closeWithSave，备注照常先落盘。
     // enabled 跟 visible：出场动画期间不再拦截（visible 已 false，重复提交被挡在门外）
     BackHandler(enabled = visible, onBack = closeWithSave)
+    // 步骤侧滑互斥协调器：同一时刻至多一张步骤卡展开。其 BackHandler 注册在上面的浮层
+    // 出口之后（后注册者优先，同项目分层出口约定）——展开态下系统返回先收起卡片，
+    // 无展开卡才轮到关浮层
+    val stepSwipeCoordinator = remember { SwipeCoordinator() }
+    BackHandler(enabled = stepSwipeCoordinator.activeKey != null) {
+        stepSwipeCoordinator.activeKey = null
+    }
     // 点「编辑」先收键盘：详情还挂在编辑浮层下层，焦点不清会把键盘带进编辑表单
     val focusManager = LocalFocusManager.current
 
@@ -280,8 +294,9 @@ internal fun TodoDetailSheet(
                     ),
                 )
             }
-            // 步骤：列表走 NoteCard（右侧勾选框、完成态划线置灰），其下是等高的
-            // 「添加步骤」行卡；步骤为空时只有按钮卡（列表不占位）
+            // 步骤：列表走 NoteCard（右侧勾选框、完成态划线置灰；支持向右滑呼出删除——
+            // 双阈值手势见 [NoteCardSwipeLayer]，[stepSwipeCoordinator] 保证单卡展开、
+            // 展开态按系统返回先收起），其下是等高的「添加步骤」行卡；步骤为空时只有按钮卡
             CardSection(title = stringResource(R.string.todo_section_steps)) {
                 todo.steps.forEach { step ->
                     NoteCard(
@@ -289,6 +304,20 @@ internal fun TodoDetailSheet(
                         completed = step.done,
                         // 卡片本身静态（不传 onClick）：勾选框是唯一交互位
                         onCheckedChange = { onStepToggle(step.id, it) },
+                        // 侧滑只配删除侧（向右滑呼出，error 红，松手过阈值即删）；
+                        // pin 传 null——向左方向不可拖出
+                        swipe = NoteCardSwipe(
+                            key = step.id,
+                            coordinator = stepSwipeCoordinator,
+                            delete = SwipeAction(
+                                iconRes = R.drawable.ic_delete,
+                                tint = MaterialTheme.colorScheme.error,
+                                activeColor = MaterialTheme.colorScheme.error,
+                                contentDescription = stringResource(R.string.todo_swipe_delete),
+                                onAction = { onStepDelete(step.id) },
+                            ),
+                            pin = null,
+                        ),
                     )
                 }
                 AddStepCard(

@@ -66,6 +66,7 @@
     <string name="todo_swipe_pin">置顶</string>
     <string name="todo_swipe_unpin">取消置顶</string>
     <string name="toast_todo_deleted">已删除</string>
+    <string name="toast_todo_step_deleted">步骤已删除</string>
     <string name="toast_todo_pinned">已置顶</string>
     <string name="toast_todo_unpinned">已取消置顶</string>
     <!-- 新建待办浮层：分组标题与表单字段 -->

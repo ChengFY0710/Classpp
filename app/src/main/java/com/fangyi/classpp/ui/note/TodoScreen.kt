@@ -416,6 +416,7 @@ fun TodoScreen(
     detailMounted?.let { detail ->
         // 回调（协程）里不是组合上下文，字符串在组合期解析（同 NewTodoSheet 的 saveFailedMessage）
         val saveFailedMessage = stringResource(R.string.todo_error_save_failed)
+        val stepDeletedMessage = stringResource(R.string.toast_todo_step_deleted)
         key(detail.id) {
             TodoDetailSheet(
                 visible = detailEntry != null,
@@ -452,6 +453,16 @@ fun TodoScreen(
                     scope.launch {
                         val result = repository.setStepDone(detail.id, stepId, done)
                         if (result is TodoOpResult.Err) AppToasts.show(context, saveFailedMessage)
+                    }
+                },
+                // 步骤侧滑删除：松手过阈值即删（removeStep 按 todo+step 双 id 定点滤除），
+                // 成功 Toast 反馈；Err（待办/步骤已被并发改动等）Toast 提示、卡片由侧滑层自动滑回
+                onStepDelete = { stepId ->
+                    scope.launch {
+                        when (repository.removeStep(detail.id, stepId)) {
+                            TodoOpResult.Ok -> AppToasts.show(context, stepDeletedMessage)
+                            is TodoOpResult.Err -> AppToasts.show(context, saveFailedMessage)
+                        }
                     }
                 },
                 // 倒计时开关：落库后列表卡左区显示剩余天数（详情菜单文案随仓库回流自动切换）
