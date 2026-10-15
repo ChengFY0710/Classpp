@@ -24,7 +24,7 @@ import com.fangyi.classpp.ui.theme.settingsRowMetrics
  * CardSectionSpacing / CardSectionTitleSpacing，当前均为 10dp）。
  * 自设置页的 SettingsSection 迁入更名，设置页与各浮层（课表设置、加课面板等）共用，
  * 保持同一套标题样式与间距节奏；组件只管纵向排版，横向边距与卡片本体由调用方提供
- * （典型搭配：卡内放 SettingsCard / PopupSelectCard 等）。
+ * （典型搭配：卡内放 SettingsCard 等）。
  *
  * [title] 可空：null（默认）不渲染标题，组件退化为纯分组容器——组内仍走 [spacing]
  * 节奏（无题卡组与带题分组的纵向节奏因此一致）。

@@ -140,30 +140,6 @@ private fun TimeRangeChoicePreview() = ClassppTheme {
 
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
 @Composable
-private fun PopupSelectCardPreview() = ClassppTheme {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        PopupSelectCard(
-            title = "结束节次",
-            valueText = "2",
-            items = (1..5).map { it to "第 $it 节" },
-            selectedId = 2,
-            onPick = {},
-        )
-        androidx.compose.material3.Text(
-            text = "课程占 1 - 2 节，跨 2 节",
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.primary,
-        )
-    }
-}
-
-@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
-@Composable
 private fun SheetInfoCardPreview() = ClassppTheme {
     Column(
         modifier = Modifier
@@ -344,7 +320,7 @@ private fun SettingsCardPreview() = ClassppTheme {
                 ),
             ),
         )
-        // 选择行：点行弹出菜单（PopupSelectCard 同款交互）
+        // 选择行：点行弹出菜单
         SettingsCard(
             items = listOf(
                 SettingsCardItem.Select(

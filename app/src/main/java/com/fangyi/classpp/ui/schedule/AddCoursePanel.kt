@@ -59,8 +59,9 @@ import com.fangyi.classpp.data.model.weeksTakenByOthers
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ColorSwatchCard
 import com.fangyi.classpp.ui.components.OverlaySheet
-import com.fangyi.classpp.ui.components.PopupSelectCard
 import com.fangyi.classpp.ui.components.RowChoiceCard
+import com.fangyi.classpp.ui.components.SettingsCard
+import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.Motion
@@ -423,36 +424,44 @@ fun AddCoursePanel(
             CardSection(title = stringResource(R.string.edit_end_slot_section)) {
                 // 开始节次：仅组内有跨节课时出现（组员起止可以不一致），与结束节次同一套选择卡
                 if (showStartSlot) {
-                    PopupSelectCard(
-                        title = stringResource(R.string.edit_start_slot),
-                        valueText = startSlotId.toString(),
-                        items = startMenuItems,
-                        selectedId = startSlotId,
-                        onPick = { id ->
-                            val message = spanConflictMessage(id, endSlotId)
-                            if (message == null) {
-                                startSlotId = id
-                                error = null
-                            } else {
-                                fail(message)
-                            }
-                        },
+                    SettingsCard(
+                        items = listOf(
+                            SettingsCardItem.Select(
+                                label = stringResource(R.string.edit_start_slot),
+                                value = startSlotId.toString(),
+                                items = startMenuItems,
+                                selectedId = startSlotId,
+                                onPick = { id ->
+                                    val message = spanConflictMessage(id, endSlotId)
+                                    if (message == null) {
+                                        startSlotId = id
+                                        error = null
+                                    } else {
+                                        fail(message)
+                                    }
+                                },
+                            ),
+                        ),
                     )
                 }
-                PopupSelectCard(
-                    title = stringResource(R.string.edit_end_slot),
-                    valueText = endSlotId.toString(),
-                    items = endMenuItems,
-                    selectedId = endSlotId,
-                    onPick = { id ->
-                        val message = spanConflictMessage(startSlotId, id)
-                        if (message == null) {
-                            endSlotId = id
-                            error = null
-                        } else {
-                            fail(message)
-                        }
-                    },
+                SettingsCard(
+                    items = listOf(
+                        SettingsCardItem.Select(
+                            label = stringResource(R.string.edit_end_slot),
+                            value = endSlotId.toString(),
+                            items = endMenuItems,
+                            selectedId = endSlotId,
+                            onPick = { id ->
+                                val message = spanConflictMessage(startSlotId, id)
+                                if (message == null) {
+                                    endSlotId = id
+                                    error = null
+                                } else {
+                                    fail(message)
+                                }
+                            },
+                        ),
+                    ),
                 )
                 Text(
                     text = stringResource(

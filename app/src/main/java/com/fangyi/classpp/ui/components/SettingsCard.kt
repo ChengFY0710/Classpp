@@ -72,7 +72,7 @@ sealed interface SettingsCardItem {
     ) : SettingsCardItem
 
     /**
-     * 选择行：整行可点弹出菜单（同 [PopupSelectCard]，打开前自动收起键盘与焦点），
+     * 选择行：整行可点弹出菜单（打开前自动收起键盘与焦点），
      * [value] 为当前值的展示文字，[items] 只传合法选项（由调用方裁剪）。
      */
     data class Select(
@@ -415,7 +415,7 @@ internal fun Chevron() {
 /**
  * 选择行尾部：上下箭头 + 锚在其上的弹出菜单（[PopupMenuPopup] 独立 Popup 窗口，
  * 不受卡片圆角裁剪；PopupMenuCard 白卡 + 柔影，与排序/重复/右键菜单同材质）。
- * 卡片顶边贴行卡顶边（对齐设计稿），自 PopupSelectCard 沿袭。
+ * 卡片顶边贴行卡顶边（对齐设计稿）。
  */
 @Composable
 private fun SelectMenu(
