@@ -276,6 +276,10 @@
     <string name="todo_menu_add_to_calendar">Add to calendar</string>
     <string name="todo_menu_countdown_start">Start countdown</string>
     <string name="todo_menu_countdown_stop">Stop countdown</string>
+    <!-- NoteCard left countdown: unit and "overdue" prefix. Quoted values keep the spaces
+         English needs around the number; the Chinese strings carry no space instead. -->
+    <string name="todo_countdown_overdue">"Overdue "</string>
+    <string name="todo_countdown_day_unit">" days"</string>
     <string name="todo_detail_time_label">Time</string>
     <!-- Todo details sheet: created & completed section -->
     <string name="todo_section_created_completed">Created &amp; completed</string>

@@ -28,9 +28,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,6 +50,7 @@ import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.kyant.shapes.RoundedRectangle
+import kotlin.math.abs
 
 /**
  * 属性行横向间距：时间项之间、时间项与首个标签之间取 [PropertySpacing]（12dp）；
@@ -66,6 +72,14 @@ private val TagChipPadding = 8.dp
 /** 标题与属性行的纵向间距：常规 [TitlePropertySpacing]；有标签时收紧到 [TitlePropertySpacingWithTags]（标签带底视觉体量更满，与标题贴紧） */
 private val TitlePropertySpacing = 4.dp
 private val TitlePropertySpacingWithTags = 1.dp
+
+/**
+ * 倒计时（[CountdownLabel]）：数字 [CountdownNumberFontSize] 半粗突出，单位与「逾期」前缀
+ * [CountdownUnitFontSize] 收小；倒计时与右侧内容列相距 [CountdownEndSpacing]（沿用紧急旗后的节奏）。
+ */
+private val CountdownNumberFontSize = 25.sp
+private val CountdownUnitFontSize = 12.sp
+private val CountdownEndSpacing = 16.dp
 
 /**
  * 时间/截止属性项：18dp 图标 + 文本（同色），图标与文字相距 4dp（同 TagChip）。
@@ -127,7 +141,36 @@ internal fun TagChip(tag: String) {
 }
 
 /**
- * 待办卡片：标题 + 属性行（待办时间、截止时间、标签，自动换行）+ 右侧紧急旗帜与勾选框。
+ * 左侧倒计时：[days] ≥ 0 显「N天」（今天即 0 天）；< 0 显「逾期N天」（数字取绝对值）。
+ * 数字 [CountdownNumberFontSize] 半粗、单位与「逾期」前缀 [CountdownUnitFontSize]，三段同一个
+ * [tint]（与右侧截止时间同色，见 [NoteCard.countdownDays]）；混排字号拼进同一个 Text，
+ * 基线天然对齐（锁 1 行，避免单位被挤到下一行）。
+ */
+@Composable
+private fun CountdownLabel(
+    days: Long,
+    tint: Color,
+) {
+    val dayUnit = stringResource(R.string.todo_countdown_day_unit)
+    val overduePrefix = if (days < 0) stringResource(R.string.todo_countdown_overdue) else ""
+    val text = buildAnnotatedString {
+        if (overduePrefix.isNotEmpty()) {
+            withStyle(SpanStyle(fontSize = CountdownUnitFontSize)) { append(overduePrefix) }
+        }
+        withStyle(SpanStyle(fontSize = CountdownNumberFontSize, fontWeight = FontWeight.SemiBold)) {
+            append(abs(days).toString())
+        }
+        withStyle(SpanStyle(fontSize = CountdownUnitFontSize)) { append(dayUnit) }
+    }
+    Text(
+        text = text,
+        style = MaterialTheme.classppTextStyles.noteProperty.copy(color = tint),
+        maxLines = 1,
+    )
+}
+
+/**
+ * 待办卡片：左侧倒计时（可选）+ 标题 + 属性行（待办时间、截止时间、标签，自动换行）+ 右侧紧急旗帜与勾选框。
  *
  * - 颜色全部取自主题：卡片底 surface，标题 fieldLabel（onSurface），标签着 primary，
  *   旗帜按 [urgency] 档位取色（[TodoUrgency.flagColor]，同 UrgentFlagCard），勾选框 primary；
@@ -135,6 +178,9 @@ internal fun TagChip(tag: String) {
  *   18dp + 文本，图标与文字均 secondaryText；
  * - [deadline] 截止时间（已格式化文本，如 "今天 8:00"、"3/12 6:00"）：ic_clock_alarm
  *   图标 18dp + 文本，图标与文字同取 [deadlineColor]（调用方按剩余天数映射紧急色）；
+ * - [countdownDays] 左侧倒计时，开关即是否传值（见 [CountdownLabel]）：非 null 时在内容列
+ *   左侧画倒计时，≥0 显「N天」、<0 显「逾期N天」，取色直接复用 [deadlineColor]——与右侧
+ *   截止时间同色同逻辑；null（用户关闭 / 无截止日期）整个元素不渲染、不占位；
  * - 两个时间项缺席时均不占位，属性行整体走 FlowRow，放不下自动换行；
  * - 行内横向间距：时间项之间、时间项与首个标签之间 12dp，标签之间 8dp（见 [PropertySpacing] /
  *   [TagSpacing]——FlowRow 行距统一取后者，时间项靠末位内距补差）；
@@ -151,6 +197,7 @@ fun NoteCard(
     time: String? = null,
     deadline: String? = null,
     deadlineColor: Color = MaterialTheme.colorScheme.primary,
+    countdownDays: Long? = null,
     tags: List<String> = emptyList(),
     urgency: TodoUrgency = TodoUrgency.None,
     completed: Boolean = false,
@@ -186,6 +233,12 @@ fun NoteCard(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // 倒计时（传值即开启）：卡片左区独占块，垂直居中随外层 Row 的 CenterVertically；
+        // 内容列 weight(1f) 自动让宽，右侧旗帜与勾选框布局不受影响
+        if (countdownDays != null) {
+            CountdownLabel(days = countdownDays, tint = deadlineColor)
+            Spacer(Modifier.width(CountdownEndSpacing))
+        }
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(titlePropertySpacing),
@@ -366,5 +419,88 @@ private fun NoteCardShowcase() {
             overdue = true,
             onCheckedChange = {},
         )
+    }
+}
+
+@Preview(showBackground = true, widthDp = 412, heightDp = 700, name = "待办卡片倒计时形态")
+@Composable
+private fun NoteCardCountdownPreview() {
+    ClassppTheme {
+        NoteCardCountdownShowcase()
+    }
+}
+
+@Preview(showBackground = true, widthDp = 412, heightDp = 700, name = "待办卡片倒计时形态（深色）")
+@Composable
+private fun NoteCardCountdownDarkPreview() {
+    ClassppTheme(darkTheme = true) {
+        NoteCardCountdownShowcase()
+    }
+}
+
+/**
+ * 预览内容：倒计时开关打开的形态（数字 25sp、单位与「逾期」前缀 12sp；取色与右侧截止时间
+ * 同源——>2 天 primary、剩 2 天 urgentYellow、剩 1 天 urgentOrange、当天与逾期 error），
+ * 末尾一张是关闭态对照（countdownDays 缺席，与既有形态完全一致）。
+ */
+@Composable
+private fun NoteCardCountdownShowcase() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 15.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // 未逾期 25 天（>2 天 primary）：时间、截止、标签齐全——设计稿第一张
+        NoteCard(
+            title = "户口乔迁材料报送",
+            time = "12:30",
+            deadline = "3/12 6:00",
+            deadlineColor = MaterialTheme.colorScheme.primary,
+            countdownDays = 25,
+            tags = listOf("待办标签"),
+            onCheckedChange = {},
+        )
+        // 逾期 25 天（error）：字面「逾期25天」+ 标题标红——设计稿第二张
+        NoteCard(
+            title = "户口乔迁材料报送",
+            time = "12:30",
+            deadline = "3/12 6:00",
+            deadlineColor = MaterialTheme.colorScheme.error,
+            countdownDays = -25,
+            tags = listOf("待办标签"),
+            overdue = true,
+            onCheckedChange = {},
+        )
+        // 剩 2 天：urgentYellow
+        NoteCard(
+            title = "户口乔迁材料报送",
+            time = "12:30",
+            deadline = "后天 8:00",
+            deadlineColor = MaterialTheme.classppColors.urgentYellow,
+            countdownDays = 2,
+            onCheckedChange = {},
+        )
+        // 剩 1 天：urgentOrange
+        NoteCard(
+            title = "户口乔迁材料报送",
+            time = "12:30",
+            deadline = "明天 8:00",
+            deadlineColor = MaterialTheme.classppColors.urgentOrange,
+            countdownDays = 1,
+            onCheckedChange = {},
+        )
+        // 当天（未逾期，显「0天」）：error
+        NoteCard(
+            title = "户口乔迁材料报送",
+            time = "12:30",
+            deadline = "今天 8:00",
+            deadlineColor = MaterialTheme.colorScheme.error,
+            countdownDays = 0,
+            onCheckedChange = {},
+        )
+        // 关闭态对照：不传天数，倒计时不渲染、不占位
+        NoteCard(title = "户口乔迁材料报送", time = "12:30", tags = listOf("待办标签"), onCheckedChange = {})
     }
 }

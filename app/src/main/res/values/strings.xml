@@ -45,6 +45,9 @@
     <string name="todo_menu_add_to_calendar">添加到日历</string>
     <string name="todo_menu_countdown_start">开启倒计时</string>
     <string name="todo_menu_countdown_stop">关闭倒计时</string>
+    <!-- 待办卡片左侧倒计时（NoteCard）：单位与「逾期」前缀取 12sp；中文数字与文字之间不留空格 -->
+    <string name="todo_countdown_overdue">逾期</string>
+    <string name="todo_countdown_day_unit">天</string>
     <string name="todo_detail_time_label">待办时间</string>
     <!-- 待办详情浮层：创建与完成时间分组 -->
     <string name="todo_section_created_completed">创建与完成时间</string>
