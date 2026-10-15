@@ -190,7 +190,10 @@ private fun CountdownLabel(
  * - [completed] 完成态：标题划线置灰（时间/标签/旗帜不变），勾选框选中；
  *   左区倒计时随完成隐藏（即使 [countdownDays] 有值），取消完成后自动恢复；
  * - [overdue] 逾期态：标题标红（theme 的 error，时间/标签/旗帜不变）；完成态优先于逾期态；
- * - 时间、截止与标签全缺席时卡片仍有 60dp 最小高度，不塌成纯文字高度。
+ * - 时间、截止与标签全缺席时卡片仍有 60dp 最小高度，不塌成纯文字高度；
+ * - [swipe] 侧滑动作（见 [NoteCardSwipe]）：非 null 时卡片包进侧滑层——左右滑呼出删除/
+ *   置顶动作卡，双阈值结算（不足展开阈值回弹复位、越过执行阈值松手即执行、展开态
+ *   动作卡可点按、点卡片主体收起）；null（默认）不加层，卡片与原来完全一致。
  */
 @Composable
 fun NoteCard(
@@ -206,6 +209,7 @@ fun NoteCard(
     overdue: Boolean = false,
     onCheckedChange: ((Boolean) -> Unit)? = null,
     onClick: (() -> Unit)? = null,
+    swipe: NoteCardSwipe? = null,
 ) {
     // 有标签时标签带底、视觉体量更大：标题与属性行贴紧一点
     val titlePropertySpacing =
@@ -221,105 +225,109 @@ fun NoteCard(
         )
         else -> MaterialTheme.classppTextStyles.fieldLabel
     }
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = SheetFieldHeight)
-            // 按压反馈同 SheetCard「可点才挂」：位置在 clip 之前（缩放作用于整卡、不被圆角
-            // 裁掉），提亮范围与 NoteCardShape 对齐；null = 静态卡，涟漪由按压反馈取代
-            .then(
-                if (onClick != null) Modifier.pressClickable(NoteCardShape, onClick = onClick) else Modifier,
-            )
-            .clip(NoteCardShape)
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // 倒计时（传值即开启；完成态退场——标记完成后不再展示，原有天数在取消完成后自动回来）：
-        // 卡片左区独占块，垂直居中随外层 Row 的 CenterVertically；
-        // 内容列 weight(1f) 自动让宽，右侧旗帜与勾选框布局不受影响
-        if (countdownDays != null && !completed) {
-            CountdownLabel(days = countdownDays, tint = deadlineColor)
-            Spacer(Modifier.width(CountdownEndSpacing))
-        }
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(titlePropertySpacing),
+    // 侧滑层：swipe 非 null 时卡片包进侧滑层（左右滑呼出动作卡），下方 Row 原样不动；
+    // null = 不加层，输出与无侧滑时完全一致
+    NoteCardSwipeLayer(swipe = swipe) {
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .heightIn(min = SheetFieldHeight)
+                // 按压反馈同 SheetCard「可点才挂」：位置在 clip 之前（缩放作用于整卡、不被圆角
+                // 裁掉），提亮范围与 NoteCardShape 对齐；null = 静态卡，涟漪由按压反馈取代
+                .then(
+                    if (onClick != null) Modifier.pressClickable(NoteCardShape, onClick = onClick) else Modifier,
+                )
+                .clip(NoteCardShape)
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = title,
-                style = titleStyle,
-            )
-            if (time != null || deadline != null || tags.isNotEmpty()) {
-                FlowRow(
-                    // 行距取标签间距；时间项各带末位内距，把与后续项（含首个标签）的间距补到 PropertySpacing
-                    horizontalArrangement = Arrangement.spacedBy(TagSpacing),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    itemVerticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (time != null) {
-                        TimeProperty(
-                            icon = R.drawable.ic_clock,
-                            text = time,
-                            tint = MaterialTheme.classppColors.secondaryText,
-                            modifier = Modifier.padding(end = TimeItemEndPadding),
-                        )
-                    }
-                    if (deadline != null) {
-                        TimeProperty(
-                            icon = R.drawable.ic_clock_alarm,
-                            text = deadline,
-                            tint = deadlineColor,
-                            modifier = Modifier.padding(end = TimeItemEndPadding),
-                        )
-                    }
-                    tags.forEach { tag ->
-                        TagChip(tag)
+            // 倒计时（传值即开启；完成态退场——标记完成后不再展示，原有天数在取消完成后自动回来）：
+            // 卡片左区独占块，垂直居中随外层 Row 的 CenterVertically；
+            // 内容列 weight(1f) 自动让宽，右侧旗帜与勾选框布局不受影响
+            if (countdownDays != null && !completed) {
+                CountdownLabel(days = countdownDays, tint = deadlineColor)
+                Spacer(Modifier.width(CountdownEndSpacing))
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(titlePropertySpacing),
+            ) {
+                Text(
+                    text = title,
+                    style = titleStyle,
+                )
+                if (time != null || deadline != null || tags.isNotEmpty()) {
+                    FlowRow(
+                        // 行距取标签间距；时间项各带末位内距，把与后续项（含首个标签）的间距补到 PropertySpacing
+                        horizontalArrangement = Arrangement.spacedBy(TagSpacing),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        itemVerticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (time != null) {
+                            TimeProperty(
+                                icon = R.drawable.ic_clock,
+                                text = time,
+                                tint = MaterialTheme.classppColors.secondaryText,
+                                modifier = Modifier.padding(end = TimeItemEndPadding),
+                            )
+                        }
+                        if (deadline != null) {
+                            TimeProperty(
+                                icon = R.drawable.ic_clock_alarm,
+                                text = deadline,
+                                tint = deadlineColor,
+                                modifier = Modifier.padding(end = TimeItemEndPadding),
+                            )
+                        }
+                        tags.forEach { tag ->
+                            TagChip(tag)
+                        }
                     }
                 }
             }
-        }
-        if (urgency != TodoUrgency.None) {
-            Icon(
-                painter = painterResource(R.drawable.ic_flag),
-                contentDescription = null,
-                tint = urgency.flagColor(),
-                modifier = Modifier.size(FlagIconSize),
-            )
-            Spacer(Modifier.width(16.dp))
-        }
-        // M3 Checkbox 占位（后续按设计稿自绘）：颜色先取主题 primary——未选 = 蓝描边框，已选，蓝底白勾。
-        // 按压源由 pressFeedback 与 toggleable 共用（indication 置 null，涟漪由按压反馈取代）
-        val checkboxPress = remember { MutableInteractionSource() }
-        Row(
-            modifier = Modifier
-                // 按压反馈在 clip 之前：缩放作用于整个触控区，提亮范围与勾选框圆角对齐
-                .pressFeedback(checkboxPress, RoundedRectangle(6.dp))
-                .clip(RoundedRectangle(6.dp))
-                .toggleable(
-                    value = completed,
-                    interactionSource = checkboxPress,
-                    indication = null,
-                    onValueChange = { onCheckedChange?.invoke(it) }, // 安全调用
-                    role = Role.Checkbox,
+            if (urgency != TodoUrgency.None) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_flag),
+                    contentDescription = null,
+                    tint = urgency.flagColor(),
+                    modifier = Modifier.size(FlagIconSize),
                 )
-                .height(36.dp)  //定义checkBox热区高度
-                .width(36.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            Checkbox(
-                checked = completed,
-                onCheckedChange = null, // 事件交给外层，这里固定null
-                colors = CheckboxDefaults.colors(
-                    checkedColor = MaterialTheme.colorScheme.primary,
-                    uncheckedColor = MaterialTheme.colorScheme.primary,
-                    checkmarkColor = MaterialTheme.colorScheme.onPrimary,
-                ),
-            )
+                Spacer(Modifier.width(16.dp))
+            }
+            // M3 Checkbox 占位（后续按设计稿自绘）：颜色先取主题 primary——未选 = 蓝描边框，已选，蓝底白勾。
+            // 按压源由 pressFeedback 与 toggleable 共用（indication 置 null，涟漪由按压反馈取代）
+            val checkboxPress = remember { MutableInteractionSource() }
+            Row(
+                modifier = Modifier
+                    // 按压反馈在 clip 之前：缩放作用于整个触控区，提亮范围与勾选框圆角对齐
+                    .pressFeedback(checkboxPress, RoundedRectangle(6.dp))
+                    .clip(RoundedRectangle(6.dp))
+                    .toggleable(
+                        value = completed,
+                        interactionSource = checkboxPress,
+                        indication = null,
+                        onValueChange = { onCheckedChange?.invoke(it) }, // 安全调用
+                        role = Role.Checkbox,
+                    )
+                    .height(36.dp)  //定义checkBox热区高度
+                    .width(36.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Checkbox(
+                    checked = completed,
+                    onCheckedChange = null, // 事件交给外层，这里固定null
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = MaterialTheme.colorScheme.primary,
+                        uncheckedColor = MaterialTheme.colorScheme.primary,
+                        checkmarkColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                )
+            }
+
+
         }
-
-
     }
 }
 

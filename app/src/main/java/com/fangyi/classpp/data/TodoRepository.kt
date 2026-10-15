@@ -187,6 +187,13 @@ class TodoRepository internal constructor(
         commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == id) updated else it }))
     }
 
+    /** 切换置顶状态；其余字段不动（置顶条目归列表「已置顶」组，移动语义不与其余组重复） */
+    suspend fun setPinned(id: String, pinned: Boolean): TodoOpResult = mutex.withLock {
+        val target = todoOrNull(id) ?: return@withLock TodoOpResult.Err(TodoError.NotFound(id))
+        val updated = normalize(target.copy(pinned = pinned))
+        commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == id) updated else it }))
+    }
+
     /**
      * 开关倒计时（待办列表卡在截止时间左侧显示剩余天数）；其余字段不动。
      * 无截止日期时开启会被 [normalize] 的倒计时不变式归一化回 false（调用侧本就不该发这种请求）。

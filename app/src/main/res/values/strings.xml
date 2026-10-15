@@ -61,6 +61,13 @@
     <!-- 编辑待办浮层：删除二次确认 -->
     <string name="todo_delete_title">删除待办</string>
     <string name="todo_delete_message">「%1$s」将被删除，此操作不可撤销。</string>
+    <!-- 待办卡片侧滑动作（NoteCard 侧滑层）：动作卡无障碍描述与执行结果 Toast -->
+    <string name="todo_swipe_delete">删除</string>
+    <string name="todo_swipe_pin">置顶</string>
+    <string name="todo_swipe_unpin">取消置顶</string>
+    <string name="toast_todo_deleted">已删除</string>
+    <string name="toast_todo_pinned">已置顶</string>
+    <string name="toast_todo_unpinned">已取消置顶</string>
     <!-- 新建待办浮层：分组标题与表单字段 -->
     <string name="todo_section_reminder">提醒与优先级</string>
     <string name="todo_section_date_time">日期与时间</string>

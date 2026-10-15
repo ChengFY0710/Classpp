@@ -1,5 +1,6 @@
 package com.fangyi.classpp.ui.note
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -49,8 +50,11 @@ import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSection
+import com.fangyi.classpp.ui.components.NoteCardSwipe
 import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.PopupMenuSection
+import com.fangyi.classpp.ui.components.SwipeAction
+import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
@@ -121,6 +125,13 @@ fun TodoScreen(
     }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // 侧滑互斥协调器：同一时刻至多一张待办卡处于展开态（起手滑他卡时原卡自动收起）
+    val swipeCoordinator = remember { SwipeCoordinator() }
+    // 卡片展开态下系统返回 = 收起卡片而非退出；各浮层自己的 BackHandler 注册在后、
+    // 优先级更高，互不干扰（同课表页编辑态返回拦截的模式）
+    BackHandler(enabled = swipeCoordinator.activeKey != null) {
+        swipeCoordinator.activeKey = null
+    }
     var selectedGroupIndex by rememberSaveable { mutableIntStateOf(0) }
     val hazeState = remember { HazeState() }
     val todos by repository.todos.collectAsState()
@@ -162,6 +173,10 @@ fun TodoScreen(
     // 分组写回失败的 Toast 文案在组合期解析（commitGroups 回调里非组合上下文，同编辑浮层约定）
     val groups by repository.groups.collectAsState()
     val groupSaveFailedMessage = stringResource(R.string.todo_error_save_failed)
+    // 侧滑动作结果 Toast 文案（组合期解析——回调里非组合上下文，同 groupSaveFailedMessage 约定）
+    val todoDeletedMessage = stringResource(R.string.toast_todo_deleted)
+    val todoPinnedMessage = stringResource(R.string.toast_todo_pinned)
+    val todoUnpinnedMessage = stringResource(R.string.toast_todo_unpinned)
     // 分组写回统一入口：新建（浮层追加）、确认（置顶/重排草稿）、删除（滤除）、重命名
     // （立即生效）共用——整表交仓库 setGroups 落盘（被删组的待办由仓库级联回未分组）；
     // 顶栏过滤下标按原组名跟随（下标按位置存，重排后不跟随会指错组）：仅 2 起的用户
@@ -208,8 +223,28 @@ fun TodoScreen(
                     sortDescending = sortDescending,
                     visibleSections = visibleSections,
                     topBarExtraSpace = topBarExtraSpace,
+                    swipeCoordinator = swipeCoordinator,
                     onToggleCompleted = { id, completed ->
                         scope.launch { repository.setCompleted(id, completed) }
+                    },
+                    // 侧滑置顶：写回仓库后卡片随分组移动（移入/移出「已置顶」组），Toast 同步反馈
+                    onTogglePinned = { id, pinned ->
+                        scope.launch {
+                            when (repository.setPinned(id, pinned)) {
+                                TodoOpResult.Ok ->
+                                    AppToasts.show(context, if (pinned) todoPinnedMessage else todoUnpinnedMessage)
+                                is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
+                            }
+                        }
+                    },
+                    // 侧滑删除：松手即删（无确认框，飞出动画本身就是强确认）；失败 Toast、卡片自动滑回
+                    onDeleteTodo = { id ->
+                        scope.launch {
+                            when (repository.removeTodo(id)) {
+                                TodoOpResult.Ok -> AppToasts.show(context, todoDeletedMessage)
+                                is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
+                            }
+                        }
                     },
                     onTodoClick = { detailTargetId = it.id },
                 )
@@ -557,7 +592,9 @@ internal fun filterTodosByGroup(
  * 组内按顶栏选定的排序与方向（默认创建时间降序——创建早的在前）。置顶条目归已置顶组、
  * 不再进其余三组（移动而非重复展示，同分组置顶的语义）。空组不渲染的另一条路是
  * 分类菜单：[visibleSections] 未含的组整组隐藏（默认全组可见）。卡片经 [TodoCard]
- * 接模型字段（时间文本 [cardTimeText]、标签、紧急旗）。列表从顶栏与浮动导航栏下滚过，
+ * 接模型字段（时间文本 [cardTimeText]、标签、紧急旗），并支持左右侧滑呼出删除/置顶
+ * 动作卡（双阈值手势见 [NoteCardSwipeLayer]）：同一时刻至多一张展开（[swipeCoordinator]
+ * 互斥），展开态按系统返回自动收起（页面层 BackHandler）。列表从顶栏与浮动导航栏下滚过，
  * 上下各留出让位；顶栏展开动作行时按 [topBarExtraSpace] 额外让位（宿主动画下发）。
  *
  * 滚动容器为 [RubberBandLazyColumn]（页面 [ProvideOverscroll] 作用域内）：内容超一屏
@@ -571,7 +608,10 @@ private fun TodoList(
     sortDescending: Boolean,
     visibleSections: Set<TodoSection>,
     topBarExtraSpace: Dp,
+    swipeCoordinator: SwipeCoordinator,
     onToggleCompleted: (id: String, completed: Boolean) -> Unit,
+    onTogglePinned: (id: String, pinned: Boolean) -> Unit,
+    onDeleteTodo: (id: String) -> Unit,
     onTodoClick: (todo: Todo) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -623,6 +663,9 @@ private fun TodoList(
                         TodoCard(
                             todo = todo,
                             overdue = section == TodoSection.Overdue,
+                            swipeCoordinator = swipeCoordinator,
+                            onDelete = { onDeleteTodo(todo.id) },
+                            onTogglePinned = { onTogglePinned(todo.id, !todo.pinned) },
                             onClick = { onTodoClick(todo) },
                         ) { onToggleCompleted(todo.id, it) }
                     }
@@ -639,11 +682,16 @@ private fun TodoList(
  * [Todo.countdown] 开启时把剩余天数交给 [NoteCard.countdownDays]，卡片左区显示倒计时
  * （天数口径与截止配色同源，见 [deadlineDaysLeft]）。
  * 点卡片（非勾选框）经 [onClick] 拉起详情浮层——勾选框是独立 toggleable，不会误触。
+ * 侧滑动作：左侧删除（error 红，松手过阈值即删）、右侧置顶（primary 蓝；已置顶卡
+ * 显示 ic_pin_off、执行取消置顶），动作卡语义见 [NoteCardSwipe]。
  */
 @Composable
 private fun TodoCard(
     todo: Todo,
     overdue: Boolean,
+    swipeCoordinator: SwipeCoordinator,
+    onDelete: () -> Unit,
+    onTogglePinned: () -> Unit,
     onClick: () -> Unit,
     onCheckedChange: (Boolean) -> Unit,
 ) {
@@ -660,6 +708,26 @@ private fun TodoCard(
         overdue = overdue,
         onClick = onClick,
         onCheckedChange = onCheckedChange,
+        swipe = NoteCardSwipe(
+            key = todo.id,
+            coordinator = swipeCoordinator,
+            delete = SwipeAction(
+                iconRes = R.drawable.ic_delete,
+                tint = MaterialTheme.colorScheme.error,
+                activeColor = MaterialTheme.colorScheme.error,
+                contentDescription = stringResource(R.string.todo_swipe_delete),
+                onAction = onDelete,
+            ),
+            pin = SwipeAction(
+                iconRes = if (todo.pinned) R.drawable.ic_pin_off else R.drawable.ic_pin,
+                tint = MaterialTheme.colorScheme.primary,
+                activeColor = MaterialTheme.colorScheme.primary,
+                contentDescription = stringResource(
+                    if (todo.pinned) R.string.todo_swipe_unpin else R.string.todo_swipe_pin,
+                ),
+                onAction = onTogglePinned,
+            ),
+        ),
     )
 }
 
