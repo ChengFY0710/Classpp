@@ -273,6 +273,10 @@
 
     <string name="todo_detail_title">Todo Details</string>
     <string name="todo_detail_time_label">Time</string>
+    <!-- Todo details sheet: created & completed section -->
+    <string name="todo_section_created_completed">Created &amp; completed</string>
+    <string name="todo_created_label">Created</string>
+    <string name="todo_completed_label">Completed</string>
     <!-- Edit todo sheet: delete confirmation -->
     <string name="todo_delete_title">Delete Todo</string>
     <string name="todo_delete_message">“%1$s” will be deleted. This cannot be undone.</string>

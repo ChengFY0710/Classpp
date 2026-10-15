@@ -44,7 +44,8 @@ private val TagRowSpacing = 12.dp
  * 待办详情浮层：点待办卡弹出，结构对标 [com.fangyi.classpp.ui.schedule.CourseDetailSheet]——
  * 正文为待办标题、标题下方的标签行（[TagChip]，空标签不渲染）、四行只读信息
  * （[SheetInfoCard]：截止日期 / 紧急程度 / 待办时间 / 待办地点，四行常显，
- * 空值显灰「无」）与备注输入（[SheetTextArea]）。
+ * 空值显灰「无」）、备注输入（[SheetTextArea]）与带标题的「创建与完成时间」分组
+ * （[SheetInfoCard] 两条时刻戳：创建时间常显、完成时间仅已完成时渲染）。
  *
  * 信息行行首各带 24dp onSurface 图标（[InfoRowIcon]），值色两处按紧急度取色、与
  * 列表卡同源：截止值走 [deadlineColor]（剩 2 天黄 / 1 天橙 / 当天及逾期红 / 其余 primary）、
@@ -166,6 +167,29 @@ internal fun TodoDetailSheet(
                     value = note,
                     onValueChange = { note = it },
                     placeholder = stringResource(R.string.detail_note_ph),
+                )
+            }
+            // 创建与完成时间：只读时刻戳，无图标槽；值色固定 Primary（不传 valueColor 即默认）
+            CardSection(title = stringResource(R.string.todo_section_created_completed)) {
+                SheetInfoCard(
+                    entries = listOfNotNull(
+                        SheetInfoEntry(
+                            label = stringResource(R.string.todo_created_label),
+                            // 旧数据文件缺 createdAt 时仓库尚未补齐（0）：仍占位显「无」，不显 1970 假数据
+                            value = if (todo.createdAtMillis == 0L) {
+                                noneText
+                            } else {
+                                epochMillisText(todo.createdAtMillis)
+                            },
+                        ),
+                        // 完成时间：仓库不变式保证未完成时 completedAtMillis 为 null，此行随之不渲染
+                        todo.completedAtMillis?.let { millis ->
+                            SheetInfoEntry(
+                                label = stringResource(R.string.todo_completed_label),
+                                value = epochMillisText(millis),
+                            )
+                        },
+                    ),
                 )
             }
         }

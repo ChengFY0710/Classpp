@@ -651,6 +651,28 @@ internal fun IsoDate.toAbsoluteDateText(today: IsoDate = IsoDate.today()): Strin
 }
 
 /**
+ * 时刻戳文本（待办创建/完成时间）：`3/12 8:00`（本年）/ `2027/3/12 8:00`（非本年）——
+ * 日期段走 [toAbsoluteDateText]，时刻段走 [TimeText.format]（时不补零、分钟两位）。
+ *
+ * 时刻戳按 [zone]（默认设备时区，同 [IsoDate.today] 的时区语义）换算成日历日与当天分钟数；
+ * [today]/[zone] 可注入，便于单测把「今年」与时区钉死。
+ */
+internal fun epochMillisText(
+    millis: Long,
+    today: IsoDate = IsoDate.today(),
+    zone: TimeZone = TimeZone.getDefault(),
+): String {
+    val local = GregorianCalendar(zone).apply { timeInMillis = millis }
+    val date = IsoDate.of(
+        local.get(GregorianCalendar.YEAR),
+        local.get(GregorianCalendar.MONTH) + 1,
+        local.get(GregorianCalendar.DAY_OF_MONTH),
+    )
+    val minuteOfDay = local.get(GregorianCalendar.HOUR_OF_DAY) * 60 + local.get(GregorianCalendar.MINUTE)
+    return "${date.toAbsoluteDateText(today)} ${TimeText.format(minuteOfDay)}"
+}
+
+/**
  * 卡片日期段：距今天 ±2 天内显相对词（后天/明天/今天/昨天/前天），更远显 [toAbsoluteDateText]
  * 的绝对日期。待办时间与截止时间共用；详情浮层不复用——详情页要给出确定日期，直接走
  * [toAbsoluteDateText]（不带相对词）。
