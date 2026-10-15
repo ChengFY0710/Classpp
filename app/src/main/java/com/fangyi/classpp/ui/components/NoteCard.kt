@@ -181,12 +181,14 @@ private fun CountdownLabel(
  * - [countdownDays] 左侧倒计时，开关即是否传值（见 [CountdownLabel]）：非 null 时在内容列
  *   左侧画倒计时，≥0 显「N天」、<0 显「逾期N天」，取色直接复用 [deadlineColor]——与右侧
  *   截止时间同色同逻辑；null（用户关闭 / 无截止日期）整个元素不渲染、不占位；
+ *   完成态（[completed] = true）同样不渲染、不占位——标记完成后倒计时退场；
  * - 两个时间项缺席时均不占位，属性行整体走 FlowRow，放不下自动换行；
  * - 行内横向间距：时间项之间、时间项与首个标签之间 12dp，标签之间 8dp（见 [PropertySpacing] /
  *   [TagSpacing]——FlowRow 行距统一取后者，时间项靠末位内距补差）；
  * - 有标签时标题与属性行贴紧一点（见 [TitlePropertySpacing] / [TitlePropertySpacingWithTags]）；
  * - [urgency] 紧急档位：非 None 才画旗，None 不画（列表默认形态无旗）；
  * - [completed] 完成态：标题划线置灰（时间/标签/旗帜不变），勾选框选中；
+ *   左区倒计时随完成隐藏（即使 [countdownDays] 有值），取消完成后自动恢复；
  * - [overdue] 逾期态：标题标红（theme 的 error，时间/标签/旗帜不变）；完成态优先于逾期态；
  * - 时间、截止与标签全缺席时卡片仍有 60dp 最小高度，不塌成纯文字高度。
  */
@@ -233,9 +235,10 @@ fun NoteCard(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 倒计时（传值即开启）：卡片左区独占块，垂直居中随外层 Row 的 CenterVertically；
+        // 倒计时（传值即开启；完成态退场——标记完成后不再展示，原有天数在取消完成后自动回来）：
+        // 卡片左区独占块，垂直居中随外层 Row 的 CenterVertically；
         // 内容列 weight(1f) 自动让宽，右侧旗帜与勾选框布局不受影响
-        if (countdownDays != null) {
+        if (countdownDays != null && !completed) {
             CountdownLabel(days = countdownDays, tint = deadlineColor)
             Spacer(Modifier.width(CountdownEndSpacing))
         }
@@ -441,6 +444,7 @@ private fun NoteCardCountdownDarkPreview() {
 /**
  * 预览内容：倒计时开关打开的形态（数字 25sp、单位与「逾期」前缀 12sp；取色与右侧截止时间
  * 同源——>2 天 primary、剩 2 天 urgentYellow、剩 1 天 urgentOrange、当天与逾期 error），
+ * 倒数第二张是完成态对照（countdownDays 有值也不渲染——标记完成后倒计时退场），
  * 末尾一张是关闭态对照（countdownDays 缺席，与既有形态完全一致）。
  */
 @Composable
@@ -498,6 +502,17 @@ private fun NoteCardCountdownShowcase() {
             deadline = "今天 8:00",
             deadlineColor = MaterialTheme.colorScheme.error,
             countdownDays = 0,
+            onCheckedChange = {},
+        )
+        // 完成态对照：倒计时开关开着（countdownDays 有值）也不渲染、不占位——标记完成后退场
+        NoteCard(
+            title = "户口乔迁材料报送",
+            time = "12:30",
+            deadline = "3/12 6:00",
+            deadlineColor = MaterialTheme.colorScheme.primary,
+            countdownDays = 25,
+            tags = listOf("待办标签"),
+            completed = true,
             onCheckedChange = {},
         )
         // 关闭态对照：不传天数，倒计时不渲染、不占位

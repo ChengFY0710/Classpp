@@ -25,7 +25,7 @@ import com.fangyi.classpp.data.isOverdue
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.Todo
-import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.OverlaySheet
@@ -37,6 +37,7 @@ import com.fangyi.classpp.ui.note.cardTimeText
 import com.fangyi.classpp.ui.note.currentMinuteOfDay
 import com.fangyi.classpp.ui.note.deadlineCardText
 import com.fangyi.classpp.ui.note.deadlineColor
+import com.fangyi.classpp.ui.note.deadlineDaysLeft
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 
@@ -47,6 +48,9 @@ import com.fangyi.classpp.ui.theme.classppColors
  * 待办，空列表则整块不出现）。默认只显未完成；勾选框可切换完成（经 [onTodoCheckedChange]
  * 交调用方落盘），**本次打开期间勾选的**卡片原地变划线置灰并保留到关闭，重开才消失；
  * 打开时即已完成的不显示。卡片整卡点击无动作（不进待办详情）。
+ *
+ * 待办卡随该待办的倒计时开关（`Todo.countdown`）在左区显示距截止剩余天数（[deadlineDaysLeft]，
+ * 与待办列表页同口径）；完成态由 [NoteCard] 自行隐藏倒计时。
  *
  * 正文按浮层内容规范排版：课程名与灰色信息行保持裸元素，信息卡、备注、待办卡列表各收进
  * 一个无题 [CardSection]（后两者是列表，组内卡间距走 CardSection 默认的 10dp）；
@@ -166,7 +170,9 @@ fun CourseDetailSheet(
                 !it.completed || it.id in checkedThisSession
             }
             if (visibleTodos.isNotEmpty()) {
-                val today = IsoDate.today()
+                // 「今天」取 LocalToday（跨零点自动跳天）：与 deadlineDaysLeft 的天数口径同源，
+                // 逾期标红与左区倒计时不会在挂过夜后各说各话（同 TodoDetailSheet）
+                val today = LocalToday
                 val nowMinute = currentMinuteOfDay()
                 // 待办卡是直接排成一列的同型卡列表：整列收进一个无题 CardSection
                 //（组内 10dp 卡间距，与待办页 NoteCardSection 的节奏一致）
@@ -186,6 +192,9 @@ fun CourseDetailSheet(
                                 time = todo.cardTimeText(),
                                 deadline = todo.deadlineCardText(),
                                 deadlineColor = todo.deadlineColor(),
+                                // 倒计时：开关开着且仍有截止日期时才有天数可显（截止被清掉时
+                                // 仓库已把开关归一化回 false）；完成态由 NoteCard 自行隐藏
+                                countdownDays = if (todo.countdown) todo.deadlineDaysLeft() else null,
                                 tags = todo.tags,
                                 urgency = todo.urgency,
                                 completed = todo.completed,
