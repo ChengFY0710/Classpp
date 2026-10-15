@@ -374,6 +374,8 @@ internal fun NewTodoSheet(
                         customDateMounted = true
                         customDateVisible = true
                     },
+                    // 共享采样源：「重复」菜单叠在本浮层上，模糊本浮层内容（同滚轮弹窗）
+                    hazeState = sheetHazeState,
                 )
                 RowChoiceCard(
                     options = listOf(

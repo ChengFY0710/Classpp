@@ -45,6 +45,7 @@ import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.isDarkTheme
+import dev.chrisbanes.haze.HazeState
 import java.util.GregorianCalendar
 import java.util.Locale
 import java.util.TimeZone
@@ -92,6 +93,9 @@ enum class RepeatFrequency { Daily, Weekly, Monthly, Yearly }
  * 点击区内侧（按压反馈铺满整行，ui.motion 的 pressClickable 取代涟漪）；行首 ic_clock
  * 图标 24dp onSurface、与 label 间距 12dp（同 [SettingsCardwithIcon]），label 走 fieldLabel，
  * 值与快捷选项走 fieldValue，尾部图标 20dp primary。
+ *
+ * [hazeState] 是「重复」菜单的磨砂采样源（同 [SettingsCard]）：宿主把它自己那层内容的采样源
+ * 传进来（浮层内嵌时传浮层的共享采样源），null（如 @Preview）退化为不透明白卡。
  */
 @Composable
 fun DateSelectionCard(
@@ -103,6 +107,8 @@ fun DateSelectionCard(
     // [onValueChange] 回写；弹窗本体由宿主（NewTodoSheet）组合在浮层之后
     onCustomDatePickRequest: (initialDate: IsoDate, onPicked: (IsoDate) -> Unit) -> Unit,
     modifier: Modifier = Modifier,
+    // 「重复」菜单的磨砂采样源（见 KDoc）：null = 菜单为不透明白卡
+    hazeState: HazeState? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     // 浅色模式下白底行加色白提亮无感（白色无法更亮），改用微微压暗表达按压；深色模式仍提亮
@@ -286,6 +292,7 @@ fun DateSelectionCard(
                             expanded = repeatMenuExpanded,
                             selected = shownCustom.repeat,
                             onDismiss = { repeatMenuExpanded = false },
+                            hazeState = hazeState,
                             onPick = {
                                 repeatMenuExpanded = false
                                 if (custom != null) onValueChange(custom.copy(repeat = it))
@@ -344,12 +351,14 @@ private fun QuickOptionText(
  * 「重复」的弹出菜单：[PopupMenuPopup] 锚在行尾上下箭头上（[PopupMenuCard] 白卡 +
  * 柔影，同 SettingsCard 选择行菜单），卡顶边贴行顶边（[MenuTopAlignLift]）；
  * 选中项经勾选槽显示勾并蓝字（PopupMenuCard 原生行样式）。
+ * [hazeState] 转给菜单做背景模糊（采样菜单背后那层内容），null = 不透明白卡。
  */
 @Composable
 private fun RepeatMenu(
     expanded: Boolean,
     selected: RepeatFrequency,
     onDismiss: () -> Unit,
+    hazeState: HazeState?,
     onPick: (RepeatFrequency) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -357,6 +366,7 @@ private fun RepeatMenu(
     PopupMenuPopup(
         expanded = expanded,
         onDismiss = onDismiss,
+        hazeState = hazeState,
         sections = listOf(
             PopupMenuSection(
                 items = RepeatFrequency.entries.map { frequency ->

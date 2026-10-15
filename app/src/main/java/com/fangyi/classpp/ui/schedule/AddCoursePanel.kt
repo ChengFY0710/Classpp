@@ -69,6 +69,7 @@ import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.WeekCellShape
 import com.fangyi.classpp.ui.theme.classppColors
+import dev.chrisbanes.haze.rememberHazeState
 import kotlin.math.ceil
 
 /** 周数方格：每行最少 6 个，均分后单格宽于上限就加列（末行补空位，保证每格同宽同高） */
@@ -347,6 +348,10 @@ fun AddCoursePanel(
         else -> null
     }
 
+    // 共享采样源：浮层滚动列是它的采样源，叠在本浮层上的选择行菜单（起止节次）拿同一份
+    // 做卡片磨砂背景模糊；同时交给浮层本身，顶栏磨砂与菜单背景模糊同源（NewTodoSheet 同款接线）
+    val sheetHazeState = rememberHazeState()
+
     OverlaySheet(
         title = stringResource(
             when {
@@ -379,6 +384,7 @@ fun AddCoursePanel(
         onDismiss = onDismiss,
         visible = visible,
         onDismissed = onDismissed,
+        hazeState = sheetHazeState,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
             // 灰色信息行是浮层规范里的"直接文本"例外，不包分组
@@ -425,6 +431,7 @@ fun AddCoursePanel(
                 // 开始节次：仅组内有跨节课时出现（组员起止可以不一致），与结束节次同一套选择卡
                 if (showStartSlot) {
                     SettingsCard(
+                        hazeState = sheetHazeState,
                         items = listOf(
                             SettingsCardItem.Select(
                                 label = stringResource(R.string.edit_start_slot),
@@ -445,6 +452,7 @@ fun AddCoursePanel(
                     )
                 }
                 SettingsCard(
+                    hazeState = sheetHazeState,
                     items = listOf(
                         SettingsCardItem.Select(
                             label = stringResource(R.string.edit_end_slot),

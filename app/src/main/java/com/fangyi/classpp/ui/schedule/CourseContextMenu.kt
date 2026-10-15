@@ -75,7 +75,7 @@ internal fun SlotContextMenu(
  * 面板随即从底部升起来，视觉上接得住；也避免"动画没播完就点"时动作被吞掉。
  *
  * 行样式与其它菜单统一（PopupMenuCard 默认行）：onSurface 深色 + 左侧 20dp 勾选槽，
- * 项间分割线经「每项独占一个 [PopupMenuSection]」表达（首组忽略 divider）。
+ * 整份菜单为单组无缝形态（不画项间分割线）。
  *
  * 生长角按锚点所在半屏现算（[menuGrowthForAnchor]）：课表按星期列横跨整屏，锚点在左半屏
  * 时菜单向右铺得下、用左上角；在右半屏（周五之后）会被钳到屏幕右缘、锚点跑到卡片左侧，
@@ -93,15 +93,11 @@ private fun ContextMenuPopup(
     val insetPx = with(density) { MenuLeftInset.roundToPx() }
     val windowWidthPx = LocalWindowInfo.current.containerSize.width.takeIf { it > 0 }
         ?: LocalView.current.width
-    // 每项独占一组：PopupMenuSection 的分割线画在「与上一组之间」，逐项成组即项间分割线
-    val sections = items.mapIndexed { index, item ->
-        PopupMenuSection(items = listOf(item), showDivider = index > 0)
-    }
     PopupMenuPopup(
         // 挂载即展开（进场动画照播）；收起由挂载方卸载，无退场
         expanded = true,
         onDismiss = onDismiss,
-        sections = sections,
+        sections = listOf(PopupMenuSection(items = items)),
         hazeState = hazeState,
         // 卡片左缘 = 卡片左缘 + 内缩，顶缘 = 卡片底缘 - 压入量（贴着卡片左下角长出）。
         // 不用回调给的 anchorBounds——本弹层由挂载方（menuAnchor）渲染在任意位置，

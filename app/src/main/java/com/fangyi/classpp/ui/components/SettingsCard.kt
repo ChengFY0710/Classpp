@@ -44,6 +44,7 @@ import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.isDarkTheme
+import dev.chrisbanes.haze.HazeState
 
 /**
  * 设置卡条目：导航行（label + 蓝色箭头）、开关行（label + [ClassppSwitch]）、
@@ -146,8 +147,12 @@ sealed interface SettingsCardItem {
  * - 间距：行高下限 [rowMinHeight]（默认 60dp = [SheetFieldHeight]）判在**整卡**而非单行，
  *   整卡内容不足时差额均摊给各行撑高（单行卡与旧「行高 min 60」规格渲染一致）；行内
  *   左右 16，内距画在交互区**内侧**；[SettingsCardItem.Custom] 行仍自带该下限兜底；
- * - 颜色只取四处主题色：surface（卡底）、onSurface（label）、primary（箭头/开关轨道/行值，
+ * 颜色只取四处主题色：surface（卡底）、onSurface（label）、primary（箭头/开关轨道/行值，
  *   值经 fieldValue 角色）、classppColors.secondaryText（描述），深浅模式自动适配。
+ *
+ * [hazeState] 是选择行弹出菜单的磨砂采样源：交给 [PopupMenuPopup] 做背景模糊，须与菜单背后
+ * 那层内容同源——浮层内的卡片传浮层的共享采样源（滚动内容即其采样源），设置页传页面自己的，
+ * null（如 @Preview）退化为不透明白卡。其余行型用不到，传了也无副作用。
  */
 @Composable
 fun SettingsCard(
@@ -160,6 +165,8 @@ fun SettingsCard(
     rowMinHeight: Dp = SheetFieldHeight,
     // 卡内内容的上下内距：首行之前与末行之后各留一份（默认 0，卡外四周不受影响）
     contentVerticalPadding: Dp = 0.dp,
+    // 选择行菜单的磨砂采样源（见 KDoc）：null = 菜单为不透明白卡
+    hazeState: HazeState? = null,
 ) {
     // 行高下限判在整卡而非单行：先按内容自然高度测各行，整卡不足 [rowMinHeight]
     // 时把差额均摊给各行撑高——行变高后按压反馈仍铺满整卡、内容仍居中，单行卡与旧的
@@ -171,7 +178,7 @@ fun SettingsCard(
                     is SettingsCardItem.Custom -> CustomRow(item, rowMinHeight)
                     is SettingsCardItem.Slider -> SliderRow(item)
                     is SettingsCardItem.SliderGroup -> SliderGroupRow(item)
-                    else -> SettingsCardRow(item)
+                    else -> SettingsCardRow(item, hazeState)
                 }
             }
         },
@@ -217,9 +224,10 @@ fun SettingsCard(
 /**
  * 单行渲染：padding 在按压反馈/点区内侧，放大提亮（或开关整行点区）铺满整行宽。
  * 行高随内容，不再自行兜底 60dp——下限由 [SettingsCard] 判在整卡上。
+ * [hazeState] 只有选择行用得到（转给菜单弹层做磨砂），其余行型不消费。
  */
 @Composable
-private fun SettingsCardRow(item: SettingsCardItem) {
+private fun SettingsCardRow(item: SettingsCardItem, hazeState: HazeState?) {
     // 菜单开合只有选择行用得到，其余行型状态恒为 false 不产生行为
     var menuExpanded by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
@@ -287,6 +295,7 @@ private fun SettingsCardRow(item: SettingsCardItem) {
                 item = item,
                 expanded = menuExpanded,
                 onDismiss = { menuExpanded = false },
+                hazeState = hazeState,
             )
             // 自定义行由 CustomRow 渲染，走不到这里
             is SettingsCardItem.Custom -> Unit
@@ -416,12 +425,14 @@ internal fun Chevron() {
  * 选择行尾部：上下箭头 + 锚在其上的弹出菜单（[PopupMenuPopup] 独立 Popup 窗口，
  * 不受卡片圆角裁剪；PopupMenuCard 白卡 + 柔影，与排序/重复/右键菜单同材质）。
  * 卡片顶边贴行卡顶边（对齐设计稿）。
+ * [hazeState] 转给菜单做背景模糊（采样菜单背后那层内容），null = 不透明白卡。
  */
 @Composable
 private fun SelectMenu(
     item: SettingsCardItem.Select,
     expanded: Boolean,
     onDismiss: () -> Unit,
+    hazeState: HazeState?,
 ) {
     val density = LocalDensity.current
     val topAlignLiftPx = with(density) { MenuTopAlignLift.roundToPx() }
@@ -449,6 +460,7 @@ private fun SelectMenu(
                     },
                 ),
             ),
+            hazeState = hazeState,
             // 卡片左缘对齐图标左缘（DropdownMenu 原位），上移量使卡顶边贴行顶边；
             // 行尾箭头贴屏幕右缘，菜单放不下会被钳到右缘 → 锚点取卡片右上角
             cardPosition = { anchorBounds, _, _ ->

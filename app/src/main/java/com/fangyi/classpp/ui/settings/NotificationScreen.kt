@@ -54,6 +54,7 @@ import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
+import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
@@ -205,6 +206,7 @@ fun NotificationScreen(
                         modifier = Modifier
                             // 行数随通知方式增减：卡片高度走 motion 层的展开令牌动画
                             .animateContentSize(tween(Motion.ExpandMillis, easing = Motion.Decelerate)),
+                        hazeState = hazeState,
                         items = buildList {
                             add(
                                 SettingsCardItem.Select(
@@ -293,6 +295,7 @@ fun NotificationScreen(
                             leadPickerVisible = true
                         },
                         onTypePick = { id -> setPrefs(prefs.copy(todoType = id)) },
+                        hazeState = hazeState,
                     )
                 }
             }
@@ -366,6 +369,7 @@ private fun CourseNotificationCard(
 /**
  * 「待办通知」组卡片：启用开关 + 提前时间导航行 + 通知类型选择行（三行同卡无缝堆叠）；
  * 总开关关闭期间子开关点击不生效，语义同 [CourseNotificationCard]。
+ * [hazeState] 转给选择行菜单做背景模糊（页面滚动内容即其采样源）。
  */
 @Composable
 private fun TodoNotificationCard(
@@ -377,8 +381,10 @@ private fun TodoNotificationCard(
     onEnabledChange: (Boolean) -> Unit,
     onLeadPickRequest: () -> Unit,
     onTypePick: (Int) -> Unit,
+    hazeState: HazeState,
 ) {
     SettingsCard(
+        hazeState = hazeState,
         items = listOf(
             SettingsCardItem.Toggle(
                 label = stringResource(R.string.notification_enable_todo),
