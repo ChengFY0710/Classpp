@@ -402,7 +402,7 @@ private fun AddStepCard(onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            painter = painterResource(R.drawable.ic_add_circle),
+            painter = painterResource(R.drawable.ic_add_circle_regular),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(24.dp),
