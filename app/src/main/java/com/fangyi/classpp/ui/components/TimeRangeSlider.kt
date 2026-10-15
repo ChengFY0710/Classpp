@@ -3,7 +3,6 @@ package com.fangyi.classpp.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -35,6 +34,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TimeText
+import com.fangyi.classpp.ui.motion.detectHorizontalSwipeGestures
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.RowShape
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -243,8 +243,9 @@ fun TimeRangeSlider(
             }
             .pointerInput(Unit) {
                 var drag: TimeRangeDrag? = null
-                detectHorizontalDragGestures(
-                    // 空轨道上起手：不认领这次拖动（后续 move 不消费，交回上层）
+                detectHorizontalSwipeGestures(
+                    // 空轨道上起手：不换算时间（drag 保持 null，后续不改值；横向手势的
+                    // 消费由检测器在 Initial pass 统一接管，竖滑仍让位给父级滚动）
                     onDragStart = {
                         drag = geometry.pressedHandle?.let { isStart ->
                             TimeRangeDrag(isStart, if (isStart) currentStart else currentEnd)
@@ -253,8 +254,7 @@ fun TimeRangeSlider(
                     onDragEnd = { drag = null },
                     onDragCancel = { drag = null },
                     onHorizontalDrag = { change, dragAmount ->
-                        val active = drag ?: return@detectHorizontalDragGestures
-                        change.consume()
+                        val active = drag ?: return@detectHorizontalSwipeGestures
                         val isStart = active.isStart
                         val startAt = if (isStart) active.minutes else currentStart
                         val endAt = if (isStart) currentEnd else active.minutes
@@ -275,7 +275,7 @@ fun TimeRangeSlider(
                             lower = lower,
                             upper = upper,
                         )
-                        if (target == previous) return@detectHorizontalDragGestures
+                        if (target == previous) return@detectHorizontalSwipeGestures
                         if (isStart) currentOnRangeChange(target, currentEnd)
                         else currentOnRangeChange(currentStart, target)
                     },

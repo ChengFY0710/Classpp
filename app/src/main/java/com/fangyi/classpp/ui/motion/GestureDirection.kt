@@ -93,7 +93,8 @@ internal class DragDirectionLock(touchSlop: Float) {
  * - **单次定轴**：横向认定后全程锁定（[DragDirectionLock]），竖向认定后立即让位
  *   （不消费、无回调，父级滚动/橡皮筋正常接管），均不再重判。
  *
- * 供嵌在竖向滚动容器内的横向手势使用；独立于滚动容器的横滑（如滑杆）用原版即可。
+ * 供嵌在竖向滚动容器内的横向手势使用（卡片侧滑、滑杆拖动等）——竖滑让位保证容器
+ * 在滑杆上方照常滚动；真正独立于任何滚动容器的横滑用原版即可。
  */
 suspend fun PointerInputScope.detectHorizontalSwipeGestures(
     onDragStart: (Offset) -> Unit = {},

@@ -4,7 +4,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -34,6 +33,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.detectHorizontalSwipeGestures
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
 import kotlinx.coroutines.Job
@@ -152,8 +152,9 @@ fun ClassppSlider(
             .clip(PillShape)
             .background(trackColor)
             // 点击跳转：点轨道任意位置，圆球以微交互节奏动画滑过去；落进默认值吸附半径则
-            // 吸附到默认值、动画到位补一次震动。移动超出 touch slop 时拖动检测器接管，
-            // 本检测器随消费事件取消（与 TimeRangeSlider 的 tap/drag 双 pointerInput 同款接法）
+            // 吸附到默认值、动画到位补一次震动。移动越过方向判定线时拖动检测器接管
+            // （Initial pass 消费事件），本检测器随之取消（与 TimeRangeSlider 的 tap/drag
+            // 双 pointerInput 同款接法）
             .pointerInput(Unit) {
                 detectTapGestures { offset ->
                     val r = currentRange.endInclusive - currentRange.start
@@ -183,7 +184,7 @@ fun ClassppSlider(
                 var snapped = false
                 var freeValue = 0f
 
-                detectHorizontalDragGestures(
+                detectHorizontalSwipeGestures(
                     onDragStart = {
                         settleJob?.cancel()
                         settleJob = null
@@ -216,9 +217,9 @@ fun ClassppSlider(
                         settleJob = null
                     },
                     onHorizontalDrag = { change, dragAmount ->
-                        change.consume()
+                        // 消费由检测器在 Initial pass 统一完成（横向定轴后父级滚动不再介入）
                         val r = currentRange.endInclusive - currentRange.start
-                        if (r <= 0f) return@detectHorizontalDragGestures
+                        if (r <= 0f) return@detectHorizontalSwipeGestures
                         val travel = (size.width - thumbInsetPx * 2 - thumbSizePx)
                             .coerceAtLeast(1f)
                         freeValue = (freeValue + dragAmount / travel * r)
