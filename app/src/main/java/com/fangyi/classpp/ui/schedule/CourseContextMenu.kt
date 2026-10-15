@@ -3,6 +3,8 @@ package com.fangyi.classpp.ui.schedule
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -10,6 +12,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.PopupMenuPopup
 import com.fangyi.classpp.ui.components.PopupMenuSection
+import com.fangyi.classpp.ui.components.menuGrowthForAnchor
 import dev.chrisbanes.haze.HazeState
 import kotlin.math.roundToInt
 
@@ -73,6 +76,10 @@ internal fun SlotContextMenu(
  *
  * 行样式与其它菜单统一（PopupMenuCard 默认行）：onSurface 深色 + 左侧 20dp 勾选槽，
  * 项间分割线经「每项独占一个 [PopupMenuSection]」表达（首组忽略 divider）。
+ *
+ * 生长角按锚点所在半屏现算（[menuGrowthForAnchor]）：课表按星期列横跨整屏，锚点在左半屏
+ * 时菜单向右铺得下、用左上角；在右半屏（周五之后）会被钳到屏幕右缘、锚点跑到卡片左侧，
+ * 改从右上角长出来。窗口宽取 containerSize，拿不到（如 API < 30 恒为 0）时退回宿主 View 宽度。
  */
 @Composable
 private fun ContextMenuPopup(
@@ -84,6 +91,8 @@ private fun ContextMenuPopup(
     val density = LocalDensity.current
     val overlapPx = with(density) { MenuOverlap.roundToPx() }
     val insetPx = with(density) { MenuLeftInset.roundToPx() }
+    val windowWidthPx = LocalWindowInfo.current.containerSize.width.takeIf { it > 0 }
+        ?: LocalView.current.width
     // 每项独占一组：PopupMenuSection 的分割线画在「与上一组之间」，逐项成组即项间分割线
     val sections = items.mapIndexed { index, item ->
         PopupMenuSection(items = listOf(item), showDivider = index > 0)
@@ -103,6 +112,7 @@ private fun ContextMenuPopup(
                 y = anchor.bottom.roundToInt() - overlapPx,
             )
         },
+        menuGrowth = menuGrowthForAnchor(anchor.center.x, windowWidthPx),
         animateExit = false,
     )
 }

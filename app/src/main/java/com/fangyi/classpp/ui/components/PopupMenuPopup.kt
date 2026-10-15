@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -32,17 +33,66 @@ import dev.chrisbanes.haze.HazeState
 val MenuTopAlignLift = 34.dp
 
 /**
+ * 菜单生长角：进场缩放自卡片四角中的哪一角长出。[TopLeft]（默认）= 卡片左上角，
+ * 菜单挂在行尾 / 锚点靠屏幕右侧时传 [TopRight]。
+ *
+ * 角即**卡片边缘**上的角（不含四周透明投影留白），换算见 [menuGrowthOrigin]；
+ * 不做 RTL 镜像——整个菜单族都按物理左右定位（各调用点的 cardPosition 亦取 anchorBounds.left）。
+ */
+enum class MenuGrowth { TopLeft, TopRight, BottomLeft, BottomRight }
+
+/**
+ * 生长角 → 图层内的比例锚点。图层 = 卡片 + 四周透明投影留白，直接写 0f/1f 会锚在留白外缘
+ * （动画中卡片因此横竖各偏约 3dp），故按卡片实际边缘反推比例。
+ * [layerSize] 尚未量出（首帧为 0）时返回 null，调用方跳过赋值、沿用上一帧的锚点。
+ */
+internal fun menuGrowthOrigin(
+    growth: MenuGrowth,
+    layerSize: Size,
+    padStart: Float,
+    padEnd: Float,
+    padTop: Float,
+    padBottom: Float,
+): TransformOrigin? {
+    if (layerSize.width <= 0f || layerSize.height <= 0f) return null
+    val left = padStart / layerSize.width
+    val right = (layerSize.width - padEnd) / layerSize.width
+    val top = padTop / layerSize.height
+    val bottom = (layerSize.height - padBottom) / layerSize.height
+    return when (growth) {
+        MenuGrowth.TopLeft -> TransformOrigin(left, top)
+        MenuGrowth.TopRight -> TransformOrigin(right, top)
+        MenuGrowth.BottomLeft -> TransformOrigin(left, bottom)
+        MenuGrowth.BottomRight -> TransformOrigin(right, bottom)
+    }
+}
+
+/**
+ * 锚点落在窗口右半屏时的生长角：菜单自锚点向右铺开，贴右缘的锚点放不下会被钳到屏幕右缘，
+ * 锚点随即跑到卡片左侧，此时该用 [MenuGrowth.TopRight]。
+ * [windowWidthPx] 未知（≤ 0）时退回默认左角。
+ */
+internal fun menuGrowthForAnchor(anchorCenterX: Float, windowWidthPx: Int): MenuGrowth =
+    if (windowWidthPx > 0 && anchorCenterX > windowWidthPx / 2f) {
+        MenuGrowth.TopRight
+    } else {
+        MenuGrowth.TopLeft
+    }
+
+/**
  * 弹出菜单的共享弹层宿主：[PopupMenuCard] 白卡 + 自定义锚定 Popup（WeekPicker 周数弹窗 /
  * TodoTopBar 排序菜单同款范式），供右键菜单、选择行菜单、重复菜单等统一接入。
  *
  * [cardPosition] 返回**卡片**左上角的期望窗口坐标（未扣投影留白、未钳窗口），
  * [cardSize] 是去掉留白后的卡片尺寸（需要按卡片自身尺寸计算位置时用）；
  * 宿主负责扣掉四周透明投影留白（左右上 [CardShadowPadding]、底部 [CardShadowBottomPadding]，
- * 45dp 柔影向下坠得最远）并钳进窗口——留白只影响 Popup 窗口大小，不改变卡片的视觉位置。
+ * 36dp 柔影向下坠得最远）并钳进窗口——留白只影响 Popup 窗口大小，不改变卡片的视觉位置。
  * [anchorBounds] 是 Popup 所在锚点（弹层应挂在锚点内的 Box 上）的窗口坐标。
  *
  * 动画：进场 scale 0.8→1（[Motion.PopupScaleMillis]）+ alpha 0→1（[Motion.PopupFadeMillis]），
- * 自 [transformOrigin]（默认左上角）长出；收起反向播放，播完才移除弹层。
+ * 自 [menuGrowth] 指定的卡片角长出——默认 [MenuGrowth.TopLeft]；菜单挂在行尾 / 锚点靠屏幕
+ * 右侧时传 [MenuGrowth.TopRight]（该角只影响缩放锚点，不参与布局），锚点位置随内容变化的
+ * 宿主（如课表按星期列）用 [menuGrowthForAnchor] 按半屏现算。收起反向播放，播完才移除弹层。
  * [animateExit] = false 时收起不播退场动画、立即卸载——供"动作与移除同帧发生、
  * 随后由面板升起接住视觉"的宿主（如右键菜单）使用。
  *
@@ -56,7 +106,7 @@ fun PopupMenuPopup(
     sections: List<PopupMenuSection>,
     cardPosition: (anchorBounds: IntRect, windowSize: IntSize, cardSize: IntSize) -> IntOffset,
     hazeState: HazeState? = null,
-    transformOrigin: TransformOrigin = TransformOrigin(0f, 0f),
+    menuGrowth: MenuGrowth = MenuGrowth.TopLeft,
     animateExit: Boolean = true,
 ) {
     val visibleState = remember { MutableTransitionState(false) }
@@ -119,7 +169,16 @@ fun PopupMenuPopup(
                         scaleX = scale
                         scaleY = scale
                         this.alpha = alpha
-                        this.transformOrigin = transformOrigin
+                        // 锚点 = 卡片上离锚点近的那只角；块里拿得到图层实测尺寸（含投影留白），
+                        // 故留白按比例扣掉后锚点正好落在卡片边缘
+                        menuGrowthOrigin(
+                            growth = menuGrowth,
+                            layerSize = size,
+                            padStart = CardShadowPadding.toPx(),
+                            padEnd = CardShadowPadding.toPx(),
+                            padTop = CardShadowPadding.toPx(),
+                            padBottom = CardShadowBottomPadding.toPx(),
+                        )?.let { transformOrigin = it }
                     }
                     .padding(
                         start = CardShadowPadding,

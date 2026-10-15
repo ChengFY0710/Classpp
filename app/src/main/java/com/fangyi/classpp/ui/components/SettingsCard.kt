@@ -449,10 +449,12 @@ private fun SelectMenu(
                     },
                 ),
             ),
-            // 卡片左缘对齐图标左缘（DropdownMenu 原位），上移量使卡顶边贴行顶边
+            // 卡片左缘对齐图标左缘（DropdownMenu 原位），上移量使卡顶边贴行顶边；
+            // 行尾箭头贴屏幕右缘，菜单放不下会被钳到右缘 → 锚点取卡片右上角
             cardPosition = { anchorBounds, _, _ ->
                 IntOffset(anchorBounds.left, anchorBounds.bottom - topAlignLiftPx)
             },
+            menuGrowth = MenuGrowth.TopRight,
         )
     }
 }
