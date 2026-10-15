@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,9 +27,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TimeText
@@ -35,8 +39,12 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.CardSection
+import com.fangyi.classpp.ui.components.MenuGrowth
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.OverlaySheet
+import com.fangyi.classpp.ui.components.PopupMenuItem
+import com.fangyi.classpp.ui.components.PopupMenuPopup
+import com.fangyi.classpp.ui.components.PopupMenuSection
 import com.fangyi.classpp.ui.components.SheetInfoCard
 import com.fangyi.classpp.ui.components.SheetInfoEntry
 import com.fangyi.classpp.ui.components.SheetTextArea
@@ -50,10 +58,20 @@ import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.rememberHazeState
 
 /** 标签行内胶囊间距（同 NoteCard 属性行）；胶囊与文字的 4dp 在 TagChip 内部 */
 private val TagRowSpacing = 12.dp
+
+/** 标题行「更多」按钮边长：与 titleLarge 行高（28sp）等高，顶对齐下视觉居中于标题首行 */
+private val TitleMoreIconSize = 28.dp
+
+/** 标题与「更多」按钮的间距 */
+private val TitleMoreSpacing = 12.dp
+
+/** 更多菜单卡顶缘与按钮底缘的间距（同 TodoTopBar 排序菜单节奏） */
+private val TitleMenuGap = 12.dp
 
 /**
  * 待办详情浮层：点待办卡弹出，结构对标 [com.fangyi.classpp.ui.schedule.CourseDetailSheet]——
@@ -68,8 +86,8 @@ private val TagRowSpacing = 12.dp
  * 紧急程度走 [flagColor]（非常紧急红 / 很紧急橙 / 紧急黄 / 不紧急绿 / 无档灰）；
  * 时间与地点保持默认 primary。
  *
- * 正文按浮层内容规范排版：标题与标签行保持裸元素（规范里唯二的例外），信息卡与备注各收进
- * 一个无题 [CardSection]；顶层块间距走 [SheetSectionSpacingBetween]。
+ * 正文按浮层内容规范排版：标题与标签行保持裸元素（规范里唯二的例外），信息卡与备注
+ * 同收进一个无题 [CardSection]；顶层块间距走 [SheetSectionSpacingBetween]。
  *
  * 顶栏左「编辑」右「关闭」：编辑把**最新快照**（备注 trim 后、可尚未落盘）经 [onEdit] 交回调用方，
  * 据此打开编辑待办浮层（叠在本浮层之上，本浮层保持打开）；备注在任意关闭路径
@@ -103,6 +121,10 @@ internal fun TodoDetailSheet(
     var stepDraft by remember { mutableStateOf("") }
     var stepRequested by remember { mutableStateOf(false) }
     var stepMounted by remember { mutableStateOf(false) }
+    // 标题行更多菜单的展开态；倒计时开关仅本层 UI 状态（本轮不落库、无业务），
+    // 随浮层/待办切换重置
+    var moreExpanded by remember { mutableStateOf(false) }
+    var countdownOn by rememberSaveable(todo.id) { mutableStateOf(false) }
     // haze 采样源：自建后同时交给本浮层容器（顶栏磨砂）与叠在其上的输入弹卡
     // （弹卡背景模糊）——两者必须同一个实例，否则弹卡按默认平底渲染（见 BottomTextFieldCard KDoc）
     val sheetHazeState = rememberHazeState()
@@ -141,12 +163,43 @@ internal fun TodoDetailSheet(
         hazeState = sheetHazeState,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
-            Text(
-                text = todo.name,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(start = 12.dp, end = 12.dp),
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 16.dp),
+                // 顶对齐：标题换行长高时「更多」按钮钉在首行右侧不动
+                //（按钮 28dp = titleLarge 行高，首行内视觉居中）
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(
+                    text = todo.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    // 避让按钮：占满剩余宽度，过长自动换行
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(TitleMoreSpacing))
+                // 菜单锚点：弹层挂在按钮的 Box 内，锚点窗口坐标即按钮窗口坐标（PopupMenuPopup 约定）
+                Box {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_more_circle),
+                        contentDescription = stringResource(R.string.cd_todo_more),
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .size(TitleMoreIconSize)
+                            .pressClickable(CircleShape, onClick = { moreExpanded = true }),
+                    )
+                    TitleMoreMenu(
+                        expanded = moreExpanded,
+                        onDismiss = { moreExpanded = false },
+                        hazeState = sheetHazeState,
+                        // 无截止日期：倒计时项置灰不可点（本轮只做 UI）
+                        countdownEnabled = todo.deadlineDate != null,
+                        countdownOn = countdownOn,
+                        onCountdownToggle = { countdownOn = !countdownOn },
+                    )
+                }
+            }
             if (todo.tags.isNotEmpty()) {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(TagRowSpacing),
@@ -161,7 +214,8 @@ internal fun TodoDetailSheet(
             // 值一律右对齐走 fieldValue，空值占位灰字「无」（同 DeadlineCard 的未设态文案）；
             // 行首图标同 NoteCard 属性行（闹钟/旗/时钟/定位针），尺寸与着色见 [InfoRowIcon]
             val noneText = stringResource(R.string.deadline_card_none)
-            // 单张信息卡与备注输入都是浮层规范里的"孤块"，各收进一个无题 CardSection
+            // 信息卡与备注输入是浮层规范里的两个"孤块"，同收进一个无题 CardSection
+            // （组内间距走 CardSection 默认节奏）
             CardSection {
                 SheetInfoCard(
                     entries = listOf(
@@ -191,8 +245,6 @@ internal fun TodoDetailSheet(
                         ),
                     ),
                 )
-            }
-            CardSection {
                 SheetTextArea(
                     value = note,
                     onValueChange = { note = it },
@@ -263,6 +315,66 @@ internal fun TodoDetailSheet(
             },
         )
     }
+}
+
+/**
+ * 标题行「更多」菜单（本文件私有）：[PopupMenuPopup] 共享弹层宿主——投影留白、越界钳制
+ * 与 scale/alpha 进出场由宿主处理；卡片右缘对齐锚点（按钮）右缘、顶缘与按钮底缘留
+ * [TitleMenuGap]，锚点在行尾故自卡片右上角长出。
+ *
+ * 条目本轮只做 UI：添加到日历点按仅收起菜单（不接日历写入）；倒计时在 [countdownEnabled]
+ * 为 false（无截止日期）时置灰不可点（`classppColors.negative`）、可点时点按切换
+ * 「开启/关闭」文案（开关状态由调用方持有）。
+ */
+@Composable
+private fun TitleMoreMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    hazeState: HazeState,
+    countdownEnabled: Boolean,
+    countdownOn: Boolean,
+    onCountdownToggle: () -> Unit,
+) {
+    val gapPx = with(LocalDensity.current) { TitleMenuGap.roundToPx() }
+    PopupMenuPopup(
+        expanded = expanded,
+        onDismiss = onDismiss,
+        // 菜单卡的背景模糊与本浮层的顶栏磨砂同源（见 sheetHazeState 声明处）
+        hazeState = hazeState,
+        sections = listOf(
+            PopupMenuSection(
+                items = listOf(
+                    PopupMenuItem(
+                        label = stringResource(R.string.todo_menu_add_to_calendar),
+                        icon = R.drawable.ic_calendar_regular,
+                        onClick = onDismiss,
+                    ),
+                    PopupMenuItem(
+                        label = stringResource(
+                            if (countdownOn) {
+                                R.string.todo_menu_countdown_stop
+                            } else {
+                                R.string.todo_menu_countdown_start
+                            },
+                        ),
+                        icon = R.drawable.ic_hourglass_half,
+                        enabled = countdownEnabled,
+                        onClick = {
+                            onCountdownToggle()
+                            onDismiss()
+                        },
+                    ),
+                ),
+            ),
+        ),
+        cardPosition = { anchorBounds, _, cardSize ->
+            IntOffset(
+                x = anchorBounds.right - cardSize.width,
+                y = anchorBounds.bottom + gapPx,
+            )
+        },
+        menuGrowth = MenuGrowth.TopRight,
+    )
 }
 
 /**

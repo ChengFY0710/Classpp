@@ -272,6 +272,10 @@
     <string name="todo_error_save_failed">Save failed, please try again later</string>
 
     <string name="todo_detail_title">Todo Details</string>
+    <!-- Todo details sheet: title-row more menu -->
+    <string name="todo_menu_add_to_calendar">Add to calendar</string>
+    <string name="todo_menu_countdown_start">Start countdown</string>
+    <string name="todo_menu_countdown_stop">Stop countdown</string>
     <string name="todo_detail_time_label">Time</string>
     <!-- Todo details sheet: created & completed section -->
     <string name="todo_section_created_completed">Created &amp; completed</string>

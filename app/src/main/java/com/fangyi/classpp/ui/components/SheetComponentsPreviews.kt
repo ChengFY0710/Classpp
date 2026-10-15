@@ -659,6 +659,31 @@ private fun PopupMenuCardPreview() = ClassppTheme {
                 ),
             ),
         )
+        // 图标型菜单（待办详情标题行更多菜单）：行首 24dp 图标；置灰项 = negative 色、不可点
+        PopupMenuCard(
+            sections = listOf(
+                PopupMenuSection(
+                    items = listOf(
+                        PopupMenuItem(
+                            label = "添加到日历",
+                            icon = R.drawable.ic_calendar_regular,
+                            onClick = {},
+                        ),
+                        PopupMenuItem(
+                            label = "开启倒计时",
+                            icon = R.drawable.ic_hourglass_half,
+                            onClick = {},
+                        ),
+                        // 无截止日期：置灰 + 不吃点击
+                        PopupMenuItem(
+                            label = "开启倒计时",
+                            icon = R.drawable.ic_hourglass_half,
+                            enabled = false,
+                        ),
+                    ),
+                ),
+            ),
+        )
     }
 }
 
