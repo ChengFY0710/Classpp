@@ -12,7 +12,9 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import com.fangyi.classpp.ui.LocalTodayState
 import com.fangyi.classpp.ui.motion.NoOpIndication
+import com.fangyi.classpp.ui.rememberTodayState
 
 private val LightColorScheme = lightColorScheme(
     primary = Primary,
@@ -143,6 +145,10 @@ fun ClassppTheme(
         LocalClassppColors provides classppColors,
         LocalClassppTextStyles provides textStyles,
         LocalClassppDarkTheme provides darkTheme,
+        // 「今天」注入（见 [rememberTodayState]）：跨零点自动跳天、回前台对表。页面里所有
+        // 按天派生的显示（倒计时、截止配色、今天/明天相对词、逾期分组）读 [LocalToday]
+        // 而非系统时钟——后者挂过夜只会停在打开那天的日期
+        LocalTodayState provides rememberTodayState(),
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

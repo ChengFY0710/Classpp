@@ -46,6 +46,7 @@ import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.isOverdue
 import com.fangyi.classpp.data.sortedFor
+import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSection
 import com.fangyi.classpp.ui.components.PopupMenuItem
@@ -364,6 +365,13 @@ fun TodoScreen(
                         if (result is TodoOpResult.Err) AppToasts.show(context, saveFailedMessage)
                     }
                 },
+                // 倒计时开关：落库后列表卡左区显示剩余天数（详情菜单文案随仓库回流自动切换）
+                onCountdownToggle = { enabled ->
+                    scope.launch {
+                        val result = repository.setCountdown(detail.id, enabled)
+                        if (result is TodoOpResult.Err) AppToasts.show(context, saveFailedMessage)
+                    }
+                },
             )
         }
     }
@@ -508,8 +516,9 @@ private fun TodoList(
     onTodoClick: (todo: Todo) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 逾期判定的"此刻"：当日/分钟随重组取值——跨过截止时刻后，任何一次重组都会重算分组
-    val today = IsoDate.today()
+    // 逾期判定的"此刻"：当天日期取 [LocalToday]（跨零点自动跳天）——零点多后即使没有别的
+    // 交互，逾期分组也会自己重算；分钟口径仍是重组时现取
+    val today = LocalToday
     val nowMinute = currentMinuteOfDay()
     val sections = remember(todos, sort, sortDescending, today, nowMinute) {
         val overdue = todos.filter { it.isOverdue(today, nowMinute) }.sortedFor(sort, sortDescending)
@@ -559,6 +568,8 @@ private fun TodoList(
  * 单条待办卡片：[Todo] → [NoteCard] 的字段接线——标题、完成态与勾选直通，
  * 待办时间走 [cardTimeText]、截止时间走 [deadlineCardText]（颜色由 [deadlineColor]
  * 按剩余天数映射），标签与紧急旗按模型透传；[overdue] 为真（在已逾期组）时标题标红。
+ * [Todo.countdown] 开启时把剩余天数交给 [NoteCard.countdownDays]，卡片左区显示倒计时
+ * （天数口径与截止配色同源，见 [deadlineDaysLeft]）。
  * 点卡片（非勾选框）经 [onClick] 拉起详情浮层——勾选框是独立 toggleable，不会误触。
  */
 @Composable
@@ -573,6 +584,8 @@ private fun TodoCard(
         time = todo.cardTimeText(),
         deadline = todo.deadlineCardText(),
         deadlineColor = todo.deadlineColor(),
+        // 倒计时：开关开着且仍有截止日期时才有天数可显（截止被清掉时仓库已把开关归一化回 false）
+        countdownDays = if (todo.countdown) todo.deadlineDaysLeft() else null,
         tags = todo.tags,
         urgency = todo.urgency,
         completed = todo.completed,
@@ -618,18 +631,29 @@ internal fun Todo.deadlineCardText(): String? {
 }
 
 /**
+ * 距截止的剩余天数（无截止返回 null，可为负 = 已逾期）；列表卡倒计时（[countdownDays]）
+ * 与截止配色（[deadlineColor]）共用同一口径，两者永远同步。
+ *
+ * 「今天」取 [LocalToday]（跨零点自动跳天，见 [rememberTodayState]）而非系统时钟——
+ * 后者只在重组那一刻取值，挂过夜会停在旧日期。
+ */
+@Composable
+internal fun Todo.deadlineDaysLeft(): Long? = deadlineDate?.let { it - LocalToday }
+
+/**
  * 截止时间取色（NoteCard 图标与文字同用）：距截止剩余 >2 天 primary；剩 2 天
  * urgentYellow；剩 1 天 urgentOrange；当天及已过期 error。截止缺席时返回
  * primary（调用方仅在有截止文本时消费该色）。
  */
 @Composable
 internal fun Todo.deadlineColor(): Color {
-    val date = deadlineDate ?: return MaterialTheme.colorScheme.primary
-    return when (val days = date - IsoDate.today()) {
-        0L -> MaterialTheme.colorScheme.error
-        1L -> MaterialTheme.classppColors.urgentOrange
-        2L -> MaterialTheme.classppColors.urgentYellow
-        else -> if (days > 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+    val days = deadlineDaysLeft() ?: return MaterialTheme.colorScheme.primary
+    return when {
+        days == 0L -> MaterialTheme.colorScheme.error
+        days == 1L -> MaterialTheme.classppColors.urgentOrange
+        days == 2L -> MaterialTheme.classppColors.urgentYellow
+        days > 2 -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.error
     }
 }
 
@@ -689,11 +713,13 @@ internal fun epochMillisText(
 /**
  * 卡片日期段：距今天 ±2 天内显相对词（后天/明天/今天/昨天/前天），更远显 [toAbsoluteDateText]
  * 的绝对日期。待办时间与截止时间共用；详情浮层不复用——详情页要给出确定日期，直接走
- * [toAbsoluteDateText]（不带相对词）。
+ * [toAbsoluteDateText]（不带相对词）。「今天」取 [LocalToday]：跨零点自动跳天，
+ * 否则「今天/明天」会随卡片一直停在打开那天。
  */
 @Composable
 internal fun IsoDate.toCardDateLabel(): String {
-    when (epochDay - IsoDate.today().epochDay) {
+    val today = LocalToday
+    when (epochDay - today.epochDay) {
         2L -> return stringResource(R.string.date_card_day_after_tomorrow)
         1L -> return stringResource(R.string.date_card_tomorrow)
         0L -> return stringResource(R.string.date_card_today)

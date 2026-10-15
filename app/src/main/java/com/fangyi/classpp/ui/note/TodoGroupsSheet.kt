@@ -31,6 +31,7 @@ import com.fangyi.classpp.data.isOverdue
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
+import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
@@ -182,9 +183,8 @@ internal fun TodoGroupsSheet(
     // 返回键先到它（先关确认框、留在浮层），同 TodoDetailSheet
     BackHandler(enabled = visible, onBack = requestClose)
 
-    // 逾期判定的"此刻"：当日/分钟随重组取值（同 TodoList 的写法）——跨过截止时刻后，
-    // 任何一次重组都会重算计数
-    val today = IsoDate.today()
+    // 逾期判定的"此刻"：当天日期取 [LocalToday]（跨零点自动跳天，同 TodoList）；分钟口径重组时现取
+    val today = LocalToday
     val nowMinute = currentMinuteOfDay()
     val completedCount = todos.count { it.completed }
     val incompleteCount = todos.count { !it.completed }

@@ -41,6 +41,8 @@ data class TodoStep(
  * @param completedAtMillis 完成时刻（epoch millis），不变式：completed=false 时必为 null，
  *   由仓库在归一化时维护
  * @param createdAtMillis 创建时刻（epoch millis），由仓库在 addTodo 时补齐
+ * @param countdown 倒计时开关：true = 待办列表卡在截止时间左侧显示剩余天数（`N天` /
+ *   `逾期N天`）。不变式：无 [deadlineDate] 时必为 false，由仓库在归一化时维护
  */
 @Serializable
 data class Todo(
@@ -61,6 +63,7 @@ data class Todo(
     val completedAtMillis: Long? = null,
     val createdAtMillis: Long = 0,
     val group: String? = null,
+    val countdown: Boolean = false,
 )
 
 /**

@@ -38,7 +38,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
@@ -46,7 +45,6 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -87,6 +85,7 @@ import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.data.model.overlappingCourses
 import com.fangyi.classpp.data.sortedFor
+import com.fangyi.classpp.ui.LocalTodayState
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.pressFeedback
@@ -95,9 +94,6 @@ import com.fangyi.classpp.ui.theme.ButtonShape
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -113,38 +109,6 @@ private fun pageOfWeek(week: Int, firstPageWeek: Int): Int = week - firstPageWee
 
 private fun weekOfPage(page: Int, firstPageWeek: Int): Int = page + firstPageWeek
 
-/**
- * 「今天」的动态来源：跨天自动跟随（前台挂过夜、后台进程存活数日），否则今周与最左页
- * 会停在组合时那一周。返回 [State] 而非裸值——Pager 的 pageCount 闭包在创建时捕获、
- * 之后长期求值，只有现读 State 才能让总页数跟着日期走。写同值（epochDay 没变）不触发
- * 任何重组，对表零成本。
- */
-@Composable
-private fun rememberTodayIso(): State<IsoDate> {
-    val epochDay = remember { mutableLongStateOf(IsoDate.today().epochDay) }
-
-    // 回到前台立即对表：覆盖后台被冻结多日的进程
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                epochDay.longValue = IsoDate.today().epochDay
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    // 前台期间跨天（平板常亮/不息屏）：每分钟对一次表
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(60_000)
-            epochDay.longValue = IsoDate.today().epochDay
-        }
-    }
-
-    return remember { derivedStateOf { IsoDate(epochDay.longValue) } }
-}
 
 /**
  * 课表页：可折叠头部（顶栏行/日期行/星期行）+ 课表网格。
@@ -195,9 +159,10 @@ fun ScheduleScreen(
 
     var selectedWeek by rememberSaveable { mutableIntStateOf(WEEK_UNSET) }
 
-    // 「今天」动态跟随：跨天自动前进（前台挂过夜、后台存活数日，见 rememberTodayIso）。
+    // 「今天」动态跟随：跨天自动前进（前台挂过夜、后台存活数日）——共享源见
+    // [rememberTodayState]（ClassppTheme 注入，待办页同源）。读 State 而非裸值：
     // Date 语义取本地正午——日期比较与日号显示不受时刻影响
-    val todayIsoState = rememberTodayIso()
+    val todayIsoState = LocalTodayState.current
     val todayIso = todayIsoState.value
     val today = todayIso.toUiDate()
 

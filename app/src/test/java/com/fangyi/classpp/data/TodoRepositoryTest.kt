@@ -191,6 +191,28 @@ class TodoRepositoryTest {
         assertEquals(2, repo().todos.value.single().steps.size)
     }
 
+    @Test
+    fun `setCountdown persists and is cleared when deadline disappears`() = runBlocking {
+        val r = repo()
+        val deadline = IsoDate.of(2026, 6, 18)
+        val id = r.addTodo(testTodo(name = "作业", deadlineDate = deadline, deadlineMinute = 480)).okId()
+
+        r.setCountdown(id, enabled = true).assertOk()
+        assertEquals(true, r.todos.value.single().countdown)
+        assertEquals(true, repo().todos.value.single().countdown) // 落盘可重开
+
+        // 清掉截止日期：倒计时不变式回 false（不留「无截止日期却开着倒计时」的悬挂态）
+        val noDeadline = r.todos.value.single().copy(deadlineDate = null, deadlineMinute = null)
+        r.updateTodo(noDeadline).assertOk()
+        assertEquals(false, r.todos.value.single().countdown)
+
+        // 无截止日期时开启：被归一化挡回 false
+        r.setCountdown(id, enabled = true).assertOk()
+        assertEquals(false, r.todos.value.single().countdown)
+
+        assertTrue(r.setCountdown("ghost", enabled = true).assertErr() is TodoError.NotFound)
+    }
+
     // ---------- 分组 ----------
 
     @Test

@@ -37,6 +37,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoTimeKind
+import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.MenuGrowth
@@ -109,6 +110,8 @@ internal fun TodoDetailSheet(
     // 失败 Toast 也由宿主提示
     onStepAdd: (String) -> Unit,
     onStepToggle: (String, Boolean) -> Unit,
+    // 开关列表卡倒计时（true = 开启）；落库后本层菜单文案随传入的 todo 自动回流
+    onCountdownToggle: (Boolean) -> Unit,
     // 被编辑浮层盖住：本层缩小后退（透传 OverlaySheet 的分层动效）
     covered: Boolean = false,
 ) {
@@ -121,10 +124,8 @@ internal fun TodoDetailSheet(
     var stepDraft by remember { mutableStateOf("") }
     var stepRequested by remember { mutableStateOf(false) }
     var stepMounted by remember { mutableStateOf(false) }
-    // 标题行更多菜单的展开态；倒计时开关仅本层 UI 状态（本轮不落库、无业务），
-    // 随浮层/待办切换重置
+    // 标题行更多菜单的展开态；倒计时开关是持久化状态（Todo.countdown），这里只读不存
     var moreExpanded by remember { mutableStateOf(false) }
-    var countdownOn by rememberSaveable(todo.id) { mutableStateOf(false) }
     // haze 采样源：自建后同时交给本浮层容器（顶栏磨砂）与叠在其上的输入弹卡
     // （弹卡背景模糊）——两者必须同一个实例，否则弹卡按默认平底渲染（见 BottomTextFieldCard KDoc）
     val sheetHazeState = rememberHazeState()
@@ -193,10 +194,10 @@ internal fun TodoDetailSheet(
                         expanded = moreExpanded,
                         onDismiss = { moreExpanded = false },
                         hazeState = sheetHazeState,
-                        // 无截止日期：倒计时项置灰不可点（本轮只做 UI）
+                        // 无截止日期：倒计时项置灰不可点（仓库不变式也保证此时开关必为 false）
                         countdownEnabled = todo.deadlineDate != null,
-                        countdownOn = countdownOn,
-                        onCountdownToggle = { countdownOn = !countdownOn },
+                        countdownOn = todo.countdown,
+                        onCountdownToggle = onCountdownToggle,
                     )
                 }
             }
@@ -214,6 +215,8 @@ internal fun TodoDetailSheet(
             // 值一律右对齐走 fieldValue，空值占位灰字「无」（同 DeadlineCard 的未设态文案）；
             // 行首图标同 NoteCard 属性行（闹钟/旗/时钟/定位针），尺寸与着色见 [InfoRowIcon]
             val noneText = stringResource(R.string.deadline_card_none)
+            // 「今天」在组合期取一次：下面 [listOfNotNull] 的 let 不是组合上下文，值先落地
+            val today = LocalToday
             // 信息卡与备注输入是浮层规范里的两个"孤块"，同收进一个无题 CardSection
             // （组内间距走 CardSection 默认节奏）
             CardSection {
@@ -261,14 +264,14 @@ internal fun TodoDetailSheet(
                             value = if (todo.createdAtMillis == 0L) {
                                 noneText
                             } else {
-                                epochMillisText(todo.createdAtMillis)
+                                epochMillisText(todo.createdAtMillis, today)
                             },
                         ),
                         // 完成时间：仓库不变式保证未完成时 completedAtMillis 为 null，此行随之不渲染
                         todo.completedAtMillis?.let { millis ->
                             SheetInfoEntry(
                                 label = stringResource(R.string.todo_completed_label),
-                                value = epochMillisText(millis),
+                                value = epochMillisText(millis, today),
                             )
                         },
                     ),
@@ -322,9 +325,10 @@ internal fun TodoDetailSheet(
  * 与 scale/alpha 进出场由宿主处理；卡片右缘对齐锚点（按钮）右缘、顶缘与按钮底缘留
  * [TitleMenuGap]，锚点在行尾故自卡片右上角长出。
  *
- * 条目本轮只做 UI：添加到日历点按仅收起菜单（不接日历写入）；倒计时在 [countdownEnabled]
- * 为 false（无截止日期）时置灰不可点（`classppColors.negative`）、可点时点按切换
- * 「开启/关闭」文案（开关状态由调用方持有）。
+ * 条目：添加到日历（本轮只做 UI——点按仅收起菜单，不接日历写入）；倒计时在
+ * [countdownEnabled] 为 false（无截止日期）时置灰不可点（`classppColors.negative`）、
+ * 可点时点按把新开关值交 [onCountdownToggle] 落库，本层文案随传入的 [countdownOn]
+ * 在「开启/关闭倒计时」间切换（状态源 = `Todo.countdown`，不在本组件内留存）。
  */
 @Composable
 private fun TitleMoreMenu(
@@ -333,7 +337,7 @@ private fun TitleMoreMenu(
     hazeState: HazeState,
     countdownEnabled: Boolean,
     countdownOn: Boolean,
-    onCountdownToggle: () -> Unit,
+    onCountdownToggle: (Boolean) -> Unit,
 ) {
     val gapPx = with(LocalDensity.current) { TitleMenuGap.roundToPx() }
     PopupMenuPopup(
@@ -360,7 +364,8 @@ private fun TitleMoreMenu(
                         icon = R.drawable.ic_hourglass_half,
                         enabled = countdownEnabled,
                         onClick = {
-                            onCountdownToggle()
+                            // 交宿主落库（列表卡随即显示/收起剩余天数）；本层文案随回流切换
+                            onCountdownToggle(!countdownOn)
                             onDismiss()
                         },
                     ),
@@ -424,10 +429,12 @@ private fun InfoRowIcon(@DrawableRes res: Int) {
 }
 
 /** 截止值 `3/12 8:00`（本年）/ `2027/3/12 8:00`（非本年）；未设截止返回 null（调用方显「无」） */
+@Composable
 private fun Todo.deadlineText(): String? {
     val date = deadlineDate ?: return null
     val minute = deadlineMinute ?: return null
-    return "${date.toAbsoluteDateText()} ${TimeText.format(minute)}"
+    // 「今天」取共享源（跨零点/跨年自动跳天，见 [LocalToday]），不直接读系统时钟
+    return "${date.toAbsoluteDateText(LocalToday)} ${TimeText.format(minute)}"
 }
 
 /**
@@ -451,7 +458,9 @@ private fun Todo.scheduledText(): String? {
         TodoTimeKind.AllDay -> stringResource(R.string.todo_time_all_day)
         TodoTimeKind.None -> null
     }
-    val datePart = dates.joinToString("、") { it.toAbsoluteDateText() }.takeIf { it.isNotEmpty() }
+    // 「今天」在组合期取一次：joinToString 的变换 lambda 不是组合上下文，值先落地
+    val today = LocalToday
+    val datePart = dates.joinToString("、") { it.toAbsoluteDateText(today) }.takeIf { it.isNotEmpty() }
     return listOfNotNull(datePart, timePart)
         .joinToString(" ")
         .takeIf { it.isNotEmpty() }

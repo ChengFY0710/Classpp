@@ -92,6 +92,7 @@ class TodoRepository internal constructor(
     /**
      * 写入前归一化：名称/标签/步骤标题 trim、标签去空、日期 distinct + 排序；
      * 完成不变式：completed=true 时 completedAtMillis 缺省补当前，false 时清空；
+     * 倒计时不变式：无截止日期时开关回 false（清掉截止日期后不留悬挂的开启态）；
      * 分组引用完整性：group trim、空串与引用不存在的组一律清回 null（未分组）——
      * 由此读侧只需判 `group == null`，导入的带组名待办同此规则落为未分组。
      * 在 mutex 内调用，读 [fileState] 的分组表安全。
@@ -104,6 +105,7 @@ class TodoRepository internal constructor(
             tags = todo.tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
             steps = todo.steps.map { it.copy(title = it.title.trim()) },
             completedAtMillis = if (todo.completed) todo.completedAtMillis ?: nowMillis() else null,
+            countdown = todo.countdown && todo.deadlineDate != null,
             group = todo.group?.trim()?.takeIf { it.isNotEmpty() && it in groupNames },
         )
     }
@@ -182,6 +184,16 @@ class TodoRepository internal constructor(
     suspend fun setCompleted(id: String, completed: Boolean): TodoOpResult = mutex.withLock {
         val target = todoOrNull(id) ?: return@withLock TodoOpResult.Err(TodoError.NotFound(id))
         val updated = normalize(target.copy(completed = completed))
+        commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == id) updated else it }))
+    }
+
+    /**
+     * 开关倒计时（待办列表卡在截止时间左侧显示剩余天数）；其余字段不动。
+     * 无截止日期时开启会被 [normalize] 的倒计时不变式归一化回 false（调用侧本就不该发这种请求）。
+     */
+    suspend fun setCountdown(id: String, enabled: Boolean): TodoOpResult = mutex.withLock {
+        val target = todoOrNull(id) ?: return@withLock TodoOpResult.Err(TodoError.NotFound(id))
+        val updated = normalize(target.copy(countdown = enabled))
         commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == id) updated else it }))
     }
 
