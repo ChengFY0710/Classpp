@@ -54,7 +54,7 @@ import dev.chrisbanes.haze.rememberHazeState
  * 待办分组浮层：待办页顶栏「更多 → 分组」进入，内容分两部分——
  *
  * - **第一部分（状态与留存，无标题 [CardSection]）**：已完成 / 未完成 / 已逾期 一张三行卡，
- *   已归档、最近删除各一张单行卡；
+ *   已置顶 + 已归档一张两行卡、最近删除一张单行卡；
  * - **第二部分（带「分组」小标题的 [CardSection]）**：未分组、全部各一张单行卡，
  *   用户自定义分组一张 [GroupCard]——自定义分组无行首图标，与带图标的固定行区分
  *   （正是 [GroupCard] 与 [SettingsCardwithIcon] 的行型差异）。
@@ -95,7 +95,8 @@ import dev.chrisbanes.haze.rememberHazeState
  *   禁用（松手回弹，不关浮层——只拦回调会把浮层卡在半拖出位置）。
  *
  * **计数口径**：已完成 / 未完成 / 已逾期 实时从 [todos] 统计，逾期判定与列表同一份
- * （[IsoDate.today] + [currentMinuteOfDay]）；已归档 / 最近删除数据层暂无该概念
+ * （[IsoDate.today] + [currentMinuteOfDay]）；已置顶同为实时统计（`pinned` 标记计数）；
+ * 已归档 / 最近删除数据层暂无该概念
  * （`removeTodo` 是硬删，无回收站），恒 0；未分组 = `group == null` 的待办数、
  * 全部 = 待办总数、自定义分组 = 该组名的待办数（分组数据已入 [TodoFile.groups]，
  * 引用完整性由仓库归一化维护）。
@@ -190,6 +191,8 @@ internal fun TodoGroupsSheet(
     val incompleteCount = todos.count { !it.completed }
     val overdueCount = todos.count { it.isOverdue(today, nowMinute) }
     val totalCount = todos.size
+    // 已置顶 = pinned 标记计数（数据层已有该字段，与归档/最近删除的恒 0 占位不同）
+    val pinnedCount = todos.count { it.pinned }
     // 未分组 = group == null（引用完整性由仓库归一化维护，读侧无需容错）
     val ungroupedCount = todos.count { it.group == null }
 
@@ -294,9 +297,16 @@ internal fun TodoGroupsSheet(
                         ),
                     ),
                 )
-                // 已归档单行卡：数据层暂无归档概念，计数恒 0（接入后由归档统计替换）
+                // 已置顶 + 已归档一张两行卡：置顶计数实时来自待办列表；归档数据层暂无概念，恒 0
+                // （接入后由归档统计替换）
                 SettingsCardwithIcon(
                     items = listOf(
+                        SettingsCardwithIconItem(
+                            icon = R.drawable.ic_pin,
+                            label = stringResource(R.string.todo_section_pinned),
+                            value = pinnedCount.toString(),
+                            onClick = {},
+                        ),
                         SettingsCardwithIconItem(
                             icon = R.drawable.ic_archive,
                             label = stringResource(R.string.todo_section_archived),

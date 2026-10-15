@@ -251,6 +251,9 @@ fun TodoScreen(
             }
             TodoTopBar(
                 groups = groups.map { it.name },
+                // 置顶分组数：仓库维持「置顶构成连续前缀」不变式，顶栏按此把前 N 粒胶囊
+                // 固定最前（行首图钉）；下标语义不受视觉前移影响（仍按 groups 原序偏移）
+                pinnedGroupCount = groups.count { it.pinned },
                 selectedGroupIndex = selectedGroupIndex,
                 onGroupSelect = { selectedGroupIndex = it },
                 // 更多点击翻转展开态;收起时顺带关排序/分类菜单——菜单锚在展开动作行的

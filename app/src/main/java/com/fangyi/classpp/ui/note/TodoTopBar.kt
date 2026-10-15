@@ -96,6 +96,12 @@ private val PillInnerPadding = 16.dp
 /** 胶囊内图标边长 */
 private val PillIconSize = 24.dp
 
+/** 置顶分组胶囊行首图钉边长（GroupCard 置顶标记同款 20dp） */
+private val GroupPinIconSize = 20.dp
+
+/** 置顶分组胶囊内图钉与文字的间距（GroupCard 置顶标记同款 12dp） */
+private val GroupPinIconSpacing = 12.dp
+
 /** 左侧常驻图标胶囊宽度（图标 + 左右内边距） */
 private val IconPillWidth = PillIconSize + PillInnerPadding * 2
 
@@ -110,7 +116,7 @@ private val MorePillRightEdge = PageHorizontalSpacing + IconPillWidth
  */
 private val ClipLineOffset = -TopBarPillHeight / 2
 
-/** 首粒「全部」静止位与更多按钮右缘的间距（不影响裁切线位置） */
+/** 首粒胶囊（置顶分组或「全部」）静止位与更多按钮右缘的间距（不影响裁切线位置） */
 private val RestGap = PillSpacing
 
 /** 阴影呼吸位：胶囊柔影上下各留一份，防 LazyRow 视口把阴影裁掉 */
@@ -175,10 +181,16 @@ private val HorizontalClipShape = object : Shape {
 
 /**
  * 待办页顶栏：左侧常驻「更多」胶囊（•••）+ 右侧可滑动的分组胶囊条
- * （「全部」常驻首位 + 用户自定义分组）。
+ * （置顶分组固定最前 + 「全部」/「未分组」常驻 + 其余用户自定义分组）。
+ *
+ * 分组条视觉顺序：置顶分组（[pinnedGroupCount] 个，行首 20dp 图钉，GroupCard 置顶
+ * 标记同款规格，未选 primary 蓝 / 选中 onPrimary 白）→「全部」→「未分组」→ 未置顶
+ * 分组（各段内部保持 [groups] 原序）；仓库维持置顶分组构成 [groups] 连续前缀的不变式，
+ * 前 [pinnedGroupCount] 个即置顶组。
  *
  * 布局：左侧常驻群浮在上层；右侧分组条的视口左边界即裁切线（[ClipLineOffset]，
- * 相对更多按钮右缘），首粒「全部」静止位与按钮右缘保持 [RestGap] 间距——向左滑动
+ * 相对更多按钮右缘），首粒胶囊（置顶分组或「全部」）静止位与按钮右缘保持 [RestGap]
+ * 间距——向左滑动
  * 时越过分界线的部分被视口直接裁掉，即「滑入更多按钮背后」（常驻群不透明，无缝隙穿帮）。
  *
  * 展开：点击更多胶囊翻转 [menuExpanded]，胶囊行之下展开一条动作行（分组 / 排序 /
@@ -204,8 +216,10 @@ private val HorizontalClipShape = object : Shape {
  * 整帧重放就位时录制的栏面（含模糊输出），绕开 Haze 对转场中间态几何的重采样——
  * 与课表页顶栏同一机制，杜绝快速切 tab 时毛玻璃闪缺、露出纯兜底色帧。
  *
- * 分组胶囊下标语义：0 = 全部、1 = 未分组、2 起 = 用户分组（[groups] 下标偏移 2）。
- * 点击切选中高亮，可见列表由宿主（TodoScreen）按下标派生过滤；更多胶囊点击回调
+ * 分组胶囊下标语义：0 = 全部、1 = 未分组、2 起 = 用户分组（[groups] 下标偏移 2）——
+ * 置顶分组只是视觉位置前移，下标仍按 [groups] 原序偏移，宿主（TodoScreen）的过滤
+ * 与分组浮层的跳转映射不受影响。点击切选中高亮，可见列表由宿主（TodoScreen）按下标
+ * 派生过滤；更多胶囊点击回调
  * [onMoreClick]（宿主翻转展开态）；展开后排序块点击回调 [onSortClick]（宿主置
  * 菜单展开态），分组块点击回调 [onGroupClick]（宿主打开待办分组浮层），
  * 分类块点击回调 [onCategoryClick]（宿主置分类菜单展开态），
@@ -219,6 +233,7 @@ private val HorizontalClipShape = object : Shape {
 @Composable
 fun TodoTopBar(
     groups: List<String>,
+    pinnedGroupCount: Int,
     selectedGroupIndex: Int,
     onGroupSelect: (Int) -> Unit,
     onMoreClick: () -> Unit,
@@ -312,6 +327,21 @@ fun TodoTopBar(
                         horizontalArrangement = Arrangement.spacedBy(PillSpacing),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        // 视觉顺序：置顶分组固定最前（更多按钮之后、「全部」之前，行首图钉），
+                        // 之后依次「全部」「未分组」与未置顶分组，各段内部保持 [groups] 原序。
+                        // 下标语义不变（0 = 全部、1 = 未分组、2 起按 [groups] 原序偏移 2）：
+                        // 置顶组占 [groups] 前缀，其原下标恰好就是视觉最前段的 i + 2；未置顶段
+                        // 整体后移 [pinnedGroupCount] 个位置补回原下标
+                        val pinnedGroups = groups.take(pinnedGroupCount)
+                        val unpinnedGroups = groups.drop(pinnedGroupCount)
+                        pinnedGroups.forEachIndexed { index, group ->
+                            GroupPill(
+                                label = group,
+                                pinned = true,
+                                selected = selectedGroupIndex == index + 2,
+                                onClick = { onGroupSelect(index + 2) },
+                            )
+                        }
                         GroupPill(
                             label = stringResource(R.string.todo_group_all),
                             selected = selectedGroupIndex == 0,
@@ -323,11 +353,11 @@ fun TodoTopBar(
                             selected = selectedGroupIndex == 1,
                             onClick = { onGroupSelect(1) },
                         )
-                        groups.forEachIndexed { index, group ->
+                        unpinnedGroups.forEachIndexed { index, group ->
                             GroupPill(
                                 label = group,
-                                selected = selectedGroupIndex == index + 2,
-                                onClick = { onGroupSelect(index + 2) },
+                                selected = selectedGroupIndex == index + 2 + pinnedGroupCount,
+                                onClick = { onGroupSelect(index + 2 + pinnedGroupCount) },
                             )
                         }
                     }
@@ -478,13 +508,19 @@ private fun Modifier.topBarPillShadow(): Modifier = graphicsLayer {
     spotShadowColor = PillShadowColor
 }
 
-/** 分组胶囊：选中 = primary 底白字，未选 = surface 底黑字（与 NavPill 同一配色逻辑） */
+/**
+ * 分组胶囊：选中 = primary 底白字，未选 = surface 底黑字（与 NavPill 同一配色逻辑）。
+ * [pinned] = 置顶分组：行首 20dp 图钉（GroupCard 置顶标记同款规格 + 12dp 间距），
+ * 配色随选中态切换——未选 primary 蓝、选中 onPrimary 白（图钉纯装饰不进语义，
+ * 文字已承载胶囊语义）。
+ */
 @Composable
 private fun GroupPill(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    pinned: Boolean = false,
 ) {
     val background =
         if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
@@ -514,12 +550,27 @@ private fun GroupPill(
             .padding(horizontal = PillInnerPadding),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.classppTextStyles.pillButton,
-            color = contentColor,
-            maxLines = 1,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (pinned) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_pin),
+                    contentDescription = null,
+                    tint = if (selected) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    modifier = Modifier.size(GroupPinIconSize),
+                )
+                Spacer(Modifier.width(GroupPinIconSpacing))
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.classppTextStyles.pillButton,
+                color = contentColor,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -638,6 +689,8 @@ private fun TodoTopBarPreviewContent(initialMenuExpanded: Boolean = false) {
     ) {
         TodoTopBar(
             groups = PreviewGroups,
+            // 预览固定 1 个置顶分组（首组「作业」行首图钉），覆盖置顶最前的排布分支
+            pinnedGroupCount = 1,
             selectedGroupIndex = selected,
             onGroupSelect = { selected = it },
             onMoreClick = { menuExpanded = !menuExpanded },
