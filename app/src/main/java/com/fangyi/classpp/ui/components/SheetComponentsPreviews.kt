@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -17,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -24,6 +27,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.components.SheetTopAction
 import kotlin.math.roundToInt
 
@@ -158,6 +162,42 @@ private fun SheetInfoCardPreview() = ClassppTheme {
             entries = listOf(
                 SheetInfoEntry("教师", "XX 老师"),
                 SheetInfoEntry("上课地点", "学武楼学武楼学武楼学武楼学武楼学武楼学武楼学武楼"),
+            ),
+        )
+        // 图标槽（24dp + 12dp 间距，同 SettingsCardwithIcon）+ 值自定义颜色：
+        // 不传 icon 的行仍不渲染图标元素，槽位为空时 label 起点与旧版一致
+        SheetInfoCard(
+            entries = listOf(
+                SheetInfoEntry(
+                    label = "教师",
+                    value = "XX 老师",
+                    icon = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_flag_regular),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    },
+                ),
+                SheetInfoEntry(
+                    label = "上课地点",
+                    value = "学武楼 C201",
+                    icon = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_location),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    },
+                ),
+                // 值色覆盖：默认主题 primary，传色后只换颜色、字号字重不变
+                SheetInfoEntry(
+                    label = "上课周数",
+                    value = "第 1-16 周",
+                    valueColor = MaterialTheme.classppColors.secondaryText,
+                ),
             ),
         )
     }

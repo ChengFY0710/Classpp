@@ -628,23 +628,32 @@ internal fun List<IsoDate>.cardDatePart(): String? {
     return labels.joinToString("、")
 }
 
-/** 日期段文本 `6月18日`（月/日不补零；换算同 IsoDate.toString 的 UTC 整数天）。待办详情浮层复用——详情页要给出确定日期 */
-internal fun IsoDate.toCardDateText(): String {
+/**
+ * 绝对日期段：非本年 `2027/3/12`（YYYY/M/D）、本年 `3/12`（M/D），月/日不补零。
+ * [toCardDateLabel] 相对词之外的兜底段与待办详情浮层（截止日期/待办时间）的日期段共用；
+ * [today] 可注入，便于单测把「今年」钉死。换算同 IsoDate.toString 的 UTC 整数天。
+ */
+internal fun IsoDate.toAbsoluteDateText(today: IsoDate = IsoDate.today()): String {
     val calendar = GregorianCalendar(TimeZone.getTimeZone("UTC")).apply {
         timeInMillis = epochDay * MILLIS_PER_DAY
     }
-    return String.format(
-        Locale.ROOT,
-        "%d月%d日",
-        calendar.get(GregorianCalendar.MONTH) + 1,
-        calendar.get(GregorianCalendar.DAY_OF_MONTH),
-    )
+    val year = calendar.get(GregorianCalendar.YEAR)
+    val month = calendar.get(GregorianCalendar.MONTH) + 1
+    val day = calendar.get(GregorianCalendar.DAY_OF_MONTH)
+    val todayYear = GregorianCalendar(TimeZone.getTimeZone("UTC")).apply {
+        timeInMillis = today.epochDay * MILLIS_PER_DAY
+    }.get(GregorianCalendar.YEAR)
+    return if (year == todayYear) {
+        String.format(Locale.ROOT, "%d/%d", month, day)
+    } else {
+        String.format(Locale.ROOT, "%d/%d/%d", year, month, day)
+    }
 }
 
 /**
- * 卡片日期段：距今天 ±2 天内显相对词（后天/明天/今天/昨天/前天），更远显绝对日期——
- * 非本年 `2027/3/12`（YYYY/M/D），本年 `3/12`（M/D），月/日不补零。
- * 待办时间与截止时间共用；详情浮层不复用（走 [toCardDateText] 的确定日期）。
+ * 卡片日期段：距今天 ±2 天内显相对词（后天/明天/今天/昨天/前天），更远显 [toAbsoluteDateText]
+ * 的绝对日期。待办时间与截止时间共用；详情浮层不复用——详情页要给出确定日期，直接走
+ * [toAbsoluteDateText]（不带相对词）。
  */
 @Composable
 internal fun IsoDate.toCardDateLabel(): String {
@@ -655,18 +664,5 @@ internal fun IsoDate.toCardDateLabel(): String {
         -1L -> return stringResource(R.string.date_card_yesterday)
         -2L -> return stringResource(R.string.date_card_day_before_yesterday)
     }
-    val calendar = GregorianCalendar(TimeZone.getTimeZone("UTC")).apply {
-        timeInMillis = epochDay * MILLIS_PER_DAY
-    }
-    val year = calendar.get(GregorianCalendar.YEAR)
-    val month = calendar.get(GregorianCalendar.MONTH) + 1
-    val day = calendar.get(GregorianCalendar.DAY_OF_MONTH)
-    val todayYear = GregorianCalendar(TimeZone.getTimeZone("UTC")).apply {
-        timeInMillis = IsoDate.today().epochDay * MILLIS_PER_DAY
-    }.get(GregorianCalendar.YEAR)
-    return if (year == todayYear) {
-        String.format(Locale.ROOT, "%d/%d", month, day)
-    } else {
-        String.format(Locale.ROOT, "%d/%d/%d", year, month, day)
-    }
+    return toAbsoluteDateText()
 }

@@ -1,10 +1,13 @@
 package com.fangyi.classpp.ui.note
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -15,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
@@ -28,8 +32,8 @@ import com.fangyi.classpp.ui.components.SheetInfoEntry
 import com.fangyi.classpp.ui.components.SheetTextArea
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.TagChip
+import com.fangyi.classpp.ui.components.flagColor
 import com.fangyi.classpp.ui.components.flagLabel
-import com.fangyi.classpp.ui.components.toDeadlineText
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 
@@ -41,6 +45,11 @@ private val TagRowSpacing = 12.dp
  * 正文为待办标题、标题下方的标签行（[TagChip]，空标签不渲染）、四行只读信息
  * （[SheetInfoCard]：截止日期 / 紧急程度 / 待办时间 / 待办地点，四行常显，
  * 空值显灰「无」）与备注输入（[SheetTextArea]）。
+ *
+ * 信息行行首各带 24dp onSurface 图标（[InfoRowIcon]），值色两处按紧急度取色、与
+ * 列表卡同源：截止值走 [deadlineColor]（剩 2 天黄 / 1 天橙 / 当天及逾期红 / 其余 primary）、
+ * 紧急程度走 [flagColor]（非常紧急红 / 很紧急橙 / 紧急黄 / 不紧急绿 / 无档灰）；
+ * 时间与地点保持默认 primary。
  *
  * 正文按浮层内容规范排版：标题与标签行保持裸元素（规范里唯二的例外），信息卡与备注各收进
  * 一个无题 [CardSection]；顶层块间距走 [SheetSectionSpacingBetween]。
@@ -118,7 +127,8 @@ internal fun TodoDetailSheet(
                 }
             }
             // 四行常显：截止日期与紧急程度是结构化字段（未设也占位），时间/地点同理——
-            // 值一律右对齐走 fieldValue，空值占位灰字「无」（同 DeadlineCard 的未设态文案）
+            // 值一律右对齐走 fieldValue，空值占位灰字「无」（同 DeadlineCard 的未设态文案）；
+            // 行首图标同 NoteCard 属性行（闹钟/旗/时钟/定位针），尺寸与着色见 [InfoRowIcon]
             val noneText = stringResource(R.string.deadline_card_none)
             // 单张信息卡与备注输入都是浮层规范里的"孤块"，各收进一个无题 CardSection
             CardSection {
@@ -127,18 +137,26 @@ internal fun TodoDetailSheet(
                         SheetInfoEntry(
                             label = stringResource(R.string.deadline_card_label),
                             value = todo.deadlineText() ?: noneText,
+                            icon = { InfoRowIcon(R.drawable.ic_clock_alarm) },
+                            // 截止值色与列表卡同源（[deadlineColor]）：离截止越近越急
+                            valueColor = todo.deadlineColor(),
                         ),
                         SheetInfoEntry(
                             label = stringResource(R.string.sort_urgency),
                             value = todo.urgency.flagLabel(),
+                            icon = { InfoRowIcon(R.drawable.ic_flag_regular) },
+                            // 档位色与旗标同源（[flagColor]）：红/橙/黄/绿，无档显灰
+                            valueColor = todo.urgency.flagColor(),
                         ),
                         SheetInfoEntry(
                             label = stringResource(R.string.todo_detail_time_label),
                             value = todo.scheduledText() ?: noneText,
+                            icon = { InfoRowIcon(R.drawable.ic_clock) },
                         ),
                         SheetInfoEntry(
                             label = stringResource(R.string.todo_location_label),
                             value = todo.location.ifBlank { noneText },
+                            icon = { InfoRowIcon(R.drawable.ic_location) },
                         ),
                     ),
                 )
@@ -154,18 +172,32 @@ internal fun TodoDetailSheet(
     }
 }
 
-/** 截止值 `2026-9-7 8:00`（同 DeadlineCard 的展示格式）；未设截止返回 null（调用方显「无」） */
+/** 信息行图标：24dp、onSurface 着色（[SheetInfoCard] 图标槽规格，同
+ *  [com.fangyi.classpp.ui.components.SettingsCardwithIcon]）；资源对齐
+ *  [com.fangyi.classpp.ui.components.NoteCard] 各属性行（闹钟 = 截止、时钟 = 待办时间）。 */
+@Composable
+private fun InfoRowIcon(@DrawableRes res: Int) {
+    Icon(
+        painter = painterResource(res),
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.size(24.dp),
+    )
+}
+
+/** 截止值 `3/12 8:00`（本年）/ `2027/3/12 8:00`（非本年）；未设截止返回 null（调用方显「无」） */
 private fun Todo.deadlineText(): String? {
     val date = deadlineDate ?: return null
     val minute = deadlineMinute ?: return null
-    return "${date.toDeadlineText()} ${TimeText.format(minute)}"
+    return "${date.toAbsoluteDateText()} ${TimeText.format(minute)}"
 }
 
 /**
- * 待办时间 `6月18日 14:00-16:00` / `6月18日 全天` / `6月18日、6月20日`；无日期也无时刻返回 null。
+ * 待办时间：时段 `10/14 8:00 - 9:00`（本年）/ `2027/10/14 8:00 - 9:00`（非本年），
+ * 全天 `10/14 全天` / `2027/10/14 全天`，多日 `10/14、10/20 全天`；无日期也无时刻返回 null。
  *
  * 与列表卡片的 [cardTimeText] 分工：这里不省略"今天"的日期段（详情页要给出确定的日期），
- * 也不兜底截止值（截止日期有自己的行）。
+ * 日期段走 [toAbsoluteDateText]（本年省年份、月日不补零），也不兜底截止值（截止日期有自己的行）。
  */
 @Composable
 private fun Todo.scheduledText(): String? {
@@ -173,12 +205,15 @@ private fun Todo.scheduledText(): String? {
         TodoTimeKind.Period -> {
             val start = startMinute
             val end = endMinute
-            if (start != null && end != null) "${TimeText.format(start)}-${TimeText.format(end)}" else null
+            if (start != null && end != null) {
+                // 起止之间的分隔符带空格（`HH:mm - HH:mm`）
+                "${TimeText.format(start)} - ${TimeText.format(end)}"
+            } else null
         }
         TodoTimeKind.AllDay -> stringResource(R.string.todo_time_all_day)
         TodoTimeKind.None -> null
     }
-    val datePart = dates.joinToString("、") { it.toCardDateText() }.takeIf { it.isNotEmpty() }
+    val datePart = dates.joinToString("、") { it.toAbsoluteDateText() }.takeIf { it.isNotEmpty() }
     return listOfNotNull(datePart, timePart)
         .joinToString(" ")
         .takeIf { it.isNotEmpty() }
