@@ -11,7 +11,7 @@
 //
 // 接入方式：在需要生效的作用域根部用 [ProvideOverscroll] 包一层，作用域内所有可滚动容器
 // （verticalScroll / LazyColumn 等）自动生效（经 LocalOverscrollFactory 逐容器创建独立
-// 效果实例，首次手势按 delta 主分量锁定单轴）；内容不足一屏（无滚动范围）的容器拉不出
+// 效果实例，首次手势按 delta 主方向占比阈值锁定单轴）；内容不足一屏（无滚动范围）的容器拉不出
 // 橡皮筋（foundation 派发门槛），改用 rubberBandVerticalScroll / rubberBandHorizontalScroll /
 // RubberBandLazyColumn 这三个增强版。注意内容平移会把边缘外区域露出来——
 // 滚动容器背后需要是可接受的底色（同色背景即可，边缘处看不出破绽）。
@@ -142,6 +142,9 @@ class OffsetOverscrollEffect(
 
     private var offset by mutableStateOf(Offset.Zero)
     private var axis = Axis.None
+    // 未定轴期间的双轴累积量：供按占比阈值定轴（见 applyToScroll），定轴后作废
+    private var pendingAxisX = 0f
+    private var pendingAxisY = 0f
     private var springJob: Job? = null
     private var flingToScrollOffset = Offset.Zero
 
@@ -153,7 +156,20 @@ class OffsetOverscrollEffect(
         performScroll: (Offset) -> Offset
     ): Offset {
         if (axis == Axis.None) {
-            axis = if (abs(delta.y) >= abs(delta.x)) Axis.Vertical else Axis.Horizontal
+            // 未定轴期间累积双轴分量，主方向达到占比阈值（[DirectionRatio]，同手势方向
+            // 仲裁的阈值）才定轴——混合 delta 的首帧不再一锤定音，也消除原「平局偏竖向」
+            // 的隐患。触摸滚动的 delta 恒为纯轴分量（竖向容器只派发 y），首帧即满足占比，
+            // 定轴时机与原逐帧主分量判定一致；累计路径超过兜底长度仍纠结（持续近 45° 的
+            // 混合输入）时按主分量定轴，避免永远不定轴导致橡皮筋失效
+            pendingAxisX += abs(delta.x)
+            pendingAxisY += abs(delta.y)
+            axis = when {
+                pendingAxisY > 0f && pendingAxisY >= DirectionRatio * pendingAxisX -> Axis.Vertical
+                pendingAxisX > 0f && pendingAxisX >= DirectionRatio * pendingAxisY -> Axis.Horizontal
+                pendingAxisX + pendingAxisY >= AxisFallbackPathPx ->
+                    if (pendingAxisY >= pendingAxisX) Axis.Vertical else Axis.Horizontal
+                else -> Axis.None
+            }
         }
 
         val isUserInput = source == NestedScrollSource.UserInput
@@ -344,6 +360,10 @@ class OffsetOverscrollEffect(
     companion object {
         // 临界阻尼、低刚度：软着陆、无过冲（androidx 原生签名 spring(阻尼, 刚度, 收敛阈值)）
         val DefaultAnimationSpec = spring(1f, 150f, 0.5f)
+
+        // 轴向锁的兜底判定路径（px，约两倍触控 slop 的等效值）：未定轴的累计路径达到它
+        // 仍纠结时按主分量定轴。触摸输入的 delta 恒为纯轴分量，不会走到该兜底
+        private const val AxisFallbackPathPx = 48f
     }
 }
 

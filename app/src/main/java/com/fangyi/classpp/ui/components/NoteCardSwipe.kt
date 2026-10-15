@@ -5,7 +5,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -42,6 +41,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.detectHorizontalSwipeGestures
 import com.fangyi.classpp.ui.theme.NoteCardShape
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -132,7 +132,10 @@ class SwipeCoordinator {
  *   删除侧整卡飞出屏幕后回调（落盘失败仍在本组合时延时滑回复位），置顶侧先回弹归位
  *   再回调（卡片随后移组）；完全变色前的松手一律不执行（按上面的展开/回弹结算）。
  *
- * 手势用 [detectHorizontalDragGestures]，与纵向滚动按触控斜率自然让位；位移经 lambda 式
+ * 手势用 [detectHorizontalSwipeGestures]（ui/motion 的方向仲裁增强版横滑检测）：
+ * 累计位移过方向判定线且横向占比达标才认定横滑，认定后在 Initial pass 抢占消费、
+ * 全程锁定——嵌在竖向滚动列表里起手带竖向分量的斜向轨迹不会被误判成滚动，
+ * 中途倾斜也不切走；判定竖滑则立即让位，列表滚动/橡皮筋正常接管。位移经 lambda 式
  * offset 应用，拖拽全程卡片内容零重组。互斥经 [SwipeCoordinator]：起手即清掉他卡展开态、
  * 自身吸附展开时登记自己，页面层 BackHandler 置 null 时所有展开卡监听收起。
  *
@@ -232,7 +235,7 @@ fun NoteCardSwipeLayer(
         modifier = modifier
             .onSizeChanged { layerWidthPx = it.width }
             .pointerInput(swipe.key) {
-                detectHorizontalDragGestures(
+                detectHorizontalSwipeGestures(
                     onDragStart = {
                         // 互斥：另一张卡展开中先请它收起（清标记即触发其联动收起）
                         val s = currentSwipe
