@@ -68,6 +68,8 @@ fun List<Todo>.filterTodos(filter: TodoFilter): List<Todo> {
  * - [Deadline]：截止早的在前，无截止的排最后（升序整体反序，无截止改排最前）；
  * - [Created]：创建早的在前（等得久的排前面）；
  * - [Name]：名称字典序（A→Z）。
+ * 除 [Deadline] 外的模式共用同一次级并列键：同键并列时截止时间近的在前（截止日 +
+ * 截止时刻，无截止的排该组最后）——截止越近越要紧，与「更要紧的在前」同向。
  * 升序 = 降序整体反序（[comparator] 的 descending = false）。
  */
 enum class TodoSort {
@@ -91,15 +93,19 @@ private val URGENCY_RANK: Map<TodoUrgency, Int> = mapOf(
  * 各字段的降序定义见 [TodoSort] 注释。
  */
 fun TodoSort.comparator(descending: Boolean = true): Comparator<Todo> {
+    // 截止并列键：截止日 + 截止时刻升序（近的在前），无截止排最后——
+    // Deadline 模式的主键，也是其余模式的次级并列键（两处口径保持一致）
+    val deadlineKey = compareBy<Todo>(
+        { it.deadlineDate?.epochDay ?: Long.MAX_VALUE },
+        { it.deadlineMinute ?: Int.MAX_VALUE },
+    )
     val base = when (this) {
-        TodoSort.Deadline -> compareBy<Todo>(
-            { it.deadlineDate?.epochDay ?: Long.MAX_VALUE },
-            { it.deadlineMinute ?: Int.MAX_VALUE },
-        )
-        // 降序 = 紧急度高在前 = 权重值小（Critical=0）的在前
-        TodoSort.Urgency -> compareBy { URGENCY_RANK.getValue(it.urgency) }
-        TodoSort.Created -> compareBy { it.createdAtMillis }
-        TodoSort.Name -> compareBy { it.name }
+        TodoSort.Deadline -> deadlineKey
+        // 非截止模式：自身维度为主键，同键并列按截止近的在前
+        // （Urgency 降序 = 紧急度高在前 = 权重值小（Critical=0）的在前）
+        TodoSort.Urgency -> compareBy<Todo> { URGENCY_RANK.getValue(it.urgency) }.then(deadlineKey)
+        TodoSort.Created -> compareBy<Todo> { it.createdAtMillis }.then(deadlineKey)
+        TodoSort.Name -> compareBy<Todo> { it.name }.then(deadlineKey)
     }
     return if (descending) base else base.reversed()
 }

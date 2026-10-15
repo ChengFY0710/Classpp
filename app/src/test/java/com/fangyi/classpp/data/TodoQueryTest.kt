@@ -145,6 +145,27 @@ class TodoQueryTest {
         assertEquals(listOf(c, b, a), listOf(a, b, c).sortedFor(TodoSort.Name))
     }
 
+    @Test
+    fun `non-deadline sorts break tie on nearer deadline`() {
+        // 同紧急度并列：截止近的在前（同日按时刻），无截止的排该组最后
+        val far = testTodo(id = "far", name = "远截止", urgency = TodoUrgency.High, deadlineDate = d0620, deadlineMinute = 600)
+        val near = testTodo(id = "near", name = "近截止", urgency = TodoUrgency.High, deadlineDate = d0618, deadlineMinute = 900)
+        val none = testTodo(id = "none", name = "无截止", urgency = TodoUrgency.High)
+        val sameDay = testTodo(id = "same", name = "同日按时刻", urgency = TodoUrgency.High, deadlineDate = d0618, deadlineMinute = 480)
+        assertEquals(
+            listOf(sameDay, near, far, none),
+            listOf(far, none, near, sameDay).sortedFor(TodoSort.Urgency),
+        )
+    }
+
+    @Test
+    fun `non-deadline sorts keep own dimension as primary key`() {
+        // 并列键只救并列：紧急度高但截止远的，仍排在紧急度低但截止近的前面
+        val criticalFar = testTodo(id = "cf", name = "紧急但截止远", urgency = TodoUrgency.Critical, deadlineDate = d0620, deadlineMinute = 600)
+        val lowNear = testTodo(id = "ln", name = "不急但截止近", urgency = TodoUrgency.Low, deadlineDate = d0618, deadlineMinute = 600)
+        assertEquals(listOf(criticalFar, lowNear), listOf(lowNear, criticalFar).sortedFor(TodoSort.Urgency))
+    }
+
     // ---------- 逾期判定 ----------
 
     @Test
