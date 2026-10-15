@@ -79,7 +79,7 @@ private val ListTopSpacing = 12.dp
 /** 列表尾部余量：列表从浮动导航栏下滚过，末张卡片能滚离底边更远 */
 private val ListBottomSlack = 96.dp
 
-/** 相邻两组卡片（已逾期/未完成/已完成）之间的间距 */
+/** 相邻两组卡片（已置顶/已逾期/未完成/已完成）之间的间距 */
 private val SectionSpacing = 20.dp
 
 /**
@@ -87,9 +87,11 @@ private val SectionSpacing = 20.dp
  * 内容层为待办列表（[hazeSource] 采样源：列表滚动到顶栏之下时透出毛玻璃），
  * 顶栏浮在上层；选中态在此持有，可见列表由 [filterTodosByGroup] 按选中分组下标派生。
  *
- * 列表分「已逾期」「未完成」「已完成」三组，已逾期在最上、已完成在下（默认收起），
- * 组内按创建时间（创建早的在前）；勾选切换写回仓库，完成即移组，
- * 截止日期已过的待办移入已逾期组、标题标红。
+ * 列表分「已置顶」「已逾期」「未完成」「已完成」四组，已置顶在最上（无置顶待办时整组
+ * 隐藏）、已逾期次之、已完成在下（默认收起），组内按创建时间（创建早的在前）；
+ * 勾选切换写回仓库，完成即移组，截止日期已过的待办移入已逾期组、标题标红。
+ * 顶栏分类菜单（分类块唤起，与排序菜单同款弹层）是四组显隐的多选开关：
+ * 默认全勾选，取消勾选即整组隐藏（[visibleSections] 派生，点选不收菜单）。
  * 新建待办浮层（[NewTodoSheet]）两段式挂载：[showNewTodoSheet] 置真即挂载滑入，
  * 关闭先清 visible 播完出场，onDismissed 才卸载；点卡片拉起待办详情浮层
  * （[TodoDetailSheet]，挂载接线同课表页课程详情）。任一浮层在场时经
@@ -127,6 +129,15 @@ fun TodoScreen(
     var sortDescending by rememberSaveable { mutableStateOf(true) }
     // 排序菜单展开态（DropdownMenu 挂在 TodoTopBar 展开动作行的排序块处）
     var sortMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    // 分类菜单展开态（弹层锚在展开动作行的分类块处，与排序菜单同款三件套接线）
+    var categoryMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    // 分类可见性：菜单四项全勾选 = 四组全显（默认），取消勾选即时隐藏对应分组。
+    // rememberSaveable：旋转/切 tab/进程重建不丢，冷启动回默认全选——与排序状态同口径
+    var visibleSections by rememberSaveable { mutableStateOf(TodoSection.entries.toSet()) }
+    // 分组显隐开关：在可见集合里增删该组（不可变更新触发重组），列表即时增减对应分组
+    val toggleSectionVisible: (TodoSection) -> Unit = { section ->
+        visibleSections = if (section in visibleSections) visibleSections - section else visibleSections + section
+    }
     // 顶栏「更多」展开态：翻转展开/收起动作行（分组/排序/分类/视图/概览）
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
     // 列表让位与顶栏展开同帧同曲线：动作行展开/收起都是 Motion.ExpandMillis 一条时长，
@@ -195,6 +206,7 @@ fun TodoScreen(
                     todos = visibleTodos,
                     sort = sort,
                     sortDescending = sortDescending,
+                    visibleSections = visibleSections,
                     topBarExtraSpace = topBarExtraSpace,
                     onToggleCompleted = { id, completed ->
                         scope.launch { repository.setCompleted(id, completed) }
@@ -206,19 +218,61 @@ fun TodoScreen(
                 groups = groups.map { it.name },
                 selectedGroupIndex = selectedGroupIndex,
                 onGroupSelect = { selectedGroupIndex = it },
-                // 更多点击翻转展开态;收起时顺带关排序菜单——菜单锚在展开动作行的
-                // 排序块上,行收起锚点即消失,不先关会悬空
+                // 更多点击翻转展开态;收起时顺带关排序/分类菜单——菜单锚在展开动作行的
+                // 动作块上,行收起锚点即消失,不先关会悬空
                 onMoreClick = {
-                    if (menuExpanded) sortMenuExpanded = false
+                    if (menuExpanded) {
+                        sortMenuExpanded = false
+                        categoryMenuExpanded = false
+                    }
                     menuExpanded = !menuExpanded
                 },
-                // 排序块点击展开菜单(SortMenuPopup 挂在动作块处)
-                onSortClick = { sortMenuExpanded = true },
+                // 排序块点击展开菜单(SortMenu 三件套挂在动作块处)；两菜单同锚一行互斥，
+                // 打开一个时先关另一个，避免两张菜单卡叠影
+                onSortClick = {
+                    categoryMenuExpanded = false
+                    sortMenuExpanded = true
+                },
+                // 分类块打开分类菜单（同互斥约定；多选开关，点选不收菜单）
+                onCategoryClick = {
+                    sortMenuExpanded = false
+                    categoryMenuExpanded = true
+                },
                 // 分组块打开待办分组浮层（动作行保持展开，关浮层回到原状，不额外折叠）
                 onGroupClick = { groupsVisible = true },
                 menuExpanded = menuExpanded,
                 sortMenuExpanded = sortMenuExpanded,
                 onSortMenuDismiss = { sortMenuExpanded = false },
+                categoryMenuExpanded = categoryMenuExpanded,
+                onCategoryMenuDismiss = { categoryMenuExpanded = false },
+                // 分类菜单：四个分组显隐开关，勾选态即分组可见性；点选只切换不收起，
+                // 便于连续勾选多项（收起靠点菜单外区域）
+                categoryMenuSections = listOf(
+                    PopupMenuSection(
+                        items = listOf(
+                            PopupMenuItem(
+                                label = stringResource(R.string.todo_section_pinned),
+                                checked = TodoSection.Pinned in visibleSections,
+                                onClick = { toggleSectionVisible(TodoSection.Pinned) },
+                            ),
+                            PopupMenuItem(
+                                label = stringResource(R.string.todo_section_overdue),
+                                checked = TodoSection.Overdue in visibleSections,
+                                onClick = { toggleSectionVisible(TodoSection.Overdue) },
+                            ),
+                            PopupMenuItem(
+                                label = stringResource(R.string.todo_section_incomplete),
+                                checked = TodoSection.Active in visibleSections,
+                                onClick = { toggleSectionVisible(TodoSection.Active) },
+                            ),
+                            PopupMenuItem(
+                                label = stringResource(R.string.todo_section_completed),
+                                checked = TodoSection.Done in visibleSections,
+                                onClick = { toggleSectionVisible(TodoSection.Done) },
+                            ),
+                        ),
+                    ),
+                ),
                 sortMenuSections = listOf(
                     PopupMenuSection(
                         items = listOf(
@@ -460,12 +514,13 @@ fun TodoScreen(
     }
 }
 
-/** 列表分组：已逾期在最上、未完成居中、已完成在下（默认收起），空组不渲染 */
-private enum class TodoSection { Overdue, Active, Done }
+/** 列表分组：已置顶在最上（无置顶待办整组不渲染）、已逾期次之、未完成居中、已完成在下（默认收起），空组不渲染 */
+private enum class TodoSection { Pinned, Overdue, Active, Done }
 
 /** 分组 → 分组标题文案资源（标题在组合期经 stringResource 解析，故只存资源 id） */
 private val TodoSection.titleRes: Int
     get() = when (this) {
+        TodoSection.Pinned -> R.string.todo_section_pinned
         TodoSection.Overdue -> R.string.todo_section_overdue
         TodoSection.Active -> R.string.todo_section_incomplete
         TodoSection.Done -> R.string.todo_section_completed
@@ -496,9 +551,12 @@ internal fun filterTodosByGroup(
 }
 
 /**
- * 待办列表：已逾期、未完成、已完成各归一组——已逾期组在最上（标题标红的卡片，
- * 截止日期已过且未完成）、未完成居中、已完成在下（默认收起），空组不渲染；
- * 组内按顶栏选定的排序与方向（默认创建时间降序——创建早的在前）。卡片经 [TodoCard]
+ * 待办列表：已置顶、已逾期、未完成、已完成各归一组——已置顶组在最上（所有置顶待办，
+ * 无置顶待办时整组不渲染）、已逾期组次之（标题标红的卡片，截止日期已过且未完成）、
+ * 未完成居中、已完成在下（默认收起），空组不渲染；
+ * 组内按顶栏选定的排序与方向（默认创建时间降序——创建早的在前）。置顶条目归已置顶组、
+ * 不再进其余三组（移动而非重复展示，同分组置顶的语义）。空组不渲染的另一条路是
+ * 分类菜单：[visibleSections] 未含的组整组隐藏（默认全组可见）。卡片经 [TodoCard]
  * 接模型字段（时间文本 [cardTimeText]、标签、紧急旗）。列表从顶栏与浮动导航栏下滚过，
  * 上下各留出让位；顶栏展开动作行时按 [topBarExtraSpace] 额外让位（宿主动画下发）。
  *
@@ -511,6 +569,7 @@ private fun TodoList(
     todos: List<Todo>,
     sort: TodoSort,
     sortDescending: Boolean,
+    visibleSections: Set<TodoSection>,
     topBarExtraSpace: Dp,
     onToggleCompleted: (id: String, completed: Boolean) -> Unit,
     onTodoClick: (todo: Todo) -> Unit,
@@ -520,15 +579,24 @@ private fun TodoList(
     // 交互，逾期分组也会自己重算；分钟口径仍是重组时现取
     val today = LocalToday
     val nowMinute = currentMinuteOfDay()
-    val sections = remember(todos, sort, sortDescending, today, nowMinute) {
-        val overdue = todos.filter { it.isOverdue(today, nowMinute) }.sortedFor(sort, sortDescending)
-        val active = todos.filter { !it.completed && !it.isOverdue(today, nowMinute) }
+    val sections = remember(todos, sort, sortDescending, today, nowMinute, visibleSections) {
+        // 置顶组收编全部置顶条目（移动语义，不与其余组重复）；其余组只在非置顶里划分。
+        // 分类菜单取消勾选的组整组不进列表（visibleSections 过滤，空列表 = 四组全隐）
+        val pinned = todos.filter { it.pinned }.sortedFor(sort, sortDescending)
+        val overdue = todos.filter { !it.pinned && it.isOverdue(today, nowMinute) }
             .sortedFor(sort, sortDescending)
-        val done = todos.filter { it.completed }.sortedFor(sort, sortDescending)
+        val active = todos.filter { !it.pinned && !it.completed && !it.isOverdue(today, nowMinute) }
+            .sortedFor(sort, sortDescending)
+        val done = todos.filter { !it.pinned && it.completed }.sortedFor(sort, sortDescending)
         listOfNotNull(
-            overdue.takeIf { it.isNotEmpty() }?.let { TodoSection.Overdue to it },
-            active.takeIf { it.isNotEmpty() }?.let { TodoSection.Active to it },
-            done.takeIf { it.isNotEmpty() }?.let { TodoSection.Done to it },
+            pinned.takeIf { it.isNotEmpty() && TodoSection.Pinned in visibleSections }
+                ?.let { TodoSection.Pinned to it },
+            overdue.takeIf { it.isNotEmpty() && TodoSection.Overdue in visibleSections }
+                ?.let { TodoSection.Overdue to it },
+            active.takeIf { it.isNotEmpty() && TodoSection.Active in visibleSections }
+                ?.let { TodoSection.Active to it },
+            done.takeIf { it.isNotEmpty() && TodoSection.Done in visibleSections }
+                ?.let { TodoSection.Done to it },
         )
     }
     val density = LocalDensity.current

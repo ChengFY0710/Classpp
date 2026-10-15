@@ -264,6 +264,7 @@
     <string name="tag_choosing_course_title">Course tags</string>
 
     <!-- Todo list sections -->
+    <string name="todo_section_pinned">Pinned</string>
     <string name="todo_section_incomplete">Incomplete</string>
     <string name="todo_section_completed">Completed</string>
     <string name="todo_section_overdue">Overdue</string>

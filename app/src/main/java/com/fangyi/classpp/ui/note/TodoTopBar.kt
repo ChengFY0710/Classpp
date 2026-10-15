@@ -121,10 +121,10 @@ private val PillShadowElevation = 36.dp
 private val PillShadowColor = Color.Black.copy(alpha = 0.1f)
 
 /**
- * 排序菜单卡顶缘与排序胶囊底缘的视觉间距。
+ * 动作行菜单卡（排序/分类）顶缘与动作块底缘的视觉间距。
  * 只管视觉值：上方 16dp 投影留白在定位时自动扣除，改这里不会牵动阴影活动空间。
  */
-private val SortMenuPopupGap = 12.dp
+private val BarActionMenuPopupGap = 12.dp
 
 /** 顶栏与状态栏的间距 */
 private val TopBarTopPadding = 0.dp
@@ -208,11 +208,13 @@ private val HorizontalClipShape = object : Shape {
  * 点击切选中高亮，可见列表由宿主（TodoScreen）按下标派生过滤；更多胶囊点击回调
  * [onMoreClick]（宿主翻转展开态）；展开后排序块点击回调 [onSortClick]（宿主置
  * 菜单展开态），分组块点击回调 [onGroupClick]（宿主打开待办分组浮层），
- * 分类/视图/概览回调本期空置（接入功能时再加参数）；排序菜单
+ * 分类块点击回调 [onCategoryClick]（宿主置分类菜单展开态），
+ * 视图/概览回调本期空置（接入功能时再加参数）；排序菜单
  * 经 [sortMenuExpanded]/[onSortMenuDismiss]/[sortMenuSections] 三件套下发，
- * [SortMenuPopup] 挂在排序块同一 Box 里（父布局即锚点）：走 [PopupMenuPopup]
- * 共享弹层（[PopupMenuCard] 白卡）——DropdownMenu 的壳自带默认阴影且换不掉，
- * 换壳才能吃上菜单卡的柔影。
+ * 分类菜单经 [categoryMenuExpanded]/[onCategoryMenuDismiss]/[categoryMenuSections]
+ * 同款三件套下发；[BarActionMenuPopup] 挂在动作块同一 Box 里（父布局即锚点）：
+ * 走 [PopupMenuPopup] 共享弹层（[PopupMenuCard] 白卡）——DropdownMenu 的壳自带
+ * 默认阴影且换不掉，换壳才能吃上菜单卡的柔影。
  */
 @Composable
 fun TodoTopBar(
@@ -222,6 +224,7 @@ fun TodoTopBar(
     onMoreClick: () -> Unit,
     onSortClick: () -> Unit,
     onGroupClick: () -> Unit,
+    onCategoryClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
     tabTransition: TabTransitionState? = null,
@@ -229,6 +232,9 @@ fun TodoTopBar(
     sortMenuExpanded: Boolean = false,
     onSortMenuDismiss: () -> Unit = {},
     sortMenuSections: List<PopupMenuSection> = emptyList(),
+    categoryMenuExpanded: Boolean = false,
+    onCategoryMenuDismiss: () -> Unit = {},
+    categoryMenuSections: List<PopupMenuSection> = emptyList(),
 ) {
     val overscrollFactory = rememberOffsetOverscrollFactory(animationSpec = Motion.Settle)
     // 磨砂 tint 随主题（hazeEffect 的 block 在绘制期执行、非 composable 上下文，取值提到 Box 之前）
@@ -369,9 +375,9 @@ fun TodoTopBar(
                                 .weight(1f)
                                 .wrapContentWidth(Alignment.CenterHorizontally),
                         )
-                        // 排序块 + 锚定其下的排序菜单：SortMenuPopup 挂在动作块同一 Box 里
-                        // （内层 Box 包住动作块即锚点，菜单卡左缘对齐动作块左缘，与原先
-                        // 锚定常驻胶囊的行为一致），展开态与菜单分组内容由宿主下发。
+                        // 排序块 + 锚定其下的排序菜单：BarActionMenuPopup 挂在动作块同一
+                        // Box 里（内层 Box 包住动作块即锚点，菜单卡左缘对齐动作块左缘，与
+                        // 原先锚定常驻胶囊的行为一致），展开态与菜单分组内容由宿主下发。
                         // 外层 Box 只负责占一等份格槽并居中，避免锚点扩大到整格
                         Box(
                             modifier = Modifier.weight(1f),
@@ -383,7 +389,7 @@ fun TodoTopBar(
                                     iconRes = R.drawable.ic_arrow_sort,
                                     onClick = onSortClick,
                                 )
-                                SortMenuPopup(
+                                BarActionMenuPopup(
                                     expanded = sortMenuExpanded,
                                     onDismiss = onSortMenuDismiss,
                                     sections = sortMenuSections,
@@ -391,14 +397,26 @@ fun TodoTopBar(
                                 )
                             }
                         }
-                        TodoBarAction(
-                            label = stringResource(R.string.todo_action_category),
-                            iconRes = R.drawable.ic_filter,
-                            onClick = {},
-                            modifier = Modifier
-                                .weight(1f)
-                                .wrapContentWidth(Alignment.CenterHorizontally),
-                        )
+                        // 分类块 + 锚定其下的分类菜单：与排序块同构（外层占格槽、内层锚点），
+                        // 菜单项是分组显隐的多选开关，展开态与勾选内容由宿主下发
+                        Box(
+                            modifier = Modifier.weight(1f),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box {
+                                TodoBarAction(
+                                    label = stringResource(R.string.todo_action_category),
+                                    iconRes = R.drawable.ic_filter,
+                                    onClick = onCategoryClick,
+                                )
+                                BarActionMenuPopup(
+                                    expanded = categoryMenuExpanded,
+                                    onDismiss = onCategoryMenuDismiss,
+                                    sections = categoryMenuSections,
+                                    hazeState = hazeState,
+                                )
+                            }
+                        }
                         TodoBarAction(
                             label = stringResource(R.string.todo_action_view),
                             iconRes = R.drawable.ic_layout_row_three,
@@ -423,23 +441,24 @@ fun TodoTopBar(
 }
 
 /**
- * 排序菜单弹层：[PopupMenuPopup] 共享弹层宿主（[PopupMenuCard] 白卡 + 自定义锚定
- * Popup），投影留白、越界钳制与 scale/alpha 进出场均由宿主处理（见 [PopupMenuPopup]）。
+ * 动作行菜单弹层（排序/分类块共用）：[PopupMenuPopup] 共享弹层宿主（[PopupMenuCard]
+ * 白卡 + 自定义锚定 Popup），投影留白、越界钳制与 scale/alpha 进出场均由宿主处理
+ * （见 [PopupMenuPopup]）。
  *
- * 定位：卡片左缘对齐排序动作块左缘、顶缘与动作块底缘保持 [SortMenuPopupGap] 间距
+ * 定位：卡片左缘对齐动作块左缘、顶缘与动作块底缘保持 [BarActionMenuPopupGap] 间距
  * （0 = 贴住，DropdownMenu 原位）。
  * [hazeState] 下发给 [PopupMenuCard] 做毛玻璃（跨窗口采样页面 hazeSource，WeekPicker
  * 周数弹窗同款），null（如 @Preview）退化为不透明白卡。
  */
 @Composable
-private fun SortMenuPopup(
+private fun BarActionMenuPopup(
     expanded: Boolean,
     onDismiss: () -> Unit,
     sections: List<PopupMenuSection>,
     hazeState: HazeState? = null,
 ) {
     val density = LocalDensity.current
-    val gapPx = with(density) { SortMenuPopupGap.roundToPx() }
+    val gapPx = with(density) { BarActionMenuPopupGap.roundToPx() }
     PopupMenuPopup(
         expanded = expanded,
         onDismiss = onDismiss,

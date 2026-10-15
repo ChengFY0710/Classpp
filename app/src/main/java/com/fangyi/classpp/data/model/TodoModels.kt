@@ -43,6 +43,7 @@ data class TodoStep(
  * @param createdAtMillis 创建时刻（epoch millis），由仓库在 addTodo 时补齐
  * @param countdown 倒计时开关：true = 待办列表卡在截止时间左侧显示剩余天数（`N天` /
  *   `逾期N天`）。不变式：无 [deadlineDate] 时必为 false，由仓库在归一化时维护
+ * @param pinned 置顶标记：true = 待办列表顶部「已置顶」分组成员（无置顶待办时整组隐藏）
  */
 @Serializable
 data class Todo(
@@ -64,6 +65,7 @@ data class Todo(
     val createdAtMillis: Long = 0,
     val group: String? = null,
     val countdown: Boolean = false,
+    val pinned: Boolean = false,
 )
 
 /**

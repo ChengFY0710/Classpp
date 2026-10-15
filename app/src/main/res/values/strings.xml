@@ -34,6 +34,7 @@
     <string name="todo_edit_title">编辑待办</string>
     <string name="todo_name_label">待办名</string>
     <string name="todo_name_hint">如：户口乔迁材料报送</string>
+    <string name="todo_section_pinned">已置顶</string>
     <string name="todo_section_incomplete">未完成</string>
     <string name="todo_section_completed">已完成</string>
     <string name="todo_section_overdue">已逾期</string>
