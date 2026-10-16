@@ -259,7 +259,7 @@ fun TodoScreen(
                             }
                         }
                     },
-                    // 侧滑删除：拖到按钮完全变色后松手才删（无确认框，满填充就是强确认）；
+                    // 侧滑删除：展开后再拖到完全变色松手才删（无确认框，满色就是强确认）；
                     // 失败 Toast、卡片自动滑回
                     onDeleteTodo = { id ->
                         scope.launch {
@@ -680,7 +680,8 @@ internal fun filterTodosBySpecial(
  * 不再进其余三组（移动而非重复展示，同分组置顶的语义）。空组不渲染的另一条路是
  * 分类菜单：[visibleSections] 未含的组整组隐藏（默认全组可见）。卡片经 [TodoCard]
  * 接模型字段（时间文本 [cardTimeText]、标签、紧急旗），并支持左右侧滑呼出删除/置顶
- * 动作卡（双阈值手势见 [NoteCardSwipeLayer]）：同一时刻至多一张展开（[swipeCoordinator]
+ * 动作卡（两段式侧滑手势见 [NoteCardSwipeLayer]：首段拖拽仅呼出，展开态再拖满色才
+ * 执行）：同一时刻至多一张展开（[swipeCoordinator]
  * 互斥），展开态按系统返回自动收起（页面层 BackHandler）。列表从顶栏与浮动导航栏下滚过，
  * 上下各留出让位；顶栏展开动作行时按 [topBarExtraSpace] 额外让位（宿主动画下发）。
  *
@@ -794,7 +795,7 @@ private fun TodoList(
  * [Todo.countdown] 开启时把剩余天数交给 [NoteCard.countdownDays]，卡片左区显示倒计时
  * （天数口径与截止配色同源，见 [deadlineDaysLeft]）。
  * 点卡片（非勾选框）经 [onClick] 拉起详情浮层——勾选框是独立 toggleable，不会误触。
- * 侧滑动作：左侧删除（error 红，拖到完全变色后松手即删）、右侧置顶（primary 蓝；已置顶卡
+ * 侧滑动作：左侧删除（error 红，呼出后再拖满色松手即删）、右侧置顶（primary 蓝；已置顶卡
  * 显示 ic_pin_off、执行取消置顶），动作卡语义见 [NoteCardSwipe]。
  */
 @Composable

@@ -115,7 +115,7 @@ internal fun TodoDetailSheet(
     // 失败 Toast 也由宿主提示
     onStepAdd: (String) -> Unit,
     onStepToggle: (String, Boolean) -> Unit,
-    // 侧滑删除一条步骤（拖到按钮完全变色后松手才执行，无确认框）；由宿主落库、失败 Toast
+    // 侧滑删除一条步骤（展开后再拖到完全变色松手才执行，无确认框）；由宿主落库、失败 Toast
     onStepDelete: (stepId: String) -> Unit,
     // 开关列表卡倒计时（true = 开启）；落库后本层菜单文案随传入的 todo 自动回流
     onCountdownToggle: (Boolean) -> Unit,
@@ -309,7 +309,7 @@ internal fun TodoDetailSheet(
                         completed = step.done,
                         // 卡片本身静态（不传 onClick）：勾选框是唯一交互位
                         onCheckedChange = { onStepToggle(step.id, it) },
-                        // 侧滑只配删除侧（向右滑呼出，error 红，拖到完全变色后松手即删）；
+                        // 侧滑只配删除侧（向右滑呼出，error 红，展开后再拖满色松手即删）；
                         // pin 传 null——向左方向不可拖出
                         swipe = NoteCardSwipe(
                             key = step.id,
