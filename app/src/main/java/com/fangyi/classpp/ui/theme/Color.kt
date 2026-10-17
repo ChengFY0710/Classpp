@@ -33,6 +33,9 @@ val Scrim = Color(0x332A333C)
 
 val Correct = Color(0xFF22B14C)
 
+// 开关（ClassppSwitch）不可点击时的置灰轨道色，无论 checked 取该值
+val SwitchDisabled = Color(0xFFEEEEEE)
+
 // ===== 紧急程度旗标（UrgentFlagCard）：红用 Error、灰用 classppColors.secondaryText，橙/黄/绿在此 =====
 // 对齐设计稿马卡龙外一档的高饱和取色；深色按 DarkPrimary 的提亮惯例整体浅一档，保深卡对比
 val UrgentOrange = Color(0xFFF2921B)
@@ -71,3 +74,6 @@ val DarkUrgentYellow = Color(0xFFF6CE52)
 val DarkUrgentGreen = Color(0xFF67D257)
 
 val DarkScrim = Color(0xBF000000)
+
+// 开关（ClassppSwitch）不可点击时的置灰轨道色，无论 checked 取该值
+val DarkSwitchDisabled = Color(0xFF1C1E22)

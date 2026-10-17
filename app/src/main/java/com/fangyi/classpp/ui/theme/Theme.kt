@@ -73,6 +73,11 @@ class ClassppColors(
      */
     val negative: Color,
     /**
+     * 开关（ClassppSwitch）不可点击时的置灰轨道色：浅 #EEEEEE / 深 #1C1E22，
+     * 不论 checked 与否——与 [negative] 的「弱化」语义分开，专表禁用。
+     */
+    val switchDisabled: Color,
+    /**
      * 底部弹出选择卡（BottomSelectSheet）卡底色：浅色 = 白卡浮于浅灰页面；
      * 深色与页面背景同值（最深一档），不再像 surface 那样比页面亮一档。
      */
@@ -90,6 +95,7 @@ private val LightClassppColors = ClassppColors(
     secondaryText = Color(0xFFABAFB4),
     hazeTint = Color.White,
     negative = Color(0xFFCBCBCB),
+    switchDisabled = SwitchDisabled,
     bottomSheetColor = BottomSheetColor,
     urgentOrange = UrgentOrange,
     urgentYellow = UrgentYellow,
@@ -100,6 +106,7 @@ private val DarkClassppColors = ClassppColors(
     secondaryText = Color(0xFF7E858D),
     hazeTint = Color.Black,
     negative = Color(0xFF5C6269),
+    switchDisabled = DarkSwitchDisabled,
     bottomSheetColor = DarkBottomSheetColor,
     urgentOrange = DarkUrgentOrange,
     urgentYellow = DarkUrgentYellow,

@@ -33,23 +33,31 @@ private val ThumbInset = 4.dp
 /**
  * 开关按钮：胶囊轨道 + 恒定大小的白色圆点滑块。
  *
- * 颜色规格：激活 = [MaterialTheme.colorScheme.primary] 轨道，未激活 = [MaterialTheme.classppColors.negative]
- * 置灰轨道（浅 #CBCBCB / 深 #5C6269），圆点无论状态与深浅模式都保持 White。
+ * 颜色规格：[enabled] 为 false（不可点击）时轨道固定取 [MaterialTheme.classppColors.switchDisabled]
+ * （浅 #EEEEEE / 深 #1C1E22），不论 checked；否则激活 = [MaterialTheme.colorScheme.primary] 轨道、
+ * 未激活 = [MaterialTheme.classppColors.negative] 置灰轨道（浅 #CBCBCB / 深 #5C6269）。
+ * [onCheckedChange] 为 null 表示点击自理（如设置卡整行可点、开关只做指示），颜色仍按 checked 正常显示。
+ * 圆点无论状态与深浅模式都保持 White。
  *
  * 形状与全局胶囊按钮（顶栏按钮、确认框按钮等）同源：轨道走 [PillShape] 连续曲率胶囊，
  * 圆角与直边平滑过渡；圆点为纯圆形（CircleShape）。
  *
  * 动效（与 RowChoiceCard 等同一节奏，Motion.FastMillis 先快后慢）：圆点平移滑动、轨道颜色渐变，
- * 按压涟漪被胶囊圆角裁剪。[onCheckedChange] 为 null 时不可交互（语义与 M3 Switch 一致）。
+ * 按压涟漪被胶囊圆角裁剪。[onCheckedChange] 为 null 或 [enabled] 为 false 时不可交互（语义与 M3 Switch 一致）。
  */
 @Composable
 fun ClassppSwitch(
     checked: Boolean,
     onCheckedChange: ((Boolean) -> Unit)?,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     val trackColor by animateColorAsState(
-        targetValue = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.classppColors.negative,
+        targetValue = when {
+            !enabled -> MaterialTheme.classppColors.switchDisabled
+            checked -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.classppColors.negative
+        },
         animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
         label = "classppSwitchTrack",
     )
@@ -64,7 +72,7 @@ fun ClassppSwitch(
             .clip(PillShape)
             .background(trackColor)
             .then(
-                if (onCheckedChange != null) {
+                if (onCheckedChange != null && enabled) {
                     Modifier.toggleable(
                         value = checked,
                         role = Role.Switch,

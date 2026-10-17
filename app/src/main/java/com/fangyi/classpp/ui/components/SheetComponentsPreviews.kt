@@ -250,6 +250,11 @@ private fun ClassppSwitchPreview() = ClassppTheme {
             checked = false,
             onCheckedChange = {},
         )
+        ClassppSwitch(
+            checked = true,
+            onCheckedChange = null,
+            enabled = false,
+        )
     }
 }
 

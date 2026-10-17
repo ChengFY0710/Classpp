@@ -296,7 +296,12 @@ private fun SettingsCardRow(item: SettingsCardItem, hazeState: HazeState?) {
         }
         when (item) {
             is SettingsCardItem.Nav -> Chevron()
-            is SettingsCardItem.Toggle -> ClassppSwitch(checked = item.checked, onCheckedChange = null)
+            is SettingsCardItem.Toggle -> ClassppSwitch(
+                checked = item.checked,
+                // 点击自理（整行 toggleable），开关只做指示；enabled=false 时整行不可点、开关同步置灰
+                onCheckedChange = null,
+                enabled = item.enabled,
+            )
             is SettingsCardItem.Select -> SelectMenu(
                 item = item,
                 expanded = menuExpanded,
