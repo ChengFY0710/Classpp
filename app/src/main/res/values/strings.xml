@@ -278,9 +278,16 @@
     <string name="detail_title">课程详情</string>
     <string name="detail_close">关闭</string>
     <string name="detail_edit">编辑</string>
+    <string name="detail_create_todo">新建</string>
     <string name="detail_teacher">教师</string>
     <string name="detail_location">上课地点</string>
     <string name="detail_note_ph">点击输入添加备注</string>
+    <!-- 新建课程待办浮层（CourseTodoSheet）：截止日期只提供「下节课 / 自定义周次」两个档位，
+         待办自动打上本节课程的课程标签（=课程名），其余字段走新建待办浮层的默认值 -->
+    <string name="course_todo_title">新建课程待办</string>
+    <string name="course_todo_deadline_next">下节课</string>
+    <string name="course_todo_deadline_custom">自定义</string>
+    <string name="course_todo_custom_desc">截止日期为第X周的本节课开始时间</string>
     <!-- 双引号包住以保留两侧空格，否则会被资源编译器裁掉 -->
     <string name="edit_alternate_meta_separator">" | "</string>
     <string name="edit_alternate_taken_hint">「%1$s」已占用：%2$s</string>

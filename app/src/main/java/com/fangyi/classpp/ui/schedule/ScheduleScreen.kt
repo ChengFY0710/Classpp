@@ -60,6 +60,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -76,6 +77,7 @@ import com.fangyi.classpp.data.ScheduleJson
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.ScheduleValidator
 import com.fangyi.classpp.data.TodoFilter
+import com.fangyi.classpp.data.TodoReadResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.TodoSort
 import com.fangyi.classpp.data.expandRepeatOccurrences
@@ -913,12 +915,19 @@ fun ScheduleScreen(
                         .filterTodos(TodoFilter(tags = setOf(detail.name)))
                         .sortedFor(TodoSort.Created, descending = true)
                 }
+                // 新建课程待办浮层：详情浮层左上「新建」请求挂载。期望态 + 挂载态两段式
+                //（同其它浮层），期望态同时驱动详情浮层 covered（上层在场时缩小后退）
+                var courseTodoVisible by remember { mutableStateOf(false) }
+                var courseTodoMounted by remember { mutableStateOf(false) }
+                val keyboard = LocalSoftwareKeyboardController.current
+                val saveFailedMessage = stringResource(R.string.todo_error_save_failed)
                 key(detail.id) {
                     CourseDetailSheet(
                         visible = detailEntry != null,
                         entry = detail,
                         schedule = schedule,
                         todos = courseTodos,
+                        covered = courseTodoVisible,
                         onTodoCheckedChange = { todo, checked ->
                             // 同 TodoScreen：异步提交，Err（如已被删）静默忽略。分期副本
                             // dates[0] 即所勾分期日期，走逐期结算；普通待办整条完成
@@ -947,8 +956,35 @@ fun ScheduleScreen(
                                 }
                             }
                         },
+                        // 左上「新建」：收键盘后挂载新建课程待办浮层（入口进弹层的通用约定）
+                        onCreateTodoClick = {
+                            keyboard?.hide()
+                            courseTodoMounted = true
+                            courseTodoVisible = true
+                        },
                         onDismiss = { detailTargetId = "" },
                         onDismissed = { detailMounted = null },
+                    )
+                }
+                // 新建课程待办浮层：画在详情浮层之后（组合顺序即绘制顺序）叠层，返回键
+                // 后注册先响应（先于详情浮层的关闭拦截）。确认落库：Ok 关浮层回详情（新
+                // 待办带课程名标签，回流后即出现在上方待办卡列表）；Err Toast 不关，可改后重试
+                if (courseTodoMounted) {
+                    CourseTodoSheet(
+                        visible = courseTodoVisible,
+                        entry = detail,
+                        schedule = schedule,
+                        onConfirm = { todo ->
+                            scope.launch {
+                                when (todoRepository?.addTodo(todo)) {
+                                    is TodoReadResult.Ok -> courseTodoVisible = false
+                                    is TodoReadResult.Err -> AppToasts.show(context, saveFailedMessage)
+                                    null -> Unit
+                                }
+                            }
+                        },
+                        onDismiss = { courseTodoVisible = false },
+                        onDismissed = { courseTodoMounted = false },
                     )
                 }
             }

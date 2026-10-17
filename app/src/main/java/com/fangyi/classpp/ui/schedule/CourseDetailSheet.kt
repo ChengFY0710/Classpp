@@ -62,8 +62,12 @@ import com.fangyi.classpp.ui.theme.classppColors
  * 备注没有显式保存按钮（设计稿顶栏只有"关闭"）：**任意关闭路径**（关闭胶囊 / 系统返回 /
  * 下拉 / 点遮罩）都会先经 [onNoteSave] 落盘再关，输入不丢；调用方负责实际持久化与去重。
  *
- * 浮层框架是 [OverlaySheet]：两段式关闭（visible / onDismissed），confirmLabel 传 null
- * 隐藏左侧确认胶囊。
+ * 顶栏左上是「新建」蓝胶囊（待办分组浮层顶栏同款设计）：点击经 [onCreateTodoClick] 请求
+ * 打开「新建课程待办」浮层（由调用方叠在本浮层之上），新建的待办自动打上本课程标签，
+ * 落库回流后即出现在上方待办卡列表。
+ *
+ * 浮层框架是 [OverlaySheet]：两段式关闭（visible / onDismissed）。[covered] = 被上层浮层
+ * （如新建课程待办）盖住时本层缩小后退（分层动效，透传容器）。
  */
 @Composable
 fun CourseDetailSheet(
@@ -75,6 +79,8 @@ fun CourseDetailSheet(
     onNoteSave: (String) -> Unit,
     todos: List<Todo> = emptyList(),
     onTodoCheckedChange: ((todo: Todo, checked: Boolean) -> Unit)? = null,
+    covered: Boolean = false,
+    onCreateTodoClick: () -> Unit = {},
 ) {
     // 本次打开期间勾选过的待办（id + 分期日期）：无 key——浮层卸载（收场动画结束）即清空，
     // 换课程随调用方的 key(detail.id) 重建。勾选先本地记账，StateFlow 回流后
@@ -114,7 +120,10 @@ fun CourseDetailSheet(
 
     OverlaySheet(
         title = stringResource(R.string.detail_title),
-        confirmLabel = null,
+        // 左上「新建」蓝胶囊（待办分组浮层顶栏同款）：请求打开新建课程待办浮层
+        confirmLabel = stringResource(R.string.detail_create_todo),
+        confirmIcon = R.drawable.ic_add_circle,
+        onConfirm = onCreateTodoClick,
         rightAction = SheetTopAction(
             label = stringResource(R.string.detail_close),
             icon = R.drawable.ic_dismiss_circle,
@@ -124,6 +133,7 @@ fun CourseDetailSheet(
         ),
         onDismiss = closeWithSave,
         visible = visible,
+        covered = covered,
         onDismissed = onDismissed,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(/**SheetSectionSpacingBetween 课程详情卡片单独设置，其余统一使用SheetSectionSpacingBetween变量**/10.dp)) {
