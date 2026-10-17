@@ -177,6 +177,9 @@ fun TodoScreen(
     )
     // 详情浮层：被点待办 id（点卡片进入），空 = 未打开（同课表页 detailTargetId）
     var detailTargetId by rememberSaveable { mutableStateOf("") }
+    // 所点条目的分期日期（ISO 文本，空 = 非逐期卡）：详情按 id 反查原始待办，逐期上下文
+    // 只能由点击带入——随重复的截止行按它折算出该条目的具体截止
+    var detailTargetDate by rememberSaveable { mutableStateOf("") }
     // 编辑浮层：被编辑待办 id（详情顶栏「编辑」进入），空 = 未打开（两段式挂载见浮层处）
     var editTargetId by rememberSaveable { mutableStateOf("") }
     // 分组浮层：待办分组（顶栏展开动作行的分组块进入），空 = 未打开（两段式挂载见浮层处）
@@ -285,7 +288,10 @@ fun TodoScreen(
                             }
                         }
                     },
-                    onTodoClick = { detailTargetId = it.id },
+                    onTodoClick = {
+                        detailTargetId = it.id
+                        detailTargetDate = it.dates.firstOrNull()?.toString().orEmpty()
+                    },
                 )
             }
             TodoTopBar(
@@ -484,7 +490,11 @@ fun TodoScreen(
                 // 编辑浮层盖上来时本层缩小后退，清 id（确认/取消/删除）的瞬间同步回位
                 covered = editTargetId != "",
                 todo = detail,
-                onDismiss = { detailTargetId = "" },
+                occurrenceDate = IsoDate.parseOrNull(detailTargetDate),
+                onDismiss = {
+                    detailTargetId = ""
+                    detailTargetDate = ""
+                },
                 onDismissed = { detailMounted = null },
                 // 备注随任意关闭路径落盘：未改动零开销；Err 仅剩校验不过等异常（Toast 提示）
                 onNoteSave = { note ->

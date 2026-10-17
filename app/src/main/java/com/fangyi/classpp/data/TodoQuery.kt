@@ -190,9 +190,10 @@ fun List<Todo>.expandRepeatOccurrences(today: IsoDate): List<Todo> = buildList {
  * [Todo.deadlineBeforeDays] 天（时刻沿用已设的截止时刻）；不早于该期自身日期——多标记的
  * 每周规则相邻间隔可能小于周期上限，提前天数会越过期日，此时收拢到期日当天。
  * 非「随重复」开关、无截止日期或展不开下一期（病态规则）时原样返回。
- * 仅在 [expandRepeatOccurrences] 的显示副本上调用，存储的原始截止不动。
+ * 展示层专用：[expandRepeatOccurrences] 的逐期副本与详情浮层的截止行都经它取折算视图，
+ * 存储的原始截止不动。
  */
-private fun Todo.withOccurrenceDeadline(anchor: IsoDate, date: IsoDate): Todo {
+fun Todo.withOccurrenceDeadline(anchor: IsoDate, date: IsoDate): Todo {
     if (!deadlineBeforeRepeat || deadlineDate == null) return this
     // fromExclusive 走 occurrencesBetween 的含端点起点：传 date + 1 才是「严格晚于该期」
     val next = repeat.nextOccurrenceAfter(anchor, date + 1) ?: return this

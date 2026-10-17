@@ -47,10 +47,11 @@ private const val MILLIS_PER_DAY = 86_400_000L
  * 结构（顶层块一律 [CardSection]）：第一部分无题分组——「设置截止日期」开关卡 + 日期/时刻卡
  * （开关关闭，或「下一次重复开始前」打开时整卡收起，[Expandable] 同重复设置页的自定义区；
  * 两行分别弹 [BottomDateSelectCard] / [BottomTimeSelectCard]）；第二部分「重复待办截止日期」
- * 分组——「下一次重复开始前」开关（仅重复待办可开，[hasRepeat] = false 时整行禁用、开关
- * 锁定为关）+ 开启后展开的「开始前」导航行（[BottomNumberSelectCard] 选 0..[repeatCycleDays]
- * 天，上限 = 重复周期天数）。开关打开后各期截止由展示层按「下一期开始前 N 天」自动折算
- * （见 [com.fangyi.classpp.data.expandRepeatOccurrences]），浮层里不再展示固定日期/时刻。
+ * 分组随主开关整组展开/收起——「下一次重复开始前」开关（仅重复待办可开，[hasRepeat] = false
+ * 时整行禁用、开关锁定为关）+ 开启后展开的「开始前」导航行（[BottomNumberSelectCard] 选
+ * 0..[repeatCycleDays] 天，上限 = 重复周期天数）。开关打开后各期截止由展示层按「下一期
+ * 开始前 N 天」自动折算（见 [com.fangyi.classpp.data.expandRepeatOccurrences]），浮层里
+ * 不再展示固定日期/时刻。
  *
  * 草稿态语义：挂载即从各 initial 参数快照，确认才经 [onConfirm] 回写（取消/遮罩/返回/下拉
  * 的改动不外泄，出场播完由宿主卸载）。开关关闭时确认，宿主把截止置回 null 对——开关即
@@ -167,35 +168,39 @@ internal fun DeadlineSettingsSheet(
                     )
                 }
             }
-            // 第二部分：「下一次重复开始前」开关（无重复日期时禁用锁定为关）+ 开始前天数行
+            // 第二部分：随主开关整组展开/收起（「设置截止日期」关 = 无截止语义，随重复
+            // 设置一并隐藏；Expandable 高度动画，兄弟内容逐帧让位，同第一部分的日期/时刻卡）。
+            // 组内：「下一次重复开始前」开关（无重复日期时禁用锁定为关）+ 开始前天数行
             // （开关打开后展开，animateContentSize 使行增减平滑过渡）
-            CardSection(title = stringResource(R.string.deadline_sheet_repeat_section)) {
-                SettingsCard(
-                    modifier = Modifier.animateContentSize(),
-                    items = buildList {
-                        add(
-                            SettingsCardItem.Toggle(
-                                label = stringResource(R.string.deadline_sheet_repeat_toggle),
-                                description = stringResource(R.string.deadline_sheet_repeat_toggle_desc),
-                                checked = beforeRepeat,
-                                onCheckedChange = { beforeRepeat = it },
-                                enabled = hasRepeat,
-                            ),
-                        )
-                        if (beforeRepeat) {
+            Expandable(expanded = enabled) {
+                CardSection(title = stringResource(R.string.deadline_sheet_repeat_section)) {
+                    SettingsCard(
+                        modifier = Modifier.animateContentSize(),
+                        items = buildList {
                             add(
-                                SettingsCardItem.Nav(
-                                    label = stringResource(R.string.deadline_sheet_repeat_before),
-                                    value = stringResource(R.string.deadline_sheet_repeat_days_value, beforeDays),
-                                    onClick = {
-                                        daysWheelMounted = true
-                                        daysWheelVisible = true
-                                    },
+                                SettingsCardItem.Toggle(
+                                    label = stringResource(R.string.deadline_sheet_repeat_toggle),
+                                    description = stringResource(R.string.deadline_sheet_repeat_toggle_desc),
+                                    checked = beforeRepeat,
+                                    onCheckedChange = { beforeRepeat = it },
+                                    enabled = hasRepeat,
                                 ),
                             )
-                        }
-                    },
-                )
+                            if (beforeRepeat) {
+                                add(
+                                    SettingsCardItem.Nav(
+                                        label = stringResource(R.string.deadline_sheet_repeat_before),
+                                        value = stringResource(R.string.deadline_sheet_repeat_days_value, beforeDays),
+                                        onClick = {
+                                            daysWheelMounted = true
+                                            daysWheelVisible = true
+                                        },
+                                    ),
+                                )
+                            }
+                        },
+                    )
+                }
             }
         }
     }

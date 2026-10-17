@@ -34,10 +34,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoTimeKind
+import com.fangyi.classpp.data.withOccurrenceDeadline
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.CardSection
@@ -109,6 +111,10 @@ private val TitleMenuGap = 12.dp
 internal fun TodoDetailSheet(
     visible: Boolean,
     todo: Todo,
+    // 所点条目的分期日期（重复待办的逐期卡带入）：「下一次重复开始前」的截止行按它折算出
+    // 该条目的具体截止（见 [withOccurrenceDeadline]）；非重复待办或无逐期上下文传 null，
+    // 按首期（锚日期）折算
+    occurrenceDate: IsoDate? = null,
     onDismiss: () -> Unit,
     onDismissed: () -> Unit,
     onNoteSave: (String) -> Unit,
@@ -236,6 +242,17 @@ internal fun TodoDetailSheet(
             val noneText = stringResource(R.string.deadline_card_none)
             // 「今天」在组合期取一次：下面 [listOfNotNull] 的 let 不是组合上下文，值先落地
             val today = LocalToday
+            // 截止行的展示视图：随重复的待办按所点条目的分期折算出该条目的具体截止
+            // （下一期开始前 N 天，见 [withOccurrenceDeadline]），无逐期上下文按首期折算；
+            // 值与色同源都取折算视图，存储的载体截止不外显
+            val deadlineView = remember(todo, occurrenceDate) {
+                val anchor = todo.dates.minByOrNull { it.epochDay }
+                if (anchor != null) {
+                    todo.withOccurrenceDeadline(anchor, occurrenceDate ?: anchor)
+                } else {
+                    todo
+                }
+            }
             // 信息卡与备注输入是浮层规范里的两个"孤块"，同收进一个无题 CardSection
             // （组内间距走 CardSection 默认节奏）
             CardSection {
@@ -243,10 +260,10 @@ internal fun TodoDetailSheet(
                     entries = listOf(
                         SheetInfoEntry(
                             label = stringResource(R.string.deadline_card_label),
-                            value = todo.deadlineText() ?: noneText,
+                            value = deadlineView.deadlineText() ?: noneText,
                             icon = { InfoRowIcon(R.drawable.ic_clock_alarm) },
                             // 截止值色与列表卡同源（[deadlineColor]）：离截止越近越急
-                            valueColor = todo.deadlineColor(),
+                            valueColor = deadlineView.deadlineColor(),
                         ),
                         SheetInfoEntry(
                             label = stringResource(R.string.sort_urgency),
@@ -501,16 +518,13 @@ private fun InfoRowIcon(@DrawableRes res: Int) {
 }
 
 /**
- * 截止值：随重复（下一次重复开始前）显规则文本「下一次重复开始前 N 天」——各期截止由展示层
- * 自动折算，存储的固定日期不再是实际截止；否则 `3/12 8:00`（本年）/ `2027/3/12 8:00`
- * （非本年）；未设截止返回 null（调用方显「无」）。
+ * 截止值 `3/12 8:00`（本年）/ `2027/3/12 8:00`（非本年）；未设截止返回 null（调用方显「无」）。
+ * 随重复的待办由调用方先经 [withOccurrenceDeadline] 折算（[deadlineView]，见声明处）——
+ * 重复组每一条目显示各自的具体截止，不是规则文本也不是存储的载体日期。
  */
 @Composable
 private fun Todo.deadlineText(): String? {
     val date = deadlineDate ?: return null
-    if (deadlineBeforeRepeat) {
-        return stringResource(R.string.deadline_before_repeat_value, deadlineBeforeDays)
-    }
     val minute = deadlineMinute ?: return null
     // 「今天」取共享源（跨零点/跨年自动跳天，见 [LocalToday]），不直接读系统时钟
     return "${date.toAbsoluteDateText(LocalToday)} ${TimeText.format(minute)}"
