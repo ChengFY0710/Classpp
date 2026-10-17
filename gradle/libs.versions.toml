@@ -1,18 +1,25 @@
 [versions]
 agp = "9.4.1"
-coreKtx = "1.10.1"
+# core-ktx 不受 Compose BOM 直管：显式声明对齐真实解析值，防止依赖图变动时
+# 静默跌回旧版（曾声明 1.10.1、实际靠冲突仲裁跑 1.16.0，声明形同虚设）
+coreKtx = "1.19.1"
 junit = "4.13.2"
-junitVersion = "1.1.5"
-espressoCore = "3.5.1"
-lifecycleRuntimeKtx = "2.6.1"
-activityCompose = "1.8.0"
+junitVersion = "1.3.0"
+espressoCore = "3.7.0"
+# 声明对齐实际解析（此前声明 2.6.1、实际被 activity-compose 传递解析到 2.9.4，
+# 声明失真误导排查）；2.11.0 为 androidx.lifecycle 当前最新稳定
+lifecycleRuntimeKtx = "2.11.0"
+# activity-compose 由 Compose BOM 管控版本：显式声明与 BOM 2026.09 口径一致的
+# 最新稳定值，声明=解析可读
+activityCompose = "1.12.4"
 kotlin = "2.2.10"
-composeBom = "2026.02.01"
+composeBom = "2026.09.00"
 # 1.7.0 修复了效果节点不随源位置变化而失效的问题（#812，tab 转场滑入滑出时
 # 顶栏模糊闪帧的关键修复），并新增 forceInvalidateOnPreDraw 兜底开关；
 # 1.7.2 为最后一个稳定 1.x（2.0 仍是 alpha）
 haze = "1.7.2"
-kotlinxSerialization = "1.9.0"
+# 1.12.0 为 RC 未取；1.11.0 为最新稳定
+kotlinxSerialization = "1.11.0"
 # Shapes 1.2.1 由 Kotlin 2.4 编译（元数据 2.4.0），需项目 Kotlin ≥2.3 才能读取；
 # 当前项目 Kotlin 2.2.10，固定用 1.2.0（API 相同，仅依赖版本不同）。升级 Kotlin 后可跟进最新版。
 kyantShapes = "1.2.0"
