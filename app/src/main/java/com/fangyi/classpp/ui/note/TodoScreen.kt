@@ -43,6 +43,7 @@ import com.fangyi.classpp.data.TodoOpResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.TodoSort
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
@@ -57,6 +58,7 @@ import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.PopupMenuSection
 import com.fangyi.classpp.ui.components.SwipeAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
+import com.fangyi.classpp.ui.components.labelText
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
@@ -791,7 +793,8 @@ private fun TodoList(
 /**
  * 单条待办卡片：[Todo] → [NoteCard] 的字段接线——标题、完成态与勾选直通，
  * 待办时间走 [cardTimeText]、截止时间走 [deadlineCardText]（颜色由 [deadlineColor]
- * 按剩余天数映射），标签与紧急旗按模型透传；[overdue] 为真（在已逾期组）时标题标红。
+ * 按剩余天数映射）、重复规则走 [repeatCardText]（primary 蓝，排在两个时间项之后），
+ * 标签与紧急旗按模型透传；[overdue] 为真（在已逾期组）时标题标红。
  * [Todo.countdown] 开启时把剩余天数交给 [NoteCard.countdownDays]，卡片左区显示倒计时
  * （天数口径与截止配色同源，见 [deadlineDaysLeft]）。
  * 点卡片（非勾选框）经 [onClick] 拉起详情浮层——勾选框是独立 toggleable，不会误触。
@@ -813,6 +816,7 @@ private fun TodoCard(
         time = todo.cardTimeText(),
         deadline = todo.deadlineCardText(),
         deadlineColor = todo.deadlineColor(),
+        repeat = todo.repeatCardText(),
         // 倒计时：开关开着且仍有截止日期时才有天数可显（截止被清掉时仓库已把开关归一化回 false）
         countdownDays = if (todo.countdown) todo.deadlineDaysLeft() else null,
         tags = todo.tags,
@@ -880,6 +884,14 @@ internal fun Todo.deadlineCardText(): String? {
         deadlineMinute?.let(TimeText::format),
     ).joinToString(" ")
 }
+
+/**
+ * 重复规则文本（NoteCard 重复项）：档位名（无重复/每天/每周/每月/每年/自定义——自定义也
+ * 只显「自定义」，频率与方格细项进编辑浮层看）；无重复语义返回 null——这一位缺席。
+ */
+@Composable
+internal fun Todo.repeatCardText(): String? =
+    repeat.type.takeUnless { it == RepeatType.None }?.labelText()
 
 /**
  * 距截止的剩余天数（无截止返回 null，可为负 = 已逾期）；列表卡倒计时（[countdownDays]）

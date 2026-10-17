@@ -82,9 +82,9 @@ private val CountdownUnitFontSize = 12.sp
 private val CountdownEndSpacing = 16.dp
 
 /**
- * 时间/截止属性项：18dp 图标 + 文本（同色），图标与文字相距 4dp（同 TagChip）。
- * 待办时间固定 secondaryText（ic_clock）；截止时间按剩余天数取紧急色（ic_clock_alarm），
- * 图标与文字颜色始终一致。
+ * 时间/截止/重复属性项：18dp 图标 + 文本（同色），图标与文字相距 4dp（同 TagChip）。
+ * 待办时间固定 secondaryText（ic_clock）；截止时间按剩余天数取紧急色（ic_clock_alarm）；
+ * 重复规则取 primary（ic_arrow_repeat）——图标与文字颜色始终一致。
  */
 @Composable
 internal fun TimeProperty(
@@ -178,11 +178,13 @@ private fun CountdownLabel(
  *   18dp + 文本，图标与文字均 secondaryText；
  * - [deadline] 截止时间（已格式化文本，如 "今天 8:00"、"3/12 6:00"）：ic_clock_alarm
  *   图标 18dp + 文本，图标与文字同取 [deadlineColor]（调用方按剩余天数映射紧急色）；
+ * - [repeat] 重复规则（已格式化文本，如 "每天"、"自定义"）：ic_arrow_repeat 图标 18dp +
+ *   文本，图标与文字均 primary，排在待办时间、截止时间之后、标签之前；
  * - [countdownDays] 左侧倒计时，开关即是否传值（见 [CountdownLabel]）：非 null 时在内容列
  *   左侧画倒计时，≥0 显「N天」、<0 显「逾期N天」，取色直接复用 [deadlineColor]——与右侧
  *   截止时间同色同逻辑；null（用户关闭 / 无截止日期）整个元素不渲染、不占位；
  *   完成态（[completed] = true）同样不渲染、不占位——标记完成后倒计时退场；
- * - 两个时间项缺席时均不占位，属性行整体走 FlowRow，放不下自动换行；
+ * - 各时间项缺席时均不占位，属性行整体走 FlowRow，放不下自动换行；
  * - 行内横向间距：时间项之间、时间项与首个标签之间 12dp，标签之间 8dp（见 [PropertySpacing] /
  *   [TagSpacing]——FlowRow 行距统一取后者，时间项靠末位内距补差）；
  * - 有标签时标题与属性行贴紧一点（见 [TitlePropertySpacing] / [TitlePropertySpacingWithTags]）；
@@ -190,7 +192,7 @@ private fun CountdownLabel(
  * - [completed] 完成态：标题划线置灰（时间/标签/旗帜不变），勾选框选中；
  *   左区倒计时随完成隐藏（即使 [countdownDays] 有值），取消完成后自动恢复；
  * - [overdue] 逾期态：标题标红（theme 的 error，时间/标签/旗帜不变）；完成态优先于逾期态；
- * - 时间、截止与标签全缺席时卡片仍有 60dp 最小高度，不塌成纯文字高度；
+ * - 时间、截止、重复与标签全缺席时卡片仍有 60dp 最小高度，不塌成纯文字高度；
  * - [swipe] 侧滑动作（见 [NoteCardSwipe]）：非 null 时卡片包进侧滑层——左右滑呼出删除/
  *   置顶动作卡，双阈值结算（不足展开阈值回弹复位、越过执行阈值松手即执行、展开态
  *   动作卡可点按、点卡片主体收起）；null（默认）不加层，卡片与原来完全一致。
@@ -202,6 +204,7 @@ fun NoteCard(
     time: String? = null,
     deadline: String? = null,
     deadlineColor: Color = MaterialTheme.colorScheme.primary,
+    repeat: String? = null,
     countdownDays: Long? = null,
     tags: List<String> = emptyList(),
     urgency: TodoUrgency = TodoUrgency.None,
@@ -257,7 +260,7 @@ fun NoteCard(
                     text = title,
                     style = titleStyle,
                 )
-                if (time != null || deadline != null || tags.isNotEmpty()) {
+                if (time != null || deadline != null || repeat != null || tags.isNotEmpty()) {
                     FlowRow(
                         // 行距取标签间距；时间项各带末位内距，把与后续项（含首个标签）的间距补到 PropertySpacing
                         horizontalArrangement = Arrangement.spacedBy(TagSpacing),
@@ -277,6 +280,14 @@ fun NoteCard(
                                 icon = R.drawable.ic_clock_alarm,
                                 text = deadline,
                                 tint = deadlineColor,
+                                modifier = Modifier.padding(end = TimeItemEndPadding),
+                            )
+                        }
+                        if (repeat != null) {
+                            TimeProperty(
+                                icon = R.drawable.ic_arrow_repeat,
+                                text = repeat,
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(end = TimeItemEndPadding),
                             )
                         }
@@ -347,7 +358,7 @@ private fun NoteCardVariantsDarkPreview() {
     }
 }
 
-/** 预览内容：设计稿的全部形态（基础、换行、标签、多标签、红旗、完成、补位、最小高、日期形态与截止各色） */
+/** 预览内容：设计稿的全部形态（基础、换行、标签、多标签、红旗、完成、补位、最小高、日期形态与截止各色、重复） */
 @Composable
 private fun NoteCardShowcase() {
     Column(
@@ -428,6 +439,17 @@ private fun NoteCardShowcase() {
             deadline = "前天 8:00",
             deadlineColor = MaterialTheme.colorScheme.error,
             overdue = true,
+            onCheckedChange = {},
+        )
+        // 重复规则：primary 蓝图标+文字，排在待办时间、截止时间之后、标签之前（自定义只显「自定义」）
+        NoteCard(title = "户口乔迁材料报送", time = "12:30", repeat = "每天", onCheckedChange = {})
+        NoteCard(
+            title = "户口乔迁材料报送",
+            time = "12:30",
+            deadline = "3/12 6:00",
+            deadlineColor = MaterialTheme.colorScheme.primary,
+            repeat = "自定义",
+            tags = listOf("待办标签"),
             onCheckedChange = {},
         )
     }

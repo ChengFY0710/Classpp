@@ -37,6 +37,7 @@ import com.fangyi.classpp.ui.note.cardTimeText
 import com.fangyi.classpp.ui.note.currentMinuteOfDay
 import com.fangyi.classpp.ui.note.deadlineCardText
 import com.fangyi.classpp.ui.note.deadlineColor
+import com.fangyi.classpp.ui.note.repeatCardText
 import com.fangyi.classpp.ui.note.deadlineDaysLeft
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
@@ -192,6 +193,7 @@ fun CourseDetailSheet(
                                 time = todo.cardTimeText(),
                                 deadline = todo.deadlineCardText(),
                                 deadlineColor = todo.deadlineColor(),
+                                repeat = todo.repeatCardText(),
                                 // 倒计时：开关开着且仍有截止日期时才有天数可显（截止被清掉时
                                 // 仓库已把开关归一化回 false）；完成态由 NoteCard 自行隐藏
                                 countdownDays = if (todo.countdown) todo.deadlineDaysLeft() else null,
