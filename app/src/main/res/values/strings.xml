@@ -361,6 +361,8 @@
     <string name="deadline_sheet_repeat_before">开始前</string>
     <string name="deadline_sheet_repeat_days_value">%1$d 天</string>
     <string name="deadline_sheet_repeat_days_title">选择开始前天数</string>
+    <!-- 随重复的截止展示文案（入口行/详情行）：固定日期已被逐期折算取代 -->
+    <string name="deadline_before_repeat_value">下一次重复开始前 %1$d 天</string>
     <string name="repeat_daily">每天</string>
     <string name="repeat_weekly">每周</string>
     <string name="repeat_monthly">每月</string>

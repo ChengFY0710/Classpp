@@ -223,13 +223,17 @@ internal fun NewTodoSheet(
     var groupPickVisible by remember { mutableStateOf(false) }
     var groupPickMounted by remember { mutableStateOf(false) }
 
-    // 截止入口行的展示值：已设 = 「2026/3/12 8:00」（日期无前导零），未设 = 「无」
+    // 截止入口行的展示值：未设 = 「无」；随重复（下一次重复开始前）= 规则文本——各期截止
+    // 由展示层自动折算，固定的存储日期不再是实际截止；否则 = 「2026/3/12 8:00」（无前导零）
     val entryDate = deadlineDate
     val entryMinute = deadlineMinute
-    val deadlineEntryValue = if (entryDate != null && entryMinute != null) {
-        "${entryDate.toDeadlineDateText()} ${TimeText.format(entryMinute)}"
-    } else {
-        stringResource(R.string.deadline_card_none)
+    val deadlineEntryValue = when {
+        entryDate == null || entryMinute == null -> stringResource(R.string.deadline_card_none)
+        deadlineBeforeRepeat -> stringResource(
+            R.string.deadline_before_repeat_value,
+            deadlineBeforeDays,
+        )
+        else -> "${entryDate.toDeadlineDateText()} ${TimeText.format(entryMinute)}"
     }
 
     // 截止设置浮层的重复语义参数：自定义日期 + 有效重复规则才带重复；周期天数 = 实际

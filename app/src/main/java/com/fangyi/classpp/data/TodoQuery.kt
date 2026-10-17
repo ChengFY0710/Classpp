@@ -146,6 +146,11 @@ fun Todo.isOverdue(today: IsoDate, nowMinute: Int): Boolean {
  *   按顺序补完拖欠后窗口才前移；
  * - 无拖欠时：显示未来最近的一期（"下一个"）——完成它自动再前移到再下一期；从已完成
  *   取消它则窗口回退到它（再下一期隐藏）。
+ *
+ * 「下一次重复开始前」的逐期折算：开着 [Todo.deadlineBeforeRepeat] 的重复待办，每条副本的
+ * 截止日期经 [withOccurrenceDeadline] 改写为「下一期开始日期提前 N 天」（时刻沿用）——
+ * 卡片文案、倒计时、逾期判定、排序过滤都读副本的截止，自动跟随；存储的原始截止不动
+ * （仅作时刻与开关的载体）。
  */
 fun List<Todo>.expandRepeatOccurrences(today: IsoDate): List<Todo> = buildList {
     for (todo in this@expandRepeatOccurrences) {
@@ -161,7 +166,7 @@ fun List<Todo>.expandRepeatOccurrences(today: IsoDate): List<Todo> = buildList {
         val completed = todo.completedOccurrences.toSet()
         // 已完成分期：整期进"已完成"（含规则修改后不再是合法分期的历史日期——记录不丢）
         for (date in todo.completedOccurrences) {
-            add(todo.copy(completed = true, dates = listOf(date)))
+            add(todo.copy(completed = true, dates = listOf(date)).withOccurrenceDeadline(anchor, date))
         }
         // 拖欠 = 应完成日期 ≤ 今天（含今天，当天未过完）的未完成分期
         val overdueWindow = todo.repeat.occurrencesBetween(anchor, anchor, today + 1)
@@ -169,13 +174,28 @@ fun List<Todo>.expandRepeatOccurrences(today: IsoDate): List<Todo> = buildList {
         if (overdueWindow.isNotEmpty()) {
             // 有拖欠：只显示拖欠期（按期序），未来的"下一个"等拖欠清完再出现
             for (date in overdueWindow) {
-                add(todo.copy(dates = listOf(date)))
+                add(todo.copy(dates = listOf(date)).withOccurrenceDeadline(anchor, date))
             }
         } else {
             // 无拖欠：显示未来最近的一期
             todo.repeat.nextOccurrenceAfter(anchor, today + 1, skip = completed)?.let { date ->
-                add(todo.copy(dates = listOf(date)))
+                add(todo.copy(dates = listOf(date)).withOccurrenceDeadline(anchor, date))
             }
         }
     }
+}
+
+/**
+ * 「下一次重复开始前」的逐期截止折算：该期的截止日期 = 下一期开始日期提前
+ * [Todo.deadlineBeforeDays] 天（时刻沿用已设的截止时刻）；不早于该期自身日期——多标记的
+ * 每周规则相邻间隔可能小于周期上限，提前天数会越过期日，此时收拢到期日当天。
+ * 非「随重复」开关、无截止日期或展不开下一期（病态规则）时原样返回。
+ * 仅在 [expandRepeatOccurrences] 的显示副本上调用，存储的原始截止不动。
+ */
+private fun Todo.withOccurrenceDeadline(anchor: IsoDate, date: IsoDate): Todo {
+    if (!deadlineBeforeRepeat || deadlineDate == null) return this
+    // fromExclusive 走 occurrencesBetween 的含端点起点：传 date + 1 才是「严格晚于该期」
+    val next = repeat.nextOccurrenceAfter(anchor, date + 1) ?: return this
+    val adjusted = next - deadlineBeforeDays
+    return copy(deadlineDate = if (adjusted.epochDay < date.epochDay) date else adjusted)
 }

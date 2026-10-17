@@ -500,10 +500,17 @@ private fun InfoRowIcon(@DrawableRes res: Int) {
     )
 }
 
-/** 截止值 `3/12 8:00`（本年）/ `2027/3/12 8:00`（非本年）；未设截止返回 null（调用方显「无」） */
+/**
+ * 截止值：随重复（下一次重复开始前）显规则文本「下一次重复开始前 N 天」——各期截止由展示层
+ * 自动折算，存储的固定日期不再是实际截止；否则 `3/12 8:00`（本年）/ `2027/3/12 8:00`
+ * （非本年）；未设截止返回 null（调用方显「无」）。
+ */
 @Composable
 private fun Todo.deadlineText(): String? {
     val date = deadlineDate ?: return null
+    if (deadlineBeforeRepeat) {
+        return stringResource(R.string.deadline_before_repeat_value, deadlineBeforeDays)
+    }
     val minute = deadlineMinute ?: return null
     // 「今天」取共享源（跨零点/跨年自动跳天，见 [LocalToday]），不直接读系统时钟
     return "${date.toAbsoluteDateText(LocalToday)} ${TimeText.format(minute)}"

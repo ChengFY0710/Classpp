@@ -3,6 +3,7 @@ package com.fangyi.classpp.data
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.RepeatType
+import com.fangyi.classpp.data.model.RepeatUnit
 import com.fangyi.classpp.data.model.Todo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -10,7 +11,8 @@ import org.junit.Test
 
 /**
  * 重复待办列表展开（[expandRepeatOccurrences]）的显示窗口测试：拖欠期全显、清完拖欠才显示
- * 未来的"下一个"、完成自动前移、取消完成按"下一期与当前时间的关系"回退或共存。
+ * 未来的"下一个"、完成自动前移、取消完成按"下一期与当前时间的关系"回退或共存；
+ * 以及「下一次重复开始前」的逐期截止折算。
  */
 class TodoRepeatDisplayTest {
 
@@ -107,5 +109,69 @@ class TodoRepeatDisplayTest {
         )
         val shown = listOf(plain, legacy).expandRepeatOccurrences(IsoDate.parse("2026-03-20"))
         assertEquals(listOf(plain, legacy), shown)
+    }
+
+    @Test
+    fun `before-next-repeat deadline folds per occurrence`() {
+        // 每周（锚 3/2 周一）、开始前 2 天：每期截止 = 下一期 − 2 天（3/2→3/7、3/9→3/14、
+        // 3/16→3/21），时刻沿用存储值；存储的原始截止只是载体，不被改动
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-02")),
+            repeat = weekly,
+            deadlineDate = IsoDate.parse("2026-03-05"),
+            deadlineMinute = 600,
+            deadlineBeforeRepeat = true,
+            deadlineBeforeDays = 2,
+        )
+        val shown = expand(todo, "2026-03-20")
+        assertEquals(
+            listOf("2026-03-07", "2026-03-14", "2026-03-21"),
+            shown.map { it.deadlineDate!!.toString() },
+        )
+        assertTrue(shown.all { it.deadlineMinute == 600 })
+        assertEquals(IsoDate.parse("2026-03-05"), todo.deadlineDate)
+    }
+
+    @Test
+    fun `folded deadline never lands before its own occurrence`() {
+        // 每周一+周五（锚 3/2）、开始前 4 天：周五期的下一期是下周一，3/9 − 4 = 3/5 早于
+        // 期日 3/6 → 收拢到期日当天（周一期的 3/6 − 4 = 3/2 恰为期日，原样保留）
+        val mondayFriday = RepeatRule(
+            type = RepeatType.Custom,
+            unit = RepeatUnit.Week,
+            interval = 1,
+            marks = setOf(1, 5),
+        )
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-02")),
+            repeat = mondayFriday,
+            deadlineDate = IsoDate.parse("2026-03-05"),
+            deadlineMinute = 480,
+            deadlineBeforeRepeat = true,
+            deadlineBeforeDays = 4,
+        )
+        val shown = expand(todo, "2026-03-07")
+        assertEquals(
+            listOf("2026-03-02", "2026-03-06"),
+            shown.map { it.deadlineDate!!.toString() },
+        )
+    }
+
+    @Test
+    fun `before-next-repeat off keeps stored deadline on every occurrence`() {
+        // 开关关闭：各期副本原样携带存储的截止（现状行为）
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-02")),
+            repeat = weekly,
+            deadlineDate = IsoDate.parse("2026-03-05"),
+            deadlineMinute = 600,
+        )
+        val shown = expand(todo, "2026-03-20")
+        assertTrue(shown.isNotEmpty())
+        assertTrue(
+            shown.all {
+                it.deadlineDate == IsoDate.parse("2026-03-05") && it.deadlineMinute == 600
+            },
+        )
     }
 }

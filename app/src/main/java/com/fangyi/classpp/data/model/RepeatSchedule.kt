@@ -134,9 +134,10 @@ fun RepeatRule.occurrencesBetween(
 }
 
 /**
- * 锚系列在 [fromExclusive] 之后（不含）的第一个不属于 [skip] 的分期——列表"下一个待办"
- * 的取值（跳过已完成的期：提前勾掉未来某期后窗口自动再前移）。一年一窗向前扫描，上限约
- * 220 窗（间隔 99 年的自定义规则也能扫到）；找不到返回 null。
+ * 锚系列自 [fromExclusive] 起的第一个不属于 [skip] 的分期——列表"下一个待办"的取值
+ * （跳过已完成的期：提前勾掉未来某期后窗口自动再前移）。**起点含端点**：[fromExclusive]
+ * 本身是分期时原样返回，调用方要「严格晚于某日」须传该日 + 1（同本文件内调用惯例）。
+ * 一年一窗向前扫描，上限约 220 窗（间隔 99 年的自定义规则也能扫到）；找不到返回 null。
  */
 fun RepeatRule.nextOccurrenceAfter(
     anchor: IsoDate,
