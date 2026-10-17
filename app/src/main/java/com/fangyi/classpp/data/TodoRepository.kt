@@ -2,10 +2,12 @@ package com.fangyi.classpp.data
 
 import android.content.Context
 import com.fangyi.classpp.data.export.TodoShareCodec
+import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.RepeatUnit
 import com.fangyi.classpp.data.model.markRange
+import com.fangyi.classpp.data.model.occurrencesBetween
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoFile
 import com.fangyi.classpp.data.model.TodoGroup
@@ -99,15 +101,19 @@ class TodoRepository internal constructor(
      * 倒计时不变式：无截止日期时开关回 false（清掉截止日期后不留悬挂的开启态）；
      * 分组引用完整性：group trim、空串与引用不存在的组一律清回 null（未分组）——
      * 由此读侧只需判 `group == null`，导入的带组名待办同此规则落为未分组；
-     * 重复规则消洗见 [normalizeRepeat]。
+     * 重复规则消洗见 [normalizeRepeat]、逾期落账见 [sweepOverdue]。
      * 在 mutex 内调用，读 [fileState] 的分组表安全。
      */
     private fun normalize(todo: Todo): Todo {
         val groupNames = fileState.value.groups.mapTo(mutableSetOf()) { it.name }
+        val (overdueCount, sweptThrough) = sweepOverdue(todo)
         return todo.copy(
             name = todo.name.trim(),
             dates = todo.dates.distinct().sortedBy { it.epochDay },
             repeat = normalizeRepeat(todo.repeat),
+            completedCount = todo.completedCount.coerceAtLeast(0),
+            overdueCount = overdueCount,
+            overdueSweptThrough = sweptThrough,
             tags = todo.tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
             steps = todo.steps.map { it.copy(title = it.title.trim()) },
             completedAtMillis = if (todo.completed) todo.completedAtMillis ?: nowMillis() else null,
@@ -117,18 +123,38 @@ class TodoRepository internal constructor(
     }
 
     /**
-     * 重复规则消洗（导入的外来数据可能越界）：非自定义档位重置为默认值（预设类型不带
-     * 自定义参数的悬挂状态）；间隔夹紧 1..99；方格标记按单位合法域剔除——天的规则无
-     * 方格语义，标记恒清空。
+     * 重复待办的逾期落账（写库路径顺带结算，水位保证每个错过的周期只计一次）：
+     * 未完成的重复待办把水位之后、今天之前错过的应完成日期（[RepeatRule.occurrencesBetween]
+     * 展开）折入逾期计数，水位推进到昨天——当天的应完成日期还不算错过（与 [Todo.isOverdue]
+     * 同为日期粒度）。已完成跳过：完成即视为赶上，完成期间不累计（勾选完成时的拖欠折入与
+     * 水位推进见 [setCompleted]）。返回 (落账后的逾期次数, 结算水位)，非重复待办原样透传。
+     * 在 mutex 内调用（nowMillis 时钟一致）。
      */
-    private fun normalizeRepeat(rule: RepeatRule): RepeatRule {
-        if (rule.type != RepeatType.Custom) return RepeatRule()
-        val range = rule.unit.markRange
-        return rule.copy(
-            interval = rule.interval.coerceIn(1, 99),
-            marks = rule.marks.filterTo(mutableSetOf()) { it in range },
-        )
+    private fun sweepOverdue(todo: Todo): Pair<Int, Long> {
+        val passthrough = todo.overdueCount.coerceAtLeast(0) to todo.overdueSweptThrough
+        if (todo.completed || todo.repeat.type == RepeatType.None) return passthrough
+        val anchor = todo.dates.minByOrNull { it.epochDay } ?: return passthrough
+        val today = IsoDate.today(nowMillis())
+        val swept = todo.overdueSweptThrough
+        val from = if (swept < 0) anchor else IsoDate(swept + 1)
+        val missed = todo.repeat.occurrencesBetween(anchor, from, today).size
+        return (todo.overdueCount.coerceAtLeast(0) + missed) to (today.epochDay - 1)
     }
+
+    /**
+     * 重复规则消洗（导入的外来数据可能越界）：预设档位不带自定义参数——unit/interval/marks
+     * 重置为默认值，**类型原样保留**；自定义档位间隔夹紧 1..99、方格标记按单位合法域剔除
+     * （天的规则无方格语义，标记恒清空）。
+     */
+    private fun normalizeRepeat(rule: RepeatRule): RepeatRule =
+        when (rule.type) {
+            RepeatType.Custom -> rule.copy(
+                interval = rule.interval.coerceIn(1, 99),
+                marks = rule.marks.filterTo(mutableSetOf()) { it in rule.unit.markRange },
+            )
+            // 预设档位（无/每天/每周/每月/每年）：只留类型，自定义参数一律归默认
+            else -> rule.copy(unit = RepeatUnit.Week, interval = 1, marks = emptySet())
+        }
 
     /**
      * 分组整表替换：新建（追加）、置顶/重排（调用方重排后写回）、删除（滤除）共用这一个入口。
@@ -200,11 +226,31 @@ class TodoRepository internal constructor(
         commit(fileState.value.copy(todos = fileState.value.todos.filterNot { it.id in drop }))
     }
 
-    /** 切换完成状态并维护 completedAtMillis；其余字段不动 */
+    /**
+     * 切换完成状态并维护 completedAtMillis 与重复统计；其余字段不动。
+     * 完成次数只在 false→true 时 +1（取消完成不回退——历史事实不抹去）。勾选完成时先把
+     * 水位前拖欠的错过周期折入逾期（拖欠不因补完成而消失），再把结算水位推进到昨天——
+     * 完成期间不累计逾期，取消完成后从这里恢复累计（[sweepOverdue] 跳过完成态）。
+     */
     suspend fun setCompleted(id: String, completed: Boolean): TodoOpResult = mutex.withLock {
         val target = todoOrNull(id) ?: return@withLock TodoOpResult.Err(TodoError.NotFound(id))
-        val updated = normalize(target.copy(completed = completed))
-        commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == id) updated else it }))
+        val prepared = if (completed && !target.completed) {
+            val today = IsoDate.today(nowMillis())
+            val (foldedOverdue, _) = sweepOverdue(target)
+            normalize(
+                target.copy(
+                    completed = true,
+                    completedCount = target.completedCount + 1,
+                    overdueCount = foldedOverdue,
+                    overdueSweptThrough = today.epochDay - 1,
+                ),
+            )
+        } else {
+            normalize(target.copy(completed = completed))
+        }
+        val errors = TodoValidator.validate(prepared)
+        if (errors.isNotEmpty()) return@withLock TodoOpResult.Err(errors.first())
+        commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == id) prepared else it }))
     }
 
     /** 切换置顶状态；其余字段不动（置顶条目归列表「已置顶」组，移动语义不与其余组重复） */

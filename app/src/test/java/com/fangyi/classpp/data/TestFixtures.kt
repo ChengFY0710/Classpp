@@ -4,6 +4,7 @@ import com.fangyi.classpp.data.model.CourseColor
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Parity
+import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoStep
@@ -76,6 +77,7 @@ internal fun testTodo(
     id: String = "",
     name: String = "高数作业",
     dates: List<IsoDate> = emptyList(),
+    repeat: RepeatRule = RepeatRule(),
     timeKind: TodoTimeKind = TodoTimeKind.None,
     startMinute: Int? = null,
     endMinute: Int? = null,
@@ -95,6 +97,7 @@ internal fun testTodo(
     id = id,
     name = name,
     dates = dates,
+    repeat = repeat,
     timeKind = timeKind,
     startMinute = startMinute,
     endMinute = endMinute,
@@ -111,3 +114,19 @@ internal fun testTodo(
     group = group,
     countdown = countdown,
 )
+
+/** FakeNow 毫秒值对应的本地日历日期（正午锚定，避开时区/DST 边界）；测试里推时钟用 */
+internal fun millisOf(date: IsoDate): Long {
+    val utc = java.util.GregorianCalendar(java.util.TimeZone.getTimeZone("UTC")).apply {
+        timeInMillis = date.epochDay * 86_400_000L
+    }
+    return java.util.GregorianCalendar().apply {
+        clear()
+        set(
+            utc.get(java.util.GregorianCalendar.YEAR),
+            utc.get(java.util.GregorianCalendar.MONTH),
+            utc.get(java.util.GregorianCalendar.DAY_OF_MONTH),
+            12, 0, 0,
+        )
+    }.timeInMillis
+}

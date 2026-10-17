@@ -291,6 +291,12 @@
     <string name="todo_detail_time_label">Time</string>
     <!-- Todo details sheet: more info section -->
     <string name="todo_section_more_info">More info</string>
+    <!-- Repeat info group (TodoDetailSheet): repeat type + completion/overdue stats of the virtual occurrence series -->
+    <string name="todo_section_repeat">Repeat</string>
+    <string name="todo_detail_repeat_type">Repeat type</string>
+    <string name="todo_detail_completed_count">Completed</string>
+    <string name="todo_detail_overdue_count">Overdue</string>
+    <string name="todo_count_times">%1$d times</string>
     <string name="todo_detail_group_label">Group</string>
     <string name="todo_created_label">Created</string>
     <string name="todo_completed_label">Completed</string>

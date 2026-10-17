@@ -1,8 +1,10 @@
 package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoUrgency
+import com.fangyi.classpp.data.model.occurrencesBetween
 
 /**
  * 待办检索过滤器：条件之间取"与"，集合条件取"或"（任一命中）。
@@ -129,4 +131,20 @@ fun Todo.isOverdue(today: IsoDate, nowMinute: Int): Boolean {
         deadline.epochDay > today.epochDay -> false
         else -> deadlineMinute != null && deadlineMinute < nowMinute
     }
+}
+
+/**
+ * 重复待办的逾期次数展示口径：落账数（[Todo.overdueCount]，随写库结算进水位）+ 水位之后
+ * 到昨天为止新错过的应完成日期补算——长时间驻留跨天、期间没有写库时详情浮层也能显示最新
+ * 值（纯函数，[today] 由调用方取，UI 用 LocalToday 跨零点自动跳天）。完成态直接返回落账
+ * 数：勾选完成时水位已推进，完成期间不累计。非重复待办 = 0。
+ */
+fun Todo.displayOverdueCount(today: IsoDate): Int {
+    if (repeat.type == RepeatType.None) return 0
+    if (completed) return overdueCount
+    val anchor = dates.minByOrNull { it.epochDay } ?: return overdueCount
+    val swept = overdueSweptThrough
+    val from = if (swept < 0) anchor else IsoDate(swept + 1)
+    val missed = repeat.occurrencesBetween(anchor, from, today).size
+    return overdueCount + missed
 }

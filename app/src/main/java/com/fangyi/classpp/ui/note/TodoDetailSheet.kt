@@ -34,6 +34,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.displayOverdueCount
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoTimeKind
@@ -56,6 +58,7 @@ import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.components.TagChip
 import com.fangyi.classpp.ui.components.flagColor
 import com.fangyi.classpp.ui.components.flagLabel
+import com.fangyi.classpp.ui.components.labelText
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.NoteCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
@@ -270,6 +273,33 @@ internal fun TodoDetailSheet(
                     onValueChange = { note = it },
                     placeholder = stringResource(R.string.detail_note_ph),
                 )
+            }
+            // 重复：仅设置过重复的待办显示（重复待办 = 一组截止日期不同的虚拟独立待办，
+            // 统计按 repeat 规则展开的应完成日期序列计）——类型卡 + 计数卡各一张；
+            // 逾期数走展示口径（落账数 + 水位后到昨天的实时补算，跨天驻留不用等写库刷新）
+            if (todo.repeat.type != RepeatType.None) {
+                CardSection(title = stringResource(R.string.todo_section_repeat)) {
+                    SheetInfoCard(
+                        entries = listOf(
+                            SheetInfoEntry(
+                                label = stringResource(R.string.todo_detail_repeat_type),
+                                value = todo.repeat.type.labelText(),
+                            ),
+                        ),
+                    )
+                    SheetInfoCard(
+                        entries = listOf(
+                            SheetInfoEntry(
+                                label = stringResource(R.string.todo_detail_completed_count),
+                                value = stringResource(R.string.todo_count_times, todo.completedCount),
+                            ),
+                            SheetInfoEntry(
+                                label = stringResource(R.string.todo_detail_overdue_count),
+                                value = stringResource(R.string.todo_count_times, todo.displayOverdueCount(today)),
+                            ),
+                        ),
+                    )
+                }
             }
             // 更多信息：分组 + 只读时刻戳，无图标槽；值色固定 Primary（不传 valueColor 即默认）
             CardSection(title = stringResource(R.string.todo_section_more_info)) {

@@ -1,6 +1,8 @@
 package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatRule
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoSharePayload
@@ -152,6 +154,78 @@ class TodoRepositoryTest {
         r.setCompleted(id, completed = false).assertOk()
         assertEquals(null, r.todos.value.single().completedAtMillis)
         assertEquals(false, r.todos.value.single().completed)
+    }
+
+    @Test
+    fun `setCompleted counts completions without decrement on uncomplete`() = runBlocking {
+        val r = repo()
+        val id = r.addTodo(testTodo(name = "A")).okId()
+
+        r.setCompleted(id, completed = true).assertOk()
+        assertEquals(1, r.todos.value.single().completedCount)
+
+        r.setCompleted(id, completed = false).assertOk()
+        assertEquals(1, r.todos.value.single().completedCount)
+
+        r.setCompleted(id, completed = true).assertOk()
+        assertEquals(2, r.todos.value.single().completedCount)
+    }
+
+    @Test
+    fun `overdue occurrences settle into counter on write`() = runBlocking {
+        // 时钟推到 2026-03-20：锚 3/2（周一）的每周待办已错过 3/2、3/9、3/16 三期
+        now.millis = millisOf(IsoDate.parse("2026-03-20"))
+        val r = repo()
+        val id = r.addTodo(
+            testTodo(
+                name = "周报",
+                dates = listOf(IsoDate.parse("2026-03-02")),
+                repeat = RepeatRule(type = RepeatType.Weekly),
+            ),
+        ).okId()
+
+        val todo = r.todos.value.single { it.id == id }
+        assertEquals(3, todo.overdueCount)
+        assertEquals(3, todo.displayOverdueCount(IsoDate.today(now())))
+
+        // 再写入（改名）不重复计：水位已推进到昨天
+        r.updateTodo(testTodo(id = id, name = "周报v2", dates = listOf(IsoDate.parse("2026-03-02")), repeat = RepeatRule(type = RepeatType.Weekly))).assertOk()
+        assertEquals(3, r.todos.value.single { it.id == id }.overdueCount)
+    }
+
+    @Test
+    fun `completion folds pending overdue then freezes accrual`() = runBlocking {
+        now.millis = millisOf(IsoDate.parse("2026-03-20"))
+        val r = repo()
+        val id = r.addTodo(
+            testTodo(
+                name = "周报",
+                dates = listOf(IsoDate.parse("2026-03-02")),
+                repeat = RepeatRule(type = RepeatType.Weekly),
+            ),
+        ).okId()
+
+        // 时钟推到 3/24：又错过 3/23 一期后勾选完成——拖欠折入（3+1=4），完成次数 +1
+        now.millis = millisOf(IsoDate.parse("2026-03-24"))
+        r.setCompleted(id, completed = true).assertOk()
+        val completed = r.todos.value.single { it.id == id }
+        assertEquals(1, completed.completedCount)
+        assertEquals(4, completed.overdueCount)
+        assertEquals(4, completed.displayOverdueCount(IsoDate.today(now())))
+
+        // 完成态不累计：时钟再往前走、随意写库，逾期数冻结
+        now.millis = millisOf(IsoDate.parse("2026-04-10"))
+        r.setCompleted(id, completed = true).assertOk()
+        assertEquals(4, r.todos.value.single { it.id == id }.overdueCount)
+
+        // 取消完成：从完成当天起恢复累计——水位 = 3/23，< 4/10 的还有 3/30、4/6 两期
+        // → 4 + 2 = 6（完成期间的两期不追溯）
+        now.millis = millisOf(IsoDate.parse("2026-04-10"))
+        r.setCompleted(id, completed = false).assertOk()
+        val uncompleted = r.todos.value.single { it.id == id }
+        assertEquals(1, uncompleted.completedCount)
+        assertEquals(6, uncompleted.overdueCount)
+        assertEquals(6, uncompleted.displayOverdueCount(IsoDate.today(now())))
     }
 
     @Test

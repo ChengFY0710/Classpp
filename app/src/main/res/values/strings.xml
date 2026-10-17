@@ -59,6 +59,12 @@
     <string name="todo_detail_time_label">待办时间</string>
     <!-- 待办详情浮层：更多信息分组 -->
     <string name="todo_section_more_info">更多信息</string>
+    <!-- 重复信息组（TodoDetailSheet）：重复类型 + 虚拟独立待办序列的完成/逾期统计 -->
+    <string name="todo_section_repeat">重复</string>
+    <string name="todo_detail_repeat_type">重复类型</string>
+    <string name="todo_detail_completed_count">完成次数</string>
+    <string name="todo_detail_overdue_count">逾期次数</string>
+    <string name="todo_count_times">%1$d 次</string>
     <string name="todo_detail_group_label">待办分组</string>
     <string name="todo_created_label">创建时间</string>
     <string name="todo_completed_label">完成时间</string>

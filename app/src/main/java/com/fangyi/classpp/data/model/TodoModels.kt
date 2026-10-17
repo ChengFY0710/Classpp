@@ -52,6 +52,15 @@ data class Todo(
     val name: String,
     val dates: List<IsoDate> = emptyList(),
     val repeat: RepeatRule = RepeatRule(),
+    // 重复待办的统计（= 一组截止日期不同的虚拟独立待办，按 repeat 规则展开的应完成日期序列计）：
+    // 字段全部带默认值，旧文件缺字段照常反序列化（与 Todo 字段的前向兼容策略一致）。
+    // 合法性由仓库归一化维护：计数不为负、逾期结算水位单调前进（见 TodoRepository）
+    /** 完成次数：完成标记 false→true 每次 +1，取消完成不回退（历史事实不抹去） */
+    val completedCount: Int = 0,
+    /** 已落账的逾期次数（错过的应完成日期，随写库结算进水位） */
+    val overdueCount: Int = 0,
+    /** 逾期结算水位（epochDay 的最后已结算日；-1 = 尚未结算，从首日锚起算）。展示口径见 TodoQuery.displayOverdueCount */
+    val overdueSweptThrough: Long = -1,
     val timeKind: TodoTimeKind = TodoTimeKind.None,
     val startMinute: Int? = null,
     val endMinute: Int? = null,
