@@ -34,7 +34,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
-import com.fangyi.classpp.data.displayOverdueCount
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
@@ -291,11 +290,11 @@ internal fun TodoDetailSheet(
                         entries = listOf(
                             SheetInfoEntry(
                                 label = stringResource(R.string.todo_detail_completed_count),
-                                value = stringResource(R.string.todo_count_times, todo.completedCount),
+                                value = stringResource(R.string.todo_count_times, todo.completedOccurrences.size),
                             ),
                             SheetInfoEntry(
                                 label = stringResource(R.string.todo_detail_overdue_count),
-                                value = stringResource(R.string.todo_count_times, todo.displayOverdueCount(today)),
+                                value = stringResource(R.string.todo_count_times, todo.overdueOccurrences.size),
                             ),
                         ),
                     )

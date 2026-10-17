@@ -133,6 +133,27 @@ fun RepeatRule.occurrencesBetween(
     return hits.toList()
 }
 
+/**
+ * 锚系列在 [fromExclusive] 之后（不含）的第一个不属于 [skip] 的分期——列表"下一个待办"
+ * 的取值（跳过已完成的期：提前勾掉未来某期后窗口自动再前移）。一年一窗向前扫描，上限约
+ * 220 窗（间隔 99 年的自定义规则也能扫到）；找不到返回 null。
+ */
+fun RepeatRule.nextOccurrenceAfter(
+    anchor: IsoDate,
+    fromExclusive: IsoDate,
+    skip: Set<IsoDate> = emptySet(),
+): IsoDate? {
+    var cursor = fromExclusive
+    var windows = 0
+    while (windows < 220) {
+        val windowEnd = cursor + 366
+        occurrencesBetween(anchor, cursor, windowEnd).firstOrNull { it !in skip }?.let { return it }
+        cursor = windowEnd
+        windows++
+    }
+    return null
+}
+
 // ---------- 日历运算辅助（UTC 日历日期，语义同 IsoDate；项目惯例规避 java.time） ----------
 
 private fun IsoDate.calendar(): GregorianCalendar =

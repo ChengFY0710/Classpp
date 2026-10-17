@@ -101,44 +101,47 @@ class TodoRepository internal constructor(
      * 倒计时不变式：无截止日期时开关回 false（清掉截止日期后不留悬挂的开启态）；
      * 分组引用完整性：group trim、空串与引用不存在的组一律清回 null（未分组）——
      * 由此读侧只需判 `group == null`，导入的带组名待办同此规则落为未分组；
-     * 重复规则消洗见 [normalizeRepeat]、逾期落账见 [sweepOverdue]。
+     * 重复规则消洗见 [normalizeRepeat]、分期集合与迁移见本函数体、逾期归账见 [sweepOverdue]。
      * 在 mutex 内调用，读 [fileState] 的分组表安全。
      */
     private fun normalize(todo: Todo): Todo {
         val groupNames = fileState.value.groups.mapTo(mutableSetOf()) { it.name }
-        val (overdueCount, sweptThrough) = sweepOverdue(todo)
-        return todo.copy(
-            name = todo.name.trim(),
-            dates = todo.dates.distinct().sortedBy { it.epochDay },
-            repeat = normalizeRepeat(todo.repeat),
-            completedCount = todo.completedCount.coerceAtLeast(0),
-            overdueCount = overdueCount,
-            overdueSweptThrough = sweptThrough,
-            tags = todo.tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
-            steps = todo.steps.map { it.copy(title = it.title.trim()) },
-            completedAtMillis = if (todo.completed) todo.completedAtMillis ?: nowMillis() else null,
-            countdown = todo.countdown && todo.deadlineDate != null,
-            group = todo.group?.trim()?.takeIf { it.isNotEmpty() && it in groupNames },
+        // 迁移：重复待办不再整条完成——旧的整条完成态折算为「把既有日期计入分期完成集合」，
+        // completed 复位后由完成不变式清掉 completedAtMillis
+        val migrated = if (todo.repeat.type != RepeatType.None && todo.completed) {
+            todo.copy(completed = false, completedOccurrences = todo.completedOccurrences + todo.dates)
+        } else {
+            todo
+        }
+        return migrated.copy(
+            name = migrated.name.trim(),
+            dates = migrated.dates.distinct().sortedBy { it.epochDay },
+            repeat = normalizeRepeat(migrated.repeat),
+            completedOccurrences = migrated.completedOccurrences.distinct().sortedBy { it.epochDay },
+            overdueOccurrences = sweepOverdue(migrated, migrated.dates.minByOrNull { it.epochDay }),
+            tags = migrated.tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
+            steps = migrated.steps.map { it.copy(title = it.title.trim()) },
+            completedAtMillis = if (migrated.completed) migrated.completedAtMillis ?: nowMillis() else null,
+            countdown = migrated.countdown && migrated.deadlineDate != null,
+            group = migrated.group?.trim()?.takeIf { it.isNotEmpty() && it in groupNames },
         )
     }
 
     /**
-     * 重复待办的逾期落账（写库路径顺带结算，水位保证每个错过的周期只计一次）：
-     * 未完成的重复待办把水位之后、今天之前错过的应完成日期（[RepeatRule.occurrencesBetween]
-     * 展开）折入逾期计数，水位推进到昨天——当天的应完成日期还不算错过（与 [Todo.isOverdue]
-     * 同为日期粒度）。已完成跳过：完成即视为赶上，完成期间不累计（勾选完成时的拖欠折入与
-     * 水位推进见 [setCompleted]）。返回 (落账后的逾期次数, 结算水位)，非重复待办原样透传。
-     * 在 mutex 内调用（nowMillis 时钟一致）。
+     * 重复待办的逾期归账（写库路径顺带结算，按集合去重）：应完成日期在今天之前、既不在完成
+     * 集合也不在逾期集合的分期收进逾期集合——取消完成不会重复计账（该期早已在集合里），
+     * 迟到的补完成也不撤销拖欠（勾选完成时先归账后入集，见 [setOccurrenceCompleted]）。
+     * 当天的应完成日期还不算错过（与 [Todo.isOverdue] 同为日期粒度）；整条完成的待办不参与
+     * 分期统计。在 mutex 内调用（nowMillis 时钟一致）。
      */
-    private fun sweepOverdue(todo: Todo): Pair<Int, Long> {
-        val passthrough = todo.overdueCount.coerceAtLeast(0) to todo.overdueSweptThrough
-        if (todo.completed || todo.repeat.type == RepeatType.None) return passthrough
-        val anchor = todo.dates.minByOrNull { it.epochDay } ?: return passthrough
-        val today = IsoDate.today(nowMillis())
-        val swept = todo.overdueSweptThrough
-        val from = if (swept < 0) anchor else IsoDate(swept + 1)
-        val missed = todo.repeat.occurrencesBetween(anchor, from, today).size
-        return (todo.overdueCount.coerceAtLeast(0) + missed) to (today.epochDay - 1)
+    private fun sweepOverdue(todo: Todo, anchor: IsoDate?): List<IsoDate> {
+        val settled = todo.overdueOccurrences
+        if (todo.completed || todo.repeat.type == RepeatType.None || anchor == null) return settled
+        val known = todo.overdueOccurrences.toSet() + todo.completedOccurrences.toSet()
+        val missed = todo.repeat.occurrencesBetween(anchor, anchor, IsoDate.today(nowMillis()))
+            .filter { it !in known }
+        if (missed.isEmpty()) return settled
+        return (settled + missed).distinct().sortedBy { it.epochDay }
     }
 
     /**
@@ -227,26 +230,38 @@ class TodoRepository internal constructor(
     }
 
     /**
-     * 切换完成状态并维护 completedAtMillis 与重复统计；其余字段不动。
-     * 完成次数只在 false→true 时 +1（取消完成不回退——历史事实不抹去）。勾选完成时先把
-     * 水位前拖欠的错过周期折入逾期（拖欠不因补完成而消失），再把结算水位推进到昨天——
-     * 完成期间不累计逾期，取消完成后从这里恢复累计（[sweepOverdue] 跳过完成态）。
+     * 切换完成状态并维护 completedAtMillis；其余字段不动。
+     * 重复待办的列表勾选不走这里（经 [setOccurrenceCompleted] 逐期结算）；若被误用，
+     * 整条完成态由归一化迁移折算成把既有日期计入分期完成集合。
      */
     suspend fun setCompleted(id: String, completed: Boolean): TodoOpResult = mutex.withLock {
         val target = todoOrNull(id) ?: return@withLock TodoOpResult.Err(TodoError.NotFound(id))
-        val prepared = if (completed && !target.completed) {
-            val today = IsoDate.today(nowMillis())
-            val (foldedOverdue, _) = sweepOverdue(target)
+        val updated = normalize(target.copy(completed = completed))
+        val errors = TodoValidator.validate(updated)
+        if (errors.isNotEmpty()) return@withLock TodoOpResult.Err(errors.first())
+        commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == id) updated else it }))
+    }
+
+    /**
+     * 重复待办的分期勾选（列表里分期卡片的完成/取消完成）：向 [Todo.completedOccurrences]
+     * 增删该期日期。勾选完成先跑一次逾期归账（用旧集合——迟到的补完成仍计拖欠），再入集；
+     * 取消完成直接出集（该期若已逾期早已归账，集合语义天然不会重复计账）。
+     * 待办不存在返回 NotFound；重复增删（无变化）直接 Ok。
+     */
+    suspend fun setOccurrenceCompleted(id: String, date: IsoDate, completed: Boolean): TodoOpResult = mutex.withLock {
+        val target = todoOrNull(id) ?: return@withLock TodoOpResult.Err(TodoError.NotFound(id))
+        val current = target.completedOccurrences
+        val prepared = if (completed) {
+            if (date in current) return@withLock TodoOpResult.Ok
             normalize(
                 target.copy(
-                    completed = true,
-                    completedCount = target.completedCount + 1,
-                    overdueCount = foldedOverdue,
-                    overdueSweptThrough = today.epochDay - 1,
+                    completedOccurrences = (current + date).distinct().sortedBy { it.epochDay },
+                    overdueOccurrences = sweepOverdue(target, target.dates.minByOrNull { it.epochDay }),
                 ),
             )
         } else {
-            normalize(target.copy(completed = completed))
+            if (date !in current) return@withLock TodoOpResult.Ok
+            normalize(target.copy(completedOccurrences = current.filter { it != date }))
         }
         val errors = TodoValidator.validate(prepared)
         if (errors.isNotEmpty()) return@withLock TodoOpResult.Err(errors.first())

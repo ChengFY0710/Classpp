@@ -42,6 +42,7 @@ import com.fangyi.classpp.data.TodoReadResult
 import com.fangyi.classpp.data.TodoOpResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.TodoSort
+import com.fangyi.classpp.data.expandRepeatOccurrences
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TimeText
@@ -210,14 +211,17 @@ fun TodoScreen(
     }
 
     // 按选中分组派生可见列表（0 = 全部、1 = 未分组、2 起 = 用户分组）；特殊分组页在场时
-    // 改按特殊页口径过滤（已归档/最近删除恒空，仅 UI），离页（胶囊保留未选）回常规过滤
+    // 改按特殊页口径过滤（已归档/最近删除恒空，仅 UI），离页（胶囊保留未选）回常规过滤。
+    // 过滤前先做重复待办的分期展开（虚拟独立待办：已完成分期进已完成、过去未完成期全显、
+    // 未来只显最近一期）——先展开后过滤，特殊页的已完成/未完成口径才能看到分期
     val today = LocalToday
     val nowMinute = currentMinuteOfDay()
     val special = if (specialActive) specialSection else null
+    val displayTodos = remember(todos, today) { todos.expandRepeatOccurrences(today) }
     val visibleTodos = if (special != null) {
-        filterTodosBySpecial(todos, special, today, nowMinute)
+        filterTodosBySpecial(displayTodos, special, today, nowMinute)
     } else {
-        filterTodosByGroup(todos, selectedGroupIndex, groups)
+        filterTodosByGroup(displayTodos, selectedGroupIndex, groups)
     }
 
     // 整页（列表 + 顶栏）滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的
@@ -248,8 +252,18 @@ fun TodoScreen(
                     emptyHint = special?.let { stringResource(it.emptyHintRes) },
                     topBarExtraSpace = topBarExtraSpace,
                     swipeCoordinator = swipeCoordinator,
-                    onToggleCompleted = { id, completed ->
-                        scope.launch { repository.setCompleted(id, completed) }
+                    // 勾选路由：分期卡（重复待办的展开副本，dates[0] 即分期日期）走逐期
+                    // 结算，普通待办走整条完成
+                    onToggleCompleted = { todo, completed ->
+                        scope.launch {
+                            if (todo.repeat.type != RepeatType.None) {
+                                todo.dates.firstOrNull()?.let { date ->
+                                    repository.setOccurrenceCompleted(todo.id, date, completed)
+                                }
+                            } else {
+                                repository.setCompleted(todo.id, completed)
+                            }
+                        }
                     },
                     // 侧滑置顶：写回仓库后卡片随分组移动（移入/移出「已置顶」组），Toast 同步反馈
                     onTogglePinned = { id, pinned ->
@@ -708,7 +722,8 @@ private fun TodoList(
     emptyHint: String? = null,
     topBarExtraSpace: Dp,
     swipeCoordinator: SwipeCoordinator,
-    onToggleCompleted: (id: String, completed: Boolean) -> Unit,
+    // 待办整条传入而非只传 id：分期卡（重复待办的展开副本）要靠 dates[0] 路由到逐期结算
+    onToggleCompleted: (todo: Todo, completed: Boolean) -> Unit,
     onTogglePinned: (id: String, pinned: Boolean) -> Unit,
     onDeleteTodo: (id: String) -> Unit,
     onTodoClick: (todo: Todo) -> Unit,
@@ -782,7 +797,7 @@ private fun TodoList(
                             onDelete = { onDeleteTodo(todo.id) },
                             onTogglePinned = { onTogglePinned(todo.id, !todo.pinned) },
                             onClick = { onTodoClick(todo) },
-                        ) { onToggleCompleted(todo.id, it) }
+                        ) { onToggleCompleted(todo, it) }
                     }
                 }
             }
@@ -826,7 +841,9 @@ private fun TodoCard(
         onClick = onClick,
         onCheckedChange = onCheckedChange,
         swipe = NoteCardSwipe(
-            key = todo.id,
+            // 侧滑互斥 key 带分期日期后缀：同一系列的分期卡同屏时互不干扰
+            //（删除/置顶动作作用于整个系列——分期没有独立的删除语义）
+            key = todo.id + "#" + (todo.dates.firstOrNull()?.epochDay?.toString() ?: ""),
             coordinator = swipeCoordinator,
             delete = SwipeAction(
                 iconRes = R.drawable.ic_delete,

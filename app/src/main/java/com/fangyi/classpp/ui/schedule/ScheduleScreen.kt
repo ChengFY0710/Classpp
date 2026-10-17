@@ -81,6 +81,7 @@ import com.fangyi.classpp.data.TodoSort
 import com.fangyi.classpp.data.filterTodos
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.data.model.overlappingCourses
@@ -911,8 +912,17 @@ fun ScheduleScreen(
                         schedule = schedule,
                         todos = courseTodos,
                         onTodoCheckedChange = { id, checked ->
-                            // 同 TodoScreen：异步提交，Err（如已被删）静默忽略
-                            scope.launch { todoRepository?.setCompleted(id, checked) }
+                            // 同 TodoScreen：异步提交，Err（如已被删）静默忽略。
+                            // 重复待办走逐期结算（这里显示的是锚日期期，勾选即勾锚期）
+                            scope.launch {
+                                val target = courseTodos.firstOrNull { it.id == id }
+                                val anchor = target?.dates?.firstOrNull()
+                                if (target != null && anchor != null && target.repeat.type != RepeatType.None) {
+                                    todoRepository?.setOccurrenceCompleted(id, anchor, checked)
+                                } else {
+                                    todoRepository?.setCompleted(id, checked)
+                                }
+                            }
                         },
                         onNoteSave = { note ->
                             val cleaned = note.trim()

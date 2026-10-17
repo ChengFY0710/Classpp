@@ -157,22 +157,33 @@ class TodoRepositoryTest {
     }
 
     @Test
-    fun `setCompleted counts completions without decrement on uncomplete`() = runBlocking {
+    fun `setOccurrenceCompleted maintains per-occurrence set`() = runBlocking {
+        now.millis = millisOf(IsoDate.parse("2026-03-20"))
         val r = repo()
-        val id = r.addTodo(testTodo(name = "A")).okId()
+        val id = r.addTodo(
+            testTodo(
+                name = "周报",
+                dates = listOf(IsoDate.parse("2026-03-02")),
+                repeat = RepeatRule(type = RepeatType.Weekly),
+            ),
+        ).okId()
 
-        r.setCompleted(id, completed = true).assertOk()
-        assertEquals(1, r.todos.value.single().completedCount)
+        r.setOccurrenceCompleted(id, IsoDate.parse("2026-03-09"), true).assertOk()
+        r.setOccurrenceCompleted(id, IsoDate.parse("2026-03-16"), true).assertOk()
+        assertEquals(
+            listOf("2026-03-09", "2026-03-16"),
+            r.todos.value.single { it.id == id }.completedOccurrences.map { it.toString() },
+        )
 
-        r.setCompleted(id, completed = false).assertOk()
-        assertEquals(1, r.todos.value.single().completedCount)
-
-        r.setCompleted(id, completed = true).assertOk()
-        assertEquals(2, r.todos.value.single().completedCount)
+        r.setOccurrenceCompleted(id, IsoDate.parse("2026-03-09"), false).assertOk()
+        assertEquals(
+            listOf("2026-03-16"),
+            r.todos.value.single { it.id == id }.completedOccurrences.map { it.toString() },
+        )
     }
 
     @Test
-    fun `overdue occurrences settle into counter on write`() = runBlocking {
+    fun `overdue occurrences settle into set on write`() = runBlocking {
         // 时钟推到 2026-03-20：锚 3/2（周一）的每周待办已错过 3/2、3/9、3/16 三期
         now.millis = millisOf(IsoDate.parse("2026-03-20"))
         val r = repo()
@@ -184,17 +195,25 @@ class TodoRepositoryTest {
             ),
         ).okId()
 
-        val todo = r.todos.value.single { it.id == id }
-        assertEquals(3, todo.overdueCount)
-        assertEquals(3, todo.displayOverdueCount(IsoDate.today(now())))
+        assertEquals(
+            listOf("2026-03-02", "2026-03-09", "2026-03-16"),
+            r.todos.value.single { it.id == id }.overdueOccurrences.map { it.toString() },
+        )
 
-        // 再写入（改名）不重复计：水位已推进到昨天
-        r.updateTodo(testTodo(id = id, name = "周报v2", dates = listOf(IsoDate.parse("2026-03-02")), repeat = RepeatRule(type = RepeatType.Weekly))).assertOk()
-        assertEquals(3, r.todos.value.single { it.id == id }.overdueCount)
+        // 再写入（改名）不重复计：集合按日期去重
+        r.updateTodo(
+            testTodo(
+                id = id,
+                name = "周报v2",
+                dates = listOf(IsoDate.parse("2026-03-02")),
+                repeat = RepeatRule(type = RepeatType.Weekly),
+            ),
+        ).assertOk()
+        assertEquals(3, r.todos.value.single { it.id == id }.overdueOccurrences.size)
     }
 
     @Test
-    fun `completion folds pending overdue then freezes accrual`() = runBlocking {
+    fun `late completion keeps overdue and uncomplete never double counts`() = runBlocking {
         now.millis = millisOf(IsoDate.parse("2026-03-20"))
         val r = repo()
         val id = r.addTodo(
@@ -204,28 +223,50 @@ class TodoRepositoryTest {
                 repeat = RepeatRule(type = RepeatType.Weekly),
             ),
         ).okId()
+        assertEquals(3, r.todos.value.single { it.id == id }.overdueOccurrences.size)
 
-        // 时钟推到 3/24：又错过 3/23 一期后勾选完成——拖欠折入（3+1=4），完成次数 +1
+        // 3/24 迟到补完成 3/16 这期：拖欠不消失（3/2、3/9、3/16 留在逾期集合），新错的 3/23 入集
         now.millis = millisOf(IsoDate.parse("2026-03-24"))
-        r.setCompleted(id, completed = true).assertOk()
-        val completed = r.todos.value.single { it.id == id }
-        assertEquals(1, completed.completedCount)
-        assertEquals(4, completed.overdueCount)
-        assertEquals(4, completed.displayOverdueCount(IsoDate.today(now())))
+        r.setOccurrenceCompleted(id, IsoDate.parse("2026-03-16"), true).assertOk()
+        assertEquals(
+            listOf("2026-03-02", "2026-03-09", "2026-03-16", "2026-03-23"),
+            r.todos.value.single { it.id == id }.overdueOccurrences.map { it.toString() },
+        )
 
-        // 完成态不累计：时钟再往前走、随意写库，逾期数冻结
-        now.millis = millisOf(IsoDate.parse("2026-04-10"))
-        r.setCompleted(id, completed = true).assertOk()
-        assertEquals(4, r.todos.value.single { it.id == id }.overdueCount)
+        // 3/29 准点前完成 3/30 这期（提前勾掉未来期）
+        now.millis = millisOf(IsoDate.parse("2026-03-29"))
+        r.setOccurrenceCompleted(id, IsoDate.parse("2026-03-30"), true).assertOk()
 
-        // 取消完成：从完成当天起恢复累计——水位 = 3/23，< 4/10 的还有 3/30、4/6 两期
-        // → 4 + 2 = 6（完成期间的两期不追溯）
-        now.millis = millisOf(IsoDate.parse("2026-04-10"))
-        r.setCompleted(id, completed = false).assertOk()
-        val uncompleted = r.todos.value.single { it.id == id }
-        assertEquals(1, uncompleted.completedCount)
-        assertEquals(6, uncompleted.overdueCount)
-        assertEquals(6, uncompleted.displayOverdueCount(IsoDate.today(now())))
+        // 4/1 取消 3/16 的完成：该期早已在逾期集合，不重复计账
+        now.millis = millisOf(IsoDate.parse("2026-04-01"))
+        r.setOccurrenceCompleted(id, IsoDate.parse("2026-03-16"), false).assertOk()
+        assertEquals(
+            listOf("2026-03-02", "2026-03-09", "2026-03-16", "2026-03-23"),
+            r.todos.value.single { it.id == id }.overdueOccurrences.map { it.toString() },
+        )
+        assertEquals(
+            listOf("2026-03-30"),
+            r.todos.value.single { it.id == id }.completedOccurrences.map { it.toString() },
+        )
+    }
+
+    @Test
+    fun `legacy whole-todo completion of repeat migrates to occurrence set`() = runBlocking {
+        now.millis = millisOf(IsoDate.parse("2026-03-20"))
+        val r = repo()
+        val id = r.addTodo(
+            testTodo(
+                name = "周报",
+                dates = listOf(IsoDate.parse("2026-03-02")),
+                repeat = RepeatRule(type = RepeatType.Weekly),
+                completed = true,
+            ),
+        ).okId()
+
+        val todo = r.todos.value.single { it.id == id }
+        assertEquals(false, todo.completed)
+        assertEquals(listOf("2026-03-02"), todo.completedOccurrences.map { it.toString() })
+        assertNull(todo.completedAtMillis)
     }
 
     @Test

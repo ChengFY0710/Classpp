@@ -4,6 +4,7 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoUrgency
+import com.fangyi.classpp.data.model.nextOccurrenceAfter
 import com.fangyi.classpp.data.model.occurrencesBetween
 
 /**
@@ -134,17 +135,47 @@ fun Todo.isOverdue(today: IsoDate, nowMinute: Int): Boolean {
 }
 
 /**
- * 重复待办的逾期次数展示口径：落账数（[Todo.overdueCount]，随写库结算进水位）+ 水位之后
- * 到昨天为止新错过的应完成日期补算——长时间驻留跨天、期间没有写库时详情浮层也能显示最新
- * 值（纯函数，[today] 由调用方取，UI 用 LocalToday 跨零点自动跳天）。完成态直接返回落账
- * 数：勾选完成时水位已推进，完成期间不累计。非重复待办 = 0。
+ * 重复待办的列表展开（显示层的"虚拟独立待办"）：未完成的重复待办替换为一组按规则展开的
+ * 可见分期条目（Todo 副本——同 id、`dates` 换成分期日期、`completed` 标分期完成态），
+ * 其余待办原样透传。分组、排序、勾选路由都在副本上进行（勾选经回调按 repeat 路由回
+ * setOccurrenceCompleted）。
+ *
+ * 可见窗口跟随 [today] 动态变化、按时间顺序推进：
+ * - 已完成分期：每期一条 `completed = true` 副本（列表落"已完成"组）；
+ * - 有拖欠（应完成日期 ≤ 今天的未完成分期）时：只显示这些拖欠期——"下一个"不出现，
+ *   按顺序补完拖欠后窗口才前移；
+ * - 无拖欠时：显示未来最近的一期（"下一个"）——完成它自动再前移到再下一期；从已完成
+ *   取消它则窗口回退到它（再下一期隐藏）。
  */
-fun Todo.displayOverdueCount(today: IsoDate): Int {
-    if (repeat.type == RepeatType.None) return 0
-    if (completed) return overdueCount
-    val anchor = dates.minByOrNull { it.epochDay } ?: return overdueCount
-    val swept = overdueSweptThrough
-    val from = if (swept < 0) anchor else IsoDate(swept + 1)
-    val missed = repeat.occurrencesBetween(anchor, from, today).size
-    return overdueCount + missed
+fun List<Todo>.expandRepeatOccurrences(today: IsoDate): List<Todo> = buildList {
+    for (todo in this@expandRepeatOccurrences) {
+        // 非重复待办、整条完成的重复待办（历史遗留形态）原样透传
+        if (todo.repeat.type == RepeatType.None || todo.completed) {
+            add(todo)
+            continue
+        }
+        val anchor = todo.dates.minByOrNull { it.epochDay } ?: run {
+            add(todo)
+            continue
+        }
+        val completed = todo.completedOccurrences.toSet()
+        // 已完成分期：整期进"已完成"（含规则修改后不再是合法分期的历史日期——记录不丢）
+        for (date in todo.completedOccurrences) {
+            add(todo.copy(completed = true, dates = listOf(date)))
+        }
+        // 拖欠 = 应完成日期 ≤ 今天（含今天，当天未过完）的未完成分期
+        val overdueWindow = todo.repeat.occurrencesBetween(anchor, anchor, today + 1)
+            .filter { it !in completed }
+        if (overdueWindow.isNotEmpty()) {
+            // 有拖欠：只显示拖欠期（按期序），未来的"下一个"等拖欠清完再出现
+            for (date in overdueWindow) {
+                add(todo.copy(dates = listOf(date)))
+            }
+        } else {
+            // 无拖欠：显示未来最近的一期
+            todo.repeat.nextOccurrenceAfter(anchor, today + 1, skip = completed)?.let { date ->
+                add(todo.copy(dates = listOf(date)))
+            }
+        }
+    }
 }

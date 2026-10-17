@@ -52,15 +52,14 @@ data class Todo(
     val name: String,
     val dates: List<IsoDate> = emptyList(),
     val repeat: RepeatRule = RepeatRule(),
-    // 重复待办的统计（= 一组截止日期不同的虚拟独立待办，按 repeat 规则展开的应完成日期序列计）：
-    // 字段全部带默认值，旧文件缺字段照常反序列化（与 Todo 字段的前向兼容策略一致）。
-    // 合法性由仓库归一化维护：计数不为负、逾期结算水位单调前进（见 TodoRepository）
-    /** 完成次数：完成标记 false→true 每次 +1，取消完成不回退（历史事实不抹去） */
-    val completedCount: Int = 0,
-    /** 已落账的逾期次数（错过的应完成日期，随写库结算进水位） */
-    val overdueCount: Int = 0,
-    /** 逾期结算水位（epochDay 的最后已结算日；-1 = 尚未结算，从首日锚起算）。展示口径见 TodoQuery.displayOverdueCount */
-    val overdueSweptThrough: Long = -1,
+    // 重复待办的逐期状态：重复待办 = 一组待办日期不同的虚拟独立待办（按 repeat 规则从锚日期
+    // 展开的应完成日期序列），列表展示与统计都按逐期记录。字段全部带默认值，旧文件缺字段
+    // 照常反序列化；升序去重的集合不变式由仓库归一化维护。**整条 completed 恒 false**——
+    // 重复待办不整体进已完成，旧的整条完成态由仓库归一化折算成分期完成（见 TodoRepository）
+    /** 已完成的分期日期（勾选列表里的分期卡即记当期日期；完成次数 = 集合大小） */
+    val completedOccurrences: List<IsoDate> = emptyList(),
+    /** 已逾期（错过、未在当期完成）的分期日期；拖欠不因事后补完成而消失，逾期次数 = 集合大小 */
+    val overdueOccurrences: List<IsoDate> = emptyList(),
     val timeKind: TodoTimeKind = TodoTimeKind.None,
     val startMinute: Int? = null,
     val endMinute: Int? = null,
