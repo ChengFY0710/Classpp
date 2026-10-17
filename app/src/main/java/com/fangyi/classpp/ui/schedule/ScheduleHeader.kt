@@ -4,7 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -697,7 +697,7 @@ private fun WeekPill(
         // alpha 0→1（Motion.PopupFadeMillis），以顶部中心（≈胶囊所在）为缩放锚点；
         // 收起反向播放，播完才移除 Popup
         if (expandedState.currentState || expandedState.targetState) {
-            val transition = updateTransition(expandedState, label = "WeekPicker")
+            val transition = rememberTransition(expandedState, label = "WeekPicker")
             val scale by transition.animateFloat(
                 transitionSpec = { tween(Motion.PopupScaleMillis, easing = Motion.Standard) },
                 label = "scale",
