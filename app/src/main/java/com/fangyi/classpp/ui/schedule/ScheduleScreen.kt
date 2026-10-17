@@ -131,7 +131,7 @@ private fun weekOfPage(page: Int, firstPageWeek: Int): Int = page + firstPageWee
  * 导航栏在组合顺序上位于本页之上、会画在浮层头顶，故由调用方以「藏」实现「盖」——
  * 浮层入场即上报、退场动画播完（卸载）才解除。
  *
- * [tabTransition]：tab 转场状态只读视图（MainActivity 的 TabPageState）。非空时顶栏与
+ * [tabTransition]：tab 转场状态只读视图（ui.navigation 的 TabPager 状态机）。非空时顶栏与
  * 编辑栏启用「转场冻结层」——转场进行中重放就位帧、绕开 haze 对中间态几何的重采样，
  * 杜绝快速切 tab 时顶栏毛玻璃闪白/闪黑（详见 ui.motion 的 tabTransitionFreeze）。
  *

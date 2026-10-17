@@ -1,6 +1,5 @@
 package com.fangyi.classpp.data
 
-import android.content.Context
 import com.fangyi.classpp.data.export.ShareCodec
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.DEFAULT_SLOTS
@@ -10,7 +9,6 @@ import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.TimeSlotDef
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.newUuid
-import com.fangyi.classpp.data.store.FileScheduleStore
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.ScheduleStore
@@ -38,7 +36,7 @@ data class CourseOccurrence(
  *   （落盘先行，失败即内存零变更，天然无回滚问题）；
  * - 设置变更若波及已有课程：整体拒绝返回 [ScheduleError.CoursesOutOfRange]，绝不静默删课。
  *
- * 构造：测试用 [create] 注入 fake store / FakeClock；应用内用 [get] 进程级单例。
+ * 构造：测试用 [create] 注入 fake store / FakeClock；应用内经 [AppContainer] 装配（进程级单例）。
  */
 class ScheduleRepository internal constructor(
     private val store: ScheduleStore,
@@ -445,16 +443,5 @@ class ScheduleRepository internal constructor(
             store: ScheduleStore,
             clock: Clock = Clock.system,
         ): ScheduleRepository = ScheduleRepository(store, clock).also { it.bootstrap() }
-
-        private val instanceMutex = Mutex()
-        private var instance: ScheduleRepository? = null
-
-        /** 应用内进程级单例（首次调用完成磁盘载入） */
-        suspend fun get(context: Context): ScheduleRepository {
-            instance?.let { return it }
-            return instanceMutex.withLock {
-                instance ?: create(FileScheduleStore(context.filesDir)).also { instance = it }
-            }
-        }
     }
 }

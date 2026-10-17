@@ -1,9 +1,7 @@
 package com.fangyi.classpp.data
 
-import android.content.Context
 import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.TagFile
-import com.fangyi.classpp.data.store.FileTagStore
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.StoreResult
@@ -27,7 +25,7 @@ import kotlinx.coroutines.withContext
  * 这里——它由课表数据派生（courses.distinctBy { it.name }），不入库；标签库只管
  * 用户在标签选择卡里自建的标签。
  *
- * 构造：测试用 [create] 注入 fake store；应用内用 [get] 进程级单例。
+ * 构造：测试用 [create] 注入 fake store；应用内经 [AppContainer] 装配（进程级单例）。
  */
 class TagRepository internal constructor(
     private val store: TagStore,
@@ -114,16 +112,5 @@ class TagRepository internal constructor(
     companion object {
         /** 构建并从磁盘载入（阻塞 I/O 经 Dispatchers.IO） */
         suspend fun create(store: TagStore): TagRepository = TagRepository(store).also { it.bootstrap() }
-
-        private val instanceMutex = Mutex()
-        private var instance: TagRepository? = null
-
-        /** 应用内进程级单例（首次调用完成磁盘载入） */
-        suspend fun get(context: Context): TagRepository {
-            instance?.let { return it }
-            return instanceMutex.withLock {
-                instance ?: create(FileTagStore(context.filesDir)).also { instance = it }
-            }
-        }
     }
 }

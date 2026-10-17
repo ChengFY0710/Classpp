@@ -106,7 +106,7 @@ private val SectionSpacing = 20.dp
  * （[TodoDetailSheet]，挂载接线同课表页课程详情）。任一浮层在场时经
  * [onOverlayOverNavBarChange] 请求藏底部导航栏（同课表页全屏浮层）。
  *
- * [tabTransition]：tab 转场状态只读视图（MainActivity 的 TabPageState），透传给
+ * [tabTransition]：tab 转场状态只读视图（ui.navigation 的 TabPager 状态机），透传给
  * [TodoTopBar] 启用转场冻结层——与课表页顶栏同一机制，杜绝快速切 tab 时顶栏
  * 毛玻璃闪缺（详见 tabTransitionFreeze）。
  */

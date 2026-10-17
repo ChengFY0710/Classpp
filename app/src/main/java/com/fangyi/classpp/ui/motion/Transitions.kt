@@ -147,7 +147,8 @@ fun PageOverlayTransition(
 }
 
 /**
- * tab 转场状态的最小只读视图：持有与 [MainActivity.TabPageState] 同源的 x/scale 动画值，
+ * tab 转场状态的最小只读视图：持有与 ui.navigation 的 TabPageState（TabPager 状态机）
+ * 同源的 x/scale 动画值，
  * 供页内需要在转场期间冻结 haze 模糊的组件（顶栏/编辑栏）在**绘制期**读取——Animatable
  * 值是快照状态，绘制块里读取只逐帧失效绘制、不触发重组。判定规则：x ≠ 0（滑入途中或
  * 屏外停靠）或 scale ≠ 1（缩小淡出/唤回途中）即转场进行中。
@@ -166,7 +167,7 @@ class TabTransitionState(
  * 模糊输出），不再执行内部绘制链；就位时照常绘制，并把本帧录进 [layer] 供下次转场重放。
  *
  * 挂在「承载 Haze 模糊、且位于 tab 页内」的顶栏组件最外层（兜底色与 hazeEffect 之外），
- * 页内 x/scale 转场状态由调用方（MainActivity 的 TabPageState.transition）透传。
+ * 页内 x/scale 转场状态由调用方（TabPager 装配层经 TabPagerState.transitionFor）透传。
  * 课表页顶栏/编辑栏与待办页顶栏共用本机制。
  *
  * 为什么需要：tab 转场用祖先 graphicsLayer 平移/缩放整页，Compose 会在动画的每一帧向
@@ -175,8 +176,9 @@ class TabTransitionState(
  * 重采样按窗口坐标取几何、画布却已被祖先变换叠加，滑入起点/屏外停靠处效果层与屏幕
  * 交集为空、尺寸归零，模糊整层不画，顶栏只剩兜底色，即快速切 tab 时闪出的纯色帧。
  * 转场期间页面内容本就不变，重放就位帧与实时绘制逐像素一致，且转场期零模糊重采样开销。
- * 停靠页（x = ±1.2 的屏外停靠位）只重放、不重录，其冻结帧由 MainActivity 的
- * 「回前台回位重录」维持有效（进多任务时系统会丢弃不可见窗口的 RenderNode 显示列表）。
+ * 停靠页（x = ±1.2 的屏外停靠位）只重放、不重录，其冻结帧由 TabPagerState.reRecordParkedTabs
+ * （MainActivity 的回前台/切主题时机触发）维持有效（进多任务时系统会丢弃不可见窗口的
+ * RenderNode 显示列表）。
  */
 fun Modifier.tabTransitionFreeze(
     layer: GraphicsLayer,
@@ -211,7 +213,7 @@ private const val PageOverlayParallaxFraction = 0.1f
 
 /**
  * 机身圆角半径：API 31+ 读系统真实 R 角、四角取最大，低版本退化 24dp 近似。
- * 两处共用：覆盖层转场的左缘圆角（本文件）与 tab 淡出页的整卡圆角（MainActivity）。
+ * 两处共用：覆盖层转场的左缘圆角（本文件）与 tab 淡出页的整卡圆角（TabPager）。
  */
 @Composable
 fun rememberDeviceCornerRadius(): Dp {

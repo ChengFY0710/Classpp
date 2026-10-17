@@ -7,8 +7,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationManagerCompat
 import com.fangyi.classpp.R
-import com.fangyi.classpp.data.ScheduleRepository
-import com.fangyi.classpp.data.TodoRepository
+import com.fangyi.classpp.data.AppContainer
 import com.fangyi.classpp.ui.settings.NotificationPreferences
 import com.fangyi.classpp.ui.settings.NotificationSettings
 
@@ -40,8 +39,9 @@ object NotificationScheduler {
     suspend fun reschedule(context: Context) {
         val appContext = context.applicationContext
         val settings: NotificationSettings = NotificationPreferences.load(appContext)
-        val schedule = ScheduleRepository.get(appContext).activeSchedule.value
-        val todos = TodoRepository.get(appContext).todos.value
+        val container = AppContainer.get(appContext)
+        val schedule = container.scheduleRepository.activeSchedule.value
+        val todos = container.todoRepository.todos.value
         val planned = NotificationPlanner.plan(
             schedule = schedule,
             todos = todos,

@@ -1,6 +1,5 @@
 package com.fangyi.classpp.data
 
-import android.content.Context
 import com.fangyi.classpp.data.export.TodoShareCodec
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatRule
@@ -13,7 +12,6 @@ import com.fangyi.classpp.data.model.TodoFile
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoStep
 import com.fangyi.classpp.data.model.newUuid
-import com.fangyi.classpp.data.store.FileTodoStore
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.StoreResult
@@ -35,7 +33,7 @@ import kotlinx.coroutines.withContext
  * - 写：Mutex 串行化，流程 = 归一化 → 校验 → `store.save` → 成功才发布到 StateFlow
  *   （落盘先行，失败即内存零变更，天然无回滚问题）。
  *
- * 构造：测试用 [create] 注入 fake store / 时钟；应用内用 [get] 进程级单例。
+ * 构造：测试用 [create] 注入 fake store / 时钟；应用内经 [AppContainer] 装配（进程级单例）。
  */
 class TodoRepository internal constructor(
     private val store: TodoStore,
@@ -362,16 +360,5 @@ class TodoRepository internal constructor(
             store: TodoStore,
             nowMillis: () -> Long = System::currentTimeMillis,
         ): TodoRepository = TodoRepository(store, nowMillis).also { it.bootstrap() }
-
-        private val instanceMutex = Mutex()
-        private var instance: TodoRepository? = null
-
-        /** 应用内进程级单例（首次调用完成磁盘载入） */
-        suspend fun get(context: Context): TodoRepository {
-            instance?.let { return it }
-            return instanceMutex.withLock {
-                instance ?: create(FileTodoStore(context.filesDir)).also { instance = it }
-            }
-        }
     }
 }
