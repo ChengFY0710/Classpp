@@ -99,6 +99,8 @@ class TodoRepository internal constructor(
      * 写入前归一化：名称/标签/步骤标题 trim、标签去空、日期 distinct + 排序；
      * 完成不变式：completed=true 时 completedAtMillis 缺省补当前，false 时清空；
      * 倒计时不变式：无截止日期时开关回 false（清掉截止日期后不留悬挂的开启态）；
+     * 截止随重复不变式：无截止日期或无重复规则时开关回 false（同理不留悬挂开启态），
+     * 提前天数非负夹紧；
      * 分组引用完整性：group trim、空串与引用不存在的组一律清回 null（未分组）——
      * 由此读侧只需判 `group == null`，导入的带组名待办同此规则落为未分组；
      * 重复规则消洗见 [normalizeRepeat]、分期集合与迁移见本函数体、逾期归账见 [sweepOverdue]。
@@ -123,6 +125,9 @@ class TodoRepository internal constructor(
             steps = migrated.steps.map { it.copy(title = it.title.trim()) },
             completedAtMillis = if (migrated.completed) migrated.completedAtMillis ?: nowMillis() else null,
             countdown = migrated.countdown && migrated.deadlineDate != null,
+            deadlineBeforeRepeat = migrated.deadlineBeforeRepeat &&
+                migrated.deadlineDate != null && migrated.repeat.type != RepeatType.None,
+            deadlineBeforeDays = migrated.deadlineBeforeDays.coerceAtLeast(0),
             group = migrated.group?.trim()?.takeIf { it.isNotEmpty() && it in groupNames },
         )
     }

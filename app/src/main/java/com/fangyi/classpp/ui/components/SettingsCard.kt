@@ -64,12 +64,17 @@ sealed interface SettingsCardItem {
         val onClick: () -> Unit,
     ) : SettingsCardItem
 
-    /** 开关行：整行可点切换（按压反馈铺满整行），尾部 [ClassppSwitch] 只作视觉件 */
+    /**
+     * 开关行：整行可点切换（按压反馈铺满整行），尾部 [ClassppSwitch] 只作视觉件。
+     * [enabled] = false 时整行不可点、按压反馈一并消失（开关保持当前态，未激活轨道
+     * 本身即置灰观感）——供「条件不满足、开关锁定」的场景（如无重复待办的截止随重复）。
+     */
     data class Toggle(
         override val label: String,
         override val description: String? = null,
         val checked: Boolean,
         val onCheckedChange: (Boolean) -> Unit,
+        val enabled: Boolean = true,
     ) : SettingsCardItem
 
     /**
@@ -243,7 +248,7 @@ private fun SettingsCardRow(item: SettingsCardItem, hazeState: HazeState?) {
             shade = rowShade,
             onClick = item.onClick,
         )
-        is SettingsCardItem.Toggle -> Modifier
+        is SettingsCardItem.Toggle -> if (item.enabled) Modifier
             // 按压反馈在点区之前：整行放大 + 明暗，行无自有 clip（溢出由卡片圆角壳兜住）
             .pressFeedback(togglePress, RectangleShape, shade = rowShade)
             .toggleable(
@@ -253,6 +258,7 @@ private fun SettingsCardRow(item: SettingsCardItem, hazeState: HazeState?) {
                 role = Role.Switch,
                 onValueChange = item.onCheckedChange,
             )
+        else Modifier
         is SettingsCardItem.Select -> Modifier.pressClickable(RectangleShape, shade = rowShade) {
             // 打开菜单前先收起键盘与焦点：键盘若开着，菜单会被盖住、焦点还留在原输入框上
             focusManager.clearFocus()

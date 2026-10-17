@@ -231,7 +231,7 @@ internal fun TodoDetailSheet(
                 }
             }
             // 四行常显：截止日期与紧急程度是结构化字段（未设也占位），时间/地点同理——
-            // 值一律右对齐走 fieldValue，空值占位灰字「无」（同 DeadlineCard 的未设态文案）；
+            // 值一律右对齐走 fieldValue，空值占位灰字「无」（同截止入口行的未设态文案）；
             // 行首图标同 NoteCard 属性行（闹钟/旗/时钟/定位针），尺寸与着色见 [InfoRowIcon]
             val noneText = stringResource(R.string.deadline_card_none)
             // 「今天」在组合期取一次：下面 [listOfNotNull] 的 let 不是组合上下文，值先落地

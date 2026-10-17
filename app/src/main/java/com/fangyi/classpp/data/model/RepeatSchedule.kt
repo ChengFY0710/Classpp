@@ -154,6 +154,37 @@ fun RepeatRule.nextOccurrenceAfter(
     return null
 }
 
+/**
+ * 重复周期天数：锚系列相邻两期的实际相差天数（取锚日期起的前两期相减，随日历浮动——
+ * 如每月 12 号，1→2 月与 2→3 月的周期不同）。某一步展开不到期时回退按单位换算
+ * （天 = interval、周 = 7×interval、月 = 30×interval、年 = 365×interval），结果至少为 1。
+ * 「下一次重复开始前 N 天」的选取上限取值（DeadlineSettingsSheet）。
+ */
+fun RepeatRule.cycleDays(anchor: IsoDate): Int {
+    if (type == RepeatType.None) return 1
+    val first = nextOccurrenceAfter(anchor, anchor - 1)
+    val fromSchedule = first?.let { first ->
+        nextOccurrenceAfter(anchor, first)?.let { (it.epochDay - first.epochDay).toInt() }
+    }
+    if (fromSchedule != null) return fromSchedule.coerceAtLeast(1)
+    // 回退：预设档位映射到固定单位（同 occurrencesBetween 的展开口径），自定义档位读自身字段
+    val unit = when (type) {
+        RepeatType.Daily -> RepeatUnit.Day
+        RepeatType.Weekly -> RepeatUnit.Week
+        RepeatType.Monthly -> RepeatUnit.Month
+        RepeatType.Yearly -> RepeatUnit.Year
+        RepeatType.Custom -> unit
+        RepeatType.None -> return 1
+    }
+    val step = if (type == RepeatType.Custom) interval.coerceAtLeast(1) else 1
+    return when (unit) {
+        RepeatUnit.Day -> step
+        RepeatUnit.Week -> 7 * step
+        RepeatUnit.Month -> 30 * step
+        RepeatUnit.Year -> 365 * step
+    }.coerceAtLeast(1)
+}
+
 // ---------- 日历运算辅助（UTC 日历日期，语义同 IsoDate；项目惯例规避 java.time） ----------
 
 private fun IsoDate.calendar(): GregorianCalendar =

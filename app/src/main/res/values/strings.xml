@@ -346,11 +346,21 @@
     <string name="date_card_custom">自定义</string>
     <string name="date_card_custom_date">自定义日期</string>
     <string name="date_card_repeat">重复</string>
-    <!-- 截止日期卡（DeadlineCard）：单行直入选择器 -->
+    <!-- 截止日期（入口行 + DeadlineSettingsSheet）：label 兼作浮层标题与入口行文案 -->
     <string name="deadline_card_label">截止日期</string>
     <string name="deadline_card_none">无</string>
     <string name="deadline_card_time_title">截止时刻</string>
     <string name="deadline_card_clear">清除</string>
+    <!-- 截止日期设置浮层（DeadlineSettingsSheet） -->
+    <string name="deadline_sheet_enable">设置截止日期</string>
+    <string name="deadline_sheet_enable_desc">重复待办自定义截止日期只生效一次</string>
+    <string name="deadline_sheet_time">时刻</string>
+    <string name="deadline_sheet_repeat_section">重复待办截止日期</string>
+    <string name="deadline_sheet_repeat_toggle">下一次重复开始前</string>
+    <string name="deadline_sheet_repeat_toggle_desc">开启后，重复待办截止日期将自动调整为下一次重复开始前，仅设置重复后生效</string>
+    <string name="deadline_sheet_repeat_before">开始前</string>
+    <string name="deadline_sheet_repeat_days_value">%1$d 天</string>
+    <string name="deadline_sheet_repeat_days_title">选择开始前天数</string>
     <string name="repeat_daily">每天</string>
     <string name="repeat_weekly">每周</string>
     <string name="repeat_monthly">每月</string>

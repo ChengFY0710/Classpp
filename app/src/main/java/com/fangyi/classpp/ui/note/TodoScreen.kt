@@ -73,7 +73,7 @@ import java.util.GregorianCalendar
 import java.util.Locale
 import java.util.TimeZone
 
-/** epochDay → millis 的换算步长（同 IsoDate/DeadlineCard 的私有常量） */
+/** epochDay → millis 的换算步长（同 IsoDate 的私有常量） */
 private const val MILLIS_PER_DAY = 86_400_000L
 
 /**

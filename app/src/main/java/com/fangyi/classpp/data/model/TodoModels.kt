@@ -35,6 +35,10 @@ data class TodoStep(
  * @param endMinute 时段结束，须大于 [startMinute]
  * @param deadlineDate 截止日期（只此一天）与 [deadlineMinute] 成对出现或同时为空
  * @param deadlineMinute 截止时刻（当天分钟数）
+ * @param deadlineBeforeRepeat 重复待办截止随重复：true = 截止日期自动调整为下一次重复开始前。
+ *   不变式：仅在已有 [deadlineDate] 且重复规则有效时有意义，由仓库在归一化时维护
+ * @param deadlineBeforeDays 「下一次重复开始前」提前的天数（开始前 N 天，0 = 当期开始当天）；
+ *   选取上限为重复周期天数（[RepeatRule.cycleDays]）
  * @param tags 纯字符串标签；与课表课程标签的联动后续再做
  * @param group 所属分组名（[TodoGroup] 的身份键），null = 未分组。引用完整性由仓库在
  *   归一化时维护：trim、空串与引用不存在的组一律清回 null
@@ -65,6 +69,10 @@ data class Todo(
     val endMinute: Int? = null,
     val deadlineDate: IsoDate? = null,
     val deadlineMinute: Int? = null,
+    /** 截止随重复：下一次重复开始前（仅重复待办有意义，归一化见 TodoRepository） */
+    val deadlineBeforeRepeat: Boolean = false,
+    /** 「开始前」提前的天数（0 = 当期开始当天；上限为重复周期天数） */
+    val deadlineBeforeDays: Int = 0,
     val location: String = "",
     val tags: List<String> = emptyList(),
     val urgency: TodoUrgency = TodoUrgency.None,

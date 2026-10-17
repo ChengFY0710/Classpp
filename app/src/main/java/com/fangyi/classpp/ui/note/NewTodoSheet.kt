@@ -32,12 +32,15 @@ import com.fangyi.classpp.data.TagOpResult
 import com.fangyi.classpp.data.TagRepository
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatRule
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
+import com.fangyi.classpp.data.model.TimeText
+import com.fangyi.classpp.data.model.cycleDays
 import com.fangyi.classpp.ui.components.BottomDateSelectCard
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.BottomTimeSelectCard
@@ -45,7 +48,6 @@ import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
 import com.fangyi.classpp.ui.components.DateSelection
 import com.fangyi.classpp.ui.components.DateSelectionCard
-import com.fangyi.classpp.ui.components.DeadlineCard
 import com.fangyi.classpp.ui.components.DialogPillButton
 import com.fangyi.classpp.ui.components.FadeOverlayDialog
 import com.fangyi.classpp.ui.components.GroupCard
@@ -104,6 +106,9 @@ private const val INITIAL_END_MINUTE = 1080
  *
  * 日期卡的「重复」进二级浮层设置页（[RepeatSettingsSheet]，分层同选择分组浮层）：确认后
  * 规则随日期卡回写，组装 [Todo] 时一并落库（仅自定义日期带重复，其余档位存默认值）。
+ * 「截止日期」入口行同理进二级设置浮层（[DeadlineSettingsSheet]）：开关 + 日期/时刻 +
+ * 重复待办的「下一次重复开始前」（无重复日期时该开关禁用锁定），确认才回写表单、随浮层
+ * 确认一并落库（开关关 = 截止 null 对）。
  */
 @Composable
 internal fun NewTodoSheet(
@@ -129,6 +134,8 @@ internal fun NewTodoSheet(
     var nameBlank by remember { mutableStateOf(false) }
     var deadlineDate by remember { mutableStateOf(existing?.deadlineDate) }
     var deadlineMinute by remember { mutableStateOf(existing?.deadlineMinute) }
+    var deadlineBeforeRepeat by remember { mutableStateOf(existing?.deadlineBeforeRepeat ?: false) }
+    var deadlineBeforeDays by remember { mutableIntStateOf(existing?.deadlineBeforeDays ?: 0) }
     var urgency by remember { mutableStateOf(existing?.urgency ?: TodoUrgency.None) }
     var dateSelection by remember { mutableStateOf(existing.toDateSelection()) }
     var dateExpanded by remember { mutableStateOf(false) }
@@ -176,35 +183,16 @@ internal fun NewTodoSheet(
     var deleteMounted by remember { mutableStateOf(false) }
     if (deleteRequested) deleteMounted = true
 
-    // 表单内容的 haze 采样源：OverlaySheet 顶栏磨砂用，叠在其上的四枚滚轮弹窗
-    // （截止日期/自定义日期/截止时刻/时段时刻）也拿它做卡片磨砂背景模糊——同一状态同源采样
+    // 表单内容的 haze 采样源：OverlaySheet 顶栏磨砂用，叠在其上的两枚滚轮弹窗
+    // （自定义日期/时段时刻）也拿它做卡片磨砂背景模糊——同一状态同源采样
+    // （二级浮层——分组/重复/截止设置——自建采样源，见各自声明处）
     val sheetHazeState = rememberHazeState()
 
-    // 截止时刻滚轮弹窗（BottomTimeSelectCard）：期望态 + 挂载态两段式（同删除确认框），
-    // 声明在 OverlaySheet 之前——弹窗在场时经 covered 让本浮层缩小后退（分层动效）
-    var deadlineTimeVisible by remember { mutableStateOf(false) }
-    var deadlineTimeMounted by remember { mutableStateOf(false) }
-    var deadlineTimeInitial by remember { mutableIntStateOf(0) }
-    var deadlineTimeCallback by remember { mutableStateOf<((Int) -> Unit)?>(null) }
-
-    // 截止日期滚轮弹窗（BottomDateSelectCard）：确认把日期交回 DeadlineCard 的链式
-    // 流程再弹时刻轮；「清除」把截止回写为 null 对（模型约束成对出现/同时为空）并关闭。
-    // 「清除」胶囊的在场与否取挂载时的快照（deadlineClearAvailable，见下）：它跟着截止
-    // 状态派生的话，点按清空后胶囊会在出场滑出中途凭空消失
-    var deadlineDateVisible by remember { mutableStateOf(false) }
-    var deadlineDateMounted by remember { mutableStateOf(false) }
-    var deadlineDateInitial by remember { mutableStateOf(IsoDate.today()) }
-    var deadlineDateCallback by remember { mutableStateOf<((IsoDate) -> Unit)?>(null) }
-    var deadlineClearAvailable by remember { mutableStateOf(false) }
-
-    // 「清除」回调：回写 null 对（模型约束截止日期与时刻成对出现/同时为空）并停掉日期步的
-    // 待确认回调——清除即终态，不会再接着弹时刻轮；请求关闭后由弹卡两段式播完出场
-    val clearDeadline: () -> Unit = {
-        deadlineDateVisible = false
-        deadlineDateCallback = null
-        deadlineDate = null
-        deadlineMinute = null
-    }
+    // 截止日期设置浮层（入口行上报）：草稿在浮层内自持，确认才回写表单的截止四项
+    // （开关关 = 截止 null 对 + 随重复开关复位）。两段式挂载，声明在 OverlaySheet 之前
+    // ——浮层在场时经 covered 让本浮层缩小后退（同重复浮层）
+    var deadlineSheetVisible by remember { mutableStateOf(false) }
+    var deadlineSheetMounted by remember { mutableStateOf(false) }
 
     // 待办「自定义日期」滚轮弹窗（DateSelectionCard 的自定义行上报）
     var customDateVisible by remember { mutableStateOf(false) }
@@ -234,6 +222,22 @@ internal fun NewTodoSheet(
     var selectedGroupName by remember { mutableStateOf(existing?.group) }
     var groupPickVisible by remember { mutableStateOf(false) }
     var groupPickMounted by remember { mutableStateOf(false) }
+
+    // 截止入口行的展示值：已设 = 「2026/3/12 8:00」（日期无前导零），未设 = 「无」
+    val entryDate = deadlineDate
+    val entryMinute = deadlineMinute
+    val deadlineEntryValue = if (entryDate != null && entryMinute != null) {
+        "${entryDate.toDeadlineDateText()} ${TimeText.format(entryMinute)}"
+    } else {
+        stringResource(R.string.deadline_card_none)
+    }
+
+    // 截止设置浮层的重复语义参数：自定义日期 + 有效重复规则才带重复；周期天数 = 实际
+    // 相邻两期的间隔天数（挂载时取值，浮层内不随表单后续改动重算；无重复传 1 不消费）
+    val repeatSelection = dateSelection as? DateSelection.Custom
+    val hasRepeat = repeatSelection != null && repeatSelection.repeat.type != RepeatType.None
+    val repeatCycleDays =
+        if (repeatSelection != null) repeatSelection.repeat.cycleDays(repeatSelection.date) else 1
 
     OverlaySheet(
         title = stringResource(if (existing == null) R.string.todo_new_title else R.string.todo_edit_title),
@@ -265,6 +269,8 @@ internal fun NewTodoSheet(
                             endMinute = if (timeKind == TodoTimeKind.Period) endMinute else null,
                             deadlineDate = deadlineDate,
                             deadlineMinute = deadlineMinute,
+                            deadlineBeforeRepeat = deadlineDate != null && deadlineBeforeRepeat,
+                            deadlineBeforeDays = deadlineBeforeDays,
                             location = location.trim(),
                             tags = selectedTagNames.toList(),
                             urgency = urgency,
@@ -295,8 +301,8 @@ internal fun NewTodoSheet(
         },
         onDismiss = onDismiss,
         visible = visible,
-        covered = deleteRequested || deadlineDateVisible || customDateVisible || rangeTimeVisible ||
-            deadlineTimeVisible || groupPickVisible || repeatVisible,
+        covered = deleteRequested || deadlineSheetVisible || customDateVisible || rangeTimeVisible ||
+            groupPickVisible || repeatVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
         // 共享采样源：叠在本浮层上的滚轮弹窗拿它做卡片磨砂背景模糊（见 sheetHazeState 声明处）
@@ -329,7 +335,7 @@ internal fun NewTodoSheet(
                             // 右侧当前分组：未选 = 默认「未分组」（选中值随确认落库，见类 KDoc）
                             value = selectedGroupName ?: stringResource(R.string.todo_group_ungrouped),
                             onClick = {
-                                // 同卡片行进弹层前收键盘（DeadlineCard 同款），再挂载选择分组浮层
+                                // 同卡片行进弹层前收键盘（截止日期入口同款），再挂载选择分组浮层
                                 focusManager.clearFocus()
                                 keyboard?.hide()
                                 groupPickMounted = true
@@ -341,30 +347,22 @@ internal fun NewTodoSheet(
             }
 
             CardSection(title = stringResource(R.string.todo_section_reminder)) {
-                DeadlineCard(
-                    deadlineDate = deadlineDate,
-                    deadlineMinute = deadlineMinute,
-                    onChange = { date, minute ->
-                        deadlineDate = date
-                        deadlineMinute = minute
-                    },
-                    // 日期步：挂载日期轮（画在本浮层之后），初值由卡片给出
-                    onDatePickRequest = { initialDate, onPicked ->
-                        deadlineDateInitial = initialDate
-                        deadlineDateCallback = onPicked
-                        // 「清除」胶囊的在场快照：此刻截止已设才给清除（整个弹窗生命周期内
-                        // 稳定，见声明处）
-                        deadlineClearAvailable = deadlineDate != null && deadlineMinute != null
-                        deadlineDateMounted = true
-                        deadlineDateVisible = true
-                    },
-                    // 时刻步：挂载时刻轮（画在本浮层之后），初值由卡片给出
-                    onTimePickRequest = { initialMinute, onPicked ->
-                        deadlineTimeInitial = initialMinute
-                        deadlineTimeCallback = onPicked
-                        deadlineTimeMounted = true
-                        deadlineTimeVisible = true
-                    },
+                SettingsCardwithIcon(
+                    items = listOf(
+                        SettingsCardwithIconItem(
+                            icon = R.drawable.ic_clock_alarm,
+                            label = stringResource(R.string.deadline_card_label),
+                            // 右侧当前截止：未设 = 「无」（已设展示见 deadlineEntryValue 声明处）
+                            value = deadlineEntryValue,
+                            onClick = {
+                                // 同卡片行进弹层前收键盘（待办分组入口同款），再挂载截止日期设置浮层
+                                focusManager.clearFocus()
+                                keyboard?.hide()
+                                deadlineSheetMounted = true
+                                deadlineSheetVisible = true
+                            },
+                        ),
+                    ),
                 )
                 UrgentFlagCard(
                     selected = urgency,
@@ -523,28 +521,28 @@ internal fun NewTodoSheet(
         )
     }
 
-    // 截止日期滚轮弹窗画在表单浮层之后（组合顺序即绘制顺序）。确认把日期交回
-    // DeadlineCard 的链式流程再弹时刻轮；「清除」回写 null 对（模型约束成对出现/同时为空）
-    // 后关闭，截止卡随即显示「无」；取消/遮罩/返回只请求关闭，播完退场才卸载
-    // （两段式，同下方的时刻轮）
-    if (deadlineDateMounted) {
-        BottomDateSelectCard(
-            visible = deadlineDateVisible,
-            onDismiss = { deadlineDateVisible = false },
-            onDismissed = {
-                deadlineDateMounted = false
-                deadlineDateCallback = null
-            },
-            hazeState = sheetHazeState,
-            title = stringResource(R.string.deadline_card_label),
-            initialDate = deadlineDateInitial,
-            // 已设截止才出现「清除」（挂载快照，见声明处）：弹卡在滚轮下方私有渲染那枚
-            // 整宽白胶囊，点按只把回调交上来（见 clearDeadline）
-            onClear = if (deadlineClearAvailable) clearDeadline else null,
-            onConfirm = { date ->
-                deadlineDateVisible = false
-                deadlineDateCallback?.invoke(date)
-                deadlineDateCallback = null
+    // 截止日期设置浮层画在表单浮层之后（组合顺序即绘制顺序），叠在表单之上；其内部
+    // 后注册 BackHandler，返回键先关截止浮层、再轮到表单出口。确认把草稿四项回写表单
+    // （开关关 = 截止 null 对 + 随重复开关复位）；取消/遮罩/返回只请求关闭，播完退场才
+    // 卸载（两段式，同重复浮层）
+    if (deadlineSheetMounted) {
+        DeadlineSettingsSheet(
+            visible = deadlineSheetVisible,
+            initialEnabled = deadlineDate != null && deadlineMinute != null,
+            // 未设过截止时的播种值：今天 + 8:00（开关一开即有值可选）
+            initialDate = deadlineDate ?: IsoDate.today(),
+            initialMinute = deadlineMinute ?: DEFAULT_DEADLINE_MINUTE,
+            initialBeforeRepeat = deadlineBeforeRepeat,
+            initialBeforeDays = deadlineBeforeDays,
+            hasRepeat = hasRepeat,
+            repeatCycleDays = repeatCycleDays,
+            onDismiss = { deadlineSheetVisible = false },
+            onDismissed = { deadlineSheetMounted = false },
+            onConfirm = { enabled, date, minute, beforeRepeat, beforeDays ->
+                deadlineDate = if (enabled) date else null
+                deadlineMinute = if (enabled) minute else null
+                deadlineBeforeRepeat = enabled && beforeRepeat
+                deadlineBeforeDays = beforeDays
             },
         )
     }
@@ -564,29 +562,6 @@ internal fun NewTodoSheet(
                 customDateVisible = false
                 customDateCallback?.invoke(date)
                 customDateCallback = null
-            },
-        )
-    }
-
-    // 截止时刻滚轮弹窗画在表单浮层之后（组合顺序即绘制顺序）；后注册 BackHandler，
-    // 返回键先关弹窗、再关浮层。确认把时/分折算成一天内的分钟数交回 DeadlineCard 的
-    // 暂存流程一并回写；取消/遮罩/返回只请求关闭，播完退场才卸载（两段式，同删除确认框）
-    if (deadlineTimeMounted) {
-        BottomTimeSelectCard(
-            visible = deadlineTimeVisible,
-            onDismiss = { deadlineTimeVisible = false },
-            onDismissed = {
-                deadlineTimeMounted = false
-                deadlineTimeCallback = null
-            },
-            title = stringResource(R.string.deadline_card_time_title),
-            initialHour = deadlineTimeInitial / 60,
-            initialMinute = deadlineTimeInitial % 60,
-            hazeState = sheetHazeState,
-            onConfirm = { hour, minute ->
-                deadlineTimeVisible = false
-                deadlineTimeCallback?.invoke(hour * 60 + minute)
-                deadlineTimeCallback = null
             },
         )
     }
