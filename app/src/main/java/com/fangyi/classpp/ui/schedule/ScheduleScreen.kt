@@ -78,6 +78,7 @@ import com.fangyi.classpp.data.ScheduleValidator
 import com.fangyi.classpp.data.TodoFilter
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.TodoSort
+import com.fangyi.classpp.data.expandRepeatOccurrences
 import com.fangyi.classpp.data.filterTodos
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
@@ -86,6 +87,7 @@ import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.data.model.overlappingCourses
 import com.fangyi.classpp.data.sortedFor
+import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.LocalTodayState
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.TabTransitionState
@@ -899,28 +901,34 @@ fun ScheduleScreen(
             var detailMounted by remember { mutableStateOf<CourseEntry?>(null) }
             if (detailEntry != null) detailMounted = detailEntry
             detailMounted?.let { detail ->
-                // 该课程标签（=课程名）命中的全部待办：标签语义走 filterTodos 的"任一重合"，
+                // 该课程标签（=课程名）命中的全部待办：先做重复待办的分期展开（同待办列表页
+                // 口径——分期副本的日期与"随重复"折算截止才是当期真实值，直接用存储层数据
+                // 会显示锚日期与原始截止），再按标签过滤（标签语义走 filterTodos 的"任一重合"），
                 // 排序与待办页默认一致（创建时间降序）；todos 回流时列表实时刷新。
                 // "只显未完成"与"本次勾选的保留显示"的区分在浮层内做（见 CourseDetailSheet）
-                val courseTodos = todos
-                    .filterTodos(TodoFilter(tags = setOf(detail.name)))
-                    .sortedFor(TodoSort.Created, descending = true)
+                val today = LocalToday
+                val courseTodos = remember(todos, today, detail.name) {
+                    todos
+                        .expandRepeatOccurrences(today)
+                        .filterTodos(TodoFilter(tags = setOf(detail.name)))
+                        .sortedFor(TodoSort.Created, descending = true)
+                }
                 key(detail.id) {
                     CourseDetailSheet(
                         visible = detailEntry != null,
                         entry = detail,
                         schedule = schedule,
                         todos = courseTodos,
-                        onTodoCheckedChange = { id, checked ->
-                            // 同 TodoScreen：异步提交，Err（如已被删）静默忽略。
-                            // 重复待办走逐期结算（这里显示的是锚日期期，勾选即勾锚期）
+                        onTodoCheckedChange = { todo, checked ->
+                            // 同 TodoScreen：异步提交，Err（如已被删）静默忽略。分期副本
+                            // dates[0] 即所勾分期日期，走逐期结算；普通待办整条完成
                             scope.launch {
-                                val target = courseTodos.firstOrNull { it.id == id }
-                                val anchor = target?.dates?.firstOrNull()
-                                if (target != null && anchor != null && target.repeat.type != RepeatType.None) {
-                                    todoRepository?.setOccurrenceCompleted(id, anchor, checked)
+                                if (todo.repeat.type != RepeatType.None) {
+                                    todo.dates.firstOrNull()?.let { date ->
+                                        todoRepository?.setOccurrenceCompleted(todo.id, date, checked)
+                                    }
                                 } else {
-                                    todoRepository?.setCompleted(id, checked)
+                                    todoRepository?.setCompleted(todo.id, checked)
                                 }
                             }
                         },

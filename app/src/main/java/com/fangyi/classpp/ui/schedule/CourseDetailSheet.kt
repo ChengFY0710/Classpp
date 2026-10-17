@@ -46,9 +46,11 @@ import com.fangyi.classpp.ui.theme.classppColors
  * 课程详情浮层：浏览态点课程卡弹出，只读展示课程名 / 上课位置（周几、节次、时间）、
  * 任课教师与上课地点（[SheetInfoCard]），并附备注输入（[SheetTextArea]）；
  * 备注之后追加该课程标签下的待办卡片（[NoteCard]，[todos] 为调用方按课程名命中的全部
- * 待办，空列表则整块不出现）。默认只显未完成；勾选框可切换完成（经 [onTodoCheckedChange]
- * 交调用方落盘），**本次打开期间勾选的**卡片原地变划线置灰并保留到关闭，重开才消失；
- * 打开时即已完成的不显示。卡片整卡点击无动作（不进待办详情）。
+ * 待办——重复待办已分期展开，每张卡是一个分期副本，口径与待办列表页一致；空列表则整块
+ * 不出现）。默认只显未完成；勾选框可切换完成（经 [onTodoCheckedChange] 交调用方对所勾
+ * 分期落盘），**本次打开期间勾选的**卡片原地变划线置灰并保留到关闭，重开才消失（重复
+ * 待办勾选后下一期照常出现为新的未完成卡，与列表页一致）；打开时即已完成的不显示。
+ * 卡片整卡点击无动作（不进待办详情）。
  *
  * 待办卡随该待办的倒计时开关（`Todo.countdown`）在左区显示距截止剩余天数（[deadlineDaysLeft]，
  * 与待办列表页同口径）；完成态由 [NoteCard] 自行隐藏倒计时。
@@ -72,14 +74,15 @@ fun CourseDetailSheet(
     onDismissed: () -> Unit,
     onNoteSave: (String) -> Unit,
     todos: List<Todo> = emptyList(),
-    onTodoCheckedChange: ((id: String, checked: Boolean) -> Unit)? = null,
+    onTodoCheckedChange: ((todo: Todo, checked: Boolean) -> Unit)? = null,
 ) {
-    // 本次打开期间勾选过的待办 id：无 key——浮层卸载（收场动画结束）即清空，
+    // 本次打开期间勾选过的待办（id + 分期日期）：无 key——浮层卸载（收场动画结束）即清空，
     // 换课程随调用方的 key(detail.id) 重建。勾选先本地记账，StateFlow 回流后
-    // completed 变 true 仍靠它保留在展示列表里（划线置灰而非消失）。
+    // completed 变 true 仍靠它保留在展示列表里（划线置灰而非消失）。按分期记账而非裸 id：
+    // 同一系列的分期卡共用 id，裸 id 会在勾选一期时把该系列所有已完成分期都显出来。
     // 取消勾选的摘除不能同步做（见渲染处 LaunchedEffect）——落盘回流前
-    // completed 还是 true，同步摘 id 会让卡片滤出→回流又滤入，闪一下
-    var checkedThisSession by remember { mutableStateOf(emptySet<String>()) }
+    // completed 还是 true，同步摘 key 会让卡片滤出→回流又滤入，闪一下
+    var checkedThisSession by remember { mutableStateOf(emptySet<Pair<String, String>>()) }
     // 备注本地态：键在课程 id 上，换目标浮层重建时初值跟着换；
     // 保存后仓库回流同 id 条目不重置（值本就一致）
     var note by rememberSaveable(entry.id) { mutableStateOf(entry.note) }
@@ -167,8 +170,8 @@ fun CourseDetailSheet(
             // 卡片转划线置灰而非消失，关闭浮层重开才移除。
             // 逾期"此刻"随重组取值（同 TodoList），跨截止时刻后重算标红；
             // completed 态 isOverdue 恒 false（完成优先于过期），无需特判
-            val visibleTodos = todos.filter {
-                !it.completed || it.id in checkedThisSession
+            val visibleTodos = todos.filter { todo ->
+                !todo.completed || todo.occurrenceKey() in checkedThisSession
             }
             if (visibleTodos.isNotEmpty()) {
                 // 「今天」取 LocalToday（跨零点自动跳天）：与 deadlineDaysLeft 的天数口径同源，
@@ -179,14 +182,15 @@ fun CourseDetailSheet(
                 //（组内 10dp 卡间距，与待办页 NoteCardSection 的节奏一致）
                 CardSection {
                     visibleTodos.forEach { todo ->
-                        key(todo.id) {
+                        // 分期副本共用 id，key 带分期日期兜同屏重复（同 TodoScreen 侧滑 key 约定）
+                        key(todo.id, todo.dates.firstOrNull()?.epochDay) {
                             // 取消勾选的摘 id 延迟到回流确认：setCompleted 异步落盘，点击瞬间
                             // completed 仍为 true，此刻摘会让 !completed 与会话集同时踩空、
                             // 卡片闪没一下。等 StateFlow 回流 completed=false（卡片本就靠
                             // !completed 可见）再摘，任意时序都无空档；落盘失败则 completed
                             // 恒为 true、id 保留，与勾选样式自洽
                             LaunchedEffect(todo.completed) {
-                                if (!todo.completed) checkedThisSession = checkedThisSession - todo.id
+                                if (!todo.completed) checkedThisSession = checkedThisSession - todo.occurrenceKey()
                             }
                             NoteCard(
                                 title = todo.name,
@@ -204,8 +208,8 @@ fun CourseDetailSheet(
                                 onCheckedChange = { checked ->
                                     // 只记"勾上"（先于回流，保勾选方向无空档）；"取消"的摘除
                                     // 交给上面的 LaunchedEffect 等回流确认后再做
-                                    if (checked) checkedThisSession = checkedThisSession + todo.id
-                                    onTodoCheckedChange?.invoke(todo.id, checked)
+                                    if (checked) checkedThisSession = checkedThisSession + todo.occurrenceKey()
+                                    onTodoCheckedChange?.invoke(todo, checked)
                                 },
                                 onClick = null,
                             )
@@ -216,3 +220,10 @@ fun CourseDetailSheet(
         }
     }
 }
+
+/**
+ * 分期副本的会话记账 key：id + 分期日期（ISO 文本）。同一系列的分期卡共用 id，
+ * 「本次勾选保留显示」须按期区分——按裸 id 记账会把该系列所有已完成分期都显出来。
+ */
+private fun Todo.occurrenceKey(): Pair<String, String> =
+    id to (dates.firstOrNull()?.toString().orEmpty())
