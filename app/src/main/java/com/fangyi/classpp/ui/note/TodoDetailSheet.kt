@@ -85,11 +85,11 @@ private val TitleMenuGap = 12.dp
  * 待办详情浮层：点待办卡弹出，结构对标 [com.fangyi.classpp.ui.schedule.CourseDetailSheet]——
  * 正文为待办标题、标题下方的标签行（[TagChip]，空标签不渲染）、四行只读信息
  * （[SheetInfoCard]：截止日期 / 紧急程度 / 待办时间 / 待办地点，四行常显，
- * 空值显灰「无」）、备注输入（[SheetTextArea]）、带标题的「创建与完成时间」分组
- * （[SheetInfoCard] 两条时刻戳：创建时间常显、完成时间仅已完成时渲染）与「步骤」分组
- * （列表走 [NoteCard] 右侧勾选框、支持向右滑呼出删除动作卡（双阈值手势见
+ * 空值显灰「无」）、备注输入（[SheetTextArea]）、「步骤」分组（列表走 [NoteCard]
+ * 右侧勾选框、支持向右滑呼出删除动作卡（双阈值手势见
  * [com.fangyi.classpp.ui.components.NoteCardSwipeLayer]），其下是等高的
- * 「添加步骤」行卡 [AddStepCard]）。
+ * 「添加步骤」行卡 [AddStepCard]）、条件渲染的「重复」分组与带标题的「更多信息」
+ * 分组（[SheetInfoCard] 时刻戳：分组、创建时间常显、完成时间仅已完成时渲染）。
  *
  * 信息行行首各带 24dp onSurface 图标（[InfoRowIcon]），值色两处按紧急度取色、与
  * 列表卡同源：截止值走 [deadlineColor]（剩 2 天黄 / 1 天橙 / 当天及逾期红 / 其余 primary）、
@@ -290,6 +290,41 @@ internal fun TodoDetailSheet(
                     placeholder = stringResource(R.string.detail_note_ph),
                 )
             }
+            // 步骤：列表走 NoteCard（右侧勾选框、完成态划线置灰；支持向右滑呼出删除——
+            // 双阈值手势见 [NoteCardSwipeLayer]，[stepSwipeCoordinator] 保证单卡展开、
+            // 展开态按系统返回先收起），其下是等高的「添加步骤」行卡；步骤为空时只有按钮卡
+            CardSection(title = stringResource(R.string.todo_section_steps)) {
+                todo.steps.forEach { step ->
+                    NoteCard(
+                        title = step.title,
+                        completed = step.done,
+                        // 卡片本身静态（不传 onClick）：勾选框是唯一交互位
+                        onCheckedChange = { onStepToggle(step.id, it) },
+                        // 侧滑只配删除侧（向右滑呼出，error 红，展开后再拖满色松手即删）；
+                        // pin 传 null——向左方向不可拖出
+                        swipe = NoteCardSwipe(
+                            key = step.id,
+                            coordinator = stepSwipeCoordinator,
+                            delete = SwipeAction(
+                                iconRes = R.drawable.ic_delete,
+                                tint = MaterialTheme.colorScheme.error,
+                                activeColor = MaterialTheme.colorScheme.error,
+                                onActiveColor = MaterialTheme.colorScheme.onError,
+                                contentDescription = stringResource(R.string.todo_swipe_delete),
+                                onAction = { onStepDelete(step.id) },
+                            ),
+                            pin = null,
+                        ),
+                    )
+                }
+                AddStepCard(
+                    onClick = {
+                        stepDraft = ""
+                        stepMounted = true
+                        stepRequested = true
+                    },
+                )
+            }
             // 重复：仅设置过重复的待办显示（重复待办 = 一组截止日期不同的虚拟独立待办，
             // 统计按 repeat 规则展开的应完成日期序列计）——类型卡 + 计数卡各一张；
             // 逾期数走展示口径（落账数 + 水位后到昨天的实时补算，跨天驻留不用等写库刷新）
@@ -343,41 +378,6 @@ internal fun TodoDetailSheet(
                             )
                         },
                     ),
-                )
-            }
-            // 步骤：列表走 NoteCard（右侧勾选框、完成态划线置灰；支持向右滑呼出删除——
-            // 双阈值手势见 [NoteCardSwipeLayer]，[stepSwipeCoordinator] 保证单卡展开、
-            // 展开态按系统返回先收起），其下是等高的「添加步骤」行卡；步骤为空时只有按钮卡
-            CardSection(title = stringResource(R.string.todo_section_steps)) {
-                todo.steps.forEach { step ->
-                    NoteCard(
-                        title = step.title,
-                        completed = step.done,
-                        // 卡片本身静态（不传 onClick）：勾选框是唯一交互位
-                        onCheckedChange = { onStepToggle(step.id, it) },
-                        // 侧滑只配删除侧（向右滑呼出，error 红，展开后再拖满色松手即删）；
-                        // pin 传 null——向左方向不可拖出
-                        swipe = NoteCardSwipe(
-                            key = step.id,
-                            coordinator = stepSwipeCoordinator,
-                            delete = SwipeAction(
-                                iconRes = R.drawable.ic_delete,
-                                tint = MaterialTheme.colorScheme.error,
-                                activeColor = MaterialTheme.colorScheme.error,
-                                onActiveColor = MaterialTheme.colorScheme.onError,
-                                contentDescription = stringResource(R.string.todo_swipe_delete),
-                                onAction = { onStepDelete(step.id) },
-                            ),
-                            pin = null,
-                        ),
-                    )
-                }
-                AddStepCard(
-                    onClick = {
-                        stepDraft = ""
-                        stepMounted = true
-                        stepRequested = true
-                    },
                 )
             }
         }

@@ -307,6 +307,14 @@
     <!-- Edit todo sheet: delete confirmation -->
     <string name="todo_delete_title">Delete Todo</string>
     <string name="todo_delete_message">“%1$s” will be deleted. This cannot be undone.</string>
+    <!-- Todo card swipe actions (NoteCard swipe layer): action card accessibility labels and result toasts -->
+    <string name="todo_swipe_delete">Delete</string>
+    <string name="todo_swipe_pin">Pin</string>
+    <string name="todo_swipe_unpin">Unpin</string>
+    <string name="toast_todo_deleted">Deleted</string>
+    <string name="toast_todo_step_deleted">Step deleted</string>
+    <string name="toast_todo_pinned">Pinned</string>
+    <string name="toast_todo_unpinned">Unpinned</string>
     <!-- New todo sheet: section titles and form fields -->
     <string name="todo_section_reminder">Reminders &amp; priority</string>
     <string name="todo_section_date_time">Date &amp; time</string>
@@ -362,7 +370,7 @@
     <string name="repeat_unit_week">week</string>
     <string name="repeat_unit_month">month</string>
     <string name="repeat_unit_year">year</string>
-    <string name="repeat_interval_title">Repeat interval</string>
+    <string name="repeat_interval_title">Repeat cycle</string>
     <string name="repeat_marks_required">Select at least one date</string>
     <string name="repeat_month_mark">%1$d mo.</string>
 
@@ -371,6 +379,18 @@
     <string name="deadline_card_none">None</string>
     <string name="deadline_card_time_title">Due Time</string>
     <string name="deadline_card_clear">Clear</string>
+    <!-- Deadline settings sheet (DeadlineSettingsSheet) -->
+    <string name="deadline_sheet_enable">Set deadline</string>
+    <string name="deadline_sheet_enable_desc">Apply this date to every cycle of the repeat</string>
+    <string name="deadline_sheet_time">Time</string>
+    <string name="deadline_sheet_repeat_section">Repeating todo deadline</string>
+    <string name="deadline_sheet_repeat_toggle">Before the next repeat starts</string>
+    <string name="deadline_sheet_repeat_toggle_desc">When enabled, the deadline of a repeating todo automatically moves to just before the next repeat starts. Only applies once a repeat is set</string>
+    <string name="deadline_sheet_repeat_before">Before start</string>
+    <string name="deadline_sheet_repeat_days_value">%1$d days</string>
+    <string name="deadline_sheet_repeat_days_title">Days before start</string>
+    <!-- Deadline display text following the repeat (entry row / detail row): fixed date replaced by per-cycle conversion -->
+    <string name="deadline_before_repeat_value">%1$d days before the next repeat starts</string>
 
     <!-- Time selection sheet (BottomTimeSelectCard): hour/minute wheels -->
     <string name="time_select_title">Select Time</string>

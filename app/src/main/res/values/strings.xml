@@ -353,14 +353,14 @@
     <string name="deadline_card_clear">清除</string>
     <!-- 截止日期设置浮层（DeadlineSettingsSheet） -->
     <string name="deadline_sheet_enable">设置截止日期</string>
-    <string name="deadline_sheet_enable_desc">重复待办自定义截止日期只生效一次</string>
+    <string name="deadline_sheet_enable_desc">重复待办每一期都应用此日期</string>
     <string name="deadline_sheet_time">时刻</string>
     <string name="deadline_sheet_repeat_section">重复待办截止日期</string>
     <string name="deadline_sheet_repeat_toggle">下一次重复开始前</string>
     <string name="deadline_sheet_repeat_toggle_desc">开启后，重复待办截止日期将自动调整为下一次重复开始前，仅设置重复后生效</string>
     <string name="deadline_sheet_repeat_before">开始前</string>
     <string name="deadline_sheet_repeat_days_value">%1$d 天</string>
-    <string name="deadline_sheet_repeat_days_title">选择开始前天数</string>
+    <string name="deadline_sheet_repeat_days_title">开始前天数</string>
     <!-- 随重复的截止展示文案（入口行/详情行）：固定日期已被逐期折算取代 -->
     <string name="deadline_before_repeat_value">下一次重复开始前 %1$d 天</string>
     <string name="repeat_daily">每天</string>
@@ -378,7 +378,7 @@
     <string name="repeat_unit_week">周</string>
     <string name="repeat_unit_month">月</string>
     <string name="repeat_unit_year">年</string>
-    <string name="repeat_interval_title">重复间隔</string>
+    <string name="repeat_interval_title">重复周期</string>
     <string name="repeat_marks_required">请至少选择一个日期</string>
     <string name="repeat_month_mark">%1$d月</string>
 
