@@ -45,8 +45,9 @@ private const val MILLIS_PER_DAY = 86_400_000L
  * 后注册 BackHandler）。
  *
  * 结构（顶层块一律 [CardSection]）：第一部分无题分组——「设置截止日期」开关卡 + 日期/时刻卡
- * （开关关闭，或「下一次重复开始前」打开时整卡收起，[Expandable] 同重复设置页的自定义区；
- * 两行分别弹 [BottomDateSelectCard] / [BottomTimeSelectCard]）；第二部分「重复待办截止日期」
+ * （开关关闭整卡收起，[Expandable] 同重复设置页的自定义区；「下一次重复开始前」打开时卡内
+ * 只收起「日期」行、「时刻」行保留——重复组每一期截止时刻统一沿用此值；两行分别弹
+ * [BottomDateSelectCard] / [BottomTimeSelectCard]）；第二部分「重复待办截止日期」
  * 分组随主开关整组展开/收起——「下一次重复开始前」开关（仅重复待办可开，[hasRepeat] = false
  * 时整行禁用、开关锁定为关）+ 开启后展开的「开始前」导航行（[BottomNumberSelectCard] 选
  * 0..[repeatCycleDays] 天，上限 = 重复周期天数）。开关打开后各期截止由展示层按「下一期
@@ -129,10 +130,10 @@ internal fun DeadlineSettingsSheet(
         hazeState = sheetHazeState,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
-            // 第一部分（无分组标题）：截止开关卡 + 日期/时刻卡——开关关闭，或「下一次重复
-            // 开始前」打开（截止随重复逐期自动折算，自定义日期/时刻不再参与）时整卡收起
-            // （高度动画，兄弟内容逐帧让位，同重复设置页自定义区）；草稿里的日期/时刻保留，
-            // 作为落库载体与自动截止的时刻来源
+            // 第一部分（无分组标题）：截止开关卡 + 日期/时刻卡——开关关闭整卡收起（高度动画，
+            // 兄弟内容逐帧让位，同重复设置页自定义区）；「下一次重复开始前」打开时卡内只收起
+            // 「日期」行（各期截止日期自动折算，固定日期不再参与），「时刻」行保留——重复组
+            // 每一期截止时刻统一沿用这里设置的时刻；草稿里的日期保留，作为落库载体
             CardSection {
                 SettingsCard(
                     items = listOf(
@@ -144,27 +145,34 @@ internal fun DeadlineSettingsSheet(
                         ),
                     ),
                 )
-                Expandable(expanded = enabled && !beforeRepeat) {
+                Expandable(expanded = enabled) {
                     SettingsCard(
+                        modifier = Modifier.animateContentSize(),
                         hazeState = sheetHazeState,
-                        items = listOf(
-                            SettingsCardItem.Nav(
-                                label = stringResource(R.string.date_card_label),
-                                value = date.toDeadlineDateText(),
-                                onClick = {
-                                    dateWheelMounted = true
-                                    dateWheelVisible = true
-                                },
-                            ),
-                            SettingsCardItem.Nav(
-                                label = stringResource(R.string.deadline_sheet_time),
-                                value = TimeText.format(minute),
-                                onClick = {
-                                    timeWheelMounted = true
-                                    timeWheelVisible = true
-                                },
-                            ),
-                        ),
+                        items = buildList {
+                            if (!beforeRepeat) {
+                                add(
+                                    SettingsCardItem.Nav(
+                                        label = stringResource(R.string.date_card_label),
+                                        value = date.toDeadlineDateText(),
+                                        onClick = {
+                                            dateWheelMounted = true
+                                            dateWheelVisible = true
+                                        },
+                                    ),
+                                )
+                            }
+                            add(
+                                SettingsCardItem.Nav(
+                                    label = stringResource(R.string.deadline_sheet_time),
+                                    value = TimeText.format(minute),
+                                    onClick = {
+                                        timeWheelMounted = true
+                                        timeWheelVisible = true
+                                    },
+                                ),
+                            )
+                        },
                     )
                 }
             }
