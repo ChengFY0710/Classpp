@@ -345,6 +345,20 @@
     <string name="repeat_weekly">Every week</string>
     <string name="repeat_monthly">Every month</string>
     <string name="repeat_yearly">Every year</string>
+    <string name="repeat_none">No repeat</string>
+    <string name="repeat_custom_summary">Every %1$d %2$s</string>
+    <!-- Repeat settings sheet (RepeatSettingsSheet) -->
+    <string name="repeat_custom_section">Custom repeat</string>
+    <string name="repeat_frequency">Frequency</string>
+    <string name="repeat_every">Every</string>
+    <string name="repeat_every_desc">Repeats once every N units</string>
+    <string name="repeat_unit_day">day</string>
+    <string name="repeat_unit_week">week</string>
+    <string name="repeat_unit_month">month</string>
+    <string name="repeat_unit_year">year</string>
+    <string name="repeat_interval_title">Repeat interval</string>
+    <string name="repeat_marks_required">Select at least one date</string>
+    <string name="repeat_month_mark">%1$d mo.</string>
 
     <!-- Deadline card (DeadlineCard): single-tap picker row -->
     <string name="deadline_card_label">Deadline</string>

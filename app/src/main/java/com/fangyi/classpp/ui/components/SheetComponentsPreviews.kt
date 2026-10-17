@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatRule
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
@@ -693,7 +695,7 @@ private fun DateSelectionCardPreview() = ClassppTheme {
     // 设计稿四态：无（值模式）/ 快捷选项（选项模式）/ 自定义+每周（静态）/ 自定义+每天（全交互，
     // 自定义日期行接真实的滚轮日期弹窗托管，代码同 NewTodoSheet）
     var interactiveValue by remember {
-        mutableStateOf<DateSelection>(DateSelection.Custom(IsoDate.of(2026, 10, 3), RepeatFrequency.Daily))
+        mutableStateOf<DateSelection>(DateSelection.Custom(IsoDate.of(2026, 10, 3), RepeatRule(type = RepeatType.Daily)))
     }
     var interactiveExpanded by remember { mutableStateOf(false) }
     var dateMounted by remember { mutableStateOf(false) }
@@ -714,6 +716,7 @@ private fun DateSelectionCardPreview() = ClassppTheme {
                 onExpandedChange = {},
                 // 静态展示卡：不接弹窗
                 onCustomDatePickRequest = { _, _ -> },
+                onRepeatEditRequest = { _, _, _ -> },
             )
             DateSelectionCard(
                 value = DateSelection.None,
@@ -721,13 +724,15 @@ private fun DateSelectionCardPreview() = ClassppTheme {
                 onValueChange = {},
                 onExpandedChange = {},
                 onCustomDatePickRequest = { _, _ -> },
+                onRepeatEditRequest = { _, _, _ -> },
             )
             DateSelectionCard(
-                value = DateSelection.Custom(IsoDate.of(2026, 10, 3), RepeatFrequency.Weekly),
+                value = DateSelection.Custom(IsoDate.of(2026, 10, 3), RepeatRule(type = RepeatType.Weekly)),
                 expanded = false,
                 onValueChange = {},
                 onExpandedChange = {},
                 onCustomDatePickRequest = { _, _ -> },
+                onRepeatEditRequest = { _, _, _ -> },
             )
             DateSelectionCard(
                 value = interactiveValue,
@@ -740,6 +745,7 @@ private fun DateSelectionCardPreview() = ClassppTheme {
                     dateMounted = true
                     dateVisible = true
                 },
+                onRepeatEditRequest = { _, _, _ -> },
             )
         }
         if (dateMounted) {

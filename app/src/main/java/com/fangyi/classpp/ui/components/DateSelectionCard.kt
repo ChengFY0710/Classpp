@@ -27,15 +27,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.ui.motion.Expandable
 import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
@@ -45,12 +44,11 @@ import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.isDarkTheme
-import dev.chrisbanes.haze.HazeState
 import java.util.GregorianCalendar
 import java.util.Locale
 import java.util.TimeZone
 
-/** 日期选择卡片的取值：快捷档位（无 / 今天 / 明天）或自定义日期 + 重复频率 */
+/** 日期选择卡片的取值：快捷档位（无 / 今天 / 明天）或自定义日期 + 重复规则 */
 sealed interface DateSelection {
     /** 无日期 */
     data object None : DateSelection
@@ -61,12 +59,9 @@ sealed interface DateSelection {
     /** 明天 */
     data object Tomorrow : DateSelection
 
-    /** 自定义日期 + 重复频率 */
-    data class Custom(val date: IsoDate, val repeat: RepeatFrequency) : DateSelection
+    /** 自定义日期 + 重复规则（随 Todo.repeat 落库） */
+    data class Custom(val date: IsoDate, val repeat: RepeatRule) : DateSelection
 }
-
-/** [DateSelection.Custom] 的重复频率 */
-enum class RepeatFrequency { Daily, Weekly, Monthly, Yearly }
 
 /**
  * 日期选择卡片：白卡主行整行可点（行首 ic_clock 图标 24dp onSurface + 12dp 间距，同
@@ -84,18 +79,15 @@ enum class RepeatFrequency { Daily, Weekly, Monthly, Yearly }
  * ——动画期间点到残留行直接忽略，避免弹窗状态卡死。
  *
  * 快捷选项点按后回写 [onValueChange] 并退回值模式；选「自定义」沿用上一次的自定义
- * 日期与重复（没有则今天 / 每周），子行随之展开。「重复」行点按弹 [PopupMenuPopup]
- * 菜单（选中项前置勾），「自定义日期」行点按经 [onCustomDatePickRequest] 请求宿主弹
- * 滚轮日期弹窗（BottomDateSelectCard，页内覆盖层画不进卡片里——浮层内容会被 Surface
- * 裁剪，由宿主组合在浮层级）。
+ * 日期与重复（没有则今天 / 无重复），子行随之展开。「重复」行点按经 [onRepeatEditRequest]
+ * 请求宿主弹重复浮层设置页（RepeatSettingsSheet，页内覆盖层画不进卡片里——浮层内容会被
+ * Surface 裁剪，由宿主组合在浮层级，同「自定义日期」行的滚轮弹窗）；「自定义日期」行
+ * 点按经 [onCustomDatePickRequest] 请求宿主弹滚轮日期弹窗（BottomDateSelectCard）。
  *
  * 规格：白卡 [SheetCardShape] 连续圆角，行高下限 [SheetFieldHeight]，行内距 16/14 画在
  * 点击区内侧（按压反馈铺满整行，ui.motion 的 pressClickable 取代涟漪）；行首 ic_clock
  * 图标 24dp onSurface、与 label 间距 12dp（同 [SettingsCardwithIcon]），label 走 fieldLabel，
  * 值与快捷选项走 fieldValue，尾部图标 20dp primary。
- *
- * [hazeState] 是「重复」菜单的磨砂采样源（同 [SettingsCard]）：宿主把它自己那层内容的采样源
- * 传进来（浮层内嵌时传浮层的共享采样源），null（如 @Preview）退化为不透明白卡。
  */
 @Composable
 fun DateSelectionCard(
@@ -106,16 +98,16 @@ fun DateSelectionCard(
     // 「自定义日期」行上报：初值为当前自定义日期，[onPicked] 收确认日期后经
     // [onValueChange] 回写；弹窗本体由宿主（NewTodoSheet）组合在浮层之后
     onCustomDatePickRequest: (initialDate: IsoDate, onPicked: (IsoDate) -> Unit) -> Unit,
+    // 「重复」行上报：初值为当前重复规则、锚日期为自定义日期（浮层切频率单位时以它播种
+    // 方格），[onPicked] 收确认规则后经 [onValueChange] 回写；浮层本体由宿主组合在浮层之后
+    onRepeatEditRequest: (initial: RepeatRule, anchorDate: IsoDate, onPicked: (RepeatRule) -> Unit) -> Unit,
     modifier: Modifier = Modifier,
-    // 「重复」菜单的磨砂采样源（见 KDoc）：null = 菜单为不透明白卡
-    hazeState: HazeState? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     // 浅色模式下白底行加色白提亮无感（白色无法更亮），改用微微压暗表达按压；深色模式仍提亮
     val rowShade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    var repeatMenuExpanded by remember { mutableStateOf(false) }
     val custom = value as? DateSelection.Custom
     // 收起动画当帧 value 可能已被切成非自定义（子行正在退场）：记住上一份自定义值把
     // 子行撑到行块平滑缩完；展示用快照，交互回调仍以当前 custom 守卫
@@ -174,12 +166,12 @@ fun DateSelectionCard(
                     QuickOptionText(
                         label = stringResource(R.string.date_card_custom),
                         onClick = {
-                            // 选「自定义」：沿用上一次的自定义日期与重复（没有则今天 / 每周），
+                            // 选「自定义」：沿用上一次的自定义日期与重复（没有则今天 / 无重复），
                             // 退回值模式让自定义子行展开
                             onValueChange(
                                 DateSelection.Custom(
                                     date = custom?.date ?: IsoDate.today(),
-                                    repeat = custom?.repeat ?: RepeatFrequency.Weekly,
+                                    repeat = custom?.repeat ?: RepeatRule(),
                                 ),
                             )
                             onExpandedChange(false)
@@ -257,7 +249,7 @@ fun DateSelectionCard(
                         modifier = Modifier.size(20.dp),
                     )
                 }
-                // 重复行：点按弹菜单（同 SettingsCard 选择行，菜单顶边贴行顶边）；
+                // 重复行：点按请求宿主弹重复浮层设置页（退场动画中 custom 已为空时忽略点击）；
                 // 行上无 clip，原位换 pressClickable（独立按压源，不与相邻行双亮）
                 Row(
                     modifier = Modifier
@@ -266,7 +258,11 @@ fun DateSelectionCard(
                         .pressClickable(RectangleShape, shade = rowShade) {
                             focusManager.clearFocus()
                             keyboard?.hide()
-                            if (custom != null) repeatMenuExpanded = true
+                            if (custom != null) {
+                                onRepeatEditRequest(custom.repeat, custom.date) { picked ->
+                                    onValueChange(custom.copy(repeat = picked))
+                                }
+                            }
                         }
                         .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -277,28 +273,16 @@ fun DateSelectionCard(
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        text = shownCustom.repeat.label(),
+                        text = shownCustom.repeat.summaryText(),
                         style = MaterialTheme.classppTextStyles.fieldValue,
                     )
                     Spacer(Modifier.width(6.dp))
-                    Box {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_chevron_up_down),
-                            contentDescription = null,
-                            tint = colors.primary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        RepeatMenu(
-                            expanded = repeatMenuExpanded,
-                            selected = shownCustom.repeat,
-                            onDismiss = { repeatMenuExpanded = false },
-                            hazeState = hazeState,
-                            onPick = {
-                                repeatMenuExpanded = false
-                                if (custom != null) onValueChange(custom.copy(repeat = it))
-                            },
-                        )
-                    }
+                    Icon(
+                        painter = painterResource(R.drawable.ic_chevron_right),
+                        contentDescription = null,
+                        tint = colors.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
             }
         }
@@ -345,57 +329,6 @@ private fun QuickOptionText(
             maxLines = 1,
         )
     }
-}
-
-/**
- * 「重复」的弹出菜单：[PopupMenuPopup] 锚在行尾上下箭头上（[PopupMenuCard] 白卡 +
- * 柔影，同 SettingsCard 选择行菜单），卡顶边贴行顶边（[MenuTopAlignLift]）；
- * 选中项经勾选槽显示勾并蓝字（PopupMenuCard 原生行样式）。
- * [hazeState] 转给菜单做背景模糊（采样菜单背后那层内容），null = 不透明白卡。
- */
-@Composable
-private fun RepeatMenu(
-    expanded: Boolean,
-    selected: RepeatFrequency,
-    onDismiss: () -> Unit,
-    hazeState: HazeState?,
-    onPick: (RepeatFrequency) -> Unit,
-) {
-    val density = LocalDensity.current
-    val topAlignLiftPx = with(density) { MenuTopAlignLift.roundToPx() }
-    PopupMenuPopup(
-        expanded = expanded,
-        onDismiss = onDismiss,
-        hazeState = hazeState,
-        sections = listOf(
-            PopupMenuSection(
-                items = RepeatFrequency.entries.map { frequency ->
-                    PopupMenuItem(
-                        label = frequency.label(),
-                        checked = frequency == selected,
-                        onClick = {
-                            onDismiss()
-                            if (frequency != selected) onPick(frequency)
-                        },
-                    )
-                },
-            ),
-        ),
-        // 卡片左缘对齐图标左缘（DropdownMenu 原位），上移量使卡顶边贴行顶边；
-        // 行尾箭头贴屏幕右缘，菜单放不下会被钳到右缘 → 锚点取卡片右上角
-        cardPosition = { anchorBounds, _, _ ->
-            IntOffset(anchorBounds.left, anchorBounds.bottom - topAlignLiftPx)
-        },
-        menuGrowth = MenuGrowth.TopRight,
-    )
-}
-
-@Composable
-private fun RepeatFrequency.label(): String = when (this) {
-    RepeatFrequency.Daily -> stringResource(R.string.repeat_daily)
-    RepeatFrequency.Weekly -> stringResource(R.string.repeat_weekly)
-    RepeatFrequency.Monthly -> stringResource(R.string.repeat_monthly)
-    RepeatFrequency.Yearly -> stringResource(R.string.repeat_yearly)
 }
 
 private const val MILLIS_PER_DAY = 86_400_000L

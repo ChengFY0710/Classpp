@@ -2,6 +2,10 @@ package com.fangyi.classpp.data
 
 import android.content.Context
 import com.fangyi.classpp.data.export.TodoShareCodec
+import com.fangyi.classpp.data.model.RepeatRule
+import com.fangyi.classpp.data.model.RepeatType
+import com.fangyi.classpp.data.model.RepeatUnit
+import com.fangyi.classpp.data.model.markRange
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoFile
 import com.fangyi.classpp.data.model.TodoGroup
@@ -94,7 +98,8 @@ class TodoRepository internal constructor(
      * 完成不变式：completed=true 时 completedAtMillis 缺省补当前，false 时清空；
      * 倒计时不变式：无截止日期时开关回 false（清掉截止日期后不留悬挂的开启态）；
      * 分组引用完整性：group trim、空串与引用不存在的组一律清回 null（未分组）——
-     * 由此读侧只需判 `group == null`，导入的带组名待办同此规则落为未分组。
+     * 由此读侧只需判 `group == null`，导入的带组名待办同此规则落为未分组；
+     * 重复规则消洗见 [normalizeRepeat]。
      * 在 mutex 内调用，读 [fileState] 的分组表安全。
      */
     private fun normalize(todo: Todo): Todo {
@@ -102,11 +107,26 @@ class TodoRepository internal constructor(
         return todo.copy(
             name = todo.name.trim(),
             dates = todo.dates.distinct().sortedBy { it.epochDay },
+            repeat = normalizeRepeat(todo.repeat),
             tags = todo.tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
             steps = todo.steps.map { it.copy(title = it.title.trim()) },
             completedAtMillis = if (todo.completed) todo.completedAtMillis ?: nowMillis() else null,
             countdown = todo.countdown && todo.deadlineDate != null,
             group = todo.group?.trim()?.takeIf { it.isNotEmpty() && it in groupNames },
+        )
+    }
+
+    /**
+     * 重复规则消洗（导入的外来数据可能越界）：非自定义档位重置为默认值（预设类型不带
+     * 自定义参数的悬挂状态）；间隔夹紧 1..99；方格标记按单位合法域剔除——天的规则无
+     * 方格语义，标记恒清空。
+     */
+    private fun normalizeRepeat(rule: RepeatRule): RepeatRule {
+        if (rule.type != RepeatType.Custom) return RepeatRule()
+        val range = rule.unit.markRange
+        return rule.copy(
+            interval = rule.interval.coerceIn(1, 99),
+            marks = rule.marks.filterTo(mutableSetOf()) { it in range },
         )
     }
 

@@ -31,6 +31,7 @@ import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.TagOpResult
 import com.fangyi.classpp.data.TagRepository
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.Todo
@@ -50,7 +51,6 @@ import com.fangyi.classpp.ui.components.FadeOverlayDialog
 import com.fangyi.classpp.ui.components.GroupCard
 import com.fangyi.classpp.ui.components.GroupCardItem
 import com.fangyi.classpp.ui.components.OverlaySheet
-import com.fangyi.classpp.ui.components.RepeatFrequency
 import com.fangyi.classpp.ui.components.RowChoiceCard
 import com.fangyi.classpp.ui.components.SettingsCardwithIcon
 import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
@@ -102,7 +102,8 @@ private const val INITIAL_END_MINUTE = 1080
  * 选了「全天/时段」但没选日期时点「确认」Toast 提示不关浮层（TodoValidator 的
  * DatesRequired 前置拦截）。表单字段随浮层卸载而复位（remember，旋转重建回默认值）。
  *
- * 日期卡的「重复」频率本期不落库（Todo 模型无重复字段），只存自定义日期本身。
+ * 日期卡的「重复」进二级浮层设置页（[RepeatSettingsSheet]，分层同选择分组浮层）：确认后
+ * 规则随日期卡回写，组装 [Todo] 时一并落库（仅自定义日期带重复，其余档位存默认值）。
  */
 @Composable
 internal fun NewTodoSheet(
@@ -211,6 +212,15 @@ internal fun NewTodoSheet(
     var customDateInitial by remember { mutableStateOf(IsoDate.today()) }
     var customDateCallback by remember { mutableStateOf<((IsoDate) -> Unit)?>(null) }
 
+    // 「重复」浮层设置页（DateSelectionCard 的重复行上报）：确认把规则交回卡片经
+    // onPicked 回写；锚日期（自定义日期）供浮层在切频率单位时播种方格。两段式挂载，
+    // 声明在 OverlaySheet 之前——浮层在场时经 covered 让本浮层缩小后退（同分组浮层）
+    var repeatVisible by remember { mutableStateOf(false) }
+    var repeatMounted by remember { mutableStateOf(false) }
+    var repeatInitial by remember { mutableStateOf(RepeatRule()) }
+    var repeatAnchor by remember { mutableStateOf(IsoDate.today()) }
+    var repeatCallback by remember { mutableStateOf<((RepeatRule) -> Unit)?>(null) }
+
     // 时段起止时刻滚轮弹窗（TimeRangeSlider 的胶囊点按上报）：确认的分钟数经 onPicked
     // 原路交回滑块，由它按顺序约束夹紧后经 onRangeChange 提交
     var rangeTimeVisible by remember { mutableStateOf(false) }
@@ -234,7 +244,7 @@ internal fun NewTodoSheet(
             if (name.isBlank()) {
                 nameBlank = true
             } else {
-                // 相对档位在落库前解析成具体日期（今天/明天），重复频率本期不存
+                // 相对档位在落库前解析成具体日期（今天/明天）；重复规则只在自定义日期下有意义
                 val dates = when (val selection = dateSelection) {
                     DateSelection.None -> emptyList()
                     DateSelection.Today -> listOf(IsoDate.today())
@@ -249,6 +259,7 @@ internal fun NewTodoSheet(
                         (existing ?: Todo(id = "", name = "")).copy(
                             name = name.trim(),
                             dates = dates,
+                            repeat = (dateSelection as? DateSelection.Custom)?.repeat ?: RepeatRule(),
                             timeKind = timeKind,
                             startMinute = if (timeKind == TodoTimeKind.Period) startMinute else null,
                             endMinute = if (timeKind == TodoTimeKind.Period) endMinute else null,
@@ -285,7 +296,7 @@ internal fun NewTodoSheet(
         onDismiss = onDismiss,
         visible = visible,
         covered = deleteRequested || deadlineDateVisible || customDateVisible || rangeTimeVisible ||
-            deadlineTimeVisible || groupPickVisible,
+            deadlineTimeVisible || groupPickVisible || repeatVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
         // 共享采样源：叠在本浮层上的滚轮弹窗拿它做卡片磨砂背景模糊（见 sheetHazeState 声明处）
@@ -374,8 +385,14 @@ internal fun NewTodoSheet(
                         customDateMounted = true
                         customDateVisible = true
                     },
-                    // 共享采样源：「重复」菜单叠在本浮层上，模糊本浮层内容（同滚轮弹窗）
-                    hazeState = sheetHazeState,
+                    // 重复步：挂载重复浮层设置页（画在本浮层之后），初值与锚日期由卡片给出
+                    onRepeatEditRequest = { initial, anchorDate, onPicked ->
+                        repeatInitial = initial
+                        repeatAnchor = anchorDate
+                        repeatCallback = onPicked
+                        repeatMounted = true
+                        repeatVisible = true
+                    },
                 )
                 RowChoiceCard(
                     options = listOf(
@@ -482,6 +499,26 @@ internal fun NewTodoSheet(
             onPick = { name ->
                 selectedGroupName = name
                 groupPickVisible = false
+            },
+        )
+    }
+
+    // 「重复」浮层设置页画在表单浮层之后（组合顺序即绘制顺序），叠在表单之上；其内部
+    // 后注册 BackHandler，返回键先关重复浮层、再轮到表单出口。确认把规则经 DateSelectionCard
+    // 的回调回写；取消/遮罩/返回只请求关闭，播完退场才卸载（两段式，同分组浮层）
+    if (repeatMounted) {
+        RepeatSettingsSheet(
+            visible = repeatVisible,
+            initial = repeatInitial,
+            anchorDate = repeatAnchor,
+            onDismiss = { repeatVisible = false },
+            onDismissed = {
+                repeatMounted = false
+                repeatCallback = null
+            },
+            onConfirm = { rule ->
+                repeatCallback?.invoke(rule)
+                repeatCallback = null
             },
         )
     }
@@ -596,15 +633,15 @@ private fun TagEntry.toTagItem(fallbackColor: Color): TagItem =
     TagItem(name = name, color = colorArgb?.let { Color(it) } ?: fallbackColor)
 
 /**
- * 编辑回填：待办日期 → 日期卡选择态——空 → 无；恰为今天/明天 → 相对档位；其余 → 自定义首日。
- * 表单是单日期 UI（多日期仅导入可达，本期无导入入口），确认时只写回这一个日期；
- * 重复频率不落库（Todo 无该字段），回填给卡内默认值即可。
+ * 编辑回填：待办日期 → 日期卡选择态——空 → 无；恰为今天/明天 → 相对档位；其余 → 自定义首日 +
+ * 存储的重复规则（随确认落库，无重复语义时为默认值）。
+ * 表单是单日期 UI（多日期仅导入可达，本期无导入入口），确认时只写回这一个日期。
  */
 private fun Todo?.toDateSelection(): DateSelection = when {
     this == null || dates.isEmpty() -> DateSelection.None
     dates.size == 1 && dates[0] == IsoDate.today() -> DateSelection.Today
     dates.size == 1 && dates[0] == IsoDate.today() + 1 -> DateSelection.Tomorrow
-    else -> DateSelection.Custom(dates.first(), RepeatFrequency.Weekly)
+    else -> DateSelection.Custom(dates.first(), repeat)
 }
 
 /**

@@ -29,6 +29,7 @@ data class TodoStep(
  *
  * @param dates 待办日期，可不连续多天；多天共用同一套时刻设置（如"周三和周五 14:00-16:00"），
  *   写入前由仓库 distinct + 排序归一化
+ * @param repeat 重复规则（自定义日期的重复），见 [RepeatRule]；无重复语义时为默认值
  * @param timeKind 时刻形态；[TodoTimeKind.Period] 时 [startMinute]/[endMinute] 必须有效
  * @param startMinute 时段开始（当天分钟数 0..1439，展示用 TimeText.format）
  * @param endMinute 时段结束，须大于 [startMinute]
@@ -50,6 +51,7 @@ data class Todo(
     val id: String,
     val name: String,
     val dates: List<IsoDate> = emptyList(),
+    val repeat: RepeatRule = RepeatRule(),
     val timeKind: TodoTimeKind = TodoTimeKind.None,
     val startMinute: Int? = null,
     val endMinute: Int? = null,

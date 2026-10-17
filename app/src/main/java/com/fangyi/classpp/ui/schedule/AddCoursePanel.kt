@@ -1,17 +1,11 @@
 package com.fangyi.classpp.ui.schedule
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -26,7 +20,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -37,7 +30,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,22 +52,15 @@ import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ColorSwatchCard
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.RowChoiceCard
+import com.fangyi.classpp.ui.components.SelectionGrid
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
-import com.fangyi.classpp.ui.motion.Motion
-import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
-import com.fangyi.classpp.ui.theme.WeekCellShape
 import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.rememberHazeState
-import kotlin.math.ceil
 
-/** 周数方格：每行最少 6 个，均分后单格宽于上限就加列（末行补空位，保证每格同宽同高） */
-private const val WeeksPerRowMin = 6
-private val WeekCellGap = 6.dp
-private val WeekCellMaxWidth = 60.dp
 private val textStartPadding = PaddingValues(start = 12.dp) // 描述性文字统一左移，视觉上更有层次
 private val secondaryTextSize = 15.sp // 描述性文字统一大小
 
@@ -485,10 +470,11 @@ fun AddCoursePanel(
             }
 
             CardSection(title = stringResource(R.string.edit_course_weeks)) {
-                WeekSelectionGrid(
-                    totalWeeks = schedule.totalWeeks,
-                    selected = selectedWeeks,
-                    blockedWeeks = blockedWeeks,
+                SelectionGrid(
+                    values = (1..schedule.totalWeeks).toList(),
+                    labels = (1..schedule.totalWeeks).map { it.toString() },
+                    selected = selectedWeeks.toSet(),
+                    blocked = blockedWeeks,
                     onToggle = { week ->
                         selectedWeeks = if (week in selectedWeeks) {
                             selectedWeeks - week
@@ -557,86 +543,6 @@ fun AddCoursePanel(
                         error = null
                     },
                 )
-            }
-        }
-    }
-}
-
-/**
- * 周数方格：点一下选中 / 取消；[blockedWeeks] 里的周已被同格其它交替课占用，灰显不可点。
- * 选中蓝底白字、未选中白底黑字（对齐设计稿），选中/取消走 150ms 颜色渐变、背景与字色同步过渡；
- * 布局与旧版一致（6/行、等宽等高）。
- */
-@Composable
-private fun WeekSelectionGrid(
-    totalWeeks: Int,
-    selected: List<Int>,
-    blockedWeeks: Set<Int>,
-    onToggle: (Int) -> Unit,
-) {
-    val selectedSet = selected.toSet()
-    BoxWithConstraints {
-        // 列数取"均分后单格不超上限"的最小值，但不低于下限：
-        // (宽 − (n−1)×格距)/n ≤ 上限 ⟺ n ≥ (宽 + 格距)/(上限 + 格距)
-        val columns = maxOf(
-            WeeksPerRowMin,
-            ceil((maxWidth + WeekCellGap) / (WeekCellMaxWidth + WeekCellGap)).toInt(),
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(WeekCellGap)) {
-            (1..totalWeeks).chunked(columns).forEach { rowWeeks ->
-                Row(horizontalArrangement = Arrangement.spacedBy(WeekCellGap)) {
-                    rowWeeks.forEach { week ->
-                        val isSelected = week in selectedSet
-                        val blocked = week in blockedWeeks
-                        // 背景/字色各走一条渐变：点选渐变变蓝、再点渐变回白，字色同步渐变
-                        //（Motion.FastMillis 先快后慢，与 SheetTextField 描边动画同一节奏）
-                        val cellColor by animateColorAsState(
-                            targetValue = when {
-                                isSelected -> MaterialTheme.colorScheme.primary
-                                blocked -> MaterialTheme.colorScheme.onPrimaryContainer
-
-                                else -> MaterialTheme.colorScheme.surface
-                            },
-                            animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
-                            label = "weekCellColor",
-                        )
-                        val numberColor by animateColorAsState(
-                            targetValue = when {
-                                isSelected -> MaterialTheme.colorScheme.onPrimary
-                                blocked -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                else -> MaterialTheme.colorScheme.onSurface
-                            },
-                            animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
-                            label = "weekCellNumber",
-                        )
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .aspectRatio(1f)
-                                // 按压反馈（自带按压源 + 点击，涟漪由其取代）整体放在 clip 之前：
-                                // blocked 走 enabled=false，点击与反馈一起失效，原 then(clickable)
-                                // 条件块因此移除
-                                .pressClickable(WeekCellShape, enabled = !blocked, onClick = { onToggle(week) })
-                                .clip(WeekCellShape)
-                                .background(cellColor),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = week.toString(),
-                                fontSize = 18.sp,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                                color = numberColor,
-                            )
-                        }
-                    }
-                    repeat(columns - rowWeeks.size) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .aspectRatio(1f),
-                        )
-                    }
-                }
             }
         }
     }
