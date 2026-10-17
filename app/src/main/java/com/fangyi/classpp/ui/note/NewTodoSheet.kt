@@ -612,15 +612,20 @@ private fun TagEntry.toTagItem(fallbackColor: Color): TagItem =
     TagItem(name = name, color = colorArgb?.let { Color(it) } ?: fallbackColor)
 
 /**
- * 编辑回填：待办日期 → 日期卡选择态——空 → 无；恰为今天/明天 → 相对档位；其余 → 自定义首日 +
- * 存储的重复规则（随确认落库，无重复语义时为默认值）。
+ * 编辑回填：待办日期 → 日期卡选择态——空 → 无；无重复语义且恰为今天/明天 → 相对档位；
+ * 其余（含带重复语义的任何日期）→ 自定义首日 + 存储的重复规则。
+ * 相对档位的折叠必须让位给重复：锚在今天/明天的重复待办若被折成"今天/明天"，编辑浮层
+ * 一打开重复状态就丢了（确认后落成无重复 + 具体日期）。
  * 表单是单日期 UI（多日期仅导入可达，本期无导入入口），确认时只写回这一个日期。
  */
-private fun Todo?.toDateSelection(): DateSelection = when {
-    this == null || dates.isEmpty() -> DateSelection.None
-    dates.size == 1 && dates[0] == IsoDate.today() -> DateSelection.Today
-    dates.size == 1 && dates[0] == IsoDate.today() + 1 -> DateSelection.Tomorrow
-    else -> DateSelection.Custom(dates.first(), repeat)
+internal fun Todo?.toDateSelection(): DateSelection {
+    if (this == null || dates.isEmpty()) return DateSelection.None
+    val single = dates.singleOrNull()
+    if (repeat.type == RepeatType.None && single != null) {
+        if (single == IsoDate.today()) return DateSelection.Today
+        if (single == IsoDate.today() + 1) return DateSelection.Tomorrow
+    }
+    return DateSelection.Custom(dates.first(), repeat)
 }
 
 /**
