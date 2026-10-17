@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
@@ -24,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -47,9 +47,12 @@ import com.fangyi.classpp.ui.theme.isDarkTheme
  *   点击已选项不变（单选语义不允许取消）；
  * - 多选（[multiSelect] = true）：点击任意项切换其选中/取消，回写切换后的新集合。
  *
- * 规格（对齐 [SettingsCard]）：行高下限 [SheetFieldHeight]，行内距 16/14 画在点击区
- * 内侧（按压反馈铺满整行，pressClickable 取代涟漪；浅色压暗、深色提亮），文字走
- * fieldLabel（16sp SemiBold），行与行无缝堆叠、溢出由卡壳圆角裁剪。
+ * 规格（对齐 [SettingsCard]）：行内距 16/14 画在点击区内侧（按压反馈铺满整行，
+ * pressClickable 取代涟漪；浅色压暗、深色提亮），文字走 fieldLabel（16sp SemiBold），
+ * 行与行无缝堆叠、溢出由卡壳圆角裁剪。行高下限 [SheetFieldHeight] 判在**整卡**而非单行
+ * （同 [SettingsCard] 的量法）：行自然高 = 上下 14 内距 + 文字高，多行卡各行维持自然高
+ * （行距与 SettingsCard 多行卡一致）；整卡内容不足下限时（如只有一个选项）差额均摊给
+ * 各行撑高，按压反馈仍铺满整卡、内容仍居中。
  *
  * 选中态：文字 primary 色 + 行尾 ic_checkmark（20dp，primary 着色，与设计稿一致），
  * 未选中行 = onSurface 黑字、尾部不画勾。选中过渡走 Motion.FastMillis 先快后慢
@@ -63,28 +66,61 @@ fun SelectCard(
     modifier: Modifier = Modifier,
     multiSelect: Boolean = false,
 ) {
-    Column(
+    // 行高下限判在整卡而非单行（量法同 [SettingsCard]）：先按内容自然高度测各行，
+    // 整卡不足 [SheetFieldHeight] 时把差额均摊给各行撑高；内容超出下限后各行保持自然高
+    Layout(
+        content = {
+            options.forEachIndexed { index, label ->
+                SelectCardRow(
+                    label = label,
+                    selected = index in selectedIndices,
+                    onClick = {
+                        val next = when {
+                            // 多选：点击项在集合中切换；单选：已选项不变，未选项替换旧选
+                            multiSelect ->
+                                if (index in selectedIndices) selectedIndices - index
+                                else selectedIndices + index
+                            index in selectedIndices -> selectedIndices
+                            else -> setOf(index)
+                        }
+                        if (next != selectedIndices) onSelectionChange(next)
+                    },
+                )
+            }
+        },
         modifier = modifier
             .fillMaxWidth()
             .clip(SettingsCardShape)
             .background(MaterialTheme.colorScheme.surface),
-    ) {
-        options.forEachIndexed { index, label ->
-            SelectCardRow(
-                label = label,
-                selected = index in selectedIndices,
-                onClick = {
-                    val next = when {
-                        // 多选：点击项在集合中切换；单选：已选项不变，未选项替换旧选
-                        multiSelect ->
-                            if (index in selectedIndices) selectedIndices - index
-                            else selectedIndices + index
-                        index in selectedIndices -> selectedIndices
-                        else -> setOf(index)
-                    }
-                    if (next != selectedIndices) onSelectionChange(next)
-                },
+    ) { measurables, constraints ->
+        val minHeightPx = SheetFieldHeight.roundToPx()
+        val width = constraints.maxWidth
+        // 同一个 Measurable 一次布局只允许 measure() 一次：各行自然高度先用 intrinsic 查询
+        // （不产生正式测量），再带着算好的下限一次性正式测量
+        val naturals = measurables.map { it.minIntrinsicHeight(width) }
+        val contentHeight = naturals.sum()
+        // 空卡不兜底；已达下限或超出的卡片各行维持自然高度
+        val cardHeight = if (naturals.isEmpty()) 0
+            else contentHeight.coerceAtLeast(minHeightPx).coerceAtMost(constraints.maxHeight)
+        // 整卡不足下限时把差额均摊给各行（余数按行序 +1px 补齐）；被撑高后内容仍垂直居中
+        val extra = cardHeight - contentHeight
+        val placeables = measurables.mapIndexed { index, measurable ->
+            val share = if (extra > 0) {
+                extra / measurables.size + if (index < extra % measurables.size) 1 else 0
+            } else 0
+            // 自然高可能超过父级给的最大高（如预览页面底部剩余空间不足），min 不得越过 max
+            measurable.measure(
+                constraints.copy(
+                    minHeight = (naturals[index] + share).coerceAtMost(constraints.maxHeight),
+                ),
             )
+        }
+        layout(width, cardHeight) {
+            var y = 0
+            placeables.forEach { placeable ->
+                placeable.place(0, y)
+                y += placeable.height
+            }
         }
     }
 }
@@ -113,7 +149,6 @@ private fun SelectCardRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = SheetFieldHeight)
             .pressClickable(RectangleShape, shade = rowShade, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
