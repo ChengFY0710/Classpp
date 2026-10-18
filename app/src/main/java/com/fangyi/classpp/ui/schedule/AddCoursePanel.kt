@@ -59,6 +59,7 @@ import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.isDarkTheme
 import dev.chrisbanes.haze.rememberHazeState
 
 private val textStartPadding = PaddingValues(start = 12.dp) // 描述性文字统一左移，视觉上更有层次
@@ -536,7 +537,8 @@ fun AddCoursePanel(
 
             CardSection(title = stringResource(R.string.edit_course_color)) {
                 ColorSwatchCard(
-                    colors = CourseColor.entries.map { it.barColor },
+                    // 色板随主题取深浅取值：所见即卡片竖条的实际颜色
+                    colors = CourseColor.entries.map { it.barColor(MaterialTheme.isDarkTheme) },
                     selectedIndex = CourseColor.entries.indexOf(color),
                     onSelect = { index ->
                         CourseColor.entries.getOrNull(index)?.let { color = it }

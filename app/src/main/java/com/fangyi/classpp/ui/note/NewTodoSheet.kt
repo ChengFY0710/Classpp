@@ -67,6 +67,7 @@ import com.fangyi.classpp.ui.components.UrgentFlagCard
 import com.fangyi.classpp.ui.schedule.CourseColor
 import com.fangyi.classpp.ui.schedule.barColor
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
+import com.fangyi.classpp.ui.theme.isDarkTheme
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -164,11 +165,13 @@ internal fun NewTodoSheet(
         scheduleRepository?.activeSchedule ?: MutableStateFlow<Schedule?>(null)
     }.collectAsState()
     // 课程标签由课表数据派生（同名课去重），不入库（TagRepository 同约定）；
-    // 课程色取 UI 层枚举的 barColor——两套 CourseColor 同名同值，经 name 直转（ScheduleAdapters 同款）
-    val courseTags = remember(activeSchedule) {
+    // 课程色取 UI 层枚举的 barColor——两套 CourseColor 同名同值，经 name 直转（ScheduleAdapters 同款）；
+    // dark 在 remember 外读取（remember 块内不能调 Composable），并作 key：深浅切换时重建标签色
+    val dark = MaterialTheme.isDarkTheme
+    val courseTags = remember(activeSchedule, dark) {
         activeSchedule?.courses
             ?.distinctBy { it.name }
-            ?.map { TagItem(name = it.name, color = CourseColor.valueOf(it.color.name).barColor) }
+            ?.map { TagItem(name = it.name, color = CourseColor.valueOf(it.color.name).barColor(dark)) }
             ?: emptyList()
     }
 

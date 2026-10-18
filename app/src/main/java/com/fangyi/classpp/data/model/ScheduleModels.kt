@@ -78,9 +78,12 @@ data class WeekPattern(val segments: List<WeekSegment> = emptyList()) {
 @Serializable
 data class TimeSlotDef(val startTime: String, val endTime: String)
 
-/** 课程卡片配色；条目名与 ui.schedule.CourseColor 完全一致，后续 UI 映射可直接 valueOf() */
+/** 课程卡片配色；条目名与 ui.schedule.CourseColor 完全一致（颜色选集 18 色），后续 UI 映射可直接 valueOf() */
 @Serializable
-enum class CourseColor { Blue, Green, Greentwo, Yellow, Orange, Purple, Teal, Pink }
+enum class CourseColor {
+    Pink, Lilac, Purple, Blue, SkyBlue, SteelBlue, IceBlue, Aqua, Teal,
+    Green, BrightGreen, Mint, Greentwo, Olive, Lemon, Yellow, Orange, Coral,
+}
 
 /**
  * 一门课在课表中的一次占位。

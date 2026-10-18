@@ -42,23 +42,66 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.isDarkTheme
 
 private val CardShape = RoundedCornerShape(6.dp)
 private val BarWidth = 3.dp
 
-/** [CourseColor] 到卡片竖条/时间文字颜色的映射（编辑弹窗的色块也用它）。
- *  马卡龙系内容色在浅色白卡与深色深卡上对比都成立，深浅共用一套 */
-internal val CourseColor.barColor: Color
+/** [CourseColor] 到卡片竖条/时间文字颜色的浅色映射（白卡底，马卡龙原色；深色见 [barColorDark]）。
+ *  分支顺序与枚举声明一致（颜色选集 18 色） */
+private val CourseColor.barColorLight: Color
     get() = when (this) {
+        CourseColor.Pink -> Color(0xFFEDB5C9)
+        CourseColor.Lilac -> Color(0xFFE2B5E9)
+        CourseColor.Purple -> Color(0xFFCBBCF0)
         CourseColor.Blue -> Color(0xFFB1C4EE)
+        CourseColor.SkyBlue -> Color(0xFFA2C8E8)
+        CourseColor.SteelBlue -> Color(0xFFA9C8E2)
+        CourseColor.IceBlue -> Color(0xFF90CCE7)
+        CourseColor.Aqua -> Color(0xFF6ED4D4)
+        CourseColor.Teal -> Color(0xFF7CD3D0)
         CourseColor.Green -> Color(0xFF81D689)
+        CourseColor.BrightGreen -> Color(0xFF72DB64)
+        CourseColor.Mint -> Color(0xFF73DB5C)
         CourseColor.Greentwo -> Color(0xFF98D651)
+        CourseColor.Olive -> Color(0xFFB5CE69)
+        CourseColor.Lemon -> Color(0xFFD1C815)
         CourseColor.Yellow -> Color(0xFFE3C160)
         CourseColor.Orange -> Color(0xFFEBB8A7)
-        CourseColor.Purple -> Color(0xFFCBBCF0)
-        CourseColor.Teal -> Color(0xFF7CD3D0)
-        CourseColor.Pink -> Color(0xFFEDB5C9)
+        CourseColor.Coral -> Color(0xFFEEB6B6)
     }
+
+/**
+ * [CourseColor] 的深色映射（DarkSurface 深卡底）：降明度降饱和策略——明度、饱和度
+ * 同比降至浅色的 75%（明度保底 0.44，仅本来就偏暗的 Lemon 触底），色相不变，
+ * 呈深卡上的低饱和沉稳同色系；卡上时间文字对比 3.6–6.0，与深色 secondaryText 相当。
+ * 经 [barColor] 取用。
+ */
+private val CourseColor.barColorDark: Color
+    get() = when (this) {
+        CourseColor.Pink -> Color(0xFFCA7090)
+        CourseColor.Lilac -> Color(0xFFB973C4)
+        CourseColor.Purple -> Color(0xFF8D74CD)
+        CourseColor.Blue -> Color(0xFF6C8ACB)
+        CourseColor.SkyBlue -> Color(0xFF6398C4)
+        CourseColor.SteelBlue -> Color(0xFF6C98BC)
+        CourseColor.IceBlue -> Color(0xFF55A2C4)
+        CourseColor.Aqua -> Color(0xFF48AAAA)
+        CourseColor.Teal -> Color(0xFF4FACA9)
+        CourseColor.Green -> Color(0xFF50B159)
+        CourseColor.BrightGreen -> Color(0xFF4DB040)
+        CourseColor.Mint -> Color(0xFF51AC3D)
+        CourseColor.Greentwo -> Color(0xFF74A43C)
+        CourseColor.Olive -> Color(0xFF8BA148)
+        CourseColor.Lemon -> Color(0xFFB5AE2B)
+        CourseColor.Yellow -> Color(0xFFB99839)
+        CourseColor.Orange -> Color(0xFFC87E66)
+        CourseColor.Coral -> Color(0xFFCB7070)
+    }
+
+/** 按当前主题取课程配色（[dark] = MaterialTheme.isDarkTheme，设置页手动覆盖时同源）；编辑弹窗的色块同源 */
+internal fun CourseColor.barColor(dark: Boolean): Color =
+    if (dark) barColorDark else barColorLight
 
 /** 卡内文本行数分配结果：[name] 课程名、[location] 地点（教师恒 1 行，不参与分配） */
 internal data class CardLines(val name: Int, val location: Int)
@@ -123,8 +166,9 @@ fun CourseCard(
     endTime: String = slot.endTime,
 ) {
     val inactiveColor = MaterialTheme.classppColors.negative
+    val dark = MaterialTheme.isDarkTheme
     val barColor = if (course.active) {
-        course.color.barColor
+        course.color.barColor(dark)
     } else {
         inactiveColor
     }
@@ -177,7 +221,7 @@ fun CourseCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .background(alternate.barColor),
+                        .background(alternate.barColor(dark)),
                 )
             }
         }

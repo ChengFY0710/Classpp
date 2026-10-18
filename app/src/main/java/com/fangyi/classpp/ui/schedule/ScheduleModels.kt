@@ -35,8 +35,14 @@ data class TimeSlot(
     val endTime: String,
 )
 
-/** 课程卡片配色；映射到 Color 收在 CourseCard.kt，模型保持零 Compose 依赖 */
-enum class CourseColor { Blue, Green, Greentwo , Yellow, Orange, Purple, Teal, Pink }
+/**
+ * 课程卡片配色；映射到 Color 收在 CourseCard.kt，模型保持零 Compose 依赖。
+ * 声明顺序即编辑面板色板的排列顺序（颜色选集 18 色，自上而下）。
+ */
+enum class CourseColor {
+    Pink, Lilac, Purple, Blue, SkyBlue, SteelBlue, IceBlue, Aqua, Teal,
+    Green, BrightGreen, Mint, Greentwo, Olive, Lemon, Yellow, Orange, Coral,
+}
 
 /**
  * 一周的整页渲染数据：日期带 + 该周课程。
