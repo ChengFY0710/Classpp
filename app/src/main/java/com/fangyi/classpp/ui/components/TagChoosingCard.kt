@@ -76,7 +76,7 @@ import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /** 标签选择卡里的一项：名字 + 颜色。
- *  用户自定义标签的颜色来自颜色选择器（接入前恒为主题 Primary）；课程标签的颜色
+ *  用户自定义标签的颜色来自颜色选择器（未挑色时跟随主题 Primary）；课程标签的颜色
  *  由宿主从课程卡配色映射（ui.schedule.CourseColor.barColor），组件不依赖课表包。 */
 @Immutable
 data class TagItem(val name: String, val color: Color)
@@ -94,7 +94,8 @@ private val DeletePopupGap = 8.dp
  * 标签选择卡：白卡内「输入添加自定义标签 + 横滑标签行 + 可展开的课程标签区」。
  *
  * 设计稿五态：
- * - 常态：占位「点击输入添加标签」+ 右侧颜色圆球（本次恒 Primary、非交互，颜色选择后续再接）；
+ * - 常态：占位「点击输入添加标签」+ 右侧颜色圆球（显示新标签的颜色草稿，点按唤起
+ *   宿主的选色弹卡 [BottomColorSelectCard]）；
  * - 已有标签：标签行横向排列，超宽横向滑动、多余裁切（不足一行也能拉出橡皮筋）；
  * - 聚焦：整卡 2dp 蓝色描边（SheetTextField 同款单动画源），光标可见；
  * - 提交：失焦（点空白/其他地方）或 IME Done 时把输入建成标签，重名静默忽略；
@@ -120,9 +121,14 @@ private val DeletePopupGap = 8.dp
  * @param userTags 用户自定义标签（横滑行，支持长按删除）
  * @param courseTags 课程标签（宿主传激活课表按课程名去重后的映射结果，不可删）
  * @param selectedNames 选中的标签名集合
- * @param onAddTag 提交新标签（已 trim 非空）；颜色由宿主定（本次恒 Primary）
+ * @param onAddTag 提交新标签（已 trim 非空）与其颜色（[newTagColorArgb]，null = 跟随主题
+ *   Primary）；宿主落库 `TagRepository.addTag(name, colorArgb)`
  * @param onDeleteTag 长按删除确认后回调（仅用户标签）
  * @param initialCourseExpanded 课程标签区初始展开态（预览/特殊宿主用，交互中仍可切换）
+ * @param newTagColorArgb 输入行颜色球的显示色 = 新标签的颜色草稿（null = 跟随主题
+ *   Primary，TagEntry.colorArgb 同语义）；由宿主经选色弹卡回写
+ * @param onPickColor 点颜色球上报：宿主唤起选色弹卡（BottomColorSelectCard）。默认空
+ *   实现——不需要选色的宿主（预览等）保持颜色球不可交互的现状
  */
 @Composable
 fun TagChoosingCard(
@@ -130,12 +136,14 @@ fun TagChoosingCard(
     courseTags: List<TagItem>,
     selectedNames: Set<String>,
     onSelectionChange: (Set<String>) -> Unit,
-    onAddTag: (String) -> Unit,
+    onAddTag: (name: String, colorArgb: Long?) -> Unit,
     onDeleteTag: (String) -> Unit,
     modifier: Modifier = Modifier,
     inputPlaceholder: String = stringResource(R.string.tag_choosing_input_hint),
     courseSectionTitle: String = stringResource(R.string.tag_choosing_course_title),
     initialCourseExpanded: Boolean = false,
+    newTagColorArgb: Long? = null,
+    onPickColor: () -> Unit = {},
 ) {
     var text by remember { mutableStateOf("") }
     var focused by remember { mutableStateOf(false) }
@@ -149,11 +157,12 @@ fun TagChoosingCard(
 
     // 提交当前输入：trim 非空且不与现有标签（用户/课程）重名才回调，随后清空输入。
     // 重名静默忽略：标签本质是字符串（Todo.tags），同名再建一份没有意义。
+    // 颜色草稿随标签一并交给宿主（null = 跟随主题 Primary）
     fun submitInput() {
         val name = text.trim()
         if (name.isEmpty()) return
         val duplicated = userTags.any { it.name == name } || courseTags.any { it.name == name }
-        if (!duplicated) onAddTag(name)
+        if (!duplicated) onAddTag(name, newTagColorArgb)
         text = ""
     }
 
@@ -203,7 +212,7 @@ fun TagChoosingCard(
                 },
             ),
     ) {
-        // —— 输入行：间距对齐 SheetTextField（16/14 内距、60dp 行高下限），左侧颜色圆球 ——
+        // —— 输入行：间距对齐 SheetTextField（16/14 内距、60dp 行高下限），右侧颜色圆球 ——
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -245,12 +254,18 @@ fun TagChoosingCard(
                 },
             )
             Spacer(Modifier.width(12.dp))
-            // 颜色选择器占位：新标签的颜色圆球，本次恒 Primary、非交互
+            // 新标签的颜色圆球：显示当前颜色草稿（null = 跟随主题 Primary），点按上报宿主
+            // 唤起选色弹卡。按压反馈在 clip 之前（ColorSwatchCard 色球同款）；只收键盘
+            // 不清焦——清焦会触发失焦提交，把输入中的文字抢跑成标签
             Box(
                 modifier = Modifier
                     .size(24.dp)
+                    .pressClickable(PillShape) {
+                        keyboard?.hide()
+                        onPickColor()
+                    }
                     .clip(PillShape)
-                    .background(primaryColor),
+                    .background(newTagColorArgb?.let { Color(it) } ?: primaryColor),
             )
         }
 

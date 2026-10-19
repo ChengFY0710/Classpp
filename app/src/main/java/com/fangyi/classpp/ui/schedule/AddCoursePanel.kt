@@ -159,7 +159,7 @@ fun AddCoursePanel(
             when {
                 existing != null -> CourseColor.valueOf(existing.color.name)
                 alternateFrom != null -> draftCourses.firstUnusedColor(day, startSlotId, endSlotId)
-                else -> CourseColor.Blue
+                else -> CourseColor.entries.first()
             },
         )
     }

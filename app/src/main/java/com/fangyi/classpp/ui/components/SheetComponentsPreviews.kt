@@ -572,8 +572,9 @@ private fun TagChoosingCardPreview() = ClassppTheme {
         TagItem("毛概", Color(0xFFCBBCF0)),
     )
     var selected by remember { mutableStateOf(setOf("紧急")) }
-    val onAddTag: (String) -> Unit = { name ->
-        userTags.add(TagItem(name, primaryColor))
+    val onAddTag: (String, Long?) -> Unit = { name, colorArgb ->
+        // 未挑色（null = 跟随主题）落到 Primary；onPickColor 默认空实现，颜色球不可交互
+        userTags.add(TagItem(name, colorArgb?.let { Color(it) } ?: primaryColor))
     }
     // 删除时同步从选中集合移除：选中键是标签名，残留会让同名新标签带着选中态复活
     val onDeleteTag: (String) -> Unit = { name ->
@@ -822,6 +823,29 @@ private fun BottomNumberSelectCardPreview() = ClassppTheme {
         title = "选择周数",
         valueRange = 1..30,
         initialValue = 16,
+        onConfirm = { },
+    )
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 500)
+@Composable
+private fun BottomColorSelectCardPreview() = ClassppTheme {
+    // 颜色选择弹窗：色球逐行均布（色板越宽每行越多），点色球换高亮、确认交回索引；
+    // 色板为 ColorSwatchCardPreview 同款 8 色示例（生产默认单 Primary）
+    BottomColorSelectCard(
+        visible = true,
+        onDismiss = {},
+        colors = listOf(
+            Color(0xFFB1C4EE),
+            Color(0xFF81D689),
+            Color(0xFF98D651),
+            Color(0xFFE3C160),
+            Color(0xFFEBB8A7),
+            Color(0xFFCBBCF0),
+            Color(0xFF7CD3D0),
+            Color(0xFFEDB5C9),
+        ),
+        selectedIndex = 2,
         onConfirm = { },
     )
 }

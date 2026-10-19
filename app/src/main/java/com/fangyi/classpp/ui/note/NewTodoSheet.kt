@@ -18,6 +18,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -41,6 +42,7 @@ import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.cycleDays
+import com.fangyi.classpp.ui.components.BottomColorSelectCard
 import com.fangyi.classpp.ui.components.BottomDateSelectCard
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.BottomTimeSelectCard
@@ -146,6 +148,9 @@ internal fun NewTodoSheet(
     var location by remember { mutableStateOf(existing?.location ?: "") }
     var note by remember { mutableStateOf(existing?.note ?: "") }
     var selectedTagNames by remember { mutableStateOf(existing?.tags?.toSet() ?: emptySet()) }
+    // 新标签的颜色草稿（null = 跟随主题 Primary，TagEntry.colorArgb 同语义）：输入行颜色球
+    // 显示、选色弹卡确认回写、建标签成功后复位——下一个新标签回到默认 Primary
+    var newTagColorArgb by remember { mutableStateOf<Long?>(null) }
 
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -218,6 +223,12 @@ internal fun NewTodoSheet(
     var rangeTimeMounted by remember { mutableStateOf(false) }
     var rangeTimeInitial by remember { mutableIntStateOf(0) }
     var rangeTimeCallback by remember { mutableStateOf<((Int) -> Unit)?>(null) }
+
+    // 标签选色弹卡（TagChoosingCard 输入行颜色球上报）：确认把选中色回写颜色草稿。
+    // 两段式挂载（同自定义日期轮），声明在 OverlaySheet 之前——弹卡在场时经 covered
+    // 让本浮层缩小后退
+    var colorPickVisible by remember { mutableStateOf(false) }
+    var colorPickMounted by remember { mutableStateOf(false) }
 
     // 待办分组选择：selectedGroupName 为 null = 未分组，编辑模式从 existing.group 回填，
     // 确认时随 Todo 组装落库（引用完整性由仓库归一化维护）。选择分组浮层期望态 + 挂载态
@@ -309,7 +320,7 @@ internal fun NewTodoSheet(
         onDismiss = onDismiss,
         visible = visible,
         covered = deleteRequested || deadlineSheetVisible || customDateVisible || rangeTimeVisible ||
-            groupPickVisible || repeatVisible,
+            groupPickVisible || repeatVisible || colorPickVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
         // 共享采样源：叠在本浮层上的滚轮弹窗拿它做卡片磨砂背景模糊（见 sheetHazeState 声明处）
@@ -452,13 +463,21 @@ internal fun NewTodoSheet(
                     courseTags = courseTags,
                     selectedNames = selectedTagNames,
                     onSelectionChange = { selectedTagNames = it },
-                    // 增删直写标签库：成功才同步选中态（重名等失败静默忽略，同组件约定）
-                    onAddTag = { tagName ->
+                    // 增删直写标签库：成功才同步选中态并复位颜色草稿（重名等失败静默忽略，
+                    // 同组件约定）；新标签颜色随 addTag 落库（null = 跟随主题 Primary）
+                    onAddTag = { tagName, colorArgb ->
                         scope.launch {
-                            if (tagRepository?.addTag(tagName) is TagOpResult.Ok) {
+                            if (tagRepository?.addTag(tagName, colorArgb) is TagOpResult.Ok) {
                                 selectedTagNames = selectedTagNames + tagName
+                                newTagColorArgb = null
                             }
                         }
+                    },
+                    // 输入行颜色球上报：挂载选色弹卡（画在本浮层之后，同自定义日期轮）
+                    newTagColorArgb = newTagColorArgb,
+                    onPickColor = {
+                        colorPickMounted = true
+                        colorPickVisible = true
                     },
                     onDeleteTag = { tagName ->
                         scope.launch {
@@ -569,6 +588,25 @@ internal fun NewTodoSheet(
                 customDateVisible = false
                 customDateCallback?.invoke(date)
                 customDateCallback = null
+            },
+        )
+    }
+
+    // 标签选色弹卡：确认把选中色回写颜色草稿（存无符号 0xAARRGGBB，TagEntry.colorArgb
+    // 同约定）；取消/遮罩/返回只请求关闭，播完退场才卸载（两段式，同自定义日期轮）
+    if (colorPickMounted) {
+        val tagColorPalette = listOf(primaryColor)
+        BottomColorSelectCard(
+            visible = colorPickVisible,
+            onDismiss = { colorPickVisible = false },
+            onDismissed = { colorPickMounted = false },
+            hazeState = sheetHazeState,
+            selectedIndex = newTagColorArgb
+                ?.let { argb -> tagColorPalette.indexOf(Color(argb)) }
+                ?: -1,
+            onConfirm = { index ->
+                newTagColorArgb = tagColorPalette[index].toArgb().toLong() and 0xFFFFFFFFL
+                colorPickVisible = false
             },
         )
     }

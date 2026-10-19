@@ -263,6 +263,9 @@
     <string name="tag_choosing_input_hint">Tap to add a tag</string>
     <string name="tag_choosing_course_title">Course tags</string>
 
+    <!-- Color select card -->
+    <string name="color_select_title">Choose Color</string>
+
     <!-- Todo list sections -->
     <string name="todo_section_pinned">Pinned</string>
     <string name="todo_section_incomplete">Incomplete</string>
