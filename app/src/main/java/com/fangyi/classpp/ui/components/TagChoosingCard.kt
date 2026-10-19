@@ -300,7 +300,15 @@ fun TagChoosingCard(
                         focusManager.clearFocus()
                         courseExpanded = !courseExpanded
                     }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                    .padding(
+                        start = 16.dp,
+                        end = 16.dp,
+                        // 无用户标签行时本行紧贴输入行：top 取 2dp（与标签行 top 同款），
+                        // 输入行下方间距两种状态一致（14 + 2 = 16dp）；有标签行时标签行
+                        // bottom 已收 0，上间距由这里的 10dp 提供
+                        top = if (userTags.isEmpty()) 2.dp else 14.dp,
+                        bottom = 14.dp,
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
