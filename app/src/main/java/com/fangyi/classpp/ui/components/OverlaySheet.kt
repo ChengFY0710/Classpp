@@ -65,13 +65,11 @@ import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetShape
-import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
-import dev.chrisbanes.haze.HazeProgressive
+import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.rememberHazeState
-import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
 
@@ -497,7 +495,7 @@ fun OverlaySheet(
 
 /**
  * 顶栏：拖拽条 + 确认胶囊 + 居中标题 + 动作胶囊（默认左确认右动作，[confirmAtEnd] 时对调）。
- * hazeEffect 打在这层上（渐变 1→0、白 30% tint，与设置页同规格），
+ * hazeBlur 打在这层上（渐变 1→0、白 30% tint，与设置页同规格），
  * 按钮与标题画在模糊层之上保持清晰；整层被 Surface 裁进浮层圆角。
  * 整条顶栏是下拉关闭的手势区（[dragModifier] 挂垂直拖拽），按钮点击不受影响。
  */
@@ -514,8 +512,7 @@ private fun OverlaySheetTopBar(
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
 ) {
-    // hazeEffect 的 block 在绘制期执行、非 composable 上下文：tint 取值提到 modifier 之前
-    val hazeTint = MaterialTheme.classppColors.hazeTint
+    // Haze 2：Style 在组合期构建（tint 由 hazeTopBarStyle 内部读主题）
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -524,16 +521,12 @@ private fun OverlaySheetTopBar(
             // 兜底若带透明度，锐利内容会从透明处透出、与模糊层叠成重影（蓝描边/蓝格子最明显）；
             // 不透明兜底让混合只发生在"模糊 vs 平色"之间，锐利内容被完全挡住
             .background(MaterialTheme.colorScheme.background)
-            .hazeEffect(hazeState) {
+            .hazeBlur(
+                input = hazeSources(hazeState),
                 // 25dp：与设置页顶栏同规格的模糊预算（转场逐帧重合成，模糊不宜过重）
-                blurRadius = 25.dp
-                progressive = HazeProgressive.verticalGradient(
-                    startIntensity = 1f,
-                    endIntensity = 0f,
-                )
-                tints = listOf(HazeTint(hazeTint.copy(alpha = 0.30f)))
-                noiseFactor = 0f
-            }
+                style = hazeTopBarStyle(),
+                performanceMode = HazePerformanceMode.Quality,
+            )
             .then(dragModifier),
     ) {
         // 拖拽小横条：提示整条顶栏可下拉关闭（手势区域为整条顶栏）

@@ -67,21 +67,22 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.components.hazeCardStyle
+import com.fangyi.classpp.ui.components.hazeSources
+import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.tabTransitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.Correct
 import com.fangyi.classpp.ui.theme.Error
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.WeekCellShape
-import dev.chrisbanes.haze.HazeProgressive
+import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeTint
-import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.blur.hazeBlur
 import java.util.Calendar
 import java.util.Date
 import kotlin.math.roundToInt
@@ -259,8 +260,6 @@ fun ScheduleHeader(
     // 学期后没有今周页（不显示）。查看的周与今周相同则按钮隐藏
     val showBackToCurrent = todayWeek != null && selectedWeek != todayWeek
 
-    // hazeEffect 的 block 在绘制期执行、非 composable 上下文：tint 取值提到 Layout 之前
-    val hazeTint = MaterialTheme.classppColors.hazeTint
     // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场期间整帧重放
     val transitionFreezeLayer = rememberGraphicsLayer()
 
@@ -456,21 +455,15 @@ fun ScheduleHeader(
             )
             .then(
                 if (hazeState != null && progress > 0f) {
-                    // 背景模糊画在兜底色之上、内容之下；alpha 随进度渐入实现无缝衔接。
-                    // forceInvalidateOnPreDraw：源网格重画后（含捕获层重建的场合）强制本
-                    // 效果重采样，杜绝快速切 tab 后首帧画出空内容（只剩白底）的闪帧——
-                    // Haze 在 API<32 上本来就强制此行为，这里对齐到所有版本
-                    Modifier.hazeEffect(hazeState) {
-                        alpha = progress
-                        blurRadius = 32.dp
-                        progressive = HazeProgressive.verticalGradient(
-                            startIntensity = 1f,
-                            endIntensity = 0f,
-                        )
-                        tints = listOf(HazeTint(hazeTint.copy(alpha = 0.30f)))
-                        noiseFactor = 0f
-                        forceInvalidateOnPreDraw = true
-                    }
+                    // 背景模糊画在兜底色之上、内容之下；opacity 随进度渐入实现无缝衔接。
+                    // Haze 2 由库内负责源失效与几何对齐（旧 forceInvalidateOnPreDraw 已移除），
+                    // 原先「源重画后强制重采样、杜绝快速切 tab 首帧空白」的诉求由库接管；
+                    // 转场期另有 tabTransitionFreeze 整帧重放兜底
+                    Modifier.hazeBlur(
+                        input = hazeSources(hazeState),
+                        style = hazeTopBarStyle(radius = 32.dp, opacity = progress),
+                        performanceMode = HazePerformanceMode.Quality,
+                    )
                 } else {
                     Modifier
                 },
@@ -782,8 +775,6 @@ private fun WeekPickerCardShell(
     onWeekSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // hazeEffect 的 block 在绘制期执行、非 composable 上下文：tint 取值提到 modifier 之前
-    val hazeTint = MaterialTheme.classppColors.hazeTint
     Box(
         modifier = modifier
             .padding(
@@ -801,11 +792,12 @@ private fun WeekPickerCardShell(
             .background(MaterialTheme.colorScheme.surface)
             .then(
                 if (hazeState != null) {
-                    Modifier.hazeEffect(hazeState) {
-                        blurRadius = 12.dp
-                        tints = listOf(HazeTint(hazeTint.copy(alpha = 0.6f)))
-                        noiseFactor = 0f
-                    }
+                    // 白卡毛玻璃：12dp + 60% tint（跨 Popup 窗口采样课表网格 hazeSource）
+                    Modifier.hazeBlur(
+                        input = hazeSources(hazeState),
+                        style = hazeCardStyle(),
+                        performanceMode = HazePerformanceMode.Quality,
+                    )
                 } else {
                     Modifier
                 },

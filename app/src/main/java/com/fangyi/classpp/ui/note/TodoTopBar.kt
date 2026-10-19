@@ -67,6 +67,8 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.PopupMenuCard
 import com.fangyi.classpp.ui.components.PopupMenuPopup
 import com.fangyi.classpp.ui.components.PopupMenuSection
+import com.fangyi.classpp.ui.components.hazeSources
+import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
@@ -80,11 +82,9 @@ import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
-import dev.chrisbanes.haze.HazeInputScale
-import dev.chrisbanes.haze.HazeProgressive
+import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeTint
-import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.blur.hazeBlur
 
 /** 顶栏胶囊高度（与 ScheduleHeader 的 WeekPill 同款 40dp） */
 private val TopBarPillHeight = 40.dp
@@ -303,15 +303,13 @@ internal fun TodoTopBar(
     categoryMenuSections: List<PopupMenuSection> = emptyList(),
 ) {
     val overscrollFactory = rememberOffsetOverscrollFactory(animationSpec = Motion.Settle)
-    // 磨砂 tint 随主题（hazeEffect 的 block 在绘制期执行、非 composable 上下文，取值提到 Box 之前）
-    val hazeTint = MaterialTheme.classppColors.hazeTint
     // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场期间整帧重放
     val transitionFreezeLayer = rememberGraphicsLayer()
     CompositionLocalProvider(LocalOverscrollFactory provides overscrollFactory) {
         Box(
             modifier = modifier
                 .fillMaxWidth()
-                // 转场冻结层包在兜底色与 hazeEffect 之外（最外层 draw）：录制帧才是
+                // 转场冻结层包在兜底色与 hazeBlur 之外（最外层 draw）：录制帧才是
                 // 「兜底色 + 模糊 + 内容」的完整栏面，转场期间整条重放、不重采样
                 .then(
                     if (tabTransition != null) {
@@ -324,20 +322,13 @@ internal fun TodoTopBar(
                 .background(MaterialTheme.colorScheme.background)
                 .then(
                     if (hazeState != null) {
-                        // 设置页顶栏同款渐变模糊：25dp + 半分辨率输入（Fixed(0.5)）+ mask
-                        // 渐变（preferPerformance）——整页覆盖层转场逐帧重合成毛玻璃，
-                        // 模糊预算必须收紧（SettingsTopBar 同一转场性能规格）
-                        Modifier.hazeEffect(hazeState) {
-                            blurRadius = 25.dp
-                            progressive = HazeProgressive.verticalGradient(
-                                startIntensity = 1f,
-                                endIntensity = 0f,
-                                preferPerformance = true,
-                            )
-                            inputScale = HazeInputScale.Fixed(0.5f)
-                            tints = listOf(HazeTint(hazeTint.copy(alpha = 0.30f)))
-                            noiseFactor = 0f
-                        }
+                        // 设置页顶栏同款渐变模糊：25dp + 下采样档（Balanced = Fixed(0.5)）
+                        // ——整页覆盖层转场逐帧重合成毛玻璃，模糊预算必须收紧
+                        Modifier.hazeBlur(
+                            input = hazeSources(hazeState),
+                            style = hazeTopBarStyle(),
+                            performanceMode = HazePerformanceMode.Balanced,
+                        )
                     } else {
                         Modifier
                     },

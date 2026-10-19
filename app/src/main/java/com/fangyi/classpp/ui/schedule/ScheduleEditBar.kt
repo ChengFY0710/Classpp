@@ -31,16 +31,16 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.components.hazeSources
+import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.tabTransitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.EditActionShape
-import dev.chrisbanes.haze.HazeProgressive
+import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeTint
-import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.blur.hazeBlur
 
 private val EditActionIconSize = 30.dp
 private val EditActionLabelTextSize = 13.sp
@@ -83,8 +83,6 @@ fun ScheduleEditBar(
     // 星期行的列标签用单字简称资源（同 ScheduleHeader），勿对全名做字符串假设
     val weekdays = stringArrayResource(R.array.weekdays_short).take(days)
     val progress = blurProgress.coerceIn(0f, 1f)
-    // hazeEffect 的 block 在绘制期执行、非 composable 上下文：tint 取值提到 modifier 之前
-    val hazeTint = MaterialTheme.classppColors.hazeTint
     // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场期间整帧重放
     val transitionFreezeLayer = rememberGraphicsLayer()
     Column(
@@ -101,20 +99,14 @@ fun ScheduleEditBar(
             .background(Color.Transparent)
             .then(
                 if (hazeState != null && progress > 0f) {
-                    // 背景模糊画在兜底色之上、内容之下；alpha 随进度渐入实现无缝衔接。
-                    // forceInvalidateOnPreDraw 与 ScheduleHeader 同款：源重画后强制重采样，
-                    // 杜绝快速切 tab 后首帧画出空内容（只剩白底）的闪帧
-                    Modifier.hazeEffect(hazeState) {
-                        alpha = progress
-                        blurRadius = 32.dp
-                        progressive = HazeProgressive.verticalGradient(
-                            startIntensity = 1f,
-                            endIntensity = 0f,
-                        )
-                        tints = listOf(HazeTint(hazeTint.copy(alpha = 0.30f)))
-                        noiseFactor = 0f
-                        forceInvalidateOnPreDraw = true
-                    }
+                    // 背景模糊画在兜底色之上、内容之下；opacity 随进度渐入实现无缝衔接。
+                    // Haze 2 由库内负责源失效与几何对齐（旧 forceInvalidateOnPreDraw 已移除），
+                    // 转场期另有 tabTransitionFreeze 整帧重放兜底
+                    Modifier.hazeBlur(
+                        input = hazeSources(hazeState),
+                        style = hazeTopBarStyle(radius = 32.dp, opacity = progress),
+                        performanceMode = HazePerformanceMode.Quality,
+                    )
                 } else {
                     Modifier
                 },

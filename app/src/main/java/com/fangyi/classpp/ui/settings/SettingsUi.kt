@@ -34,16 +34,15 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
+import com.fangyi.classpp.ui.components.hazeSources
+import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.schedule.totalWeeks
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
-import dev.chrisbanes.haze.HazeInputScale
-import dev.chrisbanes.haze.HazeProgressive
+import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeTint
-import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.blur.hazeBlur
 
 /**
  * 设置页组件：顶栏 [SettingsTopBar] 与学期设置卡 [TermDatesCard]。
@@ -70,8 +69,7 @@ internal fun SettingsTopBar(
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
 ) {
-    // 磨砂 tint 随主题（hazeEffect 的 block 在绘制期执行、非 composable 上下文，取值提到 Box 之前）
-    val hazeTint = MaterialTheme.classppColors.hazeTint
+    // Haze 2：Style 在组合期构建（tint 由 hazeTopBarStyle 内部读主题）
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -79,20 +77,14 @@ internal fun SettingsTopBar(
             .background(MaterialTheme.colorScheme.background)
             .then(
                 if (hazeState != null) {
-                    // 转场性能规格：25dp + 半分辨率输入（Fixed(0.5)）+ mask 渐变
-                    // （preferPerformance）——整页覆盖层转场逐帧重合成毛玻璃，模糊预算
-                    // 必须收紧（32dp 全分辨率 progressive 的 GPU 成本压不住帧预算）
-                    Modifier.hazeEffect(hazeState) {
-                        blurRadius = 25.dp
-                        progressive = HazeProgressive.verticalGradient(
-                            startIntensity = 1f,
-                            endIntensity = 0f,
-                            preferPerformance = true,
-                        )
-                        inputScale = HazeInputScale.Fixed(0.5f)
-                        tints = listOf(HazeTint(hazeTint.copy(alpha = 0.30f)))
-                        noiseFactor = 0f
-                    }
+                    // 转场性能规格：25dp + 下采样档（Balanced = Fixed(0.5)）——整页覆盖层
+                    // 转场逐帧重合成毛玻璃，模糊预算必须收紧（32dp 全分辨率 progressive
+                    // 的 GPU 成本压不住帧预算）
+                    Modifier.hazeBlur(
+                        input = hazeSources(hazeState),
+                        style = hazeTopBarStyle(),
+                        performanceMode = HazePerformanceMode.Balanced,
+                    )
                 } else {
                     Modifier
                 },

@@ -9,19 +9,20 @@ espressoCore = "3.7.0"
 # 声明对齐实际解析（此前声明 2.6.1、实际被 activity-compose 传递解析到 2.9.4，
 # 声明失真误导排查）；2.11.0 为 androidx.lifecycle 当前最新稳定
 lifecycleRuntimeKtx = "2.11.0"
-# activity-compose 由 Compose BOM 管控版本：显式声明与 BOM 2026.09 口径一致的
-# 最新稳定值，声明=解析可读
-activityCompose = "1.12.4"
+# Haze 2.0.1 的 Android runtime 依赖 androidx.activity:activity:1.13.0；按本文件惯例
+# 把声明对齐到实际解析值，避免 activity-compose 1.12.4 与 activity 1.13.0 混跑
+activityCompose = "1.13.0"
 # AGP 9.4.1 内置 Kotlin 默认 KGP 2.2.10；此 ref 同时决定 KGP/编译器与 compose、
 # serialization 插件版本（三者必须一致，否则 compose 编译器版本校验不通过）。
 # 2.4.21 为当前最新稳定（2.5 仍 Beta1）；官方兼容窗 Gradle ≤9.7.0、AGP ≤9.3.1，
 # 本项目 AGP 9.4.1 超一个小版本（官方允许）；实测构建/测试通过、产物 metadata 2.4.0。
 kotlin = "2.4.21"
 composeBom = "2026.09.00"
-# 1.7.0 修复了效果节点不随源位置变化而失效的问题（#812，tab 转场滑入滑出时
-# 顶栏模糊闪帧的关键修复），并新增 forceInvalidateOnPreDraw 兜底开关；
-# 1.7.2 为最后一个稳定 1.x（2.0 仍是 alpha）
-haze = "1.7.2"
+# 2.0.1 为当前最新稳定（2026-09-29 发布）。2.0 起拆分为 haze（核心基础设施）+
+# haze-blur（内置 Blur）；由 Kotlin 2.4.20 / Compose Multiplatform 1.12.1 编译，
+# 与项目 Kotlin 2.4.21、Compose BOM 2026.09.00（androidx.compose.ui 1.12.1）对齐。
+# 注意 1.x 的 hazeEffect 块 API、HazeTint、HazeInputScale 在 2.0 已移除
+haze = "2.0.1"
 # 1.12.0 为 RC 未取；1.11.0 为最新稳定
 kotlinxSerialization = "1.11.0"
 # Shapes 1.2.1 由 Kotlin 2.4 编译（元数据 2.4.0），需项目 Kotlin ≥2.3 才能读取；
@@ -43,7 +44,8 @@ androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "u
 androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
-haze = { group = "dev.chrisbanes.haze", name = "haze", version.ref = "haze" }
+haze-core = { group = "dev.chrisbanes.haze", name = "haze", version.ref = "haze" }
+haze-blur = { group = "dev.chrisbanes.haze", name = "haze-blur", version.ref = "haze" }
 kyant-shapes = { group = "io.github.kyant0", name = "shapes", version.ref = "kyantShapes" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 

@@ -166,7 +166,7 @@ class TabTransitionState(
  * 每帧只失效绘制、不触发重组）整帧重放 [layer] 里录制的最后一帧就位画面（含 Haze
  * 模糊输出），不再执行内部绘制链；就位时照常绘制，并把本帧录进 [layer] 供下次转场重放。
  *
- * 挂在「承载 Haze 模糊、且位于 tab 页内」的顶栏组件最外层（兜底色与 hazeEffect 之外），
+ * 挂在「承载 Haze 模糊、且位于 tab 页内」的顶栏组件最外层（兜底色与 hazeBlur 之外），
  * 页内 x/scale 转场状态由调用方（TabPager 装配层经 TabPagerState.transitionFor）透传。
  * 课表页顶栏/编辑栏与待办页顶栏共用本机制。
  *
@@ -184,17 +184,21 @@ fun Modifier.tabTransitionFreeze(
     layer: GraphicsLayer,
     transition: TabTransitionState,
 ): Modifier = drawWithContent {
-    val transitioning = transition.isTransitioning
-    if (transitioning) {
+    if (transition.isTransitioning) {
         // 冻结层尚无内容（理论上不可能：转场前至少绘制过一帧）时退回实时绘制
         if (layer.size.width >= 1 && layer.size.height >= 1) {
             drawLayer(layer)
             return@drawWithContent
         }
+        drawContent()
     } else {
+        // 只把子树绘制一次（录进 layer 后直接画 layer）：
+        // Haze 2 的效果节点在「同一帧内被绘制两次」时会构建出自引用的 RenderNode，
+        // 渲染线程在 prepareTreeImpl 里无限递归、栈溢出崩溃；旧实现
+        // `layer.record { drawContent() }` + `drawContent()` 恰好是两次。
         layer.record { this@drawWithContent.drawContent() }
+        drawLayer(layer)
     }
-    drawContent()
 }
 
 /**

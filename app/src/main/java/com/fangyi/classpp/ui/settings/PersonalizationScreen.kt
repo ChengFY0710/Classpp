@@ -46,6 +46,7 @@ import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetBottomSlack
+import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
@@ -138,7 +139,9 @@ fun PersonalizationScreen(
             SettingsTopBar(
                 title = stringResource(R.string.settings_personalization),
                 onBack = onBack,
-                hazeState = hazeState,
+                // 子页在覆盖层隐藏时仍常驻组合、整页停在屏外：只在活跃期挂 Haze 效果，
+                // 避免对屏外页面做源捕获/模糊（Haze 2 下会触发 RenderThread 递归崩溃）
+                hazeState = if (LocalPageOverlayActive.current) hazeState else null,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .onGloballyPositioned { coords ->

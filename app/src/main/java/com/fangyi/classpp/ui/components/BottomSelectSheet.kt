@@ -44,9 +44,9 @@ import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.BottomSelectSheetShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeTint
-import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.blur.hazeBlur
 import kotlinx.coroutines.launch
 
 /** 卡片距屏幕左右/底缘的边距：私有值，不随全局页边距走（卡片悬浮感与内容节奏解耦） */
@@ -96,8 +96,8 @@ private val CardBlurRadius: Dp = 20.dp
  * - 不做拖拽关闭（卡片矮、内容少，点遮罩/按钮足够）。
  *
  * 遮罩随进度压暗不变；卡片本体是一块**磨砂玻璃**：[hazeState] 非空时在 bottomSheetColor
- * 底色之上叠加背景模糊（hazeEffect 画在底色之上、内容之下，同 [PopupMenuCard] /
- * WeekPickerCardShell 的白卡毛玻璃配方：CardBlurRadius 12dp + hazeTint 60%），背后的
+ * 底色之上叠加背景模糊（hazeBlur 画在底色之上、内容之下，同 [PopupMenuCard] /
+ * WeekPickerCardShell 的白卡毛玻璃配方：CardBlurRadius + hazeTint 60%），背后的
  * hazeSource 内容透出毛玻璃质感；null = 纯 bottomSheetColor 平底卡。宿主把页面/浮层内容挂
  * hazeSource 后将同一状态传进来。
  *
@@ -148,8 +148,6 @@ fun BottomSelectSheet(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val scrimColor = MaterialTheme.colorScheme.scrim
-    // hazeEffect 的 block 在绘制期执行、非 composable 上下文：tint 取值提到 modifier 之前
-    val cardHazeTint = MaterialTheme.classppColors.hazeTint
     // 键盘让位：键盘弹起时整卡抬到键盘上方（只补 ime 超出导航栏的差值，不与
     // navigationBarsPadding 双计；弹起当帧就位、收起后 600ms 缓回，复用 OverlaySheet
     // 尾部余量的同一机制）。滚轮卡族键盘恒收起 → 让位量恒 0，渲染与动画不变。
@@ -248,15 +246,15 @@ fun BottomSelectSheet(
             ) {
                 Column(
                     modifier = Modifier
-                        // 卡片磨砂（hazeState 非空时）：hazeEffect 画在 Surface 底色之上、
+                        // 卡片磨砂（hazeState 非空时）：hazeBlur 画在 Surface 底色之上、
                         // 内容之下（同 PopupMenuCard 白卡毛玻璃配方），玻璃感由 tint 统一
                         .then(
                             if (hazeState != null) {
-                                Modifier.hazeEffect(hazeState) {
-                                    blurRadius = CardBlurRadius
-                                    tints = listOf(HazeTint(cardHazeTint.copy(alpha = 0.6f)))
-                                    noiseFactor = 0f
-                                }
+                                Modifier.hazeBlur(
+                                    input = hazeSources(hazeState),
+                                    style = hazeCardStyle(radius = CardBlurRadius),
+                                    performanceMode = HazePerformanceMode.Quality,
+                                )
                             } else {
                                 Modifier
                             },

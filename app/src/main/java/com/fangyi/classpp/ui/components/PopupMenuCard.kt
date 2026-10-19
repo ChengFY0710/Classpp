@@ -28,9 +28,9 @@ import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.MenuShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeTint
-import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.blur.hazeBlur
 
 /** 勾选图标边长；未勾选行保留同宽空槽，勾选/未勾选的文字左缘对齐（设计稿） */
 private val CheckIconSize = 20.dp
@@ -87,10 +87,10 @@ data class PopupMenuSection(
  * 宿主想跟弹出动画联动时可传入过渡进度。
  *
  * 材质：默认不透明白卡；[hazeState] 非空时白底之上叠 Haze 毛玻璃（WeekPickerCardShell
- * 同款配方，跨 Popup 窗口采样宿主页面的 hazeSource）——hazeEffect 须画在背景之上、
+ * 同款配方，跨 Popup 窗口采样宿主页面的 hazeSource）——hazeBlur 须画在背景之上、
  * 内容之下，故壳用 Box + background 而非 Surface（其 modifier 链插不进这一层）；
- * 圆角由投影层 clip 统一裁剪。 hazeEffect 的 block 在绘制期执行、非 composable 上下文，
- * tint 取值提前到 modifier 之前。
+ * 圆角由投影层 clip 统一裁剪。Haze 2 的 HazeBlurStyle 在组合期构建（tint 由
+ * [hazeCardStyle] 内部读主题）。
  */
 @Composable
 fun PopupMenuCard(
@@ -99,7 +99,6 @@ fun PopupMenuCard(
     blurProgress: Float = 1f,
     hazeState: HazeState? = null,
 ) {
-    val hazeTint = MaterialTheme.classppColors.hazeTint
     Box(
         // propagateMinConstraints：卡被外部 modifier 撑宽（如固定 200dp）时，内容 Column
         // 至少跟着撑满——否则 Column 仍收在 IntrinsicSize 宽度，右侧卡面成为点按断区
@@ -115,11 +114,12 @@ fun PopupMenuCard(
             .background(MaterialTheme.colorScheme.surface)
             .then(
                 if (hazeState != null) {
-                    Modifier.hazeEffect(hazeState) {
-                        blurRadius = 12.dp
-                        tints = listOf(HazeTint(hazeTint.copy(alpha = 0.6f)))
-                        noiseFactor = 0f
-                    }
+                    // 白卡毛玻璃：12dp + 60% tint（跨 Popup 窗口采样宿主页面 hazeSource）
+                    Modifier.hazeBlur(
+                        input = hazeSources(hazeState),
+                        style = hazeCardStyle(),
+                        performanceMode = HazePerformanceMode.Quality,
+                    )
                 } else {
                     Modifier
                 },

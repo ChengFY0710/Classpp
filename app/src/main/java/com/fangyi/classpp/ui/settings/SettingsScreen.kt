@@ -125,6 +125,10 @@ fun SettingsScreen(
                                 onOpenPersonalization = { showPersonalization = true },
                                 onOpenNotifications = { showNotifications = true },
                                 repository = repository,
+                                // 设置覆盖层隐藏时整页停在屏外仍是常驻组合：Haze 效果只在
+                                // 覆盖层活跃期挂载，避免对屏外页面做源捕获/模糊（Haze 2 下
+                                // 屏外页面上的效果会触发 RenderThread 递归崩溃）
+                                overlayActive = overlayActive,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         },
@@ -164,6 +168,7 @@ private fun SettingsHomePage(
     onOpenPersonalization: () -> Unit,
     onOpenNotifications: () -> Unit,
     repository: ScheduleRepository?,
+    overlayActive: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -258,7 +263,7 @@ private fun SettingsHomePage(
             SettingsTopBar(
                 title = stringResource(R.string.settings_root_title),
                 onBack = onClose,
-                hazeState = hazeState,
+                hazeState = if (overlayActive) hazeState else null,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .onGloballyPositioned { coords ->

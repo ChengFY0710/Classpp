@@ -66,8 +66,8 @@ import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
-import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.util.GregorianCalendar
@@ -146,7 +146,7 @@ fun TodoScreen(
     // 关闭后自动回到进入前的常规分组
     var specialSection by rememberSaveable { mutableStateOf<TodoSpecialSection?>(null) }
     var specialActive by rememberSaveable { mutableStateOf(false) }
-    val hazeState = remember { HazeState() }
+    val hazeState = rememberHazeState()
     val todos by repository.todos.collectAsState()
 
     // 标签配色表（标签名 → 颜色）：与 TagChoosingCard 同源，用户自定义标签取
