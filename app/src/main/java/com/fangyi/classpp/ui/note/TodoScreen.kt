@@ -68,6 +68,7 @@ import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.util.GregorianCalendar
 import java.util.Locale
@@ -147,6 +148,17 @@ fun TodoScreen(
     var specialActive by rememberSaveable { mutableStateOf(false) }
     val hazeState = remember { HazeState() }
     val todos by repository.todos.collectAsState()
+
+    // 标签配色表（标签名 → 颜色）：与 TagChoosingCard 同源，用户自定义标签取
+    // TagEntry.colorArgb（null = 跟随主题 Primary）。**仅用户标签进表**——课程标签
+    // 在卡片上不取课程卡配色，跟随默认 Primary（10% 底 + Primary 字）
+    val userTagEntries by remember(tagRepository) {
+        tagRepository?.tags ?: MutableStateFlow(emptyList())
+    }.collectAsState()
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val tagColorMap = remember(userTagEntries, primaryColor) {
+        userTagEntries.associate { it.name to (it.colorArgb?.let(::Color) ?: primaryColor) }
+    }
     // 排序状态：默认创建时间降序（创建早的在前）
     var sort by rememberSaveable { mutableStateOf(TodoSort.Created) }
     var sortDescending by rememberSaveable { mutableStateOf(true) }
@@ -247,6 +259,8 @@ fun TodoScreen(
                     todos = visibleTodos,
                     sort = sort,
                     sortDescending = sortDescending,
+                    // 标签配色表（用户标签所选颜色）：透传给列表卡的 NoteCard
+                    tagColors = tagColorMap,
                     // 特殊分组页 = 该页本身就是过滤口径，分类菜单的分组显隐不再参与（全组可见）
                     visibleSections =
                         if (special != null) TodoSection.entries.toSet() else visibleSections,
@@ -490,6 +504,7 @@ fun TodoScreen(
                 // 编辑浮层盖上来时本层缩小后退，清 id（确认/取消/删除）的瞬间同步回位
                 covered = editTargetId != "",
                 todo = detail,
+                tagColors = tagColorMap,
                 occurrenceDate = IsoDate.parseOrNull(detailTargetDate),
                 onDismiss = {
                     detailTargetId = ""
@@ -725,6 +740,8 @@ private fun TodoList(
     todos: List<Todo>,
     sort: TodoSort,
     sortDescending: Boolean,
+    // 标签配色表（标签名 → 颜色）：透传给每张卡的 NoteCard，标签胶囊据此着色
+    tagColors: Map<String, Color>,
     visibleSections: Set<TodoSection>,
     // 特殊分组页：分组头全部默认展开（常规列表「已完成默认收起」不适用）
     expandAllSections: Boolean = false,
@@ -802,6 +819,7 @@ private fun TodoList(
                     group.forEach { todo ->
                         TodoCard(
                             todo = todo,
+                            tagColors = tagColors,
                             overdue = section == TodoSection.Overdue,
                             swipeCoordinator = swipeCoordinator,
                             onDelete = { onDeleteTodo(todo.id) },
@@ -819,7 +837,8 @@ private fun TodoList(
  * 单条待办卡片：[Todo] → [NoteCard] 的字段接线——标题、完成态与勾选直通，
  * 待办时间走 [cardTimeText]、截止时间走 [deadlineCardText]（颜色由 [deadlineColor]
  * 按剩余天数映射）、重复规则走 [repeatCardText]（primary 蓝，排在两个时间项之后），
- * 标签与紧急旗按模型透传；[overdue] 为真（在已逾期组）时标题标红。
+ * 标签按模型透传并经 [tagColors] 着色（TagChoosingCard 挑选的颜色，见 tagColorMap）；
+ * 紧急旗按档位透传；[overdue] 为真（在已逾期组）时标题标红。
  * [Todo.countdown] 开启时把剩余天数交给 [NoteCard.countdownDays]，卡片左区显示倒计时
  * （天数口径与截止配色同源，见 [deadlineDaysLeft]）。
  * 点卡片（非勾选框）经 [onClick] 拉起详情浮层——勾选框是独立 toggleable，不会误触。
@@ -829,6 +848,8 @@ private fun TodoList(
 @Composable
 private fun TodoCard(
     todo: Todo,
+    // 标签配色表（标签名 → 颜色）：透传给 NoteCard 的 tagColors
+    tagColors: Map<String, Color>,
     overdue: Boolean,
     swipeCoordinator: SwipeCoordinator,
     onDelete: () -> Unit,
@@ -845,6 +866,7 @@ private fun TodoCard(
         // 倒计时：开关开着且仍有截止日期时才有天数可显（截止被清掉时仓库已把开关归一化回 false）
         countdownDays = if (todo.countdown) todo.deadlineDaysLeft() else null,
         tags = todo.tags,
+        tagColors = tagColors,
         urgency = todo.urgency,
         completed = todo.completed,
         overdue = overdue,

@@ -112,16 +112,18 @@ internal fun TimeProperty(
 }
 
 /**
- * 单枚标签胶囊：primaryContainer 圆角底 + ic_tag 图标 + 标签名（图标与文字均取 primary），
- * 图标与文字相距 4dp。底加水平内距（8dp）与上下内距（3dp，计入布局高度、撑起所在行）。
+ * 单枚标签胶囊：标签色 10% 圆角底 + ic_tag 图标 + 标签名（图标与文字取标签色）——
+ * TagChoosingCard 未选中胶囊同款配色语义。标签色由调用方按 [color] 注入
+ * （TagChoosingCard 挑选的颜色；缺省主题 Primary）。
+ * 底加水平内距（8dp）与上下内距（3dp，计入布局高度、撑起所在行）。
  * 卡片属性行（[NoteCard]）与待办详情浮层共用同一形态；外层间距由调用方排布。
  */
 @Composable
-internal fun TagChip(tag: String) {
+internal fun TagChip(tag: String, color: Color = MaterialTheme.colorScheme.primary) {
     Row(
         modifier = Modifier
             .clip(TagChipShape)
-            .background(MaterialTheme.colorScheme.primaryContainer)
+            .background(color.copy(alpha = 0.1f))
             .padding(
                 start = TagChipPadding,
                 end = TagChipPadding,
@@ -134,13 +136,13 @@ internal fun TagChip(tag: String) {
         Icon(
             painter = painterResource(R.drawable.ic_tag),
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
+            tint = color,
             modifier = Modifier.size(TagIconSize),
         )
         Text(
             text = tag,
             style = MaterialTheme.classppTextStyles.noteProperty
-                .copy(color = MaterialTheme.colorScheme.primary, fontSize = 12.sp),
+                .copy(color = color, fontSize = 12.sp),
         )
     }
 }
@@ -177,8 +179,11 @@ private fun CountdownLabel(
 /**
  * 待办卡片：左侧倒计时（可选）+ 标题 + 属性行（待办时间、截止时间、标签，自动换行）+ 右侧紧急旗帜与勾选框。
  *
- * - 颜色全部取自主题：卡片底 surface，标题 fieldLabel（onSurface），标签着 primary，
- *   旗帜按 [urgency] 档位取色（[TodoUrgency.flagColor]，同 UrgentFlagCard），勾选框 primary；
+ * - 颜色全部取自主题：卡片底 surface，标题 fieldLabel（onSurface），旗帜按 [urgency]
+ *   档位取色（[TodoUrgency.flagColor]，同 UrgentFlagCard），勾选框 primary；
+ * - [tagColors] 标签配色表（标签名 → 颜色）：标签胶囊底取标签色 10% 透明、图标与文字取
+ *   标签色（TagChoosingCard 未选中胶囊同款）。配色由调用方从标签库解析（用户标签
+ *   TagEntry.colorArgb）；表里没有的名字（含课程标签）回落主题 Primary；
  * - [time] 待办时间（已格式化文本，如 "12:30"、"明天 14:00-16:00"）：ic_clock 图标
  *   18dp + 文本，图标与文字均 secondaryText；
  * - [deadline] 截止时间（已格式化文本，如 "今天 8:00"、"3/12 6:00"）：ic_clock_alarm
@@ -211,6 +216,8 @@ fun NoteCard(
     repeat: String? = null,
     countdownDays: Long? = null,
     tags: List<String> = emptyList(),
+    // 标签配色表（标签名 → 颜色，与 TagChoosingCard 同源）：缺席的名字回落主题 Primary
+    tagColors: Map<String, Color> = emptyMap(),
     urgency: TodoUrgency = TodoUrgency.None,
     completed: Boolean = false,
     overdue: Boolean = false,
@@ -228,6 +235,8 @@ fun NoteCard(
         )
         else -> MaterialTheme.classppTextStyles.fieldLabel
     }
+    // 标签配色的回落色：配色表里没有的名字（含调用方未接线时）统一落主题 Primary
+    val fallbackTagColor = MaterialTheme.colorScheme.primary
     // 侧滑层：swipe 非 null 时卡片包进侧滑层（左右滑呼出动作卡），下方 Row 原样不动；
     // null = 不加层，输出与无侧滑时完全一致
     NoteCardSwipeLayer(swipe = swipe) {
@@ -292,7 +301,7 @@ fun NoteCard(
                             )
                         }
                         tags.forEach { tag ->
-                            TagChip(tag)
+                            TagChip(tag, tagColors[tag] ?: fallbackTagColor)
                         }
                     }
                 }
@@ -374,6 +383,18 @@ private fun NoteCardShowcase() {
             time = "12:30",
             onCheckedChange = {},
         )
+        // 标签配色：底 = 标签色 10%、图标与文字 = 标签色（TagChoosingCard 挑选的颜色，
+        // 调用方经 tagColors 注入）；「复习」不在配色表里 → 回落主题 Primary
+        NoteCard(
+            title = "户口乔迁材料报送",
+            time = "12:30",
+            tags = listOf("高等数学", "实验报告", "复习"),
+            tagColors = mapOf(
+                "实验报告" to Color(0xFFE5645C),
+            ),
+            onCheckedChange = {},
+        )
+        // 无配色表：标签回落主题 Primary
         NoteCard(title = "户口乔迁材料报送", time = "12:30", tags = listOf("待办标签"), onCheckedChange = {})
         NoteCard(
             title = "户口乔迁材料报送",

@@ -90,6 +90,10 @@ private val TagIconSize = 14.dp
 /** 删除弹层与标签之间的缝隙 */
 private val DeletePopupGap = 8.dp
 
+/** 未选中胶囊的底色透明度：用户标签 10%；课程标签 20%（底稍实一点区分来源） */
+private const val UserTagAlpha = 0.1f
+private const val CourseTagAlpha = 0.2f
+
 /**
  * 标签选择卡：白卡内「输入添加自定义标签 + 横滑标签行 + 可展开的课程标签区」。
  *
@@ -114,7 +118,7 @@ private val DeletePopupGap = 8.dp
  *
  * IME Done 提交后保留焦点与键盘，方便连续录入多个标签，最后一条靠失焦提交。
  *
- * 选中态（设计稿）：点击胶囊切换选中——未选中「标签色 30% 底 + 标签色字」，
+ * 选中态（设计稿）：点击胶囊切换选中——未选中「标签色 10% 底 + 标签色字」，
  * 选中「标签色实心底 + 白字」（白字含深色模式，按设计稿恒白）。选中键是标签名
  * 字符串，与 Todo.tags 的纯字符串模型一致，未来待办可直接携带。
  *
@@ -351,6 +355,8 @@ fun TagChoosingCard(
                             item = tag,
                             selected = tag.name in selectedNames,
                             onClick = { toggleSelection(tag.name) },
+                            // 课程标签底稍实（20%），与用户标签（10%）区分来源
+                            backgroundAlpha = CourseTagAlpha,
                         )
                     }
                 }
@@ -360,7 +366,8 @@ fun TagChoosingCard(
 }
 
 /**
- * 标签胶囊：标签色 30% 透明度底 + 标签色字；选中为标签色实心底 + 白字（图标同白）。
+ * 标签胶囊：标签色透明度底 + 标签色字（透明度见 [backgroundAlpha]，用户/课程标签不同）；
+ * 选中为标签色实心底 + 白字（图标同白）。
  * 用户标签经 [onLongClick] 长按弹删除层；课程标签不可删，不传即无长按响应。
  */
 @Composable
@@ -368,6 +375,8 @@ private fun TagCapsule(
     item: TagItem,
     selected: Boolean,
     onClick: () -> Unit,
+    // 未选中态的底色透明度：用户标签 [UserTagAlpha]、课程标签 [CourseTagAlpha]
+    backgroundAlpha: Float = UserTagAlpha,
     onLongClick: (() -> Unit)? = null,
     showDeletePopup: Boolean = false,
     onDismissDelete: () -> Unit = {},
@@ -385,7 +394,7 @@ private fun TagCapsule(
                 // 标签胶囊按压放大单独调大到 1.10（与顶栏按钮同规格，不随全局默认）
                 .pressFeedback(press, PillShape, scale = 1.10f)
                 .clip(PillShape)
-                .background(if (selected) item.color else item.color.copy(alpha = 0.3f))
+                .background(if (selected) item.color else item.color.copy(alpha = backgroundAlpha))
                 .combinedClickable(
                     interactionSource = press,
                     indication = null,

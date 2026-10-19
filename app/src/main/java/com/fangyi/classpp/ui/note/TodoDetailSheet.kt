@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
@@ -83,7 +84,8 @@ private val TitleMenuGap = 12.dp
 
 /**
  * 待办详情浮层：点待办卡弹出，结构对标 [com.fangyi.classpp.ui.schedule.CourseDetailSheet]——
- * 正文为待办标题、标题下方的标签行（[TagChip]，空标签不渲染）、四行只读信息
+ * 正文为待办标题、标题下方的标签行（[TagChip] 按传入的标签配色着色，与列表卡同源；
+ * 空标签不渲染）、四行只读信息
  * （[SheetInfoCard]：截止日期 / 紧急程度 / 待办时间 / 待办地点，四行常显，
  * 空值显灰「无」）、备注输入（[SheetTextArea]）、「步骤」分组（列表走 [NoteCard]
  * 右侧勾选框、支持向右滑呼出删除动作卡（双阈值手势见
@@ -111,6 +113,9 @@ private val TitleMenuGap = 12.dp
 internal fun TodoDetailSheet(
     visible: Boolean,
     todo: Todo,
+    // 标签配色表（标签名 → 颜色，与列表卡 NoteCard 同源同表）：标签行胶囊据此着色，
+    // 缺席的名字（含课程标签）回落主题 Primary
+    tagColors: Map<String, Color> = emptyMap(),
     // 所点条目的分期日期（重复待办的逐期卡带入）：「下一次重复开始前」的截止行按它折算出
     // 该条目的具体截止（见 [withOccurrenceDeadline]）；非重复待办或无逐期上下文传 null，
     // 按首期（锚日期）折算
@@ -227,13 +232,15 @@ internal fun TodoDetailSheet(
                 }
             }
             if (todo.tags.isNotEmpty()) {
+                // 标签色与列表卡同源（tagColors 缺席的名字回落主题 Primary）
+                val fallbackTagColor = MaterialTheme.colorScheme.primary
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(TagRowSpacing),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     itemVerticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(start = 8.dp),
                 ) {
-                    todo.tags.forEach { tag -> TagChip(tag) }
+                    todo.tags.forEach { tag -> TagChip(tag, tagColors[tag] ?: fallbackTagColor) }
                 }
             }
             // 四行常显：截止日期与紧急程度是结构化字段（未设也占位），时间/地点同理——

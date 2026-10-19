@@ -79,6 +79,21 @@ private const val INITIAL_START_MINUTE = 480
 private const val INITIAL_END_MINUTE = 1080
 
 /**
+ * 标签选色板的候选色（硬编码，深浅主题同值）：排在默认 Primary 之后，绕色环取一圈
+ * 中饱和糖果色——作标签胶囊底色时选中态白字可读、未选中 30% 透明底上文字也清晰。
+ */
+private val NewTagColorPalette = listOf(
+    Color(0xFFE5645C), // 珊瑚红
+    Color(0xFFEF8A3C), // 暖橙
+    Color(0xFFE3B23E), // 芒果黄
+    Color(0xFF66BB6A), // 草绿
+    Color(0xFF26A69A), // 湖青
+    Color(0xFF5C9CE6), // 晴蓝
+    Color(0xFF9575CD), // 薰紫
+    Color(0xFFF06292), // 桃粉
+)
+
+/**
  * 新建/编辑待办浮层：同一套表单，[existing] 区分模式（同 [com.fangyi.classpp.ui.schedule.AddCoursePanel]
  * 的 existing 语义），容器为 [OverlaySheet]，「确认」胶囊在右上（confirmAtEnd）。
  * 组装结果经 [onConfirm] 交回调用方落库——新建以 id 空串为底（仓库补 id/createdAt），
@@ -593,13 +608,15 @@ internal fun NewTodoSheet(
     }
 
     // 标签选色弹卡：确认把选中色回写颜色草稿（存无符号 0xAARRGGBB，TagEntry.colorArgb
-    // 同约定）；取消/遮罩/返回只请求关闭，播完退场才卸载（两段式，同自定义日期轮）
+    // 同约定）；取消/遮罩/返回只请求关闭，播完退场才卸载（两段式，同自定义日期轮）。
+    // 色板 = 默认 Primary 打头 + 硬编码候选色（NewTagColorPalette）
     if (colorPickMounted) {
-        val tagColorPalette = listOf(primaryColor)
+        val tagColorPalette = listOf(primaryColor) + NewTagColorPalette
         BottomColorSelectCard(
             visible = colorPickVisible,
             onDismiss = { colorPickVisible = false },
             onDismissed = { colorPickMounted = false },
+            colors = tagColorPalette,
             hazeState = sheetHazeState,
             selectedIndex = newTagColorArgb
                 ?.let { argb -> tagColorPalette.indexOf(Color(argb)) }
