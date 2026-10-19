@@ -98,7 +98,7 @@ fun classppTextStyles(colorScheme: ColorScheme, colors: ClassppColors) = Classpp
     fieldValue = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colorScheme.primary),
     pillButton = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
     menuItem = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colorScheme.onSurface),
-    noteProperty = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Normal, color = colors.secondaryText),
+    noteProperty = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal, color = colors.secondaryText),
 )
 
 /**
