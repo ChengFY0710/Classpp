@@ -8,7 +8,7 @@ import androidx.compose.ui.unit.dp
  * 设置页（SettingsScreen）与浮层骨架（OverlaySheet，含其顶栏按钮行）共用，
  * 保证两处的卡片宽度一致——改这一个值，两侧同步。
  */
-val PageHorizontalSpacing: Dp = 15.dp
+val PageHorizontalSpacing: Dp = 12.dp
 
 /**
  * 卡片分组（CardSection、NoteCardSection）内的纵向**卡间距（卡↔卡）**。

@@ -92,7 +92,7 @@ private val TopBarHeight = 78.dp
 
 /**
  * 顶栏按钮行（把手下的关闭/确认胶囊）的横向边距：刻意大于内容卡片的
- * [PageHorizontalSpacing]（15dp），胶囊贴边更收、与卡片左缘不齐平（设计如此）。
+ * [PageHorizontalSpacing]（12dp），胶囊贴边更收、与卡片左缘不齐平（设计如此）。
  */
 private val TopBarRowHorizontalPadding: Dp = 15.dp
 

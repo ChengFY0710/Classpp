@@ -107,7 +107,7 @@ private val GroupTabIconSpacing = 12.dp
 /** 左侧常驻图标胶囊宽度（图标 + 左右内边距） */
 private val IconPillWidth = PillIconSize + PillInnerPadding * 2
 
-/** 更多按钮右缘在顶栏坐标系里的位置：固定行自带 15dp 页边距（PageHorizontalSpacing） */
+/** 更多按钮右缘在顶栏坐标系里的位置：固定行自带 12dp 页边距（PageHorizontalSpacing） */
 private val MorePillRightEdge = PageHorizontalSpacing + IconPillWidth
 
 /**
