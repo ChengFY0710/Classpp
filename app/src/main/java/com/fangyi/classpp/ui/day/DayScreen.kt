@@ -27,7 +27,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,6 +35,7 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.navigation.NavReserve
+import com.fangyi.classpp.ui.theme.SerifDisplay
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
@@ -131,7 +131,7 @@ fun DayScreen(modifier: Modifier = Modifier) {
             Text(
                 text = dayOfMonth.toString(),
                 fontSize = 72.sp,
-                fontFamily = FontFamily.Serif,
+                fontFamily = SerifDisplay,
                 color = Color.White,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
