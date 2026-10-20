@@ -52,6 +52,7 @@ import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.isOverdue
 import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.LocalToday
+import com.fangyi.classpp.ui.components.BottomFadeScrim
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSection
 import com.fangyi.classpp.ui.components.NoteCardSwipe
@@ -196,6 +197,15 @@ fun TodoScreen(
     var editTargetId by rememberSaveable { mutableStateOf("") }
     // 分组浮层：待办分组（顶栏展开动作行的分组块进入），空 = 未打开（两段式挂载见浮层处）
     var groupsVisible by rememberSaveable { mutableStateOf(false) }
+    // 四张全屏浮层（新建/详情/编辑/分组）的挂载态：声明提前到页面布局之前——底部渐变
+    // 遮罩（页面 Box 内的 BottomFadeScrim）要读 anyOverlayMounted 决定显隐；各浮层
+    // 自己的两段式挂载块（置真与卸载回调）仍在原位
+    var newTodoMounted by remember { mutableStateOf(false) }
+    var detailMounted by remember { mutableStateOf<Todo?>(null) }
+    var editMounted by remember { mutableStateOf<Todo?>(null) }
+    var groupsMounted by remember { mutableStateOf(false) }
+    val anyOverlayMounted = newTodoMounted || detailMounted != null || editMounted != null ||
+        groupsMounted
     // 分组列表（顺序 + 置顶标记）：仓库 todos.json 持久化，顶栏胶囊与分组浮层共享同一份；
     // 分组写回失败的 Toast 文案在组合期解析（commitGroups 回调里非组合上下文，同编辑浮层约定）
     val groups by repository.groups.collectAsState()
@@ -308,6 +318,13 @@ fun TodoScreen(
                     },
                 )
             }
+            // 底部渐变遮罩：页面自绘（原导航栏内置层下沉至此），盖住滚进导航栏区域的列表；
+            // 全屏浮层在场时随导航栏一同下移出屏——与 MainActivity 的导航栏 AnimatedVisibility
+            // 共用 Motion.EditMillis 规格。画在内容层之上、顶栏之下（遮罩管底、顶栏管顶）
+            BottomFadeScrim(
+                visible = !anyOverlayMounted,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
             TodoTopBar(
                 groups = groups.map { it.name },
                 // 置顶分组数：仓库维持「置顶构成连续前缀」不变式，顶栏按此把前 N 粒胶囊
@@ -456,8 +473,8 @@ fun TodoScreen(
     }
 
     // 新建待办浮层：两段式挂载（同 ScheduleScreen 的浮层接线）。画在页面内容之后
-    // （组合顺序即绘制顺序，浮层盖住页面），与 ScheduleScreen 的浮层位置一致
-    var newTodoMounted by remember { mutableStateOf(false) }
+    // （组合顺序即绘制顺序，浮层盖住页面），与 ScheduleScreen 的浮层位置一致；
+    // newTodoMounted 声明提前到了页面布局之前（BottomFadeScrim 读 anyOverlayMounted）
     if (showNewTodoSheet) newTodoMounted = true
     if (newTodoMounted) {
         // 回调（协程）里不是组合上下文，字符串在组合期解析——lint 不允许经
@@ -489,11 +506,10 @@ fun TodoScreen(
     // 条目从当前列表反查：待办在浮层开着时被删则反查落空 → visible 转 false 自动收起。
     // 画在新建浮层之后（组合顺序即绘制顺序），两者都盖住页面内容
     val detailEntry = todos.firstOrNull { it.id == detailTargetId }
-    var detailMounted by remember { mutableStateOf<Todo?>(null) }
     if (detailEntry != null) detailMounted = detailEntry
     // 编辑浮层挂载快照：只在详情「编辑」回调里取一次、不跟随仓库回流（表单是快照语义，
     // 同 AddCoursePanel 草稿）；visible 走反查，待办被删则反查落空自动收起
-    var editMounted by remember { mutableStateOf<Todo?>(null) }
+    // （editMounted 声明提前到了页面布局之前，BottomFadeScrim 读 anyOverlayMounted）
     detailMounted?.let { detail ->
         // 回调（协程）里不是组合上下文，字符串在组合期解析（同 NewTodoSheet 的 saveFailedMessage）
         val saveFailedMessage = stringResource(R.string.todo_error_save_failed)
@@ -612,7 +628,6 @@ fun TodoScreen(
     // 普通态点击分组/「未分组」/「全部」经 onOpen* 跳转：顶栏胶囊切到对应下标 + 收起浮层；
     // 第一部分（状态/留存）行经 onOpenSpecial 打开对应特殊分组页（顶栏首位出胶囊，收起浮层）
     // ——切常规分组只离页（胶囊保留、转未选态），再点未选胶囊回页、点已选胶囊才退出关闭
-    var groupsMounted by remember { mutableStateOf(false) }
     if (groupsVisible) groupsMounted = true
     if (groupsMounted) {
         TodoGroupsSheet(
@@ -650,8 +665,7 @@ fun TodoScreen(
 
     // 浮层在场（含收场动画期间）就藏底部导航栏，onDismissed 卸载后才放回（同课表页全屏浮层）；
     // 四个浮层任一在场都算，避免分组/详情/编辑浮层开着时导航栏提前露回
-    val anyOverlayMounted = newTodoMounted || detailMounted != null || editMounted != null ||
-        groupsMounted
+    // （anyOverlayMounted 的计算提前到了页面布局之前，底部渐变遮罩同读这一份）
     LaunchedEffect(anyOverlayMounted) {
         onOverlayOverNavBarChange(anyOverlayMounted)
     }

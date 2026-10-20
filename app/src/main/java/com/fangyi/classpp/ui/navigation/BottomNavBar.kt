@@ -28,7 +28,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
@@ -36,10 +35,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.components.BottomFadeScrim
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.PillShape
@@ -69,19 +68,16 @@ private val PillShadowElevation = 8.dp
 /** 选中指示器相对白胶囊边缘的内缩 */
 private val PillIndicatorInset = 3.dp
 private val PillHorizontalPadding = 33.dp
-private val GradientOverhang = 40.dp
+
+/** 胶囊区上方被渐变遮罩盖住的延伸高度（遮罩已下沉为页面的 BottomFadeScrim，仅供其取用） */
+internal val GradientOverhang = 40.dp
 
 /** 课表网格等内容需为导航栏预留的底部高度（不含系统导航栏 inset） */
 val NavReserve = PillBottomOffset + PillHeight
 
-/** 导航栏整体高度：系统 inset + 胶囊区 + 渐变上沿延伸 */
-@Composable
-fun navBarTotalHeight(): Dp =
-    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
-        NavReserve + GradientOverhang
-
 /**
- * 底部导航：全宽渐变遮罩（底部 Background → 向上透明）+ 三个胶囊按钮。
+ * 底部导航：三个胶囊按钮。渐变遮罩不在其中——已下沉为各页面自绘的
+ * BottomFadeScrim（ui.components），高度与此处几何常量对齐。
  * 调用方负责对齐（如 Modifier.align(Alignment.BottomCenter)）。
  */
 @Composable
@@ -93,19 +89,13 @@ fun BottomNavBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(navBarTotalHeight()),
+            // 系统 inset + 胶囊区：遮罩不再属于导航栏，页面滚进胶囊区上方的淡出
+            // 由各页面的 BottomFadeScrim 负责
+            .height(
+                WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                    NavReserve,
+            ),
     ) {
-        // 渐变遮罩
-        Box(
-            Modifier
-                .matchParentSize()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        1f to MaterialTheme.colorScheme.background,
-                    ),
-                ),
-        )
         Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -240,6 +230,7 @@ private fun BottomNavBarPreview(selectedTab: AppTab) {
                     )
                 }
             }
+            BottomFadeScrim(modifier = Modifier.align(Alignment.BottomCenter))
             BottomNavBar(
                 selectedTab = selectedTab,
                 onTabSelected = {},

@@ -91,6 +91,7 @@ import com.fangyi.classpp.data.model.overlappingCourses
 import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.LocalTodayState
+import com.fangyi.classpp.ui.components.BottomFadeScrim
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.pressFeedback
@@ -761,6 +762,13 @@ fun ScheduleScreen(
                             },
                         )
                         .hazeSource(hazeState),
+                )
+                // 底部渐变遮罩：页面自绘（原导航栏内置层下沉至此），盖住滚进导航栏区域的网格。
+                // 编辑态随导航栏一同下移出屏——与 MainActivity 的导航栏 AnimatedVisibility
+                // 共用 Motion.EditMillis 规格，同一个 editing 翻转同帧启动，两侧严格同步
+                BottomFadeScrim(
+                    visible = editSession == null,
+                    modifier = Modifier.align(Alignment.BottomCenter),
                 )
                 // 顶栏 ↔ 编辑栏进出场：新内容自顶部滑入淡入、旧内容向上滑出淡出，进退对称，
                 // 与底部导航栏的 AnimatedVisibility 共用 [Motion.EditMillis] 规格，
