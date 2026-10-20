@@ -148,6 +148,9 @@ internal fun allocateCardLines(
  * 不足依次回落到课程名先降段（保底 1/1）；教师/起止时间恒 1 行——设置页调小行高
  * 文本变密、调大变疏，超行省略号截断。
  *
+ * [showTeacher] = 个性化页「显示教师」开关：关闭时教师行不渲染，视为教师留空——
+ * 地点行上移、行高预算同步少扣一行（[allocateCardLines] 的固定开销按 2 行时间 + 内边距计）。
+ *
  * 竖条分两段表示交替课程：本周上的那门占上 3/4，非本周的交替课占下 1/4
  * （见 [Course.alternateBar]）；组内非本周的课再多也只占这 1/4、只用一个颜色。
  * 整卡置灰（本周不上）时竖条全灰、不分段。
@@ -161,6 +164,7 @@ fun CourseCard(
     course: Course,
     slot: TimeSlot,
     modifier: Modifier = Modifier,
+    showTeacher: Boolean = true,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     endTime: String = slot.endTime,
@@ -233,7 +237,8 @@ fun CourseCard(
                 .weight(1f)
                 .fillMaxHeight(),
         ) {
-            val hasTeacher = course.teacher.isNotBlank()
+            // 「显示教师」关闭或教师留空都不渲染教师行：地点上移、预算少扣一行
+            val hasTeacher = showTeacher && course.teacher.isNotBlank()
             val lines = if (constraints.maxHeight == Constraints.Infinity) {
                 CardLines(3, 3)
             } else {

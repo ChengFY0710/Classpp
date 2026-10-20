@@ -214,6 +214,7 @@
     <string name="card_height_label">课程卡片高度</string>
     <string name="card_height_default">默认</string>
     <string name="card_height_value">%1$ddp</string>
+    <string name="show_teacher">显示教师</string>
     <string name="time_range_start">开始时间</string>
     <string name="time_range_end">结束时间</string>
     <string name="show_inactive">显示非本周课程</string>

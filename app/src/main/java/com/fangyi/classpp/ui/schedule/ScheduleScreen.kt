@@ -153,6 +153,8 @@ fun ScheduleScreen(
     // 课程卡片高度状态（MainActivity 持有、个性化页写入）：State 实例透传给 CourseGrid，
     // 本屏不读 .value——滑条拖动时 ScheduleScreen 整体 skip，只有 CourseGrid 重组重排
     cardHeights: State<CardHeights> = mutableStateOf(CardHeights()),
+    // 课程卡片「显示教师」开关（MainActivity 持有、个性化页写入）：State 实例透传纪律同上
+    showTeacher: State<Boolean> = mutableStateOf(true),
 ) {
     // get() 返回即 bootstrap 完成，此分支仅首帧毫秒级；早返回后下方 smart cast 为非空
     if (repository == null) {
@@ -741,6 +743,7 @@ fun ScheduleScreen(
                     daysPerWeek = schedule.daysPerWeek,
                     // State 实例透传，值在 CourseGrid 内读取（拖动时本屏 skip 的关键）
                     cardHeights = cardHeights,
+                    showTeacher = showTeacher,
                     onAddClick = onAddClick,
                     onEditClick = onEditClick,
                     onCourseLongClick = onCourseLongClick,

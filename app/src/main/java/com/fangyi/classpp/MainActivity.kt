@@ -48,6 +48,7 @@ import com.fangyi.classpp.ui.note.TodoScreen
 import com.fangyi.classpp.ui.placeholder.AgendaScreen
 import com.fangyi.classpp.ui.schedule.CardHeightPreferences
 import com.fangyi.classpp.ui.schedule.ScheduleScreen
+import com.fangyi.classpp.ui.schedule.TeacherDisplayPreferences
 import com.fangyi.classpp.ui.settings.SettingsScreen
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.ThemeMode
@@ -94,6 +95,8 @@ class MainActivity : ComponentActivity() {
         }
         // 课程卡片高度：与主题同为 SharedPreferences 真源，冷启动读一次（load 内按范围钳制）
         val savedCardHeights = CardHeightPreferences.load(this)
+        // 课程卡片「显示教师」开关：同为 SharedPreferences 真源，冷启动读一次
+        val savedShowTeacher = TeacherDisplayPreferences.load(this)
         super.onCreate(savedInstanceState)
         // 系统栏外观随主题：状态栏/导航栏全透明、前景图标深浅按模式切换。
         // 必须显式 light 而非 auto：auto 会把 isNavigationBarContrastEnforced 置为 true，
@@ -137,6 +140,9 @@ class MainActivity : ComponentActivity() {
                     .debounce(CardHeightSettleMillis)
                     .collect { gridCardHeightsState.value = it }
             }
+            // 「显示教师」开关状态：prefs 真源、重建时重读；布尔翻转无连续变化，
+            // 落盘在回调里即时完成（同 themeMode），无需去抖
+            val showTeacherState = remember { mutableStateOf(savedShowTeacher) }
             val darkTheme = when (themeMode) {
                 ThemeMode.System -> isSystemInDarkTheme()
                 ThemeMode.Light -> false
@@ -269,6 +275,8 @@ class MainActivity : ComponentActivity() {
                                     tabTransition = transition,
                                     // 网格读降频态（即时态只喂个性化页滑条）
                                     cardHeights = gridCardHeightsState,
+                                    // 课程卡片教师行显隐（个性化页开关写入）
+                                    showTeacher = showTeacherState,
                                 )
                                 AppTab.Todo -> TodoScreen(
                                     modifier = pageModifier,
@@ -330,6 +338,12 @@ class MainActivity : ComponentActivity() {
                         onCardHeightsChange = { heights ->
                             // 只改内存即时生效；落盘由上方 LaunchedEffect 去抖完成
                             cardHeightsState.value = heights
+                        },
+                        showTeacher = showTeacherState,
+                        onShowTeacherChange = { show ->
+                            // 只改内存即时生效 + 即时落盘（布尔翻转无连续变化，无需去抖）
+                            showTeacherState.value = show
+                            TeacherDisplayPreferences.save(this@MainActivity, show)
                         },
                         modifier = Modifier.fillMaxSize(),
                     )

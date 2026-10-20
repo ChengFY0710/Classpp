@@ -118,6 +118,9 @@ fun CourseGrid(
     // 拖动时上游全部 skip、本组件每帧重组重排——行高变化的本质需求）。
     // 只换行高本体：单元格内边距、网格线、日期带等间距常量一律不动
     cardHeights: State<CardHeights> = mutableStateOf(CardHeights()),
+    // 课程卡片「显示教师」开关（个性化页开关，State 实例传递纪律同上）：
+    // 值在下方读取一次为布尔，经 WeekPage/GridRow 传给各课程卡片
+    showTeacher: State<Boolean> = mutableStateOf(true),
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)? = null,
     onEditClick: ((courseId: String) -> Unit)? = null,
     onCourseLongClick: ((courseId: String, anchor: Rect) -> Unit)? = null,
@@ -130,6 +133,8 @@ fun CourseGrid(
     // gridRowHeight 恒等（5 天 150 / 7 天 160），默认渲染无差异
     val heights = cardHeights.value
     val rowHeight = (if (days > 5) heights.seven else heights.five).dp
+    // 教师行显隐：同 heights 一样在本组件读取一次，向下传纯布尔
+    val showTeacherOnCard = showTeacher.value
     val pageHeight = (if (showDates) DateBandHeight else 0.dp) +
         rowHeight * timeSlots.size + TrailingScrollSpace
     // 接缝竖线是否要画：派生成布尔 state —— 拖动中恒为真，只在起手/落位翻转一次。
@@ -169,6 +174,7 @@ fun CourseGrid(
                     timeSlots = timeSlots,
                     days = days,
                     rowHeight = rowHeight,
+                    showTeacher = showTeacherOnCard,
                     seamVisible = seamVisible,
                     listState = state,
                     showDates = showDates,
@@ -216,6 +222,7 @@ private fun WeekPage(
     timeSlots: List<TimeSlot>,
     days: Int,
     rowHeight: Dp,
+    showTeacher: Boolean,
     seamVisible: State<Boolean>,
     listState: LazyListState,
     showDates: Boolean,
@@ -265,6 +272,7 @@ private fun WeekPage(
                     courses = content.courses,
                     days = days,
                     rowHeight = rowHeight,
+                    showTeacher = showTeacher,
                     editMode = editMode,
                     onAddClick = onAddClick,
                     onEditClick = onEditClick,
@@ -305,6 +313,7 @@ private fun WeekPage(
                                 CourseCard(
                                     course = course,
                                     slot = slot,
+                                    showTeacher = showTeacher,
                                     endTime = timeSlots[lastIdx].endTime,
                                     // 必须 required：单元格内容区最高只有一行（rowHeight − 内边距），
                                     // 普通 height() 会被父约束钳回单行高度，跨不出去。
@@ -469,6 +478,7 @@ private fun GridRow(
     courses: List<Course>,
     days: Int,
     rowHeight: Dp,
+    showTeacher: Boolean,
     editMode: Boolean,
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)?,
     onEditClick: ((courseId: String) -> Unit)?,
@@ -525,6 +535,7 @@ private fun GridRow(
                     course != null && course.span == 1 -> CourseCard(
                         course = course,
                         slot = slot,
+                        showTeacher = showTeacher,
                         modifier = Modifier
                             .fillMaxSize()
                             // 长按菜单的锚点取卡片自身窗口坐标（填满格 = 格坐标）

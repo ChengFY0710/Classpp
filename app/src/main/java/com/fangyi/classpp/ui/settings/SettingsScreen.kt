@@ -81,6 +81,9 @@ fun SettingsScreen(
     // State 实例透传（本层不读 .value）：滑条拖动时本屏与个性化页整体 skip，只重组值的叶子
     cardHeights: State<CardHeights> = mutableStateOf(CardHeights()),
     onCardHeightsChange: (CardHeights) -> Unit = {},
+    // 课程卡片「显示教师」开关（同 cardHeights 的透传纪律）
+    showTeacher: State<Boolean> = mutableStateOf(true),
+    onShowTeacherChange: (Boolean) -> Unit = {},
 ) {
     var showPersonalization by rememberSaveable { mutableStateOf(false) }
     var showNotifications by rememberSaveable { mutableStateOf(false) }
@@ -140,6 +143,8 @@ fun SettingsScreen(
                             repository = repository,
                             cardHeights = cardHeights,
                             onCardHeightsChange = onCardHeightsChange,
+                            showTeacher = showTeacher,
+                            onShowTeacherChange = onShowTeacherChange,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }

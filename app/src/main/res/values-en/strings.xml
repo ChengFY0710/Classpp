@@ -157,6 +157,7 @@
     <string name="card_height_label">Course card height</string>
     <string name="card_height_default">Default</string>
     <string name="card_height_value">%1$ddp</string>
+    <string name="show_teacher">Show teacher</string>
     <string name="time_range_start">Start time</string>
     <string name="time_range_end">End time</string>
     <string name="show_inactive">Show classes not held this week</string>

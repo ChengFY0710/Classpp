@@ -68,7 +68,8 @@ import kotlin.math.roundToInt
  * 「颜色模式」三选一（跟随系统/浅色/深色，[themeMode] / [onThemeModeChange]），
  * 行尾显示当前模式，点行弹选择对话框，点选项即时生效并关闭——对话框下方的页面同步变色，
  * 反馈直观，无需「确定」一步；「课表」分组为课程卡片高度滑条（[cardHeights] /
- * [onCardHeightsChange]，范围与默认值随 [repository] 激活课表的 5/7 天模式切换）。
+ * [onCardHeightsChange]，范围与默认值随 [repository] 激活课表的 5/7 天模式切换）
+ * 与「显示教师」开关（[showTeacher] / [onShowTeacherChange]，控制课程卡片上教师行的显隐）。
  * 后续外观类设置项（字号、图标风格等）继续加入本页。
  */
 @Composable
@@ -82,6 +83,9 @@ fun PersonalizationScreen(
     // 拖动滑条时本页整体 skip，只有滑条卡片子树每帧重组
     cardHeights: State<CardHeights> = mutableStateOf(CardHeights()),
     onCardHeightsChange: (CardHeights) -> Unit = {},
+    // 课程卡片「显示教师」开关（State 实例透传纪律同上）
+    showTeacher: State<Boolean> = mutableStateOf(true),
+    onShowTeacherChange: (Boolean) -> Unit = {},
 ) {
     // 当前激活课表决定滑条走 5 天还是 7 天的范围/默认值；无课表（加载中/空）回退 5 天
     val schedule by remember(repository) {
@@ -133,6 +137,8 @@ fun PersonalizationScreen(
                     daysPerWeek = daysPerWeek,
                     cardHeights = cardHeights,
                     onCardHeightsChange = onCardHeightsChange,
+                    showTeacher = showTeacher,
+                    onShowTeacherChange = onShowTeacherChange,
                 )
             }
 
@@ -154,20 +160,26 @@ fun PersonalizationScreen(
 }
 
 /**
- * 「课表」分组：课程卡片高度滑条。范围与默认值随 [daysPerWeek] 切换——5 天 100–200
- * 默认 150、7 天 120–300 默认 160（[CardHeightPreferences]，默认值即现行行高），
- * 滑至默认值附近自动吸附并震动；值等于默认时右上显示「默认」，否则显示具体 dp 值。
+ * 「课表」分组：课程卡片高度滑条 + 「显示教师」开关，各占一张独立卡片（CardSection
+ * 卡间距分隔）。滑条范围与默认值随 [daysPerWeek]
+ * 切换——5 天 100–200 默认 150、7 天 120–300 默认 160（[CardHeightPreferences]，
+ * 默认值即现行行高），滑至默认值附近自动吸附并震动；值等于默认时右上显示「默认」，
+ * 否则显示具体 dp 值。开关控制课程卡片上教师行的显隐（[TeacherDisplayPreferences]），
+ * 关闭后地点行上移、行高预算自动归还课程名/地点。
  */
 @Composable
 private fun ScheduleSection(
     daysPerWeek: Int,
     cardHeights: State<CardHeights>,
     onCardHeightsChange: (CardHeights) -> Unit,
+    showTeacher: State<Boolean>,
+    onShowTeacherChange: (Boolean) -> Unit,
 ) {
     // 值读取点（叶子）：拖动时只有本函数及其子树（卡片/滑条）每帧重组
     val sevenDay = daysPerWeek > 5
     val default = if (sevenDay) CardHeightPreferences.Default7 else CardHeightPreferences.Default5
     val height = if (sevenDay) cardHeights.value.seven else cardHeights.value.five
+    val showTeacherOnCard = showTeacher.value
     CardSection(title = stringResource(R.string.section_schedule)) {
         SettingsCard(
             items = listOf(
@@ -194,6 +206,16 @@ private fun ScheduleSection(
                     } else {
                         CardHeightPreferences.Range5
                     },
+                ),
+            ),
+        )
+        // 独立一张卡片：开关与滑条分开（组内卡间距 10dp，见 CardSection）
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Toggle(
+                    label = stringResource(R.string.show_teacher),
+                    checked = showTeacherOnCard,
+                    onCheckedChange = onShowTeacherChange,
                 ),
             ),
         )
