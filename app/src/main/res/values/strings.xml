@@ -97,6 +97,7 @@
     <string name="todo_time_period">时段</string>
     <string name="todo_error_dates_required">请先选择日期</string>
     <string name="month_day_format">%1$d月%2$d日</string>
+    <string name="date_year_month_format">%1$d/%2$d</string>
     <string name="date_title_format">%1$s %2$s</string>
     <string name="back_to_current_week">返回本周</string>
     <string name="cd_section_collapse">收起</string>
@@ -409,4 +410,8 @@
     <string name="unit_week">周</string>
     <string name="unit_slot">节</string>
     <string name="unit_min">min</string>
+
+    <!-- 日程页（DayScreen）：顶部提示与背景切换入口的无障碍文案 -->
+    <string name="day_swipe_hint">上滑开启新一天</string>
+    <string name="cd_day_background">更换背景图</string>
 </resources>

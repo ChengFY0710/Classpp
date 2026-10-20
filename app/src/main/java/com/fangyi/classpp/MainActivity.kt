@@ -38,6 +38,7 @@ import com.fangyi.classpp.data.AppContainer
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.notification.NotificationAlarmReceiver
 import com.fangyi.classpp.data.notification.NotificationScheduler
+import com.fangyi.classpp.ui.day.DayScreen
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
 import com.fangyi.classpp.ui.navigation.AppTab
@@ -45,7 +46,6 @@ import com.fangyi.classpp.ui.navigation.BottomNavBar
 import com.fangyi.classpp.ui.navigation.TabPager
 import com.fangyi.classpp.ui.navigation.rememberTabPagerState
 import com.fangyi.classpp.ui.note.TodoScreen
-import com.fangyi.classpp.ui.placeholder.AgendaScreen
 import com.fangyi.classpp.ui.schedule.CardHeightPreferences
 import com.fangyi.classpp.ui.schedule.ScheduleScreen
 import com.fangyi.classpp.ui.schedule.TeacherDisplayPreferences
@@ -263,7 +263,7 @@ class MainActivity : ComponentActivity() {
                         // 之后常驻；tab 分派与各屏参数在本 lambda 内装配
                         TabPager(state = pagerState) { tab, transition ->
                             when (tab) {
-                                AppTab.Agenda -> AgendaScreen(pageModifier)
+                                AppTab.Agenda -> DayScreen(pageModifier)
                                 AppTab.Timetable -> ScheduleScreen(
                                     modifier = pageModifier,
                                     repository = repository,
