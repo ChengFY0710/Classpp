@@ -244,9 +244,9 @@ private fun ScheduleSection(
  * 颜色模式分组：app 级三选一（跟随系统/浅色/深色），行尾显示当前模式。
  * 点行弹选择对话框，点选项即时生效并关闭——对话框下方的页面同步变色，反馈直观，
  * 无需「确定」一步。同组下方为「更高级的玻璃材质」开关（[glassStyle] /
- * [onGlassStyleChange]，控制底部导航栏三胶囊、待办页顶栏胶囊、设置页顶栏返回按钮
- * 与 OverlaySheet 顶栏按钮的 Backdrop 液态玻璃渲染 + Q弹按压；关闭即各自原实现，
- * 低版本与性能说明见描述文案，持久化见 GlassPreferences）。
+ * [onGlassStyleChange]，控制底部导航栏三胶囊、待办页顶栏胶囊、设置页顶栏返回按钮、
+ * 课表页顶栏周数胶囊与 OverlaySheet 顶栏按钮的 Backdrop 液态玻璃渲染 + Q弹按压；
+ * 关闭即各自原实现，低版本与性能说明见描述文案，持久化见 GlassPreferences）。
  */
 @Composable
 private fun ColorModeSection(

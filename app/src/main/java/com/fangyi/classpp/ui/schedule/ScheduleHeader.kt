@@ -1,5 +1,6 @@
 package com.fangyi.classpp.ui.schedule
 
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloat
@@ -72,6 +73,7 @@ import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressFeedback
+import com.fangyi.classpp.ui.motion.pressScale
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.tabTransitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -80,6 +82,10 @@ import com.fangyi.classpp.ui.theme.Error
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.WeekCellShape
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.hazeBlur
@@ -91,6 +97,18 @@ internal val TopBarHeight = 56.dp  //顶栏行自然高度，也是最大折叠�
 
 private val WeekPillHeight = 40.dp
 private val HeaderEdgePadding = 33.dp
+
+// ---- 周数胶囊液态玻璃的手感/观感参数（对齐待办顶栏/浮层顶栏玻璃胶囊的取值）----
+
+/** 玻璃模糊半径：胶囊小、底后是磨砂顶栏下的课程网格，轻模糊够读 */
+private val PillGlassBlurRadius = 4.dp
+
+/** 玻璃折射高度/深度（官方玻璃指示器的量级：10/14dp） */
+private val PillGlassLensHeight = 10.dp
+private val PillGlassLensDepth = 14.dp
+
+/** 玻璃表面染色浓度：叠原 surface 底色——白玻璃，色相不变、透出玻璃感 */
+private const val PillGlassTintAlpha = 0.70f
 
 /**
  * 图标中心距屏幕边缘恒为 44dp（原实现 = 20dp 留白 + 48dp 按钮盒的一半），盒宽取其两倍、
@@ -205,6 +223,11 @@ internal fun collapsedPillX(
  * 整帧重放就位时录制的画面（含模糊输出），绕开 Haze 对转场中间态几何的重采样，
  * 杜绝快速切 tab 时顶栏闪出展开态的白/黑帧。
  *
+ * [pillBackdrop] 非空（宿主经「更高级的玻璃材质」开关 + SDK 双门控下发）时周数胶囊
+ * 折叠终态改液态玻璃底 + Q弹按压放大——玻璃随 [blurProgress] 淡入接替实心底渐变
+ * （展开态的扁平灰底形态不变，见 WeekPill）；null（默认，如 @Preview / 玻璃开关
+ * 关闭）维持原实心底 + pressFeedback。
+ *
  * [termStartWeekdayIndex]/[termEndWeekdayIndex] 非空时星期行的对应列绿（Correct）/红（Error）：
  * 查看开学/结课所在周时由调用方传入该日期的星期下标（周一起始，与 [weekIndex] 同规则），
  * 与日期带的学期起止日标记上下对齐；起止日恰为「今天」时调用方传 null，
@@ -222,6 +245,7 @@ fun ScheduleHeader(
     modifier: Modifier = Modifier,
     blurProgress: Float = 0f,
     hazeState: HazeState? = null,
+    pillBackdrop: Backdrop? = null,
     weekRange: IntRange = 1..20,
     daysPerWeek: Int = 5,
     onDaysPerWeekToggle: (() -> Unit)? = null,
@@ -429,6 +453,7 @@ fun ScheduleHeader(
                 onWeekSelected = onWeekSelected,
                 blurProgress = progress,
                 hazeState = hazeState,
+                backdrop = pillBackdrop,
                 onMenuExpandedChange = onMenuExpandedChange,
             )
         },
@@ -576,6 +601,7 @@ private fun WeekPill(
     hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
     blurProgress: Float = 0f,
+    backdrop: Backdrop? = null,
     onMenuExpandedChange: (Boolean) -> Unit = {},
 ) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
@@ -610,18 +636,36 @@ private fun WeekPill(
             }
         }
 
-        // 按压态的唯一来源：pressFeedback 与 clickable 共用（涟漪由按压反馈取代，故 clickable 不再要 Indication）
+        // 按压态的唯一来源：pressFeedback/pressScale 与 clickable 共用（涟漪由按压反馈取代，故 clickable 不再要 Indication）
         val pressInteraction = remember { MutableInteractionSource() }
-        Row(
+        // 玻璃双门控（开关 + SDK）已由宿主完成，此处只看非空
+        val useGlass = backdrop != null && Build.VERSION.SDK_INT >= 31
+        // 玻璃表面染色：叠原 surface 底色——白玻璃（组合侧读好，onDrawSurface 是
+        // DrawScope，读不了 Composable 上下文）
+        val surfaceTint = MaterialTheme.colorScheme.surface.copy(alpha = PillGlassTintAlpha)
+        // 胶囊 = 按压反馈 + 柔影 + 手势 + 内容；底材单独拆成底层子 Box——玻璃要随
+        // blurProgress 淡入，只有独立子图层才能只淡玻璃底、不牵连文字内容
+        //（graphicsLayer 若放在同一链上，alpha 会连子内容一起淡掉）
+        Box(
             modifier = Modifier
                 .height(WeekPillHeight)
-                // 按压反馈：整体放大 + 主体提亮；形状与本胶囊的 clip 一致，
-                // 接在带 clip 的图层之前，投影照常生长。
-                // 顶栏周数胶囊按压放大单独调大到 1.10（与顶栏图标钮同规格，不随全局默认）
-                .pressFeedback(
-                    interactionSource = pressInteraction,
-                    shape = PillShape,
-                    scale = 1.10f,
+                // 按压反馈：非玻璃原样（整体放大 + 主体提亮，接在带 clip 的图层之前）；
+                // 玻璃模式换官方 Q弹按压放大（pressScale：软弹簧果冻过冲 + 沿轮廓加色
+                // 提亮，底部导航栏/待办顶栏等玻璃按钮同款手感）。放大两态同取 1.10
+                .then(
+                    if (useGlass) {
+                        Modifier.pressScale(
+                            interactionSource = pressInteraction,
+                            shape = PillShape,
+                            pressedScale = 1.10f,
+                        )
+                    } else {
+                        Modifier.pressFeedback(
+                            interactionSource = pressInteraction,
+                            shape = PillShape,
+                            scale = 1.10f,
+                        )
+                    },
                 )
                 // 投影随模糊进度长出；graphicsLayer 在 draw 阶段读值，不引发重组
                 .graphicsLayer {
@@ -630,14 +674,6 @@ private fun WeekPill(
                     shadowElevation = 45.dp.toPx() * blurProgress
                     spotShadowColor = Color.Black.copy(alpha = 0.2f)
                 }
-                // 扁平灰底 → 表面亮色，与顶栏模糊同步过渡（深色主题下即「深底 → 更亮一档」）
-                .background(
-                    lerp(
-                        MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.surface,
-                        blurProgress,
-                    ),
-                )
                 .clickable(
                     interactionSource = pressInteraction,
                     indication = null,
@@ -645,25 +681,63 @@ private fun WeekPill(
                         menuExpanded = true
                         onMenuExpandedChange(true)
                     },
-                )
-                .padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                ),
+            contentAlignment = Alignment.Center,
         ) {
-            Text(
-                // 学期前有多页「第 0 周」（原始周号 ≤ 0：今周~开学前一周），胶囊一律显示「第 0 周」
-                text = stringResource(R.string.week_format, selectedWeek.coerceAtLeast(0)),
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
+            // 底材层：扁平灰底 → surface 的原渐变原样保留（玻璃模式也不改终点）——
+            // 玻璃输出本身不透明（采样层画了页面底色），直接在不透明底材上淡入即可：
+            // 中段是两张不透明图像的干净叠化，不会有半透明底透出原始网格的发暗感。
+            // 玻璃层的 alpha 在 draw 阶段读 blurProgress，滚动折叠期间零重组
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .background(
+                        lerp(
+                            MaterialTheme.colorScheme.background,
+                            MaterialTheme.colorScheme.surface,
+                            blurProgress,
+                        ),
+                    )
+                    .then(
+                        if (useGlass && backdrop != null) {
+                            Modifier
+                                .graphicsLayer { alpha = blurProgress }
+                                .drawBackdrop(
+                                    backdrop = backdrop,
+                                    shape = { PillShape },
+                                    effects = {
+                                        blur(PillGlassBlurRadius.toPx())
+                                        if (Build.VERSION.SDK_INT >= 33) {
+                                            lens(PillGlassLensHeight.toPx(), PillGlassLensDepth.toPx())
+                                        }
+                                    },
+                                    onDrawSurface = { drawRect(surfaceTint) },
+                                )
+                        } else {
+                            Modifier
+                        },
+                    ),
             )
-            Spacer(Modifier.width(4.dp))
-            Icon(
-                painter = painterResource(R.drawable.ic_chevron_down),
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    // 学期前有多页「第 0 周」（原始周号 ≤ 0：今周~开学前一周），胶囊一律显示「第 0 周」
+                    text = stringResource(R.string.week_format, selectedWeek.coerceAtLeast(0)),
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    painter = painterResource(R.drawable.ic_chevron_down),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
         }
 
         // 屏幕水平居中 + 垂直固定：卡片顶部落在胶囊底部下方 WeekPickerGap（展开/折叠态一致）。

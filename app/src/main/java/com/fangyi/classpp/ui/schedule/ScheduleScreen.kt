@@ -3,6 +3,7 @@ package com.fangyi.classpp.ui.schedule
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -48,6 +49,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -98,6 +100,9 @@ import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.theme.ButtonShape
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.settings.LocalGlassStyle
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlin.math.abs
@@ -277,6 +282,18 @@ fun ScheduleScreen(
 
     val listState = rememberLazyListState()
     val hazeState = rememberHazeState()
+    // 顶栏周数胶囊的液态玻璃：设置页「更高级的玻璃材质」开关 + API 31+（RenderEffect）
+    // 双门控，关闭即原实心底（blurProgress 渐变的扁平灰底→surface）。采样层 = 页面
+    // 底色 + 课程网格——网格从顶栏下滚过，玻璃才有东西可折射（底色必须画进采样层，
+    // 否则漏透明像素）；胶囊在采样节点之外，玻璃不会照见自己。采样与顶栏的 Haze
+    // 磨砂同源（hazeSource / layerBackdrop 挂同一节点），两套采样互不干扰
+    val glassPillEnabled = LocalGlassStyle.current && Build.VERSION.SDK_INT >= 31
+    // 底色经 State 中转：draw 块读不了组合上下文，靠状态读取驱动主题切换重画
+    val gridBgColor = rememberUpdatedState(MaterialTheme.colorScheme.background)
+    val weekPillBackdrop = rememberLayerBackdrop {
+        drawRect(gridBgColor.value)
+        drawContent()
+    }
 
     // 顶栏实测高度（含状态栏 inset）→ 网格 contentPadding.top。
     // 两种模式各存一份：切换模式时立刻拿到上一轮的实测值，内容不会先跳一帧；
@@ -761,7 +778,16 @@ fun ScheduleScreen(
                                 Modifier
                             },
                         )
-                        .hazeSource(hazeState),
+                        .hazeSource(hazeState)
+                        // 玻璃周数胶囊开启时同一节点再挂液态玻璃采样标记（Haze 管顶栏
+                        // 磨砂、Backdrop 只喂周数胶囊）；关闭时不挂载，采样层零开销
+                        .then(
+                            if (glassPillEnabled) {
+                                Modifier.layerBackdrop(weekPillBackdrop)
+                            } else {
+                                Modifier
+                            },
+                        ),
                 )
                 // 底部渐变遮罩：页面自绘（原导航栏内置层下沉至此），盖住滚进导航栏区域的网格。
                 // 编辑态随导航栏一同下移出屏——与 MainActivity 的导航栏 AnimatedVisibility
@@ -804,6 +830,7 @@ fun ScheduleScreen(
                             onDaysPerWeekToggle = onToggleDaysPerWeek,
                             blurProgress = blurProgress,
                             hazeState = hazeState,
+                            pillBackdrop = if (glassPillEnabled) weekPillBackdrop else null,
                             tabTransition = tabTransition,
                             termStartWeekdayIndex = termStartWeekdayIndex,
                             termEndWeekdayIndex = termEndWeekdayIndex,
