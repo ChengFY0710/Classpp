@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.note
 
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -72,6 +73,7 @@ import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
+import com.fangyi.classpp.ui.motion.pressScale
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollFactory
 import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
@@ -82,6 +84,10 @@ import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.hazeBlur
@@ -127,6 +133,18 @@ private val ShadowOverhang = 8.dp
 /** 胶囊柔影：大 elevation 换软边、低透明 spot 压深浅 */
 private val PillShadowElevation = 36.dp
 private val PillShadowColor = Color.Black.copy(alpha = 0.1f)
+
+// ---- 顶栏胶囊液态玻璃的手感/观感参数（对齐浮层顶栏玻璃按钮 SheetPillButton 的取值）----
+
+/** 玻璃模糊半径：胶囊小、底后是磨砂顶栏下的页面内容，轻模糊够读 */
+private val PillGlassBlurRadius = 4.dp
+
+/** 玻璃折射高度/深度（官方玻璃指示器的量级：10/14dp） */
+private val PillGlassLensHeight = 10.dp
+private val PillGlassLensDepth = 14.dp
+
+/** 玻璃表面染色浓度：叠原底色，胶囊色相不变、透出玻璃感 */
+private const val PillGlassTintAlpha = 0.70f
 
 /**
  * 动作行菜单卡（排序/分类）顶缘与动作块底缘的视觉间距。
@@ -250,9 +268,12 @@ internal enum class TodoSpecialSection(
  *
  * 材质：顶栏容器叠设置页同款的整条渐变模糊（SettingsTopBar 配方：25dp + 半分辨率
  * 输入 + 垂直渐变 mask，顶部最强向下渐弱，兜底色 background 画在模糊层之下）——
- * 模糊层从屏幕顶铺下，状态栏区域沉浸式覆盖；胶囊一律实心 surface（选中 primary），
- * 与课表页 WeekPill 浮在毛玻璃顶栏上同一套材质关系；[hazeState] 为 null（如
- * @Preview）时容器退化为不透明兜底色。
+ * 模糊层从屏幕顶铺下，状态栏区域沉浸式覆盖；[pillBackdrop] 为 null（默认，如
+ * @Preview / 玻璃开关关闭）时胶囊一律实心 surface（选中 primary），与课表页 WeekPill
+ * 浮在毛玻璃顶栏上同一套材质关系；非空（宿主经「更高级的玻璃材质」开关 + SDK 双门控
+ * 下发）时三种胶囊（分组/特殊分组/更多）改液态玻璃底 + Q弹按压放大——采样层由宿主
+ * 挂在列表内容节点上（Backdrop 只喂顶栏胶囊，与 Haze 磨砂两套采样互不干扰，见
+ * TodoScreen）；[hazeState] 为 null（如 @Preview）时容器退化为不透明兜底色。
  *
  * [tabTransition] 非 null 时启用转场冻结层（[tabTransitionFreeze]）：tab 转场进行中
  * 整帧重放就位时录制的栏面（含模糊输出），绕开 Haze 对转场中间态几何的重采样——
@@ -293,6 +314,10 @@ internal fun TodoTopBar(
     onCategoryClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
+    // 顶栏胶囊的液态玻璃采样层（非空 = 分组/特殊分组/更多三处胶囊走玻璃底 + Q弹按压，
+    // 见 topBarPillMaterial）：由宿主门控下发（LocalGlassStyle 开关 + SDK gate），
+    // null（默认）= 原实心底实现
+    pillBackdrop: Backdrop? = null,
     tabTransition: TabTransitionState? = null,
     menuExpanded: Boolean = false,
     sortMenuExpanded: Boolean = false,
@@ -382,6 +407,7 @@ internal fun TodoTopBar(
                                 section = section,
                                 selected = specialSectionSelected,
                                 onClick = onSpecialSectionClick,
+                                backdrop = pillBackdrop,
                             )
                         }
                         // 视觉顺序：置顶分组固定最前（特殊胶囊之后、「全部」之前，行首图钉），
@@ -401,24 +427,28 @@ internal fun TodoTopBar(
                                 pinned = true,
                                 selected = regularSelection == index + 2,
                                 onClick = { onGroupSelect(index + 2) },
+                                backdrop = pillBackdrop,
                             )
                         }
                         GroupPill(
                             label = stringResource(R.string.todo_group_all),
                             selected = regularSelection == 0,
                             onClick = { onGroupSelect(0) },
+                            backdrop = pillBackdrop,
                         )
                         // 未分组固定占下标 1（全部之后、用户分组之前），与用户分组编辑无关
                         GroupPill(
                             label = stringResource(R.string.todo_group_ungrouped),
                             selected = regularSelection == 1,
                             onClick = { onGroupSelect(1) },
+                            backdrop = pillBackdrop,
                         )
                         unpinnedGroups.forEachIndexed { index, group ->
                             GroupPill(
                                 label = group,
                                 selected = regularSelection == index + 2 + pinnedGroupCount,
                                 onClick = { onGroupSelect(index + 2 + pinnedGroupCount) },
+                                backdrop = pillBackdrop,
                             )
                         }
                     }
@@ -431,6 +461,7 @@ internal fun TodoTopBar(
                             iconRes = R.drawable.ic_more_horizontal,
                             contentDescription = stringResource(R.string.cd_todo_more),
                             onClick = onMoreClick,
+                            backdrop = pillBackdrop,
                         )
                     }
                 }
@@ -579,10 +610,66 @@ private fun Modifier.topBarPillShadow(): Modifier = graphicsLayer {
 }
 
 /**
+ * 顶栏胶囊的按压反馈 + 柔影 + 底材一体（分组/特殊分组/更多三处共用）：[backdrop]
+ * 非空且 API 31+ 走玻璃——Q弹按压放大（pressScale：官方软弹簧果冻过冲 + 沿轮廓加色
+ * 提亮，底部导航栏/浮层顶栏玻璃按钮同款手感）+ drawBackdrop 出底（采样内容经模糊/
+ * 折射裁进胶囊形状，表面叠 [containerColor] 染色——色相不变、透出玻璃感；lens 折射
+ * 仅 API 33+，31-32 只留模糊+染色）；null（默认，如 @Preview / 玻璃开关关闭）维持
+ * 原实现——pressFeedback（硬节奏缩放提亮）+ 实心底。按压放大两态同取 1.10（顶栏
+ * 胶囊既有规格，不随全局默认）。顺序：按压反馈 → 柔影 → 底材——投影随组件一起放大，
+ * 玻璃受同一 clip 约束；缩放会让玻璃采样跟着放大（无 layerBlock 补偿），blur + 染色
+ * + 1.10 小倍率下不可感知，与底部导航栏玻璃胶囊同一取舍。
+ */
+@Composable
+private fun Modifier.topBarPillMaterial(
+    pressInteraction: MutableInteractionSource,
+    containerColor: Color,
+    backdrop: Backdrop?,
+): Modifier {
+    val useGlass = backdrop != null && Build.VERSION.SDK_INT >= 31
+    return this
+        .then(
+            if (useGlass) {
+                Modifier.pressScale(
+                    interactionSource = pressInteraction,
+                    shape = PillShape,
+                    pressedScale = 1.10f,
+                )
+            } else {
+                Modifier.pressFeedback(
+                    interactionSource = pressInteraction,
+                    shape = PillShape,
+                    scale = 1.10f,
+                )
+            },
+        )
+        .topBarPillShadow()
+        .then(
+            if (useGlass && backdrop != null) {
+                Modifier.drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { PillShape },
+                    effects = {
+                        blur(PillGlassBlurRadius.toPx())
+                        if (Build.VERSION.SDK_INT >= 33) {
+                            lens(PillGlassLensHeight.toPx(), PillGlassLensDepth.toPx())
+                        }
+                    },
+                    onDrawSurface = {
+                        drawRect(containerColor.copy(alpha = PillGlassTintAlpha))
+                    },
+                )
+            } else {
+                Modifier.background(containerColor, PillShape)
+            },
+        )
+}
+
+/**
  * 分组胶囊：选中 = primary 底白字，未选 = surface 底黑字（与 NavPill 同一配色逻辑）。
  * [pinned] = 置顶分组：行首 20dp 图钉（GroupCard 置顶标记同款规格 + 12dp 间距），
  * 配色随选中态切换——未选 primary 蓝、选中 onPrimary 白（图钉纯装饰不进语义，
- * 文字已承载胶囊语义）。
+ * 文字已承载胶囊语义）。按压与底材见 [topBarPillMaterial]（[backdrop] 非空走玻璃）。
  */
 @Composable
 private fun GroupPill(
@@ -591,25 +678,19 @@ private fun GroupPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     pinned: Boolean = false,
+    backdrop: Backdrop? = null,
 ) {
     val background =
         if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
     val contentColor =
         if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-    // 按压态的唯一来源：pressFeedback 与 selectable 共用（涟漪由按压反馈取代，故 selectable 不再要 Indication）
+    // 按压态的唯一来源：pressFeedback/pressScale 与 selectable 共用（涟漪由按压反馈取代，故 selectable 不再要 Indication）
     val pressInteraction = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
             .height(TopBarPillHeight)
-            // 按压反馈：整体放大 + 主体提亮；接在柔影图层之前，投影随组件一起放大。
-            // 顶栏胶囊按压放大单独调大到 1.10（与课表顶栏同规格，不随全局默认）
-            .pressFeedback(
-                interactionSource = pressInteraction,
-                shape = PillShape,
-                scale = 1.10f,
-            )
-            .topBarPillShadow()
-            .background(background, PillShape)
+            // 按压反馈 + 柔影 + 底材一体：接在柔影图层之前，投影随组件一起放大
+            .topBarPillMaterial(pressInteraction, background, backdrop)
             .selectable(
                 selected = selected,
                 interactionSource = pressInteraction,
@@ -663,7 +744,7 @@ private fun TodoSpecialSection.accentColor(): Color = when (this) {
  * 切换：已选中 = 退出关闭（胶囊一并消失）、未选中 = 回到该页——行为由宿主按选中态
  * 接管（✕ 不单设命中区，同 [GroupPill] 的整粒点击语义）；图标与✕纯装饰不进语义树，
  * 标签文字已承载胶囊语义。规格同 [GroupPill]（40dp 高、16dp 内距、20dp 图标 + 12dp
- * 间距、按压放大 1.10 + 柔影）。
+ * 间距、按压放大 1.10 + 柔影；按压与底材见 [topBarPillMaterial]，[backdrop] 非空走玻璃）。
  */
 @Composable
 private fun SpecialGroupPill(
@@ -671,22 +752,18 @@ private fun SpecialGroupPill(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    backdrop: Backdrop? = null,
 ) {
     val accent = section.accentColor()
     val background = if (selected) accent else MaterialTheme.colorScheme.surface
     val contentColor = if (selected) Color.White else accent
-    // 按压态的唯一来源：pressFeedback 与 selectable 共用（涟漪由按压反馈取代，故 selectable 不再要 Indication）
+    // 按压态的唯一来源：pressFeedback/pressScale 与 selectable 共用（涟漪由按压反馈取代，故 selectable 不再要 Indication）
     val pressInteraction = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
             .height(TopBarPillHeight)
-            .pressFeedback(
-                interactionSource = pressInteraction,
-                shape = PillShape,
-                scale = 1.10f,
-            )
-            .topBarPillShadow()
-            .background(background, PillShape)
+            // 按压反馈 + 柔影 + 底材一体：接在柔影图层之前，投影随组件一起放大
+            .topBarPillMaterial(pressInteraction, background, backdrop)
             .selectable(
                 selected = selected,
                 interactionSource = pressInteraction,
@@ -729,21 +806,19 @@ private fun IconPill(
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    backdrop: Backdrop? = null,
 ) {
-    // 按压态的唯一来源：pressFeedback 与 clickable 共用（涟漪由按压反馈取代，故 clickable 不再要 Indication）
+    // 按压态的唯一来源：pressFeedback/pressScale 与 clickable 共用（涟漪由按压反馈取代，故 clickable 不再要 Indication）
     val pressInteraction = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
             .size(width = IconPillWidth, height = TopBarPillHeight)
-            // 按压反馈：整体放大 + 主体提亮；接在柔影图层之前，投影随组件一起放大。
-            // 顶栏胶囊按压放大单独调大到 1.10（与分组胶囊同规格，不随全局默认）
-            .pressFeedback(
-                interactionSource = pressInteraction,
-                shape = PillShape,
-                scale = 1.10f,
+            // 按压反馈 + 柔影 + 底材一体：接在柔影图层之前，投影随组件一起放大
+            .topBarPillMaterial(
+                pressInteraction,
+                MaterialTheme.colorScheme.surface,
+                backdrop,
             )
-            .topBarPillShadow()
-            .background(MaterialTheme.colorScheme.surface, PillShape)
             .clickable(
                 interactionSource = pressInteraction,
                 indication = null,

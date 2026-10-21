@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.note
 
 import androidx.activity.compose.BackHandler
+import android.os.Build
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -23,6 +24,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,8 +67,11 @@ import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.motion.TabTransitionState
+import com.fangyi.classpp.ui.settings.LocalGlassStyle
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -148,6 +153,19 @@ fun TodoScreen(
     var specialSection by rememberSaveable { mutableStateOf<TodoSpecialSection?>(null) }
     var specialActive by rememberSaveable { mutableStateOf(false) }
     val hazeState = rememberHazeState()
+    // 顶栏胶囊的液态玻璃：设置页「更高级的玻璃材质」开关 + API 31+（RenderEffect）
+    // 双门控，关闭即原实心底（pressFeedback + background）。采样层 = 页面底色 + 待办
+    // 列表——列表从顶栏下滚过，玻璃才有东西可折射（官方教程：底色必须画进采样层，
+    // 否则漏透明像素）；顶栏胶囊在采样节点之外，玻璃不会照见自己。采样与顶栏的 Haze
+    // 磨砂同源（hazeSource / layerBackdrop 挂同一内容节点），两套采样互不干扰：
+    // Haze 管整条顶栏的磨砂，Backdrop 只喂顶栏胶囊（OverlaySheet 顶栏按钮同款结构）
+    val glassPillsEnabled = LocalGlassStyle.current && Build.VERSION.SDK_INT >= 31
+    // 底色经 State 中转：draw 块读不了组合上下文，靠状态读取驱动主题切换重画
+    val topBarBgColor = rememberUpdatedState(MaterialTheme.colorScheme.background)
+    val topBarPillBackdrop = rememberLayerBackdrop {
+        drawRect(topBarBgColor.value)
+        drawContent()
+    }
     val todos by repository.todos.collectAsState()
 
     // 标签配色表（标签名 → 颜色）：与 TagChoosingCard 同源，用户自定义标签取
@@ -263,7 +281,16 @@ fun TodoScreen(
             Box(
                 Modifier
                     .matchParentSize()
-                    .hazeSource(hazeState),
+                    .hazeSource(hazeState)
+                    // 玻璃顶栏胶囊开启时同一节点再挂液态玻璃采样标记（Haze 管顶栏磨砂、
+                    // Backdrop 只喂顶栏胶囊）；关闭时不挂载，采样层零开销
+                    .then(
+                        if (glassPillsEnabled) {
+                            Modifier.layerBackdrop(topBarPillBackdrop)
+                        } else {
+                            Modifier
+                        },
+                    ),
             ) {
                 TodoList(
                     todos = visibleTodos,
@@ -467,6 +494,7 @@ fun TodoScreen(
                 ),
                 modifier = Modifier.align(Alignment.TopCenter),
                 hazeState = hazeState,
+                pillBackdrop = if (glassPillsEnabled) topBarPillBackdrop else null,
                 tabTransition = tabTransition,
             )
         }

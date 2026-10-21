@@ -42,6 +42,7 @@ import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.schedule.CardHeights
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
+import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 
@@ -194,6 +195,9 @@ private fun SettingsHomePage(
                 .padding(innerPadding),
         ) {
             val hazeState = rememberHazeState()
+            // 顶栏返回按钮的液态玻璃：采样层挂下方滚动内容（与 hazeSource 同一节点，
+            // Haze 管顶栏磨砂、Backdrop 只喂返回按钮）；null = 玻璃关闭，标记不挂载
+            val glassBackdrop = rememberSettingsGlassBackdrop()
             var topBarHeight by remember { mutableStateOf(0.dp) }
             val density = LocalDensity.current
             // 手势条（小白条）区域：内容可铺到屏幕底，末尾留出这段避免被遮挡
@@ -207,7 +211,15 @@ private fun SettingsHomePage(
                 repository == null -> Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .hazeSource(hazeState),
+                        .hazeSource(hazeState)
+                        // 玻璃返回按钮开启时加载态同样挂采样标记（按钮玻璃一直渲染）
+                        .then(
+                            if (glassBackdrop != null) {
+                                Modifier.layerBackdrop(glassBackdrop)
+                            } else {
+                                Modifier
+                            },
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator()
@@ -218,6 +230,14 @@ private fun SettingsHomePage(
                         modifier = Modifier
                             .fillMaxSize()
                             .hazeSource(hazeState)
+                            // 玻璃返回按钮开启时同一节点再挂液态玻璃采样标记
+                            .then(
+                                if (glassBackdrop != null) {
+                                    Modifier.layerBackdrop(glassBackdrop)
+                                } else {
+                                    Modifier
+                                },
+                            )
                             // 橡皮筋增强版 verticalScroll：入口卡不足一屏的大屏上也能拉出
                             // 橡皮筋（ui.motion 的 rubberBandVerticalScroll）
                             .rubberBandVerticalScroll(rememberScrollState())
@@ -274,6 +294,7 @@ private fun SettingsHomePage(
                 title = stringResource(R.string.settings_root_title),
                 onBack = onClose,
                 hazeState = if (overlayActive) hazeState else null,
+                buttonBackdrop = glassBackdrop,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .onGloballyPositioned { coords ->

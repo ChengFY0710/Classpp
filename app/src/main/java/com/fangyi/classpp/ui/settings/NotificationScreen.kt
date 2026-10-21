@@ -55,6 +55,7 @@ import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
+import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -136,6 +137,9 @@ fun NotificationScreen(
 
     // 采样源状态提到 Scaffold 之外：滚轮弹窗（Popup 窗口）也要用它对页面做卡片磨砂
     val hazeState = rememberHazeState()
+    // 顶栏返回按钮的液态玻璃：采样层挂正文列（与 hazeSource 同一节点，Haze 管顶栏
+    // 磨砂、Backdrop 只喂返回按钮）；null = 玻璃关闭，标记不挂载
+    val glassBackdrop = rememberSettingsGlassBackdrop()
 
     Scaffold(
         modifier = modifier,
@@ -162,6 +166,14 @@ fun NotificationScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .hazeSource(hazeState)
+                    // 玻璃返回按钮开启时同一节点再挂液态玻璃采样标记
+                    .then(
+                        if (glassBackdrop != null) {
+                            Modifier.layerBackdrop(glassBackdrop)
+                        } else {
+                            Modifier
+                        },
+                    )
                     // 橡皮筋增强版 verticalScroll：内容不足一屏时也能拉出橡皮筋
                     .rubberBandVerticalScroll(rememberScrollState())
                     .padding(horizontal = PageHorizontalSpacing)
@@ -307,6 +319,7 @@ fun NotificationScreen(
                 // 子页在覆盖层隐藏时仍常驻组合、整页停在屏外：只在活跃期挂 Haze 效果，
                 // 避免对屏外页面做源捕获/模糊（Haze 2 下会触发 RenderThread 递归崩溃）
                 hazeState = if (LocalPageOverlayActive.current) hazeState else null,
+                buttonBackdrop = glassBackdrop,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .onGloballyPositioned { coords ->

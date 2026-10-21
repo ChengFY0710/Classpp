@@ -1,5 +1,6 @@
 package com.fangyi.classpp.ui.settings
 
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -20,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,9 +39,16 @@ import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.pressFeedback
+import com.fangyi.classpp.ui.motion.pressScale
 import com.fangyi.classpp.ui.schedule.totalWeeks
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.hazeBlur
@@ -53,6 +62,39 @@ import dev.chrisbanes.haze.blur.hazeBlur
  * 次级文字 `classppColors.secondaryText`。
  */
 
+// ---- 顶栏返回按钮液态玻璃的手感/观感参数（对齐待办顶栏/浮层顶栏玻璃胶囊的取值）----
+
+/** 玻璃模糊半径：按钮小、底后是顶栏磨砂下的页面内容，轻模糊够读 */
+private val SettingsGlassBlurRadius = 4.dp
+
+/** 玻璃折射高度/深度（官方玻璃指示器的量级：10/14dp） */
+private val SettingsGlassLensHeight = 10.dp
+private val SettingsGlassLensDepth = 14.dp
+
+/** 玻璃表面染色浓度：叠原 surface 底色——白玻璃，色相不变、透出玻璃感 */
+private const val SettingsGlassTintAlpha = 0.70f
+
+/**
+ * 设置页顶栏返回按钮的液态玻璃采样层（根页/个性化/通知三页共用）：返回 null =
+ * 玻璃关闭（「更高级的玻璃材质」开关或 API < 31），按钮维持原实心底、layerBackdrop
+ * 不必挂载；非 null = 调用方把它经 layerBackdrop 标记到本页滚动内容节点上（与顶栏
+ * Haze 磨砂的 hazeSource 同一节点，Backdrop 只喂返回按钮，两套采样互不干扰），再
+ * 原样传给 [SettingsTopBar] 的 buttonBackdrop。采样内容 = 页面底色 + 滚动内容——
+ * 内容从顶栏背后滚过，玻璃才有东西可折射（官方教程：底色必须画进采样层，否则漏
+ * 透明像素）；返回按钮在顶栏层、不在采样节点内，玻璃不会照见自己。
+ */
+@Composable
+internal fun rememberSettingsGlassBackdrop(): LayerBackdrop? {
+    val enabled = LocalGlassStyle.current && Build.VERSION.SDK_INT >= 31
+    // 底色经 State 中转：draw 块读不了组合上下文，靠状态读取驱动主题切换重画
+    val bgColor = rememberUpdatedState(MaterialTheme.colorScheme.background)
+    val backdrop = rememberLayerBackdrop {
+        drawRect(bgColor.value)
+        drawContent()
+    }
+    return if (enabled) backdrop else null
+}
+
 /**
  * 设置页顶栏：左侧圆形返回按钮 + 居中加粗标题。
  *
@@ -60,6 +102,11 @@ import dev.chrisbanes.haze.blur.hazeBlur
  * [hazeState] 非空时对顶栏背后的滚动内容做背景模糊——顶部最强、向下渐弱（渐变模糊），
  * 与 ScheduleHeader 同一套 Haze 规格，兜底色画在模糊层之下；
  * null（如 @Preview）时退化为不透明背景。
+ *
+ * [buttonBackdrop] 非空（宿主经 [rememberSettingsGlassBackdrop] 门控下发）时返回按钮
+ * 改液态玻璃底 + Q弹按压放大（pressScale：采样内容经模糊/折射裁进圆形，表面叠原
+ * surface 染色——白玻璃；软弹簧果冻过冲按压）；null（默认，如 @Preview / 玻璃开关
+ * 关闭）维持原实心底 + pressFeedback。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,6 +115,7 @@ internal fun SettingsTopBar(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
+    buttonBackdrop: Backdrop? = null,
 ) {
     // Haze 2：Style 在组合期构建（tint 由 hazeTopBarStyle 内部读主题）
     Box(
@@ -104,6 +152,11 @@ internal fun SettingsTopBar(
         // 圆钮改用按压反馈（ui.motion 的 pressFeedback，放大 + 提亮取代涟漪）：pressFeedback
         // 放在柔影 graphicsLayer 之前，缩放连投影一起放大；按压源与点击共用，indication 置 null
         val press = remember { MutableInteractionSource() }
+        // 玻璃双门控（开关 + SDK）已在 rememberSettingsGlassBackdrop 处完成，此处只看非空
+        val useGlass = buttonBackdrop != null && Build.VERSION.SDK_INT >= 31
+        // 玻璃表面染色：叠原 surface 底色（组合侧读好——onDrawSurface 是 DrawScope，
+        // 读不了 Composable 上下文）
+        val surfaceTint = MaterialTheme.colorScheme.surface.copy(alpha = SettingsGlassTintAlpha)
         Box(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -111,16 +164,43 @@ internal fun SettingsTopBar(
                 .windowInsetsPadding(TopAppBarDefaults.windowInsets)
                 .padding(start = 24.dp, top = 8.dp)  // 返回按钮位置
                 .size(47.dp)
-                // 按压反馈接在柔影图层之前：缩放连投影一起放大，提亮对齐 CircleShape；
-                // 顶栏返回钮按压放大单独调大到 1.10（与课表/待办顶栏同规格，不随全局默认）
-                .pressFeedback(press, CircleShape, scale = 1.10f)
+                // 按压反馈接在柔影图层之前：缩放连投影一起放大。玻璃模式换官方 Q弹按压
+                // 放大（pressScale：软弹簧果冻过冲 + 沿轮廓加色提亮，底部导航栏/浮层顶栏/
+                // 待办顶栏玻璃按钮同款手感）；放大两态同取 1.10（不随全局默认）
+                .then(
+                    if (useGlass) {
+                        Modifier.pressScale(press, CircleShape, pressedScale = 1.10f)
+                    } else {
+                        Modifier.pressFeedback(press, CircleShape, scale = 1.10f)
+                    },
+                )
                 .graphicsLayer {    // 返回按钮投影
                     shape = CircleShape
                     clip = true
                     shadowElevation = 45.dp.toPx()
                     spotShadowColor = Color.Black.copy(alpha = 0.2f)
                 }
-                .background(MaterialTheme.colorScheme.surface, CircleShape)
+                // 玻璃模式改由 drawBackdrop 出底：采样内容（页面底色 + 滚动内容）经模糊/
+                // 折射裁进圆形，表面叠原 surface 染色——白玻璃；缩放会让采样跟着放大
+                //（无 layerBlock 补偿），blur + 染色 + 1.10 小倍率下不可感知，与各处玻璃
+                // 按钮同一取舍。lens 折射仅 API 33+，31-32 只留模糊+染色
+                .then(
+                    if (useGlass && buttonBackdrop != null) {
+                        Modifier.drawBackdrop(
+                            backdrop = buttonBackdrop,
+                            shape = { CircleShape },
+                            effects = {
+                                blur(SettingsGlassBlurRadius.toPx())
+                                if (Build.VERSION.SDK_INT >= 33) {
+                                    lens(SettingsGlassLensHeight.toPx(), SettingsGlassLensDepth.toPx())
+                                }
+                            },
+                            onDrawSurface = { drawRect(surfaceTint) },
+                        )
+                    } else {
+                        Modifier.background(MaterialTheme.colorScheme.surface, CircleShape)
+                    },
+                )
                 .clickable(interactionSource = press, indication = null, onClick = onBack),
             contentAlignment = Alignment.Center,
         ) {

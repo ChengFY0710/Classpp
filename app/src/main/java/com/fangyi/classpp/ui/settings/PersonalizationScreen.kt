@@ -55,6 +55,7 @@ import com.fangyi.classpp.ui.schedule.CardHeights
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
+import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -108,6 +109,9 @@ fun PersonalizationScreen(
                 .padding(innerPadding),
         ) {
             val hazeState = rememberHazeState()
+            // 顶栏返回按钮的液态玻璃：采样层挂下方正文列（与 hazeSource 同一节点，
+            // Haze 管顶栏磨砂、Backdrop 只喂返回按钮）；null = 玻璃关闭，标记不挂载
+            val glassBackdrop = rememberSettingsGlassBackdrop()
             var topBarHeight by remember { mutableStateOf(0.dp) }
             val density = LocalDensity.current
             // 手势条（小白条）区域：内容可铺到屏幕底，末尾留出这段避免被遮挡
@@ -121,6 +125,14 @@ fun PersonalizationScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .hazeSource(hazeState)
+                    // 玻璃返回按钮开启时同一节点再挂液态玻璃采样标记
+                    .then(
+                        if (glassBackdrop != null) {
+                            Modifier.layerBackdrop(glassBackdrop)
+                        } else {
+                            Modifier
+                        },
+                    )
                     // 橡皮筋增强版 verticalScroll：内容不足一屏时也能拉出橡皮筋
                     // （ui.motion 的 rubberBandVerticalScroll）
                     .rubberBandVerticalScroll(rememberScrollState())
@@ -153,6 +165,7 @@ fun PersonalizationScreen(
                 // 子页在覆盖层隐藏时仍常驻组合、整页停在屏外：只在活跃期挂 Haze 效果，
                 // 避免对屏外页面做源捕获/模糊（Haze 2 下会触发 RenderThread 递归崩溃）
                 hazeState = if (LocalPageOverlayActive.current) hazeState else null,
+                buttonBackdrop = glassBackdrop,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .onGloballyPositioned { coords ->
@@ -231,9 +244,9 @@ private fun ScheduleSection(
  * 颜色模式分组：app 级三选一（跟随系统/浅色/深色），行尾显示当前模式。
  * 点行弹选择对话框，点选项即时生效并关闭——对话框下方的页面同步变色，反馈直观，
  * 无需「确定」一步。同组下方为「更高级的玻璃材质」开关（[glassStyle] /
- * [onGlassStyleChange]，控制底部导航栏三胶囊与 OverlaySheet 顶栏按钮的
- * Backdrop 液态玻璃渲染 + Q弹按压；关闭即各自原实现，低版本与性能说明见
- * 描述文案，持久化见 GlassPreferences）。
+ * [onGlassStyleChange]，控制底部导航栏三胶囊、待办页顶栏胶囊、设置页顶栏返回按钮
+ * 与 OverlaySheet 顶栏按钮的 Backdrop 液态玻璃渲染 + Q弹按压；关闭即各自原实现，
+ * 低版本与性能说明见描述文案，持久化见 GlassPreferences）。
  */
 @Composable
 private fun ColorModeSection(
