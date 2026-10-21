@@ -1,7 +1,10 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.DecayAnimation
 import androidx.compose.animation.core.DecayAnimationSpec
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.calculateTargetValue
 import androidx.compose.animation.splineBasedDecay
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.Orientation
@@ -12,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -58,6 +62,9 @@ internal const val FadeOutScale = 0.8f
 /** 拖出首尾边界的阻尼：越界位移只按此比例跟手（橡皮筋，不会越拉越远） */
 private const val OvershootResistance = 0.25f
 
+/** 滑到头惯性过冲的视觉上限（格）：甩得再狠也最多甩出这么多，随即带残速弹回边界格 */
+private const val BounceOvershootItems = 0.5f
+
 /** 滚轮数字字号（对齐设计稿量得的中格大小） */
 private val WheelNumberFontSize = 36.sp
 
@@ -79,8 +86,8 @@ private val UnitGap: Dp = 10.dp
 
 /**
  * 单个滚轮的状态：[scroll] 是内容滚动量（px，数值 i 画在 `i × 格距 − scroll` 的偏移处，
- * 正 = 内容下移 = 选中更小的值）。拖拽、惯性、吸附、点选全部收在这里，确认按钮随时可读
- * [selectedIndex]（跟手/吸附过渡中取最近的整格）。
+ * 正 = 内容下移 = 选中更小的值）。拖拽、惯性、吸附、滑到头回弹、点选全部收在这里，确认
+ * 按钮随时可读 [selectedIndex]（跟手/吸附过渡中取最近的整格）。
  *
  * 格数可变（日期选择器的「日」轮随年月天数增减，见 [updateCount]）。
  * 滚动数学与轴向无关：竖向轮用默认格距 [WheelItemHeight]，横向轮（SelectWheelHorizontal）
@@ -132,15 +139,33 @@ internal class WheelState(
     }
 
     /**
-     * 打断进行中的惯性/吸附动画。惯性期间 raw 不跟随动画（只在 settle 收尾回写），
-     * 打断时必须先把 raw 对齐到动画实际位置 scroll.value，否则后续拖拽以松手时的
-     * 旧基准叠加增量，snapTo 会把滚轮瞬移回上一次拖拽的起点（惯性中反向滑动失效的根因）。
+     * 橡皮筋映射：未阻尼坐标 → 视觉滚动量。界内恒等，越界段按 [OvershootResistance] 折减。
+     * 拖拽与滑到头的惯性滑行共用这一条曲线，两段之间位置才连续。
+     */
+    private fun resist(x: Float): Float = when {
+        x < 0f -> x * OvershootResistance
+        x > maxScroll -> maxScroll + (x - maxScroll) * OvershootResistance
+        else -> x
+    }
+
+    /** [resist] 的反解：视觉滚动量 → 未阻尼坐标（打断动画后把 raw 对齐回实际位置用） */
+    private fun unresist(x: Float): Float = when {
+        x < 0f -> x / OvershootResistance
+        x > maxScroll -> maxScroll + (x - maxScroll) / OvershootResistance
+        else -> x
+    }
+
+    /**
+     * 打断进行中的惯性/吸附/回弹动画。惯性期间 raw 不跟随动画（只在 settle 收尾回写），
+     * 打断时必须先把 raw 对齐到动画实际位置 scroll.value（界内恒等、越界段反解橡皮筋），
+     * 否则后续拖拽以松手时的旧基准叠加增量，snapTo 会把滚轮瞬移回上一次拖拽的起点
+     * （惯性中反向滑动失效的根因；回弹中抓轮同理）。
      */
     private fun interruptSettle() {
         val job = settleJob ?: return
         job.cancel()
         settleJob = null
-        raw = scroll.value
+        raw = unresist(scroll.value)
     }
 
     /** 跟手滚动：正 deltaPx = 手指向下 = 内容下移 = 选中变小；越界只按阻尼比例跟手 */
@@ -149,30 +174,64 @@ internal class WheelState(
         scope.launch {
             scroll.updateBounds(Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY)
             raw -= deltaPx
-            val resisted = when {
-                raw < 0f -> raw * OvershootResistance
-                raw > maxScroll -> maxScroll + (raw - maxScroll) * OvershootResistance
-                else -> raw
-            }
-            scroll.snapTo(resisted)
+            scroll.snapTo(resist(raw))
         }
     }
 
     /**
-     * 松手收尾（内部起协程）：惯性滑行期间把界设为合法区间，滑出边界动画即自动停在
-     * 边界；随后放开边界，把最近的整格吸到中心（无过冲弹簧，ui.motion 的 Motion.Settle）
+     * 松手收尾（内部起协程）。惯性不会滑到头时照旧：把界设为合法区间衰减滑行到自然停住，
+     * 再把最近整格吸到中心（无过冲弹簧，ui.motion 的 Motion.Settle）。惯性会滑到头（或
+     * 松手时已在橡皮筋越界段）时不再撞边截停——原实现衰减动画一越界就被界截停、速度瞬间
+     * 归零，越界段松手更是首帧被夹回边界，视觉上都是跳切。改为界全放开，未阻尼坐标 raw
+     * 继续按衰减曲线滑行，视觉位置每帧经 [resist] 回写（与拖拽段同一条阻尼曲线，连续越过
+     * 边界后自然减速）；滑到衰减耗尽或视觉过冲达 [BounceOvershootItems] 格，把当时残余
+     * 的视觉速度原样交给回位弹簧弹回最近整格（越界时即边界格）——位置、速度全程连续。
      */
     fun settle(initialVelocityPx: Float, decay: DecayAnimationSpec<Float>) {
         interruptSettle()
         settleJob = scope.launch {
-            scroll.updateBounds(0f, maxScroll)
-            scroll.animateDecay(initialVelocityPx, decay)
+            val projected = decay.calculateTargetValue(raw, initialVelocityPx)
+            if (scroll.value in 0f..maxScroll && projected in 0f..maxScroll) {
+                scroll.updateBounds(0f, maxScroll)
+                scroll.animateDecay(initialVelocityPx, decay)
+                scroll.updateBounds(Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY)
+                snapToNearestItem()
+                return@launch
+            }
             scroll.updateBounds(Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY)
-            val target =
-                (scroll.value / itemSizePx).roundToInt().coerceIn(0, count - 1) * itemSizePx
-            raw = target
-            scroll.animateTo(target, Motion.Settle)
+            val fling = DecayAnimation(decay, Float.VectorConverter, raw, initialVelocityPx)
+            val overshootCap = itemSizePx * BounceOvershootItems
+            var startNanos = 0L
+            var playTime = 0L
+            while (true) {
+                withFrameNanos { now ->
+                    if (startNanos == 0L) startNanos = now
+                    playTime = now - startNanos
+                }
+                playTime = playTime.coerceAtMost(fling.durationNanos)
+                raw = fling.getValueFromNanos(playTime)
+                scroll.snapTo(resist(raw))
+                val overshoot = when {
+                    raw < 0f -> -raw
+                    raw > maxScroll -> raw - maxScroll
+                    else -> 0f
+                }
+                if (
+                    playTime >= fling.durationNanos ||
+                    overshoot * OvershootResistance >= overshootCap
+                ) break
+            }
+            // 交接给回位弹簧的视觉速度 = raw 速度 × resist 的斜率（越界段阻尼、界内恒等）
+            val slope = if (raw < 0f || raw > maxScroll) OvershootResistance else 1f
+            snapToNearestItem(fling.getVelocityVectorFromNanos(playTime).value * slope)
         }
+    }
+
+    /** 把离中心最近的整格吸到中心：界内惯性滑行与滑到头回弹共用的收尾（Motion.Settle） */
+    private suspend fun snapToNearestItem(initialVelocity: Float = scroll.velocity) {
+        val target = selectedIndex * itemSizePx
+        raw = target
+        scroll.animateTo(target, Motion.Settle, initialVelocity = initialVelocity)
     }
 
     /**
