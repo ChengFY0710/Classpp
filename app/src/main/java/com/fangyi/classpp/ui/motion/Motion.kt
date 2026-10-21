@@ -114,6 +114,19 @@ object Motion {
      * 当前用于浮层拖拽松手后的回位（跟手 snapTo 之后的收尾），
      * 以及待办顶栏分组条的极限橡皮筋回弹（Overscroll 效果的回弹 spec）。
      */
-    val Settle: AnimationSpec<Float> =
-        spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+    val Settle: AnimationSpec<Float> = settle(Spring.DefaultDisplacementThreshold)
+
+    /**
+     * [Settle] 的带可见阈值变体。[visibilityThreshold] 是「距终点多近算到位」，它同时决定
+     * 弹簧提前收站的时刻与**末帧吸附的幅度**——动画循环在估计时长处终止，终止帧直接落到
+     * 终点，而上一帧还在以正常速度运动（距终点 ≈1.3~1.5 个阈值），这段差值就是一帧内的
+     * 吸附跳变。以像素为单位动画时默认 0.01 只有 0.014px，不可见；但 OverlaySheet 的进度
+     * 是「浮层高度比例」，0.01 ≈ 浮层高度的 1%（约 30px+），回弹尾段会肉眼可见地窜一下。
+     * 归一化单位必须传「不足一像素」的比例值（如 1f / 浮层高度 px），吸附才隐形。
+     */
+    fun settle(visibilityThreshold: Float): AnimationSpec<Float> = spring(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = Spring.StiffnessMediumLow,
+        visibilityThreshold = visibilityThreshold,
+    )
 }

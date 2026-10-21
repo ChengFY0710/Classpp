@@ -344,12 +344,14 @@ fun OverlaySheet(
                         }
                     }
                     else -> {
-                        // 松手回弹归位：无过冲弹簧（ui.motion 的 Motion.Settle）。
+                        // 松手回弹归位：无过冲弹簧（ui.motion 的 Motion.settle）。
                         // 带上松手速度（px/s → 比例/s）让弹簧顺着甩势收，而不是瞬间停住再反向；
-                        // 进度不为负，向上甩出的负速度钳成 0（回弹起点在 0 时保持原位不动）
+                        // 进度不为负，向上甩出的负速度钳成 0（回弹起点在 0 时保持原位不动）。
+                        // 可见阈值取「不足一像素」的比例值：阈值决定末帧吸附幅度（≈1.4×阈值），
+                        // 默认 0.01 在「浮层高度比例」单位下 ≈ 30px，回弹尾段会肉眼可见地窜一下
                         hiddenFraction.animateTo(
                             0f,
-                            Motion.Settle,
+                            Motion.settle(1f / travelPx.coerceAtLeast(1)),
                             initialVelocity = velocity.coerceAtLeast(0f) / travelPx.coerceAtLeast(1),
                         )
                     }
