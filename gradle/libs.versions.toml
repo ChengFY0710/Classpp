@@ -33,6 +33,12 @@ kyantShapes = "1.2.1"
 # Kotlin 2.4.21、BOM 2026.09.00 对齐。仅用于底部导航栏玻璃样式（NavGlassPreferences 开关）；
 # Android 端 lens 折射需 API 33+、blur 需 API 31+，低版本由调用侧门控回退原实现。
 backdrop = "2.0.1"
+# Coil 3.6.3 为当前最新稳定。仅用于日程页背景/图片网格的本地加载（file 模型），
+# 不引入 coil-network-*；AsyncImage 按测量尺寸解码，网格缩略图不会全尺寸进内存
+coil = "3.6.3"
+# ExifInterface 1.4.2 为当前最新稳定（2025-12-03 发布）：导入相册图片时读取 EXIF
+# 方向做转正再落盘（BitmapFactory 解码不管方向，不转正会存下横竖颠倒的副本）
+androidxExifInterface = "1.4.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -53,6 +59,8 @@ haze-core = { group = "dev.chrisbanes.haze", name = "haze", version.ref = "haze"
 haze-blur = { group = "dev.chrisbanes.haze", name = "haze-blur", version.ref = "haze" }
 kyant-shapes = { group = "io.github.kyant0", name = "shapes", version.ref = "kyantShapes" }
 kyant-backdrop = { group = "io.github.kyant0", name = "backdrop", version.ref = "backdrop" }
+coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "androidxExifInterface" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 
 [plugins]

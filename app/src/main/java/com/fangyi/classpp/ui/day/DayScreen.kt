@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.day
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,17 +20,22 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.LocalToday
@@ -65,22 +71,48 @@ private const val MillisPerDay = 86_400_000L
  * 的毛玻璃：模糊强度同待办顶栏（25dp + Balanced），压暗 tint 固定纯黑（照片底不随主题换色），
  * progressive 会把模糊与 tint 一起渐隐，正好得到设计稿的「24%/30% 黑 → 0% 黑」。
  *
- * 背景暂为固定测试图（drawable-nodpi/bg_day_test）；ic_image 换背景入口仅展示，
- * 呼起浮层的能力后续实现。上滑手势同样未实现，顶部提示只作静态展示。
+ * 背景默认用内置测试图（drawable-nodpi/bg_day_test）；ic_image 呼起「选择图片」浮层
+ * （[DayImageSheet]），点选用户导入的图片即换背景并持久化（[DayImageStore]）。
+ * 上滑手势未实现，顶部提示只作静态展示。
  */
 @Composable
 fun DayScreen(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     val hazeState = rememberHazeState()
 
+    // 用户图片库与当前背景：首次组合从磁盘读，之后改动即时落盘（DayImageStore）
+    var images by remember { mutableStateOf(DayImageStore.loadImages(context)) }
+    var selectedImage by remember { mutableStateOf(DayImageStore.loadSelected(context)) }
+    // 浮层两段式：mounted 决定是否在组合里，visible 管进出场——出场播完才移出组合
+    var sheetMounted by remember { mutableStateOf(false) }
+    var sheetVisible by remember { mutableStateOf(false) }
+
+    // 背景：有用户选中的图片就换上去（文件缺失/解码失败回退默认测试图），磨砂采样链路不变
+    val backgroundImage = remember(selectedImage) {
+        selectedImage?.let { DayImageStore.imageFile(context, it) }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
-        Image(
-            painter = painterResource(R.drawable.bg_day_test),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .matchParentSize()
-                .hazeSource(hazeState),
-        )
+        if (backgroundImage != null) {
+            AsyncImage(
+                model = backgroundImage,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                error = painterResource(R.drawable.bg_day_test),
+                modifier = Modifier
+                    .matchParentSize()
+                    .hazeSource(hazeState),
+            )
+        } else {
+            Image(
+                painter = painterResource(R.drawable.bg_day_test),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .matchParentSize()
+                    .hazeSource(hazeState),
+            )
+        }
 
         DayEdgeScrim(
             hazeState = hazeState,
@@ -143,14 +175,37 @@ fun DayScreen(modifier: Modifier = Modifier) {
                     letterSpacing = (-0.3).sp,
                 )
                 Spacer(Modifier.weight(1f))
-                // 换背景入口：本版本仅展示，点击呼起浮层后续实现
+                // 换背景入口：呼起「选择图片」浮层
                 Icon(
                     painter = painterResource(R.drawable.ic_image),
                     contentDescription = stringResource(R.string.cd_day_background),
                     tint = Color.White,
-                    modifier = Modifier.size(28.dp),
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clickable {
+                            sheetMounted = true
+                            sheetVisible = true
+                        },
                 )
             }
+        }
+
+        if (sheetMounted) {
+            DayImageSheet(
+                visible = sheetVisible,
+                images = images,
+                onImported = { imported ->
+                    images = images + imported
+                    DayImageStore.saveImages(context, images)
+                },
+                onSelect = { name ->
+                    selectedImage = name
+                    DayImageStore.saveSelected(context, name)
+                    sheetVisible = false
+                },
+                onDismiss = { sheetVisible = false },
+                onDismissed = { sheetMounted = false },
+            )
         }
     }
 }

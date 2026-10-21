@@ -416,4 +416,10 @@
     <!-- 日程页（DayScreen）：顶部提示与背景切换入口的无障碍文案 -->
     <string name="day_swipe_hint">上滑开启新一天</string>
     <string name="cd_day_background">更换背景图</string>
+
+    <!-- 日程页选择图片浮层（DayImageSheet）：左导入 / 居中标题 / 右关闭 -->
+    <string name="day_image_sheet_title">选择图片</string>
+    <string name="day_image_import">导入</string>
+    <string name="day_image_close">关闭</string>
+    <string name="day_image_empty_hint">暂无图片，点击「导入」从相册添加</string>
 </resources>

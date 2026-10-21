@@ -49,6 +49,8 @@ dependencies {
     implementation(libs.haze.blur)
     implementation(libs.kyant.shapes)
     implementation(libs.kyant.backdrop)
+    implementation(libs.coil.compose)
+    implementation(libs.androidx.exifinterface)
     implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
