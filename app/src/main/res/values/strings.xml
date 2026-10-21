@@ -188,6 +188,7 @@
     <string name="appearance_theme_system">跟随系统</string>
     <string name="appearance_theme_light">浅色</string>
     <string name="appearance_theme_dark">深色</string>
+    <string name="nav_glass_style">导航栏玻璃样式</string>
     <string name="section_days">每周上课天数</string>
     <string name="section_slots">节数与时间</string>
     <string name="section_display">显示</string>

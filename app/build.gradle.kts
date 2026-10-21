@@ -48,6 +48,7 @@ dependencies {
     implementation(libs.haze.core)
     implementation(libs.haze.blur)
     implementation(libs.kyant.shapes)
+    implementation(libs.kyant.backdrop)
     implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

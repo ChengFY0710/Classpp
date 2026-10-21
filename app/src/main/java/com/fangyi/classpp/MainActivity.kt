@@ -3,6 +3,7 @@ package com.fangyi.classpp
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -17,6 +18,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -25,6 +27,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -43,6 +46,7 @@ import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
 import com.fangyi.classpp.ui.navigation.AppTab
 import com.fangyi.classpp.ui.navigation.BottomNavBar
+import com.fangyi.classpp.ui.navigation.NavGlassPreferences
 import com.fangyi.classpp.ui.navigation.TabPager
 import com.fangyi.classpp.ui.navigation.rememberTabPagerState
 import com.fangyi.classpp.ui.note.TodoScreen
@@ -53,6 +57,8 @@ import com.fangyi.classpp.ui.settings.SettingsScreen
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.ThemeMode
 import com.fangyi.classpp.ui.theme.ThemePreferences
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 
@@ -97,6 +103,8 @@ class MainActivity : ComponentActivity() {
         val savedCardHeights = CardHeightPreferences.load(this)
         // 课程卡片「显示教师」开关：同为 SharedPreferences 真源，冷启动读一次
         val savedShowTeacher = TeacherDisplayPreferences.load(this)
+        // 底部导航栏玻璃样式开关：同为 SharedPreferences 真源，冷启动读一次
+        val savedNavGlass = NavGlassPreferences.load(this)
         super.onCreate(savedInstanceState)
         // 系统栏外观随主题：状态栏/导航栏全透明、前景图标深浅按模式切换。
         // 必须显式 light 而非 auto：auto 会把 isNavigationBarContrastEnforced 置为 true，
@@ -143,6 +151,8 @@ class MainActivity : ComponentActivity() {
             // 「显示教师」开关状态：prefs 真源、重建时重读；布尔翻转无连续变化，
             // 落盘在回调里即时完成（同 themeMode），无需去抖
             val showTeacherState = remember { mutableStateOf(savedShowTeacher) }
+            // 底部导航栏玻璃样式开关状态：同 showTeacher（prefs 真源、回调即时落盘）
+            val navGlassState = remember { mutableStateOf(savedNavGlass) }
             val darkTheme = when (themeMode) {
                 ThemeMode.System -> isSystemInDarkTheme()
                 ThemeMode.Light -> false
@@ -246,6 +256,21 @@ class MainActivity : ComponentActivity() {
                     pagerState.reRecordParkedTabs()
                 }
 
+                // 底部导航栏玻璃样式（NavGlassPreferences）：开启时把页面世界标记进
+                // layerBackdrop 采样层，三胶囊经 drawBackdrop 取样做液态玻璃（模糊+折射+
+                // 染色）。采样内容 = 页面底色（与下方 Box 的 background 同源）+ 各 tab 页，
+                // 官方教程明确底色必须画进采样层，否则玻璃后漏透明像素；导航栏在采样
+                // 层的 Box 之外，玻璃不会照见自己。lens 折射需 API 33+、blur 需 API 31+
+                // （RenderEffect），API 31 以下开关保留但维持原白底渲染。关闭开关时
+                // layerBackdrop 不挂载，采样层零开销
+                val useGlass = navGlassState.value && Build.VERSION.SDK_INT >= 31
+                // 底色经 State 中转：draw 块读不了组合上下文，靠状态读取驱动主题切换重画
+                val backdropBgColor = rememberUpdatedState(MaterialTheme.colorScheme.background)
+                val navBackdrop = rememberLayerBackdrop {
+                    drawRect(backdropBgColor.value)
+                    drawContent()
+                }
+
                 // 设置页覆盖层完整转场（ui.motion 的 PageOverlayTransition）：下层让位视差、
                 // 压暗遮罩、右滑进出场与转场期左缘圆角都在其中，与个性化子页共用同一实现
                 PageOverlayTransition(
@@ -260,34 +285,48 @@ class MainActivity : ComponentActivity() {
                     behind = {
                         // 已挂载的页面层（惰性挂载与常驻机制见 TabPagerState/TabPager）：
                         // 每页由 TabPager 包一层 Box 承载转场变换，页面内容仅组合一次、
-                        // 之后常驻；tab 分派与各屏参数在本 lambda 内装配
-                        TabPager(state = pagerState) { tab, transition ->
-                            when (tab) {
-                                AppTab.Agenda -> DayScreen(pageModifier)
-                                AppTab.Timetable -> ScheduleScreen(
-                                    modifier = pageModifier,
-                                    repository = repository,
-                                    todoRepository = todoRepository,
-                                    editing = editing,
-                                    onEditingChange = onEditingChange,
-                                    onOverlayOverNavBarChange = onOverlayOverNavBarChange,
-                                    onOpenSettings = onOpenSettings,
-                                    tabTransition = transition,
-                                    // 网格读降频态（即时态只喂个性化页滑条）
-                                    cardHeights = gridCardHeightsState,
-                                    // 课程卡片教师行显隐（个性化页开关写入）
-                                    showTeacher = showTeacherState,
-                                )
-                                AppTab.Todo -> TodoScreen(
-                                    modifier = pageModifier,
-                                    repository = todoRepository,
-                                    tagRepository = tagRepository,
-                                    scheduleRepository = repository,
-                                    showNewTodoSheet = showNewTodoSheet,
-                                    onNewTodoSheetDismiss = onNewTodoSheetDismiss,
-                                    onOverlayOverNavBarChange = onOverlayOverNavBarChange,
-                                    tabTransition = transition,
-                                )
+                        // 之后常驻；tab 分派与各屏参数在本 lambda 内装配。
+                        // 玻璃开启时外面包一层采样标记 Box（TabPager 无 modifier 参数）；
+                        // 关闭时不挂 layerBackdrop，Box 纯透传不影响原渲染路径
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .then(
+                                    if (useGlass) {
+                                        Modifier.layerBackdrop(navBackdrop)
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                        ) {
+                            TabPager(state = pagerState) { tab, transition ->
+                                when (tab) {
+                                    AppTab.Agenda -> DayScreen(pageModifier)
+                                    AppTab.Timetable -> ScheduleScreen(
+                                        modifier = pageModifier,
+                                        repository = repository,
+                                        todoRepository = todoRepository,
+                                        editing = editing,
+                                        onEditingChange = onEditingChange,
+                                        onOverlayOverNavBarChange = onOverlayOverNavBarChange,
+                                        onOpenSettings = onOpenSettings,
+                                        tabTransition = transition,
+                                        // 网格读降频态（即时态只喂个性化页滑条）
+                                        cardHeights = gridCardHeightsState,
+                                        // 课程卡片教师行显隐（个性化页开关写入）
+                                        showTeacher = showTeacherState,
+                                    )
+                                    AppTab.Todo -> TodoScreen(
+                                        modifier = pageModifier,
+                                        repository = todoRepository,
+                                        tagRepository = tagRepository,
+                                        scheduleRepository = repository,
+                                        showNewTodoSheet = showNewTodoSheet,
+                                        onNewTodoSheetDismiss = onNewTodoSheetDismiss,
+                                        onOverlayOverNavBarChange = onOverlayOverNavBarChange,
+                                        tabTransition = transition,
+                                    )
+                                }
                             }
                         }
                         // 编辑态或课表页全屏浮层在场时隐藏底部导航栏（设计稿如此，也避免编辑中途被切走）：
@@ -311,6 +350,8 @@ class MainActivity : ComponentActivity() {
                         ) {
                             BottomNavBar(
                                 selectedTab = pagerState.selectedTab,
+                                glassEnabled = useGlass,
+                                backdrop = navBackdrop,
                                 // 退场动画期间仍在组合中，挡掉点击：编辑中途或浮层打开时不许切 tab。
                                 // 待办页已选中时胶囊即「新建」入口：再点呼起新建待办浮层
                                 onTabSelected = { tab ->
@@ -344,6 +385,12 @@ class MainActivity : ComponentActivity() {
                             // 只改内存即时生效 + 即时落盘（布尔翻转无连续变化，无需去抖）
                             showTeacherState.value = show
                             TeacherDisplayPreferences.save(this@MainActivity, show)
+                        },
+                        navGlassStyle = navGlassState,
+                        onNavGlassStyleChange = { enabled ->
+                            // 只改内存即时生效 + 即时落盘（同 showTeacher）
+                            navGlassState.value = enabled
+                            NavGlassPreferences.save(this@MainActivity, enabled)
                         },
                         modifier = Modifier.fillMaxSize(),
                     )

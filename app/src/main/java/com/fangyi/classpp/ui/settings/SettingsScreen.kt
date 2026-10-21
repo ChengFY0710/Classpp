@@ -84,6 +84,9 @@ fun SettingsScreen(
     // 课程卡片「显示教师」开关（同 cardHeights 的透传纪律）
     showTeacher: State<Boolean> = mutableStateOf(true),
     onShowTeacherChange: (Boolean) -> Unit = {},
+    // 底部导航栏玻璃样式开关（同 cardHeights 的透传纪律）
+    navGlassStyle: State<Boolean> = mutableStateOf(false),
+    onNavGlassStyleChange: (Boolean) -> Unit = {},
 ) {
     var showPersonalization by rememberSaveable { mutableStateOf(false) }
     var showNotifications by rememberSaveable { mutableStateOf(false) }
@@ -145,6 +148,8 @@ fun SettingsScreen(
                             onCardHeightsChange = onCardHeightsChange,
                             showTeacher = showTeacher,
                             onShowTeacherChange = onShowTeacherChange,
+                            navGlassStyle = navGlassStyle,
+                            onNavGlassStyleChange = onNavGlassStyleChange,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }

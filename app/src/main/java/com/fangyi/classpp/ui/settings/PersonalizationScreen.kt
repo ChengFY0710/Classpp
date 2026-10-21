@@ -86,6 +86,9 @@ fun PersonalizationScreen(
     // 课程卡片「显示教师」开关（State 实例透传纪律同上）
     showTeacher: State<Boolean> = mutableStateOf(true),
     onShowTeacherChange: (Boolean) -> Unit = {},
+    // 底部导航栏玻璃样式开关（State 实例透传纪律同上，值只在 ColorModeSection 叶子内读）
+    navGlassStyle: State<Boolean> = mutableStateOf(false),
+    onNavGlassStyleChange: (Boolean) -> Unit = {},
 ) {
     // 当前激活课表决定滑条走 5 天还是 7 天的范围/默认值；无课表（加载中/空）回退 5 天
     val schedule by remember(repository) {
@@ -132,6 +135,8 @@ fun PersonalizationScreen(
                 ColorModeSection(
                     mode = themeMode,
                     onSelect = onThemeModeChange,
+                    navGlassStyle = navGlassStyle,
+                    onNavGlassStyleChange = onNavGlassStyleChange,
                 )
                 ScheduleSection(
                     daysPerWeek = daysPerWeek,
@@ -223,25 +228,44 @@ private fun ScheduleSection(
 }
 
 /**
- * 颜色模式设置：app 级三选一（跟随系统/浅色/深色），行尾显示当前模式。
+ * 颜色模式分组：app 级三选一（跟随系统/浅色/深色），行尾显示当前模式。
  * 点行弹选择对话框，点选项即时生效并关闭——对话框下方的页面同步变色，反馈直观，
- * 无需「确定」一步。
+ * 无需「确定」一步。同组下方为「导航栏玻璃样式」开关（[navGlassStyle] /
+ * [onNavGlassStyleChange]，控制底部三胶囊的 Backdrop 液态玻璃渲染：
+ * 选中项染主题蓝、白图标，取消蓝底指示器；关闭即原始白底实现，
+ * 持久化见 NavGlassPreferences）。
  */
 @Composable
 private fun ColorModeSection(
     mode: ThemeMode,
     onSelect: (ThemeMode) -> Unit,
+    navGlassStyle: State<Boolean>,
+    onNavGlassStyleChange: (Boolean) -> Unit,
 ) {
     var picking by remember { mutableStateOf(false) }
-    SettingsCard(
-        items = listOf(
-            SettingsCardItem.Nav(
-                label = stringResource(R.string.appearance_theme_mode),
-                value = stringResource(mode.labelRes),
-                onClick = { picking = true },
+    // 颜色模式与玻璃样式同属外观分组：两卡收进同一 CardSection（无标题纯分组容器，
+    // 组内卡间距 10dp），与「课表」分组的两卡结构对齐
+    CardSection {
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Nav(
+                    label = stringResource(R.string.appearance_theme_mode),
+                    value = stringResource(mode.labelRes),
+                    onClick = { picking = true },
+                ),
             ),
-        ),
-    )
+        )
+        // 独立一张卡片：开关与模式行分开（组内卡间距 10dp，见 CardSection）
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Toggle(
+                    label = stringResource(R.string.nav_glass_style),
+                    checked = navGlassStyle.value,
+                    onCheckedChange = onNavGlassStyleChange,
+                ),
+            ),
+        )
+    }
 
     if (picking) {
         AlertDialog(

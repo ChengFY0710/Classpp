@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.navigation
 
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -42,6 +43,10 @@ import com.fangyi.classpp.ui.components.BottomFadeScrim
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.PillShape
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
 
 enum class AppTab(
     @DrawableRes val iconRes: Int,
@@ -69,6 +74,15 @@ private val PillShadowElevation = 8.dp
 private val PillIndicatorInset = 3.dp
 private val PillHorizontalPadding = 33.dp
 
+/** 玻璃模糊半径：胶囊小、底后是渐变遮罩淡出的页面内容，轻模糊够读 */
+private val GlassBlurRadius = 4.dp
+/** 玻璃折射高度/深度（官方 Glass Bottom Bar 教程同款起始值） */
+private val GlassLensHeight = 16.dp
+private val GlassLensDepth = 32.dp
+/** 玻璃表面染色浓度：选中项主题蓝、未选中白玻璃（表面 alpha，目测定值） */
+private const val GlassSelectedTintAlpha = 0.70f
+private const val GlassIdleTintAlpha = 0.55f
+
 /** 胶囊区上方被渐变遮罩盖住的延伸高度（遮罩已下沉为页面的 BottomFadeScrim，仅供其取用） */
 internal val GradientOverhang = 40.dp
 
@@ -79,13 +93,22 @@ val NavReserve = PillBottomOffset + PillHeight
  * 底部导航：三个胶囊按钮。渐变遮罩不在其中——已下沉为各页面自绘的
  * BottomFadeScrim（ui.components），高度与此处几何常量对齐。
  * 调用方负责对齐（如 Modifier.align(Alignment.BottomCenter)）。
+ *
+ * 玻璃样式（[glassEnabled] 且 [backdrop] 非空时启用）：胶囊白底改由 Backdrop 液态
+ * 玻璃渲染——模糊 + 折射 + 表面染色（选中项主题蓝、未选中白玻璃），选中蓝底指示器
+ * 取消、图标文字转白；尺寸/间距/形状/投影/按压反馈与白底实现完全一致。
+ * [backdrop] 采样层由调用方创建（rememberLayerBackdrop 画底色 + layerBackdrop 标记
+ * 页面世界），导航栏自身必须在采样层之外，否则玻璃会照见自己。
  */
 @Composable
 fun BottomNavBar(
     selectedTab: AppTab,
     onTabSelected: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
+    glassEnabled: Boolean = false,
+    backdrop: Backdrop? = null,
 ) {
+    val useGlass = glassEnabled && backdrop != null
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -110,6 +133,8 @@ fun BottomNavBar(
                 NavPill(
                     tab = tab,
                     selected = tab == selectedTab,
+                    useGlass = useGlass,
+                    backdrop = backdrop,
                     onClick = { onTabSelected(tab) },
                     modifier = Modifier.weight(1f),
                 )
@@ -122,11 +147,26 @@ fun BottomNavBar(
 private fun NavPill(
     tab: AppTab,
     selected: Boolean,
+    useGlass: Boolean,
+    backdrop: Backdrop?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 玻璃模式下选中项转白：染了主题蓝的玻璃上用主题蓝/深色图文都读不清
     val contentColor =
-        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+        when {
+            useGlass && selected -> Color.White
+            selected -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.colorScheme.onSurface
+        }
+    // 玻璃表面染色：选中项主题蓝（深色模式自动用 DarkPrimary），未选中白玻璃。
+    // 读取在组合侧完成——onDrawSurface 是 DrawScope，读不了 Composable 上下文
+    val surfaceTint =
+        if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = GlassSelectedTintAlpha)
+        } else {
+            MaterialTheme.colorScheme.surface.copy(alpha = GlassIdleTintAlpha)
+        }
     // 选中态的胶囊内容可整体换装（待办 → 新建入口），未定义则与常态相同
     val iconRes = if (selected) tab.selectedIconRes ?: tab.iconRes else tab.iconRes
     val labelRes = if (selected) tab.selectedLabelRes ?: tab.labelRes else tab.labelRes
@@ -148,8 +188,27 @@ private fun NavPill(
                 spotShadowColor = Color.Black.copy(alpha = 0.3f)
             }
             // 白底必须不透明：PrimaryContainer 仅 12% alpha，若直接铺在胶囊上，
-            // graphicsLayer 的投影会从半透明底里透上来，在图标后形成一条淡横线
-            .background(MaterialTheme.colorScheme.surface, PillShape)
+            // graphicsLayer 的投影会从半透明底里透上来，在图标后形成一条淡横线。
+            // 玻璃模式改由 drawBackdrop 出底：采样层内容经模糊/折射后裁进胶囊形状，
+            // 表面再叠染色——白玻璃（未选中）/主题蓝（选中）；玻璃受同一 clip 约束，
+            // 投影环境不变。lens 折射走 RuntimeShader 仅 API 33+，低版本只留模糊+染色
+            .then(
+                if (useGlass && backdrop != null) {
+                    Modifier.drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { PillShape },
+                        effects = {
+                            blur(GlassBlurRadius.toPx())
+                            if (Build.VERSION.SDK_INT >= 33) {
+                                lens(GlassLensHeight.toPx(), GlassLensDepth.toPx())
+                            }
+                        },
+                        onDrawSurface = { drawRect(surfaceTint) },
+                    )
+                } else {
+                    Modifier.background(MaterialTheme.colorScheme.surface, PillShape)
+                },
+            )
             .selectable(
                 selected = selected,
                 interactionSource = pressInteraction,
@@ -159,8 +218,9 @@ private fun NavPill(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        // 选中指示器：浮在白胶囊内侧，四周内缩 PillIndicatorInset
-        if (selected) {
+        // 选中指示器：浮在白胶囊内侧，四周内缩 PillIndicatorInset。
+        // 玻璃模式的选中态由整胶囊主题蓝染色 + 白色图文承担，蓝底指示器退场
+        if (selected && !useGlass) {
             Box(
                 Modifier
                     .matchParentSize()
