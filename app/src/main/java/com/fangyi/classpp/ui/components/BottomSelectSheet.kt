@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.activity.compose.BackHandler
-import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -28,7 +27,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,12 +41,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
-import com.fangyi.classpp.ui.settings.LocalGlassStyle
 import com.fangyi.classpp.ui.theme.BottomSelectSheetShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
+import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.hazeBlur
@@ -151,13 +149,8 @@ fun BottomSelectSheet(
     // 采样不越界；按钮在采样节点之外（顶栏 overlay 层），玻璃不会照见自己（读写同一
     // 层是 GPU 反馈环）。与卡片的 Haze 磨砂同源挂内容（Haze 管整卡磨砂、Backdrop 只
     // 喂两颗玻璃按钮），两套采样互不干扰
-    val glassButtonsEnabled = LocalGlassStyle.current && Build.VERSION.SDK_INT >= 31
-    // 底色经 State 中转：draw 块读不了组合上下文，靠状态读取驱动主题切换重画
-    val cardBgColor = rememberUpdatedState(MaterialTheme.classppColors.bottomSheetColor)
-    val glassButtonsBackdrop = rememberLayerBackdrop {
-        drawRect(cardBgColor.value)
-        drawContent()
-    }
+    val glassButtonsEnabled = isGlassStyleEnabled()
+    val glassButtonsBackdrop = rememberGlassBackdrop(MaterialTheme.classppColors.bottomSheetColor)
     val glassButtonBackdrop = if (glassButtonsEnabled) glassButtonsBackdrop else null
 
     // ——— 进出场共用一条进度：0 = 完全显示，1 = 完全滑出屏幕下方 ———

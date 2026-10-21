@@ -3,7 +3,6 @@ package com.fangyi.classpp.ui.schedule
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -49,7 +48,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -100,9 +98,9 @@ import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.theme.ButtonShape
 import com.fangyi.classpp.ui.theme.ClassppTheme
-import com.fangyi.classpp.ui.settings.LocalGlassStyle
+import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
+import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlin.math.abs
@@ -287,13 +285,8 @@ fun ScheduleScreen(
     // 底色 + 课程网格——网格从顶栏下滚过，玻璃才有东西可折射（底色必须画进采样层，
     // 否则漏透明像素）；胶囊在采样节点之外，玻璃不会照见自己。采样与顶栏的 Haze
     // 磨砂同源（hazeSource / layerBackdrop 挂同一节点），两套采样互不干扰
-    val glassPillEnabled = LocalGlassStyle.current && Build.VERSION.SDK_INT >= 31
-    // 底色经 State 中转：draw 块读不了组合上下文，靠状态读取驱动主题切换重画
-    val gridBgColor = rememberUpdatedState(MaterialTheme.colorScheme.background)
-    val weekPillBackdrop = rememberLayerBackdrop {
-        drawRect(gridBgColor.value)
-        drawContent()
-    }
+    val glassPillEnabled = isGlassStyleEnabled()
+    val weekPillBackdrop = rememberGlassBackdrop(MaterialTheme.colorScheme.background)
 
     // 顶栏实测高度（含状态栏 inset）→ 网格 contentPadding.top。
     // 两种模式各存一份：切换模式时立刻拿到上一轮的实测值，内容不会先跳一帧；

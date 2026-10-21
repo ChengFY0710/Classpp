@@ -2,7 +2,6 @@ package com.fangyi.classpp.ui.note
 
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
-import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -72,8 +71,6 @@ import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
-import com.fangyi.classpp.ui.motion.pressFeedback
-import com.fangyi.classpp.ui.motion.pressScale
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollFactory
 import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
@@ -84,10 +81,9 @@ import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.fangyi.classpp.ui.theme.glassPressFeedback
+import com.fangyi.classpp.ui.theme.glassSurface
 import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.hazeBlur
@@ -133,18 +129,6 @@ private val ShadowOverhang = 8.dp
 /** 胶囊柔影：大 elevation 换软边、低透明 spot 压深浅 */
 private val PillShadowElevation = 36.dp
 private val PillShadowColor = Color.Black.copy(alpha = 0.1f)
-
-// ---- 顶栏胶囊液态玻璃的手感/观感参数（对齐浮层顶栏玻璃按钮 SheetPillButton 的取值）----
-
-/** 玻璃模糊半径：胶囊小、底后是磨砂顶栏下的页面内容，轻模糊够读 */
-private val PillGlassBlurRadius = 4.dp
-
-/** 玻璃折射高度/深度（官方玻璃指示器的量级：10/14dp） */
-private val PillGlassLensHeight = 10.dp
-private val PillGlassLensDepth = 14.dp
-
-/** 玻璃表面染色浓度：叠原底色，胶囊色相不变、透出玻璃感 */
-private const val PillGlassTintAlpha = 0.70f
 
 /**
  * 动作行菜单卡（排序/分类）顶缘与动作块底缘的视觉间距。
@@ -610,60 +594,30 @@ private fun Modifier.topBarPillShadow(): Modifier = graphicsLayer {
 }
 
 /**
- * 顶栏胶囊的按压反馈 + 柔影 + 底材一体（分组/特殊分组/更多三处共用）：[backdrop]
- * 非空且 API 31+ 走玻璃——Q弹按压放大（pressScale：官方软弹簧果冻过冲 + 沿轮廓加色
- * 提亮，底部导航栏/浮层顶栏玻璃按钮同款手感）+ drawBackdrop 出底（采样内容经模糊/
- * 折射裁进胶囊形状，表面叠 [containerColor] 染色——色相不变、透出玻璃感；lens 折射
- * 仅 API 33+，31-32 只留模糊+染色）；null（默认，如 @Preview / 玻璃开关关闭）维持
- * 原实现——pressFeedback（硬节奏缩放提亮）+ 实心底。按压放大两态同取 1.10（顶栏
- * 胶囊既有规格，不随全局默认）。顺序：按压反馈 → 柔影 → 底材——投影随组件一起放大，
- * 玻璃受同一 clip 约束；缩放会让玻璃采样跟着放大（无 layerBlock 补偿），blur + 染色
- * + 1.10 小倍率下不可感知，与底部导航栏玻璃胶囊同一取舍。
+ * 顶栏胶囊的按压反馈 + 柔影 + 底材一体（分组/特殊分组/更多三处共用）：按压与底材
+ * 走 ui.theme LiquidGlass 的统一封装（[glassPressFeedback] / [glassSurface]，默认
+ * LiquidGlassStyle.Pill）——[backdrop] 非空且 API 31+ 走玻璃（Q弹按压放大 + drawBackdrop
+ * 出底，底部导航栏/浮层顶栏玻璃按钮同款）；null（默认，如 @Preview / 玻璃开关关闭）
+ * 维持原实现（pressFeedback + 实心底）。按压放大两态同取 1.10（顶栏胶囊既有规格）。
+ * 顺序：按压反馈 → 柔影 → 底材——投影随组件一起放大，玻璃受同一 clip 约束。
  */
 @Composable
 private fun Modifier.topBarPillMaterial(
     pressInteraction: MutableInteractionSource,
     containerColor: Color,
     backdrop: Backdrop?,
-): Modifier {
-    val useGlass = backdrop != null && Build.VERSION.SDK_INT >= 31
-    return this
-        .then(
-            if (useGlass) {
-                Modifier.pressScale(
-                    interactionSource = pressInteraction,
-                    shape = PillShape,
-                    pressedScale = 1.10f,
-                )
-            } else {
-                Modifier.pressFeedback(
-                    interactionSource = pressInteraction,
-                    shape = PillShape,
-                    scale = 1.10f,
-                )
-            },
-        )
+): Modifier =
+    glassPressFeedback(
+        interactionSource = pressInteraction,
+        shape = PillShape,
+        backdrop = backdrop,
+    )
         .topBarPillShadow()
-        .then(
-            if (useGlass && backdrop != null) {
-                Modifier.drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { PillShape },
-                    effects = {
-                        blur(PillGlassBlurRadius.toPx())
-                        if (Build.VERSION.SDK_INT >= 33) {
-                            lens(PillGlassLensHeight.toPx(), PillGlassLensDepth.toPx())
-                        }
-                    },
-                    onDrawSurface = {
-                        drawRect(containerColor.copy(alpha = PillGlassTintAlpha))
-                    },
-                )
-            } else {
-                Modifier.background(containerColor, PillShape)
-            },
+        .glassSurface(
+            shape = PillShape,
+            containerColor = containerColor,
+            backdrop = backdrop,
         )
-}
 
 /**
  * 分组胶囊：选中 = primary 底白字，未选 = surface 底黑字（与 NavPill 同一配色逻辑）。

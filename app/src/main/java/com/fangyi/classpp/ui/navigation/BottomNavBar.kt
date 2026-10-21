@@ -2,7 +2,6 @@ package com.fangyi.classpp.ui.navigation
 
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
-import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -40,14 +39,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.BottomFadeScrim
-import com.fangyi.classpp.ui.motion.pressFeedback
-import com.fangyi.classpp.ui.motion.pressScale
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.LiquidGlassStyle
 import com.fangyi.classpp.ui.theme.PillShape
+import com.fangyi.classpp.ui.theme.glassPressFeedback
+import com.fangyi.classpp.ui.theme.glassSurface
 import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
 
 enum class AppTab(
     @DrawableRes val iconRes: Int,
@@ -75,13 +72,9 @@ private val PillShadowElevation = 8.dp
 private val PillIndicatorInset = 3.dp
 private val PillHorizontalPadding = 33.dp
 
-/** 玻璃模糊半径：胶囊小、底后是渐变遮罩淡出的页面内容，轻模糊够读 */
-private val GlassBlurRadius = 4.dp
-/** 玻璃折射高度/深度（官方 Glass Bottom Bar 教程同款起始值） */
-private val GlassLensHeight = 16.dp
-private val GlassLensDepth = 32.dp
-/** 玻璃表面染色浓度：选中项主题蓝、未选中白玻璃（表面 alpha，目测定值） */
-private const val GlassSelectedTintAlpha = 0.70f
+/** 玻璃样式取 ui.theme 的 NavPill 档（blur 4dp + 折射 16/32dp，官方 Glass Bottom Bar 教程量级） */
+
+/** 玻璃表面染色浓度（未选中白玻璃）：比样式档的 0.70 更透一档，白玻璃目测定值 */
 private const val GlassIdleTintAlpha = 0.55f
 
 /** 胶囊区上方被渐变遮罩盖住的延伸高度（遮罩已下沉为页面的 BottomFadeScrim，仅供其取用） */
@@ -95,7 +88,8 @@ val NavReserve = PillBottomOffset + PillHeight
  * BottomFadeScrim（ui.components），高度与此处几何常量对齐。
  * 调用方负责对齐（如 Modifier.align(Alignment.BottomCenter)）。
  *
- * 玻璃样式（[glassEnabled] 且 [backdrop] 非空时启用）：胶囊白底改由 Backdrop 液态
+ * 玻璃样式（[backdrop] 非空时启用，与全 app 玻璃按钮同一判定——调用方经
+ * isGlassStyleEnabled 门控、关闭传 null）：胶囊白底改由 Backdrop 液态
  * 玻璃渲染——模糊 + 折射 + 表面染色（选中项主题蓝、未选中白玻璃），选中蓝底指示器
  * 取消、图标文字转白；尺寸/间距/形状/投影/按压反馈与白底实现完全一致。
  * [backdrop] 采样层由调用方创建（rememberLayerBackdrop 画底色 + layerBackdrop 标记
@@ -106,10 +100,9 @@ fun BottomNavBar(
     selectedTab: AppTab,
     onTabSelected: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
-    glassEnabled: Boolean = false,
     backdrop: Backdrop? = null,
 ) {
-    val useGlass = glassEnabled && backdrop != null
+    val useGlass = backdrop != null
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -160,11 +153,12 @@ private fun NavPill(
             selected -> MaterialTheme.colorScheme.primary
             else -> MaterialTheme.colorScheme.onSurface
         }
-    // 玻璃表面染色：选中项主题蓝（深色模式自动用 DarkPrimary），未选中白玻璃。
-    // 读取在组合侧完成——onDrawSurface 是 DrawScope，读不了 Composable 上下文
+    // 玻璃表面染色：选中项主题蓝（深色模式自动用 DarkPrimary，浓度取样式档 tintAlpha），
+    // 未选中白玻璃（更透一档）。读取在组合侧完成——onDrawSurface 是 DrawScope，
+    // 读不了 Composable 上下文
     val surfaceTint =
         if (selected) {
-            MaterialTheme.colorScheme.primary.copy(alpha = GlassSelectedTintAlpha)
+            MaterialTheme.colorScheme.primary.copy(alpha = LiquidGlassStyle.NavPill.tintAlpha)
         } else {
             MaterialTheme.colorScheme.surface.copy(alpha = GlassIdleTintAlpha)
         }
@@ -176,20 +170,16 @@ private fun NavPill(
     Box(
         modifier = modifier
             .height(PillHeight)
-            // 按压反馈：非玻璃原样（整体放大 + 主体提亮，接在带 clip 的图层之前）；
-            // 玻璃模式换官方 Q弹按压放大（软弹簧果冻过冲 + 沿轮廓加色提亮，
-            // 见 ui.motion PressScale）。缩放会让玻璃采样跟着放大（无 layerBlock
-            // 补偿），blur + 染色下不可感知，与原实现同一取舍
-            .then(
-                if (useGlass) {
-                    Modifier.pressScale(pressInteraction, PillShape)
-                } else {
-                    Modifier.pressFeedback(
-                        interactionSource = pressInteraction,
-                        shape = PillShape,
-                        scale = 1.15f,
-                    )
-                },
+            // 按压反馈：玻璃模式换官方 Q弹按压放大（软弹簧果冻过冲 + 沿轮廓加色提亮），
+            // 非玻璃维持 pressFeedback（封装见 ui.theme LiquidGlass）；导航胶囊单独
+            // 调大到 1.15（与其他玻璃按钮的 1.10 不同，沿用胶囊原按压记忆）。
+            // 缩放会让玻璃采样跟着放大（无 layerBlock 补偿），blur + 染色下不可感知，
+            // 与原实现同一取舍
+            .glassPressFeedback(
+                interactionSource = pressInteraction,
+                shape = PillShape,
+                backdrop = backdrop,
+                pressedScale = 1.15f,
             )
             .graphicsLayer {
                 shape = PillShape
@@ -199,25 +189,14 @@ private fun NavPill(
             }
             // 白底必须不透明：PrimaryContainer 仅 12% alpha，若直接铺在胶囊上，
             // graphicsLayer 的投影会从半透明底里透上来，在图标后形成一条淡横线。
-            // 玻璃模式改由 drawBackdrop 出底：采样层内容经模糊/折射后裁进胶囊形状，
-            // 表面再叠染色——白玻璃（未选中）/主题蓝（选中）；玻璃受同一 clip 约束，
-            // 投影环境不变。lens 折射走 RuntimeShader 仅 API 33+，低版本只留模糊+染色
-            .then(
-                if (useGlass && backdrop != null) {
-                    Modifier.drawBackdrop(
-                        backdrop = backdrop,
-                        shape = { PillShape },
-                        effects = {
-                            blur(GlassBlurRadius.toPx())
-                            if (Build.VERSION.SDK_INT >= 33) {
-                                lens(GlassLensHeight.toPx(), GlassLensDepth.toPx())
-                            }
-                        },
-                        onDrawSurface = { drawRect(surfaceTint) },
-                    )
-                } else {
-                    Modifier.background(MaterialTheme.colorScheme.surface, PillShape)
-                },
+            // 玻璃模式改由 drawBackdrop 出底（采样层内容经模糊/折射后裁进胶囊形状，
+            // 表面再叠染色——选中蓝玻璃/未选白玻璃）；非玻璃实心底，投影环境不变
+            .glassSurface(
+                shape = PillShape,
+                containerColor = MaterialTheme.colorScheme.surface,
+                backdrop = backdrop,
+                style = LiquidGlassStyle.NavPill,
+                tint = surfaceTint,
             )
             .selectable(
                 selected = selected,

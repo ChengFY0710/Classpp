@@ -73,15 +73,16 @@ import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressFeedback
-import com.fangyi.classpp.ui.motion.pressScale
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.tabTransitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.Correct
 import com.fangyi.classpp.ui.theme.Error
+import com.fangyi.classpp.ui.theme.LiquidGlassStyle
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.WeekCellShape
+import com.fangyi.classpp.ui.theme.glassPressFeedback
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
@@ -97,18 +98,6 @@ internal val TopBarHeight = 56.dp  //顶栏行自然高度，也是最大折叠�
 
 private val WeekPillHeight = 40.dp
 private val HeaderEdgePadding = 33.dp
-
-// ---- 周数胶囊液态玻璃的手感/观感参数（对齐待办顶栏/浮层顶栏玻璃胶囊的取值）----
-
-/** 玻璃模糊半径：胶囊小、底后是磨砂顶栏下的课程网格，轻模糊够读 */
-private val PillGlassBlurRadius = 4.dp
-
-/** 玻璃折射高度/深度（官方玻璃指示器的量级：10/14dp） */
-private val PillGlassLensHeight = 10.dp
-private val PillGlassLensDepth = 14.dp
-
-/** 玻璃表面染色浓度：叠原 surface 底色——白玻璃，色相不变、透出玻璃感 */
-private const val PillGlassTintAlpha = 0.70f
 
 /**
  * 图标中心距屏幕边缘恒为 44dp（原实现 = 20dp 留白 + 48dp 按钮盒的一半），盒宽取其两倍、
@@ -636,36 +625,26 @@ private fun WeekPill(
             }
         }
 
-        // 按压态的唯一来源：pressFeedback/pressScale 与 clickable 共用（涟漪由按压反馈取代，故 clickable 不再要 Indication）
+        // 按压态的唯一来源：glassPressFeedback 与 clickable 共用（涟漪由按压反馈取代，故 clickable 不再要 Indication）
         val pressInteraction = remember { MutableInteractionSource() }
         // 玻璃双门控（开关 + SDK）已由宿主完成，此处只看非空
         val useGlass = backdrop != null && Build.VERSION.SDK_INT >= 31
         // 玻璃表面染色：叠原 surface 底色——白玻璃（组合侧读好，onDrawSurface 是
-        // DrawScope，读不了 Composable 上下文）
-        val surfaceTint = MaterialTheme.colorScheme.surface.copy(alpha = PillGlassTintAlpha)
+        // DrawScope，读不了 Composable 上下文）；玻璃参数取 ui.theme 的 Pill 档样式
+        val surfaceTint = MaterialTheme.colorScheme.surface.copy(alpha = LiquidGlassStyle.Pill.tintAlpha)
         // 胶囊 = 按压反馈 + 柔影 + 手势 + 内容；底材单独拆成底层子 Box——玻璃要随
         // blurProgress 淡入，只有独立子图层才能只淡玻璃底、不牵连文字内容
         //（graphicsLayer 若放在同一链上，alpha 会连子内容一起淡掉）
         Box(
             modifier = Modifier
                 .height(WeekPillHeight)
-                // 按压反馈：非玻璃原样（整体放大 + 主体提亮，接在带 clip 的图层之前）；
-                // 玻璃模式换官方 Q弹按压放大（pressScale：软弹簧果冻过冲 + 沿轮廓加色
-                // 提亮，底部导航栏/待办顶栏等玻璃按钮同款手感）。放大两态同取 1.10
-                .then(
-                    if (useGlass) {
-                        Modifier.pressScale(
-                            interactionSource = pressInteraction,
-                            shape = PillShape,
-                            pressedScale = 1.10f,
-                        )
-                    } else {
-                        Modifier.pressFeedback(
-                            interactionSource = pressInteraction,
-                            shape = PillShape,
-                            scale = 1.10f,
-                        )
-                    },
+                // 按压反馈：玻璃模式官方 Q弹按压放大（软弹簧果冻过冲 + 沿轮廓加色提亮），
+                // 非玻璃维持 pressFeedback（封装见 ui.theme LiquidGlass）；两态同取 1.10。
+                // 接在带 clip 的图层之前，投影随组件一起放大
+                .glassPressFeedback(
+                    interactionSource = pressInteraction,
+                    shape = PillShape,
+                    backdrop = backdrop,
                 )
                 // 投影随模糊进度长出；graphicsLayer 在 draw 阶段读值，不引发重组
                 .graphicsLayer {
@@ -706,9 +685,12 @@ private fun WeekPill(
                                     backdrop = backdrop,
                                     shape = { PillShape },
                                     effects = {
-                                        blur(PillGlassBlurRadius.toPx())
+                                        blur(LiquidGlassStyle.Pill.blurRadius.toPx())
                                         if (Build.VERSION.SDK_INT >= 33) {
-                                            lens(PillGlassLensHeight.toPx(), PillGlassLensDepth.toPx())
+                                            lens(
+                                                LiquidGlassStyle.Pill.lensHeight.toPx(),
+                                                LiquidGlassStyle.Pill.lensDepth.toPx(),
+                                            )
                                         }
                                     },
                                     onDrawSurface = { drawRect(surfaceTint) },

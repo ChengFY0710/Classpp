@@ -28,7 +28,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -54,13 +53,13 @@ import com.fangyi.classpp.ui.schedule.CardHeightPreferences
 import com.fangyi.classpp.ui.schedule.ScheduleScreen
 import com.fangyi.classpp.ui.schedule.TeacherDisplayPreferences
 import com.fangyi.classpp.ui.settings.GlassPreferences
-import com.fangyi.classpp.ui.settings.LocalGlassStyle
 import com.fangyi.classpp.ui.settings.SettingsScreen
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.LocalGlassStyle
 import com.fangyi.classpp.ui.theme.ThemeMode
 import com.fangyi.classpp.ui.theme.ThemePreferences
+import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 
@@ -269,12 +268,7 @@ class MainActivity : ComponentActivity() {
                     // （RenderEffect），API 31 以下开关保留但维持原白底渲染。关闭开关时
                     // layerBackdrop 不挂载，采样层零开销
                     val useGlass = glassStyleState.value && Build.VERSION.SDK_INT >= 31
-                    // 底色经 State 中转：draw 块读不了组合上下文，靠状态读取驱动主题切换重画
-                    val backdropBgColor = rememberUpdatedState(MaterialTheme.colorScheme.background)
-                    val navBackdrop = rememberLayerBackdrop {
-                        drawRect(backdropBgColor.value)
-                        drawContent()
-                    }
+                    val navBackdrop = rememberGlassBackdrop(MaterialTheme.colorScheme.background)
 
                     // 设置页覆盖层完整转场（ui.motion 的 PageOverlayTransition）：下层让位视差、
                     // 压暗遮罩、右滑进出场与转场期左缘圆角都在其中，与个性化子页共用同一实现
@@ -355,8 +349,10 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 BottomNavBar(
                                     selectedTab = pagerState.selectedTab,
-                                    glassEnabled = useGlass,
-                                    backdrop = navBackdrop,
+                                    // 关闭时必须传 null：backdrop 非空即玻璃（全 app 统一判定），
+                                    // 采样层对象本身常驻（挂载与否由 useGlass 门控），非空会让
+                                    // 胶囊误走玻璃分支
+                                    backdrop = if (useGlass) navBackdrop else null,
                                     // 退场动画期间仍在组合中，挡掉点击：编辑中途或浮层打开时不许切 tab。
                                     // 待办页已选中时胶囊即「新建」入口：再点呼起新建待办浮层
                                     onTabSelected = { tab ->
