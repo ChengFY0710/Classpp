@@ -6,6 +6,10 @@ https://github.com/Nevodev/Cresto
 
 https://github.com/Kyant0/Shapes
 
+https://github.com/Kyant0/AndroidLiquidGlass
+
+https://github.com/coil-kt/coil
+
 ---
 
 # Class Plus Plus（Classpp/Class++）
@@ -18,7 +22,7 @@ https://github.com/Kyant0/Shapes
 Developing...
 
 已知bug：
-+ OverlaySheet组件，向下拖动手势线但未超出退出阈值时，返回动画有跳变。
++ PopupMenuCard组件出场退场动画待优化。
 + 待办编辑页，键盘聚焦滚动性能待优化。
 + 浮层内输入框唤起输入法后，点击popupSelectCard组件，键盘闪烁退出。
 + 设置页入场动画性能待优化。
