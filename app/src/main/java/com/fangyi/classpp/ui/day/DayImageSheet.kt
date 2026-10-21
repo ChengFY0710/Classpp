@@ -252,7 +252,11 @@ private fun ImageMenuPopup(
         sections = listOf(
             PopupMenuSection(
                 items = listOf(
-                    PopupMenuItem(stringResource(R.string.day_image_delete), onClick = onDelete),
+                    PopupMenuItem(
+                        label = stringResource(R.string.day_image_delete),
+                        icon = R.drawable.ic_delete,
+                        onClick = onDelete,
+                    ),
                 ),
             ),
         ),
