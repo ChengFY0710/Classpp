@@ -16,8 +16,8 @@ val LocalGlassStyle = staticCompositionLocalOf { false }
  * 「更高级的玻璃材质」开关持久化：SharedPreferences 单键存储（模式同 ThemePreferences）。
  *
  * 开关开启时玻璃材质应用于底部导航栏三胶囊、待办页顶栏胶囊、设置页顶栏返回按钮、
- * 课表页顶栏周数胶囊与 OverlaySheet 顶栏按钮（Backdrop 液态玻璃渲染 + Q弹按压）；
- * 关闭即各自的原实现。默认关闭——老用户升级后观感不变。
+ * 课表页顶栏周数胶囊与 OverlaySheet / BottomSelectSheet 顶栏按钮（Backdrop
+ * 液态玻璃渲染 + Q弹按压）；关闭即各自的原实现。默认关闭——老用户升级后观感不变。
  *
  * 低版本降级由各调用侧门控：lens 折射需 API 33+、blur 需 API 31+，
  * API 31 以下玻璃效果不生效，维持原渲染，本偏好只管「用户想要玻璃材质」这件事本身。

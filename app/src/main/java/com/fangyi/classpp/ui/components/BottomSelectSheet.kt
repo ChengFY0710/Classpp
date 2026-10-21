@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.activity.compose.BackHandler
+import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -27,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,9 +43,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.settings.LocalGlassStyle
 import com.fangyi.classpp.ui.theme.BottomSelectSheetShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.hazeBlur
@@ -101,6 +106,10 @@ private val CardBlurRadius: Dp = 20.dp
  * hazeSource 内容透出毛玻璃质感；null = 纯 bottomSheetColor 平底卡。宿主把页面/浮层内容挂
  * hazeSource 后将同一状态传进来。
  *
+ * 顶栏两颗胶囊在「更高级的玻璃材质」开关开启时（API 31+）改液态玻璃底 + Q弹按压
+ * （[SheetPillButton] 内置，采样层由本组件自建：卡片底色 + 卡内内容，按钮在采样节点
+ * 之外的顶栏 overlay 层，玻璃不会照见自己）；开关关闭维持原实心底。
+ *
  * [cancelLabel] / [confirmLabel] 默认取全局「取消/确认」文案；确认按钮的点击回调
  * [onConfirm] 只在非收场状态下放行（防双击重复提交），[confirmEnabled] = false 时点击与
  * 按压反馈一并失效、胶囊按项目置灰语义着色（输入类弹卡的实时校验用）。
@@ -135,6 +144,21 @@ fun BottomSelectSheet(
     val scrimInteraction = remember { MutableInteractionSource() }
     // 吃掉落在卡片上的点击，避免穿透到遮罩把弹窗关掉（卡内控件的消费优先）
     val cardInteraction = remember { MutableInteractionSource() }
+
+    // 顶栏两侧按钮的液态玻璃：设置页「更高级的玻璃材质」开关 + API 31+（RenderEffect）
+    // 双门控，关闭即原实心底（SheetPillButton 内部回退）。采样层 = 卡片底色 + 卡内
+    // 内容——内容列顶部留出顶栏区（见下方结构注释），采样层因此盖住按钮背后的区域、
+    // 采样不越界；按钮在采样节点之外（顶栏 overlay 层），玻璃不会照见自己（读写同一
+    // 层是 GPU 反馈环）。与卡片的 Haze 磨砂同源挂内容（Haze 管整卡磨砂、Backdrop 只
+    // 喂两颗玻璃按钮），两套采样互不干扰
+    val glassButtonsEnabled = LocalGlassStyle.current && Build.VERSION.SDK_INT >= 31
+    // 底色经 State 中转：draw 块读不了组合上下文，靠状态读取驱动主题切换重画
+    val cardBgColor = rememberUpdatedState(MaterialTheme.classppColors.bottomSheetColor)
+    val glassButtonsBackdrop = rememberLayerBackdrop {
+        drawRect(cardBgColor.value)
+        drawContent()
+    }
+    val glassButtonBackdrop = if (glassButtonsEnabled) glassButtonsBackdrop else null
 
     // ——— 进出场共用一条进度：0 = 完全显示，1 = 完全滑出屏幕下方 ———
     // 滑动位移与遮罩透明度都从它派生
@@ -244,10 +268,14 @@ fun BottomSelectSheet(
                 shape = BottomSelectSheetShape,
                 color = MaterialTheme.classppColors.bottomSheetColor,
             ) {
-                Column(
+                // 卡片磨砂（hazeState 非空时）挂在容器上：hazeBlur 画在 Surface 底色之上、
+                // 内容之下（同 PopupMenuCard 白卡毛玻璃配方），玻璃感由 tint 统一。
+                // 结构为「内容层 + 顶栏 overlay」两槽（OverlaySheet 同款）：顶栏从内容流里
+                // 提出来浮在上层，内容列顶部才留得出顶栏区——玻璃按钮的采样层（挂内容列）
+                // 因此盖住按钮背后的区域；按钮在采样节点之外，玻璃不会照见自己。
+                // 内容列顶部让位 = 顶栏内距 + 按钮高 + 内容顶距，卡片总高与原平铺结构一致
+                Box(
                     modifier = Modifier
-                        // 卡片磨砂（hazeState 非空时）：hazeBlur 画在 Surface 底色之上、
-                        // 内容之下（同 PopupMenuCard 白卡毛玻璃配方），玻璃感由 tint 统一
                         .then(
                             if (hazeState != null) {
                                 Modifier.hazeBlur(
@@ -260,8 +288,29 @@ fun BottomSelectSheet(
                             },
                         ),
                 ) {
-                    // 顶栏：取消胶囊 + 居中标题 + 确认胶囊（同 OverlaySheet 顶栏的按钮行，
-                    // 标题以整行宽度居中、叠在按钮行之上）
+                    // 内容槽（玻璃采样源）：距顶栏按钮底缘 [ContentTopSpacing]、距卡片
+                    // 底缘 [ContentBottomPadding]，卡片高度随内容自适应
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            // 玻璃按钮开启时挂液态玻璃采样标记（Haze 管整卡磨砂、
+                            // Backdrop 只喂顶栏两颗按钮）；关闭时不挂载，采样层零开销
+                            .then(
+                                if (glassButtonsEnabled) {
+                                    Modifier.layerBackdrop(glassButtonsBackdrop)
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .padding(
+                                top = TopBarTopPadding + TopBarPillHeight + ContentTopSpacing,
+                                bottom = ContentBottomPadding,
+                            ),
+                    ) {
+                        content()
+                    }
+                    // 顶栏 overlay：取消胶囊 + 居中标题 + 确认胶囊（同 OverlaySheet 顶栏的
+                    // 按钮行，标题以整行宽度居中、叠在按钮行之上）
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -282,6 +331,7 @@ fun BottomSelectSheet(
                                 containerColor = MaterialTheme.colorScheme.surface,
                                 contentColor = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.height(TopBarPillHeight),
+                                backdrop = glassButtonBackdrop,
                                 onClick = { if (!closeRequested) onDismiss() },
                             )
                             SheetPillButton(
@@ -301,6 +351,7 @@ fun BottomSelectSheet(
                                 modifier = Modifier.height(TopBarPillHeight),
                                 iconAtEnd = true,
                                 enabled = confirmEnabled,
+                                backdrop = glassButtonBackdrop,
                                 onClick = { if (!closeRequested && confirmEnabled) onConfirm() },
                             )
                         }
@@ -309,16 +360,6 @@ fun BottomSelectSheet(
                             style = MaterialTheme.classppTextStyles.topBarTitle.copy(fontSize = 18.sp),
                             modifier = Modifier.align(Alignment.Center),
                         )
-                    }
-                    // 内容槽：距顶栏按钮底缘 [ContentTopSpacing]、距卡片底缘
-                    // [ContentBottomPadding]，卡片高度随内容自适应
-                    Column(
-                        modifier = Modifier.padding(
-                            top = ContentTopSpacing,
-                            bottom = ContentBottomPadding,
-                        ),
-                    ) {
-                        content()
                     }
                 }
             }
