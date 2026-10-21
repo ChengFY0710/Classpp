@@ -1,6 +1,16 @@
 package com.fangyi.classpp.ui.navigation
 
 import android.content.Context
+import androidx.compose.runtime.staticCompositionLocalOf
+
+/**
+ * 玻璃样式开关的组合本地下发：玻璃效果要复用到多个共享组件（底部导航栏、
+ * OverlaySheet 顶栏按钮等），调用点分散，逐层传参会穿透一长串中间签名——
+ * 组合根部提供、任意深处读取。MainActivity 在 ClassppTheme 外层用开关的
+ * 即时值提供（读 .value，翻转自根部重组，与 themeMode 同一模式）；
+ * 未提供（预览等）时默认关闭 = 原实现。
+ */
+val LocalGlassStyle = staticCompositionLocalOf { false }
 
 /**
  * 底部导航栏玻璃样式持久化：SharedPreferences 单键存储（模式同 ThemePreferences）。

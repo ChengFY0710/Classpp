@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.annotation.DrawableRes
+import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -43,6 +44,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,12 +63,20 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressFeedback
+import com.fangyi.classpp.ui.motion.pressScale
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
+import com.fangyi.classpp.ui.navigation.LocalGlassStyle
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetShape
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.hazeBlur
@@ -109,6 +119,18 @@ val TopBarPillHeight: Dp = 46.dp
  * 上层滑入/滑出同帧反向播放（见 OverlaySheet 的 coveredFraction）。
  */
 private const val CoveredCardScale = 0.92f
+
+// ---- 顶栏玻璃按钮的手感/观感参数（对齐底部导航栏玻璃胶囊的取值）----
+
+/** 玻璃模糊半径：胶囊小、底后是浮层自身内容，轻模糊够读 */
+private val SheetGlassBlurRadius = 4.dp
+
+/** 玻璃折射高度/深度（官方玻璃指示器的量级：10/14dp） */
+private val SheetGlassLensHeight = 10.dp
+private val SheetGlassLensDepth = 14.dp
+
+/** 玻璃表面染色浓度：叠原 containerColor，按钮色相不变、透出玻璃感 */
+private const val SheetGlassTintAlpha = 0.70f
 
 /**
  * 键盘与浮层的关系（未来不同浮层可选不同行为）：
@@ -210,6 +232,21 @@ fun OverlaySheet(
 ) {
     // 采样源状态：调用方传入共享 hazeState 则复用（叠层弹窗同源采样），否则自建
     val sheetHazeState = hazeState ?: rememberHazeState()
+    // 顶栏两侧按钮的液态玻璃：设置页「导航栏玻璃样式」开关 + API 31+（RenderEffect）
+    // 双门控，关闭即原实心底（pressFeedback + background）。采样层 = 卡片底色 +
+    // 滚动内容——内容从顶栏下滚过，玻璃才有东西可折射（官方教程：底色必须画进
+    // 采样层，否则漏透明像素）；按钮在顶栏层、不在采样节点内，玻璃不会照见自己。
+    // 采样与顶栏的 Haze 磨砂同源（hazeSource / layerBackdrop 挂同一内容节点），
+    // 两套采样互不干扰：Haze 管整条顶栏的磨砂，Backdrop 只喂两颗玻璃按钮
+    val glassButtonsEnabled = LocalGlassStyle.current && Build.VERSION.SDK_INT >= 31
+    // 底色经 State 中转：draw 块读不了组合上下文，靠状态读取驱动主题切换重画
+    val sheetBgColor = rememberUpdatedState(MaterialTheme.colorScheme.background)
+    val glassButtonsBackdrop = rememberLayerBackdrop {
+        drawRect(sheetBgColor.value)
+        drawContent()
+    }
+    // 传给顶栏两颗按钮的采样层：关闭时传 null，按钮内部回退原实现
+    val glassButtonBackdrop = if (glassButtonsEnabled) glassButtonsBackdrop else null
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
     // 距屏幕顶端 = 状态栏（顶部信息栏）实际高度；调用方显式传 topInset 时用传入值。
@@ -433,6 +470,15 @@ fun OverlaySheet(
                                     .fillMaxSize()
                                     // 顶栏模糊的采样源：滚动内容从顶栏底下滚过时被渐变模糊
                                     .hazeSource(sheetHazeState)
+                                    // 玻璃按钮开启时同一节点再挂液态玻璃采样标记
+                                    // （Haze 管顶栏磨砂、Backdrop 只喂两颗玻璃按钮）
+                                    .then(
+                                        if (glassButtonsEnabled) {
+                                            Modifier.layerBackdrop(glassButtonsBackdrop)
+                                        } else {
+                                            Modifier
+                                        },
+                                    )
                                     // 滚动列自身在根坐标系里的位置：内容坐标系的稳定原点
                                     //（滚动列自己的放置位置不随其内容滚动而变）
                                     .onGloballyPositioned {
@@ -477,6 +523,7 @@ fun OverlaySheet(
                                 rightAction = guardedRightAction,
                                 confirmAtEnd = confirmAtEnd,
                                 hazeState = sheetHazeState,
+                                buttonBackdrop = glassButtonBackdrop,
                                 dragModifier = topBarDragModifier,
                                 modifier = Modifier.align(Alignment.TopCenter),
                             )
@@ -523,6 +570,7 @@ fun OverlaySheet(
  * hazeBlur 打在这层上（渐变 1→0、白 30% tint，与设置页同规格），
  * 按钮与标题画在模糊层之上保持清晰；整层被 Surface 裁进浮层圆角。
  * 整条顶栏是下拉关闭的手势区（[dragModifier] 挂垂直拖拽），按钮点击不受影响。
+ * [buttonBackdrop] 非空时两侧胶囊改液态玻璃底（见 [SheetPillButton]）。
  */
 @Composable
 private fun OverlaySheetTopBar(
@@ -534,6 +582,7 @@ private fun OverlaySheetTopBar(
     rightAction: SheetTopAction,
     confirmAtEnd: Boolean = false,
     hazeState: HazeState,
+    buttonBackdrop: Backdrop? = null,
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
 ) {
@@ -599,6 +648,7 @@ private fun OverlaySheetTopBar(
                         contentColor = rightAction.contentColor,
                         modifier = Modifier.height(TopBarPillHeight),
                         iconAtEnd = true,
+                        backdrop = buttonBackdrop,
                         onClick = rightAction.onClick,
                     )
                 } else if (confirmAtEnd) {
@@ -611,6 +661,7 @@ private fun OverlaySheetTopBar(
                         contentColor = rightAction.contentColor,
                         modifier = Modifier.height(TopBarPillHeight),
                         iconAtEnd = false,
+                        backdrop = buttonBackdrop,
                         onClick = rightAction.onClick,
                     )
                     SheetPillButton(
@@ -621,6 +672,7 @@ private fun OverlaySheetTopBar(
                         modifier = Modifier.height(TopBarPillHeight),
                         iconSize = confirmIconSize,
                         iconAtEnd = true,
+                        backdrop = buttonBackdrop,
                         onClick = onConfirm,
                     )
                 } else {
@@ -631,6 +683,7 @@ private fun OverlaySheetTopBar(
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.height(TopBarPillHeight),
                         iconSize = confirmIconSize,
+                        backdrop = buttonBackdrop,
                         onClick = onConfirm,
                     )
                     SheetPillButton(
@@ -640,6 +693,7 @@ private fun OverlaySheetTopBar(
                         contentColor = rightAction.contentColor,
                         modifier = Modifier.height(TopBarPillHeight),
                         iconAtEnd = true,
+                        backdrop = buttonBackdrop,
                         onClick = rightAction.onClick,
                     )
                 }
@@ -653,13 +707,21 @@ private fun OverlaySheetTopBar(
     }
 }
 
-/** 顶栏胶囊按钮。图标为「实心圆+镂空图形」，整体 tint 后即得设计稿效果（确认图标在前，
+/**
+ * 顶栏胶囊按钮。图标为「实心圆+镂空图形」，整体 tint 后即得设计稿效果（确认图标在前，
  *  取消/删除文字在前——见 [iconAtEnd]）；投影同设置页返回按钮的大柔影做法（形状为胶囊）；
  *  [iconSize] 独立控制图标大小（顶栏钮与底部常驻钮可各配各的）。
  *  按压反馈：整体放大 + 主体提亮（ui.motion 的 pressFeedback），按压放大固定 1.10f
  *  （本组件统一值，顶栏与底部常驻钮一视同仁，不随全局默认）。
  *  [enabled] = false 时点击与按压反馈一并失效（点击源不派发即无反馈）；置灰颜色由调用方
- *  传 contentColor（如 theme 的 negative），组件不自动改色。 */
+ *  传 contentColor（如 theme 的 negative），组件不自动改色。
+ *
+ *  液态玻璃（[backdrop] 非空且 API 31+ 时启用）：实心底改由 drawBackdrop 出底——
+ *  采样内容经模糊/折射裁进胶囊形状，表面叠原 containerColor 染色（confirm 仍是主题蓝、
+ *  动作钮仍是原色，只是透出玻璃感）；lens 折射仅 API 33+，31-32 只留模糊+染色。
+ *  按压反馈同步换 Q弹按压放大（pressScale：果冻过冲缩放 + 沿轮廓加色提亮）。
+ *  [backdrop] 由调用方门控（OverlaySheet 经 LocalGlassStyle 开关 + SDK gate 后传入），
+ *  null（默认）= 原实现，底部常驻钮等调用点不受影响。 */
 @Composable
 fun SheetPillButton(
     label: String,
@@ -675,16 +737,30 @@ fun SheetPillButton(
     startPadding: Dp = 13.dp,  // 文字加宽宽度改这里，文字所在那侧的外边距比图标侧多 5dp（8+5）：图标在左(确认)加宽右侧，图标在右(删除/取消)加宽左侧
     endPadding: Dp = 8.dp,
     enabled: Boolean = true,
+    backdrop: Backdrop? = null,
 ) {
-    // 按压态的唯一来源：pressFeedback 与 clickable 共用（涟漪由按压反馈取代，故 clickable 不再要 Indication）
+    val useGlass = backdrop != null && Build.VERSION.SDK_INT >= 31
+    // 按压态的唯一来源：pressFeedback/pressScale 与 clickable 共用（涟漪由按压反馈取代，故 clickable 不再要 Indication）
     val pressInteraction = remember { MutableInteractionSource() }
     Row(
         modifier = modifier
-            .pressFeedback(
-                interactionSource = pressInteraction,
-                shape = PillShape,
-                // 胶囊按钮统一 1.10（见 KDoc）：不随全局默认，调这里一处生效
-                scale = 1.10f,
+            // 玻璃模式换 Q弹按压放大（官方软弹簧果冻过冲 + 沿轮廓加色提亮）；
+            // 非玻璃维持 pressFeedback
+            .then(
+                if (useGlass) {
+                    Modifier.pressScale(
+                        interactionSource = pressInteraction,
+                        shape = PillShape,
+                        pressedScale = 1.10f,
+                    )
+                } else {
+                    Modifier.pressFeedback(
+                        interactionSource = pressInteraction,
+                        shape = PillShape,
+                        // 胶囊按钮统一 1.10（见 KDoc）：不随全局默认，调这里一处生效
+                        scale = 1.10f,
+                    )
+                },
             )
             // 大柔影：高 shadowElevation 撑开模糊半径，低透明度阴影色压住存在感
             //（同设置页返回按钮的投影做法）
@@ -694,7 +770,28 @@ fun SheetPillButton(
                 shadowElevation = 45.dp.toPx()
                 spotShadowColor = Color.Black.copy(alpha = 0.3f)
             }
-            .background(containerColor, PillShape)
+            // 玻璃模式改由 drawBackdrop 出底：采样内容经模糊/折射裁进胶囊形状，
+            // 表面叠原色染色——按钮色相不变、透出玻璃感。缩放会让采样跟着放大
+            //（无 layerBlock 补偿），blur + 染色 + 1.10 小倍率下不可感知
+            .then(
+                if (useGlass && backdrop != null) {
+                    Modifier.drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { PillShape },
+                        effects = {
+                            blur(SheetGlassBlurRadius.toPx())
+                            if (Build.VERSION.SDK_INT >= 33) {
+                                lens(SheetGlassLensHeight.toPx(), SheetGlassLensDepth.toPx())
+                            }
+                        },
+                        onDrawSurface = {
+                            drawRect(containerColor.copy(alpha = SheetGlassTintAlpha))
+                        },
+                    )
+                } else {
+                    Modifier.background(containerColor, PillShape)
+                },
+            )
             .clickable(
                 interactionSource = pressInteraction,
                 indication = null,
