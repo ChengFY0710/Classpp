@@ -48,13 +48,13 @@ import java.util.GregorianCalendar
 import java.util.TimeZone
 
 // 上下磨砂层的覆盖高度：决定模糊/压暗各自渐隐的距离（对照日程页设计稿，可调）
-private val TopScrimHeight = 170.dp
-private val BottomScrimHeight = 320.dp
+private val TopScrimHeight = 135.dp
+private val BottomScrimHeight = 360.dp
 
 // 日期区与顶部提示的排版常量（对照设计稿，可调）
-private val DateEdgePadding = 28.dp
-private val DateBottomGap = 36.dp
-private val HintTopPadding = 24.dp
+private val DateEdgePadding = 33.dp
+private val DateBottomGap = 40.dp
+private val HintTopPadding = 12.dp
 
 private const val MillisPerDay = 86_400_000L
 
@@ -110,7 +110,7 @@ fun DayScreen(modifier: Modifier = Modifier) {
             Spacer(Modifier.width(6.dp))
             Text(
                 text = stringResource(R.string.day_swipe_hint),
-                fontSize = 17.sp,
+                fontSize = 15.sp,
                 color = Color.White,
             )
         }
@@ -130,7 +130,7 @@ fun DayScreen(modifier: Modifier = Modifier) {
         ) {
             Text(
                 text = dayOfMonth.toString(),
-                fontSize = 72.sp,
+                fontSize = 64.sp,
                 fontFamily = SerifDisplay,
                 color = Color.White,
             )
@@ -138,7 +138,7 @@ fun DayScreen(modifier: Modifier = Modifier) {
                 Text(
                     text = stringResource(R.string.date_title_format, yearMonth, weekday),
                     fontSize = 23.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Medium,
                     color = Color.White,
                     letterSpacing = (-0.3).sp,
                 )

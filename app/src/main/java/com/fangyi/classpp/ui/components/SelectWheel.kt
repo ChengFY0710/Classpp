@@ -65,6 +65,9 @@ private const val OvershootResistance = 0.25f
 /** 滑到头惯性过冲的视觉上限（格）：甩得再狠也最多甩出这么多，随即带残速弹回边界格 */
 private const val BounceOvershootItems = 0.5f
 
+/** 最小甩动速度（Android ViewConfiguration 同款 50dp/s）：低于它的松手不算甩，直接吸附 */
+private val MinimumFlingVelocity: Dp = 50.dp
+
 /** 滚轮数字字号（对齐设计稿量得的中格大小） */
 private val WheelNumberFontSize = 36.sp
 
@@ -102,6 +105,7 @@ internal class WheelState(
     itemSize: Dp = WheelItemHeight,
 ) {
     private val itemSizePx = with(density) { itemSize.toPx() }
+    private val minFlingVelocityPx = with(density) { MinimumFlingVelocity.toPx() }
 
     /** 格数（1 起） */
     var count: Int = count.coerceAtLeast(1)
@@ -179,17 +183,26 @@ internal class WheelState(
     }
 
     /**
-     * 松手收尾（内部起协程）。惯性不会滑到头时照旧：把界设为合法区间衰减滑行到自然停住，
-     * 再把最近整格吸到中心（无过冲弹簧，ui.motion 的 Motion.Settle）。惯性会滑到头（或
-     * 松手时已在橡皮筋越界段）时不再撞边截停——原实现衰减动画一越界就被界截停、速度瞬间
-     * 归零，越界段松手更是首帧被夹回边界，视觉上都是跳切。改为界全放开，未阻尼坐标 raw
-     * 继续按衰减曲线滑行，视觉位置每帧经 [resist] 回写（与拖拽段同一条阻尼曲线，连续越过
+     * 松手收尾（内部起协程）。低于 [MinimumFlingVelocity] 的松手（拖到头按住不动再松手、
+     * 轻放）不进惯性：没有任何可滑行的距离，直接吸附最近整格——越界时这一步就是橡皮筋
+     * 回弹本身。惯性不会滑到头时照旧：把界设为合法区间衰减滑行到自然停住，再把最近整格
+     * 吸到中心（无过冲弹簧，ui.motion 的 Motion.Settle）。惯性会滑到头（或松手时已在
+     * 橡皮筋越界段）时不再撞边截停——原实现衰减动画一越界就被界截停、速度瞬间归零，
+     * 越界段松手更是首帧被夹回边界，视觉上都是跳切。改为界全放开，未阻尼坐标 raw 继续
+     * 按衰减曲线滑行，视觉位置每帧经 [resist] 回写（与拖拽段同一条阻尼曲线，连续越过
      * 边界后自然减速）；滑到衰减耗尽或视觉过冲达 [BounceOvershootItems] 格，把当时残余
      * 的视觉速度原样交给回位弹簧弹回最近整格（越界时即边界格）——位置、速度全程连续。
      */
     fun settle(initialVelocityPx: Float, decay: DecayAnimationSpec<Float>) {
         interruptSettle()
         settleJob = scope.launch {
+            if (abs(initialVelocityPx) < minFlingVelocityPx) {
+                // 近零速度松手（拖到头按住不动再松手即属此类）不进入惯性：没有可滑行的
+                // 距离，直接吸附最近格——越界时这一步就是橡皮筋回弹本身，不经过衰减动画
+                scroll.updateBounds(Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY)
+                snapToNearestItem()
+                return@launch
+            }
             val projected = decay.calculateTargetValue(raw, initialVelocityPx)
             if (scroll.value in 0f..maxScroll && projected in 0f..maxScroll) {
                 scroll.updateBounds(0f, maxScroll)
@@ -210,6 +223,12 @@ internal class WheelState(
                 }
                 playTime = playTime.coerceAtMost(fling.durationNanos)
                 raw = fling.getValueFromNanos(playTime)
+                // 衰减曲线退化出非法值（不应发生）时立刻终止滑行，保留上一帧位置转入回弹，
+                // 绝不把 NaN/Inf 写进滚动量（画布会对 NaN 全部失配，数字整体消失）
+                if (!raw.isFinite()) {
+                    raw = unresist(scroll.value)
+                    break
+                }
                 scroll.snapTo(resist(raw))
                 val overshoot = when {
                     raw < 0f -> -raw
@@ -223,7 +242,8 @@ internal class WheelState(
             }
             // 交接给回位弹簧的视觉速度 = raw 速度 × resist 的斜率（越界段阻尼、界内恒等）
             val slope = if (raw < 0f || raw > maxScroll) OvershootResistance else 1f
-            snapToNearestItem(fling.getVelocityVectorFromNanos(playTime).value * slope)
+            val carried = fling.getVelocityVectorFromNanos(playTime).value * slope
+            snapToNearestItem(if (carried.isFinite()) carried else 0f)
         }
     }
 
