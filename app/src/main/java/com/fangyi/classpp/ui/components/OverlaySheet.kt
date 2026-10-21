@@ -66,7 +66,7 @@ import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.pressScale
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
-import com.fangyi.classpp.ui.navigation.LocalGlassStyle
+import com.fangyi.classpp.ui.settings.LocalGlassStyle
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetShape
@@ -232,7 +232,7 @@ fun OverlaySheet(
 ) {
     // 采样源状态：调用方传入共享 hazeState 则复用（叠层弹窗同源采样），否则自建
     val sheetHazeState = hazeState ?: rememberHazeState()
-    // 顶栏两侧按钮的液态玻璃：设置页「导航栏玻璃样式」开关 + API 31+（RenderEffect）
+    // 顶栏两侧按钮的液态玻璃：设置页「更高级的玻璃材质」开关 + API 31+（RenderEffect）
     // 双门控，关闭即原实心底（pressFeedback + background）。采样层 = 卡片底色 +
     // 滚动内容——内容从顶栏下滚过，玻璃才有东西可折射（官方教程：底色必须画进
     // 采样层，否则漏透明像素）；按钮在顶栏层、不在采样节点内，玻璃不会照见自己。

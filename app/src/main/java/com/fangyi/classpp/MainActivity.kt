@@ -47,14 +47,14 @@ import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
 import com.fangyi.classpp.ui.navigation.AppTab
 import com.fangyi.classpp.ui.navigation.BottomNavBar
-import com.fangyi.classpp.ui.navigation.LocalGlassStyle
-import com.fangyi.classpp.ui.navigation.NavGlassPreferences
 import com.fangyi.classpp.ui.navigation.TabPager
 import com.fangyi.classpp.ui.navigation.rememberTabPagerState
 import com.fangyi.classpp.ui.note.TodoScreen
 import com.fangyi.classpp.ui.schedule.CardHeightPreferences
 import com.fangyi.classpp.ui.schedule.ScheduleScreen
 import com.fangyi.classpp.ui.schedule.TeacherDisplayPreferences
+import com.fangyi.classpp.ui.settings.GlassPreferences
+import com.fangyi.classpp.ui.settings.LocalGlassStyle
 import com.fangyi.classpp.ui.settings.SettingsScreen
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.ThemeMode
@@ -105,8 +105,8 @@ class MainActivity : ComponentActivity() {
         val savedCardHeights = CardHeightPreferences.load(this)
         // 课程卡片「显示教师」开关：同为 SharedPreferences 真源，冷启动读一次
         val savedShowTeacher = TeacherDisplayPreferences.load(this)
-        // 底部导航栏玻璃样式开关：同为 SharedPreferences 真源，冷启动读一次
-        val savedNavGlass = NavGlassPreferences.load(this)
+        // 玻璃材质开关（更高级的玻璃材质）：同为 SharedPreferences 真源，冷启动读一次
+        val savedGlassStyle = GlassPreferences.load(this)
         super.onCreate(savedInstanceState)
         // 系统栏外观随主题：状态栏/导航栏全透明、前景图标深浅按模式切换。
         // 必须显式 light 而非 auto：auto 会把 isNavigationBarContrastEnforced 置为 true，
@@ -153,16 +153,16 @@ class MainActivity : ComponentActivity() {
             // 「显示教师」开关状态：prefs 真源、重建时重读；布尔翻转无连续变化，
             // 落盘在回调里即时完成（同 themeMode），无需去抖
             val showTeacherState = remember { mutableStateOf(savedShowTeacher) }
-            // 底部导航栏玻璃样式开关状态：同 showTeacher（prefs 真源、回调即时落盘）
-            val navGlassState = remember { mutableStateOf(savedNavGlass) }
+            // 玻璃材质开关状态：同 showTeacher（prefs 真源、回调即时落盘）
+            val glassStyleState = remember { mutableStateOf(savedGlassStyle) }
             val darkTheme = when (themeMode) {
                 ThemeMode.System -> isSystemInDarkTheme()
                 ThemeMode.Light -> false
                 ThemeMode.Dark -> true
             }
-            // 玻璃样式开关（导航栏玻璃样式）：组合根部下发，浮层顶栏按钮等共享组件
+            // 玻璃材质开关（更高级的玻璃材质）：组合根部下发，浮层顶栏按钮等共享组件
             // 经 LocalGlassStyle 读取；读 .value，翻转自根部重组（与 themeMode 同拍）
-            CompositionLocalProvider(LocalGlassStyle provides navGlassState.value) {
+            CompositionLocalProvider(LocalGlassStyle provides glassStyleState.value) {
                 ClassppTheme(darkTheme = darkTheme) {
                     // 主题切换（含设置页即时改选）后重设系统栏外观；enableEdgeToEdge 幂等
                     SideEffect {
@@ -261,14 +261,14 @@ class MainActivity : ComponentActivity() {
                         pagerState.reRecordParkedTabs()
                     }
 
-                    // 底部导航栏玻璃样式（NavGlassPreferences）：开启时把页面世界标记进
+                    // 玻璃材质（GlassPreferences）：开启时把页面世界标记进
                     // layerBackdrop 采样层，三胶囊经 drawBackdrop 取样做液态玻璃（模糊+折射+
                     // 染色）。采样内容 = 页面底色（与下方 Box 的 background 同源）+ 各 tab 页，
                     // 官方教程明确底色必须画进采样层，否则玻璃后漏透明像素；导航栏在采样
                     // 层的 Box 之外，玻璃不会照见自己。lens 折射需 API 33+、blur 需 API 31+
                     // （RenderEffect），API 31 以下开关保留但维持原白底渲染。关闭开关时
                     // layerBackdrop 不挂载，采样层零开销
-                    val useGlass = navGlassState.value && Build.VERSION.SDK_INT >= 31
+                    val useGlass = glassStyleState.value && Build.VERSION.SDK_INT >= 31
                     // 底色经 State 中转：draw 块读不了组合上下文，靠状态读取驱动主题切换重画
                     val backdropBgColor = rememberUpdatedState(MaterialTheme.colorScheme.background)
                     val navBackdrop = rememberLayerBackdrop {
@@ -391,11 +391,11 @@ class MainActivity : ComponentActivity() {
                                 showTeacherState.value = show
                                 TeacherDisplayPreferences.save(this@MainActivity, show)
                             },
-                            navGlassStyle = navGlassState,
-                            onNavGlassStyleChange = { enabled ->
+                            glassStyle = glassStyleState,
+                            onGlassStyleChange = { enabled ->
                                 // 只改内存即时生效 + 即时落盘（同 showTeacher）
-                                navGlassState.value = enabled
-                                NavGlassPreferences.save(this@MainActivity, enabled)
+                                glassStyleState.value = enabled
+                                GlassPreferences.save(this@MainActivity, enabled)
                             },
                             modifier = Modifier.fillMaxSize(),
                         )

@@ -131,7 +131,8 @@
     <string name="appearance_theme_system">Follow system</string>
     <string name="appearance_theme_light">Light</string>
     <string name="appearance_theme_dark">Dark</string>
-    <string name="nav_glass_style">Glass navigation bar style</string>
+    <string name="glass_material">Advanced glass material</string>
+    <string name="glass_material_desc">Liquid glass blur and refraction. Requires Android 13+. Per-frame sampling costs performance — consider off on low-end devices</string>
     <string name="section_days">Days per week</string>
     <string name="section_slots">Slots and times</string>
     <string name="section_display">Display</string>
