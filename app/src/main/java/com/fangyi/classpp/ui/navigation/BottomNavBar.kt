@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.BottomFadeScrim
 import com.fangyi.classpp.ui.motion.pressFeedback
+import com.fangyi.classpp.ui.motion.pressScale
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.PillShape
 import com.kyant.backdrop.Backdrop
@@ -175,11 +176,20 @@ private fun NavPill(
     Box(
         modifier = modifier
             .height(PillHeight)
-            // 按压反馈：整体放大 + 主体提亮，光晕式的柔影按原样保留（接在带 clip 的图层之前）
-            .pressFeedback(
-                interactionSource = pressInteraction,
-                shape = PillShape,
-                scale = 1.15f,
+            // 按压反馈：非玻璃原样（整体放大 + 主体提亮，接在带 clip 的图层之前）；
+            // 玻璃模式换官方 Q弹按压放大（软弹簧果冻过冲，见 ui.motion PressScale）——
+            // 染色玻璃上提亮本来就难察觉，过冲颤动就是反馈。缩放会让玻璃采样跟着
+            // 放大（无 layerBlock 补偿），blur + 染色下不可感知，与原实现同一取舍
+            .then(
+                if (useGlass) {
+                    Modifier.pressScale(pressInteraction)
+                } else {
+                    Modifier.pressFeedback(
+                        interactionSource = pressInteraction,
+                        shape = PillShape,
+                        scale = 1.15f,
+                    )
+                },
             )
             .graphicsLayer {
                 shape = PillShape
