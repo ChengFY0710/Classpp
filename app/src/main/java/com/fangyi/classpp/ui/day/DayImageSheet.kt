@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -32,6 +31,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.motion.pressClickable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -41,6 +41,7 @@ import kotlinx.coroutines.withContext
 private val GridSpacing = 12.dp
 private val MinCellWidth = 110.dp
 private val CellCorner = 16.dp
+private val CellShape = RoundedCornerShape(CellCorner)
 private const val CellAspectRatio = 3f / 5f
 
 // 一次最多导入张数（PickMultipleVisualMedia 要求 ≥ 2）
@@ -145,11 +146,12 @@ private fun DayImageGrid(
                     model = DayImageStore.imageFile(context, name),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
+                    // 按压反馈接在 clip 外侧（放大不被裁掉），提亮轮廓与圆角对齐（同 NoteCard 惯例）
                     modifier = Modifier
                         .width(cellWidth)
                         .aspectRatio(CellAspectRatio)
-                        .clip(RoundedCornerShape(CellCorner))
-                        .clickable { onSelect(name) },
+                        .pressClickable(CellShape) { onSelect(name) }
+                        .clip(CellShape),
                 )
             }
         }

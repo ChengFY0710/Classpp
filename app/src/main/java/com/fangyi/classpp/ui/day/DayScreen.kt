@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.day
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,6 +42,7 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.navigation.NavReserve
+import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.SerifDisplay
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeProgressive
@@ -187,14 +188,15 @@ fun DayScreen(
                     letterSpacing = (-0.3).sp,
                 )
                 Spacer(Modifier.weight(1f))
-                // 换背景入口：呼起「选择图片」浮层
+                // 换背景入口：呼起「选择图片」浮层。裸图标提亮无感、放大即全部反馈，
+                // 倍率取小块动作钮同款 1.10（TodoTopBar 动作区规格）
                 Icon(
                     painter = painterResource(R.drawable.ic_image),
                     contentDescription = stringResource(R.string.cd_day_background),
                     tint = Color.White,
                     modifier = Modifier
                         .size(28.dp)
-                        .clickable {
+                        .pressClickable(shape = CircleShape, scale = 1.10f) {
                             sheetMounted = true
                             sheetVisible = true
                         },
