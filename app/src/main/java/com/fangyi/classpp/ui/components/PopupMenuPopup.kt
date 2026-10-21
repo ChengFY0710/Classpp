@@ -89,12 +89,10 @@ internal fun menuGrowthForAnchor(anchorCenterX: Float, windowWidthPx: Int): Menu
  * 36dp 柔影向下坠得最远）并钳进窗口——留白只影响 Popup 窗口大小，不改变卡片的视觉位置。
  * [anchorBounds] 是 Popup 所在锚点（弹层应挂在锚点内的 Box 上）的窗口坐标。
  *
- * 动画：进场 scale 0.8→1（[Motion.PopupScaleMillis]），自 [menuGrowth] 指定的卡片角长出——
- * 默认 [MenuGrowth.TopLeft]；菜单挂在行尾 / 锚点靠屏幕右侧时传 [MenuGrowth.TopRight]
- * （该角只影响缩放锚点，不参与布局），锚点位置随内容变化的宿主（如课表按星期列）用
- * [menuGrowthForAnchor] 按半屏现算。收起反向播放，播完才移除弹层。
- * 不做 alpha 淡入淡出：整卡半透明会把锐利背景混进毛玻璃，模糊在动画期间看起来「由弱变强」，
- * 卡与模糊须首帧即最终强度。
+ * 动画：进场 scale 0.8→1（[Motion.PopupScaleMillis]）+ alpha 0→1（[Motion.PopupFadeMillis]），
+ * 自 [menuGrowth] 指定的卡片角长出——默认 [MenuGrowth.TopLeft]；菜单挂在行尾 / 锚点靠屏幕
+ * 右侧时传 [MenuGrowth.TopRight]（该角只影响缩放锚点，不参与布局），锚点位置随内容变化的
+ * 宿主（如课表按星期列）用 [menuGrowthForAnchor] 按半屏现算。收起反向播放，播完才移除弹层。
  * [animateExit] = false 时收起不播退场动画、立即卸载——供"动作与移除同帧发生、
  * 随后由面板升起接住视觉"的宿主（如右键菜单）使用。
  *
@@ -149,6 +147,10 @@ fun PopupMenuPopup(
             transitionSpec = { tween(Motion.PopupScaleMillis, easing = Motion.Standard) },
             label = "scale",
         ) { visible -> if (visible) 1f else 0.8f }
+        val alpha by transition.animateFloat(
+            transitionSpec = { tween(Motion.PopupFadeMillis, easing = Motion.Standard) },
+            label = "alpha",
+        ) { visible -> if (visible) 1f else 0f }
 
         Popup(
             onDismissRequest = onDismiss,
@@ -161,11 +163,12 @@ fun PopupMenuPopup(
                 hazeState = hazeState,
                 // 投影留白垫在卡外（裁切线 = Popup 窗口边缘，留白多大柔影就有多少活动空间）：
                 // 左右上 16dp、底部 48dp——光源在上投影向下坠得最远（WeekPicker 同款配方）；
-                // 缩放排在其外，整卡（含柔影）一起变换
+                // 缩放/淡入排在其外，整卡（含柔影）一起变换
                 modifier = Modifier
                     .graphicsLayer {
                         scaleX = scale
                         scaleY = scale
+                        this.alpha = alpha
                         // 锚点 = 卡片上离锚点近的那只角；块里拿得到图层实测尺寸（含投影留白），
                         // 故留白按比例扣掉后锚点正好落在卡片边缘
                         menuGrowthOrigin(
