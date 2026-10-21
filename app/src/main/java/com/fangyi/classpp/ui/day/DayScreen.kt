@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,9 +75,15 @@ private const val MillisPerDay = 86_400_000L
  * 背景默认用内置测试图（drawable-nodpi/bg_day_test）；ic_image 呼起「选择图片」浮层
  * （[DayImageSheet]），点选用户导入的图片即换背景并持久化（[DayImageStore]）。
  * 上滑手势未实现，顶部提示只作静态展示。
+ *
+ * [onOverlayOverNavBarChange] 请求藏底部导航栏（同课表页/待办页全屏浮层）：
+ * 选择图片浮层挂载期间藏，onDismissed 卸载后才放回。
  */
 @Composable
-fun DayScreen(modifier: Modifier = Modifier) {
+fun DayScreen(
+    modifier: Modifier = Modifier,
+    onOverlayOverNavBarChange: (Boolean) -> Unit = {},
+) {
     val context = LocalContext.current
     val hazeState = rememberHazeState()
 
@@ -90,6 +97,11 @@ fun DayScreen(modifier: Modifier = Modifier) {
     // 背景：有用户选中的图片就换上去（文件缺失/解码失败回退默认测试图），磨砂采样链路不变
     val backgroundImage = remember(selectedImage) {
         selectedImage?.let { DayImageStore.imageFile(context, it) }
+    }
+
+    // 浮层挂载（含收场动画期间）就藏底部导航栏，onDismissed 卸载后才放回（同待办页全屏浮层）
+    LaunchedEffect(sheetMounted) {
+        onOverlayOverNavBarChange(sheetMounted)
     }
 
     Box(modifier = modifier.fillMaxSize()) {
