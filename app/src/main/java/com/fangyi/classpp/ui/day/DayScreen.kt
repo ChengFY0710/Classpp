@@ -217,6 +217,16 @@ fun DayScreen(
                     DayImageStore.saveSelected(context, name)
                     sheetVisible = false
                 },
+                onDelete = { name ->
+                    // 长按菜单删除：清文件、清名单；删的是当前背景时清选中，回退默认测试图
+                    DayImageStore.deleteImage(context, name)
+                    images = images - name
+                    DayImageStore.saveImages(context, images)
+                    if (selectedImage == name) {
+                        selectedImage = null
+                        DayImageStore.saveSelected(context, null)
+                    }
+                },
                 onDismiss = { sheetVisible = false },
                 onDismissed = { sheetMounted = false },
             )

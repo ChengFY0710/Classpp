@@ -419,4 +419,5 @@
     <string name="day_image_import">Import</string>
     <string name="day_image_close">Close</string>
     <string name="day_image_empty_hint">No images yet — tap “Import” to add from your gallery</string>
+    <string name="day_image_delete">Delete</string>
 </resources>

@@ -139,6 +139,15 @@ object DayImageStore {
         fileName
     }.getOrNull()
 
+    /**
+     * 删除一张已导入的图片副本（列表与选中项由调用方同步维护落盘）；文件不存在时静默忽略。
+     * 名单是自持数据，仍防一手路径穿越：只接受纯文件名。
+     */
+    fun deleteImage(context: Context, name: String) {
+        if (name.isEmpty() || name.contains(File.separatorChar)) return
+        imageFile(context, name).delete()
+    }
+
     private fun prefs(context: Context) =
         context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
 }
