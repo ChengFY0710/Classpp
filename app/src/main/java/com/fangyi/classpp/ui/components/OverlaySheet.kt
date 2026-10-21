@@ -37,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -142,7 +143,8 @@ data class SheetTopAction(
  *   只表示**请求关闭**，调用方收到后清掉自己的状态使 [visible] 变 false，组件随即向下滑出
  *   （与入场同一条曲线，只是时长更短）、遮罩同步变淡，**播完后才回调 [onDismissed]**，调用方在这一刻把浮层移出组合，
  *   收场期间内容保持原样不闪空；
- * - 顶栏整条可垂直拖拽、浮层跟手下移，遮罩跟着变淡；松手超过位移/速度阈值走关闭，否则弹回。
+ * - 顶栏整条可垂直拖拽、浮层跟手下移，遮罩跟着变淡；松手超过位移/速度阈值走关闭，否则弹回
+ *   （回弹先落地松手位置、再顺松手速度收尾，起点与甩势都连续，无跳变）。
  * - 被上层盖住（[covered]）：本层卡片以底边为锚缩小后退（[CoveredCardScale]），与上层滑入/
  *   滑出**同帧启动、同一条 [Motion.Overlay] 曲线**（进 400ms / 出 340ms），两层像一个整体在动；
  *   上层的遮罩本就压在本层之上，无需再叠压暗。无叠层场景恒不触发，现有浮层零变化。
@@ -251,6 +253,10 @@ fun OverlaySheet(
     // ——— 进出场与拖拽共用一条进度：0 = 完全显示，1 = 完全滑出屏幕下方 ———
     // 拖拽直接改写它（跟手），浮层位移与遮罩透明度都从它派生，各段动画之间天然连续
     val hiddenFraction = remember { Animatable(1f) }
+    // 拖拽的权威目标值：增量在事件线程上同步累加（不走协程），snapTo 只负责把它画出来。
+    // 松手时以它为准——Animatable 的值可能落后（末帧 snapTo 还在排队），拿它判断阈值、
+    // 回弹前先落地，回弹起点才与松手时的视觉位置严格一致
+    var dragTargetFraction by remember { mutableFloatStateOf(0f) }
     // 滑动全程 = 浮层自身高度；layout 先于 draw 测出，首帧不会闪现在最终位置
     var travelPx by remember { mutableStateOf(0) }
     // 已决定关闭（收场动画可能被中途拖拽打断，打断后松手要能续播而不是卡死在半路）
@@ -304,32 +310,49 @@ fun OverlaySheet(
 
     // 顶栏整条可拖拽：跟手改写进度；松手超过位移/速度阈值 → 走关闭（清状态 → 统一出场），
     // 否则弹回。拖拽与顶栏按钮点击互不干扰（点击不产生滑动位移）
+    //
+    // snapTo 瞄向绝对目标值而非「当前值 + 增量」：每个 snapTo 在 Animatable 的互斥锁上
+    // 会等帧落地、也可能被下一个动画抢占，增量式写法一旦被抢占，那截位移就永久丢失；
+    // 绝对目标值自愈——无论前面丢了多少帧，后面的 snapTo 一律补齐到最新目标
     val dragState = rememberDraggableState { delta ->
+        dragTargetFraction = (dragTargetFraction + delta / travelPx.coerceAtLeast(1)).coerceIn(0f, 1f)
         scope.launch {
-            hiddenFraction.snapTo(
-                (hiddenFraction.value + delta / travelPx.coerceAtLeast(1)).coerceIn(0f, 1f),
-            )
+            hiddenFraction.snapTo(dragTargetFraction)
         }
     }
     val topBarDragModifier = Modifier.draggable(
         orientation = Orientation.Vertical,
         state = dragState,
+        // 每次拖拽起步都把目标值重新对齐到当前真实进度：上次回弹可能还没播完就再次拖拽、
+        // 或入场动画进行中就开拖，从这里接续才不会跳
+        onDragStarted = { dragTargetFraction = hiddenFraction.value },
         onDragStopped = { velocity ->
-            when {
-                // 收场途中被拖拽打断：从当前位置续播收场
-                exiting -> scope.launch { runExit() }
-                // 下拉关闭被禁用（编辑态拦成「退出编辑」的场景）：超阈值也走回弹，
-                // 不置 closeRequested、不回调——否则闸门落下却没人真的关浮层，整层卡死
-                dragDismissEnabled &&
-                    (hiddenFraction.value >= DragDismissFraction || velocity >= dismissVelocityPx) -> {
-                    if (!closeRequested) {
-                        closeRequested = true
-                        onDismiss()
+            scope.launch {
+                // 先把松手位置精确落地再分派：拖拽期间的末帧 snapTo 可能还在等帧排队，
+                // 直接启动后续动画会把它抢占掉——回弹/收场就会从落后一截的旧位置起跳
+                hiddenFraction.snapTo(dragTargetFraction)
+                when {
+                    // 收场途中被拖拽打断：从当前位置续播收场
+                    exiting -> runExit()
+                    // 下拉关闭被禁用（编辑态拦成「退出编辑」的场景）：超阈值也走回弹，
+                    // 不置 closeRequested、不回调——否则闸门落下却没人真的关浮层，整层卡死
+                    dragDismissEnabled &&
+                        (dragTargetFraction >= DragDismissFraction || velocity >= dismissVelocityPx) -> {
+                        if (!closeRequested) {
+                            closeRequested = true
+                            onDismiss()
+                        }
                     }
-                }
-                else -> scope.launch {
-                    // 松手回弹归位：无过冲弹簧（ui.motion 的 Motion.Settle）
-                    hiddenFraction.animateTo(0f, Motion.Settle)
+                    else -> {
+                        // 松手回弹归位：无过冲弹簧（ui.motion 的 Motion.Settle）。
+                        // 带上松手速度（px/s → 比例/s）让弹簧顺着甩势收，而不是瞬间停住再反向；
+                        // 进度不为负，向上甩出的负速度钳成 0（回弹起点在 0 时保持原位不动）
+                        hiddenFraction.animateTo(
+                            0f,
+                            Motion.Settle,
+                            initialVelocity = velocity.coerceAtLeast(0f) / travelPx.coerceAtLeast(1),
+                        )
+                    }
                 }
             }
         },
