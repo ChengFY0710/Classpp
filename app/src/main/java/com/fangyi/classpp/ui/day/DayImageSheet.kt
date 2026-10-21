@@ -50,6 +50,8 @@ import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.menuGrowthForAnchor
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.DayImageCellShape
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.rememberHazeState
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -102,6 +104,9 @@ fun DayImageSheet(
 
     // 长按菜单目标：文件名 + 该图当时的窗口坐标（菜单锚点）。删除 / 点外部 / 返回即清
     var menuTarget by remember { mutableStateOf<MenuTarget?>(null) }
+    // 长按菜单的毛玻璃——浮层滚动列是采样源，顶栏磨砂与菜单的背景模糊同源（同 TodoGroupsSheet
+    // 的 sheetHazeState 接法：OverlaySheet 收到共享实例即复用，不再自建）
+    val sheetHazeState = rememberHazeState()
 
     // 系统相册（Photo Picker）：ImageOnly 只出图片，视频等文件类型不可选
     val pickerLauncher = rememberLauncherForActivityResult(
@@ -137,6 +142,8 @@ fun DayImageSheet(
         onDismissed = onDismissed,
         // 纯网格浮层没有输入框，键盘不必让位（同待办分组浮层）
         imeBehavior = SheetImeBehavior.IgnoreIme,
+        // 采样源交给容器（同 TodoGroupsSheet）：顶栏磨砂与叠在浮层上的长按菜单同源
+        hazeState = sheetHazeState,
         modifier = modifier,
     ) {
         if (images.isEmpty()) {
@@ -158,6 +165,7 @@ fun DayImageSheet(
                 menuTarget = null
                 onDelete(target.name)
             },
+            hazeState = sheetHazeState,
         )
     }
 }
@@ -231,14 +239,16 @@ private val MenuLeftInset = 8.dp
  *
  * 定位只认长按那张图的窗口坐标 [anchor]（菜单贴它的左下角长出，投影留白与越界钳制由
  * 宿主处理），生长角按锚点所在半屏现算（[menuGrowthForAnchor]）。
- * animateExit = false——收起不播退场动画：删除动作与图片移除在同一帧发生，视觉上接得住；
- * 材质为不透明白卡：PopupMenuCard 的 hazeState 由浮层内嵌宿主传 null（同族约定）。
+ * animateExit = false——收起不播退场动画：删除动作与图片移除在同一帧发生，视觉上接得住。
+ * [hazeState] 传浮层的共享采样源（滚动列）：菜单卡对背后的网格内容做毛玻璃
+ * （跨 Popup 窗口采样，同周数弹窗/排序菜单材质）；null 退化为不透明白卡（@Preview 用）。
  */
 @Composable
 private fun ImageMenuPopup(
     anchor: Rect,
     onDismiss: () -> Unit,
     onDelete: () -> Unit,
+    hazeState: HazeState?,
 ) {
     val density = LocalDensity.current
     val overlapPx = with(density) { MenuOverlap.roundToPx() }
@@ -268,6 +278,7 @@ private fun ImageMenuPopup(
         },
         menuGrowth = menuGrowthForAnchor(anchor.center.x, windowWidthPx),
         animateExit = false,
+        hazeState = hazeState,
     )
 }
 
