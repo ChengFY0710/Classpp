@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,16 +31,16 @@ import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.theme.DayImageCellShape
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-// 网格内部规格（对照设计稿）：横纵间距 12dp、单元约 3:5、圆角 16dp；
+// 网格内部规格（对照设计稿）：横纵间距 12dp、单元约 3:5、圆角 16dp
+// （平滑圆角，收在 ui.theme 的 DayImageCellShape，与全局形状常量同源）；
 // 自适应列数的最小单元宽——常见手机（≈390-430dp 宽）出 3 列
 private val GridSpacing = 12.dp
 private val MinCellWidth = 110.dp
-private val CellCorner = 16.dp
-private val CellShape = RoundedCornerShape(CellCorner)
 private const val CellAspectRatio = 3f / 5f
 
 // 一次最多导入张数（PickMultipleVisualMedia 要求 ≥ 2）
@@ -150,8 +149,8 @@ private fun DayImageGrid(
                     modifier = Modifier
                         .width(cellWidth)
                         .aspectRatio(CellAspectRatio)
-                        .pressClickable(CellShape) { onSelect(name) }
-                        .clip(CellShape),
+                        .pressClickable(DayImageCellShape) { onSelect(name) }
+                        .clip(DayImageCellShape),
                 )
             }
         }
