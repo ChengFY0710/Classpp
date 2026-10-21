@@ -61,8 +61,8 @@ private val BottomScrimHeight = 360.dp
 
 // 日期区与顶部提示的排版常量（对照设计稿，可调）
 private val DateEdgePadding = 33.dp
-private val DateBottomGap = 40.dp
-private val HintTopPadding = 12.dp
+private val DateBottomGap = 36.dp
+private val HintTopPadding = 8.dp
 
 private const val MillisPerDay = 86_400_000L
 
