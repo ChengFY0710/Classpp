@@ -478,6 +478,8 @@ internal fun NewTodoSheet(
                     courseTags = courseTags,
                     selectedNames = selectedTagNames,
                     onSelectionChange = { selectedTagNames = it },
+                    // 长按删除菜单与叠在本浮层上的滚轮弹窗同材质：共享采样源磨砂表单内容
+                    hazeState = sheetHazeState,
                     // 增删直写标签库：成功才同步选中态并复位颜色草稿（重名等失败静默忽略，
                     // 同组件约定）；新标签颜色随 addTag 落库（null = 跟随主题 Primary）
                     onAddTag = { tagName, colorArgb ->

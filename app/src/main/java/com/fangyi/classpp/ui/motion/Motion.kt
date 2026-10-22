@@ -68,14 +68,7 @@ object Motion {
     const val DialogMillis = 200
 
     /**
-     * 弹出菜单 scale 时长（scale 0.8→1），周数弹窗与标签选择卡共用。
-     * 弹出菜单族（PopupMenuPopup）的进场已改为一条含果冻回弹的 keyframes 一体曲线
-     * （生长 + 回弹无缝衔接，见 PopupEnterJelly），不再单独走这条时长。
-     */
-    const val PopupScaleMillis = 200
-
-    /**
-     * 弹出菜单内容层淡入时长（alpha 0→1），与 [PopupScaleMillis] 同帧启动、同曲线。
+     * 弹出菜单内容层淡入时长（alpha 0→1），与进场果冻曲线同帧启动。
      * 淡入只作用于内容行——毛玻璃卡壳在本组件内不淡入（整卡只在进出场首尾一个
      * [PopupCardFadeMillis] 短窗内由宿主缩放层统一淡入淡出，中段恒满强度）：
      * 整卡长时间半透明会把锐利背景混进毛玻璃，模糊看起来「由弱变强」（6f7cae7 存档的

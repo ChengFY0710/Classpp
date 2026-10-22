@@ -83,8 +83,6 @@ class ClassppTextStyles(
     val fieldValue: TextStyle,
     /** 胶囊按钮文字：15sp SemiBold；颜色随按钮配色由调用方传入（onPrimary/onSurface/onError），样式本身不带色 */
     val pillButton: TextStyle,
-    /** 浮层下拉菜单项：16sp Medium onSurface */
-    val menuItem: TextStyle,
     /** 待办卡片属性行（时间、标签文字）：15sp Normal secondaryText */
     val noteProperty: TextStyle,
 )
@@ -97,7 +95,6 @@ fun classppTextStyles(colorScheme: ColorScheme, colors: ClassppColors) = Classpp
     fieldPlaceholder = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colors.secondaryText),
     fieldValue = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colorScheme.primary),
     pillButton = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
-    menuItem = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colorScheme.onSurface),
     noteProperty = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal, color = colors.secondaryText),
 )
 

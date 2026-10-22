@@ -71,10 +71,10 @@ private val BlurSnapshotOverscan = (PopupJellyPeakScale - 1f) * BlurSnapshotOver
  * 锚点为生长角：整条曲线绕同一锚点，果冻回弹朝锚点反方向撑开，与「贴着锚点长出来」同构。
  */
 private fun popupEnterJelly(startScale: Float): FiniteAnimationSpec<Float> = keyframes {
-    durationMillis = 600
+    durationMillis = 520
     startScale at 0
-    PopupJellyPeakScale at 200 using Motion.Standard
-    1f at 600 using Motion.Accelerate
+    PopupJellyPeakScale at 180 using Motion.Standard
+    1f at 520 using Motion.Accelerate
 }
 
 /**

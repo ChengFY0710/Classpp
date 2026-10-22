@@ -1,9 +1,7 @@
 package com.fangyi.classpp.ui.components
 
-import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,7 +25,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -41,39 +38,38 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntRect
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupPositionProvider
-import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Expandable
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
-import com.fangyi.classpp.ui.theme.MenuShape
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import dev.chrisbanes.haze.HazeState
+import kotlin.math.roundToInt
 
 /** 标签选择卡里的一项：名字 + 颜色。
  *  用户自定义标签的颜色来自颜色选择器（未挑色时跟随主题 Primary）；课程标签的颜色
@@ -87,7 +83,7 @@ private val TagTextStyle = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.N
 /** 胶囊内标签图标尺寸：与 13sp 文字同高对齐设计稿 */
 private val TagIconSize = 14.dp
 
-/** 删除弹层与标签之间的缝隙 */
+/** 删除菜单与标签之间的缝隙 */
 private val DeletePopupGap = 8.dp
 
 /** 未选中胶囊的底色透明度：用户标签 10%；课程标签 20%（底稍实一点区分来源） */
@@ -101,10 +97,12 @@ private const val CourseTagAlpha = 0.2f
  * - 常态：占位「点击输入添加标签」+ 右侧颜色圆球（显示新标签的颜色草稿，点按唤起
  *   宿主的选色弹卡 [BottomColorSelectCard]）；
  * - 已有标签：标签行横向排列，超宽横向滑动、多余裁切（不足一行也能拉出橡皮筋）；
+ *   删空后整行经 Expandable 折叠收起；
  * - 聚焦：整卡 2dp 蓝色描边（SheetTextField 同款单动画源），光标可见；
  * - 提交：失焦（点空白/其他地方）或 IME Done 时把输入建成标签，重名静默忽略；
- * - 长按用户标签弹「删除」层；课程标签区默认收起，点头部行展开——高度动画复用
- *   motion 层 [Expandable]（展开/收起时下方内容实时让位），chevron 同步 180° 旋转。
+ * - 长按用户标签弹「删除」菜单（[PopupMenuPopup] 共享弹层）；课程标签区默认收起，
+ *   点头部行展开——高度动画复用 motion 层 [Expandable]（展开/收起时下方内容实时让位），
+ *   chevron 同步 180° 旋转。
  *
  * 描边宽度与不透明度同走一条 0→1 进度动画（单动画源，两条曲线严格同步），
  * 进度归 0 后干脆不挂 border——0 宽描边会被 Skia 画成 1px 发丝线（SheetTextField 踩过）。
@@ -133,6 +131,8 @@ private const val CourseTagAlpha = 0.2f
  *   Primary，TagEntry.colorArgb 同语义）；由宿主经选色弹卡回写
  * @param onPickColor 点颜色球上报：宿主唤起选色弹卡（BottomColorSelectCard）。默认空
  *   实现——不需要选色的宿主（预览等）保持颜色球不可交互的现状
+ * @param hazeState 删除菜单的毛玻璃采样源：菜单卡对背后的浮层内容做磨砂（跨 Popup
+ *   窗口采样，同滚轮弹窗/长按图片菜单材质）；null（如 @Preview）退化为不透明白卡
  */
 @Composable
 fun TagChoosingCard(
@@ -148,13 +148,20 @@ fun TagChoosingCard(
     initialCourseExpanded: Boolean = false,
     newTagColorArgb: Long? = null,
     onPickColor: () -> Unit = {},
+    hazeState: HazeState? = null,
 ) {
     var text by remember { mutableStateOf("") }
     var focused by remember { mutableStateOf(false) }
-    // 长按待删除的用户标签名（非空 = 删除弹层打开），同时只开一个
-    var deleteTarget by remember { mutableStateOf<String?>(null) }
+    // 长按删除菜单「锚点 + 可见性」两态（同 DayImageSheet 的长按图片菜单）：deleteTarget
+    // 记待删标签与长按时刻的窗口坐标，收起/删除只翻 deleteVisible，锚点保留到退场播完清
+    var deleteTarget by remember { mutableStateOf<DeleteTarget?>(null) }
+    var deleteVisible by remember { mutableStateOf(false) }
     // 课程标签区展开状态：默认收起；展开/收起动画走 motion 层 Expandable（下方部分实时让位）
     var courseExpanded by rememberSaveable { mutableStateOf(initialCourseExpanded) }
+    // 标签行删空后的折叠快照：Expandable 收起动画期间列表已空，行内容若直接跟随列表清空
+    // 会瞬间只剩 padding 在收——快照删除前的标签，让胶囊跟着窗帘一起收完；非空时同步刷新
+    var collapsingTags by remember { mutableStateOf(userTags) }
+    if (userTags.isNotEmpty()) collapsingTags = userTags
 
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -199,168 +206,199 @@ fun TagChoosingCard(
     val strokeWidth = 2.dp * strokeProgress
     val primaryColor = MaterialTheme.colorScheme.primary
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(SheetCardShape)
-            .background(MaterialTheme.colorScheme.surface)
-            .then(
-                if (strokeWidth > 0.dp) {
-                    Modifier.border(
-                        width = strokeWidth,
-                        color = primaryColor.copy(alpha = primaryColor.alpha * strokeProgress),
-                        shape = SheetCardShape,
-                    )
-                } else {
-                    Modifier
-                },
-            ),
-    ) {
-        // —— 输入行：间距对齐 SheetTextField（16/14 内距、60dp 行高下限），右侧颜色圆球 ——
-        Row(
+    // Box 兼作删除弹层的锚：Popup 在组合里落零尺寸锚点节点，须收在 Box（叠加摆放）内——
+    // 若作为本组件的兄弟节点落进宿主 CardSection 的 spacedBy 内容列，会多占一个组间距，
+    // 弹层一开卡片就长高（下方分组随之下移）
+    Box(modifier = modifier.fillMaxWidth()) {
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = SheetFieldHeight)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .clip(SheetCardShape)
+                .background(MaterialTheme.colorScheme.surface)
+                .then(
+                    if (strokeWidth > 0.dp) {
+                        Modifier.border(
+                            width = strokeWidth,
+                            color = primaryColor.copy(alpha = primaryColor.alpha * strokeProgress),
+                            shape = SheetCardShape,
+                        )
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
-            val valueStyle = MaterialTheme.classppTextStyles.fieldValue
-            BasicTextField(
-                value = text,
-                onValueChange = { text = it },
-                textStyle = valueStyle,
-                // 标签名不需要换行：单行输入，粘贴带入的换行由 singleLine 自动滤掉
-                singleLine = true,
-                cursorBrush = SolidColor(primaryColor),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                // Done 只提交不清焦：焦点键盘都留着，方便连续录入，最后一条靠失焦提交
-                keyboardActions = KeyboardActions(onDone = { submitInput() }),
-                interactionSource = interactionSource,
-                modifier = Modifier
-                    .weight(1f)
-                    // 参与宿主的「键盘弹起把输入框滚到键盘上方」（OverlaySheet 的 ImeScrollTracker）
-                    .imeFieldTracking()
-                    .onFocusChanged { focused = it.isFocused },
-                decorationBox = { innerTextField ->
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        // 未聚焦且为空时显示占位；聚焦时光标可见、不显占位（SheetTextField 同款）
-                        if (text.isEmpty() && !focused && inputPlaceholder.isNotEmpty()) {
-                            Text(
-                                text = inputPlaceholder,
-                                style = MaterialTheme.classppTextStyles.fieldPlaceholder,
-                            )
-                        }
-                        innerTextField()
-                    }
-                },
-            )
-            Spacer(Modifier.width(12.dp))
-            // 新标签的颜色圆球：显示当前颜色草稿（null = 跟随主题 Primary），点按上报宿主
-            // 唤起选色弹卡。按压反馈在 clip 之前（ColorSwatchCard 色球同款）；只收键盘
-            // 不清焦——清焦会触发失焦提交，把输入中的文字抢跑成标签
-            Box(
-                modifier = Modifier
-                    .size(24.dp)
-                    .pressClickable(PillShape) {
-                        keyboard?.hide()
-                        onPickColor()
-                    }
-                    .clip(PillShape)
-                    .background(newTagColorArgb?.let { Color(it) } ?: primaryColor),
-            )
-        }
-
-        // —— 用户自定义标签行：横向滑动 + 橡皮筋（不足一行也能拉出；多余随卡片裁切）——
-        if (userTags.isNotEmpty()) {
+            // —— 输入行：间距对齐 SheetTextField（16/14 内距、60dp 行高下限），右侧颜色圆球 ——
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .rubberBandHorizontalScroll(rememberScrollState())
-                    // padding 在滚动之内 = 两端内容边距：静止时与输入文字左缘对齐，
-                    // 滑到头也能停在 16dp 上；视觉裁切由外卡 clip 承担
-                    .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = if (courseTags.isNotEmpty()) 0.dp else 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                userTags.forEach { tag ->
-                    TagCapsule(
-                        item = tag,
-                        selected = tag.name in selectedNames,
-                        onClick = { toggleSelection(tag.name) },
-                        onLongClick = { deleteTarget = tag.name },
-                        showDeletePopup = deleteTarget == tag.name,
-                        onDismissDelete = { deleteTarget = null },
-                        onDelete = {
-                            onDeleteTag(tag.name)
-                            deleteTarget = null
-                        },
-                    )
-                }
-            }
-        }
-
-        // —— 课程标签区：头部行可点展开/收起；展开后 FlowRow 换行，颜色=课程卡片配色 ——
-        if (courseTags.isNotEmpty()) {
-            // chevron 旋转：固定一张 down 图转 180° 当 up 用，时长与 Expandable 高度
-            // 动画同值（ExpandMillis），同帧启动、同帧收尾
-            val chevronRotation by animateFloatAsState(
-                targetValue = if (courseExpanded) 180f else 0f,
-                animationSpec = tween(Motion.ExpandMillis, easing = Motion.Standard),
-                label = "tagCardChevron",
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // 行无自有 clip：矩形提亮原位接上（不可复用卡片级按压源——那个用于
-                    // PressInteraction 唤起键盘，pressClickable 内部自建独立源）
-                    .pressClickable(RectangleShape) {
-                        focusManager.clearFocus()
-                        courseExpanded = !courseExpanded
-                    }
-                    .padding(
-                        start = 16.dp,
-                        end = 16.dp,
-                        // 无用户标签行时本行紧贴输入行：top 取 2dp（与标签行 top 同款），
-                        // 输入行下方间距两种状态一致（14 + 2 = 16dp）；有标签行时标签行
-                        // bottom 已收 0，上间距由这里的 10dp 提供
-                        top = if (userTags.isEmpty()) 2.dp else 14.dp,
-                        bottom = 14.dp,
-                    ),
+                    .heightIn(min = SheetFieldHeight)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = courseSectionTitle,
-                    style = MaterialTheme.classppTextStyles.fieldLabel,
-                )
-                Spacer(Modifier.weight(1f))
-                Icon(
-                    painter = painterResource(R.drawable.ic_chevron_down),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface,
+                val valueStyle = MaterialTheme.classppTextStyles.fieldValue
+                BasicTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    textStyle = valueStyle,
+                    // 标签名不需要换行：单行输入，粘贴带入的换行由 singleLine 自动滤掉
+                    singleLine = true,
+                    cursorBrush = SolidColor(primaryColor),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    // Done 只提交不清焦：焦点键盘都留着，方便连续录入，最后一条靠失焦提交
+                    keyboardActions = KeyboardActions(onDone = { submitInput() }),
+                    interactionSource = interactionSource,
                     modifier = Modifier
-                        .size(20.dp)
-                        .graphicsLayer { rotationZ = chevronRotation },
+                        .weight(1f)
+                        // 参与宿主的「键盘弹起把输入框滚到键盘上方」（OverlaySheet 的 ImeScrollTracker）
+                        .imeFieldTracking()
+                        .onFocusChanged { focused = it.isFocused },
+                    decorationBox = { innerTextField ->
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            // 未聚焦且为空时显示占位；聚焦时光标可见、不显占位（SheetTextField 同款）
+                            if (text.isEmpty() && !focused && inputPlaceholder.isNotEmpty()) {
+                                Text(
+                                    text = inputPlaceholder,
+                                    style = MaterialTheme.classppTextStyles.fieldPlaceholder,
+                                )
+                            }
+                            innerTextField()
+                        }
+                    },
+                )
+                Spacer(Modifier.width(12.dp))
+                // 新标签的颜色圆球：显示当前颜色草稿（null = 跟随主题 Primary），点按上报宿主
+                // 唤起选色弹卡。按压反馈在 clip 之前（ColorSwatchCard 色球同款）；只收键盘
+                // 不清焦——清焦会触发失焦提交，把输入中的文字抢跑成标签
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .pressClickable(PillShape) {
+                            keyboard?.hide()
+                            onPickColor()
+                        }
+                        .clip(PillShape)
+                        .background(newTagColorArgb?.let { Color(it) } ?: primaryColor),
                 )
             }
-            Expandable(expanded = courseExpanded) {
-                FlowRow(
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+
+            // —— 用户自定义标签行：横向滑动 + 橡皮筋（不足一行也能拉出；多余随卡片裁切）。
+            // 删空后整行经 Expandable 折叠收起（下方内容实时让位，收起播的是删除前快照），
+            // 首次添加对称展开 ——
+            Expandable(expanded = userTags.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .rubberBandHorizontalScroll(rememberScrollState())
+                        // padding 在滚动之内 = 两端内容边距：静止时与输入文字左缘对齐，
+                        // 滑到头也能停在 16dp 上；视觉裁切由外卡 clip 承担
+                        .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = if (courseTags.isNotEmpty()) 0.dp else 14.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    courseTags.forEach { tag ->
+                    collapsingTags.forEach { tag ->
                         TagCapsule(
                             item = tag,
                             selected = tag.name in selectedNames,
                             onClick = { toggleSelection(tag.name) },
-                            // 课程标签底稍实（20%），与用户标签（10%）区分来源
-                            backgroundAlpha = CourseTagAlpha,
+                            // 长按记录待删标签与其窗口坐标并翻开可见（锚点保留到退场播完再清）
+                            onLongClick = { anchor ->
+                                deleteTarget = DeleteTarget(tag.name, anchor)
+                                deleteVisible = true
+                            },
+                            // 折叠播放中的是删除前快照：胶囊不可交互，避免给已删标签恢复选中
+                            enabled = userTags.isNotEmpty(),
                         )
                     }
                 }
             }
+
+            // —— 课程标签区：头部行可点展开/收起；展开后 FlowRow 换行，颜色=课程卡片配色 ——
+            if (courseTags.isNotEmpty()) {
+                // 头部行与标签行的间距（有标签行 14dp / 无 2dp）：标签行删空折叠时同规格
+                // （ExpandMillis + Accelerate，与 shrinkVertically 同步）动画过渡，头部行
+                // 平滑 riding 折叠、不出现瞬时跳位；首次添加标签时对称回扩
+                val courseHeaderTop by animateDpAsState(
+                    targetValue = if (userTags.isEmpty()) 2.dp else 14.dp,
+                    animationSpec = tween(Motion.ExpandMillis, easing = Motion.Accelerate),
+                    label = "tagCardCourseHeaderTop",
+                )
+                // chevron 旋转：固定一张 down 图转 180° 当 up 用，时长与 Expandable 高度
+                // 动画同值（ExpandMillis），同帧启动、同帧收尾
+                val chevronRotation by animateFloatAsState(
+                    targetValue = if (courseExpanded) 180f else 0f,
+                    animationSpec = tween(Motion.ExpandMillis, easing = Motion.Standard),
+                    label = "tagCardChevron",
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // 行无自有 clip：矩形提亮原位接上（不可复用卡片级按压源——那个用于
+                        // PressInteraction 唤起键盘，pressClickable 内部自建独立源）
+                        .pressClickable(RectangleShape) {
+                            focusManager.clearFocus()
+                            courseExpanded = !courseExpanded
+                        }
+                        .padding(
+                            start = 16.dp,
+                            end = 16.dp,
+                            // 无用户标签行时本行紧贴输入行：输入行下方间距两种状态一致
+                            // （14 + 2 = 16dp）；有标签行时标签行 bottom 已收 0，上间距
+                            // 由这里的 14dp 提供（随标签行折叠/展开动画过渡，见上）
+                            top = courseHeaderTop,
+                            bottom = 14.dp,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = courseSectionTitle,
+                        style = MaterialTheme.classppTextStyles.fieldLabel,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Icon(
+                        painter = painterResource(R.drawable.ic_chevron_down),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .graphicsLayer { rotationZ = chevronRotation },
+                    )
+                }
+                Expandable(expanded = courseExpanded) {
+                    FlowRow(
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        courseTags.forEach { tag ->
+                            TagCapsule(
+                                item = tag,
+                                selected = tag.name in selectedNames,
+                                onClick = { toggleSelection(tag.name) },
+                                // 课程标签底稍实（20%），与用户标签（10%）区分来源
+                                backgroundAlpha = CourseTagAlpha,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 长按删除菜单挂在 Box 内（不随胶囊挂载）：删除标签后列表即时刷新也不打断退场播放
+        // （同 DayImageSheet 的宿主级挂载）
+        deleteTarget?.let { target ->
+            TagDeleteMenu(
+                anchor = target.anchor,
+                expanded = deleteVisible,
+                onDismiss = { deleteVisible = false },
+                onDelete = {
+                    deleteVisible = false
+                    onDeleteTag(target.name)
+                },
+                hazeState = hazeState,
+                onExitFinished = { deleteTarget = null },
+            )
         }
     }
 }
@@ -368,7 +406,8 @@ fun TagChoosingCard(
 /**
  * 标签胶囊：标签色透明度底 + 标签色字（透明度见 [backgroundAlpha]，用户/课程标签不同）；
  * 选中为标签色实心底 + 白字（图标同白）。
- * 用户标签经 [onLongClick] 长按弹删除层；课程标签不可删，不传即无长按响应。
+ * 用户标签经 [onLongClick] 长按上报删除请求（带胶囊当时的窗口坐标作菜单锚点）；
+ * 课程标签不可删，不传即无长按响应。
  */
 @Composable
 private fun TagCapsule(
@@ -377,144 +416,111 @@ private fun TagCapsule(
     onClick: () -> Unit,
     // 未选中态的底色透明度：用户标签 [UserTagAlpha]、课程标签 [CourseTagAlpha]
     backgroundAlpha: Float = UserTagAlpha,
-    onLongClick: (() -> Unit)? = null,
-    showDeletePopup: Boolean = false,
-    onDismissDelete: () -> Unit = {},
-    onDelete: () -> Unit = {},
+    onLongClick: ((Rect) -> Unit)? = null,
+    // false = 不吃点击与长按（折叠快照期的占位胶囊）
+    enabled: Boolean = true,
 ) {
     val contentColor = if (selected) Color.White else item.color
+    val bounds = remember { BoundsHolder() }
     // 按压源新建（不碰卡片级键盘唤起源）：pressFeedback 与 combinedClickable 共用，
     // indication 置 null——涟漪由按压反馈取代，长按 onLongClick 语义不变
     val press = remember { MutableInteractionSource() }
-    // Box 兼作删除弹层的锚：Popup 挂在它下面，anchorBounds 即胶囊的窗口坐标
-    Box {
-        Row(
-            modifier = Modifier
-                // 按压反馈在 clip 之前：缩放作用于整枚胶囊，提亮范围与 PillShape 对齐；
-                // 标签胶囊按压放大单独调大到 1.10（与顶栏按钮同规格，不随全局默认）
-                .pressFeedback(press, PillShape, scale = 1.10f)
-                .clip(PillShape)
-                .background(if (selected) item.color else item.color.copy(alpha = backgroundAlpha))
-                .combinedClickable(
-                    interactionSource = press,
-                    indication = null,
-                    onClick = onClick,
-                    onLongClick = onLongClick,
-                )
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_tag),
-                contentDescription = null,
-                tint = contentColor,
-                modifier = Modifier.size(TagIconSize),
+    Row(
+        modifier = Modifier
+            .onGloballyPositioned { bounds.value = it.boundsInWindow() }
+            // 按压反馈在 clip 之前：缩放作用于整枚胶囊，提亮范围与 PillShape 对齐；
+            // 标签胶囊按压放大单独调大到 1.10（与顶栏按钮同规格，不随全局默认）
+            .pressFeedback(press, PillShape, scale = 1.10f)
+            .clip(PillShape)
+            .background(if (selected) item.color else item.color.copy(alpha = backgroundAlpha))
+            .combinedClickable(
+                interactionSource = press,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+                onLongClick = { onLongClick?.invoke(bounds.value) },
             )
-            Text(
-                text = item.name,
-                style = TagTextStyle.copy(color = contentColor),
-            )
-        }
-        if (showDeletePopup) {
-            TagDeletePopup(
-                onDismiss = onDismissDelete,
-                onDelete = onDelete,
-            )
-        }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_tag),
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier.size(TagIconSize),
+        )
+        Text(
+            text = item.name,
+            style = TagTextStyle.copy(color = contentColor),
+        )
     }
 }
 
 /**
- * 长按用户标签弹出的「删除」层（设计稿的白色圆角弹层：红垃圾桶 + 红字）。
+ * 长按用户标签弹出的「删除」菜单（单组单项）：[PopupMenuPopup] 共享弹层（果冻进场 +
+ * 整卡首尾淡入淡出 + 毛玻璃卡壳，同长按图片菜单的 ImageMenuPopup 范式）。
  *
- * 定位沿用 CourseContextMenu 那套：自定义 [PopupPositionProvider] + focusable 弹窗
- * （返回键/点外部收起）。差异是贴标签**上方**（菜单语义是「对这个标签做动作」，
- * 压住标签本身会挡住长按的高亮），上方放不下（标签贴屏顶）再落到下方，横向与
- * 标签左缘对齐、越界钳进窗口。
+ * 定位：贴标签**上方**、与标签左缘对齐（菜单语义是「对这个标签做动作」，压住标签本身
+ * 会挡住长按的高亮），上方放不下（标签贴屏顶）再落到下方；投影留白与越界钳制由宿主处理。
+ * 生长角按标签所在半屏现算（菜单贴着标签长出）。删除不做二次确认：设计稿只有一层菜单，
+ * 点「删除」直接生效。
  *
- * 进场同规格（Motion.PopupScale/PopupFadeMillis）：scale 0.8→1 + alpha 0→1。
- * 删除不做二次确认：设计稿只有一层弹层，点「删除」直接生效。
+ * @param anchor 长按时刻标签的窗口坐标（[DeleteTarget.anchor] 快照，菜单不随标签移动）
  */
 @Composable
-private fun TagDeletePopup(
+private fun TagDeleteMenu(
+    anchor: Rect,
+    expanded: Boolean,
     onDismiss: () -> Unit,
     onDelete: () -> Unit,
+    hazeState: HazeState?,
+    onExitFinished: () -> Unit = {},
 ) {
-    val visibleState = remember { MutableTransitionState(false) }
-    // 首帧后置真：从 0.8/0 长到 1/1
-    LaunchedEffect(Unit) { visibleState.targetState = true }
-
     val gap = with(LocalDensity.current) { DeletePopupGap.roundToPx() }
-    val positionProvider = remember(gap) {
-        object : PopupPositionProvider {
-            override fun calculatePosition(
-                anchorBounds: IntRect,
-                windowSize: IntSize,
-                layoutDirection: LayoutDirection,
-                popupContentSize: IntSize,
-            ): IntOffset {
-                val x = anchorBounds.left
-                    .coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0))
-                val y = if (anchorBounds.top - gap - popupContentSize.height >= 0) {
-                    anchorBounds.top - gap - popupContentSize.height
-                } else {
-                    anchorBounds.bottom + gap
-                }.coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0))
-                return IntOffset(x, y)
-            }
-        }
-    }
-
-    val transition = rememberTransition(visibleState, label = "TagDeletePopup")
-    val scale by transition.animateFloat(
-        transitionSpec = { tween(Motion.PopupScaleMillis, easing = Motion.Standard) },
-        label = "scale",
-    ) { visible -> if (visible) 1f else 0.8f }
-    val alpha by transition.animateFloat(
-        transitionSpec = { tween(Motion.PopupFadeMillis, easing = Motion.Standard) },
-        label = "alpha",
-    ) { visible -> if (visible) 1f else 0f }
-
-    Popup(
-        onDismissRequest = onDismiss,
-        popupPositionProvider = positionProvider,
-        // focusable：返回键收起；dismissOnClickOutside 默认开启
-        properties = PopupProperties(focusable = true),
-    ) {
-        Surface(
-            shape = MenuShape,
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
-            modifier = Modifier.graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                this.alpha = alpha
-                // 从标签那一侧长出来
-                transformOrigin = TransformOrigin(0.5f, 1f)
-            },
-        ) {
-            Row(
-                modifier = Modifier
-                    // 删除钮行无自有 clip：矩形提亮原位接上（卡壳 MenuShape 在祖先层兜住溢出）
-                    .pressClickable(RectangleShape, onClick = onDelete)
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_delete),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(20.dp),
-                )
-                Text(
-                    text = stringResource(R.string.edit_delete),
-                    style = MaterialTheme.classppTextStyles.menuItem.copy(
-                        color = MaterialTheme.colorScheme.error,
+    val windowWidthPx = LocalWindowInfo.current.containerSize.width.takeIf { it > 0 }
+        ?: LocalView.current.width
+    PopupMenuPopup(
+        expanded = expanded,
+        onDismiss = onDismiss,
+        sections = listOf(
+            PopupMenuSection(
+                items = listOf(
+                    PopupMenuItem(
+                        label = stringResource(R.string.edit_delete),
+                        icon = R.drawable.ic_delete,
+                        onClick = onDelete,
                     ),
-                )
-            }
-        }
-    }
+                ),
+            ),
+        ),
+        cardPosition = { _, _, cardSize ->
+            IntOffset(
+                x = anchor.left.roundToInt(),
+                y = if (anchor.top - gap - cardSize.height >= 0) {
+                    anchor.top - gap - cardSize.height
+                } else {
+                    anchor.bottom + gap
+                }.roundToInt(),
+            )
+        },
+        menuGrowth = if (windowWidthPx > 0 && anchor.center.x > windowWidthPx / 2f) {
+            MenuGrowth.BottomRight
+        } else {
+            MenuGrowth.BottomLeft
+        },
+        hazeState = hazeState,
+        onExitFinished = onExitFinished,
+    )
+}
+
+/** 长按删除菜单的目标：标签名 + 长按那一刻该标签的窗口坐标（菜单锚点） */
+private class DeleteTarget(val name: String, val anchor: Rect)
+
+/**
+ * 标签窗口坐标（长按弹菜单的锚点）：只在长按回调里读，故存普通字段而非 Compose state
+ * ——写在 onGloballyPositioned 里也不会像 state 那样让布局阶段触发重组（DayImageGrid 同款）。
+ */
+private class BoundsHolder {
+    var value: Rect = Rect.Zero
 }
