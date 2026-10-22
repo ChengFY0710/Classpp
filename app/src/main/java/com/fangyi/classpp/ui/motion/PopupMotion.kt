@@ -51,7 +51,7 @@ private const val PopupExitTailFadeScaleSpan = 0.05f
 private fun popupEnterJelly(startScale: Float): FiniteAnimationSpec<Float> = keyframes {
     durationMillis = 600
     startScale at 0
-    1.05f at 250 using Motion.Accelerate
+    1.05f at 200 using Motion.Standard
     1f at 600 using Motion.Accelerate
 }
 
