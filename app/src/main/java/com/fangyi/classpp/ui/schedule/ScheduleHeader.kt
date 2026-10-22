@@ -597,7 +597,12 @@ private fun WeekPill(
         var menuExpanded by remember { mutableStateOf(false) }
         // 进出场动画（果冻曲线 + 分层淡入 + 尾淡兜底，与弹出菜单族同一套 motion）：
         // 收起动画期间 motion.shown 保持 Popup 在场
-        val motion = rememberPopupMotion(expanded = menuExpanded)
+        val motion = rememberPopupMotion(
+            expanded = menuExpanded,
+            // 起始缩放 0.5：半尺寸小卡收在胶囊正下方，从胶囊中心「涌出」的读感才够强
+            // （胶囊中心距卡片顶边仅 36dp，默认 0.8 的锚点差肉眼不可辨）
+            enterStartScale = 0.5f,
+        )
 
         fun closeMenu() {
             menuExpanded = false

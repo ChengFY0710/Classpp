@@ -40,18 +40,18 @@ import dev.chrisbanes.haze.blur.hazeBlur
 private const val PopupExitTailFadeScaleSpan = 0.05f
 
 /**
- * 进场 + 果冻回弹一体曲线：0.8 → 1.05 → 1 一条 keyframes 走完（约 800ms）。
+ * 进场 + 果冻回弹一体曲线：[startScale] → 1.05 → 1 一条 keyframes 走完（约 800ms）。
  * 生长冲过 1 后顺势回缩定住，没有「先减速停住、再重新起拍」的 velocity 死点，
  * 两段端点（1.05 / 1.0）都落在振幅极值（速度为零），读起来是一条连续的阻尼振荡：
  * - 0 → 200ms 生长段（[Motion.Standard]）：起步逐渐加速上冲到峰值；
  * - 200 → 800ms 收定段（[Motion.Standard]）：回到 1 定住。
  * 锚点为生长角：整条曲线绕同一锚点，果冻回弹朝锚点反方向撑开，与「贴着锚点长出来」同构。
  */
-private val PopupEnterJelly: FiniteAnimationSpec<Float> = keyframes {
-    durationMillis = 800
-    Motion.PopupEnterStartScale at 0
+private fun popupEnterJelly(startScale: Float): FiniteAnimationSpec<Float> = keyframes {
+    durationMillis = 720
+    startScale at 0
     1.05f at 200 using Motion.Standard
-    1f at 800 using Motion.Standard
+    1f at 720 using Motion.Accelerate
 }
 
 /**
@@ -62,6 +62,8 @@ private val PopupEnterJelly: FiniteAnimationSpec<Float> = keyframes {
 @Stable
 class PopupMotionState internal constructor(
     private val animateExit: Boolean,
+    /** 进场起始缩放（退场缩回同值），尾淡区间与投影渐入都按它推算 */
+    val enterStartScale: Float,
     private val visibleState: MutableTransitionState<Boolean>,
     val scale: State<Float>,
     val contentAlpha: State<Float>,
@@ -86,17 +88,20 @@ class PopupMotionState internal constructor(
         return if (s >= 1f) {
             1f
         } else {
-            ((s - Motion.PopupEnterStartScale) / (1f - Motion.PopupEnterStartScale))
-                .coerceIn(0f, 1f)
+            ((s - enterStartScale) / (1f - enterStartScale)).coerceIn(0f, 1f)
         }
     }
 }
 
 /**
  * 弹层进出场动画的共享实现（PopupMenuPopup / WeekPicker 等玻璃弹层共用）：
- * 进场 scale 走 [PopupEnterJelly] 一体曲线（生长冲过 1 顺势回缩定住）+ 内容淡入
+ * 进场 scale 走 [popupEnterJelly] 一体曲线（生长冲过 1 顺势回缩定住）+ 内容淡入
  * （[Motion.PopupFadeMillis]），退场 scale 与内容淡出共用 [Motion.PopupExitMillis] +
  * Accelerate 同步收尾；[animateExit] = false 时收起不播退场、立即卸载。
+ *
+ * [enterStartScale] 是进场起始缩放（默认 0.8）：锚点离卡片很近的弹层用默认值即可；
+ * 锚点要表达「从某个宿主控件里长出来」（如周数卡从胶囊中心涌出）时调小它（如 0.5f），
+ * 起始卡面越小、从锚点涌现的读感越强。
  *
  * 退场播完经 [onExitFinished] 回调一次（宿主借机清理「仅退场期保留」的锚点状态；
  * 仅退场动画存在时才会触发）。transition 恒常驻组合——若随「是否显示」条件一起
@@ -111,6 +116,7 @@ fun rememberPopupMotion(
     expanded: Boolean,
     animateExit: Boolean = true,
     onExitFinished: () -> Unit = {},
+    enterStartScale: Float = Motion.PopupEnterStartScale,
 ): PopupMotionState {
     val visibleState = remember { MutableTransitionState(false) }
     visibleState.targetState = expanded
@@ -132,13 +138,13 @@ fun rememberPopupMotion(
     val scaleState = transition.animateFloat(
         transitionSpec = {
             if (targetState) {
-                PopupEnterJelly
+                popupEnterJelly(enterStartScale)
             } else {
                 tween(Motion.PopupExitMillis, easing = Motion.Accelerate)
             }
         },
         label = "PopupMotionScale",
-    ) { visible -> if (visible) 1f else Motion.PopupEnterStartScale }
+    ) { visible -> if (visible) 1f else enterStartScale }
     val contentAlphaState = transition.animateFloat(
         transitionSpec = {
             if (targetState) {
@@ -150,8 +156,8 @@ fun rememberPopupMotion(
         label = "PopupMotionContentAlpha",
     ) { visible -> if (visible) 1f else 0f }
 
-    return remember(visibleState, scaleState, contentAlphaState, animateExit) {
-        PopupMotionState(animateExit, visibleState, scaleState, contentAlphaState)
+    return remember(visibleState, scaleState, contentAlphaState, animateExit, enterStartScale) {
+        PopupMotionState(animateExit, enterStartScale, visibleState, scaleState, contentAlphaState)
     }
 }
 
@@ -174,7 +180,7 @@ fun Modifier.popupMotionScale(
     alpha = if (!motion.exiting) {
         1f
     } else {
-        ((scale - Motion.PopupEnterStartScale) / PopupExitTailFadeScaleSpan).coerceIn(0f, 1f)
+        ((scale - motion.enterStartScale) / PopupExitTailFadeScaleSpan).coerceIn(0f, 1f)
     }
     origin(size)?.let { transformOrigin = it }
 }

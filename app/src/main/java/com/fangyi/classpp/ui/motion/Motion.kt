@@ -90,7 +90,7 @@ object Motion {
     const val PopupExitMillis = 120
 
     /** 弹出菜单进场起始缩放（退场缩回同值）；投影强度按 scale 距该值的进度渐入（PopupMenuPopup）。 */
-    const val PopupEnterStartScale = 0.5f
+    const val PopupEnterStartScale = 0.3f
 
     /**
      * 内容区展开/收起时长（Expandable 高度动画）：与配套的淡入淡出、头部 chevron
