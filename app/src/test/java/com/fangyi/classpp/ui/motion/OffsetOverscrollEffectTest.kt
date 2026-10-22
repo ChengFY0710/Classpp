@@ -9,16 +9,15 @@ import org.junit.Test
 
 class OffsetOverscrollEffectTest {
 
-    private fun effect(maxDistanceOverridePx: Float? = null) = OffsetOverscrollEffect(
+    private fun effect() = OffsetOverscrollEffect(
         animationScope = CoroutineScope(Dispatchers.Unconfined),
         animationSpec = OffsetOverscrollEffect.DefaultAnimationSpec,
-        maxFraction = 0.65f,
-        maxDistanceOverridePx = maxDistanceOverridePx,
+        maxFraction = OffsetOverscrollEffect.DefaultMaxFraction,
     )
 
     @Test
     fun scrollConsumesIntoRawOffsetAndUpReturnsIt() {
-        val effect = effect(maxDistanceOverridePx = 100f)
+        val effect = effect()
 
         val down = effect.applyToScroll(
             delta = Offset(0f, 200f),

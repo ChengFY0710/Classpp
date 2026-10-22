@@ -138,12 +138,6 @@ class OffsetOverscrollEffect(
     private val animationScope: CoroutineScope,
     private val animationSpec: AnimationSpec<Float>,
     private val maxFraction: Float,
-    /**
-     * 阻尼分母/视觉拉出上限（px）。null = 用效果节点的容器尺寸。
-     * 页级过滚动（如日程 02 的整组下移）需要比容器更小的上限时传入；
-     * 初始跟手比例仍由 [maxFraction] 决定，与容器尺寸无关。
-     */
-    private val maxDistanceOverridePx: Float? = null,
 ) : OverscrollEffect {
 
     private var offset by mutableStateOf(Offset.Zero)
@@ -157,8 +151,7 @@ class OffsetOverscrollEffect(
     override val isInProgress: Boolean = false
 
     /**
-     * 当前原始过滚动偏移（px，未阻尼）；节点渲染时会再按
-     * [maxDistanceOverridePx] / 容器尺寸换算成视觉位移。
+     * 当前原始过滚动偏移（px，未阻尼）；节点渲染时再按容器尺寸换算成视觉位移。
      * 供页级过滚动判断“是否还拉着”以及反向拖动先收回多少。
      */
     val currentOffset: Offset get() = offset
@@ -317,10 +310,8 @@ class OffsetOverscrollEffect(
     }
 
     private fun computeOffset(overscrollDistance: Float, maxDistance: Float): Float {
-        val distance = maxDistanceOverridePx ?: maxDistance
-        if (distance <= 0f) return 0f
-        val progress = ProgressConverter.convert(overscrollDistance / distance, maxFraction)
-        return progress * distance
+        val progress = ProgressConverter.convert(overscrollDistance / maxDistance, maxFraction)
+        return progress * maxDistance
     }
 
     // 同向：全部消耗；反向：只消耗到归零为止（先"拉回来"再滚动列表）
@@ -387,6 +378,13 @@ class OffsetOverscrollEffect(
         // 临界阻尼、低刚度：软着陆、无过冲（androidx 原生签名 spring(阻尼, 刚度, 收敛阈值)）
         val DefaultAnimationSpec = spring(1f, 150f, 0.5f)
 
+        /**
+         * 默认最大拉出比例：阻尼曲线 f(p) = 1 − e^(−p·maxFraction)，初始跟手比例
+         * 等于该值，位移上限 = maxFraction × 容器尺寸。页级过滚动想和内容区
+         * 完全同款手感时直接使用该 token。
+         */
+        const val DefaultMaxFraction = 0.65f
+
         // 轴向锁的兜底判定路径（px，约两倍触控 slop 的等效值）：未定轴的累计路径达到它
         // 仍纠结时按主分量定轴。触摸输入的 delta 恒为纯轴分量，不会走到该兜底
         private const val AxisFallbackPathPx = 48f
@@ -410,7 +408,7 @@ private object NoOpShape : Shape {
 @Composable
 fun rememberOffsetOverscrollFactory(
     animationSpec: AnimationSpec<Float> = OffsetOverscrollEffect.DefaultAnimationSpec,
-    maxFraction: Float = 0.65f
+    maxFraction: Float = OffsetOverscrollEffect.DefaultMaxFraction,
 ): OverscrollFactory {
     val animationScope = rememberCoroutineScope()
     return remember(animationScope, animationSpec, maxFraction) {
@@ -425,7 +423,7 @@ fun rememberOffsetOverscrollFactory(
 class OffsetOverscrollFactory(
     private val animationScope: CoroutineScope,
     private val animationSpec: AnimationSpec<Float> = OffsetOverscrollEffect.DefaultAnimationSpec,
-    private val maxFraction: Float = 0.65f
+    private val maxFraction: Float = OffsetOverscrollEffect.DefaultMaxFraction,
 ) : OverscrollFactory {
 
     override fun createOverscrollEffect(): OverscrollEffect {

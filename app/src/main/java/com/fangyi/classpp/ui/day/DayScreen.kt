@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.animation.core.EaseIn
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -93,7 +92,6 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
-import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.OffsetOverscrollEffect
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
@@ -148,18 +146,13 @@ fun DayScreen(
     val pxPerDp = density.density
     val scope = rememberCoroutineScope()
     // 02 端点的整组过滚动：直接复用 ui.motion 的 OffsetOverscrollEffect，
-    // 挂在整个页面上；阻尼分母用比容器更小的 DayCompactOverscrollMax。
-    val compactOverscroll = remember(scope, pxPerDp) {
+    // 阻尼比例、回弹弹簧与内容区 OverScroll 完全同款；效果节点挂在整页上，
+    // 容器尺寸就是屏幕，拉出曲线和 04 的内容列表一致。
+    val compactOverscroll = remember(scope) {
         OffsetOverscrollEffect(
             animationScope = scope,
-            // 回位走 Motion 层的非线性曲线，和 02→04 的吸附同源；
-            // 曲线在终点速度为 0，不会在效果内部再触发一次速度拉出。
-            animationSpec = tween(
-                durationMillis = Motion.AgendaSnapMillis,
-                easing = Motion.Overlay,
-            ),
-            maxFraction = DayCompactOverscrollFraction,
-            maxDistanceOverridePx = DayCompactOverscrollMax.value * pxPerDp,
+            animationSpec = OffsetOverscrollEffect.DefaultAnimationSpec,
+            maxFraction = OffsetOverscrollEffect.DefaultMaxFraction,
         )
     }
     val view = LocalView.current
@@ -482,7 +475,7 @@ fun DayScreen(
                     }
                     // 还拉着整组过滚动时只做回位动画，不启动 02→04 吸附。
                     // 04→02 已经拖过 02 的情况也在这里：先无动画地提交 02，
-                    // 再让 OffsetOverscrollEffect 用 Motion.Overlay 把内容送回原位；
+                    // 再由 OffsetOverscrollEffect 的默认临界阻尼弹簧把内容送回原位；
                     // 效果挂在页面根上，不会因切回 Compact 被移除而硬切。
                     val compactPulled = transition.collapse <= 0f &&
                         compactOverscroll.currentOffset != Offset.Zero
