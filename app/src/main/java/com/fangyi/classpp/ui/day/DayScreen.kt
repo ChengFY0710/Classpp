@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.animation.core.EaseIn
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.overscroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -62,6 +64,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
@@ -91,6 +94,7 @@ import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.OffsetOverscrollEffect
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.motion.pressClickable
@@ -112,6 +116,7 @@ import dev.chrisbanes.haze.rememberHazeState
 import java.util.GregorianCalendar
 import java.util.TimeZone
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 private const val MillisPerDay = 86_400_000L
 
@@ -142,6 +147,21 @@ fun DayScreen(
     val density = LocalDensity.current
     val pxPerDp = density.density
     val scope = rememberCoroutineScope()
+    // 02 端点的整组过滚动：直接复用 ui.motion 的 OffsetOverscrollEffect，
+    // 挂在整个页面上；阻尼分母用比容器更小的 DayCompactOverscrollMax。
+    val compactOverscroll = remember(scope, pxPerDp) {
+        OffsetOverscrollEffect(
+            animationScope = scope,
+            // 回位走 Motion 层的非线性曲线，和 02→04 的吸附同源；
+            // 曲线在终点速度为 0，不会在效果内部再触发一次速度拉出。
+            animationSpec = tween(
+                durationMillis = Motion.AgendaSnapMillis,
+                easing = Motion.Overlay,
+            ),
+            maxFraction = DayCompactOverscrollFraction,
+            maxDistanceOverridePx = DayCompactOverscrollMax.value * pxPerDp,
+        )
+    }
     val view = LocalView.current
     val activity = remember(view) { view.context.findActivity() }
     val darkTheme = MaterialTheme.isDarkTheme
@@ -192,9 +212,18 @@ fun DayScreen(
     // 跨天/回前台对表：LocalToday 已含 onResume 与前台每分钟对表；日期变化立即回 01。
     LaunchedEffect(today) {
         if (openedDay != today) {
+            compactOverscroll.reset()
             transition.resetForNewDay()
             persistedStage = DayStage.Calendar
         }
+    }
+    // 离开 02 或切到别的停留态时，整组过滚动必须归零，避免残余位移带进 01/04。
+    LaunchedEffect(transition.stage) {
+        if (transition.stage != DayStage.Compact) compactOverscroll.reset()
+    }
+    // 切到其它 tab 时手势会中断，过滚动也要立即归零，回页时不带残余位移。
+    LaunchedEffect(active) {
+        if (!active) compactOverscroll.reset()
     }
 
     // 状态栏图标：01 图片上强制浅色；02/04 随主题（浅色主题深图标），浮层/非当前页恢复主题。
@@ -320,17 +349,47 @@ fun DayScreen(
             // 02 上滑、04 下滑时直接消费并推进 collapse（没有起手阈值）；04 上滑完全
             // 不驱动 collapse，把手势留给内容区的 OverScroll 橡皮筋。
             // 抬手速度仍在这里统一交给 settle（04 仍在 1 时跳过，避免打断橡皮筋）。
-            .pointerInput(active, sheetMounted, flingThresholdPx, dragDistancePx) {
+            .pointerInput(
+                active,
+                sheetMounted,
+                flingThresholdPx,
+                dragDistancePx,
+                compactOverscroll,
+            ) {
                 if (!active || sheetMounted) return@pointerInput
                 val tracker = VelocityTracker()
                 // 04 起手方向锁的阈值：先用一个 touch slop 判定这次手势是下滑还是上滑，
                 // 快速上滑开头的少量向下抖动不会被当成 04→02 下滑。
                 val directionSlopPx = viewConfiguration.touchSlop
+
+                // 02 端点的整组过滚动：向下全收；向上只收到当前拉出量归零，
+                // 剩余位移由调用方交给 collapse。返回本次被过滚动消费的 dy。
+                fun applyCompactOverscroll(
+                    deltaY: Float,
+                    change: PointerInputChange,
+                ): Float {
+                    val current = compactOverscroll.currentOffset.y
+                    val overscrollDelta = when {
+                        deltaY > 0f -> deltaY
+                        current > 0f -> maxOf(deltaY, -current)
+                        else -> 0f
+                    }
+                    if (overscrollDelta == 0f) return 0f
+                    val consumed = compactOverscroll.applyToScroll(
+                        delta = Offset(0f, overscrollDelta),
+                        source = NestedScrollSource.UserInput,
+                    ) { Offset.Zero }.y
+                    if (consumed != 0f) change.consume()
+                    return consumed
+                }
+
                 awaitEachGesture {
                     val down = awaitFirstDown(
                         requireUnconsumed = false,
                         pass = PointerEventPass.Initial,
                     )
+                    // 吸附/重播期间不接新手势，避免整组过滚动在转场动画上再叠位移。
+                    if (transition.isAnimating) return@awaitEachGesture
                     // 02→04 与 04→02 都由根级统一驱动跟手；04 只跟下滑，
                     // 上滑完全不消费、不写 collapse，留给内容区 Overscroll。
                     // 04 只要列表在顶部就由根级接管，避免未到达列表滚动阈值前
@@ -376,15 +435,39 @@ fun DayScreen(
                                             // 上滑锁定后完全不碰 collapse，放给 Overscroll。
                                         }
                                     }
-                                    1 -> if (dy > 0f) {
-                                        val consumed = transition.dragCollapseBy(dy, dragDistancePx)
-                                        if (consumed != 0f) change.consume()
+                                    1 -> {
+                                        if (transition.collapse <= 0f) {
+                                            // 04→02 已经拖到 02：继续下滑交给整组过滚动，
+                                            // 不再让内容列表自己的 overscroll 接走——
+                                            // 切回 Compact 时那条效果会被移除，回位会硬切。
+                                            applyCompactOverscroll(dy, change)
+                                        } else if (dy > 0f) {
+                                            val consumed = transition.dragCollapseBy(
+                                                dy,
+                                                dragDistancePx,
+                                            )
+                                            if (consumed != 0f) change.consume()
+                                        }
                                     }
                                     // -1：上滑锁定，整个手势都不再写 collapse
                                 }
                             } else if (dy != 0f) {
-                                val consumed = transition.dragCollapseBy(dy, dragDistancePx)
-                                if (consumed != 0f) change.consume()
+                                if (transition.collapse <= 0f) {
+                                    // 02 端点：向下喂给 OffsetOverscrollEffect 做整组
+                                    // 过滚动；向上先收到拉出量归零，剩余才推进 02→04。
+                                    val consumedByOverscroll = applyCompactOverscroll(dy, change)
+                                    val remaining = dy - consumedByOverscroll
+                                    if (remaining != 0f) {
+                                        val consumed = transition.dragCollapseBy(
+                                            remaining,
+                                            dragDistancePx,
+                                        )
+                                        if (consumed != 0f) change.consume()
+                                    }
+                                } else {
+                                    val consumed = transition.dragCollapseBy(dy, dragDistancePx)
+                                    if (consumed != 0f) change.consume()
+                                }
                             }
                         }
                         if (!change.pressed) break
@@ -397,11 +480,30 @@ fun DayScreen(
                             drivesCollapse && transition.collapse < 1f
                         else -> true
                     }
-                    if (shouldSettle) {
+                    // 还拉着整组过滚动时只做回位动画，不启动 02→04 吸附。
+                    // 04→02 已经拖过 02 的情况也在这里：先无动画地提交 02，
+                    // 再让 OffsetOverscrollEffect 用 Motion.Overlay 把内容送回原位；
+                    // 效果挂在页面根上，不会因切回 Compact 被移除而硬切。
+                    val compactPulled = transition.collapse <= 0f &&
+                        compactOverscroll.currentOffset != Offset.Zero
+                    if (compactPulled) {
+                        if (transition.stage == DayStage.Schedule) {
+                            transition.settle(0f, flingThresholdPx)
+                        }
+                        val velocityY = tracker.calculateVelocity().y
+                        scope.launch {
+                            compactOverscroll.applyToFling(Velocity(0f, velocityY)) {
+                                Velocity.Zero
+                            }
+                        }
+                    } else if (shouldSettle) {
                         transition.settle(tracker.calculateVelocity().y, flingThresholdPx)
                     }
                 }
-            },
+            }
+            // 02 的整组过滚动直接复用 OffsetOverscrollEffect：节点挂在页面最外层，
+            // 渲染时把整个页面内容（图片卡、日期组、内容列表等）作为一个图层平移。
+            .overscroll(compactOverscroll),
     ) {
         val statusBarDp = WindowInsets.statusBars.asPaddingValues().calculateTopPadding().value
         val navBarDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding().value
@@ -649,7 +751,10 @@ fun DayScreen(
                         enabled = cardGestureEnabled,
                         role = Role.Button,
                         onClickLabel = cardBackLabel,
-                        onClick = { transition.replayToCalendar() },
+                        onClick = {
+                            compactOverscroll.reset()
+                            transition.replayToCalendar()
+                        },
                     )
                     .draggable(
                         state = cardDragState,
@@ -732,6 +837,7 @@ fun DayScreen(
                                 scale = 1.10f,
                                 enabled = active && !transition.isAnimating && dateIconVisible,
                             ) {
+                                compactOverscroll.reset()
                                 sheetMounted = true
                                 sheetVisible = true
                             },

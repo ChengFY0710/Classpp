@@ -64,6 +64,12 @@ internal val DayDateBottomGap = 36.dp
 /** 一段转场 0→1 对应的一比一手势行程。 */
 internal val DayDragDistance = 360.dp
 
+/** 02 端点向下过滚动的最大视觉拉出距离（图片卡与内容列表一起下移）。 */
+internal val DayCompactOverscrollMax = 120.dp
+
+/** 02 端点过滚动阻尼系数：越大越软，初始跟手比例等于该值。 */
+internal const val DayCompactOverscrollFraction = 0.65f
+
 /** 快速甩动直判阈值（与 OverlaySheet 的拖拽关闭速度同规格）。 */
 internal val DayFlingVelocity = 800.dp
 
