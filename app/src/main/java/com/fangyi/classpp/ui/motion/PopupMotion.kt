@@ -24,7 +24,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import kotlin.math.roundToInt
 import com.fangyi.classpp.ui.components.hazeCardStyle
 import com.fangyi.classpp.ui.components.hazeSources
 import dev.chrisbanes.haze.HazePerformanceMode
@@ -41,17 +44,36 @@ import dev.chrisbanes.haze.blur.hazeBlur
 private const val PopupExitTailFadeScaleSpan = 0.05f
 
 /**
- * 进场 + 果冻回弹一体曲线：[startScale] → 1.05 → 1 一条 keyframes 走完（约 800ms）。
- * 生长冲过 1 后顺势回缩定住，没有「先减速停住、再重新起拍」的 velocity 死点，
- * 两段端点（1.05 / 1.0）都落在振幅极值（速度为零），读起来是一条连续的阻尼振荡：
+ * 果冻回弹的峰值缩放：生长冲过 1 的最高点。[popupEnterJelly] 与毛玻璃快照的扩采边距
+ * （[BlurSnapshotOverscan]）共用——峰值一变，快照需要补盖的差值随之自动推算。
+ */
+private const val PopupJellyPeakScale = 1.05f
+
+/**
+ * 毛玻璃快照四周的扩采边距（占卡面尺寸的比例）：快照经反向缩放恒等映射回卡面**静止
+ * 位置**，果冻回弹（峰值 [PopupJellyPeakScale]）越过 1 时可见卡面会大于静止位置，超出
+ * 部分没有模糊、露出卡壳自己的不透明底色。每边按 (峰值 − 1) × [BlurSnapshotOverscanFactor]
+ * 扩采（默认 10%），系数 2 是为锚点在卡面外（如周数弹窗锚在胶囊中心）的最远边留的余量
+ * （锚点外移不超过一个卡面尺寸时足够）；扩出卡面的部分平时由卡壳 clip 裁掉，回弹放大
+ * 时恰好补上——「按峰值静态扩采、动画中动态显形」，无需逐帧改布局。
+ */
+private const val BlurSnapshotOverscanFactor = 2f
+
+/** 见 [BlurSnapshotOverscanFactor]：每边扩采边距 = (峰值 − 1) × 该系数。 */
+private val BlurSnapshotOverscan = (PopupJellyPeakScale - 1f) * BlurSnapshotOverscanFactor
+
+/**
+ * 进场 + 果冻回弹一体曲线：[startScale] → [PopupJellyPeakScale] → 1 一条 keyframes 走完
+ * （600ms）。生长冲过 1 后顺势回缩定住，没有「先减速停住、再重新起拍」的 velocity 死点，
+ * 两段端点（峰值 / 1.0）都落在振幅极值（速度为零），读起来是一条连续的阻尼振荡：
  * - 0 → 200ms 生长段（[Motion.Standard]）：起步逐渐加速上冲到峰值；
- * - 200 → 800ms 收定段（[Motion.Standard]）：回到 1 定住。
+ * - 200 → 600ms 收定段（[Motion.Standard]）：回到 1 定住。
  * 锚点为生长角：整条曲线绕同一锚点，果冻回弹朝锚点反方向撑开，与「贴着锚点长出来」同构。
  */
 private fun popupEnterJelly(startScale: Float): FiniteAnimationSpec<Float> = keyframes {
     durationMillis = 600
     startScale at 0
-    1.05f at 200 using Motion.Standard
+    PopupJellyPeakScale at 200 using Motion.Standard
     1f at 600 using Motion.Accelerate
 }
 
@@ -231,12 +253,14 @@ fun Modifier.popupMotionScale(
  * - 毛玻璃是独立子层，并按 [blurScale] 绕 [blurOrigin] **反向缩放**——外层生长缩放会把
  *   按最终位置画好的采样内容一起变换，动画中除锚点外处处与真实背景错位；反向缩放后
  *   两层相乘为恒等，毛玻璃全程 1:1 钉在真实背景上（模糊半径也不被放大），卡形状/白底/
- *   投影/内容照常随缩放生长，超出卡面的部分由壳 clip 兜住。
+ *   投影/内容照常随缩放生长，超出卡面的部分由壳 clip 兜住。快照的布局范围另按
+ *   [BlurSnapshotOverscan] 四周扩采（[blurSnapshotOverscan]）：恒等映射使快照恒落在卡面
+ *   静止位置，回弹越过 1 时卡面大于静止位置，扩采段补上差值、卡底色不从边缘漏出。
  *
- * [blurOrigin] 是反向缩放的锚点，**卡面坐标**（本子层尺寸）下的比例点；锚点可在卡面外
- * （负值/大于 1，如「从宿主胶囊中心长出」）。恒等变换要求它与宿主缩放图层
- * （[popupMotionScale] 的 origin，图层坐标 = 卡面 + 四周留白）指向同一个物理点：
- * 两边锚点相差一圈 padding 平移。
+ * [blurOrigin] 是反向缩放的锚点，**卡面坐标**下的比例点（卡面 = 本子层扣除四周扩采
+ * 边距；本组件内部完成到扩采层坐标的换算）；锚点可在卡面外（负值/大于 1，如「从宿主
+ * 胶囊中心长出」）。恒等变换要求它与宿主缩放图层（[popupMotionScale] 的 origin，
+ * 图层坐标 = 卡面 + 四周留白）指向同一个物理点：两边锚点相差一圈 padding 平移。
  *
  * [propagateMinConstraints]：卡被外部 modifier 撑宽时内容至少跟着撑满（Surface 同款
  * 行为），玻璃模式菜单卡依赖它，换壳时不能丢。
@@ -272,15 +296,26 @@ fun PopupGlassCard(
         if (hazeState != null) {
             // 白卡毛玻璃（跨 Popup 窗口采样宿主页面 hazeSource）。独立子层 + 反向缩放
             // （理由见上方 KDoc）：锚点由 [blurOrigin] 给出，须与宿主缩放图层指向同一
-            // 物理点。生长/果冻回弹都会短暂偏离 1，反向缩放对任意 s 成立，故恒生效
+            // 物理点。生长/果冻回弹都会短暂偏离 1，反向缩放对任意 s 成立，故恒生效。
+            // [blurSnapshotOverscan] 把快照四周扩采一圈：回弹越过 1 时可见卡面大于快照
+            // 静止位置，扩采段补上差值，卡壳自己的白底不从边缘漏出
             Box(
                 modifier = Modifier
                     .matchParentSize()
+                    .blurSnapshotOverscan()
                     .graphicsLayer {
                         val s = blurScale().coerceAtLeast(0.1f)
                         scaleX = 1f / s
                         scaleY = 1f / s
-                        transformOrigin = blurOrigin(size)
+                        // blurOrigin 给的是卡面坐标的比例点；本层已含四周扩边
+                        // （每边占卡面 [BlurSnapshotOverscan]），换算到扩边层坐标：
+                        // (f + c) / (1 + 2c)——物理锚点不变，恒等变换不被破坏
+                        val inv = 1f + 2f * BlurSnapshotOverscan
+                        val origin = blurOrigin(Size(size.width / inv, size.height / inv))
+                        transformOrigin = TransformOrigin(
+                            (origin.pivotFractionX + BlurSnapshotOverscan) / inv,
+                            (origin.pivotFractionY + BlurSnapshotOverscan) / inv,
+                        )
                     }
                     .hazeBlur(
                         input = hazeSources(hazeState),
@@ -295,5 +330,27 @@ fun PopupGlassCard(
             modifier = Modifier.graphicsLayer { alpha = contentAlpha() },
             content = content,
         )
+    }
+}
+
+/**
+ * 毛玻璃快照的扩采布局（[PopupGlassCard] 模糊子层专用，**接在 matchParentSize 之后**）：
+ * matchParentSize 拿到卡壳量出的精确卡面约束后，这里把内容外扩 [BlurSnapshotOverscan]
+ * 一圈量测、自身仍报告卡面尺寸——不改变卡壳的实际尺寸（matchParentSize 子层本就不参与
+ * 卡壳定尺寸）。外扩段平时由卡壳形状 clip 裁掉，回弹放大（卡面越过静止位置）时显形补盖。
+ */
+private fun Modifier.blurSnapshotOverscan(): Modifier = layout { measurable, constraints ->
+    val width = constraints.maxWidth
+    val height = constraints.maxHeight
+    if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight || width <= 0 || height <= 0) {
+        val placeable = measurable.measure(constraints)
+        layout(width.coerceAtLeast(0), height.coerceAtLeast(0)) { placeable.placeRelative(0, 0) }
+    } else {
+        val padWidth = (width * BlurSnapshotOverscan).roundToInt()
+        val padHeight = (height * BlurSnapshotOverscan).roundToInt()
+        val placeable = measurable.measure(
+            Constraints.fixed(width + padWidth * 2, height + padHeight * 2),
+        )
+        layout(width, height) { placeable.placeRelative(-padWidth, -padHeight) }
     }
 }
