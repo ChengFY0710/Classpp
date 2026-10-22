@@ -15,6 +15,8 @@ class DayGeometryTest {
         screenHeight = 893f,
         statusBar = 48f,
         navBar = 34f,
+        // 取一个与 DayCardShape 24dp 不同的机身圆角，验证 01→02 的连续插值
+        deviceCornerRadius = 28f,
     )
 
     @Test
@@ -25,10 +27,11 @@ class DayGeometryTest {
         assertEquals(0f, frame.image.top, 0.01f)
         assertEquals(402f, frame.image.right, 0.01f)
         assertEquals(893f, frame.image.bottom, 0.01f)
-        assertEquals(0f, frame.imageRadius, 0.01f)
+        // 01 先裁机身圆角（不是 0，也不是 DayCardShape）
+        assertEquals(28f, frame.imageRadius, 0.01f)
 
-        // 01 白卡完全在屏外，模糊带就是原来的 360dp 底部 scrim
-        assertEquals(893f, frame.content.top, 0.01f)
+        // 01 白卡完全在屏外（比图片底边低一个 DayCardGap），模糊带仍是原来的 360dp 底部 scrim
+        assertEquals(893f + DayCardGap.value, frame.content.top, 0.01f)
         assertEquals(533f, frame.bandTop, 0.01f)
         assertEquals(893f, frame.bandBottom, 0.01f)
         assertEquals(360f, frame.bandHeight, 0.01f)
@@ -37,6 +40,33 @@ class DayGeometryTest {
         assertEquals(1f, frame.topScrimAlpha, 0.01f)
         assertEquals(0f, frame.topBarAlpha, 0.01f)
         assertEquals(0.30f, frame.bandTintAlpha, 0.01f)
+    }
+
+    @Test
+    fun openTransitionKeepsImageToContentGapConstant() {
+        val opens = listOf(0f, 0.1f, 0.25f, 0.5f, 0.75f, 0.99f, 1f)
+        opens.forEach { open ->
+            val frame = DayGeometry.frame(metrics, open = open, collapse = 0f)
+            assertEquals(
+                DayCardGap.value,
+                frame.content.top - frame.image.bottom,
+                0.01f,
+            )
+        }
+    }
+
+    @Test
+    fun imageCornerRadiusMorphsFromDeviceCornerToDayCardShape() {
+        val calendar = DayGeometry.frame(metrics, open = 0f, collapse = 0f)
+        val halfway = DayGeometry.frame(metrics, open = 0.5f, collapse = 0f)
+        val compact = DayGeometry.frame(metrics, open = 1f, collapse = 0f)
+        val schedule = DayGeometry.frame(metrics, open = 1f, collapse = 1f)
+
+        assertEquals(28f, calendar.imageRadius, 0.01f)
+        assertEquals(26f, halfway.imageRadius, 0.01f)
+        assertEquals(24f, compact.imageRadius, 0.01f)
+        // 02→04 只收窄/下移，不参与圆角插值
+        assertEquals(24f, schedule.imageRadius, 0.01f)
     }
 
     @Test
@@ -50,17 +80,18 @@ class DayGeometryTest {
         assertEquals(300f, frame.image.bottom, 0.01f)
         assertEquals(24f, frame.imageRadius, 0.01f)
 
-        // 白卡：设计稿 top≈313dp / bottom≈548dp
+        // 白卡顶边 = 图片卡底边 + DayCardGap（当前 token 24dp → 324dp）
+        val contentTop = 300f + DayCardGap.value
         assertEquals(12f, frame.content.left, 0.01f)
-        assertEquals(312f, frame.content.top, 0.01f)
+        assertEquals(contentTop, frame.content.top, 0.01f)
         assertEquals(390f, frame.content.right, 0.01f)
-        assertEquals(547f, frame.content.bottom, 0.01f)
+        assertEquals(contentTop + 235f, frame.content.bottom, 0.01f)
         assertEquals(235f, frame.content.height, 0.01f)
 
         // 模糊带：卡片中点起、白卡顶边止；02 起不再有黑色 tint
         assertEquals(180f, frame.bandTop, 0.01f)
-        assertEquals(312f, frame.bandBottom, 0.01f)
-        assertEquals(132f, frame.bandHeight, 0.01f)
+        assertEquals(contentTop, frame.bandBottom, 0.01f)
+        assertEquals(contentTop - 180f, frame.bandHeight, 0.01f)
         assertEquals(0f, frame.bandTintAlpha, 0.01f)
 
         // 日期组 01→02 的位移与设计稿量取一致（约 -485dp）
@@ -95,16 +126,20 @@ class DayGeometryTest {
 
     @Test
     fun transitionPassesThroughDesign03Composition() {
-        // 由 contentTop = 312 - 196p 反解设计稿 03 的 204dp
-        val collapse = (312f - 204f) / (312f - 116f)
+        // 03 的构图仍以 contentTop=204dp 为锚点；白卡起点随 DayCardGap 变化，
+        // 反解出的 collapse 也随之移动（gap=12 时约 0.551，gap=24 时约 0.577）。
+        val contentTopCompact = 300f + DayCardGap.value
+        val collapse = (contentTopCompact - 204f) / (contentTopCompact - 116f)
         val frame = DayGeometry.frame(metrics, open = 1f, collapse = collapse)
 
         assertEquals(204f, frame.content.top, 0.5f)
-        assertEquals(235f, frame.content.height, 0.5f)
+        // 高度 ramp 从 collapse=0.55 开始；该锚点落在 ramp 前段，仍应接近 235dp
+        assertEquals(235f, frame.content.height, 1f)
 
-        // 设计稿 03：图片卡 top≈117dp、宽≈282dp；此处落在 115dp/280dp（±2dp）
+        // 设计稿 03：图片卡 top≈117dp、宽≈282dp。gap 非 12dp 时收窄点略偏，
+        // 图片 top 仍对齐，宽度给 8dp 容差（gap=24 时约 275dp）。
         assertEquals(117f, frame.image.top, 2f)
-        assertEquals(282f, frame.image.width, 3f)
+        assertEquals(282f, frame.image.width, 8f)
 
         // 白卡顶边已越过卡片中点 → 模糊带归零，03 没有残留模糊带
         assertEquals(0f, frame.bandHeight, 0.01f)

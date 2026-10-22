@@ -50,8 +50,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.addOutline
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -91,6 +95,7 @@ import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.motion.rememberDeviceCornerRadius
 import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.theme.DayCardShape
 import com.fangyi.classpp.ui.theme.SerifDisplay
@@ -141,6 +146,9 @@ fun DayScreen(
     val view = LocalView.current
     val activity = remember(view) { view.context.findActivity() }
     val darkTheme = MaterialTheme.isDarkTheme
+    // 01 台历的全屏图圆角取机身真实 R 角；01→02 再连续过渡到 DayCardShape 的 24dp。
+    // 图片卡外层用 shapes 库的 RoundedRectangle 裁剪，圆滑圆角与白卡同源。
+    val deviceCornerRadius = rememberDeviceCornerRadius()
 
     // 图片采样与白卡采样分开：图片 scrim/模糊带只采图片，顶栏只采内容卡，
     // 避免两种材质互相串色（Haze 2 一个 State 可以承载多种源，这里刻意隔离）。
@@ -349,12 +357,19 @@ fun DayScreen(
     ) {
         val statusBarDp = WindowInsets.statusBars.asPaddingValues().calculateTopPadding().value
         val navBarDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding().value
-        val metrics = remember(maxWidth.value, maxHeight.value, statusBarDp, navBarDp) {
+        val metrics = remember(
+            maxWidth.value,
+            maxHeight.value,
+            statusBarDp,
+            navBarDp,
+            deviceCornerRadius.value,
+        ) {
             DayMetrics(
                 screenWidth = maxWidth.value,
                 screenHeight = maxHeight.value,
                 statusBar = statusBarDp,
                 navBar = navBarDp,
+                deviceCornerRadius = deviceCornerRadius.value,
             )
         }
 
@@ -447,12 +462,37 @@ fun DayScreen(
                             .fillMaxSize()
                             .drawWithContent {
                                 drawContent()
-                                val tint = DayGeometry.frame(
+                                val frame = DayGeometry.frame(
                                     metrics,
                                     transition.open,
                                     transition.collapse,
-                                ).bandTintAlpha
-                                if (tint > 0f) drawRect(bandTintBrush, alpha = tint)
+                                )
+                                val tint = frame.bandTintAlpha
+                                if (tint > 0f) {
+                                    // 黑色压暗只作用在图片卡内部，并复用图片卡同一 RoundedRectangle
+                                    // 轮廓裁剪：底部两角随 imageRadius 一起从机身圆角过渡到
+                                    // DayCardShape，页面背景与卡间间隙不再被压暗。
+                                    val cardWidthPx =
+                                        (frame.image.width * pxPerDp).coerceAtLeast(1f)
+                                    val cardHeightPx =
+                                        (frame.image.height * pxPerDp).coerceAtLeast(1f)
+                                    val outline = RoundedRectangle(frame.imageRadius.dp).createOutline(
+                                        size = Size(cardWidthPx, cardHeightPx),
+                                        layoutDirection = layoutDirection,
+                                        density = this,
+                                    )
+                                    val cardClip = Path().apply { addOutline(outline) }
+                                    // 图片卡在模糊带局部坐标系里的落位：band child 顶部 = bandTop
+                                    cardClip.translate(
+                                        Offset(
+                                            x = frame.image.left * pxPerDp,
+                                            y = (frame.image.top - frame.bandTop) * pxPerDp,
+                                        ),
+                                    )
+                                    clipPath(cardClip) {
+                                        drawRect(bandTintBrush, alpha = tint)
+                                    }
+                                }
                             }
                             .hazeBlur(
                                 input = hazeSources(imageHazeState),

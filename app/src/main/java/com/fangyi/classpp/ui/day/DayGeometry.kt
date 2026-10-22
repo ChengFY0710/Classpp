@@ -17,7 +17,7 @@ internal val DayCardTopInset = 12.dp
 internal val DayCardHeight = 240.dp
 
 /** 图片卡与白底内容卡的间距。 */
-internal val DayCardGap = 12.dp
+internal val DayCardGap = 24.dp
 
 /** 图片卡/白卡圆角（DayCardShape 同值）。 */
 internal val DayCardCorner = 24.dp
@@ -100,6 +100,12 @@ internal data class DayMetrics(
     val pageHorizontal: Float = PageHorizontalSpacing.value,
     val navReserve: Float = NavReserve.value,
     val dateBottomGap: Float = DayDateBottomGap.value,
+    /**
+     * 机身圆角半径（dp）：01 台历全屏图的裁剪半径，也是 01→02 圆角插值的起点。
+     * UI 由 rememberDeviceCornerRadius() 读系统真实 R 角；低版本/取不到时该 helper
+     * 退化为 24dp。单测可传任意值验证「机身圆角 → DayCardShape」的连续过渡。
+     */
+    val deviceCornerRadius: Float = DayCardCorner.value,
 )
 
 /** dp 矩形；left/top/right/bottom 与 Compose 的 Rect 同语义。 */
@@ -124,13 +130,16 @@ internal data class DayRect(
 internal data class DayFrame(
     /** 图片卡矩形（shape 裁剪 + 图片居中裁切共用）。 */
     val image: DayRect,
-    /** 图片卡圆角（01 为 0，02/04 为 24dp）。 */
+    /** 图片卡圆角：01 为机身圆角，01→02 连续插值到 24dp；02/04 恒为 24dp。 */
     val imageRadius: Float,
     /** 白底内容卡矩形。 */
     val content: DayRect,
     /** 图片卡下段模糊带的顶边。 */
     val bandTop: Float,
-    /** 模糊带底边（= 白卡顶边，被白卡自然截断）。 */
+    /**
+     * 模糊带底边：01→02 开头白卡仍在屏外时钉在屏底（保持 01 的 360dp scrim），
+     * 白卡顶边进入屏幕后即等于白卡顶边，被白卡自然截断。
+     */
     val bandBottom: Float,
     /** 日期组相对 01 基准位的纵向位移。 */
     val dateTranslationY: Float,
@@ -183,7 +192,10 @@ internal object DayGeometry {
         val contentTopCompact = compactImage.bottom + DayCardGap.value
         val contentTopSchedule = metrics.statusBar + DayTopBarRowHeight.value + DayTopBarGap.value
         val contentTop = if (o < 1f) {
-            lerp(metrics.screenHeight, contentTopCompact, o)
+            // 01→02 白卡顶边始终跟随图片卡底边 + DayCardGap，间距从第一帧到 02 恒定；
+            // 不再从屏幕底边独立插值（否则间距会从 0 长到 DayCardGap）。
+            // 01 时白卡整体在屏外，比图片底边低一个 DayCardGap 不可见。
+            image.bottom + DayCardGap.value
         } else {
             lerp(contentTopCompact, contentTopSchedule, c)
         }
@@ -211,6 +223,13 @@ internal object DayGeometry {
         } else {
             lerp(compactBandTop, scheduleBandTop, c)
         }
+        // 01→02 开头白卡还在屏外（contentTop 比屏底低一个 gap），模糊带底边先钉在屏底，
+        // 保持 01 的 360dp 底部 scrim 不变；白卡顶边进入屏幕后再由它截断。
+        val bandBottom = if (o < 1f) {
+            contentTop.coerceAtMost(metrics.screenHeight)
+        } else {
+            contentTop
+        }
 
         // 日期组：01 基准（导航胶囊上方）→ 02 图片卡内部左下 → 02→04 跟随图片卡下移。
         val baseDateBottom =
@@ -224,10 +243,12 @@ internal object DayGeometry {
 
         return DayFrame(
             image = image,
-            imageRadius = DayCardCorner.value * o,
+            // 01 全屏图先裁成机身圆角，再随卡片收拢连续过渡到 DayCardShape 的 24dp；
+            // 02→04 的 open 恒为 1，圆角保持 24dp 不参与收窄。
+            imageRadius = lerp(metrics.deviceCornerRadius, DayCardCorner.value, o),
             content = content,
             bandTop = bandTop,
-            bandBottom = contentTop,
+            bandBottom = bandBottom,
             dateTranslationY = dateTranslationY,
             topScrimAlpha = 1f - o,
             topBarAlpha = topBarAlpha,
