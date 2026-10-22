@@ -557,56 +557,74 @@ fun DayScreen(
             DayGeometry.frame(metrics, open = 1f, collapse = 0f).image
         }
 
-        // 1) 图片卡：全屏图固定解码尺寸，父层随进度改变尺寸/位置/圆角，图片在卡内居中裁切。
-        Layout(
-            content = {
-                DayBackgroundImage(
-                    context = context,
-                    selectedImage = selectedImage,
-                    modifier = Modifier
-                        .requiredSize(metrics.screenWidth.dp, metrics.screenHeight.dp)
-                        .graphicsLayer {
-                            val frame = DayGeometry.frame(
-                                metrics,
-                                transition.open,
-                                transition.collapse,
-                            )
-                            val scale = frame.imageScale(metrics)
-                            scaleX = scale
-                            scaleY = scale
-                            translationX = frame.imageTranslationX(metrics) * pxPerDp
-                            translationY = frame.imageTranslationY(metrics) * pxPerDp
-                        },
-                )
-            },
-            modifier = Modifier
-                .offset {
-                    val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
-                    IntOffset(
-                        (frame.image.left * pxPerDp).roundToInt(),
-                        (frame.image.top * pxPerDp).roundToInt(),
-                    )
-                }
+        // 0) 图片卡与页面底色作为同一个 Haze 源：图片卡下方的模糊带同时采到
+        // 图片和卡片外底色，图片卡的边界（底边/两侧）会一起被晕开。01 全屏图
+        // 完全盖住底色，不改变现有画面。
+        Box(
+            Modifier
+                .fillMaxSize()
                 .hazeSource(imageHazeState)
-                .graphicsLayer {
-                    val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
-                    // 02→04 后段渐隐：白卡被 Overscroll 拖上去时不再露出台历残影。
-                    alpha = frame.imageAlpha
-                    clip = true
-                    shape = RoundedRectangle(frame.imageRadius.dp)
+                .background(MaterialTheme.colorScheme.background),
+        ) {
+            // 1) 图片卡：全屏图固定解码尺寸，父层随进度改变尺寸/位置/圆角，
+            // 图片在卡内居中裁切。
+            Layout(
+                content = {
+                    DayBackgroundImage(
+                        context = context,
+                        selectedImage = selectedImage,
+                        modifier = Modifier
+                            .requiredSize(metrics.screenWidth.dp, metrics.screenHeight.dp)
+                            .graphicsLayer {
+                                val frame = DayGeometry.frame(
+                                    metrics,
+                                    transition.open,
+                                    transition.collapse,
+                                )
+                                val scale = frame.imageScale(metrics)
+                                scaleX = scale
+                                scaleY = scale
+                                translationX = frame.imageTranslationX(metrics) * pxPerDp
+                                translationY = frame.imageTranslationY(metrics) * pxPerDp
+                            },
+                    )
                 },
-        ) { measurables, _ ->
-            val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
-            val layoutWidth = (frame.image.width * pxPerDp).roundToInt().coerceAtLeast(1)
-            val layoutHeight = (frame.image.height * pxPerDp).roundToInt().coerceAtLeast(1)
-            val child = measurables[0].measure(
-                Constraints.fixed(
-                    (metrics.screenWidth * pxPerDp).roundToInt().coerceAtLeast(1),
-                    (metrics.screenHeight * pxPerDp).roundToInt().coerceAtLeast(1),
-                ),
-            )
-            layout(layoutWidth, layoutHeight) {
-                child.place(0, 0)
+                modifier = Modifier
+                    .offset {
+                        val frame = DayGeometry.frame(
+                            metrics,
+                            transition.open,
+                            transition.collapse,
+                        )
+                        IntOffset(
+                            (frame.image.left * pxPerDp).roundToInt(),
+                            (frame.image.top * pxPerDp).roundToInt(),
+                        )
+                    }
+                    .graphicsLayer {
+                        val frame = DayGeometry.frame(
+                            metrics,
+                            transition.open,
+                            transition.collapse,
+                        )
+                        // 02→04 后段渐隐：白卡被 Overscroll 拖上去时不再露出台历残影。
+                        alpha = frame.imageAlpha
+                        clip = true
+                        shape = RoundedRectangle(frame.imageRadius.dp)
+                    },
+            ) { measurables, _ ->
+                val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
+                val layoutWidth = (frame.image.width * pxPerDp).roundToInt().coerceAtLeast(1)
+                val layoutHeight = (frame.image.height * pxPerDp).roundToInt().coerceAtLeast(1)
+                val child = measurables[0].measure(
+                    Constraints.fixed(
+                        (metrics.screenWidth * pxPerDp).roundToInt().coerceAtLeast(1),
+                        (metrics.screenHeight * pxPerDp).roundToInt().coerceAtLeast(1),
+                    ),
+                )
+                layout(layoutWidth, layoutHeight) {
+                    child.place(0, 0)
+                }
             }
         }
 
