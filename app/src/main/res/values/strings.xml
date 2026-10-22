@@ -416,6 +416,7 @@
     <!-- 日程页（DayScreen）：顶部提示与背景切换入口的无障碍文案 -->
     <string name="day_swipe_hint">上滑开启新一天</string>
     <string name="cd_day_background">更换背景图</string>
+    <string name="cd_day_card_back">返回台历页</string>
 
     <!-- 日程页选择图片浮层（DayImageSheet）：左导入 / 居中标题 / 右关闭 -->
     <string name="day_image_sheet_title">选择图片</string>

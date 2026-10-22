@@ -413,6 +413,7 @@
     <!-- Day screen (DayScreen): top hint & background-picker a11y -->
     <string name="day_swipe_hint">Swipe up to start a new day</string>
     <string name="cd_day_background">Change background image</string>
+    <string name="cd_day_card_back">Back to calendar</string>
 
     <!-- Day image sheet (DayImageSheet): import on the left / centered title / close on the right -->
     <string name="day_image_sheet_title">Choose Image</string>

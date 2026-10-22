@@ -55,6 +55,13 @@ object Motion {
     /** 整页覆盖层退场时长：同方向右滑出，比进场短一些，返回更利落。 */
     const val PageExitMillis = 380
 
+    /**
+     * 日程页台历三态转场（01→02→04 及反向、02 点卡重播）的吸附时长：
+     * 三段转场与重播共用 [Overlay] 同一条曲线，松手后从当前进度收束到目标态。
+     * 取值由设计稿节奏定，约 380ms；改这里全局同步。
+     */
+    const val AgendaSnapMillis = 380
+
     /** 浮层（OverlaySheet）入场时长：从屏幕底部滑入，配合 [Overlay]。 */
     const val SheetEnterMillis = 400
 

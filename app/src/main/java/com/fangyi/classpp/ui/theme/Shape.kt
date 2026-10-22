@@ -44,6 +44,9 @@ val WeekCellShape = RoundedRectangle(11.dp)
 /** 日程页选择图片浮层的网格图片 */
 val DayImageCellShape = RoundedRectangle(16.dp)
 
+/** 日程页台历图片卡与白底内容卡：24dp 连续圆角（设计稿量取） */
+val DayCardShape = RoundedRectangle(24.dp)
+
 /** 顶栏胶囊按钮（全圆角）；投影与背景共用同一个形状 */
 val PillShape = Capsule()
 

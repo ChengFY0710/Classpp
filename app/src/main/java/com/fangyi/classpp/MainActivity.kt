@@ -304,6 +304,9 @@ class MainActivity : ComponentActivity() {
                                     when (tab) {
                                         AppTab.Agenda -> DayScreen(
                                             modifier = pageModifier,
+                                            // 仅用于状态栏图标在非 Agenda tab 恢复主题默认；
+                                            // 不参与转场，也不改导航栏布局
+                                            active = tab == pagerState.selectedTab,
                                             // 选择图片浮层在场时藏底部导航栏（同课表/待办页浮层）
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                         )
