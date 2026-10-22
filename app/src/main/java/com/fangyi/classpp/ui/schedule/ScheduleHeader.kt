@@ -2,10 +2,7 @@ package com.fangyi.classpp.ui.schedule
 
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -40,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.TransformOrigin
@@ -68,11 +66,13 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
-import com.fangyi.classpp.ui.components.hazeCardStyle
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.PopupGlassCard
+import com.fangyi.classpp.ui.motion.popupMotionScale
 import com.fangyi.classpp.ui.motion.pressFeedback
+import com.fangyi.classpp.ui.motion.rememberPopupMotion
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.tabTransitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -595,9 +595,9 @@ private fun WeekPill(
 ) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         var menuExpanded by remember { mutableStateOf(false) }
-        // 收起动画期间保持 Popup 在场：targetState（开）或 currentState（关动画未完）任一为真
-        val expandedState = remember { MutableTransitionState(false) }
-        expandedState.targetState = menuExpanded
+        // 进出场动画（果冻曲线 + 分层淡入 + 尾淡兜底，与弹出菜单族同一套 motion）：
+        // 收起动画期间 motion.shown 保持 Popup 在场
+        val motion = rememberPopupMotion(expanded = menuExpanded)
 
         fun closeMenu() {
             menuExpanded = false
@@ -728,6 +728,10 @@ private fun WeekPill(
         // 窗口宽度由 weekCellSize 反推，居中后左右各留 WeekPickerEdgeMargin
         val density = LocalDensity.current
         val gapPx = with(density) { (WeekPickerGap - CardShadowPadding).roundToPx() }
+        val shadowPaddingPx = with(density) { CardShadowPadding.toPx() }
+        val shadowBottomPaddingPx = with(density) { CardShadowBottomPadding.toPx() }
+        // 卡片顶边到胶囊中心的距离：缩放锚点取在胶囊中心（位于弹层窗口外、卡面坐标为负）
+        val pillCenterOffsetPx = with(density) { (WeekPickerGap + WeekPillHeight / 2f).toPx() }
         val positionProvider = remember(gapPx) {
             object : PopupPositionProvider {
                 override fun calculatePosition(
@@ -742,20 +746,9 @@ private fun WeekPill(
             }
         }
 
-        // M3 DropdownMenu 同款开关动画：scale 0.8→1（Motion.PopupScaleMillis）、
-        // alpha 0→1（Motion.PopupFadeMillis），以顶部中心（≈胶囊所在）为缩放锚点；
-        // 收起反向播放，播完才移除 Popup
-        if (expandedState.currentState || expandedState.targetState) {
-            val transition = rememberTransition(expandedState, label = "WeekPicker")
-            val scale by transition.animateFloat(
-                transitionSpec = { tween(Motion.PopupScaleMillis, easing = Motion.Standard) },
-                label = "scale",
-            ) { expanded -> if (expanded) 1f else 0.8f }
-            val alpha by transition.animateFloat(
-                transitionSpec = { tween(Motion.PopupFadeMillis, easing = Motion.Standard) },
-                label = "alpha",
-            ) { expanded -> if (expanded) 1f else 0f }
-
+        // 开关动画与菜单族同款（rememberPopupMotion）：果冻曲线 + 只淡内容行 + 尾淡兜底，
+        // 以顶部中心（≈胶囊所在）为缩放锚点；收起播完才移除 Popup
+        if (motion.shown) {
             Popup(
                 onDismissRequest = { closeMenu() },
                 popupPositionProvider = positionProvider,
@@ -768,13 +761,28 @@ private fun WeekPill(
                     weekRange = weekRange,
                     hazeState = hazeState,
                     cellSize = weekCellSize,
-                    // 排在外壳 padding/裁剪/投影/毛玻璃之外：整卡一起缩放淡入
-                    modifier = Modifier.graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        this.alpha = alpha
-                        transformOrigin = TransformOrigin(0.5f, 0f)
+                    blurOrigin = { size ->
+                        TransformOrigin(0.5f, -pillCenterOffsetPx / size.height.coerceAtLeast(1f))
                     },
+                    blurScale = motion::blurScale,
+                    contentAlpha = { motion.contentAlpha.value },
+                    blurProgress = motion::blurProgress,
+                    // 排在外壳 padding/裁剪/投影/毛玻璃之外：整卡一起缩放（含退场尾淡），
+                    // 缩放锚点 = 周数胶囊中心（在卡片上方、窗口外 → 负分数锚点），
+                    // 卡片从胶囊中心向下「长」出来
+                    modifier = Modifier.popupMotionScale(
+                        motion,
+                        origin = { size ->
+                            if (size.height > 0f) {
+                                TransformOrigin(
+                                    pivotFractionX = 0.5f,
+                                    pivotFractionY = (shadowPaddingPx - pillCenterOffsetPx) / size.height,
+                                )
+                            } else {
+                                null
+                            }
+                        },
+                    ),
                     onWeekSelected = {
                         onWeekSelected(it)
                         closeMenu()
@@ -818,7 +826,9 @@ private fun WeekPickerCard(
 }
 
 /**
- * 弹窗卡片外壳：四周 [CardShadowPadding] 透明留白容纳投影，避免被 Popup 窗口边界裁剪。
+ * 弹窗卡片外壳：[PopupGlassCard] 共享配方（投影 / 毛玻璃 / 分层动画契约都在那里，
+ * 参数为 SettingsCardShape、45dp 投影、20% 黑影）+ 周数网格内容；四周
+ * [CardShadowPadding] 透明留白容纳投影，避免被 Popup 窗口边界裁剪。
  * [hazeState] 非空时在白底之上叠加 Haze 毛玻璃（采样课表网格 hazeSource，跨窗口生效）。
  */
 @Composable
@@ -828,36 +838,33 @@ private fun WeekPickerCardShell(
     weekRange: IntRange,
     hazeState: HazeState?,
     cellSize: Dp,
+    blurOrigin: (Size) -> TransformOrigin,
+    blurScale: () -> Float,
+    contentAlpha: () -> Float,
+    blurProgress: () -> Float,
     onWeekSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier
-            .padding(
-                start = CardShadowPadding,
-                top = CardShadowPadding,
-                end = CardShadowPadding,
-                bottom = CardShadowBottomPadding,
-            )
-            .graphicsLayer { //阴影和窗口圆角效果
-                shape = SettingsCardShape
-                clip = true
-                shadowElevation = 45.dp.toPx()
-                spotShadowColor = Color.Black.copy(alpha = 0.2f)
-            }
-            .background(MaterialTheme.colorScheme.surface)
-            .then(
-                if (hazeState != null) {
-                    // 白卡毛玻璃：12dp + 60% tint（跨 Popup 窗口采样课表网格 hazeSource）
-                    Modifier.hazeBlur(
-                        input = hazeSources(hazeState),
-                        style = hazeCardStyle(),
-                        performanceMode = HazePerformanceMode.Quality,
-                    )
-                } else {
-                    Modifier
-                },
-            ),
+    PopupGlassCard(
+        shape = SettingsCardShape,
+        shadowElevation = 45.dp,
+        spotShadowColor = Color.Black.copy(alpha = 0.2f),
+        hazeState = hazeState,
+        // 投影留白垫在缩放图层之内、卡壳之外（裁切线 = Popup 窗口边缘）：左右上 16dp、
+        // 底部 48dp——45dp 柔影向下坠得最远，没有这层留白投影会整体画在窗口外被裁掉，
+        // 卡片落位也会偏高 16dp（gapPx 按「窗口含留白」反推）
+        modifier = modifier.padding(
+            start = CardShadowPadding,
+            top = CardShadowPadding,
+            end = CardShadowPadding,
+            bottom = CardShadowBottomPadding,
+        ),
+        blurOrigin = blurOrigin,
+        blurScale = blurScale,
+        contentAlpha = contentAlpha,
+        blurProgress = blurProgress,
+        // 周数网格按内容自适应宽度，不吃外壳最小约束（与原壳行为一致）
+        propagateMinConstraints = false,
     ) {
         WeekPickerCard(
             selectedWeek = selectedWeek,

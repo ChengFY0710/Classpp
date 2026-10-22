@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.annotation.DrawableRes
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -21,17 +20,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.PopupGlassCard
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.MenuShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
-import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.blur.hazeBlur
 
 /** 勾选图标边长；未勾选行保留同宽空槽，勾选/未勾选的文字左缘对齐（设计稿） */
 private val CheckIconSize = 20.dp
@@ -76,33 +73,22 @@ data class PopupMenuSection(
 
 /**
  * 弹出选择菜单卡（设计稿：白圆角卡 + 左侧勾选行 + 按压反馈 + 组间可选分割线）。
- * [MenuShape] 卡壳 + [PopupMenuContent] 内容；自带容器的宿主（如 DropdownMenu）
- * 直接用 [PopupMenuContent] 铺内容，避免双层卡片。
+ * [MenuShape] 卡壳（[PopupGlassCard] 共享配方：投影 / 毛玻璃 / 分层动画契约都在那里）
+ * + [PopupMenuContent] 内容；自带容器的宿主（如 DropdownMenu）直接用 [PopupMenuContent]
+ * 铺内容，避免双层卡片。
  *
  * 宽度：默认收窄到最宽行；要固定/铺满宽度给 [modifier] 加 width/widthIn/fillMaxWidth，
  * 行是 fillMaxWidth 会跟着撑开。
  *
- * 阴影走 graphicsLayer（WeekPill 同款）：形状必须与 [MenuShape] 一致——
- * CircleShape 是「短边一半」圆角，宽卡上会变成胶囊轮廓并裁掉四角内容。
- * [blurProgress] ∈ [0,1] 缩放投影强度，默认恒 1f（完整阴影）；lambda 延迟读取
- * （draw 阶段取值、动画全程零重组，ScheduleHeader 玻璃层同款），宿主想跟弹出动画
- * 联动时传投影进度，如 `{ (scale - Motion.PopupEnterStartScale) / (1f - Motion.PopupEnterStartScale) }`。
+ * 与弹出动画的联动（均 lambda 延迟读取，draw 阶段取值、零重组，宿主经
+ * [com.fangyi.classpp.ui.motion.rememberPopupMotion] 取值）：
+ * [blurProgress] ∈ [0,1] 缩放投影强度（默认恒 1f 完整阴影）；[contentAlpha] 只淡内容行，
+ * 卡壳不淡入、模糊首帧即最终强度；[blurScale] 供毛玻璃子层反向缩放、动画全程与真实
+ * 背景 1:1 对位；[menuGrowth] 是生长锚点（反向缩放绕同一点，两层相乘为恒等）。
  *
- * 材质：默认不透明白卡；[hazeState] 非空时白底之上叠 Haze 毛玻璃（WeekPickerCardShell
- * 同款配方，跨 Popup 窗口采样宿主页面的 hazeSource）——hazeBlur 须画在背景之上、
- * 内容之下，故壳用 Box + background 而非 Surface（其 modifier 链插不进这一层）；
- * 圆角由投影层 clip 统一裁剪。Haze 2 的 HazeBlurStyle 在组合期构建（tint 由
- * [hazeCardStyle] 内部读主题）。
- *
- * 分层契约（弹出动画的前提）：卡壳（白底 + 毛玻璃 + 投影）对透明度恒为满强度、
- * 永不淡入淡出——整卡半透明会把锐利背景混进毛玻璃，模糊在动画期间看起来
- * 「由弱变强」（6f7cae7 存档的已知问题）。弹出动画只淡 [contentAlpha]（内容行）
- * 与 [blurProgress]（投影），均在 draw 阶段读值、零重组。
- *
- * 模糊对位：毛玻璃是独立子层，并按 [blurScale] 绕 [menuGrowth] 生长角**反向缩放**——
- * 外层生长缩放会把按最终位置画好的采样内容一起变换，动画中除生长角外处处与真实
- * 背景错位；反向缩放后两层相乘为恒等，毛玻璃全程 1:1 钉在真实背景上（模糊半径也
- * 不被放大），卡形状/白底/投影/内容照常随缩放生长。超出卡面的部分由壳 clip 兜住。
+ * 材质：默认不透明白卡；[hazeState] 非空时白底之上叠 Haze 毛玻璃（跨 Popup 窗口采样
+ * 宿主页面的 hazeSource，样式 16dp + 70% tint，为菜单卡单独调过的值）；null（如
+ * @Preview）退化为不透明白卡。
  */
 @Composable
 fun PopupMenuCard(
@@ -114,51 +100,24 @@ fun PopupMenuCard(
     blurScale: () -> Float = { 1f },
     menuGrowth: MenuGrowth = MenuGrowth.TopLeft,
 ) {
-    Box(
-        // propagateMinConstraints：卡被外部 modifier 撑宽（如固定 200dp）时，内容 Column
-        // 至少跟着撑满——否则 Column 仍收在 IntrinsicSize 宽度，右侧卡面成为点按断区
-        //（Surface 内部同款行为，换壳时不能丢）
-        propagateMinConstraints = true,
-        modifier = modifier
-            .graphicsLayer {
-                shape = MenuShape
-                clip = true
-                shadowElevation = 36.dp.toPx() * blurProgress()
-                spotShadowColor = Color.Black.copy(alpha = 0.15f)
-            }
-            .background(MaterialTheme.colorScheme.surface),
+    PopupGlassCard(
+        shape = MenuShape,
+        // 36dp 柔影 + 15% 黑：光源在上投影向下坠得最远
+        shadowElevation = 36.dp,
+        spotShadowColor = Color.Black.copy(alpha = 0.15f),
+        hazeState = hazeState,
+        modifier = modifier,
+        // 生长锚点 → 卡面坐标的反向缩放锚点（本层无投影留白，四角分数即 0/1、TopCenter 为 0.5）
+        blurOrigin = { size ->
+            menuGrowthOrigin(menuGrowth, size, 0f, 0f, 0f, 0f) ?: TransformOrigin(0f, 0f)
+        },
+        // 菜单卡单独调过的毛玻璃（默认配方 12dp + 60%，见 hazeCardStyle）
+        blurStyle = hazeCardStyle(radius = 16.dp, tintAlpha = 0.7f),
+        blurScale = blurScale,
+        contentAlpha = contentAlpha,
+        blurProgress = blurProgress,
     ) {
-        if (hazeState != null) {
-            // 白卡毛玻璃：12dp + 60% tint（跨 Popup 窗口采样宿主页面 hazeSource）。
-            // 独立子层 + 反向缩放（理由见上方 KDoc）：锚点取与外层缩放同一个卡片
-            // 边缘生长角（本层即卡面尺寸，角分数恒为 0/1），两层相乘才是恒等变换。
-            // 生长缩放与落定后果冻脉动都会短暂偏离 1，反向缩放对任意 s 成立，故恒生效
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .graphicsLayer {
-                        val s = blurScale().coerceAtLeast(0.1f)
-                        scaleX = 1f / s
-                        scaleY = 1f / s
-                        transformOrigin = when (menuGrowth) {
-                            MenuGrowth.TopLeft -> TransformOrigin(0f, 0f)
-                            MenuGrowth.TopRight -> TransformOrigin(1f, 0f)
-                            MenuGrowth.BottomLeft -> TransformOrigin(0f, 1f)
-                            MenuGrowth.BottomRight -> TransformOrigin(1f, 1f)
-                        }
-                    }
-                    .hazeBlur(
-                        input = hazeSources(hazeState),
-                        style = hazeCardStyle(radius = 16.dp, tintAlpha = 0.7f),
-                        performanceMode = HazePerformanceMode.Quality,
-                    ),
-            )
-        }
-        PopupMenuContent(
-            sections = sections,
-            // 只淡内容行：白底 + 毛玻璃壳恒为满 alpha，模糊首帧即最终强度
-            modifier = Modifier.graphicsLayer { alpha = contentAlpha() },
-        )
+        PopupMenuContent(sections = sections)
     }
 }
 
