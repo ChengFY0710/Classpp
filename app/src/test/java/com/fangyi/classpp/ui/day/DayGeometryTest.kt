@@ -38,7 +38,8 @@ class DayGeometryTest {
 
         assertEquals(0f, frame.dateTranslationY, 0.01f)
         assertEquals(1f, frame.topScrimAlpha, 0.01f)
-        assertEquals(0f, frame.topBarAlpha, 0.01f)
+        assertEquals(0f, frame.topBarContentAlpha, 0.01f)
+        assertEquals(0f, frame.topBarBackgroundAlpha, 0.01f)
         assertEquals(0.30f, frame.bandTintAlpha, 0.01f)
     }
 
@@ -99,7 +100,8 @@ class DayGeometryTest {
         assertEquals(-485f, frame.dateTranslationY, 0.5f)
         assertEquals(1f, frame.dateScale, 0.01f)
         assertEquals(0f, frame.topScrimAlpha, 0.01f)
-        assertEquals(0f, frame.topBarAlpha, 0.01f)
+        assertEquals(0f, frame.topBarContentAlpha, 0.01f)
+        assertEquals(0f, frame.topBarBackgroundAlpha, 0.01f)
     }
 
     @Test
@@ -122,7 +124,8 @@ class DayGeometryTest {
         assertTrue(frame.image.bottom <= frame.content.bottom)
         assertEquals(0f, frame.bandHeight, 0.01f)
 
-        assertTrue(frame.topBarAlpha >= 1f)
+        assertTrue(frame.topBarContentAlpha >= 1f)
+        assertTrue(frame.topBarBackgroundAlpha >= 1f)
         assertEquals(0f, frame.topBarTranslationY, 0.01f)
 
         // 日期组缩到最终卡宽比例、按卡内左边距右移；底边跟着缩小的图片卡底边
@@ -185,7 +188,33 @@ class DayGeometryTest {
 
         // 白卡顶边已越过卡片中点 → 模糊带归零，03 没有残留模糊带
         assertEquals(0f, frame.bandHeight, 0.01f)
-        assertEquals(1f, frame.topBarAlpha, 0.01f)
+        // 顶栏内容已基本就位；背景按新节奏接近 04 才出现，03 处还没有。
+        assertTrue(frame.topBarContentAlpha > 0.95f)
+        assertEquals(0f, frame.topBarBackgroundAlpha, 0.01f)
+    }
+
+    @Test
+    fun topBarContentLeadsBackground() {
+        val early = DayGeometry.frame(metrics, open = 1f, collapse = 0.4f)
+        val backgroundGone = DayGeometry.frame(metrics, open = 1f, collapse = 0.65f)
+        val late = DayGeometry.frame(metrics, open = 1f, collapse = 0.85f)
+        val schedule = DayGeometry.frame(metrics, open = 1f, collapse = 1f)
+
+        // 02→04：内容先淡入并下移，背景此时仍全透明。
+        assertTrue(early.topBarContentAlpha > 0.5f)
+        assertTrue(early.topBarTranslationY < 0f)
+        assertEquals(0f, early.topBarBackgroundAlpha, 0.01f)
+
+        // 04→02 反向：背景先消失，内容此时仍完全可见、尚未上移。
+        assertEquals(1f, backgroundGone.topBarContentAlpha, 0.01f)
+        assertEquals(0f, backgroundGone.topBarBackgroundAlpha, 0.01f)
+        assertEquals(0f, backgroundGone.topBarTranslationY, 0.01f)
+
+        // 接近 04：内容已就位，背景正在渐入。
+        assertEquals(1f, late.topBarContentAlpha, 0.01f)
+        assertTrue(late.topBarBackgroundAlpha > 0f)
+        assertTrue(late.topBarBackgroundAlpha < 1f)
+        assertEquals(1f, schedule.topBarBackgroundAlpha, 0.01f)
     }
 
     @Test

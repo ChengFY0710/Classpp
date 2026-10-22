@@ -82,8 +82,11 @@ internal val DayTopScrimExitOffset = 40.dp
 /** 01 提示文案退出时上移的距离。 */
 internal val DayHintExitOffset = 24.dp
 
-/** 顶栏完全可见的 collapse 进度（设计稿 03 处已全亮）。 */
-internal const val DayTopBarFadeEnd = 0.45f
+/** 02→04 顶栏内容（标题）淡入并下移完成的 collapse 进度。 */
+internal const val DayTopBarContentFadeEnd = 0.6f
+
+/** 02→04 顶栏背景（渐变模糊）开始淡入的 collapse 进度；接近 04 才出现。 */
+internal const val DayTopBarBackgroundFadeStart = 0.7f
 
 /**
  * 图片卡（含下段模糊带）开始渐隐的 collapse 进度：此前保持不透明，
@@ -167,9 +170,11 @@ internal data class DayFrame(
     val dateScale: Float,
     /** 01 顶部磨砂/提示的透明度（1→0）。 */
     val topScrimAlpha: Float,
-    /** 顶栏透明度/位移进度（03 处已为 1）。 */
-    val topBarAlpha: Float,
-    /** 顶栏进场下移量（负值，随 alpha 归零）。 */
+    /** 顶栏内容（标题）透明度：先于背景淡入，04→02 最后淡出。 */
+    val topBarContentAlpha: Float,
+    /** 顶栏背景（渐变模糊）透明度：接近 04 才淡入，04→02 先淡出。 */
+    val topBarBackgroundAlpha: Float,
+    /** 顶栏内容进场下移量（负值，随内容 alpha 归零）；背景不参与位移。 */
     val topBarTranslationY: Float,
     /** 01 底部 scrim 的黑色 tint 浓度（02 起为 0，交给纯模糊）。 */
     val bandTintAlpha: Float,
@@ -286,7 +291,10 @@ internal object DayGeometry {
             openDateDelta + (targetBottom - compactDateBottom)
         }
 
-        val topBarAlpha = smoothstep(0f, DayTopBarFadeEnd, c)
+        // 顶栏内容先淡入/下移；背景接近 04 才独立淡入，且不参与位移。
+        // 04→02 反过来：背景先淡出，内容再淡出上移。
+        val topBarContentAlpha = smoothstep(0f, DayTopBarContentFadeEnd, c)
+        val topBarBackgroundAlpha = smoothstep(DayTopBarBackgroundFadeStart, 1f, c)
         // 02→04 的台历淡出：图片卡后段渐隐，日期组更早被白卡盖住、从 02 起就淡出。
         // 04 两者都归零，白卡被 Overscroll 拖上去时不会露出图片卡/日期组残影。
         val imageAlpha = 1f - smoothstep(DayImageFadeStart, 1f, c)
@@ -304,8 +312,10 @@ internal object DayGeometry {
             dateTranslationY = dateTranslationY,
             dateScale = dateScale,
             topScrimAlpha = 1f - o,
-            topBarAlpha = topBarAlpha,
-            topBarTranslationY = -(1f - topBarAlpha) * DayTopBarEntryOffset.value,
+            topBarContentAlpha = topBarContentAlpha,
+            topBarBackgroundAlpha = topBarBackgroundAlpha,
+            topBarTranslationY =
+                -(1f - topBarContentAlpha) * DayTopBarEntryOffset.value,
             bandTintAlpha = 0.30f * (1f - o),
             imageAlpha = imageAlpha,
             dateAlpha = dateAlpha,

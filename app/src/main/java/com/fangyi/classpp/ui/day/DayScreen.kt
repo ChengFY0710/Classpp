@@ -920,8 +920,19 @@ fun DayScreen(
             DayTopBar(
                 title = topBarTitle,
                 height = statusBarDp.dp + DayTopBarRowHeight + DayTopBarGap,
-                alpha = {
-                    DayGeometry.frame(metrics, transition.open, transition.collapse).topBarAlpha
+                contentAlpha = {
+                    DayGeometry.frame(
+                        metrics,
+                        transition.open,
+                        transition.collapse,
+                    ).topBarContentAlpha
+                },
+                backgroundAlpha = {
+                    DayGeometry.frame(
+                        metrics,
+                        transition.open,
+                        transition.collapse,
+                    ).topBarBackgroundAlpha
                 },
                 translationYDp = {
                     DayGeometry.frame(
@@ -1000,15 +1011,18 @@ private fun DayBackgroundImage(
 /**
  * 日程页顶栏：整条渐变模糊 + 单行日期标题。
  *
- * [alpha]/[translationYDp] 在 graphicsLayer 的绘制阶段读取转场进度，跟手进出场不触发
- * 重组；Haze 采样内容卡（[hazeState]），与待办顶栏同一配方。标题左侧 33dp、23sp
- * SemiBold / onSurface / -0.3sp，与 ScheduleHeader 的日期行一致。
+ * 背景与内容拆成两层：背景（页面底色 + Haze）固定在顶栏位置，只随
+ * [backgroundAlpha] 淡入淡出；内容层独立使用 [contentAlpha] 与 [translationYDp]，
+ * 02→04 先淡入下移，04→02 后淡出上移。所有进度在 graphicsLayer 的绘制阶段读取，
+ * 跟手进出场不触发重组；Haze 采样内容卡（[hazeState]），与待办顶栏同一配方。
+ * 标题左侧 33dp、23sp SemiBold / onSurface / -0.3sp，与 ScheduleHeader 的日期行一致。
  */
 @Composable
 private fun DayTopBar(
     title: String,
     height: Dp,
-    alpha: () -> Float,
+    contentAlpha: () -> Float,
+    backgroundAlpha: () -> Float,
     translationYDp: () -> Float,
     hazeState: HazeState,
     modifier: Modifier = Modifier,
@@ -1016,21 +1030,28 @@ private fun DayTopBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(height)
-            .graphicsLayer {
-                this.alpha = alpha()
-                translationY = translationYDp() * density
-            }
-            .background(MaterialTheme.colorScheme.background)
-            .hazeBlur(
-                input = hazeSources(hazeState),
-                style = hazeTopBarStyle(),
-                performanceMode = HazePerformanceMode.Balanced,
-            ),
+            .height(height),
     ) {
+        // 背景层固定在顶栏位置，只做透明度：晚于内容出现、早于内容消失，不参与位移。
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = backgroundAlpha() }
+                .background(MaterialTheme.colorScheme.background)
+                .hazeBlur(
+                    input = hazeSources(hazeState),
+                    style = hazeTopBarStyle(),
+                    performanceMode = HazePerformanceMode.Balanced,
+                ),
+        )
+        // 内容层：淡入/淡出 + 上下位移；04 停在原位，02 方向缩回上方。
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer {
+                    alpha = contentAlpha()
+                    translationY = translationYDp() * density
+                }
                 .windowInsetsPadding(WindowInsets.statusBars),
         ) {
             Row(
