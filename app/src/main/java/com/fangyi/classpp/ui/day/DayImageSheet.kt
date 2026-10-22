@@ -102,8 +102,10 @@ fun DayImageSheet(
     val scope = rememberCoroutineScope()
     BackHandler(enabled = visible, onBack = onDismiss)
 
-    // 长按菜单目标：文件名 + 该图当时的窗口坐标（菜单锚点）。删除 / 点外部 / 返回即清
+    // 长按菜单目标：文件名 + 该图当时的窗口坐标（菜单锚点）。收起只翻 menuVisible，
+    // 锚点保留到退场播完（onExitFinished 清）——退场 150ms 里菜单内容稳定、动作仍可命中
     var menuTarget by remember { mutableStateOf<MenuTarget?>(null) }
+    var menuVisible by remember { mutableStateOf(false) }
     // 长按菜单的毛玻璃——浮层滚动列是采样源，顶栏磨砂与菜单的背景模糊同源（同 TodoGroupsSheet
     // 的 sheetHazeState 接法：OverlaySheet 收到共享实例即复用，不再自建）
     val sheetHazeState = rememberHazeState()
@@ -152,7 +154,10 @@ fun DayImageSheet(
             DayImageGrid(
                 images = images,
                 onSelect = onSelect,
-                onLongClick = { name, anchor -> menuTarget = MenuTarget(name, anchor) },
+                onLongClick = { name, anchor ->
+                    menuTarget = MenuTarget(name, anchor)
+                    menuVisible = true
+                },
             )
         }
     }
@@ -160,12 +165,15 @@ fun DayImageSheet(
     menuTarget?.let { target ->
         ImageMenuPopup(
             anchor = target.anchor,
-            onDismiss = { menuTarget = null },
+            expanded = menuVisible,
+            onDismiss = { menuVisible = false },
             onDelete = {
-                menuTarget = null
+                menuVisible = false
                 onDelete(target.name)
             },
             hazeState = sheetHazeState,
+            // 锚点保留到退场播完，同 ScheduleScreen 的 menuAnchor
+            onExitFinished = { menuTarget = null },
         )
     }
 }
@@ -239,16 +247,20 @@ private val MenuLeftInset = 8.dp
  *
  * 定位只认长按那张图的窗口坐标 [anchor]（菜单贴它的左下角长出，投影留白与越界钳制由
  * 宿主处理），生长角按锚点所在半屏现算（[menuGrowthForAnchor]）。
- * animateExit = false——收起不播退场动画：删除动作与图片移除在同一帧发生，视觉上接得住。
+ * 生命周期走「锚点 + 可见性」两态（同 ScheduleScreen）：宿主收起只翻 [expanded]，锚点
+ * 保留到退场播完（[onExitFinished] 后再清）——删除动作照旧与收起同帧执行，视觉移除
+ * 交给退场动画；退场 150ms 里菜单内容稳定、行点击动作仍可命中。
  * [hazeState] 传浮层的共享采样源（滚动列）：菜单卡对背后的网格内容做毛玻璃
  * （跨 Popup 窗口采样，同周数弹窗/排序菜单材质）；null 退化为不透明白卡（@Preview 用）。
  */
 @Composable
 private fun ImageMenuPopup(
     anchor: Rect,
+    expanded: Boolean,
     onDismiss: () -> Unit,
     onDelete: () -> Unit,
     hazeState: HazeState?,
+    onExitFinished: () -> Unit = {},
 ) {
     val density = LocalDensity.current
     val overlapPx = with(density) { MenuOverlap.roundToPx() }
@@ -256,8 +268,7 @@ private fun ImageMenuPopup(
     val windowWidthPx = LocalWindowInfo.current.containerSize.width.takeIf { it > 0 }
         ?: LocalView.current.width
     PopupMenuPopup(
-        // 挂载即展开（进场动画照播）；收起由挂载方卸载，无退场
-        expanded = true,
+        expanded = expanded,
         onDismiss = onDismiss,
         sections = listOf(
             PopupMenuSection(
@@ -277,8 +288,8 @@ private fun ImageMenuPopup(
             )
         },
         menuGrowth = menuGrowthForAnchor(anchor.center.x, windowWidthPx),
-        animateExit = false,
         hazeState = hazeState,
+        onExitFinished = onExitFinished,
     )
 }
 

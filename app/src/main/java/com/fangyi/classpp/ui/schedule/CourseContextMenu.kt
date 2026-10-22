@@ -26,22 +26,32 @@ private val MenuLeftInset = 8.dp
  * 长按课程卡弹出的上下文菜单：「复制课程」（可选）+「新建交替课程」。
  *
  * [onCopy] 传 null 时不显示复制项——跨节课程暂不支持复制（见 ScheduleScreen 的菜单挂载点）。
+ * [expanded] / [onExitFinished] 供宿主拆「锚点 + 可见性」两态（见 [ContextMenuPopup]）。
  * [hazeState] 下发给 [PopupMenuPopup] 做毛玻璃（采样课表网格 hazeSource，与周数弹窗同材质），
  * null（如 @Preview）退化为不透明白卡。
  */
 @Composable
 internal fun CourseContextMenu(
     anchor: Rect,
+    expanded: Boolean,
     onDismiss: () -> Unit,
     onCopy: (() -> Unit)?,
     onNewAlternate: () -> Unit,
     hazeState: HazeState? = null,
+    onExitFinished: () -> Unit = {},
 ) {
     val items = buildList {
         if (onCopy != null) add(PopupMenuItem(stringResource(R.string.edit_copy_course), onClick = onCopy))
         add(PopupMenuItem(stringResource(R.string.edit_new_alternate), onClick = onNewAlternate))
     }
-    ContextMenuPopup(anchor = anchor, onDismiss = onDismiss, items = items, hazeState = hazeState)
+    ContextMenuPopup(
+        anchor = anchor,
+        expanded = expanded,
+        onDismiss = onDismiss,
+        items = items,
+        hazeState = hazeState,
+        onExitFinished = onExitFinished,
+    )
 }
 
 /**
@@ -51,28 +61,32 @@ internal fun CourseContextMenu(
 @Composable
 internal fun SlotContextMenu(
     anchor: Rect,
+    expanded: Boolean,
     onDismiss: () -> Unit,
     onPaste: () -> Unit,
     hazeState: HazeState? = null,
+    onExitFinished: () -> Unit = {},
 ) {
     ContextMenuPopup(
         anchor = anchor,
+        expanded = expanded,
         onDismiss = onDismiss,
         items = listOf(PopupMenuItem(stringResource(R.string.edit_paste_course), onClick = onPaste)),
         hazeState = hazeState,
+        onExitFinished = onExitFinished,
     )
 }
 
 /**
  * 上下文菜单的共享弹层（设计稿二的白色圆角卡）：[PopupMenuPopup] 共享宿主
- * （[PopupMenuCard] 白卡 + 36dp 柔影 + scale/alpha 进出场）。
+ * （[PopupMenuCard] 白卡 + 36dp 柔影 + scale/内容淡入进出场）。
  *
  * 定位沿用 [ScheduleHeader] 周数弹窗那套：自定义锚定由宿主的 cardPosition 回调表达
  * （DropdownMenu 的锚定策略做不到贴卡片），[anchor] 是长按那张卡/那格的窗口坐标
  * （见 CourseGrid 的 BoundsHolder），菜单贴在它的左下角，投影留白与越界钳制由宿主处理。
- * 挂载即展开（宿主经 menuAnchor?.let 控制生命周期），[PopupMenuPopup] 的
- * animateExit = false——收起不做退场动画：动作（复制/开面板）与移除在同一帧发生，
- * 面板随即从底部升起来，视觉上接得住；也避免"动画没播完就点"时动作被吞掉。
+ * 生命周期走「锚点 + 可见性」两态：宿主收起只翻 [expanded]，锚点保留到退场播完
+ * （[onExitFinished] 后再清）——退场 150ms 里菜单内容稳定、行点击动作仍可命中
+ * （动作照旧与收起同帧执行，视觉移除交给退场动画，规避原「动画没播完就点动作被吞」问题）。
  *
  * 行样式与其它菜单统一（PopupMenuCard 默认行）：onSurface 深色 + 左侧 20dp 勾选槽，
  * 整份菜单为单组无缝形态（不画项间分割线）。
@@ -84,9 +98,11 @@ internal fun SlotContextMenu(
 @Composable
 private fun ContextMenuPopup(
     anchor: Rect,
+    expanded: Boolean,
     onDismiss: () -> Unit,
     items: List<PopupMenuItem>,
     hazeState: HazeState?,
+    onExitFinished: () -> Unit,
 ) {
     val density = LocalDensity.current
     val overlapPx = with(density) { MenuOverlap.roundToPx() }
@@ -94,8 +110,7 @@ private fun ContextMenuPopup(
     val windowWidthPx = LocalWindowInfo.current.containerSize.width.takeIf { it > 0 }
         ?: LocalView.current.width
     PopupMenuPopup(
-        // 挂载即展开（进场动画照播）；收起由挂载方卸载，无退场
-        expanded = true,
+        expanded = expanded,
         onDismiss = onDismiss,
         sections = listOf(PopupMenuSection(items = items)),
         hazeState = hazeState,
@@ -109,6 +124,6 @@ private fun ContextMenuPopup(
             )
         },
         menuGrowth = menuGrowthForAnchor(anchor.center.x, windowWidthPx),
-        animateExit = false,
+        onExitFinished = onExitFinished,
     )
 }

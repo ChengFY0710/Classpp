@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -83,21 +84,35 @@ data class PopupMenuSection(
  *
  * 阴影走 graphicsLayer（WeekPill 同款）：形状必须与 [MenuShape] 一致——
  * CircleShape 是「短边一半」圆角，宽卡上会变成胶囊轮廓并裁掉四角内容。
- * [blurProgress] ∈ [0,1] 缩放投影强度，默认 1f（完整阴影）；
- * 宿主想跟弹出动画联动时可传入过渡进度。
+ * [blurProgress] ∈ [0,1] 缩放投影强度，默认恒 1f（完整阴影）；lambda 延迟读取
+ * （draw 阶段取值、动画全程零重组，ScheduleHeader 玻璃层同款），宿主想跟弹出动画
+ * 联动时传投影进度，如 `{ (scale - Motion.PopupEnterStartScale) / (1f - Motion.PopupEnterStartScale) }`。
  *
  * 材质：默认不透明白卡；[hazeState] 非空时白底之上叠 Haze 毛玻璃（WeekPickerCardShell
  * 同款配方，跨 Popup 窗口采样宿主页面的 hazeSource）——hazeBlur 须画在背景之上、
  * 内容之下，故壳用 Box + background 而非 Surface（其 modifier 链插不进这一层）；
  * 圆角由投影层 clip 统一裁剪。Haze 2 的 HazeBlurStyle 在组合期构建（tint 由
  * [hazeCardStyle] 内部读主题）。
+ *
+ * 分层契约（弹出动画的前提）：卡壳（白底 + 毛玻璃 + 投影）对透明度恒为满强度、
+ * 永不淡入淡出——整卡半透明会把锐利背景混进毛玻璃，模糊在动画期间看起来
+ * 「由弱变强」（6f7cae7 存档的已知问题）。弹出动画只淡 [contentAlpha]（内容行）
+ * 与 [blurProgress]（投影），均在 draw 阶段读值、零重组。
+ *
+ * 模糊对位：毛玻璃是独立子层，并按 [blurScale] 绕 [menuGrowth] 生长角**反向缩放**——
+ * 外层生长缩放会把按最终位置画好的采样内容一起变换，动画中除生长角外处处与真实
+ * 背景错位；反向缩放后两层相乘为恒等，毛玻璃全程 1:1 钉在真实背景上（模糊半径也
+ * 不被放大），卡形状/白底/投影/内容照常随缩放生长。超出卡面的部分由壳 clip 兜住。
  */
 @Composable
 fun PopupMenuCard(
     sections: List<PopupMenuSection>,
     modifier: Modifier = Modifier,
-    blurProgress: Float = 1f,
+    blurProgress: () -> Float = { 1f },
     hazeState: HazeState? = null,
+    contentAlpha: () -> Float = { 1f },
+    blurScale: () -> Float = { 1f },
+    menuGrowth: MenuGrowth = MenuGrowth.TopLeft,
 ) {
     Box(
         // propagateMinConstraints：卡被外部 modifier 撑宽（如固定 200dp）时，内容 Column
@@ -108,24 +123,42 @@ fun PopupMenuCard(
             .graphicsLayer {
                 shape = MenuShape
                 clip = true
-                shadowElevation = 36.dp.toPx() * blurProgress
+                shadowElevation = 36.dp.toPx() * blurProgress()
                 spotShadowColor = Color.Black.copy(alpha = 0.15f)
             }
-            .background(MaterialTheme.colorScheme.surface)
-            .then(
-                if (hazeState != null) {
-                    // 白卡毛玻璃：12dp + 60% tint（跨 Popup 窗口采样宿主页面 hazeSource）
-                    Modifier.hazeBlur(
+            .background(MaterialTheme.colorScheme.surface),
+    ) {
+        if (hazeState != null) {
+            // 白卡毛玻璃：12dp + 60% tint（跨 Popup 窗口采样宿主页面 hazeSource）。
+            // 独立子层 + 反向缩放（理由见上方 KDoc）：锚点取与外层缩放同一个卡片
+            // 边缘生长角（本层即卡面尺寸，角分数恒为 0/1），两层相乘才是恒等变换。
+            // 生长缩放与落定后果冻脉动都会短暂偏离 1，反向缩放对任意 s 成立，故恒生效
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        val s = blurScale().coerceAtLeast(0.1f)
+                        scaleX = 1f / s
+                        scaleY = 1f / s
+                        transformOrigin = when (menuGrowth) {
+                            MenuGrowth.TopLeft -> TransformOrigin(0f, 0f)
+                            MenuGrowth.TopRight -> TransformOrigin(1f, 0f)
+                            MenuGrowth.BottomLeft -> TransformOrigin(0f, 1f)
+                            MenuGrowth.BottomRight -> TransformOrigin(1f, 1f)
+                        }
+                    }
+                    .hazeBlur(
                         input = hazeSources(hazeState),
                         style = hazeCardStyle(),
                         performanceMode = HazePerformanceMode.Quality,
-                    )
-                } else {
-                    Modifier
-                },
-            ),
-    ) {
-        PopupMenuContent(sections = sections)
+                    ),
+            )
+        }
+        PopupMenuContent(
+            sections = sections,
+            // 只淡内容行：白底 + 毛玻璃壳恒为满 alpha，模糊首帧即最终强度
+            modifier = Modifier.graphicsLayer { alpha = contentAlpha() },
+        )
     }
 }
 

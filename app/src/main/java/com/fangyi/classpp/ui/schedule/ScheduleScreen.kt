@@ -393,6 +393,9 @@ fun ScheduleScreen(
             // 长按菜单：被长按卡的 id + 窗口坐标；空 = 菜单未打开。
             // 刻意不 rememberSaveable——菜单是瞬时 UI，旋转重建就收起（Rect 也不可存）
             var menuAnchor by remember { mutableStateOf<CardMenuAnchor?>(null) }
+            // 菜单可见性，与锚点拆两态：收起只翻它，锚点保留到退场播完（onExitFinished 清）——
+            // 退场 150ms 里菜单内容稳定、行点击动作仍可命中（动作用得上锚点里的 id/坐标）
+            var menuVisible by remember { mutableStateOf(false) }
             // 选择要编辑的交替课程：被点卡片的 id；空 = 弹窗未打开
             var chooserSourceId by rememberSaveable { mutableStateOf("") }
             // 新建交替课程：源课 id（长按菜单进来）；空 = 面板未打开
@@ -405,6 +408,8 @@ fun ScheduleScreen(
             // 空位长按菜单：被长按格 [dayOfWeek, slotId] + 格子窗口坐标；空 = 菜单未打开。
             // 刻意不 rememberSaveable——菜单是瞬时 UI，旋转重建就收起（Rect 也不可存），同 menuAnchor
             var pasteAnchor by remember { mutableStateOf<SlotMenuAnchor?>(null) }
+            // 可见性同 menuVisible：收起只翻它，锚点保留到退场播完
+            var pasteVisible by remember { mutableStateOf(false) }
             // 切换课表浮层：开关、待切换目标（非空 = 脏草稿确认打开）、新建表单浮层开关
             //（叠在切换课表上，两段式挂载见浮层处；新建失败走系统 Toast，无表单内联错误）
             var switcherVisible by rememberSaveable { mutableStateOf(false) }
@@ -491,13 +496,19 @@ fun ScheduleScreen(
             }
             // 长按已有课卡 → 弹「新建交替课程」菜单，锚点用卡片自己的窗口坐标
             val onCourseLongClick: (String, Rect) -> Unit = remember {
-                { courseId, anchor -> menuAnchor = CardMenuAnchor(courseId, anchor) }
+                { courseId, anchor ->
+                    menuAnchor = CardMenuAnchor(courseId, anchor)
+                    menuVisible = true
+                }
             }
             // 长按空位 → 弹「粘贴课程」菜单；剪贴板为空时无响应（没东西可粘贴）。
             // lambda 里读的是 copiedEntry 的 state 本体，弹出与否始终跟随当前剪贴板
             val onSlotLongClick: (Int, TimeSlot, Rect) -> Unit = remember {
                 { day, slot, anchor ->
-                    if (copiedEntry != null) pasteAnchor = SlotMenuAnchor(day, slot.id, anchor)
+                    if (copiedEntry != null) {
+                        pasteAnchor = SlotMenuAnchor(day, slot.id, anchor)
+                        pasteVisible = true
+                    }
                 }
             }
 
@@ -596,6 +607,7 @@ fun ScheduleScreen(
                 chooserSourceId = ""
                 alternateSourceId = ""
                 menuAnchor = null
+                menuVisible = false
                 selectedWeek = WEEK_UNSET
                 scope.launch {
                     // 先关浮层再落盘：id 取自列表故 NotFound 不可达，落盘失败提示后重开浮层即可重试
@@ -1121,19 +1133,22 @@ fun ScheduleScreen(
                 val source = editSession?.courses?.firstOrNull { it.id == anchor.courseId }
                 CourseContextMenu(
                     anchor = anchor.rect,
-                    onDismiss = { menuAnchor = null },
+                    expanded = menuVisible,
+                    onDismiss = { menuVisible = false },
                     onCopy = source?.takeIf { it.span == 1 }?.let { entry ->
                         {
                             copiedEntry = entry
                             AppToasts.show(context, copiedToast)
-                            menuAnchor = null
+                            menuVisible = false
                         }
                     },
                     onNewAlternate = {
                         alternateSourceId = anchor.courseId
-                        menuAnchor = null
+                        menuVisible = false
                     },
                     hazeState = hazeState,
+                    // 锚点保留到退场播完（收起只翻 menuVisible）：退场期间内容稳定、动作仍可命中
+                    onExitFinished = { menuAnchor = null },
                 )
             }
 
@@ -1143,10 +1158,13 @@ fun ScheduleScreen(
             pasteAnchor?.let { anchor ->
                 SlotContextMenu(
                     anchor = anchor.rect,
-                    onDismiss = { pasteAnchor = null },
+                    expanded = pasteVisible,
+                    onDismiss = { pasteVisible = false },
                     hazeState = hazeState,
+                    // 锚点保留到退场播完，同上方 menuAnchor
+                    onExitFinished = { pasteAnchor = null },
                     onPaste = {
-                        pasteAnchor = null
+                        pasteVisible = false
                         val session = editSession
                         val source = copiedEntry
                         if (session != null && source != null) {

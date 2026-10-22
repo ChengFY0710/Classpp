@@ -68,13 +68,29 @@ object Motion {
     const val DialogMillis = 200
 
     /**
-     * 弹出菜单 scale 时长（M3 DropdownMenu 同款：scale 0.8→1），周数弹窗与
-     * 课程长按菜单共用，配合 [Standard]。
+     * 弹出菜单 scale 时长（scale 0.8→1），周数弹窗与标签选择卡共用。
+     * 弹出菜单族（PopupMenuPopup）的进场已改为一条含果冻回弹的 keyframes 一体曲线
+     * （生长 + 回弹无缝衔接，见 PopupEnterJelly），不再单独走这条时长。
      */
     const val PopupScaleMillis = 200
 
-    /** 弹出菜单 alpha 时长（alpha 0→1），与 [PopupScaleMillis] 同帧启动、同曲线。 */
+    /**
+     * 弹出菜单内容层淡入时长（alpha 0→1），与 [PopupScaleMillis] 同帧启动、同曲线。
+     * 淡入只作用于内容行——毛玻璃卡壳（白底 + 模糊 + 柔影）首帧即最终强度、永不淡入：
+     * 整卡半透明会把锐利背景混进毛玻璃，模糊在动画期间看起来「由弱变强」（6f7cae7 存档的
+     * 已知问题，分层方案见 [com.fangyi.classpp.ui.components.PopupMenuCard]）。
+     */
     const val PopupFadeMillis = 120
+
+    /**
+     * 弹出菜单退场时长：scale 1→0.8 与内容淡出共用，同步收尾（进场是 fade 先行、scale 收尾，
+     * 退场若沿用不同时长会出现「alpha 已归零、scale 还在隐形缩小」的空窗）。
+     * 配合 [Accelerate]，比进场短，收起更利落。
+     */
+    const val PopupExitMillis = 120
+
+    /** 弹出菜单进场起始缩放（退场缩回同值）；投影强度按 scale 距该值的进度渐入（PopupMenuPopup）。 */
+    const val PopupEnterStartScale = 0.5f
 
     /**
      * 内容区展开/收起时长（Expandable 高度动画）：与配套的淡入淡出、头部 chevron
