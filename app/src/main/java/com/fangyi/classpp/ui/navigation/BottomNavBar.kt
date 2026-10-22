@@ -84,6 +84,15 @@ internal val GradientOverhang = 40.dp
 val NavReserve = PillBottomOffset + PillHeight
 
 /**
+ * 导航栏装进转场层（MainActivity 的 AnimatedVisibility，滑入滑出带淡入淡出）时的顶部
+ * 余量。转场层 alpha < 1 时 Android 按层自身边界做离屏合成，越界绘制被裁——「新建」
+ * 胶囊按压放大 1.15（Y 轴弹簧过冲 ≈1.16）顶边溢出布局约 4.5dp、胶囊投影上探更多，
+ * 浮层打开导航下移的瞬间就被层边界裁出一条平直切边；层边界不随内容下滑移动，导航越
+ * 下移裁得越多。余量把放大顶溢与上方投影带收进层内，转场全程不再被裁。
+ */
+val NavBarTransitionHeadroom = 20.dp
+
+/**
  * 底部导航：三个胶囊按钮。渐变遮罩不在其中——已下沉为各页面自绘的
  * BottomFadeScrim（ui.components），高度与此处几何常量对齐。
  * 调用方负责对齐（如 Modifier.align(Alignment.BottomCenter)）。

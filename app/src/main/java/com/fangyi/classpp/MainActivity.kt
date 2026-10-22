@@ -20,6 +20,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -46,6 +47,7 @@ import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
 import com.fangyi.classpp.ui.navigation.AppTab
 import com.fangyi.classpp.ui.navigation.BottomNavBar
+import com.fangyi.classpp.ui.navigation.NavBarTransitionHeadroom
 import com.fangyi.classpp.ui.navigation.TabPager
 import com.fangyi.classpp.ui.navigation.rememberTabPagerState
 import com.fangyi.classpp.ui.note.TodoScreen
@@ -351,7 +353,10 @@ class MainActivity : ComponentActivity() {
                                     // 用极大值一劳永逸——切 tab 转场中新页从它下方滑过，它纹丝不动
                                     .zIndex(Float.MAX_VALUE),
                             ) {
+                                // 顶部余量见 NavBarTransitionHeadroom：转场层 alpha 合成按层
+                                // 边界裁剪，按压放大的「新建」胶囊顶边与投影必须留在层内
                                 BottomNavBar(
+                                    modifier = Modifier.padding(top = NavBarTransitionHeadroom),
                                     selectedTab = pagerState.selectedTab,
                                     // 关闭时必须传 null：backdrop 非空即玻璃（全 app 统一判定），
                                     // 采样层对象本身常驻（挂载与否由 useGlass 门控），非空会让
