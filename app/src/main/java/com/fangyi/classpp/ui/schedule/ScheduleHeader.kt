@@ -735,8 +735,10 @@ private fun WeekPill(
         val gapPx = with(density) { (WeekPickerGap - CardShadowPadding).roundToPx() }
         val shadowPaddingPx = with(density) { CardShadowPadding.toPx() }
         val shadowBottomPaddingPx = with(density) { CardShadowBottomPadding.toPx() }
-        // 卡片顶边到胶囊中心的距离：缩放锚点取在胶囊中心（位于弹层窗口外、卡面坐标为负）
-        val pillCenterOffsetPx = with(density) { (WeekPickerGap + WeekPillHeight / 2f).toPx() }
+        // 缩放锚点跟随胶囊实际位置：定位回调存下「弹层落位 + 胶囊实际中心」快照
+        // （胶囊会随头部展开/折叠移动，常量推算的固定锚点会脱靶），锚点在 draw 阶段
+        // 读快照实时跟随——胶囊动到哪，锚点跟到哪
+        val anchorSnapshot = remember { mutableStateOf(PopupAnchorSnapshot.Zero) }
         val positionProvider = remember(gapPx) {
             object : PopupPositionProvider {
                 override fun calculatePosition(
@@ -744,16 +746,23 @@ private fun WeekPill(
                     windowSize: IntSize,
                     layoutDirection: LayoutDirection,
                     popupContentSize: IntSize,
-                ): IntOffset = IntOffset(
-                    x = (windowSize.width - popupContentSize.width) / 2,
-                    y = anchorBounds.bottom + gapPx,
-                )
+                ): IntOffset {
+                    val offset = IntOffset(
+                        x = (windowSize.width - popupContentSize.width) / 2,
+                        y = anchorBounds.bottom + gapPx,
+                    )
+                    // anchorBounds 即胶囊自身的窗口坐标（本 Popup 挂在胶囊容器上）
+                    anchorSnapshot.value = PopupAnchorSnapshot(
+                        contentOffset = offset,
+                        pillCenter = anchorBounds.center,
+                    )
+                    return offset
+                }
             }
         }
 
-        // 开关动画与菜单族同款（rememberPopupMotion）：果冻曲线 + 整卡首尾淡入淡出 +
-        // 只淡内容行 + 尾淡兜底，
-        // 以顶部中心（≈胶囊所在）为缩放锚点；收起播完才移除 Popup
+        // 开关动画与菜单族同款（rememberPopupMotion）：果冻曲线 + 只淡内容行 + 尾淡兜底；
+        // 缩放锚点跟随胶囊实际中心（见上方 anchorSnapshot），收起播完才移除 Popup
         if (motion.shown) {
             Popup(
                 onDismissRequest = { closeMenu() },
@@ -768,25 +777,37 @@ private fun WeekPill(
                     hazeState = hazeState,
                     cellSize = weekCellSize,
                     blurOrigin = { size ->
-                        TransformOrigin(0.5f, -pillCenterOffsetPx / size.height.coerceAtLeast(1f))
+                        // 胶囊中心在卡面坐标下的位置（扣一圈投影留白），随快照实时跟随
+                        TransformOrigin(
+                            pivotFractionX =
+                                (anchorSnapshot.value.pillCenter.x -
+                                    anchorSnapshot.value.contentOffset.x - shadowPaddingPx) /
+                                size.width.coerceAtLeast(1f),
+                            pivotFractionY =
+                                (anchorSnapshot.value.pillCenter.y -
+                                    anchorSnapshot.value.contentOffset.y - shadowPaddingPx) /
+                                size.height.coerceAtLeast(1f),
+                        )
                     },
                     blurScale = motion::blurScale,
                     contentAlpha = { motion.contentAlpha.value },
                     blurProgress = motion::blurProgress,
                     // 排在外壳 padding/裁剪/投影/毛玻璃之外：整卡一起缩放（含退场尾淡），
-                    // 缩放锚点 = 周数胶囊中心（在卡片上方、窗口外 → 负分数锚点），
-                    // 卡片从胶囊中心向下「长」出来
+                    // 缩放锚点 = 胶囊实际中心（在卡片上方、窗口外 → 负分数锚点），
+                    // 卡片从胶囊中心向下「长」出来，胶囊移动时锚点随快照实时跟随
                     modifier = Modifier.popupMotionScale(
                         motion,
                         origin = { size ->
-                            if (size.height > 0f) {
-                                TransformOrigin(
-                                    pivotFractionX = 0.5f,
-                                    pivotFractionY = (shadowPaddingPx - pillCenterOffsetPx) / size.height,
-                                )
-                            } else {
-                                null
-                            }
+                            TransformOrigin(
+                                pivotFractionX =
+                                    (anchorSnapshot.value.pillCenter.x -
+                                        anchorSnapshot.value.contentOffset.x) /
+                                    size.width.coerceAtLeast(1f),
+                                pivotFractionY =
+                                    (anchorSnapshot.value.pillCenter.y -
+                                        anchorSnapshot.value.contentOffset.y) /
+                                    size.height.coerceAtLeast(1f),
+                            )
                         },
                     ),
                     onWeekSelected = {
@@ -879,6 +900,20 @@ private fun WeekPickerCardShell(
             cellSize = cellSize,
             onWeekSelected = onWeekSelected,
         )
+    }
+}
+
+/**
+ * 弹层锚点快照：弹层内容的窗口落位 + 胶囊实际窗口中心（均窗口坐标）。
+ * 由 Popup 定位回调在每次布局时写入，缩放锚点（含毛玻璃反向缩放）在 draw 阶段读取——
+ * 胶囊随头部展开/折叠移动时，锚点与弹层同步跟随，零重组。
+ */
+private data class PopupAnchorSnapshot(
+    val contentOffset: IntOffset,
+    val pillCenter: IntOffset,
+) {
+    companion object {
+        val Zero = PopupAnchorSnapshot(IntOffset.Zero, IntOffset.Zero)
     }
 }
 
