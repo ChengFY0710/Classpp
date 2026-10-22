@@ -49,13 +49,18 @@ internal fun hazeTopBarStyle(radius: Dp = 25.dp, opacity: Float = 1f): HazeBlurS
 /**
  * 白卡 / 浮层卡磨砂：磨砂 tint 60%（弹出菜单卡、周数选择卡、底部选择卡同款配方）。
  * [radius] 由调用方给出：白卡 12dp，底部选择卡用自己的 CardBlurRadius。
+ * [tintAlpha] 染色浓度（0~1）：越大玻璃越「实」、背景越淡；调用点可单独覆盖，
+ * 默认 60% 与既有观感一致。
  */
 @Composable
-internal fun hazeCardStyle(radius: Dp = 12.dp): HazeBlurStyle {
+internal fun hazeCardStyle(
+    radius: Dp = 12.dp,
+    tintAlpha: Float = 0.6f,
+): HazeBlurStyle {
     val tint = MaterialTheme.classppColors.hazeTint
     return HazeBlurStyle {
         blurRadius(radius)
-        colorEffects(listOf(HazeColorEffect.tint(tint.copy(alpha = 0.6f))))
+        colorEffects(listOf(HazeColorEffect.tint(tint.copy(alpha = tintAlpha))))
         noiseFactor(0f)
     }
 }

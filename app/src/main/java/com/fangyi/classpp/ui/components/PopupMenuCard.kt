@@ -149,7 +149,7 @@ fun PopupMenuCard(
                     }
                     .hazeBlur(
                         input = hazeSources(hazeState),
-                        style = hazeCardStyle(),
+                        style = hazeCardStyle(radius = 16.dp, tintAlpha = 0.7f),
                         performanceMode = HazePerformanceMode.Quality,
                     ),
             )
