@@ -1,8 +1,8 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -38,7 +38,6 @@ import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.ui.motion.Expandable
 import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
-import com.fangyi.classpp.ui.theme.RowShape
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppColors
@@ -147,11 +146,12 @@ fun DateSelectionCard(
                 style = MaterialTheme.classppTextStyles.fieldLabel,
             )
             if (expanded) {
-                // 快捷选项均布在 label 与收起图标之间；各选项自吃点击，不再触发整行收起
+                // 快捷选项为纯文字按钮（无按压反馈 / 涟漪占位）：文字按内容占宽，Row 内
+                // SpaceEvenly 均分空隙——文字宽窄不一，相邻文字间距仍相等；各选项自吃点击，
+                // 不再触发整行收起
                 Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(start = 10.dp),
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     quickOptionLabels().forEach { (option, label) ->
                         QuickOptionText(
@@ -160,7 +160,6 @@ fun DateSelectionCard(
                                 onValueChange(option)
                                 onExpandedChange(false)
                             },
-                            modifier = Modifier.weight(1f),
                         )
                     }
                     QuickOptionText(
@@ -176,7 +175,6 @@ fun DateSelectionCard(
                             )
                             onExpandedChange(false)
                         },
-                        modifier = Modifier.weight(1f),
                     )
                 }
                 Spacer(Modifier.width(6.dp))
@@ -306,29 +304,21 @@ private fun quickOptionLabels(): List<Pair<DateSelection, String>> = listOf(
     DateSelection.Tomorrow to stringResource(R.string.date_card_tomorrow),
 )
 
-/** 快捷选项文字按钮：蓝字居中，按压反馈取行形圆角 RowShape（同 RowChoiceCard 的选项行） */
+/** 快捷选项文字按钮：纯文字可点，无按压反馈 / 涟漪占位（主题根以 NoOpIndication 关掉涟漪） */
 @Composable
 private fun QuickOptionText(
     label: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    // 快捷选项与卡片各行同款：浅色压暗、深色提亮
-    val shade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
-    Box(
-        modifier = modifier
-            // 按压反馈放 clip 之前：缩放作用于整块、明暗与 RowShape 圆角对齐（clip 不挡点击输入）
-            .pressClickable(RowShape, shade = shade, onClick = onClick)
-            .clip(RowShape)
-            .padding(vertical = 4.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.classppTextStyles.fieldValue,
-            maxLines = 1,
-        )
-    }
+    Text(
+        text = label,
+        style = MaterialTheme.classppTextStyles.fieldValue,
+        maxLines = 1,
+        // 内边距画在点击区内侧：触控区比文字外扩一圈，文字间隙的误触不落回整行收起
+        modifier = Modifier
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clickable(onClick = onClick),
+    )
 }
 
 private const val MILLIS_PER_DAY = 86_400_000L
