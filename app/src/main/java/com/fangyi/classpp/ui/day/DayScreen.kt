@@ -47,9 +47,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -66,8 +66,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -98,6 +97,7 @@ import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.rememberDeviceCornerRadius
 import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.theme.DayCardShape
+import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.SerifDisplay
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.kyant.shapes.RoundedRectangle
@@ -111,7 +111,6 @@ import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import java.util.GregorianCalendar
 import java.util.TimeZone
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private const val MillisPerDay = 86_400_000L
@@ -227,13 +226,17 @@ fun DayScreen(
         }
     }
 
+    // 日期组淡出后图片 icon 仍会参与命中测试：用 derivedStateOf 在跨过淡出终点时
+    // 只重组一次，把不可见的按钮一并禁用，避免 04 过滚动露出区域还能点开换图浮层。
+    val dateIconVisible by remember {
+        derivedStateOf { transition.collapse < DayDateFadeEnd }
+    }
+
     val listState = rememberLazyListState()
     val dragDistancePx = with(density) { DayDragDistance.toPx() }
     val flingThresholdPx = with(density) { DayFlingVelocity.toPx() }
-    // 内容卡拖拽的兜底桥：nested scroll 正常时由它消费；若某些设备/版本下 LazyColumn
-    // 的空占位没有把 nested scroll 派发上来，根级 pointerInput 直接接手，避免 02→04 死区。
-    val gestureBridge = remember { DayGestureBridge() }
-    val contentBounds = remember { DayContentBounds() }
+    // 02↔04 的跟手统一由根级 pointerInput 驱动（见下方）：内容为空占位、nested scroll
+    // 不消费时，图片卡/内容卡上任意起手都用同一份原始 dy 推进 collapse，没有起手阈值。
     val bandTintBrush = remember {
         // 接近 HazeProgressive 的 EaseIn 渐隐：01 底部 30% 黑 tint，只是拆到 Haze 外，
         // 让 02 起能把 tint 干净地降到 0（Haze style 在组合期固定，不能逐帧改 tint）。
@@ -261,7 +264,11 @@ fun DayScreen(
                 val consumed = when {
                     deltaY < 0f && transition.open < 1f ->
                         transition.dragOpenBy(deltaY, dragDistancePx)
-                    deltaY < 0f && transition.collapse < 1f ->
+                    // 02→04 的上滑推进 collapse；04 的上滑只属于内容 Overscroll，
+                    // 即使 collapse 还没回到 1 也不在 pre 阶段拉回去（会打断橡皮筋）。
+                    deltaY < 0f &&
+                        transition.collapse < 1f &&
+                        transition.stage != DayStage.Schedule ->
                         transition.dragCollapseBy(deltaY, dragDistancePx)
                     deltaY > 0f &&
                         transition.open >= 1f &&
@@ -269,12 +276,6 @@ fun DayScreen(
                         !listState.canScrollBackward ->
                         transition.dragCollapseBy(deltaY, dragDistancePx)
                     else -> 0f
-                }
-                if (consumed != 0f) {
-                    // 本次手势已由 nested scroll 真正消费；根级 pointerInput 的兜底驱动应退让，
-                    // 避免同一次拖动被写两遍进度。若 nested scroll 只透传（返回 0），不置位，
-                    // 兜底路径仍可补救。
-                    gestureBridge.nestedScrollSeen = true
                 }
                 return Offset(0f, consumed)
             }
@@ -286,9 +287,13 @@ fun DayScreen(
                 val canMove = when {
                     transition.open < 1f -> true
                     transition.collapse > 0f && transition.collapse < 1f -> true
-                    // 端点上的快速甩动：02 上甩收台历、04 下甩回 02
+                    // 端点上的甩动：02 上甩收台历；04 任何向下速度都交给 04→02，
+                    // 不能让它落到内容 Overscroll 上造成反向橡皮筋。
                     transition.collapse <= 0f && available.y < -flingThresholdPx -> true
-                    transition.collapse >= 1f && available.y > flingThresholdPx -> true
+                    // 04 向下甩：仅在列表顶部时交给 04→02；列表已下滚时让列表自己 fling。
+                    transition.collapse >= 1f &&
+                        available.y > 0f &&
+                        !listState.canScrollBackward -> true
                     else -> false
                 }
                 if (!canMove) return Velocity.Zero
@@ -311,47 +316,90 @@ fun DayScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .nestedScroll(nestedScrollConnection)
-            // 根级抬手观察器：不消费事件，只取松手速度交给状态机吸附。
-            // 为什么不用 draggable 的 onDragStopped：内容卡走 nested scroll，拖拽层走
-            // draggable，两条路径只有这里能统一拿到「手已抬起」。
+            // 根级转场手势：Initial pass 先于内容卡/图片卡拿到事件，按方向决定是否消费。
+            // 02 上滑、04 下滑时直接消费并推进 collapse（没有起手阈值）；04 上滑完全
+            // 不驱动 collapse，把手势留给内容区的 OverScroll 橡皮筋。
+            // 抬手速度仍在这里统一交给 settle（04 仍在 1 时跳过，避免打断橡皮筋）。
             .pointerInput(active, sheetMounted, flingThresholdPx, dragDistancePx) {
                 if (!active || sheetMounted) return@pointerInput
                 val tracker = VelocityTracker()
-                val touchSlop = viewConfiguration.touchSlop
+                // 04 起手方向锁的阈值：先用一个 touch slop 判定这次手势是下滑还是上滑，
+                // 快速上滑开头的少量向下抖动不会被当成 04→02 下滑。
+                val directionSlopPx = viewConfiguration.touchSlop
                 awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    // 空占位内容不可滚时，若本次触摸落在白卡内，nested scroll 万一没派发，
-                    // 由本观察器直接驱动 02/04 段的 collapse；它不消费事件，内容滚动/橡皮筋
-                    // 仍照常运行。nested scroll 真正消费后会把 nestedScrollSeen 置真，这里让位。
-                    val contentIdle =
-                        !listState.canScrollForward && !listState.canScrollBackward
-                    gestureBridge.nestedScrollSeen = false
-                    gestureBridge.fromContent =
-                        contentIdle && contentBounds.value.contains(down.position)
+                    val down = awaitFirstDown(
+                        requireUnconsumed = false,
+                        pass = PointerEventPass.Initial,
+                    )
+                    // 02→04 与 04→02 都由根级统一驱动跟手；04 只跟下滑，
+                    // 上滑完全不消费、不写 collapse，留给内容区 Overscroll。
+                    // 04 只要列表在顶部就由根级接管，避免未到达列表滚动阈值前
+                    // 出现“只吸不跟手”；列表已下滚时让给列表。
+                    val drivesCollapse = shouldDriveCollapse(
+                        stage = transition.stage,
+                        canScrollForward = listState.canScrollForward,
+                        canScrollBackward = listState.canScrollBackward,
+                    )
                     tracker.resetTracking()
                     tracker.addPosition(down.uptimeMillis, down.position)
                     val pointerId = down.id
                     var lastY = down.position.y
-                    var totalDy = 0f
-                    var dragged = false
+                    val scheduleGesture = transition.stage == DayStage.Schedule
+                    // 0 = 未定，1 = 下滑（驱动 collapse），-1 = 上滑（只做 Overscroll）
+                    var scheduleDirection = 0
+                    var directionAccum = 0f
                     while (true) {
-                        val event = awaitPointerEvent(PointerEventPass.Final)
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
                         val change = event.changes.firstOrNull { it.id == pointerId } ?: break
                         tracker.addPosition(change.uptimeMillis, change.position)
                         val dy = change.position.y - lastY
                         lastY = change.position.y
-                        totalDy += dy
-                        if (!dragged && abs(totalDy) > touchSlop) dragged = true
-                        if (dragged &&
-                            gestureBridge.fromContent &&
-                            !gestureBridge.nestedScrollSeen
-                        ) {
-                            transition.dragCollapseBy(dy, dragDistancePx)
+                        if (drivesCollapse) {
+                            if (scheduleGesture) {
+                                when (scheduleDirection) {
+                                    0 -> {
+                                        directionAccum += dy
+                                        val decided = scheduleCollapseDirection(
+                                            accumulatedDy = directionAccum,
+                                            slopPx = directionSlopPx,
+                                        )
+                                        if (decided != 0) {
+                                            scheduleDirection = decided
+                                            if (decided > 0) {
+                                                // 补上定向前累计的下滑量，跟手不丢位移。
+                                                val consumed = transition.dragCollapseBy(
+                                                    directionAccum,
+                                                    dragDistancePx,
+                                                )
+                                                if (consumed != 0f) change.consume()
+                                            }
+                                            // 上滑锁定后完全不碰 collapse，放给 Overscroll。
+                                        }
+                                    }
+                                    1 -> if (dy > 0f) {
+                                        val consumed = transition.dragCollapseBy(dy, dragDistancePx)
+                                        if (consumed != 0f) change.consume()
+                                    }
+                                    // -1：上滑锁定，整个手势都不再写 collapse
+                                }
+                            } else if (dy != 0f) {
+                                val consumed = transition.dragCollapseBy(dy, dragDistancePx)
+                                if (consumed != 0f) change.consume()
+                            }
                         }
                         if (!change.pressed) break
                     }
-                    transition.settle(tracker.calculateVelocity().y, flingThresholdPx)
-                    gestureBridge.fromContent = false
+                    // 04 上滑只做过滚动：collapse 仍在 1 时不 settle，避免任何吸附动画
+                    // 打断橡皮筋回弹；下滑过（collapse < 1）则松手提交 02。
+                    // 04 列表已下滚时手势归列表收束，根级同样不 settle。
+                    val shouldSettle = when (transition.stage) {
+                        DayStage.Schedule ->
+                            drivesCollapse && transition.collapse < 1f
+                        else -> true
+                    }
+                    if (shouldSettle) {
+                        transition.settle(tracker.calculateVelocity().y, flingThresholdPx)
+                    }
                 }
             },
     ) {
@@ -383,17 +431,22 @@ fun DayScreen(
         }
 
         val gestureAllowed = active && !sheetMounted && !transition.isAnimating
-        val fullScreenGestureEnabled = gestureAllowed &&
-            (transition.stage == DayStage.Calendar || transition.stage == DayStage.Schedule)
+        val contentUnscrollable =
+            !listState.canScrollForward && !listState.canScrollBackward
+        // 01 的上滑仍由整屏 draggable 负责；02/04 的空占位由根级 pointerInput 统一驱动，
+        // 不再额外挂 Schedule 的整屏层，避免同一次拖动被写两遍。
+        val fullScreenGestureEnabled =
+            gestureAllowed && transition.stage == DayStage.Calendar
         val cardGestureEnabled = gestureAllowed && transition.stage == DayStage.Compact
-        val contentUserScrollEnabled = gestureAllowed
+        // 内容不可滚时根级 pointerInput 已接管图片卡/内容卡的跟手；只有未来内容真正
+        // 可滚、根级驱动让位时，才由 02 卡面自己的 draggable 接管图片区域。
+        val cardDragEnabled = cardGestureEnabled && !contentUnscrollable
+        // 04 完全收起后才启用内容区滚动/OverScroll；02/03 的内容区由根级转场手势接管。
+        val contentUserScrollEnabled =
+            gestureAllowed && transition.stage == DayStage.Schedule
 
         val fullScreenDragState = rememberDraggableState { delta ->
-            when (transition.stage) {
-                DayStage.Calendar -> transition.dragOpenBy(delta, dragDistancePx)
-                DayStage.Schedule -> transition.dragCollapseBy(delta, dragDistancePx)
-                DayStage.Compact -> Unit
-            }
+            transition.dragOpenBy(delta, dragDistancePx)
         }
         val cardDragState = rememberDraggableState { delta ->
             transition.dragCollapseBy(delta, dragDistancePx)
@@ -435,6 +488,8 @@ fun DayScreen(
                 .hazeSource(imageHazeState)
                 .graphicsLayer {
                     val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
+                    // 02→04 后段渐隐：白卡被 Overscroll 拖上去时不再露出台历残影。
+                    alpha = frame.imageAlpha
                     clip = true
                     shape = RoundedRectangle(frame.imageRadius.dp)
                 },
@@ -501,7 +556,16 @@ fun DayScreen(
                             ),
                     )
                 },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    // 模糊带与图片卡同一条淡出曲线，避免图片卡消失后只剩一条模糊。
+                    .graphicsLayer {
+                        alpha = DayGeometry.frame(
+                            metrics,
+                            transition.open,
+                            transition.collapse,
+                        ).imageAlpha
+                    },
             ) { measurables, constraints ->
                 val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
                 val bandTopPx = (frame.bandTop * pxPerDp).roundToInt()
@@ -590,6 +654,7 @@ fun DayScreen(
                     .draggable(
                         state = cardDragState,
                         orientation = Orientation.Vertical,
+                        enabled = cardDragEnabled,
                     )
                     .semantics { contentDescription = cardBackLabel },
             )
@@ -604,95 +669,141 @@ fun DayScreen(
                 .padding(bottom = navBarDp.dp + NavReserve + DayDateBottomGap)
                 .offset {
                     val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
-                    IntOffset(0, (frame.dateTranslationY * pxPerDp).roundToInt())
+                    IntOffset(
+                        (frame.dateTranslationX * pxPerDp).roundToInt(),
+                        (frame.dateTranslationY * pxPerDp).roundToInt(),
+                    )
+                }
+                .graphicsLayer {
+                    // 日期组（大数字、日期行、图片 icon）整组淡出：04 被 Overscroll
+                    // 拖出白卡时不再露出白色日期文字/图标。
+                    alpha = DayGeometry.frame(
+                        metrics,
+                        transition.open,
+                        transition.collapse,
+                    ).dateAlpha
                 },
         ) {
-            Text(
-                text = dayOfMonth.toString(),
-                fontSize = 64.sp,
-                fontFamily = SerifDisplay,
-                color = Color.White,
-                modifier = Modifier.graphicsLayer {
-                    // 设计稿实测 01/02 的“21”等大；保留左下锚点缩放，后续只改 token。
-                    transformOrigin = TransformOrigin(0f, 1f)
-                    scaleX = DayDateNumberScale
-                    scaleY = DayDateNumberScale
-                },
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // 日期 / 日期文字 / 图片 icon 作为一组整体缩放：锚在组内左下角，
+            // 02→04 跟随图片卡收窄，三个元素同步缩小并随卡片下移。
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        val frame = DayGeometry.frame(
+                            metrics,
+                            transition.open,
+                            transition.collapse,
+                        )
+                        transformOrigin = TransformOrigin(0f, 1f)
+                        scaleX = frame.dateScale
+                        scaleY = frame.dateScale
+                    },
+            ) {
                 Text(
-                    text = stringResource(R.string.date_title_format, yearMonth, weekday),
-                    fontSize = 23.sp,
-                    fontWeight = FontWeight.Medium,
+                    text = dayOfMonth.toString(),
+                    fontSize = 64.sp,
+                    fontFamily = SerifDisplay,
                     color = Color.White,
-                    letterSpacing = (-0.3).sp,
+                    modifier = Modifier.graphicsLayer {
+                        // 设计稿实测 01/02 的“21”等大；组级缩放之外仍保留这个 token。
+                        transformOrigin = TransformOrigin(0f, 1f)
+                        scaleX = DayDateNumberScale
+                        scaleY = DayDateNumberScale
+                    },
                 )
-                Spacer(Modifier.weight(1f))
-                Icon(
-                    painter = painterResource(R.drawable.ic_image),
-                    contentDescription = stringResource(R.string.cd_day_background),
-                    tint = Color.White,
-                    modifier = Modifier
-                        .size(28.dp)
-                        .pressClickable(
-                            shape = CircleShape,
-                            scale = 1.10f,
-                            enabled = active && !transition.isAnimating,
-                        ) {
-                            sheetMounted = true
-                            sheetVisible = true
-                        },
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stringResource(R.string.date_title_format, yearMonth, weekday),
+                        fontSize = 23.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White,
+                        letterSpacing = (-0.3).sp,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Icon(
+                        painter = painterResource(R.drawable.ic_image),
+                        contentDescription = stringResource(R.string.cd_day_background),
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .pressClickable(
+                                shape = CircleShape,
+                                scale = 1.10f,
+                                enabled = active && !transition.isAnimating && dateIconVisible,
+                            ) {
+                                sheetMounted = true
+                                sheetVisible = true
+                            },
+                    )
+                }
             }
         }
 
-        // 8) 白底内容卡：内部固定 285dp 测量、外层按当前 235→285dp 裁切，
-        // 高度变化不重测列表；橡皮筋滚动由 ProvideOverscroll + RubberBandLazyColumn 接入。
+        // 8) 白卡就是日程页的占位内容，也是滚动列表的第一条；高度固定 235dp。
+        // 04 滑到底时 Overscroll 会拖动这张白卡本身；后续真实内容直接排在它后面。
+        // 内容视口铺满全屏：02 时视口顶贴住白卡顶（不盖图片卡），04 时抬到屏幕顶，
+        // 白卡与后续内容才能滚进顶栏下面。白卡位置由「视口 offset + 首条 spacer」
+        // 两段之和决定，恒等于 frame.content.top。
         if (showContent) {
-            ProvideOverscroll {
-                Layout(
-                    content = {
-                        RubberBandLazyColumn(
-                            state = listState,
-                            userScrollEnabled = contentUserScrollEnabled,
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
-                            item { Spacer(Modifier.height(1.dp)) }
-                        }
-                    },
-                    modifier = Modifier
-                        .offset {
-                            val frame = DayGeometry.frame(
-                                metrics,
-                                transition.open,
-                                transition.collapse,
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .hazeSource(contentHazeState),
+            ) {
+                ProvideOverscroll {
+                    RubberBandLazyColumn(
+                        state = listState,
+                        userScrollEnabled = contentUserScrollEnabled,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .offset {
+                                val frame = DayGeometry.frame(
+                                    metrics,
+                                    transition.open,
+                                    transition.collapse,
+                                )
+                                // 02 贴白卡顶 → 04 抬到屏幕顶；collapse 越大视口越早
+                                // 覆盖顶栏区域，内容才有机会进入顶栏下面。
+                                val viewportTop =
+                                    frame.content.top * (1f - transition.collapse)
+                                IntOffset(0, (viewportTop * pxPerDp).roundToInt())
+                            },
+                    ) {
+                        // 首条 spacer 把白卡按当前进度放到 frame.content.top；高度在
+                        // measure 阶段读转场进度，拖拽每帧只触发布局、不触发重组。
+                        item(key = "contentTopSpacer") {
+                            Spacer(
+                                Modifier.layout { measurable, constraints ->
+                                    val frame = DayGeometry.frame(
+                                        metrics,
+                                        transition.open,
+                                        transition.collapse,
+                                    )
+                                    val heightPx =
+                                        (frame.content.top * transition.collapse * pxPerDp)
+                                            .roundToInt()
+                                            .coerceAtLeast(0)
+                                    val placeable = measurable.measure(
+                                        Constraints.fixed(constraints.maxWidth, heightPx),
+                                    )
+                                    layout(constraints.maxWidth, heightPx) {
+                                        placeable.place(0, 0)
+                                    }
+                                },
                             )
-                            IntOffset(
-                                (frame.content.left * pxPerDp).roundToInt(),
-                                (frame.content.top * pxPerDp).roundToInt(),
+                        }
+                        // 第二条 = 当前白卡占位内容；后续日程条目继续 item { } 追加。
+                        item(key = "dayCard") {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = PageHorizontalSpacing)
+                                    .height(DayContentHeight)
+                                    .clip(DayCardShape)
+                                    .background(MaterialTheme.colorScheme.surface),
                             )
                         }
-                        .onGloballyPositioned { contentBounds.value = it.boundsInWindow() }
-                        .hazeSource(contentHazeState)
-                        .graphicsLayer {
-                            clip = true
-                            shape = DayCardShape
-                        }
-                        .background(MaterialTheme.colorScheme.surface),
-                ) { measurables, _ ->
-                    val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
-                    val cardWidth = (frame.content.width * pxPerDp).roundToInt().coerceAtLeast(1)
-                    val cardHeight = (frame.content.height * pxPerDp).roundToInt().coerceAtLeast(1)
-                    val child = measurables[0].measure(
-                        Constraints.fixed(
-                            cardWidth,
-                            (DayContentScheduleHeight.value * pxPerDp)
-                                .roundToInt()
-                                .coerceAtLeast(cardHeight),
-                        ),
-                    )
-                    layout(cardWidth, cardHeight) {
-                        child.place(0, 0)
                     }
                 }
             }
@@ -850,22 +961,6 @@ private fun dayBandStyle(): HazeBlurStyle = HazeBlurStyle {
     blurRadius(25.dp)
     progressive(HazeProgressive.verticalGradient(startIntensity = 0f, endIntensity = 1f))
     noiseFactor(0f)
-}
-
-/**
- * 单次手势的跨路径标记：nested scroll 与根级 pointerInput 都读同一实例。
- * [nestedScrollSeen] 只在 nested scroll 真正消费了位移时置真；[fromContent] 标记
- * 本次按下是否落在白卡内（空占位且内容不可滚时，根级观察器才做兜底驱动）。
- * 普通字段而非 Compose state：只在手势回调里读写，不参与组合。
- */
-private class DayGestureBridge {
-    var nestedScrollSeen: Boolean = false
-    var fromContent: Boolean = false
-}
-
-/** 白卡当前窗口矩形（onGloballyPositioned 写入，手势按下时读，不触发重组）。 */
-private class DayContentBounds {
-    var value: Rect = Rect.Zero
 }
 
 /** 从 Context 包装链里找 Activity（状态栏图标需要 window）。 */

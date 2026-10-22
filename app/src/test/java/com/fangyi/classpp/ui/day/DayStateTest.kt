@@ -78,24 +78,65 @@ class DayStateTest {
     }
 
     @Test
-    fun collapseReverseUsesDistanceFrom04() {
-        // 从 04 出发：collapse 往下走过 40%（≤0.6）才回 02；
-        // 0.39 已走 61% → 去 02（forward=false），0.61 只走 39% → 回 04。
-        assertFalse(
-            snapCollapseForward(DayStage.Schedule, 0.39f, 0f, 800f),
+    fun scheduleOnlyKeeps04WhileCollapseStillAtTop() {
+        // 仍停在 04：上滑只做过滚动，松手速度再大也保持 04。
+        assertTrue(
+            snapCollapseForward(DayStage.Schedule, 1f, 0f, 800f),
         )
         assertTrue(
-            snapCollapseForward(DayStage.Schedule, 0.61f, 0f, 800f),
+            snapCollapseForward(DayStage.Schedule, 1f, -900f, 800f),
+        )
+        // 已经下滑让 collapse 离开 1：松手回 02；即使最后在往上推也不回 04，
+        // 避免回 04 的吸附动画打断内容 Overscroll。
+        assertFalse(
+            snapCollapseForward(DayStage.Schedule, 0.99f, 0f, 800f),
+        )
+        assertFalse(
+            snapCollapseForward(DayStage.Schedule, 0.5f, -900f, 800f),
         )
     }
 
     @Test
-    fun collapseVelocityOverridesReverseProgress() {
+    fun scheduleDirectionLocksOnlyAfterSlop() {
+        val slop = 100f
+        // 起手抖动不足一个阈值：方向未定，不启动 04→02。
+        assertEquals(0, scheduleCollapseDirection(accumulatedDy = 3f, slopPx = slop))
+        assertEquals(0, scheduleCollapseDirection(accumulatedDy = -99f, slopPx = slop))
+        // 超过阈值才锁定；向下 = 1，向上 = -1。
+        assertEquals(1, scheduleCollapseDirection(accumulatedDy = 100f, slopPx = slop))
+        assertEquals(-1, scheduleCollapseDirection(accumulatedDy = -100f, slopPx = slop))
+    }
+
+    @Test
+    fun collapseGestureRoutingFollowsStageAndListPosition() {
+        // 02 空占位：上下都不可滚时由根级驱动
+        assertTrue(
+            shouldDriveCollapse(DayStage.Compact, canScrollForward = false, canScrollBackward = false),
+        )
         assertFalse(
-            snapCollapseForward(DayStage.Schedule, 0.9f, 900f, 800f),
+            shouldDriveCollapse(DayStage.Compact, canScrollForward = true, canScrollBackward = false),
+        )
+        assertFalse(
+            shouldDriveCollapse(DayStage.Compact, canScrollForward = false, canScrollBackward = true),
+        )
+
+        // 04：列表在顶部（不能向后滚）就由根级驱动；长列表已下滚时让给列表
+        assertTrue(
+            shouldDriveCollapse(DayStage.Schedule, canScrollForward = false, canScrollBackward = false),
         )
         assertTrue(
-            snapCollapseForward(DayStage.Schedule, 0.1f, -900f, 800f),
+            shouldDriveCollapse(DayStage.Schedule, canScrollForward = true, canScrollBackward = false),
+        )
+        assertFalse(
+            shouldDriveCollapse(DayStage.Schedule, canScrollForward = true, canScrollBackward = true),
+        )
+        assertFalse(
+            shouldDriveCollapse(DayStage.Schedule, canScrollForward = false, canScrollBackward = true),
+        )
+
+        // 01 由整屏 draggable 驱动
+        assertFalse(
+            shouldDriveCollapse(DayStage.Calendar, canScrollForward = false, canScrollBackward = false),
         )
     }
 }

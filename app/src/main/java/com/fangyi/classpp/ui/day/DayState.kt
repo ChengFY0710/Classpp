@@ -62,11 +62,12 @@ internal fun snapForward(
 
 /**
  * 02↔04 段的目标方向。不能直接复用 [snapForward] 的绝对 progress：
- * `collapse` 固定以 02 为 0、04 为 1，从 04 往下滑时「朝 02 走了多少」是
- * `1 - collapse`。因此以手势出发态 [startStage] 区分：
- * - 从 02 出发（Compact/Calendar）：collapse ≥ 0.4 判回 04；
- * - 从 04 出发（Schedule）：1 - collapse ≥ 0.4（即 collapse ≤ 0.6）判回 02。
- * 速度方向仍优先；返回 true = 吸附到 04，false = 吸附到 02。
+ * `collapse` 固定以 02 为 0、04 为 1，因此以手势出发态 [startStage] 区分：
+ * - 从 02 出发（Compact/Calendar）：按 [snapForward] 的进度/速度阈值判是否去 04；
+ * - 从 04 出发（Schedule）：只看 collapse 是否仍为 1。04 的上滑不驱动 collapse，
+ *   只属于内容 Overscroll；一旦下滑让 collapse 离开 1，松手就回 02，不再按方向
+ *   推回 04——回 04 的吸附会和过滚动回弹动画互相打断。
+ * 返回 true = 吸附到 04，false = 吸附到 02。
  */
 internal fun snapCollapseForward(
     startStage: DayStage,
@@ -74,14 +75,43 @@ internal fun snapCollapseForward(
     velocityY: Float,
     flingThresholdPx: Float,
 ): Boolean = if (startStage == DayStage.Schedule) {
-    when {
-        velocityY > flingThresholdPx -> false
-        velocityY < -flingThresholdPx -> true
-        else -> (1f - collapse) < DaySnapThreshold
-    }
+    collapse >= 1f
 } else {
     snapForward(collapse, velocityY, flingThresholdPx)
 }
 
+/**
+ * 04 手势起手方向锁：累计位移超过 [slopPx] 才锁定方向，返回 1 = 下滑
+ * （驱动 collapse）、-1 = 上滑（只做过滚动）、0 = 还未定。
+ *
+ * 快速上滑的起手常带一点向下抖动；不设这个锁，第一段正向 dy 就会被当成
+ * 04→02 下滑，松手后提交 02。锁定后整次手势不再改方向：上滑始终只做过滚动，
+ * 下滑后反向推回也不会再写 collapse（松手按已下滑提交 02）。
+ */
+internal fun scheduleCollapseDirection(accumulatedDy: Float, slopPx: Float): Int = when {
+    accumulatedDy >= slopPx -> 1
+    accumulatedDy <= -slopPx -> -1
+    else -> 0
+}
+
 /** 吸附进度阈值（设计稿提示词建议 0.4）。 */
 internal const val DaySnapThreshold = 0.4f
+
+/**
+ * 根级 pointerInput 是否应该接管本次手势并推进 collapse。
+ *
+ * - 02（Compact）：内容还是空占位、列表上下都不可滚，图片卡/内容卡任意起手都跟手；
+ * - 04（Schedule）：列表在顶部（不能再向后滚）时，任何下滑都由根级从第一像素推进
+ *   collapse，上滑仍由 [DayTransitionState.dragCollapseBy] 返回 0 放给内容 Overscroll；
+ *   列表已经下滚时则让给列表滚动；
+ * - 01（Calendar）：由整屏 draggable 负责 01→02。
+ */
+internal fun shouldDriveCollapse(
+    stage: DayStage,
+    canScrollForward: Boolean,
+    canScrollBackward: Boolean,
+): Boolean = when (stage) {
+    DayStage.Compact -> !canScrollForward && !canScrollBackward
+    DayStage.Schedule -> !canScrollBackward
+    DayStage.Calendar -> false
+}

@@ -13,7 +13,7 @@ import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 /** 02 图片卡顶边距状态栏下沿。 */
 internal val DayCardTopInset = 12.dp
 
-/** 图片卡高度：01→02→04 全程不变。 */
+/** 02 图片卡高度；02→04 随宽度等比缩小，04 高度 = 240 × (200/卡宽)。 */
 internal val DayCardHeight = 240.dp
 
 /** 图片卡与白底内容卡的间距。 */
@@ -22,11 +22,11 @@ internal val DayCardGap = 24.dp
 /** 图片卡/白卡圆角（DayCardShape 同值）。 */
 internal val DayCardCorner = 24.dp
 
-/** 02 白卡高度（设计稿 02/03 相同）。 */
-internal val DayContentCompactHeight = 235.dp
-
-/** 04 白卡高度：恰好完整覆盖 04 的图片卡与模糊带。 */
-internal val DayContentScheduleHeight = 285.dp
+/**
+ * 白卡（日程页内容）固定高度：02/03/04 全程不变。
+ * 后续真实内容在白卡同一层、紧随其后的内容层里添加，不再靠拉高白卡来承载。
+ */
+internal val DayContentHeight = 235.dp
 
 /** 04 图片卡宽（收窄终点）。 */
 internal val DayScheduleImageWidth = 200.dp
@@ -79,8 +79,17 @@ internal val DayHintExitOffset = 24.dp
 /** 顶栏完全可见的 collapse 进度（设计稿 03 处已全亮）。 */
 internal const val DayTopBarFadeEnd = 0.45f
 
-/** 白卡从 235dp 长到 285dp 的起始 collapse 进度：03 之前保持 235dp。 */
-internal const val DayContentHeightRampStart = 0.55f
+/**
+ * 图片卡（含下段模糊带）开始渐隐的 collapse 进度：此前保持不透明，
+ * 让设计稿 03 的中间构图仍有完整图片卡；此后随白卡上移逐渐淡出。
+ */
+internal const val DayImageFadeStart = 0.5f
+
+/**
+ * 日期组（含图片 icon）渐隐完成的 collapse 进度：日期组位于图片卡下段，
+ * 会比图片卡本体更早被白卡盖住，所以从 02 出发就开始淡出。
+ */
+internal const val DayDateFadeEnd = 0.4f
 
 /** 状态栏图标切换到「日历视觉」的 open 阈值（01 图片上 / 02 浅灰底）。 */
 internal const val DayCalendarIconSwitch = 0.5f
@@ -141,8 +150,15 @@ internal data class DayFrame(
      * 白卡顶边进入屏幕后即等于白卡顶边，被白卡自然截断。
      */
     val bandBottom: Float,
+    /** 日期组相对 01 基准位的横向位移：02→04 随卡片收窄向右归位。 */
+    val dateTranslationX: Float,
     /** 日期组相对 01 基准位的纵向位移。 */
     val dateTranslationY: Float,
+    /**
+     * 日期组整体缩放：01→02 保持 1；02→04 跟随图片卡宽度比例缩小，
+     * 让“日期 / 日期文字 / 图片 icon”一起收缩。锚点在组内左下角。
+     */
+    val dateScale: Float,
     /** 01 顶部磨砂/提示的透明度（1→0）。 */
     val topScrimAlpha: Float,
     /** 顶栏透明度/位移进度（03 处已为 1）。 */
@@ -151,6 +167,10 @@ internal data class DayFrame(
     val topBarTranslationY: Float,
     /** 01 底部 scrim 的黑色 tint 浓度（02 起为 0，交给纯模糊）。 */
     val bandTintAlpha: Float,
+    /** 图片卡（含下段模糊带）透明度：02→04 后段渐隐，04 为 0，避免过滚动时露出台历残影。 */
+    val imageAlpha: Float,
+    /** 日期组（含图片 icon）透明度：先于图片卡被白卡盖住，02→04 前段渐隐，04 为 0。 */
+    val dateAlpha: Float,
 ) {
     /** 模糊带可见高度；白卡顶边越过卡片中点后为 0（03/04 无残留）。 */
     val bandHeight: Float get() = (bandBottom - bandTop).coerceAtLeast(0f)
@@ -170,11 +190,18 @@ internal object DayGeometry {
             right = metrics.screenWidth - metrics.pageHorizontal,
             bottom = compactTop + cardHeight,
         )
+        val finalImageWidth = DayScheduleImageWidth.value
+        // 等比缩小：宽度缩到 200dp 时，高度按同一比例收缩（240 × 200/378）。
+        val finalImageHeight = if (compactImage.width > 0f) {
+            cardHeight * finalImageWidth / compactImage.width
+        } else {
+            cardHeight
+        }
         val finalImage = DayRect(
-            left = (metrics.screenWidth - DayScheduleImageWidth.value) / 2f,
+            left = (metrics.screenWidth - finalImageWidth) / 2f,
             top = metrics.statusBar + DayScheduleImageTopInset.value,
-            right = (metrics.screenWidth + DayScheduleImageWidth.value) / 2f,
-            bottom = metrics.statusBar + DayScheduleImageTopInset.value + cardHeight,
+            right = (metrics.screenWidth + finalImageWidth) / 2f,
+            bottom = metrics.statusBar + DayScheduleImageTopInset.value + finalImageHeight,
         )
         val fullImage = DayRect(
             left = 0f,
@@ -199,15 +226,8 @@ internal object DayGeometry {
         } else {
             lerp(contentTopCompact, contentTopSchedule, c)
         }
-        val contentHeight = if (o < 1f) {
-            DayContentCompactHeight.value
-        } else {
-            lerp(
-                DayContentCompactHeight.value,
-                DayContentScheduleHeight.value,
-                smoothstep(DayContentHeightRampStart, 1f, c),
-            )
-        }
+        // 白卡就是日程页内容本体，高度固定；02→04 只改位置，不拉高。
+        val contentHeight = DayContentHeight.value
         val content = DayRect(
             left = metrics.pageHorizontal,
             top = contentTop,
@@ -231,15 +251,40 @@ internal object DayGeometry {
             contentTop
         }
 
-        // 日期组：01 基准（导航胶囊上方）→ 02 图片卡内部左下 → 02→04 跟随图片卡下移。
+        // 02→04 日期组整体跟随图片卡宽度缩放；01→02 保持 1（设计稿里日期行尺寸不变）。
+        // 横向按卡内左边距等比内收，保证收窄后日期组仍贴在卡片左侧。
+        val dateScale = if (o < 1f) {
+            1f
+        } else {
+            (image.width / compactImage.width).coerceIn(0f, 1f)
+        }
+        val dateInnerStart = DayDateEdgePadding.value - compactImage.left
+        val dateTranslationX = if (o < 1f) {
+            0f
+        } else {
+            (image.left + dateInnerStart * dateScale) - DayDateEdgePadding.value
+        }
+
+        // 日期组：01 基准（导航胶囊上方）→ 02 图片卡内部左下 → 02→04 跟随图片卡。
+        // 图片高度等比缩小后底边上移，日期组底边跟着 image.bottom 走，并按 dateScale
+        // 缩放卡内下边距，保证整组始终留在图片卡内部。
         val baseDateBottom =
             metrics.screenHeight - metrics.navBar - metrics.navReserve - metrics.dateBottomGap
         val compactDateBottom = compactImage.bottom - DayDateInCardBottomPadding.value
         val openDateDelta = compactDateBottom - baseDateBottom
-        val collapseDateDelta = finalImage.top - compactImage.top
-        val dateTranslationY = o * openDateDelta + o * c * collapseDateDelta
+        val dateTranslationY = if (o < 1f) {
+            o * openDateDelta
+        } else {
+            val targetBottom =
+                image.bottom - DayDateInCardBottomPadding.value * dateScale
+            openDateDelta + (targetBottom - compactDateBottom)
+        }
 
         val topBarAlpha = smoothstep(0f, DayTopBarFadeEnd, c)
+        // 02→04 的台历淡出：图片卡后段渐隐，日期组更早被白卡盖住、从 02 起就淡出。
+        // 04 两者都归零，白卡被 Overscroll 拖上去时不会露出图片卡/日期组残影。
+        val imageAlpha = 1f - smoothstep(DayImageFadeStart, 1f, c)
+        val dateAlpha = 1f - smoothstep(0f, DayDateFadeEnd, c)
 
         return DayFrame(
             image = image,
@@ -249,11 +294,15 @@ internal object DayGeometry {
             content = content,
             bandTop = bandTop,
             bandBottom = bandBottom,
+            dateTranslationX = dateTranslationX,
             dateTranslationY = dateTranslationY,
+            dateScale = dateScale,
             topScrimAlpha = 1f - o,
             topBarAlpha = topBarAlpha,
             topBarTranslationY = -(1f - topBarAlpha) * DayTopBarEntryOffset.value,
             bandTintAlpha = 0.30f * (1f - o),
+            imageAlpha = imageAlpha,
+            dateAlpha = dateAlpha,
         )
     }
 }
