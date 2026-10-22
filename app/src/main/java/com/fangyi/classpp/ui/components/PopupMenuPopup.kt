@@ -86,17 +86,19 @@ internal fun menuGrowthForAnchor(anchorCenterX: Float, windowWidthPx: Int): Menu
  * 36dp 柔影向下坠得最远）并钳进窗口——留白只影响 Popup 窗口大小，不改变卡片的视觉位置。
  * [anchorBounds] 是 Popup 所在锚点（弹层应挂在锚点内的 Box 上）的窗口坐标。
  *
- * 动画（分层，见 [PopupMenuCard] 与 [rememberPopupMotion]：毛玻璃卡壳不淡入，模糊首帧
- * 即最终强度）：进场 scale 0.8→1 走果冻一体曲线——生长冲过 1 顺势回缩定住
- * （0.8 → 1.05 → 1，约 800ms）+ 内容淡入
+ * 动画（分层，见 [PopupMenuCard] 与 [rememberPopupMotion]）：进场 scale 走果冻一体
+ * 曲线——生长冲过 1 顺势回缩定住（enterStartScale → 1.05 → 1）+ 整卡开头淡入
+ * （[com.fangyi.classpp.ui.motion.Motion.PopupCardFadeMillis]）+ 内容淡入
  * （[com.fangyi.classpp.ui.motion.Motion.PopupFadeMillis]），模糊子层反向缩放保持背景
  * 对位，投影随缩放进度渐入，自 [menuGrowth] 指定的卡片锚点长出——默认 [MenuGrowth.TopLeft]；
  * 菜单挂在行尾 / 锚点靠屏幕右侧时传 [MenuGrowth.TopRight]（该点只影响缩放锚点，不参与布局），
  * 锚点位置随内容变化的宿主（如课表按星期列）用 [menuGrowthForAnchor] 按半屏现算。
  * 收起 scale 与内容淡出共用 [com.fangyi.classpp.ui.motion.Motion.PopupExitMillis] +
- * Accelerate，同步收尾，播完才移除弹层；收起最后约 30ms（scale 0.85→0.8）整卡淡出到
- * 全透明作兜底——进场方向恒满强度、模糊「由弱变强」伪影不可能出现，这段淡出只为杜绝
- * 任何残留帧显形成白卡。
+ * Accelerate，同步收尾，播完才移除弹层；退场尾窗整卡淡出
+ * （[com.fangyi.classpp.ui.motion.Motion.PopupCardFadeMillis]），另有一段 scale 尾区间
+ * 兜底淡出，杜绝任何残留帧显形成白卡。整卡淡入淡出都压在首尾短窗内、中段恒满强度——
+ * 长时间整卡半透明会把锐利背景混进毛玻璃，模糊看起来「由弱变强」（6f7cae7 存档的
+ * 已知问题）。
  * [onExitFinished] 在退场播完后回调一次（宿主借机清理「仅退场期保留」的锚点状态；
  * 仅退场动画存在时才会触发，[animateExit] = false 时收起即卸载、不回调）。
  * [animateExit] = false 时收起不播退场动画、立即卸载。

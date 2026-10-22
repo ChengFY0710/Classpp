@@ -595,8 +595,8 @@ private fun WeekPill(
 ) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         var menuExpanded by remember { mutableStateOf(false) }
-        // 进出场动画（果冻曲线 + 分层淡入 + 尾淡兜底，与弹出菜单族同一套 motion）：
-        // 收起动画期间 motion.shown 保持 Popup 在场
+        // 进出场动画（果冻曲线 + 整卡首尾淡入淡出 + 分层淡入 + 尾淡兜底，与弹出菜单族
+        // 同一套 motion）：收起动画期间 motion.shown 保持 Popup 在场
         val motion = rememberPopupMotion(
             expanded = menuExpanded,
             // 起始缩放 0.5：半尺寸小卡收在胶囊正下方，从胶囊中心「涌出」的读感才够强
@@ -751,7 +751,8 @@ private fun WeekPill(
             }
         }
 
-        // 开关动画与菜单族同款（rememberPopupMotion）：果冻曲线 + 只淡内容行 + 尾淡兜底，
+        // 开关动画与菜单族同款（rememberPopupMotion）：果冻曲线 + 整卡首尾淡入淡出 +
+        // 只淡内容行 + 尾淡兜底，
         // 以顶部中心（≈胶囊所在）为缩放锚点；收起播完才移除 Popup
         if (motion.shown) {
             Popup(

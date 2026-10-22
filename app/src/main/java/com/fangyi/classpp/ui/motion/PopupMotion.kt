@@ -33,9 +33,10 @@ import dev.chrisbanes.haze.blur.HazeBlurStyle
 import dev.chrisbanes.haze.blur.hazeBlur
 
 /**
- * 退场尾段整卡淡出兜底覆盖的 scale 区间长度：scale 走完最后这段（0.85→0.8，约 30ms）
- * 时整卡淡到全透明。进场方向恒满强度，模糊「由弱变强」伪影不可能出现在可见段——
- * 这段淡出只为保证收起的任何一帧（含被竞态/残留拖住的末帧）不会显形成白卡。
+ * 退场尾段整卡淡出兜底覆盖的 scale 区间长度：scale 走完最后这段时整卡淡到全透明。
+ * 正常退场的可见淡出由 [Motion.PopupCardFadeMillis] 尾窗承担，这里是与其取 min 的
+ * 兜底下限——保证收起的任何一帧（含被竞态/残留拖住的末帧，无论动画值是否卡住）
+ * 都不会显形成白卡。
  */
 private const val PopupExitTailFadeScaleSpan = 0.05f
 
@@ -48,15 +49,15 @@ private const val PopupExitTailFadeScaleSpan = 0.05f
  * 锚点为生长角：整条曲线绕同一锚点，果冻回弹朝锚点反方向撑开，与「贴着锚点长出来」同构。
  */
 private fun popupEnterJelly(startScale: Float): FiniteAnimationSpec<Float> = keyframes {
-    durationMillis = 720
+    durationMillis = 600
     startScale at 0
-    1.05f at 200 using Motion.Standard
-    1f at 720 using Motion.Accelerate
+    1.05f at 250 using Motion.Accelerate
+    1f at 600 using Motion.Accelerate
 }
 
 /**
- * 弹层进出场动画的状态句柄（[rememberPopupMotion] 返回）：生长缩放 + 分层淡入 +
- * 投影/毛玻璃联动进度，供宿主 graphicsLayer 与玻璃卡壳在 **draw 阶段** 消费
+ * 弹层进出场动画的状态句柄（[rememberPopupMotion] 返回）：生长缩放 + 整卡首尾淡入淡出 +
+ * 分层淡入 + 投影/毛玻璃联动进度，供宿主 graphicsLayer 与玻璃卡壳在 **draw 阶段** 消费
  * （零重组）。[shown] 是组合条件——宿主 `if (motion.shown) { Popup { … } }`。
  */
 @Stable
@@ -67,6 +68,8 @@ class PopupMotionState internal constructor(
     private val visibleState: MutableTransitionState<Boolean>,
     val scale: State<Float>,
     val contentAlpha: State<Float>,
+    /** 整卡（含柔影留白）透明度：进场开头淡入、退场尾窗淡出，中段恒满强度（draw 阶段读取） */
+    val cardAlpha: State<Float>,
 ) {
     /**
      * 是否应组合弹层：expanded（开）或退场动画未完（仅 [rememberPopupMotion] 的
@@ -95,9 +98,10 @@ class PopupMotionState internal constructor(
 
 /**
  * 弹层进出场动画的共享实现（PopupMenuPopup / WeekPicker 等玻璃弹层共用）：
- * 进场 scale 走 [popupEnterJelly] 一体曲线（生长冲过 1 顺势回缩定住）+ 内容淡入
- * （[Motion.PopupFadeMillis]），退场 scale 与内容淡出共用 [Motion.PopupExitMillis] +
- * Accelerate 同步收尾；[animateExit] = false 时收起不播退场、立即卸载。
+ * 进场 scale 走 [popupEnterJelly] 一体曲线（生长冲过 1 顺势回缩定住）+ 整卡开头淡入
+ * （[Motion.PopupCardFadeMillis]）+ 内容淡入（[Motion.PopupFadeMillis]），退场 scale 与
+ * 内容淡出共用 [Motion.PopupExitMillis] + Accelerate 同步收尾、尾窗整卡淡出；
+ * [animateExit] = false 时收起不播退场、立即卸载。
  *
  * [enterStartScale] 是进场起始缩放（默认 0.8）：锚点离卡片很近的弹层用默认值即可；
  * 锚点要表达「从某个宿主控件里长出来」（如周数卡从胶囊中心涌出）时调小它（如 0.5f），
@@ -155,17 +159,43 @@ fun rememberPopupMotion(
         },
         label = "PopupMotionContentAlpha",
     ) { visible -> if (visible) 1f else 0f }
+    // 整卡首尾淡入淡出（进场开头淡入 / 退场尾窗淡出，中段恒满强度，不给模糊
+    // 「由弱变强」伪影留可见窗口；时长见 Motion.PopupCardFadeMillis）
+    val cardAlphaState = transition.animateFloat(
+        transitionSpec = {
+            if (targetState) {
+                // 进场开头整卡淡入，之后果冻回弹段恒满强度
+                tween(Motion.PopupCardFadeMillis, easing = Motion.Decelerate)
+            } else {
+                // 退场先满强度走完前段收缩，尾窗整卡淡出收尾；不写 at-0 关键帧——
+                // 进场中被反向收起时从当前 alpha 平滑出发，不闪跳
+                keyframes {
+                    durationMillis = Motion.PopupExitMillis
+                    1f at (Motion.PopupExitMillis - Motion.PopupCardFadeMillis).coerceAtLeast(0) using Motion.Decelerate
+                    0f at Motion.PopupExitMillis using Motion.Accelerate
+                }
+            }
+        },
+        label = "PopupMotionCardAlpha",
+    ) { visible -> if (visible) 1f else 0f }
 
-    return remember(visibleState, scaleState, contentAlphaState, animateExit, enterStartScale) {
-        PopupMotionState(animateExit, enterStartScale, visibleState, scaleState, contentAlphaState)
+    return remember(visibleState, scaleState, contentAlphaState, cardAlphaState, animateExit, enterStartScale) {
+        PopupMotionState(
+            animateExit,
+            enterStartScale,
+            visibleState,
+            scaleState,
+            contentAlphaState,
+            cardAlphaState,
+        )
     }
 }
 
 /**
- * 弹层内容的缩放图层（[rememberPopupMotion] 的宿主侧消费端）：生长缩放 + 退场尾段
- * 整卡淡出兜底 + 生长锚点，全部在 draw 阶段读值、零重组。垫在投影留白 padding
- * **之外**——整卡（含柔影）一起变换，锚点由 [origin] 按图层实测尺寸（含留白）反推，
- * 未提供（首帧 size 未量出等）时沿用上一帧锚点。
+ * 弹层内容的缩放图层（[rememberPopupMotion] 的宿主侧消费端）：生长缩放 + 整卡首尾
+ * 淡入淡出（退场尾段另取兜底下限）+ 生长锚点，全部在 draw 阶段读值、零重组。垫在
+ * 投影留白 padding **之外**——整卡（含柔影）一起变换，锚点由 [origin] 按图层实测尺寸
+ * （含留白）反推，未提供（首帧 size 未量出等）时沿用上一帧锚点。
  */
 fun Modifier.popupMotionScale(
     motion: PopupMotionState,
@@ -174,13 +204,16 @@ fun Modifier.popupMotionScale(
     val scale = motion.scale.value
     scaleX = scale
     scaleY = scale
-    // 退场尾段整卡淡出兜底（进场恒满强度，模糊不会「由弱变强」）：scale 走完最后
-    // [PopupExitTailFadeScaleSpan] 时淡到全透明——收起的任何一帧（含被竞态/残留拖住的
+    // 整卡首尾淡入淡出（进场开头淡入 / 退场尾窗淡出，中段恒满强度）；退场再与尾段
+    // 兜底取 min——scale 掉进尾区间时强制趋零，收起的任何一帧（含被竞态/残留拖住的
     // 末帧，无论卡在组合层、Popup 窗口还是 Haze 效果层）都不再可能显形成白卡
     alpha = if (!motion.exiting) {
-        1f
+        motion.cardAlpha.value
     } else {
-        ((scale - motion.enterStartScale) / PopupExitTailFadeScaleSpan).coerceIn(0f, 1f)
+        minOf(
+            motion.cardAlpha.value,
+            ((scale - motion.enterStartScale) / PopupExitTailFadeScaleSpan).coerceIn(0f, 1f),
+        )
     }
     origin(size)?.let { transformOrigin = it }
 }
@@ -190,9 +223,11 @@ fun Modifier.popupMotionScale(
  * （[shadowElevation] × [blurProgress] 渐入）+ 不透明白底 + 白底之上叠 Haze 毛玻璃。
  *
  * 分层契约（弹出动画的前提）：
- * - 卡壳（白底 + 毛玻璃 + 投影）对透明度恒为满强度、永不淡入淡出——整卡半透明会把
- *   锐利背景混进毛玻璃，模糊在动画期间看起来「由弱变强」；弹出动画只淡 [contentAlpha]
- *   （内容）与 [blurProgress]（投影），均在 draw 阶段读值、零重组；
+ * - 卡壳（白底 + 毛玻璃 + 投影）在本组件内不做任何透明度动画——整卡长时间半透明会把
+ *   锐利背景混进毛玻璃，模糊看起来「由弱变强」。整卡只在进出场**首尾短窗**
+ *   （[Motion.PopupCardFadeMillis]，中段恒满强度）由宿主缩放层（[popupMotionScale]）
+ *   统一淡入淡出；组件内只淡 [contentAlpha]（内容）与 [blurProgress]（投影），
+ *   均在 draw 阶段读值、零重组；
  * - 毛玻璃是独立子层，并按 [blurScale] 绕 [blurOrigin] **反向缩放**——外层生长缩放会把
  *   按最终位置画好的采样内容一起变换，动画中除锚点外处处与真实背景错位；反向缩放后
  *   两层相乘为恒等，毛玻璃全程 1:1 钉在真实背景上（模糊半径也不被放大），卡形状/白底/
@@ -254,7 +289,7 @@ fun PopupGlassCard(
                     ),
             )
         }
-        // 只淡内容：白底 + 毛玻璃壳恒为满 alpha，模糊首帧即最终强度
+        // 只淡内容：白底 + 毛玻璃壳在本组件内恒为满 alpha（整卡首尾淡入淡出由宿主缩放层统一做）
         Box(
             propagateMinConstraints = propagateMinConstraints,
             modifier = Modifier.graphicsLayer { alpha = contentAlpha() },

@@ -82,9 +82,11 @@ data class PopupMenuSection(
  *
  * 与弹出动画的联动（均 lambda 延迟读取，draw 阶段取值、零重组，宿主经
  * [com.fangyi.classpp.ui.motion.rememberPopupMotion] 取值）：
- * [blurProgress] ∈ [0,1] 缩放投影强度（默认恒 1f 完整阴影）；[contentAlpha] 只淡内容行，
- * 卡壳不淡入、模糊首帧即最终强度；[blurScale] 供毛玻璃子层反向缩放、动画全程与真实
- * 背景 1:1 对位；[menuGrowth] 是生长锚点（反向缩放绕同一点，两层相乘为恒等）。
+ * [blurProgress] ∈ [0,1] 缩放投影强度（默认恒 1f 完整阴影）；[contentAlpha] 只淡内容行
+ * （整卡的首尾淡入淡出由宿主缩放层统一做，见
+ * [com.fangyi.classpp.ui.motion.Motion.PopupCardFadeMillis]）；[blurScale] 供毛玻璃子层
+ * 反向缩放、动画全程与真实背景 1:1 对位；[menuGrowth] 是生长锚点（反向缩放绕同一点，
+ * 两层相乘为恒等）。
  *
  * 材质：默认不透明白卡；[hazeState] 非空时白底之上叠 Haze 毛玻璃（跨 Popup 窗口采样
  * 宿主页面的 hazeSource，样式 16dp + 70% tint，为菜单卡单独调过的值）；null（如

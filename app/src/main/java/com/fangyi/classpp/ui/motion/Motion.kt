@@ -76,8 +76,9 @@ object Motion {
 
     /**
      * 弹出菜单内容层淡入时长（alpha 0→1），与 [PopupScaleMillis] 同帧启动、同曲线。
-     * 淡入只作用于内容行——毛玻璃卡壳（白底 + 模糊 + 柔影）首帧即最终强度、永不淡入：
-     * 整卡半透明会把锐利背景混进毛玻璃，模糊在动画期间看起来「由弱变强」（6f7cae7 存档的
+     * 淡入只作用于内容行——毛玻璃卡壳在本组件内不淡入（整卡只在进出场首尾一个
+     * [PopupCardFadeMillis] 短窗内由宿主缩放层统一淡入淡出，中段恒满强度）：
+     * 整卡长时间半透明会把锐利背景混进毛玻璃，模糊看起来「由弱变强」（6f7cae7 存档的
      * 已知问题，分层方案见 [com.fangyi.classpp.ui.components.PopupMenuCard]）。
      */
     const val PopupFadeMillis = 120
@@ -88,6 +89,15 @@ object Motion {
      * 配合 [Accelerate]，比进场短，收起更利落。
      */
     const val PopupExitMillis = 120
+
+    /**
+     * 弹层整卡（白底卡壳 + 柔影留白，含内容）进出场首尾的淡入淡出窗口时长：进场开头
+     * 本窗口内整卡淡入、退场最后同样长的尾窗内整卡淡出，其余时段恒满强度。整卡长时间
+     * 半透明会把锐利背景混进毛玻璃、模糊看起来「由弱变强」（6f7cae7 存档的已知问题），
+     * 故淡入淡出压在首尾短窗内——只软化「凭空出现 / 凭空消失」的生硬切变，不给伪影
+     * 留可见窗口。内容层的长淡入另见 [PopupFadeMillis]。
+     */
+    const val PopupCardFadeMillis = 100
 
     /** 弹出菜单进场起始缩放（退场缩回同值）；投影强度按 scale 距该值的进度渐入（PopupMenuPopup）。 */
     const val PopupEnterStartScale = 0.3f
