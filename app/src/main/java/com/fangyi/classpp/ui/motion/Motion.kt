@@ -45,7 +45,7 @@ object Motion {
      * 的 AnimatedVisibility（三者配 [Overlay]）。同一个 editing 翻转同帧启动，
      * 各处才能严格同步。想更快收场可下调（300ms 左右），两套曲线都不变。
      */
-    const val EditMillis = 480
+    const val EditMillis = 400
 
     /**
      * 整页覆盖层（设置页、个性化子页）进场时长：整页右滑入，配合 [Overlay]。
