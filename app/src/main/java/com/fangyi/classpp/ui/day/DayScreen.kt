@@ -92,6 +92,8 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
+import com.fangyi.classpp.ui.motion.DragDirection
+import com.fangyi.classpp.ui.motion.DragDirectionLock
 import com.fangyi.classpp.ui.motion.OffsetOverscrollEffect
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
@@ -340,9 +342,10 @@ fun DayScreen(
             .nestedScroll(nestedScrollConnection)
             // 根级转场手势：Initial pass 先于内容卡/图片卡拿到事件，按方向决定是否消费。
             // 02 上滑、04 下滑时直接消费并推进 collapse（没有起手阈值；04 方向锁定后
-            // 上下都跟手）；04 以上滑起手时完全不驱动 collapse，把手势留给内容区的
-            // OverScroll 橡皮筋。抬手速度仍在这里统一交给 settle（04 仍在 1 时跳过，
-            // 避免打断橡皮筋）。
+            // 上下都跟手）；04 起手按主方向仲裁，横向占优让位给内容手势（卡片侧滑等），
+            // 上滑占优不驱动 collapse、留给内容区 OverScroll 橡皮筋。02↔04 吸附动画期间
+            // 竖向起手可直接接管（停住动画、从当前进度继续跟手）。抬手速度仍在这里
+            // 统一交给 settle（04 仍在 1 时跳过，避免打断橡皮筋）。
             .pointerInput(
                 active,
                 sheetMounted,
@@ -352,9 +355,6 @@ fun DayScreen(
             ) {
                 if (!active || sheetMounted) return@pointerInput
                 val tracker = VelocityTracker()
-                // 04 起手方向锁的阈值：先用一个 touch slop 判定这次手势是下滑还是上滑，
-                // 快速上滑开头的少量向下抖动不会被当成 04→02 下滑。
-                val directionSlopPx = viewConfiguration.touchSlop
 
                 // 02 端点的整组过滚动：向下全收；向上只收到当前拉出量归零，
                 // 剩余位移由调用方交给 collapse。返回本次被过滚动消费的 dy。
@@ -383,12 +383,18 @@ fun DayScreen(
                         pass = PointerEventPass.Initial,
                     )
                     // 吸附/重播期间不接新手势，避免整组过滚动在转场动画上再叠位移。
-                    if (transition.isAnimating) return@awaitEachGesture
-                    // 02→04 与 04→02 都由根级统一驱动跟手；04 以上滑起手时
-                    // 完全不消费、不写 collapse，留给内容区 Overscroll。
+                    // 例外：02↔04 吸附允许新手势接管（canTakeOverSnap），其余动画整段屏蔽。
+                    if (transition.isAnimating && !transition.canTakeOverSnap) {
+                        return@awaitEachGesture
+                    }
+                    // 本次起手是否用于接管在途的 02↔04 吸附（01↔02 吸附/重播不会走到这里）。
+                    val snapTakeOver = transition.canTakeOverSnap
+                    // 02→04 与 04→02 都由根级统一驱动跟手；04 起手先做横/竖轴仲裁：
+                    // 横向占优整段让位，竖向（上滑）占优不写 collapse，留给内容区 Overscroll。
                     // 04 只要列表在顶部就由根级接管，避免未到达列表滚动阈值前
-                    // 出现“只吸不跟手”；列表已下滚时让给列表。
-                    val drivesCollapse = shouldDriveCollapse(
+                    // 出现“只吸不跟手”；列表已下滚时让给列表。接管吸附时无视列表状态——
+                    // 动画期间内容滚动本就是关闭的。
+                    val drivesCollapse = snapTakeOver || shouldDriveCollapse(
                         stage = transition.stage,
                         canScrollForward = listState.canScrollForward,
                         canScrollBackward = listState.canScrollBackward,
@@ -396,15 +402,26 @@ fun DayScreen(
                     tracker.resetTracking()
                     tracker.addPosition(down.uptimeMillis, down.position)
                     val pointerId = down.id
+                    var lastX = down.position.x
                     var lastY = down.position.y
-                    val scheduleGesture = transition.stage == DayStage.Schedule
+                    // 接管吸附也走 04 同一套轴仲裁与双向跟手，只是竖向定轴后先停住动画。
+                    val scheduleGesture =
+                        transition.stage == DayStage.Schedule || snapTakeOver
+                    // 04 起手轴仲裁：复用横滑手势同一把方向锁（占比阈值 + 单次定轴），
+                    // 竖向占优才由根级驱动 04→02；横向占优立即让位给卡片的横滑/其它
+                    // 横向手势，不消费事件、也不写 collapse。未定轴前一律不消费，点击不受影响。
+                    val scheduleAxisLock = DragDirectionLock(viewConfiguration.touchSlop)
                     // 0 = 未定，1 = 下滑（驱动 collapse），-1 = 上滑（只做 Overscroll）
                     var scheduleDirection = 0
                     var directionAccum = 0f
+                    // 横向定轴后整段让位：结束时不再走 settle，吸附动画自行跑完。
+                    var gaveWayToHorizontal = false
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
                         val change = event.changes.firstOrNull { it.id == pointerId } ?: break
                         tracker.addPosition(change.uptimeMillis, change.position)
+                        val dx = change.position.x - lastX
+                        lastX = change.position.x
                         val dy = change.position.y - lastY
                         lastY = change.position.y
                         if (drivesCollapse) {
@@ -412,27 +429,46 @@ fun DayScreen(
                                 when (scheduleDirection) {
                                     0 -> {
                                         directionAccum += dy
-                                        val decided = scheduleCollapseDirection(
-                                            accumulatedDy = directionAccum,
-                                            slopPx = directionSlopPx,
-                                        )
-                                        if (decided != 0) {
-                                            scheduleDirection = decided
-                                            if (decided > 0) {
-                                                // 补上定向前累计的下滑量，跟手不丢位移。
-                                                val consumed = transition.dragCollapseBy(
-                                                    directionAccum,
-                                                    dragDistancePx,
-                                                )
-                                                if (consumed != 0f) change.consume()
+                                        when (scheduleAxisLock.onMove(dx, dy)) {
+                                            // 横向手势：让位，整段不再驱动 collapse。
+                                            DragDirection.Horizontal -> {
+                                                gaveWayToHorizontal = true
+                                                break
                                             }
-                                            // 上滑锁定后完全不碰 collapse，放给 Overscroll。
+                                            DragDirection.Vertical -> when {
+                                                snapTakeOver && transition.canTakeOverSnap -> {
+                                                    // 接管在途吸附：动画停在当前进度，
+                                                    // 上下两个方向都直接跟手。
+                                                    transition.takeOverSnap()
+                                                    scheduleDirection = 1
+                                                    val consumed = transition.dragCollapseBy(
+                                                        directionAccum,
+                                                        dragDistancePx,
+                                                    )
+                                                    if (consumed != 0f) change.consume()
+                                                }
+                                                transition.stage == DayStage.Schedule &&
+                                                    directionAccum < 0f -> {
+                                                    // 上滑锁定：完全不碰 collapse，放给 Overscroll。
+                                                    scheduleDirection = -1
+                                                }
+                                                else -> {
+                                                    scheduleDirection = 1
+                                                    // 补上定向前累计的下滑量，跟手不丢位移。
+                                                    val consumed = transition.dragCollapseBy(
+                                                        directionAccum,
+                                                        dragDistancePx,
+                                                    )
+                                                    if (consumed != 0f) change.consume()
+                                                }
+                                            }
+                                            DragDirection.Undecided -> Unit
                                         }
                                     }
                                     1 -> {
-                                        // 下滑锁定后仍双向跟手：上滑把 collapse 拉回 04，
-                                        // 松手时才按最终进度判是否回 02——拖出去再拉回来
-                                        // （未越过阈值）不会提前触发 02。
+                                        // 下滑锁定（或接管吸附）后仍双向跟手：上滑把 collapse
+                                        // 拉回 04，松手时才按最终进度判是否回 02——拖出去再
+                                        // 拉回来（未越过阈值）不会提前触发 02。
                                         if (transition.collapse <= 0f && dy > 0f) {
                                             // 04→02 已经拖到 02：继续下滑交给整组过滚动，
                                             // 不再让内容列表自己的 overscroll 接走——
@@ -482,7 +518,8 @@ fun DayScreen(
                     // 04 上滑起手只做过滚动：collapse 仍在 1 时不 settle，避免任何吸附
                     // 动画打断橡皮筋回弹；下滑过（collapse < 1）则松手按最终进度/速度
                     // 判回 02 还是回弹 04。04 列表已下滚时手势归列表收束，根级同样不 settle。
-                    val shouldSettle = when (transition.stage) {
+                    // 横向让位的手势不参与转场收束，避免拿横滑的竖向抖动去触发 settle。
+                    val shouldSettle = !gaveWayToHorizontal && when (transition.stage) {
                         DayStage.Schedule ->
                             drivesCollapse && transition.collapse < 1f
                         else -> true
@@ -491,7 +528,8 @@ fun DayScreen(
                     // 04→02 已经拖过 02 的情况也在这里：先无动画地提交 02，
                     // 再由 OffsetOverscrollEffect 的默认临界阻尼弹簧把内容送回原位；
                     // 效果挂在页面根上，不会因切回 Compact 被移除而硬切。
-                    val compactPulled = transition.collapse <= 0f &&
+                    val compactPulled = !gaveWayToHorizontal &&
+                        transition.collapse <= 0f &&
                         compactOverscroll.currentOffset != Offset.Zero
                     if (compactPulled) {
                         if (transition.stage == DayStage.Schedule) {

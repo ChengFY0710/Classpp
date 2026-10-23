@@ -86,20 +86,6 @@ internal fun snapCollapseForward(
     snapForward(collapse, velocityY, flingThresholdPx)
 }
 
-/**
- * 04 手势起手方向锁：累计位移超过 [slopPx] 才锁定方向，返回 1 = 下滑
- * （驱动 collapse）、-1 = 上滑（只做过滚动）、0 = 还未定。
- *
- * 快速上滑的起手常带一点向下抖动；不设这个锁，第一段正向 dy 就会被当成
- * 04→02 下滑。锁只决定这次手势由谁驱动：上滑起手始终只做过滚动；下滑锁定后
- * 反向拖动仍跟手把 collapse 推回 04，但是否回 02 只在松手时按最终位置判定。
- */
-internal fun scheduleCollapseDirection(accumulatedDy: Float, slopPx: Float): Int = when {
-    accumulatedDy >= slopPx -> 1
-    accumulatedDy <= -slopPx -> -1
-    else -> 0
-}
-
 /** 吸附进度阈值（设计稿提示词建议 0.4）。 */
 internal const val DaySnapThreshold = 0.4f
 
@@ -107,9 +93,9 @@ internal const val DaySnapThreshold = 0.4f
  * 根级 pointerInput 是否应该接管本次手势并推进 collapse。
  *
  * - 02（Compact）：内容还是空占位、列表上下都不可滚，图片卡/内容卡任意起手都跟手；
- * - 04（Schedule）：列表在顶部（不能再向后滚）时，任何下滑都由根级从第一像素推进
- *   collapse；上滑起手不写 collapse，放给内容 Overscroll（下滑锁定后的回拉仍跟手）；
- *   列表已经下滚时则让给列表滚动；
+ * - 04（Schedule）：列表在顶部（不能再向后滚）时，竖向手势由根级从第一像素推进
+ *   collapse；横滑经轴仲裁让位给内容手势；上滑起手不写 collapse，放给内容
+ *   Overscroll（下滑锁定后的回拉仍跟手）；列表已经下滚时则让给列表滚动；
  * - 01（Calendar）：由整屏 draggable 负责 01→02。
  */
 internal fun shouldDriveCollapse(

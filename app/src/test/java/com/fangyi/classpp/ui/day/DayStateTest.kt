@@ -99,17 +99,6 @@ class DayStateTest {
     }
 
     @Test
-    fun scheduleDirectionLocksOnlyAfterSlop() {
-        val slop = 100f
-        // 起手抖动不足一个阈值：方向未定，不启动 04→02。
-        assertEquals(0, scheduleCollapseDirection(accumulatedDy = 3f, slopPx = slop))
-        assertEquals(0, scheduleCollapseDirection(accumulatedDy = -99f, slopPx = slop))
-        // 超过阈值才锁定；向下 = 1，向上 = -1。
-        assertEquals(1, scheduleCollapseDirection(accumulatedDy = 100f, slopPx = slop))
-        assertEquals(-1, scheduleCollapseDirection(accumulatedDy = -100f, slopPx = slop))
-    }
-
-    @Test
     fun collapseGestureRoutingFollowsStageAndListPosition() {
         // 02 空占位：上下都不可滚时由根级驱动
         assertTrue(

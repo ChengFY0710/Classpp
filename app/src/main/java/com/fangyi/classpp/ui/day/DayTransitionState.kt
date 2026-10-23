@@ -25,6 +25,8 @@ import kotlinx.coroutines.launch
  * 是纯视觉动画：结束时 [stage] 变 Calendar，但不触发 [onCommit]，已开启标记保持不变。
  *
  * [isAnimating] 覆盖吸附与重播，调用方据此屏蔽所有手势（重播期间尤其必须屏蔽）。
+ * 例外是 02↔04 吸附：[canTakeOverSnap] 期间新手势可在竖向定轴后调用 [takeOverSnap]
+ * 取消动画、从当前进度继续拖拽；01↔02 吸附与重播不可接管。
  */
 @Stable
 internal class DayTransitionState(
@@ -44,8 +46,12 @@ internal class DayTransitionState(
     var stage by mutableStateOf(initialStage)
         private set
 
-    /** 吸附/重播动画进行中；true 时全部手势入口关闭。 */
+    /** 吸附/重播动画进行中；true 时全部手势入口关闭（[canTakeOverSnap] 除外）。 */
     var isAnimating by mutableStateOf(false)
+        private set
+
+    /** 进行中的 02↔04 吸附可被新手势接管（[takeOverSnap]）；01↔02 吸附与重播不可。 */
+    var canTakeOverSnap by mutableStateOf(false)
         private set
 
     private var animationJob: Job? = null
@@ -97,6 +103,7 @@ internal class DayTransitionState(
      * 04→02 与 02→04 共用 [DaySnapThreshold]，且只看松手时的最终进度：
      * 04 下滑越过往 02 的阈值（或快速下滑一甩）才提交 02，途中越过又拉回来的
      * 不算；04 仍在 1 时上滑只做过滚动，不启动吸附打断橡皮筋。
+     * collapse 段的吸附可被新手势接管（[takeOverSnap]），01↔02 段不可。
      *
      * @param velocityY px/s，正 = 下滑，负 = 上滑
      * @param flingThresholdPx 快速甩动阈值（px/s）
@@ -120,13 +127,32 @@ internal class DayTransitionState(
                 val forward = snapCollapseForward(stage, collapse, velocityY, flingThresholdPx)
                 when {
                     forward && collapse < 1f ->
-                        animateTo(1f, 1f, DayStage.Schedule, commit = true)
+                        animateTo(
+                            1f, 1f, DayStage.Schedule, commit = true, takeOverable = true,
+                        )
                     forward -> commitCurrentEndpoint()
-                    collapse > 0f -> animateTo(1f, 0f, DayStage.Compact, commit = true)
+                    collapse > 0f -> animateTo(
+                        1f, 0f, DayStage.Compact, commit = true, takeOverable = true,
+                    )
                     else -> commitCurrentEndpoint()
                 }
             }
         }
+    }
+
+    /**
+     * 新手势接管进行中的 02↔04 吸附：取消动画、停在当前进度，随后的
+     * [dragCollapseBy] 立即跟手。返回是否真的取消了在途吸附（动画已结束/不可接管时为 false）。
+     */
+    fun takeOverSnap(): Boolean {
+        if (!canTakeOverSnap) return false
+        // 先递增代号再 cancel：旧协程的 finally 不得再清掉接管后的状态。
+        animationGeneration++
+        animationJob?.cancel()
+        animationJob = null
+        isAnimating = false
+        canTakeOverSnap = false
+        return true
     }
 
     /** 02 点图片卡：同一曲线原路反向播放 02→01，纯视觉，不写任何持久化。 */
@@ -146,6 +172,7 @@ internal class DayTransitionState(
         collapse = 0f
         stage = DayStage.Calendar
         isAnimating = false
+        canTakeOverSnap = false
     }
 
     /**
@@ -167,17 +194,22 @@ internal class DayTransitionState(
 
     /**
      * 共用的吸附动画：从当前值 tween 到目标值，每帧只写两个 float state；
-     * 归位后提交 stage/持久化。取消（重播被新动作/跨天打断）时不会提交。
+     * 归位后提交 stage/持久化。取消（重播被新动作/跨天打断/手势接管）时不会提交。
+     *
+     * @param takeOverable 02↔04 段的吸附传 true：允许新手势中途 [takeOverSnap]；
+     *   01↔02 与重播传 false，动画期间整段屏蔽手势。
      */
     private fun animateTo(
         targetOpen: Float,
         targetCollapse: Float,
         targetStage: DayStage,
         commit: Boolean,
+        takeOverable: Boolean = false,
     ) {
         animationJob?.cancel()
         val generation = ++animationGeneration
         isAnimating = true
+        canTakeOverSnap = takeOverable
         animationJob = scope.launch {
             val startOpen = open
             val startCollapse = collapse
@@ -203,6 +235,7 @@ internal class DayTransitionState(
             } finally {
                 if (generation == animationGeneration) {
                     isAnimating = false
+                    canTakeOverSnap = false
                 }
             }
         }
