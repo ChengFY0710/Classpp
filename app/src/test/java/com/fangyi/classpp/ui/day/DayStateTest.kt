@@ -99,6 +99,20 @@ class DayStateTest {
     }
 
     @Test
+    fun snapTakeOverNeedsClearlyVerticalIntent() {
+        val confirmPx = 16f
+        // 横滑起手带一小段竖向弧线：距离不够，即使方向锁先判成竖向也不接管。
+        assertFalse(confirmsSnapTakeOver(verticalPx = 10f, horizontalPx = 1f, confirmPx = confirmPx))
+        assertFalse(confirmsSnapTakeOver(verticalPx = 14f, horizontalPx = 30f, confirmPx = confirmPx))
+        // 竖向够了但横向占比过大（斜向横滑）：不接管。
+        assertFalse(confirmsSnapTakeOver(verticalPx = 20f, horizontalPx = 18f, confirmPx = confirmPx))
+        // 竖向明确压过横向、位移达到确认距离：上下两个方向都可接管。
+        assertTrue(confirmsSnapTakeOver(verticalPx = 16f, horizontalPx = 0f, confirmPx = confirmPx))
+        assertTrue(confirmsSnapTakeOver(verticalPx = 18f, horizontalPx = 3f, confirmPx = confirmPx))
+        assertTrue(confirmsSnapTakeOver(verticalPx = -18f, horizontalPx = 3f, confirmPx = confirmPx))
+    }
+
+    @Test
     fun collapseGestureRoutingFollowsStageAndListPosition() {
         // 02 空占位：上下都不可滚时由根级驱动
         assertTrue(

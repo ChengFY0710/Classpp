@@ -121,6 +121,15 @@ import kotlinx.coroutines.launch
 private const val MillisPerDay = 86_400_000L
 
 /**
+ * 接管 02↔04 吸附所需的最小竖向确认距离（× touchSlop）。
+ *
+ * 横滑起手常带一小段竖向弧线，刚过方向锁阈值就去停吸附，会让横滑把在途吸附
+ * 打断、再按阈值重新吸附（表现为「左右滑触发阈值」）。因此要求竖向位移达到
+ * 这个距离、且仍明显压过横向位移，才允许接管；未确认前一律不消费、不动画。
+ */
+private const val SnapTakeOverConfirmSlopFactor = 2f
+
+/**
  * 日程页（AppTab.Agenda）：手势驱动的台历三态页面。
  *
  * 真实状态只有 01 台历（[DayStage.Calendar]）、02 台历缩小态（[DayStage.Compact]）、
@@ -389,6 +398,8 @@ fun DayScreen(
                     }
                     // 本次起手是否用于接管在途的 02↔04 吸附（01↔02 吸附/重播不会走到这里）。
                     val snapTakeOver = transition.canTakeOverSnap
+                    val snapTakeOverConfirmPx =
+                        viewConfiguration.touchSlop * SnapTakeOverConfirmSlopFactor
                     // 02→04 与 04→02 都由根级统一驱动跟手；04 起手先做横/竖轴仲裁：
                     // 横向占优整段让位，竖向（上滑）占优不写 collapse，留给内容区 Overscroll。
                     // 04 只要列表在顶部就由根级接管，避免未到达列表滚动阈值前
@@ -414,8 +425,17 @@ fun DayScreen(
                     // 0 = 未定，1 = 下滑（驱动 collapse），-1 = 上滑（只做 Overscroll）
                     var scheduleDirection = 0
                     var directionAccum = 0f
+                    var horizontalAccum = 0f
                     // 横向定轴后整段让位：结束时不再走 settle，吸附动画自行跑完。
                     var gaveWayToHorizontal = false
+                    // 定轴/接管后从累计位移开始跟手：下滑方向补上定向前位移，
+                    // 上滑方向不碰 collapse（0 不给调用方消费）。
+                    fun startVerticalDrag(): Float =
+                        if (scheduleDirection > 0) {
+                            transition.dragCollapseBy(directionAccum, dragDistancePx)
+                        } else {
+                            0f
+                        }
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
                         val change = event.changes.firstOrNull { it.id == pointerId } ?: break
@@ -429,37 +449,59 @@ fun DayScreen(
                                 when (scheduleDirection) {
                                     0 -> {
                                         directionAccum += dy
+                                        horizontalAccum += dx
                                         when (scheduleAxisLock.onMove(dx, dy)) {
                                             // 横向手势：让位，整段不再驱动 collapse。
                                             DragDirection.Horizontal -> {
                                                 gaveWayToHorizontal = true
                                                 break
                                             }
-                                            DragDirection.Vertical -> when {
-                                                snapTakeOver && transition.canTakeOverSnap -> {
-                                                    // 接管在途吸附：动画停在当前进度，
-                                                    // 上下两个方向都直接跟手。
-                                                    transition.takeOverSnap()
-                                                    scheduleDirection = 1
-                                                    val consumed = transition.dragCollapseBy(
+                                            DragDirection.Vertical -> {
+                                                // 接管在途吸附要求明确的竖向意图：只看
+                                                // 方向锁定轴还不够（横滑起手常带竖向弧线），
+                                                // 必须再走出一段竖向位移且仍压过横向。
+                                                val takeOverConfirmed = snapTakeOver &&
+                                                    confirmsSnapTakeOver(
                                                         directionAccum,
-                                                        dragDistancePx,
+                                                        horizontalAccum,
+                                                        snapTakeOverConfirmPx,
                                                     )
-                                                    if (consumed != 0f) change.consume()
-                                                }
-                                                transition.stage == DayStage.Schedule &&
-                                                    directionAccum < 0f -> {
-                                                    // 上滑锁定：完全不碰 collapse，放给 Overscroll。
-                                                    scheduleDirection = -1
-                                                }
-                                                else -> {
-                                                    scheduleDirection = 1
-                                                    // 补上定向前累计的下滑量，跟手不丢位移。
-                                                    val consumed = transition.dragCollapseBy(
-                                                        directionAccum,
-                                                        dragDistancePx,
-                                                    )
-                                                    if (consumed != 0f) change.consume()
+                                                when {
+                                                    // 还在观察（吸附中或已结束）：不消费、
+                                                    // 不碰 collapse，动画/阈值都不被打断。
+                                                    snapTakeOver && !takeOverConfirmed -> Unit
+                                                    snapTakeOver && transition.canTakeOverSnap -> {
+                                                        // 接管在途吸附：动画停在当前进度，
+                                                        // 上下两个方向都直接跟手。
+                                                        transition.takeOverSnap()
+                                                        scheduleDirection = 1
+                                                        val consumed = startVerticalDrag()
+                                                        if (consumed != 0f) change.consume()
+                                                    }
+                                                    // 确认竖向时吸附已自己结束：按普通竖向手势继续。
+                                                    snapTakeOver -> {
+                                                        scheduleDirection =
+                                                            if (
+                                                                transition.stage == DayStage.Schedule &&
+                                                                directionAccum < 0f
+                                                            ) {
+                                                                -1
+                                                            } else {
+                                                                1
+                                                            }
+                                                        val consumed = startVerticalDrag()
+                                                        if (consumed != 0f) change.consume()
+                                                    }
+                                                    transition.stage == DayStage.Schedule &&
+                                                        directionAccum < 0f -> {
+                                                        // 上滑锁定：完全不碰 collapse，放给 Overscroll。
+                                                        scheduleDirection = -1
+                                                    }
+                                                    else -> {
+                                                        scheduleDirection = 1
+                                                        val consumed = startVerticalDrag()
+                                                        if (consumed != 0f) change.consume()
+                                                    }
                                                 }
                                             }
                                             DragDirection.Undecided -> Unit
@@ -518,8 +560,11 @@ fun DayScreen(
                     // 04 上滑起手只做过滚动：collapse 仍在 1 时不 settle，避免任何吸附
                     // 动画打断橡皮筋回弹；下滑过（collapse < 1）则松手按最终进度/速度
                     // 判回 02 还是回弹 04。04 列表已下滚时手势归列表收束，根级同样不 settle。
-                    // 横向让位的手势不参与转场收束，避免拿横滑的竖向抖动去触发 settle。
-                    val shouldSettle = !gaveWayToHorizontal && when (transition.stage) {
+                    // 没有驱动转场的手势（横向让位 / 吸附起手但没真正接管）整段只算观察：
+                    // 不 settle，否则横滑残留的竖向抖动会再触发一次阈值吸附。
+                    val passiveGesture = gaveWayToHorizontal ||
+                        (snapTakeOver && scheduleDirection == 0)
+                    val shouldSettle = !passiveGesture && when (transition.stage) {
                         DayStage.Schedule ->
                             drivesCollapse && transition.collapse < 1f
                         else -> true
@@ -528,7 +573,7 @@ fun DayScreen(
                     // 04→02 已经拖过 02 的情况也在这里：先无动画地提交 02，
                     // 再由 OffsetOverscrollEffect 的默认临界阻尼弹簧把内容送回原位；
                     // 效果挂在页面根上，不会因切回 Compact 被移除而硬切。
-                    val compactPulled = !gaveWayToHorizontal &&
+                    val compactPulled = !passiveGesture &&
                         transition.collapse <= 0f &&
                         compactOverscroll.currentOffset != Offset.Zero
                     if (compactPulled) {

@@ -1,6 +1,8 @@
 package com.fangyi.classpp.ui.day
 
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.ui.motion.DirectionRatio
+import kotlin.math.abs
 
 /**
  * 日程页台历的真实停留状态（设计稿 01 / 02 / 04）。
@@ -88,6 +90,21 @@ internal fun snapCollapseForward(
 
 /** 吸附进度阈值（设计稿提示词建议 0.4）。 */
 internal const val DaySnapThreshold = 0.4f
+
+/**
+ * 02↔04 吸附是否允许被本次起手接管：竖向位移达到确认距离 [confirmPx]，
+ * 且仍明显压过横向位移。
+ *
+ * 不能只看 `DragDirectionLock` 的单次定轴——定轴时机早于确认，横滑起手常带
+ * 一小段竖向弧线，第一帧只有 dy 时会被判成竖向；据此就接管会让横滑把在途
+ * 吸附停住、再按阈值重新吸附（表现为「左右滑动触发阈值」）。
+ */
+internal fun confirmsSnapTakeOver(
+    verticalPx: Float,
+    horizontalPx: Float,
+    confirmPx: Float,
+): Boolean = abs(verticalPx) >= confirmPx &&
+    abs(verticalPx) >= DirectionRatio * abs(horizontalPx)
 
 /**
  * 根级 pointerInput 是否应该接管本次手势并推进 collapse。

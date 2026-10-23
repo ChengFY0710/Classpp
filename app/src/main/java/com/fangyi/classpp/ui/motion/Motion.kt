@@ -60,7 +60,7 @@ object Motion {
      * 三段转场与重播共用 [Overlay] 同一条曲线，松手后从当前进度收束到目标态。
      * 取值由设计稿节奏定，约 380ms；改这里全局同步。
      */
-    const val AgendaSnapMillis = 380
+    const val AgendaSnapMillis = 450
 
     /** 浮层（OverlaySheet）入场时长：从屏幕底部滑入，配合 [Overlay]。 */
     const val SheetEnterMillis = 400
