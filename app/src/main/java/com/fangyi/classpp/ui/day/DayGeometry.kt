@@ -113,7 +113,8 @@ internal data class DayMetrics(
     val navReserve: Float = NavReserve.value,
     val dateBottomGap: Float = DayDateBottomGap.value,
     /**
-     * 机身圆角半径（dp）：01 台历全屏图的裁剪半径，也是 01→02 圆角插值的起点。
+     * 机身圆角半径（dp）：01 滑动开始瞬间套到全屏图上的裁剪半径，也是 01→02
+     * 圆角插值的起点。01 静止态不裁剪（直角），滑动一开始才取这个值。
      * UI 由 rememberDeviceCornerRadius() 读系统真实 R 角；低版本/取不到时该 helper
      * 退化为 24dp。单测可传任意值验证「机身圆角 → DayCardShape」的连续过渡。
      */
@@ -142,7 +143,10 @@ internal data class DayRect(
 internal data class DayFrame(
     /** 图片卡矩形（shape 裁剪 + 图片居中裁切共用）。 */
     val image: DayRect,
-    /** 图片卡圆角：01 为机身圆角，01→02 连续插值到 24dp；02/04 恒为 24dp。 */
+    /**
+     * 图片卡圆角：01 静止态为 0（满幅直角，不裁剪）；用户一开始滑动（open > 0）
+     * 立即切到机身圆角，再随 01→02 连续插值到 24dp；02/04 恒为 24dp。
+     */
     val imageRadius: Float,
     /** 白底内容卡矩形。 */
     val content: DayRect,
@@ -296,9 +300,14 @@ internal object DayGeometry {
 
         return DayFrame(
             image = image,
-            // 01 全屏图先裁成机身圆角，再随卡片收拢连续过渡到 DayCardShape 的 24dp；
-            // 02→04 的 open 恒为 1，圆角保持 24dp 不参与收窄。
-            imageRadius = lerp(metrics.deviceCornerRadius, DayCardCorner.value, o),
+            // 01 静止态是满幅直角；滑动一开始（open > 0）立刻切到机身圆角，
+            // 再随卡片收拢连续过渡到 DayCardShape 的 24dp。02→04 的 open 恒为 1，
+            // 圆角保持 24dp 不参与收窄。
+            imageRadius = if (o <= 0f) {
+                0f
+            } else {
+                lerp(metrics.deviceCornerRadius, DayCardCorner.value, o)
+            },
             content = content,
             bandTop = bandTop,
             bandBottom = bandBottom,

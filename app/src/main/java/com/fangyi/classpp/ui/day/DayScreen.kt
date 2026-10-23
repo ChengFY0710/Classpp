@@ -55,6 +55,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.addOutline
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.TransformOrigin
@@ -165,8 +166,9 @@ fun DayScreen(
     val view = LocalView.current
     val activity = remember(view) { view.context.findActivity() }
     val darkTheme = MaterialTheme.isDarkTheme
-    // 01 台历的全屏图圆角取机身真实 R 角；01→02 再连续过渡到 DayCardShape 的 24dp。
-    // 图片卡外层用 shapes 库的 RoundedRectangle 裁剪，圆滑圆角与白卡同源。
+    // 01 静止态全屏图满幅直角；滑动一开始才取机身真实 R 角，01→02 再连续
+    // 过渡到 DayCardShape 的 24dp。图片卡外层用 shapes 库的 RoundedRectangle
+    // 裁剪，圆滑圆角与白卡同源。
     val deviceCornerRadius = rememberDeviceCornerRadius()
 
     // 图片采样与白卡采样分开：图片 scrim/模糊带只采图片，顶栏只采内容卡，
@@ -697,8 +699,15 @@ fun DayScreen(
                         )
                         // 02→04 后段渐隐：白卡被 Overscroll 拖上去时不再露出台历残影。
                         alpha = frame.imageAlpha
-                        clip = true
-                        shape = RoundedRectangle(frame.imageRadius.dp)
+                        // 01 静止态是满幅直角：不裁剪，避免 RoundedRectangle(0) 在
+                        // 屏幕边缘留下抗锯齿细线；滑动一开始（open > 0）立即套机身圆角。
+                        val radius = frame.imageRadius
+                        if (radius > 0f) {
+                            clip = true
+                            shape = RoundedRectangle(radius.dp)
+                        } else {
+                            clip = false
+                        }
                     },
             ) { measurables, _ ->
                 val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
@@ -735,15 +744,25 @@ fun DayScreen(
                                     // 黑色压暗只作用在图片卡内部，并复用图片卡同一 RoundedRectangle
                                     // 轮廓裁剪：底部两角随 imageRadius 一起从机身圆角过渡到
                                     // DayCardShape，页面背景与卡间间隙不再被压暗。
+                                    // 01 静止态（圆角 0）用矩形轮廓，与不裁剪的图片一致。
                                     val cardWidthPx =
                                         (frame.image.width * pxPerDp).coerceAtLeast(1f)
                                     val cardHeightPx =
                                         (frame.image.height * pxPerDp).coerceAtLeast(1f)
-                                    val outline = RoundedRectangle(frame.imageRadius.dp).createOutline(
-                                        size = Size(cardWidthPx, cardHeightPx),
-                                        layoutDirection = layoutDirection,
-                                        density = this,
-                                    )
+                                    val cardSize = Size(cardWidthPx, cardHeightPx)
+                                    val outline = if (frame.imageRadius > 0f) {
+                                        RoundedRectangle(frame.imageRadius.dp).createOutline(
+                                            size = cardSize,
+                                            layoutDirection = layoutDirection,
+                                            density = this,
+                                        )
+                                    } else {
+                                        RectangleShape.createOutline(
+                                            size = cardSize,
+                                            layoutDirection = layoutDirection,
+                                            density = this,
+                                        )
+                                    }
                                     val cardClip = Path().apply { addOutline(outline) }
                                     // 图片卡在模糊带局部坐标系里的落位：band child 顶部 = bandTop
                                     cardClip.translate(

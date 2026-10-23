@@ -27,14 +27,14 @@ class DayGeometryTest {
         assertEquals(0f, frame.image.top, 0.01f)
         assertEquals(402f, frame.image.right, 0.01f)
         assertEquals(893f, frame.image.bottom, 0.01f)
-        // 01 先裁机身圆角（不是 0，也不是 DayCardShape）
-        assertEquals(28f, frame.imageRadius, 0.01f)
+        // 01 静止态满幅直角：不裁圆角
+        assertEquals(0f, frame.imageRadius, 0.01f)
 
-        // 01 白卡完全在屏外（比图片底边低一个 DayCardGap），模糊带仍是原来的 360dp 底部 scrim
+        // 01 白卡完全在屏外（比图片底边低一个 DayCardGap），模糊带仍是原来的 320dp 底部 scrim
         assertEquals(893f + DayCardGap.value, frame.content.top, 0.01f)
-        assertEquals(533f, frame.bandTop, 0.01f)
+        assertEquals(573f, frame.bandTop, 0.01f)
         assertEquals(893f, frame.bandBottom, 0.01f)
-        assertEquals(360f, frame.bandHeight, 0.01f)
+        assertEquals(320f, frame.bandHeight, 0.01f)
 
         assertEquals(0f, frame.dateTranslationY, 0.01f)
         assertEquals(1f, frame.topScrimAlpha, 0.01f)
@@ -59,11 +59,14 @@ class DayGeometryTest {
     @Test
     fun imageCornerRadiusMorphsFromDeviceCornerToDayCardShape() {
         val calendar = DayGeometry.frame(metrics, open = 0f, collapse = 0f)
+        // 滑动刚开始的第一帧（open 从 0 跨到极小正值）立即切到机身圆角
+        val swipeStart = DayGeometry.frame(metrics, open = 0.001f, collapse = 0f)
         val halfway = DayGeometry.frame(metrics, open = 0.5f, collapse = 0f)
         val compact = DayGeometry.frame(metrics, open = 1f, collapse = 0f)
         val schedule = DayGeometry.frame(metrics, open = 1f, collapse = 1f)
 
-        assertEquals(28f, calendar.imageRadius, 0.01f)
+        assertEquals(0f, calendar.imageRadius, 0.01f)
+        assertEquals(28f, swipeStart.imageRadius, 0.03f)
         assertEquals(26f, halfway.imageRadius, 0.01f)
         assertEquals(24f, compact.imageRadius, 0.01f)
         // 02→04 只收窄/下移，不参与圆角插值
