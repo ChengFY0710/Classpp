@@ -11,6 +11,7 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoFile
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoStep
+import com.fangyi.classpp.data.model.isDeleted
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
@@ -29,6 +30,12 @@ import kotlinx.coroutines.withContext
  * 同时持有**待办分组**（[TodoFile.groups]）：与待办同文件、同 mutex 原子写入，
  * 删除分组经 [setGroups] 级联把该组待办置回未分组。
  *
+ * **软删除（最近删除）**：删除统一是软删——[removeTodo] / [removeTodos] 只写
+ * [Todo.deletedAtMillis]，条目仍留在 todos.json；读侧按标记分成两个流：
+ * [todos] 只发活跃待办（通知、日历、课程详情等既有消费方天然看不到回收站），
+ * [deletedTodos] 只发回收站条目。恢复走 [restoreTodo]（清标记重回活跃流），
+ * 彻底删除走 [purgeTodo]（才真正从文件移除）。
+ *
  * - 读：StateFlow 直接 collect，无 I/O；
  * - 写：Mutex 串行化，流程 = 归一化 → 校验 → `store.save` → 成功才发布到 StateFlow
  *   （落盘先行，失败即内存零变更，天然无回滚问题）。
@@ -44,8 +51,13 @@ class TodoRepository internal constructor(
     // canonical in-memory file state（mutex 守护下写入；读走 StateFlow）
     private val fileState = MutableStateFlow(TodoFile())
 
+    // 活跃待办（最近删除之外的全部条目）：通知/日历/课程详情等既有消费方只读这一份
     private val _todos = MutableStateFlow<List<Todo>>(emptyList())
     val todos: StateFlow<List<Todo>> = _todos.asStateFlow()
+
+    // 最近删除（deletedAtMillis 非 null）：仅待办页回收站读取；按删除时刻倒序由 UI 排布
+    private val _deletedTodos = MutableStateFlow<List<Todo>>(emptyList())
+    val deletedTodos: StateFlow<List<Todo>> = _deletedTodos.asStateFlow()
 
     // 分组列表（顺序即显示序，置顶项构成连续前缀）：与 todos 同文件、同 commit 原子写入
     private val _groups = MutableStateFlow<List<TodoGroup>>(emptyList())
@@ -74,7 +86,9 @@ class TodoRepository internal constructor(
 
     private fun publish(file: TodoFile) {
         fileState.value = file
-        _todos.value = file.todos
+        // 单文件双流：活跃/回收站按软删标记分流，写入路径无需在两条列表间搬运条目
+        _todos.value = file.todos.filterNot { it.isDeleted }
+        _deletedTodos.value = file.todos.filter { it.isDeleted }
         _groups.value = file.groups
     }
 
@@ -90,8 +104,13 @@ class TodoRepository internal constructor(
         }
     }
 
+    /** 活跃待办按 id 反查（已进回收站的条目对常规写路径不可见，返回 null） */
     private fun todoOrNull(id: String): Todo? =
-        fileState.value.todos.firstOrNull { it.id == id }
+        fileState.value.todos.firstOrNull { it.id == id && !it.isDeleted }
+
+    /** 回收站条目按 id 反查（恢复/彻底删除专用） */
+    private fun deletedTodoOrNull(id: String): Todo? =
+        fileState.value.todos.firstOrNull { it.id == id && it.isDeleted }
 
     /**
      * 写入前归一化：名称/标签/步骤标题 trim、标签去空、日期 distinct + 排序；
@@ -221,15 +240,55 @@ class TodoRepository internal constructor(
         commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == prepared.id) prepared else it }))
     }
 
+    /**
+     * 删除待办 = 移入最近删除（软删）：只写 [Todo.deletedAtMillis]，条目留在 todos.json。
+     * 活跃列表即时移除、回收站流即时出现；已删除或不存在返回 NotFound。
+     */
     suspend fun removeTodo(id: String): TodoOpResult = mutex.withLock {
         if (todoOrNull(id) == null) return@withLock TodoOpResult.Err(TodoError.NotFound(id))
-        commit(fileState.value.copy(todos = fileState.value.todos.filterNot { it.id == id }))
+        val deletedAt = nowMillis()
+        commit(
+            fileState.value.copy(
+                todos = fileState.value.todos.map {
+                    if (it.id == id) it.copy(deletedAtMillis = deletedAt) else it
+                },
+            ),
+        )
     }
 
-    /** 批量删除；未知 id 宽容忽略（批量语义，同 removeCourses） */
+    /** 批量软删除；未知 id 宽容忽略（批量语义，同 removeCourses），已在回收站的不重复打标 */
     suspend fun removeTodos(ids: List<String>): TodoOpResult = mutex.withLock {
         val drop = ids.toSet()
-        commit(fileState.value.copy(todos = fileState.value.todos.filterNot { it.id in drop }))
+        val deletedAt = nowMillis()
+        commit(
+            fileState.value.copy(
+                todos = fileState.value.todos.map {
+                    if (it.id in drop && !it.isDeleted) it.copy(deletedAtMillis = deletedAt) else it
+                },
+            ),
+        )
+    }
+
+    /**
+     * 从最近删除恢复：清 [Todo.deletedAtMillis] 后重回活跃列表。
+     * 原分组 / 置顶 / 完成态一并保留；分组若在此期间被删，[normalize] 的引用完整性会
+     * 把 group 兜底回未分组。不在回收站（不存在或仍活跃）返回 NotFound。
+     */
+    suspend fun restoreTodo(id: String): TodoOpResult = mutex.withLock {
+        val target = deletedTodoOrNull(id) ?: return@withLock TodoOpResult.Err(TodoError.NotFound(id))
+        val restored = normalize(target.copy(deletedAtMillis = null))
+        val errors = TodoValidator.validate(restored)
+        if (errors.isNotEmpty()) return@withLock TodoOpResult.Err(errors.first())
+        commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == id) restored else it }))
+    }
+
+    /**
+     * 彻底删除（仅最近删除页的侧滑动作走这条）：才真正从 todos.json 移除、不可恢复。
+     * 只允许删回收站里的条目——活跃条目误调返回 NotFound，避免绕过软删直接毁数据。
+     */
+    suspend fun purgeTodo(id: String): TodoOpResult = mutex.withLock {
+        if (deletedTodoOrNull(id) == null) return@withLock TodoOpResult.Err(TodoError.NotFound(id))
+        commit(fileState.value.copy(todos = fileState.value.todos.filterNot { it.id == id }))
     }
 
     /**
@@ -327,10 +386,11 @@ class TodoRepository internal constructor(
 
     // ---------- 分享 ----------
 
-    /** 导出全部待办为 pretty JSON 文本（分享载荷），供系统分享面板发送 */
+    /** 导出全部**活跃**待办为 pretty JSON 文本（分享载荷）；最近删除不随分享导出 */
     suspend fun exportTodos(): TodoReadResult<String> {
         val current = fileState.value
-        return TodoReadResult.Ok(TodoShareCodec.encode(current.todos, nowMillis()))
+        val live = current.todos.filterNot { it.isDeleted }
+        return TodoReadResult.Ok(TodoShareCodec.encode(live, nowMillis()))
     }
 
     /**

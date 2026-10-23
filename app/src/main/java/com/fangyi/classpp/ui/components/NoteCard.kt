@@ -65,6 +65,9 @@ private val TagIconSize = 15.dp
 private val TimeIconSize = 16.dp
 private val FlagIconSize = 25.dp
 
+/** 已删除样式的撤回按钮：图标 24dp，热区与勾选框同规格（36dp，见卡片右侧） */
+private val RestoreIconSize = 24.dp
+
 /** 标签胶囊底 **/
 private val TagChipShape = PillShape
 private val TagChipPadding = 8.dp
@@ -201,6 +204,9 @@ private fun CountdownLabel(
  * - [completed] 完成态：标题划线置灰（时间/标签/旗帜不变），勾选框选中；
  *   左区倒计时随完成隐藏（即使 [countdownDays] 有值），取消完成后自动恢复；
  * - [overdue] 逾期态：标题标红（theme 的 error，时间/标签/旗帜不变）；完成态优先于逾期态；
+ * - [deleted] 已删除样式（最近删除页）：右侧勾选框换成 24dp 撤回按钮（ic_arrow_reset，
+ *   theme 的 error 色），点按回调 [onRestore]；其余样式与普通卡完全一致——唯一区别是右侧；
+ *   该样式下 [onCheckedChange] 不参与渲染；
  * - 时间、截止、重复与标签全缺席时卡片仍有 60dp 最小高度，不塌成纯文字高度；
  * - [swipe] 侧滑动作（见 [NoteCardSwipe]）：非 null 时卡片包进侧滑层——左右滑呼出删除/
  *   置顶动作卡，双阈值结算（不足展开阈值回弹复位、越过执行阈值松手即执行、展开态
@@ -221,6 +227,10 @@ fun NoteCard(
     urgency: TodoUrgency = TodoUrgency.None,
     completed: Boolean = false,
     overdue: Boolean = false,
+    // 已删除样式（最近删除页）：右侧勾选框换成撤回按钮，点按回调 onRestore；
+    // 其余样式不变（唯一区别是右侧），onCheckedChange 在该样式下不参与渲染
+    deleted: Boolean = false,
+    onRestore: (() -> Unit)? = null,
     onCheckedChange: ((Boolean) -> Unit)? = null,
     onClick: (() -> Unit)? = null,
     swipe: NoteCardSwipe? = null,
@@ -315,38 +325,62 @@ fun NoteCard(
                 )
                 Spacer(Modifier.width(16.dp))
             }
-            // M3 Checkbox 占位（后续按设计稿自绘）：颜色先取主题 primary——未选 = 蓝描边框，已选，蓝底白勾。
-            // 按压源由 pressFeedback 与 toggleable 共用（indication 置 null，涟漪由按压反馈取代）
-            val checkboxPress = remember { MutableInteractionSource() }
-            Row(
-                modifier = Modifier
-                    // 按压反馈在 clip 之前：缩放作用于整个触控区，提亮范围与勾选框圆角对齐
-                    .pressFeedback(checkboxPress, RoundedRectangle(6.dp))
-                    .clip(RoundedRectangle(6.dp))
-                    .toggleable(
-                        value = completed,
-                        interactionSource = checkboxPress,
-                        indication = null,
-                        onValueChange = { onCheckedChange?.invoke(it) }, // 安全调用
-                        role = Role.Checkbox,
+            if (deleted) {
+                // 已删除样式：右侧换撤回按钮——24dp 图标取 theme 的 error 色，热区与勾选框同为
+                // 36×36；按压反馈同源（pressClickable 的缩放作用于整个触控区、放在 clip 之前，
+                // 提亮范围与圆角对齐）。onRestore 缺席时按钮只是不响应（预览态）
+                Row(
+                    modifier = Modifier
+                        .pressClickable(
+                            shape = RoundedRectangle(6.dp),
+                            role = Role.Button,
+                            onClick = { onRestore?.invoke() },
+                        )
+                        .clip(RoundedRectangle(6.dp))
+                        .height(36.dp)
+                        .width(36.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_arrow_reset),
+                        contentDescription = stringResource(R.string.todo_restore),
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(RestoreIconSize),
                     )
-                    .height(36.dp)  //定义checkBox热区高度
-                    .width(36.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                Checkbox(
-                    checked = completed,
-                    onCheckedChange = null, // 事件交给外层，这里固定null
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = MaterialTheme.colorScheme.primary,
-                        uncheckedColor = MaterialTheme.colorScheme.primary,
-                        checkmarkColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
-                )
+                }
+            } else {
+                // M3 Checkbox 占位（后续按设计稿自绘）：颜色先取主题 primary——未选 = 蓝描边框，已选，蓝底白勾。
+                // 按压源由 pressFeedback 与 toggleable 共用（indication 置 null，涟漪由按压反馈取代）
+                val checkboxPress = remember { MutableInteractionSource() }
+                Row(
+                    modifier = Modifier
+                        // 按压反馈在 clip 之前：缩放作用于整个触控区，提亮范围与勾选框圆角对齐
+                        .pressFeedback(checkboxPress, RoundedRectangle(6.dp))
+                        .clip(RoundedRectangle(6.dp))
+                        .toggleable(
+                            value = completed,
+                            interactionSource = checkboxPress,
+                            indication = null,
+                            onValueChange = { onCheckedChange?.invoke(it) }, // 安全调用
+                            role = Role.Checkbox,
+                        )
+                        .height(36.dp)  //定义checkBox热区高度
+                        .width(36.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Checkbox(
+                        checked = completed,
+                        onCheckedChange = null, // 事件交给外层，这里固定null
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                            uncheckedColor = MaterialTheme.colorScheme.primary,
+                            checkmarkColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                    )
+                }
             }
-
-
         }
     }
 }
@@ -472,6 +506,14 @@ private fun NoteCardShowcase() {
             repeat = "自定义",
             tags = listOf("待办标签"),
             onCheckedChange = {},
+        )
+        // 已删除样式（最近删除页）：右侧勾选框换成红色撤回按钮，其余样式与普通卡完全一致
+        NoteCard(
+            title = "户口乔迁材料报送",
+            time = "12:30",
+            tags = listOf("待办标签"),
+            deleted = true,
+            onRestore = {},
         )
     }
 }

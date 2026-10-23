@@ -44,6 +44,14 @@ class TodoJsonRoundTripTest {
     }
 
     @Test
+    fun `recently deleted marker survives roundtrip`() {
+        val trashed = testTodo(id = "t1", deletedAtMillis = 1_700_000_000_000L)
+        val decoded = ScheduleJson.decodeStorage<Todo>(ScheduleJson.encodeStorage(trashed))
+        assertEquals(trashed, decoded)
+        assertEquals(1_700_000_000_000L, decoded.deletedAtMillis)
+    }
+
+    @Test
     fun `dates serialize as iso text`() {
         val json = ScheduleJson.encodeStorage(testTodo(id = "t1", dates = listOf(IsoDate.parse("2026-06-18"))))
         assertEquals("2026-06-18", Regex(""""dates":\["([^"]+)"""").find(json)!!.groupValues[1])

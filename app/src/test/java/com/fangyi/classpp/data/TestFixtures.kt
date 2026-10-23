@@ -94,6 +94,7 @@ internal fun testTodo(
     completed: Boolean = false,
     completedAtMillis: Long? = null,
     createdAtMillis: Long = 0,
+    deletedAtMillis: Long? = null,
     group: String? = null,
     countdown: Boolean = false,
 ) = Todo(
@@ -117,6 +118,7 @@ internal fun testTodo(
     completed = completed,
     completedAtMillis = completedAtMillis,
     createdAtMillis = createdAtMillis,
+    deletedAtMillis = deletedAtMillis,
     group = group,
     countdown = countdown,
 )

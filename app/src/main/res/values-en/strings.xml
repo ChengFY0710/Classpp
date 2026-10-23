@@ -311,14 +311,19 @@
     <string name="todo_section_steps">Steps</string>
     <string name="todo_step_add">Add step</string>
     <string name="todo_step_create_hint">Enter step name</string>
-    <!-- Edit todo sheet: delete confirmation -->
+    <!-- Edit todo sheet: delete confirmation (soft delete: the item moves to Recently Deleted) -->
     <string name="todo_delete_title">Delete Todo</string>
-    <string name="todo_delete_message">“%1$s” will be deleted. This cannot be undone.</string>
+    <string name="todo_delete_message">“%1$s” will be moved to Recently Deleted.</string>
     <!-- Todo card swipe actions (NoteCard swipe layer): action card accessibility labels and result toasts -->
     <string name="todo_swipe_delete">Delete</string>
     <string name="todo_swipe_pin">Pin</string>
     <string name="todo_swipe_unpin">Unpin</string>
+    <!-- NoteCard deleted style (Recently Deleted): right-side restore button; swipe left to purge -->
+    <string name="todo_restore">Restore</string>
+    <string name="todo_swipe_purge">Delete permanently</string>
     <string name="toast_todo_deleted">Deleted</string>
+    <string name="toast_todo_restored">Restored</string>
+    <string name="toast_todo_purged">Permanently deleted</string>
     <string name="toast_todo_step_deleted">Step deleted</string>
     <string name="toast_todo_pinned">Pinned</string>
     <string name="toast_todo_unpinned">Unpinned</string>

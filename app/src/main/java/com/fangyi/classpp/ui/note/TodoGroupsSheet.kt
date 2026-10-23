@@ -94,20 +94,21 @@ import dev.chrisbanes.haze.rememberHazeState
  *   系统返回 = 丢草稿退编辑（[requestClose] 三分支合一）；编辑态下拉关闭被 dragDismissEnabled
  *   禁用（松手回弹，不关浮层——只拦回调会把浮层卡在半拖出位置）。
  *
- * **计数口径**：已完成 / 未完成 / 已逾期 实时从 [todos] 统计，逾期判定与列表同一份
- * （[IsoDate.today] + [currentMinuteOfDay]）；已置顶同为实时统计（`pinned` 标记计数）；
- * 已归档 / 最近删除数据层暂无该概念
- * （`removeTodo` 是硬删，无回收站），恒 0；未分组 = `group == null` 的待办数、
- * 全部 = 待办总数、自定义分组 = 该组名的待办数（分组数据已入 [TodoFile.groups]，
+ * **计数口径**：已完成 / 未完成 / 已逾期 实时从 [todos]（活跃待办，仓库已剔除最近删除）
+ * 统计，逾期判定与列表同一份（[IsoDate.today] + [currentMinuteOfDay]）；已置顶同为实时
+ * 统计（`pinned` 标记计数）；最近删除 = 回收站条目数（[deletedCount]，仓库 deletedTodos
+ * 流），点入即可撤回或彻底删除；已归档数据层暂无该概念，恒 0；未分组 = `group == null`
+ * 的待办数、全部 = 待办总数、自定义分组 = 该组名的待办数（分组数据已入 [TodoFile.groups]，
  * 引用完整性由仓库归一化维护）。
  *
  * 第一部分（状态/留存）各行点击 = 跳转对应特殊分组页（[onOpenSpecial]：宿主收起浮层、
- * 顶栏分组条首位出现对应胶囊并常驻——再点已选胶囊退出关闭、点未选胶囊回页；已归档/
- * 最近删除本期仅 UI）；普通态点击
+ * 顶栏分组条首位出现对应胶囊并常驻——再点已选胶囊退出关闭、点未选胶囊回页；已归档
+ * 本期仅 UI）；普通态点击
  * 自定义分组 /「未分组」/「全部」= 跳转对应过滤（[onOpenGroup] / [onOpenUngrouped] /
  * [onOpenAll]：宿主收起浮层并切顶栏胶囊）。
  *
  * @param groups 分组列表：顺序即显示序，置顶项须构成连续前缀（[TodoGroup] 不变式）
+ * @param deletedCount 最近删除条目数（仓库 deletedTodos 流的大小）
  * @param onGroupsChange 整表写回统一入口：编辑态确认（顺序 + 置顶）、普通态新建（追加分组）、
  *   重命名（立即生效）；[renames] 为本次操作的重命名映射（原名 → 新名，供宿主让顶栏选中
  *   跟随到新名），无重命名时传空表
@@ -121,6 +122,7 @@ import dev.chrisbanes.haze.rememberHazeState
 @Composable
 internal fun TodoGroupsSheet(
     todos: List<Todo>,
+    deletedCount: Int,
     groups: List<TodoGroup>,
     visible: Boolean,
     onDismiss: () -> Unit,
@@ -321,14 +323,14 @@ internal fun TodoGroupsSheet(
                         ),
                     ),
                 )
-                // 最近删除单行卡：无回收站（removeTodo 硬删），计数恒 0（接入软删后替换）；
-                // 点击跳转仅 UI 的空页（空状态文案占位）
+                // 最近删除单行卡：计数 = 仓库回收站条目数；点击进入回收站页
+                // （右撤回恢复、左滑彻底删除，不做 N 天自动清理）
                 SettingsCardwithIcon(
                     items = listOf(
                         SettingsCardwithIconItem(
                             icon = R.drawable.ic_delete,
                             label = stringResource(R.string.todo_section_trash),
-                            value = "0",
+                            value = deletedCount.toString(),
                             onClick = { if (!editing) onOpenSpecial(TodoSpecialSection.Trash) },
                         ),
                     ),

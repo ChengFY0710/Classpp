@@ -53,6 +53,7 @@ import com.fangyi.classpp.data.isOverdue
 import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.BottomFadeScrim
+import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSection
 import com.fangyi.classpp.ui.components.NoteCardSwipe
@@ -159,7 +160,9 @@ fun TodoScreen(
     // Haze 管整条顶栏的磨砂，Backdrop 只喂顶栏胶囊（OverlaySheet 顶栏按钮同款结构）
     val glassPillsEnabled = isGlassStyleEnabled()
     val topBarPillBackdrop = rememberGlassBackdrop(MaterialTheme.colorScheme.background)
+    // 活跃待办：仓库已剔除最近删除（软删条目只在 deletedTodos 流里，供回收站页使用）
     val todos by repository.todos.collectAsState()
+    val deletedTodos by repository.deletedTodos.collectAsState()
 
     // 标签配色表（标签名 → 颜色）：与 TagChoosingCard 同源，用户自定义标签取
     // TagEntry.colorArgb（null = 跟随主题 Primary）。**仅用户标签进表**——课程标签
@@ -223,6 +226,8 @@ fun TodoScreen(
     val groupSaveFailedMessage = stringResource(R.string.todo_error_save_failed)
     // 侧滑动作结果 Toast 文案（组合期解析——回调里非组合上下文，同 groupSaveFailedMessage 约定）
     val todoDeletedMessage = stringResource(R.string.toast_todo_deleted)
+    val todoRestoredMessage = stringResource(R.string.toast_todo_restored)
+    val todoPurgedMessage = stringResource(R.string.toast_todo_purged)
     val todoPinnedMessage = stringResource(R.string.toast_todo_pinned)
     val todoUnpinnedMessage = stringResource(R.string.toast_todo_unpinned)
     // 分组写回统一入口：新建（浮层追加）、确认（置顶/重排草稿）、删除（滤除）、重命名
@@ -247,17 +252,19 @@ fun TodoScreen(
     }
 
     // 按选中分组派生可见列表（0 = 全部、1 = 未分组、2 起 = 用户分组）；特殊分组页在场时
-    // 改按特殊页口径过滤（已归档/最近删除恒空，仅 UI），离页（胶囊保留未选）回常规过滤。
+    // 改按特殊页口径过滤。离页（胶囊保留未选）回常规过滤。
     // 过滤前先做重复待办的分期展开（虚拟独立待办：已完成分期进已完成、过去未完成期全显、
-    // 未来只显最近一期）——先展开后过滤，特殊页的已完成/未完成口径才能看到分期
+    // 未来只显最近一期）——先展开后过滤，特殊页的已完成/未完成口径才能看到分期。
+    // 最近删除页例外：条目不在活跃列表里（仓库单列 deletedTodos 流），整条待办一张卡、
+    // 不做分期展开，并按删除时刻倒序（最近删的在最前）
     val today = LocalToday
     val nowMinute = currentMinuteOfDay()
     val special = if (specialActive) specialSection else null
     val displayTodos = remember(todos, today) { todos.expandRepeatOccurrences(today) }
-    val visibleTodos = if (special != null) {
-        filterTodosBySpecial(displayTodos, special, today, nowMinute)
-    } else {
-        filterTodosByGroup(displayTodos, selectedGroupIndex, groups)
+    val visibleTodos = when (special) {
+        TodoSpecialSection.Trash -> deletedTodos.sortedByDescending { it.deletedAtMillis ?: 0L }
+        null -> filterTodosByGroup(displayTodos, selectedGroupIndex, groups)
+        else -> filterTodosBySpecial(displayTodos, special, today, nowMinute)
     }
 
     // 整页（列表 + 顶栏）滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的
@@ -297,6 +304,8 @@ fun TodoScreen(
                     // 特殊页分组头全部默认展开（常规列表「已完成默认收起」不适用）；空页给占位文案
                     expandAllSections = special != null,
                     emptyHint = special?.let { stringResource(it.emptyHintRes) },
+                    // 最近删除页：平铺（无四组分组头）+ 已删除样式卡片（右撤回 / 左滑彻底删除）
+                    deletedCards = special == TodoSpecialSection.Trash,
                     topBarExtraSpace = topBarExtraSpace,
                     swipeCoordinator = swipeCoordinator,
                     // 勾选路由：分期卡（重复待办的展开副本，dates[0] 即分期日期）走逐期
@@ -323,11 +332,29 @@ fun TodoScreen(
                         }
                     },
                     // 侧滑删除：展开后再拖到完全变色松手才删（无确认框，满色就是强确认）；
-                    // 失败 Toast、卡片自动滑回
+                    // 失败 Toast、卡片自动滑回。软删：条目进最近删除，可从回收站恢复
                     onDeleteTodo = { id ->
                         scope.launch {
                             when (repository.removeTodo(id)) {
                                 TodoOpResult.Ok -> AppToasts.show(context, todoDeletedMessage)
+                                is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
+                            }
+                        }
+                    },
+                    // 最近删除页的撤回按钮：清除软删标记，待办回到原分组（分组已删则回未分组）
+                    onRestoreTodo = { id ->
+                        scope.launch {
+                            when (repository.restoreTodo(id)) {
+                                TodoOpResult.Ok -> AppToasts.show(context, todoRestoredMessage)
+                                is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
+                            }
+                        }
+                    },
+                    // 最近删除页的左滑「彻底删除」：满色松手才真正从文件移除（不可恢复）
+                    onPurgeTodo = { id ->
+                        scope.launch {
+                            when (repository.purgeTodo(id)) {
+                                TodoOpResult.Ok -> AppToasts.show(context, todoPurgedMessage)
                                 is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
                             }
                         }
@@ -653,6 +680,7 @@ fun TodoScreen(
     if (groupsMounted) {
         TodoGroupsSheet(
             todos = todos,
+            deletedCount = deletedTodos.size,
             groups = groups,
             visible = groupsVisible,
             onDismiss = { groupsVisible = false },
@@ -729,8 +757,9 @@ internal fun filterTodosByGroup(
 }
 
 /**
- * 按特殊分组页（[TodoSpecialSection]）口径派生可见待办：已完成/未完成/已逾期/已置顶
- * 实时过滤；已归档/最近删除数据层暂无该概念（removeTodo 硬删、无归档），恒空仅 UI。
+ * 按特殊分组页（[TodoSpecialSection]）口径从**活跃待办**派生可见列表：已完成/未完成/
+ * 已逾期/已置顶实时过滤；已归档数据层暂无该概念，恒空仅 UI。最近删除的条目不在活跃
+ * 列表里（仓库单列 deletedTodos 流），由宿主按删除时刻倒序直接取用，这里同样返回空。
  * 逾期判定与列表同一份（[today] 取 [LocalToday]、[nowMinute] 重组时现取，同 TodoList）。
  * 页内仍按置顶/逾期/未完成/已完成分区展示（置顶收编语义不变——「已置顶」页单卡侧滑
  * 即可撤销置顶）。
@@ -745,6 +774,7 @@ internal fun filterTodosBySpecial(
     TodoSpecialSection.Incomplete -> todos.filter { !it.completed }
     TodoSpecialSection.Overdue -> todos.filter { it.isOverdue(today, nowMinute) }
     TodoSpecialSection.Pinned -> todos.filter { it.pinned }
+    // 已归档无数据层概念；最近删除走仓库的 deletedTodos 流（不在活跃列表里）
     TodoSpecialSection.Archived, TodoSpecialSection.Trash -> emptyList()
 }
 
@@ -763,8 +793,11 @@ internal fun filterTodosBySpecial(
  *
  * 特殊分组页（分组浮层第一部分跳转）复用同一渲染：[expandAllSections] = 分组头全部
  * 默认展开（规避「已完成默认收起」把整页收起来）；[emptyHint] = 过滤结果为空时的
- * 居中占位文案（已归档/最近删除恒空）。「已置顶」页的卡片照常支持侧滑——单卡撤销
- * 置顶即从该页消失。
+ * 居中占位文案。「已置顶」页的卡片照常支持侧滑——单卡撤销置顶即从该页消失。
+ *
+ * 最近删除页（[deletedCards] = true）走另一条渲染分支：无标题 [CardSection] 把全部卡片
+ * 平铺在一起（10dp 卡间距），不套四组分区头——条目由宿主按删除时刻倒序传入，与
+ * 「最近删除」的时间语义一致；卡片为已删除样式（右侧撤回按钮），左滑呼出「彻底删除」。
  *
  * 滚动容器为 [RubberBandLazyColumn]（页面 [ProvideOverscroll] 作用域内）：内容超一屏
  * 时滚到边缘拉出橡皮筋，待办很少、不足一屏时同样能拉——短内容是 foundation 派发门槛
@@ -782,12 +815,16 @@ private fun TodoList(
     expandAllSections: Boolean = false,
     // 列表为空时的居中占位文案（特殊分组页传入）；null = 维持空白（常规列表行为不变）
     emptyHint: String? = null,
+    // 最近删除页：平铺卡片（无四组分区）、已删除样式（右撤回 / 左滑彻底删除）
+    deletedCards: Boolean = false,
     topBarExtraSpace: Dp,
     swipeCoordinator: SwipeCoordinator,
     // 待办整条传入而非只传 id：分期卡（重复待办的展开副本）要靠 dates[0] 路由到逐期结算
     onToggleCompleted: (todo: Todo, completed: Boolean) -> Unit,
     onTogglePinned: (id: String, pinned: Boolean) -> Unit,
     onDeleteTodo: (id: String) -> Unit,
+    onRestoreTodo: (id: String) -> Unit = {},
+    onPurgeTodo: (id: String) -> Unit = {},
     onTodoClick: (todo: Todo) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -827,40 +864,75 @@ private fun TodoList(
             end = PageHorizontalSpacing,
         ),
     ) {
-        // 空列表占位：特殊分组页过滤结果为空（含恒空的已归档/最近删除）时给居中文案；
-        // 常规列表不传 emptyHint，全组被分类菜单隐藏时维持原空白行为
-        if (sections.isEmpty() && emptyHint != null) {
-            item(key = "emptyHint") {
-                Box(
-                    Modifier.fillParentMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = emptyHint,
-                        fontSize = 14.sp,
-                        color = MaterialTheme.classppColors.secondaryText,
-                    )
+        if (deletedCards) {
+            // 最近删除页：整页收进一个无标题 CardSection 平铺（10dp 卡间距）——不套四组
+            // 分组头，顺序由宿主按删除时刻倒序给定；空列表沿用统一的居中占位文案
+            if (todos.isEmpty()) {
+                if (emptyHint != null) {
+                    item(key = "emptyHint") {
+                        Box(
+                            Modifier.fillParentMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = emptyHint,
+                                fontSize = 14.sp,
+                                color = MaterialTheme.classppColors.secondaryText,
+                            )
+                        }
+                    }
+                }
+            } else {
+                item(key = "trashCards") {
+                    CardSection {
+                        todos.forEach { todo ->
+                            TrashedTodoCard(
+                                todo = todo,
+                                tagColors = tagColors,
+                                swipeCoordinator = swipeCoordinator,
+                                onRestore = { onRestoreTodo(todo.id) },
+                                onPurge = { onPurgeTodo(todo.id) },
+                            )
+                        }
+                    }
                 }
             }
-        }
-        sections.forEachIndexed { index, (section, group) ->
-            item(key = section.name) {
-                NoteCardSection(
-                    title = stringResource(section.titleRes),
-                    initiallyExpanded = expandAllSections || section != TodoSection.Done,
-                    // 组间距给首组之外的每组：首组贴列表起点，再加间距会比下面的组低一截
-                    modifier = if (index > 0) Modifier.padding(top = SectionSpacing) else Modifier,
-                ) {
-                    group.forEach { todo ->
-                        TodoCard(
-                            todo = todo,
-                            tagColors = tagColors,
-                            overdue = section == TodoSection.Overdue,
-                            swipeCoordinator = swipeCoordinator,
-                            onDelete = { onDeleteTodo(todo.id) },
-                            onTogglePinned = { onTogglePinned(todo.id, !todo.pinned) },
-                            onClick = { onTodoClick(todo) },
-                        ) { onToggleCompleted(todo, it) }
+        } else {
+            // 空列表占位：特殊分组页过滤结果为空（含恒空的已归档）时给居中文案；
+            // 常规列表不传 emptyHint，全组被分类菜单隐藏时维持原空白行为
+            if (sections.isEmpty() && emptyHint != null) {
+                item(key = "emptyHint") {
+                    Box(
+                        Modifier.fillParentMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = emptyHint,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.classppColors.secondaryText,
+                        )
+                    }
+                }
+            }
+            sections.forEachIndexed { index, (section, group) ->
+                item(key = section.name) {
+                    NoteCardSection(
+                        title = stringResource(section.titleRes),
+                        initiallyExpanded = expandAllSections || section != TodoSection.Done,
+                        // 组间距给首组之外的每组：首组贴列表起点，再加间距会比下面的组低一截
+                        modifier = if (index > 0) Modifier.padding(top = SectionSpacing) else Modifier,
+                    ) {
+                        group.forEach { todo ->
+                            TodoCard(
+                                todo = todo,
+                                tagColors = tagColors,
+                                overdue = section == TodoSection.Overdue,
+                                swipeCoordinator = swipeCoordinator,
+                                onDelete = { onDeleteTodo(todo.id) },
+                                onTogglePinned = { onTogglePinned(todo.id, !todo.pinned) },
+                                onClick = { onTodoClick(todo) },
+                            ) { onToggleCompleted(todo, it) }
+                        }
                     }
                 }
             }
@@ -930,6 +1002,50 @@ private fun TodoCard(
                 ),
                 onAction = onTogglePinned,
             ),
+        ),
+    )
+}
+
+/**
+ * 最近删除页的单条卡片：[Todo] → [NoteCard] 的已删除样式接线——标题、时间、截止、重复、
+ * 标签、紧急旗与普通卡同一份取值，右侧勾选框换成撤回按钮（[NoteCard.deleted]，点按
+ * [onRestore]），其余样式与普通卡完全一致。不接点击：详情/编辑浮层只认活跃待办，
+ * 回收站条目点开也改不了。左滑呼出「彻底删除」动作卡（满色松手即执行，同普通卡删除的
+ * 强确认模型），右滑侧不提供置顶。
+ */
+@Composable
+private fun TrashedTodoCard(
+    todo: Todo,
+    tagColors: Map<String, Color>,
+    swipeCoordinator: SwipeCoordinator,
+    onRestore: () -> Unit,
+    onPurge: () -> Unit,
+) {
+    NoteCard(
+        title = todo.name,
+        time = todo.cardTimeText(),
+        deadline = todo.deadlineCardText(),
+        deadlineColor = todo.deadlineColor(),
+        repeat = todo.repeatCardText(),
+        countdownDays = if (todo.countdown) todo.deadlineDaysLeft() else null,
+        tags = todo.tags,
+        tagColors = tagColors,
+        urgency = todo.urgency,
+        completed = todo.completed,
+        deleted = true,
+        onRestore = onRestore,
+        swipe = NoteCardSwipe(
+            key = todo.id,
+            coordinator = swipeCoordinator,
+            delete = SwipeAction(
+                iconRes = R.drawable.ic_delete,
+                tint = MaterialTheme.colorScheme.error,
+                activeColor = MaterialTheme.colorScheme.error,
+                onActiveColor = MaterialTheme.colorScheme.onError,
+                contentDescription = stringResource(R.string.todo_swipe_purge),
+                onAction = onPurge,
+            ),
+            pin = null,
         ),
     )
 }

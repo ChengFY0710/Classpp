@@ -72,14 +72,19 @@
     <string name="todo_section_steps">步骤</string>
     <string name="todo_step_add">添加步骤</string>
     <string name="todo_step_create_hint">输入步骤名称</string>
-    <!-- 编辑待办浮层：删除二次确认 -->
+    <!-- 编辑待办浮层：删除二次确认（软删：条目进最近删除，可从回收站恢复） -->
     <string name="todo_delete_title">删除待办</string>
-    <string name="todo_delete_message">「%1$s」将被删除，此操作不可撤销。</string>
+    <string name="todo_delete_message">「%1$s」将移到最近删除，可在回收站恢复。</string>
     <!-- 待办卡片侧滑动作（NoteCard 侧滑层）：动作卡无障碍描述与执行结果 Toast -->
     <string name="todo_swipe_delete">删除</string>
     <string name="todo_swipe_pin">置顶</string>
     <string name="todo_swipe_unpin">取消置顶</string>
+    <!-- 待办卡片已删除样式（最近删除页）：右侧撤回按钮；左滑彻底删除 -->
+    <string name="todo_restore">恢复</string>
+    <string name="todo_swipe_purge">彻底删除</string>
     <string name="toast_todo_deleted">已删除</string>
+    <string name="toast_todo_restored">已恢复</string>
+    <string name="toast_todo_purged">已彻底删除</string>
     <string name="toast_todo_step_deleted">步骤已删除</string>
     <string name="toast_todo_pinned">已置顶</string>
     <string name="toast_todo_unpinned">已取消置顶</string>

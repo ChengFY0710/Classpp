@@ -40,6 +40,8 @@ internal object TodoShareCodec {
             todo.copy(
                 id = newUuid(),
                 steps = todo.steps.map { it.copy(id = newUuid()) },
+                // 分享导入永远是活跃待办：载荷若带软删标记（导出自其它版本/手工编辑），一并清掉
+                deletedAtMillis = null,
             )
         }
         for (todo in rebuilt) {

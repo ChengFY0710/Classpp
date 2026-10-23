@@ -6,6 +6,7 @@ import com.fangyi.classpp.data.model.TodoSharePayload
 import com.fangyi.classpp.data.model.TodoTimeKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -42,8 +43,21 @@ class TodoShareCodecTest {
     }
 
     @Test
-    fun `pretty json carries kind and version`() {
-        val json = TodoShareCodec.encode(payloadTodos, exportedAtMillis = 42L)
+    fun `import always lands as live todos`() {
+        // 载荷里的软删标记（导出自其它版本 / 手工编辑）一律清空：分享导入永远是活跃待办
+        val json = TodoShareCodec.encode(
+            listOf(testTodo(id = "t1", name = "已删除", deletedAtMillis = 123L)),
+            exportedAtMillis = 1L,
+        )
+        val result = TodoShareCodec.decodeForImport(json).let {
+            assertTrue("expected Ok, got ${(it as? TodoReadResult.Err)?.error?.message}", it is TodoReadResult.Ok)
+            (it as TodoReadResult.Ok).value
+        }
+        assertNull(result.single().deletedAtMillis)
+    }
+
+    @Test
+    fun `pretty json carries kind and version`() {        val json = TodoShareCodec.encode(payloadTodos, exportedAtMillis = 42L)
         val payload = ScheduleJson.decodeShare<TodoSharePayload>(json)
         assertEquals("classpp.todo", payload.kind)
         assertEquals(1, payload.formatVersion)

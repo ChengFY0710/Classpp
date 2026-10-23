@@ -46,6 +46,9 @@ data class TodoStep(
  * @param completedAtMillis 完成时刻（epoch millis），不变式：completed=false 时必为 null，
  *   由仓库在归一化时维护
  * @param createdAtMillis 创建时刻（epoch millis），由仓库在 addTodo 时补齐
+ * @param deletedAtMillis 删除时刻（epoch millis），null = 正常待办；非 null = 已移入「最近删除」，
+ *   由仓库 removeTodo 写入、restoreTodo 清空。回收站条目不在仓库的活跃待办流里，
+ *   只在回收站流中按该时刻倒序展示
  * @param countdown 倒计时开关：true = 待办列表卡在截止时间左侧显示剩余天数（`N天` /
  *   `逾期N天`）。不变式：无 [deadlineDate] 时必为 false，由仓库在归一化时维护
  * @param pinned 置顶标记：true = 待办列表顶部「已置顶」分组成员（无置顶待办时整组隐藏）
@@ -81,10 +84,15 @@ data class Todo(
     val completed: Boolean = false,
     val completedAtMillis: Long? = null,
     val createdAtMillis: Long = 0,
+    /** 删除时刻：null = 正常待办，非 null = 在「最近删除」（软删标记，见类 KDoc） */
+    val deletedAtMillis: Long? = null,
     val group: String? = null,
     val countdown: Boolean = false,
     val pinned: Boolean = false,
 )
+
+/** 是否在「最近删除」里（读侧统一口径：只看软删标记，与仓库的活跃/回收站分流同源） */
+val Todo.isDeleted: Boolean get() = deletedAtMillis != null
 
 /**
  * 待办整库文件信封：todos.json 的内容（分组与待办同文件——删除分组时级联把该组待办置回

@@ -10,6 +10,7 @@ import com.fangyi.classpp.data.store.StoreResult
 import com.fangyi.classpp.data.store.TodoStore
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -126,17 +127,83 @@ class TodoRepositoryTest {
     }
 
     @Test
-    fun `removeTodo and batch removeTodos`() = runBlocking {
+    fun `removeTodo and batch removeTodos move todos to recently deleted`() = runBlocking {
         val r = repo()
         val a = r.addTodo(testTodo(name = "A")).okId()
         val b = r.addTodo(testTodo(name = "B")).okId()
 
         r.removeTodos(listOf(a, "不存在")).assertOk() // 未知 id 宽容忽略
         assertEquals(listOf("B"), r.todos.value.map { it.name })
+        assertEquals(listOf("A"), r.deletedTodos.value.map { it.name })
 
         r.removeTodo(b).assertOk()
         assertTrue(r.todos.value.isEmpty())
+        assertEquals(setOf("A", "B"), r.deletedTodos.value.map { it.name }.toSet())
+        // 已在回收站 = 对删除路径不可见（二次删除仍报 NotFound）
         assertTrue(r.removeTodo(b).assertErr() is TodoError.NotFound)
+    }
+
+    @Test
+    fun `soft deleted todos persist and stay out of the live flow`() = runBlocking {
+        val r = repo()
+        val id = r.addTodo(testTodo(name = "A")).okId()
+
+        now.advanceBy(500)
+        r.removeTodo(id).assertOk()
+        assertEquals(1_000_500L, r.deletedTodos.value.single().deletedAtMillis)
+        assertTrue(r.todos.value.isEmpty())
+
+        // 软删不是物理删除：重开仓库后条目仍在回收站，活跃流依旧为空
+        val reopened = repo()
+        assertTrue(reopened.todos.value.isEmpty())
+        assertEquals(listOf(id), reopened.deletedTodos.value.map { it.id })
+        assertEquals(1_000_500L, reopened.deletedTodos.value.single().deletedAtMillis)
+    }
+
+    @Test
+    fun `restoreTodo returns the todo to the live list`() = runBlocking {
+        val r = repo()
+        r.setGroups(listOf(TodoGroup("作业"))).assertOk()
+        val id = r.addTodo(testTodo(name = "A", group = "作业")).okId()
+        r.removeTodo(id).assertOk()
+
+        r.restoreTodo(id).assertOk()
+        val restored = r.todos.value.single { it.id == id }
+        assertEquals("A", restored.name)
+        assertEquals("作业", restored.group) // 恢复保留原分组
+        assertNull(restored.deletedAtMillis)
+        assertTrue(r.deletedTodos.value.isEmpty())
+
+        // 活跃条目不在回收站，恢复同样报 NotFound（与二次删除对称）
+        assertTrue(r.restoreTodo(id).assertErr() is TodoError.NotFound)
+    }
+
+    @Test
+    fun `purgeTodo only removes recently deleted todos`() = runBlocking {
+        val r = repo()
+        val live = r.addTodo(testTodo(name = "A")).okId()
+        val trashed = r.addTodo(testTodo(name = "B")).okId()
+        r.removeTodo(trashed).assertOk()
+
+        // 活跃条目不允许绕过软删直接彻底删除
+        assertTrue(r.purgeTodo(live).assertErr() is TodoError.NotFound)
+
+        r.purgeTodo(trashed).assertOk()
+        assertTrue(r.deletedTodos.value.isEmpty())
+        assertEquals(listOf("A"), r.todos.value.map { it.name })
+        assertTrue(r.purgeTodo(trashed).assertErr() is TodoError.NotFound)
+    }
+
+    @Test
+    fun `exportTodos excludes recently deleted`() = runBlocking {
+        val r = repo()
+        val a = r.addTodo(testTodo(name = "已删除待办")).okId()
+        r.addTodo(testTodo(name = "活跃待办")).okId()
+        r.removeTodo(a).assertOk()
+
+        val json = r.exportTodos().okText()
+        assertTrue(json.contains("活跃待办"))
+        assertFalse(json.contains("已删除待办"))
     }
 
     // ---------- 完成状态 / 步骤 ----------
