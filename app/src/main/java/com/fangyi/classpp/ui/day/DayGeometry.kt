@@ -50,10 +50,10 @@ internal val DayDateEdgePadding = 33.dp
 internal val DayHintTopPadding = 8.dp
 
 /** 01 顶部渐变磨砂高度（沿用原 DayScreen）。 */
-internal val DayTopScrimHeight = 135.dp
+internal val DayTopScrimHeight = 120.dp
 
 /** 01 底部渐变磨砂高度（沿用原 DayScreen）。 */
-internal val DayBottomScrimHeight = 360.dp
+internal val DayBottomScrimHeight = 320.dp
 
 /** 02 日期组底边到图片卡底边的内距。 */
 internal val DayDateInCardBottomPadding = 26.dp

@@ -831,7 +831,7 @@ fun DayScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = stringResource(R.string.date_title_format, yearMonth, weekday),
-                        fontSize = 23.sp,
+                        fontSize = 24.sp,
                         fontWeight = FontWeight.Medium,
                         color = Color.White,
                         letterSpacing = (-0.3).sp,
@@ -842,7 +842,7 @@ fun DayScreen(
                         contentDescription = stringResource(R.string.cd_day_background),
                         tint = Color.White,
                         modifier = Modifier
-                            .size(28.dp)
+                            .size(30.dp)
                             .pressClickable(
                                 shape = CircleShape,
                                 scale = 1.10f,
