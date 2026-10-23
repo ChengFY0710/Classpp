@@ -74,6 +74,41 @@ class DayGeometryTest {
     }
 
     @Test
+    fun calendarImageCornerFadesFromDeviceCornerToSharp() {
+        // 02→01 展开落定后：状态机把系数从 1 渐变到 0，圆角随之收成直角。
+        val rounded = DayGeometry.frame(
+            metrics,
+            open = 0f,
+            collapse = 0f,
+            deviceCornerAlpha = 1f,
+        )
+        val halfway = DayGeometry.frame(
+            metrics,
+            open = 0f,
+            collapse = 0f,
+            deviceCornerAlpha = 0.5f,
+        )
+        val sharp = DayGeometry.frame(
+            metrics,
+            open = 0f,
+            collapse = 0f,
+            deviceCornerAlpha = 0f,
+        )
+        // open > 0 时忽略收角系数：一滑动仍是机身圆角，随后插值到 24dp。
+        val swiping = DayGeometry.frame(
+            metrics,
+            open = 0.5f,
+            collapse = 0f,
+            deviceCornerAlpha = 0f,
+        )
+
+        assertEquals(28f, rounded.imageRadius, 0.01f)
+        assertEquals(14f, halfway.imageRadius, 0.01f)
+        assertEquals(0f, sharp.imageRadius, 0.01f)
+        assertEquals(26f, swiping.imageRadius, 0.01f)
+    }
+
+    @Test
     fun compactStateMatchesDesignCardAndWhiteCard() {
         val frame = DayGeometry.frame(metrics, open = 1f, collapse = 0f)
 

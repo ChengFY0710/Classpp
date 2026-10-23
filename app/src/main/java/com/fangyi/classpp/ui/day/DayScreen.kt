@@ -696,6 +696,7 @@ fun DayScreen(
                             metrics,
                             transition.open,
                             transition.collapse,
+                            transition.deviceCornerAlpha,
                         )
                         // 02→04 后段渐隐：白卡被 Overscroll 拖上去时不再露出台历残影。
                         alpha = frame.imageAlpha
@@ -738,6 +739,7 @@ fun DayScreen(
                                     metrics,
                                     transition.open,
                                     transition.collapse,
+                                    transition.deviceCornerAlpha,
                                 )
                                 val tint = frame.bandTintAlpha
                                 if (tint > 0f) {

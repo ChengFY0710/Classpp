@@ -62,6 +62,12 @@ object Motion {
      */
     const val AgendaSnapMillis = 450
 
+    /**
+     * 01 落定后的收角时长：02→01 展开动画结束时图片已铺满全屏，机身圆角再单独
+     * 渐收成直角，作为展开动画的短尾；配合 [Decelerate]，不阻塞手势。
+     */
+    const val AgendaCornerFadeMillis = 320
+
     /** 浮层（OverlaySheet）入场时长：从屏幕底部滑入，配合 [Overlay]。 */
     const val SheetEnterMillis = 400
 

@@ -144,8 +144,9 @@ internal data class DayFrame(
     /** 图片卡矩形（shape 裁剪 + 图片居中裁切共用）。 */
     val image: DayRect,
     /**
-     * 图片卡圆角：01 静止态为 0（满幅直角，不裁剪）；用户一开始滑动（open > 0）
-     * 立即切到机身圆角，再随 01→02 连续插值到 24dp；02/04 恒为 24dp。
+     * 图片卡圆角：01 静止态在 0 与机身圆角之间由 deviceCornerAlpha 控制
+     * （展开落定后渐收成直角）；用户一开始滑动（open > 0）立即切到机身圆角，
+     * 再随 01→02 连续插值到 24dp；02/04 恒为 24dp。
      */
     val imageRadius: Float,
     /** 白底内容卡矩形。 */
@@ -187,7 +188,17 @@ internal data class DayFrame(
 
 internal object DayGeometry {
 
-    fun frame(metrics: DayMetrics, open: Float, collapse: Float): DayFrame {
+    /**
+     * @param deviceCornerAlpha 01 静止态的机身圆角系数（0 = 直角，1 = 机身圆角）。
+     *   02→01 展开动画落定后由状态机从 1 渐变到 0，让圆角收成直角；open > 0 时
+     *   几何按滑动中的机身圆角取值，忽略此系数。
+     */
+    fun frame(
+        metrics: DayMetrics,
+        open: Float,
+        collapse: Float,
+        deviceCornerAlpha: Float = 0f,
+    ): DayFrame {
         val o = open.coerceIn(0f, 1f)
         val c = collapse.coerceIn(0f, 1f)
 
@@ -300,11 +311,12 @@ internal object DayGeometry {
 
         return DayFrame(
             image = image,
-            // 01 静止态是满幅直角；滑动一开始（open > 0）立刻切到机身圆角，
-            // 再随卡片收拢连续过渡到 DayCardShape 的 24dp。02→04 的 open 恒为 1，
+            // 01 静止态从满幅直角开始；展开落定后 deviceCornerAlpha 从 1 渐收到 0，
+            // 圆角随之由机身圆角平滑收成直角。滑动一开始（open > 0）立即切回机身
+            // 圆角，再随卡片收拢连续过渡到 DayCardShape 的 24dp。02→04 的 open 恒为 1，
             // 圆角保持 24dp 不参与收窄。
             imageRadius = if (o <= 0f) {
-                0f
+                metrics.deviceCornerRadius * deviceCornerAlpha.coerceIn(0f, 1f)
             } else {
                 lerp(metrics.deviceCornerRadius, DayCardCorner.value, o)
             },

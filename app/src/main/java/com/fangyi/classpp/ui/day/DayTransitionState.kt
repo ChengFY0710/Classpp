@@ -54,7 +54,18 @@ internal class DayTransitionState(
     var canTakeOverSnap by mutableStateOf(false)
         private set
 
+    /**
+     * 01 静止态的机身圆角系数：0 = 图片满幅直角（静止默认），1 = 机身圆角。
+     * 02→01 展开动画落定后从 1 渐变到 0，让圆角收成直角；只要 open > 0，
+     * 几何就按滑动中的机身圆角取值，不读这个系数。
+     */
+    var deviceCornerAlpha by mutableFloatStateOf(0f)
+        private set
+
     private var animationJob: Job? = null
+
+    /** 独立的收角动画：不参与 [isAnimating]，展开落定后手势立即可用。 */
+    private var cornerFadeJob: Job? = null
 
     /**
      * 动画代号：新旧动画交替时，旧协程的 finally 不得把新动画的 isAnimating 清掉。
@@ -167,12 +178,16 @@ internal class DayTransitionState(
      */
     fun resetForNewDay() {
         animationJob?.cancel()
+        cornerFadeJob?.cancel()
+        cornerFadeJob = null
         animationGeneration++
         open = 0f
         collapse = 0f
         stage = DayStage.Calendar
         isAnimating = false
         canTakeOverSnap = false
+        // 跨天直接回 01：直角立即生效，不播放收角动画。
+        deviceCornerAlpha = 0f
     }
 
     /**
@@ -207,6 +222,9 @@ internal class DayTransitionState(
         takeOverable: Boolean = false,
     ) {
         animationJob?.cancel()
+        // 新转场开始时先停掉 01 的收角尾巴：若之后又落回 01，会在落定时重新开始。
+        cornerFadeJob?.cancel()
+        cornerFadeJob = null
         val generation = ++animationGeneration
         isAnimating = true
         canTakeOverSnap = takeOverable
@@ -232,11 +250,38 @@ internal class DayTransitionState(
                 if (commit && targetStage != DayStage.Calendar) {
                     onCommit(targetStage)
                 }
+                // 02→01 展开到位（图片已铺满全屏）后，机身圆角再单独渐进收成直角。
+                if (targetOpen == 0f && targetStage == DayStage.Calendar) {
+                    startCornerFade()
+                }
             } finally {
                 if (generation == animationGeneration) {
                     isAnimating = false
                     canTakeOverSnap = false
                 }
+            }
+        }
+    }
+
+    /**
+     * 展开落定后的收角：先把系数钉回 1——此刻 open 刚落到 0，几何取满幅的
+     * 机身圆角，与展开动画末帧连续——再淡出到 0 收成直角。
+     * 独立于 [isAnimating]，期间手势立即可用；再次上滑时 open > 0 的几何
+     * 会直接取机身圆角，这条尾巴的残余值不再被读取。
+     */
+    private fun startCornerFade() {
+        cornerFadeJob?.cancel()
+        deviceCornerAlpha = 1f
+        cornerFadeJob = scope.launch {
+            val driver = Animatable(1f)
+            driver.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(
+                    durationMillis = Motion.AgendaCornerFadeMillis,
+                    easing = Motion.Decelerate,
+                ),
+            ) {
+                deviceCornerAlpha = value
             }
         }
     }
