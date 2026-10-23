@@ -30,6 +30,16 @@ data class IsoDate(val epochDay: Long) {
     /** ISO 星期：1 = 周一 … 7 = 周日。1970-01-01 是周四（=4） */
     fun isoDayOfWeek(): Int = Math.floorMod(epochDay + 3, 7L).toInt() + 1
 
+    /** 拆出公历年月日（月/日从 1 开始） */
+    fun yearMonthDay(): Triple<Int, Int, Int> {
+        val cal = GregorianCalendar(UTC).apply { timeInMillis = epochDay * MILLIS_PER_DAY }
+        return Triple(
+            cal.get(GregorianCalendar.YEAR),
+            cal.get(GregorianCalendar.MONTH) + 1,
+            cal.get(GregorianCalendar.DAY_OF_MONTH),
+        )
+    }
+
     /** 所在 ISO 周的周一（周日回退到本周一）——周数/日期带一律按日历周对齐 */
     fun mondayOfWeek(): IsoDate = this + (1 - isoDayOfWeek())
 

@@ -88,7 +88,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import coil3.compose.AsyncImage
 import com.fangyi.classpp.R
-import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.calendar.ChineseDayMarks
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
@@ -113,12 +113,8 @@ import dev.chrisbanes.haze.blur.HazeColorEffect
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
-import java.util.GregorianCalendar
-import java.util.TimeZone
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
-
-private const val MillisPerDay = 86_400_000L
 
 /**
  * 接管 02↔04 吸附所需的最小竖向确认距离（× touchSlop）。
@@ -337,7 +333,9 @@ fun DayScreen(
     }
 
     // 日期文案（日期组与顶栏共用同一份今天）
-    val (year, month, dayOfMonth) = remember(today) { today.toYearMonthDay() }
+    val (year, month, dayOfMonth) = remember(today) { today.yearMonthDay() }
+    // 节日/节气当天用同名两字文案替换大日期数字；名称用字已包含在字体子集中。
+    val dayMark = remember(today) { ChineseDayMarks.markOf(today) }
     val yearMonth = stringResource(R.string.date_year_month_format, year, month)
     val weekday = stringArrayResource(R.array.weekdays)[today.isoDayOfWeek() - 1]
     val monthDay = stringResource(R.string.month_day_format, month, dayOfMonth)
@@ -914,8 +912,9 @@ fun DayScreen(
                     },
             ) {
                 Text(
-                    text = dayOfMonth.toString(),
-                    fontSize = 64.sp,
+                    text = dayMark ?: dayOfMonth.toString(),
+                    // 中文节日/节气比日期数字略小，避免两字文案在视觉上过宽。
+                    fontSize = if (dayMark != null) 52.sp else 64.sp,
                     fontFamily = SerifDisplay,
                     color = Color.White,
                     modifier = Modifier.graphicsLayer {
@@ -1203,16 +1202,4 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
-}
-
-/** [IsoDate] → (年, 月, 日)（UTC 日历日换算，同 BottomDateSelectCard/RepeatSchedule 的既有模式）。 */
-private fun IsoDate.toYearMonthDay(): Triple<Int, Int, Int> {
-    val calendar = GregorianCalendar(TimeZone.getTimeZone("UTC")).apply {
-        timeInMillis = epochDay * MillisPerDay
-    }
-    return Triple(
-        calendar.get(GregorianCalendar.YEAR),
-        calendar.get(GregorianCalendar.MONTH) + 1,
-        calendar.get(GregorianCalendar.DAY_OF_MONTH),
-    )
 }

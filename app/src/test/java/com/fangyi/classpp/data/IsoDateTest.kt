@@ -46,6 +46,15 @@ class IsoDateTest {
     }
 
     @Test
+    fun `yearMonthDay splits gregorian fields`() {
+        assertEquals(Triple(2028, 2, 29), IsoDate.parse("2028-02-29").yearMonthDay())
+        assertEquals(Triple(1999, 12, 31), IsoDate.parse("1999-12-31").yearMonthDay())
+        assertEquals(Triple(2000, 1, 1), IsoDate.parse("2000-01-01").yearMonthDay())
+        assertEquals(Triple(1970, 1, 1), IsoDate.parse("1970-01-01").yearMonthDay())
+        assertEquals(Triple(1900, 1, 31), IsoDate.parse("1900-01-31").yearMonthDay())
+    }
+
+    @Test
     fun `mondayOfWeek maps any day to its calendar week's monday`() {
         // 周一不动，周中/周日都回到同一周的周一
         assertEquals("2026-03-02", IsoDate.parse("2026-03-02").mondayOfWeek().toString())

@@ -32,9 +32,6 @@ import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import dev.chrisbanes.haze.HazeState
 import java.util.GregorianCalendar
-import java.util.TimeZone
-
-private const val MILLIS_PER_DAY = 86_400_000L
 
 /** 日期轮数字字号：年/月/日三列比时间轮的两列挤（年轮还是 4 位），比共享默认小一档 */
 private val WheelNumberFontSize = 32.sp
@@ -63,19 +60,7 @@ private fun monthLength(year: Int, month: Int): Int = when (month) {
 
 /** 年份轮默认范围：今年-1 ~ 今年+10（学期起止等大跨度场景用 [BottomDateSelectCard] 的 yearRange 调宽） */
 private fun defaultYearRange(): IntRange =
-    IsoDate.today().toYearMonthDay().first.let { (it - 1)..(it + 10) }
-
-/** [IsoDate] → (年, 月, 日)（UTC 日历日，与 [IsoDate.of] 同一套换算；模型本身不存 y/m/d 字段） */
-private fun IsoDate.toYearMonthDay(): Triple<Int, Int, Int> {
-    val calendar = GregorianCalendar(TimeZone.getTimeZone("UTC")).apply {
-        timeInMillis = epochDay * MILLIS_PER_DAY
-    }
-    return Triple(
-        calendar.get(GregorianCalendar.YEAR),
-        calendar.get(GregorianCalendar.MONTH) + 1,
-        calendar.get(GregorianCalendar.DAY_OF_MONTH),
-    )
-}
+    IsoDate.today().yearMonthDay().first.let { (it - 1)..(it + 10) }
 
 /**
  * 日期选择弹窗（BottomSelectSheet 变体之二）：年/月/日三列滚轮，上下滑动选择，
@@ -109,7 +94,7 @@ fun BottomDateSelectCard(
     onConfirm: (date: IsoDate) -> Unit,
     onDismissed: () -> Unit = {},
 ) {
-    val (initYear, initMonth, initDay) = initialDate.toYearMonthDay()
+    val (initYear, initMonth, initDay) = initialDate.yearMonthDay()
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val yearState = remember(density, yearRange) {
