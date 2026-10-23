@@ -274,7 +274,7 @@ fun BottomSelectSheet(
                                 Modifier.hazeBlur(
                                     input = hazeSources(hazeState),
                                     style = hazeCardStyle(radius = CardBlurRadius),
-                                    performanceMode = HazePerformanceMode.Quality,
+                                    performanceMode = HazePerformanceMode.Balanced,
                                 )
                             } else {
                                 Modifier

@@ -577,7 +577,7 @@ private fun OverlaySheetTopBar(
                 input = hazeSources(hazeState),
                 // 25dp：与设置页顶栏同规格的模糊预算（转场逐帧重合成，模糊不宜过重）
                 style = hazeTopBarStyle(),
-                performanceMode = HazePerformanceMode.Quality,
+                performanceMode = HazePerformanceMode.Balanced,
             )
             .then(dragModifier),
     ) {

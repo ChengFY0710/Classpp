@@ -320,7 +320,7 @@ fun PopupGlassCard(
                     .hazeBlur(
                         input = hazeSources(hazeState),
                         style = blurStyle,
-                        performanceMode = HazePerformanceMode.Quality,
+                        performanceMode = HazePerformanceMode.Balanced,
                     ),
             )
         }
