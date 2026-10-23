@@ -61,12 +61,13 @@ internal fun snapForward(
 }
 
 /**
- * 02↔04 段的目标方向。不能直接复用 [snapForward] 的绝对 progress：
+ * 02↔04 段吸附到 04 的判定。不能直接复用 [snapForward] 的绝对 progress：
  * `collapse` 固定以 02 为 0、04 为 1，因此以手势出发态 [startStage] 区分：
  * - 从 02 出发（Compact/Calendar）：按 [snapForward] 的进度/速度阈值判是否去 04；
- * - 从 04 出发（Schedule）：只看 collapse 是否仍为 1。04 的上滑不驱动 collapse，
- *   只属于内容 Overscroll；一旦下滑让 collapse 离开 1，松手就回 02，不再按方向
- *   推回 04——回 04 的吸附会和过滚动回弹动画互相打断。
+ * - 从 04 出发（Schedule）：把下滑进度看作 `1 - collapse`，同样过
+ *   [DaySnapThreshold] 才判回 02，否则回弹 04。判据只看松手时的最终位置——
+ *   下滑越过阈值后又上滑回来、最终没越过的，松手回 04，不会因为途中越过就锁定；
+ *   速度方向仍优先（快速下滑直接回 02，快速上甩直接回 04）。
  * 返回 true = 吸附到 04，false = 吸附到 02。
  */
 internal fun snapCollapseForward(
@@ -75,7 +76,12 @@ internal fun snapCollapseForward(
     velocityY: Float,
     flingThresholdPx: Float,
 ): Boolean = if (startStage == DayStage.Schedule) {
-    collapse >= 1f
+    when {
+        velocityY > flingThresholdPx -> false
+        velocityY < -flingThresholdPx -> true
+        // 向 02 的进度没到阈值（collapse 仍在阈值位置之上）：松手回弹 04。
+        else -> collapse > 1f - DaySnapThreshold
+    }
 } else {
     snapForward(collapse, velocityY, flingThresholdPx)
 }
@@ -85,8 +91,8 @@ internal fun snapCollapseForward(
  * （驱动 collapse）、-1 = 上滑（只做过滚动）、0 = 还未定。
  *
  * 快速上滑的起手常带一点向下抖动；不设这个锁，第一段正向 dy 就会被当成
- * 04→02 下滑，松手后提交 02。锁定后整次手势不再改方向：上滑始终只做过滚动，
- * 下滑后反向推回也不会再写 collapse（松手按已下滑提交 02）。
+ * 04→02 下滑。锁只决定这次手势由谁驱动：上滑起手始终只做过滚动；下滑锁定后
+ * 反向拖动仍跟手把 collapse 推回 04，但是否回 02 只在松手时按最终位置判定。
  */
 internal fun scheduleCollapseDirection(accumulatedDy: Float, slopPx: Float): Int = when {
     accumulatedDy >= slopPx -> 1
@@ -102,7 +108,7 @@ internal const val DaySnapThreshold = 0.4f
  *
  * - 02（Compact）：内容还是空占位、列表上下都不可滚，图片卡/内容卡任意起手都跟手；
  * - 04（Schedule）：列表在顶部（不能再向后滚）时，任何下滑都由根级从第一像素推进
- *   collapse，上滑仍由 [DayTransitionState.dragCollapseBy] 返回 0 放给内容 Overscroll；
+ *   collapse；上滑起手不写 collapse，放给内容 Overscroll（下滑锁定后的回拉仍跟手）；
  *   列表已经下滚时则让给列表滚动；
  * - 01（Calendar）：由整屏 draggable 负责 01→02。
  */

@@ -78,22 +78,24 @@ class DayStateTest {
     }
 
     @Test
-    fun scheduleOnlyKeeps04WhileCollapseStillAtTop() {
-        // 仍停在 04：上滑只做过滚动，松手速度再大也保持 04。
-        assertTrue(
-            snapCollapseForward(DayStage.Schedule, 1f, 0f, 800f),
-        )
-        assertTrue(
-            snapCollapseForward(DayStage.Schedule, 1f, -900f, 800f),
-        )
-        // 已经下滑让 collapse 离开 1：松手回 02；即使最后在往上推也不回 04，
-        // 避免回 04 的吸附动画打断内容 Overscroll。
-        assertFalse(
-            snapCollapseForward(DayStage.Schedule, 0.99f, 0f, 800f),
-        )
-        assertFalse(
-            snapCollapseForward(DayStage.Schedule, 0.5f, -900f, 800f),
-        )
+    fun scheduleSettles02ByFinalProgressAtRelease() {
+        // 仍停在 04：不启动吸附，保持 04。
+        assertTrue(snapCollapseForward(DayStage.Schedule, 1f, 0f, 800f))
+        // 下滑途中越过阈值、但松手前又拉回来（最终进度未越过往 02 的 0.4）：
+        // 按最终位置回弹 04，不因途中越过而锁定。
+        assertTrue(snapCollapseForward(DayStage.Schedule, 0.61f, 0f, 800f))
+        assertTrue(snapCollapseForward(DayStage.Schedule, 0.8f, 0f, 800f))
+        // 松手时最终进度越过阈值：提交 02。
+        assertFalse(snapCollapseForward(DayStage.Schedule, 0.6f, 0f, 800f))
+        assertFalse(snapCollapseForward(DayStage.Schedule, 0.2f, 0f, 800f))
+    }
+
+    @Test
+    fun scheduleFlingStillOverridesFinalProgress() {
+        // 快速下滑一甩：即使最终进度没过阈值也回 02。
+        assertFalse(snapCollapseForward(DayStage.Schedule, 0.9f, 900f, 800f))
+        // 快速上甩：即使已经越过阈值也回 04。
+        assertTrue(snapCollapseForward(DayStage.Schedule, 0.5f, -900f, 800f))
     }
 
     @Test

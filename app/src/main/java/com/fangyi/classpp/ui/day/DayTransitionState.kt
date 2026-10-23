@@ -93,9 +93,10 @@ internal class DayTransitionState(
 
     /**
      * 松手吸附：按当前进度所在段 + 松手速度决定目标，全部用
-     * [Motion.Overlay] / [Motion.AgendaSnapMillis]。04 不设回 04 的吸附：
-     * collapse 仍为 1 时保持 04（上滑只做过滚动），已经下滑则回 02；
-     * 02 端点的快速上甩也在此直接过段到 04。
+     * [Motion.Overlay] / [Motion.AgendaSnapMillis]。
+     * 04→02 与 02→04 共用 [DaySnapThreshold]，且只看松手时的最终进度：
+     * 04 下滑越过往 02 的阈值（或快速下滑一甩）才提交 02，途中越过又拉回来的
+     * 不算；04 仍在 1 时上滑只做过滚动，不启动吸附打断橡皮筋。
      *
      * @param velocityY px/s，正 = 下滑，负 = 上滑
      * @param flingThresholdPx 快速甩动阈值（px/s）
@@ -113,9 +114,9 @@ internal class DayTransitionState(
                 }
             }
             else -> {
-                // 02/03/04 都由 collapse 段收束；04 只要下滑让 collapse 离开 1
-                // 就回 02，不设距离/速度阈值，也不按向上方向推回 04；
-                // 从 02 出发仍按 collapse 进度与速度阈值判是否去 04。
+                // 02/03/04 都由 collapse 段收束；04→02 也按松手时的最终进度判阈值，
+                // 下滑后上滑回来（未越过）回弹 04，越过才提交 02。04 仍在 1 时
+                // forward 为 true，只对齐状态、不起动画。
                 val forward = snapCollapseForward(stage, collapse, velocityY, flingThresholdPx)
                 when {
                     forward && collapse < 1f ->

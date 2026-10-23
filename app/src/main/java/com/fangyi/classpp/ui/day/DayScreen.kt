@@ -339,9 +339,10 @@ fun DayScreen(
             .background(MaterialTheme.colorScheme.background)
             .nestedScroll(nestedScrollConnection)
             // 根级转场手势：Initial pass 先于内容卡/图片卡拿到事件，按方向决定是否消费。
-            // 02 上滑、04 下滑时直接消费并推进 collapse（没有起手阈值）；04 上滑完全
-            // 不驱动 collapse，把手势留给内容区的 OverScroll 橡皮筋。
-            // 抬手速度仍在这里统一交给 settle（04 仍在 1 时跳过，避免打断橡皮筋）。
+            // 02 上滑、04 下滑时直接消费并推进 collapse（没有起手阈值；04 方向锁定后
+            // 上下都跟手）；04 以上滑起手时完全不驱动 collapse，把手势留给内容区的
+            // OverScroll 橡皮筋。抬手速度仍在这里统一交给 settle（04 仍在 1 时跳过，
+            // 避免打断橡皮筋）。
             .pointerInput(
                 active,
                 sheetMounted,
@@ -383,8 +384,8 @@ fun DayScreen(
                     )
                     // 吸附/重播期间不接新手势，避免整组过滚动在转场动画上再叠位移。
                     if (transition.isAnimating) return@awaitEachGesture
-                    // 02→04 与 04→02 都由根级统一驱动跟手；04 只跟下滑，
-                    // 上滑完全不消费、不写 collapse，留给内容区 Overscroll。
+                    // 02→04 与 04→02 都由根级统一驱动跟手；04 以上滑起手时
+                    // 完全不消费、不写 collapse，留给内容区 Overscroll。
                     // 04 只要列表在顶部就由根级接管，避免未到达列表滚动阈值前
                     // 出现“只吸不跟手”；列表已下滚时让给列表。
                     val drivesCollapse = shouldDriveCollapse(
@@ -429,17 +430,30 @@ fun DayScreen(
                                         }
                                     }
                                     1 -> {
-                                        if (transition.collapse <= 0f) {
+                                        // 下滑锁定后仍双向跟手：上滑把 collapse 拉回 04，
+                                        // 松手时才按最终进度判是否回 02——拖出去再拉回来
+                                        // （未越过阈值）不会提前触发 02。
+                                        if (transition.collapse <= 0f && dy > 0f) {
                                             // 04→02 已经拖到 02：继续下滑交给整组过滚动，
                                             // 不再让内容列表自己的 overscroll 接走——
                                             // 切回 Compact 时那条效果会被移除，回位会硬切。
                                             applyCompactOverscroll(dy, change)
-                                        } else if (dy > 0f) {
-                                            val consumed = transition.dragCollapseBy(
-                                                dy,
-                                                dragDistancePx,
-                                            )
-                                            if (consumed != 0f) change.consume()
+                                        } else if (dy != 0f) {
+                                            // 上滑先收回 02 的整组过滚动，剩余位移再拉回 collapse。
+                                            val overscrollConsumed =
+                                                if (dy < 0f && transition.collapse <= 0f) {
+                                                    applyCompactOverscroll(dy, change)
+                                                } else {
+                                                    0f
+                                                }
+                                            val remaining = dy - overscrollConsumed
+                                            if (remaining != 0f) {
+                                                val consumed = transition.dragCollapseBy(
+                                                    remaining,
+                                                    dragDistancePx,
+                                                )
+                                                if (consumed != 0f) change.consume()
+                                            }
                                         }
                                     }
                                     // -1：上滑锁定，整个手势都不再写 collapse
@@ -465,9 +479,9 @@ fun DayScreen(
                         }
                         if (!change.pressed) break
                     }
-                    // 04 上滑只做过滚动：collapse 仍在 1 时不 settle，避免任何吸附动画
-                    // 打断橡皮筋回弹；下滑过（collapse < 1）则松手提交 02。
-                    // 04 列表已下滚时手势归列表收束，根级同样不 settle。
+                    // 04 上滑起手只做过滚动：collapse 仍在 1 时不 settle，避免任何吸附
+                    // 动画打断橡皮筋回弹；下滑过（collapse < 1）则松手按最终进度/速度
+                    // 判回 02 还是回弹 04。04 列表已下滚时手势归列表收束，根级同样不 settle。
                     val shouldSettle = when (transition.stage) {
                         DayStage.Schedule ->
                             drivesCollapse && transition.collapse < 1f
