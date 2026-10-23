@@ -288,12 +288,11 @@ fun ScheduleScreen(
     val glassPillEnabled = isGlassStyleEnabled()
     val weekPillBackdrop = rememberGlassBackdrop(MaterialTheme.colorScheme.background)
 
-    // 顶栏实测高度（含状态栏 inset）→ 网格 contentPadding.top。
-    // 两种模式各存一份：切换模式时立刻拿到上一轮的实测值，内容不会先跳一帧；
-    // 首次进入该模式用估算值，onGloballyPositioned 在首帧绘制前即会校正
+    // 顶栏实测高度（含状态栏 inset）→ 网格顶部留白。两种模式各存一份：
+    // 编辑转场期间 CourseGrid 按 editProgress 在两个实测值之间插值，网格随顶栏
+    // 平滑上滑收拢；首次进入该模式用估算值，onGloballyPositioned 在首帧绘制前即会校正
     var headerHeight by remember { mutableStateOf(HeaderHeightGuess) }
     var editBarHeight by remember { mutableStateOf(EditBarHeightGuess) }
-    val topBarHeight = if (editing) editBarHeight else headerHeight
     val bandHeightPx = with(density) { DateBandHeight.toPx() }
     // 与日期带渐隐同步：index==0 时 offset/bandHeight 爬升，带滚过后恒为 1。
     // derivedStateOf 只在输出变化时通知 → 渐隐窗口外零新增重组
@@ -382,6 +381,31 @@ fun ScheduleScreen(
                 if (editing) ScheduleEditSession(draft = schedule.courses) else ScheduleEditSession.Inactive
             }
             val editSession: ScheduleEditSession? = session.takeIf { it.active }
+            // 编辑态内容过渡进度：0 = 浏览、1 = 编辑，驱动网格整体上滑收拢、日期带折叠
+            // 与空位加号卡的渐次浮现。与顶栏换场共用 [Motion.EditMillis]（本进度配
+            // [Motion.Overlay]，顶栏换场配更缓的 [Motion.Standard]），同一个 editing
+            // 翻转同帧启动；Animatable 互斥且从当前值续播——转场中途
+            // 反向操作（如快速取消再进入）会就地反向，不会跳帧
+            val editContentProgress = remember {
+                Animatable(if (editSession != null) 1f else 0f)
+            }
+            // 传给网格的是只读 State：Animatable 本身是 State<Float, AnimationVector1D>，
+            // 与 State<Float> 不同型；remember 一次避免每帧新建包装对象
+            val editContentState = remember(editContentProgress) {
+                editContentProgress.asState()
+            }
+            // 两段式挂载（同 OverlaySheet 的 mounted 手法）：退场期间加号卡保持在场、
+            // 随进度淡出，播完才卸载；否则退场第一帧卡片就会凭空消失
+            var editContentMounted by remember { mutableStateOf(editSession != null) }
+            LaunchedEffect(editSession != null) {
+                val entering = editSession != null
+                if (entering) editContentMounted = true
+                editContentProgress.animateTo(
+                    targetValue = if (entering) 1f else 0f,
+                    animationSpec = tween(Motion.EditMillis, easing = Motion.Overlay),
+                )
+                if (!entering) editContentMounted = false
+            }
             // 待添加的格子：[dayOfWeek, slotId]；空 = 添加面板未打开
             var addTarget by rememberSaveable { mutableStateOf(listOf<Int>()) }
             // 正在编辑的课程 id（点已有课卡进入）；空 = 编辑面板未打开。
@@ -750,18 +774,21 @@ fun ScheduleScreen(
                     timeSlots = timeSlots,
                     contentForPage = displayedContentForPage,
                     state = listState,
-                    // 滚动到底时最后一行可停在导航栏胶囊上方，网格背景仍铺满屏幕底缘；
-                    // top 跟随顶栏高度，折叠期视觉与原先 Column 上推一致
+                    // 滚动到底时最后一行可停在导航栏胶囊上方，网格背景仍铺满屏幕底缘。
+                    // 顶部留白不在这里给：由 CourseGrid 按 editProgress 在下方两个高度间
+                    // 插值（State 在网格内部读取，逐帧重组不外溢到本屏）
                     contentPadding = PaddingValues(
-                        top = topBarHeight,
                         bottom = WindowInsets.navigationBars
                             .only(WindowInsetsSides.Bottom)
                             .asPaddingValues()
                             .calculateBottomPadding() + NavReserve,
                     ),
                     editMode = editSession != null,
-                    // 编辑态没有日期层（设计稿里日期带消失），页高相应少一条
-                    showDates = editSession == null,
+                    // 编辑进度：网格收拢、日期带折叠、加号卡浮现共用这一条进度
+                    editProgress = editContentState,
+                    addCardsMounted = editContentMounted,
+                    headerHeight = headerHeight,
+                    editBarHeight = editBarHeight,
                     // 列数：5 天课表 5 列、7 天课表 7 列（含周六/周日），与顶栏星期行/日期带同源
                     daysPerWeek = schedule.daysPerWeek,
                     // State 实例透传，值在 CourseGrid 内读取（拖动时本屏 skip 的关键）
@@ -796,14 +823,16 @@ fun ScheduleScreen(
                 )
                 // 底部渐变遮罩：页面自绘（原导航栏内置层下沉至此），盖住滚进导航栏区域的网格。
                 // 编辑态随导航栏一同下移出屏——与 MainActivity 的导航栏 AnimatedVisibility
-                // 共用 Motion.EditMillis 规格，同一个 editing 翻转同帧启动，两侧严格同步
+                // 共用 Motion.EditMillis + Motion.Overlay 规格，同一个 editing 翻转同帧启动
                 BottomFadeScrim(
                     visible = editSession == null,
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
-                // 顶栏 ↔ 编辑栏进出场：新内容自顶部滑入淡入、旧内容向上滑出淡出，进退对称，
-                // 与底部导航栏的 AnimatedVisibility 共用 [Motion.EditMillis] 规格，
-                // 同一个 editing 翻转同帧启动，两侧严格同步。
+                // 顶栏 ↔ 编辑栏进出场：新内容自顶部滑入淡入、旧内容向上滑出淡出，进退对称。
+                // 与网格收拢、底部遮罩、导航栏共用 [Motion.EditMillis]，同一个 editing 翻转
+                // 同帧启动；但本换场用 [Motion.Standard] 而非 [Motion.Overlay]——Overlay
+                // 前重后轻，顶栏会在前 ~100ms 窜完大半行程，观感太急；Standard 起步更缓、
+                // 全程更均匀，顶栏这块的位移量最大，配合它更稳。
                 // 内容读 lambda 参数而非外层 editSession：会话翻转时若读外层值，
                 // 退场中的旧槽位也会跟着渲染成新内容
                 AnimatedContent(
@@ -812,10 +841,10 @@ fun ScheduleScreen(
                     transitionSpec = {
                         (slideInVertically(
                             animationSpec = tween(Motion.EditMillis, easing = Motion.Standard),
-                        ) { -it } + fadeIn(tween(Motion.EditMillis))) togetherWith
+                        ) { -it } + fadeIn(tween(Motion.EditMillis, easing = Motion.Standard))) togetherWith
                             (slideOutVertically(
                                 animationSpec = tween(Motion.EditMillis, easing = Motion.Standard),
-                            ) { -it } + fadeOut(tween(Motion.EditMillis)))
+                            ) { -it } + fadeOut(tween(Motion.EditMillis, easing = Motion.Standard)))
                     },
                     modifier = Modifier.align(Alignment.TopStart),
                     label = "topBarSwap",

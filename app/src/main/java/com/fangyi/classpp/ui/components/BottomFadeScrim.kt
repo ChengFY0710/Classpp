@@ -36,8 +36,8 @@ private fun scrimHeight(): Dp =
  * （如 Modifier.align(Alignment.BottomCenter)）与压在滚动内容之上、页面浮层之下的层序。
  *
  * [visible] 为假时随导航栏一同下移出屏（编辑态/全屏浮层在场）。显隐动画与 MainActivity
- * 的导航栏 AnimatedVisibility 共用 [Motion.EditMillis] 规格，同一状态翻转同帧启动，
- * 两侧严格同步。
+ * 的导航栏 AnimatedVisibility 共用 [Motion.EditMillis] + [Motion.Overlay] 规格，同一状态
+ * 翻转同帧启动、同一条曲线；网格收拢同帧同曲线，顶栏换场同帧但另用更缓的 [Motion.Standard]。
  */
 @Composable
 fun BottomFadeScrim(
@@ -47,11 +47,11 @@ fun BottomFadeScrim(
     AnimatedVisibility(
         visible = visible,
         enter = slideInVertically(
-            animationSpec = tween(Motion.EditMillis, easing = Motion.Standard),
-        ) { it } + fadeIn(tween(Motion.EditMillis)),
+            animationSpec = tween(Motion.EditMillis, easing = Motion.Overlay),
+        ) { it } + fadeIn(tween(Motion.EditMillis, easing = Motion.Overlay)),
         exit = slideOutVertically(
-            animationSpec = tween(Motion.EditMillis, easing = Motion.Standard),
-        ) { it } + fadeOut(tween(Motion.EditMillis)),
+            animationSpec = tween(Motion.EditMillis, easing = Motion.Overlay),
+        ) { it } + fadeOut(tween(Motion.EditMillis, easing = Motion.Overlay)),
         modifier = modifier,
     ) {
         Box(

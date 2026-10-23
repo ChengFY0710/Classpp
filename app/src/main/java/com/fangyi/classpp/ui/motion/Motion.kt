@@ -39,11 +39,13 @@ object Motion {
     const val TabShrinkScale = 0.9f
 
     /**
-     * 编辑态过渡时长：顶栏 ↔ 编辑栏（ScheduleScreen 内 AnimatedContent）与底部导航栏
-     * 的 AnimatedVisibility 共用同一规格（配合 [Standard]），同一个 editing 翻转同帧启动，
-     * 两侧才能严格同步。想更快收场可下调（300ms 左右），曲线不变。
+     * 编辑态过渡时长：整段转场共用同一时长——顶栏 ↔ 编辑栏（ScheduleScreen 内
+     * AnimatedContent，配 [Standard]：起步更缓，避免顶栏的大位移在 [Overlay] 前段
+     * 一口气窜完）、课程网格收拢（编辑进度 Animatable）、底部渐变遮罩与底部导航栏
+     * 的 AnimatedVisibility（三者配 [Overlay]）。同一个 editing 翻转同帧启动，
+     * 各处才能严格同步。想更快收场可下调（300ms 左右），两套曲线都不变。
      */
-    const val EditMillis = 360
+    const val EditMillis = 480
 
     /**
      * 整页覆盖层（设置页、个性化子页）进场时长：整页右滑入，配合 [Overlay]。

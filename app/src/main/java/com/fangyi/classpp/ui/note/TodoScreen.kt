@@ -340,7 +340,7 @@ fun TodoScreen(
             }
             // 底部渐变遮罩：页面自绘（原导航栏内置层下沉至此），盖住滚进导航栏区域的列表；
             // 全屏浮层在场时随导航栏一同下移出屏——与 MainActivity 的导航栏 AnimatedVisibility
-            // 共用 Motion.EditMillis 规格。画在内容层之上、顶栏之下（遮罩管底、顶栏管顶）
+            // 共用 Motion.EditMillis + Motion.Overlay 规格。画在内容层之上、顶栏之下（遮罩管底、顶栏管顶）
             BottomFadeScrim(
                 visible = !anyOverlayMounted,
                 modifier = Modifier.align(Alignment.BottomCenter),

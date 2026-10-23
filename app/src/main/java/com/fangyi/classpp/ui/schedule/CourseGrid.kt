@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,10 +40,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.Correct
@@ -83,6 +87,15 @@ private val TrailingScrollSpace = 120.dp
 /** 日期带渐隐速率：值越大消失越快；1.0f 为原始速度（滚完自身高度才消失） */
 private const val DateBandFadeSpeed = 3.0f
 
+/**
+ * 编辑态空位加号卡的浮现参数：按「列 + 行」对角线递增延迟，形成从左上方铺开的扫入感。
+ * 延迟是**进度占比**（总时长 Motion.EditMillis），末尾格封顶 [AddCardRevealMaxDelay]
+ * （约 80ms），避免最后几格明显迟到；退出时进度反向，后出现的格子先消失。
+ */
+private const val AddCardRevealStep = 0.02f
+private const val AddCardRevealMaxDelay = 0.22f
+private const val AddCardRevealStartScale = 0.92f
+private val AddCardRevealRise = 6.dp
 
 /**
  * 课表网格：整块内容区是一个横向 Pager，**每周一页**（日期数字带 + 按节次分行的课程格）。
@@ -93,11 +106,13 @@ private const val DateBandFadeSpeed = 3.0f
  *
  * 关键结构：Pager 是列表里的**唯一 item**，纵向滚动留在 Pager 之外——
  * 三页因此共享同一纵向位置与折叠状态，拖动途中相邻周与当前周严格对齐；
- * 每页高度固定（日期带 + 各行 + 尾部留白），故给 Pager 显式高度，避开 item 纵向约束无界。
+ * 每页高度显式给出（日期带 + 各行 + 尾部留白，编辑转场期间日期带高连续变化），
+ * 故给 Pager 显式高度，避开 item 纵向约束无界。
  *
  * 日期带高亮列与星期行高亮列同源（均由顶栏日期推导，见 [WeekPageContent.highlightDate]）。
  * 折叠通过外部 modifier.nestedScroll 接入，本组件不感知折叠状态。
- * 列表状态由调用方持有（供模糊进度与日期带渐隐计算），顶部偏移由 contentPadding.top 跟随顶栏高度；
+ * 列表状态由调用方持有（供模糊进度与日期带渐隐计算），顶部留白在本组件内按
+ * [editProgress] 于 [headerHeight] / [editBarHeight] 间插值（编辑转场时网格整体上滑收拢）；
  * Pager 状态同样由调用方持有（供周次 ↔ 翻页双向同步）。
  *
  * 喂进来的 [WeekPageContent.courses] 已由 resolveWeekCards 解析过：各卡两两不重叠
@@ -112,6 +127,17 @@ fun CourseGrid(
     state: LazyListState = rememberLazyListState(),
     contentPadding: PaddingValues = PaddingValues(0.dp),
     editMode: Boolean = false,
+    // 编辑转场进度（0 = 浏览、1 = 编辑）：顶部留白、日期带高度、页高与加号卡浮现
+    // 全部由这一条进度派生。用 State 实例传递：值在本组件组合内读取，
+    // ScheduleScreen 不跟着逐帧重组（与 cardHeights 同一条纪律）
+    editProgress: State<Float> = remember { mutableStateOf(0f) },
+    // 加号卡的两段式挂载：退场期间保持 true、随进度淡出，播完才卸载；
+    // 只按 editMode 组合会让卡片在退场第一帧凭空消失
+    addCardsMounted: Boolean = editMode,
+    // 顶栏两种模式的实测高度：内容顶部留白在两者间按 editProgress 插值，
+    // 网格随之平滑上滑收拢/回落
+    headerHeight: Dp = contentPadding.calculateTopPadding(),
+    editBarHeight: Dp = contentPadding.calculateTopPadding(),
     showDates: Boolean = true,
     daysPerWeek: Int = 5,
     // 课程卡片高度状态（个性化页滑条，State 实例传递：值只在下方 rowHeight 处读取，
@@ -135,8 +161,14 @@ fun CourseGrid(
     val rowHeight = (if (days > 5) heights.seven else heights.five).dp
     // 教师行显隐：同 heights 一样在本组件读取一次，向下传纯布尔
     val showTeacherOnCard = showTeacher.value
-    val pageHeight = (if (showDates) DateBandHeight else 0.dp) +
-        rowHeight * timeSlots.size + TrailingScrollSpace
+    // 编辑进度：读 State → 转场期间本组件逐帧重组重排（与拖动卡片高度同一量级），
+    // 页面高度、日期带高、顶部留白都随之连续变化；Steady 状态下恒为 0/1
+    val editFraction = editProgress.value.coerceIn(0f, 1f)
+    // 顶部留白 = 顶栏实测高度按进度插值：随顶栏换场同步收拢，内容不会先跳一帧
+    val topPadding = lerp(headerHeight, editBarHeight, editFraction)
+    // 日期带高度按进度收拢到 0（编辑态设计稿里没有日期层），页高同步少一条
+    val dateBandHeight = if (showDates) DateBandHeight * (1f - editFraction) else 0.dp
+    val pageHeight = dateBandHeight + rowHeight * timeSlots.size + TrailingScrollSpace
     // 接缝竖线是否要画：派生成布尔 state —— 拖动中恒为真，只在起手/落位翻转一次。
     // 切不可让 draw 直接读 currentPageOffsetFraction（拖动中逐帧都变）：那会让页面图层
     // 被逐帧判为失效、整页绘制指令（日期带 + 各行卡片）跟着重录一遍，图层也就白加了。
@@ -144,9 +176,18 @@ fun CourseGrid(
     val seamVisible: State<Boolean> = remember(pagerState) {
         derivedStateOf { pagerState.isSeamVisible }
     }
+    // 顶部留白在这里合并：调用方只给底部导航预留等静态留白，
+    // 顶部随编辑进度逐帧变化（读 State 的范围止于本组件）
+    val layoutDirection = LocalLayoutDirection.current
+    val resolvedPadding = PaddingValues(
+        start = contentPadding.calculateStartPadding(layoutDirection),
+        top = topPadding,
+        end = contentPadding.calculateEndPadding(layoutDirection),
+        bottom = contentPadding.calculateBottomPadding(),
+    )
     LazyColumn(
         state = state,
-        contentPadding = contentPadding,
+        contentPadding = resolvedPadding,
         modifier = modifier.background(MaterialTheme.colorScheme.background),
     ) {
         item(key = "weekPager") {
@@ -178,6 +219,9 @@ fun CourseGrid(
                     seamVisible = seamVisible,
                     listState = state,
                     showDates = showDates,
+                    dateBandHeight = dateBandHeight,
+                    editProgress = editProgress,
+                    addCardsMounted = addCardsMounted,
                     editMode = editMode,
                     onAddClick = onAddClick,
                     onEditClick = onEditClick,
@@ -226,6 +270,10 @@ private fun WeekPage(
     seamVisible: State<Boolean>,
     listState: LazyListState,
     showDates: Boolean,
+    // 日期带当前高度：编辑转场期间由 DateBandHeight 收拢到 0（叠加层 Spacer 同步）
+    dateBandHeight: Dp,
+    editProgress: State<Float>,
+    addCardsMounted: Boolean,
     editMode: Boolean,
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)?,
     onEditClick: ((courseId: String) -> Unit)?,
@@ -233,7 +281,7 @@ private fun WeekPage(
     onSlotLongClick: ((day: Int, slot: TimeSlot, anchor: Rect) -> Unit)?,
 ) {
     val density = LocalDensity.current
-    val bandPx = with(density) { DateBandHeight.toPx() }
+    val bandPx = with(density) { dateBandHeight.toPx() }
     val trailingPx = with(density) { TrailingScrollSpace.toPx() }
     val outline = MaterialTheme.colorScheme.outline
     Box(
@@ -254,16 +302,20 @@ private fun WeekPage(
             },
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            if (showDates) {
+            // 高度收到 0 时直接不组合：编辑稳态下不保留一条零高的日期带；
+            // 退场时进度一离开 1 就重新挂载，带高从 0 长回 DateBandHeight
+            if (showDates && dateBandHeight > 0.dp) {
                 DateBand(
                     weekDates = content.dates,
                     days = days,
+                    height = dateBandHeight,
                     highlightDate = content.highlightDate,
                     highlightIsToday = content.highlightIsToday,
                     termStartDate = content.termStartDate,
                     termEndDate = content.termEndDate,
                     listState = listState,
                     seamVisible = seamVisible,
+                    editProgress = editProgress,
                 )
             }
             timeSlots.forEach { slot ->
@@ -273,6 +325,8 @@ private fun WeekPage(
                     days = days,
                     rowHeight = rowHeight,
                     showTeacher = showTeacher,
+                    editProgress = editProgress,
+                    addCardsMounted = addCardsMounted,
                     editMode = editMode,
                     onAddClick = onAddClick,
                     onEditClick = onEditClick,
@@ -285,7 +339,7 @@ private fun WeekPage(
 
         // ——— 跨节卡叠加层：y 偏移由镜像 Spacer(日期带) + 行高自然对齐 ———
         Column(modifier = Modifier.matchParentSize()) {
-            if (showDates) Spacer(modifier = Modifier.height(DateBandHeight))
+            if (showDates) Spacer(modifier = Modifier.height(dateBandHeight))
             timeSlots.forEach { slot ->
                 Row(
                     modifier = Modifier
@@ -361,17 +415,22 @@ private fun WeekPage(
  * 翻页途中页右缘的接缝竖线由本带自己补（页级 drawBehind 补的那段会被带的底色盖住），
  * 画在自身 drawBehind 内 ⇒ 与带内其它竖线一同渐隐，不会在滚过顶栏后留一截浮线；
  * 开关同样取自派生后的布尔 state，避免拖动中逐帧重录本层指令。
+ *
+ * [height] 是编辑转场期间的当前带高（[DateBandHeight] → 0）：高度收缩与进度淡出
+ * 同帧发生，文字被图层裁剪吃掉，不会在带底露残行。
  */
 @Composable
 private fun DateBand(
     weekDates: List<Date>,
     days: Int,
+    height: Dp,
     highlightDate: Date,
     highlightIsToday: Boolean,
     termStartDate: Date?,
     termEndDate: Date?,
     listState: LazyListState,
     seamVisible: State<Boolean>,
+    editProgress: State<Float>,
 ) {
     val density = LocalDensity.current
     val bandHeightPx = with(density) { DateBandHeight.toPx() }
@@ -380,7 +439,7 @@ private fun DateBand(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(DateBandHeight)
+            .height(height)
             // 在 draw 阶段读滚动偏移，滚动时不触发整列重组：
             // offset = 0 全显，≥ bandHeight 全隐
             .graphicsLayer {
@@ -395,7 +454,9 @@ private fun DateBand(
                 } else {
                     1f
                 }
-                alpha = 1f - fadeProgress
+                // 编辑进度再乘一层：带高收缩的同时淡出；clip 裁掉高度不足时的文字残行
+                alpha = (1f - fadeProgress) * (1f - editProgress.value)
+                clip = true
             }
 
             .background(MaterialTheme.colorScheme.background)
@@ -471,6 +532,10 @@ private fun DateBand(
  * 普通态有课渲染课程卡片、无课露网格背景；编辑态空位渲染添加卡片（点击新建、长按出粘贴菜单），
  * 已有课程卡（含本周不上的置灰卡）点击进编辑、长按出课程菜单。
  * 跨节课的起始格与续格都留空——卡片由 [WeekPage] 的叠加层跨行绘制。
+ *
+ * 添加卡的出现/消失不复用 [editMode]：它由 [addCardsMounted] 控制挂载、由 [editProgress]
+ * 在图层里算每格的斜向错峰（淡入 + 微缩放 + 上浮），退场时卡片留到进度归零才卸载；
+ * 退场期间 [editMode] 已为 false，点击回调是 no-op。
  */
 @Composable
 private fun GridRow(
@@ -479,6 +544,8 @@ private fun GridRow(
     days: Int,
     rowHeight: Dp,
     showTeacher: Boolean,
+    editProgress: State<Float>,
+    addCardsMounted: Boolean,
     editMode: Boolean,
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)?,
     onEditClick: ((courseId: String) -> Unit)?,
@@ -504,7 +571,8 @@ private fun GridRow(
             val course = courses.findAt(day, slot.id)
             // 续格（被跨节课覆盖）：不画课卡也不画添加卡，点击自然落空
             val covered = courses.isContinuationAt(day, slot.id)
-            // 编辑态才有添加回调（只给空位添加卡用；已有课卡点击走 onEditClick）
+            // 编辑态才有添加回调（只给空位添加卡用；已有课卡点击走 onEditClick）。
+            // 退场期间为 null → 卡片仍显示但点击是 no-op
             val add: (() -> Unit)? = if (editMode && onAddClick != null && !covered) {
                 { onAddClick(day, slot) }
             } else {
@@ -518,13 +586,28 @@ private fun GridRow(
                     .padding(start = CellPadding, end = CellPadding, bottom = CellPadding, top = CellPaddingTop),
             ) {
                 when {
-                    course == null && add != null -> AddCourseCard(
+                    course == null && addCardsMounted && !covered -> AddCourseCard(
                         slot = slot,
-                        onClick = add,
+                        onClick = add ?: {},
                         // 长按粘贴菜单的锚点取添加卡片自身窗口坐标（填满格 = 格坐标）；
                         // 回调仅在编辑态传入（同下方课程卡），菜单是否弹出由调用方按剪贴板决定
                         modifier = Modifier
                             .fillMaxSize()
+                            // 斜向错峰浮现：延迟按「列 + 行」递增；全局进度已被 Overlay
+                            // 曲线整形，这里只切时间窗，退场自动按反向顺序消失。
+                            // 值在图层块内读取 → 逐帧只失效图层，不触发重组
+                            .graphicsLayer {
+                                val delay = (((day - 1) + (slot.id - 1)) * AddCardRevealStep)
+                                    .coerceAtMost(AddCardRevealMaxDelay)
+                                val local = ((editProgress.value - delay) / (1f - delay))
+                                    .coerceIn(0f, 1f)
+                                alpha = local
+                                val revealScale = AddCardRevealStartScale +
+                                    (1f - AddCardRevealStartScale) * local
+                                scaleX = revealScale
+                                scaleY = revealScale
+                                translationY = (1f - local) * AddCardRevealRise.toPx()
+                            }
                             .onGloballyPositioned { cardBounds.value = it.boundsInWindow() },
                         onLongClick = if (editMode && onSlotLongClick != null) {
                             { onSlotLongClick(day, slot, cardBounds.value) }

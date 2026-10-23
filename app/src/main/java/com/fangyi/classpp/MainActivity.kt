@@ -338,18 +338,19 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             // 编辑态或课表页全屏浮层在场时隐藏底部导航栏（设计稿如此，也避免编辑中途被切走）：
-                            // 下移出屏 / 上移入屏，与顶栏的编辑栏过渡（ScheduleScreen 内 AnimatedContent）
-                            // 共用 [Motion.EditMillis] 规格，同一个 editing 翻转同帧启动，两侧严格同步
+                            // 下移出屏 / 上移入屏，与网格收拢、遮罩（ScheduleScreen 内）共用
+                            // [Motion.EditMillis] + [Motion.Overlay]，同一个 editing 翻转同帧启动；
+                            // 顶栏换场同帧但另用更缓的 [Motion.Standard]（见 ScheduleScreen）
                             AnimatedVisibility(
                                 visible = !editing && !navBarHiddenByOverlay,
                                 enter = slideInVertically(
                                     // 从自身高度下方起步：上移入
-                                    animationSpec = tween(Motion.EditMillis, easing = Motion.Standard),
-                                ) { it } + fadeIn(tween(Motion.EditMillis)),
+                                    animationSpec = tween(Motion.EditMillis, easing = Motion.Overlay),
+                                ) { it } + fadeIn(tween(Motion.EditMillis, easing = Motion.Overlay)),
                                 exit = slideOutVertically(
                                     // 滑向自身高度下方：下移出
-                                    animationSpec = tween(Motion.EditMillis, easing = Motion.Standard),
-                                ) { it } + fadeOut(tween(Motion.EditMillis)),
+                                    animationSpec = tween(Motion.EditMillis, easing = Motion.Overlay),
+                                ) { it } + fadeOut(tween(Motion.EditMillis, easing = Motion.Overlay)),
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
                                     // 导航栏永远压在所有页面之上：页面 z 序随选中递增无上界，
