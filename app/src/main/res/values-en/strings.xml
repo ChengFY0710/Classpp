@@ -36,6 +36,8 @@
     <string name="todo_name_hint">e.g. Renew passport</string>
     <string name="month_day_format">%1$d/%2$d</string>
     <string name="date_year_month_format">%1$d/%2$d</string>
+    <!-- DayCalendar (calendar card) footer title: year & month without leading zeros -->
+    <string name="date_year_month_cn_format">%1$d/%2$d</string>
     <string name="date_title_format">%1$s %2$s</string>
     <string name="back_to_current_week">Back to this week</string>
     <string name="cd_section_collapse">Collapse</string>
@@ -43,6 +45,11 @@
     <string name="cd_switch_to_5_days">Switch to the 5-day view</string>
     <string name="cd_switch_to_7_days">Switch to the 7-day view</string>
     <string name="cd_pinned">Pinned</string>
+    <!-- DayCalendar (calendar card) footer prev/next buttons -->
+    <string name="cd_calendar_previous_month">Previous month</string>
+    <string name="cd_calendar_next_month">Next month</string>
+    <string name="cd_calendar_previous_week">Previous week</string>
+    <string name="cd_calendar_next_week">Next week</string>
     <string-array name="weekdays">
         <item>Mon</item>
         <item>Tue</item>

@@ -120,6 +120,8 @@
     <string name="todo_error_dates_required">请先选择日期</string>
     <string name="month_day_format">%1$d月%2$d日</string>
     <string name="date_year_month_format">%1$d/%2$d</string>
+    <!-- DayCalendar（日历卡）底栏标题：年月不带前导零 -->
+    <string name="date_year_month_cn_format">%1$d年%2$d月</string>
     <string name="date_title_format">%1$s %2$s</string>
     <string name="back_to_current_week">返回本周</string>
     <string name="cd_section_collapse">收起</string>
@@ -127,6 +129,11 @@
     <string name="cd_switch_to_5_days">切换到 5 天视图</string>
     <string name="cd_switch_to_7_days">切换到 7 天视图</string>
     <string name="cd_pinned">已置顶</string>
+    <!-- DayCalendar（日历卡）底栏左右切换按钮 -->
+    <string name="cd_calendar_previous_month">上一月</string>
+    <string name="cd_calendar_next_month">下一月</string>
+    <string name="cd_calendar_previous_week">上一周</string>
+    <string name="cd_calendar_next_week">下一周</string>
     <string-array name="weekdays">
         <item>周一</item>
         <item>周二</item>
