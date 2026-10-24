@@ -223,7 +223,10 @@ private fun CountdownLabel(
  *   （onClick 由调用方接「切换选中」）；null（默认）无选中形态，卡片与原来完全一致；
  * - [onLongClick] 长按回调（待办列表长按进编辑页的入口）：与 onClick 同时非 null 时手势
  *   从 pressClickable 换成 pressFeedback + combinedClickable 手动配对（长按需自建按压源）；
- *   null（默认）维持纯单击。
+ *   null（默认）维持纯单击；
+ * - [modifier] 作用于侧滑层之外（整卡节点）：列表项级 animateItem 与卡间距内距由宿主
+ *   挂在这里、不进卡内布局链——动作卡经 matchParentSize 撑满侧滑层实测尺寸，内距若进
+ *   卡内 Row 会把动作卡一起撑高（比主体卡多出一份透明内距）。
  */
 @Composable
 fun NoteCard(
@@ -274,10 +277,13 @@ fun NoteCard(
     val selectionStrokeColor = MaterialTheme.colorScheme.primary
     val selectionStrokeWidth = 2.dp * selectionProgress
     // 侧滑层：swipe 非 null 时卡片包进侧滑层（左右滑呼出动作卡），下方 Row 原样不动；
-    // null = 不加层，输出与无侧滑时完全一致
-    NoteCardSwipeLayer(swipe = swipe) {
+    // null = 不加层，输出与无侧滑时完全一致。[modifier] 挂在侧滑层之外（整卡节点）——
+    // 列表项级 animateItem 与卡间距内距由宿主挂这里、不进卡内 Row：动作卡经
+    // matchParentSize 撑满侧滑层实测尺寸，内距若进 Row 会把它一起撑高（比主体卡
+    // 多出一份透明内距，表现为滑出的动作卡比待办卡高）
+    NoteCardSwipeLayer(swipe = swipe, modifier = modifier) {
         Row(
-            modifier = modifier
+            modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = SheetFieldHeight)
                 // 按压反馈同 SheetCard「可点才挂」：位置在 clip 之前（缩放作用于整卡、不被圆角
