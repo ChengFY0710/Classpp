@@ -92,7 +92,8 @@ private val CardBlurRadius: Dp = 20.dp
  *
  * 进出场由组件自己完成，与 OverlaySheet 同一套两段式关闭：
  * - 挂载即入场：从屏幕底部滑入（ui.motion 的 [Motion.Overlay]，与浮层同一条非线性
- *   曲线，退场同曲线、时长更短），遮罩同步压暗；
+ *   曲线；时长用选择卡自己的 [Motion.BottomSheetEnterMillis] /
+ *   [Motion.BottomSheetExitMillis]，与浮层 token 分开维护），遮罩同步压暗；
  * - [onDismiss]（遮罩点击 / 返回键 / 取消 / 确认）只表示**请求关闭**，调用方收到后清掉自己的状态使
  *   [visible] 变 false，组件随即向下滑出（[Motion.Overlay]，退场不带回弹）、遮罩同步变淡，
  *   **播完后才回调 [onDismissed]**，调用方在这一刻把弹窗移出组合；
@@ -180,7 +181,7 @@ fun BottomSelectSheet(
 
     // 收场动画本体：从当前进度滑到全隐，播完才回调 onDismissed
     suspend fun runExit() {
-        hiddenFraction.animateTo(1f, tween(Motion.SheetExitMillis, easing = Motion.Overlay))
+        hiddenFraction.animateTo(1f, tween(Motion.BottomSheetExitMillis, easing = Motion.Overlay))
         onDismissed()
     }
 
@@ -200,7 +201,7 @@ fun BottomSelectSheet(
             closeRequested = false
             hiddenFraction.animateTo(
                 0f,
-                tween(Motion.SheetEnterMillis, easing = Motion.Overlay),
+                tween(Motion.BottomSheetEnterMillis, easing = Motion.Overlay),
             )
         } else {
             beginExit()

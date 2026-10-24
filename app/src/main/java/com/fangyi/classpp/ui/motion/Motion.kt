@@ -77,6 +77,19 @@ object Motion {
     const val SheetExitMillis = 400
 
     /**
+     * 底部弹出选择卡（BottomSelectSheet）入场时长：从屏幕底部滑入，配合 [Overlay]。
+     * 与浮层 [SheetEnterMillis] 同值起步，但独立成 token——选择卡族调节奏不动浮层，
+     * 反之亦然。
+     */
+    const val BottomSheetEnterMillis = 400
+
+    /**
+     * 底部弹出选择卡（BottomSelectSheet）出场时长：向下滑出，配合 [Overlay]。
+     * 独立于浮层 [SheetExitMillis]；比入场短一拍的收场节奏与浮层保持一致。
+     */
+    const val BottomSheetExitMillis = 340
+
+    /**
      * 遮罩弹窗（FadeOverlayDialog）淡入淡出时长：遮罩与卡片共用同一条透明度，
      * 进场 [Decelerate]、退场 [Accelerate]。
      */
