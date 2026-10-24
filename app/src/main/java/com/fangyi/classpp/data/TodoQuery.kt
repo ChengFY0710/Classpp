@@ -200,3 +200,29 @@ fun Todo.withOccurrenceDeadline(anchor: IsoDate, date: IsoDate): Todo {
     val adjusted = next - deadlineBeforeDays
     return copy(deadlineDate = if (adjusted.epochDay < date.epochDay) date else adjusted)
 }
+
+/**
+ * 待办时间在 `[startInclusive, endInclusive]` 窗口内覆盖的日期（日历待办小点取数）：
+ * 待办时间 = 显式日期 [Todo.dates] ∪ 重复规则自锚日期展开的分期日期 ∪ 已记账的
+ * 完成/逾期分期（规则修改后不再产生的历史分期仍算数）；截止日期是「什么时候要交」
+ * 而非「待办时间」，不算。完成态不影响覆盖——已完成的待办仍是那天的待办。
+ *
+ * 窗口外的日期不收：日历只给显示中的格子取点，调用方传网格首尾日期即可；
+ * 锚日期远早于窗口的重复规则展开成本受 occurrencesBetween 的 MAX_PERIODS 兜底。
+ */
+fun List<Todo>.datesCoveredWithin(startInclusive: IsoDate, endInclusive: IsoDate): Set<IsoDate> {
+    if (isEmpty()) return emptySet()
+    val window = startInclusive.epochDay..endInclusive.epochDay
+    val endExclusive = endInclusive + 1
+    return buildSet {
+        for (todo in this@datesCoveredWithin) {
+            todo.dates.forEach { if (it.epochDay in window) add(it) }
+            todo.completedOccurrences.forEach { if (it.epochDay in window) add(it) }
+            todo.overdueOccurrences.forEach { if (it.epochDay in window) add(it) }
+            val anchor = todo.dates.minByOrNull { it.epochDay }
+            if (anchor != null && todo.repeat.type != RepeatType.None) {
+                addAll(todo.repeat.occurrencesBetween(anchor, startInclusive, endExclusive))
+            }
+        }
+    }
+}

@@ -18,6 +18,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
@@ -26,6 +27,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,13 +84,16 @@ import kotlinx.coroutines.launch
  *
  * **锚点（anchor）唯一**：展开态展示锚点所在月、折叠态展示锚点所在周，标题始终显示锚点
  * 所在年月——两种形态、按钮切换与折叠联动共用同一份锚点状态。本组件暂不接数据库，
- * [markedDates] 由调用方传入；[onDateClick] 本次预留（null = 无点击交互）。
+ * [markedDates] 由调用方传入；锚点月可无限翻页，小点这类窗口化数据按
+ * [onGridRangeChange] 回报的网格日期窗口取值即可（见 DayScreen 的待办小点）。[onDateClick]
+ * 本次预留（null = 无点击交互）。
  */
 @Composable
 fun DayCalendar(
     modifier: Modifier = Modifier,
     markedDates: Set<IsoDate> = emptySet(),
     onDateClick: ((IsoDate) -> Unit)? = null,
+    onGridRangeChange: ((firstDate: IsoDate, lastDate: IsoDate) -> Unit)? = null,
     foldState: DayCalendarFoldState? = null,
     initiallyFolded: Boolean = false,
     today: IsoDate = IsoDate.today(),
@@ -110,6 +115,15 @@ fun DayCalendar(
     val rowCount = (firstOfMonth.isoDayOfWeek() - 1 + daysInMonth + 6) / 7
     // 完全折叠后唯一可见的行：锚点日期所在周（锚点必在本月内，索引必然合法）
     val visibleWeekIndex = ((anchor.mondayOfWeek().epochDay - gridStart.epochDay) / 7L).toInt()
+
+    // 展示中的网格日期窗口（首尾都含前后月补位日期）：markedDates 这类窗口化数据的取值
+    // 范围。经 rememberUpdatedState 恒调最新回调（同 DayScreen 的 commitState 惯例）；
+    // 仅锚点月翻页时窗口变化才回调——折叠只在月内取行、窗口不变。
+    val lastGridDate = gridStart + rowCount * 7 - 1
+    val gridRangeChange by rememberUpdatedState(onGridRangeChange)
+    LaunchedEffect(gridStart, lastGridDate) {
+        gridRangeChange?.invoke(gridStart, lastGridDate)
+    }
 
     val monthContentHeight = RowStep * rowCount - RowSpacing + DotZone
     val weekContentHeight = BallSize + DotZone
@@ -479,7 +493,7 @@ private fun IsoDate.plusMonthsClamped(months: Int): IsoDate {
 // ---------- 视觉规格（设计稿量取；颜色一律取主题，见各用点） ----------
 
 private val BallSize = 34.dp
-private val RowSpacing = 12.dp
+private val RowSpacing = 10.dp
 private val RowStep = BallSize + RowSpacing
 /** 星期表头与日历网格的间距，独立于行距 [RowSpacing]，可单独调 */
 private val HeaderGridGap = 6.dp

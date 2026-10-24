@@ -39,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -89,7 +90,10 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import coil3.compose.AsyncImage
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.calendar.ChineseDayMarks
+import com.fangyi.classpp.data.datesCoveredWithin
+import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.DayCalendar
 import com.fangyi.classpp.ui.components.DayCalendarFoldState
@@ -143,11 +147,15 @@ private const val SnapTakeOverConfirmSlopFactor = 2f
  * 背景图仍是唯一图片源（[DayImageStore]）；ic_image 仍呼起 [DayImageSheet]，浮层
  * 在场时继续藏底部导航栏。[active] 由调用方按当前 tab 透传，仅用于状态栏图标在
  * 非 Agenda 页恢复主题默认，不参与转场与导航栏布局。
+ *
+ * [todoRepository] 只喂日历卡的待办小点：活跃待办按 DayCalendar 回报的网格窗口取
+ * 覆盖日期（[datesCoveredWithin]），未注入（预览/首帧）按无待办处理。
  */
 @Composable
 fun DayScreen(
     modifier: Modifier = Modifier,
     active: Boolean = true,
+    todoRepository: TodoRepository? = null,
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -216,6 +224,17 @@ fun DayScreen(
     // + 松手吸附），由下方根级转场手势在 04 统一驱动——上滑先折叠日历、下滑先展开折叠
     // 再过渡 02（见手势块注释），02 阶段恒为展开态。
     val calendarFold = remember { DayCalendarFoldState(scope) }
+
+    // 日历待办小点：活跃待办在日历网格窗口内覆盖的日期（显式日期 + 重复分期，见
+    // datesCoveredWithin）。网格窗口由 DayCalendar 回报（锚点月翻页时变化，组合后首帧
+    // 才到——首帧按无小点渲染，与仓库异步装载同拍）；待办回流实时刷新。
+    val todosState = todoRepository?.todos?.collectAsState()
+    val todos = todosState?.value ?: emptyList()
+    var calendarRange by remember { mutableStateOf<Pair<IsoDate, IsoDate>?>(null) }
+    val todoMarkedDates = remember(todos, calendarRange) {
+        val range = calendarRange ?: return@remember emptySet<IsoDate>()
+        todos.datesCoveredWithin(range.first, range.second)
+    }
 
     // 跨天/回前台对表：LocalToday 已含 onResume 与前台每分钟对表；日期变化立即回 01。
     LaunchedEffect(today) {
@@ -1081,6 +1100,10 @@ fun DayScreen(
                         // 继续 item { } 追加。
                         item(key = "dayCard") {
                             DayCalendar(
+                                markedDates = todoMarkedDates,
+                                onGridRangeChange = { firstDate, lastDate ->
+                                    calendarRange = firstDate to lastDate
+                                },
                                 foldState = calendarFold,
                                 today = today,
                                 modifier = Modifier.padding(horizontal = PageHorizontalSpacing),

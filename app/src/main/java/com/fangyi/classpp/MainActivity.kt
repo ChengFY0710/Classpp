@@ -307,6 +307,8 @@ class MainActivity : ComponentActivity() {
                                             // 仅用于状态栏图标在非 Agenda tab 恢复主题默认；
                                             // 不参与转场，也不改导航栏布局
                                             active = tab == pagerState.selectedTab,
+                                            // 日历卡待办小点的数据源（网格窗口内取覆盖日期）
+                                            todoRepository = todoRepository,
                                             // 选择图片浮层在场时藏底部导航栏（同课表/待办页浮层）
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                         )

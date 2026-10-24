@@ -1,6 +1,8 @@
 package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatRule
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
 import org.junit.Assert.assertEquals
@@ -200,5 +202,48 @@ class TodoQueryTest {
     fun `completed todo is never overdue`() {
         val todo = testTodo(deadlineDate = d0610, completed = true, completedAtMillis = 1)
         assertFalse(todo.isOverdue(d0618, nowMinute = 0))
+    }
+
+    // ---------- 待办时间覆盖日期（日历待办小点） ----------
+
+    @Test
+    fun `covered dates are explicit dates clipped to window`() {
+        // lab dates = 06-10 / 06-15，截止 06-18——截止日期不算待办时间
+        assertEquals(setOf(d0610, d0615), listOf(lab).datesCoveredWithin(d0610, d0615))
+        assertEquals(setOf(d0615), listOf(lab).datesCoveredWithin(d0612, d0616))
+        assertEquals(emptySet<IsoDate>(), listOf(lab).datesCoveredWithin(d0616, d0617))
+    }
+
+    @Test
+    fun `repeat occurrences expand from anchor and clip to window`() {
+        val weekly = testTodo(
+            id = "r1",
+            dates = listOf(d0610), // 2026-06-10 是周三：锚周起每周三一期
+            repeat = RepeatRule(type = RepeatType.Weekly),
+        )
+        assertEquals(setOf(d0610, d0617), listOf(weekly).datesCoveredWithin(d0610, d0617))
+        // 窗口晚于锚日（翻月浏览）：只剩窗内的分期
+        assertEquals(setOf(d0617), listOf(weekly).datesCoveredWithin(d0616, d0620))
+        // 锚日晚于窗口：没有任何分期
+        assertEquals(emptySet<IsoDate>(), listOf(weekly).datesCoveredWithin(d0612, d0615))
+    }
+
+    @Test
+    fun `recorded occurrences count even when rule no longer produces them`() {
+        // 规则修改后不再产生的历史分期（已记账的完成分期）仍算那天有待办：
+        // 周三规则不产生 06-15（周一），但记录在案就照样覆盖
+        val moved = testTodo(
+            id = "r2",
+            dates = listOf(d0610),
+            repeat = RepeatRule(type = RepeatType.Weekly),
+            completedOccurrences = listOf(d0615),
+        )
+        assertEquals(setOf(d0610, d0615, d0617), listOf(moved).datesCoveredWithin(d0610, d0620))
+    }
+
+    @Test
+    fun `todos without dates cover nothing`() {
+        assertEquals(emptySet<IsoDate>(), listOf(essay, done1).datesCoveredWithin(d0610, d0620))
+        assertEquals(emptySet<IsoDate>(), emptyList<com.fangyi.classpp.data.model.Todo>().datesCoveredWithin(d0610, d0620))
     }
 }
