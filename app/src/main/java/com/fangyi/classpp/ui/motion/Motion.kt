@@ -71,10 +71,10 @@ object Motion {
     const val AgendaCornerFadeMillis = 320
 
     /** 浮层（OverlaySheet）入场时长：从屏幕底部滑入，配合 [Overlay]。 */
-    const val SheetEnterMillis = 450
+    const val SheetEnterMillis = 400
 
     /** 浮层出场时长：向下滑出，配合 [Overlay]。 */
-    const val SheetExitMillis = 400
+    const val SheetExitMillis = 360
 
     /**
      * 底部弹出选择卡（BottomSelectSheet）入场时长：从屏幕底部滑入，配合 [Overlay]。

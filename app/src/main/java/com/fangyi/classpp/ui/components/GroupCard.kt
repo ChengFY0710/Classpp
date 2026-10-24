@@ -138,6 +138,11 @@ private const val FloatBorderAlpha = 0.35f
  * [iconTint] 调整 [icon] 颜色：null 时取 onSurface（随深浅色模式），传色值可自定义（如标签的
  * 彩色图标）；[icon] 为 null 时忽略。
  *
+ * [locked] 是只读锁定标记：锁序行为与 [pinned] 完全一致（不可起手拖拽、落点不进锁定前缀、
+ * 编辑态长按只多选），但不渲染置顶图标——供「展示但不可管理」的行使用（如分组浮层标签卡的
+ * 课程标签）；与 [pinned] 一样须构成连续前缀排在最前，可与 [pinned] 混用（锁定区长度按两者
+ * 之和计）。
+ *
  * [pinned] 是置顶标记：行首挂 primary 色 pin 图标（`cd_pinned`），普通态、编辑态与拖拽浮层同步
  * 显示；同时置顶项在编辑态锁序——不可起手拖拽，见 [GroupCard] 的置顶契约。
  */
@@ -147,6 +152,7 @@ data class GroupCardItem(
     val description: String? = null,
     val value: String? = null,
     val pinned: Boolean = false,
+    val locked: Boolean = false,
     @DrawableRes val icon: Int? = null,
     val iconTint: Color? = null,
 )
@@ -184,6 +190,11 @@ data class GroupCardItem(
  *
  * 置顶/取消置顶的入口与数据逻辑也由调用方自备（同「批量操作入口」约定）：编辑态选中 → 调用方
  * 的动作入口（如浮层顶栏）→ 调用方按置顶操作顺序把 [items] 同步重排为「置顶前缀 + 其余」。
+ *
+ * ## 只读锁定行
+ * [GroupCardItem.locked] 是 [GroupCardItem.pinned] 锁序的无图标变体（「展示但不可管理」的行，
+ * 如分组浮层标签卡的课程标签）：同样须构成连续前缀排在最前，不可起手拖拽、落点不进锁定区
+ * （锁定区长度按 pinned/locked 前缀之和计），编辑态长按只多选；点击与多选行为与普通行一致。
  *
  * ## 拖拽排序
  * [onMove] 为 null 时编辑态内不启动拖拽（该行为退化为纯多选列表）。拖拽过程：
@@ -261,8 +272,8 @@ fun GroupCard(
                             editing = editing,
                             selected = item.id in selectedIds,
                             dragState = dragState,
-                            // 置顶项锁序：不可起手拖拽（点击多选不受影响）
-                            canDrag = canDrag && !item.pinned,
+                            // 置顶项与锁定项锁序：不可起手拖拽（点击多选不受影响）
+                            canDrag = canDrag && !(item.pinned || item.locked),
                             pressScope = scope,
                             onItemClick = onItemClick,
                             onEnterEdit = onEnterEdit,
@@ -273,8 +284,11 @@ fun GroupCard(
                                         dragState.start(
                                             itemId = id,
                                             snapshot = snapshot,
-                                            // 与槽位快照同帧取置顶区长度：普通行落点槽位下限
-                                            minTargetIndex = latestItems.value.takeWhile { it.pinned }.count(),
+                                            // 与槽位快照同帧取锁定区长度（置顶前缀 + 只读锁定前缀）：
+                                            // 普通行落点槽位下限
+                                            minTargetIndex = latestItems.value
+                                                .takeWhile { it.pinned || it.locked }
+                                                .count(),
                                         )
                                     }
                                     ?: false

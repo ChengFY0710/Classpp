@@ -53,6 +53,17 @@ import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.rememberHazeState
 
 /**
+ * 标签卡的一行：用户标签与课程标签的统一视角。[entry] 非空 = 用户标签（可重命名/删除/拖拽
+ * 重排，写回 [TagRepository] 时原样带颜色）；null = 课程标签（宿主按激活课表派生、不入库，
+ * 只读——GroupCard 锁定前缀展示，编辑态里重命名/删除置灰）。
+ */
+private data class TagRow(
+    val name: String,
+    val isCourse: Boolean,
+    val entry: TagEntry?,
+)
+
+/**
  * 待办分组浮层：待办页顶栏「更多 → 分组」进入，内容分两部分——
  *
  * - **第一部分（状态与留存，无标题 [CardSection]）**：已完成 / 未完成 / 已逾期 一张三行卡，
@@ -60,20 +71,23 @@ import dev.chrisbanes.haze.rememberHazeState
  * - **第二部分（带「分组」小标题的 [CardSection]）**：未分组、全部各一张单行卡，
  *   用户自定义分组一张 [GroupCard]——自定义分组无行首图标，与带图标的固定行区分
  *   （正是 [GroupCard] 与 [SettingsCardwithIcon] 的行型差异）；
- * - **第三部分（带「标签」小标题的 [CardSection]）**：全部标签一张 [GroupCard]——行首挂
- *   `ic_tag`、颜色跟随标签色（colorArgb null = 跟随主题 primary，同列表卡标签配色规则），
- *   计数 = 挂该标签的待办数；无标签时整组（含标题）不渲染。普通态点击行 = 跳转该标签的
- *   待办过滤页（[onOpenTag]）。
+ * - **第三部分（带「标签」小标题的 [CardSection]）**：全部标签一张 [GroupCard]——课程标签
+ *   （[courseTags]，宿主按激活课表派生）作只读锁定前缀、用户标签随后，行首挂 `ic_tag`、
+ *   颜色跟随标签色（用户标签 colorArgb null 与课程标签都取主题 primary），计数 = 挂该标签
+ *   的待办数；无任何标签时整组（含标题）不渲染。普通态点击行 = 跳转该标签的待办过滤页
+ *   （[onOpenTag]）。
  *
  * ## 标签编辑态（长按标签行进入，与分组编辑态同构、互斥）
  * 长按标签行 = 以该行快照进标签编辑态：顶栏换「左白✕取消 + 右蓝✓确认」，底栏操作行滑入
- * （同分组编辑态，无置顶钮——标签无置顶语义）；编辑态点击 = 多选切换，长按 = 拾起拖拽
- * 重排，顶栏「确认」把重排后的标签表经 [onTagsChange] 整表写回（同分组「确认写回草稿」
- * 模型）。重命名（仅选中恰好一个时可点，多选置灰）弹 [BottomTextFieldCard]、删除（批量）
- * 经 [DeleteConfirmDialog] 二次确认——两者都**确认即立即生效**（[onRenameTag] /
- * [onDeleteTags]：宿主改标签库并回写全部待办，待办本身保留），不经顶栏「取消」撤销，
- * 删空自动退编辑。两种编辑态互斥：分组编辑态内标签行的长按/点击不触发；标签编辑态内
- * 分组行的长按/点击与全部跳转行同样不触发（避免静默丢弃另一边的草稿）。
+ * （同分组编辑态，无置顶钮——标签无置顶语义）；编辑态点击 = 多选切换，长按 = 拾起拖拽重排
+ * （课程标签锁定不可拖、落点不进锁定区），顶栏「确认」把重排后的**用户标签**表经
+ * [onTagsChange] 整表写回（同分组「确认写回草稿」模型，课程标签不入库位置随派生序）。
+ * 重命名（仅选中恰好一个「用户标签」时可点）弹 [BottomTextFieldCard]、删除（批量，选中含
+ * 课程标签时置灰——课程标签只读不可删改）经 [DeleteConfirmDialog] 二次确认——两者都
+ * **确认即立即生效**（[onRenameTag] / [onDeleteTags]：宿主改标签库并回写全部待办，待办
+ * 本身保留），不经顶栏「取消」撤销，删空自动退编辑。两种编辑态互斥：分组编辑态内标签行的
+ * 长按/点击不触发；标签编辑态内分组行的长按/点击与全部跳转行同样不触发（避免静默丢弃
+ * 另一边的草稿）。
  *
  * **顶栏普通态**：左蓝「新建」（`ic_add_circle` → [BottomTextFieldCard] 底部输入弹卡，
  * 经 [onGroupsChange] 整表写回落库）+ 居中标题 + 右白「关闭」，与课表切换浮层同款顶栏排布。
@@ -125,6 +139,9 @@ import dev.chrisbanes.haze.rememberHazeState
  *
  * @param groups 分组列表：顺序即显示序，置顶项须构成连续前缀（[TodoGroup] 不变式）
  * @param tags 标签列表（用户自定义标签，顺序即显示序）：第三部分标签 [GroupCard] 的数据源
+ * @param courseTags 课程标签名（宿主按激活课表去重派生，不入库）：只展示**有待办挂载**的，
+ *   以只读锁定前缀展示在用户标签之前，不可重命名/删除/拖拽；与用户标签重名时以用户标签
+ *   为准（id 须唯一）
  * @param deletedCount 最近删除条目数（仓库 deletedTodos 流的大小）
  * @param onGroupsChange 整表写回统一入口：编辑态确认（顺序 + 置顶）、普通态新建（追加分组）、
  *   重命名（立即生效）；[renames] 为本次操作的重命名映射（原名 → 新名）——宿主让顶栏选中
@@ -146,6 +163,7 @@ internal fun TodoGroupsSheet(
     deletedCount: Int,
     groups: List<TodoGroup>,
     tags: List<TagEntry>,
+    courseTags: List<String>,
     visible: Boolean,
     onDismiss: () -> Unit,
     onDismissed: () -> Unit,
@@ -189,7 +207,7 @@ internal fun TodoGroupsSheet(
     // 重命名/删除同分组一样确认即立即生效
     var tagEditing by remember { mutableStateOf(false) }
     var tagSelectedIds by remember { mutableStateOf(emptySet<String>()) }
-    var tagDraft by remember { mutableStateOf(emptyList<TagEntry>()) }
+    var tagDraft by remember { mutableStateOf(emptyList<TagRow>()) }
     // 标签重命名弹卡（标签编辑态底栏「重命名」触发，仅选中恰好一个时可点）：挂载与草稿
     // 同分组重命名的两段式约定，tagRenameFrom 是打开时的原标签名快照（校验与确认都以它对齐）
     var tagRenameVisible by remember { mutableStateOf(false) }
@@ -208,7 +226,17 @@ internal fun TodoGroupsSheet(
     val sheetHazeState = rememberHazeState()
 
     val displayGroups = if (editing) draft else groups
-    val displayTags = if (tagEditing) tagDraft else tags
+    // 标签合并视图：课程标签（只读）作锁定前缀 + 用户标签。课程标签只展示**有待办挂载**的
+    // （空课程标签不占位，与用户标签「建了就在」不同——它是派生行，随挂载出现/消失）；与
+    // 用户标签重名时跳过课程标签（GroupCard 的 id 须唯一，用户标签可编辑、以它为准）。
+    // 写回 [onTagsChange] 时只取用户标签（entry 非空，原样带颜色），课程标签不入库
+    val userTagNames = tags.mapTo(mutableSetOf()) { it.name }
+    val mergedTags = courseTags
+        .filter { name -> todos.any { name in it.tags } }
+        .filterNot { it in userTagNames }
+        .map { TagRow(name = it, isCourse = true, entry = null) } +
+        tags.map { TagRow(name = it.name, isCourse = false, entry = it) }
+    val displayTags = if (tagEditing) tagDraft else mergedTags
 
     fun exitEdit() {
         editing = false
@@ -235,14 +263,15 @@ internal fun TodoGroupsSheet(
     }
 
     fun enterTagEdit(id: String) {
-        tagDraft = tags
+        tagDraft = mergedTags
         tagSelectedIds = setOf(id)
         tagEditing = true
     }
 
     fun confirmTagEdit() {
-        // 草稿写回只承载重排（重命名/删除在弹卡/确认框确认时已立即生效）
-        onTagsChange(tagDraft)
+        // 草稿写回只承载重排（重命名/删除在弹卡/确认框确认时已立即生效）；课程标签是
+        // 派生的只读行，不在写回之列
+        onTagsChange(tagDraft.mapNotNull { it.entry })
         exitTagEdit()
     }
 
@@ -333,17 +362,17 @@ internal fun TodoGroupsSheet(
         bottomContent = {
             // 分组编辑态与标签编辑态共用底部操作行（两者互斥，随当前编辑态切换内容）：
             // 分组多一颗置顶钮（标签无置顶语义）；重命名都是「选中恰好一个」时可点（多选
-            // 置灰），删除按有无选中着色
-            val selection = if (editing) selectedIds else tagSelectedIds
-            EditActionRow(
-                visible = editing || tagEditing,
-                showPin = editing,
-                pinAction = currentPinAction,
-                hasSelection = selection.isNotEmpty(),
-                renameEnabled = selection.size == 1,
-                onPin = onPin,
-                onRename = {
-                    if (editing) {
+            // 置灰），标签额外要求选中的是用户标签——课程标签只读，选中含课程标签时
+            // 重命名/删除一并置灰
+            if (editing) {
+                EditActionRow(
+                    visible = true,
+                    showPin = true,
+                    pinAction = currentPinAction,
+                    hasSelection = selectedIds.isNotEmpty(),
+                    renameEnabled = selectedIds.size == 1,
+                    onPin = onPin,
+                    onRename = {
                         // 目标 = 草稿里选中的那个组（改名立即生效，快照原组名与草稿初值）
                         displayGroups.firstOrNull { it.name in selectedIds }?.let { target ->
                             renameFrom = target.name
@@ -351,24 +380,32 @@ internal fun TodoGroupsSheet(
                             renameMounted = true
                             renameVisible = true
                         }
-                    } else {
-                        // 目标 = 草稿里选中的那个标签（同分组：快照原名与草稿初值，确认立即生效）
-                        displayTags.firstOrNull { it.name in tagSelectedIds }?.let { target ->
+                    },
+                    onDelete = { deleteTargets = displayGroups.filter { it.name in selectedIds }.map { it.name } },
+                )
+            } else {
+                val selectionRows = displayTags.filter { it.name in tagSelectedIds }
+                val courseSelected = selectionRows.any { it.isCourse }
+                EditActionRow(
+                    visible = tagEditing,
+                    showPin = false,
+                    pinAction = PinAction.Disabled,
+                    hasSelection = selectionRows.isNotEmpty() && !courseSelected,
+                    renameEnabled = selectionRows.size == 1 && !courseSelected,
+                    onPin = {},
+                    onRename = {
+                        // 目标 = 草稿里选中的那个用户标签（同分组：快照原名与草稿初值，确认立即生效）
+                        selectionRows.firstOrNull { !it.isCourse }?.let { target ->
                             tagRenameFrom = target.name
                             tagRenameDraft = target.name
                             tagRenameMounted = true
                             tagRenameVisible = true
                         }
-                    }
-                },
-                onDelete = {
-                    if (editing) {
-                        deleteTargets = displayGroups.filter { it.name in selectedIds }.map { it.name }
-                    } else {
-                        tagDeleteTargets = displayTags.filter { it.name in tagSelectedIds }.map { it.name }
-                    }
-                },
-            )
+                    },
+                    // 课程标签只读，防御性滤除（门槛置灰后本就不会出现在删除目标里）
+                    onDelete = { tagDeleteTargets = selectionRows.filterNot { it.isCourse }.map { it.name } },
+                )
+            }
         },
         modifier = modifier,
     ) {
@@ -485,12 +522,13 @@ internal fun TodoGroupsSheet(
                     )
                 }
             }
-            // 第三部分：标签。分组内容之后；无标签时整组（含标题）不渲染。行首挂 ic_tag、
-            // 颜色跟随标签色（colorArgb null = 跟随主题 primary，同列表卡标签配色规则），
-            // 计数 = 挂该标签的待办数。普通态点击行 = 跳转该标签的待办过滤页；长按 = 进入
-            // 标签编辑态（与分组编辑态同构、互斥——分组编辑草稿期间点击与长按都不触发，
-            // 同上方各行「编辑态不触发」约定）：多选批量删除、重命名（仅选中恰好一个时可点，
-            // 多选置灰）、长按拖拽重排（顶栏「确认」写回 onTagsChange），无置顶钮
+            // 第三部分：标签。分组内容之后；无任何标签时整组（含标题）不渲染。课程标签
+            // （只读）作锁定前缀、用户标签随后，行首挂 ic_tag、颜色跟随标签色（用户标签
+            // colorArgb null 与课程标签都取主题 primary），计数 = 挂该标签的待办数。普通态
+            // 点击行 = 跳转该标签的待办过滤页；长按 = 进入标签编辑态（与分组编辑态同构、
+            // 互斥——分组编辑草稿期间点击与长按都不触发，同上方各行「编辑态不触发」约定）：
+            // 多选批量删除、重命名（仅选中恰好一个用户标签时可点，多选/含课程标签置灰）、
+            // 长按拖拽重排用户标签（顶栏「确认」写回 onTagsChange；课程标签锁定不可拖）
             if (displayTags.isNotEmpty()) {
                 CardSection(title = stringResource(R.string.todo_section_tags)) {
                     GroupCard(
@@ -501,8 +539,11 @@ internal fun TodoGroupsSheet(
                                 id = tag.name,
                                 label = tag.name,
                                 value = todos.count { tag.name in it.tags }.toString(),
+                                // 课程标签只读：锁定前缀，编辑态里重命名/删除置灰
+                                locked = tag.isCourse,
                                 icon = R.drawable.ic_tag,
-                                iconTint = tag.colorArgb?.let(::Color) ?: MaterialTheme.colorScheme.primary,
+                                iconTint = tag.entry?.colorArgb?.let(::Color)
+                                    ?: MaterialTheme.colorScheme.primary,
                             )
                         },
                         editing = tagEditing,
@@ -515,7 +556,8 @@ internal fun TodoGroupsSheet(
                             tagSelectedIds =
                                 if (id in tagSelectedIds) tagSelectedIds - id else tagSelectedIds + id
                         },
-                        // 拖拽落位同步重排草稿（GroupCard 契约）；标签无置顶，无锁序约束
+                        // 拖拽落位同步重排草稿（GroupCard 契约）；课程标签锁定不可拖、落点
+                        // 不进锁定区（GroupCard 内部钳制），标签无置顶无锁序
                         onMove = { from, to -> tagDraft = tagDraft.move(from, to) },
                     )
                 }
@@ -670,7 +712,7 @@ internal fun TodoGroupsSheet(
             value = tagRenameDraft,
             onValueChange = { tagRenameDraft = it },
             confirmEnabled = tagRenameName.isNotEmpty() &&
-                tags.none { it.name == tagRenameName && it.name != tagRenameFrom },
+                mergedTags.none { it.name == tagRenameName && it.name != tagRenameFrom },
             // 卡片磨砂：采样源同本浮层顶栏（见 sheetHazeState 声明处）
             hazeState = sheetHazeState,
             onConfirm = {

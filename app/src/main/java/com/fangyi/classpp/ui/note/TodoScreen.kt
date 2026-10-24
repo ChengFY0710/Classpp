@@ -46,6 +46,7 @@ import com.fangyi.classpp.data.TodoSort
 import com.fangyi.classpp.data.expandRepeatOccurrences
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
+import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
@@ -181,6 +182,14 @@ fun TodoScreen(
     val primaryColor = MaterialTheme.colorScheme.primary
     val tagColorMap = remember(userTagEntries, primaryColor) {
         userTagEntries.associate { it.name to (it.colorArgb?.let(::Color) ?: primaryColor) }
+    }
+    // 课程标签：由激活课表按课程名去重派生（不入库，同 NewTodoSheet 的 TagChoosingCard 约定），
+    // 分组浮层标签卡以只读锁定行展示——icon 与顶栏胶囊都取主题 Primary
+    val activeSchedule by remember(scheduleRepository) {
+        scheduleRepository?.activeSchedule ?: MutableStateFlow<Schedule?>(null)
+    }.collectAsState()
+    val courseTagNames = remember(activeSchedule) {
+        activeSchedule?.courses?.distinctBy { it.name }?.map { it.name }.orEmpty()
     }
     // 排序状态：默认创建时间降序（创建早的在前）
     var sort by rememberSaveable { mutableStateOf(TodoSort.Created) }
@@ -765,6 +774,7 @@ fun TodoScreen(
             deletedCount = deletedTodos.size,
             groups = groups,
             tags = userTagEntries,
+            courseTags = courseTagNames,
             visible = groupsVisible,
             onDismiss = { groupsVisible = false },
             onDismissed = { groupsMounted = false },
