@@ -3,9 +3,13 @@ package com.fangyi.classpp.ui.note
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.LocalOverscrollFactory
@@ -231,7 +235,8 @@ internal enum class TodoSpecialSection(
  * 位于置顶自定义分组之前，打开后**常驻**——[specialSectionSelected] = 页面在场（强调色
  * 整粒底 + 白内容）；false = 页面已离开但胶囊保留（surface 底 + 强调色内容，设计图未选
  * 样式），此时常规胶囊恢复选中态高亮。点击已选中的特殊胶囊 = 退出关闭（[onSpecialSectionClick]，
- * 胶囊一并消失）；点击未选中的 = 回到该特殊分组页。
+ * 胶囊一并消失）；点击未选中的 = 回到该特殊分组页。胶囊出入场经 AnimatedVisibility 平滑
+ * 过渡（宽度生长/收拢 + 淡入淡出，[AccentPillEnter]/[AccentPillExit]，标签胶囊同套）。
  *
  * 标签特殊分组页（[tagPillName] 非 null）：同套常驻语义，胶囊插在特殊分组胶囊之后、
  * 置顶分组之前（[AccentPill]，行首 ic_tag）——强调色 = 标签色（[tagPillColor]，宿主从标签
@@ -370,10 +375,25 @@ internal fun TodoTopBar(
                         .height(TopBarPillHeight + ShadowOverhang * 2),
                 ) {
                     val scrollState = rememberScrollState()
+                    // 退场动画期间宿主参数已归 null 而胶囊须继续渲染到收尾——各记最近一次
+                    // 非 null 值，供 AnimatedVisibility 的内容在退场中读取
+                    var lastSpecialSection by remember { mutableStateOf(specialSection) }
+                    if (specialSection != null) lastSpecialSection = specialSection
+                    var lastTagPillName by remember { mutableStateOf(tagPillName) }
+                    if (tagPillName != null) lastTagPillName = tagPillName
                     // 特殊分组页/标签页胶囊在分组条最前：打开时若分组条停在右侧滚动位，首粒
-                    // 胶囊会藏在更多按钮背后看不见——跳转打开即滚回首位（切常规 tab 不动滚动位）
+                    // 胶囊会藏在更多按钮背后看不见——跳转打开即滚回首位（切常规 tab 不动滚动位）。
+                    // 收束配 Motion.Overlay 前重后轻（TodoPillRowSnapMillis，台历吸附同手感）
                     LaunchedEffect(specialSection, tagPillName) {
-                        if (specialSection != null || tagPillName != null) scrollState.animateScrollTo(0)
+                        if (specialSection != null || tagPillName != null) {
+                            scrollState.animateScrollTo(
+                                0,
+                                animationSpec = tween(
+                                    durationMillis = Motion.TodoPillRowSnapMillis,
+                                    easing = Motion.Overlay,
+                                ),
+                            )
+                        }
                     }
                     // 视口左边界 = 裁切线（MorePillRightEdge + ClipLineOffset）；contentPadding
                     // 反向补偿裁切偏移，让静止间距只由 RestGap 决定——两个旋钮互不干扰。
@@ -400,27 +420,42 @@ internal fun TodoTopBar(
                     ) {
                         // 特殊分组页胶囊：被跳转的特殊页打开后固定分组条最前（置顶自定义分组
                         // 之前）且常驻——选中（页面在场）= 整粒一色，未选 = 白底彩字；再点
-                        // 已选中的退出关闭、点未选中的回到该页（行为由宿主按状态接管）
-                        specialSection?.let { section ->
-                            SpecialGroupPill(
-                                section = section,
-                                selected = specialSectionSelected,
-                                onClick = onSpecialSectionClick,
-                                backdrop = pillBackdrop,
-                            )
+                        // 已选中的退出关闭、点未选中的回到该页（行为由宿主按状态接管）。
+                        // 出入场经 AnimatedVisibility 平滑过渡（AccentPillEnter/Exit）——
+                        // 胶囊凭空插入/移除会瞬间推动整行避让
+                        AnimatedVisibility(
+                            visible = specialSection != null,
+                            enter = AccentPillEnter,
+                            exit = AccentPillExit,
+                        ) {
+                            lastSpecialSection?.let { section ->
+                                SpecialGroupPill(
+                                    section = section,
+                                    selected = specialSectionSelected,
+                                    onClick = onSpecialSectionClick,
+                                    backdrop = pillBackdrop,
+                                )
+                            }
                         }
                         // 标签特殊分组页胶囊：同特殊胶囊的常驻语义（分组浮层标签区跳转进入），
                         // 强调色 = 标签色（宿主下发，null 兜底 primary）；选中 = 整粒标签色底 +
-                        // 白内容，未选 = surface 底 + 标签色内容——设计稿标签胶囊的两种形态
-                        tagPillName?.let { name ->
-                            AccentPill(
-                                iconRes = R.drawable.ic_tag,
-                                label = name,
-                                accent = tagPillColor ?: MaterialTheme.colorScheme.primary,
-                                selected = tagPillSelected,
-                                onClick = onTagPillClick,
-                                backdrop = pillBackdrop,
-                            )
+                        // 白内容，未选 = surface 底 + 标签色内容——设计稿标签胶囊的两种形态。
+                        // 出入场同特殊胶囊（AccentPillEnter/Exit）
+                        AnimatedVisibility(
+                            visible = tagPillName != null,
+                            enter = AccentPillEnter,
+                            exit = AccentPillExit,
+                        ) {
+                            lastTagPillName?.let { name ->
+                                AccentPill(
+                                    iconRes = R.drawable.ic_tag,
+                                    label = name,
+                                    accent = tagPillColor ?: MaterialTheme.colorScheme.primary,
+                                    selected = tagPillSelected,
+                                    onClick = onTagPillClick,
+                                    backdrop = pillBackdrop,
+                                )
+                            }
                         }
                         // 视觉顺序：置顶分组固定最前（特殊胶囊之后、「全部」之前，行首图钉），
                         // 之后依次「全部」「未分组」与未置顶分组，各段内部保持 [groups] 原序。
@@ -718,6 +753,22 @@ private fun TodoSpecialSection.accentColor(): Color = when (this) {
     TodoSpecialSection.Incomplete, TodoSpecialSection.Pinned, TodoSpecialSection.Archived ->
         MaterialTheme.colorScheme.primary
 }
+
+/**
+ * 强调色胶囊（特殊分组页/标签页两处 [AccentPill] 共用）的出入场转场：宽度生长/收拢 +
+ * 淡入淡出——胶囊在分组条最前凭空插入/移除会瞬间推动整条胶囊行避让，经 AnimatedVisibility
+ * 平滑过渡。进场从左缘（裁切线一侧）向右生长、退场向左收拢（收进的部分被分组条的横向
+ * 裁剪切掉、藏进更多按钮背后），规格见 [Motion.TodoPillEnterMillis]/[Motion.TodoPillExitMillis]。
+ */
+private val AccentPillEnter: EnterTransition = expandHorizontally(
+    animationSpec = tween(Motion.TodoPillEnterMillis, easing = Motion.Decelerate),
+    expandFrom = Alignment.Start,
+) + fadeIn(tween(Motion.TodoPillEnterMillis, easing = Motion.Decelerate))
+
+private val AccentPillExit: ExitTransition = shrinkHorizontally(
+    animationSpec = tween(Motion.TodoPillExitMillis, easing = Motion.Accelerate),
+    shrinkTowards = Alignment.Start,
+) + fadeOut(tween(Motion.TodoPillExitMillis, easing = Motion.Accelerate))
 
 /**
  * 强调色胶囊（特殊分组页/标签页共用主体）：行首语义图标 + 标签 + 尾部关闭✕（ic_dismiss），
