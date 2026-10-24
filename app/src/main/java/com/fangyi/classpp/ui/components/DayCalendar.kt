@@ -40,6 +40,7 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
@@ -177,12 +178,11 @@ fun DayCalendar(
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(HeaderGridGap))
-            // 折叠外框：高度在整月网格与单行之间随进度插值，裁掉滑出的行
+            // 折叠外框：高度插值 + 裁切都在 foldHeight 内完成（裁切必须先于测量挂链）
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .foldHeight(fold, monthContentHeight, weekContentHeight)
-                    .clipToBounds(),
+                    .foldHeight(fold, monthContentHeight, weekContentHeight),
             ) {
                 Column(
                     modifier = Modifier
@@ -398,11 +398,12 @@ private fun DayCell(
                 },
             )
             if (marked) {
-                // BottomCenter 对齐后整体下移 DotZone：小球顶到球底间隔 DotGap，恰好填满预留呼吸区
+                // BottomCenter 对齐后整体下移 DotDrop：球底到小点顶的间隙即 DotGap；
+                // 呼吸区 DotZone 含 2dp 余量，小点底缘悬在裁切边界之上不被削
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .offset(y = DotZone)
+                        .offset(y = DotDrop)
                         .size(DotSize)
                         .background(colors.primary, CircleShape),
                 )
@@ -438,13 +439,22 @@ private fun NavButton(
  * 折叠外框高度：在 [expanded]/[collapsed] 之间随折叠进度插值。进度在 measure 块内
  * 读取——动画/拖拽每帧只触发重测，不走重组。
  */
+/**
+ * 折叠外框：上报高度在 [expanded]/[collapsed] 之间随折叠进度插值，并把内容裁切到这个
+ * 高度内。裁切必须发生在测量**外层**（本函数内部的 clipToBounds 先于 layout 挂链）——
+ * 它裁的是动画中的外框高度；内容则按自然高度测量（内层约束放开），只显示不挤压。
+ * 若把裁切挂在调用侧 layout 之后（内层），它裁到的会是内容的自然高度，滑出的行会
+ * 溢出外框、叠到底栏上。进度在 measure 块内读取——拖拽每帧只触发重测，不走重组。
+ */
 private fun Modifier.foldHeight(
     fold: DayCalendarFoldState,
     expanded: Dp,
     collapsed: Dp,
-): Modifier = layout { measurable, constraints ->
+): Modifier = clipToBounds().layout { measurable, constraints ->
     val height = lerp(expanded, collapsed, fold.progress).roundToPx()
-    val placeable = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
+    val placeable = measurable.measure(
+        constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity),
+    )
     layout(placeable.width, height) { placeable.placeRelative(0, 0) }
 }
 
@@ -475,13 +485,19 @@ private val RowStep = BallSize + RowSpacing
 private val HeaderGridGap = 6.dp
 private val DotSize = 4.dp
 private val DotGap = 3.dp
-/** 网格内容底部为待办小点预留的呼吸区（折叠裁切与小点溢出共用该边界） */
-private val DotZone = DotSize + DotGap
+/** 小点从球底下垂的距离：底对齐后 offset 它，球底到小点顶的间隙即 [DotGap] */
+private val DotDrop = DotSize + DotGap
+/**
+ * 网格内容底部为待办小点预留的呼吸区（折叠裁切与小点溢出共用该边界）。
+ * 在 [DotDrop] 之外多留 2dp 余量：非整数像素密度下 dp→px 取整会让小点底缘
+ * 恰好压在 clipToBounds 边界上被削掉一点，余量保证它悬在边界之上。
+ */
+private val DotZone = DotDrop + 2.dp
 private val NavButtonSize = 40.dp
 private val NavIconSize = 24.dp
 private val CardPaddingHorizontal = 8.dp
 private val CardPaddingVertical = 8.dp
-private val BottomBarGap = 6.dp
+private val BottomBarGap = 4.dp
 /** 折叠甩动吸附的速度阈值（对标 M3 anchoredDraggable 默认值） */
 internal val FoldFlingVelocity = 125.dp
 private val WeekdayFontSize = 15.sp
