@@ -23,8 +23,9 @@ internal val DayCardGap = 24.dp
 internal val DayCardCorner = 24.dp
 
 /**
- * 白卡（日程页内容）固定高度：02/03/04 全程不变。
- * 后续真实内容在白卡同一层、紧随其后的内容层里添加，不再靠拉高白卡来承载。
+ * 白卡几何占位高度：只喂给 frame.content.bottom（测试按此断言），生产 UI 不消费——
+ * 真实白卡内容是 DayCalendar 组件，高度随月/周折叠形态自适应；卡的位置一律由
+ * frame.content.top 决定，02/03/04 全程只改位置不拉高。
  */
 internal val DayContentHeight = 235.dp
 

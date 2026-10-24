@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -19,12 +18,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +53,8 @@ import com.fangyi.classpp.ui.theme.DayCardShape
 import com.fangyi.classpp.ui.theme.classppColors
 import java.util.GregorianCalendar
 import java.util.TimeZone
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -66,10 +69,15 @@ import kotlinx.coroutines.launch
  * 三、**底栏**：左侧「XXXX年XX月」（无前导零）标题，右侧左右两个圆形箭头按钮（Primary）：
  *     展开态切换上/下月（日号月末收拢），折叠态切换上/下周（锚点 ±7 天）。
  *
- * **折叠**：单行周视图是月历的折叠形态。在表头/网格区竖向拖拽跟手（上滑收拢到锚点日期
- * 所在周、下拉展开），松手按位移过半或甩动速度吸附（[Motion.settle]）。折叠进度同时驱动
- * 外框高度（整月网格高 ↔ 单行高插值，clipToBounds 裁掉滑出内容）与网格整体上移（锚点周
- * 成为唯一可见行），表头与底栏固定不动。进度走 layout/graphicsLayer 读取，拖拽全程不重组。
+ * **折叠**：单行周视图是月历的折叠形态，进度走 [DayCalendarFoldState]（0 = 月历，1 = 单行）。
+ * 折叠进度同时驱动外框高度（整月网格高 ↔ 单行高插值，clipToBounds 裁掉滑出内容）与网格
+ * 整体上移（锚点周成为唯一可见行），表头与底栏固定不动。进度在 layout/graphicsLayer 内
+ * 读取，拖拽全程不重组。两种驱动方式：
+ * - **自驱**（默认，[foldState] 不传）：组件在表头/网格区挂竖向拖拽，上滑跟手折叠、
+ *   下滑跟手展开，松手按位移过半或甩动速度吸附；
+ * - **宿主驱动**（[foldState] 传入）：组件内手势自动关闭，由宿主在自己的手势里跟手写
+ *   进度——日程页 04 用这种方式把折叠并进根级转场手势（上滑先折叠、下滑先展开再过渡
+ *   02，见 DayScreen），避免两套手势抢同一根手指。
  *
  * **锚点（anchor）唯一**：展开态展示锚点所在月、折叠态展示锚点所在周，标题始终显示锚点
  * 所在年月——两种形态、按钮切换与折叠联动共用同一份锚点状态。本组件暂不接数据库，
@@ -80,15 +88,16 @@ fun DayCalendar(
     modifier: Modifier = Modifier,
     markedDates: Set<IsoDate> = emptySet(),
     onDateClick: ((IsoDate) -> Unit)? = null,
+    foldState: DayCalendarFoldState? = null,
     initiallyFolded: Boolean = false,
     today: IsoDate = IsoDate.today(),
 ) {
     val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
-
-    // 折叠进度：0 = 月历展开，1 = 收拢为锚点周单行（见文件头 KDoc）
-    val foldProgress = remember { Animatable(if (initiallyFolded) 1f else 0f) }
-    val folded by remember { derivedStateOf { foldProgress.value >= 0.5f } }
+    // 宿主未传折叠状态时自建（自驱）；传入则复用且关闭组件内手势（宿主驱动）
+    val fold = foldState ?: remember { DayCalendarFoldState(scope, initiallyFolded) }
+    val selfGesture = foldState == null
+    val folded by remember { derivedStateOf { fold.progress >= 0.5f } }
 
     var anchor by remember(today) { mutableStateOf(today) }
     val (anchorYear, anchorMonth, _) = anchor.yearMonthDay()
@@ -104,8 +113,14 @@ fun DayCalendar(
     val monthContentHeight = RowStep * rowCount - RowSpacing + DotZone
     val weekContentHeight = BallSize + DotZone
     val foldRangeDp = monthContentHeight - weekContentHeight
-    val foldRangePx = with(LocalDensity.current) { foldRangeDp.toPx() }
-    val currentFoldRangePx by rememberUpdatedState(foldRangePx)
+    // 行程与甩动阈值随锚点月行数（5/6 行）变化：回填给折叠状态，自驱/宿主手势共用
+    val density = LocalDensity.current
+    val foldRangePx = with(density) { foldRangeDp.toPx() }
+    val foldFlingThresholdPx = with(density) { FoldFlingVelocity.toPx() }
+    SideEffect {
+        fold.rangePx = foldRangePx
+        fold.flingThresholdPx = foldFlingThresholdPx
+    }
 
     // 今天列高亮：展示的月/周包含今天才高亮（浏览其他月份不高亮）
     val todayColumn = today.isoDayOfWeek() - 1
@@ -124,57 +139,49 @@ fun DayCalendar(
             .background(colors.surface, DayCardShape)
             .padding(horizontal = CardPaddingHorizontal, vertical = CardPaddingVertical),
     ) {
-        // —— 手势区：表头 + 网格。竖向拖拽跟手折叠/展开；日期点击是子级 clickable，
-        // 起手超过触摸阈值前不消费位移，与拖拽天然不冲突
+        // —— 手势区（仅自驱模式）：表头 + 网格。竖向拖拽跟手折叠/展开；日期点击是
+        // 子级 clickable，起手超过触摸阈值前不消费位移，与拖拽天然不冲突。
+        // 宿主驱动模式不挂手势：折叠由宿主根级手势统一驱动（DayScreen 04）。
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .pointerInput(Unit) {
-                    val tracker = VelocityTracker()
-                    val flingVelocityPx = FoldFlingVelocity.toPx()
-                    fun settleTarget(velocity: Float): Float = when {
-                        velocity <= -flingVelocityPx -> 1f
-                        velocity >= flingVelocityPx -> 0f
-                        foldProgress.value >= 0.5f -> 1f
-                        else -> 0f
-                    }
-
-                    fun settleSpec() = Motion.settle(0.5f / currentFoldRangePx.coerceAtLeast(1f))
-                    detectVerticalDragGestures(
-                        onDragStart = {
-                            tracker.resetTracking()
-                            // 打断吸附动画，从当前进度接管（跟手）
-                            scope.launch { foldProgress.stop() }
-                        },
-                        onDragCancel = {
-                            scope.launch { foldProgress.animateTo(settleTarget(0f), settleSpec()) }
-                        },
-                        onDragEnd = {
-                            val velocity = tracker.calculateVelocity().y
-                            scope.launch { foldProgress.animateTo(settleTarget(velocity), settleSpec()) }
-                        },
-                        onVerticalDrag = { change, dragAmount ->
-                            tracker.addPosition(change.uptimeMillis, change.position)
-                            change.consume()
-                            // 上滑（dragAmount < 0）折叠：进度增，除以总行程换算为比例
-                            val from = foldProgress.value
-                            val to = (from - dragAmount / currentFoldRangePx).coerceIn(0f, 1f)
-                            if (to != from) scope.launch { foldProgress.snapTo(to) }
-                        },
-                    )
-                },
+                .then(
+                    if (selfGesture) {
+                        Modifier.pointerInput(Unit) {
+                            val tracker = VelocityTracker()
+                            detectVerticalDragGestures(
+                                onDragStart = {
+                                    tracker.resetTracking()
+                                    // 打断吸附动画，从当前进度接管（跟手）
+                                    fold.stop()
+                                },
+                                onDragCancel = { fold.settle(0f) },
+                                onDragEnd = { fold.settle(tracker.calculateVelocity().y) },
+                                onVerticalDrag = { change, dragAmount ->
+                                    tracker.addPosition(change.uptimeMillis, change.position)
+                                    change.consume()
+                                    // 上滑（dragAmount < 0）折叠：进度增，行程换算见
+                                    // [DayCalendarFoldState.dragBy]
+                                    fold.dragBy(dragAmount)
+                                },
+                            )
+                        }
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
             WeekdayHeader(
                 todayColumn = todayColumn,
                 highlightToday = showsToday,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Spacer(Modifier.height(RowSpacing))
+            Spacer(Modifier.height(HeaderGridGap))
             // 折叠外框：高度在整月网格与单行之间随进度插值，裁掉滑出的行
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .foldHeight(foldProgress, monthContentHeight, weekContentHeight)
+                    .foldHeight(fold, monthContentHeight, weekContentHeight)
                     .clipToBounds(),
             ) {
                 Column(
@@ -183,7 +190,7 @@ fun DayCalendar(
                         .graphicsLayer {
                             // 网格整体上移，让锚点周在完全折叠时对齐外框顶部、成为唯一可见行；
                             // 底部预留的 DotZone 让末行/单行的待办小点不被裁掉
-                            translationY = -(RowStep * visibleWeekIndex).toPx() * foldProgress.value
+                            translationY = -(RowStep * visibleWeekIndex).toPx() * fold.progress
                         },
                     verticalArrangement = Arrangement.spacedBy(RowSpacing),
                 ) {
@@ -215,7 +222,7 @@ fun DayCalendar(
                 text = monthTitle,
                 modifier = Modifier.weight(1f).padding(start = 12.dp),
                 fontSize = TitleFontSize,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.SemiBold,
                 color = colors.onSurface,
             )
             NavButton(
@@ -235,6 +242,97 @@ fun DayCalendar(
         }
     }
 }
+
+/**
+ * DayCalendar 折叠状态：[progress] 0 = 月历展开，1 = 收拢为锚点周单行。
+ *
+ * 两种驱动方式（见 [DayCalendar] KDoc）：
+ * - **自驱**：组件内部手势调用 [dragBy] 跟手、[settle] 松手收束；
+ * - **宿主驱动**：宿主在自己的手势里调用同一组接口——与 DayTransitionState 的
+ *   dragXxxBy/settle 同一口径（跟手同步直写 snapshot float，不 suspend）。
+ *
+ * [progress] 跟手期间每帧只触发重测/重绘，不重组。折叠总行程（月历 5/6 行不同）与
+ * 甩动阈值由组件经 SideEffect 回填（[rangePx]/[flingThresholdPx]），宿主无需感知。
+ */
+@Stable
+class DayCalendarFoldState(
+    private val scope: CoroutineScope,
+    initiallyFolded: Boolean = false,
+) {
+    var progress by mutableFloatStateOf(if (initiallyFolded) 1f else 0f)
+        private set
+
+    /** 进度过半即视为折叠（周单行）形态 */
+    val folded: Boolean get() = progress >= 0.5f
+
+    /** 折叠总行程（px）：月历网格高 - 单行高，由组件按锚点月行数回填 */
+    internal var rangePx by mutableFloatStateOf(0f)
+
+    /** 甩动判向阈值（px/s），由组件回填（FoldFlingVelocity 换算） */
+    internal var flingThresholdPx by mutableFloatStateOf(0f)
+
+    private var animationJob: Job? = null
+
+    /**
+     * 跟手推进：[deltaY] 为手指位移（正 = 下滑展开，负 = 上滑折叠），返回实际消费的
+     * 像素（与 [deltaY] 同号；端点上没有可消费量时返回 0，剩余位移交给外层手势/滚动）。
+     * 调用即接管：在途吸附动画被取消，从当前进度继续跟手。
+     */
+    fun dragBy(deltaY: Float): Float {
+        animationJob?.cancel()
+        animationJob = null
+        val range = rangePx
+        if (range <= 0f || deltaY == 0f) return 0f
+        val next = (progress - deltaY / range).coerceIn(0f, 1f)
+        val consumedPx = (progress - next) * range
+        if (consumedPx == 0f) return 0f
+        progress = next
+        return consumedPx
+    }
+
+    /**
+     * 松手吸附：下滑速度优先判展开、上滑优先判折叠，否则按过半吸附；
+     * 弹簧收尾用 [Motion.settle]（可见阈值换算成不足一像素的进度值，末帧不跳）。
+     */
+    fun settle(velocityY: Float) {
+        val target = when {
+            velocityY > flingThresholdPx -> 0f
+            velocityY < -flingThresholdPx -> 1f
+            else -> if (progress >= 0.5f) 1f else 0f
+        }
+        if (progress == target) return
+        animationJob?.cancel()
+        animationJob = scope.launch {
+            val driver = Animatable(progress)
+            driver.animateTo(
+                targetValue = target,
+                animationSpec = Motion.settle(0.5f / rangePx.coerceAtLeast(1f)),
+            ) {
+                progress = value
+            }
+            progress = target
+        }
+    }
+
+    /** 新手势接管：停住在途吸附动画，从当前进度继续跟手 */
+    fun stop() {
+        animationJob?.cancel()
+        animationJob = null
+    }
+
+    /** 无动画立即回展开态（跨天重置等场景，与 DayTransitionState.resetForNewDay 配对） */
+    fun reset() {
+        stop()
+        progress = 0f
+    }
+}
+
+/** 创建挂到 [scope] 的 [DayCalendarFoldState]；独立使用传给 [DayCalendar] 即自驱折叠 */
+@Composable
+fun rememberDayCalendarFoldState(
+    scope: CoroutineScope,
+    initiallyFolded: Boolean = false,
+): DayCalendarFoldState = remember(scope) { DayCalendarFoldState(scope, initiallyFolded) }
 
 /** 星期表头：一~日 7 列均分，今天所在列 Primary（仅当 [highlightToday]） */
 @Composable
@@ -256,7 +354,7 @@ private fun WeekdayHeader(
                 Text(
                     text = label,
                     fontSize = WeekdayFontSize,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.SemiBold,
                     color = if (highlightToday && index == todayColumn) colors.primary else colors.onSurface,
                 )
             }
@@ -292,7 +390,7 @@ private fun DayCell(
             Text(
                 text = date.dayOfMonth().toString(),
                 fontSize = DayNumberFontSize,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.SemiBold,
                 color = when {
                     isToday -> colors.onPrimary
                     !inMonth -> MaterialTheme.classppColors.secondaryText
@@ -337,15 +435,15 @@ private fun NavButton(
 }
 
 /**
- * 折叠外框高度：在 [expanded]/[collapsed] 之间随 [progress] 插值。进度在 measure 块内
+ * 折叠外框高度：在 [expanded]/[collapsed] 之间随折叠进度插值。进度在 measure 块内
  * 读取——动画/拖拽每帧只触发重测，不走重组。
  */
 private fun Modifier.foldHeight(
-    progress: Animatable<Float, AnimationVector1D>,
+    fold: DayCalendarFoldState,
     expanded: Dp,
     collapsed: Dp,
 ): Modifier = layout { measurable, constraints ->
-    val height = lerp(expanded, collapsed, progress.value).roundToPx()
+    val height = lerp(expanded, collapsed, fold.progress).roundToPx()
     val placeable = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
     layout(placeable.width, height) { placeable.placeRelative(0, 0) }
 }
@@ -371,19 +469,21 @@ private fun IsoDate.plusMonthsClamped(months: Int): IsoDate {
 // ---------- 视觉规格（设计稿量取；颜色一律取主题，见各用点） ----------
 
 private val BallSize = 34.dp
-private val RowSpacing = 14.dp
+private val RowSpacing = 12.dp
 private val RowStep = BallSize + RowSpacing
+/** 星期表头与日历网格的间距，独立于行距 [RowSpacing]，可单独调 */
+private val HeaderGridGap = 6.dp
 private val DotSize = 4.dp
-private val DotGap = 4.dp
+private val DotGap = 3.dp
 /** 网格内容底部为待办小点预留的呼吸区（折叠裁切与小点溢出共用该边界） */
 private val DotZone = DotSize + DotGap
 private val NavButtonSize = 40.dp
 private val NavIconSize = 24.dp
-private val CardPaddingHorizontal = 12.dp
-private val CardPaddingVertical = 10.dp
-private val BottomBarGap = 12.dp
-/** 甩动吸附的速度阈值（对标 M3 anchoredDraggable 默认值） */
-private val FoldFlingVelocity = 125.dp
+private val CardPaddingHorizontal = 8.dp
+private val CardPaddingVertical = 8.dp
+private val BottomBarGap = 6.dp
+/** 折叠甩动吸附的速度阈值（对标 M3 anchoredDraggable 默认值） */
+internal val FoldFlingVelocity = 125.dp
 private val WeekdayFontSize = 15.sp
 private val DayNumberFontSize = 17.sp
 private val TitleFontSize = 17.sp

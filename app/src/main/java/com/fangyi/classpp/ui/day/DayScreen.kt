@@ -91,6 +91,8 @@ import coil3.compose.AsyncImage
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.calendar.ChineseDayMarks
 import com.fangyi.classpp.ui.LocalToday
+import com.fangyi.classpp.ui.components.DayCalendar
+import com.fangyi.classpp.ui.components.DayCalendarFoldState
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.DragDirection
@@ -210,12 +212,17 @@ fun DayScreen(
     val transition = remember {
         DayTransitionState(initialStage, scope) { target -> commitState.value(target) }
     }
+    // 04 内容卡（DayCalendar）的折叠进度：与 open/collapse 同一驱动口径（跟手同步直写
+    // + 松手吸附），由下方根级转场手势在 04 统一驱动——上滑先折叠日历、下滑先展开折叠
+    // 再过渡 02（见手势块注释），02 阶段恒为展开态。
+    val calendarFold = remember { DayCalendarFoldState(scope) }
 
     // 跨天/回前台对表：LocalToday 已含 onResume 与前台每分钟对表；日期变化立即回 01。
     LaunchedEffect(today) {
         if (openedDay != today) {
             compactOverscroll.reset()
             transition.resetForNewDay()
+            calendarFold.reset()
             persistedStage = DayStage.Calendar
         }
     }
@@ -301,11 +308,17 @@ fun DayScreen(
                         transition.collapse < 1f &&
                         transition.stage != DayStage.Schedule ->
                         transition.dragCollapseBy(deltaY, dragDistancePx)
+                    // 04 下滑（列表回滚）：先展开日历折叠，归零后剩余才推进 04→02
+                    // （与根级手势「先展开折叠，再过渡 02」同口径）。
                     deltaY > 0f &&
                         transition.open >= 1f &&
                         transition.collapse > 0f &&
                         !listState.canScrollBackward ->
-                        transition.dragCollapseBy(deltaY, dragDistancePx)
+                        if (calendarFold.progress > 0f) {
+                            calendarFold.dragBy(deltaY)
+                        } else {
+                            transition.dragCollapseBy(deltaY, dragDistancePx)
+                        }
                     else -> 0f
                 }
                 return Offset(0f, consumed)
@@ -328,6 +341,12 @@ fun DayScreen(
                     else -> false
                 }
                 if (!canMove) return Velocity.Zero
+                // 04 下滑甩：先展开日历折叠（同拖拽口径「先展开折叠，再过渡 02」）——
+                // 折叠收束本场速度、不启动 04→02 吸附；已展开时按原逻辑交回转场。
+                if (transition.collapse >= 1f && calendarFold.progress > 0f) {
+                    calendarFold.settle(available.y)
+                    return Velocity(0f, available.y)
+                }
                 transition.settle(available.y, flingThresholdPx)
                 return Velocity(0f, available.y)
             }
@@ -511,20 +530,31 @@ fun DayScreen(
                                         // 下滑锁定（或接管吸附）后仍双向跟手：上滑把 collapse
                                         // 拉回 04，松手时才按最终进度判是否回 02——拖出去再
                                         // 拉回来（未越过阈值）不会提前触发 02。
-                                        if (transition.collapse <= 0f && dy > 0f) {
+                                        // 04 下滑先跟手展开日历折叠，归零后剩余位移才走原有
+                                        // 链路（04→02、02 端点整组过滚动）——「先展开折叠，
+                                        // 再过渡 02」在单次手势内完成。
+                                        val unfoldConsumed =
+                                            if (dy > 0f && calendarFold.progress > 0f) {
+                                                calendarFold.dragBy(dy)
+                                            } else {
+                                                0f
+                                            }
+                                        if (unfoldConsumed != 0f) change.consume()
+                                        val dyAfterUnfold = dy - unfoldConsumed
+                                        if (transition.collapse <= 0f && dyAfterUnfold > 0f) {
                                             // 04→02 已经拖到 02：继续下滑交给整组过滚动，
                                             // 不再让内容列表自己的 overscroll 接走——
                                             // 切回 Compact 时那条效果会被移除，回位会硬切。
-                                            applyCompactOverscroll(dy, change)
-                                        } else if (dy != 0f) {
+                                            applyCompactOverscroll(dyAfterUnfold, change)
+                                        } else if (dyAfterUnfold != 0f) {
                                             // 上滑先收回 02 的整组过滚动，剩余位移再拉回 collapse。
                                             val overscrollConsumed =
-                                                if (dy < 0f && transition.collapse <= 0f) {
-                                                    applyCompactOverscroll(dy, change)
+                                                if (dyAfterUnfold < 0f && transition.collapse <= 0f) {
+                                                    applyCompactOverscroll(dyAfterUnfold, change)
                                                 } else {
                                                     0f
                                                 }
-                                            val remaining = dy - overscrollConsumed
+                                            val remaining = dyAfterUnfold - overscrollConsumed
                                             if (remaining != 0f) {
                                                 val consumed = transition.dragCollapseBy(
                                                     remaining,
@@ -534,7 +564,15 @@ fun DayScreen(
                                             }
                                         }
                                     }
-                                    // -1：上滑锁定，整个手势都不再写 collapse
+                                    -1 -> {
+                                        // 上滑锁定：先跟手折叠日历（04 上滑即开始折叠）；
+                                        // 折叠到头后不再消费，剩余位移放给内容 Overscroll
+                                        // 橡皮筋——与此前「上滑不写 collapse」的让位行为
+                                        // 在折叠到头后完全一致。
+                                        if (dy < 0f && calendarFold.progress < 1f) {
+                                            if (calendarFold.dragBy(dy) != 0f) change.consume()
+                                        }
+                                    }
                                 }
                             } else if (dy != 0f) {
                                 if (transition.collapse <= 0f) {
@@ -573,10 +611,17 @@ fun DayScreen(
                     // 04→02 已经拖过 02 的情况也在这里：先无动画地提交 02，
                     // 再由 OffsetOverscrollEffect 的默认临界阻尼弹簧把内容送回原位；
                     // 效果挂在页面根上，不会因切回 Compact 被移除而硬切。
+                    // 折叠停在半程（拖了但没到端点、或松手速度不足以判向）：只吸附折叠
+                    // 本身——collapse 仍为 1，不启动 02↔04 吸附。折叠已到端点的手势走
+                    // 原有收束：fold=1 时 collapse<1f 不成立、无吸附；fold=0 且拖过
+                    // collapse 的按最终进度判回 02/回弹 04。
+                    val foldMid = calendarFold.progress > 0f && calendarFold.progress < 1f
                     val compactPulled = !passiveGesture &&
                         transition.collapse <= 0f &&
                         compactOverscroll.currentOffset != Offset.Zero
-                    if (compactPulled) {
+                    if (foldMid && !passiveGesture && drivesCollapse) {
+                        calendarFold.settle(tracker.calculateVelocity().y)
+                    } else if (compactPulled) {
                         if (transition.stage == DayStage.Schedule) {
                             transition.settle(0f, flingThresholdPx)
                         }
@@ -974,10 +1019,11 @@ fun DayScreen(
             }
         }
 
-        // 8) 白卡就是日程页的占位内容，也是滚动列表的第一条；高度固定 235dp。
-        // 04 滑到底时 Overscroll 会拖动这张白卡本身；后续真实内容直接排在它后面。
-        // 内容视口铺满全屏：02 时视口顶贴住白卡顶（不盖图片卡），04 时抬到屏幕顶，
-        // 白卡与后续内容才能滚进顶栏下面。白卡位置由「视口 offset + 首条 spacer」
+        // 8) 日历卡（DayCalendar）是日程页的内容卡，也是滚动列表的第一条；高度随月/周
+        // 折叠形态自适应，位置仍由 frame.content.top 决定（白卡顶边几何不变）。
+        // 04 滑到底时 Overscroll 会拖动这张卡本身；后续真实内容直接排在它后面。
+        // 内容视口铺满全屏：02 时视口顶贴住卡顶（不盖图片卡），04 时抬到屏幕顶，
+        // 卡与后续内容才能滚进顶栏下面。卡位置由「视口 offset + 首条 spacer」
         // 两段之和决定，恒等于 frame.content.top。
         if (showContent) {
             Box(
@@ -1027,15 +1073,15 @@ fun DayScreen(
                                 },
                             )
                         }
-                        // 第二条 = 当前白卡占位内容；后续日程条目继续 item { } 追加。
+                        // 第二条 = 日历卡：白卡占位已替换为 DayCalendar 组件（自带 surface
+                        // 卡壳与 DayCardShape，高度随月/周折叠形态自适应）；折叠进度由根级
+                        // 转场手势统一驱动（calendarFold），组件内不自挂手势。后续日程条目
+                        // 继续 item { } 追加。
                         item(key = "dayCard") {
-                            Box(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = PageHorizontalSpacing)
-                                    .height(DayContentHeight)
-                                    .clip(DayCardShape)
-                                    .background(MaterialTheme.colorScheme.surface),
+                            DayCalendar(
+                                foldState = calendarFold,
+                                today = today,
+                                modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
                             )
                         }
                     }
