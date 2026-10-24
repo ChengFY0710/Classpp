@@ -73,6 +73,7 @@ import com.fangyi.classpp.ui.components.PopupMenuSection
 import com.fangyi.classpp.ui.components.SwipeAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.components.labelText
+import com.fangyi.classpp.ui.motion.CrossPages
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
@@ -120,7 +121,15 @@ private val SectionSpacing = 20.dp
 /**
  * 待办页：页面底色铺 background（tab 转场缩小淡出时不透出其他层）。
  * 内容层为待办列表（[hazeSource] 采样源：列表滚动到顶栏之下时透出毛玻璃），
- * 顶栏浮在上层；选中态在此持有，可见列表由 [filterTodosByGroup] 按选中分组下标派生。
+ * 顶栏浮在上层；选中态在此持有，可见列表由 [filterTodosByGroup] 等过滤函数按页面
+ * 身份派生（见下方 CrossPages 段）。
+ *
+ * 分组/特殊分组页/标签页之间的切换走整页交叉过渡（ui.motion 的 [CrossPages]，Cresto
+ * 层级交叉动效的移植）：每个页面身份一个独立列表组合，旧页淡出下沉、新页延迟退让后
+ * 放大浮起——切组不再触发条目级交叉淡入淡出（那是同一 LazyColumn 换数据的产物），
+ * 条目级 animateItem 只服务页内增删移与折叠；各页过滤口径从页面 key 解码，退场中的
+ * 旧页继续渲染自己的内容；列表滚动位与分区折叠经 SaveableStateProvider 按页保活。
+ * 顶栏不参与过渡（页面 chrome 常驻原位）。
  *
  * 列表分「已置顶」「已逾期」「未完成」「已完成」四组，已置顶在最上（无置顶待办时整组
  * 隐藏）、已逾期次之、已完成在下（默认收起），组内按创建时间（创建早的在前）；
@@ -361,22 +370,23 @@ fun TodoScreen(
         }
     }
 
-    // 按选中分组派生可见列表（0 = 全部、1 = 未分组、2 起 = 用户分组）；特殊分组页在场时
-    // 改按特殊页口径过滤，标签页在场时按标签过滤。离页（胶囊保留未选）回常规过滤。
     // 过滤前先做重复待办的分期展开（虚拟独立待办：已完成分期进已完成、过去未完成期全显、
-    // 未来只显最近一期）——先展开后过滤，特殊页的已完成/未完成口径才能看到分期。
-    // 最近删除页例外：条目不在活跃列表里（仓库单列 deletedTodos 流），整条待办一张卡、
-    // 不做分期展开，并按删除时刻倒序（最近删的在最前）
+    // 未来只显最近一期）——先展开后过滤，特殊页的已完成/未完成口径才能看到分期。各页面
+    // 的可见列表改在 CrossPages 的内容 lambda 里从页面 key 解码派生（见 TodoList 调用处）：
+    // 退场中的旧页继续渲染自己的口径，不读当前选中态。最近删除页例外：条目不在活跃列表里
+    // （仓库单列 deletedTodos 流），整条待办一张卡、不做分期展开，并按删除时刻倒序（最近删的在最前）
     val today = LocalToday
     val nowMinute = currentMinuteOfDay()
     val special = if (specialActive) specialSection else null
     val activeTag = if (tagActive) selectedTag else null
     val displayTodos = remember(todos, today) { todos.expandRepeatOccurrences(today) }
-    val visibleTodos = when {
-        special == TodoSpecialSection.Trash -> deletedTodos.sortedByDescending { it.deletedAtMillis ?: 0L }
-        special != null -> filterTodosBySpecial(displayTodos, special, today, nowMinute)
-        activeTag != null -> filterTodosByTag(displayTodos, activeTag)
-        else -> filterTodosByGroup(displayTodos, selectedGroupIndex, groups)
+    // 页面身份编码为 CrossPages 的 key（字符串——SaveableStateProvider 的状态保活要把
+    // key 存进 Bundle；前缀决定身份段，标签名含下划线也不冲突，解码只按前缀 removePrefix）。
+    // 顶栏（页面 chrome）照旧读 special/activeTag/selectedGroupIndex，不参与整页过渡
+    val todoPageKey = when {
+        special != null -> TodoPageKeySpecialPrefix + special.name
+        activeTag != null -> TodoPageKeyTagPrefix + activeTag
+        else -> TodoPageKeyGroupPrefix + selectedGroupIndex
     }
 
     // 待办编辑三件套：进入（长按卡片，自动选中长按卡；顶栏展开的菜单/动作行与侧滑展开卡
@@ -489,90 +499,110 @@ fun TodoScreen(
                         },
                     ),
             ) {
-                TodoList(
-                    todos = visibleTodos,
-                    sort = sort,
-                    sortDescending = sortDescending,
-                    // 标签配色表（用户标签所选颜色）：透传给列表卡的 NoteCard
-                    tagColors = tagColorMap,
-                    // 特殊分组页 = 该页本身就是过滤口径，分类菜单的分组显隐不再参与（全组可见）；
-                    // 标签页的分类菜单可用，显隐开关照常作用于其过滤结果
-                    visibleSections = if (special != null) TodoSection.entries.toSet() else visibleSections,
-                    // 特殊页/标签页分组头全部默认展开（常规列表「已完成默认收起」不适用）；空页给占位文案
-                    expandAllSections = special != null || activeTag != null,
-                    emptyHint = when {
-                        special != null -> stringResource(special.emptyHintRes)
-                        activeTag != null -> stringResource(R.string.todo_empty_tag)
-                        else -> null
-                    },
-                    // 最近删除页：平铺（无四组分组头）+ 已删除样式卡片（右撤回 / 左滑彻底删除）
-                    deletedCards = special == TodoSpecialSection.Trash,
-                    topBarExtraSpace = topBarExtraSpace,
-                    editBarExtraSpace = editBarExtraSpace,
-                    swipeCoordinator = swipeCoordinator,
-                    // 待办编辑态：卡片转选中形态、分组头强制展开并换「全选/取消全选」、
-                    // 侧滑与勾选停用；进入闸门在 enterTodoEdit 内（特殊分组页关断）
-                    editing = todoEditing,
-                    selectedTodoIds = selectedTodoIds,
-                    onEnterEdit = enterTodoEdit,
-                    onToggleSelect = toggleTodoSelect,
-                    onToggleSelectAll = toggleTodoSelectAll,
-                    // 勾选路由：分期卡（重复待办的展开副本，dates[0] 即分期日期）走逐期
-                    // 结算，普通待办走整条完成
-                    onToggleCompleted = { todo, completed ->
-                        scope.launch {
-                            if (todo.repeat.type != RepeatType.None) {
-                                todo.dates.firstOrNull()?.let { date ->
-                                    repository.setOccurrenceCompleted(todo.id, date, completed)
+                // 分组/特殊分组页/标签页切换的整页交叉过渡（ui.motion 的 CrossPages，
+                // Cresto 层级交叉动效的移植）：每个页面身份一个独立列表组合，旧页淡出
+                // 下沉、新页延迟退让后放大浮起。原先「切组 = 同一 LazyColumn 换数据、
+                // 逐 item 交叉淡入淡出」的效果由此结构性移除——条目级 animateItem 只再
+                // 服务页内变化（勾选/删除/置顶/排序/折叠的进出场与避让收拢）。各页过滤
+                // 口径从页面 key 解码（退场中的旧页继续渲染自己的内容），列表滚动位与
+                // 分区折叠经 SaveableStateProvider 按页保活，切回恢复
+                CrossPages(
+                    selectedKey = todoPageKey,
+                    modifier = Modifier.matchParentSize(),
+                ) { pageKey ->
+                    val page = pageKey.toTodoPageIdentity()
+                    val pageTodos = when {
+                        page.special == TodoSpecialSection.Trash ->
+                            deletedTodos.sortedByDescending { it.deletedAtMillis ?: 0L }
+                        page.special != null -> filterTodosBySpecial(displayTodos, page.special, today, nowMinute)
+                        page.tag != null -> filterTodosByTag(displayTodos, page.tag)
+                        else -> filterTodosByGroup(displayTodos, page.groupIndex, groups)
+                    }
+                    TodoList(
+                        todos = pageTodos,
+                        sort = sort,
+                        sortDescending = sortDescending,
+                        // 标签配色表（用户标签所选颜色）：透传给列表卡的 NoteCard
+                        tagColors = tagColorMap,
+                        // 特殊分组页 = 该页本身就是过滤口径，分类菜单的分组显隐不再参与（全组可见）；
+                        // 标签页的分类菜单可用，显隐开关照常作用于其过滤结果
+                        visibleSections = if (page.special != null) TodoSection.entries.toSet() else visibleSections,
+                        // 特殊页/标签页分组头全部默认展开（常规列表「已完成默认收起」不适用）；空页给占位文案
+                        expandAllSections = page.special != null || page.tag != null,
+                        emptyHint = when {
+                            page.special != null -> stringResource(page.special.emptyHintRes)
+                            page.tag != null -> stringResource(R.string.todo_empty_tag)
+                            else -> null
+                        },
+                        // 最近删除页：平铺（无四组分组头）+ 已删除样式卡片（右撤回 / 左滑彻底删除）
+                        deletedCards = page.special == TodoSpecialSection.Trash,
+                        topBarExtraSpace = topBarExtraSpace,
+                        editBarExtraSpace = editBarExtraSpace,
+                        swipeCoordinator = swipeCoordinator,
+                        // 待办编辑态：卡片转选中形态、分组头强制展开并换「全选/取消全选」、
+                        // 侧滑与勾选停用；进入闸门在 enterTodoEdit 内（特殊分组页关断）
+                        editing = todoEditing,
+                        selectedTodoIds = selectedTodoIds,
+                        onEnterEdit = enterTodoEdit,
+                        onToggleSelect = toggleTodoSelect,
+                        onToggleSelectAll = toggleTodoSelectAll,
+                        // 勾选路由：分期卡（重复待办的展开副本，dates[0] 即分期日期）走逐期
+                        // 结算，普通待办走整条完成
+                        onToggleCompleted = { todo, completed ->
+                            scope.launch {
+                                if (todo.repeat.type != RepeatType.None) {
+                                    todo.dates.firstOrNull()?.let { date ->
+                                        repository.setOccurrenceCompleted(todo.id, date, completed)
+                                    }
+                                } else {
+                                    repository.setCompleted(todo.id, completed)
                                 }
-                            } else {
-                                repository.setCompleted(todo.id, completed)
                             }
-                        }
-                    },
-                    // 侧滑置顶：写回仓库后卡片随分组移动（移入/移出「已置顶」组），Toast 同步反馈
-                    onTogglePinned = { id, pinned ->
-                        scope.launch {
-                            when (repository.setPinned(id, pinned)) {
-                                TodoOpResult.Ok ->
-                                    AppToasts.show(context, if (pinned) todoPinnedMessage else todoUnpinnedMessage)
-                                is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
+                        },
+                        // 侧滑置顶：写回仓库后卡片随分组移动（移入/移出「已置顶」组），Toast 同步反馈
+                        onTogglePinned = { id, pinned ->
+                            scope.launch {
+                                when (repository.setPinned(id, pinned)) {
+                                    TodoOpResult.Ok ->
+                                        AppToasts.show(context, if (pinned) todoPinnedMessage else todoUnpinnedMessage)
+                                    is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
+                                }
                             }
-                        }
-                    },
-                    // 侧滑删除：展开后再拖到完全变色松手才删（无确认框，满色就是强确认）；
-                    // 失败 Toast、卡片自动滑回。软删：条目进最近删除，可从回收站恢复
-                    onDeleteTodo = { id ->
-                        scope.launch {
-                            when (repository.removeTodo(id)) {
-                                TodoOpResult.Ok -> AppToasts.show(context, todoDeletedMessage)
-                                is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
+                        },
+                        // 侧滑删除：展开后再拖到完全变色松手才删（无确认框，满色就是强确认）；
+                        // 失败 Toast、卡片自动滑回。软删：条目进最近删除，可从回收站恢复
+                        onDeleteTodo = { id ->
+                            scope.launch {
+                                when (repository.removeTodo(id)) {
+                                    TodoOpResult.Ok -> AppToasts.show(context, todoDeletedMessage)
+                                    is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
+                                }
                             }
-                        }
-                    },
-                    // 最近删除页的撤回按钮：清除软删标记，待办回到原分组（分组已删则回未分组）
-                    onRestoreTodo = { id ->
-                        scope.launch {
-                            when (repository.restoreTodo(id)) {
-                                TodoOpResult.Ok -> AppToasts.show(context, todoRestoredMessage)
-                                is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
+                        },
+                        // 最近删除页的撤回按钮：清除软删标记，待办回到原分组（分组已删则回未分组）
+                        onRestoreTodo = { id ->
+                            scope.launch {
+                                when (repository.restoreTodo(id)) {
+                                    TodoOpResult.Ok -> AppToasts.show(context, todoRestoredMessage)
+                                    is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
+                                }
                             }
-                        }
-                    },
-                    // 最近删除页的左滑「彻底删除」：满色松手才真正从文件移除（不可恢复）
-                    onPurgeTodo = { id ->
-                        scope.launch {
-                            when (repository.purgeTodo(id)) {
-                                TodoOpResult.Ok -> AppToasts.show(context, todoPurgedMessage)
-                                is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
+                        },
+                        // 最近删除页的左滑「彻底删除」：满色松手才真正从文件移除（不可恢复）
+                        onPurgeTodo = { id ->
+                            scope.launch {
+                                when (repository.purgeTodo(id)) {
+                                    TodoOpResult.Ok -> AppToasts.show(context, todoPurgedMessage)
+                                    is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
+                                }
                             }
-                        }
-                    },
-                    onTodoClick = {
-                        detailTargetId = it.id
-                        detailTargetDate = it.dates.firstOrNull()?.toString().orEmpty()
-                    },
-                )
+                        },
+                        onTodoClick = {
+                            detailTargetId = it.id
+                            detailTargetDate = it.dates.firstOrNull()?.toString().orEmpty()
+                        },
+                    )
+                }
             }
             // 底部渐变遮罩：页面自绘（原导航栏内置层下沉至此），盖住滚进导航栏区域的列表；
             // 全屏浮层在场或待办编辑态时随导航栏一同下移出屏——与 MainActivity 的导航栏
@@ -1054,6 +1084,33 @@ private val TodoListFadeOutSpec: FiniteAnimationSpec<Float> =
 private fun Todo.listItemKey(): String =
     "card_" + id + "#" + (dates.firstOrNull()?.epochDay?.toString() ?: "")
 
+/** CrossPages 页面 key 的前缀（本文件私有）：前缀决定身份段，解码只按前缀 removePrefix */
+private const val TodoPageKeyGroupPrefix = "group_"
+private const val TodoPageKeySpecialPrefix = "special_"
+private const val TodoPageKeyTagPrefix = "tag_"
+
+/**
+ * 待办页的页面身份（CrossPages key 的解码结果）：特殊分组页 / 标签页 / 常规分组下标
+ * 三选一。key 编码为字符串是因为 CrossPages 的状态保活要把 key 写进 Bundle
+ * （SaveableStateProvider 的 key 须 Bundle 可存）；前缀决定身份段——标签名里含
+ * 下划线也不会错位（解码只 removePrefix，不按分隔符切分）。
+ */
+private data class TodoPageIdentity(
+    val special: TodoSpecialSection? = null,
+    val tag: String? = null,
+    val groupIndex: Int = 0,
+)
+
+/** 解码页面 key（编码见 [TodoPageKeySpecialPrefix] 等前缀常量处说明） */
+private fun String.toTodoPageIdentity(): TodoPageIdentity = when {
+    startsWith(TodoPageKeySpecialPrefix) ->
+        TodoPageIdentity(special = TodoSpecialSection.valueOf(removePrefix(TodoPageKeySpecialPrefix)))
+    startsWith(TodoPageKeyTagPrefix) ->
+        TodoPageIdentity(tag = removePrefix(TodoPageKeyTagPrefix))
+    else ->
+        TodoPageIdentity(groupIndex = removePrefix(TodoPageKeyGroupPrefix).toIntOrNull() ?: 0)
+}
+
 /** 已折叠分区集的保存器：枚举按名字存取（未知名字丢弃，防枚举变更后恢复崩溃） */
 private val CollapsedSectionsSaver = listSaver<Set<TodoSection>, String>(
     save = { sections -> sections.map(TodoSection::name) },
@@ -1127,7 +1184,9 @@ internal fun filterTodosByTag(todos: List<Todo>, tag: String): List<Todo> =
  * [Todo.listItemKey]），每项挂 Modifier.animateItem——进出场淡入淡出与邻居避让收拢
  * 全走 [TodoListFadeInSpec] / [TodoListPlaceSpec] / [TodoListFadeOutSpec] 三条规格
  * （Motion.TodoCard* 令牌）：勾选完成/侧滑删除/置顶的跨组移动 = 原组退场 + 新组进场
- * 两侧同时收拢，排序切换 = 组内避让，整组清空 = 分区头与余卡一起淡出。折叠即宿主停止
+ * 两侧同时收拢，排序切换 = 组内避让，整组清空 = 分区头与余卡一起淡出。分组/页面级
+ * 切换不经过条目动画——宿主以 CrossPages 按页叠放、整页交叉过渡（见 TodoScreen），
+ * 本组件的条目进出场只服务页内增删移与折叠。折叠即宿主停止
  * 下发该组卡片项，收合同样由避让动画完成——分区头照常渲染（见 [NoteCardSectionHeader]），
  * 折叠集由本组件持有（rememberSaveable，编辑态强制展开不写回）。卡片经 [TodoCard]
  * 接模型字段（时间文本 [cardTimeText]、标签、紧急旗），并支持左右侧滑呼出删除/置顶
