@@ -533,14 +533,14 @@ class TodoRepositoryTest {
     }
 
     @Test
-    fun `removeTagFromTodos unbinds tag and keeps todos`() = runBlocking {
+    fun `removeTagsFromTodos unbinds tags and keeps todos`() = runBlocking {
         val r = repo()
         val a = r.addTodo(testTodo(name = "A", tags = listOf("紧急", "作业"))).okId()
         val b = r.addTodo(testTodo(name = "B", tags = listOf("紧急"))).okId()
-        val c = r.addTodo(testTodo(name = "C")).okId()
+        val c = r.addTodo(testTodo(name = "C", tags = listOf("本周"))).okId()
         r.removeTodo(b).assertOk()
 
-        r.removeTagFromTodos("紧急").assertOk()
+        r.removeTagsFromTodos(setOf("紧急", "本周")).assertOk()
 
         // 只解绑标签，待办本身（活跃 + 回收站条目）保留
         val live = r.todos.value.associateBy { it.name }
@@ -548,7 +548,7 @@ class TodoRepositoryTest {
         assertTrue(r.deletedTodos.value.single { it.id == b }.tags.isEmpty())
         assertEquals(emptyList<String>(), live.getValue("C").tags)
         // 未知标签宽容无操作：报 Ok 且现有标签不受影响
-        r.removeTagFromTodos("不存在").assertOk()
+        r.removeTagsFromTodos(setOf("不存在")).assertOk()
         assertEquals(listOf("作业"), r.todos.value.single { it.id == a }.tags)
     }
 

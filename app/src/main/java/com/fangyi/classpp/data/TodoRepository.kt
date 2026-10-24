@@ -423,15 +423,20 @@ class TodoRepository internal constructor(
     }
 
     /**
-     * 删除标签的待办侧回写：从**全部**待办（含回收站条目）tags 里摘除 [name]——只解绑标签，
-     * 待办本身保留。与 [TagRepository.removeTag] 配对使用（顺序同 [renameTagInTodos]）；
-     * 未知标签宽容为无操作（批量语义）。
+     * 删除标签的待办侧回写：从**全部**待办（含回收站条目）tags 里摘除 [names]——只解绑
+     * 标签，待办本身保留。与 [TagRepository.setTags]（整表滤除）配对使用（顺序同
+     * [renameTagInTodos]）；未知标签宽容为无操作（批量语义）。
      */
-    suspend fun removeTagFromTodos(name: String): TodoOpResult = mutex.withLock {
+    suspend fun removeTagsFromTodos(names: Collection<String>): TodoOpResult = mutex.withLock {
+        val drop = names.toSet()
         commit(
             fileState.value.copy(
                 todos = fileState.value.todos.map { todo ->
-                    if (name !in todo.tags) todo else todo.copy(tags = todo.tags - name)
+                    if (todo.tags.none { it in drop }) {
+                        todo
+                    } else {
+                        todo.copy(tags = todo.tags.filterNot { it in drop })
+                    }
                 },
             ),
         )

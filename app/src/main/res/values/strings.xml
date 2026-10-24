@@ -35,6 +35,7 @@
     <string name="todo_tag_rename_hint">输入标签名</string>
     <string name="todo_tag_delete_title">删除标签</string>
     <string name="todo_tag_delete_message">「%1$s」将被删除，待办本身不会受影响，此操作不可撤销。</string>
+    <string name="todo_tag_delete_message_multi">所选 %1$d 个标签将被删除，待办本身不会受影响，此操作不可撤销。</string>
     <string name="todo_new_title">新建待办</string>
     <string name="todo_edit_title">编辑待办</string>
     <string name="todo_name_label">待办名</string>

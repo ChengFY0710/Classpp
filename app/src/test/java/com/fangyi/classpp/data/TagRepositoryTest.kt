@@ -99,6 +99,36 @@ class TagRepositoryTest {
     }
 
     @Test
+    fun `setTags replaces table with normalized order and persists`() = runBlocking {
+        val repo = open()
+        repo.addTag("紧急").okOrThrow()
+        repo.addTag("实验报告", colorArgb = 0xFF22B14C).okOrThrow()
+        repo.addTag("本周").okOrThrow()
+
+        // 编辑态确认（拖拽重排）与批量删除共用整表替换：顺序即显示序，归一化同 addTag
+        // （trim → 空白丢弃 → 按名去重保留首个，重名条目以首个的颜色为准），颜色随条目保留
+        repo.setTags(
+            listOf(
+                TagEntry(" 本周 "),
+                TagEntry("实验报告", colorArgb = 0xFF22B14C),
+                TagEntry(""),
+                TagEntry("紧急"),
+                TagEntry("实验报告"),
+            ),
+        ).okOrThrow()
+        assertEquals(
+            listOf(TagEntry("本周"), TagEntry("实验报告", colorArgb = 0xFF22B14C), TagEntry("紧急")),
+            repo.tags.value,
+        )
+
+        val reopened = open()
+        assertEquals(
+            listOf(TagEntry("本周"), TagEntry("实验报告", colorArgb = 0xFF22B14C), TagEntry("紧急")),
+            reopened.tags.value,
+        )
+    }
+
+    @Test
     fun `setTagColor updates only the target and null returns to theme default`() = runBlocking {
         val repo = open()
 

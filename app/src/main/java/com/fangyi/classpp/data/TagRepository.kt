@@ -118,6 +118,20 @@ class TagRepository internal constructor(
         )
     }
 
+    /**
+     * 标签整表替换：编辑态确认（拖拽重排）、批量删除（滤除）共用这一个入口（同
+     * [TodoRepository.setGroups] 的整表语义）。归一化：name trim、空白丢弃、按名去重
+     * （保留首个）。标签无置顶概念，不做划分；待办侧的解绑由调用方跟进
+     * （[TodoRepository.removeTagsFromTodos]，两个文件无法同一次提交原子落盘）。
+     */
+    suspend fun setTags(newTags: List<TagEntry>): TagOpResult = mutex.withLock {
+        val cleaned = newTags
+            .map { it.copy(name = it.name.trim()) }
+            .filter { it.name.isNotEmpty() }
+            .distinctBy { it.name }
+        commit(TagFile(fileState.value.formatVersion, cleaned))
+    }
+
     /** 改标签色（颜色选择器接入后用）；null = 回到跟随主题 Primary */
     suspend fun setTagColor(name: String, colorArgb: Long?): TagOpResult = mutex.withLock {
         if (fileState.value.tags.none { it.name == name }) {
