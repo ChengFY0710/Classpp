@@ -2,6 +2,8 @@ package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.export.TodoShareCodec
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.REPEAT_END_COUNT_DEFAULT
+import com.fangyi.classpp.data.model.RepeatEndType
 import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.RepeatUnit
@@ -170,10 +172,17 @@ class TodoRepository internal constructor(
     /**
      * 重复规则消洗（导入的外来数据可能越界）：预设档位不带自定义参数——unit/interval/marks
      * 重置为默认值，**类型原样保留**；自定义档位间隔夹紧 1..99、方格标记按单位合法域剔除
-     * （天的规则无方格语义，标记恒清空）。
+     * （天的规则无方格语义，标记恒清空）。结束条件只随重复存在：无重复强制归「永不」，
+     * 日期档缺日期回退「永不」，次数档缺次数兜底默认值、越界夹紧 1..99。
      */
-    private fun normalizeRepeat(rule: RepeatRule): RepeatRule =
-        when (rule.type) {
+    private fun normalizeRepeat(rule: RepeatRule): RepeatRule {
+        val endType = when {
+            rule.type == RepeatType.None -> RepeatEndType.Never
+            rule.endType == RepeatEndType.Date && rule.endDate != null -> RepeatEndType.Date
+            rule.endType == RepeatEndType.Count -> RepeatEndType.Count
+            else -> RepeatEndType.Never
+        }
+        val base = when (rule.type) {
             RepeatType.Custom -> rule.copy(
                 interval = rule.interval.coerceIn(1, 99),
                 marks = rule.marks.filterTo(mutableSetOf()) { it in rule.unit.markRange },
@@ -181,6 +190,16 @@ class TodoRepository internal constructor(
             // 预设档位（无/每天/每周/每月/每年）：只留类型，自定义参数一律归默认
             else -> rule.copy(unit = RepeatUnit.Week, interval = 1, marks = emptySet())
         }
+        return base.copy(
+            endType = endType,
+            endDate = if (endType == RepeatEndType.Date) rule.endDate else null,
+            endCount = if (endType == RepeatEndType.Count) {
+                (rule.endCount ?: REPEAT_END_COUNT_DEFAULT).coerceIn(1, 99)
+            } else {
+                null
+            },
+        )
+    }
 
     /**
      * 分组整表替换：新建（追加）、置顶/重排（调用方重排后写回）、删除（滤除）、重命名共用这一个入口。

@@ -385,6 +385,19 @@
     <string name="repeat_interval_title">Repeat cycle</string>
     <string name="repeat_marks_required">Select at least one date</string>
     <string name="repeat_month_mark">%1$d mo.</string>
+    <string name="repeat_end_title">End</string>
+    <string name="repeat_end_never">Never</string>
+    <string name="repeat_end_type_date">On a date</string>
+    <string name="repeat_end_type_count">After a number of times</string>
+    <string name="repeat_end_date_row">End date</string>
+    <string name="repeat_end_date_desc">Repeats stop before this date</string>
+    <string name="repeat_end_count_row">Repeat count</string>
+    <string name="repeat_end_count_desc">Repeats stop after this many times</string>
+    <string name="repeat_end_count_value">%1$d times</string>
+    <string name="repeat_unit_count">times</string>
+    <string name="repeat_end_invalid">The end date is too early. Please choose a later date</string>
+    <string name="repeat_summary_until">%1$s · until %2$s</string>
+    <string name="repeat_summary_count">%1$s · %2$d times total</string>
 
     <!-- Deadline card (DeadlineCard): single-tap picker row -->
     <string name="deadline_card_label">Deadline</string>

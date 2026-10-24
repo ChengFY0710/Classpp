@@ -1,6 +1,7 @@
 package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatEndType
 import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TodoGroup
@@ -334,6 +335,76 @@ class TodoRepositoryTest {
         assertEquals(false, todo.completed)
         assertEquals(listOf("2026-03-02"), todo.completedOccurrences.map { it.toString() })
         assertNull(todo.completedAtMillis)
+    }
+
+    @Test
+    fun `repeat end condition sanitizes dangling and out of range values`() = runBlocking {
+        val r = repo()
+        val anchor = IsoDate.parse("2026-03-02")
+        val end = IsoDate.parse("2026-06-01")
+
+        // 无重复：结束条件不参与语义，强制归「永不」并清空两参
+        val noneId = r.addTodo(
+            testTodo(
+                name = "无重复",
+                dates = listOf(anchor),
+                repeat = RepeatRule(
+                    type = RepeatType.None,
+                    endType = RepeatEndType.Date,
+                    endDate = end,
+                    endCount = 3,
+                ),
+            ),
+        ).okId()
+
+        // 日期档缺日期：悬挂态回退「永不」
+        val danglingId = r.addTodo(
+            testTodo(
+                name = "悬挂日期",
+                dates = listOf(anchor),
+                repeat = RepeatRule(type = RepeatType.Daily, endType = RepeatEndType.Date),
+            ),
+        ).okId()
+
+        // 次数档：越界夹紧 1..99，缺值兜底默认 5；日期/次数两参随档位互斥清空
+        val countId = r.addTodo(
+            testTodo(
+                name = "次数夹紧",
+                dates = listOf(anchor),
+                repeat = RepeatRule(
+                    type = RepeatType.Weekly,
+                    endType = RepeatEndType.Count,
+                    endCount = 500,
+                    endDate = end,
+                ),
+            ),
+        ).okId()
+
+        // 预设档位保留合法的日期结束条件（结束条件随任一重复档位存在）
+        val dateEndId = r.addTodo(
+            testTodo(
+                name = "预设带日期结束",
+                dates = listOf(anchor),
+                repeat = RepeatRule(type = RepeatType.Weekly, endType = RepeatEndType.Date, endDate = end),
+            ),
+        ).okId()
+
+        val savedNone = r.todos.value.single { it.id == noneId }
+        assertEquals(RepeatEndType.Never, savedNone.repeat.endType)
+        assertNull(savedNone.repeat.endDate)
+        assertNull(savedNone.repeat.endCount)
+
+        assertEquals(RepeatEndType.Never, r.todos.value.single { it.id == danglingId }.repeat.endType)
+
+        val savedCount = r.todos.value.single { it.id == countId }
+        assertEquals(RepeatEndType.Count, savedCount.repeat.endType)
+        assertEquals(99, savedCount.repeat.endCount)
+        assertNull(savedCount.repeat.endDate)
+
+        val savedDateEnd = r.todos.value.single { it.id == dateEndId }
+        assertEquals(RepeatEndType.Date, savedDateEnd.repeat.endType)
+        assertEquals(end, savedDateEnd.repeat.endDate)
+        assertNull(savedDateEnd.repeat.endCount)
     }
 
     @Test

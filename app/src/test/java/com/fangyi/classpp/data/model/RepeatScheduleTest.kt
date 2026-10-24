@@ -125,4 +125,108 @@ class RepeatScheduleTest {
             expand(rule, anchor = "2026-03-10", start = "2026-03-10", endExclusive = "2026-04-10"),
         )
     }
+
+    // ---------- 结束条件 ----------
+
+    @Test
+    fun `date end trims window exclusively`() {
+        // 结束日期 3/13 当天不含（「该日期前停止」），统计终点再远也只到 3/12
+        val rule = RepeatRule(
+            type = RepeatType.Daily,
+            endType = RepeatEndType.Date,
+            endDate = d("2026-03-13"),
+        )
+        assertEquals(
+            listOf("2026-03-10", "2026-03-11", "2026-03-12"),
+            expand(rule, anchor = "2026-03-10", start = "2026-03-10", endExclusive = "2026-04-10"),
+        )
+    }
+
+    @Test
+    fun `date end at or before anchor yields nothing`() {
+        val rule = RepeatRule(
+            type = RepeatType.Daily,
+            endType = RepeatEndType.Date,
+            endDate = d("2026-03-10"),
+        )
+        assertEquals(
+            emptyList<String>(),
+            expand(rule, anchor = "2026-03-10", start = "2026-03-10", endExclusive = "2026-04-10"),
+        )
+    }
+
+    @Test
+    fun `date end before first occurrence yields nothing`() {
+        // 锚 3/11（周三）但方格只勾周二：首期 3/17，结束日期 3/16 前一期都没有
+        val rule = RepeatRule(
+            type = RepeatType.Custom,
+            unit = RepeatUnit.Week,
+            marks = setOf(2),
+            endType = RepeatEndType.Date,
+            endDate = d("2026-03-16"),
+        )
+        assertEquals(
+            emptyList<String>(),
+            expand(rule, anchor = "2026-03-11", start = "2026-03-11", endExclusive = "2026-04-10"),
+        )
+    }
+
+    @Test
+    fun `count end keeps first n occurrences`() {
+        val rule = RepeatRule(
+            type = RepeatType.Daily,
+            endType = RepeatEndType.Count,
+            endCount = 3,
+        )
+        assertEquals(
+            listOf("2026-03-10", "2026-03-11", "2026-03-12"),
+            expand(rule, anchor = "2026-03-10", start = "2026-03-10", endExclusive = "2026-04-10"),
+        )
+    }
+
+    @Test
+    fun `count end indexes from anchor regardless of window start`() {
+        // 次数自系列锚日起数（3/10 起第 1 期），窗口从 3/11 起只影响过滤不影响计数：
+        // 第 1 期 3/10 被窗口剔掉，但 3/13 已是第 4 期、超上限被剔
+        val rule = RepeatRule(
+            type = RepeatType.Daily,
+            endType = RepeatEndType.Count,
+            endCount = 3,
+        )
+        assertEquals(
+            listOf("2026-03-11", "2026-03-12"),
+            expand(rule, anchor = "2026-03-10", start = "2026-03-11", endExclusive = "2026-04-10"),
+        )
+    }
+
+    @Test
+    fun `count end counts clamped duplicates as one occurrence`() {
+        // 锚 1/30、方格 30/31 号：2 月两者都收拢到 2/28，同日只记一期——
+        // 上限 4 期 = 1/30、1/31、2/28、3/30（3/31 是第 5 期被剔），不做同日合并会少算一期
+        val rule = RepeatRule(
+            type = RepeatType.Custom,
+            unit = RepeatUnit.Month,
+            marks = setOf(30, 31),
+            endType = RepeatEndType.Count,
+            endCount = 4,
+        )
+        assertEquals(
+            listOf("2026-01-30", "2026-01-31", "2026-02-28", "2026-03-30"),
+            expand(rule, anchor = "2026-01-30", start = "2026-01-01", endExclusive = "2026-06-01"),
+        )
+    }
+
+    @Test
+    fun `count end exhausts series for next occurrence`() {
+        val rule = RepeatRule(
+            type = RepeatType.Daily,
+            endType = RepeatEndType.Count,
+            endCount = 3,
+        )
+        val anchor = d("2026-03-10")
+        // 系列只到 3/12：从 3/13 起再无下一期；起点含端点语义下分期原样返回
+        assertEquals(null, rule.nextOccurrenceAfter(anchor, d("2026-03-13")))
+        assertEquals(d("2026-03-10"), rule.nextOccurrenceAfter(anchor, anchor - 1))
+        assertEquals(d("2026-03-12"), rule.nextOccurrenceAfter(anchor, d("2026-03-12")))
+    }
 }

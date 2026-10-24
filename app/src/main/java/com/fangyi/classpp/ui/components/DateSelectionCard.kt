@@ -323,8 +323,9 @@ private fun QuickOptionText(
 
 private const val MILLIS_PER_DAY = 86_400_000L
 
-/** 设计稿展示格式 `2026/10/3`（不补零）；换算同 [IsoDate.toString] 的 UTC 整数天 */
-private fun IsoDate.toCardText(): String {
+/** 设计稿展示格式 `2026/10/3`（不补零）；换算同 [IsoDate.toString] 的 UTC 整数天。
+ * internal：重复摘要（RepeatFormat）与重复浮层的结束日期行共用同一格式 */
+internal fun IsoDate.toCardText(): String {
     val calendar = GregorianCalendar(TimeZone.getTimeZone("UTC")).apply {
         timeInMillis = epochDay * MILLIS_PER_DAY
     }

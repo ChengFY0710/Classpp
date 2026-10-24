@@ -417,6 +417,19 @@
     <string name="repeat_interval_title">重复周期</string>
     <string name="repeat_marks_required">请至少选择一个日期</string>
     <string name="repeat_month_mark">%1$d月</string>
+    <string name="repeat_end_title">结束</string>
+    <string name="repeat_end_never">永不</string>
+    <string name="repeat_end_type_date">日期</string>
+    <string name="repeat_end_type_count">次数</string>
+    <string name="repeat_end_date_row">结束日期</string>
+    <string name="repeat_end_date_desc">重复将于该日期前停止</string>
+    <string name="repeat_end_count_row">重复次数</string>
+    <string name="repeat_end_count_desc">重复达该次数后停止</string>
+    <string name="repeat_end_count_value">%1$d 次</string>
+    <string name="repeat_unit_count">次</string>
+    <string name="repeat_end_invalid">结束日期过早，请选择更晚的日期</string>
+    <string name="repeat_summary_until">%1$s · 至%2$s</string>
+    <string name="repeat_summary_count">%1$s · 共%2$d次</string>
 
     <!-- 时间选择弹窗（BottomTimeSelectCard）：滚轮选时/分 -->
     <string name="time_select_title">选择时间</string>

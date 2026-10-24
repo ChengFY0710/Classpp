@@ -9,7 +9,9 @@ import java.util.TimeZone
  *
  * 系列从锚日期（待办的首个自定义日期）起；预设档位（每天/每周/每月/每年）= 间隔 1、
  * 无方格，锚定锚日期自身的属性（星期几 / 几号 / 月+日），自定义档位按单位/间隔/方格
- * 展开。纯函数不取时钟——区间由调用方给定（统计到哪算哪）。
+ * 展开。结束条件（日期/次数档）由 [occurrencesBetween] 在展开时消化——日期档收紧统计
+ * 终点、次数档只取前 N 期，N 期之后序列自然耗尽（[nextOccurrenceAfter] 返回 null）。
+ * 纯函数不取时钟——区间由调用方给定（统计到哪算哪）。
  */
 
 private val UTC: TimeZone = TimeZone.getTimeZone("UTC")
@@ -22,6 +24,10 @@ private const val MAX_PERIODS = 100_000
  * 展开规则在 `[startInclusive, endExclusive)` 内的应完成日期（升序、去重，均 ≥ [anchor]
  * ——系列从锚日起）。
  *
+ * 结束条件（[RepeatRule.endType]）在展开核心内消化，列表展开、逾期归账、下一期等下游
+ * 自动随动：日期档把统计终点收紧到 [RepeatRule.endDate]（不含，「该日期前停止」）；
+ * 次数档只保留系列前 N 期（N 自锚日起数，与统计窗口起点无关）。
+ *
  * @param anchor 系列锚日期（重复待办的首个自定义日期）
  * @param startInclusive 统计区间起点（含）；逾期结算传「水位 + 1 天」（未结算传锚日）
  * @param endExclusive 统计区间终点（不含）；逾期统计传「今天」——当天的应完成日期还不算错过
@@ -33,7 +39,30 @@ fun RepeatRule.occurrencesBetween(
 ): List<IsoDate> {
     // 无重复没有序列可言
     if (type == RepeatType.None) return emptyList()
-    if (anchor.epochDay >= endExclusive.epochDay) return emptyList()
+    // 日期档：终点取 endDate 与统计终点的较早者（endDate 当天不含，重复于该日期前停止）
+    val effectiveEnd = if (endType == RepeatEndType.Date && endDate != null &&
+        endDate.epochDay < endExclusive.epochDay
+    ) {
+        endDate
+    } else {
+        endExclusive
+    }
+    if (anchor.epochDay >= effectiveEnd.epochDay) return emptyList()
+    // 次数档：只放行前 N 期（缺值/非正为外来脏数据，防御性不截断，归一化已消洗）
+    val countCap = if (endType == RepeatEndType.Count) endCount?.takeIf { it >= 1 } else null
+    var seriesIndex = 0
+    var seriesLast: IsoDate? = null
+
+    // 系列成员（≥ 锚日、< 终点）逐个记账，再按统计窗口与次数上限放行；月末收拢可能撞出
+    // 同日（如每月 30/31 号在 2 月都落在 2/28），同日只记一期
+    fun accept(date: IsoDate): Boolean {
+        if (date.epochDay < anchor.epochDay || date.epochDay >= effectiveEnd.epochDay) return false
+        if (date != seriesLast) {
+            seriesIndex++
+            seriesLast = date
+        }
+        return countCap == null || seriesIndex <= countCap
+    }
     // 展开参数：预设档位映射到固定单位（间隔 1、无方格，锚定锚日期自身属性，unit/interval/
     // marks 字段不参与——它们的值恒为默认）；自定义档位读自身字段（间隔夹紧、方格按单位
     // 合法域过滤）
@@ -60,8 +89,8 @@ fun RepeatRule.occurrencesBetween(
         RepeatUnit.Day -> {
             var date = anchor
             var step = 0
-            while (date.epochDay < endExclusive.epochDay && step < MAX_PERIODS) {
-                if (date.epochDay >= startInclusive.epochDay) hits.add(date)
+            while (date.epochDay < effectiveEnd.epochDay && step < MAX_PERIODS) {
+                if (accept(date) && date.epochDay >= startInclusive.epochDay) hits.add(date)
                 date += stepInterval
                 step++
             }
@@ -72,13 +101,10 @@ fun RepeatRule.occurrencesBetween(
             val weekdays = stepMarks.ifEmpty { sortedSetOf(anchor.isoDayOfWeek()) }
             var weekStart = anchor.mondayOfWeek()
             var step = 0
-            while (weekStart.epochDay < endExclusive.epochDay && step < MAX_PERIODS) {
+            while (weekStart.epochDay < effectiveEnd.epochDay && step < MAX_PERIODS) {
                 for (weekday in weekdays) {
                     val date = weekStart + (weekday - 1)
-                    if (date.epochDay >= anchor.epochDay &&
-                        date.epochDay >= startInclusive.epochDay &&
-                        date.epochDay < endExclusive.epochDay
-                    ) {
+                    if (accept(date) && date.epochDay >= startInclusive.epochDay) {
                         hits.add(date)
                     }
                 }
@@ -94,13 +120,10 @@ fun RepeatRule.occurrencesBetween(
             val monthDays = stepMarks.ifEmpty { sortedSetOf(anchor.dayOfMonth()) }
             var monthDate = anchor
             var step = 0
-            while (monthDate.monthBegin().epochDay < endExclusive.epochDay && step < MAX_PERIODS) {
+            while (monthDate.monthBegin().epochDay < effectiveEnd.epochDay && step < MAX_PERIODS) {
                 for (day in monthDays) {
                     val date = monthDate.withDayOfMonthClamped(day)
-                    if (date.epochDay >= anchor.epochDay &&
-                        date.epochDay >= startInclusive.epochDay &&
-                        date.epochDay < endExclusive.epochDay
-                    ) {
+                    if (accept(date) && date.epochDay >= startInclusive.epochDay) {
                         hits.add(date)
                     }
                 }
@@ -115,13 +138,10 @@ fun RepeatRule.occurrencesBetween(
             val months = stepMarks.ifEmpty { sortedSetOf(anchor.monthOfYear()) }
             var yearDate = anchor
             var step = 0
-            while (yearDate.yearBegin().epochDay < endExclusive.epochDay && step < MAX_PERIODS) {
+            while (yearDate.yearBegin().epochDay < effectiveEnd.epochDay && step < MAX_PERIODS) {
                 for (month in months) {
                     val date = yearDate.withDayOfMonthClamped(anchor.dayOfMonth(), month)
-                    if (date.epochDay >= anchor.epochDay &&
-                        date.epochDay >= startInclusive.epochDay &&
-                        date.epochDay < endExclusive.epochDay
-                    ) {
+                    if (accept(date) && date.epochDay >= startInclusive.epochDay) {
                         hits.add(date)
                     }
                 }

@@ -32,6 +32,7 @@ import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.TagOpResult
 import com.fangyi.classpp.data.TagRepository
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatEndType
 import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
@@ -42,6 +43,7 @@ import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.cycleDays
+import com.fangyi.classpp.data.model.occurrencesBetween
 import com.fangyi.classpp.ui.components.BottomColorSelectCard
 import com.fangyi.classpp.ui.components.BottomDateSelectCard
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
@@ -174,6 +176,7 @@ internal fun NewTodoSheet(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val datesRequiredMessage = stringResource(R.string.todo_error_dates_required)
+    val repeatEndInvalidMessage = stringResource(R.string.repeat_end_invalid)
 
     // 标签数据：仓库为 null 仅首帧毫秒级（MainActivity 启动即装配），此时给空流兜底
     val userTagEntries by remember(tagRepository) {
@@ -290,6 +293,9 @@ internal fun NewTodoSheet(
                 }
                 if (timeKind != TodoTimeKind.None && dates.isEmpty()) {
                     AppToasts.show(context, datesRequiredMessage)
+                } else if (endRepeatInvalid(dateSelection)) {
+                    // 结束日期过早的二次拦截：重复浮层关闭后再改锚日期，日期档可能展不开首期
+                    AppToasts.show(context, repeatEndInvalidMessage)
                 } else {
                     // 编辑以 existing 为底 copy：id/完成状态/子步骤/创建时间原样保留，只覆盖表单字段
                     onConfirm(
@@ -686,6 +692,22 @@ internal fun Todo?.toDateSelection(): DateSelection {
         if (single == IsoDate.today() + 1) return DateSelection.Tomorrow
     }
     return DateSelection.Custom(dates.first(), repeat)
+}
+
+/**
+ * 结束日期过早（日期档下连首期都展不进「锚日 ~ 结束日期」窗口，即重复不了）：
+ * 保存前的二次拦截——重复浮层内已挡一次，关闭浮层后再改锚日期（如结束日期早于新日期）
+ * 只有这里能拦住，否则会落库一条列表里展不开的「幽灵」重复待办。与重复浮层确认共用
+ * [occurrencesBetween] 的口径。
+ */
+private fun endRepeatInvalid(selection: DateSelection): Boolean {
+    val custom = selection as? DateSelection.Custom ?: return false
+    val rule = custom.repeat
+    val endDate = rule.endDate
+    if (rule.type == RepeatType.None || rule.endType != RepeatEndType.Date || endDate == null) {
+        return false
+    }
+    return rule.occurrencesBetween(custom.date, custom.date, endDate).isEmpty()
 }
 
 /**
