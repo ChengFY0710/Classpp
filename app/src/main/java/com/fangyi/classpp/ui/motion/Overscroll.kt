@@ -577,8 +577,8 @@ fun Modifier.rubberBandHorizontalScroll(state: ScrollState): Modifier {
  *
  * 这一开关只改同一个 LazyColumn 调用点的 modifier 与参数，不写成 if/else 两处调用：
  * canScroll 翻转并不罕见（内容高度正好跨过一屏——如展开一个可收起分组），而列表整体重建
- * 会连它内部保存列表项状态的容器一起丢掉，列表项里 rememberSaveable 的展开态等会被重置
- * 回初值（原因与后果见下方实现处的注释）。
+ * 会连它内部保存列表项状态的容器一起丢掉，列表项里 rememberSaveable 持有的界面状态会被
+ * 重置回初值（原因与后果见下方实现处的注释）。
  *
  * 零消费状态与原速放行 fling 的作用同 [rubberBandVerticalScroll]（绕过派发门槛、
  * 不让「无位移的惯性动画」吃掉甩动速度）；效果渲染节点（[Modifier.overscroll]）挂在
@@ -617,9 +617,9 @@ fun RubberBandLazyColumn(
     }
     // 单一调用点：兜底开关只改 modifier 与参数，绝不写成 if/else 两个 LazyColumn。
     // 列表整体重建会连它内部保存列表项状态的容器一起丢掉（LazyLayout 的可保存状态容器
-    // 建在列表里），列表项中 rememberSaveable 持有的状态——如可收起分组的展开态——会被
-    // 重置回初值；而内容高度恰好跨过「不足一屏 ↔ 可滚」时兜底判据会翻转，于是展开
-    // 可收起分组这类操作会立刻被重置回收起，再点再重置（表现为怎么点都展不开）
+    // 建在列表里），列表项中 rememberSaveable 持有的界面状态会被重置回初值；而内容高度
+    // 恰好跨过「不足一屏 ↔ 可滚」时兜底判据会翻转——若此刻正有依赖项内保存状态的操作
+    // 进行中，状态会立刻被重置、再点再重置（表现为操作怎么点都不生效）
     LazyColumn(
         modifier = if (fallbackEffect != null) {
             modifier

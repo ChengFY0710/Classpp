@@ -189,7 +189,7 @@ fun CourseDetailSheet(
                 val today = LocalToday
                 val nowMinute = currentMinuteOfDay()
                 // 待办卡是直接排成一列的同型卡列表：整列收进一个无题 CardSection
-                //（组内 10dp 卡间距，与待办页 NoteCardSection 的节奏一致）
+                //（组内 10dp 卡间距，与待办页列表的节奏一致）
                 CardSection {
                     visibleTodos.forEach { todo ->
                         // 分期副本共用 id，key 带分期日期兜同屏重复（同 TodoScreen 侧滑 key 约定）

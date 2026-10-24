@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.note
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -29,6 +30,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.AppToasts
@@ -62,9 +65,8 @@ import com.fangyi.classpp.data.isOverdue
 import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.BottomFadeScrim
-import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.NoteCard
-import com.fangyi.classpp.ui.components.NoteCardSection
+import com.fangyi.classpp.ui.components.NoteCardSectionHeader
 import com.fangyi.classpp.ui.components.NoteCardSwipe
 import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.PopupMenuSection
@@ -75,6 +77,8 @@ import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.motion.TabTransitionState
+import com.fangyi.classpp.ui.theme.CardSectionSpacing
+import com.fangyi.classpp.ui.theme.CardSectionTitleSpacing
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
@@ -1028,6 +1032,36 @@ private val TodoSection.titleRes: Int
         TodoSection.Done -> R.string.todo_section_completed
     }
 
+/**
+ * 列表项 animateItem 三条规格：进场淡入 / 避让收拢 / 退场淡出——曲线与时长全从 [Motion]
+ * 取（TodoCardEnter/Place/ExitMillis，Decelerate/Accelerate 族对）。分区头与卡片、常规
+ * 列表与最近删除页共用同一套，同屏节奏才一致。
+ */
+private val TodoListFadeInSpec: FiniteAnimationSpec<Float> =
+    tween(durationMillis = Motion.TodoCardEnterMillis, easing = Motion.Decelerate)
+
+private val TodoListPlaceSpec: FiniteAnimationSpec<IntOffset> =
+    tween(durationMillis = Motion.TodoCardPlaceMillis, easing = Motion.Decelerate)
+
+private val TodoListFadeOutSpec: FiniteAnimationSpec<Float> =
+    tween(durationMillis = Motion.TodoCardExitMillis, easing = Motion.Accelerate)
+
+/**
+ * 待办列表项的 LazyColumn key：待办 id + 分期日期后缀（同侧滑互斥 key 口径）——重复
+ * 待办的展开副本同享一个 id，逐卡 item 靠日期后缀区分；"card_" 前缀与分区头的
+ * "header_" key 隔离命名空间。
+ */
+private fun Todo.listItemKey(): String =
+    "card_" + id + "#" + (dates.firstOrNull()?.epochDay?.toString() ?: "")
+
+/** 已折叠分区集的保存器：枚举按名字存取（未知名字丢弃，防枚举变更后恢复崩溃） */
+private val CollapsedSectionsSaver = listSaver<Set<TodoSection>, String>(
+    save = { sections -> sections.map(TodoSection::name) },
+    restore = { names ->
+        names.mapNotNull { name -> TodoSection.entries.firstOrNull { it.name == name } }.toSet()
+    },
+)
+
 /** 当前时刻的当天分钟数 0..1439（[Todo.isOverdue] 的 nowMinute 入参；课表页课程详情复用） */
 internal fun currentMinuteOfDay(): Int {
     val now = GregorianCalendar()
@@ -1088,7 +1122,14 @@ internal fun filterTodosByTag(todos: List<Todo>, tag: String): List<Todo> =
  * 未完成居中、已完成在下（默认收起），空组不渲染；
  * 组内按顶栏选定的排序与方向（默认创建时间降序——创建早的在前）。置顶条目归已置顶组、
  * 不再进其余三组（移动而非重复展示，同分组置顶的语义）。空组不渲染的另一条路是
- * 分类菜单：[visibleSections] 未含的组整组隐藏（默认全组可见）。卡片经 [TodoCard]
+ * 分类菜单：[visibleSections] 未含的组整组隐藏（默认全组可见）。渲染结构：分区头与
+ * 卡片各自是独立 LazyColumn item（头 key = "header_" + 分区名、卡 key 见
+ * [Todo.listItemKey]），每项挂 Modifier.animateItem——进出场淡入淡出与邻居避让收拢
+ * 全走 [TodoListFadeInSpec] / [TodoListPlaceSpec] / [TodoListFadeOutSpec] 三条规格
+ * （Motion.TodoCard* 令牌）：勾选完成/侧滑删除/置顶的跨组移动 = 原组退场 + 新组进场
+ * 两侧同时收拢，排序切换 = 组内避让，整组清空 = 分区头与余卡一起淡出。折叠即宿主停止
+ * 下发该组卡片项，收合同样由避让动画完成——分区头照常渲染（见 [NoteCardSectionHeader]），
+ * 折叠集由本组件持有（rememberSaveable，编辑态强制展开不写回）。卡片经 [TodoCard]
  * 接模型字段（时间文本 [cardTimeText]、标签、紧急旗），并支持左右侧滑呼出删除/置顶
  * 动作卡（两段式侧滑手势见 [NoteCardSwipeLayer]：首段拖拽仅呼出，展开态再拖满色才
  * 执行）：同一时刻至多一张展开（[swipeCoordinator]
@@ -1099,8 +1140,8 @@ internal fun filterTodosByTag(todos: List<Todo>, tag: String): List<Todo> =
  * 默认展开（规避「已完成默认收起」把整页收起来）；[emptyHint] = 过滤结果为空时的
  * 居中占位文案。「已置顶」页的卡片照常支持侧滑——单卡撤销置顶即从该页消失。
  *
- * 最近删除页（[deletedCards] = true）走另一条渲染分支：无标题 [CardSection] 把全部卡片
- * 平铺在一起（10dp 卡间距），不套四组分区头——条目由宿主按删除时刻倒序传入，与
+ * 最近删除页（[deletedCards] = true）走另一条渲染分支：卡片逐项平铺（无四组分区头、
+ * 同一套 animateItem 规格，卡间距走每项底部内距）——条目由宿主按删除时刻倒序传入，与
  * 「最近删除」的时间语义一致；卡片为已删除样式（右侧撤回按钮），左滑呼出「彻底删除」。
  *
  * 滚动容器为 [RubberBandLazyColumn]（页面 [ProvideOverscroll] 作用域内）：内容超一屏
@@ -1108,9 +1149,10 @@ internal fun filterTodosByTag(todos: List<Todo>, tag: String): List<Todo> =
  * 拦下的场景，由该封装的兜底手势层接管。
  *
  * 待办编辑态（[editing] = true，长按卡片进入，见 [TodoCard.onLongClick]）复用同一渲染
- * 转入选中形态：卡片点按由详情改为切换选中、长按停用，分组头经 [NoteCardSection.editMode]
- * 强制展开并把展开箭头换成「全选/取消全选」（按组内待办 id 整组增删 [selectedTodoIds]，
- * 重复待办的分期卡同享一个 id，整系列同选同撤），侧滑与完成勾选停用。
+ * 转入选中形态：卡片点按由详情改为切换选中、长按停用，分组头经
+ * [NoteCardSectionHeader.editMode] 把展开箭头换成「全选/取消全选」（按组内待办 id 整组
+ * 增删 [selectedTodoIds]，重复待办的分期卡同享一个 id，整系列同选同撤），卡片项强制
+ * 下发——渲染条件叠加而不写回折叠集，退出编辑恢复原折叠选择；侧滑与完成勾选停用。
  */
 @Composable
 private fun TodoList(
@@ -1173,6 +1215,20 @@ private fun TodoList(
                 ?.let { TodoSection.Done to it },
         )
     }
+    // 分区折叠态（原 NoteCardSection 组件内部的 rememberSaveable 提升至宿主）：旋转/切
+    // tab/进程重建不丢。编辑态的强制展开只是渲染条件叠加（卡片项下发条件 editing ||
+    // 未折叠），不写回这份集合，退出编辑自动恢复用户此前对各组的折叠选择。初始值沿用
+    // 旧口径——常规列表「已完成默认收起」、特殊页/标签页全展开；rememberSaveable 只在
+    // 首次组合取初值，expandAllSections 中途翻转不重置（与旧组件 init-once 语义一致）。
+    // 与旧实现的唯一行为差异：分区因清空而整体消失、之后再出现时，折叠选择不再重置
+    // 回初值——折叠是用户偏好，跟随而不是归零
+    var collapsedSections by rememberSaveable(stateSaver = CollapsedSectionsSaver) {
+        mutableStateOf(if (expandAllSections) emptySet() else setOf(TodoSection.Done))
+    }
+    val toggleSectionCollapsed: (TodoSection) -> Unit = { section ->
+        collapsedSections =
+            if (section in collapsedSections) collapsedSections - section else collapsedSections + section
+    }
     val density = LocalDensity.current
     val topInset = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
     val bottomInset = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
@@ -1186,8 +1242,9 @@ private fun TodoList(
         ),
     ) {
         if (deletedCards) {
-            // 最近删除页：整页收进一个无标题 CardSection 平铺（10dp 卡间距）——不套四组
-            // 分组头，顺序由宿主按删除时刻倒序给定；空列表沿用统一的居中占位文案
+            // 最近删除页：逐卡 item 平铺（无四组分组头，卡间距走每项底部内距、末卡不带）
+            // ——顺序由宿主按删除时刻倒序给定，与「最近删除」的时间语义一致；空列表沿用
+            // 统一的居中占位文案。撤回/彻底删除后卡片走 animateItem 退场，其余卡片避让收拢
             if (todos.isEmpty()) {
                 if (emptyHint != null) {
                     item(key = "emptyHint") {
@@ -1204,17 +1261,24 @@ private fun TodoList(
                     }
                 }
             } else {
-                item(key = "trashCards") {
-                    CardSection {
-                        todos.forEach { todo ->
-                            TrashedTodoCard(
-                                todo = todo,
-                                tagColors = tagColors,
-                                swipeCoordinator = swipeCoordinator,
-                                onRestore = { onRestoreTodo(todo.id) },
-                                onPurge = { onPurgeTodo(todo.id) },
-                            )
-                        }
+                todos.forEachIndexed { index, todo ->
+                    item(key = todo.listItemKey()) {
+                        TrashedTodoCard(
+                            todo = todo,
+                            tagColors = tagColors,
+                            swipeCoordinator = swipeCoordinator,
+                            onRestore = { onRestoreTodo(todo.id) },
+                            onPurge = { onPurgeTodo(todo.id) },
+                            modifier = Modifier
+                                .animateItem(
+                                    fadeInSpec = TodoListFadeInSpec,
+                                    placementSpec = TodoListPlaceSpec,
+                                    fadeOutSpec = TodoListFadeOutSpec,
+                                )
+                                .padding(
+                                    bottom = if (index < todos.lastIndex) CardSectionSpacing else 0.dp,
+                                ),
+                        )
                     }
                 }
             }
@@ -1236,13 +1300,17 @@ private fun TodoList(
                 }
             }
             sections.forEachIndexed { index, (section, group) ->
-                item(key = section.name) {
+                // 分区头独立成 item：整组清空时头与余卡一起走 animateItem 退场（淡出 +
+                // 邻组避让收拢），不再瞬时消失。组间距给首组之外的每组：首组贴列表起点，
+                // 再加间距会比下面的组低一截
+                item(key = "header_" + section.name) {
                     // 分组头「全选/取消全选」的口径：组内待办 id 集（分期卡同享 id，整系列同选同撤）
                     val sectionIds = remember(group) { group.map { it.id }.toSet() }
                     val allSelected = sectionIds.isNotEmpty() && sectionIds.all { it in selectedTodoIds }
-                    NoteCardSection(
+                    NoteCardSectionHeader(
                         title = stringResource(section.titleRes),
-                        initiallyExpanded = expandAllSections || section != TodoSection.Done,
+                        expanded = section !in collapsedSections,
+                        onToggleClick = { toggleSectionCollapsed(section) },
                         editMode = editing,
                         allSelected = allSelected,
                         onSelectAllToggle = if (editing) {
@@ -1250,10 +1318,23 @@ private fun TodoList(
                         } else {
                             null
                         },
-                        // 组间距给首组之外的每组：首组贴列表起点，再加间距会比下面的组低一截
-                        modifier = if (index > 0) Modifier.padding(top = SectionSpacing) else Modifier,
-                    ) {
-                        group.forEach { todo ->
+                        modifier = Modifier
+                            .animateItem(
+                                fadeInSpec = TodoListFadeInSpec,
+                                placementSpec = TodoListPlaceSpec,
+                                fadeOutSpec = TodoListFadeOutSpec,
+                            )
+                            .then(if (index > 0) Modifier.padding(top = SectionSpacing) else Modifier),
+                    )
+                }
+                // 卡片逐张成 item：进出场淡入淡出与邻居避让收拢全走 animateItem
+                //（TodoList*Spec 三条规格）。折叠 = 宿主不下发卡片项（编辑态强制下发、
+                // 不写回折叠集，退出编辑恢复原折叠选择）；卡间距走每项底部内距、末卡
+                // 不带——与旧 Column spacedBy「只在卡与卡之间留白」口径一致，末卡身份
+                // 随增删变化时的差值由避让动画顺滑带过
+                if (editing || section !in collapsedSections) {
+                    group.forEachIndexed { cardIndex, todo ->
+                        item(key = todo.listItemKey()) {
                             TodoCard(
                                 todo = todo,
                                 tagColors = tagColors,
@@ -1266,6 +1347,15 @@ private fun TodoList(
                                 // 编辑态点卡片（任意位置）切换选中，常规态拉起详情浮层
                                 onClick = { if (editing) onToggleSelect(todo.id) else onTodoClick(todo) },
                                 onLongClick = { onEnterEdit(todo.id) },
+                                modifier = Modifier
+                                    .animateItem(
+                                        fadeInSpec = TodoListFadeInSpec,
+                                        placementSpec = TodoListPlaceSpec,
+                                        fadeOutSpec = TodoListFadeOutSpec,
+                                    )
+                                    .padding(
+                                        bottom = if (cardIndex < group.lastIndex) CardSectionSpacing else 0.dp,
+                                    ),
                             ) { onToggleCompleted(todo, it) }
                         }
                     }
@@ -1305,9 +1395,12 @@ private fun TodoCard(
     onTogglePinned: () -> Unit,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    // 列表项级 modifier：animateItem（进出场/避让）与卡间距内距由宿主组装后传入
+    modifier: Modifier = Modifier,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     NoteCard(
+        modifier = modifier,
         title = todo.name,
         time = todo.cardTimeText(),
         deadline = todo.deadlineCardText(),
@@ -1370,8 +1463,11 @@ private fun TrashedTodoCard(
     swipeCoordinator: SwipeCoordinator,
     onRestore: () -> Unit,
     onPurge: () -> Unit,
+    // 列表项级 modifier：animateItem（进出场/避让）与卡间距内距由宿主组装后传入
+    modifier: Modifier = Modifier,
 ) {
     NoteCard(
+        modifier = modifier,
         title = todo.name,
         time = todo.cardTimeText(),
         deadline = todo.deadlineCardText(),

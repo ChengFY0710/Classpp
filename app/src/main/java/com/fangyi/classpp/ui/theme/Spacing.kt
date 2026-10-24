@@ -11,8 +11,9 @@ import androidx.compose.ui.unit.dp
 val PageHorizontalSpacing: Dp = 12.dp
 
 /**
- * 卡片分组（CardSection、NoteCardSection）内的纵向**卡间距（卡↔卡）**。
- * 两个组件共用它作默认值，设置页与各浮层（加课面板、新建待办、课表设置）都取默认，
+ * 卡片分组（CardSection）与待办列表逐卡项（TodoList 挂在每张卡 item 底部的内距）内的
+ * 纵向**卡间距（卡↔卡）**。
+ * 两个场景共用它作默认值，设置页与各浮层（加课面板、新建待办、课表设置）都取默认，
  * 不再逐处覆盖——改这一个值，全局卡片节奏同步。
  *
  * 「标题↔首卡」已与它解耦，另走 [CardSectionTitleSpacing]（当前同为 10dp，却是两个独立值）。
@@ -20,7 +21,8 @@ val PageHorizontalSpacing: Dp = 12.dp
 val CardSectionSpacing: Dp = 10.dp
 
 /**
- * 卡片分组**标题与其下方内容（首卡）**之间的间距：CardSection、NoteCardSection 共用。
+ * 卡片分组**标题与其下方内容（首卡）**之间的间距：CardSection 与待办列表分组头
+ * （NoteCardSectionHeader，内置在头组件里）共用。
  * 与 [CardSectionSpacing]（卡↔卡）是两个独立值——想让标题更贴近或更远离内容，
  * 只改这一个，卡片之间的节奏不受影响。
  */

@@ -162,6 +162,28 @@ object Motion {
      */
     const val TodoPillRowSnapMillis = 400
 
+    /**
+     * 待办列表卡片进场时长：列表项淡入（LazyColumn animateItem 的 fadeInSpec，TodoList）。
+     * 配合 [Decelerate]——起步即全速。animateItem 的进出场只动透明度、不动尺寸，占位
+     * 由邻居的避让动画让出，两条动画同帧启动才有「让位到位、内容渐显」的整体感。
+     */
+    const val TodoCardEnterMillis = 260
+
+    /**
+     * 待办列表卡片退场时长：列表项淡出（animateItem 的 fadeOutSpec）。配合 [Accelerate]
+     * ——与 [Decelerate] 成同族曲线对。条目移除时占位立即释放、其余项由避让动画滑合
+     * 缺口，淡出中的旧卡与滑上的邻居会有一瞬交叠——比进场短一拍，压短交叠窗口。
+     */
+    const val TodoCardExitMillis = 220
+
+    /**
+     * 待办列表卡片避让收拢时长：增删/跨组移动后，其余卡片与分区滑合缺口的节奏
+     * （animateItem 的 placementSpec）。配合 [Decelerate]——起步即全速、贴着上一帧的
+     * 内容位置跟手让位。与 [ReorderMillis] 同档（同为「条目避让位移」语义）但独立成
+     * token——那是分组管理页拖拽重排的节奏，跨屏共用会互相牵动。
+     */
+    const val TodoCardPlaceMillis = 220
+
     /** 标准曲线：先加速后减速，页面级进出场与弹出菜单的主曲线。 */
     val Standard: Easing = FastOutSlowInEasing
 

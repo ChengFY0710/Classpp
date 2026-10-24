@@ -252,7 +252,7 @@ internal enum class TodoSpecialSection(
  * 分类 / 视图 / 概览，「图标在上、标签在下」，课表编辑栏 EditAction 同规格）——
  * 动作行画在顶栏模糊层之上，模糊 Box 包裹整条 Column、随展开自动长高覆盖；
  * 进出场 expand/shrink + 淡入淡出（Motion.ExpandMillis，进场 Decelerate、退场
- * Accelerate，NoteCardSection 同款），列表让位由宿主按 [TopBarActionRowSpace]
+ * Accelerate，Expandable 同款），列表让位由宿主按 [TopBarActionRowSpace]
  * 同步让出。收起更多胶囊即收起动作行——排序菜单锚在动作行的排序块上，宿主收起时
  * 应同步关闭菜单（锚点随行消失）。
  *
@@ -513,7 +513,7 @@ internal fun TodoTopBar(
                     }
                 }
                 // 展开动作行：画在顶栏模糊层之上（外层 Box 包裹整条 Column、随展开自动
-                // 长高，模糊跟着覆盖）；进出场同 NoteCardSection——expand/shrink + 淡入
+                // 长高，模糊跟着覆盖）；进出场同 Expandable——expand/shrink + 淡入
                 // 淡出，Motion.ExpandMillis 一条时长，进场 Decelerate、退场 Accelerate。
                 // 列表让位由宿主按 TopBarActionRowSpace 用同帧同曲线动画同步让出
                 AnimatedVisibility(
