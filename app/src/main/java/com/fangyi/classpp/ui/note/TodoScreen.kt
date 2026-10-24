@@ -11,6 +11,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -36,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -105,7 +108,8 @@ private val TopBarRowSpace = 59.dp
 /**
  * 待办编辑顶栏在内容坐标系里的占位高（TodoEditBar 私有常量镜像）：状态栏之下 6dp 顶部
  * 留白 + 64dp 动作行。比常规顶栏（[TopBarRowSpace]）高出的部分进编辑时由
- * editBarExtraSpace 动画补差（列表让位），退出时收回。
+ * editBarExtraSpace 动画补差（列表让位；等长按手势松手才启动，见 TodoScreen 的
+ * editListReleased），退出时收回。
  */
 private val EditBarRowSpace = 70.dp
 
@@ -149,9 +153,14 @@ private val SectionSpacing = 20.dp
  * [enterTodoEdit]）：顶栏经 AnimatedContent 换场为编辑顶栏（[TodoEditBar]，删除/移动/
  * 同步/置顶/确认，规格与动画逐项对齐课表编辑顶栏，Motion.EditMillis + Standard），
  * 删除/置顶/移动批量作用于选中待办并即时落库（移动经 [GroupPickSheet] 点选目标分组），
- * 「确认」/系统返回退出（不设取消）；
+ * 「确认」/系统返回退出（不设取消，退出还原进编辑前的动作行展开状态）；
  * 卡片经 [NoteCard.selected] 转选中蓝框形态、分组头强制展开并把箭头换成「全选/取消
  * 全选」；编辑态下底部导航栏与渐隐遮罩下移出屏、侧滑与完成勾选停用。
+ * 长按命中（onLongClick 在超时即触发）时手指仍按在卡片上：顶栏换场与导航栏下移照旧
+ * 即时启动，列表内容的移动则推迟到本次手势结束——页面 Box 的 pointerInput 被动旁听
+ * 手势，编辑态内第一次「全部指针抬起」置真 [editListReleased]（松手闸门），编辑顶栏
+ * 让位补差、被顺手收起的动作行的让位追赶（[editEnterTopBarExtraSpace]）与收起组的
+ * 强制展开自此才开始，卡片不会在用户指下挪动。
  */
 @Composable
 fun TodoScreen(
@@ -185,10 +194,16 @@ fun TodoScreen(
     // （与课表编辑的草稿会话不同），「确认」只负责退出——不设取消，系统返回同语义
     var todoEditing by rememberSaveable { mutableStateOf(false) }
     var selectedTodoIds by rememberSaveable { mutableStateOf(emptySet<String>()) }
-    BackHandler(enabled = todoEditing) {
-        todoEditing = false
-        selectedTodoIds = emptySet()
-    }
+    // 列表内容的松手闸门：onLongClick 在长按超时即命中、手指仍按在卡上——顶栏换场与
+    // 导航栏下移照旧即时启动，但列表的移动（编辑顶栏让位补差 + 收起组强制展开）要等
+    // 松手，否则卡片在用户指下突然挪动。页面 Box 的 pointerInput 旁听每次手势，编辑态
+    // 内第一次全部指针抬起即置真；退出编辑复位。不 rememberSaveable：编辑态只在长按
+    // 手势进行中进入，进程重建等恢复场景手指必然已不在屏上，下一次点按的抬起会自愈置真
+    var editListReleased by remember { mutableStateOf(false) }
+    // 顶栏动作行的进编辑前展开状态：enterTodoEdit 收起动作行前快照，退出编辑（确认/
+    // 返回）时还原——编辑顶栏只是临时接管，不因一次编辑丢掉用户的展开偏好。
+    // rememberSaveable：与 todoEditing 同口径，进程重建恢复编辑态后退出照样还原
+    var menuExpandedBeforeEdit by rememberSaveable { mutableStateOf(false) }
     var selectedGroupIndex by rememberSaveable { mutableIntStateOf(0) }
     // 特殊分组页（已完成/未完成/已逾期/已置顶/已归档/最近删除）：分组浮层第一部分跳转进入，
     // 顶栏分组条首位出现对应胶囊并**常驻**——specialSection 记胶囊存在，specialActive 记
@@ -250,23 +265,36 @@ fun TodoScreen(
     }
     // 顶栏「更多」展开态：翻转展开/收起动作行（分组/排序/分类/视图/概览）
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
+    // 动作行让位的进编辑冻结快照：enterTodoEdit 在长按命中那一刻快照列表当前的让位值
+    // （topBarExtraSpace 的当前帧值），供下方冻结目标使用；无需复位——快照只在进入编辑
+    // 那一刻读取，编辑态期间动作行不可能再展开
+    var editEnterTopBarExtraSpace by remember { mutableStateOf(0.dp) }
     // 列表让位与顶栏展开同帧同曲线：动作行展开/收起都是 Motion.ExpandMillis 一条时长，
     // 进场 Decelerate、退场 Accelerate——与 TodoTopBar 的 AnimatedVisibility 同规格，
-    // 顶栏长高的同时列表同步下移，两者之间不露缝也不重叠
+    // 顶栏长高的同时列表同步下移，两者之间不露缝也不重叠。
+    // 例外：长按进编辑的手势期间（todoEditing 且未松手）目标冻结在快照上——enterTodoEdit
+    // 会顺手收起展开的动作行，让位归零的动画照常驱动顶栏自身，但列表不再跟随（卡片不能
+    // 在指下移动）；松手（editListReleased）后目标切回 menuExpanded 口径（彼时必为 0），
+    // 快照归零的追赶补差与编辑顶栏让位（editBarExtraSpace）同帧同曲线（EditMillis +
+    // Overlay），列表整段移动共享一条曲线
     val topBarExtraSpace by animateDpAsState(
-        targetValue = if (menuExpanded) TopBarActionRowSpace else 0.dp,
-        animationSpec = if (menuExpanded) {
-            tween(Motion.ExpandMillis, easing = Motion.Decelerate)
-        } else {
-            tween(Motion.ExpandMillis, easing = Motion.Accelerate)
+        targetValue = when {
+            todoEditing && !editListReleased -> editEnterTopBarExtraSpace
+            else -> if (menuExpanded) TopBarActionRowSpace else 0.dp
+        },
+        animationSpec = when {
+            todoEditing -> tween(Motion.EditMillis, easing = Motion.Overlay)
+            menuExpanded -> tween(Motion.ExpandMillis, easing = Motion.Decelerate)
+            else -> tween(Motion.ExpandMillis, easing = Motion.Accelerate)
         },
         label = "todoTopBarActionSpace",
     )
     // 编辑顶栏让位：编辑顶栏（状态栏下 6dp 留白 + 64dp 动作行）比常规顶栏高出的部分，
-    // 翻转时与底部遮罩/导航栏同帧同曲线（EditMillis + Overlay）补差，列表不被顶栏压住。
+    // EditMillis + Overlay 补差，列表不被顶栏压住。进编辑受 editListReleased 松手闸门
+    // （手指还按在卡上时列表不动，松手才补差），退出无闸门、与遮罩/导航栏同帧收回。
     // 与顶栏展开动作行的让位（上方 topBarExtraSpace）相互独立——两者叠加进 contentPadding
     val editBarExtraSpace by animateDpAsState(
-        targetValue = if (todoEditing) EditBarRowSpace - TopBarRowSpace else 0.dp,
+        targetValue = if (todoEditing && editListReleased) EditBarRowSpace - TopBarRowSpace else 0.dp,
         animationSpec = tween(Motion.EditMillis, easing = Motion.Overlay),
         label = "todoEditBarSpace",
     )
@@ -390,12 +418,18 @@ fun TodoScreen(
     }
 
     // 待办编辑三件套：进入（长按卡片，自动选中长按卡；顶栏展开的菜单/动作行与侧滑展开卡
-    // 一并收起——编辑顶栏取代顶栏后它们无处安放）、退出（确认/系统返回）、单卡选中切换
-    //（编辑态下点卡片任意位置，含勾选框区域）。
+    // 一并收起——编辑顶栏取代顶栏后它们无处安放；动作行展开状态经 menuExpandedBeforeEdit
+    // 快照待退出还原，动作行的列表让位冻结到松手见 topBarExtraSpace）、退出（确认/系统
+    // 返回，还原动作行展开状态）、单卡选中切换（编辑态下点卡片任意位置，含勾选框区域）。
     // 进入带可用性闸门：仅常规分组（全部/未分组/用户分组）与标签页可用——特殊分组页
     //（已完成/未完成/已逾期/已置顶/已归档/最近删除）本身是过滤口径，无编辑语义
     val enterTodoEdit: (String) -> Unit = { id ->
         if (!todoEditing && special == null) {
+            // 动作行展开中被长按：先快照（展开状态给退出还原用；列表让位值供
+            // topBarExtraSpace 冻结到松手——两者读的都是当前帧值，随后 menuExpanded
+            // 翻转不影响它们）
+            editEnterTopBarExtraSpace = topBarExtraSpace
+            menuExpandedBeforeEdit = menuExpanded
             todoEditing = true
             selectedTodoIds = setOf(id)
             menuExpanded = false
@@ -407,7 +441,12 @@ fun TodoScreen(
     val exitTodoEdit: () -> Unit = {
         todoEditing = false
         selectedTodoIds = emptySet()
+        editListReleased = false
+        menuExpanded = menuExpandedBeforeEdit
     }
+    // 系统返回同「确认」语义（注册在 swipeCoordinator 收起之后、各浮层之前——浮层自己的
+    // BackHandler 注册在后、优先级更高，浮层在场时先关浮层）
+    BackHandler(enabled = todoEditing, onBack = exitTodoEdit)
     val toggleTodoSelect: (String) -> Unit = { id ->
         selectedTodoIds = if (id in selectedTodoIds) selectedTodoIds - id else selectedTodoIds + id
     }
@@ -482,7 +521,20 @@ fun TodoScreen(
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
+                .background(MaterialTheme.colorScheme.background)
+                // 手势旁听器（GroupCard/DayScreen 的根级 awaitEachGesture 同款接法）：
+                // 不消费任何事件、不干扰子层点击/侧滑/滚动，只观察每次手势的「按下 →
+                // 全部抬起」——长按命中时那根手指还在屏上，编辑态内第一次全部抬起就是
+                // 它的松手（editListReleased 置真，列表让位与内容重排自此启动）
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        while (true) {
+                            if (awaitPointerEvent().changes.none { it.pressed }) break
+                        }
+                        if (todoEditing) editListReleased = true
+                    }
+                },
         ) {
             // 内容层：待办列表从顶栏毛玻璃下滚过（列表滚动到顶栏之下时被渐变模糊）
             Box(
@@ -540,8 +592,10 @@ fun TodoScreen(
                         editBarExtraSpace = editBarExtraSpace,
                         swipeCoordinator = swipeCoordinator,
                         // 待办编辑态：卡片转选中形态、分组头强制展开并换「全选/取消全选」、
-                        // 侧滑与勾选停用；进入闸门在 enterTodoEdit 内（特殊分组页关断）
-                        editing = todoEditing,
+                        // 侧滑与勾选停用；进入闸门在 enterTodoEdit 内（特殊分组页关断）。
+                        // 与 editBarExtraSpace 同受 editListReleased 松手闸门——列表内容
+                        // （含收起组的强制展开）等长按松手才重排
+                        editing = todoEditing && editListReleased,
                         selectedTodoIds = selectedTodoIds,
                         onEnterEdit = enterTodoEdit,
                         onToggleSelect = toggleTodoSelect,
@@ -615,7 +669,8 @@ fun TodoScreen(
             // 顶栏换场：常规顶栏上移淡出、编辑顶栏自上方下移淡入——课表编辑（ScheduleScreen
             // 的 topBarSwap）同规格：同一个 todoEditing 翻转同帧启动、450ms，顶栏换场另配
             // 更缓的 Motion.Standard（Overlay 前重后轻，顶栏会在前 ~100ms 窜完大半行程，
-            // 观感太急）；列表让位补差走 editBarExtraSpace（Overlay，与遮罩/导航栏同帧）
+            // 观感太急）；列表让位补差走 editBarExtraSpace（Overlay；进编辑等长按松手才
+            // 启动——见 editListReleased，退出时与遮罩/导航栏同帧收回）
             AnimatedContent(
                 targetState = !todoEditing,
                 contentAlignment = Alignment.TopCenter,
