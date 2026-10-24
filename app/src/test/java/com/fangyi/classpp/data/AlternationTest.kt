@@ -110,19 +110,19 @@ class AlternationTest {
     @Test
     fun firstUnusedColorSkipsColorsAlreadyInTheGroup() {
         val group = listOf(
-            testCourse(id = "a", day = 1, startSlot = 2, color = CourseColor.Blue),
-            testCourse(id = "b", day = 1, startSlot = 2, color = CourseColor.Green),
+            testCourse(id = "a", day = 1, startSlot = 2, color = CourseColor.Pink),
+            testCourse(id = "b", day = 1, startSlot = 2, color = CourseColor.Lilac),
         )
-        assertEquals(CourseColor.Greentwo, group.firstUnusedColor(1, 2, 2))
-        // 只按同组判断：别的天/别的节次用了什么配色不影响
-        assertEquals(CourseColor.Blue, group.firstUnusedColor(1, 4, 4))
+        assertEquals(CourseColor.Purple, group.firstUnusedColor(1, 2, 2))
+        // 只按同组判断：别的天/别的节次用了什么配色不影响（色板首位即缺省）
+        assertEquals(CourseColor.Pink, group.firstUnusedColor(1, 4, 4))
     }
 
     @Test
     fun firstUnusedColorCountsSpanIntersectingNeighbours() {
-        // 上方有一门跨节蓝课压到第 2 节：第 2 节的新交替课要避开蓝色，否则色条分不出来
-        val spanning = testCourse(id = "span", day = 1, startSlot = 1, span = 2, color = CourseColor.Blue)
-        assertEquals(CourseColor.Green, listOf(spanning).firstUnusedColor(1, 2, 2))
+        // 上方有一门跨节粉课压到第 2 节：第 2 节的新交替课要避开它，否则色条分不出来
+        val spanning = testCourse(id = "span", day = 1, startSlot = 1, span = 2, color = CourseColor.Pink)
+        assertEquals(CourseColor.Lilac, listOf(spanning).firstUnusedColor(1, 2, 2))
     }
 
     @Test

@@ -363,49 +363,57 @@ internal fun TodoGroupsSheet(
             // 分组编辑态与标签编辑态共用底部操作行（两者互斥，随当前编辑态切换内容）：
             // 分组多一颗置顶钮（标签无置顶语义）；重命名都是「选中恰好一个」时可点（多选
             // 置灰），标签额外要求选中的是用户标签——课程标签只读，选中含课程标签时
-            // 重命名/删除一并置灰
-            if (editing) {
-                EditActionRow(
-                    visible = true,
-                    showPin = true,
-                    pinAction = currentPinAction,
-                    hasSelection = selectedIds.isNotEmpty(),
-                    renameEnabled = selectedIds.size == 1,
-                    onPin = onPin,
-                    onRename = {
+            // 重命名/删除一并置灰。
+            // **必须保持单一调用点**：分组/标签的分支只能写进实参表达式与回调内部，不能
+            // 拆成 if/else 两个 EditActionRow——if/else 是两个组合槽位，切换时
+            // AnimatedVisibility 是整个挂载/卸载而非 visible 翻转，进出场滑入滑出动画会被
+            // 整体跳过（分支拆开后曾回归过：分组编辑态底栏瞬现瞬失）
+            val selectedGroups = displayGroups.filter { it.name in selectedIds }
+            val selectedTags = displayTags.filter { it.name in tagSelectedIds }
+            val courseSelected = selectedTags.any { it.isCourse }
+            EditActionRow(
+                visible = editing || tagEditing,
+                showPin = editing,
+                pinAction = if (editing) currentPinAction else PinAction.Disabled,
+                hasSelection = if (editing) {
+                    selectedGroups.isNotEmpty()
+                } else {
+                    selectedTags.isNotEmpty() && !courseSelected
+                },
+                renameEnabled = if (editing) {
+                    selectedGroups.size == 1
+                } else {
+                    selectedTags.size == 1 && !courseSelected
+                },
+                onPin = onPin,
+                onRename = {
+                    if (editing) {
                         // 目标 = 草稿里选中的那个组（改名立即生效，快照原组名与草稿初值）
-                        displayGroups.firstOrNull { it.name in selectedIds }?.let { target ->
+                        selectedGroups.firstOrNull()?.let { target ->
                             renameFrom = target.name
                             renameDraft = target.name
                             renameMounted = true
                             renameVisible = true
                         }
-                    },
-                    onDelete = { deleteTargets = displayGroups.filter { it.name in selectedIds }.map { it.name } },
-                )
-            } else {
-                val selectionRows = displayTags.filter { it.name in tagSelectedIds }
-                val courseSelected = selectionRows.any { it.isCourse }
-                EditActionRow(
-                    visible = tagEditing,
-                    showPin = false,
-                    pinAction = PinAction.Disabled,
-                    hasSelection = selectionRows.isNotEmpty() && !courseSelected,
-                    renameEnabled = selectionRows.size == 1 && !courseSelected,
-                    onPin = {},
-                    onRename = {
+                    } else {
                         // 目标 = 草稿里选中的那个用户标签（同分组：快照原名与草稿初值，确认立即生效）
-                        selectionRows.firstOrNull { !it.isCourse }?.let { target ->
+                        selectedTags.firstOrNull { !it.isCourse }?.let { target ->
                             tagRenameFrom = target.name
                             tagRenameDraft = target.name
                             tagRenameMounted = true
                             tagRenameVisible = true
                         }
-                    },
-                    // 课程标签只读，防御性滤除（门槛置灰后本就不会出现在删除目标里）
-                    onDelete = { tagDeleteTargets = selectionRows.filterNot { it.isCourse }.map { it.name } },
-                )
-            }
+                    }
+                },
+                onDelete = {
+                    if (editing) {
+                        deleteTargets = selectedGroups.map { it.name }
+                    } else {
+                        // 课程标签只读，防御性滤除（门槛置灰后本就不会出现在删除目标里）
+                        tagDeleteTargets = selectedTags.filterNot { it.isCourse }.map { it.name }
+                    }
+                },
+            )
         },
         modifier = modifier,
     ) {
@@ -741,6 +749,12 @@ internal fun TodoGroupsSheet(
  * 出 [Motion.SheetExitMillis]），与浮层本体同一套手感。渐变兜底 + 12/24 内距 +
  * 导航栏留白在这里自绘自持（OverlaySheet 传 `bottomScrim = false` 只给钉底定位）——
  * 规格随动画层整体移动，非编辑态不残留底部薄纱。胶囊参数同切换课表浮层的导入/导出按钮。
+ *
+ * **退场动画期间内容冻结**：退编辑瞬间 [visible] 翻假的同时，调用方的 showPin 已翻假、
+ * 选中集已清空（hasSelection/renameEnabled 跟着翻假）——若胶囊直接跟随新参数，三颗会在
+ * 滑出动画中瞬间变两颗（置顶钮被卸载）、着色瞬变灰。故记住**最后一次可见时**的参数作为
+ * 退场期间的内容，动画播完自然消失；[visible] 再翻真（另一种编辑态进场）时立即换新参数，
+ * 进场动画照常播新内容。
  */
 @Composable
 private fun EditActionRow(
@@ -753,6 +767,19 @@ private fun EditActionRow(
     onRename: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val current = EditActionRowParams(
+        showPin = showPin,
+        pinAction = pinAction,
+        hasSelection = hasSelection,
+        renameEnabled = renameEnabled,
+        onPin = onPin,
+        onRename = onRename,
+        onDelete = onDelete,
+    )
+    val shown = remember { mutableStateOf(current) }
+    // 可见期间同步最新参数（同 rememberUpdatedState 的组合期写入约定）；退场后不再跟随
+    if (visible) shown.value = current
+    val params = if (visible) current else shown.value
     AnimatedVisibility(
         visible = visible,
         enter = slideInVertically(tween(Motion.SheetEnterMillis, easing = Motion.Overlay)) { it } +
@@ -781,16 +808,16 @@ private fun EditActionRow(
             ) {
                 // 置灰统一用 theme 的 negative（弱化规范色，非危险色）；可点时置顶蓝、删除红
                 val negative = MaterialTheme.classppColors.negative
-                val pinEnabled = pinAction != PinAction.Disabled
-                if (showPin) {
+                val pinEnabled = params.pinAction != PinAction.Disabled
+                if (params.showPin) {
                     SheetPillButton(
                         label = stringResource(
-                            if (pinAction == PinAction.Unpin) R.string.settings_cancel else R.string.edit_pin,
+                            if (params.pinAction == PinAction.Unpin) R.string.settings_cancel else R.string.edit_pin,
                         ),
-                        icon = if (pinAction == PinAction.Unpin) R.drawable.ic_pin_off else R.drawable.ic_pin,
+                        icon = if (params.pinAction == PinAction.Unpin) R.drawable.ic_pin_off else R.drawable.ic_pin,
                         containerColor = MaterialTheme.colorScheme.surface,
                         contentColor = if (pinEnabled) MaterialTheme.colorScheme.primary else negative,
-                        onClick = onPin,
+                        onClick = params.onPin,
                         enabled = pinEnabled,
                         iconSize = 25.dp,
                         topPadding = 10.dp,
@@ -803,9 +830,9 @@ private fun EditActionRow(
                     label = stringResource(R.string.edit_rename),
                     icon = R.drawable.ic_rename,
                     containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = if (renameEnabled) MaterialTheme.colorScheme.primary else negative,
-                    onClick = onRename,
-                    enabled = renameEnabled,
+                    contentColor = if (params.renameEnabled) MaterialTheme.colorScheme.primary else negative,
+                    onClick = params.onRename,
+                    enabled = params.renameEnabled,
                     iconSize = 25.dp,
                     topPadding = 10.dp,
                     bottomPadding = 10.dp,
@@ -816,9 +843,9 @@ private fun EditActionRow(
                     label = stringResource(R.string.edit_delete),
                     icon = R.drawable.ic_delete,
                     containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = if (hasSelection) MaterialTheme.colorScheme.error else negative,
-                    onClick = onDelete,
-                    enabled = hasSelection,
+                    contentColor = if (params.hasSelection) MaterialTheme.colorScheme.error else negative,
+                    onClick = params.onDelete,
+                    enabled = params.hasSelection,
                     iconSize = 25.dp,
                     topPadding = 10.dp,
                     bottomPadding = 10.dp,
@@ -829,6 +856,20 @@ private fun EditActionRow(
         }
     }
 }
+
+/**
+ * [EditActionRow] 的内容参数快照：退场动画期间冻结最后一次可见时的形态（见其 KDoc），
+ * 回调一并冻结——退场途中误触也作用于退场前的选中目标，而不是对已清空的选中集空跑。
+ */
+private data class EditActionRowParams(
+    val showPin: Boolean,
+    val pinAction: PinAction,
+    val hasSelection: Boolean,
+    val renameEnabled: Boolean,
+    val onPin: () -> Unit,
+    val onRename: () -> Unit,
+    val onDelete: () -> Unit,
+)
 
 /**
  * 删除确认框：[ConfirmDialogCard] 白卡 + 遮罩，叠加在浮层**之后**组合——返回键时后注册的
