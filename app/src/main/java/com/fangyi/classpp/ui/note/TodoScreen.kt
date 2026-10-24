@@ -238,10 +238,11 @@ fun TodoScreen(
     val todoPinnedMessage = stringResource(R.string.toast_todo_pinned)
     val todoUnpinnedMessage = stringResource(R.string.toast_todo_unpinned)
     // 分组写回统一入口：新建（浮层追加）、确认（置顶/重排草稿）、删除（滤除）、重命名
-    // （立即生效）共用——整表交仓库 setGroups 落盘（被删组的待办由仓库级联回未分组）；
+    // （立即生效）共用——整表连 renames 交仓库 setGroups 落盘：被删组的待办由仓库级联回
+    // 未分组，重命名组（renames 映射，原名 → 新名）的待办归属同一次提交跟随到新名；
     // 顶栏过滤下标按原组名跟随（下标按位置存，重排后不跟随会指错组）：仅 2 起的用户
     // 分组下标需要跟随，0（全部）/1（未分组）与分组编辑无关；选中的组被重命名时经
-    // [renames] 映射（原名 → 新名）跟随到新名字；组被删则 indexOfFirst 得 -1 → 回 0（全部）
+    // [renames] 映射跟随到新名字；组被删则 indexOfFirst 得 -1 → 回 0（全部）
     val commitGroups: (List<TodoGroup>, Map<String, String>) -> Unit = { newGroups, renames ->
         if (selectedGroupIndex >= 2) {
             val selectedName = groups.getOrNull(selectedGroupIndex - 2)?.name
@@ -252,7 +253,7 @@ fun TodoScreen(
             selectedGroupIndex = if (newIndex >= 0) newIndex + 2 else 0
         }
         scope.launch {
-            if (repository.setGroups(newGroups) is TodoOpResult.Err) {
+            if (repository.setGroups(newGroups, renames) is TodoOpResult.Err) {
                 AppToasts.show(context, groupSaveFailedMessage)
             }
         }

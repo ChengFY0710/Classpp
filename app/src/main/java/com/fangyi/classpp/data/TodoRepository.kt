@@ -28,7 +28,8 @@ import kotlinx.coroutines.withContext
 /**
  * 待办仓库：内存真源（StateFlow）+ 磁盘持久化（[TodoStore]），与 ScheduleRepository 同构。
  * 同时持有**待办分组**（[TodoFile.groups]）：与待办同文件、同 mutex 原子写入，
- * 删除分组经 [setGroups] 级联把该组待办置回未分组。
+ * 删除分组经 [setGroups] 级联把该组待办置回未分组；重命名分组经 [setGroups] 的 renames
+ * 映射让该组待办的归属同一次提交跟随到新名。
  *
  * **软删除（最近删除）**：删除统一是软删——[removeTodo] / [removeTodos] 只写
  * [Todo.deletedAtMillis]，条目仍留在 todos.json；读侧按标记分成两个流：
@@ -182,20 +183,29 @@ class TodoRepository internal constructor(
         }
 
     /**
-     * 分组整表替换：新建（追加）、置顶/重排（调用方重排后写回）、删除（滤除）共用这一个入口。
+     * 分组整表替换：新建（追加）、置顶/重排（调用方重排后写回）、删除（滤除）、重命名共用这一个入口。
      *
      * 归一化：name trim、空白丢弃、按名去重（保留首个），并做置顶连续前缀稳定划分
      * （`filter { pinned } + filter { !pinned }`，维持 TodoGroup/GroupCard 契约）。
-     * 级联：本次被移除的组，其待办的 group 一并清回 null——与分组表**同一次 commit 原子落盘**，
-     * 不会出现悬挂引用。失败内存零变更（同其余写 API）。
+     * 重命名跟随：[renames]（本次的原名 → 新名映射）在级联**之前**应用到待办的 group——
+     * 改名后的新名已在 [newGroups] 里，引用因此同一次 commit 原子跟随，不会因旧名不在
+     * 新表而被误级联成未分组（改名丢归属）；映射外的引用照常走级联规则。
+     * 级联：本次被移除的组（含被删组），其待办的 group 一并清回 null——与分组表**同一次
+     * commit 原子落盘**，不会出现悬挂引用。失败内存零变更（同其余写 API）。
      */
-    suspend fun setGroups(newGroups: List<TodoGroup>): TodoOpResult = mutex.withLock {
+    suspend fun setGroups(
+        newGroups: List<TodoGroup>,
+        renames: Map<String, String> = emptyMap(),
+    ): TodoOpResult = mutex.withLock {
         val normalized = normalizeGroups(newGroups)
         val kept = normalized.mapTo(mutableSetOf()) { it.name }
         val current = fileState.value
-        // 级联 = 对每条待办做一次分组引用归一化（trim + 成员检查，同 normalize 的 group 规则）
+        // 重命名跟随 + 级联 = 对每条待办做一次分组引用归一化（trim + 重命名映射 + 成员检查，
+        // 同 normalize 的 group 规则）
         val cascaded = current.todos.map { todo ->
-            val group = todo.group?.trim()?.takeIf { it in kept }
+            val group = todo.group?.trim()
+                ?.let { renames[it] ?: it }
+                ?.takeIf { it in kept }
             if (group != todo.group) todo.copy(group = group) else todo
         }
         commit(current.copy(groups = normalized, todos = cascaded))

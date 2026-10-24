@@ -448,6 +448,42 @@ class TodoRepositoryTest {
     }
 
     @Test
+    fun `renaming group keeps its todos following the renames mapping`() = runBlocking {
+        val r = repo()
+        r.setGroups(listOf(TodoGroup("作业"), TodoGroup("日常琐事"))).assertOk()
+        val a = r.addTodo(testTodo(name = "A", group = "作业")).okId()
+        val b = r.addTodo(testTodo(name = "B", group = "日常琐事")).okId()
+
+        // 整表替换 + 重命名映射：该组待办的归属同一次提交跟随到新名，不因旧名不在新表
+        // 被级联成未分组（改名丢归属的回归防线）
+        r.setGroups(
+            listOf(TodoGroup("日常作业"), TodoGroup("日常琐事")),
+            renames = mapOf("作业" to "日常作业"),
+        ).assertOk()
+
+        assertEquals(listOf("日常作业", "日常琐事"), r.groups.value.map { it.name })
+        assertEquals("日常作业", r.todos.value.single { it.id == a }.group)
+        assertEquals("日常琐事", r.todos.value.single { it.id == b }.group)
+
+        val reopened = repo()
+        assertEquals(listOf("日常作业", "日常琐事"), reopened.groups.value.map { it.name })
+        assertEquals("日常作业", reopened.todos.value.single { it.id == a }.group)
+    }
+
+    @Test
+    fun `rename mapping to a missing new group still cascades to ungrouped`() = runBlocking {
+        val r = repo()
+        r.setGroups(listOf(TodoGroup("作业"))).assertOk()
+        val id = r.addTodo(testTodo(name = "A", group = "作业")).okId()
+
+        // 防御：映射目标不在新表（调用方 bug）时按级联规则兜底回未分组，不留悬挂引用
+        r.setGroups(emptyList(), renames = mapOf("作业" to "新组")).assertOk()
+
+        assertTrue(r.groups.value.isEmpty())
+        assertNull(r.todos.value.single { it.id == id }.group)
+    }
+
+    @Test
     fun `todo writes do not lose groups`() = runBlocking {
         val r = repo()
         r.setGroups(listOf(TodoGroup("作业"))).assertOk()
