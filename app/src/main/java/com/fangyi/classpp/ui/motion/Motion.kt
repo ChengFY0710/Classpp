@@ -189,6 +189,54 @@ object Motion {
      */
     const val TodoCardPlaceMillis = 220
 
+    /**
+     * 待办列表卡片进场的延迟：animateItem 的 fadeInSpec 用带 delay 的 tween（TodoList）
+     * ——退场卡先谢幕一拍，同位置补位的新卡才淡入。重复待办完成一期后窗口前移，「下一期」
+     * 卡与刚退场的卡内容几乎相同、又大概率落在同一位置，若与退场淡出交叉同跑，观感就是
+     * 同一张卡闪了一下；延迟让两段动画错开（退场 [TodoCardExitMillis] 先走完大半），完成
+     * 读作「勾上的卡退场、下一天再出现」。折叠展开、恢复删除等其余进场同样吃到这一拍，
+     * 统一为「先腾位、再现身」的节奏（与 [TodoPillEnterMillis] 的胶囊编排同语义）。
+     */
+    const val TodoCardEnterDelayMillis = 120
+
+    /**
+     * 待办勾选完成的「停一拍」：勾选手势先在 UI 层乐观生效（TodoScreen 的 completionEcho
+     * 回显覆盖卡片完成态，勾选与划线动画当帧起播），延后本值再落库——仓库回流触发的
+     * 列表重排（退场/避让/补位进场）等完成反馈播完才开始，反馈不被重排动画截断。
+     * 取值盖过 Checkbox 勾选与 NoteCard 划线过渡（[FastMillis]）的时长即可。
+     */
+    const val TodoCardCompleteSettleMillis = 180
+
+    /**
+     * 待办倒计时完成退场时长：卡片左区倒计时标签「左移淡出」的节奏（NoteCard 的
+     * CountdownExitSlot，勾选完成当帧起播）。配合 [Accelerate]——退场收场，与划线
+     * 过渡（[FastMillis]）几乎同时起播、同时档收束。
+     */
+    const val TodoCountdownExitMillis = 160
+
+    /**
+     * 待办倒计时退场时右区内容跟随的启动延迟：标签先走、内容随后跟上——倒计时左移
+     * 淡出先播一拍，槽位收拢（内容左移让位）延后本值再启动，「先…跟随」的两段错拍。
+     * 取消完成的入场（标签淡入回归、内容右移让位）用同一拍镜像。
+     */
+    const val TodoCountdownFollowDelayMillis = 60
+
+    /**
+     * 待办倒计时让位后右区内容跟随左移的时长：倒计时槽位宽度从自然宽收缩到 0（或反向
+     * 张回）的节奏，内容由布局自动跟随。配合 [Decelerate]——与 [TodoCardPlaceMillis]
+     * 同语义（条目内让位位移）但独立成 token：那是列表级避让收拢，这是卡内让位，
+     * 跨效果共用会互相牵动。
+     */
+    const val TodoCountdownFollowMillis = 180
+
+    /**
+     * 开倒计时的待办勾选完成的「停一拍」：[TodoCardCompleteSettleMillis] 的倒计时版。
+     * 取值盖过倒计时退场与内容跟随的总长（[TodoCountdownExitMillis] 与
+     * [TodoCountdownFollowDelayMillis] + [TodoCountdownFollowMillis] 取大者），倒计时
+     * 待办的完成反馈比普通待办多一拍，播完再落库、列表重排才开始。
+     */
+    const val TodoCountdownCompleteSettleMillis = 260
+
     /** 标准曲线：先加速后减速，页面级进出场与弹出菜单的主曲线。 */
     val Standard: Easing = FastOutSlowInEasing
 

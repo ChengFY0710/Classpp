@@ -1,6 +1,8 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -26,20 +28,28 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -57,6 +67,9 @@ import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.kyant.shapes.RoundedRectangle
 import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * 属性行横向间距：时间项之间、时间项与首个标签之间取 [PropertySpacing]（12dp）；
@@ -89,6 +102,12 @@ private val TitlePropertySpacing = 2.dp
 private val CountdownNumberFontSize = 25.sp
 private val CountdownUnitFontSize = 12.sp
 private val CountdownEndSpacing = 16.dp
+
+/**
+ * 倒计时完成退场的左移幅度（CountdownExitSlot）：标签淡出时向卡边漂移的距离——
+ * 收在 16dp 卡横向内距内，不会被卡片 clip（NoteCardShape）裁掉。
+ */
+private val CountdownExitSlide = 12.dp
 
 /**
  * 时间/截止/重复属性项：18dp 图标 + 文本（同色），图标与文字相距 4dp（同 TagChip）。
@@ -186,6 +205,43 @@ private fun CountdownLabel(
 }
 
 /**
+ * 倒计时进出场槽位（编排见 [NoteCard] 内的注释块）：[slotProgress] 1→0 时槽位宽度从
+ * 内容自然宽（标签 + [CountdownEndSpacing]）收缩到 0——右区内容列 weight(1f) 由布局
+ * 自动跟随左移；内容本体按 [labelProgress] 向左漂移 [CountdownExitSlide] 并淡出。
+ * 两个进度分开驱动，「标签先走、内容跟随」的错拍由调用方编排保证。测孩子放开 minWidth，
+ * 混排 Text 才能在 Row 的约束下取到固有宽。
+ */
+@Composable
+private fun CountdownExitSlot(
+    days: Long,
+    tint: Color,
+    labelProgress: Float,
+    slotProgress: Float,
+) {
+    Row(
+        modifier = Modifier.layout { measurable, constraints ->
+            val placeable = measurable.measure(constraints.copy(minWidth = 0))
+            layout(
+                width = (placeable.width * slotProgress).roundToInt(),
+                height = placeable.height,
+            ) {
+                placeable.placeRelative(0, 0)
+            }
+        },
+    ) {
+        Row(
+            modifier = Modifier.graphicsLayer {
+                alpha = labelProgress
+                translationX = -CountdownExitSlide.toPx() * (1f - labelProgress)
+            },
+        ) {
+            CountdownLabel(days = days, tint = tint)
+            Spacer(Modifier.width(CountdownEndSpacing))
+        }
+    }
+}
+
+/**
  * 待办卡片：左侧倒计时（可选）+ 标题 + 属性行（待办时间、截止时间、标签，自动换行）+ 右侧紧急旗帜与勾选框。
  *
  * - 颜色全部取自主题：卡片底 surface，标题 fieldLabel（onSurface），旗帜按 [urgency]
@@ -202,13 +258,17 @@ private fun CountdownLabel(
  * - [countdownDays] 左侧倒计时，开关即是否传值（见 [CountdownLabel]）：非 null 时在内容列
  *   左侧画倒计时，≥0 显「N天」、<0 显「逾期N天」，取色直接复用 [deadlineColor]——与右侧
  *   截止时间同色同逻辑；null（用户关闭 / 无截止日期）整个元素不渲染、不占位；
- *   完成态（[completed] = true）同样不渲染、不占位——标记完成后倒计时退场；
+ *   完成态（[completed] = true）同样不渲染、不占位——但不是瞬时增删：标记完成后标签
+ *   「左移淡出」退场、槽位收拢让右区内容跟随左移，取消完成反向入场（见 CountdownExitSlot）；
+ *   若 [countdownDays] 本身变 null（浮层里关掉开关）则维持旧口径直接收场，不走动画；
  * - 各时间项缺席时均不占位，属性行整体走 FlowRow，放不下自动换行；
  * - 行内横向间距：时间项之间、时间项与首个标签之间 12dp，标签之间 8dp（见 [PropertySpacing] /
  *   [TagSpacing]——FlowRow 行距统一取后者，时间项靠末位内距补差）；
  * - [urgency] 紧急档位：非 None 才画旗，None 不画（列表默认形态无旗）；
- * - [completed] 完成态：标题划线置灰（时间/标签/旗帜不变），勾选框选中；
- *   左区倒计时随完成隐藏（即使 [countdownDays] 有值），取消完成后自动恢复；
+ * - [completed] 完成态：标题划线置灰（时间/标签/旗帜不变），勾选框选中——切换带过渡
+ *   动画（颜色渐变 + 删除线按进度自绘「划过去」，取消完成反向擦除，见 titleStyle 处）；
+ *   左区倒计时随完成「左移淡出」退场、右区内容跟随左移（即使 [countdownDays] 有值），
+ *   取消完成后反向入场恢复；
  * - [overdue] 逾期态：标题标红（theme 的 error，时间/标签/旗帜不变）；完成态优先于逾期态；
  * - [deleted] 已删除样式（最近删除页）：右侧勾选框换成 24dp 撤回按钮（ic_arrow_reset，
  *   theme 的 error 色），点按回调 [onRestore]；其余样式与普通卡完全一致——唯一区别是右侧；
@@ -255,16 +315,27 @@ fun NoteCard(
     onLongClick: (() -> Unit)? = null,
     swipe: NoteCardSwipe? = null,
 ) {
-    val titleStyle = when {
-        completed -> MaterialTheme.classppTextStyles.fieldLabel.copy(
-            color = MaterialTheme.classppColors.secondaryText,
-            textDecoration = TextDecoration.LineThrough,
-        )
-        overdue -> MaterialTheme.classppTextStyles.fieldLabel.copy(
-            color = MaterialTheme.colorScheme.error,
-        )
-        else -> MaterialTheme.classppTextStyles.fieldLabel
-    }
+    // 完成态过渡：删除线不再用 TextDecoration（只能整体开关，无动画）——颜色渐变 +
+    // 按进度自绘（见标题 Text 的 drawBehind）。颜色端点同旧口径：completed 优先于
+    // overdue（都真时取完成灰），普通态取 fieldLabel 自带的 onSurface
+    val completedProgress by animateFloatAsState(
+        targetValue = if (completed) 1f else 0f,
+        animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
+        label = "noteCardCompletedStrike",
+    )
+    val titleColor by animateColorAsState(
+        targetValue = when {
+            completed -> MaterialTheme.classppColors.secondaryText
+            overdue -> MaterialTheme.colorScheme.error
+            else -> MaterialTheme.colorScheme.onSurface
+        },
+        animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
+        label = "noteCardTitleColor",
+    )
+    val titleStyle = MaterialTheme.classppTextStyles.fieldLabel.copy(color = titleColor)
+    // 标题布局结果（onTextLayout 回传，随文本/宽度变化刷新）：删除线自绘要按行取
+    // 基线与行宽，逐行揭示才能正确处理换行标题
+    var titleLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
     // 标签配色的回落色：配色表里没有的名字（含调用方未接线时）统一落主题 Primary
     val fallbackTagColor = MaterialTheme.colorScheme.primary
     // 选中蓝框（编辑态）：宽度与透明度共用同一条 0→1 进度动画，选中「生长+淡入」、
@@ -276,6 +347,47 @@ fun NoteCard(
     )
     val selectionStrokeColor = MaterialTheme.colorScheme.primary
     val selectionStrokeWidth = 2.dp * selectionProgress
+    // 倒计时进出场编排：目标态 = 有天数且未完成。完成/取消完成不再瞬时卸载/恢复，
+    // 而是两条 Animatable 编排——标签「左移淡出」（alpha + 左移幅度）与槽位宽度收拢
+    // （右区内容由布局跟随左移），取消完成镜像入场。shown 控制是否参与组合：退场动画
+    // 播完才卸载；初值取首帧目标态，常驻展示的卡不会起播一条无谓动画。快速连点时
+    // LaunchedEffect 重启，Animatable 从当前值自然反转，「播完再卸载」随取消自动作废
+    val countdownTarget = countdownDays != null && !completed
+    var countdownShown by remember { mutableStateOf(countdownTarget) }
+    val countdownLabelProgress = remember { Animatable(if (countdownTarget) 1f else 0f) }
+    val countdownSlotProgress = remember { Animatable(if (countdownTarget) 1f else 0f) }
+    LaunchedEffect(countdownTarget) {
+        if (countdownTarget) {
+            // 入场（取消完成，与退场互为倒带）：标签先从左淡入回归，槽位延后一拍张回，
+            // 内容右移让位
+            countdownShown = true
+            launch {
+                countdownLabelProgress.animateTo(
+                    1f,
+                    tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
+                )
+            }
+            delay(Motion.TodoCountdownFollowDelayMillis.toLong())
+            countdownSlotProgress.animateTo(
+                1f,
+                tween(durationMillis = Motion.TodoCountdownFollowMillis, easing = Motion.Decelerate),
+            )
+        } else {
+            // 退场（完成）：标签先左移淡出，槽位收拢延后一拍启动，内容跟随滑入让位
+            launch {
+                countdownLabelProgress.animateTo(
+                    0f,
+                    tween(durationMillis = Motion.TodoCountdownExitMillis, easing = Motion.Accelerate),
+                )
+            }
+            delay(Motion.TodoCountdownFollowDelayMillis.toLong())
+            countdownSlotProgress.animateTo(
+                0f,
+                tween(durationMillis = Motion.TodoCountdownFollowMillis, easing = Motion.Decelerate),
+            )
+            countdownShown = false
+        }
+    }
     // 侧滑层：swipe 非 null 时卡片包进侧滑层（左右滑呼出动作卡），下方 Row 原样不动；
     // null = 不加层，输出与无侧滑时完全一致。[modifier] 挂在侧滑层之外（整卡节点）——
     // 列表项级 animateItem 与卡间距内距由宿主挂这里、不进卡内 Row：动作卡经
@@ -325,12 +437,16 @@ fun NoteCard(
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 倒计时（传值即开启；完成态退场——标记完成后不再展示，原有天数在取消完成后自动回来）：
+            // 倒计时（传值即开启；完成/取消完成走上方编排的动画进出场，不再瞬时增删）：
             // 卡片左区独占块，垂直居中随外层 Row 的 CenterVertically；
-            // 内容列 weight(1f) 自动让宽，右侧旗帜与勾选框布局不受影响
-            if (countdownDays != null && !completed) {
-                CountdownLabel(days = countdownDays, tint = deadlineColor)
-                Spacer(Modifier.width(CountdownEndSpacing))
+            // 槽位收拢后内容列 weight(1f) 自动占满让出的宽，右侧旗帜与勾选框布局不受影响
+            if (countdownShown && countdownDays != null) {
+                CountdownExitSlot(
+                    days = countdownDays,
+                    tint = deadlineColor,
+                    labelProgress = countdownLabelProgress.value,
+                    slotProgress = countdownSlotProgress.value,
+                )
             }
             Column(
                 modifier = Modifier.weight(1f),
@@ -339,6 +455,33 @@ fun NoteCard(
                 Text(
                     text = title,
                     style = titleStyle,
+                    onTextLayout = { titleLayout = it },
+                    modifier = Modifier.drawBehind {
+                        val layout = titleLayout ?: return@drawBehind
+                        if (completedProgress <= 0f) return@drawBehind
+                        // 删除线按进度从行首向行尾揭示（多行标题按行序擦过去），取消完成
+                        // 反向擦除。位置取基线上方 0.3×字号（平台 LineThrough 的常规视觉位），
+                        // 线宽 1dp 与 16sp 字号的系统删除线粗细相当；平头端帽对齐系统样式
+                        val fontPx = titleStyle.fontSize.toPx()
+                        var total = 0f
+                        for (line in 0 until layout.lineCount) {
+                            total += layout.getLineRight(line) - layout.getLineLeft(line)
+                        }
+                        var budget = total * completedProgress
+                        for (line in 0 until layout.lineCount) {
+                            if (budget <= 0f) break
+                            val left = layout.getLineLeft(line)
+                            val drawn = minOf(layout.getLineRight(line) - left, budget)
+                            budget -= drawn
+                            drawLine(
+                                color = titleColor,
+                                start = Offset(left, layout.getLineBaseline(line) - fontPx * 0.30f),
+                                end = Offset(left + drawn, layout.getLineBaseline(line) - fontPx * 0.30f),
+                                strokeWidth = 1.dp.toPx(),
+                                cap = StrokeCap.Butt,
+                            )
+                        }
+                    },
                 )
                 if (time != null || deadline != null || repeat != null || tags.isNotEmpty()) {
                     FlowRow(

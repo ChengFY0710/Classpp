@@ -13,6 +13,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.lazy.LazyListLayoutInfo
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -55,6 +57,7 @@ import com.fangyi.classpp.data.TodoReadResult
 import com.fangyi.classpp.data.TodoOpResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.TodoSort
+import com.fangyi.classpp.data.comparator
 import com.fangyi.classpp.data.expandRepeatOccurrences
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
@@ -90,6 +93,7 @@ import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.util.GregorianCalendar
@@ -513,6 +517,66 @@ fun TodoScreen(
         }
     }
 
+    // 勾选完成的乐观回显（列表项 key → 目标完成态，key 口径同 [Todo.listItemKey]）：
+    // 仓库是「落盘成功才发布」（Mutex + IO 写文件），点勾到数据回流之间有几十毫秒死区，
+    // 且分期卡是被列表数据「移除」而非改值——animateItem 的退场淡出复用最后一次组合
+    // 内容，勾选动画从头到尾没机会播，卡片是「没勾上就消失」。回显让 NoteCard 的完成态
+    // 由它覆盖仓库值，勾选/划线动画手势当帧起播；停一拍（普通待办
+    // Motion.TodoCardCompleteSettleMillis，开倒计时的取倒计时版多留一拍，等倒计时
+    // 退场与内容跟随播完）再落库，完成反馈播完列表重排（退场/避让/补位进场）才开始。
+    // 普通待办与分期卡同一套
+    var completionEcho by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+    // 「飞入已完成组」的完成副本登记（元素 = 基础 key，口径见 [Todo.listItemKeyBase]）：
+    // 勾选时刻由列表按落点可见性判定写入（shouldFlyCompletedIntoView），命中的完成副本
+    // 渲染原 key 走同 key 位移「飞入」，其余带 #done 段走「退场 + 入场」。取消完成不在
+    // 点按帧动它（完成副本还在场，换 key 会当帧凭空闪一下退场+入场），等写入结算后
+    // 清理：Ok 才清（条目已离场，防残留影响下次完成判定），Err 保留（卡片留在已完成
+    // 组，key 必须维持原样）
+    var flyDoneKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val toggleTodoCompleted: (Todo, Boolean, Boolean) -> Unit = { todo, completed, flyIntoDone ->
+        val date = todo.dates.firstOrNull()
+        // 重复待办但展不开分期日期（无 dates 的异常形态）：与旧行为一致不结算，
+        // 也不置回显——置了没有写入来结算，勾选会卡在假完成态
+        if (todo.repeat.type == RepeatType.None || date != null) {
+            // 回显 key 先于 fly 记账读取：必须与被点卡片当前的渲染 key 一致（完成方向点的
+            // 是未完成卡、key 恒为基础段；取消完成点的完成副本是否带 #done 由现有登记定）
+            val echoKey = todo.listItemKey(flyDoneKeys)
+            val flyKey = todo.listItemKeyBase()
+            // fly 记账只在完成方向写：副本此刻尚不存在，改 key 无闪烁；判定随勾选事件
+            // 一次性生效，之后不随重组重算（key 帧间稳定）
+            if (completed) {
+                flyDoneKeys = if (flyIntoDone) flyDoneKeys + flyKey else flyDoneKeys - flyKey
+            }
+            completionEcho = completionEcho + (echoKey to completed)
+            scope.launch {
+                delay(
+                    if (todo.countdown) {
+                        Motion.TodoCountdownCompleteSettleMillis
+                    } else {
+                        Motion.TodoCardCompleteSettleMillis
+                    }.toLong(),
+                )
+                val result = if (todo.repeat.type != RepeatType.None && date != null) {
+                    repository.setOccurrenceCompleted(todo.id, date, completed)
+                } else {
+                    repository.setCompleted(todo.id, completed)
+                }
+                // Ok 在仓库 publish 之后返回（数据已含本次写入），Err 则数据未动——两种
+                // 结算都是清掉「仍是本值」的回显：期间被再次点击覆盖成反向值则保留，
+                // 等反向写入自己结算，避免把用户刚点的状态闪回去；Err 另 Toast 提示
+                if (completionEcho[echoKey] == completed) {
+                    completionEcho = completionEcho - echoKey
+                }
+                if (!completed && result is TodoOpResult.Ok) {
+                    flyDoneKeys = flyDoneKeys - flyKey
+                }
+                if (result is TodoOpResult.Err) {
+                    AppToasts.show(context, groupSaveFailedMessage)
+                }
+            }
+        }
+    }
+
     // 整页（列表 + 顶栏）滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的
     // ProvideOverscroll）：列表滚到顶/底后继续拖动，内容整块被拉出边缘、越拉越硬，
     // 松手无过冲弹回；顶栏分组胶囊（rubberBandHorizontalScroll）同享。平移露出的是
@@ -597,22 +661,16 @@ fun TodoScreen(
                         // （含收起组的强制展开）等长按松手才重排
                         editing = todoEditing && editListReleased,
                         selectedTodoIds = selectedTodoIds,
+                        // 勾选完成的乐观回显：卡片完成态由它覆盖仓库值（见上方 completionEcho）
+                        completionEcho = completionEcho,
+                        // 「飞入已完成组」登记（见上方 flyDoneKeys）：命中的完成副本同 key 位移
+                        flyDoneKeys = flyDoneKeys,
                         onEnterEdit = enterTodoEdit,
                         onToggleSelect = toggleTodoSelect,
                         onToggleSelectAll = toggleTodoSelectAll,
-                        // 勾选路由：分期卡（重复待办的展开副本，dates[0] 即分期日期）走逐期
-                        // 结算，普通待办走整条完成
-                        onToggleCompleted = { todo, completed ->
-                            scope.launch {
-                                if (todo.repeat.type != RepeatType.None) {
-                                    todo.dates.firstOrNull()?.let { date ->
-                                        repository.setOccurrenceCompleted(todo.id, date, completed)
-                                    }
-                                } else {
-                                    repository.setCompleted(todo.id, completed)
-                                }
-                            }
-                        },
+                        // 勾选路由：乐观回显 + 停一拍落库，分期卡按 dates[0] 逐期结算、
+                        // 普通待办整条完成（见上方 completionEcho / toggleTodoCompleted）
+                        onToggleCompleted = toggleTodoCompleted,
                         // 侧滑置顶：写回仓库后卡片随分组移动（移入/移出「已置顶」组），Toast 同步反馈
                         onTogglePinned = { id, pinned ->
                             scope.launch {
@@ -1119,11 +1177,17 @@ private val TodoSection.titleRes: Int
 
 /**
  * 列表项 animateItem 三条规格：进场淡入 / 避让收拢 / 退场淡出——曲线与时长全从 [Motion]
- * 取（TodoCardEnter/Place/ExitMillis，Decelerate/Accelerate 族对）。分区头与卡片、常规
- * 列表与最近删除页共用同一套，同屏节奏才一致。
+ * 取（TodoCardEnter/Place/ExitMillis，Decelerate/Accelerate 族对）。进场淡入带
+ * TodoCardEnterDelayMillis 延迟：退场卡先谢幕一拍，同位置补位的新卡（重复待办完成后
+ * 前移的「下一期」）才淡入，两段内容几乎相同的交叉动画错开，完成不再读作闪烁。
+ * 分区头与卡片、常规列表与最近删除页共用同一套，同屏节奏才一致。
  */
 private val TodoListFadeInSpec: FiniteAnimationSpec<Float> =
-    tween(durationMillis = Motion.TodoCardEnterMillis, easing = Motion.Decelerate)
+    tween(
+        durationMillis = Motion.TodoCardEnterMillis,
+        delayMillis = Motion.TodoCardEnterDelayMillis,
+        easing = Motion.Decelerate,
+    )
 
 private val TodoListPlaceSpec: FiniteAnimationSpec<IntOffset> =
     tween(durationMillis = Motion.TodoCardPlaceMillis, easing = Motion.Decelerate)
@@ -1131,13 +1195,57 @@ private val TodoListPlaceSpec: FiniteAnimationSpec<IntOffset> =
 private val TodoListFadeOutSpec: FiniteAnimationSpec<Float> =
     tween(durationMillis = Motion.TodoCardExitMillis, easing = Motion.Accelerate)
 
-/**
- * 待办列表项的 LazyColumn key：待办 id + 分期日期后缀（同侧滑互斥 key 口径）——重复
- * 待办的展开副本同享一个 id，逐卡 item 靠日期后缀区分；"card_" 前缀与分区头的
- * "header_" key 隔离命名空间。
- */
-private fun Todo.listItemKey(): String =
+/** 完成副本与未完成副本共享的基础 key（不含完成态段）：待办 id + 分期日期后缀（同侧滑互斥 key 口径） */
+private fun Todo.listItemKeyBase(): String =
     "card_" + id + "#" + (dates.firstOrNull()?.epochDay?.toString() ?: "")
+
+/**
+ * 待办列表项的 LazyColumn key：基础 key（[listItemKeyBase]）之上，完成副本默认追加
+ * "#done" 段。完成态分段是刻意的：勾选完成/取消完成时条目会在未完成/已完成两组间换位，
+ * 若两组共用同一 key，LazyColumn 把它当作**同一条目的位移**——落点在视口附近时是好看
+ * 的「飞入已完成组」，但已完成列表超过一屏时落点远离视口，220ms 的避让动画会让卡片从
+ * 原位掠过整屏直坠组内（item 出窗即被回收时则直接消失），读作闪烁。
+ *
+ * 折中（飞入手感与远近稳定兼得）：勾选时刻由列表按落点可见性一次性判定
+ * （[shouldFlyCompletedIntoView]），判可飞入的完成副本由宿主登记进 [flyDoneKeys]、渲染
+ * 原 key（同 key 位移 = 飞入）；其余完成副本带 "#done" 段走「原组退场淡出 + 新组延迟
+ * 淡入」（与分组折叠的进出场同构，远近都稳）。登记只在勾选事件写入、不随重组重算，
+ * key 在帧间保持稳定。乐观回显（TodoScreen 的 completionEcho）按被点卡片自身的 key
+ * 读写，两种副本各取各的段，回显不会错位。
+ * "card_" 前缀与分区头的 "header_" key 隔离命名空间。
+ */
+private fun Todo.listItemKey(flyDoneKeys: Set<String>): String {
+    val base = listItemKeyBase()
+    return if (completed && base !in flyDoneKeys) base + "#done" else base
+}
+
+/**
+ * 「飞入已完成组」的落点可见性判定（勾选时刻一次性快照，结果由宿主记入 flyDoneKeys）：
+ * 已完成组展开、分组头在视口内、且完成副本按排序将落入的条目（分组头下方第 N 张卡，
+ * 卡高用视口内卡片的实测高近似）顶端仍在视口内，才同 key 飞入——落点远离视口时飞入
+ * 会掠过整屏，退回「退场 + 入场」。被点卡片必然可见而已完成组整体在其下方，分组头
+ * 可见性即是落点远近的充分代理；估计只需分辨屏内/屏外，一张卡高的误差可容忍。
+ */
+private fun shouldFlyCompletedIntoView(
+    layoutInfo: LazyListLayoutInfo,
+    doneCards: List<Todo>,
+    copy: Todo,
+    sort: TodoSort,
+    sortDescending: Boolean,
+): Boolean {
+    if (doneCards.isEmpty()) return false
+    val visible = layoutInfo.visibleItemsInfo
+    val header = visible.firstOrNull { it.key == "header_" + TodoSection.Done.name } ?: return false
+    val cardHeight = visible.firstOrNull { (it.key as? String)?.startsWith("card_") == true }?.size ?: return false
+    if (cardHeight <= 0) return false
+    // 与实际列表序一致的比较器：sortedFor 是稳定排序，同键并列保持分期升序（同系列
+    // 完成副本按 epochDay 依次排布），补一条 epochDay 升序次级键才能数对落点位
+    val comparator = sort.comparator(sortDescending)
+        .then(compareBy<Todo> { it.dates.firstOrNull()?.epochDay ?: Long.MIN_VALUE })
+    val landingIndex = doneCards.count { comparator.compare(it, copy) < 0 }
+    val landingTop = header.offset + header.size + landingIndex * cardHeight
+    return landingTop >= layoutInfo.viewportStartOffset && landingTop < layoutInfo.viewportEndOffset
+}
 
 /** CrossPages 页面 key 的前缀（本文件私有）：前缀决定身份段，解码只按前缀 removePrefix */
 private const val TodoPageKeyGroupPrefix = "group_"
@@ -1290,14 +1398,23 @@ private fun TodoList(
     editing: Boolean = false,
     // 编辑态选中集（待办 id；重复待办整系列共享一个 id）
     selectedTodoIds: Set<String> = emptySet(),
+    // 勾选完成的乐观回显（列表项 key → 目标完成态，宿主持有）：卡片完成态由它覆盖
+    // 仓库值，点勾当帧先播勾选/划线动画，仓库回流后由宿主清条目（见 TodoScreen 的
+    // completionEcho）；缺席条目照常读仓库值
+    completionEcho: Map<String, Boolean> = emptyMap(),
+    // 「飞入已完成组」的完成副本登记（基础 key 集，宿主持有）：命中的完成副本渲染原
+    // key 走同 key 位移「飞入」，其余带 #done 段走退场+入场（见 [Todo.listItemKey]）
+    flyDoneKeys: Set<String> = emptySet(),
     // 长按卡片进编辑（可用性闸门在宿主回调内：特殊分组页关断）；编辑态下卡片长按不触发
     onEnterEdit: (String) -> Unit = {},
     // 编辑态单卡选中切换
     onToggleSelect: (String) -> Unit = {},
     // 编辑态分组头「全选/取消全选」：整组待办 id 并入（select = true）/移出选中集
     onToggleSelectAll: (Set<String>, select: Boolean) -> Unit = { _, _ -> },
-    // 待办整条传入而非只传 id：分期卡（重复待办的展开副本）要靠 dates[0] 路由到逐期结算
-    onToggleCompleted: (todo: Todo, completed: Boolean) -> Unit,
+    // 待办整条传入而非只传 id：分期卡（重复待办的展开副本）要靠 dates[0] 路由到逐期结算；
+    // 第三参 flyIntoDone = 勾选时刻的落点可见性判定（是否同 key 飞入已完成组，见
+    // shouldFlyCompletedIntoView），宿主据此维护 flyDoneKeys
+    onToggleCompleted: (todo: Todo, completed: Boolean, flyIntoDone: Boolean) -> Unit,
     onTogglePinned: (id: String, pinned: Boolean) -> Unit,
     onDeleteTodo: (id: String) -> Unit,
     onRestoreTodo: (id: String) -> Unit = {},
@@ -1346,8 +1463,28 @@ private fun TodoList(
     val density = LocalDensity.current
     val topInset = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
     val bottomInset = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
+    // 列表状态提升到本组件（RubberBandLazyColumn 本有默认参数，显式传入）：勾选路由要读
+    // layoutInfo 判定「飞入已完成组」的落点可见性（见 onCardToggleCompleted）
+    val listState = rememberLazyListState()
+    // 勾选路由包装：完成方向先按当前布局一次性判定落点可见性（快照经回调交给宿主记入
+    // flyDoneKeys，key 方案见 [Todo.listItemKey]），再交宿主落库；已完成组收起时无落点
+    // 可言、直接不飞。取消完成不判定——飞回与否由完成时的登记决定（见 TodoScreen
+    // toggleTodoCompleted 的取消结算）
+    val onCardToggleCompleted: (Todo, Boolean) -> Unit = { todo, completed ->
+        val flyIntoDone = completed &&
+            TodoSection.Done !in collapsedSections &&
+            shouldFlyCompletedIntoView(
+                layoutInfo = listState.layoutInfo,
+                doneCards = sections.firstOrNull { it.first == TodoSection.Done }?.second.orEmpty(),
+                copy = todo.copy(completed = true),
+                sort = sort,
+                sortDescending = sortDescending,
+            )
+        onToggleCompleted(todo, completed, flyIntoDone)
+    }
     RubberBandLazyColumn(
         modifier = modifier.fillMaxSize(),
+        state = listState,
         contentPadding = PaddingValues(
             top = topInset + TopBarRowSpace + ListTopSpacing + topBarExtraSpace + editBarExtraSpace,
             bottom = bottomInset + ListBottomSlack,
@@ -1376,7 +1513,7 @@ private fun TodoList(
                 }
             } else {
                 todos.forEachIndexed { index, todo ->
-                    item(key = todo.listItemKey()) {
+                    item(key = todo.listItemKey(flyDoneKeys)) {
                         TrashedTodoCard(
                             todo = todo,
                             tagColors = tagColors,
@@ -1448,9 +1585,11 @@ private fun TodoList(
                 // 随增删变化时的差值由避让动画顺滑带过
                 if (editing || section !in collapsedSections) {
                     group.forEachIndexed { cardIndex, todo ->
-                        item(key = todo.listItemKey()) {
+                        item(key = todo.listItemKey(flyDoneKeys)) {
                             TodoCard(
                                 todo = todo,
+                                // 完成态先经乐观回显覆盖（见 TodoScreen 的 completionEcho）
+                                completed = completionEcho[todo.listItemKey(flyDoneKeys)] ?: todo.completed,
                                 tagColors = tagColors,
                                 overdue = section == TodoSection.Overdue,
                                 editing = editing,
@@ -1470,7 +1609,7 @@ private fun TodoList(
                                     .padding(
                                         bottom = if (cardIndex < group.lastIndex) CardSectionSpacing else 0.dp,
                                     ),
-                            ) { onToggleCompleted(todo, it) }
+                            ) { onCardToggleCompleted(todo, it) }
                         }
                     }
                 }
@@ -1497,6 +1636,8 @@ private fun TodoList(
 @Composable
 private fun TodoCard(
     todo: Todo,
+    // 完成态（宿主解析后传入）：乐观回显覆盖仓库值，驱动 NoteCard 的勾选框与划线过渡
+    completed: Boolean,
     // 标签配色表（标签名 → 颜色）：透传给 NoteCard 的 tagColors
     tagColors: Map<String, Color>,
     overdue: Boolean,
@@ -1525,7 +1666,7 @@ private fun TodoCard(
         tags = todo.tags,
         tagColors = tagColors,
         urgency = todo.urgency,
-        completed = todo.completed,
+        completed = completed,
         overdue = overdue,
         onClick = onClick,
         onCheckedChange = if (editing) null else onCheckedChange,
