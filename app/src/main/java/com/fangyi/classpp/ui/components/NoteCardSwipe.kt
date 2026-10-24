@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.detectHorizontalSwipeGestures
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.NoteCardShape
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -73,6 +74,13 @@ private val SwipeIconRevealSpan = 36.dp
 
 /** 删除飞出后等待落盘驱动的离场时长；超时仍在本组合（落盘失败）则自动滑回复位 */
 private const val SwipeDeleteRestoreDelayMillis = 400L
+
+/**
+ * 点按动作卡执行的「变长变色」补装时长：从呼出位补播到触发阈值（[SwipeFillSpan] 行程），
+ * 复刻执行会话拖满色的收尾视觉。拖拽由手指速度决定节奏，点按取固定一拍——配合
+ * [Motion.Decelerate]（起步即全速，与微交互族一致），随后立即进入执行收场。
+ */
+private const val SwipeTapFillMillis = 240
 
 /**
  * 侧滑动作：[NoteCardSwipe] 的单侧动作定义——图标、取色与业务回调。
@@ -124,7 +132,8 @@ class SwipeCoordinator {
  *   拖拽上限 = [SwipeExecuteOffset]，到顶钉住；
  * - 第一阶段·呼出（从收起态起手的拖拽）：全程不变色、永不执行——拉到钉住点松手也只回
  *   [SwipeOpenOffset]（按钮露出状态）；[SwipeOpenOffset] 以下松手回弹收起。展开态下
- *   动作卡可直接点按执行、点卡片主体收起；
+ *   动作卡可直接点按执行（按压反馈同主体卡；点按先从呼出位补播「变长变色」到触发阈值
+ *   ——与拖满色同视觉、同触感，再走同一条执行收场）、点卡片主体（含间距）收起；
  * - 第二阶段·执行（从展开态起手的同向拖拽）：越过 [SwipeOpenOffset] 继续跟手位移并开始
  *   渐变变色——背景 surface → [SwipeAction.activeColor]、图标动作色 →
  *   [SwipeAction.onActiveColor]（[SwipeFillSpan] 内过渡到位）；拖到 [SwipeExecuteOffset]
@@ -139,6 +148,11 @@ class SwipeCoordinator {
  * 中途倾斜也不切走；判定竖滑则立即让位，列表滚动/橡皮筋正常接管。位移经 lambda 式
  * offset 应用，拖拽全程卡片内容零重组。互斥经 [SwipeCoordinator]：起手即清掉他卡展开态、
  * 自身吸附展开时登记自己，页面层 BackHandler 置 null 时所有展开卡监听收起。
+ *
+ * 动作卡的可点按是条件挂载的（见 [SwipeActionButton]）：呼出后才挂——收起态宽度为 0 的
+ * 可点击节点会被 Compose 按 48dp 最小触控目标向外扩展命中区（约 24dp「幽灵热区」），卡片
+ * 内容没有可点击节点覆盖时（最近删除页卡片、详情浮层步骤卡均无 onClick），贴边点按会落进
+ * 热区直接执行动作；条件挂载后收起态无热区，贴边点按回归卡片本体。
  *
  * [swipe] 为 null 时原样输出 [content]（不加层、不包 Box），未接入侧滑的使用处零影响。
  */
@@ -175,6 +189,10 @@ fun NoteCardSwipeLayer(
     // 执行会话是否已拖到触发阈值（完全变色，到顶震一次；回落到填充中段以下才解除——
     // 钉住处手指抖动不反复触发触感）；呼出会话恒为 false
     var armed by remember(swipe.key) { mutableStateOf(false) }
+    // 点按动作卡执行的「变长变色」补装侧记（±1 = 在播的一侧，0 = 不在播）：点按入口先从
+    // 呼出位补播到触发阈值再走执行收场，期间填充进度按它映射——sessionFromOpen 是拖拽
+    // 会话专属（从收起态呼出的卡上它是 false），点按不能借用，故单独立此状态
+    var tapFillSign by remember(swipe.key) { mutableFloatStateOf(0f) }
     // 动作执行中（飞出/回弹 + 回调）：屏蔽协调器联动收起，避免执行途中被拽回
     var executing by remember(swipe.key) { mutableStateOf(false) }
     // 容器宽度：删除飞出的目标位移（整卡完全滑出屏幕）
@@ -195,10 +213,21 @@ fun NoteCardSwipeLayer(
         if (s.coordinator.activeKey != s.key) s.coordinator.activeKey = s.key
     }
 
-    // 执行动作：删除侧先整卡飞出再回调（留延时兜底落盘失败的复位），置顶侧先回弹归位再回调
-    suspend fun execute(action: SwipeAction, sign: Float) {
+    // 执行动作：fromTap（点按动作卡）先从呼出位补播「变长变色」到触发阈值——与执行会话
+    // 拖满色的收尾段同一视觉（动作卡变长 + 背景/图标渐变到动作色），到顶触发同一记长按
+    // 触感，随后走与拖拽松手完全相同的收场：删除侧先整卡飞出再回调（留延时兜底落盘失败
+    // 的复位），置顶侧先回弹归位再回调
+    suspend fun execute(action: SwipeAction, sign: Float, fromTap: Boolean = false) {
         executing = true
         try {
+            if (fromTap) {
+                // 点按期间填充进度由 tapFillSign 驱动：先清掉拖拽会话的填充权——会话符号
+                // 在「穿越零点收场展开」后可能与当前呼出侧相反（settle→openTo 不改会话态）
+                sessionFromOpen = false
+                tapFillSign = sign
+                offset.animateTo(sign * executePx, tween(SwipeTapFillMillis, easing = Motion.Decelerate))
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
             if (sign > 0) {
                 offset.animateTo(
                     maxOf(layerWidthPx, maxPx.roundToInt()).toFloat() * sign,
@@ -216,6 +245,7 @@ fun NoteCardSwipeLayer(
                 action.onAction()
             }
         } finally {
+            tapFillSign = 0f
             executing = false
             // 执行即离场/归位：让出互斥标记，页面层 BackHandler 随之失效（删除路径已提前清，此处兜底）
             val s = currentSwipe
@@ -288,7 +318,8 @@ fun NoteCardSwipeLayer(
             content()
         }
         // 展开态点卡片主体 = 收起（拦截卡片自身的点击/勾选）；夹在主体卡与动作卡之间，
-        // 动作卡层在其上、点按不受影响。clickable 不消费移动事件，纵向滚动与续拖不受阻
+        // 动作卡层在其上——呼出的按钮区域点按直达动作卡（可点按执行），其余区域落到此层收起。
+        // clickable 不消费移动事件，纵向滚动与续拖不受阻
         if (isOpen) {
             Box(
                 Modifier
@@ -302,22 +333,26 @@ fun NoteCardSwipeLayer(
             )
         }
         // 动作卡层：matchParentSize 撑满卡片实测尺寸（高度与主体卡完全相同），
-        // 左右各按呼出宽度渲染；动作卡只可能与主体卡并排出现（宽度归零即不可见），层级无遮挡
+        // 左右各按呼出宽度渲染；动作卡只可能与主体卡并排出现（宽度归零即不可见），层级无遮挡。
+        // 动作卡仅在呼出后可点按（点按先补播变长变色到触发阈值再执行，同拖满色视觉），
+        // 收起态宽度为 0 时不挂点按——避免最小触控目标扩展出的贴边幽灵热区（见 SwipeActionButton 注释）
         Box(Modifier.matchParentSize()) {
             val value = offset.value
-            // 填充进度仅执行会话（展开态起手、未反穿零点）生效：呼出会话恒 0——surface 底 + 彩色图标
+            // 填充侧记：执行会话（拖拽满色）用会话符号，点按执行动画用 tapFillSign；
+            // 其余（呼出会话、静止收起）恒 0——surface 底 + 彩色图标
+            val fillSign = if (sessionFromOpen) sessionSign else tapFillSign
             swipe.delete?.let { action ->
                 SwipeActionButton(
                     action = action,
                     revealedPx = value.coerceIn(0f, maxPx) - gapPx,
-                    fillProgress = if (sessionFromOpen && sessionSign > 0f) {
+                    fillProgress = if (fillSign > 0f) {
                         ((value.coerceIn(0f, maxPx) - openPx) / fillSpanPx).coerceIn(0f, 1f)
                     } else {
                         0f
                     },
                     surfaceColor = MaterialTheme.colorScheme.surface,
                     iconRevealPx = iconRevealPx,
-                    onClick = { scope.launch { execute(action, 1f) } },
+                    onClick = { scope.launch { execute(action, 1f, fromTap = true) } },
                     modifier = Modifier.align(Alignment.CenterStart),
                 )
             }
@@ -325,14 +360,14 @@ fun NoteCardSwipeLayer(
                 SwipeActionButton(
                     action = action,
                     revealedPx = (-value).coerceIn(0f, maxPx) - gapPx,
-                    fillProgress = if (sessionFromOpen && sessionSign < 0f) {
+                    fillProgress = if (fillSign < 0f) {
                         (((-value).coerceIn(0f, maxPx) - openPx) / fillSpanPx).coerceIn(0f, 1f)
                     } else {
                         0f
                     },
                     surfaceColor = MaterialTheme.colorScheme.surface,
                     iconRevealPx = iconRevealPx,
-                    onClick = { scope.launch { execute(action, -1f) } },
+                    onClick = { scope.launch { execute(action, -1f, fromTap = true) } },
                     modifier = Modifier.align(Alignment.CenterEnd),
                 )
             }
@@ -353,7 +388,15 @@ fun NoteCardSwipeLayer(
  * 单个动作卡：宽度 = 当前呼出量（随拖拽变长、间距外恒定），高度撑满父层（与卡片同高）；
  * 圆角与待办卡片一致；[fillProgress] = 0 时 surface 底 + 彩色图标（呼出会话恒如此），
  * 执行会话内随进度渐变为动作色底 + on 色图标（拖到顶 = 完全变色，松手即执行）；图标随
- * 呼出宽度渐显（[SwipeIconRevealSpan] 内淡入）。整卡可点按直接执行动作（展开态下点按的入口）。
+ * 呼出宽度渐显（[SwipeIconRevealSpan] 内淡入）。整卡可点按直接执行动作（展开态下点按的
+ * 入口）：按压反馈与主体卡同源（[pressFeedback]，缩放 + 提亮，涟漪由它取代），点按后由
+ * 调用方先补播「变长变色」到触发阈值再执行（见 [NoteCardSwipeLayer] 的 execute fromTap）。
+ *
+ * 点按只在呼出后挂载（[revealedPx] > 0，即真有可见宽度时）：收起态宽度为 0 的可点击节点
+ * 会被 Compose 按 48dp 最小触控目标向外扩展命中区（约 24dp「幽灵热区」）——卡片内容没有
+ * 可点击节点覆盖时（最近删除页卡片、详情浮层步骤卡均无 onClick），贴边点按会落进热区直接
+ * 触发动作。呼出态宽度 ≥ 48dp 无扩展；不足 48dp 的过渡宽度只存在于拖拽/收放动画途中，
+ * 而宽度 > 0 必然 |位移| > 间距，透明拦截层（isOpen）在场且其真实命中覆盖热区，点击仍落收起。
  */
 @Composable
 private fun SwipeActionButton(
@@ -366,6 +409,9 @@ private fun SwipeActionButton(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
+    // 按压源：pressFeedback（观察按压）与 clickable（indication 置 null）共用，
+    // 拖拽抢走手势时 clickable 发 Cancel、反馈立即回弹不闪
+    val press = remember { MutableInteractionSource() }
     val backgroundColor = lerp(surfaceColor, action.activeColor, fillProgress)
     // 填充到位的图标色由调用方按容器色配 on 色（onError/onPrimary，同 Overlay 顶栏胶囊）
     val iconTint = lerp(action.tint, action.onActiveColor, fillProgress)
@@ -374,15 +420,25 @@ private fun SwipeActionButton(
         modifier = modifier
             .width(with(density) { revealedPx.coerceAtLeast(0f).toDp() })
             .fillMaxHeight()
+            // 按压反馈挂 clip 之前（同 NoteCard 主体卡）：缩放作用于整卡不被圆角裁掉，
+            // 提亮范围与 NoteCardShape 对齐；可点才挂
+            .then(if (revealedPx > 0f) Modifier.pressFeedback(press, NoteCardShape) else Modifier)
             .clip(NoteCardShape)
             .background(backgroundColor)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                role = Role.Button,
-                onClick = onClick,
-            )
-            .semantics { contentDescription = action.contentDescription },
+            .then(
+                if (revealedPx > 0f) {
+                    Modifier
+                        .clickable(
+                            interactionSource = press,
+                            indication = null,
+                            role = Role.Button,
+                            onClick = onClick,
+                        )
+                        .semantics { contentDescription = action.contentDescription }
+                } else {
+                    Modifier
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
