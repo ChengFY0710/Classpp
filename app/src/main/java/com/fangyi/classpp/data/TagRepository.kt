@@ -96,6 +96,28 @@ class TagRepository internal constructor(
         commit(TagFile(fileState.value.formatVersion, fileState.value.tags.filterNot { it.name == name }))
     }
 
+    /**
+     * 重命名标签：只改标签库里的名字——待办侧的引用回写由调用方跟进（[TodoRepository]
+     * 的 renameTagInTodos，两个文件无法同一次提交原子落盘），本方法先落标签库。
+     * 校验同 [addTag]：新名 trim 非空、不与其它标签重名；与原标签同名 = 无操作（允许确认）。
+     */
+    suspend fun renameTag(from: String, to: String): TagOpResult = mutex.withLock {
+        val prepared = to.trim()
+        if (prepared.isEmpty()) return@withLock TagOpResult.Err(TagError.BlankName)
+        if (fileState.value.tags.none { it.name == from }) {
+            return@withLock TagOpResult.Err(TagError.NotFound(from))
+        }
+        if (prepared != from && fileState.value.tags.any { it.name == prepared }) {
+            return@withLock TagOpResult.Err(TagError.DuplicateName(prepared))
+        }
+        commit(
+            TagFile(
+                fileState.value.formatVersion,
+                fileState.value.tags.map { if (it.name == from) it.copy(name = prepared) else it },
+            ),
+        )
+    }
+
     /** 改标签色（颜色选择器接入后用）；null = 回到跟随主题 Primary */
     suspend fun setTagColor(name: String, colorArgb: Long?): TagOpResult = mutex.withLock {
         if (fileState.value.tags.none { it.name == name }) {

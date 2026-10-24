@@ -64,6 +64,41 @@ class TagRepositoryTest {
     }
 
     @Test
+    fun `renameTag updates name in place and persists`() = runBlocking {
+        val repo = open()
+        repo.addTag("紧急").okOrThrow()
+        repo.addTag("实验报告", colorArgb = 0xFF22B14C).okOrThrow()
+
+        // 待办侧引用回写由调用方（TodoRepository.renameTagInTodos）跟进，这里只验标签库
+        repo.renameTag("紧急", "  本周重点  ").okOrThrow()
+        // 只改名字：颜色与顺序不动
+        assertEquals(
+            listOf(TagEntry("本周重点"), TagEntry("实验报告", colorArgb = 0xFF22B14C)),
+            repo.tags.value,
+        )
+
+        val reopened = open()
+        assertEquals(
+            listOf(TagEntry("本周重点"), TagEntry("实验报告", colorArgb = 0xFF22B14C)),
+            reopened.tags.value,
+        )
+    }
+
+    @Test
+    fun `renameTag rejects blank unknown and duplicate, same name is no-op allowed`() = runBlocking {
+        val repo = open()
+        repo.addTag("紧急").okOrThrow()
+        repo.addTag("本周").okOrThrow()
+
+        assertEquals(TagError.BlankName, repo.renameTag("紧急", "   ").errOrThrow())
+        assertEquals(TagError.NotFound("不存在"), repo.renameTag("不存在", "新名").errOrThrow())
+        assertEquals(TagError.DuplicateName("本周"), repo.renameTag("紧急", " 本周 ").errOrThrow())
+        // 与原名同名 = 无操作（允许确认，同分组重命名约定）
+        repo.renameTag("紧急", "紧急").okOrThrow()
+        assertEquals(listOf(TagEntry("紧急"), TagEntry("本周")), repo.tags.value)
+    }
+
+    @Test
     fun `setTagColor updates only the target and null returns to theme default`() = runBlocking {
         val repo = open()
 

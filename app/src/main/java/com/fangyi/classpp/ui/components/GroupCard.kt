@@ -1,5 +1,6 @@
 package com.fangyi.classpp.ui.components
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
@@ -45,6 +46,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedback
@@ -109,6 +111,12 @@ private val CheckMarkSize = 20.dp
 private val PinMarkSize = 20.dp
 private val PinMarkSpacing = 12.dp
 
+/** 行首图标尺寸：与 [SettingsCardwithIcon] 行首图标同 24dp */
+private val IconSize = 24.dp
+
+/** 行首图标与标题间距：与 [SettingsCardwithIcon] 的 12dp 同规格 */
+private val IconSpacing = 12.dp
+
 /** 拖拽浮层起手放大倍率：比按压反馈（1.04）再大一点，读作「被拾起」 */
 private const val DraggedFloatScale = 1.05f
 
@@ -123,6 +131,13 @@ private const val FloatBorderAlpha = 0.35f
  * [id] 是条目身份键：拖拽排序与多选都按它匹配——重排后各行状态（让位位移、选中标记）跟着条目
  * 走，不会串到邻行，因此同一列表内 id 必须唯一。
  *
+ * [icon] 是行首图标：null = 不渲染不占位（行布局与不带图标时完全一致）；非 null 时按
+ * [SettingsCardwithIcon] 行首图标规格渲染（24dp、与标题间距 12dp），普通态、编辑态与拖拽浮层
+ * 同步显示；与 [pinned] 同现时图标在前、pin 标记在后。
+ *
+ * [iconTint] 调整 [icon] 颜色：null 时取 onSurface（随深浅色模式），传色值可自定义（如标签的
+ * 彩色图标）；[icon] 为 null 时忽略。
+ *
  * [pinned] 是置顶标记：行首挂 primary 色 pin 图标（`cd_pinned`），普通态、编辑态与拖拽浮层同步
  * 显示；同时置顶项在编辑态锁序——不可起手拖拽，见 [GroupCard] 的置顶契约。
  */
@@ -132,6 +147,8 @@ data class GroupCardItem(
     val description: String? = null,
     val value: String? = null,
     val pinned: Boolean = false,
+    @DrawableRes val icon: Int? = null,
+    val iconTint: Color? = null,
 )
 
 /**
@@ -149,6 +166,12 @@ data class GroupCardItem(
  * - 编辑态：点击 = [onToggleSelect]（多选切换），长按 = 拾起该条拖拽排序；右侧值文字与箭头
  *   淡出/横向收放换为勾选标记——未选 `ic_checkbox_unchecked`（灰）、选中 `ic_checkbox_checked`
  *   （蓝 primary）。
+ *
+ * ## 行首图标
+ * [GroupCardItem.icon] 非 null 时行首挂 24dp 图标、与标题间距 12dp（对齐 [SettingsCardwithIcon]
+ * 行首规格），普通态、编辑态与拖拽浮层同步显示；颜色默认 onSurface 随深浅色，可用
+ * [GroupCardItem.iconTint] 自定义（如标签的彩色图标）。不传 icon 的条目不渲染不占位，布局与
+ * 不带图标时完全一致。
  *
  * ## 置顶
  * [GroupCardItem.pinned] 的条目行首挂 pin 标记（编辑态与拖拽浮层都保留），并被锁序：
@@ -396,7 +419,7 @@ private fun GroupCardRow(
     )
 }
 
-/** 行内容：（置顶标记）+ 标题块 + 尾部（编辑态勾选标记 / 普通态值文字 + 箭头）；浮层复用同一份，保证落位前后像素一致 */
+/** 行内容：（行首图标）（置顶标记）+ 标题块 + 尾部（编辑态勾选标记 / 普通态值文字 + 箭头）；浮层复用同一份，保证落位前后像素一致 */
 @Composable
 private fun GroupCardRowContent(
     item: GroupCardItem,
@@ -410,6 +433,15 @@ private fun GroupCardRowContent(
             .padding(horizontal = RowHorizontalPadding, vertical = RowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        item.icon?.let { icon ->
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                tint = item.iconTint ?: MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(IconSize),
+            )
+            Spacer(Modifier.width(IconSpacing))
+        }
         if (item.pinned) {
             Icon(
                 painter = painterResource(R.drawable.ic_pin),
@@ -966,6 +998,30 @@ private fun GroupCardEditingDarkPreview() {
                 selectedIds = setOf("daily"),
                 onMove = { _, _ -> },
             )
+        }
+    }
+}
+
+/** 行首图标预览数据：模拟标签卡——彩色 tag 图标 + 计数值，与不带图标的行混排 */
+private val PreviewIconItems = listOf(
+    GroupCardItem(
+        id = "work",
+        label = "标签名",
+        value = "15",
+        pinned = true,
+        icon = R.drawable.ic_tag,
+        iconTint = Color(0xFF1677FF),
+    ),
+    GroupCardItem(id = "life", label = "标签名", value = "54", icon = R.drawable.ic_tag, iconTint = Color(0xFF52C41A)),
+    GroupCardItem(id = "plain", label = "不带图标的行", value = "3"),
+)
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, name = "分组卡·行首图标")
+@Composable
+private fun GroupCardIconPreview() {
+    ClassppTheme {
+        Column(modifier = Modifier.padding(16.dp)) {
+            GroupCard(items = PreviewIconItems)
         }
     }
 }

@@ -233,6 +233,11 @@ internal enum class TodoSpecialSection(
  * 样式），此时常规胶囊恢复选中态高亮。点击已选中的特殊胶囊 = 退出关闭（[onSpecialSectionClick]，
  * 胶囊一并消失）；点击未选中的 = 回到该特殊分组页。
  *
+ * 标签特殊分组页（[tagPillName] 非 null）：同套常驻语义，胶囊插在特殊分组胶囊之后、
+ * 置顶分组之前（[AccentPill]，行首 ic_tag）——强调色 = 标签色（[tagPillColor]，宿主从标签
+ * 配色表取值并兜底 primary），选中 = 整粒标签色底 + 白内容、未选 = surface 底 + 标签色内容；
+ * 点击已选中 = 退出关闭（[onTagPillClick]，胶囊一并消失）、未选中 = 回到该标签页。
+ *
  * 布局：左侧常驻群浮在上层；右侧分组条的视口左边界即裁切线（[ClipLineOffset]，
  * 相对更多按钮右缘），首粒胶囊（置顶分组或「全部」）静止位与按钮右缘保持 [RestGap]
  * 间距——向左滑动
@@ -292,6 +297,15 @@ internal fun TodoTopBar(
     specialSection: TodoSpecialSection? = null,
     specialSectionSelected: Boolean = false,
     onSpecialSectionClick: () -> Unit = {},
+    // 标签特殊分组页胶囊（特殊分组胶囊之后、置顶分组之前，常驻）：[tagPillName] 非 null =
+    // 已有标签页被打开过（胶囊存在）；[tagPillSelected] = 页面在场（整粒标签色底 + 白内容），
+    // false = 页面已离开（surface 底 + 标签色内容）。[tagPillColor] = 标签强调色（宿主取
+    // 标签配色表，colorArgb null 已兜底 primary；查不到的残留名同样兜底），点击回调
+    // [onTagPillClick] 同特殊胶囊的整粒切换语义
+    tagPillName: String? = null,
+    tagPillColor: Color? = null,
+    tagPillSelected: Boolean = false,
+    onTagPillClick: () -> Unit = {},
     // 分类块状态配色：false = 置灰（negative）不可点；true 且 [categoryFiltered] = primary 提示
     categoryEnabled: Boolean = true,
     // 分组显隐过滤生效中（四组未全选）= 分类块 primary 提示有分组被隐藏
@@ -356,10 +370,10 @@ internal fun TodoTopBar(
                         .height(TopBarPillHeight + ShadowOverhang * 2),
                 ) {
                     val scrollState = rememberScrollState()
-                    // 特殊分组页胶囊在分组条首位：打开时若分组条停在右侧滚动位，首粒胶囊会
-                    // 藏在更多按钮背后看不见——跳转打开即滚回首位（切常规 tab 不动滚动位）
-                    LaunchedEffect(specialSection) {
-                        if (specialSection != null) scrollState.animateScrollTo(0)
+                    // 特殊分组页/标签页胶囊在分组条最前：打开时若分组条停在右侧滚动位，首粒
+                    // 胶囊会藏在更多按钮背后看不见——跳转打开即滚回首位（切常规 tab 不动滚动位）
+                    LaunchedEffect(specialSection, tagPillName) {
+                        if (specialSection != null || tagPillName != null) scrollState.animateScrollTo(0)
                     }
                     // 视口左边界 = 裁切线（MorePillRightEdge + ClipLineOffset）；contentPadding
                     // 反向补偿裁切偏移，让静止间距只由 RestGap 决定——两个旋钮互不干扰。
@@ -395,15 +409,28 @@ internal fun TodoTopBar(
                                 backdrop = pillBackdrop,
                             )
                         }
+                        // 标签特殊分组页胶囊：同特殊胶囊的常驻语义（分组浮层标签区跳转进入），
+                        // 强调色 = 标签色（宿主下发，null 兜底 primary）；选中 = 整粒标签色底 +
+                        // 白内容，未选 = surface 底 + 标签色内容——设计稿标签胶囊的两种形态
+                        tagPillName?.let { name ->
+                            AccentPill(
+                                iconRes = R.drawable.ic_tag,
+                                label = name,
+                                accent = tagPillColor ?: MaterialTheme.colorScheme.primary,
+                                selected = tagPillSelected,
+                                onClick = onTagPillClick,
+                                backdrop = pillBackdrop,
+                            )
+                        }
                         // 视觉顺序：置顶分组固定最前（特殊胶囊之后、「全部」之前，行首图钉），
                         // 之后依次「全部」「未分组」与未置顶分组，各段内部保持 [groups] 原序。
                         // 下标语义不变（0 = 全部、1 = 未分组、2 起按 [groups] 原序偏移 2）：
                         // 置顶组占 [groups] 前缀，其原下标恰好就是视觉最前段的 i + 2；未置顶段
                         // 整体后移 [pinnedGroupCount] 个位置补回原下标。
-                        // 特殊页在场时常规胶囊一律不亮选中态（高亮由首位特殊胶囊独占）；
-                        // 离开页面（胶囊保留未选）后常规选中态恢复
+                        // 特殊页/标签页在场时常规胶囊一律不亮选中态（高亮由最前的特殊胶囊
+                        // /标签胶囊独占）；离开页面（胶囊保留未选）后常规选中态恢复
                         val regularSelection =
-                            if (specialSectionSelected) Int.MIN_VALUE else selectedGroupIndex
+                            if (specialSectionSelected || tagPillSelected) Int.MIN_VALUE else selectedGroupIndex
                         val pinnedGroups = groups.take(pinnedGroupCount)
                         val unpinnedGroups = groups.drop(pinnedGroupCount)
                         pinnedGroups.forEachIndexed { index, group ->
@@ -693,23 +720,25 @@ private fun TodoSpecialSection.accentColor(): Color = when (this) {
 }
 
 /**
- * 特殊分组页胶囊（已完成/未完成/已逾期/已置顶/已归档/最近删除）：行首语义图标 + 标签 +
- * 尾部关闭✕（ic_dismiss），整粒同色——[selected]（页面在场）= 强调色底 + 白内容，
- * 未选 = surface 底 + 强调色内容（设计图两种形态）。打开后常驻分组条首位，点击整粒
- * 切换：已选中 = 退出关闭（胶囊一并消失）、未选中 = 回到该页——行为由宿主按选中态
- * 接管（✕ 不单设命中区，同 [GroupPill] 的整粒点击语义）；图标与✕纯装饰不进语义树，
- * 标签文字已承载胶囊语义。规格同 [GroupPill]（40dp 高、16dp 内距、20dp 图标 + 12dp
- * 间距、按压放大 1.10 + 柔影；按压与底材见 [topBarPillMaterial]，[backdrop] 非空走玻璃）。
+ * 强调色胶囊（特殊分组页/标签页共用主体）：行首语义图标 + 标签 + 尾部关闭✕（ic_dismiss），
+ * 整粒同色——[selected]（页面在场）= [accent] 底 + 白内容，未选 = surface 底 + [accent] 内容
+ * （设计图两种形态；[accent] 由调用方决定——枚举特殊页取 [TodoSpecialSection.accentColor]，
+ * 标签页取标签色，白内容对中饱和色板可读同 TagChoosingCard 选中态先例）。打开后常驻分组条
+ * 最前，点击整粒切换：已选中 = 退出关闭（胶囊一并消失）、未选中 = 回到该页——行为由宿主
+ * 按选中态接管（✕ 不单设命中区，同 [GroupPill] 的整粒点击语义）；图标与✕纯装饰不进语义树，
+ * 标签文字已承载胶囊语义。规格同 [GroupPill]（40dp 高、16dp 内距、20dp 图标 + 12dp 间距、
+ * 按压放大 1.10 + 柔影；按压与底材见 [topBarPillMaterial]，[backdrop] 非空走玻璃）。
  */
 @Composable
-private fun SpecialGroupPill(
-    section: TodoSpecialSection,
+private fun AccentPill(
+    @DrawableRes iconRes: Int,
+    label: String,
+    accent: Color,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     backdrop: Backdrop? = null,
 ) {
-    val accent = section.accentColor()
     val background = if (selected) accent else MaterialTheme.colorScheme.surface
     val contentColor = if (selected) Color.White else accent
     // 按压态的唯一来源：pressFeedback/pressScale 与 selectable 共用（涟漪由按压反馈取代，故 selectable 不再要 Indication）
@@ -731,14 +760,14 @@ private fun SpecialGroupPill(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                painter = painterResource(section.iconRes),
+                painter = painterResource(iconRes),
                 contentDescription = null,
                 tint = contentColor,
                 modifier = Modifier.size(GroupTabIconSize),
             )
             Spacer(Modifier.width(GroupTabIconSpacing))
             Text(
-                text = stringResource(section.labelRes),
+                text = label,
                 style = MaterialTheme.classppTextStyles.pillButton,
                 color = contentColor,
                 maxLines = 1,
@@ -752,6 +781,29 @@ private fun SpecialGroupPill(
             )
         }
     }
+}
+
+/**
+ * 特殊分组页胶囊（已完成/未完成/已逾期/已置顶/已归档/最近删除）：[TodoSpecialSection] 的
+ * 图标/文案/强调色（[TodoSpecialSection.accentColor]）接入 [AccentPill]。
+ */
+@Composable
+private fun SpecialGroupPill(
+    section: TodoSpecialSection,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    backdrop: Backdrop? = null,
+) {
+    AccentPill(
+        iconRes = section.iconRes,
+        label = stringResource(section.labelRes),
+        accent = section.accentColor(),
+        selected = selected,
+        onClick = onClick,
+        modifier = modifier,
+        backdrop = backdrop,
+    )
 }
 
 /** 常驻图标胶囊：surface 底 + primary 图标（设计图蓝色图标） */

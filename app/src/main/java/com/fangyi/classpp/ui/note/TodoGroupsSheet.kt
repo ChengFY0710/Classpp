@@ -24,11 +24,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.isOverdue
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.ui.LocalToday
@@ -57,7 +59,15 @@ import dev.chrisbanes.haze.rememberHazeState
  *   已置顶 + 已归档一张两行卡、最近删除一张单行卡；
  * - **第二部分（带「分组」小标题的 [CardSection]）**：未分组、全部各一张单行卡，
  *   用户自定义分组一张 [GroupCard]——自定义分组无行首图标，与带图标的固定行区分
- *   （正是 [GroupCard] 与 [SettingsCardwithIcon] 的行型差异）。
+ *   （正是 [GroupCard] 与 [SettingsCardwithIcon] 的行型差异）；
+ * - **第三部分（带「标签」小标题的 [CardSection]）**：全部标签一张 [GroupCard]——行首挂
+ *   `ic_tag`、颜色跟随标签色（colorArgb null = 跟随主题 primary，同列表卡标签配色规则），
+ *   计数 = 挂该标签的待办数；无标签时整组（含标题）不渲染。普通态点击行 = 跳转该标签的
+ *   待办过滤页（[onOpenTag]），**长按** = 底部滑入操作行（[TagActionRow]，仅重命名/删除
+ *   两项——标签无置顶语义，不走 [GroupCard] 的编辑态）：
+ *   重命名弹 [BottomTextFieldCard]（校验同分组重命名，确认即立即生效经 [onRenameTag]，
+ *   宿主先改标签库再回写全部待办）；删除经 [DeleteConfirmDialog] 二次确认（[onDeleteTag]，
+ *   只解绑标签不删待办），同样立即生效。
  *
  * **顶栏普通态**：左蓝「新建」（`ic_add_circle` → [BottomTextFieldCard] 底部输入弹卡，
  * 经 [onGroupsChange] 整表写回落库）+ 居中标题 + 右白「关闭」，与课表切换浮层同款顶栏排布。
@@ -104,15 +114,19 @@ import dev.chrisbanes.haze.rememberHazeState
  * 第一部分（状态/留存）各行点击 = 跳转对应特殊分组页（[onOpenSpecial]：宿主收起浮层、
  * 顶栏分组条首位出现对应胶囊并常驻——再点已选胶囊退出关闭、点未选胶囊回页；已归档
  * 本期仅 UI）；普通态点击
- * 自定义分组 /「未分组」/「全部」= 跳转对应过滤（[onOpenGroup] / [onOpenUngrouped] /
- * [onOpenAll]：宿主收起浮层并切顶栏胶囊）。
+ * 自定义分组 /「未分组」/「全部」/ 标签行 = 跳转对应过滤（[onOpenGroup] / [onOpenUngrouped] /
+ * [onOpenAll] / [onOpenTag]：宿主收起浮层并切顶栏胶囊；标签页的胶囊着标签色）。
  *
  * @param groups 分组列表：顺序即显示序，置顶项须构成连续前缀（[TodoGroup] 不变式）
+ * @param tags 标签列表（用户自定义标签，顺序即显示序）：第三部分标签 [GroupCard] 的数据源
  * @param deletedCount 最近删除条目数（仓库 deletedTodos 流的大小）
  * @param onGroupsChange 整表写回统一入口：编辑态确认（顺序 + 置顶）、普通态新建（追加分组）、
  *   重命名（立即生效）；[renames] 为本次操作的重命名映射（原名 → 新名，供宿主让顶栏选中
  *   跟随到新名），无重命名时传空表
  * @param onDeleteGroups 删除：立即从真实列表移除选中分组，不可经顶栏「取消」撤销
+ * @param onOpenTag 普通态点击标签行：宿主收起浮层并打开该标签的待办过滤页
+ * @param onRenameTag 标签重命名确认（立即生效）：宿主先改标签库再回写全部待办
+ * @param onDeleteTag 标签删除确认（立即生效）：宿主删标签并解绑全部待办（待办本身保留）
  * @param onOpenGroup 普通态点击自定义分组：宿主收起浮层并把顶栏胶囊切到该分组
  * @param onOpenUngrouped 普通态点击「未分组」行：宿主收起浮层并把顶栏胶囊切到「未分组」
  * @param onOpenAll 普通态点击「全部」行：宿主收起浮层并把顶栏胶囊切回「全部」
@@ -124,11 +138,15 @@ internal fun TodoGroupsSheet(
     todos: List<Todo>,
     deletedCount: Int,
     groups: List<TodoGroup>,
+    tags: List<TagEntry>,
     visible: Boolean,
     onDismiss: () -> Unit,
     onDismissed: () -> Unit,
     onGroupsChange: (groups: List<TodoGroup>, renames: Map<String, String>) -> Unit,
     onDeleteGroups: (List<String>) -> Unit,
+    onOpenTag: (String) -> Unit,
+    onRenameTag: (from: String, to: String) -> Unit,
+    onDeleteTag: (String) -> Unit,
     onOpenGroup: (String) -> Unit,
     onOpenUngrouped: () -> Unit,
     onOpenAll: () -> Unit,
@@ -157,6 +175,18 @@ internal fun TodoGroupsSheet(
     var renameFrom by remember { mutableStateOf("") }
     var renameDraft by remember { mutableStateOf("") }
     if (renameVisible) renameMounted = true
+    // 标签操作行目标：长按标签行记录的标签名（非空 = 底部滑入 [TagActionRow]）——标签不走
+    // [GroupCard] 编辑态（无多选/拖拽/置顶），长按直接弹操作按钮，与分组行的长按语义分流
+    var tagActionTarget by remember { mutableStateOf<String?>(null) }
+    // 标签重命名弹卡（标签操作行「重命名」触发）：挂载与草稿同分组重命名的两段式约定，
+    // tagRenameFrom 是打开时的原标签名快照（校验与确认都以它对齐）
+    var tagRenameVisible by remember { mutableStateOf(false) }
+    var tagRenameMounted by remember { mutableStateOf(false) }
+    var tagRenameFrom by remember { mutableStateOf("") }
+    var tagRenameDraft by remember { mutableStateOf("") }
+    if (tagRenameVisible) tagRenameMounted = true
+    // 标签删除确认请求：非空 = 对话框打开（值为打开时的标签名快照）
+    var tagDeleteTarget by remember { mutableStateOf<String?>(null) }
 
     // haze 采样源：自建后同时交给本浮层（[OverlaySheet] 的共享 hazeState 槽）与叠在其上的
     // 新建/重命名弹卡——浮层滚动列是采样源，顶栏磨砂与弹卡的背景模糊同源（同 NewTodoSheet
@@ -173,6 +203,8 @@ internal fun TodoGroupsSheet(
     }
 
     fun enterEdit(id: String) {
+        // 互斥：进分组编辑态先收起标签操作行（长按标签受编辑态闸门拦截，理论不可同显，兜底防御）
+        tagActionTarget = null
         draft = groups
         selectedIds = setOf(id)
         editing = true
@@ -184,8 +216,15 @@ internal fun TodoGroupsSheet(
         exitEdit()
     }
 
-    // 遮罩 / 下拉 / 系统返回 / 顶栏取消共用一个出口：编辑态先退编辑，非编辑态才真正关浮层
-    val requestClose = { if (editing) exitEdit() else onDismiss() }
+    // 遮罩 / 下拉 / 系统返回 / 顶栏取消共用一个出口，逐层退出：编辑态先退编辑；标签操作行
+    // 在场先收起它（同编辑态的「返回 = 退层不关浮层」）；非编辑态才真正关浮层
+    val requestClose = {
+        when {
+            editing -> exitEdit()
+            tagActionTarget != null -> tagActionTarget = null
+            else -> onDismiss()
+        }
+    }
 
     // 系统返回 = 退编辑（编辑态）或关浮层（普通态）；删除确认框在其挂载处后注册 BackHandler，
     // 返回键先到它（先关确认框、留在浮层），同 TodoDetailSheet
@@ -241,9 +280,11 @@ internal fun TodoGroupsSheet(
         ),
         onDismiss = requestClose,
         visible = visible,
-        // 层级动效：新建/重命名弹卡或删除确认框在场时，本浮层缩小后退（同 NewTodoSheet
-        // 的 covered 约定，用可见请求态而非挂载态——退场时与上层收场同帧反向恢复）
-        covered = createRequested || renameVisible || deleteTargets != null,
+        // 层级动效：新建/重命名弹卡、删除确认框或标签重命名弹卡/删除确认框在场时，本浮层
+        // 缩小后退（同 NewTodoSheet 的 covered 约定，用可见请求态而非挂载态——退场时与上层
+        // 收场同帧反向恢复）
+        covered = createRequested || renameVisible || deleteTargets != null ||
+            tagRenameVisible || tagDeleteTarget != null,
         onDismissed = onDismissed,
         // 编辑态禁用下拉关闭：下拉手势只回弹不触发关闭（拦成「退编辑」会与手势语义打架，
         // 只拦回调则闸门落下没人真关浮层、整层卡在半拖出位置）
@@ -272,6 +313,20 @@ internal fun TodoGroupsSheet(
                     }
                 },
                 onDelete = { deleteTargets = displayGroups.filter { it.name in selectedIds }.map { it.name } },
+            )
+            // 标签操作行：与 EditActionRow 互斥（长按标签在编辑态被闸门拦截），共用钉底槽
+            TagActionRow(
+                visible = tagActionTarget != null,
+                onRename = {
+                    // 快照原标签名与草稿初值（同分组重命名），确认即立即生效
+                    tagActionTarget?.let { target ->
+                        tagRenameFrom = target
+                        tagRenameDraft = target
+                        tagRenameMounted = true
+                        tagRenameVisible = true
+                    }
+                },
+                onDelete = { tagDeleteTarget = tagActionTarget },
             )
         },
         modifier = modifier,
@@ -388,6 +443,32 @@ internal fun TodoGroupsSheet(
                     )
                 }
             }
+            // 第三部分：标签。分组内容之后；无标签时整组（含标题）不渲染。行首挂 ic_tag、
+            // 颜色跟随标签色（colorArgb null = 跟随主题 primary，同列表卡标签配色规则），
+            // 计数 = 挂该标签的待办数。普通态点击行 = 跳转该标签的待办过滤页；长按 = 底部
+            // 滑入操作行（仅重命名/删除）——分组编辑草稿期间点击与长按都不触发（同上方
+            // 各行「编辑态不触发」约定，避免静默丢弃草稿）
+            if (tags.isNotEmpty()) {
+                CardSection(title = stringResource(R.string.todo_section_tags)) {
+                    GroupCard(
+                        items = tags.map { tag ->
+                            // 标签以名字为身份键（同 Todo.tags 的字符串引用模型）
+                            GroupCardItem(
+                                id = tag.name,
+                                label = tag.name,
+                                value = todos.count { tag.name in it.tags }.toString(),
+                                icon = R.drawable.ic_tag,
+                                iconTint = tag.colorArgb?.let(::Color) ?: MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                        // 不传 editing/selectedIds/onMove：标签行永不进编辑态、不可拖拽
+                        onItemClick = { if (!editing) onOpenTag(it) },
+                        // GroupCard 的 onEnterEdit 在这里只当「非编辑态长按」回调用：
+                        // 记录目标并滑入标签操作行，不进编辑态
+                        onEnterEdit = { if (!editing) tagActionTarget = it },
+                    )
+                }
+            }
         }
     }
 
@@ -401,8 +482,13 @@ internal fun TodoGroupsSheet(
     var shownDeleteTargets by remember { mutableStateOf(emptyList<String>()) }
     if (deleteDialogVisible) shownDeleteTargets = deleteTargets.orEmpty()
     if (deleteDialogMounted) {
-        DeleteGroupConfirmDialog(
-            groupNames = shownDeleteTargets,
+        DeleteConfirmDialog(
+            title = stringResource(R.string.todo_groups_delete_title),
+            message = if (shownDeleteTargets.size == 1) {
+                stringResource(R.string.todo_groups_delete_message, shownDeleteTargets.first())
+            } else {
+                stringResource(R.string.todo_groups_delete_message_multi, shownDeleteTargets.size)
+            },
             visible = deleteDialogVisible,
             onDismissed = { deleteDialogMounted = false },
             onCancel = { deleteTargets = null },
@@ -416,6 +502,33 @@ internal fun TodoGroupsSheet(
                     draft = draft.filterNot { it.name in nameSet }
                     selectedIds = selectedIds - nameSet
                     if (draft.isEmpty()) exitEdit()
+                }
+            },
+        )
+    }
+
+    // 标签删除确认框（标签操作行「删除」触发）：两段式挂载同分组删除确认框；确认 = 立即
+    // 生效（onDeleteTag：宿主删标签并解绑全部待办，待办本身保留）并收起操作行，
+    // 「取消」/返回只关确认框、回到操作行
+    var tagDeleteMounted by remember { mutableStateOf(false) }
+    val tagDeleteVisible = tagDeleteTarget != null
+    if (tagDeleteVisible) tagDeleteMounted = true
+    // 淡出期间文案快照：确认后目标已清，播动画的卡片不能跟着变空
+    var shownTagDeleteTarget by remember { mutableStateOf("") }
+    if (tagDeleteVisible) shownTagDeleteTarget = tagDeleteTarget ?: ""
+    if (tagDeleteMounted) {
+        DeleteConfirmDialog(
+            title = stringResource(R.string.todo_tag_delete_title),
+            message = stringResource(R.string.todo_tag_delete_message, shownTagDeleteTarget),
+            visible = tagDeleteVisible,
+            onDismissed = { tagDeleteMounted = false },
+            onCancel = { tagDeleteTarget = null },
+            onConfirm = {
+                val name = tagDeleteTarget
+                tagDeleteTarget = null
+                if (!name.isNullOrEmpty()) {
+                    onDeleteTag(name)
+                    tagActionTarget = null
                 }
             },
         )
@@ -477,6 +590,36 @@ internal fun TodoGroupsSheet(
                     )
                     draft = draft.map { g -> if (g.name == renameFrom) g.copy(name = to) else g }
                     selectedIds = selectedIds.mapTo(mutableSetOf()) { if (it == renameFrom) to else it }
+                }
+            },
+        )
+    }
+
+    // 标签重命名弹卡（标签操作行「重命名」触发）：位置与校验同分组重命名弹卡——
+    // 空名禁用；与原标签同名 = 无操作（允许确认）；与其它标签重名禁用（校验基准取
+    // 真实标签表）。**确认即立即生效**：onRenameTag 交宿主先改标签库再回写全部待办
+    // （不经浮层顶栏取消撤销，同分组重命名/删除的立即生效模型），并收起操作行；
+    // 「取消」/遮罩/返回只关弹卡、回到操作行
+    if (tagRenameMounted) {
+        val tagRenameName = tagRenameDraft.trim()
+        BottomTextFieldCard(
+            visible = tagRenameVisible,
+            onDismiss = { tagRenameVisible = false },
+            onDismissed = { tagRenameMounted = false },
+            title = stringResource(R.string.todo_tag_rename_title),
+            placeholder = stringResource(R.string.todo_tag_rename_hint),
+            value = tagRenameDraft,
+            onValueChange = { tagRenameDraft = it },
+            confirmEnabled = tagRenameName.isNotEmpty() &&
+                tags.none { it.name == tagRenameName && it.name != tagRenameFrom },
+            // 卡片磨砂：采样源同本浮层顶栏（见 sheetHazeState 声明处）
+            hazeState = sheetHazeState,
+            onConfirm = {
+                tagRenameVisible = false
+                val to = tagRenameDraft.trim()
+                if (to.isNotEmpty() && to != tagRenameFrom) {
+                    onRenameTag(tagRenameFrom, to)
+                    tagActionTarget = null
                 }
             },
         )
@@ -581,13 +724,84 @@ private fun EditActionRow(
 }
 
 /**
- * 删除分组确认框：[ConfirmDialogCard] 白卡 + 遮罩，叠加在浮层**之后**组合——返回键时后注册的
- * 它先收到，优先于浮层出口。仅删分组：该组待办由仓库在同一次 setGroups 提交里级联
- * 置回未分组（不删除待办本身），文案只提分组；删除钮走 error（同删除课表/删除待办确认框先例）。
+ * 标签操作行：长按标签行滑入的底部操作栏——重命名 / 删除两颗胶囊（标签无置顶语义，不出
+ * 现置顶钮；两颗在行内恒可点——行可见即有目标）。进出场、渐变兜底、12/24 内距与导航栏
+ * 留白全部同 [EditActionRow] 的规格（自绘自持，[OverlaySheet] 传 `bottomScrim = false` 只给
+ * 钉底定位）；与 [EditActionRow] 互斥出现（长按标签受编辑态闸门拦截），共用浮层的钉底槽。
+ * 两颗胶囊的点击都只上报，行为由调用方接管。
  */
 @Composable
-private fun DeleteGroupConfirmDialog(
-    groupNames: List<String>,
+private fun TagActionRow(
+    visible: Boolean,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically(tween(Motion.SheetEnterMillis, easing = Motion.Overlay)) { it } +
+            fadeIn(tween(Motion.SheetEnterMillis, easing = Motion.Overlay)),
+        exit = slideOutVertically(tween(Motion.SheetExitMillis, easing = Motion.Overlay)) { it } +
+            fadeOut(tween(Motion.SheetExitMillis, easing = Motion.Overlay)),
+        label = "todoGroupsTagActions",
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.background.copy(alpha = 0f),
+                            MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                        ),
+                    ),
+                )
+                .navigationBarsPadding()
+                .padding(top = 12.dp, bottom = 24.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(30.dp, Alignment.CenterHorizontally),
+            ) {
+                SheetPillButton(
+                    label = stringResource(R.string.edit_rename),
+                    icon = R.drawable.ic_rename,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    onClick = onRename,
+                    iconSize = 25.dp,
+                    topPadding = 10.dp,
+                    bottomPadding = 10.dp,
+                    startPadding = 15.dp,
+                    endPadding = 10.dp,
+                )
+                SheetPillButton(
+                    label = stringResource(R.string.edit_delete),
+                    icon = R.drawable.ic_delete,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.error,
+                    onClick = onDelete,
+                    iconSize = 25.dp,
+                    topPadding = 10.dp,
+                    bottomPadding = 10.dp,
+                    startPadding = 15.dp,
+                    endPadding = 10.dp,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 删除确认框：[ConfirmDialogCard] 白卡 + 遮罩，叠加在浮层**之后**组合——返回键时后注册的
+ * 它先收到，优先于浮层出口。分组删除 = 仅删分组（该组待办由仓库在同一次 setGroups 提交里
+ * 级联置回未分组，不删除待办本身）；标签删除 = 删标签并解绑全部待办（同样不删待办本身）。
+ * 标题/文案由调用方拼接（分组单删/批删、标签各有一套）；删除钮走 error（同删除课表/
+ * 删除待办确认框先例）。
+ */
+@Composable
+private fun DeleteConfirmDialog(
+    title: String,
+    message: String,
     visible: Boolean,
     onDismissed: () -> Unit,
     onCancel: () -> Unit,
@@ -599,14 +813,7 @@ private fun DeleteGroupConfirmDialog(
         onDismissed = onDismissed,
         cardHorizontalPadding = 32.dp,
     ) {
-        ConfirmDialogCard(
-            title = stringResource(R.string.todo_groups_delete_title),
-            message = if (groupNames.size == 1) {
-                stringResource(R.string.todo_groups_delete_message, groupNames.first())
-            } else {
-                stringResource(R.string.todo_groups_delete_message_multi, groupNames.size)
-            },
-        ) {
+        ConfirmDialogCard(title = title, message = message) {
             DialogPillButton(
                 label = stringResource(R.string.settings_cancel),
                 containerColor = MaterialTheme.colorScheme.surface,

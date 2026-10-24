@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
+import com.fangyi.classpp.data.TagOpResult
 import com.fangyi.classpp.data.TagRepository
 import com.fangyi.classpp.data.TodoReadResult
 import com.fangyi.classpp.data.TodoOpResult
@@ -151,6 +152,12 @@ fun TodoScreen(
     // 关闭后自动回到进入前的常规分组
     var specialSection by rememberSaveable { mutableStateOf<TodoSpecialSection?>(null) }
     var specialActive by rememberSaveable { mutableStateOf(false) }
+    // 标签特殊分组页（分组浮层标签区跳转进入）：与特殊分组页同一套「胶囊常驻 + active 记
+    // 页面在场」语义——selectedTag 记顶栏标签胶囊（标签名），tagActive 记页面在场。二者独立
+    // 于 [selectedGroupIndex] 与 [specialSection] 保存；specialActive 与 tagActive 在所有切换
+    // 点互斥（任一页打开即关另一页），点常规胶囊两页一起退（胶囊保留、转未选态）
+    var selectedTag by rememberSaveable { mutableStateOf<String?>(null) }
+    var tagActive by rememberSaveable { mutableStateOf(false) }
     val hazeState = rememberHazeState()
     // 顶栏胶囊的液态玻璃：设置页「更高级的玻璃材质」开关 + API 31+（RenderEffect）
     // 双门控，关闭即原实心底（pressFeedback + background）。采样层 = 页面底色 + 待办
@@ -251,8 +258,43 @@ fun TodoScreen(
         }
     }
 
+    // 标签写回统一入口（分组浮层标签区「长按 → 操作行」触发）：标签库先落盘，待办侧回写
+    // 随后——tags.json 与 todos.json 两个文件无法同一次提交原子落盘，两步各自失败都 Toast
+    // 提示（中途失败留下「库已改、待办未跟随」的窗口，属落盘异常时的可接受降级）。
+    // 重命名成功后顶栏标签胶囊跟随到新名（同 commitGroups 的 renames 跟随语义）；
+    // 删除成功后胶囊随之消失，标签页在场则一并退出
+    val commitTagRename: (String, String) -> Unit = { from, to ->
+        scope.launch {
+            val tags = tagRepository ?: return@launch
+            if (tags.renameTag(from, to) is TagOpResult.Err) {
+                AppToasts.show(context, groupSaveFailedMessage)
+                return@launch
+            }
+            if (repository.renameTagInTodos(from, to) is TodoOpResult.Err) {
+                AppToasts.show(context, groupSaveFailedMessage)
+            }
+            if (selectedTag == from) selectedTag = to
+        }
+    }
+    val commitTagDelete: (String) -> Unit = { name ->
+        scope.launch {
+            val tags = tagRepository ?: return@launch
+            if (tags.removeTag(name) is TagOpResult.Err) {
+                AppToasts.show(context, groupSaveFailedMessage)
+                return@launch
+            }
+            if (repository.removeTagFromTodos(name) is TodoOpResult.Err) {
+                AppToasts.show(context, groupSaveFailedMessage)
+            }
+            if (selectedTag == name) {
+                selectedTag = null
+                tagActive = false
+            }
+        }
+    }
+
     // 按选中分组派生可见列表（0 = 全部、1 = 未分组、2 起 = 用户分组）；特殊分组页在场时
-    // 改按特殊页口径过滤。离页（胶囊保留未选）回常规过滤。
+    // 改按特殊页口径过滤，标签页在场时按标签过滤。离页（胶囊保留未选）回常规过滤。
     // 过滤前先做重复待办的分期展开（虚拟独立待办：已完成分期进已完成、过去未完成期全显、
     // 未来只显最近一期）——先展开后过滤，特殊页的已完成/未完成口径才能看到分期。
     // 最近删除页例外：条目不在活跃列表里（仓库单列 deletedTodos 流），整条待办一张卡、
@@ -260,11 +302,13 @@ fun TodoScreen(
     val today = LocalToday
     val nowMinute = currentMinuteOfDay()
     val special = if (specialActive) specialSection else null
+    val activeTag = if (tagActive) selectedTag else null
     val displayTodos = remember(todos, today) { todos.expandRepeatOccurrences(today) }
-    val visibleTodos = when (special) {
-        TodoSpecialSection.Trash -> deletedTodos.sortedByDescending { it.deletedAtMillis ?: 0L }
-        null -> filterTodosByGroup(displayTodos, selectedGroupIndex, groups)
-        else -> filterTodosBySpecial(displayTodos, special, today, nowMinute)
+    val visibleTodos = when {
+        special == TodoSpecialSection.Trash -> deletedTodos.sortedByDescending { it.deletedAtMillis ?: 0L }
+        special != null -> filterTodosBySpecial(displayTodos, special, today, nowMinute)
+        activeTag != null -> filterTodosByTag(displayTodos, activeTag)
+        else -> filterTodosByGroup(displayTodos, selectedGroupIndex, groups)
     }
 
     // 整页（列表 + 顶栏）滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的
@@ -300,10 +344,18 @@ fun TodoScreen(
                     tagColors = tagColorMap,
                     // 特殊分组页 = 该页本身就是过滤口径，分类菜单的分组显隐不再参与（全组可见）
                     visibleSections =
-                        if (special != null) TodoSection.entries.toSet() else visibleSections,
-                    // 特殊页分组头全部默认展开（常规列表「已完成默认收起」不适用）；空页给占位文案
-                    expandAllSections = special != null,
-                    emptyHint = special?.let { stringResource(it.emptyHintRes) },
+                        if (special != null || activeTag != null) {
+                            TodoSection.entries.toSet()
+                        } else {
+                            visibleSections
+                        },
+                    // 特殊页/标签页分组头全部默认展开（常规列表「已完成默认收起」不适用）；空页给占位文案
+                    expandAllSections = special != null || activeTag != null,
+                    emptyHint = when {
+                        special != null -> stringResource(special.emptyHintRes)
+                        activeTag != null -> stringResource(R.string.todo_empty_tag)
+                        else -> null
+                    },
                     // 最近删除页：平铺（无四组分组头）+ 已删除样式卡片（右撤回 / 左滑彻底删除）
                     deletedCards = special == TodoSpecialSection.Trash,
                     topBarExtraSpace = topBarExtraSpace,
@@ -387,11 +439,29 @@ fun TodoScreen(
                         specialActive = false
                     } else {
                         specialActive = true
+                        tagActive = false
+                    }
+                },
+                // 标签特殊分组页胶囊（特殊胶囊之后、置顶分组之前，常驻）+ 点击切换：
+                // 已选中 = 退出关闭（胶囊消失），未选中 = 回到该页（顺带退出特殊分组页）
+                tagPillName = selectedTag,
+                // 胶囊强调色 = 标签色（colorArgb null 已在 tagColorMap 兜底为 primary；
+                // 查不到的残留名同样兜底 primary）
+                tagPillColor = selectedTag?.let { tagColorMap[it] },
+                tagPillSelected = tagActive,
+                onTagPillClick = {
+                    if (tagActive) {
+                        selectedTag = null
+                        tagActive = false
+                    } else {
+                        tagActive = true
+                        specialActive = false
                     }
                 },
                 selectedGroupIndex = selectedGroupIndex,
                 onGroupSelect = {
                     specialActive = false
+                    tagActive = false
                     selectedGroupIndex = it
                 },
                 // 更多点击翻转展开态;收起时顺带关排序/分类菜单——菜单锚在展开动作行的
@@ -421,9 +491,9 @@ fun TodoScreen(
                 onSortMenuDismiss = { sortMenuExpanded = false },
                 categoryMenuExpanded = categoryMenuExpanded,
                 onCategoryMenuDismiss = { categoryMenuExpanded = false },
-                // 分类块状态：特殊分组页在场 = 置灰不可点（该页本身就是过滤口径，显隐开关
-                // 无意义）；其余页面四组未全选（有分组被隐藏）= primary 提示过滤生效中
-                categoryEnabled = special == null,
+                // 分类块状态：特殊分组页/标签页在场 = 置灰不可点（该页本身就是过滤口径，显隐
+                // 开关无意义）；其余页面四组未全选（有分组被隐藏）= primary 提示过滤生效中
+                categoryEnabled = special == null && activeTag == null,
                 categoryFiltered = visibleSections.size < TodoSection.entries.size,
                 // 分类菜单：四个分组显隐开关，勾选态即分组可见性；点选只切换不收起，
                 // 便于连续勾选多项（收起靠点菜单外区域）
@@ -682,31 +752,44 @@ fun TodoScreen(
             todos = todos,
             deletedCount = deletedTodos.size,
             groups = groups,
+            tags = userTagEntries,
             visible = groupsVisible,
             onDismiss = { groupsVisible = false },
             onDismissed = { groupsMounted = false },
             onGroupsChange = commitGroups,
             onDeleteGroups = { names -> commitGroups(groups.filterNot { it.name in names }, emptyMap()) },
+            onOpenTag = { name ->
+                selectedTag = name
+                tagActive = true
+                specialActive = false
+                groupsVisible = false
+            },
+            onRenameTag = commitTagRename,
+            onDeleteTag = commitTagDelete,
             onOpenGroup = { name ->
                 val index = groups.indexOfFirst { it.name == name }
                 if (index >= 0) selectedGroupIndex = index + 2
                 specialActive = false
+                tagActive = false
                 groupsVisible = false
             },
             onOpenUngrouped = {
                 selectedGroupIndex = 1
                 specialActive = false
+                tagActive = false
                 groupsVisible = false
             },
             onOpenAll = {
                 selectedGroupIndex = 0
                 specialActive = false
+                tagActive = false
                 groupsVisible = false
             },
             // 第一部分（状态/留存）行：打开对应特殊分组页（顶栏首位出胶囊并置为选中），收起浮层
             onOpenSpecial = { section ->
                 specialSection = section
                 specialActive = true
+                tagActive = false
                 groupsVisible = false
             },
         )
@@ -777,6 +860,14 @@ internal fun filterTodosBySpecial(
     // 已归档无数据层概念；最近删除走仓库的 deletedTodos 流（不在活跃列表里）
     TodoSpecialSection.Archived, TodoSpecialSection.Trash -> emptyList()
 }
+
+/**
+ * 按标签派生可见待办（标签特殊分组页）：[Todo.tags] 含该标签名的活跃待办。
+ * 页内仍按置顶/逾期/未完成/已完成分区展示（复用 [TodoList] 的固定分组渲染，置顶收编
+ * 语义不变——「已置顶」页单卡侧滑即可撤销置顶）。
+ */
+internal fun filterTodosByTag(todos: List<Todo>, tag: String): List<Todo> =
+    todos.filter { tag in it.tags }
 
 /**
  * 待办列表：已置顶、已逾期、未完成、已完成各归一组——已置顶组在最上（所有置顶待办，

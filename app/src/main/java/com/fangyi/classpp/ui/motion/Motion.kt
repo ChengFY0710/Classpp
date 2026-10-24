@@ -45,7 +45,7 @@ object Motion {
      * 的 AnimatedVisibility（三者配 [Overlay]）。同一个 editing 翻转同帧启动，
      * 各处才能严格同步。想更快收场可下调（300ms 左右），两套曲线都不变。
      */
-    const val EditMillis = 400
+    const val EditMillis = 450
 
     /**
      * 整页覆盖层（设置页、个性化子页）进场时长：整页右滑入，配合 [Overlay]。
@@ -71,10 +71,10 @@ object Motion {
     const val AgendaCornerFadeMillis = 320
 
     /** 浮层（OverlaySheet）入场时长：从屏幕底部滑入，配合 [Overlay]。 */
-    const val SheetEnterMillis = 400
+    const val SheetEnterMillis = 450
 
     /** 浮层出场时长：向下滑出，配合 [Overlay]。 */
-    const val SheetExitMillis = 340
+    const val SheetExitMillis = 400
 
     /**
      * 遮罩弹窗（FadeOverlayDialog）淡入淡出时长：遮罩与卡片共用同一条透明度，

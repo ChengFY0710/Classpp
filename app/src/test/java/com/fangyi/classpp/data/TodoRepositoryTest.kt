@@ -463,6 +463,60 @@ class TodoRepositoryTest {
     }
 
     @Test
+    fun `renameTagInTodos rewrites active and deleted todos with dedupe`() = runBlocking {
+        val r = repo()
+        r.addTodo(testTodo(name = "无标签")).okId()
+        val a = r.addTodo(testTodo(name = "A", tags = listOf("紧急", "作业"))).okId()
+        val b = r.addTodo(testTodo(name = "B", tags = listOf("紧急", "本周"))).okId()
+        val c = r.addTodo(testTodo(name = "C", tags = listOf("紧急", "作业"))).okId()
+        r.removeTodo(c).assertOk()
+
+        r.renameTagInTodos("紧急", "作业").assertOk()
+
+        val live = r.todos.value.associateBy { it.name }
+        assertEquals(emptyList<String>(), live.getValue("无标签").tags)
+        // 与既有「作业」叠加时 distinct 去重，不产生重复标签
+        assertEquals(listOf("作业"), live.getValue("A").tags)
+        assertEquals(listOf("作业", "本周"), live.getValue("B").tags)
+        // 回收站条目同批回写（恢复后引用不悬空），重载后一致
+        val reopened = repo()
+        assertEquals(listOf("作业"), reopened.deletedTodos.value.single { it.id == c }.tags)
+        reopened.restoreTodo(c).assertOk()
+        assertEquals(listOf("作业"), reopened.todos.value.single { it.id == c }.tags)
+    }
+
+    @Test
+    fun `renameTagInTodos is lenient on blank and unknown tags`() = runBlocking {
+        val r = repo()
+        val id = r.addTodo(testTodo(name = "A", tags = listOf("紧急"))).okId()
+
+        // 批量语义宽容：空名/未知标签都是无操作（调用方 UI 已校验非空 + 不重名）
+        r.renameTagInTodos("紧急", "   ").assertOk()
+        r.renameTagInTodos("不存在", "新名").assertOk()
+        assertEquals(listOf("紧急"), r.todos.value.single { it.id == id }.tags)
+    }
+
+    @Test
+    fun `removeTagFromTodos unbinds tag and keeps todos`() = runBlocking {
+        val r = repo()
+        val a = r.addTodo(testTodo(name = "A", tags = listOf("紧急", "作业"))).okId()
+        val b = r.addTodo(testTodo(name = "B", tags = listOf("紧急"))).okId()
+        val c = r.addTodo(testTodo(name = "C")).okId()
+        r.removeTodo(b).assertOk()
+
+        r.removeTagFromTodos("紧急").assertOk()
+
+        // 只解绑标签，待办本身（活跃 + 回收站条目）保留
+        val live = r.todos.value.associateBy { it.name }
+        assertEquals(listOf("作业"), live.getValue("A").tags)
+        assertTrue(r.deletedTodos.value.single { it.id == b }.tags.isEmpty())
+        assertEquals(emptyList<String>(), live.getValue("C").tags)
+        // 未知标签宽容无操作：报 Ok 且现有标签不受影响
+        r.removeTagFromTodos("不存在").assertOk()
+        assertEquals(listOf("作业"), r.todos.value.single { it.id == a }.tags)
+    }
+
+    @Test
     fun `normalize clears unknown blank or stale group reference`() = runBlocking {
         val r = repo()
         r.setGroups(listOf(TodoGroup("作业"))).assertOk()

@@ -384,6 +384,49 @@ class TodoRepository internal constructor(
         commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == todoId) updated else it }))
     }
 
+    // ---------- 标签批量回写 ----------
+
+    /**
+     * 标签重命名的待办侧回写：把**全部**待办（含回收站条目，恢复后引用才不悬空）tags 里的
+     * [from] 替换为 [to]。与 [TagRepository.renameTag] 配对使用（标签库先落、待办随后回写，
+     * 两个文件无法同一次提交原子落盘）；调用方保证 [to] trim 非空且不与其它标签重名，空名
+     * 宽容为无操作（批量语义，同 [removeTodos] 对未知 id 的处理）。
+     *
+     * 不逐条 [normalize]：tags 每次写入已归一化（trim/去空/去重），替换值为合法标签名后仍
+     * 归一化，distinct 兜住「待办同时挂 from 与 to」时替换后叠加重复的情况；绕开 normalize
+     * 也避免顺带触发重复待办的逾期归账等无关结算。
+     */
+    suspend fun renameTagInTodos(from: String, to: String): TodoOpResult = mutex.withLock {
+        val prepared = to.trim()
+        if (prepared.isEmpty() || from == prepared) return@withLock TodoOpResult.Ok
+        commit(
+            fileState.value.copy(
+                todos = fileState.value.todos.map { todo ->
+                    if (from !in todo.tags) {
+                        todo
+                    } else {
+                        todo.copy(tags = todo.tags.map { if (it == from) prepared else it }.distinct())
+                    }
+                },
+            ),
+        )
+    }
+
+    /**
+     * 删除标签的待办侧回写：从**全部**待办（含回收站条目）tags 里摘除 [name]——只解绑标签，
+     * 待办本身保留。与 [TagRepository.removeTag] 配对使用（顺序同 [renameTagInTodos]）；
+     * 未知标签宽容为无操作（批量语义）。
+     */
+    suspend fun removeTagFromTodos(name: String): TodoOpResult = mutex.withLock {
+        commit(
+            fileState.value.copy(
+                todos = fileState.value.todos.map { todo ->
+                    if (name !in todo.tags) todo else todo.copy(tags = todo.tags - name)
+                },
+            ),
+        )
+    }
+
     // ---------- 分享 ----------
 
     /** 导出全部**活跃**待办为 pretty JSON 文本（分享载荷）；最近删除不随分享导出 */
