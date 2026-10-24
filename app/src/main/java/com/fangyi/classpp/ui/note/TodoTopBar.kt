@@ -3,13 +3,10 @@ package com.fangyi.classpp.ui.note
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.LocalOverscrollFactory
@@ -49,13 +46,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -67,6 +68,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.Constraints
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.PopupMenuCard
 import com.fangyi.classpp.ui.components.PopupMenuPopup
@@ -91,6 +93,7 @@ import com.kyant.backdrop.Backdrop
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.hazeBlur
+import kotlin.math.roundToInt
 
 /** 顶栏胶囊高度（与 ScheduleHeader 的 WeekPill 同款 40dp） */
 private val TopBarPillHeight = 40.dp
@@ -235,8 +238,8 @@ internal enum class TodoSpecialSection(
  * 位于置顶自定义分组之前，打开后**常驻**——[specialSectionSelected] = 页面在场（强调色
  * 整粒底 + 白内容）；false = 页面已离开但胶囊保留（surface 底 + 强调色内容，设计图未选
  * 样式），此时常规胶囊恢复选中态高亮。点击已选中的特殊胶囊 = 退出关闭（[onSpecialSectionClick]，
- * 胶囊一并消失）；点击未选中的 = 回到该特殊分组页。胶囊出入场经 AnimatedVisibility 平滑
- * 过渡（宽度生长/收拢 + 淡入淡出，[AccentPillEnter]/[AccentPillExit]，标签胶囊同套）。
+ * 胶囊一并消失）；点击未选中的 = 回到该特殊分组页。胶囊出入场经 [TwoPhasePillPresence]
+ * 两段式编排——先让位后现身 / 先谢幕后收拢（标签胶囊同套）。
  *
  * 标签特殊分组页（[tagPillName] 非 null）：同套常驻语义，胶囊插在特殊分组胶囊之后、
  * 置顶分组之前（[AccentPill]，行首 ic_tag）——强调色 = 标签色（[tagPillColor]，宿主从标签
@@ -421,13 +424,9 @@ internal fun TodoTopBar(
                         // 特殊分组页胶囊：被跳转的特殊页打开后固定分组条最前（置顶自定义分组
                         // 之前）且常驻——选中（页面在场）= 整粒一色，未选 = 白底彩字；再点
                         // 已选中的退出关闭、点未选中的回到该页（行为由宿主按状态接管）。
-                        // 出入场经 AnimatedVisibility 平滑过渡（AccentPillEnter/Exit）——
-                        // 胶囊凭空插入/移除会瞬间推动整行避让
-                        AnimatedVisibility(
-                            visible = specialSection != null,
-                            enter = AccentPillEnter,
-                            exit = AccentPillExit,
-                        ) {
+                        // 出入场经 TwoPhasePillPresence 两段式编排——先让位后现身 /
+                        // 先谢幕后收拢
+                        TwoPhasePillPresence(visible = specialSection != null) {
                             lastSpecialSection?.let { section ->
                                 SpecialGroupPill(
                                     section = section,
@@ -440,12 +439,8 @@ internal fun TodoTopBar(
                         // 标签特殊分组页胶囊：同特殊胶囊的常驻语义（分组浮层标签区跳转进入），
                         // 强调色 = 标签色（宿主下发，null 兜底 primary）；选中 = 整粒标签色底 +
                         // 白内容，未选 = surface 底 + 标签色内容——设计稿标签胶囊的两种形态。
-                        // 出入场同特殊胶囊（AccentPillEnter/Exit）
-                        AnimatedVisibility(
-                            visible = tagPillName != null,
-                            enter = AccentPillEnter,
-                            exit = AccentPillExit,
-                        ) {
+                        // 出入场同特殊胶囊（TwoPhasePillPresence）
+                        TwoPhasePillPresence(visible = tagPillName != null) {
                             lastTagPillName?.let { name ->
                                 AccentPill(
                                     iconRes = R.drawable.ic_tag,
@@ -755,20 +750,87 @@ private fun TodoSpecialSection.accentColor(): Color = when (this) {
 }
 
 /**
- * 强调色胶囊（特殊分组页/标签页两处 [AccentPill] 共用）的出入场转场：宽度生长/收拢 +
- * 淡入淡出——胶囊在分组条最前凭空插入/移除会瞬间推动整条胶囊行避让，经 AnimatedVisibility
- * 平滑过渡。进场从左缘（裁切线一侧）向右生长、退场向左收拢（收进的部分被分组条的横向
- * 裁剪切掉、藏进更多按钮背后），规格见 [Motion.TodoPillEnterMillis]/[Motion.TodoPillExitMillis]。
+ * 特殊胶囊的两段式出入场容器（特殊分组页/标签页两处共用）：不用 AnimatedVisibility——
+ * 它的展开/收起布局自带常驻 clipToBounds，胶囊按压放大（glassPressFeedback 的 1.10）超出
+ * 布局边界的左右部分会被平切、36dp 柔影同样被裁；且组合转场里宽度与透明度同帧驱动，
+ * 先后关系不受控（退场收拢的裁切会追上尚在淡出的本体）。改为显式两段编排 + 手写宽度
+ * 布局，全程无裁切：
+ *
+ * - 进场：先让位——槽位列入组合，宽度从 0 长到本体实宽（layout 按 [slotProgress] 折算，
+ *   [Motion.TodoPillPlaceMillis] + [Motion.Decelerate]，邻粒移到位），本体 alpha 持 0；
+ *   让位播完本体才淡入（[Motion.TodoPillEnterMillis] + [Motion.Decelerate]）——
+ *   「先腾地方、再现身」；
+ * - 退场：先谢幕——本体淡出（[Motion.TodoPillExitMillis] + [Motion.Accelerate]），播完
+ *   宽度再收到 0（[Motion.TodoPillPlaceMillis] + [Motion.Accelerate]），邻粒向左合拢——
+ *   此时本体 alpha 已归 0，超出槽位的部分无需裁切藏内容——「先谢幕、再收桌」；收拢播完
+ *   才把槽位移出组合（零宽槽在 spacedBy 行里会留幽灵间距）。
+ *
+ * [visible] 连续翻转时 LaunchedEffect 取消重启，两条 Animatable 从当前值续走：隐藏中途
+ * 改显示则宽度续长、本体淡回；首组合即在场（如 @Preview）无进场动画。宽度的折算与
+ * alpha 都在 layout/graphicsLayer 块内读 Animatable 值，逐帧推进不触发重组。
  */
-private val AccentPillEnter: EnterTransition = expandHorizontally(
-    animationSpec = tween(Motion.TodoPillEnterMillis, easing = Motion.Decelerate),
-    expandFrom = Alignment.Start,
-) + fadeIn(tween(Motion.TodoPillEnterMillis, easing = Motion.Decelerate))
+@Composable
+private fun TwoPhasePillPresence(
+    visible: Boolean,
+    content: @Composable () -> Unit,
+) {
+    val slotProgress = remember { Animatable(if (visible) 1f else 0f) }
+    val pillAlpha = remember { Animatable(if (visible) 1f else 0f) }
+    var slotComposed by remember { mutableStateOf(visible) }
+    LaunchedEffect(visible) {
+        if (visible) {
+            slotComposed = true
+            slotProgress.animateTo(1f, tween(Motion.TodoPillPlaceMillis, easing = Motion.Decelerate))
+            pillAlpha.animateTo(1f, tween(Motion.TodoPillEnterMillis, easing = Motion.Decelerate))
+        } else {
+            pillAlpha.animateTo(0f, tween(Motion.TodoPillExitMillis, easing = Motion.Accelerate))
+            slotProgress.animateTo(0f, tween(Motion.TodoPillPlaceMillis, easing = Motion.Accelerate))
+            slotComposed = false
+        }
+    }
+    if (slotComposed) {
+        Box(
+            modifier = Modifier
+                .layout { measurable, constraints ->
+                    val placeable = measurable.measure(constraints)
+                    // 槽位宽 = 本体实宽 × 进度：只折算布局占位、不裁切内容——宽度不足全宽
+                    // 时本体 alpha 必为 0（两段编排保证），超出槽位的部分无需藏
+                    val width = (placeable.width * slotProgress.value).roundToInt()
+                    layout(width, placeable.height) {
+                        placeable.placeRelative(0, 0)
+                    }
+                }
+                .accentPillFade(alpha = { pillAlpha.value }),
+        ) {
+            content()
+        }
+    }
+}
 
-private val AccentPillExit: ExitTransition = shrinkHorizontally(
-    animationSpec = tween(Motion.TodoPillExitMillis, easing = Motion.Accelerate),
-    shrinkTowards = Alignment.Start,
-) + fadeOut(tween(Motion.TodoPillExitMillis, easing = Motion.Accelerate))
+/**
+ * 本体淡入淡出（不建离屏合成层）：graphicsLayer 的 alpha 会让图层按节点布局尺寸录制
+ * 内容，按压放大（glassPressFeedback 的 1.10 + 果冻过冲）超出布局边界的左右部分被图层
+ * 边缘平切——表现为按下时胶囊出现直线切口（pressFeedback 规避「离屏缓冲裁断」的同一
+ * 现象）。改用画布级 saveLayer 合成 alpha：合成范围取当前画布裁剪（祖先裁剪），本体
+ * 可自由溢出；alpha == 1 直绘零开销。alpha 在 draw 块内读取（调用方传 Animatable 值），
+ * 逐帧重画不触发重组。
+ */
+private fun Modifier.accentPillFade(alpha: () -> Float): Modifier {
+    val paint = android.graphics.Paint()
+    return drawWithContent {
+        val a = alpha()
+        when {
+            a >= 1f -> drawContent()
+            a <= 0f -> Unit
+            else -> drawIntoCanvas { canvas ->
+                paint.alpha = (a * 255f).roundToInt().coerceIn(0, 255)
+                val saveCount = canvas.nativeCanvas.saveLayer(null, paint)
+                drawContent()
+                canvas.nativeCanvas.restoreToCount(saveCount)
+            }
+        }
+    }
+}
 
 /**
  * 强调色胶囊（特殊分组页/标签页共用主体）：行首语义图标 + 标签 + 尾部关闭✕（ic_dismiss），

@@ -139,18 +139,23 @@ object Motion {
     const val ReorderMillis = 220
 
     /**
-     * 待办顶栏特殊胶囊（特殊分组页/标签页胶囊）进场时长：胶囊在分组条最前凭空插入会瞬间
-     * 推动整条胶囊行避让，故配 expandHorizontally（expandFrom = Start）+ fadeIn 平滑进场
-     * （TodoTopBar）。配合 [Decelerate]——起步即全速，邻粒随宽度生长即时让位。与
-     * [ReorderMillis] 同档（同为「条目避让位移」语义）但独立成 token，调节奏互不牵动。
+     * 待办顶栏特殊胶囊（特殊分组页/标签页胶囊）的邻粒避让时长：胶囊进出场与邻粒移动
+     * 分两段先后播放（TodoTopBar）——进场先让位（宽度槽在胶囊隐形时张开，邻粒移到位）、
+     * 退场末尾再收拢（胶囊淡出完毕，宽度槽塌掉、邻粒合拢），本值是让位/收拢这一段的
+     * 时长，让位配 [Decelerate]、收拢配 [Accelerate]。
+     */
+    const val TodoPillPlaceMillis = 220
+
+    /**
+     * 待办顶栏特殊胶囊自身的淡入时长：邻粒让位完成后，胶囊才在就位的槽位里淡入——
+     * 「先腾地方、再现身」。配合 [Decelerate]。
      */
     const val TodoPillEnterMillis = 220
 
     /**
-     * 待办顶栏特殊胶囊退场时长：shrinkHorizontally（shrinkTowards = Start）+ fadeOut，
-     * 胶囊原地向左收拢——收进的部分被分组条的横向裁剪切掉、藏进更多按钮背后。配合
-     * [Accelerate]（与 [Decelerate] 成同族曲线对，动作行展开/收起同套配对）；比进场
-     * 短一拍，与 Sheet/Popup 族进出场节奏一致。
+     * 待办顶栏特殊胶囊自身的淡出时长：胶囊先在原位谢幕，淡出完毕邻粒才开始收拢——
+     * 「先谢幕、再收桌」。配合 [Accelerate]；比淡入短一拍，与 Sheet/Popup 族进出场
+     * 节奏一致。
      */
     const val TodoPillExitMillis = 180
 
