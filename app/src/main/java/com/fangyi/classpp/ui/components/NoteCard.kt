@@ -1,7 +1,11 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TodoUrgency
+import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -210,7 +216,14 @@ private fun CountdownLabel(
  * - 时间、截止、重复与标签全缺席时卡片仍有 60dp 最小高度，不塌成纯文字高度；
  * - [swipe] 侧滑动作（见 [NoteCardSwipe]）：非 null 时卡片包进侧滑层——左右滑呼出删除/
  *   置顶动作卡，双阈值结算（不足展开阈值回弹复位、越过执行阈值松手即执行、展开态
- *   动作卡可点按、点卡片主体收起）；null（默认）不加层，卡片与原来完全一致。
+ *   动作卡可点按、点卡片主体收起）；null（默认）不加层，卡片与原来完全一致；
+ * - [selected] 编辑态选中（传非 null 即进入选中形态）：选中卡画 2dp Primary 描边——宽度与
+ *   透明度共用同一条 150ms 进度动画「生长+淡入」（与 SheetTextField 聚焦蓝框同规格）；
+ *   右侧勾选框同时转纯展示（保留完成态视觉、不拦截点击），整卡任意位置单击即切换选中
+ *   （onClick 由调用方接「切换选中」）；null（默认）无选中形态，卡片与原来完全一致；
+ * - [onLongClick] 长按回调（待办列表长按进编辑页的入口）：与 onClick 同时非 null 时手势
+ *   从 pressClickable 换成 pressFeedback + combinedClickable 手动配对（长按需自建按压源）；
+ *   null（默认）维持纯单击。
  */
 @Composable
 fun NoteCard(
@@ -233,6 +246,10 @@ fun NoteCard(
     onRestore: (() -> Unit)? = null,
     onCheckedChange: ((Boolean) -> Unit)? = null,
     onClick: (() -> Unit)? = null,
+    // 编辑态选中：非 null 进入选中形态（Primary 蓝框 + 勾选框纯展示），null 无此形态
+    selected: Boolean? = null,
+    // 长按回调（进编辑页入口）：与 onClick 同时非 null 才生效
+    onLongClick: (() -> Unit)? = null,
     swipe: NoteCardSwipe? = null,
 ) {
     val titleStyle = when {
@@ -247,6 +264,15 @@ fun NoteCard(
     }
     // 标签配色的回落色：配色表里没有的名字（含调用方未接线时）统一落主题 Primary
     val fallbackTagColor = MaterialTheme.colorScheme.primary
+    // 选中蓝框（编辑态）：宽度与透明度共用同一条 0→1 进度动画，选中「生长+淡入」、
+    // 取消「萎缩+淡出」严格同步——SheetTextField 聚焦描边同规格（150ms LinearOutSlowIn）
+    val selectionProgress by animateFloatAsState(
+        targetValue = if (selected == true) 1f else 0f,
+        animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
+        label = "noteCardSelectionStroke",
+    )
+    val selectionStrokeColor = MaterialTheme.colorScheme.primary
+    val selectionStrokeWidth = 2.dp * selectionProgress
     // 侧滑层：swipe 非 null 时卡片包进侧滑层（左右滑呼出动作卡），下方 Row 原样不动；
     // null = 不加层，输出与无侧滑时完全一致
     NoteCardSwipeLayer(swipe = swipe) {
@@ -255,12 +281,41 @@ fun NoteCard(
                 .fillMaxWidth()
                 .heightIn(min = SheetFieldHeight)
                 // 按压反馈同 SheetCard「可点才挂」：位置在 clip 之前（缩放作用于整卡、不被圆角
-                // 裁掉），提亮范围与 NoteCardShape 对齐；null = 静态卡，涟漪由按压反馈取代
+                // 裁掉），提亮范围与 NoteCardShape 对齐；null = 静态卡，涟漪由按压反馈取代。
+                // 长按形态（编辑入口）手动配对 pressFeedback + combinedClickable——
+                // pressClickable 只封了单击（长按需自建按压源，见其 KDoc）
                 .then(
-                    if (onClick != null) Modifier.pressClickable(NoteCardShape, onClick = onClick) else Modifier,
+                    when {
+                        onClick != null && onLongClick != null -> {
+                            val press = remember { MutableInteractionSource() }
+                            Modifier.pressFeedback(press, NoteCardShape).combinedClickable(
+                                interactionSource = press,
+                                indication = null,
+                                onClick = onClick,
+                                onLongClick = onLongClick,
+                            )
+                        }
+                        onClick != null -> Modifier.pressClickable(NoteCardShape, onClick = onClick)
+                        else -> Modifier
+                    },
                 )
                 .clip(NoteCardShape)
                 .background(MaterialTheme.colorScheme.surface)
+                .then(
+                    // 进度归 0 后干脆不挂 border：0 宽描边会被 Skia 画成 1px 发丝线而非不可见
+                    // （SheetTextField 上机踩过的坑，同款规避）
+                    if (selectionStrokeWidth > 0.dp) {
+                        Modifier.border(
+                            width = selectionStrokeWidth,
+                            color = selectionStrokeColor.copy(
+                                alpha = selectionStrokeColor.alpha * selectionProgress,
+                            ),
+                            shape = NoteCardShape,
+                        )
+                    } else {
+                        Modifier
+                    },
+                )
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -351,19 +406,28 @@ fun NoteCard(
                 }
             } else {
                 // M3 Checkbox 占位（后续按设计稿自绘）：颜色先取主题 primary——未选 = 蓝描边框，已选，蓝底白勾。
-                // 按压源由 pressFeedback 与 toggleable 共用（indication 置 null，涟漪由按压反馈取代）
+                // 按压源由 pressFeedback 与 toggleable 共用（indication 置 null，涟漪由按压反馈取代）；
+                // 编辑选中形态（selected 非 null）转纯展示——不挂按压反馈与 toggleable，
+                // 点击穿透给整卡（单击任意位置切换选中），勾选框只保留完成态视觉
                 val checkboxPress = remember { MutableInteractionSource() }
                 Row(
                     modifier = Modifier
                         // 按压反馈在 clip 之前：缩放作用于整个触控区，提亮范围与勾选框圆角对齐
-                        .pressFeedback(checkboxPress, RoundedRectangle(6.dp))
-                        .clip(RoundedRectangle(6.dp))
-                        .toggleable(
-                            value = completed,
-                            interactionSource = checkboxPress,
-                            indication = null,
-                            onValueChange = { onCheckedChange?.invoke(it) }, // 安全调用
-                            role = Role.Checkbox,
+                        .then(
+                            if (selected == null) {
+                                Modifier
+                                    .pressFeedback(checkboxPress, RoundedRectangle(6.dp))
+                                    .clip(RoundedRectangle(6.dp))
+                                    .toggleable(
+                                        value = completed,
+                                        interactionSource = checkboxPress,
+                                        indication = null,
+                                        onValueChange = { onCheckedChange?.invoke(it) }, // 安全调用
+                                        role = Role.Checkbox,
+                                    )
+                            } else {
+                                Modifier
+                            },
                         )
                         .height(36.dp)  //定义checkBox热区高度
                         .width(36.dp),
@@ -515,6 +579,12 @@ private fun NoteCardShowcase() {
             deleted = true,
             onRestore = {},
         )
+        // 编辑选中形态对照：选中（2dp Primary 蓝框）与未选中（进入编辑形态、无蓝框）——
+        // 勾选框转纯展示（保留完成态视觉），整卡单击切换选中
+        NoteCard(title = "户口乔迁材料报送", time = "12:30", onCheckedChange = {}, selected = true)
+        NoteCard(title = "户口乔迁材料报送", time = "12:30", onCheckedChange = {}, selected = false)
+        // 选中与完成态叠加：蓝框 + 划线置灰标题 + 勾选框选中
+        NoteCard(title = "户口乔迁材料报送", time = "12:30", completed = true, onCheckedChange = {}, selected = true)
     }
 }
 

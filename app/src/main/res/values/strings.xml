@@ -95,6 +95,16 @@
     <string name="toast_todo_step_deleted">步骤已删除</string>
     <string name="toast_todo_pinned">已置顶</string>
     <string name="toast_todo_unpinned">已取消置顶</string>
+    <string name="toast_todo_moved">已移动</string>
+    <!-- 待办编辑页（长按列表卡片进入）：编辑顶栏动作与分组头全选文字按钮；
+         动作即时落库，「确认」只负责退出，不设取消 -->
+    <string name="todo_edit_delete">删除</string>
+    <string name="todo_edit_move">移动</string>
+    <string name="todo_edit_sync">同步</string>
+    <string name="todo_edit_pin">置顶</string>
+    <string name="todo_edit_confirm">确认</string>
+    <string name="todo_edit_select_all">全选</string>
+    <string name="todo_edit_deselect_all">取消全选</string>
     <!-- 新建待办浮层：分组标题与表单字段 -->
     <string name="todo_section_reminder">提醒与优先级</string>
     <string name="todo_section_date_time">日期与时间</string>

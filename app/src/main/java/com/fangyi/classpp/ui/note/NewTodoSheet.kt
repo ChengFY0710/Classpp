@@ -738,6 +738,9 @@ private fun DeleteTodoConfirmDialog(
  * 顶栏左上「新建」蓝胶囊（[OverlaySheet] 的确认槽，同 [TodoGroupsSheet] 普通态的新建按钮：
  * 文案「新建」+ ic_add_circle + primary 底）、右上「关闭」白胶囊同 [TodoGroupsSheet] 普通态样式。
  *
+ * 待办编辑页的批量「移动」复用同一浮层（TodoScreen 唤起）：点选分组即把选中待办整批
+ * 移动过去，「新建」当场建组后同样留在列表等点选。
+ *
  * 「新建」走 [BottomTextFieldCard] 命名卡（两段式挂载，同 [TodoGroupsSheet] 的新建流程）：
  * 挂载即聚焦弹键盘、确认 = 追加 `TodoGroup(name)`（pinned = false，落列表末尾——保持置顶项
  * 构成连续前缀的 [TodoGroup] 不变式）经 [onGroupsChange] 整表写回，落库失败的 Toast 由宿主
@@ -759,7 +762,7 @@ private fun DeleteTodoConfirmDialog(
  * @param onPick 选中回调：组名（null = 未分组），由调用方回写入口值并请求关闭
  */
 @Composable
-private fun GroupPickSheet(
+internal fun GroupPickSheet(
     todos: List<Todo>,
     groups: List<TodoGroup>,
     visible: Boolean,

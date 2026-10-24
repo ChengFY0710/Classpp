@@ -1,8 +1,14 @@
 package com.fangyi.classpp.ui.note
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -91,6 +97,13 @@ private const val MILLIS_PER_DAY = 86_400_000L
  */
 private val TopBarRowSpace = 59.dp
 
+/**
+ * 待办编辑顶栏在内容坐标系里的占位高（TodoEditBar 私有常量镜像）：状态栏之下 6dp 顶部
+ * 留白 + 64dp 动作行。比常规顶栏（[TopBarRowSpace]）高出的部分进编辑时由
+ * editBarExtraSpace 动画补差（列表让位），退出时收回。
+ */
+private val EditBarRowSpace = 70.dp
+
 /** 列表首组与顶栏的间距 */
 private val ListTopSpacing = 12.dp
 
@@ -118,6 +131,14 @@ private val SectionSpacing = 20.dp
  * [tabTransition]：tab 转场状态只读视图（ui.navigation 的 TabPager 状态机），透传给
  * [TodoTopBar] 启用转场冻结层——与课表页顶栏同一机制，杜绝快速切 tab 时顶栏
  * 毛玻璃闪缺（详见 tabTransitionFreeze）。
+ *
+ * 长按列表卡片进入待办编辑页（仅常规分组与标签页可用，特殊分组页无入口，闸门见
+ * [enterTodoEdit]）：顶栏经 AnimatedContent 换场为编辑顶栏（[TodoEditBar]，删除/移动/
+ * 同步/置顶/确认，规格与动画逐项对齐课表编辑顶栏，Motion.EditMillis + Standard），
+ * 删除/置顶/移动批量作用于选中待办并即时落库（移动经 [GroupPickSheet] 点选目标分组），
+ * 「确认」/系统返回退出（不设取消）；
+ * 卡片经 [NoteCard.selected] 转选中蓝框形态、分组头强制展开并把箭头换成「全选/取消
+ * 全选」；编辑态下底部导航栏与渐隐遮罩下移出屏、侧滑与完成勾选停用。
  */
 @Composable
 fun TodoScreen(
@@ -145,6 +166,15 @@ fun TodoScreen(
     // 优先级更高，互不干扰（同课表页编辑态返回拦截的模式）
     BackHandler(enabled = swipeCoordinator.activeKey != null) {
         swipeCoordinator.activeKey = null
+    }
+    // 待办编辑态：长按列表卡片进入（仅常规分组/标签页可用，特殊分组页与最近删除无入口），
+    // 选中集与编辑标记都 rememberSaveable（旋转/进程重建不丢）。删除/置顶即点即落库
+    // （与课表编辑的草稿会话不同），「确认」只负责退出——不设取消，系统返回同语义
+    var todoEditing by rememberSaveable { mutableStateOf(false) }
+    var selectedTodoIds by rememberSaveable { mutableStateOf(emptySet<String>()) }
+    BackHandler(enabled = todoEditing) {
+        todoEditing = false
+        selectedTodoIds = emptySet()
     }
     var selectedGroupIndex by rememberSaveable { mutableIntStateOf(0) }
     // 特殊分组页（已完成/未完成/已逾期/已置顶/已归档/最近删除）：分组浮层第一部分跳转进入，
@@ -219,6 +249,14 @@ fun TodoScreen(
         },
         label = "todoTopBarActionSpace",
     )
+    // 编辑顶栏让位：编辑顶栏（状态栏下 6dp 留白 + 64dp 动作行）比常规顶栏高出的部分，
+    // 翻转时与底部遮罩/导航栏同帧同曲线（EditMillis + Overlay）补差，列表不被顶栏压住。
+    // 与顶栏展开动作行的让位（上方 topBarExtraSpace）相互独立——两者叠加进 contentPadding
+    val editBarExtraSpace by animateDpAsState(
+        targetValue = if (todoEditing) EditBarRowSpace - TopBarRowSpace else 0.dp,
+        animationSpec = tween(Motion.EditMillis, easing = Motion.Overlay),
+        label = "todoEditBarSpace",
+    )
     // 详情浮层：被点待办 id（点卡片进入），空 = 未打开（同课表页 detailTargetId）
     var detailTargetId by rememberSaveable { mutableStateOf("") }
     // 所点条目的分期日期（ISO 文本，空 = 非逐期卡）：详情按 id 反查原始待办，逐期上下文
@@ -228,15 +266,18 @@ fun TodoScreen(
     var editTargetId by rememberSaveable { mutableStateOf("") }
     // 分组浮层：待办分组（顶栏展开动作行的分组块进入），空 = 未打开（两段式挂载见浮层处）
     var groupsVisible by rememberSaveable { mutableStateOf(false) }
-    // 四张全屏浮层（新建/详情/编辑/分组）的挂载态：声明提前到页面布局之前——底部渐变
+    // 移动-选择分组浮层（待办编辑态「移动」唤起，复用 GroupPickSheet）：两段式挂载同分组浮层
+    var movePickVisible by rememberSaveable { mutableStateOf(false) }
+    // 五张全屏浮层（新建/详情/编辑/分组/移动选组）的挂载态：声明提前到页面布局之前——底部渐变
     // 遮罩（页面 Box 内的 BottomFadeScrim）要读 anyOverlayMounted 决定显隐；各浮层
     // 自己的两段式挂载块（置真与卸载回调）仍在原位
     var newTodoMounted by remember { mutableStateOf(false) }
     var detailMounted by remember { mutableStateOf<Todo?>(null) }
     var editMounted by remember { mutableStateOf<Todo?>(null) }
     var groupsMounted by remember { mutableStateOf(false) }
+    var movePickMounted by remember { mutableStateOf(false) }
     val anyOverlayMounted = newTodoMounted || detailMounted != null || editMounted != null ||
-        groupsMounted
+        groupsMounted || movePickMounted
     // 分组列表（顺序 + 置顶标记）：仓库 todos.json 持久化，顶栏胶囊与分组浮层共享同一份；
     // 分组写回失败的 Toast 文案在组合期解析（commitGroups 回调里非组合上下文，同编辑浮层约定）
     val groups by repository.groups.collectAsState()
@@ -247,6 +288,7 @@ fun TodoScreen(
     val todoPurgedMessage = stringResource(R.string.toast_todo_purged)
     val todoPinnedMessage = stringResource(R.string.toast_todo_pinned)
     val todoUnpinnedMessage = stringResource(R.string.toast_todo_unpinned)
+    val todoMovedMessage = stringResource(R.string.toast_todo_moved)
     // 分组写回统一入口：新建（浮层追加）、确认（置顶/重排草稿）、删除（滤除）、重命名
     // （立即生效）共用——整表连 renames 交仓库 setGroups 落盘：被删组的待办由仓库级联回
     // 未分组，重命名组（renames 映射，原名 → 新名）的待办归属同一次提交跟随到新名；
@@ -333,6 +375,91 @@ fun TodoScreen(
         else -> filterTodosByGroup(displayTodos, selectedGroupIndex, groups)
     }
 
+    // 待办编辑三件套：进入（长按卡片，自动选中长按卡；顶栏展开的菜单/动作行与侧滑展开卡
+    // 一并收起——编辑顶栏取代顶栏后它们无处安放）、退出（确认/系统返回）、单卡选中切换
+    //（编辑态下点卡片任意位置，含勾选框区域）。
+    // 进入带可用性闸门：仅常规分组（全部/未分组/用户分组）与标签页可用——特殊分组页
+    //（已完成/未完成/已逾期/已置顶/已归档/最近删除）本身是过滤口径，无编辑语义
+    val enterTodoEdit: (String) -> Unit = { id ->
+        if (!todoEditing && special == null) {
+            todoEditing = true
+            selectedTodoIds = setOf(id)
+            menuExpanded = false
+            sortMenuExpanded = false
+            categoryMenuExpanded = false
+            swipeCoordinator.activeKey = null
+        }
+    }
+    val exitTodoEdit: () -> Unit = {
+        todoEditing = false
+        selectedTodoIds = emptySet()
+    }
+    val toggleTodoSelect: (String) -> Unit = { id ->
+        selectedTodoIds = if (id in selectedTodoIds) selectedTodoIds - id else selectedTodoIds + id
+    }
+    // 分组头「全选/取消全选」：整组待办 id 并入/移出选中集（重复待办的分期卡同享一个
+    // id，整系列同选同撤）
+    val toggleTodoSelectAll: (Set<String>, Boolean) -> Unit = { ids, select ->
+        selectedTodoIds = if (select) selectedTodoIds + ids else selectedTodoIds - ids
+    }
+    // 编辑顶栏「删除」：批量软删所选（进最近删除，同侧滑删除语义），成功清空选中、
+    // 保持编辑态等用户继续操作或确认退出；失败 Toast 保存失败
+    val onDeleteSelected: () -> Unit = {
+        val ids = selectedTodoIds.toList()
+        if (ids.isNotEmpty()) {
+            scope.launch {
+                when (repository.removeTodos(ids)) {
+                    TodoOpResult.Ok -> {
+                        selectedTodoIds = emptySet()
+                        AppToasts.show(context, todoDeletedMessage)
+                    }
+                    is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
+                }
+            }
+        }
+    }
+    // 编辑顶栏「置顶」：逐条写回（重复待办整系列生效，同侧滑置顶语义），成功 Toast
+    // 已置顶、任一失败 Toast 保存失败；置顶后卡片移入「已置顶」组，选中保持
+    val onPinSelected: () -> Unit = {
+        val ids = selectedTodoIds.toList()
+        if (ids.isNotEmpty()) {
+            scope.launch {
+                var failed = false
+                for (id in ids) {
+                    if (repository.setPinned(id, true) is TodoOpResult.Err) failed = true
+                }
+                AppToasts.show(context, if (failed) groupSaveFailedMessage else todoPinnedMessage)
+            }
+        }
+    }
+    // 「置顶」可用性：所选非空且含未置顶待办——所选已全部置顶（含空选）时动作无效，
+    // 编辑顶栏把按钮置灰（negative 色）
+    val pinEnabled = selectedTodoIds.isNotEmpty() && todos.any { it.id in selectedTodoIds && !it.pinned }
+    // 编辑顶栏「移动」：唤起选择分组浮层（复用新建/编辑浮层的 GroupPickSheet，含「新建」），
+    // 点选分组（null = 未分组）即把所选待办整批移动过去——只写 group 字段，其余不动
+    //（置顶状态跟随，已置顶待办移动后仍在「已置顶」组；重复待办整系列生效，同删除/置顶
+    // 语义）。目标组与现组相同的待办跳过：无变化不写盘、不提示。成功清空选中（移动后
+    // 待办可能离开当前过滤视图，非「全部」页尤甚）、保持编辑态；任一失败 Toast 保存失败、
+    // 选中保留可重试
+    val onMovePick: (String?) -> Unit = { target ->
+        movePickVisible = false
+        val movable = todos.filter { it.id in selectedTodoIds && it.group != target }
+        if (movable.isNotEmpty()) {
+            scope.launch {
+                var failed = false
+                for (todo in movable) {
+                    if (repository.updateTodo(todo.copy(group = target)) is TodoOpResult.Err) failed = true
+                }
+                if (failed) {
+                    AppToasts.show(context, groupSaveFailedMessage)
+                } else {
+                    selectedTodoIds = emptySet()
+                    AppToasts.show(context, todoMovedMessage)
+                }
+            }
+        }
+    }
+
     // 整页（列表 + 顶栏）滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的
     // ProvideOverscroll）：列表滚到顶/底后继续拖动，内容整块被拉出边缘、越拉越硬，
     // 松手无过冲弹回；顶栏分组胶囊（rubberBandHorizontalScroll）同享。平移露出的是
@@ -377,7 +504,15 @@ fun TodoScreen(
                     // 最近删除页：平铺（无四组分组头）+ 已删除样式卡片（右撤回 / 左滑彻底删除）
                     deletedCards = special == TodoSpecialSection.Trash,
                     topBarExtraSpace = topBarExtraSpace,
+                    editBarExtraSpace = editBarExtraSpace,
                     swipeCoordinator = swipeCoordinator,
+                    // 待办编辑态：卡片转选中形态、分组头强制展开并换「全选/取消全选」、
+                    // 侧滑与勾选停用；进入闸门在 enterTodoEdit 内（特殊分组页关断）
+                    editing = todoEditing,
+                    selectedTodoIds = selectedTodoIds,
+                    onEnterEdit = enterTodoEdit,
+                    onToggleSelect = toggleTodoSelect,
+                    onToggleSelectAll = toggleTodoSelectAll,
                     // 勾选路由：分期卡（重复待办的展开副本，dates[0] 即分期日期）走逐期
                     // 结算，普通待办走整条完成
                     onToggleCompleted = { todo, completed ->
@@ -436,176 +571,212 @@ fun TodoScreen(
                 )
             }
             // 底部渐变遮罩：页面自绘（原导航栏内置层下沉至此），盖住滚进导航栏区域的列表；
-            // 全屏浮层在场时随导航栏一同下移出屏——与 MainActivity 的导航栏 AnimatedVisibility
-            // 共用 Motion.EditMillis + Motion.Overlay 规格。画在内容层之上、顶栏之下（遮罩管底、顶栏管顶）
+            // 全屏浮层在场或待办编辑态时随导航栏一同下移出屏——与 MainActivity 的导航栏
+            // AnimatedVisibility 共用 Motion.EditMillis + Motion.Overlay 规格。
+            // 画在内容层之上、顶栏之下（遮罩管底、顶栏管顶）
             BottomFadeScrim(
-                visible = !anyOverlayMounted,
+                visible = !anyOverlayMounted && !todoEditing,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
-            TodoTopBar(
-                groups = groups.map { it.name },
-                // 置顶分组数：仓库维持「置顶构成连续前缀」不变式，顶栏按此把前 N 粒胶囊
-                // 固定最前（行首图钉）；下标语义不受视觉前移影响（仍按 groups 原序偏移）
-                pinnedGroupCount = groups.count { it.pinned },
-                // 特殊分组页胶囊（分组条首位，常驻）+ 点击切换：已选中 = 退出关闭（胶囊消失），
-                // 未选中 = 回到该页；切任何常规胶囊 = 离开特殊页（胶囊保留、转未选态）
-                specialSection = specialSection,
-                specialSectionSelected = specialActive,
-                onSpecialSectionClick = {
-                    if (specialActive) {
-                        specialSection = null
-                        specialActive = false
-                    } else {
-                        specialActive = true
-                        tagActive = false
-                    }
+            // 顶栏换场：常规顶栏上移淡出、编辑顶栏自上方下移淡入——课表编辑（ScheduleScreen
+            // 的 topBarSwap）同规格：同一个 todoEditing 翻转同帧启动、450ms，顶栏换场另配
+            // 更缓的 Motion.Standard（Overlay 前重后轻，顶栏会在前 ~100ms 窜完大半行程，
+            // 观感太急）；列表让位补差走 editBarExtraSpace（Overlay，与遮罩/导航栏同帧）
+            AnimatedContent(
+                targetState = !todoEditing,
+                contentAlignment = Alignment.TopCenter,
+                transitionSpec = {
+                    (slideInVertically(
+                        animationSpec = tween(Motion.EditMillis, easing = Motion.Standard),
+                    ) { -it } + fadeIn(tween(Motion.EditMillis, easing = Motion.Standard))) togetherWith
+                        (slideOutVertically(
+                            animationSpec = tween(Motion.EditMillis, easing = Motion.Standard),
+                        ) { -it } + fadeOut(tween(Motion.EditMillis, easing = Motion.Standard)))
                 },
-                // 标签特殊分组页胶囊（特殊胶囊之后、置顶分组之前，常驻）+ 点击切换：
-                // 已选中 = 退出关闭（胶囊消失），未选中 = 回到该页（顺带退出特殊分组页）
-                tagPillName = selectedTag,
-                // 胶囊强调色 = 标签色（colorArgb null 已在 tagColorMap 兜底为 primary；
-                // 查不到的残留名同样兜底 primary）
-                tagPillColor = selectedTag?.let { tagColorMap[it] },
-                tagPillSelected = tagActive,
-                onTagPillClick = {
-                    if (tagActive) {
-                        selectedTag = null
-                        tagActive = false
-                    } else {
-                        tagActive = true
-                        specialActive = false
-                    }
-                },
-                selectedGroupIndex = selectedGroupIndex,
-                onGroupSelect = {
-                    specialActive = false
-                    tagActive = false
-                    selectedGroupIndex = it
-                },
-                // 更多点击翻转展开态;收起时顺带关排序/分类菜单——菜单锚在展开动作行的
-                // 动作块上,行收起锚点即消失,不先关会悬空
-                onMoreClick = {
-                    if (menuExpanded) {
-                        sortMenuExpanded = false
-                        categoryMenuExpanded = false
-                    }
-                    menuExpanded = !menuExpanded
-                },
-                // 排序块点击展开菜单(SortMenu 三件套挂在动作块处)；两菜单同锚一行互斥，
-                // 打开一个时先关另一个，避免两张菜单卡叠影
-                onSortClick = {
-                    categoryMenuExpanded = false
-                    sortMenuExpanded = true
-                },
-                // 分类块打开分类菜单（同互斥约定；多选开关，点选不收菜单）
-                onCategoryClick = {
-                    sortMenuExpanded = false
-                    categoryMenuExpanded = true
-                },
-                // 分组块打开待办分组浮层（动作行保持展开，关浮层回到原状，不额外折叠）
-                onGroupClick = { groupsVisible = true },
-                menuExpanded = menuExpanded,
-                sortMenuExpanded = sortMenuExpanded,
-                onSortMenuDismiss = { sortMenuExpanded = false },
-                categoryMenuExpanded = categoryMenuExpanded,
-                onCategoryMenuDismiss = { categoryMenuExpanded = false },
-                // 分类块状态：特殊分组页在场 = 置灰不可点（该页本身就是过滤口径，显隐开关
-                // 无意义）；标签页可点（显隐开关作用于标签过滤结果）；其余页面四组未全选
-                // （有分组被隐藏）= primary 提示过滤生效中
-                categoryEnabled = special == null,
-                categoryFiltered = visibleSections.size < TodoSection.entries.size,
-                // 分类菜单：四个分组显隐开关，勾选态即分组可见性；点选只切换不收起，
-                // 便于连续勾选多项（收起靠点菜单外区域）
-                categoryMenuSections = listOf(
-                    PopupMenuSection(
-                        items = listOf(
-                            PopupMenuItem(
-                                label = stringResource(R.string.todo_section_pinned),
-                                checked = TodoSection.Pinned in visibleSections,
-                                onClick = { toggleSectionVisible(TodoSection.Pinned) },
-                            ),
-                            PopupMenuItem(
-                                label = stringResource(R.string.todo_section_overdue),
-                                checked = TodoSection.Overdue in visibleSections,
-                                onClick = { toggleSectionVisible(TodoSection.Overdue) },
-                            ),
-                            PopupMenuItem(
-                                label = stringResource(R.string.todo_section_incomplete),
-                                checked = TodoSection.Active in visibleSections,
-                                onClick = { toggleSectionVisible(TodoSection.Active) },
-                            ),
-                            PopupMenuItem(
-                                label = stringResource(R.string.todo_section_completed),
-                                checked = TodoSection.Done in visibleSections,
-                                onClick = { toggleSectionVisible(TodoSection.Done) },
-                            ),
-                        ),
-                    ),
-                ),
-                sortMenuSections = listOf(
-                    PopupMenuSection(
-                        items = listOf(
-                            PopupMenuItem(
-                                label = stringResource(R.string.sort_created),
-                                checked = sort == TodoSort.Created,
-                                onClick = {
-                                    sort = TodoSort.Created
-                                    sortMenuExpanded = false
-                                },
-                            ),
-                            PopupMenuItem(
-                                label = stringResource(R.string.sort_deadline),
-                                checked = sort == TodoSort.Deadline,
-                                onClick = {
-                                    sort = TodoSort.Deadline
-                                    sortMenuExpanded = false
-                                },
-                            ),
-                            PopupMenuItem(
-                                label = stringResource(R.string.sort_urgency),
-                                checked = sort == TodoSort.Urgency,
-                                onClick = {
-                                    sort = TodoSort.Urgency
-                                    sortMenuExpanded = false
-                                },
-                            ),
-                            PopupMenuItem(
-                                label = stringResource(R.string.sort_name),
-                                checked = sort == TodoSort.Name,
-                                onClick = {
-                                    sort = TodoSort.Name
-                                    sortMenuExpanded = false
-                                },
-                            ),
-                        ),
-                    ),
-                    PopupMenuSection(
-                        showDivider = true,
-                        items = listOf(
-                            PopupMenuItem(
-                                label = stringResource(R.string.sort_ascending),
-                                checked = !sortDescending,
-                                onClick = {
-                                    sortDescending = false
-                                    sortMenuExpanded = false
-                                },
-                            ),
-                            PopupMenuItem(
-                                label = stringResource(R.string.sort_descending),
-                                checked = sortDescending,
-                                onClick = {
-                                    sortDescending = true
-                                    sortMenuExpanded = false
-                                },
-                            ),
-                        ),
-                    ),
-                ),
                 modifier = Modifier.align(Alignment.TopCenter),
-                hazeState = hazeState,
-                pillBackdrop = if (glassPillsEnabled) topBarPillBackdrop else null,
-                tabTransition = tabTransition,
-            )
+                label = "todoTopBarSwap",
+            ) { viewing ->
+                if (viewing) {
+                    TodoTopBar(
+                        groups = groups.map { it.name },
+                        // 置顶分组数：仓库维持「置顶构成连续前缀」不变式，顶栏按此把前 N 粒胶囊
+                        // 固定最前（行首图钉）；下标语义不受视觉前移影响（仍按 groups 原序偏移）
+                        pinnedGroupCount = groups.count { it.pinned },
+                        // 特殊分组页胶囊（分组条首位，常驻）+ 点击切换：已选中 = 退出关闭（胶囊消失），
+                        // 未选中 = 回到该页；切任何常规胶囊 = 离开特殊页（胶囊保留、转未选态）
+                        specialSection = specialSection,
+                        specialSectionSelected = specialActive,
+                        onSpecialSectionClick = {
+                            if (specialActive) {
+                                specialSection = null
+                                specialActive = false
+                            } else {
+                                specialActive = true
+                                tagActive = false
+                            }
+                        },
+                        // 标签特殊分组页胶囊（特殊胶囊之后、置顶分组之前，常驻）+ 点击切换：
+                        // 已选中 = 退出关闭（胶囊消失），未选中 = 回到该页（顺带退出特殊分组页）
+                        tagPillName = selectedTag,
+                        // 胶囊强调色 = 标签色（colorArgb null 已在 tagColorMap 兜底为 primary；
+                        // 查不到的残留名同样兜底 primary）
+                        tagPillColor = selectedTag?.let { tagColorMap[it] },
+                        tagPillSelected = tagActive,
+                        onTagPillClick = {
+                            if (tagActive) {
+                                selectedTag = null
+                                tagActive = false
+                            } else {
+                                tagActive = true
+                                specialActive = false
+                            }
+                        },
+                        selectedGroupIndex = selectedGroupIndex,
+                        onGroupSelect = {
+                            specialActive = false
+                            tagActive = false
+                            selectedGroupIndex = it
+                        },
+                        // 更多点击翻转展开态;收起时顺带关排序/分类菜单——菜单锚在展开动作行的
+                        // 动作块上,行收起锚点即消失,不先关会悬空
+                        onMoreClick = {
+                            if (menuExpanded) {
+                                sortMenuExpanded = false
+                                categoryMenuExpanded = false
+                            }
+                            menuExpanded = !menuExpanded
+                        },
+                        // 排序块点击展开菜单(SortMenu 三件套挂在动作块处)；两菜单同锚一行互斥，
+                        // 打开一个时先关另一个，避免两张菜单卡叠影
+                        onSortClick = {
+                            categoryMenuExpanded = false
+                            sortMenuExpanded = true
+                        },
+                        // 分类块打开分类菜单（同互斥约定；多选开关，点选不收菜单）
+                        onCategoryClick = {
+                            sortMenuExpanded = false
+                            categoryMenuExpanded = true
+                        },
+                        // 分组块打开待办分组浮层（动作行保持展开，关浮层回到原状，不额外折叠）
+                        onGroupClick = { groupsVisible = true },
+                        menuExpanded = menuExpanded,
+                        sortMenuExpanded = sortMenuExpanded,
+                        onSortMenuDismiss = { sortMenuExpanded = false },
+                        categoryMenuExpanded = categoryMenuExpanded,
+                        onCategoryMenuDismiss = { categoryMenuExpanded = false },
+                        // 分类块状态：特殊分组页在场 = 置灰不可点（该页本身就是过滤口径，显隐开关
+                        // 无意义）；标签页可点（显隐开关作用于标签过滤结果）；其余页面四组未全选
+                        // （有分组被隐藏）= primary 提示过滤生效中
+                        categoryEnabled = special == null,
+                        categoryFiltered = visibleSections.size < TodoSection.entries.size,
+                        // 分类菜单：四个分组显隐开关，勾选态即分组可见性；点选只切换不收起，
+                        // 便于连续勾选多项（收起靠点菜单外区域）
+                        categoryMenuSections = listOf(
+                            PopupMenuSection(
+                                items = listOf(
+                                    PopupMenuItem(
+                                        label = stringResource(R.string.todo_section_pinned),
+                                        checked = TodoSection.Pinned in visibleSections,
+                                        onClick = { toggleSectionVisible(TodoSection.Pinned) },
+                                    ),
+                                    PopupMenuItem(
+                                        label = stringResource(R.string.todo_section_overdue),
+                                        checked = TodoSection.Overdue in visibleSections,
+                                        onClick = { toggleSectionVisible(TodoSection.Overdue) },
+                                    ),
+                                    PopupMenuItem(
+                                        label = stringResource(R.string.todo_section_incomplete),
+                                        checked = TodoSection.Active in visibleSections,
+                                        onClick = { toggleSectionVisible(TodoSection.Active) },
+                                    ),
+                                    PopupMenuItem(
+                                        label = stringResource(R.string.todo_section_completed),
+                                        checked = TodoSection.Done in visibleSections,
+                                        onClick = { toggleSectionVisible(TodoSection.Done) },
+                                    ),
+                                ),
+                            ),
+                        ),
+                        sortMenuSections = listOf(
+                            PopupMenuSection(
+                                items = listOf(
+                                    PopupMenuItem(
+                                        label = stringResource(R.string.sort_created),
+                                        checked = sort == TodoSort.Created,
+                                        onClick = {
+                                            sort = TodoSort.Created
+                                            sortMenuExpanded = false
+                                        },
+                                    ),
+                                    PopupMenuItem(
+                                        label = stringResource(R.string.sort_deadline),
+                                        checked = sort == TodoSort.Deadline,
+                                        onClick = {
+                                            sort = TodoSort.Deadline
+                                            sortMenuExpanded = false
+                                        },
+                                    ),
+                                    PopupMenuItem(
+                                        label = stringResource(R.string.sort_urgency),
+                                        checked = sort == TodoSort.Urgency,
+                                        onClick = {
+                                            sort = TodoSort.Urgency
+                                            sortMenuExpanded = false
+                                        },
+                                    ),
+                                    PopupMenuItem(
+                                        label = stringResource(R.string.sort_name),
+                                        checked = sort == TodoSort.Name,
+                                        onClick = {
+                                            sort = TodoSort.Name
+                                            sortMenuExpanded = false
+                                        },
+                                    ),
+                                ),
+                            ),
+                            PopupMenuSection(
+                                showDivider = true,
+                                items = listOf(
+                                    PopupMenuItem(
+                                        label = stringResource(R.string.sort_ascending),
+                                        checked = !sortDescending,
+                                        onClick = {
+                                            sortDescending = false
+                                            sortMenuExpanded = false
+                                        },
+                                    ),
+                                    PopupMenuItem(
+                                        label = stringResource(R.string.sort_descending),
+                                        checked = sortDescending,
+                                        onClick = {
+                                            sortDescending = true
+                                            sortMenuExpanded = false
+                                        },
+                                    ),
+                                ),
+                            ),
+                        ),
+                        // 对齐交由 AnimatedContent（TopCenter）负责，本体铺满宽度即可
+                        modifier = Modifier,
+                        hazeState = hazeState,
+                        pillBackdrop = if (glassPillsEnabled) topBarPillBackdrop else null,
+                        tabTransition = tabTransition,
+                    )
+                } else {
+                    TodoEditBar(
+                        moveEnabled = selectedTodoIds.isNotEmpty(),
+                        pinEnabled = pinEnabled,
+                        onDelete = onDeleteSelected,
+                        onMove = {
+                            movePickMounted = true
+                            movePickVisible = true
+                        },
+                        onPin = onPinSelected,
+                        onConfirm = exitTodoEdit,
+                        hazeState = hazeState,
+                    )
+                }
+            }
         }
     }
 
@@ -818,11 +989,30 @@ fun TodoScreen(
         )
     }
 
-    // 浮层在场（含收场动画期间）就藏底部导航栏，onDismissed 卸载后才放回（同课表页全屏浮层）；
+    // 移动-选择分组浮层：编辑顶栏「移动」唤起（复用新建/编辑浮层的 GroupPickSheet）——
+    // 未分组单行卡 + 自定义分组卡，点选即经 onMovePick 整批移动；「新建」经 commitGroups
+    // 当场建组落库（与新建待办浮层同款，建完留在列表等点选）。画在分组浮层之后，
+    // 浮层自带的 BackHandler 后注册：返回键先关本浮层，再轮到编辑态出口
+    if (movePickVisible) movePickMounted = true
+    if (movePickMounted) {
+        GroupPickSheet(
+            todos = todos,
+            groups = groups,
+            visible = movePickVisible,
+            onDismiss = { movePickVisible = false },
+            onDismissed = { movePickMounted = false },
+            onGroupsChange = commitGroups,
+            onPick = onMovePick,
+        )
+    }
+
+    // 浮层在场（含收场动画期间）或待办编辑态就藏底部导航栏，浮层卸载/退出编辑后才放回
+    //（走 MainActivity 现有的导航栏 AnimatedVisibility，EditMillis + Overlay 同规格下移
+    // 出屏/上移回位，与课表页编辑态同一个翻转同帧启动的模型一致）；
     // 四个浮层任一在场都算，避免分组/详情/编辑浮层开着时导航栏提前露回
     // （anyOverlayMounted 的计算提前到了页面布局之前，底部渐变遮罩同读这一份）
-    LaunchedEffect(anyOverlayMounted) {
-        onOverlayOverNavBarChange(anyOverlayMounted)
+    LaunchedEffect(anyOverlayMounted, todoEditing) {
+        onOverlayOverNavBarChange(anyOverlayMounted || todoEditing)
     }
 }
 
@@ -916,6 +1106,11 @@ internal fun filterTodosByTag(todos: List<Todo>, tag: String): List<Todo> =
  * 滚动容器为 [RubberBandLazyColumn]（页面 [ProvideOverscroll] 作用域内）：内容超一屏
  * 时滚到边缘拉出橡皮筋，待办很少、不足一屏时同样能拉——短内容是 foundation 派发门槛
  * 拦下的场景，由该封装的兜底手势层接管。
+ *
+ * 待办编辑态（[editing] = true，长按卡片进入，见 [TodoCard.onLongClick]）复用同一渲染
+ * 转入选中形态：卡片点按由详情改为切换选中、长按停用，分组头经 [NoteCardSection.editMode]
+ * 强制展开并把展开箭头换成「全选/取消全选」（按组内待办 id 整组增删 [selectedTodoIds]，
+ * 重复待办的分期卡同享一个 id，整系列同选同撤），侧滑与完成勾选停用。
  */
 @Composable
 private fun TodoList(
@@ -932,7 +1127,19 @@ private fun TodoList(
     // 最近删除页：平铺卡片（无四组分区）、已删除样式（右撤回 / 左滑彻底删除）
     deletedCards: Boolean = false,
     topBarExtraSpace: Dp,
+    // 编辑顶栏让位补差（EditBarRowSpace − TopBarRowSpace 的动画值，宿主随 todoEditing 下发）
+    editBarExtraSpace: Dp = 0.dp,
     swipeCoordinator: SwipeCoordinator,
+    // 待办编辑态：卡片转选中形态、分组头强制展开并换「全选/取消全选」、侧滑与勾选停用
+    editing: Boolean = false,
+    // 编辑态选中集（待办 id；重复待办整系列共享一个 id）
+    selectedTodoIds: Set<String> = emptySet(),
+    // 长按卡片进编辑（可用性闸门在宿主回调内：特殊分组页关断）；编辑态下卡片长按不触发
+    onEnterEdit: (String) -> Unit = {},
+    // 编辑态单卡选中切换
+    onToggleSelect: (String) -> Unit = {},
+    // 编辑态分组头「全选/取消全选」：整组待办 id 并入（select = true）/移出选中集
+    onToggleSelectAll: (Set<String>, select: Boolean) -> Unit = { _, _ -> },
     // 待办整条传入而非只传 id：分期卡（重复待办的展开副本）要靠 dates[0] 路由到逐期结算
     onToggleCompleted: (todo: Todo, completed: Boolean) -> Unit,
     onTogglePinned: (id: String, pinned: Boolean) -> Unit,
@@ -972,7 +1179,7 @@ private fun TodoList(
     RubberBandLazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            top = topInset + TopBarRowSpace + ListTopSpacing + topBarExtraSpace,
+            top = topInset + TopBarRowSpace + ListTopSpacing + topBarExtraSpace + editBarExtraSpace,
             bottom = bottomInset + ListBottomSlack,
             start = PageHorizontalSpacing,
             end = PageHorizontalSpacing,
@@ -1030,9 +1237,19 @@ private fun TodoList(
             }
             sections.forEachIndexed { index, (section, group) ->
                 item(key = section.name) {
+                    // 分组头「全选/取消全选」的口径：组内待办 id 集（分期卡同享 id，整系列同选同撤）
+                    val sectionIds = remember(group) { group.map { it.id }.toSet() }
+                    val allSelected = sectionIds.isNotEmpty() && sectionIds.all { it in selectedTodoIds }
                     NoteCardSection(
                         title = stringResource(section.titleRes),
                         initiallyExpanded = expandAllSections || section != TodoSection.Done,
+                        editMode = editing,
+                        allSelected = allSelected,
+                        onSelectAllToggle = if (editing) {
+                            { onToggleSelectAll(sectionIds, !allSelected) }
+                        } else {
+                            null
+                        },
                         // 组间距给首组之外的每组：首组贴列表起点，再加间距会比下面的组低一截
                         modifier = if (index > 0) Modifier.padding(top = SectionSpacing) else Modifier,
                     ) {
@@ -1041,10 +1258,14 @@ private fun TodoList(
                                 todo = todo,
                                 tagColors = tagColors,
                                 overdue = section == TodoSection.Overdue,
+                                editing = editing,
+                                selected = todo.id in selectedTodoIds,
                                 swipeCoordinator = swipeCoordinator,
                                 onDelete = { onDeleteTodo(todo.id) },
                                 onTogglePinned = { onTogglePinned(todo.id, !todo.pinned) },
-                                onClick = { onTodoClick(todo) },
+                                // 编辑态点卡片（任意位置）切换选中，常规态拉起详情浮层
+                                onClick = { if (editing) onToggleSelect(todo.id) else onTodoClick(todo) },
+                                onLongClick = { onEnterEdit(todo.id) },
                             ) { onToggleCompleted(todo, it) }
                         }
                     }
@@ -1062,7 +1283,10 @@ private fun TodoList(
  * 紧急旗按档位透传；[overdue] 为真（在已逾期组）时标题标红。
  * [Todo.countdown] 开启时把剩余天数交给 [NoteCard.countdownDays]，卡片左区显示倒计时
  * （天数口径与截止配色同源，见 [deadlineDaysLeft]）。
- * 点卡片（非勾选框）经 [onClick] 拉起详情浮层——勾选框是独立 toggleable，不会误触。
+ * 点卡片（非勾选框）经 [onClick] 拉起详情浮层——勾选框是独立 toggleable，不会误触；
+ * 编辑态（[editing]）点按改由宿主接「切换选中」，卡片转选中形态（[selected] 画蓝框）、
+ * 侧滑/完成勾选/长按全部停用。
+ * 长按卡片（非编辑态）经 [onLongClick] 进入待办编辑页（可用性闸门在宿主回调内）。
  * 侧滑动作：左侧删除（error 红，呼出后再拖满色松手即删）、右侧置顶（primary 蓝；已置顶卡
  * 显示 ic_pin_off、执行取消置顶），动作卡语义见 [NoteCardSwipe]。
  */
@@ -1072,10 +1296,15 @@ private fun TodoCard(
     // 标签配色表（标签名 → 颜色）：透传给 NoteCard 的 tagColors
     tagColors: Map<String, Color>,
     overdue: Boolean,
+    // 编辑态：卡片转选中形态（onClick 已由宿主接「切换选中」），侧滑/勾选/长按停用
+    editing: Boolean,
+    // 编辑态下该卡是否在选中集（NoteCard 画 Primary 蓝框）
+    selected: Boolean,
     swipeCoordinator: SwipeCoordinator,
     onDelete: () -> Unit,
     onTogglePinned: () -> Unit,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     NoteCard(
@@ -1092,31 +1321,38 @@ private fun TodoCard(
         completed = todo.completed,
         overdue = overdue,
         onClick = onClick,
-        onCheckedChange = onCheckedChange,
-        swipe = NoteCardSwipe(
-            // 侧滑互斥 key 带分期日期后缀：同一系列的分期卡同屏时互不干扰
-            //（删除/置顶动作作用于整个系列——分期没有独立的删除语义）
-            key = todo.id + "#" + (todo.dates.firstOrNull()?.epochDay?.toString() ?: ""),
-            coordinator = swipeCoordinator,
-            delete = SwipeAction(
-                iconRes = R.drawable.ic_delete,
-                tint = MaterialTheme.colorScheme.error,
-                activeColor = MaterialTheme.colorScheme.error,
-                onActiveColor = MaterialTheme.colorScheme.onError,
-                contentDescription = stringResource(R.string.todo_swipe_delete),
-                onAction = onDelete,
-            ),
-            pin = SwipeAction(
-                iconRes = if (todo.pinned) R.drawable.ic_pin_off else R.drawable.ic_pin,
-                tint = MaterialTheme.colorScheme.primary,
-                activeColor = MaterialTheme.colorScheme.primary,
-                onActiveColor = MaterialTheme.colorScheme.onPrimary,
-                contentDescription = stringResource(
-                    if (todo.pinned) R.string.todo_swipe_unpin else R.string.todo_swipe_pin,
+        onCheckedChange = if (editing) null else onCheckedChange,
+        selected = if (editing) selected else null,
+        onLongClick = if (editing) null else onLongClick,
+        swipe = if (editing) {
+            // 编辑态禁用侧滑：侧滑删除/置顶与批量选中是两套动作模型，编辑态只认顶栏
+            null
+        } else {
+            NoteCardSwipe(
+                // 侧滑互斥 key 带分期日期后缀：同一系列的分期卡同屏时互不干扰
+                //（删除/置顶动作作用于整个系列——分期没有独立的删除语义）
+                key = todo.id + "#" + (todo.dates.firstOrNull()?.epochDay?.toString() ?: ""),
+                coordinator = swipeCoordinator,
+                delete = SwipeAction(
+                    iconRes = R.drawable.ic_delete,
+                    tint = MaterialTheme.colorScheme.error,
+                    activeColor = MaterialTheme.colorScheme.error,
+                    onActiveColor = MaterialTheme.colorScheme.onError,
+                    contentDescription = stringResource(R.string.todo_swipe_delete),
+                    onAction = onDelete,
                 ),
-                onAction = onTogglePinned,
-            ),
-        ),
+                pin = SwipeAction(
+                    iconRes = if (todo.pinned) R.drawable.ic_pin_off else R.drawable.ic_pin,
+                    tint = MaterialTheme.colorScheme.primary,
+                    activeColor = MaterialTheme.colorScheme.primary,
+                    onActiveColor = MaterialTheme.colorScheme.onPrimary,
+                    contentDescription = stringResource(
+                        if (todo.pinned) R.string.todo_swipe_unpin else R.string.todo_swipe_pin,
+                    ),
+                    onAction = onTogglePinned,
+                ),
+            )
+        },
     )
 }
 
