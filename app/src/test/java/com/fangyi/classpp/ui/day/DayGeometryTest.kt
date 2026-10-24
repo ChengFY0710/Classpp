@@ -112,30 +112,31 @@ class DayGeometryTest {
     fun compactStateMatchesDesignCardAndWhiteCard() {
         val frame = DayGeometry.frame(metrics, open = 1f, collapse = 0f)
 
-        // 图片卡：两侧 12dp、顶边状态栏下 12dp、240dp 高、24dp 圆角
+        // 图片卡：两侧 12dp、顶边状态栏下 6dp、235dp 高、24dp 圆角
         assertEquals(12f, frame.image.left, 0.01f)
-        assertEquals(60f, frame.image.top, 0.01f)
+        assertEquals(54f, frame.image.top, 0.01f)
         assertEquals(390f, frame.image.right, 0.01f)
-        assertEquals(300f, frame.image.bottom, 0.01f)
+        assertEquals(289f, frame.image.bottom, 0.01f)
         assertEquals(24f, frame.imageRadius, 0.01f)
 
-        // 白卡顶边 = 图片卡底边 + DayCardGap（当前 token 24dp → 324dp）
-        val contentTop = 300f + DayCardGap.value
+        // 白卡顶边 = 图片卡底边 + DayCardGap（当前 token 20dp → 309dp）
+        val contentTop = 289f + DayCardGap.value
         assertEquals(12f, frame.content.left, 0.01f)
         assertEquals(contentTop, frame.content.top, 0.01f)
         assertEquals(390f, frame.content.right, 0.01f)
         assertEquals(contentTop + 235f, frame.content.bottom, 0.01f)
         assertEquals(235f, frame.content.height, 0.01f)
 
-        // 模糊带：卡片中点起、白卡顶边止；02 起不再有黑色 tint
-        assertEquals(180f, frame.bandTop, 0.01f)
-        assertEquals(contentTop, frame.bandBottom, 0.01f)
-        assertEquals(contentTop - 180f, frame.bandHeight, 0.01f)
+        // 模糊带：卡片中点起、图片卡底边 + DayBandBleed 止——带底压到白卡顶边之下，
+        // 由不透明的白卡叠在上面盖住；02 起不再有黑色 tint
+        assertEquals(171.5f, frame.bandTop, 0.01f)
+        assertEquals(289f + DayBandBleed.value, frame.bandBottom, 0.01f)
+        assertEquals(117.5f + DayBandBleed.value, frame.bandHeight, 0.01f)
         assertEquals(0f, frame.bandTintAlpha, 0.01f)
 
-        // 日期组 01→02 的位移与设计稿量取一致（约 -485dp）；02 尚未缩放/横移
+        // 日期组 01→02 的位移与设计稿量取一致（约 -496dp）；02 尚未缩放/横移
         assertEquals(0f, frame.dateTranslationX, 0.01f)
-        assertEquals(-485f, frame.dateTranslationY, 0.5f)
+        assertEquals(-496f, frame.dateTranslationY, 0.5f)
         assertEquals(1f, frame.dateScale, 0.01f)
         assertEquals(0f, frame.topScrimAlpha, 0.01f)
         assertEquals(0f, frame.topBarContentAlpha, 0.01f)
@@ -146,8 +147,8 @@ class DayGeometryTest {
     fun scheduleStateCoversCalendarAndBandCompletely() {
         val frame = DayGeometry.frame(metrics, open = 1f, collapse = 1f)
 
-        // 图片卡最终宽 200dp、居中、顶边状态栏下 112dp；高度按等比缩到 240×200/378
-        val finalHeight = 240f * 200f / 378f
+        // 图片卡最终宽 200dp、居中、顶边状态栏下 112dp；高度按等比缩到 235×200/378
+        val finalHeight = 235f * 200f / 378f
         assertEquals(101f, frame.image.left, 0.01f)
         assertEquals(160f, frame.image.top, 0.01f)
         assertEquals(301f, frame.image.right, 0.01f)
@@ -160,7 +161,12 @@ class DayGeometryTest {
         assertEquals(235f, frame.content.height, 0.01f)
         assertTrue(frame.image.top >= frame.content.top)
         assertTrue(frame.image.bottom <= frame.content.bottom)
-        assertEquals(0f, frame.bandHeight, 0.01f)
+        // 模糊带底边仍延伸到图片卡底边之下（图片底部始终被模糊盖住），但整段
+        // 落在白卡竖向范围内、且 imageAlpha 已归零——04 不露残影
+        assertTrue(frame.bandTop >= frame.content.top)
+        assertEquals(frame.image.bottom + DayBandBleed.value, frame.bandBottom, 0.01f)
+        assertTrue(frame.bandBottom <= frame.content.bottom)
+        assertEquals(0f, frame.imageAlpha, 0.01f)
 
         assertTrue(frame.topBarContentAlpha >= 1f)
         assertTrue(frame.topBarBackgroundAlpha >= 1f)
@@ -194,7 +200,8 @@ class DayGeometryTest {
         assertTrue(schedule.dateTranslationX > halfway.dateTranslationX)
 
         // 图片高度等比收缩，日期组底边随缩小的卡底走（不再固定下移 100dp），
-        // 但仍完整落在图片卡内。
+        // 但仍完整落在图片卡内。compact 高 235 → 04 高约 124，卡底只上移约 5dp，
+        // 而卡内下边距按缩放收回约 12dp，整组净下移约 8dp。
         assertTrue(schedule.image.height < compact.image.height)
         assertEquals(
             compact.image.height * schedule.image.width / compact.image.width,
@@ -204,14 +211,14 @@ class DayGeometryTest {
         val scheduleDateBottom = 759f + schedule.dateTranslationY
         assertTrue(scheduleDateBottom <= schedule.image.bottom)
         assertTrue(scheduleDateBottom >= schedule.image.top)
-        assertTrue(kotlin.math.abs(schedule.dateTranslationY - compact.dateTranslationY) < 2f)
+        assertTrue(kotlin.math.abs(schedule.dateTranslationY - compact.dateTranslationY) < 12f)
     }
 
     @Test
     fun transitionPassesThroughDesign03Composition() {
-        // 03 的构图仍以 contentTop=204dp 为锚点；白卡起点随 DayCardGap 变化，
-        // 反解出的 collapse 也随之移动（gap=12 时约 0.551，gap=24 时约 0.577）。
-        val contentTopCompact = 300f + DayCardGap.value
+        // 03 的构图仍以 contentTop=204dp 为锚点；白卡起点随 token 变化，反解出的
+        // collapse 也随之移动（gap=20、顶距 6dp/高 235dp 时约 0.544）。
+        val contentTopCompact = 289f + DayCardGap.value
         val collapse = (contentTopCompact - 204f) / (contentTopCompact - 116f)
         val frame = DayGeometry.frame(metrics, open = 1f, collapse = collapse)
 
@@ -219,13 +226,15 @@ class DayGeometryTest {
         // 白卡高度固定，03 也是 235dp
         assertEquals(235f, frame.content.height, 0.01f)
 
-        // 设计稿 03：图片卡 top≈117dp、宽≈282dp。gap 非 12dp 时收窄点略偏，
-        // 图片 top 仍对齐，宽度给 8dp 容差（gap=24 时约 275dp）。
-        assertEquals(117f, frame.image.top, 2f)
+        // 设计稿 03：图片卡 top≈117dp、宽≈282dp。compact token（顶距/高度）调整后
+        // 收窄点略偏，图片 top 偏低约 5dp，容差放宽到 8dp（宽度本就 8dp 容差）。
+        assertEquals(117f, frame.image.top, 8f)
         assertEquals(282f, frame.image.width, 8f)
 
-        // 白卡顶边已越过卡片中点 → 模糊带归零，03 没有残留模糊带
-        assertEquals(0f, frame.bandHeight, 0.01f)
+        // 带体仍在（图片底部始终被模糊盖住），底边压在白卡顶边之下由白卡盖住；
+        // 带顶（模糊起点）可以露在白卡上方，那正是 03 该有的中间构图
+        assertTrue(frame.bandHeight > 0f)
+        assertTrue(frame.bandBottom > frame.content.top)
         // 顶栏内容已基本就位；背景按新节奏接近 04 才出现，03 处还没有。
         assertTrue(frame.topBarContentAlpha > 0.95f)
         assertEquals(0f, frame.topBarBackgroundAlpha, 0.01f)
@@ -285,7 +294,7 @@ class DayGeometryTest {
         val compact = DayGeometry.frame(metrics, open = 1f, collapse = 0f)
         assertEquals(378f / 402f, compact.imageScale(metrics), 0.0001f)
         assertEquals(-12f, compact.imageTranslationX(metrics), 0.01f)
-        assertEquals((240f - 893f) / 2f, compact.imageTranslationY(metrics), 0.01f)
+        assertEquals((235f - 893f) / 2f, compact.imageTranslationY(metrics), 0.01f)
 
         val schedule = DayGeometry.frame(metrics, open = 1f, collapse = 1f)
         assertEquals(200f / 402f, schedule.imageScale(metrics), 0.0001f)

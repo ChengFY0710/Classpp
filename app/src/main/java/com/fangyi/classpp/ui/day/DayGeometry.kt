@@ -11,13 +11,21 @@ import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 // ---------------------------------------------------------------
 
 /** 02 图片卡顶边距状态栏下沿。 */
-internal val DayCardTopInset = 12.dp
+internal val DayCardTopInset = 6.dp
 
-/** 02 图片卡高度；02→04 随宽度等比缩小，04 高度 = 240 × (200/卡宽)。 */
-internal val DayCardHeight = 240.dp
+/** 02 图片卡高度；02→04 随宽度等比缩小，04 高度 = 235 × (200/卡宽)。 */
+internal val DayCardHeight = 235.dp
 
 /** 图片卡与白底内容卡的间距。 */
-internal val DayCardGap = 24.dp
+internal val DayCardGap = 20.dp
+
+/**
+ * 模糊带底边相对图片卡底边的向下延伸：带底越过白卡顶边压到白卡后面，由不透明的
+ * 白卡叠在上面盖住——模糊始终遮住图片卡底部，02 静止态白卡两侧留白与 02↔04 白卡
+ * 顶边扫过图片卡时都不再出现切线。需大于 [DayCardGap]（保证越过白卡顶边），且离
+ * 图片卡底边足够远（25dp blur 下 40dp 处的 smear 已不可见，带底自身无可见边缘）。
+ */
+internal val DayBandBleed = 40.dp
 
 /** 图片卡/白卡圆角（DayCardShape 同值）。 */
 internal val DayCardCorner = 24.dp
@@ -155,8 +163,9 @@ internal data class DayFrame(
     /** 图片卡下段模糊带的顶边。 */
     val bandTop: Float,
     /**
-     * 模糊带底边：01→02 开头白卡仍在屏外时钉在屏底（保持 01 的 360dp scrim），
-     * 白卡顶边进入屏幕后即等于白卡顶边，被白卡自然截断。
+     * 模糊带底边：图片卡底边 + [DayBandBleed]，01 满屏图时钳在屏底（保持 01 的
+     * 底部 scrim 原样）。带底越过白卡顶边压到白卡后面，白卡不透明、叠在带上方，
+     * 越界段被卡自然盖住——不依赖渲染层渐隐，图片卡底部始终被完整模糊盖住。
      */
     val bandBottom: Float,
     /** 日期组相对 01 基准位的横向位移：02→04 随卡片收窄向右归位。 */
@@ -183,7 +192,7 @@ internal data class DayFrame(
     /** 日期组（含图片 icon）透明度：先于图片卡被白卡盖住，02→04 前段渐隐，04 为 0。 */
     val dateAlpha: Float,
 ) {
-    /** 模糊带可见高度；白卡顶边越过卡片中点后为 0（03/04 无残留）。 */
+    /** 模糊带高度：图片卡下半段 + 底边外延；03/04 带体仍计算，但整段落入白卡竖向范围被卡盖住（且随 imageAlpha 渐隐）。 */
     val bandHeight: Float get() = (bandBottom - bandTop).coerceAtLeast(0f)
 }
 
@@ -264,13 +273,11 @@ internal object DayGeometry {
         } else {
             lerp(compactBandTop, scheduleBandTop, c)
         }
-        // 01→02 开头白卡还在屏外（contentTop 比屏底低一个 gap），模糊带底边先钉在屏底，
-        // 保持 01 的 360dp 底部 scrim 不变；白卡顶边进入屏幕后再由它截断。
-        val bandBottom = if (o < 1f) {
-            contentTop.coerceAtMost(metrics.screenHeight)
-        } else {
-            contentTop
-        }
+        // 模糊带底边：图片卡底边再向下延伸 DayBandBleed——模糊始终盖住图片卡底部，
+        // 卡底晕开不被白卡顶边切断；白卡不透明、叠在带上方，越界段被卡自然盖住。
+        // 01 满屏图时延伸越出屏底，钳在屏底保持原 320dp 底部 scrim 不变。
+        val bandBottom =
+            (image.bottom + DayBandBleed.value).coerceAtMost(metrics.screenHeight)
 
         // 02→04 日期组整体跟随图片卡宽度缩放；01→02 保持 1（设计稿里日期行尺寸不变）。
         // 横向按卡内左边距等比内收，保证收窄后日期组仍贴在卡片左侧。
