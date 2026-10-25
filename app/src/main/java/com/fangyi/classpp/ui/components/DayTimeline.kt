@@ -28,6 +28,7 @@ import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.DayTimelineNowChipShape
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
+import kotlin.math.abs
 
 /** 一天的整点数：刻度从 0:00 到次日 0:00 共 [HoursPerDay] + 1 个 */
 private const val HoursPerDay = 24
@@ -51,6 +52,10 @@ private val NowChipWidth = 39.dp
 private val NowChipHeight = 22.dp
 private val NowChipFontSize = 10.sp
 
+/** 时刻矩形临近整点判定：当前时刻距某整点前后各 ≤ 该分钟数时，该整点刻度文字隐藏，
+ *  避免与矩形挤在一起 */
+private const val NowNearTickThresholdMinutes = 20
+
 /** 刻度字号（与 DayCourseAlert 次级信息一致） */
 private val TimeLabelFontSize = 12.sp
 
@@ -61,7 +66,8 @@ private val TimeLabelFontSize = 12.sp
  *
  * 当前时间指示器（[nowMinute] 非 null 且不早于锚点时）：Error 色横线自时刻矩形右缘
  * 贯穿屏幕右缘（压过任务卡），时刻矩形（白字 Error 底）距屏幕左缘 [NowChipStartPadding]、
- * 文字居中，垂直对齐当前时刻的刻度中心。
+ * 文字居中，垂直对齐当前时刻的刻度中心。当前时刻距某整点前后各
+ * ≤ [NowNearTickThresholdMinutes] 分钟时，该整点刻度文字隐藏（矩形就近覆盖）。
  *
  * 网格线与课表页同款（1dp 实线、colorScheme.outline）：顶部/底部两条全宽横线 + 时间列
  * 右缘一条贯通竖线，无逐小时横线。首尾横线不压刻度——每个刻度落在 50dp 格的垂直中心，
@@ -119,7 +125,13 @@ internal fun DayTimeline(
     ) {
         hourLabels.forEachIndexed { index, label ->
             // 刻度盒 = 50dp 一格：文字水平居中于 44dp 时间列、垂直居中于本格，中心即
-            // (锚点 + index) 的时间位置 —— y(t) = ((t − 锚点) / 60 + 0.5) × HourSpacing
+            // (锚点 + index) 的时间位置 —— y(t) = ((t − 锚点) / 60 + 0.5) × HourSpacing。
+            // 当前时刻距本整点前后 ≤ [NowNearTickThresholdMinutes] 分钟时文字隐藏，
+            // 该处由指示器矩形就近覆盖
+            val tickMinute = (anchorHour + index) * 60
+            val now = nowMinute
+            val hiddenByNow = now != null && now >= anchorMinute &&
+                abs(now - tickMinute) <= NowNearTickThresholdMinutes
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -127,11 +139,13 @@ internal fun DayTimeline(
                     .size(width = TimeAreaWidth, height = HourSpacing),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = label,
-                    color = secondaryText,
-                    fontSize = TimeLabelFontSize,
-                )
+                if (!hiddenByNow) {
+                    Text(
+                        text = label,
+                        color = secondaryText,
+                        fontSize = TimeLabelFontSize,
+                    )
+                }
             }
         }
         if (tasks.isNotEmpty()) {
