@@ -108,6 +108,7 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.ui.LocalToday
+import com.fangyi.classpp.ui.components.BottomFadeScrim
 import com.fangyi.classpp.ui.components.DayCalendar
 import com.fangyi.classpp.ui.components.DayCalendarFoldState
 import com.fangyi.classpp.ui.components.DayCourseAlert
@@ -166,7 +167,8 @@ private const val CourseAlertResyncMillis = 30_000L
  * open/collapse 两个进度派生，不存在停留点。
  *
  * 01→02：图片从全屏连续收成顶部圆角卡、日期组移入卡片、底部模糊层变为卡片下段
- * 模糊带、白卡从屏底升入。02→04：白卡上移、图片卡收窄下移、顶栏渐入。02 禁止下滑
+ * 模糊带、白卡从屏底升入、底部渐变遮罩（BottomFadeScrim）从屏底跟手升入。02→04：
+ * 白卡上移、图片卡收窄下移、顶栏渐入。02 禁止下滑
  * 回 01；点 02 图片卡用同一曲线重播 02→01（纯视觉，不写持久化）。所有几何集中在
  * [DayGeometry]，每帧只在 layout/draw 阶段读进度，拖拽不触发重组。
  *
@@ -1235,7 +1237,17 @@ fun DayScreen(
             }
         }
 
-        // 9) 日程顶栏：内容卡顶部贴住它；Haze 采样白卡，标题样式复刻 ScheduleHeader。
+        // 9) 02 底部渐变遮罩：与 01↔02 转场同一进度源（open）跟手——01→02 从屏幕底外
+        // 一比一升入落位，02→01 反向沉出（拖拽与吸附动画都自动跟随）；02/04 常驻盖住
+        // 滚进导航栏区域的内容卡。压在内容列表之上、图片浮层之下（见 BottomFadeScrim）。
+        if (showContent) {
+            BottomFadeScrim(
+                progress = { transition.open },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+
+        // 10) 日程顶栏：内容卡顶部贴住它；Haze 采样白卡，标题样式复刻 ScheduleHeader。
         if (showTopBar) {
             DayTopBar(
                 title = topBarTitle,
@@ -1266,7 +1278,7 @@ fun DayScreen(
             )
         }
 
-        // 10) 图片选择浮层保持最后挂载，盖住整个页面（含顶栏）。
+        // 11) 图片选择浮层保持最后挂载，盖住整个页面（含顶栏）。
         if (sheetMounted) {
             DayImageSheet(
                 visible = sheetVisible,
