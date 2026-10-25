@@ -303,9 +303,10 @@ fun DayScreen(
         }
     }
 
-    // 上课提醒卡：今天该上的课（周号 + 星期 + 周规律，口径同 NotificationPlanner）+
-    // 当前时刻 → 倒计时/上课中/课已上完/今日无课。时刻对表：前台每 30s 一跳 + 回前台
-    // 立即对表（进程冻结期间 delay 不走，与 LocalToday 同款兜底）；课表未装载按无课。
+    // 上课提醒卡：今天该上的课（周号 + 星期 + 周规律，取课同 NotificationPlanner，但周末
+    // 不按 daysPerWeek 跳过——显示模式不裁剪真实课程）+ 当前时刻 → 倒计时/上课中/课已上完/
+    // 今日无课。时刻对表：前台每 30s 一跳 + 回前台立即对表（进程冻结期间 delay 不走，与
+    // LocalToday 同款兜底）；课表未装载按无课。
     val scheduleState = scheduleRepository?.activeSchedule?.collectAsState()
     var nowMinute by remember { mutableIntStateOf(nowMinuteOfDay()) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -1445,10 +1446,11 @@ private data class DayCourseAlertData(
 
 /**
  * 提醒卡取数：今天该上的课 + 当前时刻 → 卡片状态。取课口径同 NotificationPlanner.planCourses
- * （周号 + 星期 + 周规律过滤，5 天表跳过周末，开学前/学期外整段跳过）：
+ * （周号 + 星期 + 周规律过滤，开学前/学期外整段跳过），但**不按 daysPerWeek 跳过周末**：
+ * 那只是网格显示列数，周末排了课仍要提醒：
  * - 进行中的课（开始 ≤ 现在 < 结束）→ Ongoing，多节并发取节次最早者；
  * - 否则最近一节未开始的课 → Countdown（分钟差，标题按小时分档的文案由组件派生）；
- * - 今天的课全部上完 → DayDone；今天没排课（含学期外/周末/课表未装载）→ NoCourse。
+ * - 今天的课全部上完 → DayDone；今天没排课（含学期外/课表未装载）→ NoCourse。
  * 结束时间取末节 endTime：跨节（span > 1）的课 = 最后一节的下课时刻。
  */
 private fun dayCourseAlertData(schedule: Schedule?, today: IsoDate, nowMinute: Int): DayCourseAlertData {
@@ -1456,7 +1458,9 @@ private fun dayCourseAlertData(schedule: Schedule?, today: IsoDate, nowMinute: I
     val termStartMonday = schedule.termStart.mondayOfWeek().epochDay
     val week = ((today.mondayOfWeek().epochDay - termStartMonday) / 7).toInt() + 1
     val dayOfWeek = today.isoDayOfWeek()
-    val inTerm = week in 1..schedule.totalWeeks && dayOfWeek <= schedule.daysPerWeek
+    // 只按学期周次过滤，不看 daysPerWeek：那只是网格的显示列数（5 天模式下周末列不画），
+    // 周六/周日真实排了课仍要提醒——无课判定不能被显示模式裁剪
+    val inTerm = week in 1..schedule.totalWeeks
     val todayCourses = if (inTerm) {
         schedule.courses
             .filter { it.dayOfWeek == dayOfWeek && it.weeks.contains(week) }
