@@ -235,6 +235,10 @@ fun DayScreen(
 ) {
     val context = LocalContext.current
     val today = LocalToday
+    // 选中查看的日期：默认今天；跨零点 today 变化时随 remember(today) 自动重置回今天
+    //（与下方跨天重置同拍）。日历点选/「回到今天」只改这里，页面日期文案、背景图、
+    // 时间轴任务全部按它取
+    var selectedDate by remember(today) { mutableStateOf(today) }
     val density = LocalDensity.current
     val pxPerDp = density.density
     val scope = rememberCoroutineScope()
@@ -266,25 +270,30 @@ fun DayScreen(
     var selectedImage by remember { mutableStateOf(DayImageStore.loadSelected(context)) }
     // 随机轮播：开启时背景取「当日命中」，命中即落盘锁定（DayImageStore）——当天内导入
     // 新图不重抽（背景不随图库变动切换），命中图被删才重抽，跨零点（today 变化）重抽；
-    // 关闭或图库为空回退手动选中
+    // 关闭或图库为空回退手动选中。查看其他日期时不落盘：按该日种子现抽当"那天的图"预览，
+    // 不改动今天已锁定的命中
     var randomEnabled by remember { mutableStateOf(DayImageStore.loadRandomEnabled(context)) }
     var randomPick by remember { mutableStateOf(DayImageStore.loadRandomPick(context)) }
-    // 当日命中在组合期同步算出（首帧即正确）：已有当天有效命中直接沿用，否则按当天种子
-    // 现抽（种子保证同天同图库下重组结果稳定，落盘后即锁定）。落盘走副作用、不参与显示
-    val todayPick = if (randomEnabled && images.isNotEmpty()) {
-        randomPick?.takeIf { (day, name) -> day == today.epochDay && name in images }
-            ?: (today.epochDay to images[Random(today.epochDay).nextInt(images.size)])
+    // 命中在组合期同步算出（首帧即正确）：今天沿用已锁定命中，没有才按今天种子现抽；
+    // 其他日期一律按该日种子现抽（种子保证同天同图库下重组结果稳定）。落盘只针对今天
+    val dayPick = if (randomEnabled && images.isNotEmpty()) {
+        if (selectedDate == today) {
+            randomPick?.takeIf { (day, name) -> day == today.epochDay && name in images }
+                ?: (today.epochDay to images[Random(today.epochDay).nextInt(images.size)])
+        } else {
+            selectedDate.epochDay to images[Random(selectedDate.epochDay).nextInt(images.size)]
+        }
     } else {
         null
     }
-    LaunchedEffect(todayPick) {
-        if (todayPick != null && randomPick != todayPick) {
-            randomPick = todayPick
-            DayImageStore.saveRandomPick(context, todayPick.first, todayPick.second)
+    LaunchedEffect(dayPick) {
+        if (dayPick != null && selectedDate == today && randomPick != dayPick) {
+            randomPick = dayPick
+            DayImageStore.saveRandomPick(context, dayPick.first, dayPick.second)
         }
     }
     val backgroundImage = if (randomEnabled && images.isNotEmpty()) {
-        todayPick?.second
+        dayPick?.second
     } else {
         selectedImage
     }
@@ -427,14 +436,14 @@ fun DayScreen(
     // 今日无课。时刻对表：前台每 30s 一跳 + 回前台立即对表（进程冻结期间 delay 不走，与
     // LocalToday 同款兜底）；课表未装载按无课。
     val scheduleState = scheduleRepository?.activeSchedule?.collectAsState()
-    // 时间轴任务卡：今天有起止时刻的课程 + 待办（口径见 dayTasks），装配成 DayTask 列表。
+    // 时间轴任务卡：所选日期有起止时刻的课程 + 待办（口径见 dayTasks），装配成 DayTask 列表。
     // 截止取色是 @Composable 口径（读 LocalToday），故在组合期装配而非 remember 块里；
     // 上课卡/待办卡的点击分别经 onCourseClick/onTodoClick 记下目标，唤起详情浮层
     //（宿主块见底部挂载处）
     val timelineTasks = dayTasks(
         scheduleState?.value,
         todos,
-        today,
+        selectedDate,
         toggleTaskTodo,
         onCourseClick = { detailTargetId = it },
         onTodoClick = openTodoDetail,
@@ -456,6 +465,10 @@ fun DayScreen(
     }
     val courseAlert = remember(scheduleState?.value, today, nowMinute) {
         dayCourseAlertData(scheduleState?.value, today, nowMinute)
+    }
+    // 非今天整天概览卡的节数：同一取课口径（周号 + 星期 + 周规律，开学前/学期外 0 节）
+    val dayCourseCount = remember(scheduleState?.value, selectedDate) {
+        scheduleState?.value?.let { todayCourseEntries(it, selectedDate).size } ?: 0
     }
 
     // 跨天/回前台对表：LocalToday 已含 onResume 与前台每分钟对表；日期变化立即回 01。
@@ -595,14 +608,25 @@ fun DayScreen(
         }
     }
 
-    // 日期文案（日期组与顶栏共用同一份今天）
-    val (year, month, dayOfMonth) = remember(today) { today.yearMonthDay() }
+    // 日期文案（日期组与顶栏共用同一份选中日期）
+    val (year, month, dayOfMonth) = remember(selectedDate) { selectedDate.yearMonthDay() }
     // 节日/节气当天用同名两字文案替换大日期数字；名称用字已包含在字体子集中。
-    val dayMark = remember(today) { ChineseDayMarks.markOf(today) }
+    val dayMark = remember(selectedDate) { ChineseDayMarks.markOf(selectedDate) }
     val yearMonth = stringResource(R.string.date_year_month_format, year, month)
-    val weekday = stringArrayResource(R.array.weekdays)[today.isoDayOfWeek() - 1]
+    val weekday = stringArrayResource(R.array.weekdays)[selectedDate.isoDayOfWeek() - 1]
     val monthDay = stringResource(R.string.month_day_format, month, dayOfMonth)
     val topBarTitle = stringResource(R.string.date_title_format, monthDay, weekday)
+    // 01 顶部提示随查看日期分档：今天开新一天（开锁）；已过去回顾这一天（图标不变）；
+    // 还没到先看看这一天（图标换闭锁——未来还锁着，过去随时可翻）
+    val swipeHintText = stringResource(
+        when {
+            selectedDate.epochDay < today.epochDay -> R.string.day_swipe_hint_past
+            selectedDate.epochDay > today.epochDay -> R.string.day_swipe_hint_future
+            else -> R.string.day_swipe_hint
+        },
+    )
+    val swipeHintIconRes =
+        if (selectedDate.epochDay > today.epochDay) R.drawable.ic_lock_closed else R.drawable.ic_lock_open
     val cardBackLabel = stringResource(R.string.cd_day_card_back)
 
     BoxWithConstraints(
@@ -1118,7 +1142,7 @@ fun DayScreen(
                 )
             }
 
-            // 4) 「上滑开启新一天」提示：跟随顶部磨砂一起上移淡出。
+            // 4) 「上滑…」提示：跟随顶部磨砂一起上移淡出；文案/图标随查看日期分档（见上）。
             Row(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -1132,14 +1156,14 @@ fun DayScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.ic_lock_open),
+                    painter = painterResource(swipeHintIconRes),
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = stringResource(R.string.day_swipe_hint),
+                    text = swipeHintText,
                     fontSize = 15.sp,
                     color = Color.White,
                 )
@@ -1316,7 +1340,10 @@ fun DayScreen(
                             // 继续 item { } 追加。
                             item(key = "dayCard") {
                                 DayCalendar(
+                                    selectedDate = selectedDate,
                                     markedDates = todoMarkedDates,
+                                    onDateClick = { selectedDate = it },
+                                    onBackToToday = { selectedDate = today },
                                     onGridRangeChange = { firstDate, lastDate ->
                                         calendarRange = firstDate to lastDate
                                     },
@@ -1325,38 +1352,55 @@ fun DayScreen(
                                     modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
                                 )
                             }
-                            // 第三条 = 上课提醒卡（DayCourseAlert）：最近一节的倒计时/上课中，
-                            // 或「今日课已上完/今日无课」；随时刻对表前进，与日历卡间距 10dp。
-                            // 有课可点（唤起课程详情浮层），无课/课已上完传 null 不可点。
+                            // 第三条 = 上课提醒卡（DayCourseAlert）：今天随时刻对表出最近一节的
+                            // 倒计时/上课中，或「今日课已上完/今日无课」；查看其他日期整天概览，
+                            // 文案按节数分档——有课「这天 N 节课 做好准备」、没课（含开学前/
+                            // 学期外）「这天没有课 好好休息吧」。今天有课可点（唤起课程详情
+                            // 浮层），其余传 null 不可点。
                             item(key = "courseAlert") {
-                                DayCourseAlert(
-                                    state = courseAlert.state,
-                                    courseName = courseAlert.course?.name.orEmpty(),
-                                    startTime = courseAlert.startTimeText,
-                                    endTime = courseAlert.endTimeText,
-                                    color = courseAlert.course?.let { CourseColor.valueOf(it.color.name) }
-                                        ?: CourseColor.Blue,
-                                    teacher = courseAlert.course?.teacher,
-                                    location = courseAlert.course?.location,
-                                    note = courseAlert.course?.note,
-                                    onClick = courseAlert.course?.let { course ->
-                                        { detailTargetId = course.id }
-                                    },
-                                    modifier = Modifier.padding(
-                                        top = CourseAlertTopSpacing,
-                                        start = PageHorizontalSpacing,
-                                        end = PageHorizontalSpacing,
-                                    ),
-                                )
+                                if (selectedDate == today) {
+                                    DayCourseAlert(
+                                        state = courseAlert.state,
+                                        courseName = courseAlert.course?.name.orEmpty(),
+                                        startTime = courseAlert.startTimeText,
+                                        endTime = courseAlert.endTimeText,
+                                        color = courseAlert.course?.let { CourseColor.valueOf(it.color.name) }
+                                            ?: CourseColor.Blue,
+                                        teacher = courseAlert.course?.teacher,
+                                        location = courseAlert.course?.location,
+                                        note = courseAlert.course?.note,
+                                        onClick = courseAlert.course?.let { course ->
+                                            { detailTargetId = course.id }
+                                        },
+                                        modifier = Modifier.padding(
+                                            top = CourseAlertTopSpacing,
+                                            start = PageHorizontalSpacing,
+                                            end = PageHorizontalSpacing,
+                                        ),
+                                    )
+                                } else {
+                                    DayCourseAlert(
+                                        state = DayCourseAlertState.DaySummary(count = dayCourseCount),
+                                        modifier = Modifier.padding(
+                                            top = CourseAlertTopSpacing,
+                                            start = PageHorizontalSpacing,
+                                            end = PageHorizontalSpacing,
+                                        ),
+                                    )
+                                }
                             }
-                            // 第四条 = 待办提醒卡（DayTodoAlert）：截止在今明后天与逾期的未完成
-                            // 待办合并一卡（逾期在前），完成勾选走落库路由；无候选待办时整卡
-                            // 折叠不占位。顶部 10dp 间距在组件折叠内容内，与上课提醒卡相邻。
+                            // 第四条 = 待办提醒卡（DayTodoAlert）：截止窗口随选中日期推算——
+                            // 今天收「今明后天 + 已逾期」的未完成待办；查看其他日期收「那天起
+                            // 2 天内」窗口 + 全部已逾期（拖欠始终在场）。无候选时整卡折叠
+                            // 不占位。倒计时（含取色）与标题逾期标红随查看日期同源推算；
+                            // 非今天截止文案取绝对日期（避免与倒计时错位）。
+                            // 完成勾选走落库路由，
                             // 行点击经 openTodoDetail 唤起待办详情浮层。
                             item(key = "todoAlert") {
                                 DayTodoAlert(
                                     todos = todos,
                                     today = today,
+                                    viewDate = selectedDate,
                                     nowMinute = nowMinute,
                                     tagColors = tagColorMap,
                                     onComplete = completeAlertTodo,
@@ -1368,11 +1412,11 @@ fun DayScreen(
                             // 44dp 时间列；网格线与屏幕同宽，故不加水平 padding。右侧卡片区域
                             // 渲染当天任务卡（timelineTasks），按任务时长比例（1 小时 = 50dp）
                             // 排布；当前时刻指示器（Error 横线 + 左侧时刻矩形）随 nowMinute
-                            // 每 30s 一跳；无任务时照常显示整条留白。
+                            // 每 30s 一跳，查看其他日期时不画；无任务时照常显示整条留白。
                             item(key = "timeline") {
                                 DayTimeline(
                                     tasks = timelineTasks,
-                                    nowMinute = nowMinute,
+                                    nowMinute = if (selectedDate == today) nowMinute else null,
                                     modifier = Modifier.padding(top = TimelineTopSpacing),
                                 )
                             }
@@ -1439,10 +1483,11 @@ fun DayScreen(
             val schedule = activeSchedule ?: return@let
             // 该课程标签（=课程名）命中的全部待办：先做重复待办的分期展开（同待办列表页
             // 口径——分期副本的日期与"随重复"折算截止才是当期真实值），再按标签过滤（标签
-            // 语义走 filterTodos 的"任一重合"），排序与待办页默认一致（创建时间降序）
-            val courseTodos = remember(todos, today, detail.name) {
+            // 语义走 filterTodos 的"任一重合"），排序与待办页默认一致（创建时间降序）。
+            // 分期展开按选中日期算：从查看日的时间轴卡点进来，相关待办就是那天的口径
+            val courseTodos = remember(todos, selectedDate, detail.name) {
                 todos
-                    .expandRepeatOccurrences(today)
+                    .expandRepeatOccurrences(selectedDate)
                     .filterTodos(TodoFilter(tags = setOf(detail.name)))
                     .sortedFor(TodoSort.Created, descending = true)
             }

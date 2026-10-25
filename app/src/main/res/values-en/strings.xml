@@ -39,6 +39,8 @@
     <!-- DayCalendar (calendar card) footer title: year & month without leading zeros -->
     <string name="date_year_month_cn_format">%1$d/%2$d</string>
     <string name="date_title_format">%1$s %2$s</string>
+    <!-- DayCalendar (calendar card) footer: jump back to today when another day is selected -->
+    <string name="back_to_today">Back to today</string>
     <string name="back_to_current_week">Back to this week</string>
     <string name="cd_section_collapse">Collapse</string>
     <string name="cd_section_expand">Expand</string>
@@ -437,6 +439,9 @@
 
     <!-- Day screen (DayScreen): top hint & background-picker a11y -->
     <string name="day_swipe_hint">Swipe up to start a new day</string>
+    <!-- Hint variants when viewing a past / future day -->
+    <string name="day_swipe_hint_past">Swipe up to revisit this day</string>
+    <string name="day_swipe_hint_future">Swipe up to peek at this day</string>
     <string name="cd_day_background">Change background image</string>
     <string name="cd_day_card_back">Back to calendar</string>
 

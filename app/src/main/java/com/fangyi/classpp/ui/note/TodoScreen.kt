@@ -1774,14 +1774,18 @@ internal fun Todo.cardTimeText(): String? {
 }
 
 /**
- * 截止时间文本：日期段（[toCardDateLabel]——今天显「今天」）+ 时刻。
- * 无截止日期返回 null——这一位缺席；截止日期与时刻成对出现（TodoValidator 约束）。
+ * 截止时间文本：日期段 + 时刻。日期段默认走 [toCardDateLabel]（距今天 ±2 天内显相对词，
+ * 更远绝对日期）；[relativeDate] = false 时直接走 [toAbsoluteDateText] 的绝对日期（详情
+ * 浮层的「确定日期」口径）——日程页非今天的提醒卡用它：相对词按真实今天算，会和随查看
+ * 日期推算的倒计时错位。无截止日期返回 null——这一位缺席；截止日期与时刻成对出现
+ * （TodoValidator 约束）。
  */
 @Composable
-internal fun Todo.deadlineCardText(): String? {
+internal fun Todo.deadlineCardText(relativeDate: Boolean = true): String? {
     val date = deadlineDate ?: return null
+    val dateText = if (relativeDate) date.toCardDateLabel() else date.toAbsoluteDateText()
     return listOfNotNull(
-        date.toCardDateLabel(),
+        dateText,
         deadlineMinute?.let(TimeText::format),
     ).joinToString(" ")
 }
@@ -1805,13 +1809,14 @@ internal fun Todo.repeatCardText(): String? =
 internal fun Todo.deadlineDaysLeft(): Long? = deadlineDate?.let { it - LocalToday }
 
 /**
- * 截止时间取色（NoteCard 图标与文字同用）：距截止剩余 >2 天 primary；剩 2 天
- * urgentYellow；剩 1 天 urgentOrange；当天及已过期 error。截止缺席时返回
- * primary（调用方仅在有截止文本时消费该色）。
+ * 截止时间取色（NoteCard 图标与文字同用）：距截止剩余 [daysLeft] 天——>2 天 primary；剩
+ * 2 天 urgentYellow；剩 1 天 urgentOrange；当天及已过期 error。截止缺席时返回 primary
+ * （调用方仅在有截止文本时消费该色）。[daysLeft] 由调用方给定：列表卡按 LocalToday 推，
+ * 日程页提醒卡按查看日期推（与各自的倒计时数字同一份天数，颜色永远同步）。
  */
 @Composable
-internal fun Todo.deadlineColor(): Color {
-    val days = deadlineDaysLeft() ?: return MaterialTheme.colorScheme.primary
+internal fun Todo.deadlineColor(daysLeft: Long?): Color {
+    val days = daysLeft ?: return MaterialTheme.colorScheme.primary
     return when {
         days == 0L -> MaterialTheme.colorScheme.error
         days == 1L -> MaterialTheme.classppColors.urgentOrange
@@ -1820,6 +1825,10 @@ internal fun Todo.deadlineColor(): Color {
         else -> MaterialTheme.colorScheme.error
     }
 }
+
+/** 同上，天数按 LocalToday 现推（待办列表卡等「相对真实今天」的口径） */
+@Composable
+internal fun Todo.deadlineColor(): Color = deadlineColor(daysLeft = deadlineDaysLeft())
 
 /** 日期段：空缺席；否则逐日走 [toCardDateLabel]，多日以「、」连接（详情浮层不复用——它要确定日期） */
 @Composable

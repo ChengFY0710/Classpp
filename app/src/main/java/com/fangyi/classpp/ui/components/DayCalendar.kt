@@ -1,6 +1,10 @@
 package com.fangyi.classpp.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +35,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -51,6 +56,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
+import com.kyant.shapes.RoundedRectangle
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.DayCardShape
 import com.fangyi.classpp.ui.theme.classppColors
@@ -65,12 +71,15 @@ import kotlinx.coroutines.launch
  *
  * 一、**星期表头**：一~日（R.array.weekdays_short，周一起始），15sp Medium；今天所在列
  *     Primary 色（仅当卡内展示的月/周包含今天时高亮，浏览其他月份不高亮）。
- * 二、**日历网格**：每天一枚 34dp 圆球（background 色），日期数字 17sp Medium；今天圆球
- *     Primary、数字 onPrimary；非本月日期数字 secondaryText（圆球颜色不变）。有待办的日期
- *     （[markedDates]）在圆球下方画一枚 4dp Primary 小点——小点从 34dp 圆球 Box 底对齐后
- *     offset 出球体，落在行距之间，不占布局空间、不撑开行距。
+ * 二、**日历网格**：每天一枚 34dp 圆球（background 色），日期数字 17sp Medium；选中日期
+ *     圆球 Primary、数字 onPrimary（[onDateClick] 点选即切日）；今天圆球 primaryContainer、
+ *     数字 primary（选中今天即回到实心 Primary）；非本月日期数字 secondaryText（圆球颜色
+ *     不变）。有待办的日期（[markedDates]）在圆球下方画一枚 4dp Primary 小点——小点从
+ *     34dp 圆球 Box 底对齐后 offset 出球体，落在行距之间，不占布局空间、不撑开行距。
  * 三、**底栏**：左侧「XXXX年XX月」（无前导零）标题，右侧左右两个圆形箭头按钮（Primary）：
- *     展开态切换上/下月（日号月末收拢），折叠态切换上/下周（锚点 ±7 天）。
+ *     展开态切换上/下月（日号月末收拢），折叠态切换上/下周（锚点 ±7 天）。选中非今天时
+ *     标题右侧出现「回到今天」文字按钮（Primary，见 [onBackToToday]），进出场只占用标题
+ *     与箭头之间的空白，不撑动底栏布局。
  *
  * **折叠**：单行周视图是月历的折叠形态，进度走 [DayCalendarFoldState]（0 = 月历，1 = 单行）。
  * 折叠进度同时驱动外框高度（整月网格高 ↔ 单行高插值，clipToBounds 裁掉滑出内容）与网格
@@ -83,29 +92,37 @@ import kotlinx.coroutines.launch
  *   02，见 DayScreen），避免两套手势抢同一根手指。
  *
  * **锚点（anchor）唯一**：展开态展示锚点所在月、折叠态展示锚点所在周，标题始终显示锚点
- * 所在年月——两种形态、按钮切换与折叠联动共用同一份锚点状态。本组件暂不接数据库，
- * [markedDates] 由调用方传入；锚点月可无限翻页，小点这类窗口化数据按
- * [onGridRangeChange] 回报的网格日期窗口取值即可（见 DayScreen 的待办小点）。[onDateClick]
- * 本次预留（null = 无点击交互）。
+ * 所在年月——两种形态、按钮切换与折叠联动共用同一份锚点状态。锚点初始与选中日对齐
+ * （[selectedDate]，null = 今天），选中日变化后自动跟随——点选日期球与宿主「回到今天」
+ * 都走这一条路；箭头翻页只挪锚点、不改选中。本组件暂不接数据库，[markedDates] 由调用方
+ * 传入；锚点月可无限翻页，小点这类窗口化数据按 [onGridRangeChange] 回报的网格日期窗口
+ * 取值即可（见 DayScreen 的待办小点）。
  */
 @Composable
 fun DayCalendar(
     modifier: Modifier = Modifier,
+    selectedDate: IsoDate? = null,
     markedDates: Set<IsoDate> = emptySet(),
     onDateClick: ((IsoDate) -> Unit)? = null,
+    onBackToToday: (() -> Unit)? = null,
     onGridRangeChange: ((firstDate: IsoDate, lastDate: IsoDate) -> Unit)? = null,
     foldState: DayCalendarFoldState? = null,
     initiallyFolded: Boolean = false,
     today: IsoDate = IsoDate.today(),
 ) {
     val colors = MaterialTheme.colorScheme
+    // 选中查看的日期：null = 跟随 today（未接选中态的调用方/预览保持原「今天高亮」不变）
+    val selected = selectedDate ?: today
     val scope = rememberCoroutineScope()
     // 宿主未传折叠状态时自建（自驱）；传入则复用且关闭组件内手势（宿主驱动）
     val fold = foldState ?: remember { DayCalendarFoldState(scope, initiallyFolded) }
     val selfGesture = foldState == null
     val folded by remember { derivedStateOf { fold.progress >= 0.5f } }
 
-    var anchor by remember(today) { mutableStateOf(today) }
+    // 锚点初始与选中日对齐，选中日变化（点选日期球/宿主回到今天）后自动跟随；箭头翻页
+    // 只挪锚点、不改选中，两条路在此汇合
+    var anchor by remember(today) { mutableStateOf(selected) }
+    LaunchedEffect(selected) { anchor = selected }
     val (anchorYear, anchorMonth, _) = anchor.yearMonthDay()
 
     // 网格起点 = 本月 1 号所在 ISO 周的周一；行数按月动态 5/6 行
@@ -217,6 +234,7 @@ fun DayCalendar(
                                     inMonth = date.epochDay >= firstOfMonth.epochDay &&
                                         date.epochDay < firstOfMonth.epochDay + daysInMonth,
                                     isToday = date == today,
+                                    isSelected = date == selected,
                                     marked = date in markedDates,
                                     onClick = onDateClick,
                                     modifier = Modifier.weight(1f),
@@ -234,11 +252,38 @@ fun DayCalendar(
         ) {
             Text(
                 text = monthTitle,
-                modifier = Modifier.weight(1f).padding(start = 12.dp),
+                modifier = Modifier.padding(start = 12.dp, end = 6.dp),
                 fontSize = TitleFontSize,
                 fontWeight = FontWeight.SemiBold,
                 color = colors.onSurface,
             )
+            // 「回到今天」：选中非今天且宿主可响应（回调非空）时出现。渐隐出现/渐隐消失，
+            // 与课表页顶栏「返回本周」同一节奏（Motion.FastMillis：进场减速、退场加速）。
+            // 占位即时进出、宽度只占用标题与箭头之间的空白（末尾 Spacer 吸收），标题、
+            // 箭头与底栏行高都不动；触控盒定高 32dp（收敛在 NavButton 的 40dp 行内）、
+            // 文字居中——字号怎么调盒子高度都不变，布局与字号彻底解耦
+            AnimatedVisibility(
+                visible = onBackToToday != null && selected != today,
+                enter = fadeIn(tween(Motion.FastMillis, easing = Motion.Decelerate)),
+                exit = fadeOut(tween(Motion.FastMillis, easing = Motion.Accelerate)),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .height(BackToTodayHeight)
+                        .pressClickable(BackToTodayShape) { onBackToToday?.invoke() }
+                        .clip(BackToTodayShape)
+                        .padding(horizontal = BackToTodayPadding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(R.string.back_to_today),
+                        fontSize = BackToTodayFontSize,
+                        fontWeight = FontWeight.Medium,
+                        color = colors.primary,
+                    )
+                }
+            }
+            Spacer(Modifier.weight(1f))
             NavButton(
                 iconRes = R.drawable.ic_arrow_circle_left,
                 contentDescription = stringResource(
@@ -376,12 +421,16 @@ private fun WeekdayHeader(
     }
 }
 
-/** 单个日期：34dp 圆球 + 数字；[marked] 时球下画 4dp Primary 小点（不占布局空间） */
+/**
+ * 单个日期：34dp 圆球 + 数字。选中实心 Primary、数字 onPrimary；今天未选中 primaryContainer
+ * 淡底、数字 primary；[marked] 时球下画 4dp Primary 小点（不占布局空间）
+ */
 @Composable
 private fun DayCell(
     date: IsoDate,
     inMonth: Boolean,
     isToday: Boolean,
+    isSelected: Boolean,
     marked: Boolean,
     onClick: ((IsoDate) -> Unit)?,
     modifier: Modifier = Modifier,
@@ -398,7 +447,14 @@ private fun DayCell(
                         Modifier
                     },
                 )
-                .background(if (isToday) colors.primary else colors.background, CircleShape),
+                .background(
+                    when {
+                        isSelected -> colors.primary
+                        isToday -> colors.primaryContainer
+                        else -> colors.background
+                    },
+                    CircleShape,
+                ),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -406,7 +462,8 @@ private fun DayCell(
                 fontSize = DayNumberFontSize,
                 fontWeight = FontWeight.SemiBold,
                 color = when {
-                    isToday -> colors.onPrimary
+                    isSelected -> colors.onPrimary
+                    isToday -> colors.primary
                     !inMonth -> MaterialTheme.classppColors.secondaryText
                     else -> colors.onSurface
                 },
@@ -509,6 +566,11 @@ private val DotDrop = DotSize + DotGap
 private val DotZone = DotDrop + 2.dp
 private val NavButtonSize = 40.dp
 private val NavIconSize = 24.dp
+/** 「回到今天」文字按钮：触控盒定高、文字居中，字号增大只占盒内空间、不撑动底栏 */
+private val BackToTodayHeight = 32.dp
+private val BackToTodayShape = RoundedRectangle(6.dp)
+private val BackToTodayPadding = 6.dp
+private val BackToTodayFontSize = 17.sp
 private val CardPaddingHorizontal = 8.dp
 private val CardPaddingVertical = 4.dp
 private val BottomBarGap = 2.dp
@@ -559,6 +621,19 @@ private fun DayCalendarWeekLightPreview() = ClassppTheme {
         markedDates = PreviewMarkedDates,
         today = PreviewToday,
         initiallyFolded = true,
+        modifier = Modifier.padding(12.dp),
+    )
+}
+
+/** 月历展开·选中非今天（今天淡底 + 「回到今天」按钮，浅色） */
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
+private fun DayCalendarMonthSelectedPreview() = ClassppTheme {
+    DayCalendar(
+        selectedDate = PreviewToday + 5,
+        markedDates = PreviewMarkedDates,
+        onBackToToday = {},
+        today = PreviewToday,
         modifier = Modifier.padding(12.dp),
     )
 }

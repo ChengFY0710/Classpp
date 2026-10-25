@@ -53,9 +53,11 @@ import com.kyant.shapes.Capsule
  *       weight(1f) 撑满两时间之间，宽高随卡片变化、宽度与上下时间对齐（双行横排
  *       「上课」，三行起竖排
  *       「上/课」，备注折行属「大于四行」，布局同四行）。
- *     - **无课/课已上完**（[DayCourseAlertState.NoCourse] / [DayCourseAlertState.DayDone]）：
- *       仅标题行「今日无课 好好休息吧」/「今日课已上完 好好休息吧」，无时间列与课程信息
- *       （教师/地点/备注即使传入也不显示），竖条与图标取 Primary。
+ *     - **无课/课已上完/非今天概览**（[DayCourseAlertState.NoCourse] /
+ *       [DayCourseAlertState.DayDone] / [DayCourseAlertState.DaySummary]）：仅标题行
+ *       「今日无课 好好休息吧」/「今日课已上完 好好休息吧」/「这天 N 节课 做好准备」（0 节
+ *       「这天没有课 好好休息吧」），无时间列与课程信息（教师/地点/备注即使传入也不显示），
+ *       竖条与图标取 Primary。
  *
  * **标题语义色**：倒计时 ≤ 10 分钟红色（colorScheme.error）、≤ 15 分钟橙色
  * （classppColors.urgentOrange）、更早为 Primary 蓝；「上课中」「今日无课」「今日课已
@@ -90,6 +92,11 @@ sealed interface DayCourseAlertState {
     /** 今日课已上完（标题「今日课已上完」+ 固定副文案「好好休息吧」；样式同 [NoCourse]，
      *  仅标题区分「真没课」与「课上完了」） */
     data object DayDone : DayCourseAlertState
+
+    /** 非今天的整天概览，文案按节数分档：[count] > 0 标题「这天 [count] 节课」+ 固定副文案
+     *  「做好准备」；0 节（含开学前/学期外）标题「这天没有课」+ 固定副文案「好好休息吧」。
+     *  样式同 [NoCourse]：仅标题行，竖条与图标取 Primary，无时间列与课程信息 */
+    data class DaySummary(val count: Int) : DayCourseAlertState
 }
 
 @Composable
@@ -106,8 +113,9 @@ fun DayCourseAlert(
     onClick: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
-    // 无课/课已上完卡没有课程信息：竖条与标题同用 Primary
-    val titleOnlyCard = state is DayCourseAlertState.NoCourse || state is DayCourseAlertState.DayDone
+    // 无课/课已上完/整天概览卡没有课程信息：竖条与标题同用 Primary
+    val titleOnlyCard = state is DayCourseAlertState.NoCourse || state is DayCourseAlertState.DayDone ||
+        state is DayCourseAlertState.DaySummary
     val barColor = if (titleOnlyCard) {
         colors.primary
     } else {
@@ -143,16 +151,25 @@ fun DayCourseAlert(
             titleColor = colors.primary
             iconRes = R.drawable.ic_alert_snooze
         }
+        is DayCourseAlertState.DaySummary -> {
+            titleText = if (state.count > 0) "这天 ${state.count} 节课" else "这天没有课"
+            titleColor = colors.primary
+            iconRes = R.drawable.ic_alert_snooze
+        }
     }
 
     // 右侧形态由中列行数（标题以外）决定：0 = 单行同行水平，1 = 竖列 + 横排标签，
     // ≥2 = 竖列 + 竖排标签。备注折行不改变行数档位（布局同四行）。
-    // 无课/课已上完卡只有标题行：无时间组与课程信息行，第二段文字为固定副文案。
+    // 无课/课已上完/整天概览卡只有标题行：无时间组与课程信息行，第二段文字为固定副文案。
     val infoRowCount = if (titleOnlyCard) 0 else listOf(teacher, location, note).count { !it.isNullOrBlank() }
     val showInlineTimes = !titleOnlyCard && infoRowCount == 0
     val stackedTimes = infoRowCount >= 1
     val verticalTag = infoRowCount >= 2
-    val subtitleText = if (titleOnlyCard) "好好休息吧" else courseName
+    val subtitleText = when {
+        state is DayCourseAlertState.DaySummary && state.count > 0 -> "做好准备"
+        titleOnlyCard -> "好好休息吧"
+        else -> courseName
+    }
 
     Box(
         modifier = modifier
@@ -506,6 +523,13 @@ private fun DayCourseAlertPreviewContent() {
         // 今日课已上完：样式同今日无课，仅标题区分
         DayCourseAlert(
             state = DayCourseAlertState.DayDone,
+        )
+        // 非今天整天概览：有课「这天 4 节课 做好准备」，没课「这天没有课 好好休息吧」
+        DayCourseAlert(
+            state = DayCourseAlertState.DaySummary(count = 4),
+        )
+        DayCourseAlert(
+            state = DayCourseAlertState.DaySummary(count = 0),
         )
     }
 }

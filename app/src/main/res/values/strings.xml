@@ -123,6 +123,8 @@
     <!-- DayCalendar（日历卡）底栏标题：年月不带前导零 -->
     <string name="date_year_month_cn_format">%1$d年%2$d月</string>
     <string name="date_title_format">%1$s %2$s</string>
+    <!-- DayCalendar（日历卡）底栏：选中非今天时的回跳按钮 -->
+    <string name="back_to_today">回到今天</string>
     <string name="back_to_current_week">返回本周</string>
     <string name="cd_section_collapse">收起</string>
     <string name="cd_section_expand">展开</string>
@@ -457,6 +459,9 @@
 
     <!-- 日程页（DayScreen）：顶部提示与背景切换入口的无障碍文案 -->
     <string name="day_swipe_hint">上滑开启新一天</string>
+    <!-- 顶部提示分档：查看已过去/还没到的日期（图标分别沿用开锁/换闭锁） -->
+    <string name="day_swipe_hint_past">上滑回顾这一天</string>
+    <string name="day_swipe_hint_future">上滑看看这一天</string>
     <string name="cd_day_background">更换背景图</string>
     <string name="cd_day_card_back">返回台历页</string>
 
