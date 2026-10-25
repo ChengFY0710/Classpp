@@ -39,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
@@ -110,7 +111,7 @@ private val CountdownEndSpacing = 16.dp
 
 /**
  * 倒计时完成退场的左移幅度（CountdownExitSlot）：标签淡出时向卡边漂移的距离——
- * 收在 16dp 卡横向内距内，不会被卡片 clip（NoteCardShape）裁掉。
+ * 收在 16dp 卡横向内距内，不会被卡片 clip 裁掉。
  */
 private val CountdownExitSlide = 12.dp
 
@@ -297,6 +298,9 @@ private fun CountdownExitSlot(
  *   null（默认）维持纯单击；
  * - [verticalPadding] 主体行上下内距：默认 [NoteCardPaddingVertical]（整卡形态的 14dp 节奏）；
  *   多条待办合并一张外卡的形态（DayTodoAlert）传 12dp，行距按合并卡节奏收紧；
+ * - [shape] 卡片形状：按压提亮轮廓、背景/内容裁剪与选中描边共用；默认 [NoteCardShape]
+ *   （整卡形态），合并卡形态传 RectangleShape——行与行之间的按压高亮取直角，外缘圆角
+ *   由外层 DayCardShape 统一裁出（高亮随缩放溢出行界时也被外层 clip 收进卡片轮廓）；
  * - [modifier] 作用于侧滑层之外（整卡节点）：列表项级 animateItem 与卡间距内距由宿主
  *   挂在这里、不进卡内布局链——动作卡经 matchParentSize 撑满侧滑层实测尺寸，内距若进
  *   卡内 Row 会把动作卡一起撑高（比主体卡多出一份透明内距）。
@@ -328,6 +332,9 @@ fun NoteCard(
     onLongClick: (() -> Unit)? = null,
     // 主体行上下内距：默认整卡节奏（NoteCardPaddingVertical），合并卡形态传 12dp
     verticalPadding: Dp = NoteCardPaddingVertical,
+    // 卡片形状：按压提亮轮廓、背景/内容裁剪与选中描边共用；合并卡形态（DayTodoAlert）
+    // 传 RectangleShape，行与行之间的按压高亮取直角
+    shape: Shape = NoteCardShape,
     swipe: NoteCardSwipe? = null,
 ) {
     // 完成态过渡：删除线不再用 TextDecoration（只能整体开关，无动画）——颜色渐变 +
@@ -414,25 +421,25 @@ fun NoteCard(
                 .fillMaxWidth()
                 .heightIn(min = SheetFieldHeight)
                 // 按压反馈同 SheetCard「可点才挂」：位置在 clip 之前（缩放作用于整卡、不被圆角
-                // 裁掉），提亮范围与 NoteCardShape 对齐；null = 静态卡，涟漪由按压反馈取代。
+                // 裁掉），提亮范围与卡片形状（shape）对齐；null = 静态卡，涟漪由按压反馈取代。
                 // 长按形态（编辑入口）手动配对 pressFeedback + combinedClickable——
                 // pressClickable 只封了单击（长按需自建按压源，见其 KDoc）
                 .then(
                     when {
                         onClick != null && onLongClick != null -> {
                             val press = remember { MutableInteractionSource() }
-                            Modifier.pressFeedback(press, NoteCardShape).combinedClickable(
+                            Modifier.pressFeedback(press, shape).combinedClickable(
                                 interactionSource = press,
                                 indication = null,
                                 onClick = onClick,
                                 onLongClick = onLongClick,
                             )
                         }
-                        onClick != null -> Modifier.pressClickable(NoteCardShape, onClick = onClick)
+                        onClick != null -> Modifier.pressClickable(shape, onClick = onClick)
                         else -> Modifier
                     },
                 )
-                .clip(NoteCardShape)
+                .clip(shape)
                 .background(MaterialTheme.colorScheme.surface)
                 .then(
                     // 进度归 0 后干脆不挂 border：0 宽描边会被 Skia 画成 1px 发丝线而非不可见
@@ -443,7 +450,7 @@ fun NoteCard(
                             color = selectionStrokeColor.copy(
                                 alpha = selectionStrokeColor.alpha * selectionProgress,
                             ),
-                            shape = NoteCardShape,
+                            shape = shape,
                         )
                     } else {
                         Modifier
