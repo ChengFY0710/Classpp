@@ -84,7 +84,8 @@ internal sealed interface DayTask {
         val onClick: (() -> Unit)? = null,
     ) : DayTask
 
-    /** 待办：本期只展示时间区间与截止时间（样式参考 NoteCard），[onToggle] 接完成勾选 */
+    /** 待办：本期只展示时间区间与截止时间（样式参考 NoteCard），[onToggle] 接完成勾选；
+     *  [onClick] 接待办详情浮层的唤起（整卡点击，null = 不可点，勾选框不受影响） */
     data class Todo(
         val id: String,
         val name: String,
@@ -94,6 +95,7 @@ internal sealed interface DayTask {
         val onToggle: ((Boolean) -> Unit)?,
         override val startMinute: Int,
         override val endMinute: Int,
+        val onClick: (() -> Unit)? = null,
     ) : DayTask
 }
 
@@ -272,8 +274,9 @@ private fun overlapsInTime(a: DayTask, b: DayTask): Boolean =
  * heightIn 下限——内容更高的竖排卡自然撑底（顶边仍锚定开始时刻）。圆角按接触标记
  * 逐角取 20dp/6dp（theme 的平滑圆角），贴背/重叠时邻角收敛。
  *
- * 课程卡带 [DayTask.Course.onClick] 时整卡可点（按压反馈形状同卡壳圆角，含收敛的
- * 接触角），宿主用它唤起课程详情浮层；待办卡整卡不可点，仅勾选框接事件。
+ * 两型卡片带 [DayTask.Course.onClick] / [DayTask.Todo.onClick] 时整卡可点（按压反馈形状
+ * 同卡壳圆角，含收敛的接触角），宿主分别用它唤起课程/待办详情浮层；待办勾选框仍是
+ * 独立交互位（子级优先消费点击，按压反馈互不串扰），无回调的卡不可点。
  */
 @Composable
 internal fun DayTaskCard(placement: DayTaskPlacement, modifier: Modifier = Modifier) {
@@ -288,15 +291,18 @@ internal fun DayTaskCard(placement: DayTaskPlacement, modifier: Modifier = Modif
         bottomStartContact = placement.bottomStartContact,
         bottomEndContact = placement.bottomEndContact,
     )
-    val courseClick = (task as? DayTask.Course)?.onClick
+    val cardClick = when (task) {
+        is DayTask.Course -> task.onClick
+        is DayTask.Todo -> task.onClick
+    }
     Box(
         modifier = modifier
             .offset(x = placement.offsetX, y = placement.offsetY)
             .width(placement.width)
             .heightIn(min = placement.height)
             .then(
-                if (courseClick != null) {
-                    Modifier.pressClickable(shape = cardShape) { courseClick() }
+                if (cardClick != null) {
+                    Modifier.pressClickable(shape = cardShape) { cardClick() }
                 } else {
                     Modifier
                 },
@@ -515,7 +521,12 @@ private fun TaskTagBox(
     Box(
         modifier = modifier
             .background(accent.copy(alpha = backgroundAlpha), DayCourseAlertTagShape)
-            .padding(horizontal = if (stretch) 0.dp else TaskTagPaddingHorizontal),
+            .padding(
+                horizontal = if (stretch) 0.dp else TaskTagPaddingHorizontal,
+                // 上下内距即横向紧凑标签的高度旋钮（高度 = 文字行高 + 上下内距 × 2）；
+                // 拉伸态（竖排卡）标签高度由时间列 weight 分配，内距归零
+                vertical = if (stretch) 0.dp else TaskTagPaddingVertical,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         // 深浅各自降明度（同 DayCourseAlert：深色课程色本就更深一档，沿用浅色系数会闷进标签底色）
@@ -656,6 +667,10 @@ private const val TaskTagTextDimFactorLight = 0.5f
 private const val TaskTagTextDimFactorDark = 0.95f
 
 private val TaskTagPaddingHorizontal = 5.dp
+
+/** 紧凑单行标签的上下内距：横向标签矩形高度 = 文字行高 + 上下内距 × 2；
+ *  拉伸态（竖排卡）不适用（高度由时间列 weight 分配，见 TaskTagBox） */
+private val TaskTagPaddingVertical = 4.dp
 
 private val TaskTitleFontSize = 15.sp
 private val TaskTitleLineHeight = 20.sp

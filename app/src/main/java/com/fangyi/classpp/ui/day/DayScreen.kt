@@ -117,6 +117,7 @@ import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.LocalToday
@@ -139,6 +140,8 @@ import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.rememberDeviceCornerRadius
 import com.fangyi.classpp.ui.motion.sharePointerInputWithSiblings
 import com.fangyi.classpp.ui.navigation.NavReserve
+import com.fangyi.classpp.ui.note.NewTodoSheet
+import com.fangyi.classpp.ui.note.TodoDetailSheet
 import com.fangyi.classpp.ui.note.deadlineColor
 import com.fangyi.classpp.ui.note.toAbsoluteDateText
 import com.fangyi.classpp.ui.schedule.CourseColor
@@ -207,7 +210,9 @@ private val TrailingScrollSpace = 120.dp
  *
  * [todoRepository] 喂日历卡的待办小点与日历卡下方的待办提醒卡（DayTodoAlert）：前者
  * 按 DayCalendar 回报的网格窗口取覆盖日期（[datesCoveredWithin]），后者按截止窗口
- * （逾期 ~ 后天）取未完成待办；未注入（预览/首帧）都按无待办处理。
+ * （逾期 ~ 后天）取未完成待办；未注入（预览/首帧）都按无待办处理。待办提醒卡行与时间轴
+ * 待办卡可点击唤起待办详情浮层（TodoDetailSheet，与待办页同款两段式接线，含备注/步骤/
+ * 倒计时与「编辑」叠层 NewTodoSheet）。
  *
  * [tagRepository] 只喂待办提醒卡的标签配色（与待办页同源，见 tagColorMap）；
  * 未注入（预览/首帧）标签回落主题 Primary。
@@ -266,8 +271,25 @@ fun DayScreen(
     //（两段式约定同课表页，宿主块见底部挂载处）
     var detailTargetId by rememberSaveable { mutableStateOf("") }
     var detailMounted by remember { mutableStateOf<CourseEntry?>(null) }
-    LaunchedEffect(sheetMounted, detailMounted != null) {
-        onOverlayOverNavBarChange(sheetMounted || detailMounted != null)
+    // 待办详情浮层：被点待办 id + 所点条目的分期日期（ISO 文本，空 = 非逐期卡）——
+    // 点待办提醒卡行/时间轴待办卡进入；条目从原始待办列表反查（id 不随分期展开变化），
+    // 待办被删后反查落空 → 请求清空 → 浮层自动关闭（两段式约定同待办页，宿主块同下）
+    var todoDetailTargetId by rememberSaveable { mutableStateOf("") }
+    var todoDetailTargetDate by rememberSaveable { mutableStateOf("") }
+    var todoDetailMounted by remember { mutableStateOf<Todo?>(null) }
+    // 编辑待办浮层：详情顶栏「编辑」进入（快照表单同待办页，叠在详情之上）；空 = 未打开
+    var todoEditTargetId by rememberSaveable { mutableStateOf("") }
+    var todoEditMounted by remember { mutableStateOf<Todo?>(null) }
+    LaunchedEffect(
+        sheetMounted,
+        detailMounted != null,
+        todoDetailMounted != null,
+        todoEditMounted != null,
+    ) {
+        onOverlayOverNavBarChange(
+            sheetMounted || detailMounted != null ||
+                todoDetailMounted != null || todoEditMounted != null,
+        )
     }
 
     // 持久化记录：进入时按「记录日期 == 今天」恢复 02/04，否则 01。
@@ -304,6 +326,9 @@ fun DayScreen(
     // 才到——首帧按无小点渲染，与仓库异步装载同拍）；待办回流实时刷新。
     val todosState = todoRepository?.todos?.collectAsState()
     val todos = todosState?.value ?: emptyList()
+    // 待办分组列表（编辑待办浮层的选分组浮层用）：与待办同源（TodoRepository StateFlow）
+    val groupsState = todoRepository?.groups?.collectAsState()
+    val groups = groupsState?.value ?: emptyList()
     var calendarRange by remember { mutableStateOf<Pair<IsoDate, IsoDate>?>(null) }
     val todoMarkedDates = remember(todos, calendarRange) {
         val range = calendarRange ?: return@remember emptySet<IsoDate>()
@@ -356,6 +381,24 @@ fun DayScreen(
             }
         }
     }
+    // 分组写回统一入口（编辑待办浮层的选分组浮层「新建」用）：整表连 renames 交仓库
+    // setGroups 落盘，失败 Toast；日程页无分组过滤 UI，不需要待办页的选中组跟随逻辑
+    val commitGroups: (List<TodoGroup>, Map<String, String>) -> Unit = { newGroups, renames ->
+        val repository = todoRepository
+        if (repository != null) {
+            scope.launch {
+                if (repository.setGroups(newGroups, renames) is TodoOpResult.Err) {
+                    AppToasts.show(context, todoSaveFailedMessage)
+                }
+            }
+        }
+    }
+    // 待办详情唤起统一入口（待办提醒卡行 + 时间轴待办卡共用）：记 id 与分期日期——
+    // 详情浮层按 id 反查原始待办，逐期上下文只由点击带入（同待办页两态口径，宿主块见底部挂载处）
+    val openTodoDetail: (Todo) -> Unit = { todo ->
+        todoDetailTargetId = todo.id
+        todoDetailTargetDate = todo.dates.firstOrNull()?.toString().orEmpty()
+    }
 
     // 上课提醒卡：今天该上的课（周号 + 星期 + 周规律，取课同 NotificationPlanner，但周末
     // 不按 daysPerWeek 跳过——显示模式不裁剪真实课程）+ 当前时刻 → 倒计时/上课中/课已上完/
@@ -364,13 +407,15 @@ fun DayScreen(
     val scheduleState = scheduleRepository?.activeSchedule?.collectAsState()
     // 时间轴任务卡：今天有起止时刻的课程 + 待办（口径见 dayTasks），装配成 DayTask 列表。
     // 截止取色是 @Composable 口径（读 LocalToday），故在组合期装配而非 remember 块里；
-    // 上课卡的点击经 onCourseClick 记下课程 id，唤起课程详情浮层（宿主块见底部挂载处）
+    // 上课卡/待办卡的点击分别经 onCourseClick/onTodoClick 记下目标，唤起详情浮层
+    //（宿主块见底部挂载处）
     val timelineTasks = dayTasks(
         scheduleState?.value,
         todos,
         today,
         toggleTaskTodo,
         onCourseClick = { detailTargetId = it },
+        onTodoClick = openTodoDetail,
     )
     var nowMinute by remember { mutableIntStateOf(nowMinuteOfDay()) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -1278,6 +1323,7 @@ fun DayScreen(
                         // 第四条 = 待办提醒卡（DayTodoAlert）：截止在今明后天与逾期的未完成
                         // 待办合并一卡（逾期在前），完成勾选走落库路由；无候选待办时整卡
                         // 折叠不占位。顶部 10dp 间距在组件折叠内容内，与上课提醒卡相邻。
+                        // 行点击经 openTodoDetail 唤起待办详情浮层。
                         item(key = "todoAlert") {
                             DayTodoAlert(
                                 todos = todos,
@@ -1285,6 +1331,7 @@ fun DayScreen(
                                 nowMinute = nowMinute,
                                 tagColors = tagColorMap,
                                 onComplete = completeAlertTodo,
+                                onTodoClick = openTodoDetail,
                                 modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
                             )
                         }
@@ -1427,6 +1474,128 @@ fun DayScreen(
                     },
                     onDismiss = { courseTodoVisible = false },
                     onDismissed = { courseTodoMounted = false },
+                )
+            }
+        }
+
+        // 10.6) 待办详情浮层：点待办提醒卡行/时间轴待办卡唤起，与待办页（TodoScreen）
+        // 同款接线。条目从原始待办列表反查（id 不随分期展开变化），待办被删后反查落空 →
+        // 请求清空 → 浮层自动关闭；分期日期由点击带入，随重复的截止行据此折算。
+        // 画在课程详情浮层之后、图片浮层之前——图片浮层保持最顶层（盖住整个页面）。
+        val todoDetailEntry = todos.firstOrNull { it.id == todoDetailTargetId }
+        if (todoDetailEntry != null) todoDetailMounted = todoDetailEntry
+        todoDetailMounted?.let { detail ->
+            val repository = todoRepository ?: return@let
+            // 回调（协程）里不是组合上下文，字符串在组合期解析（同待办页浮层约定）
+            val stepDeletedMessage = stringResource(R.string.toast_todo_step_deleted)
+            key(detail.id) {
+                TodoDetailSheet(
+                    visible = todoDetailEntry != null,
+                    // 编辑浮层盖上来时本层缩小后退，清 id（确认/取消/删除）的瞬间同步回位
+                    covered = todoEditTargetId != "",
+                    todo = detail,
+                    tagColors = tagColorMap,
+                    occurrenceDate = IsoDate.parseOrNull(todoDetailTargetDate),
+                    onDismiss = {
+                        todoDetailTargetId = ""
+                        todoDetailTargetDate = ""
+                    },
+                    onDismissed = { todoDetailMounted = null },
+                    // 备注随任意关闭路径落盘：未改动零开销；Err 仅剩校验不过等异常（Toast 提示）
+                    onNoteSave = { note ->
+                        val cleaned = note.trim()
+                        if (cleaned != detail.note) {
+                            scope.launch {
+                                if (repository.updateTodo(detail.copy(note = cleaned)) is TodoOpResult.Err) {
+                                    AppToasts.show(context, todoSaveFailedMessage)
+                                }
+                            }
+                        }
+                    },
+                    // 详情保留在下层不关：最新快照（含未落盘备注）直接当表单初值挂载编辑浮层
+                    //（叠在详情之上），确认/取消后回到详情；不等落盘——备注不丢、打开零延迟
+                    onEdit = { latest ->
+                        todoEditMounted = latest
+                        todoEditTargetId = latest.id
+                    },
+                    // 步骤新增/勾选：各自落库（addStep 现铸步骤 id、setStepDone 按 id 定点切换），
+                    // Err（待办已删/空标题等异常）Toast 提示；列表随仓库回流自动刷新
+                    onStepAdd = { title ->
+                        scope.launch {
+                            if (repository.addStep(detail.id, title) is TodoOpResult.Err) {
+                                AppToasts.show(context, todoSaveFailedMessage)
+                            }
+                        }
+                    },
+                    onStepToggle = { stepId, done ->
+                        scope.launch {
+                            if (repository.setStepDone(detail.id, stepId, done) is TodoOpResult.Err) {
+                                AppToasts.show(context, todoSaveFailedMessage)
+                            }
+                        }
+                    },
+                    // 步骤侧滑删除：松手过阈值即删（removeStep 按 todo+step 双 id 定点滤除），
+                    // 成功 Toast 反馈；Err Toast 提示、卡片由侧滑层自动滑回
+                    onStepDelete = { stepId ->
+                        scope.launch {
+                            when (repository.removeStep(detail.id, stepId)) {
+                                TodoOpResult.Ok -> AppToasts.show(context, stepDeletedMessage)
+                                is TodoOpResult.Err -> AppToasts.show(context, todoSaveFailedMessage)
+                            }
+                        }
+                    },
+                    // 倒计时开关：落库后列表卡左区显示剩余天数（详情菜单文案随仓库回流自动切换）
+                    onCountdownToggle = { enabled ->
+                        scope.launch {
+                            if (repository.setCountdown(detail.id, enabled) is TodoOpResult.Err) {
+                                AppToasts.show(context, todoSaveFailedMessage)
+                            }
+                        }
+                    },
+                )
+            }
+        }
+        // 编辑待办浮层：两段式挂载同详情，画在详情之后（组合顺序即绘制顺序）叠在详情之上。
+        // todoEditTargetId 是期望目标（空 = 关），todoEditMounted 是挂载时的快照（表单初值
+        // 只取一次）；visible 从当前列表反查：待办被删反查落空 → 自动收起
+        val todoEditEntry = todos.firstOrNull { it.id == todoEditTargetId }
+        todoEditMounted?.let { initial ->
+            val repository = todoRepository ?: return@let
+            key(initial.id) {
+                NewTodoSheet(
+                    visible = todoEditEntry != null,
+                    onDismissed = { todoEditMounted = null },
+                    onDismiss = { todoEditTargetId = "" },
+                    tagRepository = tagRepository,
+                    scheduleRepository = scheduleRepository,
+                    groups = groups,
+                    todos = todos,
+                    // 选择分组浮层的「新建」走同一套整表写回（落盘失败 Toast 由 commitGroups 统一弹）
+                    onGroupsChange = commitGroups,
+                    existing = initial,
+                    onConfirm = { todo ->
+                        scope.launch {
+                            // 空名等非法值已在浮层内拦截，Err 仅剩落盘失败等异常，Toast 提示、
+                            // 表单保持原样
+                            when (repository.updateTodo(todo)) {
+                                TodoOpResult.Ok -> todoEditTargetId = ""
+                                is TodoOpResult.Err -> AppToasts.show(context, todoSaveFailedMessage)
+                            }
+                        }
+                    },
+                    onDelete = {
+                        scope.launch {
+                            when (repository.removeTodo(initial.id)) {
+                                TodoOpResult.Ok -> {
+                                    // 反查落空本会让两个浮层自动收起，这里显式清 id 收尾
+                                    todoEditTargetId = ""
+                                    todoDetailTargetId = ""
+                                    todoDetailTargetDate = ""
+                                }
+                                is TodoOpResult.Err -> AppToasts.show(context, todoSaveFailedMessage)
+                            }
+                        }
+                    },
                 )
             }
         }
@@ -1654,9 +1823,10 @@ private fun todayCourseEntries(schedule: Schedule, today: IsoDate): List<CourseE
  * 时间轴任务卡取数（组合期调用——截止取色是 @Composable 口径，读 LocalToday）：
  * 今天该上的课 + 当天有起止时刻（Period 档）的待办。
  * 课程口径同 [todayCourseEntries]，时刻经大节定义解析（跨节 span > 1 = 末节下课时刻）；
- * 上课卡经 [onCourseClick]（课程 id）接课程详情浮层的唤起；待办先按重复规则展开分期
- * 再取落在今天的，已完成分期也上轴（卡片内置灰划线呈现），AllDay/无时刻的待办在比例
- * 时间轴上无处安放、不上轴；截止文案取绝对日期（如「10/27 6:00」）。
+ * 上课卡经 [onCourseClick]（课程 id）、待办卡经 [onTodoClick]（分期副本，宿主取 id + 分期
+ * 日期）接详情浮层的唤起；待办先按重复规则展开分期再取落在今天的，已完成分期也上轴
+ * （卡片内置灰划线呈现），AllDay/无时刻的待办在比例时间轴上无处安放、不上轴；
+ * 截止文案取绝对日期（如「10/27 6:00」）。
  */
 @Composable
 private fun dayTasks(
@@ -1665,6 +1835,7 @@ private fun dayTasks(
     today: IsoDate,
     onToggleTodo: (Todo, Boolean) -> Unit,
     onCourseClick: (String) -> Unit = {},
+    onTodoClick: (Todo) -> Unit = {},
 ): List<DayTask> = buildList {
     if (schedule != null) {
         for (course in todayCourseEntries(schedule, today)) {
@@ -1705,6 +1876,7 @@ private fun dayTasks(
                 },
                 deadlineColor = todo.deadlineColor(),
                 onToggle = { checked -> onToggleTodo(todo, checked) },
+                onClick = { onTodoClick(todo) },
                 startMinute = startMinute,
                 endMinute = endMinute,
             ),

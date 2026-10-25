@@ -53,7 +53,7 @@ private val RowPaddingVertical = 12.dp
  * 日程页的待办提醒卡：截止在今明后天与逾期的未完成待办合并一张白卡（DayCardShape），
  * 展示信息与完成动画与待办页 NoteCard 完全一致，三处刻意不同——
  * - 倒计时恒开（不读 [Todo.countdown]，逾期显「逾期N天」红、当天「0天」、1/2 天橙/黄）；
- * - 无侧滑、无点击/长按（详情唤起暂不接），只保留勾选完成；
+ * - 无侧滑、无长按（进编辑页的入口只在待办页），保留勾选完成与行点击；
  * - 多条待办同卡，行上下 [RowPaddingVertical] 依次叠加。
  *
  * 排序按截止早的在前：逾期（按截止日升序）→ 0 天 → 1 天 → 2 天，同日按截止时刻；
@@ -64,11 +64,15 @@ private val RowPaddingVertical = 12.dp
  * 交宿主落库；数据回流该行退出候选集 → 行上滑渐隐（[Motion.TodoCardExitMillis]）；最后一行
  * 退场结束后 expanded 翻 false，整卡走 [Expandable] 的折叠动画收起。
  *
+ * 行点击经 [onTodoClick] 交宿主唤起待办详情浮层：传的是**分期副本**（重复待办已展开），
+ * 宿主取其 id 与 `dates.first()`（分期日期）定位原始待办 + 逐期上下文；null（默认）行不可点。
+ *
  * @param todos 活跃待办（仓库原样；删除由仓库分流，不在流里）
  * @param today 今天（跨零点自动跳天的 [com.fangyi.classpp.ui.LocalToday]）
  * @param nowMinute 当天分钟数（逾期判定用，宿主对表驱动）
  * @param tagColors 标签配色表（标签名 → 颜色，同待办页口径）
  * @param onComplete 勾选完成回调：组件只做回显与停一拍，落库路由（分期/整条）在宿主
+ * @param onTodoClick 行点击回调（传分期副本）：宿主唤起待办详情；null = 行不可点
  */
 @Composable
 fun DayTodoAlert(
@@ -78,6 +82,7 @@ fun DayTodoAlert(
     tagColors: Map<String, Color>,
     onComplete: (Todo) -> Unit,
     modifier: Modifier = Modifier,
+    onTodoClick: ((Todo) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     // 候选集：重复待办先展开逐期（分期副本自带逐期折算的截止与完成态），再过滤排序。
@@ -140,6 +145,7 @@ fun DayTodoAlert(
                                     }
                                 }
                             },
+                            onClick = onTodoClick?.let { callback -> { callback(row.todo) } },
                         )
                     }
                     // 退场计时：visible 翻 false 起等退场播完再移出行列表并清回显——
@@ -200,8 +206,8 @@ private fun reconcileRows(
 
 /**
  * 单条待办行：[NoteCard] 的提醒卡接线——展示信息与完成动画与待办页逐位同款
- * （文案格式化与配色复用待办页的 internal 取值），倒计时恒开、无侧滑、无点击/长按，
- * 行内距取合并卡的 [RowPaddingVertical]。
+ * （文案格式化与配色复用待办页的 internal 取值），倒计时恒开、无侧滑，行内距取合并卡的
+ * [RowPaddingVertical]；[onClick] 接宿主唤起待办详情（null = 行不可点）。
  */
 @Composable
 private fun DayTodoAlertRowContent(
@@ -211,6 +217,7 @@ private fun DayTodoAlertRowContent(
     completed: Boolean,
     tagColors: Map<String, Color>,
     onCheckedChange: (Boolean) -> Unit,
+    onClick: (() -> Unit)? = null,
 ) {
     NoteCard(
         title = todo.name,
@@ -227,6 +234,7 @@ private fun DayTodoAlertRowContent(
         completed = completed,
         overdue = todo.isOverdue(today, nowMinute),
         onCheckedChange = onCheckedChange,
+        onClick = onClick,
         verticalPadding = RowPaddingVertical,
     )
 }
