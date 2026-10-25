@@ -120,8 +120,8 @@ object NotificationPlanner {
             // 开学前（≤ 0）与学期外（> 总周数）整段跳过
             if (week < 1 || week > schedule.totalWeeks) continue
             val dayOfWeek = date.isoDayOfWeek()
-            // 5 天表的周末不出提醒（与课表网格只画 daysPerWeek 天同口径）
-            if (dayOfWeek > schedule.daysPerWeek) continue
+            // 周末不按 daysPerWeek 跳过：那只是网格的显示列数（5 天模式下周末列不画），
+            // 周六/周日真实排了课仍要提醒（与日程页上课提醒卡同口径）
             for (course in schedule.courses) {
                 if (course.dayOfWeek != dayOfWeek) continue
                 if (!course.weeks.contains(week)) continue
