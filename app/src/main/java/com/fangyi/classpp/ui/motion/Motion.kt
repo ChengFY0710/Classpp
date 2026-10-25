@@ -70,6 +70,15 @@ object Motion {
      */
     const val AgendaCornerFadeMillis = 320
 
+    /**
+     * 日程页换图淡入时长：02 态点日历切查看日期（随机轮播按日命中新图）、图片浮层
+     * 换选等背景图变化时，新图在旧图上单向淡入（cross-dissolve）——旧图恒满强度
+     * 垫底、新图盖上淡入，双向各淡一半会在中段同时半透明、透出页面底色。新图等
+     * Coil 解码就绪才起播，本时长只花在真正的淡入上、不被磁盘解码吃掉。配合
+     * [Overlay]——与台历吸附（[AgendaSnapMillis]）同族节奏，前重后轻，换图干脆。
+     */
+    const val AgendaImageFadeMillis = 450
+
     /** 浮层（OverlaySheet）入场时长：从屏幕底部滑入，配合 [Overlay]。 */
     const val SheetEnterMillis = 400
 

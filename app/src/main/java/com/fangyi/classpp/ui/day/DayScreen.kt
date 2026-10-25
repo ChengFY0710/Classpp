@@ -3,7 +3,9 @@ package com.fangyi.classpp.ui.day
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseIn
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -51,6 +53,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -133,6 +136,7 @@ import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.DragDirection
 import com.fangyi.classpp.ui.motion.DragDirectionLock
+import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.OffsetOverscrollEffect
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
@@ -165,6 +169,7 @@ import kotlin.math.roundToInt
 import kotlin.random.Random
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -1732,6 +1737,13 @@ fun DayScreen(
  * 背景图：调用方解析好的背景文件名（手动选中，或随机轮播按天抽取的图）有就换上去
  * （文件缺失/解码失败回退默认测试图）。尺寸由调用方通过 requiredSize 固定为屏幕大小，
  * 图片卡内部只做图层缩放/平移，换卡尺寸时不会触发 Coil 重新按新尺寸请求。
+ *
+ * 换图（02 态点日历切日期按日命中新图、图片浮层换选/开关随机）走单向 cross-dissolve：
+ * 底图恒满强度垫底，新图等 Coil 解码就绪（失败回退默认图也算）才以 [Motion.Overlay]
+ * 淡入盖上——双向各淡一半会在中段同时半透明、透出页面底色；等就绪再起播则让
+ * [Motion.AgendaImageFadeMillis] 只花在真正的淡入上、不被磁盘解码吃掉。快速连续换图
+ * 恒最多两层：在途层已就绪的瞬时落定为底图再起新一场，未就绪的直接丢弃（底图从未
+ * 离开，不闪页面底色）。
  */
 @Composable
 private fun DayBackgroundImage(
@@ -1739,15 +1751,71 @@ private fun DayBackgroundImage(
     backgroundImage: String?,
     modifier: Modifier = Modifier,
 ) {
-    val file = remember(backgroundImage) {
-        backgroundImage?.let { DayImageStore.imageFile(context, it) }
+    var settledImage by remember { mutableStateOf(backgroundImage) }
+    var incomingImage by remember { mutableStateOf<String?>(null) }
+    var incomingReady by remember { mutableStateOf(false) }
+    val fade = remember { Animatable(1f) }
+    LaunchedEffect(backgroundImage) {
+        val target = backgroundImage
+        if (target == null || target == settledImage) {
+            // null（图库删空/选中被删，回退默认测试图）只由图片浮层触达、浮层盖着屏幕，
+            // 直接换不淡入；等于底图是首帧同图重复，或淡入途中折返回底图——弃掉在途层即可
+            settledImage = target
+            incomingImage = null
+            fade.snapTo(1f)
+            return@LaunchedEffect
+        }
+        if (incomingImage != null) {
+            // 上一场未播完被顶替：已就绪的半成品瞬时落定为底图（快连点时 alpha 有个
+            // 小跳变，好过叠出第三层）；未就绪的直接丢弃
+            if (incomingReady) settledImage = incomingImage
+            incomingImage = null
+            fade.snapTo(1f)
+        }
+        incomingImage = target
+        incomingReady = false
+        fade.snapTo(0f)
+        snapshotFlow { incomingReady }.first { it }
+        fade.animateTo(1f, tween(Motion.AgendaImageFadeMillis, easing = Motion.Overlay))
+        // 播完收台：新图成为底图、在途层退场（中途被顶替时本协程已取消，走不到这）
+        settledImage = target
+        incomingImage = null
     }
+    Box(modifier) {
+        DayImageLayer(context, settledImage, Modifier.fillMaxSize())
+        if (incomingImage != null) {
+            DayImageLayer(
+                context = context,
+                image = incomingImage,
+                // 淡入进度只在绘制阶段读，逐帧动画不触发重组；fillMaxSize 维持
+                // requiredSize 固定的解码尺寸，Coil 不按图片固有尺寸另起请求
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = fade.value },
+                // 回报先与本层图名比对：被顶替的旧层迟到的回调不误放行
+                onReady = { image -> if (image == incomingImage) incomingReady = true },
+            )
+        }
+    }
+}
+
+/** 单层背景图：文件交给 Coil 按测量尺寸解码（缺失/失败回退默认测试图），null 直接默认图。 */
+@Composable
+private fun DayImageLayer(
+    context: Context,
+    image: String?,
+    modifier: Modifier = Modifier,
+    onReady: ((String?) -> Unit)? = null,
+) {
+    val file = remember(image) { image?.let { DayImageStore.imageFile(context, it) } }
     if (file != null) {
         AsyncImage(
             model = file,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             error = painterResource(R.drawable.bg_day_test),
+            onSuccess = { onReady?.invoke(image) },
+            onError = { onReady?.invoke(image) },
             modifier = modifier,
         )
     } else {
