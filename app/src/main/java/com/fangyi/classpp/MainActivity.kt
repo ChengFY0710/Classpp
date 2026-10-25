@@ -312,6 +312,8 @@ class MainActivity : ComponentActivity() {
                                             // 上课提醒卡数据源：今天该上的课 + 当前时刻 →
                                             // 倒计时/上课中/课已上完/今日无课
                                             scheduleRepository = repository,
+                                            // 待办提醒卡标签配色数据源（与待办页同源）
+                                            tagRepository = tagRepository,
                                             // 选择图片浮层在场时藏底部导航栏（同课表/待办页浮层）
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                         )

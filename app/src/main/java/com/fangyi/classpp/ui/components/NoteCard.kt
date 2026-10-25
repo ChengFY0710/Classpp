@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
@@ -94,6 +95,9 @@ private val TagChipVerticalPadding = 3.dp
 
 /** 标题与属性行的纵向间距 */
 private val TitlePropertySpacing = 2.dp
+
+/** 卡片主体行上下内距：整卡形态的默认节奏；多条待办合并一张外卡的形态传更紧的 12dp */
+internal val NoteCardPaddingVertical = 14.dp
 
 /**
  * 倒计时（[CountdownLabel]）：数字 [CountdownNumberFontSize] 半粗突出，单位与「逾期」前缀
@@ -284,6 +288,8 @@ private fun CountdownExitSlot(
  * - [onLongClick] 长按回调（待办列表长按进编辑页的入口）：与 onClick 同时非 null 时手势
  *   从 pressClickable 换成 pressFeedback + combinedClickable 手动配对（长按需自建按压源）；
  *   null（默认）维持纯单击；
+ * - [verticalPadding] 主体行上下内距：默认 [NoteCardPaddingVertical]（整卡形态的 14dp 节奏）；
+ *   多条待办合并一张外卡的形态（DayTodoAlert）传 12dp，行距按合并卡节奏收紧；
  * - [modifier] 作用于侧滑层之外（整卡节点）：列表项级 animateItem 与卡间距内距由宿主
  *   挂在这里、不进卡内布局链——动作卡经 matchParentSize 撑满侧滑层实测尺寸，内距若进
  *   卡内 Row 会把动作卡一起撑高（比主体卡多出一份透明内距）。
@@ -313,6 +319,8 @@ fun NoteCard(
     selected: Boolean? = null,
     // 长按回调（进编辑页入口）：与 onClick 同时非 null 才生效
     onLongClick: (() -> Unit)? = null,
+    // 主体行上下内距：默认整卡节奏（NoteCardPaddingVertical），合并卡形态传 12dp
+    verticalPadding: Dp = NoteCardPaddingVertical,
     swipe: NoteCardSwipe? = null,
 ) {
     // 完成态过渡：删除线不再用 TextDecoration（只能整体开关，无动画）——颜色渐变 +
@@ -434,7 +442,7 @@ fun NoteCard(
                         Modifier
                     },
                 )
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 16.dp, vertical = verticalPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // 倒计时（传值即开启；完成/取消完成走上方编排的动画进出场，不再瞬时增删）：

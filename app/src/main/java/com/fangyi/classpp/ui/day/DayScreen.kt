@@ -93,20 +93,26 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil3.compose.AsyncImage
+import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
+import com.fangyi.classpp.data.TagRepository
+import com.fangyi.classpp.data.TodoOpResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.calendar.ChineseDayMarks
 import com.fangyi.classpp.data.datesCoveredWithin
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeText
+import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.DayCalendar
 import com.fangyi.classpp.ui.components.DayCalendarFoldState
 import com.fangyi.classpp.ui.components.DayCourseAlert
 import com.fangyi.classpp.ui.components.DayCourseAlertState
+import com.fangyi.classpp.ui.components.DayTodoAlert
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.DragDirection
@@ -134,6 +140,7 @@ import dev.chrisbanes.haze.rememberHazeState
 import java.util.GregorianCalendar
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -167,8 +174,12 @@ private const val CourseAlertResyncMillis = 30_000L
  * 在场时继续藏底部导航栏。[active] 由调用方按当前 tab 透传，仅用于状态栏图标在
  * 非 Agenda 页恢复主题默认，不参与转场与导航栏布局。
  *
- * [todoRepository] 只喂日历卡的待办小点：活跃待办按 DayCalendar 回报的网格窗口取
- * 覆盖日期（[datesCoveredWithin]），未注入（预览/首帧）按无待办处理。
+ * [todoRepository] 喂日历卡的待办小点与日历卡下方的待办提醒卡（DayTodoAlert）：前者
+ * 按 DayCalendar 回报的网格窗口取覆盖日期（[datesCoveredWithin]），后者按截止窗口
+ * （逾期 ~ 后天）取未完成待办；未注入（预览/首帧）都按无待办处理。
+ *
+ * [tagRepository] 只喂待办提醒卡的标签配色（与待办页同源，见 tagColorMap）；
+ * 未注入（预览/首帧）标签回落主题 Primary。
  *
  * [scheduleRepository] 只喂日历卡下方的上课提醒卡（DayCourseAlert）：按今天的周号/星期/
  * 周规律取该上的课，结合当前时刻给出倒计时/上课中/课已上完/今日无课；未注入（预览/
@@ -180,6 +191,7 @@ fun DayScreen(
     active: Boolean = true,
     todoRepository: TodoRepository? = null,
     scheduleRepository: ScheduleRepository? = null,
+    tagRepository: TagRepository? = null,
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -258,6 +270,35 @@ fun DayScreen(
     val todoMarkedDates = remember(todos, calendarRange) {
         val range = calendarRange ?: return@remember emptySet<IsoDate>()
         todos.datesCoveredWithin(range.first, range.second)
+    }
+
+    // 标签配色表（标签名 → 颜色）：待办提醒卡的标签胶囊取色，与待办页同源——用户标签
+    // 取 TagEntry.colorArgb（null = 跟随主题 Primary），仅用户标签进表
+    val userTagEntries by remember(tagRepository) {
+        tagRepository?.tags ?: MutableStateFlow(emptyList())
+    }.collectAsState()
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val tagColorMap = remember(userTagEntries, primaryColor) {
+        userTagEntries.associate { it.name to (it.colorArgb?.let(::Color) ?: primaryColor) }
+    }
+    // 待办提醒卡的勾选完成落库：回显与停一拍由 DayTodoAlert 负责，这里只做路由——
+    // 重复待办按分期结算（setOccurrenceCompleted），普通待办整条结算；失败 Toast 提示
+    val todoSaveFailedMessage = stringResource(R.string.todo_error_save_failed)
+    val completeAlertTodo: (Todo) -> Unit = { todo ->
+        val repository = todoRepository
+        if (repository != null) {
+            scope.launch {
+                val date = todo.dates.firstOrNull()
+                val result = if (todo.repeat.type != RepeatType.None && date != null) {
+                    repository.setOccurrenceCompleted(todo.id, date, true)
+                } else {
+                    repository.setCompleted(todo.id, true)
+                }
+                if (result is TodoOpResult.Err) {
+                    AppToasts.show(context, todoSaveFailedMessage)
+                }
+            }
+        }
     }
 
     // 上课提醒卡：今天该上的课（周号 + 星期 + 周规律，口径同 NotificationPlanner）+
@@ -1174,6 +1215,19 @@ fun DayScreen(
                                     start = PageHorizontalSpacing,
                                     end = PageHorizontalSpacing,
                                 ),
+                            )
+                        }
+                        // 第四条 = 待办提醒卡（DayTodoAlert）：截止在今明后天与逾期的未完成
+                        // 待办合并一卡（逾期在前），完成勾选走落库路由；无候选待办时整卡
+                        // 折叠不占位。顶部 10dp 间距在组件折叠内容内，与上课提醒卡相邻。
+                        item(key = "todoAlert") {
+                            DayTodoAlert(
+                                todos = todos,
+                                today = today,
+                                nowMinute = nowMinute,
+                                tagColors = tagColorMap,
+                                onComplete = completeAlertTodo,
+                                modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
                             )
                         }
                     }
