@@ -27,6 +27,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.schedule.CourseColor
 import com.fangyi.classpp.ui.schedule.barColor
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -67,7 +68,11 @@ import com.kyant.shapes.Capsule
  * （RGB × [TagTextDimFactorLight]/[TagTextDimFactorDark]，深浅各一档），标签底色取
  * 课程色 25% 透明。
  *
- * 纯展示组件（同 DayCalendar 的「不接数据库」约定）：提醒状态与课程信息全由调用方传入，
+ * **点击**：[onClick] 非 null 时整卡可点（按压反馈为 ui.motion 的 pressFeedback，反馈形状
+ * 同卡壳圆角），宿主用它唤起课程详情浮层；null（默认，无课/课已上完没有详情可看）时
+ * 卡片不可点、无按压反馈。
+ *
+ * 展示组件（同 DayCalendar 的「不接数据库」约定）：提醒状态与课程信息全由调用方传入，
  * 倒计时/上课中的判定与分钟数刷新由宿主负责；无课/课已上完卡只需传 [state]，其余参数
  * 走默认值并被忽略。
  */
@@ -98,6 +103,7 @@ fun DayCourseAlert(
     teacher: String? = null,
     location: String? = null,
     note: String? = null,
+    onClick: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     // 无课/课已上完卡没有课程信息：竖条与标题同用 Primary
@@ -151,6 +157,7 @@ fun DayCourseAlert(
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .pressClickable(shape = DayCardShape, enabled = onClick != null) { onClick?.invoke() }
             .background(colors.surface, DayCardShape),
     ) {
         // 左侧文字列：唯一的高度来源，垂直内边距恒定 → 文字距卡上下缘恒定 14dp。

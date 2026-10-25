@@ -43,11 +43,13 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,6 +77,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
@@ -97,12 +100,17 @@ import coil3.compose.AsyncImage
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
+import com.fangyi.classpp.data.OpResult
 import com.fangyi.classpp.data.TagRepository
+import com.fangyi.classpp.data.TodoFilter
 import com.fangyi.classpp.data.TodoOpResult
+import com.fangyi.classpp.data.TodoReadResult
 import com.fangyi.classpp.data.TodoRepository
+import com.fangyi.classpp.data.TodoSort
 import com.fangyi.classpp.data.calendar.ChineseDayMarks
 import com.fangyi.classpp.data.datesCoveredWithin
 import com.fangyi.classpp.data.expandRepeatOccurrences
+import com.fangyi.classpp.data.filterTodos
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
@@ -110,6 +118,7 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoTimeKind
+import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.BottomFadeScrim
 import com.fangyi.classpp.ui.components.DayCalendar
@@ -133,6 +142,8 @@ import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.note.deadlineColor
 import com.fangyi.classpp.ui.note.toAbsoluteDateText
 import com.fangyi.classpp.ui.schedule.CourseColor
+import com.fangyi.classpp.ui.schedule.CourseDetailSheet
+import com.fangyi.classpp.ui.schedule.CourseTodoSheet
 import com.fangyi.classpp.ui.theme.DayCardShape
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.SerifDisplay
@@ -203,7 +214,9 @@ private val TrailingScrollSpace = 120.dp
  *
  * [scheduleRepository] 只喂日历卡下方的上课提醒卡（DayCourseAlert）：按今天的周号/星期/
  * 周规律取该上的课，结合当前时刻给出倒计时/上课中/课已上完/今日无课；未注入（预览/
- * 首帧）按「今日无课」处理。
+ * 首帧）按「今日无课」处理。有课的上课提醒卡与时间轴上课卡（DayTaskCard.Course）可点击
+ * 唤起课程详情浮层（CourseDetailSheet，与课表页同款两段式接线，含备注编辑、课程待办与
+ * 「新建课程待办」叠层浮层），浮层在场时经 [onOverlayOverNavBarChange] 藏底部导航栏。
  */
 @Composable
 fun DayScreen(
@@ -248,8 +261,13 @@ fun DayScreen(
     // 浮层两段式：mounted 决定是否在组合里，visible 管进出场——出场播完才移出组合
     var sheetMounted by remember { mutableStateOf(false) }
     var sheetVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(sheetMounted) {
-        onOverlayOverNavBarChange(sheetMounted)
+    // 课程详情浮层：被点课程 id（点上课提醒卡/时间轴上课卡进入）；空 = 未打开。
+    // 条目从当前课表反查，课程被删/切课表后反查落空 → 请求清空 → 浮层自动关闭
+    //（两段式约定同课表页，宿主块见底部挂载处）
+    var detailTargetId by rememberSaveable { mutableStateOf("") }
+    var detailMounted by remember { mutableStateOf<CourseEntry?>(null) }
+    LaunchedEffect(sheetMounted, detailMounted != null) {
+        onOverlayOverNavBarChange(sheetMounted || detailMounted != null)
     }
 
     // 持久化记录：进入时按「记录日期 == 今天」恢复 02/04，否则 01。
@@ -345,8 +363,15 @@ fun DayScreen(
     // LocalToday 同款兜底）；课表未装载按无课。
     val scheduleState = scheduleRepository?.activeSchedule?.collectAsState()
     // 时间轴任务卡：今天有起止时刻的课程 + 待办（口径见 dayTasks），装配成 DayTask 列表。
-    // 截止取色是 @Composable 口径（读 LocalToday），故在组合期装配而非 remember 块里
-    val timelineTasks = dayTasks(scheduleState?.value, todos, today, toggleTaskTodo)
+    // 截止取色是 @Composable 口径（读 LocalToday），故在组合期装配而非 remember 块里；
+    // 上课卡的点击经 onCourseClick 记下课程 id，唤起课程详情浮层（宿主块见底部挂载处）
+    val timelineTasks = dayTasks(
+        scheduleState?.value,
+        todos,
+        today,
+        toggleTaskTodo,
+        onCourseClick = { detailTargetId = it },
+    )
     var nowMinute by remember { mutableIntStateOf(nowMinuteOfDay()) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -1228,6 +1253,7 @@ fun DayScreen(
                         }
                         // 第三条 = 上课提醒卡（DayCourseAlert）：最近一节的倒计时/上课中，
                         // 或「今日课已上完/今日无课」；随时刻对表前进，与日历卡间距 10dp。
+                        // 有课可点（唤起课程详情浮层），无课/课已上完传 null 不可点。
                         item(key = "courseAlert") {
                             DayCourseAlert(
                                 state = courseAlert.state,
@@ -1239,6 +1265,9 @@ fun DayScreen(
                                 teacher = courseAlert.course?.teacher,
                                 location = courseAlert.course?.location,
                                 note = courseAlert.course?.note,
+                                onClick = courseAlert.course?.let { course ->
+                                    { detailTargetId = course.id }
+                                },
                                 modifier = Modifier.padding(
                                     top = CourseAlertTopSpacing,
                                     start = PageHorizontalSpacing,
@@ -1320,6 +1349,86 @@ fun DayScreen(
                 hazeState = contentHazeState,
                 modifier = Modifier.align(Alignment.TopCenter),
             )
+        }
+
+        // 10.5) 课程详情浮层：点上课提醒卡/时间轴上课卡唤起，与课表页（ScheduleScreen）
+        // 同款接线。条目从当前课表反查（课程被删/切课表后反查落空 → 请求清空 → 浮层自动
+        // 关闭）；挂载/可见两段式：收场动画期间 detailMounted 保持内容稳定不闪空。
+        // 画在顶栏之后、图片浮层之前——图片浮层保持最顶层（盖住整个页面，含浮层）。
+        val activeSchedule = scheduleState?.value
+        val detailEntry = activeSchedule?.courses?.firstOrNull { it.id == detailTargetId }
+        if (detailEntry != null) detailMounted = detailEntry
+        detailMounted?.let { detail ->
+            val schedule = activeSchedule ?: return@let
+            // 该课程标签（=课程名）命中的全部待办：先做重复待办的分期展开（同待办列表页
+            // 口径——分期副本的日期与"随重复"折算截止才是当期真实值），再按标签过滤（标签
+            // 语义走 filterTodos 的"任一重合"），排序与待办页默认一致（创建时间降序）
+            val courseTodos = remember(todos, today, detail.name) {
+                todos
+                    .expandRepeatOccurrences(today)
+                    .filterTodos(TodoFilter(tags = setOf(detail.name)))
+                    .sortedFor(TodoSort.Created, descending = true)
+            }
+            // 新建课程待办浮层：详情浮层左上「新建」请求挂载。期望态 + 挂载态两段式
+            //（同其它浮层），期望态同时驱动详情浮层 covered（上层在场时缩小后退）
+            var courseTodoVisible by remember { mutableStateOf(false) }
+            var courseTodoMounted by remember { mutableStateOf(false) }
+            val keyboard = LocalSoftwareKeyboardController.current
+            val noteSaveFailedMessage = stringResource(R.string.error_persist_failed)
+            key(detail.id) {
+                CourseDetailSheet(
+                    visible = detailEntry != null,
+                    entry = detail,
+                    schedule = schedule,
+                    todos = courseTodos,
+                    covered = courseTodoVisible,
+                    // 同时间轴待办卡：勾选结算走 toggleTaskTodo（分期/整条 + 失败 Toast）
+                    onTodoCheckedChange = toggleTaskTodo,
+                    onNoteSave = { note ->
+                        val cleaned = note.trim()
+                        if (cleaned != detail.note) {
+                            scope.launch {
+                                val result = scheduleRepository?.upsertCourse(
+                                    schedule.id,
+                                    detail.copy(note = cleaned),
+                                )
+                                if (result is OpResult.Err) {
+                                    AppToasts.show(context, noteSaveFailedMessage)
+                                }
+                            }
+                        }
+                    },
+                    // 左上「新建」：收键盘后挂载新建课程待办浮层（入口进弹层的通用约定）
+                    onCreateTodoClick = {
+                        keyboard?.hide()
+                        courseTodoMounted = true
+                        courseTodoVisible = true
+                    },
+                    onDismiss = { detailTargetId = "" },
+                    onDismissed = { detailMounted = null },
+                )
+            }
+            // 新建课程待办浮层：画在详情浮层之后（组合顺序即绘制顺序）叠层，返回键
+            // 后注册先响应（先于详情浮层的关闭拦截）。确认落库：Ok 关浮层回详情（新
+            // 待办带课程名标签，回流后即出现在上方待办卡列表）；Err Toast 不关，可改后重试
+            if (courseTodoMounted) {
+                CourseTodoSheet(
+                    visible = courseTodoVisible,
+                    entry = detail,
+                    schedule = schedule,
+                    onConfirm = { todo ->
+                        scope.launch {
+                            when (val result = todoRepository?.addTodo(todo)) {
+                                is TodoReadResult.Ok -> courseTodoVisible = false
+                                is TodoReadResult.Err -> AppToasts.show(context, todoSaveFailedMessage)
+                                null -> Unit
+                            }
+                        }
+                    },
+                    onDismiss = { courseTodoVisible = false },
+                    onDismissed = { courseTodoMounted = false },
+                )
+            }
         }
 
         // 11) 图片选择浮层保持最后挂载，盖住整个页面（含顶栏）。
@@ -1545,8 +1654,9 @@ private fun todayCourseEntries(schedule: Schedule, today: IsoDate): List<CourseE
  * 时间轴任务卡取数（组合期调用——截止取色是 @Composable 口径，读 LocalToday）：
  * 今天该上的课 + 当天有起止时刻（Period 档）的待办。
  * 课程口径同 [todayCourseEntries]，时刻经大节定义解析（跨节 span > 1 = 末节下课时刻）；
- * 待办先按重复规则展开分期再取落在今天的，已完成分期也上轴（卡片内置灰划线呈现），
- * AllDay/无时刻的待办在比例时间轴上无处安放、不上轴；截止文案取绝对日期（如「10/27 6:00」）。
+ * 上课卡经 [onCourseClick]（课程 id）接课程详情浮层的唤起；待办先按重复规则展开分期
+ * 再取落在今天的，已完成分期也上轴（卡片内置灰划线呈现），AllDay/无时刻的待办在比例
+ * 时间轴上无处安放、不上轴；截止文案取绝对日期（如「10/27 6:00」）。
  */
 @Composable
 private fun dayTasks(
@@ -1554,6 +1664,7 @@ private fun dayTasks(
     todos: List<Todo>,
     today: IsoDate,
     onToggleTodo: (Todo, Boolean) -> Unit,
+    onCourseClick: (String) -> Unit = {},
 ): List<DayTask> = buildList {
     if (schedule != null) {
         for (course in todayCourseEntries(schedule, today)) {
@@ -1571,6 +1682,7 @@ private fun dayTasks(
                     color = CourseColor.valueOf(course.color.name),
                     startMinute = startMinute,
                     endMinute = endMinute,
+                    onClick = { onCourseClick(course.id) },
                 ),
             )
         }

@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TimeText
+import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.schedule.CourseColor
 import com.fangyi.classpp.ui.schedule.barColor
@@ -70,7 +71,8 @@ internal sealed interface DayTask {
     val startMinute: Int
     val endMinute: Int
 
-    /** 上课：信息字段与 DayCourseAlert 一致（空白字段不出行） */
+    /** 上课：信息字段与 DayCourseAlert 一致（空白字段不出行）；[onClick] 接课程详情
+     *  浮层的唤起（整卡点击，null = 不可点） */
     data class Course(
         val name: String,
         val teacher: String?,
@@ -79,6 +81,7 @@ internal sealed interface DayTask {
         val color: CourseColor,
         override val startMinute: Int,
         override val endMinute: Int,
+        val onClick: (() -> Unit)? = null,
     ) : DayTask
 
     /** 待办：本期只展示时间区间与截止时间（样式参考 NoteCard），[onToggle] 接完成勾选 */
@@ -268,6 +271,9 @@ private fun overlapsInTime(a: DayTask, b: DayTask): Boolean =
  * 单张任务卡：位置尺寸由 [placement] 给出（由 DayTimeline 在卡片区域放置），高度作
  * heightIn 下限——内容更高的竖排卡自然撑底（顶边仍锚定开始时刻）。圆角按接触标记
  * 逐角取 20dp/6dp（theme 的平滑圆角），贴背/重叠时邻角收敛。
+ *
+ * 课程卡带 [DayTask.Course.onClick] 时整卡可点（按压反馈形状同卡壳圆角，含收敛的
+ * 接触角），宿主用它唤起课程详情浮层；待办卡整卡不可点，仅勾选框接事件。
  */
 @Composable
 internal fun DayTaskCard(placement: DayTaskPlacement, modifier: Modifier = Modifier) {
@@ -276,19 +282,26 @@ internal fun DayTaskCard(placement: DayTaskPlacement, modifier: Modifier = Modif
         is DayTask.Course -> task.color.barColor(MaterialTheme.isDarkTheme)
         is DayTask.Todo -> MaterialTheme.colorScheme.primary
     }
+    val cardShape = dayTaskCardShape(
+        topStartContact = placement.topStartContact,
+        topEndContact = placement.topEndContact,
+        bottomStartContact = placement.bottomStartContact,
+        bottomEndContact = placement.bottomEndContact,
+    )
+    val courseClick = (task as? DayTask.Course)?.onClick
     Box(
         modifier = modifier
             .offset(x = placement.offsetX, y = placement.offsetY)
             .width(placement.width)
             .heightIn(min = placement.height)
-            .clip(
-                dayTaskCardShape(
-                    topStartContact = placement.topStartContact,
-                    topEndContact = placement.topEndContact,
-                    bottomStartContact = placement.bottomStartContact,
-                    bottomEndContact = placement.bottomEndContact,
-                ),
+            .then(
+                if (courseClick != null) {
+                    Modifier.pressClickable(shape = cardShape) { courseClick() }
+                } else {
+                    Modifier
+                },
             )
+            .clip(cardShape)
             .background(MaterialTheme.colorScheme.surface),
         propagateMinConstraints = true,
     ) {
@@ -326,6 +339,12 @@ private fun VerticalTaskContent(task: DayTask, accent: Color) {
             TaskTagBox(
                 label = task.tagLabel,
                 accent = accent,
+                backgroundAlpha = if (task is DayTask.Course) {
+                    TaskCourseTagBackgroundAlpha
+                } else {
+                    TaskTodoTagBackgroundAlpha
+                },
+                dimText = task is DayTask.Course,
                 stretch = true,
                 vertical = true,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -430,6 +449,12 @@ private fun CompactTaskContent(task: DayTask, accent: Color) {
         TaskTagBox(
             label = task.tagLabel,
             accent = accent,
+            backgroundAlpha = if (task is DayTask.Course) {
+                TaskCourseTagBackgroundAlpha
+            } else {
+                TaskTodoTagBackgroundAlpha
+            },
+            dimText = task is DayTask.Course,
             stretch = false,
             vertical = false,
         )
@@ -461,6 +486,7 @@ private fun CompactTaskTitle(title: String, completed: Boolean, modifier: Modifi
         text = title,
         modifier = modifier,
         style = MaterialTheme.classppTextStyles.fieldLabel.copy(
+            fontSize = TaskTitleFontSize,
             color = if (completed) {
                 MaterialTheme.classppColors.secondaryText
             } else {
@@ -473,26 +499,29 @@ private fun CompactTaskTitle(title: String, completed: Boolean, modifier: Modifi
     )
 }
 
-/** 「上课/待办」标签：底色 accent 25% 透明 + 文字降明度（DayCourseAlert TagBox 同款）；
- *  [stretch] = 竖列中间档撑满给定约束（水平内边距归零），[vertical] = 文字按字竖排 */
+/** 「上课/待办」标签：底色 accent [backgroundAlpha] 透明；[dimText] = 文字相对 accent
+ *  降明度（课程色为马卡龙浅色需要压深，深浅各一套系数）——待办标签的 accent 本身就是
+ *  Primary，传 false 直接用原色 */
 @Composable
 private fun TaskTagBox(
     label: String,
     accent: Color,
+    backgroundAlpha: Float,
+    dimText: Boolean,
     stretch: Boolean,
     vertical: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Box(
         modifier = modifier
-            .background(accent.copy(alpha = TaskTagBackgroundAlpha), DayCourseAlertTagShape)
+            .background(accent.copy(alpha = backgroundAlpha), DayCourseAlertTagShape)
             .padding(horizontal = if (stretch) 0.dp else TaskTagPaddingHorizontal),
         contentAlignment = Alignment.Center,
     ) {
         // 深浅各自降明度（同 DayCourseAlert：深色课程色本就更深一档，沿用浅色系数会闷进标签底色）
         val dimFactor =
             if (MaterialTheme.isDarkTheme) TaskTagTextDimFactorDark else TaskTagTextDimFactorLight
-        val tagColor = accent.darkened(dimFactor)
+        val tagColor = if (dimText) accent.darkened(dimFactor) else accent
         if (vertical) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 TaskTagText(label.substring(0, 1), tagColor)
@@ -567,8 +596,8 @@ private fun TaskTodoCheckbox(
                     Modifier
                 },
             )
-            .height(36.dp)
-            .width(36.dp),
+            .height(TaskTodoCheckboxSize)
+            .width(TaskTodoCheckboxSize),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
@@ -612,8 +641,13 @@ private val TaskTitlePropertySpacing = 2.dp
 /** 待办属性行内时间项与下一项的间距（NoteCard 4dp FlowRow 间距 + 8dp 末位内距 = 12dp） */
 private val TaskPropertyItemEndPadding = 8.dp
 
-/** 标签底色透明度：accent 25%（DayCourseAlert 同款设计巧思） */
-private const val TaskTagBackgroundAlpha = 0.25f
+/** 待办勾选框热区：方径见 [TaskTodoCheckboxSize]（NoteCard 同款 36dp），M3 Checkbox 居中其中 */
+private val TaskTodoCheckboxSize = 36.dp
+
+/** 标签底色透明度：课程色 25%（DayCourseAlert 同款设计巧思）；待办取 Primary 10%
+ *  （NoteCard TagChip 同款） */
+private const val TaskCourseTagBackgroundAlpha = 0.25f
+private const val TaskTodoTagBackgroundAlpha = 0.1f
 
 /** 标签文字相对 accent 的降明度系数（RGB 同比）·浅色主题 */
 private const val TaskTagTextDimFactorLight = 0.5f
@@ -623,14 +657,14 @@ private const val TaskTagTextDimFactorDark = 0.95f
 
 private val TaskTagPaddingHorizontal = 5.dp
 
-private val TaskTitleFontSize = 16.sp
+private val TaskTitleFontSize = 15.sp
 private val TaskTitleLineHeight = 20.sp
-private val TaskInfoFontSize = 13.sp
+private val TaskInfoFontSize = 12.sp
 private val TaskInfoLineHeight = 18.sp
-private val TaskTimeFontSize = 13.sp
+private val TaskTimeFontSize = 12.sp
 private val TaskTimeLineHeight = 20.sp
 private val TaskTagFontSize = 11.sp
-private val TaskTagLineHeight = 20.sp
+private val TaskTagLineHeight = 12.sp
 
 // ---------- 预览 ----------
 
