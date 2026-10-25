@@ -1,5 +1,6 @@
 package com.fangyi.classpp.ui.theme
 
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 import com.kyant.shapes.Capsule
 import com.kyant.shapes.RoundedRectangle
@@ -49,6 +50,36 @@ val DayCardShape = RoundedRectangle(20.dp)
 
 /** 日程页上课提醒卡（DayCourseAlert）的「上课」竖排小标签 */
 val DayCourseAlertTagShape = RoundedRectangle(6.dp)
+
+/** 日程页时间轴任务卡（DayTaskCard）的默认四角：20dp 平滑圆角（与 DayCardShape 同规格） */
+val DayTaskCardShape = RoundedRectangle(20.dp)
+
+private val DayTaskCornerRadius = 20.dp
+
+/** 任务卡与相邻任务贴近（渲染间距 < 6dp）一侧接触角的圆角 */
+private val DayTaskContactRadius = 6.dp
+
+/**
+ * 日程页时间轴任务卡的逐角圆角：默认取 [DayTaskCardShape]；与相邻任务卡贴近的角
+ * 收敛为 [DayTaskContactRadius]（连续曲率同款）——哪些角贴近由布局求解按贴邻方向
+ * 逐角标记（竖向贴邻按横向半宽分角，横向贴邻（时间重叠均分）收起/末两侧角）。
+ */
+fun dayTaskCardShape(
+    topStartContact: Boolean = false,
+    topEndContact: Boolean = false,
+    bottomStartContact: Boolean = false,
+    bottomEndContact: Boolean = false,
+): Shape {
+    if (!topStartContact && !topEndContact && !bottomStartContact && !bottomEndContact) {
+        return DayTaskCardShape
+    }
+    return UnevenRoundedRectangle(
+        topStart = if (topStartContact) DayTaskContactRadius else DayTaskCornerRadius,
+        topEnd = if (topEndContact) DayTaskContactRadius else DayTaskCornerRadius,
+        bottomStart = if (bottomStartContact) DayTaskContactRadius else DayTaskCornerRadius,
+        bottomEnd = if (bottomEndContact) DayTaskContactRadius else DayTaskCornerRadius,
+    )
+}
 
 /** 顶栏胶囊按钮（全圆角）；投影与背景共用同一个形状 */
 val PillShape = Capsule()

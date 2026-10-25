@@ -354,8 +354,8 @@ private fun TagText(text: String, color: Color) {
     )
 }
 
-/** 课程色降明度：RGB 同比乘 [factor]（色相与透明度不变），比时间文字深一档 */
-private fun Color.darkened(factor: Float): Color =
+/** 课程色降明度：RGB 同比乘 [factor]（色相与透明度不变），比时间文字深一档（时间轴任务卡标签同用） */
+internal fun Color.darkened(factor: Float): Color =
     Color(red = red * factor, green = green * factor, blue = blue * factor, alpha = alpha)
 
 /** 倒计时标题：不足 1 小时「X分钟后」，达到 1 小时「X小时Y分钟后」，整小时「X小时后」 */

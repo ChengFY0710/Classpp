@@ -102,18 +102,21 @@ import com.fangyi.classpp.data.TodoOpResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.calendar.ChineseDayMarks
 import com.fangyi.classpp.data.datesCoveredWithin
+import com.fangyi.classpp.data.expandRepeatOccurrences
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.BottomFadeScrim
 import com.fangyi.classpp.ui.components.DayCalendar
 import com.fangyi.classpp.ui.components.DayCalendarFoldState
 import com.fangyi.classpp.ui.components.DayCourseAlert
 import com.fangyi.classpp.ui.components.DayCourseAlertState
+import com.fangyi.classpp.ui.components.DayTask
 import com.fangyi.classpp.ui.components.DayTimeline
 import com.fangyi.classpp.ui.components.DayTodoAlert
 import com.fangyi.classpp.ui.components.hazeSources
@@ -127,6 +130,8 @@ import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.rememberDeviceCornerRadius
 import com.fangyi.classpp.ui.motion.sharePointerInputWithSiblings
 import com.fangyi.classpp.ui.navigation.NavReserve
+import com.fangyi.classpp.ui.note.deadlineColor
+import com.fangyi.classpp.ui.note.toAbsoluteDateText
 import com.fangyi.classpp.ui.schedule.CourseColor
 import com.fangyi.classpp.ui.theme.DayCardShape
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
@@ -315,12 +320,33 @@ fun DayScreen(
             }
         }
     }
+    // 时间轴待办卡的勾选落库：与 completeAlertTodo 同一结算口径，但支持双向（勾/取消勾）；
+    // 卡片自带完成态回显（划线置灰），无需停一拍编排
+    val toggleTaskTodo: (Todo, Boolean) -> Unit = { todo, checked ->
+        val repository = todoRepository
+        if (repository != null) {
+            scope.launch {
+                val date = todo.dates.firstOrNull()
+                val result = if (todo.repeat.type != RepeatType.None && date != null) {
+                    repository.setOccurrenceCompleted(todo.id, date, checked)
+                } else {
+                    repository.setCompleted(todo.id, checked)
+                }
+                if (result is TodoOpResult.Err) {
+                    AppToasts.show(context, todoSaveFailedMessage)
+                }
+            }
+        }
+    }
 
     // 上课提醒卡：今天该上的课（周号 + 星期 + 周规律，取课同 NotificationPlanner，但周末
     // 不按 daysPerWeek 跳过——显示模式不裁剪真实课程）+ 当前时刻 → 倒计时/上课中/课已上完/
     // 今日无课。时刻对表：前台每 30s 一跳 + 回前台立即对表（进程冻结期间 delay 不走，与
     // LocalToday 同款兜底）；课表未装载按无课。
     val scheduleState = scheduleRepository?.activeSchedule?.collectAsState()
+    // 时间轴任务卡：今天有起止时刻的课程 + 待办（口径见 dayTasks），装配成 DayTask 列表。
+    // 截止取色是 @Composable 口径（读 LocalToday），故在组合期装配而非 remember 块里
+    val timelineTasks = dayTasks(scheduleState?.value, todos, today, toggleTaskTodo)
     var nowMinute by remember { mutableIntStateOf(nowMinuteOfDay()) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -1235,10 +1261,11 @@ fun DayScreen(
                         }
                         // 第五条 = 时间轴（DayTimeline）：0:00 → 次日 0:00 全宽网格 + 左侧
                         // 44dp 时间列；网格线与屏幕同宽，故不加水平 padding。右侧卡片区域
-                        // 本期留白，卡片组件按任务时长比例（1 小时 = 50dp）排布，后续接入；
-                        // 无日程时照常显示整条。
+                        // 渲染当天任务卡（timelineTasks），按任务时长比例（1 小时 = 50dp）
+                        // 排布；无任务时照常显示整条留白。
                         item(key = "timeline") {
                             DayTimeline(
+                                tasks = timelineTasks,
                                 modifier = Modifier.padding(top = TimelineTopSpacing),
                             )
                         }
@@ -1469,19 +1496,7 @@ private data class DayCourseAlertData(
  */
 private fun dayCourseAlertData(schedule: Schedule?, today: IsoDate, nowMinute: Int): DayCourseAlertData {
     if (schedule == null) return DayCourseAlertData(DayCourseAlertState.NoCourse)
-    val termStartMonday = schedule.termStart.mondayOfWeek().epochDay
-    val week = ((today.mondayOfWeek().epochDay - termStartMonday) / 7).toInt() + 1
-    val dayOfWeek = today.isoDayOfWeek()
-    // 只按学期周次过滤，不看 daysPerWeek：那只是网格的显示列数（5 天模式下周末列不画），
-    // 周六/周日真实排了课仍要提醒——无课判定不能被显示模式裁剪
-    val inTerm = week in 1..schedule.totalWeeks
-    val todayCourses = if (inTerm) {
-        schedule.courses
-            .filter { it.dayOfWeek == dayOfWeek && it.weeks.contains(week) }
-            .sortedBy { it.startSlot }
-    } else {
-        emptyList()
-    }
+    val todayCourses = todayCourseEntries(schedule, today)
     if (todayCourses.isEmpty()) return DayCourseAlertData(DayCourseAlertState.NoCourse)
 
     var next: Triple<CourseEntry, Pair<String, String>, Int>? = null
@@ -1510,3 +1525,75 @@ private fun dayCourseAlertData(schedule: Schedule?, today: IsoDate, nowMinute: I
         endTimeText = times.second,
     )
 }
+
+/** 今天该上的课（周号 + 星期 + 周规律过滤，开学前/学期外整段跳过）。**不按 daysPerWeek
+ *  跳过周末**：那只是网格的显示列数，周末真实排了课仍要提醒/上时间轴。上课提醒卡
+ *  （[dayCourseAlertData]）与时间轴任务卡（[dayTasks]）共用同一取课口径 */
+private fun todayCourseEntries(schedule: Schedule, today: IsoDate): List<CourseEntry> {
+    val termStartMonday = schedule.termStart.mondayOfWeek().epochDay
+    val week = ((today.mondayOfWeek().epochDay - termStartMonday) / 7).toInt() + 1
+    if (week !in 1..schedule.totalWeeks) return emptyList()
+    val dayOfWeek = today.isoDayOfWeek()
+    return schedule.courses
+        .filter { it.dayOfWeek == dayOfWeek && it.weeks.contains(week) }
+        .sortedBy { it.startSlot }
+}
+
+/**
+ * 时间轴任务卡取数（组合期调用——截止取色是 @Composable 口径，读 LocalToday）：
+ * 今天该上的课 + 当天有起止时刻（Period 档）的待办。
+ * 课程口径同 [todayCourseEntries]，时刻经大节定义解析（跨节 span > 1 = 末节下课时刻）；
+ * 待办先按重复规则展开分期再取落在今天的，已完成分期也上轴（卡片内置灰划线呈现），
+ * AllDay/无时刻的待办在比例时间轴上无处安放、不上轴；截止文案取绝对日期（如「10/27 6:00」）。
+ */
+@Composable
+private fun dayTasks(
+    schedule: Schedule?,
+    todos: List<Todo>,
+    today: IsoDate,
+    onToggleTodo: (Todo, Boolean) -> Unit,
+): List<DayTask> = buildList {
+    if (schedule != null) {
+        for (course in todayCourseEntries(schedule, today)) {
+            val startSlot = schedule.slots.getOrNull(course.startSlot - 1) ?: continue
+            val endSlot = schedule.slots.getOrNull(course.endSlot - 1) ?: startSlot
+            val startMinute = TimeText.parseMinutes(startSlot.startTime) ?: continue
+            val endMinute = TimeText.parseMinutes(endSlot.endTime) ?: continue
+            add(
+                DayTask.Course(
+                    name = course.name,
+                    teacher = course.teacher.takeIf { it.isNotBlank() },
+                    location = course.location.takeIf { it.isNotBlank() },
+                    note = course.note.takeIf { it.isNotBlank() },
+                    // 存储枚举（data.model）→ UI 枚举（ui.schedule）同名映射，barColor 取色同源
+                    color = CourseColor.valueOf(course.color.name),
+                    startMinute = startMinute,
+                    endMinute = endMinute,
+                ),
+            )
+        }
+    }
+    for (todo in todos.expandRepeatOccurrences(today)) {
+        if (today !in todo.dates) continue
+        if (todo.timeKind != TodoTimeKind.Period) continue
+        val startMinute = todo.startMinute ?: continue
+        val endMinute = todo.endMinute ?: continue
+        add(
+            DayTask.Todo(
+                id = todo.id,
+                name = todo.name,
+                completed = todo.completed,
+                deadlineText = todo.deadlineDate?.let { date ->
+                    listOfNotNull(
+                        date.toAbsoluteDateText(today),
+                        todo.deadlineMinute?.let(TimeText::format),
+                    ).joinToString(" ")
+                },
+                deadlineColor = todo.deadlineColor(),
+                onToggle = { checked -> onToggleTodo(todo, checked) },
+                startMinute = startMinute,
+                endMinute = endMinute,
+            ),
+        )
+    }
+}.sortedBy { it.startMinute }
