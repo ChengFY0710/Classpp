@@ -32,6 +32,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -101,10 +102,11 @@ import kotlinx.coroutines.launch
  * **锚点（anchor）唯一**：展开态展示锚点所在月、折叠态展示锚点所在周，标题始终显示锚点
  * 所在年月——两种形态、按钮切换与折叠联动共用同一份锚点状态。锚点初始与选中日对齐
  * （[selectedDate]，null = 今天），选中日变化后自动跟随——点选日期球与宿主「回到今天」
- * 都走这一条路；箭头翻页只挪锚点、不改选中。锚点月变化即触发**整月横滑换页**（见
- * [MonthSwap]：Motion.AgendaMonthSwitchMillis + Overlay 曲线，新月从方向侧滑入、旧月
- * 滑出，外框高度在 5/6 行间随同一进度插值、底栏不跳），标题短滑淡入淡出与网格同帧；
- * 折叠态跨月换页同样成立（各层用自己的锚点周对齐可见行）。本组件暂不接数据库，[markedDates] 由调用方
+ * 都走这一条路；箭头翻页只挪锚点、不改选中。锚点变化即触发**横滑换页**（见
+ * [MonthSwap]：Motion.AgendaCalendarSwitchMillis + Overlay 曲线，新页从方向侧滑入、
+ * 旧页滑出）：展开态翻月/跨月跳转让整月网格横滑、外框高度在 5/6 行间随同一进度插值、
+ * 底栏不跳，标题短滑淡入淡出与网格同帧；折叠态翻周让可见周行横滑换行（跨月时仍走
+ * 整月换页，各层用自己的锚点周对齐可见行）。本组件暂不接数据库，[markedDates] 由调用方
  * 传入；锚点月可无限翻页，小点这类窗口化数据按 [onGridRangeChange] 回报的网格日期窗口
  * 取值即可（见 DayScreen 的待办小点）。
  */
@@ -135,37 +137,66 @@ fun DayCalendar(
     LaunchedEffect(selected) { anchor = selected }
     val (anchorYear, anchorMonth, _) = anchor.yearMonthDay()
 
-    // 月切换横滑：snapshotFlow 收集锚点变化，锚点月变了就把旧月网格参数快照进
-    // [MonthSwap]，新旧两层整月网格同帧横滑换页（Motion.AgendaMonthSwitchMillis +
-    // Overlay 曲线）。lastDisplayedAnchor 随每次锚点变化更新——折叠周翻页在月内挪过
-    // 锚点再跨月时，快照里的锚点周（fromWeekIndex）仍然准确。切换途中来了新锚点：
-    // 当前动画先播完（collect 挂起），再按最新目标起下一页——连点累积翻页、不跳帧。
-    // 三个状态同用 remember(today)：跨天重置一起回到选中日，不当成一次翻页。
+    // 换页横滑：snapshotFlow 收集锚点变化，与上一显示锚点比对——跨月则整月网格换页
+    // （新旧两层月网格横滑），月内挪周（折叠态箭头 ±7 天）则同一份月网格横滑换可见
+    // 周行，共用 Motion.AgendaCalendarSwitchMillis + Overlay 一条曲线。lastDisplayedAnchor
+    // 随每次锚点变化更新——折叠周翻页在月内挪过锚点再跨月时，快照里的锚点周
+    // （fromWeekIndex）仍然准确。切换途中来了新锚点：当前动画先播完（collect 挂起），
+    // 再按最新目标起下一页——连点累积翻页、不跳帧。网格参数一律从目标月日期现场推算
+    // （本协程跨重组存活，捕获组合期局部值会过期）。三个状态同用 remember(today)：
+    // 跨天重置一起回到选中日，不当成一次换页。
     val swapState = remember(today) { mutableStateOf<MonthSwap?>(null) }
     var lastDisplayedAnchor by remember(today) { mutableStateOf(anchor) }
     LaunchedEffect(today) {
         snapshotFlow { anchor }.collect { target ->
             val prev = lastDisplayedAnchor
             lastDisplayedAnchor = target
+            val direction = if (target.epochDay > prev.epochDay) 1 else -1
             val (prevYear, prevMonth, _) = prev.yearMonthDay()
             val (targetYear, targetMonth, _) = target.yearMonthDay()
-            if (prevYear == targetYear && prevMonth == targetMonth) return@collect
-            val prevFirst = IsoDate.of(prevYear, prevMonth, 1)
-            val prevGridStart = prevFirst.mondayOfWeek()
-            val prevDaysInMonth = (prevFirst.plusMonthsClamped(1) - prevFirst).toInt()
-            val prevRowCount = (prevFirst.isoDayOfWeek() - 1 + prevDaysInMonth + 6) / 7
-            val swap = MonthSwap(
-                fromGridStart = prevGridStart,
-                fromFirstOfMonth = prevFirst,
-                fromDaysInMonth = prevDaysInMonth,
-                fromRowCount = prevRowCount,
-                fromWeekIndex = ((prev.mondayOfWeek().epochDay - prevGridStart.epochDay) / 7L).toInt(),
-                fromMonthHeight = RowStep * prevRowCount - RowSpacing + DotZone,
-                direction = if (targetYear * 12 + targetMonth > prevYear * 12 + prevMonth) 1 else -1,
-            )
-            swapState.value = swap
-            swap.progress.animateTo(1f, tween(Motion.AgendaMonthSwitchMillis, easing = Motion.Overlay))
-            swapState.value = null
+            val targetFirst = IsoDate.of(targetYear, targetMonth, 1)
+            val targetGridStart = targetFirst.mondayOfWeek()
+            val targetDaysInMonth = (targetFirst.plusMonthsClamped(1) - targetFirst).toInt()
+            val targetRowCount = (targetFirst.isoDayOfWeek() - 1 + targetDaysInMonth + 6) / 7
+
+            if (prevYear == targetYear && prevMonth == targetMonth) {
+                // 折叠态周切换：锚点月没变、只挪了周——同一份月网格换可见行，横滑语义
+                // 与月切换一致。展开态周内变化不可见（fold.progress = 0，网格整体原位）；
+                // 同周变化（点选日期球等）没有可动的内容，两种情况都直接跳过。
+                val prevWeekIndex = ((prev.mondayOfWeek().epochDay - targetGridStart.epochDay) / 7L).toInt()
+                val targetWeekIndex = ((target.mondayOfWeek().epochDay - targetGridStart.epochDay) / 7L).toInt()
+                if (prevWeekIndex == targetWeekIndex || !folded) return@collect
+                animateSwap(
+                    swapState,
+                    MonthSwap(
+                        fromGridStart = targetGridStart,
+                        fromFirstOfMonth = targetFirst,
+                        fromDaysInMonth = targetDaysInMonth,
+                        fromRowCount = targetRowCount,
+                        fromWeekIndex = prevWeekIndex,
+                        fromMonthHeight = RowStep * targetRowCount - RowSpacing + DotZone,
+                        direction = direction,
+                    ),
+                )
+            } else {
+                // 跨月：整月换页（折叠周翻页跨月 / 展开翻月 / 回到今天 / 点邻月补位日期）
+                val prevFirst = IsoDate.of(prevYear, prevMonth, 1)
+                val prevGridStart = prevFirst.mondayOfWeek()
+                val prevDaysInMonth = (prevFirst.plusMonthsClamped(1) - prevFirst).toInt()
+                val prevRowCount = (prevFirst.isoDayOfWeek() - 1 + prevDaysInMonth + 6) / 7
+                animateSwap(
+                    swapState,
+                    MonthSwap(
+                        fromGridStart = prevGridStart,
+                        fromFirstOfMonth = prevFirst,
+                        fromDaysInMonth = prevDaysInMonth,
+                        fromRowCount = prevRowCount,
+                        fromWeekIndex = ((prev.mondayOfWeek().epochDay - prevGridStart.epochDay) / 7L).toInt(),
+                        fromMonthHeight = RowStep * prevRowCount - RowSpacing + DotZone,
+                        direction = direction,
+                    ),
+                )
+            }
         }
     }
 
@@ -252,9 +283,9 @@ fun DayCalendar(
             )
             Spacer(Modifier.height(HeaderGridGap))
             // 折叠外框：高度插值 + 裁切都在 foldHeight 内完成（裁切必须先于测量挂链）。
-            // 内部最多两层整月网格——目标月（锚点月）常驻，月切换在途时叠一层旧月快照：
-            // 两层同宽、横向位移互补（monthLayer），如胶片换页般无缝横滑，横向溢出由
-            // 外框 clipToBounds 裁掉。
+            // 内部最多两层整月网格——目标月（锚点月）常驻，换页（翻月/折叠翻周）在途时
+            // 叠一层旧页快照：两层同宽、横向位移互补（monthLayer），如胶片换页般无缝
+            // 横滑，横向溢出由外框 clipToBounds 裁掉。
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -297,15 +328,16 @@ fun DayCalendar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // 年月标题：随月切换做方向性短滑 + 淡入淡出，与网格横滑同帧、同曲线同时长
-            // （AgendaMonthSwitchMillis + Overlay），整卡换页一个节奏。滑距取文本宽 1/3，
-            // 尺寸变化（如 9 月 ↔ 10 月）由默认 SizeTransform 平滑。
+            // （AgendaCalendarSwitchMillis + Overlay），整卡换页一个节奏；折叠翻周不动
+            // 标题（年月没变，targetState 相同即无转场）。滑距取文本宽 1/3，尺寸变化
+            // （如 9 月 ↔ 10 月）由默认 SizeTransform 平滑。
             AnimatedContent(
                 targetState = anchorYear to anchorMonth,
                 transitionSpec = {
                     val forward = targetState.first * 12 + targetState.second >
                         initialState.first * 12 + initialState.second
-                    val move = tween<IntOffset>(Motion.AgendaMonthSwitchMillis, easing = Motion.Overlay)
-                    val fade = tween<Float>(Motion.AgendaMonthSwitchMillis, easing = Motion.Overlay)
+                    val move = tween<IntOffset>(Motion.AgendaCalendarSwitchMillis, easing = Motion.Overlay)
+                    val fade = tween<Float>(Motion.AgendaCalendarSwitchMillis, easing = Motion.Overlay)
                     if (forward) {
                         (slideInHorizontally(move) { it / 3 } + fadeIn(fade)) togetherWith
                             (slideOutHorizontally(move) { -it / 3 } + fadeOut(fade))
@@ -461,15 +493,16 @@ fun rememberDayCalendarFoldState(
 ): DayCalendarFoldState = remember(scope) { DayCalendarFoldState(scope, initiallyFolded) }
 
 /**
- * 一次月切换的横滑快照：被替换月份（from）的网格参数 + 滑动方向 + 进度。[progress]
- * 由 DayCalendar 内收集锚点变化的协程驱动 0→1；读侧（[monthLayer] 的 graphicsLayer 与
- * [foldHeight] 的 measure）延迟读取，动画全程不重组。
+ * 一次换页的横滑快照：被替换页（from）的网格参数 + 滑动方向 + 进度。月切换时 from 为
+ * 旧月网格；折叠周切换时 from 与目标同月——同一份月网格换可见周行，两层各自对齐自己
+ * 的锚点周。[progress] 由 DayCalendar 内收集锚点变化的协程驱动 0→1；读侧（[monthLayer]
+ * 的 graphicsLayer 与 [foldHeight] 的 measure）延迟读取，动画全程不重组。
  *
- * @param fromGridStart 旧月网格起点（1 号所在 ISO 周的周一）
- * @param fromWeekIndex 旧月锚点周所在行（折叠态旧层上移对齐可见行用）
- * @param fromMonthHeight 旧月网格内容高（RowStep × 行数 - RowSpacing + DotZone，
+ * @param fromGridStart 旧页网格起点（1 号所在 ISO 周的周一）
+ * @param fromWeekIndex 旧页锚点周所在行（折叠态旧层上移对齐可见行用）
+ * @param fromMonthHeight 旧页网格内容高（RowStep × 行数 - RowSpacing + DotZone，
  *   口径同 monthContentHeight）
- * @param direction +1 = 翻下月（内容左移、新月从右滑入），-1 = 翻上月（镜像）
+ * @param direction +1 = 翻下一页（内容左移、新页从右滑入），-1 = 翻上一页（镜像）
  */
 private class MonthSwap(
     val fromGridStart: IsoDate,
@@ -481,6 +514,13 @@ private class MonthSwap(
     val direction: Int,
 ) {
     val progress = Animatable(0f)
+}
+
+/** 起一次换页：快照入 [swapState] → 按 [Motion.AgendaCalendarSwitchMillis] 节奏驱动到落定 → 清快照 */
+private suspend fun animateSwap(swapState: MutableState<MonthSwap?>, swap: MonthSwap) {
+    swapState.value = swap
+    swap.progress.animateTo(1f, tween(Motion.AgendaCalendarSwitchMillis, easing = Motion.Overlay))
+    swapState.value = null
 }
 
 /** 星期表头：一~日 7 列均分，今天所在列 Primary（仅当 [highlightToday]） */
@@ -637,10 +677,11 @@ private fun NavButton(
 }
 
 /**
- * 月网格层位移：月切换横滑与折叠纵移合并在一个 graphicsLayer 里，进度全部在绘制期
- * 读取——每帧只更新图层矩阵，不重组。横滑：目标月从方向侧滑入（偏移 direction × 层宽
- * → 0），旧月滑出（0 → -direction × 层宽），两层同宽、位移互补，滑动中如胶片换页般
- * 无缝衔接，横向溢出由外层 [foldHeight] 的 clipToBounds 裁掉。纵移：各层按**自己的**
+ * 月网格层位移：换页（展开翻月、折叠翻周）横滑与折叠纵移合并在一个 graphicsLayer 里，
+ * 进度全部在绘制期读取——每帧只更新图层矩阵，不重组。横滑：目标页从方向侧滑入
+ * （偏移 direction × 层宽 → 0），旧页滑出（0 → -direction × 层宽），两层同宽、位移互补，
+ * 滑动中如胶片换页般无缝衔接，横向溢出由外层 [foldHeight] 的 clipToBounds 裁掉。纵移：
+ * 各层按**自己的**
  * 锚点周上移（两层锚点周可能不是同一行，折叠态跨月换页各自对齐各自的可见行），完全
  * 折叠时锚点周成为唯一可见行；底部预留的 DotZone 让末行/单行的待办小点不被裁掉。
  */

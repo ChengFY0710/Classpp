@@ -80,12 +80,12 @@ object Motion {
     const val AgendaImageFadeMillis = 450
 
     /**
-     * 日历卡（DayCalendar）月切换横滑时长：箭头翻月/跨月跳转时整月网格横向滑动换页，
-     * 新旧两月同帧启动、共用 [Overlay] 一条曲线——前重后轻，与台历吸附
-     * （[AgendaSnapMillis]）同族节奏。外框高度在 5/6 行之间随同一进度插值，
-     * 底栏不跳。想更利落可下调（380ms 左右），曲线不变。
+     * 日历卡（DayCalendar）换页横滑时长：展开态箭头翻月/跨月跳转时整月网格横向滑动
+     * 换页，折叠态箭头翻周同样横滑换行——新旧两层同帧启动、共用 [Overlay] 一条曲线，
+     * 前重后轻，与台历吸附（[AgendaSnapMillis]）同族节奏。月切换时外框高度在 5/6 行
+     * 之间随同一进度插值，底栏不跳。想更利落可下调（380ms 左右），曲线不变。
      */
-    const val AgendaMonthSwitchMillis = 450
+    const val AgendaCalendarSwitchMillis = 450
 
     /** 浮层（OverlaySheet）入场时长：从屏幕底部滑入，配合 [Overlay]。 */
     const val SheetEnterMillis = 400
