@@ -451,4 +451,8 @@
     <string name="day_image_close">Close</string>
     <string name="day_image_empty_hint">No images yet — tap “Import” to add from your gallery</string>
     <string name="day_image_delete">Delete</string>
+    <string name="day_image_random_title">Daily Shuffle</string>
+    <string name="day_image_random_desc">Pick a random image as the background each day</string>
+    <string name="day_image_parallax_title">Wallpaper Perspective</string>
+    <string name="day_image_parallax_desc">Background shifts subtly as you tilt your phone</string>
 </resources>

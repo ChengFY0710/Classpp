@@ -77,8 +77,10 @@ private const val MaxPickCount = 20
  * [onDelete] 落盘清理）。当前正在显示的背景（[currentImage]，随机命中或手动选中）
  * 不可删——菜单删除项置灰（negative 色）不可点，背景图被删的跳变与删除时序一并规避。
  *
- * 网格上方一张 [SettingsCard] 单行开关卡「随机轮播」：开启后每天从图库随机抽一张当
- * 背景——抽取逻辑（按当天日期做种子）在日程页，本浮层只管开关状态与落盘（[onRandomChange]）；
+ * 网格上方一张 [SettingsCard] 双行开关卡：「随机轮播」开启后每天从图库随机抽一张当
+ * 背景——抽取逻辑（按当天日期做种子）在日程页，本浮层只管开关状态与落盘
+ * （[onRandomChange]）；「壁纸视差」控制 01 态背景图随重力倾斜微移（[onParallaxChange]，
+ * 逻辑在 ui.motion 的 TiltParallax）——两行都只管开关状态与落盘，效果本体不在浮层；
  * 无图可随机，空态不显示卡片。卡片与下方网格 16dp（对照设计稿）。
  *
  * 顶栏两颗胶囊走 OverlaySheet 自带规格：左上「导入」= 确认胶囊（同「新建」按钮的
@@ -105,6 +107,8 @@ fun DayImageSheet(
     currentImage: String?,
     randomEnabled: Boolean,
     onRandomChange: (Boolean) -> Unit,
+    parallaxEnabled: Boolean,
+    onParallaxChange: (Boolean) -> Unit,
     onImported: (List<String>) -> Unit,
     onSelect: (String) -> Unit,
     onDelete: (String) -> Unit,
@@ -167,7 +171,7 @@ fun DayImageSheet(
         if (images.isEmpty()) {
             DayImageEmptyHint(modifier = Modifier.fillMaxWidth())
         } else {
-            // 随机轮播开关卡（与下方网格 16dp，对照设计稿）；卡片到顶栏的留白由
+            // 开关卡（与下方网格 16dp，对照设计稿）；卡片到顶栏的留白由
             // OverlaySheet 的 TopBarHeight 余量承担。整行可点切换，整行按压反馈铺满卡片
             SettingsCard(
                 hazeState = sheetHazeState,
@@ -177,6 +181,12 @@ fun DayImageSheet(
                         description = stringResource(R.string.day_image_random_desc),
                         checked = randomEnabled,
                         onCheckedChange = onRandomChange,
+                    ),
+                    SettingsCardItem.Toggle(
+                        label = stringResource(R.string.day_image_parallax_title),
+                        description = stringResource(R.string.day_image_parallax_desc),
+                        checked = parallaxEnabled,
+                        onCheckedChange = onParallaxChange,
                     ),
                 ),
             )

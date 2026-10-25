@@ -26,6 +26,7 @@ object DayImageStore {
     private const val KEY_IMAGES = "images"
     private const val KEY_SELECTED = "selected"
     private const val KEY_RANDOM_ENABLED = "random_enabled"
+    private const val KEY_TILT_PARALLAX_ENABLED = "tilt_parallax_enabled"
     private const val KEY_RANDOM_PICK_DATE = "random_pick_date"
     private const val KEY_RANDOM_PICK = "random_pick"
     private const val DIR_NAME = "day_images"
@@ -72,6 +73,15 @@ object DayImageStore {
     /** 保存「随机轮播」开关（apply 异步落盘；UI 状态由调用方同步更新，不等落盘） */
     fun saveRandomEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_RANDOM_ENABLED, enabled).apply()
+    }
+
+    /** 读取「壁纸视差」开关（01 态背景图随重力倾斜微移）；无记录默认开启 */
+    fun loadTiltParallaxEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_TILT_PARALLAX_ENABLED, true)
+
+    /** 保存「壁纸视差」开关（apply 异步落盘；UI 状态由调用方同步更新，不等落盘） */
+    fun saveTiltParallaxEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_TILT_PARALLAX_ENABLED, enabled).apply()
     }
 
     /**

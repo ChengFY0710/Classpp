@@ -140,9 +140,12 @@ import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.OffsetOverscrollEffect
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
+import com.fangyi.classpp.ui.motion.TiltParallaxState
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.rememberDeviceCornerRadius
+import com.fangyi.classpp.ui.motion.rememberTiltParallax
 import com.fangyi.classpp.ui.motion.sharePointerInputWithSiblings
+import com.fangyi.classpp.ui.motion.tiltParallax
 import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.note.NewTodoSheet
 import com.fangyi.classpp.ui.note.TodoDetailSheet
@@ -278,6 +281,9 @@ fun DayScreen(
     // 关闭或图库为空回退手动选中。查看其他日期时不落盘：按该日种子现抽当"那天的图"预览，
     // 不改动今天已锁定的命中
     var randomEnabled by remember { mutableStateOf(DayImageStore.loadRandomEnabled(context)) }
+    // 壁纸视差开关：01 态背景图随重力倾斜微移（效果本体在 ui.motion 的 TiltParallax，
+    // 状态接线见下方 tilt）；口径同随机轮播——首帧从磁盘读，改动即时落盘
+    var tiltEnabled by remember { mutableStateOf(DayImageStore.loadTiltParallaxEnabled(context)) }
     var randomPick by remember { mutableStateOf(DayImageStore.loadRandomPick(context)) }
     // 命中在组合期同步算出（首帧即正确）：今天沿用已锁定命中，没有才按今天种子现抽；
     // 其他日期一律按该日种子现抽（种子保证同天同图库下重组结果稳定）。落盘只针对今天
@@ -352,6 +358,14 @@ fun DayScreen(
     val transition = remember {
         DayTransitionState(initialStage, scope) { target -> commitState.value(target) }
     }
+    // 壁纸视差（01 态专属）：仅「本页活跃 + 图片浮层未开 + 停在 01」才注册重力传感器
+    // （rememberTiltParallax 内部再叠加生命周期 RESUMED 门控，切后台必注销），转场离开
+    // 01 即注销归零，02/04 态不空转。位移效果不靠注销收敛——靠图片层的 gate（1 - open）
+    // 随转场进度收敛到 0，落位像素精确回到几何落位（见 DayBackgroundImage 接线处）
+    val tiltActive by remember {
+        derivedStateOf { active && !sheetMounted && transition.stage == DayStage.Calendar }
+    }
+    val tilt = rememberTiltParallax(tiltActive && tiltEnabled)
     // 04 内容卡（DayCalendar）的折叠进度：与 open/collapse 同一驱动口径（跟手同步直写
     // + 松手吸附），由下方根级转场手势在 04 统一驱动——上滑先折叠日历、下滑先展开折叠
     // 再过渡 02（见手势块注释），02 阶段恒为展开态。
@@ -980,6 +994,10 @@ fun DayScreen(
                     DayBackgroundImage(
                         context = context,
                         backgroundImage = backgroundImage,
+                        tilt = tilt,
+                        // 01 静止态视差满量；拖拽/吸附向 02 收敛（open→1 位移归零），
+                        // 02→01 重播时自然恢复。open 在 graphicsLayer 内绘制阶段读
+                        tiltGate = { 1f - transition.open },
                             modifier = Modifier
                                 .requiredSize(metrics.screenWidth.dp, metrics.screenHeight.dp)
                                 .graphicsLayer {
@@ -1702,6 +1720,11 @@ fun DayScreen(
                         }
                     }
                 },
+                parallaxEnabled = tiltEnabled,
+                onParallaxChange = { enabled ->
+                    tiltEnabled = enabled
+                    DayImageStore.saveTiltParallaxEnabled(context, enabled)
+                },
                 onImported = { imported ->
                     images = images + imported
                     DayImageStore.saveImages(context, images)
@@ -1749,6 +1772,8 @@ fun DayScreen(
 private fun DayBackgroundImage(
     context: Context,
     backgroundImage: String?,
+    tilt: TiltParallaxState,
+    tiltGate: () -> Float,
     modifier: Modifier = Modifier,
 ) {
     var settledImage by remember { mutableStateOf(backgroundImage) }
@@ -1782,19 +1807,28 @@ private fun DayBackgroundImage(
         incomingImage = null
     }
     Box(modifier) {
-        DayImageLayer(context, settledImage, Modifier.fillMaxSize())
-        if (incomingImage != null) {
-            DayImageLayer(
-                context = context,
-                image = incomingImage,
-                // 淡入进度只在绘制阶段读，逐帧动画不触发重组；fillMaxSize 维持
-                // requiredSize 固定的解码尺寸，Coil 不按图片固有尺寸另起请求
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = fade.value },
-                // 回报先与本层图名比对：被顶替的旧层迟到的回调不误放行
-                onReady = { image -> if (image == incomingImage) incomingReady = true },
-            )
+        // 视差包在两层换图图层之外：cross-dissolve 的底图与在途层同动不错位；且位于
+        // 转场 transform（外层 graphicsLayer 的缩放/平移）内侧——位移在局部空间里随
+        // 卡片收缩被同比例缩小，[tiltGate] 再把它收敛到 0，02 落位不受视差影响
+        Box(
+            Modifier
+                .matchParentSize()
+                .tiltParallax(tilt, tiltGate),
+        ) {
+            DayImageLayer(context, settledImage, Modifier.fillMaxSize())
+            if (incomingImage != null) {
+                DayImageLayer(
+                    context = context,
+                    image = incomingImage,
+                    // 淡入进度只在绘制阶段读，逐帧动画不触发重组；fillMaxSize 维持
+                    // requiredSize 固定的解码尺寸，Coil 不按图片固有尺寸另起请求
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = fade.value },
+                    // 回报先与本层图名比对：被顶替的旧层迟到的回调不误放行
+                    onReady = { image -> if (image == incomingImage) incomingReady = true },
+                )
+            }
         }
     }
 }
