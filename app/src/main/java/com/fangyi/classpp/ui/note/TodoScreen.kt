@@ -103,20 +103,6 @@ import java.util.TimeZone
 /** epochDay → millis 的换算步长（同 IsoDate 的私有常量） */
 private const val MILLIS_PER_DAY = 86_400_000L
 
-/**
- * 顶栏在内容坐标系里的占位高：TodoTopBar 的私有常量镜像（状态栏之上另算）——
- * 顶栏顶部留白 3dp + 胶囊行 Box 高 40dp + 上下阴影呼吸位 8dp×2。
- */
-private val TopBarRowSpace = 59.dp
-
-/**
- * 待办编辑顶栏在内容坐标系里的占位高（TodoEditBar 私有常量镜像）：状态栏之下 6dp 顶部
- * 留白 + 64dp 动作行。比常规顶栏（[TopBarRowSpace]）高出的部分进编辑时由
- * editBarExtraSpace 动画补差（列表让位；等长按手势松手才启动，见 TodoScreen 的
- * editListReleased），退出时收回。
- */
-private val EditBarRowSpace = 70.dp
-
 /** 列表首组与顶栏的间距 */
 private val ListTopSpacing = 12.dp
 

@@ -62,6 +62,8 @@ private val DarkColorScheme = darkColorScheme(
 class ClassppColors(
     /** 次级说明文字灰 */
     val secondaryText: Color,
+    /** 卡面细弱元素（卡片内分隔线、点状轨道）：浅 = outline 同值，深 = 卡面上可见的中灰 */
+    val onSurfaceCard: Color,
     /**
      * 顶栏等 Haze 磨砂的叠加基础色（浅色 = 白提亮、深色 = 深底色压暗）。
      * 调用处按强度 copy(alpha)——各磨砂位强度不同（0.30f / 0.6f），基础色只有一个来源。
@@ -93,6 +95,7 @@ class ClassppColors(
 
 private val LightClassppColors = ClassppColors(
     secondaryText = Color(0xFFABAFB4),
+    onSurfaceCard = OnSurfaceCard,
     hazeTint = Color.White,
     negative = Color(0xFFCBCBCB),
     switchDisabled = SwitchDisabled,
@@ -104,6 +107,7 @@ private val LightClassppColors = ClassppColors(
 
 private val DarkClassppColors = ClassppColors(
     secondaryText = Color(0xFF7E858D),
+    onSurfaceCard = DarkOnSurfaceCard,
     hazeTint = Color.Black,
     negative = Color(0xFF5C6269),
     switchDisabled = DarkSwitchDisabled,

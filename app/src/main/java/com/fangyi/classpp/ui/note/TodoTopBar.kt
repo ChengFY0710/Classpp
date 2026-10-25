@@ -168,6 +168,14 @@ private val TopBarActionInnerPadding = 8.dp
 internal val TopBarActionRowSpace = TopBarActionBarTopGap + TopBarActionBarHeight
 
 /**
+ * 常规顶栏（胶囊行）在内容坐标系里的占位高（状态栏之上另算）：顶部留白
+ * [TopBarTopPadding] + 胶囊行 Box 高（[TopBarPillHeight] + 上下阴影呼吸位
+ * [ShadowOverhang]×2）。宿主列表让位用——公开 internal 同 [TopBarActionRowSpace]
+ * 约定，宿主直接引用、不做手工镜像常量，布局常量调整时让位值自动跟随。
+ */
+internal val TopBarRowSpace = TopBarTopPadding + TopBarPillHeight + ShadowOverhang * 2
+
+/**
  * 分组条的裁剪形状：左右封闭在节点边界（左 = 裁切线）、上下向外扩 [ShadowBleed]。
  * horizontalScroll 不自带视口裁剪，不裁则滑向排序按钮的胶囊会画进常驻区；但整体
  * clipToBounds 会把 45dp 柔影上下切平——故只封水平方向，纵向放行柔影。

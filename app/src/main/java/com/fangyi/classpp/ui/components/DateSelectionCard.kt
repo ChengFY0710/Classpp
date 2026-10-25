@@ -208,7 +208,7 @@ fun DateSelectionCard(
             if (shownCustom != null) {
                 HorizontalDivider(
                     thickness = 1.dp,   // 线粗细
-                    color = MaterialTheme.colorScheme.outline,
+                    color = MaterialTheme.classppColors.onSurfaceCard,
                     modifier = Modifier.padding(horizontal = 16.dp).offset(y = (-3).dp),
                 )
                 // 自定义日期行：点按弹 M3 DatePickerDialog（退场动画中 custom 已为空时忽略点击）。

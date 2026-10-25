@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -60,9 +60,9 @@ private val SelectAllHorizontalPadding = 4.dp
  * - 标题行下方永久保留 [CardSectionTitleSpacing] 留白：列表里它是「标题 ↔ 首卡」的间距，
  *   折叠态（宿主不再下发卡片项）即头的收尾留白，两种状态纵向节奏一致；
  * - [editMode] 编辑态（待办编辑页）：展开箭头替换为「全选/取消全选」文字按钮——primary 色、
- *   sectionTitle 同字号，高度收敛在原 32dp 按钮盒内不撑起标题行，宽度向左占标题与
- *   按钮之间的空白；点按回调 [onSelectAllToggle]，按钮文案由 [allSelected] 驱动
- *   （组内卡片全选中显「取消全选」，否则显「全选」）。
+ *   sectionTitle 同字号，按钮盒钉在与箭头盒相同的 32dp（标题行高两种形态一致，进编辑
+ *   不塌行高），宽度向左占标题与按钮之间的空白；点按回调 [onSelectAllToggle]，按钮
+ *   文案由 [allSelected] 驱动（组内卡片全选中显「取消全选」，否则显「全选」）。
  */
 @Composable
 fun NoteCardSectionHeader(
@@ -95,12 +95,13 @@ fun NoteCardSectionHeader(
             style = MaterialTheme.classppTextStyles.sectionTitle.settingsRowMetrics(),
         )
         if (editMode && onSelectAllToggle != null) {
-            // 编辑态：展开箭头换「全选/取消全选」文字按钮——高度收敛在原 32dp 按钮盒内
-            //（sectionTitle 行高 24sp < 32dp，不撑起标题行），宽度向左占 SpaceBetween
-            // 的空白；按压反馈形状用小圆角（CircleShape 对宽按钮提亮范围太扁）
+            // 编辑态：展开箭头换「全选/取消全选」文字按钮——高度钉在与箭头盒相同的 32dp
+            //（标题行靠 32dp 盒撑高，按钮若按文字行高收缩，进编辑行高塌 8dp、其下卡片
+            // 整段上跳），宽度按文字收缩、向左占 SpaceBetween 的空白；按压反馈形状用
+            // 小圆角（CircleShape 对宽按钮提亮范围太扁）
             Box(
                 modifier = Modifier
-                    .heightIn(max = SectionButtonSize)
+                    .height(SectionButtonSize)
                     .pressClickable(SelectAllButtonShape) { onSelectAllToggle() }
                     .clip(SelectAllButtonShape)
                     .padding(horizontal = SelectAllHorizontalPadding),

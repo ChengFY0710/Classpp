@@ -37,6 +37,7 @@ import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.ui.motion.detectHorizontalSwipeGestures
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.RowShape
+import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import kotlin.math.max
 import kotlin.math.min
@@ -196,6 +197,8 @@ fun TimeRangeSlider(
     onTimePickRequest: ((initialMinute: Int, isStart: Boolean, onPicked: (minuteOfDay: Int) -> Unit) -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
+    // 轨道点色：卡面细弱元素色（深浅取值见 ClassppColors.onSurfaceCard）
+    val dotColor = MaterialTheme.classppColors.onSurfaceCard
     // 正在通过弹窗自定义时间的胶囊（null = 无）
     var editingIsStart by remember { mutableStateOf<Boolean?>(null) }
     // 手势与布局共用的几何快照：测量里写入、手势里读。普通对象而非快照状态——
@@ -224,7 +227,7 @@ fun TimeRangeSlider(
                 val radius = DotDiameter.toPx() / 2f
                 var x = (size.width - totalWidth) / 2f + radius
                 repeat(count) {
-                    drawCircle(colors.outline, radius, Offset(x, size.height / 2f))
+                    drawCircle(dotColor, radius, Offset(x, size.height / 2f))
                     x += step
                 }
             }

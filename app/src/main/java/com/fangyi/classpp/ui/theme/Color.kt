@@ -23,6 +23,9 @@ val SurfaceContainerHigh = Color(0xFFEAEDF1)
 
 val Outline = Color(0xFFDCE2E7)
 
+// 卡面细弱元素（卡片内分隔线、点状轨道）：浅色与 outline 同值，深色取卡面上可见的中灰
+val OnSurfaceCard = Color(0xFFDCE2E7)
+
 val InversePrimary = Color(0x4D006FEF)
 
 val Error = Color(0xFFF44336)
@@ -62,6 +65,8 @@ val DarkBottomSheetColor = Color(0xFF0B0C0F)
 val DarkSurfaceContainerHigh = Color(0xFF1E2227)
 
 val DarkOutline = Color(0xFF2A2F36)
+
+val DarkOnSurfaceCard = Color(0xFF4D5157)
 
 val DarkInversePrimary = Color(0x99479CFF)
 

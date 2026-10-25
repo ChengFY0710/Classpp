@@ -46,8 +46,16 @@ private val EditActionInnerPadding = 8.dp
 /** 动作行高度：纵向"图标 + 标签"块在其中垂直居中，上下留出呼吸空间（ScheduleEditBar 同款） */
 private val EditActionBarHeight = 64.dp
 
-/** 图标行与屏幕顶端的距离（ScheduleEditBar 同款 6dp；列表让位常量见 TodoScreen 的 EditBarRowSpace） */
+/** 图标行与屏幕顶端的距离（ScheduleEditBar 同款 6dp） */
 private val EditBarTopPadding = 6.dp
+
+/**
+ * 编辑顶栏在内容坐标系里的占位高（状态栏之上另算）：顶部留白 [EditBarTopPadding] +
+ * 动作行高 [EditActionBarHeight]。比常规顶栏（TodoTopBar 的 TopBarRowSpace）高出的
+ * 部分由宿主随进/退编辑动画补差让位——公开 internal 同 TopBarRowSpace 约定，宿主
+ * 直接引用、不做手工镜像常量。
+ */
+internal val EditBarRowSpace = EditBarTopPadding + EditActionBarHeight
 
 /**
  * 待办编辑顶栏：删除 / 移动 / 同步 / 置顶 / 确认，取代常规的 [TodoTopBar]。

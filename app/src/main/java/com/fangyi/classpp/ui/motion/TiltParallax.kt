@@ -65,8 +65,9 @@ private const val PursuitTauSeconds = 0.2f
  *  与水平仪气泡趋平的行为一致。 */
 private const val BaselineAlpha = 0.004f
 
-/** 死区：渲染值与目标的残差不足该归一化量（≈0.3px）时不写状态，收敛时直接贴合
- *  目标——静止时传感器噪声被吸收成零重绘，这是功耗控制的关键一环。 */
+/** 死区：渲染值与目标的残差不足该归一化量（≈0.3px，亚像素）时不写状态——包括收敛
+ *  贴合那一次；静止时传感器噪声的微移被整个吸收成零重绘（平放不动 = 帧循环只被
+ *  唤醒不做任何写），这是功耗控制的关键一环。 */
 private const val WriteEpsilon = 0.01f
 
 /** 视差位移上限：单侧最大平移该图层尺寸的 6%（明显档——倾斜时位移一眼可见，
@@ -166,10 +167,13 @@ internal class TiltParallaxState {
         if (dx >= WriteEpsilon) shiftX = smoothedX
         if (dy >= WriteEpsilon) shiftY = smoothedY
         if (dx < WriteEpsilon && dy < WriteEpsilon) {
+            // 收敛：贴合目标并休眠。贴合写同样过死区——静止时传感器噪声让目标每事件
+            // 微移亚像素量，无条件写会以 16Hz 持续触发图层属性失效/重绘；残差不足阈值
+            // （<0.3px）保持旧值即可，肉眼不可见
             smoothedX = targetX
             smoothedY = targetY
-            if (shiftX != targetX) shiftX = targetX
-            if (shiftY != targetY) shiftY = targetY
+            if (abs(targetX - shiftX) >= WriteEpsilon) shiftX = targetX
+            if (abs(targetY - shiftY) >= WriteEpsilon) shiftY = targetY
             return false
         }
         return true
