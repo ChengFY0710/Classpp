@@ -64,7 +64,8 @@ import com.kyant.shapes.Capsule
  *
  * **课程色同源**（[CourseColor.barColor]，深浅主题各自映射）：竖条、上下时间文字、标签
  * 全部取标准课程卡色（无课卡竖条取 Primary）。两个小巧思：「上课」文字取课程色降明度
- * （RGB × [TagTextDimFactor]），标签底色取课程色 25% 透明。
+ * （RGB × [TagTextDimFactorLight]/[TagTextDimFactorDark]，深浅各一档），标签底色取
+ * 课程色 25% 透明。
  *
  * 纯展示组件（同 DayCalendar 的「不接数据库」约定）：提醒状态与课程信息全由调用方传入，
  * 倒计时/上课中的判定与分钟数刷新由宿主负责；无课/课已上完卡只需传 [state]，其余参数
@@ -287,7 +288,7 @@ private fun StackedTimeColumn(
 /** 「上课」标签：[stretch] = 撑满给定约束的宽高（竖列中间档：高 weight 撑满、宽 fillMaxWidth
  *  与上下时间对齐；水平内边距归零，宽度完全交给上下时间决定），否则自然宽高（单行卡内嵌）；
  *  [vertical] = 文字竖排「上/课」两行，否则横排「上课」。底色 = 课程色 25% 透明，
- *  文字 = 课程色降明度（RGB × [TagTextDimFactor]）。 */
+ *  文字 = 课程色降明度（RGB × 深/浅各一套的降明度系数）。 */
 @Composable
 private fun TagBox(
     stretch: Boolean,
@@ -304,7 +305,9 @@ private fun TagBox(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        val tagColor = barColor.darkened(TagTextDimFactor)
+        // 深浅各自降明度：深色课程色本就比浅色深一档，沿用浅色系数会闷进标签底色
+        val dimFactor = if (MaterialTheme.isDarkTheme) TagTextDimFactorDark else TagTextDimFactorLight
+        val tagColor = barColor.darkened(dimFactor)
         if (vertical) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 TagText("上", tagColor)
@@ -400,8 +403,11 @@ private val TagGap = 3.dp
 /** 「上课」标签底色的透明度：课程色 25%（设计巧思） */
 private const val TagBackgroundAlpha = 0.25f
 
-/** 「上课」文字相对课程色的降明度系数（RGB 同比，设计巧思） */
-private const val TagTextDimFactor = 0.7f
+/** 「上课」文字相对课程色的降明度系数（RGB 同比，设计巧思）·浅色主题 */
+private const val TagTextDimFactorLight = 0.5f
+
+/** 同上 ·深色主题：课程色本身已比浅色深一档，系数放缓避免文字闷进 25% 透明的标签底色 */
+private const val TagTextDimFactorDark = 0.95f
 private val TagPaddingHorizontal = 5.dp
 
 /** 拉伸态标签（竖列中间档）的水平内边距：宽度已由列宽（= 上下时间中较宽者）决定，
