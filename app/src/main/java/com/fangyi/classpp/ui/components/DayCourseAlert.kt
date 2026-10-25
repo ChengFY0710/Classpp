@@ -52,21 +52,23 @@ import com.kyant.shapes.Capsule
  *       weight(1f) 撑满两时间之间，宽高随卡片变化、宽度与上下时间对齐（双行横排
  *       「上课」，三行起竖排
  *       「上/课」，备注折行属「大于四行」，布局同四行）。
- *     - **无课**（[DayCourseAlertState.NoCourse]）：仅标题行「今日无课 好好休息吧」，
- *       无时间列与课程信息（教师/地点/备注即使传入也不显示），竖条与图标取 Primary。
+ *     - **无课/课已上完**（[DayCourseAlertState.NoCourse] / [DayCourseAlertState.DayDone]）：
+ *       仅标题行「今日无课 好好休息吧」/「今日课已上完 好好休息吧」，无时间列与课程信息
+ *       （教师/地点/备注即使传入也不显示），竖条与图标取 Primary。
  *
  * **标题语义色**：倒计时 ≤ 10 分钟红色（colorScheme.error）、≤ 15 分钟橙色
- * （classppColors.urgentOrange）、更早为 Primary 蓝；「上课中」「今日无课」同为
- * Primary 蓝。图标随状态切换：倒计时 ic_alert_urgent（铃铛+闪电），上课中/无课
- * ic_alert_snooze（铃铛+Zz）。
+ * （classppColors.urgentOrange）、更早为 Primary 蓝；「上课中」「今日无课」「今日课已
+ * 上完」同为 Primary 蓝。图标随状态切换：倒计时 ic_alert_urgent（铃铛+闪电），其余
+ * ic_alert_snooze（铃铛+Zz）。倒计时标题不足 1 小时为「X分钟后」，达到 1 小时为
+ * 「X小时Y分钟后」（整小时「X小时后」，见 [countdownTitle]）。
  *
  * **课程色同源**（[CourseColor.barColor]，深浅主题各自映射）：竖条、上下时间文字、标签
  * 全部取标准课程卡色（无课卡竖条取 Primary）。两个小巧思：「上课」文字取课程色降明度
  * （RGB × [TagTextDimFactor]），标签底色取课程色 25% 透明。
  *
  * 纯展示组件（同 DayCalendar 的「不接数据库」约定）：提醒状态与课程信息全由调用方传入，
- * 倒计时/上课中的判定与分钟数刷新由宿主负责；无课卡只需传 [state]，其余参数走默认值
- * 并被忽略。
+ * 倒计时/上课中的判定与分钟数刷新由宿主负责；无课/课已上完卡只需传 [state]，其余参数
+ * 走默认值并被忽略。
  */
 sealed interface DayCourseAlertState {
     /** 距上课还有 [minutes] 分钟（标题「XX分钟后」） */
@@ -78,6 +80,10 @@ sealed interface DayCourseAlertState {
     /** 今日无课（标题「今日无课」+ 固定副文案「好好休息吧」；无时间列与课程信息，
      *  竖条与图标取 Primary） */
     data object NoCourse : DayCourseAlertState
+
+    /** 今日课已上完（标题「今日课已上完」+ 固定副文案「好好休息吧」；样式同 [NoCourse]，
+     *  仅标题区分「真没课」与「课上完了」） */
+    data object DayDone : DayCourseAlertState
 }
 
 @Composable
@@ -93,8 +99,9 @@ fun DayCourseAlert(
     note: String? = null,
 ) {
     val colors = MaterialTheme.colorScheme
-    // 无课卡没有课程色：竖条与标题同用 Primary
-    val barColor = if (state is DayCourseAlertState.NoCourse) {
+    // 无课/课已上完卡没有课程信息：竖条与标题同用 Primary
+    val titleOnlyCard = state is DayCourseAlertState.NoCourse || state is DayCourseAlertState.DayDone
+    val barColor = if (titleOnlyCard) {
         colors.primary
     } else {
         color.barColor(MaterialTheme.isDarkTheme)
@@ -106,7 +113,7 @@ fun DayCourseAlert(
     val iconRes: Int
     when (state) {
         is DayCourseAlertState.Countdown -> {
-            titleText = "${state.minutes}分钟后"
+            titleText = countdownTitle(state.minutes)
             titleColor = when {
                 state.minutes <= UrgentThresholdMinutes -> colors.error
                 state.minutes <= WarnThresholdMinutes -> MaterialTheme.classppColors.urgentOrange
@@ -124,17 +131,21 @@ fun DayCourseAlert(
             titleColor = colors.primary
             iconRes = R.drawable.ic_alert_snooze
         }
+        DayCourseAlertState.DayDone -> {
+            titleText = "今日课已上完"
+            titleColor = colors.primary
+            iconRes = R.drawable.ic_alert_snooze
+        }
     }
 
     // 右侧形态由中列行数（标题以外）决定：0 = 单行同行水平，1 = 竖列 + 横排标签，
     // ≥2 = 竖列 + 竖排标签。备注折行不改变行数档位（布局同四行）。
-    // 无课卡只有标题行：无时间组与课程信息行，第二段文字为固定副文案。
-    val noCourse = state is DayCourseAlertState.NoCourse
-    val infoRowCount = if (noCourse) 0 else listOf(teacher, location, note).count { !it.isNullOrBlank() }
-    val showInlineTimes = !noCourse && infoRowCount == 0
+    // 无课/课已上完卡只有标题行：无时间组与课程信息行，第二段文字为固定副文案。
+    val infoRowCount = if (titleOnlyCard) 0 else listOf(teacher, location, note).count { !it.isNullOrBlank() }
+    val showInlineTimes = !titleOnlyCard && infoRowCount == 0
     val stackedTimes = infoRowCount >= 1
     val verticalTag = infoRowCount >= 2
-    val subtitleText = if (noCourse) "好好休息吧" else courseName
+    val subtitleText = if (titleOnlyCard) "好好休息吧" else courseName
 
     Box(
         modifier = modifier
@@ -208,7 +219,7 @@ fun DayCourseAlert(
                         TimeText(endTime, barColor)
                     }
                 }
-                if (!noCourse) {
+                if (!titleOnlyCard) {
                     if (!teacher.isNullOrBlank()) {
                         InfoText(teacher, MaterialTheme.classppColors.secondaryText)
                     }
@@ -344,6 +355,14 @@ private fun TagText(text: String, color: Color) {
 private fun Color.darkened(factor: Float): Color =
     Color(red = red * factor, green = green * factor, blue = blue * factor, alpha = alpha)
 
+/** 倒计时标题：不足 1 小时「X分钟后」，达到 1 小时「X小时Y分钟后」，整小时「X小时后」 */
+private fun countdownTitle(minutes: Int): String {
+    if (minutes < 60) return "${minutes}分钟后"
+    val hours = minutes / 60
+    val rest = minutes % 60
+    return if (rest == 0) "${hours}小时后" else "${hours}小时${rest}分钟后"
+}
+
 // ---------- 视觉规格（设计稿量取；颜色一律取主题/课程色，见各用点） ----------
 
 /** 倒计时语义分档：≤ 此值红色（colorScheme.error） */
@@ -470,6 +489,10 @@ private fun DayCourseAlertPreviewContent() {
         // 今日无课：仅标题行，竖条/图标取 Primary，无时间列
         DayCourseAlert(
             state = DayCourseAlertState.NoCourse,
+        )
+        // 今日课已上完：样式同今日无课，仅标题区分
+        DayCourseAlert(
+            state = DayCourseAlertState.DayDone,
         )
     }
 }

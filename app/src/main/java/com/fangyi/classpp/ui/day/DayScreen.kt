@@ -42,6 +42,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -88,15 +89,24 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil3.compose.AsyncImage
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.calendar.ChineseDayMarks
 import com.fangyi.classpp.data.datesCoveredWithin
+import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.Schedule
+import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.DayCalendar
 import com.fangyi.classpp.ui.components.DayCalendarFoldState
+import com.fangyi.classpp.ui.components.DayCourseAlert
+import com.fangyi.classpp.ui.components.DayCourseAlertState
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.DragDirection
@@ -107,6 +117,7 @@ import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.rememberDeviceCornerRadius
 import com.fangyi.classpp.ui.navigation.NavReserve
+import com.fangyi.classpp.ui.schedule.CourseColor
 import com.fangyi.classpp.ui.theme.DayCardShape
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.SerifDisplay
@@ -120,7 +131,9 @@ import dev.chrisbanes.haze.blur.HazeColorEffect
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import java.util.GregorianCalendar
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -131,6 +144,12 @@ import kotlinx.coroutines.launch
  * 这个距离、且仍明显压过横向位移，才允许接管；未确认前一律不消费、不动画。
  */
 private const val SnapTakeOverConfirmSlopFactor = 2f
+
+/** 上课提醒卡与日历卡的间距 */
+private val CourseAlertTopSpacing = 10.dp
+
+/** 上课提醒卡的时刻对表间隔：倒计时按分钟显示，30s 步进保证一分钟内跳字 */
+private const val CourseAlertResyncMillis = 30_000L
 
 /**
  * 日程页（AppTab.Agenda）：手势驱动的台历三态页面。
@@ -150,12 +169,17 @@ private const val SnapTakeOverConfirmSlopFactor = 2f
  *
  * [todoRepository] 只喂日历卡的待办小点：活跃待办按 DayCalendar 回报的网格窗口取
  * 覆盖日期（[datesCoveredWithin]），未注入（预览/首帧）按无待办处理。
+ *
+ * [scheduleRepository] 只喂日历卡下方的上课提醒卡（DayCourseAlert）：按今天的周号/星期/
+ * 周规律取该上的课，结合当前时刻给出倒计时/上课中/课已上完/今日无课；未注入（预览/
+ * 首帧）按「今日无课」处理。
  */
 @Composable
 fun DayScreen(
     modifier: Modifier = Modifier,
     active: Boolean = true,
     todoRepository: TodoRepository? = null,
+    scheduleRepository: ScheduleRepository? = null,
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -234,6 +258,29 @@ fun DayScreen(
     val todoMarkedDates = remember(todos, calendarRange) {
         val range = calendarRange ?: return@remember emptySet<IsoDate>()
         todos.datesCoveredWithin(range.first, range.second)
+    }
+
+    // 上课提醒卡：今天该上的课（周号 + 星期 + 周规律，口径同 NotificationPlanner）+
+    // 当前时刻 → 倒计时/上课中/课已上完/今日无课。时刻对表：前台每 30s 一跳 + 回前台
+    // 立即对表（进程冻结期间 delay 不走，与 LocalToday 同款兜底）；课表未装载按无课。
+    val scheduleState = scheduleRepository?.activeSchedule?.collectAsState()
+    var nowMinute by remember { mutableIntStateOf(nowMinuteOfDay()) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) nowMinute = nowMinuteOfDay()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            nowMinute = nowMinuteOfDay()
+            delay(CourseAlertResyncMillis)
+        }
+    }
+    val courseAlert = remember(scheduleState?.value, today, nowMinute) {
+        dayCourseAlertData(scheduleState?.value, today, nowMinute)
     }
 
     // 跨天/回前台对表：LocalToday 已含 onResume 与前台每分钟对表；日期变化立即回 01。
@@ -1109,6 +1156,26 @@ fun DayScreen(
                                 modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
                             )
                         }
+                        // 第三条 = 上课提醒卡（DayCourseAlert）：最近一节的倒计时/上课中，
+                        // 或「今日课已上完/今日无课」；随时刻对表前进，与日历卡间距 10dp。
+                        item(key = "courseAlert") {
+                            DayCourseAlert(
+                                state = courseAlert.state,
+                                courseName = courseAlert.course?.name.orEmpty(),
+                                startTime = courseAlert.startTimeText,
+                                endTime = courseAlert.endTimeText,
+                                color = courseAlert.course?.let { CourseColor.valueOf(it.color.name) }
+                                    ?: CourseColor.Blue,
+                                teacher = courseAlert.course?.teacher,
+                                location = courseAlert.course?.location,
+                                note = courseAlert.course?.note,
+                                modifier = Modifier.padding(
+                                    top = CourseAlertTopSpacing,
+                                    start = PageHorizontalSpacing,
+                                    end = PageHorizontalSpacing,
+                                ),
+                            )
+                        }
                     }
                 }
             }
@@ -1294,4 +1361,68 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+/** 当前时刻的当天分钟数（0..1439），与 TimeText.parseMinutes 同口径可直接比较 */
+private fun nowMinuteOfDay(): Int {
+    val cal = GregorianCalendar()
+    return cal.get(GregorianCalendar.HOUR_OF_DAY) * 60 + cal.get(GregorianCalendar.MINUTE)
+}
+
+/** 上课提醒卡渲染数据：状态 + 最近一节的课程字段与起止时间（无课/课已上完 course = null） */
+private data class DayCourseAlertData(
+    val state: DayCourseAlertState,
+    val course: CourseEntry? = null,
+    val startTimeText: String = "",
+    val endTimeText: String = "",
+)
+
+/**
+ * 提醒卡取数：今天该上的课 + 当前时刻 → 卡片状态。取课口径同 NotificationPlanner.planCourses
+ * （周号 + 星期 + 周规律过滤，5 天表跳过周末，开学前/学期外整段跳过）：
+ * - 进行中的课（开始 ≤ 现在 < 结束）→ Ongoing，多节并发取节次最早者；
+ * - 否则最近一节未开始的课 → Countdown（分钟差，标题按小时分档的文案由组件派生）；
+ * - 今天的课全部上完 → DayDone；今天没排课（含学期外/周末/课表未装载）→ NoCourse。
+ * 结束时间取末节 endTime：跨节（span > 1）的课 = 最后一节的下课时刻。
+ */
+private fun dayCourseAlertData(schedule: Schedule?, today: IsoDate, nowMinute: Int): DayCourseAlertData {
+    if (schedule == null) return DayCourseAlertData(DayCourseAlertState.NoCourse)
+    val termStartMonday = schedule.termStart.mondayOfWeek().epochDay
+    val week = ((today.mondayOfWeek().epochDay - termStartMonday) / 7).toInt() + 1
+    val dayOfWeek = today.isoDayOfWeek()
+    val inTerm = week in 1..schedule.totalWeeks && dayOfWeek <= schedule.daysPerWeek
+    val todayCourses = if (inTerm) {
+        schedule.courses
+            .filter { it.dayOfWeek == dayOfWeek && it.weeks.contains(week) }
+            .sortedBy { it.startSlot }
+    } else {
+        emptyList()
+    }
+    if (todayCourses.isEmpty()) return DayCourseAlertData(DayCourseAlertState.NoCourse)
+
+    var next: Triple<CourseEntry, Pair<String, String>, Int>? = null
+    for (course in todayCourses) {
+        val startSlot = schedule.slots.getOrNull(course.startSlot - 1) ?: continue
+        val endSlot = schedule.slots.getOrNull(course.endSlot - 1) ?: startSlot
+        val startMinute = TimeText.parseMinutes(startSlot.startTime) ?: continue
+        val endMinute = TimeText.parseMinutes(endSlot.endTime) ?: continue
+        if (startMinute <= nowMinute && nowMinute < endMinute) {
+            return DayCourseAlertData(
+                state = DayCourseAlertState.Ongoing,
+                course = course,
+                startTimeText = startSlot.startTime,
+                endTimeText = endSlot.endTime,
+            )
+        }
+        if (next == null && startMinute > nowMinute) {
+            next = Triple(course, startSlot.startTime to endSlot.endTime, startMinute)
+        }
+    }
+    val (course, times, startMinute) = next ?: return DayCourseAlertData(DayCourseAlertState.DayDone)
+    return DayCourseAlertData(
+        state = DayCourseAlertState.Countdown(startMinute - nowMinute),
+        course = course,
+        startTimeText = times.first,
+        endTimeText = times.second,
+    )
 }

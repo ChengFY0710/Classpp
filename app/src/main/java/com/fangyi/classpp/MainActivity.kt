@@ -309,6 +309,9 @@ class MainActivity : ComponentActivity() {
                                             active = tab == pagerState.selectedTab,
                                             // 日历卡待办小点的数据源（网格窗口内取覆盖日期）
                                             todoRepository = todoRepository,
+                                            // 上课提醒卡数据源：今天该上的课 + 当前时刻 →
+                                            // 倒计时/上课中/课已上完/今日无课
+                                            scheduleRepository = repository,
                                             // 选择图片浮层在场时藏底部导航栏（同课表/待办页浮层）
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                         )
