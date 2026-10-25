@@ -852,9 +852,6 @@ fun DayScreen(
                     }
                 }
             }
-            // 02 的整组过滚动直接复用 OffsetOverscrollEffect：节点挂在页面最外层，
-            // 渲染时把整个页面内容（图片卡、日期组、内容列表等）作为一个图层平移。
-            .overscroll(compactOverscroll),
     ) {
         val statusBarDp = WindowInsets.statusBars.asPaddingValues().calculateTopPadding().value
         val navBarDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding().value
@@ -903,495 +900,506 @@ fun DayScreen(
             DayGeometry.frame(metrics, open = 1f, collapse = 0f).image
         }
 
-        // 0) 图片卡与页面底色作为同一个 Haze 源：图片卡下方的模糊带同时采到
-        // 图片和卡片外底色，图片卡的边界（底边/两侧）会一起被晕开。01 全屏图
-        // 完全盖住底色，不改变现有画面。
+        // 02 的整组过滚动：OffsetOverscrollEffect 的渲染节点从页面根内收到这层内容组
+        // 包装上——平移时把图片卡、日期组、内容列表、顶栏作为整组图层拖出，而底部渐变
+        // 遮罩（9）与 10.5 起的各浮层留在包装之外：遮罩与导航栏同为屏幕固定层，橡皮筋
+        // 拉出时钉在屏幕底部不动；浮层本就不参与过滚动。包装容器仍是全屏，阻尼分母
+        // 与手感不变。
         Box(
             Modifier
                 .fillMaxSize()
-                .hazeSource(imageHazeState)
-                .background(MaterialTheme.colorScheme.background),
+                .overscroll(compactOverscroll),
         ) {
-            // 1) 图片卡：全屏图固定解码尺寸，父层随进度改变尺寸/位置/圆角，
-            // 图片在卡内居中裁切。
-            Layout(
-                content = {
-                    DayBackgroundImage(
-                        context = context,
-                        selectedImage = selectedImage,
-                        modifier = Modifier
-                            .requiredSize(metrics.screenWidth.dp, metrics.screenHeight.dp)
-                            .graphicsLayer {
-                                val frame = DayGeometry.frame(
-                                    metrics,
-                                    transition.open,
-                                    transition.collapse,
-                                )
-                                val scale = frame.imageScale(metrics)
-                                scaleX = scale
-                                scaleY = scale
-                                translationX = frame.imageTranslationX(metrics) * pxPerDp
-                                translationY = frame.imageTranslationY(metrics) * pxPerDp
-                            },
-                    )
-                },
-                modifier = Modifier
-                    .offset {
-                        val frame = DayGeometry.frame(
-                            metrics,
-                            transition.open,
-                            transition.collapse,
+            // 0) 图片卡与页面底色作为同一个 Haze 源：图片卡下方的模糊带同时采到
+            // 图片和卡片外底色，图片卡的边界（底边/两侧）会一起被晕开。01 全屏图
+            // 完全盖住底色，不改变现有画面。
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .hazeSource(imageHazeState)
+                    .background(MaterialTheme.colorScheme.background),
+            ) {
+                // 1) 图片卡：全屏图固定解码尺寸，父层随进度改变尺寸/位置/圆角，
+                // 图片在卡内居中裁切。
+                Layout(
+                    content = {
+                        DayBackgroundImage(
+                            context = context,
+                            selectedImage = selectedImage,
+                            modifier = Modifier
+                                .requiredSize(metrics.screenWidth.dp, metrics.screenHeight.dp)
+                                .graphicsLayer {
+                                    val frame = DayGeometry.frame(
+                                        metrics,
+                                        transition.open,
+                                        transition.collapse,
+                                    )
+                                    val scale = frame.imageScale(metrics)
+                                    scaleX = scale
+                                    scaleY = scale
+                                    translationX = frame.imageTranslationX(metrics) * pxPerDp
+                                    translationY = frame.imageTranslationY(metrics) * pxPerDp
+                                },
                         )
+                    },
+                    modifier = Modifier
+                        .offset {
+                            val frame = DayGeometry.frame(
+                                metrics,
+                                transition.open,
+                                transition.collapse,
+                            )
+                            IntOffset(
+                                (frame.image.left * pxPerDp).roundToInt(),
+                                (frame.image.top * pxPerDp).roundToInt(),
+                            )
+                        }
+                        .graphicsLayer {
+                            val frame = DayGeometry.frame(
+                                metrics,
+                                transition.open,
+                                transition.collapse,
+                                transition.deviceCornerAlpha,
+                            )
+                            // 02→04 后段渐隐：白卡被 Overscroll 拖上去时不再露出台历残影。
+                            alpha = frame.imageAlpha
+                            // 01 静止态是满幅直角：不裁剪，避免 RoundedRectangle(0) 在
+                            // 屏幕边缘留下抗锯齿细线；滑动一开始（open > 0）立即套机身圆角。
+                            val radius = frame.imageRadius
+                            if (radius > 0f) {
+                                clip = true
+                                shape = RoundedRectangle(radius.dp)
+                            } else {
+                                clip = false
+                            }
+                        },
+                ) { measurables, _ ->
+                    val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
+                    val layoutWidth = (frame.image.width * pxPerDp).roundToInt().coerceAtLeast(1)
+                    val layoutHeight = (frame.image.height * pxPerDp).roundToInt().coerceAtLeast(1)
+                    val child = measurables[0].measure(
+                        Constraints.fixed(
+                            (metrics.screenWidth * pxPerDp).roundToInt().coerceAtLeast(1),
+                            (metrics.screenHeight * pxPerDp).roundToInt().coerceAtLeast(1),
+                        ),
+                    )
+                    layout(layoutWidth, layoutHeight) {
+                        child.place(0, 0)
+                    }
+                }
+            }
+
+            // 2) 图片卡下段模糊带：底边延伸到图片卡底边以下 DayBandBleed、压到白卡顶边
+            // 之下；白卡（不透明）叠在带上方盖住越界段——模糊始终遮住图片卡底部，
+            // 02 静止态白卡两侧留白与 02↔04 白卡扫过图片卡时都不再有切线。
+            if (showBand) {
+                Layout(
+                    content = {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .drawWithContent {
+                                    drawContent()
+                                    val frame = DayGeometry.frame(
+                                        metrics,
+                                        transition.open,
+                                        transition.collapse,
+                                        transition.deviceCornerAlpha,
+                                    )
+                                    val tint = frame.bandTintAlpha
+                                    if (tint > 0f) {
+                                        // 黑色压暗只作用在图片卡内部，并复用图片卡同一 RoundedRectangle
+                                        // 轮廓裁剪：底部两角随 imageRadius 一起从机身圆角过渡到
+                                        // DayCardShape，页面背景与卡间间隙不再被压暗。
+                                        // 01 静止态（圆角 0）用矩形轮廓，与不裁剪的图片一致。
+                                        val cardWidthPx =
+                                            (frame.image.width * pxPerDp).coerceAtLeast(1f)
+                                        val cardHeightPx =
+                                            (frame.image.height * pxPerDp).coerceAtLeast(1f)
+                                        val cardSize = Size(cardWidthPx, cardHeightPx)
+                                        val outline = if (frame.imageRadius > 0f) {
+                                            RoundedRectangle(frame.imageRadius.dp).createOutline(
+                                                size = cardSize,
+                                                layoutDirection = layoutDirection,
+                                                density = this,
+                                            )
+                                        } else {
+                                            RectangleShape.createOutline(
+                                                size = cardSize,
+                                                layoutDirection = layoutDirection,
+                                                density = this,
+                                            )
+                                        }
+                                        val cardClip = Path().apply { addOutline(outline) }
+                                        // 图片卡在模糊带局部坐标系里的落位：band child 顶部 = bandTop
+                                        cardClip.translate(
+                                            Offset(
+                                                x = frame.image.left * pxPerDp,
+                                                y = (frame.image.top - frame.bandTop) * pxPerDp,
+                                            ),
+                                        )
+                                        clipPath(cardClip) {
+                                            drawRect(bandTintBrush, alpha = tint)
+                                        }
+                                    }
+                                }
+                                .hazeBlur(
+                                    input = hazeSources(imageHazeState),
+                                    style = dayBandStyle(),
+                                    performanceMode = HazePerformanceMode.Balanced,
+                                ),
+                        )
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        // 模糊带与图片卡同一条淡出曲线，避免图片卡消失后只剩一条模糊。
+                        .graphicsLayer {
+                            alpha = DayGeometry.frame(
+                                metrics,
+                                transition.open,
+                                transition.collapse,
+                            ).imageAlpha
+                        },
+                ) { measurables, constraints ->
+                    val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
+                    val bandTopPx = (frame.bandTop * pxPerDp).roundToInt()
+                    val bandHeightPx = (frame.bandHeight * pxPerDp).roundToInt()
+                    val child = measurables[0].measure(
+                        Constraints.fixed(constraints.maxWidth, bandHeightPx.coerceAtLeast(1)),
+                    )
+                    layout(constraints.maxWidth, constraints.maxHeight) {
+                        if (bandHeightPx > 0) child.place(0, bandTopPx)
+                    }
+                }
+            }
+
+            // 3) 01 顶部渐变磨砂：上移 + 淡出，02 起移出组合。
+            if (showTopScrim) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .height(DayTopScrimHeight)
+                        .graphicsLayer {
+                            val alpha = 1f - transition.open
+                            this.alpha = alpha
+                            translationY = -(1f - alpha) * DayTopScrimExitOffset.value * pxPerDp
+                        }
+                        .hazeBlur(
+                            input = hazeSources(imageHazeState),
+                            style = dayTopScrimStyle(),
+                            performanceMode = HazePerformanceMode.Balanced,
+                        ),
+                )
+            }
+
+            // 4) 「上滑开启新一天」提示：跟随顶部磨砂一起上移淡出。
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(top = DayHintTopPadding)
+                    .graphicsLayer {
+                        val alpha = 1f - transition.open
+                        this.alpha = alpha
+                        translationY = -(1f - alpha) * DayHintExitOffset.value * pxPerDp
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_lock_open),
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = stringResource(R.string.day_swipe_hint),
+                    fontSize = 15.sp,
+                    color = Color.White,
+                )
+            }
+
+            // 5) 整屏手势层：01 上滑开台历 / 04 下滑收顶栏；透明、不画内容。
+            if (fullScreenGestureEnabled) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .draggable(
+                            state = fullScreenDragState,
+                            orientation = Orientation.Vertical,
+                        ),
+                )
+            }
+
+            // 6) 02 图片卡手势层：点击原路重播回 01（竖向跟手归根级 pointerInput 统一驱动）；
+            // 固定在 02 卡片矩形。
+            if (cardGestureEnabled) {
+                Box(
+                    Modifier
+                        .offset(x = compactCard.left.dp, y = compactCard.top.dp)
+                        .width(compactCard.width.dp)
+                        .height(compactCard.height.dp)
+                        .clickable(
+                            enabled = cardGestureEnabled,
+                            role = Role.Button,
+                            onClickLabel = cardBackLabel,
+                            onClick = {
+                                compactOverscroll.reset()
+                                transition.replayToCalendar()
+                            },
+                        )
+                        .semantics { contentDescription = cardBackLabel },
+                )
+            }
+
+            // 7) 日期组：01 左下 → 02 卡内左下 → 02→04 随卡下移；日期行尺寸不变。
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(horizontal = DayDateEdgePadding)
+                    .padding(bottom = navBarDp.dp + NavReserve + DayDateBottomGap)
+                    .offset {
+                        val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
                         IntOffset(
-                            (frame.image.left * pxPerDp).roundToInt(),
-                            (frame.image.top * pxPerDp).roundToInt(),
+                            (frame.dateTranslationX * pxPerDp).roundToInt(),
+                            (frame.dateTranslationY * pxPerDp).roundToInt(),
                         )
                     }
                     .graphicsLayer {
-                        val frame = DayGeometry.frame(
-                            metrics,
-                            transition.open,
-                            transition.collapse,
-                            transition.deviceCornerAlpha,
-                        )
-                        // 02→04 后段渐隐：白卡被 Overscroll 拖上去时不再露出台历残影。
-                        alpha = frame.imageAlpha
-                        // 01 静止态是满幅直角：不裁剪，避免 RoundedRectangle(0) 在
-                        // 屏幕边缘留下抗锯齿细线；滑动一开始（open > 0）立即套机身圆角。
-                        val radius = frame.imageRadius
-                        if (radius > 0f) {
-                            clip = true
-                            shape = RoundedRectangle(radius.dp)
-                        } else {
-                            clip = false
-                        }
-                    },
-            ) { measurables, _ ->
-                val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
-                val layoutWidth = (frame.image.width * pxPerDp).roundToInt().coerceAtLeast(1)
-                val layoutHeight = (frame.image.height * pxPerDp).roundToInt().coerceAtLeast(1)
-                val child = measurables[0].measure(
-                    Constraints.fixed(
-                        (metrics.screenWidth * pxPerDp).roundToInt().coerceAtLeast(1),
-                        (metrics.screenHeight * pxPerDp).roundToInt().coerceAtLeast(1),
-                    ),
-                )
-                layout(layoutWidth, layoutHeight) {
-                    child.place(0, 0)
-                }
-            }
-        }
-
-        // 2) 图片卡下段模糊带：底边延伸到图片卡底边以下 DayBandBleed、压到白卡顶边
-        // 之下；白卡（不透明）叠在带上方盖住越界段——模糊始终遮住图片卡底部，
-        // 02 静止态白卡两侧留白与 02↔04 白卡扫过图片卡时都不再有切线。
-        if (showBand) {
-            Layout(
-                content = {
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .drawWithContent {
-                                drawContent()
-                                val frame = DayGeometry.frame(
-                                    metrics,
-                                    transition.open,
-                                    transition.collapse,
-                                    transition.deviceCornerAlpha,
-                                )
-                                val tint = frame.bandTintAlpha
-                                if (tint > 0f) {
-                                    // 黑色压暗只作用在图片卡内部，并复用图片卡同一 RoundedRectangle
-                                    // 轮廓裁剪：底部两角随 imageRadius 一起从机身圆角过渡到
-                                    // DayCardShape，页面背景与卡间间隙不再被压暗。
-                                    // 01 静止态（圆角 0）用矩形轮廓，与不裁剪的图片一致。
-                                    val cardWidthPx =
-                                        (frame.image.width * pxPerDp).coerceAtLeast(1f)
-                                    val cardHeightPx =
-                                        (frame.image.height * pxPerDp).coerceAtLeast(1f)
-                                    val cardSize = Size(cardWidthPx, cardHeightPx)
-                                    val outline = if (frame.imageRadius > 0f) {
-                                        RoundedRectangle(frame.imageRadius.dp).createOutline(
-                                            size = cardSize,
-                                            layoutDirection = layoutDirection,
-                                            density = this,
-                                        )
-                                    } else {
-                                        RectangleShape.createOutline(
-                                            size = cardSize,
-                                            layoutDirection = layoutDirection,
-                                            density = this,
-                                        )
-                                    }
-                                    val cardClip = Path().apply { addOutline(outline) }
-                                    // 图片卡在模糊带局部坐标系里的落位：band child 顶部 = bandTop
-                                    cardClip.translate(
-                                        Offset(
-                                            x = frame.image.left * pxPerDp,
-                                            y = (frame.image.top - frame.bandTop) * pxPerDp,
-                                        ),
-                                    )
-                                    clipPath(cardClip) {
-                                        drawRect(bandTintBrush, alpha = tint)
-                                    }
-                                }
-                            }
-                            .hazeBlur(
-                                input = hazeSources(imageHazeState),
-                                style = dayBandStyle(),
-                                performanceMode = HazePerformanceMode.Balanced,
-                            ),
-                    )
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    // 模糊带与图片卡同一条淡出曲线，避免图片卡消失后只剩一条模糊。
-                    .graphicsLayer {
+                        // 日期组（大数字、日期行、图片 icon）整组淡出：04 被 Overscroll
+                        // 拖出白卡时不再露出白色日期文字/图标。
                         alpha = DayGeometry.frame(
                             metrics,
                             transition.open,
                             transition.collapse,
-                        ).imageAlpha
+                        ).dateAlpha
                     },
-            ) { measurables, constraints ->
-                val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
-                val bandTopPx = (frame.bandTop * pxPerDp).roundToInt()
-                val bandHeightPx = (frame.bandHeight * pxPerDp).roundToInt()
-                val child = measurables[0].measure(
-                    Constraints.fixed(constraints.maxWidth, bandHeightPx.coerceAtLeast(1)),
-                )
-                layout(constraints.maxWidth, constraints.maxHeight) {
-                    if (bandHeightPx > 0) child.place(0, bandTopPx)
-                }
-            }
-        }
-
-        // 3) 01 顶部渐变磨砂：上移 + 淡出，02 起移出组合。
-        if (showTopScrim) {
-            Box(
-                Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .height(DayTopScrimHeight)
-                    .graphicsLayer {
-                        val alpha = 1f - transition.open
-                        this.alpha = alpha
-                        translationY = -(1f - alpha) * DayTopScrimExitOffset.value * pxPerDp
-                    }
-                    .hazeBlur(
-                        input = hazeSources(imageHazeState),
-                        style = dayTopScrimStyle(),
-                        performanceMode = HazePerformanceMode.Balanced,
-                    ),
-            )
-        }
-
-        // 4) 「上滑开启新一天」提示：跟随顶部磨砂一起上移淡出。
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(top = DayHintTopPadding)
-                .graphicsLayer {
-                    val alpha = 1f - transition.open
-                    this.alpha = alpha
-                    translationY = -(1f - alpha) * DayHintExitOffset.value * pxPerDp
-                },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_lock_open),
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = stringResource(R.string.day_swipe_hint),
-                fontSize = 15.sp,
-                color = Color.White,
-            )
-        }
-
-        // 5) 整屏手势层：01 上滑开台历 / 04 下滑收顶栏；透明、不画内容。
-        if (fullScreenGestureEnabled) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .draggable(
-                        state = fullScreenDragState,
-                        orientation = Orientation.Vertical,
-                    ),
-            )
-        }
-
-        // 6) 02 图片卡手势层：点击原路重播回 01（竖向跟手归根级 pointerInput 统一驱动）；
-        // 固定在 02 卡片矩形。
-        if (cardGestureEnabled) {
-            Box(
-                Modifier
-                    .offset(x = compactCard.left.dp, y = compactCard.top.dp)
-                    .width(compactCard.width.dp)
-                    .height(compactCard.height.dp)
-                    .clickable(
-                        enabled = cardGestureEnabled,
-                        role = Role.Button,
-                        onClickLabel = cardBackLabel,
-                        onClick = {
-                            compactOverscroll.reset()
-                            transition.replayToCalendar()
+            ) {
+                // 日期 / 日期文字 / 图片 icon 作为一组整体缩放：锚在组内左下角，
+                // 02→04 跟随图片卡收窄，三个元素同步缩小并随卡片下移。
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            val frame = DayGeometry.frame(
+                                metrics,
+                                transition.open,
+                                transition.collapse,
+                            )
+                            transformOrigin = TransformOrigin(0f, 1f)
+                            scaleX = frame.dateScale
+                            scaleY = frame.dateScale
+                        },
+                ) {
+                    Text(
+                        text = dayMark ?: dayOfMonth.toString(),
+                        // 中文节日/节气比日期数字略小，避免两字文案在视觉上过宽。
+                        fontSize = if (dayMark != null) 52.sp else 64.sp,
+                        fontFamily = SerifDisplay,
+                        color = Color.White,
+                        modifier = Modifier.graphicsLayer {
+                            // 设计稿实测 01/02 的“21”等大；组级缩放之外仍保留这个 token。
+                            transformOrigin = TransformOrigin(0f, 1f)
+                            scaleX = DayDateNumberScale
+                            scaleY = DayDateNumberScale
                         },
                     )
-                    .semantics { contentDescription = cardBackLabel },
-            )
-        }
-
-        // 7) 日期组：01 左下 → 02 卡内左下 → 02→04 随卡下移；日期行尺寸不变。
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .padding(horizontal = DayDateEdgePadding)
-                .padding(bottom = navBarDp.dp + NavReserve + DayDateBottomGap)
-                .offset {
-                    val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
-                    IntOffset(
-                        (frame.dateTranslationX * pxPerDp).roundToInt(),
-                        (frame.dateTranslationY * pxPerDp).roundToInt(),
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = stringResource(R.string.date_title_format, yearMonth, weekday),
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White,
+                            letterSpacing = (-0.3).sp,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Icon(
+                            painter = painterResource(R.drawable.ic_image),
+                            contentDescription = stringResource(R.string.cd_day_background),
+                            tint = Color.White,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .pressClickable(
+                                    shape = CircleShape,
+                                    scale = 1.10f,
+                                    enabled = active && !transition.isAnimating && dateIconVisible,
+                                ) {
+                                    compactOverscroll.reset()
+                                    sheetMounted = true
+                                    sheetVisible = true
+                                },
+                        )
+                    }
                 }
-                .graphicsLayer {
-                    // 日期组（大数字、日期行、图片 icon）整组淡出：04 被 Overscroll
-                    // 拖出白卡时不再露出白色日期文字/图标。
-                    alpha = DayGeometry.frame(
-                        metrics,
-                        transition.open,
-                        transition.collapse,
-                    ).dateAlpha
-                },
-        ) {
-            // 日期 / 日期文字 / 图片 icon 作为一组整体缩放：锚在组内左下角，
-            // 02→04 跟随图片卡收窄，三个元素同步缩小并随卡片下移。
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer {
-                        val frame = DayGeometry.frame(
+            }
+
+            // 8) 日历卡（DayCalendar）是日程页的内容卡，也是滚动列表的首条实体；高度随月/周
+            // 折叠形态自适应，位置仍由 frame.content.top 决定（白卡顶边几何不变）。
+            // 04 滑到底时 Overscroll 会拖动这张卡本身；后续真实内容直接排在它后面。
+            // 内容视口铺满全屏，白卡位置 = 视口 offset + 首条 spacer（恒为 04 顶栏高度）
+            // 之和，恒等于 frame.content.top：02 时视口顶抬到白卡上方 spacer 处（不盖
+            // 图片卡），04 时视口贴屏幕顶、spacer 垫在顶栏下方，卡与后续内容才能滚进
+            // 顶栏下面。spacer 不可随进度归零，原因见 spacer 处注释。
+            if (showContent) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .hazeSource(contentHazeState)
+                        // 02 的内容视口顶垫进图片卡下半部（首条 spacer 恒高，见列表处注释），
+                        // 列表 scrollable 节点即使手势关闭也构成命中，会把下层图片卡点击层
+                        // 与换背景 icon 整片挡死；声明与下层兄弟共享命中后二者恢复可点。
+                        .sharePointerInputWithSiblings(),
+                ) {
+                    ProvideOverscroll {
+                        RubberBandLazyColumn(
+                            state = listState,
+                            userScrollEnabled = contentUserScrollEnabled,
+                            // 滚动余量与课表页同口径：滚动到底时时间轴末线停在导航栏胶囊上方，
+                            // 底部渐变遮罩之下不露内容断茬。
+                            contentPadding = PaddingValues(bottom = navBarDp.dp + NavReserve),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .offset {
+                                    val frame = DayGeometry.frame(
+                                        metrics,
+                                        transition.open,
+                                        transition.collapse,
+                                    )
+                                    // 视口顶 = 白卡顶 − 顶栏高度，与恒高的首条 spacer 相加
+                                    // 恒等于 frame.content.top；collapse 越大视口越早覆盖
+                                    // 顶栏区域，内容才有机会进入顶栏下面。
+                                    val viewportTop =
+                                        frame.content.top - metrics.contentTopSchedule()
+                                    IntOffset(0, (viewportTop * pxPerDp).roundToInt())
+                                },
+                        ) {
+                            // 首条 spacer：恒为 04 顶栏高度（状态栏 + 标题行 + 间距），把白卡
+                            // 顶边垫到 frame.content.top。高度绝不能随 collapse 归零——02 态
+                            // 若 spacer 高 0，LazyList 会把这个 0 高的 firstVisibleItem 规范化
+                            // 跳过（firstVisibleItemIndex 推进到日历、占位被永久丢弃），之后
+                            // 02→04 落位时日历贴屏幕顶、内容整体上移一个顶栏高度。
+                            item(key = "contentTopSpacer") {
+                                Spacer(
+                                    Modifier.height(metrics.contentTopSchedule().dp),
+                                )
+                            }
+                            // 第二条 = 日历卡：白卡占位已替换为 DayCalendar 组件（自带 surface
+                            // 卡壳与 DayCardShape，高度随月/周折叠形态自适应）；折叠进度由根级
+                            // 转场手势统一驱动（calendarFold），组件内不自挂手势。后续日程条目
+                            // 继续 item { } 追加。
+                            item(key = "dayCard") {
+                                DayCalendar(
+                                    markedDates = todoMarkedDates,
+                                    onGridRangeChange = { firstDate, lastDate ->
+                                        calendarRange = firstDate to lastDate
+                                    },
+                                    foldState = calendarFold,
+                                    today = today,
+                                    modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
+                                )
+                            }
+                            // 第三条 = 上课提醒卡（DayCourseAlert）：最近一节的倒计时/上课中，
+                            // 或「今日课已上完/今日无课」；随时刻对表前进，与日历卡间距 10dp。
+                            // 有课可点（唤起课程详情浮层），无课/课已上完传 null 不可点。
+                            item(key = "courseAlert") {
+                                DayCourseAlert(
+                                    state = courseAlert.state,
+                                    courseName = courseAlert.course?.name.orEmpty(),
+                                    startTime = courseAlert.startTimeText,
+                                    endTime = courseAlert.endTimeText,
+                                    color = courseAlert.course?.let { CourseColor.valueOf(it.color.name) }
+                                        ?: CourseColor.Blue,
+                                    teacher = courseAlert.course?.teacher,
+                                    location = courseAlert.course?.location,
+                                    note = courseAlert.course?.note,
+                                    onClick = courseAlert.course?.let { course ->
+                                        { detailTargetId = course.id }
+                                    },
+                                    modifier = Modifier.padding(
+                                        top = CourseAlertTopSpacing,
+                                        start = PageHorizontalSpacing,
+                                        end = PageHorizontalSpacing,
+                                    ),
+                                )
+                            }
+                            // 第四条 = 待办提醒卡（DayTodoAlert）：截止在今明后天与逾期的未完成
+                            // 待办合并一卡（逾期在前），完成勾选走落库路由；无候选待办时整卡
+                            // 折叠不占位。顶部 10dp 间距在组件折叠内容内，与上课提醒卡相邻。
+                            // 行点击经 openTodoDetail 唤起待办详情浮层。
+                            item(key = "todoAlert") {
+                                DayTodoAlert(
+                                    todos = todos,
+                                    today = today,
+                                    nowMinute = nowMinute,
+                                    tagColors = tagColorMap,
+                                    onComplete = completeAlertTodo,
+                                    onTodoClick = openTodoDetail,
+                                    modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
+                                )
+                            }
+                            // 第五条 = 时间轴（DayTimeline）：0:00 → 次日 0:00 全宽网格 + 左侧
+                            // 44dp 时间列；网格线与屏幕同宽，故不加水平 padding。右侧卡片区域
+                            // 渲染当天任务卡（timelineTasks），按任务时长比例（1 小时 = 50dp）
+                            // 排布；当前时刻指示器（Error 横线 + 左侧时刻矩形）随 nowMinute
+                            // 每 30s 一跳；无任务时照常显示整条留白。
+                            item(key = "timeline") {
+                                DayTimeline(
+                                    tasks = timelineTasks,
+                                    nowMinute = nowMinute,
+                                    modifier = Modifier.padding(top = TimelineTopSpacing),
+                                )
+                            }
+                            // 第六条 = 尾部留白（TrailingScrollSpace）：纯占位，扩大可滚动
+                            // 范围，与课表页末行之后的留白同构。
+                            item(key = "trailingScrollSpace") {
+                                Spacer(Modifier.height(TrailingScrollSpace))
+                            }
+                        }
+                    }
+                }
+            }
+            // 10) 日程顶栏：内容卡顶部贴住它；Haze 采样白卡，标题样式复刻 ScheduleHeader。
+            if (showTopBar) {
+                DayTopBar(
+                    title = topBarTitle,
+                    height = statusBarDp.dp + DayTopBarRowHeight + DayTopBarGap,
+                    contentAlpha = {
+                        DayGeometry.frame(
                             metrics,
                             transition.open,
                             transition.collapse,
-                        )
-                        transformOrigin = TransformOrigin(0f, 1f)
-                        scaleX = frame.dateScale
-                        scaleY = frame.dateScale
+                        ).topBarContentAlpha
                     },
-            ) {
-                Text(
-                    text = dayMark ?: dayOfMonth.toString(),
-                    // 中文节日/节气比日期数字略小，避免两字文案在视觉上过宽。
-                    fontSize = if (dayMark != null) 52.sp else 64.sp,
-                    fontFamily = SerifDisplay,
-                    color = Color.White,
-                    modifier = Modifier.graphicsLayer {
-                        // 设计稿实测 01/02 的“21”等大；组级缩放之外仍保留这个 token。
-                        transformOrigin = TransformOrigin(0f, 1f)
-                        scaleX = DayDateNumberScale
-                        scaleY = DayDateNumberScale
+                    backgroundAlpha = {
+                        DayGeometry.frame(
+                            metrics,
+                            transition.open,
+                            transition.collapse,
+                        ).topBarBackgroundAlpha
                     },
+                    translationYDp = {
+                        DayGeometry.frame(
+                            metrics,
+                            transition.open,
+                            transition.collapse,
+                        ).topBarTranslationY
+                    },
+                    hazeState = contentHazeState,
+                    modifier = Modifier.align(Alignment.TopCenter),
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = stringResource(R.string.date_title_format, yearMonth, weekday),
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White,
-                        letterSpacing = (-0.3).sp,
-                    )
-                    Spacer(Modifier.weight(1f))
-                    Icon(
-                        painter = painterResource(R.drawable.ic_image),
-                        contentDescription = stringResource(R.string.cd_day_background),
-                        tint = Color.White,
-                        modifier = Modifier
-                            .size(30.dp)
-                            .pressClickable(
-                                shape = CircleShape,
-                                scale = 1.10f,
-                                enabled = active && !transition.isAnimating && dateIconVisible,
-                            ) {
-                                compactOverscroll.reset()
-                                sheetMounted = true
-                                sheetVisible = true
-                            },
-                    )
-                }
-            }
-        }
-
-        // 8) 日历卡（DayCalendar）是日程页的内容卡，也是滚动列表的首条实体；高度随月/周
-        // 折叠形态自适应，位置仍由 frame.content.top 决定（白卡顶边几何不变）。
-        // 04 滑到底时 Overscroll 会拖动这张卡本身；后续真实内容直接排在它后面。
-        // 内容视口铺满全屏，白卡位置 = 视口 offset + 首条 spacer（恒为 04 顶栏高度）
-        // 之和，恒等于 frame.content.top：02 时视口顶抬到白卡上方 spacer 处（不盖
-        // 图片卡），04 时视口贴屏幕顶、spacer 垫在顶栏下方，卡与后续内容才能滚进
-        // 顶栏下面。spacer 不可随进度归零，原因见 spacer 处注释。
-        if (showContent) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .hazeSource(contentHazeState)
-                    // 02 的内容视口顶垫进图片卡下半部（首条 spacer 恒高，见列表处注释），
-                    // 列表 scrollable 节点即使手势关闭也构成命中，会把下层图片卡点击层
-                    // 与换背景 icon 整片挡死；声明与下层兄弟共享命中后二者恢复可点。
-                    .sharePointerInputWithSiblings(),
-            ) {
-                ProvideOverscroll {
-                    RubberBandLazyColumn(
-                        state = listState,
-                        userScrollEnabled = contentUserScrollEnabled,
-                        // 滚动余量与课表页同口径：滚动到底时时间轴末线停在导航栏胶囊上方，
-                        // 底部渐变遮罩之下不露内容断茬。
-                        contentPadding = PaddingValues(bottom = navBarDp.dp + NavReserve),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .offset {
-                                val frame = DayGeometry.frame(
-                                    metrics,
-                                    transition.open,
-                                    transition.collapse,
-                                )
-                                // 视口顶 = 白卡顶 − 顶栏高度，与恒高的首条 spacer 相加
-                                // 恒等于 frame.content.top；collapse 越大视口越早覆盖
-                                // 顶栏区域，内容才有机会进入顶栏下面。
-                                val viewportTop =
-                                    frame.content.top - metrics.contentTopSchedule()
-                                IntOffset(0, (viewportTop * pxPerDp).roundToInt())
-                            },
-                    ) {
-                        // 首条 spacer：恒为 04 顶栏高度（状态栏 + 标题行 + 间距），把白卡
-                        // 顶边垫到 frame.content.top。高度绝不能随 collapse 归零——02 态
-                        // 若 spacer 高 0，LazyList 会把这个 0 高的 firstVisibleItem 规范化
-                        // 跳过（firstVisibleItemIndex 推进到日历、占位被永久丢弃），之后
-                        // 02→04 落位时日历贴屏幕顶、内容整体上移一个顶栏高度。
-                        item(key = "contentTopSpacer") {
-                            Spacer(
-                                Modifier.height(metrics.contentTopSchedule().dp),
-                            )
-                        }
-                        // 第二条 = 日历卡：白卡占位已替换为 DayCalendar 组件（自带 surface
-                        // 卡壳与 DayCardShape，高度随月/周折叠形态自适应）；折叠进度由根级
-                        // 转场手势统一驱动（calendarFold），组件内不自挂手势。后续日程条目
-                        // 继续 item { } 追加。
-                        item(key = "dayCard") {
-                            DayCalendar(
-                                markedDates = todoMarkedDates,
-                                onGridRangeChange = { firstDate, lastDate ->
-                                    calendarRange = firstDate to lastDate
-                                },
-                                foldState = calendarFold,
-                                today = today,
-                                modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
-                            )
-                        }
-                        // 第三条 = 上课提醒卡（DayCourseAlert）：最近一节的倒计时/上课中，
-                        // 或「今日课已上完/今日无课」；随时刻对表前进，与日历卡间距 10dp。
-                        // 有课可点（唤起课程详情浮层），无课/课已上完传 null 不可点。
-                        item(key = "courseAlert") {
-                            DayCourseAlert(
-                                state = courseAlert.state,
-                                courseName = courseAlert.course?.name.orEmpty(),
-                                startTime = courseAlert.startTimeText,
-                                endTime = courseAlert.endTimeText,
-                                color = courseAlert.course?.let { CourseColor.valueOf(it.color.name) }
-                                    ?: CourseColor.Blue,
-                                teacher = courseAlert.course?.teacher,
-                                location = courseAlert.course?.location,
-                                note = courseAlert.course?.note,
-                                onClick = courseAlert.course?.let { course ->
-                                    { detailTargetId = course.id }
-                                },
-                                modifier = Modifier.padding(
-                                    top = CourseAlertTopSpacing,
-                                    start = PageHorizontalSpacing,
-                                    end = PageHorizontalSpacing,
-                                ),
-                            )
-                        }
-                        // 第四条 = 待办提醒卡（DayTodoAlert）：截止在今明后天与逾期的未完成
-                        // 待办合并一卡（逾期在前），完成勾选走落库路由；无候选待办时整卡
-                        // 折叠不占位。顶部 10dp 间距在组件折叠内容内，与上课提醒卡相邻。
-                        // 行点击经 openTodoDetail 唤起待办详情浮层。
-                        item(key = "todoAlert") {
-                            DayTodoAlert(
-                                todos = todos,
-                                today = today,
-                                nowMinute = nowMinute,
-                                tagColors = tagColorMap,
-                                onComplete = completeAlertTodo,
-                                onTodoClick = openTodoDetail,
-                                modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
-                            )
-                        }
-                        // 第五条 = 时间轴（DayTimeline）：0:00 → 次日 0:00 全宽网格 + 左侧
-                        // 44dp 时间列；网格线与屏幕同宽，故不加水平 padding。右侧卡片区域
-                        // 渲染当天任务卡（timelineTasks），按任务时长比例（1 小时 = 50dp）
-                        // 排布；当前时刻指示器（Error 横线 + 左侧时刻矩形）随 nowMinute
-                        // 每 30s 一跳；无任务时照常显示整条留白。
-                        item(key = "timeline") {
-                            DayTimeline(
-                                tasks = timelineTasks,
-                                nowMinute = nowMinute,
-                                modifier = Modifier.padding(top = TimelineTopSpacing),
-                            )
-                        }
-                        // 第六条 = 尾部留白（TrailingScrollSpace）：纯占位，扩大可滚动
-                        // 范围，与课表页末行之后的留白同构。
-                        item(key = "trailingScrollSpace") {
-                            Spacer(Modifier.height(TrailingScrollSpace))
-                        }
-                    }
-                }
             }
         }
 
         // 9) 02 底部渐变遮罩：与 01↔02 转场同一进度源（open）跟手——01→02 从屏幕底外
         // 一比一升入落位，02→01 反向沉出（拖拽与吸附动画都自动跟随）；02/04 常驻盖住
-        // 滚进导航栏区域的内容卡。压在内容列表之上、图片浮层之下（见 BottomFadeScrim）。
+        // 滚进导航栏区域的内容卡。画在内容组包装（过滚动层）之外、各浮层之下：整组
+        // 橡皮筋平移时遮罩钉在屏幕底部不动，内容沉入固定的渐变里被盖住。
         if (showContent) {
             BottomFadeScrim(
                 progress = { transition.open },
                 modifier = Modifier.align(Alignment.BottomCenter),
-            )
-        }
-
-        // 10) 日程顶栏：内容卡顶部贴住它；Haze 采样白卡，标题样式复刻 ScheduleHeader。
-        if (showTopBar) {
-            DayTopBar(
-                title = topBarTitle,
-                height = statusBarDp.dp + DayTopBarRowHeight + DayTopBarGap,
-                contentAlpha = {
-                    DayGeometry.frame(
-                        metrics,
-                        transition.open,
-                        transition.collapse,
-                    ).topBarContentAlpha
-                },
-                backgroundAlpha = {
-                    DayGeometry.frame(
-                        metrics,
-                        transition.open,
-                        transition.collapse,
-                    ).topBarBackgroundAlpha
-                },
-                translationYDp = {
-                    DayGeometry.frame(
-                        metrics,
-                        transition.open,
-                        transition.collapse,
-                    ).topBarTranslationY
-                },
-                hazeState = contentHazeState,
-                modifier = Modifier.align(Alignment.TopCenter),
             )
         }
 
