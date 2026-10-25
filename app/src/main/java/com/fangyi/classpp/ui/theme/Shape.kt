@@ -54,6 +54,9 @@ val DayCourseAlertTagShape = RoundedRectangle(6.dp)
 /** 日程页时间轴任务卡（DayTaskCard）的默认四角：20dp 平滑圆角（与 DayCardShape 同规格） */
 val DayTaskCardShape = RoundedRectangle(20.dp)
 
+/** 日程页时间轴当前时间指示器的时刻矩形（DayTimeline）：8dp 平滑圆角 */
+val DayTimelineNowChipShape = RoundedRectangle(8.dp)
+
 private val DayTaskCornerRadius = 20.dp
 
 /** 任务卡与相邻任务贴近（渲染间距 < 6dp）一侧接触角的圆角 */

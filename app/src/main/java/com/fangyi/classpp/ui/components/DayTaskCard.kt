@@ -144,17 +144,20 @@ private val DayTaskContactGap = 6.dp
  * - 分组：按开始时间排序后，start < 组内最大 end 即入同组（贴背 start == end 不算
  *   重叠，另起一组）；
  * - 分列：新卡放进「最后一节结束 ≤ 自己开始」的第一个既有列，否则新列——同列内
- *   时间永远不重叠；
+ *   时间永远不重叠；列分配顺序课程优先于待办（重叠时上课在左、待办在右）；
  * - 均分：组内 n 列等宽 = (区域宽 − (n−1) × [DayTaskColumnGap]) / n；
  * - 横向接触：相邻列且时间重叠的两卡，起/末两侧整边四角收敛；
  * - 纵向接触：不重叠且渲染间距（时间差 × 比例尺）< [DayTaskContactGap]（含贴背）
  *   的上下卡全局配对（贴背任务分属不同重叠链，不能只在列内找），按横向半宽分角；
  * - 高度：竖排卡 = 比例高度（渲染时作 heightIn 下限，内容更高自然撑底）；紧凑卡 =
- *   max(比例高度, [CompactMinHeight])。
+ *   max(比例高度, [CompactMinHeight])；
+ * - 纵向原点：[anchorMinute]（时间轴首刻度，见 DayTimeline），卡片顶边对齐其开始
+ *   时刻的刻度中心 y = ((start − anchor) / 60 + 0.5) × hourSpacing。
  */
 internal fun List<DayTask>.solveDayTaskPlacements(
     regionWidth: Dp,
     hourSpacing: Dp,
+    anchorMinute: Int = 0,
 ): List<DayTaskPlacement> {
     if (isEmpty() || regionWidth <= 0.dp) return emptyList()
     val order = withIndex().sortedWith(compareBy({ it.value.startMinute }, { it.value.endMinute }))
@@ -201,7 +204,7 @@ internal fun List<DayTask>.solveDayTaskPlacements(
                 results[index] = DayTaskPlacement(
                     task = task,
                     offsetX = (columnWidth + DayTaskColumnGap) * columnOf[index],
-                    offsetY = hourSpacing * (task.startMinute / 60f + 0.5f),
+                    offsetY = hourSpacing * ((task.startMinute - anchorMinute) / 60f + 0.5f),
                     width = columnWidth,
                     height = if (compact) maxOf(proportionalHeight, CompactMinHeight) else proportionalHeight,
                     topStartContact = touchesPrevious,

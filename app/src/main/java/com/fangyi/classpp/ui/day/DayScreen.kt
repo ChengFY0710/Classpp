@@ -1262,10 +1262,12 @@ fun DayScreen(
                         // 第五条 = 时间轴（DayTimeline）：0:00 → 次日 0:00 全宽网格 + 左侧
                         // 44dp 时间列；网格线与屏幕同宽，故不加水平 padding。右侧卡片区域
                         // 渲染当天任务卡（timelineTasks），按任务时长比例（1 小时 = 50dp）
-                        // 排布；无任务时照常显示整条留白。
+                        // 排布；当前时刻指示器（Error 横线 + 左侧时刻矩形）随 nowMinute
+                        // 每 30s 一跳；无任务时照常显示整条留白。
                         item(key = "timeline") {
                             DayTimeline(
                                 tasks = timelineTasks,
+                                nowMinute = nowMinute,
                                 modifier = Modifier.padding(top = TimelineTopSpacing),
                             )
                         }

@@ -149,8 +149,16 @@ class DayTaskPlacementTest {
 
     @Test
     fun topAnchorsAtStartTickCenter() {
-        // 8:00 → y = (8/60 + 0.5) × 50dp（DayTimeline 同一映射）
+        // 8:00 → y = (8/60 + 0.5) × 50dp（DayTimeline 同一映射，默认锚点 0:00）
         val placements = listOf(course(480, 540)).solveDayTaskPlacements(regionWidth, hourSpacing)
         assertEquals(50f * (480 / 60f + 0.5f), placements[0].offsetY.value, 1e-3f)
+    }
+
+    @Test
+    fun anchorShiftsVerticalOriginToAnchorTick() {
+        // 锚点 7:00（420min）：8:00 顶边 = ((480 − 420)/60 + 0.5) × 50 = 75dp
+        val placements = listOf(course(480, 540))
+            .solveDayTaskPlacements(regionWidth, hourSpacing, anchorMinute = 420)
+        assertEquals(50f * (60 / 60f + 0.5f), placements[0].offsetY.value, 1e-3f)
     }
 }
