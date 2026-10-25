@@ -452,23 +452,10 @@ fun DayScreen(
         todoDetailTargetDate = todo.dates.firstOrNull()?.toString().orEmpty()
     }
 
-    // 上课提醒卡：今天该上的课（周号 + 星期 + 周规律，取课同 NotificationPlanner，但周末
-    // 不按 daysPerWeek 跳过——显示模式不裁剪真实课程）+ 当前时刻 → 倒计时/上课中/课已上完/
-    // 今日无课。时刻对表：前台每 30s 一跳 + 回前台立即对表（进程冻结期间 delay 不走，与
-    // LocalToday 同款兜底）；课表未装载按无课。
+    // 课表数据：日历下方内容按页日期现算上课提醒卡/时间轴课程卡（横滑容器预组合前后两天，
+    // 故不在页面级提前算好某一天）。时刻对表：前台每 30s 一跳 + 回前台立即对表（进程冻结
+    // 期间 delay 不走，与 LocalToday 同款兜底）。
     val scheduleState = scheduleRepository?.activeSchedule?.collectAsState()
-    // 时间轴任务卡：所选日期有起止时刻的课程 + 待办（口径见 dayTasks），装配成 DayTask 列表。
-    // 截止取色是 @Composable 口径（读 LocalToday），故在组合期装配而非 remember 块里；
-    // 上课卡/待办卡的点击分别经 onCourseClick/onTodoClick 记下目标，唤起详情浮层
-    //（宿主块见底部挂载处）
-    val timelineTasks = dayTasks(
-        scheduleState?.value,
-        todos,
-        selectedDate,
-        toggleTaskTodo,
-        onCourseClick = { detailTargetId = it },
-        onTodoClick = openTodoDetail,
-    )
     var nowMinute by remember { mutableIntStateOf(nowMinuteOfDay()) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -483,13 +470,6 @@ fun DayScreen(
             nowMinute = nowMinuteOfDay()
             delay(CourseAlertResyncMillis)
         }
-    }
-    val courseAlert = remember(scheduleState?.value, today, nowMinute) {
-        dayCourseAlertData(scheduleState?.value, today, nowMinute)
-    }
-    // 非今天整天概览卡的节数：同一取课口径（周号 + 星期 + 周规律，开学前/学期外 0 节）
-    val dayCourseCount = remember(scheduleState?.value, selectedDate) {
-        scheduleState?.value?.let { todayCourseEntries(it, selectedDate).size } ?: 0
     }
 
     // 跨天/回前台对表：LocalToday 已含 onResume 与前台每分钟对表；日期变化立即回 01。
@@ -1377,73 +1357,33 @@ fun DayScreen(
                                     modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
                                 )
                             }
-                            // 第三条 = 上课提醒卡（DayCourseAlert）：今天随时刻对表出最近一节的
-                            // 倒计时/上课中，或「今日课已上完/今日无课」；查看其他日期整天概览，
-                            // 文案按节数分档——有课「这天 N 节课 做好准备」、没课（含开学前/
-                            // 学期外）「这天没有课 好好休息吧」。今天有课可点（唤起课程详情
-                            // 浮层），其余传 null 不可点。
-                            item(key = "courseAlert") {
-                                if (selectedDate == today) {
-                                    DayCourseAlert(
-                                        state = courseAlert.state,
-                                        courseName = courseAlert.course?.name.orEmpty(),
-                                        startTime = courseAlert.startTimeText,
-                                        endTime = courseAlert.endTimeText,
-                                        color = courseAlert.course?.let { CourseColor.valueOf(it.color.name) }
-                                            ?: CourseColor.Blue,
-                                        teacher = courseAlert.course?.teacher,
-                                        location = courseAlert.course?.location,
-                                        note = courseAlert.course?.note,
-                                        onClick = courseAlert.course?.let { course ->
-                                            { detailTargetId = course.id }
-                                        },
-                                        modifier = Modifier.padding(
-                                            top = CourseAlertTopSpacing,
-                                            start = PageHorizontalSpacing,
-                                            end = PageHorizontalSpacing,
-                                        ),
-                                    )
-                                } else {
-                                    DayCourseAlert(
-                                        state = DayCourseAlertState.DaySummary(count = dayCourseCount),
-                                        modifier = Modifier.padding(
-                                            top = CourseAlertTopSpacing,
-                                            start = PageHorizontalSpacing,
-                                            end = PageHorizontalSpacing,
-                                        ),
+                            // 第三条 = 日历下方内容组（横滑切日）：上课提醒卡 + 待办提醒卡 +
+                            // 时间轴合并为同一个 item，交给 DayContentSwipe 预组合昨天/选中日/
+                            // 明天三页并跟手横滑（手感同课表页课表内容的 HorizontalPager）。
+                            // 日历卡本身不在滑轨内，横滑只认日历下方的这块内容；竖向滚动与
+                            // 日历折叠仍归根级手势/LazyColumn，互不干扰。三页各按自己的日期
+                            // 现算提醒与时间轴，横滑途中相邻日实时滑入。
+                            item(key = "dayContent") {
+                                DayContentSwipe(
+                                    selectedDate = selectedDate,
+                                    onDateChange = { selectedDate = it },
+                                    enabled = contentUserScrollEnabled,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) { viewDate, revision ->
+                                    DayDateContent(
+                                        viewDate = viewDate,
+                                        revision = revision,
+                                        schedule = scheduleState?.value,
+                                        todos = todos,
+                                        today = today,
+                                        nowMinute = nowMinute,
+                                        tagColors = tagColorMap,
+                                        onCompleteTodo = completeAlertTodo,
+                                        onToggleTodo = toggleTaskTodo,
+                                        onTodoClick = openTodoDetail,
+                                        onCourseClick = { detailTargetId = it },
                                     )
                                 }
-                            }
-                            // 第四条 = 待办提醒卡（DayTodoAlert）：截止窗口随选中日期推算——
-                            // 今天收「今明后天 + 已逾期」的未完成待办；查看其他日期收「那天起
-                            // 2 天内」窗口 + 全部已逾期（拖欠始终在场）。无候选时整卡折叠
-                            // 不占位。倒计时（含取色）与标题逾期标红随查看日期同源推算；
-                            // 非今天截止文案取绝对日期（避免与倒计时错位）。
-                            // 完成勾选走落库路由，
-                            // 行点击经 openTodoDetail 唤起待办详情浮层。
-                            item(key = "todoAlert") {
-                                DayTodoAlert(
-                                    todos = todos,
-                                    today = today,
-                                    viewDate = selectedDate,
-                                    nowMinute = nowMinute,
-                                    tagColors = tagColorMap,
-                                    onComplete = completeAlertTodo,
-                                    onTodoClick = openTodoDetail,
-                                    modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
-                                )
-                            }
-                            // 第五条 = 时间轴（DayTimeline）：0:00 → 次日 0:00 全宽网格 + 左侧
-                            // 44dp 时间列；网格线与屏幕同宽，故不加水平 padding。右侧卡片区域
-                            // 渲染当天任务卡（timelineTasks），按任务时长比例（1 小时 = 50dp）
-                            // 排布；当前时刻指示器（Error 横线 + 左侧时刻矩形）随 nowMinute
-                            // 每 30s 一跳，查看其他日期时不画；无任务时照常显示整条留白。
-                            item(key = "timeline") {
-                                DayTimeline(
-                                    tasks = timelineTasks,
-                                    nowMinute = if (selectedDate == today) nowMinute else null,
-                                    modifier = Modifier.padding(top = TimelineTopSpacing),
-                                )
                             }
                             // 第六条 = 尾部留白（TrailingScrollSpace）：纯占位，扩大可滚动
                             // 范围，与课表页末行之后的留白同构。
@@ -1755,6 +1695,111 @@ fun DayScreen(
                 onDismissed = { sheetMounted = false },
             )
         }
+    }
+}
+
+/**
+ * 日历下方单日内容（横滑三页中的一页）：上课提醒卡 + 待办提醒卡 + 时间轴。
+ *
+ * 三页各自按 [viewDate] 现算，横滑途中相邻日实时滑入，故这里不做任何「当前选中日」的
+ * 假设。课表取课口径与页面级一致：今天随时刻对表出倒计时/上课中/课已上完/今日无课，
+ * 其他日期出整天节数概览（开学前/学期外 0 节）；时间轴只接该日有起止时刻的课程与待办。
+ *
+ * [revision] 只在横滑提交时自增，用作 [DayTodoAlert] 的重置键：滑入页在落位前已按新
+ * 日期渲染，落位瞬间必须从新日期的完整行集起画——若复用旧日期的行镜，会先重播一遍
+ * 「跨日行增减」动画（表现为新页面刚滑进来又闪回旧待办行）。点日历球等外部换日不经过
+ * revision，原有跨日行动画保持不变。
+ */
+@Composable
+private fun DayDateContent(
+    viewDate: IsoDate,
+    revision: Int,
+    schedule: Schedule?,
+    todos: List<Todo>,
+    today: IsoDate,
+    nowMinute: Int,
+    tagColors: Map<String, Color>,
+    onCompleteTodo: (Todo) -> Unit,
+    onToggleTodo: (Todo, Boolean) -> Unit,
+    onTodoClick: (Todo) -> Unit,
+    onCourseClick: (String) -> Unit,
+) {
+    val isToday = viewDate == today
+    // 上课提醒卡：今天有课可点（唤起课程详情浮层），其余传 null 不可点
+    val courseAlert = remember(schedule, viewDate, isToday, nowMinute) {
+        if (isToday) dayCourseAlertData(schedule, viewDate, nowMinute) else null
+    }
+    // 非今天整天概览卡的节数：同一取课口径（周号 + 星期 + 周规律，开学前/学期外 0 节）
+    val dayCourseCount = remember(schedule, viewDate) {
+        schedule?.let { todayCourseEntries(it, viewDate).size } ?: 0
+    }
+    // 时间轴任务卡：该日有起止时刻的课程 + 待办（口径见 dayTasks），装配成 DayTask 列表。
+    // 截止取色是 @Composable 口径（读 LocalToday），故在组合期装配而非 remember 块里；
+    // 上课卡/待办卡的点击分别经 onCourseClick/onTodoClick 记下目标，唤起详情浮层
+    //（宿主块见底部挂载处）
+    val timelineTasks = dayTasks(
+        schedule,
+        todos,
+        viewDate,
+        onToggleTodo,
+        onCourseClick = onCourseClick,
+        onTodoClick = onTodoClick,
+    )
+
+    Column(Modifier.fillMaxWidth()) {
+        if (courseAlert != null) {
+            DayCourseAlert(
+                state = courseAlert.state,
+                courseName = courseAlert.course?.name.orEmpty(),
+                startTime = courseAlert.startTimeText,
+                endTime = courseAlert.endTimeText,
+                color = courseAlert.course?.let { CourseColor.valueOf(it.color.name) }
+                    ?: CourseColor.Blue,
+                teacher = courseAlert.course?.teacher,
+                location = courseAlert.course?.location,
+                note = courseAlert.course?.note,
+                onClick = courseAlert.course?.let { course -> { onCourseClick(course.id) } },
+                modifier = Modifier.padding(
+                    top = CourseAlertTopSpacing,
+                    start = PageHorizontalSpacing,
+                    end = PageHorizontalSpacing,
+                ),
+            )
+        } else {
+            DayCourseAlert(
+                state = DayCourseAlertState.DaySummary(count = dayCourseCount),
+                modifier = Modifier.padding(
+                    top = CourseAlertTopSpacing,
+                    start = PageHorizontalSpacing,
+                    end = PageHorizontalSpacing,
+                ),
+            )
+        }
+        // 待办提醒卡：截止窗口随查看日期推算——今天收「今明后天 + 已逾期」的未完成待办；
+        // 查看其他日期收「那天起 2 天内」窗口 + 全部已逾期（拖欠始终在场）。无候选时整卡
+        // 折叠不占位。倒计时（含取色）与标题逾期标红随查看日期同源推算；非今天截止文案
+        // 取绝对日期（避免与倒计时错位）。完成勾选走落库路由，行点击经 openTodoDetail
+        // 唤起待办详情浮层。key(revision) 的落位重置口径见函数 KDoc。
+        key(revision) {
+            DayTodoAlert(
+                todos = todos,
+                today = today,
+                viewDate = viewDate,
+                nowMinute = nowMinute,
+                tagColors = tagColors,
+                onComplete = onCompleteTodo,
+                onTodoClick = onTodoClick,
+                modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
+            )
+        }
+        // 时间轴（DayTimeline）：0:00 → 次日 0:00 全宽网格 + 左侧 44dp 时间列；网格线与
+        // 屏幕同宽，故不加水平 padding。右侧卡片区域渲染当天任务卡，按任务时长比例
+        // （1 小时 = 50dp）排布；当前时刻指示器仅在今天显示，无任务时照常显示整条留白。
+        DayTimeline(
+            tasks = timelineTasks,
+            nowMinute = if (isToday) nowMinute else null,
+            modifier = Modifier.padding(top = TimelineTopSpacing),
+        )
     }
 }
 

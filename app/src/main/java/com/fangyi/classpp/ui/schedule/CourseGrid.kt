@@ -27,10 +27,14 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -47,6 +51,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import com.fangyi.classpp.ui.motion.CrossPage
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.Correct
 import com.fangyi.classpp.ui.theme.Error
@@ -151,6 +156,19 @@ fun CourseGrid(
     onEditClick: ((courseId: String) -> Unit)? = null,
     onCourseLongClick: ((courseId: String, anchor: Rect) -> Unit)? = null,
     onSlotLongClick: ((day: Int, slot: TimeSlot, anchor: Rect) -> Unit)? = null,
+    // ——— 跨多周跳转的层级交叉转场（复用 ui.motion 的 CrossPage，状态与决策在 ScheduleScreen）———
+    // 进场侧（Pager 新页）的透明度/缩放：静止恒为全可见（1f），只有跨多周跳转的进场期间
+    // 非 1（淡入 + 从 0.95 放大回 1，时序由 ScheduleScreen 按 CrossPageSpec 驱动）。
+    // State 实例透传（与 editProgress/cardHeights 同一纪律）：值在下方 Pager 的 graphicsLayer
+    // 里延迟读取，转场每帧只更新图层矩阵，不外溢重组
+    jumpEnterAlpha: State<Float> = remember { mutableStateOf(1f) },
+    jumpEnterScale: State<Float> = remember { mutableStateOf(1f) },
+    // 退场侧（旧页）：被离开那一页的页索引，null = 无转场。overlay 内容经 contentForPage
+    // 按页索引现算，与真页同源（编辑态即草稿版）
+    jumpOverlayPage: Int? = null,
+    // 转场会话号：退场层的 key。每次跳转自增重建退场层——CrossPage 首组合即全可见、
+    // 不播进场（正合「旧页原位就位再沉退」），旧退场层随 key 更换直接替换（快照语义）
+    jumpOverlaySession: Int = 0,
 ) {
     // 列数至少 1（0/负值理论上被校验挡住，这里兜一下避免算出空页宽或除零）
     val days = daysPerWeek.coerceAtLeast(1)
@@ -191,43 +209,87 @@ fun CourseGrid(
         modifier = modifier.background(MaterialTheme.colorScheme.background),
     ) {
         item(key = "weekPager") {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(pageHeight),
-                // 编辑态固定当前周（设计稿里编辑态没有周次指示，翻周无从判断），
-                // 顺带不必预组合邻页
-                beyondViewportPageCount = if (editMode) 0 else 1,
-                userScrollEnabled = !editMode,
-                // 一次手势最多翻一周（对应「上一周/下一周」），甩动不跨周跳
-                flingBehavior = PagerDefaults.flingBehavior(
+            Box {
+                HorizontalPager(
                     state = pagerState,
-                    pagerSnapDistance = PagerSnapDistance.atMost(1),
-                ),
-            ) { page ->
-                WeekPage(
-                    // 这里刻意不 remember：编辑态的 provider 会读草稿 state，
-                    // 记忆会让"刚加的课"刷不出来（key 没变 → 计算不重跑）。
-                    // 入参是**页索引**：页 0 = 最左页（学期前为第 0 周/当今周，学期后为
-                    // 第 1 周），页 → 周的换算由调用方在 contentForPage 内完成
-                    content = contentForPage(page),
-                    timeSlots = timeSlots,
-                    days = days,
-                    rowHeight = rowHeight,
-                    showTeacher = showTeacherOnCard,
-                    seamVisible = seamVisible,
-                    listState = state,
-                    showDates = showDates,
-                    dateBandHeight = dateBandHeight,
-                    editProgress = editProgress,
-                    addCardsMounted = addCardsMounted,
-                    editMode = editMode,
-                    onAddClick = onAddClick,
-                    onEditClick = onEditClick,
-                    onCourseLongClick = onCourseLongClick,
-                    onSlotLongClick = onSlotLongClick,
-                )
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(pageHeight)
+                        // 跨多周跳转的进场侧：新页在 ScheduleScreen 驱动下延迟后淡入、
+                        // 从 hiddenScale 放大回 1，这里只读结果。静止恒为 1f，
+                        // 手势翻周与相邻周滑动不受影响
+                        .graphicsLayer {
+                            alpha = jumpEnterAlpha.value
+                            scaleX = jumpEnterScale.value
+                            scaleY = jumpEnterScale.value
+                        },
+                    // 编辑态固定当前周（设计稿里编辑态没有周次指示，翻周无从判断），
+                    // 顺带不必预组合邻页
+                    beyondViewportPageCount = if (editMode) 0 else 1,
+                    userScrollEnabled = !editMode,
+                    // 一次手势最多翻一周（对应「上一周/下一周」），甩动不跨周跳
+                    flingBehavior = PagerDefaults.flingBehavior(
+                        state = pagerState,
+                        pagerSnapDistance = PagerSnapDistance.atMost(1),
+                    ),
+                ) { page ->
+                    WeekPage(
+                        // 这里刻意不 remember：编辑态的 provider 会读草稿 state，
+                        // 记忆会让"刚加的课"刷不出来（key 没变 → 计算不重跑）。
+                        // 入参是**页索引**：页 0 = 最左页（学期前为第 0 周/当今周，学期后为
+                        // 第 1 周），页 → 周的换算由调用方在 contentForPage 内完成
+                        content = contentForPage(page),
+                        timeSlots = timeSlots,
+                        days = days,
+                        rowHeight = rowHeight,
+                        showTeacher = showTeacherOnCard,
+                        seamVisible = seamVisible,
+                        listState = state,
+                        showDates = showDates,
+                        dateBandHeight = dateBandHeight,
+                        editProgress = editProgress,
+                        addCardsMounted = addCardsMounted,
+                        editMode = editMode,
+                        onAddClick = onAddClick,
+                        onEditClick = onEditClick,
+                        onCourseLongClick = onCourseLongClick,
+                        onSlotLongClick = onSlotLongClick,
+                    )
+                }
+
+                // 跨多周跳转的退场侧：被离开的旧页叠在 Pager 正上方，由 CrossPage 播退场——
+                // 原位淡出 + 缩到 0.95 沉下去，alpha 归零内容自行卸载。退场层首组合即全可见
+                //（CrossPage 对初始可见不播进场，正合「旧页原位就位再沉退」），挂载后立即翻
+                // visible 启动退场；会话号作 key，连续跳转时旧退场层直接换成新会话的
+                jumpOverlayPage?.let { overlayPage ->
+                    key(jumpOverlaySession) {
+                        var overlayExiting by remember { mutableStateOf(false) }
+                        LaunchedEffect(Unit) { overlayExiting = true }
+                        CrossPage(
+                            visible = !overlayExiting,
+                            modifier = Modifier.matchParentSize(),
+                        ) {
+                            WeekPage(
+                                content = contentForPage(overlayPage),
+                                timeSlots = timeSlots,
+                                days = days,
+                                rowHeight = rowHeight,
+                                showTeacher = showTeacherOnCard,
+                                seamVisible = seamVisible,
+                                listState = state,
+                                showDates = showDates,
+                                dateBandHeight = dateBandHeight,
+                                editProgress = editProgress,
+                                addCardsMounted = addCardsMounted,
+                                editMode = editMode,
+                                onAddClick = onAddClick,
+                                onEditClick = onEditClick,
+                                onCourseLongClick = onCourseLongClick,
+                                onSlotLongClick = onSlotLongClick,
+                            )
+                        }
+                    }
+                }
             }
         }
     }

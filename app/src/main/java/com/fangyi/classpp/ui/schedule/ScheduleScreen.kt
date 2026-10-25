@@ -55,7 +55,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -92,6 +91,7 @@ import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.LocalTodayState
 import com.fangyi.classpp.ui.components.BottomFadeScrim
+import com.fangyi.classpp.ui.motion.CrossPageSpec
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.pressFeedback
@@ -104,6 +104,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlin.math.abs
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -536,11 +537,24 @@ fun ScheduleScreen(
                 }
             }
 
-            // 跨多周跳转的单页滑入进度：1 = 整块网格从右侧一页宽处入场（跳向更后的周）、
-            // -1 = 从左侧（跳向更前的周）、0 = 落定。存"页宽倍数"而非像素，图层里乘自身宽度即
-            // 得位移，跳多远都恒定一页宽——不途经中间页（途经页的组合成本随距离线性涨，
-            // 超远跳转峰值帧会吃紧）
-            val jumpSlideFraction = remember { Animatable(0f) }
+            // ——— 跨多周跳转的层级交叉转场（复用 ui.motion 的 CrossPage）———
+            // 与手势翻周/相邻周滑动（Pager 原生平移）分流：跳转时 Pager 先瞬移落位到目标周
+            // 作「进场侧」，由下面两条 Animatable 在 Pager 图层上播「延迟 → 淡入 + 放大」；
+            // 被离开的旧页作「退场侧」，由 CourseGrid 里的 CrossPage overlay 原位沉退
+            //（淡出 + 缩到 0.95）。时序全部读 CrossPageSpec 默认值（单一来源）——进场侧手写
+            // Animatable 只为绕开「Pager 不能被 CrossPage 包裹」：Pager 是持久基座，不能被
+            // 挂载门控卸载重建。静止恒为全可见（1f），手势翻周与相邻周滑动不受影响
+            val jumpCrossSpec = remember { CrossPageSpec() }
+            val jumpEnterAlpha = remember { Animatable(1f) }
+            val jumpEnterScale = remember { Animatable(1f) }
+            // 传给网格的是只读 State：Animatable 与 State<Float> 不同型（同 editContentState
+            // 的处理）；remember 一次避免每帧新建包装对象
+            val jumpEnterAlphaState = remember(jumpEnterAlpha) { jumpEnterAlpha.asState() }
+            val jumpEnterScaleState = remember(jumpEnterScale) { jumpEnterScale.asState() }
+            // 退场侧状态：旧页页索引（null = 无转场）+ 会话号（自增，作 CourseGrid 退场层的
+            // key——连续跳转时旧退场层直接换成新会话的，快照语义）
+            var jumpOverlayPage by remember { mutableStateOf<Int?>(null) }
+            var jumpOverlaySession by remember { mutableStateOf(0) }
 
             // 手势 → 周次：currentPage 在拖动过半时即翻转，顶栏周数胶囊与日期随之切换；
             // 写回同值时 State 自身忽略，不产生额外重组。
@@ -552,25 +566,45 @@ fun ScheduleScreen(
             }
 
             // 周次 → 翻页：周数弹窗、返回本周、学期范围钳制触发的换周。
-            // 相邻周走 Pager 原生滑动（与手势翻页连贯）；跨多周先瞬移落位、再让整块网格从
-            // 手势方向滑入一页宽。滑入动画挂在 scope 上而非本效果里：week 途中再变时本效果
-            // 会重启，滑入不能被连带取消、停在半程偏移上；snapTo 同时会打断上一次未完成的
-            // 滑入，连续跳转天然收敛到最后一次
+            // 相邻周走 Pager 原生滑动（与手势翻页连贯）；跨多周走 CrossPage 层级交叉——
+            // 旧页原位沉退、新页延迟后浮入，不途经中间页（途经页的组合成本随距离线性涨，
+            // 超远跳转峰值帧会吃紧）。进场动画挂在 scope 上而非本效果里：week 途中再变时
+            // 本效果会重启，进场不能被连带取消、停在半程透明度上；snapTo 同时会打断上一次
+            // 未完成的进场，连续跳转天然收敛到最后一次
             LaunchedEffect(week, firstPageWeek) {
                 val target = pageOfWeek(week, firstPageWeek)
                 val current = pagerState.currentPage
                 if (current != target) {
                     if (abs(current - target) == 1) {
+                        // 上一次跨周跳转的进场若被打断，先恢复全可见，避免半透明状态下滑动
+                        jumpEnterAlpha.snapTo(1f)
+                        jumpEnterScale.snapTo(1f)
                         pagerState.animateScrollToPage(target)
                     } else {
-                        val forward = target > current
+                        // 旧页快照先登记（会话号自增换退场层），Pager 瞬移落位到目标周后，
+                        // 进场侧从隐藏态播起——首帧即被全可见的旧页 overlay 盖住，无跳变
+                        jumpOverlaySession += 1
+                        jumpOverlayPage = current
                         pagerState.scrollToPage(target)
                         scope.launch {
-                            jumpSlideFraction.snapTo(if (forward) 1f else -1f)
-                            jumpSlideFraction.animateTo(
-                                0f,
-                                tween(durationMillis = 240, easing = Motion.Decelerate),
-                            )
+                            jumpEnterAlpha.snapTo(0f)
+                            jumpEnterScale.snapTo(jumpCrossSpec.hiddenScale)
+                            delay(jumpCrossSpec.enterDelayMillis.toLong())
+                            coroutineScope {
+                                launch {
+                                    jumpEnterAlpha.animateTo(
+                                        1f,
+                                        tween(durationMillis = jumpCrossSpec.enterAlphaMillis),
+                                    )
+                                }
+                                jumpEnterScale.animateTo(
+                                    1f,
+                                    tween(
+                                        durationMillis = jumpCrossSpec.enterScaleMillis,
+                                        easing = jumpCrossSpec.enterEasing,
+                                    ),
+                                )
+                            }
                         }
                     }
                 }
@@ -798,10 +832,13 @@ fun ScheduleScreen(
                     onEditClick = onEditClick,
                     onCourseLongClick = onCourseLongClick,
                     onSlotLongClick = onSlotLongClick,
+                    // 跨多周跳转的层级交叉转场：进场侧动画由本屏驱动、退场层在网格内部叠放
+                    jumpEnterAlpha = jumpEnterAlphaState,
+                    jumpEnterScale = jumpEnterScaleState,
+                    jumpOverlayPage = jumpOverlayPage,
+                    jumpOverlaySession = jumpOverlaySession,
                     modifier = Modifier
                         .fillMaxSize()
-                        // 跨多周跳转的单页滑入：位移 = 滑入进度 × 自身宽度（即页宽），只动图层不触发布局
-                        .graphicsLayer { translationX = jumpSlideFraction.value * size.width }
                         // 编辑态不折叠：顶栏换成了固定编辑栏，滚动连接不参与
                         .then(
                             if (editSession == null) {
