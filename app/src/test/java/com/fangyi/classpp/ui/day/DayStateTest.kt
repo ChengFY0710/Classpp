@@ -114,34 +114,15 @@ class DayStateTest {
 
     @Test
     fun collapseGestureRoutingFollowsStageAndListPosition() {
-        // 02 空占位：上下都不可滚时由根级驱动
-        assertTrue(
-            shouldDriveCollapse(DayStage.Compact, canScrollForward = false, canScrollBackward = false),
-        )
-        assertFalse(
-            shouldDriveCollapse(DayStage.Compact, canScrollForward = true, canScrollBackward = false),
-        )
-        assertFalse(
-            shouldDriveCollapse(DayStage.Compact, canScrollForward = false, canScrollBackward = true),
-        )
+        // 02：内容区滚动只在 04 开启，转场跟手优先，恒由根级驱动
+        assertTrue(shouldDriveCollapse(DayStage.Compact, canScrollBackward = false))
+        assertTrue(shouldDriveCollapse(DayStage.Compact, canScrollBackward = true))
 
         // 04：列表在顶部（不能向后滚）就由根级驱动；长列表已下滚时让给列表
-        assertTrue(
-            shouldDriveCollapse(DayStage.Schedule, canScrollForward = false, canScrollBackward = false),
-        )
-        assertTrue(
-            shouldDriveCollapse(DayStage.Schedule, canScrollForward = true, canScrollBackward = false),
-        )
-        assertFalse(
-            shouldDriveCollapse(DayStage.Schedule, canScrollForward = true, canScrollBackward = true),
-        )
-        assertFalse(
-            shouldDriveCollapse(DayStage.Schedule, canScrollForward = false, canScrollBackward = true),
-        )
+        assertTrue(shouldDriveCollapse(DayStage.Schedule, canScrollBackward = false))
+        assertFalse(shouldDriveCollapse(DayStage.Schedule, canScrollBackward = true))
 
         // 01 由整屏 draggable 驱动
-        assertFalse(
-            shouldDriveCollapse(DayStage.Calendar, canScrollForward = false, canScrollBackward = false),
-        )
+        assertFalse(shouldDriveCollapse(DayStage.Calendar, canScrollBackward = false))
     }
 }

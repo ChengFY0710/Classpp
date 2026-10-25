@@ -15,6 +15,7 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -113,6 +114,7 @@ import com.fangyi.classpp.ui.components.DayCalendar
 import com.fangyi.classpp.ui.components.DayCalendarFoldState
 import com.fangyi.classpp.ui.components.DayCourseAlert
 import com.fangyi.classpp.ui.components.DayCourseAlertState
+import com.fangyi.classpp.ui.components.DayTimeline
 import com.fangyi.classpp.ui.components.DayTodoAlert
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
@@ -158,6 +160,16 @@ private val CourseAlertTopSpacing = 10.dp
 
 /** 上课提醒卡的时刻对表间隔：倒计时按分钟显示，30s 步进保证一分钟内跳字 */
 private const val CourseAlertResyncMillis = 30_000L
+
+/** 时间轴与上方待办提醒卡的间距；待办卡折叠收起时自然成为与上课提醒卡的间距 */
+private val TimelineTopSpacing = 12.dp
+
+/**
+ * 末行之后的尾部留白：扩大内容列表的可滚动范围（与课表页 CourseGrid 同款，
+ * 叠加在 contentPadding 的导航栏 inset + NavReserve 之上）。
+ * 内容较少时末段时间轴/卡片也能拉离屏底阅读；按需调整此常量即可。
+ */
+private val TrailingScrollSpace = 120.dp
 
 /**
  * 日程页（AppTab.Agenda）：手势驱动的台历三态页面。
@@ -383,8 +395,9 @@ fun DayScreen(
     val listState = rememberLazyListState()
     val dragDistancePx = with(density) { DayDragDistance.toPx() }
     val flingThresholdPx = with(density) { DayFlingVelocity.toPx() }
-    // 02↔04 的跟手统一由根级 pointerInput 驱动（见下方）：内容为空占位、nested scroll
-    // 不消费时，图片卡/内容卡上任意起手都用同一份原始 dy 推进 collapse，没有起手阈值。
+    // 02↔04 的跟手统一由根级 pointerInput 驱动（见下方）：02 恒由根级接管（内容区
+    // 滚动只在 04 开启）、04 列表在顶部时也由根级接管——图片卡/内容卡上任意起手都
+    // 用同一份原始 dy 推进 collapse，没有起手阈值。
     val bandTintBrush = remember {
         // 接近 HazeProgressive 的 EaseIn 渐隐：01 底部 30% 黑 tint，只是拆到 Haze 外，
         // 让 02 起能把 tint 干净地降到 0（Haze style 在组合期固定，不能逐帧改 tint）。
@@ -536,7 +549,6 @@ fun DayScreen(
                     // 动画期间内容滚动本就是关闭的。
                     val drivesCollapse = snapTakeOver || shouldDriveCollapse(
                         stage = transition.stage,
-                        canScrollForward = listState.canScrollForward,
                         canScrollBackward = listState.canScrollBackward,
                     )
                     tracker.resetTracking()
@@ -778,25 +790,20 @@ fun DayScreen(
         }
 
         val gestureAllowed = active && !sheetMounted && !transition.isAnimating
-        val contentUnscrollable =
-            !listState.canScrollForward && !listState.canScrollBackward
-        // 01 的上滑仍由整屏 draggable 负责；02/04 的空占位由根级 pointerInput 统一驱动，
-        // 不再额外挂 Schedule 的整屏层，避免同一次拖动被写两遍。
+        // 01 的上滑仍由整屏 draggable 负责；02/04 的转场跟手由根级 pointerInput 统一驱动
+        // （02 恒由根级接管、不依赖内容是否可滚，见 shouldDriveCollapse），不再额外挂
+        // Schedule 的整屏层，避免同一次拖动被写两遍。
         val fullScreenGestureEnabled =
             gestureAllowed && transition.stage == DayStage.Calendar
+        // 02 图片卡手势层只保留点击重播：竖向跟手与白卡一致归根级 pointerInput，不再挂
+        // draggable 兜底，避免与根级形成双驱动（含双指各按一处的场景）。
         val cardGestureEnabled = gestureAllowed && transition.stage == DayStage.Compact
-        // 内容不可滚时根级 pointerInput 已接管图片卡/内容卡的跟手；只有未来内容真正
-        // 可滚、根级驱动让位时，才由 02 卡面自己的 draggable 接管图片区域。
-        val cardDragEnabled = cardGestureEnabled && !contentUnscrollable
         // 04 完全收起后才启用内容区滚动/OverScroll；02/03 的内容区由根级转场手势接管。
         val contentUserScrollEnabled =
             gestureAllowed && transition.stage == DayStage.Schedule
 
         val fullScreenDragState = rememberDraggableState { delta ->
             transition.dragOpenBy(delta, dragDistancePx)
-        }
-        val cardDragState = rememberDraggableState { delta ->
-            transition.dragCollapseBy(delta, dragDistancePx)
         }
         val compactCard = remember(metrics) {
             DayGeometry.frame(metrics, open = 1f, collapse = 0f).image
@@ -1024,7 +1031,8 @@ fun DayScreen(
             )
         }
 
-        // 6) 02 图片卡手势层：上滑收台历 + 点击原路重播回 01；固定在 02 卡片矩形。
+        // 6) 02 图片卡手势层：点击原路重播回 01（竖向跟手归根级 pointerInput 统一驱动）；
+        // 固定在 02 卡片矩形。
         if (cardGestureEnabled) {
             Box(
                 Modifier
@@ -1039,11 +1047,6 @@ fun DayScreen(
                             compactOverscroll.reset()
                             transition.replayToCalendar()
                         },
-                    )
-                    .draggable(
-                        state = cardDragState,
-                        orientation = Orientation.Vertical,
-                        enabled = cardDragEnabled,
                     )
                     .semantics { contentDescription = cardBackLabel },
             )
@@ -1131,12 +1134,13 @@ fun DayScreen(
             }
         }
 
-        // 8) 日历卡（DayCalendar）是日程页的内容卡，也是滚动列表的第一条；高度随月/周
+        // 8) 日历卡（DayCalendar）是日程页的内容卡，也是滚动列表的首条实体；高度随月/周
         // 折叠形态自适应，位置仍由 frame.content.top 决定（白卡顶边几何不变）。
         // 04 滑到底时 Overscroll 会拖动这张卡本身；后续真实内容直接排在它后面。
-        // 内容视口铺满全屏：02 时视口顶贴住卡顶（不盖图片卡），04 时抬到屏幕顶，
-        // 卡与后续内容才能滚进顶栏下面。卡位置由「视口 offset + 首条 spacer」
-        // 两段之和决定，恒等于 frame.content.top。
+        // 内容视口铺满全屏，白卡位置 = 视口 offset + 首条 spacer（恒为 04 顶栏高度）
+        // 之和，恒等于 frame.content.top：02 时视口顶抬到白卡上方 spacer 处（不盖
+        // 图片卡），04 时视口贴屏幕顶、spacer 垫在顶栏下方，卡与后续内容才能滚进
+        // 顶栏下面。spacer 不可随进度归零，原因见 spacer 处注释。
         if (showContent) {
             Box(
                 modifier = Modifier
@@ -1147,6 +1151,9 @@ fun DayScreen(
                     RubberBandLazyColumn(
                         state = listState,
                         userScrollEnabled = contentUserScrollEnabled,
+                        // 滚动余量与课表页同口径：滚动到底时时间轴末线停在导航栏胶囊上方，
+                        // 底部渐变遮罩之下不露内容断茬。
+                        contentPadding = PaddingValues(bottom = navBarDp.dp + NavReserve),
                         modifier = Modifier
                             .fillMaxSize()
                             .offset {
@@ -1155,34 +1162,22 @@ fun DayScreen(
                                     transition.open,
                                     transition.collapse,
                                 )
-                                // 02 贴白卡顶 → 04 抬到屏幕顶；collapse 越大视口越早
-                                // 覆盖顶栏区域，内容才有机会进入顶栏下面。
+                                // 视口顶 = 白卡顶 − 顶栏高度，与恒高的首条 spacer 相加
+                                // 恒等于 frame.content.top；collapse 越大视口越早覆盖
+                                // 顶栏区域，内容才有机会进入顶栏下面。
                                 val viewportTop =
-                                    frame.content.top * (1f - transition.collapse)
+                                    frame.content.top - metrics.contentTopSchedule()
                                 IntOffset(0, (viewportTop * pxPerDp).roundToInt())
                             },
                     ) {
-                        // 首条 spacer 把白卡按当前进度放到 frame.content.top；高度在
-                        // measure 阶段读转场进度，拖拽每帧只触发布局、不触发重组。
+                        // 首条 spacer：恒为 04 顶栏高度（状态栏 + 标题行 + 间距），把白卡
+                        // 顶边垫到 frame.content.top。高度绝不能随 collapse 归零——02 态
+                        // 若 spacer 高 0，LazyList 会把这个 0 高的 firstVisibleItem 规范化
+                        // 跳过（firstVisibleItemIndex 推进到日历、占位被永久丢弃），之后
+                        // 02→04 落位时日历贴屏幕顶、内容整体上移一个顶栏高度。
                         item(key = "contentTopSpacer") {
                             Spacer(
-                                Modifier.layout { measurable, constraints ->
-                                    val frame = DayGeometry.frame(
-                                        metrics,
-                                        transition.open,
-                                        transition.collapse,
-                                    )
-                                    val heightPx =
-                                        (frame.content.top * transition.collapse * pxPerDp)
-                                            .roundToInt()
-                                            .coerceAtLeast(0)
-                                    val placeable = measurable.measure(
-                                        Constraints.fixed(constraints.maxWidth, heightPx),
-                                    )
-                                    layout(constraints.maxWidth, heightPx) {
-                                        placeable.place(0, 0)
-                                    }
-                                },
+                                Modifier.height(metrics.contentTopSchedule().dp),
                             )
                         }
                         // 第二条 = 日历卡：白卡占位已替换为 DayCalendar 组件（自带 surface
@@ -1232,6 +1227,20 @@ fun DayScreen(
                                 onComplete = completeAlertTodo,
                                 modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
                             )
+                        }
+                        // 第五条 = 时间轴（DayTimeline）：0:00 → 次日 0:00 全宽网格 + 左侧
+                        // 44dp 时间列；网格线与屏幕同宽，故不加水平 padding。右侧卡片区域
+                        // 本期留白，卡片组件按任务时长比例（1 小时 = 50dp）排布，后续接入；
+                        // 无日程时照常显示整条。
+                        item(key = "timeline") {
+                            DayTimeline(
+                                modifier = Modifier.padding(top = TimelineTopSpacing),
+                            )
+                        }
+                        // 第六条 = 尾部留白（TrailingScrollSpace）：纯占位，扩大可滚动
+                        // 范围，与课表页末行之后的留白同构。
+                        item(key = "trailingScrollSpace") {
+                            Spacer(Modifier.height(TrailingScrollSpace))
                         }
                     }
                 }

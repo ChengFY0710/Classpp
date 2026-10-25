@@ -247,7 +247,7 @@ internal object DayGeometry {
         }
 
         val contentTopCompact = compactImage.bottom + DayCardGap.value
-        val contentTopSchedule = metrics.statusBar + DayTopBarRowHeight.value + DayTopBarGap.value
+        val contentTopSchedule = metrics.contentTopSchedule()
         val contentTop = if (o < 1f) {
             // 01→02 白卡顶边始终跟随图片卡底边 + DayCardGap，间距从第一帧到 02 恒定；
             // 不再从屏幕底边独立插值（否则间距会从 0 长到 DayCardGap）。
@@ -359,6 +359,10 @@ internal fun DayFrame.imageTranslationX(metrics: DayMetrics): Float =
 
 internal fun DayFrame.imageTranslationY(metrics: DayMetrics): Float =
     (image.height - metrics.screenHeight) / 2f
+
+/** 04 的白卡顶边（= 顶栏总高）：内容视口的 spacer 与视口偏移的共同基准（见 DayScreen）。 */
+internal fun DayMetrics.contentTopSchedule(): Float =
+    statusBar + DayTopBarRowHeight.value + DayTopBarGap.value
 
 private fun lerp(start: DayRect, stop: DayRect, fraction: Float): DayRect = DayRect(
     left = lerp(start.left, stop.left, fraction),

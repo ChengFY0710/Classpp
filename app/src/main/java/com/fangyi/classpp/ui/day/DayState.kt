@@ -109,7 +109,8 @@ internal fun confirmsSnapTakeOver(
 /**
  * 根级 pointerInput 是否应该接管本次手势并推进 collapse。
  *
- * - 02（Compact）：内容还是空占位、列表上下都不可滚，图片卡/内容卡任意起手都跟手；
+ * - 02（Compact）：内容区滚动只在 04 开启，列表即使内容超高也不参与手势——转场跟手
+ *   优先，图片卡/内容卡任意起手都由根级推进 collapse（02 端点的整组过滚动同路）；
  * - 04（Schedule）：列表在顶部（不能再向后滚）时，竖向手势由根级从第一像素推进
  *   collapse；横滑经轴仲裁让位给内容手势；上滑起手不写 collapse，放给内容
  *   Overscroll（下滑锁定后的回拉仍跟手）；列表已经下滚时则让给列表滚动；
@@ -117,10 +118,9 @@ internal fun confirmsSnapTakeOver(
  */
 internal fun shouldDriveCollapse(
     stage: DayStage,
-    canScrollForward: Boolean,
     canScrollBackward: Boolean,
 ): Boolean = when (stage) {
-    DayStage.Compact -> !canScrollForward && !canScrollBackward
+    DayStage.Compact -> true
     DayStage.Schedule -> !canScrollBackward
     DayStage.Calendar -> false
 }
