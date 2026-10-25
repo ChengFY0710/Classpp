@@ -1,10 +1,14 @@
 package com.fangyi.classpp.ui.components
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +37,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.State
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +56,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
@@ -94,7 +101,10 @@ import kotlinx.coroutines.launch
  * **锚点（anchor）唯一**：展开态展示锚点所在月、折叠态展示锚点所在周，标题始终显示锚点
  * 所在年月——两种形态、按钮切换与折叠联动共用同一份锚点状态。锚点初始与选中日对齐
  * （[selectedDate]，null = 今天），选中日变化后自动跟随——点选日期球与宿主「回到今天」
- * 都走这一条路；箭头翻页只挪锚点、不改选中。本组件暂不接数据库，[markedDates] 由调用方
+ * 都走这一条路；箭头翻页只挪锚点、不改选中。锚点月变化即触发**整月横滑换页**（见
+ * [MonthSwap]：Motion.AgendaMonthSwitchMillis + Overlay 曲线，新月从方向侧滑入、旧月
+ * 滑出，外框高度在 5/6 行间随同一进度插值、底栏不跳），标题短滑淡入淡出与网格同帧；
+ * 折叠态跨月换页同样成立（各层用自己的锚点周对齐可见行）。本组件暂不接数据库，[markedDates] 由调用方
  * 传入；锚点月可无限翻页，小点这类窗口化数据按 [onGridRangeChange] 回报的网格日期窗口
  * 取值即可（见 DayScreen 的待办小点）。
  */
@@ -124,6 +134,40 @@ fun DayCalendar(
     var anchor by remember(today) { mutableStateOf(selected) }
     LaunchedEffect(selected) { anchor = selected }
     val (anchorYear, anchorMonth, _) = anchor.yearMonthDay()
+
+    // 月切换横滑：snapshotFlow 收集锚点变化，锚点月变了就把旧月网格参数快照进
+    // [MonthSwap]，新旧两层整月网格同帧横滑换页（Motion.AgendaMonthSwitchMillis +
+    // Overlay 曲线）。lastDisplayedAnchor 随每次锚点变化更新——折叠周翻页在月内挪过
+    // 锚点再跨月时，快照里的锚点周（fromWeekIndex）仍然准确。切换途中来了新锚点：
+    // 当前动画先播完（collect 挂起），再按最新目标起下一页——连点累积翻页、不跳帧。
+    // 三个状态同用 remember(today)：跨天重置一起回到选中日，不当成一次翻页。
+    val swapState = remember(today) { mutableStateOf<MonthSwap?>(null) }
+    var lastDisplayedAnchor by remember(today) { mutableStateOf(anchor) }
+    LaunchedEffect(today) {
+        snapshotFlow { anchor }.collect { target ->
+            val prev = lastDisplayedAnchor
+            lastDisplayedAnchor = target
+            val (prevYear, prevMonth, _) = prev.yearMonthDay()
+            val (targetYear, targetMonth, _) = target.yearMonthDay()
+            if (prevYear == targetYear && prevMonth == targetMonth) return@collect
+            val prevFirst = IsoDate.of(prevYear, prevMonth, 1)
+            val prevGridStart = prevFirst.mondayOfWeek()
+            val prevDaysInMonth = (prevFirst.plusMonthsClamped(1) - prevFirst).toInt()
+            val prevRowCount = (prevFirst.isoDayOfWeek() - 1 + prevDaysInMonth + 6) / 7
+            val swap = MonthSwap(
+                fromGridStart = prevGridStart,
+                fromFirstOfMonth = prevFirst,
+                fromDaysInMonth = prevDaysInMonth,
+                fromRowCount = prevRowCount,
+                fromWeekIndex = ((prev.mondayOfWeek().epochDay - prevGridStart.epochDay) / 7L).toInt(),
+                fromMonthHeight = RowStep * prevRowCount - RowSpacing + DotZone,
+                direction = if (targetYear * 12 + targetMonth > prevYear * 12 + prevMonth) 1 else -1,
+            )
+            swapState.value = swap
+            swap.progress.animateTo(1f, tween(Motion.AgendaMonthSwitchMillis, easing = Motion.Overlay))
+            swapState.value = null
+        }
+    }
 
     // 网格起点 = 本月 1 号所在 ISO 周的周一；行数按月动态 5/6 行
     val firstOfMonth = remember(anchorYear, anchorMonth) { IsoDate.of(anchorYear, anchorMonth, 1) }
@@ -162,8 +206,6 @@ fun DayCalendar(
         val (todayYear, todayMonth, _) = today.yearMonthDay()
         anchorYear == todayYear && anchorMonth == todayMonth
     }
-
-    val monthTitle = stringResource(R.string.date_year_month_cn_format, anchorYear, anchorMonth)
 
     Column(
         modifier = modifier
@@ -209,39 +251,43 @@ fun DayCalendar(
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(HeaderGridGap))
-            // 折叠外框：高度插值 + 裁切都在 foldHeight 内完成（裁切必须先于测量挂链）
+            // 折叠外框：高度插值 + 裁切都在 foldHeight 内完成（裁切必须先于测量挂链）。
+            // 内部最多两层整月网格——目标月（锚点月）常驻，月切换在途时叠一层旧月快照：
+            // 两层同宽、横向位移互补（monthLayer），如胶片换页般无缝横滑，横向溢出由
+            // 外框 clipToBounds 裁掉。
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .foldHeight(fold, monthContentHeight, weekContentHeight),
+                    .foldHeight(fold, swapState, monthContentHeight, weekContentHeight),
             ) {
-                Column(
+                MonthGrid(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .graphicsLayer {
-                            // 网格整体上移，让锚点周在完全折叠时对齐外框顶部、成为唯一可见行；
-                            // 底部预留的 DotZone 让末行/单行的待办小点不被裁掉
-                            translationY = -(RowStep * visibleWeekIndex).toPx() * fold.progress
-                        },
-                    verticalArrangement = Arrangement.spacedBy(RowSpacing),
-                ) {
-                    repeat(rowCount) { row ->
-                        Row(Modifier.fillMaxWidth()) {
-                            repeat(7) { column ->
-                                val date = gridStart + row * 7 + column
-                                DayCell(
-                                    date = date,
-                                    inMonth = date.epochDay >= firstOfMonth.epochDay &&
-                                        date.epochDay < firstOfMonth.epochDay + daysInMonth,
-                                    isToday = date == today,
-                                    isSelected = date == selected,
-                                    marked = date in markedDates,
-                                    onClick = onDateClick,
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
-                    }
+                        .monthLayer(fold, swapState, isTarget = true, weekIndex = visibleWeekIndex),
+                    firstOfMonth = firstOfMonth,
+                    gridStart = gridStart,
+                    daysInMonth = daysInMonth,
+                    rowCount = rowCount,
+                    today = today,
+                    selected = selected,
+                    markedDates = markedDates,
+                    onDateClick = onDateClick,
+                )
+                swapState.value?.let { swap ->
+                    MonthGrid(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .monthLayer(fold, swapState, isTarget = false, weekIndex = swap.fromWeekIndex),
+                        firstOfMonth = swap.fromFirstOfMonth,
+                        gridStart = swap.fromGridStart,
+                        daysInMonth = swap.fromDaysInMonth,
+                        rowCount = swap.fromRowCount,
+                        today = today,
+                        selected = selected,
+                        markedDates = markedDates,
+                        // 滑出层不响应点选：点到旧月日期会把选中跳回旧月、触发反向横滑
+                        onDateClick = null,
+                    )
                 }
             }
         }
@@ -250,13 +296,34 @@ fun DayCalendar(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = monthTitle,
+            // 年月标题：随月切换做方向性短滑 + 淡入淡出，与网格横滑同帧、同曲线同时长
+            // （AgendaMonthSwitchMillis + Overlay），整卡换页一个节奏。滑距取文本宽 1/3，
+            // 尺寸变化（如 9 月 ↔ 10 月）由默认 SizeTransform 平滑。
+            AnimatedContent(
+                targetState = anchorYear to anchorMonth,
+                transitionSpec = {
+                    val forward = targetState.first * 12 + targetState.second >
+                        initialState.first * 12 + initialState.second
+                    val move = tween<IntOffset>(Motion.AgendaMonthSwitchMillis, easing = Motion.Overlay)
+                    val fade = tween<Float>(Motion.AgendaMonthSwitchMillis, easing = Motion.Overlay)
+                    if (forward) {
+                        (slideInHorizontally(move) { it / 3 } + fadeIn(fade)) togetherWith
+                            (slideOutHorizontally(move) { -it / 3 } + fadeOut(fade))
+                    } else {
+                        (slideInHorizontally(move) { -it / 3 } + fadeIn(fade)) togetherWith
+                            (slideOutHorizontally(move) { it / 3 } + fadeOut(fade))
+                    }
+                },
                 modifier = Modifier.padding(start = 12.dp, end = 6.dp),
-                fontSize = TitleFontSize,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.onSurface,
-            )
+                label = "dayCalendarMonthTitle",
+            ) { (year, month) ->
+                Text(
+                    text = stringResource(R.string.date_year_month_cn_format, year, month),
+                    fontSize = TitleFontSize,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface,
+                )
+            }
             // 「回到今天」：选中非今天且宿主可响应（回调非空）时出现。渐隐出现/渐隐消失，
             // 与课表页顶栏「返回本周」同一节奏（Motion.FastMillis：进场减速、退场加速）。
             // 占位即时进出、宽度只占用标题与箭头之间的空白（末尾 Spacer 吸收），标题、
@@ -393,6 +460,29 @@ fun rememberDayCalendarFoldState(
     initiallyFolded: Boolean = false,
 ): DayCalendarFoldState = remember(scope) { DayCalendarFoldState(scope, initiallyFolded) }
 
+/**
+ * 一次月切换的横滑快照：被替换月份（from）的网格参数 + 滑动方向 + 进度。[progress]
+ * 由 DayCalendar 内收集锚点变化的协程驱动 0→1；读侧（[monthLayer] 的 graphicsLayer 与
+ * [foldHeight] 的 measure）延迟读取，动画全程不重组。
+ *
+ * @param fromGridStart 旧月网格起点（1 号所在 ISO 周的周一）
+ * @param fromWeekIndex 旧月锚点周所在行（折叠态旧层上移对齐可见行用）
+ * @param fromMonthHeight 旧月网格内容高（RowStep × 行数 - RowSpacing + DotZone，
+ *   口径同 monthContentHeight）
+ * @param direction +1 = 翻下月（内容左移、新月从右滑入），-1 = 翻上月（镜像）
+ */
+private class MonthSwap(
+    val fromGridStart: IsoDate,
+    val fromFirstOfMonth: IsoDate,
+    val fromDaysInMonth: Int,
+    val fromRowCount: Int,
+    val fromWeekIndex: Int,
+    val fromMonthHeight: Dp,
+    val direction: Int,
+) {
+    val progress = Animatable(0f)
+}
+
 /** 星期表头：一~日 7 列均分，今天所在列 Primary（仅当 [highlightToday]） */
 @Composable
 private fun WeekdayHeader(
@@ -483,6 +573,46 @@ private fun DayCell(
     }
 }
 
+/**
+ * 整月网格：[rowCount] 行、每行 7 枚 [DayCell]（weight 均分，周一起始）。横滑/折叠的
+ * 位移全部由调用方挂在 [modifier] 上（monthLayer 在绘制期读进度），本函数只管内容。
+ */
+@Composable
+private fun MonthGrid(
+    modifier: Modifier = Modifier,
+    firstOfMonth: IsoDate,
+    gridStart: IsoDate,
+    daysInMonth: Int,
+    rowCount: Int,
+    today: IsoDate,
+    selected: IsoDate,
+    markedDates: Set<IsoDate>,
+    onDateClick: ((IsoDate) -> Unit)?,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(RowSpacing),
+    ) {
+        repeat(rowCount) { row ->
+            Row(Modifier.fillMaxWidth()) {
+                repeat(7) { column ->
+                    val date = gridStart + row * 7 + column
+                    DayCell(
+                        date = date,
+                        inMonth = date.epochDay >= firstOfMonth.epochDay &&
+                            date.epochDay < firstOfMonth.epochDay + daysInMonth,
+                        isToday = date == today,
+                        isSelected = date == selected,
+                        marked = date in markedDates,
+                        onClick = onDateClick,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** 底栏左右切换按钮：24dp 图标 + 40dp 圆形触控区（按压反馈沿圆轮廓） */
 @Composable
 private fun NavButton(
@@ -507,22 +637,46 @@ private fun NavButton(
 }
 
 /**
- * 折叠外框高度：在 [expanded]/[collapsed] 之间随折叠进度插值。进度在 measure 块内
- * 读取——动画/拖拽每帧只触发重测，不走重组。
+ * 月网格层位移：月切换横滑与折叠纵移合并在一个 graphicsLayer 里，进度全部在绘制期
+ * 读取——每帧只更新图层矩阵，不重组。横滑：目标月从方向侧滑入（偏移 direction × 层宽
+ * → 0），旧月滑出（0 → -direction × 层宽），两层同宽、位移互补，滑动中如胶片换页般
+ * 无缝衔接，横向溢出由外层 [foldHeight] 的 clipToBounds 裁掉。纵移：各层按**自己的**
+ * 锚点周上移（两层锚点周可能不是同一行，折叠态跨月换页各自对齐各自的可见行），完全
+ * 折叠时锚点周成为唯一可见行；底部预留的 DotZone 让末行/单行的待办小点不被裁掉。
  */
+private fun Modifier.monthLayer(
+    fold: DayCalendarFoldState,
+    swap: State<MonthSwap?>,
+    isTarget: Boolean,
+    weekIndex: Int,
+): Modifier = graphicsLayer {
+    val s = swap.value
+    translationX = when {
+        s == null -> 0f
+        isTarget -> s.direction * size.width * (1f - s.progress.value)
+        else -> -s.direction * size.width * s.progress.value
+    }
+    translationY = -(RowStep * weekIndex).toPx() * fold.progress
+}
+
 /**
  * 折叠外框：上报高度在 [expanded]/[collapsed] 之间随折叠进度插值，并把内容裁切到这个
  * 高度内。裁切必须发生在测量**外层**（本函数内部的 clipToBounds 先于 layout 挂链）——
  * 它裁的是动画中的外框高度；内容则按自然高度测量（内层约束放开），只显示不挤压。
  * 若把裁切挂在调用侧 layout 之后（内层），它裁到的会是内容的自然高度，滑出的行会
- * 溢出外框、叠到底栏上。进度在 measure 块内读取——拖拽每帧只触发重测，不走重组。
+ * 溢出外框、叠到底栏上。折叠插值的展开端点先随月切换进度从旧月高插到目标月高
+ * （[MonthSwap] 在途时，5/6 行翻页底栏平滑升降、不跳变），两个进度都在 measure 块内
+ * 读取——动画/拖拽每帧只触发重测，不走重组。
  */
 private fun Modifier.foldHeight(
     fold: DayCalendarFoldState,
+    swap: State<MonthSwap?>,
     expanded: Dp,
     collapsed: Dp,
 ): Modifier = clipToBounds().layout { measurable, constraints ->
-    val height = lerp(expanded, collapsed, fold.progress).roundToPx()
+    val s = swap.value
+    val expandedNow = if (s != null) lerp(s.fromMonthHeight, expanded, s.progress.value) else expanded
+    val height = lerp(expandedNow, collapsed, fold.progress).roundToPx()
     val placeable = measurable.measure(
         constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity),
     )
