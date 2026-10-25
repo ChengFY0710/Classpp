@@ -466,4 +466,6 @@
     <string name="day_image_close">关闭</string>
     <string name="day_image_empty_hint">暂无图片，点击「导入」从相册添加</string>
     <string name="day_image_delete">删除</string>
+    <string name="day_image_random_title">随机轮播</string>
+    <string name="day_image_random_desc">开启后，每天将随机选择图片显示</string>
 </resources>

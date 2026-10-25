@@ -162,6 +162,7 @@ import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import java.util.GregorianCalendar
 import kotlin.math.roundToInt
+import kotlin.random.Random
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -263,6 +264,30 @@ fun DayScreen(
     // 用户图片库与当前背景：首次组合从磁盘读，之后改动即时落盘（DayImageStore）
     var images by remember { mutableStateOf(DayImageStore.loadImages(context)) }
     var selectedImage by remember { mutableStateOf(DayImageStore.loadSelected(context)) }
+    // 随机轮播：开启时背景取「当日命中」，命中即落盘锁定（DayImageStore）——当天内导入
+    // 新图不重抽（背景不随图库变动切换），命中图被删才重抽，跨零点（today 变化）重抽；
+    // 关闭或图库为空回退手动选中
+    var randomEnabled by remember { mutableStateOf(DayImageStore.loadRandomEnabled(context)) }
+    var randomPick by remember { mutableStateOf(DayImageStore.loadRandomPick(context)) }
+    // 当日命中在组合期同步算出（首帧即正确）：已有当天有效命中直接沿用，否则按当天种子
+    // 现抽（种子保证同天同图库下重组结果稳定，落盘后即锁定）。落盘走副作用、不参与显示
+    val todayPick = if (randomEnabled && images.isNotEmpty()) {
+        randomPick?.takeIf { (day, name) -> day == today.epochDay && name in images }
+            ?: (today.epochDay to images[Random(today.epochDay).nextInt(images.size)])
+    } else {
+        null
+    }
+    LaunchedEffect(todayPick) {
+        if (todayPick != null && randomPick != todayPick) {
+            randomPick = todayPick
+            DayImageStore.saveRandomPick(context, todayPick.first, todayPick.second)
+        }
+    }
+    val backgroundImage = if (randomEnabled && images.isNotEmpty()) {
+        todayPick?.second
+    } else {
+        selectedImage
+    }
     // 浮层两段式：mounted 决定是否在组合里，visible 管进出场——出场播完才移出组合
     var sheetMounted by remember { mutableStateOf(false) }
     var sheetVisible by remember { mutableStateOf(false) }
@@ -923,9 +948,9 @@ fun DayScreen(
                 // 图片在卡内居中裁切。
                 Layout(
                     content = {
-                        DayBackgroundImage(
-                            context = context,
-                            selectedImage = selectedImage,
+                    DayBackgroundImage(
+                        context = context,
+                        backgroundImage = backgroundImage,
                             modifier = Modifier
                                 .requiredSize(metrics.screenWidth.dp, metrics.screenHeight.dp)
                                 .graphicsLayer {
@@ -1610,6 +1635,23 @@ fun DayScreen(
             DayImageSheet(
                 visible = sheetVisible,
                 images = images,
+                // 当前显示中的背景（随机命中或手动选中）：浮层里它的删除项置灰不可点
+                currentImage = backgroundImage,
+                randomEnabled = randomEnabled,
+                onRandomChange = { enabled ->
+                    randomEnabled = enabled
+                    DayImageStore.saveRandomEnabled(context, enabled)
+                    // 关闭随机不切换背景：把当日命中固化为手动选中，画面保持原样
+                    //（无有效命中——图库空或跨天残留——时不固化，显示自然不变）
+                    if (!enabled) {
+                        randomPick?.let { (day, name) ->
+                            if (day == today.epochDay && name in images) {
+                                selectedImage = name
+                                DayImageStore.saveSelected(context, name)
+                            }
+                        }
+                    }
+                },
                 onImported = { imported ->
                     images = images + imported
                     DayImageStore.saveImages(context, images)
@@ -1617,6 +1659,12 @@ fun DayScreen(
                 onSelect = { name ->
                     selectedImage = name
                     DayImageStore.saveSelected(context, name)
+                    // 随机开启时点选立即切换：点中的图固化为当日命中（随机保持开启，
+                    // 当天锁定不再重抽，跨零点恢复每日随机）
+                    if (randomEnabled) {
+                        randomPick = today.epochDay to name
+                        DayImageStore.saveRandomPick(context, today.epochDay, name)
+                    }
                     sheetVisible = false
                 },
                 onDelete = { name ->
@@ -1636,22 +1684,22 @@ fun DayScreen(
 }
 
 /**
- * 背景图：有用户选中的图片就换上去（文件缺失/解码失败回退默认测试图）。
- * 尺寸由调用方通过 requiredSize 固定为屏幕大小，图片卡内部只做图层缩放/平移，
- * 换卡尺寸时不会触发 Coil 重新按新尺寸请求。
+ * 背景图：调用方解析好的背景文件名（手动选中，或随机轮播按天抽取的图）有就换上去
+ * （文件缺失/解码失败回退默认测试图）。尺寸由调用方通过 requiredSize 固定为屏幕大小，
+ * 图片卡内部只做图层缩放/平移，换卡尺寸时不会触发 Coil 重新按新尺寸请求。
  */
 @Composable
 private fun DayBackgroundImage(
     context: Context,
-    selectedImage: String?,
+    backgroundImage: String?,
     modifier: Modifier = Modifier,
 ) {
-    val backgroundImage = remember(selectedImage) {
-        selectedImage?.let { DayImageStore.imageFile(context, it) }
+    val file = remember(backgroundImage) {
+        backgroundImage?.let { DayImageStore.imageFile(context, it) }
     }
-    if (backgroundImage != null) {
+    if (file != null) {
         AsyncImage(
-            model = backgroundImage,
+            model = file,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             error = painterResource(R.drawable.bg_day_test),

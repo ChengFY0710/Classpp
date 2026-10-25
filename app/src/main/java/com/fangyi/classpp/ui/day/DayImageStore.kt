@@ -18,13 +18,16 @@ import java.util.UUID
  *
  * 相册选图走 Photo Picker，返回的 URI 是临时授权（无 persistable 权限，跨重启即失效），
  * 直接存 URI 当背景会失效——导入时把图片解码转正压缩后拷贝进 [imageDir]，持久化的只是
- * 文件名。列表与选中项存 SharedPreferences 单文件（模式同 GlassPreferences：单值不值得
- * 引入 DataStore），列表用 JSON 数组承载以保持导入顺序。
+ * 文件名。列表、选中项与随机轮播状态（开关、当日命中）存 SharedPreferences 单文件
+ * （模式同 GlassPreferences：单值不值得引入 DataStore），列表用 JSON 数组承载以保持导入顺序。
  */
 object DayImageStore {
     private const val FILE_NAME = "day_image_prefs"
     private const val KEY_IMAGES = "images"
     private const val KEY_SELECTED = "selected"
+    private const val KEY_RANDOM_ENABLED = "random_enabled"
+    private const val KEY_RANDOM_PICK_DATE = "random_pick_date"
+    private const val KEY_RANDOM_PICK = "random_pick"
     private const val DIR_NAME = "day_images"
 
     // 落盘前把最长边压到该值：铺满最大屏幕足够（背景不做局部裁切放大），
@@ -60,6 +63,34 @@ object DayImageStore {
     /** 保存选中背景（传 null 即恢复默认） */
     fun saveSelected(context: Context, name: String?) {
         prefs(context).edit().putString(KEY_SELECTED, name).apply()
+    }
+
+    /** 读取「随机轮播」开关（每天从图库随机抽一张当背景）；无记录默认关闭 */
+    fun loadRandomEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_RANDOM_ENABLED, false)
+
+    /** 保存「随机轮播」开关（apply 异步落盘；UI 状态由调用方同步更新，不等落盘） */
+    fun saveRandomEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_RANDOM_ENABLED, enabled).apply()
+    }
+
+    /**
+     * 读取随机轮播的「当日命中」：返回（抽样日期 epochDay to 文件名），无记录返回 null。
+     * 命中落盘后当天锁定——导入新图不重抽，跨零点才换（保证背景不随图库变动而切换）。
+     */
+    fun loadRandomPick(context: Context): Pair<Long, String>? {
+        val prefs = prefs(context)
+        val day = prefs.getLong(KEY_RANDOM_PICK_DATE, Long.MIN_VALUE)
+        val name = prefs.getString(KEY_RANDOM_PICK, null)?.takeIf { it.isNotEmpty() }
+        return if (day == Long.MIN_VALUE || name == null) null else day to name
+    }
+
+    /** 保存随机轮播的「当日命中」（日期 + 文件名成对写入，apply 异步落盘） */
+    fun saveRandomPick(context: Context, epochDay: Long, name: String) {
+        prefs(context).edit()
+            .putLong(KEY_RANDOM_PICK_DATE, epochDay)
+            .putString(KEY_RANDOM_PICK, name)
+            .apply()
     }
 
     /**

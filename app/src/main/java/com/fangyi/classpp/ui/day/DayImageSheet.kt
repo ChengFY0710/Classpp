@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,6 +47,8 @@ import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.PopupMenuPopup
 import com.fangyi.classpp.ui.components.PopupMenuSection
+import com.fangyi.classpp.ui.components.SettingsCard
+import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.menuGrowthForAnchor
@@ -70,7 +74,12 @@ private const val MaxPickCount = 20
 /**
  * 日程页「选择图片」浮层：网格展示已导入的图片，点一张即设为日程页背景并关闭；
  * 长按一张弹上下文菜单（单组单项「删除」），删除对应图片（文件与名单由日程页经
- * [onDelete] 落盘清理，删的是当前背景时一并清选中回退默认图）。
+ * [onDelete] 落盘清理）。当前正在显示的背景（[currentImage]，随机命中或手动选中）
+ * 不可删——菜单删除项置灰（negative 色）不可点，背景图被删的跳变与删除时序一并规避。
+ *
+ * 网格上方一张 [SettingsCard] 单行开关卡「随机轮播」：开启后每天从图库随机抽一张当
+ * 背景——抽取逻辑（按当天日期做种子）在日程页，本浮层只管开关状态与落盘（[onRandomChange]）；
+ * 无图可随机，空态不显示卡片。卡片与下方网格 16dp（对照设计稿）。
  *
  * 顶栏两颗胶囊走 OverlaySheet 自带规格：左上「导入」= 确认胶囊（同「新建」按钮的
  * 蓝底加号），唤起系统相册（Photo Picker，[ActivityResultContracts.PickVisualMedia.ImageOnly]
@@ -91,6 +100,11 @@ private const val MaxPickCount = 20
 fun DayImageSheet(
     visible: Boolean,
     images: List<String>,
+    // 当前正在显示的背景图（随机轮播的当日命中或手动选中）：它的删除项置灰不可点——
+    // 背景图被删后回退默认图属破坏性跳变，且删除它正是曾触发崩溃的最坏时序
+    currentImage: String?,
+    randomEnabled: Boolean,
+    onRandomChange: (Boolean) -> Unit,
     onImported: (List<String>) -> Unit,
     onSelect: (String) -> Unit,
     onDelete: (String) -> Unit,
@@ -107,7 +121,9 @@ fun DayImageSheet(
     var menuTarget by remember { mutableStateOf<MenuTarget?>(null) }
     var menuVisible by remember { mutableStateOf(false) }
     // 长按菜单的毛玻璃——浮层滚动列是采样源，顶栏磨砂与菜单的背景模糊同源（同 TodoGroupsSheet
-    // 的 sheetHazeState 接法：OverlaySheet 收到共享实例即复用，不再自建）
+    // 的 sheetHazeState 接法：OverlaySheet 收到共享实例即复用，不再自建）。
+    // 曾因跨窗口采样在「删除」时触发 RenderThread 栈溢出而短暂摘除，随「当前背景图不可删」
+    // （[currentImage]，删除项置灰不可点）落地后恢复——删除不再驱动网格与菜单退场同帧重组
     val sheetHazeState = rememberHazeState()
 
     // 系统相册（Photo Picker）：ImageOnly 只出图片，视频等文件类型不可选
@@ -151,6 +167,20 @@ fun DayImageSheet(
         if (images.isEmpty()) {
             DayImageEmptyHint(modifier = Modifier.fillMaxWidth())
         } else {
+            // 随机轮播开关卡（与下方网格 16dp，对照设计稿）；卡片到顶栏的留白由
+            // OverlaySheet 的 TopBarHeight 余量承担。整行可点切换，整行按压反馈铺满卡片
+            SettingsCard(
+                hazeState = sheetHazeState,
+                items = listOf(
+                    SettingsCardItem.Toggle(
+                        label = stringResource(R.string.day_image_random_title),
+                        description = stringResource(R.string.day_image_random_desc),
+                        checked = randomEnabled,
+                        onCheckedChange = onRandomChange,
+                    ),
+                ),
+            )
+            Spacer(Modifier.height(16.dp))
             DayImageGrid(
                 images = images,
                 onSelect = onSelect,
@@ -171,6 +201,8 @@ fun DayImageSheet(
                 menuVisible = false
                 onDelete(target.name)
             },
+            // 当前背景图不可删：删除项置灰（negative 色）不可点
+            deleteEnabled = target.name != currentImage,
             hazeState = sheetHazeState,
             // 锚点保留到退场播完，同 ScheduleScreen 的 menuAnchor
             onExitFinished = { menuTarget = null },
@@ -252,6 +284,7 @@ private val MenuLeftInset = 8.dp
  * 交给退场动画；退场 150ms 里菜单内容稳定、行点击动作仍可命中。
  * [hazeState] 传浮层的共享采样源（滚动列）：菜单卡对背后的网格内容做毛玻璃
  * （跨 Popup 窗口采样，同周数弹窗/排序菜单材质）；null 退化为不透明白卡（@Preview 用）。
+ * [deleteEnabled] = false（长按的是当前背景图）时删除项置灰（negative 色）不可点。
  */
 @Composable
 private fun ImageMenuPopup(
@@ -259,6 +292,7 @@ private fun ImageMenuPopup(
     expanded: Boolean,
     onDismiss: () -> Unit,
     onDelete: () -> Unit,
+    deleteEnabled: Boolean,
     hazeState: HazeState?,
     onExitFinished: () -> Unit = {},
 ) {
@@ -276,6 +310,7 @@ private fun ImageMenuPopup(
                     PopupMenuItem(
                         label = stringResource(R.string.day_image_delete),
                         icon = R.drawable.ic_delete,
+                        enabled = deleteEnabled,
                         onClick = onDelete,
                     ),
                 ),
