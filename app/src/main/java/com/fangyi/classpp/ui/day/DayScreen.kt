@@ -280,16 +280,13 @@ fun DayScreen(
     // 编辑待办浮层：详情顶栏「编辑」进入（快照表单同待办页，叠在详情之上）；空 = 未打开
     var todoEditTargetId by rememberSaveable { mutableStateOf("") }
     var todoEditMounted by remember { mutableStateOf<Todo?>(null) }
-    LaunchedEffect(
-        sheetMounted,
-        detailMounted != null,
-        todoDetailMounted != null,
-        todoEditMounted != null,
-    ) {
-        onOverlayOverNavBarChange(
-            sheetMounted || detailMounted != null ||
-                todoDetailMounted != null || todoEditMounted != null,
-        )
+    // 任一浮层（图片/课程详情/待办详情/待办编辑）在场：根级转场手势、嵌套滚动接管与内容
+    // 列表滚动一并闭闸——根级 pointerInput 走 Initial pass，先于浮层子树拿到事件，不闭闸
+    // 会把浮层顶栏的下拉关闭抢去驱动 02↔04 转场（浮层自身手势被吞，表现为列表跟手）
+    val overlayMounted = sheetMounted || detailMounted != null ||
+        todoDetailMounted != null || todoEditMounted != null
+    LaunchedEffect(overlayMounted) {
+        onOverlayOverNavBarChange(overlayMounted)
     }
 
     // 持久化记录：进入时按「记录日期 == 今天」恢复 02/04，否则 01。
@@ -511,11 +508,11 @@ fun DayScreen(
         dragDistancePx,
         flingThresholdPx,
         active,
-        sheetMounted,
+        overlayMounted,
     ) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (!active || sheetMounted || transition.isAnimating) return Offset.Zero
+                if (!active || overlayMounted || transition.isAnimating) return Offset.Zero
                 // 只跟手；fling 阶段由 onPreFling 统一收束，避免同一手势被写两次
                 if (source != NestedScrollSource.UserInput) return Offset.Zero
                 val deltaY = available.y
@@ -545,7 +542,7 @@ fun DayScreen(
             }
 
             override suspend fun onPreFling(available: Velocity): Velocity {
-                if (!active || sheetMounted) return Velocity.Zero
+                if (!active || overlayMounted) return Velocity.Zero
                 // 吸附/重播中合入的速度一律吃掉，别让内容再起一场无意义 fling
                 if (transition.isAnimating) return Velocity(0f, available.y)
                 val canMove = when {
@@ -596,12 +593,12 @@ fun DayScreen(
             // 统一交给 settle（04 仍在 1 时跳过，避免打断橡皮筋）。
             .pointerInput(
                 active,
-                sheetMounted,
+                overlayMounted,
                 flingThresholdPx,
                 dragDistancePx,
                 compactOverscroll,
             ) {
-                if (!active || sheetMounted) return@pointerInput
+                if (!active || overlayMounted) return@pointerInput
                 val tracker = VelocityTracker()
 
                 // 02 端点的整组过滚动：向下全收；向上只收到当前拉出量归零，
@@ -886,7 +883,7 @@ fun DayScreen(
             }
         }
 
-        val gestureAllowed = active && !sheetMounted && !transition.isAnimating
+        val gestureAllowed = active && !overlayMounted && !transition.isAnimating
         // 01 的上滑仍由整屏 draggable 负责；02/04 的转场跟手由根级 pointerInput 统一驱动
         // （02 恒由根级接管、不依赖内容是否可滚，见 shouldDriveCollapse），不再额外挂
         // Schedule 的整屏层，避免同一次拖动被写两遍。
