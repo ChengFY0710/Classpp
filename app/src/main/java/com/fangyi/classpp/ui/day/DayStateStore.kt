@@ -13,7 +13,8 @@ import com.fangyi.classpp.data.model.IsoDate
  * 「当日已开启」标记）。损坏/未知值一律回退 [DayOpenRecord.Empty]。
  */
 internal object DayStateStore {
-    private const val FILE_NAME = "day_state_prefs"
+    /** 暴露给 androidTest 清理落盘记录，保证用例从 01 起步。 */
+    internal const val FILE_NAME = "day_state_prefs"
     private const val KEY_OPENED_DAY = "opened_day"
     private const val KEY_STAGE = "stage"
 

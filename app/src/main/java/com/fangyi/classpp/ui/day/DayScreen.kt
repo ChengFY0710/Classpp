@@ -125,6 +125,7 @@ import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.rememberDeviceCornerRadius
+import com.fangyi.classpp.ui.motion.sharePointerInputWithSiblings
 import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.schedule.CourseColor
 import com.fangyi.classpp.ui.theme.DayCardShape
@@ -1145,7 +1146,11 @@ fun DayScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .hazeSource(contentHazeState),
+                    .hazeSource(contentHazeState)
+                    // 02 的内容视口顶垫进图片卡下半部（首条 spacer 恒高，见列表处注释），
+                    // 列表 scrollable 节点即使手势关闭也构成命中，会把下层图片卡点击层
+                    // 与换背景 icon 整片挡死；声明与下层兄弟共享命中后二者恢复可点。
+                    .sharePointerInputWithSiblings(),
             ) {
                 ProvideOverscroll {
                     RubberBandLazyColumn(

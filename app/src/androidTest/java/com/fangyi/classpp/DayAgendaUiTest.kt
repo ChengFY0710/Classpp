@@ -1,5 +1,6 @@
 package com.fangyi.classpp
 
+import android.content.Context
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasClickAction
@@ -13,6 +14,8 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.fangyi.classpp.ui.day.DayStateStore
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -29,6 +32,19 @@ class DayAgendaUiTest {
     @get:Rule
     val rule = createAndroidComposeRule<MainActivity>()
 
+    /**
+     * 台历停留态按「同日恢复」落盘：先清掉记录再重建 Activity，保证用例一律从 01 起步，
+     * 不受上次使用停在 02/04 的影响（恢复态下首次上滑会直接 02→04，用例必挂）。
+     */
+    @Before
+    fun resetDayStateToCalendar() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        context.getSharedPreferences(DayStateStore.FILE_NAME, Context.MODE_PRIVATE)
+            .edit().clear().commit()
+        rule.activityRule.scenario.recreate()
+        rule.waitForIdle()
+    }
+
     /** 无障碍文案直接取目标应用资源，避免写死中文/日期。 */
     private val cardBack: String
         get() = InstrumentationRegistry.getInstrumentation()
@@ -44,7 +60,8 @@ class DayAgendaUiTest {
         rule.waitForIdle()
         waitUntilText(hint)
 
-        swipeUp(fromFraction = 0.78f, toFraction = 0.30f) // 01→02
+        // 慢速上滑（快速上甩在 01 段会直判 04，见 snapForward 的速度优先规则）
+        swipeUp(fromFraction = 0.78f, toFraction = 0.30f, durationMillis = 900) // 01→02
         waitForCard()
 
         swipeUp(fromFraction = 0.55f, toFraction = 0.25f) // 02→04
@@ -61,9 +78,19 @@ class DayAgendaUiTest {
         settle()
         waitUntilCardGone()
 
-        // 重播后还能再次上滑开台历
-        swipeUp(fromFraction = 0.78f, toFraction = 0.30f)
+        // 重播后还能再次上滑开台历（慢速：快速上甩在 01 段会直判 04，见 snapForward）
+        swipeUp(fromFraction = 0.78f, toFraction = 0.30f, durationMillis = 900)
         waitForCard()
+
+        // 02 点图片卡下半部（内容列表视口与卡片重叠区）：同样要能重播回 01。
+        // 0.20/0.27 都落在卡内；0.27 处于列表视口顶（白卡顶 − 顶栏高）与卡底之间，
+        // 是列表 scrollable 节点盖住下层点击层的回归位。
+        rule.onRoot().performTouchInput {
+            click(Offset(width / 2f, height * 0.27f))
+        }
+        rule.waitForIdle()
+        settle()
+        waitUntilCardGone()
     }
 
     private fun waitUntilText(text: String) {
@@ -86,23 +113,23 @@ class DayAgendaUiTest {
         rule.waitForIdle()
     }
 
-    private fun swipeUp(fromFraction: Float, toFraction: Float) {
+    private fun swipeUp(fromFraction: Float, toFraction: Float, durationMillis: Long = 420) {
         rule.onRoot().performTouchInput {
             swipe(
                 start = Offset(width / 2f, height * fromFraction),
                 end = Offset(width / 2f, height * toFraction),
-                durationMillis = 420,
+                durationMillis = durationMillis,
             )
         }
         settle()
     }
 
-    private fun swipeDown(fromFraction: Float, toFraction: Float) {
+    private fun swipeDown(fromFraction: Float, toFraction: Float, durationMillis: Long = 420) {
         rule.onRoot().performTouchInput {
             swipe(
                 start = Offset(width / 2f, height * fromFraction),
                 end = Offset(width / 2f, height * toFraction),
-                durationMillis = 420,
+                durationMillis = durationMillis,
             )
         }
         settle()
