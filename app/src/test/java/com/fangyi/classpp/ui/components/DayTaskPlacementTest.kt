@@ -101,6 +101,22 @@ class DayTaskPlacementTest {
     }
 
     @Test
+    fun overlappingCourseTakesLeftColumnOverTodo() {
+        // 待办 16:10-19:00 先开始，课程 16:40-18:20 与之重叠：列序课程优先 →
+        // 课程在左列、待办在右列（placements 保持输入顺序，[0] = 待办）
+        val placements = listOf(todo(970, 1140), course(1000, 1100))
+            .solveDayTaskPlacements(regionWidth, hourSpacing)
+        val half = ((regionWidth - DayTaskColumnGap) / 2).value
+        assertEquals(half + DayTaskColumnGap.value, placements[0].offsetX.value, 1e-3f)
+        assertEquals(0f, placements[1].offsetX.value, 1e-3f)
+        assertEquals(half, placements[0].width.value, 1e-3f)
+        assertEquals(half, placements[1].width.value, 1e-3f)
+        // 贴邻角依旧成立：课程收末侧、待办收起侧
+        assertTrue(placements[0].topStartContact)
+        assertTrue(placements[1].topEndContact)
+    }
+
+    @Test
     fun chainedOverlapReusesColumnForNonOverlappingPair() {
         // A(8:00-9:00) B(8:30-11:00) C(10:00-11:00)：B 与 A、C 都重叠而 A/C 不重叠
         // → 两列：A、C 复用列 0，B 独占列 1，三者等宽

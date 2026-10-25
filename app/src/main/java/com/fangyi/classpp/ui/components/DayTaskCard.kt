@@ -101,6 +101,13 @@ private val DayTask.tagLabel: String
         is DayTask.Todo -> "待办"
     }
 
+/** 重叠分列时的列序：课程在左、待办在右（同型内按开始时间） */
+private val DayTask.columnPriority: Int
+    get() = when (this) {
+        is DayTask.Course -> 0
+        is DayTask.Todo -> 1
+    }
+
 // ---------- 布局求解：位置尺寸 + 接触角 + 形态（纯函数，可单测） ----------
 
 /** 单张任务卡的求解结果；[offsetX] 相对卡片区域左缘、[offsetY] 相对时间轴顶部。
@@ -165,6 +172,8 @@ internal fun List<DayTask>.solveDayTaskPlacements(
 
     val results = arrayOfNulls<DayTaskPlacement>(size)
     for (group in groups) {
+        // 列分配顺序：课程优先于待办（重叠分列时上课固定在左、待办在右），同型按开始时间
+        group.sortWith(compareBy({ this[it].columnPriority }, { this[it].startMinute }))
         // 组内贪心分列：同列内时间不重叠（列内按 start 有序，末尾卡 end 即列占用下限）
         val columns = mutableListOf<MutableList<Int>>()
         val columnOf = IntArray(size) { -1 }
@@ -381,11 +390,14 @@ private fun VerticalTodoContent(task: DayTask.Todo, modifier: Modifier = Modifie
             verticalArrangement = Arrangement.spacedBy(3.dp),
             itemVerticalAlignment = Alignment.CenterVertically,
         ) {
+            // 重叠分列后卡可能只剩一半宽：时刻单行省略，避免逐字折行（图 5 同款截断）
             TimeProperty(
                 icon = R.drawable.ic_clock,
                 text = "${TimeText.format(task.startMinute)} - ${TimeText.format(task.endMinute)}",
                 tint = MaterialTheme.classppColors.secondaryText,
                 modifier = Modifier.padding(end = TaskPropertyItemEndPadding),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             task.deadlineText?.let { deadline ->
                 TimeProperty(
@@ -393,6 +405,8 @@ private fun VerticalTodoContent(task: DayTask.Todo, modifier: Modifier = Modifie
                     text = deadline,
                     tint = task.deadlineColor,
                     modifier = Modifier.padding(end = TaskPropertyItemEndPadding),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -628,7 +642,7 @@ private val PreviewDeadlineColor = Color(0xFF006FEF)
 private fun DayTaskCardPreview() {
     ClassppTheme {
         Box(Modifier.fillMaxSize()) {
-            // 区域宽 = 390 − 时间列 44 − 起步呼吸距 6 − 右缘页边距 12（与 DayTimeline 同口径）
+            // 区域宽 = 390 − 时间列 44 − 竖线距 12 − 右缘页边距 12（与 DayTimeline 同口径）
             val placements = remember {
                 listOf(
                     DayTask.Course(
@@ -693,8 +707,8 @@ private fun DayTaskCardPreview() {
                         endMinute = 15 * 60 + 30,
                     ),
                 )
-            }.solveDayTaskPlacements(regionWidth = 328.dp, hourSpacing = 50.dp)
-            Box(Modifier.padding(start = 50.dp, end = 12.dp)) {
+            }.solveDayTaskPlacements(regionWidth = 322.dp, hourSpacing = 50.dp)
+            Box(Modifier.padding(start = 56.dp, end = 12.dp)) {
                 placements.forEach { DayTaskCard(it) }
             }
         }

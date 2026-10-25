@@ -49,6 +49,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
@@ -117,6 +118,8 @@ private val CountdownExitSlide = 12.dp
  * 时间/截止/重复属性项：18dp 图标 + 文本（同色），图标与文字相距 4dp（同 TagChip）。
  * 待办时间固定 secondaryText（ic_clock）；截止时间按剩余天数取紧急色（ic_clock_alarm）；
  * 重复规则取 primary（ic_arrow_repeat）——图标与文字颜色始终一致。
+ * 文本默认不限行数（NoteCard 全宽卡不会触界）；窄容器（时间轴任务卡重叠分列）传
+ * maxLines = 1 + Ellipsis，避免时刻被逐字折行。
  */
 @Composable
 internal fun TimeProperty(
@@ -124,6 +127,8 @@ internal fun TimeProperty(
     text: String,
     tint: Color,
     modifier: Modifier = Modifier,
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Clip,
 ) {
     Row(
         modifier = modifier,
@@ -139,6 +144,8 @@ internal fun TimeProperty(
         Text(
             text = text,
             style = MaterialTheme.classppTextStyles.noteProperty.copy(color = tint),
+            maxLines = maxLines,
+            overflow = overflow,
         )
     }
 }

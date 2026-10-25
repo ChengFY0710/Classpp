@@ -32,8 +32,8 @@ private val HourSpacing = 50.dp
 /** 左侧时间区域宽度，刻度在其中水平居中；右缘即网格竖线 */
 private val TimeAreaWidth = 44.dp
 
-/** 卡片区域左缘与网格竖线的呼吸距（卡片不压线） */
-private val TaskAreaStartGap = 6.dp
+/** 卡片区域左缘与网格竖线的距离：12dp（与页面卡片水平边距一致） */
+private val TaskAreaStartGap = 12.dp
 
 /** 网格线笔宽：与课表页 CourseGrid 同款 */
 private val GridLineWidth = 1.dp
