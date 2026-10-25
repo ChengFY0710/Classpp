@@ -39,9 +39,10 @@ import kotlin.math.exp
  * 才被唤醒——运动全程满帧率、静止零帧开销。位移只在 [tiltParallax] 的 graphicsLayer
  * 里读，倾斜全程零重组。
  *
- * 传感器注册由 [rememberTiltParallax] 全权管理，三重门控（调用方 enabled + 生命周期
- * RESUMED + 设备有传感器）同时满足才注册，任一失效即注销并复位——离开页面、切后台、
- * 关开关都不会漏挂监听，后台零传感器耗电不依赖调用方自觉。重力传感器
+ * 传感器注册由 [rememberTiltParallax] 全权管理：页面侧门控 [active]、用户开关
+ * [enabled]、生命周期 RESUMED 与设备有传感器同时满足才注册，任一失效即注销——
+ * active 失效（浮层打开/切后台/离开 01）画面**定格原地**不跳变，enabled 失效
+ * （用户关开关）平滑滑回中心；后台零传感器耗电不依赖调用方自觉。重力传感器
  * （[Sensor.TYPE_GRAVITY]，系统融合输出，天然平滑且无瞬时抖动）优先，缺失回退
  * 加速度计并自带重力分离滤波。重力/加速度传感器不需要任何权限。
  */
@@ -174,18 +175,40 @@ internal class TiltParallaxState {
         return true
     }
 
-    /** 复位：注销与关开关时归零，重挂后从当前姿态重新定基准，不残留旧位移。 */
-    fun reset() {
+    /**
+     * 暂停定格：页面侧门控失效（浮层打开/切后台/离开 01）时调用——把目标贴到当前
+     * 渲染值（在途追踪收敛即停，画面原地不动，不跳回中心），并作废基准；重挂后
+     * 首个事件按当下姿态重新定格基准，旧位移经追踪平滑续接归位，全程无跳变。
+     */
+    fun pause() {
+        targetX = smoothedX
+        targetY = smoothedY
+        baselineSet = false
+    }
+
+    /** 归中目标：目标设回 0 并作废基准（用户关掉开关后由 [runGlideHome] 平滑回正，
+     *  之后若重新开启，也从当下姿态重新定基准，不带旧姿态残留）。 */
+    internal fun retargetHome() {
         targetX = 0f
         targetY = 0f
-        smoothedX = 0f
-        smoothedY = 0f
-        baselineX = 0f
-        baselineY = 0f
         baselineSet = false
-        shiftX = 0f
-        shiftY = 0f
-        frameRequests.trySend(Unit)
+    }
+
+    /**
+     * 归中滑行：逐帧追踪到中心后协程退出（用户关掉开关时画面平滑回正——关闭效果
+     * 不该把画面钉在半路）。监听已随开关注销，没有传感器事件打扰，收敛即静止。
+     */
+    suspend fun runGlideHome() {
+        retargetHome()
+        var lastNanos = 0L
+        while (true) {
+            val moving = withFrameNanos { now ->
+                val dt = if (lastNanos == 0L) 0f else (now - lastNanos) / 1e9f
+                lastNanos = now
+                pursueStep(dt)
+            }
+            if (!moving) break
+        }
     }
 
     /** 饱和 + 保号 smoothstep：中心段响应软（微小倾斜不出画）、逼近饱和时平滑封顶。 */
@@ -197,14 +220,16 @@ internal class TiltParallaxState {
 }
 
 /**
- * 创建视差状态并管理传感器注册。仅当 [enabled]（调用方门控——页面可见且处于要出
- * 效果的停留态）且宿主 RESUMED 且设备有可用传感器时才注册；任一条件失效即注销并
- * [TiltParallaxState.reset]。采样率 SENSOR_DELAY_UI（约 16Hz）：手持倾斜是 ~1Hz
- * 级的慢运动，目标更新的粒度由帧循环的逐帧追踪铺满渲染帧率，又比 GAME（50Hz）
- * 省下持续唤醒；真机若嫌目标响应迟钝可上调采样率。
+ * 创建视差状态并管理传感器注册。仅当 [active]（页面侧门控——本页可见、浮层未开、
+ * 停在出效果的停留态）、[enabled]（用户开关）、宿主 RESUMED 且设备有可用传感器同时
+ * 满足才注册。[active] 失效即注销并 [TiltParallaxState.pause]——画面定格原地（浮层
+ * 打开时背景静止不跳变），重挂后从当下姿态重新定基准平滑续接；[enabled] 失效即注销
+ * 并 [TiltParallaxState.runGlideHome]——关掉效果画面平滑回正。采样率 SENSOR_DELAY_UI
+ * （约 16Hz）：手持倾斜是 ~1Hz 级的慢运动，目标更新的粒度由帧循环的逐帧追踪铺满
+ * 渲染帧率，又比 GAME（50Hz）省下持续唤醒；真机若嫌目标响应迟钝可上调采样率。
  */
 @Composable
-internal fun rememberTiltParallax(enabled: Boolean): TiltParallaxState {
+internal fun rememberTiltParallax(active: Boolean, enabled: Boolean): TiltParallaxState {
     val state = remember { TiltParallaxState() }
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -222,11 +247,17 @@ internal fun rememberTiltParallax(enabled: Boolean): TiltParallaxState {
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    // 帧循环与传感器同生命周期：只在已注册（门控全开）时追踪，位移渲染值随循环存活
-    LaunchedEffect(state, enabled, resumed) {
-        if (enabled && resumed) state.runFrameLoop()
+    // 帧循环与传感器同生命周期：门控全开时逐帧追踪；仅 active 失效（浮层/切后台/
+    // 离开 01）什么都不做——画面定格由传感器注销侧的 pause 完成；enabled 失效则
+    // 平滑滑回中心（关掉效果画面该回正，不能钉在半路）
+    LaunchedEffect(state, active, enabled, resumed) {
+        when {
+            active && enabled && resumed -> state.runFrameLoop()
+            !enabled -> state.runGlideHome()
+            else -> Unit
+        }
     }
-    DisposableEffect(context, enabled, resumed) {
+    DisposableEffect(context, active, enabled, resumed) {
         val manager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val gravity = manager.getDefaultSensor(Sensor.TYPE_GRAVITY)
         val accelerometer = if (gravity == null) {
@@ -264,7 +295,7 @@ internal fun rememberTiltParallax(enabled: Boolean): TiltParallaxState {
             )
             onDispose {
                 manager.unregisterListener(listener)
-                state.reset()
+                state.pause()
             }
         }
     }

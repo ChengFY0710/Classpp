@@ -99,19 +99,41 @@ class TiltParallaxTest {
         )
     }
 
-    /** 复位清空一切，重挂后按新姿态重新定格基准。 */
+    /** 暂停定格：注销瞬间画面停在原地（残余追踪也不动）；重挂后按新姿态重新定基准，
+     *  旧位移经追踪平滑归位——浮层打开时背景静止不跳变。 */
     @Test
-    fun resetClearsShiftAndRebaselines() {
+    fun pauseHoldsPositionAndRebaselinesOnNextStart() {
         val state = TiltParallaxState()
-        repeat(5) { state.consume(2f, -4.905f) }
+        repeat(5) { state.consume(0f, 0f) } // 平放静止，基准归零
         state.settle()
-        state.reset()
-        assertEquals(0f, state.shiftX, 0f)
-        assertEquals(0f, state.shiftY, 0f)
-        // 复位后竖持静止：基准重新定格，不带出旧位移
-        repeat(100) { state.consume(0f, -9.6f) }
+        repeat(5) { state.consume(2f, -4.905f) } // 倾斜出位移
+        state.settle()
+        state.pause()
+        val frozen = state.shiftX
+        assertTrue("定格应保留位移，实际 $frozen", frozen < -0.3f)
+        while (state.pursueStep(1f / 120f)) { /* 在途目标已贴合当前位置，追到收敛仍原地 */ }
+        assertEquals(frozen, state.shiftX, 0f)
+        // 重挂后竖持静止：基准按竖持重新定格，旧横滚位移经追踪平滑归位归零
+        repeat(5) { state.consume(0f, -9.6f) }
         state.settle()
         assertEquals(0f, state.shiftX, 0.001f)
         assertEquals(0f, state.shiftY, 0.001f)
+    }
+
+    /** 关开关归中：目标设回 0，逐帧追踪平滑滑回中心并精确贴合，不留残差。 */
+    @Test
+    fun glideHomeReturnsShiftToZero() {
+        val state = TiltParallaxState()
+        repeat(5) { state.consume(0f, 0f) } // 平放静止，基准归零
+        state.settle()
+        repeat(5) { state.consume(2f, -4.905f) } // 倾斜出位移
+        state.settle()
+        state.retargetHome()
+        var frames = 0
+        while (state.pursueStep(1f / 120f)) {
+            if (++frames > 600) break
+        }
+        assertEquals(0f, state.shiftX, 0f)
+        assertEquals(0f, state.shiftY, 0f)
     }
 }

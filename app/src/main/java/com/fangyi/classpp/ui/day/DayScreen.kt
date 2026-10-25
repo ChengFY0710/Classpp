@@ -360,12 +360,14 @@ fun DayScreen(
     }
     // 壁纸视差（01 态专属）：仅「本页活跃 + 图片浮层未开 + 停在 01」才注册重力传感器
     // （rememberTiltParallax 内部再叠加生命周期 RESUMED 门控，切后台必注销），转场离开
-    // 01 即注销归零，02/04 态不空转。位移效果不靠注销收敛——靠图片层的 gate（1 - open）
+    // 01 即注销定格，02/04 态不空转。位移效果不靠注销收敛——靠图片层的 gate（1 - open）
     // 随转场进度收敛到 0，落位像素精确回到几何落位（见 DayBackgroundImage 接线处）
     val tiltActive by remember {
         derivedStateOf { active && !sheetMounted && transition.stage == DayStage.Calendar }
     }
-    val tilt = rememberTiltParallax(tiltActive && tiltEnabled)
+    // active 管暂停（浮层/切 tab/离开 01 → 画面定格原地），enabled 管用户开关
+    // （关闭 → 画面平滑滑回中心），两种失效走向不同，见 rememberTiltParallax
+    val tilt = rememberTiltParallax(active = tiltActive, enabled = tiltEnabled)
     // 04 内容卡（DayCalendar）的折叠进度：与 open/collapse 同一驱动口径（跟手同步直写
     // + 松手吸附），由下方根级转场手势在 04 统一驱动——上滑先折叠日历、下滑先展开折叠
     // 再过渡 02（见手势块注释），02 阶段恒为展开态。
