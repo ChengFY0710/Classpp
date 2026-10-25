@@ -47,6 +47,9 @@ val DayImageCellShape = RoundedRectangle(16.dp)
 /** 日程页台历图片卡与白底内容卡：20dp 连续圆角（设计稿量取） */
 val DayCardShape = RoundedRectangle(20.dp)
 
+/** 日程页上课提醒卡（DayCourseAlert）的「上课」竖排小标签 */
+val DayCourseAlertTagShape = RoundedRectangle(6.dp)
+
 /** 顶栏胶囊按钮（全圆角）；投影与背景共用同一个形状 */
 val PillShape = Capsule()
 

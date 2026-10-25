@@ -493,12 +493,12 @@ private fun IsoDate.plusMonthsClamped(months: Int): IsoDate {
 // ---------- 视觉规格（设计稿量取；颜色一律取主题，见各用点） ----------
 
 private val BallSize = 34.dp
-private val RowSpacing = 10.dp
+private val RowSpacing = 8.dp
 private val RowStep = BallSize + RowSpacing
 /** 星期表头与日历网格的间距，独立于行距 [RowSpacing]，可单独调 */
 private val HeaderGridGap = 6.dp
-private val DotSize = 4.dp
-private val DotGap = 3.dp
+private val DotSize = 3.dp
+private val DotGap = 2.dp
 /** 小点从球底下垂的距离：底对齐后 offset 它，球底到小点顶的间隙即 [DotGap] */
 private val DotDrop = DotSize + DotGap
 /**
@@ -510,8 +510,8 @@ private val DotZone = DotDrop + 2.dp
 private val NavButtonSize = 40.dp
 private val NavIconSize = 24.dp
 private val CardPaddingHorizontal = 8.dp
-private val CardPaddingVertical = 8.dp
-private val BottomBarGap = 4.dp
+private val CardPaddingVertical = 4.dp
+private val BottomBarGap = 2.dp
 /** 折叠甩动吸附的速度阈值（对标 M3 anchoredDraggable 默认值） */
 internal val FoldFlingVelocity = 125.dp
 private val WeekdayFontSize = 15.sp
