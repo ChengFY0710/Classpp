@@ -150,6 +150,7 @@ import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.note.NewTodoSheet
 import com.fangyi.classpp.ui.note.TodoDetailSheet
 import com.fangyi.classpp.ui.note.deadlineColor
+import com.fangyi.classpp.ui.note.repeatCardText
 import com.fangyi.classpp.ui.note.toAbsoluteDateText
 import com.fangyi.classpp.ui.schedule.CourseColor
 import com.fangyi.classpp.ui.schedule.CourseDetailSheet
@@ -2106,7 +2107,7 @@ private fun todayCourseEntries(schedule: Schedule, today: IsoDate): List<CourseE
  * 上课卡经 [onCourseClick]（课程 id）、待办卡经 [onTodoClick]（分期副本，宿主取 id + 分期
  * 日期）接详情浮层的唤起；待办先按重复规则展开分期再取落在今天的，已完成分期也上轴
  * （卡片内置灰划线呈现），AllDay/无时刻的待办在比例时间轴上无处安放、不上轴；
- * 截止文案取绝对日期（如「10/27 6:00」）。
+ * 截止文案取绝对日期（如「10/27 6:00」），重复规则取档位名（如「每天」）。
  */
 @Composable
 private fun dayTasks(
@@ -2155,6 +2156,7 @@ private fun dayTasks(
                     ).joinToString(" ")
                 },
                 deadlineColor = todo.deadlineColor(),
+                repeatText = todo.repeatCardText(),
                 onToggle = { checked -> onToggleTodo(todo, checked) },
                 onClick = { onTodoClick(todo) },
                 startMinute = startMinute,

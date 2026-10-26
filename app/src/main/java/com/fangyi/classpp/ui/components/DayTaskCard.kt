@@ -5,6 +5,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -64,6 +65,8 @@ import com.kyant.shapes.RoundedRectangle
  *   [solveDayTaskLayout] 在冲突时刻插入额外轴空间（左侧整点跨度局部变大）；
  * - 比例高度 < [DayTaskCompactThreshold]（≈84 分钟）切紧凑单行（时间 + 标签 + 时间 +
  *   标题横排一行）；
+ * - 分列后卡宽不足 [DayTask.narrowThreshold]（课程 100dp / 待办 180dp）时切窄卡样式：
+ *   起止时间置顶单行 + 标题 + 内容（课程备注换行、待办不画勾选框），优先于紧凑单行；
  * - 相邻任务贴近（渲染间距 < 6dp，含贴背）时接触角收敛为 6dp，时间重叠的任务均分
  *   卡片区域宽度（列间 2dp），贴邻方向接触角同样收敛——圆角一律走
  *   [com.fangyi.classpp.ui.theme.dayTaskCardShape]。
@@ -85,14 +88,16 @@ internal sealed interface DayTask {
         val onClick: (() -> Unit)? = null,
     ) : DayTask
 
-    /** 待办：本期只展示时间区间与截止时间（样式参考 NoteCard），[onToggle] 接完成勾选；
-     *  [onClick] 接待办详情浮层的唤起（整卡点击，null = 不可点，勾选框不受影响） */
+    /** 待办：标题下展示截止时间与重复规则（样式复用 NoteCard 的属性行）；左侧时间与标签
+     *  矩形取截止时间色（无截止回落 Primary）。[onToggle] 接完成勾选；[onClick] 接待办
+     *  详情浮层的唤起（整卡点击，null = 不可点，勾选框不受影响） */
     data class Todo(
         val id: String,
         val name: String,
         val completed: Boolean,
         val deadlineText: String?,
         val deadlineColor: Color,
+        val repeatText: String? = null,
         val onToggle: ((Boolean) -> Unit)?,
         override val startMinute: Int,
         override val endMinute: Int,
@@ -114,10 +119,24 @@ private val DayTask.columnPriority: Int
         is DayTask.Todo -> 1
     }
 
+/** 窄卡分界（课程）：分列后卡宽小于该值时切窄卡样式（时间置顶单行、无左侧时间列） */
+internal val DayTaskNarrowThresholdCourse = 100.dp
+
+/** 窄卡分界（待办）：待办竖排还占一列 36dp 勾选框，阈值高于课程 */
+internal val DayTaskNarrowThresholdTodo = 180.dp
+
+/** 窄卡判定阈值：由任务类型取对应分界 */
+internal val DayTask.narrowThreshold: Dp
+    get() = when (this) {
+        is DayTask.Course -> DayTaskNarrowThresholdCourse
+        is DayTask.Todo -> DayTaskNarrowThresholdTodo
+    }
+
 // ---------- 布局求解：位置尺寸 + 接触角 + 形态（纯函数，可单测） ----------
 
 /** 单张任务卡的求解结果；[offsetX] 相对卡片区域左缘、[offsetY] 相对时间轴顶部。
- *  四个接触标记 = 对应角与邻近任务贴近（渲染间距 < 6dp），渲染时收敛为 6dp 圆角 */
+ *  四个接触标记 = 对应角与邻近任务贴近（渲染间距 < 6dp），渲染时收敛为 6dp 圆角；
+ *  [narrow] = 分列后卡宽不足 [DayTask.narrowThreshold]，渲染切窄卡样式（优先于 [compact]） */
 internal data class DayTaskPlacement(
     val task: DayTask,
     val offsetX: Dp,
@@ -129,6 +148,7 @@ internal data class DayTaskPlacement(
     val bottomStartContact: Boolean,
     val bottomEndContact: Boolean,
     val compact: Boolean,
+    val narrow: Boolean,
 )
 
 /** 重叠任务卡分列时的列间距（均分空间、间距 2dp） */
@@ -158,7 +178,8 @@ internal data class DayTaskLayout(
 }
 
 /** 紧凑/竖排分界：竖排布局（上下时间 + 拉伸标签）最小内容高约 70dp（≈84 分钟），
- *  比例高度不足即切紧凑单行——1 小时 = 50dp 比例尺下 60 分钟待办为紧凑形态 */
+ *  比例高度不足即切紧凑单行——1 小时 = 50dp 比例尺下 60 分钟待办为紧凑形态；
+ *  分列后卡宽不足窄卡阈值时优先窄卡样式（见 [DayTask.narrowThreshold]） */
 internal val DayTaskCompactThreshold = 70.dp
 
 /** 紧凑单行的最小高度兜底（比例高度更小时不再压缩，保证一行文字的呼吸感） */
@@ -239,18 +260,27 @@ internal fun List<DayTask>.solveDayTaskLayout(
         }
     }
 
-    // 形态与高度基准：紧凑判定沿用基础比例尺（1 小时 = hourSpacing）；内容最小高度
-    // 把渲染时 heightIn 的撑高量提前纳入布局，避免内容压住下卡。[baseHeights] 会随
-    // 卡内插入的空间增长（见下方局部拉伸）
+    // 形态与高度基准：窄卡按分列后的实际卡宽判定（窄卡优先于紧凑单行）；紧凑判定沿用
+    // 基础比例尺（1 小时 = hourSpacing）。内容最小高度把渲染时 heightIn 的撑高量提前
+    // 纳入布局，避免内容压住下卡。[baseHeights] 会随卡内插入的空间增长（见下方局部拉伸）
     val compact = BooleanArray(size)
+    val narrow = BooleanArray(size)
     val baseHeights = arrayOfNulls<Dp>(size)
     val contentMins = arrayOfNulls<Dp>(size)
     for (index in indices) {
         val task = this[index]
+        val width = requireNotNull(columnInfo[index]).width
         val proportionalHeight = hourSpacing * ((task.endMinute - task.startMinute) / 60f)
-        compact[index] = proportionalHeight < DayTaskCompactThreshold
+        narrow[index] = width < task.narrowThreshold
+        compact[index] = !narrow[index] && proportionalHeight < DayTaskCompactThreshold
         baseHeights[index] = proportionalHeight
-        contentMins[index] = dayTaskContentMinHeight(task, compact[index], fontScale)
+        contentMins[index] = dayTaskContentMinHeight(
+            task = task,
+            compact = compact[index],
+            narrow = narrow[index],
+            width = width,
+            fontScale = fontScale,
+        )
     }
 
     // 纵向排布：按开始时间分组，同组卡片顶边对齐。每放置一组前，先看所有已放置且
@@ -339,6 +369,7 @@ internal fun List<DayTask>.solveDayTaskLayout(
             bottomStartContact = startContact[index],
             bottomEndContact = endContact[index],
             compact = compact[index],
+            narrow = narrow[index],
         )
     }
 
@@ -403,14 +434,53 @@ private fun List<DayTaskPush>.extraAt(minute: Int): Dp =
     lastOrNull { it.minute <= minute }?.extra ?: 0.dp
 
 /**
- * 卡片内容的最小高度：镜像 [VerticalTaskContent]/[CompactTaskContent] 的排版常量，
- * 让布局在渲染前就知道内容需要的高度（渲染时的 heightIn 只作兜底）。sp 按 [fontScale]
- * 换算成 dp。
+ * 卡片内容的最小高度：镜像 [NarrowTaskContent]/[VerticalTaskContent]/[CompactTaskContent]
+ * 的排版常量，让布局在渲染前就知道内容需要的高度（渲染时的 heightIn 只作兜底）。
+ * 窄卡（[narrow]）按实际卡宽 [width] 估算课程备注的换行行数。sp 按 [fontScale] 换算成 dp。
  */
-private fun dayTaskContentMinHeight(task: DayTask, compact: Boolean, fontScale: Float): Dp {
+private fun dayTaskContentMinHeight(
+    task: DayTask,
+    compact: Boolean,
+    narrow: Boolean,
+    width: Dp,
+    fontScale: Float,
+): Dp {
     val titleLine = (TaskTitleLineHeight.value * fontScale).dp
     val timeLine = (TaskTimeLineHeight.value * fontScale).dp
     val tagLine = (TaskTagLineHeight.value * fontScale).dp
+    if (narrow) {
+        // 窄卡：顶行时间 + 标题 + 内容，元素间距统一 TaskLineSpacing。课程备注按卡宽
+        // 估算换行行数，避免渲染撑高后压住下卡
+        val infoLine = (TaskInfoLineHeight.value * fontScale).dp
+        return when (task) {
+            is DayTask.Course -> {
+                val hasTeacherLocation =
+                    listOfNotNull(task.teacher, task.location).isNotEmpty()
+                val noteLines = task.note?.let {
+                    estimateNarrowNoteLines("备注：$it", width, fontScale)
+                } ?: 0
+                var height = TaskContentPaddingVertical * 2 +
+                    timeLine + TaskLineSpacing + titleLine
+                if (hasTeacherLocation) height += TaskLineSpacing + infoLine
+                if (noteLines > 0) height += TaskLineSpacing + infoLine * noteLines
+                height
+            }
+            is DayTask.Todo -> {
+                val rows = listOfNotNull(task.deadlineText, task.repeatText).size
+                val rowHeight = maxOf(
+                    TaskPropertyIconSize,
+                    (TaskPropertyLineHeight.value * fontScale).dp,
+                )
+                var height = TaskContentPaddingVertical * 2 +
+                    timeLine + TaskLineSpacing + titleLine
+                if (rows > 0) {
+                    height += TaskLineSpacing + rowHeight * rows +
+                        TaskPropertyRowGap * (rows - 1)
+                }
+                height
+            }
+        }
+    }
     if (compact) {
         return maxOf(
             CompactMinHeight,
@@ -433,20 +503,33 @@ private fun dayTaskContentMinHeight(task: DayTask, compact: Boolean, fontScale: 
                 ((TaskInfoLineHeight.value * fontScale).dp + TaskLineSpacing) * infoCount
         }
         is DayTask.Todo -> {
-            // 属性行（时间 + 截止）在窄列里最多两项、可能折成两行
-            val rows = if (task.deadlineText != null) 2 else 1
+            // 属性行（截止 + 重复）在窄列里最多两项、可能折成两行；两项都缺席时整行不渲染
+            val rows = listOfNotNull(task.deadlineText, task.repeatText).size
             val rowHeight = maxOf(
                 TaskPropertyIconSize,
                 (TaskPropertyLineHeight.value * fontScale).dp,
             )
             TaskContentPaddingVertical * 2 +
                 titleLine +
-                TaskTitlePropertySpacing +
-                rowHeight * rows +
-                TaskPropertyRowGap * (rows - 1)
+                if (rows > 0) {
+                    TaskTitlePropertySpacing +
+                        rowHeight * rows +
+                        TaskPropertyRowGap * (rows - 1)
+                } else {
+                    0.dp
+                }
         }
     }
     return maxOf(timeColumn, right, TaskTodoCheckboxSize)
+}
+
+/** 窄卡课程备注的估算行数：内容宽（卡宽 − 左右内距）按 13sp 中文字宽折算，至少 1 行 */
+private fun estimateNarrowNoteLines(text: String, width: Dp, fontScale: Float): Int {
+    val contentWidth = (width - TaskCardPaddingHorizontal * 2).value
+    val charWidth = TaskInfoFontSize.value * fontScale
+    if (contentWidth <= 0f || charWidth <= 0f) return 1
+    val charsPerLine = (contentWidth / charWidth).toInt().coerceAtLeast(1)
+    return ((text.length + charsPerLine - 1) / charsPerLine).coerceAtLeast(1)
 }
 
 // ---------- 渲染 ----------
@@ -465,7 +548,13 @@ internal fun DayTaskCard(placement: DayTaskPlacement, modifier: Modifier = Modif
     val task = placement.task
     val accent = when (task) {
         is DayTask.Course -> task.color.barColor(MaterialTheme.isDarkTheme)
-        is DayTask.Todo -> MaterialTheme.colorScheme.primary
+        // 待办左侧时间/标签矩形取截止时间色（NoteCard 属性行的同一取色：>2 天 Primary、
+        // 剩 2 天黄、剩 1 天橙、当天与逾期红）；无截止日期回落 Primary
+        is DayTask.Todo -> if (task.deadlineText != null) {
+            task.deadlineColor
+        } else {
+            MaterialTheme.colorScheme.primary
+        }
     }
     val cardShape = dayTaskCardShape(
         topStartContact = placement.topStartContact,
@@ -493,10 +582,109 @@ internal fun DayTaskCard(placement: DayTaskPlacement, modifier: Modifier = Modif
             .background(MaterialTheme.colorScheme.surface),
         propagateMinConstraints = true,
     ) {
-        if (placement.compact) {
-            CompactTaskContent(task, accent)
-        } else {
-            VerticalTaskContent(task, accent)
+        when {
+            placement.narrow -> NarrowTaskContent(task, accent)
+            placement.compact -> CompactTaskContent(task, accent)
+            else -> VerticalTaskContent(task, accent)
+        }
+    }
+}
+
+/**
+ * 窄卡布局（分列后卡宽 < [DayTask.narrowThreshold]）：起止时间单行置顶，其次标题，
+ * 内容列紧随（课程：教师/地点一行 + 备注换行；待办：截止/重复属性行，不画勾选框）。
+ * 无左侧时间列与「上课/待办」标签；内容整体垂直居中，卡片高度仍按比例/内容最小高度撑开。
+ */
+@Composable
+private fun NarrowTaskContent(task: DayTask, accent: Color) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = TaskCardPaddingHorizontal,
+                vertical = TaskContentPaddingVertical,
+            ),
+        verticalArrangement = Arrangement.spacedBy(TaskLineSpacing, Alignment.CenterVertically),
+    ) {
+        TaskTimeText(
+            text = "${TimeText.format(task.startMinute)} - ${TimeText.format(task.endMinute)}",
+            color = accent,
+        )
+        when (task) {
+            is DayTask.Course -> NarrowCourseContent(task)
+            is DayTask.Todo -> NarrowTodoContent(task)
+        }
+    }
+}
+
+/** 窄卡课程内容：标题（单行省略）+ 教师/地点并作一行 + 备注（换行，不截断） */
+@Composable
+private fun ColumnScope.NarrowCourseContent(task: DayTask.Course) {
+    Text(
+        text = task.name,
+        color = MaterialTheme.colorScheme.onSurface,
+        fontSize = TaskTitleFontSize,
+        lineHeight = TaskTitleLineHeight,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+    listOfNotNull(task.teacher, task.location)
+        .joinToString(" ")
+        .takeIf { it.isNotEmpty() }
+        ?.let { TaskInfoText(it, MaterialTheme.classppColors.secondaryText) }
+    task.note?.let {
+        TaskInfoText(
+            text = "备注：$it",
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = Int.MAX_VALUE,
+        )
+    }
+}
+
+/** 窄卡待办内容：标题（单行省略）+ 截止/重复属性行；勾选框不参与渲染，完成态仍灰划线 */
+@Composable
+private fun ColumnScope.NarrowTodoContent(task: DayTask.Todo) {
+    Text(
+        text = task.name,
+        style = MaterialTheme.classppTextStyles.fieldLabel.copy(
+            color = if (task.completed) {
+                MaterialTheme.classppColors.secondaryText
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            lineHeight = TaskTitleLineHeight,
+        ),
+        textDecoration = if (task.completed) TextDecoration.LineThrough else null,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+    if (task.deadlineText != null || task.repeatText != null) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(TaskPropertyRowGap),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            task.deadlineText?.let { deadline ->
+                TimeProperty(
+                    icon = R.drawable.ic_clock_alarm,
+                    text = deadline,
+                    tint = task.deadlineColor,
+                    modifier = Modifier.padding(end = TaskPropertyItemEndPadding),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            task.repeatText?.let { repeat ->
+                TimeProperty(
+                    icon = R.drawable.ic_arrow_repeat,
+                    text = repeat,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(end = TaskPropertyItemEndPadding),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -543,7 +731,11 @@ private fun VerticalTaskContent(task: DayTask, accent: Color) {
             is DayTask.Course -> VerticalCourseContent(task, Modifier.weight(1f))
             is DayTask.Todo -> {
                 VerticalTodoContent(task, Modifier.weight(1f))
-                TaskTodoCheckbox(checked = task.completed, onToggle = task.onToggle)
+                TaskTodoCheckbox(
+                    checked = task.completed,
+                    onToggle = task.onToggle,
+                    modifier = Modifier.padding(end = TaskTodoCheckboxEndInset),
+                )
             }
         }
     }
@@ -573,7 +765,7 @@ private fun VerticalCourseContent(task: DayTask.Course, modifier: Modifier = Mod
     }
 }
 
-/** 待办内容（NoteCard 样式：fieldLabel 标题 + 时间/截止属性行；本期不展示标签/重复等） */
+/** 待办内容（NoteCard 样式：fieldLabel 标题 + 截止/重复属性行；标签、紧急旗暂不接入） */
 @Composable
 private fun VerticalTodoContent(task: DayTask.Todo, modifier: Modifier = Modifier) {
     Column(
@@ -596,29 +788,33 @@ private fun VerticalTodoContent(task: DayTask.Todo, modifier: Modifier = Modifie
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-            itemVerticalAlignment = Alignment.CenterVertically,
-        ) {
-            // 重叠分列后卡可能只剩一半宽：时刻单行省略，避免逐字折行（图 5 同款截断）
-            TimeProperty(
-                icon = R.drawable.ic_clock,
-                text = "${TimeText.format(task.startMinute)} - ${TimeText.format(task.endMinute)}",
-                tint = MaterialTheme.classppColors.secondaryText,
-                modifier = Modifier.padding(end = TaskPropertyItemEndPadding),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            task.deadlineText?.let { deadline ->
-                TimeProperty(
-                    icon = R.drawable.ic_clock_alarm,
-                    text = deadline,
-                    tint = task.deadlineColor,
-                    modifier = Modifier.padding(end = TaskPropertyItemEndPadding),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+        if (task.deadlineText != null || task.repeatText != null) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                // 重叠分列后卡可能只剩一半宽：属性项单行省略，避免逐字折行（图 5 同款截断）
+                task.deadlineText?.let { deadline ->
+                    TimeProperty(
+                        icon = R.drawable.ic_clock_alarm,
+                        text = deadline,
+                        tint = task.deadlineColor,
+                        modifier = Modifier.padding(end = TaskPropertyItemEndPadding),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                task.repeatText?.let { repeat ->
+                    TimeProperty(
+                        icon = R.drawable.ic_arrow_repeat,
+                        text = repeat,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(end = TaskPropertyItemEndPadding),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
@@ -662,7 +858,11 @@ private fun CompactTaskContent(task: DayTask, accent: Color) {
                     completed = task.completed,
                     modifier = Modifier.weight(1f),
                 )
-                TaskTodoCheckbox(checked = task.completed, onToggle = task.onToggle)
+                TaskTodoCheckbox(
+                    checked = task.completed,
+                    onToggle = task.onToggle,
+                    modifier = Modifier.padding(end = TaskTodoCheckboxEndInset),
+                )
             }
         }
     }
@@ -690,8 +890,8 @@ private fun CompactTaskTitle(title: String, completed: Boolean, modifier: Modifi
 }
 
 /** 「上课/待办」标签：底色 accent [backgroundAlpha] 透明；[dimText] = 文字相对 accent
- *  降明度（课程色为马卡龙浅色需要压深，深浅各一套系数）——待办标签的 accent 本身就是
- *  Primary，传 false 直接用原色 */
+ *  降明度（课程色为马卡龙浅色需要压深，深浅各一套系数）——待办标签的 accent 取截止时间色
+ *  （无截止回落 Primary），传 false 直接用原色 */
 @Composable
 private fun TaskTagBox(
     label: String,
@@ -753,15 +953,16 @@ private fun TaskTagText(text: String, color: Color) {
     )
 }
 
-/** 课程信息行（教师/地点/备注）：13sp，颜色由调用方给；单行省略（重叠窄卡不撑高） */
+/** 课程信息行（教师/地点/备注）：13sp，颜色由调用方给；[maxLines] 缺省单行省略（竖排
+ *  窄卡不撑高），窄卡备注传 [Int.MAX_VALUE] 让文本正常换行 */
 @Composable
-private fun TaskInfoText(text: String, color: Color) {
+private fun TaskInfoText(text: String, color: Color, maxLines: Int = 1) {
     Text(
         text = text,
         color = color,
         fontSize = TaskInfoFontSize,
         lineHeight = TaskInfoLineHeight,
-        maxLines = 1,
+        maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
     )
 }
@@ -843,6 +1044,10 @@ private val TaskPropertyItemEndPadding = 8.dp
 /** 待办勾选框热区：方径见 [TaskTodoCheckboxSize]（NoteCard 同款 36dp），M3 Checkbox 居中其中 */
 private val TaskTodoCheckboxSize = 36.dp
 
+/** 待办勾选框距卡片右缘的补差：卡壳横向内距 12dp 已是卡内内容基准，勾选框再补 4dp，
+ *  右缘间距凑成 NoteCard 的 16dp（热区方径不变，补的是卡内排版位） */
+private val TaskTodoCheckboxEndInset = 16.dp - TaskCardPaddingHorizontal
+
 /** 待办属性行（TimeProperty）的图标尺寸与保守行高：用于内容最小高度估算 */
 private val TaskPropertyIconSize = 16.dp
 private val TaskPropertyLineHeight = 18.sp
@@ -850,8 +1055,8 @@ private val TaskPropertyLineHeight = 18.sp
 /** 待办属性行换行时的行间距（FlowRow verticalArrangement = 3dp） */
 private val TaskPropertyRowGap = 3.dp
 
-/** 标签底色透明度：课程色 25%（DayCourseAlert 同款设计巧思）；待办取 Primary 10%
- *  （NoteCard TagChip 同款） */
+/** 标签底色透明度：课程色 25%（DayCourseAlert 同款设计巧思）；待办取截止时间色 10%
+ *  （NoteCard TagChip 同款，截止色随剩余天数变化、无截止为 Primary） */
 private const val TaskCourseTagBackgroundAlpha = 0.25f
 private const val TaskTodoTagBackgroundAlpha = 0.1f
 
@@ -881,8 +1086,11 @@ private val TaskTagLineHeight = 12.sp
 /** 设计稿同款课程色 */
 private val PreviewCourseColor = CourseColor.Blue
 
-/** 设计稿同款截止色（primary 蓝） */
+/** 设计稿同款截止色（primary 蓝；紧急档位与逾期时左侧时间/标签随之换色） */
 private val PreviewDeadlineColor = Color(0xFF006FEF)
+private val PreviewDeadlineYellow = Color(0xFFF2C11C)
+private val PreviewDeadlineOrange = Color(0xFFF2921B)
+private val PreviewDeadlineRed = Color(0xFFF44336)
 
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 900)
 @Composable
@@ -922,16 +1130,17 @@ private fun DayTaskCardPreview() {
                         startMinute = 10 * 60 + 10,
                         endMinute = 11 * 60 + 50,
                     ),
-                    // 60 分钟：紧凑单行
+                    // 90 分钟：竖排形态，标题下为截止 + 重复属性行；当天截止 → 左侧与标签取红
                     DayTask.Todo(
                         id = "todo-2",
                         name = "待办标题待办标题待办标题",
                         completed = false,
-                        deadlineText = "10/27 6:00",
-                        deadlineColor = PreviewDeadlineColor,
+                        deadlineText = "今天 8:00",
+                        deadlineColor = PreviewDeadlineRed,
+                        repeatText = "每天",
                         onToggle = null,
-                        startMinute = 13 * 60,
-                        endMinute = 14 * 60,
+                        startMinute = 11 * 60 + 50,
+                        endMinute = 13 * 60 + 20,
                     ),
                     // 时间重叠：与下卡均分宽度、2dp 间距、贴邻角收敛
                     DayTask.Course(
@@ -947,8 +1156,8 @@ private fun DayTaskCardPreview() {
                         id = "todo-3",
                         name = "待办标题待办标题待办标题",
                         completed = true,
-                        deadlineText = "10/27 6:00",
-                        deadlineColor = PreviewDeadlineColor,
+                        deadlineText = "后天 8:00",
+                        deadlineColor = PreviewDeadlineYellow,
                         onToggle = null,
                         startMinute = 15 * 60,
                         endMinute = 15 * 60 + 30,
@@ -958,6 +1167,73 @@ private fun DayTaskCardPreview() {
             Box(Modifier.padding(start = 56.dp, end = 12.dp)) {
                 placements.forEach { DayTaskCard(it) }
             }
+        }
+    }
+}
+
+/**
+ * 窄卡样式对照：待办半宽（160dp < [DayTaskNarrowThresholdTodo]）与课程四列
+ * （≈79dp < [DayTaskNarrowThresholdCourse]）。位置直接给定，聚焦样式本身
+ * （触发判定由 DayTaskPlacementTest 覆盖）。
+ */
+@Preview(
+    showBackground = true,
+    backgroundColor = 0xFFF2F4F6,
+    widthDp = 390,
+    heightDp = 620,
+    name = "窄卡样式",
+)
+@Composable
+private fun DayTaskCardNarrowPreview() {
+    ClassppTheme {
+        Box(Modifier.fillMaxSize()) {
+            DayTaskCard(
+                DayTaskPlacement(
+                    task = DayTask.Todo(
+                        id = "narrow-todo",
+                        name = "待办标题待办标题待办标题",
+                        completed = false,
+                        deadlineText = "明天 8:00",
+                        deadlineColor = PreviewDeadlineOrange,
+                        onToggle = null,
+                        startMinute = 13 * 60,
+                        endMinute = 14 * 60,
+                    ),
+                    offsetX = 16.dp,
+                    offsetY = 16.dp,
+                    width = 160.dp,
+                    height = 84.dp,
+                    topStartContact = false,
+                    topEndContact = false,
+                    bottomStartContact = false,
+                    bottomEndContact = false,
+                    compact = false,
+                    narrow = true,
+                ),
+            )
+            DayTaskCard(
+                DayTaskPlacement(
+                    task = DayTask.Course(
+                        name = "课程标题课程标题课程标题",
+                        teacher = "XX老师",
+                        location = "上课地点",
+                        note = "备注内容备注内容备注内容备注内容",
+                        color = PreviewCourseColor,
+                        startMinute = 13 * 60,
+                        endMinute = 14 * 60,
+                    ),
+                    offsetX = 16.dp,
+                    offsetY = 116.dp,
+                    width = 90.dp,
+                    height = 160.dp,
+                    topStartContact = false,
+                    topEndContact = false,
+                    bottomStartContact = false,
+                    bottomEndContact = false,
+                    compact = false,
+                    narrow = true,
+                ),
+            )
         }
     }
 }

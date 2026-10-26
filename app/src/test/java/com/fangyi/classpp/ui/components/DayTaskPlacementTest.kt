@@ -130,6 +130,42 @@ class DayTaskPlacementTest {
     }
 
     @Test
+    fun halfWidthTodoSwitchesToNarrowButCourseStaysVertical() {
+        // 课程 + 待办重叠各占半宽（163dp）：待办 < 180dp 切窄卡，课程 ≥ 100dp 保持竖排
+        val placements = listOf(course(480, 600), todo(540, 660))
+            .solveDayTaskPlacements(regionWidth, hourSpacing)
+        val coursePlacement = placements.single { it.task is DayTask.Course }
+        val todoPlacement = placements.single { it.task is DayTask.Todo }
+        assertEquals(163f, todoPlacement.width.value, 1e-3f)
+        assertTrue(todoPlacement.narrow)
+        assertFalse(todoPlacement.compact)
+        assertFalse(coursePlacement.narrow)
+    }
+
+    @Test
+    fun quarterWidthCoursesSwitchToNarrow() {
+        // 4 条同时段课程 → 列宽 (328 − 3×2) / 4 = 80.5dp < 100dp：全部窄卡
+        val placements = List(4) { course(480, 540) }
+            .solveDayTaskPlacements(regionWidth, hourSpacing)
+        val columnWidth = ((regionWidth - DayTaskColumnGap * 3) / 4).value
+        placements.forEach {
+            assertEquals(columnWidth, it.width.value, 1e-3f)
+            assertTrue(it.narrow)
+            assertFalse(it.compact)
+        }
+    }
+
+    @Test
+    fun narrowTodoHeightUsesStackedContentMinimum() {
+        // 20 分钟待办在半宽列（比例高度 ≈ 16.7dp）：窄卡内容（时间置顶 + 标题）撑到 60dp+
+        val placements = listOf(course(480, 600), todo(540, 560))
+            .solveDayTaskPlacements(regionWidth, hourSpacing)
+        val narrowTodo = placements.single { it.task is DayTask.Todo }
+        assertTrue(narrowTodo.narrow)
+        assertTrue(narrowTodo.height > 40.dp)
+    }
+
+    @Test
     fun shortTasksTurnCompactWithHeightFloor() {
         // 60 分钟 = 50dp < 70dp 阈值 → 紧凑，高度按比例
         val hour = listOf(todo(780, 840)).solveDayTaskPlacements(regionWidth, hourSpacing)
