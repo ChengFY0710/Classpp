@@ -672,11 +672,11 @@ private val TaskTagPaddingHorizontal = 5.dp
  *  拉伸态（竖排卡）不适用（高度由时间列 weight 分配，见 TaskTagBox） */
 private val TaskTagPaddingVertical = 4.dp
 
-private val TaskTitleFontSize = 15.sp
+private val TaskTitleFontSize = 16.sp
 private val TaskTitleLineHeight = 20.sp
-private val TaskInfoFontSize = 12.sp
+private val TaskInfoFontSize = 13.sp
 private val TaskInfoLineHeight = 18.sp
-private val TaskTimeFontSize = 12.sp
+private val TaskTimeFontSize = 13.sp
 private val TaskTimeLineHeight = 20.sp
 private val TaskTagFontSize = 11.sp
 private val TaskTagLineHeight = 12.sp
