@@ -5,6 +5,7 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.schedule.CourseColor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -296,6 +297,28 @@ class DayTaskPlacementTest {
         )
         assertTrue(layout.placements[0].compact)
         assertEquals(40f, layout.placements[0].height.value, 1e-3f)
+    }
+
+    @Test
+    fun measureKeyIgnoresCallbacksAndColors() {
+        val todo = DayTask.Todo(
+            id = "t",
+            name = "待办",
+            completed = false,
+            deadlineText = "10/27 6:00",
+            deadlineColor = Color.Black,
+            repeatText = "每天",
+            onToggle = null,
+            startMinute = 480,
+            endMinute = 540,
+        )
+        // 回调/颜色不影响内容高度：不入键，否则每次重建任务列表（新 lambda）都会失效
+        assertEquals(todo.measureKey, todo.copy(onToggle = {}, onClick = {}).measureKey)
+        assertEquals(todo.measureKey, todo.copy(deadlineColor = Color.Red).measureKey)
+        // 影响排版的字段必须区分
+        assertNotEquals(todo.measureKey, todo.copy(name = "改名").measureKey)
+        assertNotEquals(todo.measureKey, todo.copy(repeatText = null).measureKey)
+        assertNotEquals(todo.measureKey, todo.copy(completed = true).measureKey)
     }
 
     @Test

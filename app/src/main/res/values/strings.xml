@@ -359,6 +359,16 @@
     <string name="error_import_version">不支持的文件版本</string>
     <string name="error_import_kind">不是课表文件</string>
 
+    <!-- 导入课表浮层 -->
+    <string name="import_sheet_title">导入课表</string>
+    <string name="import_json_label">从 JSON 文件导入</string>
+    <string name="import_json_desc">仅支持 Classpp 格式的 JSON 文件</string>
+    <string name="import_clipboard_label">从剪贴板导入</string>
+    <string name="import_clipboard_desc">复制好 JSON 文件内容后点击导入</string>
+    <string name="import_wakeup_label">从 Wakeup 课表分享口令导入</string>
+    <string name="import_wakeup_desc">输入Wakeup课表的分享口令导入</string>
+    <string name="import_clipboard_empty">剪贴板中没有可导入的内容</string>
+
     <!-- Tag choosing card -->
     <string name="tag_choosing_input_hint">点击输入添加标签</string>
     <string name="tag_choosing_course_title">课程标签</string>

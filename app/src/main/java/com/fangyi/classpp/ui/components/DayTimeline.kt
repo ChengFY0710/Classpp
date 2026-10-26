@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,10 +19,14 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.data.model.TimeText
@@ -64,6 +69,17 @@ private val TimeLabelFontSize = 12.sp
 /** SubcomposeLayout 里时间轴主体层的 slot id（卡片内容实测层用任务下标 0..n−1） */
 private const val TimelineBodySlot = "day-timeline-body"
 
+/** 实测内容高度缓存的容量上限：按日期切换才会累积，64 条足够覆盖数天 */
+private const val MeasuredHeightCacheLimit = 64
+
+/** 实测内容高度缓存键：内容 + 形态 + 卡宽；字体度量由缓存生命周期（见 remember 键）保证 */
+private data class CardHeightKey(
+    val content: DayTaskMeasureKey,
+    val compact: Boolean,
+    val narrow: Boolean,
+    val widthPx: Int,
+)
+
 /**
  * 日程页时间轴：左侧 [TimeAreaWidth] 时间列自 0:00 到次日 0:00 共 [HoursPerDay] + 1 个
  * 整点刻度（基础间隔 [HourSpacing]），右侧为日程卡片区域——[DayTaskCard] 按任务时长
@@ -73,7 +89,9 @@ private const val TimelineBodySlot = "day-timeline-body"
  * 间距），在下方卡开始时刻插入额外空间，整点刻度跨度随该小时内插入量局部变大；没有
  * 冲突的小时仍保持 [HourSpacing]。卡片内容高度由 [DayTaskCardContent] 在求解前**实测**
  * （与渲染同一 composable、同一卡宽），而不是靠镜像排版常量估算——备注折行、字体行高
- * 等任何撑高都会同步推后下卡并让轴局部拉伸，上下卡间距始终 ≥ 2dp。映射：
+ * 等任何撑高都会同步推后下卡并让轴局部拉伸，上下卡间距始终 ≥ 2dp。实测结果按
+ * [DayTaskMeasureKey] + 形态 + 卡宽缓存（见 [CardHeightKey]），重测命中时直接复用，
+ * 不再组合测量副本。映射：
  * y(t) = [HourSpacing] × ((t − 锚点) / 60 + 0.5) + 已插入的累计额外空间。
  * 卡片顶边 = y(开始时刻)，高度见 [solveDayTaskLayout]（上下卡至少 2dp、贴背恰好 2dp）。
  *
@@ -100,7 +118,21 @@ internal fun DayTimeline(
 ) {
     val outline = MaterialTheme.colorScheme.outline
     val secondaryText = MaterialTheme.classppColors.secondaryText
-    val fontScale = LocalDensity.current.fontScale
+    val density = LocalDensity.current
+    val fontScale = density.fontScale
+    val layoutDirection = LocalLayoutDirection.current
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val configuration = LocalConfiguration.current
+    val textStyle = LocalTextStyle.current
+    // 实测内容高度缓存：内容/形态/卡宽与字体度量都相同时，重测不再组合测量副本。
+    // 字体解析器、密度（含字号缩放）、布局方向、区域配置或环境文字样式变化时整体重建
+    val cardHeightCache = remember(
+        density,
+        layoutDirection,
+        fontFamilyResolver,
+        configuration,
+        textStyle,
+    ) { mutableMapOf<CardHeightKey, Dp>() }
     // 锚点（首刻度）= 当天最早任务开始时刻所在小时的整点（floor，如最早任务 7:30 → 7:00）；
     // 无任务时恒为 0:00 起显示整天。末刻度固定为次日 0:00。
     val anchorHour = tasks.minOfOrNull { it.startMinute }?.div(60) ?: 0
@@ -125,18 +157,29 @@ internal fun DayTimeline(
             fontScale = fontScale,
         )
         val contentHeights = estimated.placements.mapIndexed { index, placement ->
-            subcompose(index) {
-                DayTaskCardContent(
-                    task = placement.task,
-                    compact = placement.compact,
-                    narrow = placement.narrow,
-                )
-            }.first().measure(
-                Constraints(
-                    minWidth = placement.width.roundToPx(),
-                    maxWidth = placement.width.roundToPx(),
-                ),
-            ).height.toDp()
+            val widthPx = placement.width.roundToPx()
+            val cacheKey = CardHeightKey(
+                content = placement.task.measureKey,
+                compact = placement.compact,
+                narrow = placement.narrow,
+                widthPx = widthPx,
+            )
+            // 命中即复用上次实测值：内容/形态/卡宽与字体度量都没变，高度必然相同，
+            // 省掉测量副本的组合与文本排版；未命中才 subcompose 测量并回填缓存
+            cardHeightCache[cacheKey] ?: run {
+                val measured = subcompose(index) {
+                    DayTaskCardContent(
+                        task = placement.task,
+                        compact = placement.compact,
+                        narrow = placement.narrow,
+                    )
+                }.first().measure(
+                    Constraints(minWidth = widthPx, maxWidth = widthPx),
+                ).height.toDp()
+                if (cardHeightCache.size >= MeasuredHeightCacheLimit) cardHeightCache.clear()
+                cardHeightCache[cacheKey] = measured
+                measured
+            }
         }
         val solvedLayout = tasks.solveDayTaskLayout(
             regionWidth = regionWidth,

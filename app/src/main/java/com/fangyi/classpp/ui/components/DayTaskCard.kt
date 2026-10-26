@@ -72,6 +72,15 @@ import com.kyant.shapes.RoundedRectangle
  * - 相邻任务贴近（渲染间距 < 6dp，含贴背）时接触角收敛为 6dp，时间重叠的任务均分
  *   卡片区域宽度（列间 2dp），贴邻方向接触角同样收敛——圆角一律走
  *   [com.fangyi.classpp.ui.theme.dayTaskCardShape]。
+ *
+ * **维护约定（实测高度缓存）**：[DayTimeline] 会把 [DayTaskCardContent] 的实测高度按
+ * [DayTaskMeasureKey]（内容 + 形态 + 卡宽；字体度量由缓存生命周期保证）缓存，重测命中
+ * 时不再组合测量副本。以后给卡片内容新增**任何影响高度的字段或排版**（新的可见性开关、
+ * 字号/行高、备注样式开关、行数限制、内容内边距等）时，必须同步更新 [DayTaskMeasureKey]
+ * 与 [DayTask.measureKey]；否则高度变化不会触发重新测量，时间轴仍按过期高度排布，
+ * 会破坏上下卡 ≥ 2dp 的间距。只影响颜色/点击等尺寸无关的字段不需要加。缓存的失效时机
+ * 见 DayTimeline 的 cache remember 键（密度/字号缩放、字体解析器、布局方向、区域配置、
+ * 环境文字样式）。
  */
 internal sealed interface DayTask {
     val startMinute: Int
@@ -112,6 +121,48 @@ private val DayTask.tagLabel: String
     get() = when (this) {
         is DayTask.Course -> "上课"
         is DayTask.Todo -> "待办"
+    }
+
+/**
+ * 卡片内容高度的缓存键：只含真正影响排版的字段。`onClick`/`onToggle` 每次重建任务
+ * 列表都是新 lambda（且不影响尺寸），颜色也不影响行高，入键会让缓存永远命中不了或
+ * 无谓失效。新增任何会影响内容高度的字段（文字、可见性开关等）时必须同步加进来，
+ * 否则缓存会返回过期高度。
+ */
+internal data class DayTaskMeasureKey(
+    val course: Boolean,
+    val name: String,
+    val teacher: String?,
+    val location: String?,
+    val note: String?,
+    val deadlineText: String?,
+    val repeatText: String?,
+    val completed: Boolean,
+)
+
+/** 见 [DayTaskMeasureKey]：任务 → 内容高度缓存键（不含回调/颜色/时间范围） */
+internal val DayTask.measureKey: DayTaskMeasureKey
+    get() = when (this) {
+        is DayTask.Course -> DayTaskMeasureKey(
+            course = true,
+            name = name,
+            teacher = teacher,
+            location = location,
+            note = note,
+            deadlineText = null,
+            repeatText = null,
+            completed = false,
+        )
+        is DayTask.Todo -> DayTaskMeasureKey(
+            course = false,
+            name = name,
+            teacher = null,
+            location = null,
+            note = null,
+            deadlineText = deadlineText,
+            repeatText = repeatText,
+            completed = completed,
+        )
     }
 
 /** 重叠分列时的列序：课程在左、待办在右（同型内按开始时间） */
@@ -561,6 +612,9 @@ private fun estimateNarrowNoteLines(text: String, width: Dp, fontScale: Float): 
  * 两型卡片带 [DayTask.Course.onClick] / [DayTask.Todo.onClick] 时整卡可点（按压反馈形状
  * 同卡壳圆角，含收敛的接触角），宿主分别用它唤起课程/待办详情浮层；待办勾选框仍是
  * 独立交互位（子级优先消费点击，按压反馈互不串扰），无回调的卡不可点。
+ *
+ * 内容高度的实测缓存与「新增影响高度的字段必须同步 [DayTaskMeasureKey]」的维护约定
+ * 见文件头 KDoc。
  */
 @Composable
 internal fun DayTaskCard(placement: DayTaskPlacement, modifier: Modifier = Modifier) {
