@@ -1489,6 +1489,13 @@ private fun ScheduleError.toEditMessage(context: Context): String = when (this) 
     is ScheduleError.ImportFormatInvalid -> context.getString(R.string.error_import_format)
     is ScheduleError.ImportVersionUnsupported -> context.getString(R.string.error_import_version)
     is ScheduleError.ImportKindMismatch -> context.getString(R.string.error_import_kind)
+    // 导入第三方数据可能触发的设置类错误：给出具体结论而非通用兜底
+    is ScheduleError.InvalidScheduleName -> context.getString(R.string.error_schedule_name)
+    is ScheduleError.TermRangeInvalid -> context.getString(R.string.error_term_range)
+    is ScheduleError.DaysPerWeekInvalid -> context.getString(R.string.error_days_per_week)
+    is ScheduleError.SlotCountInvalid -> context.getString(R.string.error_slot_count)
+    is ScheduleError.SlotTimeFormatInvalid -> context.getString(R.string.error_slot_time_format)
+    is ScheduleError.SlotOrderInvalid -> context.getString(R.string.error_slot_order)
     // 真正没覆盖到的形态：不把内部 message 抛给用户
     else -> context.getString(R.string.error_unexpected)
 }

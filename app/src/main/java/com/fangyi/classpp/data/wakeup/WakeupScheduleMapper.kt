@@ -175,7 +175,12 @@ object WakeupScheduleMapper {
     /**
      * 作息表：脚本回传的 timeSlots 按节次编号排序；时间经 [TimeText] 归一为 `8:00` 形态
      * （容忍 `08:00` / `8:00:00`）。任一条时间非法则整体弃用（节次编号 = 列表位置，
-     * 中途缺位会错位），改用默认作息；课程末节超出时按「上节结束 + 30 分钟 + 每节时长」续生成。
+     * 中途缺位会错位），改用默认作息；课程末节超出时按「上节结束 + 课间 + 每节时长」续生成。
+     *
+     * 尾部裁剪：Wakeup 对学校未配置的节次会下发**互相重叠的占位作息**（如 12-20 节全挤在
+     * 21:00-23:30 里），而 Classpp 校验要求各节时间有序不重叠。课程实际用到的节（1..maxEnd）
+     * 一律保留（不能移位），其后的节只在「开始不早于上一节结束」时保留——真实的额外节次
+     * 留在网格里，占位垃圾自此截断。
      */
     private fun buildSlots(payload: WakeupSharePayload, maxEndSection: Int): List<TimeSlotDef> {
         val raw = payload.timeSlots.sortedBy { it.slotNumber }
@@ -202,7 +207,26 @@ object WakeupScheduleMapper {
                 slots = slots + TimeSlotDef(TimeText.format(start), TimeText.format(end))
             }
         }
-        return slots
+        return trimTrailingSlots(slots, target)
+    }
+
+    /** 课程用到的节全保留；其后遇到「开始早于上一节结束」的占位节即截断 */
+    private fun trimTrailingSlots(slots: List<TimeSlotDef>, usedEnd: Int): List<TimeSlotDef> {
+        if (slots.size <= usedEnd) return slots
+        val kept = mutableListOf<TimeSlotDef>()
+        var prevEnd: Int? = null
+        for ((index, slot) in slots.withIndex()) {
+            val start = TimeText.parseMinutes(slot.startTime)
+            val end = TimeText.parseMinutes(slot.endTime)
+            if (start == null || end == null) break
+            if (index >= usedEnd) {
+                val previous = prevEnd
+                if (previous != null && previous > start) break
+            }
+            kept += slot
+            prevEnd = end
+        }
+        return kept
     }
 
     private fun normalizeTime(text: String?): String? {

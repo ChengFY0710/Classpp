@@ -238,5 +238,26 @@ class WakeupScheduleMapperTest {
         assertEquals(5, schedule.daysPerWeek)
     }
 
+    @Test
+    fun `trailing placeholder slots are trimmed while ordered extras survive`() {
+        // Wakeup 对未配置节次下发重叠占位作息：课程用到的节全保留（不移位），
+        // 其后第一条无序占位处截断（后面即使有序也不再保留，占位垃圾不进网格）
+        val payload = WakeupSharePayload(
+            courses = listOf(
+                WakeupCourse(name = "数学", day = 1, weeks = listOf(1, 2), startSection = 1, endSection = 2),
+            ),
+            timeSlots = listOf(
+                WakeupTimeSlot(number = 1, startTime = "8:00", endTime = "8:45"),
+                WakeupTimeSlot(number = 2, startTime = "8:55", endTime = "9:40"),
+                WakeupTimeSlot(number = 3, startTime = "9:50", endTime = "10:35"),
+                WakeupTimeSlot(number = 4, startTime = "9:00", endTime = "9:45"),
+                WakeupTimeSlot(number = 5, startTime = "10:00", endTime = "10:45"),
+            ),
+        )
+        val schedule = WakeupScheduleMapper.toScheduleOrNull(payload, "", "Wakeup 课表")!!
+        assertEquals(3, schedule.slots.size)
+        assertEquals("9:50", schedule.slots.last().startTime)
+    }
+
     //endregion
 }
