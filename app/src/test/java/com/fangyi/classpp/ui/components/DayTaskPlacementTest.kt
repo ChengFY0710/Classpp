@@ -261,6 +261,44 @@ class DayTaskPlacementTest {
     }
 
     @Test
+    fun measuredContentHeightsDriveCardHeightAndPushes() {
+        // 渲染侧实测内容高度优先于常量估算：课程实测比估算高一行（18dp），卡片应
+        // 精确按实测撑高，贴背的下卡同步下推，间距仍恰好 2dp，9:00 处的轴拉伸量变大
+        val tasks = listOf(richCourse(480, 580), todo(580, 640))
+        val estimated = tasks.solveDayTaskLayout(regionWidth, hourSpacing)
+        val courseEstimate = estimated.placements[0].height
+        val measuredCourseHeight = courseEstimate + 18.dp
+        val measured = tasks.solveDayTaskLayout(
+            regionWidth = regionWidth,
+            hourSpacing = hourSpacing,
+            contentHeights = listOf(measuredCourseHeight, 36.dp),
+        )
+        assertEquals(
+            measuredCourseHeight.value,
+            measured.placements[0].height.value,
+            1e-3f,
+        )
+        assertEquals(
+            DayTaskVerticalGap.value,
+            (measured.placements[1].offsetY - measured.placements[0].bottom()).value,
+            1e-3f,
+        )
+        assertTrue(measured.extraAt(580) > estimated.extraAt(580))
+    }
+
+    @Test
+    fun measuredContentHeightKeepsCompactMinimum() {
+        // 20 分钟待办比例高度 ≈ 16.7dp < 40dp：实测内容更矮时仍兜底到 40dp 呼吸高
+        val layout = listOf(todo(780, 800)).solveDayTaskLayout(
+            regionWidth = regionWidth,
+            hourSpacing = hourSpacing,
+            contentHeights = listOf(10.dp),
+        )
+        assertTrue(layout.placements[0].compact)
+        assertEquals(40f, layout.placements[0].height.value, 1e-3f)
+    }
+
+    @Test
     fun axisStaysUniformWithoutPushes() {
         // 单卡没有后继，不需要插入空间：相邻整点仍为 50dp
         val layout = listOf(course(480, 540))

@@ -60,7 +60,9 @@ import com.kyant.shapes.RoundedRectangle
  *
  * 布局规则：
  * - 高度按时间占比（映射与比例尺见 DayTimeline KDoc：基础 1 小时 = 50dp），比例高度
- *   装不下竖排内容时以内容最小高度撑底（顶边仍锚定开始时刻）；
+ *   装不下竖排内容时以内容最小高度撑底（顶边仍锚定开始时刻）；内容最小高度由渲染侧
+ *   实测（[DayTaskCardContent] 的真实测量结果经 [solveDayTaskLayout] 的 [contentHeights]
+ *   传入），备注折行/字体行高等任何撑高都会参与下方的 2dp 间距与时间轴局部拉伸；
  * - 同一横向范围内上下相邻卡至少留 2dp，时间贴背恰好 2dp；空间不足时由
  *   [solveDayTaskLayout] 在冲突时刻插入额外轴空间（左侧整点跨度局部变大）；
  * - 比例高度 < [DayTaskCompactThreshold]（≈84 分钟）切紧凑单行（时间 + 标签 + 时间 +
@@ -198,6 +200,8 @@ private val DayTaskContactGap = 6.dp
  *   局部变大——贴背任务恰好 2dp，未受影响的小时仍为 [hourSpacing]；
  * - 高度：先取 max(比例高度, 内容最小高度)，再把卡片时间区间内插入的额外空间计入，
  *   保证卡片仍覆盖被拉伸的时间段（结束边界处的插入留给下卡间距，不计入本卡）；
+ *   内容最小高度优先取 [contentHeights]（渲染侧对 [DayTaskCardContent] 的实测高度，
+ *   按输入顺序对应），缺省时用镜像排版常量的估算值（单测/预览等无排版上下文场景）；
  * - 接触角：上下卡实际渲染间距 < [DayTaskContactGap] 时收敛 6dp（含贴背 2dp）；
  * - 纵向原点：[anchorMinute]（时间轴首刻度），卡片顶边 = y(start) =
  *   [hourSpacing] × ((start − anchor) / 60 + 0.5) + 已插入的累计额外空间。
@@ -207,6 +211,7 @@ internal fun List<DayTask>.solveDayTaskLayout(
     hourSpacing: Dp,
     anchorMinute: Int = 0,
     fontScale: Float = 1f,
+    contentHeights: List<Dp>? = null,
 ): DayTaskLayout {
     if (isEmpty() || regionWidth <= 0.dp) {
         return DayTaskLayout(hourSpacing, anchorMinute, emptyList(), emptyList())
@@ -274,7 +279,11 @@ internal fun List<DayTask>.solveDayTaskLayout(
         narrow[index] = width < task.narrowThreshold
         compact[index] = !narrow[index] && proportionalHeight < DayTaskCompactThreshold
         baseHeights[index] = proportionalHeight
-        contentMins[index] = dayTaskContentMinHeight(
+        // 渲染侧实测内容高度优先（与画卡用同一内容 composable，备注折行等抖动不再是
+        // 估算误差）；紧凑卡仍保留 40dp 呼吸高下限。无实测时退回镜像常量估算
+        contentMins[index] = contentHeights?.getOrNull(index)?.let { measured ->
+            maxOf(measured, if (compact[index]) CompactMinHeight else 0.dp)
+        } ?: dayTaskContentMinHeight(
             task = task,
             compact = compact[index],
             narrow = narrow[index],
@@ -412,8 +421,15 @@ internal fun List<DayTask>.solveDayTaskPlacements(
     hourSpacing: Dp,
     anchorMinute: Int = 0,
     fontScale: Float = 1f,
+    contentHeights: List<Dp>? = null,
 ): List<DayTaskPlacement> =
-    solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute, fontScale).placements
+    solveDayTaskLayout(
+        regionWidth,
+        hourSpacing,
+        anchorMinute,
+        fontScale,
+        contentHeights,
+    ).placements
 
 /** 两段横向范围是否有共存（开区间——仅边线相贴不算，接触角需要共享一段宽度） */
 private fun xRangesIntersect(aStart: Dp, aEnd: Dp, bStart: Dp, bEnd: Dp): Boolean =
@@ -436,7 +452,9 @@ private fun List<DayTaskPush>.extraAt(minute: Int): Dp =
 /**
  * 卡片内容的最小高度：镜像 [NarrowTaskContent]/[VerticalTaskContent]/[CompactTaskContent]
  * 的排版常量，让布局在渲染前就知道内容需要的高度（渲染时的 heightIn 只作兜底）。
- * 窄卡（[narrow]）按实际卡宽 [width] 估算课程备注的换行行数。sp 按 [fontScale] 换算成 dp。
+ * 窄卡（[narrow]）按实际卡宽 [width] 估算课程备注的换行行数。sp 按 [fontScale] 换算
+ * 成 dp。渲染路径用 [DayTaskCardContent] 实测内容高度（[contentHeights]），这里只是
+ * 无排版上下文（单测/预览）时的兜底。
  */
 private fun dayTaskContentMinHeight(
     task: DayTask,
@@ -456,8 +474,8 @@ private fun dayTaskContentMinHeight(
             is DayTask.Course -> {
                 val hasTeacherLocation =
                     listOfNotNull(task.teacher, task.location).isNotEmpty()
-                val noteLines = task.note?.let {
-                    estimateNarrowNoteLines("备注：$it", width, fontScale)
+                val noteLines = task.note?.let { note ->
+                    estimateNarrowNoteLines("备注：$note", width, fontScale)
                 } ?: 0
                 var height = TaskContentPaddingVertical * 2 +
                     timeLine + TaskLineSpacing + titleLine
@@ -523,7 +541,8 @@ private fun dayTaskContentMinHeight(
     return maxOf(timeColumn, right, TaskTodoCheckboxSize)
 }
 
-/** 窄卡课程备注的估算行数：内容宽（卡宽 − 左右内距）按 13sp 中文字宽折算，至少 1 行 */
+/** 窄卡课程备注的估算行数：内容宽（卡宽 − 左右内距）按 13sp 中文字宽折算，至少 1 行。
+ *  无排版上下文时的兜底（单测/预览）；渲染侧由 [DayTaskCardContent] 实测整体内容高度 */
 private fun estimateNarrowNoteLines(text: String, width: Dp, fontScale: Float): Int {
     val contentWidth = (width - TaskCardPaddingHorizontal * 2).value
     val charWidth = TaskInfoFontSize.value * fontScale
@@ -546,16 +565,6 @@ private fun estimateNarrowNoteLines(text: String, width: Dp, fontScale: Float): 
 @Composable
 internal fun DayTaskCard(placement: DayTaskPlacement, modifier: Modifier = Modifier) {
     val task = placement.task
-    val accent = when (task) {
-        is DayTask.Course -> task.color.barColor(MaterialTheme.isDarkTheme)
-        // 待办左侧时间/标签矩形取截止时间色（NoteCard 属性行的同一取色：>2 天 Primary、
-        // 剩 2 天黄、剩 1 天橙、当天与逾期红）；无截止日期回落 Primary
-        is DayTask.Todo -> if (task.deadlineText != null) {
-            task.deadlineColor
-        } else {
-            MaterialTheme.colorScheme.primary
-        }
-    }
     val cardShape = dayTaskCardShape(
         topStartContact = placement.topStartContact,
         topEndContact = placement.topEndContact,
@@ -582,11 +591,36 @@ internal fun DayTaskCard(placement: DayTaskPlacement, modifier: Modifier = Modif
             .background(MaterialTheme.colorScheme.surface),
         propagateMinConstraints = true,
     ) {
-        when {
-            placement.narrow -> NarrowTaskContent(task, accent)
-            placement.compact -> CompactTaskContent(task, accent)
-            else -> VerticalTaskContent(task, accent)
+        DayTaskCardContent(
+            task = task,
+            compact = placement.compact,
+            narrow = placement.narrow,
+        )
+    }
+}
+
+/**
+ * 卡片内容（不含白底卡壳）：渲染与「布局前的内容高度实测」共用同一份 composable，因此
+ * 备注折行、字体行高、可见性分支等任何撑高质量都与求解器计入的一致。调用方负责给出与
+ * [DayTaskCard] 相同的宽度约束；卡壳 Box 的 propagateMinConstraints 会把卡高作为最小
+ * 高度传进来（竖排卡的时间列/内容列据此拉伸与垂直居中）。
+ */
+@Composable
+internal fun DayTaskCardContent(task: DayTask, compact: Boolean, narrow: Boolean) {
+    val accent = when (task) {
+        is DayTask.Course -> task.color.barColor(MaterialTheme.isDarkTheme)
+        // 待办左侧时间/标签矩形取截止时间色（NoteCard 属性行的同一取色：>2 天 Primary、
+        // 剩 2 天黄、剩 1 天橙、当天与逾期红）；无截止日期回落 Primary
+        is DayTask.Todo -> if (task.deadlineText != null) {
+            task.deadlineColor
+        } else {
+            MaterialTheme.colorScheme.primary
         }
+    }
+    when {
+        narrow -> NarrowTaskContent(task, accent)
+        compact -> CompactTaskContent(task, accent)
+        else -> VerticalTaskContent(task, accent)
     }
 }
 
