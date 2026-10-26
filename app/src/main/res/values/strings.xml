@@ -102,6 +102,7 @@
     <string name="todo_edit_move">移动</string>
     <string name="todo_edit_sync">同步</string>
     <string name="todo_edit_pin">置顶</string>
+    <string name="todo_edit_unpin">取消</string>
     <string name="todo_edit_confirm">确认</string>
     <string name="todo_edit_select_all">全选</string>
     <string name="todo_edit_deselect_all">取消全选</string>

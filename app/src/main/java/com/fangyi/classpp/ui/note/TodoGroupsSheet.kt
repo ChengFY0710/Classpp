@@ -914,7 +914,11 @@ private fun DeleteConfirmDialog(
     }
 }
 
-/** 置顶按钮三态：可点置顶 / 可点取消置顶 / 置灰（空选择或同时选中已置顶与未置顶） */
+/**
+ * 置顶按钮三态：可点置顶 / 可点取消置顶 / 置灰。判定口径由调用方决定——分组浮层用
+ * [pinAction]（空选择或混合置顶态置灰），待办编辑顶栏用 [todoPinAction]（空选择置灰，
+ * 混合时按置顶处理）。
+ */
 internal enum class PinAction { Pin, Unpin, Disabled }
 
 /**

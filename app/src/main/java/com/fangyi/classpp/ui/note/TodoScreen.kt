@@ -141,8 +141,9 @@ private val SectionSpacing = 20.dp
  *
  * 长按列表卡片进入待办编辑页（仅常规分组与标签页可用，特殊分组页无入口，闸门见
  * [enterTodoEdit]）：顶栏经 AnimatedContent 换场为编辑顶栏（[TodoEditBar]，删除/移动/
- * 同步/置顶/确认，规格与动画逐项对齐课表编辑顶栏，Motion.EditMillis + Standard），
- * 删除/置顶/移动批量作用于选中待办并即时落库（移动经 [GroupPickSheet] 点选目标分组），
+ * 同步/置顶（只选中已置顶待办时切「取消」）/确认，规格与动画逐项对齐课表编辑顶栏，
+ * Motion.EditMillis + Standard），删除/置顶/取消置顶/移动批量作用于选中待办并即时落库
+ *（移动经 [GroupPickSheet] 点选目标分组），
  * 「确认」/系统返回退出（不设取消，退出还原进编辑前的动作行展开状态）；
  * 卡片经 [NoteCard.selected] 转选中蓝框形态、分组头强制展开并把箭头换成「全选/取消
  * 全选」；编辑态下底部导航栏与渐隐遮罩下移出屏、侧滑与完成勾选停用。
@@ -475,9 +476,25 @@ fun TodoScreen(
             }
         }
     }
-    // 「置顶」可用性：所选非空且含未置顶待办——所选已全部置顶（含空选）时动作无效，
-    // 编辑顶栏把按钮置灰（negative 色）
-    val pinEnabled = selectedTodoIds.isNotEmpty() && todos.any { it.id in selectedTodoIds && !it.pinned }
+    // 编辑顶栏「取消」（只选中已置顶待办时出现，同一块按钮切换文案/图标）：逐条写回
+    // 取消置顶，成功 Toast 已取消置顶、任一失败 Toast 保存失败；卡片移出「已置顶」组，
+    // 选中保持
+    val onUnpinSelected: () -> Unit = {
+        val ids = selectedTodoIds.toList()
+        if (ids.isNotEmpty()) {
+            scope.launch {
+                var failed = false
+                for (id in ids) {
+                    if (repository.setPinned(id, false) is TodoOpResult.Err) failed = true
+                }
+                AppToasts.show(context, if (failed) groupSaveFailedMessage else todoUnpinnedMessage)
+            }
+        }
+    }
+    // 编辑顶栏置顶钮三态：空选择置灰；所选待办全部已置顶 → 按钮切「取消」+ ic_pin_off，
+    // 点击取消置顶；其余（全未置顶，或已置顶与未置顶混合）→ 显示「置顶」，点击整批置顶
+    //（混合时未置顶的一并置顶、已置顶的保持不动）
+    val pinAction = todoPinAction(todos, selectedTodoIds)
     // 编辑顶栏「移动」：唤起选择分组浮层（复用新建/编辑浮层的 GroupPickSheet，含「新建」），
     // 点选分组（null = 未分组）即把所选待办整批移动过去——只写 group 字段，其余不动
     //（置顶状态跟随，已置顶待办移动后仍在「已置顶」组；重复待办整系列生效，同删除/置顶
@@ -900,13 +917,14 @@ fun TodoScreen(
                 } else {
                     TodoEditBar(
                         moveEnabled = selectedTodoIds.isNotEmpty(),
-                        pinEnabled = pinEnabled,
+                        pinAction = pinAction,
                         onDelete = onDeleteSelected,
                         onMove = {
                             movePickMounted = true
                             movePickVisible = true
                         },
                         onPin = onPinSelected,
+                        onUnpin = onUnpinSelected,
                         onConfirm = exitTodoEdit,
                         hazeState = hazeState,
                     )

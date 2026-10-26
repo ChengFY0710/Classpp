@@ -28,6 +28,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.pressClickable
@@ -58,27 +59,31 @@ private val EditBarTopPadding = 6.dp
 internal val EditBarRowSpace = EditBarTopPadding + EditActionBarHeight
 
 /**
- * 待办编辑顶栏：删除 / 移动 / 同步 / 置顶 / 确认，取代常规的 [TodoTopBar]。
+ * 待办编辑顶栏：删除 / 移动 / 同步 / 置顶或取消 / 确认，取代常规的 [TodoTopBar]。
  *
  * 五个动作块等距一行（各占一等份），每块为"图标在上、文字在下"的纵向组合，
  * 规格（30dp 图标、13sp Medium 标签、1.10 按压放大、10dp 圆角按压形状）逐项对齐
  * 课表编辑顶栏（ScheduleEditBar）。背景与 [TodoTopBar] 同一套兜底色 + Haze 渐变模糊——
  * 列表滚动到顶栏之下时透出毛玻璃。
  *
- * 动作即时落库（见 TodoScreen 的 onDeleteSelected / onPinSelected / onMovePick），[onConfirm]
- * 只负责退出编辑——不设「取消」，系统返回同语义。「移动」经 [onMove] 唤起选择分组浮层
- *（复用 GroupPickSheet，点选即整批移动）；「同步」本次仅占位（显示但点击无操作）。
- * [moveEnabled] 为 false（未选中任何待办）时「移动」、[pinEnabled] 为 false（未选中任何
- * 待办，或所选待办已全部置顶）时「置顶」的 icon 与文字转 [classppColors.negative] 置灰、
- * 点击无效。
+ * 动作即时落库（见 TodoScreen 的 onDeleteSelected / onPinSelected / onUnpinSelected /
+ * onMovePick），[onConfirm] 只负责退出编辑——不设「取消」，系统返回同语义。「移动」经
+ * [onMove] 唤起选择分组浮层（复用 GroupPickSheet，点选即整批移动）；「同步」本次仅占位
+ *（显示但点击无操作）。
+ * [moveEnabled] 为 false（未选中任何待办）时「移动」置灰（icon 与文字转
+ * [classppColors.negative]、点击无效）。置顶块随 [pinAction] 三态切换：只选中已置顶
+ * 待办时显示「取消」+ ic_pin_off、点击 [onUnpin] 取消置顶；只选中未置顶或混合选择
+ *（既有已置顶又有未置顶）时显示「置顶」+ ic_pin、点击 [onPin] 整批置顶；未选中任何
+ * 待办时置灰不可点。
  */
 @Composable
 internal fun TodoEditBar(
     moveEnabled: Boolean,
-    pinEnabled: Boolean,
+    pinAction: PinAction,
     onDelete: () -> Unit,
     onMove: () -> Unit,
     onPin: () -> Unit,
+    onUnpin: () -> Unit,
     onConfirm: () -> Unit,
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
@@ -140,10 +145,24 @@ internal fun TodoEditBar(
                     .wrapContentWidth(Alignment.CenterHorizontally),
             )
             EditAction(
-                text = stringResource(R.string.todo_edit_pin),
-                iconRes = R.drawable.ic_pin,
-                color = if (pinEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.classppColors.negative,
-                onClick = { if (pinEnabled) onPin() },
+                // 置顶 / 取消置顶同一块：所选全部已置顶时切「取消」+ ic_pin_off，
+                // 其余可点情形统一显示「置顶」（混合选择把未置顶的一并置顶）
+                text = stringResource(
+                    if (pinAction == PinAction.Unpin) R.string.todo_edit_unpin else R.string.todo_edit_pin,
+                ),
+                iconRes = if (pinAction == PinAction.Unpin) R.drawable.ic_pin_off else R.drawable.ic_pin,
+                color = if (pinAction != PinAction.Disabled) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.classppColors.negative
+                },
+                onClick = {
+                    when (pinAction) {
+                        PinAction.Pin -> onPin()
+                        PinAction.Unpin -> onUnpin()
+                        PinAction.Disabled -> Unit
+                    }
+                },
                 modifier = Modifier
                     .weight(1f)
                     .wrapContentWidth(Alignment.CenterHorizontally),
@@ -202,11 +221,47 @@ private fun EditActionIcon(@DrawableRes iconRes: Int, color: Color) {
     )
 }
 
+/**
+ * 编辑顶栏置顶钮的判定（待办口径，与分组浮层的 [pinAction] 不同）：选中集为空
+ * （或所选 id 已不在待办列表）→ [PinAction.Disabled]；所选待办全部已置顶 →
+ * [PinAction.Unpin]（按钮显示「取消」+ ic_pin_off）；其余（全部未置顶，或已置顶与
+ * 未置顶混合）→ [PinAction.Pin]——混合时点按把未置顶的一并置顶，已置顶的保持不动。
+ */
+internal fun todoPinAction(todos: List<Todo>, selected: Set<String>): PinAction {
+    val chosen = todos.filter { it.id in selected }
+    if (chosen.isEmpty()) return PinAction.Disabled
+    return if (chosen.all { it.pinned }) PinAction.Unpin else PinAction.Pin
+}
+
 @Preview(showBackground = true, name = "待办编辑顶栏")
 @Composable
 private fun TodoEditBarPreview() {
     ClassppTheme {
-        TodoEditBar(moveEnabled = true, pinEnabled = true, onDelete = {}, onMove = {}, onPin = {}, onConfirm = {})
+        TodoEditBar(
+            moveEnabled = true,
+            pinAction = PinAction.Pin,
+            onDelete = {},
+            onMove = {},
+            onPin = {},
+            onUnpin = {},
+            onConfirm = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "待办编辑顶栏（取消置顶）")
+@Composable
+private fun TodoEditBarUnpinPreview() {
+    ClassppTheme {
+        TodoEditBar(
+            moveEnabled = true,
+            pinAction = PinAction.Unpin,
+            onDelete = {},
+            onMove = {},
+            onPin = {},
+            onUnpin = {},
+            onConfirm = {},
+        )
     }
 }
 
@@ -214,7 +269,15 @@ private fun TodoEditBarPreview() {
 @Composable
 private fun TodoEditBarPinDisabledPreview() {
     ClassppTheme {
-        TodoEditBar(moveEnabled = true, pinEnabled = false, onDelete = {}, onMove = {}, onPin = {}, onConfirm = {})
+        TodoEditBar(
+            moveEnabled = true,
+            pinAction = PinAction.Disabled,
+            onDelete = {},
+            onMove = {},
+            onPin = {},
+            onUnpin = {},
+            onConfirm = {},
+        )
     }
 }
 
@@ -222,6 +285,14 @@ private fun TodoEditBarPinDisabledPreview() {
 @Composable
 private fun TodoEditBarMoveDisabledPreview() {
     ClassppTheme {
-        TodoEditBar(moveEnabled = false, pinEnabled = false, onDelete = {}, onMove = {}, onPin = {}, onConfirm = {})
+        TodoEditBar(
+            moveEnabled = false,
+            pinAction = PinAction.Disabled,
+            onDelete = {},
+            onMove = {},
+            onPin = {},
+            onUnpin = {},
+            onConfirm = {},
+        )
     }
 }
