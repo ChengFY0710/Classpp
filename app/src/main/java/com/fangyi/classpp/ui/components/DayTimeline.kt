@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -61,24 +62,29 @@ private val TimeLabelFontSize = 12.sp
 
 /**
  * 日程页时间轴：左侧 [TimeAreaWidth] 时间列自 0:00 到次日 0:00 共 [HoursPerDay] + 1 个
- * 整点刻度（相邻间隔 [HourSpacing]），右侧为日程卡片区域——[DayTaskCard] 按任务时长
- * 比例排布（1 小时 = [HourSpacing]），由 [tasks] 传入当天任务，无任务时整块留白。
+ * 整点刻度（基础间隔 [HourSpacing]），右侧为日程卡片区域——[DayTaskCard] 按任务时长
+ * 比例排布（基础比例 1 小时 = [HourSpacing]），由 [tasks] 传入当天任务，无任务时整块留白。
+ *
+ * 时间轴跨度是动态的：卡片需要更多纵向空间时（内容撑高、短卡 40dp 下限、贴背 2dp
+ * 间距），在下方卡开始时刻插入额外空间，整点刻度跨度随该小时内插入量局部变大；没有
+ * 冲突的小时仍保持 [HourSpacing]。映射：
+ * y(t) = [HourSpacing] × ((t − 锚点) / 60 + 0.5) + 已插入的累计额外空间。
+ * 卡片顶边 = y(开始时刻)，高度见 [solveDayTaskLayout]（上下卡至少 2dp、贴背恰好 2dp）。
  *
  * 当前时间指示器（[nowMinute] 非 null 且不早于锚点时）：Error 色横线自时刻矩形右缘
  * 贯穿屏幕右缘（压过任务卡），时刻矩形（白字 Error 底）距屏幕左缘 [NowChipStartPadding]、
- * 文字居中，垂直对齐当前时刻的刻度中心。当前时刻距某整点前后各
+ * 文字居中，垂直对齐当前时刻的映射位置。当前时刻距某整点前后各
  * ≤ [NowNearTickThresholdMinutes] 分钟时，该整点刻度文字隐藏（矩形就近覆盖）。
  *
  * 网格线与课表页同款（1dp 实线、colorScheme.outline）：顶部/底部两条全宽横线 + 时间列
- * 右缘一条贯通竖线，无逐小时横线。首尾横线不压刻度——每个刻度落在 50dp 格的垂直中心，
- * 中心即该整点的时间位置，映射公式 y(t) = ((t − 锚点) / 60 + 0.5) × [HourSpacing]；
- * 卡片沿用同一映射：卡片顶边对齐其开始时刻的刻度中心、高度 = 时长/60 × [HourSpacing]，
+ * 右缘一条贯通竖线，无逐小时横线。刻度/卡片/指示器共用 [DayTaskLayout.yAt] 映射，
  * 卡片区域起点 x = [TimeAreaWidth] + [TaskAreaStartGap]、右缘收进 [PageHorizontalSpacing]
- * （与其他日程卡同边距），区域内布局见 [solveDayTaskPlacements]。
+ * （与其他日程卡同边距）。
  *
  * 网格锚点（首刻度）= 当天最早任务（[tasks]）开始时刻所在小时的整点（floor，如最早
  * 任务 7:30 → 7:00 起），不显示任务前的空档；无任务时恒为 0:00 起显示一整天；末刻度
- * 固定为次日 0:00。将来出现跨零点任务（> 24:00）再扩展末刻度与总高。
+ * 固定为次日 0:00。容器高度取「末刻度底边」与「卡片实际底边」的较大值，内容撑出
+ * 24:00 时页面继续向下延伸。
  */
 @Composable
 internal fun DayTimeline(
@@ -99,109 +105,115 @@ internal fun DayTimeline(
             if (hour == HoursPerDay) "0:00" else TimeText.format(hour * 60)
         }
     }
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(HourSpacing * (HoursPerDay - anchorHour + 1))
-            .drawBehind {
-                val stroke = GridLineWidth.toPx()
-                // 首尾横线全宽，笔迹整体落在容器内（与课表页首/末线同口径）
-                drawLine(
-                    outline,
-                    Offset(0f, stroke / 2),
-                    Offset(size.width, stroke / 2),
-                    strokeWidth = stroke,
-                )
-                drawLine(
-                    outline,
-                    Offset(0f, size.height - stroke / 2),
-                    Offset(size.width, size.height - stroke / 2),
-                    strokeWidth = stroke,
-                )
-                // 时间列右缘竖线：贯通上下横线
-                val x = TimeAreaWidth.toPx()
-                drawLine(outline, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
-            },
-    ) {
-        hourLabels.forEachIndexed { index, label ->
-            // 刻度盒 = 50dp 一格：文字水平居中于 44dp 时间列、垂直居中于本格，中心即
-            // (锚点 + index) 的时间位置 —— y(t) = ((t − 锚点) / 60 + 0.5) × HourSpacing。
-            // 当前时刻距本整点前后 ≤ [NowNearTickThresholdMinutes] 分钟时文字隐藏，
-            // 该处由指示器矩形就近覆盖
-            val tickMinute = (anchorHour + index) * 60
-            val now = nowMinute
-            val hiddenByNow = now != null && now >= anchorMinute &&
-                abs(now - tickMinute) <= NowNearTickThresholdMinutes
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(y = HourSpacing * index)
-                    .size(width = TimeAreaWidth, height = HourSpacing),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (!hiddenByNow) {
-                    Text(
-                        text = label,
-                        color = secondaryText,
-                        fontSize = TimeLabelFontSize,
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val fontScale = LocalDensity.current.fontScale
+        val regionWidth = maxWidth - TimeAreaWidth - TaskAreaStartGap - PageHorizontalSpacing
+        val layout = remember(tasks, regionWidth, anchorMinute, fontScale) {
+            tasks.solveDayTaskLayout(regionWidth, HourSpacing, anchorMinute, fontScale)
+        }
+        // 末刻度（次日 0:00）的格子底边；卡片内容撑出 24:00 时容器继续向下延伸
+        val axisBottom = layout.yAt(HoursPerDay * 60) + HourSpacing / 2
+        val cardBottom = layout.placements.maxOfOrNull { it.offsetY + it.height } ?: 0.dp
+        val timelineHeight = maxOf(axisBottom, cardBottom)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(timelineHeight)
+                .drawBehind {
+                    val stroke = GridLineWidth.toPx()
+                    // 首尾横线全宽，笔迹整体落在容器内（与课表页首/末线同口径）
+                    drawLine(
+                        outline,
+                        Offset(0f, stroke / 2),
+                        Offset(size.width, stroke / 2),
+                        strokeWidth = stroke,
                     )
+                    drawLine(
+                        outline,
+                        Offset(0f, size.height - stroke / 2),
+                        Offset(size.width, size.height - stroke / 2),
+                        strokeWidth = stroke,
+                    )
+                    // 时间列右缘竖线：贯通上下横线
+                    val x = TimeAreaWidth.toPx()
+                    drawLine(outline, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
+                },
+        ) {
+            hourLabels.forEachIndexed { index, label ->
+                // 刻度中心 = y(该整点)；局部拉伸会改变相邻刻度的间距，未受影响的小时
+                // 仍为 HourSpacing。当前时刻距本整点前后 ≤ [NowNearTickThresholdMinutes]
+                // 分钟时文字隐藏，该处由指示器矩形就近覆盖
+                val tickMinute = (anchorHour + index) * 60
+                val now = nowMinute
+                val hiddenByNow = now != null && now >= anchorMinute &&
+                    abs(now - tickMinute) <= NowNearTickThresholdMinutes
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .offset(y = layout.yAt(tickMinute) - HourSpacing / 2)
+                        .size(width = TimeAreaWidth, height = HourSpacing),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (!hiddenByNow) {
+                        Text(
+                            text = label,
+                            color = secondaryText,
+                            fontSize = TimeLabelFontSize,
+                        )
+                    }
                 }
             }
-        }
-        if (tasks.isNotEmpty()) {
-            // 卡片区域：网格竖线右侧留呼吸距、右缘与页面其他日程卡对齐；区域内按
-            // 时长比例求解位置/宽度/接触角（重叠均分等规则见求解器 KDoc）
-            val regionWidth = maxWidth - TimeAreaWidth - TaskAreaStartGap - PageHorizontalSpacing
-            val placements = remember(tasks, regionWidth) {
-                tasks.solveDayTaskPlacements(regionWidth, HourSpacing, anchorMinute)
+            if (tasks.isNotEmpty()) {
+                // 卡片区域：网格竖线右侧留呼吸距、右缘与页面其他日程卡对齐；区域内按
+                // 时长比例求解位置/宽度/接触角（重叠均分、纵向间距与局部拉伸见求解器）
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .padding(start = TimeAreaWidth + TaskAreaStartGap, end = PageHorizontalSpacing),
+                ) {
+                    layout.placements.forEach { DayTaskCard(it) }
+                }
             }
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .padding(start = TimeAreaWidth + TaskAreaStartGap, end = PageHorizontalSpacing),
-            ) {
-                placements.forEach { DayTaskCard(it) }
-            }
-        }
-        // 当前时刻早于锚点（还没到当天第一个任务的小时）时不在时间轴范围内，不显示
-        if (nowMinute != null && nowMinute >= anchorMinute) {
-            // 当前时间指示器：Error 色横线自时刻矩形右缘起贯穿屏幕右缘（不外露矩形
-            // 左侧，覆盖层压过任务卡与刻度），并向左多画 1dp 压进矩形底下保证接缝无隙；
-            // 时刻矩形贴时间列左缘、定宽定高、文字水平垂直居中，垂直对齐当前时刻的
-            // 刻度中心（映射同卡片）
-            val error = MaterialTheme.colorScheme.error
-            val onError = MaterialTheme.colorScheme.onError
-            val nowY = HourSpacing * ((nowMinute - anchorMinute) / 60f + 0.5f)
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .drawBehind {
-                        drawLine(
-                            error,
-                            Offset(
-                                (NowChipStartPadding + NowChipWidth - 1.dp).toPx(),
-                                nowY.toPx(),
-                            ),
-                            Offset(size.width, nowY.toPx()),
-                            strokeWidth = GridLineWidth.toPx(),
-                        )
-                    },
-            )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(x = NowChipStartPadding, y = nowY - NowChipHeight / 2)
-                    .size(width = NowChipWidth, height = NowChipHeight)
-                    .clip(DayTimelineNowChipShape)
-                    .background(error),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = TimeText.format(nowMinute),
-                    color = onError,
-                    fontSize = NowChipFontSize,
-                    fontWeight = FontWeight.Medium,
+            // 当前时刻早于锚点（还没到当天第一个任务的小时）时不在时间轴范围内，不显示
+            if (nowMinute != null && nowMinute >= anchorMinute) {
+                // 当前时间指示器：Error 色横线自时刻矩形右缘起贯穿屏幕右缘（不外露矩形
+                // 左侧，覆盖层压过任务卡与刻度），并向左多画 1dp 压进矩形底下保证接缝无隙；
+                // 时刻矩形贴时间列左缘、定宽定高、文字水平垂直居中，垂直对齐当前时刻的
+                // 映射位置（与刻度/卡片同一 yAt）
+                val error = MaterialTheme.colorScheme.error
+                val onError = MaterialTheme.colorScheme.onError
+                val nowY = layout.yAt(nowMinute)
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .drawBehind {
+                            drawLine(
+                                error,
+                                Offset(
+                                    (NowChipStartPadding + NowChipWidth - 1.dp).toPx(),
+                                    nowY.toPx(),
+                                ),
+                                Offset(size.width, nowY.toPx()),
+                                strokeWidth = GridLineWidth.toPx(),
+                            )
+                        },
                 )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .offset(x = NowChipStartPadding, y = nowY - NowChipHeight / 2)
+                        .size(width = NowChipWidth, height = NowChipHeight)
+                        .clip(DayTimelineNowChipShape)
+                        .background(error),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = TimeText.format(nowMinute),
+                        color = onError,
+                        fontSize = NowChipFontSize,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
             }
         }
     }

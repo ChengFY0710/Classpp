@@ -59,8 +59,10 @@ import com.kyant.shapes.RoundedRectangle
  * 信息行配色，待办沿用 NoteCard 的标题/属性行/勾选框样式。
  *
  * 布局规则：
- * - 高度按时间占比（映射与比例尺见 DayTimeline KDoc：1 小时 = 50dp），比例高度装不下
- *   竖排内容时以内容撑底（高度只增不减，顶边仍锚定开始时刻）；
+ * - 高度按时间占比（映射与比例尺见 DayTimeline KDoc：基础 1 小时 = 50dp），比例高度
+ *   装不下竖排内容时以内容最小高度撑底（顶边仍锚定开始时刻）；
+ * - 同一横向范围内上下相邻卡至少留 2dp，时间贴背恰好 2dp；空间不足时由
+ *   [solveDayTaskLayout] 在冲突时刻插入额外轴空间（左侧整点跨度局部变大）；
  * - 比例高度 < [DayTaskCompactThreshold]（≈84 分钟）切紧凑单行（时间 + 标签 + 时间 +
  *   标题横排一行）；
  * - 相邻任务贴近（渲染间距 < 6dp，含贴背）时接触角收敛为 6dp，时间重叠的任务均分
@@ -133,6 +135,29 @@ internal data class DayTaskPlacement(
 /** 重叠任务卡分列时的列间距（均分空间、间距 2dp） */
 internal val DayTaskColumnGap = 2.dp
 
+/** 上下相邻任务卡的最小纵向间距；时间贴背的任务恰好保持该间距 */
+internal val DayTaskVerticalGap = 2.dp
+
+/** 某一时刻起插入的额外轴空间：整条时间轴从 [minute] 起再向下平移 [extra] */
+internal data class DayTaskPush(val minute: Int, val extra: Dp)
+
+/**
+ * 时间轴布局结果：[yAt] 是时间→纵坐标的完整映射（基础比例 + 局部拉伸），[pushes]
+ * 记录每次局部拉伸，[placements] 与输入任务同序。
+ */
+internal data class DayTaskLayout(
+    val hourSpacing: Dp,
+    val anchorMinute: Int,
+    val placements: List<DayTaskPlacement>,
+    val pushes: List<DayTaskPush>,
+) {
+    /** ≤ [minute] 的累计额外空间：卡片顶边、整点刻度、当前时刻线使用 */
+    fun extraAt(minute: Int): Dp = pushes.extraAt(minute)
+
+    fun yAt(minute: Int): Dp =
+        hourSpacing * ((minute - anchorMinute) / 60f + 0.5f) + extraAt(minute)
+}
+
 /** 紧凑/竖排分界：竖排布局（上下时间 + 拉伸标签）最小内容高约 70dp（≈84 分钟），
  *  比例高度不足即切紧凑单行——1 小时 = 50dp 比例尺下 60 分钟待办为紧凑形态 */
 internal val DayTaskCompactThreshold = 70.dp
@@ -140,31 +165,32 @@ internal val DayTaskCompactThreshold = 70.dp
 /** 紧凑单行的最小高度兜底（比例高度更小时不再压缩，保证一行文字的呼吸感） */
 private val CompactMinHeight = 40.dp
 
-/** 贴近判定阈值：相邻任务渲染间距（时间差 × 比例尺）小于该值 → 接触角收敛 6dp */
+/** 贴近判定阈值：上下卡实际渲染间距小于该值 → 接触角收敛 6dp（贴背 2dp 也在此列） */
 private val DayTaskContactGap = 6.dp
 
 /**
- * 时间轴任务卡布局求解：重叠链分组 → 组内贪心分列 → 等宽均分 → 接触角标记。
+ * 时间轴任务卡布局求解：重叠链分组 → 组内贪心分列 → 等宽均分 → 纵向排布 → 接触角标记。
  *
- * - 分组：按开始时间排序后，start < 组内最大 end 即入同组（贴背 start == end 不算
- *   重叠，另起一组）；
- * - 分列：新卡放进「最后一节结束 ≤ 自己开始」的第一个既有列，否则新列——同列内
- *   时间永远不重叠；列分配顺序课程优先于待办（重叠时上课在左、待办在右）；
- * - 均分：组内 n 列等宽 = (区域宽 − (n−1) × [DayTaskColumnGap]) / n；
- * - 横向接触：相邻列且时间重叠的两卡，起/末两侧整边四角收敛；
- * - 纵向接触：不重叠且渲染间距（时间差 × 比例尺）< [DayTaskContactGap]（含贴背）
- *   的上下卡全局配对（贴背任务分属不同重叠链，不能只在列内找），按横向半宽分角；
- * - 高度：竖排卡 = 比例高度（渲染时作 heightIn 下限，内容更高自然撑底）；紧凑卡 =
- *   max(比例高度, [CompactMinHeight])；
- * - 纵向原点：[anchorMinute]（时间轴首刻度，见 DayTimeline），卡片顶边对齐其开始
- *   时刻的刻度中心 y = ((start − anchor) / 60 + 0.5) × hourSpacing。
+ * - 分组/分列/均分/横向接触：与旧版一致（贴背不算重叠，课程列优先，列间 2dp）；
+ * - 纵向排布：保持 1 小时 = [hourSpacing] 的基础比例，按开始时间顺序放置；同一横向
+ *   范围（x 区间严格相交）内、时间不重叠的上下卡之间至少留 [DayTaskVerticalGap]，
+ *   不足时在下方卡开始时刻插入额外轴空间（[DayTaskPush]），因此整点刻度跨度会按需
+ *   局部变大——贴背任务恰好 2dp，未受影响的小时仍为 [hourSpacing]；
+ * - 高度：先取 max(比例高度, 内容最小高度)，再把卡片时间区间内插入的额外空间计入，
+ *   保证卡片仍覆盖被拉伸的时间段（结束边界处的插入留给下卡间距，不计入本卡）；
+ * - 接触角：上下卡实际渲染间距 < [DayTaskContactGap] 时收敛 6dp（含贴背 2dp）；
+ * - 纵向原点：[anchorMinute]（时间轴首刻度），卡片顶边 = y(start) =
+ *   [hourSpacing] × ((start − anchor) / 60 + 0.5) + 已插入的累计额外空间。
  */
-internal fun List<DayTask>.solveDayTaskPlacements(
+internal fun List<DayTask>.solveDayTaskLayout(
     regionWidth: Dp,
     hourSpacing: Dp,
     anchorMinute: Int = 0,
-): List<DayTaskPlacement> {
-    if (isEmpty() || regionWidth <= 0.dp) return emptyList()
+    fontScale: Float = 1f,
+): DayTaskLayout {
+    if (isEmpty() || regionWidth <= 0.dp) {
+        return DayTaskLayout(hourSpacing, anchorMinute, emptyList(), emptyList())
+    }
     val order = withIndex().sortedWith(compareBy({ it.value.startMinute }, { it.value.endMinute }))
 
     // 重叠链分组（存下标，避免同字段待办在 map 里被值相等覆盖）
@@ -178,11 +204,13 @@ internal fun List<DayTask>.solveDayTaskPlacements(
         }
     }
 
-    val results = arrayOfNulls<DayTaskPlacement>(size)
+    // 分列：列分配顺序课程优先于待办（重叠分列时上课固定在左、待办在右），同型按开始
+    // 时间；同列内时间不重叠（列内按 start 有序，末尾卡 end 即列占用下限）
+    val columnInfo = arrayOfNulls<DayTaskColumnInfo>(size)
+    val startContact = BooleanArray(size)
+    val endContact = BooleanArray(size)
     for (group in groups) {
-        // 列分配顺序：课程优先于待办（重叠分列时上课固定在左、待办在右），同型按开始时间
         group.sortWith(compareBy({ this[it].columnPriority }, { this[it].startMinute }))
-        // 组内贪心分列：同列内时间不重叠（列内按 start 有序，末尾卡 end 即列占用下限）
         val columns = mutableListOf<MutableList<Int>>()
         val columnOf = IntArray(size) { -1 }
         for (index in group) {
@@ -199,30 +227,123 @@ internal fun List<DayTask>.solveDayTaskPlacements(
             val column = columns[columnIndex]
             for (index in column) {
                 val task = this[index]
-                val proportionalHeight = hourSpacing * ((task.endMinute - task.startMinute) / 60f)
-                val compact = proportionalHeight < DayTaskCompactThreshold
                 // 横向贴邻：相邻列存在时间重叠的卡 → 起/末两侧整边收敛
-                val touchesPrevious = columnIndex > 0 &&
+                startContact[index] = columnIndex > 0 &&
                     columns[columnIndex - 1].any { overlapsInTime(this[it], task) }
-                val touchesNext = columnIndex < columnCount - 1 &&
+                endContact[index] = columnIndex < columnCount - 1 &&
                     columns[columnIndex + 1].any { overlapsInTime(task, this[it]) }
-                results[index] = DayTaskPlacement(
-                    task = task,
+                columnInfo[index] = DayTaskColumnInfo(
                     offsetX = (columnWidth + DayTaskColumnGap) * columnOf[index],
-                    offsetY = hourSpacing * ((task.startMinute - anchorMinute) / 60f + 0.5f),
                     width = columnWidth,
-                    height = if (compact) maxOf(proportionalHeight, CompactMinHeight) else proportionalHeight,
-                    topStartContact = touchesPrevious,
-                    topEndContact = touchesNext,
-                    bottomStartContact = touchesPrevious,
-                    bottomEndContact = touchesNext,
-                    compact = compact,
                 )
             }
         }
     }
 
-    // 纵向接触全局配对：上卡 end ≤ 下卡 start 且渲染间距 < [DayTaskContactGap]，
+    // 形态与高度基准：紧凑判定沿用基础比例尺（1 小时 = hourSpacing）；内容最小高度
+    // 把渲染时 heightIn 的撑高量提前纳入布局，避免内容压住下卡。[baseHeights] 会随
+    // 卡内插入的空间增长（见下方局部拉伸）
+    val compact = BooleanArray(size)
+    val baseHeights = arrayOfNulls<Dp>(size)
+    val contentMins = arrayOfNulls<Dp>(size)
+    for (index in indices) {
+        val task = this[index]
+        val proportionalHeight = hourSpacing * ((task.endMinute - task.startMinute) / 60f)
+        compact[index] = proportionalHeight < DayTaskCompactThreshold
+        baseHeights[index] = proportionalHeight
+        contentMins[index] = dayTaskContentMinHeight(task, compact[index], fontScale)
+    }
+
+    // 纵向排布：按开始时间分组，同组卡片顶边对齐。每放置一组前，先看所有已放置且
+    // 横向相交、时间已结束的卡；不足 2dp 时在组开始时刻插入额外空间（时间轴局部拉伸）
+    val sortedIndices = indices.sortedWith(
+        compareBy({ this[it].startMinute }, { this[it].endMinute }),
+    )
+    val tops = arrayOfNulls<Dp>(size)
+    val pushes = mutableListOf<DayTaskPush>()
+    val placed = mutableListOf<Int>()
+    var extra = 0.dp
+    var groupStart = 0
+    while (groupStart < sortedIndices.size) {
+        val start = this[sortedIndices[groupStart]].startMinute
+        var groupEnd = groupStart
+        while (groupEnd < sortedIndices.size &&
+            this[sortedIndices[groupEnd]].startMinute == start
+        ) {
+            groupEnd++
+        }
+        val baseTop = hourSpacing * ((start - anchorMinute) / 60f + 0.5f) + extra
+        var top = baseTop
+        for (i in groupStart until groupEnd) {
+            val info = requireNotNull(columnInfo[sortedIndices[i]])
+            for (placedIndex in placed) {
+                if (this[placedIndex].endMinute > start) continue
+                val placedInfo = requireNotNull(columnInfo[placedIndex])
+                if (!xRangesIntersect(
+                        info.offsetX,
+                        info.offsetX + info.width,
+                        placedInfo.offsetX,
+                        placedInfo.offsetX + placedInfo.width,
+                    )
+                ) {
+                    continue
+                }
+                top = maxOf(
+                    top,
+                    requireNotNull(tops[placedIndex]) +
+                        maxOf(
+                            requireNotNull(baseHeights[placedIndex]),
+                            requireNotNull(contentMins[placedIndex]),
+                        ) +
+                        DayTaskVerticalGap,
+                )
+            }
+        }
+        if (top > baseTop) {
+            val inserted = top - baseTop
+            extra += inserted
+            pushes.add(DayTaskPush(start, extra))
+            // 时间轴从这里整体下移：正在跨越该时刻的卡片同步加高，保持覆盖自己的
+            // 时间段；结束边界上的插入不算卡内（留给下卡间距）
+            for (placedIndex in placed) {
+                val placedTask = this[placedIndex]
+                if (placedTask.startMinute < start && start < placedTask.endMinute) {
+                    baseHeights[placedIndex] =
+                        requireNotNull(baseHeights[placedIndex]) + inserted
+                }
+            }
+        }
+        for (i in groupStart until groupEnd) {
+            tops[sortedIndices[i]] = top
+        }
+        placed.addAll(sortedIndices.subList(groupStart, groupEnd))
+        groupStart = groupEnd
+    }
+
+    // 最终高度：比例高度 + 本卡时间区间内插入的空间（不含结束边界，边界空间留给下卡
+    // 间距），并保证不低于内容最小高度
+    val results = arrayOfNulls<DayTaskPlacement>(size)
+    for (index in indices) {
+        val task = this[index]
+        val info = requireNotNull(columnInfo[index])
+        results[index] = DayTaskPlacement(
+            task = task,
+            offsetX = info.offsetX,
+            offsetY = requireNotNull(tops[index]),
+            width = info.width,
+            height = maxOf(
+                requireNotNull(baseHeights[index]),
+                requireNotNull(contentMins[index]),
+            ),
+            topStartContact = startContact[index],
+            topEndContact = endContact[index],
+            bottomStartContact = startContact[index],
+            bottomEndContact = endContact[index],
+            compact = compact[index],
+        )
+    }
+
+    // 纵向接触全局配对：上卡 end ≤ 下卡 start，按实际渲染间距判定（含贴背 2dp），
     // 按横向半宽分角——下卡压上卡左半 → 上卡 bottomStart / 下卡 topStart，右半同理
     val solved = List(size) { requireNotNull(results[it]) }.toMutableList()
     for (i in solved.indices) {
@@ -231,11 +352,7 @@ internal fun List<DayTask>.solveDayTaskPlacements(
             val upper = solved[i]
             val lower = solved[j]
             if (upper.task.endMinute > lower.task.startMinute) continue
-            if (hourSpacing * ((lower.task.startMinute - upper.task.endMinute) / 60f) >=
-                DayTaskContactGap
-            ) {
-                continue
-            }
+            if (lower.offsetY - (upper.offsetY + upper.height) >= DayTaskContactGap) continue
             val upperLeft = upper.offsetX
             val upperMid = upper.offsetX + upper.width / 2f
             val upperRight = upper.offsetX + upper.width
@@ -256,8 +373,17 @@ internal fun List<DayTask>.solveDayTaskPlacements(
             }
         }
     }
-    return solved
+    return DayTaskLayout(hourSpacing, anchorMinute, solved, pushes.toList())
 }
+
+/** 旧入口：只取布局结果中的卡片位置（预览与既有单测使用） */
+internal fun List<DayTask>.solveDayTaskPlacements(
+    regionWidth: Dp,
+    hourSpacing: Dp,
+    anchorMinute: Int = 0,
+    fontScale: Float = 1f,
+): List<DayTaskPlacement> =
+    solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute, fontScale).placements
 
 /** 两段横向范围是否有共存（开区间——仅边线相贴不算，接触角需要共享一段宽度） */
 private fun xRangesIntersect(aStart: Dp, aEnd: Dp, bStart: Dp, bEnd: Dp): Boolean =
@@ -266,6 +392,63 @@ private fun xRangesIntersect(aStart: Dp, aEnd: Dp, bStart: Dp, bEnd: Dp): Boolea
 /** 两任务时间区间是否重叠（贴背不算） */
 private fun overlapsInTime(a: DayTask, b: DayTask): Boolean =
     a.startMinute < b.endMinute && b.startMinute < a.endMinute
+
+/** 卡片在横向上的分列结果 */
+private data class DayTaskColumnInfo(
+    val offsetX: Dp,
+    val width: Dp,
+)
+
+/** ≤ [minute] 的累计额外空间（[pushes] 按分钟升序） */
+private fun List<DayTaskPush>.extraAt(minute: Int): Dp =
+    lastOrNull { it.minute <= minute }?.extra ?: 0.dp
+
+/**
+ * 卡片内容的最小高度：镜像 [VerticalTaskContent]/[CompactTaskContent] 的排版常量，
+ * 让布局在渲染前就知道内容需要的高度（渲染时的 heightIn 只作兜底）。sp 按 [fontScale]
+ * 换算成 dp。
+ */
+private fun dayTaskContentMinHeight(task: DayTask, compact: Boolean, fontScale: Float): Dp {
+    val titleLine = (TaskTitleLineHeight.value * fontScale).dp
+    val timeLine = (TaskTimeLineHeight.value * fontScale).dp
+    val tagLine = (TaskTagLineHeight.value * fontScale).dp
+    if (compact) {
+        return maxOf(
+            CompactMinHeight,
+            timeLine,
+            tagLine + TaskTagPaddingVertical * 2,
+            titleLine,
+            TaskTodoCheckboxSize,
+        )
+    }
+    // 左侧时间列：上下时间 + 两行标签 + 2dp 上下内距与 3dp 间距
+    val timeColumn = TaskTimeEdgeInset * 2 +
+        timeLine * 2 +
+        TaskTagGap * 2 +
+        tagLine * 2
+    val right = when (task) {
+        is DayTask.Course -> {
+            val infoCount = listOfNotNull(task.teacher, task.location, task.note).size
+            TaskContentPaddingVertical * 2 +
+                titleLine +
+                ((TaskInfoLineHeight.value * fontScale).dp + TaskLineSpacing) * infoCount
+        }
+        is DayTask.Todo -> {
+            // 属性行（时间 + 截止）在窄列里最多两项、可能折成两行
+            val rows = if (task.deadlineText != null) 2 else 1
+            val rowHeight = maxOf(
+                TaskPropertyIconSize,
+                (TaskPropertyLineHeight.value * fontScale).dp,
+            )
+            TaskContentPaddingVertical * 2 +
+                titleLine +
+                TaskTitlePropertySpacing +
+                rowHeight * rows +
+                TaskPropertyRowGap * (rows - 1)
+        }
+    }
+    return maxOf(timeColumn, right, TaskTodoCheckboxSize)
+}
 
 // ---------- 渲染 ----------
 
@@ -408,6 +591,7 @@ private fun VerticalTodoContent(task: DayTask.Todo, modifier: Modifier = Modifie
                 } else {
                     MaterialTheme.colorScheme.onSurface
                 },
+                lineHeight = TaskTitleLineHeight,
             ),
             textDecoration = if (task.completed) TextDecoration.LineThrough else null,
             maxLines = 1,
@@ -498,6 +682,7 @@ private fun CompactTaskTitle(title: String, completed: Boolean, modifier: Modifi
             } else {
                 MaterialTheme.colorScheme.onSurface
             },
+            lineHeight = TaskTitleLineHeight,
         ),
         textDecoration = if (completed) TextDecoration.LineThrough else null,
         maxLines = 1,
@@ -654,6 +839,13 @@ private val TaskPropertyItemEndPadding = 8.dp
 
 /** 待办勾选框热区：方径见 [TaskTodoCheckboxSize]（NoteCard 同款 36dp），M3 Checkbox 居中其中 */
 private val TaskTodoCheckboxSize = 36.dp
+
+/** 待办属性行（TimeProperty）的图标尺寸与保守行高：用于内容最小高度估算 */
+private val TaskPropertyIconSize = 16.dp
+private val TaskPropertyLineHeight = 18.sp
+
+/** 待办属性行换行时的行间距（FlowRow verticalArrangement = 3dp） */
+private val TaskPropertyRowGap = 3.dp
 
 /** 标签底色透明度：课程色 25%（DayCourseAlert 同款设计巧思）；待办取 Primary 10%
  *  （NoteCard TagChip 同款） */

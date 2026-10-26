@@ -161,4 +161,122 @@ class DayTaskPlacementTest {
             .solveDayTaskPlacements(regionWidth, hourSpacing, anchorMinute = 420)
         assertEquals(50f * (60 / 60f + 0.5f), placements[0].offsetY.value, 1e-3f)
     }
+
+    // ---------- 纵向间距：≥2dp、贴背 2dp、时间轴局部拉伸 ----------
+
+    private fun richCourse(start: Int, end: Int) = DayTask.Course(
+        name = "课程",
+        teacher = "老师",
+        location = "教室",
+        note = "备注",
+        color = CourseColor.Blue,
+        startMinute = start,
+        endMinute = end,
+    )
+
+    private fun DayTaskPlacement.bottom() = offsetY + height
+
+    private fun xIntersects(a: DayTaskPlacement, b: DayTaskPlacement): Boolean =
+        a.offsetX < b.offsetX + b.width && b.offsetX < a.offsetX + a.width
+
+    @Test
+    fun backToBackCardsKeepExactlyTwoDpGap() {
+        // 8:00-9:00 + 9:00-10:00：贴背后下卡被下推 2dp，轴在 9:00 处局部拉伸
+        val placements = listOf(course(480, 540), todo(540, 600))
+            .solveDayTaskPlacements(regionWidth, hourSpacing)
+        val gap = placements[1].offsetY - placements[0].bottom()
+        assertEquals(DayTaskVerticalGap.value, gap.value, 1e-3f)
+    }
+
+    @Test
+    fun shortTaskPushesNextCardAndStretchesHourSpan() {
+        // 20 分钟待办按 40dp 兜底；贴背下卡从 16.7dp 处被推到 42dp，9:00→10:00 的
+        // 刻度跨度随之变大
+        val layout = listOf(todo(600, 620), todo(620, 680))
+            .solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 600)
+        val first = layout.placements[0]
+        val second = layout.placements[1]
+        assertEquals(40f, first.height.value, 1e-3f)
+        assertEquals(
+            DayTaskVerticalGap.value,
+            (second.offsetY - first.bottom()).value,
+            1e-3f,
+        )
+        assertTrue(layout.extraAt(620) > 0.dp)
+        assertTrue(layout.yAt(660) - layout.yAt(600) > hourSpacing)
+    }
+
+    @Test
+    fun contentGrownCoursePushesFollowingCard() {
+        // 100 分钟课程比例高度 ≈ 83.3dp，三行信息内容高 103dp：高度取内容高，
+        // 贴背待办被推到课程底边下方 2dp
+        val layout = listOf(richCourse(480, 580), todo(580, 640))
+            .solveDayTaskLayout(regionWidth, hourSpacing)
+        val course = layout.placements[0]
+        val todo = layout.placements[1]
+        assertFalse(course.compact)
+        assertTrue(course.height > hourSpacing * (100 / 60f))
+        assertEquals(
+            DayTaskVerticalGap.value,
+            (todo.offsetY - course.bottom()).value,
+            1e-3f,
+        )
+        assertTrue(layout.extraAt(580) > 0.dp)
+    }
+
+    @Test
+    fun axisStaysUniformWithoutPushes() {
+        // 单卡没有后继，不需要插入空间：相邻整点仍为 50dp
+        val layout = listOf(course(480, 540))
+            .solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 480)
+        assertEquals(hourSpacing.value, (layout.yAt(540) - layout.yAt(480)).value, 1e-3f)
+        assertEquals(hourSpacing.value, (layout.yAt(600) - layout.yAt(540)).value, 1e-3f)
+    }
+
+    @Test
+    fun cardSpanningInsertedSpaceStretchesWithAxis() {
+        // C(7:50-8:05) 与 B(8:10-8:30) 同列贴得近，B 在 8:10 推出一段轴空间；
+        // A(8:00-10:00) 横跨该时刻 → A 跟着加高；D(10:00-10:20) 仍与 A 保持 2dp
+        val layout = listOf(
+            course(470, 485),
+            course(480, 600),
+            course(490, 510),
+            course(600, 620),
+        ).solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 420)
+        val spanning = layout.placements[1]
+        val below = layout.placements[3]
+        assertTrue(spanning.height > hourSpacing * (120 / 60f))
+        assertEquals(
+            DayTaskVerticalGap.value,
+            (below.offsetY - spanning.bottom()).value,
+            1e-3f,
+        )
+    }
+
+    @Test
+    fun horizontallyOverlappingCardsNeverOverlapVertically() {
+        // 覆盖贴背、跨重叠链、半宽列与全宽列相交等组合：所有横向相交且时间不重叠
+        // 的上下卡实际间距都必须 ≥ 2dp
+        val layout = listOf(
+            course(480, 540),
+            todo(540, 560),
+            course(570, 680),
+            todo(600, 620),
+            todo(690, 700),
+        ).solveDayTaskLayout(regionWidth, hourSpacing)
+        for (i in layout.placements.indices) {
+            for (j in layout.placements.indices) {
+                if (i == j) continue
+                val upper = layout.placements[i]
+                val lower = layout.placements[j]
+                if (upper.task.endMinute > lower.task.startMinute) continue
+                if (!xIntersects(upper, lower)) continue
+                val gap = lower.offsetY - upper.bottom()
+                assertTrue(
+                    "cards $i/$j gap=$gap < ${DayTaskVerticalGap}",
+                    gap >= DayTaskVerticalGap,
+                )
+            }
+        }
+    }
 }
