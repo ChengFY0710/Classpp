@@ -21,8 +21,9 @@ import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
  *
  * 三个入口排成三张独立白卡（设计稿即三张卡、卡间露灰底），整列收进一个无题 [CardSection]：
  * JSON 文件、剪贴板、Wakeup 分享口令。与 [ScheduleSwitcherSheet] 同一职责划分——实际导入
- * （文件选择器 / 读剪贴板 / 仓库落盘）全由调用方执行，这里纯 UI；Wakeup 入口本轮只做 UI，
- * 行样式照常可点、暂无动作。
+ * （文件选择器 / 读剪贴板 / 跑 Wakeup 适配脚本 / 仓库落盘）全由调用方执行，这里纯 UI。
+ * Wakeup 入口再叠一层输入浮层（[WakeupImportSheet]，调用方挂载），盖上来时本浮层经
+ * covered 缩小后退。
  *
  * 顶栏只有右侧「关闭」胶囊（confirmLabel = null 时自动右对齐、文字在前图标在后）；
  * 列表无输入框，键盘不必让位（IgnoreIme）。
@@ -34,6 +35,7 @@ internal fun ImportScheduleSheet(
     onDismiss: () -> Unit,
     onImportJsonFile: () -> Unit,
     onImportClipboard: () -> Unit,
+    onImportWakeup: () -> Unit,
     covered: Boolean = false,
 ) {
     // 返回键关浮层；叠在切换课表浮层之上，后注册因此先收到
@@ -83,11 +85,11 @@ internal fun ImportScheduleSheet(
                 )
                 SettingsCard(
                     items = listOf(
-                        // Wakeup 分享口令：本轮只做 UI，点击暂无动作
+                        // Wakeup 分享口令：打开输入浮层（调用方挂载，叠在本浮层之上）
                         SettingsCardItem.Nav(
                             label = stringResource(R.string.import_wakeup_label),
                             description = stringResource(R.string.import_wakeup_desc),
-                            onClick = {},
+                            onClick = onImportWakeup,
                         ),
                     ),
                 )

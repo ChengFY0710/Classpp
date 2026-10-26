@@ -86,9 +86,14 @@ import com.fangyi.classpp.data.filterTodos
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
+import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.data.model.overlappingCourses
+import com.fangyi.classpp.data.wakeup.WakeupImportExecutor
+import com.fangyi.classpp.data.wakeup.WakeupScheduleMapper
+import com.fangyi.classpp.data.wakeup.WakeupScriptStore
+import com.fangyi.classpp.data.wakeup.WakeupShareText
 import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.LocalTodayState
@@ -105,6 +110,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlin.math.abs
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -442,6 +448,8 @@ fun ScheduleScreen(
             var switcherCreateVisible by rememberSaveable { mutableStateOf(false) }
             // 导入课表浮层：切换课表底部「导入课表」打开，叠在切换浮层之上（同新建表单）
             var importSheetVisible by rememberSaveable { mutableStateOf(false) }
+            // Wakeup 口令导入浮层：导入浮层第三入口打开，叠在导入浮层之上（同分层动效）
+            var wakeupSheetVisible by rememberSaveable { mutableStateOf(false) }
             // 课表设置浮层：编辑栏按钮打开（内容自原设置页迁入，见 ScheduleSettingsSheet）
             var settingsSheetVisible by rememberSaveable { mutableStateOf(false) }
             // 编辑态的网格数据源：草稿 → 渲染模型（复用仓库路径同一套映射与置灰规则）。
@@ -630,6 +638,7 @@ fun ScheduleScreen(
                 switcherVisible = false
                 switcherCreateVisible = false
                 importSheetVisible = false
+                wakeupSheetVisible = false
                 addTarget = emptyList()
                 editTargetId = ""
                 chooserSourceId = ""
@@ -790,6 +799,68 @@ fun ScheduleScreen(
                             }
                             is ReadResult.Err ->
                                 AppToasts.show(context, r.error.toEditMessage(context))
+                        }
+                    }
+                }
+            }
+
+            // Wakeup 口令导入：解析口令 → 无头 WebView 跑云端适配脚本 → 纯函数映射成
+            // Classpp 课表 → 确认弹窗（课程数/课表名）→ 走仓库导入（复用 JSON 导入的
+            // 校验/名称去重/新 id 路径）。运行态（importing/进度/解析结果）刻意不
+            // rememberSaveable：旋转/进程重建时 rememberCoroutineScope 一并取消，导入就地
+            // 作废——比起跨重建续跑一个无头 WebView，作废重导更简单也更稳
+            val wakeupKeyInvalidToast = stringResource(R.string.error_wakeup_key_invalid)
+            val wakeupScriptToast = stringResource(R.string.error_wakeup_script)
+            val wakeupTimeoutToast = stringResource(R.string.error_wakeup_timeout)
+            val wakeupNoCoursesToast = stringResource(R.string.error_wakeup_no_courses)
+            val unexpectedToast = stringResource(R.string.error_unexpected)
+            val wakeupDefaultName = stringResource(R.string.import_wakeup_default_name)
+            var wakeupImporting by remember { mutableStateOf(false) }
+            var wakeupProgressText by remember { mutableStateOf("") }
+            var wakeupParsed by remember { mutableStateOf<Schedule?>(null) }
+            var wakeupImportJob by remember { mutableStateOf<Job?>(null) }
+            val onWakeupImport: (String) -> Unit = { shareText ->
+                if (!wakeupImporting) {
+                    val key = WakeupShareText.extractShareKey(shareText)
+                    // 口令非法就地拦截，垃圾输入不进无头 WebView
+                    if (!WakeupShareText.isValidKey(key)) {
+                        AppToasts.show(context, wakeupKeyInvalidToast)
+                    } else {
+                        wakeupImporting = true
+                        wakeupProgressText = ""
+                        wakeupImportJob = scope.launch {
+                            try {
+                                val script = WakeupScriptStore.ensureScript(context)
+                                val payload = WakeupImportExecutor.import(context, key, script) { progress ->
+                                    // 进度文案来自脚本 toast（桥已收敛到主线程），直接进状态
+                                    wakeupProgressText = progress
+                                }
+                                val schedule = WakeupScheduleMapper.toScheduleOrNull(
+                                    payload,
+                                    shareText,
+                                    wakeupDefaultName,
+                                )
+                                if (schedule == null) {
+                                    AppToasts.show(context, wakeupNoCoursesToast)
+                                } else {
+                                    wakeupParsed = schedule
+                                }
+                            } catch (e: WakeupScriptStore.ScriptUnavailableException) {
+                                AppToasts.show(context, wakeupScriptToast)
+                            } catch (e: WakeupImportExecutor.WakeupImportException) {
+                                val message = when (e.reason) {
+                                    WakeupImportExecutor.Reason.Timeout,
+                                    WakeupImportExecutor.Reason.PageLoad,
+                                    -> wakeupTimeoutToast
+                                    WakeupImportExecutor.Reason.NoCourses -> wakeupNoCoursesToast
+                                    // 脚本给出的可读文案原样透传（如「无效的分享口令」）
+                                    WakeupImportExecutor.Reason.Failed ->
+                                        e.message?.takeIf { it.isNotBlank() } ?: unexpectedToast
+                                }
+                                AppToasts.show(context, message)
+                            } finally {
+                                wakeupImporting = false
+                            }
                         }
                     }
                 }
@@ -1118,8 +1189,9 @@ fun ScheduleScreen(
                 )
             }
 
-            // 切换课表浮层：列表 + 底部导出导入；新建表单、导入浮层与脏草稿确认都叠在它之上——
-            // 组合顺序保证返回键优先级：脏草稿确认 → 新建表单 → 导入浮层 → 切换浮层 → 编辑取消。
+            // 切换课表浮层：列表 + 底部导出导入；新建表单、导入浮层（及其上的 Wakeup 输入
+            // 浮层）与脏草稿确认都叠在它之上——组合顺序保证返回键优先级：脏草稿确认 →
+            // Wakeup 确认框 → 新建表单 → Wakeup 输入 → 导入浮层 → 切换浮层 → 编辑取消。
             // 挂载与可见性分离（同课程面板的两段式关闭）：关闭先播浮层出场动画，
             // 播完（onDismissed）才真正卸载
             var switcherMounted by remember { mutableStateOf(false) }
@@ -1153,6 +1225,63 @@ fun ScheduleScreen(
                         onDismiss = { importSheetVisible = false },
                         onImportJsonFile = { importLauncher.launch(ScheduleJsonMimeTypes) },
                         onImportClipboard = onImportClipboard,
+                        // Wakeup 输入浮层盖上来时本浮层缩小后退（分层动效与新建表单一致）
+                        onImportWakeup = { wakeupSheetVisible = true },
+                        covered = wakeupSheetVisible,
+                    )
+                }
+                // Wakeup 口令导入浮层：叠在导入浮层之上（粘贴分享文案 → 跑云端适配脚本）。
+                // 关浮层 = 取消导入（onDismissed 取消协程，执行器 finally 销毁 WebView）
+                var wakeupSheetMounted by remember { mutableStateOf(false) }
+                if (wakeupSheetVisible) wakeupSheetMounted = true
+                if (wakeupSheetMounted) {
+                    WakeupImportSheet(
+                        visible = wakeupSheetVisible,
+                        onDismissed = {
+                            wakeupSheetMounted = false
+                            // 浮层收场即取消在途导入：解析态一并复位（确认弹窗未开时无副作用）
+                            wakeupImporting = false
+                            wakeupImportJob?.cancel()
+                        },
+                        onDismiss = { wakeupSheetVisible = false },
+                        onConfirm = onWakeupImport,
+                        importing = wakeupImporting,
+                        progressText = wakeupProgressText,
+                    )
+                }
+                // Wakeup 导入确认框：叠在输入浮层之上（两段式同删除确认框）；
+                // 确认 → 仓库导入（复用 JSON 导入路径）→ 关浮层链 → 走统一切换（脏则弹确认）
+                var wakeupConfirmMounted by remember { mutableStateOf(false) }
+                val wakeupConfirmVisible = wakeupParsed != null
+                if (wakeupConfirmVisible) wakeupConfirmMounted = true
+                if (wakeupConfirmMounted) {
+                    WakeupImportConfirmDialog(
+                        courseCount = wakeupParsed?.courses?.size ?: 0,
+                        scheduleName = wakeupParsed?.name.orEmpty(),
+                        visible = wakeupConfirmVisible,
+                        onDismissed = { wakeupConfirmMounted = false },
+                        onCancel = { wakeupParsed = null },
+                        onConfirm = {
+                            val parsed = wakeupParsed
+                            wakeupParsed = null
+                            if (parsed != null) {
+                                scope.launch {
+                                    when (val r = repository.importSchedule(
+                                        WakeupScheduleMapper.toShareJson(parsed),
+                                    )) {
+                                        is ReadResult.Ok -> {
+                                            wakeupSheetVisible = false
+                                            importSheetVisible = false
+                                            requestSwitch(r.value)
+                                        }
+                                        is ReadResult.Err -> AppToasts.show(
+                                            context,
+                                            r.error.toEditMessage(context),
+                                        )
+                                    }
+                                }
+                            }
+                        },
                     )
                 }
                 // 新建表单浮层：叠在切换课表之上（同待办详情→编辑的接线与动效）。
