@@ -523,7 +523,7 @@ private fun VerticalTaskContent(task: DayTask, accent: Color) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(TaskTagGap),
         ) {
-            TaskTimeText(TimeText.formatDisplay(task.startMinute), accent)
+            TaskTimeText(TimeText.format(task.startMinute), accent)
             TaskTagBox(
                 label = task.tagLabel,
                 accent = accent,
@@ -535,9 +535,9 @@ private fun VerticalTaskContent(task: DayTask, accent: Color) {
                 dimText = task is DayTask.Course,
                 stretch = true,
                 vertical = true,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier.weight(1f).width(TaskTagWidth),
             )
-            TaskTimeText(TimeText.formatDisplay(task.endMinute), accent)
+            TaskTimeText(TimeText.format(task.endMinute), accent)
         }
         when (task) {
             is DayTask.Course -> VerticalCourseContent(task, Modifier.weight(1f))
@@ -633,7 +633,7 @@ private fun CompactTaskContent(task: DayTask, accent: Color) {
             .padding(horizontal = TaskCardPaddingHorizontal),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TaskTimeText(TimeText.formatDisplay(task.startMinute), accent)
+        TaskTimeText(TimeText.format(task.startMinute), accent)
         Spacer(Modifier.width(TaskTimeTagGap))
         TaskTagBox(
             label = task.tagLabel,
@@ -648,7 +648,7 @@ private fun CompactTaskContent(task: DayTask, accent: Color) {
             vertical = false,
         )
         Spacer(Modifier.width(TaskTimeTagGap))
-        TaskTimeText(TimeText.formatDisplay(task.endMinute), accent)
+        TaskTimeText(TimeText.format(task.endMinute), accent)
         Spacer(Modifier.width(TaskContentTimeGap))
         when (task) {
             is DayTask.Course -> CompactTaskTitle(
@@ -824,6 +824,9 @@ private val TaskTimeEdgeInset = 2.dp
 
 /** 竖排：时间与标签的间距 */
 private val TaskTagGap = 1.dp
+
+/** 竖排卡标签矩形定宽：不再随列宽（= 时间文字宽）撑满，与上下时间共用中轴居中 */
+private val TaskTagWidth = 32.dp
 
 /** 紧凑单行：时间与标签的间距（DayCourseAlert 单行卡同款） */
 private val TaskTimeTagGap = 6.dp

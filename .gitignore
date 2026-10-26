@@ -21,6 +21,9 @@ local.properties
 .mimocode/
 .zcode/
 
+# Trae 本地工作区配置与文档（.trae/，不属于项目代码）
+.trae/
+
 # Android Studio / IDEA 本地状态：设备选择、设备列表、工程 SDK 名、跑测偏好——
 # 逐机器/逐会话变化，且可能带上本机绝对路径（workspace.xml 已在上方忽略）
 /.idea/deploymentTargetSelector.xml

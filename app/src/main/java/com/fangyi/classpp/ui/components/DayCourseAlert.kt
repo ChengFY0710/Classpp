@@ -274,8 +274,9 @@ fun DayCourseAlert(
 }
 
 /** ≥2 行时的右侧竖列（[modifier] 传 matchParentSize）：时间顶到上下缘 [TimeEdgeInset] 处，
- *  「上课」标签 weight(1f) 撑满两时间之间，自身高度完全由卡片高度决定；宽度经
- *  width(IntrinsicSize.Max) 取列宽（= 上下时间中较宽者），fillMaxWidth 与时间对齐。 */
+ *  「上课」标签 weight(1f) 撑满两时间之间，自身高度完全由卡片高度决定；标签定宽
+ *  [StackedTagWidth]，与上下时间共用同一条竖直中轴（列宽经 width(IntrinsicSize.Max)
+ *  取上下时间中较宽者）。 */
 @Composable
 private fun StackedTimeColumn(
     startTime: String,
@@ -304,17 +305,17 @@ private fun StackedTimeColumn(
                 stretch = true,
                 vertical = verticalTag,
                 barColor = barColor,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier.weight(1f).width(StackedTagWidth),
             )
             TimeText(endTime, barColor)
         }
     }
 }
 
-/** 「上课」标签：[stretch] = 撑满给定约束的宽高（竖列中间档：高 weight 撑满、宽 fillMaxWidth
- *  与上下时间对齐；水平内边距归零，宽度完全交给上下时间决定），否则自然宽高（单行卡内嵌）；
- *  [vertical] = 文字竖排「上/课」两行，否则横排「上课」。底色 = 课程色 25% 透明，
- *  文字 = 课程色降明度（RGB × 深/浅各一套的降明度系数）。 */
+/** 「上课」标签：[stretch] = 撑满给定约束的高度（竖列中间档：高 weight 撑满、定宽
+ *  [StackedTagWidth] 与上下时间共用中轴；水平内边距归零，宽度完全交给外部定宽），
+ *  否则自然宽高（单行卡内嵌）；[vertical] = 文字竖排「上/课」两行，否则横排「上课」。
+ *  底色 = 课程色 25% 透明，文字 = 课程色降明度（RGB × 深/浅各一套的降明度系数）。 */
 @Composable
 private fun TagBox(
     stretch: Boolean,
@@ -356,11 +357,11 @@ private fun InfoText(text: String, color: Color) {
     )
 }
 
-/** 右侧上下课时间：15sp Medium，标准课程卡色；显示时小时补前导零（`8:00` → `08:00`） */
+/** 右侧上下课时间：15sp Medium，标准课程卡色；显示时去掉小时前导零（`08:00` → `8:00`） */
 @Composable
 private fun TimeText(text: String, color: Color) {
     Text(
-        text = TimeFormatter.formatDisplay(text),
+        text = TimeFormatter.normalize(text) ?: text,
         color = color,
         fontSize = TimeFontSize,
         lineHeight = TimeLineHeight,
@@ -426,6 +427,9 @@ private val TimeEdgeInset = 2.dp
 
 /** 竖列内时间与「上课」标签的间距 */
 private val TagGap = 1.dp
+
+/** 竖列「上课」标签定宽：不再随列宽（= 时间文字宽）撑满，与上下时间共用中轴居中 */
+private val StackedTagWidth = 32.dp
 
 /** 「上课」标签底色的透明度：课程色 25%（设计巧思） */
 private const val TagBackgroundAlpha = 0.25f
