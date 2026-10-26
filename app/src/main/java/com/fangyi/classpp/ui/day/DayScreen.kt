@@ -249,8 +249,8 @@ fun DayScreen(
     var selectedDate by remember(today) { mutableStateOf(today) }
     // 日历点选跳日指令（02/04 态下发——内容区可见的两个形态）：目标日 + 递增会话号
     //（DayContentSwipe 的驱动 key）。相邻日回放手势式滑动、非相邻日走 CrossPage 层级交叉；
-    // 提交时机由 DayContentSwipe 按路径定（滑动落位时 / CrossPage 起步时）。01 台历页点击
-    //（内容不在视野内）与跨天重置不经此路径，照旧直接换日
+    // 两条路径都在转场起步时先提交日期（日历球/图片卡日期/背景图与动画同帧联动，不等
+    // 落位）。01 台历页点击（内容不在视野内）与跨天重置不经此路径，照旧直接换日
     var jumpTargetDate by remember { mutableStateOf<IsoDate?>(null) }
     var jumpSession by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
@@ -1359,7 +1359,7 @@ fun DayScreen(
                                     selectedDate = selectedDate,
                                     markedDates = todoMarkedDates,
                                     // 02/04 态点选/回到今天走跳日指令（相邻日回放手势滑动、
-                                    // 非相邻日走 CrossPage），提交时机由 DayContentSwipe 定；
+                                    // 非相邻日走 CrossPage），日期在转场起步时提交；
                                     // 01 台历页照旧直接换日（内容不在视野内，无需动画）
                                     onDateClick = { date ->
                                         if (transition.stage != DayStage.Calendar && date != selectedDate) {
@@ -1738,9 +1738,9 @@ fun DayScreen(
  * 假设。课表取课口径与页面级一致：今天随时刻对表出倒计时/上课中/课已上完/今日无课，
  * 其他日期出整天节数概览（开学前/学期外 0 节）；时间轴只接该日有起止时刻的课程与待办。
  *
- * [revision] 只在横滑提交时自增，用作 [DayTodoAlert] 的重置键：滑入页在落位前已按新
- * 日期渲染，落位瞬间必须从新日期的完整行集起画——若复用旧日期的行镜，会先重播一遍
- * 「跨日行增减」动画（表现为新页面刚滑进来又闪回旧待办行）。点日历球等外部换日不经过
+ * [revision] 在每次换日提交时自增（横滑松手判定 / 日历跳日），用作 [DayTodoAlert] 的重置
+ * 键：提交瞬间内容必须从新日期的完整行集起画——若复用旧日期的行镜，会先重播一遍
+ *「跨日行增减」动画（表现为新页面刚滑进来又闪回旧待办行）。点日历球等外部换日不经过
  * revision，原有跨日行动画保持不变。
  */
 @Composable

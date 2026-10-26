@@ -55,7 +55,8 @@ private const val DaySwipeCommitFraction = 0.5f
 /**
  * 日程页 04 态日历下方内容（上课提醒卡 + 待办提醒卡 + 时间轴/DayTaskCard）的按日横滑容器：
  * 三页（昨天 / 选中日 / 明天）各占一屏宽排成一行，手指位移 1:1 直接写图层 translationX，
- * 松手按「位移过半或同向甩动」吸附到相邻日并提交日期，手感与课表页课表内容的
+ * 松手按「位移过半或同向甩动」判定是否切换到相邻日；判定提交时日期在松手当帧提交
+ *（日历球/背景图/顶栏即时联动），吸附动画只负责把旧页送出视口，手感与课表页课表内容的
  * `HorizontalPager`（见 CourseGrid）对齐——相邻日实时滑入、一次手势最多切一天、
  * 快速甩动优先于位移阈值。
  *
@@ -79,24 +80,26 @@ private const val DaySwipeCommitFraction = 0.5f
  * 只有松手收束走 [animate]——位移每帧只在 graphicsLayer 里读，全程不重组、不重排。
  *
  * **日历点选跳日**（[jumpTargetDate]/[jumpSession]，宿主在内容区可见的 02/04 态下发指令）
- * 按日距分流：相邻日回放手势式滑动——位移从 0 直接摆到目标页一页宽处，再以与松手收束
- * 相同的 [Motion.Settle] 滑到另一端提交，除起点外与手势完全同轨，提交沿用「落位才换日」；
- * 非相邻日走 CrossPage 层级交叉（复用 ui.motion 的 CrossPage）——被离开的日期进退场层
- * 原位沉退，内容本体先落位到目标日（顶栏/背景图/日历球即时联动）、再延迟浮入。
+ * 按日距分流：目标在指令到达时已确定，两条路径都先提交换日（顶栏/背景图/日历球与动画
+ * 同帧联动，不再等落位才换日）。相邻日回放手势式滑动——提交后三页整体平移一格，位移
+ * 按新参照系回补一整页后，再以与松手收束相同的 [Motion.Settle] 滑回 0，旧页视觉位置
+ * 不变、观感与手势同轨；非相邻日走 CrossPage 层级交叉（复用 ui.motion 的 CrossPage）——
+ * 被离开的日期进退场层原位沉退，内容本体落位到目标日、再延迟浮入。
  * 三页结构只有相邻日，非相邻日的内容本体只能瞬移落位、靠进出场动画补足层次。指令路径
  * 不受 [enabled] 手势闸影响：02 态横滑关闭，点选跳日仍按同一套动画执行。
  *
  * @param selectedDate 当前选中日（宿主状态）
- * @param onDateChange 横滑落位后回调相邻日；点日历球等外部换日不会经过这里
+ * @param onDateChange 换日提交回调（手势松手判定提交 / 日历相邻日跳日起步）；点日历球等
+ *   其它外部换日不会经过这里
  * @param enabled 仅 04 态内容可滚时开启（与内容竖向滚动同一把闸）
  * @param jumpTargetDate 日历点选跳日指令：本轮要跳到的日期，null = 无指令（其余换日
  *   路径不经此）。会话内消费一次；宿主回到 01 台历页时置 null 作废残留
  * @param jumpSession 跳日指令会话号：宿主每次点选自增，作本组件驱动 key
  * @param jumpCrossSpec 非相邻日跳转的 CrossPage 时序（与待办页顶栏分组切换共用
  *   Motion.PageJumpCross）
- * @param page 单页内容；第二个参数 revision 在每次横滑提交时自增，宿主可用它作为有状态
- *   内容（如 DayTodoAlert 的行镜）的重置键——滑入页在落位前已按新日期渲染，落位瞬间必须
- *   从新日期的完整行集起画，而不是复用旧日期的实例重播「跨日行增减」动画
+ * @param page 单页内容；第二个参数 revision 在每次换日提交时自增，宿主可用它作为有状态
+ *   内容（如 DayTodoAlert 的行镜）的重置键——提交瞬间内容须从新日期的完整行集起画，
+ *   而不是复用旧日期的实例重播「跨日行增减」动画
  */
 @Composable
 internal fun DayContentSwipe(
@@ -116,6 +119,9 @@ internal fun DayContentSwipe(
     val prevDate = remember(selectedDate) { selectedDate - 1 }
     val nextDate = remember(selectedDate) { selectedDate + 1 }
     var revision by remember { mutableIntStateOf(0) }
+    // 内部提交标记：滑轨自身的换日（手势落位 / 相邻日跳日起步）自行管理位移，随后的
+    // selectedDate 变化不能再按「外部换日」清零位移（会把刚摆好的滑动起点抹掉）
+    var internalCommitDate by remember { mutableStateOf<IsoDate?>(null) }
     // ——— 日历点选跳日的 CrossPage 转场（非相邻日路径）———
     // 退场层日期 = 被离开的那一天（连续跨日跳转必不相同，作 key 直接重建）；进场侧的
     // 淡入/放大挂在滑轨 Layout 的图层上，静止恒为全可见，手势横滑不受影响
@@ -151,8 +157,13 @@ internal fun DayContentSwipe(
         settleJob = null
     }
 
-    // 外部换日（点日历球/回到今天/跨天重置）：内容立即落位，不走横向动画
+    // 外部换日（非相邻跳日/回到今天/跨天重置）：内容立即落位，不走横向动画。
+    // 内部提交（手势落位、相邻跳日起步）的位移由提交方接续，这里跳过
     LaunchedEffect(selectedDate) {
+        if (internalCommitDate == selectedDate) {
+            internalCommitDate = null
+            return@LaunchedEffect
+        }
         stopSettle()
         offset = 0f
     }
@@ -177,16 +188,20 @@ internal fun DayContentSwipe(
         val pageWidthPx = constraints.maxWidth.toFloat()
         val flingVelocityPx = with(LocalDensity.current) { DaySwipeFlingVelocity.toPx() }
 
-        // 提交落位：行镜 revision 自增（滑入页在落位前已按新日期渲染，落位瞬间须按新日期
-        // 的完整行集重画待办提醒卡）+ 换日 + 位移归零——归零后新选中日正好停在视口原位，
-        // 落位前后画面完全一致
+        // 提交换日：行镜 revision 自增（内容已按新日期渲染，提交瞬间须按新日期的完整
+        // 行集重画待办提醒卡）+ 换日 + 位移归零。手势在松手判定提交时调用、相邻日跳日在
+        // 指令到达时调用，两处都由调用方随即把位移换算到新页参照系。internalCommitDate
+        // 让随后的 selectedDate 变化不走「外部换日」清位移
         fun commitSwipe(newDate: IsoDate) {
             revision += 1
+            internalCommitDate = newDate
             latestOnDateChange(newDate)
             offset = 0f
         }
 
-        // 松手收束：同向甩动优先，其次位移过半；提交时先滑满一页，再切日期并把位移归零
+        // 松手收束：同向甩动优先，其次位移过半。判定提交时先换日（三页整体平移一格，日期
+        // 与日历/背景同帧联动），位移按新参照系回补一整页后滑回 0——旧页视觉位置不变，
+        // 收尾轨迹与原「落位才换日」完全一致；未达阈值则直接弹回 0
         fun settle(velocityX: Float) {
             stopSettle()
             val current = offset
@@ -194,28 +209,29 @@ internal fun DayContentSwipe(
             val direction = if (current > 0f) 1 else -1
             val commit = abs(current) >= pageWidthPx * DaySwipeCommitFraction ||
                 velocityX * direction >= flingVelocityPx
-            val target = if (commit) direction * pageWidthPx else 0f
+            if (commit) {
+                commitSwipe(if (direction > 0) latestSelectedDate - 1 else latestSelectedDate + 1)
+                offset = current - direction * pageWidthPx
+            }
             settleJob = scope.launch {
                 animate(
-                    initialValue = current,
-                    targetValue = target,
+                    initialValue = offset,
+                    targetValue = 0f,
                     animationSpec = Motion.Settle,
                 ) { value, _ -> offset = value }
-                offset = target
+                offset = 0f
                 settleJob = null
-                if (commit) {
-                    commitSwipe(if (direction > 0) latestSelectedDate - 1 else latestSelectedDate + 1)
-                }
             }
         }
 
-        // 日历点选跳日（宿主在 02/04 态下发指令；指令路径不受 enabled 手势闸影响）：相邻日
-        // 回放手势式滑动——位移从 0 直接摆到目标页一页宽处（拖向昨天为正/明天为负，与手势
-        // 同向），再用与松手收束相同的 [Motion.Settle] 滑到另一端提交，除起点外与手势完全
-        // 同轨；非相邻日走 CrossPage 层级交叉——被离开的日期进退场层原位沉退，内容本体先
-        // 落位到目标日（顶栏/背景图/日历球即时联动）再延迟浮入，时序读 [jumpCrossSpec]。
-        // 进场动画挂 scope 上而非本 effect 协程：会话重启（转场中再点选）不连带取消在途
-        // 进场；相邻分支重启时先恢复全可见、非相邻分支重播，无半程残留
+        // 日历点选跳日（宿主在 02/04 态下发指令；指令路径不受 enabled 手势闸影响）：目标在
+        // 指令到达时已确定，两条路径都先提交换日（顶栏/背景图/日历球即时联动）再播动画，
+        // 不再等落位才换日。相邻日回放手势式滑动——提交后三页整体平移一格，位移按新参照
+        // 系回补一整页（旧页停在原视觉位置），再用与松手收束相同的 [Motion.Settle] 滑回 0；
+        // 非相邻日走 CrossPage 层级交叉——被离开的日期进退场层原位沉退，内容本体落位到
+        // 目标日后延迟浮入，时序读 [jumpCrossSpec]。进场动画挂 scope 上而非本 effect 协程：
+        // 会话重启（转场中再点选）不连带取消在途进场；相邻分支重启时先恢复全可见、非相邻
+        // 分支重播，无半程残留
         LaunchedEffect(jumpSession) {
             val target = jumpTargetDate ?: return@LaunchedEffect
             val current = latestSelectedDate
@@ -225,16 +241,21 @@ internal fun DayContentSwipe(
                 jumpOverlayDate = null
                 jumpEnterAlpha.snapTo(1f)
                 jumpEnterScale.snapTo(1f)
+                // 先提交再滑：日期/背景图/日历球与动画同帧联动，动画本身仍从旧页位置
+                // 滑向目标页——提交后三页整体平移一格，位移按新参照系回补一整页
+                //（offset_new = offset_old − targetOffset），旧页视觉位置不变
                 val targetOffset = if (target == current - 1) pageWidthPx else -pageWidthPx
+                val fromOffset = offset
+                commitSwipe(target)
+                offset = fromOffset - targetOffset
                 settleJob = scope.launch {
                     animate(
                         initialValue = offset,
-                        targetValue = targetOffset,
+                        targetValue = 0f,
                         animationSpec = Motion.Settle,
                     ) { value, _ -> offset = value }
-                    offset = targetOffset
+                    offset = 0f
                     settleJob = null
-                    commitSwipe(target)
                 }
             } else {
                 jumpOverlayDate = current

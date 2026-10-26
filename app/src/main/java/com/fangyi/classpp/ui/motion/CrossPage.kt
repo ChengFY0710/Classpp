@@ -61,8 +61,8 @@ data class CrossPageSpec(
     /** 进场淡入时长：与退场淡出同长，交叉段内新旧页同时可见。 */
     val enterAlphaMillis: Int = 200,
 
-    /** 进场放大时长（[CrossPageSpec.hiddenScale]→1）：比淡入长一倍。 */
-    val enterScaleMillis: Int = 400,
+    /** 进场放大时长（[CrossPageSpec.hiddenScale]→1）：比淡入长。 */
+    val enterScaleMillis: Int = 520,
 
     /** 进场放大曲线：EaseOutExpo——前段极快、收尾轻盈的「浮起」感。 */
     val enterEasing: Easing = EaseOutExpo,

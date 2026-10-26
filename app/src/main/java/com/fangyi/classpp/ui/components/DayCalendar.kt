@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.components
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -31,6 +32,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -80,7 +82,8 @@ import kotlinx.coroutines.launch
  * 一、**星期表头**：一~日（R.array.weekdays_short，周一起始），15sp Medium；今天所在列
  *     Primary 色（仅当卡内展示的月/周包含今天时高亮，浏览其他月份不高亮）。
  * 二、**日历网格**：每天一枚 34dp 圆球（background 色），日期数字 17sp Medium；选中日期
- *     圆球 Primary、数字 onPrimary（[onDateClick] 点选即切日）；今天圆球 primaryContainer、
+ *     圆球 Primary、数字 onPrimary（[onDateClick] 点选即切日，选中/取消走 150ms 背景+
+ *     字色渐变，与课程编辑的周数方格同款）；今天圆球 primaryContainer、
  *     数字 primary（选中今天即回到实心 Primary）；非本月日期数字 secondaryText（圆球颜色
  *     不变）。有待办的日期（[markedDates]）在圆球下方画一枚 4dp Primary 小点——小点从
  *     34dp 圆球 Box 底对齐后 offset 出球体，落在行距之间，不占布局空间、不撑开行距。
@@ -553,7 +556,8 @@ private fun WeekdayHeader(
 
 /**
  * 单个日期：34dp 圆球 + 数字。选中实心 Primary、数字 onPrimary；今天未选中 primaryContainer
- * 淡底、数字 primary；[marked] 时球下画 4dp Primary 小点（不占布局空间）
+ * 淡底、数字 primary；[marked] 时球下画 4dp Primary 小点（不占布局空间）。选中/取消时
+ * 背景与字色各走一条渐变（[Motion.FastMillis] 先快后慢，与课程编辑的周数方格同节奏）。
  */
 @Composable
 private fun DayCell(
@@ -566,6 +570,27 @@ private fun DayCell(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
+    // 背景/字色各走一条渐变：点选渐变变蓝、再点渐变回底色，字色同步过渡
+    //（Motion.FastMillis 先快后慢，与课程编辑的周数方格同一节奏）
+    val ballColor by animateColorAsState(
+        targetValue = when {
+            isSelected -> colors.primary
+            isToday -> colors.primaryContainer
+            else -> colors.background
+        },
+        animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
+        label = "dayCellColor",
+    )
+    val labelColor by animateColorAsState(
+        targetValue = when {
+            isSelected -> colors.onPrimary
+            isToday -> colors.primary
+            !inMonth -> MaterialTheme.classppColors.secondaryText
+            else -> colors.onSurface
+        },
+        animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
+        label = "dayCellLabel",
+    )
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Box(
             modifier = Modifier
@@ -577,26 +602,14 @@ private fun DayCell(
                         Modifier
                     },
                 )
-                .background(
-                    when {
-                        isSelected -> colors.primary
-                        isToday -> colors.primaryContainer
-                        else -> colors.background
-                    },
-                    CircleShape,
-                ),
+                .background(ballColor, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = date.dayOfMonth().toString(),
                 fontSize = DayNumberFontSize,
                 fontWeight = FontWeight.SemiBold,
-                color = when {
-                    isSelected -> colors.onPrimary
-                    isToday -> colors.primary
-                    !inMonth -> MaterialTheme.classppColors.secondaryText
-                    else -> colors.onSurface
-                },
+                color = labelColor,
             )
             if (marked) {
                 // BottomCenter 对齐后整体下移 DotDrop：球底到小点顶的间隙即 DotGap；
@@ -616,6 +629,8 @@ private fun DayCell(
 /**
  * 整月网格：[rowCount] 行、每行 7 枚 [DayCell]（weight 均分，周一起始）。横滑/折叠的
  * 位移全部由调用方挂在 [modifier] 上（monthLayer 在绘制期读进度），本函数只管内容。
+ * 单元格按日期加 key：换月时同一调用位的组合槽位会换成新日期，颜色动画状态必须随
+ * 旧日期销毁、新日期从目标色起步，否则新页会从旧日期残留的选中色开始渐变（翻月闪蓝）。
  */
 @Composable
 private fun MonthGrid(
@@ -637,16 +652,18 @@ private fun MonthGrid(
             Row(Modifier.fillMaxWidth()) {
                 repeat(7) { column ->
                     val date = gridStart + row * 7 + column
-                    DayCell(
-                        date = date,
-                        inMonth = date.epochDay >= firstOfMonth.epochDay &&
-                            date.epochDay < firstOfMonth.epochDay + daysInMonth,
-                        isToday = date == today,
-                        isSelected = date == selected,
-                        marked = date in markedDates,
-                        onClick = onDateClick,
-                        modifier = Modifier.weight(1f),
-                    )
+                    key(date) {
+                        DayCell(
+                            date = date,
+                            inMonth = date.epochDay >= firstOfMonth.epochDay &&
+                                date.epochDay < firstOfMonth.epochDay + daysInMonth,
+                            isToday = date == today,
+                            isSelected = date == selected,
+                            marked = date in markedDates,
+                            onClick = onDateClick,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
             }
         }
