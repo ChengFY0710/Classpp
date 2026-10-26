@@ -273,6 +273,16 @@ object Motion {
     val Overlay: Easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
 
     /**
+     * 页面切换的层级交叉时序（[CrossPageSpec]）：「旧页原位沉退、新页延迟后浮入」的
+     * 整页换内容，日程页非相邻日跳日（DayScreen/DayContentSwipe）与待办页顶栏分组切换
+     *（TodoScreen 的 [CrossPages]）共用——两处必须同节奏，调参只改这一处。
+     * 取值即 [CrossPageSpec] 默认值（Cresto 原版调参）：进场延迟 100（旧页先退出
+     * 一小段再让位）、淡入 200 + 放大 400（EaseOutExpo 快收）、退场淡出 200 + 缩小 600
+     *（alpha 归零即卸载，缩小长尾在隐形中收完）、幅度端点 0.95。
+     */
+    val PageJumpCross: CrossPageSpec = CrossPageSpec()
+
+    /**
      * 松手回弹归位弹簧：无过冲（NoBouncy）、中低刚度，接近终点自然减速停住。
      * 当前用于浮层拖拽松手后的回位（跟手 snapTo 之后的收尾），
      * 以及待办顶栏分组条的极限橡皮筋回弹（Overscroll 效果的回弹 spec）。

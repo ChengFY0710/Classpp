@@ -1,6 +1,8 @@
 package com.fangyi.classpp.ui.day
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -25,16 +28,22 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastAny
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.ui.motion.CrossPage
+import com.fangyi.classpp.ui.motion.CrossPageSpec
 import com.fangyi.classpp.ui.motion.DragDirection
 import com.fangyi.classpp.ui.motion.DragDirectionLock
 import com.fangyi.classpp.ui.motion.Motion
 import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** 横滑切日的甩动判向阈值（dp/s，换算成 px/s 后使用）：与课表页 Pager 默认吸附速度同量级 */
@@ -59,6 +68,8 @@ private const val DaySwipeCommitFraction = 0.5f
  * （邻页只画不撑高，多出来的部分由外层 `clipToBounds` 裁掉）——不能用一个 3W 宽的
  * Row 交给 Box：Box 会把超宽子项居中，静止时中间页反而落在视口外、显示成「明天」；
  * 取三页最大高度也会让短的一天（下午才有课 → 时间轴锚点晚）下方拖出大片空白。
+ * 高度本身是动画值：换日提交时从旧页高度平滑过渡到新页高度，裁剪边界与 item 占位
+ * 同步动画，旧内容不会被新页高度立即裁掉（消除换日的几何硬切）。
  *
  * 手势与课表页共用同一把方向锁（[DragDirectionLock]）：横向定轴当帧在 Initial pass
  * 消费，早于 LazyColumn 竖向滚动的 Main pass 处理，嵌在滚动容器内也不会被抢走；
@@ -67,9 +78,21 @@ private const val DaySwipeCommitFraction = 0.5f
  * 跟手位移用普通 float state 直写（指针回调是受限挂起作用域，且拖动要当帧生效），
  * 只有松手收束走 [animate]——位移每帧只在 graphicsLayer 里读，全程不重组、不重排。
  *
+ * **日历点选跳日**（[jumpTargetDate]/[jumpSession]，宿主仅 04 态下发指令）按日距分流：
+ * 相邻日回放手势式滑动——位移从 0 直接摆到目标页一页宽处，再以与松手收束相同的
+ * [Motion.Settle] 滑到另一端提交，除起点外与手势完全同轨，提交沿用「落位才换日」；
+ * 非相邻日走 CrossPage 层级交叉（复用 ui.motion 的 CrossPage）——被离开的日期进退场层
+ * 原位沉退，内容本体先落位到目标日（顶栏/背景图/日历球即时联动）、再延迟浮入。
+ * 三页结构只有相邻日，非相邻日的内容本体只能瞬移落位、靠进出场动画补足层次。
+ *
  * @param selectedDate 当前选中日（宿主状态）
  * @param onDateChange 横滑落位后回调相邻日；点日历球等外部换日不会经过这里
  * @param enabled 仅 04 态内容可滚时开启（与内容竖向滚动同一把闸）
+ * @param jumpTargetDate 日历点选跳日指令：本轮要跳到的日期，null = 无指令（其余换日
+ *   路径不经此）。会话内消费一次；宿主在离开 04 态时置 null 作废残留
+ * @param jumpSession 跳日指令会话号：宿主每次点选自增，作本组件驱动 key
+ * @param jumpCrossSpec 非相邻日跳转的 CrossPage 时序（与待办页顶栏分组切换共用
+ *   Motion.PageJumpCross）
  * @param page 单页内容；第二个参数 revision 在每次横滑提交时自增，宿主可用它作为有状态
  *   内容（如 DayTodoAlert 的行镜）的重置键——滑入页在落位前已按新日期渲染，落位瞬间必须
  *   从新日期的完整行集起画，而不是复用旧日期的实例重播「跨日行增减」动画
@@ -79,6 +102,9 @@ internal fun DayContentSwipe(
     selectedDate: IsoDate,
     onDateChange: (IsoDate) -> Unit,
     enabled: Boolean,
+    jumpTargetDate: IsoDate? = null,
+    jumpSession: Int = 0,
+    jumpCrossSpec: CrossPageSpec = CrossPageSpec(),
     modifier: Modifier = Modifier,
     page: @Composable (viewDate: IsoDate, revision: Int) -> Unit,
 ) {
@@ -89,6 +115,31 @@ internal fun DayContentSwipe(
     val prevDate = remember(selectedDate) { selectedDate - 1 }
     val nextDate = remember(selectedDate) { selectedDate + 1 }
     var revision by remember { mutableIntStateOf(0) }
+    // ——— 日历点选跳日的 CrossPage 转场（非相邻日路径）———
+    // 退场层日期 = 被离开的那一天（连续跨日跳转必不相同，作 key 直接重建）；进场侧的
+    // 淡入/放大挂在滑轨 Layout 的图层上，静止恒为全可见，手势横滑不受影响
+    var jumpOverlayDate by remember { mutableStateOf<IsoDate?>(null) }
+    val jumpEnterAlpha = remember { Animatable(1f) }
+    val jumpEnterScale = remember { Animatable(1f) }
+    // ——— 容器高度过渡（消除换日的几何硬切）———
+    // 当前页实测高度由 Layout 内的 onSizeChanged 回灌；换日提交后容器高度（裁剪边界与
+    // item 占位）用短动画从旧页高度过渡到新页高度——否则旧内容底部会被新页高度立即
+    // 裁掉、item 高度瞬变，混在交叉淡入淡出里非常突兀。时长与交叉段的进场完成对齐
+    //（延迟 100 + 淡入 200 = 300ms），新内容完全显现的同一刻几何也刚好落定
+    var measuredPageHeight by remember { mutableIntStateOf(0) }
+    val containerHeight = remember { Animatable(0f) }
+    LaunchedEffect(measuredPageHeight) {
+        if (measuredPageHeight <= 0) return@LaunchedEffect
+        if (containerHeight.value <= 0f) {
+            // 首测直接就位，不播动画
+            containerHeight.snapTo(measuredPageHeight.toFloat())
+        } else {
+            containerHeight.animateTo(
+                measuredPageHeight.toFloat(),
+                tween(durationMillis = 300, easing = Motion.Standard),
+            )
+        }
+    }
     // 手势块只在页宽变化时重启，闭包会一直持有首次组合时的日期；日期切换后必须读最新值，
     // 否则第二次横滑会按旧日期再减/加一天（表现为一次滑两天）
     val latestSelectedDate by rememberUpdatedState(selectedDate)
@@ -105,11 +156,15 @@ internal fun DayContentSwipe(
         offset = 0f
     }
 
-    // 离开 04 / 浮层压住 / 转场动画期间停掉在途吸附并归零，避免带着半页位移进下一态
+    // 离开 04 / 浮层压住 / 转场动画期间停掉在途吸附并归零，避免带着半页位移进下一态；
+    // 跳日转场的半程状态一并收敛（清退场层、恢复全可见）
     LaunchedEffect(enabled) {
         if (!enabled) {
             stopSettle()
             offset = 0f
+            jumpOverlayDate = null
+            jumpEnterAlpha.snapTo(1f)
+            jumpEnterScale.snapTo(1f)
         }
     }
 
@@ -120,8 +175,16 @@ internal fun DayContentSwipe(
         val pageWidthPx = constraints.maxWidth.toFloat()
         val flingVelocityPx = with(LocalDensity.current) { DaySwipeFlingVelocity.toPx() }
 
-        // 松手收束：同向甩动优先，其次位移过半；提交时先滑满一页，再切日期并把位移归零——
-        // 归零后新选中日正好停在视口原位，落位前后画面完全一致
+        // 提交落位：行镜 revision 自增（滑入页在落位前已按新日期渲染，落位瞬间须按新日期
+        // 的完整行集重画待办提醒卡）+ 换日 + 位移归零——归零后新选中日正好停在视口原位，
+        // 落位前后画面完全一致
+        fun commitSwipe(newDate: IsoDate) {
+            revision += 1
+            latestOnDateChange(newDate)
+            offset = 0f
+        }
+
+        // 松手收束：同向甩动优先，其次位移过半；提交时先滑满一页，再切日期并把位移归零
         fun settle(velocityX: Float) {
             stopSettle()
             val current = offset
@@ -139,11 +202,66 @@ internal fun DayContentSwipe(
                 offset = target
                 settleJob = null
                 if (commit) {
-                    revision += 1
-                    latestOnDateChange(
-                        if (direction > 0) latestSelectedDate - 1 else latestSelectedDate + 1,
-                    )
-                    offset = 0f
+                    commitSwipe(if (direction > 0) latestSelectedDate - 1 else latestSelectedDate + 1)
+                }
+            }
+        }
+
+        // 日历点选跳日（宿主仅 04 态下发指令）：相邻日回放手势式滑动——位移从 0 直接摆到
+        // 目标页一页宽处（拖向昨天为正/明天为负，与手势同向），再用与松手收束相同的
+        // [Motion.Settle] 滑到另一端提交，除起点外与手势完全同轨；非相邻日走 CrossPage
+        // 层级交叉——被离开的日期进退场层原位沉退，内容本体先落位到目标日（顶栏/背景图/
+        // 日历球即时联动）再延迟浮入，时序读 [jumpCrossSpec]。进场动画挂 scope 上而非本
+        // effect 协程：会话重启（转场中再点选）不连带取消在途进场；相邻分支重启时先恢复
+        // 全可见、非相邻分支重播，无半程残留
+        LaunchedEffect(jumpSession) {
+            val target = jumpTargetDate ?: return@LaunchedEffect
+            val current = latestSelectedDate
+            if (target == current) return@LaunchedEffect
+            stopSettle()
+            if (target == current - 1 || target == current + 1) {
+                jumpOverlayDate = null
+                jumpEnterAlpha.snapTo(1f)
+                jumpEnterScale.snapTo(1f)
+                val targetOffset = if (target == current - 1) pageWidthPx else -pageWidthPx
+                settleJob = scope.launch {
+                    animate(
+                        initialValue = offset,
+                        targetValue = targetOffset,
+                        animationSpec = Motion.Settle,
+                    ) { value, _ -> offset = value }
+                    offset = targetOffset
+                    settleJob = null
+                    commitSwipe(target)
+                }
+            } else {
+                jumpOverlayDate = current
+                // 非相邻日同样是一次换日提交：revision 同步自增（同横滑提交纪律），
+                // 待办提醒卡（行镜以 revision 为 key）按新日期的完整行集起画——
+                // 不自增的话同一实例拿到新日期数据会重播「跨日行增减」动画，
+                // 行动画叠在淡入半透明层上，新内容看起来就是闪现出来的
+                revision += 1
+                latestOnDateChange(target)
+                // snapTo 会打断上一次未完成的进场，连续跳转收敛到最后一次
+                scope.launch {
+                    jumpEnterAlpha.snapTo(0f)
+                    jumpEnterScale.snapTo(jumpCrossSpec.hiddenScale)
+                    delay(jumpCrossSpec.enterDelayMillis.toLong())
+                    coroutineScope {
+                        launch {
+                            jumpEnterAlpha.animateTo(
+                                1f,
+                                tween(durationMillis = jumpCrossSpec.enterAlphaMillis),
+                            )
+                        }
+                        jumpEnterScale.animateTo(
+                            1f,
+                            tween(
+                                durationMillis = jumpCrossSpec.enterScaleMillis,
+                                easing = jumpCrossSpec.enterEasing,
+                            ),
+                        )
+                    }
                 }
             }
         }
@@ -210,23 +328,63 @@ internal fun DayContentSwipe(
             Layout(
                 content = {
                     Box(Modifier.width(pageWidth)) { page(prevDate, revision) }
-                    Box(Modifier.width(pageWidth)) { page(selectedDate, revision) }
+                    // 当前页实测高度回灌：换日提交后容器高度平滑过渡的动画目标
+                    //（见 DayContentSwipe 顶部的 containerHeight）
+                    Box(
+                        Modifier
+                            .width(pageWidth)
+                            .onSizeChanged { measuredPageHeight = it.height },
+                    ) { page(selectedDate, revision) }
                     Box(Modifier.width(pageWidth)) { page(nextDate, revision) }
                 },
                 modifier = Modifier
                     .width(pageWidth)
-                    // 位移只写图层，拖动全程不重组、不重排三页内容
-                    .graphicsLayer { translationX = offset - pageWidthPx },
+                    // 位移只写图层，拖动全程不重组、不重排三页内容；跨日跳转的进场侧
+                    //（非相邻日：延迟后淡入 + 从 hiddenScale 放大回 1）同层延迟读取，
+                    // 静止恒为 1f，手势横滑不受影响
+                    .graphicsLayer {
+                        translationX = offset - pageWidthPx
+                        alpha = jumpEnterAlpha.value
+                        scaleX = jumpEnterScale.value
+                        scaleY = jumpEnterScale.value
+                    },
             ) { measurables, constraints ->
                 val width = constraints.maxWidth
                 val placeables = measurables.map { measurable ->
                     measurable.measure(Constraints(minWidth = width, maxWidth = width))
                 }
-                // 占位高度只看当前页（索引 1）：邻页只画不撑高，避免短页面下方留大片空白
-                val height = placeables.getOrNull(1)?.height ?: 0
+                // 占位高度只看当前页（索引 1）：邻页只画不撑高，避免短页面下方留大片空白。
+                // 换日提交后改报 containerHeight——容器高度从旧页平滑过渡到新页，
+                // 裁剪边界与 item 占位同步动画，旧内容底部不会被新页高度立即裁掉
+                val naturalHeight = placeables.getOrNull(1)?.height ?: 0
+                val height = if (containerHeight.value > 0f) {
+                    containerHeight.value.roundToInt()
+                } else {
+                    naturalHeight
+                }
                 layout(width, height) {
                     placeables.forEachIndexed { index, placeable ->
                         placeable.placeRelative(index * width, 0)
+                    }
+                }
+            }
+
+            // 非相邻日跳转的退场层：被离开的日期内容叠在滑轨正上方，由 CrossPage 播退场——
+            // 原位淡出 + 缩到 hiddenScale 沉下去，alpha 归零内容自行卸载。首组合即全可见
+            //（CrossPage 对初始可见不播进场，正合「旧页原位就位再沉退」），挂载后立即翻
+            // visible 启动退场。matchParentSize 不撑大容器（容器高度必须只跟随当前页），
+            // 旧页超出部分与手势中的邻页一样被外层 clipToBounds 裁掉；连续跨日跳转被离开
+            // 的日期必不相同，key 用日期即可直接重建
+            jumpOverlayDate?.let { overlayDate ->
+                key(overlayDate) {
+                    var overlayExiting by remember { mutableStateOf(false) }
+                    LaunchedEffect(Unit) { overlayExiting = true }
+                    CrossPage(
+                        visible = !overlayExiting,
+                        modifier = Modifier.matchParentSize(),
+                        spec = jumpCrossSpec,
+                    ) {
+                        page(overlayDate, revision)
                     }
                 }
             }

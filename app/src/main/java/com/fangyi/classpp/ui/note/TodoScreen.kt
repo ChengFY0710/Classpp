@@ -610,6 +610,8 @@ fun TodoScreen(
                 // 分区折叠经 SaveableStateProvider 按页保活，切回恢复
                 CrossPages(
                     selectedKey = todoPageKey,
+                    // 分组切换的整页交叉时序：与日程页跳日共用同一常量，两处同节奏
+                    spec = Motion.PageJumpCross,
                     modifier = Modifier.matchParentSize(),
                 ) { pageKey ->
                     val page = pageKey.toTodoPageIdentity()

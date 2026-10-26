@@ -247,6 +247,11 @@ fun DayScreen(
     //（与下方跨天重置同拍）。日历点选/「回到今天」只改这里，页面日期文案、背景图、
     // 时间轴任务全部按它取
     var selectedDate by remember(today) { mutableStateOf(today) }
+    // 日历点选跳日指令（仅 04 态下发）：目标日 + 递增会话号（DayContentSwipe 的驱动 key）。
+    // 相邻日回放手势式滑动、非相邻日走 CrossPage 层级交叉；提交时机由 DayContentSwipe 按
+    // 路径定（滑动落位时 / CrossPage 起步时）。01/02 态点击与跨天重置不经此路径，照旧直接换日
+    var jumpTargetDate by remember { mutableStateOf<IsoDate?>(null) }
+    var jumpSession by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     val pxPerDp = density.density
     val scope = rememberCoroutineScope()
@@ -357,6 +362,11 @@ fun DayScreen(
     )
     val transition = remember {
         DayTransitionState(initialStage, scope) { target -> commitState.value(target) }
+    }
+    // 离开 04 态即作废未消费的跳日指令：内容 item 可能随竖向滚动离场后重建（remember
+    // 状态随之丢失），残留指令会在重组后重放一次旧转场
+    LaunchedEffect(transition.stage) {
+        if (transition.stage != DayStage.Schedule) jumpTargetDate = null
     }
     // 壁纸视差（01 态专属）：仅「本页活跃 + 图片浮层未开 + 停在 01」才注册重力传感器
     // （rememberTiltParallax 内部再叠加生命周期 RESUMED 门控，切后台必注销），转场离开
@@ -1347,8 +1357,25 @@ fun DayScreen(
                                 DayCalendar(
                                     selectedDate = selectedDate,
                                     markedDates = todoMarkedDates,
-                                    onDateClick = { selectedDate = it },
-                                    onBackToToday = { selectedDate = today },
+                                    // 04 态点选/回到今天走跳日指令（相邻日回放手势滑动、
+                                    // 非相邻日走 CrossPage），提交时机由 DayContentSwipe 定；
+                                    // 其余形态照旧直接换日（瞬移）
+                                    onDateClick = { date ->
+                                        if (transition.stage == DayStage.Schedule && date != selectedDate) {
+                                            jumpSession += 1
+                                            jumpTargetDate = date
+                                        } else {
+                                            selectedDate = date
+                                        }
+                                    },
+                                    onBackToToday = {
+                                        if (transition.stage == DayStage.Schedule && today != selectedDate) {
+                                            jumpSession += 1
+                                            jumpTargetDate = today
+                                        } else {
+                                            selectedDate = today
+                                        }
+                                    },
                                     onGridRangeChange = { firstDate, lastDate ->
                                         calendarRange = firstDate to lastDate
                                     },
@@ -1368,6 +1395,11 @@ fun DayScreen(
                                     selectedDate = selectedDate,
                                     onDateChange = { selectedDate = it },
                                     enabled = contentUserScrollEnabled,
+                                    // 日历点选跳日指令：相邻日回放手势滑动、非相邻日走
+                                    // CrossPage（时序见 Motion.PageJumpCross）
+                                    jumpTargetDate = jumpTargetDate,
+                                    jumpSession = jumpSession,
+                                    jumpCrossSpec = Motion.PageJumpCross,
                                     modifier = Modifier.fillMaxWidth(),
                                 ) { viewDate, revision ->
                                     DayDateContent(
