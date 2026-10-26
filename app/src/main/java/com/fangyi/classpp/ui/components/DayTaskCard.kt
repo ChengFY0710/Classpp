@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,8 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -524,7 +523,7 @@ private fun VerticalTaskContent(task: DayTask, accent: Color) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(TaskTagGap),
         ) {
-            TaskTimeText(TimeText.format(task.startMinute), accent)
+            TaskTimeText(TimeText.formatDisplay(task.startMinute), accent)
             TaskTagBox(
                 label = task.tagLabel,
                 accent = accent,
@@ -538,7 +537,7 @@ private fun VerticalTaskContent(task: DayTask, accent: Color) {
                 vertical = true,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
-            TaskTimeText(TimeText.format(task.endMinute), accent)
+            TaskTimeText(TimeText.formatDisplay(task.endMinute), accent)
         }
         when (task) {
             is DayTask.Course -> VerticalCourseContent(task, Modifier.weight(1f))
@@ -634,7 +633,7 @@ private fun CompactTaskContent(task: DayTask, accent: Color) {
             .padding(horizontal = TaskCardPaddingHorizontal),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TaskTimeText(TimeText.format(task.startMinute), accent)
+        TaskTimeText(TimeText.formatDisplay(task.startMinute), accent)
         Spacer(Modifier.width(TaskTimeTagGap))
         TaskTagBox(
             label = task.tagLabel,
@@ -649,7 +648,7 @@ private fun CompactTaskContent(task: DayTask, accent: Color) {
             vertical = false,
         )
         Spacer(Modifier.width(TaskTimeTagGap))
-        TaskTimeText(TimeText.format(task.endMinute), accent)
+        TaskTimeText(TimeText.formatDisplay(task.endMinute), accent)
         Spacer(Modifier.width(TaskContentTimeGap))
         when (task) {
             is DayTask.Course -> CompactTaskTitle(
@@ -738,6 +737,7 @@ private fun TaskTimeText(text: String, color: Color) {
         fontSize = TaskTimeFontSize,
         lineHeight = TaskTimeLineHeight,
         fontWeight = FontWeight.Medium,
+        style = TextStyle(fontFeatureSettings = "tnum"),
     )
 }
 
@@ -823,7 +823,7 @@ private val TaskContentTimeGap = 12.dp
 private val TaskTimeEdgeInset = 2.dp
 
 /** 竖排：时间与标签的间距 */
-private val TaskTagGap = 3.dp
+private val TaskTagGap = 1.dp
 
 /** 紧凑单行：时间与标签的间距（DayCourseAlert 单行卡同款） */
 private val TaskTimeTagGap = 6.dp
@@ -868,8 +868,8 @@ private val TaskTitleFontSize = 16.sp
 private val TaskTitleLineHeight = 20.sp
 private val TaskInfoFontSize = 13.sp
 private val TaskInfoLineHeight = 18.sp
-private val TaskTimeFontSize = 13.sp
-private val TaskTimeLineHeight = 20.sp
+private val TaskTimeFontSize = 12.sp
+private val TaskTimeLineHeight = 19.sp
 private val TaskTagFontSize = 11.sp
 private val TaskTagLineHeight = 12.sp
 

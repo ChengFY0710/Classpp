@@ -212,6 +212,7 @@ internal fun DayTimeline(
                         color = onError,
                         fontSize = NowChipFontSize,
                         fontWeight = FontWeight.Medium,
+                        modifier = Modifier.offset(y = (-1).dp),
                     )
                 }
             }

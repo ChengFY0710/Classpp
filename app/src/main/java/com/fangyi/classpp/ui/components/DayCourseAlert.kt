@@ -21,12 +21,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.model.TimeText as TimeFormatter
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.schedule.CourseColor
 import com.fangyi.classpp.ui.schedule.barColor
@@ -354,15 +356,16 @@ private fun InfoText(text: String, color: Color) {
     )
 }
 
-/** 右侧上下课时间：15sp Medium，标准课程卡色 */
+/** 右侧上下课时间：15sp Medium，标准课程卡色；显示时小时补前导零（`8:00` → `08:00`） */
 @Composable
 private fun TimeText(text: String, color: Color) {
     Text(
-        text,
+        text = TimeFormatter.formatDisplay(text),
         color = color,
         fontSize = TimeFontSize,
         lineHeight = TimeLineHeight,
         fontWeight = FontWeight.Medium,
+        style = TextStyle(fontFeatureSettings = "tnum"),
     )
 }
 
@@ -422,7 +425,7 @@ private val TimeTagGap = 6.dp
 private val TimeEdgeInset = 2.dp
 
 /** 竖列内时间与「上课」标签的间距 */
-private val TagGap = 3.dp
+private val TagGap = 1.dp
 
 /** 「上课」标签底色的透明度：课程色 25%（设计巧思） */
 private const val TagBackgroundAlpha = 0.25f
@@ -446,8 +449,8 @@ private val TitleFontSize = 16.sp
 private val TitleLineHeight = 16.sp
 private val InfoFontSize = 13.sp
 private val InfoLineHeight = 18.sp
-private val TimeFontSize = 13.sp
-private val TimeLineHeight = 20.sp
+private val TimeFontSize = 12.sp
+private val TimeLineHeight = 19.sp
 private val TagFontSize = 11.sp
 private val TagLineHeight = 20.sp
 
