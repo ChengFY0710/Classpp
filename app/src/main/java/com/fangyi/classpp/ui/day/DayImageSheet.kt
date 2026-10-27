@@ -40,7 +40,6 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.OverlaySheet
@@ -53,6 +52,7 @@ import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.menuGrowthForAnchor
 import com.fangyi.classpp.ui.motion.pressFeedback
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.DayImageCellShape
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.rememberHazeState
@@ -271,7 +271,7 @@ private fun DayImageEmptyHint(modifier: Modifier = Modifier) {
     Box(modifier = modifier.padding(top = 140.dp), contentAlignment = Alignment.TopCenter) {
         Text(
             text = stringResource(R.string.day_image_empty_hint),
-            fontSize = 15.sp,
+            style = ClassppTextTokens.emptyHintLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }

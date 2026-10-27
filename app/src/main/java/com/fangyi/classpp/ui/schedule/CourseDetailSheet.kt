@@ -19,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.isOverdue
 import com.fangyi.classpp.data.model.CourseEntry
@@ -39,6 +38,7 @@ import com.fangyi.classpp.ui.note.deadlineCardText
 import com.fangyi.classpp.ui.note.deadlineColor
 import com.fangyi.classpp.ui.note.repeatCardText
 import com.fangyi.classpp.ui.note.deadlineDaysLeft
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 
@@ -145,7 +145,7 @@ fun CourseDetailSheet(
             )
             Text(
                 text = cellInfo,
-                fontSize = 15.sp,
+                style = ClassppTextTokens.secondaryTextLarge,
                 color = MaterialTheme.classppColors.secondaryText,
                 modifier = Modifier
                     .padding(start = 12.dp)

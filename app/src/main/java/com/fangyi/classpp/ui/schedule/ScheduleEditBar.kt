@@ -25,17 +25,16 @@ import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.tabTransitionFreeze
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.EditActionShape
 import dev.chrisbanes.haze.HazePerformanceMode
@@ -43,7 +42,6 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.hazeBlur
 
 private val EditActionIconSize = 30.dp
-private val EditActionLabelTextSize = 13.sp
 private val EditActionLabelGap = 2.dp
 private val EditActionInnerPadding = 8.dp
 
@@ -169,8 +167,7 @@ fun ScheduleEditBar(
                     modifier = Modifier
                         .weight(1f)
                         .wrapContentWidth(Alignment.CenterHorizontally),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    style = ClassppTextTokens.calendarWeekday,
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -203,8 +200,7 @@ private fun EditAction(
         Text(
             text = text,
             color = color,
-            fontSize = EditActionLabelTextSize,
-            fontWeight = FontWeight.Medium,
+            style = ClassppTextTokens.actionLabel,
         )
     }
 }

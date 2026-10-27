@@ -52,18 +52,16 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Expandable
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
@@ -76,9 +74,6 @@ import kotlin.math.roundToInt
  *  由宿主从课程卡配色映射（ui.schedule.CourseColor.barColor），组件不依赖课表包。 */
 @Immutable
 data class TagItem(val name: String, val color: Color)
-
-/** 标签文字：胶囊私有的小号正文（设计稿 13sp Normal），颜色由各胶囊按标签色注入 */
-private val TagTextStyle = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Normal)
 
 /** 胶囊内标签图标尺寸：与 13sp 文字同高对齐设计稿 */
 private val TagIconSize = 14.dp
@@ -452,7 +447,7 @@ private fun TagCapsule(
         )
         Text(
             text = item.name,
-            style = TagTextStyle.copy(color = contentColor),
+            style = ClassppTextTokens.secondaryTextSmall.copy(color = contentColor),
         )
     }
 }

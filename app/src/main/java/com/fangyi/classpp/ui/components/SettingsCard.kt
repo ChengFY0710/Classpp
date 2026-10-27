@@ -35,13 +35,14 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
+import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import dev.chrisbanes.haze.HazeState
@@ -147,8 +148,8 @@ sealed interface SettingsCardItem {
  * [contentVerticalPadding] 为卡内首行之前 / 末行之后的额外留白（默认 0）。
  *
  * 规格（对齐 [SheetTextField]）：
- * - 字体：label 走 fieldLabel（16sp SemiBold onSurface），描述走 fieldPlaceholder
- *   （16sp Medium secondaryText）；
+ * - 字体：label 走 fieldLabel（16sp SemiBold onSurface），描述走 settingsDescription
+ *   （13sp Medium、20sp 行高、secondaryText）；
  * - 间距：行高下限 [rowMinHeight]（默认 60dp = [SheetFieldHeight]）判在**整卡**而非单行，
  *   整卡内容不足时差额均摊给各行撑高（单行卡与旧「行高 min 60」规格渲染一致）；行内
  *   左右 16，内距画在交互区**内侧**；[SettingsCardItem.Custom] 行仍自带该下限兜底；
@@ -413,8 +414,10 @@ internal fun SettingsRowText(
             Spacer(modifier = Modifier.size(3.dp))
             Text(
                 text = description,
-                // 描述可能多行换行：补 20sp 行高，多行时行间节奏与 16sp 字号匹配
-                style = MaterialTheme.classppTextStyles.fieldPlaceholder.copy(lineHeight = 20.sp, fontSize = 13.sp),
+                // 描述可能多行换行：20sp 行高，多行时行间节奏与 13sp 字号匹配
+                style = ClassppTextTokens.settingsDescription.copy(
+                    color = MaterialTheme.classppColors.secondaryText,
+                ),
                 modifier = Modifier.padding(end = 10.dp),
             )
         }

@@ -30,24 +30,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.schedule.CourseColor
 import com.fangyi.classpp.ui.schedule.barColor
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.DayCourseAlertTagShape
 import com.fangyi.classpp.ui.theme.classppColors
-import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.dayTaskCardShape
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.kyant.shapes.RoundedRectangle
@@ -514,13 +511,13 @@ private fun dayTaskContentMinHeight(
     width: Dp,
     fontScale: Float,
 ): Dp {
-    val titleLine = (TaskTitleLineHeight.value * fontScale).dp
-    val timeLine = (TaskTimeLineHeight.value * fontScale).dp
-    val tagLine = (TaskTagLineHeight.value * fontScale).dp
+    val titleLine = (ClassppTextTokens.taskCardTitle.lineHeight.value * fontScale).dp
+    val timeLine = (ClassppTextTokens.metaTextSmall.lineHeight.value * fontScale).dp
+    val tagLine = (ClassppTextTokens.compactTagText.lineHeight.value * fontScale).dp
     if (narrow) {
         // 窄卡：顶行时间 + 标题 + 内容，元素间距统一 TaskLineSpacing。课程备注按卡宽
         // 估算换行行数，避免渲染撑高后压住下卡
-        val infoLine = (TaskInfoLineHeight.value * fontScale).dp
+        val infoLine = (ClassppTextTokens.metaText.lineHeight.value * fontScale).dp
         return when (task) {
             is DayTask.Course -> {
                 val hasTeacherLocation =
@@ -538,7 +535,7 @@ private fun dayTaskContentMinHeight(
                 val rows = listOfNotNull(task.deadlineText, task.repeatText).size
                 val rowHeight = maxOf(
                     TaskPropertyIconSize,
-                    (TaskPropertyLineHeight.value * fontScale).dp,
+                    (ClassppTextTokens.metaText.lineHeight.value * fontScale).dp,
                 )
                 var height = TaskContentPaddingVertical * 2 +
                     timeLine + TaskLineSpacing + titleLine
@@ -569,14 +566,14 @@ private fun dayTaskContentMinHeight(
             val infoCount = listOfNotNull(task.teacher, task.location, task.note).size
             TaskContentPaddingVertical * 2 +
                 titleLine +
-                ((TaskInfoLineHeight.value * fontScale).dp + TaskLineSpacing) * infoCount
+                ((ClassppTextTokens.metaText.lineHeight.value * fontScale).dp + TaskLineSpacing) * infoCount
         }
         is DayTask.Todo -> {
             // 属性行（截止 + 重复）在窄列里最多两项、可能折成两行；两项都缺席时整行不渲染
             val rows = listOfNotNull(task.deadlineText, task.repeatText).size
             val rowHeight = maxOf(
                 TaskPropertyIconSize,
-                (TaskPropertyLineHeight.value * fontScale).dp,
+                (ClassppTextTokens.metaText.lineHeight.value * fontScale).dp,
             )
             TaskContentPaddingVertical * 2 +
                 titleLine +
@@ -596,7 +593,7 @@ private fun dayTaskContentMinHeight(
  *  无排版上下文时的兜底（单测/预览）；渲染侧由 [DayTaskCardContent] 实测整体内容高度 */
 private fun estimateNarrowNoteLines(text: String, width: Dp, fontScale: Float): Int {
     val contentWidth = (width - TaskCardPaddingHorizontal * 2).value
-    val charWidth = TaskInfoFontSize.value * fontScale
+    val charWidth = ClassppTextTokens.metaText.fontSize.value * fontScale
     if (contentWidth <= 0f || charWidth <= 0f) return 1
     val charsPerLine = (contentWidth / charWidth).toInt().coerceAtLeast(1)
     return ((text.length + charsPerLine - 1) / charsPerLine).coerceAtLeast(1)
@@ -710,10 +707,8 @@ private fun NarrowTaskContent(task: DayTask, accent: Color) {
 private fun ColumnScope.NarrowCourseContent(task: DayTask.Course) {
     Text(
         text = task.name,
+        style = ClassppTextTokens.courseTaskCardTitle,
         color = MaterialTheme.colorScheme.onSurface,
-        fontSize = TaskTitleFontSize,
-        lineHeight = TaskTitleLineHeight,
-        fontWeight = FontWeight.SemiBold,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
@@ -735,13 +730,12 @@ private fun ColumnScope.NarrowCourseContent(task: DayTask.Course) {
 private fun ColumnScope.NarrowTodoContent(task: DayTask.Todo) {
     Text(
         text = task.name,
-        style = MaterialTheme.classppTextStyles.fieldLabel.copy(
+        style = ClassppTextTokens.taskCardTitle.copy(
             color = if (task.completed) {
                 MaterialTheme.classppColors.secondaryText
             } else {
                 MaterialTheme.colorScheme.onSurface
             },
-            lineHeight = TaskTitleLineHeight,
         ),
         textDecoration = if (task.completed) TextDecoration.LineThrough else null,
         maxLines = 1,
@@ -840,10 +834,8 @@ private fun VerticalCourseContent(task: DayTask.Course, modifier: Modifier = Mod
     ) {
         Text(
             text = task.name,
+            style = ClassppTextTokens.courseTaskCardTitle,
             color = MaterialTheme.colorScheme.onSurface,
-            fontSize = TaskTitleFontSize,
-            lineHeight = TaskTitleLineHeight,
-            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -864,13 +856,12 @@ private fun VerticalTodoContent(task: DayTask.Todo, modifier: Modifier = Modifie
     ) {
         Text(
             text = task.name,
-            style = MaterialTheme.classppTextStyles.fieldLabel.copy(
+            style = ClassppTextTokens.taskCardTitle.copy(
                 color = if (task.completed) {
                     MaterialTheme.classppColors.secondaryText
                 } else {
                     MaterialTheme.colorScheme.onSurface
                 },
-                lineHeight = TaskTitleLineHeight,
             ),
             textDecoration = if (task.completed) TextDecoration.LineThrough else null,
             maxLines = 1,
@@ -962,14 +953,12 @@ private fun CompactTaskTitle(title: String, completed: Boolean, modifier: Modifi
     Text(
         text = title,
         modifier = modifier,
-        style = MaterialTheme.classppTextStyles.fieldLabel.copy(
-            fontSize = TaskTitleFontSize,
+        style = ClassppTextTokens.taskCardTitle.copy(
             color = if (completed) {
                 MaterialTheme.classppColors.secondaryText
             } else {
                 MaterialTheme.colorScheme.onSurface
             },
-            lineHeight = TaskTitleLineHeight,
         ),
         textDecoration = if (completed) TextDecoration.LineThrough else null,
         maxLines = 1,
@@ -1016,16 +1005,13 @@ private fun TaskTagBox(
     }
 }
 
-/** 左列上下时间：13sp Medium，accent 色（DayCourseAlert TimeText 同款） */
+/** 左列上下时间：11sp Medium，accent 色（DayCourseAlert TimeText 同款） */
 @Composable
 private fun TaskTimeText(text: String, color: Color) {
     Text(
         text = text,
+        style = ClassppTextTokens.metaTextSmall,
         color = color,
-        fontSize = TaskTimeFontSize,
-        lineHeight = TaskTimeLineHeight,
-        fontWeight = FontWeight.Medium,
-        style = TextStyle(fontFeatureSettings = "tnum"),
     )
 }
 
@@ -1034,10 +1020,8 @@ private fun TaskTimeText(text: String, color: Color) {
 private fun TaskTagText(text: String, color: Color) {
     Text(
         text = text,
+        style = ClassppTextTokens.compactTagText,
         color = color,
-        fontSize = TaskTagFontSize,
-        lineHeight = TaskTagLineHeight,
-        fontWeight = FontWeight.Medium,
     )
 }
 
@@ -1047,9 +1031,8 @@ private fun TaskTagText(text: String, color: Color) {
 private fun TaskInfoText(text: String, color: Color, maxLines: Int = 1) {
     Text(
         text = text,
+        style = ClassppTextTokens.metaText,
         color = color,
-        fontSize = TaskInfoFontSize,
-        lineHeight = TaskInfoLineHeight,
         maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
     )
@@ -1136,9 +1119,8 @@ private val TaskTodoCheckboxSize = 36.dp
  *  右缘间距凑成 NoteCard 的 16dp（热区方径不变，补的是卡内排版位） */
 private val TaskTodoCheckboxEndInset = 16.dp - TaskCardPaddingHorizontal
 
-/** 待办属性行（TimeProperty）的图标尺寸与保守行高：用于内容最小高度估算 */
+/** 待办属性行（TimeProperty）的图标尺寸：用于内容最小高度估算 */
 private val TaskPropertyIconSize = 16.dp
-private val TaskPropertyLineHeight = 18.sp
 
 /** 待办属性行换行时的行间距（FlowRow verticalArrangement = 3dp） */
 private val TaskPropertyRowGap = 3.dp
@@ -1159,15 +1141,6 @@ private val TaskTagPaddingHorizontal = 5.dp
 /** 紧凑单行标签的上下内距：横向标签矩形高度 = 文字行高 + 上下内距 × 2；
  *  拉伸态（竖排卡）不适用（高度由时间列 weight 分配，见 TaskTagBox） */
 private val TaskTagPaddingVertical = 4.dp
-
-private val TaskTitleFontSize = 16.sp
-private val TaskTitleLineHeight = 20.sp
-private val TaskInfoFontSize = 13.sp
-private val TaskInfoLineHeight = 18.sp
-private val TaskTimeFontSize = 11.sp
-private val TaskTimeLineHeight = 19.sp
-private val TaskTagFontSize = 11.sp
-private val TaskTagLineHeight = 12.sp
 
 // ---------- 预览 ----------
 

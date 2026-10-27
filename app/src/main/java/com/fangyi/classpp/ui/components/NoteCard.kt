@@ -49,19 +49,18 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.NoteCardShape
 import com.fangyi.classpp.ui.theme.PillShape
@@ -102,11 +101,9 @@ private val TitlePropertySpacing = 2.dp
 internal val NoteCardPaddingVertical = 14.dp
 
 /**
- * 倒计时（[CountdownLabel]）：数字 [CountdownNumberFontSize] 半粗突出，单位与「逾期」前缀
- * [CountdownUnitFontSize] 收小；倒计时与右侧内容列相距 [CountdownEndSpacing]（沿用紧急旗后的节奏）。
+ * 倒计时（[CountdownLabel]）：数字 [ClassppTextTokens.countdownNumber] 半粗突出，单位与「逾期」
+ * 前缀 [ClassppTextTokens.countdownUnit] 收小；倒计时与右侧内容列相距 [CountdownEndSpacing]（沿用紧急旗后的节奏）。
  */
-private val CountdownNumberFontSize = 25.sp
-private val CountdownUnitFontSize = 12.sp
 private val CountdownEndSpacing = 16.dp
 
 /**
@@ -181,8 +178,7 @@ internal fun TagChip(tag: String, color: Color = MaterialTheme.colorScheme.prima
         )
         Text(
             text = tag,
-            style = MaterialTheme.classppTextStyles.noteProperty
-                .copy(color = color, fontSize = 12.sp),
+            style = ClassppTextTokens.tagChip.copy(color = color),
         )
     }
 }
@@ -202,12 +198,17 @@ private fun CountdownLabel(
     val overduePrefix = if (days < 0) stringResource(R.string.todo_countdown_overdue) else ""
     val text = buildAnnotatedString {
         if (overduePrefix.isNotEmpty()) {
-            withStyle(SpanStyle(fontSize = CountdownUnitFontSize)) { append(overduePrefix) }
+            withStyle(SpanStyle(fontSize = ClassppTextTokens.countdownUnit.fontSize)) { append(overduePrefix) }
         }
-        withStyle(SpanStyle(fontSize = CountdownNumberFontSize, fontWeight = FontWeight.SemiBold)) {
+        withStyle(
+            SpanStyle(
+                fontSize = ClassppTextTokens.countdownNumber.fontSize,
+                fontWeight = ClassppTextTokens.countdownNumber.fontWeight,
+            ),
+        ) {
             append(abs(days).toString())
         }
-        withStyle(SpanStyle(fontSize = CountdownUnitFontSize)) { append(dayUnit) }
+        withStyle(SpanStyle(fontSize = ClassppTextTokens.countdownUnit.fontSize)) { append(dayUnit) }
     }
     Text(
         text = text,

@@ -39,7 +39,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
@@ -53,6 +52,7 @@ import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -270,8 +270,8 @@ fun NotificationScreen(
                                     ) {
                                         Text(
                                             text = stringResource(R.string.notification_test_publish),
+                                            style = ClassppTextTokens.textButton,
                                             color = MaterialTheme.colorScheme.primary,
-                                            fontSize = 16.sp,
                                         )
                                     }
                                 },

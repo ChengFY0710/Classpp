@@ -19,10 +19,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.ui.motion.pressFeedback
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
 
@@ -38,16 +37,14 @@ fun ConfirmDialogCard(
     ) {
         Text(
             text = title,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
+            style = ClassppTextTokens.dialogTitle,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(start = 12.dp, end = 12.dp),
         )
         Spacer(Modifier.height(10.dp))
         Text(
             text = message,
-            fontSize = 15.sp,
-            lineHeight = 22.sp,
+            style = ClassppTextTokens.dialogMessage,
             color = MaterialTheme.classppColors.secondaryText,
             modifier = Modifier.padding(start = 12.dp, end = 12.dp),
         )
@@ -104,8 +101,7 @@ fun DialogPillButton(
     ) {
         Text(
             text = label,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = ClassppTextTokens.dialogButtonText,
             color = contentColor,
         )
     }

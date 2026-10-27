@@ -31,15 +31,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.pressFeedback
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isDarkTheme
@@ -230,8 +229,8 @@ fun CourseCard(
             }
         }
         // 内容区包一层 BoxWithConstraints：卡高约束首帧组合期即可用（无先溢出后修正的闪跳），
-        // 行预算按起止时间行(12sp) + 教师行(12sp，留空则不扣) + 内边距(6dp) + 1dp 安全余量扣除，
-        // 行成本取各 Text 的 lineHeight（16sp/14sp）× fontScale × density
+        // 行预算按起止时间行（lineHeight 12sp）+ 教师行（lineHeight 12sp，留空则不扣）+
+        // 内边距(6dp) + 1dp 安全余量扣除，行成本取各 Text 的 lineHeight（16sp/14sp）× fontScale × density
         BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
@@ -245,11 +244,11 @@ fun CourseCard(
                 val localDensity = LocalDensity.current
                 val spPx = { sp: Float -> sp * localDensity.fontScale * localDensity.density }
                 val fixedPx = with(localDensity) { 6.dp.toPx() + 1.dp.toPx() } +
-                    spPx(12f) * (if (hasTeacher) 3f else 2f)
+                    spPx(ClassppTextTokens.courseCardMeta.lineHeight.value) * (if (hasTeacher) 3f else 2f)
                 allocateCardLines(
                     budgetPx = constraints.maxHeight - fixedPx,
-                    nameLinePx = spPx(16f),
-                    locationLinePx = spPx(14f),
+                    nameLinePx = spPx(ClassppTextTokens.compactCardTitle.lineHeight.value),
+                    locationLinePx = spPx(ClassppTextTokens.courseCardLocation.lineHeight.value),
                 )
             }
             Column(
@@ -261,50 +260,41 @@ fun CourseCard(
                 Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                     Text(
                         text = slot.startTime,
+                        style = ClassppTextTokens.courseCardMeta,
                         color = barColor,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         textAlign = TextAlign.Start,
-                        lineHeight = 12.sp,
                     )
                     Column() {
                         Text(
                             text = course.name,
+                            style = ClassppTextTokens.compactCardTitle,
                             color = if (course.active) {
                                 MaterialTheme.colorScheme.onSurface
                             } else {
                                 inactiveColor
                             },
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            lineHeight = 16.sp,
                             maxLines = lines.name,
                             overflow = TextOverflow.Ellipsis,
-                            letterSpacing = (-0.1).sp,
                         )
                         Spacer(modifier = Modifier.size(1.dp))
                         // 教师留空时不占位，地点直接上移
                         if (hasTeacher) {
                             Text(
                                 text = course.teacher,
+                                style = ClassppTextTokens.courseCardMeta,
                                 color = secondaryColor,
-                                fontSize = 11.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Start,
-                                lineHeight = 12.sp,
-                                fontWeight = FontWeight.Medium,
                             )
                         }
                         // 上课地点：默认三行，课程名降到底（1 行）后才轮到它降（见 allocateCardLines）
                         Text(
                             text = course.location,
+                            style = ClassppTextTokens.courseCardLocation,
                             color = secondaryColor,
-                            fontSize = 11.sp,
                             textAlign = TextAlign.Start,
-                            lineHeight = 14.sp,
-                            fontWeight = FontWeight.Medium,
                             maxLines = lines.location,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -312,12 +302,10 @@ fun CourseCard(
                 }
                 Text(
                     text = endTime,
+                    style = ClassppTextTokens.courseCardMeta,
                     color = barColor,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     textAlign = TextAlign.Start,
-                    lineHeight = 12.sp,
                 )
             }
         }
@@ -397,11 +385,9 @@ fun AddCourseCard(
 private fun AddCardTime(text: String) {
     Text(
         text = text,
+        style = ClassppTextTokens.courseCardMeta,
         color = MaterialTheme.colorScheme.inversePrimary,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Medium,
         maxLines = 1,
-        lineHeight = 12.sp,
     )
 }
 

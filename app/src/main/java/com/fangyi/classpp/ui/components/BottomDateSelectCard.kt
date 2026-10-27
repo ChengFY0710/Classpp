@@ -24,17 +24,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import dev.chrisbanes.haze.HazeState
 import java.util.GregorianCalendar
-
-/** 日期轮数字字号：年/月/日三列比时间轮的两列挤（年轮还是 4 位），比共享默认小一档 */
-private val WheelNumberFontSize = 32.sp
 
 /** 「清除」宽胶囊的内距 8/13、图标 30dp、图文间距 6dp：同顶栏 [SheetPillButton] 的规格 */
 private val ClearPillVerticalPadding = 8.dp
@@ -149,21 +146,21 @@ fun BottomDateSelectCard(
                 state = yearState,
                 format = { (yearRange.first + it).toString() },
                 modifier = Modifier.weight(1f),
-                fontSize = WheelNumberFontSize,
+                fontSize = ClassppTextTokens.dateWheelNumber.fontSize,
                 unit = stringResource(R.string.date_unit_year),
             )
             NumberWheel(
                 state = monthState,
                 format = { pad2(it + 1) },
                 modifier = Modifier.weight(1f),
-                fontSize = WheelNumberFontSize,
+                fontSize = ClassppTextTokens.dateWheelNumber.fontSize,
                 unit = stringResource(R.string.date_unit_month),
             )
             NumberWheel(
                 state = dayState,
                 format = { pad2(it + 1) },
                 modifier = Modifier.weight(1f),
-                fontSize = WheelNumberFontSize,
+                fontSize = ClassppTextTokens.dateWheelNumber.fontSize,
                 unit = stringResource(R.string.date_unit_day),
             )
         }

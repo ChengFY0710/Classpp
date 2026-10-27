@@ -23,14 +23,13 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.ui.schedule.CourseColor
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.DayTimelineNowChipShape
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
@@ -53,18 +52,14 @@ private val TaskAreaStartGap = 12.dp
 private val GridLineWidth = 1.dp
 
 /** 当前时刻矩形规格：距屏幕左缘 [NowChipStartPadding]、定宽 [NowChipWidth]（横线自其
- *  右缘起画，左侧不外露）、高 [NowChipHeight]、时刻 [NowChipFontSize] Medium 居中 */
+ *  右缘起画，左侧不外露）、高 [NowChipHeight]、时刻字号见 ClassppTextTokens.timelineNowChip */
 private val NowChipStartPadding = 2.dp
 private val NowChipWidth = 36.dp
 private val NowChipHeight = 22.dp
-private val NowChipFontSize = 10.sp
 
 /** 时刻矩形临近整点判定：当前时刻距某整点前后各 ≤ 该分钟数时，该整点刻度文字隐藏，
  *  避免与矩形挤在一起 */
 private const val NowNearTickThresholdMinutes = 20
-
-/** 刻度字号（与 DayCourseAlert 次级信息一致） */
-private val TimeLabelFontSize = 11.sp
 
 /** SubcomposeLayout 里时间轴主体层的 slot id（卡片内容实测层用任务下标 0..n−1） */
 private const val TimelineBodySlot = "day-timeline-body"
@@ -268,8 +263,8 @@ private fun DayTimelineBody(
                 if (!hiddenByNow) {
                     Text(
                         text = label,
+                        style = ClassppTextTokens.timelineLabel,
                         color = secondaryText,
-                        fontSize = TimeLabelFontSize,
                     )
                 }
             }
@@ -320,9 +315,8 @@ private fun DayTimelineBody(
             ) {
                 Text(
                     text = TimeText.format(nowMinute),
+                    style = ClassppTextTokens.timelineNowChip,
                     color = onError,
-                    fontSize = NowChipFontSize,
-                    fontWeight = FontWeight.Medium,
                     modifier = Modifier.offset(y = (-1).dp),
                 )
             }

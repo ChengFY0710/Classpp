@@ -46,7 +46,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
-import androidx.compose.ui.unit.sp
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.Correct
 import com.fangyi.classpp.ui.theme.Error
@@ -537,12 +537,13 @@ private fun DateBand(
                     } else {
                         Modifier
                     },
-                    fontSize = 18.sp,
-                    fontWeight = if (highlighted || isTermStart || isTermEnd) {
-                        FontWeight.SemiBold
-                    } else {
-                        FontWeight.Medium
-                    },
+                    style = ClassppTextTokens.courseGridDate.copy(
+                        fontWeight = if (highlighted || isTermStart || isTermEnd) {
+                            FontWeight.SemiBold
+                        } else {
+                            FontWeight.Medium
+                        },
+                    ),
                     // 学期起止日标记优先于普通高亮（今天样式已在上游让位）：
                     // 开始日绿、结束日红；一日起止的极端学期按开始日（绿）计
                     color = when {

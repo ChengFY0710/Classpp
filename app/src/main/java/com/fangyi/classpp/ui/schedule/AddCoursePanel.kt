@@ -32,7 +32,6 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.FieldReason
@@ -57,13 +56,13 @@ import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import dev.chrisbanes.haze.rememberHazeState
 
 private val textStartPadding = PaddingValues(start = 12.dp) // 描述性文字统一左移，视觉上更有层次
-private val secondaryTextSize = 15.sp // 描述性文字统一大小
 
 /**
  * 添加/编辑课程面板：[day] / [slot] 是点中的那一格（编辑态传被编辑课的星期与起始节）；
@@ -376,7 +375,7 @@ fun AddCoursePanel(
             // 灰色信息行是浮层规范里的"直接文本"例外，不包分组
             Text(
                 text = cellInfo,
-                fontSize = secondaryTextSize,
+                style = ClassppTextTokens.secondaryTextLarge,
                 color = MaterialTheme.classppColors.secondaryText,
                 modifier = Modifier
                     .padding(textStartPadding)
@@ -464,7 +463,7 @@ fun AddCoursePanel(
                         endSlotId,
                         endSlotId - startSlotId + 1,
                     ),
-                    fontSize = secondaryTextSize,
+                    style = ClassppTextTokens.secondaryTextLarge,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(textStartPadding),
                 )
@@ -515,7 +514,7 @@ fun AddCoursePanel(
                 )
                 Text(
                     text = stringResource(R.string.edit_weeks_summary, weeksSummary(weeks)),
-                    fontSize = secondaryTextSize,
+                    style = ClassppTextTokens.secondaryTextLarge,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .padding(textStartPadding)
@@ -529,7 +528,7 @@ fun AddCoursePanel(
                             other.name,
                             weeksSummary(other.weeks),
                         ),
-                        fontSize = 13.sp,
+                        style = ClassppTextTokens.hintText,
                         color = MaterialTheme.classppColors.secondaryText,
                     )
                 }

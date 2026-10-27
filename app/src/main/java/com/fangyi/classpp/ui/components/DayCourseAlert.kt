@@ -21,17 +21,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TimeText as TimeFormatter
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.schedule.CourseColor
 import com.fangyi.classpp.ui.schedule.barColor
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.DayCardShape
 import com.fangyi.classpp.ui.theme.DayCourseAlertTagShape
@@ -214,9 +212,7 @@ fun DayCourseAlert(
                     Text(
                         titleText,
                         color = titleColor,
-                        fontSize = TitleFontSize,
-                        lineHeight = TitleLineHeight,
-                        fontWeight = FontWeight.SemiBold,
+                        style = ClassppTextTokens.alertCardTitle,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -226,9 +222,7 @@ fun DayCourseAlert(
                         // 单行卡用它把右侧时间组推到行尾；≥2 行卡右端已让位，无需 weight
                         modifier = if (showInlineTimes) Modifier.weight(1f) else Modifier,
                         color = colors.onSurface,
-                        fontSize = TitleFontSize,
-                        lineHeight = TitleLineHeight,
-                        fontWeight = FontWeight.SemiBold,
+                        style = ClassppTextTokens.alertCardTitle,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -346,39 +340,33 @@ private fun TagBox(
     }
 }
 
-/** 教师/地点/备注行：14sp 常规字重，颜色由调用方给（教师地点 = secondaryText，备注 = primary） */
+/** 教师/地点/备注行：13sp Medium，颜色由调用方给（教师地点 = secondaryText，备注 = primary） */
 @Composable
 private fun InfoText(text: String, color: Color) {
     Text(
         text,
+        style = ClassppTextTokens.metaText,
         color = color,
-        fontSize = InfoFontSize,
-        lineHeight = InfoLineHeight,
     )
 }
 
-/** 右侧上下课时间：15sp Medium，标准课程卡色；显示时去掉小时前导零（`08:00` → `8:00`） */
+/** 右侧上下课时间：11sp Medium，标准课程卡色；显示时去掉小时前导零（`08:00` → `8:00`） */
 @Composable
 private fun TimeText(text: String, color: Color) {
     Text(
         text = TimeFormatter.normalize(text) ?: text,
+        style = ClassppTextTokens.metaTextSmall,
         color = color,
-        fontSize = TimeFontSize,
-        lineHeight = TimeLineHeight,
-        fontWeight = FontWeight.Medium,
-        style = TextStyle(fontFeatureSettings = "tnum"),
     )
 }
 
-/** 「上课」标签文字：15sp Medium，课程色降明度 */
+/** 「上课」标签文字：11sp Medium，课程色降明度 */
 @Composable
 private fun TagText(text: String, color: Color) {
     Text(
         text,
+        style = ClassppTextTokens.tagText,
         color = color,
-        fontSize = TagFontSize,
-        lineHeight = TagLineHeight,
-        fontWeight = FontWeight.Medium,
     )
 }
 
@@ -448,15 +436,6 @@ private val StretchedTagPaddingHorizontal = 0.dp
 /** 标签垂直内边距：拉伸态高度由列分配（行高收紧后余量很小，内边距会把最小内容高
  *  撑出可分配空间造成溢出），文字盒自带的行距已提供呼吸感，归零 */
 private val TagPaddingVertical = 0.dp
-
-private val TitleFontSize = 16.sp
-private val TitleLineHeight = 16.sp
-private val InfoFontSize = 13.sp
-private val InfoLineHeight = 18.sp
-private val TimeFontSize = 11.sp
-private val TimeLineHeight = 19.sp
-private val TagFontSize = 11.sp
-private val TagLineHeight = 20.sp
 
 // ---------- 预览 ----------
 

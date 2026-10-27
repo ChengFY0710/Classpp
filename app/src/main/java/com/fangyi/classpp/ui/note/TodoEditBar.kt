@@ -23,15 +23,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.EditActionShape
 import com.fangyi.classpp.ui.theme.classppColors
@@ -40,7 +39,6 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.hazeBlur
 
 private val EditActionIconSize = 30.dp
-private val EditActionLabelTextSize = 13.sp
 private val EditActionLabelGap = 2.dp
 private val EditActionInnerPadding = 8.dp
 
@@ -204,8 +202,7 @@ private fun EditAction(
         Text(
             text = text,
             color = color,
-            fontSize = EditActionLabelTextSize,
-            fontWeight = FontWeight.Medium,
+            style = ClassppTextTokens.actionLabel,
         )
     }
 }

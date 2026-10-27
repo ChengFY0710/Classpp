@@ -61,6 +61,7 @@ import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.fangyi.classpp.ui.theme.tabularNumbers
 import dev.chrisbanes.haze.rememberHazeState
 
 /**
@@ -506,7 +507,7 @@ private fun TimeChip(
             .clip(ChipShape)
             .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 18.dp, vertical = 9.dp),
-        style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+        style = MaterialTheme.typography.bodyMedium.tabularNumbers(),
         color = MaterialTheme.colorScheme.primary,
     )
 }

@@ -22,7 +22,6 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -30,9 +29,9 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.classppColors
 import kotlin.math.abs
 import kotlin.math.floor
@@ -67,12 +66,6 @@ private const val BounceOvershootItems = 0.5f
 
 /** 最小甩动速度（Android ViewConfiguration 同款 50dp/s）：低于它的松手不算甩，直接吸附 */
 private val MinimumFlingVelocity: Dp = 50.dp
-
-/** 滚轮数字字号（对齐设计稿量得的中格大小） */
-private val WheelNumberFontSize = 36.sp
-
-/** 单位（时/分、年/月/日）字号（横向轮的单位标签同样取这一档） */
-internal val WheelUnitFontSize = 18.sp
 
 /** 数字右缘到单位的间距 */
 private val UnitGap: Dp = 10.dp
@@ -292,7 +285,7 @@ internal fun NumberWheel(
     state: WheelState,
     format: (Int) -> String,
     modifier: Modifier = Modifier,
-    fontSize: TextUnit = WheelNumberFontSize,
+    fontSize: TextUnit = ClassppTextTokens.timeWheelNumber.fontSize,
     unit: String? = null,
 ) {
     val density = LocalDensity.current
@@ -306,16 +299,12 @@ internal fun NumberWheel(
     // 数字样式不设色：颜色随离中心的距离在 draw 期逐帧混出（onSurface→secondaryText）。
     // fontFeatureSettings "tnum" = 等宽数字（tabular figures）：1/0 等数字同宽，滚动换值、
     // 中心数字宽度与单位位置都不抖动（字体不支持该特性时自动忽略，无副作用）
-    val numberStyle = TextStyle(
-        fontSize = fontSize,
-        fontWeight = FontWeight.Medium,
-        fontFeatureSettings = "tnum",
-    )
+    val numberStyle = ClassppTextTokens.timeWheelNumber.copy(fontSize = fontSize)
     // 选中格字重 SemiBold、未选中 Medium：字重离散（两档字形轮廓不同，不像颜色能插值），
     // 跨半格直接切换；单位锚点量宽也用它，与循环里 centerIndex 判据保持一致
     val selectedStyle = numberStyle.copy(fontWeight = FontWeight.SemiBold)
     // 单位样式：静态灰字（secondaryText），不随滚动缩放/渐隐
-    val unitStyle = TextStyle(fontSize = WheelUnitFontSize, fontWeight = FontWeight.Medium)
+    val unitStyle = ClassppTextTokens.wheelUnit
 
     Canvas(
         modifier = modifier

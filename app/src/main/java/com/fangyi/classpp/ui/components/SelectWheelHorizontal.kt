@@ -16,15 +16,14 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.classppColors
 import kotlin.math.abs
 import kotlin.math.floor
@@ -38,9 +37,6 @@ private const val HorizontalVisibleItems = 5
 
 /** 横向滚轮的行高（画布高度，数字带上下留白） */
 private val HorizontalWheelHeight = 128.dp
-
-/** 横向滚轮数字字号（单轮独占一行，比竖向共享默认 36sp 大一档） */
-private val HorizontalWheelFontSize = 40.sp
 
 /** 横向渐隐结束的距离（格）：设计稿最外格（±2）仍隐约可见，尾巴拉到 2.4（早于视口裁剪边 2.5 格） */
 private const val HorizontalFadeOutItems = 2.4f
@@ -63,7 +59,7 @@ internal fun HorizontalNumberWheel(
     state: WheelState,
     format: (Int) -> String,
     modifier: Modifier = Modifier,
-    fontSize: TextUnit = HorizontalWheelFontSize,
+    fontSize: TextUnit = ClassppTextTokens.horizontalWheelNumber.fontSize,
     unit: String? = null,
 ) {
     val density = LocalDensity.current
@@ -76,16 +72,12 @@ internal fun HorizontalNumberWheel(
     val sideColor = MaterialTheme.classppColors.secondaryText
     // 数字样式不设色：颜色随离中心的距离在 draw 期逐帧混出（onSurface→secondaryText）；
     // "tnum" 等宽数字同竖向（字体不支持该特性时自动忽略，无副作用）
-    val numberStyle = TextStyle(
-        fontSize = fontSize,
-        fontWeight = FontWeight.Medium,
-        fontFeatureSettings = "tnum",
-    )
+    val numberStyle = ClassppTextTokens.horizontalWheelNumber.copy(fontSize = fontSize)
     // 选中格字重 SemiBold、未选中 Medium：字重离散（两档字形轮廓不同，不像颜色能插值），
     // 跨半格直接切换；单位锚点量宽也用它，与循环里 centerIndex 判据保持一致
     val selectedStyle = numberStyle.copy(fontWeight = FontWeight.SemiBold)
     // 单位样式：静态灰字（secondaryText），不随滚动缩放/渐隐
-    val unitStyle = TextStyle(fontSize = WheelUnitFontSize, fontWeight = FontWeight.Medium)
+    val unitStyle = ClassppTextTokens.wheelUnit
 
     Canvas(
         modifier = modifier

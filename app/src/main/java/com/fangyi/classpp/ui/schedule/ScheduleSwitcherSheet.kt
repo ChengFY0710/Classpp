@@ -24,10 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Schedule
@@ -41,6 +39,7 @@ import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetPillButton
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.pressFeedback
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 
@@ -183,8 +182,7 @@ private fun ScheduleCard(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = schedule.name,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
+                style = ClassppTextTokens.listRowTitle,
                 color = if (isActive) {
                     MaterialTheme.colorScheme.primary
                 } else {
@@ -200,7 +198,7 @@ private fun ScheduleCard(
                     schedule.termStart.toSlashText(),
                     schedule.termEnd.toSlashText(),
                 ),
-                fontSize = 14.sp,
+                style = ClassppTextTokens.captionText,
                 color = MaterialTheme.classppColors.secondaryText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

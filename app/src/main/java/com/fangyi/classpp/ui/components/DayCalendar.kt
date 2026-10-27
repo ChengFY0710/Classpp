@@ -54,19 +54,18 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.lerp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.kyant.shapes.RoundedRectangle
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.DayCardShape
 import com.fangyi.classpp.ui.theme.classppColors
@@ -354,8 +353,7 @@ fun DayCalendar(
             ) { (year, month) ->
                 Text(
                     text = stringResource(R.string.date_year_month_cn_format, year, month),
-                    fontSize = TitleFontSize,
-                    fontWeight = FontWeight.SemiBold,
+                    style = ClassppTextTokens.cardTitle,
                     color = colors.onSurface,
                 )
             }
@@ -379,8 +377,7 @@ fun DayCalendar(
                 ) {
                     Text(
                         text = stringResource(R.string.back_to_today),
-                        fontSize = BackToTodayFontSize,
-                        fontWeight = FontWeight.Medium,
+                        style = ClassppTextTokens.calendarAction,
                         color = colors.primary,
                     )
                 }
@@ -545,8 +542,7 @@ private fun WeekdayHeader(
             ) {
                 Text(
                     text = label,
-                    fontSize = WeekdayFontSize,
-                    fontWeight = FontWeight.SemiBold,
+                    style = ClassppTextTokens.calendarWeekday,
                     color = if (highlightToday && index == todayColumn) colors.primary else colors.onSurface,
                 )
             }
@@ -607,8 +603,7 @@ private fun DayCell(
         ) {
             Text(
                 text = date.dayOfMonth().toString(),
-                fontSize = DayNumberFontSize,
-                fontWeight = FontWeight.SemiBold,
+                style = ClassppTextTokens.calendarDay,
                 color = labelColor,
             )
             if (marked) {
@@ -782,15 +777,11 @@ private val NavIconSize = 24.dp
 private val BackToTodayHeight = 32.dp
 private val BackToTodayShape = RoundedRectangle(6.dp)
 private val BackToTodayPadding = 6.dp
-private val BackToTodayFontSize = 16.sp
 private val CardPaddingHorizontal = 8.dp
 private val CardPaddingVertical = 4.dp
 private val BottomBarGap = 2.dp
 /** 折叠甩动吸附的速度阈值（对标 M3 anchoredDraggable 默认值） */
 internal val FoldFlingVelocity = 125.dp
-private val WeekdayFontSize = 15.sp
-private val DayNumberFontSize = 17.sp
-private val TitleFontSize = 16.sp
 
 // ---------- 预览 ----------
 

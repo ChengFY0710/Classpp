@@ -47,7 +47,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
@@ -86,6 +85,7 @@ import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.CardSectionTitleSpacing
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
@@ -1511,7 +1511,7 @@ private fun TodoList(
                         ) {
                             Text(
                                 text = emptyHint,
-                                fontSize = 14.sp,
+                                style = ClassppTextTokens.emptyHint,
                                 color = MaterialTheme.classppColors.secondaryText,
                             )
                         }
@@ -1550,7 +1550,7 @@ private fun TodoList(
                     ) {
                         Text(
                             text = emptyHint,
-                            fontSize = 14.sp,
+                            style = ClassppTextTokens.emptyHint,
                             color = MaterialTheme.classppColors.secondaryText,
                         )
                     }

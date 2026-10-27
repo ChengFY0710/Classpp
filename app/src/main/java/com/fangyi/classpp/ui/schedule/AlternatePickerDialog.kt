@@ -17,15 +17,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.ui.components.FadeOverlayDialog
 import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.RowShape
 
 /**
@@ -55,8 +54,7 @@ internal fun AlternatePickerDialog(
             Text(
                 text = stringResource(R.string.edit_alternate_pick_title),
                 modifier = Modifier.fillMaxWidth(),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
+                style = ClassppTextTokens.secondaryTextLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
@@ -97,8 +95,7 @@ private fun AlternateCourseRow(
     ) {
         Text(
             text = course.name,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = ClassppTextTokens.alternateRowTitle,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -107,7 +104,7 @@ private fun AlternateCourseRow(
             Spacer(Modifier.height(2.dp))
             Text(
                 text = meta,
-                fontSize = 13.sp,
+                style = ClassppTextTokens.hintText,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

@@ -61,13 +61,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Constraints
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.PopupMenuCard
@@ -81,6 +79,7 @@ import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollFactory
 import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
 import com.fangyi.classpp.ui.motion.tabTransitionFreeze
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.EditActionShape
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
@@ -155,9 +154,8 @@ private val TopBarActionBarHeight = 64.dp
 /** 动作行与上方胶囊行的间距（课表编辑栏状态栏下留白同款 6dp） */
 private val TopBarActionBarTopGap = 6.dp
 
-/** 动作块图标边长 / 标签字号 / 图标与标签间距 / 块内水平边距（课表编辑栏 EditAction 同规格） */
+/** 动作块图标边长 / 图标与标签间距 / 块内水平边距（课表编辑栏 EditAction 同规格） */
 private val TopBarActionIconSize = 30.dp
-private val TopBarActionLabelTextSize = 13.sp
 private val TopBarActionLabelGap = 2.dp
 private val TopBarActionInnerPadding = 8.dp
 
@@ -1001,8 +999,7 @@ private fun TodoBarAction(
         Text(
             text = label,
             color = contentColor,
-            fontSize = TopBarActionLabelTextSize,
-            fontWeight = FontWeight.Medium,
+            style = ClassppTextTokens.actionLabel,
         )
     }
 }

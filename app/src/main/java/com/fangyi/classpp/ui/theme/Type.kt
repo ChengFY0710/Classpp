@@ -86,9 +86,9 @@ val Typography = BaselineTypography.copy(
  */
 @Immutable
 class ClassppTextStyles(
-    /** 顶栏居中标题：20sp Bold onSurface（设置页顶栏与浮层顶栏同款） */
+    /** 顶栏居中标题：20sp SemiBold onSurface（设置页顶栏与浮层顶栏同款） */
     val topBarTitle: TextStyle,
-    /** 分组标题（卡片外的次级灰字）：16sp Medium secondaryText */
+    /** 分组标题（卡片外的次级灰字）：15sp Medium secondaryText */
     val sectionTitle: TextStyle,
     /** 行卡左侧 label：16sp SemiBold onSurface */
     val fieldLabel: TextStyle,
@@ -96,9 +96,9 @@ class ClassppTextStyles(
     val fieldPlaceholder: TextStyle,
     /** 行卡右侧值：16sp Medium primary */
     val fieldValue: TextStyle,
-    /** 胶囊按钮文字：15sp SemiBold；颜色随按钮配色由调用方传入（onPrimary/onSurface/onError），样式本身不带色 */
+    /** 胶囊按钮文字：16sp SemiBold；颜色随按钮配色由调用方传入（onPrimary/onSurface/onError），样式本身不带色 */
     val pillButton: TextStyle,
-    /** 待办卡片属性行（时间、标签文字）：15sp Normal secondaryText */
+    /** 待办卡片属性行（时间、标签文字）：14sp Normal secondaryText */
     val noteProperty: TextStyle,
 )
 

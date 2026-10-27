@@ -19,9 +19,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.WeekCellShape
 import kotlin.math.ceil
@@ -99,8 +99,9 @@ fun SelectionGrid(
                         ) {
                             Text(
                                 text = labels[index],
-                                fontSize = 18.sp,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                style = ClassppTextTokens.weekCell.copy(
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                ),
                                 color = labelColor,
                             )
                         }

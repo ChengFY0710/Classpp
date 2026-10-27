@@ -33,12 +33,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.BottomFadeScrim
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.LiquidGlassStyle
 import com.fangyi.classpp.ui.theme.PillShape
@@ -242,9 +241,7 @@ private fun NavPill(
             )
             Text(
                 text = stringResource(labelRes),
-                fontSize = 11.sp,
-                lineHeight = 11.sp,
-                fontWeight = FontWeight.Medium,
+                style = ClassppTextTokens.navLabel,
                 color = contentColor,
                 modifier = Modifier.offset(y = - 1.dp),
             )

@@ -61,7 +61,6 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
@@ -75,6 +74,7 @@ import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rememberPopupMotion
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.tabTransitionFreeze
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.Correct
 import com.fangyi.classpp.ui.theme.Error
@@ -353,10 +353,8 @@ fun ScheduleHeader(
             ) {
                 Text(
                     text = dateTitle,
-                    fontSize = 23.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    style = ClassppTextTokens.pageTitle,
                     color = MaterialTheme.colorScheme.onSurface,
-                    letterSpacing = (-0.3).sp,
                 )
                 Spacer(Modifier.weight(1f))
                 // 箭头方向只在按钮可见时更新：跳回今周后 selectedWeek == todayWeek，
@@ -416,8 +414,7 @@ fun ScheduleHeader(
                     Text(
                         text = weekdays[i],
                         modifier = Modifier.weight(1f),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        style = ClassppTextTokens.calendarWeekday,
                         textAlign = TextAlign.Center,
                         // 学期起止日标记优先于「今天/查看日」高亮：与下方日期带的同日标记
                         // 同列同色（开始日绿、结束日红）；为今天时调用方已传 null，蓝字保留。
@@ -573,8 +570,7 @@ private fun BackToCurrentButton(
         Spacer(Modifier.width(6.dp))
         Text(
             text = stringResource(R.string.back_to_current_week),
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = ClassppTextTokens.calendarWeekday,
             color = MaterialTheme.colorScheme.primary,
             maxLines = 1,
         )
@@ -712,8 +708,7 @@ private fun WeekPill(
                 Text(
                     // 学期前有多页「第 0 周」（原始周号 ≤ 0：今周~开学前一周），胶囊一律显示「第 0 周」
                     text = stringResource(R.string.week_format, selectedWeek.coerceAtLeast(0)),
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    style = ClassppTextTokens.weekPill,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                 )
@@ -949,8 +944,9 @@ private fun WeekCell(
     ) {
         Text(
             text = week.toString(),
-            fontSize = 22.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            style = ClassppTextTokens.weekGridNumber.copy(
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            ),
             color = when {
                 selected -> colors.onPrimary
                 isCurrent -> colors.primary

@@ -88,13 +88,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -155,9 +153,9 @@ import com.fangyi.classpp.ui.note.toAbsoluteDateText
 import com.fangyi.classpp.ui.schedule.CourseColor
 import com.fangyi.classpp.ui.schedule.CourseDetailSheet
 import com.fangyi.classpp.ui.schedule.CourseTodoSheet
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.DayCardShape
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
-import com.fangyi.classpp.ui.theme.SerifDisplay
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.kyant.shapes.RoundedRectangle
 import dev.chrisbanes.haze.HazePerformanceMode
@@ -1181,7 +1179,7 @@ fun DayScreen(
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = swipeHintText,
-                    fontSize = 15.sp,
+                    style = ClassppTextTokens.secondaryTextLarge,
                     color = Color.White,
                 )
             }
@@ -1262,8 +1260,11 @@ fun DayScreen(
                     Text(
                         text = dayMark ?: dayOfMonth.toString(),
                         // 中文节日/节气比日期数字略小，避免两字文案在视觉上过宽。
-                        fontSize = if (dayMark != null) 52.sp else 64.sp,
-                        fontFamily = SerifDisplay,
+                        style = if (dayMark != null) {
+                            ClassppTextTokens.displayDateMark
+                        } else {
+                            ClassppTextTokens.displayDate
+                        },
                         color = Color.White,
                         modifier = Modifier.graphicsLayer {
                             // 设计稿实测 01/02 的“21”等大；组级缩放之外仍保留这个 token。
@@ -1275,10 +1276,8 @@ fun DayScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = stringResource(R.string.date_title_format, yearMonth, weekday),
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Medium,
+                            style = ClassppTextTokens.calendarSubtitle,
                             color = Color.White,
-                            letterSpacing = (-0.3).sp,
                         )
                         Spacer(Modifier.weight(1f))
                         Icon(
@@ -1998,10 +1997,8 @@ private fun DayTopBar(
             ) {
                 Text(
                     text = title,
-                    fontSize = 23.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    style = ClassppTextTokens.pageTitle,
                     color = MaterialTheme.colorScheme.onSurface,
-                    letterSpacing = (-0.3).sp,
                     maxLines = 1,
                 )
             }

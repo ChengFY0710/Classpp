@@ -39,6 +39,7 @@ import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.RowShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.fangyi.classpp.ui.theme.tabularNumbers
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -486,7 +487,7 @@ private fun TimeHandle(
     ) {
         Text(
             text = TimeText.format(minutes),
-            style = MaterialTheme.classppTextStyles.fieldLabel.copy(fontFeatureSettings = "tnum"),
+            style = MaterialTheme.classppTextStyles.fieldLabel.tabularNumbers(),
             color = colors.primary,
         )
     }
