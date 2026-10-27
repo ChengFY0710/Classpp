@@ -9,6 +9,8 @@ import androidx.compose.ui.unit.sp
  *
  * 取值说明：
  * - 方案 B 阶梯：UI 文字 `11 / 12 / 14 / 16 / 20 / 24sp`，展示数字 `32 / 48 / 64sp`。
+ * - 特殊展示字号（不进入常规阶梯）：`23sp` 仅页面顶栏（[pageTitle]）；
+ *   `18sp` 仅课表日期带（[courseGridDate]）与滚轮单位（[wheelUnit]）。
  * - 中文正文/描述字距统一 `0sp`；只有 ≥20sp 的展示标题保留负字距。
  * - token 只描述字号 / 字重 / 行高 / 字距 / 字体家族，不包含颜色；颜色仍由
  *   `MaterialTheme.colorScheme` / `ClassppColors` 在调用处或 [ClassppTextStyles] 中派生。
@@ -18,8 +20,8 @@ import androidx.compose.ui.unit.sp
  */
 object ClassppTextTokens {
     // ---------- 标题族 ----------
-    /** 页面顶栏日期标题：24sp SemiBold，仅此级展示标题保留负字距。 */
-    val pageTitle = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.SemiBold, lineHeight = 28.sp, letterSpacing = (-0.3).sp)
+    /** 页面顶栏日期标题：23sp SemiBold，特殊展示字号；仅此级展示标题保留负字距。 */
+    val pageTitle = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.SemiBold, lineHeight = 28.sp, letterSpacing = (-0.3).sp)
     /** 台历日期副标题：24sp Medium，与页面标题同档。 */
     val calendarSubtitle = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.Medium, lineHeight = 28.sp, letterSpacing = (-0.3).sp)
     /** 台历大日期：64sp 思源宋体 Heavy；24sp 行高是台历几何的紧行盒锚点，不随字号放大。 */
@@ -44,8 +46,8 @@ object ClassppTextTokens {
     val courseTaskCardTitle = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 密集卡片标题（课表课程名）：12sp SemiBold。 */
     val compactCardTitle = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, lineHeight = 16.sp, letterSpacing = 0.sp)
-    /** 列表行标题（课表切换卡）：20sp SemiBold。 */
-    val listRowTitle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp, letterSpacing = 0.sp)
+    /** 课表切换卡标题：16sp SemiBold；行高 20，按单行设置卡标题处理。 */
+    val listRowTitle = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 交替课选择行标题：16sp SemiBold。 */
     val alternateRowTitle = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 分组标题：14sp Medium。 */
@@ -114,8 +116,8 @@ object ClassppTextTokens {
     val weekGridNumber = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 周数/重复设置方格：20sp Medium。 */
     val weekCell = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
-    /** 课表日期格：16sp Medium。 */
-    val courseGridDate = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
+    /** 课表日期带日期行：18sp Medium，特殊展示字号（与滚轮单位同档）。 */
+    val courseGridDate = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 时间轴刻度：12sp Medium，等宽数字。 */
     val timelineLabel = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp).tabularNumbers()
     /** 时间轴当前时刻胶囊：12sp Medium，等宽数字。 */
@@ -124,8 +126,8 @@ object ClassppTextTokens {
     val dateWheelNumber = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Medium).tabularNumbers()
     /** 竖向数字滚轮：32sp Medium，等宽数字。 */
     val timeWheelNumber = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Medium).tabularNumbers()
-    /** 横向数字滚轮：48sp Medium，等宽数字。 */
-    val horizontalWheelNumber = TextStyle(fontSize = 48.sp, fontWeight = FontWeight.Medium).tabularNumbers()
+    /** 横向数字滚轮：40sp Medium，等宽数字，特殊展示字号。 */
+    val horizontalWheelNumber = TextStyle(fontSize = 40.sp, fontWeight = FontWeight.Medium).tabularNumbers()
     /** 滚轮单位：18sp Medium。 */
     val wheelUnit = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium)
     /** 倒计时数字：24sp SemiBold，等宽数字。 */

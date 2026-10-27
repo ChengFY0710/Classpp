@@ -32,21 +32,16 @@ import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.EditActionBarHeight
+import com.fangyi.classpp.ui.theme.EditActionIconSize
+import com.fangyi.classpp.ui.theme.EditActionInnerPadding
+import com.fangyi.classpp.ui.theme.EditActionLabelGap
 import com.fangyi.classpp.ui.theme.EditActionShape
+import com.fangyi.classpp.ui.theme.EditBarTopPadding
 import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.hazeBlur
-
-private val EditActionIconSize = 30.dp
-private val EditActionLabelGap = 2.dp
-private val EditActionInnerPadding = 8.dp
-
-/** 动作行高度：纵向"图标 + 标签"块在其中垂直居中，上下留出呼吸空间（ScheduleEditBar 同款） */
-private val EditActionBarHeight = 64.dp
-
-/** 图标行与屏幕顶端的距离（ScheduleEditBar 同款 6dp） */
-private val EditBarTopPadding = 6.dp
 
 /**
  * 编辑顶栏在内容坐标系里的占位高（状态栏之上另算）：顶部留白 [EditBarTopPadding] +
@@ -60,8 +55,9 @@ internal val EditBarRowSpace = EditBarTopPadding + EditActionBarHeight
  * 待办编辑顶栏：删除 / 移动 / 同步 / 置顶或取消 / 确认，取代常规的 [TodoTopBar]。
  *
  * 五个动作块等距一行（各占一等份），每块为"图标在上、文字在下"的纵向组合，
- * 规格（30dp 图标、12sp Medium 标签、1.10 按压放大、10dp 圆角按压形状）逐项对齐
- * 课表编辑顶栏（ScheduleEditBar）。背景与 [TodoTopBar] 同一套兜底色 + Haze 渐变模糊——
+ * 几何规格（图标、标签间距、内距、行高）与课表编辑顶栏（ScheduleEditBar）共用
+ * ui/theme 的 Spacing.kt；12sp Medium 标签、1.10 按压放大、10dp 圆角按压形状也同款。
+ * 背景与 [TodoTopBar] 同一套兜底色 + Haze 渐变模糊——
  * 列表滚动到顶栏之下时透出毛玻璃。
  *
  * 动作即时落库（见 TodoScreen 的 onDeleteSelected / onPinSelected / onUnpinSelected /

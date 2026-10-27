@@ -61,3 +61,26 @@ val SettingsSectionSpacing: Dp = 18.dp
  * 例外：输入值超宽自动换行时输入行卡按行数长高（上下内距不变），其余卡维持此高度。
  */
 val SheetFieldHeight: Dp = 60.dp
+
+/**
+ * 编辑顶栏动作块的共享几何：课表编辑顶栏（ScheduleEditBar）与待办编辑顶栏
+ * （TodoEditBar）的「图标在上、文字在下」动作块逐项共用——改这里的值，两处同步。
+ *
+ * 待办常规顶栏（TodoTopBar）的展开动作行另有一套同值的 TopBarAction* 常量，
+ * 尚未收敛到此处——调整本组值时留意是否需要三处同步。
+ */
+
+/** 动作图标边长 */
+val EditActionIconSize: Dp = 30.dp
+
+/** 动作图标与其下方 12sp Medium 标签的间距 */
+val EditActionLabelGap: Dp = 4.dp
+
+/** 动作块的水平内边距 */
+val EditActionInnerPadding: Dp = 8.dp
+
+/** 动作行高度：纵向「图标 + 标签」块在其中垂直居中，上下留出呼吸空间 */
+val EditActionBarHeight: Dp = 64.dp
+
+/** 动作行与屏幕顶端的距离：状态栏 inset 之外再加的留白 */
+val EditBarTopPadding: Dp = 6.dp

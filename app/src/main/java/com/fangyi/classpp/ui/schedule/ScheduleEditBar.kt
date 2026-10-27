@@ -36,17 +36,15 @@ import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.tabTransitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.EditActionBarHeight
+import com.fangyi.classpp.ui.theme.EditActionIconSize
+import com.fangyi.classpp.ui.theme.EditActionInnerPadding
+import com.fangyi.classpp.ui.theme.EditActionLabelGap
 import com.fangyi.classpp.ui.theme.EditActionShape
+import com.fangyi.classpp.ui.theme.EditBarTopPadding
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.hazeBlur
-
-private val EditActionIconSize = 30.dp
-private val EditActionLabelGap = 2.dp
-private val EditActionInnerPadding = 8.dp
-
-/** 动作行高度：纵向"图标 + 标签"块在其中垂直居中，上下留出呼吸空间 */
-private val EditActionBarHeight = 64.dp
 
 /**
  * 编辑态顶栏：取消 / 切换课表 / 课表设置 / 保存 + 星期行，取代可折叠的 [ScheduleHeader]。
@@ -111,7 +109,7 @@ fun ScheduleEditBar(
             )
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
-        Spacer(modifier = Modifier.fillMaxWidth().height(6.dp)) //调整icon到屏幕顶端距离
+        Spacer(modifier = Modifier.fillMaxWidth().height(EditBarTopPadding))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
