@@ -782,15 +782,15 @@ private val NavIconSize = 24.dp
 private val BackToTodayHeight = 32.dp
 private val BackToTodayShape = RoundedRectangle(6.dp)
 private val BackToTodayPadding = 6.dp
-private val BackToTodayFontSize = 17.sp
+private val BackToTodayFontSize = 16.sp
 private val CardPaddingHorizontal = 8.dp
 private val CardPaddingVertical = 4.dp
 private val BottomBarGap = 2.dp
 /** 折叠甩动吸附的速度阈值（对标 M3 anchoredDraggable 默认值） */
 internal val FoldFlingVelocity = 125.dp
 private val WeekdayFontSize = 15.sp
-private val DayNumberFontSize = 17.sp
-private val TitleFontSize = 17.sp
+private val DayNumberFontSize = 16.sp
+private val TitleFontSize = 16.sp
 
 // ---------- 预览 ----------
 

@@ -44,7 +44,7 @@ private const val HoursPerDay = 24
 private val HourSpacing = 50.dp
 
 /** 左侧时间区域宽度，刻度在其中水平居中；右缘即网格竖线 */
-private val TimeAreaWidth = 44.dp
+private val TimeAreaWidth = 40.dp
 
 /** 卡片区域左缘与网格竖线的距离：12dp（与页面卡片水平边距一致） */
 private val TaskAreaStartGap = 12.dp
@@ -55,7 +55,7 @@ private val GridLineWidth = 1.dp
 /** 当前时刻矩形规格：距屏幕左缘 [NowChipStartPadding]、定宽 [NowChipWidth]（横线自其
  *  右缘起画，左侧不外露）、高 [NowChipHeight]、时刻 [NowChipFontSize] Medium 居中 */
 private val NowChipStartPadding = 2.dp
-private val NowChipWidth = 39.dp
+private val NowChipWidth = 36.dp
 private val NowChipHeight = 22.dp
 private val NowChipFontSize = 10.sp
 
@@ -64,7 +64,7 @@ private val NowChipFontSize = 10.sp
 private const val NowNearTickThresholdMinutes = 20
 
 /** 刻度字号（与 DayCourseAlert 次级信息一致） */
-private val TimeLabelFontSize = 12.sp
+private val TimeLabelFontSize = 11.sp
 
 /** SubcomposeLayout 里时间轴主体层的 slot id（卡片内容实测层用任务下标 0..n−1） */
 private const val TimelineBodySlot = "day-timeline-body"
