@@ -28,6 +28,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -507,7 +508,7 @@ private fun TimeChip(
             .clip(ChipShape)
             .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 18.dp, vertical = 9.dp),
-        style = MaterialTheme.typography.bodyMedium.tabularNumbers(),
+        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium).tabularNumbers(),
         color = MaterialTheme.colorScheme.primary,
     )
 }

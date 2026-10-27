@@ -60,7 +60,7 @@ internal val EditBarRowSpace = EditBarTopPadding + EditActionBarHeight
  * 待办编辑顶栏：删除 / 移动 / 同步 / 置顶或取消 / 确认，取代常规的 [TodoTopBar]。
  *
  * 五个动作块等距一行（各占一等份），每块为"图标在上、文字在下"的纵向组合，
- * 规格（30dp 图标、14sp Medium 标签、1.10 按压放大、10dp 圆角按压形状）逐项对齐
+ * 规格（30dp 图标、12sp Medium 标签、1.10 按压放大、10dp 圆角按压形状）逐项对齐
  * 课表编辑顶栏（ScheduleEditBar）。背景与 [TodoTopBar] 同一套兜底色 + Haze 渐变模糊——
  * 列表滚动到顶栏之下时透出毛玻璃。
  *
@@ -178,7 +178,7 @@ internal fun TodoEditBar(
     }
 }
 
-/** 编辑栏的纵向动作块：图标在上、14sp Medium 标签在下，两者水平居中对齐，整块可点（ScheduleEditBar 同款） */
+/** 编辑栏的纵向动作块：图标在上、12sp Medium 标签在下，两者水平居中对齐，整块可点（ScheduleEditBar 同款） */
 @Composable
 private fun EditAction(
     text: String,

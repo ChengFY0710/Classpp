@@ -63,8 +63,8 @@ enum class AppTab(
     ),
 }
 
-/** 胶囊高度：12sp/15sp 底栏标签 + 32dp 图标 + 上下呼吸位后保留 2dp 余量。 */
-internal val PillHeight = 60.dp
+/** 胶囊高度：11sp/13sp 底栏标签 + 32dp 图标 + 上下呼吸位恰好 56dp。 */
+internal val PillHeight = 56.dp
 internal val PillBottomOffset = 8.dp
 private val PillSpacing = 18.dp
 private val PillShadowElevation = 8.dp

@@ -56,12 +56,12 @@ object ClassppTextTokens {
     // ---------- 正文 / 表单族 ----------
     /** 行卡左侧 label：16sp SemiBold。 */
     val fieldLabel = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-    /** 行卡右侧值 / 输入值：16sp Normal（方案 B 正文回归常规字重）。 */
-    val bodyValue = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal)
+    /** 行卡右侧值 / 输入值：16sp Medium（右侧 label 与行内输入值同字重）。 */
+    val bodyValue = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium)
     /** 小号正文：14sp Normal。 */
     val bodySmall = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal, lineHeight = 20.sp)
-    /** 输入占位：16sp Normal；与输入值同字重，输入前后不跳字重。 */
-    val placeholder = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal)
+    /** 输入占位：16sp Medium；与输入值同字重，输入前后不跳字重。 */
+    val placeholder = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium)
     /** 次级说明（待办属性行）：14sp Normal；行高继承 24sp 以容纳倒计时数字。 */
     val secondaryText = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal)
     /** 小号次级说明（标签文字）：14sp Normal。 */
@@ -100,24 +100,24 @@ object ClassppTextTokens {
     val buttonText = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     /** 文字按钮：16sp SemiBold。 */
     val textButton = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
-    /** 底栏标签：12sp Medium。 */
-    val navLabel = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 15.sp, letterSpacing = 0.sp)
-    /** 顶栏/编辑栏动作标签：14sp Medium。 */
-    val actionLabel = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp, letterSpacing = 0.sp)
+    /** 底栏标签：11sp Medium。 */
+    val navLabel = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, lineHeight = 13.sp, letterSpacing = 0.sp)
+    /** 顶栏/编辑栏动作标签：12sp Medium。 */
+    val actionLabel = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp)
 
     // ---------- 日历 / 数字族 ----------
-    /** 日历星期：14sp SemiBold。 */
-    val calendarWeekday = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
+    /** 日历星期：16sp SemiBold。 */
+    val calendarWeekday = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 日历日号：16sp SemiBold。 */
     val calendarDay = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 日历「回到今天」：16sp Normal。 */
     val calendarAction = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal, lineHeight = 24.sp, letterSpacing = 0.sp)
-    /** 周胶囊：20sp SemiBold。 */
-    val weekPill = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp, letterSpacing = 0.sp)
-    /** 展开态周数方格：24sp Medium。 */
-    val weekGridNumber = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
-    /** 周数方格：16sp Medium。 */
-    val weekCell = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
+    /** 周胶囊：16sp SemiBold。 */
+    val weekPill = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
+    /** 展开态周数方格：20sp Medium。 */
+    val weekGridNumber = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
+    /** 周数/重复设置方格：20sp Medium。 */
+    val weekCell = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 课表日期格：16sp Medium。 */
     val courseGridDate = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 时间轴刻度：12sp Medium，等宽数字。 */

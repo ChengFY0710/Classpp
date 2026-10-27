@@ -136,9 +136,9 @@ class ClassppTextStyles(
     val sectionTitle: TextStyle,
     /** 行卡左侧 label：16sp SemiBold onSurface */
     val fieldLabel: TextStyle,
-    /** 输入占位文字：16sp Normal secondaryText */
+    /** 输入占位文字：16sp Medium secondaryText */
     val fieldPlaceholder: TextStyle,
-    /** 行卡右侧值：16sp Normal primary */
+    /** 行卡右侧值：16sp Medium primary */
     val fieldValue: TextStyle,
     /** 胶囊按钮文字：16sp SemiBold；颜色随按钮配色由调用方传入（onPrimary/onSurface/onError），样式本身不带色 */
     val pillButton: TextStyle,

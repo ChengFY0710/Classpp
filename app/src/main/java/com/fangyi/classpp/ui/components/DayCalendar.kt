@@ -78,7 +78,7 @@ import kotlinx.coroutines.launch
 /**
  * 日历卡（DayCalendar）：设计稿的月历卡片，自带白底圆角卡壳，自上而下三层——
  *
- * 一、**星期表头**：一~日（R.array.weekdays_short，周一起始），14sp SemiBold；今天所在列
+ * 一、**星期表头**：一~日（R.array.weekdays_short，周一起始），16sp SemiBold；今天所在列
  *     Primary 色（仅当卡内展示的月/周包含今天时高亮，浏览其他月份不高亮）。
  * 二、**日历网格**：每天一枚 34dp 圆球（background 色），日期数字 16sp SemiBold；选中日期
  *     圆球 Primary、数字 onPrimary（[onDateClick] 点选即切日，选中/取消走 150ms 背景+
