@@ -30,8 +30,6 @@ object ClassppTextTokens {
     val detailTitle = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.SemiBold, lineHeight = 28.sp, letterSpacing = 0.sp)
     /** 浮层顶栏标题：20sp SemiBold。 */
     val sheetTitle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-    /** 浮层顶栏标题紧凑变体：已并入 20sp。 */
-    val sheetTitleCompact = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
     /** 确认框标题：20sp SemiBold（方案 B 取消 Bold）。 */
     val dialogTitle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 空态标题：20sp SemiBold。 */
@@ -58,8 +56,6 @@ object ClassppTextTokens {
     val fieldLabel = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     /** 行卡右侧值 / 输入值：16sp Medium（右侧 label 与行内输入值同字重）。 */
     val bodyValue = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium)
-    /** 小号正文：14sp Normal。 */
-    val bodySmall = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal, lineHeight = 20.sp)
     /** 输入占位：16sp Medium；与输入值同字重，输入前后不跳字重。 */
     val placeholder = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium)
     /** 次级说明（待办属性行）：14sp Normal；行高继承 24sp 以容纳倒计时数字。 */

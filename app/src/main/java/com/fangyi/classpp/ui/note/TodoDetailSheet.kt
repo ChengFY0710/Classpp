@@ -62,6 +62,7 @@ import com.fangyi.classpp.ui.components.flagColor
 import com.fangyi.classpp.ui.components.flagLabel
 import com.fangyi.classpp.ui.components.labelText
 import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.NoteCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
@@ -73,7 +74,7 @@ import dev.chrisbanes.haze.rememberHazeState
 /** 标签行内胶囊间距（同 NoteCard 属性行）；胶囊与文字的 4dp 在 TagChip 内部 */
 private val TagRowSpacing = 12.dp
 
-/** 标题行「更多」按钮边长：与 titleLarge 行高（28sp）等高，顶对齐下视觉居中于标题首行 */
+/** 标题行「更多」按钮边长：与 detailTitle 行高（28sp）等高，顶对齐下视觉居中于标题首行 */
 private val TitleMoreIconSize = 28.dp
 
 /** 标题与「更多」按钮的间距 */
@@ -196,12 +197,12 @@ internal fun TodoDetailSheet(
                     .fillMaxWidth()
                     .padding(start = 12.dp, end = 16.dp),
                 // 顶对齐：标题换行长高时「更多」按钮钉在首行右侧不动
-                //（按钮 28dp = titleLarge 行高，首行内视觉居中）
+                //（按钮 28dp = detailTitle 行高，首行内视觉居中）
                 verticalAlignment = Alignment.Top,
             ) {
                 Text(
                     text = todo.name,
-                    style = MaterialTheme.typography.titleLarge,
+                    style = ClassppTextTokens.detailTitle,
                     color = MaterialTheme.colorScheme.onSurface,
                     // 避让按钮：占满剩余宽度，过长自动换行
                     modifier = Modifier.weight(1f),

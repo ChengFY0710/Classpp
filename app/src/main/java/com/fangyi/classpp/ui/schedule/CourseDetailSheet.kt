@@ -139,7 +139,7 @@ fun CourseDetailSheet(
         Column(verticalArrangement = Arrangement.spacedBy(/**SheetSectionSpacingBetween 课程详情卡片单独设置，其余统一使用SheetSectionSpacingBetween变量**/10.dp)) {
             Text(
                 text = entry.name,
-                style = MaterialTheme.typography.titleLarge,
+                style = ClassppTextTokens.detailTitle,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(start = 12.dp, end = 12.dp),
             )

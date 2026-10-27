@@ -350,7 +350,7 @@ fun BottomSelectSheet(
                         }
                         Text(
                             text = title,
-                            style = ClassppTextTokens.sheetTitleCompact.copy(
+                            style = ClassppTextTokens.sheetTitle.copy(
                                 color = MaterialTheme.colorScheme.onSurface,
                             ),
                             modifier = Modifier.align(Alignment.Center),
