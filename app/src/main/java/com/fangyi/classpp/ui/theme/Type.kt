@@ -8,7 +8,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-val Typography = Typography(
+/** M3 baseline：只用于补齐未自定义的槽位，阶段 3 再按方案 B 调整。 */
+private val BaselineTypography = Typography()
+
+val Typography = BaselineTypography.copy(
     titleLarge = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.SemiBold,
@@ -57,7 +60,18 @@ val Typography = Typography(
         fontSize = 12.sp,
         lineHeight = 16.sp,
         letterSpacing = 0.5.sp
-    )
+    ),
+
+    // 阶段 1 显式登记、但仍保持 M3 baseline 的 8 个槽位。
+    // 这样 15 个槽位都有明确来源；阶段 3 再逐项替换为方案 B 的值。
+    displayLarge = BaselineTypography.displayLarge,
+    displayMedium = BaselineTypography.displayMedium,
+    displaySmall = BaselineTypography.displaySmall,
+    headlineLarge = BaselineTypography.headlineLarge,
+    headlineMedium = BaselineTypography.headlineMedium,
+    headlineSmall = BaselineTypography.headlineSmall,
+    bodySmall = BaselineTypography.bodySmall,
+    labelSmall = BaselineTypography.labelSmall,
 )
 
 /**
@@ -65,8 +79,9 @@ val Typography = Typography(
  * 设置页与浮层卡片组件只按角色取用，用法：
  * `Text(text = ..., style = MaterialTheme.classppTextStyles.fieldLabel)`。
  *
- * 颜色取自当前主题（onSurface / primary / secondaryText），随 [ClassppTheme] 深浅切换；
- * 只统一字号 / 粗细 / 颜色——行高与字距留给调用处按各自既有的排版节奏给出
+ * 字面值来自 [ClassppTextTokens]（阶段 1 起为唯一来源）；颜色取自当前主题
+ * （onSurface / primary / secondaryText），随 [ClassppTheme] 深浅切换。
+ * 行高与字距仍留给调用处按各自既有的排版节奏给出
  * （行卡类文字的 24sp / 0.5sp 用文件尾的 [settingsRowMetrics] 一行补齐）。
  */
 @Immutable
@@ -89,13 +104,13 @@ class ClassppTextStyles(
 
 /** 按当前 colorScheme 与自定义色构造一组角色化文字样式（由 [ClassppTheme] 提供） */
 fun classppTextStyles(colorScheme: ColorScheme, colors: ClassppColors) = ClassppTextStyles(
-    topBarTitle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = colorScheme.onSurface),
-    sectionTitle = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Medium, color = colors.secondaryText),
-    fieldLabel = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colorScheme.onSurface),
-    fieldPlaceholder = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colors.secondaryText),
-    fieldValue = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, color = colorScheme.primary),
-    pillButton = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
-    noteProperty = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal, color = colors.secondaryText),
+    topBarTitle = ClassppTextTokens.sheetTitle.copy(color = colorScheme.onSurface),
+    sectionTitle = ClassppTextTokens.sectionTitle.copy(color = colors.secondaryText),
+    fieldLabel = ClassppTextTokens.fieldLabel.copy(color = colorScheme.onSurface),
+    fieldPlaceholder = ClassppTextTokens.placeholder.copy(color = colors.secondaryText),
+    fieldValue = ClassppTextTokens.bodyValue.copy(color = colorScheme.primary),
+    pillButton = ClassppTextTokens.buttonText,
+    noteProperty = ClassppTextTokens.secondaryText.copy(color = colors.secondaryText),
 )
 
 /**
