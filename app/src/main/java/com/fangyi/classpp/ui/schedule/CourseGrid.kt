@@ -57,19 +57,40 @@ import kotlin.math.roundToInt
 /** 日期带高度（滚动渐隐的参考高度，模糊进度也以此为刻度） */
 internal val DateBandHeight = 41.dp
 
-/** 5 天视图下每个节次行的固定高度（容纳两行课程名 + 教师/地点/房间 + 起止时间） */
+/** 行高基准时长（分钟）：行高随节次时长线性伸缩以此为锚（默认作息即 100 分钟一节） */
+internal const val BaseSlotMinutes = 100
+
+/**
+ * 5 天视图下 100 分钟节的基准行高（容纳两行课程名 + 教师/地点/房间 + 起止时间）。
+ * 其他时长的行高按比例伸缩（见 [slotRowHeight]）：时长越长卡片越高。
+ */
 internal val GridRowHeight = 150.dp
 
 /**
- * 7 天视图每行**多加**的高度：列一窄，课名换行更多，卡片就得更长一点。
+ * 7 天视图基准行高**多加**的部分：列一窄，课名换行更多，卡片就得更长一点。
  * 想调"7 日视图比 5 日视图高多少"只改这一个数值：
- * 行高、日期带之外的页高、跨节卡高度、@Preview 全部由 [gridRowHeight] 派生。
+ * 基准行高、各行行高、页高、跨节卡高度、@Preview 全部由 [gridRowHeight] 派生。
  */
 internal val SevenDayRowExtraHeight = 10.dp
 
-/** 按列数取每行高度：5 天视图 [GridRowHeight]，7 天视图再加 [SevenDayRowExtraHeight]（其他天数按 7 天算） */
+/**
+ * 按列数取 100 分钟节的基准行高：5 天视图 [GridRowHeight]，7 天视图再加
+ * [SevenDayRowExtraHeight]（其他天数按 7 天算）。
+ */
 internal fun gridRowHeight(daysPerWeek: Int): Dp =
     if (daysPerWeek > 5) GridRowHeight + SevenDayRowExtraHeight else GridRowHeight
+
+/** 行高下限：超短节次按比例会缩到卡片内容放不下（如 20 分钟 → 30dp），缩到本值为止 */
+internal val MinRowHeight = 48.dp
+
+/**
+ * 一个节次行的行高：基准行高（[gridRowHeight]）按该节时长占 [BaseSlotMinutes] 的比例伸缩，
+ * 再乘个性化倍率（[CardHeightScales]，默认 1.0），短于 [MinRowHeight] 时钳到下限。
+ * 先算时长占比再乘基准 dp：基准时长 × 1.0 倍处无浮点误差，与固定行高逐像素一致。
+ */
+internal fun slotRowHeight(durationMinutes: Int, daysPerWeek: Int, scale: Float): Dp =
+    (gridRowHeight(daysPerWeek) * (durationMinutes.toFloat() / BaseSlotMinutes) * scale)
+        .coerceAtLeast(MinRowHeight)
 
 /** 单元格内边距，卡片间形成网格沟槽（@Preview 与网格保持一致） */
 internal val CellPadding = 3.dp
@@ -140,10 +161,10 @@ fun CourseGrid(
     editBarHeight: Dp = contentPadding.calculateTopPadding(),
     showDates: Boolean = true,
     daysPerWeek: Int = 5,
-    // 课程卡片高度状态（个性化页滑条，State 实例传递：值只在下方 rowHeight 处读取，
+    // 课程卡片高度倍率状态（个性化页滑条，State 实例传递：值只在下方 rowHeights 处读取，
     // 拖动时上游全部 skip、本组件每帧重组重排——行高变化的本质需求）。
     // 只换行高本体：单元格内边距、网格线、日期带等间距常量一律不动
-    cardHeights: State<CardHeights> = mutableStateOf(CardHeights()),
+    cardHeights: State<CardHeightScales> = mutableStateOf(CardHeightScales()),
     // 课程卡片「显示教师」开关（个性化页开关，State 实例传递纪律同上）：
     // 值在下方读取一次为布尔，经 WeekPage/GridRow 传给各课程卡片
     showTeacher: State<Boolean> = mutableStateOf(true),
@@ -154,12 +175,16 @@ fun CourseGrid(
 ) {
     // 列数至少 1（0/负值理论上被校验挡住，这里兜一下避免算出空页宽或除零）
     val days = daysPerWeek.coerceAtLeast(1)
-    // 行高随列数变（7 天视图更高）：页高、每行、跨节卡三处都取自同一个值，否则卡片会溢出格子；
-    // 值取自个性化页滑条（读 .value → 本组件随拖动每帧重组重排），默认 CardHeights 与
-    // gridRowHeight 恒等（5 天 150 / 7 天 160），默认渲染无差异
-    val heights = cardHeights.value
-    val rowHeight = (if (days > 5) heights.seven else heights.five).dp
-    // 教师行显隐：同 heights 一样在本组件读取一次，向下传纯布尔
+    // 行高随列数与**各节自己的时长**变：基准行高（100 分钟节）按每节实际分钟数伸缩、
+    // 再乘个性化倍率（见 slotRowHeight）。页高、每行、跨节卡三处都取自同一份 rowHeights，
+    // 否则卡片会溢出格子。倍率取自个性化页滑条（读 .value → 本组件随拖动每帧重组重排），
+    // 默认 1.0 且默认作息全为 100 分钟节，行高与基准恒等，默认渲染无差异
+    val scales = cardHeights.value
+    val scale = if (days > 5) scales.seven else scales.five
+    val rowHeights = remember(timeSlots, days, scale) {
+        timeSlots.map { slot -> slotRowHeight(slot.durationMinutes(), days, scale) }
+    }
+    // 教师行显隐：同 scales 一样在本组件读取一次，向下传纯布尔
     val showTeacherOnCard = showTeacher.value
     // 编辑进度：读 State → 转场期间本组件逐帧重组重排（与拖动卡片高度同一量级），
     // 页面高度、日期带高、顶部留白都随之连续变化；Steady 状态下恒为 0/1
@@ -168,7 +193,7 @@ fun CourseGrid(
     val topPadding = lerp(headerHeight, editBarHeight, editFraction)
     // 日期带高度按进度收拢到 0（编辑态设计稿里没有日期层），页高同步少一条
     val dateBandHeight = if (showDates) DateBandHeight * (1f - editFraction) else 0.dp
-    val pageHeight = dateBandHeight + rowHeight * timeSlots.size + TrailingScrollSpace
+    val pageHeight = dateBandHeight + rowHeights.fold(0.dp) { acc, h -> acc + h } + TrailingScrollSpace
     // 接缝竖线是否要画：派生成布尔 state —— 拖动中恒为真，只在起手/落位翻转一次。
     // 切不可让 draw 直接读 currentPageOffsetFraction（拖动中逐帧都变）：那会让页面图层
     // 被逐帧判为失效、整页绘制指令（日期带 + 各行卡片）跟着重录一遍，图层也就白加了。
@@ -214,7 +239,7 @@ fun CourseGrid(
                     content = contentForPage(page),
                     timeSlots = timeSlots,
                     days = days,
-                    rowHeight = rowHeight,
+                    rowHeights = rowHeights,
                     showTeacher = showTeacherOnCard,
                     seamVisible = seamVisible,
                     listState = state,
@@ -265,7 +290,9 @@ private fun WeekPage(
     content: WeekPageContent,
     timeSlots: List<TimeSlot>,
     days: Int,
-    rowHeight: Dp,
+    // 各节次行的行高（随各节时长伸缩，与 CourseGrid 的 rowHeights 同一份）：
+    // 主行循环与跨节卡叠加层按下标取同一行的值，两层才能逐行对齐
+    rowHeights: List<Dp>,
     showTeacher: Boolean,
     seamVisible: State<Boolean>,
     listState: LazyListState,
@@ -318,12 +345,12 @@ private fun WeekPage(
                     editProgress = editProgress,
                 )
             }
-            timeSlots.forEach { slot ->
+            timeSlots.forEachIndexed { index, slot ->
                 GridRow(
                     slot = slot,
                     courses = content.courses,
                     days = days,
-                    rowHeight = rowHeight,
+                    rowHeight = rowHeights[index],
                     showTeacher = showTeacher,
                     editProgress = editProgress,
                     addCardsMounted = addCardsMounted,
@@ -337,14 +364,14 @@ private fun WeekPage(
             Spacer(modifier = Modifier.height(TrailingScrollSpace))
         }
 
-        // ——— 跨节卡叠加层：y 偏移由镜像 Spacer(日期带) + 行高自然对齐 ———
+        // ——— 跨节卡叠加层：y 偏移由镜像 Spacer(日期带) + 各行行高自然对齐 ———
         Column(modifier = Modifier.matchParentSize()) {
             if (showDates) Spacer(modifier = Modifier.height(dateBandHeight))
-            timeSlots.forEach { slot ->
+            timeSlots.forEachIndexed { index, slot ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(rowHeight),
+                        .height(rowHeights[index]),
                 ) {
                     for (day in 1..days) {
                         val course = content.courses.findAt(day, slot.id)
@@ -363,13 +390,16 @@ private fun WeekPage(
                             if (course != null && course.span > 1) {
                                 val lastIdx = (slot.id - 1 + course.span - 1)
                                     .coerceAtMost(timeSlots.lastIndex)
-                                val effSpan = lastIdx - (slot.id - 1) + 1
+                                // 跨节卡高度 = 所跨各行高之和 − 上下内缩（各行行高可不同，逐行求和）
+                                val spanHeight = rowHeights
+                                    .subList(slot.id - 1, lastIdx + 1)
+                                    .fold(0.dp) { acc, h -> acc + h }
                                 CourseCard(
                                     course = course,
                                     slot = slot,
                                     showTeacher = showTeacher,
                                     endTime = timeSlots[lastIdx].endTime,
-                                    // 必须 required：单元格内容区最高只有一行（rowHeight − 内边距），
+                                    // 必须 required：单元格内容区最高只有一行（行高 − 内边距），
                                     // 普通 height() 会被父约束钳回单行高度，跨不出去。
                                     // requiredHeight 对被钳掉的超高内容默认居中放置（卡顶偏上 (H−行高)/2），
                                     // 先放开高度约束（无钳制即无居中），再按 Top 钉在格顶、向下溢出，
@@ -377,7 +407,7 @@ private fun WeekPage(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .wrapContentHeight(align = Alignment.Top, unbounded = true)
-                                        .requiredHeight(rowHeight * effSpan - CellPaddingTop - CellPadding)
+                                        .requiredHeight(spanHeight - CellPaddingTop - CellPadding)
                                         // 长按菜单的锚点取卡片自身窗口坐标（溢出部分按整卡算）
                                         .onGloballyPositioned { cardBounds.value = it.boundsInWindow() },
                                     // 整张跨节卡可点（含续格覆盖区域）→ 编辑态开编辑面板、
@@ -528,7 +558,8 @@ private fun DateBand(
 }
 
 /**
- * 一个节次行：按 [days] 等分（5 或 7）的等宽单元格，行高 [rowHeight]（7 天视图更高，见 [gridRowHeight]）。
+ * 一个节次行：按 [days] 等分（5 或 7）的等宽单元格，行高 [rowHeight]
+ * （随该节时长伸缩，见 [slotRowHeight]）。
  * 普通态有课渲染课程卡片、无课露网格背景；编辑态空位渲染添加卡片（点击新建、长按出粘贴菜单），
  * 已有课程卡（含本周不上的置灰卡）点击进编辑、长按出课程菜单。
  * 跨节课的起始格与续格都留空——卡片由 [WeekPage] 的叠加层跨行绘制。

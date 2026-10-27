@@ -102,8 +102,9 @@ class MainActivity : ComponentActivity() {
             ThemeMode.Light -> setTheme(R.style.Theme_Classpp_Light)
             ThemeMode.Dark -> setTheme(R.style.Theme_Classpp_Dark)
         }
-        // 课程卡片高度：与主题同为 SharedPreferences 真源，冷启动读一次（load 内按范围钳制）
-        val savedCardHeights = CardHeightPreferences.load(this)
+        // 课程卡片高度倍率：与主题同为 SharedPreferences 真源，冷启动读一次
+        // （load 内按范围钳制；旧版本存的绝对 dp 行高在 load 内自动换算迁移）
+        val savedCardScales = CardHeightPreferences.load(this)
         // 课程卡片「显示教师」开关：同为 SharedPreferences 真源，冷启动读一次
         val savedShowTeacher = TeacherDisplayPreferences.load(this)
         // 玻璃材质开关（更高级的玻璃材质）：同为 SharedPreferences 真源，冷启动读一次
@@ -131,21 +132,21 @@ class MainActivity : ComponentActivity() {
         setContent {
             // 外观模式状态：prefs 是真源，旋转/系统深色切换等重建时 onCreate 重读，无需 saveable
             var themeMode by remember { mutableStateOf(savedThemeMode) }
-            // 课程卡片高度状态：同 themeMode，prefs 真源、重建时重读。
+            // 课程卡片高度倍率状态：同 themeMode，prefs 真源、重建时重读。
             // 以 State 实例向下传递（实参不读 .value）：拖动滑条只失效真正消费值的
             // 叶子（个性化页滑条卡片、CourseGrid），根 lambda 与两块屏幕全部 skip
-            val cardHeightsState = remember { mutableStateOf(savedCardHeights) }
+            val cardHeightsState = remember { mutableStateOf(savedCardScales) }
             // 落盘去抖：拖动中只改内存，snapshotFlow 在协程内读值不参与组合，
             // 停顿 300ms 才写 SharedPreferences（避免每帧 apply）
             LaunchedEffect(cardHeightsState) {
                 snapshotFlow { cardHeightsState.value }
                     .debounce(CardHeightSettleMillis)
-                    .collect { heights -> CardHeightPreferences.save(this@MainActivity, heights) }
+                    .collect { scales -> CardHeightPreferences.save(this@MainActivity, scales) }
             }
             // 课表网格跟随态：滑条与值文字读上方即时态（全程跟手），CourseGrid 只读这份——
             // debounce 以「变化停顿」为准：拖动中每次变化都重置计时、全程不触发，
             // 松手（含吸附归位动画收尾）停顿后一次性补最终值，课表滑动期间零重排
-            val gridCardHeightsState = remember { mutableStateOf(savedCardHeights) }
+            val gridCardHeightsState = remember { mutableStateOf(savedCardScales) }
             LaunchedEffect(cardHeightsState, gridCardHeightsState) {
                 snapshotFlow { cardHeightsState.value }
                     .debounce(CardHeightSettleMillis)
@@ -397,9 +398,9 @@ class MainActivity : ComponentActivity() {
                                 ThemePreferences.save(this@MainActivity, mode)
                             },
                             cardHeights = cardHeightsState,
-                            onCardHeightsChange = { heights ->
+                            onCardHeightsChange = { scales ->
                                 // 只改内存即时生效；落盘由上方 LaunchedEffect 去抖完成
-                                cardHeightsState.value = heights
+                                cardHeightsState.value = scales
                             },
                             showTeacher = showTeacherState,
                             onShowTeacherChange = { show ->

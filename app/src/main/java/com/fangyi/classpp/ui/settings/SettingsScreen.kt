@@ -39,7 +39,7 @@ import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
-import com.fangyi.classpp.ui.schedule.CardHeights
+import com.fangyi.classpp.ui.schedule.CardHeightScales
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -80,8 +80,8 @@ fun SettingsScreen(
     themeMode: ThemeMode = ThemeMode.System,
     onThemeModeChange: (ThemeMode) -> Unit = {},
     // State 实例透传（本层不读 .value）：滑条拖动时本屏与个性化页整体 skip，只重组值的叶子
-    cardHeights: State<CardHeights> = mutableStateOf(CardHeights()),
-    onCardHeightsChange: (CardHeights) -> Unit = {},
+    cardHeights: State<CardHeightScales> = mutableStateOf(CardHeightScales()),
+    onCardHeightsChange: (CardHeightScales) -> Unit = {},
     // 课程卡片「显示教师」开关（同 cardHeights 的透传纪律）
     showTeacher: State<Boolean> = mutableStateOf(true),
     onShowTeacherChange: (Boolean) -> Unit = {},

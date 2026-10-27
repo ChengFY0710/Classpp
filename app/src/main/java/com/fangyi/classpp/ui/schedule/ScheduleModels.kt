@@ -1,5 +1,7 @@
 package com.fangyi.classpp.ui.schedule
 
+import com.fangyi.classpp.data.model.DEFAULT_SLOT_DURATION_MINUTES
+import com.fangyi.classpp.data.model.TimeText
 import java.util.Calendar
 import java.util.Date
 
@@ -34,6 +36,18 @@ data class TimeSlot(
     val startTime: String,
     val endTime: String,
 )
+
+/**
+ * 该节的实际时长（分钟）：结束 − 开始。网格行高按它线性伸缩（见 [slotRowHeight]）——
+ * 用户可单独修改某节的结束时间，各节时长因此可以不同，行高逐行取各自的值。
+ * 起止任一非法或差值非正时回退 [DEFAULT_SLOT_DURATION_MINUTES]（默认作息即 100 分钟）。
+ */
+fun TimeSlot.durationMinutes(): Int {
+    val start = TimeText.parseMinutes(startTime)
+    val end = TimeText.parseMinutes(endTime)
+    val duration = if (start != null && end != null) end - start else 0
+    return if (duration > 0) duration else DEFAULT_SLOT_DURATION_MINUTES
+}
 
 /**
  * 课程卡片配色；映射到 Color 收在 CourseCard.kt，模型保持零 Compose 依赖。

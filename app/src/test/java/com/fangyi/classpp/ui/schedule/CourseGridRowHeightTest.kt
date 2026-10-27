@@ -6,13 +6,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 行高随列数变：5 天视图用基础行高，7 天视图每行再加一个可调增量
- * （列一窄课名换行更多，卡片需要更长）。页高、每行高度、跨节卡高度全部由
- * [gridRowHeight] 派生，故"7 日视图比 5 日视图多高"只需改 [SevenDayRowExtraHeight]。
- *
- * 这些是纯 dp 数值比较，不涉及组合，可在 JVM 单测里直接断言。
+ * 行高两层逻辑的纯 dp 数值断言（不涉及组合，JVM 单测可跑）：
+ * - 基准行高随列数变：5 天视图用基础行高，7 天视图每行再加一个可调增量（[gridRowHeight]）；
+ * - 实际行高随该节时长线性伸缩、再乘个性化倍率，超短节次钳到下限（[slotRowHeight]）。
+ * 页高、每行高度、跨节卡高度全部由这两者派生。
  */
 class CourseGridRowHeightTest {
+
+    // ——— 基准行高（100 分钟节、1.0 倍） ———
 
     @Test
     fun `five day view uses the base row height`() {
@@ -38,7 +39,7 @@ class CourseGridRowHeightTest {
         assertTrue(gridRowHeight(7) > gridRowHeight(5))
     }
 
-    /** 页高按行高 × 节数算：7 天视图整页相应变高，否则卡片会被页尾截断 */
+    /** 页高按各行高之和算：7 天视图整页相应变高，否则卡片会被页尾截断 */
     @Test
     fun `page height grows with the row height`() {
         val slots = 5
@@ -46,5 +47,44 @@ class CourseGridRowHeightTest {
         val sevenDayPage = gridRowHeight(7) * slots
 
         assertEquals(SevenDayRowExtraHeight * slots, sevenDayPage - fiveDayPage)
+    }
+
+    // ——— 实际行高：随时长伸缩 × 倍率（slotRowHeight） ———
+
+    /** 锚点：100 分钟节、1.0 倍 = 基准行高（需求指定 100min → 150dp / 160dp，须无浮点误差） */
+    @Test
+    fun `anchor duration at default scale equals the base row height`() {
+        assertEquals(GridRowHeight, slotRowHeight(BaseSlotMinutes, daysPerWeek = 5, scale = 1f))
+        assertEquals(gridRowHeight(7), slotRowHeight(BaseSlotMinutes, daysPerWeek = 7, scale = 1f))
+    }
+
+    /** 线性：时长减半行高减半（50 分钟 → 75dp / 80dp），固定行高的旧逻辑会在这里失败 */
+    @Test
+    fun `row height scales linearly with duration`() {
+        assertEquals(75.dp, slotRowHeight(50, daysPerWeek = 5, scale = 1f))
+        assertEquals(80.dp, slotRowHeight(50, daysPerWeek = 7, scale = 1f))
+    }
+
+    /** 个性化倍率整体缩放：1.2 倍的 100 分钟节 ≈ 180dp（旧版 dp 偏好迁移到 1.2 倍后渲染一致） */
+    @Test
+    fun `scale multiplies the proportional height`() {
+        assertEquals(
+            180f,
+            slotRowHeight(BaseSlotMinutes, daysPerWeek = 5, scale = 1.2f).value,
+            0.01f,
+        )
+        assertEquals(
+            gridRowHeight(7).value * 1.2f,
+            slotRowHeight(BaseSlotMinutes, daysPerWeek = 7, scale = 1.2f).value,
+            0.01f,
+        )
+    }
+
+    /** 超短节次钳到下限，保证课程名等基本内容可读；正常时长不受影响 */
+    @Test
+    fun `very short durations clamp to the minimum row height`() {
+        assertEquals(MinRowHeight, slotRowHeight(10, daysPerWeek = 5, scale = 1f))
+        assertEquals(MinRowHeight, slotRowHeight(10, daysPerWeek = 7, scale = 0.5f))
+        assertTrue(slotRowHeight(BaseSlotMinutes, daysPerWeek = 5, scale = 1f) > MinRowHeight)
     }
 }

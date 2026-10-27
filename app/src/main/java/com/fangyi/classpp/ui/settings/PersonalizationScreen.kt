@@ -51,7 +51,7 @@ import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.schedule.CardHeightPreferences
-import com.fangyi.classpp.ui.schedule.CardHeights
+import com.fangyi.classpp.ui.schedule.CardHeightScales
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
@@ -69,7 +69,8 @@ import kotlin.math.roundToInt
  * 「颜色模式」三选一（跟随系统/浅色/深色，[themeMode] / [onThemeModeChange]），
  * 行尾显示当前模式，点行弹选择对话框，点选项即时生效并关闭——对话框下方的页面同步变色，
  * 反馈直观，无需「确定」一步；「课表」分组为课程卡片高度滑条（[cardHeights] /
- * [onCardHeightsChange]，范围与默认值随 [repository] 激活课表的 5/7 天模式切换）
+ * [onCardHeightsChange]，调节**倍率**：网格行高随每节课实际时长伸缩，倍率整体缩放；
+ * 5 天 / 7 天模式各存一份，由 [repository] 激活课表的天数决定当前编辑哪份）
  * 与「显示教师」开关（[showTeacher] / [onShowTeacherChange]，控制课程卡片上教师行的显隐）。
  * 后续外观类设置项（字号、图标风格等）继续加入本页。
  */
@@ -82,8 +83,8 @@ fun PersonalizationScreen(
     repository: ScheduleRepository? = null,
     // State 实例透传（本层不读 .value，值只在 ScheduleSection 叶子内读）：
     // 拖动滑条时本页整体 skip，只有滑条卡片子树每帧重组
-    cardHeights: State<CardHeights> = mutableStateOf(CardHeights()),
-    onCardHeightsChange: (CardHeights) -> Unit = {},
+    cardHeights: State<CardHeightScales> = mutableStateOf(CardHeightScales()),
+    onCardHeightsChange: (CardHeightScales) -> Unit = {},
     // 课程卡片「显示教师」开关（State 实例透传纪律同上）
     showTeacher: State<Boolean> = mutableStateOf(true),
     onShowTeacherChange: (Boolean) -> Unit = {},
@@ -91,7 +92,8 @@ fun PersonalizationScreen(
     glassStyle: State<Boolean> = mutableStateOf(false),
     onGlassStyleChange: (Boolean) -> Unit = {},
 ) {
-    // 当前激活课表决定滑条走 5 天还是 7 天的范围/默认值；无课表（加载中/空）回退 5 天
+    // 当前激活课表决定滑条编辑 5 天还是 7 天那份倍率（两份各存、互不覆盖）；
+    // 无课表（加载中/空）回退 5 天
     val schedule by remember(repository) {
         repository?.activeSchedule ?: MutableStateFlow<Schedule?>(null)
     }.collectAsState()
@@ -179,51 +181,50 @@ fun PersonalizationScreen(
 
 /**
  * 「课表」分组：课程卡片高度滑条 + 「显示教师」开关，各占一张独立卡片（CardSection
- * 卡间距分隔）。滑条范围与默认值随 [daysPerWeek]
- * 切换——5 天 100–200 默认 150、7 天 120–300 默认 160（[CardHeightPreferences]，
- * 默认值即现行行高），滑至默认值附近自动吸附并震动；值等于默认时右上显示「默认」，
- * 否则显示具体 dp 值。开关控制课程卡片上教师行的显隐（[TeacherDisplayPreferences]），
+ * 卡间距分隔）。滑条调节**倍率**（[CardHeightPreferences.Range]，0.5–2.0，默认 1.0 = 基准
+ * 行高）：网格行高随每节课实际时长伸缩（见 [com.fangyi.classpp.ui.schedule.slotRowHeight]），
+ * 倍率整体缩放，滑至默认值附近自动吸附并震动；值等于默认时右上显示「默认」，
+ * 否则显示百分比。5 天 / 7 天模式各存一份倍率（[daysPerWeek] 决定当前编辑哪份），
+ * 切换模式互不覆盖。开关控制课程卡片上教师行的显隐（[TeacherDisplayPreferences]），
  * 关闭后地点行上移、行高预算自动归还课程名/地点。
  */
 @Composable
 private fun ScheduleSection(
     daysPerWeek: Int,
-    cardHeights: State<CardHeights>,
-    onCardHeightsChange: (CardHeights) -> Unit,
+    cardHeights: State<CardHeightScales>,
+    onCardHeightsChange: (CardHeightScales) -> Unit,
     showTeacher: State<Boolean>,
     onShowTeacherChange: (Boolean) -> Unit,
 ) {
     // 值读取点（叶子）：拖动时只有本函数及其子树（卡片/滑条）每帧重组
     val sevenDay = daysPerWeek > 5
-    val default = if (sevenDay) CardHeightPreferences.Default7 else CardHeightPreferences.Default5
-    val height = if (sevenDay) cardHeights.value.seven else cardHeights.value.five
+    val scale = if (sevenDay) cardHeights.value.seven else cardHeights.value.five
+    val percent = (scale * 100).roundToInt()
     val showTeacherOnCard = showTeacher.value
     CardSection(title = stringResource(R.string.section_schedule)) {
         SettingsCard(
             items = listOf(
                 SettingsCardItem.Slider(
                     label = stringResource(R.string.card_height_label),
-                    value = height.toFloat(),
+                    description = stringResource(R.string.card_height_desc),
+                    value = scale,
                     onValueChange = { value ->
-                        val newHeight = value.roundToInt()
+                        // 四舍五入到 0.01（百分比的最小步进），避免浮点长尾进偏好
+                        val newScale = (value * 100).roundToInt() / 100f
                         // 事件回调里读 .value 不订阅组合，无重组开销
                         val current = cardHeights.value
                         onCardHeightsChange(
-                            if (sevenDay) current.copy(seven = newHeight)
-                            else current.copy(five = newHeight),
+                            if (sevenDay) current.copy(seven = newScale)
+                            else current.copy(five = newScale),
                         )
                     },
-                    valueText = if (height == default) {
+                    valueText = if (percent == 100) {
                         stringResource(R.string.card_height_default)
                     } else {
-                        stringResource(R.string.card_height_value, height)
+                        stringResource(R.string.card_height_value, percent)
                     },
-                    defaultValue = default.toFloat(),
-                    valueRange = if (sevenDay) {
-                        CardHeightPreferences.Range7
-                    } else {
-                        CardHeightPreferences.Range5
-                    },
+                    defaultValue = CardHeightPreferences.DefaultScale,
+                    valueRange = CardHeightPreferences.Range,
                 ),
             ),
         )

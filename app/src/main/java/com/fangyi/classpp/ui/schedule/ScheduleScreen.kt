@@ -161,9 +161,10 @@ fun ScheduleScreen(
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
     onOpenSettings: () -> Unit = {},
     tabTransition: TabTransitionState? = null,
-    // 课程卡片高度状态（MainActivity 持有、个性化页写入）：State 实例透传给 CourseGrid，
-    // 本屏不读 .value——滑条拖动时 ScheduleScreen 整体 skip，只有 CourseGrid 重组重排
-    cardHeights: State<CardHeights> = mutableStateOf(CardHeights()),
+    // 课程卡片高度倍率状态（MainActivity 持有、个性化页写入；网格行高随每节时长伸缩，
+    // 倍率整体缩放）：State 实例透传给 CourseGrid，本屏不读 .value——滑条拖动时
+    // ScheduleScreen 整体 skip，只有 CourseGrid 重组重排
+    cardHeights: State<CardHeightScales> = mutableStateOf(CardHeightScales()),
     // 课程卡片「显示教师」开关（MainActivity 持有、个性化页写入）：State 实例透传纪律同上
     showTeacher: State<Boolean> = mutableStateOf(true),
 ) {

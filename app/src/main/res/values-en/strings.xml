@@ -167,8 +167,9 @@
     <!-- Timetable (Personalization) -->
     <string name="section_schedule">Timetable</string>
     <string name="card_height_label">Course card height</string>
+    <string name="card_height_desc">Scales with each class period\'s length</string>
     <string name="card_height_default">Default</string>
-    <string name="card_height_value">%1$ddp</string>
+    <string name="card_height_value">%1$d%%</string>
     <string name="show_teacher">Show teacher</string>
     <string name="time_range_start">Start time</string>
     <string name="time_range_end">End time</string>

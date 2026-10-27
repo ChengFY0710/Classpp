@@ -247,8 +247,9 @@
     <!-- 课表（个性化页） -->
     <string name="section_schedule">课表</string>
     <string name="card_height_label">课程卡片高度</string>
+    <string name="card_height_desc">随每节课时间自动伸缩</string>
     <string name="card_height_default">默认</string>
-    <string name="card_height_value">%1$ddp</string>
+    <string name="card_height_value">%1$d%%</string>
     <string name="show_teacher">显示教师</string>
     <string name="time_range_start">开始时间</string>
     <string name="time_range_end">结束时间</string>
