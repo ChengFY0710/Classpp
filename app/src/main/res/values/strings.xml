@@ -240,6 +240,17 @@
     <string name="slot_duration_desc">根据开始时间自动推算结束时间</string>
     <string name="slot_duration_value">%1$dmin</string>
     <string name="slot_duration_select_title">每节课时间</string>
+    <!-- 课程时间方案（节次与时间浮层）：方案选择 + 节次时间明细 + 保存/合并操作 -->
+    <string name="section_slots_time">节次与时间</string>
+    <string name="time_scheme_title">课程时间方案</string>
+    <string name="time_scheme_entry_desc">仅本课表生效，可留存方案复用</string>
+    <string name="time_scheme_default">默认</string>
+    <string name="time_scheme_custom">自定义</string>
+    <string name="time_scheme_save">保存方案</string>
+    <string name="time_scheme_name_title">方案名称</string>
+    <string name="time_scheme_name_hint">如：自定义方案一</string>
+    <string name="time_scheme_merge">合并两小节为一大节</string>
+    <string name="error_time_scheme_name">方案名称不能为空</string>
     <!-- 调课与调休（课表设置）：占位导航行，功能待接入 -->
     <string name="section_adjustment">调课与调休</string>
     <string name="adjust_course_label">设置调课</string>

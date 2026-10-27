@@ -617,4 +617,72 @@ class ScheduleRepositoryTest {
         assertTrue(res is ReadResult.Err)
         assertTrue((res as ReadResult.Err).error is ScheduleError.NotFound)
     }
+
+    // ---------- 课程时间方案库 ----------
+
+    @Test
+    fun `addTimeScheme persists and survives reopen`() = runBlocking {
+        val r = repo()
+        val slots = listOf(TimeSlotDef("08:00", "9:30"), TimeSlotDef("10:00", "11:30"))
+        r.addTimeScheme("上午两节", slots, 90).assertOk()
+
+        assertEquals(1, r.timeSchemes.value.size)
+        val saved = r.timeSchemes.value.single()
+        assertEquals("上午两节", saved.name)
+        // 时间文本归一化：08:00 → 8:00
+        assertEquals(listOf(TimeSlotDef("8:00", "9:30"), TimeSlotDef("10:00", "11:30")), saved.slots)
+        assertEquals(90, saved.slotDurationMinutes)
+
+        val reopened = repo()
+        assertEquals(1, reopened.timeSchemes.value.size)
+        assertEquals("上午两节", reopened.timeSchemes.value.single().name)
+    }
+
+    @Test
+    fun `addTimeScheme rejects blank name and invalid slots`() = runBlocking {
+        val r = repo()
+
+        assertTrue(
+            r.addTimeScheme("  ", DEFAULT_SLOTS, 100).assertErr() is
+                ScheduleError.InvalidTimeSchemeName,
+        )
+        val badOrder = listOf(TimeSlotDef("10:00", "11:00"), TimeSlotDef("9:00", "9:50"))
+        assertTrue(
+            r.addTimeScheme("坏方案", badOrder, 60).assertErr() is
+                ScheduleError.SlotOrderInvalid,
+        )
+        assertTrue("非法方案不应落库", r.timeSchemes.value.isEmpty())
+    }
+
+    @Test
+    fun `setSlotsAndDuration applies both atomically and persists`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+        val slots = listOf(TimeSlotDef("8:00", "9:30"), TimeSlotDef("10:00", "11:30"))
+
+        r.setSlotsAndDuration(id, slots, 90).assertOk()
+
+        val updated = r.schedules.value.first { it.id == id }
+        assertEquals(slots, updated.slots)
+        assertEquals(90, updated.slotDurationMinutes)
+
+        val reopened = repo()
+        val persisted = reopened.schedules.value.first { it.id == id }
+        assertEquals(slots, persisted.slots)
+        assertEquals(90, persisted.slotDurationMinutes)
+    }
+
+    @Test
+    fun `setSlotsAndDuration rejects out of range courses losslessly`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+        r.upsertCourse(id, testCourse(startSlot = 5)).assertOk()
+
+        val error = r.setSlotsAndDuration(id, listOf(TimeSlotDef("8:00", "9:30")), 90).assertErr()
+        assertTrue(error is ScheduleError.CoursesOutOfRange)
+
+        val untouched = r.schedules.value.first { it.id == id }
+        assertEquals(DEFAULT_SLOTS, untouched.slots)
+        assertEquals(100, untouched.slotDurationMinutes)
+    }
 }

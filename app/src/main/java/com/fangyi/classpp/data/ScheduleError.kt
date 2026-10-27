@@ -47,6 +47,9 @@ sealed class ScheduleError(val message: String) {
 
     data object InvalidScheduleName : ScheduleError("schedule name must not be blank")
 
+    /** 保存自定义时间方案时名称为空 */
+    data object InvalidTimeSchemeName : ScheduleError("time scheme name must not be blank")
+
     data class CourseFieldInvalid(val courseId: String, val reason: FieldReason) :
         ScheduleError("course $courseId invalid: $reason")
 

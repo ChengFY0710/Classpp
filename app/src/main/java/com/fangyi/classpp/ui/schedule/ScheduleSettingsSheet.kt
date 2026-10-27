@@ -2,78 +2,51 @@ package com.fangyi.classpp.ui.schedule
 
 import android.content.Context
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusEvent
-import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.OpResult
 import com.fangyi.classpp.data.ScheduleError
 import com.fangyi.classpp.data.ScheduleRepository
-import com.fangyi.classpp.data.ScheduleValidator
+import com.fangyi.classpp.data.model.DEFAULT_SLOTS
+import com.fangyi.classpp.data.model.DEFAULT_SLOT_DURATION_MINUTES
+import com.fangyi.classpp.data.model.DEFAULT_TIME_SCHEME_ID
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Schedule
-import com.fangyi.classpp.data.model.TimeSlotDef
-import com.fangyi.classpp.data.model.TimeText
-import com.fangyi.classpp.data.model.DEFAULT_SLOT_DURATION_MINUTES
-import com.fangyi.classpp.data.model.MAX_SLOT_DURATION
-import com.fangyi.classpp.data.model.MIN_SLOT_DURATION
-import com.fangyi.classpp.data.model.slotsWithAdjustedStart
-import com.fangyi.classpp.data.model.slotsWithCount
+import com.fangyi.classpp.data.model.TimeScheme
 import com.fangyi.classpp.ui.components.BottomDateSelectCard
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
-import com.fangyi.classpp.ui.components.BottomTimeSelectCard
+import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.RowChoiceCard
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTextField
-import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SheetTopAction
-import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.settings.TermDatesCard
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
-import com.fangyi.classpp.ui.theme.classppTextStyles
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
-
-/**
- * 时间行 chip 容器高度 = 标签行高（bodyLarge lineHeight 24dp）：
- * 行高与两行间距按标签节奏计算，32dp 的 chip 蓝底保持原高、不计入行高。
- */
-private val ChipRowHeight = 24.dp
 
 /**
  * 「课表设置」浮层（编辑栏按钮打开）——原课表设置页的课表级设置整体迁入：
@@ -83,6 +56,10 @@ private val ChipRowHeight = 24.dp
  * 设置即改即提交（注入的 [repository]，Err 走系统 Toast，不占版面），但整个浮层只在
  * 编辑态可开——改动处于编辑态事务内：保存则保留，取消随整库快照一并回滚。
  * 无确认/取消语义，故无左确认胶囊，右上只留「关闭」。
+ *
+ * 「节数与时间」本身不再内联：分组内只有一行「课程时间方案」入口（附当前方案名），
+ * 点击叠开 [TimeSchemeSheet]（子浮层，经 [OverlaySheet.covered] 让本浮层缩小后退）；
+ * 子浮层的明细改动先落草稿，右上「确认」才整套写回本课表。
  *
  * 滚动、键盘让位（课表名输入框在场 → ContentScroll）由 OverlaySheet 内建，
  * 这里只负责内容与日期/时间对话框。内容列按浮层规范排版：顶层块一律 [CardSection]——
@@ -121,29 +98,38 @@ internal fun ScheduleSettingsSheet(
     var pickerInitial by remember { mutableStateOf(IsoDate.today()) }
     var pickerCallback by remember { mutableStateOf<((IsoDate) -> Unit)?>(null) }
 
-    // 节次起止时刻滚轮弹窗（TimeChip 点按上报）：确认分钟数经 onPicked 原路交回设置卡，
-    // 由它折算 HH:mm 后整表提交仓库（先后顺序合法性由仓库校验、Err 走统一 toast）
-    var slotTimeVisible by remember { mutableStateOf(false) }
-    var slotTimeMounted by remember { mutableStateOf(false) }
-    var slotTimeInitial by remember { mutableIntStateOf(0) }
-    var slotTimeTitle by remember { mutableStateOf("") }
-    var slotTimeCallback by remember { mutableStateOf<((Int) -> Unit)?>(null) }
-
     // 学期周数横向滚轮弹窗（BottomNumberSelectCard）：期望态 + 挂载态两段式（同日期轮）；
     // 初值在请求时快照（挂载期间本浮层的起止日不会再变）
     var weeksVisible by remember { mutableStateOf(false) }
     var weeksMounted by remember { mutableStateOf(false) }
     var weeksInitial by remember { mutableIntStateOf(TERM_WEEKS_MIN) }
 
-    // 总节数横向滚轮弹窗（BottomNumberSelectCard）：两段式同上；初值在请求时快照
-    var slotCountVisible by remember { mutableStateOf(false) }
-    var slotCountMounted by remember { mutableStateOf(false) }
-    var slotCountInitial by remember { mutableIntStateOf(1) }
+    // 「课程时间方案」子浮层：挂载与可见性分离（同其他叠层），可见期间本浮层缩小后退
+    var schemeSheetVisible by remember { mutableStateOf(false) }
+    var schemeSheetMounted by remember { mutableStateOf(false) }
 
-    // 每节课时间横向滚轮弹窗（BottomNumberSelectCard）：两段式同上
-    var slotDurationVisible by remember { mutableStateOf(false) }
-    var slotDurationMounted by remember { mutableStateOf(false) }
-    var slotDurationInitial by remember { mutableIntStateOf(DEFAULT_SLOT_DURATION_MINUTES) }
+    // 全局方案库：入口行显示的当前方案名按「当前配置 == 某方案」反查，未命中即自定义
+    val timeSchemes by repository.timeSchemes.collectAsState()
+    val defaultSchemeName = stringResource(R.string.time_scheme_default)
+    val customSchemeName = stringResource(R.string.time_scheme_custom)
+    val currentSchemeName = remember(
+        schedule.slots,
+        schedule.slotDurationMinutes,
+        timeSchemes,
+        defaultSchemeName,
+        customSchemeName,
+    ) {
+        val defaultScheme = TimeScheme(
+            id = DEFAULT_TIME_SCHEME_ID,
+            name = defaultSchemeName,
+            slots = DEFAULT_SLOTS,
+            slotDurationMinutes = DEFAULT_SLOT_DURATION_MINUTES,
+        )
+        (listOf(defaultScheme) + timeSchemes).firstOrNull {
+            it.slots == schedule.slots &&
+                it.slotDurationMinutes == schedule.slotDurationMinutes
+        }?.name ?: customSchemeName
+    }
 
     // 设置内容的 haze 采样源：OverlaySheet 顶栏磨砂用，叠在其上的学期日期/节次时刻
     // 滚轮弹窗也拿它做卡片磨砂背景模糊——同一状态同源采样
@@ -161,8 +147,7 @@ internal fun ScheduleSettingsSheet(
         ),
         onDismiss = onDismiss,
         visible = visible,
-        covered = pickerVisible || slotTimeVisible || weeksVisible ||
-            slotCountVisible || slotDurationVisible,
+        covered = pickerVisible || weeksVisible || schemeSheetVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
         // 共享采样源：叠在本浮层上的两枚滚轮弹窗拿它做卡片磨砂背景模糊（见 sheetHazeState 声明处）
@@ -171,6 +156,7 @@ internal fun ScheduleSettingsSheet(
     ) {
         SettingsContent(
             schedule = schedule,
+            timeSchemeName = currentSchemeName,
             // 学期起止步：挂载日期轮（画在本浮层之后），初值由设置卡给出
             onDatePickRequest = { initialDate, onPicked ->
                 pickerInitial = initialDate
@@ -178,30 +164,16 @@ internal fun ScheduleSettingsSheet(
                 pickerMounted = true
                 pickerVisible = true
             },
-            // 节次起止步：挂载时刻轮（画在本浮层之后），初值与「第 N 节」标题由设置卡给出
-            onSlotTimePickRequest = { initialMinute, title, onPicked ->
-                slotTimeInitial = initialMinute
-                slotTimeTitle = title
-                slotTimeCallback = onPicked
-                slotTimeMounted = true
-                slotTimeVisible = true
-            },
             // 学期周数：挂载横向滚轮弹窗（画在本浮层之后），初值 = 当前起止日的日历周数
             onPickWeeks = {
                 weeksInitial = totalWeeks(schedule.termStart, schedule.termEnd)
                 weeksMounted = true
                 weeksVisible = true
             },
-            // 总节数 / 每节课时间：挂载横向滚轮弹窗（画在本浮层之后），初值请求时快照
-            onPickSlotCount = {
-                slotCountInitial = schedule.slotCount
-                slotCountMounted = true
-                slotCountVisible = true
-            },
-            onPickSlotDuration = {
-                slotDurationInitial = schedule.slotDurationMinutes
-                slotDurationMounted = true
-                slotDurationVisible = true
+            // 课程时间方案：叠开子浮层（内容与提交都在子浮层内完成）
+            onOpenTimeScheme = {
+                schemeSheetMounted = true
+                schemeSheetVisible = true
             },
             onRename = { name ->
                 scope.launch { submit(repository.renameSchedule(schedule.id, name)) }
@@ -214,11 +186,39 @@ internal fun ScheduleSettingsSheet(
                 // 切回 7 天原样出现——故切换不会失败，也无需联动改学期结束日
                 scope.launch { submit(repository.setDaysPerWeek(schedule.id, days)) }
             },
-            onSlots = { slots ->
-                scope.launch { submit(repository.setSlots(schedule.id, slots)) }
-            },
             onShowInactive = { show ->
                 scope.launch { submit(repository.setShowInactiveCourses(schedule.id, show)) }
+            },
+        )
+    }
+
+    // 课程时间方案子浮层：叠在本浮层之上（后注册因此先收返回键）。
+    // 确认 → 整套提交（成功才关，失败 toast 并保留草稿）；取消/返回丢弃草稿。
+    // 保存方案 → 独立落库，成功后经 timeSchemes 流回到子浮层顶部列表
+    if (schemeSheetMounted) {
+        TimeSchemeSheet(
+            schedule = schedule,
+            timeSchemes = timeSchemes,
+            visible = schemeSheetVisible,
+            onDismiss = { schemeSheetVisible = false },
+            onDismissed = { schemeSheetMounted = false },
+            onApply = { slots, duration ->
+                // 草稿与当前配置一致（只是看了看）→ 直接关，不做无意义的落盘
+                if (slots == schedule.slots &&
+                    duration == schedule.slotDurationMinutes
+                ) {
+                    schemeSheetVisible = false
+                } else {
+                    scope.launch {
+                        when (val r = repository.setSlotsAndDuration(schedule.id, slots, duration)) {
+                            OpResult.Ok -> schemeSheetVisible = false
+                            is OpResult.Err -> showError(r.error)
+                        }
+                    }
+                }
+            },
+            onSaveScheme = { name, slots, duration ->
+                scope.launch { submit(repository.addTimeScheme(name, slots, duration)) }
             },
         )
     }
@@ -239,27 +239,6 @@ internal fun ScheduleSettingsSheet(
                 pickerVisible = false
                 pickerCallback?.invoke(picked)
                 pickerCallback = null
-            },
-        )
-    }
-
-    // 节次起止时刻滚轮弹窗：确认分钟数经 onPicked 原路交回设置卡（折算 HH:mm 整表提交）
-    if (slotTimeMounted) {
-        BottomTimeSelectCard(
-            visible = slotTimeVisible,
-            onDismiss = { slotTimeVisible = false },
-            onDismissed = {
-                slotTimeMounted = false
-                slotTimeCallback = null
-            },
-            title = slotTimeTitle,
-            initialHour = slotTimeInitial / 60,
-            initialMinute = slotTimeInitial % 60,
-            hazeState = sheetHazeState,
-            onConfirm = { hour, minute ->
-                slotTimeVisible = false
-                slotTimeCallback?.invoke(hour * 60 + minute)
-                slotTimeCallback = null
             },
         )
     }
@@ -291,82 +270,27 @@ internal fun ScheduleSettingsSheet(
             },
         )
     }
-
-    // 总节数横向滚轮弹窗画在浮层之后：小于现有 → 前缀裁剪；大于现有 → 末尾按每节课
-    // 时长生成（课间 30 分钟）。当天放不下目标节数（slotsWithCount 返回 null）时 toast
-    // 并保持原值，不提交截断结果
-    if (slotCountMounted) {
-        // stringResource 是 Composable 调用，先取好再进确认闭包
-        val slotOverflowToast = stringResource(R.string.slot_overflow_desc)
-        BottomNumberSelectCard(
-            visible = slotCountVisible,
-            onDismiss = { slotCountVisible = false },
-            onDismissed = { slotCountMounted = false },
-            title = stringResource(R.string.slot_count_select_title),
-            valueRange = ScheduleValidator.MIN_SLOTS..ScheduleValidator.MAX_SLOTS,
-            initialValue = slotCountInitial,
-            unit = stringResource(R.string.unit_slot),
-            hazeState = sheetHazeState,
-            onConfirm = { count ->
-                slotCountVisible = false
-                val adjusted = slotsWithCount(
-                    schedule.slots,
-                    count,
-                    schedule.slotDurationMinutes,
-                )
-                if (adjusted != null) {
-                    scope.launch { submit(repository.setSlots(schedule.id, adjusted)) }
-                } else {
-                    AppToasts.show(context, slotOverflowToast)
-                }
-            },
-        )
-    }
-
-    // 每节课时间横向滚轮弹窗画在浮层之后：提交后即作为改开始时间自动推算结束/
-    // 级联顺延的依据（slotsWithAdjustedStart），不改写现有各节时间
-    if (slotDurationMounted) {
-        BottomNumberSelectCard(
-            visible = slotDurationVisible,
-            onDismiss = { slotDurationVisible = false },
-            onDismissed = { slotDurationMounted = false },
-            title = stringResource(R.string.slot_duration_select_title),
-            valueRange = MIN_SLOT_DURATION..MAX_SLOT_DURATION,
-            initialValue = slotDurationInitial,
-            unit = stringResource(R.string.unit_min),
-            hazeState = sheetHazeState,
-            onConfirm = { minutes ->
-                slotDurationVisible = false
-                scope.launch { submit(repository.setSlotDuration(schedule.id, minutes)) }
-            },
-        )
-    }
 }
 
 /** 当前课表全套设置：课表名 / 学期 / 每周天数 / 节数与时间 / 显示。数据变更经回调即时提交仓库。 */
 @Composable
 private fun SettingsContent(
     schedule: Schedule,
+    // 入口行显示的当前方案名（默认 / 已保存方案 / 自定义），由宿主反查
+    timeSchemeName: String,
     // 学期起止步上报：初值为当前起止日，[onPicked] 收确认日期后经 [onTerm] 提交仓库；
     // 弹窗本体（BottomDateSelectCard）由 ScheduleSettingsSheet 组合在浮层之后
     onDatePickRequest: (initialDate: IsoDate, onPicked: (IsoDate) -> Unit) -> Unit,
-    // 节次起止步上报：初值为当前时刻（分钟数）、title 为「第 N 节」，[onPicked] 收确认的
-    // 分钟数后在此折算 HH:mm 整表提交；弹窗本体（BottomTimeSelectCard）同在浮层之后
-    onSlotTimePickRequest: (initialMinute: Int, title: String, onPicked: (minuteOfDay: Int) -> Unit) -> Unit,
     // 学期周数步上报：挂载周数滚轮弹窗（BottomNumberSelectCard，画在本浮层之后）
     onPickWeeks: () -> Unit,
-    // 总节数 / 每节课时间：挂载横向滚轮弹窗（BottomNumberSelectCard，画在本浮层之后）
-    onPickSlotCount: () -> Unit,
-    onPickSlotDuration: () -> Unit,
+    // 课程时间方案：叠开子浮层（明细与提交都在子浮层内完成）
+    onOpenTimeScheme: () -> Unit,
     onRename: (name: String) -> Unit,
     onTerm: (start: IsoDate, end: IsoDate) -> Unit,
     onDays: (days: Int) -> Unit,
-    onSlots: (slots: List<TimeSlotDef>) -> Unit,
     onShowInactive: (show: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 开始时间级联放不下当天时，就地 toast 拒绝（与仓库拒绝同一条出口）
-    val context = LocalContext.current
     // 滚动由 OverlaySheet 的内容列承担，这里只排内容；顶层块间距 = 浮层统一值（12dp）
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -412,95 +336,23 @@ private fun SettingsContent(
         }
 
         CardSection(title = stringResource(R.string.section_slots)) {
-            // 总节数 + 每节课时间：一张 SettingsCard 双导航行（蓝字数值 + 箭头），点击各自
-            // 挂横向滚轮（1..30 / 10..200）；实际生成/裁剪与「当天放不下」的拒绝在宿主的
-            // 确认回调里（slotsWithCount）。每节课时间行带描述：改开始时间自动推算结束的
-            // 联动依据（slotsWithAdjustedStart），改结束时间不联动
+            // 「节次与时间」整体迁入独立浮层：这里只留一行入口（当前方案名 + 箭头），
+            // 点击叠开 TimeSchemeSheet；明细修改在子浮层内草稿化，确认才写回本课表
             SettingsCard(
                 items = listOf(
                     SettingsCardItem.Nav(
-                        label = stringResource(R.string.slot_count_label),
-                        value = schedule.slotCount.toString(),
-                        onClick = onPickSlotCount,
-                    ),
-                    SettingsCardItem.Nav(
-                        label = stringResource(R.string.slot_duration_label),
-                        description = stringResource(R.string.slot_duration_desc),
-                        value = stringResource(R.string.slot_duration_value, schedule.slotDurationMinutes),
-                        onClick = onPickSlotDuration,
+                        label = stringResource(R.string.time_scheme_title),
+                        description = stringResource(R.string.time_scheme_entry_desc),
+                        value = timeSchemeName,
+                        onClick = onOpenTimeScheme,
                     ),
                 ),
-            )
-            // 多行卡（每节一行「文字 + 时间胶囊」），无缝堆叠；行距只在本卡收紧：行高下限调低
-            // （默认 60）后各行回落为自然高（上下内距 14×2 + 内容 24 = 52，下限再小行高不变），
-            // 胶囊上下留白随之减小；卡内首行前 / 末行后各补 6dp，首尾不被收得比行间更挤
-            SettingsCard(
-                rowMinHeight = 38.dp,
-                contentVerticalPadding = 8.dp,
-                items = schedule.slots.mapIndexed { index, slot ->
-                    SettingsCardItem.Custom(
-                        label = stringResource(R.string.slot_format, index + 1),
-                        trailing = {
-                            // 弹窗标题「第 N 节」：stringResource 是 Composable 调用，先取好再进点击闭包
-                            val slotTitle = stringResource(R.string.slot_format, index + 1)
-                            // 当天放不下的拒绝提示同理：先取好文案再进点击闭包
-                            val dayOverflowToast = stringResource(R.string.error_slot_day_overflow)
-                            // chip Background灰底保持 32dp 原高，但不计入行高：容器只按标签行高 24dp
-                            // 参与行高，垂直居中向上下各溢出 4dp
-                            OverflowHeightBox(ChipRowHeight) {
-                                // 点胶囊：挂载时刻轮（画在本浮层之后），初值 = 当前时刻；
-                                // 确认分钟数后整表提交。开始时间走 slotsWithAdjustedStart：
-                                // 结束 = 开始 + 每节课时长，与下一节冲突则后续节级联顺延
-                                //（结束时间不走联动，顺序合法性仍由仓库校验）
-                                TimeChip(TimeText.formatDisplay(slot.startTime)) {
-                                    onSlotTimePickRequest(
-                                        TimeText.parseMinutes(slot.startTime) ?: 8 * 60,
-                                        slotTitle,
-                                    ) { picked ->
-                                        val adjusted = slotsWithAdjustedStart(
-                                            schedule.slots,
-                                            index,
-                                            picked,
-                                            schedule.slotDurationMinutes,
-                                        )
-                                        if (adjusted != null) {
-                                            onSlots(adjusted)
-                                        } else {
-                                            // 当天放不下：提示后放弃本次修改，不产生部分生效的中间态
-                                            AppToasts.show(
-                                                context,
-                                                dayOverflowToast,
-                                            )
-                                        }
-                                    }
-                                }
-                                Spacer(Modifier.width(16.dp))
-                                TimeChip(TimeText.formatDisplay(slot.endTime)) {
-                                    onSlotTimePickRequest(
-                                        TimeText.parseMinutes(slot.endTime) ?: 8 * 60,
-                                        slotTitle,
-                                    ) { picked ->
-                                        onSlots(
-                                            schedule.slots.mapIndexed { i, s ->
-                                                if (i == index) {
-                                                    s.copy(endTime = TimeText.format(picked))
-                                                } else {
-                                                    s
-                                                }
-                                            },
-                                        )
-                                    }
-                                }
-                            }
-                        },
-                    )
-                },
             )
         }
 
         CardSection(title = stringResource(R.string.section_adjustment)) {
             // 调课 / 调休入口：占位导航行（暂无功能，点击不响应），接入时把 onClick
-            // 换成各自的挂载请求回调（同 onPickSlotCount 的模式）
+            // 换成各自的挂载请求回调
             SettingsCard(
                 items = listOf(
                     SettingsCardItem.Nav(
@@ -567,59 +419,6 @@ private fun ScheduleNameField(name: String, onRename: (String) -> Unit) {
     )
 }
 
-private val ChipShape = RoundedCornerShape(8.dp)
-
-/**
- * 时间胶囊：背景灰底、primary 字，点击弹时间选择（节次行尾部控件）。
- * 文字启用等宽数字（tnum）：所有时间同为 00:00 五字符，数字位等宽后各胶囊文字宽度天然一致。
- */
-@Composable
-private fun TimeChip(
-    text: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    Text(
-        text = text,
-        modifier = modifier
-            // 按压反馈（自带按压源 + 点击，涟漪由其取代）放在 clip 之前：
-            // 缩放/提亮作用于整枚 chip，ChipShape 圆角裁剪在其内侧
-            .pressClickable(ChipShape, onClick = onClick)
-            .clip(ChipShape)
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 18.dp, vertical = 9.dp),
-        style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
-        color = MaterialTheme.colorScheme.primary,
-    )
-}
-
-/**
- * chip 容器：整体只占 [height] 参与父行行高与行间距；子项放开高度约束按实际尺寸
- * 测量、垂直居中向上下溢出——蓝底保持原高不被压扁，其高度不影响两行间距。
- * （固定高度的 Row/Box 会把约束收紧到容器高、子项被压扁，故用自定义测量。）
- */
-@Composable
-private fun OverflowHeightBox(height: Dp, content: @Composable () -> Unit) {
-    Layout(
-        content = content,
-        measurePolicy = { measurables, constraints ->
-            // 放开高度约束测量子项（宽度约束保持原样），容器高度固定为 height
-            val placeables = measurables.map {
-                it.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
-            }
-            val containerHeight = height.roundToPx()
-            layout(placeables.sumOf { it.width }, containerHeight) {
-                var x = 0
-                for (placeable in placeables) {
-                    // 垂直居中：32dp 子项在 24dp 容器内上下各溢出 4dp（负值放置不裁剪）
-                    placeable.place(x, (containerHeight - placeable.height) / 2)
-                    x += placeable.width
-                }
-            }
-        },
-    )
-}
-
 /**
  * [ScheduleError] → 本地化文案。课程类错误正常都经仓库 rejection() 归并为 CoursesOutOfRange，
  * 但兜底分支同样给中文结论，绝不把内部 id / 英文 message 直接显示给用户。
@@ -634,6 +433,7 @@ internal fun ScheduleError.toMessage(context: Context): String = when (this) {
     is ScheduleError.SlotTimeFormatInvalid -> context.getString(R.string.error_slot_time_format)
     is ScheduleError.SlotOrderInvalid -> context.getString(R.string.error_slot_order)
     ScheduleError.InvalidScheduleName -> context.getString(R.string.error_schedule_name)
+    ScheduleError.InvalidTimeSchemeName -> context.getString(R.string.error_time_scheme_name)
     is ScheduleError.CoursesOutOfRange -> context.getString(
         R.string.error_courses_out_of_range,
         affected.size,
@@ -657,15 +457,13 @@ private fun SettingsContentPreview() {
                 termStart = IsoDate.parse("2026-03-02"),
                 termEnd = IsoDate.parse("2026-06-19"),
             ),
+            timeSchemeName = "默认",
             onDatePickRequest = { _, _ -> },
-            onSlotTimePickRequest = { _, _, _ -> },
             onPickWeeks = {},
-            onPickSlotCount = {},
-            onPickSlotDuration = {},
+            onOpenTimeScheme = {},
             onRename = {},
             onTerm = { _, _ -> },
             onDays = {},
-            onSlots = {},
             onShowInactive = {},
         )
     }

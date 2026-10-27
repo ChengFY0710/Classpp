@@ -160,6 +160,17 @@
     <string name="slot_duration_desc">End time is derived from the start time</string>
     <string name="slot_duration_value">%1$dmin</string>
     <string name="slot_duration_select_title">Class Duration</string>
+    <!-- Course time scheme (periods & times sheet): scheme picker + slot details + save/merge actions -->
+    <string name="section_slots_time">Periods and times</string>
+    <string name="time_scheme_title">Course time scheme</string>
+    <string name="time_scheme_entry_desc">Applies to this timetable only; save it for reuse</string>
+    <string name="time_scheme_default">Default</string>
+    <string name="time_scheme_custom">Custom</string>
+    <string name="time_scheme_save">Save scheme</string>
+    <string name="time_scheme_name_title">Scheme name</string>
+    <string name="time_scheme_name_hint">e.g. Custom scheme 1</string>
+    <string name="time_scheme_merge">Merge two periods into one</string>
+    <string name="error_time_scheme_name">Scheme name must not be blank</string>
     <!-- Rescheduling & holidays (schedule settings): placeholder nav rows, feature pending -->
     <string name="section_adjustment">Rescheduling &amp; Holidays</string>
     <string name="adjust_course_label">Reschedule Classes</string>

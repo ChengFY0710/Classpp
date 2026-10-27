@@ -9,4 +9,9 @@ data class ScheduleFile(
     /** 当前激活（正在查看）的课表 id；null = 无课表 */
     val activeScheduleId: String? = null,
     val schedules: List<Schedule> = emptyList(),
+    /**
+     * 全局「课程时间方案」库（内置「默认」不落库，由 UI 构造）：
+     * 跨课表复用。旧文件缺该字段按空列表反序列化，无需升 [SCHEDULE_FORMAT_VERSION]。
+     */
+    val timeSchemes: List<TimeScheme> = emptyList(),
 )

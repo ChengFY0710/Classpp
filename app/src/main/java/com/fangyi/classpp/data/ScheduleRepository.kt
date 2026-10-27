@@ -6,6 +6,7 @@ import com.fangyi.classpp.data.model.DEFAULT_SLOTS
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.ScheduleFile
+import com.fangyi.classpp.data.model.TimeScheme
 import com.fangyi.classpp.data.model.TimeSlotDef
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.newUuid
@@ -59,6 +60,11 @@ class ScheduleRepository internal constructor(
     private val _loadState = MutableStateFlow(LoadState.Ready)
     val loadState: StateFlow<LoadState> = _loadState.asStateFlow()
 
+    private val _timeSchemes = MutableStateFlow<List<TimeScheme>>(emptyList())
+
+    /** 全局「课程时间方案」库（跨课表复用）；方案保存/回滚后自动刷新 */
+    val timeSchemes: StateFlow<List<TimeScheme>> = _timeSchemes.asStateFlow()
+
     // ---------- 生命周期 ----------
 
     /** 从磁盘载入并修复悬挂的 activeScheduleId（阻塞 I/O，经 Dispatchers.IO） */
@@ -89,6 +95,7 @@ class ScheduleRepository internal constructor(
         _schedules.value = file.schedules
         _activeScheduleId.value = file.activeScheduleId
         _activeSchedule.value = file.schedules.firstOrNull { it.id == file.activeScheduleId }
+        _timeSchemes.value = file.timeSchemes
     }
 
     /** 落盘成功才发布内存态 */
@@ -221,6 +228,63 @@ class ScheduleRepository internal constructor(
     suspend fun setShowInactiveCourses(id: String, show: Boolean): OpResult = mutex.withLock {
         val target = scheduleOrNull(id) ?: return@withLock OpResult.Err(ScheduleError.NotFound(id))
         commit(fileState.value.replace(target, target.copy(showInactiveCourses = show)))
+    }
+
+    /**
+     * 整套应用时间方案：节次表与每节课时长一次校验、一次提交——「课程时间方案」浮层的
+     * 确认出口。课程越界仍整体拒绝（[rejection]），不产生部分生效的中间态。
+     */
+    suspend fun setSlotsAndDuration(
+        id: String,
+        slots: List<TimeSlotDef>,
+        durationMinutes: Int,
+    ): OpResult = mutex.withLock {
+        val target = scheduleOrNull(id) ?: return@withLock OpResult.Err(ScheduleError.NotFound(id))
+        val updated = target.copy(
+            slots = normalizeSlots(slots),
+            slotDurationMinutes = durationMinutes,
+        )
+        val errors = ScheduleValidator.validate(updated)
+        if (errors.isNotEmpty()) return@withLock OpResult.Err(rejection(updated, errors))
+        commit(fileState.value.replace(target, updated))
+    }
+
+    // ---------- 课程时间方案库 ----------
+
+    /**
+     * 保存一套自定义时间方案（全局库，跨课表复用）。名称去首尾空白后不得为空；
+     * 节次表复用整表设置校验（节数 1..30 / 时间格式 / 先后有序）。方案允许重名——
+     * 列表按 id 区分，重名不覆盖既有方案。
+     */
+    suspend fun addTimeScheme(
+        name: String,
+        slots: List<TimeSlotDef>,
+        durationMinutes: Int,
+    ): OpResult = mutex.withLock {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return@withLock OpResult.Err(ScheduleError.InvalidTimeSchemeName)
+        val normalized = normalizeSlots(slots)
+        // 探针课表只为跑通「设置」校验：学期取同一天（必然合法），名称已单独检查
+        val today = clock.today()
+        val probe = Schedule(
+            id = "",
+            name = trimmed,
+            termStart = today,
+            termEnd = today,
+            slots = normalized,
+            slotDurationMinutes = durationMinutes,
+        )
+        val errors = ScheduleValidator.validateSettingsOnly(probe)
+        if (errors.isNotEmpty()) return@withLock OpResult.Err(errors.first())
+
+        val current = fileState.value
+        val scheme = TimeScheme(
+            id = newUuid(),
+            name = trimmed,
+            slots = normalized,
+            slotDurationMinutes = durationMinutes,
+        )
+        commit(current.copy(timeSchemes = current.timeSchemes + scheme))
     }
 
     /**

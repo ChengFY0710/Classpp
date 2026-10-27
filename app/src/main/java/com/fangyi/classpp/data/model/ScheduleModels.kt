@@ -78,6 +78,22 @@ data class WeekPattern(val segments: List<WeekSegment> = emptyList()) {
 @Serializable
 data class TimeSlotDef(val startTime: String, val endTime: String)
 
+/** 内置「默认」时间方案的 id（UI 用 [DEFAULT_SLOTS] 构造，名称走本地化字符串） */
+const val DEFAULT_TIME_SCHEME_ID = "default"
+
+/**
+ * 一套可复用的作息模板（「课程时间方案」）：节次时间表 + 每节课时长。
+ * 保存后进入全局方案库（[ScheduleFile.timeSchemes]），选中时整套应用到课表
+ * （[Schedule.slots] + [Schedule.slotDurationMinutes]）；方案本身不绑定某份课表。
+ */
+@Serializable
+data class TimeScheme(
+    val id: String,
+    val name: String,
+    val slots: List<TimeSlotDef>,
+    val slotDurationMinutes: Int = DEFAULT_SLOT_DURATION_MINUTES,
+)
+
 /** 课程卡片配色；条目名与 ui.schedule.CourseColor 完全一致（颜色选集 18 色），后续 UI 映射可直接 valueOf() */
 @Serializable
 enum class CourseColor {
