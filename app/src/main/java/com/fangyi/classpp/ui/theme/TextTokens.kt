@@ -10,7 +10,8 @@ import androidx.compose.ui.unit.sp
  * 取值说明：
  * - 方案 B 阶梯：UI 文字 `11 / 12 / 14 / 16 / 20 / 24sp`，展示数字 `32 / 48 / 64sp`。
  * - 特殊展示字号（不进入常规阶梯）：`23sp` 仅页面顶栏（[pageTitle]）；
- *   `18sp` 仅课表日期带（[courseGridDate]）与滚轮单位（[wheelUnit]）。
+ *   `18sp` 仅课表日期带（[courseGridDate]）与滚轮单位（[wheelUnit]）；
+ *   `13sp` 仅顶栏/编辑栏图标下动作标签（[actionLabel]）。
  * - 中文正文/描述字距统一 `0sp`；只有 ≥20sp 的展示标题保留负字距。
  * - token 只描述字号 / 字重 / 行高 / 字距 / 字体家族，不包含颜色；颜色仍由
  *   `MaterialTheme.colorScheme` / `ClassppColors` 在调用处或 [ClassppTextStyles] 中派生。
@@ -26,8 +27,8 @@ object ClassppTextTokens {
     val calendarSubtitle = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.Medium, lineHeight = 28.sp, letterSpacing = (-0.3).sp)
     /** 台历大日期：64sp 思源宋体 Heavy；24sp 行高是台历几何的紧行盒锚点，不随字号放大。 */
     val displayDate = TextStyle(fontSize = 64.sp, fontWeight = FontWeight.Black, fontFamily = SerifDisplay, lineHeight = 24.sp, letterSpacing = 0.sp)
-    /** 台历节日/节气：48sp 思源宋体 Heavy，行高同 [displayDate]。 */
-    val displayDateMark = TextStyle(fontSize = 48.sp, fontWeight = FontWeight.Black, fontFamily = SerifDisplay, lineHeight = 24.sp, letterSpacing = 0.sp)
+    /** 台历节日/节气：52sp 思源宋体 Heavy，行高同 [displayDate]。 */
+    val displayDateMark = TextStyle(fontSize = 52.sp, fontWeight = FontWeight.Black, fontFamily = SerifDisplay, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 详情页标题（课程/待办）：24sp SemiBold。 */
     val detailTitle = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.SemiBold, lineHeight = 28.sp, letterSpacing = 0.sp)
     /** 浮层顶栏标题：20sp SemiBold。 */
@@ -100,8 +101,8 @@ object ClassppTextTokens {
     val textButton = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 底栏标签：11sp Medium。 */
     val navLabel = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, lineHeight = 13.sp, letterSpacing = 0.sp)
-    /** 顶栏/编辑栏动作标签：12sp Medium。 */
-    val actionLabel = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp)
+    /** 顶栏/编辑栏图标下动作标签：13sp Medium，特殊展示字号。 */
+    val actionLabel = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp)
 
     // ---------- 日历 / 数字族 ----------
     /** 日历星期：16sp SemiBold。 */
@@ -120,8 +121,8 @@ object ClassppTextTokens {
     val courseGridDate = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 时间轴刻度：12sp Medium，等宽数字。 */
     val timelineLabel = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp).tabularNumbers()
-    /** 时间轴当前时刻胶囊：12sp Medium，等宽数字。 */
-    val timelineNowChip = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp).tabularNumbers()
+    /** 时间轴当前时刻胶囊：11sp Medium，等宽数字。 */
+    val timelineNowChip = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp).tabularNumbers()
     /** 日期滚轮数字：32sp Medium，等宽数字。 */
     val dateWheelNumber = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Medium).tabularNumbers()
     /** 竖向数字滚轮：32sp Medium，等宽数字。 */

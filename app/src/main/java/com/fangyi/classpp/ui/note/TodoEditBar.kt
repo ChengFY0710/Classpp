@@ -56,7 +56,7 @@ internal val EditBarRowSpace = EditBarTopPadding + EditActionBarHeight
  *
  * 五个动作块等距一行（各占一等份），每块为"图标在上、文字在下"的纵向组合，
  * 几何规格（图标、标签间距、内距、行高）与课表编辑顶栏（ScheduleEditBar）共用
- * ui/theme 的 Spacing.kt；12sp Medium 标签、1.10 按压放大、10dp 圆角按压形状也同款。
+ * ui/theme 的 Spacing.kt；13sp Medium 标签（特殊展示字号）、1.10 按压放大、10dp 圆角按压形状也同款。
  * 背景与 [TodoTopBar] 同一套兜底色 + Haze 渐变模糊——
  * 列表滚动到顶栏之下时透出毛玻璃。
  *
@@ -174,7 +174,7 @@ internal fun TodoEditBar(
     }
 }
 
-/** 编辑栏的纵向动作块：图标在上、12sp Medium 标签在下，两者水平居中对齐，整块可点（ScheduleEditBar 同款） */
+/** 编辑栏的纵向动作块：图标在上、13sp Medium 标签在下，两者水平居中对齐，整块可点（ScheduleEditBar 同款） */
 @Composable
 private fun EditAction(
     text: String,

@@ -50,7 +50,7 @@ import dev.chrisbanes.haze.blur.hazeBlur
  * 编辑态顶栏：取消 / 切换课表 / 课表设置 / 保存 + 星期行，取代可折叠的 [ScheduleHeader]。
  *
  * 四个动作块等距一行（各占一等份），每块为"图标在上、文字在下"的纵向组合，
- * 文字 12sp Medium、与图标水平居中对齐；取消/保存分居最左/最右。
+ * 文字 13sp Medium（特殊展示字号）、与图标水平居中对齐；取消/保存分居最左/最右。
  * 星期行沿用头部同款 padding 与字号、按 [daysPerWeek] 等分（5/7 列），
  * 保证与网格列对齐；编辑态没有"今天"语义，故不做今日高亮。
  *
@@ -174,7 +174,7 @@ fun ScheduleEditBar(
     }
 }
 
-/** 编辑栏的纵向动作块：图标在上、12sp Medium 标签在下，两者水平居中对齐，整块可点 */
+/** 编辑栏的纵向动作块：图标在上、13sp Medium 标签在下，两者水平居中对齐，整块可点 */
 @Composable
 private fun EditAction(
     text: String,

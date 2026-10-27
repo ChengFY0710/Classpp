@@ -81,6 +81,7 @@ import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
 import com.fangyi.classpp.ui.motion.tabTransitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.EditActionLabelGap
 import com.fangyi.classpp.ui.theme.EditActionShape
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
@@ -154,10 +155,12 @@ private val TopBarActionBarHeight = 64.dp
 /** 动作行与上方胶囊行的间距（课表编辑栏状态栏下留白同款 6dp） */
 private val TopBarActionBarTopGap = 6.dp
 
-/** 动作块图标边长 / 图标与标签间距 / 块内水平边距（课表编辑栏 EditAction 同规格） */
+/** 动作块图标边长 / 块内水平边距（课表编辑栏 EditAction 同规格） */
 private val TopBarActionIconSize = 30.dp
-private val TopBarActionLabelGap = 2.dp
 private val TopBarActionInnerPadding = 8.dp
+
+// 图标与标签间距不另设常量，直接用编辑栏共享的 EditActionLabelGap（Spacing.kt）：
+// 课表编辑栏 / 待办编辑栏 / 本展开动作行三处单源，改一处三处同步
 
 /**
  * 展开动作行的总占位高（上方留白 + 行高）：宿主列表让位用。公开 internal 让
@@ -964,7 +967,7 @@ private fun IconPill(
 }
 
 /**
- * 顶栏展开动作块：图标在上、12sp Medium 标签在下（课表编辑栏 EditAction 同规格），
+ * 顶栏展开动作块：图标在上、13sp Medium 标签在下（课表编辑栏 EditAction 同规格，特殊展示字号），
  * 两者水平居中对齐，整块可点。图标与标签同色（[contentColor]，默认 onSurface 设计图
  * 深色；分类块用它表达状态——分组显隐过滤生效中 = primary、特殊分组页在场 = negative
  * 置灰）。[enabled] = false 时整块不可点，点击与按压反馈一并停。文字已承载语义，
@@ -995,7 +998,7 @@ private fun TodoBarAction(
             tint = contentColor,
             modifier = Modifier.size(TopBarActionIconSize),
         )
-        Spacer(Modifier.height(TopBarActionLabelGap))
+        Spacer(Modifier.height(EditActionLabelGap))
         Text(
             text = label,
             color = contentColor,

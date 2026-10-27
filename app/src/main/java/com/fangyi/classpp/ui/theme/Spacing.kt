@@ -66,15 +66,16 @@ val SheetFieldHeight: Dp = 60.dp
  * 编辑顶栏动作块的共享几何：课表编辑顶栏（ScheduleEditBar）与待办编辑顶栏
  * （TodoEditBar）的「图标在上、文字在下」动作块逐项共用——改这里的值，两处同步。
  *
- * 待办常规顶栏（TodoTopBar）的展开动作行另有一套同值的 TopBarAction* 常量，
- * 尚未收敛到此处——调整本组值时留意是否需要三处同步。
+ * 待办常规顶栏（TodoTopBar）的展开动作行已直接共用本组 [EditActionLabelGap]；其余几何
+ * 另有同值的 TopBarAction* 镜像常量（图标边长/块内边距/行高/行顶距）——调整本组值时
+ * 留意是否需要三处同步。
  */
 
 /** 动作图标边长 */
 val EditActionIconSize: Dp = 30.dp
 
-/** 动作图标与其下方 12sp Medium 标签的间距 */
-val EditActionLabelGap: Dp = 4.dp
+/** 动作图标与其下方 13sp Medium 标签的间距 */
+val EditActionLabelGap: Dp = 3.dp
 
 /** 动作块的水平内边距 */
 val EditActionInnerPadding: Dp = 8.dp
