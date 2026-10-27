@@ -1534,7 +1534,10 @@ private fun EmptyScheduleContent(
             interactionSource = press,
             modifier = Modifier.pressFeedback(press, ButtonShape),
         ) {
-            Text(stringResource(R.string.create_schedule))
+            Text(
+                text = stringResource(R.string.create_schedule),
+                style = ClassppTextTokens.buttonText,
+            )
         }
     }
 }

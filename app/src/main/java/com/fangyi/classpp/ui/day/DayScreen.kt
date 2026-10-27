@@ -1949,7 +1949,7 @@ private fun DayImageLayer(
  * [backgroundAlpha] 淡入淡出；内容层独立使用 [contentAlpha] 与 [translationYDp]，
  * 02→04 先淡入下移，04→02 后淡出上移。所有进度在 graphicsLayer 的绘制阶段读取，
  * 跟手进出场不触发重组；Haze 采样内容卡（[hazeState]），与待办顶栏同一配方。
- * 标题左侧 33dp、23sp SemiBold / onSurface / -0.3sp，与 ScheduleHeader 的日期行一致。
+ * 标题左侧 33dp、24sp SemiBold / onSurface / -0.3sp，与 ScheduleHeader 的日期行一致。
  */
 @Composable
 private fun DayTopBar(

@@ -340,7 +340,7 @@ private fun TagBox(
     }
 }
 
-/** 教师/地点/备注行：13sp Medium，颜色由调用方给（教师地点 = secondaryText，备注 = primary） */
+/** 教师/地点/备注行：14sp Normal，颜色由调用方给（教师地点 = secondaryText，备注 = primary） */
 @Composable
 private fun InfoText(text: String, color: Color) {
     Text(
@@ -350,7 +350,7 @@ private fun InfoText(text: String, color: Color) {
     )
 }
 
-/** 右侧上下课时间：11sp Medium，标准课程卡色；显示时去掉小时前导零（`08:00` → `8:00`） */
+/** 右侧上下课时间：12sp Medium，标准课程卡色；显示时去掉小时前导零（`08:00` → `8:00`） */
 @Composable
 private fun TimeText(text: String, color: Color) {
     Text(
@@ -360,7 +360,7 @@ private fun TimeText(text: String, color: Color) {
     )
 }
 
-/** 「上课」标签文字：11sp Medium，课程色降明度 */
+/** 「上课」标签文字：12sp Medium，课程色降明度 */
 @Composable
 private fun TagText(text: String, color: Color) {
     Text(

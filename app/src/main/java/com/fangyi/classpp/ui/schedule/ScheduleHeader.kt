@@ -945,7 +945,7 @@ private fun WeekCell(
         Text(
             text = week.toString(),
             style = ClassppTextTokens.weekGridNumber.copy(
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             ),
             color = when {
                 selected -> colors.onPrimary

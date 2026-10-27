@@ -58,7 +58,7 @@ data class SettingsCardwithIconItem(
  *
  * 规格（对齐 [SettingsCard]）：
  * - 字体：label 走 fieldLabel（16sp SemiBold onSurface），描述走 fieldPlaceholder
- *   （13sp/20sp 行高 Medium secondaryText），行值走 fieldValue；
+ *   （14sp/20sp 行高 Normal secondaryText），行值走 fieldValue；
  * - 图标：24dp onSurface（随深浅色模式），与文字间距 12dp；
  * - 间距：行高下限 [rowMinHeight]（默认 60dp = [SheetFieldHeight]）判在**整卡**而非单行，
  *   整卡内容不足时差额均摊给各行撑高（单行卡与旧「行高 min 60」规格渲染一致）；行内

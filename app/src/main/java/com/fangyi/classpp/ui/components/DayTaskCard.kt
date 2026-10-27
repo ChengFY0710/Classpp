@@ -589,7 +589,7 @@ private fun dayTaskContentMinHeight(
     return maxOf(timeColumn, right, TaskTodoCheckboxSize)
 }
 
-/** 窄卡课程备注的估算行数：内容宽（卡宽 − 左右内距）按 13sp 中文字宽折算，至少 1 行。
+/** 窄卡课程备注的估算行数：内容宽（卡宽 − 左右内距）按 14sp 中文字宽折算，至少 1 行。
  *  无排版上下文时的兜底（单测/预览）；渲染侧由 [DayTaskCardContent] 实测整体内容高度 */
 private fun estimateNarrowNoteLines(text: String, width: Dp, fontScale: Float): Int {
     val contentWidth = (width - TaskCardPaddingHorizontal * 2).value
@@ -1005,7 +1005,7 @@ private fun TaskTagBox(
     }
 }
 
-/** 左列上下时间：11sp Medium，accent 色（DayCourseAlert TimeText 同款） */
+/** 左列上下时间：12sp Medium，accent 色（DayCourseAlert TimeText 同款） */
 @Composable
 private fun TaskTimeText(text: String, color: Color) {
     Text(
@@ -1015,7 +1015,7 @@ private fun TaskTimeText(text: String, color: Color) {
     )
 }
 
-/** 标签文字：11sp Medium，降明度 accent（DayCourseAlert TagText 同款） */
+/** 标签文字：12sp Medium，降明度 accent（DayCourseAlert TagText 同款） */
 @Composable
 private fun TaskTagText(text: String, color: Color) {
     Text(
@@ -1025,7 +1025,7 @@ private fun TaskTagText(text: String, color: Color) {
     )
 }
 
-/** 课程信息行（教师/地点/备注）：13sp，颜色由调用方给；[maxLines] 缺省单行省略（竖排
+/** 课程信息行（教师/地点/备注）：14sp，颜色由调用方给；[maxLines] 缺省单行省略（竖排
  *  窄卡不撑高），窄卡备注传 [Int.MAX_VALUE] 让文本正常换行 */
 @Composable
 private fun TaskInfoText(text: String, color: Color, maxLines: Int = 1) {

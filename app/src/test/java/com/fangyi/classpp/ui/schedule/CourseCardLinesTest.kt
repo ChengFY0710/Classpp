@@ -7,8 +7,9 @@ import org.junit.Test
  * 卡内文本行数分配：单条偏好序 first-fit、无默认值分支——
  * 增长段地点先涨 ((3,4)…(6,6)，封顶 6/6) → 默认段 (3,3) → 降级段课程名先降 ((2,3)…(1,1))。
  *
- * 行成本 = lineHeight px（课程名 16、地点 14）；默认行高预算（5 天 107 / 7 天 117）
- * 自然落在 (3,4)。纯浮点比较，JVM 单测直接断言。
+ * 行成本 = lineHeight px。本测试用课程名 16 / 地点 14 覆盖偏好序；阶段 3 生产值
+ * 课程名与地点均为 16，默认预算约 95（5 天）/ 105（7 天），分别落在 (2,3) / (3,3)。
+ * 纯浮点比较，JVM 单测直接断言。
  */
 class CourseCardLinesTest {
     private val nameLine = 16f
@@ -16,6 +17,9 @@ class CourseCardLinesTest {
 
     private fun allocate(budget: Float) =
         allocateCardLines(budget, nameLine, locationLine)
+
+    private fun allocateProduction(budget: Float) =
+        allocateCardLines(budget, nameLinePx = 16f, locationLinePx = 16f)
 
     @Test
     fun excessBudgetCapsAtSixLines() {
@@ -55,6 +59,14 @@ class CourseCardLinesTest {
         // 课程名到底后才降地点 (1,2)=44
         assertEquals(CardLines(1, 2), allocate(57.9f))
         assertEquals(CardLines(1, 2), allocate(44f))
+    }
+
+    @Test
+    fun productionBudgetsAfterStage3() {
+        // 阶段 3：课程名/地点/元信息行高均为 16sp。5 天行高 150dp 扣 7dp 与 3×16dp → 95
+        assertEquals(CardLines(2, 3), allocateProduction(95f))
+        // 7 天行高 160dp → 105，刚好放下 3 行课程名 + 3 行地点
+        assertEquals(CardLines(3, 3), allocateProduction(105f))
     }
 
     @Test

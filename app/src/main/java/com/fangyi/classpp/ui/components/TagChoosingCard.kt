@@ -75,7 +75,7 @@ import kotlin.math.roundToInt
 @Immutable
 data class TagItem(val name: String, val color: Color)
 
-/** 胶囊内标签图标尺寸：与 13sp 文字同高对齐设计稿 */
+/** 胶囊内标签图标尺寸：与 14sp 文字同高对齐设计稿 */
 private val TagIconSize = 14.dp
 
 /** 删除菜单与标签之间的缝隙 */

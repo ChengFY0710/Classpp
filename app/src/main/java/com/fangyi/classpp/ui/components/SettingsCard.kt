@@ -149,7 +149,7 @@ sealed interface SettingsCardItem {
  *
  * 规格（对齐 [SheetTextField]）：
  * - 字体：label 走 fieldLabel（16sp SemiBold onSurface），描述走 settingsDescription
- *   （13sp Medium、20sp 行高、secondaryText）；
+ *   （14sp Normal、20sp 行高、secondaryText）；
  * - 间距：行高下限 [rowMinHeight]（默认 60dp = [SheetFieldHeight]）判在**整卡**而非单行，
  *   整卡内容不足时差额均摊给各行撑高（单行卡与旧「行高 min 60」规格渲染一致）；行内
  *   左右 16，内距画在交互区**内侧**；[SettingsCardItem.Custom] 行仍自带该下限兜底；
@@ -414,7 +414,7 @@ internal fun SettingsRowText(
             Spacer(modifier = Modifier.size(3.dp))
             Text(
                 text = description,
-                // 描述可能多行换行：20sp 行高，多行时行间节奏与 13sp 字号匹配
+                // 描述可能多行换行：20sp 行高，多行时行间节奏与 14sp 字号匹配
                 style = ClassppTextTokens.settingsDescription.copy(
                     color = MaterialTheme.classppColors.secondaryText,
                 ),

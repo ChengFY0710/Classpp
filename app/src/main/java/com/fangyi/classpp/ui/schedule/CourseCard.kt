@@ -112,9 +112,9 @@ internal data class CardLines(val name: Int, val location: Int)
  * - 默认段：(3,3)
  * - 降级段（课程名先降，保底 1/1）：(2,3) → (1,3) → (1,2) → (1,1)
  *
- * 行成本 = 各自 Text 的 lineHeight px（[nameLinePx] 16sp、[locationLinePx] 14sp，
+ * 行成本 = 各自 Text 的 lineHeight px（[nameLinePx] 16sp、[locationLinePx] 16sp，
  * 调用处已乘 fontScale）；连保底档都装不下也返回 (1,1)，溢出交给 maxLines + 省略号。
- * 默认行高（5 天 150 / 7 天 160dp，预算约 107/117）自然落在 (3,4)。
+ * 默认行高（5 天 150 / 7 天 160dp，预算约 95/105）分别落在 (2,3) / (3,3)。
  */
 internal fun allocateCardLines(
     budgetPx: Float,
@@ -229,8 +229,8 @@ fun CourseCard(
             }
         }
         // 内容区包一层 BoxWithConstraints：卡高约束首帧组合期即可用（无先溢出后修正的闪跳），
-        // 行预算按起止时间行（lineHeight 12sp）+ 教师行（lineHeight 12sp，留空则不扣）+
-        // 内边距(6dp) + 1dp 安全余量扣除，行成本取各 Text 的 lineHeight（16sp/14sp）× fontScale × density
+        // 行预算按起止时间行（lineHeight 16sp）+ 教师行（lineHeight 16sp，留空则不扣）+
+        // 内边距(6dp) + 1dp 安全余量扣除，行成本取各 Text 的 lineHeight（16sp/16sp）× fontScale × density
         BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)

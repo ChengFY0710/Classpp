@@ -8,70 +8,114 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-/** M3 baseline：只用于补齐未自定义的槽位，阶段 3 再按方案 B 调整。 */
-private val BaselineTypography = Typography()
-
-val Typography = BaselineTypography.copy(
+/** Material3 的 15 个文字槽位全部按方案 B 显式定义，避免 M3 组件静默回退 baseline。 */
+val Typography = Typography(
+    displayLarge = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 64.sp,
+        lineHeight = 68.sp,
+        letterSpacing = 0.sp
+    ),
+    displayMedium = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 48.sp,
+        lineHeight = 52.sp,
+        letterSpacing = 0.sp
+    ),
+    displaySmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 32.sp,
+        lineHeight = 36.sp,
+        letterSpacing = 0.sp
+    ),
+    headlineLarge = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 24.sp,
+        lineHeight = 28.sp,
+        letterSpacing = 0.sp
+    ),
+    headlineMedium = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 20.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.sp
+    ),
+    // 20sp：M3 AlertDialog 标题槽，与 ClassppTextTokens.dialogTitle / sheetTitle 同档。
+    headlineSmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 20.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.sp
+    ),
     titleLarge = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 22.sp,
+        fontSize = 24.sp,
         lineHeight = 28.sp,
         letterSpacing = 0.sp
     ),
     titleMedium = TextStyle(
         fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 16.sp,
         lineHeight = 24.sp,
-        letterSpacing = 0.15.sp
+        letterSpacing = 0.sp
     ),
     titleSmall = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Medium,
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        letterSpacing = 0.1.sp
+        letterSpacing = 0.sp
     ),
     bodyLarge = TextStyle(
         fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
         lineHeight = 24.sp,
-        letterSpacing = 0.5.sp
+        letterSpacing = 0.sp
     ),
     bodyMedium = TextStyle(
         fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        letterSpacing = 0.25.sp
+        letterSpacing = 0.sp
+    ),
+    bodySmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        letterSpacing = 0.sp
     ),
     labelLarge = TextStyle(
         fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        letterSpacing = 0.1.sp
+        letterSpacing = 0.sp
     ),
     labelMedium = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Medium,
         fontSize = 12.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
+        letterSpacing = 0.sp
     ),
-
-    // 阶段 1 显式登记、但仍保持 M3 baseline 的 8 个槽位。
-    // 这样 15 个槽位都有明确来源；阶段 3 再逐项替换为方案 B 的值。
-    displayLarge = BaselineTypography.displayLarge,
-    displayMedium = BaselineTypography.displayMedium,
-    displaySmall = BaselineTypography.displaySmall,
-    headlineLarge = BaselineTypography.headlineLarge,
-    headlineMedium = BaselineTypography.headlineMedium,
-    headlineSmall = BaselineTypography.headlineSmall,
-    bodySmall = BaselineTypography.bodySmall,
-    labelSmall = BaselineTypography.labelSmall,
+    labelSmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Medium,
+        fontSize = 11.sp,
+        lineHeight = 16.sp,
+        letterSpacing = 0.sp
+    ),
 )
 
 /**
@@ -79,22 +123,22 @@ val Typography = BaselineTypography.copy(
  * 设置页与浮层卡片组件只按角色取用，用法：
  * `Text(text = ..., style = MaterialTheme.classppTextStyles.fieldLabel)`。
  *
- * 字面值来自 [ClassppTextTokens]（阶段 1 起为唯一来源）；颜色取自当前主题
+ * 字面值来自 [ClassppTextTokens]（唯一来源）；颜色取自当前主题
  * （onSurface / primary / secondaryText），随 [ClassppTheme] 深浅切换。
- * 行高与字距仍留给调用处按各自既有的排版节奏给出
- * （行卡类文字的 24sp / 0.5sp 用文件尾的 [settingsRowMetrics] 一行补齐）。
+ * 角色样式本身不含行高与字距：行卡 label/value 继承 [Typography.bodyLarge]
+ * 的 24sp / 0sp；分组标题用 [settingsRowMetrics] 补 20sp / 0sp。
  */
 @Immutable
 class ClassppTextStyles(
     /** 顶栏居中标题：20sp SemiBold onSurface（设置页顶栏与浮层顶栏同款） */
     val topBarTitle: TextStyle,
-    /** 分组标题（卡片外的次级灰字）：15sp Medium secondaryText */
+    /** 分组标题（卡片外的次级灰字）：14sp Medium secondaryText */
     val sectionTitle: TextStyle,
     /** 行卡左侧 label：16sp SemiBold onSurface */
     val fieldLabel: TextStyle,
-    /** 输入占位文字：16sp Medium secondaryText */
+    /** 输入占位文字：16sp Normal secondaryText */
     val fieldPlaceholder: TextStyle,
-    /** 行卡右侧值：16sp Medium primary */
+    /** 行卡右侧值：16sp Normal primary */
     val fieldValue: TextStyle,
     /** 胶囊按钮文字：16sp SemiBold；颜色随按钮配色由调用方传入（onPrimary/onSurface/onError），样式本身不带色 */
     val pillButton: TextStyle,
@@ -114,8 +158,7 @@ fun classppTextStyles(colorScheme: ColorScheme, colors: ClassppColors) = Classpp
 )
 
 /**
- * 行卡类文字（分组标题 / 行 label / 行值）的行高与字距：沿用原 bodyLarge 的取值，
- * 换成角色化样式后行距节奏保持不变（角色样式本身只统一字号 / 粗细 / 颜色）。
- * 通用分组 CardSection 使用，改这里同步生效。
+ * 分组标题的行高与字距：方案 B 的 20sp 行高 + 中文 0 字距。
+ * 通用分组 [com.fangyi.classpp.ui.components.CardSection] 与待办分组头使用，改这里同步生效。
  */
-internal fun TextStyle.settingsRowMetrics() = copy(lineHeight = 24.sp, letterSpacing = 0.5.sp)
+internal fun TextStyle.settingsRowMetrics() = copy(lineHeight = 20.sp, letterSpacing = 0.sp)

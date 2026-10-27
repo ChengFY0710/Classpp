@@ -101,7 +101,7 @@ fun DialogPillButton(
     ) {
         Text(
             text = label,
-            style = ClassppTextTokens.dialogButtonText,
+            style = ClassppTextTokens.buttonText,
             color = contentColor,
         )
     }

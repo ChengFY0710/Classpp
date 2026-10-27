@@ -134,9 +134,9 @@ class DayGeometryTest {
         assertEquals(117.5f + DayBandBleed.value, frame.bandHeight, 0.01f)
         assertEquals(0f, frame.bandTintAlpha, 0.01f)
 
-        // 日期组 01→02 的位移与设计稿量取一致（约 -496dp）；02 尚未缩放/横移
+        // 日期组 01→02 的位移与设计稿量取一致（约 -492dp；NavReserve 68dp）；02 尚未缩放/横移
         assertEquals(0f, frame.dateTranslationX, 0.01f)
-        assertEquals(-496f, frame.dateTranslationY, 0.5f)
+        assertEquals(-492f, frame.dateTranslationY, 0.5f)
         assertEquals(1f, frame.dateScale, 0.01f)
         assertEquals(0f, frame.topScrimAlpha, 0.01f)
         assertEquals(0f, frame.topBarContentAlpha, 0.01f)
@@ -179,7 +179,7 @@ class DayGeometryTest {
         assertEquals(expectedGroupX, frame.dateTranslationX, 0.01f)
         assertEquals(
             frame.image.bottom - 26f * groupScale,
-            759f + frame.dateTranslationY,
+            755f + frame.dateTranslationY,
             0.5f,
         )
     }
@@ -208,7 +208,7 @@ class DayGeometryTest {
             schedule.image.height,
             0.01f,
         )
-        val scheduleDateBottom = 759f + schedule.dateTranslationY
+        val scheduleDateBottom = 755f + schedule.dateTranslationY
         assertTrue(scheduleDateBottom <= schedule.image.bottom)
         assertTrue(scheduleDateBottom >= schedule.image.top)
         assertTrue(kotlin.math.abs(schedule.dateTranslationY - compact.dateTranslationY) < 12f)
