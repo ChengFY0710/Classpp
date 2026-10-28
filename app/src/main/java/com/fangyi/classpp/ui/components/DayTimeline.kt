@@ -317,7 +317,6 @@ private fun DayTimelineBody(
                     text = TimeText.format(nowMinute),
                     style = ClassppTextTokens.timelineNowChip,
                     color = onError,
-                    modifier = Modifier.offset(y = (-1).dp),
                 )
             }
         }
