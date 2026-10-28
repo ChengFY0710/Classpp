@@ -157,7 +157,7 @@ fun ScheduleEditBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 10.dp, bottom = 7.dp),
+                .padding(top = 14.dp, bottom = 7.dp),
         ) {
             for (i in weekdays.indices) {
                 Text(
