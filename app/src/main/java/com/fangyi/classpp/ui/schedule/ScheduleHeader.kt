@@ -570,7 +570,7 @@ private fun BackToCurrentButton(
         Spacer(Modifier.width(6.dp))
         Text(
             text = stringResource(R.string.back_to_current_week),
-            style = ClassppTextTokens.calendarWeekday,
+            style = ClassppTextTokens.calendarAction,
             color = MaterialTheme.colorScheme.primary,
             maxLines = 1,
         )

@@ -111,8 +111,8 @@ object ClassppTextTokens {
     val calendarWeekday = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 日历日号：16sp SemiBold。 */
     val calendarDay = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp, letterSpacing = 0.sp)
-    /** 日历「回到今天」：16sp Normal。 */
-    val calendarAction = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal, lineHeight = 24.sp, letterSpacing = 0.sp)
+    /** 日程页「回到今天」/ 课表页「返回本周」：16sp Medium。 */
+    val calendarAction = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 课表页顶栏周数选择胶囊：17sp SemiBold，特殊展示字号；仅胶囊使用，行高 20 不变。 */
     val weekPill = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 周数选择卡内数字：22sp Medium，特殊展示字号；仅周数选择卡方格使用，行高 24 不变。 */
