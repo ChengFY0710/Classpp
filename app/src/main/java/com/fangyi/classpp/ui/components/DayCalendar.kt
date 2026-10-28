@@ -450,7 +450,8 @@ class DayCalendarFoldState(
 
     /**
      * 松手吸附：下滑速度优先判展开、上滑优先判折叠，否则按过半吸附；
-     * 弹簧收尾用 [Motion.settle]（可见阈值换算成不足一像素的进度值，末帧不跳）。
+     * 收束动画用普通缓动曲线（[Motion.AgendaCalendarFoldMillis] + [Motion.Standard]），
+     * 不走弹簧的非线性收尾。
      */
     fun settle(velocityY: Float) {
         val target = when {
@@ -464,7 +465,10 @@ class DayCalendarFoldState(
             val driver = Animatable(progress)
             driver.animateTo(
                 targetValue = target,
-                animationSpec = Motion.settle(0.5f / rangePx.coerceAtLeast(1f)),
+                animationSpec = tween(
+                    Motion.AgendaCalendarFoldMillis,
+                    easing = Motion.Standard,
+                ),
             ) {
                 progress = value
             }

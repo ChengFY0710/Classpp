@@ -87,6 +87,12 @@ object Motion {
      */
     const val AgendaCalendarSwitchMillis = 450
 
+    /**
+     * 日历卡（DayCalendar）折叠/展开松手吸附时长：拖拽松手后进度收束到展开或单行周
+     * 视图的节奏，配合 [Standard]——普通缓动（先加速后减速），不用弹簧收尾。
+     */
+    const val AgendaCalendarFoldMillis = 520
+
     /** 浮层（OverlaySheet）入场时长：从屏幕底部滑入，配合 [Overlay]。 */
     const val SheetEnterMillis = 400
 
