@@ -4,28 +4,37 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * 卡内文本行数分配：单条偏好序 first-fit、无默认值分支——
- * 增长段地点先涨 ((3,4)…(6,6)，封顶 6/6) → 默认段 (3,3) → 降级段课程名先降 ((2,3)…(1,1))。
+ * 卡内文本行数分配：**实测自然行数封顶 + 单条偏好序 first-fit**。
  *
- * 行成本 = lineHeight px。本测试用课程名 16 / 地点 14 覆盖偏好序；阶段 3 生产值
- * 课程名与地点均为 16，默认预算约 95（5 天）/ 105（7 天），分别落在 (2,3) / (3,3)。
- * 纯浮点比较，JVM 单测直接断言。
+ * 偏好序与旧版一致——增长段地点先涨 ((3,4)…(6,6)，封顶 6/6) → 默认段 (3,3) →
+ * 降级段课程名先降 ((2,3)…(1,1))；变化在于每档字段行数不超过内容自然行数，
+ * 短内容不再为空行预留空间、长内容才被截断。默认 wanted = 6/6 时与旧行为逐值一致（回归基线）。
+ *
+ * 行成本 = lineHeight px。偏好序测试用课程名 16 / 地点 14；生产值两者均 16，
+ * 默认预算约 95（5 天）/ 105（7 天）。
  */
 class CourseCardLinesTest {
     private val nameLine = 16f
     private val locationLine = 14f
 
-    private fun allocate(budget: Float) =
-        allocateCardLines(budget, nameLine, locationLine)
+    private fun allocate(
+        budget: Float,
+        name: Int = 6,
+        location: Int = 6,
+    ) = allocateCardLines(budget, nameLine, locationLine, name, location)
 
-    private fun allocateProduction(budget: Float) =
-        allocateCardLines(budget, nameLinePx = 16f, locationLinePx = 16f)
+    private fun allocateProduction(
+        budget: Float,
+        name: Int = 6,
+        location: Int = 6,
+    ) = allocateCardLines(budget, nameLinePx = 16f, locationLinePx = 16f, name, location)
 
     @Test
     fun excessBudgetCapsAtSixLines() {
-        // 超额预算封顶 6/6；恰好等于 6/6 总价 (180) 也成立
+        // 超额预算封顶 6/6；实际行数超过 6 也封顶在 6/6
         assertEquals(CardLines(6, 6), allocate(1000f))
         assertEquals(CardLines(6, 6), allocate(180f))
+        assertEquals(CardLines(6, 6), allocate(1000f, name = 20, location = 20))
     }
 
     @Test
@@ -63,10 +72,35 @@ class CourseCardLinesTest {
 
     @Test
     fun productionBudgetsAfterStage3() {
-        // 阶段 3：课程名/地点/元信息行高均为 16sp。5 天行高 150dp 扣 7dp 与 3×16dp → 95
-        assertEquals(CardLines(2, 3), allocateProduction(95f))
+        // 阶段 3：课程名/地点/元信息行高均为 16sp，实测 3/3 时与旧档位逐值一致
+        // 5 天行高 150dp 扣 7dp 与 3×16dp → 95
+        assertEquals(CardLines(2, 3), allocateProduction(95f, name = 3, location = 3))
         // 7 天行高 160dp → 105，刚好放下 3 行课程名 + 3 行地点
-        assertEquals(CardLines(3, 3), allocateProduction(105f))
+        assertEquals(CardLines(3, 3), allocateProduction(105f, name = 3, location = 3))
+    }
+
+    @Test
+    fun shortContentDoesNotReserveEmptyLines() {
+        // 实测 1/1：预算再大也只给 (1,1)——不再为不存在的行预留空间
+        assertEquals(CardLines(1, 1), allocate(1000f, name = 1, location = 1))
+        assertEquals(CardLines(1, 2), allocate(1000f, name = 1, location = 2))
+        assertEquals(CardLines(2, 1), allocate(1000f, name = 2, location = 1))
+        // 实测 0/0（空文本）同样按保底 1 行处理
+        assertEquals(CardLines(1, 1), allocate(1000f, name = 0, location = 0))
+    }
+
+    @Test
+    fun shortNameFreesBudgetForMoreLocation() {
+        // 生产预算 95：实测课名 1 行时，地点可以放到 4 行（(1,4)=80 ≤ 95，(1,5)=96 超）
+        // 旧档位不看实际内容，同样预算只会给 (2,3) 并截掉第 4 行地点
+        assertEquals(CardLines(1, 4), allocateProduction(95f, name = 1, location = 6))
+        assertEquals(CardLines(1, 4), allocateProduction(95f, name = 1, location = 4))
+    }
+
+    @Test
+    fun longNameUsesBudgetFreedByShortLocation() {
+        // 实测课名 4 行 + 地点 1 行 = 5 行，预算 80 恰好放下——旧档位会先把课名截到 2 行
+        assertEquals(CardLines(4, 1), allocateProduction(80f, name = 4, location = 1))
     }
 
     @Test
@@ -75,5 +109,6 @@ class CourseCardLinesTest {
         assertEquals(CardLines(1, 1), allocate(29.9f))
         assertEquals(CardLines(1, 1), allocate(0f))
         assertEquals(CardLines(1, 1), allocate(-100f))
+        assertEquals(CardLines(1, 1), allocateProduction(0f, name = 1, location = 1))
     }
 }

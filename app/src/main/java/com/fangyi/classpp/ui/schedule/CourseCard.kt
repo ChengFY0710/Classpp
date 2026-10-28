@@ -31,6 +31,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -45,6 +48,14 @@ import com.fangyi.classpp.ui.theme.isDarkTheme
 
 private val CardShape = RoundedCornerShape(6.dp)
 private val BarWidth = 3.dp
+
+/** 内容区内边距：行预算的固定开销与实测文本宽度都由这里推导，改 padding 不必再同步改预算 */
+private val CardPaddingStart = 4.dp
+private val CardPaddingEnd = 2.dp
+private val CardPaddingVertical = 3.dp
+
+/** 行预算的安全余量：吸收 dp→px 取整与课程名/教师之间的 1dp 间距 */
+private val CardBudgetSafety = 1.dp
 
 /** [CourseColor] 到卡片竖条/时间文字颜色的浅色映射（白卡底，马卡龙原色；深色见 [barColorDark]）。
  *  分支顺序与枚举声明一致（颜色选集 18 色） */
@@ -105,47 +116,82 @@ internal fun CourseColor.barColor(dark: Boolean): Color =
 /** 卡内文本行数分配结果：[name] 课程名、[location] 地点（教师恒 1 行，不参与分配） */
 internal data class CardLines(val name: Int, val location: Int)
 
+/** 单字段最多显示行数：超长课名/地点在跨节大卡里也不至于铺满整卡 */
+private const val MaxFieldLines = 6
+
+/** 偏好序（好→差）：增长段地点先涨（封顶 6/6）→ 默认段 (3,3) → 降级段课程名先降（保底 1/1） */
+private val CardLineTiers = listOf(
+    CardLines(6, 6),
+    CardLines(5, 6),
+    CardLines(4, 6),
+    CardLines(3, 6),
+    CardLines(3, 5),
+    CardLines(3, 4),
+    CardLines(3, 3),
+    CardLines(2, 3),
+    CardLines(1, 3),
+    CardLines(1, 2),
+    CardLines(1, 1),
+)
+
 /**
- * 行数分配：给定 [budgetPx]（卡高扣掉起止时间行、教师行、内边距与安全余量后的剩余预算），
- * 在单一偏好序（好→差）里取第一个放得下的档位，**预算装得下几行就给几行**、无默认值分支：
- * - 增长段（地点先涨，封顶 6/6）：(6,6) → (5,6) → (4,6) → (3,6) → (3,5) → (3,4)
- * - 默认段：(3,3)
- * - 降级段（课程名先降，保底 1/1）：(2,3) → (1,3) → (1,2) → (1,1)
+ * 行数分配：**实测实际行数先封顶、再按预算在偏好序上 first-fit**。
  *
- * 行成本 = 各自 Text 的 lineHeight px（[nameLinePx] 16sp、[locationLinePx] 16sp，
- * 调用处已乘 fontScale）；连保底档都装不下也返回 (1,1)，溢出交给 maxLines + 省略号。
- * 默认行高（5 天 150 / 7 天 160dp，预算约 95/105）分别落在 (2,3) / (3,3)。
+ * 每个档位的字段行数不超过内容的自然行数（[wantedName]/[wantedLocation]），
+ * 因此不再为不存在的文本预留空行：内容短就直接落到更小的档位、把预算让给另一字段；
+ * 内容长才真正用到 maxLines 截断。偏好序与旧版一致（地点先涨、课程名先降，保底 1/1）。
+ *
+ * 行成本 = 各自 Text 的 lineHeight px（[nameLinePx]/[locationLinePx]，调用处已乘 fontScale）；
+ * 连保底档都装不下也返回 (1,1)，溢出交给 maxLines + 省略号。
+ * 默认行高（5 天 150 / 7 天 160dp，预算约 95/105）下，实测 3/3 的课分别落在 (2,3) / (3,3)，
+ * 与旧版结果一致；课名实测只占 1 行时，预算可还给地点显示更多实际行。
  */
 internal fun allocateCardLines(
     budgetPx: Float,
     nameLinePx: Float,
     locationLinePx: Float,
+    wantedName: Int,
+    wantedLocation: Int,
 ): CardLines {
-    val tiers = listOf(
-        CardLines(6, 6),
-        CardLines(5, 6),
-        CardLines(4, 6),
-        CardLines(3, 6),
-        CardLines(3, 5),
-        CardLines(3, 4),
-        CardLines(3, 3),
-        CardLines(2, 3),
-        CardLines(1, 3),
-        CardLines(1, 2),
-        CardLines(1, 1),
-    )
-    return tiers.firstOrNull { it.name * nameLinePx + it.location * locationLinePx <= budgetPx }
-        ?: CardLines(1, 1)
+    val nameCap = wantedName.coerceIn(1, MaxFieldLines)
+    val locationCap = wantedLocation.coerceIn(1, MaxFieldLines)
+    for (tier in CardLineTiers) {
+        val name = minOf(tier.name, nameCap)
+        val location = minOf(tier.location, locationCap)
+        if (name * nameLinePx + location * locationLinePx <= budgetPx) {
+            return CardLines(name, location)
+        }
+    }
+    return CardLines(1, 1)
+}
+
+/**
+ * 文本在 [widthPx] 宽度下的自然行数（不被 maxLines 截断）。
+ * 用 [rememberTextMeasurer] 实测而非按字符数估算——换行结果与 Text 的真实排版同源；
+ * 结果按 文本/样式/宽度/字号缩放 记忆，只在输入变化时重测，其余重组零开销。
+ * 测量器随卡片私有、只缓存本卡两段文本，避免整屏卡片挤同一个 LRU。
+ */
+@Composable
+private fun rememberNaturalLineCount(text: String, style: TextStyle, widthPx: Float): Int {
+    val measurer = rememberTextMeasurer(cacheSize = 4)
+    val fontScale = LocalDensity.current.fontScale
+    return remember(text, style, widthPx, fontScale, measurer) {
+        measurer.measure(
+            text = AnnotatedString(text),
+            style = style,
+            constraints = Constraints(maxWidth = widthPx.toInt().coerceAtLeast(1)),
+        ).lineCount
+    }
 }
 
 /**
  * 课程卡片：白底圆角卡 + 左侧彩色竖条。
  *
  * 自上而下：开始时间（竖条同色）→ 课程名 → 教师 → @楼名 房间，底部对齐结束时间。
- * 课程名/地点的行数上限**纯由行高预算**在单条偏好序上 first-fit 决定
- * （[allocateCardLines]，无默认值特殊分支）：预算充足走地点先涨段（封顶 6/6），
- * 不足依次回落到课程名先降段（保底 1/1）；教师/起止时间恒 1 行——设置页调小行高
- * 文本变密、调大变疏，超行省略号截断。
+ * 课程名/地点的行数上限 = min(实测自然行数, 预算放得下的档位)（[allocateCardLines]）：
+ * 先按 [rememberNaturalLineCount] 在卡宽下实测文本行数封顶，再在偏好序上 first-fit——
+ * 内容短不为空行预留空间，内容长才用省略号截断；教师/起止时间恒 1 行——设置页调小行高
+ * 文本变密、调大变疏。
  *
  * [showTeacher] = 个性化页「显示教师」开关：关闭时教师行不渲染，视为教师留空——
  * 地点行上移、行高预算同步少扣一行（[allocateCardLines] 的固定开销按 2 行时间 + 内边距计）。
@@ -230,7 +276,8 @@ fun CourseCard(
         }
         // 内容区包一层 BoxWithConstraints：卡高约束首帧组合期即可用（无先溢出后修正的闪跳），
         // 行预算按起止时间行（lineHeight 16sp）+ 教师行（lineHeight 16sp，留空则不扣）+
-        // 内边距(6dp) + 1dp 安全余量扣除，行成本取各 Text 的 lineHeight（16sp/16sp）× fontScale × density
+        // 内边距（上下 3dp）+ 安全余量扣除，行成本取各 Text 的 lineHeight（16sp）× fontScale × density；
+        // 各字段的自然行数按内容区实际文本宽度实测（见 rememberNaturalLineCount）
         BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
@@ -238,24 +285,36 @@ fun CourseCard(
         ) {
             // 「显示教师」关闭或教师留空都不渲染教师行：地点上移、预算少扣一行
             val hasTeacher = showTeacher && course.teacher.isNotBlank()
-            val lines = if (constraints.maxHeight == Constraints.Infinity) {
+            val lines = if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
                 CardLines(3, 3)
             } else {
                 val localDensity = LocalDensity.current
                 val spPx = { sp: Float -> sp * localDensity.fontScale * localDensity.density }
-                val fixedPx = with(localDensity) { 6.dp.toPx() + 1.dp.toPx() } +
-                    spPx(ClassppTextTokens.courseCardMeta.lineHeight.value) * 2f +
+                val fixedPx = with(localDensity) {
+                    (CardPaddingVertical * 2 + CardBudgetSafety).toPx()
+                } + spPx(ClassppTextTokens.courseCardMeta.lineHeight.value) * 2f +
                     (if (hasTeacher) spPx(ClassppTextTokens.courseCardTeacher.lineHeight.value) else 0f)
+                val textWidthPx = constraints.maxWidth -
+                    with(localDensity) { (CardPaddingStart + CardPaddingEnd).toPx() }
+                val nameStyle = ClassppTextTokens.compactCardTitle
+                val locationStyle = ClassppTextTokens.courseCardLocation
                 allocateCardLines(
                     budgetPx = constraints.maxHeight - fixedPx,
-                    nameLinePx = spPx(ClassppTextTokens.compactCardTitle.lineHeight.value),
-                    locationLinePx = spPx(ClassppTextTokens.courseCardLocation.lineHeight.value),
+                    nameLinePx = spPx(nameStyle.lineHeight.value),
+                    locationLinePx = spPx(locationStyle.lineHeight.value),
+                    wantedName = rememberNaturalLineCount(course.name, nameStyle, textWidthPx),
+                    wantedLocation = rememberNaturalLineCount(course.location, locationStyle, textWidthPx),
                 )
             }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(start = 4.dp, end = 2.dp, top = 3.dp, bottom = 3.dp),
+                    .padding(
+                        start = CardPaddingStart,
+                        end = CardPaddingEnd,
+                        top = CardPaddingVertical,
+                        bottom = CardPaddingVertical,
+                    ),
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
@@ -290,7 +349,7 @@ fun CourseCard(
                                 textAlign = TextAlign.Start,
                             )
                         }
-                        // 上课地点：默认三行，课程名降到底（1 行）后才轮到它降（见 allocateCardLines）
+                        // 上课地点：档位封顶之外还受实测自然行数约束（见 allocateCardLines）
                         Text(
                             text = course.location,
                             style = ClassppTextTokens.courseCardLocation,
