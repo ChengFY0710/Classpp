@@ -10,7 +10,6 @@ import androidx.compose.ui.unit.sp
  * 取值说明：
  * - 方案 B 阶梯：UI 文字 `11 / 12 / 14 / 16 / 20 / 24sp`，展示数字 `32 / 48 / 64sp`。
  * - 特殊展示字号（不进入常规阶梯）：`23sp` 仅页面顶栏（[pageTitle]）；
- *   `18sp` 仅滚轮单位（[wheelUnit]）；
  *   `13sp` 仅顶栏/编辑栏图标下动作标签（[actionLabel]）；
  *   `17sp` 仅课表页顶栏周数选择胶囊（[weekPill]）与课表日期带（[courseGridDate]）；
  *   `22sp` 仅周数选择卡内数字（[weekGridNumber]）。
@@ -133,8 +132,8 @@ object ClassppTextTokens {
     val timeWheelNumber = TextStyle(fontSize = 32.sp, fontWeight = FontWeight.Medium).tabularNumbers()
     /** 横向数字滚轮：40sp Medium，等宽数字，特殊展示字号。 */
     val horizontalWheelNumber = TextStyle(fontSize = 40.sp, fontWeight = FontWeight.Medium).tabularNumbers()
-    /** 滚轮单位：18sp Medium。 */
-    val wheelUnit = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium)
+    /** 滚轮单位：16sp Medium。 */
+    val wheelUnit = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium)
     /** 倒计时数字：24sp SemiBold，等宽数字。 */
     val countdownNumber = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.SemiBold).tabularNumbers()
     /** 倒计时单位：14sp Normal，等宽数字。 */
