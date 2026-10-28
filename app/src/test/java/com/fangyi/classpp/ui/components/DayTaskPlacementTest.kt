@@ -243,6 +243,129 @@ class DayTaskPlacementTest {
         assertTrue(layout.yAt(660) - layout.yAt(600) > hourSpacing)
     }
 
+    // ---------- 紧凑卡最低高度：在结束时刻拉伸时间轴 ----------
+
+    @Test
+    fun compactCardStretchesAxisAtItsEnd() {
+        // 20 分钟待办比例高度 ≈ 16.7dp，被紧凑卡 40dp 最低高度兜底：差额插在结束
+        // 时刻，卡底正好落到结束刻度，之后的刻度整体下移
+        val layout = listOf(todo(780, 800))
+            .solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 780)
+        val card = layout.placements[0]
+        assertTrue(card.compact)
+        assertEquals(40f, card.height.value, 1e-3f)
+        assertEquals(
+            layout.yAt(800).value,
+            (card.offsetY + card.height).value,
+            1e-3f,
+        )
+        assertEquals(
+            40f - hourSpacing.value * 20 / 60,
+            layout.extraAt(800).value,
+            1e-3f,
+        )
+    }
+
+    @Test
+    fun compactAtMinimumHeightKeepsAxisUniform() {
+        // 60 分钟待办比例高度 50dp ≥ 40dp 最低高度：无需插轴，刻度仍均匀
+        val layout = listOf(todo(780, 840))
+            .solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 780)
+        assertTrue(layout.placements[0].compact)
+        assertTrue(layout.pushes.isEmpty())
+        assertEquals(
+            hourSpacing.value,
+            (layout.yAt(840) - layout.yAt(780)).value,
+            1e-3f,
+        )
+    }
+
+    @Test
+    fun parallelCardsEndingTogetherInsertMaxOnce() {
+        // 两条同时段短课程并排、同一结束时刻：并行车道共用一段轴，按最大差额只插
+        // 一次（不累加），两卡底边都落在结束刻度
+        val layout = listOf(course(480, 500), course(480, 500))
+            .solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 480)
+        assertEquals(
+            40f - hourSpacing.value * 20 / 60,
+            layout.extraAt(500).value,
+            1e-3f,
+        )
+        assertEquals(1, layout.pushes.count { it.minute == 500 })
+        layout.placements.forEach {
+            assertEquals(
+                layout.yAt(500).value,
+                (it.offsetY + it.height).value,
+                1e-3f,
+            )
+        }
+    }
+
+    @Test
+    fun backToBackShortCardInsertsDeficitThenGap() {
+        // 贴背：先在 10:20 结束时刻补最低高度差额，再在 10:20 开始组补 2dp 间距，
+        // 两条插入同刻叠加，下卡与短卡恰好 2dp
+        val layout = listOf(todo(600, 620), todo(620, 680))
+            .solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 600)
+        val first = layout.placements[0]
+        val second = layout.placements[1]
+        assertEquals(
+            40f - hourSpacing.value * 20 / 60 + DayTaskVerticalGap.value,
+            layout.extraAt(620).value,
+            1e-3f,
+        )
+        assertEquals(
+            DayTaskVerticalGap.value,
+            (second.offsetY - first.bottom()).value,
+            1e-3f,
+        )
+    }
+
+    @Test
+    fun spanningCardGrowsWithEndInsertion() {
+        // 长课程横跨短课程的结束时刻：差额插轴后长卡同步加高，卡底仍对齐自己的
+        // 结束刻度
+        val layout = listOf(course(480, 600), course(490, 510))
+            .solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 480)
+        val spanning = layout.placements[0]
+        val short = layout.placements[1]
+        assertTrue(short.compact)
+        assertEquals(
+            hourSpacing.value * 2 + 40f - hourSpacing.value * 20 / 60,
+            spanning.height.value,
+            1e-3f,
+        )
+        assertEquals(
+            layout.yAt(600).value,
+            (spanning.offsetY + spanning.height).value,
+            1e-3f,
+        )
+    }
+
+    @Test
+    fun lastCardEndInsertionExtendsAxis() {
+        // 当天最后一张短卡也要撑轴：末刻度（次日 0:00）随之下移，卡底到末刻度
+        // 恰好是真实的 20 分钟空档
+        val layout = listOf(todo(1400, 1420))
+            .solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 1400)
+        assertEquals(
+            40f + hourSpacing.value * 20 / 60,
+            (layout.yAt(1440) - layout.yAt(1400)).value,
+            1e-3f,
+        )
+    }
+
+    @Test
+    fun narrowCardDoesNotInsertAtEnd() {
+        // 窄卡的内容撑高不参与最低高度拉伸（本次范围外）：无冲突时不插轴
+        val layout = listOf(course(480, 600), todo(540, 560))
+            .solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 480)
+        val narrowTodo = layout.placements.single { it.task is DayTask.Todo }
+        assertTrue(narrowTodo.narrow)
+        assertTrue(narrowTodo.height > 40.dp)
+        assertTrue(layout.pushes.isEmpty())
+    }
+
     @Test
     fun contentGrownCoursePushesFollowingCard() {
         // 100 分钟课程比例高度 ≈ 83.3dp，三行信息内容高 103dp：高度取内容高，

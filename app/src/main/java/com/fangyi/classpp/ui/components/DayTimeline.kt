@@ -57,10 +57,6 @@ private val NowChipStartPadding = 2.dp
 private val NowChipWidth = 36.dp
 private val NowChipHeight = 22.dp
 
-/** 时刻矩形临近整点判定：当前时刻距某整点前后各 ≤ 该分钟数时，该整点刻度文字隐藏，
- *  避免与矩形挤在一起 */
-private const val NowNearTickThresholdMinutes = 20
-
 /** SubcomposeLayout 里时间轴主体层的 slot id（卡片内容实测层用任务下标 0..n−1） */
 private const val TimelineBodySlot = "day-timeline-body"
 
@@ -80,9 +76,10 @@ private data class CardHeightKey(
  * 整点刻度（基础间隔 [HourSpacing]），右侧为日程卡片区域——[DayTaskCard] 按任务时长
  * 比例排布（基础比例 1 小时 = [HourSpacing]），由 [tasks] 传入当天任务，无任务时整块留白。
  *
- * 时间轴跨度是动态的：卡片需要更多纵向空间时（内容撑高、短卡 40dp 下限、贴背 2dp
- * 间距），在下方卡开始时刻插入额外空间，整点刻度跨度随该小时内插入量局部变大；没有
- * 冲突的小时仍保持 [HourSpacing]。卡片内容高度由 [DayTaskCardContent] 在求解前**实测**
+ * 时间轴跨度是动态的：卡片需要更多纵向空间时（内容撑高、贴背 2dp 间距），在下方卡
+ * 开始时刻插入额外空间；短卡触发紧凑卡 40dp 最低高度（≈48 分钟）时，差额插在卡自己
+ * 的结束时刻，卡底恰好落到结束刻度。整点刻度跨度随插入量局部变大，没有插入的小时仍
+ * 保持 [HourSpacing]。卡片内容高度由 [DayTaskCardContent] 在求解前**实测**
  * （与渲染同一 composable、同一卡宽），而不是靠镜像排版常量估算——备注折行、字体行高
  * 等任何撑高都会同步推后下卡并让轴局部拉伸，上下卡间距始终 ≥ 2dp。实测结果按
  * [DayTaskMeasureKey] + 形态 + 卡宽缓存（见 [CardHeightKey]），重测命中时直接复用，
@@ -92,8 +89,9 @@ private data class CardHeightKey(
  *
  * 当前时间指示器（[nowMinute] 非 null 且不早于锚点时）：Error 色横线自时刻矩形右缘
  * 贯穿屏幕右缘（压过任务卡），时刻矩形（白字 Error 底）距屏幕左缘 [NowChipStartPadding]、
- * 文字居中，垂直对齐当前时刻的映射位置。当前时刻距某整点前后各
- * ≤ [NowNearTickThresholdMinutes] 分钟时，该整点刻度文字隐藏（矩形就近覆盖）。
+ * 文字居中，垂直对齐当前时刻的映射位置。时刻矩形与某整点刻度文字的纵向距离小于
+ * 「矩形半高 + 刻度行高一半」时，该整点刻度文字隐藏——按 [DayTaskLayout.yAt] 的实际
+ * 像素距离判断，局部拉伸后分钟距离不再代表视觉距离。
  *
  * 网格线与课表页同款（1dp 实线、colorScheme.outline）：顶部/底部两条全宽横线 + 时间列
  * 右缘一条贯通竖线，无逐小时横线。刻度/卡片/指示器共用 [DayTaskLayout.yAt] 映射，
@@ -221,6 +219,14 @@ private fun DayTimelineBody(
     val axisBottom = layout.yAt(HoursPerDay * 60) + HourSpacing / 2
     val cardBottom = layout.placements.maxOfOrNull { it.offsetY + it.height } ?: 0.dp
     val timelineHeight = maxOf(axisBottom, cardBottom)
+    // 当前时刻线（早于锚点即不在时间轴范围内）与刻度隐藏距离：时刻矩形半高 + 刻度
+    // 文字行高一半，按 yAt 的像素差判断——局部拉伸后分钟差不再等于视觉距离
+    val visibleNowMinute = nowMinute?.takeIf { it >= anchorMinute }
+    val nowY = visibleNowMinute?.let { layout.yAt(it) }
+    val labelHalfHeight = with(LocalDensity.current) {
+        ClassppTextTokens.timelineLabel.lineHeight.toDp()
+    } / 2
+    val nowNearTickDistance = NowChipHeight / 2 + labelHalfHeight
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -247,16 +253,16 @@ private fun DayTimelineBody(
     ) {
         hourLabels.forEachIndexed { index, label ->
             // 刻度中心 = y(该整点)；局部拉伸会改变相邻刻度的间距，未受影响的小时
-            // 仍为 HourSpacing。当前时刻距本整点前后 ≤ [NowNearTickThresholdMinutes]
-            // 分钟时文字隐藏，该处由指示器矩形就近覆盖
+            // 仍为 HourSpacing。时刻矩形与本刻度中心的像素距离过近时文字隐藏，该处
+            // 由指示器矩形就近覆盖
             val tickMinute = (anchorHour + index) * 60
-            val now = nowMinute
-            val hiddenByNow = now != null && now >= anchorMinute &&
-                abs(now - tickMinute) <= NowNearTickThresholdMinutes
+            val tickY = layout.yAt(tickMinute)
+            val hiddenByNow = nowY != null &&
+                abs((tickY - nowY).value) < nowNearTickDistance.value
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .offset(y = layout.yAt(tickMinute) - HourSpacing / 2)
+                    .offset(y = tickY - HourSpacing / 2)
                     .size(width = TimeAreaWidth, height = HourSpacing),
                 contentAlignment = Alignment.Center,
             ) {
@@ -280,15 +286,13 @@ private fun DayTimelineBody(
                 layout.placements.forEach { DayTaskCard(it) }
             }
         }
-        // 当前时刻早于锚点（还没到当天第一个任务的小时）时不在时间轴范围内，不显示
-        if (nowMinute != null && nowMinute >= anchorMinute) {
+        if (visibleNowMinute != null && nowY != null) {
             // 当前时间指示器：Error 色横线自时刻矩形右缘起贯穿屏幕右缘（不外露矩形
             // 左侧，覆盖层压过任务卡与刻度），并向左多画 1dp 压进矩形底下保证接缝无隙；
             // 时刻矩形贴时间列左缘、定宽定高、文字水平垂直居中，垂直对齐当前时刻的
             // 映射位置（与刻度/卡片同一 yAt）
             val error = MaterialTheme.colorScheme.error
             val onError = MaterialTheme.colorScheme.onError
-            val nowY = layout.yAt(nowMinute)
             Box(
                 Modifier
                     .matchParentSize()
@@ -314,7 +318,7 @@ private fun DayTimelineBody(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = TimeText.format(nowMinute),
+                    text = TimeText.format(visibleNowMinute),
                     style = ClassppTextTokens.timelineNowChip,
                     color = onError,
                 )
