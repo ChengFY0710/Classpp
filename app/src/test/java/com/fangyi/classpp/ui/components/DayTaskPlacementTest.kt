@@ -1,8 +1,10 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.schedule.CourseColor
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -367,9 +369,55 @@ class DayTaskPlacementTest {
     }
 
     @Test
+    fun narrowCourseLongNoteIsCappedAtTwoLines() {
+        // 窄卡（90dp < 100dp）：备注上限两行，长备注不再按字符数无限撑高；
+        // 与刚好两行的备注同高，避免把当天时间轴整体拉长
+        fun narrowHeight(note: String): Dp = listOf(
+            DayTask.Course(
+                name = "课程",
+                teacher = null,
+                location = null,
+                note = note,
+                color = CourseColor.Blue,
+                startMinute = 480,
+                endMinute = 540,
+            ),
+        ).solveDayTaskLayout(regionWidth = 90.dp, hourSpacing = hourSpacing)
+            .placements.single().height
+
+        // 90dp 卡宽内容宽 66dp、约 4 字/行：「备注：」+ 4 字 = 两行
+        val twoLines = narrowHeight("备注备注")
+        val manyLines = narrowHeight("备注".repeat(30))
+        assertEquals(twoLines.value, manyLines.value, 1e-3f)
+    }
+
+    @Test
+    fun verticalCourseNoteReservesTwoLines() {
+        // 竖排卡（90 分钟，比例高 75dp）备注上限两行：兜底估算按两行预留高度
+        fun verticalHeight(note: String?): Dp = listOf(
+            DayTask.Course(
+                name = "课程",
+                teacher = "老师",
+                location = "教室",
+                note = note,
+                color = CourseColor.Blue,
+                startMinute = 480,
+                endMinute = 570,
+            ),
+        ).solveDayTaskLayout(regionWidth = regionWidth, hourSpacing = hourSpacing)
+            .placements.single().height
+
+        val metaLine = ClassppTextTokens.metaText.lineHeight.value.dp
+        val diff = verticalHeight("这是一条足够长的备注，用来触发第二行").value -
+            verticalHeight(null).value
+        assertTrue(diff > metaLine.value * 1.5f)
+        assertTrue(diff < metaLine.value * 2.5f)
+    }
+
+    @Test
     fun contentGrownCoursePushesFollowingCard() {
-        // 100 分钟课程比例高度 ≈ 83.3dp，三行信息内容高 103dp：高度取内容高，
-        // 贴背待办被推到课程底边下方 2dp
+        // 100 分钟课程比例高度 ≈ 83.3dp，信息区（备注按两行兜底估算）内容更高：
+        // 高度取内容高，贴背待办被推到课程底边下方 2dp
         val layout = listOf(richCourse(480, 580), todo(580, 640))
             .solveDayTaskLayout(regionWidth, hourSpacing)
         val course = layout.placements[0]
