@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleValidator
+import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.DEFAULT_SLOTS
 import com.fangyi.classpp.data.model.DEFAULT_SLOT_DURATION_MINUTES
 import com.fangyi.classpp.data.model.DEFAULT_TIME_SCHEME_ID
@@ -45,6 +46,7 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeScheme
 import com.fangyi.classpp.data.model.TimeSlotDef
 import com.fangyi.classpp.data.model.TimeText
+import com.fangyi.classpp.data.model.previewSlotMerge
 import com.fangyi.classpp.data.model.slotsWithAdjustedStart
 import com.fangyi.classpp.data.model.slotsWithCount
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
@@ -94,7 +96,11 @@ private data class PendingSchemeSave(
  *   「自定义」无菜单）：重命名走底部名称输入卡，确认即落库；删除即时生效，删的是当前选中
  *   方案时落回「自定义」并保留当前草稿；
  * - 下方同一个 [CardSection]（节次与时间）依次是：总节数 / 每节课时间、逐节起止时间、
- *   保存方案、合并两小节为一大节（占位）；
+ *   保存方案、合并两小节为一大节；
+ * - 合并只改本地草稿（节表 + 课程映射），右上「确认」才随整套配置落库。可点条件由
+ *   [previewSlotMerge] 判定：所有课程 span ≥ 2、每门课起止都能精确对齐、且至少有一对
+ *   可合并；否则整行置灰（negative 色）不可点。合并输入是 [courses]（编辑态取课程
+ *   草稿），因此网格与后续保存编辑都能拿到重映射后的课程；
  * - 所有明细修改只落在**本地草稿**，右上「确认」才经 [onApply] 整套提交；取消/返回/
  *   下拉关闭丢弃草稿。保存方案是独立动作：经 [onSaveScheme] 落库，成功后经仓库
  *   timeSchemes 流回到顶部列表并自动选中刚保存的方案——方案库不参与课表编辑事务，
@@ -107,11 +113,18 @@ private data class PendingSchemeSave(
 @Composable
 internal fun TimeSchemeSheet(
     schedule: Schedule,
+    // 合并输入与课程草稿初值：课表编辑态传编辑草稿，非编辑态传仓库课程
+    courses: List<CourseEntry>,
     timeSchemes: List<TimeScheme>,
     visible: Boolean,
     onDismiss: () -> Unit,
     onDismissed: () -> Unit,
-    onApply: (slots: List<TimeSlotDef>, durationMinutes: Int) -> Unit,
+    // mergedCourses 非空 = 本次草稿改写过课程映射（合并），需与节表同批落库
+    onApply: (
+        slots: List<TimeSlotDef>,
+        durationMinutes: Int,
+        mergedCourses: List<CourseEntry>?,
+    ) -> Unit,
     onSaveScheme: (name: String, slots: List<TimeSlotDef>, durationMinutes: Int) -> Unit,
     onRenameScheme: (id: String, name: String) -> Unit,
     onDeleteScheme: (id: String) -> Unit,
@@ -135,9 +148,12 @@ internal fun TimeSchemeSheet(
     // 草稿随浮层卸载复位：每次打开都从当前课表配置出发
     var draftSlots by remember { mutableStateOf(schedule.slots) }
     var draftDuration by remember { mutableIntStateOf(schedule.slotDurationMinutes) }
+    // 课程映射草稿：只有「合并」会改写；与入参相同表示本次没有课程变更
+    var draftCourses by remember { mutableStateOf(courses) }
     // 「自定义」名下保存的草稿：切去预设方案只是换掉当前显示，切回「自定义」时恢复这组值
     var customSlots by remember { mutableStateOf(schedule.slots) }
     var customDuration by remember { mutableIntStateOf(schedule.slotDurationMinutes) }
+    var customCourses by remember { mutableStateOf(courses) }
     // 选中方案 id；null = 自定义。打开时按当前配置反查，未命中任何方案即落在「自定义」。
     // 明细区始终可编辑：预设方案被实际改动时自动切回「自定义」（见 markCustom）
     var selectedSchemeId by remember {
@@ -194,11 +210,18 @@ internal fun TimeSchemeSheet(
         selectedSchemeId = null
         customSlots = draftSlots
         customDuration = draftDuration
+        customCourses = draftCourses
     }
 
     // 保存按钮在「自定义」下始终可点：即便没改任何值，也允许把当前配置存成新方案；
     // 预设方案只当模板（若要保存预设，先改一项即自动切到自定义）
     val saveEnabled = isCustom
+
+    // 合并预览与门控：固定两两配对 + 30 分钟间隙；所有课程 span≥2、能精确对齐且
+    // 至少有一对可合并时按钮才可点。纯计算，草稿每次变化重算一次（课表规模很小）
+    val mergePlan = remember(draftSlots, draftCourses, schedule.daysPerWeek) {
+        previewSlotMerge(draftSlots, draftCourses, schedule.daysPerWeek)
+    }
 
     // 同一屏内的校验提示文案：先取好再进点击闭包
     val slotOverflowToast = stringResource(R.string.slot_overflow_desc)
@@ -225,7 +248,14 @@ internal fun TimeSchemeSheet(
         confirmLabel = stringResource(R.string.edit_confirm),
         // 确认在右、取消在左（同新建课表浮层）
         confirmAtEnd = true,
-        onConfirm = { onApply(draftSlots, draftDuration) },
+        onConfirm = {
+            onApply(
+                draftSlots,
+                draftDuration,
+                // 与入参一致 = 本次没合并过课程，确认时不碰课程
+                draftCourses.takeIf { it != courses },
+            )
+        },
         rightAction = SheetTopAction(
             label = stringResource(R.string.settings_cancel),
             icon = R.drawable.ic_dismiss_circle,
@@ -255,11 +285,14 @@ internal fun TimeSchemeSheet(
                             selectedSchemeId = null
                             draftSlots = customSlots
                             draftDuration = customDuration
+                            draftCourses = customCourses
                         } else {
                             val scheme = allSchemes[index]
                             selectedSchemeId = scheme.id
                             draftSlots = scheme.slots
                             draftDuration = scheme.slotDurationMinutes
+                            // 预设方案只含节表：此前的合并映射对它无效，回落到入参课程
+                            draftCourses = courses
                         }
                     },
                     // 长按用户保存的方案才出菜单；内置「默认」（index 0）与「自定义」（末尾）无菜单
@@ -422,12 +455,25 @@ internal fun TimeSchemeSheet(
                     },
                 )
 
-                // 合并两小节为一大节：本期占位，点击无动作（保留按压反馈）
+                // 合并两小节为一大节：只改草稿，确认才随整套配置落库；
+                // 课程 span<2 或无法精确对齐时整体置灰（negative 色）不可点
                 SchemeActionRow(
                     label = stringResource(R.string.time_scheme_merge),
                     icon = null,
-                    enabled = true,
-                    onClick = {},
+                    enabled = mergePlan.canMerge,
+                    onClick = {
+                        draftSlots = mergePlan.newSlots
+                        draftDuration = mergePlan.newDurationMinutes
+                        draftCourses = mergePlan.newCourses
+                        markCustom()
+                        AppToasts.show(
+                            context,
+                            context.getString(
+                                R.string.time_scheme_merge_done,
+                                mergePlan.mergedPairCount,
+                            ),
+                        )
+                    },
                 )
             }
         }
@@ -544,7 +590,8 @@ internal fun TimeSchemeSheet(
 
 /**
  * 底部操作行卡（保存方案 / 合并两小节）：整宽白卡、内容居中，复刻待办详情「添加步骤」
- * 的行卡风格——主色图标（可选）+ 主色文字；[enabled] = false 时整体灰字、无按压反馈。
+ * 的行卡风格——主色图标（可选）+ 主色文字；[enabled] = false 时文字与图标统一用
+ * theme 的 negative 置灰色、无按压反馈。
  */
 @Composable
 private fun SchemeActionRow(
@@ -556,7 +603,7 @@ private fun SchemeActionRow(
     val contentColor = if (enabled) {
         MaterialTheme.colorScheme.primary
     } else {
-        MaterialTheme.classppColors.secondaryText
+        MaterialTheme.classppColors.negative
     }
     Row(
         modifier = Modifier

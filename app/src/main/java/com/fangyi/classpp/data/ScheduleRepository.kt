@@ -252,6 +252,28 @@ class ScheduleRepository internal constructor(
         commit(fileState.value.replace(target, updated))
     }
 
+    /**
+     * 「合并两小节为一大节」的落库出口：节表、每节课时长与**重映射后的课程**一次校验、
+     * 一次提交。合并会改写课程的 startSlot/span，必须与节表同批落盘；课程越界仍整体
+     * 拒绝（[rejection]），不产生部分生效的中间态。
+     */
+    suspend fun setSlotsDurationAndCourses(
+        id: String,
+        slots: List<TimeSlotDef>,
+        durationMinutes: Int,
+        courses: List<CourseEntry>,
+    ): OpResult = mutex.withLock {
+        val target = scheduleOrNull(id) ?: return@withLock OpResult.Err(ScheduleError.NotFound(id))
+        val updated = target.copy(
+            slots = normalizeSlots(slots),
+            slotDurationMinutes = durationMinutes,
+            courses = courses,
+        )
+        val errors = ScheduleValidator.validate(updated)
+        if (errors.isNotEmpty()) return@withLock OpResult.Err(rejection(updated, errors))
+        commit(fileState.value.replace(target, updated))
+    }
+
     // ---------- 课程时间方案库 ----------
 
     /**

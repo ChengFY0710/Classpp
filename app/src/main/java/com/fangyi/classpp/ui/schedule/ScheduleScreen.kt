@@ -1322,10 +1322,14 @@ fun ScheduleScreen(
             if (settingsSheetMounted) {
                 ScheduleSettingsSheet(
                     schedule = schedule,
+                    // 设置浮层只在编辑态打开：课程草稿才是网格真源，合并输入取草稿；
+                    // 合并落库成功后同步回草稿，避免保存编辑用旧 span 覆盖合并结果
+                    mergeCourses = editSession?.courses ?: schedule.courses,
                     repository = repository,
                     visible = settingsSheetVisible,
                     onDismissed = { settingsSheetMounted = false },
                     onDismiss = { settingsSheetVisible = false },
+                    onCoursesMerged = { merged -> editSession?.replaceAll(merged) },
                 )
             }
 

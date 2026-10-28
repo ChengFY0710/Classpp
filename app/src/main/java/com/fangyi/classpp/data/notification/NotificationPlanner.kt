@@ -125,9 +125,11 @@ object NotificationPlanner {
             for (course in schedule.courses) {
                 if (course.dayOfWeek != dayOfWeek) continue
                 if (!course.weeks.contains(week)) continue
-                val slot = schedule.slots.getOrNull(course.startSlot - 1) ?: continue
-                val startMinute = TimeText.parseMinutes(slot.startTime) ?: continue
-                val endMinute = TimeText.parseMinutes(slot.endTime) ?: continue
+                val startSlot = schedule.slots.getOrNull(course.startSlot - 1) ?: continue
+                // 跨节课的结束时间取末节，与课程详情 / 日程页同一口径
+                val endSlot = schedule.slots.getOrNull(course.endSlot - 1) ?: continue
+                val startMinute = TimeText.parseMinutes(startSlot.startTime) ?: continue
+                val endMinute = TimeText.parseMinutes(endSlot.endTime) ?: continue
                 val eventAt = localMillis(date, startMinute)
                 val trigger = localMillis(date, startMinute - leadMinutes)
                 if (trigger <= nowMillis) continue

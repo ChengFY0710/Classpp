@@ -171,6 +171,7 @@
     <string name="time_scheme_rename_title">Rename scheme</string>
     <string name="time_scheme_name_hint">e.g. Custom scheme 1</string>
     <string name="time_scheme_merge">Merge two periods into one</string>
+    <string name="time_scheme_merge_done">Merged %1$d adjacent period pairs, confirm to apply</string>
     <string name="error_time_scheme_name">Scheme name must not be blank</string>
     <!-- Rescheduling & holidays (schedule settings): placeholder nav rows, feature pending -->
     <string name="section_adjustment">Rescheduling &amp; Holidays</string>

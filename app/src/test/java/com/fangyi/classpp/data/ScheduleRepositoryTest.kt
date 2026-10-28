@@ -6,6 +6,7 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeSlotDef
 import com.fangyi.classpp.data.model.appendSlot
 import com.fangyi.classpp.data.model.defaultSlotsFor
+import com.fangyi.classpp.data.model.previewSlotMerge
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.ScheduleStore
@@ -748,5 +749,50 @@ class ScheduleRepositoryTest {
         val untouched = r.schedules.value.first { it.id == id }
         assertEquals(DEFAULT_SLOTS, untouched.slots)
         assertEquals(100, untouched.slotDurationMinutes)
+    }
+
+    @Test
+    fun `setSlotsDurationAndCourses applies slots duration and courses atomically and persists`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+        r.upsertCourse(id, testCourse(span = 2)).assertOk()
+        val smallSlots = listOf(
+            TimeSlotDef("8:00", "8:45"),
+            TimeSlotDef("8:55", "9:40"),
+        )
+        val before = r.schedules.value.first { it.id == id }
+        val plan = previewSlotMerge(smallSlots, before.courses, before.daysPerWeek)
+        assertTrue(plan.canMerge)
+
+        r.setSlotsDurationAndCourses(id, plan.newSlots, plan.newDurationMinutes, plan.newCourses)
+            .assertOk()
+
+        val updated = r.schedules.value.first { it.id == id }
+        assertEquals(plan.newSlots, updated.slots)
+        assertEquals(plan.newDurationMinutes, updated.slotDurationMinutes)
+        assertEquals(plan.newCourses, updated.courses)
+        assertEquals(1, updated.courses.single().span)
+
+        val reopened = repo().schedules.value.first { it.id == id }
+        assertEquals(plan.newSlots, reopened.slots)
+        assertEquals(plan.newCourses, reopened.courses)
+    }
+
+    @Test
+    fun `setSlotsDurationAndCourses rejects out of range courses losslessly`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+        r.upsertCourse(id, testCourse(startSlot = 5)).assertOk()
+        val before = r.schedules.value.first { it.id == id }
+
+        val error = r.setSlotsDurationAndCourses(
+            id,
+            listOf(TimeSlotDef("8:00", "9:30")),
+            90,
+            before.courses,
+        ).assertErr()
+        assertTrue(error is ScheduleError.CoursesOutOfRange)
+
+        assertEquals(before, r.schedules.value.first { it.id == id })
     }
 }

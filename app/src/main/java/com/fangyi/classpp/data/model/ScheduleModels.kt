@@ -209,6 +209,9 @@ const val DEFAULT_SLOT_DURATION_MINUTES = 100
 const val MIN_SLOT_DURATION = 10
 const val MAX_SLOT_DURATION = 200
 
+/** 合并相邻两小节的间隙上限（分钟）：超过则不配对，避免把午休前后撮成大节 */
+const val SLOT_MERGE_MAX_GAP_MINUTES = 30
+
 /**
  * 保留现有 [slots] 并在末尾追加一节：新节开始 = 上一节结束 + [DEFAULT_BREAK_MINUTES]，
  * 时长 [durationMinutes]（缺省与 [DEFAULT_SLOTS] 各节一致）。空表、末节时间文本非法、
@@ -277,6 +280,124 @@ fun slotsWithCount(
         current = appendSlot(current, durationMinutes) ?: return null
     }
     return current
+}
+
+/**
+ * 「合并相邻两小节为一大节」的预览与门控结果（纯计算，不写库）。
+ *
+ * [canMerge] 同时要求：至少有一对可合并、所有课程都能精确对齐、所有课程 span ≥ 2——
+ * 后两条保证合并后每门课的起止时间不变，不会出现课程时间被悄悄改写。
+ */
+data class SlotMergePlan(
+    val newSlots: List<TimeSlotDef>,
+    val newCourses: List<CourseEntry>,
+    val mergedPairCount: Int,
+    val unalignedCourses: List<CourseEntry>,
+    val singleSlotCourses: List<CourseEntry>,
+    val newDurationMinutes: Int,
+) {
+    val canMerge: Boolean
+        get() = mergedPairCount > 0 &&
+            unalignedCourses.isEmpty() &&
+            singleSlotCourses.isEmpty()
+}
+
+/**
+ * 按位置把相邻两小节两两配对成一大节：
+ *
+ * - 仅当两节间隙落在 `0..` [SLOT_MERGE_MAX_GAP_MINUTES] 内才合并（如 45+10 的小节表）；
+ *   间隙超标的对（如午休前后）保留原样，避免撮出数小时的大节。时长不参与配对判断，
+ *   合并节的起止 = 首节开始 ~ 次节结束，完全实算；
+ * - 课程映射以「起点/终点时间不变」为准：起点落在合并对的次节、或终点落在首节时
+ *   无法精确对齐，计入 [SlotMergePlan.unalignedCourses] 阻断合并；
+ * - span < 2 的课程一律计入 [SlotMergePlan.singleSlotCourses] 阻断（产品规则：所有
+ *   课程都占用 ≥2 节时才允许合并）；
+ * - 落在当前每周天数之外、且索引已越界的隐藏课（5 天课表里的周末课）原样保留、
+ *   不参与阻断：校验器本就跳过它们，保留旧映射不会让可见数据变错；
+ * - 新节表的「每节课时间」取各节实际时长的众数（并列取较大），它仅作后续改开始时间
+ *   级联顺延的推算依据，不写死 45/100。
+ *
+ * 函数无副作用，产物整表由调用方（仓库）提交前再走一遍 `ScheduleValidator`。
+ */
+fun previewSlotMerge(
+    slots: List<TimeSlotDef>,
+    courses: List<CourseEntry>,
+    daysPerWeek: Int,
+): SlotMergePlan {
+    val newSlots = mutableListOf<TimeSlotDef>()
+    // 旧节索引（0-based）→ 新节索引
+    val indexMap = IntArray(slots.size)
+    var mergedPairs = 0
+    var i = 0
+    while (i < slots.size) {
+        val current = slots[i]
+        val next = slots.getOrNull(i + 1)
+        val gap = if (next != null) {
+            val end = TimeText.parseMinutes(current.endTime)
+            val nextStart = TimeText.parseMinutes(next.startTime)
+            if (end != null && nextStart != null) nextStart - end else null
+        } else {
+            null
+        }
+        if (next != null && gap != null && gap in 0..SLOT_MERGE_MAX_GAP_MINUTES) {
+            indexMap[i] = newSlots.size
+            indexMap[i + 1] = newSlots.size
+            newSlots += TimeSlotDef(current.startTime, next.endTime)
+            mergedPairs++
+            i += 2
+        } else {
+            indexMap[i] = newSlots.size
+            newSlots += current
+            i += 1
+        }
+    }
+
+    val newCourses = mutableListOf<CourseEntry>()
+    val unaligned = mutableListOf<CourseEntry>()
+    val singleSlot = mutableListOf<CourseEntry>()
+    for (course in courses) {
+        val oldStart = course.startSlot - 1
+        val oldEnd = course.endSlot - 1
+        if (oldStart !in slots.indices || oldEnd !in slots.indices) {
+            // 可见课越界属于非法草稿，阻断；隐藏课的旧映射本就越界，原样保留
+            if (course.dayOfWeek <= daysPerWeek) unaligned += course else newCourses += course
+            continue
+        }
+        if (course.span < 2) singleSlot += course
+        val newStart = indexMap[oldStart]
+        val newEnd = indexMap[oldEnd]
+        val aligned = newSlots[newStart].startTime == slots[oldStart].startTime &&
+            newSlots[newEnd].endTime == slots[oldEnd].endTime
+        if (aligned) {
+            newCourses += course.copy(
+                startSlot = newStart + 1,
+                span = newEnd - newStart + 1,
+            )
+        } else {
+            unaligned += course
+        }
+    }
+
+    val durations = newSlots.mapNotNull { slot ->
+        val start = TimeText.parseMinutes(slot.startTime)
+        val end = TimeText.parseMinutes(slot.endTime)
+        if (start != null && end != null && end > start) end - start else null
+    }
+    val newDuration = durations
+        .groupingBy { it }
+        .eachCount()
+        .maxWithOrNull(compareBy({ it.value }, { it.key }))
+        ?.key
+        ?: DEFAULT_SLOT_DURATION_MINUTES
+
+    return SlotMergePlan(
+        newSlots = newSlots,
+        newCourses = newCourses,
+        mergedPairCount = mergedPairs,
+        unalignedCourses = unaligned,
+        singleSlotCourses = singleSlot,
+        newDurationMinutes = newDuration,
+    )
 }
 
 /** 新 UUID（课表 id / 课程 id 统一来源） */

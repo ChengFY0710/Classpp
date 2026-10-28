@@ -46,6 +46,14 @@ class ScheduleEditSession internal constructor(
         courses = courses.filterNot { it.id == id }
     }
 
+    /**
+     * 整份替换草稿：「合并两小节为一大节」落库成功后同步重映射后的课程，
+     * 避免后续「保存编辑」用旧 span 覆盖合并结果、或网格仍按旧跨度渲染。
+     */
+    fun replaceAll(courses: List<CourseEntry>) {
+        this.courses = courses
+    }
+
     companion object {
         /** 非编辑态的占位会话 */
         val Inactive: ScheduleEditSession = ScheduleEditSession(active = false)

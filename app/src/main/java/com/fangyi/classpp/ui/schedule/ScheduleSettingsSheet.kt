@@ -26,6 +26,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.OpResult
 import com.fangyi.classpp.data.ScheduleError
 import com.fangyi.classpp.data.ScheduleRepository
+import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.DEFAULT_SLOTS
 import com.fangyi.classpp.data.model.DEFAULT_SLOT_DURATION_MINUTES
 import com.fangyi.classpp.data.model.DEFAULT_TIME_SCHEME_ID
@@ -62,6 +63,10 @@ import kotlinx.coroutines.launch
  * 子浮层的明细改动先落草稿，右上「确认」才整套写回本课表；保存方案则是独立落库，
  * 浮层内确认即持久化，不随编辑事务的保存/取消回滚。
  *
+ * 合并两小节会同时改写节表与课程映射：[mergeCourses] 是合并输入（编辑态传课程草稿，
+ * 保证网格看到的就是被合并的课程），确认成功后再经 [onCoursesMerged] 把重映射后的
+ * 课程同步回草稿——否则后续「保存编辑」会用旧 span 覆盖合并结果。
+ *
  * 滚动、键盘让位（课表名输入框在场 → ContentScroll）由 OverlaySheet 内建，
  * 这里只负责内容与日期/时间对话框。内容列按浮层规范排版：顶层块一律 [CardSection]——
  * 课表名是孤立的输入卡、收进无题分组，其余是带题分组；顶层块间距走
@@ -70,10 +75,14 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun ScheduleSettingsSheet(
     schedule: Schedule,
+    // 合并输入：编辑态传课程草稿，非编辑态传仓库课程
+    mergeCourses: List<CourseEntry>,
     repository: ScheduleRepository,
     visible: Boolean,
     onDismissed: () -> Unit,
     onDismiss: () -> Unit,
+    // 合并落库成功后把重映射后的课程同步回编辑草稿
+    onCoursesMerged: (List<CourseEntry>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -199,21 +208,37 @@ internal fun ScheduleSettingsSheet(
     if (schemeSheetMounted) {
         TimeSchemeSheet(
             schedule = schedule,
+            courses = mergeCourses,
             timeSchemes = timeSchemes,
             visible = schemeSheetVisible,
             onDismiss = { schemeSheetVisible = false },
             onDismissed = { schemeSheetMounted = false },
-            onApply = { slots, duration ->
+            onApply = { slots, duration, mergedCourses ->
+                val coursesChanged = mergedCourses != null && mergedCourses != schedule.courses
+                val settingsChanged = slots != schedule.slots ||
+                    duration != schedule.slotDurationMinutes
                 // 草稿与当前配置一致（只是看了看）→ 直接关，不做无意义的落盘
-                if (slots == schedule.slots &&
-                    duration == schedule.slotDurationMinutes
-                ) {
+                if (!coursesChanged && !settingsChanged) {
                     schemeSheetVisible = false
                 } else {
                     scope.launch {
-                        when (val r = repository.setSlotsAndDuration(schedule.id, slots, duration)) {
-                            OpResult.Ok -> schemeSheetVisible = false
-                            is OpResult.Err -> showError(r.error)
+                        val result = if (mergedCourses != null) {
+                            // 合并同时改写节表与课程映射：必须一次校验、一次提交
+                            repository.setSlotsDurationAndCourses(
+                                schedule.id,
+                                slots,
+                                duration,
+                                mergedCourses,
+                            )
+                        } else {
+                            repository.setSlotsAndDuration(schedule.id, slots, duration)
+                        }
+                        when (result) {
+                            OpResult.Ok -> {
+                                mergedCourses?.let(onCoursesMerged)
+                                schemeSheetVisible = false
+                            }
+                            is OpResult.Err -> showError(result.error)
                         }
                     }
                 }
