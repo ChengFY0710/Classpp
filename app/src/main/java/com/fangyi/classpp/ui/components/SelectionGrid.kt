@@ -24,6 +24,7 @@ import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.WeekCellShape
+import com.fangyi.classpp.ui.theme.classppColors
 import kotlin.math.ceil
 
 /** 每行最少格数；均分后单格宽于上限就加列（末行补空位，保证每格同宽同高） */
@@ -80,7 +81,7 @@ fun SelectionGrid(
                         val labelColor by animateColorAsState(
                             targetValue = when {
                                 isSelected -> MaterialTheme.colorScheme.onPrimary
-                                isBlocked -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                isBlocked -> MaterialTheme.classppColors.secondaryText.copy(alpha = 0.4f)
                                 else -> MaterialTheme.colorScheme.onSurface
                             },
                             animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),

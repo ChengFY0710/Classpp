@@ -26,6 +26,7 @@ import com.fangyi.classpp.ui.components.FadeOverlayDialog
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.RowShape
+import com.fangyi.classpp.ui.theme.classppColors
 
 /**
  * 「请选择要编辑的交替课程」选择弹窗（设计稿三）：同一格上的多门课先让用户点名，
@@ -55,7 +56,7 @@ internal fun AlternatePickerDialog(
                 text = stringResource(R.string.edit_alternate_pick_title),
                 modifier = Modifier.fillMaxWidth(),
                 style = ClassppTextTokens.secondaryTextLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.classppColors.secondaryText,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(14.dp))
@@ -105,7 +106,7 @@ private fun AlternateCourseRow(
             Text(
                 text = meta,
                 style = ClassppTextTokens.hintText,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.classppColors.secondaryText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

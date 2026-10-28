@@ -16,6 +16,8 @@ import com.fangyi.classpp.ui.LocalTodayState
 import com.fangyi.classpp.ui.motion.NoOpIndication
 import com.fangyi.classpp.ui.rememberTodayState
 
+// 显式装配的槽位之外，secondary / tertiary / onError / outlineVariant 等停留 M3 紫色基线：
+// 当前业务零消费属有意留白，任何槽位使用前必须先在此显式装配（见《颜色使用规范》第 12 节）。
 private val LightColorScheme = lightColorScheme(
     primary = Primary,
     onPrimary = OnPrimary,
@@ -94,10 +96,10 @@ class ClassppColors(
 )
 
 private val LightClassppColors = ClassppColors(
-    secondaryText = Color(0xFFABAFB4),
+    secondaryText = SecondaryText,
     onSurfaceCard = OnSurfaceCard,
-    hazeTint = Color.White,
-    negative = Color(0xFFCBCBCB),
+    hazeTint = HazeTint,
+    negative = Negative,
     switchDisabled = SwitchDisabled,
     bottomSheetColor = BottomSheetColor,
     urgentOrange = UrgentOrange,
@@ -106,10 +108,10 @@ private val LightClassppColors = ClassppColors(
 )
 
 private val DarkClassppColors = ClassppColors(
-    secondaryText = Color(0xFF7E858D),
+    secondaryText = DarkSecondaryText,
     onSurfaceCard = DarkOnSurfaceCard,
-    hazeTint = Color.Black,
-    negative = Color(0xFF5C6269),
+    hazeTint = DarkHazeTint,
+    negative = DarkNegative,
     switchDisabled = DarkSwitchDisabled,
     bottomSheetColor = DarkBottomSheetColor,
     urgentOrange = DarkUrgentOrange,

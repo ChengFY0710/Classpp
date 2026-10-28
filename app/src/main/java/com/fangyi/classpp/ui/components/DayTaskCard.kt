@@ -1147,19 +1147,18 @@ private val TaskTagPaddingVertical = 4.dp
 /** 设计稿同款课程色 */
 private val PreviewCourseColor = CourseColor.Blue
 
-/** 设计稿同款截止色（primary 蓝；紧急档位与逾期时左侧时间/标签随之换色） */
-private val PreviewDeadlineColor = Color(0xFF006FEF)
-private val PreviewDeadlineYellow = Color(0xFFF2C11C)
-private val PreviewDeadlineOrange = Color(0xFFF2921B)
-private val PreviewDeadlineRed = Color(0xFFF44336)
-
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 900)
 @Composable
 private fun DayTaskCardPreview() {
     ClassppTheme {
         Box(Modifier.fillMaxSize()) {
+            // 截止配色读当前主题（浅/深预览各得其所，口径同 Todo.deadlineColor），
+            // 作 remember key：深浅切换时重摆
+            val deadlinePrimary = MaterialTheme.colorScheme.primary
+            val deadlineYellow = MaterialTheme.classppColors.urgentYellow
+            val deadlineRed = MaterialTheme.colorScheme.error
             // 区域宽 = 390 − 时间列 44 − 竖线距 12 − 右缘页边距 12（与 DayTimeline 同口径）
-            val placements = remember {
+            val placements = remember(deadlinePrimary, deadlineYellow, deadlineRed) {
                 listOf(
                     DayTask.Course(
                         name = "数据结构",
@@ -1176,7 +1175,7 @@ private fun DayTaskCardPreview() {
                         name = "待办标题待办标题待办标题",
                         completed = false,
                         deadlineText = "10/27 6:00",
-                        deadlineColor = PreviewDeadlineColor,
+                        deadlineColor = deadlinePrimary,
                         onToggle = null,
                         startMinute = 9 * 60 + 40,
                         endMinute = 10 * 60,
@@ -1197,7 +1196,7 @@ private fun DayTaskCardPreview() {
                         name = "待办标题待办标题待办标题",
                         completed = false,
                         deadlineText = "今天 8:00",
-                        deadlineColor = PreviewDeadlineRed,
+                        deadlineColor = deadlineRed,
                         repeatText = "每天",
                         onToggle = null,
                         startMinute = 11 * 60 + 50,
@@ -1218,7 +1217,7 @@ private fun DayTaskCardPreview() {
                         name = "待办标题待办标题待办标题",
                         completed = true,
                         deadlineText = "后天 8:00",
-                        deadlineColor = PreviewDeadlineYellow,
+                        deadlineColor = deadlineYellow,
                         onToggle = null,
                         startMinute = 15 * 60,
                         endMinute = 15 * 60 + 30,
@@ -1255,7 +1254,7 @@ private fun DayTaskCardNarrowPreview() {
                         name = "待办标题待办标题待办标题",
                         completed = false,
                         deadlineText = "明天 8:00",
-                        deadlineColor = PreviewDeadlineOrange,
+                        deadlineColor = MaterialTheme.classppColors.urgentOrange,
                         onToggle = null,
                         startMinute = 13 * 60,
                         endMinute = 14 * 60,

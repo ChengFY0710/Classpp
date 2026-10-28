@@ -10,9 +10,9 @@ import androidx.compose.ui.unit.sp
  * 取值说明：
  * - 方案 B 阶梯：UI 文字 `11 / 12 / 14 / 16 / 20 / 24sp`，展示数字 `32 / 48 / 64sp`。
  * - 特殊展示字号（不进入常规阶梯）：`23sp` 仅页面顶栏（[pageTitle]）；
- *   `18sp` 仅课表日期带（[courseGridDate]）与滚轮单位（[wheelUnit]）；
+ *   `18sp` 仅滚轮单位（[wheelUnit]）；
  *   `13sp` 仅顶栏/编辑栏图标下动作标签（[actionLabel]）；
- *   `17sp` 仅课表页顶栏周数选择胶囊（[weekPill]）；
+ *   `17sp` 仅课表页顶栏周数选择胶囊（[weekPill]）与课表日期带（[courseGridDate]）；
  *   `22sp` 仅周数选择卡内数字（[weekGridNumber]）。
  * - 中文正文/描述字距统一 `0sp`；只有 ≥20sp 的展示标题保留负字距。
  * - token 只描述字号 / 字重 / 行高 / 字距 / 字体家族，不包含颜色；颜色仍由
@@ -91,10 +91,12 @@ object ClassppTextTokens {
     val tagText = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp)
     /** 任务卡标签：12sp Medium。 */
     val compactTagText = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp)
-    /** 课表课程卡时间/教师行：12sp Medium，等宽数字避免时间切换抖动。 */
+    /** 课表课程卡时间行：12sp Medium，等宽数字避免时间切换抖动（添加卡起止时间同源）。 */
     val courseCardMeta = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp).tabularNumbers()
-    /** 课表课程卡地点行：12sp Medium。 */
-    val courseCardLocation = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp)
+    /** 课表课程卡教师行：11sp Medium，行高 16 与时间行同节奏。 */
+    val courseCardTeacher = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp)
+    /** 课表课程卡地点行：11sp Medium，与教师行同档。 */
+    val courseCardLocation = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp)
     /** 备忘标签 chip：12sp Normal。 */
     val tagChip = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Normal)
     /** 胶囊按钮：16sp SemiBold。 */
@@ -119,8 +121,8 @@ object ClassppTextTokens {
     val weekGridNumber = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 周数/重复设置方格：20sp Medium。 */
     val weekCell = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
-    /** 课表日期带日期行：18sp Medium，特殊展示字号（与滚轮单位同档）。 */
-    val courseGridDate = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
+    /** 课表日期带日期行：17sp Medium，特殊展示字号（与周数选择胶囊同档）。 */
+    val courseGridDate = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 时间轴刻度：12sp Medium，等宽数字。 */
     val timelineLabel = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp).tabularNumbers()
     /** 时间轴当前时刻胶囊：11sp Medium，等宽数字。 */

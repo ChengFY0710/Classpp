@@ -14,6 +14,7 @@ import java.io.File
  *    取色必须经 `MaterialTheme.colorScheme` / `MaterialTheme.classppColors`。
  * 3. `MaterialTheme.isDarkTheme` 只允许既定的深浅分档场景（课程调色板参数、按压反馈方向、
  *    标签文字压暗系数、台历视觉/remember key），不得用于手动挑选不同色值。
+ * 4. `colorScheme.onSurfaceVariant` 已归一到 `classppColors.secondaryText`，业务代码零使用。
  *
  * 新增颜色请先在 `ui/theme/Color.kt` 定义浅/深成对值并在 `Theme.kt` 装配；确需例外时，
  * 先更新规范文档与这里的白名单。
@@ -118,6 +119,26 @@ class ColorUsageRulesTest {
                 "台历视觉与 remember key 四类场景（规范 6.4）：\n" + violations.joinToString("\n"),
             violations.isEmpty(),
         )
+    }
+
+    @Test
+    fun onSurfaceVariantStaysRetired() {
+        assertNoViolations(
+            businessFiles,
+            listOf(
+                Rule(
+                    "colorScheme.onSurfaceVariant",
+                    Regex("""colorScheme\.onSurfaceVariant\b"""),
+                ),
+            ),
+            "颜色规范守卫失败：onSurfaceVariant 已归一到 classppColors.secondaryText" +
+                "（规范第 12 节 9 条），不要再新增使用：\n",
+        )
+    }
+
+    private fun assertNoViolations(files: List<File>, rules: List<Rule>, message: String) {
+        val violations = files.flatMap { file -> file.violations(rules) }
+        assertTrue(message + violations.joinToString("\n"), violations.isEmpty())
     }
 
     /**

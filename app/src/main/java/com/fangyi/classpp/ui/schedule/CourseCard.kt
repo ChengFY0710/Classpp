@@ -244,7 +244,8 @@ fun CourseCard(
                 val localDensity = LocalDensity.current
                 val spPx = { sp: Float -> sp * localDensity.fontScale * localDensity.density }
                 val fixedPx = with(localDensity) { 6.dp.toPx() + 1.dp.toPx() } +
-                    spPx(ClassppTextTokens.courseCardMeta.lineHeight.value) * (if (hasTeacher) 3f else 2f)
+                    spPx(ClassppTextTokens.courseCardMeta.lineHeight.value) * 2f +
+                    (if (hasTeacher) spPx(ClassppTextTokens.courseCardTeacher.lineHeight.value) else 0f)
                 allocateCardLines(
                     budgetPx = constraints.maxHeight - fixedPx,
                     nameLinePx = spPx(ClassppTextTokens.compactCardTitle.lineHeight.value),
@@ -282,7 +283,7 @@ fun CourseCard(
                         if (hasTeacher) {
                             Text(
                                 text = course.teacher,
-                                style = ClassppTextTokens.courseCardMeta,
+                                style = ClassppTextTokens.courseCardTeacher,
                                 color = secondaryColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,

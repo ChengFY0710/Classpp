@@ -2,7 +2,7 @@ package com.fangyi.classpp.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// 品牌：蓝 #0077FF（见 res/values/colors.xml brand_blue）/ 黑 #000000 / 白 #FFFFFF / 背景浅灰 #F2F4F6（浅色专用）
+// 品牌：蓝 #0077FF（Primary 即其微调版，见下行）/ 黑 #000000 / 白 #FFFFFF / 背景浅灰 #F2F4F6（浅色专用）
 // Primary 微调为 #006FEF，使白字对比度达到 4.65:1（WCAG AA）
 val Primary = Color(0xFF006FEF)
 val OnPrimary = Color(0xFFFFFFFF)
@@ -34,6 +34,10 @@ val OnErrorContainer = Color(0xFF410E0B)
 
 val Scrim = Color(0x332A333C)
 
+/**
+ * 学期开始日标记绿字（CourseGrid / ScheduleHeader），不分深浅系有意。
+ * 与 urgentGreen（不急旗标/已完成分组）、标签草绿 #66BB6A 语义不同，勿混用。
+ */
 val Correct = Color(0xFF22B14C)
 
 // 开关（ClassppSwitch）不可点击时的置灰轨道色，无论 checked 取该值
@@ -45,10 +49,24 @@ val UrgentOrange = Color(0xFFF2921B)
 val UrgentYellow = Color(0xFFF2C11C)
 val UrgentGreen = Color(0xFF3BC222)
 
+// ===== ClassppColors 扩展色的深浅取值（装配见 Theme.kt，语义注释也在装配处）=====
+
+/** 次级说明文字灰 */
+val SecondaryText = Color(0xFFABAFB4)
+val DarkSecondaryText = Color(0xFF7E858D)
+
+/** 「刻意弱化」置灰：浅色取卡片底；深色卡底上取更暗的灰，保持同等弱化视觉强度 */
+val Negative = Color(0xFFCBCBCB)
+val DarkNegative = Color(0xFF5C6269)
+
+/** Haze 磨砂叠加基础色：浅色白提亮、深色黑压暗，调用处按强度 copy(alpha) */
+val HazeTint = Color.White
+val DarkHazeTint = Color.Black
+
 // ===== 深色模式 =====
 // 与浅色同构的冷灰阶梯：Background 最深、Surface（卡片）亮一档、容器再亮——
-// 对应浅色「页面灰底 → 白卡」的层级关系反转。Primary 提亮为 tonal 80（#A3C8FA，
-// 与浅色 InversePrimary 同源），保证深底上文字/图标对比达标。
+// 对应浅色「页面灰底 → 白卡」的层级关系反转。Primary 提亮为 #479CFF，
+// 保证深底上文字/图标对比达标。
 val DarkPrimary = Color(0xFF479CFF)
 val DarkOnPrimary = Color(0xFF003062)
 val DarkPrimaryContainer = Color(0x45479CFF)

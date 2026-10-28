@@ -54,6 +54,7 @@ import com.fangyi.classpp.ui.components.menuGrowthForAnchor
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.DayImageCellShape
+import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.rememberHazeState
 import kotlin.math.roundToInt
@@ -272,7 +273,7 @@ private fun DayImageEmptyHint(modifier: Modifier = Modifier) {
         Text(
             text = stringResource(R.string.day_image_empty_hint),
             style = ClassppTextTokens.emptyHintLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.classppColors.secondaryText,
         )
     }
 }
