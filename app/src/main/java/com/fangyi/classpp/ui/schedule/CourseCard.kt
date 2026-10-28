@@ -117,10 +117,14 @@ internal fun CourseColor.barColor(dark: Boolean): Color =
 internal data class CardLines(val name: Int, val location: Int)
 
 /** 单字段最多显示行数：超长课名/地点在跨节大卡里也不至于铺满整卡 */
-private const val MaxFieldLines = 6
+private const val MaxFieldLines = 8
 
-/** 偏好序（好→差）：增长段地点先涨（封顶 6/6）→ 默认段 (3,3) → 降级段课程名先降（保底 1/1） */
+/** 偏好序（好→差）：增长段地点 3→6 → 课名 3→6 → 地点 6→8 → 课名 6→8（封顶 8/8）→ 默认段 (3,3) → 降级段课程名先降（保底 1/1） */
 private val CardLineTiers = listOf(
+    CardLines(8, 8),
+    CardLines(7, 8),
+    CardLines(6, 8),
+    CardLines(6, 7),
     CardLines(6, 6),
     CardLines(5, 6),
     CardLines(4, 6),
@@ -139,7 +143,8 @@ private val CardLineTiers = listOf(
  *
  * 每个档位的字段行数不超过内容的自然行数（[wantedName]/[wantedLocation]），
  * 因此不再为不存在的文本预留空行：内容短就直接落到更小的档位、把预算让给另一字段；
- * 内容长才真正用到 maxLines 截断。偏好序与旧版一致（地点先涨、课程名先降，保底 1/1）。
+ * 内容长才真正用到 maxLines 截断。偏好序见 [CardLineTiers]：
+ * 地点 3→6 → 课名 3→6 → 地点 6→8 → 课名 6→8，降级段课程名先降、保底 1/1。
  *
  * 行成本 = 各自 Text 的 lineHeight px（[nameLinePx]/[locationLinePx]，调用处已乘 fontScale）；
  * 连保底档都装不下也返回 (1,1)，溢出交给 maxLines + 省略号。

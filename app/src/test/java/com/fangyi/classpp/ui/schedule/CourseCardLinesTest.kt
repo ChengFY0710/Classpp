@@ -6,8 +6,8 @@ import org.junit.Test
 /**
  * 卡内文本行数分配：**实测自然行数封顶 + 单条偏好序 first-fit**。
  *
- * 偏好序与旧版一致——增长段地点先涨 ((3,4)…(6,6)，封顶 6/6) → 默认段 (3,3) →
- * 降级段课程名先降 ((2,3)…(1,1))；变化在于每档字段行数不超过内容自然行数，
+ * 偏好序：增长段地点 3→6 → 课名 3→6 → 地点 6→8 → 课名 6→8（封顶 8/8）→ 默认段 (3,3) →
+ * 降级段课程名先降 ((2,3)…(1,1))；每档字段行数不超过内容自然行数，
  * 短内容不再为空行预留空间、长内容才被截断。默认 wanted = 6/6 时与旧行为逐值一致（回归基线）。
  *
  * 行成本 = lineHeight px。偏好序测试用课程名 16 / 地点 14；生产值两者均 16，
@@ -30,11 +30,15 @@ class CourseCardLinesTest {
     ) = allocateCardLines(budget, nameLinePx = 16f, locationLinePx = 16f, name, location)
 
     @Test
-    fun excessBudgetCapsAtSixLines() {
-        // 超额预算封顶 6/6；实际行数超过 6 也封顶在 6/6
+    fun excessBudgetCapsAtEightLines() {
+        // 超额预算封顶 8/8；实际行数超过 8 也封顶在 8/8（(8,8)=240）
+        assertEquals(CardLines(8, 8), allocate(1000f, name = 20, location = 20))
+        assertEquals(CardLines(8, 8), allocate(240f, name = 20, location = 20))
+        // 差一点放不下 8/8 → 课程名先让一档 (7,8)=224
+        assertEquals(CardLines(7, 8), allocate(239.9f, name = 20, location = 20))
+        // 封顶 6/6 的旧默认 wanted 不受影响
         assertEquals(CardLines(6, 6), allocate(1000f))
         assertEquals(CardLines(6, 6), allocate(180f))
-        assertEquals(CardLines(6, 6), allocate(1000f, name = 20, location = 20))
     }
 
     @Test
@@ -47,14 +51,20 @@ class CourseCardLinesTest {
     }
 
     @Test
-    fun growsLocationBeforeName() {
-        // 地点先涨：(3,4)=104 → (3,5)=118 → (3,6)=132
+    fun growthFollowsPreferenceOrder() {
+        // 地点 3→6：(3,4)=104 → (3,5)=118 → (3,6)=132
         assertEquals(CardLines(3, 4), allocate(104f))
         assertEquals(CardLines(3, 5), allocate(118f))
         assertEquals(CardLines(3, 6), allocate(132f))
-        // 地点到 6 行封顶后才轮到课程名：(4,6)=148 → (5,6)=164
+        // 课名 3→6：(4,6)=148 → (5,6)=164 → (6,6)=180（实测 6/6 上限下到此为止）
         assertEquals(CardLines(4, 6), allocate(148f))
         assertEquals(CardLines(5, 6), allocate(164f))
+        assertEquals(CardLines(6, 6), allocate(180f))
+        // 地点 6→8 后再课名 6→8：(6,7)=194 → (6,8)=208 → (7,8)=224 → (8,8)=240
+        assertEquals(CardLines(6, 7), allocate(194f, name = 20, location = 20))
+        assertEquals(CardLines(6, 8), allocate(208f, name = 20, location = 20))
+        assertEquals(CardLines(7, 8), allocate(224f, name = 20, location = 20))
+        assertEquals(CardLines(8, 8), allocate(240f, name = 20, location = 20))
     }
 
     @Test
