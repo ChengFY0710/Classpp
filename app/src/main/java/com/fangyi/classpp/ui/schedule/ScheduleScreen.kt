@@ -86,7 +86,6 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.ScheduleFile
-import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.data.model.overlappingCourses
 import com.fangyi.classpp.data.wakeup.WakeupImportExecutor
 import com.fangyi.classpp.data.wakeup.WakeupScheduleMapper
@@ -1334,7 +1333,7 @@ fun ScheduleScreen(
             }
 
             // 长按卡片的上下文菜单（Popup 独立窗口，位置由卡片坐标决定）。
-            // 复制项仅单节课程（span == 1）显示——跨节课程暂不支持复制，菜单退化为只有新建交替课程
+            // 单节与跨节课程都可复制：粘贴端保留源课跨度
             menuAnchor?.let { anchor ->
                 val copiedToast = stringResource(R.string.toast_course_copied)
                 val source = editSession?.courses?.firstOrNull { it.id == anchor.courseId }
@@ -1342,7 +1341,7 @@ fun ScheduleScreen(
                     anchor = anchor.rect,
                     expanded = menuVisible,
                     onDismiss = { menuVisible = false },
-                    onCopy = source?.takeIf { it.span == 1 }?.let { entry ->
+                    onCopy = source?.let { entry ->
                         {
                             copiedEntry = entry
                             AppToasts.show(context, copiedToast)
@@ -1360,7 +1359,7 @@ fun ScheduleScreen(
             }
 
             // 空位长按的粘贴菜单：只有剪贴板有课时才会被 onSlotLongClick 打开。
-            // 粘贴 = 以快照为模板在长按格新建一门课（星期/起始节换成目标格、跨度恒 1），
+            // 粘贴 = 以快照为模板在长按格新建一门课（星期/起始节换成目标格、跨度随源课保留），
             // 其余参数原样保留；剪贴板不清空，可连续粘贴多格
             pasteAnchor?.let { anchor ->
                 SlotContextMenu(
@@ -1375,19 +1374,14 @@ fun ScheduleScreen(
                         val session = editSession
                         val source = copiedEntry
                         if (session != null && source != null) {
-                            val entry = source.copy(
-                                id = newUuid(),
-                                dayOfWeek = anchor.day,
-                                startSlot = anchor.slotId,
-                                span = 1,
-                            )
-                            // 空位不可能与现有课同格冲突（添加卡只在格内无任何课程重叠时才出现），
-                            // 这里的整份预检兜住的是跨课表粘贴时的周次超学期 / 末周越界
+                            val entry = source.pastedAt(anchor.day, anchor.slotId)
+                            // 跨节粘贴会覆盖下方格子：整份预检兜住同格冲突 / 末节越界 /
+                            // 跨课表粘贴的周次越界；只拦与这门新课相关的错误，草稿里无关的旧错误不误伤
                             val blocking = ScheduleValidator
                                 .validateCourses(schedule.copy(courses = session.courses + entry))
-                                .firstOrNull()
+                                .firstOrNull { it.involvesCourse(entry.id) }
                             if (blocking != null) {
-                                AppToasts.show(context, blocking.toEditMessage(context))
+                                AppToasts.show(context, blocking.toPasteMessage(context, entry.span))
                             } else {
                                 session.add(entry)
                             }
@@ -1506,6 +1500,16 @@ private fun ScheduleError.toEditMessage(context: Context): String = when (this) 
     is ScheduleError.SlotOrderInvalid -> context.getString(R.string.error_slot_order)
     // 真正没覆盖到的形态：不把内部 message 抛给用户
     else -> context.getString(R.string.error_unexpected)
+}
+
+/** 粘贴预检错误 → 用户可读文案：跨节课程放不下时提示换位置，其余沿用编辑流程文案 */
+private fun ScheduleError.toPasteMessage(context: Context, span: Int): String = when (this) {
+    is ScheduleError.CourseFieldInvalid -> when (reason) {
+        FieldReason.SpanOutOfRange ->
+            context.getString(R.string.error_paste_span_out_of_range, span)
+        else -> toEditMessage(context)
+    }
+    else -> toEditMessage(context)
 }
 
 /** 无激活课表时的空状态：标题 + 说明 + 新建按钮（打开 [NewScheduleSheet]） */

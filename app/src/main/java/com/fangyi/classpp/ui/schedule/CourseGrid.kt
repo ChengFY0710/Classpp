@@ -417,7 +417,7 @@ private fun WeekPage(
                                     } else {
                                         null
                                     },
-                                    // 编辑态长按 → 以这门课为基准新建交替课程
+                                    // 编辑态长按 → 复制课程 / 以这门课为基准新建交替课程
                                     onLongClick = if (editMode && onCourseLongClick != null) {
                                         { onCourseLongClick(course.id, cardBounds.value) }
                                     } else {

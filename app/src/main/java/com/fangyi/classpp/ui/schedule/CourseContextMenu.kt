@@ -25,7 +25,7 @@ private val MenuLeftInset = 8.dp
 /**
  * 长按课程卡弹出的上下文菜单：「复制课程」（可选）+「新建交替课程」。
  *
- * [onCopy] 传 null 时不显示复制项——跨节课程暂不支持复制（见 ScheduleScreen 的菜单挂载点）。
+ * [onCopy] 传 null 时不显示复制项（单节 / 跨节课程都可复制，见 ScheduleScreen 的菜单挂载点）。
  * [expanded] / [onExitFinished] 供宿主拆「锚点 + 可见性」两态（见 [ContextMenuPopup]）。
  * [hazeState] 下发给 [PopupMenuPopup] 做毛玻璃（采样课表网格 hazeSource，与周数弹窗同材质），
  * null（如 @Preview）退化为不透明白卡。

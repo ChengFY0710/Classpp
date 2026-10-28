@@ -261,6 +261,7 @@
     <string name="error_weeks_beyond_term_course">“%1$s” would run until %2$s, past the term (this term has %3$d weeks) — shorten its weeks or move the term end</string>
     <string name="error_term_end_course">“%1$s” would last run on %2$s, after the term end — shorten its weeks or move the term end</string>
     <string name="error_span_out_of_range">“%1$s” spans more periods than the day has — pick another end period</string>
+    <string name="error_paste_span_out_of_range">This course spans %1$d periods and does not fit here — try a cell higher up</string>
     <string name="error_grid_conflict">Conflicts with “%1$s”</string>
     <string name="error_alternate_weeks_taken">Those weeks are taken by an alternating course</string>
 

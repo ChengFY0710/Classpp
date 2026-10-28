@@ -287,8 +287,8 @@
 
     <!-- 课表编辑 -->
     <string name="edit_save">保存</string>
-    <string name="edit_switch_schedule">切换</string>
-    <string name="edit_schedule_settings">设置</string>
+    <string name="edit_switch_schedule">切换课表</string>
+    <string name="edit_schedule_settings">课表设置</string>
     <string name="edit_cancel">取消</string>
     <string name="edit_add_course">添加课程</string>
     <string name="edit_edit_course">编辑课程</string>
@@ -348,6 +348,7 @@
     <string name="error_weeks_beyond_term_course">「%1$s」会上到 %2$s，超出学期范围（本学期共 %3$d 周），请缩短周数或调整学期结束</string>
     <string name="error_term_end_course">「%1$s」最后一次上课是 %2$s，已晚于学期结束日，请缩短周数或调整学期结束</string>
     <string name="error_span_out_of_range">「%1$s」的节次超出当天范围，请重新选择结束节次</string>
+    <string name="error_paste_span_out_of_range">这里放不下这门 %1$d 节的课程，请选择更靠上的格子粘贴</string>
     <string name="error_grid_conflict">与「%1$s」时间冲突</string>
     <string name="error_alternate_weeks_taken">该周数已被交替课程占用</string>
 
