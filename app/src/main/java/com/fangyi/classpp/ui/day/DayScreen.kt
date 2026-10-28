@@ -128,6 +128,7 @@ import com.fangyi.classpp.ui.components.DayCalendarFoldState
 import com.fangyi.classpp.ui.components.DayCourseAlert
 import com.fangyi.classpp.ui.components.DayCourseAlertState
 import com.fangyi.classpp.ui.components.DayTask
+import com.fangyi.classpp.ui.components.DayTaskAlldayAlert
 import com.fangyi.classpp.ui.components.DayTimeline
 import com.fangyi.classpp.ui.components.DayTodoAlert
 import com.fangyi.classpp.ui.components.hazeSources
@@ -189,7 +190,7 @@ private val CourseAlertTopSpacing = 10.dp
 /** 上课提醒卡的时刻对表间隔：倒计时按分钟显示，30s 步进保证一分钟内跳字 */
 private const val CourseAlertResyncMillis = 30_000L
 
-/** 时间轴与上方待办提醒卡的间距；待办卡折叠收起时自然成为与上课提醒卡的间距 */
+/** 时间轴与上方提醒卡（全天任务卡 / 待办提醒卡）的间距；两张卡都折叠时自然成为与上课提醒卡的间距 */
 private val TimelineTopSpacing = 12.dp
 
 /**
@@ -1732,16 +1733,16 @@ fun DayScreen(
 }
 
 /**
- * 日历下方单日内容（横滑三页中的一页）：上课提醒卡 + 待办提醒卡 + 时间轴。
+ * 日历下方单日内容（横滑三页中的一页）：上课提醒卡 + 待办提醒卡 + 全天任务提醒卡 + 时间轴。
  *
  * 三页各自按 [viewDate] 现算，横滑途中相邻日实时滑入，故这里不做任何「当前选中日」的
  * 假设。课表取课口径与页面级一致：今天随时刻对表出倒计时/上课中/课已上完/今日无课，
  * 其他日期出整天节数概览（开学前/学期外 0 节）；时间轴只接该日有起止时刻的课程与待办。
  *
- * [revision] 在每次换日提交时自增（横滑松手判定 / 日历跳日），用作 [DayTodoAlert] 的重置
- * 键：提交瞬间内容必须从新日期的完整行集起画——若复用旧日期的行镜，会先重播一遍
- *「跨日行增减」动画（表现为新页面刚滑进来又闪回旧待办行）。点日历球等外部换日不经过
- * revision，原有跨日行动画保持不变。
+ * [revision] 在每次换日提交时自增（横滑松手判定 / 日历跳日），用作两张提醒卡
+ * （[DayTodoAlert] / [DayTaskAlldayAlert]）的行镜重置键：提交瞬间内容必须从新日期的
+ * 完整行集起画——若复用旧日期的行镜，会先重播一遍「跨日行增减」动画（表现为新页面
+ * 刚滑进来又闪回旧待办行）。点日历球等外部换日不经过 revision，原有跨日行动画保持不变。
  */
 @Composable
 private fun DayDateContent(
@@ -1819,6 +1820,18 @@ private fun DayDateContent(
                 today = today,
                 viewDate = viewDate,
                 nowMinute = nowMinute,
+                tagColors = tagColors,
+                onComplete = onCompleteTodo,
+                onTodoClick = onTodoClick,
+                modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
+            )
+            // 全天任务提醒卡：只收查看日命中的全天（AllDay）未完成待办；截止窗口内的
+            // 全天任务已在上一张卡显示，这里让位不重复。行不显示截止/倒计时（只回答
+            //「这一天有哪些全天任务」）。无候选时整卡折叠，10dp 间距随内容一并收起。
+            DayTaskAlldayAlert(
+                todos = todos,
+                today = today,
+                viewDate = viewDate,
                 tagColors = tagColors,
                 onComplete = onCompleteTodo,
                 onTodoClick = onTodoClick,

@@ -98,8 +98,8 @@ private const val DaySwipeCommitFraction = 0.5f
  * @param jumpCrossSpec 非相邻日跳转的 CrossPage 时序（与待办页顶栏分组切换共用
  *   Motion.PageJumpCross）
  * @param page 单页内容；第二个参数 revision 在每次换日提交时自增，宿主可用它作为有状态
- *   内容（如 DayTodoAlert 的行镜）的重置键——提交瞬间内容须从新日期的完整行集起画，
- *   而不是复用旧日期的实例重播「跨日行增减」动画
+ *   内容（如提醒卡 DayTodoAlert / DayTaskAlldayAlert 的行镜）的重置键——提交瞬间内容须
+ *   从新日期的完整行集起画，而不是复用旧日期的实例重播「跨日行增减」动画
  */
 @Composable
 internal fun DayContentSwipe(
