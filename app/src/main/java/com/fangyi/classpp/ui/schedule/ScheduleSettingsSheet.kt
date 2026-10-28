@@ -59,7 +59,8 @@ import kotlinx.coroutines.launch
  *
  * 「节数与时间」本身不再内联：分组内只有一行「课程时间方案」入口（附当前方案名），
  * 点击叠开 [TimeSchemeSheet]（子浮层，经 [OverlaySheet.covered] 让本浮层缩小后退）；
- * 子浮层的明细改动先落草稿，右上「确认」才整套写回本课表。
+ * 子浮层的明细改动先落草稿，右上「确认」才整套写回本课表；保存方案则是独立落库，
+ * 浮层内确认即持久化，不随编辑事务的保存/取消回滚。
  *
  * 滚动、键盘让位（课表名输入框在场 → ContentScroll）由 OverlaySheet 内建，
  * 这里只负责内容与日期/时间对话框。内容列按浮层规范排版：顶层块一律 [CardSection]——
@@ -219,6 +220,13 @@ internal fun ScheduleSettingsSheet(
             },
             onSaveScheme = { name, slots, duration ->
                 scope.launch { submit(repository.addTimeScheme(name, slots, duration)) }
+            },
+            // 方案库的改名/删除同样即时落库（不参与课表编辑事务，见 restoreEditBaseline）
+            onRenameScheme = { id, name ->
+                scope.launch { submit(repository.renameTimeScheme(id, name)) }
+            },
+            onDeleteScheme = { id ->
+                scope.launch { submit(repository.deleteTimeScheme(id)) }
             },
         )
     }

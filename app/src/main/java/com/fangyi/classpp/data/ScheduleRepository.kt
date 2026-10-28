@@ -175,16 +175,19 @@ class ScheduleRepository internal constructor(
     // ---------- 编辑态事务（保存提交 / 取消整库回滚） ----------
 
     /**
-     * 编辑态事务基线：进入编辑时整库快照一次，取消时经 [restoreAll] 原样恢复。
+     * 编辑态事务基线：进入编辑时整库快照一次，取消时经 [restoreEditBaseline] 恢复。
      * mutex 下读取，与写路径看到的状态严格一致（schedules + activeScheduleId 不会错位）。
      */
     suspend fun snapshot(): ScheduleFile = mutex.withLock { fileState.value }
 
     /**
-     * 整库恢复快照（编辑态取消）：一次落盘 + 一次发布，天然原子；落盘失败内存零变更。
-     * 快照取自先前合法的库态，此处不再校验。
+     * 取消编辑：恢复编辑前的课表集合与激活项，但 [ScheduleFile.timeSchemes] 取**当前**值——
+     * 方案库是全局资源，保存方案在浮层内确认即落库，不受课表编辑的保存/取消控制。
+     * 一次落盘 + 一次发布，天然原子；落盘失败内存零变更。快照取自先前合法的库态，此处不再校验。
      */
-    suspend fun restoreAll(file: ScheduleFile): OpResult = mutex.withLock { commit(file) }
+    suspend fun restoreEditBaseline(file: ScheduleFile): OpResult = mutex.withLock {
+        commit(file.copy(timeSchemes = fileState.value.timeSchemes))
+    }
 
     // ---------- 设置变更（波及课程则整体拒绝） ----------
 
@@ -285,6 +288,35 @@ class ScheduleRepository internal constructor(
             slotDurationMinutes = durationMinutes,
         )
         commit(current.copy(timeSchemes = current.timeSchemes + scheme))
+    }
+
+    /**
+     * 重命名方案：名称去首尾空白后不得为空（[ScheduleError.InvalidTimeSchemeName]）；
+     * 允许与其他方案重名（同 [addTimeScheme]，列表按 id 区分）；名称未变视为成功空操作。
+     */
+    suspend fun renameTimeScheme(id: String, name: String): OpResult = mutex.withLock {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return@withLock OpResult.Err(ScheduleError.InvalidTimeSchemeName)
+        val current = fileState.value
+        val target = current.timeSchemes.firstOrNull { it.id == id }
+            ?: return@withLock OpResult.Err(ScheduleError.NotFound(id))
+        if (target.name == trimmed) return@withLock OpResult.Ok
+        commit(
+            current.copy(
+                timeSchemes = current.timeSchemes.map {
+                    if (it.id == id) it.copy(name = trimmed) else it
+                },
+            ),
+        )
+    }
+
+    /** 删除方案：按 id 移除；方案不存在返回 [ScheduleError.NotFound]（同课表删除语义）。 */
+    suspend fun deleteTimeScheme(id: String): OpResult = mutex.withLock {
+        val current = fileState.value
+        if (current.timeSchemes.none { it.id == id }) {
+            return@withLock OpResult.Err(ScheduleError.NotFound(id))
+        }
+        commit(current.copy(timeSchemes = current.timeSchemes.filterNot { it.id == id }))
     }
 
     /**

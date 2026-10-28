@@ -655,6 +655,70 @@ class ScheduleRepositoryTest {
     }
 
     @Test
+    fun `cancel edit rollback keeps schemes saved during editing`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+        val baseline = r.snapshot()
+
+        // 编辑期间：改课表名 + 保存方案（两者都即时落库）
+        r.renameSchedule(id, "B").assertOk()
+        r.addTimeScheme("上午两节", DEFAULT_SLOTS, 100).assertOk()
+
+        // 取消编辑：课表按基线回滚，方案库保留（保存方案不受编辑保存/取消控制）
+        r.restoreEditBaseline(baseline).assertOk()
+        assertEquals("A", r.schedules.value.single().name)
+        assertEquals(listOf("上午两节"), r.timeSchemes.value.map { it.name })
+
+        // 保留同样落盘
+        assertEquals(listOf("上午两节"), repo().timeSchemes.value.map { it.name })
+    }
+
+    @Test
+    fun `renameTimeScheme updates name and persists`() = runBlocking {
+        val r = repo()
+        r.addTimeScheme("旧名", DEFAULT_SLOTS, 100).assertOk()
+        val id = r.timeSchemes.value.single().id
+
+        // 去首尾空白；与其他方案重名也允许（列表按 id 区分）
+        r.addTimeScheme("另一套", DEFAULT_SLOTS, 90).assertOk()
+        r.renameTimeScheme(id, "  新名  ").assertOk()
+        assertEquals(listOf("新名", "另一套"), r.timeSchemes.value.map { it.name })
+        assertEquals(listOf("新名", "另一套"), repo().timeSchemes.value.map { it.name })
+
+        // 名称未变视为成功空操作
+        r.renameTimeScheme(id, "新名").assertOk()
+        assertEquals(listOf("新名", "另一套"), r.timeSchemes.value.map { it.name })
+    }
+
+    @Test
+    fun `renameTimeScheme rejects blank name and unknown id`() = runBlocking {
+        val r = repo()
+        r.addTimeScheme("方案", DEFAULT_SLOTS, 100).assertOk()
+        val id = r.timeSchemes.value.single().id
+
+        assertTrue(
+            r.renameTimeScheme(id, "   ").assertErr() is ScheduleError.InvalidTimeSchemeName,
+        )
+        assertTrue(r.renameTimeScheme("missing", "新名").assertErr() is ScheduleError.NotFound)
+        assertEquals(listOf("方案"), r.timeSchemes.value.map { it.name })
+    }
+
+    @Test
+    fun `deleteTimeScheme removes scheme and persists`() = runBlocking {
+        val r = repo()
+        r.addTimeScheme("待删", DEFAULT_SLOTS, 100).assertOk()
+        r.addTimeScheme("保留", DEFAULT_SLOTS, 90).assertOk()
+        val removed = r.timeSchemes.value.first { it.name == "待删" }
+
+        r.deleteTimeScheme(removed.id).assertOk()
+        assertEquals(listOf("保留"), r.timeSchemes.value.map { it.name })
+        assertEquals(listOf("保留"), repo().timeSchemes.value.map { it.name })
+
+        // 再删同一个 id：已不存在
+        assertTrue(r.deleteTimeScheme(removed.id).assertErr() is ScheduleError.NotFound)
+    }
+
+    @Test
     fun `setSlotsAndDuration applies both atomically and persists`() = runBlocking {
         val r = repo()
         val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()

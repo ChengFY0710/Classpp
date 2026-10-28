@@ -200,7 +200,8 @@ fun ScheduleScreen(
 
     // ——— 编辑态事务：保存提交 / 取消整库回滚 ———
     // 进入编辑时整库快照一次（全部课表 + 激活 id；JSON 存 saveable，进程重建后取消仍可回滚）。
-    // 编辑期间的切换/设置/新建/删除/导入照旧即时落库，取消时以快照一次性恢复，保存则自然保留
+    // 编辑期间的切换/设置/新建/删除/导入照旧即时落库，取消时以快照一次性恢复，保存则自然保留；
+    // 方案库（timeSchemes）不在回滚范围：保存方案在浮层内确认即持久化，不受编辑保存/取消控制
     var editBaselineJson by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(editing) {
         if (editing) {
@@ -216,6 +217,7 @@ fun ScheduleScreen(
     val persistFailedToast = stringResource(R.string.error_persist_failed)
 
     // 取消编辑：恢复进入编辑前的整库快照（切换/设置/新建/删除/导入一并回滚），再退出编辑态。
+    // 方案库除外：保存方案在浮层内确认即落库，不随编辑取消回滚（见 restoreEditBaseline）。
     // 基线先置空：连点取消/返回不会触发两次恢复；恢复失败仅 Toast（磁盘写失败极罕见），仍退出
     fun cancelEdit() {
         val baseline = editBaselineJson
@@ -225,7 +227,9 @@ fun ScheduleScreen(
             return
         }
         scope.launch {
-            val restored = repository.restoreAll(ScheduleJson.decodeStorage<ScheduleFile>(baseline))
+            val restored = repository.restoreEditBaseline(
+                ScheduleJson.decodeStorage<ScheduleFile>(baseline),
+            )
             if (restored is OpResult.Err) {
                 Toast.makeText(
                     context,

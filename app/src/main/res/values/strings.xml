@@ -248,6 +248,7 @@
     <string name="time_scheme_custom">自定义</string>
     <string name="time_scheme_save">保存方案</string>
     <string name="time_scheme_name_title">方案名称</string>
+    <string name="time_scheme_rename_title">重命名方案</string>
     <string name="time_scheme_name_hint">如：自定义方案一</string>
     <string name="time_scheme_merge">合并两小节为一大节</string>
     <string name="error_time_scheme_name">方案名称不能为空</string>

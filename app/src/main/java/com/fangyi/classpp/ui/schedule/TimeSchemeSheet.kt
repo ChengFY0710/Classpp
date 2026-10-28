@@ -16,6 +16,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +52,8 @@ import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.BottomTimeSelectCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.OverlaySheet
+import com.fangyi.classpp.ui.components.PopupMenuCard
+import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.SelectCard
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
@@ -73,17 +76,29 @@ private val ChipRowHeight = 24.dp
 
 private val ChipShape = RoundedCornerShape(8.dp)
 
+/** 一次保存方案的挂起信息：保存前的方案 id 集合 + 发起时的草稿，回流后据此判断并选中新增方案 */
+private data class PendingSchemeSave(
+    val knownIds: Set<String>,
+    val slots: List<TimeSlotDef>,
+    val durationMinutes: Int,
+)
+
 /**
  * 「课程时间方案」浮层（课表设置 → 节数与时间入口打开）——原内联的节次与时间模块整体迁入：
  *
  * - 顶部方案选择（[SelectCard]）：「默认」+ 已保存方案 + 「自定义」；选中预设即把该方案
  *   整套填入草稿；明细区始终可点，任何**实际改动**都会自动切回「自定义」，避免预设方案
- *   被静默改写（只是打开选择器又确认同值不算改动，仍留在原方案）；
+ *   被静默改写（只是打开选择器又确认同值不算改动，仍留在原方案）；「自定义」有独立的
+ *   草稿——切去预设方案再切回来，此前调好的参数原样恢复；
+ * - 长按**用户保存的方案**行呼出菜单（[PopupMenuCard] 卡体，删除 / 重命名；内置「默认」与
+ *   「自定义」无菜单）：重命名走底部名称输入卡，确认即落库；删除即时生效，删的是当前选中
+ *   方案时落回「自定义」并保留当前草稿；
  * - 下方同一个 [CardSection]（节次与时间）依次是：总节数 / 每节课时间、逐节起止时间、
  *   保存方案、合并两小节为一大节（占位）；
  * - 所有明细修改只落在**本地草稿**，右上「确认」才经 [onApply] 整套提交；取消/返回/
  *   下拉关闭丢弃草稿。保存方案是独立动作：经 [onSaveScheme] 落库，成功后经仓库
- *   timeSchemes 流回到顶部列表，取消浮层也不撤销（保存即持久化）。
+ *   timeSchemes 流回到顶部列表并自动选中刚保存的方案——方案库不参与课表编辑事务，
+ *   取消浮层、取消课表编辑都不撤销（保存即持久化）。
  *
  * 容器为 [OverlaySheet]，与新建课表浮层同一套顶栏排布（取消在左、确认在右）与拖拽关闭；
  * 底部滚轮/名称输入均走 Bottom*Card 一族，两段式挂载（先播退场再卸载），在场时经
@@ -98,6 +113,8 @@ internal fun TimeSchemeSheet(
     onDismissed: () -> Unit,
     onApply: (slots: List<TimeSlotDef>, durationMinutes: Int) -> Unit,
     onSaveScheme: (name: String, slots: List<TimeSlotDef>, durationMinutes: Int) -> Unit,
+    onRenameScheme: (id: String, name: String) -> Unit,
+    onDeleteScheme: (id: String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -110,11 +127,17 @@ internal fun TimeSchemeSheet(
         slotDurationMinutes = DEFAULT_SLOT_DURATION_MINUTES,
     )
     val customLabel = stringResource(R.string.time_scheme_custom)
+    // 长按菜单文案：菜单项在长按那一刻构造，先取好供闭包使用
+    val renameSchemeLabel = stringResource(R.string.edit_rename)
+    val deleteSchemeLabel = stringResource(R.string.edit_delete)
     val allSchemes = listOf(defaultScheme) + timeSchemes
 
     // 草稿随浮层卸载复位：每次打开都从当前课表配置出发
     var draftSlots by remember { mutableStateOf(schedule.slots) }
     var draftDuration by remember { mutableIntStateOf(schedule.slotDurationMinutes) }
+    // 「自定义」名下保存的草稿：切去预设方案只是换掉当前显示，切回「自定义」时恢复这组值
+    var customSlots by remember { mutableStateOf(schedule.slots) }
+    var customDuration by remember { mutableIntStateOf(schedule.slotDurationMinutes) }
     // 选中方案 id；null = 自定义。打开时按当前配置反查，未命中任何方案即落在「自定义」。
     // 明细区始终可编辑：预设方案被实际改动时自动切回「自定义」（见 markCustom）
     var selectedSchemeId by remember {
@@ -147,6 +170,8 @@ internal fun TimeSchemeSheet(
     var nameVisible by remember { mutableStateOf(false) }
     var nameMounted by remember { mutableStateOf(false) }
     var nameDraft by remember { mutableStateOf("") }
+    // 名称输入卡的目标：null = 保存新方案；非空 = 重命名该 id 的方案（标题随之切换）
+    var nameTargetId by remember { mutableStateOf<String?>(null) }
 
     val covered = slotCountVisible || durationVisible || timeVisible || nameVisible
     val sheetHazeState = rememberHazeState()
@@ -163,9 +188,12 @@ internal fun TimeSchemeSheet(
     }
 
     // 明细发生实际改动 → 自动切到「自定义」：预设方案只当模板，不能就地改写。
+    // 改动同时写进「自定义」草稿，之后切去别的项再切回来仍是最新参数。
     // 仅在值确实变化时调用（确认同值不切换，仍留在原方案）
     fun markCustom() {
         selectedSchemeId = null
+        customSlots = draftSlots
+        customDuration = draftDuration
     }
 
     // 保存按钮在「自定义」下始终可点：即便没改任何值，也允许把当前配置存成新方案；
@@ -176,6 +204,21 @@ internal fun TimeSchemeSheet(
     val slotOverflowToast = stringResource(R.string.slot_overflow_desc)
     val dayOverflowToast = stringResource(R.string.error_slot_day_overflow)
     val orderToast = stringResource(R.string.error_slot_order)
+
+    // 保存成功 → 顶部自动切到刚保存的方案：保存时先记下既有方案 id 与发起时的草稿，
+    // 仓库回流后取新增项；若回流前草稿又被改过/切去了别的项，则尊重用户当前操作不抢选
+    var pendingSchemeSave by remember { mutableStateOf<PendingSchemeSave?>(null) }
+    LaunchedEffect(timeSchemes) {
+        val pending = pendingSchemeSave ?: return@LaunchedEffect
+        val saved = timeSchemes.firstOrNull { it.id !in pending.knownIds } ?: return@LaunchedEffect
+        pendingSchemeSave = null
+        if (draftSlots == pending.slots && draftDuration == pending.durationMinutes) {
+            // 与点选方案同语义：选中即整套填入草稿（保存值本就等于当前草稿）
+            selectedSchemeId = saved.id
+            draftSlots = saved.slots
+            draftDuration = saved.slotDurationMinutes
+        }
+    }
 
     OverlaySheet(
         title = stringResource(R.string.time_scheme_title),
@@ -208,8 +251,10 @@ internal fun TimeSchemeSheet(
                     onSelectionChange = { picked ->
                         val index = picked.firstOrNull() ?: return@SelectCard
                         if (index == allSchemes.size) {
-                            // 自定义：保留当前草稿，只解锁编辑
+                            // 自定义：恢复「自定义」草稿并解锁编辑（此前切走的参数不丢）
                             selectedSchemeId = null
+                            draftSlots = customSlots
+                            draftDuration = customDuration
                         } else {
                             val scheme = allSchemes[index]
                             selectedSchemeId = scheme.id
@@ -217,6 +262,38 @@ internal fun TimeSchemeSheet(
                             draftDuration = scheme.slotDurationMinutes
                         }
                     },
+                    // 长按用户保存的方案才出菜单；内置「默认」（index 0）与「自定义」（末尾）无菜单
+                    longPressMenuItems = { index ->
+                        val scheme = allSchemes.getOrNull(index)
+                            ?.takeIf { it.id != DEFAULT_TIME_SCHEME_ID }
+                        if (scheme == null) {
+                            emptyList()
+                        } else {
+                            listOf(
+                                PopupMenuItem(
+                                    label = renameSchemeLabel,
+                                    icon = R.drawable.ic_rename,
+                                    onClick = {
+                                        nameTargetId = scheme.id
+                                        nameDraft = scheme.name
+                                        nameMounted = true
+                                        nameVisible = true
+                                    },
+                                ),
+                                PopupMenuItem(
+                                    label = deleteSchemeLabel,
+                                    icon = R.drawable.ic_delete,
+                                    onClick = {
+                                        onDeleteScheme(scheme.id)
+                                        // 删的是当前选中方案 → 落回「自定义」，当前草稿留作
+                                        // 自定义草稿（避免选中 id 悬空、保存按钮状态错位）
+                                        if (selectedSchemeId == scheme.id) markCustom()
+                                    },
+                                ),
+                            )
+                        }
+                    },
+                    menuHazeState = sheetHazeState,
                 )
             }
 
@@ -338,6 +415,7 @@ internal fun TimeSchemeSheet(
                     icon = R.drawable.ic_add_circle_regular,
                     enabled = saveEnabled,
                     onClick = {
+                        nameTargetId = null
                         nameDraft = ""
                         nameMounted = true
                         nameVisible = true
@@ -426,13 +504,21 @@ internal fun TimeSchemeSheet(
         )
     }
 
-    // 方案名称输入：空名禁用确认；确认即保存当前草稿（不动课表），新方案经流回到顶部列表
+    // 方案名称输入（保存 / 重命名共用同一张卡）：空名禁用确认。
+    // 保存 = 当前草稿存成新方案（不动课表）；重命名 = 改目标方案的名字，均即时落库
     if (nameMounted) {
+        val renameTargetId = nameTargetId
         BottomTextFieldCard(
             visible = nameVisible,
             onDismiss = { nameVisible = false },
             onDismissed = { nameMounted = false },
-            title = stringResource(R.string.time_scheme_name_title),
+            title = stringResource(
+                if (renameTargetId != null) {
+                    R.string.time_scheme_rename_title
+                } else {
+                    R.string.time_scheme_name_title
+                },
+            ),
             value = nameDraft,
             onValueChange = { nameDraft = it },
             placeholder = stringResource(R.string.time_scheme_name_hint),
@@ -440,7 +526,17 @@ internal fun TimeSchemeSheet(
             hazeState = sheetHazeState,
             onConfirm = {
                 nameVisible = false
-                onSaveScheme(nameDraft.trim(), draftSlots, draftDuration)
+                if (renameTargetId != null) {
+                    onRenameScheme(renameTargetId, nameDraft.trim())
+                } else {
+                    // 记下保存前的方案 id 与草稿，仓库回流新增项后自动选中它
+                    pendingSchemeSave = PendingSchemeSave(
+                        knownIds = timeSchemes.map { it.id }.toSet(),
+                        slots = draftSlots,
+                        durationMinutes = draftDuration,
+                    )
+                    onSaveScheme(nameDraft.trim(), draftSlots, draftDuration)
+                }
             },
         )
     }
