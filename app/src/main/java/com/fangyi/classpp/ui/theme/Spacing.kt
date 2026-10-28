@@ -74,8 +74,8 @@ val SheetFieldHeight: Dp = 60.dp
 /** 动作图标边长 */
 val EditActionIconSize: Dp = 30.dp
 
-/** 动作图标与其下方 13sp Medium 标签的间距 */
-val EditActionLabelGap: Dp = 3.dp
+/** 动作图标与其下方 14sp Medium 标签的间距 */
+val EditActionLabelGap: Dp = 5.dp
 
 /** 动作块的水平内边距 */
 val EditActionInnerPadding: Dp = 8.dp

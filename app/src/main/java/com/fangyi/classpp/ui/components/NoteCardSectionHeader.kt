@@ -33,6 +33,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.CardSectionTitleSpacing
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
@@ -112,7 +113,7 @@ fun NoteCardSectionHeader(
                         if (allSelected) R.string.todo_edit_deselect_all else R.string.todo_edit_select_all,
                     ),
                     color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.classppTextStyles.sectionTitle.settingsRowMetrics(),
+                    style = ClassppTextTokens.sectionAction,
                 )
             }
         } else {

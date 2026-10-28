@@ -967,7 +967,7 @@ private fun IconPill(
 }
 
 /**
- * 顶栏展开动作块：图标在上、13sp Medium 标签在下（课表编辑栏 EditAction 同规格，特殊展示字号），
+ * 顶栏展开动作块：图标在上、14sp Medium 标签在下（课表编辑栏 EditAction 同规格），
  * 两者水平居中对齐，整块可点。图标与标签同色（[contentColor]，默认 onSurface 设计图
  * 深色；分类块用它表达状态——分组显隐过滤生效中 = primary、特殊分组页在场 = negative
  * 置灰）。[enabled] = false 时整块不可点，点击与按压反馈一并停。文字已承载语义，

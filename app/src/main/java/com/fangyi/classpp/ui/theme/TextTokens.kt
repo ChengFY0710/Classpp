@@ -10,10 +10,10 @@ import androidx.compose.ui.unit.sp
  * 取值说明：
  * - 方案 B 阶梯：UI 文字 `11 / 12 / 14 / 16 / 20 / 24sp`，展示数字 `32 / 48 / 64sp`。
  * - 特殊展示字号（不进入常规阶梯）：`23sp` 仅页面顶栏（[pageTitle]）；
- *   `13sp` 仅顶栏/编辑栏图标下动作标签（[actionLabel]）；
  *   `17sp` 仅课表页顶栏周数选择胶囊（[weekPill]）与课表日期带（[courseGridDate]）；
  *   `22sp` 仅周数选择卡内数字（[weekGridNumber]）。
- * - 中文正文/描述字距统一 `0sp`；只有 ≥20sp 的展示标题保留负字距。
+ * - 中文正文/描述字距统一 `0sp`；只有 ≥20sp 的展示标题保留负字距，
+ *   14sp 动作标签（[actionLabel]）用 `0.6sp` 正字距补齐小字可读性。
  * - token 只描述字号 / 字重 / 行高 / 字距 / 字体家族，不包含颜色；颜色仍由
  *   `MaterialTheme.colorScheme` / `ClassppColors` 在调用处或 [ClassppTextStyles] 中派生。
  * - `Text` 未显式传 `style` 时会继承 `LocalTextStyle`（[Typography.bodyLarge]：
@@ -54,6 +54,8 @@ object ClassppTextTokens {
     val alternateRowTitle = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 分组标题：14sp Medium。 */
     val sectionTitle = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium)
+    /** 分组头「全选/取消全选」文字按钮：14sp SemiBold，行高 20；与 [sectionTitle] 同字号，仅字重提高一档。 */
+    val sectionAction = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
 
     // ---------- 正文 / 表单族 ----------
     /** 行卡左侧 label：16sp SemiBold。 */
@@ -104,16 +106,16 @@ object ClassppTextTokens {
     val textButton = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 底栏标签：11sp Medium。 */
     val navLabel = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, lineHeight = 13.sp, letterSpacing = 0.sp)
-    /** 顶栏/编辑栏图标下动作标签：13sp Medium，特殊展示字号。 */
-    val actionLabel = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp)
+    /** 顶栏/编辑栏图标下动作标签：14sp Medium，字距 0.8sp，行高 16 不变。 */
+    val actionLabel = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.8.sp)
 
     // ---------- 日历 / 数字族 ----------
     /** 日历星期：16sp SemiBold。 */
     val calendarWeekday = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 日历日号：16sp SemiBold。 */
     val calendarDay = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp, letterSpacing = 0.sp)
-    /** 日程页「回到今天」/ 课表页「返回本周」：16sp Medium。 */
-    val calendarAction = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
+    /** 日程页「回到今天」/ 课表页「返回本周」：16sp SemiBold。 */
+    val calendarAction = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 课表页顶栏周数选择胶囊：17sp SemiBold，特殊展示字号；仅胶囊使用，行高 20 不变。 */
     val weekPill = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 周数选择卡内数字：22sp Medium，特殊展示字号；仅周数选择卡方格使用，行高 24 不变。 */
