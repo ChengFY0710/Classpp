@@ -57,6 +57,43 @@ private val CardPaddingVertical = 3.dp
 /** 行预算的安全余量：吸收 dp→px 取整与课程名/教师之间的 1dp 间距 */
 private val CardBudgetSafety = 1.dp
 
+/**
+ * 可见行（起止时间、教师按需）对应的内容高度：与行预算的固定开销同源——
+ * 上下内边距 3dp × 2 + 1dp 间距/安全余量，加上各可见文本行的 lineHeight × fontScale。
+ * 默认字号下：完整 87dp（显示教师）/ 71dp（关闭教师），去掉结束时间 71/55，
+ * 只剩课程名/教师/地点 55/39。
+ */
+internal fun cardContentHeightDp(
+    fontScale: Float,
+    showTeacher: Boolean,
+    showStartTime: Boolean,
+    showEndTime: Boolean,
+): Float {
+    val meta = ClassppTextTokens.courseCardMeta.lineHeight.value
+    val title = ClassppTextTokens.compactCardTitle.lineHeight.value
+    val teacher = ClassppTextTokens.courseCardTeacher.lineHeight.value
+    val location = ClassppTextTokens.courseCardLocation.lineHeight.value
+    val lines = (if (showStartTime) meta else 0f) + title + location +
+        (if (showTeacher) teacher else 0f) + (if (showEndTime) meta else 0f)
+    return (CardPaddingVertical * 2 + CardBudgetSafety).value + lines * fontScale
+}
+
+/** 卡内起止时间的收起结果：结束时间先收、开始时间后收 */
+internal data class CardRowVisibility(val showStartTime: Boolean, val showEndTime: Boolean)
+
+/**
+ * 按卡片可用高度决定起止时间是否可见：完整内容放不下先收结束时间，
+ * 连去掉结束时间的内容都放不下再收开始时间。结束时间可见时开始时间必然可见。
+ */
+internal fun resolveCardVisibility(
+    cardHeightDp: Float,
+    fullContentDp: Float,
+    withoutEndContentDp: Float,
+): CardRowVisibility = CardRowVisibility(
+    showStartTime = cardHeightDp >= withoutEndContentDp,
+    showEndTime = cardHeightDp >= fullContentDp,
+)
+
 /** [CourseColor] 到卡片竖条/时间文字颜色的浅色映射（白卡底，马卡龙原色；深色见 [barColorDark]）。
  *  分支顺序与枚举声明一致（颜色选集 18 色） */
 private val CourseColor.barColorLight: Color
@@ -115,6 +152,9 @@ internal fun CourseColor.barColor(dark: Boolean): Color =
 
 /** 卡内文本行数分配结果：[name] 课程名、[location] 地点（教师恒 1 行，不参与分配） */
 internal data class CardLines(val name: Int, val location: Int)
+
+/** 单张卡在当前高度下的内容方案：起止时间可见性 + 课程名/地点行数 */
+private data class CardPlan(val visibility: CardRowVisibility, val lines: CardLines)
 
 /** 单字段最多显示行数：超长课名/地点在跨节大卡里也不至于铺满整卡 */
 private const val MaxFieldLines = 8
@@ -193,13 +233,17 @@ private fun rememberNaturalLineCount(text: String, style: TextStyle, widthPx: Fl
  * 课程卡片：白底圆角卡 + 左侧彩色竖条。
  *
  * 自上而下：开始时间（竖条同色）→ 课程名 → 教师 → @楼名 房间，底部对齐结束时间。
+ * 卡高不足时按「结束时间 → 开始时间」的顺序收起（阈值见 [cardContentHeightDp]）：
+ * 显示教师时完整内容 87dp、去掉结束时间 71dp、只剩课程名/教师/地点 55dp；
+ * 关闭教师时 71/55/39dp。最终只留三行各 1 行，网格行高由 [minCardRowHeight] 钳住，
+ * 卡片不会再缩到内容被裁切。
  * 课程名/地点的行数上限 = min(实测自然行数, 预算放得下的档位)（[allocateCardLines]）：
  * 先按 [rememberNaturalLineCount] 在卡宽下实测文本行数封顶，再在偏好序上 first-fit——
  * 内容短不为空行预留空间，内容长才用省略号截断；教师/起止时间恒 1 行——设置页调小行高
  * 文本变密、调大变疏。
  *
  * [showTeacher] = 个性化页「显示教师」开关：关闭时教师行不渲染，视为教师留空——
- * 地点行上移、行高预算同步少扣一行（[allocateCardLines] 的固定开销按 2 行时间 + 内边距计）。
+ * 地点行上移、行高预算同步少扣一行；收起阈值与最终下限也按无教师（71/55/39dp）计算。
  *
  * 竖条分两段表示交替课程：本周上的那门占上 3/4，非本周的交替课占下 1/4
  * （见 [Course.alternateBar]）；组内非本周的课再多也只占这 1/4、只用一个颜色。
@@ -279,10 +323,10 @@ fun CourseCard(
                 )
             }
         }
-        // 内容区包一层 BoxWithConstraints：卡高约束首帧组合期即可用（无先溢出后修正的闪跳），
-        // 行预算按起止时间行（lineHeight 16sp）+ 教师行（lineHeight 16sp，留空则不扣）+
-        // 内边距（上下 3dp）+ 安全余量扣除，行成本取各 Text 的 lineHeight（16sp）× fontScale × density；
-        // 各字段的自然行数按内容区实际文本宽度实测（见 rememberNaturalLineCount）
+        // 内容区包一层 BoxWithConstraints：卡高约束首帧组合期即可用（无先溢出后修正的闪跳）。
+        // 先按卡片实际高度决定起止时间是否收起（见 resolveCardVisibility），行预算只扣
+        // 当前可见的时间行 + 教师行 + 内边距 + 安全余量；行成本取各 Text 的 lineHeight（16sp）
+        // × fontScale × density，各字段的自然行数按内容区实际文本宽度实测。
         BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
@@ -290,25 +334,43 @@ fun CourseCard(
         ) {
             // 「显示教师」关闭或教师留空都不渲染教师行：地点上移、预算少扣一行
             val hasTeacher = showTeacher && course.teacher.isNotBlank()
-            val lines = if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
-                CardLines(3, 3)
+            val plan = if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
+                CardPlan(CardRowVisibility(true, true), CardLines(3, 3))
             } else {
                 val localDensity = LocalDensity.current
-                val spPx = { sp: Float -> sp * localDensity.fontScale * localDensity.density }
-                val fixedPx = with(localDensity) {
-                    (CardPaddingVertical * 2 + CardBudgetSafety).toPx()
-                } + spPx(ClassppTextTokens.courseCardMeta.lineHeight.value) * 2f +
-                    (if (hasTeacher) spPx(ClassppTextTokens.courseCardTeacher.lineHeight.value) else 0f)
-                val textWidthPx = constraints.maxWidth -
-                    with(localDensity) { (CardPaddingStart + CardPaddingEnd).toPx() }
+                val fontScale = localDensity.fontScale
+                val spPx = { sp: Float -> sp * fontScale * localDensity.density }
                 val nameStyle = ClassppTextTokens.compactCardTitle
                 val locationStyle = ClassppTextTokens.courseCardLocation
-                allocateCardLines(
-                    budgetPx = constraints.maxHeight - fixedPx,
-                    nameLinePx = spPx(nameStyle.lineHeight.value),
-                    locationLinePx = spPx(locationStyle.lineHeight.value),
-                    wantedName = rememberNaturalLineCount(course.name, nameStyle, textWidthPx),
-                    wantedLocation = rememberNaturalLineCount(course.location, locationStyle, textWidthPx),
+                // 卡高不足时先收结束时间、再收开始时间；阈值 = 各可见行组合的内容高度
+                val visibility = resolveCardVisibility(
+                    cardHeightDp = maxHeight.value,
+                    fullContentDp = cardContentHeightDp(fontScale, hasTeacher, true, true),
+                    withoutEndContentDp = cardContentHeightDp(fontScale, hasTeacher, true, false),
+                )
+                // 预算只扣当前可见的时间行：隐藏一行时间，16sp 让给课程名/地点
+                val nameLinePx = spPx(nameStyle.lineHeight.value)
+                val locationLinePx = spPx(locationStyle.lineHeight.value)
+                val visibleContentPx = with(localDensity) {
+                    cardContentHeightDp(
+                        fontScale = fontScale,
+                        showTeacher = hasTeacher,
+                        showStartTime = visibility.showStartTime,
+                        showEndTime = visibility.showEndTime,
+                    ).dp.toPx()
+                }
+                val fixedPx = visibleContentPx - nameLinePx - locationLinePx
+                val textWidthPx = constraints.maxWidth -
+                    with(localDensity) { (CardPaddingStart + CardPaddingEnd).toPx() }
+                CardPlan(
+                    visibility = visibility,
+                    lines = allocateCardLines(
+                        budgetPx = constraints.maxHeight - fixedPx,
+                        nameLinePx = nameLinePx,
+                        locationLinePx = locationLinePx,
+                        wantedName = rememberNaturalLineCount(course.name, nameStyle, textWidthPx),
+                        wantedLocation = rememberNaturalLineCount(course.location, locationStyle, textWidthPx),
+                    ),
                 )
             }
             Column(
@@ -320,16 +382,24 @@ fun CourseCard(
                         top = CardPaddingVertical,
                         bottom = CardPaddingVertical,
                     ),
-                verticalArrangement = Arrangement.SpaceBetween,
+                // 开始时间也收起后只剩课程名/教师/地点：在整卡内容区内垂直居中；
+                // 其余状态保持原布局（正常高度卡片不受影响）
+                verticalArrangement = if (plan.visibility.showStartTime) {
+                    Arrangement.SpaceBetween
+                } else {
+                    Arrangement.Center
+                },
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                    Text(
-                        text = slot.startTime,
-                        style = ClassppTextTokens.courseCardMeta,
-                        color = barColor,
-                        maxLines = 1,
-                        textAlign = TextAlign.Start,
-                    )
+                    if (plan.visibility.showStartTime) {
+                        Text(
+                            text = slot.startTime,
+                            style = ClassppTextTokens.courseCardMeta,
+                            color = barColor,
+                            maxLines = 1,
+                            textAlign = TextAlign.Start,
+                        )
+                    }
                     Column() {
                         Text(
                             text = course.name,
@@ -339,7 +409,7 @@ fun CourseCard(
                             } else {
                                 inactiveColor
                             },
-                            maxLines = lines.name,
+                            maxLines = plan.lines.name,
                             overflow = TextOverflow.Ellipsis,
                         )
                         Spacer(modifier = Modifier.size(1.dp))
@@ -360,18 +430,20 @@ fun CourseCard(
                             style = ClassppTextTokens.courseCardLocation,
                             color = secondaryColor,
                             textAlign = TextAlign.Start,
-                            maxLines = lines.location,
+                            maxLines = plan.lines.location,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
-                Text(
-                    text = endTime,
-                    style = ClassppTextTokens.courseCardMeta,
-                    color = barColor,
-                    maxLines = 1,
-                    textAlign = TextAlign.Start,
-                )
+                if (plan.visibility.showEndTime) {
+                    Text(
+                        text = endTime,
+                        style = ClassppTextTokens.courseCardMeta,
+                        color = barColor,
+                        maxLines = 1,
+                        textAlign = TextAlign.Start,
+                    )
+                }
             }
         }
     }
@@ -383,9 +455,28 @@ private val AddIconSize = 30.dp
 /** 添加卡片左侧内缩 = 课程卡片的色条 3dp + 内缩 4dp，使两者起止时间同一条竖线 */
 private val AddCardStartPadding = 7.dp
 
+/** 添加卡片上下内边距：内容高度与展开时的 padding 同源 */
+private val AddCardPaddingVertical = 3.dp
+
+/**
+ * 添加卡片的内容高度（dp）：上下内边距 + 加号 + 按需的起止时间行。
+ * 默认字号下完整 68dp、去掉结束时间 52dp、只剩加号 36dp。
+ */
+internal fun addCardContentHeightDp(
+    fontScale: Float,
+    showStartTime: Boolean,
+    showEndTime: Boolean,
+): Float {
+    val meta = ClassppTextTokens.courseCardMeta.lineHeight.value
+    val lines = (if (showStartTime) meta else 0f) + (if (showEndTime) meta else 0f)
+    return (AddCardPaddingVertical * 2).value + AddIconSize.value + lines * fontScale
+}
+
 /**
  * 编辑态空位上的「添加卡片」：与 [CourseCard] 同骨架——上开始时间、下结束时间，
  * 中间是加号；无左侧色条。点整卡打开添加课程弹窗。
+ * 卡高不足时与课程卡片一样先收结束时间、再收开始时间，最终只留加号
+ * （内容高 68/52/36dp，阈值见 [addCardContentHeightDp]）。
  *
  * [onLongClick] 仅编辑态且剪贴板有课时会传（长按出"粘贴课程"菜单，见 ScheduleScreen）；
  * 与 [CourseCard] 同源：长按与点击都在 clip 之内（圆角外的点击被裁掉），按压反馈共用按压源。
@@ -413,7 +504,7 @@ fun AddCourseCard(
             onClick = onClick,
         )
     }
-    Column(
+    BoxWithConstraints(
         modifier = modifier
             // 按压反馈接在 clip 之前：缩放连圆角裁剪一起放大，提亮范围与 CardShape 对齐
             .pressFeedback(
@@ -422,26 +513,53 @@ fun AddCourseCard(
             )
             .clip(CardShape)
             .background(MaterialTheme.colorScheme.surface)
-            .then(clickModifier)
-            .padding(
-                start = AddCardStartPadding,
-                end = 5.dp,
-                top = 3.dp,
-                bottom = 3.dp,
-            ),
-        verticalArrangement = Arrangement.SpaceBetween,
-        horizontalAlignment = Alignment.Start,
+            .then(clickModifier),
     ) {
-        AddCardTime(text = slot.startTime)
-        Icon(
-            painter = painterResource(R.drawable.ic_add),
-            contentDescription = stringResource(R.string.cd_add_course),
-            tint = MaterialTheme.colorScheme.primary,
+        // 与课程卡片同一收起规则：完整内容放不下先收结束时间，再收开始时间
+        val visibility = if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
+            CardRowVisibility(true, true)
+        } else {
+            val fontScale = LocalDensity.current.fontScale
+            resolveCardVisibility(
+                cardHeightDp = maxHeight.value,
+                fullContentDp = addCardContentHeightDp(fontScale, true, true),
+                withoutEndContentDp = addCardContentHeightDp(fontScale, true, false),
+            )
+        }
+        Column(
             modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .size(AddIconSize),
-        )
-        AddCardTime(text = slot.endTime)
+                .fillMaxSize()
+                .padding(
+                    start = AddCardStartPadding,
+                    end = 5.dp,
+                    top = AddCardPaddingVertical,
+                    bottom = AddCardPaddingVertical,
+                ),
+            verticalArrangement = Arrangement.Top,
+            horizontalAlignment = Alignment.Start,
+        ) {
+            if (visibility.showStartTime) {
+                AddCardTime(text = slot.startTime)
+            }
+            // 加号在「开始时间下方的剩余区域」内垂直居中；开始时间也收起时即整卡内容区居中。
+            // 起止时间都显示时剩余区域 = 加号高度 + 上下等分余量，与旧 SpaceBetween 版式一致。
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_add),
+                    contentDescription = stringResource(R.string.cd_add_course),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(AddIconSize),
+                )
+            }
+            if (visibility.showEndTime) {
+                AddCardTime(text = slot.endTime)
+            }
+        }
     }
 }
 
@@ -623,6 +741,60 @@ private fun SevenDayRowPreview() {
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 收起起止时间的三个阶段（显示教师）：87dp 完整、80dp 只收结束时间、55dp 只剩
+ * 课程名/教师/地点，用于在 Studio 预览里检查阈值切换。
+ */
+@Preview(showBackground = true, name = "收起起止时间", widthDp = 360)
+@Composable
+private fun CourseCardCollapsedPreview() {
+    ClassppTheme {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.background),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            listOf(87.dp, 80.dp, 55.dp).forEach { height ->
+                CourseCard(
+                    course = MockCourses[4],
+                    slot = DefaultTimeSlots[1],
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(height),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 添加卡片收起起止时间的三个阶段：68dp 完整、60dp 加号在开始时间下方居中、
+ * 36dp 只剩加号（整卡居中）。
+ */
+@Preview(showBackground = true, name = "添加卡片 · 收起起止时间", widthDp = 360)
+@Composable
+private fun AddCourseCardCollapsedPreview() {
+    ClassppTheme {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.background),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            listOf(68.dp, 60.dp, 36.dp).forEach { height ->
+                AddCourseCard(
+                    slot = DefaultTimeSlots[1],
+                    onClick = {},
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(height),
+                )
             }
         }
     }

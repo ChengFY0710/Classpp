@@ -80,17 +80,39 @@ internal val SevenDayRowExtraHeight = 10.dp
 internal fun gridRowHeight(daysPerWeek: Int): Dp =
     if (daysPerWeek > 5) GridRowHeight + SevenDayRowExtraHeight else GridRowHeight
 
-/** 行高下限：超短节次按比例会缩到卡片内容放不下（如 20 分钟 → 30dp），缩到本值为止 */
+/**
+ * 通用行高下限（纯函数默认值）：48dp 保证极短节次仍有基本触控/可读面积。
+ * 课表网格的实际下限由卡片内容实算（见 [minCardRowHeight]），会随教师开关与字号变化。
+ */
 internal val MinRowHeight = 48.dp
 
 /**
  * 一个节次行的行高：基准行高（[gridRowHeight]）按该节时长占 [BaseSlotMinutes] 的比例伸缩，
- * 再乘个性化倍率（[CardHeightScales]，默认 1.0），短于 [MinRowHeight] 时钳到下限。
+ * 再乘个性化倍率（[CardHeightScales]，默认 1.0），短于 [minRowHeight] 时钳到下限。
+ * 默认 [MinRowHeight] 供不感知卡片内容的调用方使用；课表网格传入 [minCardRowHeight]。
  * 先算时长占比再乘基准 dp：基准时长 × 1.0 倍处无浮点误差，与固定行高逐像素一致。
  */
-internal fun slotRowHeight(durationMinutes: Int, daysPerWeek: Int, scale: Float): Dp =
+internal fun slotRowHeight(
+    durationMinutes: Int,
+    daysPerWeek: Int,
+    scale: Float,
+    minRowHeight: Dp = MinRowHeight,
+): Dp =
     (gridRowHeight(daysPerWeek) * (durationMinutes.toFloat() / BaseSlotMinutes) * scale)
-        .coerceAtLeast(MinRowHeight)
+        .coerceAtLeast(minRowHeight)
+
+/**
+ * 卡片内容驱动的行高下限：收起起止时间后仍要放下课程名、教师（可选）、地点各 1 行。
+ * 默认字号下显示教师 60dp、关闭教师 44dp，系统字体放大时同步增长；
+ * 网格用它作为实际下限，卡片不会再缩到内容被裁切。
+ */
+internal fun minCardRowHeight(showTeacher: Boolean, fontScale: Float): Dp =
+    (cardContentHeightDp(
+        fontScale = fontScale,
+        showTeacher = showTeacher,
+        showStartTime = false,
+        showEndTime = false,
+    ) + (CellPaddingTop + CellPadding).value).dp
 
 /** 单元格内边距，卡片间形成网格沟槽（@Preview 与网格保持一致） */
 internal val CellPadding = 3.dp
@@ -178,14 +200,23 @@ fun CourseGrid(
     // 行高随列数与**各节自己的时长**变：基准行高（100 分钟节）按每节实际分钟数伸缩、
     // 再乘个性化倍率（见 slotRowHeight）。页高、每行、跨节卡三处都取自同一份 rowHeights，
     // 否则卡片会溢出格子。倍率取自个性化页滑条（读 .value → 本组件随拖动每帧重组重排），
-    // 默认 1.0 且默认作息全为 100 分钟节，行高与基准恒等，默认渲染无差异
+    // 默认 1.0 且默认作息全为 100 分钟节，行高与基准恒等，默认渲染无差异。
+    // 行高下限按卡片内容实算（见 minCardRowHeight）：卡片收起起止时间后仍能放下
+    // 课程名/教师/地点各 1 行，极短节/低倍率时不会再裁切内容
     val scales = cardHeights.value
     val scale = if (days > 5) scales.seven else scales.five
-    val rowHeights = remember(timeSlots, days, scale) {
-        timeSlots.map { slot -> slotRowHeight(slot.durationMinutes(), days, scale) }
-    }
     // 教师行显隐：同 scales 一样在本组件读取一次，向下传纯布尔
     val showTeacherOnCard = showTeacher.value
+    // 内容下限随教师开关与系统字号变；网格行高不得低于它（页高/跨节卡高度自动跟随）
+    val fontScale = LocalDensity.current.fontScale
+    val minRowHeight = remember(showTeacherOnCard, fontScale) {
+        minCardRowHeight(showTeacherOnCard, fontScale)
+    }
+    val rowHeights = remember(timeSlots, days, scale, minRowHeight) {
+        timeSlots.map { slot ->
+            slotRowHeight(slot.durationMinutes(), days, scale, minRowHeight)
+        }
+    }
     // 编辑进度：读 State → 转场期间本组件逐帧重组重排（与拖动卡片高度同一量级），
     // 页面高度、日期带高、顶部留白都随之连续变化；Steady 状态下恒为 0/1
     val editFraction = editProgress.value.coerceIn(0f, 1f)
