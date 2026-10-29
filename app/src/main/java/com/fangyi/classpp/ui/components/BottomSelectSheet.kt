@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.BottomSelectSheetShape
+import com.fangyi.classpp.ui.theme.TopBarRowHorizontalPadding
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
@@ -53,9 +54,6 @@ import kotlinx.coroutines.launch
 
 /** 卡片距屏幕左右/底缘的边距：私有值，不随全局页边距走（卡片悬浮感与内容节奏解耦） */
 private val CardEdgeMargin: Dp = 10.dp
-
-/** 顶栏按钮行距卡片左右缘：与浮层顶栏按钮行同款 15dp（不随 [CardEdgeMargin] 联动） */
-private val TopBarRowHorizontalPadding: Dp = 15.dp
 
 /** 顶栏按钮行距卡片顶缘：与按钮行横向边距同一节奏 */
 private val TopBarTopPadding: Dp = 15.dp

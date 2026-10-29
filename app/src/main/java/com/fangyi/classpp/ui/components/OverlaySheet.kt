@@ -65,6 +65,7 @@ import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetShape
+import com.fangyi.classpp.ui.theme.TopBarRowHorizontalPadding
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.glassPressFeedback
 import com.fangyi.classpp.ui.theme.glassSurface
@@ -93,12 +94,6 @@ private val DragDismissVelocity: Dp = 800.dp
 
 /** 顶栏总高（拖拽条 + 按钮行），滚动内容顶部为它留位。 */
 private val TopBarHeight = 78.dp
-
-/**
- * 顶栏按钮行（把手下的关闭/确认胶囊）的横向边距：刻意大于内容卡片的
- * [PageHorizontalSpacing]（12dp），胶囊贴边更收、与卡片左缘不齐平（设计如此）。
- */
-private val TopBarRowHorizontalPadding: Dp = 15.dp
 
 /**
  * 顶栏胶囊固定高度 = 默认图标 30dp + 上下 padding 各 8dp（[SheetPillButton] 的自然高）。

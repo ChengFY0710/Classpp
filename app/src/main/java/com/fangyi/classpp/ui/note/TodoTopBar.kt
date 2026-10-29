@@ -81,8 +81,12 @@ import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
 import com.fangyi.classpp.ui.motion.tabTransitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.EditActionBarHeight
+import com.fangyi.classpp.ui.theme.EditActionIconSize
+import com.fangyi.classpp.ui.theme.EditActionInnerPadding
 import com.fangyi.classpp.ui.theme.EditActionLabelGap
 import com.fangyi.classpp.ui.theme.EditActionShape
+import com.fangyi.classpp.ui.theme.EditBarTopPadding
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
@@ -149,24 +153,11 @@ private val TopBarTopPadding = 0.dp
 /** 裁剪形状纵向的外扩量：容纳 45dp elevation 柔影的可见扩散范围 */
 private val ShadowBleed = 200.dp
 
-/** 展开动作行高度：纵向「图标 + 标签」块在其中垂直居中（课表编辑栏 EditActionBarHeight 同规格） */
-private val TopBarActionBarHeight = 64.dp
-
-/** 动作行与上方胶囊行的间距（课表编辑栏状态栏下留白同款 6dp） */
-private val TopBarActionBarTopGap = 6.dp
-
-/** 动作块图标边长 / 块内水平边距（课表编辑栏 EditAction 同规格） */
-private val TopBarActionIconSize = 30.dp
-private val TopBarActionInnerPadding = 8.dp
-
-// 图标与标签间距不另设常量，直接用编辑栏共享的 EditActionLabelGap（Spacing.kt）：
-// 课表编辑栏 / 待办编辑栏 / 本展开动作行三处单源，改一处三处同步
-
 /**
  * 展开动作行的总占位高（上方留白 + 行高）：宿主列表让位用。公开 internal 让
  * [com.fangyi.classpp.ui.note.TodoScreen] 直接引用，不再走手工镜像常量。
  */
-internal val TopBarActionRowSpace = TopBarActionBarTopGap + TopBarActionBarHeight
+internal val TopBarActionRowSpace = EditBarTopPadding + EditActionBarHeight
 
 /**
  * 常规顶栏（胶囊行）在内容坐标系里的占位高（状态栏之上另算）：顶部留白
@@ -548,8 +539,8 @@ internal fun TodoTopBar(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = TopBarActionBarTopGap)
-                            .height(TopBarActionBarHeight),
+                            .padding(top = EditBarTopPadding)
+                            .height(EditActionBarHeight),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         // 分组块打开待办分组浮层；概览块仍为占位（保留按压反馈，
@@ -1028,14 +1019,14 @@ private fun TodoBarAction(
             // 放大倍率与课表编辑栏动作块同规格单独调大到 1.10（不随全局默认）
             .pressClickable(EditActionShape, scale = 1.10f, enabled = enabled, onClick = onClick)
             .clip(EditActionShape)
-            .padding(horizontal = TopBarActionInnerPadding, vertical = 4.dp),
+            .padding(horizontal = EditActionInnerPadding, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
             painter = painterResource(iconRes),
             contentDescription = null,
             tint = contentColor,
-            modifier = Modifier.size(TopBarActionIconSize),
+            modifier = Modifier.size(EditActionIconSize),
         )
         Spacer(Modifier.height(EditActionLabelGap))
         Text(
