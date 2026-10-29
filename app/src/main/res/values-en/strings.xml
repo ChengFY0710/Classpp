@@ -15,6 +15,9 @@
     <string name="todo_action_category">Category</string>
     <string name="todo_action_view">View</string>
     <string name="todo_action_overview">Overview</string>
+    <!-- Todo page "View" menu: list view (default) / inbox view -->
+    <string name="todo_view_list">List view</string>
+    <string name="todo_view_inbox">Inbox view</string>
     <!-- Todo groups sheet top bar -->
     <string name="todo_groups_title">Todo Groups</string>
     <string name="todo_groups_create">New</string>
@@ -184,6 +187,10 @@
     <string name="card_height_default">Default</string>
     <string name="card_height_value">%1$d%%</string>
     <string name="show_teacher">Show teacher</string>
+    <!-- Todo (Personalization) -->
+    <string name="section_todo">Todo</string>
+    <string name="todo_masonry_view">Waterfall view</string>
+    <string name="todo_masonry_view_desc">When on, the waterfall view is enabled once there are 3 inbox cards</string>
     <string name="time_range_start">Start time</string>
     <string name="time_range_end">End time</string>
     <string name="show_inactive">Show classes not held this week</string>

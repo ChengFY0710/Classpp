@@ -15,10 +15,15 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
@@ -27,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -77,11 +83,14 @@ import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.PopupMenuSection
 import com.fangyi.classpp.ui.components.SwipeAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
+import com.fangyi.classpp.ui.components.TodoInboxCard
+import com.fangyi.classpp.ui.components.TodoInboxItem
 import com.fangyi.classpp.ui.components.labelText
 import com.fangyi.classpp.ui.motion.CrossPages
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
+import com.fangyi.classpp.ui.motion.RubberBandLazyVerticalStaggeredGrid
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.CardSectionTitleSpacing
@@ -118,18 +127,28 @@ private val SectionSpacing = 20.dp
  * 顶栏浮在上层；选中态在此持有，可见列表由 [filterTodosByGroup] 等过滤函数按页面
  * 身份派生（见下方 CrossPages 段）。
  *
- * 分组/特殊分组页/标签页之间的切换走整页交叉过渡（ui.motion 的 [CrossPages]，Cresto
- * 层级交叉动效的移植）：每个页面身份一个独立列表组合，旧页淡出下沉、新页延迟退让后
- * 放大浮起——切组不再触发条目级交叉淡入淡出（那是同一 LazyColumn 换数据的产物），
- * 条目级 animateItem 只服务页内增删移与折叠；各页过滤口径从页面 key 解码，退场中的
- * 旧页继续渲染自己的内容；列表滚动位与分区折叠经 SaveableStateProvider 按页保活。
- * 顶栏不参与过渡（页面 chrome 常驻原位）。
+ * 分组/特殊分组页/标签页/列表↔收集箱视图之间的切换走整页交叉过渡（ui.motion 的
+ * [CrossPages]，Cresto 层级交叉动效的移植）：每个页面身份一个独立内容组合，旧页淡出
+ * 下沉、新页延迟退让后放大浮起——切组不再触发条目级交叉淡入淡出（那是同一 LazyColumn
+ * 换数据的产物），条目级 animateItem 只服务页内增删移与折叠；各页过滤口径与视图
+ * 从页面 key 解码，退场中的旧页继续渲染自己的内容（视图也是身份段的一部分，见
+ * 下方视图菜单段）；列表滚动位、网格滚动位与分区折叠经 SaveableStateProvider 按页保活
+ * （列表与收集箱各存各的滚动位）。顶栏不参与过渡（页面 chrome 常驻原位）。
  *
  * 列表分「已置顶」「已逾期」「未完成」「已完成」四组，已置顶在最上（无置顶待办时整组
  * 隐藏）、已逾期次之、已完成在下（默认收起），组内按创建时间（创建早的在前）；
  * 勾选切换写回仓库，完成即移组，截止日期已过的待办移入已逾期组、标题标红。
  * 顶栏分类菜单（分类块唤起，与排序菜单同款弹层）是四组显隐的多选开关：
  * 默认全勾选，取消勾选即整组隐藏（[visibleSections] 派生，点选不收菜单）。
+ * 顶栏视图菜单（视图块唤起，与排序/分类同款弹层）在列表视图（默认）与收集箱视图
+ * 之间切换：收集箱视图把非空分组渲染成 [TodoInboxCard]——三组及以上按个性化页的
+ * 「瀑布流视图」开关（[masonryView]，默认开启）走两列瀑布流（卡间距 10dp，按卡片
+ * 高度落进较短一列）或整宽竖排，两组及以下始终整宽竖排（半宽卡会把标题与
+ * 属性行挤得过窄；特殊分组页的单卡同理）；卡内只显示
+ * 标题与时间/截止/重复（三项均带图标），行点击拉起详情浮层、勾选照常落库；分组口径
+ * 与列表同源（[buildTodoSections]）。视图段编进 CrossPages 的页面 key，视图切换与
+ * 切分组同享整页交叉过渡；最近删除页保留列表且不编码视图段（撤回/彻底删除需要整卡
+ * 动作，切视图不播动画、内容不变），顶栏视图块在该页置灰不可点。
  * 新建待办浮层（[NewTodoSheet]）两段式挂载：[showNewTodoSheet] 置真即挂载滑入，
  * 关闭先清 visible 播完出场，onDismissed 才卸载；点卡片拉起待办详情浮层
  * （[TodoDetailSheet]，挂载接线同课表页课程详情）。任一浮层在场时经
@@ -163,6 +182,9 @@ fun TodoScreen(
     onNewTodoSheetDismiss: () -> Unit = {},
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
     tabTransition: TabTransitionState? = null,
+    // 收集箱「瀑布流视图」开关（个性化页的 State 实例透传，默认开启）：关闭时收集箱
+    // 无论几组都整宽竖排；值只在 TodoInboxContent 叶子内读，切换开关不牵动整页
+    masonryView: State<Boolean> = mutableStateOf(true),
 ) {
     // get() 返回即 bootstrap 完成，此分支仅首帧毫秒级；早返回后下方 smart cast 为非空
     if (repository == null) {
@@ -247,6 +269,11 @@ fun TodoScreen(
     var sortMenuExpanded by rememberSaveable { mutableStateOf(false) }
     // 分类菜单展开态（弹层锚在展开动作行的分类块处，与排序菜单同款三件套接线）
     var categoryMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    // 视图模式：false = 列表（默认），true = 收集箱；rememberSaveable 同排序口径
+    //（旋转/切 tab/进程重建不丢，冷启动回列表）
+    var inboxView by rememberSaveable { mutableStateOf(false) }
+    // 视图菜单展开态（弹层锚在展开动作行的视图块处，与排序/分类同款三件套）
+    var viewMenuExpanded by rememberSaveable { mutableStateOf(false) }
     // 分类可见性：菜单四项全勾选 = 四组全显（默认），取消勾选即时隐藏对应分组。
     // rememberSaveable：旋转/切 tab/进程重建不丢，冷启动回默认全选——与排序状态同口径
     var visibleSections by rememberSaveable { mutableStateOf(TodoSection.entries.toSet()) }
@@ -402,10 +429,21 @@ fun TodoScreen(
     // 页面身份编码为 CrossPages 的 key（字符串——SaveableStateProvider 的状态保活要把
     // key 存进 Bundle；前缀决定身份段，标签名含下划线也不冲突，解码只按前缀 removePrefix）。
     // 顶栏（页面 chrome）照旧读 special/activeTag/selectedGroupIndex，不参与整页过渡
-    val todoPageKey = when {
+    val todoPageBaseKey = when {
         special != null -> TodoPageKeySpecialPrefix + special.name
         activeTag != null -> TodoPageKeyTagPrefix + activeTag
         else -> TodoPageKeyGroupPrefix + selectedGroupIndex
+    }
+    // 视图段也是页面身份的一部分：列表与收集箱各是一页，切换视图与切分组同享 CrossPages
+    // 整页交叉过渡，两边的滚动位也各按视图保活（切回恢复）。最近删除页例外——回收站
+    // 保持列表（撤回/彻底删除需要整卡动作），视图切换不改 key、也不播动画；编辑态只可能
+    // 从列表视图进入，!todoEditing 仅作兜底（编辑中不把 key 翻到收集箱页）
+    val inboxActive = inboxView && !todoEditing && special != TodoSpecialSection.Trash
+    val todoPageKey = if (inboxActive) TodoPageKeyInboxPrefix + todoPageBaseKey else todoPageBaseKey
+    // 最近删除页恒走列表，顶栏视图块置灰不可点；进入该页时顺手收起可能残留的视图菜单
+    // （弹层是 Popup，不受动作块置灰约束，状态不清理会在离开该页后重新弹出）
+    LaunchedEffect(special) {
+        if (special == TodoSpecialSection.Trash) viewMenuExpanded = false
     }
 
     // 待办编辑三件套：进入（长按卡片，自动选中长按卡；顶栏展开的菜单/动作行与侧滑展开卡
@@ -426,6 +464,7 @@ fun TodoScreen(
             menuExpanded = false
             sortMenuExpanded = false
             categoryMenuExpanded = false
+            viewMenuExpanded = false
             swipeCoordinator.activeKey = null
         }
     }
@@ -639,6 +678,46 @@ fun TodoScreen(
                         page.tag != null -> filterTodosByTag(displayTodos, page.tag)
                         else -> filterTodosByGroup(displayTodos, page.groupIndex, groups)
                     }
+                    // 特殊分组页 = 该页本身就是过滤口径，分类菜单的分组显隐不再参与（全组可见）；
+                    // 标签页的分类菜单可用，显隐开关照常作用于其过滤结果
+                    val pageVisibleSections = if (page.special != null) {
+                        TodoSection.entries.toSet()
+                    } else {
+                        visibleSections
+                    }
+                    val pageEmptyHint = when {
+                        page.special != null -> stringResource(page.special.emptyHintRes)
+                        page.tag != null -> stringResource(R.string.todo_empty_tag)
+                        else -> null
+                    }
+                    // 详情入口：列表卡与收集箱卡共用（分期上下文由所点条目的 dates[0] 带入）
+                    val openTodoDetail: (Todo) -> Unit = {
+                        detailTargetId = it.id
+                        detailTargetDate = it.dates.firstOrNull()?.toString().orEmpty()
+                    }
+                    // 收集箱视图：由页面 key 的视图段决定（最近删除页不编码视图段，恒走列表）。
+                    // 从 key 解码而非读当前 inboxView——退场中的列表页要继续渲染自己的内容，
+                    // 视图切换的整页交叉过渡才成立。多分区走两列瀑布流（10dp 间距），
+                    // 单分区（特殊分组页）用整宽卡
+                    if (page.inbox) {
+                        TodoInboxContent(
+                            todos = pageTodos,
+                            sort = sort,
+                            sortDescending = sortDescending,
+                            visibleSections = pageVisibleSections,
+                            emptyHint = pageEmptyHint,
+                            topBarExtraSpace = topBarExtraSpace,
+                            completionEcho = completionEcho,
+                            flyDoneKeys = flyDoneKeys,
+                            masonryView = masonryView,
+                            onTodoClick = openTodoDetail,
+                            onToggleCompleted = { todo, completed ->
+                                toggleTodoCompleted(todo, completed, false)
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        return@CrossPages
+                    }
                     TodoList(
                         todos = pageTodos,
                         sort = sort,
@@ -647,14 +726,10 @@ fun TodoScreen(
                         tagColors = tagColorMap,
                         // 特殊分组页 = 该页本身就是过滤口径，分类菜单的分组显隐不再参与（全组可见）；
                         // 标签页的分类菜单可用，显隐开关照常作用于其过滤结果
-                        visibleSections = if (page.special != null) TodoSection.entries.toSet() else visibleSections,
+                        visibleSections = pageVisibleSections,
                         // 特殊页/标签页分组头全部默认展开（常规列表「已完成默认收起」不适用）；空页给占位文案
                         expandAllSections = page.special != null || page.tag != null,
-                        emptyHint = when {
-                            page.special != null -> stringResource(page.special.emptyHintRes)
-                            page.tag != null -> stringResource(R.string.todo_empty_tag)
-                            else -> null
-                        },
+                        emptyHint = pageEmptyHint,
                         // 最近删除页：平铺（无四组分组头）+ 已删除样式卡片（右撤回 / 左滑彻底删除）
                         deletedCards = page.special == TodoSpecialSection.Trash,
                         topBarExtraSpace = topBarExtraSpace,
@@ -714,10 +789,7 @@ fun TodoScreen(
                                 }
                             }
                         },
-                        onTodoClick = {
-                            detailTargetId = it.id
-                            detailTargetDate = it.dates.firstOrNull()?.toString().orEmpty()
-                        },
+                        onTodoClick = openTodoDetail,
                     )
                 }
             }
@@ -789,25 +861,34 @@ fun TodoScreen(
                             tagActive = false
                             selectedGroupIndex = it
                         },
-                        // 更多点击翻转展开态;收起时顺带关排序/分类菜单——菜单锚在展开动作行的
-                        // 动作块上,行收起锚点即消失,不先关会悬空
+                        // 更多点击翻转展开态;收起时顺带关排序/分类/视图菜单——菜单锚在展开
+                        // 动作行的动作块上,行收起锚点即消失,不先关会悬空
                         onMoreClick = {
                             if (menuExpanded) {
                                 sortMenuExpanded = false
                                 categoryMenuExpanded = false
+                                viewMenuExpanded = false
                             }
                             menuExpanded = !menuExpanded
                         },
-                        // 排序块点击展开菜单(SortMenu 三件套挂在动作块处)；两菜单同锚一行互斥，
-                        // 打开一个时先关另一个，避免两张菜单卡叠影
+                        // 排序块点击展开菜单(SortMenu 三件套挂在动作块处)；三个菜单同锚一行
+                        // 互斥，打开一个时先关其余，避免两张菜单卡叠影
                         onSortClick = {
                             categoryMenuExpanded = false
+                            viewMenuExpanded = false
                             sortMenuExpanded = true
                         },
                         // 分类块打开分类菜单（同互斥约定；多选开关，点选不收菜单）
                         onCategoryClick = {
                             sortMenuExpanded = false
+                            viewMenuExpanded = false
                             categoryMenuExpanded = true
+                        },
+                        // 视图块打开视图菜单（同互斥约定；两项单选，点选即切换并收菜单）
+                        onViewClick = {
+                            sortMenuExpanded = false
+                            categoryMenuExpanded = false
+                            viewMenuExpanded = true
                         },
                         // 分组块打开待办分组浮层（动作行保持展开，关浮层回到原状，不额外折叠）
                         onGroupClick = { groupsVisible = true },
@@ -903,6 +984,35 @@ fun TodoScreen(
                                         onClick = {
                                             sortDescending = true
                                             sortMenuExpanded = false
+                                        },
+                                    ),
+                                ),
+                            ),
+                        ),
+                        // 视图菜单：两项单选（列表为默认），点选即切换并收菜单；
+                        // 动作块图标由 inboxView 决定（列表行 / 收集箱格）。
+                        // 最近删除页恒走列表：视图块置灰不可点（与分类块在特殊页的置灰同款）
+                        inboxView = inboxView,
+                        viewEnabled = special != TodoSpecialSection.Trash,
+                        viewMenuExpanded = viewMenuExpanded,
+                        onViewMenuDismiss = { viewMenuExpanded = false },
+                        viewMenuSections = listOf(
+                            PopupMenuSection(
+                                items = listOf(
+                                    PopupMenuItem(
+                                        label = stringResource(R.string.todo_view_list),
+                                        checked = !inboxView,
+                                        onClick = {
+                                            inboxView = false
+                                            viewMenuExpanded = false
+                                        },
+                                    ),
+                                    PopupMenuItem(
+                                        label = stringResource(R.string.todo_view_inbox),
+                                        checked = inboxView,
+                                        onClick = {
+                                            inboxView = true
+                                            viewMenuExpanded = false
                                         },
                                     ),
                                 ),
@@ -1182,6 +1292,183 @@ private val TodoSection.titleRes: Int
     }
 
 /**
+ * 四个分组的口径（列表视图与收集箱视图共用同一份）：
+ * - 置顶组收编全部置顶条目（移动语义，不与其余组重复）；其余组只在非置顶里划分；
+ * - 分类菜单取消勾选的组整组不进结果（visibleSections 过滤，空列表 = 四组全隐）；
+ * - 组内按当前排序 [sort]/[sortDescending] 排；
+ * - 空组不返回（列表不渲染空分区头、收集箱不渲染空卡）。
+ */
+private fun buildTodoSections(
+    todos: List<Todo>,
+    sort: TodoSort,
+    sortDescending: Boolean,
+    today: IsoDate,
+    nowMinute: Int,
+    visibleSections: Set<TodoSection>,
+): List<Pair<TodoSection, List<Todo>>> {
+    val pinned = todos.filter { it.pinned }.sortedFor(sort, sortDescending)
+    val overdue = todos.filter { !it.pinned && it.isOverdue(today, nowMinute) }
+        .sortedFor(sort, sortDescending)
+    val active = todos.filter { !it.pinned && !it.completed && !it.isOverdue(today, nowMinute) }
+        .sortedFor(sort, sortDescending)
+    val done = todos.filter { !it.pinned && it.completed }.sortedFor(sort, sortDescending)
+    return listOfNotNull(
+        pinned.takeIf { it.isNotEmpty() && TodoSection.Pinned in visibleSections }
+            ?.let { TodoSection.Pinned to it },
+        overdue.takeIf { it.isNotEmpty() && TodoSection.Overdue in visibleSections }
+            ?.let { TodoSection.Overdue to it },
+        active.takeIf { it.isNotEmpty() && TodoSection.Active in visibleSections }
+            ?.let { TodoSection.Active to it },
+        done.takeIf { it.isNotEmpty() && TodoSection.Done in visibleSections }
+            ?.let { TodoSection.Done to it },
+    )
+}
+
+/** 收集箱视图的卡片间距：两列之间与同列上下卡之间都取 10dp（需求定值） */
+private val InboxCardSpacing = 10.dp
+
+/**
+ * 收集箱视图：四个分组各一张 [TodoInboxCard]。
+ *
+ * - 三至四个分区（常规分组页/标签页）：按「瀑布流视图」开关（[masonryView]）——
+ *   开启（默认）走两列瀑布流，按卡片实际高度自动落进较短的一列（置顶/逾期各占一列后，
+ *   未完成落进较矮的右列，已完成补左列，与设计稿的四卡排布一致）；关闭则整宽竖排；
+ * - 一至两个分区（特殊分组页只过滤出一组，或常规页只剩两组）：始终整宽竖排——两个
+ *   分区不两列并排，半宽卡会把标题与属性行挤得过窄；
+ * - 分区口径、卡片内顺序、完成回显与列表视图完全同源（见 [buildTodoSections] 与
+ *   [TodoScreen] 的 completionEcho）：勾选后卡片即时变色/划线，停一拍落库，
+ *   条目随后在「未完成 ↔ 已完成」两卡之间移动；
+ * - 卡片只显示标题 + 时间/截止/重复，不渲染标签、紧急旗、倒计时（组件口径）；
+ *   头部强调色按分组：已完成 urgentGreen、已逾期 error、其余 primary，图标取对应
+ *   特殊分组图标（已完成勾选框 / 未完成空框 / 已逾期警告框 / 已置顶图钉）；
+ * - 点击行经 [onTodoClick] 交宿主拉起详情浮层；勾选框经 [onToggleCompleted] 落库；
+ * - 最近删除页不进入本视图（调用方保留列表：撤回/彻底删除需要整卡动作）；
+ * - 空结果沿用列表的居中占位文案（特殊页/标签页），常规页为空时不渲染内容。
+ *
+ * 滚动与列表视图同一套边距与手感：顶部让出状态栏 + 顶栏 + 动作行（[topBarExtraSpace]），
+ * 底部留出导航栏与浮动导航的余量；页面横向边距取 [PageHorizontalSpacing]；网格经
+ * [RubberBandLazyVerticalStaggeredGrid]（页面 [ProvideOverscroll] 作用域内）——内容超一屏
+ * 时边缘拉出橡皮筋，收集箱常见的不满一屏同样能拉（foundation 派发门槛的兜底同列表）。
+ */
+@Composable
+private fun TodoInboxContent(
+    todos: List<Todo>,
+    sort: TodoSort,
+    sortDescending: Boolean,
+    visibleSections: Set<TodoSection>,
+    emptyHint: String?,
+    topBarExtraSpace: Dp,
+    completionEcho: Map<String, Boolean>,
+    flyDoneKeys: Set<String>,
+    // 收集箱「瀑布流视图」开关（个性化页 State 透传）：值在此叶子读取
+    masonryView: State<Boolean>,
+    onTodoClick: (Todo) -> Unit,
+    onToggleCompleted: (Todo, Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val today = LocalToday
+    val nowMinute = currentMinuteOfDay()
+    val sections = remember(todos, sort, sortDescending, today, nowMinute, visibleSections) {
+        buildTodoSections(todos, sort, sortDescending, today, nowMinute, visibleSections)
+    }
+    val density = LocalDensity.current
+    val topInset = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
+    val bottomInset = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
+    // 网格滚动位提升到空结果早返回之前：组清空再恢复时不重置滚动；状态随 CrossPages 的
+    // SaveableStateProvider 按页面 key 保活（列表视图与收集箱视图各存各的滚动位）
+    val gridState = rememberLazyStaggeredGridState()
+    if (sections.isEmpty()) {
+        if (emptyHint != null) {
+            Box(
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(top = topInset + TopBarRowSpace + ListTopSpacing + topBarExtraSpace),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = emptyHint,
+                    style = ClassppTextTokens.emptyHint,
+                    color = MaterialTheme.classppColors.secondaryText,
+                )
+            }
+        }
+        return
+    }
+    // 一至两个分区始终整宽竖排（两张也竖排，不挤成半宽并排——窄卡放不下标题与
+    // 时间/截止/重复；特殊分组页的单卡同理）；三个分区起由「瀑布流视图」开关决定：
+    // 开启（默认）走两列瀑布流，关闭则同样整宽竖排
+    val fullWidthCards = sections.size <= 2 || !masonryView.value
+    RubberBandLazyVerticalStaggeredGrid(
+        columns = StaggeredGridCells.Fixed(2),
+        state = gridState,
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            top = topInset + TopBarRowSpace + ListTopSpacing + topBarExtraSpace,
+            bottom = bottomInset + ListBottomSlack,
+            start = PageHorizontalSpacing,
+            end = PageHorizontalSpacing,
+        ),
+        horizontalArrangement = Arrangement.spacedBy(InboxCardSpacing),
+        verticalItemSpacing = InboxCardSpacing,
+    ) {
+        sections.forEach { (section, group) ->
+            item(
+                key = "inbox_" + section.name,
+                span = if (fullWidthCards) {
+                    StaggeredGridItemSpan.FullLine
+                } else {
+                    StaggeredGridItemSpan.SingleLane
+                },
+            ) {
+                // 展示字段的格式化函数（cardTimeText / deadlineColor 等）是 @Composable，
+                // 只能在组合上下文里现算，不进 remember
+                val cardItems = group.map { todo ->
+                    val key = todo.listItemKey(flyDoneKeys)
+                    TodoInboxItem(
+                        id = key,
+                        title = todo.name,
+                        time = todo.cardTimeText(),
+                        deadline = todo.deadlineCardText(),
+                        deadlineColor = todo.deadlineColor(),
+                        repeat = todo.repeatCardText(),
+                        // 乐观回显覆盖仓库值：勾选当帧先变色/划线（同列表卡）
+                        completed = completionEcho[key] ?: todo.completed,
+                        // 逾期卡整卡红标题；已完成优先（两者都真取完成灰，同 NoteCard）
+                        overdue = section == TodoSection.Overdue,
+                    )
+                }
+                // 卡片行 id → 原始待办（含分期副本）：点击/勾选回传完整模型给宿主
+                val todoByItemId = group.associateBy { it.listItemKey(flyDoneKeys) }
+                // 头部强调色与图标：已完成绿、已逾期红、其余 primary（颜色规范 4.3）
+                val accent = when (section) {
+                    TodoSection.Done -> MaterialTheme.classppColors.urgentGreen
+                    TodoSection.Overdue -> MaterialTheme.colorScheme.error
+                    TodoSection.Pinned, TodoSection.Active -> MaterialTheme.colorScheme.primary
+                }
+                val icon = when (section) {
+                    TodoSection.Pinned -> R.drawable.ic_pin
+                    TodoSection.Overdue -> R.drawable.ic_checkbox_warning
+                    TodoSection.Active -> R.drawable.ic_checkbox_unchecked
+                    TodoSection.Done -> R.drawable.ic_checkbox_checked
+                }
+                TodoInboxCard(
+                    title = stringResource(section.titleRes),
+                    items = cardItems,
+                    onTodoClick = { item -> todoByItemId[item.id]?.let(onTodoClick) },
+                    iconRes = icon,
+                    headerColor = accent,
+                    compact = !fullWidthCards,
+                    onItemCheckedChange = { item, checked ->
+                        todoByItemId[item.id]?.let { onToggleCompleted(it, checked) }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+/**
  * 列表项 animateItem 三条规格：进场淡入 / 避让收拢 / 退场淡出——曲线与时长全从 [Motion]
  * 取（TodoCardEnter/Place/ExitMillis，Decelerate/Accelerate 族对）。进场淡入带
  * TodoCardEnterDelayMillis 延迟：退场卡先谢幕一拍，同位置补位的新卡（重复待办完成后
@@ -1259,25 +1546,44 @@ private const val TodoPageKeySpecialPrefix = "special_"
 private const val TodoPageKeyTagPrefix = "tag_"
 
 /**
+ * 收集箱视图段前缀：放在身份段最前（`inbox_group_0` / `inbox_tag_工作` /
+ * `inbox_special_Completed`）。列表页不带该段（key 维持原样），解码先剥它再按下方
+ * 三类身份段解析；最近删除页不编码视图段（回收站恒走列表）。
+ */
+private const val TodoPageKeyInboxPrefix = "inbox_"
+
+/**
  * 待办页的页面身份（CrossPages key 的解码结果）：特殊分组页 / 标签页 / 常规分组下标
- * 三选一。key 编码为字符串是因为 CrossPages 的状态保活要把 key 写进 Bundle
- * （SaveableStateProvider 的 key 须 Bundle 可存）；前缀决定身份段——标签名里含
- * 下划线也不会错位（解码只 removePrefix，不按分隔符切分）。
+ * 三选一，外加视图段 [inbox]（列表 = false、收集箱 = true——视图切换也是整页交叉
+ * 过渡的一种，键值见 [TodoPageKeyInboxPrefix]）。key 编码为字符串是因为 CrossPages 的
+ * 状态保活要把 key 写进 Bundle（SaveableStateProvider 的 key 须 Bundle 可存）；前缀
+ * 决定身份段——标签名里含下划线也不会错位（解码只 removePrefix，不按分隔符切分）。
  */
 private data class TodoPageIdentity(
     val special: TodoSpecialSection? = null,
     val tag: String? = null,
     val groupIndex: Int = 0,
+    val inbox: Boolean = false,
 )
 
-/** 解码页面 key（编码见 [TodoPageKeySpecialPrefix] 等前缀常量处说明） */
-private fun String.toTodoPageIdentity(): TodoPageIdentity = when {
-    startsWith(TodoPageKeySpecialPrefix) ->
-        TodoPageIdentity(special = TodoSpecialSection.valueOf(removePrefix(TodoPageKeySpecialPrefix)))
-    startsWith(TodoPageKeyTagPrefix) ->
-        TodoPageIdentity(tag = removePrefix(TodoPageKeyTagPrefix))
-    else ->
-        TodoPageIdentity(groupIndex = removePrefix(TodoPageKeyGroupPrefix).toIntOrNull() ?: 0)
+/** 解码页面 key（编码见 [TodoPageKeyInboxPrefix] 等前缀常量处说明）：先剥视图段再解身份段 */
+private fun String.toTodoPageIdentity(): TodoPageIdentity {
+    val inbox = startsWith(TodoPageKeyInboxPrefix)
+    val identityKey = if (inbox) removePrefix(TodoPageKeyInboxPrefix) else this
+    return when {
+        identityKey.startsWith(TodoPageKeySpecialPrefix) ->
+            TodoPageIdentity(
+                special = TodoSpecialSection.valueOf(identityKey.removePrefix(TodoPageKeySpecialPrefix)),
+                inbox = inbox,
+            )
+        identityKey.startsWith(TodoPageKeyTagPrefix) ->
+            TodoPageIdentity(tag = identityKey.removePrefix(TodoPageKeyTagPrefix), inbox = inbox)
+        else ->
+            TodoPageIdentity(
+                groupIndex = identityKey.removePrefix(TodoPageKeyGroupPrefix).toIntOrNull() ?: 0,
+                inbox = inbox,
+            )
+    }
 }
 
 /** 已折叠分区集的保存器：枚举按名字存取（未知名字丢弃，防枚举变更后恢复崩溃） */
@@ -1433,24 +1739,7 @@ private fun TodoList(
     val today = LocalToday
     val nowMinute = currentMinuteOfDay()
     val sections = remember(todos, sort, sortDescending, today, nowMinute, visibleSections) {
-        // 置顶组收编全部置顶条目（移动语义，不与其余组重复）；其余组只在非置顶里划分。
-        // 分类菜单取消勾选的组整组不进列表（visibleSections 过滤，空列表 = 四组全隐）
-        val pinned = todos.filter { it.pinned }.sortedFor(sort, sortDescending)
-        val overdue = todos.filter { !it.pinned && it.isOverdue(today, nowMinute) }
-            .sortedFor(sort, sortDescending)
-        val active = todos.filter { !it.pinned && !it.completed && !it.isOverdue(today, nowMinute) }
-            .sortedFor(sort, sortDescending)
-        val done = todos.filter { !it.pinned && it.completed }.sortedFor(sort, sortDescending)
-        listOfNotNull(
-            pinned.takeIf { it.isNotEmpty() && TodoSection.Pinned in visibleSections }
-                ?.let { TodoSection.Pinned to it },
-            overdue.takeIf { it.isNotEmpty() && TodoSection.Overdue in visibleSections }
-                ?.let { TodoSection.Overdue to it },
-            active.takeIf { it.isNotEmpty() && TodoSection.Active in visibleSections }
-                ?.let { TodoSection.Active to it },
-            done.takeIf { it.isNotEmpty() && TodoSection.Done in visibleSections }
-                ?.let { TodoSection.Done to it },
-        )
+        buildTodoSections(todos, sort, sortDescending, today, nowMinute, visibleSections)
     }
     // 分区折叠态（原 NoteCardSection 组件内部的 rememberSaveable 提升至宿主）：旋转/切
     // tab/进程重建不丢。编辑态的强制展开只是渲染条件叠加（卡片项下发条件 editing ||

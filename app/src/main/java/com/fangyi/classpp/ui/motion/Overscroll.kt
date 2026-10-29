@@ -13,8 +13,8 @@
 // （verticalScroll / LazyColumn 等）自动生效（经 LocalOverscrollFactory 逐容器创建独立
 // 效果实例，首次手势按 delta 主方向占比阈值锁定单轴）；内容不足一屏（无滚动范围）的容器拉不出
 // 橡皮筋（foundation 派发门槛），改用 rubberBandVerticalScroll / rubberBandHorizontalScroll /
-// RubberBandLazyColumn 这三个增强版。注意内容平移会把边缘外区域露出来——
-// 滚动容器背后需要是可接受的底色（同色背景即可，边缘处看不出破绽）。
+// RubberBandLazyColumn / RubberBandLazyVerticalStaggeredGrid 这四个增强版。注意内容平移会把
+// 边缘外区域露出来——滚动容器背后需要是可接受的底色（同色背景即可，边缘处看不出破绽）。
 package com.fangyi.classpp.ui.motion
 
 import androidx.compose.animation.core.AnimationSpec
@@ -40,6 +40,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScope
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.overscroll
 import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.foundation.verticalScroll
@@ -69,6 +74,7 @@ import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.node.LayoutModifierNode
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Velocity
@@ -647,6 +653,89 @@ fun RubberBandLazyColumn(
         // 兜底时摘掉列表自带的效果实例（它永远收不到 delta），只留外侧兜底那一个；
         // 平时用列表自己的实例
         overscrollEffect = if (fallbackEffect == null) listEffect else null,
+        content = content,
+    )
+}
+
+/**
+ * [LazyVerticalStaggeredGrid] 的橡皮筋增强版：与 [RubberBandLazyColumn] 完全同构
+ * （同一套「不足一屏时关列表手势、外挂兜底手势层 + 效果渲染节点」的接管与量化规避手段），
+ * 仅容器换成两列/多列瀑布流——收集箱视图的卡片网格用它。
+ *
+ * 内容超出一屏时行为与原版完全一致（边缘橡皮筋由注入的 [OffsetOverscrollEffect] 承担，
+ * 渲染节点在网格自带的 scrollableArea 里，容器尺寸就是视口）；内容不足一屏（上下都不可滚）
+ * 时原版拉不出橡皮筋——foundation 的派发门槛（Scrollable.kt 的
+ * shouldDispatchOverscroll = canScrollForward || canScrollBackward），本辅助此时把拖拽
+ * delta 与甩动速度全部交给环境 OverscrollEffect（[ProvideOverscroll] 作用域内即 iOS 式
+ * 橡皮筋），由它完成「拉出 → 软着陆回弹」以及速度正比的甩动拉出。
+ *
+ * 与 [RubberBandLazyColumn] 的差异只在容器参数：网格的手势层同样由列表内部自带、挂在
+ * 调用方 modifier 之后（更内层），所以兜底分支同样要关掉网格自身手势
+ * （userScrollEnabled = false）并摘掉它自带的效果实例；canScroll 翻转时兜底层自动摘除，
+ * 滚动路径回到与原版一致的状态。保持单一 [LazyVerticalStaggeredGrid] 调用点，内容高度
+ * 跨过一屏阈值时不重建网格、不丢条目状态（原因见 [RubberBandLazyColumn] 实现处注释）。
+ */
+@Composable
+fun RubberBandLazyVerticalStaggeredGrid(
+    columns: StaggeredGridCells,
+    modifier: Modifier = Modifier,
+    state: LazyStaggeredGridState = rememberLazyStaggeredGridState(),
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    reverseLayout: Boolean = false,
+    verticalItemSpacing: Dp = 0.dp,
+    horizontalArrangement: Arrangement.Horizontal =
+        if (!reverseLayout) Arrangement.Start else Arrangement.End,
+    flingBehavior: FlingBehavior = ScrollableDefaults.flingBehavior(),
+    userScrollEnabled: Boolean = true,
+    content: LazyStaggeredGridScope.() -> Unit,
+) {
+    val effect = rememberOverscrollEffect()
+    // 兜底路径之外、网格自带手势层用的效果实例：与兜底实例分开持有（两个 remember 各
+    // 建一个），两条路径切换时不会出现同一实例被两处同时挂载
+    val gridEffect = rememberOverscrollEffect()
+    val unscrollable = !state.canScrollForward && !state.canScrollBackward
+    // 兜底判据：有环境效果实例、调用方允许手势、且网格上下都不可滚
+    val fallbackEffect = effect?.takeIf { userScrollEnabled && unscrollable }
+    // 不消费任何滚动量的状态：canScrollForward/Backward 默认恒为 true，恰好绕过
+    // foundation 的派发门槛，让全部 delta 进入 overscroll
+    val passthroughState = remember { ScrollableState { 0f } }
+    // 原速放行 fling：不产生任何惯性位移，速度原样交还效果实例
+    val passthroughFling = remember {
+        object : FlingBehavior {
+            override suspend fun ScrollScope.performFling(initialVelocity: Float): Float =
+                initialVelocity
+        }
+    }
+    // 单一调用点：兜底开关只改 modifier 与参数，绝不写成 if/else 两个网格（内容高度
+    // 恰好跨过「不足一屏 ↔ 可滚」时兜底判据会翻转，整体重建会丢掉条目里的保存状态）
+    LazyVerticalStaggeredGrid(
+        columns = columns,
+        modifier = if (fallbackEffect != null) {
+            modifier
+                // 效果渲染节点：挂在网格外侧（更外层），按真实视口尺寸做阻尼分母
+                // （同 rubberBandVerticalScroll 的量化规避）
+                .overscroll(fallbackEffect)
+                // 兜底手势层：网格自带手势层关掉后由它接管拖拽（内层先于外层派发）
+                .scrollable(
+                    state = passthroughState,
+                    orientation = Orientation.Vertical,
+                    overscrollEffect = fallbackEffect,
+                    flingBehavior = passthroughFling,
+                )
+        } else {
+            modifier
+        },
+        state = state,
+        contentPadding = contentPadding,
+        reverseLayout = reverseLayout,
+        verticalItemSpacing = verticalItemSpacing,
+        horizontalArrangement = horizontalArrangement,
+        flingBehavior = flingBehavior,
+        // 兜底时关掉网格自带手势层（更内层、会先吞掉拖拽 change）；平时原样透传
+        userScrollEnabled = if (fallbackEffect == null) userScrollEnabled else false,
+        // 兜底时摘掉网格自带的效果实例（它永远收不到 delta），只留外侧兜底那一个；
+        // 平时用网格自己的实例
+        overscrollEffect = if (fallbackEffect == null) gridEffect else null,
         content = content,
     )
 }

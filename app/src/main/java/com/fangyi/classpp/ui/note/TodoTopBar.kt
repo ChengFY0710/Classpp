@@ -293,12 +293,16 @@ internal enum class TodoSpecialSection(
  * [onMoreClick]（宿主翻转展开态）；展开后排序块点击回调 [onSortClick]（宿主置
  * 菜单展开态），分组块点击回调 [onGroupClick]（宿主打开待办分组浮层），
  * 分类块点击回调 [onCategoryClick]（宿主置分类菜单展开态），
- * 视图/概览回调本期空置（接入功能时再加参数）；分类块配色/可用性经
+ * 视图块经 [onViewClick]/[viewMenuExpanded]/[onViewMenuDismiss]/[viewMenuSections] 接入
+ * 列表/收集箱视图菜单（[inboxView] 决定动作块图标），概览回调本期空置（接入功能时再加
+ * 参数）；分类块配色/可用性经
  * [categoryEnabled]/[categoryFiltered] 下发——特殊分组页在场置灰（negative）不可点，
- * 分组显隐未全选（有分组被隐藏）时 primary 提示；排序菜单
+ * 分组显隐未全选（有分组被隐藏）时 primary 提示；视图块可用性经 [viewEnabled] 下发——
+ * 最近删除页置灰（negative）不可点（该页恒走列表，视图切换无意义）；
+ * 排序菜单
  * 经 [sortMenuExpanded]/[onSortMenuDismiss]/[sortMenuSections] 三件套下发，
  * 分类菜单经 [categoryMenuExpanded]/[onCategoryMenuDismiss]/[categoryMenuSections]
- * 同款三件套下发；[BarActionMenuPopup] 挂在动作块同一 Box 里（父布局即锚点）：
+ * 同款三件套下发；视图菜单同款三件套；[BarActionMenuPopup] 挂在动作块同一 Box 里（父布局即锚点）：
  * 走 [PopupMenuPopup] 共享弹层（[PopupMenuCard] 白卡）——DropdownMenu 的壳自带
  * 默认阴影且换不掉，换壳才能吃上菜单卡的柔影。
  */
@@ -342,6 +346,16 @@ internal fun TodoTopBar(
     categoryMenuExpanded: Boolean = false,
     onCategoryMenuDismiss: () -> Unit = {},
     categoryMenuSections: List<PopupMenuSection> = emptyList(),
+    // 视图模式（false = 列表，true = 收集箱）：动作块图标随当前模式切换（列表
+    // ic_layout_row_three / 收集箱 ic_layout_cell_four）；菜单两项单选，展开态与
+    // 菜单内容由宿主下发（与排序/分类菜单同款三件套）。
+    // [viewEnabled] = 视图块可用性：false = 置灰（negative）不可点（最近删除页恒走列表）
+    inboxView: Boolean = false,
+    viewEnabled: Boolean = true,
+    onViewClick: () -> Unit = {},
+    viewMenuExpanded: Boolean = false,
+    onViewMenuDismiss: () -> Unit = {},
+    viewMenuSections: List<PopupMenuSection> = emptyList(),
 ) {
     val overscrollFactory = rememberOffsetOverscrollFactory(animationSpec = Motion.Settle)
     // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场期间整帧重放
@@ -538,8 +552,8 @@ internal fun TodoTopBar(
                             .height(TopBarActionBarHeight),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // 分组块打开待办分组浮层；同排的分类/视图/概览仍是占位
-                        // （保留按压反馈，接入功能时再加回调参数）
+                        // 分组块打开待办分组浮层；概览块仍为占位（保留按压反馈，
+                        // 接入功能时再加回调参数）
                         TodoBarAction(
                             label = stringResource(R.string.todo_action_group),
                             iconRes = R.drawable.ic_folder,
@@ -599,14 +613,39 @@ internal fun TodoTopBar(
                                 )
                             }
                         }
-                        TodoBarAction(
-                            label = stringResource(R.string.todo_action_view),
-                            iconRes = R.drawable.ic_layout_row_three,
-                            onClick = {},
-                            modifier = Modifier
-                                .weight(1f)
-                                .wrapContentWidth(Alignment.CenterHorizontally),
-                        )
+                        // 视图块 + 锚定其下的视图菜单：图标随当前模式切换（列表行图标 /
+                        // 收集箱格图标），菜单两项单选（列表视图默认 / 收集箱视图）。
+                        // 外层占格槽、内层锚点，与排序/分类块同构。
+                        // 块色随可用性：最近删除页 = negative 置灰不可点（该页恒走列表，
+                        // 视图切换无意义），其余默认 onSurface
+                        Box(
+                            modifier = Modifier.weight(1f),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box {
+                                TodoBarAction(
+                                    label = stringResource(R.string.todo_action_view),
+                                    iconRes = if (inboxView) {
+                                        R.drawable.ic_layout_cell_four
+                                    } else {
+                                        R.drawable.ic_layout_row_three
+                                    },
+                                    onClick = onViewClick,
+                                    contentColor = if (viewEnabled) {
+                                        MaterialTheme.colorScheme.onSurface
+                                    } else {
+                                        MaterialTheme.classppColors.negative
+                                    },
+                                    enabled = viewEnabled,
+                                )
+                                BarActionMenuPopup(
+                                    expanded = viewMenuExpanded && viewEnabled,
+                                    onDismiss = onViewMenuDismiss,
+                                    sections = viewMenuSections,
+                                    hazeState = hazeState,
+                                )
+                            }
+                        }
                         TodoBarAction(
                             label = stringResource(R.string.todo_action_overview),
                             iconRes = R.drawable.ic_clipboard_task,
@@ -623,7 +662,7 @@ internal fun TodoTopBar(
 }
 
 /**
- * 动作行菜单弹层（排序/分类块共用）：[PopupMenuPopup] 共享弹层宿主（[PopupMenuCard]
+ * 动作行菜单弹层（排序/分类/视图块共用）：[PopupMenuPopup] 共享弹层宿主（[PopupMenuCard]
  * 白卡 + 自定义锚定 Popup），投影留白、越界钳制与 scale/alpha 进出场均由宿主处理
  * （见 [PopupMenuPopup]）。
  *

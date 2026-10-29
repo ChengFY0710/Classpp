@@ -15,6 +15,9 @@
     <string name="todo_action_category">分类</string>
     <string name="todo_action_view">视图</string>
     <string name="todo_action_overview">概览</string>
+    <!-- 待办页「视图」菜单：列表视图（默认）/ 收集箱视图 -->
+    <string name="todo_view_list">列表视图</string>
+    <string name="todo_view_inbox">收集箱视图</string>
     <!-- 待办分组浮层：顶栏（左新建 / 居中标题 / 右关闭） -->
     <string name="todo_groups_title">待办分组</string>
     <string name="todo_groups_create">新建</string>
@@ -264,6 +267,10 @@
     <string name="card_height_default">默认</string>
     <string name="card_height_value">%1$d%%</string>
     <string name="show_teacher">显示教师</string>
+    <!-- 待办（个性化页） -->
+    <string name="section_todo">待办</string>
+    <string name="todo_masonry_view">瀑布流视图</string>
+    <string name="todo_masonry_view_desc">开启后，收集箱达3个启用瀑布流视图</string>
     <string name="time_range_start">开始时间</string>
     <string name="time_range_end">结束时间</string>
     <string name="show_inactive">显示非本周课程</string>

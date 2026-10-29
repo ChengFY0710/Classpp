@@ -48,6 +48,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
@@ -114,35 +115,41 @@ private val CountdownEndSpacing = 16.dp
 private val CountdownExitSlide = 12.dp
 
 /**
- * 时间/截止/重复属性项：18dp 图标 + 文本（同色），图标与文字相距 4dp（同 TagChip）。
+ * 时间/截止/重复属性项：图标 16dp + 文本（同色），图标与文字相距 4dp（同 TagChip）。
  * 待办时间固定 secondaryText（ic_clock）；截止时间按剩余天数取紧急色（ic_clock_alarm）；
  * 重复规则取 primary（ic_arrow_repeat）——图标与文字颜色始终一致。
- * 文本默认不限行数（NoteCard 全宽卡不会触界）；窄容器（时间轴任务卡重叠分列）传
- * maxLines = 1 + Ellipsis，避免时刻被逐字折行。
+ * 图标可空（收集箱两列紧凑卡的时间项不画 ic_clock，给 12sp 的窄卡省出文字宽度）。
+ * 文本样式默认 [MaterialTheme.classppTextStyles.noteProperty]（14sp Normal）；紧凑卡传
+ * [ClassppTextTokens.metaTextSmall]（12sp Medium / 行高 16 / tnum）。文本默认不限行数
+ * （NoteCard 全宽卡不会触界）；窄容器（时间轴任务卡重叠分列）传 maxLines = 1 + Ellipsis，
+ * 避免时刻被逐字折行。
  */
 @Composable
 internal fun TimeProperty(
-    @DrawableRes icon: Int,
+    @DrawableRes icon: Int?,
     text: String,
     tint: Color,
     modifier: Modifier = Modifier,
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Clip,
+    textStyle: TextStyle = MaterialTheme.classppTextStyles.noteProperty,
 ) {
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            painter = painterResource(icon),
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier.size(TimeIconSize),
-        )
+        if (icon != null) {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(TimeIconSize),
+            )
+        }
         Text(
             text = text,
-            style = MaterialTheme.classppTextStyles.noteProperty.copy(color = tint),
+            style = textStyle.copy(color = tint),
             maxLines = maxLines,
             overflow = overflow,
         )

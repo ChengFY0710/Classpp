@@ -88,6 +88,9 @@ fun SettingsScreen(
     // 玻璃材质开关（同 cardHeights 的透传纪律）
     glassStyle: State<Boolean> = mutableStateOf(false),
     onGlassStyleChange: (Boolean) -> Unit = {},
+    // 待办收集箱「瀑布流视图」开关（同 cardHeights 的透传纪律）
+    todoMasonry: State<Boolean> = mutableStateOf(true),
+    onTodoMasonryChange: (Boolean) -> Unit = {},
 ) {
     var showPersonalization by rememberSaveable { mutableStateOf(false) }
     var showNotifications by rememberSaveable { mutableStateOf(false) }
@@ -151,6 +154,8 @@ fun SettingsScreen(
                             onShowTeacherChange = onShowTeacherChange,
                             glassStyle = glassStyle,
                             onGlassStyleChange = onGlassStyleChange,
+                            todoMasonry = todoMasonry,
+                            onTodoMasonryChange = onTodoMasonryChange,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }

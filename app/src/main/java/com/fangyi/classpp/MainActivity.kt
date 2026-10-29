@@ -50,6 +50,7 @@ import com.fangyi.classpp.ui.navigation.BottomNavBar
 import com.fangyi.classpp.ui.navigation.NavBarTransitionHeadroom
 import com.fangyi.classpp.ui.navigation.TabPager
 import com.fangyi.classpp.ui.navigation.rememberTabPagerState
+import com.fangyi.classpp.ui.note.TodoInboxPreferences
 import com.fangyi.classpp.ui.note.TodoScreen
 import com.fangyi.classpp.ui.schedule.CardHeightPreferences
 import com.fangyi.classpp.ui.schedule.ScheduleScreen
@@ -109,6 +110,8 @@ class MainActivity : ComponentActivity() {
         val savedShowTeacher = TeacherDisplayPreferences.load(this)
         // 玻璃材质开关（更高级的玻璃材质）：同为 SharedPreferences 真源，冷启动读一次
         val savedGlassStyle = GlassPreferences.load(this)
+        // 待办收集箱「瀑布流视图」开关：同为 SharedPreferences 真源，冷启动读一次
+        val savedTodoMasonry = TodoInboxPreferences.load(this)
         super.onCreate(savedInstanceState)
         // 系统栏外观随主题：状态栏/导航栏全透明、前景图标深浅按模式切换。
         // 必须显式 light 而非 auto：auto 会把 isNavigationBarContrastEnforced 置为 true，
@@ -157,6 +160,9 @@ class MainActivity : ComponentActivity() {
             val showTeacherState = remember { mutableStateOf(savedShowTeacher) }
             // 玻璃材质开关状态：同 showTeacher（prefs 真源、回调即时落盘）
             val glassStyleState = remember { mutableStateOf(savedGlassStyle) }
+            // 待办收集箱「瀑布流视图」开关状态：同 showTeacher（prefs 真源、回调即时落盘）；
+            // State 实例透传给待办页，收集箱布局在叶子内读值
+            val todoMasonryState = remember { mutableStateOf(savedTodoMasonry) }
             val darkTheme = when (themeMode) {
                 ThemeMode.System -> isSystemInDarkTheme()
                 ThemeMode.Light -> false
@@ -341,6 +347,8 @@ class MainActivity : ComponentActivity() {
                                             onNewTodoSheetDismiss = onNewTodoSheetDismiss,
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                             tabTransition = transition,
+                                            // 收集箱「瀑布流视图」开关（个性化页写入，默认开启）
+                                            masonryView = todoMasonryState,
                                         )
                                     }
                                 }
@@ -413,6 +421,12 @@ class MainActivity : ComponentActivity() {
                                 // 只改内存即时生效 + 即时落盘（同 showTeacher）
                                 glassStyleState.value = enabled
                                 GlassPreferences.save(this@MainActivity, enabled)
+                            },
+                            todoMasonry = todoMasonryState,
+                            onTodoMasonryChange = { enabled ->
+                                // 只改内存即时生效 + 即时落盘（同 showTeacher）
+                                todoMasonryState.value = enabled
+                                TodoInboxPreferences.save(this@MainActivity, enabled)
                             },
                             modifier = Modifier.fillMaxSize(),
                         )

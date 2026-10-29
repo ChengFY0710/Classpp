@@ -79,6 +79,9 @@ import kotlin.math.roundToInt
  * 见 [ScheduleSection]；
  * 5 天 / 7 天模式各存一份，由 [repository] 激活课表的天数决定当前编辑哪份）
  * 与「显示教师」开关（[showTeacher] / [onShowTeacherChange]，控制课程卡片上教师行的显隐）。
+ * 「待办」分组为收集箱「瀑布流视图」开关（[todoMasonry] / [onTodoMasonryChange]）：
+ * 开启时收集箱非空分组达 3 个后自动两列瀑布流，关闭后始终整宽竖排（默认开启，
+ * 保持既有布局行为，设置项只提供关闭入口）。
  * 后续外观类设置项（字号、图标风格等）继续加入本页。
  */
 @Composable
@@ -98,6 +101,9 @@ fun PersonalizationScreen(
     // 玻璃材质开关（State 实例透传纪律同上，值只在 ColorModeSection 叶子内读）
     glassStyle: State<Boolean> = mutableStateOf(false),
     onGlassStyleChange: (Boolean) -> Unit = {},
+    // 待办收集箱「瀑布流视图」开关（State 实例透传纪律同上，值只在 TodoSection 叶子内读）
+    todoMasonry: State<Boolean> = mutableStateOf(true),
+    onTodoMasonryChange: (Boolean) -> Unit = {},
 ) {
     // 当前激活课表决定滑条编辑 5 天还是 7 天那份倍率（两份各存、互不覆盖）；
     // 无课表（加载中/空）回退 5 天
@@ -168,6 +174,10 @@ fun PersonalizationScreen(
                     onCardHeightsChange = onCardHeightsChange,
                     showTeacher = showTeacher,
                     onShowTeacherChange = onShowTeacherChange,
+                )
+                TodoSection(
+                    masonryView = todoMasonry,
+                    onMasonryViewChange = onTodoMasonryChange,
                 )
             }
 
@@ -269,6 +279,34 @@ private fun ScheduleSection(
                     label = stringResource(R.string.show_teacher),
                     checked = showTeacherOnCard,
                     onCheckedChange = onShowTeacherChange,
+                ),
+            ),
+        )
+    }
+}
+
+/**
+ * 「待办」分组：收集箱「瀑布流视图」开关单独一张卡（[todoMasonry] /
+ * [onTodoMasonryChange]）。开启时待办页收集箱在非空分组达 3 个后自动两列瀑布流
+ * （一至两组始终整宽竖排）；关闭后无论几组都整宽竖排。持久化见
+ * [com.fangyi.classpp.ui.note.TodoInboxPreferences]。
+ *
+ * State 实例由调用方透传、值只在本叶子读取：切换开关只重组本卡片，不牵动整页
+ * （同 ScheduleSection / ColorModeSection 的透传纪律）。
+ */
+@Composable
+private fun TodoSection(
+    masonryView: State<Boolean>,
+    onMasonryViewChange: (Boolean) -> Unit,
+) {
+    CardSection(title = stringResource(R.string.section_todo)) {
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Toggle(
+                    label = stringResource(R.string.todo_masonry_view),
+                    description = stringResource(R.string.todo_masonry_view_desc),
+                    checked = masonryView.value,
+                    onCheckedChange = onMasonryViewChange,
                 ),
             ),
         )
