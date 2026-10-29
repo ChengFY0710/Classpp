@@ -63,6 +63,8 @@ import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PillShape
+import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
+import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -227,7 +229,7 @@ fun TagChoosingCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = SheetFieldHeight)
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                    .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val valueStyle = MaterialTheme.classppTextStyles.fieldValue

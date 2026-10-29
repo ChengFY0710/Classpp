@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
+import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -138,7 +140,7 @@ private fun SettingsCardwithIconRow(item: SettingsCardwithIconItem) {
             .fillMaxWidth()
             // 行无自有 clip，矩形明暗原位接在行上；溢出由卡片圆角壳兜住
             .pressClickable(RectangleShape, shade = rowShade, onClick = item.onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(

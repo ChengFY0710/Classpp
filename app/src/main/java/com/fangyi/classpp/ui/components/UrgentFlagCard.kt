@@ -25,6 +25,8 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.PillShape
+import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
+import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppColors
@@ -85,7 +87,7 @@ fun UrgentFlagCard(
             .heightIn(min = SheetFieldHeight)
             .clip(SheetCardShape)
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // —— 左：当前档 ——

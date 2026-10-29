@@ -39,6 +39,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
+import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -196,7 +198,7 @@ private fun SheetTextFieldRow(item: SheetTextFieldItem) {
     Row(
         modifier = item.modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

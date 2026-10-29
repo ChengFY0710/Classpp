@@ -34,6 +34,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
+import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -176,7 +178,7 @@ private fun BottomCardTextField(
                     Modifier
                 },
             )
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
         // 内容垂直居中（原件的外层 Row 用 CenterVertically，Row 改 Box 后同义补齐）：
         // 单行在 SheetFieldHeight 最小高度内居中；多行内容撑高卡片后自然以整块居中
         contentAlignment = Alignment.CenterStart,

@@ -65,6 +65,8 @@ import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.NoteCardShape
 import com.fangyi.classpp.ui.theme.PillShape
+import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
+import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -98,9 +100,6 @@ private val TagChipVerticalPadding = 3.dp
 
 /** 标题与属性行的纵向间距 */
 private val TitlePropertySpacing = 2.dp
-
-/** 卡片主体行上下内距：整卡形态的默认节奏；多条待办合并一张外卡的形态传更紧的 12dp */
-internal val NoteCardPaddingVertical = 14.dp
 
 /**
  * 倒计时（[CountdownLabel]）：数字 [ClassppTextTokens.countdownNumber] 半粗突出，单位与「逾期」
@@ -305,7 +304,7 @@ private fun CountdownExitSlot(
  * - [onLongClick] 长按回调（待办列表长按进编辑页的入口）：与 onClick 同时非 null 时手势
  *   从 pressClickable 换成 pressFeedback + combinedClickable 手动配对（长按需自建按压源）；
  *   null（默认）维持纯单击；
- * - [verticalPadding] 主体行上下内距：默认 [NoteCardPaddingVertical]（整卡形态的 14dp 节奏）；
+ * - [verticalPadding] 主体行上下内距：默认 [RowCardPaddingVertical]（整卡形态的 14dp 节奏）；
  *   多条待办合并一张外卡的形态（DayTodoAlert）传 12dp，行距按合并卡节奏收紧；
  * - [shape] 卡片形状：按压提亮轮廓、背景/内容裁剪与选中描边共用；默认 [NoteCardShape]
  *   （整卡形态），合并卡形态传 RectangleShape——行与行之间的按压高亮取直角，外缘圆角
@@ -339,8 +338,8 @@ fun NoteCard(
     selected: Boolean? = null,
     // 长按回调（进编辑页入口）：与 onClick 同时非 null 才生效
     onLongClick: (() -> Unit)? = null,
-    // 主体行上下内距：默认整卡节奏（NoteCardPaddingVertical），合并卡形态传 12dp
-    verticalPadding: Dp = NoteCardPaddingVertical,
+    // 主体行上下内距：默认整卡节奏（RowCardPaddingVertical），合并卡形态传 12dp
+    verticalPadding: Dp = RowCardPaddingVertical,
     // 卡片形状：按压提亮轮廓、背景/内容裁剪与选中描边共用；合并卡形态（DayTodoAlert）
     // 传 RectangleShape，行与行之间的按压高亮取直角
     shape: Shape = NoteCardShape,
@@ -465,7 +464,7 @@ fun NoteCard(
                         Modifier
                     },
                 )
-                .padding(horizontal = 16.dp, vertical = verticalPadding),
+                .padding(horizontal = RowCardPaddingHorizontal, vertical = verticalPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // 倒计时（传值即开启；完成/取消完成走上方编排的动画进出场，不再瞬时增删）：

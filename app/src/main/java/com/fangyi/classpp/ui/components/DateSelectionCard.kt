@@ -38,6 +38,8 @@ import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.ui.motion.Expandable
 import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
+import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppColors
@@ -131,7 +133,7 @@ fun DateSelectionCard(
                     keyboard?.hide()
                     onExpandedChange(!expanded)
                 }
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -227,7 +229,7 @@ fun DateSelectionCard(
                                 }
                             }
                         }
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -262,7 +264,7 @@ fun DateSelectionCard(
                                 }
                             }
                         }
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(

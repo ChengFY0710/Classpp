@@ -40,6 +40,8 @@ import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
+import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
+import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppColors
@@ -284,7 +286,7 @@ private fun SettingsCardRow(item: SettingsCardItem, hazeState: HazeState?) {
         modifier = Modifier
             .fillMaxWidth()
             .then(interactionModifier)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SettingsRowText(label = item.label, description = item.description, modifier = Modifier.weight(1f))
@@ -325,7 +327,7 @@ private fun CustomRow(item: SettingsCardItem.Custom, minHeight: Dp) {
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = minHeight)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SettingsRowText(label = item.label, description = item.description, modifier = Modifier.weight(1f))
@@ -341,7 +343,7 @@ private fun SliderRow(item: SettingsCardItem.Slider) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SettingsRowText(label = item.label, description = item.description, modifier = Modifier.weight(1f))
@@ -372,7 +374,7 @@ private fun SliderGroupRow(item: SettingsCardItem.SliderGroup) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
     ) {
         SettingsRowText(label = item.label, description = item.description)
         Spacer(modifier = Modifier.height(14.dp))

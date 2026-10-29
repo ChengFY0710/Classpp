@@ -80,6 +80,8 @@ import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
+import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.RowShape
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
@@ -94,12 +96,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlin.math.abs
 import kotlin.math.roundToInt
-
-/** 行内左右内距（与 [SettingsCard] 同规格） */
-private val RowHorizontalPadding = 16.dp
-
-/** 行内上下内距（与 [SettingsCard] 同规格） */
-private val RowVerticalPadding = 14.dp
 
 /** 值文字 ↔ 尾部箭头间距（与 [SettingsCard] 同规格） */
 private val ValueTrailingSpacing = 6.dp
@@ -444,7 +440,7 @@ private fun GroupCardRowContent(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = RowHorizontalPadding, vertical = RowVerticalPadding),
+            .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         item.icon?.let { icon ->

@@ -64,6 +64,24 @@ val SettingsSectionSpacing: Dp = 18.dp
 val SheetFieldHeight: Dp = 60.dp
 
 /**
+ * 行卡（浮层行卡、设置卡及同规格卡片）标准内距，两个值成对使用：
+ * `padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical)`。
+ * SheetCard 的默认 `SheetCardPadding`、SheetTextField、SettingsCard(withIcon)、SelectCard、
+ * TagChoosingCard、BottomTextFieldCard、DateSelectionCard、UrgentFlagCard、GroupCard、
+ * NoteCard 与各浮层属性行共用——改这一组，全部行卡内距同步。
+ *
+ * 分工：[SheetFieldHeight] 管行高下限，本组管内容到卡缘的内距；[PageHorizontalSpacing]
+ * 是卡片到屏幕的边距，不混用。待办顶栏胶囊内距（TodoTopBar 的 PillInnerPadding 16dp）
+ * 是独立场景，不走本组。
+ */
+
+/** 行卡横向内距 */
+val RowCardPaddingHorizontal: Dp = 16.dp
+
+/** 行卡纵向内距 */
+val RowCardPaddingVertical: Dp = 14.dp
+
+/**
  * 编辑顶栏动作块的共享几何：课表编辑顶栏（ScheduleEditBar）与待办编辑顶栏
  * （TodoEditBar）的「图标在上、文字在下」动作块逐项共用——改这里的值，两处同步。
  *

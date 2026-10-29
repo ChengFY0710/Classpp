@@ -64,6 +64,8 @@ import com.fangyi.classpp.ui.components.labelText
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.NoteCardShape
+import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
+import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
@@ -496,7 +498,7 @@ private fun AddStepCard(onClick: () -> Unit) {
             .background(MaterialTheme.colorScheme.surface)
             // 按压反馈同 NoteCard 的可点态：位置在 clip 之前（缩放作用于整卡、不被圆角裁掉）
             .pressClickable(NoteCardShape, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
