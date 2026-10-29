@@ -3,7 +3,6 @@ package com.fangyi.classpp.ui.schedule
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,6 +29,7 @@ import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetInfoCard
 import com.fangyi.classpp.ui.components.SheetInfoEntry
+import com.fangyi.classpp.ui.components.SheetInfoPillRow
 import com.fangyi.classpp.ui.components.SheetTextArea
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.note.cardTimeText
@@ -40,7 +40,6 @@ import com.fangyi.classpp.ui.note.repeatCardText
 import com.fangyi.classpp.ui.note.deadlineDaysLeft
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
-import com.fangyi.classpp.ui.theme.classppColors
 
 /**
  * 课程详情浮层：浏览态点课程卡弹出，只读展示课程名 / 上课位置（周几、节次、时间）、
@@ -55,7 +54,8 @@ import com.fangyi.classpp.ui.theme.classppColors
  * 待办卡随该待办的倒计时开关（`Todo.countdown`）在左区显示距截止剩余天数（[deadlineDaysLeft]，
  * 与待办列表页同口径）；完成态由 [NoteCard] 自行隐藏倒计时。
  *
- * 正文按浮层内容规范排版：课程名与灰色信息行保持裸元素，信息卡、备注、待办卡列表各收进
+ * 正文按浮层内容规范排版：课程名与位置信息胶囊行（星期 / 节次 / 起止时间，
+ * [SheetInfoPillRow]）保持裸元素，信息卡、备注、待办卡列表各收进
  * 一个无题 [CardSection]（后两者是列表，组内卡间距走 CardSection 默认的 10dp）；
  * 顶层块间距走 [SheetSectionSpacingBetween]。
  *
@@ -100,7 +100,7 @@ fun CourseDetailSheet(
     // enabled 跟 visible：出场动画期间不再拦截（visible 已 false，重复提交被挡在门外）
     BackHandler(enabled = visible, onBack = closeWithSave)
 
-    // 灰色"当前"行：与 AddCoursePanel 的 cellInfo 同一构造（星期数组 + 节次 + 起止时间）
+    // 位置信息胶囊行：与 AddCoursePanel 的构造同源（星期数组 + 节次 + 起止时间）
     val weekdays = stringArrayResource(R.array.weekdays)
     val weekdayName = weekdays[(entry.dayOfWeek - 1).coerceIn(weekdays.indices)]
     val slotLabel = if (entry.span == 1) {
@@ -111,11 +111,10 @@ fun CourseDetailSheet(
     val slots = schedule.slots
     val startDef = slots[(entry.startSlot - 1).coerceIn(slots.indices)]
     val endDef = slots[(entry.endSlot - 1).coerceIn(slots.indices)]
-    val cellInfo = stringResource(
-        R.string.edit_cell_info,
-        weekdayName,
-        slotLabel,
-        "${startDef.startTime}-${endDef.endTime}",
+    val timeRange = stringResource(
+        R.string.time_range_format,
+        startDef.startTime,
+        endDef.endTime,
     )
 
     OverlaySheet(
@@ -143,14 +142,9 @@ fun CourseDetailSheet(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(start = 12.dp, end = 12.dp),
             )
-            Text(
-                text = cellInfo,
-                style = ClassppTextTokens.secondaryTextLarge,
-                color = MaterialTheme.classppColors.secondaryText,
-                modifier = Modifier
-                    .padding(start = 12.dp)
-                    .offset(y = 2.dp),
-            )
+            // 位置信息胶囊行（星期 / 节次 / 起止时间）：与课程名同为裸元素、不包分组
+            //（浮层规范里的直接文本例外），左缘比课程名再内缩 3dp
+            SheetInfoPillRow(values = listOf(weekdayName, slotLabel, timeRange))
             // 教师 / 地点留空的字段不显示假数据；两者全空且无周数时不出现
             val infoEntries = buildList {
                 if (entry.teacher.isNotBlank()) {

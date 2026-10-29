@@ -296,7 +296,8 @@
     <string name="edit_delete">删除</string>
     <string name="edit_pin">置顶</string>
     <string name="edit_rename">重命名</string>
-    <string name="edit_cell_info">当前：%1$s｜%2$s｜%3$s</string>
+    <!-- 起止时间胶囊（课程编辑/详情浮层的信息胶囊行）：%1$s 开始时间、%2$s 结束时间 -->
+    <string name="time_range_format">%1$s - %2$s</string>
     <string name="edit_end_slot_section">上课节次</string>
     <string name="edit_start_slot">开始节次</string>
     <string name="edit_end_slot">结束节次</string>
@@ -314,7 +315,6 @@
     <string name="edit_weeks_even">双周</string>
     <string name="edit_weeks_none">尚未选择</string>
     <string name="edit_weeks_separator">、</string>
-    <string name="edit_weeks_summary">已选：%1$s</string>
     <string name="edit_weeks_one">第 %1$d 周</string>
     <string name="edit_weeks_range">第 %1$d-%2$d 周</string>
     <string name="edit_weeks_suffix_odd">（单周）</string>

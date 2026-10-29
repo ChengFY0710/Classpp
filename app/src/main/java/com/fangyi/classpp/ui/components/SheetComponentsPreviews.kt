@@ -28,6 +28,7 @@ import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.components.SheetTopAction
 import kotlin.math.roundToInt
@@ -201,6 +202,25 @@ private fun SheetInfoCardPreview() = ClassppTheme {
                 ),
             ),
         )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
+private fun SheetInfoPillRowPreview() = ClassppTheme {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            // 浮层滚动内容列自带 PageHorizontalSpacing，这里补上以还原真实横向位置
+            .padding(horizontal = PageHorizontalSpacing),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // 课程编辑 / 详情浮层的三枚位置胶囊：胶囊左缘比卡片再内缩 3dp
+        SheetInfoPillRow(values = listOf("周一", "第 2 节", "08:00 - 09:40"))
+        // 跨节课程：节次胶囊带上起止
+        SheetInfoPillRow(values = listOf("周三", "第 3-4 节", "10:00 - 11:40"))
+        // 英文 / 系统大字号放不下时自动换行（FlowRow），不挤出屏幕
+        SheetInfoPillRow(values = listOf("Wednesday", "Periods 3-4", "10:00 - 11:40"))
     }
 }
 

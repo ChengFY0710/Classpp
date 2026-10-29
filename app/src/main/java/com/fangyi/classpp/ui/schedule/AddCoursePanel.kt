@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -54,6 +53,7 @@ import com.fangyi.classpp.ui.components.RowChoiceCard
 import com.fangyi.classpp.ui.components.SelectionGrid
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
+import com.fangyi.classpp.ui.components.SheetInfoPillRow
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
@@ -87,7 +87,8 @@ private val textStartPadding = PaddingValues(start = 12.dp) // 描述性文字�
  * - 顶栏 = 左确认 / 中标题 / 右取消（编辑态删除），背景对滚动内容做渐变模糊并收敛在圆角内；
  * - 表单控件全部抽成可复用组件（输入框/行选择/浮层选择/颜色选择卡片）；
  * - 表单内容按浮层内容规范排版：顶层块一律 [CardSection]——课程名/教师/地点三张连续输入卡
- *   合成一个无题分组，其余是带题分组；灰色信息行是唯一的裸元素（规范里的直接文本例外）。
+ *   合成一个无题分组，其余是带题分组；位置信息胶囊行（星期 / 节次 / 起止时间，
+ *   [SheetInfoPillRow]）是唯一的裸元素（规范里的直接文本例外）。
  *   顶层块间距走 [SheetSectionSpacingBetween]（12dp），组内卡间距由 CardSection 默认值负责。
  *
  * **生命周期**：[visible] 为 true 时面板从底部滑入；关闭流程是两段式——所有关闭入口
@@ -189,12 +190,12 @@ fun AddCoursePanel(
     // 恢复的节次理论上不越界，仍钳一下防进程重建后的极端情况
     val startDef = schedule.slots[(startSlotId - 1).coerceIn(schedule.slots.indices)]
     val endDef = schedule.slots[(endSlotId - 1).coerceIn(schedule.slots.indices)]
-    val cellInfo = stringResource(
-        R.string.edit_cell_info,
-        weekdayName,
-        slotLabel,
-        "${startDef.startTime}-${endDef.endTime}",
+    val timeRange = stringResource(
+        R.string.time_range_format,
+        startDef.startTime,
+        endDef.endTime,
     )
+    // 已选周 → 周模式：提交时作为 CourseEntry.weeks 落库
     val weeks = weeksFromSelection(selectedWeeks)
 
     // 结束节次菜单：只列合法项（起始之前 / 跨度过长的不出现）；
@@ -372,15 +373,9 @@ fun AddCoursePanel(
         hazeState = sheetHazeState,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
-            // 灰色信息行是浮层规范里的"直接文本"例外，不包分组
-            Text(
-                text = cellInfo,
-                style = ClassppTextTokens.secondaryTextLarge,
-                color = MaterialTheme.classppColors.secondaryText,
-                modifier = Modifier
-                    .padding(textStartPadding)
-                    .offset(y = 2.dp),
-            )
+            // 位置信息胶囊行（星期 / 节次 / 起止时间）：浮层规范里的"直接文本"例外，
+            // 不包分组——三枚白底胶囊代替原来的「当前：…」灰字行
+            SheetInfoPillRow(values = listOf(weekdayName, slotLabel, timeRange))
 
             // 三张连续输入卡（课程名 / 教师 / 地点）同型：合成一个无题分组，组内 10dp 卡间距
             CardSection {
@@ -511,14 +506,6 @@ fun AddCoursePanel(
                             )
                         }
                     },
-                )
-                Text(
-                    text = stringResource(R.string.edit_weeks_summary, weeksSummary(weeks)),
-                    style = ClassppTextTokens.secondaryTextLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .padding(textStartPadding)
-                        .offset(y = -4.dp),
                 )
                 // 同格的其它交替课占了哪些周：说清灰显方格是被谁占的
                 groupOthers.forEach { other ->

@@ -216,7 +216,8 @@
     <string name="edit_delete">Delete</string>
     <string name="edit_pin">Pin</string>
     <string name="edit_rename">Rename</string>
-    <string name="edit_cell_info">Now: %1$s | %2$s | %3$s</string>
+    <!-- Time range capsule (info capsule row in course edit/detail sheets) -->
+    <string name="time_range_format">%1$s - %2$s</string>
     <string name="edit_end_slot_section">Periods</string>
     <string name="edit_start_slot">Start period</string>
     <string name="edit_end_slot">End period</string>
@@ -234,7 +235,6 @@
     <string name="edit_weeks_even">Even</string>
     <string name="edit_weeks_none">Nothing selected</string>
     <string name="edit_weeks_separator">, </string>
-    <string name="edit_weeks_summary">Selected: %1$s</string>
     <string name="edit_weeks_one">Week %1$d</string>
     <string name="edit_weeks_range">Weeks %1$d-%2$d</string>
     <string name="edit_weeks_suffix_odd"> (odd)</string>
