@@ -149,7 +149,8 @@ private val SectionSpacing = 20.dp
  * 标题与时间/截止/重复（三项均带图标），行点击拉起详情浮层、勾选照常落库；分组口径
  * 与列表同源（[buildTodoSections]）。视图段编进 CrossPages 的页面 key，视图切换与
  * 切分组同享整页交叉过渡；最近删除页保留列表且不编码视图段（撤回/彻底删除需要整卡
- * 动作，切视图不播动画、内容不变），顶栏视图块在该页置灰不可点。
+ * 动作，切视图不播动画、内容不变），顶栏视图块在该页置灰不可点。收集箱卡不渲染
+ * 倒计时，从该视图打开的详情里「开启倒计时」菜单项同样置灰（开关无可视反馈）。
  * 新建待办浮层（[NewTodoSheet]）两段式挂载：[showNewTodoSheet] 置真即挂载滑入，
  * 关闭先清 visible 播完出场，onDismissed 才卸载；点卡片拉起待办详情浮层
  * （[TodoDetailSheet]，挂载接线同课表页课程详情）。任一浮层在场时经
@@ -330,6 +331,11 @@ fun TodoScreen(
     // 所点条目的分期日期（ISO 文本，空 = 非逐期卡）：详情按 id 反查原始待办，逐期上下文
     // 只能由点击带入——随重复的截止行按它折算出该条目的具体截止
     var detailTargetDate by rememberSaveable { mutableStateOf("") }
+    // 详情「开启倒计时」的可用性：收集箱卡不渲染倒计时（TodoInboxCard 组件口径），
+    // 从收集箱打开的详情把该项置灰。打开时按页面 key 的视图段写入、不在详情期间重算
+    //（浮层盖住页面，视图不会在打开期间变化）；rememberSaveable 与 detailTargetId 同口径。
+    // 不在关闭时复位：收场动画期间内容仍在，复位会让菜单项闪回可点状态
+    var detailCountdownAvailable by rememberSaveable { mutableStateOf(true) }
     // 编辑浮层：被编辑待办 id（详情顶栏「编辑」进入），空 = 未打开（两段式挂载见浮层处）
     var editTargetId by rememberSaveable { mutableStateOf("") }
     // 分组浮层：待办分组（顶栏展开动作行的分组块进入），空 = 未打开（两段式挂载见浮层处）
@@ -699,10 +705,12 @@ fun TodoScreen(
                         page.tag != null -> stringResource(R.string.todo_empty_tag)
                         else -> null
                     }
-                    // 详情入口：列表卡与收集箱卡共用（分期上下文由所点条目的 dates[0] 带入）
+                    // 详情入口：列表卡与收集箱卡共用（分期上下文由所点条目的 dates[0] 带入；
+                    // 倒计时开关可用性由当前页面的视图段决定——收集箱卡不渲染倒计时）
                     val openTodoDetail: (Todo) -> Unit = {
                         detailTargetId = it.id
                         detailTargetDate = it.dates.firstOrNull()?.toString().orEmpty()
+                        detailCountdownAvailable = !page.inbox
                     }
                     // 收集箱视图：由页面 key 的视图段决定（最近删除页不编码视图段，恒走列表）。
                     // 从 key 解码而非读当前 inboxView——退场中的列表页要继续渲染自己的内容，
@@ -1147,7 +1155,9 @@ fun TodoScreen(
                         }
                     }
                 },
-                // 倒计时开关：落库后列表卡左区显示剩余天数（详情菜单文案随仓库回流自动切换）
+                // 倒计时开关：落库后列表卡左区显示剩余天数（详情菜单文案随仓库回流自动切换）；
+                // 收集箱视图打开时整项置灰（该视图的卡不渲染倒计时，见 detailCountdownAvailable）
+                countdownAvailable = detailCountdownAvailable,
                 onCountdownToggle = { enabled ->
                     scope.launch {
                         val result = repository.setCountdown(detail.id, enabled)
@@ -1350,7 +1360,8 @@ private val InboxCardSpacing = 10.dp
  * - 卡片只显示标题 + 时间/截止/重复，不渲染标签、紧急旗、倒计时（组件口径）；
  *   头部强调色按分组：已完成 urgentGreen、已逾期 error、其余 primary，图标取对应
  *   特殊分组图标（已完成勾选框 / 未完成空框 / 已逾期警告框 / 已置顶图钉）；
- * - 点击行经 [onTodoClick] 交宿主拉起详情浮层；勾选框经 [onToggleCompleted] 落库；
+ * - 点击行经 [onTodoClick] 交宿主拉起详情浮层（详情里的倒计时开关由宿主按视图置灰：
+ *   本视图的卡不渲染倒计时，开启后无任何可视反馈）；勾选框经 [onToggleCompleted] 落库；
  * - 最近删除页不进入本视图（调用方保留列表：撤回/彻底删除需要整卡动作）；
  * - 空结果沿用列表的居中占位文案（特殊页/标签页），常规页为空时不渲染内容。
  *

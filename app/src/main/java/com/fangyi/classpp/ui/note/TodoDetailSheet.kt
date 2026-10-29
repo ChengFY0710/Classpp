@@ -133,6 +133,9 @@ internal fun TodoDetailSheet(
     onStepDelete: (stepId: String) -> Unit,
     // 开关列表卡倒计时（true = 开启）；落库后本层菜单文案随传入的 todo 自动回流
     onCountdownToggle: (Boolean) -> Unit,
+    // 当前视图是否提供倒计时开关：收集箱卡不渲染倒计时（TodoInboxCard 组件口径），
+    // 从收集箱打开的详情传 false 把「开启倒计时」整体置灰（开关无可视反馈）
+    countdownAvailable: Boolean = true,
     // 被编辑浮层盖住：本层缩小后退（透传 OverlaySheet 的分层动效）
     covered: Boolean = false,
 ) {
@@ -222,11 +225,11 @@ internal fun TodoDetailSheet(
                         expanded = moreExpanded,
                         onDismiss = { moreExpanded = false },
                         hazeState = sheetHazeState,
-                        // 无截止日期或已标记完成：倒计时项置灰不可点（无截止时仓库不变式
-                        // 也保证开关必为 false；完成后仅禁用入口，开关值原样保留，取消
-                        // 完成即恢复可点）
-                        countdownEnabled = todo.deadlineDate != null && !todo.completed,
-                        completed = todo.completed,
+                        // 无截止日期、已标记完成或当前视图不显示倒计时（收集箱）：倒计时
+                        // 项置灰不可点（无截止时仓库不变式也保证开关必为 false；完成后仅
+                        // 禁用入口，开关值原样保留，取消完成即恢复可点）
+                        countdownEnabled = countdownAvailable &&
+                            todo.deadlineDate != null && !todo.completed,
                         countdownOn = todo.countdown,
                         onCountdownToggle = onCountdownToggle,
                     )
@@ -418,10 +421,10 @@ internal fun TodoDetailSheet(
  * [TitleMenuGap]，锚点在行尾故自卡片右上角长出。
  *
  * 条目：添加到日历（本轮只做 UI——点按仅收起菜单，不接日历写入）；倒计时在
- * [countdownEnabled] 为 false（无截止日期，或该待办已标记完成）时置灰不可点
- * （`classppColors.negative`）、可点时点按把新开关值交 [onCountdownToggle] 落库；
- * 文案：完成态（[completed] = true）恒显「开启倒计时」（此刻必然置灰），未完成随
- * 传入的 [countdownOn] 在「开启/关闭倒计时」间切换（状态源 = `Todo.countdown`，
+ * [countdownEnabled] 为 false（无截止日期、该待办已标记完成，或当前视图不显示倒计时）
+ * 时置灰不可点（`classppColors.negative`）、可点时点按把新开关值交 [onCountdownToggle]
+ * 落库；文案：置灰时恒显「开启倒计时」（不暴露「关闭」误导用户以为还能操作），
+ * 可点时随传入的 [countdownOn] 在「开启/关闭倒计时」间切换（状态源 = `Todo.countdown`，
  * 不在本组件内留存）。
  */
 @Composable
@@ -430,7 +433,6 @@ private fun TitleMoreMenu(
     onDismiss: () -> Unit,
     hazeState: HazeState,
     countdownEnabled: Boolean,
-    completed: Boolean,
     countdownOn: Boolean,
     onCountdownToggle: (Boolean) -> Unit,
 ) {
@@ -449,10 +451,10 @@ private fun TitleMoreMenu(
                         onClick = onDismiss,
                     ),
                     PopupMenuItem(
-                        // 完成态恒显「开启倒计时」（此刻整体置灰不可点，不暴露「关闭」误导
-                        // 用户以为还能操作）；未完成随开关在「开启/关闭倒计时」间切换
+                        // 置灰时恒显「开启倒计时」（同完成态：不暴露「关闭」误导用户以为
+                        // 还能操作）；可点时随开关在「开启/关闭倒计时」间切换
                         label = stringResource(
-                            if (!completed && countdownOn) {
+                            if (countdownEnabled && countdownOn) {
                                 R.string.todo_menu_countdown_stop
                             } else {
                                 R.string.todo_menu_countdown_start
