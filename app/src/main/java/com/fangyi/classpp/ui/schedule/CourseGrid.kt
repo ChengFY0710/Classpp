@@ -119,7 +119,7 @@ internal fun minCardRowHeight(showTeacher: Boolean, fontScale: Float): Dp =
  * 当前课表下「卡片高度触发最低高度」的倍率：最短一节按比例恰好降到 [minCardRowHeight] 时的倍率，
  * 向下取到 0.01。最低高度随「显示教师」开关变（60/44dp），因此下限也随开关重算；
  * 再低只会让最短节进入行高下限、更长节继续缩短，破坏卡片高度与时间的比例，故作为滑条下限。
- * 结果钳在 [CardHeightPreferences.Range] 内（极短节封顶 2.0）。
+ * 结果钳在 [CardHeightPreferences.Range] 内（极短节封顶 1.5）。
  */
 internal fun cardHeightMinScale(
     shortestDurationMinutes: Int,

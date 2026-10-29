@@ -44,7 +44,7 @@ object CardHeightPreferences {
      * （见 [cardHeightMinScale]），落在本范围内；网格渲染也按不低于该下限的倍率绘制，
      * 但不写回偏好。
      */
-    val Range = 0.1f..2f
+    val Range = 0.1f..1.5f
 
     /** 读取两个模式的倍率；新键优先，无新键时从旧 dp 值迁移，均无回退默认值 */
     fun load(context: Context): CardHeightScales {

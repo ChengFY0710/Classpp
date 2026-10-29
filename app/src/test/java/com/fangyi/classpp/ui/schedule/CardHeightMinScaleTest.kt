@@ -5,7 +5,7 @@ import org.junit.Test
 
 /**
  * 滑条可调下限 [cardHeightMinScale] = 当前课表最短一节把卡片高度压到当前最低高度的倍率，
- * 向下取到 0.01，并钳在可存储范围 0.1–2.0 内。最低高度随「显示教师」开关变
+ * 向下取到 0.01，并钳在可存储范围 0.1–1.5 内。最低高度随「显示教师」开关变
  * （默认字号行高 60/44dp），因此下限也随开关重算；按该倍率渲染时最短节恰好落在行高下限。
  */
 class CardHeightMinScaleTest {
@@ -24,7 +24,7 @@ class CardHeightMinScaleTest {
         assertEquals(0.83f, cardHeightMinScale(45, 7, 1f, showTeacher = true), 0.0001f)
         assertEquals(1.33f, cardHeightMinScale(30, 5, 1f, showTeacher = true), 0.0001f)
         assertEquals(1.25f, cardHeightMinScale(30, 7, 1f, showTeacher = true), 0.0001f)
-        assertEquals(2.00f, cardHeightMinScale(20, 5, 1f, showTeacher = true), 0.0001f)
+        assertEquals(1.50f, cardHeightMinScale(20, 5, 1f, showTeacher = true), 0.0001f)
 
         assertEquals(0.65f, cardHeightMinScale(45, 5, 1f, showTeacher = false), 0.0001f)
         assertEquals(0.61f, cardHeightMinScale(45, 7, 1f, showTeacher = false), 0.0001f)
@@ -43,9 +43,9 @@ class CardHeightMinScaleTest {
 
     @Test
     fun `minimum scale is clamped to the storage range`() {
-        // 10 分钟节需要约 4.0× / 2.9×，超过滑条上限 → 封顶 2.0
-        assertEquals(2.00f, cardHeightMinScale(10, 5, 1f, showTeacher = true), 0.0001f)
-        assertEquals(2.00f, cardHeightMinScale(10, 5, 1f, showTeacher = false), 0.0001f)
+        // 10 分钟节需要约 4.0× / 2.9×，超过滑条上限 → 封顶 1.5
+        assertEquals(1.50f, cardHeightMinScale(10, 5, 1f, showTeacher = true), 0.0001f)
+        assertEquals(1.50f, cardHeightMinScale(10, 5, 1f, showTeacher = false), 0.0001f)
         // 200 分钟节只需 0.19× / 0.14×，但不低于可存储下限 0.1
         assertEquals(0.18f, cardHeightMinScale(200, 7, 1f, showTeacher = true), 0.0001f)
         assertEquals(0.13f, cardHeightMinScale(200, 7, 1f, showTeacher = false), 0.0001f)

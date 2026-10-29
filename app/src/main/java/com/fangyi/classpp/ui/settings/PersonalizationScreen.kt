@@ -191,7 +191,7 @@ fun PersonalizationScreen(
 
 /**
  * 「课表」分组：课程卡片高度滑条 + 「显示教师」开关，各占一张独立卡片（CardSection
- * 卡间距分隔）。滑条调节**用户倍率**（可存储范围 [CardHeightPreferences.Range]，0.1–2.0，
+ * 卡间距分隔）。滑条调节**用户倍率**（可存储范围 [CardHeightPreferences.Range]，0.1–1.5，
  * 默认 1.0 = 基准行高）：网格行高随每节课实际时长伸缩（见
  * [com.fangyi.classpp.ui.schedule.slotRowHeight]），倍率整体缩放。
  * 可调下限由当前课表最短一节与「显示教师」开关决定（[cardHeightMinScale]）：它是让卡片高度
