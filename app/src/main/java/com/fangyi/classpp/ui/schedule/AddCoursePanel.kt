@@ -52,6 +52,8 @@ import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetInfoPillRow
 import com.fangyi.classpp.ui.components.SheetTextField
+import com.fangyi.classpp.ui.components.SheetTextFieldGroup
+import com.fangyi.classpp.ui.components.SheetTextFieldItem
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.isDarkTheme
@@ -79,9 +81,9 @@ import dev.chrisbanes.haze.rememberHazeState
  *   让位发生在滚动内容末尾，容器本身不动；
  * - 顶栏 = 左确认 / 中标题 / 右取消（编辑态删除），背景对滚动内容做渐变模糊并收敛在圆角内；
  * - 表单控件全部抽成可复用组件（输入框/行选择/浮层选择/颜色选择卡片）；
- * - 表单内容按浮层内容规范排版：顶层块一律 [CardSection]——课程名/教师/地点三张连续输入卡
- *   合成一个无题分组，其余是带题分组；位置信息胶囊行（星期 / 节次 / 起止时间，
- *   [SheetInfoPillRow]）是唯一的裸元素（规范里的直接文本例外）。
+ * - 表单内容按浮层内容规范排版：顶层块一律 [CardSection]——课程名单卡与
+ *   「教师/地点」两行合并卡同收在一个无题分组，其余是带题分组；位置信息胶囊行
+ *   （星期 / 节次 / 起止时间，[SheetInfoPillRow]）是唯一的裸元素（规范里的直接文本例外）。
  *   顶层块间距走 [SheetSectionSpacingBetween]（12dp），组内卡间距由 CardSection 默认值负责。
  *
  * **生命周期**：[visible] 为 true 时面板从底部滑入；关闭流程是两段式——所有关闭入口
@@ -370,7 +372,8 @@ fun AddCoursePanel(
             // 不包分组——三枚白底胶囊代替原来的「当前：…」灰字行
             SheetInfoPillRow(values = listOf(weekdayName, slotLabel, timeRange))
 
-            // 三张连续输入卡（课程名 / 教师 / 地点）同型：合成一个无题分组，组内 10dp 卡间距
+            // 课程名单卡 + 教师/地点两行合并卡：同收一个无题分组，组内 10dp 卡间距。
+            // 合并卡整卡描边：任一教师/地点行聚焦时整卡蓝框（行间切换不闪断）
             CardSection {
                 SheetTextField(
                     label = stringResource(R.string.edit_course_name),
@@ -382,21 +385,25 @@ fun AddCoursePanel(
                     onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
                     focusRequester = nameFocus,
                 )
-                SheetTextField(
-                    label = stringResource(R.string.edit_course_teacher),
-                    value = teacher,
-                    onValueChange = { teacher = it; error = null },
-                    placeholder = stringResource(R.string.edit_course_teacher_ph),
-                    imeAction = ImeAction.Next,
-                    onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
-                )
-                SheetTextField(
-                    label = stringResource(R.string.edit_course_location),
-                    value = location,
-                    onValueChange = { location = it; error = null },
-                    placeholder = stringResource(R.string.edit_course_location_ph),
-                    imeAction = ImeAction.Done,
-                    onImeAction = { focusManager.clearFocus() },
+                SheetTextFieldGroup(
+                    fields = listOf(
+                        SheetTextFieldItem(
+                            label = stringResource(R.string.edit_course_teacher),
+                            value = teacher,
+                            onValueChange = { teacher = it; error = null },
+                            placeholder = stringResource(R.string.edit_course_teacher_ph),
+                            imeAction = ImeAction.Next,
+                            onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
+                        ),
+                        SheetTextFieldItem(
+                            label = stringResource(R.string.edit_course_location),
+                            value = location,
+                            onValueChange = { location = it; error = null },
+                            placeholder = stringResource(R.string.edit_course_location_ph),
+                            imeAction = ImeAction.Done,
+                            onImeAction = { focusManager.clearFocus() },
+                        ),
+                    ),
                 )
             }
 

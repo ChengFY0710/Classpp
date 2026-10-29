@@ -54,9 +54,10 @@ val SheetSectionSpacingBetween: Dp = 12.dp
 val SettingsSectionSpacing: Dp = 18.dp
 
 /**
- * 浮层行卡与设置卡统一行高（行高下限）：输入框（SheetTextField）与信息展示框
- * （SheetInfoCard）按它取 `heightIn(min)`，设置卡（SettingsCard、SettingsCardwithIcon）
- * 以它为整卡行高下限，保证各卡等高；
+ * 浮层行卡与设置卡统一行高（行高下限）：单行输入框（SheetTextField）与信息展示框
+ * （SheetInfoCard）按它取 `heightIn(min)`；多行输入卡（SheetTextFieldGroup）与设置卡
+ * （SettingsCard、SettingsCardwithIcon）以它为**整卡**行高下限——单行仍为 60dp，
+ * 多行时各行按自然高无缝堆叠，保证各卡等高；
  * 系统字体放大时行高同步增长，等高关系依旧成立。
  * 例外：输入值超宽自动换行时输入行卡按行数长高（上下内距不变），其余卡维持此高度。
  */

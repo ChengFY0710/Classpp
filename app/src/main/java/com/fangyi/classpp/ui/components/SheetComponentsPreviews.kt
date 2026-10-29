@@ -76,6 +76,61 @@ private fun SheetTextFieldPreview() = ClassppTheme {
 
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
 @Composable
+private fun SheetTextFieldGroupPreview() = ClassppTheme {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // 两行卡：60dp 下限判在整卡，各行按自然高堆叠、行间无缝
+        SheetTextFieldGroup(
+            fields = listOf(
+                SheetTextFieldItem(
+                    label = "教师",
+                    value = "XX 老师",
+                    onValueChange = {},
+                ),
+                SheetTextFieldItem(
+                    label = "上课地点",
+                    value = "学武楼 C201",
+                    onValueChange = {},
+                ),
+            ),
+        )
+        // 单行 Group：与旧单卡等高（60dp）
+        SheetTextFieldGroup(
+            fields = listOf(
+                SheetTextFieldItem(
+                    label = "课表名",
+                    value = "",
+                    onValueChange = {},
+                    placeholder = "2024-2025 秋季",
+                ),
+            ),
+        )
+        // 任一行报错：整卡红描边压过聚焦蓝
+        SheetTextFieldGroup(
+            fields = listOf(
+                SheetTextFieldItem(
+                    label = "教师",
+                    value = "",
+                    onValueChange = {},
+                    placeholder = "XX 老师",
+                    isError = true,
+                ),
+                SheetTextFieldItem(
+                    label = "上课地点",
+                    value = "学武楼 C201",
+                    onValueChange = {},
+                ),
+            ),
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
 private fun RowChoiceCardPreview() = ClassppTheme {
     Column(
         modifier = Modifier
