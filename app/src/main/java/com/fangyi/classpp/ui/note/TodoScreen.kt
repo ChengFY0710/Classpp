@@ -141,7 +141,8 @@ private val SectionSpacing = 20.dp
  * 顶栏分类菜单（分类块唤起，与排序菜单同款弹层）是四组显隐的多选开关：
  * 默认全勾选，取消勾选即整组隐藏（[visibleSections] 派生，点选不收菜单）。
  * 顶栏视图菜单（视图块唤起，与排序/分类同款弹层）在列表视图（默认）与收集箱视图
- * 之间切换：收集箱视图把非空分组渲染成 [TodoInboxCard]——三组及以上按个性化页的
+ * 之间切换（选择经 [TodoInboxPreferences] 持久化，冷启动回到上次视图）：收集箱视图
+ * 把非空分组渲染成 [TodoInboxCard]——三组及以上按个性化页的
  * 「瀑布流视图」开关（[masonryView]，默认开启）走两列瀑布流（卡间距 10dp，按卡片
  * 高度落进较短一列）或整宽竖排，两组及以下始终整宽竖排（半宽卡会把标题与
  * 属性行挤得过窄；特殊分组页的单卡同理）；卡内只显示
@@ -269,9 +270,17 @@ fun TodoScreen(
     var sortMenuExpanded by rememberSaveable { mutableStateOf(false) }
     // 分类菜单展开态（弹层锚在展开动作行的分类块处，与排序菜单同款三件套接线）
     var categoryMenuExpanded by rememberSaveable { mutableStateOf(false) }
-    // 视图模式：false = 列表（默认），true = 收集箱；rememberSaveable 同排序口径
-    //（旋转/切 tab/进程重建不丢，冷启动回列表）
-    var inboxView by rememberSaveable { mutableStateOf(false) }
+    // 视图模式：false = 列表（默认），true = 收集箱。rememberSaveable 管旋转/切 tab/
+    // 进程重建，初值取 SharedPreferences 里用户上次的选择——普通冷启动也回到上次视图
+    //（与个性化页的显示开关同源，见 TodoInboxPreferences）
+    var inboxView by rememberSaveable {
+        mutableStateOf(TodoInboxPreferences.loadInboxView(context))
+    }
+    // 视图选择即时落盘（布尔翻转无连续变化，无需去抖）：以 LaunchedEffect 统一收口，
+    // 菜单项与将来新增的入口都无需各自记得写盘；首帧写入与读到的值相同，幂等无副作用
+    LaunchedEffect(inboxView) {
+        TodoInboxPreferences.saveInboxView(context, inboxView)
+    }
     // 视图菜单展开态（弹层锚在展开动作行的视图块处，与排序/分类同款三件套）
     var viewMenuExpanded by rememberSaveable { mutableStateOf(false) }
     // 分类可见性：菜单四项全勾选 = 四组全显（默认），取消勾选即时隐藏对应分组。

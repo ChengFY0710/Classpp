@@ -14,7 +14,7 @@ val OnPrimaryContainer = Color(0x1A000000)
  * 产生色相跳变闪烁，方格式的选中底改用它。浅色 = 蓝 12% 叠白后的实色。
  */
 val PrimaryContainerSolid = Color(0xFFE2EDFB)
-val DarkPrimaryContainerSolid = Color(0xFFD4E5FD)
+val DarkPrimaryContainerSolid = Color(0xFF394C67)
 
 val Background = Color(0xFFF2F4F6)
 

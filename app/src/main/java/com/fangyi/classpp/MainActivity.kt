@@ -111,7 +111,7 @@ class MainActivity : ComponentActivity() {
         // 玻璃材质开关（更高级的玻璃材质）：同为 SharedPreferences 真源，冷启动读一次
         val savedGlassStyle = GlassPreferences.load(this)
         // 待办收集箱「瀑布流视图」开关：同为 SharedPreferences 真源，冷启动读一次
-        val savedTodoMasonry = TodoInboxPreferences.load(this)
+        val savedTodoMasonry = TodoInboxPreferences.loadMasonryView(this)
         super.onCreate(savedInstanceState)
         // 系统栏外观随主题：状态栏/导航栏全透明、前景图标深浅按模式切换。
         // 必须显式 light 而非 auto：auto 会把 isNavigationBarContrastEnforced 置为 true，
@@ -426,7 +426,7 @@ class MainActivity : ComponentActivity() {
                             onTodoMasonryChange = { enabled ->
                                 // 只改内存即时生效 + 即时落盘（同 showTeacher）
                                 todoMasonryState.value = enabled
-                                TodoInboxPreferences.save(this@MainActivity, enabled)
+                                TodoInboxPreferences.saveMasonryView(this@MainActivity, enabled)
                             },
                             modifier = Modifier.fillMaxSize(),
                         )
