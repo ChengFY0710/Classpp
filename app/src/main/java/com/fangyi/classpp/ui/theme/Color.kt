@@ -9,6 +9,13 @@ val OnPrimary = Color(0xFFFFFFFF)
 val PrimaryContainer = Color(0x1F006FEF)
 val OnPrimaryContainer = Color(0x1A000000)
 
+/**
+ * 选中方格的 primaryContainer 不透明版：半透明底在按压反馈提亮/压暗时会透出下层色、
+ * 产生色相跳变闪烁，方格式的选中底改用它。浅色 = 蓝 12% 叠白后的实色。
+ */
+val PrimaryContainerSolid = Color(0xFFE2EDFB)
+val DarkPrimaryContainerSolid = Color(0xFFD4E5FD)
+
 val Background = Color(0xFFF2F4F6)
 
 val Surface = Color(0xFFFFFFFF)

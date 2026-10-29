@@ -64,6 +64,11 @@ private val DarkColorScheme = darkColorScheme(
 class ClassppColors(
     /** 次级说明文字灰 */
     val secondaryText: Color,
+    /**
+     * 选中方格的不透明 primaryContainer 替身：半透明底色在按压反馈提亮/压暗时会透出
+     * 下层色导致闪烁，方格选中底改用本实色（浅 #E2EDFB / 深 #D4E5FD）。
+     */
+    val primaryContainerSolid: Color,
     /** 卡面细弱元素（卡片内分隔线、点状轨道）：浅 = outline 同值，深 = 卡面上可见的中灰 */
     val onSurfaceCard: Color,
     /**
@@ -97,6 +102,7 @@ class ClassppColors(
 
 private val LightClassppColors = ClassppColors(
     secondaryText = SecondaryText,
+    primaryContainerSolid = PrimaryContainerSolid,
     onSurfaceCard = OnSurfaceCard,
     hazeTint = HazeTint,
     negative = Negative,
@@ -109,6 +115,7 @@ private val LightClassppColors = ClassppColors(
 
 private val DarkClassppColors = ClassppColors(
     secondaryText = DarkSecondaryText,
+    primaryContainerSolid = DarkPrimaryContainerSolid,
     onSurfaceCard = DarkOnSurfaceCard,
     hazeTint = DarkHazeTint,
     negative = DarkNegative,

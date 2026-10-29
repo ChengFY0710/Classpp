@@ -34,6 +34,7 @@ import com.fangyi.classpp.ui.motion.Expandable
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.RowShape
+import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /**
@@ -85,7 +86,8 @@ fun RowChoiceCard(
         Column(modifier = Modifier.fillMaxWidth()) {
             Box(modifier = Modifier.fillMaxWidth()) {
                 // 滑动蓝底：宽度恒为 1/选项数，按选中索引平移；透明度与位移是两条独立动画——
-                // 换选 = 只平移不淡出，取消 = 原地淡出不平移
+                // 换选 = 只平移不淡出，取消 = 原地淡出不平移。选中底取不透明实色，
+                // 半透明 primaryContainer 在按压提亮时透底会闪烁
                 Box(
                     modifier = Modifier
                         .matchParentSize()
@@ -96,7 +98,7 @@ fun RowChoiceCard(
                             .fillMaxWidth(1f / options.size)
                             .fillMaxHeight()
                             .graphicsLayer { translationX = pillOffset * size.width }
-                            .background(MaterialTheme.colorScheme.primaryContainer, RowShape),
+                            .background(MaterialTheme.classppColors.primaryContainerSolid, RowShape),
                     )
                 }
                 Row(modifier = Modifier.fillMaxWidth()) {
