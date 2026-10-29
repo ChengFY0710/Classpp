@@ -868,3 +868,17 @@ private fun BottomColorSelectCardPreview() = ClassppTheme {
         onConfirm = { },
     )
 }
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
+private fun SheetInfoBannerPreview() = ClassppTheme {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(PageHorizontalSpacing),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SheetInfoBanner(text = "课程占 3-3 节, 占 1 节")
+        SheetInfoBanner(text = "课程占 1-2 节，跨 2 节课程占 1-2 节，跨 2 节课程占 1-2 节")
+    }
+}

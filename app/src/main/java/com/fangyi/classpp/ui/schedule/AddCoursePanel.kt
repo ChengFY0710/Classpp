@@ -3,13 +3,10 @@ package com.fangyi.classpp.ui.schedule
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,7 +27,6 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.FieldReason
@@ -53,16 +49,13 @@ import com.fangyi.classpp.ui.components.RowChoiceCard
 import com.fangyi.classpp.ui.components.SelectionGrid
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
+import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetInfoPillRow
 import com.fangyi.classpp.ui.components.SheetTextField
 import com.fangyi.classpp.ui.components.SheetTopAction
-import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
-import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import dev.chrisbanes.haze.rememberHazeState
-
-private val textStartPadding = PaddingValues(start = 12.dp) // 描述性文字统一左移，视觉上更有层次
 
 /**
  * 添加/编辑课程面板：[day] / [slot] 是点中的那一格（编辑态传被编辑课的星期与起始节）；
@@ -451,16 +444,13 @@ fun AddCoursePanel(
                         ),
                     ),
                 )
-                Text(
+                SheetInfoBanner(
                     text = stringResource(
                         R.string.edit_span_hint,
                         startSlotId,
                         endSlotId,
                         endSlotId - startSlotId + 1,
                     ),
-                    style = ClassppTextTokens.secondaryTextLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(textStartPadding),
                 )
             }
 
@@ -509,14 +499,12 @@ fun AddCoursePanel(
                 )
                 // 同格的其它交替课占了哪些周：说清灰显方格是被谁占的
                 groupOthers.forEach { other ->
-                    Text(
+                    SheetInfoBanner(
                         text = stringResource(
                             R.string.edit_alternate_taken_hint,
                             other.name,
                             weeksSummary(other.weeks),
                         ),
-                        style = ClassppTextTokens.hintText,
-                        color = MaterialTheme.classppColors.secondaryText,
                     )
                 }
             }
