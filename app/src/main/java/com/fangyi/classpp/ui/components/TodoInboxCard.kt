@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -41,6 +42,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
@@ -58,7 +60,10 @@ import com.kyant.shapes.RoundedRectangle
 /** 卡片左右内距：头部与待办行同一条左基线，与 NoteCard 的 16dp 一致。 */
 private val InboxCardHorizontalPadding = 16.dp
 
-/** 卡片上下内距：头部上缘、末行下缘与卡边留白。 */
+/**
+ * 卡片上下留白：卡顶一份画在头部上缘；卡底同一份收进末行的点区内侧——末行点区随之下探
+ * 到卡片底缘，按压高亮像 [SettingsCard] 一样铺满整卡，行内容位置不变。
+ */
 private val InboxCardVerticalPadding = 14.dp
 
 /** 头部与首行待办之间的间距。 */
@@ -141,8 +146,9 @@ data class TodoInboxItem(
  * 待办收集箱卡：白底 [NoteCardShape] 卡片，顶部「图标 + 大标题」，下方多条紧凑待办行。
  *
  * 视觉口径：
- * - 卡片底 [MaterialTheme.colorScheme.surface]、20dp 连续圆角、无投影；上下各
- *   [InboxCardVerticalPadding] 留白，头部与行共用左基线（默认 16dp；[compact] 收 12dp）；
+ * - 卡片底 [MaterialTheme.colorScheme.surface]、20dp 连续圆角、无投影；头部与行共用左基线
+ *   （默认 16dp；[compact] 收 12dp）；卡顶留白画在头部上缘，卡底留白收进末行点区内侧
+ *   （末行按压高亮一直铺到卡底，内容位置不变，同 [SettingsCard] 的整卡按压）；
  * - 头部图标（缺省 ic_pin）与标题统一 [headerColor]（默认 primary：已置顶/未完成；
  *   已逾期传 error、已完成传 urgentGreen），标题取 [ClassppTextTokens.cardTitle]
  *   （16sp SemiBold / 行高 20，与行标题同档，靠颜色与图标拉开层级），单行超长省略；
@@ -208,15 +214,16 @@ fun TodoInboxCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(NoteCardShape)
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(vertical = InboxCardVerticalPadding),
+            .background(MaterialTheme.colorScheme.surface),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // 卡顶留白画在头部这一侧：头部不可点，无需按压区覆盖
                 .padding(
                     start = horizontalPadding,
                     end = horizontalPadding,
+                    top = InboxCardVerticalPadding,
                     bottom = InboxHeaderBottomSpacing,
                 ),
             verticalAlignment = Alignment.CenterVertically,
@@ -238,15 +245,21 @@ fun TodoInboxCard(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        items.forEach { item ->
+        items.forEachIndexed { index, item ->
             key(item.id) {
                 TodoInboxRow(
                     item = item,
                     compact = compact,
+                    // 卡底留白只由末行承载：按压区随行高下探到卡底，涟漪铺满整卡
+                    bottomInset = if (index == items.lastIndex) InboxCardVerticalPadding else 0.dp,
                     onCheckedChange = onItemCheckedChange,
                     onTodoClick = onTodoClick,
                 )
             }
+        }
+        // 没有待办时只剩头部：卡底留白没有行可承载，单留一个不可点的空档
+        if (items.isEmpty()) {
+            Spacer(Modifier.height(InboxCardVerticalPadding))
         }
     }
 }
@@ -262,11 +275,16 @@ fun TodoInboxCard(
  * 密排）。整行恒可点（[TodoInboxCard] 的 onTodoClick 必传）：按压高亮取方角
  * [RectangleShape]，外缘圆角由卡片的 clip 裁出；勾选框回调为 null 时不挂 toggleable，
  * 只作展示。
+ *
+ * [bottomInset] 只由末行传非 0（卡底留白）：行高下限同步抬高该值，留白全部画在
+ * 内容下方——内容位置与其余行完全一致，按压高亮连同留白一起铺到卡片底缘
+ * （对齐 [SettingsCard] 末行的整卡按压）。
  */
 @Composable
 private fun TodoInboxRow(
     item: TodoInboxItem,
     compact: Boolean,
+    bottomInset: Dp,
     onCheckedChange: ((TodoInboxItem, Boolean) -> Unit)?,
     onTodoClick: (TodoInboxItem) -> Unit,
 ) {
@@ -287,13 +305,16 @@ private fun TodoInboxRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = rowMinHeight)
+            // 行高下限含卡底留白（非末行 0）；留白全画在内容下方，末行内容与其余行
+            // 位置一致，只有按压区（含留白）下探到卡片底缘
+            .heightIn(min = rowMinHeight + bottomInset)
             // 方角按压高亮：行与行之间不露圆角缺口，外缘圆角由卡片统一裁出
             .pressClickable(
                 shape = RectangleShape,
                 onClick = { onTodoClick(item) },
             )
-            .padding(horizontal = horizontalPadding),
+            .padding(horizontal = horizontalPadding)
+            .padding(bottom = bottomInset),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(
