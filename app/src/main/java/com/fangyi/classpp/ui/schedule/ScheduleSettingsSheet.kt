@@ -67,6 +67,11 @@ import kotlinx.coroutines.launch
  * 保证网格看到的就是被合并的课程），确认成功后再经 [onCoursesMerged] 把重映射后的
  * 课程同步回草稿——否则后续「保存编辑」会用旧 span 覆盖合并结果。
  *
+ * 确认时的课程口径同样取 [mergeCourses]：用户刚调的结束节次只落在课程草稿里，若拿仓库
+ * 已保存的旧跨度做越界判定，「草稿改短 + 缩节数」会被误报成课程冲突。草稿与已保存课程
+ * 不同时，节表、时长与课程同批校验、同批落库，避免留下「节数已缩小、课程还伸到旧末节」
+ * 的非法中间态。
+ *
  * 滚动、键盘让位（课表名输入框在场 → ContentScroll）由 OverlaySheet 内建，
  * 这里只负责内容与日期/时间对话框。内容列按浮层规范排版：顶层块一律 [CardSection]——
  * 课表名是孤立的输入卡、收进无题分组，其余是带题分组；顶层块间距走
@@ -75,7 +80,8 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun ScheduleSettingsSheet(
     schedule: Schedule,
-    // 合并输入：编辑态传课程草稿，非编辑态传仓库课程
+    // 当前有效课程（编辑态 = 课程草稿，非编辑态 = 仓库课程）：合并输入，
+    // 也是确认时课程越界校验与同批落库的口径
     mergeCourses: List<CourseEntry>,
     repository: ScheduleRepository,
     visible: Boolean,
@@ -221,17 +227,24 @@ internal fun ScheduleSettingsSheet(
                 if (!coursesChanged && !settingsChanged) {
                     schemeSheetVisible = false
                 } else {
+                    // 校验与提交都用「当前有效课程」：编辑态是课程草稿（用户刚调的结束节次
+                    // 只落在草稿里），仓库中已保存的旧跨度不参与判定——否则草稿已把课改短、
+                    // 仓库还停在旧末节时，缩节数会被旧数据误判成课程越界
+                    val effectiveCourses = mergedCourses ?: mergeCourses
                     scope.launch {
-                        val result = if (mergedCourses != null) {
-                            // 合并同时改写节表与课程映射：必须一次校验、一次提交
+                        val result = if (effectiveCourses == schedule.courses) {
+                            // 与已保存课程一致：只动设置
+                            repository.setSlotsAndDuration(schedule.id, slots, duration)
+                        } else {
+                            // 合并改写课程映射 / 草稿与已保存课程不同：节表、时长与课程
+                            // 一次校验、一次提交——否则会留下「节数已缩小、课程还伸到旧末节」
+                            // 的非法中间态（切换课表会丢弃草稿，该态无人修正）
                             repository.setSlotsDurationAndCourses(
                                 schedule.id,
                                 slots,
                                 duration,
-                                mergedCourses,
+                                effectiveCourses,
                             )
-                        } else {
-                            repository.setSlotsAndDuration(schedule.id, slots, duration)
                         }
                         when (result) {
                             OpResult.Ok -> {

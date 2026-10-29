@@ -795,4 +795,27 @@ class ScheduleRepositoryTest {
 
         assertEquals(before, r.schedules.value.first { it.id == id })
     }
+
+    @Test
+    fun `setSlotsDurationAndCourses judges the passed courses not the saved ones`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+        // 仓库里的课还伸到第 5 节（DEFAULT_SLOTS 末节）
+        r.upsertCourse(id, testCourse(startSlot = 5)).assertOk()
+        val saved = r.schedules.value.first { it.id == id }
+        // 编辑草稿已把同一门课改到第 2 节：缩到 2 节应通过，不该被旧跨度误报越界
+        val shortened = saved.courses.map { it.copy(startSlot = 2, span = 1) }
+        val twoSlots = listOf(TimeSlotDef("8:00", "9:30"), TimeSlotDef("10:00", "11:30"))
+
+        r.setSlotsDurationAndCourses(id, twoSlots, 90, shortened).assertOk()
+
+        val updated = r.schedules.value.first { it.id == id }
+        assertEquals(twoSlots, updated.slots)
+        assertEquals(90, updated.slotDurationMinutes)
+        assertEquals(shortened, updated.courses)
+        // 节表与课程同批落库：重启后仍是自洽的一套
+        val reopened = repo().schedules.value.first { it.id == id }
+        assertEquals(twoSlots, reopened.slots)
+        assertEquals(shortened, reopened.courses)
+    }
 }

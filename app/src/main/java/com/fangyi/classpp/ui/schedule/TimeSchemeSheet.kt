@@ -479,8 +479,9 @@ internal fun TimeSchemeSheet(
         }
     }
 
-    // 总节数滚轮：小于现有 → 前缀裁剪；大于现有 → 按每节课时长追加（课间 30 分钟）；
-    // 当天放不下（slotsWithCount 返回 null）时 toast 并保持原草稿
+    // 总节数滚轮：小于现有 → 前缀裁剪；大于现有 → 先按课间 30 分钟末尾追加，放不下时把
+    // 新增节塞进当天剩余时间，仍不够则全天按每节课时长重排（见 slotsWithCount）；
+    // 只有全天都排不下（返回 null）才 toast 并保持原草稿
     if (slotCountMounted) {
         BottomNumberSelectCard(
             visible = slotCountVisible,

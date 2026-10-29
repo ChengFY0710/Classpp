@@ -263,9 +263,22 @@ fun slotsWithAdjustedStart(
 }
 
 /**
- * 把节数调整为 [count]（设置页「总节数」滚轮）：小于现有 → 前缀裁剪（保留用户已改时间）；
- * 大于现有 → 循环 [appendSlot] 在末尾生成（课间 30 分钟、时长 [durationMinutes]）。
- * 当天放不下目标节数时返回 null（调用方提示后放弃，不提交截断结果）。
+ * 把节数调整为 [count]（设置页「总节数」滚轮）：
+ *
+ * - 小于现有 → 前缀裁剪（保留用户已改时间）；等于现有 → 原样返回；
+ * - 大于现有 → 三级补足，越靠前越少改动用户已排好的作息：
+ *   1. **末尾追加**：新节 = 上一节结束 + [DEFAULT_BREAK_MINUTES] 课间，时长 [durationMinutes]，
+ *      能放下则现有各节时间全部不动（与旧行为一致）；
+ *   2. **剩余窗口分配**：追加越界时，新增节塞进「末节结束 ~ 23:59」，课间取
+ *      `(剩余分钟 − 新增节数 × 时长) / 新增节数`（整除，可为 0 = 各节首尾相接），
+ *      现有各节仍不动；
+ *   3. **全天重排**：剩余窗口连「新增节数 × 时长」都放不下时，保留**第 1 节开始时间**，
+ *      以 [durationMinutes] 为每节时长、全天课间统一压缩重排（课间上限 30 分钟，
+ *      不为了填满 23:59 而拉长）。本级会改写现有各节的起止时间（午休等不规则课间
+ *      被抹平），是"当天尽量排下"的最后手段。
+ *
+ * 只有第 3 级也放不下——即 `count × durationMinutes` 超过「第 1 节开始 ~ 23:59」——
+ * 才返回 null（调用方提示后放弃调整，不产生部分生效的中间态）。
  */
 fun slotsWithCount(
     slots: List<TimeSlotDef>,
@@ -275,11 +288,45 @@ fun slotsWithCount(
     require(count >= 1) { "slot count must be positive: $count" }
     if (count == slots.size) return slots
     if (count < slots.size) return slots.take(count)
+
+    // 第 1 级：末尾追加（课间 30 分钟），能放下就不改任何现有节
     var current = slots
+    var appended = true
     while (current.size < count) {
-        current = appendSlot(current, durationMinutes) ?: return null
+        val next = appendSlot(current, durationMinutes)
+        if (next == null) {
+            appended = false
+            break
+        }
+        current = next
     }
-    return current
+    if (appended) return current
+
+    // 第 2 级：新增节塞进「末节结束 ~ 23:59」，课间按剩余时间均分（可压到 0）
+    val lastEnd = slots.lastOrNull()?.let { TimeText.parseMinutes(it.endTime) }
+    val newCount = count - slots.size
+    if (lastEnd != null) {
+        val remaining = LAST_MINUTE_OF_DAY - lastEnd
+        val needed = newCount * durationMinutes
+        if (needed <= remaining) {
+            val gap = (remaining - needed) / newCount
+            return slots + (0 until newCount).map { i ->
+                val start = lastEnd + (i + 1) * gap + i * durationMinutes
+                TimeSlotDef(TimeText.format(start), TimeText.format(start + durationMinutes))
+            }
+        }
+    }
+
+    // 第 3 级：全天重排——首节开始与每节时长不变，课间统一压缩（上限 30 分钟）
+    val firstStart = slots.firstOrNull()?.let { TimeText.parseMinutes(it.startTime) } ?: return null
+    val available = LAST_MINUTE_OF_DAY - firstStart
+    val required = count * durationMinutes
+    if (required > available) return null
+    val gap = minOf(DEFAULT_BREAK_MINUTES, (available - required) / (count - 1))
+    return (0 until count).map { i ->
+        val start = firstStart + i * (durationMinutes + gap)
+        TimeSlotDef(TimeText.format(start), TimeText.format(start + durationMinutes))
+    }
 }
 
 /**
