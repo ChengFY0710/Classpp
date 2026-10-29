@@ -8,12 +8,12 @@ import androidx.compose.ui.unit.sp
  * 语义化文字 token（阶段 1 建立，阶段 2 迁移调用点，阶段 3 按方案 B 调值）。
  *
  * 取值说明：
- * - 方案 B 阶梯：UI 文字 `11 / 12 / 14 / 16 / 20 / 24sp`，展示数字 `32 / 48 / 64sp`。
+ * - 方案 B 阶梯：UI 文字 `11 / 12 / 14 / 16 / 20 / 24sp`，展示数字 `32 / 52 / 64sp`。
  * - 特殊展示字号（不进入常规阶梯）：`23sp` 仅页面顶栏（[pageTitle]）；
  *   `17sp` 仅课表页顶栏周数选择胶囊（[weekPill]）与课表日期带（[courseGridDate]）；
- *   `22sp` 仅周数选择卡内数字（[weekGridNumber]）。
+ *   `22sp` 仅周数选择卡内数字（[weekGridNumber]）；`40sp` 仅横向数字滚轮（[horizontalWheelNumber]）。
  * - 中文正文/描述字距统一 `0sp`；只有 ≥20sp 的展示标题保留负字距，
- *   14sp 动作标签（[actionLabel]）用 `0.6sp` 正字距补齐小字可读性。
+ *   14sp 动作标签（[actionLabel]）用 `0.8sp` 正字距补齐小字可读性。
  * - token 只描述字号 / 字重 / 行高 / 字距 / 字体家族，不包含颜色；颜色仍由
  *   `MaterialTheme.colorScheme` / `ClassppColors` 在调用处或 [ClassppTextStyles] 中派生。
  * - `Text` 未显式传 `style` 时会继承 `LocalTextStyle`（[Typography.bodyLarge]：

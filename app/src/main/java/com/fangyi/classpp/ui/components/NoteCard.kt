@@ -119,7 +119,7 @@ private val CountdownExitSlide = 12.dp
  * 待办时间固定 secondaryText（ic_clock）；截止时间按剩余天数取紧急色（ic_clock_alarm）；
  * 重复规则取 primary（ic_arrow_repeat）——图标与文字颜色始终一致。
  * 图标可空（收集箱两列紧凑卡的时间项不画 ic_clock，给 12sp 的窄卡省出文字宽度）。
- * 文本样式默认 [MaterialTheme.classppTextStyles.noteProperty]（14sp Normal）；紧凑卡传
+ * 文本样式默认 [MaterialTheme.classppTextStyles.noteProperty]（14sp Normal · tnum）；紧凑卡传
  * [ClassppTextTokens.metaTextSmall]（12sp Medium / 行高 16 / tnum）。文本默认不限行数
  * （NoteCard 全宽卡不会触界）；窄容器（时间轴任务卡重叠分列）传 maxLines = 1 + Ellipsis，
  * 避免时刻被逐字折行。
@@ -132,7 +132,7 @@ internal fun TimeProperty(
     modifier: Modifier = Modifier,
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Clip,
-    textStyle: TextStyle = MaterialTheme.classppTextStyles.noteProperty,
+    textStyle: TextStyle = MaterialTheme.classppTextStyles.noteProperty.tabularNumbers(),
 ) {
     Row(
         modifier = modifier,

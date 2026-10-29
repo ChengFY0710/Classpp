@@ -41,8 +41,8 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.BottomSelectSheetShape
-import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
 import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -350,9 +350,7 @@ fun BottomSelectSheet(
                         }
                         Text(
                             text = title,
-                            style = ClassppTextTokens.sheetTitle.copy(
-                                color = MaterialTheme.colorScheme.onSurface,
-                            ),
+                            style = MaterialTheme.classppTextStyles.topBarTitle,
                             modifier = Modifier.align(Alignment.Center),
                         )
                     }

@@ -55,6 +55,7 @@ import com.fangyi.classpp.ui.theme.NoteCardShape
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.fangyi.classpp.ui.theme.tabularNumbers
 import com.kyant.shapes.RoundedRectangle
 
 /** 卡片左右内距：头部与待办行同一条左基线，与 NoteCard 的 16dp 一致。 */
@@ -296,11 +297,11 @@ private fun TodoInboxRow(
     val rowMinHeight = if (compact) InboxRowCompactMinHeight else InboxRowMinHeight
     val checkboxHitSize = if (compact) InboxCheckboxCompactHitSize else InboxCheckboxHitSize
     // 属性行字号：整卡形态与 NoteCard 同款 14sp；两列紧凑卡按设计稿用 12sp 时间行 token，
-    // 让「时间 + 截止」在 132dp 左右的内容宽里尽量同排
+    // 让「时间 + 截止」在 132dp 左右的内容宽里尽量同排；两种形态都带 tnum，时间换值不抖动
     val propertyStyle = if (compact) {
         ClassppTextTokens.metaTextSmall
     } else {
-        MaterialTheme.classppTextStyles.noteProperty
+        MaterialTheme.classppTextStyles.noteProperty.tabularNumbers()
     }
     Row(
         modifier = Modifier
