@@ -52,6 +52,7 @@ import com.fangyi.classpp.ui.theme.Correct
 import com.fangyi.classpp.ui.theme.Error
 import com.fangyi.classpp.ui.theme.PillShape
 import java.util.Date
+import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /** 日期带高度（滚动渐隐的参考高度，模糊进度也以此为刻度） */
@@ -113,6 +114,29 @@ internal fun minCardRowHeight(showTeacher: Boolean, fontScale: Float): Dp =
         showStartTime = false,
         showEndTime = false,
     ) + (CellPaddingTop + CellPadding).value).dp
+
+/**
+ * 当前课表下「卡片高度触发最低高度」的倍率：最短一节按比例恰好降到 [minCardRowHeight] 时的倍率，
+ * 向下取到 0.01。最低高度随「显示教师」开关变（60/44dp），因此下限也随开关重算；
+ * 再低只会让最短节进入行高下限、更长节继续缩短，破坏卡片高度与时间的比例，故作为滑条下限。
+ * 结果钳在 [CardHeightPreferences.Range] 内（极短节封顶 2.0）。
+ */
+internal fun cardHeightMinScale(
+    shortestDurationMinutes: Int,
+    daysPerWeek: Int,
+    fontScale: Float,
+    showTeacher: Boolean,
+): Float {
+    val duration = shortestDurationMinutes.coerceAtLeast(1)
+    val minRowDp = minCardRowHeight(showTeacher, fontScale).value
+    val baseRowDp = gridRowHeight(daysPerWeek).value * duration / BaseSlotMinutes
+    // 加极小量再向下取整：避免整除时浮点误差少进一档
+    val stepped = floor(minRowDp / baseRowDp * 100f + 1e-3f) / 100f
+    return stepped.coerceIn(
+        CardHeightPreferences.Range.start,
+        CardHeightPreferences.Range.endInclusive,
+    )
+}
 
 /** 单元格内边距，卡片间形成网格沟槽（@Preview 与网格保持一致） */
 internal val CellPadding = 3.dp
@@ -202,16 +226,25 @@ fun CourseGrid(
     // 否则卡片会溢出格子。倍率取自个性化页滑条（读 .value → 本组件随拖动每帧重组重排），
     // 默认 1.0 且默认作息全为 100 分钟节，行高与基准恒等，默认渲染无差异。
     // 行高下限按卡片内容实算（见 minCardRowHeight）：卡片收起起止时间后仍能放下
-    // 课程名/教师/地点各 1 行，极短节/低倍率时不会再裁切内容
+    // 课程名/教师/地点各 1 行（关闭教师时少一行），随教师开关与字号变
     val scales = cardHeights.value
-    val scale = if (days > 5) scales.seven else scales.five
     // 教师行显隐：同 scales 一样在本组件读取一次，向下传纯布尔
     val showTeacherOnCard = showTeacher.value
-    // 内容下限随教师开关与系统字号变；网格行高不得低于它（页高/跨节卡高度自动跟随）
+    // 内容下限随教师开关与系统字号变；页高/跨节卡高度自动跟随
     val fontScale = LocalDensity.current.fontScale
     val minRowHeight = remember(showTeacherOnCard, fontScale) {
         minCardRowHeight(showTeacherOnCard, fontScale)
     }
+    // 滑条下限同源：最短节触发当前最低高度（随教师开关）的倍率；只影响渲染，不写回偏好
+    val minScale = remember(timeSlots, days, fontScale, showTeacherOnCard) {
+        cardHeightMinScale(
+            shortestDurationMinutes = timeSlots.shortestDurationMinutes(),
+            daysPerWeek = days,
+            fontScale = fontScale,
+            showTeacher = showTeacherOnCard,
+        )
+    }
+    val scale = maxOf(if (days > 5) scales.seven else scales.five, minScale)
     val rowHeights = remember(timeSlots, days, scale, minRowHeight) {
         timeSlots.map { slot ->
             slotRowHeight(slot.durationMinutes(), days, scale, minRowHeight)

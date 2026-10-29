@@ -8,6 +8,9 @@ import kotlin.math.roundToInt
  * 网格行高随每节课实际时长伸缩（见 [slotRowHeight]）：行高 = 基准行高（100 分钟节，
  * 5 天 [GridRowHeight] / 7 天加 [SevenDayRowExtraHeight]）×（该节时长 ÷ 100）× 倍率，
  * 1.0 倍即基准，默认渲染与固定行高时代逐像素一致。
+ * 存的是**用户倍率**；实际渲染倍率不低于「最短节触发卡片最低高度」的下限
+ * （见 [cardHeightMinScale]，随显示教师开关），抬高结果不回写偏好，
+ * 短节移除/课表变长后自动回落。
  */
 data class CardHeightScales(
     val five: Float = CardHeightPreferences.DefaultScale,
@@ -32,11 +35,16 @@ object CardHeightPreferences {
     private const val LEGACY_KEY_HEIGHT_5 = "card_height_5"
     private const val LEGACY_KEY_HEIGHT_7 = "card_height_7"
 
-    /** 默认倍率：1.0 = 基准行高 */
+    /** 用户倍率的默认值：1.0 = 基准行高 */
     const val DefaultScale = 1f
 
-    /** 可调范围（倍率）：个性化页滑条 valueRange 与 load 钳制共用 */
-    val Range = 0.5f..2f
+    /**
+     * 可存储范围（倍率）：load/save 钳制与个性化页写库共用（下限 0.1 覆盖 200 分钟节的
+     * 最低触发倍率）。滑条的可调下限另由当前课表最短节与「显示教师」开关动态计算
+     * （见 [cardHeightMinScale]），落在本范围内；网格渲染也按不低于该下限的倍率绘制，
+     * 但不写回偏好。
+     */
+    val Range = 0.1f..2f
 
     /** 读取两个模式的倍率；新键优先，无新键时从旧 dp 值迁移，均无回退默认值 */
     fun load(context: Context): CardHeightScales {

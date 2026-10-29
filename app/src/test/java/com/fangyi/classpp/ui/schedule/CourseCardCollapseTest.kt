@@ -7,7 +7,8 @@ import org.junit.Test
 /**
  * 卡片高度不足时逐级收起起止时间：
  * 显示教师时完整内容 87dp / 去掉结束时间 71dp / 只留课程名·教师·地点 55dp；
- * 关闭教师时 71/55/39dp；网格行高下限 = 卡片内容 + 单元格上下内边距（60/44dp，默认字号）。
+ * 关闭教师时 71/55/39dp；网格行高下限随教师开关（60/44dp，默认字号），
+ * 滑条可调下限（触发当前最低高度的倍率）见 CardHeightMinScaleTest。
  */
 class CourseCardCollapseTest {
 

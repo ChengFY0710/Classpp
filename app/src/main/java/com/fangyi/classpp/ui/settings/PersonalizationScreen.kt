@@ -52,6 +52,11 @@ import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.schedule.CardHeightPreferences
 import com.fangyi.classpp.ui.schedule.CardHeightScales
+import com.fangyi.classpp.ui.schedule.DefaultTimeSlots
+import com.fangyi.classpp.ui.schedule.TimeSlot
+import com.fangyi.classpp.ui.schedule.cardHeightMinScale
+import com.fangyi.classpp.ui.schedule.shortestDurationMinutes
+import com.fangyi.classpp.ui.schedule.toUiSlots
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
@@ -69,7 +74,9 @@ import kotlin.math.roundToInt
  * 「颜色模式」三选一（跟随系统/浅色/深色，[themeMode] / [onThemeModeChange]），
  * 行尾显示当前模式，点行弹选择对话框，点选项即时生效并关闭——对话框下方的页面同步变色，
  * 反馈直观，无需「确定」一步；「课表」分组为课程卡片高度滑条（[cardHeights] /
- * [onCardHeightsChange]，调节**倍率**：网格行高随每节课实际时长伸缩，倍率整体缩放；
+ * [onCardHeightsChange]，调节**用户倍率**：网格行高随每节课实际时长伸缩，倍率整体缩放；
+ * 滑条可调下限 = 当前课表最短一节与「显示教师」开关触发卡片最低高度所需倍率，
+ * 见 [ScheduleSection]；
  * 5 天 / 7 天模式各存一份，由 [repository] 激活课表的天数决定当前编辑哪份）
  * 与「显示教师」开关（[showTeacher] / [onShowTeacherChange]，控制课程卡片上教师行的显隐）。
  * 后续外观类设置项（字号、图标风格等）继续加入本页。
@@ -98,6 +105,8 @@ fun PersonalizationScreen(
         repository?.activeSchedule ?: MutableStateFlow<Schedule?>(null)
     }.collectAsState()
     val daysPerWeek = schedule?.daysPerWeek ?: 5
+    // 滑条下限按当前课表最短一节推导（见 ScheduleSection）；无课表按默认作息
+    val slots = remember(schedule) { schedule?.slots?.toUiSlots() ?: DefaultTimeSlots }
     Scaffold(
         modifier = modifier,
         // 沉浸式：只吃左右 inset，状态栏/手势条区域交给内容与顶栏自己铺满（同设置根页）
@@ -154,6 +163,7 @@ fun PersonalizationScreen(
                 )
                 ScheduleSection(
                     daysPerWeek = daysPerWeek,
+                    slots = slots,
                     cardHeights = cardHeights,
                     onCardHeightsChange = onCardHeightsChange,
                     showTeacher = showTeacher,
@@ -181,16 +191,21 @@ fun PersonalizationScreen(
 
 /**
  * 「课表」分组：课程卡片高度滑条 + 「显示教师」开关，各占一张独立卡片（CardSection
- * 卡间距分隔）。滑条调节**倍率**（[CardHeightPreferences.Range]，0.5–2.0，默认 1.0 = 基准
- * 行高）：网格行高随每节课实际时长伸缩（见 [com.fangyi.classpp.ui.schedule.slotRowHeight]），
- * 倍率整体缩放，滑至默认值附近自动吸附并震动；值等于默认时右上显示「默认」，
- * 否则显示百分比。5 天 / 7 天模式各存一份倍率（[daysPerWeek] 决定当前编辑哪份），
- * 切换模式互不覆盖。开关控制课程卡片上教师行的显隐（[TeacherDisplayPreferences]），
- * 关闭后地点行上移、行高预算自动归还课程名/地点。
+ * 卡间距分隔）。滑条调节**用户倍率**（可存储范围 [CardHeightPreferences.Range]，0.1–2.0，
+ * 默认 1.0 = 基准行高）：网格行高随每节课实际时长伸缩（见
+ * [com.fangyi.classpp.ui.schedule.slotRowHeight]），倍率整体缩放。
+ * 可调下限由当前课表最短一节与「显示教师」开关决定（[cardHeightMinScale]）：它是让卡片高度
+ * 刚好触发当前最低高度的倍率，再低只会让短节被行高下限钳住、更长节继续缩小而破坏时间比例。
+ * 显示值与网格渲染都不低于该下限；自动抬高不写库，课表变长/短节移除后自动回落。
+ * 值等于 100% 时右上显示「默认」，否则显示百分比。5 天 / 7 天模式各存一份倍率
+ * （[daysPerWeek] 决定当前编辑哪份），切换模式互不覆盖。开关控制课程卡片上教师行的显隐
+ * （[TeacherDisplayPreferences]），关闭后地点行上移、行高预算自动归还课程名/地点，
+ * 最低高度（60→44dp）与滑条下限同步降低。
  */
 @Composable
 private fun ScheduleSection(
     daysPerWeek: Int,
+    slots: List<TimeSlot>,
     cardHeights: State<CardHeightScales>,
     onCardHeightsChange: (CardHeightScales) -> Unit,
     showTeacher: State<Boolean>,
@@ -198,9 +213,22 @@ private fun ScheduleSection(
 ) {
     // 值读取点（叶子）：拖动时只有本函数及其子树（卡片/滑条）每帧重组
     val sevenDay = daysPerWeek > 5
-    val scale = if (sevenDay) cardHeights.value.seven else cardHeights.value.five
-    val percent = (scale * 100).roundToInt()
     val showTeacherOnCard = showTeacher.value
+    // 当前课表下卡片触发最低高度所需的倍率 = 滑条可调下限；最低高度随教师开关变
+    val fontScale = LocalDensity.current.fontScale
+    val minScale = remember(slots, daysPerWeek, fontScale, showTeacherOnCard) {
+        cardHeightMinScale(
+            shortestDurationMinutes = slots.shortestDurationMinutes(),
+            daysPerWeek = daysPerWeek,
+            fontScale = fontScale,
+            showTeacher = showTeacherOnCard,
+        )
+    }
+    val valueRange = minScale..CardHeightPreferences.Range.endInclusive
+    // 存的是用户倍率；低于下限时显示按 max(用户倍率, 下限)，但不改写存储
+    val scale = (if (sevenDay) cardHeights.value.seven else cardHeights.value.five)
+        .coerceIn(valueRange)
+    val percent = (scale * 100).roundToInt()
     CardSection(title = stringResource(R.string.section_schedule)) {
         SettingsCard(
             items = listOf(
@@ -209,13 +237,18 @@ private fun ScheduleSection(
                     description = stringResource(R.string.card_height_desc),
                     value = scale,
                     onValueChange = { value ->
-                        // 四舍五入到 0.01（百分比的最小步进），避免浮点长尾进偏好
-                        val newScale = (value * 100).roundToInt() / 100f
+                        // 四舍五入到 0.01（百分比的最小步进），避免浮点长尾进偏好；
+                        // 吸附等路径回吐的下限以下值一并钳回可调下限
+                        val rounded = (value * 100).roundToInt() / 100f
+                        val stored = rounded.coerceIn(
+                            minScale,
+                            CardHeightPreferences.Range.endInclusive,
+                        )
                         // 事件回调里读 .value 不订阅组合，无重组开销
                         val current = cardHeights.value
                         onCardHeightsChange(
-                            if (sevenDay) current.copy(seven = newScale)
-                            else current.copy(five = newScale),
+                            if (sevenDay) current.copy(seven = stored)
+                            else current.copy(five = stored),
                         )
                     },
                     valueText = if (percent == 100) {
@@ -223,8 +256,9 @@ private fun ScheduleSection(
                     } else {
                         stringResource(R.string.card_height_value, percent)
                     },
-                    defaultValue = CardHeightPreferences.DefaultScale,
-                    valueRange = CardHeightPreferences.Range,
+                    // 下限高于 100% 时默认标记/吸附点跟着抬到下限，避免吸附出不可选的值
+                    defaultValue = maxOf(CardHeightPreferences.DefaultScale, minScale),
+                    valueRange = valueRange,
                 ),
             ),
         )

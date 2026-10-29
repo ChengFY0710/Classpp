@@ -50,6 +50,14 @@ fun TimeSlot.durationMinutes(): Int {
 }
 
 /**
+ * 课表中最短一节的时长（分钟）：滑条可调下限按它计算（见 [cardHeightMinScale]）。
+ * 空表回退 [DEFAULT_SLOT_DURATION_MINUTES]；按全部节次取最短（含没有课的节），
+ * 结果与课程数据解耦、不随增删课或换周跳动。
+ */
+internal fun List<TimeSlot>.shortestDurationMinutes(): Int =
+    minOfOrNull { it.durationMinutes() } ?: DEFAULT_SLOT_DURATION_MINUTES
+
+/**
  * 课程卡片配色；映射到 Color 收在 CourseCard.kt，模型保持零 Compose 依赖。
  * 声明顺序即编辑面板色板的排列顺序（颜色选集 18 色，自上而下）。
  */
