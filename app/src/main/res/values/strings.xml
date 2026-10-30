@@ -1,0 +1,523 @@
+<resources>
+    <string name="app_name">Classpp</string>
+    <string name="week_format">第 %1$d 周</string>
+    <string name="cd_edit_schedule">编辑或切换课表</string>
+    <string name="cd_settings">设置</string>
+    <string name="nav_schedule">日程</string>
+    <string name="nav_timetable">课表</string>
+    <string name="nav_todo">待办</string>
+    <string name="nav_todo_create">新建</string>
+    <string name="todo_group_all">全部</string>
+    <string name="todo_group_ungrouped">未分组</string>
+    <string name="cd_todo_more">更多</string>
+    <string name="todo_action_group">分组</string>
+    <string name="todo_action_sort">排序</string>
+    <string name="todo_action_category">分类</string>
+    <string name="todo_action_view">视图</string>
+    <string name="todo_action_overview">概览</string>
+    <!-- 待办页「视图」菜单：列表视图（默认）/ 收集箱视图 -->
+    <string name="todo_view_list">列表视图</string>
+    <string name="todo_view_inbox">收集箱视图</string>
+    <!-- 待办分组浮层：顶栏（左新建 / 居中标题 / 右关闭） -->
+    <string name="todo_groups_title">待办分组</string>
+    <string name="todo_groups_create">新建</string>
+    <string name="todo_groups_close">关闭</string>
+    <!-- 待办分组浮层：编辑态删除二次确认（仅删分组，不联动待办） -->
+    <string name="todo_groups_delete_title">删除分组</string>
+    <string name="todo_groups_delete_message">「%1$s」将被删除，此操作不可撤销。</string>
+    <string name="todo_groups_delete_message_multi">所选 %1$d 个分组将被删除，此操作不可撤销。</string>
+    <!-- 编辑待办浮层：待办分组入口 → 选择分组浮层 -->
+    <string name="todo_group_pick_title">选择分组</string>
+    <!-- 待办分组浮层：新建分组输入弹窗 -->
+    <string name="todo_group_create_title">新建分组</string>
+    <string name="todo_group_create_hint">输入分组名</string>
+    <!-- 待办分组浮层：编辑态重命名弹卡 -->
+    <string name="todo_group_rename_title">重命名分组</string>
+    <!-- 待办分组浮层：标签区（分组内容之后）与标签长按操作（仅重命名/删除） -->
+    <string name="todo_tag_rename_title">重命名标签</string>
+    <string name="todo_tag_rename_hint">输入标签名</string>
+    <string name="todo_tag_delete_title">删除标签</string>
+    <string name="todo_tag_delete_message">「%1$s」将被删除，待办本身不会受影响，此操作不可撤销。</string>
+    <string name="todo_tag_delete_message_multi">所选 %1$d 个标签将被删除，待办本身不会受影响，此操作不可撤销。</string>
+    <string name="todo_new_title">新建待办</string>
+    <string name="todo_edit_title">编辑待办</string>
+    <string name="todo_name_label">待办名</string>
+    <string name="todo_name_hint">如：户口乔迁材料报送</string>
+    <string name="todo_section_pinned">已置顶</string>
+    <string name="todo_section_incomplete">未完成</string>
+    <string name="todo_section_completed">已完成</string>
+    <string name="todo_section_overdue">已逾期</string>
+    <string name="todo_section_archived">已归档</string>
+    <string name="todo_section_trash">最近删除</string>
+    <!-- 待办特殊分组页（顶栏首位胶囊跳转）空列表占位 -->
+    <string name="todo_empty_completed">还没有已完成的待办</string>
+    <string name="todo_empty_incomplete">所有待办都已完成</string>
+    <string name="todo_empty_overdue">没有已逾期的待办</string>
+    <string name="todo_empty_pinned">还没有置顶的待办</string>
+    <string name="todo_empty_archived">暂无已归档的待办</string>
+    <string name="todo_empty_trash">暂无最近删除的待办</string>
+    <string name="todo_empty_tag">该标签下还没有待办</string>
+    <string name="todo_error_save_failed">保存失败，请稍后重试</string>
+    <string name="todo_detail_title">待办详情</string>
+    <!-- 待办详情浮层：标题行更多菜单 -->
+    <string name="todo_menu_add_to_calendar">添加到日历</string>
+    <string name="todo_menu_countdown_start">开启倒计时</string>
+    <string name="todo_menu_countdown_stop">关闭倒计时</string>
+    <!-- 待办卡片左侧倒计时（NoteCard）：单位与「逾期」前缀取 12sp；中文数字与文字之间不留空格 -->
+    <string name="todo_countdown_overdue">逾期</string>
+    <string name="todo_countdown_day_unit">天</string>
+    <string name="todo_detail_time_label">待办时间</string>
+    <!-- 待办详情浮层：更多信息分组 -->
+    <string name="todo_section_more_info">更多信息</string>
+    <!-- 重复信息组（TodoDetailSheet）：重复类型 + 虚拟独立待办序列的完成/逾期统计 -->
+    <string name="todo_section_repeat">重复</string>
+    <string name="todo_detail_repeat_type">重复类型</string>
+    <string name="todo_detail_completed_count">完成次数</string>
+    <string name="todo_detail_overdue_count">逾期次数</string>
+    <string name="todo_count_times">%1$d 次</string>
+    <string name="todo_detail_group_label">待办分组</string>
+    <string name="todo_created_label">创建时间</string>
+    <string name="todo_completed_label">完成时间</string>
+    <!-- 待办详情浮层：步骤分组（列表 + 添加步骤按钮，弹卡共用同一动作文案） -->
+    <string name="todo_section_steps">步骤</string>
+    <string name="todo_step_add">添加步骤</string>
+    <string name="todo_step_create_hint">输入步骤名称</string>
+    <!-- 编辑待办浮层：删除二次确认（软删：条目进最近删除，可从回收站恢复） -->
+    <string name="todo_delete_title">删除待办</string>
+    <string name="todo_delete_message">「%1$s」将移到最近删除，可在回收站恢复。</string>
+    <!-- 待办卡片侧滑动作（NoteCard 侧滑层）：动作卡无障碍描述与执行结果 Toast -->
+    <string name="todo_swipe_delete">删除</string>
+    <string name="todo_swipe_pin">置顶</string>
+    <string name="todo_swipe_unpin">取消置顶</string>
+    <!-- 待办卡片已删除样式（最近删除页）：右侧撤回按钮；左滑彻底删除 -->
+    <string name="todo_restore">恢复</string>
+    <string name="todo_swipe_purge">彻底删除</string>
+    <string name="toast_todo_deleted">已删除</string>
+    <string name="toast_todo_restored">已恢复</string>
+    <string name="toast_todo_purged">已彻底删除</string>
+    <string name="toast_todo_step_deleted">步骤已删除</string>
+    <string name="toast_todo_pinned">已置顶</string>
+    <string name="toast_todo_unpinned">已取消置顶</string>
+    <string name="toast_todo_moved">已移动</string>
+    <!-- 待办编辑页（长按列表卡片进入）：编辑顶栏动作与分组头全选文字按钮；
+         动作即时落库，「确认」只负责退出，不设取消 -->
+    <string name="todo_edit_delete">删除</string>
+    <string name="todo_edit_move">移动</string>
+    <string name="todo_edit_sync">同步</string>
+    <string name="todo_edit_pin">置顶</string>
+    <string name="todo_edit_unpin">取消</string>
+    <string name="todo_edit_confirm">确认</string>
+    <string name="todo_edit_select_all">全选</string>
+    <string name="todo_edit_deselect_all">取消全选</string>
+    <!-- 新建待办浮层：分组标题与表单字段 -->
+    <string name="todo_section_reminder">提醒与优先级</string>
+    <string name="todo_section_date_time">日期与时间</string>
+    <string name="todo_section_tags">标签</string>
+    <string name="todo_section_more">更多</string>
+    <string name="todo_location_label">待办地点</string>
+    <string name="todo_location_hint">待办地点</string>
+    <string name="todo_note_hint">点击输入添加备注</string>
+    <!-- 时刻形态三选项（RowChoiceCard） -->
+    <string name="todo_time_none">无</string>
+    <string name="todo_time_all_day">全天</string>
+    <string name="todo_time_period">时段</string>
+    <string name="todo_error_dates_required">请先选择日期</string>
+    <string name="month_day_format">%1$d月%2$d日</string>
+    <string name="date_year_month_format">%1$d/%2$d</string>
+    <!-- DayCalendar（日历卡）底栏标题：年月不带前导零 -->
+    <string name="date_year_month_cn_format">%1$d年%2$d月</string>
+    <string name="date_title_format">%1$s %2$s</string>
+    <!-- DayCalendar（日历卡）底栏：选中非今天时的回跳按钮 -->
+    <string name="back_to_today">回到今天</string>
+    <string name="back_to_current_week">返回本周</string>
+    <string name="cd_section_collapse">收起</string>
+    <string name="cd_section_expand">展开</string>
+    <string name="cd_switch_to_5_days">切换到 5 天视图</string>
+    <string name="cd_switch_to_7_days">切换到 7 天视图</string>
+    <string name="cd_pinned">已置顶</string>
+    <!-- DayCalendar（日历卡）底栏左右切换按钮 -->
+    <string name="cd_calendar_previous_month">上一月</string>
+    <string name="cd_calendar_next_month">下一月</string>
+    <string name="cd_calendar_previous_week">上一周</string>
+    <string name="cd_calendar_next_week">下一周</string>
+    <string-array name="weekdays">
+        <item>周一</item>
+        <item>周二</item>
+        <item>周三</item>
+        <item>周四</item>
+        <item>周五</item>
+        <item>周六</item>
+        <item>周日</item>
+    </string-array>
+    <!-- 顶栏/编辑栏星期行的列标签：周X 的单字简称，与 weekdays 一一对应 -->
+    <string-array name="weekdays_short">
+        <item>一</item>
+        <item>二</item>
+        <item>三</item>
+        <item>四</item>
+        <item>五</item>
+        <item>六</item>
+        <item>日</item>
+    </string-array>
+    <string name="settings_title">课表设置</string>
+    <string name="settings_root_title">设置</string>
+    <string name="settings_personalization">个性化</string>
+    <string name="settings_data_management">数据管理</string>
+    <string name="settings_about">关于</string>
+    <string name="cd_settings_close">关闭</string>
+    <!-- 通知与提醒 -->
+    <string name="settings_notifications">通知与提醒</string>
+    <string name="notification_enable">启用通知</string>
+    <string name="notification_permission_desc">需授予通知权限</string>
+    <string name="notification_method">通知方式</string>
+    <string name="notification_method_normal">普通通知</string>
+    <string name="notification_method_live">Live Updates</string>
+    <string name="notification_live_info_label">实时通知显示信息</string>
+    <string name="notification_live_info_desc">需 Android 16 及以上</string>
+    <string name="notification_live_info_course">课程名</string>
+    <string name="notification_live_info_location">上课地点</string>
+    <string name="section_course_notifications">课程通知</string>
+    <string name="section_todo_notifications">待办通知</string>
+    <string name="notification_enable_course">启用课程通知</string>
+    <string name="notification_enable_todo">启用待办通知</string>
+    <string name="notification_lead_time">通知提前时间</string>
+    <string name="notification_lead_course_desc">将于课程开始前该时间提前通知</string>
+    <string name="notification_lead_todo_desc">将于待办开始/结束前该时间提前通知</string>
+    <string name="notification_lead_value">%1$dmin</string>
+    <string name="notification_todo_type">通知类型</string>
+    <string name="notification_todo_type_all">全部</string>
+    <string name="notification_todo_type_deadline">截止日期</string>
+    <string name="notification_todo_type_start">待办开始时间</string>
+    <string name="notification_todo_type_end">待办结束时间</string>
+    <!-- 通知内容与渠道 -->
+    <string name="notification_channel_course">课程提醒</string>
+    <string name="notification_channel_todo">待办提醒</string>
+    <string name="notification_course_text">%1$s 上课 · %2$s</string>
+    <string name="notification_course_text_no_location">%1$s 上课</string>
+    <string name="notification_todo_deadline_text">%1$s 截止</string>
+    <string name="notification_todo_start_text">%1$s 开始</string>
+    <string name="notification_todo_end_text">%1$s 结束</string>
+    <string name="notification_date_prefix">%1$d月%2$d日 </string>
+    <string name="notification_permission_denied_toast">未授予通知权限，已关闭通知</string>
+    <!-- 实况预览（测试入口） -->
+    <string name="notification_test_label">测试 Live Updates</string>
+    <string name="notification_test_desc">发布一条测试实况，60 秒后自动移除</string>
+    <string name="notification_test_publish">发布</string>
+    <string name="notification_test_course">测试课程</string>
+    <string name="notification_test_time">测试时间</string>
+    <string name="notification_test_location">测试地点</string>
+    <string name="notification_test_permission_toast">未授予通知权限，无法预览</string>
+    <string name="empty_title">还没有课表</string>
+    <string name="empty_desc">创建一份课表，开始记录课程</string>
+    <string name="create_schedule">创建课表</string>
+    <string name="schedule_name_label">课表名称</string>
+    <string name="schedule_name_hint">如：2026春</string>
+    <string name="term_start">学期开始时间</string>
+    <string name="term_end">学期结束时间</string>
+    <string name="term_weeks">学期总周数</string>
+    <string name="term_weeks_value">%1$d 周</string>
+    <string name="term_weeks_range">1–30 周</string>
+    <string name="section_term">学期</string>
+    <!-- 外观 -->
+    <string name="appearance_theme_mode">颜色模式</string>
+    <string name="appearance_theme_system">跟随系统</string>
+    <string name="appearance_theme_light">浅色</string>
+    <string name="appearance_theme_dark">深色</string>
+    <string name="glass_material">更高级的玻璃材质</string>
+    <string name="glass_material_desc">液态玻璃模糊与折射，需 Android 13 起；逐帧采样有性能开销，低端设备建议关闭</string>
+    <string name="section_days">每周上课天数</string>
+    <string name="section_slots">节数与时间</string>
+    <string name="section_display">显示</string>
+    <string name="days_5">5 天</string>
+    <string name="days_7">7 天</string>
+    <string name="slot_count_format">每天 %1$d 节</string>
+    <string name="slot_decrease">减一节</string>
+    <string name="slot_increase">加一节</string>
+    <string name="slot_overflow_desc">当天时间不足以排下这么多节次</string>
+    <string name="slot_format">第 %1$d 节</string>
+    <string name="slot_range_format">第 %1$d-%2$d 节</string>
+    <!-- 节数与时间（课表设置）：总节数与每节课时间导航行 + 各自的横向滚轮弹窗 -->
+    <string name="slot_count_label">总节数</string>
+    <string name="slot_count_select_title">总节数</string>
+    <string name="slot_duration_label">每节课时间</string>
+    <string name="slot_duration_desc">根据开始时间自动推算结束时间</string>
+    <string name="slot_duration_value">%1$dmin</string>
+    <string name="slot_duration_select_title">每节课时间</string>
+    <!-- 课程时间方案（节次与时间浮层）：方案选择 + 节次时间明细 + 保存/合并操作 -->
+    <string name="section_slots_time">节次与时间</string>
+    <string name="time_scheme_title">课程时间方案</string>
+    <string name="time_scheme_entry_desc">仅本课表生效，可留存方案复用</string>
+    <string name="time_scheme_default">默认</string>
+    <string name="time_scheme_custom">自定义</string>
+    <string name="time_scheme_save">保存方案</string>
+    <string name="time_scheme_name_title">方案名称</string>
+    <string name="time_scheme_rename_title">重命名方案</string>
+    <string name="time_scheme_name_hint">如：自定义方案一</string>
+    <string name="time_scheme_merge">合并两小节为一大节</string>
+    <string name="time_scheme_merge_done">已合并 %1$d 对相邻小节，确认后生效</string>
+    <string name="error_time_scheme_name">方案名称不能为空</string>
+    <!-- 调课与调休（课表设置）：占位导航行，功能待接入 -->
+    <string name="section_adjustment">调课与调休</string>
+    <string name="adjust_course_label">设置调课</string>
+    <string name="adjust_holiday_label">设置调休</string>
+    <!-- 课表（个性化页） -->
+    <string name="section_schedule">课表</string>
+    <string name="card_height_label">课程卡片高度</string>
+    <string name="card_height_desc">随每节课时间自动伸缩</string>
+    <string name="card_height_default">默认</string>
+    <string name="card_height_value">%1$d%%</string>
+    <string name="show_teacher">显示教师</string>
+    <!-- 待办（个性化页） -->
+    <string name="section_todo">待办</string>
+    <string name="todo_masonry_view">瀑布流视图</string>
+    <string name="todo_masonry_view_desc">开启后，收集箱达3个启用瀑布流视图</string>
+    <string name="time_range_start">开始时间</string>
+    <string name="time_range_end">结束时间</string>
+    <string name="show_inactive">显示非本周课程</string>
+    <string name="show_inactive_desc">关闭后隐藏，开启后以灰色显示</string>
+    <string name="settings_confirm">确定</string>
+    <string name="settings_cancel">取消</string>
+    <string name="error_term_range">学期结束不能早于学期开始</string>
+    <string name="error_term_end_short">学期末周放不下这些课，请缩短课程周数或把学期结束往后调</string>
+    <string name="error_days_per_week">每周天数只能是 5 或 7</string>
+    <string name="error_slot_count">节数须在 1–30 之间</string>
+    <string name="error_slot_time_format">时间格式须为 8:00 形式</string>
+    <string name="error_slot_order">各节时间须先后有序不重叠</string>
+    <string name="error_slot_day_overflow">调整后超出当天时间范围</string>
+    <string name="error_schedule_name">课表名称不能为空</string>
+    <string name="error_courses_out_of_range">有 %1$d 门课超出新范围，已取消修改：%2$s</string>
+    <string name="error_not_found">课表不存在</string>
+    <string name="error_persist_failed">保存失败</string>
+    <string name="error_unexpected">操作失败，请重试</string>
+    <string name="load_state_restored">已从备份恢复课表数据</string>
+    <string name="load_state_reset">课表数据损坏，已重置</string>
+
+    <!-- 课表编辑 -->
+    <string name="edit_save">保存</string>
+    <string name="edit_switch_schedule">切换课表</string>
+    <string name="edit_schedule_settings">课表设置</string>
+    <string name="edit_cancel">取消</string>
+    <string name="edit_add_course">添加课程</string>
+    <string name="edit_edit_course">编辑课程</string>
+    <string name="edit_confirm">确认</string>
+    <string name="edit_delete">删除</string>
+    <string name="edit_pin">置顶</string>
+    <string name="edit_rename">重命名</string>
+    <!-- 起止时间胶囊（课程编辑/详情浮层的信息胶囊行）：%1$s 开始时间、%2$s 结束时间 -->
+    <string name="time_range_format">%1$s - %2$s</string>
+    <string name="edit_end_slot_section">上课节次</string>
+    <string name="edit_start_slot">开始节次</string>
+    <string name="edit_end_slot">结束节次</string>
+    <string name="edit_span_hint">课程占 %1$d - %2$d 节，跨 %3$d 节</string>
+    <string name="edit_course_name">课程名</string>
+    <string name="edit_course_name_ph">微积分 I-2</string>
+    <string name="edit_course_teacher">教师</string>
+    <string name="edit_course_teacher_ph">XX 老师</string>
+    <string name="edit_course_location">上课地点</string>
+    <string name="edit_course_location_ph">学武楼 C201</string>
+    <string name="edit_course_weeks">上课周数</string>
+    <string name="edit_course_color">颜色</string>
+    <string name="edit_weeks_all">全选</string>
+    <string name="edit_weeks_odd">单周</string>
+    <string name="edit_weeks_even">双周</string>
+    <string name="edit_weeks_none">尚未选择</string>
+    <string name="edit_weeks_separator">、</string>
+    <string name="edit_weeks_one">第 %1$d 周</string>
+    <string name="edit_weeks_range">第 %1$d-%2$d 周</string>
+    <string name="edit_weeks_suffix_odd">（单周）</string>
+    <string name="edit_weeks_suffix_even">（双周）</string>
+    <string name="edit_new_alternate">新建交替课程</string>
+    <string name="edit_copy_course">复制课程</string>
+    <string name="edit_paste_course">粘贴课程</string>
+    <string name="toast_course_copied">已复制，长按空白格子可粘贴</string>
+    <string name="edit_alternate_pick_title">请选择要编辑的交替课程</string>
+    <!-- 课程详情浮层 -->
+    <string name="detail_title">课程详情</string>
+    <string name="detail_close">关闭</string>
+    <string name="detail_edit">编辑</string>
+    <string name="detail_create_todo">新建</string>
+    <string name="detail_teacher">教师</string>
+    <string name="detail_location">上课地点</string>
+    <string name="detail_note_ph">点击输入添加备注</string>
+    <!-- 新建课程待办浮层（CourseTodoSheet）：截止日期只提供「下节课 / 自定义周次」两个档位，
+         待办自动打上本节课程的课程标签（=课程名），其余字段走新建待办浮层的默认值 -->
+    <string name="course_todo_title">新建课程待办</string>
+    <string name="course_todo_deadline_next">下节课</string>
+    <string name="course_todo_deadline_custom">自定义</string>
+    <string name="course_todo_custom_desc">截止日期为第X周的本节课开始时间</string>
+    <!-- 双引号包住以保留两侧空格，否则会被资源编译器裁掉 -->
+    <string name="edit_alternate_meta_separator">" | "</string>
+    <string name="edit_alternate_taken_hint">「%1$s」已占用：%2$s</string>
+    <string name="cd_add_course">添加课程</string>
+    <string name="error_course_name_blank">课程名不能为空</string>
+    <string name="error_weeks_empty">请至少选择一周</string>
+    <string name="error_weeks_beyond_term">周数超出学期范围</string>
+    <string name="error_weeks_beyond_term_course">「%1$s」会上到 %2$s，超出学期范围（本学期共 %3$d 周），请缩短周数或调整学期结束</string>
+    <string name="error_term_end_course">「%1$s」最后一次上课是 %2$s，已晚于学期结束日，请缩短周数或调整学期结束</string>
+    <string name="error_span_out_of_range">「%1$s」的节次超出当天范围，请重新选择结束节次</string>
+    <string name="error_paste_span_out_of_range">这里放不下这门 %1$d 节的课程，请选择更靠上的格子粘贴</string>
+    <string name="error_grid_conflict">与「%1$s」时间冲突</string>
+    <string name="error_alternate_weeks_taken">该周数已被交替课程占用</string>
+
+    <!-- 切换课表浮层 -->
+    <string name="switcher_export">导出课表</string>
+    <string name="switcher_import">导入课表</string>
+    <string name="switcher_new">新建课表</string>
+    <string name="switcher_new_action">新建</string>
+    <string name="switcher_title">切换课表</string>
+    <string name="switcher_close">关闭</string>
+    <string name="switcher_delete_title">删除课表</string>
+    <string name="switcher_delete_message">「%1$s」及其全部课程将被删除，此操作不可撤销。</string>
+    <string name="date_cn_format">%1$d年%2$d月%3$d日</string>
+    <string name="date_hyphen_format">%1$d-%2$d-%3$d</string>
+    <string name="date_slash_format">%1$d/%2$d/%3$d</string>
+    <string name="switcher_date_range">%1$s - %2$s</string>
+    <string name="switcher_discard_title">放弃未保存的修改？</string>
+    <string name="switcher_discard_message">切换课表将丢弃当前未保存的编辑</string>
+    <string name="switcher_discard_confirm">丢弃并切换</string>
+    <string name="switcher_discard_cancel">取消</string>
+    <string name="import_read_failed">读取文件失败</string>
+    <string name="error_import_format">文件格式无效</string>
+    <string name="error_import_version">不支持的文件版本</string>
+    <string name="error_import_kind">不是课表文件</string>
+
+    <!-- 导入课表浮层 -->
+    <string name="import_sheet_title">导入课表</string>
+    <string name="import_json_label">从 JSON 文件导入</string>
+    <string name="import_json_desc">仅支持 Classpp 格式的 JSON 文件</string>
+    <string name="import_clipboard_label">从剪贴板导入</string>
+    <string name="import_clipboard_desc">复制好 JSON 文件内容后点击导入</string>
+    <string name="import_wakeup_label">从 Wakeup 课表分享口令导入</string>
+    <string name="import_wakeup_desc">输入Wakeup课表的分享口令导入</string>
+    <string name="import_clipboard_empty">剪贴板中没有可导入的内容</string>
+    <string name="import_wakeup_sheet_title">Wakeup 口令导入</string>
+    <string name="import_wakeup_field_label">分享口令</string>
+    <string name="import_wakeup_field_hint">粘贴 Wakeup 分享口令或完整分享文案</string>
+    <string name="import_wakeup_action">导入</string>
+    <string name="import_wakeup_running">正在获取 Wakeup 课表…</string>
+    <string name="import_wakeup_confirm_title">导入 Wakeup 课表</string>
+    <string name="import_wakeup_confirm_message">已解析到 %1$d 门课程，将新建课表「%2$s」。</string>
+    <string name="import_wakeup_default_name">Wakeup 课表</string>
+    <string name="error_wakeup_key_invalid">未找到有效的分享口令</string>
+    <string name="error_wakeup_script">适配脚本获取失败，请检查网络后重试</string>
+    <string name="error_wakeup_timeout">导入超时，请重试</string>
+    <string name="error_wakeup_no_courses">未解析到课程</string>
+
+    <!-- Tag choosing card -->
+    <string name="tag_choosing_input_hint">点击输入添加标签</string>
+    <string name="tag_choosing_course_title">课程标签</string>
+
+    <!-- Color select card -->
+    <string name="color_select_title">选择颜色</string>
+
+    <!-- Todo urgency -->
+    <string name="urgency_critical">非常紧急</string>
+    <string name="urgency_high">很紧急</string>
+    <string name="urgency_medium">紧急</string>
+    <string name="urgency_low">不紧急</string>
+    <string name="urgency_none">无</string>
+
+    <!-- Todo sort menu -->
+    <string name="sort_created">时间</string>
+    <string name="sort_deadline">截止日期</string>
+    <string name="sort_urgency">紧急程度</string>
+    <string name="sort_name">名称</string>
+    <string name="sort_ascending">升序</string>
+    <string name="sort_descending">降序</string>
+
+    <!-- Date selection card -->
+    <string name="date_card_label">日期</string>
+    <string name="date_card_none">无</string>
+    <string name="date_card_today">今天</string>
+    <string name="date_card_tomorrow">明天</string>
+    <string name="date_card_day_after_tomorrow">后天</string>
+    <string name="date_card_yesterday">昨天</string>
+    <string name="date_card_day_before_yesterday">前天</string>
+    <string name="date_card_custom">自定义</string>
+    <string name="date_card_custom_date">自定义日期</string>
+    <string name="date_card_repeat">重复</string>
+    <!-- 截止日期（入口行 + DeadlineSettingsSheet）：label 兼作浮层标题与入口行文案 -->
+    <string name="deadline_card_label">截止日期</string>
+    <string name="deadline_card_none">无</string>
+    <string name="deadline_card_time_title">截止时刻</string>
+    <string name="deadline_card_clear">清除</string>
+    <!-- 截止日期设置浮层（DeadlineSettingsSheet） -->
+    <string name="deadline_sheet_enable">设置截止日期</string>
+    <string name="deadline_sheet_enable_desc">重复待办每一期都应用此日期</string>
+    <string name="deadline_sheet_time">时刻</string>
+    <string name="deadline_sheet_repeat_section">重复待办截止日期</string>
+    <string name="deadline_sheet_repeat_toggle">下一次重复开始前</string>
+    <string name="deadline_sheet_repeat_toggle_desc">开启后，重复待办截止日期将自动调整为下一次重复开始前，仅设置重复后生效</string>
+    <string name="deadline_sheet_repeat_before">开始前</string>
+    <string name="deadline_sheet_repeat_days_value">%1$d 天</string>
+    <string name="deadline_sheet_repeat_days_title">开始前天数</string>
+    <!-- 随重复的截止展示文案（入口行/详情行）：固定日期已被逐期折算取代 -->
+    <string name="deadline_before_repeat_value">下一次重复开始前 %1$d 天</string>
+    <string name="repeat_daily">每天</string>
+    <string name="repeat_weekly">每周</string>
+    <string name="repeat_monthly">每月</string>
+    <string name="repeat_yearly">每年</string>
+    <string name="repeat_none">无重复</string>
+    <string name="repeat_custom_summary">每%1$d%2$s</string>
+    <!-- 重复浮层设置页（RepeatSettingsSheet） -->
+    <string name="repeat_custom_section">自定义重复</string>
+    <string name="repeat_frequency">频率</string>
+    <string name="repeat_every">每</string>
+    <string name="repeat_every_desc">每单位数内重复一次</string>
+    <string name="repeat_unit_day">天</string>
+    <string name="repeat_unit_week">周</string>
+    <string name="repeat_unit_month">月</string>
+    <string name="repeat_unit_year">年</string>
+    <string name="repeat_interval_title">重复周期</string>
+    <string name="repeat_marks_required">请至少选择一个日期</string>
+    <string name="repeat_month_mark">%1$d月</string>
+    <string name="repeat_end_title">结束</string>
+    <string name="repeat_end_never">永不</string>
+    <string name="repeat_end_type_date">日期</string>
+    <string name="repeat_end_type_count">次数</string>
+    <string name="repeat_end_date_row">结束日期</string>
+    <string name="repeat_end_date_desc">重复将于该日期前停止</string>
+    <string name="repeat_end_count_row">重复次数</string>
+    <string name="repeat_end_count_desc">重复达该次数后停止</string>
+    <string name="repeat_end_count_value">%1$d 次</string>
+    <string name="repeat_unit_count">次</string>
+    <string name="repeat_end_invalid">结束日期过早，请选择更晚的日期</string>
+    <string name="repeat_summary_until">%1$s · 至%2$s</string>
+    <string name="repeat_summary_count">%1$s · 共%2$d次</string>
+
+    <!-- 时间选择弹窗（BottomTimeSelectCard）：滚轮选时/分 -->
+    <string name="time_select_title">选择时间</string>
+    <string name="time_unit_hour">时</string>
+    <string name="time_unit_minute">分</string>
+
+    <!-- 日期选择弹窗（BottomDateSelectCard）：滚轮选年/月/日 -->
+    <string name="date_select_title">选择日期</string>
+    <string name="date_unit_year">年</string>
+    <string name="date_unit_month">月</string>
+    <string name="date_unit_day">日</string>
+
+    <!-- 数值选择弹窗（BottomNumberSelectCard）：横向滚轮选整数（学期周数等），单位钉在中心数字下方 -->
+    <string name="weeks_select_title">选择周数</string>
+    <string name="unit_week">周</string>
+    <string name="unit_slot">节</string>
+    <string name="unit_min">min</string>
+
+    <!-- 日程页（DayScreen）：顶部提示与背景切换入口的无障碍文案 -->
+    <string name="day_swipe_hint">上滑开启新一天</string>
+    <!-- 顶部提示分档：查看已过去/还没到的日期（图标分别沿用开锁/换闭锁） -->
+    <string name="day_swipe_hint_past">上滑回顾这一天</string>
+    <string name="day_swipe_hint_future">上滑看看这一天</string>
+    <string name="cd_day_background">更换背景图</string>
+    <string name="cd_day_card_back">返回台历页</string>
+
+    <!-- 日程页选择图片浮层（DayImageSheet）：左导入 / 居中标题 / 右关闭 -->
+    <string name="day_image_sheet_title">选择图片</string>
+    <string name="day_image_import">导入</string>
+    <string name="day_image_close">关闭</string>
+    <string name="day_image_empty_hint">暂无图片，点击「导入」从相册添加</string>
+    <string name="day_image_delete">删除</string>
+    <string name="day_image_random_title">随机轮播</string>
+    <string name="day_image_random_desc">开启后，每天将随机选择图片显示</string>
+    <string name="day_image_parallax_title">壁纸视差</string>
+    <string name="day_image_parallax_desc">倾斜手机时，背景图随之轻微移动</string>
+</resources>

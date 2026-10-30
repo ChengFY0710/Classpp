@@ -1,0 +1,297 @@
+package com.fangyi.classpp.ui.navigation
+
+import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
+import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.components.BottomFadeScrim
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
+import com.fangyi.classpp.ui.theme.ClassppTheme
+import com.fangyi.classpp.ui.theme.LiquidGlassStyle
+import com.fangyi.classpp.ui.theme.PillShape
+import com.fangyi.classpp.ui.theme.glassPressFeedback
+import com.fangyi.classpp.ui.theme.glassSurface
+import com.kyant.backdrop.Backdrop
+
+enum class AppTab(
+    @DrawableRes val iconRes: Int,
+    @StringRes val labelRes: Int,
+    /** 选中态改用的图标：待办页选中后胶囊变为「新建待办」入口，null 表示不变 */
+    @DrawableRes val selectedIconRes: Int? = null,
+    /** 选中态改用的文案，null 表示不变 */
+    @StringRes val selectedLabelRes: Int? = null,
+) {
+    Agenda(R.drawable.ic_day, R.string.nav_schedule),
+    Timetable(R.drawable.ic_calendar, R.string.nav_timetable),
+    Todo(
+        iconRes = R.drawable.ic_notes,
+        labelRes = R.string.nav_todo,
+        selectedIconRes = R.drawable.ic_note_add,
+        selectedLabelRes = R.string.nav_todo_create,
+    ),
+}
+
+/** 胶囊高度：11sp/13sp 底栏标签 + 32dp 图标 + 上下呼吸位恰好 56dp。 */
+internal val PillHeight = 56.dp
+internal val PillBottomOffset = 8.dp
+private val PillSpacing = 18.dp
+private val PillShadowElevation = 8.dp
+/** 选中指示器相对白胶囊边缘的内缩 */
+private val PillIndicatorInset = 3.dp
+private val PillHorizontalPadding = 33.dp
+
+/** 玻璃样式取 ui.theme 的 NavPill 档（blur 4dp + 折射 16/32dp，官方 Glass Bottom Bar 教程量级） */
+
+/** 玻璃表面染色浓度（未选中白玻璃）：比样式档的 0.70 更透一档，白玻璃目测定值 */
+private const val GlassIdleTintAlpha = 0.55f
+
+/** 胶囊区上方被渐变遮罩盖住的延伸高度（遮罩已下沉为页面的 BottomFadeScrim，仅供其取用） */
+internal val GradientOverhang = 40.dp
+
+/** 课表网格等内容需为导航栏预留的底部高度（不含系统导航栏 inset） */
+val NavReserve = PillBottomOffset + PillHeight
+
+/**
+ * 导航栏装进转场层（MainActivity 的 AnimatedVisibility，滑入滑出带淡入淡出）时的顶部
+ * 余量。转场层 alpha < 1 时 Android 按层自身边界做离屏合成，越界绘制被裁——「新建」
+ * 胶囊按压放大 1.15（Y 轴弹簧过冲 ≈1.16）顶边溢出布局约 4.5dp、胶囊投影上探更多，
+ * 浮层打开导航下移的瞬间就被层边界裁出一条平直切边；层边界不随内容下滑移动，导航越
+ * 下移裁得越多。余量把放大顶溢与上方投影带收进层内，转场全程不再被裁。
+ */
+val NavBarTransitionHeadroom = 20.dp
+
+/**
+ * 底部导航：三个胶囊按钮。渐变遮罩不在其中——已下沉为各页面自绘的
+ * BottomFadeScrim（ui.components），高度与此处几何常量对齐。
+ * 调用方负责对齐（如 Modifier.align(Alignment.BottomCenter)）。
+ *
+ * 玻璃样式（[backdrop] 非空时启用，与全 app 玻璃按钮同一判定——调用方经
+ * isGlassStyleEnabled 门控、关闭传 null）：胶囊白底改由 Backdrop 液态
+ * 玻璃渲染——模糊 + 折射 + 表面染色（选中项主题蓝、未选中白玻璃），选中蓝底指示器
+ * 取消、图标文字转白；尺寸/间距/形状/投影/按压反馈与白底实现完全一致。
+ * [backdrop] 采样层由调用方创建（rememberLayerBackdrop 画底色 + layerBackdrop 标记
+ * 页面世界），导航栏自身必须在采样层之外，否则玻璃会照见自己。
+ */
+@Composable
+fun BottomNavBar(
+    selectedTab: AppTab,
+    onTabSelected: (AppTab) -> Unit,
+    modifier: Modifier = Modifier,
+    backdrop: Backdrop? = null,
+) {
+    val useGlass = backdrop != null
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            // 系统 inset + 胶囊区：遮罩不再属于导航栏，页面滚进胶囊区上方的淡出
+            // 由各页面的 BottomFadeScrim 负责
+            .height(
+                WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                    NavReserve,
+            ),
+    ) {
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = PillHorizontalPadding)
+                .navigationBarsPadding()
+                .padding(bottom = PillBottomOffset)
+                .selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(PillSpacing),
+        ) {
+            AppTab.entries.forEach { tab ->
+                NavPill(
+                    tab = tab,
+                    selected = tab == selectedTab,
+                    useGlass = useGlass,
+                    backdrop = backdrop,
+                    onClick = { onTabSelected(tab) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavPill(
+    tab: AppTab,
+    selected: Boolean,
+    useGlass: Boolean,
+    backdrop: Backdrop?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // 玻璃模式下选中项转白：染了主题蓝的玻璃上用主题蓝/深色图文都读不清
+    val contentColor =
+        when {
+            useGlass && selected -> Color.White
+            selected -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.colorScheme.onSurface
+        }
+    // 玻璃表面染色：选中项主题蓝（深色模式自动用 DarkPrimary，浓度取样式档 tintAlpha），
+    // 未选中白玻璃（更透一档）。读取在组合侧完成——onDrawSurface 是 DrawScope，
+    // 读不了 Composable 上下文
+    val surfaceTint =
+        if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = LiquidGlassStyle.NavPill.tintAlpha)
+        } else {
+            MaterialTheme.colorScheme.surface.copy(alpha = GlassIdleTintAlpha)
+        }
+    // 选中态的胶囊内容可整体换装（待办 → 新建入口），未定义则与常态相同
+    val iconRes = if (selected) tab.selectedIconRes ?: tab.iconRes else tab.iconRes
+    val labelRes = if (selected) tab.selectedLabelRes ?: tab.labelRes else tab.labelRes
+    // 按压态的唯一来源：pressFeedback 与 selectable 共用（涟漪由按压反馈取代，故 selectable 不再要 Indication）
+    val pressInteraction = remember { MutableInteractionSource() }
+    Box(
+        modifier = modifier
+            .height(PillHeight)
+            // 按压反馈：玻璃模式换官方 Q弹按压放大（软弹簧果冻过冲 + 沿轮廓加色提亮），
+            // 非玻璃维持 pressFeedback（封装见 ui.theme LiquidGlass）；导航胶囊单独
+            // 调大到 1.15（与其他玻璃按钮的 1.10 不同，沿用胶囊原按压记忆）。
+            // 缩放会让玻璃采样跟着放大（无 layerBlock 补偿），blur + 染色下不可感知，
+            // 与原实现同一取舍
+            .glassPressFeedback(
+                interactionSource = pressInteraction,
+                shape = PillShape,
+                backdrop = backdrop,
+                pressedScale = 1.15f,
+            )
+            .graphicsLayer {
+                shape = PillShape
+                clip = true
+                shadowElevation = 45.dp.toPx()
+                spotShadowColor = Color.Black.copy(alpha = 0.3f)
+            }
+            // 白底必须不透明：PrimaryContainer 仅 12% alpha，若直接铺在胶囊上，
+            // graphicsLayer 的投影会从半透明底里透上来，在图标后形成一条淡横线。
+            // 玻璃模式改由 drawBackdrop 出底（采样层内容经模糊/折射后裁进胶囊形状，
+            // 表面再叠染色——选中蓝玻璃/未选白玻璃）；非玻璃实心底，投影环境不变
+            .glassSurface(
+                shape = PillShape,
+                containerColor = MaterialTheme.colorScheme.surface,
+                backdrop = backdrop,
+                style = LiquidGlassStyle.NavPill,
+                tint = surfaceTint,
+            )
+            .selectable(
+                selected = selected,
+                interactionSource = pressInteraction,
+                indication = null,
+                role = Role.Tab,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        // 选中指示器：浮在白胶囊内侧，四周内缩 PillIndicatorInset。
+        // 玻璃模式的选中态由整胶囊主题蓝染色 + 白色图文承担，蓝底指示器退场
+        if (selected && !useGlass) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .padding(PillIndicatorInset)
+                    .background(
+                        MaterialTheme.colorScheme.primaryContainer,
+                        PillShape,
+                    ),
+            )
+        }
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.height(5.dp))
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(32.dp),
+            )
+            Text(
+                text = stringResource(labelRes),
+                style = ClassppTextTokens.navLabel,
+                color = contentColor,
+                modifier = Modifier.offset(y = - 1.dp),
+            )
+            Spacer(Modifier.height(6.dp))
+        }
+    }
+}
+
+@Preview(showBackground = true, widthDp = 412, heightDp = 360, name = "日程选中")
+@Composable
+private fun AgendaSelectedPreview() = BottomNavBarPreview(AppTab.Agenda)
+
+@Preview(showBackground = true, widthDp = 412, heightDp = 360, name = "课表选中")
+@Composable
+private fun TimetableSelectedPreview() = BottomNavBarPreview(AppTab.Timetable)
+
+@Preview(showBackground = true, widthDp = 412, heightDp = 360, name = "待办选中")
+@Composable
+private fun TodoSelectedPreview() = BottomNavBarPreview(AppTab.Todo)
+
+/** 模拟页面内容置于导航栏之后，便于观察渐变遮罩的淡出效果 */
+@Composable
+private fun BottomNavBarPreview(selectedTab: AppTab) {
+    ClassppTheme {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
+        ) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+            ) {
+                repeat(12) {
+                    Text(
+                        text = "16:40  形式与政策  XX老师  @学武楼 B101",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        modifier = Modifier.padding(vertical = 10.dp),
+                    )
+                }
+            }
+            BottomFadeScrim(modifier = Modifier.align(Alignment.BottomCenter))
+            BottomNavBar(
+                selectedTab = selectedTab,
+                onTabSelected = {},
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+    }
+}

@@ -1,0 +1,233 @@
+package com.fangyi.classpp.ui.schedule
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import com.fangyi.classpp.R
+import com.fangyi.classpp.data.isOverdue
+import com.fangyi.classpp.data.model.CourseEntry
+import com.fangyi.classpp.data.model.Schedule
+import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.ui.LocalToday
+import com.fangyi.classpp.ui.components.CardSection
+import com.fangyi.classpp.ui.components.NoteCard
+import com.fangyi.classpp.ui.components.OverlaySheet
+import com.fangyi.classpp.ui.components.SheetInfoCard
+import com.fangyi.classpp.ui.components.SheetInfoEntry
+import com.fangyi.classpp.ui.components.SheetInfoPillRow
+import com.fangyi.classpp.ui.components.SheetTextArea
+import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.note.cardTimeText
+import com.fangyi.classpp.ui.note.currentMinuteOfDay
+import com.fangyi.classpp.ui.note.deadlineCardText
+import com.fangyi.classpp.ui.note.deadlineColor
+import com.fangyi.classpp.ui.note.repeatCardText
+import com.fangyi.classpp.ui.note.deadlineDaysLeft
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
+import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
+
+/**
+ * 课程详情浮层：浏览态点课程卡弹出，只读展示课程名 / 上课位置（周几、节次、时间）、
+ * 任课教师与上课地点（[SheetInfoCard]），并附备注输入（[SheetTextArea]）；
+ * 备注之后追加该课程标签下的待办卡片（[NoteCard]，[todos] 为调用方按课程名命中的全部
+ * 待办——重复待办已分期展开，每张卡是一个分期副本，口径与待办列表页一致；空列表则整块
+ * 不出现）。默认只显未完成；勾选框可切换完成（经 [onTodoCheckedChange] 交调用方对所勾
+ * 分期落盘），**本次打开期间勾选的**卡片原地变划线置灰并保留到关闭，重开才消失（重复
+ * 待办勾选后下一期照常出现为新的未完成卡，与列表页一致）；打开时即已完成的不显示。
+ * 卡片整卡点击无动作（不进待办详情）。
+ *
+ * 待办卡随该待办的倒计时开关（`Todo.countdown`）在左区显示距截止剩余天数（[deadlineDaysLeft]，
+ * 与待办列表页同口径）；完成态由 [NoteCard] 自行隐藏倒计时。
+ *
+ * 正文按浮层内容规范排版：课程名与位置信息胶囊行（星期 / 节次 / 起止时间，
+ * [SheetInfoPillRow]）保持裸元素，信息卡、备注、待办卡列表各收进
+ * 一个无题 [CardSection]（后两者是列表，组内卡间距走 CardSection 默认的 10dp）；
+ * 顶层块间距走 [SheetSectionSpacingBetween]。
+ *
+ * 备注没有显式保存按钮（设计稿顶栏只有"关闭"）：**任意关闭路径**（关闭胶囊 / 系统返回 /
+ * 下拉 / 点遮罩）都会先经 [onNoteSave] 落盘再关，输入不丢；调用方负责实际持久化与去重。
+ *
+ * 顶栏左上是「新建」蓝胶囊（待办分组浮层顶栏同款设计）：点击经 [onCreateTodoClick] 请求
+ * 打开「新建课程待办」浮层（由调用方叠在本浮层之上），新建的待办自动打上本课程标签，
+ * 落库回流后即出现在上方待办卡列表。
+ *
+ * 浮层框架是 [OverlaySheet]：两段式关闭（visible / onDismissed）。[covered] = 被上层浮层
+ * （如新建课程待办）盖住时本层缩小后退（分层动效，透传容器）。
+ */
+@Composable
+fun CourseDetailSheet(
+    visible: Boolean,
+    entry: CourseEntry,
+    schedule: Schedule,
+    onDismiss: () -> Unit,
+    onDismissed: () -> Unit,
+    onNoteSave: (String) -> Unit,
+    todos: List<Todo> = emptyList(),
+    onTodoCheckedChange: ((todo: Todo, checked: Boolean) -> Unit)? = null,
+    covered: Boolean = false,
+    onCreateTodoClick: () -> Unit = {},
+) {
+    // 本次打开期间勾选过的待办（id + 分期日期）：无 key——浮层卸载（收场动画结束）即清空，
+    // 换课程随调用方的 key(detail.id) 重建。勾选先本地记账，StateFlow 回流后
+    // completed 变 true 仍靠它保留在展示列表里（划线置灰而非消失）。按分期记账而非裸 id：
+    // 同一系列的分期卡共用 id，裸 id 会在勾选一期时把该系列所有已完成分期都显出来。
+    // 取消勾选的摘除不能同步做（见渲染处 LaunchedEffect）——落盘回流前
+    // completed 还是 true，同步摘 key 会让卡片滤出→回流又滤入，闪一下
+    var checkedThisSession by remember { mutableStateOf(emptySet<Pair<String, String>>()) }
+    // 备注本地态：键在课程 id 上，换目标浮层重建时初值跟着换；
+    // 保存后仓库回流同 id 条目不重置（值本就一致）
+    var note by rememberSaveable(entry.id) { mutableStateOf(entry.note) }
+    val closeWithSave = {
+        onNoteSave(note.trim())
+        onDismiss()
+    }
+    // 系统返回 = 收起浮层而非退出 app；与关闭/下拉同走 closeWithSave，备注照常先落盘。
+    // enabled 跟 visible：出场动画期间不再拦截（visible 已 false，重复提交被挡在门外）
+    BackHandler(enabled = visible, onBack = closeWithSave)
+
+    // 位置信息胶囊行：与 AddCoursePanel 的构造同源（星期数组 + 节次 + 起止时间）
+    val weekdays = stringArrayResource(R.array.weekdays)
+    val weekdayName = weekdays[(entry.dayOfWeek - 1).coerceIn(weekdays.indices)]
+    val slotLabel = if (entry.span == 1) {
+        stringResource(R.string.slot_format, entry.startSlot)
+    } else {
+        stringResource(R.string.slot_range_format, entry.startSlot, entry.endSlot)
+    }
+    val slots = schedule.slots
+    val startDef = slots[(entry.startSlot - 1).coerceIn(slots.indices)]
+    val endDef = slots[(entry.endSlot - 1).coerceIn(slots.indices)]
+    val timeRange = stringResource(
+        R.string.time_range_format,
+        startDef.startTime,
+        endDef.endTime,
+    )
+
+    OverlaySheet(
+        title = stringResource(R.string.detail_title),
+        // 左上「新建」蓝胶囊（待办分组浮层顶栏同款）：请求打开新建课程待办浮层
+        confirmLabel = stringResource(R.string.detail_create_todo),
+        confirmIcon = R.drawable.ic_add_circle,
+        onConfirm = onCreateTodoClick,
+        rightAction = SheetTopAction(
+            label = stringResource(R.string.detail_close),
+            icon = R.drawable.ic_dismiss_circle,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            onClick = closeWithSave,
+        ),
+        onDismiss = closeWithSave,
+        visible = visible,
+        covered = covered,
+        onDismissed = onDismissed,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(/**SheetSectionSpacingBetween 课程详情卡片单独设置，其余统一使用SheetSectionSpacingBetween变量**/10.dp)) {
+            Text(
+                text = entry.name,
+                style = ClassppTextTokens.detailTitle,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(start = 12.dp, end = 12.dp),
+            )
+            // 位置信息胶囊行（星期 / 节次 / 起止时间）：与课程名同为裸元素、不包分组
+            //（浮层规范里的直接文本例外），左缘比课程名再内缩 3dp
+            SheetInfoPillRow(values = listOf(weekdayName, slotLabel, timeRange))
+            // 教师 / 地点留空的字段不显示假数据；两者全空且无周数时不出现
+            val infoEntries = buildList {
+                if (entry.teacher.isNotBlank()) {
+                    add(SheetInfoEntry(stringResource(R.string.detail_teacher), entry.teacher))
+                }
+                if (entry.location.isNotBlank()) {
+                    add(SheetInfoEntry(stringResource(R.string.detail_location), entry.location))
+                }
+                // 上课周数：文案与编辑面板的周数摘要同款（weeksSummary，如「第 1-16 周」）
+                add(SheetInfoEntry(stringResource(R.string.edit_course_weeks), weeksSummary(entry.weeks)))
+            }
+            // 判空留在分组之外：三项都缺时不出现空分组、也不多出一段 12dp 间隔
+            if (infoEntries.isNotEmpty()) {
+                CardSection {
+                    SheetInfoCard(entries = infoEntries)
+                }
+            }
+            CardSection {
+                SheetTextArea(
+                    value = note,
+                    onValueChange = { note = it },
+                    placeholder = stringResource(R.string.detail_note_ph),
+                )
+            }
+            // 该课程标签下的待办：打开时即已完成的不显示；本次会话勾选的
+            // （checkedThisSession）保留在列——StateFlow 回流后 completed=true，
+            // 卡片转划线置灰而非消失，关闭浮层重开才移除。
+            // 逾期"此刻"随重组取值（同 TodoList），跨截止时刻后重算标红；
+            // completed 态 isOverdue 恒 false（完成优先于过期），无需特判
+            val visibleTodos = todos.filter { todo ->
+                !todo.completed || todo.occurrenceKey() in checkedThisSession
+            }
+            if (visibleTodos.isNotEmpty()) {
+                // 「今天」取 LocalToday（跨零点自动跳天）：与 deadlineDaysLeft 的天数口径同源，
+                // 逾期标红与左区倒计时不会在挂过夜后各说各话（同 TodoDetailSheet）
+                val today = LocalToday
+                val nowMinute = currentMinuteOfDay()
+                // 待办卡是直接排成一列的同型卡列表：整列收进一个无题 CardSection
+                //（组内 10dp 卡间距，与待办页列表的节奏一致）
+                CardSection {
+                    visibleTodos.forEach { todo ->
+                        // 分期副本共用 id，key 带分期日期兜同屏重复（同 TodoScreen 侧滑 key 约定）
+                        key(todo.id, todo.dates.firstOrNull()?.epochDay) {
+                            // 取消勾选的摘 id 延迟到回流确认：setCompleted 异步落盘，点击瞬间
+                            // completed 仍为 true，此刻摘会让 !completed 与会话集同时踩空、
+                            // 卡片闪没一下。等 StateFlow 回流 completed=false（卡片本就靠
+                            // !completed 可见）再摘，任意时序都无空档；落盘失败则 completed
+                            // 恒为 true、id 保留，与勾选样式自洽
+                            LaunchedEffect(todo.completed) {
+                                if (!todo.completed) checkedThisSession = checkedThisSession - todo.occurrenceKey()
+                            }
+                            NoteCard(
+                                title = todo.name,
+                                time = todo.cardTimeText(),
+                                deadline = todo.deadlineCardText(),
+                                deadlineColor = todo.deadlineColor(),
+                                repeat = todo.repeatCardText(),
+                                // 倒计时：开关开着且仍有截止日期时才有天数可显（截止被清掉时
+                                // 仓库已把开关归一化回 false）；完成态由 NoteCard 自行隐藏
+                                countdownDays = if (todo.countdown) todo.deadlineDaysLeft() else null,
+                                tags = todo.tags,
+                                urgency = todo.urgency,
+                                completed = todo.completed,
+                                overdue = todo.isOverdue(today, nowMinute),
+                                onCheckedChange = { checked ->
+                                    // 只记"勾上"（先于回流，保勾选方向无空档）；"取消"的摘除
+                                    // 交给上面的 LaunchedEffect 等回流确认后再做
+                                    if (checked) checkedThisSession = checkedThisSession + todo.occurrenceKey()
+                                    onTodoCheckedChange?.invoke(todo, checked)
+                                },
+                                onClick = null,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 分期副本的会话记账 key：id + 分期日期（ISO 文本）。同一系列的分期卡共用 id，
+ * 「本次勾选保留显示」须按期区分——按裸 id 记账会把该系列所有已完成分期都显出来。
+ */
+private fun Todo.occurrenceKey(): Pair<String, String> =
+    id to (dates.firstOrNull()?.toString().orEmpty())

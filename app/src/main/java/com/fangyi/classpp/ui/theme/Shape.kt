@@ -1,0 +1,91 @@
+package com.fangyi.classpp.ui.theme
+
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.dp
+import com.kyant.shapes.Capsule
+import com.kyant.shapes.RoundedRectangle
+import com.kyant.shapes.UnevenRoundedRectangle
+
+/**
+ * 全局形状常量，统一走 [RoundedRectangle] 的 Continuous（连续曲率）风格，
+ * 即 iOS 同款"圆角与直边平滑过渡"，替代 androidx 的 RoundedCornerShape。
+ * 小圆角（课表格子 6dp 等）不做平滑，保留各文件内的 RoundedCornerShape。
+ */
+
+/** 底部浮层：顶部 36dp 平滑圆角，模糊与内容裁剪共用 */
+val SheetShape = UnevenRoundedRectangle(topStart = 36.dp, topEnd = 36.dp)
+
+/** 底部弹出选择卡（BottomSelectSheet）：四角 36dp 平滑圆角，与浮层顶部圆角一致 */
+val BottomSelectSheetShape = RoundedRectangle(36.dp)
+
+/** 浮层内卡片 */
+val SheetCardShape = RoundedRectangle(20.dp)
+
+/** 页内对话框卡片（换课选择、切换器删除/放弃确认框） */
+val DialogShape = RoundedRectangle(32.dp)
+
+/** 长按/右键菜单、弹出选择卡 */
+val MenuShape = RoundedRectangle(16.dp)
+
+/** 设置页卡片、周选择卡片容器 */
+val SettingsCardShape = RoundedRectangle(20.dp)
+
+/** 待办卡片（NoteCard） */
+val NoteCardShape = RoundedRectangle(20.dp)
+
+/** 对话框行、选择卡行 */
+val RowShape = RoundedRectangle(12.dp)
+
+/** 课表编辑条操作按钮 */
+val EditActionShape = RoundedRectangle(10.dp)
+
+/** 选周格子（添加课程面板、周选择浮层的周数方格） */
+val WeekCellShape = RoundedRectangle(12.dp)
+
+/** 日程页选择图片浮层的网格图片 */
+val DayImageCellShape = RoundedRectangle(16.dp)
+
+/** 日程页台历图片卡与白底内容卡：20dp 连续圆角（设计稿量取） */
+val DayCardShape = RoundedRectangle(20.dp)
+
+/** 日程页上课提醒卡（DayCourseAlert）的「上课」竖排小标签 */
+val DayCourseAlertTagShape = RoundedRectangle(6.dp)
+
+/** 日程页时间轴任务卡（DayTaskCard）的默认四角：20dp 平滑圆角（与 DayCardShape 同规格） */
+val DayTaskCardShape = RoundedRectangle(20.dp)
+
+/** 日程页时间轴当前时间指示器的时刻矩形（DayTimeline）：8dp 平滑圆角 */
+val DayTimelineNowChipShape = RoundedRectangle(8.dp)
+
+private val DayTaskCornerRadius = 20.dp
+
+/** 任务卡与相邻任务贴近（渲染间距 < 6dp）一侧接触角的圆角 */
+private val DayTaskContactRadius = 6.dp
+
+/**
+ * 日程页时间轴任务卡的逐角圆角：默认取 [DayTaskCardShape]；与相邻任务卡贴近的角
+ * 收敛为 [DayTaskContactRadius]（连续曲率同款）——哪些角贴近由布局求解按贴邻方向
+ * 逐角标记（竖向贴邻按横向半宽分角，横向贴邻（时间重叠均分）收起/末两侧角）。
+ */
+fun dayTaskCardShape(
+    topStartContact: Boolean = false,
+    topEndContact: Boolean = false,
+    bottomStartContact: Boolean = false,
+    bottomEndContact: Boolean = false,
+): Shape {
+    if (!topStartContact && !topEndContact && !bottomStartContact && !bottomEndContact) {
+        return DayTaskCardShape
+    }
+    return UnevenRoundedRectangle(
+        topStart = if (topStartContact) DayTaskContactRadius else DayTaskCornerRadius,
+        topEnd = if (topEndContact) DayTaskContactRadius else DayTaskCornerRadius,
+        bottomStart = if (bottomStartContact) DayTaskContactRadius else DayTaskCornerRadius,
+        bottomEnd = if (bottomEndContact) DayTaskContactRadius else DayTaskCornerRadius,
+    )
+}
+
+/** 顶栏胶囊按钮（全圆角）；投影与背景共用同一个形状 */
+val PillShape = Capsule()
+
+/** 主操作大按钮（创建课表等 M3 Button） */
+val ButtonShape = Capsule()

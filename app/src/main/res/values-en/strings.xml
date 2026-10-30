@@ -1,0 +1,502 @@
+<resources>
+    <string name="app_name">Classpp</string>
+    <string name="week_format">Week %1$d</string>
+    <string name="cd_edit_schedule">Edit or switch schedule</string>
+    <string name="cd_settings">Settings</string>
+    <string name="nav_schedule">Schedule</string>
+    <string name="nav_timetable">Timetable</string>
+    <string name="nav_todo">Todo</string>
+    <string name="nav_todo_create">New</string>
+    <string name="todo_group_all">All</string>
+    <string name="todo_group_ungrouped">Ungrouped</string>
+    <string name="cd_todo_more">More</string>
+    <string name="todo_action_group">Group</string>
+    <string name="todo_action_sort">Sort</string>
+    <string name="todo_action_category">Category</string>
+    <string name="todo_action_view">View</string>
+    <string name="todo_action_overview">Overview</string>
+    <!-- Todo page "View" menu: list view (default) / inbox view -->
+    <string name="todo_view_list">List view</string>
+    <string name="todo_view_inbox">Inbox view</string>
+    <!-- Todo groups sheet top bar -->
+    <string name="todo_groups_title">Todo Groups</string>
+    <string name="todo_groups_create">New</string>
+    <string name="todo_groups_close">Close</string>
+    <!-- Todo groups sheet: edit-mode delete confirmation (groups only, todos untouched) -->
+    <string name="todo_groups_delete_title">Delete Group</string>
+    <string name="todo_groups_delete_message">“%1$s” will be deleted. This cannot be undone.</string>
+    <string name="todo_groups_delete_message_multi">%1$d selected groups will be deleted. This cannot be undone.</string>
+    <!-- Edit todo sheet: group entry → group picker sheet -->
+    <string name="todo_group_pick_title">Choose Group</string>
+    <!-- Todo groups sheet: create-group input dialog -->
+    <string name="todo_group_create_title">New Group</string>
+    <string name="todo_group_create_hint">Enter group name</string>
+    <!-- Todo groups sheet: edit-mode rename card -->
+    <string name="todo_group_rename_title">Rename Group</string>
+    <string name="todo_new_title">New Todo</string>
+    <string name="todo_edit_title">Edit Todo</string>
+    <string name="todo_name_label">Todo name</string>
+    <string name="todo_name_hint">e.g. Renew passport</string>
+    <string name="month_day_format">%1$d/%2$d</string>
+    <string name="date_year_month_format">%1$d/%2$d</string>
+    <!-- DayCalendar (calendar card) footer title: year & month without leading zeros -->
+    <string name="date_year_month_cn_format">%1$d/%2$d</string>
+    <string name="date_title_format">%1$s %2$s</string>
+    <!-- DayCalendar (calendar card) footer: jump back to today when another day is selected -->
+    <string name="back_to_today">Back to today</string>
+    <string name="back_to_current_week">Back to this week</string>
+    <string name="cd_section_collapse">Collapse</string>
+    <string name="cd_section_expand">Expand</string>
+    <string name="cd_switch_to_5_days">Switch to the 5-day view</string>
+    <string name="cd_switch_to_7_days">Switch to the 7-day view</string>
+    <string name="cd_pinned">Pinned</string>
+    <!-- DayCalendar (calendar card) footer prev/next buttons -->
+    <string name="cd_calendar_previous_month">Previous month</string>
+    <string name="cd_calendar_next_month">Next month</string>
+    <string name="cd_calendar_previous_week">Previous week</string>
+    <string name="cd_calendar_next_week">Next week</string>
+    <string-array name="weekdays">
+        <item>Mon</item>
+        <item>Tue</item>
+        <item>Wed</item>
+        <item>Thu</item>
+        <item>Fri</item>
+        <item>Sat</item>
+        <item>Sun</item>
+    </string-array>
+    <!-- Column labels of the weekday row in the header/edit bar, aligned with `weekdays` -->
+    <string-array name="weekdays_short">
+        <item>Mon</item>
+        <item>Tue</item>
+        <item>Wed</item>
+        <item>Thu</item>
+        <item>Fri</item>
+        <item>Sat</item>
+        <item>Sun</item>
+    </string-array>
+    <string name="settings_title">Schedule Settings</string>
+    <string name="settings_root_title">Settings</string>
+    <string name="settings_personalization">Personalization</string>
+    <string name="settings_data_management">Data management</string>
+    <string name="settings_about">About</string>
+    <string name="cd_settings_close">Close</string>
+    <!-- Notifications & reminders -->
+    <string name="settings_notifications">Notifications &amp; reminders</string>
+    <string name="notification_enable">Enable notifications</string>
+    <string name="notification_permission_desc">Notification permission required</string>
+    <string name="notification_method">Notification method</string>
+    <string name="notification_method_normal">Normal</string>
+    <string name="notification_method_live">Live Updates</string>
+    <string name="notification_live_info_label">Live update display info</string>
+    <string name="notification_live_info_desc">Requires Android 16+</string>
+    <string name="notification_live_info_course">Course name</string>
+    <string name="notification_live_info_location">Class location</string>
+    <string name="section_course_notifications">Course notifications</string>
+    <string name="section_todo_notifications">Todo notifications</string>
+    <string name="notification_enable_course">Enable course notifications</string>
+    <string name="notification_enable_todo">Enable todo notifications</string>
+    <string name="notification_lead_time">Lead time</string>
+    <string name="notification_lead_course_desc">Notify this many minutes before a class starts</string>
+    <string name="notification_lead_todo_desc">Notify this many minutes before a todo starts/ends</string>
+    <string name="notification_lead_value">%1$dmin</string>
+    <string name="notification_todo_type">Notification type</string>
+    <string name="notification_todo_type_all">All</string>
+    <string name="notification_todo_type_deadline">Deadline</string>
+    <string name="notification_todo_type_start">Start time</string>
+    <string name="notification_todo_type_end">End time</string>
+    <!-- Notification content & channels -->
+    <string name="notification_channel_course">Class reminders</string>
+    <string name="notification_channel_todo">Todo reminders</string>
+    <string name="notification_course_text">Class %1$s · %2$s</string>
+    <string name="notification_course_text_no_location">Class %1$s</string>
+    <string name="notification_todo_deadline_text">Due %1$s</string>
+    <string name="notification_todo_start_text">Starts %1$s</string>
+    <string name="notification_todo_end_text">Ends %1$s</string>
+    <string name="notification_date_prefix">%1$d/%2$d </string>
+    <string name="notification_permission_denied_toast">Notification permission denied — turned off</string>
+    <!-- Live update preview (test entry) -->
+    <string name="notification_test_label">Test Live Updates</string>
+    <string name="notification_test_desc">Post a test live update; auto-dismissed after 60 s</string>
+    <string name="notification_test_publish">Post</string>
+    <string name="notification_test_course">Test Course</string>
+    <string name="notification_test_time">Test Time</string>
+    <string name="notification_test_location">Test Location</string>
+    <string name="notification_test_permission_toast">Notification permission denied — cannot preview</string>
+    <string name="empty_title">No schedule yet</string>
+    <string name="empty_desc">Create a schedule to start recording classes</string>
+    <string name="create_schedule">Create Schedule</string>
+    <string name="schedule_name_label">Schedule Name</string>
+    <string name="schedule_name_hint">e.g. Spring 2026</string>
+    <string name="term_start">Term Start</string>
+    <string name="term_end">Term End</string>
+    <string name="term_weeks">Total Weeks</string>
+    <string name="term_weeks_value">%1$d weeks</string>
+    <string name="term_weeks_range">1–30 weeks</string>
+    <string name="section_term">Term</string>
+    <!-- BottomNumberSelectCard (horizontal number wheel, e.g. term weeks); unit label pinned below the center number -->
+    <string name="weeks_select_title">Select Weeks</string>
+    <string name="unit_week">weeks</string>
+    <string name="unit_slot">periods</string>
+    <string name="unit_min">min</string>
+    <!-- 外观 -->
+    <string name="appearance_theme_mode">Color mode</string>
+    <string name="appearance_theme_system">Follow system</string>
+    <string name="appearance_theme_light">Light</string>
+    <string name="appearance_theme_dark">Dark</string>
+    <string name="glass_material">Advanced glass material</string>
+    <string name="glass_material_desc">Liquid glass blur and refraction. Requires Android 13+. Per-frame sampling costs performance — consider off on low-end devices</string>
+    <string name="section_days">Days per week</string>
+    <string name="section_slots">Slots and times</string>
+    <string name="section_display">Display</string>
+    <string name="days_5">5 days</string>
+    <string name="days_7">7 days</string>
+    <string name="slot_count_format">%1$d periods per day</string>
+    <string name="slot_decrease">Remove one</string>
+    <string name="slot_increase">Add one</string>
+    <string name="slot_overflow_desc">Not enough time in the day for that many periods</string>
+    <string name="slot_format">Period %1$d</string>
+    <string name="slot_range_format">Periods %1$d-%2$d</string>
+    <!-- Periods & times (schedule settings): total-count / per-class-duration nav rows + their wheel sheets -->
+    <string name="slot_count_label">Total Periods</string>
+    <string name="slot_count_select_title">Total Periods</string>
+    <string name="slot_duration_label">Class Duration</string>
+    <string name="slot_duration_desc">End time is derived from the start time</string>
+    <string name="slot_duration_value">%1$dmin</string>
+    <string name="slot_duration_select_title">Class Duration</string>
+    <!-- Course time scheme (periods & times sheet): scheme picker + slot details + save/merge actions -->
+    <string name="section_slots_time">Periods and times</string>
+    <string name="time_scheme_title">Course time scheme</string>
+    <string name="time_scheme_entry_desc">Applies to this timetable only; save it for reuse</string>
+    <string name="time_scheme_default">Default</string>
+    <string name="time_scheme_custom">Custom</string>
+    <string name="time_scheme_save">Save scheme</string>
+    <string name="time_scheme_name_title">Scheme name</string>
+    <string name="time_scheme_rename_title">Rename scheme</string>
+    <string name="time_scheme_name_hint">e.g. Custom scheme 1</string>
+    <string name="time_scheme_merge">Merge two periods into one</string>
+    <string name="time_scheme_merge_done">Merged %1$d adjacent period pairs, confirm to apply</string>
+    <string name="error_time_scheme_name">Scheme name must not be blank</string>
+    <!-- Rescheduling & holidays (schedule settings): placeholder nav rows, feature pending -->
+    <string name="section_adjustment">Rescheduling &amp; Holidays</string>
+    <string name="adjust_course_label">Reschedule Classes</string>
+    <string name="adjust_holiday_label">Adjust Holidays</string>
+    <!-- Timetable (Personalization) -->
+    <string name="section_schedule">Timetable</string>
+    <string name="card_height_label">Course card height</string>
+    <string name="card_height_desc">Scales with each class period\'s length</string>
+    <string name="card_height_default">Default</string>
+    <string name="card_height_value">%1$d%%</string>
+    <string name="show_teacher">Show teacher</string>
+    <!-- Todo (Personalization) -->
+    <string name="section_todo">Todo</string>
+    <string name="todo_masonry_view">Waterfall view</string>
+    <string name="todo_masonry_view_desc">When on, the waterfall view is enabled once there are 3 inbox cards</string>
+    <string name="time_range_start">Start time</string>
+    <string name="time_range_end">End time</string>
+    <string name="show_inactive">Show classes not held this week</string>
+    <string name="show_inactive_desc">Hidden when off; greyed out when on</string>
+    <string name="settings_confirm">Confirm</string>
+    <string name="settings_cancel">Cancel</string>
+    <string name="error_term_range">Term end must not be before term start</string>
+    <string name="error_term_end_short">These courses no longer fit in the last week — shorten their weeks or move the term end later</string>
+    <string name="error_days_per_week">Days per week must be 5 or 7</string>
+    <string name="error_slot_count">Period count must be 1–30</string>
+    <string name="error_slot_time_format">Time must look like 8:00</string>
+    <string name="error_slot_order">Periods must be ordered without overlap</string>
+    <string name="error_slot_day_overflow">Adjusted times exceed the day</string>
+    <string name="error_schedule_name">Schedule name must not be blank</string>
+    <string name="error_courses_out_of_range">%1$d course(s) outside the new range; change rejected: %2$s</string>
+    <string name="error_not_found">Schedule not found</string>
+    <string name="error_persist_failed">Failed to save</string>
+    <string name="error_unexpected">Operation failed, please try again</string>
+    <string name="load_state_restored">Schedule data restored from backup</string>
+    <string name="load_state_reset">Schedule data was corrupted and reset</string>
+
+    <!-- Schedule edit -->
+    <string name="edit_save">Save</string>
+    <string name="edit_switch_schedule">Switch</string>
+    <string name="edit_schedule_settings">Settings</string>
+    <string name="edit_cancel">Cancel</string>
+    <string name="edit_add_course">Add Course</string>
+    <string name="edit_edit_course">Edit Course</string>
+    <string name="edit_confirm">Confirm</string>
+    <string name="edit_delete">Delete</string>
+    <string name="edit_pin">Pin</string>
+    <string name="edit_rename">Rename</string>
+    <!-- Time range capsule (info capsule row in course edit/detail sheets) -->
+    <string name="time_range_format">%1$s - %2$s</string>
+    <string name="edit_end_slot_section">Periods</string>
+    <string name="edit_start_slot">Start period</string>
+    <string name="edit_end_slot">End period</string>
+    <string name="edit_span_hint">Class occupies periods %1$d - %2$d, spanning %3$d</string>
+    <string name="edit_course_name">Course name</string>
+    <string name="edit_course_name_ph">e.g. Calculus I-2</string>
+    <string name="edit_course_teacher">Teacher</string>
+    <string name="edit_course_teacher_ph">e.g. Ms. XX</string>
+    <string name="edit_course_location">Location</string>
+    <string name="edit_course_location_ph">e.g. C201</string>
+    <string name="edit_course_weeks">Weeks</string>
+    <string name="edit_course_color">Colour</string>
+    <string name="edit_weeks_all">All</string>
+    <string name="edit_weeks_odd">Odd</string>
+    <string name="edit_weeks_even">Even</string>
+    <string name="edit_weeks_none">Nothing selected</string>
+    <string name="edit_weeks_separator">, </string>
+    <string name="edit_weeks_one">Week %1$d</string>
+    <string name="edit_weeks_range">Weeks %1$d-%2$d</string>
+    <string name="edit_weeks_suffix_odd"> (odd)</string>
+    <string name="edit_weeks_suffix_even"> (even)</string>
+    <string name="edit_new_alternate">New alternating course</string>
+    <string name="edit_copy_course">Copy course</string>
+    <string name="edit_paste_course">Paste course</string>
+    <string name="toast_course_copied">Copied. Long-press an empty cell to paste</string>
+    <string name="edit_alternate_pick_title">Choose which alternating course to edit</string>
+    <!-- Course details sheet -->
+    <string name="detail_title">Course Details</string>
+    <string name="detail_close">Close</string>
+    <string name="detail_edit">Edit</string>
+    <string name="detail_teacher">Teacher</string>
+    <string name="detail_location">Location</string>
+    <string name="detail_note_ph">Tap to add a note</string>
+    <!-- Quoted so the surrounding spaces survive resource compilation -->
+    <string name="edit_alternate_meta_separator">" | "</string>
+    <string name="edit_alternate_taken_hint">Taken by “%1$s”: %2$s</string>
+    <string name="cd_add_course">Add course</string>
+    <string name="error_course_name_blank">Course name must not be blank</string>
+    <string name="error_weeks_empty">Select at least one week</string>
+    <string name="error_weeks_beyond_term">Weeks exceed the term</string>
+    <string name="error_weeks_beyond_term_course">“%1$s” would run until %2$s, past the term (this term has %3$d weeks) — shorten its weeks or move the term end</string>
+    <string name="error_term_end_course">“%1$s” would last run on %2$s, after the term end — shorten its weeks or move the term end</string>
+    <string name="error_span_out_of_range">“%1$s” spans more periods than the day has — pick another end period</string>
+    <string name="error_paste_span_out_of_range">This course spans %1$d periods and does not fit here — try a cell higher up</string>
+    <string name="error_grid_conflict">Conflicts with “%1$s”</string>
+    <string name="error_alternate_weeks_taken">Those weeks are taken by an alternating course</string>
+
+    <!-- Schedule switcher sheet -->
+    <string name="switcher_export">Export</string>
+    <string name="switcher_import">Import</string>
+    <string name="switcher_new">New Schedule</string>
+    <string name="switcher_new_action">New</string>
+    <string name="switcher_title">Switch Schedule</string>
+    <string name="switcher_close">Close</string>
+    <string name="switcher_delete_title">Delete Schedule</string>
+    <string name="switcher_delete_message">“%1$s” and all of its courses will be deleted. This cannot be undone.</string>
+    <string name="date_cn_format">%2$d/%3$d/%1$d</string>
+    <string name="date_hyphen_format">%1$d-%2$d-%3$d</string>
+    <string name="date_slash_format">%1$d/%2$d/%3$d</string>
+    <string name="switcher_date_range">%1$s – %2$s</string>
+    <string name="switcher_discard_title">Discard unsaved changes?</string>
+    <string name="switcher_discard_message">Switching will discard your unsaved edits</string>
+    <string name="switcher_discard_confirm">Discard &amp; switch</string>
+    <string name="switcher_discard_cancel">Cancel</string>
+    <string name="import_read_failed">Failed to read file</string>
+    <string name="error_import_format">Invalid file format</string>
+    <string name="error_import_version">Unsupported file version</string>
+    <string name="error_import_kind">Not a schedule file</string>
+
+    <!-- Import schedule sheet -->
+    <string name="import_sheet_title">Import Schedule</string>
+    <string name="import_json_label">Import from JSON File</string>
+    <string name="import_json_desc">Classpp-format JSON files only</string>
+    <string name="import_clipboard_label">Import from Clipboard</string>
+    <string name="import_clipboard_desc">Copy the JSON contents, then tap to import</string>
+    <string name="import_wakeup_label">Import from Wakeup Share Code</string>
+    <string name="import_wakeup_desc">Enter a Wakeup schedule share code to import</string>
+    <string name="import_clipboard_empty">Nothing to import from the clipboard</string>
+    <string name="import_wakeup_sheet_title">Import via Wakeup Code</string>
+    <string name="import_wakeup_field_label">Share code</string>
+    <string name="import_wakeup_field_hint">Paste a Wakeup share code or the full share text</string>
+    <string name="import_wakeup_action">Import</string>
+    <string name="import_wakeup_running">Fetching the Wakeup schedule…</string>
+    <string name="import_wakeup_confirm_title">Import Wakeup Schedule</string>
+    <string name="import_wakeup_confirm_message">%1$d courses parsed; a new schedule “%2$s” will be created.</string>
+    <string name="import_wakeup_default_name">Wakeup Schedule</string>
+    <string name="error_wakeup_key_invalid">No valid share code found</string>
+    <string name="error_wakeup_script">Couldn’t fetch the adapter script. Check your network and retry</string>
+    <string name="error_wakeup_timeout">Import timed out. Please retry</string>
+    <string name="error_wakeup_no_courses">No courses parsed</string>
+
+    <!-- Tag choosing card -->
+    <string name="tag_choosing_input_hint">Tap to add a tag</string>
+    <string name="tag_choosing_course_title">Course tags</string>
+
+    <!-- Color select card -->
+    <string name="color_select_title">Choose Color</string>
+
+    <!-- Todo list sections -->
+    <string name="todo_section_pinned">Pinned</string>
+    <string name="todo_section_incomplete">Incomplete</string>
+    <string name="todo_section_completed">Completed</string>
+    <string name="todo_section_overdue">Overdue</string>
+    <string name="todo_section_archived">Archived</string>
+    <string name="todo_section_trash">Recently Deleted</string>
+    <!-- Empty states for the special todo sections (top-bar first pill) -->
+    <string name="todo_empty_completed">No completed todos yet</string>
+    <string name="todo_empty_incomplete">All todos are completed</string>
+    <string name="todo_empty_overdue">No overdue todos</string>
+    <string name="todo_empty_pinned">No pinned todos yet</string>
+    <string name="todo_empty_archived">No archived todos yet</string>
+    <string name="todo_empty_trash">Nothing recently deleted</string>
+    <string name="todo_error_save_failed">Save failed, please try again later</string>
+
+    <string name="todo_detail_title">Todo Details</string>
+    <!-- Todo details sheet: title-row more menu -->
+    <string name="todo_menu_add_to_calendar">Add to calendar</string>
+    <string name="todo_menu_countdown_start">Start countdown</string>
+    <string name="todo_menu_countdown_stop">Stop countdown</string>
+    <!-- NoteCard left countdown: unit and "overdue" prefix. Quoted values keep the spaces
+         English needs around the number; the Chinese strings carry no space instead. -->
+    <string name="todo_countdown_overdue">"Overdue "</string>
+    <string name="todo_countdown_day_unit">" days"</string>
+    <string name="todo_detail_time_label">Time</string>
+    <!-- Todo details sheet: more info section -->
+    <string name="todo_section_more_info">More info</string>
+    <!-- Repeat info group (TodoDetailSheet): repeat type + completion/overdue stats of the virtual occurrence series -->
+    <string name="todo_section_repeat">Repeat</string>
+    <string name="todo_detail_repeat_type">Repeat type</string>
+    <string name="todo_detail_completed_count">Completed</string>
+    <string name="todo_detail_overdue_count">Overdue</string>
+    <string name="todo_count_times">%1$d times</string>
+    <string name="todo_detail_group_label">Group</string>
+    <string name="todo_created_label">Created</string>
+    <string name="todo_completed_label">Completed</string>
+    <!-- Todo details sheet: steps section (list + add-step row; dialog shares the action label) -->
+    <string name="todo_section_steps">Steps</string>
+    <string name="todo_step_add">Add step</string>
+    <string name="todo_step_create_hint">Enter step name</string>
+    <!-- Edit todo sheet: delete confirmation (soft delete: the item moves to Recently Deleted) -->
+    <string name="todo_delete_title">Delete Todo</string>
+    <string name="todo_delete_message">“%1$s” will be moved to Recently Deleted.</string>
+    <!-- Todo card swipe actions (NoteCard swipe layer): action card accessibility labels and result toasts -->
+    <string name="todo_swipe_delete">Delete</string>
+    <string name="todo_swipe_pin">Pin</string>
+    <string name="todo_swipe_unpin">Unpin</string>
+    <!-- NoteCard deleted style (Recently Deleted): right-side restore button; swipe left to purge -->
+    <string name="todo_restore">Restore</string>
+    <string name="todo_swipe_purge">Delete permanently</string>
+    <string name="toast_todo_deleted">Deleted</string>
+    <string name="toast_todo_restored">Restored</string>
+    <string name="toast_todo_purged">Permanently deleted</string>
+    <string name="toast_todo_step_deleted">Step deleted</string>
+    <string name="toast_todo_pinned">Pinned</string>
+    <string name="toast_todo_unpinned">Unpinned</string>
+    <!-- New todo sheet: section titles and form fields -->
+    <string name="todo_section_reminder">Reminders &amp; priority</string>
+    <string name="todo_section_date_time">Date &amp; time</string>
+    <string name="todo_section_tags">Tags</string>
+    <string name="todo_section_more">More</string>
+    <string name="todo_location_label">Location</string>
+    <string name="todo_location_hint">Location</string>
+    <string name="todo_note_hint">Tap to add a note</string>
+    <!-- Time kind three options (RowChoiceCard) -->
+    <string name="todo_time_none">None</string>
+    <string name="todo_time_all_day">All day</string>
+    <string name="todo_time_period">Time range</string>
+    <string name="todo_error_dates_required">Select a date first</string>
+
+    <!-- Todo urgency -->
+    <string name="urgency_critical">Critical</string>
+    <string name="urgency_high">Very urgent</string>
+    <string name="urgency_medium">Urgent</string>
+    <string name="urgency_low">Not urgent</string>
+    <string name="urgency_none">None</string>
+
+    <!-- Todo sort menu -->
+    <string name="sort_created">Time</string>
+    <string name="sort_deadline">Deadline</string>
+    <string name="sort_urgency">Urgency</string>
+    <string name="sort_name">Name</string>
+    <string name="sort_ascending">Ascending</string>
+    <string name="sort_descending">Descending</string>
+
+    <!-- Date selection card -->
+    <string name="date_card_label">Date</string>
+    <string name="date_card_none">None</string>
+    <string name="date_card_today">Today</string>
+    <string name="date_card_tomorrow">Tomorrow</string>
+    <string name="date_card_day_after_tomorrow">Day after tomorrow</string>
+    <string name="date_card_yesterday">Yesterday</string>
+    <string name="date_card_day_before_yesterday">Day before yesterday</string>
+    <string name="date_card_custom">Custom</string>
+    <string name="date_card_custom_date">Custom date</string>
+    <string name="date_card_repeat">Repeat</string>
+    <string name="repeat_daily">Every day</string>
+    <string name="repeat_weekly">Every week</string>
+    <string name="repeat_monthly">Every month</string>
+    <string name="repeat_yearly">Every year</string>
+    <string name="repeat_none">No repeat</string>
+    <string name="repeat_custom_summary">Every %1$d %2$s</string>
+    <!-- Repeat settings sheet (RepeatSettingsSheet) -->
+    <string name="repeat_custom_section">Custom repeat</string>
+    <string name="repeat_frequency">Frequency</string>
+    <string name="repeat_every">Every</string>
+    <string name="repeat_every_desc">Repeats once every N units</string>
+    <string name="repeat_unit_day">day</string>
+    <string name="repeat_unit_week">week</string>
+    <string name="repeat_unit_month">month</string>
+    <string name="repeat_unit_year">year</string>
+    <string name="repeat_interval_title">Repeat cycle</string>
+    <string name="repeat_marks_required">Select at least one date</string>
+    <string name="repeat_month_mark">%1$d mo.</string>
+    <string name="repeat_end_title">End</string>
+    <string name="repeat_end_never">Never</string>
+    <string name="repeat_end_type_date">On a date</string>
+    <string name="repeat_end_type_count">After a number of times</string>
+    <string name="repeat_end_date_row">End date</string>
+    <string name="repeat_end_date_desc">Repeats stop before this date</string>
+    <string name="repeat_end_count_row">Repeat count</string>
+    <string name="repeat_end_count_desc">Repeats stop after this many times</string>
+    <string name="repeat_end_count_value">%1$d times</string>
+    <string name="repeat_unit_count">times</string>
+    <string name="repeat_end_invalid">The end date is too early. Please choose a later date</string>
+    <string name="repeat_summary_until">%1$s · until %2$s</string>
+    <string name="repeat_summary_count">%1$s · %2$d times total</string>
+
+    <!-- Deadline card (DeadlineCard): single-tap picker row -->
+    <string name="deadline_card_label">Deadline</string>
+    <string name="deadline_card_none">None</string>
+    <string name="deadline_card_time_title">Due Time</string>
+    <string name="deadline_card_clear">Clear</string>
+    <!-- Deadline settings sheet (DeadlineSettingsSheet) -->
+    <string name="deadline_sheet_enable">Set deadline</string>
+    <string name="deadline_sheet_enable_desc">Apply this date to every cycle of the repeat</string>
+    <string name="deadline_sheet_time">Time</string>
+    <string name="deadline_sheet_repeat_section">Repeating todo deadline</string>
+    <string name="deadline_sheet_repeat_toggle">Before the next repeat starts</string>
+    <string name="deadline_sheet_repeat_toggle_desc">When enabled, the deadline of a repeating todo automatically moves to just before the next repeat starts. Only applies once a repeat is set</string>
+    <string name="deadline_sheet_repeat_before">Before start</string>
+    <string name="deadline_sheet_repeat_days_value">%1$d days</string>
+    <string name="deadline_sheet_repeat_days_title">Days before start</string>
+    <!-- Deadline display text following the repeat (entry row / detail row): fixed date replaced by per-cycle conversion -->
+    <string name="deadline_before_repeat_value">%1$d days before the next repeat starts</string>
+
+    <!-- Time selection sheet (BottomTimeSelectCard): hour/minute wheels -->
+    <string name="time_select_title">Select Time</string>
+    <string name="time_unit_hour">Hour</string>
+    <string name="time_unit_minute">Minute</string>
+
+    <!-- Date selection sheet (BottomDateSelectCard): year/month/day wheels -->
+    <string name="date_select_title">Select Date</string>
+    <string name="date_unit_year">Year</string>
+    <string name="date_unit_month">Month</string>
+    <string name="date_unit_day">Day</string>
+
+    <!-- Day screen (DayScreen): top hint & background-picker a11y -->
+    <string name="day_swipe_hint">Swipe up to start a new day</string>
+    <!-- Hint variants when viewing a past / future day -->
+    <string name="day_swipe_hint_past">Swipe up to revisit this day</string>
+    <string name="day_swipe_hint_future">Swipe up to peek at this day</string>
+    <string name="cd_day_background">Change background image</string>
+    <string name="cd_day_card_back">Back to calendar</string>
+
+    <!-- Day image sheet (DayImageSheet): import on the left / centered title / close on the right -->
+    <string name="day_image_sheet_title">Choose Image</string>
+    <string name="day_image_import">Import</string>
+    <string name="day_image_close">Close</string>
+    <string name="day_image_empty_hint">No images yet — tap “Import” to add from your gallery</string>
+    <string name="day_image_delete">Delete</string>
+    <string name="day_image_random_title">Daily Shuffle</string>
+    <string name="day_image_random_desc">Pick a random image as the background each day</string>
+    <string name="day_image_parallax_title">Wallpaper Perspective</string>
+    <string name="day_image_parallax_desc">Background shifts subtly as you tilt your phone</string>
+</resources>
