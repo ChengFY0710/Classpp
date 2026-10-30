@@ -72,6 +72,10 @@
     <!-- 重复信息组（TodoDetailSheet）：重复类型 + 虚拟独立待办序列的完成/逾期统计 -->
     <string name="todo_section_repeat">重复</string>
     <string name="todo_detail_repeat_type">重复类型</string>
+    <string name="todo_detail_repeat_rule">重复规则</string>
+    <string name="todo_detail_completion">完成情况</string>
+    <string name="todo_completion_rate">完成率</string>
+    <string name="todo_completion_percent">%1$d%%</string>
     <string name="todo_detail_completed_count">完成次数</string>
     <string name="todo_detail_overdue_count">逾期次数</string>
     <string name="todo_count_times">%1$d 次</string>
@@ -129,6 +133,7 @@
     <string name="date_title_format">%1$s %2$s</string>
     <!-- DayCalendar（日历卡）底栏：选中非今天时的回跳按钮 -->
     <string name="back_to_today">回到今天</string>
+    <string name="back_to_month">回到本月</string>
     <string name="back_to_current_week">返回本周</string>
     <string name="cd_section_collapse">收起</string>
     <string name="cd_section_expand">展开</string>
@@ -480,8 +485,12 @@
     <string name="repeat_end_count_row">重复次数</string>
     <string name="repeat_end_count_desc">重复达该次数后停止</string>
     <string name="repeat_end_count_value">%1$d 次</string>
+    <string name="repeat_end_date_value">至%1$s</string>
+    <string name="repeat_end_count_summary">共%1$d次</string>
     <string name="repeat_unit_count">次</string>
     <string name="repeat_end_invalid">结束日期过早，请选择更晚的日期</string>
+    <string name="repeat_merge_title">重复待办合并</string>
+    <string name="repeat_merge_desc">开启后重复待办合并显示，关闭后逾期或完成时将拆分为多条。长周期建议开启，防止渲染过多重复待办导致卡顿。</string>
     <string name="repeat_summary_until">%1$s · 至%2$s</string>
     <string name="repeat_summary_count">%1$s · 共%2$d次</string>
 

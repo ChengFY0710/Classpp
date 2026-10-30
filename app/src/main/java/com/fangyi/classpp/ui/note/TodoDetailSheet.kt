@@ -51,6 +51,8 @@ import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.PopupMenuPopup
 import com.fangyi.classpp.ui.components.PopupMenuSection
+import com.fangyi.classpp.ui.components.SettingsCard
+import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetInfoCard
 import com.fangyi.classpp.ui.components.SheetInfoEntry
 import com.fangyi.classpp.ui.components.SheetTextArea
@@ -58,6 +60,8 @@ import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.SwipeAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.components.TagChip
+import com.fangyi.classpp.ui.components.customRuleText
+import com.fangyi.classpp.ui.components.endConditionText
 import com.fangyi.classpp.ui.components.flagColor
 import com.fangyi.classpp.ui.components.flagLabel
 import com.fangyi.classpp.ui.components.labelText
@@ -93,7 +97,9 @@ private val TitleMenuGap = 12.dp
  * 空值显灰「无」）、备注输入（[SheetTextArea]）、「步骤」分组（列表走 [NoteCard]
  * 右侧勾选框、支持向右滑呼出删除动作卡（双阈值手势见
  * [com.fangyi.classpp.ui.components.NoteCardSwipeLayer]），其下是等高的
- * 「添加步骤」行卡 [AddStepCard]）、条件渲染的「重复」分组与带标题的「更多信息」
+ * 「添加步骤」行卡 [AddStepCard]）、条件渲染的「重复」分组（[SheetInfoCard] 只读信息行：
+ * 重复类型 /（自定义时）重复规则 / 结束，其下一张 [SettingsCard] 的「完成情况」导航行
+ * 唤起 [TodoCompletionSheet]——逐日完成状态日历 + 完成率/次数卡）与带标题的「更多信息」
  * 分组（[SheetInfoCard] 时刻戳：分组、创建时间常显、完成时间仅已完成时渲染）。
  *
  * 信息行行首各带 24dp onSurface 图标（[InfoRowIcon]），值色两处按紧急度取色、与
@@ -133,6 +139,9 @@ internal fun TodoDetailSheet(
     onStepToggle: (String, Boolean) -> Unit,
     // 侧滑删除一条步骤（展开后再拖到完全变色松手才执行，无确认框）；由宿主落库、失败 Toast
     onStepDelete: (stepId: String) -> Unit,
+    // 完成情况浮层里点绿/红球切换某一期的完成状态（true = 补完成、false = 取消完成）；
+    // 由宿主落库（repository.setOccurrenceCompleted），失败 Toast
+    onOccurrenceCompletedChange: (date: IsoDate, completed: Boolean) -> Unit,
     // 开关列表卡倒计时（true = 开启）；落库后本层菜单文案随传入的 todo 自动回流
     onCountdownToggle: (Boolean) -> Unit,
     // 当前视图是否提供倒计时开关：收集箱卡不渲染倒计时（TodoInboxCard 组件口径），
@@ -150,6 +159,10 @@ internal fun TodoDetailSheet(
     var stepDraft by remember { mutableStateOf("") }
     var stepRequested by remember { mutableStateOf(false) }
     var stepMounted by remember { mutableStateOf(false) }
+    // 完成情况浮层的两段式挂载（同步骤弹卡）：requested = 可见请求，mounted 在退场播完
+    // 前保持内容在场；打开时详情缩小后退（covered 见 OverlaySheet 参数）
+    var completionRequested by remember { mutableStateOf(false) }
+    var completionMounted by remember { mutableStateOf(false) }
     // 标题行更多菜单的展开态；倒计时开关是持久化状态（Todo.countdown），这里只读不存
     var moreExpanded by remember { mutableStateOf(false) }
     // haze 采样源：自建后同时交给本浮层容器（顶栏磨砂）与叠在其上的输入弹卡
@@ -191,7 +204,8 @@ internal fun TodoDetailSheet(
         ),
         onDismiss = closeWithSave,
         visible = visible,
-        covered = covered,
+        // 编辑浮层或完成情况浮层盖上来时本层缩小后退（透传 OverlaySheet 的分层动效）
+        covered = covered || completionRequested,
         onDismissed = onDismissed,
         // 采样源交给容器（见 sheetHazeState 声明处）：顶栏磨砂与叠层弹卡的背景模糊同源
         hazeState = sheetHazeState,
@@ -339,27 +353,36 @@ internal fun TodoDetailSheet(
                 )
             }
             // 重复：仅设置过重复的待办显示（重复待办 = 一组截止日期不同的虚拟独立待办，
-            // 统计按 repeat 规则展开的应完成日期序列计）——类型卡 + 计数卡各一张；
-            // 逾期数走展示口径（落账数 + 水位后到昨天的实时补算，跨天驻留不用等写库刷新）
+            // 统计按 repeat 规则展开的应完成日期序列计）——信息卡（只读行：类型 / 自定义时
+            // 的完整策略 / 结束）+ 完成情况入口卡；逐日状态与计数在完成情况浮层里看
             if (todo.repeat.type != RepeatType.None) {
+                val repeatTypeText = todo.repeat.type.labelText()
+                val repeatRuleText = todo.repeat.customRuleText()
+                val repeatEndText = todo.repeat.endConditionText()
+                val repeatTypeLabel = stringResource(R.string.todo_detail_repeat_type)
+                val repeatRuleLabel = stringResource(R.string.todo_detail_repeat_rule)
+                val repeatEndLabel = stringResource(R.string.repeat_end_title)
                 CardSection(title = stringResource(R.string.todo_section_repeat)) {
+                    // 原信息展示沿用 SheetInfoCard：label 左、值右（fieldValue 角色色）
                     SheetInfoCard(
-                        entries = listOf(
-                            SheetInfoEntry(
-                                label = stringResource(R.string.todo_detail_repeat_type),
-                                value = todo.repeat.type.labelText(),
-                            ),
-                        ),
+                        entries = buildList {
+                            add(SheetInfoEntry(label = repeatTypeLabel, value = repeatTypeText))
+                            // 自定义档位追加完整策略（每N单位 + 方格标记）；预设档位不出现该行
+                            if (repeatRuleText != null) {
+                                add(SheetInfoEntry(label = repeatRuleLabel, value = repeatRuleText))
+                            }
+                            add(SheetInfoEntry(label = repeatEndLabel, value = repeatEndText))
+                        },
                     )
-                    SheetInfoCard(
-                        entries = listOf(
-                            SheetInfoEntry(
-                                label = stringResource(R.string.todo_detail_completed_count),
-                                value = stringResource(R.string.todo_count_times, todo.completedOccurrences.size),
-                            ),
-                            SheetInfoEntry(
-                                label = stringResource(R.string.todo_detail_overdue_count),
-                                value = stringResource(R.string.todo_count_times, todo.overdueOccurrences.size),
+                    // 完成情况入口：SettingsCard 导航行（尾部蓝色箭头）
+                    SettingsCard(
+                        items = listOf(
+                            SettingsCardItem.Nav(
+                                label = stringResource(R.string.todo_detail_completion),
+                                onClick = {
+                                    completionMounted = true
+                                    completionRequested = true
+                                },
                             ),
                         ),
                     )
@@ -413,6 +436,17 @@ internal fun TodoDetailSheet(
                 stepRequested = false
                 onStepAdd(stepDraft.trim())
             },
+        )
+    }
+    // 完成情况浮层：画在本浮层之后（组合顺序即绘制顺序），叠在详情之上；本层 covered
+    // 同步缩小后退。纯展示浮层，关闭只请求、播完退场才卸载（两段式）
+    if (completionMounted) {
+        TodoCompletionSheet(
+            visible = completionRequested,
+            todo = todo,
+            onOccurrenceCompletedChange = onOccurrenceCompletedChange,
+            onDismiss = { completionRequested = false },
+            onDismissed = { completionMounted = false },
         )
     }
 }

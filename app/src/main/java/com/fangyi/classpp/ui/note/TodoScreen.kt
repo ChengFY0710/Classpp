@@ -1155,6 +1155,14 @@ fun TodoScreen(
                         }
                     }
                 },
+                // 完成情况浮层里的绿/红球切换：按所点分期落库（补完成先归账逾期、取消完成
+                // 出完成集合，仓库口径见 setOccurrenceCompleted）；Err Toast 提示
+                onOccurrenceCompletedChange = { date, completed ->
+                    scope.launch {
+                        val result = repository.setOccurrenceCompleted(detail.id, date, completed)
+                        if (result is TodoOpResult.Err) AppToasts.show(context, saveFailedMessage)
+                    }
+                },
                 // 倒计时开关：落库后列表卡左区显示剩余天数（详情菜单文案随仓库回流自动切换）；
                 // 收集箱视图打开时整项置灰（该视图的卡不渲染倒计时，见 detailCountdownAvailable）
                 countdownAvailable = detailCountdownAvailable,

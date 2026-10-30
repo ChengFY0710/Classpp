@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -76,6 +77,22 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
+ * 单日完成状态球（仅本月生效；今天/选中日有状态时状态色优先）：
+ * [Completed] = 已完成（urgentGreen 底 + 白字）、[Overdue] = 已逾期未完成（error 底 + 白字）。
+ * 前后月补位日期不上状态色（保持灰字 + 小蓝球）。
+ */
+enum class DayCalendarDayStatus { Completed, Overdue }
+
+/**
+ * 底栏回跳按钮的行为：
+ * - [Today]（默认）：选中日非今天时显示「回到今天」，点击只回调 `onBackToToday`，
+ *   由宿主把选中日改回今天（既有行为，既有调用方零变化）；
+ * - [CurrentMonth]：展示月非今天所在月时显示「回到本月」，点击由组件把锚点收回今天
+ *   所在月，再回调 `onBackToToday`（纯浏览场景传空回调即可）。
+ */
+enum class DayCalendarBackAction { Today, CurrentMonth }
+
+/**
  * 日历卡（DayCalendar）：设计稿的月历卡片，自带白底圆角卡壳，自上而下三层——
  *
  * 一、**星期表头**：一~日（R.array.weekdays_short，周一起始），16sp SemiBold；今天所在列
@@ -84,12 +101,17 @@ import kotlinx.coroutines.launch
  *     圆球 Primary、数字 onPrimary（[onDateClick] 点选即切日，选中/取消走 150ms 背景+
  *     字色渐变，与课程编辑的周数方格同款）；今天圆球 primaryContainer、
  *     数字 primary（选中今天即回到实心 Primary）；非本月日期数字 secondaryText（圆球颜色
- *     不变）。有待办的日期（[markedDates]）在圆球下方画一枚 4dp Primary 小点——小点从
+ *     不变）。有待办的日期（[markedDates]）在圆球下方画一枚 3dp Primary 小点——小点从
  *     34dp 圆球 Box 底对齐后 offset 出球体，落在行距之间，不占布局空间、不撑开行距。
+ *     [dayStates] 给日期上完成状态色（仅本月生效，今天/选中日有状态时状态色优先）：
+ *     已完成 = urgentGreen 底 + 白字、已逾期 = error 底 + 白字；[clickableDates] 非空时
+ *     只有白名单内的日期可点（状态球切换等场景用，无状态日期不出现按压反馈）。
  * 三、**底栏**：左侧「XXXX年XX月」（无前导零）标题，右侧左右两个圆形箭头按钮（Primary）：
- *     展开态切换上/下月（日号月末收拢），折叠态切换上/下周（锚点 ±7 天）。选中非今天时
- *     标题右侧出现「回到今天」文字按钮（Primary，见 [onBackToToday]），进出场只占用标题
- *     与箭头之间的空白，不撑动底栏布局。
+ *     展开态切换上/下月（日号月末收拢），折叠态切换上/下周（锚点 ±7 天）。回跳按钮的
+ *     显示条件与点击语义见 [backAction]：默认「回到今天」（选中非今天时出现，见
+ *     [onBackToToday]），[DayCalendarBackAction.CurrentMonth] 下改为「回到本月」（展示月
+ *     非今天所在月时出现，点击把锚点收回今天所在月）；进出场只占用标题与箭头之间的空白，
+ *     不撑动底栏布局。
  *
  * **折叠**：单行周视图是月历的折叠形态，进度走 [DayCalendarFoldState]（0 = 月历，1 = 单行）。
  * 折叠进度同时驱动外框高度（整月网格高 ↔ 单行高插值，clipToBounds 裁掉滑出内容）与网格
@@ -117,8 +139,14 @@ fun DayCalendar(
     modifier: Modifier = Modifier,
     selectedDate: IsoDate? = null,
     markedDates: Set<IsoDate> = emptySet(),
+    // 日期的完成状态球（仅本月生效；今天/选中日有状态时状态色优先）；未列出的日期保持原样式
+    dayStates: Map<IsoDate, DayCalendarDayStatus> = emptyMap(),
     onDateClick: ((IsoDate) -> Unit)? = null,
+    // 可点日期白名单：null = 全部可点（既有行为）；非 null 时只有集合内日期响应点按
+    clickableDates: Set<IsoDate>? = null,
     onBackToToday: (() -> Unit)? = null,
+    // 回跳按钮行为：默认「回到今天」（既有行为）；CurrentMonth = 「回到本月」并收回锚点
+    backAction: DayCalendarBackAction = DayCalendarBackAction.Today,
     onGridRangeChange: ((firstDate: IsoDate, lastDate: IsoDate) -> Unit)? = null,
     foldState: DayCalendarFoldState? = null,
     initiallyFolded: Boolean = false,
@@ -233,11 +261,17 @@ fun DayCalendar(
 
     // 今天列高亮：展示的月/周包含今天才高亮（浏览其他月份不高亮）
     val todayColumn = today.isoDayOfWeek() - 1
+    val (todayYear, todayMonth, _) = today.yearMonthDay()
     val showsToday = if (folded) {
         anchor.mondayOfWeek() == today.mondayOfWeek()
     } else {
-        val (todayYear, todayMonth, _) = today.yearMonthDay()
         anchorYear == todayYear && anchorMonth == todayMonth
+    }
+    // 回跳按钮：默认按「选中非今天」出现（回到今天）；CurrentMonth 模式按「展示月非今天
+    // 所在月」出现（回到本月）——两种模式共用同一颗按钮与进出场动画
+    val backVisible = onBackToToday != null && when (backAction) {
+        DayCalendarBackAction.Today -> selected != today
+        DayCalendarBackAction.CurrentMonth -> anchorYear != todayYear || anchorMonth != todayMonth
     }
 
     Column(
@@ -304,6 +338,8 @@ fun DayCalendar(
                     today = today,
                     selected = selected,
                     markedDates = markedDates,
+                    dayStates = dayStates,
+                    clickableDates = clickableDates,
                     onDateClick = onDateClick,
                 )
                 swapState.value?.let { swap ->
@@ -318,6 +354,8 @@ fun DayCalendar(
                         today = today,
                         selected = selected,
                         markedDates = markedDates,
+                        dayStates = dayStates,
+                        clickableDates = clickableDates,
                         // 滑出层不响应点选：点到旧月日期会把选中跳回旧月、触发反向横滑
                         onDateClick = null,
                     )
@@ -363,20 +401,30 @@ fun DayCalendar(
             // 箭头与底栏行高都不动；触控盒定高 32dp（收敛在 NavButton 的 40dp 行内）、
             // 文字居中——字号怎么调盒子高度都不变，布局与字号彻底解耦
             AnimatedVisibility(
-                visible = onBackToToday != null && selected != today,
+                visible = backVisible,
                 enter = fadeIn(tween(Motion.FastMillis, easing = Motion.Decelerate)),
                 exit = fadeOut(tween(Motion.FastMillis, easing = Motion.Accelerate)),
             ) {
                 Box(
                     modifier = Modifier
                         .height(BackToTodayHeight)
-                        .pressClickable(BackToTodayShape) { onBackToToday?.invoke() }
+                        .pressClickable(BackToTodayShape) {
+                            // 回到本月由组件自己把锚点收回今天所在月（选中日不变，
+                            // 走不了宿主「改选中日」那条路）；回到今天仍交宿主处理
+                            if (backAction == DayCalendarBackAction.CurrentMonth) anchor = today
+                            onBackToToday?.invoke()
+                        }
                         .clip(BackToTodayShape)
                         .padding(horizontal = BackToTodayPadding),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = stringResource(R.string.back_to_today),
+                        text = stringResource(
+                            when (backAction) {
+                                DayCalendarBackAction.Today -> R.string.back_to_today
+                                DayCalendarBackAction.CurrentMonth -> R.string.back_to_month
+                            },
+                        ),
                         style = ClassppTextTokens.calendarAction,
                         color = colors.primary,
                     )
@@ -556,8 +604,10 @@ private fun WeekdayHeader(
 
 /**
  * 单个日期：34dp 圆球 + 数字。选中实心 Primary、数字 onPrimary；今天未选中 primaryContainer
- * 淡底、数字 primary；[marked] 时球下画 4dp Primary 小点（不占布局空间）。选中/取消时
- * 背景与字色各走一条渐变（[Motion.FastMillis] 先快后慢，与课程编辑的周数方格同节奏）。
+ * 淡底、数字 primary；[marked] 时球下画 3dp Primary 小点（不占布局空间）。[status] 为
+ * 完成状态球（仅本月生效；今天/选中日有状态时状态色优先）：已完成 urgentGreen 底 + 白字、
+ * 已逾期 error 底 + 白字；[clickable] = false 时不挂点按（无按压反馈）。背景与字色各走一条
+ * 渐变（[Motion.FastMillis] 先快后慢，与课程编辑的周数方格同节奏）。
  */
 @Composable
 private fun DayCell(
@@ -566,14 +616,21 @@ private fun DayCell(
     isToday: Boolean,
     isSelected: Boolean,
     marked: Boolean,
+    status: DayCalendarDayStatus?,
+    clickable: Boolean,
     onClick: ((IsoDate) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
+    // 状态色只上在本月日期：补位日期保持灰字 + 小点；今天/选中日有状态时状态色优先
+    //（完成情况浮层要能看到当天与提前完成的记录），无状态时仍按今天/选中样式渲染
+    val statusBall = status?.takeIf { inMonth }
     // 背景/字色各走一条渐变：点选渐变变蓝、再点渐变回底色，字色同步过渡
     //（Motion.FastMillis 先快后慢，与课程编辑的周数方格同一节奏）
     val ballColor by animateColorAsState(
         targetValue = when {
+            statusBall == DayCalendarDayStatus.Completed -> MaterialTheme.classppColors.urgentGreen
+            statusBall == DayCalendarDayStatus.Overdue -> colors.error
             isSelected -> colors.primary
             isToday -> colors.primaryContainer
             else -> colors.background
@@ -583,6 +640,8 @@ private fun DayCell(
     )
     val labelColor by animateColorAsState(
         targetValue = when {
+            // 状态球底上恒白（规范 6.5 例外：绿/红状态球文字）
+            statusBall != null -> Color.White
             isSelected -> colors.onPrimary
             isToday -> colors.primary
             !inMonth -> MaterialTheme.classppColors.secondaryText
@@ -596,7 +655,7 @@ private fun DayCell(
             modifier = Modifier
                 .size(BallSize)
                 .then(
-                    if (onClick != null) {
+                    if (onClick != null && clickable) {
                         Modifier.pressClickable(shape = CircleShape) { onClick(date) }
                     } else {
                         Modifier
@@ -641,6 +700,8 @@ private fun MonthGrid(
     today: IsoDate,
     selected: IsoDate,
     markedDates: Set<IsoDate>,
+    dayStates: Map<IsoDate, DayCalendarDayStatus>,
+    clickableDates: Set<IsoDate>?,
     onDateClick: ((IsoDate) -> Unit)?,
 ) {
     Column(
@@ -659,6 +720,8 @@ private fun MonthGrid(
                             isToday = date == today,
                             isSelected = date == selected,
                             marked = date in markedDates,
+                            status = dayStates[date],
+                            clickable = clickableDates == null || date in clickableDates,
                             onClick = onDateClick,
                             modifier = Modifier.weight(1f),
                         )

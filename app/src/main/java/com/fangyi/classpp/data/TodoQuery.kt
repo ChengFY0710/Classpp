@@ -135,22 +135,26 @@ fun Todo.isOverdue(today: IsoDate, nowMinute: Int): Boolean {
 }
 
 /**
- * 重复待办的列表展开（显示层的"虚拟独立待办"）：未完成的重复待办替换为一组按规则展开的
- * 可见分期条目（Todo 副本——同 id、`dates` 换成分期日期、`completed` 标分期完成态），
- * 其余待办原样透传。分组、排序、勾选路由都在副本上进行（勾选经回调按 repeat 路由回
+ * 重复待办的列表展开（显示层的"虚拟独立待办"）：未完成的重复待办替换为可见条目
+ * （Todo 副本——同 id、`dates` 换成分期日期、`completed` 标分期完成态），其余待办
+ * 原样透传。分组、排序、勾选路由都在副本上进行（勾选经回调按 repeat 路由回
  * setOccurrenceCompleted）。
  *
- * 可见窗口跟随 [today] 动态变化、按时间顺序推进：
- * - 已完成分期：每期一条 `completed = true` 副本（列表落"已完成"组）；
- * - 有拖欠（应完成日期 ≤ 今天的未完成分期）时：只显示这些拖欠期——"下一个"不出现，
- *   按顺序补完拖欠后窗口才前移；
- * - 无拖欠时：显示未来最近的一期（"下一个"）——完成它自动再前移到再下一期；从已完成
- *   取消它则窗口回退到它（再下一期隐藏）。
+ * 展开口径由 [RepeatRule.merge] 切换：
+ * - **合并（默认开）**：整条系列只出一条卡，显示今天起（含今天）最近一期未完成分期——
+ *   过去的已完成/拖欠期不再逐期成卡（"过去的就过去吧"），完成当期自动前移到下一期；
+ *   系列走完（次数/日期档到头）时保留最后一期（完成态照实），整条待办不从列表消失；
+ * - **拆分**：按下面逐期展开——
+ *   - 已完成分期：每期一条 `completed = true` 副本（列表落"已完成"组）；
+ *   - 有拖欠（应完成日期 ≤ 今天的未完成分期）时：只显示这些拖欠期——"下一个"不出现，
+ *     按顺序补完拖欠后窗口才前移；
+ *   - 无拖欠时：显示未来最近的一期（"下一个"）——完成它自动再前移到再下一期；从已完成
+ *     取消它则窗口回退到它（再下一期隐藏）。
  *
  * 「下一次重复开始前」的逐期折算：开着 [Todo.deadlineBeforeRepeat] 的重复待办，每条副本的
  * 截止日期经 [withOccurrenceDeadline] 改写为「下一期开始日期提前 N 天」（时刻沿用）——
  * 卡片文案、倒计时、逾期判定、排序过滤都读副本的截止，自动跟随；存储的原始截止不动
- * （仅作时刻与开关的载体）。
+ * （仅作时刻与开关的载体）。合并口径同样生效。
  */
 fun List<Todo>.expandRepeatOccurrences(today: IsoDate): List<Todo> = buildList {
     for (todo in this@expandRepeatOccurrences) {
@@ -164,6 +168,11 @@ fun List<Todo>.expandRepeatOccurrences(today: IsoDate): List<Todo> = buildList {
             continue
         }
         val completed = todo.completedOccurrences.toSet()
+        // 合并口径：整条系列只出一条滚动卡（过去的就过去吧）
+        if (todo.repeat.merge) {
+            addMergedOccurrence(todo, anchor, today, completed)
+            continue
+        }
         // 已完成分期：整期进"已完成"（含规则修改后不再是合法分期的历史日期——记录不丢）
         for (date in todo.completedOccurrences) {
             add(todo.copy(completed = true, dates = listOf(date)).withOccurrenceDeadline(anchor, date))
@@ -186,6 +195,31 @@ fun List<Todo>.expandRepeatOccurrences(today: IsoDate): List<Todo> = buildList {
 }
 
 /**
+ * 合并口径的单条副本：今天起（含今天）最近一期未完成分期；系列走完（次数/日期档到头）
+ * 或未来期全部已完成时，回退到最后一期（完成态照实），保证整条待办始终有一张入口卡，
+ * 不因合并从列表消失。逾期/已完成的历史分期不再逐期成卡。
+ */
+private fun MutableList<Todo>.addMergedOccurrence(
+    todo: Todo,
+    anchor: IsoDate,
+    today: IsoDate,
+    completed: Set<IsoDate>,
+) {
+    // nextOccurrenceAfter 起点含端点：传 today 即「今天起（含）」，skip 跳过已完成期
+    val date = todo.repeat.nextOccurrenceAfter(anchor, today, skip = completed)
+        // 系列走完或未来期全部已完成：保留最后一期，待办不从列表消失
+        ?: todo.repeat.occurrencesBetween(anchor, anchor, today + 1).lastOrNull()
+        ?: return
+    add(
+        todo.copy(
+            // 完成态照实（回退到最后一期时该期可能已完成——进"已完成"组）
+            completed = date in completed,
+            dates = listOf(date),
+        ).withOccurrenceDeadline(anchor, date),
+    )
+}
+
+/**
  * 「下一次重复开始前」的逐期截止折算：该期的截止日期 = 下一期开始日期提前
  * [Todo.deadlineBeforeDays] 天（时刻沿用已设的截止时刻）；不早于该期自身日期——多标记的
  * 每周规则相邻间隔可能小于周期上限，提前天数会越过期日，此时收拢到期日当天。
@@ -199,6 +233,22 @@ fun Todo.withOccurrenceDeadline(anchor: IsoDate, date: IsoDate): Todo {
     val next = repeat.nextOccurrenceAfter(anchor, date + 1) ?: return this
     val adjusted = next - deadlineBeforeDays
     return copy(deadlineDate = if (adjusted.epochDay < date.epochDay) date else adjusted)
+}
+
+/**
+ * 展示口径的逾期分期：落账集合 + 锚日到今天（不含）之间尚未完成、尚未落账的分期。
+ *
+ * 仓库只在写库时结算逾期（TodoRepository.sweepOverdue），浮层跨天驻留或长时间不操作时，
+ * 界面靠这份实时补算就能看到新逾期，不用等下一次写库。迟到补完成不撤销已落账拖欠——
+ * 完成集合只把实时补算部分排除在外，落账集合原样保留（与仓库口径一致）。
+ */
+fun Todo.displayOverdueOccurrences(today: IsoDate): List<IsoDate> {
+    if (repeat.type == RepeatType.None) return overdueOccurrences
+    val anchor = dates.minByOrNull { it.epochDay } ?: return overdueOccurrences
+    val known = overdueOccurrences.toSet() + completedOccurrences.toSet()
+    val missed = repeat.occurrencesBetween(anchor, anchor, today).filter { it !in known }
+    if (missed.isEmpty()) return overdueOccurrences
+    return (overdueOccurrences + missed).distinct().sortedBy { it.epochDay }
 }
 
 /**

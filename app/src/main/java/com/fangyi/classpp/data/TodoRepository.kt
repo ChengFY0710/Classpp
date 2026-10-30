@@ -173,7 +173,8 @@ class TodoRepository internal constructor(
      * 重复规则消洗（导入的外来数据可能越界）：预设档位不带自定义参数——unit/interval/marks
      * 重置为默认值，**类型原样保留**；自定义档位间隔夹紧 1..99、方格标记按单位合法域剔除
      * （天的规则无方格语义，标记恒清空）。结束条件只随重复存在：无重复强制归「永不」，
-     * 日期档缺日期回退「永不」，次数档缺次数兜底默认值、越界夹紧 1..99。
+     * 日期档缺日期回退「永不」，次数档缺次数兜底默认值、越界夹紧 1..99。显示层的
+     * [RepeatRule.merge] 不参与周期语义，原样保留。
      */
     private fun normalizeRepeat(rule: RepeatRule): RepeatRule {
         val endType = when {

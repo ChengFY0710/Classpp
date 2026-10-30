@@ -13,7 +13,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import com.fangyi.classpp.AppToasts
@@ -37,10 +36,12 @@ import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.labelText
+import com.fangyi.classpp.ui.components.markLabels
 import com.fangyi.classpp.ui.components.toCardText
 import com.fangyi.classpp.ui.components.unitText
 import com.fangyi.classpp.ui.motion.Expandable
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import dev.chrisbanes.haze.rememberHazeState
@@ -51,11 +52,13 @@ import java.util.TimeZone
  * 重复浮层设置页：日期卡「重复」行的二级浮层（[OverlaySheet] 叠 [OverlaySheet]，分层
  * 模式同 [GroupPickSheet]——画在表单浮层之后、自建 haze 采样源、后注册 BackHandler）。
  *
- * 结构：类型选择卡（[SelectCard] 单选：无重复/每天/每周/每月/每年/自定义）→ 结束设置卡
- * （[SettingsCard]，与类型卡同分组：随任一重复档位经 [Expandable] 展开——「结束」选择行
- * 弹菜单切 永不/日期/次数，日期档卡内追加「结束日期」导航行唤起 [BottomDateSelectCard]，
- * 次数档追加「重复次数」导航行唤起 [BottomNumberSelectCard]，卡高变化经 animateContentSize
- * 过渡）→ 选「自定义」时经 [Expandable] 展开自定义区——「自定义重复」分组（[SettingsCard]：
+ * 结构：类型选择卡（[SelectCard] 单选：无重复/每天/每周/每月/每年/自定义）→ 与类型卡同分组、
+ * 随任一重复档位经 [Expandable] 展开的两张卡：「重复待办合并」开关卡（[SettingsCard]，
+ * [SettingsCardItem.Toggle]，默认开——列表里整条系列合并成一条滚动卡，关闭则逾期/已完成
+ * 分期逐条拆分）与结束设置卡（[SettingsCard]——「结束」选择行弹菜单切 永不/日期/次数，
+ * 日期档卡内追加「结束日期」导航行唤起 [BottomDateSelectCard]，次数档追加「重复次数」
+ * 导航行唤起 [BottomNumberSelectCard]，卡高变化经 animateContentSize 过渡）→ 选「自定义」
+ * 时经 [Expandable] 展开自定义区——「自定义重复」分组（[SettingsCard]：
  * 「频率」选择行弹行内菜单切天/周/月/年；「每」导航行经 [BottomNumberSelectCard] 选 1..99
  * 的间隔）+ 方格（[SelectionGrid]，多选）：周 = 一~日、月 = 1~31、年 = 1月~12月，天无方格。
  *
@@ -151,70 +154,84 @@ internal fun RepeatSettingsSheet(
                         }
                     },
                 )
-                // 结束设置卡：与类型选择卡同分组，随任一重复档位展开/收起（结束条件只随
-                // 重复存在）。首行「结束」选择行弹菜单切档；日期/次数档在卡内追加导航行，
-                // 卡高变化经 animateContentSize 过渡（SettingsCard 是整体自绘布局，
-                // 单行无法用 Expandable窗帘式揭示，整卡尺寸动画即可）
+                // 重复待办合并开关 + 结束设置卡：与类型选择卡同分组，随任一重复档位展开/
+                // 收起（合并与结束条件只随重复存在）。合并开关决定列表口径——开 = 整条系列
+                // 一条滚动卡（过去的就过去吧），关 = 逾期/已完成分期逐条拆分
                 Expandable(expanded = draft.type != RepeatType.None) {
-                    SettingsCard(
-                        modifier = Modifier.animateContentSize(
-                            animationSpec = tween(Motion.ExpandMillis, easing = Motion.Decelerate),
-                        ),
-                        // 选择行菜单叠在本浮层上，模糊本层内容（采样源同顶栏）
-                        hazeState = sheetHazeState,
-                        items = buildList {
-                            add(
-                                SettingsCardItem.Select(
-                                    label = stringResource(R.string.repeat_end_title),
-                                    value = draft.endType.labelText(),
-                                    items = RepeatEndType.entries.map { it.ordinal to it.labelText() },
-                                    selectedId = draft.endType.ordinal,
-                                    onPick = { id ->
-                                        // 首切日期/次数档即落默认值：行上恒有具体值可看（同设计稿）
-                                        when (val picked = RepeatEndType.entries[id]) {
-                                            RepeatEndType.Date -> draft = draft.copy(
-                                                endType = picked,
-                                                endDate = draft.endDate ?: anchorDate.plusMonths(1),
-                                            )
-                                            RepeatEndType.Count -> draft = draft.copy(
-                                                endType = picked,
-                                                endCount = draft.endCount ?: REPEAT_END_COUNT_DEFAULT,
-                                            )
-                                            RepeatEndType.Never -> draft = draft.copy(endType = picked)
-                                        }
-                                    },
+                    Column(verticalArrangement = Arrangement.spacedBy(CardSectionSpacing)) {
+                        SettingsCard(
+                            items = listOf(
+                                SettingsCardItem.Toggle(
+                                    label = stringResource(R.string.repeat_merge_title),
+                                    description = stringResource(R.string.repeat_merge_desc),
+                                    checked = draft.merge,
+                                    onCheckedChange = { merge -> draft = draft.copy(merge = merge) },
                                 ),
-                            )
-                            when (draft.endType) {
-                                RepeatEndType.Date -> add(
-                                    SettingsCardItem.Nav(
-                                        label = stringResource(R.string.repeat_end_date_row),
-                                        description = stringResource(R.string.repeat_end_date_desc),
-                                        value = draft.endDate?.toCardText().orEmpty(),
-                                        onClick = {
-                                            endDateMounted = true
-                                            endDateVisible = true
+                            ),
+                        )
+                        // 结束设置卡：首行「结束」选择行弹菜单切档；日期/次数档在卡内追加
+                        // 导航行，卡高变化经 animateContentSize 过渡（SettingsCard 是整体自绘
+                        // 布局，单行无法用 Expandable窗帘式揭示，整卡尺寸动画即可）
+                        SettingsCard(
+                            modifier = Modifier.animateContentSize(
+                                animationSpec = tween(Motion.ExpandMillis, easing = Motion.Decelerate),
+                            ),
+                            // 选择行菜单叠在本浮层上，模糊本层内容（采样源同顶栏）
+                            hazeState = sheetHazeState,
+                            items = buildList {
+                                add(
+                                    SettingsCardItem.Select(
+                                        label = stringResource(R.string.repeat_end_title),
+                                        value = draft.endType.labelText(),
+                                        items = RepeatEndType.entries.map { it.ordinal to it.labelText() },
+                                        selectedId = draft.endType.ordinal,
+                                        onPick = { id ->
+                                            // 首切日期/次数档即落默认值：行上恒有具体值可看（同设计稿）
+                                            when (val picked = RepeatEndType.entries[id]) {
+                                                RepeatEndType.Date -> draft = draft.copy(
+                                                    endType = picked,
+                                                    endDate = draft.endDate ?: anchorDate.plusMonths(1),
+                                                )
+                                                RepeatEndType.Count -> draft = draft.copy(
+                                                    endType = picked,
+                                                    endCount = draft.endCount ?: REPEAT_END_COUNT_DEFAULT,
+                                                )
+                                                RepeatEndType.Never -> draft = draft.copy(endType = picked)
+                                            }
                                         },
                                     ),
                                 )
-                                RepeatEndType.Count -> add(
-                                    SettingsCardItem.Nav(
-                                        label = stringResource(R.string.repeat_end_count_row),
-                                        description = stringResource(R.string.repeat_end_count_desc),
-                                        value = stringResource(
-                                            R.string.repeat_end_count_value,
-                                            draft.endCount ?: REPEAT_END_COUNT_DEFAULT,
+                                when (draft.endType) {
+                                    RepeatEndType.Date -> add(
+                                        SettingsCardItem.Nav(
+                                            label = stringResource(R.string.repeat_end_date_row),
+                                            description = stringResource(R.string.repeat_end_date_desc),
+                                            value = draft.endDate?.toCardText().orEmpty(),
+                                            onClick = {
+                                                endDateMounted = true
+                                                endDateVisible = true
+                                            },
                                         ),
-                                        onClick = {
-                                            endCountMounted = true
-                                            endCountVisible = true
-                                        },
-                                    ),
-                                )
-                                RepeatEndType.Never -> Unit
-                            }
-                        },
-                    )
+                                    )
+                                    RepeatEndType.Count -> add(
+                                        SettingsCardItem.Nav(
+                                            label = stringResource(R.string.repeat_end_count_row),
+                                            description = stringResource(R.string.repeat_end_count_desc),
+                                            value = stringResource(
+                                                R.string.repeat_end_count_value,
+                                                draft.endCount ?: REPEAT_END_COUNT_DEFAULT,
+                                            ),
+                                            onClick = {
+                                                endCountMounted = true
+                                                endCountVisible = true
+                                            },
+                                        ),
+                                    )
+                                    RepeatEndType.Never -> Unit
+                                }
+                            },
+                        )
+                    }
                 }
             }
             // 自定义区随「自定义」档位展开/收起（高度动画，兄弟内容逐帧让位，同日期卡子行）
@@ -255,7 +272,7 @@ internal fun RepeatSettingsSheet(
                         CardSection {
                             SelectionGrid(
                                 values = draft.unit.markRange.toList(),
-                                labels = draft.unit.gridLabels(),
+                                labels = draft.unit.markLabels(),
                                 selected = draft.marks,
                                 onToggle = { mark ->
                                     draft = if (mark in draft.marks) {
@@ -333,15 +350,6 @@ private const val REPEAT_INTERVAL_MAX = 99
 /** 重复次数的可选范围（与仓库 normalize 的夹紧一致） */
 private const val REPEAT_END_COUNT_MIN = 1
 private const val REPEAT_END_COUNT_MAX = 99
-
-/** 各单位的方格标签：周 = 一~日（weekdays_short 同课表列头）、月 = 数字、年 = 「N月」 */
-@Composable
-private fun RepeatUnit.gridLabels(): List<String> = when (this) {
-    RepeatUnit.Day -> emptyList()
-    RepeatUnit.Week -> stringArrayResource(R.array.weekdays_short).toList()
-    RepeatUnit.Month -> markRange.map { it.toString() }
-    RepeatUnit.Year -> markRange.map { stringResource(R.string.repeat_month_mark, it) }
-}
 
 /** 以锚日期（自定义日期）为某单位播种方格标记：周几/几号/几月；天无方格语义 */
 private fun RepeatUnit.seedMarks(anchorDate: IsoDate): Set<Int> = when (this) {

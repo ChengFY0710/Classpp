@@ -53,6 +53,9 @@ const val REPEAT_END_COUNT_DEFAULT = 5
  *   其余档位恒 null
  * @param endCount 重复总次数（[RepeatEndType.Count] 档），1..99，系列达该期数后停止；
  *   其余档位恒 null
+ * @param merge 显示层「重复待办合并」开关（默认开）：true = 整条系列只出一条滚动卡
+ *   （见 [com.fangyi.classpp.data.expandRepeatOccurrences]），false = 逾期/已完成分期
+ *   逐条展开。不参与周期展开，归一化原样保留
  */
 @Serializable
 data class RepeatRule(
@@ -63,4 +66,5 @@ data class RepeatRule(
     val endType: RepeatEndType = RepeatEndType.Never,
     val endDate: IsoDate? = null,
     val endCount: Int? = null,
+    val merge: Boolean = true,
 )
