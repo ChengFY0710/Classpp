@@ -332,8 +332,10 @@ fun slotsWithCount(
 /**
  * 「合并相邻两小节为一大节」的预览与门控结果（纯计算，不写库）。
  *
- * [canMerge] 同时要求：至少有一对可合并、所有课程都能精确对齐、所有课程 span ≥ 2——
- * 后两条保证合并后每门课的起止时间不变，不会出现课程时间被悄悄改写。
+ * [canMerge] 同时要求：至少有一对可合并、至少有一门课程真正占用 ≥2 节、所有课程都能精确
+ * 对齐、所有课程 span ≥ 2——后两条保证合并后每门课的起止时间不变，不会出现课程时间被
+ * 悄悄改写；[hasMultiSlotCourse] 则保证合并确实有课程可重映射——空课表 / 全是单节课时
+ * 合并只是把节表缩小一半，没有意义（产品规则：没有课程占用 ≥2 节时按钮置灰）。
  */
 data class SlotMergePlan(
     val newSlots: List<TimeSlotDef>,
@@ -342,9 +344,15 @@ data class SlotMergePlan(
     val unalignedCourses: List<CourseEntry>,
     val singleSlotCourses: List<CourseEntry>,
     val newDurationMinutes: Int,
+    /**
+     * 是否存在至少一门「实际占用 ≥2 节」的课程（起止节次都落在当前节表内）。
+     * 越界的隐藏课（5 天课表里的周末课且节次已越界）不参与：它们本就不会被重映射。
+     */
+    val hasMultiSlotCourse: Boolean,
 ) {
     val canMerge: Boolean
         get() = mergedPairCount > 0 &&
+            hasMultiSlotCourse &&
             unalignedCourses.isEmpty() &&
             singleSlotCourses.isEmpty()
 }
@@ -358,7 +366,8 @@ data class SlotMergePlan(
  * - 课程映射以「起点/终点时间不变」为准：起点落在合并对的次节、或终点落在首节时
  *   无法精确对齐，计入 [SlotMergePlan.unalignedCourses] 阻断合并；
  * - span < 2 的课程一律计入 [SlotMergePlan.singleSlotCourses] 阻断（产品规则：所有
- *   课程都占用 ≥2 节时才允许合并）；
+ *   课程都占用 ≥2 节时才允许合并）；空课表或全是单节课时没有课程可重映射，合并只会
+ *   把节表缩小一半，同样阻断（[SlotMergePlan.hasMultiSlotCourse]）；
  * - 落在当前每周天数之外、且索引已越界的隐藏课（5 天课表里的周末课）原样保留、
  *   不参与阻断：校验器本就跳过它们，保留旧映射不会让可见数据变错；
  * - 新节表的「每节课时间」取各节实际时长的众数（并列取较大），它仅作后续改开始时间
@@ -402,6 +411,7 @@ fun previewSlotMerge(
     val newCourses = mutableListOf<CourseEntry>()
     val unaligned = mutableListOf<CourseEntry>()
     val singleSlot = mutableListOf<CourseEntry>()
+    var hasMultiSlotCourse = false
     for (course in courses) {
         val oldStart = course.startSlot - 1
         val oldEnd = course.endSlot - 1
@@ -410,7 +420,7 @@ fun previewSlotMerge(
             if (course.dayOfWeek <= daysPerWeek) unaligned += course else newCourses += course
             continue
         }
-        if (course.span < 2) singleSlot += course
+        if (course.span < 2) singleSlot += course else hasMultiSlotCourse = true
         val newStart = indexMap[oldStart]
         val newEnd = indexMap[oldEnd]
         val aligned = newSlots[newStart].startTime == slots[oldStart].startTime &&
@@ -444,6 +454,7 @@ fun previewSlotMerge(
         unalignedCourses = unaligned,
         singleSlotCourses = singleSlot,
         newDurationMinutes = newDuration,
+        hasMultiSlotCourse = hasMultiSlotCourse,
     )
 }
 

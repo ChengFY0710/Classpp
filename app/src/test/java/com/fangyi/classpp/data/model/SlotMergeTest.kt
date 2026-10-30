@@ -35,7 +35,8 @@ class SlotMergeTest {
 
     @Test
     fun `merges adjacent small periods into big ones`() {
-        val plan = previewSlotMerge(smallSlots, emptyList(), 5)
+        // 至少一门课真正占用 ≥2 节才允许合并（空课表没有可重映射的课程）
+        val plan = previewSlotMerge(smallSlots, listOf(course("a", startSlot = 1, span = 2)), 5)
 
         assertEquals(
             listOf(TimeSlotDef("8:00", "9:40"), TimeSlotDef("10:10", "11:50")),
@@ -43,6 +44,7 @@ class SlotMergeTest {
         )
         assertEquals(2, plan.mergedPairCount)
         assertEquals(100, plan.newDurationMinutes)
+        assertEquals(listOf(course("a", startSlot = 1, span = 1)), plan.newCourses)
         assertTrue(plan.canMerge)
     }
 
@@ -181,8 +183,28 @@ class SlotMergeTest {
     }
 
     @Test
-    fun `empty course list can merge`() {
-        assertTrue(previewSlotMerge(smallSlots, emptyList(), 5).canMerge)
+    fun `empty course list cannot merge`() {
+        // 没有课程占用 ≥2 节时合并只是把节表对半砍，没有可重映射的课程 → 阻挡
+        val plan = previewSlotMerge(smallSlots, emptyList(), 5)
+
+        assertEquals(2, plan.mergedPairCount)
+        assertFalse(plan.hasMultiSlotCourse)
+        assertFalse(plan.canMerge)
+    }
+
+    @Test
+    fun `single slot courses only cannot merge`() {
+        val courses = listOf(
+            course("a", startSlot = 1, span = 1),
+            course("b", startSlot = 3, span = 1),
+        )
+
+        val plan = previewSlotMerge(smallSlots, courses, 5)
+
+        assertEquals(2, plan.mergedPairCount)
+        assertFalse(plan.hasMultiSlotCourse)
+        assertEquals(listOf("a", "b"), plan.singleSlotCourses.map { it.id })
+        assertFalse(plan.canMerge)
     }
 
     @Test
@@ -230,13 +252,30 @@ class SlotMergeTest {
     @Test
     fun `hidden course with out of range slots is preserved and does not block`() {
         val hidden = course("hidden", startSlot = 99, span = 1, dayOfWeek = 6)
+        val visible = course("visible", startSlot = 1, span = 2)
+
+        val plan = previewSlotMerge(smallSlots, listOf(visible, hidden), daysPerWeek = 5)
+
+        assertTrue(plan.canMerge)
+        assertTrue(plan.hasMultiSlotCourse)
+        assertEquals(listOf("visible", "hidden"), plan.newCourses.map { it.id })
+        // 越界隐藏课原样保留；可见课按合并对重映射
+        assertEquals(hidden, plan.newCourses.single { it.id == "hidden" })
+        assertEquals(1, plan.newCourses.single { it.id == "visible" }.span)
+        assertTrue(plan.unalignedCourses.isEmpty())
+        assertTrue(plan.singleSlotCourses.isEmpty())
+    }
+
+    @Test
+    fun `hidden course alone cannot enable merge`() {
+        // 唯一的多节课程落在越界隐藏格：它不会被重映射，合并没有实际对象
+        val hidden = course("hidden", startSlot = 99, span = 2, dayOfWeek = 6)
 
         val plan = previewSlotMerge(smallSlots, listOf(hidden), daysPerWeek = 5)
 
-        assertTrue(plan.canMerge)
+        assertFalse(plan.hasMultiSlotCourse)
+        assertFalse(plan.canMerge)
         assertEquals(listOf(hidden), plan.newCourses)
-        assertTrue(plan.unalignedCourses.isEmpty())
-        assertTrue(plan.singleSlotCourses.isEmpty())
     }
 
     @Test

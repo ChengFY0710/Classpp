@@ -43,6 +43,7 @@ import com.fangyi.classpp.data.model.DEFAULT_TIME_SCHEME_ID
 import com.fangyi.classpp.data.model.MAX_SLOT_DURATION
 import com.fangyi.classpp.data.model.MIN_SLOT_DURATION
 import com.fangyi.classpp.data.model.Schedule
+import com.fangyi.classpp.data.model.SlotMergePlan
 import com.fangyi.classpp.data.model.TimeScheme
 import com.fangyi.classpp.data.model.TimeSlotDef
 import com.fangyi.classpp.data.model.TimeText
@@ -100,8 +101,10 @@ private data class PendingSchemeSave(
  * - 下方同一个 [CardSection]（节次与时间）依次是：总节数 / 每节课时间、逐节起止时间、
  *   保存方案、合并两小节为一大节；
  * - 合并只改本地草稿（节表 + 课程映射），右上「确认」才随整套配置落库。可点条件由
- *   [previewSlotMerge] 判定：所有课程 span ≥ 2、每门课起止都能精确对齐、且至少有一对
- *   可合并；否则整行置灰（negative 色）不可点。合并输入是 [courses]（编辑态取课程
+ *   [previewSlotMerge] 判定：至少有一门课真正占用 ≥2 节（空课表 / 全是单节课时没有可
+ *   重映射的课程）、所有课程 span ≥ 2、每门课起止都能精确对齐、且至少有一对可合并；
+ *   另外内置「默认」方案是大节模板（100 分钟一节），不支持合并——选着它时整行置灰。
+ *   任一条件不满足即整行置灰（negative 色）不可点。合并输入是 [courses]（编辑态取课程
  *   草稿），因此网格与后续保存编辑都能拿到重映射后的课程；
  * - 所有明细修改只落在**本地草稿**，右上「确认」才经 [onApply] 整套提交；取消/返回/
  *   下拉关闭丢弃草稿。保存方案是独立动作：经 [onSaveScheme] 落库，成功后经仓库
@@ -219,11 +222,15 @@ internal fun TimeSchemeSheet(
     // 预设方案只当模板（若要保存预设，先改一项即自动切到自定义）
     val saveEnabled = isCustom
 
-    // 合并预览与门控：固定两两配对 + 30 分钟间隙；所有课程 span≥2、能精确对齐且
-    // 至少有一对可合并时按钮才可点。纯计算，草稿每次变化重算一次（课表规模很小）
+    // 合并预览与门控：固定两两配对 + 30 分钟间隙；至少有一门课真正占用 ≥2 节、所有课程
+    // span≥2、能精确对齐且至少有一对可合并时按钮才可点。纯计算，草稿每次变化重算一次
+    // （课表规模很小）
     val mergePlan = remember(draftSlots, draftCourses, schedule.daysPerWeek) {
         previewSlotMerge(draftSlots, draftCourses, schedule.daysPerWeek)
     }
+    // 内置「默认」方案不支持合并（大节模板，合并只会把 100 分钟一节并成 230 分钟的大节）；
+    // 切到其它方案或改动任一明细自动落到「自定义」后，合并才按 mergePlan 的条件放行
+    val mergeEnabled = canMergeTimeScheme(mergePlan, selectedSchemeId)
 
     // 同一屏内的校验提示文案：先取好再进点击闭包
     val slotOverflowToast = stringResource(R.string.slot_overflow_desc)
@@ -458,12 +465,15 @@ internal fun TimeSchemeSheet(
                 )
 
                 // 合并两小节为一大节：只改草稿，确认才随整套配置落库；
-                // 课程 span<2 或无法精确对齐时整体置灰（negative 色）不可点
+                // 默认方案 / 没有课程占用 ≥2 节 / 课程 span<2 或无法精确对齐时整体置灰
+                //（negative 色）不可点
                 SchemeActionRow(
                     label = stringResource(R.string.time_scheme_merge),
                     icon = null,
-                    enabled = mergePlan.canMerge,
+                    enabled = mergeEnabled,
                     onClick = {
+                        // 双重保险：置灰态不挂点击，这里再拦一次，绝不在不可合并的草稿上执行
+                        if (!mergeEnabled) return@SchemeActionRow
                         draftSlots = mergePlan.newSlots
                         draftDuration = mergePlan.newDurationMinutes
                         draftCourses = mergePlan.newCourses
@@ -590,6 +600,17 @@ internal fun TimeSchemeSheet(
         )
     }
 }
+
+/**
+ * 「合并两小节为一大节」的可点判定（纯函数，便于单测）：
+ * 合并预览本身允许（[SlotMergePlan.canMerge]：至少一门课占用 ≥2 节、全部课程可精确对齐、
+ * 且至少有一对可合并），并且当前选中的不是内置「默认」方案——默认方案是大节模板，
+ * 合并只会把 100 分钟一节并成 230 分钟的大节，产品上不支持。
+ */
+internal fun canMergeTimeScheme(
+    plan: SlotMergePlan,
+    selectedSchemeId: String?,
+): Boolean = plan.canMerge && selectedSchemeId != DEFAULT_TIME_SCHEME_ID
 
 /**
  * 底部操作行卡（保存方案 / 合并两小节）：整宽白卡、内容居中，复刻待办详情「添加步骤」
