@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+   自动备份排除规则（API 30 及以下，指导 §8.2）：
+   - 课程中心同步映射 xmu-sync.json（含 .tmp/.bak）：只含哈希与账号 id，不入备份缩小隐私面；
+   - app_webview：WebView 的 cookie（含课程中心 httpOnly 会话）与站点数据，凭据绝不随备份迁移。
+   todos.json 不排除：待办是用户自身数据，应随备份恢复。
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="file" path="xmu-sync.json" />
+    <exclude domain="file" path="xmu-sync.json.tmp" />
+    <exclude domain="file" path="xmu-sync.json.bak" />
+    <exclude domain="root" path="app_webview" />
 </full-backup-content>

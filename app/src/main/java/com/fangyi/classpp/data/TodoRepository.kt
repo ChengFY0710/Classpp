@@ -261,6 +261,36 @@ class TodoRepository internal constructor(
         }
     }
 
+    /**
+     * 批量新增（课程中心等外部同步导入走这条）：id/createdAt 补齐 → 全量归一化 → 逐条
+     * 校验 → 查重 → **单次 commit**（导入 N 条只落盘一次，区别于逐条 addTodo）。
+     * 任意一条非法或 id 与现有待办重复则整体失败、零落盘——同步层应先过滤非法项与
+     * 已存在项（active + 回收站）再调用。
+     */
+    suspend fun addTodos(todos: List<Todo>): TodoReadResult<List<String>> = mutex.withLock {
+        if (todos.isEmpty()) return@withLock TodoReadResult.Ok(emptyList())
+        val prepared = todos.map {
+            normalize(
+                it.copy(
+                    id = it.id.ifBlank { newUuid() },
+                    createdAtMillis = if (it.createdAtMillis == 0L) nowMillis() else it.createdAtMillis,
+                ),
+            )
+        }
+        prepared.forEach { todo ->
+            val errors = TodoValidator.validate(todo)
+            if (errors.isNotEmpty()) return@withLock TodoReadResult.Err(errors.first())
+        }
+        val existing = fileState.value.todos.mapTo(mutableSetOf()) { it.id }
+        prepared.firstOrNull { it.id in existing }?.let {
+            return@withLock TodoReadResult.Err(TodoError.DuplicateId(it.id))
+        }
+        when (val r = commit(fileState.value.copy(todos = fileState.value.todos + prepared))) {
+            TodoOpResult.Ok -> TodoReadResult.Ok(prepared.map { it.id })
+            is TodoOpResult.Err -> TodoReadResult.Err(r.error)
+        }
+    }
+
     /** 按 id 全量替换（编辑表单提交走这条）；归一化 + 校验后落盘，失败内存零变更 */
     suspend fun updateTodo(todo: Todo): TodoOpResult = mutex.withLock {
         if (todoOrNull(todo.id) == null) return@withLock TodoOpResult.Err(TodoError.NotFound(todo.id))

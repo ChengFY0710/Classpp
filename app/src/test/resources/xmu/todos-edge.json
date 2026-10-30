@@ -1,0 +1,100 @@
+{
+  "todo_list": [
+    {
+      "id": 2001,
+      "title": "跨日截止作业",
+      "type": "homework",
+      "course_id": 100,
+      "course_code": "00000000000000000000001",
+      "course_name": "跨日课程",
+      "course_type": 1,
+      "end_time": "2026-11-04T16:00:00Z",
+      "is_locked": false,
+      "is_student": true
+    },
+    {
+      "id": 2002,
+      "title": "秒截断作业",
+      "type": "homework",
+      "course_id": 100,
+      "course_code": "00000000000000000000001",
+      "course_name": "跨日课程",
+      "course_type": 1,
+      "end_time": "2026-11-04T23:59:59Z",
+      "is_locked": false,
+      "is_student": true
+    },
+    {
+      "id": 2003,
+      "title": "已锁定作业",
+      "type": "homework",
+      "course_id": 101,
+      "course_code": "00000000000000000000002",
+      "course_name": "锁定课程",
+      "course_type": 1,
+      "end_time": "2026-12-01T00:00:00Z",
+      "is_locked": true,
+      "is_student": true
+    },
+    {
+      "id": 2004,
+      "title": "无截止作业",
+      "type": "homework",
+      "course_id": 101,
+      "course_code": "00000000000000000000002",
+      "course_name": "锁定课程",
+      "course_type": 1,
+      "end_time": null,
+      "is_locked": false,
+      "is_student": true
+    },
+    {
+      "id": 2005,
+      "title": "未知类型条目",
+      "type": "quiz",
+      "course_id": 102,
+      "course_code": "00000000000000000000003",
+      "course_name": "测验课程",
+      "course_type": 2,
+      "end_time": "2026-12-02T08:00:00Z",
+      "is_locked": false,
+      "is_student": true
+    },
+    {
+      "id": 2006,
+      "title": "非学生条目",
+      "type": "homework",
+      "course_id": 102,
+      "course_code": "00000000000000000000003",
+      "course_name": "测验课程",
+      "course_type": 2,
+      "end_time": "2026-12-02T08:00:00Z",
+      "is_locked": false,
+      "is_student": false
+    },
+    {
+      "id": 2007,
+      "title": "   ",
+      "type": "homework",
+      "course_id": 102,
+      "course_code": "00000000000000000000003",
+      "course_name": "测验课程",
+      "course_type": 2,
+      "end_time": "2026-12-02T08:00:00Z",
+      "is_locked": false,
+      "is_student": true
+    },
+    {
+      "id": 0,
+      "title": "非法 id 条目",
+      "type": "homework",
+      "course_id": 102,
+      "course_code": "00000000000000000000003",
+      "course_name": "测验课程",
+      "course_type": 2,
+      "end_time": "2026-12-02T08:00:00Z",
+      "is_locked": false,
+      "is_student": true
+    }
+  ]
+}

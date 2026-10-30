@@ -89,6 +89,10 @@ data class Todo(
     val group: String? = null,
     val countdown: Boolean = false,
     val pinned: Boolean = false,
+    /** 来源标识：null = 用户手建；"xmu" = 厦门大学课程中心同步（见 data.xmu.XmuTodoMapper） */
+    val source: String? = null,
+    /** 来源附加信息：课程中心场景存课程名（列表卡徽标展示），无则 null */
+    val sourceDetail: String? = null,
 )
 
 /** 是否在「最近删除」里（读侧统一口径：只看软删标记，与仓库的活跃/回收站分流同源） */

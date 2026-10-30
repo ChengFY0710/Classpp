@@ -191,6 +191,32 @@ internal fun TagChip(tag: String, color: Color = MaterialTheme.colorScheme.prima
 }
 
 /**
+ * 来源徽标：外部同步的待办在属性行显示来源（课程中心场景 = 课程名）——形态与 [TagChip]
+ * 同构（10% 圆角底 + 同款内距），配色取中性 secondaryText、无图标：与用户标签
+ * （ic_tag + primary）一眼区分。
+ */
+@Composable
+internal fun SourceBadge(label: String) {
+    val color = MaterialTheme.classppColors.secondaryText
+    Row(
+        modifier = Modifier
+            .clip(TagChipShape)
+            .background(color.copy(alpha = 0.12f))
+            .padding(
+                start = TagChipPadding,
+                end = TagChipPadding,
+                top = TagChipVerticalPadding,
+                bottom = TagChipVerticalPadding,
+            ),
+    ) {
+        Text(
+            text = label,
+            style = ClassppTextTokens.tagChip.copy(color = color),
+        )
+    }
+}
+
+/**
  * 左侧倒计时：[days] ≥ 0 显「N天」（今天即 0 天）；< 0 显「逾期N天」（数字取绝对值）。
  * 数字 [CountdownNumberFontSize] 半粗、单位与「逾期」前缀 [CountdownUnitFontSize]，三段同一个
  * [tint]（与右侧截止时间同色，见 [NoteCard.countdownDays]）；混排字号拼进同一个 Text，
@@ -269,6 +295,8 @@ private fun CountdownExitSlot(
  * - [tagColors] 标签配色表（标签名 → 颜色）：标签胶囊底取标签色 10% 透明、图标与文字取
  *   标签色（TagChoosingCard 未选中胶囊同款）。配色由调用方从标签库解析（用户标签
  *   TagEntry.colorArgb）；表里没有的名字（含课程标签）回落主题 Primary；
+ * - [sourceLabel] 来源徽标（外部同步的待办，如课程中心的课程名）：与标签胶囊同构但取
+ *   中性 secondaryText、无图标，排在重复规则之后、用户标签之前；null 不渲染；
  * - [time] 待办时间（已格式化文本，如 "12:30"、"明天 14:00-16:00"）：ic_clock 图标
  *   18dp + 文本，图标与文字均 secondaryText；
  * - [deadline] 截止时间（已格式化文本，如 "今天 8:00"、"3/12 6:00"）：ic_clock_alarm
@@ -325,6 +353,8 @@ fun NoteCard(
     tags: List<String> = emptyList(),
     // 标签配色表（标签名 → 颜色，与 TagChoosingCard 同源）：缺席的名字回落主题 Primary
     tagColors: Map<String, Color> = emptyMap(),
+    // 来源徽标（外部同步的待办，如课程中心课程名）：null 不渲染，与用户标签视觉区分
+    sourceLabel: String? = null,
     urgency: TodoUrgency = TodoUrgency.None,
     completed: Boolean = false,
     overdue: Boolean = false,
@@ -513,7 +543,7 @@ fun NoteCard(
                         }
                     },
                 )
-                if (time != null || deadline != null || repeat != null || tags.isNotEmpty()) {
+                if (time != null || deadline != null || repeat != null || sourceLabel != null || tags.isNotEmpty()) {
                     FlowRow(
                         // 行距取标签间距；时间项各带末位内距，把与后续项（含首个标签）的间距补到 PropertySpacing
                         horizontalArrangement = Arrangement.spacedBy(TagSpacing),
@@ -543,6 +573,9 @@ fun NoteCard(
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(end = TimeItemEndPadding),
                             )
+                        }
+                        if (sourceLabel != null) {
+                            SourceBadge(sourceLabel)
                         }
                         tags.forEach { tag ->
                             TagChip(tag, tagColors[tag] ?: fallbackTagColor)

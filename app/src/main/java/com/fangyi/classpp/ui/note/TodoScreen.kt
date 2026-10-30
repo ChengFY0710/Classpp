@@ -64,6 +64,7 @@ import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.TodoSort
 import com.fangyi.classpp.data.comparator
 import com.fangyi.classpp.data.expandRepeatOccurrences
+import com.fangyi.classpp.data.xmu.XmuTodoMapper
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
@@ -1941,6 +1942,15 @@ private fun TodoList(
     }
 }
 
+/** 来源徽标文本：课程中心同步的待办显示课程名（缺失时回落「课程中心」）；用户手建无徽标 */
+@Composable
+private fun Todo.sourceLabel(): String? =
+    if (source == XmuTodoMapper.SOURCE_XMU) {
+        sourceDetail?.takeIf { it.isNotBlank() } ?: stringResource(R.string.xmu_source_badge)
+    } else {
+        null
+    }
+
 /**
  * 单条待办卡片：[Todo] → [NoteCard] 的字段接线——标题、完成态与勾选直通，
  * 待办时间走 [cardTimeText]、截止时间走 [deadlineCardText]（颜色由 [deadlineColor]
@@ -1988,6 +1998,7 @@ private fun TodoCard(
         countdownDays = if (todo.countdown) todo.deadlineDaysLeft() else null,
         tags = todo.tags,
         tagColors = tagColors,
+        sourceLabel = todo.sourceLabel(),
         urgency = todo.urgency,
         completed = completed,
         overdue = overdue,
@@ -2054,6 +2065,7 @@ private fun TrashedTodoCard(
         countdownDays = if (todo.countdown) todo.deadlineDaysLeft() else null,
         tags = todo.tags,
         tagColors = tagColors,
+        sourceLabel = todo.sourceLabel(),
         urgency = todo.urgency,
         completed = todo.completed,
         deleted = true,

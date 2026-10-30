@@ -1,0 +1,30 @@
+{
+  "todo_list": [
+    {
+      "id": 925512,
+      "title": "第一次作业",
+      "type": "homework",
+      "course_id": 106160,
+      "course_code": "20262027113013001020702",
+      "course_name": "高等数学",
+      "course_type": 1,
+      "end_time": "2026-11-04T10:30:00Z",
+      "is_locked": false,
+      "is_student": true,
+      "prerequisites": []
+    },
+    {
+      "id": 1013424,
+      "title": "第二次作业",
+      "type": "homework",
+      "course_id": 110846,
+      "course_code": "20262027113013001020802",
+      "course_name": "线性代数",
+      "course_type": 1,
+      "end_time": "2026-11-05T15:59:00Z",
+      "is_locked": false,
+      "is_student": true,
+      "prerequisites": []
+    }
+  ]
+}

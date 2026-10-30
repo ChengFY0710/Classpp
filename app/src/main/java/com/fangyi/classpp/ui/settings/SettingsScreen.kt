@@ -18,6 +18,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +33,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
+import com.fangyi.classpp.data.xmu.XmuSyncRepository
 import com.fangyi.classpp.ui.components.SettingsCardwithIcon
 import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
 import com.fangyi.classpp.ui.components.SheetBottomSlack
@@ -57,26 +59,46 @@ internal val TopBarContentGap = 18.dp
 private val EntryCardSpacing = 12.dp
 
 /**
+ * 「账号与同步」入口卡的行值：未连接 / 已连接 姓名 / 登录已过期。
+ * 状态流在组合里 collect（repository == null 时显示未连接）；过期态没有独立落盘标志，
+ * 仅由同步流程的探活结果驱动（子页横幅同一份判定），这里只呈现「已连接与否」。
+ */
+@Composable
+private fun xmuSyncEntryValue(repository: XmuSyncRepository?): String {
+    val connected = repository != null &&
+        repository.state.collectAsState().value.uid.isNotEmpty()
+    return if (connected) {
+        val name = repository.state.value.accountName
+        if (name.isBlank()) stringResource(R.string.xmu_connected_label)
+        else stringResource(R.string.xmu_connected_name, name)
+    } else {
+        stringResource(R.string.xmu_not_connected_label)
+    }
+}
+
+/**
  * 设置页：全屏覆盖层（由 MainActivity 组合在底部导航之后），返回键/关闭按钮经 [onClose] 退出。
  *
  * 结构 = 设置根页 + 子页覆盖层（完整转场与设置页覆盖层同源，ui.motion 的 [PageOverlayTransition]）：
- * - 根页（[SettingsHomePage]）标题「设置」，正文四张独立入口卡：
- *   个性化 / 通知与提醒 / 数据管理 / 关于；
+ * - 根页（[SettingsHomePage]）标题「设置」，正文五张独立入口卡：
+ *   个性化 / 通知与提醒 / 账号与同步 / 数据管理 / 关于；
  * - 「个性化」子页（[PersonalizationScreen]）承载 app 级外观设置，已实装；
  *   「通知与提醒」子页（[NotificationScreen]）承载通知设置项 UI，已实装；
+ *   「账号与同步」子页（[XmuSyncScreen]）承载课程中心待办同步，已实装；
  *   「数据管理」「关于」入口本次仅占位（点击暂无响应，子页后续接入）；
- * - 两个子页互斥（各自从根页打开、经根页返回，永不同屏）：通知页覆盖层嵌在外层，
- *   「个性化页 + 根页」整体作为它的 behind——根页仍只组合一次，嵌套层的让位视差与
- *   压暗遮罩把下层两层内容当一个整体对待；
- * - 返回键优先关子页（通知页 → 个性化页）；无子页时经 [onClose] 退出设置。子页退场
- *   动画期间标志已复位，此时再按返回会直接退出设置——与设置页覆盖层「退场中幂等
- *   关闭」同语义。
+ * - 各子页互斥（各自从根页打开、经根页返回，永不同屏）：「账号与同步」覆盖层嵌在最外层，
+ *   通知页与「个性化页 + 根页」整体作为它的 behind——根页仍只组合一次，嵌套层的让位
+ *   视差与压暗遮罩把下层内容当一个整体对待；
+ * - 返回键优先关子页（账号与同步 → 通知页 → 个性化页）；无子页时经 [onClose] 退出设置。
+ *   子页退场动画期间标志已复位，此时再按返回会直接退出设置——与设置页覆盖层「退场中
+ *   幂等关闭」同语义。
  */
 @Composable
 fun SettingsScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     repository: ScheduleRepository? = null,
+    xmuSyncRepository: XmuSyncRepository? = null,
     themeMode: ThemeMode = ThemeMode.System,
     onThemeModeChange: (ThemeMode) -> Unit = {},
     // State 实例透传（本层不读 .value）：滑条拖动时本屏与个性化页整体 skip，只重组值的叶子
@@ -94,13 +116,15 @@ fun SettingsScreen(
 ) {
     var showPersonalization by rememberSaveable { mutableStateOf(false) }
     var showNotifications by rememberSaveable { mutableStateOf(false) }
+    var showXmuSync by rememberSaveable { mutableStateOf(false) }
     // 覆盖层内容常驻组合（ui.motion 的 PageOverlayTransition）：隐藏态下页面只是停在
     // 屏外、返回键处理必须让位给系统（否则主界面按返回会被吃掉）；转场彻底结束后把
     // 子页复位到根页——与此前 AnimatedVisibility「关闭即销毁」的重开语义一致
     val overlayActive = LocalPageOverlayActive.current
     BackHandler(enabled = overlayActive) {
         when {
-            // 子页逐层退：通知页在最外层，优先于个性化页
+            // 子页逐层退：账号与同步在最外层，优先于通知页/个性化页
+            showXmuSync -> showXmuSync = false
             showNotifications -> showNotifications = false
             showPersonalization -> showPersonalization = false
             else -> onClose()
@@ -110,6 +134,7 @@ fun SettingsScreen(
         if (!overlayActive) {
             showPersonalization = false
             showNotifications = false
+            showXmuSync = false
         }
     }
 
@@ -121,48 +146,63 @@ fun SettingsScreen(
         ProvideOverscroll {
             // 子页以与设置页覆盖层完全相同的完整转场盖住根页（ui.motion 的 PageOverlayTransition：
             // 让位视差 + 压暗遮罩 + 右滑进出场 + 转场期左缘圆角）——共用同一实现，两层观感严格一致。
-            // 通知与提醒嵌在外层：「个性化 + 根页」整体作为它的 behind，两个子页永不同屏
+            // 「账号与同步」嵌在最外层：通知页 + 「个性化 + 根页」整体作为它的 behind，
+            // 各子页永不同屏
             PageOverlayTransition(
-                visible = showNotifications,
+                visible = showXmuSync,
                 modifier = Modifier.fillMaxSize(),
                 behind = {
                     PageOverlayTransition(
-                        visible = showPersonalization,
+                        visible = showNotifications,
                         modifier = Modifier.fillMaxSize(),
                         behind = {
-                            SettingsHomePage(
-                                onClose = onClose,
-                                onOpenPersonalization = { showPersonalization = true },
-                                onOpenNotifications = { showNotifications = true },
-                                repository = repository,
-                                // 设置覆盖层隐藏时整页停在屏外仍是常驻组合：Haze 效果只在
-                                // 覆盖层活跃期挂载，避免对屏外页面做源捕获/模糊（Haze 2 下
-                                // 屏外页面上的效果会触发 RenderThread 递归崩溃）
-                                overlayActive = overlayActive,
+                            PageOverlayTransition(
+                                visible = showPersonalization,
                                 modifier = Modifier.fillMaxSize(),
-                            )
+                                behind = {
+                                    SettingsHomePage(
+                                        onClose = onClose,
+                                        onOpenPersonalization = { showPersonalization = true },
+                                        onOpenNotifications = { showNotifications = true },
+                                        onOpenXmuSync = { showXmuSync = true },
+                                        xmuSyncRepository = xmuSyncRepository,
+                                        repository = repository,
+                                        // 设置覆盖层隐藏时整页停在屏外仍是常驻组合：Haze 效果只在
+                                        // 覆盖层活跃期挂载，避免对屏外页面做源捕获/模糊（Haze 2 下
+                                        // 屏外页面上的效果会触发 RenderThread 递归崩溃）
+                                        overlayActive = overlayActive,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                },
+                            ) {
+                                PersonalizationScreen(
+                                    onBack = { showPersonalization = false },
+                                    themeMode = themeMode,
+                                    onThemeModeChange = onThemeModeChange,
+                                    repository = repository,
+                                    cardHeights = cardHeights,
+                                    onCardHeightsChange = onCardHeightsChange,
+                                    showTeacher = showTeacher,
+                                    onShowTeacherChange = onShowTeacherChange,
+                                    glassStyle = glassStyle,
+                                    onGlassStyleChange = onGlassStyleChange,
+                                    todoMasonry = todoMasonry,
+                                    onTodoMasonryChange = onTodoMasonryChange,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
                         },
                     ) {
-                        PersonalizationScreen(
-                            onBack = { showPersonalization = false },
-                            themeMode = themeMode,
-                            onThemeModeChange = onThemeModeChange,
-                            repository = repository,
-                            cardHeights = cardHeights,
-                            onCardHeightsChange = onCardHeightsChange,
-                            showTeacher = showTeacher,
-                            onShowTeacherChange = onShowTeacherChange,
-                            glassStyle = glassStyle,
-                            onGlassStyleChange = onGlassStyleChange,
-                            todoMasonry = todoMasonry,
-                            onTodoMasonryChange = onTodoMasonryChange,
+                        NotificationScreen(
+                            onBack = { showNotifications = false },
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
                 },
             ) {
-                NotificationScreen(
-                    onBack = { showNotifications = false },
+                XmuSyncScreen(
+                    onBack = { showXmuSync = false },
+                    repository = xmuSyncRepository,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -171,11 +211,13 @@ fun SettingsScreen(
 }
 
 /**
- * 设置根页：顶栏（标题「设置」+ 圆形返回按钮 + 渐变模糊）+ 四张独立入口卡。
+ * 设置根页：顶栏（标题「设置」+ 圆形返回按钮 + 渐变模糊）+ 五张独立入口卡。
  *
  * 课表级设置（课表名/学期/天数/节数时间/显示开关）在编辑态的「课表设置」浮层
  * （见 Schedule ui 的 [com.fangyi.classpp.ui.schedule.ScheduleSettingsSheet]），
- * 外观设置在「个性化」子页、通知设置在「通知与提醒」子页，本页只承担导航分发。
+ * 外观设置在「个性化」子页、通知设置在「通知与提醒」子页、课程中心待办同步在
+ * 「账号与同步」子页，本页只承担导航分发。入口卡行内同步展示账号连接状态
+ * （未连接 / 已连接 姓名 / 登录已过期，取自 [xmuSyncRepository] 的状态流）。
  * [repository] = null → 加载指示（仅首帧毫秒级）。
  */
 @Composable
@@ -183,9 +225,11 @@ private fun SettingsHomePage(
     onClose: () -> Unit,
     onOpenPersonalization: () -> Unit,
     onOpenNotifications: () -> Unit,
+    onOpenXmuSync: () -> Unit,
     repository: ScheduleRepository?,
     overlayActive: Boolean,
     modifier: Modifier = Modifier,
+    xmuSyncRepository: XmuSyncRepository? = null,
 ) {
     Scaffold(
         modifier = modifier,
@@ -254,7 +298,9 @@ private fun SettingsHomePage(
                             ),
                         verticalArrangement = Arrangement.spacedBy(EntryCardSpacing),
                     ) {
-                        // 四张独立入口卡（设计稿形态）；数据管理/关于子页待实装，入口先占位
+                        // 五张独立入口卡（设计稿形态）；数据管理/关于子页待实装，入口先占位。
+                        // 账号与同步行内展示连接状态（State 透传纪律：本层 collect 成本地值、
+                        // 仅此行随它重组）
                         SettingsCardwithIcon(
                             items = listOf(
                                 SettingsCardwithIconItem(
@@ -270,6 +316,16 @@ private fun SettingsHomePage(
                                     icon = R.drawable.ic_alert,
                                     label = stringResource(R.string.settings_notifications),
                                     onClick = onOpenNotifications,
+                                ),
+                            ),
+                        )
+                        SettingsCardwithIcon(
+                            items = listOf(
+                                SettingsCardwithIconItem(
+                                    icon = R.drawable.ic_arrow_repeat,
+                                    label = stringResource(R.string.settings_account_sync),
+                                    value = xmuSyncEntryValue(xmuSyncRepository),
+                                    onClick = onOpenXmuSync,
                                 ),
                             ),
                         )
