@@ -68,11 +68,12 @@ import dev.chrisbanes.haze.rememberHazeState
  * 标题切换、显示删除按钮；[onDelete] 点删除即回调（直接删草稿，无二次确认——
  * 取消编辑即可整体撤销）。两者都只作用于草稿，保存时才落库。
  *
- * [alternateFrom] 非空 = 长按已有课新建**交替课程**（与 [existing] 互斥）：默认与源课同起止
- * （"默认一致"），结束节次锁定跟随源课，周数默认取该组还没被占用的周、配色取组内没用过的
- * 第一个；组内其它课（含被源课跨节覆盖的续格课）已占的周在方格里灰显不可点——交替课程的
- * 周数不能重合。组内有跨节课程（span ≥ 2）时出现「开始节次」选择：组员的起止节次可以
- * 不一致，开始节次最早可选到组的最早节次。
+ * [alternateFrom] 非空 = 长按已有课新建**交替课程**（与 [existing] 互斥）：默认与源课同起止，
+ * 结束节次可往下延伸，与范围有交集的课程都一起成为交替课程（不要求完整包住，只要周数不冲突）。
+ * 周数默认取该组还没被占用的周、配色取组内没用过的第一个；组内其它课（含被源课跨节覆盖的
+ * 续格课）已占的周在方格里灰显不可点——交替课程的周数不能重合。组内有跨节课程（span ≥ 2）时
+ * 出现「开始节次」选择：组员的起止节次可以不一致，开始节次最早可选到组的最早节次、最晚不超过
+ * 源课末节。
  * 编辑已有课时同样灰显组内其它课占用的周。
  *
  * **UI 层已按设计稿改造为顶栏浮层（见 [OverlaySheet]）**：
@@ -114,12 +115,12 @@ fun AddCoursePanel(
     var teacher by rememberSaveable { mutableStateOf(existing?.teacher ?: "") }
     var location by rememberSaveable { mutableStateOf(existing?.location ?: "") }
     // 开始节次：仅新建交替课程面板出现选择项（组内有跨节课时，见 showStartSlot），
-    // 默认与源课同起止（"默认一致"）；编辑/新建普通课程锁定为所在格
+    // 默认与源课同起始；编辑/新建普通课程锁定为所在格
     var startSlotId by rememberSaveable(slot.id) {
         mutableStateOf(existing?.startSlot ?: alternateFrom?.startSlot ?: slot.id)
     }
     // 结束节次：key=slot.id，重开面板（或旋转恢复后目标格变化）即复位；
-    // 编辑态初值取被编辑课的末节，新建交替课时跟随源课（默认同起止）
+    // 编辑态初值取被编辑课的末节，新建交替课时默认跟随源课（可再往下延伸）
     var endSlotId by rememberSaveable(slot.id) {
         mutableStateOf(existing?.endSlot ?: alternateFrom?.endSlot ?: slot.id)
     }
@@ -168,11 +169,12 @@ fun AddCoursePanel(
     // 让新交替课对齐到不同成员（如源课只占第 4 节、组里的跨节课占 3-4 节，可选 3 或 4 起始）
     val showStartSlot = alternateFrom != null && alternateGroup.any { it.span >= 2 }
     // 开始节次菜单：下限取组的最早节次（新交替课不能探出组的占用范围顶端）与跨度上限，
-    // 上限 = 结束节次（交替模式锁定为源课末节）
+    // 上限不超过源课末节——结束节次延伸后开始节次仍留在源课范围内，新范围才始终与源课相交
     val groupEarliestSlot = alternateGroup.minOfOrNull { it.startSlot } ?: slot.id
     val startMenuItems = run {
+        val maxSlot = minOf(endSlotId, alternateFrom?.endSlot ?: endSlotId)
         val minSlot = maxOf(groupEarliestSlot, endSlotId - ScheduleValidator.MAX_SPAN + 1, 1)
-        (minSlot..endSlotId).map { id -> id to stringResource(R.string.slot_format, id) }
+        (minSlot..maxSlot).map { id -> id to stringResource(R.string.slot_format, id) }
     }
 
     val weekdays = stringArrayResource(R.array.weekdays)
@@ -193,11 +195,15 @@ fun AddCoursePanel(
     // 已选周 → 周模式：提交时作为 CourseEntry.weeks 落库
     val weeks = weeksFromSelection(selectedWeeks)
 
-    // 结束节次菜单：只列合法项（起始之前 / 跨度过长的不出现）；
-    // 交替课程默认与源课同起止，跨度锁定后菜单里只剩那一个末节
-    val maxEnd = minOf(schedule.slotCount, slot.id + ScheduleValidator.MAX_SPAN - 1)
-    val endRange = alternateFrom?.let { it.endSlot..it.endSlot } ?: (slot.id..maxEnd)
-    val endMenuItems = endRange.map { id -> id to stringResource(R.string.slot_format, id) }
+    // 结束节次菜单：新建交替课默认与源课一致，可往下延伸把途经课程包进范围（只伸不缩）；
+    // 其余场景（新建普通课 / 编辑）从起始节起按跨度上限列出
+    val maxEnd = minOf(schedule.slotCount, startSlotId + ScheduleValidator.MAX_SPAN - 1)
+    val minEnd = if (alternateFrom != null) {
+        maxOf(startSlotId, alternateFrom.endSlot)
+    } else {
+        startSlotId
+    }
+    val endMenuItems = (minEnd..maxEnd).map { id -> id to stringResource(R.string.slot_format, id) }
 
     // 文案先取出来：校验发生在 lambda 里，那里不能再调 stringResource
     val errorNameBlank = stringResource(R.string.error_course_name_blank)
@@ -209,15 +215,33 @@ fun AddCoursePanel(
     val errorConflictFormat = stringResource(R.string.error_grid_conflict)
     val errorUnexpected = stringResource(R.string.error_unexpected)
 
-    // 节次选择与已选周数的联合校验：把范围调成 [start..end] 后若与某门被涉课的周数重合，
-    // 点名报冲突——"周数冲突的不能设置跨节"在选择层就拦下，不用等确认时的整草稿校验
-    fun spanConflictMessage(start: Int, end: Int): String? =
-        draftCourses.firstOrNull { course ->
+    // 节次选择校验：普通新建/编辑时，范围调整后若与某门被涉课的周数重合，点名报冲突——
+    // "周数冲突的不能设置跨节"在选择层就拦下，不用等确认时的整草稿校验。
+    // 新建交替课不在这里拦：延伸包进的课程自动占周、已选周随之剔除（见 dropCoveredWeeks），
+    // 剩下的周数与整组天然不冲突
+    fun rangeConflictMessage(start: Int, end: Int): String? {
+        if (alternateFrom != null) return null
+        return draftCourses.firstOrNull { course ->
             course.id != existing?.id &&
                 course.dayOfWeek == day &&
                 course.startSlot <= end && course.endSlot >= start &&
                 selectedWeeks.any { course.weeks.contains(it) }
         }?.let { errorConflictFormat.format(it.name) }
+    }
+
+    // 范围变化后：新包进课程的占用周从已选周里剔除——它们自动成为交替课，新课只剩剩下的周
+    // （非交替场景维持"周数冲突就拦下"的交互，见 rangeConflictMessage）
+    fun dropCoveredWeeks(start: Int, end: Int) {
+        if (alternateFrom == null) return
+        val blocked = draftCourses.weeksTakenByOthers(
+            selfId = existing?.id ?: "",
+            dayOfWeek = day,
+            startSlot = start,
+            endSlot = end,
+            totalWeeks = schedule.totalWeeks,
+        )
+        selectedWeeks = selectedWeeks.filterNot { it in blocked }
+    }
 
     val nameFocus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
@@ -419,9 +443,10 @@ fun AddCoursePanel(
                                 items = startMenuItems,
                                 selectedId = startSlotId,
                                 onPick = { id ->
-                                    val message = spanConflictMessage(id, endSlotId)
+                                    val message = rangeConflictMessage(id, endSlotId)
                                     if (message == null) {
                                         startSlotId = id
+                                        dropCoveredWeeks(id, endSlotId)
                                         error = null
                                     } else {
                                         fail(message)
@@ -440,9 +465,10 @@ fun AddCoursePanel(
                             items = endMenuItems,
                             selectedId = endSlotId,
                             onPick = { id ->
-                                val message = spanConflictMessage(startSlotId, id)
+                                val message = rangeConflictMessage(startSlotId, id)
                                 if (message == null) {
                                     endSlotId = id
+                                    dropCoveredWeeks(startSlotId, id)
                                     error = null
                                 } else {
                                     fail(message)
