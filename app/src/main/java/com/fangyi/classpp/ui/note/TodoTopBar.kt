@@ -192,9 +192,9 @@ private val HorizontalClipShape = object : Shape {
 
 /**
  * 待办特殊分组页：分组浮层第一部分（状态/留存）的六个入口——点入后宿主收起浮层，
- * 顶栏分组条首位出现对应胶囊（[SpecialGroupPill]），再点一次胶囊退出。最近删除已接入
- * 软删除（仓库 deletedTodos 流：单卡撤回恢复 / 左滑彻底删除）；已归档数据层暂无该概念，
- * 本期仅 UI（列表恒空、空状态文案占位）。
+ * 顶栏分组条首位出现对应胶囊（[SpecialGroupPill]），再点一次胶囊退出。最近删除接入
+ * 软删除（仓库 deletedTodos 流：单卡撤回恢复 / 左滑彻底删除）；已归档接入归档
+ * （仓库 archivedTodos 流：单卡取消归档 / 左滑软删进最近删除）。
  *
  * [iconRes]/[labelRes] 供胶囊渲染，[emptyHintRes] 供空列表占位；强调色不在枚举里
  * 存死（Color 非资源语义），按条目在 [SpecialGroupPill] 处映射：已完成 = 绿

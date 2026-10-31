@@ -65,6 +65,7 @@
     <string name="todo_menu_add_to_calendar">添加到日历</string>
     <string name="todo_menu_countdown_start">开启倒计时</string>
     <string name="todo_menu_countdown_stop">关闭倒计时</string>
+    <string name="todo_menu_archive">归档</string>
     <!-- 添加到日历：账户选择卡（多日历账户时弹出）与写入结果 Toast -->
     <string name="calendar_picker_title">选择日历</string>
     <string name="calendar_picker_confirm">添加</string>
@@ -106,9 +107,13 @@
     <!-- 待办卡片已删除样式（最近删除页）：右侧撤回按钮；左滑彻底删除 -->
     <string name="todo_restore">恢复</string>
     <string name="todo_swipe_purge">彻底删除</string>
+    <!-- 待办卡片已归档样式（已归档页）：右侧取消归档按钮（归档的唯一出口） -->
+    <string name="todo_unarchive">取消归档</string>
     <string name="toast_todo_deleted">已删除</string>
     <string name="toast_todo_restored">已恢复</string>
     <string name="toast_todo_purged">已彻底删除</string>
+    <string name="toast_todo_archived">已归档</string>
+    <string name="toast_todo_unarchived">已取消归档</string>
     <string name="toast_todo_step_deleted">步骤已删除</string>
     <string name="toast_todo_pinned">已置顶</string>
     <string name="toast_todo_unpinned">已取消置顶</string>

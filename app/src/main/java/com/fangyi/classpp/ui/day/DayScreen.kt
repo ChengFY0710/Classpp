@@ -1568,6 +1568,7 @@ fun DayScreen(
             val repository = todoRepository ?: return@let
             // 回调（协程）里不是组合上下文，字符串在组合期解析（同待办页浮层约定）
             val stepDeletedMessage = stringResource(R.string.toast_todo_step_deleted)
+            val todoArchivedMessage = stringResource(R.string.toast_todo_archived)
             key(detail.id) {
                 TodoDetailSheet(
                     visible = todoDetailEntry != null,
@@ -1645,6 +1646,22 @@ fun DayScreen(
                     // 「添加到日历」（详情菜单项）：权限/账户选择/写入由 calendarAdd 编排；
                     // 传详情快照 detail，写入目标锁定点菜单那一刻的内容
                     onAddToCalendar = { calendarAdd.begin(detail) },
+                    // 「归档」（详情菜单项）：落库后待办移入已归档页，本浮层随活跃列表反查
+                    // 落空自动收起（同待办页详情的收场路径）；目标 id 同步显式清空——归档
+                    // 条目取消归档后会重回活跃列表，残留 id 会让浮层凭空重新弹出；
+                    // Err Toast 提示、浮层保持打开
+                    onArchive = {
+                        scope.launch {
+                            when (repository.archiveTodo(detail.id)) {
+                                TodoOpResult.Ok -> {
+                                    todoDetailTargetId = ""
+                                    todoDetailTargetDate = ""
+                                    AppToasts.show(context, todoArchivedMessage)
+                                }
+                                is TodoOpResult.Err -> AppToasts.show(context, todoSaveFailedMessage)
+                            }
+                        }
+                    },
                 )
             }
         }

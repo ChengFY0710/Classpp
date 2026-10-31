@@ -321,6 +321,10 @@ private fun CountdownExitSlot(
  * - [deleted] 已删除样式（最近删除页）：右侧勾选框换成 24dp 撤回按钮（ic_arrow_reset，
  *   theme 的 error 色），点按回调 [onRestore]；其余样式与普通卡完全一致——唯一区别是右侧；
  *   该样式下 [onCheckedChange] 不参与渲染；
+ * - [archived] 已归档样式（已归档页）：与已删除样式同构——右侧勾选框换成 24dp 取消归档
+ *   按钮（同 ic_arrow_reset「放回」图形，取 primary 蓝与回收站撤回按钮的 error 红区分语义），
+ *   点按回调 [onUnarchive]；与 [deleted] 互斥（调用方只传其一），该样式下 [onCheckedChange]
+ *   同样不参与渲染；
  * - 时间、截止、重复与标签全缺席时卡片仍有 60dp 最小高度，不塌成纯文字高度；
  * - [swipe] 侧滑动作（见 [NoteCardSwipe]）：非 null 时卡片包进侧滑层——左右滑呼出删除/
  *   置顶动作卡，双阈值结算（不足展开阈值回弹复位、越过执行阈值松手即执行、展开态
@@ -362,6 +366,10 @@ fun NoteCard(
     // 其余样式不变（唯一区别是右侧），onCheckedChange 在该样式下不参与渲染
     deleted: Boolean = false,
     onRestore: (() -> Unit)? = null,
+    // 已归档样式（已归档页）：右侧勾选框换成取消归档按钮，点按回调 onUnarchive；
+    // 与 deleted 互斥（调用方只传其一），渲染同 deleted 分支（图标同形、primary 蓝）
+    archived: Boolean = false,
+    onUnarchive: (() -> Unit)? = null,
     onCheckedChange: ((Boolean) -> Unit)? = null,
     onClick: (() -> Unit)? = null,
     // 编辑态选中：非 null 进入选中形态（Primary 蓝框 + 勾选框纯展示），null 无此形态
@@ -592,16 +600,16 @@ fun NoteCard(
                 )
                 Spacer(Modifier.width(16.dp))
             }
-            if (deleted) {
-                // 已删除样式：右侧换撤回按钮——24dp 图标取 theme 的 error 色，热区与勾选框同为
+            if (deleted || archived) {
+                // 已删除/已归档样式：右侧换成撤回/取消归档按钮——24dp 图标，热区与勾选框同为
                 // 36×36；按压反馈同源（pressClickable 的缩放作用于整个触控区、放在 clip 之前，
-                // 提亮范围与圆角对齐）。onRestore 缺席时按钮只是不响应（预览态）
+                // 提亮范围与圆角对齐）。回调缺席时按钮只是不响应（预览态）
                 Row(
                     modifier = Modifier
                         .pressClickable(
                             shape = RoundedRectangle(6.dp),
                             role = Role.Button,
-                            onClick = { onRestore?.invoke() },
+                            onClick = { (if (archived) onUnarchive else onRestore)?.invoke() },
                         )
                         .clip(RoundedRectangle(6.dp))
                         .height(36.dp)
@@ -611,8 +619,16 @@ fun NoteCard(
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_arrow_reset),
-                        contentDescription = stringResource(R.string.todo_restore),
-                        tint = MaterialTheme.colorScheme.error,
+                        // 取消归档取 primary 蓝（正向出口），回收站撤回取 error 红（警示）；
+                        // 同一「放回」图形，靠颜色与语境（所在页）区分语义
+                        contentDescription = stringResource(
+                            if (archived) R.string.todo_unarchive else R.string.todo_restore,
+                        ),
+                        tint = if (archived) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
                         modifier = Modifier.size(RestoreIconSize),
                     )
                 }

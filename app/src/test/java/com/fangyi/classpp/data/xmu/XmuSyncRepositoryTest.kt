@@ -2,6 +2,7 @@ package com.fangyi.classpp.data.xmu
 
 import com.fangyi.classpp.data.FakeNow
 import com.fangyi.classpp.data.TodoError
+import com.fangyi.classpp.data.TodoOpResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.model.isDeleted
 import com.fangyi.classpp.data.store.FileTodoStore
@@ -72,6 +73,7 @@ class XmuSyncRepositoryTest {
     )
 
     private fun XmuSyncRepository.activeIds(): Set<String> = todoRepository.todos.value.map { it.id }.toSet()
+    private fun XmuSyncRepository.archivedIds(): Set<String> = todoRepository.archivedTodos.value.map { it.id }.toSet()
     private fun XmuSyncRepository.trashIds(): Set<String> = todoRepository.deletedTodos.value.map { it.id }.toSet()
 
     private suspend fun XmuSyncRepository.syncAll(
@@ -127,6 +129,25 @@ class XmuSyncRepositoryTest {
         assertEquals(1, report.restored)
         assertEquals(0, report.imported)
         assertFalse(r.todoRepository.todos.value.first { it.id == "xmu-106160-925512" }.isDeleted)
+    }
+
+    @Test
+    fun `归档后同步不重复导入（已归档算已导入）`() = runBlocking {
+        val api = okApi()
+        val r = repo(api)
+        r.syncAll(api)
+
+        assertTrue(r.todoRepository.archiveTodo("xmu-106160-925512") is TodoOpResult.Ok)
+        assertTrue(r.archivedIds().contains("xmu-106160-925512"))
+
+        // 归档只是隐藏：比对时仍算「已导入」，不进新增候选、也不进复活候选
+        val plan = (r.prepareSync(force = true) as XmuPrepareOutcome.Ready).plan
+        assertTrue(plan.newItems.isEmpty())
+        assertTrue(plan.restoreItems.isEmpty())
+
+        val report = (r.commitSync(plan, emptySet()) as XmuCommitOutcome.Done).report
+        assertEquals(0, report.imported)
+        assertEquals(setOf("xmu-106160-925512"), r.archivedIds())
     }
 
     @Test
@@ -259,17 +280,23 @@ class XmuSyncRepositoryTest {
         val r = repo(api)
         r.syncAll(api)
         r.todoRepository.removeTodo("xmu-106160-925512") // 制造一条回收站数据
+        r.todoRepository.archiveTodo("xmu-110846-1013424") // 制造一条已归档数据
 
-        // 仅清映射：本地待办原样保留
+        // 仅清映射：本地待办原样保留（活跃 + 回收站 + 已归档）
         r.resetSyncData(deleteSyncedTodos = false)
         assertTrue(r.state.value.uid.isEmpty())
-        assertEquals(2, r.todoRepository.todos.value.size + r.todoRepository.deletedTodos.value.size)
+        assertEquals(
+            2,
+            r.todoRepository.todos.value.size +
+                r.todoRepository.deletedTodos.value.size +
+                r.todoRepository.archivedTodos.value.size,
+        )
 
-        // 重新同步建立映射后再彻底清（含回收站的 xmu- 条目）
+        // 重新同步建立映射后再彻底清（回收站与已归档的 xmu- 条目一并扫到）
         r.syncAll(api)
         r.todoRepository.addTodo(com.fangyi.classpp.data.testTodo(id = "user-made"))
         r.resetSyncData(deleteSyncedTodos = true)
-        assertEquals(setOf("user-made"), r.activeIds() + r.trashIds())
+        assertEquals(setOf("user-made"), r.activeIds() + r.trashIds() + r.archivedIds())
         // 批量 purge 后回收站不留残留
         assertTrue(r.todoRepository.deletedTodos.value.isEmpty())
     }

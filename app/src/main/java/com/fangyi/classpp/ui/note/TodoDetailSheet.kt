@@ -144,6 +144,9 @@ internal fun TodoDetailSheet(
     onOccurrenceCompletedChange: (date: IsoDate, completed: Boolean) -> Unit,
     // 开关列表卡倒计时（true = 开启）；落库后本层菜单文案随传入的 todo 自动回流
     onCountdownToggle: (Boolean) -> Unit,
+    // 归档本待办（移入「已归档」特殊分组页，归档后本浮层由宿主反查落空自动收起）；
+    // 权限外的持久化与失败 Toast 均由宿主编排
+    onArchive: () -> Unit,
     // 把本待办写入系统日历（权限请求/账户选择/写入与 Toast 均由宿主编排）；时间为「无」
     // 的待办菜单项整体置灰，本回调不会被触发
     onAddToCalendar: () -> Unit,
@@ -255,6 +258,7 @@ internal fun TodoDetailSheet(
                             todo.deadlineDate != null && !todo.completed,
                         countdownOn = todo.countdown,
                         onCountdownToggle = onCountdownToggle,
+                        onArchive = onArchive,
                     )
                 }
             }
@@ -470,7 +474,8 @@ internal fun TodoDetailSheet(
  * 时置灰不可点（`classppColors.negative`）、可点时点按把新开关值交 [onCountdownToggle]
  * 落库；文案：置灰时恒显「开启倒计时」（不暴露「关闭」误导用户以为还能操作），
  * 可点时随传入的 [countdownOn] 在「开启/关闭倒计时」间切换（状态源 = `Todo.countdown`，
- * 不在本组件内留存）。
+ * 不在本组件内留存）；归档（恒可点，详情只可能被活跃待办打开）点按交 [onArchive]
+ * 由宿主落库——待办移入「已归档」特殊分组页，本浮层随宿主反查落空自动收起。
  */
 @Composable
 private fun TitleMoreMenu(
@@ -482,6 +487,7 @@ private fun TitleMoreMenu(
     countdownEnabled: Boolean,
     countdownOn: Boolean,
     onCountdownToggle: (Boolean) -> Unit,
+    onArchive: () -> Unit,
 ) {
     val gapPx = with(LocalDensity.current) { TitleMenuGap.roundToPx() }
     PopupMenuPopup(
@@ -517,6 +523,17 @@ private fun TitleMoreMenu(
                         onClick = {
                             // 交宿主落库（列表卡随即显示/收起剩余天数）；本层文案随回流切换
                             onCountdownToggle(!countdownOn)
+                            onDismiss()
+                        },
+                    ),
+                    // 归档：把待办移入「已归档」特殊分组页（纯标记隐藏，详情随宿主反查落空
+                    // 自动收起，同删除后详情的收场路径）；重复待办整系列一并归档
+                    //（单模型字段语义，同删除/置顶），无置灰态——详情只可能被活跃待办打开
+                    PopupMenuItem(
+                        label = stringResource(R.string.todo_menu_archive),
+                        icon = R.drawable.ic_archive,
+                        onClick = {
+                            onArchive()
                             onDismiss()
                         },
                     ),

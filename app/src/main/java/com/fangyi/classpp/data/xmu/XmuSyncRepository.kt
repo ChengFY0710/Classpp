@@ -212,12 +212,14 @@ class XmuSyncRepository internal constructor(
 
     /**
      * 清空同步状态（退出登录与账号切换共用）：删 filesDir/xmu/ 下的状态文件与损坏隔离
-     * 文件并复位内存态；[deleteSyncedTodos] 时把课程中心同步来的本地待办一并移除（活跃软删
-     * 后随回收站条目一起彻底删除）。cookie 清理由 UI 层做（CookieManager.removeAllCookies）。
+     * 文件并复位内存态；[deleteSyncedTodos] 时把课程中心同步来的本地待办一并移除（活跃与
+     * 已归档条目软删后随回收站条目一起彻底删除）。cookie 清理由 UI 层做
+     * （CookieManager.removeAllCookies）。
      */
     suspend fun resetSyncData(deleteSyncedTodos: Boolean) = mutex.withLock {
         if (deleteSyncedTodos) {
-            val syncedActive = todoRepository.todos.value
+            // 已归档条目不在活跃流里（归档 = 隐藏），退出清理要一并扫到，否则归档的同步待办残留
+            val syncedActive = (todoRepository.todos.value + todoRepository.archivedTodos.value)
                 .filter { it.isXmuSynced() }
                 .map { it.id }
             if (syncedActive.isNotEmpty()) todoRepository.removeTodos(syncedActive)
@@ -269,6 +271,9 @@ class XmuSyncRepository internal constructor(
         fetchedAt: Long,
     ): XmuSyncPlan {
         val active = todoRepository.todos.value.associateBy { it.id }
+        // 已归档条目不在活跃流里（归档 = 隐藏），比对时要算「已导入」——漏掉会把归档的
+        // 同步待办当新增候选，用户确认导入后撞 DuplicateId 整批失败
+        val archived = todoRepository.archivedTodos.value.associateBy { it.id }
         val trashed = todoRepository.deletedTodos.value.associateBy { it.id }
         val knownEntries = _state.value.entries.associateBy { XmuTodoMapper.remoteKey(it) }
 
@@ -289,21 +294,23 @@ class XmuSyncRepository internal constructor(
                         knownTodoId,
                         outcome.todo.id,
                         XmuTodoMapper.legacyLocalId(dto),
-                    ).filterNotNull().firstOrNull { it in active || it in trashed }
+                    ).filterNotNull().firstOrNull { it in active || it in archived || it in trashed }
                         ?: knownTodoId
                         ?: outcome.todo.id
                     val activeTodo = active[localId]
                     val trashedTodo = trashed[localId]
+                    // 已导入（活跃或已归档——归档只是隐藏，不改变导入事实）：
+                    // 跳过（P2 再按哈希做远端变化更新）；映射缺档只补基线
+                    val liveTodo = activeTodo ?: archived[localId]
                     when {
-                        activeTodo != null -> {
-                            // 已导入：跳过（P2 再按哈希做远端变化更新）；映射缺档只补基线
+                        liveTodo != null -> {
                             if (rKey !in knownEntries) {
                                 entriesForActive += XmuSyncEntry(
                                     remoteId = dto.id,
                                     courseId = dto.courseId,
                                     todoId = localId,
                                     remoteHash = XmuTodoMapper.remoteHash(dto),
-                                    localHash = XmuTodoMapper.localHash(activeTodo),
+                                    localHash = XmuTodoMapper.localHash(liveTodo),
                                 )
                             }
                         }

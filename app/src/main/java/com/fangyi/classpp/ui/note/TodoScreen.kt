@@ -250,9 +250,11 @@ fun TodoScreen(
     // Haze 管整条顶栏的磨砂，Backdrop 只喂顶栏胶囊（OverlaySheet 顶栏按钮同款结构）
     val glassPillsEnabled = isGlassStyleEnabled()
     val topBarPillBackdrop = rememberGlassBackdrop(MaterialTheme.colorScheme.background)
-    // 活跃待办：仓库已剔除最近删除（软删条目只在 deletedTodos 流里，供回收站页使用）
+    // 活跃待办：仓库已剔除最近删除与已归档（软删条目只在 deletedTodos 流、归档条目只在
+    // archivedTodos 流里，分别供回收站页与已归档页使用）
     val todos by repository.todos.collectAsState()
     val deletedTodos by repository.deletedTodos.collectAsState()
+    val archivedTodos by repository.archivedTodos.collectAsState()
 
     // 标签配色表（标签名 → 颜色）：与 TagChoosingCard 同源，用户自定义标签取
     // TagEntry.colorArgb（null = 跟随主题 Primary）。**仅用户标签进表**——课程标签
@@ -368,6 +370,8 @@ fun TodoScreen(
     val todoDeletedMessage = stringResource(R.string.toast_todo_deleted)
     val todoRestoredMessage = stringResource(R.string.toast_todo_restored)
     val todoPurgedMessage = stringResource(R.string.toast_todo_purged)
+    val todoArchivedMessage = stringResource(R.string.toast_todo_archived)
+    val todoUnarchivedMessage = stringResource(R.string.toast_todo_unarchived)
     val todoPinnedMessage = stringResource(R.string.toast_todo_pinned)
     val todoUnpinnedMessage = stringResource(R.string.toast_todo_unpinned)
     val todoMovedMessage = stringResource(R.string.toast_todo_moved)
@@ -462,17 +466,22 @@ fun TodoScreen(
         else -> TodoPageKeyGroupPrefix + selectedGroupIndex
     }
     // 视图段也是页面身份的一部分：列表与收集箱各是一页，切换视图与切分组同享 CrossPages
-    // 整页交叉过渡，两边的滚动位也各按视图保活（切回恢复）。最近删除页例外——回收站
-    // 保持列表（撤回/彻底删除需要整卡动作），视图切换不改 key、也不播动画；编辑态只可能
-    // 从列表视图进入，!todoEditing 仅作兜底（编辑中不把 key 翻到收集箱页）
-    val inboxActive = inboxView && !todoEditing && special != TodoSpecialSection.Trash
+    // 整页交叉过渡，两边的滚动位也各按视图保活（切回恢复）。最近删除页与已归档页例外——
+    // 回收站恒走列表（撤回需要整卡动作），已归档页也恒走列表（取消归档需要整卡动作，
+    // 收集箱卡的勾选/点击对冻结的归档条目都无意义），视图切换不改 key、也不播动画；
+    // 编辑态只可能从列表视图进入，!todoEditing 仅作兜底（编辑中不把 key 翻到收集箱页）
+    val inboxActive = inboxView && !todoEditing &&
+        special != TodoSpecialSection.Trash && special != TodoSpecialSection.Archived
     val todoPageKey = if (inboxActive) TodoPageKeyInboxPrefix + todoPageBaseKey else todoPageBaseKey
-    // 最近删除页恒走列表，顶栏视图块置灰不可点；进入该页时顺手收起可能残留的视图菜单
-    // （弹层是 Popup，不受动作块置灰约束，状态不清理会在离开该页后重新弹出），并补跑一次
-    // 到期清理——装载时已清过一轮，这里兜住应用长时间驻留期间新满 30 天的条目
+    // 最近删除页与已归档页恒走列表，顶栏视图块置灰不可点；进入这两页时顺手收起可能残留
+    // 的视图菜单（弹层是 Popup，不受动作块置灰约束，状态不清理会在离开该页后重新弹出）；
+    // 最近删除页另补跑一次到期清理——装载时已清过一轮，这里兜住应用长时间驻留期间
+    // 新满 30 天的条目
     LaunchedEffect(special) {
-        if (special == TodoSpecialSection.Trash) {
+        if (special == TodoSpecialSection.Trash || special == TodoSpecialSection.Archived) {
             viewMenuExpanded = false
+        }
+        if (special == TodoSpecialSection.Trash) {
             repository.purgeExpiredDeleted()
         }
     }
@@ -717,6 +726,10 @@ fun TodoScreen(
                     val pageTodos = when {
                         page.special == TodoSpecialSection.Trash ->
                             deletedTodos.sortedByDescending { it.deletedAtMillis ?: 0L }
+                        page.special == TodoSpecialSection.Archived ->
+                            // 已归档条目不在活跃列表里（仓库单列 archivedTodos 流），按归档时刻
+                            // 倒序（最近归档的在最前），与「最近归档」的时间语义一致
+                            archivedTodos.sortedByDescending { it.archivedAtMillis ?: 0L }
                         page.special != null -> filterTodosBySpecial(displayTodos, page.special, today, nowMinute)
                         page.tag != null -> filterTodosByTag(displayTodos, page.tag)
                         else -> filterTodosByGroup(displayTodos, page.groupIndex, groups)
@@ -777,6 +790,9 @@ fun TodoScreen(
                         emptyHint = pageEmptyHint,
                         // 最近删除页：平铺（无四组分组头）+ 已删除样式卡片（右撤回 / 左滑彻底删除）
                         deletedCards = page.special == TodoSpecialSection.Trash,
+                        // 已归档页：平铺（无四组分组头）+ 已归档样式卡片（右取消归档；
+                        // 左滑软删进最近删除）
+                        archivedCards = page.special == TodoSpecialSection.Archived,
                         topBarExtraSpace = topBarExtraSpace,
                         editBarExtraSpace = editBarExtraSpace,
                         swipeCoordinator = swipeCoordinator,
@@ -808,6 +824,7 @@ fun TodoScreen(
                         },
                         // 侧滑删除：展开后再拖到完全变色松手才删（无确认框，满色就是强确认）；
                         // 失败 Toast、卡片自动滑回。软删：条目进最近删除，可从回收站恢复
+                        // （已归档页的左滑删除同走这条——归档标记保留，恢复仍回已归档页）
                         onDeleteTodo = { id ->
                             scope.launch {
                                 when (repository.removeTodo(id)) {
@@ -821,6 +838,15 @@ fun TodoScreen(
                             scope.launch {
                                 when (repository.restoreTodo(id)) {
                                     TodoOpResult.Ok -> AppToasts.show(context, todoRestoredMessage)
+                                    is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
+                                }
+                            }
+                        },
+                        // 已归档页的取消归档按钮：清除归档标记，待办重回原分组与原状态
+                        onUnarchiveTodo = { id ->
+                            scope.launch {
+                                when (repository.unarchiveTodo(id)) {
+                                    TodoOpResult.Ok -> AppToasts.show(context, todoUnarchivedMessage)
                                     is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
                                 }
                             }
@@ -1036,9 +1062,10 @@ fun TodoScreen(
                         ),
                         // 视图菜单：两项单选（列表为默认），点选即切换并收菜单；
                         // 动作块图标由 inboxView 决定（列表行 / 收集箱格）。
-                        // 最近删除页恒走列表：视图块置灰不可点（与分类块在特殊页的置灰同款）
+                        // 最近删除页与已归档页恒走列表：视图块置灰不可点（与分类块在特殊页的置灰同款）
                         inboxView = inboxView,
-                        viewEnabled = special != TodoSpecialSection.Trash,
+                        viewEnabled = special != TodoSpecialSection.Trash &&
+                            special != TodoSpecialSection.Archived,
                         viewMenuExpanded = viewMenuExpanded,
                         onViewMenuDismiss = { viewMenuExpanded = false },
                         viewMenuSections = listOf(
@@ -1203,6 +1230,22 @@ fun TodoScreen(
                 // 「添加到日历」（详情菜单项）：权限/账户选择/写入由 calendarAdd 编排；
                 // 传详情快照 detail，写入目标锁定点菜单那一刻的内容
                 onAddToCalendar = { calendarAdd.begin(detail) },
+                // 「归档」（详情菜单项）：落库后待办移入已归档页，本浮层随活跃列表反查
+                // 落空自动收起（同删除后详情的收场路径）；目标 id 同步显式清空——归档条目
+                // 取消归档后会重回活跃列表，残留 id 会让浮层凭空重新弹出；Err Toast 提示、
+                // 浮层保持打开
+                onArchive = {
+                    scope.launch {
+                        when (repository.archiveTodo(detail.id)) {
+                            TodoOpResult.Ok -> {
+                                detailTargetId = ""
+                                detailTargetDate = ""
+                                AppToasts.show(context, todoArchivedMessage)
+                            }
+                            is TodoOpResult.Err -> AppToasts.show(context, groupSaveFailedMessage)
+                        }
+                    }
+                },
             )
         }
     }
@@ -1267,6 +1310,7 @@ fun TodoScreen(
         TodoGroupsSheet(
             todos = todos,
             deletedCount = deletedTodos.size,
+            archivedCount = archivedTodos.size,
             groups = groups,
             tags = userTagEntries,
             courseTags = courseTagNames,
@@ -1682,8 +1726,8 @@ internal fun filterTodosByGroup(
 
 /**
  * 按特殊分组页（[TodoSpecialSection]）口径从**活跃待办**派生可见列表：已完成/未完成/
- * 已逾期/已置顶实时过滤；已归档数据层暂无该概念，恒空仅 UI。最近删除的条目不在活跃
- * 列表里（仓库单列 deletedTodos 流），由宿主按删除时刻倒序直接取用，这里同样返回空。
+ * 已逾期/已置顶实时过滤。已归档与最近删除的条目都不在活跃列表里（仓库单列 archivedTodos /
+ * deletedTodos 流），由宿主按归档/删除时刻倒序直接取用，这里同样返回空。
  * 逾期判定与列表同一份（[today] 取 [LocalToday]、[nowMinute] 重组时现取，同 TodoList）。
  * 页内仍按置顶/逾期/未完成/已完成分区展示（置顶收编语义不变——「已置顶」页单卡侧滑
  * 即可撤销置顶）。
@@ -1698,7 +1742,7 @@ internal fun filterTodosBySpecial(
     TodoSpecialSection.Incomplete -> todos.filter { !it.completed }
     TodoSpecialSection.Overdue -> todos.filter { it.isOverdue(today, nowMinute) }
     TodoSpecialSection.Pinned -> todos.filter { it.pinned }
-    // 已归档无数据层概念；最近删除走仓库的 deletedTodos 流（不在活跃列表里）
+    // 已归档走仓库的 archivedTodos 流、最近删除走 deletedTodos 流（都不在活跃列表里）
     TodoSpecialSection.Archived, TodoSpecialSection.Trash -> emptyList()
 }
 
@@ -1741,6 +1785,9 @@ internal fun filterTodosByTag(todos: List<Todo>, tag: String): List<Todo> =
  * 卡片逐项平铺（无四组分区头、
  * 同一套 animateItem 规格，卡间距走每项底部内距）——条目由宿主按删除时刻倒序传入，与
  * 「最近删除」的时间语义一致；卡片为已删除样式（右侧撤回按钮），左滑呼出「彻底删除」。
+ * 已归档页（[archivedCards] = true）同样逐项平铺：无保留期提示条（归档不自动清理），
+ * 卡片为已归档样式（右侧取消归档按钮，左滑软删进最近删除——归档条目不接点击，常规写
+ * 路径对归档条目不可见），条目由宿主按归档时刻倒序传入。
  *
  * 滚动容器为 [RubberBandLazyColumn]（页面 [ProvideOverscroll] 作用域内）：内容超一屏
  * 时滚到边缘拉出橡皮筋，待办很少、不足一屏时同样能拉——短内容是 foundation 派发门槛
@@ -1766,6 +1813,8 @@ private fun TodoList(
     emptyHint: String? = null,
     // 最近删除页：平铺卡片（无四组分区）、已删除样式（右撤回 / 左滑彻底删除）
     deletedCards: Boolean = false,
+    // 已归档页：平铺卡片（无四组分区）、已归档样式（右取消归档；左滑软删进最近删除）
+    archivedCards: Boolean = false,
     topBarExtraSpace: Dp,
     // 编辑顶栏让位补差（EditBarRowSpace − TopBarRowSpace 的动画值，宿主随 todoEditing 下发）
     editBarExtraSpace: Dp = 0.dp,
@@ -1794,6 +1843,7 @@ private fun TodoList(
     onTogglePinned: (id: String, pinned: Boolean) -> Unit,
     onDeleteTodo: (id: String) -> Unit,
     onRestoreTodo: (id: String) -> Unit = {},
+    onUnarchiveTodo: (id: String) -> Unit = {},
     onPurgeTodo: (id: String) -> Unit = {},
     onTodoClick: (todo: Todo) -> Unit,
     modifier: Modifier = Modifier,
@@ -1908,8 +1958,51 @@ private fun TodoList(
                     }
                 }
             }
+        } else if (archivedCards) {
+            // 已归档页：逐卡平铺（无四组分组头；归档无保留期语义，也没有回收站那条提示条）
+            // ——顺序由宿主按归档时刻倒序给定（最近归档的在最前），卡片为已归档样式
+            // （右侧取消归档按钮；左滑软删进最近删除，归档标记保留）；取消归档/删除后卡片
+            // 走 animateItem 退场，其余卡片避让收拢。空页给居中占位文案（与特殊分组页共用
+            // emptyHint）
+            if (todos.isEmpty()) {
+                if (emptyHint != null) {
+                    item(key = "archivedEmptyState") {
+                        Box(
+                            Modifier.fillParentMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = emptyHint,
+                                style = ClassppTextTokens.emptyHint,
+                                color = MaterialTheme.classppColors.secondaryText,
+                            )
+                        }
+                    }
+                }
+            } else {
+                todos.forEachIndexed { index, todo ->
+                    item(key = todo.listItemKey(flyDoneKeys)) {
+                        ArchivedTodoCard(
+                            todo = todo,
+                            tagColors = tagColors,
+                            swipeCoordinator = swipeCoordinator,
+                            onDelete = { onDeleteTodo(todo.id) },
+                            onUnarchive = { onUnarchiveTodo(todo.id) },
+                            modifier = Modifier
+                                .animateItem(
+                                    fadeInSpec = TodoListFadeInSpec,
+                                    placementSpec = TodoListPlaceSpec,
+                                    fadeOutSpec = TodoListFadeOutSpec,
+                                )
+                                .padding(
+                                    bottom = if (index < todos.lastIndex) CardSectionSpacing else 0.dp,
+                                ),
+                        )
+                    }
+                }
+            }
         } else {
-            // 空列表占位：特殊分组页过滤结果为空（含恒空的已归档）时给居中文案；
+            // 空列表占位：特殊分组页过滤结果为空时给居中文案；
             // 常规列表不传 emptyHint，全组被分类菜单隐藏时维持原空白行为
             if (sections.isEmpty() && emptyHint != null) {
                 item(key = "emptyHint") {
@@ -2131,6 +2224,54 @@ private fun TrashedTodoCard(
                 onActiveColor = MaterialTheme.colorScheme.onError,
                 contentDescription = stringResource(R.string.todo_swipe_purge),
                 onAction = onPurge,
+            ),
+            pin = null,
+        ),
+    )
+}
+
+/**
+ * 已归档页的单条卡片：[Todo] → [NoteCard] 的已归档样式接线——右侧勾选框换成取消归档按钮
+ * （[NoteCard.archived]，点按 [onUnarchive]），其余样式与普通卡完全一致（完成态照常划线
+ * 置灰，时间/截止/标签等只读展示）。不接点击：详情/编辑浮层只认活跃待办，归档条目是
+ * 冻结态。左滑呼出「删除」动作卡（满色松手即软删进最近删除——与主列表删除同一语义同一
+ * 样式，归档标记保留，回收站恢复后仍回已归档页），右滑不提供置顶。
+ */
+@Composable
+private fun ArchivedTodoCard(
+    todo: Todo,
+    tagColors: Map<String, Color>,
+    swipeCoordinator: SwipeCoordinator,
+    onDelete: () -> Unit,
+    onUnarchive: () -> Unit,
+    // 列表项级 modifier：animateItem（进出场/避让）与卡间距内距由宿主组装后传入
+    modifier: Modifier = Modifier,
+) {
+    NoteCard(
+        modifier = modifier,
+        title = todo.name,
+        time = todo.cardTimeText(),
+        deadline = todo.deadlineCardText(),
+        deadlineColor = todo.deadlineColor(),
+        repeat = todo.repeatCardText(),
+        countdownDays = if (todo.countdown) todo.deadlineDaysLeft() else null,
+        tags = todo.tags,
+        tagColors = tagColors,
+        sourceLabel = todo.sourceLabel(),
+        urgency = todo.urgency,
+        completed = todo.completed,
+        archived = true,
+        onUnarchive = onUnarchive,
+        swipe = NoteCardSwipe(
+            key = todo.id,
+            coordinator = swipeCoordinator,
+            delete = SwipeAction(
+                iconRes = R.drawable.ic_delete,
+                tint = MaterialTheme.colorScheme.error,
+                activeColor = MaterialTheme.colorScheme.error,
+                onActiveColor = MaterialTheme.colorScheme.onError,
+                contentDescription = stringResource(R.string.todo_swipe_delete),
+                onAction = onDelete,
             ),
             pin = null,
         ),

@@ -143,6 +143,7 @@ private data class TagRow(
  *   以只读锁定前缀展示在用户标签之前，不可重命名/删除/拖拽；与用户标签重名时以用户标签
  *   为准（id 须唯一）
  * @param deletedCount 最近删除条目数（仓库 deletedTodos 流的大小）
+ * @param archivedCount 已归档条目数（仓库 archivedTodos 流的大小）
  * @param onGroupsChange 整表写回统一入口：编辑态确认（顺序 + 置顶）、普通态新建（追加分组）、
  *   重命名（立即生效）；[renames] 为本次操作的重命名映射（原名 → 新名）——宿主让顶栏选中
  *   跟随到新名，仓库在同一次提交里让该组待办的归属跟随（不掉回未分组），无重命名时传空表
@@ -161,6 +162,7 @@ private data class TagRow(
 internal fun TodoGroupsSheet(
     todos: List<Todo>,
     deletedCount: Int,
+    archivedCount: Int,
     groups: List<TodoGroup>,
     tags: List<TagEntry>,
     courseTags: List<String>,
@@ -446,8 +448,8 @@ internal fun TodoGroupsSheet(
                         ),
                     ),
                 )
-                // 已置顶 + 已归档一张两行卡：置顶计数实时来自待办列表；归档数据层暂无概念，恒 0
-                // （接入后由归档统计替换）；已置顶页内可单卡侧滑撤销置顶，归档页本期仅 UI
+                // 已置顶 + 已归档一张两行卡：置顶/归档计数实时来自待办列表（归档条目在仓库
+                // archivedTodos 流）；已归档页内单卡点「取消归档」即回活跃列表
                 SettingsCardwithIcon(
                     items = listOf(
                         SettingsCardwithIconItem(
@@ -459,7 +461,7 @@ internal fun TodoGroupsSheet(
                         SettingsCardwithIconItem(
                             icon = R.drawable.ic_archive,
                             label = stringResource(R.string.todo_section_archived),
-                            value = "0",
+                            value = archivedCount.toString(),
                             onClick = { if (!editing && !tagEditing) onOpenSpecial(TodoSpecialSection.Archived) },
                         ),
                     ),

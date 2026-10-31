@@ -49,6 +49,10 @@ data class TodoStep(
  * @param deletedAtMillis 删除时刻（epoch millis），null = 正常待办；非 null = 已移入「最近删除」，
  *   由仓库 removeTodo 写入、restoreTodo 清空。回收站条目不在仓库的活跃待办流里，
  *   只在回收站流中按该时刻倒序展示
+ * @param archivedAtMillis 归档时刻（epoch millis），null = 正常待办；非 null = 已移入「已归档」
+ *   特殊分组页（归档 = 隐藏：待办从仓库活跃流整条移出，通知/日历/统计等消费方一并看不到，
+ *   仅已归档页按该时刻倒序展示）。由仓库 archiveTodo 写入、unarchiveTodo 清空；软删不清此
+ *   标记——归档条目被删进回收站再恢复，仍回已归档页
  * @param countdown 倒计时开关：true = 待办列表卡在截止时间左侧显示剩余天数（`N天` /
  *   `逾期N天`）。不变式：无 [deadlineDate] 时必为 false，由仓库在归一化时维护
  * @param pinned 置顶标记：true = 待办列表顶部「已置顶」分组成员（无置顶待办时整组隐藏）
@@ -86,6 +90,8 @@ data class Todo(
     val createdAtMillis: Long = 0,
     /** 删除时刻：null = 正常待办，非 null = 在「最近删除」（软删标记，见类 KDoc） */
     val deletedAtMillis: Long? = null,
+    /** 归档时刻：null = 正常待办，非 null = 在「已归档」（隐藏标记，见类 KDoc） */
+    val archivedAtMillis: Long? = null,
     val group: String? = null,
     val countdown: Boolean = false,
     val pinned: Boolean = false,
@@ -97,6 +103,9 @@ data class Todo(
 
 /** 是否在「最近删除」里（读侧统一口径：只看软删标记，与仓库的活跃/回收站分流同源） */
 val Todo.isDeleted: Boolean get() = deletedAtMillis != null
+
+/** 是否在「已归档」里（读侧统一口径：只看归档标记，与仓库的活跃/已归档分流同源） */
+val Todo.isArchived: Boolean get() = archivedAtMillis != null
 
 /**
  * 待办整库文件信封：todos.json 的内容（分组与待办同文件——删除分组时级联把该组待办置回

@@ -398,6 +398,7 @@
     <string name="todo_menu_add_to_calendar">Add to calendar</string>
     <string name="todo_menu_countdown_start">Start countdown</string>
     <string name="todo_menu_countdown_stop">Stop countdown</string>
+    <string name="todo_menu_archive">Archive</string>
     <!-- Add to calendar: account picker card (shown with multiple calendars) and result toasts -->
     <string name="calendar_picker_title">"Choose calendar"</string>
     <string name="calendar_picker_confirm">"Add"</string>
@@ -440,9 +441,13 @@
     <!-- NoteCard deleted style (Recently Deleted): right-side restore button; swipe left to purge -->
     <string name="todo_restore">Restore</string>
     <string name="todo_swipe_purge">Delete permanently</string>
+    <!-- NoteCard archived style (Archived page): right-side unarchive button (the only way out) -->
+    <string name="todo_unarchive">Unarchive</string>
     <string name="toast_todo_deleted">Deleted</string>
     <string name="toast_todo_restored">Restored</string>
     <string name="toast_todo_purged">Permanently deleted</string>
+    <string name="toast_todo_archived">Archived</string>
+    <string name="toast_todo_unarchived">Unarchived</string>
     <string name="toast_todo_step_deleted">Step deleted</string>
     <string name="toast_todo_pinned">Pinned</string>
     <string name="toast_todo_unpinned">Unpinned</string>

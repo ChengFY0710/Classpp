@@ -44,9 +44,12 @@ class TodoShareCodecTest {
 
     @Test
     fun `import always lands as live todos`() {
-        // 载荷里的软删标记（导出自其它版本 / 手工编辑）一律清空：分享导入永远是活跃待办
+        // 载荷里的软删/归档标记（导出自其它版本 / 手工编辑）一律清空：分享导入永远是活跃待办
         val json = TodoShareCodec.encode(
-            listOf(testTodo(id = "t1", name = "已删除", deletedAtMillis = 123L)),
+            listOf(
+                testTodo(id = "t1", name = "已删除", deletedAtMillis = 123L)
+                    .copy(archivedAtMillis = 456L),
+            ),
             exportedAtMillis = 1L,
         )
         val result = TodoShareCodec.decodeForImport(json).let {
@@ -54,6 +57,7 @@ class TodoShareCodecTest {
             (it as TodoReadResult.Ok).value
         }
         assertNull(result.single().deletedAtMillis)
+        assertNull(result.single().archivedAtMillis)
     }
 
     @Test

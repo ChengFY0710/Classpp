@@ -277,6 +277,129 @@ class TodoRepositoryTest {
         assertFalse(json.contains("已删除待办"))
     }
 
+    // ---------- 归档 ----------
+
+    @Test
+    fun `archiveTodo hides from live flow and shows in archived flow`() = runBlocking {
+        val r = repo()
+        val id = r.addTodo(testTodo(name = "A")).okId()
+
+        now.advanceBy(100)
+        r.archiveTodo(id).assertOk()
+        assertTrue(r.todos.value.isEmpty())
+        assertEquals(1_000_100L, r.archivedTodos.value.single().archivedAtMillis)
+
+        // 归档是软标记：条目仍在文件里，重开仓库后仍只在已归档流
+        val reopened = repo()
+        assertTrue(reopened.todos.value.isEmpty())
+        assertEquals(listOf(id), reopened.archivedTodos.value.map { it.id })
+    }
+
+    @Test
+    fun `archiveTodo rejects archived and unknown ids`() = runBlocking {
+        val r = repo()
+        val id = r.addTodo(testTodo(name = "A")).okId()
+        r.archiveTodo(id).assertOk()
+
+        // 已归档条目对归档路径不可见（重复归档报 NotFound，同回收站的二次删除语义）
+        assertTrue(r.archiveTodo(id).assertErr() is TodoError.NotFound)
+        assertTrue(r.archiveTodo("ghost").assertErr() is TodoError.NotFound)
+    }
+
+    @Test
+    fun `unarchiveTodo returns the todo to the live list with state kept`() = runBlocking {
+        val r = repo()
+        r.setGroups(listOf(TodoGroup("作业"))).assertOk()
+        val id = r.addTodo(testTodo(name = "A", group = "作业")).okId()
+        r.setPinned(id, true).assertOk()
+        r.archiveTodo(id).assertOk()
+
+        now.advanceBy(100)
+        r.unarchiveTodo(id).assertOk()
+        val restored = r.todos.value.single { it.id == id }
+        assertNull(restored.archivedAtMillis)
+        assertEquals("作业", restored.group) // 取消归档保留原分组
+        assertTrue(restored.pinned) // 取消归档保留置顶
+        assertTrue(r.archivedTodos.value.isEmpty())
+
+        // 活跃条目不在已归档，取消归档同样报 NotFound（与重复归档对称）
+        assertTrue(r.unarchiveTodo(id).assertErr() is TodoError.NotFound)
+    }
+
+    @Test
+    fun `group deletion cascades to archived todos too`() = runBlocking {
+        val r = repo()
+        r.setGroups(listOf(TodoGroup("作业"))).assertOk()
+        val id = r.addTodo(testTodo(name = "A", group = "作业")).okId()
+        r.archiveTodo(id).assertOk()
+
+        r.setGroups(emptyList()).assertOk()
+        assertNull(r.archivedTodos.value.single().group) // 级联清引用也扫到已归档条目
+        r.unarchiveTodo(id).assertOk()
+        assertNull(r.todos.value.single().group)
+    }
+
+    @Test
+    fun `regular write paths reject archived todos`() = runBlocking {
+        val r = repo()
+        val id = r.addTodo(testTodo(name = "A")).okId()
+        r.archiveTodo(id).assertOk()
+
+        // 归档 = 冻结：常规写路径（编辑/完成/置顶）都只认活跃待办，出口只有取消归档与删除
+        assertTrue(r.updateTodo(testTodo(id = id, name = "改名")).assertErr() is TodoError.NotFound)
+        assertTrue(r.setCompleted(id, true).assertErr() is TodoError.NotFound)
+        assertTrue(r.setPinned(id, true).assertErr() is TodoError.NotFound)
+    }
+
+    @Test
+    fun `removeTodos reaches archived todos and restore keeps archive flag`() = runBlocking {
+        val r = repo()
+        val id = r.addTodo(testTodo(name = "A")).okId()
+        r.archiveTodo(id).assertOk()
+
+        // 批量软删扫得到已归档条目（外部同步的退出清理依赖这一点）
+        now.advanceBy(100)
+        r.removeTodos(listOf(id)).assertOk()
+        assertTrue(r.archivedTodos.value.isEmpty())
+        assertEquals(listOf(id), r.deletedTodos.value.map { it.id })
+
+        // 恢复保留归档标记：删除前已在「已归档」的条目恢复后仍回已归档页
+        r.restoreTodo(id).assertOk()
+        assertTrue(r.todos.value.isEmpty())
+        assertEquals(listOf(id), r.archivedTodos.value.map { it.id })
+    }
+
+    @Test
+    fun `removeTodo reaches archived todos and keeps archive flag`() = runBlocking {
+        val r = repo()
+        val id = r.addTodo(testTodo(name = "A")).okId()
+        r.archiveTodo(id).assertOk()
+
+        // 已归档页左滑删除 = 软删进最近删除（删除统一是软删）：归档标记保留
+        now.advanceBy(100)
+        r.removeTodo(id).assertOk()
+        assertTrue(r.archivedTodos.value.isEmpty())
+        assertEquals(listOf(id), r.deletedTodos.value.map { it.id })
+        assertEquals(1_000_000L, r.deletedTodos.value.single().archivedAtMillis)
+
+        // 回收站恢复不清归档标记：仍回已归档页
+        r.restoreTodo(id).assertOk()
+        assertTrue(r.todos.value.isEmpty())
+        assertEquals(listOf(id), r.archivedTodos.value.map { it.id })
+    }
+
+    @Test
+    fun `exportTodos excludes archived todos`() = runBlocking {
+        val r = repo()
+        val a = r.addTodo(testTodo(name = "已归档待办")).okId()
+        r.addTodo(testTodo(name = "活跃待办")).okId()
+        r.archiveTodo(a).assertOk()
+
+        val json = r.exportTodos().okText()
+        assertTrue(json.contains("活跃待办"))
+        assertFalse(json.contains("已归档待办"))
+    }
+
     // ---------- 完成状态 / 步骤 ----------
 
     @Test
