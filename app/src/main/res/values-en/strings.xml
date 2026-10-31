@@ -85,6 +85,7 @@
     <string name="settings_account_sync">Account &amp; sync</string>
     <string name="xmu_header_title">Sync your XMU account</string>
     <string name="xmu_header_description">Sign in with XMU Unified Identity to sync assignments, quizzes, and other to-dos</string>
+    <string name="xmu_section_auto_login_sync">Auto renewal and sync</string>
     <string name="xmu_section_capabilities">What sync can do</string>
     <string name="xmu_section_school">Select school</string>
     <string name="xmu_school_current">Current school</string>
@@ -133,13 +134,12 @@
     <string name="xmu_switch_keep_records">Clear records and continue</string>
     <string name="xmu_switch_delete_all">Clear and delete synced todos</string>
     <!-- Auto renewal (optional, native OAuth) -->
-    <string name="xmu_auto_login_section">Auto renewal</string>
     <string name="xmu_auto_login_title">Remember sign-in to renew automatically</string>
     <string name="xmu_auto_login_desc_enabled">On: signs in automatically when the session expires</string>
     <string name="xmu_auto_login_desc_blocked">Paused: automatic sign-in failed. Sign in manually, then re-enable.</string>
     <string name="xmu_auto_login_desc_off">Off: you will need to sign in manually when the session expires</string>
     <string name="xmu_auto_login_desc_unavailable">Unavailable: cannot access the system keystore</string>
-    <string name="xmu_auto_login_sheet_title">Enable auto renewal</string>
+    <string name="xmu_auto_login_sheet_title">Auto renewal</string>
     <string name="xmu_auto_login_sheet_title_busy">Signing in</string>
     <string name="xmu_auto_login_notes_title">Important</string>
     <string name="xmu_auto_login_warning">Enabling this stores your student ID and password. Credentials are encrypted with the Android Keystore and excluded from backups. Sign-in happens only on this device, directly with the university authentication service. If a captcha appears, the password changes, or authentication fails, auto renewal pauses immediately and deletes the saved password — it never retries in a loop. Do not enable this on a shared device.</string>
@@ -158,7 +158,6 @@
     <string name="xmu_auto_login_disable_message">Turning this off deletes the saved student ID and password. The current sign-in is kept; after the session expires you will need to sign in manually.</string>
     <string name="xmu_auto_login_disable_confirm">Turn off and delete password</string>
     <!-- Daily auto sync -->
-    <string name="xmu_auto_sync_section">Auto sync</string>
     <string name="xmu_auto_sync_title">Daily auto sync</string>
     <string name="xmu_auto_sync_desc">When enabled, syncs daily at 6:00</string>
     <string name="xmu_auto_sync_notif_title">Course Center auto sync finished</string>

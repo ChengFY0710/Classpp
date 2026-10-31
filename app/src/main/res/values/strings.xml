@@ -189,6 +189,7 @@
     <string name="settings_account_sync">账号与同步</string>
     <string name="xmu_header_title">同步你的厦大账号</string>
     <string name="xmu_header_description">使用厦门大学统一身份认证，即可同步作业、测验等相关待办</string>
+    <string name="xmu_section_auto_login_sync">自动续期和同步</string>
     <string name="xmu_section_capabilities">同步可以做什么</string>
     <string name="xmu_section_school">选择学校</string>
     <string name="xmu_school_current">当前学校</string>
@@ -237,13 +238,12 @@
     <string name="xmu_switch_keep_records">清空记录并继续</string>
     <string name="xmu_switch_delete_all">清空并删除同步待办</string>
     <!-- 自动续期（方案 B，可选） -->
-    <string name="xmu_auto_login_section">自动续期</string>
     <string name="xmu_auto_login_title">记住登录以自动续期</string>
     <string name="xmu_auto_login_desc_enabled">已开启：会话过期时自动登录</string>
     <string name="xmu_auto_login_desc_blocked">已暂停：自动登录失败，请手动登录后重新开启</string>
     <string name="xmu_auto_login_desc_off">未开启：会话过期后需手动登录</string>
     <string name="xmu_auto_login_desc_unavailable">不可用：无法访问系统密钥库</string>
-    <string name="xmu_auto_login_sheet_title">开启自动续期</string>
+    <string name="xmu_auto_login_sheet_title">自动续期</string>
     <string name="xmu_auto_login_sheet_title_busy">正在登录</string>
     <string name="xmu_auto_login_notes_title">注意事项</string>
     <string name="xmu_auto_login_warning">开启后需要保存你的学号与密码。凭据由 Android Keystore 加密，不随备份迁移；登录只在本机直接与学校认证服务交互。遇到验证码、密码变更或认证失败会立即暂停并删除密码，不会连续重试。请勿在共用设备上开启。</string>
@@ -262,7 +262,6 @@
     <string name="xmu_auto_login_disable_message">关闭后将删除已保存的学号与密码。当前登录状态会保留，会话过期后需手动登录。</string>
     <string name="xmu_auto_login_disable_confirm">关闭并删除密码</string>
     <!-- 每日自动同步 -->
-    <string name="xmu_auto_sync_section">自动同步</string>
     <string name="xmu_auto_sync_title">每日自动同步</string>
     <string name="xmu_auto_sync_desc">开启后，每日 6:00 自动同步</string>
     <string name="xmu_auto_sync_notif_title">课程中心自动同步完成</string>

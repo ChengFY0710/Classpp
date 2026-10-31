@@ -589,50 +589,62 @@ fun XmuSyncScreen(
                             }
                         }
 
-                        // 「自动续期」分组（方案 B，可选）：关闭/暂停/不可用时同步仍走
-                        // 原 WebView 路径；开启需要现场输入凭据完成一次原生登录。
-                        if (autoLogin != null) {
-                            CardSection(title = stringResource(R.string.xmu_auto_login_section)) {
+                        // 「自动续期和同步」分组：两个开关合并一张卡，能力缺失时逐行隐藏。
+                        // 自动续期关闭/暂停/不可用时同步仍走原 WebView 路径，开启需要现场输入
+                        // 凭据完成一次原生登录；自动同步每天 6:00 后台跑一次并自动导入（需已
+                        // 连接），未开自动续期时登录过期该次静默跳过（行为不变，文案统一不区分）
+                        if (autoLogin != null || connected) {
+                            CardSection(
+                                title = stringResource(R.string.xmu_section_auto_login_sync),
+                            ) {
                                 SettingsCard(
-                                    items = listOf(
-                                        SettingsCardItem.Toggle(
-                                            label = stringResource(R.string.xmu_auto_login_title),
-                                            description = if (!autoLoginState.available) {
-                                                stringResource(R.string.xmu_auto_login_desc_unavailable)
-                                            } else {
-                                                when (autoLoginState.policy) {
-                                                    XmuAutoLoginPolicy.ENABLED ->
-                                                        stringResource(R.string.xmu_auto_login_desc_enabled)
-                                                    XmuAutoLoginPolicy.BLOCKED ->
-                                                        stringResource(R.string.xmu_auto_login_desc_blocked)
-                                                    XmuAutoLoginPolicy.USER_LOGGED_OUT ->
-                                                        stringResource(R.string.xmu_auto_login_desc_off)
-                                                }
-                                            },
-                                            checked = autoLoginState.policy ==
-                                                XmuAutoLoginPolicy.ENABLED,
-                                            onCheckedChange = onAutoLoginToggle,
-                                            enabled = !autoLoginBusy && autoLoginState.available,
-                                        ),
-                                    ),
-                                )
-                            }
-                        }
-
-                        // 「自动同步」分组：每天 6:00 后台同步一次并自动导入（需已连接）。
-                        // 未开自动续期时登录过期该次静默跳过（行为不变，文案统一不区分）
-                        if (connected) {
-                            CardSection(title = stringResource(R.string.xmu_auto_sync_section)) {
-                                SettingsCard(
-                                    items = listOf(
-                                        SettingsCardItem.Toggle(
-                                            label = stringResource(R.string.xmu_auto_sync_title),
-                                            description =
-                                                stringResource(R.string.xmu_auto_sync_desc),
-                                            checked = dailySyncEnabled,
-                                            onCheckedChange = onDailySyncToggle,
-                                        ),
-                                    ),
+                                    items = buildList {
+                                        if (autoLogin != null) {
+                                            add(
+                                                SettingsCardItem.Toggle(
+                                                    label =
+                                                        stringResource(R.string.xmu_auto_login_title),
+                                                    description = if (!autoLoginState.available) {
+                                                        stringResource(
+                                                            R.string.xmu_auto_login_desc_unavailable,
+                                                        )
+                                                    } else {
+                                                        when (autoLoginState.policy) {
+                                                            XmuAutoLoginPolicy.ENABLED ->
+                                                                stringResource(
+                                                                    R.string.xmu_auto_login_desc_enabled,
+                                                                )
+                                                            XmuAutoLoginPolicy.BLOCKED ->
+                                                                stringResource(
+                                                                    R.string.xmu_auto_login_desc_blocked,
+                                                                )
+                                                            XmuAutoLoginPolicy.USER_LOGGED_OUT ->
+                                                                stringResource(
+                                                                    R.string.xmu_auto_login_desc_off,
+                                                                )
+                                                        }
+                                                    },
+                                                    checked = autoLoginState.policy ==
+                                                        XmuAutoLoginPolicy.ENABLED,
+                                                    onCheckedChange = onAutoLoginToggle,
+                                                    enabled =
+                                                        !autoLoginBusy && autoLoginState.available,
+                                                ),
+                                            )
+                                        }
+                                        if (connected) {
+                                            add(
+                                                SettingsCardItem.Toggle(
+                                                    label =
+                                                        stringResource(R.string.xmu_auto_sync_title),
+                                                    description =
+                                                        stringResource(R.string.xmu_auto_sync_desc),
+                                                    checked = dailySyncEnabled,
+                                                    onCheckedChange = onDailySyncToggle,
+                                                ),
+                                            )
+                                        }
+                                    },
                                 )
                             }
                         }
