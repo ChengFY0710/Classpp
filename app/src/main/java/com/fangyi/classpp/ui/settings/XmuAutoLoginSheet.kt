@@ -132,6 +132,7 @@ internal fun XmuAutoLoginSheet(
                                 password = it
                                 validationShown = false
                             },
+                            placeholder = stringResource(R.string.xmu_auto_login_password_hint),
                             isError = validationShown && passwordBlank,
                             imeAction = ImeAction.Done,
                             onImeAction = ::submit,

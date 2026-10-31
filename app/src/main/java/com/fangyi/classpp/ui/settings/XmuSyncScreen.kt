@@ -620,27 +620,15 @@ fun XmuSyncScreen(
                         }
 
                         // 「自动同步」分组：每天 6:00 后台同步一次并自动导入（需已连接）。
-                        // 未开自动续期时登录过期该次静默跳过——文案里说明，避免用户以为
-                        // 开了就必然同步成功
+                        // 未开自动续期时登录过期该次静默跳过（行为不变，文案统一不区分）
                         if (connected) {
                             CardSection(title = stringResource(R.string.xmu_auto_sync_section)) {
                                 SettingsCard(
                                     items = listOf(
                                         SettingsCardItem.Toggle(
                                             label = stringResource(R.string.xmu_auto_sync_title),
-                                            description = if (dailySyncEnabled) {
-                                                if (autoLoginState.policy ==
-                                                    XmuAutoLoginPolicy.ENABLED
-                                                ) {
-                                                    stringResource(R.string.xmu_auto_sync_desc_on)
-                                                } else {
-                                                    stringResource(
-                                                        R.string.xmu_auto_sync_desc_on_no_renewal,
-                                                    )
-                                                }
-                                            } else {
-                                                stringResource(R.string.xmu_auto_sync_desc_off)
-                                            },
+                                            description =
+                                                stringResource(R.string.xmu_auto_sync_desc),
                                             checked = dailySyncEnabled,
                                             onCheckedChange = onDailySyncToggle,
                                         ),

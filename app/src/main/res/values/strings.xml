@@ -250,6 +250,7 @@
     <string name="xmu_auto_login_username">学号</string>
     <string name="xmu_auto_login_username_hint">统一身份认证账号</string>
     <string name="xmu_auto_login_password">密码</string>
+    <string name="xmu_auto_login_password_hint">输入密码</string>
     <string name="xmu_auto_login_confirm">确认</string>
     <string name="xmu_auto_login_blank">请先输入学号和密码</string>
     <string name="xmu_auto_login_busy">正在登录…</string>
@@ -263,9 +264,7 @@
     <!-- 每日自动同步 -->
     <string name="xmu_auto_sync_section">自动同步</string>
     <string name="xmu_auto_sync_title">每日自动同步</string>
-    <string name="xmu_auto_sync_desc_on">已开启：每天 6:00 自动同步课程中心，新待办自动导入并通知</string>
-    <string name="xmu_auto_sync_desc_on_no_renewal">已开启：每天 6:00 自动同步；未开启自动续期，登录过期将跳过该次同步</string>
-    <string name="xmu_auto_sync_desc_off">未开启：仅打开 App 时手动同步</string>
+    <string name="xmu_auto_sync_desc">开启后，每日 6:00 自动同步</string>
     <string name="xmu_auto_sync_notif_title">课程中心自动同步完成</string>
     <string name="xmu_auto_sync_notif_text">已自动导入 %1$d 条，恢复 %2$d 条</string>
     <!-- 通知与提醒 -->

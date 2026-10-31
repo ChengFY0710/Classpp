@@ -146,6 +146,7 @@
     <string name="xmu_auto_login_username">Student ID</string>
     <string name="xmu_auto_login_username_hint">Unified identity account</string>
     <string name="xmu_auto_login_password">Password</string>
+    <string name="xmu_auto_login_password_hint">Enter password</string>
     <string name="xmu_auto_login_confirm">Confirm</string>
     <string name="xmu_auto_login_blank">Enter your student ID and password first</string>
     <string name="xmu_auto_login_busy">Signing in…</string>
@@ -159,9 +160,7 @@
     <!-- Daily auto sync -->
     <string name="xmu_auto_sync_section">Auto sync</string>
     <string name="xmu_auto_sync_title">Daily auto sync</string>
-    <string name="xmu_auto_sync_desc_on">Enabled: syncs Course Center daily at 6:00, imports new todos and notifies you</string>
-    <string name="xmu_auto_sync_desc_on_no_renewal">Enabled: syncs daily at 6:00. Auto renewal is off, so an expired sign-in skips that sync</string>
-    <string name="xmu_auto_sync_desc_off">Off: sync manually when the app is open</string>
+    <string name="xmu_auto_sync_desc">When enabled, syncs daily at 6:00</string>
     <string name="xmu_auto_sync_notif_title">Course Center auto sync finished</string>
     <string name="xmu_auto_sync_notif_text">Auto-imported %1$d, restored %2$d</string>
     <!-- Notifications & reminders -->
