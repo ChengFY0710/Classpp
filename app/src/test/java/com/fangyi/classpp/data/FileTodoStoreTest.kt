@@ -78,6 +78,19 @@ class FileTodoStoreTest {
     }
 
     @Test
+    fun `missing main restores from bak`() {
+        val state = fileWith(testTodo(id = "t1", name = "崩溃后幸存"))
+        store().save(state)
+        // 模拟进程崩在「删主 → 改名」之间：只剩 bak
+        mainFile().delete()
+
+        val outcome = store().load()
+        assertTrue(outcome is LoadOutcome.Loaded)
+        assertEquals(LoadIssue.RestoredFromBackup, outcome.issue)
+        assertEquals(state, (outcome as LoadOutcome.Loaded<TodoFile>).file)
+    }
+
+    @Test
     fun `double corruption quarantines main and resets`() {
         store().save(fileWith(testTodo(id = "t1")))
         mainFile().writeText("garbage")

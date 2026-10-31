@@ -219,12 +219,13 @@ class XmuSyncRepository internal constructor(
             val syncedActive = todoRepository.todos.value
                 .filter { XmuTodoMapper.isSyncedLocalId(it.id) }
                 .map { it.id }
-            val syncedAll = todoRepository.todos.value + todoRepository.deletedTodos.value
             if (syncedActive.isNotEmpty()) todoRepository.removeTodos(syncedActive)
-            // 软删后全部进回收站，逐个彻底删除（仓库没有批量 purge）
-            for (todo in syncedAll) {
-                if (XmuTodoMapper.isSyncedLocalId(todo.id)) todoRepository.purgeTodo(todo.id)
-            }
+
+            // 软删已把活跃条目全部推进回收站：一次批量 purge 彻底删掉，避免逐条全量落盘
+            val syncedTrash = todoRepository.deletedTodos.value
+                .filter { XmuTodoMapper.isSyncedLocalId(it.id) }
+                .map { it.id }
+            if (syncedTrash.isNotEmpty()) todoRepository.purgeTodos(syncedTrash)
         }
         withContext(Dispatchers.IO) { store.delete() }
         _state.value = XmuSyncFile()

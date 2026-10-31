@@ -111,6 +111,7 @@
     <string name="xmu_preview_summary">%1$d to import, %2$d skipped</string>
     <string name="xmu_preview_restore">%1$d deleted synced todos will be restored</string>
     <string name="xmu_preview_empty">No todos</string>
+    <string name="xmu_deadline_unparseable">%1$d entries have an unrecognized deadline format; the Course Center interface may have changed</string>
     <string name="xmu_import_done">Imported %1$d, restored %2$d</string>
     <string name="xmu_deadline_format">%3$02d:%4$02d, %1$d/%2$d</string>
     <string name="xmu_error_expired">Session expired, please sign in again</string>
@@ -118,6 +119,7 @@
     <string name="xmu_error_network">Network connection failed</string>
     <string name="xmu_error_timeout">Connection timed out, try again later</string>
     <string name="xmu_error_format">Interface format changed, please update the app</string>
+    <string name="xmu_error_account_changed">The Course Center account changed. Sign in again or clear sync records.</string>
     <string name="xmu_error_too_soon">Synced just now, try again later</string>
     <string name="xmu_error_persist">Failed to save sync records. Check storage space and retry.</string>
     <string name="xmu_error_generic">Sync failed, try again later</string>

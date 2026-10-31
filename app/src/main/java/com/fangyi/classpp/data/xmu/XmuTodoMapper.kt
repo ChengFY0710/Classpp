@@ -10,8 +10,14 @@ sealed interface XmuMapOutcome {
     data class Skipped(val reason: SkipReason) : XmuMapOutcome
 }
 
-/** 跳过原因（预览摘要聚合展示；InvalidId/NotStudent 属接口异常形态，计入「无效」） */
-enum class SkipReason { NotStudent, InvalidId, BlankTitle, NoDeadline, Locked, Overdue }
+/**
+ * 跳过原因（预览摘要聚合展示；InvalidId/NotStudent 属接口异常形态，计入「无效」）。
+ * [NoDeadline]（end_time 为空）是合法业务形态；[DeadlineUnparseable]（非空但解析失败）
+ * 是接口形态变化的信号，UI 单独提示，不能混在「无截止」里静默跳过。
+ */
+enum class SkipReason {
+    NotStudent, InvalidId, BlankTitle, NoDeadline, DeadlineUnparseable, Locked, Overdue,
+}
 
 /**
  * 课程中心待办 → Classpp [Todo] 的映射与过滤。
@@ -45,6 +51,7 @@ object XmuTodoMapper {
      * 映射一条远端待办；不满足导入条件返回 Skipped（原因见 [SkipReason]）：
      * 非学生 / id 非法 / 标题空白 / 截止缺失或解析失败，以及默认滤掉的已锁定与已过期
      * （[includeClosedOrOverdue]=true 时后两类放行，预留给设置开关）。
+     * 截止为空与「非空但解析不了」分开计数：后者是接口形态变化的信号。
      */
     fun map(
         dto: XmuTodoDto,
@@ -55,8 +62,11 @@ object XmuTodoMapper {
         if (dto.id <= 0L) return XmuMapOutcome.Skipped(SkipReason.InvalidId)
         val name = dto.title.trim()
         if (name.isEmpty()) return XmuMapOutcome.Skipped(SkipReason.BlankTitle)
-        val deadline = XmuTime.parseDeadline(dto.endTime)
-            ?: return XmuMapOutcome.Skipped(SkipReason.NoDeadline)
+        val end = dto.endTime
+        val deadline = XmuTime.parseDeadline(end)
+            ?: return XmuMapOutcome.Skipped(
+                if (end.isNullOrBlank()) SkipReason.NoDeadline else SkipReason.DeadlineUnparseable,
+            )
         if (dto.isLocked && !includeClosedOrOverdue) return XmuMapOutcome.Skipped(SkipReason.Locked)
         if (!includeClosedOrOverdue && XmuTime.isOverdue(deadline, nowMillis)) {
             return XmuMapOutcome.Skipped(SkipReason.Overdue)

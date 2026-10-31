@@ -17,7 +17,8 @@ interface TodoStore {
 /**
  * 基于单 JSON 文件的实现，写入为 tmp+rename 提交流程，与 FileScheduleStore 完全一致
  * （协议细节见其 KDoc）：tmp（fsync）→ bak（备份本次将提交的数据）→ rename 覆盖主文件；
- * 读取降级 主文件坏 → bak → 双坏改名 `todos.corrupt-<millis>.json` 留证并返回空库。
+ * 读取降级 主文件坏 → bak → 双坏改名 `todos.corrupt-<millis>.json` 留证并返回空库；
+ * 主文件缺失（进程在删主与改名之间被杀）同样由 bak 兜底。
  * `formatVersion` 高于当前版本按损坏处理。
  */
 class FileTodoStore(private val dir: File) : TodoStore {
@@ -30,6 +31,11 @@ class FileTodoStore(private val dir: File) : TodoStore {
         if (!dir.exists()) dir.mkdirs()
 
         if (!main.exists()) {
+            // 没有主文件不等于没有数据：save 先写 bak 再 rename，崩在中间时只剩 bak
+            val bakParsed = parseFile(bak)
+            if (bakParsed != null && bakParsed.formatVersion <= TODO_FORMAT_VERSION) {
+                return LoadOutcome.Loaded(bakParsed, LoadIssue.RestoredFromBackup)
+            }
             return LoadOutcome.Fresh(TodoFile(), LoadIssue.None)
         }
 

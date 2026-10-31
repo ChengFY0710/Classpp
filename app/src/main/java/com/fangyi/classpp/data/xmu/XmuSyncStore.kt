@@ -11,7 +11,8 @@ import java.io.File
  * 状态文件收在 `filesDir/xmu/` 子目录（备份规则按目录整体排除，隔离文件也不会外泄）；
  * 文件协议与 FileTodoStore 完全一致（细节见其 KDoc）：tmp（fsync）→ bak（备份本次
  * 将提交的数据）→ rename 原子覆盖主文件；读取降级 主文件坏 → bak → 双坏改名
- * `xmu-sync.corrupt-<millis>.json` 留证并返回空状态。formatVersion 高于当前版本按损坏处理。
+ * `xmu-sync.corrupt-<millis>.json` 留证并返回空状态。主文件缺失（进程在删主与改名之间
+ * 被杀）同样由 bak 兜底。formatVersion 高于当前版本按损坏处理。
  *
  * open + [save] open：单测可注入「落盘失败」替身（见 XmuSyncRepositoryTest.FailingStore）。
  */
@@ -27,6 +28,11 @@ open class XmuSyncStore(private val dir: File) {
         migrateLegacyFiles()
 
         if (!main.exists()) {
+            // 没有主文件不等于没有数据：save 先写 bak 再 rename，崩在中间时只剩 bak
+            val bakParsed = parseFile(bak)
+            if (bakParsed != null && bakParsed.formatVersion <= XMU_SYNC_FORMAT_VERSION) {
+                return LoadOutcome.Loaded(bakParsed, LoadIssue.RestoredFromBackup)
+            }
             return LoadOutcome.Fresh(XmuSyncFile(), LoadIssue.None)
         }
 

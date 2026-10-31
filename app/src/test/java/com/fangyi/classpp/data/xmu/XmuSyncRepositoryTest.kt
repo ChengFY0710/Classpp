@@ -270,6 +270,8 @@ class XmuSyncRepositoryTest {
         r.todoRepository.addTodo(com.fangyi.classpp.data.testTodo(id = "user-made"))
         r.resetSyncData(deleteSyncedTodos = true)
         assertEquals(setOf("user-made"), r.activeIds() + r.trashIds())
+        // 批量 purge 后回收站不留残留
+        assertTrue(r.todoRepository.deletedTodos.value.isEmpty())
     }
 
     @Test
@@ -287,6 +289,20 @@ class XmuSyncRepositoryTest {
         val plan = (r.prepareSync() as XmuPrepareOutcome.Ready).plan
         assertTrue(plan.newItems.isEmpty())
         assertEquals(0, plan.totalRemote)
+    }
+
+    @Test
+    fun `截止格式变化只计入 DeadlineUnparseable 且不阻断其他条目`() = runBlocking {
+        val todos = """
+            {"todo_list":[
+              {"id":7001,"title":"时区偏移作业","type":"homework","course_id":1,"course_name":"课程A","end_time":"2026-11-04T18:30:00+08:00","is_student":true},
+              {"id":7002,"title":"正常作业","type":"homework","course_id":1,"course_name":"课程A","end_time":"2026-11-04T10:30:00Z","is_student":true}
+            ]}
+        """.trimIndent()
+        val plan = (repo(okApi(todos = todos)).prepareSync() as XmuPrepareOutcome.Ready).plan
+
+        assertEquals(1, plan.skipped[SkipReason.DeadlineUnparseable])
+        assertEquals(listOf("xmu-7002"), plan.newItems.map { it.todo.id })
     }
 
     @Test

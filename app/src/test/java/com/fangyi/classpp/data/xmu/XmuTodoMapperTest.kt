@@ -76,6 +76,8 @@ class XmuTodoMapperTest {
         assertTrue(reasons.contains(SkipReason.BlankTitle))
         assertTrue(reasons.contains(SkipReason.InvalidId))
         assertFalse(reasons.contains(SkipReason.Overdue))
+        // end_time 为 null 是合法「无截止」，不能计入格式异常
+        assertFalse(reasons.contains(SkipReason.DeadlineUnparseable))
 
         val quiz = (XmuTodoMapper.map(list[4], now) as XmuMapOutcome.Mapped).todo
         assertTrue(quiz.note.contains("类型：quiz"))
@@ -95,6 +97,28 @@ class XmuTodoMapperTest {
         val late: Long = now + 30L * 24 * 60 * 60 * 1000 // 一个月后：全部过期
         assertTrue(XmuTodoMapper.map(dto, late) is XmuMapOutcome.Skipped)
         assertTrue(XmuTodoMapper.map(dto, late, includeClosedOrOverdue = true) is XmuMapOutcome.Mapped)
+    }
+
+    @Test
+    fun `截止格式无法识别与无截止分流`() {
+        val base = decodeFixture("todos-2026-10-30.json").todoList.first()
+
+        // 平台把 end_time 从 Z 改成 +08:00：是接口形态变化信号，不是「没有截止」
+        val shifted = base.copy(endTime = "2026-11-04T18:30:00+08:00")
+        assertEquals(
+            SkipReason.DeadlineUnparseable,
+            (XmuTodoMapper.map(shifted, now) as XmuMapOutcome.Skipped).reason,
+        )
+
+        // 空/空白仍是合法的「无截止」，不提示格式问题
+        assertEquals(
+            SkipReason.NoDeadline,
+            (XmuTodoMapper.map(base.copy(endTime = null), now) as XmuMapOutcome.Skipped).reason,
+        )
+        assertEquals(
+            SkipReason.NoDeadline,
+            (XmuTodoMapper.map(base.copy(endTime = "  "), now) as XmuMapOutcome.Skipped).reason,
+        )
     }
 
     @Test

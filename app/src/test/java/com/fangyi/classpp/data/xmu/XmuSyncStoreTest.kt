@@ -72,6 +72,19 @@ class XmuSyncStoreTest {
     }
 
     @Test
+    fun `missing main restores from bak`() {
+        val state = fileWith(entry(7))
+        store().save(state)
+        // 模拟进程崩在「删主 → 改名」之间：只剩 bak
+        mainFile().delete()
+
+        val outcome = store().load()
+        assertTrue(outcome is LoadOutcome.Loaded)
+        assertEquals(LoadIssue.RestoredFromBackup, outcome.issue)
+        assertEquals(state, (outcome as LoadOutcome.Loaded<XmuSyncFile>).file)
+    }
+
+    @Test
     fun `double corruption quarantines main and resets`() {
         store().save(fileWith(entry(1)))
         mainFile().writeText("garbage")

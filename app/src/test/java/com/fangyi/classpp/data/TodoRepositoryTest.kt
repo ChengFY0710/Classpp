@@ -199,6 +199,39 @@ class TodoRepositoryTest {
     }
 
     @Test
+    fun `purgeTodos removes only trashed ids in one save`() = runBlocking {
+        var saves = 0
+        val inner = com.fangyi.classpp.data.store.FileTodoStore(folder.root)
+        val counting = object : TodoStore {
+            override fun load() = inner.load()
+            override fun save(file: com.fangyi.classpp.data.model.TodoFile): StoreResult {
+                saves++
+                return inner.save(file)
+            }
+        }
+        val r = repo(counting)
+        val a = r.addTodo(testTodo(name = "A")).okId()
+        val b = r.addTodo(testTodo(name = "B")).okId()
+        val c = r.addTodo(testTodo(name = "C")).okId()
+        r.removeTodos(listOf(b, c)).assertOk()
+
+        // 活跃 id（a）与未知 id 宽容忽略：批量语义只删回收站里的 b
+        saves = 0
+        r.purgeTodos(listOf(a, b, "unknown")).assertOk()
+        assertEquals("批量彻底删除只落盘一次", 1, saves)
+        assertEquals(listOf("A"), r.todos.value.map { it.name })
+        assertEquals(listOf(c), r.deletedTodos.value.map { it.id })
+
+        // 没有可删条目时不写盘
+        r.purgeTodos(listOf(a, "unknown")).assertOk()
+        assertEquals(1, saves)
+
+        val reopened = repo()
+        assertEquals(listOf("A"), reopened.todos.value.map { it.name })
+        assertEquals(listOf(c), reopened.deletedTodos.value.map { it.id })
+    }
+
+    @Test
     fun `purgeExpiredDeleted only removes trash at or past retention`() = runBlocking {
         val r = repo()
         val id = r.addTodo(testTodo(name = "A")).okId()

@@ -377,6 +377,18 @@ class TodoRepository internal constructor(
     }
 
     /**
+     * 批量彻底删除（仅回收站条目）：一次 commit 完成，未知/活跃 id 宽容忽略。
+     * 与 [purgeTodo] 同语义，供外部同步的「退出并删除」等批量场景使用——
+     * 逐条 purge 会每条全量写一次 todos.json，条目多时落盘次数与中间态都不可接受。
+     */
+    suspend fun purgeTodos(ids: Collection<String>): TodoOpResult = mutex.withLock {
+        val drop = ids.toSet()
+        val remaining = fileState.value.todos.filterNot { it.id in drop && it.isDeleted }
+        if (remaining.size == fileState.value.todos.size) return@withLock TodoOpResult.Ok
+        commit(fileState.value.copy(todos = remaining))
+    }
+
+    /**
      * 清理最近删除里已满保留期（[TRASH_RETENTION_DAYS] 天）的条目：真正从 todos.json 移除，
      * 不可恢复。装载时由 [bootstrap] 自动跑一次；最近删除页打开时再跑一次，补上应用装载后
      * 新到期的条目（应用长时间驻留时不重新装载也能按时清掉）。没有到期条目时不写盘。

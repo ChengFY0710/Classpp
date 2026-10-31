@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -45,6 +46,7 @@ import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.TodoError
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.xmu.SkipReason
 import com.fangyi.classpp.data.xmu.XmuCommitOutcome
 import com.fangyi.classpp.data.xmu.XmuFetchResult
 import com.fangyi.classpp.data.xmu.XmuPrepareOutcome
@@ -114,9 +116,18 @@ fun XmuSyncScreen(
     var previewMounted by remember { mutableStateOf(false) }
     if (previewPlan != null) previewMounted = true
 
-    // 登录浮层与登录结果（结果里带两段响应原文，账号切换确认后要用）
+    // 登录浮层与登录结果（结果里带两段响应原文，账号切换确认后要用）。
+    // 原文都是字符串，用 Saver 一并存进 savedInstanceState：旋转后换号确认框的按钮仍可用，
+    // 不会出现「框还在、pendingLogin 已丢」的死对话框。
     var loginVisible by rememberSaveable { mutableStateOf(false) }
-    var pendingLogin by remember { mutableStateOf<XmuFetchResult.Ok?>(null) }
+    var pendingLogin by rememberSaveable(
+        stateSaver = Saver<XmuFetchResult.Ok?, ArrayList<String>>(
+            save = { ok -> ok?.let { arrayListOf(it.profileRaw, it.todosRaw) } },
+            restore = { saved ->
+                saved.takeIf { it.size == 2 }?.let { XmuFetchResult.Ok(it[0], it[1]) }
+            },
+        ),
+    ) { mutableStateOf<XmuFetchResult.Ok?>(null) }
 
     // 退出登录：一次确认（保留已同步待办）；账号切换确认。
     // 两个确认框都走两段式挂载：visible 置 false 后仍留在组合里播淡出，onDismissed 才卸载
@@ -135,6 +146,7 @@ fun XmuSyncScreen(
             XmuSyncError.NetworkError to R.string.xmu_error_network,
             XmuSyncError.Timeout to R.string.xmu_error_timeout,
             XmuSyncError.FormatChanged to R.string.xmu_error_format,
+            XmuSyncError.AccountChanged to R.string.xmu_error_account_changed,
             XmuSyncError.TooSoon to R.string.xmu_error_too_soon,
             XmuSyncError.PersistFailed to R.string.xmu_error_persist,
         )
@@ -145,6 +157,7 @@ fun XmuSyncScreen(
     val importFailedText = stringResource(R.string.xmu_error_import)
     val persistFailedText = stringResource(R.string.xmu_error_persist)
     val logoutDoneText = stringResource(R.string.xmu_logout_done)
+    val deadlineWarningFormat = stringResource(R.string.xmu_deadline_unparseable)
 
     val showError: (XmuSyncError) -> Unit = { error ->
         AppToasts.show(
@@ -155,15 +168,20 @@ fun XmuSyncScreen(
 
     // 无新增、无恢复 → 预览里没有任何可看得见的内容，不弹浮层；但仍要补写映射基线与
     // lastSyncAt（备份恢复/「仅退出」后重新登录靠这一步重建「上次同步」）。落盘失败不能报
-    // 「已是最新」，否则用户以为同步成功、实际映射没保存。
+    // 「已是最新」，否则用户以为同步成功、实际映射没保存。全部条目都因截止格式被跳过时同理：
+    // 不能说「已是最新」，否则接口改版会被当成同步成功。
     suspend fun showPlanOrUpToDate(plan: XmuSyncPlan) {
         if (plan.newItems.isNotEmpty() || plan.restoreItems.isNotEmpty()) {
             previewPlan = plan
             return
         }
         val repo = repository
+        val unparseable = plan.skipped[SkipReason.DeadlineUnparseable] ?: 0
         if (repo == null || repo.markSynced(plan)) {
-            AppToasts.show(context, upToDateText)
+            AppToasts.show(
+                context,
+                if (unparseable > 0) deadlineWarningFormat.format(unparseable) else upToDateText,
+            )
         } else {
             AppToasts.show(context, persistFailedText)
         }
@@ -637,6 +655,21 @@ private fun XmuSyncPreviewSheet(
             SheetInfoBanner(text = summaryFormat.format(selected.size, p.skipped.values.sum()))
             if (p.restoreItems.isNotEmpty()) {
                 SheetInfoBanner(text = restoreFormat.format(p.restoreItems.size))
+            }
+            // 截止时间非空但解析失败：单条不阻断导入，但要让用户看到接口可能已变化。
+            // 用可换行的文本块而不是单行横幅，长文案不会被省略号截断。
+            val unparseable = p.skipped[SkipReason.DeadlineUnparseable] ?: 0
+            if (unparseable > 0) {
+                CardSection {
+                    Text(
+                        text = stringResource(R.string.xmu_deadline_unparseable, unparseable),
+                        style = ClassppTextTokens.settingsDescription,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                    )
+                }
             }
             if (p.newItems.isEmpty()) {
                 CardSection {
