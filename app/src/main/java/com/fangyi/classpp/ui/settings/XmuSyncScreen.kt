@@ -53,6 +53,7 @@ import com.fangyi.classpp.ui.components.FadeOverlayDialog
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
+import com.fangyi.classpp.ui.components.SettingsInfoHeaderCard
 import com.fangyi.classpp.ui.components.SheetBottomSlack
 import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTopAction
@@ -106,10 +107,14 @@ fun XmuSyncScreen(
     var loginVisible by rememberSaveable { mutableStateOf(false) }
     var pendingLogin by remember { mutableStateOf<XmuFetchResult.Ok?>(null) }
 
-    // 退出登录：两段确认（第二段针对「连待办一起删」的不可逆操作）；账号切换确认
+    // 退出登录：一次确认（保留已同步待办）；账号切换确认。
+    // 两个确认框都走两段式挂载：visible 置 false 后仍留在组合里播淡出，onDismissed 才卸载
     var logoutVisible by rememberSaveable { mutableStateOf(false) }
-    var logoutPurgeConfirmVisible by rememberSaveable { mutableStateOf(false) }
+    var logoutMounted by remember { mutableStateOf(false) }
+    if (logoutVisible) logoutMounted = true
     var switchVisible by rememberSaveable { mutableStateOf(false) }
+    var switchMounted by remember { mutableStateOf(false) }
+    if (switchVisible) switchMounted = true
 
     // 错误文案在组合期解析（回调里只引用，不经 LocalContext 查资源——lint 惯例）
     val errorTexts = remember {
@@ -190,9 +195,9 @@ fun XmuSyncScreen(
         }
     }
 
-    val doLogout: (Boolean) -> Unit = { deleteSyncedTodos ->
+    val doLogout: () -> Unit = {
         scope.launch {
-            repository?.resetSyncData(deleteSyncedTodos)
+            repository?.resetSyncData(deleteSyncedTodos = false)
             // App 只有这一个 WebView 用途：清全量 cookie 可接受（指导 §8.3）
             CookieManager.getInstance().removeAllCookies(null)
             CookieManager.getInstance().flush()
@@ -296,70 +301,74 @@ fun XmuSyncScreen(
                             SheetInfoBanner(text = stringResource(R.string.xmu_error_expired))
                         }
 
-                        if (!connected) {
-                            CardSection {
+                        // 顶部无题分组：头部卡 + 账号状态/登录入口，组内卡间距 10dp
+                        CardSection {
+                            SettingsInfoHeaderCard(
+                                icon = R.drawable.ic_arrow_sync_circle,
+                                title = stringResource(R.string.xmu_header_title),
+                                description = stringResource(R.string.xmu_header_description),
+                            )
+
+                            if (!connected) {
+                                SettingsCard(
+                                    items = listOf(
+                                        SettingsCardItem.Nav(
+                                            label = stringResource(R.string.xmu_login_button),
+                                            onClick = {
+                                                sessionExpired = false
+                                                loginVisible = true
+                                            },
+                                        ),
+                                    ),
+                                )
+                            } else {
                                 SettingsCard(
                                     items = listOf(
                                         SettingsCardItem.Custom(
-                                            label = stringResource(R.string.xmu_intro_title),
-                                            description = stringResource(R.string.xmu_intro_body),
+                                            label = if (syncState.accountName.isBlank()) {
+                                                stringResource(R.string.xmu_connected_label)
+                                            } else {
+                                                stringResource(R.string.xmu_connected_name, syncState.accountName)
+                                            },
+                                            description = if (syncState.lastSyncAtMillis > 0L) {
+                                                stringResource(
+                                                    R.string.xmu_last_sync_at,
+                                                    formatSyncTime(syncState.lastSyncAtMillis),
+                                                )
+                                            } else {
+                                                stringResource(R.string.xmu_last_sync_never)
+                                            },
                                             trailing = {},
                                         ),
                                     ),
                                 )
-                            }
-                            SettingsCard(
-                                items = listOf(
-                                    SettingsCardItem.Nav(
-                                        label = stringResource(R.string.xmu_login_button),
-                                        onClick = {
-                                            sessionExpired = false
-                                            loginVisible = true
-                                        },
+                                SettingsCard(
+                                    items = listOf(
+                                        SettingsCardItem.Nav(
+                                            label = stringResource(R.string.xmu_sync_button),
+                                            onClick = onSyncClick,
+                                        ),
+                                        SettingsCardItem.Nav(
+                                            label = stringResource(R.string.xmu_logout_button),
+                                            onClick = { logoutVisible = true },
+                                        ),
                                     ),
-                                ),
-                            )
-                        } else {
+                                )
+                            }
+                        }
+
+                        // 「同步可以做什么」说明分组：沿用原介绍卡（标题 + 完整说明）
+                        CardSection(title = stringResource(R.string.xmu_section_capabilities)) {
                             SettingsCard(
                                 items = listOf(
                                     SettingsCardItem.Custom(
-                                        label = if (syncState.accountName.isBlank()) {
-                                            stringResource(R.string.xmu_connected_label)
-                                        } else {
-                                            stringResource(R.string.xmu_connected_name, syncState.accountName)
-                                        },
-                                        description = if (syncState.lastSyncAtMillis > 0L) {
-                                            stringResource(
-                                                R.string.xmu_last_sync_at,
-                                                formatSyncTime(syncState.lastSyncAtMillis),
-                                            )
-                                        } else {
-                                            stringResource(R.string.xmu_last_sync_never)
-                                        },
+                                        label = stringResource(R.string.xmu_intro_title),
+                                        description = stringResource(R.string.xmu_intro_body),
                                         trailing = {},
                                     ),
                                 ),
                             )
-                            SettingsCard(
-                                items = listOf(
-                                    SettingsCardItem.Nav(
-                                        label = stringResource(R.string.xmu_sync_button),
-                                        onClick = onSyncClick,
-                                    ),
-                                    SettingsCardItem.Nav(
-                                        label = stringResource(R.string.xmu_logout_button),
-                                        onClick = { logoutVisible = true },
-                                    ),
-                                ),
-                            )
                         }
-
-                        Text(
-                            text = stringResource(R.string.xmu_disclaimer),
-                            style = ClassppTextTokens.settingsDescription,
-                            color = MaterialTheme.classppColors.secondaryText,
-                            modifier = Modifier.padding(horizontal = 4.dp),
-                        )
                     }
                 }
             }
@@ -404,79 +413,44 @@ fun XmuSyncScreen(
         )
     }
 
-    if (logoutVisible) {
+    if (logoutMounted) {
         FadeOverlayDialog(
             visible = logoutVisible,
             onDismiss = { logoutVisible = false },
-            onDismissed = { logoutVisible = false },
-            cardHorizontalPadding = 32.dp,
+            onDismissed = { logoutMounted = false },
         ) {
             ConfirmDialogCard(
                 title = stringResource(R.string.xmu_logout_confirm_title),
                 message = stringResource(R.string.xmu_logout_confirm_message),
             ) {
                 DialogPillButton(
-                    label = stringResource(R.string.xmu_logout_keep),
+                    label = stringResource(R.string.settings_cancel),
                     containerColor = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
-                    onClick = {
-                        logoutVisible = false
-                        doLogout(false)
-                    },
+                    enabled = logoutVisible,
+                    onClick = { logoutVisible = false },
                 )
                 DialogPillButton(
-                    label = stringResource(R.string.xmu_logout_purge),
+                    label = stringResource(R.string.xmu_logout_confirm),
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.weight(1f),
+                    enabled = logoutVisible,
                     onClick = {
                         logoutVisible = false
-                        logoutPurgeConfirmVisible = true
+                        doLogout()
                     },
                 )
             }
         }
     }
 
-    if (logoutPurgeConfirmVisible) {
-        FadeOverlayDialog(
-            visible = logoutPurgeConfirmVisible,
-            onDismiss = { logoutPurgeConfirmVisible = false },
-            onDismissed = { logoutPurgeConfirmVisible = false },
-            cardHorizontalPadding = 32.dp,
-        ) {
-            ConfirmDialogCard(
-                title = stringResource(R.string.xmu_logout_purge_title),
-                message = stringResource(R.string.xmu_logout_purge_message),
-            ) {
-                DialogPillButton(
-                    label = stringResource(R.string.switcher_close),
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                    onClick = { logoutPurgeConfirmVisible = false },
-                )
-                DialogPillButton(
-                    label = stringResource(R.string.xmu_logout_purge_confirm),
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError,
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        logoutPurgeConfirmVisible = false
-                        doLogout(true)
-                    },
-                )
-            }
-        }
-    }
-
-    if (switchVisible) {
+    if (switchMounted) {
         FadeOverlayDialog(
             visible = switchVisible,
             onDismiss = { switchVisible = false },
-            onDismissed = { switchVisible = false },
-            cardHorizontalPadding = 32.dp,
+            onDismissed = { switchMounted = false },
         ) {
             ConfirmDialogCard(
                 title = stringResource(R.string.xmu_switch_title),
@@ -487,6 +461,7 @@ fun XmuSyncScreen(
                     containerColor = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
+                    enabled = switchVisible,
                     onClick = {
                         switchVisible = false
                         onSwitchResolved(false)
@@ -497,6 +472,7 @@ fun XmuSyncScreen(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.weight(1f),
+                    enabled = switchVisible,
                     onClick = {
                         switchVisible = false
                         onSwitchResolved(true)

@@ -160,14 +160,14 @@ class XmuSyncRepositoryTest {
     }
 
     @Test
-    fun `60 秒内重复探活被去抖，force 可越过`() = runBlocking {
+    fun `3 秒内重复探活被去抖，超时后可重试`() = runBlocking {
         val api = okApi()
         val r = repo(api)
         r.syncAll(api) // 已探活一次
 
         assertTrue(r.prepareSync() is XmuPrepareOutcome.Failed)
         assertEquals(1, api.calls) // 去抖命中，没发请求
-        clock.advanceBy(61_000)
+        clock.advanceBy(3_001)
         assertTrue(r.prepareSync() is XmuPrepareOutcome.Ready)
         assertEquals(2, api.calls)
     }

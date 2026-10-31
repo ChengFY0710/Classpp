@@ -21,7 +21,7 @@ data class XmuSyncFile(
     val accountName: String = "",
     /** 上次成功同步（commitSync 落盘）时刻 */
     val lastSyncAtMillis: Long = 0,
-    /** 上次成功探活（prepareSync 拉到有效 profile）时刻，60 秒去抖用 */
+    /** 上次成功探活（prepareSync 拉到有效 profile）时刻，3 秒去抖用 */
     val lastProbeAtMillis: Long = 0,
     /**
      * 已处理条目映射（含删除过的）：删除不是「永久忽略」，远端仍列出时同步允许复活——

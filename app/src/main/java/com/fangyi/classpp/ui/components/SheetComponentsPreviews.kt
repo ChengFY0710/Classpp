@@ -573,6 +573,23 @@ private fun SettingsCardwithIconPreview() = ClassppTheme {
 
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
 @Composable
+private fun SettingsInfoHeaderCardPreview() = ClassppTheme {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = PageHorizontalSpacing, vertical = 16.dp),
+    ) {
+        // 信息头部卡：渐变图标 + 居中标题/说明，卡高固定 150dp
+        SettingsInfoHeaderCard(
+            icon = R.drawable.ic_arrow_sync_circle,
+            title = "同步你的厦大账号",
+            description = "使用厦门大学统一身份认证，即可同步作业、测验等相关待办",
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
 private fun ColorSwatchCardPreview() = ClassppTheme {
     Column(
         modifier = Modifier

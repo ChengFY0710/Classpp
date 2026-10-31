@@ -322,7 +322,7 @@ private fun SettingsHomePage(
                         SettingsCardwithIcon(
                             items = listOf(
                                 SettingsCardwithIconItem(
-                                    icon = R.drawable.ic_arrow_repeat,
+                                    icon = R.drawable.ic_arrow_sync_circle,
                                     label = stringResource(R.string.settings_account_sync),
                                     value = xmuSyncEntryValue(xmuSyncRepository),
                                     onClick = onOpenXmuSync,

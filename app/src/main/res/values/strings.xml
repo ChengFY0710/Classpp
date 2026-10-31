@@ -172,6 +172,9 @@
     <string name="cd_settings_close">关闭</string>
     <!-- 账号与同步（课程中心待办同步） -->
     <string name="settings_account_sync">账号与同步</string>
+    <string name="xmu_header_title">同步你的厦大账号</string>
+    <string name="xmu_header_description">使用厦门大学统一身份认证，即可同步作业、测验等相关待办</string>
+    <string name="xmu_section_capabilities">同步可以做什么</string>
     <string name="xmu_source_badge">课程中心</string>
     <string name="xmu_connected_label">已连接</string>
     <string name="xmu_connected_name">已连接：%1$s</string>
@@ -180,7 +183,6 @@
     <string name="xmu_last_sync_never">尚未同步</string>
     <string name="xmu_intro_title">同步课程中心待办</string>
     <string name="xmu_intro_body">登录厦门大学课程中心后，把未完成的作业同步进待办库。只读取待办列表，不提交作业、不修改任何数据；登录由学校统一身份认证页面完成，App 不保存密码；可随时退出登录并清除数据。</string>
-    <string name="xmu_disclaimer">非官方接口，可能随平台升级失效；仅同步本人账号的数据。</string>
     <string name="xmu_login_button">去登录</string>
     <string name="xmu_sync_button">立即同步</string>
     <string name="xmu_logout_button">退出登录</string>
@@ -203,13 +205,9 @@
     <string name="xmu_error_too_soon">刚刚同步过，请稍后再试</string>
     <string name="xmu_error_generic">同步失败，请稍后重试</string>
     <string name="xmu_error_import">导入失败，请重试</string>
-    <string name="xmu_logout_confirm_title">退出登录？</string>
+    <string name="xmu_logout_confirm_title">退出登录</string>
     <string name="xmu_logout_confirm_message">退出后将清除课程中心的登录状态与同步记录。重新登录并同步后，课程中心仍列出的作业会再次导入。</string>
-    <string name="xmu_logout_keep">仅退出</string>
-    <string name="xmu_logout_purge">退出并删除同步待办</string>
-    <string name="xmu_logout_purge_title">删除同步待办？</string>
-    <string name="xmu_logout_purge_message">将删除全部来自课程中心的待办（含回收站），此操作不可撤销。</string>
-    <string name="xmu_logout_purge_confirm">确认删除</string>
+    <string name="xmu_logout_confirm">退出</string>
     <string name="xmu_logout_done">已退出登录</string>
     <string name="xmu_switch_title">检测到账号变化</string>
     <string name="xmu_switch_message">课程中心账号与上次同步的不一致，继续同步需要先清空旧的同步记录。已导入的待办可保留，或一并删除。</string>

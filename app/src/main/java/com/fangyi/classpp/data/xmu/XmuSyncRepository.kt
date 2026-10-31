@@ -30,7 +30,7 @@ enum class XmuSyncError {
     FormatChanged,
     /** profile 的 uid 与已存映射不一致（换账号了） */
     AccountChanged,
-    /** 距上次成功探活不足 60 秒，去抖 */
+    /** 距上次成功探活不足 3 秒，去抖 */
     TooSoon,
 }
 
@@ -73,7 +73,7 @@ sealed interface XmuCommitOutcome {
  * 课程中心待办同步编排（指导 §5）：**只增不改**——远端内容变化本期不回写本地（P2 按
  * 哈希更新），远端消失不自动删/不自动勾完成；用户删除过的条目只要远端仍列出就允许复活。
  *
- * 并发纪律：探活/同步/清空共用一把 [mutex]，同一时刻只有一次会话；探活 60 秒去抖
+ * 并发纪律：探活/同步/清空共用一把 [mutex]，同一时刻只有一次会话；探活 3 秒去抖
  * （成功才刷新时间戳，失败立即可重试）。同步状态与 todos.json 完全独立文件（[XmuSyncStore]），
  * 损坏互不波及；entries 只存哈希不存标题原文。
  *
@@ -309,7 +309,7 @@ class XmuSyncRepository internal constructor(
     }
 
     private companion object {
-        /** 探活/同步最小间隔（指导 §6.3：手动同步 60 秒内去重） */
-        const val PROBE_DEBOUNCE_MS = 60_000L
+        /** 探活/同步最小间隔（防连点重复请求；放到 3 秒，避免正常重试被拦） */
+        const val PROBE_DEBOUNCE_MS = 3_000L
     }
 }

@@ -83,6 +83,9 @@
     <string name="cd_settings_close">Close</string>
     <!-- Account & sync (course center todo sync) -->
     <string name="settings_account_sync">Account &amp; sync</string>
+    <string name="xmu_header_title">Sync your XMU account</string>
+    <string name="xmu_header_description">Sign in with XMU Unified Identity to sync assignments, quizzes, and other to-dos</string>
+    <string name="xmu_section_capabilities">What sync can do</string>
     <string name="xmu_source_badge">Course Center</string>
     <string name="xmu_connected_label">Connected</string>
     <string name="xmu_connected_name">Connected: %1$s</string>
@@ -91,7 +94,6 @@
     <string name="xmu_last_sync_never">Never synced</string>
     <string name="xmu_intro_title">Sync course center todos</string>
     <string name="xmu_intro_body">After signing in to the XMU Course Center, unfinished assignments are synced into your todo list. Read-only: no submissions, no data changes. Sign-in happens on the university\'s official identity page — the app never stores your password. Sign out anytime to wipe stored data.</string>
-    <string name="xmu_disclaimer">Unofficial interface; may break on platform upgrades. Syncs only your own account data.</string>
     <string name="xmu_login_button">Sign in</string>
     <string name="xmu_sync_button">Sync now</string>
     <string name="xmu_logout_button">Sign out</string>
@@ -114,13 +116,9 @@
     <string name="xmu_error_too_soon">Synced just now, try again later</string>
     <string name="xmu_error_generic">Sync failed, try again later</string>
     <string name="xmu_error_import">Import failed, please retry</string>
-    <string name="xmu_logout_confirm_title">Sign out?</string>
+    <string name="xmu_logout_confirm_title">Sign out</string>
     <string name="xmu_logout_confirm_message">Signing out clears the Course Center session and sync records. After signing in and syncing again, assignments still listed there will be re-imported.</string>
-    <string name="xmu_logout_keep">Sign out only</string>
-    <string name="xmu_logout_purge">Sign out and delete synced todos</string>
-    <string name="xmu_logout_purge_title">Delete synced todos?</string>
-    <string name="xmu_logout_purge_message">All todos imported from the Course Center will be deleted (including trash). This cannot be undone.</string>
-    <string name="xmu_logout_purge_confirm">Delete</string>
+    <string name="xmu_logout_confirm">Sign out</string>
     <string name="xmu_logout_done">Signed out</string>
     <string name="xmu_switch_title">Account changed</string>
     <string name="xmu_switch_message">The Course Center account differs from the last sync. Continuing requires clearing the old sync records. Imported todos can be kept or deleted.</string>
