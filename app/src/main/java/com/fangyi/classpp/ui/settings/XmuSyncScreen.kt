@@ -465,7 +465,18 @@ fun XmuSyncScreen(
             SettingsTopBar(
                 title = stringResource(R.string.settings_account_sync),
                 onBack = onBack,
-                hazeState = if (overlayActive) hazeState else null,
+                // 全屏模拟对话框（FadeOverlayDialog：加载/退出/换号确认）用整屏
+                // graphicsLayer(alpha) 做淡入淡出；与顶栏磨砂的 Haze 源层同帧增删时，
+                // 部分设备（实测 HyperOS / Android 17）会触发 RenderThread 自引用
+                // RenderNode 递归崩溃（SIGSEGV、栈溢出）。对话框在场时顶栏已被遮罩
+                // 压暗、磨砂不可见——期间卸掉效果，对话框彻底卸载后再恢复。
+                hazeState = if (
+                    overlayActive && !loadingMounted && !logoutMounted && !switchMounted
+                ) {
+                    hazeState
+                } else {
+                    null
+                },
                 buttonBackdrop = glassBackdrop,
                 modifier = Modifier
                     .align(Alignment.TopStart)
