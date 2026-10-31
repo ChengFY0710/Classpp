@@ -53,7 +53,7 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  * 关闭浮层即取消导入（协程取消 → 执行器销毁 WebView）。
  *
  * 实际导入由调用方（ScheduleScreen）执行，这里纯 UI；解析成功后的确认弹窗
- * （[WakeupImportConfirmDialog]）也在调用方挂载，叠在本浮层之上。
+ * （[ScheduleImportConfirmDialog]）也在调用方挂载，叠在本浮层之上。
  *
  * 输入随浮层卸载复位（remember，旋转重建回空值，同新建课表表单）。
  */
@@ -138,26 +138,34 @@ internal fun WakeupImportSheet(
 }
 
 /**
- * Wakeup 导入确认框：页内居中白卡（[ConfirmDialogCard]），告知解析到的课程数与新课表名。
+ * 课表导入确认框（Wakeup 与教务导入共用）：页内居中白卡（[ConfirmDialogCard]），告知解析
+ * 到的课程数与新课表名，[detailLine] 非空时在其下补充一行明细（教务导入展示推算的开学日）。
  * 确认胶囊走主色（创建语义，非 destructive）；返回键与遮罩点击都只取消——留在输入浮层，
  * 已解析数据作废（再点「导入」重新走一遍）。两段式关闭见 [FadeOverlayDialog]：
  * 确认/取消即清数据源，[shownName]/[shownCount] 留住最后一份文案，淡出期间不闪空。
  */
 @Composable
-internal fun WakeupImportConfirmDialog(
+internal fun ScheduleImportConfirmDialog(
+    title: String,
     courseCount: Int,
     scheduleName: String,
     visible: Boolean,
     onDismissed: () -> Unit,
     onCancel: () -> Unit,
     onConfirm: () -> Unit,
+    detailLine: String? = null,
 ) {
     var shownCount by remember { mutableIntStateOf(0) }
     var shownName by remember { mutableStateOf("") }
+    var shownDetail by remember { mutableStateOf<String?>(null) }
     if (scheduleName.isNotEmpty()) {
         shownCount = courseCount
         shownName = scheduleName
+        shownDetail = detailLine
     }
+    // 明细行（教务导入的开学日）并入说明文案：ConfirmDialogCard 的插槽只有 message
+    val message = stringResource(R.string.import_wakeup_confirm_message, shownCount, shownName) +
+        shownDetail?.let { "\n$it" }.orEmpty()
 
     FadeOverlayDialog(
         visible = visible,
@@ -166,12 +174,8 @@ internal fun WakeupImportConfirmDialog(
         cardHorizontalPadding = 32.dp,
     ) {
         ConfirmDialogCard(
-            title = stringResource(R.string.import_wakeup_confirm_title),
-            message = stringResource(
-                R.string.import_wakeup_confirm_message,
-                shownCount,
-                shownName,
-            ),
+            title = title,
+            message = message,
         ) {
             DialogPillButton(
                 label = stringResource(R.string.settings_cancel),

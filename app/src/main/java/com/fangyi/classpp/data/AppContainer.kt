@@ -9,6 +9,9 @@ import com.fangyi.classpp.data.xmu.AndroidXmuCookieMirror
 import com.fangyi.classpp.data.xmu.KeystoreXmuSecureStore
 import com.fangyi.classpp.data.xmu.XmuAutoLoginManager
 import com.fangyi.classpp.data.xmu.XmuDebugLog
+import com.fangyi.classpp.data.xmu.XmuJwLoginClient
+import com.fangyi.classpp.data.xmu.XmuJwScheduleApi
+import com.fangyi.classpp.data.xmu.XmuJwScheduleImporter
 import com.fangyi.classpp.data.xmu.XmuLoginClient
 import com.fangyi.classpp.data.xmu.XmuNativeTodoApi
 import com.fangyi.classpp.data.xmu.XmuOkHttpTransport
@@ -36,6 +39,8 @@ class AppContainer internal constructor(
     val xmuSyncRepository: XmuSyncRepository,
     /** 方案 B 自动续期的状态与凭据（UI 的「自动续期」开关读写它） */
     val xmuAutoLoginManager: XmuAutoLoginManager,
+    /** 教务导入（jw.xmu.edu.cn）：用已存凭据登录教务站拉课表，与课程中心不共享登录态 */
+    val xmuScheduleImporter: XmuJwScheduleImporter,
 ) {
     companion object {
         private val instanceMutex = Mutex()
@@ -60,19 +65,30 @@ class AppContainer internal constructor(
             // cookie 持有者由登录客户端和原生取数共享；WebView 路径仍由 XmuWebFetcher 保持原样。
             val transport = XmuOkHttpTransport()
             val session = XmuSessionCookieHolder()
+            // minSdk 24 不能用 java.util.Base64；密码加密的编码器在此注入（两条登录链路共用）
+            val cipher = XmuPasswordCipher(
+                base64Encoder = { Base64.encodeToString(it, Base64.NO_WRAP) },
+            )
             val xmuAutoLoginManager = XmuAutoLoginManager(
                 store = KeystoreXmuSecureStore(context.applicationContext),
                 loginClient = XmuLoginClient(
                     transport = transport,
-                    // minSdk 24 不能用 java.util.Base64；密码加密的编码器在此注入
-                    cipher = XmuPasswordCipher(
-                        base64Encoder = { Base64.encodeToString(it, Base64.NO_WRAP) },
-                    ),
+                    cipher = cipher,
                 ),
                 nativeApi = XmuNativeTodoApi(transport, session),
                 session = session,
                 cookieMirror = AndroidXmuCookieMirror,
             ).also { it.bootstrap() }
+
+            // 教务导入：与课程中心共用传输层与密码加密，但登录链路（CAS service 指回
+            // 教务站）与会话 cookie（jw 域，仅内存）各自独立
+            val jwSession = XmuSessionCookieHolder()
+            val xmuScheduleImporter = XmuJwScheduleImporter(
+                loginClient = XmuJwLoginClient(transport = transport, cipher = cipher),
+                api = XmuJwScheduleApi(transport = transport, session = jwSession),
+                credentialsProvider = { xmuAutoLoginManager.peekCredentials() },
+                session = jwSession,
+            )
 
             return AppContainer(
                 scheduleRepository = ScheduleRepository.create(FileScheduleStore(dir)),
@@ -85,6 +101,7 @@ class AppContainer internal constructor(
                     api = XmuTodoApiRouter(XmuWebFetcher(context.applicationContext), xmuAutoLoginManager),
                 ).also { it.bootstrap() },
                 xmuAutoLoginManager = xmuAutoLoginManager,
+                xmuScheduleImporter = xmuScheduleImporter,
             )
         }
     }

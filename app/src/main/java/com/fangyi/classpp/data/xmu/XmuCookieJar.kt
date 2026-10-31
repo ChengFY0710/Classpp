@@ -63,8 +63,10 @@ internal class XmuCookieJar {
     }
 
     /** 当前 lnt 域（含其父域）的全部 cookie：登录成功的凭据就是它们 */
-    fun lntCookies(): Map<String, String> {
-        val host = XmuWebViewPolicy.LNT_HOST
+    fun lntCookies(): Map<String, String> = cookiesFor(XmuWebViewPolicy.LNT_HOST)
+
+    /** 指定主机（含其父域）的全部 cookie：教务站登录成功的凭据 */
+    fun cookiesFor(host: String): Map<String, String> {
         val matched = mutableMapOf<String, String>()
         for ((domain, cookies) in byDomain) {
             if (host == domain || host.endsWith(".$domain")) matched.putAll(cookies)

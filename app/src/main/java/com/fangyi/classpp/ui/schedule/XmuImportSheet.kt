@@ -3,15 +3,28 @@ package com.fangyi.classpp.ui.schedule
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.CardSection
+import com.fangyi.classpp.ui.components.DialogPillButton
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SelectCard
 import com.fangyi.classpp.ui.components.SettingsCardwithIcon
@@ -19,34 +32,23 @@ import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
+import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
-
-/** 占位学期列表（本次仅 UI）：条目取自教务「我的课表」学期下拉的真实文案；接口接入后由调用方传入实际可导入学期 */
-internal val XmuImportPlaceholderSemesters = listOf(
-    "2026-2027学年 秋季学期",
-    "2025-2026学年 夏季学期",
-    "2025-2026学年 春季学期",
-    "2025-2026学年 秋季学期",
-    "2024-2025学年 夏季学期",
-    "2024-2025学年 春季学期",
-    "2024-2025学年 秋季学期",
-    "2023-2024学年 夏季学期",
-    "2023-2024学年 春季学期",
-    "2023-2024学年 秋季学期",
-)
+import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /**
  * 「教务导入」浮层：导入课表浮层的教务入口打开，叠在它之上（本浮层盖上来时导入浮层经
- * covered 缩小后退，同 Wakeup 输入浮层的分层动效）。本次仅 UI：不请求教务接口，确认
- * 胶囊只回调 [onConfirm] 不落库（调用方暂挂空）。
+ * covered 缩小后退，同 Wakeup 输入浮层的分层动效）。数据获取由调用方执行，这里纯 UI。
  *
  * 内容两组卡（[CardSection] 分组、组间 [SheetSectionSpacingBetween]）：
  * - 账号与同步行（[SettingsCardwithIcon]）：照搬设置页「账号与同步」入口（设计稿漏画图标，
  *   行首取设置页同款 ic_arrow_sync_circle），行值随连接状态展示（未连接 / 已连接 / 已连接：
  *   姓名，文案由调用方解析后经 [accountStatus] 传入）；点击后由调用方收起整串浮层、编辑态
  *   取消更改并转到设置页-账号与同步（[onOpenAccountSync]）。
- * - 可导入学期单选卡（[SelectCard]）：选项默认取 [XmuImportPlaceholderSemesters] 占位，
- *   选中态随浮层卸载复位（重开回第一项）；列表为空时整卡不渲染、确认胶囊不响应。
+ * - 可导入学期单选卡（[SelectCard]）：选项为调用方从教务拉取的真实学期（[semesters]）；
+ *   拉取中显示进度行、失败显示横幅加重试行，两者都替代学期卡且确认胶囊不响应；
+ *   拉取课表期间（[importing]）确认胶囊同样不响应并显示进度行。选中态随浮层卸载复位。
  *
  * [importBlockedReason] 非空 = 当前登录方式不支持教务导入（已连接但没保存凭据，即网页
  * 登录或已关自动续期）：内容顶部横幅说明原因，确认胶囊不响应。
@@ -63,12 +65,19 @@ internal fun XmuImportSheet(
     accountStatus: String,
     onConfirm: (semesterIndex: Int) -> Unit,
     importBlockedReason: String? = null,
-    semesters: List<String> = XmuImportPlaceholderSemesters,
+    semesters: List<String>,
+    semestersLoading: Boolean = false,
+    semestersError: String? = null,
+    onRetrySemesters: () -> Unit = {},
+    importing: Boolean = false,
 ) {
     // 学期单选随浮层组合存活：两段式关闭播完（onDismissed 卸载）即复位，重开回第一项
     var selectedSemester by remember { mutableIntStateOf(0) }
-    // 选项列表变化（未来接真数据）时旧选中可能越界，钳制回有效区间
+    // 选项列表刷新（重开重拉）时旧选中可能越界，钳制回有效区间
     val selected = selectedSemester.coerceIn(0, semesters.lastIndex.coerceAtLeast(0))
+    // 学期不可选（拉取中/失败/拉课表中）或登录方式被拦截时确认不响应
+    val confirmEnabled = semesters.isNotEmpty() && !semestersLoading &&
+        semestersError == null && importBlockedReason == null && !importing
 
     // 返回键关浮层；叠在导入浮层之上，后注册因此先收到
     BackHandler(enabled = true) {
@@ -80,10 +89,7 @@ internal fun XmuImportSheet(
         confirmLabel = stringResource(R.string.edit_confirm),
         // 确认在右、取消（关闭）在其外侧（同 Wakeup 口令导入的顶栏排布）
         confirmAtEnd = true,
-        // 当前登录方式不支持教务导入（或学期列表为空）时确认不响应
-        onConfirm = {
-            if (semesters.isNotEmpty() && importBlockedReason == null) onConfirm(selected)
-        },
+        onConfirm = { if (confirmEnabled) onConfirm(selected) },
         rightAction = SheetTopAction(
             label = stringResource(R.string.settings_cancel),
             icon = R.drawable.ic_dismiss_circle,
@@ -114,9 +120,47 @@ internal fun XmuImportSheet(
                     ),
                 )
             }
-            // 可导入学期：单选卡（点击未选项替换旧选，组件内部已按单选语义处理）
-            if (semesters.isNotEmpty()) {
-                CardSection {
+            when {
+                // 拉取课表中：进度行替代学期卡（同 Wakeup 导入的进行中样式）
+                importing -> CardSection {
+                    ProgressRow(text = stringResource(R.string.import_xmu_running))
+                }
+                // 学期拉取中：进度行替代学期卡
+                semestersLoading -> CardSection {
+                    ProgressRow(text = stringResource(R.string.import_xmu_loading_semesters))
+                }
+                // 学期拉取失败：横幅说明 + 重试行
+                semestersError != null -> {
+                    SheetInfoBanner(text = semestersError)
+                    CardSection {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(
+                                    horizontal = RowCardPaddingHorizontal,
+                                    vertical = RowCardPaddingVertical,
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.import_xmu_semesters_failed),
+                                style = MaterialTheme.classppTextStyles.fieldPlaceholder,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            DialogPillButton(
+                                label = stringResource(R.string.import_xmu_retry),
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                                onClick = onRetrySemesters,
+                            )
+                        }
+                    }
+                }
+                // 学期单选卡（点击未选项替换旧选，组件内部已按单选语义处理）
+                semesters.isNotEmpty() -> CardSection {
                     SelectCard(
                         options = semesters,
                         selectedIndices = setOf(selected),
@@ -127,5 +171,28 @@ internal fun XmuImportSheet(
                 }
             }
         }
+    }
+}
+
+/** 进行中行：细转圈 + 一行说明（同 Wakeup 输入浮层的导入中样式） */
+@Composable
+private fun ProgressRow(text: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(20.dp),
+            strokeWidth = 2.dp,
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.classppTextStyles.fieldPlaceholder,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }

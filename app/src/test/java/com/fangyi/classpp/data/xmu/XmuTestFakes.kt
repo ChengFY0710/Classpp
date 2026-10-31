@@ -189,3 +189,112 @@ internal class XmuTestHarness(
         nowMillis = { now },
     )
 }
+
+internal const val XMU_JW_TEST_ENTRY_URL =
+    "https://jw.xmu.edu.cn/gsapp/sys/wdkbapp/modules/xskcb/kfdxnxqcx.do"
+internal const val XMU_JW_TEST_LOGIN_REDIRECT =
+    "https://ids.xmu.edu.cn/authserver/login?service=https%3A%2F%2Fjw.xmu.edu.cn%2Fgsapp%2Fsys%2Fwdkbapp%2Fmodules%2Fxskcb%2Fkfdxnxqcx.do"
+internal const val XMU_JW_TEST_TICKET_URL =
+    "https://jw.xmu.edu.cn/gsapp/sys/wdkbapp/modules/xskcb/kfdxnxqcx.do?ticket=ST-1"
+internal const val XMU_JW_TEST_HOME_HTML = "<html>jw home</html>"
+
+/** 以下接口样本取自真实教务「我的课表」抓包（精简字段，结构与线上响应一致） */
+internal const val XMU_JW_TEST_SEMESTERS = """
+{"datas":{"kfdxnxqcx":{"rows":[
+  {"XNXQDM":"20261","XNXQDM_DISPLAY":"2026-2027学年 秋季学期","KBKFRQ":"2026-09-17 10:00:00","BY1":null},
+  {"XNXQDM":"20252","XNXQDM_DISPLAY":"2025-2026学年 春季学期","KBKFRQ":"2025-12-31 19:55:00","BY1":null}
+]}}}
+"""
+
+internal const val XMU_JW_TEST_SKJC = """
+{"success":true,"data":[
+  {"DM":"1","MC":"第1节","PX":1,"KSSJ":800,"JSSJ":845,"JCFADM":"01"},
+  {"DM":"2","MC":"第2节","PX":2,"KSSJ":855,"JSSJ":940,"JCFADM":"01"},
+  {"DM":"3","MC":"第3节","PX":3,"KSSJ":1010,"JSSJ":1055,"JCFADM":"01"},
+  {"DM":"4","MC":"第4节","PX":4,"KSSJ":1105,"JSSJ":1150,"JCFADM":"01"},
+  {"DM":"12","MC":"中午","PX":12,"KSSJ":1200,"JSSJ":1400,"JCFADM":"01"},
+  {"DM":"5","MC":"第5节","PX":5,"KSSJ":1430,"JSSJ":1515,"JCFADM":"01"}
+]}
+"""
+
+internal const val XMU_JW_TEST_ZCXX = """{"currentZc":"8","success":true,"zcList":[{"ZC":1},{"ZC":2}]}"""
+
+internal const val XMU_JW_TEST_PKJG = """
+{"success":true,"pkjgList":[
+  {"KCMC":"大学物理B（下）","KCDM":"130090010055","JSXM":"李开航","JASMC":"学武楼（1号楼）A202",
+   "XQ":2,"KSJCDM":3,"JSJCDM":4,"ZCBH":"111111111111111100000000000000","ZCMC":"1-16周","KBBZ":null,"WID":"W1"},
+  {"KCMC":"大学物理实验","KCDM":"130090010085","JSXM":"程唤龄","JASMC":"学武楼（1号楼）C201",
+   "XQ":5,"KSJCDM":1,"JSJCDM":4,"ZCBH":"110000000000000000000000000000","ZCMC":"1-2周","KBBZ":"备注A","WID":"W2"}
+],"ttbList":[]}
+"""
+
+/**
+ * 脚本化教务站（jw）登录链路 + 课表接口的假服务器：
+ * - 未登录：入口与业务接口一律 302 到身份域 CAS（与真实教务一致）；
+ * - 登录成功后置 [sessionValid]，后续 jw 请求按路径分发样本响应并种 JW_SESSION cookie。
+ */
+internal class FakeXmuJwServer {
+    var sessionValid = false
+    var needCaptcha = false
+    var invalidCredentials = false
+    var networkDown = false
+
+    /** 各端点返回体；置 null 让该端点 404（测格式变化） */
+    var semestersBody: String? = XMU_JW_TEST_SEMESTERS
+    var skjcBody: String? = XMU_JW_TEST_SKJC
+    var zcxxBody: String? = XMU_JW_TEST_ZCXX
+    var pkjgBody: String? = XMU_JW_TEST_PKJG
+
+    var loginPosts = 0
+        private set
+    var loginForm: String? = null
+        private set
+
+    val requests: List<XmuHttpRequest> get() = transport.requests
+
+    val transport = FakeXmuTransport { request ->
+        if (networkDown) throw IOException("network down")
+        when {
+            request.url.startsWith("https://ids.xmu.edu.cn/authserver/checkNeedCaptcha") ->
+                XmuHttpResponse(200, body = """{"isNeed":$needCaptcha}""")
+
+            request.url.startsWith("https://ids.xmu.edu.cn/authserver/login") &&
+                request.method == "POST" -> {
+                loginPosts++
+                loginForm = request.formBody
+                if (invalidCredentials) {
+                    XmuHttpResponse(200, body = XMU_TEST_LOGIN_HTML)
+                } else {
+                    sessionValid = true
+                    XmuHttpResponse(302, location = XMU_JW_TEST_TICKET_URL)
+                }
+            }
+
+            request.url.startsWith("https://ids.xmu.edu.cn/authserver/login") ->
+                XmuHttpResponse(200, body = XMU_TEST_LOGIN_HTML)
+
+            request.url.startsWith("https://jw.xmu.edu.cn/") -> when {
+                // 带 ticket 回落：CAS 过滤器校验后建立会话（种 JW_SESSION）
+                request.url.contains("ticket=") ->
+                    XmuHttpResponse(
+                        200,
+                        body = XMU_JW_TEST_HOME_HTML,
+                        setCookies = listOf("JW_SESSION=S; Path=/; HttpOnly"),
+                    )
+                // 未登录的业务请求（含登录入口本身）一律 302 到 CAS
+                !sessionValid -> XmuHttpResponse(302, location = XMU_JW_TEST_LOGIN_REDIRECT)
+                request.url.endsWith("kfdxnxqcx.do") ->
+                    XmuHttpResponse(200, body = requireNotNull(semestersBody))
+                request.url.endsWith("queryXsskjc.do") ->
+                    XmuHttpResponse(200, body = requireNotNull(skjcBody))
+                request.url.endsWith("getZcxx.do") ->
+                    XmuHttpResponse(200, body = requireNotNull(zcxxBody))
+                request.url.endsWith("queryXspkjg.do") ->
+                    XmuHttpResponse(200, body = requireNotNull(pkjgBody))
+                else -> XmuHttpResponse(404)
+            }
+
+            else -> error("unexpected ${request.method} ${request.url}")
+        }
+    }
+}

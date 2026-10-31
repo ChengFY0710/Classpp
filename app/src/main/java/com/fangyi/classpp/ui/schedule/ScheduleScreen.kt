@@ -80,6 +80,7 @@ import com.fangyi.classpp.data.TodoReadResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.TodoSort
 import com.fangyi.classpp.data.expandRepeatOccurrences
+import com.fangyi.classpp.data.export.ShareCodec
 import com.fangyi.classpp.data.filterTodos
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
@@ -90,6 +91,11 @@ import com.fangyi.classpp.data.model.overlappingCourses
 import com.fangyi.classpp.data.wakeup.WakeupImportExecutor
 import com.fangyi.classpp.data.xmu.XmuAutoLoginManager
 import com.fangyi.classpp.data.xmu.XmuAutoLoginState
+import com.fangyi.classpp.data.xmu.XmuJwImportError
+import com.fangyi.classpp.data.xmu.XmuJwScheduleImporter
+import com.fangyi.classpp.data.xmu.XmuJwScheduleResult
+import com.fangyi.classpp.data.xmu.XmuJwSemester
+import com.fangyi.classpp.data.xmu.XmuJwSemestersResult
 import com.fangyi.classpp.data.xmu.XmuSyncRepository
 import com.fangyi.classpp.data.wakeup.WakeupScheduleMapper
 import com.fangyi.classpp.data.wakeup.WakeupScriptStore
@@ -169,6 +175,8 @@ fun ScheduleScreen(
     // 自动续期管理器（教务导入浮层的「是否支持导入」判定数据源）；null = 容器未装配，
     // 视作未保存凭据处理
     xmuAutoLoginManager: XmuAutoLoginManager? = null,
+    // 教务导入编排器（学期列表/课表拉取）；null = 容器未装配，确认入口不响应
+    xmuScheduleImporter: XmuJwScheduleImporter? = null,
     tabTransition: TabTransitionState? = null,
     // 课程卡片高度倍率状态（MainActivity 持有、个性化页写入；网格行高随每节时长伸缩，
     // 倍率整体缩放）：State 实例透传给 CourseGrid，本屏不读 .value——滑条拖动时
@@ -913,6 +921,74 @@ fun ScheduleScreen(
                 }
             }
 
+            // 教务导入：学期列表随浮层打开拉取（卸载即弃，重开重拉——连接状态可能变化），
+            // 选中学期确认后拉课表 → 映射 → 确认弹窗 → 复用 JSON 导入路径落库（同 Wakeup）
+            var xmuSemesters by remember { mutableStateOf<List<XmuJwSemester>?>(null) }
+            var xmuSemestersLoading by remember { mutableStateOf(false) }
+            var xmuSemestersError by remember { mutableStateOf<XmuJwImportError?>(null) }
+            var xmuImporting by remember { mutableStateOf(false) }
+            var xmuImportJob by remember { mutableStateOf<Job?>(null) }
+            var xmuParsed by remember { mutableStateOf<Schedule?>(null) }
+            // 失败分类 → 文案（组合期解析 stringResource，协程里只查表）
+            val xmuErrorTexts: Map<XmuJwImportError, String> = mapOf(
+                XmuJwImportError.NeedLogin to stringResource(R.string.error_xmu_need_login),
+                XmuJwImportError.SessionExpired to stringResource(R.string.error_xmu_session),
+                XmuJwImportError.ServiceBusy to stringResource(R.string.error_xmu_busy),
+                XmuJwImportError.NetworkError to stringResource(R.string.error_xmu_network),
+                XmuJwImportError.Timeout to stringResource(R.string.error_xmu_timeout),
+                XmuJwImportError.FormatChanged to stringResource(R.string.error_xmu_format),
+            )
+            val xmuNoCoursesToast = stringResource(R.string.error_xmu_no_courses)
+            val xmuDefaultName = stringResource(R.string.import_xmu_default_name)
+            // 学期列表只在「已连接且保存了凭据」（原生登录）时拉取；其余状态由浮层的账号行
+            // 与拦截横幅引导，不出请求
+            val xmuCanFetch = xmuSyncState != null && xmuSyncState.uid.isNotEmpty() &&
+                xmuAutoLoginState.hasCredentials
+            val loadXmuSemesters: () -> Unit = {
+                val importer = xmuScheduleImporter
+                if (importer != null && xmuCanFetch && !xmuSemestersLoading && !xmuImporting) {
+                    xmuSemestersLoading = true
+                    xmuSemestersError = null
+                    xmuImportJob = scope.launch {
+                        xmuSemesters = when (val r = importer.fetchSemesters()) {
+                            is XmuJwSemestersResult.Ok -> r.semesters
+                            is XmuJwSemestersResult.Failed -> {
+                                xmuSemestersError = r.error
+                                xmuSemesters
+                            }
+                        }
+                        xmuSemestersLoading = false
+                    }
+                }
+            }
+            // 浮层确认 → 按选中学期拉课表；未连接给引导 toast（浮层本身不拦截未连接），
+            // 网页登录的拦截横幅已在浮层内说明，这里不重复
+            val onXmuImportConfirm: (Int) -> Unit = { semesterIndex ->
+                val importer = xmuScheduleImporter
+                val semester = xmuSemesters?.getOrNull(semesterIndex)
+                if (importer != null && semester != null && !xmuImporting) {
+                    when {
+                        !xmuCanFetch ->
+                            AppToasts.show(context, xmuErrorTexts.getValue(XmuJwImportError.NeedLogin))
+                        else -> {
+                            xmuImporting = true
+                            xmuImportJob = scope.launch {
+                                when (val r = importer.fetchSchedule(semester.code, xmuDefaultName)) {
+                                    is XmuJwScheduleResult.Ok -> xmuParsed = r.schedule
+                                    is XmuJwScheduleResult.NoCourses ->
+                                        AppToasts.show(context, xmuNoCoursesToast)
+                                    is XmuJwScheduleResult.Failed -> AppToasts.show(
+                                        context,
+                                        xmuErrorTexts[r.error] ?: xmuNoCoursesToast,
+                                    )
+                                }
+                                xmuImporting = false
+                            }
+                        }
+                    }
+                }
+            }
+
             // 编辑态的返回键 = 取消：整库恢复进入编辑前的快照（同取消按钮），再退出编辑态
             BackHandler(enabled = editSession != null) { cancelEdit() }
 
@@ -1303,26 +1379,45 @@ fun ScheduleScreen(
                 var wakeupConfirmMounted by remember { mutableStateOf(false) }
                 val wakeupConfirmVisible = wakeupParsed != null
                 if (wakeupConfirmVisible) wakeupConfirmMounted = true
-                // 教务导入浮层：叠在导入浮层之上（账号与同步行 + 可导入学期单选）。本次仅 UI：
-                // 确认暂不落库；账号行点击收整串浮层并转到设置页-账号与同步
+                // 教务导入浮层：叠在导入浮层之上（账号与同步行 + 可导入学期单选）。学期列表
+                // 随浮层打开拉取、卸载即弃；确认 → 拉课表映射 → 确认弹窗
                 var xmuSheetMounted by remember { mutableStateOf(false) }
                 if (xmuSheetVisible) xmuSheetMounted = true
+                LaunchedEffect(xmuSheetVisible) {
+                    if (xmuSheetVisible) {
+                        xmuSemesters = null
+                        xmuSemestersError = null
+                        loadXmuSemesters()
+                    }
+                }
                 if (xmuSheetMounted) {
                     XmuImportSheet(
                         visible = xmuSheetVisible,
-                        onDismissed = { xmuSheetMounted = false },
+                        onDismissed = {
+                            xmuSheetMounted = false
+                            // 浮层收场即取消在途请求与解析态（同 Wakeup 输入浮层）
+                            xmuImportJob?.cancel()
+                            xmuImporting = false
+                            xmuParsed = null
+                            xmuSemesters = null
+                            xmuSemestersError = null
+                        },
                         onDismiss = { xmuSheetVisible = false },
                         onOpenAccountSync = onXmuAccountClick,
                         accountStatus = xmuAccountStatus,
                         // 非空 = 当前登录方式不支持教务导入：浮层内横幅说明并拦截确认
                         importBlockedReason = xmuImportBlockedReason,
-                        onConfirm = { _ ->
-                            // 教务课表同步接入后：按选中学期拉取课表并走导入预览
-                        },
+                        semesters = xmuSemesters?.map { it.label }.orEmpty(),
+                        semestersLoading = xmuSemestersLoading,
+                        semestersError = xmuSemestersError?.let { xmuErrorTexts[it] },
+                        onRetrySemesters = loadXmuSemesters,
+                        importing = xmuImporting,
+                        onConfirm = onXmuImportConfirm,
                     )
                 }
                 if (wakeupConfirmMounted) {
-                    WakeupImportConfirmDialog(
+                    ScheduleImportConfirmDialog(
+                        title = stringResource(R.string.import_wakeup_confirm_title),
                         courseCount = wakeupParsed?.courses?.size ?: 0,
                         scheduleName = wakeupParsed?.name.orEmpty(),
                         visible = wakeupConfirmVisible,
@@ -1338,6 +1433,46 @@ fun ScheduleScreen(
                                     )) {
                                         is ReadResult.Ok -> {
                                             wakeupSheetVisible = false
+                                            importSheetVisible = false
+                                            requestSwitch(r.value)
+                                        }
+                                        is ReadResult.Err -> AppToasts.show(
+                                            context,
+                                            r.error.toEditMessage(context),
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                    )
+                }
+                // 教务导入确认框：叠在教务导入浮层之上（同 Wakeup 确认框的两段式）；
+                // 确认 → 仓库导入（ShareCodec 编码走既有 JSON 导入路径）→ 关浮层链 → 统一切换
+                var xmuConfirmMounted by remember { mutableStateOf(false) }
+                val xmuConfirmVisible = xmuParsed != null
+                if (xmuConfirmVisible) xmuConfirmMounted = true
+                if (xmuConfirmMounted) {
+                    ScheduleImportConfirmDialog(
+                        title = stringResource(R.string.import_xmu_confirm_title),
+                        courseCount = xmuParsed?.courses?.size ?: 0,
+                        scheduleName = xmuParsed?.name.orEmpty(),
+                        // 开学日为推算默认值：确认时展示，导入后仍可在课表设置里调整
+                        detailLine = xmuParsed?.let {
+                            stringResource(R.string.import_confirm_detail, it.termStart.toString())
+                        },
+                        visible = xmuConfirmVisible,
+                        onDismissed = { xmuConfirmMounted = false },
+                        onCancel = { xmuParsed = null },
+                        onConfirm = {
+                            val parsed = xmuParsed
+                            xmuParsed = null
+                            if (parsed != null) {
+                                scope.launch {
+                                    when (val r = repository.importSchedule(
+                                        ShareCodec.encode(parsed, System.currentTimeMillis()),
+                                    )) {
+                                        is ReadResult.Ok -> {
+                                            xmuSheetVisible = false
                                             importSheetVisible = false
                                             requestSwitch(r.value)
                                         }

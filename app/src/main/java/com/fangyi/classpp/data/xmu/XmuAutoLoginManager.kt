@@ -275,6 +275,13 @@ class XmuAutoLoginManager internal constructor(
         )
     }
 
+    /**
+     * 已存凭据的只读访问（教务站导入用同一套学号/密码登录教务系统）：不改任何策略、
+     * 会话或 cookie——课程中心登录态只归 [enable]/[disable]/自动续期管。
+     */
+    internal suspend fun peekCredentials(): XmuCredentials? =
+        withContext(Dispatchers.IO) { store.loadCredentials() }
+
     // ---------- 内部 ----------
 
     private suspend fun loginAndFetch(): XmuFetchResult {

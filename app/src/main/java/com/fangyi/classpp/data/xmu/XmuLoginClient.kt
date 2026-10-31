@@ -479,7 +479,7 @@ internal class XmuLoginClient(
 }
 
 @Serializable
-private data class XmuCaptchaDto(
+internal data class XmuCaptchaDto(
     @SerialName("isNeed") val isNeed: Boolean? = null,
 )
 
