@@ -359,6 +359,7 @@ class MainActivity : ComponentActivity() {
                                             onOpenSettings = onOpenSettings,
                                             onOpenAccountSync = onOpenAccountSync,
                                             xmuSyncRepository = xmuSyncRepository,
+                                            xmuAutoLoginManager = xmuAutoLoginManager,
                                             tabTransition = transition,
                                             // 网格读降频态（即时态只喂个性化页滑条）
                                             cardHeights = gridCardHeightsState,

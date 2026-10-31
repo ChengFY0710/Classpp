@@ -88,6 +88,7 @@
     <string name="xmu_section_auto_login_sync">Auto renewal and sync</string>
     <string name="xmu_section_capabilities">What sync can do</string>
     <string name="xmu_section_school">Select school</string>
+    <string name="xmu_section_alt_login">Alternative sign-in</string>
     <string name="xmu_school_current">Current school</string>
     <string name="xmu_school_xmu">Xiamen University</string>
     <string name="xmu_source_badge">Course Center</string>
@@ -107,6 +108,8 @@
     <string name="xmu_login_hint">Complete the sign-in on this page; returns automatically when done</string>
     <string name="xmu_login_load_error">Failed to load the page. Check your network and retry.</string>
     <string name="xmu_login_retry">Retry</string>
+    <string name="xmu_webview_login">WebView sign-in</string>
+    <string name="xmu_webview_login_desc">A secure sign-in that does not store your account or password. The session can expire, and academic system import and auto renewal are unavailable.</string>
     <string name="xmu_preview_title">Sync preview</string>
     <string name="xmu_preview_confirm">Import</string>
     <string name="xmu_preview_summary">%1$d to import, %2$d skipped</string>
@@ -133,16 +136,16 @@
     <string name="xmu_switch_message">The Course Center account differs from the last sync. Continuing requires clearing the old sync records. Imported todos can be kept or deleted.</string>
     <string name="xmu_switch_keep_records">Clear records and continue</string>
     <string name="xmu_switch_delete_all">Clear and delete synced todos</string>
-    <!-- Auto renewal (optional, native OAuth) -->
+    <!-- Native OAuth sign-in (default; signing in stores credentials and enables auto renewal) -->
+    <string name="xmu_native_login_title">Account sign-in</string>
     <string name="xmu_auto_login_title">Remember sign-in to renew automatically</string>
     <string name="xmu_auto_login_desc_enabled">On: signs in automatically when the session expires</string>
     <string name="xmu_auto_login_desc_blocked">Paused: automatic sign-in failed. Sign in manually, then re-enable.</string>
-    <string name="xmu_auto_login_desc_off">Off: you will need to sign in manually when the session expires</string>
+    <string name="xmu_auto_login_desc_off">Off: you will need to sign in manually when the session expires, and academic system import is unavailable</string>
     <string name="xmu_auto_login_desc_unavailable">Unavailable: cannot access the system keystore</string>
-    <string name="xmu_auto_login_sheet_title">Auto renewal</string>
     <string name="xmu_auto_login_sheet_title_busy">Signing in</string>
     <string name="xmu_auto_login_notes_title">Important</string>
-    <string name="xmu_auto_login_warning">Enabling this stores your student ID and password. Credentials are encrypted with the Android Keystore and excluded from backups. Sign-in happens only on this device, directly with the university authentication service. If a captcha appears, the password changes, or authentication fails, auto renewal pauses immediately and deletes the saved password — it never retries in a loop. Do not enable this on a shared device.</string>
+    <string name="xmu_auto_login_warning">Signing in stores your student ID and password. Credentials are encrypted with the Android Keystore and excluded from backups. Sign-in happens only on this device, directly with the university authentication service. If a captcha appears, the password changes, or authentication fails, sign-in pauses immediately and deletes the saved password — it never retries in a loop. Do not sign in on a shared device.</string>
     <string name="xmu_auto_login_username">Student ID</string>
     <string name="xmu_auto_login_username_hint">Unified identity account</string>
     <string name="xmu_auto_login_password">Password</string>
@@ -151,7 +154,7 @@
     <string name="xmu_auto_login_blank">Enter your student ID and password first</string>
     <string name="xmu_auto_login_busy">Signing in…</string>
     <string name="xmu_auto_login_need_captcha">This sign-in requires a captcha. Use the web sign-in instead.</string>
-    <string name="xmu_auto_login_invalid_credentials">Incorrect student ID or password. Auto renewal is paused.</string>
+    <string name="xmu_auto_login_invalid_credentials">Incorrect student ID or password</string>
     <string name="xmu_auto_login_storage_unavailable">Cannot store credentials securely. Auto renewal is unavailable.</string>
     <string name="xmu_auto_login_not_established">Signed in but could not read Course Center data. Use the web sign-in instead.</string>
     <string name="xmu_auto_login_disable_title">Turn off auto renewal</string>
@@ -386,6 +389,7 @@
     <string name="import_xmu_label">Import from Academic System</string>
     <string name="import_xmu_desc">Sign in via Account &amp; Sync settings to import</string>
     <string name="import_xmu_sheet_title">Academic System Import</string>
+    <string name="import_xmu_unsupported">The current sign-in method does not support academic system import. Sign in again with Account sign-in on the Account &amp; sync page.</string>
     <string name="import_wakeup_label">Import from Wakeup Share Code</string>
     <string name="import_wakeup_desc">Enter a Wakeup schedule share code to import</string>
     <string name="import_clipboard_empty">Nothing to import from the clipboard</string>

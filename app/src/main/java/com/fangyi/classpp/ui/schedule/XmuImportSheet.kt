@@ -17,6 +17,7 @@ import com.fangyi.classpp.ui.components.SelectCard
 import com.fangyi.classpp.ui.components.SettingsCardwithIcon
 import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
 import com.fangyi.classpp.ui.components.SheetImeBehavior
+import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 
@@ -47,6 +48,9 @@ internal val XmuImportPlaceholderSemesters = listOf(
  * - 可导入学期单选卡（[SelectCard]）：选项默认取 [XmuImportPlaceholderSemesters] 占位，
  *   选中态随浮层卸载复位（重开回第一项）；列表为空时整卡不渲染、确认胶囊不响应。
  *
+ * [importBlockedReason] 非空 = 当前登录方式不支持教务导入（已连接但没保存凭据，即网页
+ * 登录或已关自动续期）：内容顶部横幅说明原因，确认胶囊不响应。
+ *
  * 顶栏排布同 Wakeup 口令导入：取消在左（X 圆图标）、确认在右（确认胶囊自带对勾图标）；
  * 列表无输入框，键盘不必让位（IgnoreIme）。
  */
@@ -58,6 +62,7 @@ internal fun XmuImportSheet(
     onOpenAccountSync: () -> Unit,
     accountStatus: String,
     onConfirm: (semesterIndex: Int) -> Unit,
+    importBlockedReason: String? = null,
     semesters: List<String> = XmuImportPlaceholderSemesters,
 ) {
     // 学期单选随浮层组合存活：两段式关闭播完（onDismissed 卸载）即复位，重开回第一项
@@ -75,7 +80,10 @@ internal fun XmuImportSheet(
         confirmLabel = stringResource(R.string.edit_confirm),
         // 确认在右、取消（关闭）在其外侧（同 Wakeup 口令导入的顶栏排布）
         confirmAtEnd = true,
-        onConfirm = { if (semesters.isNotEmpty()) onConfirm(selected) },
+        // 当前登录方式不支持教务导入（或学期列表为空）时确认不响应
+        onConfirm = {
+            if (semesters.isNotEmpty() && importBlockedReason == null) onConfirm(selected)
+        },
         rightAction = SheetTopAction(
             label = stringResource(R.string.settings_cancel),
             icon = R.drawable.ic_dismiss_circle,
@@ -90,6 +98,9 @@ internal fun XmuImportSheet(
         imeBehavior = SheetImeBehavior.IgnoreIme,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
+            // 登录方式不支持教务导入：顶部横幅说明原因（确认胶囊已拦截），引导回设置页换
+            // 原生登录
+            importBlockedReason?.let { SheetInfoBanner(text = it) }
             // 账号与同步：孤行卡收进无题分组（与其他浮层的内容列约定一致）
             CardSection {
                 SettingsCardwithIcon(

@@ -192,6 +192,7 @@
     <string name="xmu_section_auto_login_sync">自动续期和同步</string>
     <string name="xmu_section_capabilities">同步可以做什么</string>
     <string name="xmu_section_school">选择学校</string>
+    <string name="xmu_section_alt_login">备用登录方式</string>
     <string name="xmu_school_current">当前学校</string>
     <string name="xmu_school_xmu">厦门大学</string>
     <string name="xmu_source_badge">课程中心</string>
@@ -211,6 +212,8 @@
     <string name="xmu_login_hint">请在页面中完成登录，成功后自动返回</string>
     <string name="xmu_login_load_error">页面加载失败，请检查网络后重试</string>
     <string name="xmu_login_retry">重试</string>
+    <string name="xmu_webview_login">WebView登录</string>
+    <string name="xmu_webview_login_desc">不保存账号密码的安全登录方式，存在过期风险，且不支持教务课表导入和自动续登</string>
     <string name="xmu_preview_title">同步预览</string>
     <string name="xmu_preview_confirm">导入</string>
     <string name="xmu_preview_summary">新增 %1$d 条，跳过 %2$d 条</string>
@@ -237,16 +240,16 @@
     <string name="xmu_switch_message">课程中心账号与上次同步的不一致，继续同步需要先清空旧的同步记录。已导入的待办可保留，或一并删除。</string>
     <string name="xmu_switch_keep_records">清空记录并继续</string>
     <string name="xmu_switch_delete_all">清空并删除同步待办</string>
-    <!-- 自动续期（方案 B，可选） -->
+    <!-- 原生 OAuth 登录（默认登录方式，登录即保存凭据并开启自动续期） -->
+    <string name="xmu_native_login_title">账号登录</string>
     <string name="xmu_auto_login_title">记住登录以自动续期</string>
     <string name="xmu_auto_login_desc_enabled">已开启：会话过期时自动登录</string>
     <string name="xmu_auto_login_desc_blocked">已暂停：自动登录失败，请手动登录后重新开启</string>
-    <string name="xmu_auto_login_desc_off">未开启：会话过期后需手动登录</string>
+    <string name="xmu_auto_login_desc_off">未开启：会话过期后需手动登录，教务导入不可用</string>
     <string name="xmu_auto_login_desc_unavailable">不可用：无法访问系统密钥库</string>
-    <string name="xmu_auto_login_sheet_title">自动续期</string>
     <string name="xmu_auto_login_sheet_title_busy">正在登录</string>
     <string name="xmu_auto_login_notes_title">注意事项</string>
-    <string name="xmu_auto_login_warning">开启后需要保存你的学号与密码。凭据由 Android Keystore 加密，不随备份迁移；登录只在本机直接与学校认证服务交互。遇到验证码、密码变更或认证失败会立即暂停并删除密码，不会连续重试。请勿在共用设备上开启。</string>
+    <string name="xmu_auto_login_warning">登录需要保存你的学号与密码。凭据由 Android Keystore 加密，不随备份迁移；登录只在本机直接与学校认证服务交互。遇到验证码、密码变更或认证失败会立即暂停并删除密码，不会连续重试。请勿在共用设备上登录。</string>
     <string name="xmu_auto_login_username">学号</string>
     <string name="xmu_auto_login_username_hint">统一身份认证账号</string>
     <string name="xmu_auto_login_password">密码</string>
@@ -255,7 +258,7 @@
     <string name="xmu_auto_login_blank">请先输入学号和密码</string>
     <string name="xmu_auto_login_busy">正在登录…</string>
     <string name="xmu_auto_login_need_captcha">本次登录需要验证码，请改用网页登录完成登录</string>
-    <string name="xmu_auto_login_invalid_credentials">学号或密码不正确，自动续期已暂停</string>
+    <string name="xmu_auto_login_invalid_credentials">学号或密码不正确</string>
     <string name="xmu_auto_login_storage_unavailable">无法安全保存凭据，自动续期不可用</string>
     <string name="xmu_auto_login_not_established">登录成功但无法读取课程中心数据，请改用网页登录</string>
     <string name="xmu_auto_login_disable_title">关闭自动续期</string>
@@ -492,6 +495,7 @@
     <string name="import_xmu_label">从教务导入</string>
     <string name="import_xmu_desc">账号与同步设置页登录后可导入</string>
     <string name="import_xmu_sheet_title">教务导入</string>
+    <string name="import_xmu_unsupported">当前登录方式不支持教务课表导入，请在「账号与同步」页重新用账号登录</string>
     <string name="import_wakeup_label">从 Wakeup 课表分享口令导入</string>
     <string name="import_wakeup_desc">输入Wakeup课表的分享口令导入</string>
     <string name="import_clipboard_empty">剪贴板中没有可导入的内容</string>

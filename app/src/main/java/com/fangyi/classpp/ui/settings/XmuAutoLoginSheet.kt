@@ -29,7 +29,8 @@ import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 
 /**
- * 开启自动续期的凭据浮层：学号 + 密码 → 原生登录一次。
+ * 原生 OAuth 登录凭据浮层：学号 + 密码 → 原生登录一次。默认登录（「去登录」）与开启
+ * 自动续期共用本浮层（[title] 由调用方按入口传入，语义相同：登录即保存凭据）。
  *
  * 密码框用 [PasswordVisualTransformation]；输入值用 remember 而非 rememberSaveable，
  * 避免密码进入 savedInstanceState（旋转后重输可接受）。
@@ -45,6 +46,7 @@ internal fun XmuAutoLoginSheet(
     onDismissed: () -> Unit,
     onSubmit: (String, String) -> Unit,
     modifier: Modifier = Modifier,
+    title: String = stringResource(R.string.xmu_native_login_title),
 ) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -84,9 +86,7 @@ internal fun XmuAutoLoginSheet(
     }
 
     OverlaySheet(
-        title = stringResource(
-            if (busy) R.string.xmu_auto_login_sheet_title_busy else R.string.xmu_auto_login_sheet_title,
-        ),
+        title = if (busy) stringResource(R.string.xmu_auto_login_sheet_title_busy) else title,
         confirmLabel = stringResource(R.string.xmu_auto_login_confirm),
         confirmAtEnd = true,
         onConfirm = ::submit,

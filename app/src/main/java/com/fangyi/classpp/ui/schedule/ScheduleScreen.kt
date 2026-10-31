@@ -88,6 +88,8 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.overlappingCourses
 import com.fangyi.classpp.data.wakeup.WakeupImportExecutor
+import com.fangyi.classpp.data.xmu.XmuAutoLoginManager
+import com.fangyi.classpp.data.xmu.XmuAutoLoginState
 import com.fangyi.classpp.data.xmu.XmuSyncRepository
 import com.fangyi.classpp.data.wakeup.WakeupScheduleMapper
 import com.fangyi.classpp.data.wakeup.WakeupScriptStore
@@ -111,6 +113,7 @@ import dev.chrisbanes.haze.rememberHazeState
 import kotlin.math.abs
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 /** [selectedWeek] 的「未初始化」哨兵：0 与负数都是合法周号（开学前的日历周），故取最小值 */
@@ -163,6 +166,9 @@ fun ScheduleScreen(
     onOpenAccountSync: () -> Unit = {},
     // 教务账号连接状态数据源（教务导入浮层账号行行值）；null = 容器未装配，按未连接展示
     xmuSyncRepository: XmuSyncRepository? = null,
+    // 自动续期管理器（教务导入浮层的「是否支持导入」判定数据源）；null = 容器未装配，
+    // 视作未保存凭据处理
+    xmuAutoLoginManager: XmuAutoLoginManager? = null,
     tabTransition: TabTransitionState? = null,
     // 课程卡片高度倍率状态（MainActivity 持有、个性化页写入；网格行高随每节时长伸缩，
     // 倍率整体缩放）：State 实例透传给 CourseGrid，本屏不读 .value——滑条拖动时
@@ -468,6 +474,17 @@ fun ScheduleScreen(
                 xmuSyncState.accountName.isBlank() ->
                     stringResource(R.string.xmu_connected_label)
                 else -> stringResource(R.string.xmu_connected_name, xmuSyncState.accountName)
+            }
+            // 自动续期状态（fallback flow 保证 collectAsState 无条件调用，同 XmuSyncScreen）：
+            // 已连接但没保存凭据 = 网页登录（或已关闭自动续期）——教务课表与课程中心不共享
+            // 登录态，导入需要保存的密码单独登录教务站，故该状态不支持导入，浮层给出拦截文案
+            val fallbackXmuAutoLoginState = remember { MutableStateFlow(XmuAutoLoginState()) }
+            val xmuAutoLoginState =
+                (xmuAutoLoginManager?.state ?: fallbackXmuAutoLoginState).collectAsState().value
+            val xmuImportBlockedReason = when {
+                xmuSyncState == null || xmuSyncState.uid.isEmpty() -> null
+                xmuAutoLoginState.hasCredentials -> null
+                else -> stringResource(R.string.import_xmu_unsupported)
             }
             // 教务导入浮层「账号与同步」：收起整串浮层（教务导入 → 导入 → 切换），编辑态取消
             // 更改（整库回滚，同编辑栏取消），再转到设置页-账号与同步（调用方直达子页）
@@ -1297,6 +1314,8 @@ fun ScheduleScreen(
                         onDismiss = { xmuSheetVisible = false },
                         onOpenAccountSync = onXmuAccountClick,
                         accountStatus = xmuAccountStatus,
+                        // 非空 = 当前登录方式不支持教务导入：浮层内横幅说明并拦截确认
+                        importBlockedReason = xmuImportBlockedReason,
                         onConfirm = { _ ->
                             // 教务课表同步接入后：按选中学期拉取课表并走导入预览
                         },

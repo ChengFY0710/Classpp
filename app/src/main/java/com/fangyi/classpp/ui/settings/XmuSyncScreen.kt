@@ -94,17 +94,21 @@ import kotlinx.coroutines.withTimeout
 /**
  * 账号与同步子页（设置 → 账号与同步）：课程中心待办同步的唯一入口。
  *
- * 结构（指导 §7）：未连接 → 隐私说明卡 +「去登录」（全屏 WebView 浮层 [XmuLoginSheet]，
- * 官方统一身份认证页完成登录，App 不接触密码）；已连接 → 连接状态卡（姓名 + 上次同步
- * 时间）+「立即同步」+「退出登录」。同步一律走「预览 → 确认导入」（[XmuSyncPreviewSheet]，
- * 按课程分组、默认全选）；错误按类提示（过期给横幅 + 重登入口，**不把所有失败说成登录
- * 过期**）。退出登录两档：仅清登录态与同步记录 / 连课程中心导入的待办一并删除。
+ * 结构：未连接 → 隐私说明卡 +「去登录」（默认原生 OAuth 登录：输入学号/密码，登录即
+ * 保存凭据并开启自动续期；Keystore 不可用时直接回退网页登录）；已连接 → 连接状态卡
+ * （姓名 + 上次同步时间）+「立即同步」+「退出登录」。页面底部「备用登录方式」提供可见
+ * WebView 登录（[XmuLoginSheet]：统一身份认证页完成登录，App 不接触密码、不保存凭据，
+ * 不支持教务课表导入与自动续期；原生登录遇验证码/页面改版时也自动切换到它）。同步一律
+ * 走「预览 → 确认导入」（[XmuSyncPreviewSheet]，按课程分组、默认全选）；错误按类提示
+ * （过期给横幅 + 重登入口，**不把所有失败说成登录过期**）。退出登录两档：仅清登录态与
+ * 同步记录 / 连课程中心导入的待办一并删除。
  *
  * [repository] = null（容器未装配完）→ 加载指示。在途标记与同步预览用 remember 非
  * saveable——旋转/进程重建时协程一并取消、导入就地作废（同 Wakeup 导入的取舍）。
  *
- * 「自动续期」是方案 B 的可选增强：[autoLogin] 非空时在连接卡下方展示开关；开启需要
- * 现场输入学号/密码完成一次原生登录。关闭/暂停/不可用时同步自动回退到原 WebView 路径。
+ * 「自动续期」：[autoLogin] 非空时在连接卡下方展示开关。原生登录成功即保存凭据并开启
+ * （开关随登录点亮）；关闭会删除已保存的密码（教务导入随之不可用），同步自动回退到
+ * WebView 路径。
  */
 @Composable
 fun XmuSyncScreen(
@@ -274,6 +278,10 @@ fun XmuSyncScreen(
         when (result) {
             is XmuFetchResult.Ok -> scope.launch {
                 try {
+                    // 网页登录不保存密码：此前若有原生登录留下的凭据，一并清除（与
+                    // 「WebView 登录不保存账号密码」的定位一致）；CookieManager 里刚建立的
+                    // 会话不受影响，关闭续期后同步回退到 WebView 路径正好复用它
+                    autoLogin?.disable()
                     when (val outcome = repo.prepareFromLogin(result.profileRaw, result.todosRaw)) {
                         is XmuPrepareOutcome.Ready -> {
                             sessionExpired = false
@@ -387,13 +395,25 @@ fun XmuSyncScreen(
                         }
                         is XmuEnableOutcome.Failed -> {
                             XmuDebugLog.d("enable failed error=${outcome.error}")
-                            autoLoginError = outcome.error
                             AppToasts.show(
                                 context,
                                 autoLoginErrorTexts[outcome.error]
                                     ?.let { context.getString(it) }
                                     ?: genericErrorText,
                             )
+                            // 验证码/页面改版/登录后仍读不到数据：原生链路走不通，收起浮层
+                            // 自动转网页登录（浮层先关，网页登录浮层叠上）；其余错误（密码
+                            // 错误、存储不可用、网络等）留在浮层内横幅提示，便于直接重试
+                            when (outcome.error) {
+                                XmuAutoLoginError.NeedCaptcha,
+                                XmuAutoLoginError.FormatChanged,
+                                XmuAutoLoginError.SessionNotEstablished,
+                                -> {
+                                    autoLoginSheetVisible = false
+                                    loginVisible = true
+                                }
+                                else -> autoLoginError = outcome.error
+                            }
                         }
                     }
                 } catch (e: TimeoutCancellationException) {
@@ -549,7 +569,16 @@ fun XmuSyncScreen(
                                             label = stringResource(R.string.xmu_login_button),
                                             onClick = {
                                                 sessionExpired = false
-                                                loginVisible = true
+                                                if (autoLogin != null && autoLoginState.available) {
+                                                    // 默认原生 OAuth 登录：输学号/密码，成功即
+                                                    // 保存凭据并开启自动续期
+                                                    autoLoginError = null
+                                                    autoLoginSheetVisible = true
+                                                } else {
+                                                    // 自动续期未装配或 Keystore 不可用：原生
+                                                    // 登录不了，直接走网页登录兜底
+                                                    loginVisible = true
+                                                }
                                             },
                                         ),
                                     ),
@@ -590,9 +619,10 @@ fun XmuSyncScreen(
                         }
 
                         // 「自动续期和同步」分组：两个开关合并一张卡，能力缺失时逐行隐藏。
-                        // 自动续期关闭/暂停/不可用时同步仍走原 WebView 路径，开启需要现场输入
-                        // 凭据完成一次原生登录；自动同步每天 6:00 后台跑一次并自动导入（需已
-                        // 连接），未开自动续期时登录过期该次静默跳过（行为不变，文案统一不区分）
+                        // 自动续期未连接时置灰（原生登录即保存凭据并自动开启，无需先开），
+                        // 关闭/暂停/不可用时同步仍走 WebView 路径，开启需要现场输入凭据完成
+                        // 一次原生登录；自动同步每天 6:00 后台跑一次并自动导入（需已连接），
+                        // 未开自动续期时登录过期该次静默跳过（行为不变，文案统一不区分）
                         if (autoLogin != null || connected) {
                             CardSection(
                                 title = stringResource(R.string.xmu_section_auto_login_sync),
@@ -627,8 +657,12 @@ fun XmuSyncScreen(
                                                     checked = autoLoginState.policy ==
                                                         XmuAutoLoginPolicy.ENABLED,
                                                     onCheckedChange = onAutoLoginToggle,
+                                                    // 未连接时置灰：登录（原生 OAuth）即保存
+                                                    // 凭据并自动开启，没有「先开开关再登录」
                                                     enabled =
-                                                        !autoLoginBusy && autoLoginState.available,
+                                                        !autoLoginBusy &&
+                                                            autoLoginState.available &&
+                                                            connected,
                                                 ),
                                             )
                                         }
@@ -647,6 +681,25 @@ fun XmuSyncScreen(
                                     },
                                 )
                             }
+                        }
+
+                        // 「备用登录方式」分组：可见 WebView 登录。默认登录走原生 OAuth
+                        // （保存凭据，支持自动续期与教务导入）；网页登录不保存密码、存在过期
+                        // 风险，也是原生登录遇验证码/页面改版时的自动回退目标
+                        CardSection(title = stringResource(R.string.xmu_section_alt_login)) {
+                            SettingsCard(
+                                items = listOf(
+                                    SettingsCardItem.Nav(
+                                        label = stringResource(R.string.xmu_webview_login),
+                                        description =
+                                            stringResource(R.string.xmu_webview_login_desc),
+                                        onClick = {
+                                            sessionExpired = false
+                                            loginVisible = true
+                                        },
+                                    ),
+                                ),
+                            )
                         }
 
                         // 「同步可以做什么」说明分组：沿用原介绍卡（标题 + 完整说明）
@@ -817,7 +870,7 @@ fun XmuSyncScreen(
         }
     }
 
-    // 自动续期凭据浮层：输入学号/密码 → 原生登录一次
+    // 原生登录凭据浮层（默认「去登录」与开启自动续期共用）：输入学号/密码 → 原生登录一次
     if (autoLoginSheetMounted) {
         XmuAutoLoginSheet(
             visible = autoLoginSheetVisible,
