@@ -393,6 +393,10 @@ fun TodoScreen(
         }
     }
 
+    // 「添加到日历」流程（详情菜单项唤起）：权限/列账户/写入/账户选择卡全在
+    // CalendarAddFlow 编排（与日程页详情共用同一套），这里取状态与总入口
+    val calendarAdd = rememberCalendarAddState()
+
     // 标签写回统一入口（分组浮层标签编辑态底栏触发）：标签库先落盘，待办侧回写随后——
     // tags.json 与 todos.json 两个文件无法同一次提交原子落盘，两步各自失败都 Toast 提示
     // （中途失败留下「库已改、待办未跟随」的窗口，属落盘异常时的可接受降级）。
@@ -1196,9 +1200,15 @@ fun TodoScreen(
                         if (result is TodoOpResult.Err) AppToasts.show(context, saveFailedMessage)
                     }
                 },
+                // 「添加到日历」（详情菜单项）：权限/账户选择/写入由 calendarAdd 编排；
+                // 传详情快照 detail，写入目标锁定点菜单那一刻的内容
+                onAddToCalendar = { calendarAdd.begin(detail) },
             )
         }
     }
+    // 日历账户选择卡：画在详情浮层之后（组合顺序即绘制顺序，盖在详情之上），
+    // 两段式挂载收口在 CalendarPickerHost
+    CalendarPickerHost(calendarAdd, hazeState = hazeState)
     // 编辑待办浮层：两段式挂载同详情，画在详情之后（组合顺序即绘制顺序）叠在详情之上。
     // editTargetId 是期望目标（空 = 关），editMounted 是挂载时的快照（表单初值只取这一次）；
     // visible 从当前列表反查：待办被删反查落空 → 自动收起（与删除确认的级联一致）

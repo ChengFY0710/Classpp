@@ -65,6 +65,14 @@
     <string name="todo_menu_add_to_calendar">添加到日历</string>
     <string name="todo_menu_countdown_start">开启倒计时</string>
     <string name="todo_menu_countdown_stop">关闭倒计时</string>
+    <!-- 添加到日历：账户选择卡（多日历账户时弹出）与写入结果 Toast -->
+    <string name="calendar_picker_title">选择日历</string>
+    <string name="calendar_picker_confirm">添加</string>
+    <string name="calendar_success_toast">已添加 %1$d 个日程到日历</string>
+    <string name="calendar_error_no_calendar">未找到可用的日历账户</string>
+    <string name="calendar_error_access_denied">未获得日历权限，无法添加</string>
+    <string name="calendar_error_insert_failed">添加到日历失败</string>
+    <string name="calendar_permission_denied_toast">未能获取日历权限</string>
     <!-- 待办卡片左侧倒计时（NoteCard）：单位与「逾期」前缀取 12sp；中文数字与文字之间不留空格 -->
     <string name="todo_countdown_overdue">逾期</string>
     <string name="todo_countdown_day_unit">天</string>

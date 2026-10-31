@@ -398,6 +398,14 @@
     <string name="todo_menu_add_to_calendar">Add to calendar</string>
     <string name="todo_menu_countdown_start">Start countdown</string>
     <string name="todo_menu_countdown_stop">Stop countdown</string>
+    <!-- Add to calendar: account picker card (shown with multiple calendars) and result toasts -->
+    <string name="calendar_picker_title">"Choose calendar"</string>
+    <string name="calendar_picker_confirm">"Add"</string>
+    <string name="calendar_success_toast">"Added %1$d event(s) to calendar"</string>
+    <string name="calendar_error_no_calendar">"No available calendar found"</string>
+    <string name="calendar_error_access_denied">"Calendar permission not granted"</string>
+    <string name="calendar_error_insert_failed">"Failed to add to calendar"</string>
+    <string name="calendar_permission_denied_toast">"Couldn't get calendar permission"</string>
     <!-- NoteCard left countdown: unit and "overdue" prefix. Quoted values keep the spaces
          English needs around the number; the Chinese strings carry no space instead. -->
     <string name="todo_countdown_overdue">"Overdue "</string>

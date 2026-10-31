@@ -144,6 +144,9 @@ internal fun TodoDetailSheet(
     onOccurrenceCompletedChange: (date: IsoDate, completed: Boolean) -> Unit,
     // 开关列表卡倒计时（true = 开启）；落库后本层菜单文案随传入的 todo 自动回流
     onCountdownToggle: (Boolean) -> Unit,
+    // 把本待办写入系统日历（权限请求/账户选择/写入与 Toast 均由宿主编排）；时间为「无」
+    // 的待办菜单项整体置灰，本回调不会被触发
+    onAddToCalendar: () -> Unit,
     // 当前视图是否提供倒计时开关：收集箱卡不渲染倒计时（TodoInboxCard 组件口径），
     // 从收集箱打开的详情传 false 把「开启倒计时」整体置灰（开关无可视反馈）
     countdownAvailable: Boolean = true,
@@ -241,6 +244,10 @@ internal fun TodoDetailSheet(
                         expanded = moreExpanded,
                         onDismiss = { moreExpanded = false },
                         hazeState = sheetHazeState,
+                        // 时间为「无」的待办没有任何可写入日历的时刻：添加到日历项置灰
+                        // 不可点（CalendarEventPlanner 同口径，正常不会触发其回调）
+                        calendarEnabled = todo.timeKind != TodoTimeKind.None,
+                        onAddToCalendar = onAddToCalendar,
                         // 无截止日期、已标记完成或当前视图不显示倒计时（收集箱）：倒计时
                         // 项置灰不可点（无截止时仓库不变式也保证开关必为 false；完成后仅
                         // 禁用入口，开关值原样保留，取消完成即恢复可点）
@@ -456,7 +463,9 @@ internal fun TodoDetailSheet(
  * 与 scale/alpha 进出场由宿主处理；卡片右缘对齐锚点（按钮）右缘、顶缘与按钮底缘留
  * [TitleMenuGap]，锚点在行尾故自卡片右上角长出。
  *
- * 条目：添加到日历（本轮只做 UI——点按仅收起菜单，不接日历写入）；倒计时在
+ * 条目：添加到日历（[calendarEnabled] = false 即待办时间为「无」时置灰不可点；可点时
+ * 点按交 [onAddToCalendar] 由宿主写入系统日历，流程见 CalendarAddFlow——待办页与日程页
+ * 两个详情浮层共用同一套）；倒计时在
  * [countdownEnabled] 为 false（无截止日期、该待办已标记完成，或当前视图不显示倒计时）
  * 时置灰不可点（`classppColors.negative`）、可点时点按把新开关值交 [onCountdownToggle]
  * 落库；文案：置灰时恒显「开启倒计时」（不暴露「关闭」误导用户以为还能操作），
@@ -468,6 +477,8 @@ private fun TitleMoreMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
     hazeState: HazeState,
+    calendarEnabled: Boolean,
+    onAddToCalendar: () -> Unit,
     countdownEnabled: Boolean,
     countdownOn: Boolean,
     onCountdownToggle: (Boolean) -> Unit,
@@ -484,7 +495,12 @@ private fun TitleMoreMenu(
                     PopupMenuItem(
                         label = stringResource(R.string.todo_menu_add_to_calendar),
                         icon = R.drawable.ic_calendar_regular,
-                        onClick = onDismiss,
+                        // 时间为「无」的待办置灰（无可写入日历的时刻）；可点时交宿主写入
+                        enabled = calendarEnabled,
+                        onClick = {
+                            onAddToCalendar()
+                            onDismiss()
+                        },
                     ),
                     PopupMenuItem(
                         // 置灰时恒显「开启倒计时」（同完成态：不暴露「关闭」误导用户以为

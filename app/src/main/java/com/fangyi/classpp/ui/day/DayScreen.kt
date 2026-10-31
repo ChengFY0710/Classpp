@@ -146,9 +146,11 @@ import com.fangyi.classpp.ui.motion.rememberTiltParallax
 import com.fangyi.classpp.ui.motion.sharePointerInputWithSiblings
 import com.fangyi.classpp.ui.motion.tiltParallax
 import com.fangyi.classpp.ui.navigation.NavReserve
+import com.fangyi.classpp.ui.note.CalendarPickerHost
 import com.fangyi.classpp.ui.note.NewTodoSheet
 import com.fangyi.classpp.ui.note.TodoDetailSheet
 import com.fangyi.classpp.ui.note.deadlineColor
+import com.fangyi.classpp.ui.note.rememberCalendarAddState
 import com.fangyi.classpp.ui.note.repeatCardText
 import com.fangyi.classpp.ui.note.toAbsoluteDateText
 import com.fangyi.classpp.ui.schedule.CourseColor
@@ -278,6 +280,10 @@ fun DayScreen(
     // 避免两种材质互相串色（Haze 2 一个 State 可以承载多种源，这里刻意隔离）。
     val imageHazeState = rememberHazeState()
     val contentHazeState = rememberHazeState()
+
+    // 「添加到日历」流程（待办详情菜单项唤起）：权限/列账户/写入/账户选择卡全在
+    // CalendarAddFlow 编排（与待办页详情共用同一套），这里取状态与总入口
+    val calendarAdd = rememberCalendarAddState()
 
     // 用户图片库与当前背景：首次组合从磁盘读，之后改动即时落盘（DayImageStore）
     var images by remember { mutableStateOf(DayImageStore.loadImages(context)) }
@@ -1636,9 +1642,15 @@ fun DayScreen(
                             }
                         }
                     },
+                    // 「添加到日历」（详情菜单项）：权限/账户选择/写入由 calendarAdd 编排；
+                    // 传详情快照 detail，写入目标锁定点菜单那一刻的内容
+                    onAddToCalendar = { calendarAdd.begin(detail) },
                 )
             }
         }
+        // 日历账户选择卡：画在待办详情浮层之后（组合顺序即绘制顺序，盖在详情之上），
+        // 两段式挂载收口在 CalendarPickerHost
+        CalendarPickerHost(calendarAdd, hazeState = contentHazeState)
         // 编辑待办浮层：两段式挂载同详情，画在详情之后（组合顺序即绘制顺序）叠在详情之上。
         // todoEditTargetId 是期望目标（空 = 关），todoEditMounted 是挂载时的快照（表单初值
         // 只取一次）；visible 从当前列表反查：待办被删反查落空 → 自动收起

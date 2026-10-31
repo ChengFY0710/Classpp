@@ -628,6 +628,10 @@ private fun XmuSyncPreviewSheet(
     onDismissed: () -> Unit,
     onConfirm: (Set<String>) -> Unit,
 ) {
+    // 系统返回 = 收起预览（取消），不穿透到设置页把「账号与同步」整页退掉。
+    // 退场期间 visible 已为 false，返回键让位给页面（同其他浮层的两段式语义）
+    BackHandler(enabled = visible, onBack = onDismiss)
+
     // 退场动画期间保留最后一次非空数据（WakeupImportConfirmDialog 的 stale-content retention）
     var shownPlan by remember { mutableStateOf<XmuSyncPlan?>(null) }
     if (plan != null) shownPlan = plan
@@ -650,7 +654,7 @@ private fun XmuSyncPreviewSheet(
             if (!importing && current != null) onConfirm(selected)
         },
         rightAction = SheetTopAction(
-            label = stringResource(R.string.switcher_close),
+            label = stringResource(R.string.settings_cancel),
             icon = R.drawable.ic_dismiss_circle,
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.onSurface,

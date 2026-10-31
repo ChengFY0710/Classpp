@@ -10,6 +10,8 @@ https://github.com/Kyant0/AndroidLiquidGlass
 
 https://github.com/coil-kt/coil
 
+https://gitee.com/XingHeYuZhuan-gh/shiguang_warehouse （Wakeup 导入适配脚本 wake_up.js 来源）
+
 ---
 
 # Class Plus Plus（Classpp/Class++）
