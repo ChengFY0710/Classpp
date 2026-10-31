@@ -467,6 +467,15 @@ private fun SettingsCardPreview() = ClassppTheme {
                 ),
             ),
         )
+        // 纯文字行：trailing 缺省无尾部控件，标题与描述撑满整行宽（无尾部避让间隙）
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Custom(
+                    label = "设置项label",
+                    description = "纯文字行的说明文字，右侧没有图标与值，标题与描述撑满整行宽度",
+                ),
+            ),
+        )
         // 多行导航
         SettingsCard(
             items = listOf(

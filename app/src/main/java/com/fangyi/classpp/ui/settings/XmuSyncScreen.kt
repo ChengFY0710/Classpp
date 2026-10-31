@@ -52,12 +52,15 @@ import com.fangyi.classpp.data.xmu.XmuAutoLoginManager
 import com.fangyi.classpp.data.xmu.XmuAutoLoginPolicy
 import com.fangyi.classpp.data.xmu.XmuAutoLoginState
 import com.fangyi.classpp.data.xmu.XmuCommitOutcome
+import com.fangyi.classpp.data.xmu.XmuDailySyncRunner
+import com.fangyi.classpp.data.xmu.XmuDailySyncScheduler
 import com.fangyi.classpp.data.xmu.XmuDebugLog
 import com.fangyi.classpp.data.xmu.XmuEnableOutcome
 import com.fangyi.classpp.data.xmu.XmuFetchResult
 import com.fangyi.classpp.data.xmu.XmuPrepareOutcome
 import com.fangyi.classpp.data.xmu.XmuSyncError
 import com.fangyi.classpp.data.xmu.XmuSyncPlan
+import com.fangyi.classpp.data.xmu.XmuSyncPreferences
 import com.fangyi.classpp.data.xmu.XmuSyncRepository
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
@@ -164,6 +167,12 @@ fun XmuSyncScreen(
     var disableAutoVisible by remember { mutableStateOf(false) }
     var disableAutoMounted by remember { mutableStateOf(false) }
     if (disableAutoVisible) disableAutoMounted = true
+
+    // 每日自动同步：开关是 SharedPreferences 单键（后台 receiver 也读），进页读一次；
+    // 切换即落盘（回调里），本状态只跟随开关刷新 UI
+    var dailySyncEnabled by remember {
+        mutableStateOf(XmuSyncPreferences.isDailySyncEnabled(context))
+    }
 
     // 错误文案在组合期解析（回调里只引用，不经 LocalContext 查资源——lint 惯例）
     val errorTexts = remember {
@@ -311,6 +320,18 @@ fun XmuSyncScreen(
             }
         } else {
             disableAutoVisible = true
+        }
+    }
+
+    // 每日自动同步开关：先落盘再调度（scheduleNext 读 prefs 决定排或取消）；开启时
+    // 立即跑一次补漏判定——当天 6:00 已过且还没同步过就当场同步，与「进 App 补漏」
+    // 同一条静默路径（导入不问确认、失败只留日志）
+    val onDailySyncToggle: (Boolean) -> Unit = { wantOn ->
+        XmuSyncPreferences.setDailySyncEnabled(context, wantOn)
+        dailySyncEnabled = wantOn
+        scope.launch {
+            if (wantOn) XmuDailySyncRunner.runIfDue(context)
+            XmuDailySyncScheduler.scheduleNext(context)
         }
     }
 
@@ -550,7 +571,6 @@ fun XmuSyncScreen(
                                             } else {
                                                 stringResource(R.string.xmu_last_sync_never)
                                             },
-                                            trailing = {},
                                         ),
                                     ),
                                 )
@@ -599,6 +619,36 @@ fun XmuSyncScreen(
                             }
                         }
 
+                        // 「自动同步」分组：每天 6:00 后台同步一次并自动导入（需已连接）。
+                        // 未开自动续期时登录过期该次静默跳过——文案里说明，避免用户以为
+                        // 开了就必然同步成功
+                        if (connected) {
+                            CardSection(title = stringResource(R.string.xmu_auto_sync_section)) {
+                                SettingsCard(
+                                    items = listOf(
+                                        SettingsCardItem.Toggle(
+                                            label = stringResource(R.string.xmu_auto_sync_title),
+                                            description = if (dailySyncEnabled) {
+                                                if (autoLoginState.policy ==
+                                                    XmuAutoLoginPolicy.ENABLED
+                                                ) {
+                                                    stringResource(R.string.xmu_auto_sync_desc_on)
+                                                } else {
+                                                    stringResource(
+                                                        R.string.xmu_auto_sync_desc_on_no_renewal,
+                                                    )
+                                                }
+                                            } else {
+                                                stringResource(R.string.xmu_auto_sync_desc_off)
+                                            },
+                                            checked = dailySyncEnabled,
+                                            onCheckedChange = onDailySyncToggle,
+                                        ),
+                                    ),
+                                )
+                            }
+                        }
+
                         // 「同步可以做什么」说明分组：沿用原介绍卡（标题 + 完整说明）
                         CardSection(title = stringResource(R.string.xmu_section_capabilities)) {
                             SettingsCard(
@@ -606,7 +656,6 @@ fun XmuSyncScreen(
                                     SettingsCardItem.Custom(
                                         label = stringResource(R.string.xmu_intro_title),
                                         description = stringResource(R.string.xmu_intro_body),
-                                        trailing = {},
                                     ),
                                 ),
                             )

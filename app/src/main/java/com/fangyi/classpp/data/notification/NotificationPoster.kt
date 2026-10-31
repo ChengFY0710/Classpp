@@ -58,20 +58,25 @@ internal object NotificationPoster {
         return builder.build()
     }
 
-    /** 普通通知：瞬时提醒，点按/滑除即走（全 API 版本通用的形态） */
+    /**
+     * 普通通知：瞬时提醒，点按/滑除即走（全 API 版本通用的形态）。
+     * [contentIntent] 非 null 时按调用方落页（自动同步结果进主页），null 走
+     * 课程/待办 tab 的默认落页。
+     */
     fun buildStandard(
         context: Context,
         channel: String,
         title: String,
         text: String,
         isCourse: Boolean,
+        contentIntent: PendingIntent? = null,
     ): Notification =
         NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_alert)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setContentIntent(contentIntent(context, isCourse, title.hashCode()))
+            .setContentIntent(contentIntent ?: contentIntent(context, isCourse, title.hashCode()))
             .setAutoCancel(true)
             .build()
 

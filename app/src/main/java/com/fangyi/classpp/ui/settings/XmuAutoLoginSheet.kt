@@ -145,7 +145,6 @@ internal fun XmuAutoLoginSheet(
                         SettingsCardItem.Custom(
                             label = stringResource(R.string.xmu_auto_login_notes_title),
                             description = stringResource(R.string.xmu_auto_login_warning),
-                            trailing = {},
                         ),
                     ),
                 )

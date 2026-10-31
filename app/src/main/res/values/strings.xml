@@ -260,6 +260,14 @@
     <string name="xmu_auto_login_disable_title">关闭自动续期</string>
     <string name="xmu_auto_login_disable_message">关闭后将删除已保存的学号与密码。当前登录状态会保留，会话过期后需手动登录。</string>
     <string name="xmu_auto_login_disable_confirm">关闭并删除密码</string>
+    <!-- 每日自动同步 -->
+    <string name="xmu_auto_sync_section">自动同步</string>
+    <string name="xmu_auto_sync_title">每日自动同步</string>
+    <string name="xmu_auto_sync_desc_on">已开启：每天 6:00 自动同步课程中心，新待办自动导入并通知</string>
+    <string name="xmu_auto_sync_desc_on_no_renewal">已开启：每天 6:00 自动同步；未开启自动续期，登录过期将跳过该次同步</string>
+    <string name="xmu_auto_sync_desc_off">未开启：仅打开 App 时手动同步</string>
+    <string name="xmu_auto_sync_notif_title">课程中心自动同步完成</string>
+    <string name="xmu_auto_sync_notif_text">已自动导入 %1$d 条，恢复 %2$d 条</string>
     <!-- 通知与提醒 -->
     <string name="settings_notifications">通知与提醒</string>
     <string name="notification_enable">启用通知</string>
@@ -287,6 +295,7 @@
     <!-- 通知内容与渠道 -->
     <string name="notification_channel_course">课程提醒</string>
     <string name="notification_channel_todo">待办提醒</string>
+    <string name="notification_channel_sync">同步报告</string>
     <string name="notification_course_text">%1$s 上课 · %2$s</string>
     <string name="notification_course_text_no_location">%1$s 上课</string>
     <string name="notification_todo_deadline_text">%1$s 截止</string>

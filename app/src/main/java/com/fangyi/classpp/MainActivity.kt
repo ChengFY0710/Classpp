@@ -42,6 +42,8 @@ import com.fangyi.classpp.data.AppContainer
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.notification.NotificationAlarmReceiver
 import com.fangyi.classpp.data.notification.NotificationScheduler
+import com.fangyi.classpp.data.xmu.XmuDailySyncRunner
+import com.fangyi.classpp.data.xmu.XmuDailySyncScheduler
 import com.fangyi.classpp.ui.day.DayScreen
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
@@ -246,6 +248,15 @@ class MainActivity : ComponentActivity() {
                             .collect {
                                 NotificationScheduler.reschedule(this@MainActivity.applicationContext)
                             }
+                    }
+
+                    // 每日自动同步：进 App 幂等续排闹钟（自愈一切漏排）+ 补漏判定——
+                    // 当天 6:00 已过且还没同步过就当场同步一次，与后台闹钟同一条静默路径
+                    LaunchedEffect(repository) {
+                        if (repository == null) return@LaunchedEffect
+                        val appContext = applicationContext
+                        XmuDailySyncScheduler.scheduleNext(appContext)
+                        XmuDailySyncRunner.runIfDue(appContext)
                     }
 
                     // 回前台重录顶栏转场冻结帧：进多任务/回桌面时窗口不可见，系统会丢弃

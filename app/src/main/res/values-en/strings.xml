@@ -156,6 +156,14 @@
     <string name="xmu_auto_login_disable_title">Turn off auto renewal</string>
     <string name="xmu_auto_login_disable_message">Turning this off deletes the saved student ID and password. The current sign-in is kept; after the session expires you will need to sign in manually.</string>
     <string name="xmu_auto_login_disable_confirm">Turn off and delete password</string>
+    <!-- Daily auto sync -->
+    <string name="xmu_auto_sync_section">Auto sync</string>
+    <string name="xmu_auto_sync_title">Daily auto sync</string>
+    <string name="xmu_auto_sync_desc_on">Enabled: syncs Course Center daily at 6:00, imports new todos and notifies you</string>
+    <string name="xmu_auto_sync_desc_on_no_renewal">Enabled: syncs daily at 6:00. Auto renewal is off, so an expired sign-in skips that sync</string>
+    <string name="xmu_auto_sync_desc_off">Off: sync manually when the app is open</string>
+    <string name="xmu_auto_sync_notif_title">Course Center auto sync finished</string>
+    <string name="xmu_auto_sync_notif_text">Auto-imported %1$d, restored %2$d</string>
     <!-- Notifications & reminders -->
     <string name="settings_notifications">Notifications &amp; reminders</string>
     <string name="notification_enable">Enable notifications</string>
@@ -183,6 +191,7 @@
     <!-- Notification content & channels -->
     <string name="notification_channel_course">Class reminders</string>
     <string name="notification_channel_todo">Todo reminders</string>
+    <string name="notification_channel_sync">Sync reports</string>
     <string name="notification_course_text">Class %1$s · %2$s</string>
     <string name="notification_course_text_no_location">Class %1$s</string>
     <string name="notification_todo_deadline_text">Due %1$s</string>
