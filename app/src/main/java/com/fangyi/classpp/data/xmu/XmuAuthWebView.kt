@@ -15,6 +15,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.fangyi.classpp.data.ScheduleJson
+import com.fangyi.classpp.data.destroySafely
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -158,11 +159,12 @@ internal object XmuWebViewPolicy {
                 val forwarded = booleanArrayOf(false)
                 var temp: WebView? = null
 
-                // 不在 WebViewClient 回调里同步 destroy，post 到下一轮消息
+                // 不在 WebViewClient 回调里同步 destroy：destroySafely 推迟一轮消息循环，
+                // 已排队的 Chromium 回调先派发；也不依赖 view.post（detach 后会挂起不执行）
                 fun destroyTemp() {
                     val wv = temp ?: return
                     temp = null
-                    view.post { wv.destroy() }
+                    wv.destroySafely()
                 }
 
                 // 取到目标 URL 后回主 WebView、销毁临时实例（只转发一次）。
@@ -448,8 +450,8 @@ internal class XmuWebSessionDriver(
         destroyed = true
         mainHandler.removeCallbacksAndMessages(null)
         if (ownsWebView) {
-            webView.stopLoading()
-            webView.destroy()
+            // destroySafely：延迟一轮销毁，避免在途加载回调派发到已销毁实例
+            webView.destroySafely()
         }
     }
 

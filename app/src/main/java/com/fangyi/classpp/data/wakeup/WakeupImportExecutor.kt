@@ -9,6 +9,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.fangyi.classpp.data.destroySafely
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -242,8 +243,8 @@ object WakeupImportExecutor {
         fun destroy() {
             destroyed = true
             mainHandler.removeCallbacksAndMessages(null)
-            webView.stopLoading()
-            webView.destroy()
+            // destroySafely：延迟一轮销毁，避免在途加载回调派发到已销毁实例
+            webView.destroySafely()
         }
 
         private fun complete() {

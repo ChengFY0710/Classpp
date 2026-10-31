@@ -41,6 +41,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.destroySafely
 import com.fangyi.classpp.data.xmu.XmuFetchResult
 import com.fangyi.classpp.data.xmu.XmuWebSessionDriver
 import com.fangyi.classpp.data.xmu.XmuWebViewPolicy
@@ -125,10 +126,8 @@ internal fun XmuLoginSheet(
             delivered = true
             driver?.destroy()
             driver = null
-            webView?.let { wv ->
-                wv.stopLoading()
-                wv.destroy()
-            }
+            // destroySafely：延迟一轮销毁，避免在途加载回调派发到已销毁实例
+            webView?.destroySafely()
             webView = null
         }
     }
