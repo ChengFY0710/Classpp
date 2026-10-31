@@ -214,7 +214,7 @@ internal fun TodoDetailSheet(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 12.dp, end = 16.dp),
+                    .padding(start = 12.dp, end = 12.dp),
                 // 顶对齐：标题换行长高时「更多」按钮钉在首行右侧不动
                 //（按钮 28dp = detailTitle 行高，首行内视觉居中）
                 verticalAlignment = Alignment.Top,

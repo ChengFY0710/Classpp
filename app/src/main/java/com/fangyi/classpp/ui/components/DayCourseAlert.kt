@@ -56,8 +56,9 @@ import com.kyant.shapes.Capsule
  *     - **无课/课已上完/非今天概览**（[DayCourseAlertState.NoCourse] /
  *       [DayCourseAlertState.DayDone] / [DayCourseAlertState.DaySummary]）：仅标题行
  *       「今日无课 好好休息吧」/「今日课已上完 好好休息吧」/「这天 N 节课 做好准备」（0 节
- *       「这天没有课 好好休息吧」），无时间列与课程信息（教师/地点/备注即使传入也不显示），
- *       竖条与图标取 Primary。
+ *       「这天没有课 好好休息吧」）；概览卡遇到过去日期（[DayCourseAlertState.DaySummary.isPast]）
+ *       改为「已上完 N 节课 好好休息吧」——课已结束，不再提示准备。无时间列与课程信息
+ *       （教师/地点/备注即使传入也不显示），竖条与图标取 Primary。
  *
  * **标题语义色**：倒计时 ≤ 10 分钟红色（colorScheme.error）、≤ 15 分钟橙色
  * （classppColors.urgentOrange）、更早为 Primary 蓝；「上课中」「今日无课」「今日课已
@@ -93,10 +94,12 @@ sealed interface DayCourseAlertState {
      *  仅标题区分「真没课」与「课上完了」） */
     data object DayDone : DayCourseAlertState
 
-    /** 非今天的整天概览，文案按节数分档：[count] > 0 标题「这天 [count] 节课」+ 固定副文案
-     *  「做好准备」；0 节（含开学前/学期外）标题「这天没有课」+ 固定副文案「好好休息吧」。
-     *  样式同 [NoCourse]：仅标题行，竖条与图标取 Primary，无时间列与课程信息 */
-    data class DaySummary(val count: Int) : DayCourseAlertState
+    /** 非今天的整天概览，文案按节数分档。未来/今天以后的日期：[count] > 0 标题
+     *  「这天 [count] 节课」+ 固定副文案「做好准备」；[isPast] 为 true 的过去日期：
+     *  [count] > 0 标题「已上完 [count] 节课」+ 固定副文案「好好休息吧」（课已上完，
+     *  不再提醒准备）；0 节（含开学前/学期外）两种日期均为标题「这天没有课」+ 固定副文案
+     *  「好好休息吧」。样式同 [NoCourse]：仅标题行，竖条与图标取 Primary，无时间列与课程信息 */
+    data class DaySummary(val count: Int, val isPast: Boolean = false) : DayCourseAlertState
 }
 
 @Composable
@@ -152,7 +155,11 @@ fun DayCourseAlert(
             iconRes = R.drawable.ic_alert_snooze
         }
         is DayCourseAlertState.DaySummary -> {
-            titleText = if (state.count > 0) "这天 ${state.count} 节课" else "这天没有课"
+            titleText = when {
+                state.count == 0 -> "这天没有课"
+                state.isPast -> "已上完 ${state.count} 节课"
+                else -> "这天 ${state.count} 节课"
+            }
             titleColor = colors.primary
             iconRes = R.drawable.ic_alert_snooze
         }
@@ -166,7 +173,7 @@ fun DayCourseAlert(
     val stackedTimes = infoRowCount >= 1
     val verticalTag = infoRowCount >= 2
     val subtitleText = when {
-        state is DayCourseAlertState.DaySummary && state.count > 0 -> "做好准备"
+        state is DayCourseAlertState.DaySummary && state.count > 0 && !state.isPast -> "做好准备"
         titleOnlyCard -> "好好休息吧"
         else -> courseName
     }
@@ -513,6 +520,10 @@ private fun DayCourseAlertPreviewContent() {
         // 非今天整天概览：有课「这天 4 节课 做好准备」，没课「这天没有课 好好休息吧」
         DayCourseAlert(
             state = DayCourseAlertState.DaySummary(count = 4),
+        )
+        // 过去日期概览：课已上完「已上完 4 节课 好好休息吧」
+        DayCourseAlert(
+            state = DayCourseAlertState.DaySummary(count = 4, isPast = true),
         )
         DayCourseAlert(
             state = DayCourseAlertState.DaySummary(count = 0),

@@ -31,10 +31,11 @@ val Typography = Typography(
         lineHeight = 36.sp,
         letterSpacing = 0.sp
     ),
+    // 23sp：UI 最大常规档，与 ClassppTextTokens.pageTitle / detailTitle 对齐。
     headlineLarge = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 24.sp,
+        fontSize = 23.sp,
         lineHeight = 28.sp,
         letterSpacing = 0.sp
     ),
@@ -56,7 +57,7 @@ val Typography = Typography(
     titleLarge = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 24.sp,
+        fontSize = 23.sp,
         lineHeight = 28.sp,
         letterSpacing = 0.sp
     ),

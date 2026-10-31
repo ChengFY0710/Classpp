@@ -817,7 +817,7 @@ private fun NoteCardCountdownDarkPreview() {
 }
 
 /**
- * 预览内容：倒计时开关打开的形态（数字 24sp、单位与「逾期」前缀 14sp；取色与右侧截止时间
+ * 预览内容：倒计时开关打开的形态（数字 23sp、单位与「逾期」前缀 14sp；取色与右侧截止时间
  * 同源——>2 天 primary、剩 2 天 urgentYellow、剩 1 天 urgentOrange、当天与逾期 error），
  * 倒数第二张是完成态对照（countdownDays 有值也不渲染——标记完成后倒计时退场），
  * 末尾一张是关闭态对照（countdownDays 缺席，与既有形态完全一致）。

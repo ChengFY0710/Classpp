@@ -8,8 +8,8 @@ import androidx.compose.ui.unit.sp
  * 语义化文字 token（阶段 1 建立，阶段 2 迁移调用点，阶段 3 按方案 B 调值）。
  *
  * 取值说明：
- * - 方案 B 阶梯：UI 文字 `11 / 12 / 14 / 16 / 20 / 24sp`，展示数字 `32 / 52 / 64sp`。
- * - 特殊展示字号（不进入常规阶梯）：`23sp` 仅页面顶栏（[pageTitle]）；
+ * - 方案 B 阶梯：UI 文字 `11 / 12 / 14 / 16 / 20 / 23sp`，展示数字 `32 / 52 / 64sp`。
+ * - 特殊展示字号（不进入常规阶梯）：`24sp` 仅台历日期副标题（[calendarSubtitle]）；
  *   `17sp` 仅课表页顶栏周数选择胶囊（[weekPill]）与课表日期带（[courseGridDate]）；
  *   `22sp` 仅周数选择卡内数字（[weekGridNumber]）；`40sp` 仅横向数字滚轮（[horizontalWheelNumber]）。
  * - 中文正文/描述字距统一 `0sp`；只有 ≥20sp 的展示标题保留负字距，
@@ -22,16 +22,16 @@ import androidx.compose.ui.unit.sp
  */
 object ClassppTextTokens {
     // ---------- 标题族 ----------
-    /** 页面顶栏日期标题：23sp SemiBold，特殊展示字号；仅此级展示标题保留负字距。 */
+    /** 页面顶栏日期标题：23sp SemiBold，UI 最大常规档；仅此级展示标题保留负字距。 */
     val pageTitle = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.SemiBold, lineHeight = 28.sp, letterSpacing = (-0.3).sp)
-    /** 台历日期副标题：24sp Medium，与页面标题同档。 */
+    /** 台历日期副标题：24sp Medium，台历专用特殊展示字号。 */
     val calendarSubtitle = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.Medium, lineHeight = 28.sp, letterSpacing = (-0.3).sp)
     /** 台历大日期：64sp 思源宋体 Heavy；24sp 行高是台历几何的紧行盒锚点，不随字号放大。 */
     val displayDate = TextStyle(fontSize = 64.sp, fontWeight = FontWeight.Black, fontFamily = SerifDisplay, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 台历节日/节气：52sp 思源宋体 Heavy，行高同 [displayDate]。 */
     val displayDateMark = TextStyle(fontSize = 52.sp, fontWeight = FontWeight.Black, fontFamily = SerifDisplay, lineHeight = 24.sp, letterSpacing = 0.sp)
-    /** 详情页标题（课程/待办）：24sp SemiBold。 */
-    val detailTitle = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.SemiBold, lineHeight = 28.sp, letterSpacing = 0.sp)
+    /** 详情页标题（课程/待办）：23sp SemiBold，与 [pageTitle] 同为 UI 最大常规档。 */
+    val detailTitle = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.SemiBold, lineHeight = 28.sp, letterSpacing = 0.sp)
     /** 浮层顶栏标题：20sp SemiBold。 */
     val sheetTitle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
     /** 确认框标题：20sp SemiBold（方案 B 取消 Bold）。 */
@@ -136,8 +136,8 @@ object ClassppTextTokens {
     val horizontalWheelNumber = TextStyle(fontSize = 40.sp, fontWeight = FontWeight.Medium).tabularNumbers()
     /** 滚轮单位：16sp Medium。 */
     val wheelUnit = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium)
-    /** 倒计时数字：24sp SemiBold，等宽数字。 */
-    val countdownNumber = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.SemiBold).tabularNumbers()
+    /** 倒计时数字：23sp SemiBold，等宽数字。 */
+    val countdownNumber = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.SemiBold).tabularNumbers()
     /** 倒计时单位：14sp Normal，等宽数字。 */
     val countdownUnit = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal).tabularNumbers()
 }
