@@ -119,6 +119,7 @@
     <string name="xmu_error_timeout">Connection timed out, try again later</string>
     <string name="xmu_error_format">Interface format changed, please update the app</string>
     <string name="xmu_error_too_soon">Synced just now, try again later</string>
+    <string name="xmu_error_persist">Failed to save sync records. Check storage space and retry.</string>
     <string name="xmu_error_generic">Sync failed, try again later</string>
     <string name="xmu_error_import">Import failed, please retry</string>
     <string name="xmu_logout_confirm_title">Sign out</string>

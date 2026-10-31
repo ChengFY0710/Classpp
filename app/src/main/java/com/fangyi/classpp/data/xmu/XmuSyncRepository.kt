@@ -32,6 +32,8 @@ enum class XmuSyncError {
     AccountChanged,
     /** 距上次成功探活不足 3 秒，去抖 */
     TooSoon,
+    /** xmu-sync.json 落盘失败（磁盘满/权限等）：映射没保存，不能当成功 */
+    PersistFailed,
 }
 
 /** 过滤+比对后的同步计划（prepare 阶段**零写入**，用户在预览里确认后才提交） */
@@ -108,8 +110,10 @@ class XmuSyncRepository internal constructor(
      */
     suspend fun prepareSync(force: Boolean = false): XmuPrepareOutcome = mutex.withLock {
         val current = _state.value
+        // 时间戳是 wall clock：系统时间回拨后差值可能为负，此时不能一直判「刚刚同步过」
+        val elapsed = nowMillis() - current.lastProbeAtMillis
         if (!force && current.lastProbeAtMillis > 0 &&
-            nowMillis() - current.lastProbeAtMillis < PROBE_DEBOUNCE_MS
+            elapsed >= 0 && elapsed < PROBE_DEBOUNCE_MS
         ) {
             return@withLock XmuPrepareOutcome.Failed(XmuSyncError.TooSoon)
         }
@@ -170,12 +174,16 @@ class XmuSyncRepository internal constructor(
             }
             for (entry in plan.entriesForActive) byRemote.putIfAbsent(entry.remoteId, entry)
 
-            persist(
-                _state.value.copy(
-                    entries = byRemote.values.toList(),
-                    lastSyncAtMillis = nowMillis(),
-                ),
+            val next = _state.value.copy(
+                entries = byRemote.values.toList(),
+                lastSyncAtMillis = nowMillis(),
             )
+            if (!persist(next)) {
+                // 映射没保存就不能报「已导入」；待办已入库，下次同步会按 entriesForActive 补写
+                return@withLock XmuCommitOutcome.Failed(
+                    TodoError.PersistFailed("xmu-sync.json save failed"),
+                )
+            }
             XmuCommitOutcome.Done(
                 XmuSyncReport(
                     imported = imported,
@@ -184,6 +192,22 @@ class XmuSyncRepository internal constructor(
                 ),
             )
         }
+
+    /**
+     * 无新增/无恢复时仅补写映射基线（[XmuSyncPlan.entriesForActive]）与 lastSyncAt，
+     * 不产生任何待办：备份恢复（todos.json 保留、同步状态未保留）后重新登录靠它重建
+     * 「上次同步」；返回 false 表示状态文件落盘失败。
+     */
+    suspend fun markSynced(plan: XmuSyncPlan): Boolean = mutex.withLock {
+        val byRemote = _state.value.entries.associateBy { it.remoteId }.toMutableMap()
+        for (entry in plan.entriesForActive) byRemote.putIfAbsent(entry.remoteId, entry)
+        persist(
+            _state.value.copy(
+                entries = byRemote.values.toList(),
+                lastSyncAtMillis = nowMillis(),
+            ),
+        )
+    }
 
     /**
      * 清空同步状态（退出登录与账号切换共用）：删 filesDir/xmu/ 下的状态文件与损坏隔离
@@ -220,13 +244,13 @@ class XmuSyncRepository internal constructor(
         }
         val listDto = parseTodos(todosRaw) ?: return XmuPrepareOutcome.Failed(classifyBody(todosRaw))
 
-        persist(
-            current.copy(
-                uid = profile.id.toString(),
-                accountName = profile.name,
-                lastProbeAtMillis = fetchedAt,
-            ),
+        val next = current.copy(
+            uid = profile.id.toString(),
+            accountName = profile.name,
+            lastProbeAtMillis = fetchedAt,
         )
+        // 账号/探活状态没落盘就不能返回 Ready：否则连接卡仍显示未连接、去抖基线也错位
+        if (!persist(next)) return XmuPrepareOutcome.Failed(XmuSyncError.PersistFailed)
         return XmuPrepareOutcome.Ready(buildPlan(profile, listDto, fetchedAt))
     }
 

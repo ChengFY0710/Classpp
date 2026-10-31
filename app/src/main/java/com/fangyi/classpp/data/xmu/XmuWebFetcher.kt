@@ -4,8 +4,10 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.webkit.CookieManager
 import android.webkit.WebView
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -27,6 +29,7 @@ class XmuWebFetcher(private val appContext: Context) : XmuTodoApi {
     /** 总预算：页面加载（含过期时的身份域重定向链）+ 两次页内 fetch + 轮询 */
     private companion object {
         const val TOTAL_TIMEOUT_MS = 30_000L
+        const val TAG = "XmuSync"
     }
 
     override suspend fun fetchSession(): XmuFetchResult = withContext(Dispatchers.Main) {
@@ -35,6 +38,12 @@ class XmuWebFetcher(private val appContext: Context) : XmuTodoApi {
         } catch (e: TimeoutCancellationException) {
             // 驱动器自己的看门狗会先行按 URL 分类；这里只是兜底
             XmuFetchResult.Timeout
+        } catch (e: CancellationException) {
+            throw e // 协程取消必须继续向上传播
+        } catch (e: Exception) {
+            // WebView 缺失/初始化失败等：不让异常冒到 UI 协程（没有全局异常处理器会直接崩）
+            Log.w(TAG, "fetch session failed: ${e::class.simpleName}")
+            XmuFetchResult.NetworkError
         }
     }
 

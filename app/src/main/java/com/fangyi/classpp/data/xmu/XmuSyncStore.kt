@@ -12,8 +12,10 @@ import java.io.File
  * 文件协议与 FileTodoStore 完全一致（细节见其 KDoc）：tmp（fsync）→ bak（备份本次
  * 将提交的数据）→ rename 原子覆盖主文件；读取降级 主文件坏 → bak → 双坏改名
  * `xmu-sync.corrupt-<millis>.json` 留证并返回空状态。formatVersion 高于当前版本按损坏处理。
+ *
+ * open + [save] open：单测可注入「落盘失败」替身（见 XmuSyncRepositoryTest.FailingStore）。
  */
-class XmuSyncStore(private val dir: File) {
+open class XmuSyncStore(private val dir: File) {
 
     private val root = File(dir, DIR_NAME)
     private val main = File(root, MAIN_NAME)
@@ -47,7 +49,7 @@ class XmuSyncStore(private val dir: File) {
         return LoadOutcome.Fresh(XmuSyncFile(), LoadIssue.ResetAfterCorruption)
     }
 
-    fun save(file: XmuSyncFile): StoreResult {
+    open fun save(file: XmuSyncFile): StoreResult {
         root.mkdirs()
         val text = try {
             ScheduleJson.encodeStorage(file)

@@ -210,6 +210,7 @@
     <string name="xmu_error_timeout">连接超时，请稍后重试</string>
     <string name="xmu_error_format">接口返回格式变化，请更新 App</string>
     <string name="xmu_error_too_soon">刚刚同步过，请稍后再试</string>
+    <string name="xmu_error_persist">同步记录保存失败，请检查存储空间后重试</string>
     <string name="xmu_error_generic">同步失败，请稍后重试</string>
     <string name="xmu_error_import">导入失败，请重试</string>
     <string name="xmu_logout_confirm_title">退出登录</string>

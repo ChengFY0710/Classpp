@@ -1,9 +1,12 @@
 package com.fangyi.classpp.data.xmu
 
 import com.fangyi.classpp.data.FakeNow
+import com.fangyi.classpp.data.TodoError
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.model.isDeleted
 import com.fangyi.classpp.data.store.FileTodoStore
+import com.fangyi.classpp.data.store.StoreResult
+import java.io.File
 import java.util.GregorianCalendar
 import java.util.TimeZone
 import kotlinx.coroutines.runBlocking
@@ -45,8 +48,24 @@ class XmuSyncRepositoryTest {
     private fun okApi(todos: String = todosRaw(), profile: String = profileRaw) =
         FakeApi(XmuFetchResult.Ok(profile, todos))
 
-    private suspend fun repo(api: FakeApi): XmuSyncRepository = XmuSyncRepository(
-        store = XmuSyncStore(folder.root),
+    /** 落盘失败注入：failOn(第 N 次 save) 为 true 时模拟磁盘满/权限异常 */
+    private class FailingStore(
+        dir: File,
+        private val failOn: (Int) -> Boolean,
+    ) : XmuSyncStore(dir) {
+        private var saves = 0
+
+        override fun save(file: XmuSyncFile): StoreResult {
+            saves++
+            return if (failOn(saves)) StoreResult.Failed("disk full") else super.save(file)
+        }
+    }
+
+    private suspend fun repo(
+        api: FakeApi,
+        store: XmuSyncStore = XmuSyncStore(folder.root),
+    ): XmuSyncRepository = XmuSyncRepository(
+        store = store,
         todoRepository = TodoRepository.create(FileTodoStore(folder.root), clock),
         api = api,
         nowMillis = clock,
@@ -251,5 +270,76 @@ class XmuSyncRepositoryTest {
         r.todoRepository.addTodo(com.fangyi.classpp.data.testTodo(id = "user-made"))
         r.resetSyncData(deleteSyncedTodos = true)
         assertEquals(setOf("user-made"), r.activeIds() + r.trashIds())
+    }
+
+    @Test
+    fun `todos 缺 todo_list key 按格式变化处理`() = runBlocking {
+        val r = repo(okApi(todos = """{"data":{}}"""))
+        assertEquals(
+            XmuSyncError.FormatChanged,
+            (r.prepareSync() as XmuPrepareOutcome.Failed).error,
+        )
+    }
+
+    @Test
+    fun `todo_list 为空数组是合法空列表`() = runBlocking {
+        val r = repo(okApi(todos = """{"todo_list":[]}"""))
+        val plan = (r.prepareSync() as XmuPrepareOutcome.Ready).plan
+        assertTrue(plan.newItems.isEmpty())
+        assertEquals(0, plan.totalRemote)
+    }
+
+    @Test
+    fun `同步状态落盘失败 - prepare 报 PersistFailed`() = runBlocking {
+        val r = repo(okApi(), FailingStore(folder.root) { true })
+        assertEquals(
+            XmuSyncError.PersistFailed,
+            (r.prepareSync() as XmuPrepareOutcome.Failed).error,
+        )
+        // 落盘失败时内存态不更新：连接卡不能假装已连接
+        assertEquals("", r.state.value.uid)
+    }
+
+    @Test
+    fun `提交时落盘失败返回 PersistFailed`() = runBlocking {
+        // 第 1 次 save 是 prepare 落账号信息，第 2 次才是提交映射：让第 2 次失败
+        val r = repo(okApi(), FailingStore(folder.root) { it == 2 })
+        val plan = (r.prepareSync(force = true) as XmuPrepareOutcome.Ready).plan
+        val selected = plan.newItems.map { it.todo.id }.toSet()
+
+        val outcome = r.commitSync(plan, selected)
+        assertTrue((outcome as XmuCommitOutcome.Failed).error is TodoError.PersistFailed)
+        assertEquals(0L, r.state.value.lastSyncAtMillis)
+    }
+
+    @Test
+    fun `系统时间回拨后去抖不应永久拦截`() = runBlocking {
+        val api = okApi()
+        val r = repo(api)
+        r.syncAll(api)
+
+        clock.advanceBy(-86_400_000L) // 系统时间被调回一天
+        assertTrue(r.prepareSync() is XmuPrepareOutcome.Ready)
+    }
+
+    @Test
+    fun `无新增时补写映射基线与上次同步时间`() = runBlocking {
+        val api = okApi()
+        val r = repo(api)
+        r.syncAll(api)
+
+        // 模拟备份恢复：todos.json 还在，同步状态丢失
+        r.resetSyncData(deleteSyncedTodos = false)
+        assertTrue(r.state.value.entries.isEmpty())
+
+        val plan = (r.prepareSync(force = true) as XmuPrepareOutcome.Ready).plan
+        assertTrue(plan.newItems.isEmpty())
+        assertTrue(plan.restoreItems.isEmpty())
+        assertEquals(2, plan.entriesForActive.size)
+        assertEquals(0L, r.state.value.lastSyncAtMillis)
+
+        assertTrue(r.markSynced(plan))
+        assertEquals(2, r.state.value.entries.size)
+        assertEquals(clock.millis, r.state.value.lastSyncAtMillis)
     }
 }

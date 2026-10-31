@@ -43,6 +43,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.TodoError
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.xmu.XmuCommitOutcome
 import com.fangyi.classpp.data.xmu.XmuFetchResult
@@ -73,6 +74,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import java.util.GregorianCalendar
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
@@ -134,12 +136,14 @@ fun XmuSyncScreen(
             XmuSyncError.Timeout to R.string.xmu_error_timeout,
             XmuSyncError.FormatChanged to R.string.xmu_error_format,
             XmuSyncError.TooSoon to R.string.xmu_error_too_soon,
+            XmuSyncError.PersistFailed to R.string.xmu_error_persist,
         )
     }
     val genericErrorText = stringResource(R.string.xmu_error_generic)
     val upToDateText = stringResource(R.string.xmu_up_to_date)
     val importDoneFormat = stringResource(R.string.xmu_import_done)
     val importFailedText = stringResource(R.string.xmu_error_import)
+    val persistFailedText = stringResource(R.string.xmu_error_persist)
     val logoutDoneText = stringResource(R.string.xmu_logout_done)
 
     val showError: (XmuSyncError) -> Unit = { error ->
@@ -149,12 +153,19 @@ fun XmuSyncScreen(
         )
     }
 
-    // 无新增、无恢复 → 预览里没有任何可看得见的内容，不弹浮层，只提示已是最新
-    val showPlanOrUpToDate: (XmuSyncPlan) -> Unit = { plan ->
-        if (plan.newItems.isEmpty() && plan.restoreItems.isEmpty()) {
+    // 无新增、无恢复 → 预览里没有任何可看得见的内容，不弹浮层；但仍要补写映射基线与
+    // lastSyncAt（备份恢复/「仅退出」后重新登录靠这一步重建「上次同步」）。落盘失败不能报
+    // 「已是最新」，否则用户以为同步成功、实际映射没保存。
+    suspend fun showPlanOrUpToDate(plan: XmuSyncPlan) {
+        if (plan.newItems.isNotEmpty() || plan.restoreItems.isNotEmpty()) {
+            previewPlan = plan
+            return
+        }
+        val repo = repository
+        if (repo == null || repo.markSynced(plan)) {
             AppToasts.show(context, upToDateText)
         } else {
-            previewPlan = plan
+            AppToasts.show(context, persistFailedText)
         }
     }
 
@@ -177,6 +188,11 @@ fun XmuSyncScreen(
                             showError(outcome.error)
                         }
                     }
+                } catch (e: CancellationException) {
+                    throw e // 返回上一页等取消：正常传播，不弹错误
+                } catch (e: Exception) {
+                    // WebView 初始化失败等未预期异常：兜底提示，不让协程异常把进程带崩
+                    AppToasts.show(context, genericErrorText)
                 } finally {
                     // 成功/失败/异常都收掉浮层（不留常驻转圈）
                     preparing = false
@@ -190,21 +206,27 @@ fun XmuSyncScreen(
         val repo = repository ?: return
         when (result) {
             is XmuFetchResult.Ok -> scope.launch {
-                when (val outcome = repo.prepareFromLogin(result.profileRaw, result.todosRaw)) {
-                    is XmuPrepareOutcome.Ready -> {
-                        sessionExpired = false
-                        showPlanOrUpToDate(outcome.plan)
-                    }
-                    is XmuPrepareOutcome.Failed -> when (outcome.error) {
-                        XmuSyncError.AccountChanged -> {
-                            pendingLogin = result
-                            switchVisible = true
+                try {
+                    when (val outcome = repo.prepareFromLogin(result.profileRaw, result.todosRaw)) {
+                        is XmuPrepareOutcome.Ready -> {
+                            sessionExpired = false
+                            showPlanOrUpToDate(outcome.plan)
                         }
-                        else -> {
-                            if (outcome.error == XmuSyncError.SessionExpired) sessionExpired = true
-                            showError(outcome.error)
+                        is XmuPrepareOutcome.Failed -> when (outcome.error) {
+                            XmuSyncError.AccountChanged -> {
+                                pendingLogin = result
+                                switchVisible = true
+                            }
+                            else -> {
+                                if (outcome.error == XmuSyncError.SessionExpired) sessionExpired = true
+                                showError(outcome.error)
+                            }
                         }
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    AppToasts.show(context, genericErrorText)
                 }
             }
             // 未登录的探活失败已在驱动器里复位等待（浮层不关、不提示）；
@@ -264,7 +286,15 @@ fun XmuSyncScreen(
                         )
                         previewPlan = null
                     }
-                    is XmuCommitOutcome.Failed -> AppToasts.show(context, importFailedText)
+                    is XmuCommitOutcome.Failed -> {
+                        // 落盘失败单独提示：待办可能已导入但映射没保存，重试前先修存储
+                        val message = if (r.error is TodoError.PersistFailed) {
+                            persistFailedText
+                        } else {
+                            importFailedText
+                        }
+                        AppToasts.show(context, message)
+                    }
                 }
                 committing = false
             }

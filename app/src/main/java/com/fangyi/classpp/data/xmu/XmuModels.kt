@@ -14,7 +14,9 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class XmuTodoListDto(
-    @SerialName("todo_list") val todoList: List<XmuTodoDto> = emptyList(),
+    // 不允许缺省：缺 key 是平台改版/错误响应的信号，必须走 FormatChanged，
+    // 不能静默解析成空列表让 UI 报「已是最新」
+    @SerialName("todo_list") val todoList: List<XmuTodoDto>,
 )
 
 /** `/api/todos` 的单条待办；`type` 实测只有 "homework"，其他取值未知、解析保持容错 */
