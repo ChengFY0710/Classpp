@@ -42,6 +42,9 @@ internal object TodoShareCodec {
                 steps = todo.steps.map { it.copy(id = newUuid()) },
                 // 分享导入永远是活跃待办：载荷若带软删标记（导出自其它版本/手工编辑），一并清掉
                 deletedAtMillis = null,
+                // 导入的是普通待办，不是课程中心同步条目：来源徽标不能跟着走
+                source = null,
+                sourceDetail = null,
             )
         }
         for (todo in rebuilt) {

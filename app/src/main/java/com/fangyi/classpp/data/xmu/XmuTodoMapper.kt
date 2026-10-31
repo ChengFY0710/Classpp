@@ -22,9 +22,9 @@ enum class SkipReason {
 /**
  * 课程中心待办 → Classpp [Todo] 的映射与过滤。
  *
- * 本地 id 取确定性 `xmu-{activityId}`（远端 id 已实测为全局 activity id）：重复同步天然
- * 幂等——再次导入只会撞 [com.fangyi.classpp.data.TodoError.DuplicateId]，不会产生重复待办。
- * 只设截止（timeKind=None + deadline 成对）、不设时段/日期；只增不改，不写回远端。
+ * 本地 id 取确定性 `xmu-{courseId}-{activityId}`：重复同步天然幂等——再次导入只会撞
+ * [com.fangyi.classpp.data.TodoError.DuplicateId]，不会产生重复待办。只设截止
+ * （timeKind=None + deadline 成对）、不设时段/日期；只增不改，不写回远端。
  */
 object XmuTodoMapper {
 
@@ -32,13 +32,22 @@ object XmuTodoMapper {
     const val ID_PREFIX = "${SOURCE_XMU}-"
 
     /**
-     * 远端唯一键：保守拼上 courseId，防 activity id 语义在平台改版后漂移。
-     * 同步映射文件（XmuSyncEntry）的哈希与配对都以它为口径。
+     * 远端唯一键（课程 + activity id）：buildPlan 的去重口径。
+     * 与 [localId] 同含 courseId，不再出现「键里拼了、实现却没用」的错位。
      */
     fun remoteKey(dto: XmuTodoDto): String = "xmu:${dto.courseId}:${dto.id}"
 
-    /** 确定性本地 id：同一远端条目永远映射到同一本地 id */
-    fun localId(dto: XmuTodoDto): String = "$ID_PREFIX${dto.id}"
+    /**
+     * 确定性本地 id：`xmu-{courseId}-{activityId}`。courseId 一并入键——activity id 若只在
+     * 课程内唯一，同 id 不同课程也不会互相顶掉（formatVersion 2 起）。
+     */
+    fun localId(dto: XmuTodoDto): String = "$ID_PREFIX${dto.courseId}-${dto.id}"
+
+    /**
+     * formatVersion 1 的本地 id 口径（不含 courseId）：**只用于**升级或映射丢失时找回旧条目，
+     * 新导入不再使用。见 [com.fangyi.classpp.data.xmu.XmuSyncRepository] 的 buildPlan。
+     */
+    fun legacyLocalId(dto: XmuTodoDto): String = "$ID_PREFIX${dto.id}"
 
     /** 判断本地待办是否来自课程中心（来源标识之外的防御性口径，退出清理也按它圈定） */
     fun isSyncedLocalId(id: String): Boolean = id.startsWith(ID_PREFIX)

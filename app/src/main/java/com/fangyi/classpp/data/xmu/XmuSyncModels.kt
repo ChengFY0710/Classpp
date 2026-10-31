@@ -2,8 +2,14 @@ package com.fangyi.classpp.data.xmu
 
 import kotlinx.serialization.Serializable
 
-/** xmu-sync.json 的信封版本（独立于 todos.json 的 TODO_FORMAT_VERSION） */
-const val XMU_SYNC_FORMAT_VERSION = 1
+/**
+ * xmu-sync.json 的信封版本（独立于 todos.json 的 TODO_FORMAT_VERSION）。
+ *
+ * 2：本地 id 口径改为 `xmu-{courseId}-{activityId}`（v1 为 `xmu-{activityId}`）。
+ * v1 文件仍可读取：旧条目按 [XmuSyncEntry.todoId] 沿用旧 id，映射丢失时按
+ * [XmuTodoMapper.legacyLocalId] 兜底找回；首次落盘会写成新版本号。
+ */
+const val XMU_SYNC_FORMAT_VERSION = 2
 
 /**
  * 课程中心同步状态文件（`filesDir/xmu/xmu-sync.json`）：远端 id ↔ 本地 id 的映射、

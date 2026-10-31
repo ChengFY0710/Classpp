@@ -211,19 +211,19 @@ class XmuSyncRepository internal constructor(
 
     /**
      * 清空同步状态（退出登录与账号切换共用）：删 filesDir/xmu/ 下的状态文件与损坏隔离
-     * 文件并复位内存态；[deleteSyncedTodos] 时把 `xmu-` 前缀的本地待办一并移除（活跃软删
+     * 文件并复位内存态；[deleteSyncedTodos] 时把课程中心同步来的本地待办一并移除（活跃软删
      * 后随回收站条目一起彻底删除）。cookie 清理由 UI 层做（CookieManager.removeAllCookies）。
      */
     suspend fun resetSyncData(deleteSyncedTodos: Boolean) = mutex.withLock {
         if (deleteSyncedTodos) {
             val syncedActive = todoRepository.todos.value
-                .filter { XmuTodoMapper.isSyncedLocalId(it.id) }
+                .filter { it.isXmuSynced() }
                 .map { it.id }
             if (syncedActive.isNotEmpty()) todoRepository.removeTodos(syncedActive)
 
             // 软删已把活跃条目全部推进回收站：一次批量 purge 彻底删掉，避免逐条全量落盘
             val syncedTrash = todoRepository.deletedTodos.value
-                .filter { XmuTodoMapper.isSyncedLocalId(it.id) }
+                .filter { it.isXmuSynced() }
                 .map { it.id }
             if (syncedTrash.isNotEmpty()) todoRepository.purgeTodos(syncedTrash)
         }
@@ -232,6 +232,13 @@ class XmuSyncRepository internal constructor(
     }
 
     // ---------- 内部 ----------
+
+    /**
+     * 是否课程中心同步条目：来源标识优先，再兜底 `xmu-` 前缀 id（v1 老数据、或被改过
+     * source 的条目）。两处口径必须一致——分享导入会清掉 source，不能再靠它单独判定。
+     */
+    private fun Todo.isXmuSynced(): Boolean =
+        source == XmuTodoMapper.SOURCE_XMU || XmuTodoMapper.isSyncedLocalId(id)
 
     /** 会话原文 → 解析 → 账号一致性 → 比对出计划；成功时顺带落探活/账号信息 */
     private suspend fun onSession(profileRaw: String, todosRaw: String, fetchedAt: Long): XmuPrepareOutcome {
@@ -262,18 +269,27 @@ class XmuSyncRepository internal constructor(
     ): XmuSyncPlan {
         val active = todoRepository.todos.value.associateBy { it.id }
         val trashed = todoRepository.deletedTodos.value.associateBy { it.id }
-        val knownEntries = _state.value.entries.mapTo(mutableSetOf()) { it.remoteId }
+        val knownEntries = _state.value.entries.associateBy { it.remoteId }
 
         val newItems = mutableListOf<XmuPlanItem>()
         val restoreItems = mutableListOf<XmuPlanItem>()
         val entriesForActive = mutableListOf<XmuSyncEntry>()
         val skipped = mutableMapOf<SkipReason, Int>()
 
-        for (dto in listDto.todoList.distinctBy { it.id }) {
+        for (dto in listDto.todoList.distinctBy { XmuTodoMapper.remoteKey(it) }) {
             when (val outcome = XmuTodoMapper.map(dto, fetchedAt)) {
                 is XmuMapOutcome.Skipped -> skipped.merge(outcome.reason, 1, Int::plus)
                 is XmuMapOutcome.Mapped -> {
-                    val localId = outcome.todo.id
+                    // 本地 id 迁移：映射里的 todoId（v1 不含 courseId）优先沿用；映射丢失时再按
+                    // v1 口径找回旧条目，避免升级/恢复后把已导入的待办当新增重复导入
+                    val knownTodoId = knownEntries[dto.id]?.todoId
+                    val localId = sequenceOf(
+                        knownTodoId,
+                        outcome.todo.id,
+                        XmuTodoMapper.legacyLocalId(dto),
+                    ).filterNotNull().firstOrNull { it in active || it in trashed }
+                        ?: knownTodoId
+                        ?: outcome.todo.id
                     val activeTodo = active[localId]
                     val trashedTodo = trashed[localId]
                     when {
@@ -290,7 +306,7 @@ class XmuSyncRepository internal constructor(
                             }
                         }
                         trashedTodo != null -> restoreItems += XmuPlanItem(dto, trashedTodo)
-                        else -> newItems += XmuPlanItem(dto, outcome.todo)
+                        else -> newItems += XmuPlanItem(dto, outcome.todo.copy(id = localId))
                     }
                 }
             }
@@ -323,10 +339,12 @@ class XmuSyncRepository internal constructor(
         if (raw.trim().startsWith("{")) XmuSyncError.FormatChanged else XmuSyncError.SessionExpired
 
     private suspend fun persist(next: XmuSyncFile): Boolean {
-        val result = withContext(Dispatchers.IO) { store.save(next) }
+        // 载入的 v1 文件在首次落盘时升到当前版本号（字段语义不变，只是 id 口径标记）
+        val stamped = next.copy(formatVersion = XMU_SYNC_FORMAT_VERSION)
+        val result = withContext(Dispatchers.IO) { store.save(stamped) }
         return when (result) {
             StoreResult.Ok -> {
-                _state.value = next
+                _state.value = stamped
                 true
             }
             is StoreResult.Failed -> false

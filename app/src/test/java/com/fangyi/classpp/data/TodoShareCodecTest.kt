@@ -57,6 +57,24 @@ class TodoShareCodecTest {
     }
 
     @Test
+    fun `import clears course center source badge`() {
+        // 分享导入的是普通待办：来源与课程名不能跟着走，否则另一端会显示「课程中心」徽标
+        val json = TodoShareCodec.encode(
+            listOf(
+                testTodo(id = "xmu-925512", name = "同步待办")
+                    .copy(source = "xmu", sourceDetail = "高等数学"),
+            ),
+            exportedAtMillis = 1L,
+        )
+        val result = TodoShareCodec.decodeForImport(json).let {
+            assertTrue("expected Ok, got ${(it as? TodoReadResult.Err)?.error?.message}", it is TodoReadResult.Ok)
+            (it as TodoReadResult.Ok).value
+        }
+        assertNull(result.single().source)
+        assertNull(result.single().sourceDetail)
+    }
+
+    @Test
     fun `pretty json carries kind and version`() {        val json = TodoShareCodec.encode(payloadTodos, exportedAtMillis = 42L)
         val payload = ScheduleJson.decodeShare<TodoSharePayload>(json)
         assertEquals("classpp.todo", payload.kind)

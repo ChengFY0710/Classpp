@@ -39,7 +39,7 @@ class XmuTodoMapperTest {
         val dto = decodeFixture("todos-2026-10-30.json").todoList.first()
         val todo = (XmuTodoMapper.map(dto, now) as XmuMapOutcome.Mapped).todo
 
-        assertEquals("xmu-925512", todo.id)
+        assertEquals("xmu-106160-925512", todo.id)
         assertEquals("第一次作业", todo.name)
         assertEquals(TodoTimeKind.None, todo.timeKind)
         assertEquals(1110, todo.deadlineMinute)
@@ -124,10 +124,22 @@ class XmuTodoMapperTest {
     @Test
     fun `确定性 id 与远端键`() {
         val dto = decodeFixture("todos-2026-10-30.json").todoList.first()
-        assertEquals("xmu-925512", XmuTodoMapper.localId(dto))
+        assertEquals("xmu-106160-925512", XmuTodoMapper.localId(dto))
+        assertEquals("xmu-925512", XmuTodoMapper.legacyLocalId(dto))
         assertEquals("xmu:106160:925512", XmuTodoMapper.remoteKey(dto))
         assertTrue(XmuTodoMapper.isSyncedLocalId(XmuTodoMapper.localId(dto)))
         assertFalse(XmuTodoMapper.isSyncedLocalId("some-uuid"))
+    }
+
+    @Test
+    fun `同 activity id 不同课程映射到不同本地 id`() {
+        val dto = decodeFixture("todos-2026-10-30.json").todoList.first()
+        val otherCourse = dto.copy(courseId = dto.courseId + 1)
+
+        assertEquals("xmu-106160-925512", XmuTodoMapper.localId(dto))
+        assertEquals("xmu-106161-925512", XmuTodoMapper.localId(otherCourse))
+        assertEquals("xmu:106160:925512", XmuTodoMapper.remoteKey(dto))
+        assertEquals("xmu:106161:925512", XmuTodoMapper.remoteKey(otherCourse))
     }
 
     @Test

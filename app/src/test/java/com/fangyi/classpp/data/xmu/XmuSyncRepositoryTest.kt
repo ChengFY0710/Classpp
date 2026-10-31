@@ -92,7 +92,7 @@ class XmuSyncRepositoryTest {
         val report = r.syncAll(api)
         assertEquals(2, report.imported)
         assertEquals(0, report.restored)
-        assertEquals(setOf("xmu-925512", "xmu-1013424"), r.activeIds())
+        assertEquals(setOf("xmu-106160-925512", "xmu-110846-1013424"), r.activeIds())
         assertEquals(2, r.state.value.entries.size)
         assertEquals("9001", r.state.value.uid)
         assertEquals("张三", r.state.value.accountName)
@@ -115,18 +115,18 @@ class XmuSyncRepositoryTest {
         val r = repo(api)
         r.syncAll(api)
 
-        r.todoRepository.removeTodo("xmu-925512")
-        assertTrue(r.trashIds().contains("xmu-925512"))
+        r.todoRepository.removeTodo("xmu-106160-925512")
+        assertTrue(r.trashIds().contains("xmu-106160-925512"))
 
         api.result = XmuFetchResult.Ok(profileRaw, todosRaw())
         val plan = (r.prepareSync(force = true) as XmuPrepareOutcome.Ready).plan
-        assertTrue(plan.restoreItems.map { it.todo.id }.contains("xmu-925512"))
+        assertTrue(plan.restoreItems.map { it.todo.id }.contains("xmu-106160-925512"))
         assertTrue(plan.newItems.isEmpty())
 
         val report = (r.commitSync(plan, emptySet()) as XmuCommitOutcome.Done).report
         assertEquals(1, report.restored)
         assertEquals(0, report.imported)
-        assertFalse(r.todoRepository.todos.value.first { it.id == "xmu-925512" }.isDeleted)
+        assertFalse(r.todoRepository.todos.value.first { it.id == "xmu-106160-925512" }.isDeleted)
     }
 
     @Test
@@ -135,13 +135,13 @@ class XmuSyncRepositoryTest {
         val r = repo(api)
         r.syncAll(api)
 
-        r.todoRepository.removeTodo("xmu-925512")
-        r.todoRepository.purgeTodo("xmu-925512")
-        assertFalse(r.trashIds().contains("xmu-925512"))
+        r.todoRepository.removeTodo("xmu-106160-925512")
+        r.todoRepository.purgeTodo("xmu-106160-925512")
+        assertFalse(r.trashIds().contains("xmu-106160-925512"))
 
         val report = r.syncAll(api)
         assertEquals(1, report.imported)
-        assertTrue(r.activeIds().contains("xmu-925512"))
+        assertTrue(r.activeIds().contains("xmu-106160-925512"))
     }
 
     @Test
@@ -151,8 +151,8 @@ class XmuSyncRepositoryTest {
         r.syncAll(api)
 
         // 删掉 item1，并把 item2 标记完成；然后远端只返回 item1（item2 已消失）
-        r.todoRepository.removeTodo("xmu-925512")
-        r.todoRepository.setCompleted("xmu-1013424", true)
+        r.todoRepository.removeTodo("xmu-106160-925512")
+        r.todoRepository.setCompleted("xmu-110846-1013424", true)
         val onlyFirst = """{"todo_list":[{"id":925512,"title":"第一次作业","type":"homework","course_id":106160,
                 "course_code":"20262027113013001020702","course_name":"高等数学","course_type":1,
                 "end_time":"2026-11-04T10:30:00Z","is_locked":false,"is_student":true}]}"""
@@ -160,10 +160,10 @@ class XmuSyncRepositoryTest {
         // item1 删除过但远端仍列出 → 复活；item2 远端消失 → 不导入、不复活
         assertEquals(0, report.imported)
         assertEquals(1, report.restored)
-        assertFalse(r.trashIds().contains("xmu-925512"))
+        assertFalse(r.trashIds().contains("xmu-106160-925512"))
 
         // 远端消失的 item2：既不被自动完成/删除，也不被改动（保持用户刚设的完成态）
-        val second = r.todoRepository.todos.value.first { it.id == "xmu-1013424" }
+        val second = r.todoRepository.todos.value.first { it.id == "xmu-110846-1013424" }
         assertTrue(second.completed)
     }
 
@@ -175,7 +175,7 @@ class XmuSyncRepositoryTest {
         // 8 条：2001/2002/2005 合法；锁定/无截止/非学生/空标题/非法id 共 5 条跳过
         assertEquals(3, report.imported)
         assertEquals(5, report.skippedFiltered)
-        assertEquals(setOf("xmu-2001", "xmu-2002", "xmu-2005"), r.activeIds())
+        assertEquals(setOf("xmu-100-2001", "xmu-100-2002", "xmu-102-2005"), r.activeIds())
     }
 
     @Test
@@ -258,7 +258,7 @@ class XmuSyncRepositoryTest {
         val api = okApi()
         val r = repo(api)
         r.syncAll(api)
-        r.todoRepository.removeTodo("xmu-925512") // 制造一条回收站数据
+        r.todoRepository.removeTodo("xmu-106160-925512") // 制造一条回收站数据
 
         // 仅清映射：本地待办原样保留
         r.resetSyncData(deleteSyncedTodos = false)
@@ -272,6 +272,23 @@ class XmuSyncRepositoryTest {
         assertEquals(setOf("user-made"), r.activeIds() + r.trashIds())
         // 批量 purge 后回收站不留残留
         assertTrue(r.todoRepository.deletedTodos.value.isEmpty())
+    }
+
+    @Test
+    fun `退出并删除覆盖来源标识与旧前缀两种口径`() = runBlocking {
+        val r = repo(okApi())
+        // 旧版本分享导入/被改过 source 的条目：id 不是 xmu- 前缀，但来源是课程中心
+        r.todoRepository.addTodo(
+            com.fangyi.classpp.data.testTodo(id = "shared-legacy", name = "旧分享导入").copy(source = "xmu"),
+        )
+        r.todoRepository.addTodo(
+            com.fangyi.classpp.data.testTodo(id = "xmu-925512", name = "旧前缀条目"),
+        )
+        r.todoRepository.addTodo(com.fangyi.classpp.data.testTodo(id = "user-made", name = "用户自建"))
+
+        r.resetSyncData(deleteSyncedTodos = true)
+
+        assertEquals(setOf("user-made"), r.activeIds() + r.trashIds())
     }
 
     @Test
@@ -302,7 +319,7 @@ class XmuSyncRepositoryTest {
         val plan = (repo(okApi(todos = todos)).prepareSync() as XmuPrepareOutcome.Ready).plan
 
         assertEquals(1, plan.skipped[SkipReason.DeadlineUnparseable])
-        assertEquals(listOf("xmu-7002"), plan.newItems.map { it.todo.id })
+        assertEquals(listOf("xmu-1-7002"), plan.newItems.map { it.todo.id })
     }
 
     @Test
@@ -357,5 +374,78 @@ class XmuSyncRepositoryTest {
         assertTrue(r.markSynced(plan))
         assertEquals(2, r.state.value.entries.size)
         assertEquals(clock.millis, r.state.value.lastSyncAtMillis)
+    }
+
+    @Test
+    fun `同 activity id 不同课程都导入且本地 id 不同`() = runBlocking {
+        val todos = """
+            {"todo_list":[
+              {"id":8001,"title":"课程一作业","type":"homework","course_id":1,"course_name":"课程一","end_time":"2026-11-04T10:30:00Z","is_student":true},
+              {"id":8001,"title":"课程二作业","type":"homework","course_id":2,"course_name":"课程二","end_time":"2026-11-04T10:30:00Z","is_student":true}
+            ]}
+        """.trimIndent()
+        val api = okApi(todos = todos)
+        val r = repo(api)
+        val report = r.syncAll(api, todos)
+
+        assertEquals(2, report.imported)
+        assertEquals(setOf("xmu-1-8001", "xmu-2-8001"), r.activeIds())
+    }
+
+    @Test
+    fun `v1 映射里的旧 id 在升级后继续沿用`() = runBlocking {
+        // v1 数据：本地待办用不含 courseId 的旧 id，映射里也记着旧 id
+        val legacyTodoId = "xmu-925512"
+        repo(okApi()).todoRepository.addTodo(
+            com.fangyi.classpp.data.testTodo(id = legacyTodoId, name = "第一次作业"),
+        )
+        XmuSyncStore(folder.root).save(
+            XmuSyncFile(
+                formatVersion = 1,
+                uid = "9001",
+                accountName = "张三",
+                entries = listOf(
+                    XmuSyncEntry(
+                        remoteId = 925512,
+                        courseId = 106160,
+                        todoId = legacyTodoId,
+                        remoteHash = "r",
+                        localHash = "l",
+                    ),
+                ),
+            ),
+        )
+
+        val api = okApi()
+        val r = repo(api)
+        r.bootstrap() // 应用装配时由 AppContainer 调用；测试里手动载入 v1 映射
+        val plan = (r.prepareSync(force = true) as XmuPrepareOutcome.Ready).plan
+
+        // 已导入条目继续沿用旧 id：不重复导入、不补映射
+        assertEquals(listOf("xmu-110846-1013424"), plan.newItems.map { it.todo.id })
+        assertTrue(plan.restoreItems.isEmpty())
+        assertTrue(plan.entriesForActive.isEmpty())
+        assertEquals(setOf(legacyTodoId), r.activeIds())
+        // 首次落盘把文件升到当前版本（v1 映射仍按旧 todoId 读取）
+        assertEquals(2, r.state.value.formatVersion)
+    }
+
+    @Test
+    fun `映射丢失时按旧前缀找回已导入条目`() = runBlocking {
+        val legacyTodoId = "xmu-925512"
+        repo(okApi()).todoRepository.addTodo(
+            com.fangyi.classpp.data.testTodo(id = legacyTodoId, name = "第一次作业"),
+        )
+
+        val api = okApi()
+        val r = repo(api)
+        val plan = (r.prepareSync(force = true) as XmuPrepareOutcome.Ready).plan
+
+        // 旧条目按新口径找不到，但能按 v1 前缀找回：只补映射基线，不重复导入
+        assertEquals(listOf("xmu-110846-1013424"), plan.newItems.map { it.todo.id })
+        assertEquals(listOf(legacyTodoId), plan.entriesForActive.map { it.todoId })
+
+        assertTrue(r.markSynced(plan))
+        assertEquals(legacyTodoId, r.state.value.entries.first { it.remoteId == 925512L }.todoId)
     }
 }
