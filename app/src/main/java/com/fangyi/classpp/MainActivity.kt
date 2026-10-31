@@ -194,6 +194,7 @@ class MainActivity : ComponentActivity() {
                     val todoRepository = container?.todoRepository
                     val tagRepository = container?.tagRepository
                     val xmuSyncRepository = container?.xmuSyncRepository
+                    val xmuAutoLoginManager = container?.xmuAutoLoginManager
                     // tab 页转场状态机：惰性挂载/常驻/切页动画/停靠页冻结帧回位的全部机制
                     // 见 ui.navigation 的 TabPagerState（原内联于此，纯搬移）
                     val pagerState = rememberTabPagerState()
@@ -402,6 +403,7 @@ class MainActivity : ComponentActivity() {
                             onClose = { showSettings = false },
                             repository = repository,
                             xmuSyncRepository = xmuSyncRepository,
+                            xmuAutoLoginManager = xmuAutoLoginManager,
                             themeMode = themeMode,
                             onThemeModeChange = { mode ->
                                 themeMode = mode

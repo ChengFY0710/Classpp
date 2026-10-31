@@ -122,6 +122,8 @@ class XmuSyncRepository internal constructor(
             XmuFetchResult.ServiceBusy -> XmuPrepareOutcome.Failed(XmuSyncError.ServiceBusy)
             XmuFetchResult.NetworkError -> XmuPrepareOutcome.Failed(XmuSyncError.NetworkError)
             XmuFetchResult.Timeout -> XmuPrepareOutcome.Failed(XmuSyncError.Timeout)
+            // 原生登录链路已确认结构变化（WebView 路径的正常/异常响应不会走到这里）
+            XmuFetchResult.FormatChanged -> XmuPrepareOutcome.Failed(XmuSyncError.FormatChanged)
             is XmuFetchResult.Ok -> onSession(result.profileRaw, result.todosRaw, nowMillis())
         }
     }

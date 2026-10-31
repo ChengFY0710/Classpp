@@ -3,7 +3,9 @@
    - 课程中心同步状态目录 xmu/：含账号 id、姓名、远端/本地 id 映射与损坏隔离文件
      （xmu-sync.corrupt-*），整目录排除，缩小隐私面；
    - 旧的根目录单文件排除保留，兜住升级后尚未迁移的数据；
-   - app_webview：WebView 的 cookie（含课程中心 httpOnly 会话）与站点数据，凭据绝不随备份迁移。
+   - app_webview：WebView 的 cookie（含课程中心 httpOnly 会话）与站点数据，凭据绝不随备份迁移；
+   - sharedpref/xmu_secure.xml：自动续期保存的学号/密码与 cookie 密文（Keystore 密钥
+     本身不可导出、不在备份里，密文恢复后也无法解密，排除是必须的）。
    todos.json 不排除：待办是用户自身数据，应随备份恢复。
 -->
 <full-backup-content>
@@ -11,5 +13,6 @@
     <exclude domain="file" path="xmu-sync.json" />
     <exclude domain="file" path="xmu-sync.json.tmp" />
     <exclude domain="file" path="xmu-sync.json.bak" />
+    <exclude domain="sharedpref" path="xmu_secure.xml" />
     <exclude domain="root" path="app_webview" />
 </full-backup-content>

@@ -39,6 +39,14 @@ coil = "3.6.3"
 # ExifInterface 1.4.2 为当前最新稳定（2025-12-03 发布）：导入相册图片时读取 EXIF
 # 方向做转正再落盘（BitmapFactory 解码不管方向，不转正会存下横竖颠倒的副本）
 androidxExifInterface = "1.4.2"
+# OkHttp 5.5.1 为当前最新稳定。仅用于方案 B 原生 OAuth 登录/取数的传输层：
+# XMU 三台主机（lnt/c-identity/ids 都是 applg219.xmu.edu.cn 的 CNAME）同时发布
+# A + AAAA 记录（CERNET IPv6 2001:da8::/32），校园网外与模拟器 IPv6 路由常不可达；
+# HttpURLConnection 按地址序连接、无 happy-eyeballs，先试 v6 会长时间黑洞（表现为
+# 请求挂起、UI 永远 busy）。参考 democard/xmu_assistant（Apache-2.0）为此实现了
+# Ipv4FirstDns（XMU 域内「有 A 记录就只走 IPv4」），并靠 OkHttp 的 callTimeout
+# 兜底整次调用——这两样 HttpURLConnection 都给不了，原生链路必须有。
+okhttp = "5.5.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -61,6 +69,7 @@ kyant-shapes = { group = "io.github.kyant0", name = "shapes", version.ref = "kya
 kyant-backdrop = { group = "io.github.kyant0", name = "backdrop", version.ref = "backdrop" }
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "androidxExifInterface" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 
 [plugins]

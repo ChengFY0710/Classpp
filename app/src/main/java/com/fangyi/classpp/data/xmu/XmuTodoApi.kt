@@ -16,7 +16,9 @@ interface XmuTodoApi {
 /**
  * 会话结果分类（指导 §5.5/§6.1）：
  * - [SessionExpired]：被 302 到身份域 / 返回登录页 HTML / 401、403——提示重新登录，**不是**所有错误的兜底；
- * - [ServiceBusy]：5xx；[NetworkError]：请求抛异常（status 0）；[Timeout]：页面/轮询超时。
+ * - [ServiceBusy]：5xx；[NetworkError]：请求抛异常（status 0）；[Timeout]：页面/轮询超时；
+ * - [FormatChanged]：原生登录链路的结构/字段变化（WebView 路径不会返回它，页内原文
+ *   由同步仓库的 `classifyBody` 判定）。
  */
 sealed interface XmuFetchResult {
     data class Ok(val profileRaw: String, val todosRaw: String) : XmuFetchResult
@@ -24,4 +26,5 @@ sealed interface XmuFetchResult {
     data object ServiceBusy : XmuFetchResult
     data object NetworkError : XmuFetchResult
     data object Timeout : XmuFetchResult
+    data object FormatChanged : XmuFetchResult
 }

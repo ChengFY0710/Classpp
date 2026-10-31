@@ -36,6 +36,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.motion.Motion
@@ -83,6 +85,8 @@ fun SheetTextField(
     imeAction: ImeAction = ImeAction.Next,
     onImeAction: () -> Unit = {},
     focusRequester: FocusRequester? = null,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
     // 单行 = 只有一行的多行卡：卡壳、行实现与描边全部共用，行为与改造前一致
     SheetTextFieldGroup(
@@ -96,6 +100,8 @@ fun SheetTextField(
                 imeAction = imeAction,
                 onImeAction = onImeAction,
                 focusRequester = focusRequester,
+                keyboardType = keyboardType,
+                visualTransformation = visualTransformation,
             ),
         ),
         modifier = modifier,
@@ -116,6 +122,9 @@ data class SheetTextFieldItem(
     val imeAction: ImeAction = ImeAction.Next,
     val onImeAction: () -> Unit = {},
     val focusRequester: FocusRequester? = null,
+    /** 密码框等场景：[KeyboardType.Password] + [VisualTransformation] */
+    val keyboardType: KeyboardType = KeyboardType.Text,
+    val visualTransformation: VisualTransformation = VisualTransformation.None,
 )
 
 /**
@@ -191,8 +200,7 @@ private fun SheetTextFieldRow(item: SheetTextFieldItem) {
         interactionSource.interactions.collect { interaction ->
             if (interaction is PressInteraction.Release) keyboard?.show()
         }
-    }
-    // 值区文字样式（角色样式）：空值不可见时要取它的色再置透明，故先取值
+    }    // 值区文字样式（角色样式）：空值不可见时要取它的色再置透明，故先取值
     val valueStyle = MaterialTheme.classppTextStyles.fieldValue
 
     Row(
@@ -220,7 +228,11 @@ private fun SheetTextFieldRow(item: SheetTextFieldItem) {
             ),
             // 不挂 singleLine：值区宽度固定（weight 占满 label 外剩余空间），超宽自动换行而非横向滚动
             interactionSource = interactionSource,
-            keyboardOptions = KeyboardOptions(imeAction = item.imeAction),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = item.keyboardType,
+                imeAction = item.imeAction,
+            ),
+            visualTransformation = item.visualTransformation,
             keyboardActions = KeyboardActions(
                 onNext = { item.onImeAction() },
                 onDone = { item.onImeAction() },

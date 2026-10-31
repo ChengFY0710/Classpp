@@ -509,4 +509,15 @@ class XmuSyncRepositoryTest {
         assertTrue(r.markSynced(plan))
         assertEquals(legacyTodoId, r.state.value.entries.first { it.remoteId == 925512L }.todoId)
     }
+
+    @Test
+    fun `原生链路的格式变化映射为 FormatChanged`() = runBlocking {
+        val api = FakeApi(XmuFetchResult.FormatChanged)
+        val outcome = repo(api).prepareSync(force = true)
+
+        assertEquals(
+            XmuSyncError.FormatChanged,
+            (outcome as XmuPrepareOutcome.Failed).error,
+        )
+    }
 }

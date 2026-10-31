@@ -132,6 +132,30 @@
     <string name="xmu_switch_message">The Course Center account differs from the last sync. Continuing requires clearing the old sync records. Imported todos can be kept or deleted.</string>
     <string name="xmu_switch_keep_records">Clear records and continue</string>
     <string name="xmu_switch_delete_all">Clear and delete synced todos</string>
+    <!-- Auto renewal (optional, native OAuth) -->
+    <string name="xmu_auto_login_section">Auto renewal</string>
+    <string name="xmu_auto_login_title">Remember sign-in to renew automatically</string>
+    <string name="xmu_auto_login_desc_enabled">On: signs in automatically when the session expires</string>
+    <string name="xmu_auto_login_desc_blocked">Paused: automatic sign-in failed. Sign in manually, then re-enable.</string>
+    <string name="xmu_auto_login_desc_off">Off: you will need to sign in manually when the session expires</string>
+    <string name="xmu_auto_login_desc_unavailable">Unavailable: cannot access the system keystore</string>
+    <string name="xmu_auto_login_sheet_title">Enable auto renewal</string>
+    <string name="xmu_auto_login_sheet_title_busy">Signing in</string>
+    <string name="xmu_auto_login_notes_title">Important</string>
+    <string name="xmu_auto_login_warning">Enabling this stores your student ID and password. Credentials are encrypted with the Android Keystore and excluded from backups. Sign-in happens only on this device, directly with the university authentication service. If a captcha appears, the password changes, or authentication fails, auto renewal pauses immediately and deletes the saved password — it never retries in a loop. Do not enable this on a shared device.</string>
+    <string name="xmu_auto_login_username">Student ID</string>
+    <string name="xmu_auto_login_username_hint">Unified identity account</string>
+    <string name="xmu_auto_login_password">Password</string>
+    <string name="xmu_auto_login_confirm">Confirm</string>
+    <string name="xmu_auto_login_blank">Enter your student ID and password first</string>
+    <string name="xmu_auto_login_busy">Signing in…</string>
+    <string name="xmu_auto_login_need_captcha">This sign-in requires a captcha. Use the web sign-in instead.</string>
+    <string name="xmu_auto_login_invalid_credentials">Incorrect student ID or password. Auto renewal is paused.</string>
+    <string name="xmu_auto_login_storage_unavailable">Cannot store credentials securely. Auto renewal is unavailable.</string>
+    <string name="xmu_auto_login_not_established">Signed in but could not read Course Center data. Use the web sign-in instead.</string>
+    <string name="xmu_auto_login_disable_title">Turn off auto renewal</string>
+    <string name="xmu_auto_login_disable_message">Turning this off deletes the saved student ID and password. The current sign-in is kept; after the session expires you will need to sign in manually.</string>
+    <string name="xmu_auto_login_disable_confirm">Turn off and delete password</string>
     <!-- Notifications & reminders -->
     <string name="settings_notifications">Notifications &amp; reminders</string>
     <string name="notification_enable">Enable notifications</string>

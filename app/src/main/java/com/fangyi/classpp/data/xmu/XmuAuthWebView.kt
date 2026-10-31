@@ -64,7 +64,9 @@ internal object XmuWebViewPolicy {
      * （c-identity → ids.xmu.edu.cn → 回 lnt）。无头取数同样需要它：过期会话要能
      * 被重定向到身份域，才能把超时归类为「登录过期」而不是普通超时。
      */
-    private const val DESKTOP_USER_AGENT =
+    // 原生 OAuth 登录（XmuLoginClient）复用同一 UA：lnt 也按 UA 分流，移动 UA 会被
+    // 302 到 c-mobile 门户，桌面 UA 才走统一的 CAS 链路
+    internal const val DESKTOP_USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 

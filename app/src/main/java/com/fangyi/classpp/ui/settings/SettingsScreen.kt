@@ -33,6 +33,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
+import com.fangyi.classpp.data.xmu.XmuAutoLoginManager
 import com.fangyi.classpp.data.xmu.XmuSyncRepository
 import com.fangyi.classpp.ui.components.SettingsCardwithIcon
 import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
@@ -99,6 +100,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     repository: ScheduleRepository? = null,
     xmuSyncRepository: XmuSyncRepository? = null,
+    xmuAutoLoginManager: XmuAutoLoginManager? = null,
     themeMode: ThemeMode = ThemeMode.System,
     onThemeModeChange: (ThemeMode) -> Unit = {},
     // State 实例透传（本层不读 .value）：滑条拖动时本屏与个性化页整体 skip，只重组值的叶子
@@ -203,6 +205,7 @@ fun SettingsScreen(
                 XmuSyncScreen(
                     onBack = { showXmuSync = false },
                     repository = xmuSyncRepository,
+                    autoLogin = xmuAutoLoginManager,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
