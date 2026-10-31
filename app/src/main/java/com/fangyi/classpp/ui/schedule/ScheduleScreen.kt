@@ -88,6 +88,7 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.overlappingCourses
 import com.fangyi.classpp.data.wakeup.WakeupImportExecutor
+import com.fangyi.classpp.data.xmu.XmuSyncRepository
 import com.fangyi.classpp.data.wakeup.WakeupScheduleMapper
 import com.fangyi.classpp.data.wakeup.WakeupScriptStore
 import com.fangyi.classpp.data.wakeup.WakeupShareText
@@ -158,6 +159,10 @@ fun ScheduleScreen(
     onEditingChange: (Boolean) -> Unit = {},
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    // 教务导入浮层「账号与同步」：收起浮层串、编辑态取消更改后由调用方转到设置页-账号与同步
+    onOpenAccountSync: () -> Unit = {},
+    // 教务账号连接状态数据源（教务导入浮层账号行行值）；null = 容器未装配，按未连接展示
+    xmuSyncRepository: XmuSyncRepository? = null,
     tabTransition: TabTransitionState? = null,
     // 课程卡片高度倍率状态（MainActivity 持有、个性化页写入；网格行高随每节时长伸缩，
     // 倍率整体缩放）：State 实例透传给 CourseGrid，本屏不读 .value——滑条拖动时
@@ -453,6 +458,28 @@ fun ScheduleScreen(
             var importSheetVisible by rememberSaveable { mutableStateOf(false) }
             // Wakeup 口令导入浮层：导入浮层第三入口打开，叠在导入浮层之上（同分层动效）
             var wakeupSheetVisible by rememberSaveable { mutableStateOf(false) }
+            // 教务导入浮层：导入浮层第一入口打开，叠在导入浮层之上（同分层动效）
+            var xmuSheetVisible by rememberSaveable { mutableStateOf(false) }
+            // 教务账号连接状态文案（与设置页同口径：uid 非空即已连接，姓名缺省只显示「已连接」）
+            val xmuSyncState = xmuSyncRepository?.state?.collectAsState()?.value
+            val xmuAccountStatus = when {
+                xmuSyncState == null || xmuSyncState.uid.isEmpty() ->
+                    stringResource(R.string.xmu_not_connected_label)
+                xmuSyncState.accountName.isBlank() ->
+                    stringResource(R.string.xmu_connected_label)
+                else -> stringResource(R.string.xmu_connected_name, xmuSyncState.accountName)
+            }
+            // 教务导入浮层「账号与同步」：收起整串浮层（教务导入 → 导入 → 切换），编辑态取消
+            // 更改（整库回滚，同编辑栏取消），再转到设置页-账号与同步（调用方直达子页）
+            val onXmuAccountClick: () -> Unit = {
+                xmuSheetVisible = false
+                wakeupSheetVisible = false
+                importSheetVisible = false
+                switcherVisible = false
+                if (editing) cancelEdit()
+                onOpenAccountSync()
+            }
+
             // 课表设置浮层：编辑栏按钮打开（内容自原设置页迁入，见 ScheduleSettingsSheet）
             var settingsSheetVisible by rememberSaveable { mutableStateOf(false) }
             // 编辑态的网格数据源：草稿 → 渲染模型（复用仓库路径同一套映射与置灰规则）。
@@ -1226,11 +1253,13 @@ fun ScheduleScreen(
                         visible = importSheetVisible,
                         onDismissed = { importSheetMounted = false },
                         onDismiss = { importSheetVisible = false },
+                        // 教务导入浮层盖上来时本浮层缩小后退（分层动效与新建表单一致）
+                        onImportXmu = { xmuSheetVisible = true },
                         onImportJsonFile = { importLauncher.launch(ScheduleJsonMimeTypes) },
                         onImportClipboard = onImportClipboard,
                         // Wakeup 输入浮层盖上来时本浮层缩小后退（分层动效与新建表单一致）
                         onImportWakeup = { wakeupSheetVisible = true },
-                        covered = wakeupSheetVisible,
+                        covered = wakeupSheetVisible || xmuSheetVisible,
                     )
                 }
                 // Wakeup 口令导入浮层：叠在导入浮层之上（粘贴分享文案 → 跑云端适配脚本）。
@@ -1257,6 +1286,22 @@ fun ScheduleScreen(
                 var wakeupConfirmMounted by remember { mutableStateOf(false) }
                 val wakeupConfirmVisible = wakeupParsed != null
                 if (wakeupConfirmVisible) wakeupConfirmMounted = true
+                // 教务导入浮层：叠在导入浮层之上（账号与同步行 + 可导入学期单选）。本次仅 UI：
+                // 确认暂不落库；账号行点击收整串浮层并转到设置页-账号与同步
+                var xmuSheetMounted by remember { mutableStateOf(false) }
+                if (xmuSheetVisible) xmuSheetMounted = true
+                if (xmuSheetMounted) {
+                    XmuImportSheet(
+                        visible = xmuSheetVisible,
+                        onDismissed = { xmuSheetMounted = false },
+                        onDismiss = { xmuSheetVisible = false },
+                        onOpenAccountSync = onXmuAccountClick,
+                        accountStatus = xmuAccountStatus,
+                        onConfirm = { _ ->
+                            // 教务课表同步接入后：按选中学期拉取课表并走导入预览
+                        },
+                    )
+                }
                 if (wakeupConfirmMounted) {
                     WakeupImportConfirmDialog(
                         courseCount = wakeupParsed?.courses?.size ?: 0,

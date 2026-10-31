@@ -101,6 +101,10 @@ fun SettingsScreen(
     repository: ScheduleRepository? = null,
     xmuSyncRepository: XmuSyncRepository? = null,
     xmuAutoLoginManager: XmuAutoLoginManager? = null,
+    // 直达「账号与同步」子页（课表页教务导入浮层的账号行跳转）：置真时展开子页，
+    // 与手动从根页进入走完全相同的子页转场；消费后回调复位标志
+    openAccountSyncDirectly: Boolean = false,
+    onAccountSyncDirectlyOpened: () -> Unit = {},
     themeMode: ThemeMode = ThemeMode.System,
     onThemeModeChange: (ThemeMode) -> Unit = {},
     // State 实例透传（本层不读 .value）：滑条拖动时本屏与个性化页整体 skip，只重组值的叶子
@@ -137,6 +141,14 @@ fun SettingsScreen(
             showPersonalization = false
             showNotifications = false
             showXmuSync = false
+        }
+    }
+    // 直达子页请求：展开「账号与同步」（转场与手动进入一致）。声明在上方复位效果之后，
+    // 首帧两个效果依次执行时直达请求后跑、不被隐藏态复位吞掉
+    LaunchedEffect(openAccountSyncDirectly) {
+        if (openAccountSyncDirectly) {
+            showXmuSync = true
+            onAccountSyncDirectlyOpened()
         }
     }
 

@@ -489,6 +489,9 @@
     <string name="import_json_desc">仅支持 Classpp 格式的 JSON 文件</string>
     <string name="import_clipboard_label">从剪贴板导入</string>
     <string name="import_clipboard_desc">复制好 JSON 文件内容后点击导入</string>
+    <string name="import_xmu_label">从教务导入</string>
+    <string name="import_xmu_desc">账号与同步设置页登录后可导入</string>
+    <string name="import_xmu_sheet_title">教务导入</string>
     <string name="import_wakeup_label">从 Wakeup 课表分享口令导入</string>
     <string name="import_wakeup_desc">输入Wakeup课表的分享口令导入</string>
     <string name="import_clipboard_empty">剪贴板中没有可导入的内容</string>

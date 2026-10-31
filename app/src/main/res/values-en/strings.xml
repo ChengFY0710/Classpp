@@ -383,6 +383,9 @@
     <string name="import_json_desc">Classpp-format JSON files only</string>
     <string name="import_clipboard_label">Import from Clipboard</string>
     <string name="import_clipboard_desc">Copy the JSON contents, then tap to import</string>
+    <string name="import_xmu_label">Import from Academic System</string>
+    <string name="import_xmu_desc">Sign in via Account &amp; Sync settings to import</string>
+    <string name="import_xmu_sheet_title">Academic System Import</string>
     <string name="import_wakeup_label">Import from Wakeup Share Code</string>
     <string name="import_wakeup_desc">Enter a Wakeup schedule share code to import</string>
     <string name="import_clipboard_empty">Nothing to import from the clipboard</string>

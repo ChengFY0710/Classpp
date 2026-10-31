@@ -183,6 +183,9 @@ class MainActivity : ComponentActivity() {
                     }
                     // 设置页开关（全屏覆盖层，经下方 PageOverlayTransition 盖在三屏与底部导航之上）
                     var showSettings by rememberSaveable { mutableStateOf(false) }
+                    // 设置页直达子页标志：课表页教务导入浮层的「账号与同步」跳转先置真再开
+                    // 设置页，账号与同步子页随之展开（SettingsScreen 消费后回调复位）
+                    var settingsOpenAccountSync by rememberSaveable { mutableStateOf(false) }
                     // 课表编辑态：由课表页的编辑按钮进入，编辑期间隐藏底部导航栏
                     var editing by rememberSaveable { mutableStateOf(false) }
                     // 课表页的全屏浮层（课程详情）在场时同样藏导航栏：导航栏在组合顺序上
@@ -210,6 +213,15 @@ class MainActivity : ComponentActivity() {
                     val onOverlayOverNavBarChange =
                         remember { { value: Boolean -> navBarHiddenByOverlay = value } }
                     val onOpenSettings = remember { { showSettings = true } }
+                    // 教务导入浮层「账号与同步」：先置直达子页标志再开设置页（同一帧生效）
+                    val onOpenAccountSync = remember {
+                        {
+                            settingsOpenAccountSync = true
+                            showSettings = true
+                        }
+                    }
+                    val onAccountSyncDirectlyOpened =
+                        remember { { settingsOpenAccountSync = false } }
                     val onNewTodoSheetDismiss = remember { { showNewTodoSheet = false } }
                     // 页面 modifier 同理记忆化：Modifier.fillMaxSize() 每次调用都是新实例，
                     // 内联写在调用点上会让三页在每次切 tab 时都白重组一遍
@@ -345,6 +357,8 @@ class MainActivity : ComponentActivity() {
                                             onEditingChange = onEditingChange,
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                             onOpenSettings = onOpenSettings,
+                                            onOpenAccountSync = onOpenAccountSync,
+                                            xmuSyncRepository = xmuSyncRepository,
                                             tabTransition = transition,
                                             // 网格读降频态（即时态只喂个性化页滑条）
                                             cardHeights = gridCardHeightsState,
@@ -415,6 +429,8 @@ class MainActivity : ComponentActivity() {
                             repository = repository,
                             xmuSyncRepository = xmuSyncRepository,
                             xmuAutoLoginManager = xmuAutoLoginManager,
+                            openAccountSyncDirectly = settingsOpenAccountSync,
+                            onAccountSyncDirectlyOpened = onAccountSyncDirectlyOpened,
                             themeMode = themeMode,
                             onThemeModeChange = { mode ->
                                 themeMode = mode
