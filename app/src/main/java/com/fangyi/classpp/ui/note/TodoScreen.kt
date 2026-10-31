@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,6 +32,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
@@ -53,6 +55,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
@@ -62,6 +67,7 @@ import com.fangyi.classpp.data.TodoReadResult
 import com.fangyi.classpp.data.TodoOpResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.TodoSort
+import com.fangyi.classpp.data.TRASH_RETENTION_DAYS
 import com.fangyi.classpp.data.comparator
 import com.fangyi.classpp.data.expandRepeatOccurrences
 import com.fangyi.classpp.data.xmu.XmuTodoMapper
@@ -82,6 +88,7 @@ import com.fangyi.classpp.ui.components.NoteCardSectionHeader
 import com.fangyi.classpp.ui.components.NoteCardSwipe
 import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.PopupMenuSection
+import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SwipeAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.components.TodoInboxCard
@@ -457,9 +464,25 @@ fun TodoScreen(
     val inboxActive = inboxView && !todoEditing && special != TodoSpecialSection.Trash
     val todoPageKey = if (inboxActive) TodoPageKeyInboxPrefix + todoPageBaseKey else todoPageBaseKey
     // 最近删除页恒走列表，顶栏视图块置灰不可点；进入该页时顺手收起可能残留的视图菜单
-    // （弹层是 Popup，不受动作块置灰约束，状态不清理会在离开该页后重新弹出）
+    // （弹层是 Popup，不受动作块置灰约束，状态不清理会在离开该页后重新弹出），并补跑一次
+    // 到期清理——装载时已清过一轮，这里兜住应用长时间驻留期间新满 30 天的条目
     LaunchedEffect(special) {
-        if (special == TodoSpecialSection.Trash) viewMenuExpanded = false
+        if (special == TodoSpecialSection.Trash) {
+            viewMenuExpanded = false
+            repository.purgeExpiredDeleted()
+        }
+    }
+    // 回到前台补扫一次回收站保留期：进程被冻结多日再回来时既不会重新装载（bootstrap 已
+    // 跑过），也不一定切到最近删除页；到期条目仍应按时彻底删除。失败静默，留给下一次扫描
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, repository) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                scope.launch { repository.purgeExpiredDeleted() }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // 待办编辑三件套：进入（长按卡片，自动选中长按卡；顶栏展开的菜单/动作行与侧滑展开卡
@@ -1703,7 +1726,9 @@ internal fun filterTodosByTag(todos: List<Todo>, tag: String): List<Todo> =
  * 默认展开（规避「已完成默认收起」把整页收起来）；[emptyHint] = 过滤结果为空时的
  * 居中占位文案。「已置顶」页的卡片照常支持侧滑——单卡撤销置顶即从该页消失。
  *
- * 最近删除页（[deletedCards] = true）走另一条渲染分支：卡片逐项平铺（无四组分区头、
+ * 最近删除页（[deletedCards] = true）走另一条渲染分支：列表顶部固定一条保留期
+ * [SheetInfoBanner]（满 30 天由仓库自动彻底删除，见 [TodoRepository.purgeExpiredDeleted]），
+ * 卡片逐项平铺（无四组分区头、
  * 同一套 animateItem 规格，卡间距走每项底部内距）——条目由宿主按删除时刻倒序传入，与
  * 「最近删除」的时间语义一致；卡片为已删除样式（右侧撤回按钮），左滑呼出「彻底删除」。
  *
@@ -1817,25 +1842,41 @@ private fun TodoList(
         ),
     ) {
         if (deletedCards) {
-            // 最近删除页：逐卡 item 平铺（无四组分组头，卡间距走每项底部内距、末卡不带）
-            // ——顺序由宿主按删除时刻倒序给定，与「最近删除」的时间语义一致；空列表沿用
-            // 统一的居中占位文案。撤回/彻底删除后卡片走 animateItem 退场，其余卡片避让收拢
+            // 最近删除页：顶部固定一条保留期说明（满 30 天自动彻底删除，见仓库
+            // purgeExpiredDeleted），逐卡 item 平铺（无四组分组头，卡间距走每项底部内距、
+            // 末卡不带）——顺序由宿主按删除时刻倒序给定，与「最近删除」的时间语义一致；
+            // 空列表沿用统一的居中占位文案（提示条与占位同处一个 item，占位仍在剩余空间
+            // 居中，不因提示条把整页撑出可滚动的一屏）。撤回/彻底删除后卡片走 animateItem
+            // 退场，其余卡片避让收拢
             if (todos.isEmpty()) {
-                if (emptyHint != null) {
-                    item(key = "emptyHint") {
-                        Box(
-                            Modifier.fillParentMaxSize(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = emptyHint,
-                                style = ClassppTextTokens.emptyHint,
-                                color = MaterialTheme.classppColors.secondaryText,
-                            )
+                item(key = "trashEmptyState") {
+                    Column(Modifier.fillParentMaxSize()) {
+                        SheetInfoBanner(
+                            text = stringResource(R.string.todo_trash_retention_hint, TRASH_RETENTION_DAYS),
+                        )
+                        if (emptyHint != null) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = emptyHint,
+                                    style = ClassppTextTokens.emptyHint,
+                                    color = MaterialTheme.classppColors.secondaryText,
+                                )
+                            }
                         }
                     }
                 }
             } else {
+                item(key = "trashRetentionBanner") {
+                    SheetInfoBanner(
+                        text = stringResource(R.string.todo_trash_retention_hint, TRASH_RETENTION_DAYS),
+                        modifier = Modifier.padding(bottom = CardSectionSpacing),
+                    )
+                }
                 todos.forEachIndexed { index, todo ->
                     item(key = todo.listItemKey(flyDoneKeys)) {
                         TrashedTodoCard(

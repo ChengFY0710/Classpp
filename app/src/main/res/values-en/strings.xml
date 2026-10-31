@@ -86,6 +86,9 @@
     <string name="xmu_header_title">Sync your XMU account</string>
     <string name="xmu_header_description">Sign in with XMU Unified Identity to sync assignments, quizzes, and other to-dos</string>
     <string name="xmu_section_capabilities">What sync can do</string>
+    <string name="xmu_section_school">Select school</string>
+    <string name="xmu_school_current">Current school</string>
+    <string name="xmu_school_xmu">Xiamen University</string>
     <string name="xmu_source_badge">Course Center</string>
     <string name="xmu_connected_label">Connected</string>
     <string name="xmu_connected_name">Connected: %1$s</string>
@@ -96,6 +99,8 @@
     <string name="xmu_intro_body">After signing in to the XMU Course Center, unfinished assignments are synced into your todo list. Read-only: no submissions, no data changes. Sign-in happens on the university\'s official identity page — the app never stores your password. Sign out anytime to wipe stored data.</string>
     <string name="xmu_login_button">Sign in</string>
     <string name="xmu_sync_button">Sync now</string>
+    <string name="xmu_syncing">Syncing…</string>
+    <string name="xmu_up_to_date">Already up to date</string>
     <string name="xmu_logout_button">Sign out</string>
     <string name="xmu_login_sheet_title">Sign in to Course Center</string>
     <string name="xmu_login_hint">Complete the sign-in on this page; returns automatically when done</string>
@@ -381,6 +386,8 @@
     <string name="todo_empty_pinned">No pinned todos yet</string>
     <string name="todo_empty_archived">No archived todos yet</string>
     <string name="todo_empty_trash">Nothing recently deleted</string>
+    <!-- Banner at the top of the Recently Deleted list: trash retention period -->
+    <string name="todo_trash_retention_hint">Kept %1$d days, then auto-deleted</string>
     <string name="todo_error_save_failed">Save failed, please try again later</string>
 
     <string name="todo_detail_title">Todo Details</string>

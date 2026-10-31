@@ -27,6 +27,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+/** 最近删除的保留天数：从删除时刻起满 30 天自动彻底删除（见 [TodoRepository.purgeExpiredDeleted]） */
+const val TRASH_RETENTION_DAYS = 30
+
+/** 回收站保留期的毫秒长度 */
+private const val TRASH_RETENTION_MILLIS = TRASH_RETENTION_DAYS * 86_400_000L
+
 /**
  * 待办仓库：内存真源（StateFlow）+ 磁盘持久化（[TodoStore]），与 ScheduleRepository 同构。
  * 同时持有**待办分组**（[TodoFile.groups]）：与待办同文件、同 mutex 原子写入，
@@ -37,7 +43,9 @@ import kotlinx.coroutines.withContext
  * [Todo.deletedAtMillis]，条目仍留在 todos.json；读侧按标记分成两个流：
  * [todos] 只发活跃待办（通知、日历、课程详情等既有消费方天然看不到回收站），
  * [deletedTodos] 只发回收站条目。恢复走 [restoreTodo]（清标记重回活跃流），
- * 彻底删除走 [purgeTodo]（才真正从文件移除）。
+ * 彻底删除走 [purgeTodo]（才真正从文件移除）。回收站条目另有保留期：删除满
+ * [TRASH_RETENTION_DAYS] 天由 [purgeExpiredDeleted] 自动彻底删除（装载时跑一次，
+ * 最近删除页打开时再跑一次）。
  *
  * - 读：StateFlow 直接 collect，无 I/O；
  * - 写：Mutex 串行化，流程 = 归一化 → 校验 → `store.save` → 成功才发布到 StateFlow
@@ -71,7 +79,7 @@ class TodoRepository internal constructor(
 
     // ---------- 生命周期 ----------
 
-    /** 从磁盘载入（阻塞 I/O，经 Dispatchers.IO） */
+    /** 从磁盘载入（阻塞 I/O，经 Dispatchers.IO）；装载时顺带清理超过保留期的回收站条目 */
     private suspend fun bootstrap() {
         val outcome = withContext(Dispatchers.IO) { store.load() }
         _loadState.value = when (outcome.issue) {
@@ -79,13 +87,30 @@ class TodoRepository internal constructor(
             LoadIssue.RestoredFromBackup -> LoadState.RestoredFromBackup
             LoadIssue.ResetAfterCorruption -> LoadState.ResetAfterCorruption
         }
-        publish(
-            when (outcome) {
-                is LoadOutcome.Loaded<TodoFile> -> outcome.file
-                is LoadOutcome.Fresh<TodoFile> -> outcome.file
-            },
-        )
+        val loaded = when (outcome) {
+            is LoadOutcome.Loaded<TodoFile> -> outcome.file
+            is LoadOutcome.Fresh<TodoFile> -> outcome.file
+        }
+        val expiredIds = loaded.expiredDeletedIds(nowMillis())
+        if (expiredIds.isEmpty()) {
+            publish(loaded)
+            return
+        }
+        // 过期条目不再进内存也不写回磁盘：内存立即隐藏（保留期是硬约束），落盘失败
+        // 只影响下次装载时再清一遍——与写路径「落盘先行」相反是有意的例外
+        val purged = loaded.copy(todos = loaded.todos.filterNot { it.id in expiredIds })
+        publish(purged)
+        withContext(Dispatchers.IO) { store.save(purged) }
     }
+
+    /** 回收站里已满保留期（[TRASH_RETENTION_DAYS] 天）的条目 id 集 */
+    private fun TodoFile.expiredDeletedIds(now: Long): Set<String> =
+        todos.asSequence()
+            .filter { todo ->
+                val deletedAt = todo.deletedAtMillis
+                deletedAt != null && now - deletedAt >= TRASH_RETENTION_MILLIS
+            }
+            .mapTo(mutableSetOf()) { it.id }
 
     private fun publish(file: TodoFile) {
         fileState.value = file
@@ -349,6 +374,17 @@ class TodoRepository internal constructor(
     suspend fun purgeTodo(id: String): TodoOpResult = mutex.withLock {
         if (deletedTodoOrNull(id) == null) return@withLock TodoOpResult.Err(TodoError.NotFound(id))
         commit(fileState.value.copy(todos = fileState.value.todos.filterNot { it.id == id }))
+    }
+
+    /**
+     * 清理最近删除里已满保留期（[TRASH_RETENTION_DAYS] 天）的条目：真正从 todos.json 移除，
+     * 不可恢复。装载时由 [bootstrap] 自动跑一次；最近删除页打开时再跑一次，补上应用装载后
+     * 新到期的条目（应用长时间驻留时不重新装载也能按时清掉）。没有到期条目时不写盘。
+     */
+    suspend fun purgeExpiredDeleted(): TodoOpResult = mutex.withLock {
+        val expiredIds = fileState.value.expiredDeletedIds(nowMillis())
+        if (expiredIds.isEmpty()) return@withLock TodoOpResult.Ok
+        commit(fileState.value.copy(todos = fileState.value.todos.filterNot { it.id in expiredIds }))
     }
 
     /**

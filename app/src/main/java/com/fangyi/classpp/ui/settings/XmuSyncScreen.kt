@@ -5,15 +5,18 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
@@ -98,6 +101,11 @@ fun XmuSyncScreen(
     var preparing by remember { mutableStateOf(false) }
     var committing by remember { mutableStateOf(false) }
 
+    // 同步加载浮层（点「立即同步」立刻压上）：两段式挂载——preparing 置 false 后仍留在
+    // 组合里播淡出，onDismissed 才卸载；淡出期间预览浮层滑入、压在本浮层之上
+    var loadingMounted by remember { mutableStateOf(false) }
+    if (preparing) loadingMounted = true
+
     // 同步预览（两段式挂载）：plan 非 null 即可见；onDismiss 清 plan（转场退场），播完才卸载
     var previewPlan by remember { mutableStateOf<XmuSyncPlan?>(null) }
     var previewMounted by remember { mutableStateOf(false) }
@@ -128,6 +136,7 @@ fun XmuSyncScreen(
         )
     }
     val genericErrorText = stringResource(R.string.xmu_error_generic)
+    val upToDateText = stringResource(R.string.xmu_up_to_date)
     val importDoneFormat = stringResource(R.string.xmu_import_done)
     val importFailedText = stringResource(R.string.xmu_error_import)
     val logoutDoneText = stringResource(R.string.xmu_logout_done)
@@ -139,24 +148,38 @@ fun XmuSyncScreen(
         )
     }
 
+    // 无新增、无恢复 → 预览里没有任何可看得见的内容，不弹浮层，只提示已是最新
+    val showPlanOrUpToDate: (XmuSyncPlan) -> Unit = { plan ->
+        if (plan.newItems.isEmpty() && plan.restoreItems.isEmpty()) {
+            AppToasts.show(context, upToDateText)
+        } else {
+            previewPlan = plan
+        }
+    }
+
     // ---------- 动作 ----------
 
     val onSyncClick: () -> Unit = {
         val repo = repository
         if (repo != null && !preparing) {
+            // 立即点亮加载浮层：网络拉取期间用户看到转圈，而不是卡在原页面
             preparing = true
             scope.launch {
-                when (val outcome = repo.prepareSync()) {
-                    is XmuPrepareOutcome.Ready -> {
-                        sessionExpired = false
-                        previewPlan = outcome.plan
+                try {
+                    when (val outcome = repo.prepareSync()) {
+                        is XmuPrepareOutcome.Ready -> {
+                            sessionExpired = false
+                            showPlanOrUpToDate(outcome.plan)
+                        }
+                        is XmuPrepareOutcome.Failed -> {
+                            if (outcome.error == XmuSyncError.SessionExpired) sessionExpired = true
+                            showError(outcome.error)
+                        }
                     }
-                    is XmuPrepareOutcome.Failed -> {
-                        if (outcome.error == XmuSyncError.SessionExpired) sessionExpired = true
-                        showError(outcome.error)
-                    }
+                } finally {
+                    // 成功/失败/异常都收掉浮层（不留常驻转圈）
+                    preparing = false
                 }
-                preparing = false
             }
         }
     }
@@ -169,7 +192,7 @@ fun XmuSyncScreen(
                 when (val outcome = repo.prepareFromLogin(result.profileRaw, result.todosRaw)) {
                     is XmuPrepareOutcome.Ready -> {
                         sessionExpired = false
-                        previewPlan = outcome.plan
+                        showPlanOrUpToDate(outcome.plan)
                     }
                     is XmuPrepareOutcome.Failed -> when (outcome.error) {
                         XmuSyncError.AccountChanged -> {
@@ -214,7 +237,7 @@ fun XmuSyncScreen(
             scope.launch {
                 repo.resetSyncData(deleteSyncedTodos)
                 when (val outcome = repo.prepareFromLogin(pending.profileRaw, pending.todosRaw)) {
-                    is XmuPrepareOutcome.Ready -> previewPlan = outcome.plan
+                    is XmuPrepareOutcome.Ready -> showPlanOrUpToDate(outcome.plan)
                     is XmuPrepareOutcome.Failed -> showError(outcome.error)
                 }
             }
@@ -369,6 +392,19 @@ fun XmuSyncScreen(
                                 ),
                             )
                         }
+
+                        // 「选择学校」分组：当前学校展示行，点击未来呼出学校选择浮层（暂不做，入口先占位）
+                        CardSection(title = stringResource(R.string.xmu_section_school)) {
+                            SettingsCard(
+                                items = listOf(
+                                    SettingsCardItem.Nav(
+                                        label = stringResource(R.string.xmu_school_current),
+                                        value = stringResource(R.string.xmu_school_xmu),
+                                        onClick = {},
+                                    ),
+                                ),
+                            )
+                        }
                     }
                 }
             }
@@ -401,6 +437,19 @@ fun XmuSyncScreen(
     }
 
     // ---------- 浮层 ----------
+
+    // 同步加载浮层：点「立即同步」当场压上，prepare 返回后淡出；在途不可关闭
+    //（遮罩点击与返回键都不放行，网络请求自带超时兜底）。
+    // 组合序在预览浮层之前：结束时预览滑入压在其上，加载卡同步淡出
+    if (loadingMounted) {
+        FadeOverlayDialog(
+            visible = preparing,
+            onDismiss = {},
+            onDismissed = { loadingMounted = false },
+        ) {
+            XmuSyncLoadingCard()
+        }
+    }
 
     if (previewMounted) {
         XmuSyncPreviewSheet(
@@ -483,7 +532,29 @@ fun XmuSyncScreen(
     }
 }
 
-/** 同步预览浮层：按课程分组列新增项（默认全选可取消），底部汇总；复活计数在横幅提示 */
+/** 同步加载卡：小转圈 + 「正在同步…」，垂直居中；浮层在途不可关闭 */
+@Composable
+private fun XmuSyncLoadingCard() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(32.dp),
+            strokeWidth = 3.dp,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = stringResource(R.string.xmu_syncing),
+            style = ClassppTextTokens.dialogMessage,
+            color = MaterialTheme.classppColors.secondaryText,
+        )
+    }
+}
+
+/** 同步预览浮层：内容顶部用横幅汇总（随勾选实时变化）与复活计数，按课程分组列新增项（默认全选可取消） */
 @Composable
 private fun XmuSyncPreviewSheet(
     plan: XmuSyncPlan?,
@@ -527,6 +598,8 @@ private fun XmuSyncPreviewSheet(
     ) {
         val p = current ?: return@OverlaySheet
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
+            // 顶部汇总：条数随勾选实时变化，SheetInfoBanner 的等宽数字避免整行居中抖动
+            SheetInfoBanner(text = summaryFormat.format(selected.size, p.skipped.values.sum()))
             if (p.restoreItems.isNotEmpty()) {
                 SheetInfoBanner(text = restoreFormat.format(p.restoreItems.size))
             }
@@ -569,14 +642,6 @@ private fun XmuSyncPreviewSheet(
                         }
                     }
             }
-            Text(
-                text = summaryFormat.format(selected.size, p.skipped.values.sum()),
-                style = ClassppTextTokens.settingsDescription,
-                color = MaterialTheme.classppColors.secondaryText,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-            )
         }
     }
 }

@@ -19,6 +19,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
+/** 一天的毫秒数（回收站保留期用例推时钟用） */
+private const val DayMillis = 86_400_000L
+
 class TodoRepositoryTest {
 
     @get:Rule
@@ -193,6 +196,40 @@ class TodoRepositoryTest {
         assertTrue(r.deletedTodos.value.isEmpty())
         assertEquals(listOf("A"), r.todos.value.map { it.name })
         assertTrue(r.purgeTodo(trashed).assertErr() is TodoError.NotFound)
+    }
+
+    @Test
+    fun `purgeExpiredDeleted only removes trash at or past retention`() = runBlocking {
+        val r = repo()
+        val id = r.addTodo(testTodo(name = "A")).okId()
+        r.removeTodo(id).assertOk()
+
+        // 未满 30 天：原样保留
+        now.advanceBy(TRASH_RETENTION_DAYS * DayMillis - 1)
+        r.purgeExpiredDeleted().assertOk()
+        assertEquals(listOf(id), r.deletedTodos.value.map { it.id })
+
+        // 满 30 天：物理删除，重开仓库也不回来
+        now.advanceBy(1)
+        r.purgeExpiredDeleted().assertOk()
+        assertTrue(r.deletedTodos.value.isEmpty())
+        assertTrue(r.purgeTodo(id).assertErr() is TodoError.NotFound)
+        assertTrue(repo().deletedTodos.value.isEmpty())
+    }
+
+    @Test
+    fun `bootstrap purges trash that expired while app was closed`() = runBlocking {
+        val r = repo()
+        val expired = r.addTodo(testTodo(name = "过期")).okId()
+        val kept = r.addTodo(testTodo(name = "未过期")).okId()
+        r.removeTodo(expired).assertOk()
+        now.advanceBy(DayMillis)
+        r.removeTodo(kept).assertOk()
+
+        // 重开时按各自的删除时刻分别判定：先删的满期、后删的还差一天
+        now.advanceBy((TRASH_RETENTION_DAYS - 1) * DayMillis)
+        val reopened = repo()
+        assertEquals(listOf(kept), reopened.deletedTodos.value.map { it.id })
     }
 
     @Test

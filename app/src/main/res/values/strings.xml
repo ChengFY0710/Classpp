@@ -56,6 +56,8 @@
     <string name="todo_empty_pinned">还没有置顶的待办</string>
     <string name="todo_empty_archived">暂无已归档的待办</string>
     <string name="todo_empty_trash">暂无最近删除的待办</string>
+    <!-- 最近删除页列表顶部提示条：回收站保留期（与 TRASH_RETENTION_DAYS 一致） -->
+    <string name="todo_trash_retention_hint">保留%1$d天，%1$d天后自动删除</string>
     <string name="todo_empty_tag">该标签下还没有待办</string>
     <string name="todo_error_save_failed">保存失败，请稍后重试</string>
     <string name="todo_detail_title">待办详情</string>
@@ -175,6 +177,9 @@
     <string name="xmu_header_title">同步你的厦大账号</string>
     <string name="xmu_header_description">使用厦门大学统一身份认证，即可同步作业、测验等相关待办</string>
     <string name="xmu_section_capabilities">同步可以做什么</string>
+    <string name="xmu_section_school">选择学校</string>
+    <string name="xmu_school_current">当前学校</string>
+    <string name="xmu_school_xmu">厦门大学</string>
     <string name="xmu_source_badge">课程中心</string>
     <string name="xmu_connected_label">已连接</string>
     <string name="xmu_connected_name">已连接：%1$s</string>
@@ -185,6 +190,8 @@
     <string name="xmu_intro_body">登录厦门大学课程中心后，把未完成的作业同步进待办库。只读取待办列表，不提交作业、不修改任何数据；登录由学校统一身份认证页面完成，App 不保存密码；可随时退出登录并清除数据。</string>
     <string name="xmu_login_button">去登录</string>
     <string name="xmu_sync_button">立即同步</string>
+    <string name="xmu_syncing">正在同步…</string>
+    <string name="xmu_up_to_date">当前状态已最新</string>
     <string name="xmu_logout_button">退出登录</string>
     <string name="xmu_login_sheet_title">登录课程中心</string>
     <string name="xmu_login_hint">请在页面中完成登录，成功后自动返回</string>
