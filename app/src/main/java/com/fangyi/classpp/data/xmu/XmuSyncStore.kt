@@ -8,18 +8,21 @@ import java.io.File
 
 /**
  * 课程中心同步状态持久化（阻塞 I/O，由仓库包到 Dispatchers.IO）。
- * 与 FileTodoStore 完全同一套文件协议（细节见其 KDoc）：tmp（fsync）→ bak（备份本次
+ * 状态文件收在 `filesDir/xmu/` 子目录（备份规则按目录整体排除，隔离文件也不会外泄）；
+ * 文件协议与 FileTodoStore 完全一致（细节见其 KDoc）：tmp（fsync）→ bak（备份本次
  * 将提交的数据）→ rename 原子覆盖主文件；读取降级 主文件坏 → bak → 双坏改名
  * `xmu-sync.corrupt-<millis>.json` 留证并返回空状态。formatVersion 高于当前版本按损坏处理。
  */
 class XmuSyncStore(private val dir: File) {
 
-    private val main = File(dir, MAIN_NAME)
-    private val tmp = File(dir, TMP_NAME)
-    private val bak = File(dir, BAK_NAME)
+    private val root = File(dir, DIR_NAME)
+    private val main = File(root, MAIN_NAME)
+    private val tmp = File(root, TMP_NAME)
+    private val bak = File(root, BAK_NAME)
 
     fun load(): LoadOutcome<XmuSyncFile> {
-        if (!dir.exists()) dir.mkdirs()
+        root.mkdirs()
+        migrateLegacyFiles()
 
         if (!main.exists()) {
             return LoadOutcome.Fresh(XmuSyncFile(), LoadIssue.None)
@@ -38,14 +41,14 @@ class XmuSyncStore(private val dir: File) {
 
         // 双坏：保留主文件取证，返回空状态（同步映射可重建，不值得惊动用户）
         if (main.exists()) {
-            val quarantine = File(dir, "$CORRUPT_PREFIX${System.currentTimeMillis()}.json")
+            val quarantine = File(root, "$CORRUPT_PREFIX${System.currentTimeMillis()}.json")
             main.renameTo(quarantine)
         }
         return LoadOutcome.Fresh(XmuSyncFile(), LoadIssue.ResetAfterCorruption)
     }
 
     fun save(file: XmuSyncFile): StoreResult {
-        if (!dir.exists()) dir.mkdirs()
+        root.mkdirs()
         val text = try {
             ScheduleJson.encodeStorage(file)
         } catch (e: Exception) {
@@ -81,11 +84,36 @@ class XmuSyncStore(private val dir: File) {
         return StoreResult.Ok
     }
 
-    /** 退出登录/账号切换时物理删除三件套 */
+    /** 退出登录/账号切换时物理删除状态文件与损坏隔离文件 */
     fun delete() {
         main.delete()
         tmp.delete()
         bak.delete()
+        root.listFiles()
+            ?.filter { it.name.startsWith(CORRUPT_PREFIX) }
+            ?.forEach { it.delete() }
+    }
+
+    /**
+     * 兼容已写入 filesDir 根目录的旧文件（功能未正式发布前的老版本）：
+     * 主文件/bak 迁入子目录，旧 tmp 直接丢弃；历史隔离文件也移入子目录，
+     * 避免继续留在备份集内。子目录已有同名文件时不覆盖。
+     */
+    private fun migrateLegacyFiles() {
+        val legacyMain = File(dir, MAIN_NAME)
+        if (legacyMain.exists() && !main.exists()) legacyMain.renameTo(main)
+
+        val legacyBak = File(dir, BAK_NAME)
+        if (legacyBak.exists() && !bak.exists()) legacyBak.renameTo(bak)
+
+        File(dir, TMP_NAME).delete()
+
+        dir.listFiles()
+            ?.filter { it.name.startsWith(CORRUPT_PREFIX) }
+            ?.forEach { legacy ->
+                val target = File(root, legacy.name)
+                if (target.exists() || !legacy.renameTo(target)) legacy.delete()
+            }
     }
 
     private fun parseFile(file: File): XmuSyncFile? {
@@ -98,6 +126,8 @@ class XmuSyncStore(private val dir: File) {
     }
 
     companion object {
+        /** 状态子目录（备份规则按目录整体排除，见 backup_rules.xml / data_extraction_rules.xml） */
+        const val DIR_NAME = "xmu"
         const val MAIN_NAME = "xmu-sync.json"
         const val TMP_NAME = "xmu-sync.json.tmp"
         const val BAK_NAME = "xmu-sync.json.bak"

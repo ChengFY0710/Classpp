@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 const val XMU_SYNC_FORMAT_VERSION = 1
 
 /**
- * 课程中心同步状态文件（filesDir 下的 xmu-sync.json）：远端 id ↔ 本地 id 的映射、
+ * 课程中心同步状态文件（`filesDir/xmu/xmu-sync.json`）：远端 id ↔ 本地 id 的映射、
  * 内容哈希、账号 id 与上次同步/探活时刻。与 todos.json 完全独立——同步失败/损坏
  * 不波及用户待办库。
  *

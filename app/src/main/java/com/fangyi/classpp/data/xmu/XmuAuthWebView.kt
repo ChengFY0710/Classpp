@@ -157,16 +157,38 @@ internal object XmuWebViewPolicy {
                 if (resultMsg == null) return false
                 val forwarded = booleanArrayOf(false)
                 var temp: WebView? = null
-                // 取到目标 URL 后回主 WebView、销毁临时实例（只转发一次）
+
+                // 不在 WebViewClient 回调里同步 destroy，post 到下一轮消息
+                fun destroyTemp() {
+                    val wv = temp ?: return
+                    temp = null
+                    view.post { wv.destroy() }
+                }
+
+                // 取到目标 URL 后回主 WebView、销毁临时实例（只转发一次）。
+                // loadUrl 不经过 shouldOverrideUrlLoading：这里是弹窗路径的白名单最后一道闸。
                 fun forward(url: String) {
                     if (forwarded[0]) return
                     forwarded[0] = true
-                    onOpenWindow(url)
-                    temp?.destroy()
+                    val uri = Uri.parse(url)
+                    if (uri.scheme == "https" && isAllowedHost(uri.host)) {
+                        onOpenWindow(url)
+                    }
+                    destroyTemp()
                 }
                 temp = WebView(view.context).apply {
-                    settings.javaScriptEnabled = true
+                    // 与主 WebView 同一套加固：禁 file/content、禁混合内容、桌面 UA
+                    harden(this)
                     webViewClient = object : WebViewClient() {
+                        override fun onReceivedSslError(
+                            v: WebView,
+                            handler: SslErrorHandler,
+                            error: SslError,
+                        ) {
+                            handler.cancel()
+                            destroyTemp()
+                        }
+
                         override fun shouldOverrideUrlLoading(
                             v: WebView,
                             request: WebResourceRequest,
@@ -189,7 +211,7 @@ internal object XmuWebViewPolicy {
                     resultMsg.sendToTarget()
                     return true
                 }
-                temp.destroy()
+                destroyTemp()
                 return false
             }
         }
@@ -305,11 +327,17 @@ internal class XmuWebSessionDriver(
                 if (!completed && !destroyed) resetProbe()
             },
         )
-        // target=_blank / window.open 统一转当前 WebView（指导 §3.1）
+        // target=_blank / window.open 统一转当前 WebView（指导 §3.1）；
+        // 白名单已在 createChromeClient 收口，这里再防御一次
         webView.webChromeClient = XmuWebViewPolicy.createChromeClient(
             onProgress = onProgress,
             onOpenWindow = { url ->
-                if (!completed && !destroyed) webView.loadUrl(url)
+                val uri = Uri.parse(url)
+                if (!completed && !destroyed &&
+                    uri.scheme == "https" && XmuWebViewPolicy.isAllowedHost(uri.host)
+                ) {
+                    webView.loadUrl(url)
+                }
             },
         )
         if (totalTimeoutMillis > 0) mainHandler.postDelayed(timeoutRunnable, totalTimeoutMillis)

@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.settings
 
 import android.webkit.CookieManager
+import android.webkit.WebStorage
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -221,12 +222,16 @@ fun XmuSyncScreen(
     val doLogout: () -> Unit = {
         scope.launch {
             repository?.resetSyncData(deleteSyncedTodos = false)
-            // App 只有这一个 WebView 用途：清全量 cookie 可接受（指导 §8.3）
-            CookieManager.getInstance().removeAllCookies(null)
-            CookieManager.getInstance().flush()
-            sessionExpired = false
-            pendingLogin = null
-            AppToasts.show(context, logoutDoneText)
+            // localStorage / IndexedDB 同属登录态残留，一并清
+            WebStorage.getInstance().deleteAllData()
+            val cookieManager = CookieManager.getInstance()
+            // 异步删除：等回调再 flush，保证提示「已退出登录」时旧 cookie 已不可用
+            cookieManager.removeAllCookies {
+                cookieManager.flush()
+                sessionExpired = false
+                pendingLogin = null
+                AppToasts.show(context, logoutDoneText)
+            }
         }
     }
 

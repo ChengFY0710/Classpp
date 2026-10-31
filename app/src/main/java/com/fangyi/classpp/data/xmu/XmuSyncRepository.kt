@@ -186,9 +186,9 @@ class XmuSyncRepository internal constructor(
         }
 
     /**
-     * 清空同步状态（退出登录与账号切换共用）：删 xmu-sync.json 三件套并复位内存态；
-     * [deleteSyncedTodos] 时把 `xmu-` 前缀的本地待办一并移除（活跃软删后随回收站条目
-     * 一起彻底删除）。cookie 清理由 UI 层做（CookieManager.removeAllCookies）。
+     * 清空同步状态（退出登录与账号切换共用）：删 filesDir/xmu/ 下的状态文件与损坏隔离
+     * 文件并复位内存态；[deleteSyncedTodos] 时把 `xmu-` 前缀的本地待办一并移除（活跃软删
+     * 后随回收站条目一起彻底删除）。cookie 清理由 UI 层做（CookieManager.removeAllCookies）。
      */
     suspend fun resetSyncData(deleteSyncedTodos: Boolean) = mutex.withLock {
         if (deleteSyncedTodos) {

@@ -31,9 +31,10 @@ class XmuSyncStoreTest {
         localHash = "l$id",
     )
 
-    private fun mainFile() = File(folder.root, XmuSyncStore.MAIN_NAME)
-    private fun bakFile() = File(folder.root, XmuSyncStore.BAK_NAME)
-    private fun tmpFile() = File(folder.root, XmuSyncStore.TMP_NAME)
+    private fun mainFile() = File(xmuDir(), XmuSyncStore.MAIN_NAME)
+    private fun bakFile() = File(xmuDir(), XmuSyncStore.BAK_NAME)
+    private fun tmpFile() = File(xmuDir(), XmuSyncStore.TMP_NAME)
+    private fun xmuDir() = File(folder.root, XmuSyncStore.DIR_NAME)
 
     @Test
     fun `fresh when no file exists`() {
@@ -79,12 +80,14 @@ class XmuSyncStoreTest {
         val outcome = store().load()
         assertTrue(outcome is LoadOutcome.Fresh)
         assertEquals(LoadIssue.ResetAfterCorruption, outcome.issue)
-        val quarantined = folder.root.listFiles { f -> f.name.startsWith(XmuSyncStore.CORRUPT_PREFIX) }
+        val quarantined = xmuDir().listFiles { f -> f.name.startsWith(XmuSyncStore.CORRUPT_PREFIX) }
         assertEquals(1, quarantined?.size)
+        assertEquals(xmuDir(), quarantined?.first()?.parentFile)
     }
 
     @Test
     fun `future formatVersion degrades like corruption`() {
+        xmuDir().mkdirs()
         mainFile().writeText("""{"formatVersion":99,"entries":[]}""")
         val outcome = store().load()
         assertTrue(outcome is LoadOutcome.Fresh)
@@ -99,6 +102,42 @@ class XmuSyncStoreTest {
         assertFalse(bakFile().exists())
         assertFalse(tmpFile().exists())
         assertTrue(store().load() is LoadOutcome.Fresh)
+    }
+
+    @Test
+    fun `delete removes quarantined corrupt files`() {
+        store().save(fileWith(entry(1)))
+        mainFile().writeText("garbage")
+        bakFile().writeText("also garbage")
+        assertTrue(store().load() is LoadOutcome.Fresh)
+        assertEquals(1, xmuDir().listFiles { f -> f.name.startsWith(XmuSyncStore.CORRUPT_PREFIX) }?.size)
+
+        store().delete()
+        assertEquals(0, xmuDir().listFiles { f -> f.name.startsWith(XmuSyncStore.CORRUPT_PREFIX) }?.size)
+    }
+
+    @Test
+    fun `legacy root files migrate into subdir`() {
+        val state = fileWith(entry(3))
+        File(folder.root, XmuSyncStore.MAIN_NAME)
+            .writeText(ScheduleJson.encodeStorage(state))
+
+        val outcome = store().load()
+        assertTrue(outcome is LoadOutcome.Loaded)
+        assertEquals(state, (outcome as LoadOutcome.Loaded<XmuSyncFile>).file)
+        assertTrue(mainFile().exists())
+        assertFalse("legacy main must be moved away", File(folder.root, XmuSyncStore.MAIN_NAME).exists())
+    }
+
+    @Test
+    fun `legacy corrupt files move into excluded subdir`() {
+        val legacy = File(folder.root, "${XmuSyncStore.CORRUPT_PREFIX}1.json")
+        legacy.writeText("garbage")
+
+        store().load()
+
+        assertFalse("legacy quarantine must leave filesDir root", legacy.exists())
+        assertTrue(File(xmuDir(), legacy.name).exists())
     }
 
     @Test
