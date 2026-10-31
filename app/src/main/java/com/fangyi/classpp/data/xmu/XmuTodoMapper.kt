@@ -32,10 +32,15 @@ object XmuTodoMapper {
     const val ID_PREFIX = "${SOURCE_XMU}-"
 
     /**
-     * 远端唯一键（课程 + activity id）：buildPlan 的去重口径。
-     * 与 [localId] 同含 courseId，不再出现「键里拼了、实现却没用」的错位。
+     * 远端唯一键（课程 + activity id）：buildPlan 去重与 entries 映射（内存/落盘）的统一键。
+     * 与 [localId] 同含 courseId——activity id 若只在课程内唯一，同 id 不同课程也不会互相顶掉。
      */
-    fun remoteKey(dto: XmuTodoDto): String = "xmu:${dto.courseId}:${dto.id}"
+    fun remoteKey(dto: XmuTodoDto): String = remoteKey(dto.courseId, dto.id)
+
+    /** 映射条目的远端唯一键（与 dto 同口径）：entries 的内存 map 一律按它配对，不能按 remoteId 单键 */
+    fun remoteKey(entry: XmuSyncEntry): String = remoteKey(entry.courseId, entry.remoteId)
+
+    fun remoteKey(courseId: Long, activityId: Long): String = "xmu:$courseId:$activityId"
 
     /**
      * 确定性本地 id：`xmu-{courseId}-{activityId}`。courseId 一并入键——activity id 若只在

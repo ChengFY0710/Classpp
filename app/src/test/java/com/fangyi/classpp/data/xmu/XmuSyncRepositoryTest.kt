@@ -393,6 +393,40 @@ class XmuSyncRepositoryTest {
     }
 
     @Test
+    fun `同 activity id 跨课程的删除与复活按 remoteKey 区分`() = runBlocking {
+        val todos = """
+            {"todo_list":[
+              {"id":8001,"title":"课程一作业","type":"homework","course_id":1,"course_name":"课程一","end_time":"2026-11-04T10:30:00Z","is_student":true},
+              {"id":8001,"title":"课程二作业","type":"homework","course_id":2,"course_name":"课程二","end_time":"2026-11-04T10:30:00Z","is_student":true}
+            ]}
+        """.trimIndent()
+        val api = okApi(todos = todos)
+        val r = repo(api)
+        r.syncAll(api, todos)
+        // 两条映射都落盘：entries 若按 remoteId 单键，第二条会覆盖第一条
+        assertEquals(2, r.state.value.entries.size)
+
+        // 删课程一：下次同步只有课程一复活，课程二不受牵连
+        r.todoRepository.removeTodo("xmu-1-8001")
+        val restorePlan = (r.prepareSync(force = true) as XmuPrepareOutcome.Ready).plan
+        assertEquals(listOf("xmu-1-8001"), restorePlan.restoreItems.map { it.todo.id })
+        assertTrue(restorePlan.newItems.isEmpty())
+        val restored = (r.commitSync(restorePlan, emptySet()) as XmuCommitOutcome.Done).report
+        assertEquals(1, restored.restored)
+        assertEquals(setOf("xmu-1-8001", "xmu-2-8001"), r.activeIds())
+
+        // 彻底删课程二：只重导课程二一条；两个 dto 不能挤进同一个 id 撞 DuplicateId
+        r.todoRepository.removeTodo("xmu-2-8001")
+        r.todoRepository.purgeTodo("xmu-2-8001")
+        val reimportPlan = (r.prepareSync(force = true) as XmuPrepareOutcome.Ready).plan
+        assertEquals(listOf("xmu-2-8001"), reimportPlan.newItems.map { it.todo.id })
+        val reimported = (r.commitSync(reimportPlan, setOf("xmu-2-8001")) as XmuCommitOutcome.Done).report
+        assertEquals(1, reimported.imported)
+        assertEquals(setOf("xmu-1-8001", "xmu-2-8001"), r.activeIds())
+        assertEquals(2, r.state.value.entries.size)
+    }
+
+    @Test
     fun `v1 映射里的旧 id 在升级后继续沿用`() = runBlocking {
         // v1 数据：本地待办用不含 courseId 的旧 id，映射里也记着旧 id
         val legacyTodoId = "xmu-925512"

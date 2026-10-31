@@ -152,10 +152,11 @@ class XmuSyncRepository internal constructor(
             }
 
             // entries 增量合并：新增/复活写新哈希基线，活跃条目只补缺（不洗掉既有基线，
-            // P2 的「用户是否编辑过」判定靠它）
-            val byRemote = _state.value.entries.associateBy { it.remoteId }.toMutableMap()
+            // P2 的「用户是否编辑过」判定靠它）。键是 remoteKey（课程+activity）：
+            // remoteId 单键会让同 activity id 跨课程的映射互相覆盖
+            val byRemote = _state.value.entries.associateBy { XmuTodoMapper.remoteKey(it) }.toMutableMap()
             for (item in selected) {
-                byRemote[item.dto.id] = XmuSyncEntry(
+                byRemote[XmuTodoMapper.remoteKey(item.dto)] = XmuSyncEntry(
                     remoteId = item.dto.id,
                     courseId = item.dto.courseId,
                     todoId = item.todo.id,
@@ -164,7 +165,7 @@ class XmuSyncRepository internal constructor(
                 )
             }
             for (item in plan.restoreItems) {
-                byRemote[item.dto.id] = XmuSyncEntry(
+                byRemote[XmuTodoMapper.remoteKey(item.dto)] = XmuSyncEntry(
                     remoteId = item.dto.id,
                     courseId = item.dto.courseId,
                     todoId = item.todo.id,
@@ -172,7 +173,7 @@ class XmuSyncRepository internal constructor(
                     localHash = XmuTodoMapper.localHash(item.todo),
                 )
             }
-            for (entry in plan.entriesForActive) byRemote.putIfAbsent(entry.remoteId, entry)
+            for (entry in plan.entriesForActive) byRemote.putIfAbsent(XmuTodoMapper.remoteKey(entry), entry)
 
             val next = _state.value.copy(
                 entries = byRemote.values.toList(),
@@ -199,8 +200,8 @@ class XmuSyncRepository internal constructor(
      * 「上次同步」；返回 false 表示状态文件落盘失败。
      */
     suspend fun markSynced(plan: XmuSyncPlan): Boolean = mutex.withLock {
-        val byRemote = _state.value.entries.associateBy { it.remoteId }.toMutableMap()
-        for (entry in plan.entriesForActive) byRemote.putIfAbsent(entry.remoteId, entry)
+        val byRemote = _state.value.entries.associateBy { XmuTodoMapper.remoteKey(it) }.toMutableMap()
+        for (entry in plan.entriesForActive) byRemote.putIfAbsent(XmuTodoMapper.remoteKey(entry), entry)
         persist(
             _state.value.copy(
                 entries = byRemote.values.toList(),
@@ -269,7 +270,7 @@ class XmuSyncRepository internal constructor(
     ): XmuSyncPlan {
         val active = todoRepository.todos.value.associateBy { it.id }
         val trashed = todoRepository.deletedTodos.value.associateBy { it.id }
-        val knownEntries = _state.value.entries.associateBy { it.remoteId }
+        val knownEntries = _state.value.entries.associateBy { XmuTodoMapper.remoteKey(it) }
 
         val newItems = mutableListOf<XmuPlanItem>()
         val restoreItems = mutableListOf<XmuPlanItem>()
@@ -280,9 +281,10 @@ class XmuSyncRepository internal constructor(
             when (val outcome = XmuTodoMapper.map(dto, fetchedAt)) {
                 is XmuMapOutcome.Skipped -> skipped.merge(outcome.reason, 1, Int::plus)
                 is XmuMapOutcome.Mapped -> {
+                    val rKey = XmuTodoMapper.remoteKey(dto)
                     // 本地 id 迁移：映射里的 todoId（v1 不含 courseId）优先沿用；映射丢失时再按
                     // v1 口径找回旧条目，避免升级/恢复后把已导入的待办当新增重复导入
-                    val knownTodoId = knownEntries[dto.id]?.todoId
+                    val knownTodoId = knownEntries[rKey]?.todoId
                     val localId = sequenceOf(
                         knownTodoId,
                         outcome.todo.id,
@@ -295,7 +297,7 @@ class XmuSyncRepository internal constructor(
                     when {
                         activeTodo != null -> {
                             // 已导入：跳过（P2 再按哈希做远端变化更新）；映射缺档只补基线
-                            if (dto.id !in knownEntries) {
+                            if (rKey !in knownEntries) {
                                 entriesForActive += XmuSyncEntry(
                                     remoteId = dto.id,
                                     courseId = dto.courseId,
