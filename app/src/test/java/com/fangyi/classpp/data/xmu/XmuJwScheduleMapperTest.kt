@@ -1,5 +1,6 @@
 package com.fangyi.classpp.data.xmu
 
+import com.fangyi.classpp.data.ScheduleValidator
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Parity
 import com.fangyi.classpp.data.model.TimeText
@@ -165,6 +166,99 @@ class XmuJwScheduleMapperTest {
         val schedule = XmuJwScheduleMapper.toScheduleOrNull(raw(courses = duplicated))!!
 
         assertEquals(2, schedule.courses.size)
+    }
+
+    @Test
+    fun `same session split by room merges into one entry`() {
+        // 实测（2026 秋 AI 编程课）：周五 7-10 节同周次两行（两间教室）——教务网格把
+        // 它们叠渲染在同一格；映射后必须并成一条，否则同格冲突校验误拒导入。
+        // 同一时段周次互补的行（7-8 节 vs 7-10 节）不受影响，仍各自成条。
+        val eveningSlots = listOf(
+            XmuJwSkjcDto(code = "7", name = "第7节", order = 7, startTime = 1640, endTime = 1725),
+            XmuJwSkjcDto(code = "8", name = "第8节", order = 8, startTime = 1735, endTime = 1820),
+            XmuJwSkjcDto(code = "9", name = "第9节", order = 9, startTime = 1910, endTime = 1955),
+            XmuJwSkjcDto(code = "10", name = "第10节", order = 10, startTime = 2005, endTime = 2050),
+        )
+        val weeksShort = "110101010110100000000000000000" // 1-2,4-8双周,10-11,13周
+        val weeksLong = "001010101001011000000000000000" // 3-9单周,12,14-15周
+        val schedule = XmuJwScheduleMapper.toScheduleOrNull(
+            raw(
+                slots = eveningSlots,
+                courses = listOf(
+                    XmuJwPkjgDto(
+                        courseName = "AI编程与智能体开发", courseCode = "U1", teacher = "林子雨",
+                        location = "学武楼（1号楼）A206", weekday = 5,
+                        startSlotCode = 7, endSlotCode = 8, weekBitmap = weeksShort,
+                    ),
+                    XmuJwPkjgDto(
+                        courseName = "AI编程与智能体开发", courseCode = "U1", teacher = "林子雨",
+                        location = "文宣楼（4号楼）B406", weekday = 5,
+                        startSlotCode = 7, endSlotCode = 10, weekBitmap = weeksLong,
+                    ),
+                    XmuJwPkjgDto(
+                        courseName = "AI编程与智能体开发", courseCode = "U1", teacher = "林子雨",
+                        location = "文宣楼（4号楼）B313", weekday = 5,
+                        startSlotCode = 7, endSlotCode = 10, weekBitmap = weeksLong,
+                    ),
+                ),
+            ),
+        )!!
+
+        assertEquals(2, schedule.courses.size)
+        val merged = schedule.courses.single { it.span == 4 }
+        assertEquals("文宣楼（4号楼）B406；文宣楼（4号楼）B313", merged.location)
+        assertEquals("林子雨", merged.teacher)
+        assertTrue(ScheduleValidator.validateCourses(schedule).isEmpty())
+    }
+
+    @Test
+    fun `same session split by teacher merges with union`() {
+        // 实测（数据结构实验）：4 位教师各一间教室、周次全等 → 并成一条，教师并集
+        val bitmap = "101010101010101000000000000000"
+        val schedule = XmuJwScheduleMapper.toScheduleOrNull(
+            raw(
+                courses = listOf("陈锦秀", "张琦", "罗斌", "苏淑文").mapIndexed { index, name ->
+                    XmuJwPkjgDto(
+                        courseName = "数据结构", courseCode = "C1", teacher = name,
+                        location = "文宣楼（4号楼）A40${index + 4}", weekday = 3,
+                        startSlotCode = 1, endSlotCode = 4, weekBitmap = bitmap,
+                    )
+                },
+            ),
+        )!!
+
+        assertEquals(1, schedule.courses.size)
+        assertEquals("陈锦秀、张琦、罗斌、苏淑文", schedule.courses[0].teacher)
+        assertEquals(
+            "文宣楼（4号楼）A404；文宣楼（4号楼）A405；文宣楼（4号楼）A406；文宣楼（4号楼）A407",
+            schedule.courses[0].location,
+        )
+        assertTrue(ScheduleValidator.validateCourses(schedule).isEmpty())
+    }
+
+    @Test
+    fun `merged teacher names are split and deduped`() {
+        // 实测（电力电子）：同一行教师写成「李杰,齐洁」，与「齐洁」行合并后不重名
+        val bitmap = "000011111111111100000000000000"
+        val schedule = XmuJwScheduleMapper.toScheduleOrNull(
+            raw(
+                courses = listOf(
+                    XmuJwPkjgDto(
+                        courseName = "电力电子技术A", courseCode = "C1", teacher = "齐洁",
+                        location = "西部片区4号楼208", weekday = 3,
+                        startSlotCode = 1, endSlotCode = 2, weekBitmap = bitmap,
+                    ),
+                    XmuJwPkjgDto(
+                        courseName = "电力电子技术A", courseCode = "C1", teacher = "李杰,齐洁",
+                        location = "西部片区4号楼208", weekday = 3,
+                        startSlotCode = 1, endSlotCode = 2, weekBitmap = bitmap,
+                    ),
+                ),
+            ),
+        )!!
+
+        assertEquals(1, schedule.courses.size)
+        assertEquals("齐洁、李杰", schedule.courses[0].teacher)
     }
 
     @Test

@@ -32,6 +32,10 @@ internal data class XmuJwScheduleRaw(
  *   课程起止节次代码（KSJCDM/JSJCDM）对号入座；KSSJ/JSSJ 的 HHmm 整数转 `8:00` 形态；
  * - 周次 = ZCBH 位图（第 i 位 '1' = 第 i+1 周）→ 周号集合 → [weeksFromSelection]
  *   归并成区间并集（单双周自动成 ODD/EVEN 段）；
+ * - **同一节课多行合并**：教务把一节课按「教师×教室」拆成多行下发（同课、同星期、
+ *   同起止节次、同周次，仅教师/教室不同——教务网格把它们叠渲染在同一格，实测
+ *   数据结构实验 4 位教师 4 行、AI 课同周次两间教室），合并成一条后再映射，
+ *   否则这些行会在同格冲突校验里互撞，导入被误拒；
  * - Classpp 单卡跨度上限 [MAX_SPAN]（5 节）：超长课拆成连续块（周次相同，块间不重叠）；
  * - 课程数据有缺陷（空名/星期越界/节次未知/无周次）时**丢弃该行**而非整体失败，
  *   一门课都放不下才返回 null 交由 UI 报「未解析到课程」；
@@ -52,9 +56,8 @@ internal object XmuJwScheduleMapper {
 
         var nextColorIndex = 0
         val colorByName = mutableMapOf<String, CourseColor>()
-        val seen = mutableSetOf<String>()
-        val courses = raw.courses.mapNotNull { row ->
-            toEntriesOrNull(row, slotIndex, seen) { name ->
+        val courses = mergeSameSessions(raw.courses).mapNotNull { row ->
+            toEntriesOrNull(row, slotIndex) { name ->
                 // 同名课共用一色，按首次出现顺序在 18 色里轮询
                 colorByName.getOrPut(name) {
                     val colors = CourseColor.entries
@@ -83,10 +86,48 @@ internal object XmuJwScheduleMapper {
 
     //region 课程 → CourseEntry
 
+    /**
+     * 同一节课的拆行合并：教务按「教师×教室」把一节课下发成多行——同课、同星期、
+     * 同起止节次、同周次，仅教师/教室不同（教务网格把它们叠渲染在同一格）。按这五个
+     * 维度并成一行：教师取拆分去重后的并集、教室去重拼接、备注取首个非空——否则这些
+     * 行周次全等，映射成多条 CourseEntry 后会在同格冲突校验里互撞（实测数据结构实验
+     * 4 位教师 4 行、AI 课同周次两间教室，导入被误拒）。
+     */
+    private fun mergeSameSessions(rows: List<XmuJwPkjgDto>): List<XmuJwPkjgDto> =
+        rows.groupBy {
+            listOf(
+                it.courseCode, it.courseName,
+                it.weekday, it.startSlotCode, it.endSlotCode, it.weekBitmap,
+            )
+        }.values.map { group ->
+            if (group.size == 1) {
+                group.first()
+            } else {
+                group.first().copy(
+                    teacher = group.asSequence()
+                        .mapNotNull { it.teacher }
+                        .flatMap(::splitNames)
+                        .distinct()
+                        .joinToString("、")
+                        .ifEmpty { null },
+                    location = group.mapNotNull { it.location?.takeIf(String::isNotBlank) }
+                        .distinct()
+                        .joinToString("；")
+                        .ifEmpty { null },
+                    note = group.mapNotNull { it.note?.takeIf(String::isNotBlank) }.firstOrNull(),
+                )
+            }
+        }
+
+    /** 教师字段可能是「李杰,齐洁」这类合写：按常见分隔符拆成名单 */
+    private fun splitNames(text: String): List<String> =
+        text.split(',', '，', '、', ';', '；', '/')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+
     private fun toEntriesOrNull(
         row: XmuJwPkjgDto,
         slotIndex: Map<Int, Int>,
-        seen: MutableSet<String>,
         assignColor: (String) -> CourseColor,
     ): List<CourseEntry>? {
         val name = row.courseName?.trim().orEmpty()
@@ -100,13 +141,6 @@ internal object XmuJwScheduleMapper {
         val end = slotIndex[endCode] ?: return null
         if (end < start) return null
         val weeks = weeksFromBitmap(row.weekBitmap) ?: return null
-        // 完全相同的行（教务偶发同课重复下发）只保留一条，避免同格冲突校验失败
-        val dedupeKey = listOfNotNull(
-            row.courseCode,
-            day, startCode, endCode,
-            row.teacher, row.location, row.weekBitmap,
-        ).joinToString("\u0000")
-        if (!seen.add(dedupeKey)) return null
         val color = assignColor(name)
 
         // 单卡跨度上限：超长课拆成连续块（同周次，块间不重叠 → 不构成同格冲突）
