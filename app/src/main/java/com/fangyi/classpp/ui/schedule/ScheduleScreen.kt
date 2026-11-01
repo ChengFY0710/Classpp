@@ -468,7 +468,7 @@ fun ScheduleScreen(
             var switcherVisible by rememberSaveable { mutableStateOf(false) }
             var pendingSwitchId by rememberSaveable { mutableStateOf("") }
             var switcherCreateVisible by rememberSaveable { mutableStateOf(false) }
-            // 导入课表浮层：切换课表底部「导入课表」打开，叠在切换浮层之上（同新建表单）
+            // 导入课表浮层：编辑栏「导入」打开（不依赖切换浮层是否曾打开过）
             var importSheetVisible by rememberSaveable { mutableStateOf(false) }
             // Wakeup 口令导入浮层：导入浮层第三入口打开，叠在导入浮层之上（同分层动效）
             var wakeupSheetVisible by rememberSaveable { mutableStateOf(false) }
@@ -1106,6 +1106,8 @@ fun ScheduleScreen(
                     } else {
                         ScheduleEditBar(
                             onSave = onSaveEdit,
+                            // 导入：唤起导入课表浮层（编辑态唯一的导入入口）
+                            onImport = { importSheetVisible = true },
                             onSwitchSchedule = { switcherVisible = true },
                             // 课表设置：唤起课表设置浮层（原设置页内容迁入）
                             onScheduleSettings = { settingsSheetVisible = true },
@@ -1315,35 +1317,38 @@ fun ScheduleScreen(
                 )
             }
 
-            // 切换课表浮层：列表 + 底部导出导入；新建表单、导入浮层（及其上的 Wakeup 输入
-            // 浮层）与脏草稿确认都叠在它之上——组合顺序保证返回键优先级：脏草稿确认 →
-            // Wakeup 确认框 → 新建表单 → Wakeup 输入 → 导入浮层 → 切换浮层 → 编辑取消。
+            // 切换课表浮层与导入课表浮层共用这一块挂载：导入浮层从编辑栏「导入」打开，
+            // 不依赖切换浮层是否曾打开过，故挂载条件是两者任一在场（含收场动画期）。
+            // 组合顺序保证返回键优先级：脏草稿确认 → 新建表单 → 教务/Wakeup 确认框 →
+            // 教务/Wakeup 输入浮层 → 导入浮层 → 切换浮层 → 编辑取消。
             // 挂载与可见性分离（同课程面板的两段式关闭）：关闭先播浮层出场动画，
             // 播完（onDismissed）才真正卸载
             var switcherMounted by remember { mutableStateOf(false) }
             if (switcherVisible) switcherMounted = true
-            if (switcherMounted) {
-                ScheduleSwitcherSheet(
-                    visible = switcherVisible,
-                    onDismissed = { switcherMounted = false },
-                    schedules = repository.schedules.collectAsState().value,
-                    activeScheduleId = schedule.id,
-                    // 「新建」= 打开表单浮层（复用 NewScheduleSheet）；盖上来时本浮层经
-                    // covered 缩小后退，清开关（取消/确认）的瞬间同步回位
-                    onCreate = { switcherCreateVisible = true },
-                    // 导入浮层盖上来时同样缩小后退（分层动效与新建表单一致）
-                    covered = switcherCreateVisible || importSheetVisible,
-                    onDismiss = { switcherVisible = false },
-                    onSwitch = requestSwitch,
-                    onDelete = onDeleteSchedule,
-                    onExport = onExport,
-                    // 「导入」= 打开导入浮层（三选一入口），不再直接拉起文件选择器
-                    onImport = { importSheetVisible = true },
-                )
-                // 导入课表浮层：叠在切换课表之上（同新建表单），后注册因此先收到返回键。
+            // 导入浮层同样两段式；挂载后独立于切换浮层存活（切换先关时不会被提前卸载）
+            var importSheetMounted by remember { mutableStateOf(false) }
+            if (importSheetVisible) importSheetMounted = true
+            if (switcherMounted || importSheetMounted) {
+                // 切换浮层本身只在它自己挂载时组合：从编辑栏直接开导入时下方不应有它
+                if (switcherMounted) {
+                    ScheduleSwitcherSheet(
+                        visible = switcherVisible,
+                        onDismissed = { switcherMounted = false },
+                        schedules = repository.schedules.collectAsState().value,
+                        activeScheduleId = schedule.id,
+                        // 「新建」= 打开表单浮层（复用 NewScheduleSheet）；盖上来时本浮层经
+                        // covered 缩小后退，清开关（取消/确认）的瞬间同步回位
+                        onCreate = { switcherCreateVisible = true },
+                        // 新建表单盖上来时本浮层缩小后退（分层动效与待办详情→编辑一致）
+                        covered = switcherCreateVisible,
+                        onDismiss = { switcherVisible = false },
+                        onSwitch = requestSwitch,
+                        onDelete = onDeleteSchedule,
+                        onExport = onExport,
+                    )
+                }
+                // 导入课表浮层：编辑栏「导入」打开；与切换浮层共用挂载块，后注册因此先收到返回键。
                 // 挂载与可见性分离（同浮层的两段式关闭）：关闭先播出场动画，播完才卸载
-                var importSheetMounted by remember { mutableStateOf(false) }
-                if (importSheetVisible) importSheetMounted = true
                 if (importSheetMounted) {
                     ImportScheduleSheet(
                         visible = importSheetVisible,

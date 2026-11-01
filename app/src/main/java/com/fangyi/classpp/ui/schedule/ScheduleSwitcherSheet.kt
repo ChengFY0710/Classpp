@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.schedule
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -22,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,22 +39,28 @@ import com.fangyi.classpp.ui.components.FadeOverlayDialog
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
-import com.fangyi.classpp.ui.components.SheetPillButton
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
+import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
+import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
+import com.fangyi.classpp.ui.theme.SettingsCardShape
+import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /**
  * 「切换课表」浮层（编辑栏中间按钮打开）——容器为 [OverlaySheet]，进出场动画与
  * 顶栏拖拽关闭由它提供，与课程编辑浮层同一套交互语言：
  * - 列表态：每张课表一张白卡（名称 + 学期起止 + 删除），当前课表主色高亮 + 对勾，
- *   点卡片切换（脏草稿走确认）；底部钉「导出 / 导入」两颗胶囊；左上「新建」经 [onCreate]
- *   打开新建表单浮层——表单是**独立浮层**（复用 NewScheduleSheet，调用方挂载、叠在本浮层
- *   之上），盖上来时本浮层经 [covered] 缩小后退（分层动效，同待办详情→编辑）。
+ *   点卡片切换（脏草稿走确认）；列表最底部一张「导出当前课表」行卡（样式同课程时间方案的
+ *   动作行卡）负责导出；左上「新建」经 [onCreate] 打开新建表单浮层——表单是**独立浮层**
+ *   （复用 NewScheduleSheet，调用方挂载、叠在本浮层之上），盖上来时本浮层经 [covered]
+ *   缩小后退（分层动效，同待办详情→编辑）。
  *
- * 切换/导出/导入/删除的实际执行由调用方（ScheduleScreen）负责，这里纯 UI；
+ * 切换/导出/删除的实际执行由调用方（ScheduleScreen）负责，这里纯 UI；
  * 新建成功后的切换收口也在调用方（先关表单回列表再走切换，避免重复点创建）。
  * 删除先弹 [DeleteScheduleConfirmDialog] 确认（破坏性操作），确认后才回调 [onDelete]——
  * 确认框挂载在 OverlaySheet 之后（画到浮层卡片之上、后注册返回键），取消/返回只关它、
@@ -71,7 +80,6 @@ internal fun ScheduleSwitcherSheet(
     onSwitch: (String) -> Unit,
     onDelete: (String) -> Unit,
     onExport: () -> Unit,
-    onImport: () -> Unit,
     covered: Boolean = false,
 ) {
     // 待删除的课表 id（非空 = 删除确认框打开）
@@ -102,40 +110,10 @@ internal fun ScheduleSwitcherSheet(
         onDismissed = onDismissed,
         // 列表没有输入框，键盘不必让位（表单浮层自己走 ContentScroll）
         imeBehavior = SheetImeBehavior.IgnoreIme,
-        bottomContent = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(30.dp, Alignment.CenterHorizontally),
-                ) {
-                    SheetPillButton(
-                        label = stringResource(R.string.switcher_export),
-                        icon = R.drawable.ic_arrow_export_up,
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        contentColor = MaterialTheme.colorScheme.primary,
-                        onClick = onExport,
-                        iconSize = 25.dp,
-                        topPadding = 10.dp,
-                        bottomPadding = 10.dp,
-                        startPadding = 15.dp,
-                        endPadding = 10.dp,
-                    )
-                    SheetPillButton(
-                        label = stringResource(R.string.switcher_import),
-                        icon = R.drawable.ic_arrow_download,
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        contentColor = MaterialTheme.colorScheme.primary,
-                        onClick = onImport,
-                        iconSize = 25.dp,
-                        topPadding = 10.dp,
-                        bottomPadding = 10.dp,
-                        startPadding = 15.dp,
-                        endPadding = 10.dp,
-                    )
-                }
-        },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
-            // 课表卡是直接排成一列的同型卡列表：整列收进一个无题 CardSection（组内 10dp 卡间距）
+            // 课表卡是直接排成一列的同型卡列表：整列收进一个无题 CardSection（组内 10dp 卡间距）；
+            // 「导出当前课表」行卡排在列表最底部，是该组的一员而非钉底工具栏
             CardSection {
                 schedules.forEach { schedule ->
                     ScheduleCard(
@@ -145,6 +123,8 @@ internal fun ScheduleSwitcherSheet(
                         onDelete = { deletingId = schedule.id },
                     )
                 }
+                // 导出当前课表：整份课表 → pretty JSON → 系统分享面板（行为同原底部「导出课表」胶囊）
+                ExportCurrentScheduleRow(onClick = onExport)
             }
         }
     }
@@ -229,6 +209,33 @@ private fun ScheduleCard(
                 tint = MaterialTheme.colorScheme.error,
             )
         }
+    }
+}
+
+/**
+ * 「导出当前课表」行卡（本文件私有）：整宽白卡、内容居中、主色文字，复刻课程时间方案
+ * 「合并两小节为一大节」的行卡——白底 + [SettingsCardShape]，行高下限 [SheetFieldHeight]，
+ * 内距走行卡标准 [RowCardPaddingHorizontal] / [RowCardPaddingVertical]。
+ */
+@Composable
+private fun ExportCurrentScheduleRow(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = SheetFieldHeight)
+            .clip(SettingsCardShape)
+            .background(MaterialTheme.colorScheme.surface)
+            // 按压反馈与课程时间方案的动作行卡同款：pressClickable 自带按压源、无涟漪
+            .pressClickable(SettingsCardShape, onClick = onClick)
+            .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.switcher_export),
+            style = MaterialTheme.classppTextStyles.fieldValue,
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 }
 

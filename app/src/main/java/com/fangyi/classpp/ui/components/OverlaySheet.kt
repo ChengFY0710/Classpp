@@ -152,7 +152,7 @@ data class SheetTopAction(
  * [confirmIcon] / [confirmIconSize] 配置左胶囊图标与尺寸（默认对勾、30dp，可按浮层单独调）；
  * [confirmLabel] 传 null 时**不渲染**左侧确认
  * 胶囊（纯展示浮层用，如课程详情），[onConfirm] 随之闲置；[bottomContent] 可选钉底槽位——
- * 画在导航栏上方、带自底向上渐变兜底，滚动内容从其下淡出（如切换课表浮层底部常驻的导出/导入按钮）；
+ * 画在导航栏上方、带自底向上渐变兜底，滚动内容从其下淡出（如待办分组浮层底部常驻的操作栏）；
  * [bottomScrim] = false 关掉钉底容器的整套内置规格（渐变/导航栏留白/内距），退化为纯钉底定位——
  * 槽内容自带进出场动画时由调用方把这三样包进动画层，规格才不脱离动画（见 TodoGroupsSheet 编辑态底栏）。
  * [dragDismissEnabled] = false 关掉下拉关闭（超阈值松手回弹归位）：编辑态把下拉拦成

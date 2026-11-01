@@ -191,10 +191,7 @@
     <string name="xmu_header_description">支持厦大统一身份认证登录，一键同步作业、测验及教务课表</string>
     <string name="xmu_section_auto_login_sync">自动续期和同步</string>
     <string name="xmu_section_capabilities">同步可以做什么</string>
-    <string name="xmu_section_school">选择学校</string>
     <string name="xmu_section_alt_login">备用登录方式</string>
-    <string name="xmu_school_current">当前学校</string>
-    <string name="xmu_school_xmu">厦门大学</string>
     <string name="xmu_source_badge">课程中心</string>
     <string name="xmu_connected_label">已连接</string>
     <string name="xmu_connected_name">已连接：%1$s</string>
@@ -401,8 +398,9 @@
 
     <!-- 课表编辑 -->
     <string name="edit_save">保存</string>
-    <string name="edit_switch_schedule">切换课表</string>
-    <string name="edit_schedule_settings">课表设置</string>
+    <string name="edit_import">导入</string>
+    <string name="edit_switch_schedule">切换</string>
+    <string name="edit_schedule_settings">设置</string>
     <string name="edit_cancel">取消</string>
     <string name="edit_add_course">添加课程</string>
     <string name="edit_edit_course">编辑课程</string>
@@ -467,8 +465,7 @@
     <string name="error_alternate_weeks_taken">该周数已被交替课程占用</string>
 
     <!-- 切换课表浮层 -->
-    <string name="switcher_export">导出课表</string>
-    <string name="switcher_import">导入课表</string>
+    <string name="switcher_export">导出当前课表</string>
     <string name="switcher_new">新建课表</string>
     <string name="switcher_new_action">新建</string>
     <string name="switcher_title">切换课表</string>

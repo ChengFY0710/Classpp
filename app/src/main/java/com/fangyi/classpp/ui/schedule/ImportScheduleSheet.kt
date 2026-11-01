@@ -16,8 +16,7 @@ import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 
 /**
- * 「导入课表」浮层：切换课表浮层底部的「导入课表」按钮打开，叠在它之上（本浮层盖上来时
- * 切换浮层经 covered 缩小后退，同「新建课表」的分层动效）。
+ * 「导入课表」浮层：课表编辑栏的「导入」按钮打开（导入入口仅在编辑态提供）。
  *
  * 四个入口排成四张独立白卡（设计稿即四张卡、卡间露灰底），整列收进一个无题 [CardSection]：
  * 教务、JSON 文件、剪贴板、Wakeup 分享口令。与 [ScheduleSwitcherSheet] 同一职责划分——实际导入

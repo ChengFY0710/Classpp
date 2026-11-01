@@ -721,19 +721,6 @@ fun XmuSyncScreen(
                                 ),
                             )
                         }
-
-                        // 「选择学校」分组：当前学校展示行，点击未来呼出学校选择浮层（暂不做，入口先占位）
-                        CardSection(title = stringResource(R.string.xmu_section_school)) {
-                            SettingsCard(
-                                items = listOf(
-                                    SettingsCardItem.Nav(
-                                        label = stringResource(R.string.xmu_school_current),
-                                        value = stringResource(R.string.xmu_school_xmu),
-                                        onClick = {},
-                                    ),
-                                ),
-                            )
-                        }
                     }
                 }
             }
