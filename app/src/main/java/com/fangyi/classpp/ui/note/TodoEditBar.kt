@@ -26,6 +26,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.calendar.CalendarEventPlanner
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
@@ -62,20 +63,24 @@ internal val EditBarRowSpace = EditBarTopPadding + EditActionBarHeight
  *
  * 动作即时落库（见 TodoScreen 的 onDeleteSelected / onPinSelected / onUnpinSelected /
  * onMovePick），[onConfirm] 只负责退出编辑——不设「取消」，系统返回同语义。「移动」经
- * [onMove] 唤起选择分组浮层（复用 GroupPickSheet，点选即整批移动）；「同步」本次仅占位
- *（显示但点击无操作）。
+ * [onMove] 唤起选择分组浮层（复用 GroupPickSheet，点选即整批移动）；「同步」经
+ * [onSync] 把所选待办整批写入系统日历（流程见 CalendarAddFlow：权限、账户选择与写入
+ * 全在其中编排，时间为「无」的条目跳过）。
  * [moveEnabled] 为 false（未选中任何待办）时「移动」置灰（icon 与文字转
- * [classppColors.negative]、点击无效）。置顶块随 [pinAction] 三态切换：只选中已置顶
- * 待办时显示「取消」+ ic_pin_off、点击 [onUnpin] 取消置顶；只选中未置顶或混合选择
- *（既有已置顶又有未置顶）时显示「置顶」+ ic_pin、点击 [onPin] 整批置顶；未选中任何
- * 待办时置灰不可点。
+ * [classppColors.negative]、点击无效）；[syncEnabled] 为 false（所选待办里没有能写入
+ * 日历的条目，口径见 [todoSyncCandidates]）时「同步」同样置灰。置顶块随 [pinAction]
+ * 三态切换：只选中已置顶待办时显示「取消」+ ic_pin_off、点击 [onUnpin] 取消置顶；只
+ * 选中未置顶或混合选择（既有已置顶又有未置顶）时显示「置顶」+ ic_pin、点击 [onPin]
+ * 整批置顶；未选中任何待办时置灰不可点。
  */
 @Composable
 internal fun TodoEditBar(
     moveEnabled: Boolean,
+    syncEnabled: Boolean,
     pinAction: PinAction,
     onDelete: () -> Unit,
     onMove: () -> Unit,
+    onSync: () -> Unit,
     onPin: () -> Unit,
     onUnpin: () -> Unit,
     onConfirm: () -> Unit,
@@ -129,11 +134,12 @@ internal fun TodoEditBar(
                     .wrapContentWidth(Alignment.CenterHorizontally),
             )
             EditAction(
-                // 同步：本次仅占位（点击无操作）
+                // 同步：所选待办整批写入系统日历（无时间的条目跳过，候选判定见
+                // todoSyncCandidates）；没有可写条目时与「移动」同款置灰不可点
                 text = stringResource(R.string.todo_edit_sync),
                 iconRes = R.drawable.ic_calendar_regular,
-                color = MaterialTheme.colorScheme.onSurface,
-                onClick = {},
+                color = if (syncEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.classppColors.negative,
+                onClick = { if (syncEnabled) onSync() },
                 modifier = Modifier
                     .weight(1f)
                     .wrapContentWidth(Alignment.CenterHorizontally),
@@ -226,15 +232,26 @@ internal fun todoPinAction(todos: List<Todo>, selected: Set<String>): PinAction 
     return if (chosen.all { it.pinned }) PinAction.Unpin else PinAction.Pin
 }
 
+/**
+ * 编辑顶栏「同步」的候选集：所选待办里能写入系统日历的条目，顺序沿用待办列表（批量
+ * 写入按此顺序产出事件）。判定与写入同源——[CalendarEventPlanner.drafts] 产不出事件的
+ * 待办（时间「无」、或没有日期）一并剔除：时间为「无」在详情菜单里同样是置灰口径，
+ * 混合选择时这些条目静默跳过。候选为空即「同步」置灰（与「移动」的空选择置灰同款）。
+ */
+internal fun todoSyncCandidates(todos: List<Todo>, selected: Set<String>): List<Todo> =
+    todos.filter { it.id in selected && CalendarEventPlanner.drafts(it).isNotEmpty() }
+
 @Preview(showBackground = true, name = "待办编辑顶栏")
 @Composable
 private fun TodoEditBarPreview() {
     ClassppTheme {
         TodoEditBar(
             moveEnabled = true,
+            syncEnabled = true,
             pinAction = PinAction.Pin,
             onDelete = {},
             onMove = {},
+            onSync = {},
             onPin = {},
             onUnpin = {},
             onConfirm = {},
@@ -248,9 +265,11 @@ private fun TodoEditBarUnpinPreview() {
     ClassppTheme {
         TodoEditBar(
             moveEnabled = true,
+            syncEnabled = true,
             pinAction = PinAction.Unpin,
             onDelete = {},
             onMove = {},
+            onSync = {},
             onPin = {},
             onUnpin = {},
             onConfirm = {},
@@ -264,9 +283,11 @@ private fun TodoEditBarPinDisabledPreview() {
     ClassppTheme {
         TodoEditBar(
             moveEnabled = true,
+            syncEnabled = false,
             pinAction = PinAction.Disabled,
             onDelete = {},
             onMove = {},
+            onSync = {},
             onPin = {},
             onUnpin = {},
             onConfirm = {},
@@ -280,9 +301,11 @@ private fun TodoEditBarMoveDisabledPreview() {
     ClassppTheme {
         TodoEditBar(
             moveEnabled = false,
+            syncEnabled = false,
             pinAction = PinAction.Disabled,
             onDelete = {},
             onMove = {},
+            onSync = {},
             onPin = {},
             onUnpin = {},
             onConfirm = {},

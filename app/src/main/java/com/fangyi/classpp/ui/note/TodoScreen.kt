@@ -172,7 +172,9 @@ private val SectionSpacing = 20.dp
  * [enterTodoEdit]）：顶栏经 AnimatedContent 换场为编辑顶栏（[TodoEditBar]，删除/移动/
  * 同步/置顶（只选中已置顶待办时切「取消」）/确认，规格与动画逐项对齐课表编辑顶栏，
  * Motion.EditMillis + Standard），删除/置顶/取消置顶/移动批量作用于选中待办并即时落库
- *（移动经 [GroupPickSheet] 点选目标分组），
+ *（移动经 [GroupPickSheet] 点选目标分组），「同步」把所选待办整批写入系统日历
+ *（CalendarAddFlow 编排权限/账户选择/写入，与详情菜单的「添加到日历」同一条流程；
+ * 时间为「无」的条目跳过，一个可写的都没有时同步块置灰），
  * 「确认」/系统返回退出（不设取消，退出还原进编辑前的动作行展开状态）；
  * 卡片经 [NoteCard.selected] 转选中蓝框形态、分组头强制展开并把箭头换成「全选/取消
  * 全选」；编辑态下底部导航栏与渐隐遮罩下移出屏、侧滑与完成勾选停用。
@@ -397,8 +399,9 @@ fun TodoScreen(
         }
     }
 
-    // 「添加到日历」流程（详情菜单项唤起）：权限/列账户/写入/账户选择卡全在
-    // CalendarAddFlow 编排（与日程页详情共用同一套），这里取状态与总入口
+    // 「添加到日历」流程（详情菜单项「添加到日历」单条、编辑顶栏「同步」整批共用）：
+    // 权限/列账户/写入/账户选择卡全在 CalendarAddFlow 编排（与日程页详情共用同一套），
+    // 这里取状态与总入口
     val calendarAdd = rememberCalendarAddState()
 
     // 标签写回统一入口（分组浮层标签编辑态底栏触发）：标签库先落盘，待办侧回写随后——
@@ -586,6 +589,14 @@ fun TodoScreen(
     // 点击取消置顶；其余（全未置顶，或已置顶与未置顶混合）→ 显示「置顶」，点击整批置顶
     //（混合时未置顶的一并置顶、已置顶的保持不动）
     val pinAction = todoPinAction(todos, selectedTodoIds)
+    // 编辑顶栏「同步」：所选待办整批写入系统日历（权限/列账户/选择卡/写入全在
+    // CalendarAddFlow，与详情菜单的「添加到日历」同一条流程）。候选只含能产出事件的
+    // 条目（时间为「无」或没有日期的跳过，见 todoSyncCandidates）——候选为空时同步块
+    // 置灰；写入不改变列表内容，故完成后保持编辑态与选中集，结果 Toast 由流程统一弹
+    val syncCandidates = remember(todos, selectedTodoIds) {
+        todoSyncCandidates(todos, selectedTodoIds)
+    }
+    val onSyncSelected: () -> Unit = { calendarAdd.begin(syncCandidates) }
     // 编辑顶栏「移动」：唤起选择分组浮层（复用新建/编辑浮层的 GroupPickSheet，含「新建」），
     // 点选分组（null = 未分组）即把所选待办整批移动过去——只写 group 字段，其余不动
     //（置顶状态跟随，已置顶待办移动后仍在「已置顶」组；重复待办整系列生效，同删除/置顶
@@ -1099,12 +1110,14 @@ fun TodoScreen(
                 } else {
                     TodoEditBar(
                         moveEnabled = selectedTodoIds.isNotEmpty(),
+                        syncEnabled = syncCandidates.isNotEmpty(),
                         pinAction = pinAction,
                         onDelete = onDeleteSelected,
                         onMove = {
                             movePickMounted = true
                             movePickVisible = true
                         },
+                        onSync = onSyncSelected,
                         onPin = onPinSelected,
                         onUnpin = onUnpinSelected,
                         onConfirm = exitTodoEdit,
@@ -1228,8 +1241,9 @@ fun TodoScreen(
                     }
                 },
                 // 「添加到日历」（详情菜单项）：权限/账户选择/写入由 calendarAdd 编排；
-                // 传详情快照 detail，写入目标锁定点菜单那一刻的内容
-                onAddToCalendar = { calendarAdd.begin(detail) },
+                // 传详情快照 detail（单元素列表，批量入口见编辑顶栏「同步」），写入目标
+                // 锁定点菜单那一刻的内容
+                onAddToCalendar = { calendarAdd.begin(listOf(detail)) },
                 // 「归档」（详情菜单项）：落库后待办移入已归档页，本浮层随活跃列表反查
                 // 落空自动收起（同删除后详情的收场路径）；目标 id 同步显式清空——归档条目
                 // 取消归档后会重回活跃列表，残留 id 会让浮层凭空重新弹出；Err Toast 提示、
@@ -1249,8 +1263,9 @@ fun TodoScreen(
             )
         }
     }
-    // 日历账户选择卡：画在详情浮层之后（组合顺序即绘制顺序，盖在详情之上），
-    // 两段式挂载收口在 CalendarPickerHost
+    // 日历账户选择卡：详情菜单「添加到日历」（单条）与编辑顶栏「同步」（整批）共用；
+    // 画在详情浮层之后（组合顺序即绘制顺序，盖在详情之上），两段式挂载收口在
+    // CalendarPickerHost
     CalendarPickerHost(calendarAdd, hazeState = hazeState)
     // 编辑待办浮层：两段式挂载同详情，画在详情之后（组合顺序即绘制顺序）叠在详情之上。
     // editTargetId 是期望目标（空 = 关），editMounted 是挂载时的快照（表单初值只取这一次）；

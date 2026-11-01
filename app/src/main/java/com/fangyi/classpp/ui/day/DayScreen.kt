@@ -1644,8 +1644,9 @@ fun DayScreen(
                         }
                     },
                     // 「添加到日历」（详情菜单项）：权限/账户选择/写入由 calendarAdd 编排；
-                    // 传详情快照 detail，写入目标锁定点菜单那一刻的内容
-                    onAddToCalendar = { calendarAdd.begin(detail) },
+                    // 传详情快照 detail（单元素列表，流程本身按待办列表批量写入），
+                    // 写入目标锁定点菜单那一刻的内容
+                    onAddToCalendar = { calendarAdd.begin(listOf(detail)) },
                     // 「归档」（详情菜单项）：落库后待办移入已归档页，本浮层随活跃列表反查
                     // 落空自动收起（同待办页详情的收场路径）；目标 id 同步显式清空——归档
                     // 条目取消归档后会重回活跃列表，残留 id 会让浮层凭空重新弹出；

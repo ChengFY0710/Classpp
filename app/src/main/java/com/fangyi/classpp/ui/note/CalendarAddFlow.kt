@@ -22,7 +22,6 @@ import com.fangyi.classpp.data.calendar.CalendarAccount
 import com.fangyi.classpp.data.calendar.CalendarEventPlanner
 import com.fangyi.classpp.data.calendar.SystemCalendar
 import com.fangyi.classpp.data.model.Todo
-import com.fangyi.classpp.data.model.TodoTimeKind
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -30,8 +29,9 @@ import kotlinx.coroutines.withContext
 
 /**
  * 「添加到日历」流程的对外接口（由 [rememberCalendarAddState] 组装）：
- * - [begin]：总入口，交给 TodoDetailSheet 的 onAddToCalendar——运行时权限、列设备日历
- *   账户、单账户直写 / 多账户弹选择卡、写入与 Toast 全在此编排（宿主不再感知细节）；
+ * - [begin]：总入口，单个待办传单元素列表——运行时权限、列设备日历账户、单账户直写 /
+ *   多账户弹选择卡、写入与 Toast 全在此编排（宿主不再感知细节）。两个接入方：详情浮层的
+ *   「添加到日历」菜单项（单条）与待办编辑顶栏的「同步」（所选整批）；
  * - [visible] / [accounts] / [selectedId] 与 [onSelect] / [onConfirm] / [onDismiss] /
  *   [onDismissed]：账户选择卡的受控接线，由 [CalendarPickerHost] 消费——宿主只需在
  *   详情浮层**之后**组合它（组合顺序即绘制顺序，选择卡盖在详情之上）。
@@ -40,7 +40,7 @@ internal class CalendarAddState(
     val visible: Boolean,
     val accounts: List<CalendarAccount>,
     val selectedId: Long,
-    val begin: (Todo) -> Unit,
+    val begin: (List<Todo>) -> Unit,
     val onSelect: (Long) -> Unit,
     val onConfirm: (Long) -> Unit,
     val onDismiss: () -> Unit,
@@ -48,23 +48,27 @@ internal class CalendarAddState(
 )
 
 /**
- * 组装「添加到日历」流程（详情浮层菜单项 → 权限 → 列账户 → 选卡/直写，写入目标支持
- * 待办页 TodoScreen 与日程页 DayScreen 两个详情浮层共用）。纯状态与回调，无 UI——
- * 选择卡的组合与两段式挂载在 [CalendarPickerHost]。
+ * 组装「添加到日历」流程（接入方 → 权限 → 列账户 → 选卡/直写，写入目标支持待办页
+ * TodoScreen 与日程页 DayScreen 两个详情浮层，以及待办编辑顶栏的整批「同步」）。纯状态
+ * 与回调，无 UI——选择卡的组合与两段式挂载在 [CalendarPickerHost]。
  *
  * 流程口径：
- * - 时间为「无」的待办无可写入日历的时刻，详情菜单项已置灰（TodoDetailSheet 口径），
- *   [CalendarAddState.begin] 防御性不动作；
+ * - 入参是待办列表（详情菜单传单条）：时间为「无」或没有日期的待办产不出日历事件，
+ *   在 [CalendarAddState.begin] 里按 CalendarEventPlanner 同口径剔除，可写条目为空时
+ *   防御性不动作（详情菜单项与编辑顶栏同步块都已按同一口径置灰）；
  * - 权限 READ+WRITE_CALENDAR 一起请求（Manifest 已静态声明）：已授权直接进写入；
  *   未授权先记下待写快照再请求，全部授予后续跑流程，拒绝 Toast（下次点按再请求）；
- * - 写入待办用点菜单那一刻的详情快照（[CalendarAddState.begin] 的入参）：目标要跨过
- *   权限弹窗/选择卡两个可能漫长的中间态，不随仓库回流换（期间待办被删则写入的仍是
- *   当时内容，属可接受口径）；
+ * - 写入待办用点按那一刻的快照（[CalendarAddState.begin] 的入参）：目标要跨过权限弹窗/
+ *   选择卡两个可能漫长的中间态，不随仓库回流换（期间待办被删则写入的仍是当时内容，
+ *   属可接受口径）；
  * - 设备单账户跳过选择直接写入；多账户预选上次写入的账户（[CalendarPreferences]，
  *   无记录或账户已随系统侧消失则选第一个）弹选择卡；无可用账户 Toast 提示；
+ * - 整条链路（权限 → 列账户 → 选择卡 → 写入）由在途闸门串行化：编辑顶栏的同步块点完
+ *   不会消失，连点若无闸门会重复写入同一批事件；
  * - SystemCalendar 是阻塞 I/O 的无状态封装，调用点现造现用（包 Dispatchers.IO）；
- *   成功记下账户 id 并按事件数 Toast（多天待办每天一个事件），错误统一映射（置灰
- *   口径保证不会触发 CalendarNoTime，权限类单独给文案）。
+ *   整批草稿一次写入，成功记下账户 id 并按事件数 Toast（多天待办每天一个事件，全部
+ *   待办的事件数合计），错误统一映射（可写口径保证不会触发 CalendarNoTime，权限类
+ *   单独给文案）。
  */
 @Composable
 internal fun rememberCalendarAddState(): CalendarAddState {
@@ -83,36 +87,43 @@ internal fun rememberCalendarAddState(): CalendarAddState {
     var pickerAccounts by remember { mutableStateOf(emptyList<CalendarAccount>()) }
     var pickerSelectedId by remember { mutableStateOf(-1L) }
     // 待写快照：见类 KDoc；选择卡退场或单账户直写后清掉，不留悬空引用
-    var pendingTodo by remember { mutableStateOf<Todo?>(null) }
+    var pendingTodos by remember { mutableStateOf(emptyList<Todo>()) }
+    // 在途闸门：权限弹窗/列账户/选择卡/写入全链路只允许一条在跑（编辑顶栏的同步块
+    // 点完不消失，连点必须不重复写入）；取消选择、权限拒绝、写入结束或异常都释放
+    var inFlight by remember { mutableStateOf(false) }
 
-    // 写入本体：待办 → 事件草稿（CalendarEventPlanner 纯函数）→ ContentResolver 插入
-    // 所选日历；成功记下账户 id（下次多账户预选）并按事件数 Toast
-    val insertCalendarEvents: (Todo, Long) -> Unit = { todo, calendarId ->
+    // 写入本体：待办列表 → 事件草稿（CalendarEventPlanner 纯函数，多天待办每天一个事件）
+    // → ContentResolver 整批插入所选日历；成功记下账户 id（下次多账户预选）并按事件数 Toast
+    val insertCalendarEvents: (List<Todo>, Long) -> Unit = { todos, calendarId ->
         scope.launch {
-            when (
-                val result = withContext(Dispatchers.IO) {
-                    SystemCalendar(context.contentResolver)
-                        .insertEvents(CalendarEventPlanner.drafts(todo), calendarId)
+            try {
+                val drafts = todos.flatMap { CalendarEventPlanner.drafts(it) }
+                when (
+                    val result = withContext(Dispatchers.IO) {
+                        SystemCalendar(context.contentResolver).insertEvents(drafts, calendarId)
+                    }
+                ) {
+                    is TodoReadResult.Ok -> {
+                        CalendarPreferences.saveLastCalendarId(context, calendarId)
+                        AppToasts.show(context, String.format(successTemplate, result.value.size))
+                    }
+                    is TodoReadResult.Err -> AppToasts.show(
+                        context,
+                        if (result.error == TodoError.CalendarAccessDenied) {
+                            accessDeniedMessage
+                        } else {
+                            insertFailedMessage
+                        },
+                    )
                 }
-            ) {
-                is TodoReadResult.Ok -> {
-                    CalendarPreferences.saveLastCalendarId(context, calendarId)
-                    AppToasts.show(context, String.format(successTemplate, result.value.size))
-                }
-                is TodoReadResult.Err -> AppToasts.show(
-                    context,
-                    if (result.error == TodoError.CalendarAccessDenied) {
-                        accessDeniedMessage
-                    } else {
-                        insertFailedMessage
-                    },
-                )
+            } finally {
+                inFlight = false
             }
         }
     }
 
     // 列出设备日历账户并分流（口径见本函数 KDoc）
-    val startCalendarInsert: (Todo) -> Unit = { todo ->
+    val startCalendarInsert: (List<Todo>) -> Unit = { todos ->
         scope.launch {
             val accounts = when (
                 val result = withContext(Dispatchers.IO) {
@@ -120,6 +131,8 @@ internal fun rememberCalendarAddState(): CalendarAddState {
                 }
             ) {
                 is TodoReadResult.Err -> {
+                    pendingTodos = emptyList()
+                    inFlight = false
                     AppToasts.show(
                         context,
                         if (result.error == TodoError.CalendarAccessDenied) {
@@ -133,12 +146,14 @@ internal fun rememberCalendarAddState(): CalendarAddState {
                 is TodoReadResult.Ok -> result.value
             }
             if (accounts.isEmpty()) {
+                pendingTodos = emptyList()
+                inFlight = false
                 AppToasts.show(context, noCalendarMessage)
                 return@launch
             }
             if (accounts.size == 1) {
-                insertCalendarEvents(todo, accounts.first().id)
-                pendingTodo = null
+                pendingTodos = emptyList()
+                insertCalendarEvents(todos, accounts.first().id)
             } else {
                 val lastId = CalendarPreferences.loadLastCalendarId(context)
                 pickerSelectedId = accounts.firstOrNull { it.id == lastId }?.id
@@ -149,32 +164,46 @@ internal fun rememberCalendarAddState(): CalendarAddState {
         }
     }
 
-    // 日历运行时权限（READ+WRITE 一起请求）：全部授予续跑写入流程（待写快照在点菜单
+    // 日历运行时权限（READ+WRITE 一起请求）：全部授予续跑写入流程（待写快照在点按
     // 那一刻记下），拒绝则 Toast
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { grants ->
         if (grants.values.all { it }) {
-            pendingTodo?.let(startCalendarInsert)
+            if (pendingTodos.isNotEmpty()) {
+                startCalendarInsert(pendingTodos)
+            } else {
+                inFlight = false
+            }
         } else {
+            pendingTodos = emptyList()
+            inFlight = false
             AppToasts.show(context, deniedMessage)
         }
     }
 
-    val begin: (Todo) -> Unit = { todo ->
-        if (todo.timeKind != TodoTimeKind.None) {
-            val needed = arrayOf(
-                Manifest.permission.READ_CALENDAR,
-                Manifest.permission.WRITE_CALENDAR,
-            )
-            val granted = needed.all {
-                ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-            }
-            if (granted) {
-                startCalendarInsert(todo)
-            } else {
-                pendingTodo = todo
-                permissionLauncher.launch(needed)
+    val begin: (List<Todo>) -> Unit = { todos ->
+        if (!inFlight) {
+            // 无时间（或没有日期）的待办产不出事件：按 CalendarEventPlanner 同口径剔除，
+            // 一个可写的都没有就不动作——详情菜单项与编辑顶栏同步块已置灰，这里是兜底
+            val syncable = todos.filter { CalendarEventPlanner.drafts(it).isNotEmpty() }
+            if (syncable.isNotEmpty()) {
+                // 待写快照在点按这一刻落地（不论权限是否已授予）：多账户选择卡也靠它
+                // 找回本批待办，不依赖「刚申请过权限」那条分支
+                pendingTodos = syncable
+                inFlight = true
+                val needed = arrayOf(
+                    Manifest.permission.READ_CALENDAR,
+                    Manifest.permission.WRITE_CALENDAR,
+                )
+                val granted = needed.all {
+                    ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+                }
+                if (granted) {
+                    startCalendarInsert(syncable)
+                } else {
+                    permissionLauncher.launch(needed)
+                }
             }
         }
     }
@@ -187,10 +216,19 @@ internal fun rememberCalendarAddState(): CalendarAddState {
         onSelect = { pickerSelectedId = it },
         onConfirm = { calendarId ->
             pickerVisible = false
-            pendingTodo?.let { todo -> insertCalendarEvents(todo, calendarId) }
+            val todos = pendingTodos
+            if (todos.isNotEmpty()) {
+                insertCalendarEvents(todos, calendarId)
+            } else {
+                inFlight = false
+            }
         },
-        onDismiss = { pickerVisible = false },
-        onDismissed = { pendingTodo = null },
+        // 用户取消/遮罩/返回关闭选择卡：当场释放闸门（待写快照在退场播完后清）
+        onDismiss = {
+            pickerVisible = false
+            inFlight = false
+        },
+        onDismissed = { pendingTodos = emptyList() },
     )
 }
 
@@ -199,6 +237,10 @@ internal fun rememberCalendarAddState(): CalendarAddState {
  * [CalendarAccountPickerSheet]）。宿主在详情浮层**之后**组合本组件（组合顺序即绘制
  * 顺序，选择卡盖在详情之上）；两段式挂载在此收口——[CalendarAddState.visible] 只
  * 请求显示/关闭，退场播完 onDismissed 才卸载。
+ *
+ * 卸载必须由本宿主完成（退场回调里把挂载标志置假）：[CalendarAccountPickerSheet] 滑出后
+ * 外层仍是一层全屏可点击遮罩（滑到全隐只是画得透明，点击照吞），漏掉卸载会让页面
+ * 从此点不动。
  */
 @Composable
 internal fun CalendarPickerHost(
@@ -215,7 +257,11 @@ internal fun CalendarPickerHost(
             onSelect = state.onSelect,
             onConfirm = state.onConfirm,
             onDismiss = state.onDismiss,
-            onDismissed = state.onDismissed,
+            onDismissed = {
+                // 先清待写快照（流程自己的收尾），再撤掉挂载——顺序无依赖，但两者都不能漏
+                state.onDismissed()
+                pickerMounted = false
+            },
             hazeState = hazeState,
         )
     }
