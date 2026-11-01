@@ -14,6 +14,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -141,6 +142,7 @@ import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.motion.TiltParallaxState
 import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rememberDeviceCornerRadius
 import com.fangyi.classpp.ui.motion.rememberTiltParallax
 import com.fangyi.classpp.ui.motion.sharePointerInputWithSiblings
@@ -1438,6 +1440,8 @@ fun DayScreen(
             if (showTopBar) {
                 DayTopBar(
                     title = topBarTitle,
+                    // AI 对话入口：动作待接入
+                    onChatClick = {},
                     height = statusBarDp.dp + DayTopBarRowHeight + DayTopBarGap,
                     contentAlpha = {
                         DayGeometry.frame(
@@ -2000,7 +2004,7 @@ private fun DayImageLayer(
 }
 
 /**
- * 日程页顶栏：整条渐变模糊 + 单行日期标题。
+ * 日程页顶栏：整条渐变模糊 + 单行日期标题 + 行尾 AI 对话入口。
  *
  * 背景与内容拆成两层：背景（页面底色 + Haze）固定在顶栏位置，只随
  * [backgroundAlpha] 淡入淡出；内容层独立使用 [contentAlpha] 与 [translationYDp]，
@@ -2011,6 +2015,7 @@ private fun DayImageLayer(
 @Composable
 private fun DayTopBar(
     title: String,
+    onChatClick: () -> Unit,
     height: Dp,
     contentAlpha: () -> Float,
     backgroundAlpha: () -> Float,
@@ -2058,6 +2063,32 @@ private fun DayTopBar(
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                 )
+                Spacer(Modifier.weight(1f))
+                // AI 对话入口：图标 30dp，右缘钉在行内容区右缘（屏幕右 33dp，与标题左
+                // 33dp 对称），随行垂直居中即与标题同一条中线。不用 M3 IconButton——
+                // 48dp 最小触控区会把图标顶成居中放置，右缘离 33dp 基线 9dp；故手写
+                // 触控区（触控盒 48dp、图标贴右缘），按压反馈画在图标自身的圆上（同
+                // 课表顶栏小图标钮：CircleShape + 放大 1.10）
+                val chatPress = remember { MutableInteractionSource() }
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clickable(
+                            interactionSource = chatPress,
+                            indication = null,
+                            onClick = onChatClick,
+                        ),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_chat_multiple),
+                        contentDescription = stringResource(R.string.cd_day_chat),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .size(30.dp)
+                            .pressFeedback(chatPress, CircleShape, scale = 1.10f),
+                    )
+                }
             }
             Spacer(Modifier.height(DayTopBarGap))
         }
