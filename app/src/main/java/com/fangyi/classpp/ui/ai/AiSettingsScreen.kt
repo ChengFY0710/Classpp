@@ -1,5 +1,6 @@
 package com.fangyi.classpp.ui.ai
 
+import android.content.pm.ApplicationInfo
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +72,9 @@ fun AiSettingsScreen(
     val saveFailedMessage = stringResource(R.string.ai_save_failed)
     val keyRequiredMessage = stringResource(R.string.ai_settings_key_required)
     val secureUnavailableMessage = stringResource(R.string.ai_settings_secure_unavailable)
+    // Keystore 可用性是响应式状态：读取/保存 Key 后仓库会同步，横幅随之出现/消失
+    val secureAvailable by aiChatRepository?.secureAvailable?.collectAsState()
+        ?: remember { mutableStateOf(true) }
 
     // 表单快照：挂载时装载一次（浮层生命周期内不随外部变化回写）
     var connection by remember { mutableStateOf(AiConnection()) }
@@ -131,7 +136,7 @@ fun AiSettingsScreen(
                     onDismiss()
                 }
                 // Key 失败优先按真实原因提示（Keystore 不可用 ≠ 没填）
-                !keySaved && !repository.secureAvailable -> {
+                !keySaved && !repository.secureAvailable.value -> {
                     AppToasts.show(context, secureUnavailableMessage)
                 }
                 !keySaved -> AppToasts.show(context, keyRequiredMessage)
@@ -170,7 +175,13 @@ fun AiSettingsScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.padding(bottom = 16.dp),
         ) {
-            for (preset in AiProviderPresets.all) {
+            // release 构建隐藏必然失败的明文预设（ollama 的 http://localhost），
+            // DEBUG 构建保留以便本地联调
+            val debuggable = remember(context) {
+                context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+            }
+            val presets = remember(debuggable) { AiProviderPresets.available(debuggable) }
+            for (preset in presets) {
                 val selected = connection.providerId == preset.id
                 Box(
                     modifier = Modifier
@@ -259,7 +270,6 @@ fun AiSettingsScreen(
                 PasswordVisualTransformation()
             },
         )
-        val secureAvailable = aiChatRepository?.secureAvailable ?: true
         if (!secureAvailable) {
             SheetInfoBanner(text = stringResource(R.string.ai_settings_secure_unavailable))
         }

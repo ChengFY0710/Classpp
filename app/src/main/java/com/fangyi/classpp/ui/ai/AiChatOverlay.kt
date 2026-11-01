@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
@@ -37,7 +38,6 @@ import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiChatRole
 import com.fangyi.classpp.data.ai.AiDraftStatus
-import com.fangyi.classpp.data.ai.AiException
 import com.fangyi.classpp.data.ai.AiMessageDrafts
 import com.fangyi.classpp.data.ai.AiTodoDraftMapping
 import com.fangyi.classpp.data.ai.AiTodoMapper
@@ -49,8 +49,6 @@ import com.fangyi.classpp.ui.note.NewTodoSheet
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /** 草稿编辑的目标：消息下标 + 草稿下标 + 映射出的 Todo（编辑器初值快照） */
@@ -67,8 +65,9 @@ private data class AiDraftEditEntry(
  * 消息列表走浮层自带滚动列（onScrollStateReady 接管 ScrollState 做自动滚底），
  * 输入栏钉底（bottomScrim = false，渐变与导航栏留白自绘并随键盘上移）。
  *
- * - 发送中输入禁用、发送键变停止键：停止 = 取消本浮层持有的协程 Job，半截回复由
- *   仓库标记 interrupted 保留（重试走 [AiChatRepository.retryLast]）；
+ * - 发送中输入禁用、发送键变停止键：发送 Job 由 [AiChatRepository] 自己的 scope 驱动，
+ *   收起浮层/旋转屏幕不会中断流；停止 = [AiChatRepository.cancelSending]，半截回复由
+ *   仓库标记 interrupted 保留（重试走 [AiChatRepository.retryInBackground]）；
  * - 草稿卡「编辑」打开预填的 [NewTodoSheet]（existing 整体回填），对话浮层随之
  *   covered 后退，两层动效由 OverlaySheet 的 covered 机制同帧衔接；
  * - AI 设置独立浮层由宿主（DayScreen）挂载，本浮层只经 [onOpenSettings] 请求打开。
@@ -106,7 +105,6 @@ fun AiChatOverlay(
         ?: remember { mutableStateOf(emptyList<com.fangyi.classpp.data.model.TagEntry>()) }
 
     var input by rememberSaveable { mutableStateOf("") }
-    var sendJob by remember { mutableStateOf<Job?>(null) }
     // 草稿编辑两态口径（同 DayScreen 的 todoEdit）：entry 是期望目标，mounted 是挂载快照
     var draftEditEntry by remember { mutableStateOf<AiDraftEditEntry?>(null) }
     var draftEditMounted by remember { mutableStateOf<Todo?>(null) }
@@ -121,9 +119,12 @@ fun AiChatOverlay(
         }
     }
 
-    // 自动滚底：新消息（条数变化）与流式增量（尾部内容长度变化）都把滚动列压到底
+    // 自动滚底：新消息（条数变化）与流式增量（尾部内容长度变化）都把滚动列压到底。
+    // 等下一帧再滚：LaunchedEffect 在布局前执行，此时 maxValue 还是上一帧的值，
+    // 最后一块较大的增量会差一截滚不到底。
     LaunchedEffect(messages.size, messages.lastOrNull()?.content?.length, visible) {
         if (!visible) return@LaunchedEffect
+        withFrameNanos { }
         chatScroll.value?.let { it.scrollTo(it.maxValue) }
     }
 
@@ -134,31 +135,16 @@ fun AiChatOverlay(
         if (text.isBlank() || sending) return
         input = ""
         keyboard?.hide()
-        sendJob = scope.launch {
-            try {
-                repository.send(text)
-            } catch (_: CancellationException) {
-                // 停止：半截回复由仓库落盘保留，UI 无需处理
-            } catch (_: AiException) {
-                // 失败：lastError 已发布，错误条渲染
-            }
-        }
+        // Job 归仓库所有：收起浮层/旋转不中断；停止走 cancelSending
+        repository.sendInBackground(text)
     }
 
     fun stopSending() {
-        sendJob?.cancel()
-        sendJob = null
+        aiChatRepository?.cancelSending()
     }
 
     fun retryLast() {
-        val repository = aiChatRepository ?: return
-        sendJob = scope.launch {
-            try {
-                repository.retryLast()
-            } catch (_: CancellationException) {
-            } catch (_: AiException) {
-            }
-        }
+        aiChatRepository?.retryInBackground()
     }
 
     // 分组整表写回（草稿编辑器里选分组浮层的「新建」用），与 DayScreen 的 commitGroups 同规格
@@ -195,9 +181,11 @@ fun AiChatOverlay(
             val todosToSave = savable.mapNotNull { index -> mappings.getOrNull(index)?.todo }
             when (val result = repository.addTodos(todosToSave)) {
                 is TodoReadResult.Ok -> {
-                    for (index in savable) {
-                        chatRepository.updateDraftStatus(messageIndex, index, AiDraftStatus.Saved)
-                    }
+                    // 批量回写：一次内存更新 + 一次落盘（N 条不再重写 N 次整个文件）
+                    chatRepository.updateDraftStatuses(
+                        messageIndex,
+                        savable.associateWith { AiDraftStatus.Saved },
+                    )
                 }
                 is TodoReadResult.Err -> AppToasts.show(context, saveFailedMessage)
             }
@@ -274,8 +262,10 @@ fun AiChatOverlay(
                             val mappings = remember(index, draftsState, knownGroups, knownTags) {
                                 AiTodoMapper.map(draftsState.drafts, knownGroups, knownTags)
                             }
-                            // 勾选集：Pending 且可直接保存（缺名称会拖垮整批 addTodos）的行全选
-                            var selected by remember(index, draftsState) {
+                            // 勾选集：Pending 且可直接保存（缺名称会拖垮整批 addTodos）的行全选。
+                            // 只在首次组合初始化；状态回写后仅剔除已处置行——否则用户手工取消
+                            // 的勾选会被「全部 Pending 重选」覆盖。
+                            var selected by remember(index) {
                                 mutableStateOf(
                                     draftsState.statuses
                                         .withIndex()
@@ -284,6 +274,13 @@ fun AiChatOverlay(
                                         .map { it.index }
                                         .toSet(),
                                 )
+                            }
+                            LaunchedEffect(draftsState) {
+                                selected = selected.filter { draftIndex ->
+                                    draftsState.statuses.getOrElse(draftIndex) {
+                                        AiDraftStatus.Pending
+                                    } == AiDraftStatus.Pending
+                                }.toSet()
                             }
                             Spacer(Modifier.padding(2.dp))
                             AiChatDraftCard(

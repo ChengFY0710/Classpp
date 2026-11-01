@@ -23,6 +23,16 @@ object AiPromptBuilder {
     /** 注入的待办行数上限（token 预算控制；未完成、非删除、非归档里取最近的） */
     const val MAX_TODO_LINES = 30
 
+    /**
+     * 待办草稿的 JSON 字段契约（单行示例）。system prompt 与仓库的草稿修复重试
+     * 共用同一份文本——修复请求里说「严格遵循格式」必须真的有声明可循。
+     */
+    internal const val TODO_JSON_SHAPE: String =
+        """{"todos":[{"name":"...","dates":["yyyy-MM-dd"],"startTime":"HH:mm",""" +
+            """"endTime":"HH:mm","deadlineDate":"yyyy-MM-dd","deadlineTime":"HH:mm",""" +
+            """"urgency":"Critical|High|Medium|Low","tags":["..."],"group":"...",""" +
+            """"note":"...","steps":["..."],"location":"..."}]}"""
+
     private val WEEKDAY_ZH = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
     private val URGENCY_ZH = mapOf(
@@ -84,12 +94,7 @@ object AiPromptBuilder {
         appendLine("[可选标签] ${tags.ifEmpty { listOf("（无）") }.joinToString("、")}")
         appendLine()
         appendLine("当用户想添加待办时，输出一个 ```json 代码块，格式（字段都可省略）：")
-        appendLine(
-            """{"todos":[{"name":"...","dates":["yyyy-MM-dd"],"startTime":"HH:mm",""" +
-                """"endTime":"HH:mm","deadlineDate":"yyyy-MM-dd","deadlineTime":"HH:mm",""" +
-                """"urgency":"Critical|High|Medium|Low","tags":["..."],"group":"...",""" +
-                """"note":"...","steps":["..."],"location":"..."}]}""",
-        )
+        appendLine(TODO_JSON_SHAPE)
         appendLine("规则：")
         appendLine("- 日期从今天的日期与星期推算（含“下周三”这类相对说法），不要编造具体日期；")
         appendLine("- group/tag 只用【可选分组】【可选标签】里出现的值，没有匹配就省略该字段；")

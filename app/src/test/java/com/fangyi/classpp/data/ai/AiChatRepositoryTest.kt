@@ -10,6 +10,9 @@ import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -37,7 +40,10 @@ class AiChatRepositoryTest {
     // ---------- fakes ----------
 
     private class FakeAiChatStore : AiChatStore {
+        @Volatile
         var file: AiChatFile = AiChatFile()
+
+        @Volatile
         var saveCount = 0
 
         override fun load(): LoadOutcome<AiChatFile> =
@@ -54,11 +60,31 @@ class AiChatRepositoryTest {
         }
     }
 
+    /** 落盘阻塞到放行：用于「取消/关闭时落盘仍要完成」的用例 */
+    private class BlockingSaveStore : AiChatStore {
+        private val release = CountDownLatch(1)
+        val saveStarted = CountDownLatch(1)
+
+        @Volatile
+        var file: AiChatFile = AiChatFile()
+
+        override fun load(): LoadOutcome<AiChatFile> = LoadOutcome.Loaded(file, LoadIssue.None)
+
+        override fun save(file: AiChatFile): StoreResult {
+            saveStarted.countDown()
+            release.await(5, TimeUnit.SECONDS)
+            this.file = file
+            return StoreResult.Ok
+        }
+
+        fun releaseSave() = release.countDown()
+    }
+
     private class FakeAiSettingsStore(
         var connection: AiConnection = AiConnection(baseUrl = "https://api.example.com/v1", model = "test"),
         var apiKey: String? = "sk-test",
+        override var secureAvailable: Boolean = true,
     ) : AiSettingsStore {
-        override val secureAvailable: Boolean get() = true
         override fun loadConnection(): AiConnection = connection
         override fun saveConnection(connection: AiConnection): Boolean {
             this.connection = connection
@@ -141,6 +167,7 @@ class AiChatRepositoryTest {
         store: FakeAiChatStore = FakeAiChatStore(),
         settings: FakeAiSettingsStore = FakeAiSettingsStore(),
         transport: FakeAiTransport,
+        nowMillis: () -> Long = System::currentTimeMillis,
     ): AiChatRepository {
         val repo = AiChatRepository(
             store = store,
@@ -148,6 +175,7 @@ class AiChatRepositoryTest {
             client = AiClient(transport),
             contextProvider = { AiChatContext() },
             clock = Clock { IsoDate.of(2026, 11, 1) },
+            nowMillis = nowMillis,
         )
         runBlocking { repo.bootstrap() }
         return repo
@@ -180,16 +208,18 @@ class AiChatRepositoryTest {
     }
 
     @Test
-    fun `send without config throws auth and appends nothing`() = runBlocking {
+    fun `send without config appends nothing and leaves guidance state`() = runBlocking {
         val repo = repository(
             settings = FakeAiSettingsStore(apiKey = null),
             transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
         )
 
-        val exception = runCatching { repo.send("hi") }.exceptionOrNull()
-        assertTrue(exception is AiException)
-        assertEquals(AiError.Auth, (exception as AiException).error)
+        // 未配置：静默返回（UI 渲染引导态），不再向调用方抛 AiException
+        repo.send("hi")
+
+        assertFalse(repo.configured.value)
         assertTrue(repo.messages.value.isEmpty())
+        assertFalse(repo.sending.value)
     }
 
     @Test
@@ -448,5 +478,132 @@ class AiChatRepositoryTest {
         assertFalse(persisted.interrupted) // 正文完整，不应标中断
         assertNull(persisted.drafts) // 修复没有结果，草稿卡不挂
         assertFalse(repo.sending.value)
+
+        // 修复请求自带格式声明：原文只说「遵循之前声明的格式」，模型手里并没有声明
+        assertEquals(listOf("system", "user", "user"), rolesOf(transport.opened[1].jsonBody))
+        assertTrue(turnsOf(transport.opened[1].jsonBody).first().second.contains("\"todos\""))
+    }
+
+    // ---------- 批次 3：后台续流 / checkpoint / 批量状态 / 健壮性 ----------
+
+    @Test
+    fun `background send keeps streaming after caller scope is cancelled`() = runBlocking {
+        val store = FakeAiChatStore()
+        val repo = repository(
+            store = store,
+            transport = FakeAiTransport(
+                ScriptedResponse(listOf(sse("后台"), sse("完成"), "data: [DONE]")),
+            ),
+        )
+        val uiScope = CoroutineScope(SupervisorJob())
+
+        repo.sendInBackground("hi")
+        uiScope.cancel() // 模拟收起浮层 / Activity 重建
+
+        withTimeout(5000) {
+            while (repo.sending.value || repo.messages.value.size < 2) delay(10)
+        }
+
+        val last = repo.messages.value.last()
+        assertEquals("后台完成", last.content)
+        assertFalse(last.interrupted)
+        assertEquals("后台完成", store.file.messages.last().content)
+    }
+
+    @Test
+    fun `cancelSending stops background stream and keeps partial`() = runBlocking {
+        val response = ScriptedResponse(listOf(sse("前半")))
+        val store = FakeAiChatStore()
+        val repo = repository(store = store, transport = FakeAiTransport(response))
+
+        repo.sendInBackground("hi")
+        withTimeout(5000) {
+            while (repo.messages.value.lastOrNull()?.content?.contains("前半") != true) delay(10)
+            repo.cancelSending()
+            response.gate.countDown()
+            while (repo.sending.value) delay(10)
+        }
+
+        val last = repo.messages.value.last()
+        assertEquals("前半", last.content)
+        assertTrue(last.interrupted)
+        assertEquals("前半", store.file.messages.last().content)
+    }
+
+    @Test
+    fun `updateDraftStatuses persists the whole batch once`() = runBlocking {
+        val store = FakeAiChatStore()
+        val reply = "草稿：\n```json\n" +
+            """{"todos":[{"name":"甲"},{"name":"乙"}]}""" +
+            "\n```"
+        val repo = repository(
+            store = store,
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+        )
+        repo.send("添加两个待办")
+        assertEquals(2, repo.messages.value.last().drafts!!.drafts.size)
+        val before = store.saveCount
+
+        repo.updateDraftStatuses(1, mapOf(0 to AiDraftStatus.Saved, 1 to AiDraftStatus.Dismissed))
+
+        assertEquals(before + 1, store.saveCount)
+        assertEquals(
+            listOf(AiDraftStatus.Saved, AiDraftStatus.Dismissed),
+            store.file.messages[1].drafts!!.statuses,
+        )
+    }
+
+    @Test
+    fun `long stream checkpoints partial reply before it finishes`() = runBlocking {
+        var tick = 0L
+        val response = ScriptedResponse(listOf(sse("部分"), sse("内容"), sse("片段")))
+        val store = FakeAiChatStore()
+        val repo = repository(
+            store = store,
+            transport = FakeAiTransport(response),
+            nowMillis = { tick += 1_000; tick },
+        )
+
+        repo.sendInBackground("hi")
+        withTimeout(5000) {
+            // 流仍阻塞在 gate（未收到 [DONE]），store 里已由 checkpoint 留下半截
+            while (store.file.messages.lastOrNull()?.content?.contains("部分内容") != true) delay(10)
+        }
+        assertTrue(repo.sending.value)
+
+        response.gate.countDown()
+        withTimeout(5000) { while (repo.sending.value) delay(10) }
+    }
+
+    @Test
+    fun `secureAvailable state follows store availability`() = runBlocking {
+        val repo = repository(
+            settings = FakeAiSettingsStore(secureAvailable = false),
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+
+        assertFalse(repo.secureAvailable.value)
+    }
+
+    @Test
+    fun `clearHistory persists even when caller is cancelled mid-save`() = runBlocking {
+        val store = BlockingSaveStore()
+        val repo = AiChatRepository(
+            store = store,
+            settings = FakeAiSettingsStore(),
+            client = AiClient(FakeAiTransport(ScriptedResponse(listOf("data: [DONE]")))),
+            contextProvider = { AiChatContext() },
+            clock = Clock { IsoDate.of(2026, 11, 1) },
+        )
+        repo.bootstrap()
+
+        val job = launch { repo.clearHistory() }
+        withTimeout(5000) { while (store.saveStarted.count != 0L) delay(10) }
+        job.cancel()
+        store.releaseSave()
+        runCatching { job.join() }
+
+        assertTrue(repo.messages.value.isEmpty())
+        assertTrue(store.file.messages.isEmpty())
     }
 }

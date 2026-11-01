@@ -93,4 +93,14 @@ class AiProviderPresetsTest {
         assertTrue(AiProviderPresets.byId("custom").requiresManualModel)
         assertTrue(AiProviderPresets.all.none { it.id == "deepseek" && it.requiresManualModel })
     }
+
+    @Test
+    fun `ollama preset is debug only but still resolvable`() {
+        // 发布版隐藏必然失败的明文预设；DEBUG 保留以便本地联调
+        assertTrue(AiProviderPresets.available(debuggable = true).any { it.id == "ollama" })
+        assertTrue(AiProviderPresets.available(debuggable = false).none { it.id == "ollama" })
+        assertTrue(AiProviderPresets.available(debuggable = false).any { it.id == "deepseek" })
+        // 已有配置仍能解析，不因下架变成 custom
+        assertEquals("ollama", AiProviderPresets.byId("ollama").id)
+    }
 }
