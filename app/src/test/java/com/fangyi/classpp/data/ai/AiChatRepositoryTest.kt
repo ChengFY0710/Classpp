@@ -606,4 +606,43 @@ class AiChatRepositoryTest {
         assertTrue(repo.messages.value.isEmpty())
         assertTrue(store.file.messages.isEmpty())
     }
+
+    @Test
+    fun `clearHistory during active send persists empty after in-flight checkpoint`() = runBlocking {
+        val store = BlockingSaveStore()
+        store.file = AiChatFile(
+            messages = listOf(
+                AiChatMessage(role = AiChatRole.User, content = "旧问题"),
+                AiChatMessage(role = AiChatRole.Assistant, content = "旧回答"),
+            ),
+        )
+        var tick = 0L
+        // 两个增量后流挂起：节流时钟让第二个增量触发 checkpoint，其落盘阻塞在 store 里
+        val response = ScriptedResponse(listOf(sse("部分"), sse("内容")))
+        val repo = AiChatRepository(
+            store = store,
+            settings = FakeAiSettingsStore(),
+            client = AiClient(FakeAiTransport(response)),
+            contextProvider = { AiChatContext() },
+            clock = Clock { IsoDate.of(2026, 11, 1) },
+            nowMillis = { tick += 1_000; tick },
+        )
+        repo.bootstrap()
+
+        repo.sendInBackground("新问题")
+        withTimeout(5000) { store.saveStarted.await() } // checkpoint 的旧快照落盘已在途并阻塞
+
+        // send 全程持有主 mutex：清空必须排队，落盘顺序 = checkpoint → 失败收口 → 清空
+        val clearJob = launch { repo.clearHistory() }
+        store.releaseSave()
+        response.gate.countDown() // EOF 无 [DONE]：send 按失败收口（保留半截 + persist）
+        withTimeout(5000) {
+            clearJob.join()
+            while (repo.sending.value) delay(10)
+        }
+
+        // 空文件最后落盘：在途/排队的落盘（含 checkpoint 旧快照）不会把刚清空的旧历史写回磁盘
+        assertTrue(repo.messages.value.isEmpty())
+        assertTrue(store.file.messages.isEmpty())
+    }
 }

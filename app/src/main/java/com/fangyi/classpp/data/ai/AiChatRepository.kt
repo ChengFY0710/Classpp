@@ -316,13 +316,17 @@ class AiChatRepository internal constructor(
         }
     }
 
-    /** 清空对话历史（设置页「清空对话历史」）；落盘失败不回滚内存（历史可弃） */
+    /**
+     * 清空对话历史（设置页「清空对话历史」）；落盘失败不回滚内存（历史可弃）。
+     * 走 [persist] 而非直接 store.save：所有落盘在 [persistMutex] 上串行——在途
+     * checkpoint 的旧快照不会晚于清空落盘，把刚清空的旧历史写回磁盘。
+     */
     suspend fun clearHistory() {
         mutex.withLock {
             _messages.value = emptyList()
             _lastError.value = null
             // 用户已两次确认：落盘不能被浮层关闭取消，否则重启后旧历史回归
-            withContext(Dispatchers.IO + NonCancellable) { store.save(AiChatFile()) }
+            withContext(NonCancellable) { persist() }
         }
     }
 
