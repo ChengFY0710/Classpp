@@ -8,7 +8,7 @@ import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.data.model.newUuid
 
 /** 草稿里没解析出来的字段；UI 在草稿卡上标注「待人工修正」 */
-enum class AiDraftField { Dates, PeriodTime, Deadline }
+enum class AiDraftField { Name, Dates, PeriodTime, Deadline }
 
 /**
  * 一条草稿的映射结果。
@@ -20,12 +20,20 @@ data class AiTodoDraftMapping(
     val draft: AiTodoDraft,
     val todo: Todo,
     val invalidFields: Set<AiDraftField>,
-)
+) {
+    /**
+     * 是否可直接批量落库：只有**缺名称**是硬拦截（TodoValidator.BlankName 会让
+     * `addTodos` 整批失败、零落盘），其余字段已有安全默认值，允许保存后再补。
+     */
+    val canSave: Boolean get() = AiDraftField.Name !in invalidFields
+}
 
 /**
  * 草稿 → [Todo] 的纯函数映射（重点单测对象，无 Android 依赖）。
  *
  * 规则（与 TodoValidator / TodoRepository 的不变式对齐）：
+ * - 名称：空白即标注 [AiDraftField.Name]——`TodoValidator.BlankName` 会让整批
+ *   `addTodos` 失败（全量校验、零落盘），UI 据此排除默认勾选并行内提示；
  * - 时段：start/end **成对**有效且 end > start 才成立（timeKind = Period），否则两者
  *   皆空——Todo 只认成对时段；
  * - 截止：日期与时刻**成对**出现（TodoValidator 硬约束），只有其一或解析失败 →
@@ -52,6 +60,10 @@ object AiTodoMapper {
     ): AiTodoDraftMapping {
         val invalid = mutableSetOf<AiDraftField>()
 
+        // 名称：TodoValidator 的第一条硬约束（BlankName），空白 = 该行不可批量保存
+        val name = draft.name.trim()
+        if (name.isBlank()) invalid += AiDraftField.Name
+
         // 日期：单条解析失败只丢坏值并标注，好值保留
         val parsedDates = draft.dates.mapNotNull { IsoDate.parseOrNull(it.trim()) }
         if (parsedDates.size < draft.dates.size) invalid += AiDraftField.Dates
@@ -74,7 +86,7 @@ object AiTodoMapper {
 
         val todo = Todo(
             id = newUuid(),
-            name = draft.name.trim(),
+            name = name,
             dates = dates,
             timeKind = if (periodValid) TodoTimeKind.Period else TodoTimeKind.None,
             startMinute = if (periodValid) startMinute else null,

@@ -680,6 +680,8 @@
     <string name="ai_draft_invalid_dates">日期待确认</string>
     <string name="ai_draft_invalid_period">时间待确认</string>
     <string name="ai_draft_invalid_deadline">截止待确认</string>
+    <string name="ai_draft_invalid_name">名称待确认</string>
+    <string name="ai_draft_name_required">有草稿缺少名称，请编辑或忽略后再保存</string>
     <string name="ai_save_failed">保存失败，请重试</string>
 
     <!-- AI 设置浮层（AiSettingsScreen）：预设 / 连接 / Key / 隐私说明 -->
@@ -699,4 +701,5 @@
     <string name="ai_settings_clear_history">清空对话历史</string>
     <string name="ai_settings_clear_history_confirm">再次点击确认清空</string>
     <string name="ai_settings_clear_history_done">对话历史已清空</string>
+    <string name="ai_settings_key_required">请填写 API Key</string>
 </resources>

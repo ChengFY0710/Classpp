@@ -67,6 +67,9 @@ fun AiSettingsScreen(
     val scope = rememberCoroutineScope()
     val invalidMessage = stringResource(R.string.ai_settings_invalid)
     val savedMessage = stringResource(R.string.ai_settings_saved)
+    val saveFailedMessage = stringResource(R.string.ai_save_failed)
+    val keyRequiredMessage = stringResource(R.string.ai_settings_key_required)
+    val secureUnavailableMessage = stringResource(R.string.ai_settings_secure_unavailable)
 
     // 表单快照：挂载时装载一次（浮层生命周期内不随外部变化回写）
     var connection by remember { mutableStateOf(AiConnection()) }
@@ -115,17 +118,24 @@ fun AiSettingsScreen(
                 model = trimmedModel,
             )
             val connectionSaved = repository.saveConnection(normalized)
+            // 没输入新 Key 时只有「已存且能解密」才算成功；空输入不再无条件报已保存
             val keySaved = if (keyInput.isNotBlank()) {
                 repository.saveApiKey(keyInput.trim())
             } else {
-                true
+                repository.loadApiKey() != null
             }
             repository.refreshConfigured()
-            if (connectionSaved && keySaved) {
-                AppToasts.show(context, savedMessage)
-                onDismiss()
-            } else {
-                AppToasts.show(context, invalidMessage)
+            when {
+                connectionSaved && keySaved -> {
+                    AppToasts.show(context, savedMessage)
+                    onDismiss()
+                }
+                // Key 失败优先按真实原因提示（Keystore 不可用 ≠ 没填）
+                !keySaved && !repository.secureAvailable -> {
+                    AppToasts.show(context, secureUnavailableMessage)
+                }
+                !keySaved -> AppToasts.show(context, keyRequiredMessage)
+                else -> AppToasts.show(context, saveFailedMessage)
             }
         }
     }

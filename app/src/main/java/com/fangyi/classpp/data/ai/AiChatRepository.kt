@@ -93,10 +93,19 @@ class AiChatRepository internal constructor(
         refreshConfigured()
     }
 
+    /**
+     * 读凭据：SharedPreferences 读与 Keystore 解密都是阻塞 I/O，调用方可能在 Main
+     * （对话浮层直接触发 send）——统一经 Dispatchers.IO，且一次读齐两项。
+     */
+    private suspend fun loadCredentials(): Pair<AiConnection, String?> =
+        withContext(Dispatchers.IO) {
+            settings.loadConnection() to settings.loadApiKey()
+        }
+
     /** 设置页保存/清除配置后调用；发送前也兜底刷新一次 */
-    fun refreshConfigured() {
-        val connection = settings.loadConnection()
-        _configured.value = connection.isConfigured && settings.loadApiKey() != null
+    suspend fun refreshConfigured() {
+        val (connection, apiKey) = loadCredentials()
+        _configured.value = connection.isConfigured && apiKey != null
     }
 
     // ---------- 对话 ----------
@@ -111,9 +120,8 @@ class AiChatRepository internal constructor(
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
         mutex.withLock {
-            val connection = settings.loadConnection()
-            val apiKey = settings.loadApiKey()
-            refreshConfigured()
+            val (connection, apiKey) = loadCredentials()
+            _configured.value = connection.isConfigured && apiKey != null
             if (!connection.isConfigured || apiKey == null) {
                 throw AiException(AiError.Auth, detail = "not configured")
             }
@@ -159,8 +167,15 @@ class AiChatRepository internal constructor(
                     return
                 }
 
-                finalizeLast(full)
-                persist()
+                try {
+                    finalizeLast(full, connection, apiKey)
+                    persist()
+                } catch (e: CancellationException) {
+                    // 正文已在 finalizeLast 第一步写全：草稿解析（可能含修复请求）阶段被取消
+                    // 时，落盘要抢在取消传播前完成，否则重启后整段回复消失
+                    withContext(NonCancellable) { persist() }
+                    throw e
+                }
             } finally {
                 _sending.value = false
             }
@@ -186,8 +201,8 @@ class AiChatRepository internal constructor(
             _lastError.value = null
             _sending.value = true
             try {
-                val connection = settings.loadConnection()
-                val apiKey = settings.loadApiKey()
+                val (connection, apiKey) = loadCredentials()
+                _configured.value = connection.isConfigured && apiKey != null
                 if (!connection.isConfigured || apiKey == null) {
                     throw AiException(AiError.Auth, detail = "not configured")
                 }
@@ -215,8 +230,14 @@ class AiChatRepository internal constructor(
                     persist()
                     return
                 }
-                finalizeLast(full)
-                persist()
+                try {
+                    finalizeLast(full, connection, apiKey)
+                    persist()
+                } catch (e: CancellationException) {
+                    // 同 send：正文已完整时落盘不能被取消吞掉
+                    withContext(NonCancellable) { persist() }
+                    throw e
+                }
             } finally {
                 _sending.value = false
             }
@@ -311,43 +332,64 @@ class AiChatRepository internal constructor(
         }
     }
 
-    /** 流结束（成功）：解析草稿块挂卡；解析失败发起一次修复重试（同连接复用契约） */
-    private suspend fun finalizeLast(full: String) {
-        val drafts = extractDrafts(full)
+    /**
+     * 流结束（成功）：先把完整正文写进消息（取消也不会丢），再解析草稿块挂卡。
+     * 草稿解析失败会发起一次修复重试（同连接复用契约），该阶段被取消时正文已成立。
+     */
+    private suspend fun finalizeLast(full: String, connection: AiConnection, apiKey: String) {
         _messages.update { list ->
-            if (list.isEmpty()) return@update list
-            val last = list.last()
+            val last = list.lastOrNull() ?: return@update list
             if (last.role != AiChatRole.Assistant) return@update list
             list.toMutableList().also {
-                it[it.lastIndex] = last.copy(content = full, interrupted = false, drafts = drafts)
+                it[it.lastIndex] = last.copy(content = full, interrupted = false)
             }
         }
-    }
-
-    private suspend fun markLastInterrupted() {
+        val drafts = extractDrafts(full, connection, apiKey) ?: return
         _messages.update { list ->
-            if (list.isEmpty()) return@update list
-            val last = list.last()
+            val last = list.lastOrNull() ?: return@update list
             if (last.role != AiChatRole.Assistant) return@update list
             list.toMutableList().also {
-                // 半截文本里若已有完整草稿块也照常解析，用户仍可保存
-                it[it.lastIndex] = last.copy(
-                    content = last.content,
-                    interrupted = true,
-                    drafts = extractDrafts(last.content) ?: last.drafts,
-                )
+                it[it.lastIndex] = last.copy(drafts = drafts)
             }
         }
     }
 
     /**
+     * 取消/失败：标记 interrupted；半截里若已有完整草稿块也就地解析挂卡，用户仍可保存。
+     * 这里**只做本地解析**——取消路径协程已失效，发起修复请求只会立刻抛取消。
+     */
+    private fun markLastInterrupted() {
+        _messages.update { list ->
+            val last = list.lastOrNull() ?: return@update list
+            if (last.role != AiChatRole.Assistant) return@update list
+            list.toMutableList().also {
+                it[it.lastIndex] = last.copy(
+                    interrupted = true,
+                    drafts = parseDraftsOrNull(last.content) ?: last.drafts,
+                )
+            }
+        }
+    }
+
+    /** 本地解析草稿块（不发起网络）；无块或解析失败返回 null */
+    private fun parseDraftsOrNull(reply: String): AiMessageDrafts? {
+        val json = AiTodoDraftCodec.extractJsonBlock(reply) ?: return null
+        return AiTodoDraftCodec.parseTodoDrafts(json)?.toMessageDrafts()
+    }
+
+    /**
      * 从回复文本提取草稿（无块 = null）；解析失败带错误自动重试一次（把上次输出
      * 原样附回，请模型修正后重新输出），仍失败返回 null（视为纯对话）。
+     *
+     * 凭据由本次发送一路传入（同一场对话内不会变），省掉每次回复的重复解密；
+     * 取消必须原样抛出——否则调用方的落盘会被跳过。
      */
-    private suspend fun extractDrafts(reply: String): AiMessageDrafts? {
-        val connection = settings.loadConnection()
-        val apiKey = settings.loadApiKey()
-        if (!connection.isConfigured || apiKey == null) return null
+    private suspend fun extractDrafts(
+        reply: String,
+        connection: AiConnection,
+        apiKey: String,
+    ): AiMessageDrafts? {
+        if (!connection.isConfigured) return null
 
         val json = AiTodoDraftCodec.extractJsonBlock(reply) ?: return null
         val first = AiTodoDraftCodec.parseTodoDrafts(json)
@@ -365,8 +407,10 @@ class AiChatRepository internal constructor(
                     AiChatTurn(role = "user", content = repairPrompt),
                 ),
             )
+        } catch (e: CancellationException) {
+            throw e // 取消语义不能吞：吞掉会让「正文已完整」的落盘被跳过
         } catch (_: Exception) {
-            null
+            null // 修复失败按「无草稿」处理
         } ?: return null
         val repairedJson = AiTodoDraftCodec.extractJsonBlock(repaired) ?: return null
         return AiTodoDraftCodec.parseTodoDrafts(repairedJson)?.toMessageDrafts()

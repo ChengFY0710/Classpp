@@ -3,6 +3,7 @@ package com.fangyi.classpp.data.ai
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -69,6 +70,17 @@ class AiTodoMapperTest {
         assertEquals(2, todo.steps.size) // 空步骤剔除，trim 生效
         assertEquals("查资料", todo.steps[0].title)
         assertEquals("ai", todo.source)
+    }
+
+    @Test
+    fun `blank name is flagged and todo name stays empty`() {
+        val blank = AiTodoMapper.map(listOf(draft(name = "   ", dates = listOf("2026-11-06")))).single()
+        assertEquals("", blank.todo.name)
+        assertEquals(setOf(AiDraftField.Name), blank.invalidFields)
+        assertFalse(blank.canSave) // 缺名称会让整批 addTodos 失败，不参与默认勾选
+
+        val named = AiTodoMapper.map(listOf(draft(name = "实验报告"))).single()
+        assertTrue(named.canSave)
     }
 
     @Test

@@ -91,6 +91,7 @@ fun AiChatOverlay(
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
     val saveFailedMessage = stringResource(R.string.ai_save_failed)
+    val nameRequiredMessage = stringResource(R.string.ai_draft_name_required)
 
     val messages by aiChatRepository?.messages?.collectAsState()
         ?: remember { mutableStateOf(emptyList<com.fangyi.classpp.data.ai.AiChatMessage>()) }
@@ -179,12 +180,22 @@ fun AiChatOverlay(
     ) {
         val repository = todoRepository ?: return
         val chatRepository = aiChatRepository ?: return
-        if (selected.isEmpty()) return
+        if (selected.isEmpty()) {
+            // 默认勾选已排除缺名称行：整卡都不可保存时按钮不应像失灵，给出明确原因
+            if (mappings.any { !it.canSave }) AppToasts.show(context, nameRequiredMessage)
+            return
+        }
         scope.launch {
-            val todosToSave = selected.mapNotNull { index -> mappings.getOrNull(index)?.todo }
+            // 缺名称的草稿会让 addTodos 全量校验整体失败（零落盘），先摘出去
+            val savable = selected.filter { index -> mappings.getOrNull(index)?.canSave == true }
+            if (savable.isEmpty()) {
+                AppToasts.show(context, nameRequiredMessage)
+                return@launch
+            }
+            val todosToSave = savable.mapNotNull { index -> mappings.getOrNull(index)?.todo }
             when (val result = repository.addTodos(todosToSave)) {
                 is TodoReadResult.Ok -> {
-                    for (index in selected) {
+                    for (index in savable) {
                         chatRepository.updateDraftStatus(messageIndex, index, AiDraftStatus.Saved)
                     }
                 }
@@ -263,12 +274,13 @@ fun AiChatOverlay(
                             val mappings = remember(index, draftsState, knownGroups, knownTags) {
                                 AiTodoMapper.map(draftsState.drafts, knownGroups, knownTags)
                             }
-                            // 勾选集：Pending 全选起步；处置过（Saved/Dismissed）的行不再参与
+                            // 勾选集：Pending 且可直接保存（缺名称会拖垮整批 addTodos）的行全选
                             var selected by remember(index, draftsState) {
                                 mutableStateOf(
                                     draftsState.statuses
                                         .withIndex()
                                         .filter { it.value == AiDraftStatus.Pending }
+                                        .filter { mappings.getOrNull(it.index)?.canSave == true }
                                         .map { it.index }
                                         .toSet(),
                                 )

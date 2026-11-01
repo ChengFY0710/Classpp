@@ -161,6 +161,26 @@ class AiPromptBuilderTest {
     }
 
     @Test
+    fun `out of range dayOfWeek is skipped without crashing`() {
+        // ScheduleValidator 对越界 dayOfWeek 按 hidden 容忍保留，损坏数据会真的走到这里
+        val prompt = AiPromptBuilder.build(
+            now,
+            schedule(
+                course("损坏课", dayOfWeek = 0),
+                course("越界课", dayOfWeek = 8),
+                course("正常课", dayOfWeek = 3),
+            ),
+            null,
+            emptyList(),
+            emptyList(),
+            emptyList(),
+        )
+        assertFalse(prompt.contains("损坏课"))
+        assertFalse(prompt.contains("越界课"))
+        assertTrue(prompt.contains("正常课"))
+    }
+
+    @Test
     fun `json contract block is present`() {
         val prompt = AiPromptBuilder.build(now, null, null, emptyList(), emptyList(), emptyList())
         assertTrue(prompt.contains("```json"))

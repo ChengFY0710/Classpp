@@ -659,6 +659,8 @@
     <string name="ai_draft_invalid_dates">Check dates</string>
     <string name="ai_draft_invalid_period">Check times</string>
     <string name="ai_draft_invalid_deadline">Check deadline</string>
+    <string name="ai_draft_invalid_name">Check name</string>
+    <string name="ai_draft_name_required">Some drafts have no name — edit or dismiss them first</string>
     <string name="ai_save_failed">Save failed — try again</string>
 
     <!-- AI settings overlay (AiSettingsScreen): presets / connection / key / privacy -->
@@ -678,4 +680,5 @@
     <string name="ai_settings_clear_history">Clear chat history</string>
     <string name="ai_settings_clear_history_confirm">Tap again to confirm</string>
     <string name="ai_settings_clear_history_done">Chat history cleared</string>
+    <string name="ai_settings_key_required">Enter an API key</string>
 </resources>

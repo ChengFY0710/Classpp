@@ -346,6 +346,7 @@ private fun AiTodoDraftRowMeta(mapping: AiTodoDraftMapping): String {
 /** 单条草稿的「待人工修正」chip 文案 */
 @Composable
 private fun invalidFieldLabel(field: AiDraftField): String = when (field) {
+    AiDraftField.Name -> stringResource(R.string.ai_draft_invalid_name)
     AiDraftField.Dates -> stringResource(R.string.ai_draft_invalid_dates)
     AiDraftField.PeriodTime -> stringResource(R.string.ai_draft_invalid_period)
     AiDraftField.Deadline -> stringResource(R.string.ai_draft_invalid_deadline)

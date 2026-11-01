@@ -419,4 +419,34 @@ class AiChatRepositoryTest {
         assertEquals(listOf("system", "user", "user", "assistant", "user"), turns.map { it.first })
         assertTrue(turns.none { it.first == "assistant" && it.second.isBlank() })
     }
+
+    // ---------- 草稿修复阶段的取消（2.1 回归） ----------
+
+    @Test
+    fun `cancel during draft repair keeps full body and does not mark interrupted`() = runBlocking {
+        val store = FakeAiChatStore()
+        // 有围栏块但结构解析不了 → 主回复结束后会发起一次修复请求
+        val reply = "草稿如下：\n```json\n{\"x\":1}\n```"
+        val repair = ScriptedResponse(emptyList()) // 修复请求挂起，等取消断流
+        val transport = FakeAiTransport(
+            ScriptedResponse(listOf(sse(reply), "data: [DONE]")),
+            repair,
+        )
+        val repo = repository(store = store, transport = transport)
+
+        withTimeout(5000) {
+            val job = launch { repo.send("添加待办") }
+            // 主回复已结束、修复请求已在途（第二次 open 返回）后再取消
+            while (transport.opened.size < 2) delay(10)
+            job.cancel()
+            repair.gate.countDown()
+            runCatching { job.join() }
+        }
+
+        val persisted = store.file.messages.last()
+        assertEquals(reply, persisted.content) // 正文完整落盘（取消不丢）
+        assertFalse(persisted.interrupted) // 正文完整，不应标中断
+        assertNull(persisted.drafts) // 修复没有结果，草稿卡不挂
+        assertFalse(repo.sending.value)
+    }
 }

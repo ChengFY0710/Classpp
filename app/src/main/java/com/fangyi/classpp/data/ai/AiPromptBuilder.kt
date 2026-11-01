@@ -52,7 +52,7 @@ object AiPromptBuilder {
         } else {
             appendLine()
             for (course in schedule.courses) {
-                appendLine(courseLine(schedule, course))
+                courseLine(schedule, course)?.let { appendLine(it) }
             }
         }
 
@@ -100,8 +100,14 @@ object AiPromptBuilder {
 
     // ---------- 课表行 ----------
 
-    /** 一门课一行：`周一 第3-4节 14:30-16:10 高等数学 @教学楼A-301 周1-16（教师：张三）` */
-    private fun courseLine(schedule: Schedule, course: CourseEntry): String {
+    /**
+     * 一门课一行：`周一 第3-4节 14:30-16:10 高等数学 @教学楼A-301 周1-16（教师：张三）`。
+     *
+     * `dayOfWeek` 越界（损坏/手工编辑的数据，ScheduleValidator 按 hidden 容忍保留）
+     * 返回 null 跳过该行——裸下标会让每次发送都崩在数组越界。
+     */
+    private fun courseLine(schedule: Schedule, course: CourseEntry): String? {
+        val weekday = WEEKDAY_ZH.getOrNull(course.dayOfWeek - 1) ?: return null
         val slotStart = schedule.slots.getOrNull(course.startSlot - 1)
         val slotEnd = schedule.slots.getOrNull(course.endSlot - 1)
         val slotRange = if (course.span == 1) {
@@ -114,7 +120,7 @@ object AiPromptBuilder {
         } else ""
         val teacher = course.teacher.takeIf { it.isNotBlank() }?.let { "（教师：$it）" } ?: ""
         val location = course.location.takeIf { it.isNotBlank() }?.let { " @$it" } ?: ""
-        return "${WEEKDAY_ZH[course.dayOfWeek - 1]} $slotRange$time ${course.name}" +
+        return "$weekday $slotRange$time ${course.name}" +
             "$location ${weeksText(course)}$teacher"
     }
 
