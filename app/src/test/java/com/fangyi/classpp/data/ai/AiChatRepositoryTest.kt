@@ -102,7 +102,7 @@ class AiChatRepositoryTest {
         private val queue = scripts.toMutableList()
         val opened = mutableListOf<AiHttpRequest>()
 
-        override suspend fun open(request: AiHttpRequest): AiStreamResponse {
+        override fun open(request: AiHttpRequest): AiStreamResponse {
             opened += request
             return queue.removeFirstOrNull() ?: error("no more scripts")
         }

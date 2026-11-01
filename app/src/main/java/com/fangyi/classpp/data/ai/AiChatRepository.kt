@@ -8,6 +8,7 @@ import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -142,8 +143,10 @@ class AiChatRepository internal constructor(
                         },
                     )
                 } catch (e: CancellationException) {
-                    // 停止/退出：半截文本保留，标记 interrupted，落盘后再传播取消
+                    // 停止/退出：半截文本保留，标记 interrupted；取消的协程里 withContext
+                    // 会直接抛出，落盘必须包 NonCancellable 才能执行完
                     markLastInterrupted()
+                    withContext(NonCancellable) { persist() }
                     throw e
                 } catch (e: AiException) {
                     markLastInterrupted()
@@ -196,7 +199,9 @@ class AiChatRepository internal constructor(
                         onDelta = { chunk -> appendToLast(chunk) },
                     )
                 } catch (e: CancellationException) {
+                    // 取消路径的落盘同样包 NonCancellable（见 send 的同款注释）
                     markLastInterrupted()
+                    withContext(NonCancellable) { persist() }
                     throw e
                 } catch (e: AiException) {
                     markLastInterrupted()

@@ -60,7 +60,7 @@ class AiClientTest {
         var lastRequest: AiHttpRequest? = null
             private set
 
-        override suspend fun open(request: AiHttpRequest): AiStreamResponse {
+        override fun open(request: AiHttpRequest): AiStreamResponse {
             lastRequest = request
             return response
         }
