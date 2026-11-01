@@ -35,6 +35,7 @@ import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiConnection
+import com.fangyi.classpp.data.ai.AiProtocol
 import com.fangyi.classpp.data.ai.AiProviderPresets
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetInfoBanner
@@ -48,7 +49,8 @@ import kotlinx.coroutines.launch
 /**
  * AI 设置（全屏浮层，从对话浮层右上角 ⚙ 或未配置引导卡进入，覆盖其上）。
  *
- * - 服务商预设：单选 chip，选中即回填服务地址与建议模型（本地/自定义预设必手填模型）；
+ * - 服务商预设：单选 chip，选中即回填服务地址、接口协议与建议模型（本地/自定义预设必手填模型）；
+ *   自定义服务商额外展示「接口格式」选择（预设自带协议，不展示该行）；
  * - 连接：服务地址 + 模型名（SheetTextField 卡式输入，与各浮层表单同规格）；
  * - API Key：密码框——已配置时占位「留空保持不变」，覆盖保存只在输入非空时发生，
  *   **不回显已存 Key**；
@@ -182,51 +184,45 @@ fun AiSettingsScreen(
             }
             val presets = remember(debuggable) { AiProviderPresets.available(debuggable) }
             for (preset in presets) {
-                val selected = connection.providerId == preset.id
-                Box(
-                    modifier = Modifier
-                        .clip(PillShape)
-                        .background(
-                            if (selected) {
-                                MaterialTheme.colorScheme.primary
+                PillChip(
+                    text = preset.label,
+                    selected = connection.providerId == preset.id,
+                    onClick = {
+                        connection = connection.copy(
+                            providerId = preset.id,
+                            // 选中预设即回填端点与协议；建议模型仅在非手填预设下覆盖，
+                            // ollama/custom 无公认默认，保留用户已填值
+                            baseUrl = preset.baseUrl.ifBlank { connection.baseUrl },
+                            model = if (!preset.requiresManualModel && preset.suggestedModel.isNotBlank()) {
+                                preset.suggestedModel
                             } else {
-                                MaterialTheme.colorScheme.surfaceVariant
+                                connection.model
                             },
+                            protocol = preset.protocol,
                         )
-                        .then(
-                            if (!selected) {
-                                Modifier.border(
-                                    width = 1.dp,
-                                    color = MaterialTheme.colorScheme.outlineVariant,
-                                    shape = PillShape,
-                                )
-                            } else {
-                                Modifier
-                            },
-                        )
-                        .clickable {
-                            connection = connection.copy(
-                                providerId = preset.id,
-                                // 选中预设即回填端点；建议模型仅在非手填预设下覆盖，
-                                // ollama/custom 无公认默认，保留用户已填值
-                                baseUrl = preset.baseUrl.ifBlank { connection.baseUrl },
-                                model = if (!preset.requiresManualModel && preset.suggestedModel.isNotBlank()) {
-                                    preset.suggestedModel
-                                } else {
-                                    connection.model
-                                },
-                            )
-                        }
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                ) {
-                    Text(
-                        text = preset.label,
-                        style = ClassppTextTokens.secondaryTextSmall,
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.classppColors.secondaryText
-                        },
+                    },
+                )
+            }
+        }
+
+        // ——— 接口格式（仅自定义服务商：预设自带协议，展示会误导改坏） ———
+        if (connection.providerId == AiProviderPresets.CUSTOM_ID) {
+            Text(
+                text = stringResource(R.string.ai_settings_protocol),
+                style = ClassppTextTokens.sectionTitle,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(bottom = 16.dp),
+            ) {
+                for (protocol in AiProtocol.entries) {
+                    PillChip(
+                        text = stringResource(protocol.labelRes()),
+                        selected = connection.protocol == protocol,
+                        onClick = { connection = connection.copy(protocol = protocol) },
                     )
                 }
             }
@@ -315,4 +311,49 @@ fun AiSettingsScreen(
             )
         }
     }
+}
+
+/** 设置页的单选胶囊 chip（服务商预设与接口格式共用同一形态） */
+@Composable
+private fun PillChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(PillShape)
+            .background(
+                if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
+            )
+            .then(
+                if (!selected) {
+                    Modifier.border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        shape = PillShape,
+                    )
+                } else {
+                    Modifier
+                }
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Text(
+            text = text,
+            style = ClassppTextTokens.secondaryTextSmall,
+            color = if (selected) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.classppColors.secondaryText
+            },
+        )
+    }
+}
+
+/** 接口格式的展示文案（数据层不产文案，与 AiError 的 UI 映射同策略） */
+private fun AiProtocol.labelRes(): Int = when (this) {
+    AiProtocol.OpenAiCompat -> R.string.ai_settings_protocol_openai
+    AiProtocol.Anthropic -> R.string.ai_settings_protocol_anthropic
 }

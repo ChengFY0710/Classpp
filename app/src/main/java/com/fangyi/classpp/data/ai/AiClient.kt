@@ -6,14 +6,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -21,7 +13,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 
-/** 一条 AI HTTP 请求：OpenAI 兼容 POST（请求头由调用方显式给，含 Authorization） */
+/** 一条 AI HTTP 请求（形状由协议编解码器决定：端点、认证头、请求体；请求头显式给出，API Key 只进请求不进日志） */
 data class AiHttpRequest(
     val url: String,
     val headers: Map<String, String> = emptyMap(),
@@ -119,10 +111,11 @@ class OkHttpAiTransport : AiHttpTransport {
 }
 
 /**
- * OpenAI 兼容 `/chat/completions` 的流式客户端（OpenAI / DeepSeek / 智谱 / 通义 /
- * Kimi / Ollama 同协议）。
+ * 流式客户端：请求编码与 SSE 载荷解析按 [AiConnection.protocol] 委托给协议编解码器
+ * （[OpenAiStreamCodec] = OpenAI 兼容，[AnthropicStreamCodec] = Anthropic Messages），
+ * 传输、取消与 HTTP 状态分类是协议无关的，在此收口。
  *
- * - 请求：`stream: true`；SSE 逐行解析 `data:` 载荷，`[DONE]` 终止，增量经
+ * - SSE 逐行解析 `data:` 载荷交编解码器分派（增量形状与终止标记随协议），增量经
  *   onDelta 回调交给调用方（UI 逐字渲染）。整个流（打开 + 阻塞读）跑在专用
  *   执行线程上，onDelta 也在该线程触发——调用方须用线程安全的方式发布状态
  *   （如 StateFlow.value 赋值），不要在回调里直接碰 UI；
@@ -132,9 +125,9 @@ class OkHttpAiTransport : AiHttpTransport {
  *   `open()` 阻塞期间（DNS/连接/TLS/等响应头）还没有句柄可取消，线程中断对阻塞
  *   socket 读也无效，此时由取消标志在 `open()` 放行后立即收口：不读一行、不再回调；
  * - 容错：`:` 开头的 SSE 注释/心跳行、解析不了的 data 载荷一律跳过不致命；
- *   服务商把错误放进流里（`data: {"error": ...}`）时按其 code 分类抛 [AiException]；
- * - EOF 无 `[DONE]`：已收到过增量 = 流被掐断（[AiError.Network]，调用方保留半截），
- *   一个字都没有 = 响应不合法（[AiError.BadResponse]）。
+ *   服务商把错误放进流里（`data: {...}` 携带错误对象）时由编解码器按协议分类抛 [AiException]；
+ * - EOF 无终止标记（协议各自的 Done 形态未出现）：已收到过增量 = 流被掐断
+ *   （[AiError.Network]，调用方保留半截），一个字都没有 = 响应不合法（[AiError.BadResponse]）。
  *
  * @param transport 传输层，默认 OkHttp 生产实现；单测注入脚本化假流
  */
@@ -163,8 +156,9 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         val inFlight = AtomicReference<AiStreamResponse?>(null)
         val future = EXECUTOR.submit {
             try {
-                val request = buildRequest(connection, apiKey, turns, temperature)
-                val text = executeAndRead(request, cancelled, inFlight, onDelta)
+                val codec = AiStreamCodec.of(connection.protocol)
+                val request = codec.buildRequest(connection, apiKey, turns, temperature)
+                val text = executeAndRead(codec, request, cancelled, inFlight, onDelta)
                 cont.resume(text, onCancellation = null)
             } catch (_: StreamCancelled) {
                 // 协程已取消：没有等待者，无需 resume；use 已释放连接
@@ -190,6 +184,7 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
     // ---------- 阻塞管线（专用执行线程上运行） ----------
 
     private fun executeAndRead(
+        codec: AiStreamCodec,
         request: AiHttpRequest,
         cancelled: AtomicBoolean,
         inFlight: AtomicReference<AiStreamResponse?>,
@@ -208,13 +203,14 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
                 val body = response.readRemaining()
                 throw classifyStatus(response.status, body)
             }
-            readEventStream(response, cancelled, onDelta)
+            readEventStream(codec, response, cancelled, onDelta)
         }
     }
 
     // ---------- SSE 解析 ----------
 
     private fun readEventStream(
+        codec: AiStreamCodec,
         response: AiStreamResponse,
         cancelled: AtomicBoolean,
         onDelta: (String) -> Unit,
@@ -226,45 +222,27 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
             val line = response.readLine() ?: break
             if (line.isBlank() || line.startsWith(":")) continue // 空行与 SSE 注释/心跳
             if (!line.startsWith(DATA_PREFIX)) continue // event: 等无关字段
-            val payload = line.removePrefix(DATA_PREFIX).trim()
-            if (payload == DONE_MARKER) {
-                sawDone = true
-                break
-            }
-            val delta = parseDelta(payload) ?: continue // 容忍不可解析载荷
-            if (delta.isNotEmpty()) {
-                if (cancelled.get()) throw StreamCancelled // 取消后不再交付副作用
-                full.append(delta)
-                onDelta(delta)
+            when (val event = codec.onData(line.removePrefix(DATA_PREFIX).trim())) {
+                is AiStreamEvent.Delta -> {
+                    if (cancelled.get()) throw StreamCancelled // 取消后不再交付副作用
+                    full.append(event.text)
+                    onDelta(event.text)
+                }
+                AiStreamEvent.Done -> {
+                    sawDone = true
+                    break
+                }
+                null -> Unit // 容忍无关/不可解析载荷
             }
         }
         if (!sawDone) {
             throw if (full.isEmpty()) {
-                AiException(AiError.BadResponse, detail = "stream ended without [DONE], no content")
+                AiException(AiError.BadResponse, detail = "stream ended without completion marker, no content")
             } else {
-                AiException(AiError.Network, detail = "stream ended without [DONE], partial content kept")
+                AiException(AiError.Network, detail = "stream ended without completion marker, partial content kept")
             }
         }
         return full.toString()
-    }
-
-    /**
-     * 解析一条 data 载荷的增量文本；返回 null = 本行不可解析（跳过）。
-     * 服务商流内错误对象（`{"error": {...}}`）转成分类异常抛出。
-     */
-    private fun parseDelta(payload: String): String? {
-        val obj = try {
-            JSON.parseToJsonElement(payload).let { it as? JsonObject } ?: return null
-        } catch (_: Exception) {
-            return null
-        }
-        (obj["error"] as? JsonObject)?.let { throw classifyStreamError(it) }
-        val delta = (obj["choices"] as? JsonArray)
-            ?.firstOrNull()
-            ?.let { it as? JsonObject }
-            ?.get("delta") as? JsonObject
-            ?: return null
-        return delta["content"].stringContentOrNull().orEmpty()
     }
 
     // ---------- 错误分类 ----------
@@ -281,51 +259,6 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         return AiException(error, detail = "HTTP $status: ${body.take(DETAIL_MAX)}")
     }
 
-    private fun classifyStreamError(error: JsonObject): AiException {
-        val message = error["message"].stringContentOrNull()
-        val code = error["code"].stringContentOrNull()?.toIntOrNull()
-        val type = when (code) {
-            401 -> AiError.Auth
-            402, 403 -> AiError.Quota
-            404 -> AiError.NotFound
-            429 -> AiError.RateLimited
-            null -> AiError.BadResponse
-            else -> if (code in 500..599) AiError.Server else AiError.BadResponse
-        }
-        return AiException(type, detail = message)
-    }
-
-    // ---------- 请求编码 ----------
-
-    private fun buildRequest(
-        connection: AiConnection,
-        apiKey: String,
-        turns: List<AiChatTurn>,
-        temperature: Double?,
-    ): AiHttpRequest = AiHttpRequest(
-        url = connection.baseUrl.trimEnd('/') + CHAT_COMPLETIONS_PATH,
-        headers = mapOf(
-            "Authorization" to "Bearer $apiKey",
-            "Accept" to "text/event-stream",
-        ),
-        jsonBody = encodeRequest(connection.model, turns, temperature),
-    )
-
-    private fun encodeRequest(model: String, turns: List<AiChatTurn>, temperature: Double?): String {
-        val payload = buildJsonObject {
-            put("model", model)
-            put("stream", true)
-            temperature?.let { put("temperature", it) }
-            put("messages", JsonArray(turns.map { turn ->
-                buildJsonObject {
-                    put("role", turn.role)
-                    put("content", turn.content)
-                }
-            }))
-        }
-        return requestJson.encodeToString(payload)
-    }
-
     /**
      * 内部提前退出信号：协程已取消，阻塞管线不再读取/回调。不是值得 resume 的错误
      * （取消侧已把 continuation 恢复为 CancellationException），任务侧静默收尾即可。
@@ -333,11 +266,7 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
     private object StreamCancelled : Exception()
 
     private companion object {
-        val JSON = Json { ignoreUnknownKeys = true } // 流内载荷宽容读取；结构错误由逐字段判空兜住
-        val requestJson = Json { encodeDefaults = false }
-        const val CHAT_COMPLETIONS_PATH = "/chat/completions"
         const val DATA_PREFIX = "data:"
-        const val DONE_MARKER = "[DONE]"
         const val DETAIL_MAX = 300
 
         /**
@@ -351,15 +280,4 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
             Thread(runnable, "classpp-ai-stream").apply { isDaemon = true }
         }
     }
-}
-
-/** 取字符串内容：JSON null / 非字符串（对象、数组）一律 null，不让畸形载荷炸掉整条流 */
-private fun JsonElement?.stringContentOrNull(): String? = when (this) {
-    null, is JsonNull -> null
-    is JsonPrimitive -> try {
-        content
-    } catch (_: Exception) {
-        null
-    }
-    else -> null
 }

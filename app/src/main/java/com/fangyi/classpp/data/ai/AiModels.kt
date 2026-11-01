@@ -7,21 +7,33 @@ import kotlinx.serialization.json.Json
 const val AI_CHAT_FORMAT_VERSION = 1
 
 /**
- * AI 连接配置（BYOK）：服务商预设 id + OpenAI 兼容端点 + 模型名。
+ * 请求协议（协议差异的编解码见 [AiStreamCodec]）：
+ * - [OpenAiCompat]：OpenAI 兼容 `/chat/completions`（DeepSeek/智谱/通义/Kimi/Ollama 同协议），
+ *   旧持久化配置无此字段时回落此默认值；
+ * - [Anthropic]：Anthropic Messages API（`/v1/messages`）。
+ */
+@Serializable
+enum class AiProtocol { OpenAiCompat, Anthropic }
+
+/**
+ * AI 连接配置（BYOK）：服务商预设 id + 端点根路径 + 模型名 + 接口协议。
  *
  * 这份是**明文可备份**的全部——API Key 永不在此，只存 Keystore 加密后的
  * SharedPreferences（见 [AiSettingsStore]，与 xmu_secure 的凭据策略同源），
  * 备份/迁移规则同步排除 `ai_secure.xml`（Keystore 密钥不随备份迁移，密文解不开）。
  *
  * @param providerId 服务商预设 id（[AiProviderPresets]，"custom" = 用户自定义）
- * @param baseUrl OpenAI 兼容端点根路径（如 https://api.deepseek.com/v1）
+ * @param baseUrl 端点根路径（如 https://api.deepseek.com/v1，路径拼接由各协议编解码器负责）
  * @param model 模型名（如 deepseek-chat）
+ * @param protocol 接口协议；带默认值——旧版本落盘的 JSON 无此字段，反序列化得
+ *   [AiProtocol.OpenAiCompat]，既有配置行为不变
  */
 @Serializable
 data class AiConnection(
     val providerId: String = AiProviderPresets.CUSTOM_ID,
     val baseUrl: String = "",
     val model: String = "",
+    val protocol: AiProtocol = AiProtocol.OpenAiCompat,
 ) {
     /** 是否已具备发起请求的最低配置；API Key 由 [AiSettingsStore.loadApiKey] 另查 */
     val isConfigured: Boolean get() = baseUrl.isNotBlank() && model.isNotBlank()
@@ -75,7 +87,7 @@ enum class AiError { Auth, Quota, NotFound, RateLimited, Server, Network, BadRes
 class AiException(val error: AiError, val detail: String? = null) :
     Exception(detail ?: error.name)
 
-/** 一次对话调用中的一条 wire 消息（OpenAI 兼容格式，role 用小写串） */
+/** 一次对话调用中的一条 wire 消息（协议中性的内部表示，role 用小写串；各协议编解码器负责落成自己的请求形状） */
 @Serializable
 data class AiChatTurn(val role: String, val content: String)
 

@@ -1,15 +1,16 @@
 package com.fangyi.classpp.data.ai
 
 /**
- * 一个 OpenAI 兼容服务商预设：用户在 AI 设置里选预设即回填端点与建议模型，
+ * 一个服务商预设：用户在 AI 设置里选预设即回填端点、协议与建议模型，
  * 只需再填自己的 API Key（label 为品牌名，不参与本地化）。
  *
  * @param id 稳定标识，存进 [AiConnection.providerId]；表内唯一，删除条目时
  *   旧配置经 [AiProviderPresets.byId] 回落 custom，不抛异常
  * @param label 设置页展示名
- * @param baseUrl 端点根路径（不含 /chat/completions，拼接由 AiClient 负责）
+ * @param baseUrl 端点根路径（不含资源路径，拼接由各协议编解码器负责）
  * @param suggestedModel 选中预设时回填的建议模型名
  * @param requiresManualModel true = 无公认默认模型（本地/自定义），模型名必手填
+ * @param protocol 选中预设时回填的接口协议（预设自带协议，设置页仅自定义服务商展示选择器）
  * @param releaseVisible false = 仅 DEBUG 构建在设置页展示（见 [AiProviderPresets.available]）；
  *   发布版不再给出必然失败的选项，旧配置仍可经 [AiProviderPresets.byId] 解析
  */
@@ -19,6 +20,7 @@ data class AiProviderPreset(
     val baseUrl: String,
     val suggestedModel: String,
     val requiresManualModel: Boolean = false,
+    val protocol: AiProtocol = AiProtocol.OpenAiCompat,
     val releaseVisible: Boolean = true,
 )
 
@@ -64,6 +66,13 @@ object AiProviderPresets {
             label = "OpenAI",
             baseUrl = "https://api.openai.com/v1",
             suggestedModel = "gpt-4o-mini",
+        ),
+        AiProviderPreset(
+            id = "anthropic",
+            label = "Anthropic",
+            baseUrl = "https://api.anthropic.com/v1",
+            suggestedModel = "claude-sonnet-4-5",
+            protocol = AiProtocol.Anthropic,
         ),
         AiProviderPreset(
             id = "ollama",

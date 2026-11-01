@@ -668,7 +668,7 @@
     <string name="ai_error_network">网络连接失败，请检查网络</string>
     <string name="ai_error_bad_response">服务商返回了无法解析的数据</string>
     <string name="ai_not_configured_title">先配置 AI 服务商</string>
-    <string name="ai_not_configured_hint">填入你自己的 API Key（DeepSeek、智谱、通义等均可），对话内容与课表、待办摘要会发送给你所选的服务商</string>
+    <string name="ai_not_configured_hint">填入你自己的 API Key（DeepSeek、智谱、通义、Claude 等均可），对话内容与课表、待办摘要会发送给你所选的服务商</string>
     <string name="ai_go_settings">去 AI 设置</string>
     <string name="ai_example_1">帮我看看下周安排</string>
     <string name="ai_example_2">添加：周五交实验报告</string>
@@ -687,6 +687,9 @@
     <!-- AI 设置浮层（AiSettingsScreen）：预设 / 连接 / Key / 隐私说明 -->
     <string name="ai_settings_title">AI 设置</string>
     <string name="ai_settings_provider">服务商预设</string>
+    <string name="ai_settings_protocol">接口格式</string>
+    <string name="ai_settings_protocol_openai">OpenAI 兼容</string>
+    <string name="ai_settings_protocol_anthropic">Anthropic</string>
     <string name="ai_settings_base_url">服务地址</string>
     <string name="ai_settings_base_url_hint">https://api.example.com/v1</string>
     <string name="ai_settings_model">模型名</string>

@@ -223,6 +223,44 @@ class AiChatRepositoryTest {
     }
 
     @Test
+    fun `send with anthropic connection posts messages wire format`() = runBlocking {
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    """data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"你好"}}""",
+                    """data: {"type":"message_stop"}""",
+                ),
+            ),
+        )
+        val repo = repository(
+            settings = FakeAiSettingsStore(
+                connection = AiConnection(
+                    providerId = "anthropic",
+                    baseUrl = "https://api.anthropic.com/v1",
+                    model = "claude-sonnet-4-5",
+                    protocol = AiProtocol.Anthropic,
+                ),
+            ),
+            transport = transport,
+        )
+
+        repo.send("帮我看看下周安排")
+
+        val request = transport.opened.single()
+        assertEquals("https://api.anthropic.com/v1/messages", request.url)
+        assertEquals("sk-test", request.headers["x-api-key"])
+        val body = Json.parseToJsonElement(request.jsonBody).jsonObject
+        // system 提升为顶层字段，messages 仅剩交替的 user/assistant
+        assertTrue(body.containsKey("system"))
+        assertTrue(body.containsKey("max_tokens"))
+        assertEquals(
+            listOf("user"),
+            body["messages"]!!.jsonArray.map { it.jsonObject["role"]!!.jsonPrimitive.content },
+        )
+        assertEquals("你好", repo.messages.value.last().content)
+    }
+
+    @Test
     fun `stream failure keeps partial and publishes error`() = runBlocking {
         val repo = repository(
             transport = FakeAiTransport(

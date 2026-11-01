@@ -64,6 +64,31 @@ class AiConnectionTest {
     }
 
     @Test
+    fun `connection protocol roundtrip`() {
+        val original = AiConnection(
+            providerId = "anthropic",
+            baseUrl = "https://api.anthropic.com/v1",
+            model = "claude-sonnet-4-5",
+            protocol = AiProtocol.Anthropic,
+        )
+        val decoded = AiJson.storage.decodeFromString(
+            AiConnection.serializer(),
+            AiJson.storage.encodeToString(AiConnection.serializer(), original),
+        )
+        assertEquals(original, decoded)
+    }
+
+    @Test
+    fun `legacy connection json without protocol decodes to openai compat`() {
+        // 旧版本落盘的配置无 protocol 字段：回落默认值，既有配置行为不变
+        val legacy = AiJson.storage.decodeFromString<AiConnection>(
+            AiConnection.serializer(),
+            """{"providerId":"custom","baseUrl":"https://x/v1","model":"m"}""",
+        )
+        assertEquals(AiProtocol.OpenAiCompat, legacy.protocol)
+    }
+
+    @Test
     fun `isConfigured requires both baseUrl and model`() {
         assertEquals(false, AiConnection().isConfigured)
         assertEquals(false, AiConnection(baseUrl = "https://x").isConfigured)
@@ -102,5 +127,20 @@ class AiProviderPresetsTest {
         assertTrue(AiProviderPresets.available(debuggable = false).any { it.id == "deepseek" })
         // 已有配置仍能解析，不因下架变成 custom
         assertEquals("ollama", AiProviderPresets.byId("ollama").id)
+    }
+
+    @Test
+    fun `anthropic preset carries anthropic protocol and is release visible`() {
+        val preset = AiProviderPresets.byId("anthropic")
+        assertEquals("https://api.anthropic.com/v1", preset.baseUrl)
+        assertEquals("claude-sonnet-4-5", preset.suggestedModel)
+        assertEquals(AiProtocol.Anthropic, preset.protocol)
+        assertTrue(AiProviderPresets.available(debuggable = false).any { it.id == "anthropic" })
+        // 其余预设保持 OpenAI 兼容默认，不受新增条目影响
+        assertTrue(
+            AiProviderPresets.all
+                .filter { it.id != "anthropic" }
+                .all { it.protocol == AiProtocol.OpenAiCompat },
+        )
     }
 }

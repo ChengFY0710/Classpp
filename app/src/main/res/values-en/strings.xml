@@ -647,7 +647,7 @@
     <string name="ai_error_network">Network error — check your connection</string>
     <string name="ai_error_bad_response">Provider returned unparseable data</string>
     <string name="ai_not_configured_title">Set up an AI provider first</string>
-    <string name="ai_not_configured_hint">Bring your own API key (DeepSeek, Zhipu, Qwen, and more). Your messages plus schedule and todo summaries are sent to the provider you choose</string>
+    <string name="ai_not_configured_hint">Bring your own API key (DeepSeek, Zhipu, Qwen, Claude, and more). Your messages plus schedule and todo summaries are sent to the provider you choose</string>
     <string name="ai_go_settings">Open AI settings</string>
     <string name="ai_example_1">What does next week look like?</string>
     <string name="ai_example_2">Add: lab report due Friday</string>
@@ -666,6 +666,9 @@
     <!-- AI settings overlay (AiSettingsScreen): presets / connection / key / privacy -->
     <string name="ai_settings_title">AI Settings</string>
     <string name="ai_settings_provider">Provider preset</string>
+    <string name="ai_settings_protocol">API format</string>
+    <string name="ai_settings_protocol_openai">OpenAI-compatible</string>
+    <string name="ai_settings_protocol_anthropic">Anthropic</string>
     <string name="ai_settings_base_url">Service URL</string>
     <string name="ai_settings_base_url_hint">https://api.example.com/v1</string>
     <string name="ai_settings_model">Model</string>
