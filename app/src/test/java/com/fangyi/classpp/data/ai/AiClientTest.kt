@@ -1,7 +1,14 @@
 package com.fangyi.classpp.data.ai
 
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -71,6 +78,57 @@ class AiClientTest {
 
     private fun clientWithStatus(status: Int) =
         AiClient(FakeAiTransport(FakeAiStreamResponse(status, listOf<String?>(null))))
+
+    /** 记录读取次数与 cancel 信号；用于断言取消后一行都没读 */
+    private class RecordingResponse(private val lines: List<String?>) : AiStreamResponse {
+        override val status: Int = 200
+        val reads = AtomicInteger(0)
+        val cancelCalled = CountDownLatch(1)
+        private var index = 0
+
+        override fun readLine(): String? {
+            reads.incrementAndGet()
+            return lines.getOrNull(index++)
+        }
+
+        override fun readRemaining(): String = ""
+
+        override fun cancel() {
+            cancelCalled.countDown()
+        }
+
+        override fun close() = Unit
+    }
+
+    /**
+     * 首次 open 阻塞（模拟 DNS/连接/TLS/等响应头）。真实 OkHttp 的阻塞 socket 读
+     * 不响应线程中断，因此这里必须吞掉 InterruptedException——否则
+     * `future.cancel(true)` 会让测试短路，测不到「open 放行后由取消标志断流」。
+     */
+    private class BlockingFirstOpenTransport(
+        private val first: AiStreamResponse,
+        private val second: AiStreamResponse,
+    ) : AiHttpTransport {
+        val firstOpenEntered = CountDownLatch(1)
+        val releaseFirstOpen = CountDownLatch(1)
+        private val opens = AtomicInteger(0)
+
+        override fun open(request: AiHttpRequest): AiStreamResponse {
+            if (opens.incrementAndGet() == 1) {
+                firstOpenEntered.countDown()
+                while (true) {
+                    try {
+                        releaseFirstOpen.await()
+                        break
+                    } catch (_: InterruptedException) {
+                        // 与真实 OkHttp 一致：阻塞在 socket I/O 时不因中断返回
+                    }
+                }
+                return first
+            }
+            return second
+        }
+    }
 
     // ---------- 请求形态 ----------
 
@@ -221,5 +279,44 @@ class AiClientTest {
             }
         }.exceptionOrNull() as AiException
         assertEquals(AiError.Network, exception.error)
+    }
+
+    // ---------- open 阻塞窗口内的取消（1.2 回归） ----------
+
+    @Test
+    fun `cancel during blocked open delivers no deltas and does not leak into next stream`() = runBlocking {
+        val blocked = RecordingResponse(listOf(sseData("旧"), null))
+        val next = RecordingResponse(listOf(sseData("新"), "data: [DONE]", null))
+        val transport = BlockingFirstOpenTransport(blocked, next)
+        val client = AiClient(transport)
+        val oldDeltas = mutableListOf<String>()
+
+        val job = launch {
+            try {
+                client.streamChat(connection(), "sk", turns, onDelta = { oldDeltas += it })
+            } catch (_: CancellationException) {
+                // 预期：取消在挂起点传播
+            }
+        }
+        // 挂起式轮询等 open 进入阻塞（不占住 runBlocking 的事件循环线程）
+        withTimeout(5000) {
+            while (transport.firstOpenEntered.count > 0L) delay(10)
+        }
+        job.cancel()
+        job.join()
+
+        // 放行 open：执行线程应立刻断流——不读一行、零回调、响应被取消
+        transport.releaseFirstOpen.countDown()
+        withTimeout(5000) {
+            while (blocked.cancelCalled.count > 0L) delay(10)
+        }
+        assertEquals(0, blocked.reads.get())
+        assertTrue(oldDeltas.isEmpty())
+
+        // 后续新的流只收到自己的增量，不与被取消的孤儿流串台
+        val newDeltas = mutableListOf<String>()
+        val text = client.streamChat(connection(), "sk", turns, onDelta = { newDeltas += it })
+        assertEquals("新", text)
+        assertEquals(listOf("新"), newDeltas)
     }
 }

@@ -3,6 +3,7 @@ package com.fangyi.classpp.data.ai
 import java.io.IOException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.Json
@@ -34,6 +35,8 @@ data class AiHttpRequest(
  * [AiClient] 调 [cancel] 中断底层连接，阻塞中的 [readLine] 立刻抛 [IOException]
  * 或返回 null——无论哪种形态，取消语义都由此收口。**实现契约：cancel() 必须
  * 能解除 readLine 的阻塞**（OkHttp 实现经 call.cancel() 断 socket，Fake 实现须放行）。
+ * 读取循环另需观察 [AiClient] 的每次调用取消标志：`open()` 阻塞窗口内没有句柄可取消，
+ * 取消只在放行后由该标志收口，且取消后不得再交付任何 `onDelta`。
  * 与 XmuHttpTransport 同一套「接口 + Fake 注入」单测惯例。
  */
 interface AiStreamResponse : AutoCloseable {
@@ -124,8 +127,10 @@ class OkHttpAiTransport : AiHttpTransport {
  *   执行线程上，onDelta 也在该线程触发——调用方须用线程安全的方式发布状态
  *   （如 StateFlow.value 赋值），不要在回调里直接碰 UI；
  * - **取消即断流**：整个阻塞管线包在 [suspendCancellableCoroutine] 里，协程取消时
- *   invokeOnCancellation 调 [AiStreamResponse.cancel] 中断底层连接，阻塞中的读
- *   立刻解除——停止按钮即时生效，不依赖下一块数据到达；
+ *   invokeOnCancellation 先置本次调用的取消标志，再调 [AiStreamResponse.cancel]
+ *   中断底层连接，阻塞中的读立刻解除——停止按钮即时生效，不依赖下一块数据到达；
+ *   `open()` 阻塞期间（DNS/连接/TLS/等响应头）还没有句柄可取消，线程中断对阻塞
+ *   socket 读也无效，此时由取消标志在 `open()` 放行后立即收口：不读一行、不再回调；
  * - 容错：`:` 开头的 SSE 注释/心跳行、解析不了的 data 载荷一律跳过不致命；
  *   服务商把错误放进流里（`data: {"error": ...}`）时按其 code 分类抛 [AiException]；
  * - EOF 无 `[DONE]`：已收到过增量 = 流被掐断（[AiError.Network]，调用方保留半截），
@@ -138,7 +143,8 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
     /**
      * 发起一次流式对话。
      *
-     * @param onDelta 每收到一段增量文本回调一次（在 AI 执行线程，须轻量）
+     * @param onDelta 每收到一段增量文本回调一次（在 AI 执行线程，须轻量）；协程取消后
+     *   保证不再回调（读取循环与交付前各检查一次本次调用的取消标志）
      * @return 完整回复文本（全部增量拼接）
      * @throws AiException 分类错误（UI 按 [AiError] 展示）；协程取消时在挂起点
      *   原样传播 CancellationException（半截文本已通过 onDelta 交给调用方，不随异常丢失）
@@ -150,13 +156,18 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         temperature: Double? = null,
         onDelta: (String) -> Unit = {},
     ): String = suspendCancellableCoroutine { cont ->
+        // 每次调用一份取消标志：open() 阻塞期间 inFlight 还是 null，取消只能靠它在
+        // 放行后立即断流（OkHttp 的阻塞 socket 读不响应线程中断）
+        val cancelled = AtomicBoolean(false)
         // 在途响应句柄：取消钩子用它断开底层连接（在执行线程里 open 后写入）
         val inFlight = AtomicReference<AiStreamResponse?>(null)
         val future = EXECUTOR.submit {
             try {
                 val request = buildRequest(connection, apiKey, turns, temperature)
-                val text = executeAndRead(request, inFlight, onDelta)
+                val text = executeAndRead(request, cancelled, inFlight, onDelta)
                 cont.resume(text, onCancellation = null)
+            } catch (_: StreamCancelled) {
+                // 协程已取消：没有等待者，无需 resume；use 已释放连接
             } catch (e: Throwable) {
                 when (e) {
                     is AiException -> cont.resumeWith(Result.failure(e))
@@ -170,8 +181,9 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
             }
         }
         cont.invokeOnCancellation {
+            cancelled.set(true)
             inFlight.get()?.cancel()
-            future.cancel(true)
+            future.cancel(true) // 仅对尚未开始的任务有效；已开始的任务靠取消标志退出
         }
     }
 
@@ -179,27 +191,38 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
 
     private fun executeAndRead(
         request: AiHttpRequest,
+        cancelled: AtomicBoolean,
         inFlight: AtomicReference<AiStreamResponse?>,
         onDelta: (String) -> Unit,
     ): String {
         val response = transport.open(request)
         inFlight.set(response)
-        response.use {
+        return response.use {
+            if (cancelled.get()) {
+                // open 期间被取消：立即断流，一行都不读（cancel 解除阻塞读）
+                response.cancel()
+                throw StreamCancelled
+            }
             if (response.status !in 200..299) {
                 // 错误体一次性读完再关；detail 截短供排查，不含敏感请求头
                 val body = response.readRemaining()
                 throw classifyStatus(response.status, body)
             }
-            return readEventStream(response, onDelta)
+            readEventStream(response, cancelled, onDelta)
         }
     }
 
     // ---------- SSE 解析 ----------
 
-    private fun readEventStream(response: AiStreamResponse, onDelta: (String) -> Unit): String {
+    private fun readEventStream(
+        response: AiStreamResponse,
+        cancelled: AtomicBoolean,
+        onDelta: (String) -> Unit,
+    ): String {
         val full = StringBuilder()
         var sawDone = false
         while (true) {
+            if (cancelled.get()) throw StreamCancelled
             val line = response.readLine() ?: break
             if (line.isBlank() || line.startsWith(":")) continue // 空行与 SSE 注释/心跳
             if (!line.startsWith(DATA_PREFIX)) continue // event: 等无关字段
@@ -210,6 +233,7 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
             }
             val delta = parseDelta(payload) ?: continue // 容忍不可解析载荷
             if (delta.isNotEmpty()) {
+                if (cancelled.get()) throw StreamCancelled // 取消后不再交付副作用
                 full.append(delta)
                 onDelta(delta)
             }
@@ -301,6 +325,12 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         }
         return requestJson.encodeToString(payload)
     }
+
+    /**
+     * 内部提前退出信号：协程已取消，阻塞管线不再读取/回调。不是值得 resume 的错误
+     * （取消侧已把 continuation 恢复为 CancellationException），任务侧静默收尾即可。
+     */
+    private object StreamCancelled : Exception()
 
     private companion object {
         val JSON = Json { ignoreUnknownKeys = true } // 流内载荷宽容读取；结构错误由逐字段判空兜住

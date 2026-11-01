@@ -17,6 +17,9 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -124,6 +127,15 @@ class AiChatRepositoryTest {
                 )
             },
         )
+
+    /** 请求体里的消息序列（role + content），用于结构断言 */
+    private fun turnsOf(jsonBody: String): List<Pair<String, String>> =
+        Json.parseToJsonElement(jsonBody).jsonObject["messages"]!!.jsonArray.map {
+            it.jsonObject["role"]!!.jsonPrimitive.content to
+                it.jsonObject["content"]!!.jsonPrimitive.content
+        }
+
+    private fun rolesOf(jsonBody: String): List<String> = turnsOf(jsonBody).map { it.first }
 
     private fun repository(
         store: FakeAiChatStore = FakeAiChatStore(),
@@ -338,5 +350,73 @@ class AiChatRepositoryTest {
         val systemIndex = request.jsonBody.indexOf("\"system\"")
         val userIndex = request.jsonBody.lastIndexOf("\"user\"")
         assertTrue(systemIndex in 0 until userIndex)
+    }
+
+    // ---------- 请求消息序列（1.1 回归） ----------
+
+    @Test
+    fun `request has exactly one user turn and no empty assistant`() = runBlocking {
+        val transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]")))
+        val repo = repository(transport = transport)
+
+        repo.send("帮我看看下周安排")
+
+        // 旧实现是 [system, user, assistant(""), user]：重复本轮 user + 空 assistant
+        assertEquals(
+            listOf("system", "user"),
+            rolesOf(transport.opened.single().jsonBody),
+        )
+        assertEquals(
+            "帮我看看下周安排",
+            turnsOf(transport.opened.single().jsonBody).last().second,
+        )
+    }
+
+    @Test
+    fun `retry resends user once with prior history intact`() = runBlocking {
+        val transport = FakeAiTransport(
+            ScriptedResponse(listOf(sse("第一轮回复"), "data: [DONE]")),
+            ScriptedResponse(listOf(sse("第二")), failAfterLines = true),
+            ScriptedResponse(listOf(sse("重试成功"), "data: [DONE]")),
+        )
+        val repo = repository(transport = transport)
+
+        repo.send("第一问")
+        repo.send("第二问")
+        repo.retryLast()
+
+        assertEquals(3, transport.opened.size)
+        assertEquals(listOf("system", "user"), rolesOf(transport.opened[0].jsonBody))
+
+        // 第二轮带上一轮完整历史；重试不重复追加本轮 user，也不发送失败的半截尾巴
+        val expected = listOf("system", "user", "assistant", "user")
+        assertEquals(expected, rolesOf(transport.opened[1].jsonBody))
+        assertEquals(expected, rolesOf(transport.opened[2].jsonBody))
+
+        val retryTurns = turnsOf(transport.opened[2].jsonBody)
+        assertEquals("第一轮回复", retryTurns[2].second)
+        assertEquals("第二问", retryTurns.last().second)
+    }
+
+    @Test
+    fun `empty assistant residue in history is not sent`() = runBlocking {
+        val store = FakeAiChatStore()
+        // 取消在首个增量前发生时的落盘形态：空 interrupted assistant 夹在历史中间
+        store.file = AiChatFile(
+            messages = listOf(
+                AiChatMessage(role = AiChatRole.User, content = "旧问题"),
+                AiChatMessage(role = AiChatRole.Assistant, content = "", interrupted = true),
+                AiChatMessage(role = AiChatRole.User, content = "旧追问"),
+                AiChatMessage(role = AiChatRole.Assistant, content = "旧回答"),
+            ),
+        )
+        val transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]")))
+        val repo = repository(store = store, transport = transport)
+
+        repo.send("新问题")
+
+        val turns = turnsOf(transport.opened.single().jsonBody)
+        assertEquals(listOf("system", "user", "user", "assistant", "user"), turns.map { it.first })
+        assertTrue(turns.none { it.first == "assistant" && it.second.isBlank() })
     }
 }

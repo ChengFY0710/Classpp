@@ -31,8 +31,9 @@ data class AiChatContext(
  * 同构；流式增量直接写入消息流（UI 逐字渲染）。
  *
  * **调用编排**（见 .mimocode/docs/AI功能计划.md §6.3）：
- * - [send] 追加 user 消息与空的 assistant 占位 → 拼 system prompt（上下文快照 +
- *   历史窗口）→ [AiClient.streamChat] 流式 → 完成后解析草稿块挂卡 → 落盘；
+ * - [send] 先对历史窗口拍快照 → 追加 user 消息与空的 assistant 占位 → 拼 system
+ *   prompt（上下文快照 + 历史快照 + 本轮 user）→ [AiClient.streamChat] 流式 →
+ *   完成后解析草稿块挂卡 → 落盘；
  * - 中断/失败保留半截文本（interrupted 标记 + [lastError]），重试走 [retryLast]
  *   （不重复追加 user 消息）；
  * - 停止 = 取消调用方协程（UI 持有自己的 Job），[send] 捕获 CancellationException
@@ -131,13 +132,16 @@ class AiChatRepository internal constructor(
                     content = "",
                     createdAtMillis = nowMillis(),
                 )
+                // 历史快照必须在本轮 user/占位入流之前拍：否则请求里会重复本轮 user，
+                // 并夹带一条 content="" 的 assistant（部分网关直接回 400）
+                val history = _messages.value.takeLast(HISTORY_WINDOW)
                 _messages.update { it + userMessage + placeholder }
 
                 val full = try {
                     client.streamChat(
                         connection = connection,
                         apiKey = apiKey,
-                        turns = buildTurns(trimmed),
+                        turns = buildTurns(history, trimmed),
                         onDelta = { chunk ->
                             appendToLast(chunk)
                         },
@@ -177,6 +181,8 @@ class AiChatRepository internal constructor(
             _messages.update { list ->
                 list.dropLastWhile { it.role == AiChatRole.Assistant }
             }
+            // 尾部那条 user 就是本次要重发的：留在 history 里会与下面追加的 userText 重复
+            val history = _messages.value.dropLast(1).takeLast(HISTORY_WINDOW)
             _lastError.value = null
             _sending.value = true
             try {
@@ -195,7 +201,7 @@ class AiChatRepository internal constructor(
                     client.streamChat(
                         connection = connection,
                         apiKey = apiKey,
-                        turns = buildTurns(userText),
+                        turns = buildTurns(history, userText),
                         onDelta = { chunk -> appendToLast(chunk) },
                     )
                 } catch (e: CancellationException) {
@@ -273,10 +279,12 @@ class AiChatRepository internal constructor(
     // ---------- 内部 ----------
 
     /**
-     * 本次请求的消息序列：system prompt（上下文快照）+ 历史窗口（截最旧）+ 本轮
-     * user 消息。历史含草稿卡消息时只发文本，不重发草稿内容。
+     * 本次请求的消息序列：system prompt（上下文快照）+ 历史窗口快照（不含本轮
+     * user）+ 本轮 user 消息。历史含草稿卡消息时只发文本，不重发草稿内容；
+     * 空 assistant（取消/失败残留的占位）不发送——对任何服务商都是噪声，
+     * 个别网关会因 `content=""` 直接回 400。
      */
-    private fun buildTurns(userText: String): List<AiChatTurn> {
+    private fun buildTurns(history: List<AiChatMessage>, userText: String): List<AiChatTurn> {
         val context = contextProvider()
         val system = AiPromptBuilder.build(
             now = clock.today(),
@@ -286,10 +294,10 @@ class AiChatRepository internal constructor(
             groups = context.groups,
             tags = context.tags,
         )
-        val history = _messages.value
-            .takeLast(HISTORY_WINDOW)
+        val turns = history
+            .filterNot { it.role == AiChatRole.Assistant && it.content.isBlank() }
             .map { AiChatTurn(role = it.role.name.lowercase(), content = it.content) }
-        return listOf(AiChatTurn(role = "system", content = system)) + history +
+        return listOf(AiChatTurn(role = "system", content = system)) + turns +
             AiChatTurn(role = "user", content = userText)
     }
 
