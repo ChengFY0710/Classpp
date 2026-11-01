@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -205,6 +206,9 @@ fun OverlaySheet(
     // 渐变才能跟着一起滑入滑出，而不是在非编辑态常驻一条底部薄纱）
     bottomScrim: Boolean = true,
     bottomContent: (@Composable () -> Unit)? = null,
+    // 可选：把内部滚动列的 ScrollState 交给宿主（AI 对话浮层用它做「新消息自动滚到
+    // 底部」）。null = 不需要；只在挂载后回调一次，既有调用零变化
+    onScrollStateReady: ((ScrollState) -> Unit)? = null,
     // 内容列的作用域由卡片内的 SheetScrollHost 显式转交（那里不在 Column 的接收者作用域里）
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -221,6 +225,10 @@ fun OverlaySheet(
     // 传给顶栏两颗按钮的采样层：关闭时传 null，按钮内部回退原实现
     val glassButtonBackdrop = if (glassButtonsEnabled) glassButtonsBackdrop else null
     val scrollState = rememberScrollState()
+    // 滚动列的 ScrollState 交给宿主（对话浮层自动滚底等）；一次性回调，重组不重发
+    LaunchedEffect(onScrollStateReady) {
+        onScrollStateReady?.invoke(scrollState)
+    }
     val density = LocalDensity.current
     // 距屏幕顶端 = 状态栏（顶部信息栏）实际高度；调用方显式传 topInset 时用传入值。
     // 键盘弹起仍不改变浮层位置——让位只发生在滚动内容末尾

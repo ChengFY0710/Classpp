@@ -2,6 +2,11 @@ package com.fangyi.classpp.data
 
 import android.content.Context
 import android.util.Base64
+import com.fangyi.classpp.data.ai.AiChatContext
+import com.fangyi.classpp.data.ai.AiChatRepository
+import com.fangyi.classpp.data.ai.AiClient
+import com.fangyi.classpp.data.ai.FileAiChatStore
+import com.fangyi.classpp.data.ai.PrefsAiSettingsStore
 import com.fangyi.classpp.data.store.FileScheduleStore
 import com.fangyi.classpp.data.store.FileTagStore
 import com.fangyi.classpp.data.store.FileTodoStore
@@ -42,6 +47,8 @@ class AppContainer internal constructor(
     val xmuAutoLoginManager: XmuAutoLoginManager,
     /** 教务导入（jw.xmu.edu.cn）：用已存凭据登录教务站拉课表，与课程中心不共享登录态 */
     val xmuScheduleImporter: XmuJwScheduleImporter,
+    /** AI 对话（BYOK）：日程页顶栏入口，见 data.ai 与 .mimocode/docs/AI功能计划.md */
+    val aiChatRepository: AiChatRepository,
 ) {
     companion object {
         private val instanceMutex = Mutex()
@@ -92,10 +99,13 @@ class AppContainer internal constructor(
                 cookieJar = jwCookieJar,
             )
 
+            val scheduleRepository = ScheduleRepository.create(FileScheduleStore(dir))
+            val tagRepository = TagRepository.create(FileTagStore(dir))
+
             return AppContainer(
-                scheduleRepository = ScheduleRepository.create(FileScheduleStore(dir)),
+                scheduleRepository = scheduleRepository,
                 todoRepository = todoRepository,
-                tagRepository = TagRepository.create(FileTagStore(dir)),
+                tagRepository = tagRepository,
                 xmuSyncRepository = XmuSyncRepository(
                     store = XmuSyncStore(dir),
                     todoRepository = todoRepository,
@@ -104,6 +114,23 @@ class AppContainer internal constructor(
                 ).also { it.bootstrap() },
                 xmuAutoLoginManager = xmuAutoLoginManager,
                 xmuScheduleImporter = xmuScheduleImporter,
+                aiChatRepository = AiChatRepository.create(
+                    store = FileAiChatStore(dir),
+                    settings = PrefsAiSettingsStore(context.applicationContext),
+                    client = AiClient(),
+                    contextProvider = {
+                        val activeSchedule = scheduleRepository.activeSchedule.value
+                        AiChatContext(
+                            schedule = activeSchedule,
+                            currentWeek = activeSchedule?.let {
+                                scheduleRepository.currentWeek(it.id)
+                            },
+                            todos = todoRepository.todos.value,
+                            groups = todoRepository.groups.value.map { it.name },
+                            tags = tagRepository.tags.value.map { it.name },
+                        )
+                    },
+                ),
             )
         }
     }

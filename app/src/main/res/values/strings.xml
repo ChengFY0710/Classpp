@@ -650,4 +650,53 @@
     <string name="day_image_random_desc">开启后，每天将随机选择图片显示</string>
     <string name="day_image_parallax_title">壁纸视差</string>
     <string name="day_image_parallax_desc">倾斜手机时，背景图随之轻微移动</string>
+
+    <!-- AI 对话浮层（AiChatOverlay）：标题 / 输入 / 示例 / 错误分类 / 草稿卡 -->
+    <string name="ai_sheet_title">AI 助手</string>
+    <string name="ai_input_hint">输入消息…</string>
+    <string name="cd_ai_send">发送</string>
+    <string name="cd_ai_stop">停止生成</string>
+    <string name="cd_ai_settings">AI 设置</string>
+    <string name="ai_interrupted">回复已中断</string>
+    <string name="ai_retry">重试</string>
+    <string name="ai_dismiss_error">知道了</string>
+    <string name="ai_error_auth">API Key 无效或已过期，请到 AI 设置检查</string>
+    <string name="ai_error_quota">账户余额不足或无该模型权限</string>
+    <string name="ai_error_not_found">模型名或服务地址不正确</string>
+    <string name="ai_error_rate_limited">请求过于频繁，请稍后再试</string>
+    <string name="ai_error_server">服务商暂时故障，请稍后再试</string>
+    <string name="ai_error_network">网络连接失败，请检查网络</string>
+    <string name="ai_error_bad_response">服务商返回了无法解析的数据</string>
+    <string name="ai_not_configured_title">先配置 AI 服务商</string>
+    <string name="ai_not_configured_hint">填入你自己的 API Key（DeepSeek、智谱、通义等均可），对话内容与课表、待办摘要会发送给你所选的服务商</string>
+    <string name="ai_go_settings">去 AI 设置</string>
+    <string name="ai_example_1">帮我看看下周安排</string>
+    <string name="ai_example_2">添加：周五交实验报告</string>
+    <string name="ai_draft_card_title">待办草稿</string>
+    <string name="ai_draft_save_selected">保存所选</string>
+    <string name="ai_draft_saved">已保存</string>
+    <string name="ai_draft_dismissed">已忽略</string>
+    <string name="cd_ai_draft_edit">编辑草稿</string>
+    <string name="ai_draft_invalid_dates">日期待确认</string>
+    <string name="ai_draft_invalid_period">时间待确认</string>
+    <string name="ai_draft_invalid_deadline">截止待确认</string>
+    <string name="ai_save_failed">保存失败，请重试</string>
+
+    <!-- AI 设置浮层（AiSettingsScreen）：预设 / 连接 / Key / 隐私说明 -->
+    <string name="ai_settings_title">AI 设置</string>
+    <string name="ai_settings_provider">服务商预设</string>
+    <string name="ai_settings_base_url">服务地址</string>
+    <string name="ai_settings_base_url_hint">https://api.example.com/v1</string>
+    <string name="ai_settings_model">模型名</string>
+    <string name="ai_settings_model_hint">如 deepseek-chat</string>
+    <string name="ai_settings_api_key">API Key</string>
+    <string name="ai_settings_api_key_hint">sk-…</string>
+    <string name="ai_settings_api_key_saved">已配置，留空保持不变</string>
+    <string name="ai_settings_invalid">服务地址与模型名必填</string>
+    <string name="ai_settings_saved">已保存</string>
+    <string name="ai_settings_privacy">对话内容与你的课表、待办摘要会发送到你配置的服务商；API Key 经系统安全加密存储，不随备份迁移。</string>
+    <string name="ai_settings_secure_unavailable">系统安全存储不可用，无法保存 API Key（可重启后再试）</string>
+    <string name="ai_settings_clear_history">清空对话历史</string>
+    <string name="ai_settings_clear_history_confirm">再次点击确认清空</string>
+    <string name="ai_settings_clear_history_done">对话历史已清空</string>
 </resources>

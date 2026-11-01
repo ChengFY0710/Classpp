@@ -1,0 +1,396 @@
+package com.fangyi.classpp.data.ai
+
+import com.fangyi.classpp.data.Clock
+import com.fangyi.classpp.data.LoadState
+import com.fangyi.classpp.data.model.Schedule
+import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.store.LoadIssue
+import com.fangyi.classpp.data.store.LoadOutcome
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+
+/** 一次对话调用的上下文快照：由 contextProvider 从各仓库 StateFlow 现取（只读，不落盘） */
+data class AiChatContext(
+    val schedule: Schedule? = null,
+    val currentWeek: Int? = null,
+    val todos: List<Todo> = emptyList(),
+    val groups: List<String> = emptyList(),
+    val tags: List<String> = emptyList(),
+)
+
+/**
+ * AI 对话仓库：内存真源（StateFlow）+ 磁盘持久化（[AiChatStore]），与 TodoRepository
+ * 同构；流式增量直接写入消息流（UI 逐字渲染）。
+ *
+ * **调用编排**（见 .mimocode/docs/AI功能计划.md §6.3）：
+ * - [send] 追加 user 消息与空的 assistant 占位 → 拼 system prompt（上下文快照 +
+ *   历史窗口）→ [AiClient.streamChat] 流式 → 完成后解析草稿块挂卡 → 落盘；
+ * - 中断/失败保留半截文本（interrupted 标记 + [lastError]），重试走 [retryLast]
+ *   （不重复追加 user 消息）；
+ * - 停止 = 取消调用方协程（UI 持有自己的 Job），[send] 捕获 CancellationException
+ *   后先落盘半截再原样传播——取消语义不吞。
+ *
+ * **草稿确认（红线：AI 不静默写库）**：草稿卡只挂在 assistant 消息上，保存动作由
+ * UI 层经 [updateDraftStatus] 回写状态并落盘；真正落库（todoRepository.addTodos）
+ * 由 UI 层调用，本仓库不碰待办写路径。
+ *
+ * 写：Mutex 串行化（同一次对话期间禁止并发 send），流程 = 内存变更 → `store.save`
+ * → 成功与否只影响下次装载（对话历史可弃，失败不回滚内存）。
+ */
+class AiChatRepository internal constructor(
+    private val store: AiChatStore,
+    private val settings: AiSettingsStore,
+    private val client: AiClient,
+    /** 上下文快照提供方：AppContainer 装配时读各仓库 StateFlow.value（同步、无 I/O） */
+    private val contextProvider: () -> AiChatContext,
+    private val clock: Clock = Clock.system,
+    private val nowMillis: () -> Long = System::currentTimeMillis,
+) {
+    private val mutex = Mutex()
+
+    private val _messages = MutableStateFlow<List<AiChatMessage>>(emptyList())
+    val messages: StateFlow<List<AiChatMessage>> = _messages.asStateFlow()
+
+    private val _loadState = MutableStateFlow(LoadState.Ready)
+    val loadState: StateFlow<LoadState> = _loadState.asStateFlow()
+
+    /** 发送中（发送键变停止键、输入禁用）；一次只允许一场对话 */
+    private val _sending = MutableStateFlow(false)
+    val sending: StateFlow<Boolean> = _sending.asStateFlow()
+
+    /** 最近一次失败的分类错误（UI 错误条 + 重试）；成功发送或用户关闭时清空 */
+    private val _lastError = MutableStateFlow<AiException?>(null)
+    val lastError: StateFlow<AiException?> = _lastError.asStateFlow()
+
+    /** 配置是否就绪（连接 + Key）；bootstrap 与设置页保存后刷新，UI 据此走引导态 */
+    private val _configured = MutableStateFlow(false)
+    val configured: StateFlow<Boolean> = _configured.asStateFlow()
+
+    // ---------- 生命周期 ----------
+
+    /** 从磁盘装载（阻塞 I/O，经 Dispatchers.IO）；对话历史可弃，损坏降级零负担 */
+    suspend fun bootstrap() {
+        val outcome = withContext(Dispatchers.IO) { store.load() }
+        _loadState.value = when (outcome.issue) {
+            LoadIssue.None -> LoadState.Ready
+            LoadIssue.RestoredFromBackup -> LoadState.RestoredFromBackup
+            LoadIssue.ResetAfterCorruption -> LoadState.ResetAfterCorruption
+        }
+        val file = when (outcome) {
+            is LoadOutcome.Loaded<AiChatFile> -> outcome.file
+            is LoadOutcome.Fresh<AiChatFile> -> outcome.file
+        }
+        _messages.value = file.messages
+        refreshConfigured()
+    }
+
+    /** 设置页保存/清除配置后调用；发送前也兜底刷新一次 */
+    fun refreshConfigured() {
+        val connection = settings.loadConnection()
+        _configured.value = connection.isConfigured && settings.loadApiKey() != null
+    }
+
+    // ---------- 对话 ----------
+
+    /**
+     * 发送一条用户消息并流式接收回复。
+     *
+     * @throws AiException 分类错误（同时发布到 [lastError]，UI 二选一消费）
+     * @throws CancellationException 调用方取消（半截文本已标记 interrupted 并落盘）
+     */
+    suspend fun send(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+        mutex.withLock {
+            val connection = settings.loadConnection()
+            val apiKey = settings.loadApiKey()
+            refreshConfigured()
+            if (!connection.isConfigured || apiKey == null) {
+                throw AiException(AiError.Auth, detail = "not configured")
+            }
+
+            _lastError.value = null
+            _sending.value = true
+            try {
+                val userMessage = AiChatMessage(
+                    role = AiChatRole.User,
+                    content = trimmed,
+                    createdAtMillis = nowMillis(),
+                )
+                // 占位 assistant 消息先入流，onDelta 按位更新它的 content
+                val placeholder = AiChatMessage(
+                    role = AiChatRole.Assistant,
+                    content = "",
+                    createdAtMillis = nowMillis(),
+                )
+                _messages.update { it + userMessage + placeholder }
+
+                val full = try {
+                    client.streamChat(
+                        connection = connection,
+                        apiKey = apiKey,
+                        turns = buildTurns(trimmed),
+                        onDelta = { chunk ->
+                            appendToLast(chunk)
+                        },
+                    )
+                } catch (e: CancellationException) {
+                    // 停止/退出：半截文本保留，标记 interrupted，落盘后再传播取消
+                    markLastInterrupted()
+                    throw e
+                } catch (e: AiException) {
+                    markLastInterrupted()
+                    _lastError.value = e
+                    persist()
+                    return
+                }
+
+                finalizeLast(full)
+                persist()
+            } finally {
+                _sending.value = false
+            }
+        }
+    }
+
+    /**
+     * 重试最后一场失败的对话：移除尾部 interrupted 的 assistant 消息后按原 user
+     * 消息重新流式（不重复追加 user 消息）。无可重试状态（没有 interrupted 尾巴）
+     * 时静默返回。
+     */
+    suspend fun retryLast() {
+        mutex.withLock {
+            if (_messages.value.lastOrNull()?.takeIf { it.role == AiChatRole.Assistant }?.interrupted != true) {
+                return
+            }
+            val userText = _messages.value.lastOrNull { it.role == AiChatRole.User }?.content ?: return
+            _messages.update { list ->
+                list.dropLastWhile { it.role == AiChatRole.Assistant }
+            }
+            _lastError.value = null
+            _sending.value = true
+            try {
+                val connection = settings.loadConnection()
+                val apiKey = settings.loadApiKey()
+                if (!connection.isConfigured || apiKey == null) {
+                    throw AiException(AiError.Auth, detail = "not configured")
+                }
+                val placeholder = AiChatMessage(
+                    role = AiChatRole.Assistant,
+                    content = "",
+                    createdAtMillis = nowMillis(),
+                )
+                _messages.update { it + placeholder }
+                val full = try {
+                    client.streamChat(
+                        connection = connection,
+                        apiKey = apiKey,
+                        turns = buildTurns(userText),
+                        onDelta = { chunk -> appendToLast(chunk) },
+                    )
+                } catch (e: CancellationException) {
+                    markLastInterrupted()
+                    throw e
+                } catch (e: AiException) {
+                    markLastInterrupted()
+                    _lastError.value = e
+                    persist()
+                    return
+                }
+                finalizeLast(full)
+                persist()
+            } finally {
+                _sending.value = false
+            }
+        }
+    }
+
+    /** 清空对话历史（设置页「清空对话历史」）；落盘失败不回滚内存（历史可弃） */
+    suspend fun clearHistory() {
+        mutex.withLock {
+            _messages.value = emptyList()
+            _lastError.value = null
+            withContext(Dispatchers.IO) { store.save(AiChatFile()) }
+        }
+    }
+
+    /** 关闭错误条（UI 的「知道了」）；下次失败会重新发布 */
+    fun dismissError() {
+        _lastError.value = null
+    }
+
+    // ---------- 设置读写（AI 设置浮层经此读写，store 不直接出包） ----------
+
+    /** Keystore 是否可用；false = 安全存储不可用，Key 无法保存（UI 置灰并说明） */
+    val secureAvailable: Boolean get() = settings.secureAvailable
+
+    suspend fun loadConnection(): AiConnection =
+        withContext(Dispatchers.IO) { settings.loadConnection() }
+
+    suspend fun saveConnection(connection: AiConnection): Boolean =
+        withContext(Dispatchers.IO) { settings.saveConnection(connection) }
+
+    /** 解密失败与未配置同形返回 null；UI 用 [secureAvailable] 区分两种语义 */
+    suspend fun loadApiKey(): String? =
+        withContext(Dispatchers.IO) { settings.loadApiKey() }
+
+    /** null = 清除已存 Key */
+    suspend fun saveApiKey(key: String?): Boolean =
+        withContext(Dispatchers.IO) { settings.saveApiKey(key) }
+
+    // ---------- 草稿卡 ----------
+
+    /** 回写一条草稿的处置状态（保存成功 → Saved；用户放弃 → Dismissed）并落盘 */
+    suspend fun updateDraftStatus(messageIndex: Int, draftIndex: Int, status: AiDraftStatus) {
+        mutex.withLock {
+            val current = _messages.value.getOrNull(messageIndex) ?: return
+            val drafts = current.drafts ?: return
+            if (draftIndex !in drafts.statuses.indices) return
+            val updated = current.copy(
+                drafts = drafts.copy(
+                    statuses = drafts.statuses.toMutableList().also {
+                        it[draftIndex] = status
+                    },
+                ),
+            )
+            _messages.update { list -> list.toMutableList().also { it[messageIndex] = updated } }
+            persist()
+        }
+    }
+
+    // ---------- 内部 ----------
+
+    /**
+     * 本次请求的消息序列：system prompt（上下文快照）+ 历史窗口（截最旧）+ 本轮
+     * user 消息。历史含草稿卡消息时只发文本，不重发草稿内容。
+     */
+    private fun buildTurns(userText: String): List<AiChatTurn> {
+        val context = contextProvider()
+        val system = AiPromptBuilder.build(
+            now = clock.today(),
+            schedule = context.schedule,
+            currentWeek = context.currentWeek,
+            todos = context.todos,
+            groups = context.groups,
+            tags = context.tags,
+        )
+        val history = _messages.value
+            .takeLast(HISTORY_WINDOW)
+            .map { AiChatTurn(role = it.role.name.lowercase(), content = it.content) }
+        return listOf(AiChatTurn(role = "system", content = system)) + history +
+            AiChatTurn(role = "user", content = userText)
+    }
+
+    /** 流式增量追加到尾部 assistant 消息（StateFlow 原位更新，UI 逐字渲染） */
+    private fun appendToLast(chunk: String) {
+        _messages.update { list ->
+            if (list.isEmpty()) return@update list
+            val last = list.last()
+            if (last.role != AiChatRole.Assistant) return@update list
+            list.toMutableList().also { it[it.lastIndex] = last.copy(content = last.content + chunk) }
+        }
+    }
+
+    /** 流结束（成功）：解析草稿块挂卡；解析失败发起一次修复重试（同连接复用契约） */
+    private suspend fun finalizeLast(full: String) {
+        val drafts = extractDrafts(full)
+        _messages.update { list ->
+            if (list.isEmpty()) return@update list
+            val last = list.last()
+            if (last.role != AiChatRole.Assistant) return@update list
+            list.toMutableList().also {
+                it[it.lastIndex] = last.copy(content = full, interrupted = false, drafts = drafts)
+            }
+        }
+    }
+
+    private suspend fun markLastInterrupted() {
+        _messages.update { list ->
+            if (list.isEmpty()) return@update list
+            val last = list.last()
+            if (last.role != AiChatRole.Assistant) return@update list
+            list.toMutableList().also {
+                // 半截文本里若已有完整草稿块也照常解析，用户仍可保存
+                it[it.lastIndex] = last.copy(
+                    content = last.content,
+                    interrupted = true,
+                    drafts = extractDrafts(last.content) ?: last.drafts,
+                )
+            }
+        }
+    }
+
+    /**
+     * 从回复文本提取草稿（无块 = null）；解析失败带错误自动重试一次（把上次输出
+     * 原样附回，请模型修正后重新输出），仍失败返回 null（视为纯对话）。
+     */
+    private suspend fun extractDrafts(reply: String): AiMessageDrafts? {
+        val connection = settings.loadConnection()
+        val apiKey = settings.loadApiKey()
+        if (!connection.isConfigured || apiKey == null) return null
+
+        val json = AiTodoDraftCodec.extractJsonBlock(reply) ?: return null
+        val first = AiTodoDraftCodec.parseTodoDrafts(json)
+        if (first != null) return first.toMessageDrafts()
+
+        // 修复重试：非流式轻量收口——复用流式通道但整块收，UI 无感（增量丢弃）
+        val repairPrompt = "你上一条回复里的 JSON 无法解析。请只输出一个修正后的 ```json 代码块，" +
+            "严格遵循之前声明的格式，不要输出其他内容。"
+        val repaired = try {
+            client.streamChat(
+                connection = connection,
+                apiKey = apiKey,
+                turns = listOf(
+                    AiChatTurn(role = "user", content = reply.take(REPAIR_CONTEXT_MAX)),
+                    AiChatTurn(role = "user", content = repairPrompt),
+                ),
+            )
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        val repairedJson = AiTodoDraftCodec.extractJsonBlock(repaired) ?: return null
+        return AiTodoDraftCodec.parseTodoDrafts(repairedJson)?.toMessageDrafts()
+    }
+
+    private fun AiTodoDraftPayload.toMessageDrafts(): AiMessageDrafts? {
+        if (todos.isEmpty()) return null
+        return AiMessageDrafts(
+            drafts = todos,
+            statuses = List(todos.size) { AiDraftStatus.Pending },
+        )
+    }
+
+    /** 落盘（阻塞 I/O，经 Dispatchers.IO）；失败只影响下次装载（历史可弃） */
+    private suspend fun persist() {
+        withContext(Dispatchers.IO) {
+            val file = AiChatFile(messages = _messages.value.takeLast(MAX_PERSISTED_MESSAGES))
+            store.save(file)
+        }
+    }
+
+    companion object {
+        /** 发给模型的历史窗口（条数；system prompt 不在此） */
+        const val HISTORY_WINDOW = 30
+
+        /** 落盘的消息上限（超限截最旧，见计划 §4.3） */
+        const val MAX_PERSISTED_MESSAGES = 200
+
+        /** 修复重试时携带的原文上限（防超长回复撑爆重试请求） */
+        const val REPAIR_CONTEXT_MAX = 4000
+
+        /** 应用侧装配入口（AppContainer）；测试直接构造注入 fake store / fake client */
+        suspend fun create(
+            store: AiChatStore,
+            settings: AiSettingsStore,
+            client: AiClient,
+            contextProvider: () -> AiChatContext,
+        ): AiChatRepository = AiChatRepository(store, settings, client, contextProvider).also { it.bootstrap() }
+    }
+}

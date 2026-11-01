@@ -629,4 +629,53 @@
     <string name="day_image_random_desc">Pick a random image as the background each day</string>
     <string name="day_image_parallax_title">Wallpaper Perspective</string>
     <string name="day_image_parallax_desc">Background shifts subtly as you tilt your phone</string>
+
+    <!-- AI chat overlay (AiChatOverlay): title / input / examples / error classes / draft card -->
+    <string name="ai_sheet_title">AI Assistant</string>
+    <string name="ai_input_hint">Type a message…</string>
+    <string name="cd_ai_send">Send</string>
+    <string name="cd_ai_stop">Stop generating</string>
+    <string name="cd_ai_settings">AI settings</string>
+    <string name="ai_interrupted">Reply interrupted</string>
+    <string name="ai_retry">Retry</string>
+    <string name="ai_dismiss_error">Got it</string>
+    <string name="ai_error_auth">API key is invalid or expired — check it in AI settings</string>
+    <string name="ai_error_quota">Insufficient balance or no access to this model</string>
+    <string name="ai_error_not_found">Incorrect model name or service URL</string>
+    <string name="ai_error_rate_limited">Too many requests — try again later</string>
+    <string name="ai_error_server">Provider is temporarily down — try again later</string>
+    <string name="ai_error_network">Network error — check your connection</string>
+    <string name="ai_error_bad_response">Provider returned unparseable data</string>
+    <string name="ai_not_configured_title">Set up an AI provider first</string>
+    <string name="ai_not_configured_hint">Bring your own API key (DeepSeek, Zhipu, Qwen, and more). Your messages plus schedule and todo summaries are sent to the provider you choose</string>
+    <string name="ai_go_settings">Open AI settings</string>
+    <string name="ai_example_1">What does next week look like?</string>
+    <string name="ai_example_2">Add: lab report due Friday</string>
+    <string name="ai_draft_card_title">Todo drafts</string>
+    <string name="ai_draft_save_selected">Save selected</string>
+    <string name="ai_draft_saved">Saved</string>
+    <string name="ai_draft_dismissed">Dismissed</string>
+    <string name="cd_ai_draft_edit">Edit draft</string>
+    <string name="ai_draft_invalid_dates">Check dates</string>
+    <string name="ai_draft_invalid_period">Check times</string>
+    <string name="ai_draft_invalid_deadline">Check deadline</string>
+    <string name="ai_save_failed">Save failed — try again</string>
+
+    <!-- AI settings overlay (AiSettingsScreen): presets / connection / key / privacy -->
+    <string name="ai_settings_title">AI Settings</string>
+    <string name="ai_settings_provider">Provider preset</string>
+    <string name="ai_settings_base_url">Service URL</string>
+    <string name="ai_settings_base_url_hint">https://api.example.com/v1</string>
+    <string name="ai_settings_model">Model</string>
+    <string name="ai_settings_model_hint">e.g. deepseek-chat</string>
+    <string name="ai_settings_api_key">API Key</string>
+    <string name="ai_settings_api_key_hint">sk-…</string>
+    <string name="ai_settings_api_key_saved">Configured — leave blank to keep</string>
+    <string name="ai_settings_invalid">Service URL and model are required</string>
+    <string name="ai_settings_saved">Saved</string>
+    <string name="ai_settings_privacy">Your messages plus schedule and todo summaries are sent to the provider you configure. The API key is encrypted with system security storage and never included in backups.</string>
+    <string name="ai_settings_secure_unavailable">System secure storage is unavailable — the API key cannot be saved (try restarting)</string>
+    <string name="ai_settings_clear_history">Clear chat history</string>
+    <string name="ai_settings_clear_history_confirm">Tap again to confirm</string>
+    <string name="ai_settings_clear_history_done">Chat history cleared</string>
 </resources>

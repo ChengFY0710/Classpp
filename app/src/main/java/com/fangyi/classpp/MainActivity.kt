@@ -201,6 +201,8 @@ class MainActivity : ComponentActivity() {
                     val xmuSyncRepository = container?.xmuSyncRepository
                     val xmuAutoLoginManager = container?.xmuAutoLoginManager
                     val xmuScheduleImporter = container?.xmuScheduleImporter
+                    // AI 对话（日程页顶栏右侧按钮唤起对话浮层，M1 唯一 AI 入口）
+                    val aiChatRepository = container?.aiChatRepository
                     // tab 页转场状态机：惰性挂载/常驻/切页动画/停靠页冻结帧回位的全部机制
                     // 见 ui.navigation 的 TabPagerState（原内联于此，纯搬移）
                     val pagerState = rememberTabPagerState()
@@ -347,6 +349,8 @@ class MainActivity : ComponentActivity() {
                                             scheduleRepository = repository,
                                             // 待办提醒卡标签配色数据源（与待办页同源）
                                             tagRepository = tagRepository,
+                                            // AI 对话（日程页顶栏右侧按钮唤起对话浮层）
+                                            aiChatRepository = aiChatRepository,
                                             // 选择图片浮层在场时藏底部导航栏（同课表/待办页浮层）
                                             onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                         )
