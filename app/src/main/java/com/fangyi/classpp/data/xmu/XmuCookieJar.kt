@@ -74,6 +74,15 @@ internal class XmuCookieJar {
         return matched
     }
 
+    /** 直接写入某主机的 cookie（登录成功后把会话凭据注入业务取数用的罐） */
+    fun putCookies(host: String, cookies: Map<String, String>) {
+        val domain = host.trimEnd('.').lowercase()
+        val target = byDomain.getOrPut(domain) { mutableMapOf() }
+        for ((name, value) in cookies) {
+            if (name.isNotBlank()) target[name] = value
+        }
+    }
+
     private fun hostOf(url: String): String? = try {
         URI(url).host?.lowercase()
     } catch (_: Exception) {

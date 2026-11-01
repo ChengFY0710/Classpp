@@ -10,11 +10,22 @@ enum class XmuJwImportError {
     /** 未连接或未保存凭据：引导先去「账号与同步」登录 */
     NeedLogin,
 
-    /** 教务登录失败（验证码/密码变更/改版）或登录一次后仍过期：引导重新登录 */
+    /** 教务系统要求验证码：无法无头登录，需稍后重试或先完成一次网页登录 */
+    NeedCaptcha,
+
+    /** 学号或密码验证失败：引导去「账号与同步」重新登录 */
+    InvalidCredentials,
+
+    /** 会话建立失败（登录后业务请求仍过期） */
     SessionExpired,
     ServiceBusy,
     NetworkError,
     Timeout,
+
+    /** 教务登录链路形态异常（CAS 页面改版/意外跳转）：与接口异常分开提示 */
+    LoginFormatChanged,
+
+    /** 业务接口返回无法解析的内容 */
     FormatChanged,
 }
 
@@ -48,14 +59,14 @@ private sealed interface XmuJwBundleResult {
  * 登录只对教务站（jw 域）建立会话——任何失败都**不触碰**课程中心的登录态与凭据策略
  * （不 BLOCKED、不删凭据），用户在课程中心的同步不受影响。
  *
- * 教务会话只在内存（[session]）：每次进程内首导必经一次登录，之后复用；过期由业务
- * 请求的过期判定触发，不做独立探活。
+ * 教务会话只在内存 [cookieJar]（与 [XmuJwScheduleApi] 共享同一实例）：登录成功后把
+ * 凭据写入罐中，业务请求随响应的 Set-Cookie 继续演进（负载均衡路由 cookie 等）。
  */
 class XmuJwScheduleImporter internal constructor(
     private val loginClient: XmuJwLoginClient,
     private val api: XmuJwScheduleApi,
     private val credentialsProvider: suspend () -> XmuCredentials?,
-    private val session: XmuSessionCookieHolder,
+    private val cookieJar: XmuCookieJar,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
     private val mutex = Mutex()
@@ -74,7 +85,7 @@ class XmuJwScheduleImporter internal constructor(
         when (val first = api.fetchSemesters()) {
             is XmuJwApiResult.Ok -> XmuJwSemestersResult.Ok(first.value.toSemesters())
             is XmuJwApiResult.SessionExpired -> {
-                if (!loginJw()) return@withLock XmuJwSemestersResult.Failed(XmuJwImportError.SessionExpired)
+                loginJw()?.let { return@withLock XmuJwSemestersResult.Failed(it) }
                 when (val retried = api.fetchSemesters()) {
                     is XmuJwApiResult.Ok -> {
                         backoffUntilMillis = 0
@@ -120,9 +131,7 @@ class XmuJwScheduleImporter internal constructor(
             is XmuJwBundleResult.Ok -> finish(first.bundle)
             is XmuJwBundleResult.Err -> when (first.error) {
                 is XmuJwApiResult.SessionExpired -> {
-                    if (!loginJw()) {
-                        return@withLock XmuJwScheduleResult.Failed(XmuJwImportError.SessionExpired)
-                    }
+                    loginJw()?.let { return@withLock XmuJwScheduleResult.Failed(it) }
                     when (val retried = fetchBundle(xnxqdm, studentId)) {
                         is XmuJwBundleResult.Ok -> finish(retried.bundle)
                         is XmuJwBundleResult.Err ->
@@ -136,11 +145,16 @@ class XmuJwScheduleImporter internal constructor(
 
     // ---------- 内部 ----------
 
-    /** 作息 + 周次 + 排课结果：周次只影响开学日推算，除会话过期外失败均静默降级 */
+    /**
+     * 作息 + 周次 + 排课结果：周次只影响开学日推算，除会话过期外失败均静默降级。
+     * 作息是全校固定的作息表——接口空应答（EMAP 对未知动作回 200 空数据）或瞬时异常
+     * 时用内置作息兜底，不阻断导入；只有会话过期仍向上传播触发重登。
+     */
     private suspend fun fetchBundle(xnxqdm: String, studentId: String): XmuJwBundleResult {
         val slots = when (val r = api.fetchSlotTimes(xnxqdm)) {
-            is XmuJwApiResult.Ok -> r.value
-            else -> return XmuJwBundleResult.Err(r)
+            is XmuJwApiResult.Ok -> r.value.ifEmpty { XMU_JW_STANDARD_SLOTS }
+            is XmuJwApiResult.SessionExpired -> return XmuJwBundleResult.Err(r)
+            else -> XMU_JW_STANDARD_SLOTS
         }
         val currentZc = when (val r = api.fetchCurrentWeek(xnxqdm)) {
             is XmuJwApiResult.Ok -> r.value
@@ -171,19 +185,24 @@ class XmuJwScheduleImporter internal constructor(
 
     /**
      * 用已存凭据登录教务站一次并写入 jw 会话。只建立 jw 会话，不读改课程中心的
-     * cookie 与策略；返回是否登录成功（ outcome 细节由 UI 统一归为「请重新登录」）。
+     * cookie 与策略；返回 null = 成功，否则返回对应失败分类（UI 按类给文案）。
      */
-    private suspend fun loginJw(): Boolean {
+    private suspend fun loginJw(): XmuJwImportError? {
         val credentials = credentialsProvider()
         if (credentials == null || credentials.username.isBlank() || credentials.password.isEmpty()) {
-            return false
+            return XmuJwImportError.NeedLogin
         }
         return when (val outcome = loginClient.login(credentials.username.trim(), credentials.password)) {
             is XmuLoginOutcome.Ok -> {
-                session.header = outcome.cookieHeader
-                true
+                cookieJar.putCookies(XmuJwLoginClient.JW_HOST, outcome.cookies)
+                null
             }
-            else -> false
+            XmuLoginOutcome.NeedCaptcha -> XmuJwImportError.NeedCaptcha
+            XmuLoginOutcome.InvalidCredentials -> XmuJwImportError.InvalidCredentials
+            XmuLoginOutcome.FormatChanged -> XmuJwImportError.LoginFormatChanged
+            XmuLoginOutcome.ServiceBusy -> XmuJwImportError.ServiceBusy
+            XmuLoginOutcome.NetworkError -> XmuJwImportError.NetworkError
+            XmuLoginOutcome.Timeout -> XmuJwImportError.Timeout
         }
     }
 

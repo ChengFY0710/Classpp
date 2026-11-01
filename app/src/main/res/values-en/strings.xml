@@ -398,11 +398,14 @@
     <string name="import_xmu_default_name">Academic Schedule</string>
     <string name="import_confirm_detail">Week 1 starts on %1$s; adjust it later in schedule settings.</string>
     <string name="error_xmu_need_login">Sign in on the Account &amp; Sync page first, then retry</string>
-    <string name="error_xmu_session">Academic system sign-in expired. Sign in again on the Account &amp; Sync page, then retry</string>
+    <string name="error_xmu_captcha">The academic system requires a captcha, so automatic sign-in is unavailable right now. Try again later, or open the academic system site in a browser first</string>
+    <string name="error_xmu_credentials">Sign-in was rejected. Sign in again on the Account &amp; Sync page, then retry</string>
+    <string name="error_xmu_session">The academic session was not established after sign-in. Retry later; if it keeps failing, sign in again on the Account &amp; Sync page</string>
     <string name="error_xmu_busy">The academic system is busy. Try again later</string>
     <string name="error_xmu_network">Network error. Check your connection and retry</string>
     <string name="error_xmu_timeout">Import timed out. Try again</string>
     <string name="error_xmu_format">Unexpected response from the academic system. Try again later</string>
+    <string name="error_xmu_login_format">The academic sign-in page is not in the expected form (it may have been redesigned), so automatic sign-in is unavailable for now</string>
     <string name="error_xmu_no_courses">No courses found</string>
     <string name="import_wakeup_label">Import from Wakeup Share Code</string>
     <string name="import_wakeup_desc">Enter a Wakeup schedule share code to import</string>

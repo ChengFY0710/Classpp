@@ -932,10 +932,13 @@ fun ScheduleScreen(
             // 失败分类 → 文案（组合期解析 stringResource，协程里只查表）
             val xmuErrorTexts: Map<XmuJwImportError, String> = mapOf(
                 XmuJwImportError.NeedLogin to stringResource(R.string.error_xmu_need_login),
+                XmuJwImportError.NeedCaptcha to stringResource(R.string.error_xmu_captcha),
+                XmuJwImportError.InvalidCredentials to stringResource(R.string.error_xmu_credentials),
                 XmuJwImportError.SessionExpired to stringResource(R.string.error_xmu_session),
                 XmuJwImportError.ServiceBusy to stringResource(R.string.error_xmu_busy),
                 XmuJwImportError.NetworkError to stringResource(R.string.error_xmu_network),
                 XmuJwImportError.Timeout to stringResource(R.string.error_xmu_timeout),
+                XmuJwImportError.LoginFormatChanged to stringResource(R.string.error_xmu_login_format),
                 XmuJwImportError.FormatChanged to stringResource(R.string.error_xmu_format),
             )
             val xmuNoCoursesToast = stringResource(R.string.error_xmu_no_courses)

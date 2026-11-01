@@ -5,7 +5,9 @@ import kotlinx.coroutines.delay
 
 internal const val XMU_TEST_LOGIN_HTML =
     """<html><head><script>var pwdEncryptSalt = "0123456789abcdef";</script></head>
-       <body><input type="hidden" name="execution" value="e1s1"/></body></html>"""
+       <body><input type="hidden" name="execution" value="e1s1"/>
+       <input type="hidden" name="lt" id="lt" value="lt-token"/>
+       <input type="hidden" id="dllt" name="dllt" value="generalLogin"/></body></html>"""
 
 internal const val XMU_TEST_PROFILE = """{"id":9001,"user_no":"20260001","name":"张三"}"""
 internal const val XMU_TEST_TODOS = """{"todo_list":[]}"""
@@ -190,12 +192,10 @@ internal class XmuTestHarness(
     )
 }
 
-internal const val XMU_JW_TEST_ENTRY_URL =
-    "https://jw.xmu.edu.cn/gsapp/sys/wdkbapp/modules/xskcb/kfdxnxqcx.do"
 internal const val XMU_JW_TEST_LOGIN_REDIRECT =
     "https://ids.xmu.edu.cn/authserver/login?service=https%3A%2F%2Fjw.xmu.edu.cn%2Fgsapp%2Fsys%2Fwdkbapp%2Fmodules%2Fxskcb%2Fkfdxnxqcx.do"
 internal const val XMU_JW_TEST_TICKET_URL =
-    "https://jw.xmu.edu.cn/gsapp/sys/wdkbapp/modules/xskcb/kfdxnxqcx.do?ticket=ST-1"
+    "https://jw.xmu.edu.cn/gsapp/sys/wdkbapp/*default/index.do?ticket=ST-1"
 internal const val XMU_JW_TEST_HOME_HTML = "<html>jw home</html>"
 
 /** 以下接口样本取自真实教务「我的课表」抓包（精简字段，结构与线上响应一致） */
@@ -281,8 +281,11 @@ internal class FakeXmuJwServer {
                         body = XMU_JW_TEST_HOME_HTML,
                         setCookies = listOf("JW_SESSION=S; Path=/; HttpOnly"),
                     )
-                // 未登录的业务请求（含登录入口本身）一律 302 到 CAS
+                // 未登录的业务请求（含登录入口/应用入口）一律 302 到 CAS
                 !sessionValid -> XmuHttpResponse(302, location = XMU_JW_TEST_LOGIN_REDIRECT)
+                // 课表应用入口：会话有效时打开应用完成初始化
+                request.url.contains("appShow") ->
+                    XmuHttpResponse(200, body = XMU_JW_TEST_HOME_HTML)
                 request.url.endsWith("kfdxnxqcx.do") ->
                     XmuHttpResponse(200, body = requireNotNull(semestersBody))
                 request.url.endsWith("queryXsskjc.do") ->

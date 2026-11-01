@@ -8,6 +8,7 @@ import com.fangyi.classpp.data.store.FileTodoStore
 import com.fangyi.classpp.data.xmu.AndroidXmuCookieMirror
 import com.fangyi.classpp.data.xmu.KeystoreXmuSecureStore
 import com.fangyi.classpp.data.xmu.XmuAutoLoginManager
+import com.fangyi.classpp.data.xmu.XmuCookieJar
 import com.fangyi.classpp.data.xmu.XmuDebugLog
 import com.fangyi.classpp.data.xmu.XmuJwLoginClient
 import com.fangyi.classpp.data.xmu.XmuJwScheduleApi
@@ -81,13 +82,14 @@ class AppContainer internal constructor(
             ).also { it.bootstrap() }
 
             // 教务导入：与课程中心共用传输层与密码加密，但登录链路（CAS service 指回
-            // 教务站）与会话 cookie（jw 域，仅内存）各自独立
-            val jwSession = XmuSessionCookieHolder()
+            // 教务站）与会话 cookie（jw 域，仅内存）各自独立；cookie 罐由登录与业务
+            // 取数共享，随响应继续演进（负载均衡路由 cookie 等）
+            val jwCookieJar = XmuCookieJar()
             val xmuScheduleImporter = XmuJwScheduleImporter(
                 loginClient = XmuJwLoginClient(transport = transport, cipher = cipher),
-                api = XmuJwScheduleApi(transport = transport, session = jwSession),
+                api = XmuJwScheduleApi(transport = transport, cookieJar = jwCookieJar),
                 credentialsProvider = { xmuAutoLoginManager.peekCredentials() },
-                session = jwSession,
+                cookieJar = jwCookieJar,
             )
 
             return AppContainer(

@@ -27,7 +27,9 @@ class XmuJwLoginClientTest {
         assertTrue(form.contains("username=20260001"))
         assertTrue(form.contains("execution=e1s1"))
         assertTrue(form.contains("_eventId=submit"))
-        assertTrue(form.contains("cllt=userNameLogin"))
+        assertTrue(form.contains("lt=lt-token"))
+        assertTrue(form.contains("dllt=generalLogin"))
+        assertTrue(form.contains("rmShown=1"))
         // 教务链路的密码同样走 AES 加密（密文非明文）
         val encodedPassword = URLDecoder.decode(
             form.split("&").first { it.startsWith("password=") }.substringAfter("="),
@@ -55,11 +57,68 @@ class XmuJwLoginClientTest {
     }
 
     @Test
-    fun `entry page without cas round trip is format changed`() = runBlocking {
-        val server = FakeXmuJwServer().apply { sessionValid = true }
-        // 入口直接 200（无 CAS 往返）拿不到教务会话：按改版处理
-        assertEquals(XmuLoginOutcome.FormatChanged, client(server.transport).login("u", "p"))
-        assertEquals(0, server.loginPosts)
+    fun `401 rendered login page is invalid credentials not format changed`() = runBlocking {
+        // 本部署的 CAS 对失败登录返回 401 + 重渲染登录页（可能附验证码错误提示）
+        val transport = FakeXmuTransport { request ->
+            when {
+                request.url.startsWith("https://jw.xmu.edu.cn/") ->
+                    XmuHttpResponse(302, location = XMU_JW_TEST_LOGIN_REDIRECT)
+                request.url.contains("checkNeedCaptcha") ->
+                    XmuHttpResponse(200, body = """{"isNeed":false}""")
+                request.url.contains("authserver/login") && request.method == "POST" ->
+                    XmuHttpResponse(401, body = XMU_TEST_LOGIN_HTML)
+                request.url.contains("authserver/login") ->
+                    XmuHttpResponse(200, body = XMU_TEST_LOGIN_HTML)
+                else -> error("unexpected ${request.method} ${request.url}")
+            }
+        }
+
+        assertEquals(XmuLoginOutcome.InvalidCredentials, client(transport).login("u", "p"))
+    }
+
+    @Test
+    fun `403 landing still succeeds when ticket issued a jw session cookie`() = runBlocking {
+        // 真实链路形态：ticket 校验已下发 GS_SESSIONID，但落地页被拒 403。
+        // 只要 jw 域已有会话类 cookie 就按成功返回，交给业务请求最终判定
+        val transport = FakeXmuTransport { request ->
+            when {
+                request.url.startsWith("https://jw.xmu.edu.cn/") -> when {
+                    request.url.contains("ticket=") ->
+                        XmuHttpResponse(
+                            302,
+                            location = "https://jw.xmu.edu.cn/gsapp/sys/wdkbapp/*default/index.do",
+                            setCookies = listOf("GS_SESSIONID=G1; Path=/"),
+                        )
+                    else -> XmuHttpResponse(403, body = "<html>denied</html>")
+                }
+                request.url.contains("checkNeedCaptcha") ->
+                    XmuHttpResponse(200, body = """{"isNeed":false}""")
+                request.url.contains("authserver/login") && request.method == "POST" ->
+                    XmuHttpResponse(
+                        302,
+                        location = "https://jw.xmu.edu.cn/gsapp/sys/wdkbapp/*default/index.do?ticket=ST-1",
+                    )
+                request.url.contains("authserver/login") ->
+                    XmuHttpResponse(200, body = XMU_TEST_LOGIN_HTML)
+                else -> error("unexpected ${request.method} ${request.url}")
+            }
+        }
+
+        val ok = client(transport).login("u", "p") as XmuLoginOutcome.Ok
+        assertEquals("G1", ok.cookies["GS_SESSIONID"])
+    }
+
+    @Test
+    fun `cas page without form fields is format changed`() = runBlocking {
+        // 入口直达 CAS：拿到不含 execution/salt 的 200 页 → 链路改版
+        val transport = FakeXmuTransport { request ->
+            when {
+                request.url.contains("authserver/login") ->
+                    XmuHttpResponse(200, body = "<html>no login form</html>")
+                else -> error("unexpected ${request.method} ${request.url}")
+            }
+        }
+        assertEquals(XmuLoginOutcome.FormatChanged, client(transport).login("u", "p"))
     }
 
     @Test

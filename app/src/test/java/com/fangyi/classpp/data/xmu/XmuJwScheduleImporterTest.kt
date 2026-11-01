@@ -18,13 +18,13 @@ class XmuJwScheduleImporterTest {
     ) {
         var now = 1_000_000L
         val server = FakeXmuJwServer().apply { this.sessionValid = sessionValid }
-        val session = XmuSessionCookieHolder()
+        val jar = XmuCookieJar()
 
         val importer = XmuJwScheduleImporter(
             loginClient = XmuJwLoginClient(server.transport, jvmCipher()),
-            api = XmuJwScheduleApi(server.transport, session),
+            api = XmuJwScheduleApi(server.transport, jar),
             credentialsProvider = { credentials },
-            session = session,
+            cookieJar = jar,
             nowMillis = { now },
         )
     }
@@ -38,7 +38,7 @@ class XmuJwScheduleImporterTest {
         assertEquals(2, semesters.size)
         assertEquals(XmuJwSemester("20261", "2026-2027学年 秋季学期"), semesters[0])
         assertEquals(1, harness.server.loginPosts)
-        assertEquals("JW_SESSION=S", harness.session.header)
+        assertEquals("S", harness.jar.cookiesFor("jw.xmu.edu.cn")["JW_SESSION"])
 
         // 会话在内存复用：第二次不再登录
         harness.importer.fetchSemesters()
@@ -55,12 +55,25 @@ class XmuJwScheduleImporterTest {
     }
 
     @Test
-    fun `failed jw login is session expired and leaves no session`() = runBlocking {
+    fun `failed jw login surfaces invalid credentials and leaves no session`() = runBlocking {
         val harness = JwHarness().apply { server.invalidCredentials = true }
         val result = harness.importer.fetchSchedule("20261", "教务课表", today)
 
-        assertEquals(XmuJwImportError.SessionExpired, (result as XmuJwScheduleResult.Failed).error)
-        assertNull(harness.session.header)
+        assertEquals(
+            XmuJwImportError.InvalidCredentials,
+            (result as XmuJwScheduleResult.Failed).error,
+        )
+        assertTrue(harness.jar.cookiesFor("jw.xmu.edu.cn").isEmpty())
+    }
+
+    @Test
+    fun `captcha demand surfaces need captcha without submitting password`() = runBlocking {
+        val harness = JwHarness().apply { server.needCaptcha = true }
+        val result = harness.importer.fetchSemesters()
+
+        assertEquals(XmuJwImportError.NeedCaptcha, (result as XmuJwSemestersResult.Failed).error)
+        assertEquals(0, harness.server.loginPosts)
+        assertTrue(harness.jar.cookiesFor("jw.xmu.edu.cn").isEmpty())
     }
 
     @Test
@@ -93,6 +106,18 @@ class XmuJwScheduleImporterTest {
         val result = harness.importer.fetchSchedule("20261", "教务课表", today)
 
         assertEquals(XmuJwScheduleResult.NoCourses, result)
+    }
+
+    @Test
+    fun `missing slot times fall back to built-in xmu slots`() = runBlocking {
+        // EMAP 对未知动作回 200 + 空数据（实测）：作息接口空应答时用内置作息兜底，
+        // 导入不因此失败
+        val harness = JwHarness().apply { server.skjcBody = """{"datas":null}""" }
+        val result = harness.importer.fetchSchedule("20261", "教务课表", today)
+
+        val schedule = (result as XmuJwScheduleResult.Ok).schedule
+        assertEquals(11, schedule.slots.size) // 内置 11 节（「中午」占位行被剔除）
+        assertEquals("8:00", schedule.slots[0].startTime)
     }
 
     @Test
