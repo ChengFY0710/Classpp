@@ -702,13 +702,21 @@ fun XmuSyncScreen(
                             )
                         }
 
-                        // 「同步可以做什么」说明分组：沿用原介绍卡（标题 + 完整说明）
+                        // 「同步可以做什么」说明分组：两张纯标题 + 完整说明的介绍卡
                         CardSection(title = stringResource(R.string.xmu_section_capabilities)) {
                             SettingsCard(
                                 items = listOf(
                                     SettingsCardItem.Custom(
                                         label = stringResource(R.string.xmu_intro_title),
                                         description = stringResource(R.string.xmu_intro_body),
+                                    ),
+                                ),
+                            )
+                            SettingsCard(
+                                items = listOf(
+                                    SettingsCardItem.Custom(
+                                        label = stringResource(R.string.xmu_intro_timetable_title),
+                                        description = stringResource(R.string.xmu_intro_timetable_body),
                                     ),
                                 ),
                             )

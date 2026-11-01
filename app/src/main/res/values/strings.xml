@@ -188,7 +188,7 @@
     <!-- 账号与同步（课程中心待办同步） -->
     <string name="settings_account_sync">账号与同步</string>
     <string name="xmu_header_title">同步你的厦大账号</string>
-    <string name="xmu_header_description">使用厦门大学统一身份认证，即可同步作业、测验等相关待办</string>
+    <string name="xmu_header_description">支持厦大统一身份认证登录，一键同步作业、测验及教务课表</string>
     <string name="xmu_section_auto_login_sync">自动续期和同步</string>
     <string name="xmu_section_capabilities">同步可以做什么</string>
     <string name="xmu_section_school">选择学校</string>
@@ -203,6 +203,8 @@
     <string name="xmu_last_sync_never">尚未同步</string>
     <string name="xmu_intro_title">同步课程中心待办</string>
     <string name="xmu_intro_body">登录厦门大学课程中心后，把未完成的作业同步进待办库。只读取待办列表，不提交作业、不修改任何数据；登录由学校统一身份认证页面完成，App 不保存密码；可随时退出登录并清除数据。</string>
+    <string name="xmu_intro_timetable_title">导入教务课表</string>
+    <string name="xmu_intro_timetable_body">账号登录后，可从教务系统一键获取本学期课表，自动生成含上课时间与地点的课程；导入只读取课表数据，不会修改教务系统中的任何信息；需使用账号登录（支持自动续期），WebView 登录暂不支持。</string>
     <string name="xmu_login_button">去登录</string>
     <string name="xmu_sync_button">立即同步</string>
     <string name="xmu_syncing">正在同步…</string>

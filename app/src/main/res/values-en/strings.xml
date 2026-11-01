@@ -84,7 +84,7 @@
     <!-- Account & sync (course center todo sync) -->
     <string name="settings_account_sync">Account &amp; sync</string>
     <string name="xmu_header_title">Sync your XMU account</string>
-    <string name="xmu_header_description">Sign in with XMU Unified Identity to sync assignments, quizzes, and other to-dos</string>
+    <string name="xmu_header_description">Sign in with XMU Unified Identity to sync assignments, quizzes, and your academic timetable in one tap</string>
     <string name="xmu_section_auto_login_sync">Auto renewal and sync</string>
     <string name="xmu_section_capabilities">What sync can do</string>
     <string name="xmu_section_school">Select school</string>
@@ -99,6 +99,8 @@
     <string name="xmu_last_sync_never">Never synced</string>
     <string name="xmu_intro_title">Sync course center todos</string>
     <string name="xmu_intro_body">After signing in to the XMU Course Center, unfinished assignments are synced into your todo list. Read-only: no submissions, no data changes. Sign-in happens on the university\'s official identity page — the app never stores your password. Sign out anytime to wipe stored data.</string>
+    <string name="xmu_intro_timetable_title">Import academic timetable</string>
+    <string name="xmu_intro_timetable_body">Once signed in with your account, fetch this semester\'s timetable from the academic system in one tap — class times and locations are filled in automatically. Read-only: nothing in the academic system is modified. Requires account sign-in (with auto renewal); WebView sign-in is not supported.</string>
     <string name="xmu_login_button">Sign in</string>
     <string name="xmu_sync_button">Sync now</string>
     <string name="xmu_syncing">Syncing…</string>
