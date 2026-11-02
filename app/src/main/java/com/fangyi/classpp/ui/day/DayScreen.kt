@@ -202,6 +202,9 @@ private val CourseAlertTopSpacing = 10.dp
 /** 上课提醒卡的时刻对表间隔：倒计时按分钟显示，30s 步进保证一分钟内跳字 */
 private const val CourseAlertResyncMillis = 30_000L
 
+/** 01 态内容区预组合的 idle 等待：落定后再留一段静默，避免首挂载撞上转场尾帧 */
+private const val ContentPrewarmDelayMillis = 200L
+
 /** 时间轴与上方提醒卡（全天任务卡 / 待办提醒卡）的间距；两张卡都折叠时自然成为与上课提醒卡的间距 */
 private val TimelineTopSpacing = 12.dp
 
@@ -250,7 +253,9 @@ private val TrailingScrollSpace = 120.dp
  * （[DayTransitionState.isAtRest]）且背景图换图淡入已完成，否则回退实时绘制。
  */
 @Composable
-fun DayScreen(
+internal fun DayScreen(
+    /** 启动时经 IO 预读的持久化快照：首挂载不再在主线程读盘/解析 JSON */
+    initialData: DayInitialData,
     modifier: Modifier = Modifier,
     active: Boolean = true,
     todoRepository: TodoRepository? = null,
@@ -303,18 +308,19 @@ fun DayScreen(
     // CalendarAddFlow 编排（与待办页详情共用同一套），这里取状态与总入口
     val calendarAdd = rememberCalendarAddState()
 
-    // 用户图片库与当前背景：首次组合从磁盘读，之后改动即时落盘（DayImageStore）
-    var images by remember { mutableStateOf(DayImageStore.loadImages(context)) }
-    var selectedImage by remember { mutableStateOf(DayImageStore.loadSelected(context)) }
+    // 用户图片库与当前背景：持久化快照由 MainActivity 在 IO 线程预读后传入，
+    // 之后改动即时落盘（DayImageStore）
+    var images by remember { mutableStateOf(initialData.images) }
+    var selectedImage by remember { mutableStateOf(initialData.selectedImage) }
     // 随机轮播：开启时背景取「当日命中」，命中即落盘锁定（DayImageStore）——当天内导入
     // 新图不重抽（背景不随图库变动切换），命中图被删才重抽，跨零点（today 变化）重抽；
     // 关闭或图库为空回退手动选中。查看其他日期时不落盘：按该日种子现抽当"那天的图"预览，
     // 不改动今天已锁定的命中
-    var randomEnabled by remember { mutableStateOf(DayImageStore.loadRandomEnabled(context)) }
+    var randomEnabled by remember { mutableStateOf(initialData.randomEnabled) }
     // 壁纸视差开关：01 态背景图随重力倾斜微移（效果本体在 ui.motion 的 TiltParallax，
-    // 状态接线见下方 tilt）；口径同随机轮播——首帧从磁盘读，改动即时落盘
-    var tiltEnabled by remember { mutableStateOf(DayImageStore.loadTiltParallaxEnabled(context)) }
-    var randomPick by remember { mutableStateOf(DayImageStore.loadRandomPick(context)) }
+    // 状态接线见下方 tilt）；口径同随机轮播——首帧取预读快照，改动即时落盘
+    var tiltEnabled by remember { mutableStateOf(initialData.tiltEnabled) }
+    var randomPick by remember { mutableStateOf(initialData.randomPick) }
     // 命中在组合期同步算出（首帧即正确）：今天沿用已锁定命中，没有才按今天种子现抽；
     // 其他日期一律按该日种子现抽（种子保证同天同图库下重组结果稳定）。落盘只针对今天
     val dayPick = if (randomEnabled && images.isNotEmpty()) {
@@ -372,8 +378,8 @@ fun DayScreen(
         onOverlayOverNavBarChange(overlayMounted)
     }
 
-    // 持久化记录：进入时按「记录日期 == 今天」恢复 02/04，否则 01。
-    val initialRecord = remember { DayStateStore.load(context) }
+    // 持久化记录：进入时按「记录日期 == 今天」恢复 02/04，否则 01（快照同经 IO 预读）。
+    val initialRecord = remember { initialData.record }
     val initialStage = remember(initialRecord, today) { initialRecord.restoredStage(today) }
     var openedDay by remember { mutableStateOf(initialRecord.openedDay) }
     var persistedStage by remember {
@@ -401,12 +407,26 @@ fun DayScreen(
     LaunchedEffect(transition.stage) {
         if (transition.stage == DayStage.Calendar) jumpTargetDate = null
     }
-    // 壁纸视差（01 态专属）：仅「本页活跃 + 图片浮层未开 + 停在 01」才注册重力传感器
-    // （rememberTiltParallax 内部再叠加生命周期 RESUMED 门控，切后台必注销），转场离开
-    // 01 即注销定格，02/04 态不空转。位移效果不靠注销收敛——靠图片层的 gate（1 - open）
-    // 随转场进度收敛到 0，落位像素精确回到几何落位（见 DayBackgroundImage 接线处）
-    val tiltActive by remember {
-        derivedStateOf { active && !sheetMounted && transition.stage == DayStage.Calendar }
+    // 整页 transform 状态（tab 转场 / 设置页覆盖层视差）：tilt 门控与冻结层共用。
+    // 声明在 tiltActive 之前：页面被整页 transform 移动期间要暂停重力视差，
+    // 否则 shiftX/shiftY 逐帧变化会让冻结键失配、转场期回退实时 Haze
+    val overlayTransform = LocalPageOverlayTransform.current
+    // 壁纸视差（01 态专属）：仅「本页活跃 + 图片浮层未开 + 停在 01 + 没有整页 transform」
+    // 才注册重力传感器（rememberTiltParallax 内部再叠加生命周期 RESUMED 门控，切后台必
+    // 注销），转场离开 01 即注销定格，02/04 态不空转。位移效果不靠注销收敛——靠图片层的
+    // gate（1 - open）随转场进度收敛到 0，落位像素精确回到几何落位（见 DayBackgroundImage
+    // 接线处）。remember 带上 key：active/tabTransition/overlayTransform 是组合值，
+    // 若不作为 key 会被闭包冻结在首次组合，切走 tab 后传感器不会注销
+    val tiltActive by remember(active, tabTransition, overlayTransform) {
+        derivedStateOf {
+            isDayTiltActive(
+                active = active,
+                sheetMounted = sheetMounted,
+                stage = transition.stage,
+                pageTransforming = tabTransition?.isTransitioning == true ||
+                    overlayTransform?.isTransforming == true,
+            )
+        }
     }
     // active 管暂停（浮层/切 tab/离开 01 → 画面定格原地），enabled 管用户开关
     // （关闭 → 画面平滑滑回中心），两种失效走向不同，见 rememberTiltParallax
@@ -420,7 +440,6 @@ fun DayScreen(
     // 下段模糊带各自录制就位帧，转场期间整帧重放，避免 Haze 逐帧重采样。资源声明在
     // 根组合：showTopScrim/showBand 条件块进出组合不丢帧；停靠页的帧由
     // TabPagerState.reRecordParkedTabs 维持
-    val overlayTransform = LocalPageOverlayTransform.current
     val topScrimFreezeLayer = rememberGraphicsLayer()
     val topScrimFreezeFrame = remember { FreezeFrame() }
     val bandFreezeLayer = rememberGraphicsLayer()
@@ -1015,13 +1034,41 @@ fun DayScreen(
             )
         }
 
+        // 同一组进度的画面几何：derivedStateOf 每帧只算一次，所有 layout/draw 读者
+        // 拿同一实例。composition 只经 showBand 的布尔派生读它，不逐帧重组。
+        // deviceCornerAlpha 统一传实际值：它只影响 imageRadius，其余读者不受影响
+        val dayFrame = remember(metrics, transition) {
+            derivedStateOf {
+                DayGeometry.frame(
+                    metrics = metrics,
+                    open = transition.open,
+                    collapse = transition.collapse,
+                    deviceCornerAlpha = transition.deviceCornerAlpha,
+                )
+            }
+        }
+
         val showContent by remember { derivedStateOf { transition.open > 0f } }
         val showTopScrim by remember { derivedStateOf { transition.open < 1f } }
         val showTopBar by remember { derivedStateOf { transition.collapse > 0f } }
-        val showBand by remember(metrics) {
-            derivedStateOf {
-                DayGeometry.frame(metrics, transition.open, transition.collapse).bandHeight > 0f
+        val showBand by remember(dayFrame) {
+            derivedStateOf { dayFrame.value.bandHeight > 0f }
+        }
+
+        // 01 态预组合内容区：内容区在屏幕下方不可见、列表手势关闭，但首次上滑那帧
+        // 才组合 LazyColumn/日历/三页横滑代价太大。本页活跃且 01 落定后 idle 置真，
+        // 让首挂载发生在这里；挂载后常驻，回 01 也不反复卸载重挂。
+        // 先等 tab 转场/设置页视差落定，再留 200ms idle，避免首挂载落在转场帧
+        var contentMounted by remember { mutableStateOf(false) }
+        LaunchedEffect(active, transition.stage, overlayMounted) {
+            if (!active || transition.stage != DayStage.Calendar || overlayMounted) {
+                return@LaunchedEffect
             }
+            snapshotFlow {
+                tabTransition?.isTransitioning == true || overlayTransform?.isTransforming == true
+            }.first { !it }
+            delay(ContentPrewarmDelayMillis)
+            contentMounted = true
         }
 
         val gestureAllowed = active && !overlayMounted && !transition.isAnimating
@@ -1079,11 +1126,7 @@ fun DayScreen(
                             modifier = Modifier
                                 .requiredSize(metrics.screenWidth.dp, metrics.screenHeight.dp)
                                 .graphicsLayer {
-                                    val frame = DayGeometry.frame(
-                                        metrics,
-                                        transition.open,
-                                        transition.collapse,
-                                    )
+                                    val frame = dayFrame.value
                                     val scale = frame.imageScale(metrics)
                                     scaleX = scale
                                     scaleY = scale
@@ -1094,23 +1137,14 @@ fun DayScreen(
                     },
                     modifier = Modifier
                         .offset {
-                            val frame = DayGeometry.frame(
-                                metrics,
-                                transition.open,
-                                transition.collapse,
-                            )
+                            val frame = dayFrame.value
                             IntOffset(
                                 (frame.image.left * pxPerDp).roundToInt(),
                                 (frame.image.top * pxPerDp).roundToInt(),
                             )
                         }
                         .graphicsLayer {
-                            val frame = DayGeometry.frame(
-                                metrics,
-                                transition.open,
-                                transition.collapse,
-                                transition.deviceCornerAlpha,
-                            )
+                            val frame = dayFrame.value
                             // 02→04 后段渐隐：白卡被 Overscroll 拖上去时不再露出台历残影。
                             alpha = frame.imageAlpha
                             // 01 静止态是满幅直角：不裁剪，避免 RoundedRectangle(0) 在
@@ -1124,7 +1158,7 @@ fun DayScreen(
                             }
                         },
                 ) { measurables, _ ->
-                    val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
+                    val frame = dayFrame.value
                     val layoutWidth = (frame.image.width * pxPerDp).roundToInt().coerceAtLeast(1)
                     val layoutHeight = (frame.image.height * pxPerDp).roundToInt().coerceAtLeast(1)
                     val child = measurables[0].measure(
@@ -1165,12 +1199,7 @@ fun DayScreen(
                                 )
                                 .drawWithContent {
                                     drawContent()
-                                    val frame = DayGeometry.frame(
-                                        metrics,
-                                        transition.open,
-                                        transition.collapse,
-                                        transition.deviceCornerAlpha,
-                                    )
+                                    val frame = dayFrame.value
                                     val tint = frame.bandTintAlpha
                                     if (tint > 0f) {
                                         // 黑色压暗只作用在图片卡内部，并复用图片卡同一 RoundedRectangle
@@ -1219,14 +1248,10 @@ fun DayScreen(
                         .fillMaxSize()
                         // 模糊带与图片卡同一条淡出曲线，避免图片卡消失后只剩一条模糊。
                         .graphicsLayer {
-                            alpha = DayGeometry.frame(
-                                metrics,
-                                transition.open,
-                                transition.collapse,
-                            ).imageAlpha
+                            alpha = dayFrame.value.imageAlpha
                         },
                 ) { measurables, constraints ->
-                    val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
+                    val frame = dayFrame.value
                     val bandTopPx = (frame.bandTop * pxPerDp).roundToInt()
                     val bandHeightPx = (frame.bandHeight * pxPerDp).roundToInt()
                     val child = measurables[0].measure(
@@ -1340,7 +1365,7 @@ fun DayScreen(
                     .padding(horizontal = DayDateEdgePadding)
                     .padding(bottom = navBarDp.dp + NavReserve + DayDateBottomGap)
                     .offset {
-                        val frame = DayGeometry.frame(metrics, transition.open, transition.collapse)
+                        val frame = dayFrame.value
                         IntOffset(
                             (frame.dateTranslationX * pxPerDp).roundToInt(),
                             (frame.dateTranslationY * pxPerDp).roundToInt(),
@@ -1349,11 +1374,7 @@ fun DayScreen(
                     .graphicsLayer {
                         // 日期组（大数字、日期行、图片 icon）整组淡出：04 被 Overscroll
                         // 拖出白卡时不再露出白色日期文字/图标。
-                        alpha = DayGeometry.frame(
-                            metrics,
-                            transition.open,
-                            transition.collapse,
-                        ).dateAlpha
+                        alpha = dayFrame.value.dateAlpha
                     },
             ) {
                 // 日期 / 日期文字 / 图片 icon 作为一组整体缩放：锚在组内左下角，
@@ -1362,11 +1383,7 @@ fun DayScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .graphicsLayer {
-                            val frame = DayGeometry.frame(
-                                metrics,
-                                transition.open,
-                                transition.collapse,
-                            )
+                            val frame = dayFrame.value
                             transformOrigin = TransformOrigin(0f, 1f)
                             scaleX = frame.dateScale
                             scaleY = frame.dateScale
@@ -1422,7 +1439,9 @@ fun DayScreen(
             // 之和，恒等于 frame.content.top：02 时视口顶抬到白卡上方 spacer 处（不盖
             // 图片卡），04 时视口贴屏幕顶、spacer 垫在顶栏下方，卡与后续内容才能滚进
             // 顶栏下面。spacer 不可随进度归零，原因见 spacer 处注释。
-            if (showContent) {
+            // 内容区在 01 态也保持组合（contentMounted 后常驻）：位置在屏幕下方不可见，
+            // 首次 01→02 只剩几何变化，不再在手势第一帧组合整棵列表
+            if (showContent || contentMounted) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -1442,11 +1461,7 @@ fun DayScreen(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .offset {
-                                    val frame = DayGeometry.frame(
-                                        metrics,
-                                        transition.open,
-                                        transition.collapse,
-                                    )
+                                    val frame = dayFrame.value
                                     // 视口顶 = 白卡顶 − 顶栏高度，与恒高的首条 spacer 相加
                                     // 恒等于 frame.content.top；collapse 越大视口越早覆盖
                                     // 顶栏区域，内容才有机会进入顶栏下面。
@@ -1552,27 +1567,9 @@ fun DayScreen(
                         aiChatVisible = true
                     },
                     height = statusBarDp.dp + DayTopBarRowHeight + DayTopBarGap,
-                    contentAlpha = {
-                        DayGeometry.frame(
-                            metrics,
-                            transition.open,
-                            transition.collapse,
-                        ).topBarContentAlpha
-                    },
-                    backgroundAlpha = {
-                        DayGeometry.frame(
-                            metrics,
-                            transition.open,
-                            transition.collapse,
-                        ).topBarBackgroundAlpha
-                    },
-                    translationYDp = {
-                        DayGeometry.frame(
-                            metrics,
-                            transition.open,
-                            transition.collapse,
-                        ).topBarTranslationY
-                    },
+                    contentAlpha = { dayFrame.value.topBarContentAlpha },
+                    backgroundAlpha = { dayFrame.value.topBarBackgroundAlpha },
+                    translationYDp = { dayFrame.value.topBarTranslationY },
                     hazeState = contentHazeState,
                     modifier = Modifier.align(Alignment.TopCenter),
                 )

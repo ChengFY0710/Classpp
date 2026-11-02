@@ -32,6 +32,7 @@ import com.fangyi.classpp.ui.motion.rememberDeviceCornerRadius
 import com.kyant.shapes.UnevenRoundedRectangle
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -89,7 +90,9 @@ class TabPagerState internal constructor(initialTab: AppTab) {
         // 新页在右则从右缘滑入，在左则从左缘滑入
         val dir = if (tab.ordinal > from.ordinal) 1f else -1f
         selectedTab = tab
-        if (tab !in mountedTabs) {
+        // 本次才挂载的新页：首帧留给组合/布局/Haze 初始化，动画晚一帧启动
+        val newlyMounted = tab !in mountedTabs
+        if (newlyMounted) {
             mountedTabs.add(tab)
             // 与组合同帧生效：初始 x 即滑入起点，首帧就在屏外、不会闪现原位
             pageStates[tab] = TabPageState(dir)
@@ -99,6 +102,9 @@ class TabPagerState internal constructor(initialTab: AppTab) {
         val spec = tween<Float>(durationMillis = Motion.TabMillis, easing = Motion.Overlay)
         val incoming = pageStates.getValue(tab)
         animationScope.launch {
+            // 新页在屏外（x = ±1）等一帧：让首挂载、文本测量、Haze 初始化都落在
+            // 不可见的帧里，动画第一帧只剩图层矩阵。旧页同帧等待保持两侧同步
+            if (newlyMounted) withFrameNanos { }
             val gen = ++incoming.generation
             if (incoming.alpha.value <= 0f) {
                 // 隐藏页停靠屏外：先把三属性摆到滑入起点（此刻不可见，无跳变），
@@ -117,6 +123,8 @@ class TabPagerState internal constructor(initialTab: AppTab) {
         }
         pageStates.getValue(from).let { outgoing ->
             animationScope.launch {
+                // 与新页同帧起步：新页挂载那一帧先不推进，只多看到旧页一帧
+                if (newlyMounted) withFrameNanos { }
                 val gen = ++outgoing.generation
                 // 旧页原位不动（x 归 0 兜住中途被切换的残位）、居中缩小淡出，
                 // 与新页滑入同 spec 同帧；Animatable 互斥保证连点时各属性
@@ -167,6 +175,47 @@ class TabPagerState internal constructor(initialTab: AppTab) {
                     page.x.snapTo(parkX)
                 }
             }
+        }
+    }
+
+    /**
+     * 空闲预挂载：把目标页先以「原位、alpha=0、压在所有页之下」挂进组合，完整绘制
+     * 两帧（首组合、Coil 解码入口、Haze 初始化、冻结帧录制都发生在这里），再停靠到
+     * 与 [selectTab] 一致的屏外位。首次切页因此只剩矩阵动画 + 整帧重放。
+     *
+     * 必须在 x=0 预热而不是屏外：Haze 2 对屏外页面的效果节点有 RenderThread 递归
+     * 风险；alpha=0 时内容不可见、zIndex 为负不参与命中。预热与当前切页动画互斥
+     * （先等选中页落定），不与首帧/手势抢主线程。停靠页只重放不重录，结束后补录
+     * 一次；背景图经 Coil 异步解码，稍后再补录一次，避免首次切回重放无图模糊。
+     */
+    fun prewarm(tabs: List<AppTab>) {
+        val pending = tabs.filter { it != selectedTab && it !in mountedTabs }
+        if (pending.isEmpty()) return
+        animationScope.launch {
+            // 等当前切页动画落定：预热页虽然不可见，但首挂载会抢同一帧
+            while (pageStates.getValue(selectedTab).let { it.x.value != 0f || it.scale.value != 1f }) {
+                withFrameNanos { }
+            }
+            pending.forEach { tab ->
+                if (tab == selectedTab || tab in mountedTabs) return@forEach
+                val page = TabPageState(0f)
+                // 先置 0 再挂载：组合里永远不会以 alpha=1 出现
+                page.alpha.snapTo(0f)
+                page.zIndex = -1f
+                pageStates[tab] = page
+                mountedTabs.add(tab)
+                // 原位 + alpha=0 完整走两帧：首挂载/布局/Haze 初始化/冻结帧录制就绪
+                withFrameNanos { }
+                withFrameNanos { }
+                if (tab == selectedTab) return@forEach
+                if (page.alpha.value <= 0f && page.x.value == 0f) {
+                    val dir = if (tab.ordinal > selectedTab.ordinal) 1f else -1f
+                    page.x.snapTo(dir * TabParkFraction)
+                }
+            }
+            reRecordParkedTabs()
+            delay(PrewarmReRecordDelayMillis)
+            reRecordParkedTabs()
         }
     }
 
@@ -271,6 +320,9 @@ internal class TabPageState(initialX: Float) {
 
 /** 旧页淡出后的屏外停靠位：多留 0.2 屏余量，任何缩放与像素圆整下都不会露边。 */
 private const val TabParkFraction = 1.2f
+
+/** 预热停靠后补录冻结帧的延时：覆盖背景图 Coil 异步解码完成的时间。 */
+private const val PrewarmReRecordDelayMillis = 500L
 
 /**
  * tab 页转场层：z 序 + 转场矩阵（平移/透明度/缩放）合并进同一个 graphicsLayer，

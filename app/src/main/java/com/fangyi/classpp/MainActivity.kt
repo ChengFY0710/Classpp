@@ -11,6 +11,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -32,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -45,6 +47,7 @@ import com.fangyi.classpp.data.notification.NotificationScheduler
 import com.fangyi.classpp.data.xmu.XmuDailySyncRunner
 import com.fangyi.classpp.data.xmu.XmuDailySyncScheduler
 import com.fangyi.classpp.ui.LocalToday
+import com.fangyi.classpp.ui.day.DayInitialData
 import com.fangyi.classpp.ui.day.DayScreen
 import com.fangyi.classpp.ui.motion.LocalPageOverlayTransform
 import com.fangyi.classpp.ui.motion.Motion
@@ -68,8 +71,10 @@ import com.fangyi.classpp.ui.theme.ThemeMode
 import com.fangyi.classpp.ui.theme.ThemePreferences
 import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.withContext
 
 /**
  * 课程卡片高度的「滑动结束」判定：值停顿此时长即视为结束——落盘与课表网格跟进共用
@@ -213,6 +218,16 @@ class MainActivity : ComponentActivity() {
                     // 见 ui.navigation 的 TabPagerState（原内联于此，纯搬移）
                     val pagerState = rememberTabPagerState()
 
+                    // 日程页首挂载所需的持久化快照：启动协程在 IO 线程预读，首次切到
+                    // 日程页时不再在主线程组合期读 5 项 prefs + 解析图片列表 JSON
+                    var dayInitial by remember { mutableStateOf<DayInitialData?>(null) }
+                    LaunchedEffect(Unit) {
+                        dayInitial = withContext(Dispatchers.IO) {
+                            runCatching { DayInitialData.load(this@MainActivity.applicationContext) }
+                                .getOrDefault(DayInitialData())
+                        }
+                    }
+
                     // 回调记忆化：ScheduleScreen 的其余入参都稳定（repository 单例、editing 仅
                     // 编辑翻转才变），回调若每次重组都是新实例，切 tab 改 selectedTab 就会连带
                     // 课表页整树无谓重组，打乱 haze 源/效果同帧失效的节奏（快速切 tab 时顶栏
@@ -243,6 +258,15 @@ class MainActivity : ComponentActivity() {
                             pagerState.selectTab(target)
                             pendingNotificationTab.value = null
                         }
+                    }
+
+                    // 首帧之后空闲预热：提前组合其余页面并录好停靠冻结帧，首次切页只剩
+                    // 矩阵动画 + 整帧重放。日程页依赖预读快照，等它就绪再预热（此时页面
+                    // 才能完整组合，冻结帧才录得到真实画面）。已挂载/选中的页自动跳过
+                    LaunchedEffect(pagerState, dayInitial) {
+                        if (dayInitial == null) return@LaunchedEffect
+                        withFrameNanos { }
+                        pagerState.prewarm(listOf(AppTab.Agenda, AppTab.Todo, AppTab.Timetable))
                     }
 
                     // 一次性存储降级提示：get() 返回即 bootstrap 完成，loadState 已定型
@@ -320,6 +344,14 @@ class MainActivity : ComponentActivity() {
                     // layerBackdrop 不挂载，采样层零开销
                     val useGlass = glassStyleState.value && Build.VERSION.SDK_INT >= 31
                     val navBackdrop = rememberGlassBackdrop(MaterialTheme.colorScheme.background)
+                    // 导航栏显隐：编辑态 / 页内全屏浮层在场时隐藏（退场动画仍占组合）。
+                    // 采样层只在导航栏真正留在组合里时挂载——退场动画中胶囊仍在屏上取样，
+                    // 提前摘层会采到过期底图；完全离场后再摘，长时间编辑/浮层期间采样零开销
+                    val navBarVisible = !editing && !navBarHiddenByOverlay
+                    val navBarVisibility = remember { MutableTransitionState(navBarVisible) }
+                    navBarVisibility.targetState = navBarVisible
+                    val navBarMounted =
+                        navBarVisibility.currentState || navBarVisibility.targetState
 
                     // 设置页覆盖层完整转场（ui.motion 的 PageOverlayTransition）：下层让位视差、
                     // 压暗遮罩、右滑进出场与转场期左缘圆角都在其中，与个性化子页共用同一实现
@@ -344,7 +376,7 @@ class MainActivity : ComponentActivity() {
                                 Modifier
                                     .fillMaxSize()
                                     .then(
-                                        if (useGlass) {
+                                        if (useGlass && navBarMounted) {
                                             Modifier.layerBackdrop(navBackdrop)
                                         } else {
                                             Modifier
@@ -359,25 +391,34 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     TabPager(state = pagerState) { tab, transition ->
                                         when (tab) {
-                                            AppTab.Agenda -> DayScreen(
-                                                modifier = pageModifier,
-                                                // 仅用于状态栏图标在非 Agenda tab 恢复主题默认；
-                                                // 不参与转场，也不改导航栏布局
-                                                active = tab == pagerState.selectedTab,
-                                                // 日历卡待办小点的数据源（网格窗口内取覆盖日期）
-                                                todoRepository = todoRepository,
-                                                // 上课提醒卡数据源：今天该上的课 + 当前时刻 →
-                                                // 倒计时/上课中/课已上完/今日无课
-                                                scheduleRepository = repository,
-                                                // 待办提醒卡标签配色数据源（与待办页同源）
-                                                tagRepository = tagRepository,
-                                                // AI 对话（日程页顶栏右侧按钮唤起对话浮层）
-                                                aiChatRepository = aiChatRepository,
-                                                // 选择图片浮层在场时藏底部导航栏（同课表/待办页浮层）
-                                                onOverlayOverNavBarChange = onOverlayOverNavBarChange,
-                                                // tab 转场状态：01/02 的 Haze 冻结层据此重放就位帧
-                                                tabTransition = transition,
-                                            )
+                                            AppTab.Agenda -> {
+                                                // 快照就绪前不组合：保证预热的这一帧就是完整
+                                                // 画面（冻结帧才录得到真实内容），寻常启动时
+                                                // 加载只需几毫秒，用户无感
+                                                val initial = dayInitial
+                                                if (initial != null) {
+                                                    DayScreen(
+                                                        initialData = initial,
+                                                        modifier = pageModifier,
+                                                        // 仅用于状态栏图标在非 Agenda tab 恢复主题默认；
+                                                        // 不参与转场，也不改导航栏布局
+                                                        active = tab == pagerState.selectedTab,
+                                                        // 日历卡待办小点的数据源（网格窗口内取覆盖日期）
+                                                        todoRepository = todoRepository,
+                                                        // 上课提醒卡数据源：今天该上的课 + 当前时刻 →
+                                                        // 倒计时/上课中/课已上完/今日无课
+                                                        scheduleRepository = repository,
+                                                        // 待办提醒卡标签配色数据源（与待办页同源）
+                                                        tagRepository = tagRepository,
+                                                        // AI 对话（日程页顶栏右侧按钮唤起对话浮层）
+                                                        aiChatRepository = aiChatRepository,
+                                                        // 选择图片浮层在场时藏底部导航栏（同课表/待办页浮层）
+                                                        onOverlayOverNavBarChange = onOverlayOverNavBarChange,
+                                                        // tab 转场状态：01/02 的 Haze 冻结层据此重放就位帧
+                                                        tabTransition = transition,
+                                                    )
+                                                }
+                                            }
                                             AppTab.Timetable -> ScheduleScreen(
                                                 modifier = pageModifier,
                                                 repository = repository,
@@ -417,7 +458,7 @@ class MainActivity : ComponentActivity() {
                             // [Motion.EditMillis] + [Motion.Overlay]，同一个 editing 翻转同帧启动；
                             // 顶栏换场同帧但另用更缓的 [Motion.Standard]（见 ScheduleScreen）
                             AnimatedVisibility(
-                                visible = !editing && !navBarHiddenByOverlay,
+                                visibleState = navBarVisibility,
                                 enter = slideInVertically(
                                     // 从自身高度下方起步：上移入
                                     animationSpec = tween(Motion.EditMillis, easing = Motion.Overlay),

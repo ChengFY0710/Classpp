@@ -34,6 +34,21 @@ internal fun isDayAtRest(
 }
 
 /**
+ * 壁纸视差是否应保持注册：本页活跃、图片浮层未开、停在 01，且当前没有整页
+ * transform（tab 转场或设置页覆盖层视差）在移动本页。
+ *
+ * 页面 transform 期间必须暂停：tilt 位移 [com.fangyi.classpp.ui.motion.TiltParallaxState]
+ * 的 shiftX/shiftY 是日程页冻结层录制键的一部分，继续随重力变化会让键逐帧失配，
+ * 转场期回退实时 Haze（逐帧重采样）。暂停后「键稳定 → 整帧重放」才成立。
+ */
+internal fun isDayTiltActive(
+    active: Boolean,
+    sheetMounted: Boolean,
+    stage: DayStage,
+    pageTransforming: Boolean,
+): Boolean = active && !sheetMounted && stage == DayStage.Calendar && !pageTransforming
+
+/**
  * 日程页三态转场状态机（01 台历 / 02 缩小卡 / 04 收起）。
  *
  * 两个进度 [open]（01↔02）与 [collapse]（02↔04）是整个画面的唯一派生源：
