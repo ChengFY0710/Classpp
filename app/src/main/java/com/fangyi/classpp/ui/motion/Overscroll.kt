@@ -162,6 +162,16 @@ class OffsetOverscrollEffect(
      */
     val currentOffset: Offset get() = offset
 
+    /**
+     * 当前渲染位移（px，已按 [viewportSize] 走与节点相同的阻尼曲线）。负值 = 内容被向上
+     * 拖出（向上过滚动），正值 = 内容被向下拖出。读取 [offset] 状态，可在绘制期求值
+     * （如设置页标题把过滚动算进内容位移，见 ui.settings 的 rememberSettingsTitleAlpha）。
+     */
+    fun visualOffset(viewportSize: Float): Float {
+        if (viewportSize <= 0f) return 0f
+        return computeOffset(offset.toFloat(), viewportSize)
+    }
+
     /** 立即取消回弹并归零（切态、打开浮层、跨天重置等）。 */
     fun reset() {
         springJob?.cancel()
@@ -426,6 +436,22 @@ fun rememberOffsetOverscrollFactory(
     }
 }
 
+/**
+ * 创建并记住一个独立的 [OffsetOverscrollEffect]（不经环境工厂）：宿主需要读取过滚动
+ * 位移（[OffsetOverscrollEffect.visualOffset]）时使用，再把实例交给
+ * [rubberBandVerticalScroll] 的 `unscrollableEffect` 参数。
+ */
+@Composable
+fun rememberOffsetOverscrollEffect(
+    animationSpec: AnimationSpec<Float> = OffsetOverscrollEffect.DefaultAnimationSpec,
+    maxFraction: Float = OffsetOverscrollEffect.DefaultMaxFraction,
+): OffsetOverscrollEffect {
+    val animationScope = rememberCoroutineScope()
+    return remember(animationScope, animationSpec, maxFraction) {
+        OffsetOverscrollEffect(animationScope, animationSpec, maxFraction)
+    }
+}
+
 class OffsetOverscrollFactory(
     private val animationScope: CoroutineScope,
     private val animationSpec: AnimationSpec<Float> = OffsetOverscrollEffect.DefaultAnimationSpec,
@@ -488,10 +514,20 @@ fun ProvideOverscroll(content: @Composable () -> Unit) {
  * 效果实例经 [rememberOverscrollEffect] 从环境工厂取（注入作用域内即
  * [OffsetOverscrollEffect] 的独立实例，与 verticalScroll 自建实例互不复用）；
  * 未注入任何工厂时退回系统 stretch，本修饰符仍可用。
+ *
+ * [unscrollableEffect] 非空时，内容不足一屏的兜底 scrollable 改用该实例（null = 环境
+ * 工厂实例，原行为）：宿主需要读取 [OffsetOverscrollEffect.visualOffset]（如设置页标题
+ * 把过滚动算进内容位移）时传入自己 remember 的实例。内容可滚时该参数不参与——走原版
+ * verticalScroll，边缘过滚动由它自建的环境效果承担。
  */
 @Composable
-fun Modifier.rubberBandVerticalScroll(state: ScrollState): Modifier {
-    val effect = rememberOverscrollEffect()
+fun Modifier.rubberBandVerticalScroll(
+    state: ScrollState,
+    unscrollableEffect: OffsetOverscrollEffect? = null,
+): Modifier {
+    // 环境实例始终取：保持组合结构稳定；宿主传入实例时只替换兜底 scrollable 的效果
+    val environmentEffect = rememberOverscrollEffect()
+    val effect = unscrollableEffect ?: environmentEffect
     val unscrollable = !state.canScrollForward && !state.canScrollBackward
     return if (effect != null && unscrollable) {
         // 不消费任何滚动量的状态：canScrollForward/Backward 默认恒为 true，恰好绕过

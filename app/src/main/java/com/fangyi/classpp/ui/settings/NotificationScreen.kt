@@ -53,6 +53,7 @@ import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressFeedback
+import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
@@ -147,6 +148,8 @@ fun NotificationScreen(
     val glassBackdrop = rememberSettingsGlassBackdrop()
     // 滚动状态上提：冻结键要读滚动位置
     val scrollState = rememberScrollState()
+    // 标题渐显要把过滚动算进内容位移（内容不足一屏时橡皮筋仍会拖动内容）
+    val overscrollEffect = rememberOffsetOverscrollEffect()
     // 预热帧也要挂 Haze；隐藏态不录制，保留上一次活跃期的就位帧
     val hazeActive = LocalPageOverlayActive.current || LocalPageOverlayPrewarm.current
     val darkTheme = MaterialTheme.isDarkTheme
@@ -199,7 +202,10 @@ fun NotificationScreen(
                         },
                     )
                     // 橡皮筋增强版 verticalScroll：内容不足一屏时也能拉出橡皮筋
-                    .rubberBandVerticalScroll(scrollState)
+                    .rubberBandVerticalScroll(
+                        scrollState,
+                        unscrollableEffect = overscrollEffect,
+                    )
                     .padding(horizontal = PageHorizontalSpacing)
                     .padding(
                         // 首项距顶栏留 TopBarContentGap（页自有节奏），尾部余量与浮层同源
@@ -355,6 +361,7 @@ fun NotificationScreen(
                 freezeKey = freezeKey,
                 recordWhen = { hazeActive },
                 isTransforming = settingsTransforming,
+                titleAlpha = rememberSettingsTitleAlpha(scrollState, overscrollEffect),
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .onGloballyPositioned { coords ->

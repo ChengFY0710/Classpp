@@ -75,6 +75,7 @@ import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
+import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
@@ -517,6 +518,8 @@ fun XmuSyncScreen(
             val density = LocalDensity.current
             // 滚动状态上提：冻结键要读滚动位置
             val scrollState = rememberScrollState()
+            // 标题渐显要把过滚动算进内容位移（内容不足一屏时橡皮筋仍会拖动内容）
+            val overscrollEffect = rememberOffsetOverscrollEffect()
             // 预热帧也要挂 Haze；对话框在场或覆盖层隐藏时不挂、也不录制（保留上次的帧）
             val hazeActive = (overlayActive || LocalPageOverlayPrewarm.current) &&
                 !loadingMounted && !logoutMounted && !switchMounted && !disableAutoMounted
@@ -580,7 +583,10 @@ fun XmuSyncScreen(
                                     Modifier
                                 },
                             )
-                            .rubberBandVerticalScroll(scrollState)
+                            .rubberBandVerticalScroll(
+                                scrollState,
+                                unscrollableEffect = overscrollEffect,
+                            )
                             .padding(horizontal = PageHorizontalSpacing)
                             .padding(
                                 top = topBarHeight + TopBarContentGap,
@@ -776,6 +782,7 @@ fun XmuSyncScreen(
                 freezeKey = freezeKey,
                 recordWhen = { hazeActive },
                 isTransforming = settingsTransforming,
+                titleAlpha = rememberSettingsTitleAlpha(scrollState, overscrollEffect),
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .onGloballyPositioned { coords ->

@@ -1,5 +1,6 @@
 package com.fangyi.classpp.ui.settings
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -27,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -40,6 +42,7 @@ import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.FreezeFrame
+import com.fangyi.classpp.ui.motion.OffsetOverscrollEffect
 import com.fangyi.classpp.ui.motion.transitionFreeze
 import com.fangyi.classpp.ui.schedule.totalWeeks
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -81,6 +84,64 @@ internal fun rememberSettingsGlassBackdrop(): LayerBackdrop? {
 }
 
 /**
+ * 标题渐显窗口：内容有效位移（滚动 − 过滚动平移）到 100dp 开始出现，150dp 完全显现；
+ * 回滚时对称消失。只用于标题淡入淡出，不参与布局（顶栏高度与内容内缩不变）。
+ */
+private val TitleFadeStart = 100.dp
+private val TitleFadeEnd = 150.dp
+
+/**
+ * 顶栏标题随内容位移的透明度（纯函数，供单测）：[scrollPx] 在 [startPx] 之前全隐，
+ * 在 [endPx] 及之后全显，两者之间用 Hermite smoothstep 过渡。[scrollPx] 由宿主编成
+ * 「滚动值 − 过滚动视觉位移」：内容不足一屏时滚动值恒 0，但橡皮筋仍会把内容向上
+ * 拖进顶栏下方，负的过滚动平移等效于多滚了这么多。
+ *
+ * Hermite smoothstep（边界导数为 0），与日程页顶栏淡入同一形态，避免起止处出现
+ * 透明度折角；[endPx] ≤ [startPx] 时退化为阶跃。
+ */
+internal fun settingsTitleAlpha(
+    scrollPx: Float,
+    startPx: Float,
+    endPx: Float,
+): Float {
+    if (endPx <= startPx) return if (scrollPx < startPx) 0f else 1f
+    val t = ((scrollPx - startPx) / (endPx - startPx)).coerceIn(0f, 1f)
+    return t * t * (3f - 2f * t)
+}
+
+/**
+ * [SettingsTopBar] 标题的渐显计算：读取宿主的 [scrollState]（以及内容不足一屏时
+ * 承担橡皮筋的 [overscrollEffect]），返回只在绘制期求值的 lambda（`graphicsLayer`
+ * 里调用），滚动/过滚动过程零重组。
+ *
+ * 有效位移 = `scrollState.value − visualOffset`：向上过滚动（负平移）计入，向下
+ * 过滚动（正平移）抵消；到 100dp 开始出现，150dp 完全显现，回滚对称消失。内容一屏
+ * 装得下且未过滚动时标题保持隐藏。
+ */
+@Composable
+internal fun rememberSettingsTitleAlpha(
+    scrollState: ScrollState,
+    overscrollEffect: OffsetOverscrollEffect? = null,
+): () -> Float {
+    val density = LocalDensity.current
+    val startPx = with(density) { TitleFadeStart.toPx() }
+    val endPx = with(density) { TitleFadeEnd.toPx() }
+    return remember(scrollState, overscrollEffect, startPx, endPx) {
+        {
+            // viewportSize 与效果渲染节点阻尼用的容器尺寸同源（滚动容器实测高度）
+            val overscrollPx = overscrollEffect
+                ?.visualOffset(scrollState.viewportSize.toFloat())
+                ?: 0f
+            settingsTitleAlpha(
+                scrollPx = scrollState.value - overscrollPx,
+                startPx = startPx,
+                endPx = endPx,
+            )
+        }
+    }
+}
+
+/**
  * 设置页顶栏：左侧圆形返回按钮 + 居中加粗标题。
  *
  * 返回按钮叠放在 TopAppBar 之上、不进 navigationIcon 槽位：
@@ -97,6 +158,12 @@ internal fun rememberSettingsGlassBackdrop(): LayerBackdrop? {
  * [transitionFreeze]，标题与玻璃返回按钮不入冻结层——玻璃采样必须保持实时。设置页
  * 覆盖层转场时整帧重放就位帧，避免 Haze 在移动页面上逐帧重采样；[recordWhen] 由宿主
  * 用「覆盖层活跃或启动预热帧」门控，隐藏态不录制（Haze 已卸载，录到的是无模糊平底色）。
+ *
+ * 标题渐显（可选）：[titleAlpha] 默认恒 1（预览、设置根页与独立调用）；个性化、通知、
+ * 账号与同步三个子页经 [rememberSettingsTitleAlpha] 传入随滚动渐显的 lambda——内容
+ * 进入顶栏下方后按 100dp→150dp 有效位移在绘制期淡入、回滚对称淡出（过滚动计入有效
+ * 位移）。透明度在 `graphicsLayer` 里求值，滚动过程零重组；标题始终占位，顶栏高度与
+ * 内容内缩不随之变化。视觉上隐藏时仍保留语义，TalkBack 可播报页面身份。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -104,6 +171,7 @@ internal fun SettingsTopBar(
     title: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    titleAlpha: () -> Float = { 1f },
     hazeState: HazeState? = null,
     buttonBackdrop: Backdrop? = null,
     freezeKey: (() -> Any?)? = null,
@@ -154,6 +222,8 @@ internal fun SettingsTopBar(
                 Text(
                     text = title,
                     style = MaterialTheme.classppTextStyles.topBarTitle,
+                    // 绘制期读滚动状态：滚动不触发重组，只让标题图层按透明度重绘
+                    modifier = Modifier.graphicsLayer { alpha = titleAlpha() },
                 )
             },
             // 状态栏 inset 由顶栏自己吸收：磨砂背景一直铺到屏幕顶（沉浸式）
