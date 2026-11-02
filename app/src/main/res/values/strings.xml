@@ -183,6 +183,8 @@
     <string name="settings_title">课表设置</string>
     <string name="settings_root_title">设置</string>
     <string name="settings_personalization">个性化</string>
+    <string name="personalization_header_title">个性化</string>
+    <string name="personalization_header_description">打造独属于你的风格</string>
     <string name="settings_data_management">数据管理</string>
     <string name="settings_about">关于</string>
     <string name="cd_settings_close">关闭</string>
@@ -271,6 +273,8 @@
     <string name="xmu_auto_sync_notif_text">已自动导入 %1$d 条，恢复 %2$d 条</string>
     <!-- 通知与提醒 -->
     <string name="settings_notifications">通知与提醒</string>
+    <string name="notification_header_title">通知与提醒</string>
+    <string name="notification_header_description">管理课程提醒，待办提醒以及通知方式</string>
     <string name="notification_enable">启用通知</string>
     <string name="notification_permission_desc">需授予通知权限</string>
     <string name="notification_method">通知方式</string>

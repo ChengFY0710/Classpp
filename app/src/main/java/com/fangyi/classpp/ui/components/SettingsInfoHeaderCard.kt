@@ -26,15 +26,17 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 
-/** 卡片固定高度（设计稿 150dp）。 */
-private val InfoHeaderCardHeight = 150.dp
+/**
+ * 卡内纵向留白：18dp。两行说明时卡高为 151dp（内容 115dp + 上下留白 36dp），
+ * 与设计稿 150dp 仅差 1dp；行数变化时卡片高度按每行 20dp 伸缩，说明距卡底距离保持不变。
+ */
+private val InfoHeaderVerticalPadding = 18.dp
 
 /** 图标尺寸（设计稿 40dp）。 */
 private val InfoHeaderIconSize = 40.dp
@@ -48,21 +50,19 @@ private val InfoHeaderIconTitleGap = 8.dp
 /** 标题与说明间距（与 [SettingsRowText] 的 3dp 节奏对齐）。 */
 private val InfoHeaderTitleDescriptionGap = 3.dp
 
-/** 说明最多行数：卡高固定，超出省略，避免长文案顶出卡面。 */
-private const val InfoHeaderDescriptionMaxLines = 2
-
 /** 渐变终点透明度（同色 25%）。 */
 private const val IconGradientEndAlpha = 0.25f
 
 /**
- * 设置页信息头部卡：白底（surface）+ [SettingsCardShape] 连续曲率圆角，固定高度 150dp，
- * 内容整组（渐变图标 + 标题 + 次要说明）水平、垂直居中。
+ * 设置页信息头部卡：白底（surface）+ [SettingsCardShape] 连续曲率圆角，高度随内容
+ * （图标 + 标题 + 说明）自适应，内容整组水平居中；两行说明时卡高 151dp（设计稿 150dp + 1dp）。
  *
  * 规格（对齐 [SettingsCard]）：
  * - 图标 40dp：[iconColor] 为 45° 斜向渐变起点（100% 不透明 → 25% 同色，右下淡出），
  *   调用点可换色；图标本身的 fillColor 不参与着色，镂空处透出卡面底色；
  * - 标题：fieldLabel（16sp SemiBold onSurface），与设置卡行 label 同款；
- * - 说明：settingsDescription（14sp/20sp Normal secondaryText），最多 2 行、超出省略；
+ * - 说明：settingsDescription（14sp/20sp Normal secondaryText），不限行数、按文案自然换行，
+ *   行数增减时卡片高度随之伸缩，说明距卡底的留白保持不变；
  * - 纯展示：无点击与按压反馈。
  */
 @Composable
@@ -76,13 +76,15 @@ fun SettingsInfoHeaderCard(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(InfoHeaderCardHeight)
             .clip(SettingsCardShape)
             .background(MaterialTheme.colorScheme.surface),
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = InfoHeaderHorizontalPadding),
+            modifier = Modifier.padding(
+                horizontal = InfoHeaderHorizontalPadding,
+                vertical = InfoHeaderVerticalPadding,
+            ),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement =  Arrangement.Center,
         ) {
@@ -104,8 +106,6 @@ fun SettingsInfoHeaderCard(
                     color = MaterialTheme.classppColors.secondaryText,
                 ),
                 textAlign = TextAlign.Center,
-                maxLines = InfoHeaderDescriptionMaxLines,
-                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(),
             )
         }

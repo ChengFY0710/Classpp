@@ -47,6 +47,7 @@ import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
+import com.fangyi.classpp.ui.components.SettingsInfoHeaderCard
 import com.fangyi.classpp.ui.components.SheetBottomSlack
 import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.Motion
@@ -185,8 +186,16 @@ fun NotificationScreen(
                 verticalArrangement = Arrangement.spacedBy(SettingsSectionSpacing),
             ) {
                 // 顶部两卡不带分组标题：无题 CardSection 收拢成组，组内 10dp 卡间距与
-                // 下方两个带题分组同节奏；组与组之间仍走页面的 SettingsSectionSpacing
+                // 下方两个带题分组同节奏；组与组之间仍走页面的 SettingsSectionSpacing。
+                // 顶部信息头卡用通知入口同款图标 + Primary 色渐变（iconColor 传入后在卡内
+                // 做 45° 同色淡出渐变，见 SettingsInfoHeaderCard），与个性化页头部卡同构
                 CardSection {
+                    SettingsInfoHeaderCard(
+                        icon = R.drawable.ic_alert,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        title = stringResource(R.string.notification_header_title),
+                        description = stringResource(R.string.notification_header_description),
+                    )
                     SettingsCard(
                         items = listOf(
                             SettingsCardItem.Toggle(

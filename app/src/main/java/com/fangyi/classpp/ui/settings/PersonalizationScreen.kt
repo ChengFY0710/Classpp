@@ -45,6 +45,7 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
+import com.fangyi.classpp.ui.components.SettingsInfoHeaderCard
 import com.fangyi.classpp.ui.components.SheetBottomSlack
 import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.pressClickable
@@ -331,8 +332,15 @@ private fun ColorModeSection(
 ) {
     var picking by remember { mutableStateOf(false) }
     // 颜色模式与玻璃材质同属外观分组：两卡收进同一 CardSection（无标题纯分组容器，
-    // 组内卡间距 10dp），与「课表」分组的两卡结构对齐
+    // 组内卡间距 10dp），与「课表」分组的两卡结构对齐；顶部信息头卡用个性化图标 +
+    // Primary 色渐变（iconColor 传入后在卡内做 45° 同色淡出渐变，见 SettingsInfoHeaderCard）
     CardSection {
+        SettingsInfoHeaderCard(
+            icon = R.drawable.ic_paint_brush,
+            iconColor = MaterialTheme.colorScheme.primary,
+            title = stringResource(R.string.personalization_header_title),
+            description = stringResource(R.string.personalization_header_description),
+        )
         SettingsCard(
             items = listOf(
                 SettingsCardItem.Nav(
