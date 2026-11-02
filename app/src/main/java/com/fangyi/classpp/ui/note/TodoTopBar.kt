@@ -73,12 +73,13 @@ import com.fangyi.classpp.ui.components.PopupMenuPopup
 import com.fangyi.classpp.ui.components.PopupMenuSection
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
+import com.fangyi.classpp.ui.motion.LocalPageOverlayTransform
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollFactory
 import com.fangyi.classpp.ui.motion.rubberBandHorizontalScroll
-import com.fangyi.classpp.ui.motion.tabTransitionFreeze
+import com.fangyi.classpp.ui.motion.transitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.EditActionBarHeight
@@ -273,9 +274,10 @@ internal enum class TodoSpecialSection(
  * 挂在列表内容节点上（Backdrop 只喂顶栏胶囊，与 Haze 磨砂两套采样互不干扰，见
  * TodoScreen）；[hazeState] 为 null（如 @Preview）时容器退化为不透明兜底色。
  *
- * [tabTransition] 非 null 时启用转场冻结层（[tabTransitionFreeze]）：tab 转场进行中
+ * [tabTransition] 非 null 时启用转场冻结层（[transitionFreeze]）；宿主通过
+ * [LocalPageOverlayTransform] 注入设置页覆盖层视差状态后，视差期间同样冻结：
  * 整帧重放就位时录制的栏面（含模糊输出），绕开 Haze 对转场中间态几何的重采样——
- * 与课表页顶栏同一机制，杜绝快速切 tab 时毛玻璃闪缺、露出纯兜底色帧。
+ * 与课表页顶栏同一机制，杜绝快速切 tab / 开关设置页时毛玻璃闪缺、露出纯兜底色帧。
  *
  * 分组胶囊下标语义：0 = 全部、1 = 未分组、2 起 = 用户分组（[groups] 下标偏移 2）——
  * 置顶分组只是视觉位置前移，下标仍按 [groups] 原序偏移，宿主（TodoScreen）的过滤
@@ -349,8 +351,11 @@ internal fun TodoTopBar(
     viewMenuSections: List<PopupMenuSection> = emptyList(),
 ) {
     val overscrollFactory = rememberOffsetOverscrollFactory(animationSpec = Motion.Settle)
-    // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场期间整帧重放
+    // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场/设置页视差期间整帧重放。
+    // overlayTransform 只在组合期取引用；isTransforming 在绘制期读，禁止在组合期读
     val transitionFreezeLayer = rememberGraphicsLayer()
+    val overlayTransform = LocalPageOverlayTransform.current
+    val hasFreezeSource = tabTransition != null || overlayTransform != null
     CompositionLocalProvider(LocalOverscrollFactory provides overscrollFactory) {
         Box(
             modifier = modifier
@@ -358,8 +363,11 @@ internal fun TodoTopBar(
                 // 转场冻结层包在兜底色与 hazeBlur 之外（最外层 draw）：录制帧才是
                 // 「兜底色 + 模糊 + 内容」的完整栏面，转场期间整条重放、不重采样
                 .then(
-                    if (tabTransition != null) {
-                        Modifier.tabTransitionFreeze(transitionFreezeLayer, tabTransition)
+                    if (hasFreezeSource) {
+                        Modifier.transitionFreeze(transitionFreezeLayer) {
+                            tabTransition?.isTransitioning == true ||
+                                overlayTransform?.isTransforming == true
+                        }
                     } else {
                         Modifier
                     },

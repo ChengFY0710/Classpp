@@ -67,13 +67,14 @@ import androidx.compose.ui.window.PopupProperties
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
+import com.fangyi.classpp.ui.motion.LocalPageOverlayTransform
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.PopupGlassCard
 import com.fangyi.classpp.ui.motion.popupMotionScale
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rememberPopupMotion
 import com.fangyi.classpp.ui.motion.TabTransitionState
-import com.fangyi.classpp.ui.motion.tabTransitionFreeze
+import com.fangyi.classpp.ui.motion.transitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.Correct
@@ -208,9 +209,10 @@ internal fun collapsedPillX(
  * 同时驱动周数胶囊从扁平灰底过渡到半透明白 + 投影。
  * [hazeState] 为 null（如 @Preview）时保持不透明背景。
  *
- * [tabTransition] 非 null 时启用转场冻结层（[tabTransitionFreeze]）：tab 转场进行中
- * 整帧重放就位时录制的画面（含模糊输出），绕开 Haze 对转场中间态几何的重采样，
- * 杜绝快速切 tab 时顶栏闪出展开态的白/黑帧。
+ * [tabTransition] 非 null 时启用转场冻结层（[transitionFreeze]）；此外，宿主通过
+ * [LocalPageOverlayTransform] 注入设置页覆盖层视差状态后，视差期间同样冻结。两种
+ * transform 进行中整帧重放就位时录制的画面（含模糊输出），绕开 Haze 对转场中间态
+ * 几何的重采样，杜绝快速切 tab / 开关设置页时顶栏闪出展开态的白/黑帧。
  *
  * [pillBackdrop] 非空（宿主经「更高级的玻璃材质」开关 + SDK 双门控下发）时周数胶囊
  * 折叠终态改液态玻璃底 + Q弹按压放大——玻璃随 [blurProgress] 淡入接替实心底渐变
@@ -273,8 +275,11 @@ fun ScheduleHeader(
     // 学期后没有今周页（不显示）。查看的周与今周相同则按钮隐藏
     val showBackToCurrent = todayWeek != null && selectedWeek != todayWeek
 
-    // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场期间整帧重放
+    // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场/设置页视差期间整帧重放。
+    // overlayTransform 只在组合期取引用；isTransforming 在绘制期读，禁止在组合期读
     val transitionFreezeLayer = rememberGraphicsLayer()
+    val overlayTransform = LocalPageOverlayTransform.current
+    val hasFreezeSource = tabTransition != null || overlayTransform != null
 
     Layout(
         content = {
@@ -446,8 +451,11 @@ fun ScheduleHeader(
         modifier = modifier
             .fillMaxWidth()
             .then(
-                if (tabTransition != null) {
-                    Modifier.tabTransitionFreeze(transitionFreezeLayer, tabTransition)
+                if (hasFreezeSource) {
+                    Modifier.transitionFreeze(transitionFreezeLayer) {
+                        tabTransition?.isTransitioning == true ||
+                            overlayTransform?.isTransforming == true
+                    }
                 } else {
                     Modifier
                 },
@@ -469,7 +477,7 @@ fun ScheduleHeader(
                     // 背景模糊画在兜底色之上、内容之下；opacity 随进度渐入实现无缝衔接。
                     // Haze 2 由库内负责源失效与几何对齐（旧 forceInvalidateOnPreDraw 已移除），
                     // 原先「源重画后强制重采样、杜绝快速切 tab 首帧空白」的诉求由库接管；
-                    // 转场期另有 tabTransitionFreeze 整帧重放兜底
+                    // 转场期另有 transitionFreeze 整帧重放兜底
                     Modifier.hazeBlur(
                         input = hazeSources(hazeState),
                         style = hazeTopBarStyle(radius = 32.dp, opacity = progress),

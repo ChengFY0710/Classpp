@@ -172,7 +172,7 @@ class TabPagerState internal constructor(initialTab: AppTab) {
 
     /**
      * 页的转场只读视图（供页内顶栏的转场冻结层在绘制期判定，见 ui.motion 的
-     * tabTransitionFreeze）；未挂载的页返回 null（调用方屏内默认值兜底）。
+     * transitionFreeze）；未挂载的页返回 null（调用方屏内默认值兜底）。
      */
     fun transitionFor(tab: AppTab): TabTransitionState? = pageStates[tab]?.transition
 

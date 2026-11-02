@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -29,9 +30,48 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.kyant.shapes.UnevenRoundedRectangle
 import kotlinx.coroutines.delay
+
+/**
+ * 覆盖层转场进度（0=隐藏、1=就位）的可共享状态。
+ *
+ * 进度提升为外部状态后，宿主可以在不碰 [PageOverlayTransition] 内部的情况下读取它；
+ * 页内 Haze 冻结层通过 [LocalPageOverlayTransform] 拿到它，在覆盖层视差期间重放
+ * 就位帧。[isTransforming] 只在绘制期读取（Animatable 是快照状态），逐帧只失效绘制、
+ * 不触发重组。
+ */
+@Stable
+class PageOverlayTransitionState {
+    val progress = Animatable(0f)
+
+    /** 进度处于 (0,1) 开区间即视差转场进行中；隐藏(0)与就位(1)都返回 false。 */
+    val isTransforming: Boolean
+        get() = isOverlayTransforming(progress.value)
+}
+
+/**
+ * 覆盖层进度是否处于视差转场中间态。开区间：端点（隐藏/完全就位）不冻结，
+ * 避免在端点误判。
+ */
+internal fun isOverlayTransforming(progress: Float): Boolean =
+    progress > 0f && progress < 1f
+
+@Composable
+fun rememberPageOverlayTransitionState(): PageOverlayTransitionState =
+    remember { PageOverlayTransitionState() }
+
+/**
+ * 外层设置页覆盖层视差状态的只读注入点。
+ *
+ * 只在 MainActivity 最外层 [PageOverlayTransition] 之外显式 provide：它移动的是
+ * tab 页面世界；嵌套子页覆盖层移动的是设置页内容，不能提供这个 local，否则
+ * 「最近一层」语义会遮住真正在移动页面世界的那一层。无覆盖层的场景（预览/独立
+ * 组件）为 null。
+ */
+val LocalPageOverlayTransform = compositionLocalOf<PageOverlayTransitionState?> { null }
 
 /**
  * 整页覆盖层转场（设置页覆盖层与个性化子页共用，两层转场同源）：[overlay] 整页从右缘
@@ -53,18 +93,22 @@ import kotlinx.coroutines.delay
  * - [behind]：被盖住的下层内容（可多个、常驻组合），随视差层整体位移；
  * - [overlay]：盖上来的整页，须自身不透明——就位后完全盖住遮罩与下层。隐藏态下内容
  *   仍在组合中，其中的返回键处理等交互应读 [LocalPageOverlayActive] 自行关闭；
+ * - [state]：转场进度状态。调用方可传入外部持有的实例（并另经 [LocalPageOverlayTransform]
+ *   提供给页内冻结层读取）；默认各调用点新建一份，行为与旧实现一致。设置页内嵌套的
+ *   子页覆盖层不要传外层的 state，也不要 provide 该 local；
  * - [visible] 翻转即启动完整转场，转场中途反向翻转时从当前值继续。
  */
 @Composable
 fun PageOverlayTransition(
     visible: Boolean,
     modifier: Modifier = Modifier,
+    state: PageOverlayTransitionState = rememberPageOverlayTransitionState(),
     behind: @Composable BoxScope.() -> Unit,
     overlay: @Composable BoxScope.() -> Unit,
 ) {
     // 转场进度 0..1（0=隐藏、1=就位）：Animatable 驱动而非 AnimatedVisibility。
     // targetState 翻转即启动，时长/曲线取 Motion token——与遮罩、视差天然同一条曲线
-    val progress = remember { Animatable(0f) }
+    val progress = state.progress
     LaunchedEffect(visible) {
         progress.animateTo(
             targetValue = if (visible) 1f else 0f,
@@ -162,41 +206,81 @@ class TabTransitionState(
 }
 
 /**
- * 顶栏级转场冻结层：转场进行中（[TabTransitionState.isTransitioning]，绘制期读取快照值，
- * 每帧只失效绘制、不触发重组）整帧重放 [layer] 里录制的最后一帧就位画面（含 Haze
- * 模糊输出），不再执行内部绘制链；就位时照常绘制，并把本帧录进 [layer] 供下次转场重放。
- *
- * 挂在「承载 Haze 模糊、且位于 tab 页内」的顶栏组件最外层（兜底色与 hazeBlur 之外），
- * 页内 x/scale 转场状态由调用方（TabPager 装配层经 TabPagerState.transitionFor）透传。
- * 课表页顶栏/编辑栏与待办页顶栏共用本机制。
- *
- * 为什么需要：tab 转场用祖先 graphicsLayer 平移/缩放整页，Compose 会在动画的每一帧向
- * 整棵子树派发 onGloballyPositioned（图层位置属性一变即递归派发），Haze 的源/效果节点
- * 随之把滑入起点、屏外停靠位等**中间态窗口坐标**写进记账状态并逐帧失效重采样——
- * 重采样按窗口坐标取几何、画布却已被祖先变换叠加，滑入起点/屏外停靠处效果层与屏幕
- * 交集为空、尺寸归零，模糊整层不画，顶栏只剩兜底色，即快速切 tab 时闪出的纯色帧。
- * 转场期间页面内容本就不变，重放就位帧与实时绘制逐像素一致，且转场期零模糊重采样开销。
- * 停靠页（x = ±1.2 的屏外停靠位）只重放、不重录，其冻结帧由 TabPagerState.reRecordParkedTabs
- * （MainActivity 的回前台/切主题时机触发）维持有效（进多任务时系统会丢弃不可见窗口的
- * RenderNode 显示列表）。
+ * 冻结帧的录制元数据：普通字段，只在绘制期读写，不参与快照与重组。
+ * size 必须一起记：窗口尺寸/字体缩放/分屏变化但键未变时，旧帧尺寸已不对，必须重录。
  */
-fun Modifier.tabTransitionFreeze(
+class FreezeFrame {
+    var hasFrame = false
+    var key: Any? = null
+    var size: IntSize? = null
+}
+
+/**
+ * 转场期间是否可以直接重放录制帧。
+ *
+ * - 图层尺寸无效（尚未绘制/已归零）→ 不重放；
+ * - 无元数据（顶栏旧行为：每帧录制、不设键）→ 尺寸有效即重放；
+ * - 有元数据 → 必须已录过帧、键相同、且录制尺寸与当前图层尺寸一致。
+ */
+internal fun shouldReplayFreeze(
+    layerWidth: Int,
+    layerHeight: Int,
+    frame: FreezeFrame?,
+    key: Any?,
+): Boolean {
+    if (layerWidth < 1 || layerHeight < 1) return false
+    if (frame == null) return true
+    return frame.hasFrame && frame.key == key && frame.size == IntSize(layerWidth, layerHeight)
+}
+
+/**
+ * 页面级 transform 的冻结修饰符：tab 转场与设置页覆盖层视差共用。
+ *
+ * - [isTransforming] 为 true（绘制期读取快照值，逐帧只失效绘制、不触发重组）：
+ *   冻结层有帧、尺寸有效时整帧重放 [layer]（含 Haze 模糊输出），不再执行内部绘制链；
+ *   若提供了 [frame] 还要求录制键与尺寸都匹配，否则回退 `drawContent()`——最坏情况
+ *   等于改造前，绝不重放过期帧。
+ * - [isTransforming] 为 false：每帧录制后重放。绝不按「键未变」跳过录制：背景图异步
+ *   解码、Coil 换帧等变化不一定体现在键上，跳过录制会让旧帧永久盖住新内容。
+ *
+ * 为什么需要：tab 转场用祖先 graphicsLayer 平移/缩放整页，设置页覆盖层则把 behind
+ * 整层左移做视差；Compose 会在动画的每一帧向整棵子树派发 onGloballyPositioned
+ * （图层位置属性一变即递归派发），Haze 的源/效果节点随之把滑入起点、屏外停靠位等
+ * **中间态窗口坐标**写进记账状态并逐帧失效重采样——重采样按窗口坐标取几何、画布却
+ * 已被祖先变换叠加，滑入起点/屏外停靠处效果层与屏幕交集为空、尺寸归零，模糊整层
+ * 不画，只剩兜底色，即快速切 tab / 开关设置页时闪出的纯色帧。转场期间页面内容本就
+ * 不变，重放就位帧与实时绘制逐像素一致，且转场期零模糊重采样开销。
+ *
+ * 停靠页（x = ±1.2 的屏外停靠位）只重放、不重录，其冻结帧由
+ * TabPagerState.reRecordParkedTabs（MainActivity 的回前台/切主题/跨天时机触发）
+ * 维持有效（进多任务时系统会丢弃不可见窗口的 RenderNode 显示列表）。
+ *
+ * 注意：录制后只 `drawLayer(layer)`，不要再 `drawContent()`——Haze 2 的效果节点在
+ * 「同一帧内被绘制两次」时会构建自引用 RenderNode，渲染线程在 prepareTreeImpl 里
+ * 无限递归、栈溢出崩溃。
+ */
+fun Modifier.transitionFreeze(
     layer: GraphicsLayer,
-    transition: TabTransitionState,
+    frame: FreezeFrame? = null,
+    key: () -> Any? = { Unit },
+    isTransforming: () -> Boolean,
 ): Modifier = drawWithContent {
-    if (transition.isTransitioning) {
-        // 冻结层尚无内容（理论上不可能：转场前至少绘制过一帧）时退回实时绘制
-        if (layer.size.width >= 1 && layer.size.height >= 1) {
+    if (isTransforming()) {
+        val layerSize = layer.size
+        if (shouldReplayFreeze(layerSize.width, layerSize.height, frame, key())) {
             drawLayer(layer)
             return@drawWithContent
         }
         drawContent()
     } else {
-        // 只把子树绘制一次（录进 layer 后直接画 layer）：
-        // Haze 2 的效果节点在「同一帧内被绘制两次」时会构建出自引用的 RenderNode，
-        // 渲染线程在 prepareTreeImpl 里无限递归、栈溢出崩溃；旧实现
-        // `layer.record { drawContent() }` + `drawContent()` 恰好是两次。
+        // 只把子树绘制一次（录进 layer 后直接画 layer）：录制后 layer.size 才是本帧
+        // 内容的真实尺寸，元数据在 record 之后取
         layer.record { this@drawWithContent.drawContent() }
+        frame?.let {
+            it.hasFrame = true
+            it.key = key()
+            it.size = layer.size
+        }
         drawLayer(layer)
     }
 }

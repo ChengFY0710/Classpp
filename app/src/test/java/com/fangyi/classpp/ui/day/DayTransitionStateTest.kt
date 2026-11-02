@@ -3,6 +3,8 @@ package com.fangyi.classpp.ui.day
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -64,5 +66,33 @@ class DayTransitionStateTest {
 
         assertEquals(-200f, consumed, 0.001f)
         assertEquals(0.7f, state.collapse, 0.0001f)
+    }
+
+    @Test
+    fun dayAtRestAtStableEndpoints() {
+        // 01 / 02 / 04 三个停留态都是冻结层可用的静止态
+        assertTrue(isDayAtRest(open = 0f, collapse = 0f, isAnimating = false, deviceCornerAlpha = 0f))
+        assertTrue(isDayAtRest(open = 1f, collapse = 0f, isAnimating = false, deviceCornerAlpha = 0f))
+        assertTrue(isDayAtRest(open = 1f, collapse = 1f, isAnimating = false, deviceCornerAlpha = 0f))
+    }
+
+    @Test
+    fun dayNotAtRestDuringDragOrSnap() {
+        assertFalse(isDayAtRest(open = 0.5f, collapse = 0f, isAnimating = false, deviceCornerAlpha = 0f))
+        assertFalse(isDayAtRest(open = 1f, collapse = 0.5f, isAnimating = false, deviceCornerAlpha = 0f))
+        assertFalse(isDayAtRest(open = 0f, collapse = 0f, isAnimating = true, deviceCornerAlpha = 0f))
+    }
+
+    @Test
+    fun dayNotAtRestWhileCalendarCornerFades() {
+        // 01 的收角尾巴仍在动：几何（机身圆角）尚未落定
+        assertFalse(isDayAtRest(open = 0f, collapse = 0f, isAnimating = false, deviceCornerAlpha = 0.5f))
+    }
+
+    @Test
+    fun compactIgnoresCornerAlpha() {
+        // 收角尾巴只属于 01；02/04 的几何不读它，不能因此让 02 永久无法冻结
+        assertTrue(isDayAtRest(open = 1f, collapse = 0f, isAnimating = false, deviceCornerAlpha = 0.5f))
+        assertTrue(isDayAtRest(open = 1f, collapse = 1f, isAnimating = false, deviceCornerAlpha = 1f))
     }
 }

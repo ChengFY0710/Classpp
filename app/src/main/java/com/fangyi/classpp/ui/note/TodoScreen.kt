@@ -166,7 +166,7 @@ private val SectionSpacing = 20.dp
  *
  * [tabTransition]：tab 转场状态只读视图（ui.navigation 的 TabPager 状态机），透传给
  * [TodoTopBar] 启用转场冻结层——与课表页顶栏同一机制，杜绝快速切 tab 时顶栏
- * 毛玻璃闪缺（详见 tabTransitionFreeze）。
+ * 毛玻璃闪缺（详见 transitionFreeze）。
  *
  * 长按列表卡片进入待办编辑页（仅常规分组与标签页可用，特殊分组页无入口，闸门见
  * [enterTodoEdit]）：顶栏经 AnimatedContent 换场为编辑顶栏（[TodoEditBar]，删除/移动/

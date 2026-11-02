@@ -31,9 +31,10 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
+import com.fangyi.classpp.ui.motion.LocalPageOverlayTransform
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.pressClickable
-import com.fangyi.classpp.ui.motion.tabTransitionFreeze
+import com.fangyi.classpp.ui.motion.transitionFreeze
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.EditActionBarHeight
@@ -57,7 +58,8 @@ import dev.chrisbanes.haze.blur.hazeBlur
  * [blurProgress] / [hazeState]：与 [ScheduleHeader] 折叠后同一套背景模糊——
  * 内容滚到编辑栏下方时按 [blurProgress] 渐入，顶部最强、向下渐弱；回到顶部恢复不透明。
  *
- * [tabTransition] 非 null 时启用同款转场冻结层（[tabTransitionFreeze]）：
+ * [tabTransition] 非 null 时启用同款转场冻结层（[transitionFreeze]）；宿主通过
+ * [LocalPageOverlayTransform] 注入设置页覆盖层视差状态后，视差期间同样冻结：
  * 覆盖「转场中途点编辑」的边角情况——编辑栏在转场结束前进场时同样重放就位帧，
  * 不让 haze 用中间态几何重采样。
  */
@@ -80,14 +82,20 @@ fun ScheduleEditBar(
     // 星期行的列标签用单字简称资源（同 ScheduleHeader），勿对全名做字符串假设
     val weekdays = stringArrayResource(R.array.weekdays_short).take(days)
     val progress = blurProgress.coerceIn(0f, 1f)
-    // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场期间整帧重放
+    // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场/设置页视差期间整帧重放。
+    // overlayTransform 只在组合期取引用；isTransforming 在绘制期读，禁止在组合期读
     val transitionFreezeLayer = rememberGraphicsLayer()
+    val overlayTransform = LocalPageOverlayTransform.current
+    val hasFreezeSource = tabTransition != null || overlayTransform != null
     Column(
         modifier = modifier
             .fillMaxWidth()
             .then(
-                if (tabTransition != null) {
-                    Modifier.tabTransitionFreeze(transitionFreezeLayer, tabTransition)
+                if (hasFreezeSource) {
+                    Modifier.transitionFreeze(transitionFreezeLayer) {
+                        tabTransition?.isTransitioning == true ||
+                            overlayTransform?.isTransforming == true
+                    }
                 } else {
                     Modifier
                 },
@@ -98,7 +106,7 @@ fun ScheduleEditBar(
                 if (hazeState != null && progress > 0f) {
                     // 背景模糊画在兜底色之上、内容之下；opacity 随进度渐入实现无缝衔接。
                     // Haze 2 由库内负责源失效与几何对齐（旧 forceInvalidateOnPreDraw 已移除），
-                    // 转场期另有 tabTransitionFreeze 整帧重放兜底
+                    // 转场期另有 transitionFreeze 整帧重放兜底
                     Modifier.hazeBlur(
                         input = hazeSources(hazeState),
                         style = hazeTopBarStyle(radius = 32.dp, opacity = progress),

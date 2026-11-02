@@ -44,9 +44,12 @@ import com.fangyi.classpp.data.notification.NotificationAlarmReceiver
 import com.fangyi.classpp.data.notification.NotificationScheduler
 import com.fangyi.classpp.data.xmu.XmuDailySyncRunner
 import com.fangyi.classpp.data.xmu.XmuDailySyncScheduler
+import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.day.DayScreen
+import com.fangyi.classpp.ui.motion.LocalPageOverlayTransform
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
+import com.fangyi.classpp.ui.motion.rememberPageOverlayTransitionState
 import com.fangyi.classpp.ui.navigation.AppTab
 import com.fangyi.classpp.ui.navigation.BottomNavBar
 import com.fangyi.classpp.ui.navigation.NavBarTransitionHeadroom
@@ -183,6 +186,9 @@ class MainActivity : ComponentActivity() {
                     }
                     // 设置页开关（全屏覆盖层，经下方 PageOverlayTransition 盖在三屏与底部导航之上）
                     var showSettings by rememberSaveable { mutableStateOf(false) }
+                    // 设置页覆盖层转场状态：进度提升到组合外，供 behind 里的 tab 页面
+                    // （课表/待办顶栏、日程页 Haze）在视差期间读取并冻结模糊输出
+                    val settingsOverlayState = rememberPageOverlayTransitionState()
                     // 设置页直达子页标志：课表页教务导入浮层的「账号与同步」跳转先置真再开
                     // 设置页，账号与同步子页随之展开（SettingsScreen 消费后回调复位）
                     var settingsOpenAccountSync by rememberSaveable { mutableStateOf(false) }
@@ -276,7 +282,7 @@ class MainActivity : ComponentActivity() {
 
                     // 回前台重录顶栏转场冻结帧：进多任务/回桌面时窗口不可见，系统会丢弃
                     // RenderNode 的显示列表（haze 为同一问题在 onStop 释放捕获层，
-                    // chrisbanes/haze#497），tabTransitionFreeze 录制的就位帧随之清空。
+                    // chrisbanes/haze#497），transitionFreeze 录制的就位帧随之清空。
                     // 可见页回前台全量重画即自愈（就位分支照常重录）；停靠页（x=±1.2、
                     // alpha=0）永远处于「转场中」判定（x≠0），冻结层只重放、从不重录，
                     // 空帧会一直带进下次切回课表页的滑入——顶栏整条空白露出底色
@@ -297,6 +303,14 @@ class MainActivity : ComponentActivity() {
                         pagerState.reRecordParkedTabs()
                     }
 
+                    // 跨天后重录停靠页冻结帧：日程页背景图/日期随 LocalToday 变化，旧帧
+                    // 的内容键已失效；停靠页只重放不重录，主动补一帧新画面，首次切回仍能
+                    // 全程冻结。重录若撞上背景图 cross-dissolve，冻结键里的 settled 状态
+                    // 会让该帧在淡入完成后自动失效（回退实时绘制），不会重放半程淡入
+                    LaunchedEffect(LocalToday) {
+                        pagerState.reRecordParkedTabs()
+                    }
+
                     // 玻璃材质（GlassPreferences）：开启时把页面世界标记进
                     // layerBackdrop 采样层，三胶囊经 drawBackdrop 取样做液态玻璃（模糊+折射+
                     // 染色）。采样内容 = 页面底色（与下方 Box 的 background 同源）+ 各 tab 页，
@@ -311,6 +325,8 @@ class MainActivity : ComponentActivity() {
                     // 压暗遮罩、右滑进出场与转场期左缘圆角都在其中，与个性化子页共用同一实现
                     PageOverlayTransition(
                         visible = showSettings,
+                        // 进度状态外部持有：供 behind 里的 tab 页面在视差期间冻结 Haze
+                        state = settingsOverlayState,
                         modifier = Modifier
                             .fillMaxSize()
                             // 页面世界的基础底色，随主题即时切换：窗口 windowBackground（XML
@@ -335,55 +351,64 @@ class MainActivity : ComponentActivity() {
                                         },
                                     ),
                             ) {
-                                TabPager(state = pagerState) { tab, transition ->
-                                    when (tab) {
-                                        AppTab.Agenda -> DayScreen(
-                                            modifier = pageModifier,
-                                            // 仅用于状态栏图标在非 Agenda tab 恢复主题默认；
-                                            // 不参与转场，也不改导航栏布局
-                                            active = tab == pagerState.selectedTab,
-                                            // 日历卡待办小点的数据源（网格窗口内取覆盖日期）
-                                            todoRepository = todoRepository,
-                                            // 上课提醒卡数据源：今天该上的课 + 当前时刻 →
-                                            // 倒计时/上课中/课已上完/今日无课
-                                            scheduleRepository = repository,
-                                            // 待办提醒卡标签配色数据源（与待办页同源）
-                                            tagRepository = tagRepository,
-                                            // AI 对话（日程页顶栏右侧按钮唤起对话浮层）
-                                            aiChatRepository = aiChatRepository,
-                                            // 选择图片浮层在场时藏底部导航栏（同课表/待办页浮层）
-                                            onOverlayOverNavBarChange = onOverlayOverNavBarChange,
-                                        )
-                                        AppTab.Timetable -> ScheduleScreen(
-                                            modifier = pageModifier,
-                                            repository = repository,
-                                            todoRepository = todoRepository,
-                                            editing = editing,
-                                            onEditingChange = onEditingChange,
-                                            onOverlayOverNavBarChange = onOverlayOverNavBarChange,
-                                            onOpenSettings = onOpenSettings,
-                                            onOpenAccountSync = onOpenAccountSync,
-                                            xmuSyncRepository = xmuSyncRepository,
-                                            xmuAutoLoginManager = xmuAutoLoginManager,
-                                            xmuScheduleImporter = xmuScheduleImporter,
-                                            tabTransition = transition,
-                                            // 网格读降频态（即时态只喂个性化页滑条）
-                                            cardHeights = gridCardHeightsState,
-                                            // 课程卡片教师行显隐（个性化页开关写入）
-                                            showTeacher = showTeacherState,
-                                        )
-                                        AppTab.Todo -> TodoScreen(
-                                            modifier = pageModifier,
-                                            repository = todoRepository,
-                                            tagRepository = tagRepository,
-                                            scheduleRepository = repository,
-                                            showNewTodoSheet = showNewTodoSheet,
-                                            onNewTodoSheetDismiss = onNewTodoSheetDismiss,
-                                            onOverlayOverNavBarChange = onOverlayOverNavBarChange,
-                                            tabTransition = transition,
-                                            // 收集箱「瀑布流视图」开关（个性化页写入，默认开启）
-                                            masonryView = todoMasonryState,
-                                        )
+                                // 设置页视差状态只注入 tab 页面世界：页内顶栏/日程页
+                                // 据此外在视差期间冻结 Haze 模糊输出。设置页自身内容
+                                // 不消费该 local（嵌套覆盖层移动的是设置页内容）
+                                CompositionLocalProvider(
+                                    LocalPageOverlayTransform provides settingsOverlayState,
+                                ) {
+                                    TabPager(state = pagerState) { tab, transition ->
+                                        when (tab) {
+                                            AppTab.Agenda -> DayScreen(
+                                                modifier = pageModifier,
+                                                // 仅用于状态栏图标在非 Agenda tab 恢复主题默认；
+                                                // 不参与转场，也不改导航栏布局
+                                                active = tab == pagerState.selectedTab,
+                                                // 日历卡待办小点的数据源（网格窗口内取覆盖日期）
+                                                todoRepository = todoRepository,
+                                                // 上课提醒卡数据源：今天该上的课 + 当前时刻 →
+                                                // 倒计时/上课中/课已上完/今日无课
+                                                scheduleRepository = repository,
+                                                // 待办提醒卡标签配色数据源（与待办页同源）
+                                                tagRepository = tagRepository,
+                                                // AI 对话（日程页顶栏右侧按钮唤起对话浮层）
+                                                aiChatRepository = aiChatRepository,
+                                                // 选择图片浮层在场时藏底部导航栏（同课表/待办页浮层）
+                                                onOverlayOverNavBarChange = onOverlayOverNavBarChange,
+                                                // tab 转场状态：01/02 的 Haze 冻结层据此重放就位帧
+                                                tabTransition = transition,
+                                            )
+                                            AppTab.Timetable -> ScheduleScreen(
+                                                modifier = pageModifier,
+                                                repository = repository,
+                                                todoRepository = todoRepository,
+                                                editing = editing,
+                                                onEditingChange = onEditingChange,
+                                                onOverlayOverNavBarChange = onOverlayOverNavBarChange,
+                                                onOpenSettings = onOpenSettings,
+                                                onOpenAccountSync = onOpenAccountSync,
+                                                xmuSyncRepository = xmuSyncRepository,
+                                                xmuAutoLoginManager = xmuAutoLoginManager,
+                                                xmuScheduleImporter = xmuScheduleImporter,
+                                                tabTransition = transition,
+                                                // 网格读降频态（即时态只喂个性化页滑条）
+                                                cardHeights = gridCardHeightsState,
+                                                // 课程卡片教师行显隐（个性化页开关写入）
+                                                showTeacher = showTeacherState,
+                                            )
+                                            AppTab.Todo -> TodoScreen(
+                                                modifier = pageModifier,
+                                                repository = todoRepository,
+                                                tagRepository = tagRepository,
+                                                scheduleRepository = repository,
+                                                showNewTodoSheet = showNewTodoSheet,
+                                                onNewTodoSheetDismiss = onNewTodoSheetDismiss,
+                                                onOverlayOverNavBarChange = onOverlayOverNavBarChange,
+                                                tabTransition = transition,
+                                                // 收集箱「瀑布流视图」开关（个性化页写入，默认开启）
+                                                masonryView = todoMasonryState,
+                                            )
+                                        }
                                     }
                                 }
                             }

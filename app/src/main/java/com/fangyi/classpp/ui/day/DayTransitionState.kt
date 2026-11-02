@@ -13,6 +13,27 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
+ * 日程页内部是否处于静止停留态（冻结层只在这时为 true）。
+ *
+ * - 吸附/重播进行中（[isAnimating]）→ 不静止；
+ * - 01（open=0）：还要等 02→01 的收角动画结束（deviceCornerAlpha≈0）；
+ * - 02/04（open=1）：collapse 在 0 或 1 即静止。此阶段 deviceCornerAlpha 不参与几何：
+ *   收角动画只属于 02→01 的落定尾巴，若用户在收角途中重新上滑到 02，cornerFadeJob
+ *   被取消、deviceCornerAlpha 可能停在中间值，但 02 的几何不读它——把它算进静止判定
+ *   会让 02 永久无法冻结。
+ */
+internal fun isDayAtRest(
+    open: Float,
+    collapse: Float,
+    isAnimating: Boolean,
+    deviceCornerAlpha: Float,
+): Boolean {
+    if (isAnimating) return false
+    if (open == 0f) return deviceCornerAlpha <= 0.001f
+    return open == 1f && (collapse == 0f || collapse == 1f)
+}
+
+/**
  * 日程页三态转场状态机（01 台历 / 02 缩小卡 / 04 收起）。
  *
  * 两个进度 [open]（01↔02）与 [collapse]（02↔04）是整个画面的唯一派生源：
@@ -61,6 +82,16 @@ internal class DayTransitionState(
      */
     var deviceCornerAlpha by mutableFloatStateOf(0f)
         private set
+
+    /**
+     * 页面内部是否处于静止停留态：冻结层只在这时为 true。
+     *
+     * - 01：open=0 且 02→01 的收角动画已结束（deviceCornerAlpha≈0）；
+     * - 02/04：open=1 且 collapse 在 0 或 1；此阶段 deviceCornerAlpha 不参与几何，忽略。
+     * 吸附/拖拽/重播/收角任何一项进行中都不是静止。
+     */
+    val isAtRest: Boolean
+        get() = isDayAtRest(open, collapse, isAnimating, deviceCornerAlpha)
 
     private var animationJob: Job? = null
 

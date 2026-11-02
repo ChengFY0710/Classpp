@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.addOutline
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -139,10 +140,13 @@ import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.DragDirection
 import com.fangyi.classpp.ui.motion.DragDirectionLock
+import com.fangyi.classpp.ui.motion.FreezeFrame
+import com.fangyi.classpp.ui.motion.LocalPageOverlayTransform
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.OffsetOverscrollEffect
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
+import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.TiltParallaxState
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
@@ -150,6 +154,7 @@ import com.fangyi.classpp.ui.motion.rememberDeviceCornerRadius
 import com.fangyi.classpp.ui.motion.rememberTiltParallax
 import com.fangyi.classpp.ui.motion.sharePointerInputWithSiblings
 import com.fangyi.classpp.ui.motion.tiltParallax
+import com.fangyi.classpp.ui.motion.transitionFreeze
 import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.note.CalendarPickerHost
 import com.fangyi.classpp.ui.note.NewTodoSheet
@@ -238,6 +243,11 @@ private val TrailingScrollSpace = 120.dp
  * 首帧）按「今日无课」处理。有课的上课提醒卡与时间轴上课卡（DayTaskCard.Course）可点击
  * 唤起课程详情浮层（CourseDetailSheet，与课表页同款两段式接线，含备注编辑、课程待办与
  * 「新建课程待办」叠层浮层），浮层在场时经 [onOverlayOverNavBarChange] 藏底部导航栏。
+ *
+ * [tabTransition]：tab 转场状态只读视图（TabPager 状态机）。非空时，01 顶部磨砂与
+ * 02 图片下段模糊带在 tab 转场期间冻结重放就位帧；宿主经 [LocalPageOverlayTransform]
+ * 注入设置页覆盖层视差状态后，视差期间同样冻结。冻结还要求页面内部静止
+ * （[DayTransitionState.isAtRest]）且背景图换图淡入已完成，否则回退实时绘制。
  */
 @Composable
 fun DayScreen(
@@ -249,6 +259,7 @@ fun DayScreen(
     /** AI 对话仓库（顶栏右侧 AI 按钮唤起对话浮层）；null = 预览等无 AI 场景 */
     aiChatRepository: AiChatRepository? = null,
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
+    tabTransition: TabTransitionState? = null,
 ) {
     val context = LocalContext.current
     val today = LocalToday
@@ -404,6 +415,57 @@ fun DayScreen(
     // + 松手吸附），由下方根级转场手势在 04 统一驱动——上滑先折叠日历、下滑先展开折叠
     // 再过渡 02（见手势块注释），02 阶段恒为展开态。
     val calendarFold = remember { DayCalendarFoldState(scope) }
+
+    // 整页 transform 冻结层（tab 转场 / 设置页覆盖层视差）：01 顶部磨砂与 02 图片
+    // 下段模糊带各自录制就位帧，转场期间整帧重放，避免 Haze 逐帧重采样。资源声明在
+    // 根组合：showTopScrim/showBand 条件块进出组合不丢帧；停靠页的帧由
+    // TabPagerState.reRecordParkedTabs 维持
+    val overlayTransform = LocalPageOverlayTransform.current
+    val topScrimFreezeLayer = rememberGraphicsLayer()
+    val topScrimFreezeFrame = remember { FreezeFrame() }
+    val bandFreezeLayer = rememberGraphicsLayer()
+    val bandFreezeFrame = remember { FreezeFrame() }
+    val hasPageFreezeSource = tabTransition != null || overlayTransform != null
+
+    // 背景图 cross-dissolve/Coil 解码未完成时关闭冻结：否则会把淡入定格在半程。
+    // 只在换图边界翻转（DayBackgroundImage 回报），不逐帧写状态
+    var backgroundVisualSettled by remember { mutableStateOf(true) }
+
+    // 页面级 transform：tab 转场或设置页视差，且页面内部与背景视觉都必须静止。
+    // backgroundVisualSettled 在 lambda 内动态读 State（draw 期读、只失效绘制），
+    // 不要先取到局部变量再捕获——那会冻结在创建时的值
+    val pageTransforming: () -> Boolean = remember(
+        tabTransition,
+        overlayTransform,
+        transition,
+    ) {
+        {
+            (tabTransition?.isTransitioning == true ||
+                overlayTransform?.isTransforming == true) &&
+                transition.isAtRest &&
+                backgroundVisualSettled
+        }
+    }
+
+    // 图片模糊层的内容键：源 = 背景图 + 页面底色；内部视觉 = open/collapse/收角；
+    // 视差 = tilt 位移；settled 记录录制时背景图是否已完成换图。停靠页停止录制后，
+    // 若停靠前最后一帧录在拖拽中途或淡入途中，键不匹配会让转场回退实时绘制。
+    // 只在绘制期求值
+    val imageFreezeKey: () -> Any = remember(backgroundImage, darkTheme, transition, tilt) {
+        {
+            DayImageFreezeKey(
+                backgroundImage = backgroundImage,
+                darkTheme = darkTheme,
+                stage = transition.stage,
+                open = transition.open,
+                collapse = transition.collapse,
+                deviceCornerAlpha = transition.deviceCornerAlpha,
+                tiltX = tilt.shiftX,
+                tiltY = tilt.shiftY,
+                settled = backgroundVisualSettled,
+            )
+        }
+    }
 
     // 日历待办小点：活跃待办在日历网格窗口内覆盖的日期（显式日期 + 重复分期，见
     // datesCoveredWithin）。网格窗口由 DayCalendar 回报（锚点月翻页时变化，组合后首帧
@@ -1012,6 +1074,8 @@ fun DayScreen(
                         // 01 静止态视差满量；拖拽/吸附向 02 收敛（open→1 位移归零），
                         // 02→01 重播时自然恢复。open 在 graphicsLayer 内绘制阶段读
                         tiltGate = { 1f - transition.open },
+                        // 换图淡入边界回报：未完成时页面冻结关闭，避免定格半程淡入
+                        onSettledChange = { backgroundVisualSettled = it },
                             modifier = Modifier
                                 .requiredSize(metrics.screenWidth.dp, metrics.screenHeight.dp)
                                 .graphicsLayer {
@@ -1084,6 +1148,21 @@ fun DayScreen(
                         Box(
                             Modifier
                                 .fillMaxSize()
+                                // 冻结层包在 tint 与 hazeBlur 之外：录制帧是「tint + 模糊」
+                                // 的完整局部画面；外层 Layout 的 imageAlpha 保持实时（内部
+                                // 静止时它本就不变，未静止时 isAtRest 已让冻结关闭）
+                                .then(
+                                    if (hasPageFreezeSource) {
+                                        Modifier.transitionFreeze(
+                                            layer = bandFreezeLayer,
+                                            frame = bandFreezeFrame,
+                                            key = imageFreezeKey,
+                                            isTransforming = pageTransforming,
+                                        )
+                                    } else {
+                                        Modifier
+                                    },
+                                )
                                 .drawWithContent {
                                     drawContent()
                                     val frame = DayGeometry.frame(
@@ -1166,6 +1245,20 @@ fun DayScreen(
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()
                         .height(DayTopScrimHeight)
+                        // 冻结层在最外层：录到的是含内部 alpha/translationY 的完整模糊
+                        // 画面；转场期间内部状态静止（isAtRest），重放正确
+                        .then(
+                            if (hasPageFreezeSource) {
+                                Modifier.transitionFreeze(
+                                    layer = topScrimFreezeLayer,
+                                    frame = topScrimFreezeFrame,
+                                    key = imageFreezeKey,
+                                    isTransforming = pageTransforming,
+                                )
+                            } else {
+                                Modifier
+                            },
+                        )
                         .graphicsLayer {
                             val alpha = 1f - transition.open
                             this.alpha = alpha
@@ -1959,6 +2052,8 @@ private fun DayBackgroundImage(
     backgroundImage: String?,
     tilt: TiltParallaxState,
     tiltGate: () -> Float,
+    /** 背景图视觉是否已落定（无换图 / 淡入播完）；只在边界回调，供冻结层闭闸 */
+    onSettledChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var settledImage by remember { mutableStateOf(backgroundImage) }
@@ -1973,6 +2068,7 @@ private fun DayBackgroundImage(
             settledImage = target
             incomingImage = null
             fade.snapTo(1f)
+            onSettledChange(true)
             return@LaunchedEffect
         }
         if (incomingImage != null) {
@@ -1982,6 +2078,7 @@ private fun DayBackgroundImage(
             incomingImage = null
             fade.snapTo(1f)
         }
+        onSettledChange(false)
         incomingImage = target
         incomingReady = false
         fade.snapTo(0f)
@@ -1990,6 +2087,7 @@ private fun DayBackgroundImage(
         // 播完收台：新图成为底图、在途层退场（中途被顶替时本协程已取消，走不到这）
         settledImage = target
         incomingImage = null
+        onSettledChange(true)
     }
     Box(modifier) {
         // 视差包在两层换图图层之外：cross-dissolve 的底图与在途层同动不错位；且位于
@@ -2017,6 +2115,24 @@ private fun DayBackgroundImage(
         }
     }
 }
+
+/**
+ * 图片模糊层冻结帧的内容键：任一字段变化都说明「当前画面 ≠ 录制帧」，转场期间
+ * 回退实时绘制。open/collapse/deviceCornerAlpha 必须在内：停靠页停止录制后，若
+ * 停靠前最后一帧录在拖拽中途，键会把这类过期帧排除掉；settled 排除换图淡入途中
+ * 录下的帧（重录停靠页时可能撞上 cross-dissolve）。
+ */
+private data class DayImageFreezeKey(
+    val backgroundImage: String?,
+    val darkTheme: Boolean,
+    val stage: DayStage,
+    val open: Float,
+    val collapse: Float,
+    val deviceCornerAlpha: Float,
+    val tiltX: Float,
+    val tiltY: Float,
+    val settled: Boolean,
+)
 
 /** 单层背景图：文件交给 Coil 按测量尺寸解码（缺失/失败回退默认测试图），null 直接默认图。 */
 @Composable
