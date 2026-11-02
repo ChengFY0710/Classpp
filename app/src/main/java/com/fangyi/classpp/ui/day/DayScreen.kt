@@ -43,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -573,18 +574,20 @@ internal fun DayScreen(
     // 故不在页面级提前算好某一天）。时刻对表：前台每 30s 一跳 + 回前台立即对表（进程冻结
     // 期间 delay 不走，与 LocalToday 同款兜底）。
     val scheduleState = scheduleRepository?.activeSchedule?.collectAsState()
-    var nowMinute by remember { mutableIntStateOf(nowMinuteOfDay()) }
+    // 对表结果以 State 透传到内容区：只有今天的提醒卡槽、时间轴主体与今天的待办行读取，
+    // 30s 一跳不重组横滑三页的整页内容（读取点见 DayDateContent 的叶子参数）
+    val nowMinute = remember { mutableIntStateOf(nowMinuteOfDay()) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) nowMinute = nowMinuteOfDay()
+            if (event == Lifecycle.Event.ON_RESUME) nowMinute.intValue = nowMinuteOfDay()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     LaunchedEffect(Unit) {
         while (true) {
-            nowMinute = nowMinuteOfDay()
+            nowMinute.intValue = nowMinuteOfDay()
             delay(CourseAlertResyncMillis)
         }
     }
@@ -1941,6 +1944,10 @@ internal fun DayScreen(
  * 假设。课表取课口径与页面级一致：今天随时刻对表出倒计时/上课中/课已上完/今日无课，
  * 其他日期出整天节数概览（开学前/学期外 0 节）；时间轴只接该日有起止时刻的课程与待办。
  *
+ * [nowMinute] 以 State 形式透传，本函数**不读取**它的值：读取点下沉到今天上课提醒卡
+ * （[DayTodayCourseAlert]）、[DayTodoAlert] 的今天行与 [DayTimeline] 主体，30s 对表
+ * 只失效这些叶子，不再重组横滑轨里的三页整页内容。
+ *
  * [revision] 在每次换日提交时自增（横滑松手判定 / 日历跳日），用作两张提醒卡
  * （[DayTodoAlert] / [DayTaskAlldayAlert]）的行镜重置键：提交瞬间内容必须从新日期的
  * 完整行集起画——若复用旧日期的行镜，会先重播一遍「跨日行增减」动画（表现为新页面
@@ -1953,7 +1960,7 @@ private fun DayDateContent(
     schedule: Schedule?,
     todos: List<Todo>,
     today: IsoDate,
-    nowMinute: Int,
+    nowMinute: State<Int>,
     tagColors: Map<String, Color>,
     onCompleteTodo: (Todo) -> Unit,
     onToggleTodo: (Todo, Boolean) -> Unit,
@@ -1961,10 +1968,6 @@ private fun DayDateContent(
     onCourseClick: (String) -> Unit,
 ) {
     val isToday = viewDate == today
-    // 上课提醒卡：今天有课可点（唤起课程详情浮层），其余传 null 不可点
-    val courseAlert = remember(schedule, viewDate, isToday, nowMinute) {
-        if (isToday) dayCourseAlertData(schedule, viewDate, nowMinute) else null
-    }
     // 非今天整天概览卡的节数：同一取课口径（周号 + 星期 + 周规律，开学前/学期外 0 节）
     val dayCourseCount = remember(schedule, viewDate) {
         schedule?.let { todayCourseEntries(it, viewDate).size } ?: 0
@@ -1983,18 +1986,13 @@ private fun DayDateContent(
     )
 
     Column(Modifier.fillMaxWidth()) {
-        if (courseAlert != null) {
-            DayCourseAlert(
-                state = courseAlert.state,
-                courseName = courseAlert.course?.name.orEmpty(),
-                startTime = courseAlert.startTimeText,
-                endTime = courseAlert.endTimeText,
-                color = courseAlert.course?.let { CourseColor.valueOf(it.color.name) }
-                    ?: CourseColor.Blue,
-                teacher = courseAlert.course?.teacher,
-                location = courseAlert.course?.location,
-                note = courseAlert.course?.note,
-                onClick = courseAlert.course?.let { course -> { onCourseClick(course.id) } },
+        if (isToday) {
+            // 上课提醒卡：今天有课可点（唤起课程详情浮层），对表 State 只在这一支读取
+            DayTodayCourseAlert(
+                schedule = schedule,
+                today = viewDate,
+                nowMinute = nowMinute,
+                onCourseClick = onCourseClick,
                 modifier = Modifier.padding(
                     top = CourseAlertTopSpacing,
                     start = PageHorizontalSpacing,
@@ -2053,6 +2051,38 @@ private fun DayDateContent(
             modifier = Modifier.padding(top = TimelineTopSpacing),
         )
     }
+}
+
+/**
+ * 今天的上课提醒卡：[nowMinute] 的读取点收敛在这里，30s 对表只让这张卡随时刻更新，
+ * 不牵动整页内容（待办卡、全天卡与时间轴主体各自只订阅自己需要的那份状态）。
+ * 取数口径与状态判定见 [dayCourseAlertData]。
+ */
+@Composable
+private fun DayTodayCourseAlert(
+    schedule: Schedule?,
+    today: IsoDate,
+    nowMinute: State<Int>,
+    onCourseClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val minute = nowMinute.value
+    val courseAlert = remember(schedule, today, minute) {
+        dayCourseAlertData(schedule, today, minute)
+    }
+    DayCourseAlert(
+        state = courseAlert.state,
+        courseName = courseAlert.course?.name.orEmpty(),
+        startTime = courseAlert.startTimeText,
+        endTime = courseAlert.endTimeText,
+        color = courseAlert.course?.let { CourseColor.valueOf(it.color.name) }
+            ?: CourseColor.Blue,
+        teacher = courseAlert.course?.teacher,
+        location = courseAlert.course?.location,
+        note = courseAlert.course?.note,
+        onClick = courseAlert.course?.let { course -> { onCourseClick(course.id) } },
+        modifier = modifier,
+    )
 }
 
 /**

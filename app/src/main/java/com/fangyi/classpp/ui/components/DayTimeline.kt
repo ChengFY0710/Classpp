@@ -11,6 +11,8 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,6 +95,9 @@ private data class CardHeightKey(
  * 「矩形半高 + 刻度行高一半」时，该整点刻度文字隐藏——按 [DayTaskLayout.yAt] 的实际
  * 像素距离判断，局部拉伸后分钟距离不再代表视觉距离。
  *
+ * [nowMinute] 传 State 而非值：只在时间轴主体（subcompose 内容）里读，宿主 30s 对表
+ * 只失效这一层，不牵动整个横滑页的重组。
+ *
  * 网格线与课表页同款（1dp 实线、colorScheme.outline）：顶部/底部两条全宽横线 + 时间列
  * 右缘一条贯通竖线，无逐小时横线。刻度/卡片/指示器共用 [DayTaskLayout.yAt] 映射，
  * 卡片区域起点 x = [TimeAreaWidth] + [TaskAreaStartGap]、右缘收进 [PageHorizontalSpacing]
@@ -107,7 +112,7 @@ private data class CardHeightKey(
 internal fun DayTimeline(
     modifier: Modifier = Modifier,
     tasks: List<DayTask> = emptyList(),
-    nowMinute: Int? = null,
+    nowMinute: State<Int>? = null,
 ) {
     val outline = MaterialTheme.colorScheme.outline
     val secondaryText = MaterialTheme.classppColors.secondaryText
@@ -208,7 +213,7 @@ internal fun DayTimeline(
 private fun DayTimelineBody(
     layout: DayTaskLayout,
     tasks: List<DayTask>,
-    nowMinute: Int?,
+    nowMinute: State<Int>?,
     anchorHour: Int,
     anchorMinute: Int,
     hourLabels: List<String>,
@@ -221,7 +226,7 @@ private fun DayTimelineBody(
     val timelineHeight = maxOf(axisBottom, cardBottom)
     // 当前时刻线（早于锚点即不在时间轴范围内）与刻度隐藏距离：时刻矩形半高 + 刻度
     // 文字行高一半，按 yAt 的像素差判断——局部拉伸后分钟差不再等于视觉距离
-    val visibleNowMinute = nowMinute?.takeIf { it >= anchorMinute }
+    val visibleNowMinute = nowMinute?.value?.takeIf { it >= anchorMinute }
     val nowY = visibleNowMinute?.let { layout.yAt(it) }
     val labelHalfHeight = with(LocalDensity.current) {
         ClassppTextTokens.timelineLabel.lineHeight.toDp()
@@ -356,7 +361,7 @@ private fun DayTimelinePreview() {
                     endMinute = 10 * 60,
                 ),
             ),
-            nowMinute = 9 * 60,
+            nowMinute = remember { mutableIntStateOf(9 * 60) },
         )
     }
 }

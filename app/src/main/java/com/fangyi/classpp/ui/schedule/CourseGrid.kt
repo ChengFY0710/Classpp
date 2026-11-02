@@ -37,6 +37,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -473,7 +474,7 @@ private fun WeekPage(
                                         .wrapContentHeight(align = Alignment.Top, unbounded = true)
                                         .requiredHeight(spanHeight - CellPaddingTop - CellPadding)
                                         // 长按菜单的锚点取卡片自身窗口坐标（溢出部分按整卡算）
-                                        .onGloballyPositioned { cardBounds.value = it.boundsInWindow() },
+                                        .onGloballyPositioned { cardBounds.coordinates = it },
                                     // 整张跨节卡可点（含续格覆盖区域）→ 编辑态开编辑面板、
                                     // 浏览态开课程详情浮层，含义由调用方的回调路由
                                     onClick = if (onEditClick != null) {
@@ -483,7 +484,7 @@ private fun WeekPage(
                                     },
                                     // 编辑态长按 → 复制课程 / 以这门课为基准新建交替课程
                                     onLongClick = if (editMode && onCourseLongClick != null) {
-                                        { onCourseLongClick(course.id, cardBounds.value) }
+                                        { onCourseLongClick(course.id, cardBounds.windowBounds()) }
                                     } else {
                                         null
                                     },
@@ -704,9 +705,9 @@ private fun GridRow(
                                 scaleY = revealScale
                                 translationY = (1f - local) * AddCardRevealRise.toPx()
                             }
-                            .onGloballyPositioned { cardBounds.value = it.boundsInWindow() },
+                            .onGloballyPositioned { cardBounds.coordinates = it },
                         onLongClick = if (editMode && onSlotLongClick != null) {
-                            { onSlotLongClick(day, slot, cardBounds.value) }
+                            { onSlotLongClick(day, slot, cardBounds.windowBounds()) }
                         } else {
                             null
                         },
@@ -718,7 +719,7 @@ private fun GridRow(
                         modifier = Modifier
                             .fillMaxSize()
                             // 长按菜单的锚点取卡片自身窗口坐标（填满格 = 格坐标）
-                            .onGloballyPositioned { cardBounds.value = it.boundsInWindow() },
+                            .onGloballyPositioned { cardBounds.coordinates = it },
                         // 点击：编辑态开编辑面板、浏览态开课程详情浮层（回调路由见 ScheduleScreen）
                         onClick = if (onEditClick != null) {
                             { onEditClick(course.id) }
@@ -727,7 +728,7 @@ private fun GridRow(
                         },
                         // 长按菜单仅编辑态传入（复制/新建交替都是编辑动作）
                         onLongClick = if (editMode && onCourseLongClick != null) {
-                            { onCourseLongClick(course.id, cardBounds.value) }
+                            { onCourseLongClick(course.id, cardBounds.windowBounds()) }
                         } else {
                             null
                         },
@@ -740,11 +741,19 @@ private fun GridRow(
 }
 
 /**
- * 卡片窗口坐标（长按弹菜单的锚点）：只在长按回调里读，故存普通字段而非 Compose state
- * ——写在 onGloballyPositioned 里也不会像 state 那样让布局阶段触发重组。
+ * 卡片的布局坐标（长按弹菜单的锚点）：只在长按回调里**现算**窗口坐标，故存普通字段
+ * 而非 Compose state——写在 onGloballyPositioned 里也不会像 state 那样让布局阶段
+ * 触发重组。存坐标而不是 Rect：转场期 Compose 会向整棵移动子树逐帧派发
+ * onGloballyPositioned，回调里只记一个引用（不再逐帧 boundsInWindow + 分配 Rect），
+ * 长按时按当前的布局坐标取值，锚点比逐帧缓存的旧帧更新鲜。
  */
 private class BoundsHolder {
-    var value: Rect = Rect.Zero
+    var coordinates: LayoutCoordinates? = null
+
+    fun windowBounds(): Rect {
+        val coordinates = coordinates ?: return Rect.Zero
+        return if (coordinates.isAttached) coordinates.boundsInWindow() else Rect.Zero
+    }
 }
 
 @Preview(showBackground = true, name = "课表网格")

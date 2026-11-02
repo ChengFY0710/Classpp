@@ -36,6 +36,17 @@ android {
     }
 }
 
+// 组合性能诊断：默认不生成报告（零额外构建开销）。需要时用
+// ./gradlew :app:compileDebugKotlin -PcomposeCompilerReports 输出到
+// build/compose_compiler（*-composables.txt / *-classes.txt / *-module.json），
+// 用于核对 SettingsHomePage / WeekPage / DayDateContent / CourseCard 等的 skippable 与稳定性
+composeCompiler {
+    if (providers.gradleProperty("composeCompilerReports").isPresent) {
+        reportsDestination.set(layout.buildDirectory.dir("compose_compiler"))
+        metricsDestination.set(layout.buildDirectory.dir("compose_compiler"))
+    }
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

@@ -1,6 +1,8 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -47,7 +49,8 @@ import com.fangyi.classpp.ui.theme.ClassppTheme
  * @param todos 活跃待办（仓库原样；删除由仓库分流，不在流里）
  * @param today 今天（跨零点自动跳天的 [com.fangyi.classpp.ui.LocalToday]）
  * @param viewDate 卡片锚定日期：截止窗口按它推算（截止 ≤ viewDate + 2 天），默认 = 今天
- * @param nowMinute 当天分钟数（逾期判定用，宿主对表驱动）
+ * @param nowMinute 当天分钟数（State，逾期判定用，宿主对表驱动）：只在本卡锚定今天时
+ *   由行内容读取——非今天卡不订阅对表，30s 一跳不会重组横滑三页里的邻页
  * @param tagColors 标签配色表（标签名 → 颜色，同待办页口径）
  * @param onComplete 勾选完成回调：组件只做回显与停一拍，落库路由（分期/整条）在宿主
  * @param onTodoClick 行点击回调（传分期副本）：宿主唤起待办详情；null = 行不可点
@@ -57,7 +60,7 @@ fun DayTodoAlert(
     todos: List<Todo>,
     today: IsoDate,
     viewDate: IsoDate = today,
-    nowMinute: Int,
+    nowMinute: State<Int>,
     tagColors: Map<String, Color>,
     onComplete: (Todo) -> Unit,
     modifier: Modifier = Modifier,
@@ -117,7 +120,7 @@ private fun DayTodoAlertRowContent(
     todo: Todo,
     today: IsoDate,
     viewDate: IsoDate,
-    nowMinute: Int,
+    nowMinute: State<Int>,
     completed: Boolean,
     tagColors: Map<String, Color>,
     onCheckedChange: (Boolean) -> Unit,
@@ -141,9 +144,11 @@ private fun DayTodoAlertRowContent(
         urgency = todo.urgency,
         completed = completed,
         // 标题逾期标红与倒计时的「逾期N天」同源：截止早于锚定日期即标红；今天卡额外按
-        // 真实时刻判定当天已过点的（isOverdue）
+        // 真实时刻判定当天已过点的（isOverdue）。对表 State 只在这一支读取：非今天卡
+        // 短路在前，不建立对表订阅，30s 一跳不会波及横滑轨里的邻页
         overdue = countdownDays != null &&
-            (countdownDays < 0L || (viewDate == today && todo.isOverdue(today, nowMinute))),
+            (countdownDays < 0L ||
+                (viewDate == today && todo.isOverdue(today, nowMinute.value))),
         onCheckedChange = onCheckedChange,
         onClick = onClick,
         verticalPadding = DayAlertRowPaddingVertical,
@@ -198,7 +203,7 @@ private fun DayTodoAlertPreview() {
                 ),
             ),
             today = IsoDate.of(2026, 10, 25),
-            nowMinute = 12 * 60 + 30,
+            nowMinute = remember { mutableIntStateOf(12 * 60 + 30) },
             tagColors = emptyMap(),
             onComplete = {},
         )
@@ -264,7 +269,7 @@ private fun DayTodoAlertViewDatePreview() {
             ),
             today = IsoDate.of(2026, 10, 25),
             viewDate = IsoDate.of(2026, 10, 27),
-            nowMinute = 12 * 60 + 30,
+            nowMinute = remember { mutableIntStateOf(12 * 60 + 30) },
             tagColors = emptyMap(),
             onComplete = {},
         )
