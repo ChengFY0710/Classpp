@@ -139,7 +139,7 @@ fun PersonalizationScreen(
             val density = LocalDensity.current
             // 滚动状态上提：冻结键要读滚动位置
             val scrollState = rememberScrollState()
-            // 标题渐显要把过滚动算进内容位移（内容不足一屏时橡皮筋仍会拖动内容）
+            // 标题渐显要把过滚动算进内容位移（可滚页面读边缘橡皮筋，不足一屏读整页橡皮筋）
             val overscrollEffect = rememberOffsetOverscrollEffect()
             // 预热帧也要挂 Haze；隐藏态不录制，保留上一次活跃期的就位帧
             val hazeActive = LocalPageOverlayActive.current || LocalPageOverlayPrewarm.current
@@ -186,7 +186,7 @@ fun PersonalizationScreen(
                     // （ui.motion 的 rubberBandVerticalScroll）
                     .rubberBandVerticalScroll(
                         scrollState,
-                        unscrollableEffect = overscrollEffect,
+                        overscrollEffect = overscrollEffect,
                     )
                     .padding(horizontal = PageHorizontalSpacing)
                     .padding(

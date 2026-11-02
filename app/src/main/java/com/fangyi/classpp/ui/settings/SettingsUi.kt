@@ -84,8 +84,8 @@ internal fun rememberSettingsGlassBackdrop(): LayerBackdrop? {
 }
 
 /**
- * 标题渐显窗口：内容有效位移（滚动 − 过滚动平移）到 100dp 开始出现，150dp 完全显现；
- * 回滚时对称消失。只用于标题淡入淡出，不参与布局（顶栏高度与内容内缩不变）。
+ * 标题渐显窗口：内容有效位移（滚动 − 过滚动原始偏移）到 100dp 开始出现，150dp 完全
+ * 显现；回滚时对称消失。只用于标题淡入淡出，不参与布局（顶栏高度与内容内缩不变）。
  */
 private val TitleFadeStart = 100.dp
 private val TitleFadeEnd = 150.dp
@@ -93,8 +93,11 @@ private val TitleFadeEnd = 150.dp
 /**
  * 顶栏标题随内容位移的透明度（纯函数，供单测）：[scrollPx] 在 [startPx] 之前全隐，
  * 在 [endPx] 及之后全显，两者之间用 Hermite smoothstep 过渡。[scrollPx] 由宿主编成
- * 「滚动值 − 过滚动视觉位移」：内容不足一屏时滚动值恒 0，但橡皮筋仍会把内容向上
- * 拖进顶栏下方，负的过滚动平移等效于多滚了这么多。
+ * 「滚动值 − 过滚动原始偏移」：内容不足一屏时滚动值恒 0，但橡皮筋仍会累积向上拖动的
+ * 原始偏移，等效于多滚了这么多。
+ *
+ * 过滚动取原始拖动量而不是阻尼后的视觉平移：橡皮筋阻尼会把 100dp 的拖动压成几十 dp
+ * 的视觉位移，直接拿视觉位移做阈值会让标题在正常手势下几乎不出现。
  *
  * Hermite smoothstep（边界导数为 0），与日程页顶栏淡入同一形态，避免起止处出现
  * 透明度折角；[endPx] ≤ [startPx] 时退化为阶跃。
@@ -110,13 +113,14 @@ internal fun settingsTitleAlpha(
 }
 
 /**
- * [SettingsTopBar] 标题的渐显计算：读取宿主的 [scrollState]（以及内容不足一屏时
- * 承担橡皮筋的 [overscrollEffect]），返回只在绘制期求值的 lambda（`graphicsLayer`
- * 里调用），滚动/过滚动过程零重组。
+ * [SettingsTopBar] 标题的渐显计算：读取宿主的 [scrollState] 与页面自有的
+ * [overscrollEffect]（可滚页面的边缘橡皮筋、内容不足一屏时的整页橡皮筋），返回只在
+ * 绘制期求值的 lambda（`graphicsLayer` 里调用），滚动/过滚动过程零重组。
  *
- * 有效位移 = `scrollState.value − visualOffset`：向上过滚动（负平移）计入，向下
- * 过滚动（正平移）抵消；到 100dp 开始出现，150dp 完全显现，回滚对称消失。内容一屏
- * 装得下且未过滚动时标题保持隐藏。
+ * 有效位移 = `scrollState.value − currentOffset.y`：向上过滚动（负偏移）计入，向下
+ * 过滚动（正偏移）抵消；到 100dp 开始出现，150dp 完全显现，回滚对称消失。可滚页面
+ * 滚到边缘后继续拖动时也会计入，因此短滚动范围可在底部过滚动里补足到完全显现；
+ * 内容一屏装得下且未过滚动时标题保持隐藏。
  */
 @Composable
 internal fun rememberSettingsTitleAlpha(
@@ -128,10 +132,8 @@ internal fun rememberSettingsTitleAlpha(
     val endPx = with(density) { TitleFadeEnd.toPx() }
     return remember(scrollState, overscrollEffect, startPx, endPx) {
         {
-            // viewportSize 与效果渲染节点阻尼用的容器尺寸同源（滚动容器实测高度）
-            val overscrollPx = overscrollEffect
-                ?.visualOffset(scrollState.viewportSize.toFloat())
-                ?: 0f
+            // 原始拖动量与滚动同口径（1:1 累计），阻尼只影响渲染位移
+            val overscrollPx = overscrollEffect?.currentOffset?.y ?: 0f
             settingsTitleAlpha(
                 scrollPx = scrollState.value - overscrollPx,
                 startPx = startPx,

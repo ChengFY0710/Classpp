@@ -158,19 +158,10 @@ class OffsetOverscrollEffect(
 
     /**
      * 当前原始过滚动偏移（px，未阻尼）；节点渲染时再按容器尺寸换算成视觉位移。
-     * 供页级过滚动判断“是否还拉着”以及反向拖动先收回多少。
+     * 供页级过滚动判断“是否还拉着”以及反向拖动先收回多少；也可在绘制期读取，
+     * 让页面视觉与拖动量同口径（如设置页标题渐显）。
      */
     val currentOffset: Offset get() = offset
-
-    /**
-     * 当前渲染位移（px，已按 [viewportSize] 走与节点相同的阻尼曲线）。负值 = 内容被向上
-     * 拖出（向上过滚动），正值 = 内容被向下拖出。读取 [offset] 状态，可在绘制期求值
-     * （如设置页标题把过滚动算进内容位移，见 ui.settings 的 rememberSettingsTitleAlpha）。
-     */
-    fun visualOffset(viewportSize: Float): Float {
-        if (viewportSize <= 0f) return 0f
-        return computeOffset(offset.toFloat(), viewportSize)
-    }
 
     /** 立即取消回弹并归零（切态、打开浮层、跨天重置等）。 */
     fun reset() {
@@ -438,8 +429,8 @@ fun rememberOffsetOverscrollFactory(
 
 /**
  * 创建并记住一个独立的 [OffsetOverscrollEffect]（不经环境工厂）：宿主需要读取过滚动
- * 位移（[OffsetOverscrollEffect.visualOffset]）时使用，再把实例交给
- * [rubberBandVerticalScroll] 的 `unscrollableEffect` 参数。
+ * 偏移（[OffsetOverscrollEffect.currentOffset]）时使用，再把实例交给
+ * [rubberBandVerticalScroll] 的 `overscrollEffect` 参数。
  */
 @Composable
 fun rememberOffsetOverscrollEffect(
@@ -515,19 +506,20 @@ fun ProvideOverscroll(content: @Composable () -> Unit) {
  * [OffsetOverscrollEffect] 的独立实例，与 verticalScroll 自建实例互不复用）；
  * 未注入任何工厂时退回系统 stretch，本修饰符仍可用。
  *
- * [unscrollableEffect] 非空时，内容不足一屏的兜底 scrollable 改用该实例（null = 环境
- * 工厂实例，原行为）：宿主需要读取 [OffsetOverscrollEffect.visualOffset]（如设置页标题
- * 把过滚动算进内容位移）时传入自己 remember 的实例。内容可滚时该参数不参与——走原版
- * verticalScroll，边缘过滚动由它自建的环境效果承担。
+ * [overscrollEffect] 非空时整条滚动路径改用该实例：内容可滚时直接交给
+ * `verticalScroll(overscrollEffect = ...)`（由它同时负责渲染与派发），内容不足一屏时
+ * 作为兜底 scrollable 的效果；null = 环境工厂实例，原行为。宿主需要读取过滚动偏移
+ * [OffsetOverscrollEffect.currentOffset]（如设置页标题把过滚动算进内容位移）时传入
+ * 自己 remember 的实例。
  */
 @Composable
 fun Modifier.rubberBandVerticalScroll(
     state: ScrollState,
-    unscrollableEffect: OffsetOverscrollEffect? = null,
+    overscrollEffect: OffsetOverscrollEffect? = null,
 ): Modifier {
-    // 环境实例始终取：保持组合结构稳定；宿主传入实例时只替换兜底 scrollable 的效果
+    // 环境实例始终取：保持组合结构稳定；宿主传入实例时两段路径都换用该实例
     val environmentEffect = rememberOverscrollEffect()
-    val effect = unscrollableEffect ?: environmentEffect
+    val effect = overscrollEffect ?: environmentEffect
     val unscrollable = !state.canScrollForward && !state.canScrollBackward
     return if (effect != null && unscrollable) {
         // 不消费任何滚动量的状态：canScrollForward/Backward 默认恒为 true，恰好绕过
@@ -555,6 +547,9 @@ fun Modifier.rubberBandVerticalScroll(
                 overscrollEffect = effect,
                 flingBehavior = passthroughFling,
             )
+    } else if (overscrollEffect != null) {
+        // 可滚页面：页面自有实例同时负责渲染与派发，宿主才能读到边缘过滚动
+        this.verticalScroll(state, overscrollEffect = overscrollEffect)
     } else {
         this.verticalScroll(state)
     }
