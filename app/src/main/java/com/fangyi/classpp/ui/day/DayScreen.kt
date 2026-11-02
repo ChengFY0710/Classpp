@@ -1469,6 +1469,13 @@ internal fun DayScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .hazeSource(contentHazeState)
+                        // 01 态预挂载但整块沉在屏幕下方不可见：清空语义，否则 TalkBack /
+                        // 语义自动化仍能聚焦并激活屏下控件（课程卡、待办行会直接唤起浮层）。
+                        // 与 02 预挂载顶栏同一口径，只看 open>0，不随转场进度逐帧切换。
+                        .then(
+                            if (showContent) Modifier
+                            else Modifier.clearAndSetSemantics { },
+                        )
                         // 02 的内容视口顶垫进图片卡下半部（首条 spacer 恒高，见列表处注释），
                         // 列表 scrollable 节点即使手势关闭也构成命中，会把下层图片卡点击层
                         // 与换背景 icon 整片挡死；声明与下层兄弟共享命中后二者恢复可点。
