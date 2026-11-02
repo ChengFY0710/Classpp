@@ -588,7 +588,7 @@ private fun SettingsInfoHeaderCardPreview() = ClassppTheme {
             .fillMaxWidth()
             .padding(horizontal = PageHorizontalSpacing, vertical = 16.dp),
     ) {
-        // 信息头部卡：渐变图标 + 居中标题/说明，卡高随说明行数自适应（两行时 150dp）
+        // 信息头部卡：渐变图标 + 居中标题/说明，卡高随说明行数自适应（两行时 159dp）
         SettingsInfoHeaderCard(
             icon = R.drawable.ic_arrow_sync_circle,
             title = "同步你的厦大账号",

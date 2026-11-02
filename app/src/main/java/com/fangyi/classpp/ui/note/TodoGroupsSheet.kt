@@ -346,11 +346,10 @@ internal fun TodoGroupsSheet(
         ),
         onDismiss = requestClose,
         visible = visible,
-        // 层级动效：新建/重命名弹卡、删除确认框或标签重命名弹卡/删除确认框在场时，本浮层
-        // 缩小后退（同 NewTodoSheet 的 covered 约定，用可见请求态而非挂载态——退场时与上层
-        // 收场同帧反向恢复）
-        covered = createRequested || renameVisible || deleteTargets != null ||
-            tagRenameVisible || tagDeleteTargets != null,
+        // 层级动效：新建/重命名弹卡或标签重命名弹卡在场时，本浮层缩小后退（同 NewTodoSheet
+        // 的 covered 约定，用可见请求态而非挂载态——退场时与上层收场同帧反向恢复）；
+        // 删除确认框（分组/标签同一居中弹窗）不参与——弹窗盖上来时本浮层保持原位
+        covered = createRequested || renameVisible || tagRenameVisible,
         onDismissed = onDismissed,
         // 编辑态（分组/标签）禁用下拉关闭：下拉手势只回弹不触发关闭（拦成「退编辑」会与
         // 手势语义打架，只拦回调则闸门落下没人真关浮层、整层卡在半拖出位置）

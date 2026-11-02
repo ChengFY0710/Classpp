@@ -33,10 +33,13 @@ import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /**
- * 卡内纵向留白：18dp。两行说明时卡高为 151dp（内容 115dp + 上下留白 36dp），
- * 与设计稿 150dp 仅差 1dp；行数变化时卡片高度按每行 20dp 伸缩，说明距卡底距离保持不变。
+ * 卡内上留白：24dp（大于下留白，内容整组略偏下）。两行说明时卡高为 159dp
+ * （内容 115dp + 上下留白 44dp）；行数变化时卡片高度按每行 20dp 伸缩。
  */
-private val InfoHeaderVerticalPadding = 18.dp
+private val InfoHeaderTopPadding = 24.dp
+
+/** 卡内下留白：20dp（与上留白分开；说明距卡底更收紧）。 */
+private val InfoHeaderBottomPadding = 20.dp
 
 /** 图标尺寸（设计稿 40dp）。 */
 private val InfoHeaderIconSize = 40.dp
@@ -55,7 +58,7 @@ private const val IconGradientEndAlpha = 0.25f
 
 /**
  * 设置页信息头部卡：白底（surface）+ [SettingsCardShape] 连续曲率圆角，高度随内容
- * （图标 + 标题 + 说明）自适应，内容整组水平居中；两行说明时卡高 151dp（设计稿 150dp + 1dp）。
+ * （图标 + 标题 + 说明）自适应，内容整组水平居中；两行说明时卡高 159dp（上留白 24、下留白 20）。
  *
  * 规格（对齐 [SettingsCard]）：
  * - 图标 40dp：[iconColor] 为 45° 斜向渐变起点（100% 不透明 → 25% 同色，右下淡出），
@@ -82,8 +85,10 @@ fun SettingsInfoHeaderCard(
     ) {
         Column(
             modifier = Modifier.padding(
-                horizontal = InfoHeaderHorizontalPadding,
-                vertical = InfoHeaderVerticalPadding,
+                start = InfoHeaderHorizontalPadding,
+                top = InfoHeaderTopPadding,
+                end = InfoHeaderHorizontalPadding,
+                bottom = InfoHeaderBottomPadding,
             ),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement =  Arrangement.Center,
