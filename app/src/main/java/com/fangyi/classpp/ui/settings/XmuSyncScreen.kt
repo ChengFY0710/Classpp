@@ -74,10 +74,12 @@ import com.fangyi.classpp.ui.components.SheetBottomSlack
 import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
+import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
+import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -116,6 +118,8 @@ fun XmuSyncScreen(
     modifier: Modifier = Modifier,
     repository: XmuSyncRepository? = null,
     autoLogin: XmuAutoLoginManager? = null,
+    // 设置页任一覆盖层是否正在转场：顶栏据此冻结重放就位帧
+    settingsTransforming: () -> Boolean = { false },
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -511,6 +515,40 @@ fun XmuSyncScreen(
             val glassBackdrop = rememberSettingsGlassBackdrop()
             var topBarHeight by remember { mutableStateOf(0.dp) }
             val density = LocalDensity.current
+            // 滚动状态上提：冻结键要读滚动位置
+            val scrollState = rememberScrollState()
+            // 预热帧也要挂 Haze；对话框在场或覆盖层隐藏时不挂、也不录制（保留上次的帧）
+            val hazeActive = (overlayActive || LocalPageOverlayPrewarm.current) &&
+                !loadingMounted && !logoutMounted && !switchMounted && !disableAutoMounted
+            val darkTheme = MaterialTheme.isDarkTheme
+            val freezeEpoch = LocalSettingsFreezeEpoch.current
+            // 冻结键：主题/顶栏高度/滚动位置/账号与对话框状态任一变化都回退实时绘制
+            val freezeKey: () -> Any = remember(
+                darkTheme,
+                scrollState,
+                repository,
+                freezeEpoch,
+            ) {
+                {
+                    val sync = repository?.state?.value
+                    SettingsTopBarFreezeKey(
+                        page = SettingsPage.XmuSync,
+                        darkTheme = darkTheme,
+                        topBarHeight = topBarHeight,
+                        scroll = scrollState.value,
+                        epoch = freezeEpoch,
+                        inputs = listOf(
+                            sync?.uid,
+                            sync?.accountName,
+                            sessionExpired,
+                            loadingMounted,
+                            logoutMounted,
+                            switchMounted,
+                            disableAutoMounted,
+                        ),
+                    )
+                }
+            }
             val navBarPadding = WindowInsets.navigationBars
                 .only(WindowInsetsSides.Bottom)
                 .asPaddingValues()
@@ -542,7 +580,7 @@ fun XmuSyncScreen(
                                     Modifier
                                 },
                             )
-                            .rubberBandVerticalScroll(rememberScrollState())
+                            .rubberBandVerticalScroll(scrollState)
                             .padding(horizontal = PageHorizontalSpacing)
                             .padding(
                                 top = topBarHeight + TopBarContentGap,
@@ -733,15 +771,11 @@ fun XmuSyncScreen(
                 // 部分设备（实测 HyperOS / Android 17）会触发 RenderThread 自引用
                 // RenderNode 递归崩溃（SIGSEGV、栈溢出）。对话框在场时顶栏已被遮罩
                 // 压暗、磨砂不可见——期间卸掉效果，对话框彻底卸载后再恢复。
-                hazeState = if (
-                    overlayActive && !loadingMounted && !logoutMounted && !switchMounted &&
-                    !disableAutoMounted
-                ) {
-                    hazeState
-                } else {
-                    null
-                },
+                hazeState = if (hazeActive) hazeState else null,
                 buttonBackdrop = glassBackdrop,
+                freezeKey = freezeKey,
+                recordWhen = { hazeActive },
+                isTransforming = settingsTransforming,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .onGloballyPositioned { coords ->

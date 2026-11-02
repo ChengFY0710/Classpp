@@ -50,12 +50,14 @@ import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SettingsInfoHeaderCard
 import com.fangyi.classpp.ui.components.SheetBottomSlack
 import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
+import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
+import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
@@ -81,6 +83,8 @@ import kotlinx.coroutines.launch
 fun NotificationScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    // 设置页任一覆盖层是否正在转场：顶栏据此冻结重放就位帧
+    settingsTransforming: () -> Boolean = { false },
 ) {
     val context = LocalContext.current
     // 偏好真源：进页 load 一次，此后每次变更即时落盘（apply 异步，同 themeMode 模式）
@@ -141,6 +145,11 @@ fun NotificationScreen(
     // 顶栏返回按钮的液态玻璃：采样层挂正文列（与 hazeSource 同一节点，Haze 管顶栏
     // 磨砂、Backdrop 只喂返回按钮）；null = 玻璃关闭，标记不挂载
     val glassBackdrop = rememberSettingsGlassBackdrop()
+    // 滚动状态上提：冻结键要读滚动位置
+    val scrollState = rememberScrollState()
+    // 预热帧也要挂 Haze；隐藏态不录制，保留上一次活跃期的就位帧
+    val hazeActive = LocalPageOverlayActive.current || LocalPageOverlayPrewarm.current
+    val darkTheme = MaterialTheme.isDarkTheme
 
     Scaffold(
         modifier = modifier,
@@ -156,6 +165,20 @@ fun NotificationScreen(
         ) {
             var topBarHeight by remember { mutableStateOf(0.dp) }
             val density = LocalDensity.current
+            val freezeEpoch = LocalSettingsFreezeEpoch.current
+            // 冻结键：主题/顶栏高度/滚动位置/通知偏好任一变化都回退实时绘制
+            val freezeKey: () -> Any = remember(darkTheme, scrollState, prefs, freezeEpoch) {
+                {
+                    SettingsTopBarFreezeKey(
+                        page = SettingsPage.Notification,
+                        darkTheme = darkTheme,
+                        topBarHeight = topBarHeight,
+                        scroll = scrollState.value,
+                        epoch = freezeEpoch,
+                        inputs = prefs,
+                    )
+                }
+            }
             // 手势条（小白条）区域：内容可铺到屏幕底，末尾留出这段避免被遮挡
             val navBarPadding = WindowInsets.navigationBars
                 .only(WindowInsetsSides.Bottom)
@@ -176,7 +199,7 @@ fun NotificationScreen(
                         },
                     )
                     // 橡皮筋增强版 verticalScroll：内容不足一屏时也能拉出橡皮筋
-                    .rubberBandVerticalScroll(rememberScrollState())
+                    .rubberBandVerticalScroll(scrollState)
                     .padding(horizontal = PageHorizontalSpacing)
                     .padding(
                         // 首项距顶栏留 TopBarContentGap（页自有节奏），尾部余量与浮层同源
@@ -327,8 +350,11 @@ fun NotificationScreen(
                 onBack = onBack,
                 // 子页在覆盖层隐藏时仍常驻组合、整页停在屏外：只在活跃期挂 Haze 效果，
                 // 避免对屏外页面做源捕获/模糊（Haze 2 下会触发 RenderThread 递归崩溃）
-                hazeState = if (LocalPageOverlayActive.current) hazeState else null,
+                hazeState = if (hazeActive) hazeState else null,
                 buttonBackdrop = glassBackdrop,
+                freezeKey = freezeKey,
+                recordWhen = { hazeActive },
+                isTransforming = settingsTransforming,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .onGloballyPositioned { coords ->

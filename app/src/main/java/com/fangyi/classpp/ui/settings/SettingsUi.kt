@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,9 +26,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
@@ -36,6 +39,8 @@ import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
+import com.fangyi.classpp.ui.motion.FreezeFrame
+import com.fangyi.classpp.ui.motion.transitionFreeze
 import com.fangyi.classpp.ui.schedule.totalWeeks
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -87,6 +92,11 @@ internal fun rememberSettingsGlassBackdrop(): LayerBackdrop? {
  * 改液态玻璃底 + Q弹按压放大（pressScale：采样内容经模糊/折射裁进圆形，表面叠原
  * surface 染色——白玻璃；软弹簧果冻过冲按压）；null（默认，如 @Preview / 玻璃开关
  * 关闭）维持原实心底 + pressFeedback。
+ *
+ * 冻结（[freezeKey] 非空时启用）：只把**背景层**（兜底色 + Haze）包进
+ * [transitionFreeze]，标题与玻璃返回按钮不入冻结层——玻璃采样必须保持实时。设置页
+ * 覆盖层转场时整帧重放就位帧，避免 Haze 在移动页面上逐帧重采样；[recordWhen] 由宿主
+ * 用「覆盖层活跃或启动预热帧」门控，隐藏态不录制（Haze 已卸载，录到的是无模糊平底色）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,28 +106,49 @@ internal fun SettingsTopBar(
     modifier: Modifier = Modifier,
     hazeState: HazeState? = null,
     buttonBackdrop: Backdrop? = null,
+    freezeKey: (() -> Any?)? = null,
+    recordWhen: () -> Boolean = { true },
+    isTransforming: () -> Boolean = { false },
 ) {
-    // Haze 2：Style 在组合期构建（tint 由 hazeTopBarStyle 内部读主题）
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            // 兜底色：与页面同色，画在模糊层之下（背后无内容时逐帧一致）
-            .background(MaterialTheme.colorScheme.background)
-            .then(
-                if (hazeState != null) {
-                    // 转场性能规格：25dp + 下采样档（Balanced = Fixed(0.5)）——整页覆盖层
-                    // 转场逐帧重合成毛玻璃，模糊预算必须收紧（32dp 全分辨率 progressive
-                    // 的 GPU 成本压不住帧预算）
-                    Modifier.hazeBlur(
-                        input = hazeSources(hazeState),
-                        style = hazeTopBarStyle(),
-                        performanceMode = HazePerformanceMode.Balanced,
-                    )
-                } else {
-                    Modifier
-                },
-            ),
-    ) {
+    // 冻结资源：顶栏常驻组合（设置页四屏都是覆盖层内容），实例随之常驻
+    val freezeLayer = rememberGraphicsLayer()
+    val freezeFrame = remember { FreezeFrame() }
+    // 外层只承载尺寸与调用方 modifier（align/高度回报）：背景拆成 matchParentSize 的
+    // 独立兄弟节点，冻结层才能只包住背景+模糊，不包标题与玻璃按钮
+    Box(modifier = modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .then(
+                    if (freezeKey != null) {
+                        Modifier.transitionFreeze(
+                            layer = freezeLayer,
+                            frame = freezeFrame,
+                            key = freezeKey,
+                            isTransforming = isTransforming,
+                            recordWhen = recordWhen,
+                        )
+                    } else {
+                        Modifier
+                    },
+                )
+                // 兜底色：与页面同色，画在模糊层之下（背后无内容时逐帧一致）
+                .background(MaterialTheme.colorScheme.background)
+                .then(
+                    if (hazeState != null) {
+                        // 转场性能规格：25dp + 下采样档（Balanced = Fixed(0.5)）——整页覆盖层
+                        // 转场逐帧重合成毛玻璃，模糊预算必须收紧（32dp 全分辨率 progressive
+                        // 的 GPU 成本压不住帧预算）
+                        Modifier.hazeBlur(
+                            input = hazeSources(hazeState),
+                            style = hazeTopBarStyle(),
+                            performanceMode = HazePerformanceMode.Balanced,
+                        )
+                    } else {
+                        Modifier
+                    },
+                ),
+        )
         CenterAlignedTopAppBar(
             title = {
                 Text(
@@ -168,6 +199,33 @@ internal fun SettingsTopBar(
         }
     }
 }
+
+/** 设置页身份：冻结键的一部分，保证四屏顶栏的帧绝不互相重放 */
+internal enum class SettingsPage { Root, Personalization, Notification, XmuSync }
+
+/**
+ * 设置页冻结帧的会话代际：进多任务/回桌面后窗口不可见，系统会丢弃 RenderNode 的
+ * 显示列表（同 ui.motion 的 transitionFreeze 注释），而设置页隐藏期不录制，旧帧会
+ * 变成空帧。宿主在离开 RESUMED 时递增本代际，页内把它并入冻结键：代际一变即拒绝
+ * 重放（回退实时绘制，最坏等于不做冻结），打开落定后重录新帧。
+ */
+internal val LocalSettingsFreezeEpoch = compositionLocalOf { 0 }
+
+/**
+ * 设置顶栏冻结帧的内容键：主题/顶栏高度/滚动位置/页面专有视觉输入任一变化即视为
+ * 过期，转场期回退实时绘制（最坏等于不做冻结，绝不重放旧画面）。
+ *
+ * 只在绘制期求值（`transitionFreeze` 的 key/录制元数据），不参与重组。页面专有输入
+ * 必须是不可变的值快照（滚动、开关值、账号状态等），不要把可变对象本身塞进来。
+ */
+internal data class SettingsTopBarFreezeKey(
+    val page: SettingsPage,
+    val darkTheme: Boolean,
+    val topBarHeight: Dp,
+    val scroll: Int,
+    val epoch: Int = 0,
+    val inputs: Any? = null,
+)
 
 /** 日期 → `2026-9-7`（无前导零），走 [R.string.date_hyphen_format] */
 @Composable

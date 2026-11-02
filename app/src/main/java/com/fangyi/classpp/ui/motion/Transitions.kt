@@ -26,6 +26,8 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -96,19 +98,26 @@ val LocalPageOverlayTransform = compositionLocalOf<PageOverlayTransitionState?> 
  * - [state]：转场进度状态。调用方可传入外部持有的实例（并另经 [LocalPageOverlayTransform]
  *   提供给页内冻结层读取）；默认各调用点新建一份，行为与旧实现一致。设置页内嵌套的
  *   子页覆盖层不要传外层的 state，也不要 provide 该 local；
- * - [visible] 翻转即启动完整转场，转场中途反向翻转时从当前值继续。
+ * - [visible] 翻转即启动完整转场，转场中途反向翻转时从当前值继续；
+ * - [prewarm] 空闲预热帧：progress 不动，覆盖层临时停在 x=0、近透明（[PageOverlayPrewarmAlpha]）
+ *   画一两帧，让页内 Haze 完成初始化并把带模糊的就位帧录进冻结层，随后由调用方关掉。
+ *   预热期 behind 不视差、遮罩不出现、覆盖层子树不参与命中（Initial 阶段消费触摸），
+ *   正式打开（[visible]=true）时立即让位给正常转场。
  */
 @Composable
 fun PageOverlayTransition(
     visible: Boolean,
     modifier: Modifier = Modifier,
     state: PageOverlayTransitionState = rememberPageOverlayTransitionState(),
+    prewarm: Boolean = false,
     behind: @Composable BoxScope.() -> Unit,
     overlay: @Composable BoxScope.() -> Unit,
 ) {
     // 转场进度 0..1（0=隐藏、1=就位）：Animatable 驱动而非 AnimatedVisibility。
     // targetState 翻转即启动，时长/曲线取 Motion token——与遮罩、视差天然同一条曲线
     val progress = state.progress
+    // 空闲预热帧：仅在不处于正式打开时生效，visible 翻转即让位给正常转场
+    val prewarmActive = prewarm && !visible
     LaunchedEffect(visible) {
         progress.animateTo(
             targetValue = if (visible) 1f else 0f,
@@ -144,22 +153,26 @@ fun PageOverlayTransition(
         // 下层整页容器：覆盖层滑入时整体向左微微滑出让位、滑出时向右滑回原位（视差，
         // 比例见 [PageOverlayParallaxFraction]）。位移挂在独立 layer 上，与各 tab 页
         // 转场层（MainActivity.tabLayer）各管一层互不干扰；转场中覆盖层页缘始终压住
-        // 本容器右缘，不会露出底缝
+        // 本容器右缘，不会露出底缝。预热帧期间不位移：不惊动用户正在看的页面世界
         Box(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    translationX = -progress.value * size.width * PageOverlayParallaxFraction
+                    translationX = if (prewarmActive) {
+                        0f
+                    } else {
+                        -progress.value * size.width * PageOverlayParallaxFraction
+                    }
                 },
         ) {
             behind()
         }
         // 压暗遮罩：透明度与页面滑移同一条曲线、同帧推进。只画不拦截点击（无指针处理，
-        // 触控落回下层）；alpha=0（隐藏）时渲染线程整层跳过
+        // 触控落回下层）；alpha=0（隐藏）时渲染线程整层跳过。预热帧不出现遮罩
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = progress.value }
+                .graphicsLayer { alpha = if (prewarmActive) 0f else progress.value }
                 .background(MaterialTheme.colorScheme.scrim),
         )
         // 最后组合 ⇒ 绘制与命中测试覆盖下层全部内容（下层仅被覆盖、不重建）。
@@ -170,8 +183,27 @@ fun PageOverlayTransition(
                 .fillMaxSize()
                 // 隐藏态清空语义：屏外页面不该被无障碍/自动化视为可达内容
                 .then(if (hidden) Modifier.clearAndSetSemantics { } else Modifier)
+                // 预热帧停在屏内：子树仍可命中。在 Initial 阶段消费全部触摸（父级先于
+                // 子级收到事件），既不让近透明的设置页吞掉点击，也不会触发其中任何按钮
+                .then(
+                    if (prewarmActive) {
+                        Modifier.pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    awaitPointerEvent(PointerEventPass.Initial)
+                                        .changes.forEach { it.consume() }
+                                }
+                            }
+                        }
+                    } else {
+                        Modifier
+                    },
+                )
                 .graphicsLayer {
-                    translationX = (1f - progress.value) * size.width
+                    // 预热帧：停在 x=0 让 Haze 的源/效果节点落在屏内（屏外效果会触发
+                    // RenderThread 递归）；整层压到不可辨的 1%，两帧后由调用方关掉
+                    translationX = if (prewarmActive) 0f else (1f - progress.value) * size.width
+                    alpha = if (prewarmActive) PageOverlayPrewarmAlpha else 1f
                     if (cornersOn) {
                         shape = leftCornerShape
                         clip = true
@@ -182,8 +214,12 @@ fun PageOverlayTransition(
                 },
         ) {
             // 活跃状态发给覆盖层内容：隐藏后内容仍常驻组合，其中的返回键处理等
-            // 交互据此关闭，避免吃掉系统返回
-            CompositionLocalProvider(LocalPageOverlayActive provides (visible || !hidden)) {
+            // 交互据此关闭，避免吃掉系统返回。预热门控单独一个 local：只让 Haze/冻结
+            // 录制在预热帧工作，不打开任何交互（BackHandler 仍按 active 判定）
+            CompositionLocalProvider(
+                LocalPageOverlayActive provides (visible || !hidden),
+                LocalPageOverlayPrewarm provides prewarmActive,
+            ) {
                 overlay()
             }
         }
@@ -233,6 +269,26 @@ internal fun shouldReplayFreeze(
     return frame.hasFrame && frame.key == key && frame.size == IntSize(layerWidth, layerHeight)
 }
 
+/** 冻结修饰符本帧的动作：[Replay] 重放旧帧、[Record] 录制新帧、[Live] 直接实时绘制 */
+internal enum class FreezeDrawAction { Replay, Record, Live }
+
+/**
+ * 冻结修饰符的绘制决策（纯函数，供 JVM 单测覆盖）：
+ * - 转场中且帧有效 → 重放；转场中但帧失配/无帧 → 实时绘制（最坏等于改造前）；
+ * - 非转场且允许录制 → 录制后重放；
+ * - 非转场且 [recordWhen] 为假 → 实时绘制、**不录制**（覆盖层隐藏时 Haze 已卸载，
+ *   录到的会是无模糊平底色，必须保留上一次活跃期的帧）。
+ */
+internal fun freezeDrawAction(
+    isTransforming: Boolean,
+    recordWhen: Boolean,
+    canReplay: Boolean,
+): FreezeDrawAction = when {
+    isTransforming -> if (canReplay) FreezeDrawAction.Replay else FreezeDrawAction.Live
+    recordWhen -> FreezeDrawAction.Record
+    else -> FreezeDrawAction.Live
+}
+
 /**
  * 页面级 transform 的冻结修饰符：tab 转场与设置页覆盖层视差共用。
  *
@@ -242,6 +298,8 @@ internal fun shouldReplayFreeze(
  *   等于改造前，绝不重放过期帧。
  * - [isTransforming] 为 false：每帧录制后重放。绝不按「键未变」跳过录制：背景图异步
  *   解码、Coil 换帧等变化不一定体现在键上，跳过录制会让旧帧永久盖住新内容。
+ * - [recordWhen] 为 false（且不在转场）：只实时绘制、不录制，保留上一次的帧。覆盖层
+ *   隐藏时 Haze 已卸载，继续录制会把「无模糊的平底色」覆盖掉有效的就位帧。
  *
  * 为什么需要：tab 转场用祖先 graphicsLayer 平移/缩放整页，设置页覆盖层则把 behind
  * 整层左移做视差；Compose 会在动画的每一帧向整棵子树派发 onGloballyPositioned
@@ -263,25 +321,27 @@ fun Modifier.transitionFreeze(
     layer: GraphicsLayer,
     frame: FreezeFrame? = null,
     key: () -> Any? = { Unit },
+    recordWhen: () -> Boolean = { true },
     isTransforming: () -> Boolean,
 ): Modifier = drawWithContent {
-    if (isTransforming()) {
-        val layerSize = layer.size
-        if (shouldReplayFreeze(layerSize.width, layerSize.height, frame, key())) {
+    val transforming = isTransforming()
+    // 只在转场期取键：静止期每帧录制时的键求值留在 record 之后，避免重复构造键对象
+    val canReplay = transforming &&
+        shouldReplayFreeze(layer.size.width, layer.size.height, frame, key())
+    when (freezeDrawAction(transforming, recordWhen(), canReplay)) {
+        FreezeDrawAction.Replay -> drawLayer(layer)
+        FreezeDrawAction.Live -> drawContent()
+        FreezeDrawAction.Record -> {
+            // 只把子树绘制一次（录进 layer 后直接画 layer）：录制后 layer.size 才是本帧
+            // 内容的真实尺寸，元数据在 record 之后取
+            layer.record { this@drawWithContent.drawContent() }
+            frame?.let {
+                it.hasFrame = true
+                it.key = key()
+                it.size = layer.size
+            }
             drawLayer(layer)
-            return@drawWithContent
         }
-        drawContent()
-    } else {
-        // 只把子树绘制一次（录进 layer 后直接画 layer）：录制后 layer.size 才是本帧
-        // 内容的真实尺寸，元数据在 record 之后取
-        layer.record { this@drawWithContent.drawContent() }
-        frame?.let {
-            it.hasFrame = true
-            it.key = key()
-            it.size = layer.size
-        }
-        drawLayer(layer)
     }
 }
 
@@ -292,6 +352,20 @@ fun Modifier.transitionFreeze(
  * 无覆盖层的场景默认 true。
  */
 val LocalPageOverlayActive = compositionLocalOf { true }
+
+/**
+ * 最近一层覆盖层是否处于空闲预热帧（[PageOverlayTransition] 的 `prewarm`）。
+ * 只作为页内 Haze 挂载与冻结录制的门控：预热两帧里页面停在 x=0 但近透明，Haze 需要
+ * 真实挂载一次才能初始化并录下带模糊的就位帧。**不**并入 [LocalPageOverlayActive]——
+ * 否则预热期会打开各页的 BackHandler 等交互逻辑。
+ */
+val LocalPageOverlayPrewarm = compositionLocalOf { false }
+
+/**
+ * 覆盖层预热帧的整层透明度。不取 0：alpha=0 的层会被渲染线程整层剔除，Haze 效果不一定
+ * 真正出图；1% 在任何底色上都不可辨，且只在启动 idle 的两帧内出现。需要回滚时改这里。
+ */
+private const val PageOverlayPrewarmAlpha = 0.01f
 
 /**
  * 覆盖层转场的背景视差位移比例：下层页面向左挪自身宽度的这个比例让位，滑出时滑回。

@@ -1,11 +1,18 @@
 package com.fangyi.classpp.ui.schedule
 
+import androidx.compose.runtime.Immutable
 import com.fangyi.classpp.data.model.DEFAULT_SLOT_DURATION_MINUTES
 import com.fangyi.classpp.data.model.TimeText
 import java.util.Calendar
 import java.util.Date
 
-/** 卡片渲染所需的最小课程字段；持久化与周次规律后续阶段再加 */
+/**
+ * 卡片渲染所需的最小课程字段；持久化与周次规律后续阶段再加。
+ *
+ * @Immutable：字段全为 val 值类型/枚举，构造后不再变化（列表均 copy-on-write，
+ * 见 ScheduleRepository / resolveWeekCards），Compose 可据此跳过无变化的整卡重组。
+ */
+@Immutable
 data class Course(
     val name: String,
     val teacher: String,
@@ -30,7 +37,8 @@ data class Course(
     val alternateBar: CourseColor? = null,
 )
 
-/** 一个固定节次；起止时间直接以卡片上显示的字符串形式保存 */
+/** 一个固定节次；起止时间直接以卡片上显示的字符串形式保存（@Immutable：全 val） */
+@Immutable
 data class TimeSlot(
     val id: Int,
     val startTime: String,
@@ -58,7 +66,8 @@ internal fun List<TimeSlot>.shortestDurationMinutes(): Int =
     minOfOrNull { it.durationMinutes() } ?: DEFAULT_SLOT_DURATION_MINUTES
 
 /**
- * 课程卡片配色；映射到 Color 收在 CourseCard.kt，模型保持零 Compose 依赖。
+ * 课程卡片配色；映射到 Color 收在 CourseCard.kt，模型只依赖 Compose 的 @Immutable
+ * 注解（无颜色/绘制依赖）。
  * 声明顺序即编辑面板色板的排列顺序（颜色选集 18 色，自上而下）。
  */
 enum class CourseColor {
@@ -69,7 +78,11 @@ enum class CourseColor {
 /**
  * 一周的整页渲染数据：日期带 + 该周课程。
  * 横向翻周时每周一页（见 CourseGrid 的 Pager），按页周号现取，无需预先算好相邻周。
+ *
+ * @Immutable：列表一律 copy-on-write、`Date` 无原地修改（全仓核查过 `setTime/time =`），
+ * 构造后视为不可变，Compose 可跳过内容未变的整页重组。
  */
+@Immutable
 data class WeekPageContent(
     val week: Int,
     val courses: List<Course>,

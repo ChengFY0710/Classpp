@@ -48,6 +48,7 @@ import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SettingsInfoHeaderCard
 import com.fangyi.classpp.ui.components.SheetBottomSlack
 import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
+import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
@@ -61,6 +62,7 @@ import com.fangyi.classpp.ui.schedule.toUiSlots
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
+import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -105,6 +107,8 @@ fun PersonalizationScreen(
     // 待办收集箱「瀑布流视图」开关（State 实例透传纪律同上，值只在 TodoSection 叶子内读）
     todoMasonry: State<Boolean> = mutableStateOf(true),
     onTodoMasonryChange: (Boolean) -> Unit = {},
+    // 设置页任一覆盖层（外层 + 三个子页）是否正在转场：顶栏据此冻结重放就位帧
+    settingsTransforming: () -> Boolean = { false },
 ) {
     // 当前激活课表决定滑条编辑 5 天还是 7 天那份倍率（两份各存、互不覆盖）；
     // 无课表（加载中/空）回退 5 天
@@ -132,6 +136,30 @@ fun PersonalizationScreen(
             val glassBackdrop = rememberSettingsGlassBackdrop()
             var topBarHeight by remember { mutableStateOf(0.dp) }
             val density = LocalDensity.current
+            // 滚动状态上提：冻结键要读滚动位置
+            val scrollState = rememberScrollState()
+            // 预热帧也要挂 Haze；隐藏态不录制，保留上一次活跃期的就位帧
+            val hazeActive = LocalPageOverlayActive.current || LocalPageOverlayPrewarm.current
+            val darkTheme = MaterialTheme.isDarkTheme
+            val freezeEpoch = LocalSettingsFreezeEpoch.current
+            val freezeKey: () -> Any = remember(darkTheme, scrollState, freezeEpoch) {
+                {
+                    SettingsTopBarFreezeKey(
+                        page = SettingsPage.Personalization,
+                        darkTheme = darkTheme,
+                        topBarHeight = topBarHeight,
+                        scroll = scrollState.value,
+                        epoch = freezeEpoch,
+                        inputs = listOf(
+                            cardHeights.value,
+                            showTeacher.value,
+                            glassStyle.value,
+                            todoMasonry.value,
+                            themeMode,
+                        ),
+                    )
+                }
+            }
             // 手势条（小白条）区域：内容可铺到屏幕底，末尾留出这段避免被遮挡
             val navBarPadding = WindowInsets.navigationBars
                 .only(WindowInsetsSides.Bottom)
@@ -153,7 +181,7 @@ fun PersonalizationScreen(
                     )
                     // 橡皮筋增强版 verticalScroll：内容不足一屏时也能拉出橡皮筋
                     // （ui.motion 的 rubberBandVerticalScroll）
-                    .rubberBandVerticalScroll(rememberScrollState())
+                    .rubberBandVerticalScroll(scrollState)
                     .padding(horizontal = PageHorizontalSpacing)
                     .padding(
                         // 首项距顶栏留 TopBarContentGap（页自有节奏），尾部余量与浮层同源
@@ -187,8 +215,11 @@ fun PersonalizationScreen(
                 onBack = onBack,
                 // 子页在覆盖层隐藏时仍常驻组合、整页停在屏外：只在活跃期挂 Haze 效果，
                 // 避免对屏外页面做源捕获/模糊（Haze 2 下会触发 RenderThread 递归崩溃）
-                hazeState = if (LocalPageOverlayActive.current) hazeState else null,
+                hazeState = if (hazeActive) hazeState else null,
                 buttonBackdrop = glassBackdrop,
+                freezeKey = freezeKey,
+                recordWhen = { hazeActive },
+                isTransforming = settingsTransforming,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .onGloballyPositioned { coords ->

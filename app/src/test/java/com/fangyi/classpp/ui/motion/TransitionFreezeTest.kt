@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.motion
 
 import androidx.compose.ui.unit.IntSize
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -71,5 +72,24 @@ class TransitionFreezeTest {
             size = IntSize(100, 80)
         }
         assertTrue(shouldReplayFreeze(layerWidth = 100, layerHeight = 80, frame = frame, key = "k"))
+    }
+
+    @Test
+    fun transformingReplaysOnlyWithValidFrame() {
+        assertEquals(FreezeDrawAction.Replay, freezeDrawAction(true, true, canReplay = true))
+        assertEquals(FreezeDrawAction.Live, freezeDrawAction(true, true, canReplay = false))
+    }
+
+    @Test
+    fun settledFrameRecordsWhenRecordingAllowed() {
+        assertEquals(FreezeDrawAction.Record, freezeDrawAction(false, true, canReplay = false))
+        // 静止期 canReplay 不参与决策：键的求值只在转场/录制分支发生
+        assertEquals(FreezeDrawAction.Record, freezeDrawAction(false, true, canReplay = true))
+    }
+
+    @Test
+    fun settledFrameStopsRecordingWhenOverlayHidden() {
+        // 覆盖层隐藏：Haze 已卸载，录制会覆盖掉有效的就位帧——只实时绘制
+        assertEquals(FreezeDrawAction.Live, freezeDrawAction(false, false, canReplay = true))
     }
 }

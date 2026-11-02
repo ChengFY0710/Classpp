@@ -88,6 +88,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Constraints
@@ -204,6 +205,9 @@ private const val CourseAlertResyncMillis = 30_000L
 
 /** 01 态内容区预组合的 idle 等待：落定后再留一段静默，避免首挂载撞上转场尾帧 */
 private const val ContentPrewarmDelayMillis = 200L
+
+/** 02 态顶栏预挂载的 idle 等待：与内容区预组合同一节奏，等吸附/切页彻底落定 */
+private const val TopBarPrewarmDelayMillis = 200L
 
 /** 时间轴与上方提醒卡（全天任务卡 / 待办提醒卡）的间距；两张卡都折叠时自然成为与上课提醒卡的间距 */
 private val TimelineTopSpacing = 12.dp
@@ -1071,6 +1075,22 @@ internal fun DayScreen(
             contentMounted = true
         }
 
+        // 02 态预挂载顶栏：collapse=0 时顶栏两层 alpha 都为 0、位移 -24dp，不可见；
+        // 但第一次 02→04 上滑那帧才组合 DayTopBar + 它的 Haze，正好落在手势里。
+        // 02 落定后 idle 挂载，首挂载/文本测量/Haze 初始化移出手势帧；挂载后常驻
+        //（回 02 只变为不可见，不反复卸载重挂）
+        var topBarMounted by remember { mutableStateOf(false) }
+        LaunchedEffect(active, transition.stage, overlayMounted) {
+            if (!active || transition.stage != DayStage.Compact || overlayMounted) {
+                return@LaunchedEffect
+            }
+            snapshotFlow {
+                tabTransition?.isTransitioning == true || overlayTransform?.isTransforming == true
+            }.first { !it }
+            delay(TopBarPrewarmDelayMillis)
+            topBarMounted = true
+        }
+
         val gestureAllowed = active && !overlayMounted && !transition.isAnimating
         // 01 的上滑仍由整屏 draggable 负责；02/04 的转场跟手由根级 pointerInput 统一驱动
         // （02 恒由根级接管、不依赖内容是否可滚，见 shouldDriveCollapse），不再额外挂
@@ -1558,7 +1578,8 @@ internal fun DayScreen(
                 }
             }
             // 10) 日程顶栏：内容卡顶部贴住它；Haze 采样白卡，标题样式复刻 ScheduleHeader。
-            if (showTopBar) {
+            // 02 落定后已预挂载（topBarMounted）：04 态显示条件仍只看 collapse>0
+            if (showTopBar || topBarMounted) {
                 DayTopBar(
                     title = topBarTitle,
                     // AI 对话入口：唤起 AI 对话浮层（两段式同图片浮层）
@@ -1571,6 +1592,9 @@ internal fun DayScreen(
                     backgroundAlpha = { dayFrame.value.topBarBackgroundAlpha },
                     translationYDp = { dayFrame.value.topBarTranslationY },
                     hazeState = contentHazeState,
+                    // 预挂载时 alpha=0 但 clickable 仍会吞点击、挡住 02 卡片的点按重播：
+                    // 只在顶栏真正可见（collapse>0）时挂聊天入口的指针输入
+                    interactive = showTopBar,
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
             }
@@ -2168,6 +2192,9 @@ private fun DayImageLayer(
  * 02→04 先淡入下移，04→02 后淡出上移。所有进度在 graphicsLayer 的绘制阶段读取，
  * 跟手进出场不触发重组；Haze 采样内容卡（[hazeState]），与待办顶栏同一配方。
  * 标题左侧 33dp、23sp SemiBold / onSurface / -0.3sp，与 ScheduleHeader 的日期行一致。
+ *
+ * [interactive] = false（02 态预挂载）：两层 alpha 均为 0，不可见；此时不挂聊天入口的
+ * 指针输入——alpha 为 0 的 clickable 仍会参与命中，会挡住 02 图片卡的点按重播。
  */
 @Composable
 private fun DayTopBar(
@@ -2178,12 +2205,15 @@ private fun DayTopBar(
     backgroundAlpha: () -> Float,
     translationYDp: () -> Float,
     hazeState: HazeState,
+    interactive: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(height),
+            .height(height)
+            // 预挂载态不可见：清空语义，避免无障碍聚焦到屏幕上看不见的标题/AI 入口
+            .then(if (interactive) Modifier else Modifier.clearAndSetSemantics { }),
     ) {
         // 背景层固定在顶栏位置，只做透明度：晚于内容出现、早于内容消失，不参与位移。
         Box(
@@ -2230,10 +2260,17 @@ private fun DayTopBar(
                 Box(
                     modifier = Modifier
                         .size(48.dp)
-                        .clickable(
-                            interactionSource = chatPress,
-                            indication = null,
-                            onClick = onChatClick,
+                        // 预挂载态不挂指针输入：alpha=0 的 clickable 仍会吃掉点击
+                        .then(
+                            if (interactive) {
+                                Modifier.clickable(
+                                    interactionSource = chatPress,
+                                    indication = null,
+                                    onClick = onChatClick,
+                                )
+                            } else {
+                                Modifier
+                            },
                         ),
                     contentAlignment = Alignment.CenterEnd,
                 ) {

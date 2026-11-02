@@ -1,6 +1,8 @@
 package com.fangyi.classpp.ui.settings
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,12 +42,16 @@ import com.fangyi.classpp.ui.components.SettingsCardwithIcon
 import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
 import com.fangyi.classpp.ui.components.SheetBottomSlack
 import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
+import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
 import com.fangyi.classpp.ui.motion.PageOverlayTransition
+import com.fangyi.classpp.ui.motion.PageOverlayTransitionState
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
+import com.fangyi.classpp.ui.motion.rememberPageOverlayTransitionState
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.schedule.CardHeightScales
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
+import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -61,19 +68,51 @@ private val EntryCardSpacing = 12.dp
 
 /**
  * 「账号与同步」入口卡的行值：未连接 / 已连接 姓名 / 登录已过期。
- * 状态流在组合里 collect（repository == null 时显示未连接）；过期态没有独立落盘标志，
+ * 状态流在这一行内 collect（repository == null 时显示未连接）；过期态没有独立落盘标志，
  * 仅由同步流程的探活结果驱动（子页横幅同一份判定），这里只呈现「已连接与否」。
+ *
+ * 订阅收敛在本卡：账号状态变化只重组这一行（item 列表按 label/value 记忆化），
+ * 不再向上失效整个设置根页。
  */
 @Composable
-private fun xmuSyncEntryValue(repository: XmuSyncRepository?): String {
-    val connected = repository != null &&
-        repository.state.collectAsState().value.uid.isNotEmpty()
-    return if (connected) {
-        val name = repository.state.value.accountName
-        if (name.isBlank()) stringResource(R.string.xmu_connected_label)
-        else stringResource(R.string.xmu_connected_name, name)
+private fun SettingsAccountSyncCard(
+    repository: XmuSyncRepository?,
+    onClick: () -> Unit,
+) {
+    val sync = if (repository != null) repository.state.collectAsState().value else null
+    val label = stringResource(R.string.settings_account_sync)
+    val valueText = if (sync != null && sync.uid.isNotEmpty()) {
+        if (sync.accountName.isBlank()) stringResource(R.string.xmu_connected_label)
+        else stringResource(R.string.xmu_connected_name, sync.accountName)
     } else {
         stringResource(R.string.xmu_not_connected_label)
+    }
+    val items = remember(label, valueText, onClick) {
+        listOf(
+            SettingsCardwithIconItem(
+                icon = R.drawable.ic_arrow_sync_circle,
+                label = label,
+                value = valueText,
+                onClick = onClick,
+            ),
+        )
+    }
+    SettingsCardwithIcon(items = items)
+}
+
+/**
+ * 单行入口卡的 item 列表：按标签与回调记忆化。字符串/回调不变时列表实例不变，
+ * 下行卡片可整体 skip（`SettingsCardwithIconItem` 已标 @Immutable）。
+ */
+@Composable
+private fun rememberSettingsEntryItem(
+    @DrawableRes icon: Int,
+    @StringRes labelRes: Int,
+    onClick: () -> Unit,
+): List<SettingsCardwithIconItem> {
+    val label = stringResource(labelRes)
+    return remember(icon, label, onClick) {
+        listOf(SettingsCardwithIconItem(icon = icon, label = label, onClick = onClick))
     }
 }
 
@@ -119,6 +158,9 @@ fun SettingsScreen(
     // 待办收集箱「瀑布流视图」开关（同 cardHeights 的透传纪律）
     todoMasonry: State<Boolean> = mutableStateOf(true),
     onTodoMasonryChange: (Boolean) -> Unit = {},
+    // 外层设置页覆盖层的进度状态（MainActivity 持有）：根页顶栏在设置页进出场视差
+    // 期间冻结重放需要它。null = 独立预览等无覆盖层场景
+    overlayTransitionState: PageOverlayTransitionState? = null,
 ) {
     var showPersonalization by rememberSaveable { mutableStateOf(false) }
     var showNotifications by rememberSaveable { mutableStateOf(false) }
@@ -127,6 +169,36 @@ fun SettingsScreen(
     // 屏外、返回键处理必须让位给系统（否则主界面按返回会被吃掉）；转场彻底结束后把
     // 子页复位到根页——与此前 AnimatedVisibility「关闭即销毁」的重开语义一致
     val overlayActive = LocalPageOverlayActive.current
+    // 启动空闲预热帧（MainActivity 在首帧后触发）：整页停在 x=0 近透明画两帧，
+    // 让四屏顶栏的 Haze 初始化并录下就位帧。交互仍按 overlayActive 判定
+    val prewarm = LocalPageOverlayPrewarm.current
+    // 三个嵌套覆盖层的进度状态上提：既传给嵌套转场，也让四屏顶栏在「任意一层在动」
+    // 时统一走冻结重放（根页在全部三层之外，子页也可能被祖先的 behind 视差带走）
+    val personalizationTransition = rememberPageOverlayTransitionState()
+    val notificationTransition = rememberPageOverlayTransitionState()
+    val xmuSyncTransition = rememberPageOverlayTransitionState()
+    val settingsTransforming: () -> Boolean = remember(
+        overlayTransitionState,
+        personalizationTransition,
+        notificationTransition,
+        xmuSyncTransition,
+    ) {
+        {
+            overlayTransitionState?.isTransforming == true ||
+                personalizationTransition.isTransforming ||
+                notificationTransition.isTransforming ||
+                xmuSyncTransition.isTransforming
+        }
+    }
+    // 导航回调记忆化（同 MainActivity 的范式）：闭包捕获同一 MutableState 实例，
+    // 语义与内联写法一致；避免每次重组都把四屏的入参变成新实例、连带重组
+    val openPersonalization = remember { { showPersonalization = true } }
+    val openNotifications = remember { { showNotifications = true } }
+    val openXmuSync = remember { { showXmuSync = true } }
+    val closePersonalization = remember { { showPersonalization = false } }
+    val closeNotifications = remember { { showNotifications = false } }
+    val closeXmuSync = remember { { showXmuSync = false } }
+    val fullSizeModifier = remember { Modifier.fillMaxSize() }
     BackHandler(enabled = overlayActive) {
         when {
             // 子页逐层退：账号与同步在最外层，优先于通知页/个性化页
@@ -161,36 +233,44 @@ fun SettingsScreen(
             // 子页以与设置页覆盖层完全相同的完整转场盖住根页（ui.motion 的 PageOverlayTransition：
             // 让位视差 + 压暗遮罩 + 右滑进出场 + 转场期左缘圆角）——共用同一实现，两层观感严格一致。
             // 「账号与同步」嵌在最外层：通知页 + 「个性化 + 根页」整体作为它的 behind，
-            // 各子页永不同屏
+            // 各子页永不同屏。prewarm 逐层下发：预热帧里四屏都停在 x=0（子页屏外预热会让
+            // Haze 效果落在屏外，触发 RenderThread 递归）
             PageOverlayTransition(
                 visible = showXmuSync,
-                modifier = Modifier.fillMaxSize(),
+                modifier = fullSizeModifier,
+                state = xmuSyncTransition,
+                prewarm = prewarm,
                 behind = {
                     PageOverlayTransition(
                         visible = showNotifications,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = fullSizeModifier,
+                        state = notificationTransition,
+                        prewarm = prewarm,
                         behind = {
                             PageOverlayTransition(
                                 visible = showPersonalization,
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = fullSizeModifier,
+                                state = personalizationTransition,
+                                prewarm = prewarm,
                                 behind = {
                                     SettingsHomePage(
                                         onClose = onClose,
-                                        onOpenPersonalization = { showPersonalization = true },
-                                        onOpenNotifications = { showNotifications = true },
-                                        onOpenXmuSync = { showXmuSync = true },
+                                        onOpenPersonalization = openPersonalization,
+                                        onOpenNotifications = openNotifications,
+                                        onOpenXmuSync = openXmuSync,
                                         xmuSyncRepository = xmuSyncRepository,
                                         repository = repository,
                                         // 设置覆盖层隐藏时整页停在屏外仍是常驻组合：Haze 效果只在
                                         // 覆盖层活跃期挂载，避免对屏外页面做源捕获/模糊（Haze 2 下
                                         // 屏外页面上的效果会触发 RenderThread 递归崩溃）
                                         overlayActive = overlayActive,
-                                        modifier = Modifier.fillMaxSize(),
+                                        settingsTransforming = settingsTransforming,
+                                        modifier = fullSizeModifier,
                                     )
                                 },
                             ) {
                                 PersonalizationScreen(
-                                    onBack = { showPersonalization = false },
+                                    onBack = closePersonalization,
                                     themeMode = themeMode,
                                     onThemeModeChange = onThemeModeChange,
                                     repository = repository,
@@ -202,23 +282,26 @@ fun SettingsScreen(
                                     onGlassStyleChange = onGlassStyleChange,
                                     todoMasonry = todoMasonry,
                                     onTodoMasonryChange = onTodoMasonryChange,
-                                    modifier = Modifier.fillMaxSize(),
+                                    settingsTransforming = settingsTransforming,
+                                    modifier = fullSizeModifier,
                                 )
                             }
                         },
                     ) {
                         NotificationScreen(
-                            onBack = { showNotifications = false },
-                            modifier = Modifier.fillMaxSize(),
+                            onBack = closeNotifications,
+                            settingsTransforming = settingsTransforming,
+                            modifier = fullSizeModifier,
                         )
                     }
                 },
             ) {
                 XmuSyncScreen(
-                    onBack = { showXmuSync = false },
+                    onBack = closeXmuSync,
                     repository = xmuSyncRepository,
                     autoLogin = xmuAutoLoginManager,
-                    modifier = Modifier.fillMaxSize(),
+                    settingsTransforming = settingsTransforming,
+                    modifier = fullSizeModifier,
                 )
             }
         }
@@ -243,6 +326,7 @@ private fun SettingsHomePage(
     onOpenXmuSync: () -> Unit,
     repository: ScheduleRepository?,
     overlayActive: Boolean,
+    settingsTransforming: () -> Boolean = { false },
     modifier: Modifier = Modifier,
     xmuSyncRepository: XmuSyncRepository? = null,
 ) {
@@ -264,6 +348,32 @@ private fun SettingsHomePage(
             val glassBackdrop = rememberSettingsGlassBackdrop()
             var topBarHeight by remember { mutableStateOf(0.dp) }
             val density = LocalDensity.current
+            // 滚动状态上提：冻结键要读滚动位置，隐藏态停录后滚动变化会让旧帧失配
+            val scrollState = rememberScrollState()
+            // 预热帧也要挂 Haze（否则录到的就位帧没有模糊）；隐藏态不录制保留上次的帧
+            val hazeActive = overlayActive || LocalPageOverlayPrewarm.current
+            // 冻结键：主题/顶栏高度/滚动位置/账号状态任一变化都回退实时绘制。
+            // 只在绘制期求值，不逐帧重组
+            val darkTheme = MaterialTheme.isDarkTheme
+            val freezeEpoch = LocalSettingsFreezeEpoch.current
+            val freezeKey: () -> Any = remember(
+                darkTheme,
+                scrollState,
+                xmuSyncRepository,
+                freezeEpoch,
+            ) {
+                {
+                    val sync = xmuSyncRepository?.state?.value
+                    SettingsTopBarFreezeKey(
+                        page = SettingsPage.Root,
+                        darkTheme = darkTheme,
+                        topBarHeight = topBarHeight,
+                        scroll = scrollState.value,
+                        epoch = freezeEpoch,
+                        inputs = sync?.let { listOf(it.uid, it.accountName) },
+                    )
+                }
+            }
             // 手势条（小白条）区域：内容可铺到屏幕底，末尾留出这段避免被遮挡
             val navBarPadding = WindowInsets.navigationBars
                 .only(WindowInsetsSides.Bottom)
@@ -304,7 +414,7 @@ private fun SettingsHomePage(
                             )
                             // 橡皮筋增强版 verticalScroll：入口卡不足一屏的大屏上也能拉出
                             // 橡皮筋（ui.motion 的 rubberBandVerticalScroll）
-                            .rubberBandVerticalScroll(rememberScrollState())
+                            .rubberBandVerticalScroll(scrollState)
                             .padding(horizontal = PageHorizontalSpacing)
                             .padding(
                                 // 首项距顶栏留 TopBarContentGap（页自有节奏），尾部余量与浮层同源
@@ -314,52 +424,39 @@ private fun SettingsHomePage(
                         verticalArrangement = Arrangement.spacedBy(EntryCardSpacing),
                     ) {
                         // 五张独立入口卡（设计稿形态）；数据管理/关于子页待实装，入口先占位。
-                        // 账号与同步行内展示连接状态（State 透传纪律：本层 collect 成本地值、
-                        // 仅此行随它重组）
+                        // 入口 item 列表按标签/回调记忆化，账号行在卡内 collect，
+                        // 状态变化只重组对应行
+                        val noop = remember { {} }
                         SettingsCardwithIcon(
-                            items = listOf(
-                                SettingsCardwithIconItem(
-                                    icon = R.drawable.ic_paint_brush,
-                                    label = stringResource(R.string.settings_personalization),
-                                    onClick = onOpenPersonalization,
-                                ),
+                            items = rememberSettingsEntryItem(
+                                icon = R.drawable.ic_paint_brush,
+                                labelRes = R.string.settings_personalization,
+                                onClick = onOpenPersonalization,
                             ),
                         )
                         SettingsCardwithIcon(
-                            items = listOf(
-                                SettingsCardwithIconItem(
-                                    icon = R.drawable.ic_alert,
-                                    label = stringResource(R.string.settings_notifications),
-                                    onClick = onOpenNotifications,
-                                ),
+                            items = rememberSettingsEntryItem(
+                                icon = R.drawable.ic_alert,
+                                labelRes = R.string.settings_notifications,
+                                onClick = onOpenNotifications,
+                            ),
+                        )
+                        SettingsAccountSyncCard(
+                            repository = xmuSyncRepository,
+                            onClick = onOpenXmuSync,
+                        )
+                        SettingsCardwithIcon(
+                            items = rememberSettingsEntryItem(
+                                icon = R.drawable.ic_book_database,
+                                labelRes = R.string.settings_data_management,
+                                onClick = noop,
                             ),
                         )
                         SettingsCardwithIcon(
-                            items = listOf(
-                                SettingsCardwithIconItem(
-                                    icon = R.drawable.ic_arrow_sync_circle,
-                                    label = stringResource(R.string.settings_account_sync),
-                                    value = xmuSyncEntryValue(xmuSyncRepository),
-                                    onClick = onOpenXmuSync,
-                                ),
-                            ),
-                        )
-                        SettingsCardwithIcon(
-                            items = listOf(
-                                SettingsCardwithIconItem(
-                                    icon = R.drawable.ic_book_database,
-                                    label = stringResource(R.string.settings_data_management),
-                                    onClick = {},
-                                ),
-                            ),
-                        )
-                        SettingsCardwithIcon(
-                            items = listOf(
-                                SettingsCardwithIconItem(
-                                    icon = R.drawable.ic_info,
-                                    label = stringResource(R.string.settings_about),
-                                    onClick = {},
-                                ),
+                            items = rememberSettingsEntryItem(
+                                icon = R.drawable.ic_info,
+                                labelRes = R.string.settings_about,
+                                onClick = noop,
                             ),
                         )
                     }
@@ -369,8 +466,11 @@ private fun SettingsHomePage(
             SettingsTopBar(
                 title = stringResource(R.string.settings_root_title),
                 onBack = onClose,
-                hazeState = if (overlayActive) hazeState else null,
+                hazeState = if (hazeActive) hazeState else null,
                 buttonBackdrop = glassBackdrop,
+                freezeKey = freezeKey,
+                recordWhen = { hazeActive },
+                isTransforming = settingsTransforming,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .onGloballyPositioned { coords ->

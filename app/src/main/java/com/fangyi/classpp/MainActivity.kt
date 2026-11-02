@@ -61,9 +61,11 @@ import com.fangyi.classpp.ui.navigation.rememberTabPagerState
 import com.fangyi.classpp.ui.note.TodoInboxPreferences
 import com.fangyi.classpp.ui.note.TodoScreen
 import com.fangyi.classpp.ui.schedule.CardHeightPreferences
+import com.fangyi.classpp.ui.schedule.CardHeightScales
 import com.fangyi.classpp.ui.schedule.ScheduleScreen
 import com.fangyi.classpp.ui.schedule.TeacherDisplayPreferences
 import com.fangyi.classpp.ui.settings.GlassPreferences
+import com.fangyi.classpp.ui.settings.LocalSettingsFreezeEpoch
 import com.fangyi.classpp.ui.settings.SettingsScreen
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.LocalGlassStyle
@@ -72,8 +74,10 @@ import com.fangyi.classpp.ui.theme.ThemePreferences
 import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 /**
@@ -81,6 +85,13 @@ import kotlinx.coroutines.withContext
  * 同一拍（拖动中每次变化都重置计时、全程不触发，松手后一次性补最终值）。
  */
 private const val CardHeightSettleMillis = 300L
+
+/**
+ * 设置页覆盖层预热帧的启动延迟：等 tab 预热（三页各两帧 + 两轮停靠重录 + 500ms）
+ * 全部落定后再做，避免两批首挂载/Haze 初始化抢同一帧；仍留出充足时间，用户首次
+ * 打开设置通常远晚于此。
+ */
+private const val SettingsPrewarmDelayMillis = 1000L
 
 class MainActivity : ComponentActivity() {
 
@@ -194,6 +205,12 @@ class MainActivity : ComponentActivity() {
                     // 设置页覆盖层转场状态：进度提升到组合外，供 behind 里的 tab 页面
                     // （课表/待办顶栏、日程页 Haze）在视差期间读取并冻结模糊输出
                     val settingsOverlayState = rememberPageOverlayTransitionState()
+                    // 设置页覆盖层空闲预热帧：首帧后 idle 把整页在 x=0 近透明画两帧，
+                    // 让四屏顶栏的 Haze 初始化并录下带模糊的就位帧（见下方 effect）
+                    var settingsPrewarm by remember { mutableStateOf(false) }
+                    // 设置页冻结帧代际：离开 RESUMED 递增（窗口不可见后系统可能清空
+                    // 冻结层显示列表；设置页隐藏期不录制，旧帧会变空帧）
+                    var settingsFreezeEpoch by remember { mutableStateOf(0) }
                     // 设置页直达子页标志：课表页教务导入浮层的「账号与同步」跳转先置真再开
                     // 设置页，账号与同步子页随之展开（SettingsScreen 消费后回调复位）
                     var settingsOpenAccountSync by rememberSaveable { mutableStateOf(false) }
@@ -250,6 +267,38 @@ class MainActivity : ComponentActivity() {
                     // 页面 modifier 同理记忆化：Modifier.fillMaxSize() 每次调用都是新实例，
                     // 内联写在调用点上会让三页在每次切 tab 时都白重组一遍
                     val pageModifier = remember { Modifier.fillMaxSize() }
+                    // 设置页入参记忆化（同款理由）：设置页四屏常驻组合，MainActivity 每次
+                    // 重组若传出新的 lambda/Modifier，整棵设置树会白重组一遍。闭包捕获的
+                    // 是同一批 State 实例，语义与内联写法一致
+                    val onCloseSettings = remember { { showSettings = false } }
+                    val onSettingsThemeModeChange = remember {
+                        { mode: ThemeMode ->
+                            themeMode = mode
+                            ThemePreferences.save(this@MainActivity, mode)
+                        }
+                    }
+                    val onSettingsCardHeightsChange = remember {
+                        { scales: CardHeightScales -> cardHeightsState.value = scales }
+                    }
+                    val onSettingsShowTeacherChange = remember {
+                        { show: Boolean ->
+                            showTeacherState.value = show
+                            TeacherDisplayPreferences.save(this@MainActivity, show)
+                        }
+                    }
+                    val onSettingsGlassStyleChange = remember {
+                        { enabled: Boolean ->
+                            glassStyleState.value = enabled
+                            GlassPreferences.save(this@MainActivity, enabled)
+                        }
+                    }
+                    val onSettingsTodoMasonryChange = remember {
+                        { enabled: Boolean ->
+                            todoMasonryState.value = enabled
+                            TodoInboxPreferences.saveMasonryView(this@MainActivity, enabled)
+                        }
+                    }
+                    val settingsModifier = remember { Modifier.fillMaxSize() }
 
                     // 通知点击落页：消费 pendingNotificationTab（冷启动 extras / onNewIntent 写入）
                     // 切到对应 tab；target 与当前一致时 selectTab 幂等直接返回
@@ -267,6 +316,32 @@ class MainActivity : ComponentActivity() {
                         if (dayInitial == null) return@LaunchedEffect
                         withFrameNanos { }
                         pagerState.prewarm(listOf(AppTab.Agenda, AppTab.Todo, AppTab.Timetable))
+                    }
+
+                    // 设置页覆盖层预热帧：等 tab 预热与首批重录落定后再做，避免与切页/
+                    // 首挂载抢同一帧。预热期整页停在 x=0、alpha≈0.01（见 PageOverlayTransition），
+                    // 两帧就够 Haze 初始化 + 冻结层录制；用户若在此期间打开设置，visible
+                    // 翻转会让位给正常转场，finally 保证近透明覆盖层不会残留
+                    LaunchedEffect(pagerState, dayInitial, showSettings) {
+                        if (dayInitial == null || showSettings) return@LaunchedEffect
+                        withFrameNanos { }
+                        delay(SettingsPrewarmDelayMillis)
+                        if (showSettings) return@LaunchedEffect
+                        // 与切页动画互斥：预热会抢同一帧，先等选中页落定再画
+                        snapshotFlow {
+                            pagerState.transitionFor(pagerState.selectedTab)?.isTransitioning == true
+                        }.first { !it }
+                        if (showSettings) return@LaunchedEffect
+                        settingsPrewarm = true
+                        try {
+                            withFrameNanos { }
+                            // 两帧预热态绘制：首帧完成组合/Haze 初始化/冻结层录制，
+                            // 第二帧留出效果出图与录制的余量
+                            withFrameNanos { }
+                            withFrameNanos { }
+                        } finally {
+                            settingsPrewarm = false
+                        }
                     }
 
                     // 一次性存储降级提示：get() 返回即 bootstrap 完成，loadState 已定型
@@ -313,7 +388,13 @@ class MainActivity : ComponentActivity() {
                     val lifecycleOwner = LocalLifecycleOwner.current
                     LaunchedEffect(lifecycleOwner) {
                         lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
-                            if (state != Lifecycle.State.RESUMED) return@collect
+                            if (state != Lifecycle.State.RESUMED) {
+                                // 设置页四屏隐藏时不录制（Haze 已卸载），窗口不可见后
+                                // 旧帧可能被系统清空：递增代际让冻结键失配，下次打开
+                                // 先实时绘制、落定后再录新帧，绝不重放空帧/过期帧
+                                settingsFreezeEpoch++
+                                return@collect
+                            }
                             pagerState.reRecordParkedTabs()
                         }
                     }
@@ -359,6 +440,8 @@ class MainActivity : ComponentActivity() {
                         visible = showSettings,
                         // 进度状态外部持有：供 behind 里的 tab 页面在视差期间冻结 Haze
                         state = settingsOverlayState,
+                        // 空闲预热帧：仅在不打开时生效，打开即让位给正常转场
+                        prewarm = settingsPrewarm,
                         modifier = Modifier
                             .fillMaxSize()
                             // 页面世界的基础底色，随主题即时切换：窗口 windowBackground（XML
@@ -497,43 +580,37 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                     ) {
-                        SettingsScreen(
-                            onClose = { showSettings = false },
-                            repository = repository,
-                            xmuSyncRepository = xmuSyncRepository,
-                            xmuAutoLoginManager = xmuAutoLoginManager,
-                            openAccountSyncDirectly = settingsOpenAccountSync,
-                            onAccountSyncDirectlyOpened = onAccountSyncDirectlyOpened,
-                            themeMode = themeMode,
-                            onThemeModeChange = { mode ->
-                                themeMode = mode
-                                ThemePreferences.save(this@MainActivity, mode)
-                            },
-                            cardHeights = cardHeightsState,
-                            onCardHeightsChange = { scales ->
+                        // 冻结帧代际：四屏顶栏的冻结键读它；离开 RESUMED 后自动失效，
+                        // 避免重放被系统清空的旧帧
+                        CompositionLocalProvider(
+                            LocalSettingsFreezeEpoch provides settingsFreezeEpoch,
+                        ) {
+                            SettingsScreen(
+                                onClose = onCloseSettings,
+                                repository = repository,
+                                xmuSyncRepository = xmuSyncRepository,
+                                xmuAutoLoginManager = xmuAutoLoginManager,
+                                openAccountSyncDirectly = settingsOpenAccountSync,
+                                onAccountSyncDirectlyOpened = onAccountSyncDirectlyOpened,
+                                themeMode = themeMode,
+                                onThemeModeChange = onSettingsThemeModeChange,
+                                cardHeights = cardHeightsState,
                                 // 只改内存即时生效；落盘由上方 LaunchedEffect 去抖完成
-                                cardHeightsState.value = scales
-                            },
-                            showTeacher = showTeacherState,
-                            onShowTeacherChange = { show ->
+                                onCardHeightsChange = onSettingsCardHeightsChange,
+                                showTeacher = showTeacherState,
                                 // 只改内存即时生效 + 即时落盘（布尔翻转无连续变化，无需去抖）
-                                showTeacherState.value = show
-                                TeacherDisplayPreferences.save(this@MainActivity, show)
-                            },
-                            glassStyle = glassStyleState,
-                            onGlassStyleChange = { enabled ->
+                                onShowTeacherChange = onSettingsShowTeacherChange,
+                                glassStyle = glassStyleState,
                                 // 只改内存即时生效 + 即时落盘（同 showTeacher）
-                                glassStyleState.value = enabled
-                                GlassPreferences.save(this@MainActivity, enabled)
-                            },
-                            todoMasonry = todoMasonryState,
-                            onTodoMasonryChange = { enabled ->
+                                onGlassStyleChange = onSettingsGlassStyleChange,
+                                todoMasonry = todoMasonryState,
                                 // 只改内存即时生效 + 即时落盘（同 showTeacher）
-                                todoMasonryState.value = enabled
-                                TodoInboxPreferences.saveMasonryView(this@MainActivity, enabled)
-                            },
-                            modifier = Modifier.fillMaxSize(),
-                        )
+                                onTodoMasonryChange = onSettingsTodoMasonryChange,
+                                // 设置页根页顶栏的冻结层要读外层覆盖层进度
+                                overlayTransitionState = settingsOverlayState,
+                                modifier = settingsModifier,
+                            )
+                        }
                     }
                 }
             }
