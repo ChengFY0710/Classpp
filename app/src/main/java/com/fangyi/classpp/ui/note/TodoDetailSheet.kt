@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -55,11 +54,12 @@ import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetInfoCard
 import com.fangyi.classpp.ui.components.SheetInfoEntry
+import com.fangyi.classpp.ui.components.SheetPill
+import com.fangyi.classpp.ui.components.SheetPillRow
 import com.fangyi.classpp.ui.components.SheetTextArea
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.SwipeAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
-import com.fangyi.classpp.ui.components.TagChip
 import com.fangyi.classpp.ui.components.customRuleText
 import com.fangyi.classpp.ui.components.endConditionText
 import com.fangyi.classpp.ui.components.flagColor
@@ -77,9 +77,6 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.rememberHazeState
 
-/** 标签行内胶囊间距（同 NoteCard 属性行）；胶囊与文字的 4dp 在 TagChip 内部 */
-private val TagRowSpacing = 12.dp
-
 /** 标题行「更多」按钮边长：与 detailTitle 行高（28sp）等高，顶对齐下视觉居中于标题首行 */
 private val TitleMoreIconSize = 28.dp
 
@@ -91,8 +88,9 @@ private val TitleMenuGap = 12.dp
 
 /**
  * 待办详情浮层：点待办卡弹出，结构对标 [com.fangyi.classpp.ui.schedule.CourseDetailSheet]——
- * 正文为待办标题、标题下方的标签行（[TagChip] 按传入的标签配色着色，与列表卡同源；
- * 空标签不渲染）、四行只读信息
+ * 正文为待办标题、标题下方的标签行（[SheetPill] 胶囊：几何与字排同课程详情的
+ * [com.fangyi.classpp.ui.components.SheetInfoPillRow] 信息胶囊，配色取传入的标签色、
+ * 与列表卡同源；空标签不渲染）、四行只读信息
  * （[SheetInfoCard]：截止日期 / 紧急程度 / 待办时间 / 待办地点，四行常显，
  * 空值显灰「无」）、备注输入（[SheetTextArea]）、「步骤」分组（列表走 [NoteCard]
  * 右侧勾选框、支持向右滑呼出删除动作卡（双阈值手势见
@@ -123,7 +121,7 @@ internal fun TodoDetailSheet(
     visible: Boolean,
     todo: Todo,
     // 标签配色表（标签名 → 颜色，与列表卡 NoteCard 同源同表）：标签行胶囊据此着色，
-    // 缺席的名字（含课程标签）回落主题 Primary
+    // 缺席的名字回落主题 Primary
     tagColors: Map<String, Color> = emptyMap(),
     // 所点条目的分期日期（重复待办的逐期卡带入）：「下一次重复开始前」的截止行按它折算出
     // 该条目的具体截止（见 [withOccurrenceDeadline]）；非重复待办或无逐期上下文传 null，
@@ -263,15 +261,20 @@ internal fun TodoDetailSheet(
                 }
             }
             if (todo.tags.isNotEmpty()) {
-                // 标签色与列表卡同源（tagColors 缺席的名字回落主题 Primary）
+                // 标签色与列表卡同源（tagColors 缺席的名字回落主题 Primary）；胶囊几何走浮层
+                // 信息行同款 [SheetPillRow] / [SheetPill]——与课程详情标题下的胶囊严格同形
+                //（全圆角、12/8 内距、14sp 字排、10dp 间距），只有配色换成 NoteCard 的
+                // 标签色（10% 底 + 标签色文字）
                 val fallbackTagColor = MaterialTheme.colorScheme.primary
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(TagRowSpacing),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    itemVerticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(start = 8.dp),
-                ) {
-                    todo.tags.forEach { tag -> TagChip(tag, tagColors[tag] ?: fallbackTagColor) }
+                SheetPillRow {
+                    todo.tags.forEach { tag ->
+                        val color = tagColors[tag] ?: fallbackTagColor
+                        SheetPill(
+                            text = tag,
+                            containerColor = color.copy(alpha = 0.1f),
+                            contentColor = color,
+                        )
+                    }
                 }
             }
             // 四行常显：截止日期与紧急程度是结构化字段（未设也占位），时间/地点同理——

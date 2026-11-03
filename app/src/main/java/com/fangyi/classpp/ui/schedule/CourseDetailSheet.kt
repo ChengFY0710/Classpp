@@ -40,6 +40,7 @@ import com.fangyi.classpp.ui.note.repeatCardText
 import com.fangyi.classpp.ui.note.deadlineDaysLeft
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
+import com.fangyi.classpp.ui.theme.isDarkTheme
 
 /**
  * 课程详情浮层：浏览态点课程卡弹出，只读展示课程名 / 上课位置（周几、节次、时间）、
@@ -99,6 +100,11 @@ fun CourseDetailSheet(
     // 系统返回 = 收起浮层而非退出 app；与关闭/下拉同走 closeWithSave，备注照常先落盘。
     // enabled 跟 visible：出场动画期间不再拦截（visible 已 false，重复提交被挡在门外）
     BackHandler(enabled = visible, onBack = closeWithSave)
+
+    // 标签配色（课程名 → 课程卡配色）：课程标签取与主题相反的课程卡配色；其余标签
+    // （用户标签）不在表内，由 NoteCard 回落主题 Primary（本浮层无标签仓库）
+    val dark = MaterialTheme.isDarkTheme
+    val tagColors = remember(schedule, dark) { schedule.courseTagColors(dark) }
 
     // 位置信息胶囊行：与 AddCoursePanel 的构造同源（星期数组 + 节次 + 起止时间）
     val weekdays = stringArrayResource(R.array.weekdays)
@@ -206,6 +212,7 @@ fun CourseDetailSheet(
                                 // 仓库已把开关归一化回 false）；完成态由 NoteCard 自行隐藏
                                 countdownDays = if (todo.countdown) todo.deadlineDaysLeft() else null,
                                 tags = todo.tags,
+                                tagColors = tagColors,
                                 urgency = todo.urgency,
                                 completed = todo.completed,
                                 overdue = todo.isOverdue(today, nowMinute),

@@ -3,6 +3,7 @@ package com.fangyi.classpp.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -11,6 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
@@ -18,7 +20,7 @@ import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.tabularNumbers
 
-/** 单枚信息胶囊的内距：水平 15dp（约一个 14sp 字符宽）、垂直 8dp——14sp/20sp 行高下胶囊高 36dp */
+/** 单枚信息胶囊的内距：水平 12dp、垂直 8dp——14sp/20sp 行高下胶囊高 36dp */
 private val InfoPillPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
 
 /** 胶囊间距：横向相邻胶囊与换行后的行间距同值 */
@@ -41,12 +43,34 @@ private val InfoPillRowStartInset = 3.dp
  * 用 [FlowRow] 而非 Row：英文文案（如 `Periods 2-3`）或系统大字号下几枚胶囊放不下时
  * 自动换行，不会把内容挤出屏幕。
  *
- * 非交互元素（只读信息，无点击/按压反馈），纯展示用。
+ * 非交互元素（只读信息，无点击/按压反馈），纯展示用。几何与字排由 [SheetPillRow] /
+ * [SheetPill] 承载，与待办详情的标签行共用同一套（两处胶囊严格同形）。
  */
 @Composable
 fun SheetInfoPillRow(
     values: List<String>,
     modifier: Modifier = Modifier,
+) {
+    SheetPillRow(modifier = modifier) {
+        values.forEach { value ->
+            SheetPill(
+                text = value,
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.classppColors.secondaryText,
+            )
+        }
+    }
+}
+
+/**
+ * 浮层胶囊行的容器（[FlowRow]）：横向相邻胶囊与换行后的行间距同取 [InfoPillSpacing]，
+ * 行首只补 [InfoPillRowStartInset]（内容列已带 [PageHorizontalSpacing]）。调用方在
+ * [content] 里逐枚放 [SheetPill]；[modifier] 由调用方按需追加（如纵向边距）。
+ */
+@Composable
+internal fun SheetPillRow(
+    modifier: Modifier = Modifier,
+    content: @Composable FlowRowScope.() -> Unit,
 ) {
     FlowRow(
         modifier = modifier
@@ -54,18 +78,29 @@ fun SheetInfoPillRow(
             .padding(start = InfoPillRowStartInset),
         horizontalArrangement = Arrangement.spacedBy(InfoPillSpacing),
         verticalArrangement = Arrangement.spacedBy(InfoPillSpacing),
-    ) {
-        values.forEach { value ->
-            Text(
-                text = value,
-                modifier = Modifier
-                    .clip(PillShape)
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(InfoPillPadding),
-                // 节次与时间会随编辑即时变化：等宽数字避免胶囊宽度抖动（中文不受影响）
-                style = ClassppTextTokens.secondaryTextLarge.tabularNumbers(),
-                color = MaterialTheme.classppColors.secondaryText,
-            )
-        }
-    }
+        content = content,
+    )
+}
+
+/**
+ * 单枚浮层胶囊：浮层顶部信息行的几何与字排——[PillShape] 全圆角、[InfoPillPadding] 内距、
+ * [ClassppTextTokens.secondaryTextLarge] + 等宽数字（数字随编辑变化时胶囊宽度不抖动）。
+ * 配色由调用方注入：信息行取白底 + secondaryText；待办详情的标签行取标签色 10% 底 +
+ * 标签色文字（与 NoteCard 的 [TagChip] 同源配色），两处因此同形不同色。
+ */
+@Composable
+internal fun SheetPill(
+    text: String,
+    containerColor: Color,
+    contentColor: Color,
+) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .clip(PillShape)
+            .background(containerColor)
+            .padding(InfoPillPadding),
+        style = ClassppTextTokens.secondaryTextLarge.tabularNumbers(),
+        color = contentColor,
+    )
 }

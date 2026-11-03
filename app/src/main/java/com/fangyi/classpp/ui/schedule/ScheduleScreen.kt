@@ -97,6 +97,7 @@ import com.fangyi.classpp.data.xmu.XmuJwScheduleResult
 import com.fangyi.classpp.data.xmu.XmuJwSemester
 import com.fangyi.classpp.data.xmu.XmuJwSemestersResult
 import com.fangyi.classpp.data.xmu.XmuSyncRepository
+import com.fangyi.classpp.data.xmu.withMatchedCourseTag
 import com.fangyi.classpp.data.wakeup.WakeupScheduleMapper
 import com.fangyi.classpp.data.wakeup.WakeupScriptStore
 import com.fangyi.classpp.data.wakeup.WakeupShareText
@@ -207,7 +208,13 @@ fun ScheduleScreen(
     val schedule = scheduleState.value
     // 待办仓库仅供课程详情浮层展示该课程标签下的待办；未注入（预览/首帧）视为空列表
     val todosState = todoRepository?.todos?.collectAsState()
-    val todos = todosState?.value ?: emptyList()
+    // 展示用待办：课程中心同步的待办匹配到激活课表课程时直接并入对应课程标签——与待办页/
+    // 日视图同一派生口径（见 withMatchedCourseTag），课程详情浮层按课程名关联待办直接命中
+    val rawTodos = todosState?.value ?: emptyList()
+    val courseTagNameSet = remember(schedule) { schedule?.courses?.map { it.name }?.toSet() ?: emptySet() }
+    val todos = remember(rawTodos, courseTagNameSet) {
+        rawTodos.map { it.withMatchedCourseTag(courseTagNameSet) }
+    }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 

@@ -73,7 +73,8 @@ private data class TagRow(
  *   （正是 [GroupCard] 与 [SettingsCardwithIcon] 的行型差异）；
  * - **第三部分（带「标签」小标题的 [CardSection]）**：全部标签一张 [GroupCard]——课程标签
  *   （[courseTags]，宿主按激活课表派生）作只读锁定前缀、用户标签随后，行首挂 `ic_tag`、
- *   颜色跟随标签色（用户标签 colorArgb null 与课程标签都取主题 primary），计数 = 挂该标签
+ *   颜色跟随标签色（用户标签 colorArgb null 取主题 primary；课程标签取与主题相反的课程卡
+ *   配色，见 [courseTagColors]，缺表时回落主题 primary），计数 = 挂该标签
  *   的待办数；无任何标签时整组（含标题）不渲染。普通态点击行 = 跳转该标签的待办过滤页
  *   （[onOpenTag]）。
  *
@@ -142,6 +143,8 @@ private data class TagRow(
  * @param courseTags 课程标签名（宿主按激活课表去重派生，不入库）：只展示**有待办挂载**的，
  *   以只读锁定前缀展示在用户标签之前，不可重命名/删除/拖拽；与用户标签重名时以用户标签
  *   为准（id 须唯一）
+ * @param courseTagColors 课程标签配色表（课程名 → 与主题相反的课程卡配色）：课程标签行的
+ *   行首 icon 取此色，与卡片/顶栏标签胶囊同源；缺表时回落主题 primary
  * @param deletedCount 最近删除条目数（仓库 deletedTodos 流的大小）
  * @param archivedCount 已归档条目数（仓库 archivedTodos 流的大小）
  * @param onGroupsChange 整表写回统一入口：编辑态确认（顺序 + 置顶）、普通态新建（追加分组）、
@@ -166,6 +169,7 @@ internal fun TodoGroupsSheet(
     groups: List<TodoGroup>,
     tags: List<TagEntry>,
     courseTags: List<String>,
+    courseTagColors: Map<String, Color>,
     visible: Boolean,
     onDismiss: () -> Unit,
     onDismissed: () -> Unit,
@@ -533,9 +537,10 @@ internal fun TodoGroupsSheet(
             }
             // 第三部分：标签。分组内容之后；无任何标签时整组（含标题）不渲染。课程标签
             // （只读）作锁定前缀、用户标签随后，行首挂 ic_tag、颜色跟随标签色（用户标签
-            // colorArgb null 与课程标签都取主题 primary），计数 = 挂该标签的待办数。普通态
-            // 点击行 = 跳转该标签的待办过滤页；长按 = 进入标签编辑态（与分组编辑态同构、
-            // 互斥——分组编辑草稿期间点击与长按都不触发，同上方各行「编辑态不触发」约定）：
+            // colorArgb null 取主题 primary；课程标签取与主题相反的课程卡配色），计数 = 挂该
+            // 标签的待办数。普通态点击行 = 跳转该标签的待办过滤页；长按 = 进入标签编辑态
+            // （与分组编辑态同构、互斥——分组编辑草稿期间点击与长按都不触发，同上方各行
+            // 「编辑态不触发」约定）：
             // 多选批量删除、重命名（仅选中恰好一个用户标签时可点，多选/含课程标签置灰）、
             // 长按拖拽重排用户标签（顶栏「确认」写回 onTagsChange；课程标签锁定不可拖）
             if (displayTags.isNotEmpty()) {
@@ -551,8 +556,14 @@ internal fun TodoGroupsSheet(
                                 // 课程标签只读：锁定前缀，编辑态里重命名/删除置灰
                                 locked = tag.isCourse,
                                 icon = R.drawable.ic_tag,
-                                iconTint = tag.entry?.colorArgb?.let(::Color)
-                                    ?: MaterialTheme.colorScheme.primary,
+                                // 课程标签取与主题相反的课程卡配色（与卡片/顶栏胶囊同源）；
+                                // 用户标签取 colorArgb，未挑色与缺表均回落主题 primary
+                                iconTint = if (tag.isCourse) {
+                                    courseTagColors[tag.name] ?: MaterialTheme.colorScheme.primary
+                                } else {
+                                    tag.entry?.colorArgb?.let(::Color)
+                                        ?: MaterialTheme.colorScheme.primary
+                                },
                             )
                         },
                         editing = tagEditing,

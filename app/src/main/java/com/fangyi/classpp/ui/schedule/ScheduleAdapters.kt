@@ -1,8 +1,10 @@
 package com.fangyi.classpp.ui.schedule
 
+import androidx.compose.ui.graphics.Color
 import com.fangyi.classpp.data.CourseOccurrence
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeSlotDef
 import java.util.Calendar
 import java.util.Date
@@ -47,6 +49,17 @@ internal fun List<CourseOccurrence>.toWeekCards(showInactive: Boolean): List<Cou
     map { it.toUiCourse() }
         .resolveWeekCards()
         .filter { showInactive || it.active }
+
+/**
+ * 课程标签配色表（课程名 → 课程卡配色）：激活课表按课程名去重。
+ * 取与当前主题**相反**的课程卡配色：浅色主题用深色卡配色（马卡龙原色作标签文字对比
+ * 不足），深色主题用浅色卡配色（深色卡配色在深底上过闷）。待办卡/浮层的课程标签胶囊、
+ * 顶栏标签胶囊、分组浮层的标签行 icon 与 TagChoosingCard 的课程标签区共用此口径
+ * （课表内查无同名课程时才由调用方回落主题 Primary）。
+ */
+internal fun Schedule.courseTagColors(darkTheme: Boolean): Map<String, Color> =
+    courses.distinctBy { it.name }
+        .associate { it.name to CourseColor.valueOf(it.color.name).barColor(dark = !darkTheme) }
 
 /** 编辑态草稿路径：与仓库路径共用同一套解析（编辑态一律显示全部课，不受显示开关影响） */
 internal fun List<CourseEntry>.toWeekCards(week: Int): List<Course> =

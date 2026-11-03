@@ -86,7 +86,6 @@ private val PropertySpacing = 12.dp
 private val TagSpacing = 4.dp
 private val TimeItemEndPadding = PropertySpacing - TagSpacing
 
-private val TagIconSize = 15.dp
 private val TimeIconSize = 16.dp
 private val FlagIconSize = 25.dp
 
@@ -114,7 +113,7 @@ private val CountdownEndSpacing = 16.dp
 private val CountdownExitSlide = 12.dp
 
 /**
- * 时间/截止/重复属性项：图标 16dp + 文本（同色），图标与文字相距 4dp（同 TagChip）。
+ * 时间/截止/重复属性项：图标 16dp + 文本（同色），图标与文字相距 4dp。
  * 待办时间固定 secondaryText（ic_clock）；截止时间按剩余天数取紧急色（ic_clock_alarm）；
  * 重复规则取 primary（ic_arrow_repeat）——图标与文字颜色始终一致。
  * 图标可空（收集箱两列紧凑卡的时间项不画 ic_clock，给 12sp 的窄卡省出文字宽度）。
@@ -156,44 +155,29 @@ internal fun TimeProperty(
 }
 
 /**
- * 单枚标签胶囊：标签色 10% 圆角底 + ic_tag 图标 + 标签名（图标与文字取标签色）——
- * TagChoosingCard 未选中胶囊同款配色语义。标签色由调用方按 [color] 注入
- * （TagChoosingCard 挑选的颜色；缺省主题 Primary）。
+ * 单枚标签胶囊：标签色 10% 圆角底 + 标签名（文字取标签色）——无图标、纯文字胶囊。
+ * 标签色由调用方按 [color] 注入（TagChoosingCard 挑选的颜色 / 课程卡配色；缺省主题 Primary）。
  * 底加水平内距（8dp）与上下内距（3dp，计入布局高度、撑起所在行）。
  * 卡片属性行（[NoteCard]）与待办详情浮层共用同一形态；外层间距由调用方排布。
  */
 @Composable
 internal fun TagChip(tag: String, color: Color = MaterialTheme.colorScheme.primary) {
-    Row(
+    Text(
+        text = tag,
+        style = ClassppTextTokens.tagChip.copy(color = color),
         modifier = Modifier
             .clip(TagChipShape)
             .background(color.copy(alpha = 0.1f))
             .padding(
-                start = TagChipPadding,
-                end = TagChipPadding,
-                top = TagChipVerticalPadding,
-                bottom = TagChipVerticalPadding,
+                horizontal = TagChipPadding,
+                vertical = TagChipVerticalPadding,
             ),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_tag),
-            contentDescription = null,
-            tint = color,
-            modifier = Modifier.size(TagIconSize),
-        )
-        Text(
-            text = tag,
-            style = ClassppTextTokens.tagChip.copy(color = color),
-        )
-    }
+    )
 }
 
 /**
  * 来源徽标：外部同步的待办在属性行显示来源（课程中心场景 = 课程名）——形态与 [TagChip]
- * 同构（10% 圆角底 + 同款内距），配色取中性 secondaryText、无图标：与用户标签
- * （ic_tag + primary）一眼区分。
+ * 同构（10% 圆角底 + 同款内距），配色取中性 secondaryText：与用户标签的标签色文字一眼区分。
  */
 @Composable
 internal fun SourceBadge(label: String) {
@@ -292,9 +276,9 @@ private fun CountdownExitSlot(
  *
  * - 颜色全部取自主题：卡片底 surface，标题 fieldLabel（onSurface），旗帜按 [urgency]
  *   档位取色（[TodoUrgency.flagColor]，同 UrgentFlagCard），勾选框 primary；
- * - [tagColors] 标签配色表（标签名 → 颜色）：标签胶囊底取标签色 10% 透明、图标与文字取
+ * - [tagColors] 标签配色表（标签名 → 颜色）：标签胶囊底取标签色 10% 透明、文字取
  *   标签色（TagChoosingCard 未选中胶囊同款）。配色由调用方从标签库解析（用户标签
- *   TagEntry.colorArgb）；表里没有的名字（含课程标签）回落主题 Primary；
+ *   TagEntry.colorArgb；课程标签取与主题相反的课程卡配色）；表里没有的名字回落主题 Primary；
  * - [sourceLabel] 来源徽标（外部同步的待办，如课程中心的课程名）：与标签胶囊同构但取
  *   中性 secondaryText、无图标，排在重复规则之后、用户标签之前；null 不渲染；
  * - [time] 待办时间（已格式化文本，如 "12:30"、"明天 14:00-16:00"）：ic_clock 图标
@@ -709,8 +693,8 @@ private fun NoteCardShowcase() {
             time = "12:30",
             onCheckedChange = {},
         )
-        // 标签配色：底 = 标签色 10%、图标与文字 = 标签色（TagChoosingCard 挑选的颜色，
-        // 调用方经 tagColors 注入）；「复习」不在配色表里 → 回落主题 Primary
+        // 标签配色：底 = 标签色 10%、文字 = 标签色（TagChoosingCard 挑选的颜色 /
+        // 课程卡配色，调用方经 tagColors 注入）；「复习」不在配色表里 → 回落主题 Primary
         NoteCard(
             title = "户口乔迁材料报送",
             time = "12:30",

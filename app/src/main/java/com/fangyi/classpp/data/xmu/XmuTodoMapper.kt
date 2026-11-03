@@ -57,6 +57,17 @@ object XmuTodoMapper {
     /** 判断本地待办是否来自课程中心（来源标识之外的防御性口径，退出清理也按它圈定） */
     fun isSyncedLocalId(id: String): Boolean = id.startsWith(ID_PREFIX)
 
+    /**
+     * 同步待办匹配到的课程标签：来源课程名（去首尾空格）在 [courseNames]（激活课表课程名集）
+     * 内时返回课表内的课程名（即「当前课表内有对应的课程」），否则 null；非课程中心来源恒 null。
+     */
+    fun matchedCourseTag(todo: Todo, courseNames: Set<String>): String? =
+        if (todo.source == SOURCE_XMU) {
+            todo.sourceDetail?.trim()?.takeIf { it in courseNames }
+        } else {
+            null
+        }
+
     /** 跳转链接：页面现有路由格式（推导自站内链接；平台改版则退化为课程主页，见指导 §2.4） */
     fun activityUrl(dto: XmuTodoDto): String =
         "https://lnt.xmu.edu.cn/course/${dto.courseId}/learning-activity#/${dto.id}"
@@ -126,4 +137,15 @@ object XmuTodoMapper {
         MessageDigest.getInstance("SHA-256")
             .digest(text.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
+}
+
+/**
+ * 展示用派生：课程中心同步的待办匹配到激活课表课程时，把对应课程标签直接并入 [Todo.tags]
+ * ——与手动勾选的课程标签完全同口径：卡片按普通标签胶囊渲染（tagColors 取课程卡配色）、
+ * 编辑/详情浮层显示为已选中、课程详情浮层按课程名关联待办也能命中。幂等；未匹配原样返回。
+ * 只在 UI 展示源上派生，不写回仓库（用户编辑保存时随 selectedTags 自然落库）。
+ */
+fun Todo.withMatchedCourseTag(courseNames: Set<String>): Todo {
+    val tag = XmuTodoMapper.matchedCourseTag(this, courseNames) ?: return this
+    return if (tag in tags) this else copy(tags = tags + tag)
 }

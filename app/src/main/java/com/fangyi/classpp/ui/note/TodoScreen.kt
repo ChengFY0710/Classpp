@@ -71,6 +71,7 @@ import com.fangyi.classpp.data.TRASH_RETENTION_DAYS
 import com.fangyi.classpp.data.comparator
 import com.fangyi.classpp.data.expandRepeatOccurrences
 import com.fangyi.classpp.data.xmu.XmuTodoMapper
+import com.fangyi.classpp.data.xmu.withMatchedCourseTag
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
@@ -100,11 +101,13 @@ import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.motion.RubberBandLazyVerticalStaggeredGrid
 import com.fangyi.classpp.ui.motion.TabTransitionState
+import com.fangyi.classpp.ui.schedule.courseTagColors
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.CardSectionTitleSpacing
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
 import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -252,29 +255,56 @@ fun TodoScreen(
     // Haze 管整条顶栏的磨砂，Backdrop 只喂顶栏胶囊（OverlaySheet 顶栏按钮同款结构）
     val glassPillsEnabled = isGlassStyleEnabled()
     val topBarPillBackdrop = rememberGlassBackdrop(MaterialTheme.colorScheme.background)
-    // 活跃待办：仓库已剔除最近删除与已归档（软删条目只在 deletedTodos 流、归档条目只在
-    // archivedTodos 流里，分别供回收站页与已归档页使用）
-    val todos by repository.todos.collectAsState()
-    val deletedTodos by repository.deletedTodos.collectAsState()
-    val archivedTodos by repository.archivedTodos.collectAsState()
+    // 活跃待办（仓库原始值）：仓库已剔除最近删除与已归档（软删条目只在 deletedTodos 流、
+    // 归档条目只在 archivedTodos 流里，分别供回收站页与已归档页使用）；展示用的派生列表
+    // 在下方课程标签名集就绪后统一生成（见 todos / deletedTodos / archivedTodos）
+    val rawTodos by repository.todos.collectAsState()
+    val rawDeletedTodos by repository.deletedTodos.collectAsState()
+    val rawArchivedTodos by repository.archivedTodos.collectAsState()
 
-    // 标签配色表（标签名 → 颜色）：与 TagChoosingCard 同源，用户自定义标签取
-    // TagEntry.colorArgb（null = 跟随主题 Primary）。**仅用户标签进表**——课程标签
-    // 在卡片上不取课程卡配色，跟随默认 Primary（10% 底 + Primary 字）
+    // 标签配色表（标签名 → 颜色）：用户自定义标签取 TagEntry.colorArgb（null = 跟随主题
+    // Primary）；课程标签取与主题相反的课程卡配色。两表合并后供卡片标签胶囊、
+    // 顶栏标签胶囊与详情浮层共用；表里没有的名字由 NoteCard 回落主题 Primary
     val userTagEntries by remember(tagRepository) {
         tagRepository?.tags ?: MutableStateFlow(emptyList())
     }.collectAsState()
     val primaryColor = MaterialTheme.colorScheme.primary
-    val tagColorMap = remember(userTagEntries, primaryColor) {
+    val userTagColorMap = remember(userTagEntries, primaryColor) {
         userTagEntries.associate { it.name to (it.colorArgb?.let(::Color) ?: primaryColor) }
     }
     // 课程标签：由激活课表按课程名去重派生（不入库，同 NewTodoSheet 的 TagChoosingCard 约定），
-    // 分组浮层标签卡以只读锁定行展示——icon 与顶栏胶囊都取主题 Primary
+    // 分组浮层标签卡以只读锁定行展示——icon 取主题 Primary，卡片/顶栏胶囊取课程卡配色
     val activeSchedule by remember(scheduleRepository) {
         scheduleRepository?.activeSchedule ?: MutableStateFlow<Schedule?>(null)
     }.collectAsState()
     val courseTagNames = remember(activeSchedule) {
         activeSchedule?.courses?.distinctBy { it.name }?.map { it.name }.orEmpty()
+    }
+    // 课程标签配色（课程名 → 课程卡配色）：取与主题相反的课程卡配色——浅色主题用深色卡
+    // 配色（马卡龙原色作标签文字对比不足），深色主题用浅色卡配色（深卡配色在深底上过闷）
+    val dark = MaterialTheme.isDarkTheme
+    val courseTagColorMap = remember(activeSchedule, dark) {
+        activeSchedule?.courseTagColors(dark) ?: emptyMap()
+    }
+    // 合并配色表：课程标签优先（同名用户标签与课程标签撞名时以课程卡配色为准）
+    val tagColorMap = remember(userTagColorMap, courseTagColorMap) {
+        userTagColorMap + courseTagColorMap
+    }
+    // 课程标签名集（匹配用）：课程中心同步的待办命中时直接并入其标签列表——与手动勾选
+    // 课程标签完全同口径（卡片按普通标签胶囊渲染、编辑/详情浮层显示为已选中、标签页与
+    // 课程详情浮层的按标签关联都能命中），见 withMatchedCourseTag
+    val courseTagNameSet = remember(courseTagNames) { courseTagNames.toSet() }
+    // 展示用待办（三份派生列表）：同步待办匹配到激活课表课程时补上对应课程标签（幂等，
+    // 未匹配原样）。页面过滤、分组计数、编辑初值、回收站/已归档页全部走派生列表——
+    // 课程标签的挂载处处一致；动作（勾选/删除/编辑落库）只按 id 定位，不受派生影响
+    val todos = remember(rawTodos, courseTagNameSet) {
+        rawTodos.map { it.withMatchedCourseTag(courseTagNameSet) }
+    }
+    val deletedTodos = remember(rawDeletedTodos, courseTagNameSet) {
+        rawDeletedTodos.map { it.withMatchedCourseTag(courseTagNameSet) }
+    }
+    val archivedTodos = remember(rawArchivedTodos, courseTagNameSet) {
+        rawArchivedTodos.map { it.withMatchedCourseTag(courseTagNameSet) }
     }
     // 排序状态：默认创建时间降序（创建早的在前）
     var sort by rememberSaveable { mutableStateOf(TodoSort.Created) }
@@ -924,8 +954,8 @@ fun TodoScreen(
                         // 标签特殊分组页胶囊（特殊胶囊之后、置顶分组之前，常驻）+ 点击切换：
                         // 已选中 = 退出关闭（胶囊消失），未选中 = 回到该页（顺带退出特殊分组页）
                         tagPillName = selectedTag,
-                        // 胶囊强调色 = 标签色（colorArgb null 已在 tagColorMap 兜底为 primary；
-                        // 查不到的残留名同样兜底 primary）
+                        // 胶囊强调色 = 标签色（用户标签 colorArgb / 课程标签课程卡配色，
+                        // 已在 tagColorMap 兜底；查不到的残留名同样兜底 primary）
                         tagPillColor = selectedTag?.let { tagColorMap[it] },
                         tagPillSelected = tagActive,
                         onTagPillClick = {
@@ -1329,6 +1359,8 @@ fun TodoScreen(
             groups = groups,
             tags = userTagEntries,
             courseTags = courseTagNames,
+            // 课程标签行的行首 icon 取与主题相反的课程卡配色（与卡片/顶栏胶囊同源）
+            courseTagColors = courseTagColorMap,
             visible = groupsVisible,
             onDismiss = { groupsVisible = false },
             onDismissed = { groupsMounted = false },
@@ -2101,11 +2133,16 @@ private fun TodoList(
     }
 }
 
-/** 来源徽标文本：课程中心同步的待办显示课程名（缺失时回落「课程中心」）；用户手建无徽标 */
+/**
+ * 来源徽标文本：课程中心同步的待办显示课程名（缺失时回落「课程中心」）；用户手建无徽标。
+ * 与 [tags] 重名时不显示——匹配到课表课程的同步待办已直接打上课程标签（见
+ * [withMatchedCourseTag]），同名徽标不再重复；用户手动打了同名标签的同理。
+ */
 @Composable
 private fun Todo.sourceLabel(): String? =
     if (source == XmuTodoMapper.SOURCE_XMU) {
-        sourceDetail?.takeIf { it.isNotBlank() } ?: stringResource(R.string.xmu_source_badge)
+        (sourceDetail?.takeIf { it.isNotBlank() } ?: stringResource(R.string.xmu_source_badge))
+            .takeIf { it !in tags }
     } else {
         null
     }
@@ -2114,7 +2151,8 @@ private fun Todo.sourceLabel(): String? =
  * 单条待办卡片：[Todo] → [NoteCard] 的字段接线——标题、完成态与勾选直通，
  * 待办时间走 [cardTimeText]、截止时间走 [deadlineCardText]（颜色由 [deadlineColor]
  * 按剩余天数映射）、重复规则走 [repeatCardText]（primary 蓝，排在两个时间项之后），
- * 标签按模型透传并经 [tagColors] 着色（TagChoosingCard 挑选的颜色，见 tagColorMap）；
+ * 标签按模型透传并经 [tagColors] 着色（用户标签取 TagChoosingCard 挑选的颜色、课程标签
+ * 取课程卡配色，见 tagColorMap）；
  * 紧急旗按档位透传；[overdue] 为真（在已逾期组）时标题标红。
  * [Todo.countdown] 开启时把剩余天数交给 [NoteCard.countdownDays]，卡片左区显示倒计时
  * （天数口径与截止配色同源，见 [deadlineDaysLeft]）。

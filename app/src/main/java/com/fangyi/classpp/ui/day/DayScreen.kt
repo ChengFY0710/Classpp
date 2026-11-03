@@ -126,6 +126,7 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.sortedFor
+import com.fangyi.classpp.data.xmu.withMatchedCourseTag
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.ai.AiChatOverlay
 import com.fangyi.classpp.ui.ai.AiSettingsScreen
@@ -168,6 +169,7 @@ import com.fangyi.classpp.ui.note.toAbsoluteDateText
 import com.fangyi.classpp.ui.schedule.CourseColor
 import com.fangyi.classpp.ui.schedule.CourseDetailSheet
 import com.fangyi.classpp.ui.schedule.CourseTodoSheet
+import com.fangyi.classpp.ui.schedule.courseTagColors
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.DayCardShape
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
@@ -495,23 +497,25 @@ internal fun DayScreen(
     // datesCoveredWithin）。网格窗口由 DayCalendar 回报（锚点月翻页时变化，组合后首帧
     // 才到——首帧按无小点渲染，与仓库异步装载同拍）；待办回流实时刷新。
     val todosState = todoRepository?.todos?.collectAsState()
-    val todos = todosState?.value ?: emptyList()
+    // 仓库原始值：展示用的派生列表在下方课表数据就绪后统一生成（见 todos）
+    val rawTodos = todosState?.value ?: emptyList()
     // 待办分组列表（编辑待办浮层的选分组浮层用）：与待办同源（TodoRepository StateFlow）
     val groupsState = todoRepository?.groups?.collectAsState()
     val groups = groupsState?.value ?: emptyList()
     var calendarRange by remember { mutableStateOf<Pair<IsoDate, IsoDate>?>(null) }
-    val todoMarkedDates = remember(todos, calendarRange) {
+    val todoMarkedDates = remember(rawTodos, calendarRange) {
         val range = calendarRange ?: return@remember emptySet<IsoDate>()
-        todos.datesCoveredWithin(range.first, range.second)
+        rawTodos.datesCoveredWithin(range.first, range.second)
     }
 
     // 标签配色表（标签名 → 颜色）：待办提醒卡的标签胶囊取色，与待办页同源——用户标签
-    // 取 TagEntry.colorArgb（null = 跟随主题 Primary），仅用户标签进表
+    // 取 TagEntry.colorArgb（null = 跟随主题 Primary）；课程标签取与主题相反的课程卡配色
+    // （见下方 courseTagColorMap）。两表合并后供提醒卡与详情浮层共用
     val userTagEntries by remember(tagRepository) {
         tagRepository?.tags ?: MutableStateFlow(emptyList())
     }.collectAsState()
     val primaryColor = MaterialTheme.colorScheme.primary
-    val tagColorMap = remember(userTagEntries, primaryColor) {
+    val userTagColorMap = remember(userTagEntries, primaryColor) {
         userTagEntries.associate { it.name to (it.colorArgb?.let(::Color) ?: primaryColor) }
     }
     // 待办提醒卡的勾选完成落库：回显与停一拍由 DayTodoAlert 负责，这里只做路由——
@@ -574,6 +578,26 @@ internal fun DayScreen(
     // 故不在页面级提前算好某一天）。时刻对表：前台每 30s 一跳 + 回前台立即对表（进程冻结
     // 期间 delay 不走，与 LocalToday 同款兜底）。
     val scheduleState = scheduleRepository?.activeSchedule?.collectAsState()
+    // 课程标签名集（匹配用）：课程中心同步的待办命中激活课表课程时直接并入标签列表——
+    // 与待办页同一派生口径（见 withMatchedCourseTag）：待办提醒卡/时间轴卡的标签胶囊、
+    // 课程详情浮层的按课程名关联、编辑浮层的标签初值都从这里拿到课程标签
+    val courseTagNameSet = remember(scheduleState?.value) {
+        scheduleState?.value?.courses?.map { it.name }?.toSet() ?: emptySet()
+    }
+    // 课程标签配色（课程名 → 课程卡配色）：取与主题相反的课程卡配色——浅色主题用深色卡
+    // 配色（马卡龙原色作标签文字对比不足），深色主题用浅色卡配色（深卡配色在深底上过闷）
+    val courseTagColorMap = remember(scheduleState?.value, darkTheme) {
+        scheduleState?.value?.courseTagColors(darkTheme) ?: emptyMap()
+    }
+    // 合并配色表：课程标签优先（同名用户标签与课程标签撞名时以课程卡配色为准）
+    val tagColorMap = remember(userTagColorMap, courseTagColorMap) {
+        userTagColorMap + courseTagColorMap
+    }
+    // 展示用待办：同步待办匹配到激活课表课程时补上对应课程标签（幂等，未匹配原样；
+    // 勾选/编辑落库只按 id 定位，不受派生影响）
+    val todos = remember(rawTodos, courseTagNameSet) {
+        rawTodos.map { it.withMatchedCourseTag(courseTagNameSet) }
+    }
     // 对表结果以 State 透传到内容区：只有今天的提醒卡槽、时间轴主体与今天的待办行读取，
     // 30s 一跳不重组横滑三页的整页内容（读取点见 DayDateContent 的叶子参数）
     val nowMinute = remember { mutableIntStateOf(nowMinuteOfDay()) }

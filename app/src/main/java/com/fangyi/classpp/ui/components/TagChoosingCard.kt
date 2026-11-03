@@ -83,9 +83,8 @@ private val TagIconSize = 14.dp
 /** 删除菜单与标签之间的缝隙 */
 private val DeletePopupGap = 8.dp
 
-/** 未选中胶囊的底色透明度：用户标签 10%；课程标签 20%（底稍实一点区分来源） */
-private const val UserTagAlpha = 0.1f
-private const val CourseTagAlpha = 0.2f
+/** 未选中胶囊的底色透明度：用户标签与课程标签统一 10% */
+private const val TagBackgroundAlpha = 0.1f
 
 /**
  * 标签选择卡：白卡内「输入添加自定义标签 + 横滑标签行 + 可展开的课程标签区」。
@@ -373,8 +372,6 @@ fun TagChoosingCard(
                                 item = tag,
                                 selected = tag.name in selectedNames,
                                 onClick = { toggleSelection(tag.name) },
-                                // 课程标签底稍实（20%），与用户标签（10%）区分来源
-                                backgroundAlpha = CourseTagAlpha,
                             )
                         }
                     }
@@ -401,7 +398,7 @@ fun TagChoosingCard(
 }
 
 /**
- * 标签胶囊：标签色透明度底 + 标签色字（透明度见 [backgroundAlpha]，用户/课程标签不同）；
+ * 标签胶囊：标签色 10% 透明度底 + 标签色字（用户/课程标签同规格）；
  * 选中为标签色实心底 + 白字（图标同白）。
  * 用户标签经 [onLongClick] 长按上报删除请求（带胶囊当时的窗口坐标作菜单锚点）；
  * 课程标签不可删，不传即无长按响应。
@@ -411,8 +408,6 @@ private fun TagCapsule(
     item: TagItem,
     selected: Boolean,
     onClick: () -> Unit,
-    // 未选中态的底色透明度：用户标签 [UserTagAlpha]、课程标签 [CourseTagAlpha]
-    backgroundAlpha: Float = UserTagAlpha,
     onLongClick: ((Rect) -> Unit)? = null,
     // false = 不吃点击与长按（折叠快照期的占位胶囊）
     enabled: Boolean = true,
@@ -429,7 +424,7 @@ private fun TagCapsule(
             // 标签胶囊按压放大单独调大到 1.10（与顶栏按钮同规格，不随全局默认）
             .pressFeedback(press, PillShape, scale = 1.10f)
             .clip(PillShape)
-            .background(if (selected) item.color else item.color.copy(alpha = backgroundAlpha))
+            .background(if (selected) item.color else item.color.copy(alpha = TagBackgroundAlpha))
             .combinedClickable(
                 interactionSource = press,
                 indication = null,
