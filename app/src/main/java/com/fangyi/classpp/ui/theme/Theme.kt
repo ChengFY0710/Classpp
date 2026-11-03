@@ -16,7 +16,7 @@ import com.fangyi.classpp.ui.LocalTodayState
 import com.fangyi.classpp.ui.motion.NoOpIndication
 import com.fangyi.classpp.ui.rememberTodayState
 
-// 显式装配的槽位之外，secondary / tertiary / onError / outlineVariant 等停留 M3 紫色基线：
+// 显式装配的槽位之外，secondary / tertiary / outlineVariant 等停留 M3 紫色基线：
 // 当前业务零消费属有意留白，任何槽位使用前必须先在此显式装配（见《颜色使用规范》第 12 节）。
 private val LightColorScheme = lightColorScheme(
     primary = Primary,
@@ -33,6 +33,7 @@ private val LightColorScheme = lightColorScheme(
     surfaceContainerHigh = SurfaceContainerHigh,
     outline = Outline,
     error = Error,
+    onError = OnPrimary,
     errorContainer = ErrorContainer,
     onErrorContainer = OnErrorContainer,
     scrim = Scrim,
@@ -51,6 +52,7 @@ private val DarkColorScheme = darkColorScheme(
     surfaceContainerHigh = DarkSurfaceContainerHigh,
     outline = DarkOutline,
     error = DarkError,
+    onError = DarkOnPrimary,
     errorContainer = DarkErrorContainer,
     onErrorContainer = DarkOnErrorContainer,
     scrim = DarkScrim,

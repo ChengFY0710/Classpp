@@ -75,7 +75,7 @@ val DarkHazeTint = Color.Black
 // 对应浅色「页面灰底 → 白卡」的层级关系反转。Primary 提亮为 #479CFF，
 // 保证深底上文字/图标对比达标。
 val DarkPrimary = Color(0xFF479CFF)
-val DarkOnPrimary = Color(0xFF003062)
+val DarkOnPrimary = Color(0xFFE4E7EA)
 val DarkPrimaryContainer = Color(0x45479CFF)
 val DarkOnPrimaryContainer = Color(0x339AA2AC)
 
