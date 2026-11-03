@@ -57,11 +57,15 @@ private val CardPaddingVertical = 3.dp
 /** 行预算的安全余量：吸收 dp→px 取整与课程名/教师之间的 1dp 间距 */
 private val CardBudgetSafety = 1.dp
 
+/** 卡内文本行之间的间距：课程名↔教师、教师↔地点（教师行显示时计入内容高度） */
+private val CardLineGap = 1.dp
+
 /**
  * 可见行（起止时间、教师按需）对应的内容高度：与行预算的固定开销同源——
- * 上下内边距 3dp × 2 + 1dp 间距/安全余量，加上各可见文本行的 lineHeight × fontScale。
- * 默认字号下：完整 87dp（显示教师）/ 71dp（关闭教师），去掉结束时间 71/55，
- * 只剩课程名/教师/地点 55/39。
+ * 上下内边距 3dp × 2 + 1dp 间距/安全余量 + 教师行存在时的 1dp 教师↔地点间距，
+ * 加上各可见文本行的 lineHeight × fontScale。
+ * 默认字号下：完整 88dp（显示教师）/ 71dp（关闭教师），去掉结束时间 72/55，
+ * 只剩课程名/教师/地点 56/39。
  */
 internal fun cardContentHeightDp(
     fontScale: Float,
@@ -75,7 +79,10 @@ internal fun cardContentHeightDp(
     val location = ClassppTextTokens.courseCardLocation.lineHeight.value
     val lines = (if (showStartTime) meta else 0f) + title + location +
         (if (showTeacher) teacher else 0f) + (if (showEndTime) meta else 0f)
-    return (CardPaddingVertical * 2 + CardBudgetSafety).value + lines * fontScale
+    // 课程名↔教师的 1dp 已计入安全余量；教师行显示时再多教师↔地点的 1dp
+    val teacherLocationGap = if (showTeacher) CardLineGap.value else 0f
+    return (CardPaddingVertical * 2 + CardBudgetSafety).value + teacherLocationGap +
+        lines * fontScale
 }
 
 /** 卡内起止时间的收起结果：结束时间先收、开始时间后收 */
@@ -188,7 +195,7 @@ private val CardLineTiers = listOf(
  *
  * 行成本 = 各自 Text 的 lineHeight px（[nameLinePx]/[locationLinePx]，调用处已乘 fontScale）；
  * 连保底档都装不下也返回 (1,1)，溢出交给 maxLines + 省略号。
- * 默认行高（5 天 150 / 7 天 160dp，预算约 95/105）下，实测 3/3 的课分别落在 (2,3) / (3,3)，
+ * 默认行高（5 天 150 / 7 天 160dp，预算约 94/104）下，实测 3/3 的课分别落在 (2,3) / (3,3)，
  * 与旧版结果一致；课名实测只占 1 行时，预算可还给地点显示更多实际行。
  */
 internal fun allocateCardLines(
@@ -234,7 +241,7 @@ private fun rememberNaturalLineCount(text: String, style: TextStyle, widthPx: Fl
  *
  * 自上而下：开始时间（竖条同色）→ 课程名 → 教师 → @楼名 房间，底部对齐结束时间。
  * 卡高不足时按「结束时间 → 开始时间」的顺序收起（阈值见 [cardContentHeightDp]）：
- * 显示教师时完整内容 87dp、去掉结束时间 71dp、只剩课程名/教师/地点 55dp；
+ * 显示教师时完整内容 88dp、去掉结束时间 72dp、只剩课程名/教师/地点 56dp；
  * 关闭教师时 71/55/39dp。最终只留三行各 1 行，网格行高由 [minCardRowHeight] 钳住，
  * 卡片不会再缩到内容被裁切。
  * 课程名/地点的行数上限 = min(实测自然行数, 预算放得下的档位)（[allocateCardLines]）：
@@ -412,7 +419,7 @@ fun CourseCard(
                             maxLines = plan.lines.name,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Spacer(modifier = Modifier.size(1.dp))
+                        Spacer(modifier = Modifier.size(CardLineGap))
                         // 教师留空时不占位，地点直接上移
                         if (hasTeacher) {
                             Text(
@@ -423,6 +430,7 @@ fun CourseCard(
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Start,
                             )
+                            Spacer(modifier = Modifier.size(CardLineGap))
                         }
                         // 上课地点：档位封顶之外还受实测自然行数约束（见 allocateCardLines）
                         Text(
@@ -747,7 +755,7 @@ private fun SevenDayRowPreview() {
 }
 
 /**
- * 收起起止时间的三个阶段（显示教师）：87dp 完整、80dp 只收结束时间、55dp 只剩
+ * 收起起止时间的三个阶段（显示教师）：88dp 完整、80dp 只收结束时间、56dp 只剩
  * 课程名/教师/地点，用于在 Studio 预览里检查阈值切换。
  */
 @Preview(showBackground = true, name = "收起起止时间", widthDp = 360)
@@ -760,7 +768,7 @@ private fun CourseCardCollapsedPreview() {
                 .background(MaterialTheme.colorScheme.background),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            listOf(87.dp, 80.dp, 55.dp).forEach { height ->
+            listOf(88.dp, 80.dp, 56.dp).forEach { height ->
                 CourseCard(
                     course = MockCourses[4],
                     slot = DefaultTimeSlots[1],

@@ -6,22 +6,22 @@ import org.junit.Test
 
 /**
  * 卡片高度不足时逐级收起起止时间：
- * 显示教师时完整内容 87dp / 去掉结束时间 71dp / 只留课程名·教师·地点 55dp；
- * 关闭教师时 71/55/39dp；网格行高下限随教师开关（60/44dp，默认字号），
+ * 显示教师时完整内容 88dp / 去掉结束时间 72dp / 只留课程名·教师·地点 56dp；
+ * 关闭教师时 71/55/39dp；网格行高下限随教师开关（61/44dp，默认字号），
  * 滑条可调下限（触发当前最低高度的倍率）见 CardHeightMinScaleTest。
  */
 class CourseCardCollapseTest {
 
-    private val fullWithTeacher = cardContentHeightDp(1f, true, true, true)   // 87
-    private val withoutEndWithTeacher = cardContentHeightDp(1f, true, true, false) // 71
+    private val fullWithTeacher = cardContentHeightDp(1f, true, true, true)   // 88
+    private val withoutEndWithTeacher = cardContentHeightDp(1f, true, true, false) // 72
     private val fullWithoutTeacher = cardContentHeightDp(1f, false, true, true) // 71
     private val withoutEndWithoutTeacher = cardContentHeightDp(1f, false, true, false) // 55
 
     @Test
     fun `content heights follow visible rows`() {
-        assertEquals(87f, fullWithTeacher, 0.001f)
-        assertEquals(71f, withoutEndWithTeacher, 0.001f)
-        assertEquals(55f, cardContentHeightDp(1f, true, false, false), 0.001f)
+        assertEquals(88f, fullWithTeacher, 0.001f)
+        assertEquals(72f, withoutEndWithTeacher, 0.001f)
+        assertEquals(56f, cardContentHeightDp(1f, true, false, false), 0.001f)
 
         assertEquals(71f, fullWithoutTeacher, 0.001f)
         assertEquals(55f, withoutEndWithoutTeacher, 0.001f)
@@ -30,9 +30,9 @@ class CourseCardCollapseTest {
 
     @Test
     fun `content heights scale with font scale`() {
-        assertEquals(111f, cardContentHeightDp(1.3f, true, true, true), 0.001f)
-        assertEquals(90.2f, cardContentHeightDp(1.3f, true, true, false), 0.001f)
-        assertEquals(69.4f, cardContentHeightDp(1.3f, true, false, false), 0.001f)
+        assertEquals(112f, cardContentHeightDp(1.3f, true, true, true), 0.001f)
+        assertEquals(91.2f, cardContentHeightDp(1.3f, true, true, false), 0.001f)
+        assertEquals(70.4f, cardContentHeightDp(1.3f, true, false, false), 0.001f)
 
         assertEquals(90.2f, cardContentHeightDp(1.3f, false, true, true), 0.001f)
         assertEquals(69.4f, cardContentHeightDp(1.3f, false, true, false), 0.001f)
@@ -43,19 +43,19 @@ class CourseCardCollapseTest {
     fun `end time hides first then start time with teacher`() {
         assertEquals(
             CardRowVisibility(showStartTime = true, showEndTime = true),
-            resolveCardVisibility(87f, fullWithTeacher, withoutEndWithTeacher),
+            resolveCardVisibility(88f, fullWithTeacher, withoutEndWithTeacher),
         )
         assertEquals(
             CardRowVisibility(showStartTime = true, showEndTime = false),
-            resolveCardVisibility(86.9f, fullWithTeacher, withoutEndWithTeacher),
+            resolveCardVisibility(87.9f, fullWithTeacher, withoutEndWithTeacher),
         )
         assertEquals(
             CardRowVisibility(showStartTime = true, showEndTime = false),
-            resolveCardVisibility(71f, fullWithTeacher, withoutEndWithTeacher),
+            resolveCardVisibility(72f, fullWithTeacher, withoutEndWithTeacher),
         )
         assertEquals(
             CardRowVisibility(showStartTime = false, showEndTime = false),
-            resolveCardVisibility(70.9f, fullWithTeacher, withoutEndWithTeacher),
+            resolveCardVisibility(71.9f, fullWithTeacher, withoutEndWithTeacher),
         )
     }
 
@@ -81,9 +81,9 @@ class CourseCardCollapseTest {
 
     @Test
     fun `row height floor keeps name teacher and location visible`() {
-        assertEquals(60f, minCardRowHeight(showTeacher = true, fontScale = 1f).value, 0.001f)
+        assertEquals(61f, minCardRowHeight(showTeacher = true, fontScale = 1f).value, 0.001f)
         assertEquals(44f, minCardRowHeight(showTeacher = false, fontScale = 1f).value, 0.001f)
-        assertEquals(74.4f, minCardRowHeight(showTeacher = true, fontScale = 1.3f).value, 0.001f)
+        assertEquals(75.4f, minCardRowHeight(showTeacher = true, fontScale = 1.3f).value, 0.001f)
         assertEquals(53.6f, minCardRowHeight(showTeacher = false, fontScale = 1.3f).value, 0.001f)
     }
 
@@ -117,9 +117,9 @@ class CourseCardCollapseTest {
 
     @Test
     fun `grid row heights clamp to the content floor`() {
-        // 30 分钟节 × 0.5 倍远低于内容下限 → 行高仍为 60/44dp
+        // 30 分钟节 × 0.5 倍远低于内容下限 → 行高仍为 61/44dp
         assertEquals(
-            60f,
+            61f,
             slotRowHeight(30, 5, 0.5f, minCardRowHeight(true, fontScale = 1f)).value,
             0.001f,
         )
@@ -149,8 +149,8 @@ class CourseCardCollapseTest {
         assertEquals(CardRowVisibility(true, false), resolveCardVisibility(67.9f, full, withoutEnd))
         assertEquals(CardRowVisibility(true, false), resolveCardVisibility(52f, full, withoutEnd))
         assertEquals(CardRowVisibility(false, false), resolveCardVisibility(51.9f, full, withoutEnd))
-        // 网格行高下限下：显示教师 55dp 仍留开始时间；关闭教师 39dp 只剩加号
-        assertEquals(CardRowVisibility(true, false), resolveCardVisibility(55f, full, withoutEnd))
+        // 网格行高下限下：显示教师 56dp 仍留开始时间；关闭教师 39dp 只剩加号
+        assertEquals(CardRowVisibility(true, false), resolveCardVisibility(56f, full, withoutEnd))
         assertEquals(CardRowVisibility(false, false), resolveCardVisibility(39f, full, withoutEnd))
     }
 }

@@ -104,7 +104,7 @@ private val TitlePropertySpacing = 2.dp
  * 倒计时（[CountdownLabel]）：数字 [ClassppTextTokens.countdownNumber] 半粗突出，单位与「逾期」
  * 前缀 [ClassppTextTokens.countdownUnit] 收小；倒计时与右侧内容列相距 [CountdownEndSpacing]（沿用紧急旗后的节奏）。
  */
-private val CountdownEndSpacing = 16.dp
+private val CountdownEndSpacing = 12.dp
 
 /**
  * 倒计时完成退场的左移幅度（CountdownExitSlot）：标签淡出时向卡边漂移的距离——

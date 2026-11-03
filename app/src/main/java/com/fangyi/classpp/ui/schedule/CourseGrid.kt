@@ -105,7 +105,7 @@ internal fun slotRowHeight(
 
 /**
  * 卡片内容驱动的行高下限：收起起止时间后仍要放下课程名、教师（可选）、地点各 1 行。
- * 默认字号下显示教师 60dp、关闭教师 44dp，系统字体放大时同步增长；
+ * 默认字号下显示教师 61dp、关闭教师 44dp，系统字体放大时同步增长；
  * 网格用它作为实际下限，卡片不会再缩到内容被裁切。
  */
 internal fun minCardRowHeight(showTeacher: Boolean, fontScale: Float): Dp =
@@ -118,7 +118,7 @@ internal fun minCardRowHeight(showTeacher: Boolean, fontScale: Float): Dp =
 
 /**
  * 当前课表下「卡片高度触发最低高度」的倍率：最短一节按比例恰好降到 [minCardRowHeight] 时的倍率，
- * 向下取到 0.01。最低高度随「显示教师」开关变（60/44dp），因此下限也随开关重算；
+ * 向下取到 0.01。最低高度随「显示教师」开关变（61/44dp），因此下限也随开关重算；
  * 再低只会让最短节进入行高下限、更长节继续缩短，破坏卡片高度与时间的比例，故作为滑条下限。
  * 结果钳在 [CardHeightPreferences.Range] 内（极短节封顶 1.5）。
  */

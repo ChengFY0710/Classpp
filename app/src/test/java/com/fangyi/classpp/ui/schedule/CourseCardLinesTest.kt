@@ -11,7 +11,7 @@ import org.junit.Test
  * 短内容不再为空行预留空间、长内容才被截断。默认 wanted = 6/6 时与旧行为逐值一致（回归基线）。
  *
  * 行成本 = lineHeight px。偏好序测试用课程名 16 / 地点 14；生产值两者均 16，
- * 默认预算约 95（5 天）/ 105（7 天）。
+ * 默认预算约 94（5 天）/ 104（7 天）。
  */
 class CourseCardLinesTest {
     private val nameLine = 16f
@@ -83,10 +83,10 @@ class CourseCardLinesTest {
     @Test
     fun productionBudgetsAfterStage3() {
         // 阶段 3：课程名/地点/元信息行高均为 16sp，实测 3/3 时与旧档位逐值一致
-        // 5 天行高 150dp 扣 7dp 与 3×16dp → 95
-        assertEquals(CardLines(2, 3), allocateProduction(95f, name = 3, location = 3))
-        // 7 天行高 160dp → 105，刚好放下 3 行课程名 + 3 行地点
-        assertEquals(CardLines(3, 3), allocateProduction(105f, name = 3, location = 3))
+        // 5 天行高 150dp 扣 8dp（上下内距 + 安全余量 + 教师↔地点间距）与 3×16dp → 94
+        assertEquals(CardLines(2, 3), allocateProduction(94f, name = 3, location = 3))
+        // 7 天行高 160dp → 104，刚好放下 3 行课程名 + 3 行地点
+        assertEquals(CardLines(3, 3), allocateProduction(104f, name = 3, location = 3))
     }
 
     @Test
@@ -101,9 +101,9 @@ class CourseCardLinesTest {
 
     @Test
     fun shortNameFreesBudgetForMoreLocation() {
-        // 生产预算 95：实测课名 1 行时，地点可以放到 4 行（(1,4)=80 ≤ 95，(1,5)=96 超）
+        // 生产预算 94：实测课名 1 行时，地点可以放到 4 行（(1,4)=80 ≤ 94，(1,5)=96 超）
         // 旧档位不看实际内容，同样预算只会给 (2,3) 并截掉第 4 行地点
-        assertEquals(CardLines(1, 4), allocateProduction(95f, name = 1, location = 6))
+        assertEquals(CardLines(1, 4), allocateProduction(94f, name = 1, location = 6))
         assertEquals(CardLines(1, 4), allocateProduction(95f, name = 1, location = 4))
     }
 
