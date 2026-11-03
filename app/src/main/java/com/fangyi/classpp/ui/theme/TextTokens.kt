@@ -140,6 +140,10 @@ object ClassppTextTokens {
     val countdownNumber = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.SemiBold).tabularNumbers()
     /** 倒计时单位：14sp Normal，等宽数字。 */
     val countdownUnit = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal).tabularNumbers()
+
+    // ---------- 头像族 ----------
+    /** 账户头像圆内首字：20sp SemiBold，行高 24 与圆形留白同心（设置-账号与同步连接卡）。 */
+    val avatarInitial = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp, letterSpacing = 0.sp)
 }
 
 /**
