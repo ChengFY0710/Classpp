@@ -67,6 +67,7 @@ import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetShape
 import com.fangyi.classpp.ui.theme.TopBarRowHorizontalPadding
+import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.glassPressFeedback
 import com.fangyi.classpp.ui.theme.glassSurface
@@ -127,6 +128,9 @@ data class SheetTopAction(
     val containerColor: Color,
     val contentColor: Color,
     val onClick: () -> Unit,
+    // 玻璃模式下的内容色：默认同 [contentColor]（白色玻璃内容不变）；
+    // primary/error 染色玻璃由调用方传 ClassppColors.onPrimaryGlass
+    val contentColorGlass: Color = contentColor,
 )
 
 /**
@@ -567,6 +571,14 @@ private fun OverlaySheetTopBar(
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
 ) {
+    // 玻璃染色后底材偏暗：primary 确认胶囊换玻璃前景色；白色玻璃动作胶囊沿用原内容色
+    val confirmContentColor = if (buttonBackdrop != null) {
+        MaterialTheme.classppColors.onPrimaryGlass
+    } else {
+        MaterialTheme.colorScheme.onPrimary
+    }
+    val actionContentColor =
+        if (buttonBackdrop != null) rightAction.contentColorGlass else rightAction.contentColor
     // Haze 2：Style 在组合期构建（tint 由 hazeTopBarStyle 内部读主题）
     Column(
         modifier = modifier
@@ -626,7 +638,7 @@ private fun OverlaySheetTopBar(
                         label = rightAction.label,
                         icon = rightAction.icon,
                         containerColor = rightAction.containerColor,
-                        contentColor = rightAction.contentColor,
+                        contentColor = actionContentColor,
                         modifier = Modifier.height(TopBarPillHeight),
                         iconAtEnd = true,
                         backdrop = buttonBackdrop,
@@ -639,7 +651,7 @@ private fun OverlaySheetTopBar(
                         label = rightAction.label,
                         icon = rightAction.icon,
                         containerColor = rightAction.containerColor,
-                        contentColor = rightAction.contentColor,
+                        contentColor = actionContentColor,
                         modifier = Modifier.height(TopBarPillHeight),
                         iconAtEnd = false,
                         backdrop = buttonBackdrop,
@@ -649,7 +661,7 @@ private fun OverlaySheetTopBar(
                         label = confirmLabel,
                         icon = confirmIcon,
                         containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        contentColor = confirmContentColor,
                         modifier = Modifier.height(TopBarPillHeight),
                         iconSize = confirmIconSize,
                         iconAtEnd = true,
@@ -661,7 +673,7 @@ private fun OverlaySheetTopBar(
                         label = confirmLabel,
                         icon = confirmIcon,
                         containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        contentColor = confirmContentColor,
                         modifier = Modifier.height(TopBarPillHeight),
                         iconSize = confirmIconSize,
                         backdrop = buttonBackdrop,
@@ -671,7 +683,7 @@ private fun OverlaySheetTopBar(
                         label = rightAction.label,
                         icon = rightAction.icon,
                         containerColor = rightAction.containerColor,
-                        contentColor = rightAction.contentColor,
+                        contentColor = actionContentColor,
                         modifier = Modifier.height(TopBarPillHeight),
                         iconAtEnd = true,
                         backdrop = buttonBackdrop,

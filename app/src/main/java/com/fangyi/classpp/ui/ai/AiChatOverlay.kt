@@ -201,6 +201,7 @@ fun AiChatOverlay(
             icon = R.drawable.ic_settings,
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary,
+            contentColorGlass = MaterialTheme.classppColors.onPrimaryGlass,
             onClick = onOpenSettings,
         ),
         visible = visible,

@@ -67,10 +67,10 @@ class ColorUsageRulesTest {
     fun themeColorValsAreNotImportedDirectly() {
         // ui/theme/Color.kt 的顶层色值名单（Dark* 全族含在内）
         val themeVals =
-            "Primary|OnPrimary|PrimaryContainer|OnPrimaryContainer|InversePrimary|Background|" +
-                "Surface|OnSurface|OnSurfaceVariant|SurfaceContainerHigh|Outline|OnSurfaceCard|" +
-                "BottomSheetColor|Error|ErrorContainer|OnErrorContainer|Scrim|Correct|" +
-                "SwitchDisabled|UrgentOrange|UrgentYellow|UrgentGreen|Dark\\w+"
+            "Primary|OnPrimary|OnPrimaryGlass|PrimaryContainer|OnPrimaryContainer|InversePrimary|" +
+                "Background|Surface|OnSurface|OnSurfaceVariant|SurfaceContainerHigh|Outline|" +
+                "OnSurfaceCard|BottomSheetColor|Error|OnError|ErrorContainer|OnErrorContainer|" +
+                "Scrim|Correct|SwitchDisabled|UrgentOrange|UrgentYellow|UrgentGreen|Dark\\w+"
         val rule = Rule(
             "直连主题顶层色值",
             Regex("""import\s+com\.fangyi\.classpp\.ui\.theme\.($themeVals)\b"""),

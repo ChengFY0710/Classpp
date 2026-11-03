@@ -334,10 +334,12 @@ fun BottomSelectSheet(
                                 } else {
                                     MaterialTheme.colorScheme.surface
                                 },
-                                contentColor = if (confirmEnabled) {
-                                    MaterialTheme.colorScheme.onPrimary
-                                } else {
-                                    MaterialTheme.classppColors.negative
+                                contentColor = when {
+                                    !confirmEnabled -> MaterialTheme.classppColors.negative
+                                    // primary 底玻璃染色后偏暗，深色下换玻璃前景色
+                                    glassButtonBackdrop != null ->
+                                        MaterialTheme.classppColors.onPrimaryGlass
+                                    else -> MaterialTheme.colorScheme.onPrimary
                                 },
                                 modifier = Modifier.height(TopBarPillHeight),
                                 iconAtEnd = true,

@@ -33,7 +33,7 @@ private val LightColorScheme = lightColorScheme(
     surfaceContainerHigh = SurfaceContainerHigh,
     outline = Outline,
     error = Error,
-    onError = OnPrimary,
+    onError = OnError,
     errorContainer = ErrorContainer,
     onErrorContainer = OnErrorContainer,
     scrim = Scrim,
@@ -52,7 +52,7 @@ private val DarkColorScheme = darkColorScheme(
     surfaceContainerHigh = DarkSurfaceContainerHigh,
     outline = DarkOutline,
     error = DarkError,
-    onError = DarkOnPrimary,
+    onError = DarkOnError,
     errorContainer = DarkErrorContainer,
     onErrorContainer = DarkOnErrorContainer,
     scrim = DarkScrim,
@@ -66,6 +66,12 @@ private val DarkColorScheme = darkColorScheme(
 class ClassppColors(
     /** 次级说明文字灰 */
     val secondaryText: Color,
+    /**
+     * primary/error 染色玻璃上的前景色（图标/文字）：浅 #FFFFFF / 深 #E4E7EA。
+     * 玻璃染色后底材偏暗，深色下不能再沿用 [MaterialTheme.colorScheme.onPrimary]
+     * 的深蓝图文；白色玻璃仍用各自的 onSurface/primary 内容色。
+     */
+    val onPrimaryGlass: Color,
     /**
      * 选中方格的不透明 primaryContainer 替身：半透明底色在按压反馈提亮/压暗时会透出
      * 下层色导致闪烁，方格选中底改用本实色（浅 #E2EDFB / 深 #D4E5FD）。
@@ -104,6 +110,7 @@ class ClassppColors(
 
 private val LightClassppColors = ClassppColors(
     secondaryText = SecondaryText,
+    onPrimaryGlass = OnPrimaryGlass,
     primaryContainerSolid = PrimaryContainerSolid,
     onSurfaceCard = OnSurfaceCard,
     hazeTint = HazeTint,
@@ -117,6 +124,7 @@ private val LightClassppColors = ClassppColors(
 
 private val DarkClassppColors = ClassppColors(
     secondaryText = DarkSecondaryText,
+    onPrimaryGlass = DarkOnPrimaryGlass,
     primaryContainerSolid = DarkPrimaryContainerSolid,
     onSurfaceCard = DarkOnSurfaceCard,
     hazeTint = DarkHazeTint,

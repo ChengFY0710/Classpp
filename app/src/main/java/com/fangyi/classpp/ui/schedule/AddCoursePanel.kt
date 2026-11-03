@@ -56,6 +56,7 @@ import com.fangyi.classpp.ui.components.SheetTextFieldGroup
 import com.fangyi.classpp.ui.components.SheetTextFieldItem
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
+import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import dev.chrisbanes.haze.rememberHazeState
 
@@ -375,6 +376,7 @@ fun AddCoursePanel(
                 icon = R.drawable.ic_delete_filled,
                 containerColor = MaterialTheme.colorScheme.error,
                 contentColor = MaterialTheme.colorScheme.onError,
+                contentColorGlass = MaterialTheme.classppColors.onPrimaryGlass,
                 onClick = onDelete,
             )
         } else {

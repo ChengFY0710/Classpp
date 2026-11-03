@@ -70,6 +70,7 @@ import com.fangyi.classpp.ui.components.TimeRangeSlider
 import com.fangyi.classpp.ui.components.UrgentFlagCard
 import com.fangyi.classpp.ui.schedule.courseTagColors
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
+import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -325,6 +326,7 @@ internal fun NewTodoSheet(
                 icon = R.drawable.ic_delete_filled,
                 containerColor = MaterialTheme.colorScheme.error,
                 contentColor = MaterialTheme.colorScheme.onError,
+                contentColorGlass = MaterialTheme.classppColors.onPrimaryGlass,
                 onClick = onDelete,
             )
         } else {

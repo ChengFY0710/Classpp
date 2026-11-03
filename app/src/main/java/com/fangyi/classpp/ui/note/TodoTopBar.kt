@@ -231,7 +231,7 @@ internal enum class TodoSpecialSection(
  * （置顶分组固定最前 + 「全部」/「未分组」常驻 + 其余用户自定义分组）。
  *
  * 分组条视觉顺序：置顶分组（[pinnedGroupCount] 个，行首 20dp 图钉，GroupCard 置顶
- * 标记同款规格，未选 primary 蓝 / 选中 onPrimary 白）→「全部」→「未分组」→ 未置顶
+ * 标记同款规格，未选 primary 蓝 / 选中 onPrimary）→「全部」→「未分组」→ 未置顶
  * 分组（各段内部保持 [groups] 原序）；仓库维持置顶分组构成 [groups] 连续前缀的不变式，
  * 前 [pinnedGroupCount] 个即置顶组。
  *
@@ -725,9 +725,10 @@ private fun Modifier.topBarPillMaterial(
         )
 
 /**
- * 分组胶囊：选中 = primary 底白字，未选 = surface 底黑字（与 NavPill 同一配色逻辑）。
+ * 分组胶囊：选中 = primary 底 onPrimary 字，未选 = surface 底黑字（与 NavPill 同一配色逻辑）；
+ * 玻璃模式下选中粒的前景换 onPrimaryGlass（primary 玻璃偏暗，深色下深蓝字读不清）。
  * [pinned] = 置顶分组：行首 20dp 图钉（GroupCard 置顶标记同款规格 + 12dp 间距），
- * 配色随选中态切换——未选 primary 蓝、选中 onPrimary 白（图钉纯装饰不进语义，
+ * 配色随选中态切换——未选 primary 蓝、选中与文字同色（图钉纯装饰不进语义，
  * 文字已承载胶囊语义）。按压与底材见 [topBarPillMaterial]（[backdrop] 非空走玻璃）。
  */
 @Composable
@@ -741,8 +742,12 @@ private fun GroupPill(
 ) {
     val background =
         if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
-    val contentColor =
-        if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    val contentColor = when {
+        // primary 底玻璃染色后偏暗，深色下换玻璃前景色；未选白玻璃沿用 onSurface
+        selected && backdrop != null -> MaterialTheme.classppColors.onPrimaryGlass
+        selected -> MaterialTheme.colorScheme.onPrimary
+        else -> MaterialTheme.colorScheme.onSurface
+    }
     // 按压态的唯一来源：pressFeedback/pressScale 与 selectable 共用（涟漪由按压反馈取代，故 selectable 不再要 Indication）
     val pressInteraction = remember { MutableInteractionSource() }
     Box(
@@ -766,7 +771,11 @@ private fun GroupPill(
                     painter = painterResource(R.drawable.ic_pin),
                     contentDescription = null,
                     tint = if (selected) {
-                        MaterialTheme.colorScheme.onPrimary
+                        if (backdrop != null) {
+                            MaterialTheme.classppColors.onPrimaryGlass
+                        } else {
+                            MaterialTheme.colorScheme.onPrimary
+                        }
                     } else {
                         MaterialTheme.colorScheme.primary
                     },

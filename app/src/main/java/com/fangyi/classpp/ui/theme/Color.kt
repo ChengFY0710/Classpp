@@ -6,6 +6,8 @@ import androidx.compose.ui.graphics.Color
 // Primary 微调为 #006FEF，使白字对比度达到 4.65:1（WCAG AA）
 val Primary = Color(0xFF006FEF)
 val OnPrimary = Color(0xFFFFFFFF)
+// primary/error 染色玻璃上的前景色（装配见 Theme.kt 的 ClassppColors.onPrimaryGlass）
+val OnPrimaryGlass = Color(0xFFFFFFFF)
 val PrimaryContainer = Color(0x1F006FEF)
 val OnPrimaryContainer = Color(0x1A000000)
 
@@ -36,6 +38,8 @@ val OnSurfaceCard = Color(0xFFDCE2E7)
 val InversePrimary = Color(0x4D006FEF)
 
 val Error = Color(0xFFF44336)
+// 与 Error 成对的前景色：装配到 colorScheme.onError
+val OnError = Color(0xFFFFFFFF)
 val ErrorContainer = Color(0xFFF9DEDC)
 val OnErrorContainer = Color(0xFF410E0B)
 
@@ -75,7 +79,9 @@ val DarkHazeTint = Color.Black
 // 对应浅色「页面灰底 → 白卡」的层级关系反转。Primary 提亮为 #479CFF，
 // 保证深底上文字/图标对比达标。
 val DarkPrimary = Color(0xFF479CFF)
-val DarkOnPrimary = Color(0xFFE4E7EA)
+val DarkOnPrimary = Color(0xFF003062)
+// primary/error 染色玻璃上的前景色（装配见 Theme.kt 的 ClassppColors.onPrimaryGlass）
+val DarkOnPrimaryGlass = Color(0xFFE4E7EA)
 val DarkPrimaryContainer = Color(0x45479CFF)
 val DarkOnPrimaryContainer = Color(0x339AA2AC)
 
@@ -96,6 +102,8 @@ val DarkOnSurfaceCard = Color(0xFF4D5157)
 val DarkInversePrimary = Color(0x99479CFF)
 
 val DarkError = Color(0xFFFF5449)
+// 与 Error 成对的前景色：装配到 colorScheme.onError
+val DarkOnError = Color(0xFF7A0700)
 val DarkErrorContainer = Color(0xFF4A1C18)
 val DarkOnErrorContainer = Color(0xFFFFD9D4)
 

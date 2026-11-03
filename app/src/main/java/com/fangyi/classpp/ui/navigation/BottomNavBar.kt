@@ -41,6 +41,7 @@ import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.LiquidGlassStyle
 import com.fangyi.classpp.ui.theme.PillShape
+import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.glassPressFeedback
 import com.fangyi.classpp.ui.theme.glassSurface
 import com.kyant.backdrop.Backdrop
@@ -158,7 +159,7 @@ private fun NavPill(
     // 玻璃模式下选中项转白：染了主题蓝的玻璃上用主题蓝/深色图文都读不清
     val contentColor =
         when {
-            useGlass && selected -> Color.White
+            useGlass && selected -> MaterialTheme.classppColors.onPrimaryGlass
             selected -> MaterialTheme.colorScheme.primary
             else -> MaterialTheme.colorScheme.onSurface
         }
