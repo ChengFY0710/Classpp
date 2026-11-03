@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -17,34 +16,43 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
-import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.tabularNumbers
+import com.kyant.shapes.RoundedRectangle
 
-/** 提示条高度：设计稿定值 45dp，图标 20dp 上下各留 12.5dp。 */
-private val InfoBannerHeight = 45.dp
-
-/** 图标尺寸：20dp，约为条高的 44%（与截图比例一致），小于行卡 24dp 图标槽。 */
+/** 图标尺寸：20dp，约为单行条高的 44%（与截图比例一致），小于行卡 24dp 图标槽。 */
 private val InfoBannerIconSize = 20.dp
 
 /** 图标与文字间距：8dp。 */
 private val InfoBannerIconGap = 8.dp
 
-/** 内容左右内距：文案超长被截断时不会贴到胶囊圆角。 */
+/** 内容左右内距：文案超长换行时不会贴到圆角。 */
 private val InfoBannerHorizontalPadding = 16.dp
 
 /**
- * 浮层信息提示条：45dp 高的白底 [PillShape] 胶囊，左侧信息图标 + 单行说明文字，
- * 整组水平垂直居中。底色走 [MaterialTheme.colorScheme.surface]（浮层画布为
+ * 内容上下内距：12.5dp。单行（文字行高 20dp）时条高恰为设计稿定值 45dp，
+ * 换行后条高按行数自然增长，不再撑破固定高度。
+ */
+private val InfoBannerVerticalPadding = 12.5.dp
+
+/**
+ * 容器形状：20dp 连续圆角（与浮层内卡片同规格）。换行后条高变高，
+ * 若仍用全圆角胶囊会把图标与首行文字顶到弧边上。
+ */
+private val InfoBannerShape = RoundedRectangle(20.dp)
+
+/**
+ * 浮层信息提示条：白底 [InfoBannerShape] 圆角条，左侧信息图标 + 说明文字，
+ * 单行时整组水平垂直居中。底色走 [MaterialTheme.colorScheme.surface]（浮层画布为
  * background 浅灰，白条可读），图标与文字统一 primary 色，字号走
  * [ClassppTextTokens.secondaryTextLarge]。
  *
  * 纯展示：无点击、按压反馈与描边；文案由调用方传入，组件不内置任何文案。
- * 单行截断（[TextOverflow.Ellipsis]），长文案不会撑高 45dp 的条高。
+ * 文字支持换行：超宽时自动折行，行首左对齐、各行起始位置一致，图标随文字块垂直居中，
+ * 条高按行数增长（不截断、不省略）。
  */
 @Composable
 fun SheetInfoBanner(
@@ -54,10 +62,12 @@ fun SheetInfoBanner(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(InfoBannerHeight)
-            .clip(PillShape)
+            .clip(InfoBannerShape)
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = InfoBannerHorizontalPadding),
+            .padding(
+                horizontal = InfoBannerHorizontalPadding,
+                vertical = InfoBannerVerticalPadding,
+            ),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -73,8 +83,6 @@ fun SheetInfoBanner(
             // 文案含随编辑变化的节次数字：等宽避免整行居中时左右抖动
             style = ClassppTextTokens.secondaryTextLarge.tabularNumbers(),
             color = MaterialTheme.classppColors.secondaryText,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }
