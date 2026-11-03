@@ -12,16 +12,19 @@ import android.content.Context
  * [enabled] 为总开关，语义是「同步」而非「总闸禁用」：它变化时把两个子开关一并置为
  * 同值（关→全关、开→全开），因此持久化状态恒满足「总开关关 ⇒ 子开关全关」；
  * 子开关在总开关开启期间仍可单独切换。
+ *
+ * 默认全部为关：通知需要用户自行到本页打开（首次开启时再请求系统通知权限），
+ * 未主动开启的安装不排任何提醒闹钟。
  */
 data class NotificationSettings(
-    val enabled: Boolean = true,
+    val enabled: Boolean = false,
     // 通知方式：普通通知 / Live Updates，二选一
     val method: Int = METHOD_NORMAL,
     // 实况 chip 的展示信息（仅 Live Updates 生效）：课程名 / 上课地点
     val liveInfo: Int = LIVE_INFO_COURSE,
-    val courseEnabled: Boolean = true,
+    val courseEnabled: Boolean = false,
     val courseLeadMinutes: Int = DefaultLeadMinutes,
-    val todoEnabled: Boolean = true,
+    val todoEnabled: Boolean = false,
     val todoLeadMinutes: Int = DefaultLeadMinutes,
     // 待办通知的类型口径：全部 / 截止日期 / 待办开始时间 / 待办结束时间
     val todoType: Int = TODO_TYPE_ALL,

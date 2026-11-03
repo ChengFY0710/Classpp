@@ -1218,7 +1218,7 @@ fun ScheduleScreen(
                 // 该课程标签（=课程名）命中的全部待办：先做重复待办的分期展开（同待办列表页
                 // 口径——分期副本的日期与"随重复"折算截止才是当期真实值，直接用存储层数据
                 // 会显示锚日期与原始截止），再按标签过滤（标签语义走 filterTodos 的"任一重合"），
-                // 排序与待办页默认一致（创建时间降序）；todos 回流时列表实时刷新。
+                // 排序固定创建时间降序（不跟随待办页顶栏的排序选择）；todos 回流时列表实时刷新。
                 // "只显未完成"与"本次勾选的保留显示"的区分在浮层内做（见 CourseDetailSheet）
                 val today = LocalToday
                 val courseTodos = remember(todos, today, detail.name) {

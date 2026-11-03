@@ -77,8 +77,9 @@ import kotlinx.coroutines.launch
  * [BottomNumberSelectCard] 横向滚轮（0–60 分钟，两处入口共用一个弹窗）。
  *
  * 普通通知已实装（data/notification 的 NotificationScheduler）：每次变更即时落盘并
- * 整体重排系统闹钟；总开关打开且未授权（API 33+）时请求 POST_NOTIFICATIONS，
- * 拒绝则整体回退为关——「启用通知」语义 = 已授权且已开启。
+ * 整体重排系统闹钟；总开关默认关（通知需用户自行打开，无记录的安装不排提醒），
+ * 总开关打开且未授权（API 33+）时请求 POST_NOTIFICATIONS，拒绝则整体回退为关——
+ * 「启用通知」语义 = 已授权且已开启。
  */
 @Composable
 fun NotificationScreen(

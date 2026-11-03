@@ -959,7 +959,7 @@ private fun SheetInfoBannerPreview() = ClassppTheme {
             .padding(PageHorizontalSpacing),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // 单行：条高 45dp，整组居中
+        // 单行：条高 40dp，整组居中
         SheetInfoBanner(text = "课程占 3-3 节, 占 1 节")
         // 换行：条高随行数增长，行首左对齐，图标随文字块垂直居中
         SheetInfoBanner(text = "课程占 1-2 节，跨 2 节课程占 1-2 节，跨 2 节课程占 1-2 节")

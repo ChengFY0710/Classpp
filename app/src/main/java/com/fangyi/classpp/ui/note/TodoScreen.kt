@@ -147,12 +147,15 @@ private val SectionSpacing = 20.dp
  * （列表与收集箱各存各的滚动位）。顶栏不参与过渡（页面 chrome 常驻原位）。
  *
  * 列表分「已置顶」「已逾期」「未完成」「已完成」四组，已置顶在最上（无置顶待办时整组
- * 隐藏）、已逾期次之、已完成在下（默认收起），组内按创建时间（创建早的在前）；
- * 勾选切换写回仓库，完成即移组，截止日期已过的待办移入已逾期组、标题标红。
+ * 隐藏）、已逾期次之、已完成在下（默认收起），组内按顶栏选定的排序与方向（默认截止
+ * 日期降序——截止早的在前；排序与分类选择经 [TodoTopBarPreferences] 持久化，冷启动
+ * 回到上次口径）；勾选切换写回仓库，完成即移组，截止日期已过的待办移入已逾期组、
+ * 标题标红。
  * 顶栏分类菜单（分类块唤起，与排序菜单同款弹层）是四组显隐的多选开关：
- * 默认全勾选，取消勾选即整组隐藏（[visibleSections] 派生，点选不收菜单）。
+ * 默认全勾选，取消勾选即整组隐藏（[visibleSections] 派生，点选不收菜单；勾选态同样
+ * 经 [TodoTopBarPreferences] 持久化）。
  * 顶栏视图菜单（视图块唤起，与排序/分类同款弹层）在列表视图（默认）与收集箱视图
- * 之间切换（选择经 [TodoInboxPreferences] 持久化，冷启动回到上次视图）：收集箱视图
+ * 之间切换（选择经 [TodoTopBarPreferences] 持久化，冷启动回到上次视图）：收集箱视图
  * 把非空分组渲染成 [TodoInboxCard]——三组及以上按个性化页的
  * 「瀑布流视图」开关（[masonryView]，默认开启）走两列瀑布流（卡间距 10dp，按卡片
  * 高度落进较短一列）或整宽竖排，两组及以下始终整宽竖排（半宽卡会把标题与
@@ -306,29 +309,53 @@ fun TodoScreen(
     val archivedTodos = remember(rawArchivedTodos, courseTagNameSet) {
         rawArchivedTodos.map { it.withMatchedCourseTag(courseTagNameSet) }
     }
-    // 排序状态：默认创建时间降序（创建早的在前）
-    var sort by rememberSaveable { mutableStateOf(TodoSort.Created) }
-    var sortDescending by rememberSaveable { mutableStateOf(true) }
+    // 排序状态：初值取偏好里的上次选择（[TodoTopBarPreferences]），无记录回默认截止日期
+    // 降序（Deadline 的降序定义 = 截止早的在前，见 TodoSort）
+    var sort by rememberSaveable { mutableStateOf(TodoTopBarPreferences.loadSort(context)) }
+    var sortDescending by rememberSaveable {
+        mutableStateOf(TodoTopBarPreferences.loadSortDescending(context))
+    }
+    // 排序选择即时落盘（枚举/布尔翻转无连续变化，无需去抖）：以 LaunchedEffect 统一收口，
+    // 菜单项与将来新增入口都无需各自记得写盘；首帧写入与读到的值相同，幂等无副作用
+    LaunchedEffect(sort, sortDescending) {
+        TodoTopBarPreferences.saveSort(context, sort)
+        TodoTopBarPreferences.saveSortDescending(context, sortDescending)
+    }
     // 排序菜单展开态（DropdownMenu 挂在 TodoTopBar 展开动作行的排序块处）
     var sortMenuExpanded by rememberSaveable { mutableStateOf(false) }
     // 分类菜单展开态（弹层锚在展开动作行的分类块处，与排序菜单同款三件套接线）
     var categoryMenuExpanded by rememberSaveable { mutableStateOf(false) }
     // 视图模式：false = 列表（默认），true = 收集箱。rememberSaveable 管旋转/切 tab/
-    // 进程重建，初值取 SharedPreferences 里用户上次的选择——普通冷启动也回到上次视图
-    //（与个性化页的显示开关同源，见 TodoInboxPreferences）
+    // 进程重建，初值取偏好里的用户上次选择——普通冷启动也回到上次视图
+    //（与排序/分类同源，见 TodoTopBarPreferences）
     var inboxView by rememberSaveable {
-        mutableStateOf(TodoInboxPreferences.loadInboxView(context))
+        mutableStateOf(TodoTopBarPreferences.loadInboxView(context))
     }
     // 视图选择即时落盘（布尔翻转无连续变化，无需去抖）：以 LaunchedEffect 统一收口，
     // 菜单项与将来新增的入口都无需各自记得写盘；首帧写入与读到的值相同，幂等无副作用
     LaunchedEffect(inboxView) {
-        TodoInboxPreferences.saveInboxView(context, inboxView)
+        TodoTopBarPreferences.saveInboxView(context, inboxView)
     }
     // 视图菜单展开态（弹层锚在展开动作行的视图块处，与排序/分类同款三件套）
     var viewMenuExpanded by rememberSaveable { mutableStateOf(false) }
     // 分类可见性：菜单四项全勾选 = 四组全显（默认），取消勾选即时隐藏对应分组。
-    // rememberSaveable：旋转/切 tab/进程重建不丢，冷启动回默认全选——与排序状态同口径
-    var visibleSections by rememberSaveable { mutableStateOf(TodoSection.entries.toSet()) }
+    // 初值取偏好里的上次勾选（存分组名集；空集 = 用户四组全隐，与无记录的回默认全选
+    // 区分，见 TodoTopBarPreferences）；rememberSaveable 管旋转/切 tab/进程重建，
+    // 普通冷启动同样回到上次勾选——与排序状态同口径
+    var visibleSections by rememberSaveable {
+        mutableStateOf(
+            TodoTopBarPreferences.loadVisibleSectionNames(context)
+                ?.let { names -> TodoSection.entries.filterTo(mutableSetOf()) { it.name in names } }
+                ?: TodoSection.entries.toSet(),
+        )
+    }
+    // 分类勾选与排序同口径即时落盘（点选无连续变化，统一由 LaunchedEffect 收口）
+    LaunchedEffect(visibleSections) {
+        TodoTopBarPreferences.saveVisibleSectionNames(
+            context,
+            visibleSections.mapTo(mutableSetOf()) { it.name },
+        )
+    }
     // 分组显隐开关：在可见集合里增删该组（不可变更新触发重组），列表即时增减对应分组
     val toggleSectionVisible: (TodoSection) -> Unit = { section ->
         visibleSections = if (section in visibleSections) visibleSections - section else visibleSections + section
@@ -1805,7 +1832,7 @@ internal fun filterTodosByTag(todos: List<Todo>, tag: String): List<Todo> =
  * 待办列表：已置顶、已逾期、未完成、已完成各归一组——已置顶组在最上（所有置顶待办，
  * 无置顶待办时整组不渲染）、已逾期组次之（标题标红的卡片，截止日期已过且未完成）、
  * 未完成居中、已完成在下（默认收起），空组不渲染；
- * 组内按顶栏选定的排序与方向（默认创建时间降序——创建早的在前）。置顶条目归已置顶组、
+ * 组内按顶栏选定的排序与方向（默认截止日期降序——截止早的在前）。置顶条目归已置顶组、
  * 不再进其余三组（移动而非重复展示，同分组置顶的语义）。空组不渲染的另一条路是
  * 分类菜单：[visibleSections] 未含的组整组隐藏（默认全组可见）。渲染结构：分区头与
  * 卡片各自是独立 LazyColumn item（头 key = "header_" + 分区名、卡 key 见

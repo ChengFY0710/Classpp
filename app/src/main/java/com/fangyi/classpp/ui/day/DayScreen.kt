@@ -1656,7 +1656,8 @@ internal fun DayScreen(
             val schedule = activeSchedule ?: return@let
             // 该课程标签（=课程名）命中的全部待办：先做重复待办的分期展开（同待办列表页
             // 口径——分期副本的日期与"随重复"折算截止才是当期真实值），再按标签过滤（标签
-            // 语义走 filterTodos 的"任一重合"），排序与待办页默认一致（创建时间降序）。
+            // 语义走 filterTodos 的"任一重合"），排序固定创建时间降序（不跟随待办页顶栏
+            // 的排序选择）。
             // 分期展开按选中日期算：从查看日的时间轴卡点进来，相关待办就是那天的口径
             val courseTodos = remember(todos, selectedDate, detail.name) {
                 todos

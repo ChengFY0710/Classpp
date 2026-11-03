@@ -23,7 +23,7 @@ import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.tabularNumbers
 import com.kyant.shapes.RoundedRectangle
 
-/** 图标尺寸：20dp，约为单行条高的 44%（与截图比例一致），小于行卡 24dp 图标槽。 */
+/** 图标尺寸：20dp，约为单行条高的一半，小于行卡 24dp 图标槽。 */
 private val InfoBannerIconSize = 20.dp
 
 /** 图标与文字间距：8dp。 */
@@ -33,10 +33,10 @@ private val InfoBannerIconGap = 8.dp
 private val InfoBannerHorizontalPadding = 16.dp
 
 /**
- * 内容上下内距：12.5dp。单行（文字行高 20dp）时条高恰为设计稿定值 45dp，
+ * 内容上下内距：10dp。单行（文字行高 20dp）时条高 40dp，
  * 换行后条高按行数自然增长，不再撑破固定高度。
  */
-private val InfoBannerVerticalPadding = 12.5.dp
+private val InfoBannerVerticalPadding = 10.dp
 
 /**
  * 容器形状：20dp 连续圆角（与浮层内卡片同规格）。换行后条高变高，
