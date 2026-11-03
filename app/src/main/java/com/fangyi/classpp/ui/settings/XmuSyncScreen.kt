@@ -31,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -40,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -54,6 +56,7 @@ import com.fangyi.classpp.data.xmu.XmuAutoLoginError
 import com.fangyi.classpp.data.xmu.XmuAutoLoginManager
 import com.fangyi.classpp.data.xmu.XmuAutoLoginPolicy
 import com.fangyi.classpp.data.xmu.XmuAutoLoginState
+import com.fangyi.classpp.data.xmu.XmuAvatarImage
 import com.fangyi.classpp.data.xmu.XmuCommitOutcome
 import com.fangyi.classpp.data.xmu.XmuDailySyncRunner
 import com.fangyi.classpp.data.xmu.XmuDailySyncScheduler
@@ -88,6 +91,7 @@ import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.kyant.backdrop.backdrops.layerBackdrop
+import coil3.compose.AsyncImage
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import java.util.GregorianCalendar
@@ -102,7 +106,7 @@ import kotlinx.coroutines.withTimeout
  *
  * 结构：未连接 → 隐私说明卡 +「去登录」（默认原生 OAuth 登录：输入学号/密码，登录即
  * 保存凭据并开启自动续期；Keystore 不可用时直接回退网页登录）；已连接 → 连接状态卡
- * （首字头像圆 + 姓名 + 上次同步时间）+「立即同步」+「退出登录」。页面底部「备用登录方式」提供可见
+ * （头像圆 + 姓名 + 上次同步时间，头像未抓到时圆内显示姓名首字）+「立即同步」+「退出登录」。页面底部「备用登录方式」提供可见
  * WebView 登录（[XmuLoginSheet]：统一身份认证页完成登录，App 不接触密码、不保存凭据，
  * 不支持教务课表导入与自动续期；原生登录遇验证码/页面改版时也自动切换到它）。同步一律
  * 走「预览 → 确认导入」（[XmuSyncPreviewSheet]，按课程分组、默认全选）；错误按类提示
@@ -573,6 +577,8 @@ fun XmuSyncScreen(
 
                 else -> {
                     val syncState by repository.state.collectAsState()
+                    // 已缓存的头像（null = 还没抓到/已退出登录）：随同步下载、退出登录更新
+                    val avatarImage by repository.avatarImage.collectAsState()
                     val connected = syncState.uid.isNotEmpty()
 
                     Column(
@@ -648,7 +654,12 @@ fun XmuSyncScreen(
                                                 stringResource(R.string.xmu_last_sync_never)
                                             },
                                             // 头像圆只在已连接分支出现：未连接时这张卡不存在，圆随之不渲染
-                                            leading = { AccountAvatar(syncState.accountName) },
+                                            leading = {
+                                                AccountAvatar(
+                                                    name = syncState.accountName,
+                                                    image = avatarImage,
+                                                )
+                                            },
                                         ),
                                     ),
                                 )
@@ -959,12 +970,16 @@ fun XmuSyncScreen(
 }
 
 /**
- * 账户头像圆（纯 UI 占位，不接真实头像）：[AccountAvatarSize] 圆底取 `primaryContainer`
- * 蓝染、字取 `primary`，圆内是账户名首字，深浅模式随主题走。名字缺省时不画字，只留空圆；
+ * 账户头像圆：[AccountAvatarSize] 圆底取 `primaryContainer` 蓝染，圆内先铺账户名首字
+ * （`primary`，20sp SemiBold），有缓存头像时再用 [AsyncImage] 盖满整圆——图片加载中或
+ * 加载失败都自然露出首字，不需要额外的占位/错误态。深浅模式随主题走；
  * 只在已连接分支渲染（未连接没有这张卡，圆自然不出现）。
+ *
+ * 换头像时文件路径不变（`avatar.img` 就地覆盖），所以用[image]的版本号做 `key`：
+ * 版本变了整块重建，Coil 才会丢掉旧结果重新解码。
  */
 @Composable
-private fun AccountAvatar(name: String) {
+private fun AccountAvatar(name: String, image: XmuAvatarImage?) {
     Box(
         modifier = Modifier
             .size(AccountAvatarSize)
@@ -972,12 +987,24 @@ private fun AccountAvatar(name: String) {
             .background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center,
     ) {
-        val initial = name.trim().firstOrNull() ?: return@Box
-        Text(
-            text = initial.toString(),
-            style = ClassppTextTokens.avatarInitial,
-            color = MaterialTheme.colorScheme.primary,
-        )
+        val initial = name.trim().firstOrNull()
+        if (initial != null) {
+            Text(
+                text = initial.toString(),
+                style = ClassppTextTokens.avatarInitial,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        if (image != null) {
+            key(image.version) {
+                AsyncImage(
+                    model = image.file,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize(),
+                )
+            }
+        }
     }
 }
 

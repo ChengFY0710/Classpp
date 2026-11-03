@@ -2,6 +2,7 @@ package com.fangyi.classpp.data
 
 import android.content.Context
 import android.util.Base64
+import android.webkit.CookieManager
 import com.fangyi.classpp.data.ai.AiChatContext
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiClient
@@ -13,8 +14,10 @@ import com.fangyi.classpp.data.store.FileTodoStore
 import com.fangyi.classpp.data.xmu.AndroidXmuCookieMirror
 import com.fangyi.classpp.data.xmu.KeystoreXmuSecureStore
 import com.fangyi.classpp.data.xmu.XmuAutoLoginManager
+import com.fangyi.classpp.data.xmu.XmuAvatarStore
 import com.fangyi.classpp.data.xmu.XmuCookieJar
 import com.fangyi.classpp.data.xmu.XmuDebugLog
+import com.fangyi.classpp.data.xmu.XmuHttpAvatarLoader
 import com.fangyi.classpp.data.xmu.XmuJwLoginClient
 import com.fangyi.classpp.data.xmu.XmuJwScheduleApi
 import com.fangyi.classpp.data.xmu.XmuJwScheduleImporter
@@ -27,6 +30,7 @@ import com.fangyi.classpp.data.xmu.XmuSyncRepository
 import com.fangyi.classpp.data.xmu.XmuSyncStore
 import com.fangyi.classpp.data.xmu.XmuTodoApiRouter
 import com.fangyi.classpp.data.xmu.XmuWebFetcher
+import com.fangyi.classpp.data.xmu.XmuWebViewPolicy
 import java.io.File
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -102,6 +106,20 @@ class AppContainer internal constructor(
             val scheduleRepository = ScheduleRepository.create(FileScheduleStore(dir))
             val tagRepository = TagRepository.create(FileTagStore(dir))
 
+            // 头像抓取：与同步同一次会话里下载，缓存进 filesDir/xmu/。Cookie 两路合并——
+            // 原生登录写进 session.header，网页登录/mirror 在 WebView 的 CookieManager 里；
+            // 实际是否带上由 loader 按域名判定（只发给 xmu.edu.cn，外域头像按匿名请求取）
+            val avatarCookie: () -> String? = {
+                val mirrored = runCatching {
+                    CookieManager.getInstance()
+                        .getCookie("https://${XmuWebViewPolicy.LNT_HOST}")
+                }.getOrNull()
+                listOfNotNull(session.header, mirrored)
+                    .filter { it.isNotBlank() }
+                    .joinToString("; ")
+                    .ifBlank { null }
+            }
+
             return AppContainer(
                 scheduleRepository = scheduleRepository,
                 todoRepository = todoRepository,
@@ -111,6 +129,8 @@ class AppContainer internal constructor(
                     todoRepository = todoRepository,
                     // 自动续期关闭/暂停/不可用时原样委托无头 WebView（方案 A）
                     api = XmuTodoApiRouter(XmuWebFetcher(context.applicationContext), xmuAutoLoginManager),
+                    avatarStore = XmuAvatarStore(dir),
+                    avatarLoader = XmuHttpAvatarLoader(avatarCookie),
                 ).also { it.bootstrap() },
                 xmuAutoLoginManager = xmuAutoLoginManager,
                 xmuScheduleImporter = xmuScheduleImporter,

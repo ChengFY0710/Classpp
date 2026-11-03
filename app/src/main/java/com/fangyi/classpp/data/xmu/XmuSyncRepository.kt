@@ -79,6 +79,10 @@ sealed interface XmuCommitOutcome {
  * （成功才刷新时间戳，失败立即可重试）。同步状态与 todos.json 完全独立文件（[XmuSyncStore]），
  * 损坏互不波及；entries 只存哈希不存标题原文。
  *
+ * 头像：与同步同一次会话里顺带抓（[XmuAvatarExtractor] 取地址 → [XmuAvatarLoader] 下载 →
+ * [XmuAvatarStore] 落盘），地址没变且文件在就跳过。失败只留日志、不影响同步结果，
+ * UI 通过 [avatarImage] 观察本地图片。
+ *
  * 构造：测试注入 fake [XmuTodoApi] 与固定时钟；应用内经 [com.fangyi.classpp.data.AppContainer] 装配。
  */
 class XmuSyncRepository internal constructor(
@@ -87,18 +91,35 @@ class XmuSyncRepository internal constructor(
     val todoRepository: TodoRepository,
     private val api: XmuTodoApi,
     private val nowMillis: () -> Long = System::currentTimeMillis,
+    /** 头像缓存（null = 不抓头像：单测与未装配场景保持原行为） */
+    private val avatarStore: XmuAvatarStore? = null,
+    /** 头像下载（null = 不抓头像）；失败由实现返回 null，这里只当作「这次没抓到」 */
+    private val avatarLoader: XmuAvatarLoader? = null,
 ) {
     private val mutex = Mutex()
 
     private val _state = MutableStateFlow(XmuSyncFile())
     val state: StateFlow<XmuSyncFile> = _state.asStateFlow()
 
+    private val _avatarImage = MutableStateFlow<XmuAvatarImage?>(null)
+
+    /** 已缓存的头像（null = 没有头像）：交给 Coil 当本地模型，随下载/退出登录更新 */
+    val avatarImage: StateFlow<XmuAvatarImage?> = _avatarImage.asStateFlow()
+
     /** 进程内是否已从磁盘载入（AppContainer 装配时调用一次） */
     suspend fun bootstrap() {
-        val outcome = withContext(Dispatchers.IO) { store.load() }
-        _state.value = when (outcome) {
+        val (outcome, cachedAvatar) = withContext(Dispatchers.IO) {
+            store.load() to avatarStore?.cachedImage()
+        }
+        val loaded = when (outcome) {
             is LoadOutcome.Loaded<XmuSyncFile> -> outcome.file
             is LoadOutcome.Fresh<XmuSyncFile> -> outcome.file
+        }
+        _state.value = loaded
+        // 状态文件与本地图片必须成对：只认「已连接 + 记过头像地址」的缓存，避免退出登录
+        // 残留的图片被下一个账号复用
+        _avatarImage.value = cachedAvatar.takeIf {
+            loaded.uid.isNotEmpty() && loaded.avatarUrl.isNotEmpty()
         }
     }
 
@@ -232,7 +253,12 @@ class XmuSyncRepository internal constructor(
                 .map { it.id }
             if (syncedTrash.isNotEmpty()) todoRepository.purgeTodos(syncedTrash)
         }
-        withContext(Dispatchers.IO) { store.delete() }
+        withContext(Dispatchers.IO) {
+            store.delete()
+            // 头像属于账号数据：退出登录/换号一并清掉，避免下一个账号看到上一张脸
+            avatarStore?.delete()
+        }
+        _avatarImage.value = null
         _state.value = XmuSyncFile()
     }
 
@@ -245,7 +271,7 @@ class XmuSyncRepository internal constructor(
     private fun Todo.isXmuSynced(): Boolean =
         source == XmuTodoMapper.SOURCE_XMU || XmuTodoMapper.isSyncedLocalId(id)
 
-    /** 会话原文 → 解析 → 账号一致性 → 比对出计划；成功时顺带落探活/账号信息 */
+    /** 会话原文 → 解析 → 账号一致性 → 比对出计划；成功时顺带落探活/账号信息与头像 */
     private suspend fun onSession(profileRaw: String, todosRaw: String, fetchedAt: Long): XmuPrepareOutcome {
         val current = _state.value
         val profile = parseProfile(profileRaw)
@@ -257,14 +283,48 @@ class XmuSyncRepository internal constructor(
         }
         val listDto = parseTodos(todosRaw) ?: return XmuPrepareOutcome.Failed(classifyBody(todosRaw))
 
+        // 头像：与同步同一次会话里顺带抓（纯装饰，失败保留上一张/首字占位）
+        val avatarUrl = refreshAvatar(XmuAvatarExtractor.extract(profileRaw), current.avatarUrl)
+
         val next = current.copy(
             uid = profile.id.toString(),
             accountName = profile.name,
             lastProbeAtMillis = fetchedAt,
+            avatarUrl = avatarUrl,
         )
         // 账号/探活状态没落盘就不能返回 Ready：否则连接卡仍显示未连接、去抖基线也错位
         if (!persist(next)) return XmuPrepareOutcome.Failed(XmuSyncError.PersistFailed)
         return XmuPrepareOutcome.Ready(buildPlan(profile, listDto, fetchedAt))
+    }
+
+    /**
+     * 抓一次头像（**不抛出、不阻断同步**）：地址没变且本地文件在 → 不发请求；否则下载并
+     * 校验落盘。返回「当前本地图片对应的地址」——成功是新地址，失败/未装配沿用 [cachedUrl]，
+     * 这样下次同步会重试，而状态文件始终与本地图片一致。
+     */
+    private suspend fun refreshAvatar(url: String?, cachedUrl: String): String {
+        val store = avatarStore ?: return cachedUrl
+        val loader = avatarLoader ?: return cachedUrl
+        if (url == null) {
+            XmuDebugLog.d("avatar: absent")
+            return cachedUrl
+        }
+        if (url == cachedUrl && withContext(Dispatchers.IO) { store.cachedImage() } != null) {
+            XmuDebugLog.d("avatar: cached")
+            return cachedUrl
+        }
+        val bytes = loader.load(url) ?: run {
+            XmuDebugLog.d("avatar: failed")
+            return cachedUrl
+        }
+        val saved = withContext(Dispatchers.IO) { store.save(bytes) }
+        if (saved == null) {
+            XmuDebugLog.d("avatar: save failed")
+            return cachedUrl
+        }
+        XmuDebugLog.d("avatar: saved ${bytes.size}B")
+        _avatarImage.value = saved
+        return url
     }
 
     private fun buildPlan(

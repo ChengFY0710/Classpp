@@ -13,6 +13,7 @@ import java.util.TimeZone
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -65,12 +66,28 @@ class XmuSyncRepositoryTest {
     private suspend fun repo(
         api: FakeApi,
         store: XmuSyncStore = XmuSyncStore(folder.root),
+        avatarStore: XmuAvatarStore? = null,
+        avatarLoader: XmuAvatarLoader? = null,
     ): XmuSyncRepository = XmuSyncRepository(
         store = store,
         todoRepository = TodoRepository.create(FileTodoStore(folder.root), clock),
         api = api,
         nowMillis = clock,
+        avatarStore = avatarStore,
+        avatarLoader = avatarLoader,
     )
+
+    /** 头像下载替身：[bytes] = null 模拟抓取失败；[calls] 记录是否重复下载 */
+    private class FakeAvatarLoader(private val bytes: ByteArray? = byteArrayOf(1, 2, 3)) : XmuAvatarLoader {
+        var calls = 0
+        var lastUrl: String? = null
+
+        override suspend fun load(url: String): ByteArray? {
+            calls++
+            lastUrl = url
+            return bytes
+        }
+    }
 
     private fun XmuSyncRepository.activeIds(): Set<String> = todoRepository.todos.value.map { it.id }.toSet()
     private fun XmuSyncRepository.archivedIds(): Set<String> = todoRepository.archivedTodos.value.map { it.id }.toSet()
@@ -519,5 +536,107 @@ class XmuSyncRepositoryTest {
             XmuSyncError.FormatChanged,
             (outcome as XmuPrepareOutcome.Failed).error,
         )
+    }
+
+    // ---------- 头像 ----------
+
+    private val avatarProfileRaw =
+        """{"id":9001,"user_no":"20260001","name":"张三","avatar":"https://cdn.xmu.edu.cn/a.jpg"}"""
+
+    @Test
+    fun `首次同步顺带缓存头像，地址未变不再重复下载`() = runBlocking {
+        val loader = FakeAvatarLoader()
+        val api = okApi(profile = avatarProfileRaw)
+        val r = repo(
+            api,
+            avatarStore = XmuAvatarStore(folder.root),
+            avatarLoader = loader,
+        )
+
+        assertTrue(r.prepareSync(force = true) is XmuPrepareOutcome.Ready)
+        assertEquals(1, loader.calls)
+        assertEquals("https://cdn.xmu.edu.cn/a.jpg", loader.lastUrl)
+        // 地址写进状态文件，本地文件与它成对
+        assertEquals("https://cdn.xmu.edu.cn/a.jpg", r.state.value.avatarUrl)
+        val image = r.avatarImage.value
+        assertTrue(image != null && image.file.exists())
+
+        // 第二次同步：同地址 + 文件在 → 不再请求
+        assertTrue(r.prepareSync(force = true) is XmuPrepareOutcome.Ready)
+        assertEquals(1, loader.calls)
+    }
+
+    @Test
+    fun `头像地址变化时重新下载`() = runBlocking {
+        val loader = FakeAvatarLoader()
+        val api = okApi(profile = avatarProfileRaw)
+        val r = repo(
+            api,
+            avatarStore = XmuAvatarStore(folder.root),
+            avatarLoader = loader,
+        )
+        r.prepareSync(force = true)
+
+        api.result = XmuFetchResult.Ok(
+            """{"id":9001,"user_no":"20260001","name":"张三","avatar":"https://cdn.xmu.edu.cn/b.jpg"}""",
+            todosRaw(),
+        )
+        assertTrue(r.prepareSync(force = true) is XmuPrepareOutcome.Ready)
+
+        assertEquals(2, loader.calls)
+        assertEquals("https://cdn.xmu.edu.cn/b.jpg", r.state.value.avatarUrl)
+    }
+
+    @Test
+    fun `头像抓取失败不影响同步，也不写地址`() = runBlocking {
+        val loader = FakeAvatarLoader(bytes = null)
+        val api = okApi(profile = avatarProfileRaw)
+        val r = repo(
+            api,
+            avatarStore = XmuAvatarStore(folder.root),
+            avatarLoader = loader,
+        )
+
+        val outcome = r.prepareSync(force = true)
+
+        assertTrue(outcome is XmuPrepareOutcome.Ready)
+        assertEquals(1, loader.calls)
+        assertEquals("", r.state.value.avatarUrl)
+        assertNull(r.avatarImage.value)
+    }
+
+    @Test
+    fun `profile 没有头像字段时不动头像`() = runBlocking {
+        val loader = FakeAvatarLoader()
+        val api = okApi() // 夹具 profile 无头像字段
+        val r = repo(
+            api,
+            avatarStore = XmuAvatarStore(folder.root),
+            avatarLoader = loader,
+        )
+
+        assertTrue(r.prepareSync(force = true) is XmuPrepareOutcome.Ready)
+        assertEquals(0, loader.calls)
+        assertNull(r.avatarImage.value)
+    }
+
+    @Test
+    fun `退出登录清空头像文件与地址`() = runBlocking {
+        val loader = FakeAvatarLoader()
+        val api = okApi(profile = avatarProfileRaw)
+        val r = repo(
+            api,
+            avatarStore = XmuAvatarStore(folder.root),
+            avatarLoader = loader,
+        )
+        r.prepareSync(force = true)
+        val image = r.avatarImage.value!!
+        assertTrue(image.file.exists())
+
+        r.resetSyncData(deleteSyncedTodos = false)
+
+        assertNull(r.avatarImage.value)
+        assertFalse(image.file.exists())
+        assertEquals("", r.state.value.avatarUrl)
     }
 }
