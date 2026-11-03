@@ -245,9 +245,8 @@
     <!-- 原生 OAuth 登录（默认登录方式，登录即保存凭据并开启自动续期） -->
     <string name="xmu_native_login_title">账号登录</string>
     <string name="xmu_auto_login_title">记住登录以自动续期</string>
-    <string name="xmu_auto_login_desc_enabled">已开启：会话过期时自动登录</string>
+    <string name="xmu_auto_login_desc">开启后支持过期自动续登及教务课表导入</string>
     <string name="xmu_auto_login_desc_blocked">已暂停：自动登录失败，请手动登录后重新开启</string>
-    <string name="xmu_auto_login_desc_off">未开启：会话过期后需手动登录，教务导入不可用</string>
     <string name="xmu_auto_login_desc_unavailable">不可用：无法访问系统密钥库</string>
     <string name="xmu_auto_login_sheet_title_busy">正在登录</string>
     <string name="xmu_auto_login_notes_title">注意事项</string>

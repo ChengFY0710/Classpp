@@ -697,25 +697,20 @@ fun XmuSyncScreen(
                                                 SettingsCardItem.Toggle(
                                                     label =
                                                         stringResource(R.string.xmu_auto_login_title),
-                                                    description = if (!autoLoginState.available) {
-                                                        stringResource(
+                                                    // 正常态（开/关）共用同一句描述；
+                                                    // 暂停/不可用保留原因与操作提示
+                                                    description = when {
+                                                        !autoLoginState.available -> stringResource(
                                                             R.string.xmu_auto_login_desc_unavailable,
                                                         )
-                                                    } else {
-                                                        when (autoLoginState.policy) {
-                                                            XmuAutoLoginPolicy.ENABLED ->
-                                                                stringResource(
-                                                                    R.string.xmu_auto_login_desc_enabled,
-                                                                )
+                                                        autoLoginState.policy ==
                                                             XmuAutoLoginPolicy.BLOCKED ->
-                                                                stringResource(
-                                                                    R.string.xmu_auto_login_desc_blocked,
-                                                                )
-                                                            XmuAutoLoginPolicy.USER_LOGGED_OUT ->
-                                                                stringResource(
-                                                                    R.string.xmu_auto_login_desc_off,
-                                                                )
-                                                        }
+                                                            stringResource(
+                                                                R.string.xmu_auto_login_desc_blocked,
+                                                            )
+                                                        else -> stringResource(
+                                                            R.string.xmu_auto_login_desc,
+                                                        )
                                                     },
                                                     checked = autoLoginState.policy ==
                                                         XmuAutoLoginPolicy.ENABLED,
@@ -1158,7 +1153,7 @@ private fun deadlineText(date: IsoDate?, minute: Int?): String {
 /** 同步时刻展示（设备本地时区的 yyyy-MM-dd HH:mm；数字形态两种语言通用） */
 private fun formatSyncTime(millis: Long): String {
     val cal = GregorianCalendar().apply { timeInMillis = millis }
-    return "%04d-%02d-%02d %02d:%02d".format(
+    return "%d/%d/%d %d:%02d".format(
         cal.get(GregorianCalendar.YEAR),
         cal.get(GregorianCalendar.MONTH) + 1,
         cal.get(GregorianCalendar.DAY_OF_MONTH),

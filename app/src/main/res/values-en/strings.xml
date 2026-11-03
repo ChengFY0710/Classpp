@@ -141,9 +141,8 @@
     <!-- Native OAuth sign-in (default; signing in stores credentials and enables auto renewal) -->
     <string name="xmu_native_login_title">Account sign-in</string>
     <string name="xmu_auto_login_title">Remember sign-in to renew automatically</string>
-    <string name="xmu_auto_login_desc_enabled">On: signs in automatically when the session expires</string>
+    <string name="xmu_auto_login_desc">When on, supports automatic sign-in on expiry and academic schedule import</string>
     <string name="xmu_auto_login_desc_blocked">Paused: automatic sign-in failed. Sign in manually, then re-enable.</string>
-    <string name="xmu_auto_login_desc_off">Off: you will need to sign in manually when the session expires, and academic system import is unavailable</string>
     <string name="xmu_auto_login_desc_unavailable">Unavailable: cannot access the system keystore</string>
     <string name="xmu_auto_login_sheet_title_busy">Signing in</string>
     <string name="xmu_auto_login_notes_title">Important</string>
