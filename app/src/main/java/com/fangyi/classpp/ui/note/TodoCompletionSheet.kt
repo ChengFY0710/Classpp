@@ -37,7 +37,7 @@ import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
  * 叠在详情浮层之上（[TodoDetailSheet] 负责两段式挂载与 covered 动效）。
  *
  * 内容是一组无题 [CardSection]，包两个组件：
- * 1. [DayCalendar]（复用日历卡，向后兼容扩展）：重复规则涉及的天数带 Primary 小蓝球；
+ * 1. [DayCalendar]（复用日历卡，向后兼容扩展）：重复规则涉及的天数带 secondaryText 小灰球；
  *    已完成/已逾期日期的圆球按状态上色——已完成 urgentGreen 底 + 白字、已逾期未完成
  *    error 底 + 白字（状态色覆盖所有已完成期，含今天与未来的提前完成；合并口径下勾选
  *    的就是当期，常常落在今天或下一期），只有本月日期上状态色（前后月补位保持灰字 +
@@ -74,7 +74,7 @@ internal fun TodoCompletionSheet(
         IsoDate.of(year, month, 1).mondayOfWeek()
     }
     var gridWindow by remember(today) { mutableStateOf(initialGridStart to (initialGridStart + 41)) }
-    // 小蓝球 = 重复规则在窗口内的分期 ∪ 已落账的完成/逾期（规则改过后不再产生的历史日期仍算）
+    // 小灰球 = 重复规则在窗口内的分期 ∪ 已落账的完成/逾期（规则改过后不再产生的历史日期仍算）
     val markedDates = remember(todo, gridWindow) {
         val (first, last) = gridWindow
         val startDay = first.epochDay

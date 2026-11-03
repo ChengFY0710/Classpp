@@ -493,9 +493,10 @@ internal fun DayScreen(
         }
     }
 
-    // 日历待办小点：活跃待办在日历网格窗口内覆盖的日期（显式日期 + 重复分期，见
-    // datesCoveredWithin）。网格窗口由 DayCalendar 回报（锚点月翻页时变化，组合后首帧
-    // 才到——首帧按无小点渲染，与仓库异步装载同拍）；待办回流实时刷新。
+    // 日历待办小点：活跃待办在日历网格窗口内覆盖的日期（显式日期 + 重复分期；无待办
+    // 时间只有截止的按创建 → 截止整段，见 datesCoveredWithin）。网格窗口由 DayCalendar
+    // 回报（锚点月翻页时变化，组合后首帧才到——首帧按无小点渲染，与仓库异步装载同拍）；
+    // 待办回流实时刷新。
     val todosState = todoRepository?.todos?.collectAsState()
     // 仓库原始值：展示用的派生列表在下方课表数据就绪后统一生成（见 todos）
     val rawTodos = todosState?.value ?: emptyList()

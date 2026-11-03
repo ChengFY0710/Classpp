@@ -5,6 +5,7 @@ import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
+import java.util.GregorianCalendar
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -13,11 +14,14 @@ import org.junit.Test
 class TodoQueryTest {
 
     private val d0610 = IsoDate.parse("2026-06-10")
+    private val d0611 = IsoDate.parse("2026-06-11")
     private val d0612 = IsoDate.parse("2026-06-12")
+    private val d0613 = IsoDate.parse("2026-06-13")
     private val d0615 = IsoDate.parse("2026-06-15")
     private val d0616 = IsoDate.parse("2026-06-16")
     private val d0617 = IsoDate.parse("2026-06-17")
     private val d0618 = IsoDate.parse("2026-06-18")
+    private val d0619 = IsoDate.parse("2026-06-19")
     private val d0620 = IsoDate.parse("2026-06-20")
 
     private val lab = testTodo(
@@ -242,8 +246,56 @@ class TodoQueryTest {
     }
 
     @Test
-    fun `todos without dates cover nothing`() {
-        assertEquals(emptySet<IsoDate>(), listOf(essay, done1).datesCoveredWithin(d0610, d0620))
+    fun `todos without dates or deadline cover nothing`() {
+        assertEquals(emptySet<IsoDate>(), listOf(done1).datesCoveredWithin(d0610, d0620))
         assertEquals(emptySet<IsoDate>(), emptyList<com.fangyi.classpp.data.model.Todo>().datesCoveredWithin(d0610, d0620))
+    }
+
+    // ---------- 无待办时间、只有截止：创建 → 截止整段覆盖 ----------
+
+    @Test
+    fun `deadline-only todo covers creation to deadline`() {
+        val homework = testTodo(
+            id = "e1",
+            deadlineDate = d0618,
+            createdAtMillis = localMillis(d0612),
+        )
+        // 创建日到截止日（含两端）整段都算有待办
+        val expected = (d0612.epochDay..d0618.epochDay).mapTo(mutableSetOf()) { IsoDate(it) }
+        assertEquals(expected, listOf(homework).datesCoveredWithin(d0610, d0620))
+        // 窗口只取显示中的格子：两端都裁到窗口内
+        assertEquals(setOf(d0615, d0616), listOf(homework).datesCoveredWithin(d0615, d0616))
+        assertEquals(setOf(d0612, IsoDate(d0612.epochDay + 1)), listOf(homework).datesCoveredWithin(d0610, d0613))
+        // 窗口整体落在跨期之外：没有覆盖
+        assertEquals(emptySet<IsoDate>(), listOf(homework).datesCoveredWithin(d0610, d0611))
+        assertEquals(emptySet<IsoDate>(), listOf(homework).datesCoveredWithin(d0619, d0620))
+    }
+
+    @Test
+    fun `todo dates win over deadline span`() {
+        // 有待办时间（dates 非空）时以待办时间为准：截止日不铺开（lab 只有 06-10 / 06-15）
+        assertEquals(setOf(d0610, d0615), listOf(lab).datesCoveredWithin(d0610, d0620))
+    }
+
+    @Test
+    fun `deadline-only todo created after deadline collapses to deadline day`() {
+        val late = testTodo(deadlineDate = d0615, createdAtMillis = localMillis(d0618))
+        assertEquals(setOf(d0615), listOf(late).datesCoveredWithin(d0610, d0620))
+    }
+
+    @Test
+    fun `deadline-only todo without creation time covers nothing`() {
+        // createdAtMillis = 0（旧文件未补齐）：不按 1970 假日期铺开
+        val legacy = testTodo(deadlineDate = d0618)
+        assertEquals(emptySet<IsoDate>(), listOf(legacy).datesCoveredWithin(d0610, d0620))
+    }
+
+    /** 本地时区某天正午的时刻戳：换算回本地日期稳定，不受夏令时午夜跳变影响 */
+    private fun localMillis(date: IsoDate): Long {
+        val (year, month, day) = date.yearMonthDay()
+        return GregorianCalendar().apply {
+            clear()
+            set(year, month - 1, day, 12, 0, 0)
+        }.timeInMillis
     }
 }

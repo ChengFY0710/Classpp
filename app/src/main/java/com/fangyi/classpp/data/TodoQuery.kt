@@ -255,7 +255,14 @@ fun Todo.displayOverdueOccurrences(today: IsoDate): List<IsoDate> {
  * 待办时间在 `[startInclusive, endInclusive]` 窗口内覆盖的日期（日历待办小点取数）：
  * 待办时间 = 显式日期 [Todo.dates] ∪ 重复规则自锚日期展开的分期日期 ∪ 已记账的
  * 完成/逾期分期（规则修改后不再产生的历史分期仍算数）；截止日期是「什么时候要交」
- * 而非「待办时间」，不算。完成态不影响覆盖——已完成的待办仍是那天的待办。
+ * 而非「待办时间」，有待办时间时不参与覆盖。完成态不影响覆盖——已完成的待办仍是
+ * 那天的待办。
+ *
+ * **无待办时间、只有截止日期**（[Todo.dates] 为空且有 [Todo.deadlineDate]，如课程中心
+ * 同步的作业）时改按「创建 → 截止」整段覆盖：创建日（[Todo.createdAtMillis] 按设备
+ * 时区换算，与 [IsoDate.today] 同口径）到截止日（含两端）之间每天都算有待办——这类
+ * 待办从建立起一直挂到截止。创建时刻缺失（0，旧文件未补齐）不推算、不铺开（详情页
+ * 同样显「无」，不显 1970 假日期）；创建晚于截止（改过截止的历史待办）收拢到截止当天。
  *
  * 窗口外的日期不收：日历只给显示中的格子取点，调用方传网格首尾日期即可；
  * 锚日期远早于窗口的重复规则展开成本受 occurrencesBetween 的 MAX_PERIODS 兜底。
@@ -272,6 +279,15 @@ fun List<Todo>.datesCoveredWithin(startInclusive: IsoDate, endInclusive: IsoDate
             val anchor = todo.dates.minByOrNull { it.epochDay }
             if (anchor != null && todo.repeat.type != RepeatType.None) {
                 addAll(todo.repeat.occurrencesBetween(anchor, startInclusive, endExclusive))
+            }
+            val deadline = todo.deadlineDate
+            if (todo.dates.isEmpty() && deadline != null && todo.createdAtMillis != 0L) {
+                // 待办时间优先：有 dates 时只按上面的日期/分期覆盖，截止不铺开
+                val createdDay = IsoDate.today(todo.createdAtMillis).epochDay
+                val deadlineDay = deadline.epochDay
+                val from = maxOf(minOf(createdDay, deadlineDay), window.first)
+                val to = minOf(deadlineDay, window.last)
+                for (day in from..to) add(IsoDate(day))
             }
         }
     }
