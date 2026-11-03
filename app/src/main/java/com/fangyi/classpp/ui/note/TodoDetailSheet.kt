@@ -208,8 +208,9 @@ internal fun TodoDetailSheet(
         ),
         onDismiss = closeWithSave,
         visible = visible,
-        // 编辑浮层或完成情况浮层盖上来时本层缩小后退（透传 OverlaySheet 的分层动效）
-        covered = covered || completionRequested,
+        // 编辑浮层、步骤弹卡或完成情况浮层盖上来时本层缩小后退（透传 OverlaySheet 的分层
+        // 动效）；弹卡用可见请求态——退场时与上层收场同帧反向恢复
+        covered = covered || stepRequested || completionRequested,
         onDismissed = onDismissed,
         // 采样源交给容器（见 sheetHazeState 声明处）：顶栏磨砂与叠层弹卡的背景模糊同源
         hazeState = sheetHazeState,
