@@ -828,7 +828,7 @@ private val RowSpacing = 8.dp
 private val RowStep = BallSize + RowSpacing
 /** 星期表头与日历网格的间距，独立于行距 [RowSpacing]，可单独调 */
 private val HeaderGridGap = 6.dp
-private val DotSize = 3.dp
+private val DotSize = 3.5.dp
 private val DotGap = 2.dp
 /** 小点从球底下垂的距离：底对齐后 offset 它，球底到小点顶的间隙即 [DotGap] */
 private val DotDrop = DotSize + DotGap

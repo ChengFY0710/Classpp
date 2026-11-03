@@ -92,6 +92,9 @@
     <string name="xmu_section_capabilities">What sync can do</string>
     <string name="xmu_section_alt_login">Alternative sign-in</string>
     <string name="xmu_source_badge">Course Center</string>
+    <!-- Course Center sync: default names for auto-created groups (only on first creation; autoKey afterwards) -->
+    <string name="xmu_group_homework">Assignments</string>
+    <string name="xmu_group_quiz">Quizzes</string>
     <string name="xmu_connected_label">Connected</string>
     <string name="xmu_connected_name">Connected: %1$s</string>
     <string name="xmu_not_connected_label">Not connected</string>

@@ -3,6 +3,7 @@ package com.fangyi.classpp.data
 import android.content.Context
 import android.util.Base64
 import android.webkit.CookieManager
+import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ai.AiChatContext
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiClient
@@ -13,6 +14,7 @@ import com.fangyi.classpp.data.store.FileTagStore
 import com.fangyi.classpp.data.store.FileTodoStore
 import com.fangyi.classpp.data.xmu.AndroidXmuCookieMirror
 import com.fangyi.classpp.data.xmu.KeystoreXmuSecureStore
+import com.fangyi.classpp.data.xmu.XmuAutoGroupNames
 import com.fangyi.classpp.data.xmu.XmuAutoLoginManager
 import com.fangyi.classpp.data.xmu.XmuAvatarStore
 import com.fangyi.classpp.data.xmu.XmuCookieJar
@@ -131,6 +133,10 @@ class AppContainer internal constructor(
                     api = XmuTodoApiRouter(XmuWebFetcher(context.applicationContext), xmuAutoLoginManager),
                     avatarStore = XmuAvatarStore(dir),
                     avatarLoader = XmuHttpAvatarLoader(avatarCookie),
+                    autoGroupNames = XmuAutoGroupNames(
+                        homework = context.getString(R.string.xmu_group_homework),
+                        quiz = context.getString(R.string.xmu_group_quiz),
+                    ),
                 ).also { it.bootstrap() },
                 xmuAutoLoginManager = xmuAutoLoginManager,
                 xmuScheduleImporter = xmuScheduleImporter,

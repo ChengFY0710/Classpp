@@ -31,6 +31,23 @@ object XmuTodoMapper {
     const val SOURCE_XMU = "xmu"
     const val ID_PREFIX = "${SOURCE_XMU}-"
 
+    /** 自动分组稳定标识：远端 type → 本地分组（[TodoGroup.autoKey]）。未知 type 不分组 */
+    const val AUTO_GROUP_KEY_HOMEWORK = "xmu:homework"
+    const val AUTO_GROUP_KEY_QUIZ = "xmu:quiz"
+
+    /** 分组键的固定顺序（新建分组时按「作业、测验」追加，避免受远端返回顺序影响） */
+    val AUTO_GROUP_KEY_ORDER = listOf(AUTO_GROUP_KEY_HOMEWORK, AUTO_GROUP_KEY_QUIZ)
+
+    /**
+     * 远端 `type` → 自动分组键；大小写/首尾空白容错。只映射已确认的 `homework`/`quiz`，
+     * 其他取值（含空串）返回 null——未知类型不猜、保持未分组。
+     */
+    fun autoGroupKey(type: String): String? = when (type.trim().lowercase()) {
+        "homework" -> AUTO_GROUP_KEY_HOMEWORK
+        "quiz" -> AUTO_GROUP_KEY_QUIZ
+        else -> null
+    }
+
     /**
      * 远端唯一键（课程 + activity id）：buildPlan 去重与 entries 映射（内存/落盘）的统一键。
      * 与 [localId] 同含 courseId——activity id 若只在课程内唯一，同 id 不同课程也不会互相顶掉。
@@ -137,6 +154,24 @@ object XmuTodoMapper {
         MessageDigest.getInstance("SHA-256")
             .digest(text.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
+}
+
+/**
+ * 自动分组的默认显示名：AppContainer 按当前语言注入（[com.fangyi.classpp.R.string.xmu_group_homework]
+ * / [com.fangyi.classpp.R.string.xmu_group_quiz]）；纯 JVM 测试与未注入场景回退中文。
+ * 名称只在分组**首次创建**时写入 [com.fangyi.classpp.data.model.TodoGroup.name]，之后以
+ * [com.fangyi.classpp.data.model.TodoGroup.autoKey] 定位，用户重命名不会被同步覆盖。
+ */
+data class XmuAutoGroupNames(
+    val homework: String = "作业",
+    val quiz: String = "测验",
+) {
+    /** 分组键 → 创建时使用的默认名；未知键返回 null（不建组） */
+    fun nameFor(autoKey: String): String? = when (autoKey) {
+        XmuTodoMapper.AUTO_GROUP_KEY_HOMEWORK -> homework
+        XmuTodoMapper.AUTO_GROUP_KEY_QUIZ -> quiz
+        else -> null
+    }
 }
 
 /**

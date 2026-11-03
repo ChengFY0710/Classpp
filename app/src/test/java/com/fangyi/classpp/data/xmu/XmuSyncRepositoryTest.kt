@@ -4,6 +4,7 @@ import com.fangyi.classpp.data.FakeNow
 import com.fangyi.classpp.data.TodoError
 import com.fangyi.classpp.data.TodoOpResult
 import com.fangyi.classpp.data.TodoRepository
+import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.isDeleted
 import com.fangyi.classpp.data.store.FileTodoStore
 import com.fangyi.classpp.data.store.StoreResult
@@ -87,6 +88,10 @@ class XmuSyncRepositoryTest {
             lastUrl = url
             return bytes
         }
+    }
+
+    private fun TodoOpResult.assertOk() {
+        assertTrue("expected Ok, got $this", this is TodoOpResult.Ok)
     }
 
     private fun XmuSyncRepository.activeIds(): Set<String> = todoRepository.todos.value.map { it.id }.toSet()
@@ -535,6 +540,161 @@ class XmuSyncRepositoryTest {
         assertEquals(
             XmuSyncError.FormatChanged,
             (outcome as XmuPrepareOutcome.Failed).error,
+        )
+    }
+
+    // ---------- 自动分组 ----------
+
+    private fun singleTodoJson(id: Long, type: String = "homework"): String = """
+        {"todo_list":[
+          {"id":$id,"title":"自动分组测试","type":"$type","course_id":106160,"course_name":"高等数学","end_time":"2026-11-04T10:30:00Z","is_student":true}
+        ]}
+    """.trimIndent()
+
+    @Test
+    fun `首次同步按远端 type 自动建组并归入作业与测验`() = runBlocking {
+        val todos = todosRaw("todos-edge.json")
+        val api = okApi(todos)
+        val r = repo(api)
+        r.syncAll(api, todos)
+
+        // 固定顺序：作业在前、测验在后；autoKey 与默认名对应
+        assertEquals(listOf("作业", "测验"), r.todoRepository.groups.value.map { it.name })
+        assertEquals(
+            listOf(
+                XmuTodoMapper.AUTO_GROUP_KEY_HOMEWORK,
+                XmuTodoMapper.AUTO_GROUP_KEY_QUIZ,
+            ),
+            r.todoRepository.groups.value.map { it.autoKey },
+        )
+        val byId = r.todoRepository.todos.value.associateBy { it.id }
+        assertEquals("作业", byId.getValue("xmu-100-2001").group)
+        assertEquals("作业", byId.getValue("xmu-100-2002").group)
+        assertEquals("测验", byId.getValue("xmu-102-2005").group)
+    }
+
+    @Test
+    fun `重命名自动分组后再次同步沿用新名且不重复建组`() = runBlocking {
+        val todos = todosRaw("todos-edge.json")
+        val api = okApi(todos)
+        val r = repo(api)
+        r.syncAll(api, todos)
+
+        // 模拟分组浮层重命名：新表 + renames 映射让组内待办同一次提交跟随
+        r.todoRepository.setGroups(
+            r.todoRepository.groups.value.map {
+                if (it.autoKey == XmuTodoMapper.AUTO_GROUP_KEY_HOMEWORK) {
+                    it.copy(name = "课程作业")
+                } else {
+                    it
+                }
+            },
+            renames = mapOf("作业" to "课程作业"),
+        ).assertOk()
+
+        val second = singleTodoJson(2008)
+        r.syncAll(api, second)
+
+        // 已有 autoKey → 沿用用户重命名后的名字，不再新建默认「作业」组
+        assertEquals(
+            listOf("课程作业", "测验"),
+            r.todoRepository.groups.value.map { it.name },
+        )
+        assertEquals(
+            "课程作业",
+            r.todoRepository.todos.value.single { it.id == "xmu-106160-2008" }.group,
+        )
+    }
+
+    @Test
+    fun `删除自动分组后再次同步重建并回填未分组条目`() = runBlocking {
+        val todos = todosRaw("todos-edge.json")
+        val api = okApi(todos)
+        val r = repo(api)
+        r.syncAll(api, todos)
+
+        // 用户删除「作业」组：级联把组内待办置回未分组
+        r.todoRepository.setGroups(
+            r.todoRepository.groups.value.filterNot {
+                it.autoKey == XmuTodoMapper.AUTO_GROUP_KEY_HOMEWORK
+            },
+        ).assertOk()
+        assertNull(r.todoRepository.todos.value.single { it.id == "xmu-100-2001" }.group)
+
+        // 远端仍列出原条目、本地无新增 → markSynced 分支也要重建组并回填
+        val plan = (r.prepareSync(force = true) as XmuPrepareOutcome.Ready).plan
+        assertTrue(plan.newItems.isEmpty())
+        assertEquals(
+            mapOf(
+                "xmu-100-2001" to XmuTodoMapper.AUTO_GROUP_KEY_HOMEWORK,
+                "xmu-100-2002" to XmuTodoMapper.AUTO_GROUP_KEY_HOMEWORK,
+            ),
+            plan.groupBackfill,
+        )
+        assertTrue(r.markSynced(plan))
+
+        val rebuilt = r.todoRepository.groups.value.single {
+            it.autoKey == XmuTodoMapper.AUTO_GROUP_KEY_HOMEWORK
+        }
+        assertEquals("作业", rebuilt.name)
+        assertEquals("作业", r.todoRepository.todos.value.single { it.id == "xmu-100-2001" }.group)
+        assertEquals("作业", r.todoRepository.todos.value.single { it.id == "xmu-100-2002" }.group)
+    }
+
+    @Test
+    fun `存量未分组同步待办在无新增同步时回填`() = runBlocking {
+        val api = okApi(singleTodoJson(925512))
+        val r = repo(api)
+        // 模拟旧版本导入：待办已在库但未分组（id 与远端严格对应）
+        r.todoRepository.addTodo(
+            com.fangyi.classpp.data.testTodo(id = "xmu-106160-925512", name = "第一次作业"),
+        )
+
+        val plan = (r.prepareSync(force = true) as XmuPrepareOutcome.Ready).plan
+        assertTrue(plan.newItems.isEmpty())
+        assertEquals(
+            mapOf("xmu-106160-925512" to XmuTodoMapper.AUTO_GROUP_KEY_HOMEWORK),
+            plan.groupBackfill,
+        )
+        assertTrue(r.markSynced(plan))
+
+        assertEquals(
+            "作业",
+            r.todoRepository.todos.value.single { it.id == "xmu-106160-925512" }.group,
+        )
+    }
+
+    @Test
+    fun `未知远端 type 不建组也不回填`() = runBlocking {
+        val todos = singleTodoJson(9300, type = "exam")
+        val api = okApi(todos)
+        val r = repo(api)
+        r.syncAll(api, todos)
+
+        assertTrue(r.todoRepository.groups.value.isEmpty())
+        assertNull(r.todoRepository.todos.value.single().group)
+    }
+
+    @Test
+    fun `用户手动分组的同步待办不被回填覆盖`() = runBlocking {
+        val todos = todosRaw("todos-edge.json")
+        val api = okApi(todos)
+        val r = repo(api)
+        r.syncAll(api, todos)
+
+        r.todoRepository.setGroups(
+            r.todoRepository.groups.value + TodoGroup("自己的分组"),
+        ).assertOk()
+        val moved = r.todoRepository.todos.value.single { it.id == "xmu-100-2001" }
+        r.todoRepository.updateTodo(moved.copy(group = "自己的分组")).assertOk()
+
+        // 再次同步：已分组的条目不进回填，用户选择保持
+        val plan = (r.prepareSync(force = true) as XmuPrepareOutcome.Ready).plan
+        assertFalse("xmu-100-2001" in plan.groupBackfill)
+        assertTrue(r.markSynced(plan))
+        assertEquals(
+            "自己的分组",
+            r.todoRepository.todos.value.single { it.id == "xmu-100-2001" }.group,
         )
     }
 

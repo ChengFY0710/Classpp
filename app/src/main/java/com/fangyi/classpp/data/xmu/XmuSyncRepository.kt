@@ -6,6 +6,7 @@ import com.fangyi.classpp.data.TodoOpResult
 import com.fangyi.classpp.data.TodoReadResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.StoreResult
 import kotlinx.coroutines.Dispatchers
@@ -50,6 +51,11 @@ data class XmuSyncPlan(
     /** 远端列表总条数（含被过滤项） */
     val totalRemote: Int,
     val fetchedAtMillis: Long,
+    /**
+     * 存量同步待办的分组回填：本地 todoId → 自动分组键（[XmuTodoMapper.AUTO_GROUP_KEY_HOMEWORK]
+     * 等）。只收当前 `group == null` 的条目——用户已手动分组的保持原样；远端 type 未知的也不收。
+     */
+    val groupBackfill: Map<String, String> = emptyMap(),
 )
 
 data class XmuPlanItem(val dto: XmuTodoDto, val todo: Todo)
@@ -74,6 +80,8 @@ sealed interface XmuCommitOutcome {
 /**
  * 课程中心待办同步编排（指导 §5）：**只增不改**——远端内容变化本期不回写本地（P2 按
  * 哈希更新），远端消失不自动删/不自动勾完成；用户删除过的条目只要远端仍列出就允许复活。
+ * 唯一例外是本地分组元数据：按远端 type 自动维护「作业」「测验」分组，并给仍未分组的
+ * 存量同步待办补分组（不碰标题/截止等远端字段，也不覆盖用户手动选择的组）。
  *
  * 并发纪律：探活/同步/清空共用一把 [mutex]，同一时刻只有一次会话；探活 3 秒去抖
  * （成功才刷新时间戳，失败立即可重试）。同步状态与 todos.json 完全独立文件（[XmuSyncStore]），
@@ -95,6 +103,8 @@ class XmuSyncRepository internal constructor(
     private val avatarStore: XmuAvatarStore? = null,
     /** 头像下载（null = 不抓头像）；失败由实现返回 null，这里只当作「这次没抓到」 */
     private val avatarLoader: XmuAvatarLoader? = null,
+    /** 自动分组首次创建时的默认名（AppContainer 按当前语言注入；测试回退中文） */
+    private val autoGroupNames: XmuAutoGroupNames = XmuAutoGroupNames(),
 ) {
     private val mutex = Mutex()
 
@@ -160,15 +170,35 @@ class XmuSyncRepository internal constructor(
     /** 提交同步计划：复活回收站条目 + 批量导入勾选的新增项 + 更新映射文件 */
     suspend fun commitSync(plan: XmuSyncPlan, selectedNewIds: Set<String>): XmuCommitOutcome =
         mutex.withLock {
+            val selected = plan.newItems.filter { it.todo.id in selectedNewIds }
+            // 自动分组：勾选的新增条目 + 存量回填各自需要的组键；先把组建好并把存量未分组
+            // 条目归位（含回收站——随后 restoreTodo 会原样保留刚补上的 group），再导入新增
+            val groupKeys = buildSet {
+                for (item in selected) XmuTodoMapper.autoGroupKey(item.dto.type)?.let(::add)
+                addAll(plan.groupBackfill.values)
+            }
+            val groups = resolveAutoGroups(groupKeys)
+            val assignments = groupBackfillAssignments(groups.nameByKey, plan.groupBackfill)
+            if (groups.ensure.isNotEmpty() || assignments.isNotEmpty()) {
+                when (val r = todoRepository.applyGroupAssignments(groups.ensure, assignments)) {
+                    TodoOpResult.Ok -> Unit
+                    is TodoOpResult.Err -> return@withLock XmuCommitOutcome.Failed(r.error)
+                }
+            }
+
             var restored = 0
             for (item in plan.restoreItems) {
                 if (todoRepository.restoreTodo(item.todo.id) is TodoOpResult.Ok) restored++
             }
 
-            val selected = plan.newItems.filter { it.todo.id in selectedNewIds }
             var imported = 0
             if (selected.isNotEmpty()) {
-                when (val r = todoRepository.addTodos(selected.map { it.todo })) {
+                val prepared = selected.map { item ->
+                    val group = XmuTodoMapper.autoGroupKey(item.dto.type)
+                        ?.let { groups.nameByKey[it] }
+                    if (group == null) item.todo else item.todo.copy(group = group)
+                }
+                when (val r = todoRepository.addTodos(prepared)) {
                     is TodoReadResult.Ok -> imported = r.value.size
                     is TodoReadResult.Err -> return@withLock XmuCommitOutcome.Failed(r.error)
                 }
@@ -223,6 +253,8 @@ class XmuSyncRepository internal constructor(
      * 「上次同步」；返回 false 表示状态文件落盘失败。
      */
     suspend fun markSynced(plan: XmuSyncPlan): Boolean = mutex.withLock {
+        // 「无新增」同样要回填存量分组：每日自动同步/手动同步的已是最新分支都走这里
+        if (!applyGroupBackfill(plan)) return@withLock false
         val byRemote = _state.value.entries.associateBy { XmuTodoMapper.remoteKey(it) }.toMutableMap()
         for (entry in plan.entriesForActive) byRemote.putIfAbsent(XmuTodoMapper.remoteKey(entry), entry)
         persist(
@@ -327,6 +359,74 @@ class XmuSyncRepository internal constructor(
         return url
     }
 
+    /** 自动分组解析结果：[ensure] 需要落库的组；[nameByKey] 分组键 → 当前使用的组名 */
+    private data class ResolvedAutoGroups(
+        val ensure: List<TodoGroup>,
+        val nameByKey: Map<String, String>,
+    )
+
+    /**
+     * 解析本次同步需要的自动分组（只读，不落库）：
+     * - 已存在同 [TodoGroup.autoKey] 的分组 → 直接用它的当前名称（用户重命名后继续沿用）；
+     * - 没有同 autoKey 但有同名用户分组 → 收养（补 autoKey，不改名、不挪位置）；
+     * - 都没有 → 用默认名新建；默认名被别的分组占用时追加「 2/3…」保证组名唯一；
+     * - 顺序固定为「作业、测验」，与远端返回顺序无关。
+     */
+    private fun resolveAutoGroups(keys: Collection<String>): ResolvedAutoGroups {
+        val desiredKeys = XmuTodoMapper.AUTO_GROUP_KEY_ORDER.filter { it in keys }
+        if (desiredKeys.isEmpty()) return ResolvedAutoGroups(emptyList(), emptyMap())
+        val current = todoRepository.groups.value
+        val usedNames = current.mapTo(mutableSetOf()) { it.name }
+        val byKey = current.mapNotNull { group -> group.autoKey?.let { it to group } }.toMap()
+        val resolved = LinkedHashMap<String, TodoGroup>()
+        for (key in desiredKeys) {
+            val existing = byKey[key]
+            if (existing != null) {
+                resolved[key] = existing
+                continue
+            }
+            val preferred = autoGroupNames.nameFor(key) ?: continue
+            val adoptable = current.firstOrNull { it.name == preferred && it.autoKey == null }
+            val group = when {
+                adoptable != null -> adoptable.copy(autoKey = key)
+                preferred !in usedNames -> TodoGroup(name = preferred, autoKey = key)
+                else -> TodoGroup(name = uniqueGroupName(preferred, usedNames), autoKey = key)
+            }
+            usedNames += group.name
+            resolved[key] = group
+        }
+        return ResolvedAutoGroups(resolved.values.toList(), resolved.mapValues { it.value.name })
+    }
+
+    /** 默认组名被占用时的兜底名：「作业 2」「作业 3」…（仅组名冲突的极端场景） */
+    private fun uniqueGroupName(base: String, used: Set<String>): String {
+        var index = 2
+        while ("$base $index" in used) index++
+        return "$base $index"
+    }
+
+    /** 存量回填的 todoId → 组名映射（分组键解析不到名称的忽略） */
+    private fun groupBackfillAssignments(
+        nameByKey: Map<String, String>,
+        backfill: Map<String, String>,
+    ): Map<String, String> = buildMap {
+        for ((todoId, key) in backfill) {
+            nameByKey[key]?.let { put(todoId, it) }
+        }
+    }
+
+    /** 只回填存量未分组同步待办（活跃/归档/回收站）；失败返回 false 交调用方报错 */
+    private suspend fun applyGroupBackfill(plan: XmuSyncPlan): Boolean {
+        if (plan.groupBackfill.isEmpty()) return true
+        val groups = resolveAutoGroups(plan.groupBackfill.values)
+        val assignments = groupBackfillAssignments(groups.nameByKey, plan.groupBackfill)
+        if (groups.ensure.isEmpty() && assignments.isEmpty()) return true
+        return when (todoRepository.applyGroupAssignments(groups.ensure, assignments)) {
+            TodoOpResult.Ok -> true
+            is TodoOpResult.Err -> false
+        }
+    }
+
     private fun buildPlan(
         profile: XmuProfileDto,
         listDto: XmuTodoListDto,
@@ -343,42 +443,49 @@ class XmuSyncRepository internal constructor(
         val restoreItems = mutableListOf<XmuPlanItem>()
         val entriesForActive = mutableListOf<XmuSyncEntry>()
         val skipped = mutableMapOf<SkipReason, Int>()
+        val groupBackfill = mutableMapOf<String, String>()
 
         for (dto in listDto.todoList.distinctBy { XmuTodoMapper.remoteKey(it) }) {
+            val rKey = XmuTodoMapper.remoteKey(dto)
+            // 本地 id 迁移：映射里的 todoId（v1 不含 courseId）优先沿用；映射丢失时再按
+            // v1 口径找回旧条目，避免升级/恢复后把已导入的待办当新增重复导入。
+            // 先于 map() 解析：已逾期/已锁定等被过滤的远端条目仍可能对应本地已导入的
+            // 待办，分组回填不能因为它这次被跳过就漏掉
+            val knownTodoId = knownEntries[rKey]?.todoId
+            val localId = sequenceOf(
+                knownTodoId,
+                XmuTodoMapper.localId(dto),
+                XmuTodoMapper.legacyLocalId(dto),
+            ).filterNotNull().firstOrNull { it in active || it in archived || it in trashed }
+                ?: knownTodoId
+                ?: XmuTodoMapper.localId(dto)
+            // 已导入（活跃或已归档——归档只是隐藏，不改变导入事实）：跳过
+            // （P2 再按哈希做远端变化更新）；映射缺档只补基线
+            val liveTodo = active[localId] ?: archived[localId]
+            val trashedTodo = trashed[localId]
+            // 存量同步待办按远端 type 补自动分组：只补本地确实存在且仍未分组的，
+            // 用户改过分组就尊重；远端新增候选不在这里回填（导入时按 type 直接设置）
+            val existing = liveTodo ?: trashedTodo
+            if (existing != null && existing.group == null) {
+                XmuTodoMapper.autoGroupKey(dto.type)?.let { groupBackfill[localId] = it }
+            }
+
             when (val outcome = XmuTodoMapper.map(dto, fetchedAt)) {
                 is XmuMapOutcome.Skipped -> skipped.merge(outcome.reason, 1, Int::plus)
-                is XmuMapOutcome.Mapped -> {
-                    val rKey = XmuTodoMapper.remoteKey(dto)
-                    // 本地 id 迁移：映射里的 todoId（v1 不含 courseId）优先沿用；映射丢失时再按
-                    // v1 口径找回旧条目，避免升级/恢复后把已导入的待办当新增重复导入
-                    val knownTodoId = knownEntries[rKey]?.todoId
-                    val localId = sequenceOf(
-                        knownTodoId,
-                        outcome.todo.id,
-                        XmuTodoMapper.legacyLocalId(dto),
-                    ).filterNotNull().firstOrNull { it in active || it in archived || it in trashed }
-                        ?: knownTodoId
-                        ?: outcome.todo.id
-                    val activeTodo = active[localId]
-                    val trashedTodo = trashed[localId]
-                    // 已导入（活跃或已归档——归档只是隐藏，不改变导入事实）：
-                    // 跳过（P2 再按哈希做远端变化更新）；映射缺档只补基线
-                    val liveTodo = activeTodo ?: archived[localId]
-                    when {
-                        liveTodo != null -> {
-                            if (rKey !in knownEntries) {
-                                entriesForActive += XmuSyncEntry(
-                                    remoteId = dto.id,
-                                    courseId = dto.courseId,
-                                    todoId = localId,
-                                    remoteHash = XmuTodoMapper.remoteHash(dto),
-                                    localHash = XmuTodoMapper.localHash(liveTodo),
-                                )
-                            }
+                is XmuMapOutcome.Mapped -> when {
+                    liveTodo != null -> {
+                        if (rKey !in knownEntries) {
+                            entriesForActive += XmuSyncEntry(
+                                remoteId = dto.id,
+                                courseId = dto.courseId,
+                                todoId = localId,
+                                remoteHash = XmuTodoMapper.remoteHash(dto),
+                                localHash = XmuTodoMapper.localHash(liveTodo),
+                            )
                         }
-                        trashedTodo != null -> restoreItems += XmuPlanItem(dto, trashedTodo)
-                        else -> newItems += XmuPlanItem(dto, outcome.todo.copy(id = localId))
                     }
+                    trashedTodo != null -> restoreItems += XmuPlanItem(dto, trashedTodo)
+                    else -> newItems += XmuPlanItem(dto, outcome.todo.copy(id = localId))
                 }
             }
         }
@@ -390,6 +497,7 @@ class XmuSyncRepository internal constructor(
             skipped = skipped,
             totalRemote = listDto.todoList.size,
             fetchedAtMillis = fetchedAt,
+            groupBackfill = groupBackfill,
         )
     }
 

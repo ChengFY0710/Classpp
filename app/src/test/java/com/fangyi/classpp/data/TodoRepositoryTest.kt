@@ -4,9 +4,11 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatEndType
 import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.RepeatType
+import com.fangyi.classpp.data.model.TodoFile
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoSharePayload
+import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.StoreResult
 import com.fangyi.classpp.data.store.TodoStore
 import kotlinx.coroutines.runBlocking
@@ -56,6 +58,18 @@ class TodoRepositoryTest {
     private suspend fun TodoOpResult.assertErr(): TodoError {
         assertTrue("expected Err, got $this", this is TodoOpResult.Err)
         return (this as TodoOpResult.Err).error
+    }
+
+    /** 写盘计数替身：验证「无变化不落盘」 */
+    private class CountingTodoStore(private val delegate: TodoStore) : TodoStore {
+        var saves = 0
+
+        override fun load(): LoadOutcome<TodoFile> = delegate.load()
+
+        override fun save(file: TodoFile): StoreResult {
+            saves++
+            return delegate.save(file)
+        }
     }
 
     // ---------- 新增 / 持久化 ----------
@@ -760,6 +774,81 @@ class TodoRepositoryTest {
         assertEquals(listOf("作业"), r.groups.value.map { it.name })
         r.removeTodo(id).assertOk()
         assertEquals(listOf("作业"), r.groups.value.map { it.name })
+    }
+
+    @Test
+    fun `applyGroupAssignments appends auto groups and backfills only ungrouped todos`() = runBlocking {
+        val r = repo()
+        r.setGroups(listOf(TodoGroup("灵感", pinned = true), TodoGroup("日常"))).assertOk()
+        val a = r.addTodo(testTodo(name = "A")).okId()
+        val b = r.addTodo(testTodo(name = "B", group = "日常")).okId()
+        val archived = r.addTodo(testTodo(name = "归档")).okId()
+        r.archiveTodo(archived).assertOk()
+        val trashed = r.addTodo(testTodo(name = "回收站")).okId()
+        r.removeTodo(trashed).assertOk()
+
+        r.applyGroupAssignments(
+            ensureGroups = listOf(TodoGroup("作业", autoKey = "xmu:homework")),
+            assignments = mapOf(
+                a to "作业",
+                b to "作业",
+                archived to "作业",
+                trashed to "作业",
+            ),
+        ).assertOk()
+
+        // 用户组在前、置顶前缀不变；自动组追加到表尾
+        assertEquals(listOf("灵感", "日常", "作业"), r.groups.value.map { it.name })
+        assertEquals(listOf(true, false, false), r.groups.value.map { it.pinned })
+        assertEquals("xmu:homework", r.groups.value.single { it.name == "作业" }.autoKey)
+        // 未分组条目（活跃/归档/回收站）回填；用户手动分组的 B 保持原样
+        assertEquals("作业", r.todos.value.single { it.id == a }.group)
+        assertEquals("日常", r.todos.value.single { it.id == b }.group)
+        assertEquals("作业", r.archivedTodos.value.single { it.id == archived }.group)
+        assertEquals("作业", r.deletedTodos.value.single { it.id == trashed }.group)
+
+        val reopened = repo()
+        assertEquals("作业", reopened.deletedTodos.value.single { it.id == trashed }.group)
+        assertEquals("xmu:homework", reopened.groups.value.single { it.name == "作业" }.autoKey)
+    }
+
+    @Test
+    fun `applyGroupAssignments keeps renamed auto group and adopts same-name user group`() = runBlocking {
+        val r = repo()
+        r.setGroups(
+            listOf(
+                TodoGroup("课程作业", autoKey = "xmu:homework"),
+                TodoGroup("测验"),
+            ),
+        ).assertOk()
+
+        r.applyGroupAssignments(
+            ensureGroups = listOf(
+                TodoGroup("作业", autoKey = "xmu:homework"),
+                TodoGroup("测验", autoKey = "xmu:quiz"),
+            ),
+            assignments = emptyMap(),
+        ).assertOk()
+
+        // 同 autoKey 的分组保留用户重命名；同名用户分组只收养 autoKey，不改名/位置
+        assertEquals(listOf("课程作业", "测验"), r.groups.value.map { it.name })
+        assertEquals("xmu:homework", r.groups.value[0].autoKey)
+        assertEquals("xmu:quiz", r.groups.value[1].autoKey)
+    }
+
+    @Test
+    fun `applyGroupAssignments is a no-op without changes`() = runBlocking {
+        val store = CountingTodoStore(com.fangyi.classpp.data.store.FileTodoStore(folder.root))
+        val r = repo(store)
+        r.setGroups(listOf(TodoGroup("作业", autoKey = "xmu:homework"))).assertOk()
+        val savesAfterSetup = store.saves
+
+        r.applyGroupAssignments(
+            ensureGroups = listOf(TodoGroup("作业", autoKey = "xmu:homework")),
+            assignments = emptyMap(),
+        ).assertOk()
+
+        assertEquals(savesAfterSetup, store.saves)
     }
 
     @Test

@@ -128,10 +128,15 @@ data class TodoFile(
  * 落点槽位排除置顶区）。持有方每次置顶/取消置顶后用稳定划分（`filter { pinned } + filter { !pinned }`）
  * 维护该不变式：新置顶项落前缀尾部（顺序即置顶操作顺序），取消置顶项原位不动。
  *
+ * @param autoKey 自动分组的稳定标识（null = 用户分组）。外部同步按它定位自己维护的分组，
+ *   **不依赖 [name]**：用户重命名后仍能命中并继续把新条目归入该组（例如课程中心同步的
+ *   「作业」「测验」分组）。用户删除分组时该标识随组一起消失，下次同步会按默认名重建。
+ *
  * 随 [TodoFile.groups] 落盘（TodoRepository.setGroups 统一写入，写入前做同样的归一化划分）。
  */
 @Serializable
 data class TodoGroup(
     val name: String,
     val pinned: Boolean = false,
+    val autoKey: String? = null,
 )

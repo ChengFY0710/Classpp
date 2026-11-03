@@ -87,10 +87,15 @@ class TodoJsonRoundTripTest {
                 testTodo(id = "t1", group = "作业"),
                 testTodo(id = "t2", name = "另一个"),
             ),
-            groups = listOf(TodoGroup("作业", pinned = true), TodoGroup("日常琐事")),
+            groups = listOf(
+                TodoGroup("作业", pinned = true, autoKey = "xmu:homework"),
+                TodoGroup("日常琐事"),
+            ),
         )
         assertEquals(file, ScheduleJson.decodeStorage<TodoFile>(ScheduleJson.encodeStorage(file)))
         assertEquals(1, file.formatVersion)
+        assertEquals("xmu:homework", file.groups.first().autoKey)
+        assertNull(file.groups.last().autoKey)
     }
 
     @Test

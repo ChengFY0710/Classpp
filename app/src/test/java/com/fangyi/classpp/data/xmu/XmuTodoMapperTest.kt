@@ -122,6 +122,30 @@ class XmuTodoMapperTest {
     }
 
     @Test
+    fun `自动分组键 - 已知类型容错、未知类型不分组`() {
+        assertEquals(
+            XmuTodoMapper.AUTO_GROUP_KEY_HOMEWORK,
+            XmuTodoMapper.autoGroupKey("homework"),
+        )
+        assertEquals(
+            XmuTodoMapper.AUTO_GROUP_KEY_HOMEWORK,
+            XmuTodoMapper.autoGroupKey("  HOMEWORK  "),
+        )
+        assertEquals(XmuTodoMapper.AUTO_GROUP_KEY_QUIZ, XmuTodoMapper.autoGroupKey("quiz"))
+        assertNull(XmuTodoMapper.autoGroupKey("exam"))
+        assertNull(XmuTodoMapper.autoGroupKey(""))
+        assertNull(XmuTodoMapper.autoGroupKey("   "))
+    }
+
+    @Test
+    fun `自动分组默认名与键对应`() {
+        val names = XmuAutoGroupNames()
+        assertEquals("作业", names.nameFor(XmuTodoMapper.AUTO_GROUP_KEY_HOMEWORK))
+        assertEquals("测验", names.nameFor(XmuTodoMapper.AUTO_GROUP_KEY_QUIZ))
+        assertNull(names.nameFor("other"))
+    }
+
+    @Test
     fun `确定性 id 与远端键`() {
         val dto = decodeFixture("todos-2026-10-30.json").todoList.first()
         assertEquals("xmu-106160-925512", XmuTodoMapper.localId(dto))

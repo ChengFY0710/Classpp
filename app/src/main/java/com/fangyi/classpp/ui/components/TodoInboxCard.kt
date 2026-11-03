@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -110,10 +111,10 @@ private val InboxPropertyLineSpacing = 3.dp
 private val InboxCheckboxShape = RoundedRectangle(6.dp)
 
 /**
- * 待办收集箱卡的一条待办行数据：只承载标题与三个属性（时间 / 截止 / 重复）。
+ * 待办收集箱卡的一条待办行数据：标题 + 三个属性（时间 / 截止 / 重复）+ 标签。
  *
- * 刻意不含标签字段——收集箱行按设计只显示这三项；也不含紧急档位、倒计时开关与删除态，
- * 这些形态由待办页的 [NoteCard] 承担。完成态只影响行标题与勾选框，不影响属性行。
+ * 不含紧急档位、倒计时开关与删除态，这些形态由待办页的 [NoteCard] 承担；
+ * 完成态只影响行标题与勾选框，不影响属性行。
  *
  * @param id 行身份键：卡片内部按它 [key] 复用行状态（完成动画、按压源），列表重排时
  *   不串位；调用方需保证同卡内唯一
@@ -126,6 +127,8 @@ private val InboxCheckboxShape = RoundedRectangle(6.dp)
  *   `Todo.deadlineColor()` 的结果（>2 天 primary、剩 2/1 天橙黄、当天与逾期 error）
  * @param repeat 重复规则（已格式化文本，如 "每天"、"自定义"）：ic_arrow_repeat 图标 +
  *   文本，图标与文字均 primary
+ * @param tags 标签名列表（按待办上的顺序展示）：纯文字、无底无图标，字号与属性行同档，
+ *   颜色取 [TodoInboxCard.tagColors]（表里没有的名字回落主题 primary）
  * @param completed 完成态：标题渐变到 secondaryText 并按进度自绘删除线（与 [NoteCard]
  *   同款动画），右侧勾选框选中；勾选切换只回调 [TodoInboxCard.onItemCheckedChange]，
  *   由调用方更新数据（组件受控）
@@ -139,6 +142,7 @@ data class TodoInboxItem(
     val deadline: String? = null,
     val deadlineColor: Color? = null,
     val repeat: String? = null,
+    val tags: List<String> = emptyList(),
     val completed: Boolean = false,
     val overdue: Boolean = false,
 )
@@ -152,10 +156,13 @@ data class TodoInboxItem(
  *   （末行按压高亮一直铺到卡底，内容位置不变，同 [SettingsCard] 的整卡按压）；
  * - 头部图标（缺省 ic_pin）与标题统一 [headerColor]（默认 primary：已置顶/未完成；
  *   已逾期传 error、已完成传 urgentGreen），标题取 [ClassppTextTokens.cardTitle]
- *   （16sp SemiBold / 行高 20，与行标题同档，靠颜色与图标拉开层级），单行超长省略；
- * - 每条待办行 = 标题（[MaterialTheme.classppTextStyles.fieldLabel]，16sp SemiBold）+
+ *   （16sp SemiBold / 行高 20，与整卡形态的行标题同档，靠颜色与图标拉开层级），
+ *   单行超长省略；
+ * - 每条待办行 = 标题（整卡/竖排形态 [MaterialTheme.classppTextStyles.fieldLabel] 16sp
+ *   SemiBold；[compact] 瀑布流形态收成 [ClassppTextTokens.masonryCardTitle] 14sp SemiBold）+
  *   属性行（[TimeProperty]：时间 secondaryText、截止按 [TodoInboxItem.deadlineColor]、
- *   重复 primary），属性行 `FlowRow` 放不下自动换行；行内**不渲染标签、紧急旗、倒计时**；
+ *   重复 primary，其后是标签——纯文字、无底无图标，字号与属性行同档，颜色取
+ *   [tagColors]），属性行 `FlowRow` 放不下自动换行；行内**不渲染紧急旗、倒计时**；
  * - 行最小高 [InboxRowMinHeight]（[compact] 收 28dp）：没有时间/截止/重复的行，标题
  *   垂直居中；行与行之间无分割线、无缝堆叠；
  * - 右侧勾选框与 [NoteCard] 同规格：36dp 热区 + M3 Checkbox（[compact] 热区收 28dp，
@@ -194,8 +201,11 @@ data class TodoInboxItem(
  * @param iconRes 头部图标；默认 ic_pin，传 null 隐藏图标
  * @param headerColor 头部图标与标题的强调色：默认 primary；已逾期传 error、已完成传
  *   urgentGreen（与待办特殊分组页的强调色口径一致）
- * @param compact 紧凑形态（收集箱两列网格）：左右内距 12dp、勾选框热区 28dp、行最小高
- *   28dp、头部图标 20dp；默认 false = 整卡形态（16dp / 36dp / 48dp / 24dp）
+ * @param compact 紧凑形态（收集箱两列瀑布流）：左右内距 12dp、勾选框热区 28dp、行最小高
+ *   28dp、头部图标 20dp、行标题 14sp（[ClassppTextTokens.masonryCardTitle]）；默认
+ *   false = 整卡形态（16dp / 36dp / 48dp / 24dp / 16sp）
+ * @param tagColors 标签配色表（标签名 → 颜色，与列表卡同一张表）；空表或表里没有的名字
+ *   回落主题 primary
  * @param onItemCheckedChange 勾选切换回调（item, checked）；null = 勾选框不可点
  */
 @Composable
@@ -207,6 +217,7 @@ fun TodoInboxCard(
     @DrawableRes iconRes: Int? = R.drawable.ic_pin,
     headerColor: Color = MaterialTheme.colorScheme.primary,
     compact: Boolean = false,
+    tagColors: Map<String, Color> = emptyMap(),
     onItemCheckedChange: ((TodoInboxItem, Boolean) -> Unit)? = null,
 ) {
     val horizontalPadding = if (compact) InboxCardCompactHorizontalPadding else InboxCardHorizontalPadding
@@ -251,6 +262,7 @@ fun TodoInboxCard(
                 TodoInboxRow(
                     item = item,
                     compact = compact,
+                    tagColors = tagColors,
                     // 卡底留白只由末行承载：按压区随行高下探到卡底，涟漪铺满整卡
                     bottomInset = if (index == items.lastIndex) InboxCardVerticalPadding else 0.dp,
                     onCheckedChange = onItemCheckedChange,
@@ -266,14 +278,16 @@ fun TodoInboxCard(
 }
 
 /**
- * 单条收集箱待办行：左侧标题 + 属性行（最多三项），右侧勾选框。
+ * 单条收集箱待办行：左侧标题 + 属性行（时间/截止/重复 + 标签），右侧勾选框。
  *
- * 行高按内容自然增长：标题 [MaterialTheme.classppTextStyles.fieldLabel]（行高继承 24dp）
- * + 2dp 间距 + 属性行（[TimeProperty]：默认 14sp/24；[compact] 用 12sp/16 的
- * [ClassppTextTokens.metaTextSmall]）；三个属性项一律带图标（时间 ic_clock、截止
- * ic_clock_alarm、重复 ic_arrow_repeat），窄卡放不下由 FlowRow 换行；
- * 没有属性行时靠 [InboxRowMinHeight] 撑高并垂直居中（[compact] 形态收 28dp，按设计稿
- * 密排）。整行恒可点（[TodoInboxCard] 的 onTodoClick 必传）：按压高亮取方角
+ * 行高按内容自然增长：标题（整卡形态 [MaterialTheme.classppTextStyles.fieldLabel]，
+ * 16sp / 行高继承 24dp；[compact] 瀑布流形态 [ClassppTextTokens.masonryCardTitle]，
+ * 14sp / 20dp）+ 2dp 间距 + 属性行（[TimeProperty]：默认 14sp/24；[compact] 用
+ * 12sp/16 的 [ClassppTextTokens.metaTextSmall]）；三个属性项一律带图标（时间 ic_clock、
+ * 截止 ic_clock_alarm、重复 ic_arrow_repeat），标签接在属性项之后——纯文字、无底无图标，
+ * 字号与属性行同档，颜色取 [tagColors]（缺省回落主题 primary）；窄卡放不下由 FlowRow
+ * 换行；没有属性行时靠 [InboxRowMinHeight] 撑高并垂直居中（[compact] 形态收 28dp，
+ * 按设计稿密排）。整行恒可点（[TodoInboxCard] 的 onTodoClick 必传）：按压高亮取方角
  * [RectangleShape]，外缘圆角由卡片的 clip 裁出；勾选框回调为 null 时不挂 toggleable，
  * 只作展示。
  *
@@ -285,12 +299,15 @@ fun TodoInboxCard(
 private fun TodoInboxRow(
     item: TodoInboxItem,
     compact: Boolean,
+    tagColors: Map<String, Color>,
     bottomInset: Dp,
     onCheckedChange: ((TodoInboxItem, Boolean) -> Unit)?,
     onTodoClick: (TodoInboxItem) -> Unit,
 ) {
     // 截止色缺省回落主题 primary（调用方按剩余天数传入紧急色）
     val deadlineColor = item.deadlineColor ?: MaterialTheme.colorScheme.primary
+    // 标签色缺省口径与列表卡一致：配色表里没有的名字回落主题 primary
+    val fallbackTagColor = MaterialTheme.colorScheme.primary
     // 勾选框按压源：pressFeedback 与 toggleable 共用（indication 置 null，涟漪由按压反馈取代）
     val checkboxPress = remember { MutableInteractionSource() }
     val horizontalPadding = if (compact) InboxCardCompactHorizontalPadding else InboxCardHorizontalPadding
@@ -302,6 +319,13 @@ private fun TodoInboxRow(
         ClassppTextTokens.metaTextSmall
     } else {
         MaterialTheme.classppTextStyles.noteProperty.tabularNumbers()
+    }
+    // 标题字号：整卡/竖排形态 16sp（与列表卡 NoteCard 同档）；瀑布流两列视图按设计稿
+    // 收 14sp，窄卡里标题与属性行的层级不至于压过属性行
+    val titleStyle = if (compact) {
+        ClassppTextTokens.masonryCardTitle
+    } else {
+        MaterialTheme.classppTextStyles.fieldLabel
     }
     Row(
         modifier = Modifier
@@ -326,8 +350,11 @@ private fun TodoInboxRow(
                 text = item.title,
                 completed = item.completed,
                 overdue = item.overdue,
+                baseStyle = titleStyle,
             )
-            if (item.time != null || item.deadline != null || item.repeat != null) {
+            if (item.time != null || item.deadline != null || item.repeat != null ||
+                item.tags.isNotEmpty()
+            ) {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(InboxPropertySpacing),
                     verticalArrangement = Arrangement.spacedBy(InboxPropertyLineSpacing),
@@ -355,6 +382,14 @@ private fun TodoInboxRow(
                             text = item.repeat,
                             tint = MaterialTheme.colorScheme.primary,
                             textStyle = propertyStyle,
+                        )
+                    }
+                    // 标签：纯文字、无底无图标，字号与属性行同档（属性行 token 直接复用，
+                    // 只换颜色），颜色随标签色；不裁单行——窄卡放不下由 FlowRow 换到下一行
+                    item.tags.forEach { tag ->
+                        Text(
+                            text = tag,
+                            style = propertyStyle.copy(color = tagColors[tag] ?: fallbackTagColor),
                         )
                     }
                 }
@@ -401,12 +436,20 @@ private fun TodoInboxRow(
  * 行标题：普通态 onSurface；逾期态 error；完成态渐变到 secondaryText 并按进度自绘删除线。
  * 完成态优先于逾期态（两者都真时取完成灰，同 [NoteCard]）。
  *
+ * 字号由调用方按形态传入：[baseStyle] 是整卡形态的 fieldLabel（16sp）或瀑布流紧凑形态的
+ * [ClassppTextTokens.masonryCardTitle]（14sp），这里只换颜色、不改字号。
+ *
  * 与 [NoteCard] 的完成态同一套做法——不用 TextDecoration（只能整体开关、无动画），
  * 而是按 [TextLayoutResult] 的逐行基线与行宽从左向右揭示，取消完成反向擦除；多行标题
  * 按行序擦过去。线宽 1dp、位置取基线上方 0.30×字号（平台 LineThrough 的常规视觉位）。
  */
 @Composable
-private fun InboxRowTitle(text: String, completed: Boolean, overdue: Boolean) {
+private fun InboxRowTitle(
+    text: String,
+    completed: Boolean,
+    overdue: Boolean,
+    baseStyle: TextStyle,
+) {
     val completedProgress by animateFloatAsState(
         targetValue = if (completed) 1f else 0f,
         animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
@@ -421,7 +464,7 @@ private fun InboxRowTitle(text: String, completed: Boolean, overdue: Boolean) {
         animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
         label = "todoInboxRowTitleColor",
     )
-    val titleStyle = MaterialTheme.classppTextStyles.fieldLabel.copy(color = titleColor)
+    val titleStyle = baseStyle.copy(color = titleColor)
     // 标题布局结果（onTextLayout 回传，随文本/宽度变化刷新）：删除线要按行取基线与行宽
     var titleLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
     Text(
@@ -473,15 +516,20 @@ private fun TodoInboxCardDarkPreview() {
 
 /**
  * 预览内容：
- * - 第一张对照整卡形态：已置顶头 + 五条行（时间+截止、时间、重复、紧急截止、完成态），
- *   勾选与行点击都接线（空实现）；
- * - 第二张：三属性齐全的长标题（验证换行自然高）与无任何属性行（验证最小高居中），
- *   只接行点击、不接勾选，演示「勾选框纯展示」形态；
+ * - 第一张对照整卡形态：已置顶头 + 五条行（时间+截止+标签、时间+标签、重复、紧急截止、
+ *   完成态），勾选与行点击都接线（空实现）；标签覆盖配色表内色与回落 primary 两种；
+ * - 第二张：三属性 + 标签齐全的长标题（验证换行自然高）与无任何属性的行（验证最小高
+ *   居中），只接行点击、不接勾选，演示「勾选框纯展示」形态；
  * - 第三行对照两列网格的紧凑形态与强调色：已逾期（error 红标题）与已完成（urgentGreen
- *   绿头 + 灰标题），卡片间距 10dp。
+ *   绿头 + 灰标题），卡片间距 10dp；紧凑形态的行带标签，验证 14sp 标题与 12sp 纯文字标签。
  */
 @Composable
 private fun TodoInboxCardShowcase() {
+    // 预览用标签配色表：任意两个标签色 + 表外名字（回落 primary）
+    val tagColors = mapOf(
+        "高等数学" to Color(0xFF5C9CE6),
+        "实验报告" to Color(0xFFE5645C),
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -498,8 +546,14 @@ private fun TodoInboxCardShowcase() {
                     time = "12:30",
                     deadline = "3/12 6:00",
                     deadlineColor = MaterialTheme.colorScheme.primary,
+                    tags = listOf("高等数学", "实验报告", "复习"),
                 ),
-                TodoInboxItem(id = "time", title = "待办标题待办标题", time = "12:30"),
+                TodoInboxItem(
+                    id = "time",
+                    title = "待办标题待办标题",
+                    time = "12:30",
+                    tags = listOf("实验报告"),
+                ),
                 TodoInboxItem(id = "repeat", title = "待办标题待办标题", repeat = "每天"),
                 TodoInboxItem(
                     id = "deadline-urgent",
@@ -509,6 +563,7 @@ private fun TodoInboxCardShowcase() {
                 ),
                 TodoInboxItem(id = "completed", title = "待办标题待办标题", completed = true),
             ),
+            tagColors = tagColors,
             onItemCheckedChange = { _, _ -> },
             onTodoClick = {},
         )
@@ -521,9 +576,11 @@ private fun TodoInboxCardShowcase() {
                     time = "12:30",
                     deadline = "3/12 6:00",
                     repeat = "每天",
+                    tags = listOf("高等数学", "实验报告"),
                 ),
                 TodoInboxItem(id = "no-properties", title = "没有时间、截止与重复的待办"),
             ),
+            tagColors = tagColors,
             onTodoClick = {},
         )
         // 两列网格对照：紧凑形态 + 头部强调色 + 逾期红标题；卡片间距 10dp
@@ -534,7 +591,12 @@ private fun TodoInboxCardShowcase() {
             TodoInboxCard(
                 title = "已逾期",
                 items = listOf(
-                    TodoInboxItem(id = "overdue-1", title = "待办标题待办标题", overdue = true),
+                    TodoInboxItem(
+                        id = "overdue-1",
+                        title = "待办标题待办标题",
+                        overdue = true,
+                        tags = listOf("实验报告"),
+                    ),
                     TodoInboxItem(id = "overdue-2", title = "待办标题待办标题", overdue = true),
                     TodoInboxItem(id = "overdue-3", title = "待办标题待办标题", overdue = true),
                 ),
@@ -542,6 +604,7 @@ private fun TodoInboxCardShowcase() {
                 iconRes = R.drawable.ic_checkbox_warning,
                 headerColor = MaterialTheme.colorScheme.error,
                 compact = true,
+                tagColors = tagColors,
                 modifier = Modifier.weight(1f),
             )
             TodoInboxCard(

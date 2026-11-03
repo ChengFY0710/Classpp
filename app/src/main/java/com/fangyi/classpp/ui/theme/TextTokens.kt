@@ -48,6 +48,8 @@ object ClassppTextTokens {
     val courseTaskCardTitle = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 密集卡片标题（课表课程名）：12sp SemiBold。 */
     val compactCardTitle = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, lineHeight = 16.sp, letterSpacing = 0.sp)
+    /** 收集箱瀑布流卡标题（待办收集箱两列视图的待办标题）：14sp SemiBold。 */
+    val masonryCardTitle = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 课表切换卡标题：16sp SemiBold；行高 20，按单行设置卡标题处理。 */
     val listRowTitle = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 交替课选择行标题：16sp SemiBold。 */

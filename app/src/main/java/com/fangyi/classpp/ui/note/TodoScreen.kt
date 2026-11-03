@@ -159,8 +159,9 @@ private val SectionSpacing = 20.dp
  * 把非空分组渲染成 [TodoInboxCard]——三组及以上按个性化页的
  * 「瀑布流视图」开关（[masonryView]，默认开启）走两列瀑布流（卡间距 10dp，按卡片
  * 高度落进较短一列）或整宽竖排，两组及以下始终整宽竖排（半宽卡会把标题与
- * 属性行挤得过窄；特殊分组页的单卡同理）；卡内只显示
- * 标题与时间/截止/重复（三项均带图标），行点击拉起详情浮层、勾选照常落库；分组口径
+ * 属性行挤得过窄；特殊分组页的单卡同理）；卡内显示
+ * 标题、时间/截止/重复（三项均带图标）与标签（纯文字、无底，字号同属性行、颜色随标签色），
+ * 行点击拉起详情浮层、勾选照常落库；分组口径
  * 与列表同源（[buildTodoSections]）。视图段编进 CrossPages 的页面 key，视图切换与
  * 切分组同享整页交叉过渡；最近删除页保留列表且不编码视图段（撤回/彻底删除需要整卡
  * 动作，切视图不播动画、内容不变），顶栏视图块在该页置灰不可点。收集箱卡不渲染
@@ -836,6 +837,7 @@ fun TodoScreen(
                             completionEcho = completionEcho,
                             flyDoneKeys = flyDoneKeys,
                             masonryView = masonryView,
+                            tagColors = tagColorMap,
                             onTodoClick = openTodoDetail,
                             onToggleCompleted = { todo, completed ->
                                 toggleTodoCompleted(todo, completed, false)
@@ -1517,7 +1519,9 @@ private val InboxCardSpacing = 10.dp
  * - 分区口径、卡片内顺序、完成回显与列表视图完全同源（见 [buildTodoSections] 与
  *   [TodoScreen] 的 completionEcho）：勾选后卡片即时变色/划线，停一拍落库，
  *   条目随后在「未完成 ↔ 已完成」两卡之间移动；
- * - 卡片只显示标题 + 时间/截止/重复，不渲染标签、紧急旗、倒计时（组件口径）；
+ * - 卡片显示标题、时间/截止/重复与标签（标签纯文字、无底无图标，字号与属性行同档、
+ *   颜色随标签色），不渲染紧急旗、倒计时（组件口径）；两列瀑布流卡的行标题收 14sp
+ *   （`masonryCardTitle`），整宽竖排卡保持 16sp；
  *   头部强调色按分组：已完成 urgentGreen、已逾期 error、其余 primary，图标取对应
  *   特殊分组图标（已完成勾选框 / 未完成空框 / 已逾期警告框 / 已置顶图钉）；
  * - 点击行经 [onTodoClick] 交宿主拉起详情浮层（详情里的倒计时开关由宿主按视图置灰：
@@ -1542,6 +1546,8 @@ private fun TodoInboxContent(
     flyDoneKeys: Set<String>,
     // 收集箱「瀑布流视图」开关（个性化页 State 透传）：值在此叶子读取
     masonryView: State<Boolean>,
+    // 标签配色表（标签名 → 颜色）：透传给卡片内的标签纯文字
+    tagColors: Map<String, Color>,
     onTodoClick: (Todo) -> Unit,
     onToggleCompleted: (Todo, Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -1611,6 +1617,8 @@ private fun TodoInboxContent(
                         deadline = todo.deadlineCardText(),
                         deadlineColor = todo.deadlineColor(),
                         repeat = todo.repeatCardText(),
+                        // 标签按待办上的顺序展示：卡片内纯文字着色，表外名字回落 primary
+                        tags = todo.tags,
                         // 乐观回显覆盖仓库值：勾选当帧先变色/划线（同列表卡）
                         completed = completionEcho[key] ?: todo.completed,
                         // 逾期卡整卡红标题；已完成优先（两者都真取完成灰，同 NoteCard）
@@ -1638,6 +1646,7 @@ private fun TodoInboxContent(
                     iconRes = icon,
                     headerColor = accent,
                     compact = !fullWidthCards,
+                    tagColors = tagColors,
                     onItemCheckedChange = { item, checked ->
                         todoByItemId[item.id]?.let { onToggleCompleted(it, checked) }
                     },

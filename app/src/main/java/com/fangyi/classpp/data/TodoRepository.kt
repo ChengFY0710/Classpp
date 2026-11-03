@@ -288,6 +288,64 @@ class TodoRepository internal constructor(
         return cleaned.filter { it.pinned } + cleaned.filter { !it.pinned }
     }
 
+    /**
+     * 外部同步的自动分组落库（单次 commit）：
+     *
+     * - [ensureGroups]：要确保存在的自动分组。按 [TodoGroup.autoKey] 优先匹配——已存在则
+     *   完全保留现有 name/pinned（用户重命名、置顶后仍继续沿用）；否则按 name 匹配，同名
+     *   用户分组只补 autoKey（收养，不改名、不挪位置）；都没有时追加到表尾（非置顶）。
+     *   归一化仍走 [normalizeGroups]，维持置顶连续前缀。
+     * - [assignments]：todoId → 分组名。只作用于**当前未分组**的待办，活跃/已归档/回收站
+     *   三类都扫；已手动分组的条目保持用户选择，未知 id 与失效组名宽容忽略。
+     * - 没有任何实际变化时不写盘（自动同步的「已是最新」路径不产生多余 I/O）。
+     *
+     * 不做全量 [normalize]：分组回填只改 group 引用，避免顺带触发重复待办的逾期结算等
+     * 无关副作用；组名有效性由本次合并后的分组表保证。
+     */
+    suspend fun applyGroupAssignments(
+        ensureGroups: List<TodoGroup>,
+        assignments: Map<String, String>,
+    ): TodoOpResult = mutex.withLock {
+        if (ensureGroups.isEmpty() && assignments.isEmpty()) return@withLock TodoOpResult.Ok
+        val current = fileState.value
+        val merged = mergeGroups(current.groups, ensureGroups)
+        val groupNames = merged.mapTo(mutableSetOf()) { it.name }
+        val todos = if (assignments.isEmpty()) {
+            current.todos
+        } else {
+            current.todos.map { todo ->
+                val target = todo.group ?: assignments[todo.id]?.takeIf { it in groupNames }
+                if (target == todo.group) todo else todo.copy(group = target)
+            }
+        }
+        if (merged == current.groups && todos == current.todos) return@withLock TodoOpResult.Ok
+        commit(current.copy(groups = merged, todos = todos))
+    }
+
+    /**
+     * 合并外部同步要确保的自动分组（见 [applyGroupAssignments]）：autoKey 优先、name 次之。
+     * 同名但已有其它 autoKey 的分组不抢占（调用方应先用唯一名）；同名用户分组只补 autoKey。
+     */
+    private fun mergeGroups(existing: List<TodoGroup>, incoming: List<TodoGroup>): List<TodoGroup> {
+        val result = existing.toMutableList()
+        for (group in incoming) {
+            val name = group.name.trim()
+            if (name.isEmpty()) continue
+            val autoKey = group.autoKey
+            if (autoKey != null && result.any { it.autoKey == autoKey }) continue
+            val sameName = result.indexOfFirst { it.name == name }
+            if (sameName >= 0) {
+                val found = result[sameName]
+                if (autoKey != null && found.autoKey == null) {
+                    result[sameName] = found.copy(autoKey = autoKey)
+                }
+                continue
+            }
+            result += group.copy(name = name, pinned = false)
+        }
+        return normalizeGroups(result)
+    }
+
     // ---------- 待办 CRUD ----------
 
     /** 新增待办：id 空则生成、createdAt 缺省（0）补当前时刻；归一化 + 校验后追加 */

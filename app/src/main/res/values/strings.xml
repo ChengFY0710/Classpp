@@ -196,6 +196,9 @@
     <string name="xmu_section_capabilities">同步可以做什么</string>
     <string name="xmu_section_alt_login">备用登录方式</string>
     <string name="xmu_source_badge">课程中心</string>
+    <!-- 课程中心同步：按远端 type 自动创建的分组默认名（仅首次创建时使用，之后以 autoKey 定位） -->
+    <string name="xmu_group_homework">作业</string>
+    <string name="xmu_group_quiz">测验</string>
     <string name="xmu_connected_label">已连接</string>
     <string name="xmu_connected_name">已连接：%1$s</string>
     <string name="xmu_not_connected_label">未连接</string>
