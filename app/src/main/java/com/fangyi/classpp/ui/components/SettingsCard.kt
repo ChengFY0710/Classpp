@@ -96,8 +96,6 @@ sealed interface SettingsCardItem {
     /**
      * 自定义行：label（+ 可选描述）与 [trailing] 同行垂直居中，无整行点击（尾部控件自理）。
      * 供暂未收敛为标准行型的控件使用（如节次卡的加减按钮、时间胶囊）；
-     * [leading] 可选，画在整行最左、与文字块垂直居中（如账号卡的头像圆），后接 12dp
-     * 行卡图标↔文本间距；文字块宽度相应收窄，换行与 [trailing] 一样不贴控件；
      * [trailing] = null（默认）为纯文字行：不渲染尾部槽位，标题与描述撑满整行可用宽
      * （描述不再预留避让尾部控件的间隙）——说明/简介类展示行同款；
      * [footer] 可选，画在整行之下、占满行宽（如节次上限的溢出提示），内距由内容自理。
@@ -105,7 +103,6 @@ sealed interface SettingsCardItem {
     data class Custom(
         override val label: String,
         override val description: String? = null,
-        val leading: (@Composable () -> Unit)? = null,
         val trailing: (@Composable RowScope.() -> Unit)? = null,
         val footer: (@Composable () -> Unit)? = null,
     ) : SettingsCardItem
@@ -324,7 +321,7 @@ private fun SettingsCardRow(item: SettingsCardItem, hazeState: HazeState?) {
     }
 }
 
-/** 自定义行渲染：首部槽 [SettingsCardItem.Custom.leading]、文字块与尾部槽同行居中（leading/trailing = null 时不渲染该槽），[SettingsCardItem.Custom.footer] 画在行下、占满行宽；行高下限随 [minHeight] */
+/** 自定义行渲染：文字块与尾部槽同行居中（trailing = null 时不渲染尾部槽），[SettingsCardItem.Custom.footer] 画在行下、占满行宽；行高下限随 [minHeight] */
 @Composable
 private fun CustomRow(item: SettingsCardItem.Custom, minHeight: Dp) {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -335,11 +332,6 @@ private fun CustomRow(item: SettingsCardItem.Custom, minHeight: Dp) {
                 .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 首部槽（如头像圆）与文字块垂直居中，间距走行卡图标↔文本的 12dp 档
-            item.leading?.let { leading ->
-                leading()
-                Spacer(Modifier.width(12.dp))
-            }
             // 纯文字行（无尾部控件）时描述不留避让间隙，标题与描述撑满整行可用宽
             SettingsRowText(
                 label = item.label,

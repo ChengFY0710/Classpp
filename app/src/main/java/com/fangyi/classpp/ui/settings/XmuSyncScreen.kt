@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -653,8 +654,10 @@ fun XmuSyncScreen(
                                             } else {
                                                 stringResource(R.string.xmu_last_sync_never)
                                             },
-                                            // 头像圆只在已连接分支出现：未连接时这张卡不存在，圆随之不渲染
-                                            leading = {
+                                            // 头像圆只在已连接分支出现：未连接时这张卡不存在，圆随之不渲染。
+                                            // 放尾部槽、与文字块留 12dp（对齐原先左侧头像的行卡图标↔文本间距）
+                                            trailing = {
+                                                Spacer(Modifier.width(12.dp))
                                                 AccountAvatar(
                                                     name = syncState.accountName,
                                                     image = avatarImage,
@@ -1008,8 +1011,8 @@ private fun AccountAvatar(name: String, image: XmuAvatarImage?) {
     }
 }
 
-/** 头像圆直径：56dp，行卡内与文字块垂直居中（行高相应为 56 + 上下内距 14×2） */
-private val AccountAvatarSize = 56.dp
+/** 头像圆直径：52dp，行卡内与文字块垂直居中*/
+private val AccountAvatarSize = 52.dp
 
 /** 同步加载卡：小转圈 + 「正在同步…」，垂直居中；浮层在途不可关闭 */
 @Composable
