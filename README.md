@@ -35,6 +35,12 @@ Developing...
 
 ---
 
+## 免责声明：
+
+本项目为纯 Vibe Coding 个人开源项目，未经安全审计，按"现状"提供。**使用本项目的任何安全风险及后果均由您自行承担，作者概不负责。** 使用前请完整阅读 [DISCLAIMER.md](DISCLAIMER.md)，不同意请勿使用。
+
+---
+
 ## 协议：
 
 本项目采用 [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) 发布，完整条文见 [LICENSE](LICENSE)。
