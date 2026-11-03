@@ -2,6 +2,8 @@ package com.fangyi.classpp.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -9,11 +11,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.xmu.XmuAutoLoginError
@@ -26,7 +32,11 @@ import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTextFieldGroup
 import com.fangyi.classpp.ui.components.SheetTextFieldItem
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
+
+/** 登录浮层顶部随机图的候选资源（每次打开随机取一张）。 */
+private val XmuLoginImages = intArrayOf(R.drawable.xmu1, R.drawable.xmu2)
 
 /**
  * 原生 OAuth 登录凭据浮层：学号 + 密码 → 原生登录一次。默认登录（「去登录」）与开启
@@ -51,6 +61,8 @@ internal fun XmuAutoLoginSheet(
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var validationShown by remember { mutableStateOf(false) }
+    // 顶部随机图：浮层每次打开都重新挂载（关闭即卸载），remember 正好等于「每次打开重 roll」
+    val imageRes = remember { XmuLoginImages.random() }
 
     val usernameBlank = username.isBlank()
     val passwordBlank = password.isEmpty()
@@ -112,6 +124,15 @@ internal fun XmuAutoLoginSheet(
             errorText?.let { SheetInfoBanner(text = it) }
 
             CardSection {
+                AsyncImage(
+                    model = imageRes,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .clip(SheetCardShape),
+                )
                 SheetTextFieldGroup(
                     fields = listOf(
                         SheetTextFieldItem(
