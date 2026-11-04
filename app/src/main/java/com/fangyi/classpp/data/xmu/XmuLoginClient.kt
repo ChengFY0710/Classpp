@@ -313,6 +313,18 @@ internal class XmuLoginClient(
                     }
                     url = next
                 }
+                // 本部署的 CAS 对失败登录返回 401 + 重渲染登录页（含验证码错误提示）：
+                // 正文仍是登录页 → 按登录失败处理，而不是链路改版
+                response.status == 401 || response.status == 403 -> {
+                    val execution = parseExecution(response.body)
+                    val salt = parseSalt(response.body)
+                    return if (execution != null && salt != null) {
+                        Hop.LoginPage(url, response.body)
+                    } else {
+                        XmuDebugLog.d("login denied ${hopLabel(url)} status=${response.status}")
+                        Hop.FormatChanged
+                    }
+                }
                 response.status in 200..299 -> {
                     return if (isLoginPage(url)) {
                         Hop.LoginPage(url, response.body)

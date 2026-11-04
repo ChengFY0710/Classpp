@@ -64,6 +64,34 @@ class XmuLoginClientTest {
     }
 
     @Test
+    fun `401 rendered login page is invalid credentials not format changed`() = runBlocking {
+        // 本部署的 CAS 对失败登录返回 401 + 重渲染登录页（可能附验证码错误提示）：
+        // 必须留在账号登录浮层提示，而不是被当成链路改版转 WebView
+        val transport = FakeXmuTransport { request ->
+            when {
+                request.url.contains("/protocol/openid-connect/auth") ->
+                    XmuHttpResponse(
+                        302,
+                        location = "https://ids.xmu.edu.cn/authserver/login?service=x",
+                    )
+                request.url.contains("checkNeedCaptcha") ->
+                    XmuHttpResponse(200, body = """{"isNeed":false}""")
+                request.url.contains("authserver/login") && request.method == "POST" ->
+                    XmuHttpResponse(401, body = XMU_TEST_LOGIN_HTML)
+                request.url.contains("authserver/login") ->
+                    XmuHttpResponse(200, body = XMU_TEST_LOGIN_HTML)
+                else -> error("unexpected ${request.method} ${request.url}")
+            }
+        }
+
+        assertEquals(XmuLoginOutcome.InvalidCredentials, client(transport).login("u", "p"))
+        assertEquals(
+            1,
+            transport.requests.count { it.method == "POST" && it.url.contains("authserver/login") },
+        )
+    }
+
+    @Test
     fun `server error is classified as busy`() = runBlocking {
         val transport = FakeXmuTransport { XmuHttpResponse(503) }
         assertEquals(XmuLoginOutcome.ServiceBusy, client(transport).login("u", "p"))
