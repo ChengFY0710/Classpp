@@ -573,7 +573,7 @@ class TodoRepositoryTest {
             ),
         ).okId()
 
-        // 次数档：越界夹紧 1..99，缺值兜底默认 5；日期/次数两参随档位互斥清空
+        // 次数档：越界夹紧 1..999，缺值兜底默认 5；日期/次数两参随档位互斥清空
         val countId = r.addTodo(
             testTodo(
                 name = "次数夹紧",
@@ -581,7 +581,7 @@ class TodoRepositoryTest {
                 repeat = RepeatRule(
                     type = RepeatType.Weekly,
                     endType = RepeatEndType.Count,
-                    endCount = 500,
+                    endCount = 1000,
                     endDate = end,
                 ),
             ),
@@ -605,7 +605,7 @@ class TodoRepositoryTest {
 
         val savedCount = r.todos.value.single { it.id == countId }
         assertEquals(RepeatEndType.Count, savedCount.repeat.endType)
-        assertEquals(99, savedCount.repeat.endCount)
+        assertEquals(999, savedCount.repeat.endCount)
         assertNull(savedCount.repeat.endDate)
 
         val savedDateEnd = r.todos.value.single { it.id == dateEndId }

@@ -19,6 +19,8 @@ import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.REPEAT_END_COUNT_DEFAULT
+import com.fangyi.classpp.data.model.REPEAT_END_COUNT_MAX
+import com.fangyi.classpp.data.model.REPEAT_END_COUNT_MIN
 import com.fangyi.classpp.data.model.RepeatEndType
 import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.RepeatType
@@ -339,7 +341,7 @@ internal fun RepeatSettingsSheet(
         )
     }
 
-    // 重复次数滚轮弹卡：系列总期数（1..99），确认回写草稿的重复次数
+    // 重复次数滚轮弹卡：系列总期数（1..999），确认回写草稿的重复次数
     if (endCountMounted) {
         BottomNumberSelectCard(
             visible = endCountVisible,
@@ -361,10 +363,6 @@ internal fun RepeatSettingsSheet(
 /** 重复间隔的可选范围（与仓库 normalize 的夹紧一致） */
 private const val REPEAT_INTERVAL_MIN = 1
 private const val REPEAT_INTERVAL_MAX = 99
-
-/** 重复次数的可选范围（与仓库 normalize 的夹紧一致） */
-private const val REPEAT_END_COUNT_MIN = 1
-private const val REPEAT_END_COUNT_MAX = 99
 
 /** 以锚日期（自定义日期）为某单位播种方格标记：周几/几号/几月；天无方格语义 */
 private fun RepeatUnit.seedMarks(anchorDate: IsoDate): Set<Int> = when (this) {

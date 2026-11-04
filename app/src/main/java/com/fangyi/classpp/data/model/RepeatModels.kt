@@ -40,6 +40,10 @@ val RepeatUnit.markRange: IntRange
 /** 重复次数档的缺省次数：UI 切到次数档的默认值与仓库归一化的兜底共用 */
 const val REPEAT_END_COUNT_DEFAULT = 5
 
+/** 重复次数档的可选范围：滚轮取值与仓库归一化的夹紧共用一份，避免两处漂移 */
+const val REPEAT_END_COUNT_MIN = 1
+const val REPEAT_END_COUNT_MAX = 999
+
 /**
  * 一条重复规则：预设档位（无/每天/每周/每月/每年）或自定义（每 [interval] [unit] 于
  * [marks] 标记处重复）。
@@ -52,7 +56,7 @@ const val REPEAT_END_COUNT_DEFAULT = 5
  * @param endType 结束条件；[RepeatType.None] 无重复语义，恒 [RepeatEndType.Never]
  * @param endDate 结束日期（[RepeatEndType.Date] 档），当天**不含**——重复于该日期前停止；
  *   其余档位恒 null
- * @param endCount 重复次数档的目标值（[RepeatEndType.Count] 档），1..99；普通模式数**期数**
+ * @param endCount 重复次数档的目标值（[RepeatEndType.Count] 档），1..999；普通模式数**期数**
  *   （系列达该期数后停止），打卡模式数**完成次数**（见 [checkIn]）。其余档位恒 null
  * @param merge 显示层「重复待办合并」开关（默认开）：true = 整条系列只出一条滚动卡
  *   （见 [com.fangyi.classpp.data.expandRepeatOccurrences]），false = 逾期/已完成分期
