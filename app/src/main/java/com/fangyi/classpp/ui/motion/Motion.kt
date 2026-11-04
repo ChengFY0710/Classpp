@@ -199,8 +199,9 @@ object Motion {
 
     /**
      * 待办列表卡片退场时长：列表项淡出（animateItem 的 fadeOutSpec）。配合 [Accelerate]
-     * ——与 [Decelerate] 成同族曲线对。条目移除时占位立即释放、其余项由避让动画滑合
-     * 缺口，淡出中的旧卡与滑上的邻居会有一瞬交叠——比进场短一拍，压短交叠窗口。
+     * ——与 [Decelerate] 成同族曲线对。条目移除时占位立即释放，其余项由
+     * [TodoCardPlaceDelayMillis] 延迟本值后再滑合缺口——本值即「退场卡谢幕」到
+     * 「余卡收拢」的分界：两段先后播放，删除不再是一枚淡出中的卡与滑上的邻居交叠。
      */
     const val TodoCardExitMillis = 220
 
@@ -211,6 +212,16 @@ object Motion {
      * token——那是分组管理页拖拽重排的节奏，跨屏共用会互相牵动。
      */
     const val TodoCardPlaceMillis = 220
+
+    /**
+     * 待办列表卡片避让收拢的启动延迟：条目退场（删除 / 撤回 / 彻底删除 / 取消归档——本页
+     * 列表因此变短）时，其余条目先停在原位，等退场卡按 [TodoCardExitMillis] 完整谢幕，
+     * 再按 [TodoCardPlaceMillis] 滑合缺口——「先消失、余卡再靠拢」。条目移除当帧占位即
+     * 释放，若避让同帧起步，淡出中的旧卡与滑上的邻居会整段交叠（旧实现只能靠退场短一拍
+     * 来压短交叠窗口）。只加在删除帧：新增 / 排序 / 跨组移动的避让仍同帧起步，不拖慢
+     * 该立即反馈的位移。
+     */
+    const val TodoCardPlaceDelayMillis = TodoCardExitMillis
 
     /**
      * 待办列表卡片进场的延迟：animateItem 的 fadeInSpec 用带 delay 的 tween（TodoList）
