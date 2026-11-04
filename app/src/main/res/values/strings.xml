@@ -187,6 +187,7 @@
     <string name="settings_personalization">个性化</string>
     <string name="personalization_header_title">个性化</string>
     <string name="personalization_header_description">打造独属于你的风格</string>
+    <string name="settings_ai">AI 设置</string>
     <string name="settings_data_management">数据管理</string>
     <string name="settings_about">关于</string>
     <string name="cd_settings_close">关闭</string>
@@ -696,8 +697,17 @@
     <string name="ai_draft_name_required">有草稿缺少名称，请编辑或忽略后再保存</string>
     <string name="ai_save_failed">保存失败，请重试</string>
 
-    <!-- AI 设置浮层（AiSettingsScreen）：预设 / 连接 / Key / 隐私说明 -->
+    <!-- AI 设置页（AISettingsScreen，设置 → AI 设置）：预设 / 连接 / Key / 隐私说明 -->
     <string name="ai_settings_title">AI 设置</string>
+    <string name="ai_settings_header_title">AI 助手</string>
+    <string name="ai_settings_header_description">配置你自己的 AI 服务商；日程页的 AI 助手会结合课表与待办帮你安排</string>
+    <string name="ai_settings_status_configured">已配置</string>
+    <string name="ai_settings_status_not_configured">未配置</string>
+    <string name="ai_settings_section_connection">连接</string>
+    <string name="ai_settings_section_privacy">隐私与安全</string>
+    <string name="ai_settings_privacy_title">数据会发送到哪里</string>
+    <string name="ai_settings_section_history">对话记录</string>
+    <string name="ai_settings_save">保存</string>
     <string name="ai_settings_provider">服务商预设</string>
     <string name="ai_settings_protocol">接口格式</string>
     <string name="ai_settings_protocol_openai">OpenAI 兼容</string>
@@ -714,6 +724,7 @@
     <string name="ai_settings_privacy">对话内容与你的课表、待办摘要会发送到你配置的服务商；API Key 经系统安全加密存储，不随备份迁移。</string>
     <string name="ai_settings_secure_unavailable">系统安全存储不可用，无法保存 API Key（可重启后再试）</string>
     <string name="ai_settings_clear_history">清空对话历史</string>
+    <string name="ai_settings_clear_history_desc">删除本机保存的对话记录，不影响已保存的待办</string>
     <string name="ai_settings_clear_history_confirm">再次点击确认清空</string>
     <string name="ai_settings_clear_history_done">对话历史已清空</string>
     <string name="ai_settings_key_required">请填写 API Key</string>

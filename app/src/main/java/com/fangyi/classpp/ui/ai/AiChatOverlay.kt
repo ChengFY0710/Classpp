@@ -70,7 +70,9 @@ private data class AiDraftEditEntry(
  *   仓库标记 interrupted 保留（重试走 [AiChatRepository.retryInBackground]）；
  * - 草稿卡「编辑」打开预填的 [NewTodoSheet]（existing 整体回填），对话浮层随之
  *   covered 后退，两层动效由 OverlaySheet 的 covered 机制同帧衔接；
- * - AI 设置独立浮层由宿主（DayScreen）挂载，本浮层只经 [onOpenSettings] 请求打开。
+ * - AI 设置由设置页的「AI 设置」子页承载（设置 → AI 设置），本浮层不再内嵌设置页：
+ *   右上角 ⚙ 与未配置引导卡都只经 [onOpenSettings] 请求宿主跳转（宿主先收起本浮层，
+ *   再打开设置页并直达 AI 子页）。
  *
  * 未配置（[AiChatRepository.configured] = false）时渲染引导态，输入栏禁用。
  */

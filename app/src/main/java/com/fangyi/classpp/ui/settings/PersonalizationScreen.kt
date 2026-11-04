@@ -108,7 +108,7 @@ fun PersonalizationScreen(
     // 待办收集箱「瀑布流视图」开关（State 实例透传纪律同上，值只在 TodoSection 叶子内读）
     todoMasonry: State<Boolean> = mutableStateOf(true),
     onTodoMasonryChange: (Boolean) -> Unit = {},
-    // 设置页任一覆盖层（外层 + 三个子页）是否正在转场：顶栏据此冻结重放就位帧
+    // 设置页任一覆盖层（外层 + 各子页）是否正在转场：顶栏据此冻结重放就位帧
     settingsTransforming: () -> Boolean = { false },
 ) {
     // 当前激活课表决定滑条编辑 5 天还是 7 天那份倍率（两份各存、互不覆盖）；

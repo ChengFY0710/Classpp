@@ -69,7 +69,7 @@ import dev.chrisbanes.haze.blur.hazeBlur
 // ---- 顶栏返回按钮液态玻璃：参数与接线收在 ui.theme 的 LiquidGlass（默认 Pill 档）----
 
 /**
- * 设置页顶栏返回按钮的液态玻璃采样层（根页/个性化/通知三页共用）：返回 null =
+ * 设置页顶栏返回按钮的液态玻璃采样层（设置各屏共用）：返回 null =
  * 玻璃关闭（「更高级的玻璃材质」开关或 API < 31），按钮维持原实心底、layerBackdrop
  * 不必挂载；非 null = 调用方把它经 layerBackdrop 标记到本页滚动内容节点上（与顶栏
  * Haze 磨砂的 hazeSource 同一节点，Backdrop 只喂返回按钮，两套采样互不干扰），再
@@ -162,7 +162,7 @@ internal fun rememberSettingsTitleAlpha(
  * 用「覆盖层活跃或启动预热帧」门控，隐藏态不录制（Haze 已卸载，录到的是无模糊平底色）。
  *
  * 标题渐显（可选）：[titleAlpha] 默认恒 1（预览、设置根页与独立调用）；个性化、通知、
- * 账号与同步三个子页经 [rememberSettingsTitleAlpha] 传入随滚动渐显的 lambda——内容
+ * AI 设置、账号与同步四个子页经 [rememberSettingsTitleAlpha] 传入随滚动渐显的 lambda——内容
  * 进入顶栏下方后按 100dp→150dp 有效位移在绘制期淡入、回滚对称淡出（过滚动计入有效
  * 位移）。透明度在 `graphicsLayer` 里求值，滚动过程零重组；标题始终占位，顶栏高度与
  * 内容内缩不随之变化。视觉上隐藏时仍保留语义，TalkBack 可播报页面身份。
@@ -180,7 +180,7 @@ internal fun SettingsTopBar(
     recordWhen: () -> Boolean = { true },
     isTransforming: () -> Boolean = { false },
 ) {
-    // 冻结资源：顶栏常驻组合（设置页四屏都是覆盖层内容），实例随之常驻
+    // 冻结资源：顶栏常驻组合（设置页各屏都是覆盖层内容），实例随之常驻
     val freezeLayer = rememberGraphicsLayer()
     val freezeFrame = remember { FreezeFrame() }
     // 外层只承载尺寸与调用方 modifier（align/高度回报）：背景拆成 matchParentSize 的
@@ -272,8 +272,8 @@ internal fun SettingsTopBar(
     }
 }
 
-/** 设置页身份：冻结键的一部分，保证四屏顶栏的帧绝不互相重放 */
-internal enum class SettingsPage { Root, Personalization, Notification, XmuSync }
+/** 设置页身份：冻结键的一部分，保证各屏顶栏的帧绝不互相重放 */
+internal enum class SettingsPage { Root, Personalization, Notification, AiSettings, XmuSync }
 
 /**
  * 设置页冻结帧的会话代际：进多任务/回桌面后窗口不可见，系统会丢弃 RenderNode 的

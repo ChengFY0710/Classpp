@@ -206,7 +206,7 @@ class MainActivity : ComponentActivity() {
                     // （课表/待办顶栏、日程页 Haze）在视差期间读取并冻结模糊输出
                     val settingsOverlayState = rememberPageOverlayTransitionState()
                     // 设置页覆盖层空闲预热帧：首帧后 idle 把整页在 x=0 近透明画两帧，
-                    // 让四屏顶栏的 Haze 初始化并录下带模糊的就位帧（见下方 effect）
+                    // 让各屏顶栏的 Haze 初始化并录下带模糊的就位帧（见下方 effect）
                     var settingsPrewarm by remember { mutableStateOf(false) }
                     // 设置页冻结帧代际：离开 RESUMED 递增（窗口不可见后系统可能清空
                     // 冻结层显示列表；设置页隐藏期不录制，旧帧会变空帧）
@@ -214,6 +214,8 @@ class MainActivity : ComponentActivity() {
                     // 设置页直达子页标志：课表页教务导入浮层的「账号与同步」跳转先置真再开
                     // 设置页，账号与同步子页随之展开（SettingsScreen 消费后回调复位）
                     var settingsOpenAccountSync by rememberSaveable { mutableStateOf(false) }
+                    // AI 对话浮层的设置入口同样直达：先置真再开设置页，AI 设置子页随之展开
+                    var settingsOpenAi by rememberSaveable { mutableStateOf(false) }
                     // 课表编辑态：由课表页的编辑按钮进入，编辑期间隐藏底部导航栏
                     var editing by rememberSaveable { mutableStateOf(false) }
                     // 课表页的全屏浮层（课程详情）在场时同样藏导航栏：导航栏在组合顺序上
@@ -263,11 +265,19 @@ class MainActivity : ComponentActivity() {
                     }
                     val onAccountSyncDirectlyOpened =
                         remember { { settingsOpenAccountSync = false } }
+                    // AI 对话浮层的设置入口：直达设置页的 AI 设置子页
+                    val onOpenAiSettings = remember {
+                        {
+                            settingsOpenAi = true
+                            showSettings = true
+                        }
+                    }
+                    val onAiSettingsDirectlyOpened = remember { { settingsOpenAi = false } }
                     val onNewTodoSheetDismiss = remember { { showNewTodoSheet = false } }
                     // 页面 modifier 同理记忆化：Modifier.fillMaxSize() 每次调用都是新实例，
                     // 内联写在调用点上会让三页在每次切 tab 时都白重组一遍
                     val pageModifier = remember { Modifier.fillMaxSize() }
-                    // 设置页入参记忆化（同款理由）：设置页四屏常驻组合，MainActivity 每次
+                    // 设置页入参记忆化（同款理由）：设置页各屏常驻组合，MainActivity 每次
                     // 重组若传出新的 lambda/Modifier，整棵设置树会白重组一遍。闭包捕获的
                     // 是同一批 State 实例，语义与内联写法一致
                     val onCloseSettings = remember { { showSettings = false } }
@@ -389,7 +399,7 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(lifecycleOwner) {
                         lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
                             if (state != Lifecycle.State.RESUMED) {
-                                // 设置页四屏隐藏时不录制（Haze 已卸载），窗口不可见后
+                                // 设置页各屏隐藏时不录制（Haze 已卸载），窗口不可见后
                                 // 旧帧可能被系统清空：递增代际让冻结键失配，下次打开
                                 // 先实时绘制、落定后再录新帧，绝不重放空帧/过期帧
                                 settingsFreezeEpoch++
@@ -495,6 +505,8 @@ class MainActivity : ComponentActivity() {
                                                         tagRepository = tagRepository,
                                                         // AI 对话（日程页顶栏右侧按钮唤起对话浮层）
                                                         aiChatRepository = aiChatRepository,
+                                                        // 对话浮层的设置入口：关浮层并直达设置页 AI 子页
+                                                        onOpenAiSettings = onOpenAiSettings,
                                                         // 选择图片浮层在场时藏底部导航栏（同课表/待办页浮层）
                                                         onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                                         // tab 转场状态：01/02 的 Haze 冻结层据此重放就位帧
@@ -580,7 +592,7 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                     ) {
-                        // 冻结帧代际：四屏顶栏的冻结键读它；离开 RESUMED 后自动失效，
+                        // 冻结帧代际：各屏顶栏的冻结键读它；离开 RESUMED 后自动失效，
                         // 避免重放被系统清空的旧帧
                         CompositionLocalProvider(
                             LocalSettingsFreezeEpoch provides settingsFreezeEpoch,
@@ -590,8 +602,12 @@ class MainActivity : ComponentActivity() {
                                 repository = repository,
                                 xmuSyncRepository = xmuSyncRepository,
                                 xmuAutoLoginManager = xmuAutoLoginManager,
+                                // AI 设置子页的数据源（连接/Key/清空历史）；根页入口卡展示配置态
+                                aiChatRepository = aiChatRepository,
                                 openAccountSyncDirectly = settingsOpenAccountSync,
                                 onAccountSyncDirectlyOpened = onAccountSyncDirectlyOpened,
+                                openAiSettingsDirectly = settingsOpenAi,
+                                onAiSettingsDirectlyOpened = onAiSettingsDirectlyOpened,
                                 themeMode = themeMode,
                                 onThemeModeChange = onSettingsThemeModeChange,
                                 cardHeights = cardHeightsState,

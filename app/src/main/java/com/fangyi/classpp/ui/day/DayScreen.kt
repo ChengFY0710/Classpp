@@ -129,7 +129,6 @@ import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.data.xmu.withMatchedCourseTag
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.ai.AiChatOverlay
-import com.fangyi.classpp.ui.ai.AiSettingsScreen
 import com.fangyi.classpp.ui.components.BottomFadeScrim
 import com.fangyi.classpp.ui.components.DayCalendar
 import com.fangyi.classpp.ui.components.DayCalendarFoldState
@@ -270,6 +269,8 @@ internal fun DayScreen(
     tagRepository: TagRepository? = null,
     /** AI 对话仓库（顶栏右侧 AI 按钮唤起对话浮层）；null = 预览等无 AI 场景 */
     aiChatRepository: AiChatRepository? = null,
+    /** 对话浮层的 AI 设置入口：关浮层并让宿主打开设置页的 AI 设置子页 */
+    onOpenAiSettings: () -> Unit = {},
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
     tabTransition: TabTransitionState? = null,
 ) {
@@ -354,12 +355,10 @@ internal fun DayScreen(
     // 浮层两段式：mounted 决定是否在组合里，visible 管进出场——出场播完才移出组合
     var sheetMounted by remember { mutableStateOf(false) }
     var sheetVisible by remember { mutableStateOf(false) }
-    // AI 对话浮层（顶栏右侧 AI 按钮唤起）与 AI 设置浮层（对话浮层右上角进入）：
-    // 两段式约定同图片浮层——visible 驱动进出场，mounted 管挂载/收场移出组合
+    // AI 对话浮层（顶栏右侧 AI 按钮唤起）：两段式约定同图片浮层——visible 驱动进出场，
+    // mounted 管挂载/收场移出组合。AI 设置已迁到设置页，浮层内的设置入口只做跳转
     var aiChatMounted by remember { mutableStateOf(false) }
     var aiChatVisible by remember { mutableStateOf(false) }
-    var aiSettingsMounted by remember { mutableStateOf(false) }
-    var aiSettingsVisible by remember { mutableStateOf(false) }
     // 课程详情浮层：被点课程 id（点上课提醒卡/时间轴上课卡进入）；空 = 未打开。
     // 条目从当前课表反查，课程被删/切课表后反查落空 → 请求清空 → 浮层自动关闭
     //（两段式约定同课表页，宿主块见底部挂载处）
@@ -374,13 +373,12 @@ internal fun DayScreen(
     // 编辑待办浮层：详情顶栏「编辑」进入（快照表单同待办页，叠在详情之上）；空 = 未打开
     var todoEditTargetId by rememberSaveable { mutableStateOf("") }
     var todoEditMounted by remember { mutableStateOf<Todo?>(null) }
-    // 任一浮层（图片/课程详情/待办详情/待办编辑/AI 对话/AI 设置）在场：根级转场手势、
+    // 任一浮层（图片/课程详情/待办详情/待办编辑/AI 对话）在场：根级转场手势、
     // 嵌套滚动接管与内容列表滚动一并闭闸——根级 pointerInput 走 Initial pass，先于浮层
     // 子树拿到事件，不闭闸会把浮层顶栏的下拉关闭抢去驱动 02↔04 转场（浮层自身手势被吞，
     // 表现为列表跟手）
     val overlayMounted = sheetMounted || detailMounted != null ||
-        todoDetailMounted != null || todoEditMounted != null ||
-        aiChatMounted || aiSettingsMounted
+        todoDetailMounted != null || todoEditMounted != null || aiChatMounted
     LaunchedEffect(overlayMounted) {
         onOverlayOverNavBarChange(overlayMounted)
     }
@@ -1884,10 +1882,9 @@ internal fun DayScreen(
             }
         }
 
-        // 10.5) AI 对话浮层（顶栏右侧 AI 按钮唤起，M1 唯一 AI 入口）与 AI 设置浮层
-        //（对话浮层右上角 ⚙ 进入）：设置浮层画在对话浮层之后（组合顺序即绘制顺序）盖在其上，
-        // 对话层 covered 后退由 AiChatOverlay 内部衔接；图片选择浮层挂载顺序仍在其后，
-        // 保持最顶层（盖住 AI 浮层，含顶栏）。
+        // 10.5) AI 对话浮层（顶栏右侧 AI 按钮唤起）。AI 设置已迁到设置页：浮层内的
+        // 设置入口先收起对话浮层，再经 [onOpenAiSettings] 让宿主打开设置页 AI 子页。
+        // 图片选择浮层挂载顺序仍在其后，保持最顶层（盖住 AI 浮层，含顶栏）。
         if (aiChatMounted) {
             AiChatOverlay(
                 visible = aiChatVisible,
@@ -1898,17 +1895,9 @@ internal fun DayScreen(
                 tagRepository = tagRepository,
                 scheduleRepository = scheduleRepository,
                 onOpenSettings = {
-                    aiSettingsMounted = true
-                    aiSettingsVisible = true
+                    aiChatVisible = false
+                    onOpenAiSettings()
                 },
-            )
-        }
-        if (aiSettingsMounted) {
-            AiSettingsScreen(
-                visible = aiSettingsVisible,
-                onDismiss = { aiSettingsVisible = false },
-                onDismissed = { aiSettingsMounted = false },
-                aiChatRepository = aiChatRepository,
             )
         }
 

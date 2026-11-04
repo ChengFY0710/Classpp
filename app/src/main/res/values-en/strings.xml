@@ -81,6 +81,7 @@
     <string name="settings_personalization">Personalization</string>
     <string name="personalization_header_title">Personalization</string>
     <string name="personalization_header_description">Make it truly yours</string>
+    <string name="settings_ai">AI Settings</string>
     <string name="settings_data_management">Data management</string>
     <string name="settings_about">About</string>
     <string name="cd_settings_close">Close</string>
@@ -669,8 +670,17 @@
     <string name="ai_draft_name_required">Some drafts have no name — edit or dismiss them first</string>
     <string name="ai_save_failed">Save failed — try again</string>
 
-    <!-- AI settings overlay (AiSettingsScreen): presets / connection / key / privacy -->
+    <!-- AI settings page (AISettingsScreen, Settings → AI settings): presets / connection / key / privacy -->
     <string name="ai_settings_title">AI Settings</string>
+    <string name="ai_settings_header_title">AI assistant</string>
+    <string name="ai_settings_header_description">Configure your own AI provider; the assistant on the agenda page plans around your timetable and todos</string>
+    <string name="ai_settings_status_configured">Configured</string>
+    <string name="ai_settings_status_not_configured">Not configured</string>
+    <string name="ai_settings_section_connection">Connection</string>
+    <string name="ai_settings_section_privacy">Privacy &amp; security</string>
+    <string name="ai_settings_privacy_title">Where your data goes</string>
+    <string name="ai_settings_section_history">Chat history</string>
+    <string name="ai_settings_save">Save</string>
     <string name="ai_settings_provider">Provider preset</string>
     <string name="ai_settings_protocol">API format</string>
     <string name="ai_settings_protocol_openai">OpenAI-compatible</string>
@@ -687,6 +697,7 @@
     <string name="ai_settings_privacy">Your messages plus schedule and todo summaries are sent to the provider you configure. The API key is encrypted with system security storage and never included in backups.</string>
     <string name="ai_settings_secure_unavailable">System secure storage is unavailable — the API key cannot be saved (try restarting)</string>
     <string name="ai_settings_clear_history">Clear chat history</string>
+    <string name="ai_settings_clear_history_desc">Deletes the chat history stored on this device; saved todos are unaffected</string>
     <string name="ai_settings_clear_history_confirm">Tap again to confirm</string>
     <string name="ai_settings_clear_history_done">Chat history cleared</string>
     <string name="ai_settings_key_required">Enter an API key</string>
