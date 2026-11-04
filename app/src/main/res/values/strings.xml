@@ -664,7 +664,8 @@
     <string name="day_image_parallax_title">壁纸视差</string>
     <string name="day_image_parallax_desc">倾斜手机时，背景图随之轻微移动</string>
 
-    <!-- AI 对话浮层（AiChatOverlay）：顶栏胶囊 / 输入 / 示例 / 错误分类 / 直接创建的待办 -->
+    <!-- AI 对话浮层（AiChatOverlay）：标题 / 顶栏胶囊 / 输入 / 示例 / 错误分类 / 直接创建的待办 -->
+    <string name="ai_sheet_title">AI 助手</string>
     <string name="ai_sheet_chat">对话</string>
     <string name="ai_sheet_close">关闭</string>
     <string name="ai_input_hint">输入消息…</string>

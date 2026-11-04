@@ -637,7 +637,8 @@
     <string name="day_image_parallax_title">Wallpaper Perspective</string>
     <string name="day_image_parallax_desc">Background shifts subtly as you tilt your phone</string>
 
-    <!-- AI chat overlay (AiChatOverlay): top bar pills / input / examples / error classes / draft card -->
+    <!-- AI chat overlay (AiChatOverlay): title / top bar pills / input / examples / error classes / draft card -->
+    <string name="ai_sheet_title">AI Assistant</string>
     <string name="ai_sheet_chat">Chat</string>
     <string name="ai_sheet_close">Close</string>
     <string name="ai_input_hint">Type a message…</string>

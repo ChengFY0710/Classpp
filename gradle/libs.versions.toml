@@ -47,6 +47,13 @@ androidxExifInterface = "1.4.2"
 # Ipv4FirstDns（XMU 域内「有 A 记录就只走 IPv4」），并靠 OkHttp 的 callTimeout
 # 兜底整次调用——这两样 HttpURLConnection 都给不了，原生链路必须有。
 okhttp = "5.5.1"
+# AI 对话气泡的 Markdown 渲染（mikepenz/multiplatform-markdown-renderer，Apache-2.0）。
+# 0.46.0（2026-10-13）由 Kotlin 2.4.21 与 Compose Multiplatform 1.12.1 构建，与项目
+# Kotlin 2.4.21、Compose BOM 2026.09.00（androidx compose 1.12.1）精确对齐，无元数据/
+# ABI 版本错配。m3 变体对 material3 是 compileOnly，运行时由本项目已引入的 androidx
+# material3 提供；只取 Android 变体，无需 Compose Multiplatform Gradle 插件。
+# GFM 解析器为 org.jetbrains:markdown（表格/任务列表/自动链接/GitHub alerts 均支持）。
+markdownRenderer = "0.46.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -71,6 +78,7 @@ coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref 
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "androidxExifInterface" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+markdown-renderer-m3 = { group = "com.mikepenz", name = "multiplatform-markdown-renderer-m3", version.ref = "markdownRenderer" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

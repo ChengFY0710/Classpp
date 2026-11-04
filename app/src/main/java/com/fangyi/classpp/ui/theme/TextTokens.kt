@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.theme
 
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
@@ -76,6 +77,28 @@ object ClassppTextTokens {
     val secondaryTextLarge = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** AI 对话气泡正文：16sp Normal，行高 24 与 bodyLarge 同节奏；用户/AI 消息同档。 */
     val chatBody = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal, lineHeight = 24.sp, letterSpacing = 0.sp)
+    /** AI 对话 Markdown 一级标题：20sp SemiBold。 */
+    val chatHeading1 = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp, letterSpacing = 0.sp)
+    /** AI 对话 Markdown 二级标题：16sp SemiBold。 */
+    val chatHeading2 = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp, letterSpacing = 0.sp)
+    /** AI 对话 Markdown 三级及以下标题：16sp Medium；字号不再降档，靠字重区分层级。 */
+    val chatHeading3 = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
+    /** AI 对话行内代码：16sp 等宽，与正文同档。 */
+    val chatInlineCode = TextStyle(
+        fontSize = 16.sp,
+        fontWeight = FontWeight.Normal,
+        fontFamily = FontFamily.Monospace,
+        lineHeight = 24.sp,
+        letterSpacing = 0.sp,
+    )
+    /** AI 对话围栏代码块：14sp 等宽，行高 20 更紧凑。 */
+    val chatCodeBlock = TextStyle(
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Normal,
+        fontFamily = FontFamily.Monospace,
+        lineHeight = 20.sp,
+        letterSpacing = 0.sp,
+    )
     /** 确认框正文：14sp Normal。 */
     val dialogMessage = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 空态提示：14sp Normal。 */

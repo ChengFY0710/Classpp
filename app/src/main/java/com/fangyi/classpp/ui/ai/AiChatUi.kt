@@ -69,7 +69,7 @@ private val BubbleShape = RoundedCornerShape(BubbleCorner)
 
 /**
  * 一条消息气泡：user 右对齐（primary 底 / onPrimary 字）/ assistant 左对齐（surface 底 / onSurface 字）。
- * 正文统一 16sp；内容按 ``` 围栏切分——围栏段按围栏样式渲染，正文段按换行保留的纯文本渲染。
+ * 正文统一 16sp；assistant 内容按 GFM Markdown 渲染（见 [ChatMarkdown]），user 内容为纯文本。
  *
  * 本条回复已创建待办时（[AiChatMessage.todoIds] 非空或落库失败），原始 JSON 围栏块
  * 不再展示——信息已由下方的 NoteCard 卡片承接；正文若因此为空，整个气泡不渲染。
@@ -122,50 +122,17 @@ internal fun AiChatMessageBubble(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                for ((isFence, segment) in splitFences(content)) {
-                    if (segment.isEmpty()) continue
-                    if (isFence) {
-                        Text(
-                            text = segment,
-                            style = FenceSegmentStyle,
-                            color = contentColor.copy(alpha = 0.85f),
-                        )
-                    } else {
-                        Text(text = segment, style = ClassppTextTokens.chatBody)
+                when {
+                    content.isEmpty() -> {
+                        // 占位阶段（流式首字未到）：三点呼吸省略号
+                        Text(text = "…", style = ClassppTextTokens.chatBody)
                     }
-                }
-                if (content.isEmpty()) {
-                    // 占位阶段（流式首字未到）：三点呼吸省略号
-                    Text(text = "…", style = ClassppTextTokens.chatBody)
+                    isUser -> Text(text = content, style = ClassppTextTokens.chatBody)
+                    else -> ChatMarkdown(content = content)
                 }
             }
         }
     }
-}
-
-/** 围栏代码块文字：16sp 与正文同档，仅靠正文色的 85% 透明度区分 */
-private val FenceSegmentStyle = ClassppTextTokens.chatBody
-
-/**
- * 围栏切分：```…``` 段标记为 true（等宽渲染），其余为 false；相邻段直接拼接渲染。
- * 未闭合的围栏（流式打到一半）把剩余内容整体按围栏段处理，增量期间不跳样式。
- */
-internal fun splitFences(content: String): List<Pair<Boolean, String>> {
-    if (!content.contains("```")) return listOf(false to content)
-    val result = mutableListOf<Pair<Boolean, String>>()
-    var inFence = false
-    for (part in content.split("```")) {
-        // 切分后首语言行（如 "json"）单独吞掉
-        val text = if (inFence && part.lineSequence().firstOrNull()?.matches(Regex("[A-Za-z0-9_-]*")) == true) {
-            part.lineSequence().drop(1).joinToString("\n")
-        } else {
-            part
-        }
-        if (text.isNotEmpty()) result += inFence to text
-        inFence = !inFence
-    }
-    // 结尾仍开着的围栏：最后一段已按 inFence 标记，符合流式中间态
-    return result
 }
 
 // ---------- 已创建待办 ----------
@@ -495,7 +462,26 @@ private fun BubblePreview() {
             AiChatMessageBubble(
                 AiChatMessage(
                     role = AiChatRole.Assistant,
-                    content = "下周三有数学课，周五要交实验报告。\n\n```json\n{\"todos\":[{\"name\":\"实验报告\"}]}\n```",
+                    content = """
+                        ## 下周安排
+                        下周三有**数学课**，周五要交 `实验报告`。
+
+                        - 周三 19:00 复习高数
+                        - 周五 23:59 前交报告
+
+                        | 日期 | 事项 |
+                        | --- | --- |
+                        | 周三 | 高等数学 |
+                        | 周五 | 实验报告 |
+
+                        [查看课表](https://example.com)
+                    """.trimIndent(),
+                ),
+            )
+            AiChatMessageBubble(
+                AiChatMessage(
+                    role = AiChatRole.Assistant,
+                    content = "已为你创建待办。\n\n```json\n{\"todos\":[{\"name\":\"实验报告\"}]}\n```",
                     todoIds = listOf("t1"),
                 ),
             )

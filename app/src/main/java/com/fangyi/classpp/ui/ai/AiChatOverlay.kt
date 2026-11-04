@@ -66,8 +66,8 @@ import kotlinx.coroutines.launch
  *   备注/步骤/倒计时/归档全部落库），侧滑呼出删除动作卡（满色松手即软删）；
  * - 「编辑」打开预填的 [NewTodoSheet]（existing 整体回填），对话浮层随之 covered 后退，
  *   两层动效由 OverlaySheet 的 covered 机制同帧衔接；
- * - 顶栏两颗胶囊（同其它浮层的顶栏规格）：左上蓝「对话」= 新建对话入口的占位（功能尚未
- *   实现，点击暂无动作），右上白「关闭」收起浮层；
+ * - 顶栏（同其它浮层的顶栏规格）：左上蓝「对话」= 新建对话入口的占位（功能尚未实现，
+ *   点击暂无动作），居中「AI 助手」标题，右上白「关闭」收起浮层；
  * - AI 设置由设置页的「AI 设置」子页承载（设置 → AI 设置），浮层内不再有 ⚙ 入口：
  *   只有未配置引导卡经 [onOpenSettings] 请求宿主跳转（宿主先收起本浮层，再打开设置页
  *   并直达 AI 子页）。
@@ -216,8 +216,7 @@ fun AiChatOverlay(
     }
 
     OverlaySheet(
-        // 顶栏只放两颗胶囊：左上「对话」即本浮层的标识位，居中标题留空不渲染（空串不占宽）
-        title = "",
+        title = stringResource(R.string.ai_sheet_title),
         // 左上「对话」= 新建对话入口的占位：功能尚未实现，onConfirm 暂为空
         confirmLabel = stringResource(R.string.ai_sheet_chat),
         confirmIcon = R.drawable.ic_add_circle,
