@@ -435,4 +435,39 @@ class TodoRepeatDisplayTest {
         assertNull(base.copy(repeat = checkInRule().copy(endCount = null)).checkInPercent())
         assertNull(testTodo().checkInPercent())
     }
+
+    @Test
+    fun `check-in backfill offers past and today occurrences only`() {
+        // 展示月 3 月、今天 3/20、完成过 3/18：补勾位 = 3/2..3/20 里未完成的各期
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-02")),
+            repeat = checkInRule(),
+            completedOccurrences = listOf(IsoDate.parse("2026-03-18")),
+        )
+        val backfill = todo.checkInBackfillDates(
+            fromInclusive = IsoDate.parse("2026-03-01"),
+            toInclusive = IsoDate.parse("2026-03-31"),
+            today = IsoDate.parse("2026-03-20"),
+        )
+        assertEquals(18, backfill.size)
+        assertEquals(IsoDate.parse("2026-03-02"), backfill.minByOrNull { it.epochDay })
+        assertEquals(IsoDate.parse("2026-03-20"), backfill.maxByOrNull { it.epochDay })
+        assertTrue(IsoDate.parse("2026-03-18") !in backfill)
+        // 未来日期不补勾：4 月窗口整体落在今天之后
+        assertTrue(
+            todo.checkInBackfillDates(
+                fromInclusive = IsoDate.parse("2026-04-01"),
+                toInclusive = IsoDate.parse("2026-04-30"),
+                today = IsoDate.parse("2026-03-20"),
+            ).isEmpty(),
+        )
+        // 非打卡模式无补勾位
+        assertTrue(
+            todo.copy(repeat = checkInRule().copy(checkIn = false)).checkInBackfillDates(
+                fromInclusive = IsoDate.parse("2026-03-01"),
+                toInclusive = IsoDate.parse("2026-03-31"),
+                today = IsoDate.parse("2026-03-20"),
+            ).isEmpty(),
+        )
+    }
 }

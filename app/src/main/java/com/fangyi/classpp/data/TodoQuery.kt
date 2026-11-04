@@ -262,10 +262,33 @@ private fun MutableList<Todo>.addCheckInOccurrence(
 
 /**
  * 打卡模式是否生效：开关只在次数档有意义——与仓库归一化（[com.fangyi.classpp.data.TodoRepository]
- * 的 normalizeRepeat）同一口径，脏数据下的悬挂开关不参与语义。
+ * 的 normalizeRepeat）同一口径，脏数据下的悬挂开关不参与语义。展示层据此切「打卡」文案、
+ * 进度与补勾口径，与周期展开分支同源。
  */
-private val Todo.isCheckInMode: Boolean
+val Todo.isCheckInMode: Boolean
     get() = repeat.checkIn && repeat.endType == RepeatEndType.Count
+
+/**
+ * 打卡模式在 `[fromInclusive, toInclusive]` 内可「补勾」的分期：锚日至今（含今天，不超过
+ * [toInclusive]）的应完成日期，已完成的剔除——打卡漏期不记逾期（红色状态球不会出现），
+ * 完成情况浮层靠这份集合把展示月里的灰点日期也变成可点的补勾位。
+ *
+ * 未来日期不给补勾（打卡按「做过才勾」记），非打卡模式或无锚日期返回空集；纯函数，
+ * 浮层与单测共用。
+ */
+fun Todo.checkInBackfillDates(
+    fromInclusive: IsoDate,
+    toInclusive: IsoDate,
+    today: IsoDate,
+): Set<IsoDate> {
+    if (!isCheckInMode) return emptySet()
+    val anchor = dates.minByOrNull { it.epochDay } ?: return emptySet()
+    val endInclusive = if (toInclusive.epochDay < today.epochDay) toInclusive else today
+    if (endInclusive.epochDay < fromInclusive.epochDay) return emptySet()
+    val completed = completedOccurrences.toSet()
+    return repeat.occurrencesBetween(anchor, fromInclusive, endInclusive + 1)
+        .filterTo(mutableSetOf()) { it !in completed }
+}
 
 /**
  * 打卡模式的完成进度百分比（0..100）：完成次数 ÷ 设定次数，四舍五入、超额夹到 100。

@@ -13,8 +13,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.checkInBackfillDates
+import com.fangyi.classpp.data.checkInPercent
 import com.fangyi.classpp.data.displayOverdueOccurrences
+import com.fangyi.classpp.data.isCheckInMode
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.REPEAT_END_COUNT_DEFAULT
 import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Todo
@@ -44,9 +48,12 @@ import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
  *    小点）。底栏回跳按钮改成「回到本月」（浏览其他月份时出现，点击收回今天所在月）。
  *    状态球可点：绿球点一下取消完成（回落红球/常规色）、红球点一下补完成（变绿），经
  *    [onOccurrenceCompletedChange] 交宿主落库（仓库按逐期集合结算，迟到补完成不撤销已落账逾期）。
+ *    打卡模式另给补勾位：漏期不记逾期（没有红球），展示月内锚日～今天的未完成分期由
+ *    [checkInBackfillDates] 并进可点集合，点灰点日期球即补完成、再点取消。
  * 2. [SheetInfoCard]：统计**已结算的期数**——已完成（含今天与未来的提前完成）+ 已逾期；
  *    完成率 = 已完成 /（已完成 + 已逾期）。今天的应完成日期既未完成、也未逾期时不进分母
- *    （仍可能完成/逾期）。值色走默认 Primary。
+ *    （仍可能完成/逾期）。打卡模式没有逾期结算，改按打卡口径：完成率 = 完成次数 / 目标次数，
+ *    第三行「逾期次数」换成「重复次数」（目标值）。值色走默认 Primary。
  *
  * 逾期数据走展示口径（[displayOverdueOccurrences]）：仓库落账集合 + 锚日到昨天的实时补算，
  * 跨天驻留不用等下一次写库刷新。日历不挂折叠手势（传入宿主 [rememberDayCalendarFoldState]），
@@ -87,12 +94,31 @@ internal fun TodoCompletionSheet(
             }
         }
     }
+    // 展示月的首尾：网格起点是 1 号所在周的周一，起点 + 7 必落在展示月内（月末按
+    // 「下月 1 号 − 1 天」推，不走日历库）
+    val (viewYear, viewMonth, _) = (gridWindow.first + 7).yearMonthDay()
+    val monthStart = IsoDate.of(viewYear, viewMonth, 1)
+    val nextMonthStart =
+        if (viewMonth == 12) IsoDate.of(viewYear + 1, 1, 1) else IsoDate.of(viewYear, viewMonth + 1, 1)
+    val monthEnd = nextMonthStart - 1
+    // 打卡模式的补勾位：漏期不记逾期 → 灰点日期没有状态球可点。展示月内锚日～今天的
+    // 各期（未完成的）同样可点，点一下即补完成（再点取消）
+    val backfillDates = remember(todo, today, gridWindow) {
+        todo.checkInBackfillDates(monthStart, monthEnd, today)
+    }
     // 完成情况统计已结算的期数：已完成（含今天与未来的提前完成）+ 已逾期；完成率 =
-    // 已完成 / 已结算。今天的应完成日期既未完成、也未逾期时不进分母（仍可能完成/逾期）
+    // 已完成 / 已结算。今天的应完成日期既未完成、也未逾期时不进分母（仍可能完成/逾期）。
+    // 打卡模式没有「逾期结算」可言：条数仍数完成次数，完成率与目标次数按打卡口径给
+    val checkInMode = todo.isCheckInMode
+    val targetCount = todo.repeat.endCount
     val completedCount = dayStates.count { it.value == DayCalendarDayStatus.Completed }
     val overdueCount = dayStates.count { it.value == DayCalendarDayStatus.Overdue }
     val settledTotal = completedCount + overdueCount
-    val percent = if (settledTotal == 0) 0 else completedCount * 100 / settledTotal
+    val percent = if (checkInMode) {
+        todo.checkInPercent() ?: 0
+    } else {
+        if (settledTotal == 0) 0 else completedCount * 100 / settledTotal
+    }
     val scope = rememberCoroutineScope()
 
     BackHandler(enabled = visible, onBack = onDismiss)
@@ -118,11 +144,15 @@ internal fun TodoCompletionSheet(
                     markedDates = markedDates,
                     dayStates = dayStates,
                     // 只有带状态的球可点（已完成/已逾期，含今天与未来的提前完成）：点按
-                    // 在完成/未完成间切换；无状态日期不出现按压反馈
-                    clickableDates = dayStates.keys,
+                    // 在完成/未完成间切换；打卡模式再并上展示月内的补勾位（灰点日期，见
+                    // [checkInBackfillDates]）——打卡漏期没有红球，不并就点不动。无状态且
+                    // 非补勾位的日期不出现按压反馈
+                    clickableDates = dayStates.keys + backfillDates,
                     onDateClick = { date ->
-                        dayStates[date]?.let { status ->
-                            onOccurrenceCompletedChange(
+                        when (val status = dayStates[date]) {
+                            // 无状态但可补勾：点一下记完成（打卡的「补打卡」）
+                            null -> if (date in backfillDates) onOccurrenceCompletedChange(date, true)
+                            else -> onOccurrenceCompletedChange(
                                 date,
                                 status != DayCalendarDayStatus.Completed,
                             )
@@ -137,20 +167,37 @@ internal fun TodoCompletionSheet(
                     today = today,
                 )
                 SheetInfoCard(
-                    entries = listOf(
-                        SheetInfoEntry(
-                            label = stringResource(R.string.todo_completion_rate),
-                            value = stringResource(R.string.todo_completion_percent, percent),
-                        ),
-                        SheetInfoEntry(
-                            label = stringResource(R.string.todo_detail_completed_count),
-                            value = stringResource(R.string.todo_count_times, completedCount),
-                        ),
-                        SheetInfoEntry(
-                            label = stringResource(R.string.todo_detail_overdue_count),
-                            value = stringResource(R.string.todo_count_times, overdueCount),
-                        ),
-                    ),
+                    entries = buildList {
+                        add(
+                            SheetInfoEntry(
+                                label = stringResource(R.string.todo_completion_rate),
+                                value = stringResource(R.string.todo_completion_percent, percent),
+                            ),
+                        )
+                        add(
+                            SheetInfoEntry(
+                                label = stringResource(R.string.todo_detail_completed_count),
+                                value = stringResource(R.string.todo_count_times, completedCount),
+                            ),
+                        )
+                        // 打卡模式没有逾期结算：第三行换成目标次数（完成率的分母）
+                        add(
+                            if (checkInMode) {
+                                SheetInfoEntry(
+                                    label = stringResource(R.string.repeat_end_count_row),
+                                    value = stringResource(
+                                        R.string.todo_count_times,
+                                        targetCount ?: REPEAT_END_COUNT_DEFAULT,
+                                    ),
+                                )
+                            } else {
+                                SheetInfoEntry(
+                                    label = stringResource(R.string.todo_detail_overdue_count),
+                                    value = stringResource(R.string.todo_count_times, overdueCount),
+                                )
+                            },
+                        )
+                    },
                 )
             }
         }
