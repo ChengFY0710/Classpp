@@ -3,6 +3,7 @@ package com.fangyi.classpp.data.ai
 import com.fangyi.classpp.data.Clock
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.StoreResult
@@ -97,6 +98,17 @@ class AiChatRepositoryTest {
         }
     }
 
+    /** 待办落库假实现：记录每批 addTodos 入参，result 控制成功/失败 */
+    private class FakeTodoPersister : AiTodoPersister {
+        val batches = mutableListOf<List<Todo>>()
+        var result = true
+
+        override suspend fun addAll(todos: List<Todo>): Boolean {
+            batches += todos
+            return result
+        }
+    }
+
     /** 脚本化响应：按序吐 lines，耗尽后阻塞在 gate（模拟流挂起），cancel 后放行 EOF */
     private class ScriptedResponse(
         private val lines: List<String?>,
@@ -167,6 +179,7 @@ class AiChatRepositoryTest {
         store: FakeAiChatStore = FakeAiChatStore(),
         settings: FakeAiSettingsStore = FakeAiSettingsStore(),
         transport: FakeAiTransport,
+        persister: FakeTodoPersister = FakeTodoPersister(),
         nowMillis: () -> Long = System::currentTimeMillis,
     ): AiChatRepository {
         val repo = AiChatRepository(
@@ -174,6 +187,7 @@ class AiChatRepositoryTest {
             settings = settings,
             client = AiClient(transport),
             contextProvider = { AiChatContext() },
+            persister = persister,
             clock = Clock { IsoDate.of(2026, 11, 1) },
             nowMillis = nowMillis,
         )
@@ -202,7 +216,8 @@ class AiChatRepositoryTest {
         assertEquals(AiChatRole.Assistant, messages[1].role)
         assertEquals("你好", messages[1].content)
         assertFalse(messages[1].interrupted)
-        assertNull(messages[1].drafts)
+        assertTrue(messages[1].todoIds.isEmpty())
+        assertFalse(messages[1].todoSaveFailed)
         assertEquals(messages, store.file.messages)
         assertFalse(repo.sending.value)
     }
@@ -332,28 +347,75 @@ class AiChatRepositoryTest {
     }
 
     @Test
-    fun `drafts extracted from fenced json and status persists`() = runBlocking {
+    fun `fenced todos are persisted directly and ids recorded`() = runBlocking {
         val store = FakeAiChatStore()
-        val reply = "好的，给你起草了：\n" +
+        val persister = FakeTodoPersister()
+        val reply = "好的，已经创建：\n" +
             "```json\n" +
-            """{"todos":[{"name":"实验报告","dates":["2026-11-06"],"deadlineDate":"2026-11-06","deadlineTime":"23:59"}]}""" +
+            """{"todos":[{"name":"实验报告","dates":["2026-11-06"],"deadlineDate":"2026-11-06","deadlineTime":"23:59",""" +
+            """"pinned":true,"repeat":{"type":"Weekly","endType":"Count","endCount":3}}]}""" +
             "\n```"
         val repo = repository(
             store = store,
             transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            persister = persister,
         )
 
-        repo.send("添加：周五交实验报告")
+        repo.send("添加：每周五交实验报告，共三次")
 
-        val drafts = repo.messages.value.last().drafts
-        assertNotNull(drafts)
-        assertEquals(1, drafts!!.drafts.size)
-        assertEquals("实验报告", drafts.drafts[0].name)
-        assertEquals(AiDraftStatus.Pending, drafts.statuses[0])
+        // 无需确认：仓库解析后直接整批落库（一次 addTodos）
+        assertEquals(1, persister.batches.size)
+        val created = persister.batches.single().single()
+        assertEquals("实验报告", created.name)
+        assertEquals(23 * 60 + 59, created.deadlineMinute)
+        assertTrue(created.pinned)
+        assertEquals(com.fangyi.classpp.data.model.RepeatType.Weekly, created.repeat.type)
+        assertEquals(3, created.repeat.endCount)
 
-        // 状态回写并落盘：用同一 store 重开一个仓库，重进对话不重复弹卡
-        repo.updateDraftStatus(1, 0, AiDraftStatus.Saved)
-        assertEquals(AiDraftStatus.Saved, store.file.messages[1].drafts!!.statuses[0])
+        // 消息只记录成功创建的 id，落盘后可恢复
+        val last = repo.messages.value.last()
+        assertEquals(listOf(created.id), last.todoIds)
+        assertFalse(last.todoSaveFailed)
+        assertEquals(listOf(created.id), store.file.messages.last().todoIds)
+    }
+
+    @Test
+    fun `blank name drafts are filtered before batch persist`() = runBlocking {
+        val persister = FakeTodoPersister()
+        val reply = "```json\n" +
+            """{"todos":[{"name":"  ","dates":["2026-11-06"]},{"name":"有效待办"}]}""" +
+            "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            persister = persister,
+        )
+
+        repo.send("添加")
+
+        // 缺名称行会让 addTodos 整批失败：必须在落库前滤掉，只保存合法行
+        assertEquals(listOf("有效待办"), persister.batches.single().map { it.name })
+        assertEquals(1, repo.messages.value.last().todoIds.size)
+        assertFalse(repo.messages.value.last().todoSaveFailed)
+    }
+
+    @Test
+    fun `persist failure marks message and keeps reply`() = runBlocking {
+        val store = FakeAiChatStore()
+        val persister = FakeTodoPersister().apply { result = false }
+        val reply = "```json\n{\"todos\":[{\"name\":\"实验报告\"}]}\n```"
+        val repo = repository(
+            store = store,
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            persister = persister,
+        )
+
+        repo.send("添加")
+
+        val last = repo.messages.value.last()
+        assertEquals(reply, last.content)
+        assertTrue(last.todoIds.isEmpty())
+        assertTrue(last.todoSaveFailed)
+        assertTrue(store.file.messages.last().todoSaveFailed)
     }
 
     @Test
@@ -369,6 +431,7 @@ class AiChatRepositoryTest {
             settings = FakeAiSettingsStore(),
             client = AiClient(FakeAiTransport(ScriptedResponse(listOf("data: [DONE]")))),
             contextProvider = { AiChatContext() },
+            persister = FakeTodoPersister(),
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
         assertEquals(LoadState.Ready, repo.loadState.value)
@@ -405,6 +468,7 @@ class AiChatRepositoryTest {
             settings = FakeAiSettingsStore(),
             client = AiClient(transport),
             contextProvider = { context },
+            persister = FakeTodoPersister(),
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
         repo.bootstrap()
@@ -514,7 +578,8 @@ class AiChatRepositoryTest {
         val persisted = store.file.messages.last()
         assertEquals(reply, persisted.content) // 正文完整落盘（取消不丢）
         assertFalse(persisted.interrupted) // 正文完整，不应标中断
-        assertNull(persisted.drafts) // 修复没有结果，草稿卡不挂
+        assertTrue(persisted.todoIds.isEmpty()) // 修复没有结果，不创建待办
+        assertFalse(persisted.todoSaveFailed)
         assertFalse(repo.sending.value)
 
         // 修复请求自带格式声明：原文只说「遵循之前声明的格式」，模型手里并没有声明
@@ -569,26 +634,24 @@ class AiChatRepositoryTest {
     }
 
     @Test
-    fun `updateDraftStatuses persists the whole batch once`() = runBlocking {
+    fun `multiple todos are persisted in a single batch`() = runBlocking {
         val store = FakeAiChatStore()
-        val reply = "草稿：\n```json\n" +
+        val persister = FakeTodoPersister()
+        val reply = "已创建：\n```json\n" +
             """{"todos":[{"name":"甲"},{"name":"乙"}]}""" +
             "\n```"
         val repo = repository(
             store = store,
             transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            persister = persister,
         )
         repo.send("添加两个待办")
-        assertEquals(2, repo.messages.value.last().drafts!!.drafts.size)
-        val before = store.saveCount
 
-        repo.updateDraftStatuses(1, mapOf(0 to AiDraftStatus.Saved, 1 to AiDraftStatus.Dismissed))
-
-        assertEquals(before + 1, store.saveCount)
-        assertEquals(
-            listOf(AiDraftStatus.Saved, AiDraftStatus.Dismissed),
-            store.file.messages[1].drafts!!.statuses,
-        )
+        // 两条同批提交（一次 addTodos），消息记录两个 id
+        assertEquals(1, persister.batches.size)
+        assertEquals(listOf("甲", "乙"), persister.batches.single().map { it.name })
+        assertEquals(2, repo.messages.value.last().todoIds.size)
+        assertEquals(repo.messages.value.last().todoIds, store.file.messages[1].todoIds)
     }
 
     @Test
@@ -631,6 +694,7 @@ class AiChatRepositoryTest {
             settings = FakeAiSettingsStore(),
             client = AiClient(FakeAiTransport(ScriptedResponse(listOf("data: [DONE]")))),
             contextProvider = { AiChatContext() },
+            persister = FakeTodoPersister(),
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
         repo.bootstrap()
@@ -662,6 +726,7 @@ class AiChatRepositoryTest {
             settings = FakeAiSettingsStore(),
             client = AiClient(FakeAiTransport(response)),
             contextProvider = { AiChatContext() },
+            persister = FakeTodoPersister(),
             clock = Clock { IsoDate.of(2026, 11, 1) },
             nowMillis = { tick += 1_000; tick },
         )

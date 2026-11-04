@@ -637,12 +637,12 @@
     <string name="day_image_parallax_title">Wallpaper Perspective</string>
     <string name="day_image_parallax_desc">Background shifts subtly as you tilt your phone</string>
 
-    <!-- AI chat overlay (AiChatOverlay): title / input / examples / error classes / draft card -->
-    <string name="ai_sheet_title">AI Assistant</string>
+    <!-- AI chat overlay (AiChatOverlay): top bar pills / input / examples / error classes / draft card -->
+    <string name="ai_sheet_chat">Chat</string>
+    <string name="ai_sheet_close">Close</string>
     <string name="ai_input_hint">Type a message…</string>
     <string name="cd_ai_send">Send</string>
     <string name="cd_ai_stop">Stop generating</string>
-    <string name="cd_ai_settings">AI settings</string>
     <string name="ai_interrupted">Reply interrupted</string>
     <string name="ai_retry">Retry</string>
     <string name="ai_dismiss_error">Got it</string>
@@ -658,16 +658,8 @@
     <string name="ai_go_settings">Open AI settings</string>
     <string name="ai_example_1">What does next week look like?</string>
     <string name="ai_example_2">Add: lab report due Friday</string>
-    <string name="ai_draft_card_title">Todo drafts</string>
-    <string name="ai_draft_save_selected">Save selected</string>
-    <string name="ai_draft_saved">Saved</string>
-    <string name="ai_draft_dismissed">Dismissed</string>
-    <string name="cd_ai_draft_edit">Edit draft</string>
-    <string name="ai_draft_invalid_dates">Check dates</string>
-    <string name="ai_draft_invalid_period">Check times</string>
-    <string name="ai_draft_invalid_deadline">Check deadline</string>
-    <string name="ai_draft_invalid_name">Check name</string>
-    <string name="ai_draft_name_required">Some drafts have no name — edit or dismiss them first</string>
+    <string name="ai_created_todos">Created todos</string>
+    <string name="ai_todo_save_failed">Couldn\'t create todos, please try again</string>
     <string name="ai_save_failed">Save failed — try again</string>
 
     <!-- AI settings page (AISettingsScreen, Settings → AI settings): presets / connection / key / privacy -->

@@ -7,6 +7,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ai.AiChatContext
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiClient
+import com.fangyi.classpp.data.ai.AiTodoPersister
 import com.fangyi.classpp.data.ai.FileAiChatStore
 import com.fangyi.classpp.data.ai.PrefsAiSettingsStore
 import com.fangyi.classpp.data.store.FileScheduleStore
@@ -155,6 +156,10 @@ class AppContainer internal constructor(
                             groups = todoRepository.groups.value.map { it.name },
                             tags = tagRepository.tags.value.map { it.name },
                         )
+                    },
+                    // 回复里的待办直接落库（无需确认）：与手建同路径，走全量校验与单次提交
+                    persister = AiTodoPersister { todos ->
+                        todoRepository.addTodos(todos) is TodoReadResult.Ok
                     },
                 ),
             )

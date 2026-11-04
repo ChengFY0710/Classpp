@@ -26,12 +26,18 @@ object AiPromptBuilder {
     /**
      * 待办草稿的 JSON 字段契约（单行示例）。system prompt 与仓库的草稿修复重试
      * 共用同一份文本——修复请求里说「严格遵循格式」必须真的有声明可循。
+     * 字段与 Todo 的完整参数面对齐（日期/全天/时段/截止/截止随重复/紧急度/标签/
+     * 分组/备注/步骤/地点/倒计时/置顶/重复规则）。
      */
     internal const val TODO_JSON_SHAPE: String =
-        """{"todos":[{"name":"...","dates":["yyyy-MM-dd"],"startTime":"HH:mm",""" +
+        """{"todos":[{"name":"...","dates":["yyyy-MM-dd"],"allDay":false,"startTime":"HH:mm",""" +
             """"endTime":"HH:mm","deadlineDate":"yyyy-MM-dd","deadlineTime":"HH:mm",""" +
+            """"deadlineBeforeRepeat":false,"deadlineBeforeDays":0,""" +
             """"urgency":"Critical|High|Medium|Low","tags":["..."],"group":"...",""" +
-            """"note":"...","steps":["..."],"location":"..."}]}"""
+            """"note":"...","steps":["..."],"location":"...","countdown":false,"pinned":false,""" +
+            """"repeat":{"type":"None|Daily|Weekly|Monthly|Yearly|Custom","unit":"Day|Week|Month|Year",""" +
+            """"interval":1,"marks":[1],"endType":"Never|Date|Count","endDate":"yyyy-MM-dd",""" +
+            """"endCount":5,"merge":true,"checkIn":false}}]}"""
 
     private val WEEKDAY_ZH = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
@@ -93,13 +99,19 @@ object AiPromptBuilder {
         appendLine("[可选分组] ${groups.ifEmpty { listOf("（无）") }.joinToString("、")}")
         appendLine("[可选标签] ${tags.ifEmpty { listOf("（无）") }.joinToString("、")}")
         appendLine()
-        appendLine("当用户想添加待办时，输出一个 ```json 代码块，格式（字段都可省略）：")
+        appendLine("当用户要新建待办时，直接在回复里输出一个 ```json 代码块；应用会把块内待办**立即落库，不需要用户确认**。代码块之外的正文照常简短说明。格式（字段都可省略，但用户提到的信息要尽量完整填写）：")
         appendLine(TODO_JSON_SHAPE)
         appendLine("规则：")
         appendLine("- 日期从今天的日期与星期推算（含“下周三”这类相对说法），不要编造具体日期；")
-        appendLine("- group/tag 只用【可选分组】【可选标签】里出现的值，没有匹配就省略该字段；")
+        appendLine("- 时段只有 startTime 与 endTime 成对出现才成立（endTime 须晚于 startTime）；全天待办用 allDay=true 且不要给时段；")
         appendLine("- 截止的日期（deadlineDate）与时刻（deadlineTime）要么都给，要么都不给；")
-        appendLine("- 用户表达含糊时先在回答里问清，再给草稿；")
+        appendLine("- countdown=true 仅在同时给了截止时可用；pinned=true 仅在用户明确要求置顶时使用；")
+        appendLine("- group/tag 只用【可选分组】【可选标签】里出现的值，没有匹配就省略该字段；")
+        appendLine("- 重复：预设档用 type=Daily/Weekly/Monthly/Yearly；自定义用 type=Custom 并给 unit（Day/Week/Month/Year）、interval、marks；")
+        appendLine("  marks 合法域：Week=周几 1..7（周一=1）、Month=几号 1..31、Year=几月 1..12，至少给一个；")
+        appendLine("  endType=Date 必须给 endDate（该日期当天不含）；endType=Count 必须给 endCount（1..999）；checkIn=true 仅配合 Count；不需要重复就省略 repeat；")
+        appendLine("- deadlineBeforeRepeat=true 表示截止随重复自动取下一次重复开始前 deadlineBeforeDays 天，需同时有 repeat 与截止；")
+        appendLine("- 新建待办一律带上用户指定的日期；用户表达含糊时先在回答里问清，再输出代码块；")
         appendLine("- 其余情况正常对话，不要输出 JSON 代码块。")
     }.trimEnd() + "\n"
 

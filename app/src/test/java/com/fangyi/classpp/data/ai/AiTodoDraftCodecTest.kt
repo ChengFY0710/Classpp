@@ -30,6 +30,40 @@ class AiTodoDraftCodecTest {
     }
 
     @Test
+    fun `strip removes the todo fence and keeps prose`() {
+        val reply = "已创建：\n```json\n{\"todos\":[{\"name\":\"x\"}]}\n```\n明天见。"
+        assertEquals("已创建：\n\n明天见。", AiTodoDraftCodec.stripJsonBlock(reply))
+        assertEquals("直接回答。", AiTodoDraftCodec.stripJsonBlock(" 直接回答。 "))
+    }
+
+    @Test
+    fun `parse complete todo parameters`() {
+        val payload = AiTodoDraftCodec.parseTodoDrafts(
+            """{"todos":[{"name":"晨跑","dates":["2026-11-02"],"allDay":true,"pinned":true,""" +
+                """"countdown":true,"deadlineDate":"2026-11-10","deadlineTime":"08:00",""" +
+                """"deadlineBeforeRepeat":true,"deadlineBeforeDays":1,""" +
+                """"repeat":{"type":"Custom","unit":"Week","interval":2,"marks":[1,3],""" +
+                """"endType":"Count","endCount":10,"merge":false,"checkIn":true}}]}""",
+        )!!
+        val draft = payload.todos.single()
+        assertEquals("晨跑", draft.name)
+        assertEquals(listOf("2026-11-02"), draft.dates)
+        assertEquals(true, draft.allDay)
+        assertEquals(true, draft.pinned)
+        assertEquals(true, draft.countdown)
+        assertEquals(true, draft.deadlineBeforeRepeat)
+        assertEquals(1, draft.deadlineBeforeDays)
+        assertEquals("Custom", draft.repeat!!.type)
+        assertEquals("Week", draft.repeat!!.unit)
+        assertEquals(2, draft.repeat!!.interval)
+        assertEquals(listOf(1, 3), draft.repeat!!.marks)
+        assertEquals("Count", draft.repeat!!.endType)
+        assertEquals(10, draft.repeat!!.endCount)
+        assertEquals(false, draft.repeat!!.merge)
+        assertEquals(true, draft.repeat!!.checkIn)
+    }
+
+    @Test
     fun `extract tolerates missing json tag`() {
         val reply = "```\n{\"todos\":[{\"name\":\"x\"}]}\n```"
         assertEquals("""{"todos":[{"name":"x"}]}""", AiTodoDraftCodec.extractJsonBlock(reply))

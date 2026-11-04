@@ -664,12 +664,12 @@
     <string name="day_image_parallax_title">壁纸视差</string>
     <string name="day_image_parallax_desc">倾斜手机时，背景图随之轻微移动</string>
 
-    <!-- AI 对话浮层（AiChatOverlay）：标题 / 输入 / 示例 / 错误分类 / 草稿卡 -->
-    <string name="ai_sheet_title">AI 助手</string>
+    <!-- AI 对话浮层（AiChatOverlay）：顶栏胶囊 / 输入 / 示例 / 错误分类 / 直接创建的待办 -->
+    <string name="ai_sheet_chat">对话</string>
+    <string name="ai_sheet_close">关闭</string>
     <string name="ai_input_hint">输入消息…</string>
     <string name="cd_ai_send">发送</string>
     <string name="cd_ai_stop">停止生成</string>
-    <string name="cd_ai_settings">AI 设置</string>
     <string name="ai_interrupted">回复已中断</string>
     <string name="ai_retry">重试</string>
     <string name="ai_dismiss_error">知道了</string>
@@ -685,16 +685,8 @@
     <string name="ai_go_settings">去 AI 设置</string>
     <string name="ai_example_1">帮我看看下周安排</string>
     <string name="ai_example_2">添加：周五交实验报告</string>
-    <string name="ai_draft_card_title">待办草稿</string>
-    <string name="ai_draft_save_selected">保存所选</string>
-    <string name="ai_draft_saved">已保存</string>
-    <string name="ai_draft_dismissed">已忽略</string>
-    <string name="cd_ai_draft_edit">编辑草稿</string>
-    <string name="ai_draft_invalid_dates">日期待确认</string>
-    <string name="ai_draft_invalid_period">时间待确认</string>
-    <string name="ai_draft_invalid_deadline">截止待确认</string>
-    <string name="ai_draft_invalid_name">名称待确认</string>
-    <string name="ai_draft_name_required">有草稿缺少名称，请编辑或忽略后再保存</string>
+    <string name="ai_created_todos">已创建待办</string>
+    <string name="ai_todo_save_failed">待办创建失败，请重试</string>
     <string name="ai_save_failed">保存失败，请重试</string>
 
     <!-- AI 设置页（AISettingsScreen，设置 → AI 设置）：预设 / 连接 / Key / 隐私说明 -->

@@ -33,24 +33,34 @@ data class AiChatContext(
 )
 
 /**
+ * 待办落库回调：AI 回复解析出的待办由仓库直接写入 TodoRepository（无需用户确认）。
+ * 抽成接口是为了让 AiChatRepository 不反向依赖具体仓库、单测可注入 fake。
+ * 返回 true = 整批落库成功（`TodoRepository.addTodos` 是全量校验、零落盘的批量语义）。
+ */
+fun interface AiTodoPersister {
+    suspend fun addAll(todos: List<Todo>): Boolean
+}
+
+/**
  * AI 对话仓库：内存真源（StateFlow）+ 磁盘持久化（[AiChatStore]），与 TodoRepository
  * 同构；流式增量直接写入消息流（UI 逐字渲染）。
  *
  * **调用编排**（见 .mimocode/docs/AI功能计划.md §6.3）：
  * - [send] 先对历史窗口拍快照 → 追加 user 消息与空的 assistant 占位 → 拼 system
  *   prompt（上下文快照 + 历史快照 + 本轮 user）→ [AiClient.streamChat] 流式 →
- *   完成后解析草稿块挂卡 → 落盘；
+ *   完成后解析草稿块 → **直接映射并落库** → 把创建成功的 todo id 挂到消息上 → 落盘；
  * - 中断/失败保留半截文本（interrupted 标记 + [lastError]），重试走 [retryLast]
- *   （不重复追加 user 消息）；
+ *   （不重复追加 user 消息）；半截回复不创建待办——只认完整结束的回复；
  * - 发送 Job 归仓库自有的 [scope]（[sendInBackground] / [retryInBackground]）：收起
  *   对话浮层、旋转屏幕都不会中断流；停止 = [cancelSending]，[send] 捕获
  *   CancellationException 后先落盘半截再原样传播——取消语义不吞；
  * - 流过长时按 [CHECKPOINT_INTERVAL_MILLIS] 节流做半截 checkpoint，进程被杀也能
  *   恢复已收到的部分。
  *
- * **草稿确认（红线：AI 不静默写库）**：草稿卡只挂在 assistant 消息上，保存动作由
- * UI 层经 [updateDraftStatus] 回写状态并落盘；真正落库（todoRepository.addTodos）
- * 由 UI 层调用，本仓库不碰待办写路径。
+ * **待办落库**：草稿解析成功后由 [persister] 写入待办库，消息只落成功创建的 id；
+ * UI 从 TodoRepository 现取内容渲染 NoteCard（详情/编辑/侧划删除都走真实待办）。
+ * 缺名称的草稿会被映射器滤掉（否则整批校验失败），落库抛错则消息标记
+ * [AiChatMessage.todoSaveFailed]。
  *
  * 写：Mutex 串行化（同一次对话期间禁止并发 send），流程 = 内存变更 → `store.save`
  * → 成功与否只影响下次装载（对话历史可弃，失败不回滚内存）。
@@ -61,6 +71,8 @@ class AiChatRepository internal constructor(
     private val client: AiClient,
     /** 上下文快照提供方：AppContainer 装配时读各仓库 StateFlow.value（同步、无 I/O） */
     private val contextProvider: () -> AiChatContext,
+    /** AI 创建待办的落库入口（AppContainer 接 TodoRepository.addTodos） */
+    private val persister: AiTodoPersister,
     private val clock: Clock = Clock.system,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
@@ -357,42 +369,13 @@ class AiChatRepository internal constructor(
         saved
     }
 
-    // ---------- 草稿卡 ----------
-
-    /**
-     * 批量回写草稿处置状态（保存成功 → Saved；用户放弃 → Dismissed）：一次内存更新
-     * + 一次落盘——「保存所选」N 条不再重写 N 次整个文件。落盘包 NonCancellable：
-     * 用户已确认的处置不能因浮层关闭丢失（否则会「待办已建、草稿仍 Pending」）。
-     */
-    suspend fun updateDraftStatuses(messageIndex: Int, statuses: Map<Int, AiDraftStatus>) {
-        if (statuses.isEmpty()) return
-        mutex.withLock {
-            val current = _messages.value.getOrNull(messageIndex) ?: return
-            val drafts = current.drafts ?: return
-            val updatedStatuses = drafts.statuses.toMutableList().also { list ->
-                for ((draftIndex, status) in statuses) {
-                    if (draftIndex in list.indices) list[draftIndex] = status
-                }
-            }
-            if (updatedStatuses == drafts.statuses) return
-            val updated = current.copy(drafts = drafts.copy(statuses = updatedStatuses))
-            _messages.update { list -> list.toMutableList().also { it[messageIndex] = updated } }
-            withContext(NonCancellable) { persist() }
-        }
-    }
-
-    /** 回写一条草稿的处置状态（单条 dismiss/编辑保存用；语义同 [updateDraftStatuses]） */
-    suspend fun updateDraftStatus(messageIndex: Int, draftIndex: Int, status: AiDraftStatus) {
-        updateDraftStatuses(messageIndex, mapOf(draftIndex to status))
-    }
-
-    // ---------- 内部 ----------
+    // ---------- 待办落库 ----------
 
     /**
      * 本次请求的消息序列：system prompt（上下文快照）+ 历史窗口快照（不含本轮
-     * user）+ 本轮 user 消息。历史含草稿卡消息时只发文本，不重发草稿内容；
-     * 空 assistant（取消/失败残留的占位）不发送——对任何服务商都是噪声，
-     * 个别网关会因 `content=""` 直接回 400。
+     * user）+ 本轮 user 消息。历史里的 assistant 正文原样回放（含已创建待办的
+     * JSON 块，给模型连续上下文）；空 assistant（取消/失败残留的占位）不发送——
+     * 对任何服务商都是噪声，个别网关会因 `content=""` 直接回 400。
      */
     private fun buildTurns(history: List<AiChatMessage>, userText: String): List<AiChatTurn> {
         val context = contextProvider()
@@ -442,8 +425,11 @@ class AiChatRepository internal constructor(
     }
 
     /**
-     * 流结束（成功）：先把完整正文写进消息（取消也不会丢），再解析草稿块挂卡。
+     * 流结束（成功）：先把完整正文写进消息（取消也不会丢），再解析草稿块并**直接落库**。
      * 草稿解析失败会发起一次修复重试（同连接复用契约），该阶段被取消时正文已成立。
+     *
+     * 落库顺序：映射 → 过滤缺名称行 → 批量 addTodos（单次提交）→ 成功创建的 id 写回
+     * 消息。落库失败只标记 [AiChatMessage.todoSaveFailed]，不影响正文与历史。
      */
     private suspend fun finalizeLast(full: String, connection: AiConnection, apiKey: String) {
         _messages.update { list ->
@@ -453,42 +439,64 @@ class AiChatRepository internal constructor(
                 it[it.lastIndex] = last.copy(content = full, interrupted = false)
             }
         }
-        val drafts = extractDrafts(full, connection, apiKey) ?: return
+        val payload = extractDrafts(full, connection, apiKey) ?: return
+        val outcome = createTodos(payload)
         _messages.update { list ->
             val last = list.lastOrNull() ?: return@update list
             if (last.role != AiChatRole.Assistant) return@update list
             list.toMutableList().also {
-                it[it.lastIndex] = last.copy(drafts = drafts)
+                it[it.lastIndex] = last.copy(
+                    todoIds = outcome.ids,
+                    todoSaveFailed = outcome.failed,
+                )
             }
         }
     }
 
+    /** 一次落库的结果：成功创建的 id + 是否失败（草稿非空却零落库 / 写库异常） */
+    private data class CreateTodosOutcome(val ids: List<String>, val failed: Boolean)
+
     /**
-     * 取消/失败：标记 interrupted；半截里若已有完整草稿块也就地解析挂卡，用户仍可保存。
-     * 这里**只做本地解析**——取消路径协程已失效，发起修复请求只会立刻抛取消。
+     * 草稿 → Todo → 落库。缺名称的行在此被滤掉：`addTodos` 全量校验、任意一条非法即
+     * 整批零落盘，与用户确认相比这里没有「改完再存」的机会，只能保证批次本身合法。
+     * 取消原样抛出（调用方的落盘不能被跳过）；其余异常按落库失败处理。
+     */
+    private suspend fun createTodos(payload: AiTodoDraftPayload): CreateTodosOutcome {
+        val context = contextProvider()
+        val mappings = AiTodoMapper.map(payload.todos, context.groups, context.tags)
+        val todos = mappings.filter { it.canSave }.map { it.todo }
+        if (todos.isEmpty()) return CreateTodosOutcome(emptyList(), failed = true)
+        val saved = try {
+            persister.addAll(todos)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            false
+        }
+        return if (saved) {
+            CreateTodosOutcome(todos.map { it.id }, failed = false)
+        } else {
+            CreateTodosOutcome(emptyList(), failed = true)
+        }
+    }
+
+    /**
+     * 取消/失败：标记 interrupted。半截回复不创建待办——只认完整结束的回复，
+     * 避免用户按下停止时把半截 JSON 写成真实待办。
      */
     private fun markLastInterrupted() {
         _messages.update { list ->
             val last = list.lastOrNull() ?: return@update list
             if (last.role != AiChatRole.Assistant) return@update list
             list.toMutableList().also {
-                it[it.lastIndex] = last.copy(
-                    interrupted = true,
-                    drafts = parseDraftsOrNull(last.content) ?: last.drafts,
-                )
+                it[it.lastIndex] = last.copy(interrupted = true)
             }
         }
     }
 
-    /** 本地解析草稿块（不发起网络）；无块或解析失败返回 null */
-    private fun parseDraftsOrNull(reply: String): AiMessageDrafts? {
-        val json = AiTodoDraftCodec.extractJsonBlock(reply) ?: return null
-        return AiTodoDraftCodec.parseTodoDrafts(json)?.toMessageDrafts()
-    }
-
     /**
-     * 从回复文本提取草稿（无块 = null）；解析失败带错误自动重试一次（把上次输出
-     * 原样附回，请模型修正后重新输出），仍失败返回 null（视为纯对话）。
+     * 从回复文本提取草稿（无块或空批次 = null）；解析失败带错误自动重试一次（把上次
+     * 输出原样附回，请模型修正后重新输出），仍失败返回 null（视为纯对话）。
      *
      * 凭据由本次发送一路传入（同一场对话内不会变），省掉每次回复的重复解密；
      * 取消必须原样抛出——否则调用方的落盘会被跳过。
@@ -497,12 +505,11 @@ class AiChatRepository internal constructor(
         reply: String,
         connection: AiConnection,
         apiKey: String,
-    ): AiMessageDrafts? {
+    ): AiTodoDraftPayload? {
         if (!connection.isConfigured) return null
 
         val json = AiTodoDraftCodec.extractJsonBlock(reply) ?: return null
-        val first = AiTodoDraftCodec.parseTodoDrafts(json)
-        if (first != null) return first.toMessageDrafts()
+        AiTodoDraftCodec.parseTodoDrafts(json)?.takeIf { it.todos.isNotEmpty() }?.let { return it }
 
         // 修复重试：非流式轻量收口——复用流式通道但整块收，UI 无感（增量丢弃）。
         // system 带上草稿 JSON 契约：原实现只说「之前声明的格式」，模型手里并没有声明。
@@ -528,15 +535,7 @@ class AiChatRepository internal constructor(
             null // 修复失败按「无草稿」处理
         } ?: return null
         val repairedJson = AiTodoDraftCodec.extractJsonBlock(repaired) ?: return null
-        return AiTodoDraftCodec.parseTodoDrafts(repairedJson)?.toMessageDrafts()
-    }
-
-    private fun AiTodoDraftPayload.toMessageDrafts(): AiMessageDrafts? {
-        if (todos.isEmpty()) return null
-        return AiMessageDrafts(
-            drafts = todos,
-            statuses = List(todos.size) { AiDraftStatus.Pending },
-        )
+        return AiTodoDraftCodec.parseTodoDrafts(repairedJson)?.takeIf { it.todos.isNotEmpty() }
     }
 
     /**
@@ -566,12 +565,14 @@ class AiChatRepository internal constructor(
         /** 流式期间半截 checkpoint 的节流间隔（进程被杀时尽量少丢内容） */
         const val CHECKPOINT_INTERVAL_MILLIS = 2000L
 
-        /** 应用侧装配入口（AppContainer）；测试直接构造注入 fake store / fake client */
+        /** 应用侧装配入口（AppContainer）；测试直接构造注入 fake store / fake client / fake persister */
         suspend fun create(
             store: AiChatStore,
             settings: AiSettingsStore,
             client: AiClient,
             contextProvider: () -> AiChatContext,
-        ): AiChatRepository = AiChatRepository(store, settings, client, contextProvider).also { it.bootstrap() }
+            persister: AiTodoPersister,
+        ): AiChatRepository =
+            AiChatRepository(store, settings, client, contextProvider, persister).also { it.bootstrap() }
     }
 }

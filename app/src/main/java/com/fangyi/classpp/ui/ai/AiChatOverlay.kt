@@ -4,8 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -16,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -24,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -33,30 +33,23 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.TagRepository
 import com.fangyi.classpp.data.TodoOpResult
-import com.fangyi.classpp.data.TodoReadResult
 import com.fangyi.classpp.data.TodoRepository
+import com.fangyi.classpp.data.ai.AiChatMessage
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiChatRole
-import com.fangyi.classpp.data.ai.AiDraftStatus
-import com.fangyi.classpp.data.ai.AiMessageDrafts
-import com.fangyi.classpp.data.ai.AiTodoDraftMapping
-import com.fangyi.classpp.data.ai.AiTodoMapper
+import com.fangyi.classpp.data.ai.AiException
+import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.note.NewTodoSheet
+import com.fangyi.classpp.ui.note.TodoDetailSheet
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
-import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
+import com.fangyi.classpp.ui.theme.classppColors
 import kotlinx.coroutines.launch
-
-/** 草稿编辑的目标：消息下标 + 草稿下标 + 映射出的 Todo（编辑器初值快照） */
-private data class AiDraftEditEntry(
-    val messageIndex: Int,
-    val draftIndex: Int,
-    val todo: Todo,
-)
 
 /**
  * AI 对话浮层（日程页顶栏右侧按钮唤起，M1 唯一 AI 入口）。
@@ -68,11 +61,16 @@ private data class AiDraftEditEntry(
  * - 发送中输入禁用、发送键变停止键：发送 Job 由 [AiChatRepository] 自己的 scope 驱动，
  *   收起浮层/旋转屏幕不会中断流；停止 = [AiChatRepository.cancelSending]，半截回复由
  *   仓库标记 interrupted 保留（重试走 [AiChatRepository.retryInBackground]）；
- * - 草稿卡「编辑」打开预填的 [NewTodoSheet]（existing 整体回填），对话浮层随之
- *   covered 后退，两层动效由 OverlaySheet 的 covered 机制同帧衔接；
- * - AI 设置由设置页的「AI 设置」子页承载（设置 → AI 设置），本浮层不再内嵌设置页：
- *   右上角 ⚙ 与未配置引导卡都只经 [onOpenSettings] 请求宿主跳转（宿主先收起本浮层，
- *   再打开设置页并直达 AI 子页）。
+ * - AI 回复里的待办由仓库**直接落库**（无需确认）：本层按消息里的 todo id 从
+ *   TodoRepository 现取，用 NoteCard 卡片展示；点卡片拉起 [TodoDetailSheet]（详情里的
+ *   备注/步骤/倒计时/归档全部落库），侧滑呼出删除动作卡（满色松手即软删）；
+ * - 「编辑」打开预填的 [NewTodoSheet]（existing 整体回填），对话浮层随之 covered 后退，
+ *   两层动效由 OverlaySheet 的 covered 机制同帧衔接；
+ * - 顶栏两颗胶囊（同其它浮层的顶栏规格）：左上蓝「对话」= 新建对话入口的占位（功能尚未
+ *   实现，点击暂无动作），右上白「关闭」收起浮层；
+ * - AI 设置由设置页的「AI 设置」子页承载（设置 → AI 设置），浮层内不再有 ⚙ 入口：
+ *   只有未配置引导卡经 [onOpenSettings] 请求宿主跳转（宿主先收起本浮层，再打开设置页
+ *   并直达 AI 子页）。
  *
  * 未配置（[AiChatRepository.configured] = false）时渲染引导态，输入栏禁用。
  */
@@ -91,40 +89,71 @@ fun AiChatOverlay(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
-    val saveFailedMessage = stringResource(R.string.ai_save_failed)
-    val nameRequiredMessage = stringResource(R.string.ai_draft_name_required)
+    val saveFailedMessage = stringResource(R.string.todo_error_save_failed)
+    val stepDeletedMessage = stringResource(R.string.toast_todo_step_deleted)
+    val archivedMessage = stringResource(R.string.toast_todo_archived)
 
     val messages by aiChatRepository?.messages?.collectAsState()
-        ?: remember { mutableStateOf(emptyList<com.fangyi.classpp.data.ai.AiChatMessage>()) }
+        ?: remember { mutableStateOf(emptyList<AiChatMessage>()) }
     val sending by aiChatRepository?.sending?.collectAsState() ?: remember { mutableStateOf(false) }
     val lastError by aiChatRepository?.lastError?.collectAsState()
-        ?: remember { mutableStateOf<com.fangyi.classpp.data.ai.AiException?>(null) }
+        ?: remember { mutableStateOf<AiException?>(null) }
     val configured by aiChatRepository?.configured?.collectAsState() ?: remember { mutableStateOf(false) }
     val groups by todoRepository?.groups?.collectAsState()
         ?: remember { mutableStateOf(emptyList<TodoGroup>()) }
     val todos by todoRepository?.todos?.collectAsState() ?: remember { mutableStateOf(emptyList<Todo>()) }
     val tags by tagRepository?.tags?.collectAsState()
-        ?: remember { mutableStateOf(emptyList<com.fangyi.classpp.data.model.TagEntry>()) }
+        ?: remember { mutableStateOf(emptyList<TagEntry>()) }
+
+    // 标签配色表（标签名 → 颜色）：用户标签取 TagEntry.colorArgb，未挑色回落主题 Primary；
+    // 与待办页列表卡/详情浮层同一份口径（表里没有的名字由 NoteCard 自己兜底）
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val tagColors = remember(tags, primaryColor) {
+        tags.associate { it.name to (it.colorArgb?.let(::Color) ?: primaryColor) }
+    }
+    val todosById = remember(todos) { todos.associateBy { it.id } }
 
     var input by rememberSaveable { mutableStateOf("") }
-    // 草稿编辑两态口径（同 DayScreen 的 todoEdit）：entry 是期望目标，mounted 是挂载快照
-    var draftEditEntry by remember { mutableStateOf<AiDraftEditEntry?>(null) }
-    var draftEditMounted by remember { mutableStateOf<Todo?>(null) }
+    // 详情/编辑目标两态口径（同 TodoScreen 的 detail/edit）：id 是期望目标，mounted 是
+    // 挂载快照（详情随仓库回流刷新，编辑表单只取一次初值）
+    var detailTodoId by remember { mutableStateOf("") }
+    var detailMounted by remember { mutableStateOf<Todo?>(null) }
+    var editTodoId by remember { mutableStateOf("") }
+    var editMounted by remember { mutableStateOf<Todo?>(null) }
+    // 卡片侧滑互斥：同一时刻至多一张展开；返回键先收展开卡
+    val swipeCoordinator = remember { SwipeCoordinator() }
     val chatScroll = remember { mutableStateOf<androidx.compose.foundation.ScrollState?>(null) }
 
-    // 返回键：编辑器开着先关编辑器，再轮到收起对话浮层
+    // 返回键：编辑器 → 详情 → 展开的侧滑卡 → 收起对话浮层（详情自身的返回拦截注册更晚，
+    // 详情在场时由它先处理备注落盘，这里只兜底非详情场景）
     BackHandler(enabled = visible) {
-        if (draftEditEntry != null) {
-            draftEditEntry = null
-        } else {
-            onDismiss()
+        when {
+            editTodoId != "" -> editTodoId = ""
+            detailTodoId != "" -> detailTodoId = ""
+            swipeCoordinator.activeKey != null -> swipeCoordinator.activeKey = null
+            else -> onDismiss()
         }
     }
 
-    // 自动滚底：新消息（条数变化）与流式增量（尾部内容长度变化）都把滚动列压到底。
-    // 等下一帧再滚：LaunchedEffect 在布局前执行，此时 maxValue 还是上一帧的值，
+    // 主浮层由宿主外部收起（跳设置页等）时清掉详情/编辑目标：重开对话不会凭空弹回
+    // 上次的浮层（挂载快照由各自 onDismissed 在退场结束后清理）
+    LaunchedEffect(visible) {
+        if (!visible) {
+            detailTodoId = ""
+            editTodoId = ""
+            swipeCoordinator.activeKey = null
+        }
+    }
+
+    // 自动滚底：新消息（条数变化）、流式增量（尾部内容长度变化）与待办卡落位都把滚动列
+    // 压到底。等下一帧再滚：LaunchedEffect 在布局前执行，此时 maxValue 还是上一帧的值，
     // 最后一块较大的增量会差一截滚不到底。
-    LaunchedEffect(messages.size, messages.lastOrNull()?.content?.length, visible) {
+    LaunchedEffect(
+        messages.size,
+        messages.lastOrNull()?.content?.length,
+        messages.lastOrNull()?.todoIds?.size,
+        visible,
+    ) {
         if (!visible) return@LaunchedEffect
         withFrameNanos { }
         chatScroll.value?.let { it.scrollTo(it.maxValue) }
@@ -149,7 +178,7 @@ fun AiChatOverlay(
         aiChatRepository?.retryInBackground()
     }
 
-    // 分组整表写回（草稿编辑器里选分组浮层的「新建」用），与 DayScreen 的 commitGroups 同规格
+    // 分组整表写回（编辑器里选分组浮层的「新建」用），与 DayScreen 的 commitGroups 同规格
     val commitGroups: (List<TodoGroup>, Map<String, String>) -> Unit = { newGroups, renames ->
         val repository = todoRepository
         if (repository != null) {
@@ -161,55 +190,51 @@ fun AiChatOverlay(
         }
     }
 
-    fun saveSelected(
-        messageIndex: Int,
-        selected: Set<Int>,
-        mappings: List<AiTodoDraftMapping>,
-    ) {
+    // ——— 待办动作（与待办页同一套仓库 API） ———
+
+    fun openTodo(todo: Todo) {
+        detailMounted = todo
+        detailTodoId = todo.id
+    }
+
+    fun deleteTodo(todo: Todo) {
         val repository = todoRepository ?: return
-        val chatRepository = aiChatRepository ?: return
-        if (selected.isEmpty()) {
-            // 默认勾选已排除缺名称行：整卡都不可保存时按钮不应像失灵，给出明确原因
-            if (mappings.any { !it.canSave }) AppToasts.show(context, nameRequiredMessage)
-            return
-        }
         scope.launch {
-            // 缺名称的草稿会让 addTodos 全量校验整体失败（零落盘），先摘出去
-            val savable = selected.filter { index -> mappings.getOrNull(index)?.canSave == true }
-            if (savable.isEmpty()) {
-                AppToasts.show(context, nameRequiredMessage)
-                return@launch
+            if (repository.removeTodo(todo.id) is TodoOpResult.Err) {
+                AppToasts.show(context, saveFailedMessage)
             }
-            val todosToSave = savable.mapNotNull { index -> mappings.getOrNull(index)?.todo }
-            when (val result = repository.addTodos(todosToSave)) {
-                is TodoReadResult.Ok -> {
-                    // 批量回写：一次内存更新 + 一次落盘（N 条不再重写 N 次整个文件）
-                    chatRepository.updateDraftStatuses(
-                        messageIndex,
-                        savable.associateWith { AiDraftStatus.Saved },
-                    )
-                }
-                is TodoReadResult.Err -> AppToasts.show(context, saveFailedMessage)
+        }
+    }
+
+    fun toggleCompleted(todo: Todo, completed: Boolean) {
+        val repository = todoRepository ?: return
+        scope.launch {
+            if (repository.setCompleted(todo.id, completed) is TodoOpResult.Err) {
+                AppToasts.show(context, saveFailedMessage)
             }
         }
     }
 
     OverlaySheet(
-        title = stringResource(R.string.ai_sheet_title),
-        // 无确认语义：左胶囊不渲染，右上角是 AI 设置入口
-        confirmLabel = null,
+        // 顶栏只放两颗胶囊：左上「对话」即本浮层的标识位，居中标题留空不渲染（空串不占宽）
+        title = "",
+        // 左上「对话」= 新建对话入口的占位：功能尚未实现，onConfirm 暂为空
+        confirmLabel = stringResource(R.string.ai_sheet_chat),
+        confirmIcon = R.drawable.ic_add_circle,
+        onConfirm = {},
+        // 右上「关闭」：白胶囊深色 ✕，点击即收起浮层（与其它浮层顶栏关闭同一颗胶囊）
         rightAction = SheetTopAction(
-            label = stringResource(R.string.cd_ai_settings),
-            icon = R.drawable.ic_settings,
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            contentColorGlass = MaterialTheme.classppColors.onPrimaryGlass,
-            onClick = onOpenSettings,
+            label = stringResource(R.string.ai_sheet_close),
+            icon = R.drawable.ic_dismiss_circle,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            onClick = onDismiss,
         ),
         visible = visible,
         onDismiss = onDismiss,
         onDismissed = onDismissed,
-        covered = draftEditEntry != null,
+        // 详情/编辑浮层叠上来时本层缩小后退
+        covered = detailTodoId != "" || editTodoId != "",
         onScrollStateReady = { chatScroll.value = it },
         bottomScrim = false,
         bottomContent = {
@@ -257,64 +282,21 @@ fun AiChatOverlay(
             }
             else -> {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    messages.forEachIndexed { index, message ->
+                    messages.forEach { message ->
                         AiChatMessageBubble(message = message)
-                        message.drafts?.let { draftsState ->
-                            val knownGroups = groups.map { it.name }
-                            val knownTags = tags.map { it.name }
-                            val mappings = remember(index, draftsState, knownGroups, knownTags) {
-                                AiTodoMapper.map(draftsState.drafts, knownGroups, knownTags)
-                            }
-                            // 勾选集：Pending 且可直接保存（缺名称会拖垮整批 addTodos）的行全选。
-                            // 只在首次组合初始化；状态回写后仅剔除已处置行——否则用户手工取消
-                            // 的勾选会被「全部 Pending 重选」覆盖。
-                            var selected by remember(index) {
-                                mutableStateOf(
-                                    draftsState.statuses
-                                        .withIndex()
-                                        .filter { it.value == AiDraftStatus.Pending }
-                                        .filter { mappings.getOrNull(it.index)?.canSave == true }
-                                        .map { it.index }
-                                        .toSet(),
-                                )
-                            }
-                            LaunchedEffect(draftsState) {
-                                selected = selected.filter { draftIndex ->
-                                    draftsState.statuses.getOrElse(draftIndex) {
-                                        AiDraftStatus.Pending
-                                    } == AiDraftStatus.Pending
-                                }.toSet()
-                            }
-                            Spacer(Modifier.padding(2.dp))
-                            AiChatDraftCard(
-                                drafts = draftsState,
-                                mappings = mappings,
-                                selected = selected,
-                                onToggle = { toggleIndex ->
-                                    selected = if (toggleIndex in selected) {
-                                        selected - toggleIndex
-                                    } else {
-                                        selected + toggleIndex
-                                    }
-                                },
-                                onEdit = { editIndex ->
-                                    mappings.getOrNull(editIndex)?.let { mapping ->
-                                        draftEditEntry = AiDraftEditEntry(index, editIndex, mapping.todo)
-                                        draftEditMounted = mapping.todo
-                                    }
-                                },
-                                onSaveSelected = {
-                                    saveSelected(index, selected, mappings)
-                                },
-                                onDismissDraft = { dismissIndex ->
-                                    scope.launch {
-                                        aiChatRepository?.updateDraftStatus(
-                                            index,
-                                            dismissIndex,
-                                            AiDraftStatus.Dismissed,
-                                        )
-                                    }
-                                },
+                        if (message.todoSaveFailed) {
+                            AiChatTodoSaveFailedHint()
+                        }
+                        // 已创建待办：按落盘的 id 顺序从活跃待办流反查（被删除/归档的自然消失）
+                        if (message.todoIds.isNotEmpty()) {
+                            val created = message.todoIds.mapNotNull(todosById::get)
+                            AiChatCreatedTodoList(
+                                todos = created,
+                                tagColors = tagColors,
+                                swipeCoordinator = swipeCoordinator,
+                                onOpen = ::openTodo,
+                                onDelete = ::deleteTodo,
+                                onCheckedChange = ::toggleCompleted,
                             )
                         }
                         if (message.interrupted && message.role == AiChatRole.Assistant) {
@@ -337,37 +319,142 @@ fun AiChatOverlay(
         }
     }
 
-    // ——— 草稿编辑器：预填的新建待办浮层，叠在对话浮层之上 ———
-    draftEditMounted?.let { initial ->
-        NewTodoSheet(
-            visible = draftEditEntry != null,
-            onDismissed = { draftEditMounted = null },
-            onDismiss = { draftEditEntry = null },
-            tagRepository = tagRepository,
-            scheduleRepository = scheduleRepository,
-            groups = groups,
-            todos = todos,
-            onGroupsChange = commitGroups,
-            existing = initial,
-            onConfirm = { todo ->
-                val repository = todoRepository
-                val chatRepository = aiChatRepository
-                val entry = draftEditEntry
-                if (repository != null && chatRepository != null) {
-                    scope.launch {
-                        when (val result = repository.addTodo(todo)) {
-                            is TodoReadResult.Ok -> {
-                                entry?.let { e ->
-                                    chatRepository.updateDraftStatus(e.messageIndex, e.draftIndex, AiDraftStatus.Saved)
-                                }
-                                draftEditEntry = null
+    // ——— 待办详情浮层：点击 AI 创建的卡片唤起，接线同待办页 ———
+    val detailEntry = todos.firstOrNull { it.id == detailTodoId }
+    if (detailEntry != null) detailMounted = detailEntry
+    detailMounted?.let { detail ->
+        val repository = todoRepository
+        key(detail.id) {
+            TodoDetailSheet(
+                // 主浮层收起时详情一并退场（宿主外部关闭不会留下孤儿浮层）
+                visible = visible && detailEntry != null,
+                covered = editTodoId != "",
+                todo = detail,
+                tagColors = tagColors,
+                occurrenceDate = null,
+                onDismiss = { detailTodoId = "" },
+                onDismissed = { detailMounted = null },
+                onNoteSave = { note ->
+                    val cleaned = note.trim()
+                    if (repository != null && cleaned != detail.note) {
+                        scope.launch {
+                            if (repository.updateTodo(detail.copy(note = cleaned)) is TodoOpResult.Err) {
+                                AppToasts.show(context, saveFailedMessage)
                             }
-                            is TodoReadResult.Err -> AppToasts.show(context, saveFailedMessage)
                         }
                     }
-                }
-            },
-            onDelete = null,
-        )
+                },
+                onEdit = { latest ->
+                    editMounted = latest
+                    editTodoId = latest.id
+                },
+                onStepAdd = { title ->
+                    if (repository != null) {
+                        scope.launch {
+                            if (repository.addStep(detail.id, title) is TodoOpResult.Err) {
+                                AppToasts.show(context, saveFailedMessage)
+                            }
+                        }
+                    }
+                },
+                onStepToggle = { stepId, done ->
+                    if (repository != null) {
+                        scope.launch {
+                            if (repository.setStepDone(detail.id, stepId, done) is TodoOpResult.Err) {
+                                AppToasts.show(context, saveFailedMessage)
+                            }
+                        }
+                    }
+                },
+                onStepDelete = { stepId ->
+                    if (repository != null) {
+                        scope.launch {
+                            when (repository.removeStep(detail.id, stepId)) {
+                                TodoOpResult.Ok -> AppToasts.show(context, stepDeletedMessage)
+                                is TodoOpResult.Err -> AppToasts.show(context, saveFailedMessage)
+                            }
+                        }
+                    }
+                },
+                onOccurrenceCompletedChange = { date, completed ->
+                    if (repository != null) {
+                        scope.launch {
+                            if (repository.setOccurrenceCompleted(detail.id, date, completed) is TodoOpResult.Err) {
+                                AppToasts.show(context, saveFailedMessage)
+                            }
+                        }
+                    }
+                },
+                onCountdownToggle = { enabled ->
+                    if (repository != null) {
+                        scope.launch {
+                            if (repository.setCountdown(detail.id, enabled) is TodoOpResult.Err) {
+                                AppToasts.show(context, saveFailedMessage)
+                            }
+                        }
+                    }
+                },
+                onArchive = {
+                    if (repository != null) {
+                        scope.launch {
+                            when (repository.archiveTodo(detail.id)) {
+                                TodoOpResult.Ok -> {
+                                    detailTodoId = ""
+                                    AppToasts.show(context, archivedMessage)
+                                }
+                                is TodoOpResult.Err -> AppToasts.show(context, saveFailedMessage)
+                            }
+                        }
+                    }
+                },
+                // AI 浮层没有日历权限/账户选择编排上下文：菜单项置灰，不提供假入口
+                calendarAvailable = false,
+                onAddToCalendar = {},
+            )
+        }
+    }
+
+    // ——— 待办编辑浮层：预填的 NewTodoSheet，叠在详情/对话之上 ———
+    val editEntry = todos.firstOrNull { it.id == editTodoId }
+    editMounted?.let { initial ->
+        key(initial.id) {
+            NewTodoSheet(
+                // 主浮层收起时编辑浮层一并退场（同详情浮层）
+                visible = visible && editEntry != null,
+                onDismissed = { editMounted = null },
+                onDismiss = { editTodoId = "" },
+                tagRepository = tagRepository,
+                scheduleRepository = scheduleRepository,
+                groups = groups,
+                todos = todos,
+                onGroupsChange = commitGroups,
+                existing = initial,
+                onConfirm = { todo ->
+                    val repository = todoRepository
+                    if (repository != null) {
+                        scope.launch {
+                            when (repository.updateTodo(todo)) {
+                                TodoOpResult.Ok -> editTodoId = ""
+                                is TodoOpResult.Err -> AppToasts.show(context, saveFailedMessage)
+                            }
+                        }
+                    }
+                },
+                onDelete = {
+                    val repository = todoRepository
+                    if (repository != null) {
+                        scope.launch {
+                            when (repository.removeTodo(initial.id)) {
+                                TodoOpResult.Ok -> {
+                                    editTodoId = ""
+                                    detailTodoId = ""
+                                }
+                                is TodoOpResult.Err -> AppToasts.show(context, saveFailedMessage)
+                            }
+                        }
+                    }
+                },
+            )
+        }
     }
 }

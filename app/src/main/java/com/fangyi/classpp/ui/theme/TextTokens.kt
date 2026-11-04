@@ -74,6 +74,8 @@ object ClassppTextTokens {
     val settingsDescription = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal, lineHeight = 20.sp)
     /** 大号次级说明（添加课程/课程详情）：14sp Medium。 */
     val secondaryTextLarge = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp, letterSpacing = 0.sp)
+    /** AI 对话气泡正文：16sp Normal，行高 24 与 bodyLarge 同节奏；用户/AI 消息同档。 */
+    val chatBody = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 确认框正文：14sp Normal。 */
     val dialogMessage = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 空态提示：14sp Normal。 */

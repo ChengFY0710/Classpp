@@ -151,6 +151,9 @@ internal fun TodoDetailSheet(
     // 当前视图是否提供倒计时开关：收集箱卡不渲染倒计时（TodoInboxCard 组件口径），
     // 从收集箱打开的详情传 false 把「开启倒计时」整体置灰（开关无可视反馈）
     countdownAvailable: Boolean = true,
+    // 当前宿主是否具备「添加到日历」的编排上下文（权限/账户选择/写入）：AI 对话浮层
+    // 等没有日历流程的宿主传 false，菜单项置灰，避免可点却无任何反应
+    calendarAvailable: Boolean = true,
     // 被编辑浮层盖住：本层缩小后退（透传 OverlaySheet 的分层动效）
     covered: Boolean = false,
 ) {
@@ -247,8 +250,9 @@ internal fun TodoDetailSheet(
                         onDismiss = { moreExpanded = false },
                         hazeState = sheetHazeState,
                         // 时间为「无」的待办没有任何可写入日历的时刻：添加到日历项置灰
-                        // 不可点（CalendarEventPlanner 同口径，正常不会触发其回调）
-                        calendarEnabled = todo.timeKind != TodoTimeKind.None,
+                        // 不可点（CalendarEventPlanner 同口径，正常不会触发其回调）；
+                        // 宿主没有日历编排上下文（calendarAvailable = false）时同样置灰
+                        calendarEnabled = calendarAvailable && todo.timeKind != TodoTimeKind.None,
                         onAddToCalendar = onAddToCalendar,
                         // 无截止日期、已标记完成或当前视图不显示倒计时（收集箱）：倒计时
                         // 项置灰不可点（无截止时仓库不变式也保证开关必为 false；完成后仅

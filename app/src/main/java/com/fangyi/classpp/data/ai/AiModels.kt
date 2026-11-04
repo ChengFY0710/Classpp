@@ -43,27 +43,15 @@ data class AiConnection(
 @Serializable
 enum class AiChatRole { User, Assistant }
 
-/** 草稿卡上单条草稿的处置状态；Saved/Dismissed 后重进对话不再重复弹卡（见 AiTodoDraftCard） */
-@Serializable
-enum class AiDraftStatus { Pending, Saved, Dismissed }
-
-/**
- * assistant 消息携带的待办草稿卡：内容 + 每条处置状态（两表等长，按位对应）。
- * 草稿的「待人工修正」标注（[AiDraftField]）不落盘——装载时由 AiTodoMapper 重算。
- */
-@Serializable
-data class AiMessageDrafts(
-    val drafts: List<AiTodoDraft> = emptyList(),
-    val statuses: List<AiDraftStatus> = emptyList(),
-)
-
 /**
  * 一条对话消息（ai_chat.json 的成员）。
  *
  * @param createdAtMillis 创建时刻（epoch millis），由仓库在追加时补齐
  * @param interrupted 流式中断标记：true = 这条 assistant 消息收到一半被停止/失败，
  *   UI 显示「已中断 + 重试」；user 消息恒 false
- * @param drafts 消息携带的待办草稿卡；null = 无草稿（纯对话消息）
+ * @param todoIds 本条回复中 AI 创建成功的待办 id（按生成顺序落盘）：重进对话仍以
+ *   NoteCard 卡片展示；卡片内容从 TodoRepository 现取，待办被删除/归档后自然消失
+ * @param todoSaveFailed 解析出了草稿但落库失败（I/O 等异常）；UI 在原处提示重试
  */
 @Serializable
 data class AiChatMessage(
@@ -71,7 +59,8 @@ data class AiChatMessage(
     val content: String,
     val createdAtMillis: Long = 0,
     val interrupted: Boolean = false,
-    val drafts: AiMessageDrafts? = null,
+    val todoIds: List<String> = emptyList(),
+    val todoSaveFailed: Boolean = false,
 )
 
 /**
