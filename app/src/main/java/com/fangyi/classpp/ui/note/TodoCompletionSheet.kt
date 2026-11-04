@@ -48,8 +48,8 @@ import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
  *    小点）。底栏回跳按钮改成「回到本月」（浏览其他月份时出现，点击收回今天所在月）。
  *    状态球可点：绿球点一下取消完成（回落红球/常规色）、红球点一下补完成（变绿），经
  *    [onOccurrenceCompletedChange] 交宿主落库（仓库按逐期集合结算，迟到补完成不撤销已落账逾期）。
- *    打卡模式另给补勾位：漏期不记逾期（没有红球），展示月内锚日～今天的未完成分期由
- *    [checkInBackfillDates] 并进可点集合，点灰点日期球即补完成、再点取消。
+ *    打卡模式另给补勾位：漏期不记逾期（没有红球），展示月内从待办起始日到今天的整段日期由
+ *    [checkInBackfillDates] 并进可点集合，点日期球即补完成、再点取消。
  * 2. [SheetInfoCard]：统计**已结算的期数**——已完成（含今天与未来的提前完成）+ 已逾期；
  *    完成率 = 已完成 /（已完成 + 已逾期）。今天的应完成日期既未完成、也未逾期时不进分母
  *    （仍可能完成/逾期）。打卡模式没有逾期结算，改按打卡口径：完成率 = 完成次数 / 目标次数，
@@ -94,6 +94,8 @@ internal fun TodoCompletionSheet(
             }
         }
     }
+    // 打卡模式判定（补勾位与统计口径共用）
+    val checkInMode = todo.isCheckInMode
     // 展示月的首尾：网格起点是 1 号所在周的周一，起点 + 7 必落在展示月内（月末按
     // 「下月 1 号 − 1 天」推，不走日历库）
     val (viewYear, viewMonth, _) = (gridWindow.first + 7).yearMonthDay()
@@ -101,15 +103,14 @@ internal fun TodoCompletionSheet(
     val nextMonthStart =
         if (viewMonth == 12) IsoDate.of(viewYear + 1, 1, 1) else IsoDate.of(viewYear, viewMonth + 1, 1)
     val monthEnd = nextMonthStart - 1
-    // 打卡模式的补勾位：漏期不记逾期 → 灰点日期没有状态球可点。展示月内锚日～今天的
-    // 各期（未完成的）同样可点，点一下即补完成（再点取消）
-    val backfillDates = remember(todo, today, gridWindow) {
+    // 打卡模式的补勾位：漏期不记逾期（没有红球可点），补勾位取展示月 ∩ [待办时间起始,
+    // 今天] 的整段日期——灰点日期与漏掉的期都能点，点一下记完成、再点取消
+    val backfillDates = remember(todo, monthStart, monthEnd, today) {
         todo.checkInBackfillDates(monthStart, monthEnd, today)
     }
     // 完成情况统计已结算的期数：已完成（含今天与未来的提前完成）+ 已逾期；完成率 =
     // 已完成 / 已结算。今天的应完成日期既未完成、也未逾期时不进分母（仍可能完成/逾期）。
     // 打卡模式没有「逾期结算」可言：条数仍数完成次数，完成率与目标次数按打卡口径给
-    val checkInMode = todo.isCheckInMode
     val targetCount = todo.repeat.endCount
     val completedCount = dayStates.count { it.value == DayCalendarDayStatus.Completed }
     val overdueCount = dayStates.count { it.value == DayCalendarDayStatus.Overdue }
@@ -144,9 +145,9 @@ internal fun TodoCompletionSheet(
                     markedDates = markedDates,
                     dayStates = dayStates,
                     // 只有带状态的球可点（已完成/已逾期，含今天与未来的提前完成）：点按
-                    // 在完成/未完成间切换；打卡模式再并上展示月内的补勾位（灰点日期，见
-                    // [checkInBackfillDates]）——打卡漏期没有红球，不并就点不动。无状态且
-                    // 非补勾位的日期不出现按压反馈
+                    // 在完成/未完成间切换；打卡模式再并上展示月内「待办起始日～今天」的
+                    // 整段日期（见 [checkInBackfillDates]）——打卡漏期没有红球，不并连补
+                    // 打卡都点不动。无状态且非补勾位的日期不出现按压反馈
                     clickableDates = dayStates.keys + backfillDates,
                     onDateClick = { date ->
                         when (val status = dayStates[date]) {

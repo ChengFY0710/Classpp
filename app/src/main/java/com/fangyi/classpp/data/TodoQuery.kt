@@ -269,12 +269,12 @@ val Todo.isCheckInMode: Boolean
     get() = repeat.checkIn && repeat.endType == RepeatEndType.Count
 
 /**
- * 打卡模式在 `[fromInclusive, toInclusive]` 内可「补勾」的分期：锚日至今（含今天，不超过
- * [toInclusive]）的应完成日期，已完成的剔除——打卡漏期不记逾期（红色状态球不会出现），
- * 完成情况浮层靠这份集合把展示月里的灰点日期也变成可点的补勾位。
+ * 打卡模式在 `[fromInclusive, toInclusive]` 内可「补勾 / 取消」的日期：待办时间起始日
+ * 至今（含今天）的**整段**日期。
  *
- * 未来日期不给补勾（打卡按「做过才勾」记），非打卡模式或无锚日期返回空集；纯函数，
- * 浮层与单测共用。
+ * 打卡漏期不记逾期（没有红色状态球可点），所以灰点日期也得能补打卡——补勾位取
+ * 「窗口 ∩ [待办时间起始, 今天]」的连续区间，不按重复规则逐期取（锚日前、未来日期都
+ * 不给补勾）。非打卡模式或无待办时间返回空集。纯函数，完成情况浮层与单测共用。
  */
 fun Todo.checkInBackfillDates(
     fromInclusive: IsoDate,
@@ -282,12 +282,10 @@ fun Todo.checkInBackfillDates(
     today: IsoDate,
 ): Set<IsoDate> {
     if (!isCheckInMode) return emptySet()
-    val anchor = dates.minByOrNull { it.epochDay } ?: return emptySet()
-    val endInclusive = if (toInclusive.epochDay < today.epochDay) toInclusive else today
-    if (endInclusive.epochDay < fromInclusive.epochDay) return emptySet()
-    val completed = completedOccurrences.toSet()
-    return repeat.occurrencesBetween(anchor, fromInclusive, endInclusive + 1)
-        .filterTo(mutableSetOf()) { it !in completed }
+    val start = dates.minByOrNull { it.epochDay } ?: return emptySet()
+    val firstEpochDay = maxOf(fromInclusive.epochDay, start.epochDay)
+    val lastEpochDay = minOf(toInclusive.epochDay, today.epochDay)
+    return buildSet { for (day in firstEpochDay..lastEpochDay) add(IsoDate(day)) }
 }
 
 /**
