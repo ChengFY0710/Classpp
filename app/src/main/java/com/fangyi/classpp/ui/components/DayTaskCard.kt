@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -68,20 +69,24 @@ import com.kyant.shapes.RoundedRectangle
  *   竖排卡的内容撑高不参与该规则（仍只在压住下卡时推轴）；
  * - 比例高度 < [DayTaskCompactThreshold] 切紧凑单行（时间 + 标签 + 时间 + 标题横排
  *   一行）；
- * - 分列后卡宽不足 [DayTask.narrowThreshold]（课程 100dp / 待办 180dp）时切窄卡样式：
- *   起止时间置顶单行 + 标题 + 内容（课程备注最多两行、待办不画勾选框），优先于紧凑单行；
+ * - 分列后卡宽不足 [DayTask.narrowThreshold]（课程/待办均 180dp）时切窄卡样式：
+ *   起止时间置顶单行 + 标题 + 内容（待办不画勾选框），优先于紧凑单行；
+ * - 文字行数随卡高动态分配：求解器取 `max(比例高度, 短卡基线内容高)` 作为行数预算，
+ *   按「标题 → 地点/info → 备注」顺序把行数扩到自然行数（[solveDayTaskTextLines]），
+ *   结果写入 [DayTaskPlacement.lines]，实测与渲染共用同一份；短卡仍保持标题 1 行、
+ *   备注最多 [DayTaskNoteBaseLines] 行的基线，紧凑卡恒单行，教师与待办属性行固定 1 行；
  * - 相邻任务贴近（渲染间距 < 6dp，含贴背）时接触角收敛为 6dp，时间重叠的任务均分
  *   卡片区域宽度（列间 2dp），贴邻方向接触角同样收敛——圆角一律走
  *   [com.fangyi.classpp.ui.theme.dayTaskCardShape]。
  *
  * **维护约定（实测高度缓存）**：[DayTimeline] 会把 [DayTaskCardContent] 的实测高度按
- * [DayTaskMeasureKey]（内容 + 形态 + 卡宽；字体度量由缓存生命周期保证）缓存，重测命中
- * 时不再组合测量副本。以后给卡片内容新增**任何影响高度的字段或排版**（新的可见性开关、
- * 字号/行高、备注样式开关、行数限制、内容内边距等）时，必须同步更新 [DayTaskMeasureKey]
- * 与 [DayTask.measureKey]；否则高度变化不会触发重新测量，时间轴仍按过期高度排布，
- * 会破坏上下卡 ≥ 2dp 的间距。只影响颜色/点击等尺寸无关的字段不需要加。缓存的失效时机
- * 见 DayTimeline 的 cache remember 键（密度/字号缩放、字体解析器、布局方向、区域配置、
- * 环境文字样式）。
+ * [DayTaskMeasureKey]（内容 + 形态 + 卡宽 + 行数计划；字体度量由缓存生命周期保证）缓存，
+ * 重测命中时不再组合测量副本。以后给卡片内容新增**任何影响高度的字段或排版**（新的
+ * 可见性开关、字号/行高、备注样式开关、行数限制、内容内边距等）时，必须同步更新
+ * [DayTaskMeasureKey]/[DayTask.measureKey] 或 DayTimeline 的实测缓存键；否则高度变化
+ * 不会触发重新测量，时间轴仍按过期高度排布，会破坏上下卡 ≥ 2dp 的间距。只影响颜色/
+ * 点击等尺寸无关的字段不需要加。缓存的失效时机见 DayTimeline 的 cache remember 键
+ * （密度/字号缩放、字体解析器、布局方向、区域配置、环境文字样式）。
  */
 internal sealed interface DayTask {
     val startMinute: Int
@@ -174,9 +179,9 @@ private val DayTask.columnPriority: Int
     }
 
 /** 窄卡分界（课程）：分列后卡宽小于该值时切窄卡样式（时间置顶单行、无左侧时间列） */
-internal val DayTaskNarrowThresholdCourse = 100.dp
+internal val DayTaskNarrowThresholdCourse = 180.dp
 
-/** 窄卡分界（待办）：待办竖排还占一列 36dp 勾选框，阈值高于课程 */
+/** 窄卡分界（待办）：与课程同分界（待办竖排还占一列 36dp 勾选框） */
 internal val DayTaskNarrowThresholdTodo = 180.dp
 
 /** 窄卡判定阈值：由任务类型取对应分界 */
@@ -186,11 +191,29 @@ internal val DayTask.narrowThreshold: Dp
         is DayTask.Todo -> DayTaskNarrowThresholdTodo
     }
 
-// ---------- 布局求解：位置尺寸 + 接触角 + 形态（纯函数，可单测） ----------
+// ---------- 布局求解：位置尺寸 + 接触角 + 形态 + 文字行数（纯函数，可单测） ----------
+
+/**
+ * 卡片文字的最大行数，由 [solveDayTaskTextLines] 在求解期按卡高预算分配。
+ *
+ * - [title]：课程/待办标题；
+ * - [info]：竖排卡的地点行；窄卡指「教师 地点」合并行（教师单独一行时恒 1 行）；
+ * - [note]：课程备注（含「备注：」前缀），无备注为 0。
+ *
+ * 默认值即短卡基线（标题 1 行、地点 1 行、备注最多 [DayTaskNoteBaseLines] 行）；
+ * 行数写入 [DayTaskPlacement.lines]，实测与渲染共用同一份计划，避免「行数 → 内容高
+ * → 卡高 → 行数」的循环。
+ */
+internal data class DayTaskTextLines(
+    val title: Int = 1,
+    val info: Int = 1,
+    val note: Int = DayTaskNoteBaseLines,
+)
 
 /** 单张任务卡的求解结果；[offsetX] 相对卡片区域左缘、[offsetY] 相对时间轴顶部。
  *  四个接触标记 = 对应角与邻近任务贴近（渲染间距 < 6dp），渲染时收敛为 6dp 圆角；
- *  [narrow] = 分列后卡宽不足 [DayTask.narrowThreshold]，渲染切窄卡样式（优先于 [compact]） */
+ *  [narrow] = 分列后卡宽不足 [DayTask.narrowThreshold]，渲染切窄卡样式（优先于 [compact]）；
+ *  [lines] = 文字行数计划（见 [DayTaskTextLines]），实测与渲染共用 */
 internal data class DayTaskPlacement(
     val task: DayTask,
     val offsetX: Dp,
@@ -203,6 +226,7 @@ internal data class DayTaskPlacement(
     val bottomEndContact: Boolean,
     val compact: Boolean,
     val narrow: Boolean,
+    val lines: DayTaskTextLines = DayTaskTextLines(),
 )
 
 /** 重叠任务卡分列时的列间距（均分空间、间距 2dp） */
@@ -244,8 +268,9 @@ private val CompactMinHeight = 40.dp
 /** 贴近判定阈值：上下卡实际渲染间距小于该值 → 接触角收敛 6dp（贴背 2dp 也在此列） */
 private val DayTaskContactGap = 6.dp
 
-/** 课程备注最大显示行数：所有卡片形态统一上限，超出省略（防止长备注把时间轴拉长） */
-private const val DayTaskNoteMaxLines = 2
+/** 短卡备注基线行数：预算不足时至少保留两行，卡高足够时由 [solveDayTaskTextLines]
+ *  向上扩展；无实测上下文时的保守估算也按该值封顶（防止长备注把时间轴拉长） */
+private const val DayTaskNoteBaseLines = 2
 
 /**
  * 时间轴任务卡布局求解：重叠链分组 → 组内贪心分列 → 等宽均分 → 纵向排布 → 接触角标记。
@@ -262,6 +287,9 @@ private const val DayTaskNoteMaxLines = 2
  *   只再补 2dp 间距）；内容最小高度优先取 [contentHeights]（渲染侧对
  *   [DayTaskCardContent] 的实测高度，按输入顺序对应），缺省时用镜像排版常量的估算值
  *   （单测/预览等无排版上下文场景）；
+ * - 文字行数：以 `max(比例高度, 估算内容最小高度)` 为预算调用
+ *   [solveDayTaskTextLines]，结果写入 [DayTaskPlacement.lines]。预算不依赖实测高度，
+ *   因此两次求解计划一致，内容实测与最终渲染的 maxLines 不会互相追着放大；
  * - 接触角：上下卡实际渲染间距 < [DayTaskContactGap] 时收敛 6dp（含贴背 2dp）；
  * - 纵向原点：[anchorMinute]（时间轴首刻度），卡片顶边 = y(start) =
  *   [hourSpacing] × ((start − anchor) / 60 + 0.5) + 已插入的累计额外空间。
@@ -332,6 +360,7 @@ internal fun List<DayTask>.solveDayTaskLayout(
     val narrow = BooleanArray(size)
     val baseHeights = arrayOfNulls<Dp>(size)
     val contentMins = arrayOfNulls<Dp>(size)
+    val textLines = arrayOfNulls<DayTaskTextLines>(size)
     for (index in indices) {
         val task = this[index]
         val width = requireNotNull(columnInfo[index]).width
@@ -339,17 +368,30 @@ internal fun List<DayTask>.solveDayTaskLayout(
         narrow[index] = width < task.narrowThreshold
         compact[index] = !narrow[index] && proportionalHeight < DayTaskCompactThreshold
         baseHeights[index] = proportionalHeight
-        // 渲染侧实测内容高度优先（与画卡用同一内容 composable，备注折行等抖动不再是
-        // 估算误差）；紧凑卡仍保留 40dp 呼吸高下限。无实测时退回镜像常量估算
-        contentMins[index] = contentHeights?.getOrNull(index)?.let { measured ->
-            maxOf(measured, if (compact[index]) CompactMinHeight else 0.dp)
-        } ?: dayTaskContentMinHeight(
+        // 短卡基线内容高（标题 1 行 + 备注最多两行）：既是无实测时的兜底，也是行数
+        // 预算的稳定下界——只依赖内容/形态/卡宽/字号，不随实测高度变化
+        val baseline = dayTaskContentMinHeight(
             task = task,
             compact = compact[index],
             narrow = narrow[index],
             width = width,
             fontScale = fontScale,
         )
+        // 行数预算 = max(比例高度, 基线内容高)：长卡按比例高度扩行，短卡恰好停在基线。
+        // 两次求解得到同一份计划，实测与渲染的 maxLines 完全一致
+        textLines[index] = solveDayTaskTextLines(
+            task = task,
+            compact = compact[index],
+            narrow = narrow[index],
+            width = width,
+            budget = maxOf(proportionalHeight, baseline),
+            fontScale = fontScale,
+        )
+        // 渲染侧实测内容高度优先（与画卡用同一内容 composable，备注折行等抖动不再是
+        // 估算误差）；紧凑卡仍保留 40dp 呼吸高下限。无实测时退回基线估算
+        contentMins[index] = contentHeights?.getOrNull(index)?.let { measured ->
+            maxOf(measured, if (compact[index]) CompactMinHeight else 0.dp)
+        } ?: baseline
     }
 
     // 纵向排布：开始组与结束时刻两路事件按分钟合并推进。同组卡片顶边对齐；每放置
@@ -486,6 +528,7 @@ internal fun List<DayTask>.solveDayTaskLayout(
             bottomEndContact = endContact[index],
             compact = compact[index],
             narrow = narrow[index],
+            lines = requireNotNull(textLines[index]),
         )
     }
 
@@ -557,12 +600,12 @@ private fun List<DayTaskPush>.extraAt(minute: Int): Dp =
     lastOrNull { it.minute <= minute }?.extra ?: 0.dp
 
 /**
- * 卡片内容的最小高度：镜像 [NarrowTaskContent]/[VerticalTaskContent]/[CompactTaskContent]
- * 的排版常量，让布局在渲染前就知道内容需要的高度（渲染时的 heightIn 只作兜底）。
- * 窄卡（[narrow]）按实际卡宽 [width] 估算课程备注行数并封顶 [DayTaskNoteMaxLines]；
- * 竖排备注存在时按两行保守估算。sp 按 [fontScale] 换算成 dp。渲染路径用
- * [DayTaskCardContent] 实测内容高度（[contentHeights]），这里只是无排版上下文
- * （单测/预览）时的兜底。
+ * 卡片内容的**短卡基线**最小高度：镜像 [NarrowTaskContent]/[VerticalTaskContent]/
+ * [CompactTaskContent] 的排版常量（标题 1 行、备注不超过 [DayTaskNoteBaseLines] 行），
+ * 既是无实测上下文（单测/预览）时的高度兜底，也是 [solveDayTaskTextLines] 行数预算的
+ * 稳定下界。窄卡（[narrow]）按实际卡宽 [width] 估算课程备注行数；竖排备注存在时按两行
+ * 保守估算。sp 按 [fontScale] 换算成 dp。渲染路径用 [DayTaskCardContent] 实测内容高度
+ * （[contentHeights]），高卡扩展出的行数由实测高度反映，本函数不随之变化。
  */
 private fun dayTaskContentMinHeight(
     task: DayTask,
@@ -625,7 +668,8 @@ private fun dayTaskContentMinHeight(
         is DayTask.Course -> {
             val infoCount = listOfNotNull(task.teacher, task.location, task.note).size
             val metaLine = (ClassppTextTokens.metaText.lineHeight.value * fontScale).dp
-            // 备注上限两行：无实测上下文时按两行保守估算（实际行数由渲染 maxLines 决定）
+            // 短卡基线两行：无实测上下文时按两行保守估算（高卡的实际行数由
+            // placement.lines 决定，可超出该基线）
             val noteSecondLine = if (task.note != null) metaLine else 0.dp
             TaskContentPaddingVertical * 2 +
                 titleLine +
@@ -654,7 +698,7 @@ private fun dayTaskContentMinHeight(
 }
 
 /** 窄卡课程备注的估算行数：内容宽（卡宽 − 左右内距）按 14sp 中文字宽折算，至少 1 行、
- *  最多 [DayTaskNoteMaxLines] 行（与渲染 maxLines 一致）。无排版上下文时的兜底
+ *  最多 [DayTaskNoteBaseLines] 行（短卡基线的保守估算）。无排版上下文时的兜底
  *  （单测/预览）；渲染侧由 [DayTaskCardContent] 实测整体内容高度 */
 private fun estimateNarrowNoteLines(text: String, width: Dp, fontScale: Float): Int {
     val contentWidth = (width - TaskCardPaddingHorizontal * 2).value
@@ -662,7 +706,155 @@ private fun estimateNarrowNoteLines(text: String, width: Dp, fontScale: Float): 
     if (contentWidth <= 0f || charWidth <= 0f) return 1
     val charsPerLine = (contentWidth / charWidth).toInt().coerceAtLeast(1)
     return ((text.length + charsPerLine - 1) / charsPerLine)
-        .coerceIn(1, DayTaskNoteMaxLines)
+        .coerceIn(1, DayTaskNoteBaseLines)
+}
+
+/**
+ * 文字行数分配：用「行数预算 − 固定元素高度」得到可容纳的行数，先保底（标题 1 行、
+ * info 1 行、备注 min([DayTaskNoteBaseLines], 自然行数)），再把剩余预算按
+ * **标题 → 地点/info → 备注** 的顺序扩到自然行数。
+ *
+ * 预算是调用处给的 `max(比例高度, 短卡基线内容高)`，与实测高度无关，所以两次求解
+ * （估算/实测后）得到同一份计划；实测与渲染使用同一 [DayTaskTextLines]，不会出现
+ * 「行数放大 → 内容变高 → 卡变高 → 行数再放大」的循环。
+ *
+ * 自然行数按字符宽估算（[estimateTextLineCount]，与 [estimateNarrowNoteLines] 同口径）：
+ * 只影响分配质量——估算偏大时 Text 实际行数更少、不会撑出预算；偏小只是提前省略。
+ * 教师、待办属性行（截止/重复）固定 1 行，不参与分配；紧凑卡不放开（单行布局）。
+ */
+private fun solveDayTaskTextLines(
+    task: DayTask,
+    compact: Boolean,
+    narrow: Boolean,
+    width: Dp,
+    budget: Dp,
+    fontScale: Float,
+): DayTaskTextLines {
+    if (compact) return DayTaskTextLines(title = 1, info = 1, note = 0)
+
+    val titleStyle = when (task) {
+        is DayTask.Course -> ClassppTextTokens.courseTaskCardTitle
+        is DayTask.Todo -> ClassppTextTokens.taskCardTitle
+    }
+    val titleLine = (titleStyle.lineHeight.value * fontScale).dp
+    val metaLine = (ClassppTextTokens.metaText.lineHeight.value * fontScale).dp
+    val timeLine = (ClassppTextTokens.metaTextSmall.lineHeight.value * fontScale).dp
+
+    // 文本可用宽度：窄卡整行；竖排卡扣掉左时间列（标签定宽与时间文字估算取大）、
+    // 列间距与待办勾选框热区。只影响自然行数估算，不参与高度求解
+    val textWidth = when {
+        narrow -> width - TaskCardPaddingHorizontal * 2
+        else -> {
+            val timeColumn = maxOf(
+                TaskTagWidth,
+                (ClassppTextTokens.metaTextSmall.fontSize.value * fontScale *
+                    TimeColumnTextWidthEm).dp,
+            )
+            val checkbox = if (task is DayTask.Todo) {
+                TaskContentTimeGap + TaskTodoCheckboxSize + TaskTodoCheckboxEndInset
+            } else {
+                0.dp
+            }
+            width - TaskCardPaddingHorizontal * 2 - timeColumn - TaskContentTimeGap - checkbox
+        }
+    }.coerceAtLeast(1.dp)
+
+    val titleWanted = estimateTextLineCount(
+        text = when (task) {
+            is DayTask.Course -> task.name
+            is DayTask.Todo -> task.name
+        },
+        style = titleStyle,
+        width = textWidth,
+        fontScale = fontScale,
+    )
+    val infoText = when (task) {
+        // 窄卡的教师/地点合并成一行（渲染同款 join），竖排卡 info 即地点行
+        is DayTask.Course -> if (narrow) {
+            listOfNotNull(task.teacher, task.location).joinToString(" ")
+        } else {
+            task.location.orEmpty()
+        }
+        is DayTask.Todo -> ""
+    }
+    val infoWanted = if (infoText.isEmpty()) {
+        0
+    } else {
+        estimateTextLineCount(infoText, ClassppTextTokens.metaText, textWidth, fontScale)
+    }
+    val noteText = (task as? DayTask.Course)?.note?.let { "备注：$it" }.orEmpty()
+    val noteWanted = if (noteText.isEmpty()) {
+        0
+    } else {
+        estimateTextLineCount(noteText, ClassppTextTokens.metaText, textWidth, fontScale)
+    }
+
+    var title = 1
+    var info = if (infoWanted > 0) 1 else 0
+    var note = if (noteWanted > 0) minOf(DayTaskNoteBaseLines, noteWanted) else 0
+    var remaining = when (task) {
+        is DayTask.Course -> {
+            // 竖排：标题 + 教师（固定 1 行）+ 地点 + 备注；窄卡：时间置顶 + 标题 +
+            // 合并的教师/地点 + 备注
+            val hasTeacher = task.teacher != null
+            val elements = if (narrow) {
+                2 + (if (infoWanted > 0) 1 else 0) + (if (noteWanted > 0) 1 else 0)
+            } else {
+                1 + (if (hasTeacher) 1 else 0) +
+                    (if (infoWanted > 0) 1 else 0) + (if (noteWanted > 0) 1 else 0)
+            }
+            val fixed = TaskContentPaddingVertical * 2 +
+                (if (narrow) timeLine else 0.dp) +
+                TaskLineSpacing * (elements - 1) +
+                titleLine * title + metaLine * (info + note) +
+                (if (!narrow && hasTeacher) metaLine else 0.dp)
+            budget - fixed
+        }
+        is DayTask.Todo -> {
+            // 待办只有标题可折行；截止/重复属性行固定单行（FlowRow 换行按最坏情况
+            // 每项一行计入，实际更矮时不影响 maxLines 上限）
+            val rows = listOfNotNull(task.deadlineText, task.repeatText).size
+            val rowHeight = maxOf(TaskPropertyIconSize, metaLine)
+            val props = if (rows > 0) {
+                (if (narrow) TaskLineSpacing else TaskTitlePropertySpacing) +
+                    rowHeight * rows + TaskPropertyRowGap * (rows - 1)
+            } else {
+                0.dp
+            }
+            val elements = if (narrow) 2 + (if (rows > 0) 1 else 0) else 0
+            budget - TaskContentPaddingVertical * 2 -
+                (if (narrow) timeLine + TaskLineSpacing * (elements - 1) else 0.dp) -
+                titleLine * title - props
+        }
+    }
+
+    fun expand(current: Int, wanted: Int, line: Dp): Int {
+        val add = minOf(wanted - current, (remaining / line).toInt())
+        if (add <= 0) return current
+        remaining -= line * add
+        return current + add
+    }
+
+    title = expand(title, titleWanted, titleLine)
+    info = expand(info, infoWanted, metaLine)
+    note = expand(note, noteWanted, metaLine)
+    return DayTaskTextLines(title = title, info = info, note = note)
+}
+
+/** 文本自然行数估算：内容宽按字号（sp × fontScale → dp）折算每行字符数。与
+ *  [estimateNarrowNoteLines] 同口径（每字符按 1em 保守估算）；只服务行数分配 */
+private fun estimateTextLineCount(
+    text: String,
+    style: TextStyle,
+    width: Dp,
+    fontScale: Float,
+): Int {
+    if (text.isEmpty()) return 0
+    val contentWidth = width.value
+    val charWidth = style.fontSize.value * fontScale
+    if (contentWidth <= 0f || charWidth <= 0f) return 1
+    val charsPerLine = (contentWidth / charWidth).toInt().coerceAtLeast(1)
+    return (text.length + charsPerLine - 1) / charsPerLine
 }
 
 // ---------- 渲染 ----------
@@ -712,6 +904,7 @@ internal fun DayTaskCard(placement: DayTaskPlacement, modifier: Modifier = Modif
             task = task,
             compact = placement.compact,
             narrow = placement.narrow,
+            lines = placement.lines,
         )
     }
 }
@@ -721,9 +914,17 @@ internal fun DayTaskCard(placement: DayTaskPlacement, modifier: Modifier = Modif
  * 备注折行、字体行高、可见性分支等任何撑高质量都与求解器计入的一致。调用方负责给出与
  * [DayTaskCard] 相同的宽度约束；卡壳 Box 的 propagateMinConstraints 会把卡高作为最小
  * 高度传进来（竖排卡的时间列/内容列据此拉伸与垂直居中）。
+ *
+ * [lines] 由求解器按卡高预算分配（[DayTaskTextLines]），实测与渲染必须传同一份
+ * [DayTaskPlacement.lines]，否则 maxLines 不同会让实测高度与最终渲染高度失配。
  */
 @Composable
-internal fun DayTaskCardContent(task: DayTask, compact: Boolean, narrow: Boolean) {
+internal fun DayTaskCardContent(
+    task: DayTask,
+    compact: Boolean,
+    narrow: Boolean,
+    lines: DayTaskTextLines,
+) {
     val accent = when (task) {
         is DayTask.Course -> task.color.barColor(MaterialTheme.isDarkTheme)
         // 待办左侧时间/标签矩形取截止时间色（NoteCard 属性行的同一取色：>2 天 Primary、
@@ -735,19 +936,20 @@ internal fun DayTaskCardContent(task: DayTask, compact: Boolean, narrow: Boolean
         }
     }
     when {
-        narrow -> NarrowTaskContent(task, accent)
+        narrow -> NarrowTaskContent(task, accent, lines)
         compact -> CompactTaskContent(task, accent)
-        else -> VerticalTaskContent(task, accent)
+        else -> VerticalTaskContent(task, accent, lines)
     }
 }
 
 /**
  * 窄卡布局（分列后卡宽 < [DayTask.narrowThreshold]）：起止时间单行置顶，其次标题，
- * 内容列紧随（课程：教师/地点一行 + 备注最多两行；待办：截止/重复属性行，不画勾选框）。
+ * 内容列紧随（课程：教师/地点一行 + 备注；待办：截止/重复属性行，不画勾选框）。
  * 无左侧时间列与「上课/待办」标签；内容整体垂直居中，卡片高度仍按比例/内容最小高度撑开。
+ * 标题/合并信息/备注的 maxLines 取 [DayTaskTextLines]，卡高足够时显示多行。
  */
 @Composable
-private fun NarrowTaskContent(task: DayTask, accent: Color) {
+private fun NarrowTaskContent(task: DayTask, accent: Color, lines: DayTaskTextLines) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -762,38 +964,45 @@ private fun NarrowTaskContent(task: DayTask, accent: Color) {
             color = accent,
         )
         when (task) {
-            is DayTask.Course -> NarrowCourseContent(task)
-            is DayTask.Todo -> NarrowTodoContent(task)
+            is DayTask.Course -> NarrowCourseContent(task, lines)
+            is DayTask.Todo -> NarrowTodoContent(task, lines)
         }
     }
 }
 
-/** 窄卡课程内容：标题（单行省略）+ 教师/地点并作一行 + 备注（最多两行，超出省略） */
+/** 窄卡课程内容：标题 + 教师/地点并作一行 + 备注；行数由卡高预算分配（见 [DayTaskTextLines]） */
 @Composable
-private fun ColumnScope.NarrowCourseContent(task: DayTask.Course) {
+private fun ColumnScope.NarrowCourseContent(task: DayTask.Course, lines: DayTaskTextLines) {
     Text(
         text = task.name,
         style = ClassppTextTokens.courseTaskCardTitle,
         color = MaterialTheme.colorScheme.onSurface,
-        maxLines = 1,
+        maxLines = lines.title,
         overflow = TextOverflow.Ellipsis,
     )
     listOfNotNull(task.teacher, task.location)
         .joinToString(" ")
         .takeIf { it.isNotEmpty() }
-        ?.let { TaskInfoText(it, MaterialTheme.classppColors.secondaryText) }
+        ?.let {
+            TaskInfoText(
+                text = it,
+                color = MaterialTheme.classppColors.secondaryText,
+                maxLines = lines.info,
+            )
+        }
     task.note?.let {
         TaskInfoText(
             text = "备注：$it",
             color = MaterialTheme.colorScheme.primary,
-            maxLines = DayTaskNoteMaxLines,
+            maxLines = lines.note,
         )
     }
 }
 
-/** 窄卡待办内容：标题（单行省略）+ 截止/重复属性行；勾选框不参与渲染，完成态仍灰划线 */
+/** 窄卡待办内容：标题 + 截止/重复属性行；勾选框不参与渲染，完成态仍灰划线。
+ *  标题行数随卡高扩展，属性行固定单行省略 */
 @Composable
-private fun ColumnScope.NarrowTodoContent(task: DayTask.Todo) {
+private fun ColumnScope.NarrowTodoContent(task: DayTask.Todo, lines: DayTaskTextLines) {
     Text(
         text = task.name,
         style = ClassppTextTokens.taskCardTitle.copy(
@@ -804,7 +1013,7 @@ private fun ColumnScope.NarrowTodoContent(task: DayTask.Todo) {
             },
         ),
         textDecoration = if (task.completed) TextDecoration.LineThrough else null,
-        maxLines = 1,
+        maxLines = lines.title,
         overflow = TextOverflow.Ellipsis,
     )
     if (task.deadlineText != null || task.repeatText != null) {
@@ -837,9 +1046,10 @@ private fun ColumnScope.NarrowTodoContent(task: DayTask.Todo) {
     }
 }
 
-/** 竖排布局（≥ [DayTaskCompactThreshold]）：左侧时间列 + 右内容列（垂直居中） */
+/** 竖排布局（≥ [DayTaskCompactThreshold]）：左侧时间列 + 右内容列（垂直居中）。
+ *  标题/地点/备注的 maxLines 取 [DayTaskTextLines]，卡高足够时内容列显示多行 */
 @Composable
-private fun VerticalTaskContent(task: DayTask, accent: Color) {
+private fun VerticalTaskContent(task: DayTask, accent: Color, lines: DayTaskTextLines) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -876,9 +1086,9 @@ private fun VerticalTaskContent(task: DayTask, accent: Color) {
             TaskTimeText(TimeText.format(task.endMinute), accent)
         }
         when (task) {
-            is DayTask.Course -> VerticalCourseContent(task, Modifier.weight(1f))
+            is DayTask.Course -> VerticalCourseContent(task, lines, Modifier.weight(1f))
             is DayTask.Todo -> {
-                VerticalTodoContent(task, Modifier.weight(1f))
+                VerticalTodoContent(task, lines, Modifier.weight(1f))
                 TaskTodoCheckbox(
                     checked = task.completed,
                     onToggle = task.onToggle,
@@ -889,9 +1099,14 @@ private fun VerticalTaskContent(task: DayTask, accent: Color) {
     }
 }
 
-/** 课程内容（DayCourseAlert 配色：标题 onSurface、教师/地点 secondaryText、备注 primary） */
+/** 课程内容（DayCourseAlert 配色：标题 onSurface、教师/地点 secondaryText、备注 primary）。
+ *  教师固定单行，地点与备注的 maxLines 随卡高扩展 */
 @Composable
-private fun VerticalCourseContent(task: DayTask.Course, modifier: Modifier = Modifier) {
+private fun VerticalCourseContent(
+    task: DayTask.Course,
+    lines: DayTaskTextLines,
+    modifier: Modifier = Modifier,
+) {
     Column(
         modifier = modifier
             .fillMaxHeight()
@@ -902,24 +1117,35 @@ private fun VerticalCourseContent(task: DayTask.Course, modifier: Modifier = Mod
             text = task.name,
             style = ClassppTextTokens.courseTaskCardTitle,
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
+            maxLines = lines.title,
             overflow = TextOverflow.Ellipsis,
         )
         task.teacher?.let { TaskInfoText(it, MaterialTheme.classppColors.secondaryText) }
-        task.location?.let { TaskInfoText(it, MaterialTheme.classppColors.secondaryText) }
+        task.location?.let {
+            TaskInfoText(
+                text = it,
+                color = MaterialTheme.classppColors.secondaryText,
+                maxLines = lines.info,
+            )
+        }
         task.note?.let {
             TaskInfoText(
                 text = "备注：$it",
                 color = MaterialTheme.colorScheme.primary,
-                maxLines = DayTaskNoteMaxLines,
+                maxLines = lines.note,
             )
         }
     }
 }
 
-/** 待办内容（NoteCard 样式：fieldLabel 标题 + 截止/重复属性行；标签、紧急旗暂不接入） */
+/** 待办内容（NoteCard 样式：fieldLabel 标题 + 截止/重复属性行；标签、紧急旗暂不接入）。
+ *  标题随卡高折行，属性行固定单行省略 */
 @Composable
-private fun VerticalTodoContent(task: DayTask.Todo, modifier: Modifier = Modifier) {
+private fun VerticalTodoContent(
+    task: DayTask.Todo,
+    lines: DayTaskTextLines,
+    modifier: Modifier = Modifier,
+) {
     Column(
         modifier = modifier
             .fillMaxHeight()
@@ -936,7 +1162,7 @@ private fun VerticalTodoContent(task: DayTask.Todo, modifier: Modifier = Modifie
                 },
             ),
             textDecoration = if (task.completed) TextDecoration.LineThrough else null,
-            maxLines = 1,
+            maxLines = lines.title,
             overflow = TextOverflow.Ellipsis,
         )
         if (task.deadlineText != null || task.repeatText != null) {
@@ -1097,8 +1323,8 @@ private fun TaskTagText(text: String, color: Color) {
     )
 }
 
-/** 课程信息行（教师/地点/备注）：14sp，颜色由调用方给；[maxLines] 缺省单行省略（教师/
- *  地点不撑高），备注传 [DayTaskNoteMaxLines] 上限两行、超出省略 */
+/** 课程信息行（教师/地点/备注）：14sp，颜色由调用方给；[maxLines] 缺省单行省略（教师
+ *  固定不撑高），地点/备注由 [DayTaskTextLines] 给出随卡高扩展的行数 */
 @Composable
 private fun TaskInfoText(text: String, color: Color, maxLines: Int = 1) {
     Text(
@@ -1171,6 +1397,9 @@ private val TaskTagGap = 1.dp
 
 /** 竖排卡标签矩形定宽：不再随列宽（= 时间文字宽）撑满，与上下时间共用中轴居中 */
 private val TaskTagWidth = 32.dp
+
+/** 左时间列宽度估算：等宽数字按 0.6em、最宽 "23:59" 5 字符（只影响行数分配的自然行估算） */
+private const val TimeColumnTextWidthEm = 0.6f * 5
 
 /** 紧凑单行：时间与标签的间距（DayCourseAlert 单行卡同款） */
 private val TaskTimeTagGap = 6.dp

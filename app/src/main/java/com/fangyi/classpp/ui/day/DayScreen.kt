@@ -2338,7 +2338,7 @@ private fun DayTopBar(
                     contentAlignment = Alignment.CenterEnd,
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_chat_multiple),
+                        painter = painterResource(R.drawable.ic_ai),
                         contentDescription = stringResource(R.string.cd_day_chat),
                         tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier

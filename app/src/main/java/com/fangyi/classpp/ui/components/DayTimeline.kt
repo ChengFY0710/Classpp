@@ -65,12 +65,15 @@ private const val TimelineBodySlot = "day-timeline-body"
 /** 实测内容高度缓存的容量上限：按日期切换才会累积，64 条足够覆盖数天 */
 private const val MeasuredHeightCacheLimit = 64
 
-/** 实测内容高度缓存键：内容 + 形态 + 卡宽；字体度量由缓存生命周期（见 remember 键）保证 */
+/** 实测内容高度缓存键：内容 + 形态 + 卡宽 + 行数计划；字体度量由缓存生命周期（见
+ *  remember 键）保证。行数计划进入键：内容相同但时长不同（行数预算不同）的卡实测高度
+ *  可能不同 */
 private data class CardHeightKey(
     val content: DayTaskMeasureKey,
     val compact: Boolean,
     val narrow: Boolean,
     val widthPx: Int,
+    val lines: DayTaskTextLines,
 )
 
 /**
@@ -122,7 +125,7 @@ internal fun DayTimeline(
     val fontFamilyResolver = LocalFontFamilyResolver.current
     val configuration = LocalConfiguration.current
     val textStyle = LocalTextStyle.current
-    // 实测内容高度缓存：内容/形态/卡宽与字体度量都相同时，重测不再组合测量副本。
+    // 实测内容高度缓存：内容/形态/卡宽/行数计划与字体度量都相同时，重测不再组合测量副本。
     // 字体解析器、密度（含字号缩放）、布局方向、区域配置或环境文字样式变化时整体重建
     val cardHeightCache = remember(
         density,
@@ -161,15 +164,17 @@ internal fun DayTimeline(
                 compact = placement.compact,
                 narrow = placement.narrow,
                 widthPx = widthPx,
+                lines = placement.lines,
             )
-            // 命中即复用上次实测值：内容/形态/卡宽与字体度量都没变，高度必然相同，
-            // 省掉测量副本的组合与文本排版；未命中才 subcompose 测量并回填缓存
+            // 命中即复用上次实测值：内容/形态/卡宽/行数计划与字体度量都没变，高度必然
+            // 相同，省掉测量副本的组合与文本排版；未命中才 subcompose 测量并回填缓存
             cardHeightCache[cacheKey] ?: run {
                 val measured = subcompose(index) {
                     DayTaskCardContent(
                         task = placement.task,
                         compact = placement.compact,
                         narrow = placement.narrow,
+                        lines = placement.lines,
                     )
                 }.first().measure(
                     Constraints(minWidth = widthPx, maxWidth = widthPx),

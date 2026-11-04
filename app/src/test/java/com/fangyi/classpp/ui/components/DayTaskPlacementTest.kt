@@ -133,8 +133,9 @@ class DayTaskPlacementTest {
     }
 
     @Test
-    fun halfWidthTodoSwitchesToNarrowButCourseStaysVertical() {
-        // 课程 + 待办重叠各占半宽（163dp）：待办 < 180dp 切窄卡，课程 ≥ 100dp 保持竖排
+    fun halfWidthCourseAndTodoBothSwitchToNarrow() {
+        // 课程 + 待办重叠各占半宽（163dp）：均 < 180dp → 同切窄卡；
+        // 单列全宽（328dp ≥ 180dp）的课程仍保持竖排
         val placements = listOf(course(480, 600), todo(540, 660))
             .solveDayTaskPlacements(regionWidth, hourSpacing)
         val coursePlacement = placements.single { it.task is DayTask.Course }
@@ -142,12 +143,16 @@ class DayTaskPlacementTest {
         assertEquals(163f, todoPlacement.width.value, 1e-3f)
         assertTrue(todoPlacement.narrow)
         assertFalse(todoPlacement.compact)
-        assertFalse(coursePlacement.narrow)
+        assertTrue(coursePlacement.narrow)
+        assertFalse(coursePlacement.compact)
+
+        val single = listOf(course(480, 600)).solveDayTaskPlacements(regionWidth, hourSpacing)
+        assertFalse(single.single().narrow)
     }
 
     @Test
     fun quarterWidthCoursesSwitchToNarrow() {
-        // 4 条同时段课程 → 列宽 (328 − 3×2) / 4 = 80.5dp < 100dp：全部窄卡
+        // 4 条同时段课程 → 列宽 (328 − 3×2) / 4 = 80.5dp < 180dp：全部窄卡
         val placements = List(4) { course(480, 540) }
             .solveDayTaskPlacements(regionWidth, hourSpacing)
         val columnWidth = ((regionWidth - DayTaskColumnGap * 3) / 4).value
@@ -286,8 +291,11 @@ class DayTaskPlacementTest {
     fun parallelCardsEndingTogetherInsertMaxOnce() {
         // 两条同时段短课程并排、同一结束时刻：并行车道共用一段轴，按最大差额只插
         // 一次（不累加），两卡底边都落在结束刻度
+        // 区域宽取 380dp：两列各 189dp ≥ 180dp 窄卡阈值，并排的短卡才仍是紧凑形态
+        // （328dp 区域下半宽 163dp 已低于阈值，会切窄卡、不参与补轴）
+        val wideRegion = 380.dp
         val layout = listOf(course(480, 500), course(480, 500))
-            .solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 480)
+            .solveDayTaskLayout(wideRegion, hourSpacing, anchorMinute = 480)
         assertEquals(
             40f - hourSpacing.value * 20 / 60,
             layout.extraAt(500).value,
@@ -326,9 +334,9 @@ class DayTaskPlacementTest {
     @Test
     fun spanningCardGrowsWithEndInsertion() {
         // 长课程横跨短课程的结束时刻：差额插轴后长卡同步加高，卡底仍对齐自己的
-        // 结束刻度
+        // 结束刻度（同样用 380dp 宽区域让并排卡保持紧凑形态，见上条说明）
         val layout = listOf(course(480, 600), course(490, 510))
-            .solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 480)
+            .solveDayTaskLayout(380.dp, hourSpacing, anchorMinute = 480)
         val spanning = layout.placements[0]
         val short = layout.placements[1]
         assertTrue(short.compact)
@@ -370,7 +378,7 @@ class DayTaskPlacementTest {
 
     @Test
     fun narrowCourseLongNoteIsCappedAtTwoLines() {
-        // 窄卡（90dp < 100dp）：备注上限两行，长备注不再按字符数无限撑高；
+        // 窄卡（90dp < 180dp）：备注上限两行，长备注不再按字符数无限撑高；
         // 与刚好两行的备注同高，避免把当天时间轴整体拉长
         fun narrowHeight(note: String): Dp = listOf(
             DayTask.Course(
@@ -412,6 +420,118 @@ class DayTaskPlacementTest {
             verticalHeight(null).value
         assertTrue(diff > metaLine.value * 1.5f)
         assertTrue(diff < metaLine.value * 2.5f)
+    }
+
+    @Test
+    fun tallCourseExpandsNoteBeyondBaseline() {
+        // 4 小时课程（比例高度 200dp）：行数预算充足，备注突破短卡的两行基线；
+        // 扩展后的内容仍装得下，卡高保持比例高度
+        val placement = listOf(
+            DayTask.Course(
+                name = "课程",
+                teacher = null,
+                location = null,
+                note = "这是一条很长的备注".repeat(8),
+                color = CourseColor.Blue,
+                startMinute = 480,
+                endMinute = 720,
+            ),
+        ).solveDayTaskPlacements(regionWidth, hourSpacing).single()
+        assertTrue(placement.lines.note > 2)
+        assertEquals(200f, placement.height.value, 1e-3f)
+    }
+
+    @Test
+    fun tallCourseExpandsLocationBeyondSingleLine() {
+        // 高卡的地点行同样可折行（教师仍固定单行）
+        val placement = listOf(
+            DayTask.Course(
+                name = "课程",
+                teacher = "老师",
+                location = "教学楼".repeat(20),
+                note = null,
+                color = CourseColor.Blue,
+                startMinute = 480,
+                endMinute = 720,
+            ),
+        ).solveDayTaskPlacements(regionWidth, hourSpacing).single()
+        assertTrue(placement.lines.info > 1)
+    }
+
+    @Test
+    fun tallTodoExpandsTitleBeyondSingleLine() {
+        // 3 小时待办：标题独占剩余预算，可折成多行
+        val placement = listOf(
+            DayTask.Todo(
+                id = "t",
+                name = "待办标题".repeat(12),
+                completed = false,
+                deadlineText = null,
+                deadlineColor = Color.Black,
+                onToggle = null,
+                startMinute = 480,
+                endMinute = 660,
+            ),
+        ).solveDayTaskPlacements(regionWidth, hourSpacing).single()
+        assertTrue(placement.lines.title > 1)
+    }
+
+    @Test
+    fun shortCourseKeepsBaselineLines() {
+        // 100 分钟课程比例高度 ≈ 83.3dp ≈ 基线内容高：标题 1 行、备注 2 行，
+        // 与改动前的短卡外观一致
+        val placement = listOf(
+            DayTask.Course(
+                name = "课程",
+                teacher = null,
+                location = null,
+                note = "这是一条很长的备注".repeat(8),
+                color = CourseColor.Blue,
+                startMinute = 480,
+                endMinute = 580,
+            ),
+        ).solveDayTaskPlacements(regionWidth, hourSpacing).single()
+        assertEquals(1, placement.lines.title)
+        assertEquals(2, placement.lines.note)
+    }
+
+    @Test
+    fun compactCardKeepsSingleLinePlan() {
+        // 60 分钟待办 = 紧凑单行形态：即使标题很长也不放开行数
+        val placement = listOf(
+            DayTask.Todo(
+                id = "t",
+                name = "待办标题".repeat(12),
+                completed = false,
+                deadlineText = null,
+                deadlineColor = Color.Black,
+                onToggle = null,
+                startMinute = 780,
+                endMinute = 840,
+            ),
+        ).solveDayTaskPlacements(regionWidth, hourSpacing).single()
+        assertTrue(placement.compact)
+        assertEquals(1, placement.lines.title)
+        assertEquals(0, placement.lines.note)
+    }
+
+    @Test
+    fun tallNarrowCourseExpandsNote() {
+        // 两条 4 小时课程重叠 → 半宽 163dp 窄卡；高卡预算仍允许备注扩行
+        val target = DayTask.Course(
+            name = "课程",
+            teacher = null,
+            location = null,
+            note = "这是一条很长的备注".repeat(8),
+            color = CourseColor.Blue,
+            startMinute = 480,
+            endMinute = 720,
+        )
+        val placement = listOf(target, course(480, 720))
+            .solveDayTaskPlacements(regionWidth, hourSpacing)
+            .single { it.task === target }
+        assertTrue(placement.narrow)
+        assertTrue(placement.lines.note > 2)
     }
 
     @Test
