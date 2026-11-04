@@ -686,7 +686,6 @@
     <string name="ai_go_settings">去 AI 设置</string>
     <string name="ai_example_1">帮我看看下周安排</string>
     <string name="ai_example_2">添加：周五交实验报告</string>
-    <string name="ai_created_todos">已创建待办</string>
     <string name="ai_todo_save_failed">待办创建失败，请重试</string>
     <string name="ai_save_failed">保存失败，请重试</string>
 

@@ -146,11 +146,6 @@ internal fun AiChatCreatedTodoList(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(
-            text = stringResource(R.string.ai_created_todos),
-            style = ClassppTextTokens.sectionTitle,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
         for (todo in todos) {
             val daysLeft = todo.deadlineDaysLeft()
             NoteCard(

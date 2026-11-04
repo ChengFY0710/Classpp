@@ -659,7 +659,6 @@
     <string name="ai_go_settings">Open AI settings</string>
     <string name="ai_example_1">What does next week look like?</string>
     <string name="ai_example_2">Add: lab report due Friday</string>
-    <string name="ai_created_todos">Created todos</string>
     <string name="ai_todo_save_failed">Couldn\'t create todos, please try again</string>
     <string name="ai_save_failed">Save failed — try again</string>
 
