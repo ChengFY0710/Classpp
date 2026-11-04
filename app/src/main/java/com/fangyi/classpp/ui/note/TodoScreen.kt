@@ -69,6 +69,7 @@ import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.TodoSort
 import com.fangyi.classpp.data.TRASH_RETENTION_DAYS
 import com.fangyi.classpp.data.comparator
+import com.fangyi.classpp.data.checkInPercent
 import com.fangyi.classpp.data.expandRepeatOccurrences
 import com.fangyi.classpp.data.xmu.XmuTodoMapper
 import com.fangyi.classpp.data.xmu.withMatchedCourseTag
@@ -2229,6 +2230,8 @@ private fun TodoCard(
         repeat = todo.repeatCardText(),
         // 倒计时：开关开着且仍有截止日期时才有天数可显（截止被清掉时仓库已把开关归一化回 false）
         countdownDays = if (todo.countdown) todo.deadlineDaysLeft() else null,
+        // 打卡进度：非打卡待办为 null（卡片保持原形态，无进度条）
+        checkInPercent = todo.checkInPercent(),
         tags = todo.tags,
         tagColors = tagColors,
         sourceLabel = todo.sourceLabel(),
@@ -2296,6 +2299,7 @@ private fun TrashedTodoCard(
         deadlineColor = todo.deadlineColor(),
         repeat = todo.repeatCardText(),
         countdownDays = if (todo.countdown) todo.deadlineDaysLeft() else null,
+        checkInPercent = todo.checkInPercent(),
         tags = todo.tags,
         tagColors = tagColors,
         sourceLabel = todo.sourceLabel(),
@@ -2344,6 +2348,7 @@ private fun ArchivedTodoCard(
         deadlineColor = todo.deadlineColor(),
         repeat = todo.repeatCardText(),
         countdownDays = if (todo.countdown) todo.deadlineDaysLeft() else null,
+        checkInPercent = todo.checkInPercent(),
         tags = todo.tags,
         tagColors = tagColors,
         sourceLabel = todo.sourceLabel(),
@@ -2407,12 +2412,17 @@ internal fun Todo.deadlineCardText(relativeDate: Boolean = true): String? {
 }
 
 /**
- * 重复规则文本（NoteCard 重复项）：档位名（无重复/每天/每周/每月/每年/自定义——自定义也
- * 只显「自定义」，频率与方格细项进编辑浮层看）；无重复语义返回 null——这一位缺席。
+ * 重复规则文本（NoteCard 重复项）：打卡模式恒显「打卡」（比档位名更能说明卡片形态）；
+ * 其余为档位名（无重复/每天/每周/每月/每年/自定义——自定义也只显「自定义」，频率与方格
+ * 细项进编辑浮层看）；无重复语义返回 null——这一位缺席。
  */
 @Composable
 internal fun Todo.repeatCardText(): String? =
-    repeat.type.takeUnless { it == RepeatType.None }?.labelText()
+    if (repeat.checkIn && repeat.type != RepeatType.None) {
+        stringResource(R.string.repeat_check_in_label)
+    } else {
+        repeat.type.takeUnless { it == RepeatType.None }?.labelText()
+    }
 
 /**
  * 距截止的剩余天数（无截止返回 null，可为负 = 已逾期）；列表卡倒计时（[countdownDays]）

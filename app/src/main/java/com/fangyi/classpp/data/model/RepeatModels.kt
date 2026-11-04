@@ -19,7 +19,8 @@ enum class RepeatUnit { Day, Week, Month, Year }
 
 /**
  * 重复的结束条件：永不结束 / 到某日期为止（[RepeatRule.endDate]，当天不含——「该日期前
- * 停止」）/ 达一定次数为止（[RepeatRule.endCount]，系列总期数）。
+ * 停止」）/ 达一定次数为止（[RepeatRule.endCount]：普通模式是该系列的总期数，打卡模式
+ * 是完成次数，见 [RepeatRule.checkIn]）。
  */
 @Serializable
 enum class RepeatEndType { Never, Date, Count }
@@ -51,11 +52,14 @@ const val REPEAT_END_COUNT_DEFAULT = 5
  * @param endType 结束条件；[RepeatType.None] 无重复语义，恒 [RepeatEndType.Never]
  * @param endDate 结束日期（[RepeatEndType.Date] 档），当天**不含**——重复于该日期前停止；
  *   其余档位恒 null
- * @param endCount 重复总次数（[RepeatEndType.Count] 档），1..99，系列达该期数后停止；
- *   其余档位恒 null
+ * @param endCount 重复次数档的目标值（[RepeatEndType.Count] 档），1..99；普通模式数**期数**
+ *   （系列达该期数后停止），打卡模式数**完成次数**（见 [checkIn]）。其余档位恒 null
  * @param merge 显示层「重复待办合并」开关（默认开）：true = 整条系列只出一条滚动卡
  *   （见 [com.fangyi.classpp.data.expandRepeatOccurrences]），false = 逾期/已完成分期
  *   逐条展开。不参与周期展开，归一化原样保留
+ * @param checkIn 打卡模式（仅 [RepeatEndType.Count] 档有效）：系列不按期数封顶，漏掉的期
+ *   不算逾期、不成拖欠卡，卡片只保留当前一期并持续显示，直到完成次数达 [endCount] 才收口；
+ *   其余档位归一化回 false
  */
 @Serializable
 data class RepeatRule(
@@ -67,4 +71,5 @@ data class RepeatRule(
     val endDate: IsoDate? = null,
     val endCount: Int? = null,
     val merge: Boolean = true,
+    val checkIn: Boolean = false,
 )

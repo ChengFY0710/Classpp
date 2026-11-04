@@ -57,7 +57,8 @@ import java.util.TimeZone
  * [SettingsCardItem.Toggle]，默认开——列表里整条系列合并成一条滚动卡，关闭则逾期/已完成
  * 分期逐条拆分）与结束设置卡（[SettingsCard]——「结束」选择行弹菜单切 永不/日期/次数，
  * 日期档卡内追加「结束日期」导航行唤起 [BottomDateSelectCard]，次数档追加「重复次数」
- * 导航行唤起 [BottomNumberSelectCard]，卡高变化经 animateContentSize 过渡）→ 选「自定义」
+ * 导航行（唤起 [BottomNumberSelectCard]）与其下的「打卡模式」开关行，卡高变化经
+ * animateContentSize 过渡）→ 选「自定义」
  * 时经 [Expandable] 展开自定义区——「自定义重复」分组（[SettingsCard]：
  * 「频率」选择行弹行内菜单切天/周/月/年；「每」导航行经 [BottomNumberSelectCard] 选 1..99
  * 的间隔）+ 方格（[SelectionGrid]，多选）：周 = 一~日、月 = 1~31、年 = 1月~12月，天无方格。
@@ -213,20 +214,34 @@ internal fun RepeatSettingsSheet(
                                             },
                                         ),
                                     )
-                                    RepeatEndType.Count -> add(
-                                        SettingsCardItem.Nav(
-                                            label = stringResource(R.string.repeat_end_count_row),
-                                            description = stringResource(R.string.repeat_end_count_desc),
-                                            value = stringResource(
-                                                R.string.repeat_end_count_value,
-                                                draft.endCount ?: REPEAT_END_COUNT_DEFAULT,
+                                    RepeatEndType.Count -> {
+                                        add(
+                                            SettingsCardItem.Nav(
+                                                label = stringResource(R.string.repeat_end_count_row),
+                                                description = stringResource(R.string.repeat_end_count_desc),
+                                                value = stringResource(
+                                                    R.string.repeat_end_count_value,
+                                                    draft.endCount ?: REPEAT_END_COUNT_DEFAULT,
+                                                ),
+                                                onClick = {
+                                                    endCountMounted = true
+                                                    endCountVisible = true
+                                                },
                                             ),
-                                            onClick = {
-                                                endCountMounted = true
-                                                endCountVisible = true
-                                            },
-                                        ),
-                                    )
+                                        )
+                                        // 打卡模式只随次数档存在：目标次数改数「完成次数」，
+                                        // 系列不按期数封顶（漏期不记逾期），卡片持续显示到凑满次数
+                                        add(
+                                            SettingsCardItem.Toggle(
+                                                label = stringResource(R.string.repeat_check_in_title),
+                                                description = stringResource(R.string.repeat_check_in_desc),
+                                                checked = draft.checkIn,
+                                                onCheckedChange = { checkIn ->
+                                                    draft = draft.copy(checkIn = checkIn)
+                                                },
+                                            ),
+                                        )
+                                    }
                                     RepeatEndType.Never -> Unit
                                 }
                             },

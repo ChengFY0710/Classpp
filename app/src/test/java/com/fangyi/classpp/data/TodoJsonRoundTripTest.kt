@@ -1,6 +1,9 @@
 package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatEndType
+import com.fangyi.classpp.data.model.RepeatRule
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoFile
 import com.fangyi.classpp.data.model.TodoGroup
@@ -106,5 +109,26 @@ class TodoJsonRoundTripTest {
         assertEquals(emptyList<TodoGroup>(), file.groups)
         assertEquals(listOf("高数作业"), file.todos.map { it.name })
         assertNull(file.todos.single().group)
+    }
+
+    @Test
+    fun `check-in flag defaults off and roundtrips`() {
+        // 旧文件无 checkIn 键：按默认 false 解码（无版本号变更的兼容契约）
+        val old = """{"id":"t1","name":"x","repeat":{"type":"Daily"}}"""
+        assertEquals(false, ScheduleJson.decodeStorage<Todo>(old).repeat.checkIn)
+
+        val checkIn = testTodo(
+            id = "t1",
+            dates = listOf(IsoDate.parse("2026-06-18")),
+            repeat = RepeatRule(
+                type = RepeatType.Daily,
+                endType = RepeatEndType.Count,
+                endCount = 5,
+                checkIn = true,
+            ),
+        )
+        val decoded = ScheduleJson.decodeStorage<Todo>(ScheduleJson.encodeStorage(checkIn))
+        assertEquals(checkIn, decoded)
+        assertEquals(true, decoded.repeat.checkIn)
     }
 }

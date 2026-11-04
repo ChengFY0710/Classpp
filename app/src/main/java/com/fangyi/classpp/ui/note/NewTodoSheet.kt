@@ -268,9 +268,12 @@ internal fun NewTodoSheet(
     }
 
     // 截止设置浮层的重复语义参数：自定义日期 + 有效重复规则才带重复；周期天数 = 实际
-    // 相邻两期的间隔天数（挂载时取值，浮层内不随表单后续改动重算；无重复传 1 不消费）
+    // 相邻两期的间隔天数（挂载时取值，浮层内不随表单后续改动重算；无重复传 1 不消费）。
+    // 打卡模式下截止只能是固定日期——「下一次重复开始前」在浮层里置灰锁定
     val repeatSelection = dateSelection as? DateSelection.Custom
     val hasRepeat = repeatSelection != null && repeatSelection.repeat.type != RepeatType.None
+    val checkIn = repeatSelection?.repeat?.checkIn == true &&
+        repeatSelection.repeat.endType == RepeatEndType.Count
     val repeatCycleDays =
         if (repeatSelection != null) repeatSelection.repeat.cycleDays(repeatSelection.date) else 1
 
@@ -566,6 +569,8 @@ internal fun NewTodoSheet(
             onConfirm = { rule ->
                 repeatCallback?.invoke(rule)
                 repeatCallback = null
+                // 打卡与「下一次重复开始前」互斥：切到打卡即清掉随重复开关，避免悬挂
+                if (rule.checkIn) deadlineBeforeRepeat = false
             },
         )
     }
@@ -584,6 +589,7 @@ internal fun NewTodoSheet(
             initialBeforeRepeat = deadlineBeforeRepeat,
             initialBeforeDays = deadlineBeforeDays,
             hasRepeat = hasRepeat,
+            checkIn = checkIn,
             repeatCycleDays = repeatCycleDays,
             onDismiss = { deadlineSheetVisible = false },
             onDismissed = { deadlineSheetMounted = false },

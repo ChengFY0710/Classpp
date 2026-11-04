@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -37,8 +38,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -111,6 +117,13 @@ private val CountdownEndSpacing = 12.dp
  * 收在 16dp 卡横向内距内，不会被卡片 clip 裁掉。
  */
 private val CountdownExitSlide = 12.dp
+
+/**
+ * 打卡进度条（[CheckInProgressBar]）：高 6dp、通栏贴卡底——内容区高度不变、整卡 +6dp；
+ * 填充头部（右端）取半高圆角，左端直角由卡片形状的 clip 自然裁出，未填充段不画（卡面即轨道）。
+ */
+private val CheckInBarHeight = 6.dp
+private val CheckInBarHeadRadius = 3.dp
 
 /**
  * 时间/截止/重复属性项：图标 16dp + 文本（同色），图标与文字相距 4dp。
@@ -272,6 +285,72 @@ private fun CountdownExitSlot(
 }
 
 /**
+ * 左侧打卡进度：[percent] 0..100——数字 [ClassppTextTokens.countdownNumber] 半粗突出、
+ * 「%」[ClassppTextTokens.countdownUnit] 收小，与 [CountdownLabel] 同一套混排字号与基线
+ * 口径（锁 1 行）。[tint] 取截止配色（见 [NoteCard.checkInPercent]），与卡底进度条同色。
+ */
+@Composable
+private fun CheckInPercentLabel(
+    percent: Int,
+    tint: Color,
+) {
+    val percentUnit = stringResource(R.string.check_in_percent_unit)
+    val text = buildAnnotatedString {
+        withStyle(
+            SpanStyle(
+                fontSize = ClassppTextTokens.countdownNumber.fontSize,
+                fontWeight = ClassppTextTokens.countdownNumber.fontWeight,
+            ),
+        ) {
+            append(percent.toString())
+        }
+        withStyle(SpanStyle(fontSize = ClassppTextTokens.countdownUnit.fontSize)) { append(percentUnit) }
+    }
+    Text(
+        text = text,
+        style = MaterialTheme.classppTextStyles.noteProperty.copy(color = tint).tabularNumbers(),
+        maxLines = 1,
+    )
+}
+
+/**
+ * 卡底打卡进度条：通栏 [CheckInBarHeight]（6dp），填充宽度按 [percent] 比例，颜色取 [color]
+ * （截止配色）。头部（右端）圆角 [CheckInBarHeadRadius]、左端直角——贴卡底左缘，圆角交给
+ * 外层的卡片 clip 统一裁出；[percent] ≤ 0 时只占位不画（未填充段即卡面，无独立轨道）。
+ */
+@Composable
+private fun CheckInProgressBar(
+    percent: Int,
+    color: Color,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(CheckInBarHeight)
+            .drawBehind {
+                val safePercent = percent.coerceIn(0, 100)
+                if (safePercent <= 0) return@drawBehind
+                val fillWidth = size.width * (safePercent / 100f)
+                val headRadius = CornerRadius(CheckInBarHeadRadius.toPx())
+                drawPath(
+                    path = Path().apply {
+                        addRoundRect(
+                            RoundRect(
+                                rect = Rect(Offset.Zero, Size(fillWidth, size.height)),
+                                topLeft = CornerRadius.Zero,
+                                topRight = headRadius,
+                                bottomRight = headRadius,
+                                bottomLeft = CornerRadius.Zero,
+                            ),
+                        )
+                    },
+                    color = color,
+                )
+            },
+    )
+}
+
+/**
  * 待办卡片：左侧倒计时（可选）+ 标题 + 属性行（待办时间、截止时间、标签，自动换行）+ 右侧紧急旗帜与勾选框。
  *
  * - 颜色全部取自主题：卡片底 surface，标题 fieldLabel（onSurface），旗帜按 [urgency]
@@ -293,6 +372,11 @@ private fun CountdownExitSlot(
  *   完成态（[completed] = true）同样不渲染、不占位——但不是瞬时增删：标记完成后标签
  *   「左移淡出」退场、槽位收拢让右区内容跟随左移，取消完成反向入场（见 CountdownExitSlot）；
  *   若 [countdownDays] 本身变 null（浮层里关掉开关）则维持旧口径直接收场，不走动画；
+ * - [checkInPercent] 打卡模式完成进度（0..100，调用方取 `Todo.checkInPercent()`）：非 null
+ *   时左区显示「XX%」（混排字号同倒计时：数字 23sp 半粗、单位 14sp）+ 卡底通栏 6dp 进度条，
+ *   两者同取 [deadlineColor]（蓝 → 黄 → 橙 → 红，与截止倒计时同源）。打卡形态下倒计时让位
+ *   不渲染（即使 [countdownDays] 有值）；进度与完成态无关——系列收口停在最后一期时照显
+ *   100%。null（默认）整卡与原有形态完全一致：无进度条、无额外高度；
  * - 各时间项缺席时均不占位，属性行整体走 FlowRow，放不下自动换行；
  * - 行内横向间距：时间项之间、时间项与首个标签之间 12dp，标签之间 8dp（见 [PropertySpacing] /
  *   [TagSpacing]——FlowRow 行距统一取后者，时间项靠末位内距补差）；
@@ -338,6 +422,8 @@ fun NoteCard(
     deadlineColor: Color = MaterialTheme.colorScheme.primary,
     repeat: String? = null,
     countdownDays: Long? = null,
+    // 打卡模式完成进度（0..100）：非 null 时左区显示「XX%」+ 卡底 6dp 进度条，整卡 +6dp
+    checkInPercent: Int? = null,
     tags: List<String> = emptyList(),
     // 标签配色表（标签名 → 颜色，与 TagChoosingCard 同源）：缺席的名字回落主题 Primary
     tagColors: Map<String, Color> = emptyMap(),
@@ -440,16 +526,18 @@ fun NoteCard(
             countdownShown = false
         }
     }
-    // 侧滑层：swipe 非 null 时卡片包进侧滑层（左右滑呼出动作卡），下方 Row 原样不动；
+    // 侧滑层：swipe 非 null 时卡片包进侧滑层（左右滑呼出动作卡），下方卡体原样不动；
     // null = 不加层，输出与无侧滑时完全一致。[modifier] 挂在侧滑层之外（整卡节点）——
-    // 列表项级 animateItem 与卡间距内距由宿主挂这里、不进卡内 Row：动作卡经
-    // matchParentSize 撑满侧滑层实测尺寸，内距若进 Row 会把它一起撑高（比主体卡
+    // 列表项级 animateItem 与卡间距内距由宿主挂这里、不进卡内布局链：动作卡经
+    // matchParentSize 撑满侧滑层实测尺寸，内距若进卡体会把动作卡一起撑高（比主体卡
     // 多出一份透明内距，表现为滑出的动作卡比待办卡高）
     NoteCardSwipeLayer(swipe = swipe, modifier = modifier) {
-        Row(
+        // 卡体 = 内容行 + 卡底打卡进度条（可选）：clip/背景/选中描边/手势挂整卡列，
+        // 16dp 横向与 14dp 纵向内距留在内容行内——打卡形态只多出进度条的 6dp，
+        // 内容区高度与原卡完全一致
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = SheetFieldHeight)
                 // 按压反馈同 SheetCard「可点才挂」：位置在 clip 之前（缩放作用于整卡、不被圆角
                 // 裁掉），提亮范围与卡片形状（shape）对齐；null = 静态卡，涟漪由按压反馈取代。
                 // 长按形态（编辑入口）手动配对 pressFeedback + combinedClickable——
@@ -485,177 +573,191 @@ fun NoteCard(
                     } else {
                         Modifier
                     },
-                )
-                .padding(horizontal = RowCardPaddingHorizontal, vertical = verticalPadding),
-            verticalAlignment = Alignment.CenterVertically,
+                ),
         ) {
-            // 倒计时（传值即开启；完成/取消完成走上方编排的动画进出场，不再瞬时增删）：
-            // 卡片左区独占块，垂直居中随外层 Row 的 CenterVertically；
-            // 槽位收拢后内容列 weight(1f) 自动占满让出的宽，右侧旗帜与勾选框布局不受影响
-            if (countdownShown && countdownDays != null) {
-                CountdownExitSlot(
-                    days = countdownDays,
-                    tint = deadlineColor,
-                    labelProgress = countdownLabelProgress.value,
-                    slotProgress = countdownSlotProgress.value,
-                )
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(TitlePropertySpacing),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = SheetFieldHeight)
+                    .padding(horizontal = RowCardPaddingHorizontal, vertical = verticalPadding),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = title,
-                    style = titleStyle,
-                    onTextLayout = { titleLayout = it },
-                    modifier = Modifier.drawBehind {
-                        val layout = titleLayout ?: return@drawBehind
-                        if (completedProgress <= 0f) return@drawBehind
-                        // 删除线按进度从行首向行尾揭示（多行标题按行序擦过去），取消完成
-                        // 反向擦除。位置取基线上方 0.3×字号（平台 LineThrough 的常规视觉位），
-                        // 线宽 1dp 与 16sp 字号的系统删除线粗细相当；平头端帽对齐系统样式
-                        val fontPx = titleStyle.fontSize.toPx()
-                        var total = 0f
-                        for (line in 0 until layout.lineCount) {
-                            total += layout.getLineRight(line) - layout.getLineLeft(line)
-                        }
-                        var budget = total * completedProgress
-                        for (line in 0 until layout.lineCount) {
-                            if (budget <= 0f) break
-                            val left = layout.getLineLeft(line)
-                            val drawn = minOf(layout.getLineRight(line) - left, budget)
-                            budget -= drawn
-                            drawLine(
-                                color = titleColor,
-                                start = Offset(left, layout.getLineBaseline(line) - fontPx * 0.30f),
-                                end = Offset(left + drawn, layout.getLineBaseline(line) - fontPx * 0.30f),
-                                strokeWidth = 1.dp.toPx(),
-                                cap = StrokeCap.Butt,
-                            )
-                        }
-                    },
-                )
-                if (time != null || deadline != null || repeat != null || sourceLabel != null || tags.isNotEmpty()) {
-                    FlowRow(
-                        // 行距取标签间距；时间项各带末位内距，把与后续项（含首个标签）的间距补到 PropertySpacing
-                        horizontalArrangement = Arrangement.spacedBy(TagSpacing),
-                        verticalArrangement = Arrangement.spacedBy(3.dp),
-                        itemVerticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (time != null) {
-                            TimeProperty(
-                                icon = R.drawable.ic_clock,
-                                text = time,
-                                tint = MaterialTheme.classppColors.secondaryText,
-                                modifier = Modifier.padding(end = TimeItemEndPadding),
-                            )
-                        }
-                        if (deadline != null) {
-                            TimeProperty(
-                                icon = R.drawable.ic_clock_alarm,
-                                text = deadline,
-                                tint = deadlineColor,
-                                modifier = Modifier.padding(end = TimeItemEndPadding),
-                            )
-                        }
-                        if (repeat != null) {
-                            TimeProperty(
-                                icon = R.drawable.ic_arrow_repeat,
-                                text = repeat,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(end = TimeItemEndPadding),
-                            )
-                        }
-                        if (sourceLabel != null) {
-                            SourceBadge(sourceLabel)
-                        }
-                        tags.forEach { tag ->
-                            TagChip(tag, tagColors[tag] ?: fallbackTagColor)
+                // 左区独占块，垂直居中随外层 Row 的 CenterVertically；槽位收拢后内容列
+                // weight(1f) 自动占满让出的宽，右侧旗帜与勾选框布局不受影响。
+                // 打卡模式优先：恒显「XX%」（与完成态无关，系列收口即 100%），倒计时让位；
+                // 否则画倒计时（传值即开启；完成/取消完成走上方编排的动画进出场，不瞬时增删）
+                if (checkInPercent != null) {
+                    CheckInPercentLabel(percent = checkInPercent, tint = deadlineColor)
+                    Spacer(Modifier.width(CountdownEndSpacing))
+                } else if (countdownShown && countdownDays != null) {
+                    CountdownExitSlot(
+                        days = countdownDays,
+                        tint = deadlineColor,
+                        labelProgress = countdownLabelProgress.value,
+                        slotProgress = countdownSlotProgress.value,
+                    )
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(TitlePropertySpacing),
+                ) {
+                    Text(
+                        text = title,
+                        style = titleStyle,
+                        onTextLayout = { titleLayout = it },
+                        modifier = Modifier.drawBehind {
+                            val layout = titleLayout ?: return@drawBehind
+                            if (completedProgress <= 0f) return@drawBehind
+                            // 删除线按进度从行首向行尾揭示（多行标题按行序擦过去），取消完成
+                            // 反向擦除。位置取基线上方 0.3×字号（平台 LineThrough 的常规视觉位），
+                            // 线宽 1dp 与 16sp 字号的系统删除线粗细相当；平头端帽对齐系统样式
+                            val fontPx = titleStyle.fontSize.toPx()
+                            var total = 0f
+                            for (line in 0 until layout.lineCount) {
+                                total += layout.getLineRight(line) - layout.getLineLeft(line)
+                            }
+                            var budget = total * completedProgress
+                            for (line in 0 until layout.lineCount) {
+                                if (budget <= 0f) break
+                                val left = layout.getLineLeft(line)
+                                val drawn = minOf(layout.getLineRight(line) - left, budget)
+                                budget -= drawn
+                                drawLine(
+                                    color = titleColor,
+                                    start = Offset(left, layout.getLineBaseline(line) - fontPx * 0.30f),
+                                    end = Offset(left + drawn, layout.getLineBaseline(line) - fontPx * 0.30f),
+                                    strokeWidth = 1.dp.toPx(),
+                                    cap = StrokeCap.Butt,
+                                )
+                            }
+                        },
+                    )
+                    if (time != null || deadline != null || repeat != null || sourceLabel != null || tags.isNotEmpty()) {
+                        FlowRow(
+                            // 行距取标签间距；时间项各带末位内距，把与后续项（含首个标签）的间距补到 PropertySpacing
+                            horizontalArrangement = Arrangement.spacedBy(TagSpacing),
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
+                            itemVerticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (time != null) {
+                                TimeProperty(
+                                    icon = R.drawable.ic_clock,
+                                    text = time,
+                                    tint = MaterialTheme.classppColors.secondaryText,
+                                    modifier = Modifier.padding(end = TimeItemEndPadding),
+                                )
+                            }
+                            if (deadline != null) {
+                                TimeProperty(
+                                    icon = R.drawable.ic_clock_alarm,
+                                    text = deadline,
+                                    tint = deadlineColor,
+                                    modifier = Modifier.padding(end = TimeItemEndPadding),
+                                )
+                            }
+                            if (repeat != null) {
+                                TimeProperty(
+                                    icon = R.drawable.ic_arrow_repeat,
+                                    text = repeat,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(end = TimeItemEndPadding),
+                                )
+                            }
+                            if (sourceLabel != null) {
+                                SourceBadge(sourceLabel)
+                            }
+                            tags.forEach { tag ->
+                                TagChip(tag, tagColors[tag] ?: fallbackTagColor)
+                            }
                         }
                     }
                 }
-            }
-            if (urgency != TodoUrgency.None) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_flag),
-                    contentDescription = null,
-                    tint = urgency.flagColor(),
-                    modifier = Modifier.size(FlagIconSize),
-                )
-                Spacer(Modifier.width(16.dp))
-            }
-            if (deleted || archived) {
-                // 已删除/已归档样式：右侧换成撤回/取消归档按钮——24dp 图标，热区与勾选框同为
-                // 36×36；按压反馈同源（pressClickable 的缩放作用于整个触控区、放在 clip 之前，
-                // 提亮范围与圆角对齐）。回调缺席时按钮只是不响应（预览态）
-                Row(
-                    modifier = Modifier
-                        .pressClickable(
-                            shape = RoundedRectangle(6.dp),
-                            role = Role.Button,
-                            onClick = { (if (archived) onUnarchive else onRestore)?.invoke() },
-                        )
-                        .clip(RoundedRectangle(6.dp))
-                        .height(36.dp)
-                        .width(36.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                ) {
+                if (urgency != TodoUrgency.None) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_arrow_reset),
-                        // 取消归档取 primary 蓝（正向出口），回收站撤回取 error 红（警示）；
-                        // 同一「放回」图形，靠颜色与语境（所在页）区分语义
-                        contentDescription = stringResource(
-                            if (archived) R.string.todo_unarchive else R.string.todo_restore,
-                        ),
-                        tint = if (archived) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        },
-                        modifier = Modifier.size(RestoreIconSize),
+                        painter = painterResource(R.drawable.ic_flag),
+                        contentDescription = null,
+                        tint = urgency.flagColor(),
+                        modifier = Modifier.size(FlagIconSize),
                     )
+                    Spacer(Modifier.width(16.dp))
                 }
-            } else {
-                // M3 Checkbox 占位（后续按设计稿自绘）：颜色先取主题 primary——未选 = 蓝描边框，已选，蓝底白勾。
-                // 按压源由 pressFeedback 与 toggleable 共用（indication 置 null，涟漪由按压反馈取代）；
-                // 编辑选中形态（selected 非 null）转纯展示——不挂按压反馈与 toggleable，
-                // 点击穿透给整卡（单击任意位置切换选中），勾选框只保留完成态视觉
-                val checkboxPress = remember { MutableInteractionSource() }
-                Row(
-                    modifier = Modifier
-                        // 按压反馈在 clip 之前：缩放作用于整个触控区，提亮范围与勾选框圆角对齐
-                        .then(
-                            if (selected == null) {
-                                Modifier
-                                    .pressFeedback(checkboxPress, RoundedRectangle(6.dp))
-                                    .clip(RoundedRectangle(6.dp))
-                                    .toggleable(
-                                        value = completed,
-                                        interactionSource = checkboxPress,
-                                        indication = null,
-                                        onValueChange = { onCheckedChange?.invoke(it) }, // 安全调用
-                                        role = Role.Checkbox,
-                                    )
+                if (deleted || archived) {
+                    // 已删除/已归档样式：右侧换成撤回/取消归档按钮——24dp 图标，热区与勾选框同为
+                    // 36×36；按压反馈同源（pressClickable 的缩放作用于整个触控区、放在 clip 之前，
+                    // 提亮范围与圆角对齐）。回调缺席时按钮只是不响应（预览态）
+                    Row(
+                        modifier = Modifier
+                            .pressClickable(
+                                shape = RoundedRectangle(6.dp),
+                                role = Role.Button,
+                                onClick = { (if (archived) onUnarchive else onRestore)?.invoke() },
+                            )
+                            .clip(RoundedRectangle(6.dp))
+                            .height(36.dp)
+                            .width(36.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_arrow_reset),
+                            // 取消归档取 primary 蓝（正向出口），回收站撤回取 error 红（警示）；
+                            // 同一「放回」图形，靠颜色与语境（所在页）区分语义
+                            contentDescription = stringResource(
+                                if (archived) R.string.todo_unarchive else R.string.todo_restore,
+                            ),
+                            tint = if (archived) {
+                                MaterialTheme.colorScheme.primary
                             } else {
-                                Modifier
+                                MaterialTheme.colorScheme.error
                             },
+                            modifier = Modifier.size(RestoreIconSize),
                         )
-                        .height(36.dp)  //定义checkBox热区高度
-                        .width(36.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    Checkbox(
-                        checked = completed,
-                        onCheckedChange = null, // 事件交给外层，这里固定null
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = MaterialTheme.colorScheme.primary,
-                            uncheckedColor = MaterialTheme.colorScheme.primary,
-                            checkmarkColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                    )
+                    }
+                } else {
+                    // M3 Checkbox 占位（后续按设计稿自绘）：颜色先取主题 primary——未选 = 蓝描边框，已选，蓝底白勾。
+                    // 按压源由 pressFeedback 与 toggleable 共用（indication 置 null，涟漪由按压反馈取代）；
+                    // 编辑选中形态（selected 非 null）转纯展示——不挂按压反馈与 toggleable，
+                    // 点击穿透给整卡（单击任意位置切换选中），勾选框只保留完成态视觉
+                    val checkboxPress = remember { MutableInteractionSource() }
+                    Row(
+                        modifier = Modifier
+                            // 按压反馈在 clip 之前：缩放作用于整个触控区，提亮范围与勾选框圆角对齐
+                            .then(
+                                if (selected == null) {
+                                    Modifier
+                                        .pressFeedback(checkboxPress, RoundedRectangle(6.dp))
+                                        .clip(RoundedRectangle(6.dp))
+                                        .toggleable(
+                                            value = completed,
+                                            interactionSource = checkboxPress,
+                                            indication = null,
+                                            onValueChange = { onCheckedChange?.invoke(it) }, // 安全调用
+                                            role = Role.Checkbox,
+                                        )
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .height(36.dp)  //定义checkBox热区高度
+                            .width(36.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Checkbox(
+                            checked = completed,
+                            onCheckedChange = null, // 事件交给外层，这里固定null
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = MaterialTheme.colorScheme.primary,
+                                uncheckedColor = MaterialTheme.colorScheme.primary,
+                                checkmarkColor = MaterialTheme.colorScheme.onPrimary,
+                            ),
+                        )
+                    }
                 }
+            }
+            // 卡底打卡进度条：只占 6dp、不占内容区内距（整体高度 +6dp）
+            if (checkInPercent != null) {
+                CheckInProgressBar(percent = checkInPercent, color = deadlineColor)
             }
         }
     }
@@ -797,6 +899,39 @@ private fun NoteCardShowcase() {
         NoteCard(title = "户口乔迁材料报送", time = "12:30", onCheckedChange = {}, selected = false)
         // 选中与完成态叠加：蓝框 + 划线置灰标题 + 勾选框选中
         NoteCard(title = "户口乔迁材料报送", time = "12:30", completed = true, onCheckedChange = {}, selected = true)
+        // 打卡模式：左区「XX%」+ 卡底 6dp 进度条（同取截止配色，无截止即 primary 蓝）；
+        // 进度与完成态无关——系列收口停在最后一期时照显 100%
+        NoteCard(
+            title = "户口乔迁材料报送",
+            time = "全天",
+            repeat = "打卡",
+            checkInPercent = 0,
+            onCheckedChange = {},
+        )
+        NoteCard(
+            title = "户口乔迁材料报送",
+            time = "全天",
+            repeat = "打卡",
+            checkInPercent = 45,
+            onCheckedChange = {},
+        )
+        NoteCard(
+            title = "户口乔迁材料报送",
+            time = "全天",
+            repeat = "打卡",
+            checkInPercent = 45,
+            deadline = "明天 8:00",
+            deadlineColor = MaterialTheme.classppColors.urgentOrange,
+            onCheckedChange = {},
+        )
+        NoteCard(
+            title = "户口乔迁材料报送",
+            time = "全天",
+            repeat = "打卡",
+            checkInPercent = 100,
+            completed = true,
+            onCheckedChange = {},
+        )
     }
 }
 

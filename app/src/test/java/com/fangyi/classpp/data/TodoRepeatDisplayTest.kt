@@ -7,6 +7,7 @@ import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.RepeatUnit
 import com.fangyi.classpp.data.model.Todo
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -322,5 +323,116 @@ class TodoRepeatDisplayTest {
         assertEquals(stored, plain.displayOverdueOccurrences(IsoDate.parse("2026-03-20")))
         // 今天 <= 锚日：还没有已经过去的分期
         assertEquals(stored, repeatTodo.displayOverdueOccurrences(IsoDate.parse("2026-03-02")))
+    }
+
+    // ---------- 打卡模式（按完成次数收口） ----------
+
+    /** 打卡规则：每日、目标 3 次（期数不封顶，收口看完成次数） */
+    private fun checkInRule(merge: Boolean = true) = RepeatRule(
+        type = RepeatType.Daily,
+        endType = RepeatEndType.Count,
+        endCount = 3,
+        merge = merge,
+        checkIn = true,
+    )
+
+    @Test
+    fun `check-in keeps one current card and never emits missed periods`() {
+        // 锚 3/2 每日、今天 3/20：漏掉的 18 期既不成拖欠卡、也不成已完成卡，只出今天这一张
+        val todo = testTodo(dates = listOf(IsoDate.parse("2026-03-02")), repeat = checkInRule())
+        val shown = expand(todo, "2026-03-20")
+        assertEquals(listOf("2026-03-20"), active(shown))
+        assertTrue(done(shown).isEmpty())
+    }
+
+    @Test
+    fun `check-in ignores the period cap and advances with completions`() {
+        // 目标 3 次：完成 3/18、3/19（超过 3 期窗口）后卡片仍在今天 3/20，不被期数截断
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-02")),
+            repeat = checkInRule(),
+            completedOccurrences = listOf(IsoDate.parse("2026-03-18"), IsoDate.parse("2026-03-19")),
+        )
+        assertEquals(listOf("2026-03-20"), active(expand(todo, "2026-03-20")))
+    }
+
+    @Test
+    fun `check-in ends on the last completed occurrence at the target`() {
+        // 完成次数达 3：停在最后一期（3/20）并标完成（进已完成组），不再出未来期
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-02")),
+            repeat = checkInRule(),
+            completedOccurrences = listOf(
+                IsoDate.parse("2026-03-18"),
+                IsoDate.parse("2026-03-19"),
+                IsoDate.parse("2026-03-20"),
+            ),
+        )
+        val shown = expand(todo, "2026-03-20")
+        assertEquals(listOf("2026-03-20"), shown.map { it.dates.single().toString() })
+        assertEquals(listOf("2026-03-20"), done(shown))
+    }
+
+    @Test
+    fun `check-in stays a single card with merge off`() {
+        // 打卡优先于合并开关：关闭合并（拆分口径）也只出一条当前期卡，不逐期拆分
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-02")),
+            repeat = checkInRule(merge = false),
+            completedOccurrences = listOf(IsoDate.parse("2026-03-19")),
+        )
+        val shown = expand(todo, "2026-03-20")
+        assertEquals(listOf("2026-03-20"), shown.map { it.dates.single().toString() })
+        assertTrue(shown.none { it.completed })
+    }
+
+    @Test
+    fun `check-in never accrues overdue occurrences`() {
+        // 漏期不记逾期：落账集合原样返回，不做实时补算
+        val todo = testTodo(dates = listOf(IsoDate.parse("2026-03-02")), repeat = checkInRule())
+        assertTrue(todo.displayOverdueOccurrences(IsoDate.parse("2026-03-20")).isEmpty())
+        val settled = todo.copy(overdueOccurrences = listOf(IsoDate.parse("2026-03-05")))
+        assertEquals(
+            listOf("2026-03-05"),
+            settled.displayOverdueOccurrences(IsoDate.parse("2026-03-20")).map { it.toString() },
+        )
+    }
+
+    @Test
+    fun `check-in percent is completions over the target`() {
+        val base = testTodo(dates = listOf(IsoDate.parse("2026-03-02")), repeat = checkInRule())
+        assertEquals(0, base.checkInPercent())
+        assertEquals(
+            67,
+            base.copy(
+                completedOccurrences = listOf(IsoDate.parse("2026-03-18"), IsoDate.parse("2026-03-19")),
+            ).checkInPercent(),
+        )
+        assertEquals(
+            100,
+            base.copy(
+                completedOccurrences = listOf(
+                    IsoDate.parse("2026-03-18"),
+                    IsoDate.parse("2026-03-19"),
+                    IsoDate.parse("2026-03-20"),
+                ),
+            ).checkInPercent(),
+        )
+    }
+
+    @Test
+    fun `check-in percent caps at 100 and is absent outside check-in`() {
+        val base = testTodo(dates = listOf(IsoDate.parse("2026-03-02")), repeat = checkInRule())
+        // 超额完成（历史遗留的更多完成记录）夹到 100
+        assertEquals(
+            100,
+            base.copy(
+                completedOccurrences = (18..23).map { IsoDate.parse("2026-03-$it") },
+            ).checkInPercent(),
+        )
+        // 非打卡 / 无重复 / 次数缺失：不显示进度
+        assertNull(base.copy(repeat = checkInRule().copy(checkIn = false)).checkInPercent())
+        assertNull(base.copy(repeat = checkInRule().copy(endCount = null)).checkInPercent())
+        assertNull(testTodo().checkInPercent())
     }
 }

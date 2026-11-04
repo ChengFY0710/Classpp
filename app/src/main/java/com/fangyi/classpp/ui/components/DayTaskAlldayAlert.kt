@@ -9,6 +9,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.TodoSort
+import com.fangyi.classpp.data.checkInPercent
 import com.fangyi.classpp.data.comparator
 import com.fangyi.classpp.data.expandRepeatOccurrences
 import com.fangyi.classpp.data.model.IsoDate
@@ -114,6 +115,8 @@ private fun DayTaskAlldayAlertRowContent(
         time = listOf(viewDate.toCardDateLabel(), stringResource(R.string.todo_time_all_day))
             .joinToString(" "),
         repeat = todo.repeatCardText(),
+        // 打卡进度（本卡不画倒计时，进度同样只在打卡待办上出现）
+        checkInPercent = todo.checkInPercent(),
         tags = todo.tags,
         tagColors = tagColors,
         urgency = todo.urgency,

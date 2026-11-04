@@ -26,7 +26,8 @@ private const val MAX_PERIODS = 100_000
  *
  * 结束条件（[RepeatRule.endType]）在展开核心内消化，列表展开、逾期归账、下一期等下游
  * 自动随动：日期档把统计终点收紧到 [RepeatRule.endDate]（不含，「该日期前停止」）；
- * 次数档只保留系列前 N 期（N 自锚日起数，与统计窗口起点无关）。
+ * 次数档只保留系列前 N 期（N 自锚日起数，与统计窗口起点无关）——打卡模式（[RepeatRule.checkIn]）
+ * 的 N 是完成次数、不是期数，故该档不截断序列，收口由展示层按完成次数判定。
  *
  * @param anchor 系列锚日期（重复待办的首个自定义日期）
  * @param startInclusive 统计区间起点（含）；逾期结算传「水位 + 1 天」（未结算传锚日）
@@ -48,8 +49,14 @@ fun RepeatRule.occurrencesBetween(
         endExclusive
     }
     if (anchor.epochDay >= effectiveEnd.epochDay) return emptyList()
-    // 次数档：只放行前 N 期（缺值/非正为外来脏数据，防御性不截断，归一化已消洗）
-    val countCap = if (endType == RepeatEndType.Count) endCount?.takeIf { it >= 1 } else null
+    // 次数档：只放行前 N 期（缺值/非正为外来脏数据，防御性不截断，归一化已消洗）。
+    // 打卡模式的 N 是「完成次数」而不是期数——期数不封顶（漏期不占额度），收口由展示层
+    // 按完成次数判定（见 com.fangyi.classpp.data.expandRepeatOccurrences）
+    val countCap = if (endType == RepeatEndType.Count && !checkIn) {
+        endCount?.takeIf { it >= 1 }
+    } else {
+        null
+    }
     var seriesIndex = 0
     var seriesLast: IsoDate? = null
 

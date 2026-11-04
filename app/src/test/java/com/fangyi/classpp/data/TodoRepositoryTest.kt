@@ -615,6 +615,76 @@ class TodoRepositoryTest {
     }
 
     @Test
+    fun `check-in mode never settles missed occurrences as overdue`() = runBlocking {
+        // 锚 3/2 的每日打卡、今天 3/20：18 期漏期不入逾期集合（打卡只数完成次数）
+        now.millis = millisOf(IsoDate.parse("2026-03-20"))
+        val r = repo()
+        val id = r.addTodo(
+            testTodo(
+                name = "每日打卡",
+                dates = listOf(IsoDate.parse("2026-03-02")),
+                repeat = RepeatRule(
+                    type = RepeatType.Daily,
+                    endType = RepeatEndType.Count,
+                    endCount = 3,
+                    checkIn = true,
+                ),
+            ),
+        ).okId()
+
+        assertTrue(r.todos.value.single { it.id == id }.overdueOccurrences.isEmpty())
+
+        // 打卡完成一次：仍不结算漏期，只记完成集合
+        r.setOccurrenceCompleted(id, IsoDate.parse("2026-03-20"), true).assertOk()
+        val saved = r.todos.value.single { it.id == id }
+        assertTrue(saved.overdueOccurrences.isEmpty())
+        assertEquals(listOf("2026-03-20"), saved.completedOccurrences.map { it.toString() })
+    }
+
+    @Test
+    fun `check-in only survives on the count end mode and clears before-repeat deadline`() = runBlocking {
+        now.millis = millisOf(IsoDate.parse("2026-03-20"))
+        val r = repo()
+        val anchor = IsoDate.parse("2026-03-02")
+
+        // 次数档 + 打卡：保留；「下一次重复开始前」被清掉（打卡的截止只能是固定日期）
+        val checkInId = r.addTodo(
+            testTodo(
+                name = "打卡",
+                dates = listOf(anchor),
+                repeat = RepeatRule(
+                    type = RepeatType.Daily,
+                    endType = RepeatEndType.Count,
+                    endCount = 3,
+                    checkIn = true,
+                ),
+                deadlineDate = IsoDate.parse("2026-05-01"),
+                deadlineMinute = 480,
+                deadlineBeforeRepeat = true,
+                deadlineBeforeDays = 1,
+            ),
+        ).okId()
+        val saved = r.todos.value.single { it.id == checkInId }
+        assertTrue(saved.repeat.checkIn)
+        assertFalse(saved.deadlineBeforeRepeat)
+
+        // 非次数档：打卡归 false（切走次数档即失效）
+        val dateEndId = r.addTodo(
+            testTodo(
+                name = "日期档",
+                dates = listOf(anchor),
+                repeat = RepeatRule(
+                    type = RepeatType.Daily,
+                    endType = RepeatEndType.Date,
+                    endDate = IsoDate.parse("2026-06-01"),
+                    checkIn = true,
+                ),
+            ),
+        ).okId()
+        assertFalse(r.todos.value.single { it.id == dateEndId }.repeat.checkIn)
+    }
+
+    @Test
     fun `setStepDone toggles one step`() = runBlocking {
         val r = repo()
         val id = r.addTodo(

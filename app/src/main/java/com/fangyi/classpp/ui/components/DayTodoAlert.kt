@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.tooling.preview.Preview
 import com.fangyi.classpp.data.TodoSort
+import com.fangyi.classpp.data.checkInPercent
 import com.fangyi.classpp.data.expandRepeatOccurrences
 import com.fangyi.classpp.data.isOverdue
 import com.fangyi.classpp.data.model.IsoDate
@@ -139,6 +140,8 @@ private fun DayTodoAlertRowContent(
         repeat = todo.repeatCardText(),
         // 倒计时恒开（日程页提醒卡口径，不读待办页的开关）：传值即渲染「N天/逾期N天」
         countdownDays = countdownDays,
+        // 打卡进度：非打卡待办为 null（行保持原形态）；打卡时左区显示「XX%」并让位倒计时
+        checkInPercent = todo.checkInPercent(),
         tags = todo.tags,
         tagColors = tagColors,
         urgency = todo.urgency,

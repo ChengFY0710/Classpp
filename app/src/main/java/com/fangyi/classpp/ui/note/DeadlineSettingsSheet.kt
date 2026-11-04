@@ -64,6 +64,8 @@ private const val MILLIS_PER_DAY = 86_400_000L
  *
  * @param hasRepeat 待办是否带重复日期（自定义日期 + 有效重复规则）；false = 「下一次重复
  *   开始前」开关禁用且锁定为关
+ * @param checkIn 待办是否开着打卡模式：打卡只数完成次数、截止只能是固定日期，该开关同样
+ *   禁用且锁定为关（置灰但保留在卡内，用户能看到为什么不可选）
  * @param repeatCycleDays 重复周期天数（[com.fangyi.classpp.data.model.cycleDays]），「开始前」
  *   天数轮的上限；无重复时传 1（不消费）
  */
@@ -76,6 +78,7 @@ internal fun DeadlineSettingsSheet(
     initialBeforeRepeat: Boolean,
     initialBeforeDays: Int,
     hasRepeat: Boolean,
+    checkIn: Boolean,
     repeatCycleDays: Int,
     onConfirm: (enabled: Boolean, date: IsoDate, minute: Int, beforeRepeat: Boolean, beforeDays: Int) -> Unit,
     onDismiss: () -> Unit,
@@ -87,7 +90,7 @@ internal fun DeadlineSettingsSheet(
     var enabled by remember { mutableStateOf(initialEnabled) }
     var date by remember { mutableStateOf(initialDate) }
     var minute by remember { mutableIntStateOf(initialMinute) }
-    var beforeRepeat by remember { mutableStateOf(initialBeforeRepeat && hasRepeat) }
+    var beforeRepeat by remember { mutableStateOf(initialBeforeRepeat && hasRepeat && !checkIn) }
     var beforeDays by remember { mutableIntStateOf(initialBeforeDays) }
 
     // 三枚滚轮弹卡：期望态 + 挂载态两段式（同重复设置页的间隔弹卡）
@@ -110,7 +113,7 @@ internal fun DeadlineSettingsSheet(
         // 确认在右、取消在左（同表单浮层与重复设置页的顶栏排布）
         confirmAtEnd = true,
         onConfirm = {
-            onConfirm(enabled, date, minute, beforeRepeat && hasRepeat, beforeDays)
+            onConfirm(enabled, date, minute, beforeRepeat && hasRepeat && !checkIn, beforeDays)
             onDismiss()
         },
         rightAction = SheetTopAction(
@@ -191,7 +194,8 @@ internal fun DeadlineSettingsSheet(
                                     description = stringResource(R.string.deadline_sheet_repeat_toggle_desc),
                                     checked = beforeRepeat,
                                     onCheckedChange = { beforeRepeat = it },
-                                    enabled = hasRepeat,
+                                    // 无重复日期 / 打卡模式（只数完成次数，截止只能是固定日期）都不可选
+                                    enabled = hasRepeat && !checkIn,
                                 ),
                             )
                             if (beforeRepeat) {
@@ -295,6 +299,7 @@ private fun DeadlineSettingsSheetPreview() = ClassppTheme {
         initialBeforeRepeat = true,
         initialBeforeDays = 0,
         hasRepeat = true,
+        checkIn = false,
         repeatCycleDays = 7,
         onConfirm = { _, _, _, _, _ -> },
         onDismiss = {},

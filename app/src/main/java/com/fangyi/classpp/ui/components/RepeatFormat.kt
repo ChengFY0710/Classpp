@@ -59,7 +59,8 @@ internal fun RepeatEndType.labelText(): String = when (this) {
 /**
  * 「重复」行的值文案：预设档位即档位名；自定义 = `每N单位`（方格标记不入摘要，保持单行
  * 短值）。结束条件追加摘要——日期档「 · 至日期」、次数档「 · 共N次」，永不不带后缀；
- * 档位字段不完整（正常只在导入的脏数据里出现）时退回不带结束信息的摘要。
+ * 打卡模式再追加「 · 打卡」（次数档的目标值此时是完成次数）。档位字段不完整（正常只在
+ * 导入的脏数据里出现）时退回不带结束信息的摘要。
  */
 @Composable
 internal fun RepeatRule.summaryText(): String {
@@ -67,7 +68,7 @@ internal fun RepeatRule.summaryText(): String {
         RepeatType.Custom -> stringResource(R.string.repeat_custom_summary, interval, unit.unitText())
         else -> type.labelText()
     }
-    return when (endType) {
+    val end = when (endType) {
         RepeatEndType.Never -> base
         RepeatEndType.Date -> endDate?.let { date ->
             stringResource(R.string.repeat_summary_until, base, date.toCardText())
@@ -78,6 +79,7 @@ internal fun RepeatRule.summaryText(): String {
             endCount ?: REPEAT_END_COUNT_DEFAULT,
         )
     }
+    return if (checkIn) stringResource(R.string.repeat_summary_check_in, end) else end
 }
 
 /**
@@ -98,17 +100,20 @@ internal fun RepeatRule.customRuleText(): String? {
 }
 
 /**
- * 详情页「结束」行的值：永不 / 至日期（`至2026/12/31`）/ 共N次。
+ * 详情页「结束」行的值：永不 / 至日期（`至2026/12/31`）/ 共N次，打卡模式追加「 · 打卡」。
  * 字段悬挂（正常只在导入的脏数据里出现）时退回「永不」，与仓库归一化口径一致。
  */
 @Composable
-internal fun RepeatRule.endConditionText(): String = when (endType) {
-    RepeatEndType.Never -> stringResource(R.string.repeat_end_never)
-    RepeatEndType.Date -> endDate
-        ?.let { stringResource(R.string.repeat_end_date_value, it.toCardText()) }
-        ?: stringResource(R.string.repeat_end_never)
-    RepeatEndType.Count -> stringResource(
-        R.string.repeat_end_count_summary,
-        endCount ?: REPEAT_END_COUNT_DEFAULT,
-    )
+internal fun RepeatRule.endConditionText(): String {
+    val end = when (endType) {
+        RepeatEndType.Never -> stringResource(R.string.repeat_end_never)
+        RepeatEndType.Date -> endDate
+            ?.let { stringResource(R.string.repeat_end_date_value, it.toCardText()) }
+            ?: stringResource(R.string.repeat_end_never)
+        RepeatEndType.Count -> stringResource(
+            R.string.repeat_end_count_summary,
+            endCount ?: REPEAT_END_COUNT_DEFAULT,
+        )
+    }
+    return if (checkIn) stringResource(R.string.repeat_summary_check_in, end) else end
 }

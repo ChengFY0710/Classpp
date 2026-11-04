@@ -19,6 +19,7 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.checkInPercent
 import com.fangyi.classpp.data.isOverdue
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.Schedule
@@ -211,6 +212,8 @@ fun CourseDetailSheet(
                                 // 倒计时：开关开着且仍有截止日期时才有天数可显（截止被清掉时
                                 // 仓库已把开关归一化回 false）；完成态由 NoteCard 自行隐藏
                                 countdownDays = if (todo.countdown) todo.deadlineDaysLeft() else null,
+                                // 打卡进度：非打卡待办为 null（卡片保持原形态）
+                                checkInPercent = todo.checkInPercent(),
                                 tags = todo.tags,
                                 tagColors = tagColors,
                                 urgency = todo.urgency,

@@ -1,11 +1,14 @@
 package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.REPEAT_END_COUNT_DEFAULT
+import com.fangyi.classpp.data.model.RepeatEndType
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.data.model.nextOccurrenceAfter
 import com.fangyi.classpp.data.model.occurrencesBetween
+import kotlin.math.roundToInt
 
 /**
  * 待办检索过滤器：条件之间取"与"，集合条件取"或"（任一命中）。
@@ -141,6 +144,9 @@ fun Todo.isOverdue(today: IsoDate, nowMinute: Int): Boolean {
  * setOccurrenceCompleted）。
  *
  * 展开口径由 [RepeatRule.merge] 切换：
+ * - **打卡模式（[RepeatRule.checkIn]，优先于 [RepeatRule.merge]）**：整条系列恒出一条卡——
+ *   未完成时是「今天起（含今天）最近一期未完成分期」，漏掉的期不成拖欠卡、不记逾期；完成
+ *   次数达 [RepeatRule.endCount] 后停在最后一期（完成态照实，进已完成组），系列收口；
  * - **合并（默认开）**：整条系列只出一条卡，显示今天起（含今天）最近一期未完成分期——
  *   过去的已完成/拖欠期不再逐期成卡（"过去的就过去吧"），完成当期自动前移到下一期；
  *   系列走完（次数/日期档到头）时保留最后一期（完成态照实），整条待办不从列表消失；
@@ -168,6 +174,11 @@ fun List<Todo>.expandRepeatOccurrences(today: IsoDate): List<Todo> = buildList {
             continue
         }
         val completed = todo.completedOccurrences.toSet()
+        // 打卡模式：只出一条「当前期」卡（漏期不记逾期、不逐期成卡），优先于合并开关
+        if (todo.isCheckInMode) {
+            addCheckInOccurrence(todo, anchor, today, completed)
+            continue
+        }
         // 合并口径：整条系列只出一条滚动卡（过去的就过去吧）
         if (todo.repeat.merge) {
             addMergedOccurrence(todo, anchor, today, completed)
@@ -220,6 +231,53 @@ private fun MutableList<Todo>.addMergedOccurrence(
 }
 
 /**
+ * 打卡口径的单条副本：未达标时取今天起（含今天）最近一期未完成分期（漏掉的期不补卡、
+ * 不记逾期——打卡只数完成次数，不问期数）；完成次数达 [RepeatRule.endCount] 后停在最后
+ * 一期并标完成（进已完成组，进度 100%）。目标次数缺失（外来脏数据）或系列展不开时不出卡。
+ */
+private fun MutableList<Todo>.addCheckInOccurrence(
+    todo: Todo,
+    anchor: IsoDate,
+    today: IsoDate,
+    completed: Set<IsoDate>,
+) {
+    val target = todo.repeat.endCount ?: REPEAT_END_COUNT_DEFAULT
+    if (todo.completedOccurrences.size >= target) {
+        val last = todo.completedOccurrences.maxByOrNull { it.epochDay } ?: return
+        add(todo.copy(completed = true, dates = listOf(last)).withOccurrenceDeadline(anchor, last))
+        return
+    }
+    // 打卡序列不按期数封顶（见 occurrencesBetween），nextOccurrenceAfter 恒有解；
+    // 回退分支只防御病态规则（锚日期缺失等），与合并口径同
+    val date = todo.repeat.nextOccurrenceAfter(anchor, today, skip = completed)
+        ?: todo.repeat.occurrencesBetween(anchor, anchor, today + 1).lastOrNull()
+        ?: return
+    add(
+        todo.copy(
+            completed = date in completed,
+            dates = listOf(date),
+        ).withOccurrenceDeadline(anchor, date),
+    )
+}
+
+/**
+ * 打卡模式是否生效：开关只在次数档有意义——与仓库归一化（[com.fangyi.classpp.data.TodoRepository]
+ * 的 normalizeRepeat）同一口径，脏数据下的悬挂开关不参与语义。
+ */
+private val Todo.isCheckInMode: Boolean
+    get() = repeat.checkIn && repeat.endType == RepeatEndType.Count
+
+/**
+ * 打卡模式的完成进度百分比（0..100）：完成次数 ÷ 设定次数，四舍五入、超额夹到 100。
+ * 非打卡模式或次数缺失返回 null（卡片不显示进度）。纯函数，展示层与单测共用。
+ */
+fun Todo.checkInPercent(): Int? {
+    if (repeat.type == RepeatType.None || !isCheckInMode) return null
+    val target = repeat.endCount?.takeIf { it >= 1 } ?: return null
+    return (completedOccurrences.size * 100.0 / target).roundToInt().coerceIn(0, 100)
+}
+
+/**
  * 「下一次重复开始前」的逐期截止折算：该期的截止日期 = 下一期开始日期提前
  * [Todo.deadlineBeforeDays] 天（时刻沿用已设的截止时刻）；不早于该期自身日期——多标记的
  * 每周规则相邻间隔可能小于周期上限，提前天数会越过期日，此时收拢到期日当天。
@@ -244,6 +302,8 @@ fun Todo.withOccurrenceDeadline(anchor: IsoDate, date: IsoDate): Todo {
  */
 fun Todo.displayOverdueOccurrences(today: IsoDate): List<IsoDate> {
     if (repeat.type == RepeatType.None) return overdueOccurrences
+    // 打卡模式漏期不算逾期：只认落账集合（仓库也不会再结算新拖欠），不做实时补算
+    if (isCheckInMode) return overdueOccurrences
     val anchor = dates.minByOrNull { it.epochDay } ?: return overdueOccurrences
     val known = overdueOccurrences.toSet() + completedOccurrences.toSet()
     val missed = repeat.occurrencesBetween(anchor, anchor, today).filter { it !in known }

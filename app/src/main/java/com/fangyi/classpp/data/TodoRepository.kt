@@ -183,18 +183,20 @@ class TodoRepository internal constructor(
         } else {
             todo
         }
+        val repeat = normalizeRepeat(migrated.repeat)
         return migrated.copy(
             name = migrated.name.trim(),
             dates = migrated.dates.distinct().sortedBy { it.epochDay },
-            repeat = normalizeRepeat(migrated.repeat),
+            repeat = repeat,
             completedOccurrences = migrated.completedOccurrences.distinct().sortedBy { it.epochDay },
             overdueOccurrences = sweepOverdue(migrated, migrated.dates.minByOrNull { it.epochDay }),
             tags = migrated.tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
             steps = migrated.steps.map { it.copy(title = it.title.trim()) },
             completedAtMillis = if (migrated.completed) migrated.completedAtMillis ?: nowMillis() else null,
             countdown = migrated.countdown && migrated.deadlineDate != null,
+            // 打卡模式的截止只能是固定日期（「下一次重复开始前」在设置页置灰），悬挂开关归 false
             deadlineBeforeRepeat = migrated.deadlineBeforeRepeat &&
-                migrated.deadlineDate != null && migrated.repeat.type != RepeatType.None,
+                migrated.deadlineDate != null && repeat.type != RepeatType.None && !repeat.checkIn,
             deadlineBeforeDays = migrated.deadlineBeforeDays.coerceAtLeast(0),
             group = migrated.group?.trim()?.takeIf { it.isNotEmpty() && it in groupNames },
         )
@@ -210,6 +212,8 @@ class TodoRepository internal constructor(
     private fun sweepOverdue(todo: Todo, anchor: IsoDate?): List<IsoDate> {
         val settled = todo.overdueOccurrences
         if (todo.completed || todo.repeat.type == RepeatType.None || anchor == null) return settled
+        // 打卡模式只数完成次数：漏掉的期不记拖欠，已落账集合原样保留
+        if (todo.repeat.checkIn && todo.repeat.endType == RepeatEndType.Count) return settled
         val known = todo.overdueOccurrences.toSet() + todo.completedOccurrences.toSet()
         val missed = todo.repeat.occurrencesBetween(anchor, anchor, IsoDate.today(nowMillis()))
             .filter { it !in known }
@@ -222,7 +226,8 @@ class TodoRepository internal constructor(
      * 重置为默认值，**类型原样保留**；自定义档位间隔夹紧 1..99、方格标记按单位合法域剔除
      * （天的规则无方格语义，标记恒清空）。结束条件只随重复存在：无重复强制归「永不」，
      * 日期档缺日期回退「永不」，次数档缺次数兜底默认值、越界夹紧 1..99。显示层的
-     * [RepeatRule.merge] 不参与周期语义，原样保留。
+     * [RepeatRule.merge] 不参与周期语义，原样保留；打卡模式（[RepeatRule.checkIn]）只随
+     * 次数档存在——切走次数档即归 false。
      */
     private fun normalizeRepeat(rule: RepeatRule): RepeatRule {
         val endType = when {
@@ -247,6 +252,7 @@ class TodoRepository internal constructor(
             } else {
                 null
             },
+            checkIn = rule.checkIn && endType == RepeatEndType.Count,
         )
     }
 
