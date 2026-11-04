@@ -68,8 +68,12 @@ import java.util.TimeZone
  * 草稿态语义：挂载即从 [initial] 快照，确认才经 [onConfirm] 回写（取消/遮罩/返回/下拉的
  * 改动不外泄，出场播完由宿主卸载）。切频率单位即以 [anchorDate]（自定义日期）为锚播种
  * 方格——周几/几号/几月跟随锚日期，方格选择从不带空入场；此后可自由增删。切结束档位即
- * 落默认值（日期 = 锚日 + 1 个月、次数 = 5），行上恒有具体值可看。确认校验两条：自定义
- * 且方格为空、日期档下结束日期早得连首期都展不开（重复不了）——Toast 提示、不关浮层。
+ * 落默认值（日期 = 锚日 + 1 个月、次数 = 5），行上恒有具体值可看。切到「无重复」只换
+ * 类型、规则字段延后归零（见下方类型选择行注释）——收起动画期间结束设置卡保持原形，
+ * 播完后再清，避免内部行数骤减导致的高度跳变；归零时点 = 再切回重复档或确认，两者都
+ * 只留显示层 merge（见 [withoutRepeat]），摘要因此不会出现「无重复 · 共N次」。
+ * 确认校验两条：自定义且方格为空、日期档下结束日期早得连首期都展不开（重复不了）——
+ * Toast 提示、不关浮层。
  *
  * 数字/日期弹卡两段式挂载（visible/mounted，同宿主的滚轮弹窗）：声明在 [OverlaySheet]
  * 之前使 covered 生效，画在本浮层之后（组合顺序即绘制顺序），其 BackHandler 后注册、
@@ -111,20 +115,23 @@ internal fun RepeatSettingsSheet(
         // 确认在右、取消在左（同表单浮层的顶栏排布）
         confirmAtEnd = true,
         onConfirm = {
+            // 无重复档只留类型与显示层 merge：草稿里可能还挂着旧的结束条件/自定义参数
+            // （历史脏数据或本次切档前的残留），确认前先归零，与仓库归一化同口径
+            val rule = if (draft.type == RepeatType.None) draft.withoutRepeat() else draft
             val marksMissing =
-                draft.type == RepeatType.Custom && draft.unit != RepeatUnit.Day && draft.marks.isEmpty()
+                rule.type == RepeatType.Custom && rule.unit != RepeatUnit.Day && rule.marks.isEmpty()
             // 结束日期过早：日期档下连首期都展不进「锚日 ~ 结束日期」窗口（重复不了）；
             // 次数档恒有首期（方格空回退锚日属性），无需校验
-            val endDate = draft.endDate
-            val endTooEarly = draft.type != RepeatType.None &&
-                draft.endType == RepeatEndType.Date &&
+            val endDate = rule.endDate
+            val endTooEarly = rule.type != RepeatType.None &&
+                rule.endType == RepeatEndType.Date &&
                 endDate != null &&
-                draft.occurrencesBetween(anchorDate, anchorDate, endDate).isEmpty()
+                rule.occurrencesBetween(anchorDate, anchorDate, endDate).isEmpty()
             when {
                 marksMissing -> AppToasts.show(context, marksRequiredMessage)
                 endTooEarly -> AppToasts.show(context, endInvalidMessage)
                 else -> {
-                    onConfirm(draft)
+                    onConfirm(rule)
                     onDismiss()
                 }
             }
@@ -153,7 +160,16 @@ internal fun RepeatSettingsSheet(
                     selectedIndices = setOf(RepeatType.entries.indexOf(draft.type)),
                     onSelectionChange = { picked ->
                         picked.firstOrNull()?.let { index ->
-                            draft = draft.copy(type = RepeatType.entries[index])
+                            val type = RepeatType.entries[index]
+                            // 切到「无重复」只换类型、不清字段：若同帧归零，结束设置卡里的
+                            // 日期/次数行会瞬间消失，外层收起动画从缩水的卡高继续收缩，高度
+                            // 跳变。归零延后到「再切回重复档」（先清再上类型，旧值不复活）
+                            // 或确认时执行——效果上即收起动画先播完、规则后清零
+                            draft = if (draft.type == RepeatType.None && type != RepeatType.None) {
+                                draft.withoutRepeat().copy(type = type)
+                            } else {
+                                draft.copy(type = type)
+                            }
                         }
                     },
                 )
@@ -363,6 +379,12 @@ internal fun RepeatSettingsSheet(
 /** 重复间隔的可选范围（与仓库 normalize 的夹紧一致） */
 private const val REPEAT_INTERVAL_MIN = 1
 private const val REPEAT_INTERVAL_MAX = 99
+
+/**
+ * 「无重复」的规则：类型、周期参数与结束条件全归默认（同仓库 normalize 的口径），只留
+ * [RepeatRule.merge]——它是显示层偏好，不随重复有无归零。
+ */
+private fun RepeatRule.withoutRepeat(): RepeatRule = RepeatRule(merge = merge)
 
 /** 以锚日期（自定义日期）为某单位播种方格标记：周几/几号/几月；天无方格语义 */
 private fun RepeatUnit.seedMarks(anchorDate: IsoDate): Set<Int> = when (this) {

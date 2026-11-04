@@ -64,6 +64,9 @@ internal fun RepeatEndType.labelText(): String = when (this) {
  */
 @Composable
 internal fun RepeatRule.summaryText(): String {
+    // 无重复不带任何结束信息：内存草稿/脏数据里残留的结束档不拼进摘要（仓库归一化会清，
+    // 此处兜底——否则会出现「无重复 · 共5次」）
+    if (type == RepeatType.None) return type.labelText()
     val base = when (type) {
         RepeatType.Custom -> stringResource(R.string.repeat_custom_summary, interval, unit.unitText())
         else -> type.labelText()
