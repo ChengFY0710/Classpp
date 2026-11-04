@@ -99,6 +99,8 @@ object ClassppTextTokens {
         lineHeight = 20.sp,
         letterSpacing = 0.sp,
     )
+    /** AI 对话 Markdown 粗体（**…**）字重：SemiBold；项目禁用 Bold，强调只上调一档。 */
+    val chatStrong = TextStyle(fontWeight = FontWeight.SemiBold)
     /** 确认框正文：14sp Normal。 */
     val dialogMessage = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 空态提示：14sp Normal。 */

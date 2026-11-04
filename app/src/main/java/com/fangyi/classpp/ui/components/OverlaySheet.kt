@@ -609,8 +609,8 @@ private fun OverlaySheetTopBar(
                         .width(40.dp)
                         .height(4.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        // 把手色 = 网格线 outline：同「底上略凸出一线」的弱对比语义，深浅主题各自成立
-                        .background(MaterialTheme.colorScheme.outline),
+                        // 把手色 = onPrimaryContainer：半透明深灰把手，深浅主题各自成立
+                        .background(MaterialTheme.colorScheme.onPrimaryContainer),
                 )
         }
         Box(

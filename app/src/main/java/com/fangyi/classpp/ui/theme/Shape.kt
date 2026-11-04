@@ -84,6 +84,15 @@ fun dayTaskCardShape(
     )
 }
 
+/** AI 对话消息气泡：四角统一 20dp 平滑圆角 */
+val ChatBubbleShape = RoundedRectangle(20.dp)
+
+/** AI 对话错误条：14dp 平滑圆角 */
+val ChatErrorBannerShape = RoundedRectangle(14.dp)
+
+/** AI 对话底部输入框：22dp 平滑圆角 */
+val ChatInputShape = RoundedRectangle(22.dp)
+
 /** 顶栏胶囊按钮（全圆角）；投影与背景共用同一个形状 */
 val PillShape = Capsule()
 

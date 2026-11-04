@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -51,6 +50,9 @@ import com.fangyi.classpp.ui.note.deadlineCardText
 import com.fangyi.classpp.ui.note.deadlineColor
 import com.fangyi.classpp.ui.note.deadlineDaysLeft
 import com.fangyi.classpp.ui.note.repeatCardText
+import com.fangyi.classpp.ui.theme.ChatBubbleShape
+import com.fangyi.classpp.ui.theme.ChatErrorBannerShape
+import com.fangyi.classpp.ui.theme.ChatInputShape
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.PillShape
@@ -60,16 +62,12 @@ import com.fangyi.classpp.ui.theme.PillShape
  * 布局全部无状态——状态（输入、浮层目标）由 [AiChatOverlay] 持有，这里只吃参数。
  */
 
-/** 气泡圆角：大圆角 + 朝向说话方的小角，视觉区分双方 */
-private val BubbleCorner = 18.dp
-private val BubbleTailCorner = 4.dp
-private val BubbleShape = RoundedCornerShape(BubbleCorner)
-
 // ---------- 消息气泡 ----------
 
 /**
  * 一条消息气泡：user 右对齐（primary 底 / onPrimary 字）/ assistant 左对齐（surface 底 / onSurface 字）。
  * 正文统一 16sp；assistant 内容按 GFM Markdown 渲染（见 [ChatMarkdown]），user 内容为纯文本。
+ * assistant 气泡在页边距内撑满宽度，user 气泡按内容自适应（上限 320dp）。
  *
  * 本条回复已创建待办时（[AiChatMessage.todoIds] 非空或落库失败），原始 JSON 围栏块
  * 不再展示——信息已由下方的 NoteCard 卡片承接；正文若因此为空，整个气泡不渲染。
@@ -93,21 +91,7 @@ internal fun AiChatMessageBubble(
     } else {
         MaterialTheme.colorScheme.onSurface
     }
-    val shape = if (isUser) {
-        RoundedCornerShape(
-            topStart = BubbleCorner,
-            topEnd = BubbleCorner,
-            bottomEnd = BubbleTailCorner,
-            bottomStart = BubbleCorner,
-        )
-    } else {
-        RoundedCornerShape(
-            topStart = BubbleCorner,
-            topEnd = BubbleCorner,
-            bottomEnd = BubbleCorner,
-            bottomStart = BubbleTailCorner,
-        )
-    }
+    val shape = ChatBubbleShape
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
@@ -116,7 +100,8 @@ internal fun AiChatMessageBubble(
             color = bubbleColor,
             contentColor = contentColor,
             shape = shape,
-            modifier = Modifier.widthIn(max = 320.dp),
+            // assistant 在页边距内撑满（Row 已有 fillMaxWidth），user 仍按内容自适应
+            modifier = if (isUser) Modifier.widthIn(max = 320.dp) else Modifier.fillMaxWidth(),
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -239,7 +224,7 @@ internal fun AiChatErrorBanner(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(ChatErrorBannerShape)
             .background(MaterialTheme.colorScheme.errorContainer)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -401,7 +386,7 @@ internal fun AiChatInputBar(
             keyboardActions = KeyboardActions(onSend = { onSend() }),
             modifier = Modifier
                 .weight(1f)
-                .clip(RoundedCornerShape(22.dp))
+                .clip(ChatInputShape)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             decorationBox = { inner ->
