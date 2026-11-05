@@ -60,6 +60,13 @@ val UrgentOrange = Color(0xFFF2921B)
 val UrgentYellow = Color(0xFFF2C11C)
 val UrgentGreen = Color(0xFF3BC222)
 
+// ===== 存储用量三段（数据管理页用量条与图例专用）=====
+// 蓝 = 应用大小（与 primary 同源，保持设置页强调色一致）；黄/绿对齐设计稿的
+// 用户数据/缓存两段。只允许 DataManagementScreen 的用量条与图例消费。
+val StorageApp = Color(0xFF006FEF)
+val StorageUser = Color(0xFFF2B93E)
+val StorageCache = Color(0xFF4CC38A)
+
 // ===== AI 对话浮层底部光场（AiThinkingAurora 专用，全 app 唯一多色装饰性渐变）=====
 // 左蓝 → 青 → 薄荷 → 右黄绿，四颗软边光斑叠成设计稿的极光场；只由 AiThinkingAurora
 // 经 classppColors.aiAurora* 消费，不得挪作其它背景或业务强调色。
@@ -119,6 +126,11 @@ val DarkOnErrorContainer = Color(0xFFFFD9D4)
 val DarkUrgentOrange = Color(0xFFF6A94C)
 val DarkUrgentYellow = Color(0xFFF6CE52)
 val DarkUrgentGreen = Color(0xFF67D257)
+
+// 存储用量三段：深色下与 primary / 紧急旗标同档提亮，保证深卡上的分段仍可区分
+val DarkStorageApp = Color(0xFF479CFF)
+val DarkStorageUser = Color(0xFFF6CE52)
+val DarkStorageCache = Color(0xFF67D257)
 
 // 深色光场 = 同色相压暗（明度 35–45%），在深底上呈现低亮度极光，不采用浅色值直接发光
 val DarkAiAuroraBlue = Color(0xFF2E6FB8)

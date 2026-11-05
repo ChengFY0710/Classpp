@@ -240,7 +240,9 @@ class MainActivity : ComponentActivity() {
                     // 日程页首挂载所需的持久化快照：启动协程在 IO 线程预读，首次切到
                     // 日程页时不再在主线程组合期读 5 项 prefs + 解析图片列表 JSON
                     var dayInitial by remember { mutableStateOf<DayInitialData?>(null) }
-                    LaunchedEffect(Unit) {
+                    // 数据管理页导入备份后递增：重新预读快照，让日程页背景图/图库立即跟上
+                    var dataRestoreEpoch by remember { mutableStateOf(0) }
+                    LaunchedEffect(dataRestoreEpoch) {
                         dayInitial = withContext(Dispatchers.IO) {
                             runCatching { DayInitialData.load(this@MainActivity.applicationContext) }
                                 .getOrDefault(DayInitialData())
@@ -281,6 +283,8 @@ class MainActivity : ComponentActivity() {
                     // 重组若传出新的 lambda/Modifier，整棵设置树会白重组一遍。闭包捕获的
                     // 是同一批 State 实例，语义与内联写法一致
                     val onCloseSettings = remember { { showSettings = false } }
+                    // 数据管理页导入备份完成：重新预读日程页快照（背景图/图库立即生效）
+                    val onDataRestored = remember { { dataRestoreEpoch = dataRestoreEpoch + 1 } }
                     val onSettingsThemeModeChange = remember {
                         { mode: ThemeMode ->
                             themeMode = mode
@@ -602,6 +606,10 @@ class MainActivity : ComponentActivity() {
                                 repository = repository,
                                 xmuSyncRepository = xmuSyncRepository,
                                 xmuAutoLoginManager = xmuAutoLoginManager,
+                                // 数据管理子页：备份导入后重载待办/标签内存态，并回调重读日程页快照
+                                todoRepository = todoRepository,
+                                tagRepository = tagRepository,
+                                onDataRestored = onDataRestored,
                                 // AI 设置子页的数据源（连接/Key/清空历史）；根页入口卡展示配置态
                                 aiChatRepository = aiChatRepository,
                                 openAccountSyncDirectly = settingsOpenAccountSync,

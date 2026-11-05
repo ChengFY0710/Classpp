@@ -127,6 +127,14 @@ class TodoRepository internal constructor(
             }
             .mapTo(mutableSetOf()) { it.id }
 
+    /**
+     * 备份恢复后整体重读磁盘：与冷启动的 [bootstrap] 同一条路径（含回收站保留期清理），
+     * mutex 串行化保证不与在途写入交叉。恢复在设置页内触发，此时没有编辑操作。
+     */
+    suspend fun reloadFromDisk() {
+        mutex.withLock { bootstrap() }
+    }
+
     private fun publish(file: TodoFile) {
         fileState.value = file
         // 单文件三流：活跃/已归档/回收站按软删与归档标记分流（回收站优先——归档条目被删

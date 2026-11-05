@@ -317,18 +317,19 @@ internal fun DayScreen(
     val calendarAdd = rememberCalendarAddState()
 
     // 用户图片库与当前背景：持久化快照由 MainActivity 在 IO 线程预读后传入，
-    // 之后改动即时落盘（DayImageStore）
-    var images by remember { mutableStateOf(initialData.images) }
-    var selectedImage by remember { mutableStateOf(initialData.selectedImage) }
+    // 之后改动即时落盘（DayImageStore）。key 用 initialData：数据管理页导入备份后
+    // 宿主会重新预读快照，实例一变即按新图库重建这几项状态（否则背景图要等重启才换）
+    var images by remember(initialData) { mutableStateOf(initialData.images) }
+    var selectedImage by remember(initialData) { mutableStateOf(initialData.selectedImage) }
     // 随机轮播：开启时背景取「当日命中」，命中即落盘锁定（DayImageStore）——当天内导入
     // 新图不重抽（背景不随图库变动切换），命中图被删才重抽，跨零点（today 变化）重抽；
     // 关闭或图库为空回退手动选中。查看其他日期时不落盘：按该日种子现抽当"那天的图"预览，
     // 不改动今天已锁定的命中
-    var randomEnabled by remember { mutableStateOf(initialData.randomEnabled) }
+    var randomEnabled by remember(initialData) { mutableStateOf(initialData.randomEnabled) }
     // 壁纸视差开关：01 态背景图随重力倾斜微移（效果本体在 ui.motion 的 TiltParallax，
     // 状态接线见下方 tilt）；口径同随机轮播——首帧取预读快照，改动即时落盘
-    var tiltEnabled by remember { mutableStateOf(initialData.tiltEnabled) }
-    var randomPick by remember { mutableStateOf(initialData.randomPick) }
+    var tiltEnabled by remember(initialData) { mutableStateOf(initialData.tiltEnabled) }
+    var randomPick by remember(initialData) { mutableStateOf(initialData.randomPick) }
     // 命中在组合期同步算出（首帧即正确）：今天沿用已锁定命中，没有才按今天种子现抽；
     // 其他日期一律按该日种子现抽（种子保证同天同图库下重组结果稳定）。落盘只针对今天
     val dayPick = if (randomEnabled && images.isNotEmpty()) {

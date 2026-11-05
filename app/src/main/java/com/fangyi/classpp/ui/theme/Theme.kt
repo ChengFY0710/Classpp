@@ -107,6 +107,13 @@ class ClassppColors(
     val urgentYellow: Color,
     val urgentGreen: Color,
     /**
+     * 存储用量三段色（数据管理页的用量条与图例专用）：应用大小 = 蓝（与 primary
+     * 同源）、用户数据 = 黄、缓存 = 绿。深浅各一套；不用于任何业务强调或旗标。
+     */
+    val storageApp: Color,
+    val storageUser: Color,
+    val storageCache: Color,
+    /**
      * AI 对话浮层底部「思考光场」四色（AiThinkingAurora 专用）：浅色 = 蓝 → 青 → 薄荷
      * → 黄绿；深色 = 同色相压暗的深极光。全 app 唯一的多色装饰性渐变，只允许
      * [com.fangyi.classpp.ui.ai.AiThinkingAurora] 消费，不得挪作其它背景或强调色。
@@ -129,6 +136,9 @@ private val LightClassppColors = ClassppColors(
     urgentOrange = UrgentOrange,
     urgentYellow = UrgentYellow,
     urgentGreen = UrgentGreen,
+    storageApp = StorageApp,
+    storageUser = StorageUser,
+    storageCache = StorageCache,
     aiAuroraBlue = AiAuroraBlue,
     aiAuroraCyan = AiAuroraCyan,
     aiAuroraMint = AiAuroraMint,
@@ -147,6 +157,9 @@ private val DarkClassppColors = ClassppColors(
     urgentOrange = DarkUrgentOrange,
     urgentYellow = DarkUrgentYellow,
     urgentGreen = DarkUrgentGreen,
+    storageApp = DarkStorageApp,
+    storageUser = DarkStorageUser,
+    storageCache = DarkStorageCache,
     aiAuroraBlue = DarkAiAuroraBlue,
     aiAuroraCyan = DarkAiAuroraCyan,
     aiAuroraMint = DarkAiAuroraMint,

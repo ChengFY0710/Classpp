@@ -59,6 +59,14 @@ class TagRepository internal constructor(
         )
     }
 
+    /**
+     * 备份恢复后整体重读磁盘：与冷启动的 [bootstrap] 同一条路径，mutex 串行化保证
+     * 不与在途写入交叉。恢复在设置页内触发，此时没有编辑操作。
+     */
+    suspend fun reloadFromDisk() {
+        mutex.withLock { bootstrap() }
+    }
+
     private fun publish(file: TagFile) {
         fileState.value = file
         _tags.value = file.tags
