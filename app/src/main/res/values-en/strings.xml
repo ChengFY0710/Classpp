@@ -486,6 +486,27 @@
     <!-- Banner at the top of the Recently Deleted list: trash retention period -->
     <string name="todo_trash_retention_hint">Kept %1$d days, then auto-deleted</string>
     <string name="todo_error_save_failed">Save failed, please try again later</string>
+    <!-- Todo overview sheet (TodoOverviewSheet): weekly mood, reminders, distribution, recent completions -->
+    <string name="todo_overview_title">Todo overview</string>
+    <string name="todo_overview_week_completed">Completed this week</string>
+    <string name="todo_overview_items">%1$d item(s)</string>
+    <string name="todo_overview_streak">%1$d-day streak</string>
+    <string name="todo_overview_today_done">Done for today</string>
+    <string name="todo_overview_week_days">Completed todos on %1$d day(s) this week</string>
+    <string name="todo_overview_start_small">Start with one small thing</string>
+    <string name="todo_overview_week_section">This week</string>
+    <string name="todo_overview_week_summary">%1$d completed · %2$d day(s)</string>
+    <string name="todo_overview_week_empty">No completions this week yet</string>
+    <string name="todo_overview_attention">Needs attention</string>
+    <string name="todo_overview_due_today">Due today</string>
+    <string name="todo_overview_due_next7">Next 7 days</string>
+    <string name="todo_overview_none_attention">No overdue or upcoming deadlines</string>
+    <string name="todo_overview_all">All todos</string>
+    <string name="todo_overview_total">%1$d todo(s) in total</string>
+    <string name="todo_overview_recent">Recently completed</string>
+    <string name="todo_overview_days_ago">%1$d days ago</string>
+    <string name="todo_overview_empty_title">No todos yet</string>
+    <string name="todo_overview_empty_hint">Add something you want to do</string>
 
     <string name="todo_detail_title">Todo Details</string>
     <!-- Todo details sheet: title-row more menu -->

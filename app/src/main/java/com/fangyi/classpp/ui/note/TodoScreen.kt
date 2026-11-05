@@ -411,9 +411,11 @@ fun TodoScreen(
     var editTargetId by rememberSaveable { mutableStateOf("") }
     // 分组浮层：待办分组（顶栏展开动作行的分组块进入），空 = 未打开（两段式挂载见浮层处）
     var groupsVisible by rememberSaveable { mutableStateOf(false) }
+    // 概览浮层：待办概览（顶栏展开动作行的概览块进入），空 = 未打开（两段式挂载见浮层处）
+    var overviewVisible by rememberSaveable { mutableStateOf(false) }
     // 移动-选择分组浮层（待办编辑态「移动」唤起，复用 GroupPickSheet）：两段式挂载同分组浮层
     var movePickVisible by rememberSaveable { mutableStateOf(false) }
-    // 五张全屏浮层（新建/详情/编辑/分组/移动选组）的挂载态：声明提前到页面布局之前——底部渐变
+    // 六张全屏浮层（新建/详情/编辑/分组/移动选组/概览）的挂载态：声明提前到页面布局之前——底部渐变
     // 遮罩（页面 Box 内的 BottomFadeScrim）要读 anyOverlayMounted 决定显隐；各浮层
     // 自己的两段式挂载块（置真与卸载回调）仍在原位
     var newTodoMounted by remember { mutableStateOf(false) }
@@ -421,8 +423,9 @@ fun TodoScreen(
     var editMounted by remember { mutableStateOf<Todo?>(null) }
     var groupsMounted by remember { mutableStateOf(false) }
     var movePickMounted by remember { mutableStateOf(false) }
+    var overviewMounted by remember { mutableStateOf(false) }
     val anyOverlayMounted = newTodoMounted || detailMounted != null || editMounted != null ||
-        groupsMounted || movePickMounted
+        groupsMounted || movePickMounted || overviewMounted
     // 分组列表（顺序 + 置顶标记）：仓库 todos.json 持久化，顶栏胶囊与分组浮层共享同一份；
     // 分组写回失败的 Toast 文案在组合期解析（commitGroups 回调里非组合上下文，同编辑浮层约定）
     val groups by repository.groups.collectAsState()
@@ -1035,6 +1038,8 @@ fun TodoScreen(
                         },
                         // 分组块打开待办分组浮层（动作行保持展开，关浮层回到原状，不额外折叠）
                         onGroupClick = { groupsVisible = true },
+                        // 概览块打开待办概览浮层（纯展示，不改页面过滤状态）
+                        onOverviewClick = { overviewVisible = true },
                         menuExpanded = menuExpanded,
                         sortMenuExpanded = sortMenuExpanded,
                         onSortMenuDismiss = { sortMenuExpanded = false },
@@ -1449,6 +1454,19 @@ fun TodoScreen(
             onDismissed = { movePickMounted = false },
             onGroupsChange = commitGroups,
             onPick = onMovePick,
+        )
+    }
+
+    // 待办概览浮层：顶栏展开动作行的概览块进入（两段式挂载，同上）。
+    // 传入全量活跃待办（todos），不传当前分组/标签过滤后的列表——概览是全局口径；
+    // 已归档/最近删除不在 todos 里，概览不统计它们
+    if (overviewVisible) overviewMounted = true
+    if (overviewMounted) {
+        TodoOverviewSheet(
+            todos = todos,
+            visible = overviewVisible,
+            onDismiss = { overviewVisible = false },
+            onDismissed = { overviewMounted = false },
         )
     }
 

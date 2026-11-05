@@ -124,7 +124,7 @@ fun SettingsInfoHeaderCard(
  * 限制在图标自身范围（卡面不受影响），图标镂空处保持透明，透出下层卡面底色。
  */
 @Composable
-private fun GradientTintedIcon(
+internal fun GradientTintedIcon(
     @DrawableRes icon: Int,
     color: Color,
     modifier: Modifier = Modifier,

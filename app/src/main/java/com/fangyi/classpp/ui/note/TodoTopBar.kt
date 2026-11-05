@@ -287,8 +287,8 @@ internal enum class TodoSpecialSection(
  * 菜单展开态），分组块点击回调 [onGroupClick]（宿主打开待办分组浮层），
  * 分类块点击回调 [onCategoryClick]（宿主置分类菜单展开态），
  * 视图块经 [onViewClick]/[viewMenuExpanded]/[onViewMenuDismiss]/[viewMenuSections] 接入
- * 列表/收集箱视图菜单（[inboxView] 决定动作块图标），概览回调本期空置（接入功能时再加
- * 参数）；分类块配色/可用性经
+ * 列表/收集箱视图菜单（[inboxView] 决定动作块图标），概览块点击回调
+ * [onOverviewClick]；分类块配色/可用性经
  * [categoryEnabled]/[categoryFiltered] 下发——特殊分组页在场置灰（negative）不可点，
  * 分组显隐未全选（有分组被隐藏）时 primary 提示；视图块可用性经 [viewEnabled] 下发——
  * 最近删除页置灰（negative）不可点（该页恒走列表，视图切换无意义）；
@@ -308,6 +308,8 @@ internal fun TodoTopBar(
     onMoreClick: () -> Unit,
     onSortClick: () -> Unit,
     onGroupClick: () -> Unit,
+    // 概览块点击（打开待办概览浮层；纯展示，不改页面过滤状态）
+    onOverviewClick: () -> Unit = {},
     specialSection: TodoSpecialSection? = null,
     specialSectionSelected: Boolean = false,
     onSpecialSectionClick: () -> Unit = {},
@@ -551,8 +553,7 @@ internal fun TodoTopBar(
                             .height(EditActionBarHeight),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // 分组块打开待办分组浮层；概览块仍为占位（保留按压反馈，
-                        // 接入功能时再加回调参数）
+                        // 分组块打开待办分组浮层；概览块打开待办概览浮层
                         TodoBarAction(
                             label = stringResource(R.string.todo_action_group),
                             iconRes = R.drawable.ic_folder,
@@ -648,7 +649,7 @@ internal fun TodoTopBar(
                         TodoBarAction(
                             label = stringResource(R.string.todo_action_overview),
                             iconRes = R.drawable.ic_clipboard_task,
-                            onClick = {},
+                            onClick = onOverviewClick,
                             modifier = Modifier
                                 .weight(1f)
                                 .wrapContentWidth(Alignment.CenterHorizontally),
