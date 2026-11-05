@@ -11,15 +11,15 @@ import org.junit.Test
  * 待办编辑顶栏同步钮的候选契约（[todoSyncCandidates]）：
  *
  * - 只取选中集里的待办，未选中的不参与；
- * - 时间为「无」的待办产不出日历事件（CalendarEventPlanner 同口径），不进候选——
- *   只选中这类待办时候选为空，同步块置灰；
- * - 有时间的待办按待办列表顺序进候选（批量写入按此顺序产出事件）。
+ * - 所有待办都可同步（没有日期时事件落在截止日期、再退到当天），无时间/无日期不再
+ *   被剔除——只选中这类待办时同样有候选；
+ * - 候选按待办列表顺序排列（批量写入按此顺序产出事件）。
  */
 class TodoEditBarSyncTest {
 
     private val date = IsoDate.parse("2026-11-02")
 
-    /** A 时段、B 无时间、C 全天、D 全天却没有日期（防御口径，正常存储不会出现） */
+    /** A 时段、B 无时间无日期、C 全天、D 全天却没有日期（防御口径，正常存储不会出现） */
     private val todos = listOf(
         Todo(
             id = "A",
@@ -42,13 +42,13 @@ class TodoEditBarSyncTest {
     }
 
     @Test
-    fun `todos that produce no events are excluded`() {
-        assertTrue(todoSyncCandidates(todos, setOf("B")).isEmpty())
-        assertTrue(todoSyncCandidates(todos, setOf("D")).isEmpty())
+    fun `todos without date or time are still candidates`() {
+        assertEquals(listOf("B"), todoSyncCandidates(todos, setOf("B")).map { it.id })
+        assertEquals(listOf("D"), todoSyncCandidates(todos, setOf("D")).map { it.id })
     }
 
     @Test
-    fun `timed todos keep the list order`() {
+    fun `candidates keep the list order`() {
         assertEquals(
             listOf("A", "C"),
             todoSyncCandidates(todos, setOf("A", "C")).map { it.id },
@@ -56,9 +56,9 @@ class TodoEditBarSyncTest {
     }
 
     @Test
-    fun `mixed selection keeps only syncable todos`() {
+    fun `mixed selection keeps every selected todo`() {
         assertEquals(
-            listOf("A", "C"),
+            listOf("A", "B", "C", "D"),
             todoSyncCandidates(todos, setOf("A", "B", "C", "D", "missing")).map { it.id },
         )
     }

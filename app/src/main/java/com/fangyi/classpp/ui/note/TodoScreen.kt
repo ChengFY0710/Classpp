@@ -182,7 +182,7 @@ private val SectionSpacing = 20.dp
  * Motion.EditMillis + Standard），删除/置顶/取消置顶/移动批量作用于选中待办并即时落库
  *（移动经 [GroupPickSheet] 点选目标分组），「同步」把所选待办整批写入系统日历
  *（CalendarAddFlow 编排权限/账户选择/写入，与详情菜单的「添加到日历」同一条流程；
- * 时间为「无」的条目跳过，一个可写的都没有时同步块置灰），
+ * 所有选中待办都可写入，未选中时同步块置灰），
  * 「确认」/系统返回退出（不设取消，退出还原进编辑前的动作行展开状态）；
  * 卡片经 [NoteCard.selected] 转选中蓝框形态、分组头强制展开并把箭头换成「全选/取消
  * 全选」；编辑态下底部导航栏与渐隐遮罩下移出屏、侧滑与完成勾选停用。
@@ -649,9 +649,10 @@ fun TodoScreen(
     //（混合时未置顶的一并置顶、已置顶的保持不动）
     val pinAction = todoPinAction(todos, selectedTodoIds)
     // 编辑顶栏「同步」：所选待办整批写入系统日历（权限/列账户/选择卡/写入全在
-    // CalendarAddFlow，与详情菜单的「添加到日历」同一条流程）。候选只含能产出事件的
-    // 条目（时间为「无」或没有日期的跳过，见 todoSyncCandidates）——候选为空时同步块
-    // 置灰；写入不改变列表内容，故完成后保持编辑态与选中集，结果 Toast 由流程统一弹
+    // CalendarAddFlow，与详情菜单的「添加到日历」同一条流程）。所有选中待办都是候选
+    //（没有日期时事件落在截止日期、再退到当天，见 todoSyncCandidates）——未选中任何
+    // 待办时同步块置灰；写入不改变列表内容，故完成后保持编辑态与选中集，结果 Toast
+    // 由流程统一弹
     val syncCandidates = remember(todos, selectedTodoIds) {
         todoSyncCandidates(todos, selectedTodoIds)
     }

@@ -53,9 +53,9 @@ internal class CalendarAddState(
  * 与回调，无 UI——选择卡的组合与两段式挂载在 [CalendarPickerHost]。
  *
  * 流程口径：
- * - 入参是待办列表（详情菜单传单条）：时间为「无」或没有日期的待办产不出日历事件，
- *   在 [CalendarAddState.begin] 里按 CalendarEventPlanner 同口径剔除，可写条目为空时
- *   防御性不动作（详情菜单项与编辑顶栏同步块都已按同一口径置灰）；
+ * - 入参是待办列表（详情菜单传单条）：所有待办都能产出日历事件——没有待办日期时
+ *   事件落在截止日期，截止日期也没有则落在当天（口径见 CalendarEventPlanner.drafts）；
+ *   空列表防御性不动作；
  * - 权限 READ+WRITE_CALENDAR 一起请求（Manifest 已静态声明）：已授权直接进写入；
  *   未授权先记下待写快照再请求，全部授予后续跑流程，拒绝 Toast（下次点按再请求）；
  * - 写入待办用点按那一刻的快照（[CalendarAddState.begin] 的入参）：目标要跨过权限弹窗/
@@ -67,8 +67,8 @@ internal class CalendarAddState(
  *   不会消失，连点若无闸门会重复写入同一批事件；
  * - SystemCalendar 是阻塞 I/O 的无状态封装，调用点现造现用（包 Dispatchers.IO）；
  *   整批草稿一次写入，成功记下账户 id 并按事件数 Toast（多天待办每天一个事件，全部
- *   待办的事件数合计），错误统一映射（可写口径保证不会触发 CalendarNoTime，权限类
- *   单独给文案）。
+ *   待办的事件数合计），错误统一映射（每条待办都会产出事件，CalendarNoTime 仅作
+ *   SystemCalendar 侧的防御分支，权限类错误单独给文案）。
  */
 @Composable
 internal fun rememberCalendarAddState(): CalendarAddState {
@@ -183,27 +183,21 @@ internal fun rememberCalendarAddState(): CalendarAddState {
     }
 
     val begin: (List<Todo>) -> Unit = { todos ->
-        if (!inFlight) {
-            // 无时间（或没有日期）的待办产不出事件：按 CalendarEventPlanner 同口径剔除，
-            // 一个可写的都没有就不动作——详情菜单项与编辑顶栏同步块已置灰，这里是兜底
-            val syncable = todos.filter { CalendarEventPlanner.drafts(it).isNotEmpty() }
-            if (syncable.isNotEmpty()) {
-                // 待写快照在点按这一刻落地（不论权限是否已授予）：多账户选择卡也靠它
-                // 找回本批待办，不依赖「刚申请过权限」那条分支
-                pendingTodos = syncable
-                inFlight = true
-                val needed = arrayOf(
-                    Manifest.permission.READ_CALENDAR,
-                    Manifest.permission.WRITE_CALENDAR,
-                )
-                val granted = needed.all {
-                    ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-                }
-                if (granted) {
-                    startCalendarInsert(syncable)
-                } else {
-                    permissionLauncher.launch(needed)
-                }
+        if (!inFlight && todos.isNotEmpty()) {
+            // 所有待办都能产出事件（日期回退链见 CalendarEventPlanner）；空列表在这里兜底
+            pendingTodos = todos
+            inFlight = true
+            val needed = arrayOf(
+                Manifest.permission.READ_CALENDAR,
+                Manifest.permission.WRITE_CALENDAR,
+            )
+            val granted = needed.all {
+                ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+            }
+            if (granted) {
+                startCalendarInsert(todos)
+            } else {
+                permissionLauncher.launch(needed)
             }
         }
     }

@@ -20,18 +20,18 @@ data class CalendarEventDraft(
 )
 
 /**
- * 待办 → 日历事件草稿的纯函数规划：
- * - 多天日期**每天一个事件**（日期可不连续，无法用单个事件跨越中间天）；
- * - AllDay → 每天一个全天事件；
- * - Period → 每天一个时段事件（多天共用同一时段）；
- * - None → 空列表（调用方报 [com.fangyi.classpp.data.TodoError.CalendarNoTime]，UI 禁用入口）。
+ * 待办 → 日历事件草稿的纯函数规划（所有待办都能产出事件）：
+ * - 事件日期优先取待办日期（多天**每天一个事件**，日期可不连续，无法用单个事件跨越
+ *   中间天）；没有待办日期时回退截止日期，截止日期也没有则回退 [today]（当天）；
+ * - AllDay / None → 每天一个全天事件（None 没有时刻语义，日期或回退日期上按全天处理）；
+ * - Period → 每天一个时段事件（多天共用同一时段）。
  */
 object CalendarEventPlanner {
 
-    fun drafts(todo: Todo): List<CalendarEventDraft> {
-        if (todo.timeKind == TodoTimeKind.None) return emptyList()
-        val allDay = todo.timeKind == TodoTimeKind.AllDay
-        return todo.dates.map { date ->
+    fun drafts(todo: Todo, today: IsoDate = IsoDate.today()): List<CalendarEventDraft> {
+        val allDay = todo.timeKind != TodoTimeKind.Period
+        val dates = todo.dates.ifEmpty { listOf(todo.deadlineDate ?: today) }
+        return dates.map { date ->
             CalendarEventDraft(
                 title = todo.name,
                 description = describe(todo),

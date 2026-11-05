@@ -65,10 +65,10 @@ internal val EditBarRowSpace = EditBarTopPadding + EditActionBarHeight
  * onMovePick），[onConfirm] 只负责退出编辑——不设「取消」，系统返回同语义。「移动」经
  * [onMove] 唤起选择分组浮层（复用 GroupPickSheet，点选即整批移动）；「同步」经
  * [onSync] 把所选待办整批写入系统日历（流程见 CalendarAddFlow：权限、账户选择与写入
- * 全在其中编排，时间为「无」的条目跳过）。
+ * 全在其中编排，所有待办都可写入——没有待办日期时按截止日期、再退到当天）。
  * [moveEnabled] 为 false（未选中任何待办）时「移动」置灰（icon 与文字转
- * [classppColors.negative]、点击无效）；[syncEnabled] 为 false（所选待办里没有能写入
- * 日历的条目，口径见 [todoSyncCandidates]）时「同步」同样置灰。置顶块随 [pinAction]
+ * [classppColors.negative]、点击无效）；[syncEnabled] 为 false（没有选中的待办，口径见
+ * [todoSyncCandidates]）时「同步」同样置灰。置顶块随 [pinAction]
  * 三态切换：只选中已置顶待办时显示「取消」+ ic_pin_off、点击 [onUnpin] 取消置顶；只
  * 选中未置顶或混合选择（既有已置顶又有未置顶）时显示「置顶」+ ic_pin、点击 [onPin]
  * 整批置顶；未选中任何待办时置灰不可点。
@@ -134,8 +134,8 @@ internal fun TodoEditBar(
                     .wrapContentWidth(Alignment.CenterHorizontally),
             )
             EditAction(
-                // 同步：所选待办整批写入系统日历（无时间的条目跳过，候选判定见
-                // todoSyncCandidates）；没有可写条目时与「移动」同款置灰不可点
+                // 同步：所选待办整批写入系统日历（所有条目都可写，候选判定见
+                // todoSyncCandidates）；没有选中待办时与「移动」同款置灰不可点
                 text = stringResource(R.string.todo_edit_sync),
                 iconRes = R.drawable.ic_calendar_regular,
                 color = if (syncEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.classppColors.negative,
@@ -233,13 +233,13 @@ internal fun todoPinAction(todos: List<Todo>, selected: Set<String>): PinAction 
 }
 
 /**
- * 编辑顶栏「同步」的候选集：所选待办里能写入系统日历的条目，顺序沿用待办列表（批量
- * 写入按此顺序产出事件）。判定与写入同源——[CalendarEventPlanner.drafts] 产不出事件的
- * 待办（时间「无」、或没有日期）一并剔除：时间为「无」在详情菜单里同样是置灰口径，
- * 混合选择时这些条目静默跳过。候选为空即「同步」置灰（与「移动」的空选择置灰同款）。
+ * 编辑顶栏「同步」的候选集：所选待办全体，顺序沿用待办列表（批量写入按此顺序产出
+ * 事件）。所有待办都能写入系统日历——没有待办日期时事件落在截止日期，截止日期也没有
+ * 则落在当天（见 [CalendarEventPlanner.drafts]）。没有候选即「同步」置灰（与「移动」
+ * 的空选择置灰同款）。
  */
 internal fun todoSyncCandidates(todos: List<Todo>, selected: Set<String>): List<Todo> =
-    todos.filter { it.id in selected && CalendarEventPlanner.drafts(it).isNotEmpty() }
+    todos.filter { it.id in selected }
 
 @Preview(showBackground = true, name = "待办编辑顶栏")
 @Composable

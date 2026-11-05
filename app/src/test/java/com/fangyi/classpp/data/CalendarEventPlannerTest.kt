@@ -15,9 +15,45 @@ class CalendarEventPlannerTest {
     private val d2 = IsoDate.parse("2026-06-22") // 与 d1 不连续
 
     @Test
-    fun `none time kind yields no drafts`() {
-        val todo = testTodo(name = "纯备忘", dates = listOf(d1), timeKind = TodoTimeKind.None)
-        assertTrue(CalendarEventPlanner.drafts(todo).isEmpty())
+    fun `none time kind yields all day drafts on todo dates`() {
+        val todo = testTodo(name = "纯备忘", dates = listOf(d1, d2), timeKind = TodoTimeKind.None)
+        val drafts = CalendarEventPlanner.drafts(todo, today = d1)
+
+        assertEquals(2, drafts.size)
+        assertEquals(listOf(d1, d2), drafts.map { it.date })
+        drafts.forEach {
+            assertTrue(it.allDay)
+            assertNull(it.startMinute)
+            assertNull(it.endMinute)
+        }
+    }
+
+    @Test
+    fun `todo without dates falls back to deadline date`() {
+        val todo = testTodo(name = "交报告", timeKind = TodoTimeKind.None, deadlineDate = d2)
+        val draft = CalendarEventPlanner.drafts(todo, today = d1).single()
+
+        assertEquals(d2, draft.date)
+        assertTrue(draft.allDay)
+    }
+
+    @Test
+    fun `todo without dates or deadline falls back to today`() {
+        val todo = testTodo(name = "随手记", timeKind = TodoTimeKind.None)
+        val draft = CalendarEventPlanner.drafts(todo, today = d2).single()
+
+        assertEquals(d2, draft.date)
+        assertTrue(draft.allDay)
+    }
+
+    @Test
+    fun `timed todo without dates also falls back instead of yielding nothing`() {
+        // 防御口径：时刻形态不是「无」却没有日期（TodoValidator 会拦，正常存储不会出现）
+        val todo = testTodo(name = "防御", timeKind = TodoTimeKind.AllDay, deadlineDate = d1)
+        val draft = CalendarEventPlanner.drafts(todo, today = d2).single()
+
+        assertEquals(d1, draft.date)
+        assertTrue(draft.allDay)
     }
 
     @Test

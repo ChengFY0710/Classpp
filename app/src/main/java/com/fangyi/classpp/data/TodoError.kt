@@ -45,8 +45,8 @@ sealed class TodoError(val message: String) {
     data class ImportKindMismatch(val kind: String) :
         TodoError("share payload kind mismatch: '$kind'")
 
-    /** 待办时间为"无"，没有可写入系统日历的时刻 */
-    data object CalendarNoTime : TodoError("todo has no time to put on calendar")
+    /** 空草稿列表（防御分支；正常待办都会产出事件，不会触发） */
+    data object CalendarNoTime : TodoError("no calendar event to insert")
 
     /** 缺少 READ/WRITE_CALENDAR 运行时权限 */
     data object CalendarAccessDenied : TodoError("calendar permission not granted")

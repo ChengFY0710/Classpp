@@ -18,7 +18,7 @@ data class CalendarAccount(
 
 /**
  * 系统日历读写器：仅封装 ContentResolver 调用与错误映射，不含业务规则
- * （哪些待办可加由 CalendarEventPlanner 决定）。需要 READ_CALENDAR /
+ * （待办如何映射为事件由 CalendarEventPlanner 决定）。需要 READ_CALENDAR /
  * WRITE_CALENDAR 运行时权限，未授权时 SecurityException 映射为
  * [TodoError.CalendarAccessDenied]。阻塞 I/O，调用方包到 Dispatchers.IO。
  */

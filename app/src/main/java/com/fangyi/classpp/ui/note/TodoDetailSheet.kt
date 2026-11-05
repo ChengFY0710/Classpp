@@ -145,8 +145,8 @@ internal fun TodoDetailSheet(
     // 归档本待办（移入「已归档」特殊分组页，归档后本浮层由宿主反查落空自动收起）；
     // 权限外的持久化与失败 Toast 均由宿主编排
     onArchive: () -> Unit,
-    // 把本待办写入系统日历（权限请求/账户选择/写入与 Toast 均由宿主编排）；时间为「无」
-    // 的待办菜单项整体置灰，本回调不会被触发
+    // 把本待办写入系统日历（权限请求/账户选择/写入与 Toast 均由宿主编排）；所有待办
+    // 都可写入（没有日期时落在截止日期、再退到当天），本回调在可点时总会被触发
     onAddToCalendar: () -> Unit,
     // 当前视图是否提供倒计时开关：收集箱卡不渲染倒计时（TodoInboxCard 组件口径），
     // 从收集箱打开的详情传 false 把「开启倒计时」整体置灰（开关无可视反馈）
@@ -249,10 +249,10 @@ internal fun TodoDetailSheet(
                         expanded = moreExpanded,
                         onDismiss = { moreExpanded = false },
                         hazeState = sheetHazeState,
-                        // 时间为「无」的待办没有任何可写入日历的时刻：添加到日历项置灰
-                        // 不可点（CalendarEventPlanner 同口径，正常不会触发其回调）；
-                        // 宿主没有日历编排上下文（calendarAvailable = false）时同样置灰
-                        calendarEnabled = calendarAvailable && todo.timeKind != TodoTimeKind.None,
+                        // 所有待办都可添加到日历（没有待办日期时落在截止日期、再退到当天，
+                        // 见 CalendarEventPlanner）；宿主没有日历编排上下文
+                        // （calendarAvailable = false）时置灰
+                        calendarEnabled = calendarAvailable,
                         onAddToCalendar = onAddToCalendar,
                         // 无截止日期、已标记完成或当前视图不显示倒计时（收集箱）：倒计时
                         // 项置灰不可点（无截止时仓库不变式也保证开关必为 false；完成后仅
@@ -475,8 +475,8 @@ internal fun TodoDetailSheet(
  * 与 scale/alpha 进出场由宿主处理；卡片右缘对齐锚点（按钮）右缘、顶缘与按钮底缘留
  * [TitleMenuGap]，锚点在行尾故自卡片右上角长出。
  *
- * 条目：添加到日历（[calendarEnabled] = false 即待办时间为「无」时置灰不可点；可点时
- * 点按交 [onAddToCalendar] 由宿主写入系统日历，流程见 CalendarAddFlow——待办页与日程页
+ * 条目：添加到日历（[calendarEnabled] = false 即宿主没有日历编排上下文时置灰不可点；
+ * 可时点按交 [onAddToCalendar] 由宿主写入系统日历，流程见 CalendarAddFlow——待办页与日程页
  * 两个详情浮层共用同一套）；倒计时在
  * [countdownEnabled] 为 false（无截止日期、该待办已标记完成，或当前视图不显示倒计时）
  * 时置灰不可点（`classppColors.negative`）、可点时点按把新开关值交 [onCountdownToggle]
@@ -509,7 +509,7 @@ private fun TitleMoreMenu(
                     PopupMenuItem(
                         label = stringResource(R.string.todo_menu_add_to_calendar),
                         icon = R.drawable.ic_calendar_regular,
-                        // 时间为「无」的待办置灰（无可写入日历的时刻）；可点时交宿主写入
+                        // 所有待办都可添加到日历；置灰仅由宿主是否具备日历编排上下文决定
                         enabled = calendarEnabled,
                         onClick = {
                             onAddToCalendar()
