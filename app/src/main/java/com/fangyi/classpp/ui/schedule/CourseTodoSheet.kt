@@ -29,6 +29,7 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.WeekPattern
+import com.fangyi.classpp.data.occurrencesOn
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.CardSection
@@ -54,7 +55,8 @@ import dev.chrisbanes.haze.rememberHazeState
 private data class CourseOccurrence(val date: IsoDate, val startMinute: Int)
 
 /**
- * 从 [today] 起向学期末逐日扫描本课程的下一次上课：星期与周规律都命中的第一天。
+ * 从 [today] 起向学期末逐日扫描本课程的下一次上课：以「周规律 + 单次调课」的实际课次
+ * 为准（[occurrencesOn]），源课次被调走则跳过，调课卡按目标节次参与。
  * 扫描含今天——当天这节课**已开始**（开始时刻 ≤ [nowMinute]）则视为已过，取下一次；
  * 走到学期末仍无课次（已结课）返回 null。
  */
@@ -64,20 +66,18 @@ private fun nextCourseOccurrence(
     today: IsoDate,
     nowMinute: Int,
 ): CourseOccurrence? {
-    val startMinute = schedule.slots.getOrNull(entry.startSlot - 1)
-        ?.let { TimeText.parseMinutes(it.startTime) }
-        ?: DEFAULT_DEADLINE_MINUTE
     val termStartMonday = schedule.termStart.mondayOfWeek()
     val termEndExclusive = termStartMonday + schedule.totalWeeks * 7
     var date = today
     while (date.epochDay < termEndExclusive.epochDay) {
-        val week = ((date.mondayOfWeek() - termStartMonday) / 7).toInt() + 1
-        if (week in 1..schedule.totalWeeks &&
-            date.isoDayOfWeek() == entry.dayOfWeek &&
-            entry.weeks.contains(week) &&
-            (date != today || startMinute > nowMinute)
-        ) {
-            return CourseOccurrence(date, startMinute)
+        val occurrence = schedule.occurrencesOn(date).firstOrNull { it.course.id == entry.id }
+        if (occurrence != null) {
+            val startMinute = schedule.slots.getOrNull(occurrence.startSlot - 1)
+                ?.let { TimeText.parseMinutes(it.startTime) }
+                ?: DEFAULT_DEADLINE_MINUTE
+            if (date != today || startMinute > nowMinute) {
+                return CourseOccurrence(date, startMinute)
+            }
         }
         date += 1
     }
@@ -176,10 +176,25 @@ internal fun CourseTodoSheet(
                 // 置灰切不过去），deadline 恒非空；let 仅作类型收窄的兜底
                 val deadline = when (mode) {
                     DeadlineMode.NextClass -> nextOccurrence
-                    DeadlineMode.Custom -> CourseOccurrence(
-                        date = termStartMonday + (customWeek - 1) * 7 + (entry.dayOfWeek - 1),
-                        startMinute = slotStartMinute,
-                    )
+                    DeadlineMode.Custom -> {
+                        // 所选周那一次课若被调课，则用目标日期/节次；否则按原周规律
+                        val adjustment = schedule.adjustmentFor(entry.id, customWeek)
+                        if (adjustment != null) {
+                            val minute = schedule.slots.getOrNull(adjustment.toStartSlot - 1)
+                                ?.let { TimeText.parseMinutes(it.startTime) }
+                                ?: DEFAULT_DEADLINE_MINUTE
+                            CourseOccurrence(
+                                date = termStartMonday +
+                                    (adjustment.toWeek - 1) * 7 + (adjustment.toDayOfWeek - 1),
+                                startMinute = minute,
+                            )
+                        } else {
+                            CourseOccurrence(
+                                date = termStartMonday + (customWeek - 1) * 7 + (entry.dayOfWeek - 1),
+                                startMinute = slotStartMinute,
+                            )
+                        }
+                    }
                 }
                 deadline?.let {
                     onConfirm(

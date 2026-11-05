@@ -63,6 +63,47 @@ sealed class ScheduleError(val message: String) {
     data class GridConflict(val dayOfWeek: Int, val a: CourseRef, val b: CourseRef) :
         ScheduleError("courses ${a.id} and ${b.id} overlap on day $dayOfWeek with intersecting weeks")
 
+    /** 调课引用的课程不存在（文件被外部改写/导入脏数据） */
+    data class AdjustmentCourseMissing(val adjustmentId: String, val courseId: String) :
+        ScheduleError("adjustment $adjustmentId references missing course $courseId")
+
+    /** 原课次不成立：fromWeek 越界，或该课当周本来就不上课 */
+    data class AdjustmentSourceInvalid(
+        val adjustmentId: String,
+        val courseName: String,
+        val fromWeek: Int,
+    ) : ScheduleError("adjustment $adjustmentId source week $fromWeek is not an occurrence of '$courseName'")
+
+    /** 目标越界；[detail] 仅供日志，不进 UI */
+    data class AdjustmentTargetInvalid(
+        val adjustmentId: String,
+        val courseName: String,
+        val detail: String,
+    ) : ScheduleError("adjustment $adjustmentId target invalid: $detail")
+
+    /** 调课前后是同一个时间（选了个寂寞） */
+    data class AdjustmentUnchanged(val adjustmentId: String, val courseName: String) :
+        ScheduleError("adjustment $adjustmentId target equals source")
+
+    /** 同一门课的同一周只能有一条调课记录 */
+    data class AdjustmentDuplicate(
+        val courseId: String,
+        val courseName: String,
+        val fromWeek: Int,
+    ) : ScheduleError("'$courseName' already has an adjustment for week $fromWeek")
+
+    /** 调课目标格与常规课/另一条调课冲突；[conflictName] 供 UI 点名 */
+    data class AdjustmentConflict(
+        val adjustmentId: String,
+        val courseName: String,
+        val conflictName: String,
+        val dayOfWeek: Int,
+        val startSlot: Int,
+        val endSlot: Int,
+    ) : ScheduleError(
+        "adjustment $adjustmentId ('$courseName') overlaps '$conflictName' on day $dayOfWeek slots $startSlot-$endSlot",
+    )
+
     /** 设置变更会波及已有课程时整体拒绝，绝不静默删课 */
     data class CoursesOutOfRange(val affected: List<CourseRef>) :
         ScheduleError("${affected.size} course(s) would fall out of range: " +

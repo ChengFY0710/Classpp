@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.checkInPercent
 import com.fangyi.classpp.data.isOverdue
+import com.fangyi.classpp.data.model.CourseAdjustment
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.Todo
@@ -70,6 +71,9 @@ import com.fangyi.classpp.ui.theme.isDarkTheme
  *
  * 浮层框架是 [OverlaySheet]：两段式关闭（visible / onDismissed）。[covered] = 被上层浮层
  * （如新建课程待办）盖住时本层缩小后退（分层动效，透传容器）。
+ *
+ * [adjustment] 非空 = 从调课卡点进来：位置胶囊显示**目标**周/节次/时间，信息卡补一行
+ * 「调课：原 周X 第a-b节」；[entry] 仍是原课程，备注保存写回原条目。
  */
 @Composable
 fun CourseDetailSheet(
@@ -83,6 +87,8 @@ fun CourseDetailSheet(
     onTodoCheckedChange: ((todo: Todo, checked: Boolean) -> Unit)? = null,
     covered: Boolean = false,
     onCreateTodoClick: () -> Unit = {},
+    // 非空 = 从调课卡点进来的：位置胶囊显示目标时间，信息卡补一行「原 周X 第a-b节」
+    adjustment: CourseAdjustment? = null,
 ) {
     // 本次打开期间勾选过的待办（id + 分期日期）：无 key——浮层卸载（收场动画结束）即清空，
     // 换课程随调用方的 key(detail.id) 重建。勾选先本地记账，StateFlow 回流后
@@ -107,17 +113,22 @@ fun CourseDetailSheet(
     val dark = MaterialTheme.isDarkTheme
     val tagColors = remember(schedule, dark) { schedule.courseTagColors(dark) }
 
-    // 位置信息胶囊行：与 AddCoursePanel 的构造同源（星期数组 + 节次 + 起止时间）
+    // 位置信息胶囊行：与 AddCoursePanel 的构造同源（星期数组 + 节次 + 起止时间）。
+    // 从调课卡进来时显示**目标**位置；[entry] 保持原课程，备注保存仍写回原条目。
     val weekdays = stringArrayResource(R.array.weekdays)
-    val weekdayName = weekdays[(entry.dayOfWeek - 1).coerceIn(weekdays.indices)]
-    val slotLabel = if (entry.span == 1) {
-        stringResource(R.string.slot_format, entry.startSlot)
+    val displayDay = adjustment?.toDayOfWeek ?: entry.dayOfWeek
+    val displayStart = adjustment?.toStartSlot ?: entry.startSlot
+    val displaySpan = adjustment?.toSpan ?: entry.span
+    val displayEnd = displayStart + displaySpan - 1
+    val weekdayName = weekdays[(displayDay - 1).coerceIn(weekdays.indices)]
+    val slotLabel = if (displaySpan == 1) {
+        stringResource(R.string.slot_format, displayStart)
     } else {
-        stringResource(R.string.slot_range_format, entry.startSlot, entry.endSlot)
+        stringResource(R.string.slot_range_format, displayStart, displayEnd)
     }
     val slots = schedule.slots
-    val startDef = slots[(entry.startSlot - 1).coerceIn(slots.indices)]
-    val endDef = slots[(entry.endSlot - 1).coerceIn(slots.indices)]
+    val startDef = slots[(displayStart - 1).coerceIn(slots.indices)]
+    val endDef = slots[(displayEnd - 1).coerceIn(slots.indices)]
     val timeRange = stringResource(
         R.string.time_range_format,
         startDef.startTime,
@@ -162,6 +173,18 @@ fun CourseDetailSheet(
                 }
                 // 上课周数：文案与编辑面板的周数摘要同款（weeksSummary，如「第 1-16 周」）
                 add(SheetInfoEntry(stringResource(R.string.edit_course_weeks), weeksSummary(entry.weeks)))
+                if (adjustment != null) {
+                    add(
+                        SheetInfoEntry(
+                            label = stringResource(R.string.detail_adjust_label),
+                            value = stringResource(
+                                R.string.detail_adjust_from,
+                                weekdays[(entry.dayOfWeek - 1).coerceIn(weekdays.indices)],
+                                slotRangeText(entry.startSlot, entry.span),
+                            ),
+                        ),
+                    )
+                }
             }
             // 判空留在分组之外：三项都缺时不出现空分组、也不多出一段 12dp 间隔
             if (infoEntries.isNotEmpty()) {

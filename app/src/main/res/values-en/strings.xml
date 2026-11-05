@@ -301,10 +301,47 @@
     <string name="time_scheme_merge">Merge two periods into one</string>
     <string name="time_scheme_merge_done">Merged %1$d adjacent period pairs, confirm to apply</string>
     <string name="error_time_scheme_name">Scheme name must not be blank</string>
-    <!-- Rescheduling & holidays (schedule settings): placeholder nav rows, feature pending -->
+    <!-- Rescheduling & holidays (schedule settings): rescheduling is live, holidays remain a placeholder -->
     <string name="section_adjustment">Rescheduling &amp; Holidays</string>
     <string name="adjust_course_label">Reschedule Classes</string>
     <string name="adjust_holiday_label">Adjust Holidays</string>
+    <!-- Rescheduling (schedule edit mode): context menu, editor sheet, settings list -->
+    <string name="edit_adjust_course">Reschedule</string>
+    <string name="edit_edit_adjust">Edit Reschedule</string>
+    <string name="adjust_sheet_title">Reschedule</string>
+    <string name="adjust_sheet_edit_title">Edit Reschedule</string>
+    <string name="adjust_list_title">Rescheduled Classes</string>
+    <string name="adjust_list_empty">No rescheduled classes. Long-press a course in the schedule to add one.</string>
+    <string name="adjust_section_source">Original class</string>
+    <string name="adjust_section_target">Move to</string>
+    <string name="adjust_source_week_hint">Pick the week to move; gray weeks have no class.</string>
+    <string name="adjust_target_week">Target week</string>
+    <string name="adjust_target_day">Weekday</string>
+    <string name="adjust_target_slot">Starting period</string>
+    <string name="adjust_week_value">Week %1$d</string>
+    <string name="adjust_slot_value">Period %1$d</string>
+    <string name="adjust_slot_with_time">Period %1$d · %2$s</string>
+    <string name="adjust_source_summary">Week %1$d %2$s %3$s</string>
+    <string name="adjust_target_summary">Week %1$d %2$s %3$s</string>
+    <string name="adjust_summary_arrow">%1$s → %2$s</string>
+    <string name="adjust_weekend_hidden">This is a 5-day schedule; weekend columns are hidden. Switch to the 7-day view to see this class.</string>
+    <string name="adjust_no_source_week">This course has no class to reschedule.</string>
+    <string name="adjust_week_picker_title">Week</string>
+    <string name="adjust_slot_picker_title">Starting period</string>
+    <string name="adjust_unit_week">wk</string>
+    <string name="adjust_unit_slot">period</string>
+    <string name="error_adjust_source_invalid">\"%1$s\" has no class in week %2$d</string>
+    <string name="error_adjust_target_invalid">The target is outside the term or period range</string>
+    <string name="error_adjust_unchanged">The class time is unchanged</string>
+    <string name="error_adjust_conflict">The target conflicts with \"%1$s\"</string>
+    <string name="error_adjust_duplicate">\"%1$s\" already has a reschedule for week %2$d</string>
+    <string name="error_adjust_course_missing">The course for this reschedule no longer exists</string>
+    <string name="error_adjust_slot_merge_blocked">Some rescheduled classes cannot align with the new periods. Remove or adjust them first.</string>
+    <string name="course_adjusted_badge">Moved</string>
+    <string name="course_adjusted_badge_description">Rescheduled class</string>
+    <string name="course_adjusted_badge_description_full">Rescheduled class, originally %1$s %2$s</string>
+    <string name="detail_adjust_label">Rescheduled</string>
+    <string name="detail_adjust_from">Originally %1$s %2$s</string>
     <!-- Timetable (Personalization) -->
     <string name="section_schedule">Timetable</string>
     <string name="card_height_label">Course card height</string>

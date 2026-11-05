@@ -216,8 +216,9 @@ fun CourseGrid(
     // 值在下方读取一次为布尔，经 WeekPage/GridRow 传给各课程卡片
     showTeacher: State<Boolean> = mutableStateOf(true),
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)? = null,
-    onEditClick: ((courseId: String) -> Unit)? = null,
-    onCourseLongClick: ((courseId: String, anchor: Rect) -> Unit)? = null,
+    // adjustmentId 非空 = 被点的是调课卡（编辑态据此打开调课面板而不是课程面板）
+    onEditClick: ((courseId: String, adjustmentId: String?) -> Unit)? = null,
+    onCourseLongClick: ((courseId: String, adjustmentId: String?, anchor: Rect) -> Unit)? = null,
     onSlotLongClick: ((day: Int, slot: TimeSlot, anchor: Rect) -> Unit)? = null,
 ) {
     // 列数至少 1（0/负值理论上被校验挡住，这里兜一下避免算出空页宽或除零）
@@ -368,8 +369,8 @@ private fun WeekPage(
     addCardsMounted: Boolean,
     editMode: Boolean,
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)?,
-    onEditClick: ((courseId: String) -> Unit)?,
-    onCourseLongClick: ((courseId: String, anchor: Rect) -> Unit)?,
+    onEditClick: ((courseId: String, adjustmentId: String?) -> Unit)?,
+    onCourseLongClick: ((courseId: String, adjustmentId: String?, anchor: Rect) -> Unit)?,
     onSlotLongClick: ((day: Int, slot: TimeSlot, anchor: Rect) -> Unit)?,
 ) {
     val density = LocalDensity.current
@@ -478,13 +479,19 @@ private fun WeekPage(
                                     // 整张跨节卡可点（含续格覆盖区域）→ 编辑态开编辑面板、
                                     // 浏览态开课程详情浮层，含义由调用方的回调路由
                                     onClick = if (onEditClick != null) {
-                                        { onEditClick(course.id) }
+                                        { onEditClick(course.id, course.adjustmentId) }
                                     } else {
                                         null
                                     },
                                     // 编辑态长按 → 复制课程 / 以这门课为基准新建交替课程
                                     onLongClick = if (editMode && onCourseLongClick != null) {
-                                        { onCourseLongClick(course.id, cardBounds.windowBounds()) }
+                                        {
+                                            onCourseLongClick(
+                                                course.id,
+                                                course.adjustmentId,
+                                                cardBounds.windowBounds(),
+                                            )
+                                        }
                                     } else {
                                         null
                                     },
@@ -645,8 +652,8 @@ private fun GridRow(
     addCardsMounted: Boolean,
     editMode: Boolean,
     onAddClick: ((day: Int, slot: TimeSlot) -> Unit)?,
-    onEditClick: ((courseId: String) -> Unit)?,
-    onCourseLongClick: ((courseId: String, anchor: Rect) -> Unit)?,
+    onEditClick: ((courseId: String, adjustmentId: String?) -> Unit)?,
+    onCourseLongClick: ((courseId: String, adjustmentId: String?, anchor: Rect) -> Unit)?,
     onSlotLongClick: ((day: Int, slot: TimeSlot, anchor: Rect) -> Unit)?,
 ) {
     val outline = MaterialTheme.colorScheme.outline
@@ -722,13 +729,19 @@ private fun GridRow(
                             .onGloballyPositioned { cardBounds.coordinates = it },
                         // 点击：编辑态开编辑面板、浏览态开课程详情浮层（回调路由见 ScheduleScreen）
                         onClick = if (onEditClick != null) {
-                            { onEditClick(course.id) }
+                            { onEditClick(course.id, course.adjustmentId) }
                         } else {
                             null
                         },
                         // 长按菜单仅编辑态传入（复制/新建交替都是编辑动作）
                         onLongClick = if (editMode && onCourseLongClick != null) {
-                            { onCourseLongClick(course.id, cardBounds.windowBounds()) }
+                            {
+                                onCourseLongClick(
+                                    course.id,
+                                    course.adjustmentId,
+                                    cardBounds.windowBounds(),
+                                )
+                            }
                         } else {
                             null
                         },

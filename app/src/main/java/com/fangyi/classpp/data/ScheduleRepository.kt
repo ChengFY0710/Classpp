@@ -1,6 +1,7 @@
 package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.export.ShareCodec
+import com.fangyi.classpp.data.model.CourseAdjustment
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.DEFAULT_SLOTS
 import com.fangyi.classpp.data.model.IsoDate
@@ -21,13 +22,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-
-/** 某门课在某周课表中的一次呈现 */
-data class CourseOccurrence(
-    val course: CourseEntry,
-    /** 该周是否真上课（false = 本周不上，UI 按 showInactiveCourses 决定灰显或隐藏） */
-    val active: Boolean,
-)
 
 /**
  * 课表仓库：内存真源（StateFlow）+ 磁盘持久化（[ScheduleStore]）。
@@ -404,17 +398,29 @@ class ScheduleRepository internal constructor(
         commit(
             fileState.value.replace(
                 target,
-                target.copy(courses = target.courses.filterNot { it.id == courseId }),
+                target.copy(
+                    courses = target.courses.filterNot { it.id == courseId },
+                    // 课程删了，它的单次调课一起清掉，不留悬空引用
+                    adjustments = target.adjustments.filterNot { it.courseId == courseId },
+                ),
             ),
         )
     }
 
-    /** 批量删除；未知 id 宽容忽略（批量语义） */
+    /** 批量删除；未知 id 宽容忽略（批量语义），同时级联清理这些课程的调课 */
     suspend fun removeCourses(scheduleId: String, courseIds: List<String>): OpResult = mutex.withLock {
         val target = scheduleOrNull(scheduleId)
             ?: return@withLock OpResult.Err(ScheduleError.NotFound(scheduleId))
         val drop = courseIds.toSet()
-        commit(fileState.value.replace(target, target.copy(courses = target.courses.filterNot { it.id in drop })))
+        commit(
+            fileState.value.replace(
+                target,
+                target.copy(
+                    courses = target.courses.filterNot { it.id in drop },
+                    adjustments = target.adjustments.filterNot { it.courseId in drop },
+                ),
+            ),
+        )
     }
 
     /**
@@ -429,7 +435,36 @@ class ScheduleRepository internal constructor(
     suspend fun replaceCourses(scheduleId: String, courses: List<CourseEntry>): OpResult = mutex.withLock {
         val target = scheduleOrNull(scheduleId)
             ?: return@withLock OpResult.Err(ScheduleError.NotFound(scheduleId))
-        val updated = target.copy(courses = courses)
+        val courseIds = courses.mapTo(HashSet()) { it.id }
+        val updated = target.copy(
+            courses = courses,
+            // 课程被整份替换掉后，它的调课不留悬空引用
+            adjustments = target.adjustments.filter { it.courseId in courseIds },
+        )
+        val errors = ScheduleValidator.validateCourses(updated)
+        if (errors.isNotEmpty()) return@withLock OpResult.Err(errors.first())
+        commit(fileState.value.replace(target, updated))
+    }
+
+    /**
+     * 整份替换课程 + 单次调课（编辑态保存走这条）：课程与例外表一次校验、一次提交，
+     * 草稿要么整体生效、要么原样不动。
+     *
+     * 调课可能引用本次编辑里**新加、尚未落库**的课程 id，因此不能走 [replaceCourses] 之后
+     * 再逐条写调课；两者必须同批提交。达到草稿里已删除课程的调课会被防御性清理。
+     */
+    suspend fun replaceCoursesAndAdjustments(
+        scheduleId: String,
+        courses: List<CourseEntry>,
+        adjustments: List<CourseAdjustment>,
+    ): OpResult = mutex.withLock {
+        val target = scheduleOrNull(scheduleId)
+            ?: return@withLock OpResult.Err(ScheduleError.NotFound(scheduleId))
+        val courseIds = courses.mapTo(HashSet()) { it.id }
+        val updated = target.copy(
+            courses = courses,
+            adjustments = adjustments.filter { it.courseId in courseIds },
+        )
         val errors = ScheduleValidator.validateCourses(updated)
         if (errors.isNotEmpty()) return@withLock OpResult.Err(errors.first())
         commit(fileState.value.replace(target, updated))
@@ -444,15 +479,14 @@ class ScheduleRepository internal constructor(
      */
     fun coursesForWeek(scheduleId: String, week: Int): List<CourseOccurrence> {
         val s = scheduleOrNull(scheduleId) ?: return emptyList()
-        if (week < 1) return s.courses.map { CourseOccurrence(it, active = false) }
         if (week > s.totalWeeks) return emptyList()
-        return s.courses.map { CourseOccurrence(it, active = it.weeks.contains(week)) }
+        return s.courses.occurrencesForWeek(week, s.adjustments)
     }
 
-    /** 占据 (day, slot) 格子的课程；span 覆盖该节即命中，含本周不活跃的（灰显候选） */
+    /** 占据 (day, slot) 格子的课程；span 覆盖该节即命中，含本周不活跃的（灰显候选）与调课卡 */
     fun courseAt(scheduleId: String, week: Int, day: Int, slot: Int): CourseOccurrence? =
         coursesForWeek(scheduleId, week).firstOrNull {
-            it.course.dayOfWeek == day && slot in it.course.startSlot..it.course.endSlot
+            it.dayOfWeek == day && slot in it.startSlot..it.endSlot
         }
 
     /**

@@ -2,10 +2,12 @@ package com.fangyi.classpp.ui.schedule
 
 import androidx.compose.ui.graphics.Color
 import com.fangyi.classpp.data.CourseOccurrence
+import com.fangyi.classpp.data.model.CourseAdjustment
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeSlotDef
+import com.fangyi.classpp.data.occurrencesForWeek
 import java.util.Calendar
 import java.util.Date
 
@@ -19,24 +21,44 @@ import java.util.Date
 /**
  * 课程条目 → 渲染课程：[active] = 本周是否上课，false 时卡片按规格置灰。
  * 编辑态的草稿直接喂 [CourseEntry]，与仓库路径共用同一个映射。
+ *
+ * [dayOfWeek]/[slotId]/[span] 默认取原条目；调课卡传入目标值，原值另存进
+ * `adjustedFrom*` 供角标/详情显示。
  */
-internal fun CourseEntry.toUiCourse(active: Boolean): Course = Course(
+internal fun CourseEntry.toUiCourse(
+    active: Boolean,
+    dayOfWeek: Int = this.dayOfWeek,
+    slotId: Int = startSlot,
+    span: Int = this.span,
+    adjustmentId: String? = null,
+): Course = Course(
     name = name,
     teacher = teacher,
     location = location,
     dayOfWeek = dayOfWeek,
-    slotId = startSlot,
+    slotId = slotId,
     color = CourseColor.valueOf(color.name),
     active = active,
     span = span,
     id = id,
+    adjustmentId = adjustmentId,
+    adjustedFromDayOfWeek = if (adjustmentId != null) this.dayOfWeek else null,
+    adjustedFromSlot = if (adjustmentId != null) this.startSlot else null,
+    adjustedFromSpan = if (adjustmentId != null) this.span else null,
 )
 
 /**
- * 课程呈现 → 渲染课程：跨节次课程只在起始格命中，故 [Course.slotId] 取 startSlot；
+ * 课程呈现 → 渲染课程：跨节次课程只在起始格命中，故 [Course.slotId] 取有效起始节；
  * [CourseColor] 两枚举同名同值，经 name 直转；[CourseOccurrence.active] 随行作置灰标志。
+ * 调课卡的有效位置取 [CourseOccurrence.dayOfWeek]/[startSlot]/[span]，原位置进 `adjustedFrom*`。
  */
-internal fun CourseOccurrence.toUiCourse(): Course = course.toUiCourse(active)
+internal fun CourseOccurrence.toUiCourse(): Course = course.toUiCourse(
+    active = active,
+    dayOfWeek = dayOfWeek,
+    slotId = startSlot,
+    span = span,
+    adjustmentId = adjustment?.id,
+)
 
 /**
  * 仓库路径：一周的全部课程呈现 → 每周渲染卡（同格只留当周那张，并附交替课色条）。
@@ -61,9 +83,16 @@ internal fun Schedule.courseTagColors(darkTheme: Boolean): Map<String, Color> =
     courses.distinctBy { it.name }
         .associate { it.name to CourseColor.valueOf(it.color.name).barColor(dark = !darkTheme) }
 
-/** 编辑态草稿路径：与仓库路径共用同一套解析（编辑态一律显示全部课，不受显示开关影响） */
-internal fun List<CourseEntry>.toWeekCards(week: Int): List<Course> =
-    map { it.toUiCourse(active = it.weeks.contains(week)) }
+/**
+ * 编辑态草稿路径：与仓库路径共用同一套解析（编辑态一律显示全部课，不受显示开关影响）。
+ * 调课与常规课一样先合成 occurrence 再解析，保证源课次当周消失、目标格出现调课卡。
+ */
+internal fun List<CourseEntry>.toWeekCards(
+    week: Int,
+    adjustments: List<CourseAdjustment> = emptyList(),
+): List<Course> =
+    occurrencesForWeek(week, adjustments)
+        .map { it.toUiCourse() }
         .resolveWeekCards()
 
 /** 节次定义列表 → 渲染节次：数据层列表位置即节次编号，转成 1-based id（与网格 key 一致） */

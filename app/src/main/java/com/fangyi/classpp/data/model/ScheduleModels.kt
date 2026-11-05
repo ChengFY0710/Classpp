@@ -129,7 +129,34 @@ data class CourseEntry(
 }
 
 /**
- * 一份课表 = 学期 + 作息 + 课程 + 显示开关（每份课表各带一套设置）。
+ * 一次「单次课次调课」：把 [courseId] 在第 [fromWeek] 周的那一次课，移到
+ * 第 [toWeek] 周的星期 [toDayOfWeek] 第 [toStartSlot] 节开始（占 [toSpan] 节）。
+ *
+ * 只描述**一次课次**，不改课程本身的周期规律；[courseId] + [fromWeek] 唯一标识原课次
+ * （一门课每周至多一次，由 [CourseEntry] 的单个 dayOfWeek 决定）。[toSpan] 建单时取
+ * 原课程 span，之后独立保存——课程后续改跨度不会反过来改写已调好的课次。
+ *
+ * 默认值让旧数据、导入/导出、备份与分享天然兼容；旧版本 app 读到新字段会按
+ * `ignoreUnknownKeys` 忽略，再保存即丢弃，是否 bump 格式版本由发布策略决定。
+ */
+@Serializable
+data class CourseAdjustment(
+    val id: String = newUuid(),
+    val courseId: String,
+    /** 原课次所在教学周（该课当周必须有课） */
+    val fromWeek: Int,
+    /** 调到第几周 */
+    val toWeek: Int,
+    /** 调到星期几：1 = 周一 … 7 = 周日 */
+    val toDayOfWeek: Int,
+    /** 调到第几节开始（1-based） */
+    val toStartSlot: Int,
+    /** 调到后占用节数，默认沿用原课程 span */
+    val toSpan: Int,
+)
+
+/**
+ * 一份课表 = 学期 + 作息 + 课程 + 单次调课 + 显示开关（每份课表各带一套设置）。
  * 合法性由 ScheduleValidator 全量校验；此模型只承载数据。
  */
 @Serializable
@@ -153,6 +180,11 @@ data class Schedule(
      */
     val slotDurationMinutes: Int = 100,
     val courses: List<CourseEntry> = emptyList(),
+    /**
+     * 单次课次调课（例外表）：只影响 [CourseAdjustment.fromWeek] 那一次课，
+     * 其余周仍按 [CourseEntry.weeks] 的周期规律上课。空表 = 无调课。
+     */
+    val adjustments: List<CourseAdjustment> = emptyList(),
     /** 本周不上的课是否显示（显示时 UI 置灰）——课表级全局开关 */
     val showInactiveCourses: Boolean = true,
 ) {
@@ -169,6 +201,10 @@ data class Schedule(
 
     /** [course] 是否在第 [week] 周上课 */
     fun isWeekActive(course: CourseEntry, week: Int): Boolean = course.weeks.contains(week)
+
+    /** 定位某门课在第 [week] 周那一次课次的调课记录；没有返回 null */
+    fun adjustmentFor(courseId: String, week: Int): CourseAdjustment? =
+        adjustments.firstOrNull { it.courseId == courseId && it.fromWeek == week }
 }
 
 /** 默认 5 节大课（时长均 100 分钟），与现有 UI mock 一致 */

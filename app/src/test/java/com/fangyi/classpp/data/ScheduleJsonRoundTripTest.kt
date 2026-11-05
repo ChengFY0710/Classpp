@@ -1,5 +1,6 @@
 package com.fangyi.classpp.data
 
+import com.fangyi.classpp.data.model.CourseAdjustment
 import com.fangyi.classpp.data.model.CourseColor
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.DEFAULT_SLOTS
@@ -38,6 +39,17 @@ class ScheduleJsonRoundTripTest {
                 color = CourseColor.Yellow,
             ),
         ),
+        adjustments = listOf(
+            CourseAdjustment(
+                id = "a-uuid-1",
+                courseId = "c-uuid-1",
+                fromWeek = 3,
+                toWeek = 5,
+                toDayOfWeek = 5,
+                toStartSlot = 3,
+                toSpan = 2,
+            ),
+        ),
         showInactiveCourses = false,
     )
 
@@ -58,6 +70,13 @@ class ScheduleJsonRoundTripTest {
         val json = ScheduleJson.encodeStorage(fullSchedule)
         assertTrue(json.contains("\"termStart\":\"2026-03-02\""))
         assertTrue(json.contains("\"termEnd\":\"2026-06-19\""))
+    }
+
+    @Test
+    fun `adjustments are encoded to disk`() {
+        val json = ScheduleJson.encodeStorage(fullSchedule)
+        assertTrue(json.contains("\"adjustments\""))
+        assertTrue(json.contains("\"a-uuid-1\""))
     }
 
     @Test

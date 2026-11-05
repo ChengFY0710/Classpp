@@ -23,9 +23,12 @@ private val MenuOverlap = 12.dp
 private val MenuLeftInset = 8.dp
 
 /**
- * 长按课程卡弹出的上下文菜单：「复制课程」（可选）+「新建交替课程」。
+ * 长按课程卡弹出的上下文菜单：「复制课程」（可选）+「调课 / 编辑调课」（可选）+
+ * 「新建交替课程」。
  *
  * [onCopy] 传 null 时不显示复制项（单节 / 跨节课程都可复制，见 ScheduleScreen 的菜单挂载点）。
+ * [onAdjust] 传 null 时不显示调课项（当前浏览周不是该课的上课周、或调课卡自身不长按出菜单）；
+ * [adjustIsEditing] = 该课次已有调课，文案改成「编辑调课」。
  * [expanded] / [onExitFinished] 供宿主拆「锚点 + 可见性」两态（见 [ContextMenuPopup]）。
  * [hazeState] 下发给 [PopupMenuPopup] 做毛玻璃（采样课表网格 hazeSource，与周数弹窗同材质），
  * null（如 @Preview）退化为不透明白卡。
@@ -36,13 +39,27 @@ internal fun CourseContextMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
     onCopy: (() -> Unit)?,
-    onNewAlternate: () -> Unit,
+    onNewAlternate: (() -> Unit)? = null,
+    onAdjust: (() -> Unit)? = null,
+    adjustIsEditing: Boolean = false,
     hazeState: HazeState? = null,
     onExitFinished: () -> Unit = {},
 ) {
     val items = buildList {
         if (onCopy != null) add(PopupMenuItem(stringResource(R.string.edit_copy_course), onClick = onCopy))
-        add(PopupMenuItem(stringResource(R.string.edit_new_alternate), onClick = onNewAlternate))
+        if (onAdjust != null) {
+            add(
+                PopupMenuItem(
+                    label = stringResource(
+                        if (adjustIsEditing) R.string.edit_edit_adjust else R.string.edit_adjust_course,
+                    ),
+                    onClick = onAdjust,
+                ),
+            )
+        }
+        if (onNewAlternate != null) {
+            add(PopupMenuItem(stringResource(R.string.edit_new_alternate), onClick = onNewAlternate))
+        }
     }
     ContextMenuPopup(
         anchor = anchor,

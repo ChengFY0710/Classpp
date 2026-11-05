@@ -30,7 +30,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -59,6 +62,12 @@ private val CardBudgetSafety = 1.dp
 
 /** 卡内文本行之间的间距：课程名↔教师、教师↔地点（教师行显示时计入内容高度） */
 private val CardLineGap = 1.dp
+
+/**
+ * 调课角标占宽（含与课程名的 2dp 间距）：行预算测课程名自然行数时扣掉这段，
+ * 否则长课名被角标挤出的额外行不在预算里，紧凑卡会裁掉地点/结束时间。
+ */
+private val AdjustedBadgeWidth = 34.dp
 
 /**
  * 可见行（起止时间、教师按需）对应的内容高度：与行预算的固定开销同源——
@@ -369,13 +378,19 @@ fun CourseCard(
                 val fixedPx = visibleContentPx - nameLinePx - locationLinePx
                 val textWidthPx = constraints.maxWidth -
                     with(localDensity) { (CardPaddingStart + CardPaddingEnd).toPx() }
+                // 调课卡的课程名与角标同一行：测宽时扣掉角标，行数与实际排版一致
+                val nameWidthPx = textWidthPx - if (course.adjustmentId != null) {
+                    with(localDensity) { AdjustedBadgeWidth.toPx() }
+                } else {
+                    0f
+                }
                 CardPlan(
                     visibility = visibility,
                     lines = allocateCardLines(
                         budgetPx = constraints.maxHeight - fixedPx,
                         nameLinePx = nameLinePx,
                         locationLinePx = locationLinePx,
-                        wantedName = rememberNaturalLineCount(course.name, nameStyle, textWidthPx),
+                        wantedName = rememberNaturalLineCount(course.name, nameStyle, nameWidthPx),
                         wantedLocation = rememberNaturalLineCount(course.location, locationStyle, textWidthPx),
                     ),
                 )
@@ -408,17 +423,24 @@ fun CourseCard(
                         )
                     }
                     Column() {
-                        Text(
-                            text = course.name,
-                            style = ClassppTextTokens.compactCardTitle,
-                            color = if (course.active) {
-                                MaterialTheme.colorScheme.onSurface
-                            } else {
-                                inactiveColor
-                            },
-                            maxLines = plan.lines.name,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text(
+                                text = course.name,
+                                style = ClassppTextTokens.compactCardTitle,
+                                color = if (course.active) {
+                                    MaterialTheme.colorScheme.onSurface
+                                } else {
+                                    inactiveColor
+                                },
+                                maxLines = plan.lines.name,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            if (course.adjustmentId != null) {
+                                Spacer(modifier = Modifier.width(2.dp))
+                                AdjustedBadge(course)
+                            }
+                        }
                         Spacer(modifier = Modifier.size(CardLineGap))
                         // 教师留空时不占位，地点直接上移
                         if (hasTeacher) {
@@ -455,6 +477,41 @@ fun CourseCard(
             }
         }
     }
+}
+
+/**
+ * 调课卡角标：课程名右侧的小号「调」胶囊。刻意做成内联元素而非角标浮层——
+ * 紧凑卡的文字行宽很紧，内联会参与测量，不会盖住课程名。
+ */
+@Composable
+private fun AdjustedBadge(course: Course, modifier: Modifier = Modifier) {
+    // 无障碍描述带上原课次，视障用户也能知道这张卡是从哪次课调过来的
+    val weekday = course.adjustedFromDayOfWeek
+    val start = course.adjustedFromSlot
+    val end = course.adjustedFromEndSlot
+    val description = if (weekday != null && start != null && end != null) {
+        val weekdays = stringArrayResource(R.array.weekdays)
+        val dayName = weekdays[(weekday - 1).coerceIn(weekdays.indices)]
+        val slotText = if (start == end) {
+            stringResource(R.string.slot_format, start)
+        } else {
+            stringResource(R.string.slot_range_format, start, end)
+        }
+        stringResource(R.string.course_adjusted_badge_description_full, dayName, slotText)
+    } else {
+        stringResource(R.string.course_adjusted_badge_description)
+    }
+    Text(
+        text = stringResource(R.string.course_adjusted_badge),
+        style = ClassppTextTokens.courseAdjustedBadge,
+        color = MaterialTheme.colorScheme.onPrimary,
+        maxLines = 1,
+        modifier = modifier
+            .semantics { contentDescription = description }
+            .clip(RoundedCornerShape(3.dp))
+            .background(MaterialTheme.colorScheme.primary)
+            .padding(horizontal = 3.dp, vertical = 1.dp),
+    )
 }
 
 /** 添加卡片中间加号的尺寸（设计稿里占卡片中部一大块） */

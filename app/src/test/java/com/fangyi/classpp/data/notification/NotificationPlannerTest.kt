@@ -1,5 +1,6 @@
 package com.fangyi.classpp.data.notification
 
+import com.fangyi.classpp.data.model.CourseAdjustment
 import com.fangyi.classpp.data.model.CourseColor
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.DEFAULT_SLOTS
@@ -57,6 +58,48 @@ class NotificationPlannerTest {
         assertEquals(NotificationKind.Course, planned[0].kind)
         assertEquals("数学", planned[0].title)
         assertEquals("8:00-9:40 上课 · A101", planned[0].text)
+    }
+
+    @Test
+    fun rescheduledOccurrenceMovesReminder() {
+        // 第 1 周周一（10/12）调到第 2 周周二（10/20）第 2 节；
+        // 窗口内应只剩「第 2 周周一原课次」与「10/20 的调课卡」
+        val adjustment = CourseAdjustment(
+            id = "adj1",
+            courseId = "c1",
+            fromWeek = 1,
+            toWeek = 2,
+            toDayOfWeek = 2,
+            toStartSlot = 2,
+            toSpan = 1,
+        )
+        val planned = plan(
+            schedule(
+                termStart = IsoDate.of(2026, 10, 12),
+                termEnd = IsoDate.of(2026, 11, 8),
+                course = course(name = "数学", dayOfWeek = 1, weeks = WeekPattern.everyWeek(4)),
+                adjustments = listOf(adjustment),
+            ),
+            emptyList(),
+            settings(lead = 0),
+            now,
+        )
+
+        assertEquals(2, planned.size)
+        // 源日期（10/12）不再排提醒
+        assertTrue(planned.none { it.key == "C:c1:${today.epochDay}" })
+        // 第 2 周原课次照常
+        assertEquals(
+            localMillis(today.plus(7), 8 * 60),
+            planned.first { it.key == "C:c1:${today.plus(7).epochDay}" }.eventAtMillis,
+        )
+        // 调课卡用调课 id 做 key，按目标日期的第 2 节时间触发
+        val moved = planned.first { it.key.endsWith(":A:adj1") }
+        assertEquals(
+            "C:c1:${IsoDate.of(2026, 10, 20).epochDay}:A:adj1",
+            moved.key,
+        )
+        assertEquals(localMillis(IsoDate.of(2026, 10, 20), 10 * 60 + 10), moved.eventAtMillis)
     }
 
     @Test
@@ -367,6 +410,7 @@ class NotificationPlannerTest {
         termEnd: IsoDate,
         course: CourseEntry,
         slots: List<TimeSlotDef> = DEFAULT_SLOTS,
+        adjustments: List<CourseAdjustment> = emptyList(),
     ) = Schedule(
         id = "s1",
         name = "测试课表",
@@ -374,6 +418,7 @@ class NotificationPlannerTest {
         termEnd = termEnd,
         slots = slots,
         courses = listOf(course),
+        adjustments = adjustments,
     )
 
     private fun course(

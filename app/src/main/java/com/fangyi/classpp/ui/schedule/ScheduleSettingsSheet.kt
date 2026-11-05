@@ -26,6 +26,8 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.OpResult
 import com.fangyi.classpp.data.ScheduleError
 import com.fangyi.classpp.data.ScheduleRepository
+import com.fangyi.classpp.data.ScheduleValidator
+import com.fangyi.classpp.data.model.CourseAdjustment
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.DEFAULT_SLOTS
 import com.fangyi.classpp.data.model.DEFAULT_SLOT_DURATION_MINUTES
@@ -33,6 +35,7 @@ import com.fangyi.classpp.data.model.DEFAULT_TIME_SCHEME_ID
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeScheme
+import com.fangyi.classpp.data.model.TimeSlotDef
 import com.fangyi.classpp.ui.components.BottomDateSelectCard
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.CardSection
@@ -83,12 +86,19 @@ internal fun ScheduleSettingsSheet(
     // 当前有效课程（编辑态 = 课程草稿，非编辑态 = 仓库课程）：合并输入，
     // 也是确认时课程越界校验与同批落库的口径
     mergeCourses: List<CourseEntry>,
+    // 当前有效调课（编辑态 = 调课草稿）：仓库看不到尚未落库的调课，设置变更前先用它预校验
+    adjustments: List<CourseAdjustment>,
     repository: ScheduleRepository,
     visible: Boolean,
     onDismissed: () -> Unit,
     onDismiss: () -> Unit,
-    // 合并落库成功后把重映射后的课程同步回编辑草稿
+    // 合并落库成功后把重映射后的课程 / 调课同步回编辑草稿
     onCoursesMerged: (List<CourseEntry>) -> Unit,
+    onAdjustmentsMerged: (List<CourseAdjustment>) -> Unit,
+    // 打开「设置调课」列表（列表与编辑浮层由宿主叠在本浮层之上）
+    onOpenAdjustments: () -> Unit,
+    // 宿主的列表/编辑浮层可见时传 true：本浮层缩小后退（分层动效）
+    extraCovered: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -102,6 +112,35 @@ internal fun ScheduleSettingsSheet(
     // 统一提交入口：Err 即时 toast，Ok 无事
     fun submit(result: OpResult) {
         (result as? OpResult.Err)?.let { showError(it.error) }
+    }
+
+    /**
+     * 设置变更前的整表预校验：仓库只看得见已落库的课程/调课，编辑态草稿里的新课程与
+     * 新调课都不在仓库里。若直接提交，可能出现「设置已生效、保存编辑时才发现调课越界」
+     * 的延迟失败；这里用「草稿课程 + 草稿调课 + 候选设置」先校验，失败即 toast 并中止。
+     */
+    fun validateWithDraft(
+        start: IsoDate = schedule.termStart,
+        end: IsoDate = schedule.termEnd,
+        slots: List<TimeSlotDef> = schedule.slots,
+        duration: Int = schedule.slotDurationMinutes,
+        courses: List<CourseEntry> = mergeCourses,
+        adjustmentsOverride: List<CourseAdjustment> = adjustments,
+    ): Boolean {
+        val candidate = schedule.copy(
+            termStart = start,
+            termEnd = end,
+            slots = slots,
+            slotDurationMinutes = duration,
+            courses = courses,
+            adjustments = adjustmentsOverride,
+        )
+        val errors = ScheduleValidator.validate(candidate)
+        if (errors.isNotEmpty()) {
+            showError(errors.first())
+            return false
+        }
+        return true
     }
 
     // 返回键关浮层（同切换课表浮层：组合顺序上晚于编辑态的取消 BackHandler，优先接管）
@@ -163,7 +202,8 @@ internal fun ScheduleSettingsSheet(
         ),
         onDismiss = onDismiss,
         visible = visible,
-        covered = pickerVisible || weeksVisible || schemeSheetVisible,
+        // 子浮层/滚轮/宿主的调课列表与编辑浮层在场时，本浮层缩小后退
+        covered = pickerVisible || weeksVisible || schemeSheetVisible || extraCovered,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
         // 共享采样源：叠在本浮层上的两枚滚轮弹窗拿它做卡片磨砂背景模糊（见 sheetHazeState 声明处）
@@ -191,11 +231,16 @@ internal fun ScheduleSettingsSheet(
                 schemeSheetMounted = true
                 schemeSheetVisible = true
             },
+            onOpenAdjustments = onOpenAdjustments,
             onRename = { name ->
                 scope.launch { submit(repository.renameSchedule(schedule.id, name)) }
             },
             onTerm = { start, end ->
-                scope.launch { submit(repository.setTerm(schedule.id, start, end)) }
+                // 草稿里的调课可能因学期缩短而越界：先用草稿整表校验，避免设置已生效、
+                // 保存编辑时才报错
+                if (validateWithDraft(start = start, end = end)) {
+                    scope.launch { submit(repository.setTerm(schedule.id, start, end)) }
+                }
             },
             onDays = { days ->
                 // 只改天数：周六/周日的课保留在数据里，5 天视图只是不画它们，
@@ -231,6 +276,24 @@ internal fun ScheduleSettingsSheet(
                     // 只落在草稿里），仓库中已保存的旧跨度不参与判定——否则草稿已把课改短、
                     // 仓库还停在旧末节时，缩节数会被旧数据误判成课程越界
                     val effectiveCourses = mergedCourses ?: mergeCourses
+                    // 调课目标节次按「起止时间不变」对齐到新节表；对不齐就整体拒绝，
+                    // 不让调课悄悄指到别的时段（与合并课程的对齐口径一致）
+                    val remappedAdjustments = remapAdjustments(schedule.slots, slots, adjustments)
+                    if (remappedAdjustments == null) {
+                        AppToasts.show(context, context.getString(R.string.error_adjust_slot_merge_blocked))
+                        return@TimeSchemeSheet
+                    }
+                    // 仓库看不到草稿里的调课：提交前用草稿整表预校验，避免设置已生效、
+                    // 保存编辑时才发现调课越界
+                    if (!validateWithDraft(
+                            slots = slots,
+                            duration = duration,
+                            courses = effectiveCourses,
+                            adjustmentsOverride = remappedAdjustments,
+                        )
+                    ) {
+                        return@TimeSchemeSheet
+                    }
                     scope.launch {
                         val result = if (effectiveCourses == schedule.courses) {
                             // 与已保存课程一致：只动设置
@@ -249,6 +312,9 @@ internal fun ScheduleSettingsSheet(
                         when (result) {
                             OpResult.Ok -> {
                                 mergedCourses?.let(onCoursesMerged)
+                                if (remappedAdjustments != adjustments) {
+                                    onAdjustmentsMerged(remappedAdjustments)
+                                }
                                 schemeSheetVisible = false
                             }
                             is OpResult.Err -> showError(result.error)
@@ -331,6 +397,8 @@ private fun SettingsContent(
     onPickWeeks: () -> Unit,
     // 课程时间方案：叠开子浮层（明细与提交都在子浮层内完成）
     onOpenTimeScheme: () -> Unit,
+    // 设置调课：叠开调课列表（列表与编辑浮层由宿主组合在本浮层之后）
+    onOpenAdjustments: () -> Unit,
     onRename: (name: String) -> Unit,
     onTerm: (start: IsoDate, end: IsoDate) -> Unit,
     onDays: (days: Int) -> Unit,
@@ -397,13 +465,12 @@ private fun SettingsContent(
         }
 
         CardSection(title = stringResource(R.string.section_adjustment)) {
-            // 调课 / 调休入口：占位导航行（暂无功能，点击不响应），接入时把 onClick
-            // 换成各自的挂载请求回调
+            // 调课已接入（叠开列表）；调休仍是占位行，点击暂不响应
             SettingsCard(
                 items = listOf(
                     SettingsCardItem.Nav(
                         label = stringResource(R.string.adjust_course_label),
-                        onClick = {},
+                        onClick = onOpenAdjustments,
                     ),
                     SettingsCardItem.Nav(
                         label = stringResource(R.string.adjust_holiday_label),
@@ -466,6 +533,31 @@ private fun ScheduleNameField(name: String, onRename: (String) -> Unit) {
 }
 
 /**
+ * 节表变更时把调课目标按「起止时间不变」对齐到新节表；任一条对不齐返回 null。
+ *
+ * 与 [previewSlotMerge] 对课程的口径一致：合并后的新节必须保留原来的开始/结束时刻，
+ * 否则调课会悄悄指到另一个时段。返回 null 由调用方整体拒绝本次节表变更。
+ */
+private fun remapAdjustments(
+    oldSlots: List<TimeSlotDef>,
+    newSlots: List<TimeSlotDef>,
+    adjustments: List<CourseAdjustment>,
+): List<CourseAdjustment>? {
+    if (oldSlots == newSlots || adjustments.isEmpty()) return adjustments
+    return adjustments.map { adjustment ->
+        val oldStart = oldSlots.getOrNull(adjustment.toStartSlot - 1) ?: return null
+        val oldEnd = oldSlots.getOrNull(adjustment.toStartSlot + adjustment.toSpan - 2) ?: return null
+        val newStart = newSlots.indexOfFirst { it.startTime == oldStart.startTime }
+        val newEnd = newSlots.indexOfFirst { it.endTime == oldEnd.endTime }
+        if (newStart < 0 || newEnd < newStart) return null
+        adjustment.copy(
+            toStartSlot = newStart + 1,
+            toSpan = newEnd - newStart + 1,
+        )
+    }
+}
+
+/**
  * [ScheduleError] → 本地化文案。课程类错误正常都经仓库 rejection() 归并为 CoursesOutOfRange，
  * 但兜底分支同样给中文结论，绝不把内部 id / 英文 message 直接显示给用户。
  * 非 Composable（context 版）：供 showError 在回调/协程里调用，结果走系统 Toast。
@@ -486,6 +578,14 @@ internal fun ScheduleError.toMessage(context: Context): String = when (this) {
         affected.take(3).joinToString { it.name },
     )
 
+    is ScheduleError.AdjustmentSourceInvalid ->
+        context.getString(R.string.error_adjust_source_invalid, courseName, fromWeek)
+    is ScheduleError.AdjustmentTargetInvalid -> context.getString(R.string.error_adjust_target_invalid)
+    is ScheduleError.AdjustmentUnchanged -> context.getString(R.string.error_adjust_unchanged)
+    is ScheduleError.AdjustmentConflict -> context.getString(R.string.error_adjust_conflict, conflictName)
+    is ScheduleError.AdjustmentDuplicate ->
+        context.getString(R.string.error_adjust_duplicate, courseName, fromWeek)
+    is ScheduleError.AdjustmentCourseMissing -> context.getString(R.string.error_adjust_course_missing)
     is ScheduleError.NotFound -> context.getString(R.string.error_not_found)
     is ScheduleError.PersistFailed -> context.getString(R.string.error_persist_failed)
     // 真正没覆盖到的形态：不暴露内部 message，只给通用提示（细节进日志由调用方决定）
@@ -507,6 +607,7 @@ private fun SettingsContentPreview() {
             onDatePickRequest = { _, _ -> },
             onPickWeeks = {},
             onOpenTimeScheme = {},
+            onOpenAdjustments = {},
             onRename = {},
             onTerm = { _, _ -> },
             onDays = {},

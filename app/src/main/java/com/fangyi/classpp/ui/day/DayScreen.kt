@@ -122,6 +122,7 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeText
+import com.fangyi.classpp.data.occurrencesOn
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoTimeKind
@@ -2419,18 +2420,24 @@ private fun dayCourseAlertData(schedule: Schedule?, today: IsoDate, nowMinute: I
     )
 }
 
-/** 今天该上的课（周号 + 星期 + 周规律过滤，开学前/学期外整段跳过）。**不按 daysPerWeek
- *  跳过周末**：那只是网格的显示列数，周末真实排了课仍要提醒/上时间轴。上课提醒卡
- *  （[dayCourseAlertData]）与时间轴任务卡（[dayTasks]）共用同一取课口径 */
-private fun todayCourseEntries(schedule: Schedule, today: IsoDate): List<CourseEntry> {
-    val termStartMonday = schedule.termStart.mondayOfWeek().epochDay
-    val week = ((today.mondayOfWeek().epochDay - termStartMonday) / 7).toInt() + 1
-    if (week !in 1..schedule.totalWeeks) return emptyList()
-    val dayOfWeek = today.isoDayOfWeek()
-    return schedule.courses
-        .filter { it.dayOfWeek == dayOfWeek && it.weeks.contains(week) }
-        .sortedBy { it.startSlot }
-}
+/**
+ * 今天该上的课（周号 + 星期 + 周规律 + 单次调课，开学前/学期外整段跳过）。
+ * **不按 daysPerWeek 跳过周末**：那只是网格的显示列数，周末真实排了课仍要提醒/上时间轴。
+ *
+ * 调课口径统一走 [occurrencesOn]：源课次在源日期消失，调课卡在目标日期以目标节次出现。
+ * 返回的 [CourseEntry] 已把 dayOfWeek/startSlot/span 改写成当天有效值——下游
+ * （上课提醒卡、时间轴）只认这三个字段。
+ *
+ * 上课提醒卡（[dayCourseAlertData]）与时间轴任务卡（[dayTasks]）共用同一取课口径。
+ */
+private fun todayCourseEntries(schedule: Schedule, today: IsoDate): List<CourseEntry> =
+    schedule.occurrencesOn(today).map { occurrence ->
+        occurrence.course.copy(
+            dayOfWeek = occurrence.dayOfWeek,
+            startSlot = occurrence.startSlot,
+            span = occurrence.span,
+        )
+    }
 
 /**
  * 时间轴任务卡取数（组合期调用——截止取色是 @Composable 口径，读 LocalToday）：

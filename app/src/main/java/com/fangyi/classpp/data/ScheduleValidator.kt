@@ -1,10 +1,11 @@
 package com.fangyi.classpp.data
 
+import com.fangyi.classpp.data.model.CourseAdjustment
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeText
 
 /**
- * 课表纯函数校验（R2–R14）。无 I/O、不修改输入，返回**全部**错误而非 fail-fast，
+ * 课表纯函数校验（R2–R15）。无 I/O、不修改输入，返回**全部**错误而非 fail-fast，
  * 供未来 UI 一次展示。
  *
  * 规则一览：
@@ -14,6 +15,7 @@ import com.fangyi.classpp.data.model.TimeText
  *  R7 时间有序不重叠                R8 课表名非空白
  *  R9-R12 课程字段/周数范围          R13 同一天 span 相交且周数相交 ⇒ 冲突
  *  R14 课程最后一次上课不得晚于 termEnd（按**日期**判定；termEnd 可停在周中）
+ *  R15 单次调课：源课次成立、目标越界/无变化、同课次唯一、目标格与常规课/其他调课冲突
  * （原 R1「termStart 必须周一」已取消：开学日可为任意一天，周数一律按日历周对齐。）
  *
  * 另有两条"视图切换友好"约定：
@@ -28,10 +30,11 @@ object ScheduleValidator {
     const val MAX_SLOTS = 30
     const val MAX_SPAN = 5
 
-    /** 全量校验：设置 + 课程（含同格周数重叠） */
+    /** 全量校验：设置 + 课程（含同格周数重叠）+ 单次调课 */
     fun validate(schedule: Schedule): List<ScheduleError> {
         val settings = validateSettingsOnly(schedule)
-        return settings + courses(schedule, settingsValid = settings.isEmpty())
+        val settingsValid = settings.isEmpty()
+        return settings + courses(schedule, settingsValid) + adjustments(schedule, settingsValid)
     }
 
     /** 只校验设置（学期/天数/节次/课表名），不查课程 —— 供 setTerm/setSlots 等快速路径 */
@@ -86,9 +89,11 @@ object ScheduleValidator {
         return errors
     }
 
-    /** 只校验课程字段与同格冲突（依赖设置的周界检查在设置非法时自动跳过） */
-    fun validateCourses(schedule: Schedule): List<ScheduleError> =
-        courses(schedule, settingsValid = validateSettingsOnly(schedule).isEmpty())
+    /** 只校验课程字段/同格冲突与调课（依赖设置的周界检查在设置非法时自动跳过） */
+    fun validateCourses(schedule: Schedule): List<ScheduleError> {
+        val settingsValid = validateSettingsOnly(schedule).isEmpty()
+        return courses(schedule, settingsValid) + adjustments(schedule, settingsValid)
+    }
 
     private fun courses(schedule: Schedule, settingsValid: Boolean): List<ScheduleError> {
         val errors = mutableListOf<ScheduleError>()
@@ -170,6 +175,146 @@ object ScheduleValidator {
             }
         }
 
+        return errors
+    }
+
+    /**
+     * 单次调课校验（R15）：
+     *  - 课程存在，原课次成立（fromWeek 在学期内且该课当周有课）；
+     *  - 目标周/日期/星期/节次在合法范围；toSpan 1..[MAX_SPAN] 且放得下；
+     *  - 同一 (courseId, fromWeek) 唯一；目标与源完全相同视为无变化；
+     *  - 目标格不与「该周真正在上的常规课」或另一条调课卡在时间上重叠。
+     *
+     * 目标周里被**别的调课**移走的常规课次是空出来的格子，不参与冲突判定；
+     * 同一周同一格内改节次时源课次会被移除，也不与自身冲突。
+     */
+    private fun adjustments(schedule: Schedule, settingsValid: Boolean): List<ScheduleError> {
+        if (schedule.adjustments.isEmpty()) return emptyList()
+        val errors = mutableListOf<ScheduleError>()
+        val coursesById = schedule.courses.associateBy { it.id }
+
+        fun sourceExists(adj: CourseAdjustment): Boolean {
+            val course = coursesById[adj.courseId] ?: return false
+            if (settingsValid && adj.fromWeek !in 1..schedule.totalWeeks) return false
+            return course.weeks.contains(adj.fromWeek)
+        }
+
+        // 目标周里被调走的常规课次：那些格子当周是空的，不算冲突
+        val movedSources = schedule.adjustments
+            .filter { sourceExists(it) }
+            .mapTo(HashSet()) { it.courseId to it.fromWeek }
+
+        val seen = HashSet<Pair<String, Int>>()
+        for (adj in schedule.adjustments) {
+            val course = coursesById[adj.courseId]
+            if (course == null) {
+                errors += ScheduleError.AdjustmentCourseMissing(adj.id, adj.courseId)
+                continue
+            }
+            if (!seen.add(adj.courseId to adj.fromWeek)) {
+                errors += ScheduleError.AdjustmentDuplicate(adj.courseId, course.name, adj.fromWeek)
+                continue
+            }
+            if (!sourceExists(adj)) {
+                errors += ScheduleError.AdjustmentSourceInvalid(adj.id, course.name, adj.fromWeek)
+            }
+
+            // 结构性目标字段（不依赖学期设置）
+            if (adj.toSpan !in 1..MAX_SPAN || adj.toDayOfWeek !in 1..7) {
+                errors += ScheduleError.AdjustmentTargetInvalid(
+                    adj.id,
+                    course.name,
+                    "day ${adj.toDayOfWeek} span ${adj.toSpan}",
+                )
+                continue
+            }
+
+            var targetUsable = true
+            if (settingsValid) {
+                if (adj.toWeek !in 1..schedule.totalWeeks) {
+                    errors += ScheduleError.AdjustmentTargetInvalid(
+                        adj.id,
+                        course.name,
+                        "week ${adj.toWeek} out of 1..${schedule.totalWeeks}",
+                    )
+                    targetUsable = false
+                } else {
+                    val targetDate = schedule.termStart.mondayOfWeek() +
+                        (adj.toWeek - 1) * 7 + (adj.toDayOfWeek - 1)
+                    if (targetDate.epochDay > schedule.termEnd.epochDay) {
+                        errors += ScheduleError.AdjustmentTargetInvalid(
+                            adj.id,
+                            course.name,
+                            "target $targetDate after termEnd",
+                        )
+                        targetUsable = false
+                    }
+                }
+                val targetEnd = adj.toStartSlot + adj.toSpan - 1
+                if (adj.toStartSlot !in 1..schedule.slotCount || targetEnd > schedule.slotCount) {
+                    errors += ScheduleError.AdjustmentTargetInvalid(
+                        adj.id,
+                        course.name,
+                        "slots ${adj.toStartSlot}..$targetEnd out of 1..${schedule.slotCount}",
+                    )
+                    targetUsable = false
+                }
+                if (adj.toWeek == adj.fromWeek &&
+                    adj.toDayOfWeek == course.dayOfWeek &&
+                    adj.toStartSlot == course.startSlot &&
+                    adj.toSpan == course.span
+                ) {
+                    errors += ScheduleError.AdjustmentUnchanged(adj.id, course.name)
+                    targetUsable = false
+                }
+            }
+            if (!targetUsable) continue
+
+            val start = adj.toStartSlot
+            val end = start + adj.toSpan - 1
+            var conflict: ScheduleError? = null
+
+            // 目标周该天真正的常规课（被别的调课移走的那一次不算）
+            for (other in schedule.courses) {
+                if (other.id == course.id && adj.toWeek == adj.fromWeek) continue
+                if ((other.id to adj.toWeek) in movedSources) continue
+                if (other.dayOfWeek != adj.toDayOfWeek) continue
+                if (!other.weeks.contains(adj.toWeek)) continue
+                if (start <= other.endSlot && other.startSlot <= end) {
+                    conflict = ScheduleError.AdjustmentConflict(
+                        adjustmentId = adj.id,
+                        courseName = course.name,
+                        conflictName = other.name,
+                        dayOfWeek = adj.toDayOfWeek,
+                        startSlot = start,
+                        endSlot = end,
+                    )
+                    break
+                }
+            }
+
+            // 与另一条调课卡的目标时间
+            if (conflict == null) {
+                for (other in schedule.adjustments) {
+                    if (other.id == adj.id) continue
+                    if (other.toWeek != adj.toWeek || other.toDayOfWeek != adj.toDayOfWeek) continue
+                    val otherEnd = other.toStartSlot + other.toSpan - 1
+                    if (start <= otherEnd && other.toStartSlot <= end) {
+                        val otherName = coursesById[other.courseId]?.name ?: other.courseId
+                        conflict = ScheduleError.AdjustmentConflict(
+                            adjustmentId = adj.id,
+                            courseName = course.name,
+                            conflictName = otherName,
+                            dayOfWeek = adj.toDayOfWeek,
+                            startSlot = start,
+                            endSlot = end,
+                        )
+                        break
+                    }
+                }
+            }
+            conflict?.let { errors += it }
+        }
         return errors
     }
 }

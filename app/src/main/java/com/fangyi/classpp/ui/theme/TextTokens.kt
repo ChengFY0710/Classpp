@@ -123,6 +123,8 @@ object ClassppTextTokens {
     val compactTagText = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp)
     /** 课表课程卡时间行：12sp Medium，等宽数字避免时间切换抖动（添加卡起止时间同源）。 */
     val courseCardMeta = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp).tabularNumbers()
+    /** 调课卡「调」角标：9sp SemiBold，行高 10sp；紧凑卡片内唯一的小号角标文字。 */
+    val courseAdjustedBadge = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.SemiBold, lineHeight = 10.sp, letterSpacing = 0.sp)
     /** 课表课程卡教师行：11sp Medium，行高 16 与时间行同节奏。 */
     val courseCardTeacher = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, letterSpacing = 0.sp)
     /** 课表课程卡地点行：11sp Medium，与教师行同档。 */

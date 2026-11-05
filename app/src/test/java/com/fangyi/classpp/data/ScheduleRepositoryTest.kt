@@ -1,5 +1,6 @@
 package com.fangyi.classpp.data
 
+import com.fangyi.classpp.data.model.CourseAdjustment
 import com.fangyi.classpp.data.model.DEFAULT_SLOTS
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Schedule
@@ -817,5 +818,88 @@ class ScheduleRepositoryTest {
         val reopened = repo().schedules.value.first { it.id == id }
         assertEquals(twoSlots, reopened.slots)
         assertEquals(shortened, reopened.courses)
+    }
+
+    // ---------- 单次调课 ----------
+
+    private fun testAdjustment(
+        id: String = "adj1",
+        courseId: String = "c1",
+        fromWeek: Int = 1,
+        toWeek: Int = 2,
+    ) = CourseAdjustment(
+        id = id,
+        courseId = courseId,
+        fromWeek = fromWeek,
+        toWeek = toWeek,
+        toDayOfWeek = 4,
+        toStartSlot = 2,
+        toSpan = 1,
+    )
+
+    @Test
+    fun `replaceCoursesAndAdjustments commits both atomically`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+        r.upsertCourse(id, testCourse(id = "c1")).assertOk()
+        val saved = r.schedules.value.single()
+        val adjustment = testAdjustment()
+
+        r.replaceCoursesAndAdjustments(id, saved.courses, listOf(adjustment)).assertOk()
+
+        assertEquals(listOf(adjustment), r.schedules.value.single().adjustments)
+        // 落盘后重启仍在
+        assertEquals(listOf(adjustment), repo().schedules.value.single().adjustments)
+    }
+
+    @Test
+    fun `coursesForWeek applies adjustments`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+        r.upsertCourse(id, testCourse(id = "c1")).assertOk()
+        r.replaceCoursesAndAdjustments(
+            id,
+            r.schedules.value.single().courses,
+            listOf(testAdjustment()),
+        ).assertOk()
+
+        // 源周次消失，目标周次出现调课卡（有效位置 = 目标星期/节次）
+        assertTrue(r.coursesForWeek(id, 1).none { it.course.id == "c1" })
+        val adjusted = r.coursesForWeek(id, 2).first { it.course.id == "c1" && it.adjusted }
+        assertEquals(4, adjusted.dayOfWeek)
+        assertEquals(2, adjusted.startSlot)
+    }
+
+    @Test
+    fun `replaceCoursesAndAdjustments rejects invalid adjustment losslessly`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+        r.upsertCourse(id, testCourse(id = "c1")).assertOk()
+        val before = r.schedules.value.single()
+
+        val error = r.replaceCoursesAndAdjustments(
+            id,
+            before.courses,
+            listOf(testAdjustment(fromWeek = 20)),
+        ).assertErr()
+
+        assertTrue(error is ScheduleError.AdjustmentSourceInvalid)
+        assertEquals(before, r.schedules.value.single())
+    }
+
+    @Test
+    fun `removing a course drops its adjustments`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+        r.upsertCourse(id, testCourse(id = "c1")).assertOk()
+        r.replaceCoursesAndAdjustments(
+            id,
+            r.schedules.value.single().courses,
+            listOf(testAdjustment()),
+        ).assertOk()
+
+        r.removeCourse(id, "c1").assertOk()
+
+        assertTrue(r.schedules.value.single().adjustments.isEmpty())
     }
 }

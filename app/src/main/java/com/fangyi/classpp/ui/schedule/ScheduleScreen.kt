@@ -448,8 +448,10 @@ fun ScheduleScreen(
             // 编辑条目从草稿反查，删除后反查落空 → 面板自动关闭
             var editTargetId by rememberSaveable { mutableStateOf("") }
             // 课程详情浮层：被点课程 id（浏览态点课卡进入）；空 = 未打开。
-            // 编辑态点课卡仍开编辑面板，路由见 onEditClick；条目从当前课表反查
+            // 编辑态点课卡仍开编辑面板，路由见 onEditClick；条目从当前课表反查。
+            // 点的是调课卡时另外记住调课 id：详情展示目标时间并补一行原课次
             var detailTargetId by rememberSaveable { mutableStateOf("") }
+            var detailAdjustmentId by rememberSaveable { mutableStateOf("") }
             // 长按菜单：被长按卡的 id + 窗口坐标；空 = 菜单未打开。
             // 刻意不 rememberSaveable——菜单是瞬时 UI，旋转重建就收起（Rect 也不可存）
             var menuAnchor by remember { mutableStateOf<CardMenuAnchor?>(null) }
@@ -460,6 +462,14 @@ fun ScheduleScreen(
             var chooserSourceId by rememberSaveable { mutableStateOf("") }
             // 新建交替课程：源课 id（长按菜单进来）；空 = 面板未打开
             var alternateSourceId by rememberSaveable { mutableStateOf("") }
+            // 调课编辑面板：课程 id + 原课次周 + 已有调课 id（空 = 新建）。
+            // 与 AddCoursePanel 同款「id 状态 → 请求 → 两段式挂载」，旋转重建后仍能恢复
+            var adjustCourseId by rememberSaveable { mutableStateOf("") }
+            var adjustFromWeek by rememberSaveable { mutableStateOf(0) }
+            var adjustExistingId by rememberSaveable { mutableStateOf("") }
+            // 调课列表浮层（设置 → 设置调课）：可见性 + 挂载态两段式
+            var adjustListVisible by rememberSaveable { mutableStateOf(false) }
+            var adjustListMounted by remember { mutableStateOf(false) }
             // 课程剪贴板：被复制课程的完整快照。不随编辑会话/课表清除——退出编辑再进、
             // 甚至切换课表后仍可粘贴；源课被删不受影响（快照语义），再复制即覆盖
             var copiedEntry by rememberSaveable(stateSaver = CopiedEntrySaver) {
@@ -528,7 +538,10 @@ fun ScheduleScreen(
                                 // 「显示本周不上的课」开关影响：开关关掉时若把它们藏起来，
                                 // 用户看不见"占着这一格但本周不上"的课，加课撞上冲突却找不到原因
                                 // （第 0 周 = 开学前的当今周，整页课程全部置灰）
-                                courses = editSession.courses.toWeekCards(pageWeek),
+                                courses = editSession.courses.toWeekCards(
+                                    pageWeek,
+                                    editSession.adjustments,
+                                ),
                                 dates = dates.map { it.toUiDate() },
                                 highlightDate = if (pageWeek == todayWeek) {
                                     today
@@ -571,11 +584,20 @@ fun ScheduleScreen(
             // 点已有课卡：浏览态 → 课程详情浮层；编辑态：与之相交的只有一门 → 直接开编辑面板，
             // 多门（span 相交的交替课程，含跨节覆盖的续格课）→ 先让用户点名要编辑哪门，
             // 否则被跨节卡盖住的那几门永远进不去（它们不在本周的网格上）
-            val onEditClick: (String) -> Unit = remember(editSession) {
-                { courseId ->
+            val onEditClick: (String, String?) -> Unit = remember(editSession) {
+                { courseId, adjustmentId ->
                     val session = editSession
                     if (session == null) {
                         detailTargetId = courseId
+                        detailAdjustmentId = adjustmentId ?: ""
+                    } else if (adjustmentId != null) {
+                        // 点调课卡：直接编辑这条调课（而不是课程本身）
+                        val adjustment = session.adjustments.firstOrNull { it.id == adjustmentId }
+                        if (adjustment != null) {
+                            adjustCourseId = adjustment.courseId
+                            adjustFromWeek = adjustment.fromWeek
+                            adjustExistingId = adjustment.id
+                        }
                     } else {
                         val entry = session.courses.firstOrNull { it.id == courseId }
                         if (entry != null && session.courses.overlappingCourses(
@@ -591,10 +613,10 @@ fun ScheduleScreen(
                     }
                 }
             }
-            // 长按已有课卡 → 弹「新建交替课程」菜单，锚点用卡片自己的窗口坐标
-            val onCourseLongClick: (String, Rect) -> Unit = remember {
-                { courseId, anchor ->
-                    menuAnchor = CardMenuAnchor(courseId, anchor)
+            // 长按已有课卡 → 弹上下文菜单，锚点用卡片自己的窗口坐标
+            val onCourseLongClick: (String, String?, Rect) -> Unit = remember {
+                { courseId, adjustmentId, anchor ->
+                    menuAnchor = CardMenuAnchor(courseId, adjustmentId, anchor)
                     menuVisible = true
                 }
             }
@@ -667,7 +689,12 @@ fun ScheduleScreen(
                 val session = editSession
                 if (session != null) {
                     val blocking = ScheduleValidator
-                        .validateCourses(schedule.copy(courses = session.courses))
+                        .validateCourses(
+                            schedule.copy(
+                                courses = session.courses,
+                                adjustments = session.adjustments,
+                            ),
+                        )
                         .firstOrNull()
                     if (blocking != null) {
                         Toast.makeText(
@@ -677,7 +704,11 @@ fun ScheduleScreen(
                         ).show()
                     } else {
                         scope.launch {
-                            val result = repository.replaceCourses(schedule.id, session.courses)
+                            val result = repository.replaceCoursesAndAdjustments(
+                                schedule.id,
+                                session.courses,
+                                session.adjustments,
+                            )
                             if (result is OpResult.Err) {
                                 Toast.makeText(
                                     context,
@@ -1211,6 +1242,10 @@ fun ScheduleScreen(
             // 课程详情浮层：浏览态点课卡进入。条目从当前课表反查（浏览态无草稿），
             // 课程被删/切课表后反查落空 → 请求清空 → 浮层自动关闭。
             // 挂载/可见两段式与面板相同：收场动画期间 mountedDetail 保持内容稳定不闪空
+            val detailAdjustment = schedule.adjustments
+                .firstOrNull { it.id == detailAdjustmentId }
+            // 条目保持原课程（备注保存写回的就是它）；详情里的位置胶囊在 CourseDetailSheet
+            // 内按 adjustment 的目标值显示，原课次另起一行
             val detailEntry = schedule.courses.firstOrNull { it.id == detailTargetId }
             var detailMounted by remember { mutableStateOf<CourseEntry?>(null) }
             if (detailEntry != null) detailMounted = detailEntry
@@ -1239,6 +1274,7 @@ fun ScheduleScreen(
                         entry = detail,
                         schedule = schedule,
                         todos = courseTodos,
+                        adjustment = detailAdjustment,
                         covered = courseTodoVisible,
                         onTodoCheckedChange = { todo, checked ->
                             // 同 TodoScreen：异步提交，Err（如已被删）静默忽略。分期副本
@@ -1274,7 +1310,10 @@ fun ScheduleScreen(
                             courseTodoMounted = true
                             courseTodoVisible = true
                         },
-                        onDismiss = { detailTargetId = "" },
+                        onDismiss = {
+                            detailTargetId = ""
+                            detailAdjustmentId = ""
+                        },
                         onDismissed = { detailMounted = null },
                     )
                 }
@@ -1535,41 +1574,154 @@ fun ScheduleScreen(
             if (settingsSheetMounted) {
                 ScheduleSettingsSheet(
                     schedule = schedule,
-                    // 设置浮层只在编辑态打开：课程草稿才是网格真源，合并输入取草稿；
-                    // 合并落库成功后同步回草稿，避免保存编辑用旧 span 覆盖合并结果
+                    // 设置浮层只在编辑态打开：课程/调课草稿才是网格真源，合并输入取草稿；
+                    // 合并落库成功后同步回草稿，避免保存编辑用旧 span/旧节次覆盖结果
                     mergeCourses = editSession?.courses ?: schedule.courses,
+                    adjustments = editSession?.adjustments ?: schedule.adjustments,
                     repository = repository,
                     visible = settingsSheetVisible,
                     onDismissed = { settingsSheetMounted = false },
                     onDismiss = { settingsSheetVisible = false },
                     onCoursesMerged = { merged -> editSession?.replaceAll(merged) },
+                    onAdjustmentsMerged = { merged -> editSession?.replaceAdjustments(merged) },
+                    onOpenAdjustments = {
+                        adjustListMounted = true
+                        adjustListVisible = true
+                    },
+                    extraCovered = adjustListVisible || adjustCourseId.isNotEmpty(),
                 )
+            }
+
+            // 有效课表（编辑态 = 课程/调课草稿）：调课列表与编辑面板的校验口径。
+            // 仓库里的调课是上次保存的结果，草稿里的才是用户眼前的数据
+            val effectiveSchedule = schedule.copy(
+                courses = editSession?.courses ?: schedule.courses,
+                adjustments = editSession?.adjustments ?: schedule.adjustments,
+            )
+
+            // 设置 → 设置调课：列表叠在设置浮层之上（画在设置之后）
+            if (adjustListMounted) {
+                AdjustmentListSheet(
+                    visible = adjustListVisible,
+                    schedule = effectiveSchedule,
+                    covered = adjustCourseId.isNotEmpty(),
+                    onDismiss = { adjustListVisible = false },
+                    onDismissed = { adjustListMounted = false },
+                    onEdit = { adjustment ->
+                        adjustCourseId = adjustment.courseId
+                        adjustFromWeek = adjustment.fromWeek
+                        adjustExistingId = adjustment.id
+                    },
+                    onDelete = { adjustment -> editSession?.removeAdjustment(adjustment.id) },
+                )
+            }
+
+            // 调课编辑浮层：长按菜单 / 列表点击 / 点调课卡都汇到这里。
+            // 请求由 saveable 的 id/周状态派生；收场动画期间用 mounted 快照保持内容稳定
+            val adjustRequest = if (adjustCourseId.isNotEmpty()) {
+                AdjustRequest(adjustCourseId, adjustFromWeek, adjustExistingId)
+            } else {
+                null
+            }
+            var mountedAdjustRequest by remember { mutableStateOf<AdjustRequest?>(null) }
+            if (adjustRequest != null) mountedAdjustRequest = adjustRequest
+            mountedAdjustRequest?.let { request ->
+                key(request) {
+                    AdjustCourseSheet(
+                        visible = adjustRequest != null,
+                        schedule = effectiveSchedule,
+                        courseId = request.courseId,
+                        initialFromWeek = request.fromWeek,
+                        existingId = request.existingId.takeIf { it.isNotEmpty() },
+                        onDismiss = {
+                            adjustCourseId = ""
+                            adjustFromWeek = 0
+                            adjustExistingId = ""
+                        },
+                        onDismissed = { mountedAdjustRequest = null },
+                        onConfirm = { adjustment ->
+                            if (editSession?.adjustments?.any { it.id == adjustment.id } == true) {
+                                editSession.updateAdjustment(adjustment.id, adjustment)
+                            } else {
+                                editSession?.addAdjustment(adjustment)
+                            }
+                            adjustCourseId = ""
+                            adjustFromWeek = 0
+                            adjustExistingId = ""
+                        },
+                        onDelete = request.existingId.takeIf { it.isNotEmpty() }?.let { id ->
+                            {
+                                editSession?.removeAdjustment(id)
+                                adjustCourseId = ""
+                                adjustFromWeek = 0
+                                adjustExistingId = ""
+                            }
+                        },
+                    )
+                }
             }
 
             // 长按卡片的上下文菜单（Popup 独立窗口，位置由卡片坐标决定）。
             // 单节与跨节课程都可复制：粘贴端保留源课跨度
             menuAnchor?.let { anchor ->
                 val copiedToast = stringResource(R.string.toast_course_copied)
-                val source = editSession?.courses?.firstOrNull { it.id == anchor.courseId }
-                CourseContextMenu(
-                    anchor = anchor.rect,
-                    expanded = menuVisible,
-                    onDismiss = { menuVisible = false },
-                    onCopy = source?.let { entry ->
-                        {
-                            copiedEntry = entry
-                            AppToasts.show(context, copiedToast)
+                val session = editSession
+                val source = session?.courses?.firstOrNull { it.id == anchor.courseId }
+                // 调课卡的菜单只保留「编辑调课」：复制/新建交替针对周期课程，不适用于单次例外
+                val adjusted = anchor.adjustmentId?.let { id ->
+                    session?.adjustments?.firstOrNull { it.id == id }
+                }
+                if (adjusted != null) {
+                    CourseContextMenu(
+                        anchor = anchor.rect,
+                        expanded = menuVisible,
+                        onDismiss = { menuVisible = false },
+                        onCopy = null,
+                        onAdjust = {
+                            adjustCourseId = adjusted.courseId
+                            adjustFromWeek = adjusted.fromWeek
+                            adjustExistingId = adjusted.id
                             menuVisible = false
-                        }
-                    },
-                    onNewAlternate = {
-                        alternateSourceId = anchor.courseId
-                        menuVisible = false
-                    },
-                    hazeState = hazeState,
-                    // 锚点保留到退场播完（收起只翻 menuVisible）：退场期间内容稳定、动作仍可命中
-                    onExitFinished = { menuAnchor = null },
-                )
+                        },
+                        adjustIsEditing = true,
+                        hazeState = hazeState,
+                        onExitFinished = { menuAnchor = null },
+                    )
+                } else {
+                    // 当前浏览周不是该课的上课周时没有可调课次，隐藏调课项
+                    val existingAdjustment = source?.let { session.adjustmentFor(it.id, week) }
+                    val canAdjust = source != null && source.weeks.contains(week)
+                    CourseContextMenu(
+                        anchor = anchor.rect,
+                        expanded = menuVisible,
+                        onDismiss = { menuVisible = false },
+                        onCopy = source?.let { entry ->
+                            {
+                                copiedEntry = entry
+                                AppToasts.show(context, copiedToast)
+                                menuVisible = false
+                            }
+                        },
+                        onNewAlternate = {
+                            alternateSourceId = anchor.courseId
+                            menuVisible = false
+                        },
+                        onAdjust = if (canAdjust) {
+                            {
+                                adjustCourseId = anchor.courseId
+                                adjustFromWeek = week
+                                adjustExistingId = existingAdjustment?.id ?: ""
+                                menuVisible = false
+                            }
+                        } else {
+                            null
+                        },
+                        adjustIsEditing = existingAdjustment != null,
+                        hazeState = hazeState,
+                        // 锚点保留到退场播完（收起只翻 menuVisible）：退场期间内容稳定、动作仍可命中
+                        onExitFinished = { menuAnchor = null },
+                    )
+                }
             }
 
             // 空位长按的粘贴菜单：只有剪贴板有课时才会被 onSlotLongClick 打开。
@@ -1652,7 +1804,12 @@ private val EditBarHeightGuess = 112.dp
  * 长按菜单的锚点：被长按卡的 id（菜单动作用它回查草稿）与卡片的窗口坐标（菜单贴卡片定位）。
  * 非 saveable 的瞬时状态，见 [ScheduleScreen] 里的 menuAnchor。
  */
-private data class CardMenuAnchor(val courseId: String, val rect: Rect)
+private data class CardMenuAnchor(
+    val courseId: String,
+    /** 非空 = 被长按的是调课卡，菜单只给「编辑调课」 */
+    val adjustmentId: String?,
+    val rect: Rect,
+)
 
 /**
  * 空位长按菜单的锚点：被长按格的星期与节次（粘贴动作以这格为目标建课）+ 格子的窗口坐标
@@ -1681,6 +1838,16 @@ private data class AddCourseRequest(
 )
 
 /**
+ * 调课编辑面板请求：课程 id + 原课次周 + 已有调课 id（空 = 新建）。
+ * 三个入口（长按菜单 / 列表点击 / 点调课卡）归一成同一份参数；数据类相等性配合 key()。
+ */
+private data class AdjustRequest(
+    val courseId: String,
+    val fromWeek: Int,
+    val existingId: String,
+)
+
+/**
  * 数据层错误 → 用户可读文案（编辑流程的 Toast 用）。课程类错误一律点名到课程或给中文结论，
  * 绝不把内部 id / 英文 message 直接抛给用户；真正没覆盖到的形态才落到通用文案。
  */
@@ -1700,6 +1867,14 @@ private fun ScheduleError.toEditMessage(context: Context): String = when (this) 
     )
     // 冲突对里 a 是列表靠前的那门（新增的课总在末尾），故指它
     is ScheduleError.GridConflict -> context.getString(R.string.error_grid_conflict, a.name)
+    is ScheduleError.AdjustmentSourceInvalid ->
+        context.getString(R.string.error_adjust_source_invalid, courseName, fromWeek)
+    is ScheduleError.AdjustmentTargetInvalid -> context.getString(R.string.error_adjust_target_invalid)
+    is ScheduleError.AdjustmentUnchanged -> context.getString(R.string.error_adjust_unchanged)
+    is ScheduleError.AdjustmentConflict -> context.getString(R.string.error_adjust_conflict, conflictName)
+    is ScheduleError.AdjustmentDuplicate ->
+        context.getString(R.string.error_adjust_duplicate, courseName, fromWeek)
+    is ScheduleError.AdjustmentCourseMissing -> context.getString(R.string.error_adjust_course_missing)
     is ScheduleError.PersistFailed -> context.getString(R.string.error_persist_failed)
     is ScheduleError.NotFound -> context.getString(R.string.error_not_found)
     is ScheduleError.ImportFormatInvalid -> context.getString(R.string.error_import_format)

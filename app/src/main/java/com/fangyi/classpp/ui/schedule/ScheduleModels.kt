@@ -35,7 +35,19 @@ data class Course(
      * 由 [resolveWeekCards] 解析填入。
      */
     val alternateBar: CourseColor? = null,
-)
+    /** 非空 = 这是一张单次调课卡，值为调课记录 id；网格据此画「调」角标 */
+    val adjustmentId: String? = null,
+    /** 调课卡的原星期（仅展示用；普通卡为 null） */
+    val adjustedFromDayOfWeek: Int? = null,
+    /** 调课卡的原起始节 */
+    val adjustedFromSlot: Int? = null,
+    /** 调课卡的原跨度 */
+    val adjustedFromSpan: Int? = null,
+) {
+    /** 调课卡的原末节；普通卡返回 null */
+    val adjustedFromEndSlot: Int?
+        get() = adjustedFromSlot?.let { it + (adjustedFromSpan ?: 1) - 1 }
+}
 
 /** 一个固定节次；起止时间直接以卡片上显示的字符串形式保存（@Immutable：全 val） */
 @Immutable
@@ -226,6 +238,10 @@ fun List<Course>.resolveWeekCards(): List<Course> {
     return mapIndexed { index, course ->
         course.takeIf { shown[index] }?.let { card ->
             if (!card.active) {
+                card
+            } else if (card.adjustmentId != null) {
+                // 调课卡不属于交替组：不把目标格的灰卡配色画到自己身上，
+                // 「调」角标才是这张卡的唯一身份标记
                 card
             } else {
                 val bar = firstOrNull { other ->

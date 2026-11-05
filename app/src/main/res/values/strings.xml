@@ -423,10 +423,47 @@
     <string name="time_scheme_merge">合并两小节为一大节</string>
     <string name="time_scheme_merge_done">已合并 %1$d 对相邻小节，确认后生效</string>
     <string name="error_time_scheme_name">方案名称不能为空</string>
-    <!-- 调课与调休（课表设置）：占位导航行，功能待接入 -->
+    <!-- 调课与调休（课表设置）：调课已接入，调休仍为占位导航行 -->
     <string name="section_adjustment">调课与调休</string>
     <string name="adjust_course_label">设置调课</string>
     <string name="adjust_holiday_label">设置调休</string>
+    <!-- 调课（课表编辑态）：长按菜单、编辑浮层、设置里的调课列表 -->
+    <string name="edit_adjust_course">调课</string>
+    <string name="edit_edit_adjust">编辑调课</string>
+    <string name="adjust_sheet_title">调课</string>
+    <string name="adjust_sheet_edit_title">编辑调课</string>
+    <string name="adjust_list_title">设置调课</string>
+    <string name="adjust_list_empty">暂无调课记录。在课表中长按课程即可添加调课。</string>
+    <string name="adjust_section_source">原课次</string>
+    <string name="adjust_section_target">调到</string>
+    <string name="adjust_source_week_hint">选择要调整的周次，灰显为这门课不上课的周</string>
+    <string name="adjust_target_week">调到第几周</string>
+    <string name="adjust_target_day">调到星期几</string>
+    <string name="adjust_target_slot">调到第几节</string>
+    <string name="adjust_week_value">第 %1$d 周</string>
+    <string name="adjust_slot_value">第 %1$d 节</string>
+    <string name="adjust_slot_with_time">第 %1$d 节 · %2$s</string>
+    <string name="adjust_source_summary">第 %1$d 周 %2$s %3$s</string>
+    <string name="adjust_target_summary">第 %1$d 周 %2$s %3$s</string>
+    <string name="adjust_summary_arrow">%1$s → %2$s</string>
+    <string name="adjust_weekend_hidden">当前为 5 天课表，周末列不显示；需要切换到 7 天视图查看这节课</string>
+    <string name="adjust_no_source_week">这门课还没有可调整的课次</string>
+    <string name="adjust_week_picker_title">调到第几周</string>
+    <string name="adjust_slot_picker_title">调到第几节</string>
+    <string name="adjust_unit_week">周</string>
+    <string name="adjust_unit_slot">节</string>
+    <string name="error_adjust_source_invalid">「%1$s」第 %2$d 周没有这节课，无法调课</string>
+    <string name="error_adjust_target_invalid">调课目标超出学期或节次范围</string>
+    <string name="error_adjust_unchanged">调课前后时间相同</string>
+    <string name="error_adjust_conflict">调课目标与「%1$s」时间冲突</string>
+    <string name="error_adjust_duplicate">「%1$s」第 %2$d 周已有调课记录</string>
+    <string name="error_adjust_course_missing">调课对应的课程已不存在</string>
+    <string name="error_adjust_slot_merge_blocked">有调课无法对齐新的节次，请先删除或调整调课后再修改节次</string>
+    <string name="course_adjusted_badge">调</string>
+    <string name="course_adjusted_badge_description">已调课</string>
+    <string name="course_adjusted_badge_description_full">已调课，原 %1$s %2$s</string>
+    <string name="detail_adjust_label">调课</string>
+    <string name="detail_adjust_from">原 %1$s %2$s</string>
     <!-- 课表（个性化页） -->
     <string name="section_schedule">课表</string>
     <string name="card_height_label">课程卡片高度</string>

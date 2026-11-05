@@ -5,6 +5,7 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.TodoTimeKind
+import com.fangyi.classpp.data.occurrencesOn
 import com.fangyi.classpp.ui.settings.NotificationSettings
 import java.util.GregorianCalendar
 import java.util.TimeZone
@@ -103,7 +104,13 @@ object NotificationPlanner {
         return planned
     }
 
-    /** 课程提醒：窗口内每天按「周号 + 星期 + 周规律」匹配课程，触发点 = 上课开始 − 提前量 */
+    /**
+     * 课程提醒：窗口内每天取「周规律 + 单次调课」后的实际课次，触发点 = 上课开始 − 提前量。
+     *
+     * 调课口径统一走 [occurrencesOn]：源课次在源日期不再排提醒，调课卡在目标日期按目标节次
+     * 排提醒。周末不按 daysPerWeek 跳过：那只是网格的显示列数（5 天模式下周末列不画），
+     * 周六/周日真实排了课仍要提醒（与日程页上课提醒卡同口径）。
+     */
     private fun planCourses(
         schedule: Schedule,
         settings: NotificationSettings,
@@ -113,21 +120,13 @@ object NotificationPlanner {
     ): List<PlannedNotification> {
         val leadMinutes = settings.courseLeadMinutes
         val result = ArrayList<PlannedNotification>()
-        val termStartMonday = schedule.termStart.mondayOfWeek().epochDay
         for (dayOffset in 0 until WINDOW_DAYS) {
             val date = today + dayOffset
-            val week = ((date.mondayOfWeek().epochDay - termStartMonday) / 7).toInt() + 1
-            // 开学前（≤ 0）与学期外（> 总周数）整段跳过
-            if (week < 1 || week > schedule.totalWeeks) continue
-            val dayOfWeek = date.isoDayOfWeek()
-            // 周末不按 daysPerWeek 跳过：那只是网格的显示列数（5 天模式下周末列不画），
-            // 周六/周日真实排了课仍要提醒（与日程页上课提醒卡同口径）
-            for (course in schedule.courses) {
-                if (course.dayOfWeek != dayOfWeek) continue
-                if (!course.weeks.contains(week)) continue
-                val startSlot = schedule.slots.getOrNull(course.startSlot - 1) ?: continue
+            for (occurrence in schedule.occurrencesOn(date)) {
+                val course = occurrence.course
+                val startSlot = schedule.slots.getOrNull(occurrence.startSlot - 1) ?: continue
                 // 跨节课的结束时间取末节，与课程详情 / 日程页同一口径
-                val endSlot = schedule.slots.getOrNull(course.endSlot - 1) ?: continue
+                val endSlot = schedule.slots.getOrNull(occurrence.endSlot - 1) ?: continue
                 val startMinute = TimeText.parseMinutes(startSlot.startTime) ?: continue
                 val endMinute = TimeText.parseMinutes(endSlot.endTime) ?: continue
                 val eventAt = localMillis(date, startMinute)
@@ -147,8 +146,13 @@ object NotificationPlanner {
                 } else {
                     course.name
                 }
+                // 调课卡带调课 id：同一天同一门课可能既有原课次又有调课卡（搬到同一天），
+                // key 必须唯一，否则两条闹钟会互相覆盖
+                val key = occurrence.adjustment?.let { adjustment ->
+                    "C:${course.id}:${date.epochDay}:A:${adjustment.id}"
+                } ?: "C:${course.id}:${date.epochDay}"
                 result += PlannedNotification(
-                    key = "C:${course.id}:${date.epochDay}",
+                    key = key,
                     triggerAtMillis = trigger,
                     eventAtMillis = eventAt,
                     kind = NotificationKind.Course,

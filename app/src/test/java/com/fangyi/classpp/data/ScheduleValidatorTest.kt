@@ -1,5 +1,6 @@
 package com.fangyi.classpp.data
 
+import com.fangyi.classpp.data.model.CourseAdjustment
 import com.fangyi.classpp.data.model.CourseColor
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.DEFAULT_SLOTS
@@ -28,9 +29,29 @@ class ScheduleValidatorTest {
         start: IsoDate = termStart,
         end: IsoDate = termEnd,
         name: String = "2026春",
+        adjustments: List<CourseAdjustment> = emptyList(),
     ) = Schedule(
         id = "s1", name = name, termStart = start, termEnd = end,
         daysPerWeek = daysPerWeek, slots = slots, courses = courses,
+        adjustments = adjustments,
+    )
+
+    private fun adjust(
+        id: String = "a1",
+        courseId: String = "c1",
+        fromWeek: Int = 1,
+        toWeek: Int = 2,
+        toDay: Int = 4,
+        toStartSlot: Int = 1,
+        toSpan: Int = 1,
+    ) = CourseAdjustment(
+        id = id,
+        courseId = courseId,
+        fromWeek = fromWeek,
+        toWeek = toWeek,
+        toDayOfWeek = toDay,
+        toStartSlot = toStartSlot,
+        toSpan = toSpan,
     )
 
     private fun course(
@@ -455,5 +476,176 @@ class ScheduleValidatorTest {
             ),
         )
         assertHas<ScheduleError.GridConflict>(errors)
+    }
+
+    // ---------- 单次调课（R15） ----------
+
+    @Test
+    fun `adjustment moving one occurrence passes`() {
+        val errors = ScheduleValidator.validate(
+            schedule(
+                courses = listOf(course()),
+                adjustments = listOf(adjust(fromWeek = 1, toWeek = 2, toDay = 4, toStartSlot = 2)),
+            ),
+        )
+        assertEquals(emptyList<ScheduleError>(), errors)
+    }
+
+    @Test
+    fun `adjustment source must be an occurrence of the course`() {
+        val firstHalf = course(weeks = WeekPattern(listOf(WeekSegment(1, 8))))
+        assertHas<ScheduleError.AdjustmentSourceInvalid>(
+            ScheduleValidator.validate(
+                schedule(courses = listOf(firstHalf), adjustments = listOf(adjust(fromWeek = 10))),
+            ),
+        )
+    }
+
+    @Test
+    fun `adjustment target week must be within term`() {
+        assertHas<ScheduleError.AdjustmentTargetInvalid>(
+            ScheduleValidator.validate(
+                schedule(courses = listOf(course()), adjustments = listOf(adjust(toWeek = 20))),
+            ),
+        )
+    }
+
+    @Test
+    fun `adjustment target must fit in slot table`() {
+        assertHas<ScheduleError.AdjustmentTargetInvalid>(
+            ScheduleValidator.validate(
+                schedule(
+                    courses = listOf(course()),
+                    adjustments = listOf(adjust(toStartSlot = 5, toSpan = 2)),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `adjustment target must differ from source`() {
+        assertHas<ScheduleError.AdjustmentUnchanged>(
+            ScheduleValidator.validate(
+                schedule(
+                    courses = listOf(course()),
+                    adjustments = listOf(adjust(fromWeek = 1, toWeek = 1, toDay = 3, toStartSlot = 1)),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `duplicate adjustment for same occurrence rejected`() {
+        assertHas<ScheduleError.AdjustmentDuplicate>(
+            ScheduleValidator.validate(
+                schedule(
+                    courses = listOf(course()),
+                    adjustments = listOf(adjust(id = "a1"), adjust(id = "a2")),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `adjustment conflicts with a course meeting in target week`() {
+        val other = course(id = "c2", day = 4, startSlot = 2, name = "大学物理")
+        assertHas<ScheduleError.AdjustmentConflict>(
+            ScheduleValidator.validate(
+                schedule(
+                    courses = listOf(course(), other),
+                    adjustments = listOf(adjust(toWeek = 2, toDay = 4, toStartSlot = 2)),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `adjustment may use a slot freed by another adjustment`() {
+        val c1 = course(id = "c1", day = 3, startSlot = 1)
+        val c2 = course(
+            id = "c2",
+            day = 4,
+            startSlot = 2,
+            name = "大学物理",
+            weeks = WeekPattern(listOf(WeekSegment(1, 8))),
+        )
+        val errors = ScheduleValidator.validate(
+            schedule(
+                courses = listOf(c1, c2),
+                adjustments = listOf(
+                    // c1 第 1 周 → 第 2 周周四第 2 节；c2 第 2 周那一次被调去第 10 周，
+                    // 所以目标格在 c2 的原周里是空的
+                    adjust(id = "a1", courseId = "c1", fromWeek = 1, toWeek = 2, toDay = 4, toStartSlot = 2),
+                    adjust(id = "a2", courseId = "c2", fromWeek = 2, toWeek = 10, toDay = 4, toStartSlot = 2),
+                ),
+            ),
+        )
+        assertNo<ScheduleError.AdjustmentConflict>(errors)
+    }
+
+    @Test
+    fun `inactive alternating course does not block target`() {
+        val odd = course(
+            id = "c2",
+            day = 4,
+            startSlot = 2,
+            weeks = WeekPattern(listOf(WeekSegment(1, 8, Parity.ODD))),
+        )
+        // 目标第 2 周（双周）该格本来就不上课
+        val errors = ScheduleValidator.validate(
+            schedule(
+                courses = listOf(course(), odd),
+                adjustments = listOf(adjust(toWeek = 2, toDay = 4, toStartSlot = 2)),
+            ),
+        )
+        assertNo<ScheduleError.AdjustmentConflict>(errors)
+    }
+
+    @Test
+    fun `moving to a week where the same course already meets conflicts`() {
+        // 第 2 周原课次还在同一天同一节，调课卡不能再占同一格
+        assertHas<ScheduleError.AdjustmentConflict>(
+            ScheduleValidator.validate(
+                schedule(
+                    courses = listOf(course()),
+                    adjustments = listOf(adjust(fromWeek = 1, toWeek = 2, toDay = 3, toStartSlot = 1)),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `moving to a week the course does not normally meet passes`() {
+        val firstHalf = course(weeks = WeekPattern(listOf(WeekSegment(1, 8))))
+        val errors = ScheduleValidator.validate(
+            schedule(
+                courses = listOf(firstHalf),
+                adjustments = listOf(adjust(fromWeek = 1, toWeek = 10, toDay = 3, toStartSlot = 1)),
+            ),
+        )
+        assertEquals(emptyList<ScheduleError>(), errors)
+    }
+
+    @Test
+    fun `same week same day different slot passes`() {
+        val errors = ScheduleValidator.validate(
+            schedule(
+                courses = listOf(course()),
+                adjustments = listOf(adjust(fromWeek = 1, toWeek = 1, toDay = 3, toStartSlot = 2)),
+            ),
+        )
+        assertEquals(emptyList<ScheduleError>(), errors)
+    }
+
+    @Test
+    fun `weekend target allowed in five day schedule`() {
+        // 5 天视图不画周末列，但周末本身是合法落点；日视图/通知仍会提醒
+        val errors = ScheduleValidator.validate(
+            schedule(
+                courses = listOf(course()),
+                adjustments = listOf(adjust(toWeek = 2, toDay = 6, toStartSlot = 1)),
+            ),
+        )
+        assertEquals(emptyList<ScheduleError>(), errors)
     }
 }
