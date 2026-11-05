@@ -81,20 +81,84 @@ class AiChatRepositoryTest {
         fun releaseSave() = release.countDown()
     }
 
+    /** 内存方案库：connection / apiKey 字段继续承载「自定义」槽位，既有用例语义不变 */
     private class FakeAiSettingsStore(
         var connection: AiConnection = AiConnection(baseUrl = "https://api.example.com/v1", model = "test"),
         var apiKey: String? = "sk-test",
         override var secureAvailable: Boolean = true,
     ) : AiSettingsStore {
-        override fun loadConnection(): AiConnection = connection
-        override fun saveConnection(connection: AiConnection): Boolean {
-            this.connection = connection
+        val profiles = mutableListOf<AiProfile>()
+        val profileKeys = mutableMapOf<String, String>()
+        var activeId: String? = null
+
+        override fun loadProfiles(): List<AiProfile> = profiles.toList()
+
+        override fun loadActiveProfileId(): String? =
+            activeId?.takeIf { id -> profiles.any { it.id == id } }
+
+        override fun saveProfile(profile: AiProfile, activate: Boolean): Boolean {
+            val index = profiles.indexOfFirst { it.id == profile.id }
+            if (index >= 0) profiles[index] = profile else profiles += profile
+            if (activate) activeId = profile.id
             return true
         }
-        override fun loadApiKey(): String? = apiKey
-        override fun saveApiKey(key: String?): Boolean {
+
+        override fun renameProfile(id: String, name: String): Boolean {
+            val trimmed = name.trim()
+            if (trimmed.isEmpty()) return false
+            val index = profiles.indexOfFirst { it.id == id }
+            if (index < 0) return false
+            profiles[index] = profiles[index].copy(name = trimmed)
+            return true
+        }
+
+        override fun deleteProfile(id: String): Boolean {
+            if (profiles.none { it.id == id }) return false
+            profiles.removeAll { it.id == id }
+            profileKeys.remove(id)
+            if (activeId == id) activeId = null
+            return true
+        }
+
+        override fun setActiveProfile(id: String?): Boolean {
+            activeId = id
+            return true
+        }
+
+        override fun loadCustomConnection(): AiConnection = connection
+
+        override fun loadCustomKey(): String? = apiKey
+
+        override fun saveCustomConnection(connection: AiConnection): Boolean {
+            this.connection = connection
+            activeId = null
+            return true
+        }
+
+        override fun saveCustomKey(key: String?): Boolean {
             apiKey = key
             return true
+        }
+
+        override fun loadProfileKey(profileId: String): String? = profileKeys[profileId]
+
+        override fun saveProfileKey(profileId: String, key: String?): Boolean {
+            if (key == null) profileKeys.remove(profileId) else profileKeys[profileId] = key
+            return true
+        }
+
+        override fun loadConnection(): AiConnection {
+            val id = activeId
+            if (id != null) {
+                profiles.firstOrNull { it.id == id }?.let { return it.connection }
+            }
+            return connection
+        }
+
+        override fun loadApiKey(): String? {
+            val id = activeId
+            // 活动方案没有 Key 时不能回落自定义槽位的 Key（两个槽位彼此独立）
+            return if (id != null) profileKeys[id] else apiKey
         }
     }
 
@@ -790,5 +854,204 @@ class AiChatRepositoryTest {
         // 空文件最后落盘：在途/排队的落盘（含 checkpoint 旧快照）不会把刚清空的旧历史写回磁盘
         assertTrue(repo.messages.value.isEmpty())
         assertTrue(store.file.messages.isEmpty())
+    }
+
+    // ---------- 配置方案 ----------
+
+    @Test
+    fun `createProfile saves without activating`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val repo = repository(
+            settings = settings,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+
+        val profile = repo.createProfile(
+            name = "  DeepSeek  ",
+            connection = AiConnection(
+                providerId = "deepseek",
+                baseUrl = "https://api.deepseek.com/v1",
+                model = "deepseek-chat",
+            ),
+            apiKey = "sk-profile",
+        )
+
+        assertNotNull(profile)
+        val saved = profile!!
+        assertEquals("DeepSeek", saved.name)
+        assertEquals(listOf(saved), repo.profiles.value)
+        // 保存为新方案不激活：活动配置仍是自定义槽位
+        assertNull(repo.activeProfileId.value)
+        assertEquals("https://api.example.com/v1", repo.activeConnection.value.baseUrl)
+        assertEquals("sk-profile", settings.profileKeys[saved.id])
+    }
+
+    @Test
+    fun `updateProfile activates profile and uses its own key`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val repo = repository(
+            settings = settings,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+        val deepseek = repo.createProfile(
+            name = "DeepSeek",
+            connection = AiConnection(
+                providerId = "deepseek",
+                baseUrl = "https://api.deepseek.com/v1",
+                model = "deepseek-chat",
+            ),
+            apiKey = "sk-deepseek",
+        )!!
+        val openai = repo.createProfile(
+            name = "OpenAI",
+            connection = AiConnection(
+                providerId = "openai",
+                baseUrl = "https://api.openai.com/v1",
+                model = "gpt-4o-mini",
+            ),
+            apiKey = "sk-openai",
+        )!!
+
+        repo.updateProfile(deepseek.id, deepseek.connection, apiKey = null)
+        assertEquals(deepseek.id, repo.activeProfileId.value)
+        assertEquals("deepseek-chat", repo.activeConnection.value.model)
+        assertEquals("sk-deepseek", settings.loadApiKey())
+        assertTrue(repo.configured.value)
+
+        repo.updateProfile(openai.id, openai.connection, apiKey = "sk-openai-new")
+        assertEquals(openai.id, repo.activeProfileId.value)
+        assertEquals("sk-openai-new", settings.loadApiKey())
+        assertTrue(repo.configured.value)
+    }
+
+    @Test
+    fun `saveCustom switches active config back to custom slot`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val repo = repository(
+            settings = settings,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+        val profile = repo.createProfile(
+            name = "P",
+            connection = AiConnection(baseUrl = "https://p.example/v1", model = "p"),
+            apiKey = "sk-p",
+        )!!
+        repo.updateProfile(profile.id, profile.connection, apiKey = null)
+        assertEquals(profile.id, repo.activeProfileId.value)
+
+        val custom = AiConnection(baseUrl = "https://custom.example/v1", model = "custom")
+        val outcome = repo.saveCustom(custom, apiKey = "sk-custom")
+
+        assertTrue(outcome.configSaved)
+        assertTrue(outcome.keySaved)
+        assertNull(repo.activeProfileId.value)
+        assertEquals(custom, repo.activeConnection.value)
+        assertEquals("sk-custom", settings.loadApiKey())
+        assertTrue(repo.configured.value)
+    }
+
+    @Test
+    fun `delete active profile falls back to custom slot`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val repo = repository(
+            settings = settings,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+        val profile = repo.createProfile(
+            name = "P",
+            connection = AiConnection(baseUrl = "https://p.example/v1", model = "p"),
+            apiKey = "sk-p",
+        )!!
+        repo.updateProfile(profile.id, profile.connection, apiKey = null)
+
+        assertTrue(repo.deleteProfile(profile.id))
+
+        assertTrue(repo.profiles.value.isEmpty())
+        assertNull(repo.activeProfileId.value)
+        assertEquals("https://api.example.com/v1", repo.activeConnection.value.baseUrl)
+        assertEquals("sk-test", settings.loadApiKey())
+        assertTrue(repo.configured.value)
+    }
+
+    @Test
+    fun `delete non active profile keeps active config`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val repo = repository(
+            settings = settings,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+        val active = repo.createProfile(
+            name = "A",
+            connection = AiConnection(baseUrl = "https://a.example/v1", model = "a"),
+            apiKey = "sk-a",
+        )!!
+        val other = repo.createProfile(
+            name = "B",
+            connection = AiConnection(baseUrl = "https://b.example/v1", model = "b"),
+            apiKey = "sk-b",
+        )!!
+        repo.updateProfile(active.id, active.connection, apiKey = null)
+
+        assertTrue(repo.deleteProfile(other.id))
+
+        assertEquals(active.id, repo.activeProfileId.value)
+        assertEquals("a", repo.activeConnection.value.model)
+        assertEquals("sk-a", settings.loadApiKey())
+    }
+
+    @Test
+    fun `renameProfile trims and rejects blank or unknown`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val repo = repository(
+            settings = settings,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+        val profile = repo.createProfile(
+            name = "A",
+            connection = AiConnection(baseUrl = "https://a.example/v1", model = "a"),
+            apiKey = null,
+        )!!
+
+        assertTrue(repo.renameProfile(profile.id, "  B  "))
+        assertEquals("B", repo.profiles.value.single().name)
+        assertFalse(repo.renameProfile(profile.id, "   "))
+        assertEquals("B", repo.profiles.value.single().name)
+        assertFalse(repo.renameProfile("missing", "C"))
+    }
+
+    @Test
+    fun `updateProfile reports missing key and unconfigures active profile`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val repo = repository(
+            settings = settings,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+        val profile = repo.createProfile(
+            name = "A",
+            connection = AiConnection(baseUrl = "https://a.example/v1", model = "a"),
+            apiKey = null,
+        )!!
+
+        val outcome = repo.updateProfile(profile.id, profile.connection, apiKey = null)
+
+        assertTrue(outcome.configSaved)
+        assertFalse(outcome.keySaved)
+        assertEquals(profile.id, repo.activeProfileId.value)
+        assertFalse(repo.configured.value)
+    }
+
+    @Test
+    fun `custom config exposes connection and key presence`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val repo = repository(
+            settings = settings,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+
+        val (connection, hasKey) = repo.loadCustomConfig()
+
+        assertEquals(settings.connection, connection)
+        assertTrue(hasKey)
+        assertFalse(repo.loadProfileKeyPresent("missing"))
     }
 }

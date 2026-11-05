@@ -727,4 +727,18 @@
     <string name="ai_settings_clear_history_confirm">再次点击确认清空</string>
     <string name="ai_settings_clear_history_done">对话历史已清空</string>
     <string name="ai_settings_key_required">请填写 API Key</string>
+    <!-- AI 配置方案（AI 设置页入口 + 方案浮层）：多套连接方案的保存 / 切换 / 重命名 / 删除 -->
+    <string name="ai_settings_section_profile">配置方案</string>
+    <string name="ai_profile_title">AI 配置方案</string>
+    <string name="ai_profile_entry_desc">保存多套服务商/模型配置，随时切换</string>
+    <string name="ai_profile_custom">自定义</string>
+    <string name="ai_profile_save_as">保存为新方案</string>
+    <string name="ai_profile_name_title">方案名称</string>
+    <string name="ai_profile_rename_title">重命名方案</string>
+    <string name="ai_profile_name_hint">如：DeepSeek 工作账号</string>
+    <string name="ai_profile_default_name">方案 %1$d</string>
+    <string name="ai_profile_saved">方案已保存</string>
+    <string name="ai_profile_delete_title">删除方案</string>
+    <string name="ai_profile_delete_message">「%1$s」及其保存的 API Key 将被删除，且无法恢复。</string>
+    <string name="ai_profile_deleted">方案已删除</string>
 </resources>

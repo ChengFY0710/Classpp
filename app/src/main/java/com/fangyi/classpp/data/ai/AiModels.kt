@@ -39,6 +39,23 @@ data class AiConnection(
     val isConfigured: Boolean get() = baseUrl.isNotBlank() && model.isNotBlank()
 }
 
+/**
+ * 一套可复用的 AI 配置方案（服务商 + 端点 + 模型 + 协议）。
+ *
+ * 方案库与「自定义」槽位同在 [AiSettingsStore]：活动配置二选一——指向某个方案，
+ * 或落在自定义槽位（复用旧版 `connection` / `api_key` 键，老配置无需迁移）。
+ * API Key 不进本模型，按 [id] 单独加密存储（`api_key_<id>`），删除方案一并删除。
+ *
+ * @param id UUID；方案身份以它为准，名称允许重复
+ * @param name 用户可见名称（保存/重命名时去首尾空白后非空）
+ */
+@Serializable
+data class AiProfile(
+    val id: String,
+    val name: String,
+    val connection: AiConnection,
+)
+
 /** 对话消息的角色；历史里只存 user / assistant（system prompt 每次现拼，不入文件） */
 @Serializable
 enum class AiChatRole { User, Assistant }

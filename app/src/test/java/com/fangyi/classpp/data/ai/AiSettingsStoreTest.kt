@@ -1,5 +1,7 @@
 package com.fangyi.classpp.data.ai
 
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -142,5 +144,52 @@ class AiProviderPresetsTest {
                 .filter { it.id != "anthropic" }
                 .all { it.protocol == AiProtocol.OpenAiCompat },
         )
+    }
+}
+
+/** 方案库 JSON：列表回环 + 未知字段兼容（与课程时间方案同策略，旧文件缺字段走默认值） */
+class AiProfileTest {
+
+    @Test
+    fun `profile list roundtrip`() {
+        val profiles = listOf(
+            AiProfile(
+                id = "a",
+                name = "DeepSeek",
+                connection = AiConnection(
+                    providerId = "deepseek",
+                    baseUrl = "https://api.deepseek.com/v1",
+                    model = "deepseek-chat",
+                ),
+            ),
+            AiProfile(
+                id = "b",
+                name = "Anthropic",
+                connection = AiConnection(
+                    providerId = "anthropic",
+                    baseUrl = "https://api.anthropic.com/v1",
+                    model = "claude-sonnet-4-5",
+                    protocol = AiProtocol.Anthropic,
+                ),
+            ),
+        )
+
+        val decoded = AiJson.storage.decodeFromString<List<AiProfile>>(
+            AiJson.storage.encodeToString(profiles),
+        )
+
+        assertEquals(profiles, decoded)
+    }
+
+    @Test
+    fun `profile with unknown fields or missing defaults decodes`() {
+        val decoded = AiJson.storage.decodeFromString<List<AiProfile>>(
+            """[{"id":"a","name":"A","connection":{"baseUrl":"https://x/v1","model":"m"},"future":1}]""",
+        )
+
+        assertEquals("A", decoded.single().name)
+        assertEquals("m", decoded.single().connection.model)
+        assertEquals(AiProtocol.OpenAiCompat, decoded.single().connection.protocol)
+        assertEquals(AiProviderPresets.CUSTOM_ID, decoded.single().connection.providerId)
     }
 }

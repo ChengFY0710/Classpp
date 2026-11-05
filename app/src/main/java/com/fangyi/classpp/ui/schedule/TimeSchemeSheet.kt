@@ -4,15 +4,10 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,12 +17,10 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Constraints
@@ -50,6 +43,7 @@ import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.previewSlotMerge
 import com.fangyi.classpp.data.model.slotsWithAdjustedStart
 import com.fangyi.classpp.data.model.slotsWithCount
+import com.fangyi.classpp.ui.components.ActionRowCard
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.BottomTimeSelectCard
@@ -63,13 +57,7 @@ import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.pressClickable
-import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
-import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
-import com.fangyi.classpp.ui.theme.SettingsCardShape
-import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
-import com.fangyi.classpp.ui.theme.classppColors
-import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.tabularNumbers
 import dev.chrisbanes.haze.rememberHazeState
 
@@ -452,7 +440,7 @@ internal fun TimeSchemeSheet(
                 )
 
                 // 保存方案：自定义状态下始终可点；点击唤起底部名称输入
-                SchemeActionRow(
+                ActionRowCard(
                     label = stringResource(R.string.time_scheme_save),
                     icon = R.drawable.ic_add_circle_regular,
                     enabled = saveEnabled,
@@ -467,13 +455,13 @@ internal fun TimeSchemeSheet(
                 // 合并两小节为一大节：只改草稿，确认才随整套配置落库；
                 // 默认方案 / 没有课程占用 ≥2 节 / 课程 span<2 或无法精确对齐时整体置灰
                 //（negative 色）不可点
-                SchemeActionRow(
+                ActionRowCard(
                     label = stringResource(R.string.time_scheme_merge),
                     icon = null,
                     enabled = mergeEnabled,
                     onClick = {
                         // 双重保险：置灰态不挂点击，这里再拦一次，绝不在不可合并的草稿上执行
-                        if (!mergeEnabled) return@SchemeActionRow
+                        if (!mergeEnabled) return@ActionRowCard
                         draftSlots = mergePlan.newSlots
                         draftDuration = mergePlan.newDurationMinutes
                         draftCourses = mergePlan.newCourses
@@ -611,51 +599,6 @@ internal fun canMergeTimeScheme(
     plan: SlotMergePlan,
     selectedSchemeId: String?,
 ): Boolean = plan.canMerge && selectedSchemeId != DEFAULT_TIME_SCHEME_ID
-
-/**
- * 底部操作行卡（保存方案 / 合并两小节）：整宽白卡、内容居中，复刻待办详情「添加步骤」
- * 的行卡风格——主色图标（可选）+ 主色文字；[enabled] = false 时文字与图标统一用
- * theme 的 negative 置灰色、无按压反馈。
- */
-@Composable
-private fun SchemeActionRow(
-    label: String,
-    icon: Int?,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val contentColor = if (enabled) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.classppColors.negative
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = SheetFieldHeight)
-            .clip(SettingsCardShape)
-            .background(MaterialTheme.colorScheme.surface)
-            .then(if (enabled) Modifier.pressClickable(SettingsCardShape, onClick = onClick) else Modifier)
-            .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (icon != null) {
-            Icon(
-                painter = painterResource(icon),
-                contentDescription = null,
-                tint = contentColor,
-                modifier = Modifier.size(24.dp),
-            )
-            Spacer(Modifier.width(12.dp))
-        }
-        Text(
-            text = label,
-            style = MaterialTheme.classppTextStyles.fieldValue,
-            color = contentColor,
-        )
-    }
-}
 
 /**
  * 时间胶囊：背景灰底、primary 字，点击弹时间选择（节次行尾部控件）。

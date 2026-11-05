@@ -41,6 +41,12 @@ fun interface AiTodoPersister {
     suspend fun addAll(todos: List<Todo>): Boolean
 }
 
+/** 保存 AI 配置的结果：配置本身是否落盘 + 保存后是否具备可解密的 Key */
+data class AiConfigSaveOutcome(
+    val configSaved: Boolean,
+    val keySaved: Boolean,
+)
+
 /**
  * AI 对话仓库：内存真源（StateFlow）+ 磁盘持久化（[AiChatStore]），与 TodoRepository
  * 同构；流式增量直接写入消息流（UI 逐字渲染）。
@@ -110,6 +116,18 @@ class AiChatRepository internal constructor(
     private val _configured = MutableStateFlow(false)
     val configured: StateFlow<Boolean> = _configured.asStateFlow()
 
+    /** AI 配置方案库（不含「自定义」槽位）；方案写操作与 bootstrap 后刷新 */
+    private val _profiles = MutableStateFlow<List<AiProfile>>(emptyList())
+    val profiles: StateFlow<List<AiProfile>> = _profiles.asStateFlow()
+
+    /** 当前激活方案 id；null = 使用「自定义」槽位 */
+    private val _activeProfileId = MutableStateFlow<String?>(null)
+    val activeProfileId: StateFlow<String?> = _activeProfileId.asStateFlow()
+
+    /** 当前生效连接（活动方案或自定义槽位），设置页入口行据此显示摘要 */
+    private val _activeConnection = MutableStateFlow(AiConnection())
+    val activeConnection: StateFlow<AiConnection> = _activeConnection.asStateFlow()
+
     /**
      * Keystore 是否可用（响应式）：读取/保存 Key 后同步——那些操作正是可用性可能
      * 翻转的时机，UI 据此展示不可用横幅与保存失败原因。
@@ -148,9 +166,26 @@ class AiChatRepository internal constructor(
 
     /** 设置页保存/清除配置后调用；发送前也兜底刷新一次 */
     suspend fun refreshConfigured() {
-        val (connection, apiKey) = loadCredentials()
-        _configured.value = connection.isConfigured && apiKey != null
+        val snapshot = withContext(Dispatchers.IO) {
+            CredentialsSnapshot(
+                profiles = settings.loadProfiles(),
+                activeProfileId = settings.loadActiveProfileId(),
+                connection = settings.loadConnection(),
+                apiKey = settings.loadApiKey(),
+            ).also { _secureAvailable.value = settings.secureAvailable }
+        }
+        _profiles.value = snapshot.profiles
+        _activeProfileId.value = snapshot.activeProfileId
+        _activeConnection.value = snapshot.connection
+        _configured.value = snapshot.connection.isConfigured && snapshot.apiKey != null
     }
+
+    private class CredentialsSnapshot(
+        val profiles: List<AiProfile>,
+        val activeProfileId: String?,
+        val connection: AiConnection,
+        val apiKey: String?,
+    )
 
     // ---------- 对话 ----------
 
@@ -351,26 +386,109 @@ class AiChatRepository internal constructor(
         _lastError.value = null
     }
 
-    // ---------- 设置读写（AI 设置浮层经此读写，store 不直接出包） ----------
+    // ---------- 配置方案（AI 设置页与方案浮层经此读写，store 不直接出包） ----------
 
-    suspend fun loadConnection(): AiConnection =
-        withContext(Dispatchers.IO) { settings.loadConnection() }
-
-    suspend fun saveConnection(connection: AiConnection): Boolean =
-        withContext(Dispatchers.IO) { settings.saveConnection(connection) }
-
-    /** 解密失败与未配置同形返回 null；UI 用 [secureAvailable] 区分两种语义 */
-    suspend fun loadApiKey(): String? = withContext(Dispatchers.IO) {
-        val key = settings.loadApiKey()
+    /** 「自定义」槽位的连接与 Key 存在性（打开方案浮层时读取） */
+    suspend fun loadCustomConfig(): Pair<AiConnection, Boolean> = withContext(Dispatchers.IO) {
+        val connection = settings.loadCustomConnection()
+        val hasKey = settings.loadCustomKey() != null
         _secureAvailable.value = settings.secureAvailable
-        key
+        connection to hasKey
     }
 
-    /** null = 清除已存 Key */
-    suspend fun saveApiKey(key: String?): Boolean = withContext(Dispatchers.IO) {
-        val saved = settings.saveApiKey(key)
+    /** 指定方案是否已有可解密的 Key（解密失败与未配置同形返回 false） */
+    suspend fun loadProfileKeyPresent(id: String): Boolean = withContext(Dispatchers.IO) {
+        val present = settings.loadProfileKey(id) != null
         _secureAvailable.value = settings.secureAvailable
-        saved
+        present
+    }
+
+    /**
+     * 保存为新方案：只入库，**不激活**（当前生效配置不变，需在浮层「确认」后才切换）。
+     * [apiKey] 非空时一并加密保存；名称为空返回 null。
+     */
+    suspend fun createProfile(
+        name: String,
+        connection: AiConnection,
+        apiKey: String?,
+    ): AiProfile? {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return null
+        val profile = AiProfile(
+            id = java.util.UUID.randomUUID().toString(),
+            name = trimmed,
+            connection = connection,
+        )
+        val saved = withContext(Dispatchers.IO) {
+            val profileSaved = settings.saveProfile(profile, activate = false)
+            // Key 落盘失败不回滚方案：方案仍在库中，补填 Key 即可，失败原因由 secureAvailable 呈现
+            if (profileSaved && apiKey != null) {
+                settings.saveProfileKey(profile.id, apiKey)
+            }
+            _secureAvailable.value = settings.secureAvailable
+            profileSaved
+        }
+        if (saved) refreshConfigured()
+        return profile.takeIf { saved }
+    }
+
+    /** 保存并激活已存方案：覆盖连接、按需覆盖 Key；Key 缺失按未配置返回 */
+    suspend fun updateProfile(
+        id: String,
+        connection: AiConnection,
+        apiKey: String?,
+    ): AiConfigSaveOutcome {
+        val target = withContext(Dispatchers.IO) {
+            settings.loadProfiles().firstOrNull { it.id == id }
+        } ?: return AiConfigSaveOutcome(configSaved = false, keySaved = false)
+        val outcome = withContext(Dispatchers.IO) {
+            val configSaved = settings.saveProfile(
+                target.copy(connection = connection),
+                activate = true,
+            )
+            val keySaved = if (apiKey != null) {
+                settings.saveProfileKey(id, apiKey)
+            } else {
+                settings.loadProfileKey(id) != null
+            }
+            _secureAvailable.value = settings.secureAvailable
+            AiConfigSaveOutcome(configSaved = configSaved, keySaved = keySaved)
+        }
+        if (outcome.configSaved) refreshConfigured()
+        return outcome
+    }
+
+    /** 保存并激活「自定义」槽位（活动指针置空）；Key 缺失按未配置返回 */
+    suspend fun saveCustom(
+        connection: AiConnection,
+        apiKey: String?,
+    ): AiConfigSaveOutcome {
+        val outcome = withContext(Dispatchers.IO) {
+            val configSaved = settings.saveCustomConnection(connection)
+            val keySaved = if (apiKey != null) {
+                settings.saveCustomKey(apiKey)
+            } else {
+                settings.loadCustomKey() != null
+            }
+            _secureAvailable.value = settings.secureAvailable
+            AiConfigSaveOutcome(configSaved = configSaved, keySaved = keySaved)
+        }
+        if (outcome.configSaved) refreshConfigured()
+        return outcome
+    }
+
+    /** 只改方案名（即时落库，不影响活动配置） */
+    suspend fun renameProfile(id: String, name: String): Boolean {
+        val renamed = withContext(Dispatchers.IO) { settings.renameProfile(id, name) }
+        if (renamed) refreshConfigured()
+        return renamed
+    }
+
+    /** 删除方案及其 Key；删的是活动方案时活动配置回落「自定义」 */
+    suspend fun deleteProfile(id: String): Boolean {
+        val deleted = withContext(Dispatchers.IO) { settings.deleteProfile(id) }
+        if (deleted) refreshConfigured()
+        return deleted
     }
 
     // ---------- 待办落库 ----------

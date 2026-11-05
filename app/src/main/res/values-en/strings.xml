@@ -700,4 +700,18 @@
     <string name="ai_settings_clear_history_confirm">Tap again to confirm</string>
     <string name="ai_settings_clear_history_done">Chat history cleared</string>
     <string name="ai_settings_key_required">Enter an API key</string>
+    <!-- AI profiles (AI settings entry + profile sheet): save / switch / rename / delete multiple setups -->
+    <string name="ai_settings_section_profile">Profiles</string>
+    <string name="ai_profile_title">AI profiles</string>
+    <string name="ai_profile_entry_desc">Save multiple provider and model setups and switch anytime</string>
+    <string name="ai_profile_custom">Custom</string>
+    <string name="ai_profile_save_as">Save as new profile</string>
+    <string name="ai_profile_name_title">Profile name</string>
+    <string name="ai_profile_rename_title">Rename profile</string>
+    <string name="ai_profile_name_hint">e.g. DeepSeek work account</string>
+    <string name="ai_profile_default_name">Profile %1$d</string>
+    <string name="ai_profile_saved">Profile saved</string>
+    <string name="ai_profile_delete_title">Delete profile</string>
+    <string name="ai_profile_delete_message">\"%1$s\" and its saved API key will be deleted permanently.</string>
+    <string name="ai_profile_deleted">Profile deleted</string>
 </resources>
