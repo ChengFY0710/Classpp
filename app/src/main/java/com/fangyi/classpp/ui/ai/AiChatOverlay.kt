@@ -3,9 +3,16 @@ package com.fangyi.classpp.ui.ai
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -42,7 +50,6 @@ import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.ui.components.AiChatInputBar
-import com.fangyi.classpp.ui.components.LocalOverlayBottomGlassBackdrop
 import com.fangyi.classpp.ui.components.LocalOverlayBottomHazeState
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetTopAction
@@ -52,14 +59,22 @@ import com.fangyi.classpp.ui.note.TodoDetailSheet
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
+import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
 import kotlinx.coroutines.launch
+
+/** 光场在输入栏上方额外留出的可见高度：与输入栏、导航栏一起构成约 240dp 的光场带 */
+private val AuroraHeadroom = 120.dp
 
 /**
  * AI 对话浮层（日程页顶栏右侧按钮唤起，M1 唯一 AI 入口）。
  *
  * 基于 [OverlaySheet]：遮罩/进出场/下拉关闭/键盘让位/顶栏玻璃全部复用组件内置规格；
  * 消息列表走浮层自带滚动列（onScrollStateReady 接管 ScrollState 做自动滚底），
- * 输入栏钉底（bottomScrim = false，渐变与导航栏留白自绘并随键盘上移）。
+ * 输入栏钉底（bottomScrim = false，底部光场/渐隐/导航栏留白自绘并随键盘上移）——
+ * 光场由 [AiThinkingAurora] 绘制，AI 思考时缓慢游动、空闲保持静态；输入栏玻璃采样
+ * 光场层（见底部槽的 layerBackdrop），玻璃关闭/API<31 时回退实心底。
  *
  * - 发送中输入禁用、发送键变停止键：发送 Job 由 [AiChatRepository] 自己的 scope 驱动，
  *   收起浮层/旋转屏幕不会中断流；停止 = [AiChatRepository.cancelSending]，半截回复由
@@ -107,6 +122,17 @@ fun AiChatOverlay(
     val todos by todoRepository?.todos?.collectAsState() ?: remember { mutableStateOf(emptyList<Todo>()) }
     val tags by tagRepository?.tags?.collectAsState()
         ?: remember { mutableStateOf(emptyList<TagEntry>()) }
+
+    // 底部光场的玻璃采样层：光场节点挂 layerBackdrop，输入栏在该节点之外采样，
+    // 不会出现读写同一层的反馈环。玻璃关闭 / API<31 时为 null，输入栏回退现有实心底。
+    val glassEnabled = isGlassStyleEnabled()
+    val auroraBackdrop = rememberGlassBackdrop(MaterialTheme.colorScheme.background)
+        .takeIf { glassEnabled }
+    val density = LocalDensity.current
+    // 键盘高出导航栏的预留：光场把可见底边锚在键盘上沿，渐隐带不被 IME 预留撑长
+    val imeBottomPx = WindowInsets.ime.getBottom(density)
+    val navBottomPx = WindowInsets.navigationBars.getBottom(density)
+    val imeReservePx = (imeBottomPx - navBottomPx).coerceAtLeast(0)
 
     // 标签配色表（标签名 → 颜色）：用户标签取 TagEntry.colorArgb，未挑色回落主题 Primary；
     // 与待办页列表卡/详情浮层同一份口径（表里没有的名字由 NoteCard 自己兜底）
@@ -242,42 +268,68 @@ fun AiChatOverlay(
         onScrollStateReady = { chatScroll.value = it },
         bottomScrim = false,
         bottomContent = {
-            // 与顶栏同源的玻璃采样层（关/API<31 为 null，输入栏回退实心）与 Haze 采样状态
-            //（恒为浮层当前 hazeState，供附件菜单跨 Popup 窗口做磨砂）
-            val bottomGlassBackdrop = LocalOverlayBottomGlassBackdrop.current
+            // 与顶栏同源的 Haze 采样状态（供附件菜单跨 Popup 窗口做磨砂）
             val bottomHazeState = LocalOverlayBottomHazeState.current
-            // 钉底输入栏：自绘渐变兜底 + 导航栏留白 + 键盘上移（insets 消费顺序：
-            // navigationBarsPadding 先吃掉导航栏，imePadding 补键盘高出导航栏的部分）
-            Column(
+            // 钉底光场 + 输入栏：光场画在 scrim 之上、输入栏之下；输入栏玻璃采样光场层。
+            // inset 消费顺序：navigationBarsPadding 先吃掉导航栏，imePadding 补键盘高出
+            // 导航栏的部分。光场自身不参与 inset，随整个槽一起被键盘顶起。
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // 消息从光场下方淡出：底段到不透明，保证文字不透过彩色光场
                     .background(
                         Brush.verticalGradient(
                             listOf(
                                 MaterialTheme.colorScheme.background.copy(alpha = 0f),
-                                MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                                MaterialTheme.colorScheme.background.copy(alpha = 0.55f),
+                                MaterialTheme.colorScheme.background,
                             ),
                         ),
-                    )
-                    .navigationBarsPadding()
-                    .imePadding()
-                    .padding(top = 12.dp, bottom = 24.dp)
-                    .padding(horizontal = PageHorizontalSpacing),
+                    ),
             ) {
-                AiChatInputBar(
-                    value = input,
-                    onValueChange = { input = it },
-                    placeholder = stringResource(R.string.ai_input_hint),
-                    sendingPlaceholder = stringResource(R.string.ai_input_sending_hint),
-                    sending = sending,
-                    enabled = configured,
-                    onSend = { sendMessage(input) },
-                    onStop = ::stopSending,
-                    onAddImage = {},
-                    onAddFile = {},
-                    hazeState = bottomHazeState,
-                    backdrop = bottomGlassBackdrop,
-                )
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .then(
+                            if (auroraBackdrop != null) {
+                                Modifier.layerBackdrop(auroraBackdrop)
+                            } else {
+                                Modifier
+                            },
+                        ),
+                ) {
+                    AiThinkingAurora(
+                        // 收起浮层或空闲时停止帧循环：光场保持设计稿的静态彩色
+                        active = visible && sending,
+                        imeReservePx = imeReservePx,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .imePadding()
+                        .padding(top = 12.dp, bottom = 24.dp)
+                        .padding(horizontal = PageHorizontalSpacing),
+                ) {
+                    // 光场在输入栏上方再留出一段可见高度，整体接近设计稿的底部光场带
+                    Spacer(Modifier.height(AuroraHeadroom))
+                    AiChatInputBar(
+                        value = input,
+                        onValueChange = { input = it },
+                        placeholder = stringResource(R.string.ai_input_hint),
+                        sendingPlaceholder = stringResource(R.string.ai_input_sending_hint),
+                        sending = sending,
+                        enabled = configured,
+                        onSend = { sendMessage(input) },
+                        onStop = ::stopSending,
+                        onAddImage = {},
+                        onAddFile = {},
+                        hazeState = bottomHazeState,
+                        backdrop = auroraBackdrop,
+                    )
+                }
             }
         },
     ) {
@@ -339,6 +391,9 @@ fun AiChatOverlay(
                 }
             }
         }
+        // 底部光场带比原输入栏高出一截：滚动内容末尾补同样高度，
+        // 自动滚底时最后一条消息停在光场上方，不被 scrim 盖住
+        Spacer(Modifier.height(AuroraHeadroom))
     }
 
     // ——— 待办详情浮层：点击 AI 创建的卡片唤起，接线同待办页 ———

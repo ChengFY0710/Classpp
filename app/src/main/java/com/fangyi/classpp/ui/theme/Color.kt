@@ -60,6 +60,15 @@ val UrgentOrange = Color(0xFFF2921B)
 val UrgentYellow = Color(0xFFF2C11C)
 val UrgentGreen = Color(0xFF3BC222)
 
+// ===== AI 对话浮层底部光场（AiThinkingAurora 专用，全 app 唯一多色装饰性渐变）=====
+// 左蓝 → 青 → 薄荷 → 右黄绿，四颗软边光斑叠成设计稿的极光场；只由 AiThinkingAurora
+// 经 classppColors.aiAurora* 消费，不得挪作其它背景或业务强调色。
+// 浅色取设计稿输入区实测的柔和色，不取高饱和原色——光场由多个光斑叠加后再经白玻璃提亮。
+val AiAuroraBlue = Color(0xFF5FA4F6)
+val AiAuroraCyan = Color(0xFF7FCBE4)
+val AiAuroraMint = Color(0xFFA0D7C4)
+val AiAuroraLime = Color(0xFFD8EE9F)
+
 // ===== ClassppColors 扩展色的深浅取值（装配见 Theme.kt，语义注释也在装配处）=====
 
 /** 次级说明文字灰 */
@@ -110,6 +119,12 @@ val DarkOnErrorContainer = Color(0xFFFFD9D4)
 val DarkUrgentOrange = Color(0xFFF6A94C)
 val DarkUrgentYellow = Color(0xFFF6CE52)
 val DarkUrgentGreen = Color(0xFF67D257)
+
+// 深色光场 = 同色相压暗（明度 35–45%），在深底上呈现低亮度极光，不采用浅色值直接发光
+val DarkAiAuroraBlue = Color(0xFF2E6FB8)
+val DarkAiAuroraCyan = Color(0xFF2A7E8C)
+val DarkAiAuroraMint = Color(0xFF357A52)
+val DarkAiAuroraLime = Color(0xFF8A9A3A)
 
 val DarkScrim = Color(0xBF000000)
 

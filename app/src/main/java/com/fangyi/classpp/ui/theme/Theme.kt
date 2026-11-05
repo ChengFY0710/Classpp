@@ -106,6 +106,15 @@ class ClassppColors(
     val urgentOrange: Color,
     val urgentYellow: Color,
     val urgentGreen: Color,
+    /**
+     * AI 对话浮层底部「思考光场」四色（AiThinkingAurora 专用）：浅色 = 蓝 → 青 → 薄荷
+     * → 黄绿；深色 = 同色相压暗的深极光。全 app 唯一的多色装饰性渐变，只允许
+     * [com.fangyi.classpp.ui.ai.AiThinkingAurora] 消费，不得挪作其它背景或强调色。
+     */
+    val aiAuroraBlue: Color,
+    val aiAuroraCyan: Color,
+    val aiAuroraMint: Color,
+    val aiAuroraLime: Color,
 )
 
 private val LightClassppColors = ClassppColors(
@@ -120,6 +129,10 @@ private val LightClassppColors = ClassppColors(
     urgentOrange = UrgentOrange,
     urgentYellow = UrgentYellow,
     urgentGreen = UrgentGreen,
+    aiAuroraBlue = AiAuroraBlue,
+    aiAuroraCyan = AiAuroraCyan,
+    aiAuroraMint = AiAuroraMint,
+    aiAuroraLime = AiAuroraLime,
 )
 
 private val DarkClassppColors = ClassppColors(
@@ -134,6 +147,10 @@ private val DarkClassppColors = ClassppColors(
     urgentOrange = DarkUrgentOrange,
     urgentYellow = DarkUrgentYellow,
     urgentGreen = DarkUrgentGreen,
+    aiAuroraBlue = DarkAiAuroraBlue,
+    aiAuroraCyan = DarkAiAuroraCyan,
+    aiAuroraMint = DarkAiAuroraMint,
+    aiAuroraLime = DarkAiAuroraLime,
 )
 
 private val LocalClassppColors = staticCompositionLocalOf { LightClassppColors }

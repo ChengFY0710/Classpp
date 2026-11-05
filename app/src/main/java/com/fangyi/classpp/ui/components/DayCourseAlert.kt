@@ -40,7 +40,8 @@ import com.kyant.shapes.Capsule
 /**
  * 上课提醒卡（DayCourseAlert）：设计稿的「XX分钟后上课」提醒卡片，自带白底圆角卡壳——
  *
- * 一、**左侧竖条**：课程色圆头竖条，撑满左侧文字高度（上下各缩进 8dp）。
+ * 一、**左侧竖条**：标题语义色（与「XX分钟后」文案同色）的圆头竖条，撑满左侧文字高度
+ *     （上下各缩进 8dp）。
  * 二、**中列**：标题行（图标 + 「XX分钟后」/「上课中」+ 课程名）→ 教师 → 上课地点 →
  *     备注（带「备注：」前缀）。教师/地点/备注为 null 或空白时整行不显示；教师/地点为
  *     secondaryText 灰，备注为 Primary 蓝。**卡片高度只由中列决定**，中列文字距卡
@@ -66,8 +67,8 @@ import com.kyant.shapes.Capsule
  * ic_alert_snooze（铃铛+Zz）。倒计时标题不足 1 小时为「X分钟后」，达到 1 小时为
  * 「X小时Y分钟后」（整小时「X小时后」，见 [countdownTitle]）。
  *
- * **课程色同源**（[CourseColor.barColor]，深浅主题各自映射）：竖条、上下时间文字、标签
- * 全部取标准课程卡色（无课卡竖条取 Primary）。两个小巧思：「上课」文字取课程色降明度
+ * **课程色同源**（[CourseColor.barColor]，深浅主题各自映射）：上下时间文字、标签全部取
+ * 标准课程卡色。左侧竖条不取课程色，改为跟随标题语义色。「上课」文字取课程色降明度
  * （RGB × [TagTextDimFactorLight]/[TagTextDimFactorDark]，深浅各一档），标签底色取
  * 课程色 25% 透明。
  *
@@ -116,14 +117,9 @@ fun DayCourseAlert(
     onClick: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
-    // 无课/课已上完/整天概览卡没有课程信息：竖条与标题同用 Primary
+    // 无课/课已上完/整天概览卡没有课程信息：标题取 Primary
     val titleOnlyCard = state is DayCourseAlertState.NoCourse || state is DayCourseAlertState.DayDone ||
         state is DayCourseAlertState.DaySummary
-    val barColor = if (titleOnlyCard) {
-        colors.primary
-    } else {
-        color.barColor(MaterialTheme.isDarkTheme)
-    }
 
     // —— 标题语义：倒计时按剩余分钟分档（≤10 红 / ≤15 橙 / 更早蓝），上课中蓝
     val titleText: String
@@ -164,6 +160,11 @@ fun DayCourseAlert(
             iconRes = R.drawable.ic_alert_snooze
         }
     }
+
+    // 左侧竖条跟随标题语义色（蓝/橙/红），与「XX分钟后」文案同色
+    val barColor = titleColor
+    // 上下时间文字与「上课」标签仍取课程卡色
+    val courseColor = if (titleOnlyCard) colors.primary else color.barColor(MaterialTheme.isDarkTheme)
 
     // 右侧形态由中列行数（标题以外）决定：0 = 单行同行水平，1 = 竖列 + 横排标签，
     // ≥2 = 竖列 + 竖排标签。备注折行不改变行数档位（布局同四行）。
@@ -235,16 +236,16 @@ fun DayCourseAlert(
                     )
                     if (showInlineTimes) {
                         Spacer(Modifier.width(InlineRightGap))
-                        TimeText(startTime, barColor)
+                        TimeText(startTime, courseColor)
                         Spacer(Modifier.width(TimeTagGap))
                         TagBox(
                             stretch = false,
                             vertical = false,
-                            barColor = barColor,
+                            courseColor = courseColor,
                             modifier = Modifier,
                         )
                         Spacer(Modifier.width(TimeTagGap))
-                        TimeText(endTime, barColor)
+                        TimeText(endTime, courseColor)
                     }
                 }
                 if (!titleOnlyCard) {
@@ -266,7 +267,7 @@ fun DayCourseAlert(
             StackedTimeColumn(
                 startTime = startTime,
                 endTime = endTime,
-                barColor = barColor,
+                courseColor = courseColor,
                 verticalTag = verticalTag,
                 modifier = Modifier.matchParentSize(),
             )
@@ -282,7 +283,7 @@ fun DayCourseAlert(
 private fun StackedTimeColumn(
     startTime: String,
     endTime: String,
-    barColor: Color,
+    courseColor: Color,
     verticalTag: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -301,14 +302,14 @@ private fun StackedTimeColumn(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(TagGap),
         ) {
-            TimeText(startTime, barColor)
+            TimeText(startTime, courseColor)
             TagBox(
                 stretch = true,
                 vertical = verticalTag,
-                barColor = barColor,
+                courseColor = courseColor,
                 modifier = Modifier.weight(1f).width(StackedTagWidth),
             )
-            TimeText(endTime, barColor)
+            TimeText(endTime, courseColor)
         }
     }
 }
@@ -321,12 +322,12 @@ private fun StackedTimeColumn(
 private fun TagBox(
     stretch: Boolean,
     vertical: Boolean,
-    barColor: Color,
+    courseColor: Color,
     modifier: Modifier = Modifier,
 ) {
     Box(
         modifier = modifier
-            .background(barColor.copy(alpha = TagBackgroundAlpha), DayCourseAlertTagShape)
+            .background(courseColor.copy(alpha = TagBackgroundAlpha), DayCourseAlertTagShape)
             .padding(
                 horizontal = if (stretch) StretchedTagPaddingHorizontal else TagPaddingHorizontal,
                 vertical = TagPaddingVertical,
@@ -335,7 +336,7 @@ private fun TagBox(
     ) {
         // 深浅各自降明度：深色课程色本就比浅色深一档，沿用浅色系数会闷进标签底色
         val dimFactor = if (MaterialTheme.isDarkTheme) TagTextDimFactorDark else TagTextDimFactorLight
-        val tagColor = barColor.darkened(dimFactor)
+        val tagColor = courseColor.darkened(dimFactor)
         if (vertical) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 TagText("上", tagColor)
