@@ -21,7 +21,7 @@ internal object ShareCodec {
             SharePayload(exportedAtMillis = exportedAtMillis, schedule = schedule),
         )
 
-    /** 解析并产出可直接入库的新课表（新 id、课程新 id、名称未去重） */
+    /** 解析并产出可直接入库的新课表（新 id、课程/调课新 id、名称未去重） */
     fun decodeForImport(json: String): ReadResult<Schedule> {
         val payload = try {
             ScheduleJson.decodeShare<SharePayload>(json)
@@ -36,9 +36,23 @@ internal object ShareCodec {
             return ReadResult.Err(ScheduleError.ImportKindMismatch(payload.kind))
         }
 
+        // id 全量重铸：课程按位置各自铸新 id（载荷里可能出现重复旧 id，必须彼此独立不合并）。
+        // 旧 id → 新 id 的映射同时喂给调课的 courseId 重定向，否则重铸后全部调课都成悬空引用，
+        // 带调课的课表必然被全量校验拒之门外。重复旧 id 时映射取最后一次（脏数据兜底，
+        // 两条新 id 都真实存在、不会悬空）；调课引用载荷里不存在的课程时保留原 id，由校验统一报错
+        val remappedCourses = payload.schedule.courses.map { it.copy(id = newUuid()) }
+        val courseIds = payload.schedule.courses
+            .zip(remappedCourses) { old, new -> old.id to new.id }
+            .toMap()
         val rebuilt = payload.schedule.copy(
             id = newUuid(),
-            courses = payload.schedule.courses.map { it.copy(id = newUuid()) },
+            courses = remappedCourses,
+            adjustments = payload.schedule.adjustments.map { adjustment ->
+                adjustment.copy(
+                    id = newUuid(),
+                    courseId = courseIds[adjustment.courseId] ?: adjustment.courseId,
+                )
+            },
         )
 
         val errors = ScheduleValidator.validate(rebuilt)

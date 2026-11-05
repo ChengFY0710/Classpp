@@ -4,8 +4,14 @@ import com.fangyi.classpp.data.CourseRef
 import kotlinx.serialization.Serializable
 import java.util.UUID
 
-/** 存储文件与分享信封的格式版本；导入时拒绝更高版本 */
-const val SCHEDULE_FORMAT_VERSION = 1
+/**
+ * 存储文件与分享信封的格式版本；导入时拒绝更高版本。
+ *
+ * v2：[Schedule] 增加 adjustments（单次调课）。旧版本会按 ignoreUnknownKeys 静默忽略该字段，
+ * 再保存即丢失全部调课——所以新数据必须被旧版本明确拒绝（分享导入/备份恢复报版本不支持，
+ * 本地存储按损坏隔离取证），而不是无声降级。
+ */
+const val SCHEDULE_FORMAT_VERSION = 2
 
 /** 调整节数生成默认作息时的课间时长（默认大课时长均为 100 分钟） */
 private const val DEFAULT_BREAK_MINUTES = 30

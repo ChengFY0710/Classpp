@@ -414,7 +414,16 @@ fun ScheduleScreen(
                 schedule.id,
                 saver = ScheduleEditSession.Saver,
             ) {
-                if (editing) ScheduleEditSession(draft = schedule.courses) else ScheduleEditSession.Inactive
+                // 已落库的单次调课同样进草稿：否则编辑态网格看不到调课卡、设置调课列表
+                // 显示为空，点保存还会用空列表整份写回，把已有调课全部清掉
+                if (editing) {
+                    ScheduleEditSession(
+                        draft = schedule.courses,
+                        draftAdjustments = schedule.adjustments,
+                    )
+                } else {
+                    ScheduleEditSession.Inactive
+                }
             }
             val editSession: ScheduleEditSession? = session.takeIf { it.active }
             // 编辑态内容过渡进度：0 = 浏览、1 = 编辑，驱动网格整体上滑收拢、日期带折叠
@@ -1600,6 +1609,9 @@ fun ScheduleScreen(
             )
 
             // 设置 → 设置调课：列表叠在设置浮层之上（画在设置之后）
+            // visible 是 saveable：旋转恢复出 visible=true 时 mounted 必须跟上，
+            // 否则列表不渲染、设置浮层还因 extraCovered 停在「被覆盖」的缩小态
+            if (adjustListVisible) adjustListMounted = true
             if (adjustListMounted) {
                 AdjustmentListSheet(
                     visible = adjustListVisible,

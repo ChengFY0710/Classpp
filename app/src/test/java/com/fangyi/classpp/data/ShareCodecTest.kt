@@ -1,6 +1,7 @@
 package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.export.ShareCodec
+import com.fangyi.classpp.data.model.CourseAdjustment
 import com.fangyi.classpp.data.model.CourseColor
 import com.fangyi.classpp.data.model.SCHEDULE_FORMAT_VERSION
 import com.fangyi.classpp.data.model.SharePayload
@@ -64,7 +65,7 @@ class ShareCodecTest {
     @Test
     fun `future formatVersion is rejected`() {
         val json = ScheduleJson.encodeShare(
-            SharePayload(formatVersion = 2, exportedAtMillis = 1L, schedule = source),
+            SharePayload(formatVersion = SCHEDULE_FORMAT_VERSION + 1, exportedAtMillis = 1L, schedule = source),
         )
         val r = ShareCodec.decodeForImport(json)
         assertTrue(r is ReadResult.Err)
@@ -129,5 +130,63 @@ class ShareCodecTest {
         assertTrue(json.contains("\"color\": \"Purple\""))
         val imported = (ShareCodec.decodeForImport(json) as ReadResult.Ok).value
         assertEquals(CourseColor.Purple, imported.courses.single().color)
+    }
+
+    @Test
+    fun `adjustment survives import with remapped course reference`() {
+        val withAdjustment = testSchedule(
+            id = "adj",
+            courses = listOf(testCourse(id = "c1", name = "微积分", span = 2)),
+            adjustments = listOf(
+                CourseAdjustment(
+                    id = "a1",
+                    courseId = "c1",
+                    fromWeek = 1,
+                    toWeek = 2,
+                    toDayOfWeek = 4,
+                    toStartSlot = 3,
+                    toSpan = 2,
+                ),
+            ),
+        )
+        val json = ShareCodec.encode(withAdjustment, exportedAtMillis = 1L)
+
+        val imported = when (val r = ShareCodec.decodeForImport(json)) {
+            is ReadResult.Ok -> r.value
+            is ReadResult.Err -> throw AssertionError("import failed: ${r.error.message}")
+        }
+
+        // 课程与调课的 id 全部重铸；courseId 重定向到新课程 id，否则整表校验必然拒绝
+        val newCourseId = imported.courses.single().id
+        assertNotEquals("c1", newCourseId)
+        val adjustment = imported.adjustments.single()
+        assertNotEquals("a1", adjustment.id)
+        assertEquals(newCourseId, adjustment.courseId)
+        assertEquals(1, adjustment.fromWeek)
+        assertEquals(2, adjustment.toWeek)
+        assertEquals(4, adjustment.toDayOfWeek)
+    }
+
+    @Test
+    fun `adjustment referencing missing course is rejected`() {
+        val dirty = testSchedule(
+            courses = listOf(testCourse(id = "c1")),
+            adjustments = listOf(
+                CourseAdjustment(
+                    id = "a1",
+                    courseId = "ghost",
+                    fromWeek = 1,
+                    toWeek = 2,
+                    toDayOfWeek = 4,
+                    toStartSlot = 1,
+                    toSpan = 1,
+                ),
+            ),
+        )
+        val json = ShareCodec.encode(dirty, exportedAtMillis = 1L)
+
+        val r = ShareCodec.decodeForImport(json)
+        assertTrue(r is ReadResult.Err)
+        assertTrue((r as ReadResult.Err).error is ScheduleError.AdjustmentCourseMissing)
     }
 }

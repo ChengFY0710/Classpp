@@ -1,6 +1,7 @@
 package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.SCHEDULE_FORMAT_VERSION
 import com.fangyi.classpp.data.model.Parity
 import com.fangyi.classpp.data.model.WeekPattern
 import com.fangyi.classpp.data.model.WeekSegment
@@ -110,7 +111,7 @@ class RepositoryBehaviorScriptTest {
 
         // 7. 导出含版本与 kind
         val json = repo.exportSchedule(idA).ok()
-        assertTrue(json.contains("\"formatVersion\": 1"))
+        assertTrue(json.contains("\"formatVersion\": $SCHEDULE_FORMAT_VERSION"))
         assertTrue(json.contains("\"kind\": \"classpp.schedule\""))
 
         // 8. 导入 → 独立副本，不劫持激活

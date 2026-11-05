@@ -111,7 +111,7 @@ class ScheduleJsonRoundTripTest {
             schedules = listOf(fullSchedule),
         )
         val json = ScheduleJson.encodeStorage(file)
-        assertTrue(json.contains("\"formatVersion\":1"))
+        assertTrue(json.contains("\"formatVersion\":$SCHEDULE_FORMAT_VERSION"))
         assertTrue(json.contains("\"activeScheduleId\":\"s-uuid-1\""))
         assertEquals(file, ScheduleJson.decodeStorage<ScheduleFile>(json))
     }

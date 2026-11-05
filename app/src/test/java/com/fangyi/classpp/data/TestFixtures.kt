@@ -1,5 +1,6 @@
 package com.fangyi.classpp.data
 
+import com.fangyi.classpp.data.model.CourseAdjustment
 import com.fangyi.classpp.data.model.CourseColor
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
@@ -25,6 +26,7 @@ internal fun testSchedule(
     name: String = "2026春",
     daysPerWeek: Int = 5,
     courses: List<CourseEntry> = emptyList(),
+    adjustments: List<CourseAdjustment> = emptyList(),
     showInactiveCourses: Boolean = true,
     start: IsoDate = TestTermStart,
     end: IsoDate = TestTermEnd,
@@ -35,6 +37,7 @@ internal fun testSchedule(
     termEnd = end,
     daysPerWeek = daysPerWeek,
     courses = courses,
+    adjustments = adjustments,
     showInactiveCourses = showInactiveCourses,
 )
 

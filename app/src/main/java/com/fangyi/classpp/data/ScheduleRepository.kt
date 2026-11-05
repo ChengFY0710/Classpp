@@ -424,34 +424,16 @@ class ScheduleRepository internal constructor(
     }
 
     /**
-     * 整份替换课程列表（编辑态保存走这条）：单次校验 + 单次提交，草稿要么整体生效要么原样不动。
+     * 整份替换课程 + 单次调课（编辑态保存走这条）：课程与例外表一次校验、一次提交，
+     * 草稿要么整体生效、要么原样不动。
      *
      * 不能用逐条 [upsertCourse]/[removeCourse] 拼出同样的结果——每条都拿"当时的仓库"做全量校验，
      * 中间态一旦非法就整轮失败，而合法的草稿经常要经过非法中间态：例如把原课周数缩成单周、
      * 同格再加一门双周的交替课，先写新课那一刻原课还占着全部周数，于是报出一场最终并不存在的冲突。
      *
-     * id 由调用方保证（草稿条目都带 id）。与其它 mutator 一致：失败时内存态零变更。
-     */
-    suspend fun replaceCourses(scheduleId: String, courses: List<CourseEntry>): OpResult = mutex.withLock {
-        val target = scheduleOrNull(scheduleId)
-            ?: return@withLock OpResult.Err(ScheduleError.NotFound(scheduleId))
-        val courseIds = courses.mapTo(HashSet()) { it.id }
-        val updated = target.copy(
-            courses = courses,
-            // 课程被整份替换掉后，它的调课不留悬空引用
-            adjustments = target.adjustments.filter { it.courseId in courseIds },
-        )
-        val errors = ScheduleValidator.validateCourses(updated)
-        if (errors.isNotEmpty()) return@withLock OpResult.Err(errors.first())
-        commit(fileState.value.replace(target, updated))
-    }
-
-    /**
-     * 整份替换课程 + 单次调课（编辑态保存走这条）：课程与例外表一次校验、一次提交，
-     * 草稿要么整体生效、要么原样不动。
-     *
-     * 调课可能引用本次编辑里**新加、尚未落库**的课程 id，因此不能走 [replaceCourses] 之后
+     * 调课可能引用本次编辑里**新加、尚未落库**的课程 id，因此不能先写课程
      * 再逐条写调课；两者必须同批提交。达到草稿里已删除课程的调课会被防御性清理。
+     * id 由调用方保证（草稿条目都带 id）。与其它 mutator 一致：失败时内存态零变更。
      */
     suspend fun replaceCoursesAndAdjustments(
         scheduleId: String,

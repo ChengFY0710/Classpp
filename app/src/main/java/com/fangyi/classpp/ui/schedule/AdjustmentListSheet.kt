@@ -63,6 +63,8 @@ internal fun AdjustmentListSheet(
             }
     }
     val todayWeek = remember(schedule) { schedule.weekOf(IsoDate.today()) }
+    // 开学前（todayWeek ≤ 0）没有任何原课次算"已过去"，全部按未过去展示
+    val currentWeek = todayWeek.takeIf { it >= 1 }
 
     OverlaySheet(
         title = stringResource(R.string.adjust_list_title),
@@ -88,7 +90,7 @@ internal fun AdjustmentListSheet(
                         AdjustmentRow(
                             adjustment = adjustment,
                             course = course,
-                            past = adjustment.fromWeek < todayWeek,
+                            past = currentWeek != null && adjustment.fromWeek < currentWeek,
                             onClick = { onEdit(adjustment) },
                             onDelete = { onDelete(adjustment) },
                         )

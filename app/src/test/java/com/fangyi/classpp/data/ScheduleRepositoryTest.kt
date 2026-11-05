@@ -96,7 +96,7 @@ class ScheduleRepositoryTest {
         assertTrue(r.renameSchedule("nope", "x").assertErr() is ScheduleError.NotFound)
         assertTrue(r.deleteSchedule("nope").assertErr() is ScheduleError.NotFound)
         assertTrue(r.removeCourse("nope", "c").assertErr() is ScheduleError.NotFound)
-        assertTrue(r.replaceCourses("nope", emptyList()).assertErr() is ScheduleError.NotFound)
+        assertTrue(r.replaceCoursesAndAdjustments("nope", emptyList(), emptyList()).assertErr() is ScheduleError.NotFound)
     }
 
     @Test
@@ -328,7 +328,7 @@ class ScheduleRepositoryTest {
     /**
      * 逐条 upsert 的写回在"原课缩周 + 同格新增交替课"这种合法草稿上会失败：
      * 新课先写时，仓库里的原课还占着全部周数，中间态非法 —— 这正是"新建交替课程后
-     * 保存报『与微积分时间冲突』"的成因（正因如此，编辑态保存改用 [replaceCourses] 整份替换）。
+     * 保存报『与微积分时间冲突』"的成因（正因如此，编辑态保存改用 [replaceCoursesAndAdjustments] 整份替换）。
      */
     @Test
     fun `course-by-course write-back rejects a legal draft on illegal mid-state`() = runBlocking {
@@ -353,14 +353,14 @@ class ScheduleRepositoryTest {
     // ---------- 整份替换（编辑态保存） ----------
 
     @Test
-    fun `replaceCourses applies the whole draft and persists it`() = runBlocking {
+    fun `replaceCoursesAndAdjustments applies the whole draft and persists it`() = runBlocking {
         val r = repo()
         val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
         r.upsertCourse(id, testCourse(id = "calc", name = "微积分", day = 1, startSlot = 1)).assertOk()
 
         val shrunken = testCourse(id = "calc", name = "微积分", day = 1, startSlot = 1, weeks = oddWeeks())
         val alternate = testCourse(id = "alt", name = "线性代数", day = 1, startSlot = 1, weeks = evenWeeks())
-        r.replaceCourses(id, listOf(shrunken, alternate)).assertOk()
+        r.replaceCoursesAndAdjustments(id, listOf(shrunken, alternate), emptyList()).assertOk()
 
         assertEquals(listOf("calc", "alt"), r.activeSchedule.value?.courses?.map { it.id })
         // 落盘后重开一致
@@ -368,7 +368,7 @@ class ScheduleRepositoryTest {
     }
 
     @Test
-    fun `replaceCourses rejects the whole draft and keeps memory untouched`() = runBlocking {
+    fun `replaceCoursesAndAdjustments rejects the whole draft and keeps memory untouched`() = runBlocking {
         val r = repo()
         val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
         r.upsertCourse(id, testCourse(id = "calc", name = "微积分", day = 1, startSlot = 1)).assertOk()
@@ -378,17 +378,20 @@ class ScheduleRepositoryTest {
             testCourse(id = "a", name = "课A", day = 1, startSlot = 1),
             testCourse(id = "b", name = "课B", day = 1, startSlot = 1),
         )
-        assertTrue(r.replaceCourses(id, conflicting).assertErr() is ScheduleError.GridConflict)
+        assertTrue(
+            r.replaceCoursesAndAdjustments(id, conflicting, emptyList()).assertErr()
+                is ScheduleError.GridConflict,
+        )
         assertEquals(listOf("calc"), r.activeSchedule.value?.courses?.map { it.id })
     }
 
     @Test
-    fun `replaceCourses can empty the course list`() = runBlocking {
+    fun `replaceCoursesAndAdjustments can empty the course list`() = runBlocking {
         val r = repo()
         val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
         r.upsertCourse(id, testCourse(id = "calc")).assertOk()
 
-        r.replaceCourses(id, emptyList()).assertOk()
+        r.replaceCoursesAndAdjustments(id, emptyList(), emptyList()).assertOk()
         assertTrue(r.activeSchedule.value!!.courses.isEmpty())
     }
 
