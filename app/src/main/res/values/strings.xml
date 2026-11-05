@@ -668,9 +668,13 @@
     <string name="ai_sheet_title">AI 助手</string>
     <string name="ai_sheet_chat">对话</string>
     <string name="ai_sheet_close">关闭</string>
-    <string name="ai_input_hint">输入消息…</string>
+    <string name="ai_input_hint">点击输入和AI对话</string>
+    <string name="ai_input_sending_hint">AI正在回答</string>
     <string name="cd_ai_send">发送</string>
     <string name="cd_ai_stop">停止生成</string>
+    <string name="cd_ai_add_attachment">添加附件</string>
+    <string name="ai_add_image">添加图片</string>
+    <string name="ai_add_file">添加文件</string>
     <string name="cd_ai_thinking_toggle">展开或收起思考过程</string>
     <string name="ai_thinking_title">思考过程</string>
     <string name="ai_thinking_in_progress">正在思考…</string>

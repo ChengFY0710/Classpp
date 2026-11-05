@@ -14,9 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -32,10 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -59,14 +54,13 @@ import com.fangyi.classpp.ui.note.deadlineDaysLeft
 import com.fangyi.classpp.ui.note.repeatCardText
 import com.fangyi.classpp.ui.theme.ChatBubbleShape
 import com.fangyi.classpp.ui.theme.ChatErrorBannerShape
-import com.fangyi.classpp.ui.theme.ChatInputShape
 import com.fangyi.classpp.ui.theme.ChatThinkingShape
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.PillShape
 
 /**
- * AI 对话浮层的子组件（气泡 / 已创建待办卡 / 错误条 / 空态 / 输入栏）。
+ * AI 对话浮层的子组件（气泡 / 已创建待办卡 / 错误条 / 空态）。
  * 布局全部无状态——状态（输入、浮层目标）由 [AiChatOverlay] 持有，这里只吃参数。
  */
 
@@ -456,81 +450,6 @@ internal fun AiChatEmptyState(
     }
 }
 
-// ---------- 输入栏 ----------
-
-/** 底部输入栏：圆角输入框 + 发送/停止切换。sending 时按钮变停止（取消当前流） */
-@Composable
-internal fun AiChatInputBar(
-    text: String,
-    onTextChange: (String) -> Unit,
-    enabled: Boolean,
-    sending: Boolean,
-    onSend: () -> Unit,
-    onStop: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        val focusColor = MaterialTheme.colorScheme.primary
-        BasicTextField(
-            value = text,
-            onValueChange = onTextChange,
-            enabled = enabled && !sending,
-            singleLine = true,
-            textStyle = ClassppTextTokens.secondaryText.copy(color = MaterialTheme.colorScheme.onSurface),
-            cursorBrush = SolidColor(focusColor),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-            keyboardActions = KeyboardActions(onSend = { onSend() }),
-            modifier = Modifier
-                .weight(1f)
-                .clip(ChatInputShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            decorationBox = { inner ->
-                Box {
-                    if (text.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.ai_input_hint),
-                            style = ClassppTextTokens.secondaryText,
-                            color = MaterialTheme.classppColors.secondaryText.copy(alpha = 0.6f),
-                        )
-                    }
-                    inner()
-                }
-            },
-        )
-        val actionEnabled = if (sending) true else text.isNotBlank() && enabled
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(
-                    if (actionEnabled) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.surfaceVariant
-                    },
-                )
-                .clickable(enabled = actionEnabled) { if (sending) onStop() else onSend() },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(if (sending) R.drawable.ic_stop else R.drawable.ic_send),
-                contentDescription = stringResource(if (sending) R.string.cd_ai_stop else R.string.cd_ai_send),
-                tint = if (actionEnabled) {
-                    MaterialTheme.colorScheme.onPrimary
-                } else {
-                    MaterialTheme.classppColors.secondaryText.copy(alpha = 0.6f)
-                },
-                modifier = Modifier.size(22.dp),
-            )
-        }
-    }
-}
-
 // ---------- 预览 ----------
 
 @Preview(name = "气泡", showBackground = true)
@@ -626,21 +545,5 @@ private fun ThinkingBlockPreview() {
                 thinkingInProgress = false,
             )
         }
-    }
-}
-
-@Preview(name = "输入栏", showBackground = true)
-@Composable
-private fun InputBarPreview() {
-    MaterialTheme {
-        AiChatInputBar(
-            text = "添加：周五交实验报告",
-            onTextChange = {},
-            enabled = true,
-            sending = false,
-            onSend = {},
-            onStop = {},
-            modifier = Modifier.padding(16.dp),
-        )
     }
 }

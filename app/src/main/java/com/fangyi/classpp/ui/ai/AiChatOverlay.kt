@@ -41,6 +41,9 @@ import com.fangyi.classpp.data.ai.AiException
 import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
+import com.fangyi.classpp.ui.components.AiChatInputBar
+import com.fangyi.classpp.ui.components.LocalOverlayBottomGlassBackdrop
+import com.fangyi.classpp.ui.components.LocalOverlayBottomHazeState
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
@@ -238,6 +241,10 @@ fun AiChatOverlay(
         onScrollStateReady = { chatScroll.value = it },
         bottomScrim = false,
         bottomContent = {
+            // 与顶栏同源的玻璃采样层（关/API<31 为 null，输入栏回退实心）与 Haze 采样状态
+            //（恒为浮层当前 hazeState，供附件菜单跨 Popup 窗口做磨砂）
+            val bottomGlassBackdrop = LocalOverlayBottomGlassBackdrop.current
+            val bottomHazeState = LocalOverlayBottomHazeState.current
             // 钉底输入栏：自绘渐变兜底 + 导航栏留白 + 键盘上移（insets 消费顺序：
             // navigationBarsPadding 先吃掉导航栏，imePadding 补键盘高出导航栏的部分）
             Column(
@@ -257,12 +264,18 @@ fun AiChatOverlay(
                     .padding(horizontal = PageHorizontalSpacing),
             ) {
                 AiChatInputBar(
-                    text = input,
-                    onTextChange = { input = it },
-                    enabled = configured,
+                    value = input,
+                    onValueChange = { input = it },
+                    placeholder = stringResource(R.string.ai_input_hint),
+                    sendingPlaceholder = stringResource(R.string.ai_input_sending_hint),
                     sending = sending,
+                    enabled = configured,
                     onSend = { sendMessage(input) },
                     onStop = ::stopSending,
+                    onAddImage = {},
+                    onAddFile = {},
+                    hazeState = bottomHazeState,
+                    backdrop = bottomGlassBackdrop,
                 )
             }
         },

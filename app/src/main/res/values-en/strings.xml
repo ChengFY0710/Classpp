@@ -641,9 +641,13 @@
     <string name="ai_sheet_title">AI Assistant</string>
     <string name="ai_sheet_chat">Chat</string>
     <string name="ai_sheet_close">Close</string>
-    <string name="ai_input_hint">Type a message…</string>
+    <string name="ai_input_hint">Tap to chat with AI</string>
+    <string name="ai_input_sending_hint">AI is replying</string>
     <string name="cd_ai_send">Send</string>
     <string name="cd_ai_stop">Stop generating</string>
+    <string name="cd_ai_add_attachment">Add attachment</string>
+    <string name="ai_add_image">Add image</string>
+    <string name="ai_add_file">Add file</string>
     <string name="cd_ai_thinking_toggle">Expand or collapse the reasoning</string>
     <string name="ai_thinking_title">Reasoning</string>
     <string name="ai_thinking_in_progress">Thinking…</string>

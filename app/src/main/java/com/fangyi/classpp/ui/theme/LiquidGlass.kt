@@ -19,6 +19,7 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.shadow.Shadow
 
 /**
  * 液态玻璃样式：全 app 玻璃按钮（底部导航栏三胶囊、待办页顶栏胶囊、设置页顶栏返回
@@ -128,8 +129,11 @@ fun Modifier.glassPressFeedback(
  * 且 API 31+ 由 drawBackdrop 出底——采样内容经 [style] 的模糊/折射裁进 [shape]，
  * 表面叠染色（[tint] 非空用原值，如导航胶囊选中蓝；null = [containerColor] ×
  * [LiquidGlassStyle.tintAlpha]，色相不变透出玻璃感）；否则维持实心底
- * [Modifier.background]。缩放会让采样跟着放大（无 layerBlock 补偿），blur + 染色 +
- * 1.1 左右的小倍率下不可感知，全 app 玻璃按钮同一取舍。
+ * [Modifier.background]。[shadow] 是 drawBackdrop 的外投影，默认沿用库的
+ * [Shadow.Default]（24dp / 黑 10%）；小尺寸玻璃圆钮嫌浓时可传更轻的 [Shadow]，
+ * 传 null 完全关闭（仅玻璃路径生效，非玻璃回退不画投影）。缩放会让采样跟着放大
+ * （无 layerBlock 补偿），blur + 染色 + 1.1 左右的小倍率下不可感知，全 app 玻璃
+ * 按钮同一取舍。
  */
 fun Modifier.glassSurface(
     shape: Shape,
@@ -137,6 +141,7 @@ fun Modifier.glassSurface(
     backdrop: Backdrop?,
     style: LiquidGlassStyle = LiquidGlassStyle.Pill,
     tint: Color? = null,
+    shadow: Shadow? = Shadow.Default,
 ): Modifier {
     val useGlass = backdrop != null && Build.VERSION.SDK_INT >= 31
     return then(
@@ -150,6 +155,7 @@ fun Modifier.glassSurface(
                         lens(style.lensHeight.toPx(), style.lensDepth.toPx())
                     }
                 },
+                shadow = shadow?.let { { it } },
                 onDrawSurface = {
                     drawRect(tint ?: containerColor.copy(alpha = style.tintAlpha))
                 },

@@ -36,6 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -44,6 +45,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -132,6 +134,25 @@ data class SheetTopAction(
     // primary/error 染色玻璃由调用方传 ClassppColors.onPrimaryGlass
     val contentColorGlass: Color = contentColor,
 )
+
+/**
+ * 钉底槽（[OverlaySheet] 的 [bottomContent]）可用的液态玻璃采样层：与浮层顶栏胶囊同源
+ * （同一个 `layerBackdrop` 采样节点），由浮层按「更高级的玻璃材质」开关统一下发。
+ * 玻璃关闭 / API < 31 时为 null；槽内组件把 null 传给 [glassSurface] /
+ * [glassPressFeedback] 即回退原实心材质，无需自己再判开关。
+ *
+ * 钉底槽画在采样节点之外（采样层 = 滚动内容 + 底色），槽内玻璃组件可直接采样，
+ * 不会出现读写同一层的 GPU 反馈环。
+ */
+val LocalOverlayBottomGlassBackdrop = staticCompositionLocalOf<Backdrop?> { null }
+
+/**
+ * 钉底槽（[OverlaySheet] 的 [bottomContent]）可用的 Haze 采样状态：与浮层顶栏磨砂同源，
+ * 恒为浮层当前使用的 hazeState。槽内的弹出菜单（PopupMenuCard）把它传给
+ * PopupMenuPopup / PopupMenuCard，即可跨 Popup 窗口采样浮层内容，得到菜单磨砂底；
+ * 不传则退化为不透明白卡。
+ */
+val LocalOverlayBottomHazeState = staticCompositionLocalOf<HazeState?> { null }
 
 /**
  * 浮层卡片容器：贯穿整个 app 的浮层设计元素。
@@ -539,7 +560,14 @@ fun OverlaySheet(
                                             },
                                         ),
                                 ) {
-                                    slot()
+                                    // 钉底槽与顶栏共用同一采样源：玻璃采样层给输入栏底材，
+                                    // Haze 状态给槽内弹出菜单做磨砂
+                                    CompositionLocalProvider(
+                                        LocalOverlayBottomGlassBackdrop provides glassButtonBackdrop,
+                                        LocalOverlayBottomHazeState provides sheetHazeState,
+                                    ) {
+                                        slot()
+                                    }
                                 }
                             }
                         }
