@@ -618,8 +618,7 @@ private fun OverlaySheetTopBar(
             .background(MaterialTheme.colorScheme.background)
             .hazeBlur(
                 input = hazeSources(hazeState),
-                // 25dp：与设置页顶栏同规格的模糊预算（转场逐帧重合成，模糊不宜过重）
-                style = hazeTopBarStyle(),
+                style = hazeTopBarStyle(radius = 18.dp),
                 performanceMode = HazePerformanceMode.Balanced,
             )
             .then(dragModifier),
