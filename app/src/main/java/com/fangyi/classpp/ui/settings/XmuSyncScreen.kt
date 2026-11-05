@@ -83,10 +83,7 @@ import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
-import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
-import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
-import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
@@ -582,27 +579,13 @@ fun XmuSyncScreen(
                     val avatarImage by repository.avatarImage.collectAsState()
                     val connected = syncState.uid.isNotEmpty()
 
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .hazeSource(hazeState)
-                            .then(
-                                if (glassBackdrop != null) {
-                                    Modifier.layerBackdrop(glassBackdrop)
-                                } else {
-                                    Modifier
-                                },
-                            )
-                            .rubberBandVerticalScroll(
-                                scrollState,
-                                overscrollEffect = overscrollEffect,
-                            )
-                            .padding(horizontal = PageHorizontalSpacing)
-                            .padding(
-                                top = topBarHeight + TopBarContentGap,
-                                bottom = navBarPadding + SheetBottomSlack,
-                            ),
-                        verticalArrangement = Arrangement.spacedBy(SettingsSectionSpacing),
+                    SettingsScrollContent(
+                        scrollState = scrollState,
+                        overscrollEffect = overscrollEffect,
+                        hazeState = hazeState,
+                        glassBackdrop = glassBackdrop,
+                        topPadding = topBarHeight + TopBarContentGap,
+                        bottomPadding = navBarPadding + SheetBottomSlack,
                     ) {
                         if (sessionExpired) {
                             SheetInfoBanner(text = stringResource(R.string.xmu_error_expired))

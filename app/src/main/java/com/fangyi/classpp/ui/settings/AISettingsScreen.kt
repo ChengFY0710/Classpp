@@ -1,20 +1,15 @@
 package com.fangyi.classpp.ui.settings
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -48,8 +43,6 @@ import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
-import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
-import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
@@ -136,15 +129,12 @@ fun AISettingsScreen(
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
         // 顶栏叠在内容之上：内容整屏铺开（hazeSource），首屏经 topBarHeight 内缩到顶栏之下，
-        // 上滑时从顶栏背后滚过，顶栏用 Haze 对其做自上而下的渐变背景模糊。
-        // BoxWithConstraints 提供视口高度：正文列据此至少撑满一屏（见下方 heightIn），
-        // 短页面时橡皮筋的兜底手势层才覆盖整页，而不是只覆盖卡片内容那一小段。
-        BoxWithConstraints(
+        // 上滑时从顶栏背后滚过，顶栏用 Haze 对其做自上而下的渐变背景模糊
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            val pageHeight = maxHeight
             val hazeState = rememberHazeState()
             // 顶栏返回按钮的液态玻璃：采样层挂下方正文列（与 hazeSource 同一节点，
             // Haze 管顶栏磨砂、Backdrop 只喂返回按钮）；null = 玻璃关闭，标记不挂载
@@ -222,34 +212,14 @@ fun AISettingsScreen(
                         stringResource(R.string.ai_profile_entry_desc)
                     }
 
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .hazeSource(hazeState)
-                            // 玻璃返回按钮开启时同一节点再挂液态玻璃采样标记
-                            .then(
-                                if (glassBackdrop != null) {
-                                    Modifier.layerBackdrop(glassBackdrop)
-                                } else {
-                                    Modifier
-                                },
-                            )
-                            // 标准可滚动路径（显式过滚动效果同时负责渲染与派发）：
-                            // 正文经下方 heightIn 保证比视口高 8dp，滚动范围恒非零，
-                            // 整页都是可拖拽区域——不依赖短页兜底手势层（它只覆盖内容自身高度）
-                            .verticalScroll(
-                                scrollState,
-                                overscrollEffect = overscrollEffect,
-                            )
-                            // 正文至少撑满一屏、并留出 8dp 可滚动余量
-                            .heightIn(min = pageHeight + 8.dp)
-                            .padding(horizontal = PageHorizontalSpacing)
-                            .padding(
-                                // 首项距顶栏留 TopBarContentGap（页自有节奏），尾部余量与浮层同源
-                                top = topBarHeight + TopBarContentGap,
-                                bottom = navBarPadding + SheetBottomSlack,
-                            ),
-                        verticalArrangement = Arrangement.spacedBy(SettingsSectionSpacing),
+                    // 设置子页共用滚动正文：整页拖拽/过滚动、Haze 采样源与玻璃采样标记统一
+                    SettingsScrollContent(
+                        scrollState = scrollState,
+                        overscrollEffect = overscrollEffect,
+                        hazeState = hazeState,
+                        glassBackdrop = glassBackdrop,
+                        topPadding = topBarHeight + TopBarContentGap,
+                        bottomPadding = navBarPadding + SheetBottomSlack,
                     ) {
                         // Keystore 不可用：置顶提示（Key 无法保存，连接与方案仍可落盘）
                         if (!secureAvailable) {

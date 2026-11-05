@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.settings
 
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -52,7 +51,6 @@ import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
-import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.schedule.CardHeightPreferences
 import com.fangyi.classpp.ui.schedule.CardHeightScales
 import com.fangyi.classpp.ui.schedule.DefaultTimeSlots
@@ -60,8 +58,6 @@ import com.fangyi.classpp.ui.schedule.TimeSlot
 import com.fangyi.classpp.ui.schedule.cardHeightMinScale
 import com.fangyi.classpp.ui.schedule.shortestDurationMinutes
 import com.fangyi.classpp.ui.schedule.toUiSlots
-import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
-import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
 import com.fangyi.classpp.ui.theme.ThemeMode
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -170,31 +166,13 @@ fun PersonalizationScreen(
                 .calculateBottomPadding()
 
             // 采样源始终存在：正文列挂 hazeSource，顶栏背后才有内容可采（不可省）
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .hazeSource(hazeState)
-                    // 玻璃返回按钮开启时同一节点再挂液态玻璃采样标记
-                    .then(
-                        if (glassBackdrop != null) {
-                            Modifier.layerBackdrop(glassBackdrop)
-                        } else {
-                            Modifier
-                        },
-                    )
-                    // 橡皮筋增强版 verticalScroll：内容不足一屏时也能拉出橡皮筋
-                    // （ui.motion 的 rubberBandVerticalScroll）
-                    .rubberBandVerticalScroll(
-                        scrollState,
-                        overscrollEffect = overscrollEffect,
-                    )
-                    .padding(horizontal = PageHorizontalSpacing)
-                    .padding(
-                        // 首项距顶栏留 TopBarContentGap（页自有节奏），尾部余量与浮层同源
-                        top = topBarHeight + TopBarContentGap,
-                        bottom = navBarPadding + SheetBottomSlack,
-                    ),
-                verticalArrangement = Arrangement.spacedBy(SettingsSectionSpacing),
+            SettingsScrollContent(
+                scrollState = scrollState,
+                overscrollEffect = overscrollEffect,
+                hazeState = hazeState,
+                glassBackdrop = glassBackdrop,
+                topPadding = topBarHeight + TopBarContentGap,
+                bottomPadding = navBarPadding + SheetBottomSlack,
             ) {
                 ColorModeSection(
                     mode = themeMode,

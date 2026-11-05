@@ -8,9 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
@@ -54,10 +52,7 @@ import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
-import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
-import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
-import com.fangyi.classpp.ui.theme.SettingsSectionSpacing
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.HazeState
@@ -190,30 +185,13 @@ fun NotificationScreen(
                 .calculateBottomPadding()
 
             // 采样源始终挂正文列：顶栏背后才有内容可采（不可省）
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .hazeSource(hazeState)
-                    // 玻璃返回按钮开启时同一节点再挂液态玻璃采样标记
-                    .then(
-                        if (glassBackdrop != null) {
-                            Modifier.layerBackdrop(glassBackdrop)
-                        } else {
-                            Modifier
-                        },
-                    )
-                    // 橡皮筋增强版 verticalScroll：内容不足一屏时也能拉出橡皮筋
-                    .rubberBandVerticalScroll(
-                        scrollState,
-                        overscrollEffect = overscrollEffect,
-                    )
-                    .padding(horizontal = PageHorizontalSpacing)
-                    .padding(
-                        // 首项距顶栏留 TopBarContentGap（页自有节奏），尾部余量与浮层同源
-                        top = topBarHeight + TopBarContentGap,
-                        bottom = navBarPadding + SheetBottomSlack,
-                    ),
-                verticalArrangement = Arrangement.spacedBy(SettingsSectionSpacing),
+            SettingsScrollContent(
+                scrollState = scrollState,
+                overscrollEffect = overscrollEffect,
+                hazeState = hazeState,
+                glassBackdrop = glassBackdrop,
+                topPadding = topBarHeight + TopBarContentGap,
+                bottomPadding = navBarPadding + SheetBottomSlack,
             ) {
                 // 顶部两卡不带分组标题：无题 CardSection 收拢成组，组内 10dp 卡间距与
                 // 下方两个带题分组同节奏；组与组之间仍走页面的 SettingsSectionSpacing。
