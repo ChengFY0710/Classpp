@@ -237,6 +237,9 @@ class AiChatRepository internal constructor(
                         onDelta = { chunk ->
                             appendToLast(chunk)
                         },
+                        onReasoning = { chunk ->
+                            appendReasoningToLast(chunk)
+                        },
                     )
                 } catch (e: CancellationException) {
                     // 停止/退出：半截文本保留，标记 interrupted；取消的协程里 withContext
@@ -302,6 +305,7 @@ class AiChatRepository internal constructor(
                         apiKey = apiKey,
                         turns = buildTurns(history, userText),
                         onDelta = { chunk -> appendToLast(chunk) },
+                        onReasoning = { chunk -> appendReasoningToLast(chunk) },
                     )
                 } catch (e: CancellationException) {
                     // 取消路径的落盘同样包 NonCancellable（见 send 的同款注释）
@@ -401,6 +405,22 @@ class AiChatRepository internal constructor(
             val last = list.last()
             if (last.role != AiChatRole.Assistant) return@update list
             list.toMutableList().also { it[it.lastIndex] = last.copy(content = last.content + chunk) }
+        }
+        maybeCheckpoint()
+    }
+
+    /**
+     * 思考增量追加到尾部 assistant 消息的 [AiChatMessage.reasoning]：与正文分列，
+     * UI 在气泡上方的折叠块里展示；同样参与 checkpoint 节流（长思考也要能恢复）。
+     */
+    private fun appendReasoningToLast(chunk: String) {
+        _messages.update { list ->
+            if (list.isEmpty()) return@update list
+            val last = list.last()
+            if (last.role != AiChatRole.Assistant) return@update list
+            list.toMutableList().also {
+                it[it.lastIndex] = last.copy(reasoning = last.reasoning + chunk)
+            }
         }
         maybeCheckpoint()
     }

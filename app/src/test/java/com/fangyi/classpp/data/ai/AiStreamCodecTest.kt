@@ -165,20 +165,31 @@ class AiStreamCodecTest {
     }
 
     @Test
-    fun `anthropic ignores non text deltas and unparseable payloads`() = runBlocking {
+    fun `anthropic thinking deltas are delivered via onReasoning`() = runBlocking {
         val deltas = mutableListOf<String>()
+        val reasoning = mutableListOf<String>()
         val result = transport(
+            """data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"先想"}}""",
+            """data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"再答"}}""",
+            // 工具调用参数 / 思考签名等非正文、非思考增量：忽略
             """data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{}"}}""",
-            """data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"想"}}""",
+            """data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}""",
             delta("正文"),
             "data: not-json",
             messageStop(),
             null,
         ).let { t ->
-            AiClient(t).streamChat(anthropicConnection(), "sk", turns, onDelta = { deltas += it })
+            AiClient(t).streamChat(
+                anthropicConnection(),
+                "sk",
+                turns,
+                onDelta = { deltas += it },
+                onReasoning = { reasoning += it },
+            )
         }
 
         assertEquals("正文", result)
+        assertEquals(listOf("先想", "再答"), reasoning)
         assertEquals(listOf("正文"), deltas)
     }
 

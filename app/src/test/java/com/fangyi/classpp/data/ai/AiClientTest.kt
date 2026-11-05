@@ -176,6 +176,30 @@ class AiClientTest {
         assertEquals(listOf("下", "周三", "有数学课"), deltas)
     }
 
+    @Test
+    fun `reasoning deltas are delivered separately and excluded from returned text`() = runBlocking {
+        val deltas = mutableListOf<String>()
+        val reasoning = mutableListOf<String>()
+        val result = client(
+            // DeepSeek 等用 reasoning_content，部分兼容网关用 reasoning：两种字段都要认
+            """data: {"choices":[{"delta":{"reasoning_content":"先想"}}]}""",
+            """data: {"choices":[{"delta":{"reasoning":"再答"}}]}""",
+            sseData("答案"),
+            "data: [DONE]",
+            null,
+        ).streamChat(
+            connection(),
+            "sk",
+            turns,
+            onDelta = { deltas += it },
+            onReasoning = { reasoning += it },
+        )
+
+        assertEquals("答案", result)
+        assertEquals(listOf("先想", "再答"), reasoning)
+        assertEquals(listOf("答案"), deltas)
+    }
+
     // ---------- HTTP 错误分类 ----------
 
     @Test
@@ -266,6 +290,20 @@ class AiClientTest {
             runBlocking { client(null).streamChat(connection(), "sk", turns) }
         }.exceptionOrNull() as AiException
         assertEquals(AiError.BadResponse, exception.error)
+    }
+
+    @Test
+    fun `eof without done but with only reasoning is network`() {
+        val exception = runCatching {
+            runBlocking {
+                client(
+                    """data: {"choices":[{"delta":{"reasoning_content":"想了一半"}}]}""",
+                    null,
+                ).streamChat(connection(), "sk", turns)
+            }
+        }.exceptionOrNull() as AiException
+        // 只收到思考也是「已有半截内容」：网络中断而非空响应
+        assertEquals(AiError.Network, exception.error)
     }
 
     @Test

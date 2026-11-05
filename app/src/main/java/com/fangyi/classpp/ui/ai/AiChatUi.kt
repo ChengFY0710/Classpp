@@ -1,5 +1,7 @@
 package com.fangyi.classpp.ui.ai
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,7 +22,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +60,7 @@ import com.fangyi.classpp.ui.note.repeatCardText
 import com.fangyi.classpp.ui.theme.ChatBubbleShape
 import com.fangyi.classpp.ui.theme.ChatErrorBannerShape
 import com.fangyi.classpp.ui.theme.ChatInputShape
+import com.fangyi.classpp.ui.theme.ChatThinkingShape
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.PillShape
@@ -69,18 +77,26 @@ import com.fangyi.classpp.ui.theme.PillShape
  * 正文统一 16sp；assistant 内容按 GFM Markdown 渲染（见 [ChatMarkdown]），user 内容为纯文本。
  * assistant 气泡在页边距内撑满宽度，user 气泡按内容自适应（上限 320dp）。
  *
+ * 推理模型的思考过程（[AiChatMessage.reasoning] 非空）渲染在气泡**上方**的可折叠块里；
+ * [thinkingInProgress] = true（思考阶段、正文未开始）时默认展开，正文开始/结束后自动收起，
+ * 用户手动点过标题行后不再自动切换（见 [AiChatThinkingBlock]）。
+ *
  * 本条回复已创建待办时（[AiChatMessage.todoIds] 非空或落库失败），原始 JSON 围栏块
- * 不再展示——信息已由下方的 NoteCard 卡片承接；正文若因此为空，整个气泡不渲染。
+ * 不再展示——信息已由下方的 NoteCard 卡片承接；正文若因此为空，气泡本身不渲染
+ * （若回复带思考过程，上方的折叠块仍保留）。
  */
 @Composable
 internal fun AiChatMessageBubble(
     message: AiChatMessage,
+    thinkingInProgress: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val isUser = message.role == AiChatRole.User
     val hasTodos = !isUser && (message.todoIds.isNotEmpty() || message.todoSaveFailed)
     val content = if (hasTodos) AiTodoDraftCodec.stripJsonBlock(message.content) else message.content
-    if (hasTodos && content.isEmpty()) return
+    // 正文与思考都没有可展示的内容：整条消息不占位
+    if (hasTodos && content.isEmpty() && message.reasoning.isEmpty()) return
+    val showBubble = !(hasTodos && content.isEmpty())
     val bubbleColor = if (isUser) {
         MaterialTheme.colorScheme.primary
     } else {
@@ -96,25 +112,114 @@ internal fun AiChatMessageBubble(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
     ) {
-        Surface(
-            color = bubbleColor,
-            contentColor = contentColor,
-            shape = shape,
-            // assistant 在页边距内撑满（Row 已有 fillMaxWidth），user 仍按内容自适应
+        Column(
             modifier = if (isUser) Modifier.widthIn(max = 320.dp) else Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                when {
-                    content.isEmpty() -> {
-                        // 占位阶段（流式首字未到）：三点呼吸省略号
-                        Text(text = "…", style = ClassppTextTokens.chatBody)
+            if (!isUser && message.reasoning.isNotEmpty()) {
+                AiChatThinkingBlock(
+                    reasoning = message.reasoning,
+                    thinkingInProgress = thinkingInProgress,
+                )
+            }
+            if (showBubble) {
+                Surface(
+                    color = bubbleColor,
+                    contentColor = contentColor,
+                    shape = shape,
+                    // assistant 在页边距内撑满（Column 已有 fillMaxWidth），user 仍按内容自适应
+                    modifier = if (isUser) Modifier else Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        when {
+                            content.isEmpty() -> {
+                                // 占位阶段（流式首字未到 / 只有思考还没有正文）：三点呼吸省略号
+                                Text(text = "…", style = ClassppTextTokens.chatBody)
+                            }
+                            isUser -> Text(text = content, style = ClassppTextTokens.chatBody)
+                            else -> ChatMarkdown(content = content)
+                        }
                     }
-                    isUser -> Text(text = content, style = ClassppTextTokens.chatBody)
-                    else -> ChatMarkdown(content = content)
                 }
+            }
+        }
+    }
+}
+
+// ---------- 思考过程 ----------
+
+/**
+ * 推理模型的思考过程折叠块：弱化容器（surface 底 + outline 描边）+ 标题行（sparkle 图标 /
+ * 文案 / 折叠箭头），点标题行切换展开。
+ *
+ * 展开态由 [thinkingInProgress] 自动驱动：思考阶段（正文还没开始）默认展开，正文开始或
+ * 回复结束后自动收起；用户手动点过之后 [userToggled] 置位，不再自动改变——避免正文开始时
+ * 把用户主动展开的内容强行收走。历史消息（非流式）初始收起。
+ */
+@Composable
+internal fun AiChatThinkingBlock(
+    reasoning: String,
+    thinkingInProgress: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by rememberSaveable { mutableStateOf(thinkingInProgress) }
+    var userToggled by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(thinkingInProgress) {
+        if (!userToggled) expanded = thinkingInProgress
+    }
+    val tint = MaterialTheme.classppColors.secondaryText
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = tint,
+        shape = ChatThinkingShape,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        userToggled = true
+                        expanded = !expanded
+                    }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_ai),
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = stringResource(
+                        if (thinkingInProgress) R.string.ai_thinking_in_progress else R.string.ai_thinking_title,
+                    ),
+                    style = ClassppTextTokens.sectionTitle,
+                    color = tint,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    painter = painterResource(
+                        if (expanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down,
+                    ),
+                    contentDescription = stringResource(R.string.cd_ai_thinking_toggle),
+                    tint = tint,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            AnimatedVisibility(visible = expanded) {
+                Text(
+                    text = reasoning.trim(),
+                    style = ClassppTextTokens.secondaryTextSmall,
+                    color = tint,
+                    modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+                )
             }
         }
     }
@@ -456,6 +561,8 @@ private fun BubblePreview() {
 
                         [查看课表](https://example.com)
                     """.trimIndent(),
+                    reasoning = "先把这周的课表和待办过一遍：周三晚上高数课，周五是实验报告的截止日，" +
+                        "再确认一下有没有和复习冲突的安排。",
                 ),
             )
             AiChatMessageBubble(
@@ -499,6 +606,26 @@ private fun CreatedTodosPreview() {
             onCheckedChange = { _, _ -> },
             modifier = Modifier.padding(16.dp),
         )
+    }
+}
+
+@Preview(name = "思考过程", showBackground = true, widthDp = 360)
+@Composable
+private fun ThinkingBlockPreview() {
+    MaterialTheme {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AiChatThinkingBlock(
+                reasoning = "先确认今天的日期，再看课表里有没有课；如果没有冲突，就把复习安排到晚上。",
+                thinkingInProgress = true,
+            )
+            AiChatThinkingBlock(
+                reasoning = "先确认今天的日期，再看课表里有没有课；如果没有冲突，就把复习安排到晚上。",
+                thinkingInProgress = false,
+            )
+        }
     }
 }
 

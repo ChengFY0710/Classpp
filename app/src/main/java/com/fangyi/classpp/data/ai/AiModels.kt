@@ -52,6 +52,9 @@ enum class AiChatRole { User, Assistant }
  * @param todoIds 本条回复中 AI 创建成功的待办 id（按生成顺序落盘）：重进对话仍以
  *   NoteCard 卡片展示；卡片内容从 TodoRepository 现取，待办被删除/归档后自然消失
  * @param todoSaveFailed 解析出了草稿但落库失败（I/O 等异常）；UI 在原处提示重试
+ * @param reasoning 推理模型的思考过程（OpenAI 兼容的 `reasoning_content` / Anthropic 的
+ *   `thinking_delta` 增量拼接），只供气泡上方的折叠块展示，**不回放进后续请求**
+ *   （推理内容不属于对话上下文）；普通模型恒为空串，旧文件无此字段时默认空串
  */
 @Serializable
 data class AiChatMessage(
@@ -61,6 +64,7 @@ data class AiChatMessage(
     val interrupted: Boolean = false,
     val todoIds: List<String> = emptyList(),
     val todoSaveFailed: Boolean = false,
+    val reasoning: String = "",
 )
 
 /**

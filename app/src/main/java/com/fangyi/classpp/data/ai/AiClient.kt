@@ -116,9 +116,10 @@ class OkHttpAiTransport : AiHttpTransport {
  * 传输、取消与 HTTP 状态分类是协议无关的，在此收口。
  *
  * - SSE 逐行解析 `data:` 载荷交编解码器分派（增量形状与终止标记随协议），增量经
- *   onDelta 回调交给调用方（UI 逐字渲染）。整个流（打开 + 阻塞读）跑在专用
- *   执行线程上，onDelta 也在该线程触发——调用方须用线程安全的方式发布状态
- *   （如 StateFlow.value 赋值），不要在回调里直接碰 UI；
+ *   onDelta 回调交给调用方（UI 逐字渲染）；推理模型的思考增量经 onReasoning 单独
+ *   交付（不进正文返回值）。整个流（打开 + 阻塞读）跑在专用执行线程上，回调也在
+ *   该线程触发——调用方须用线程安全的方式发布状态（如 StateFlow.value 赋值），
+ *   不要在回调里直接碰 UI；
  * - **取消即断流**：整个阻塞管线包在 [suspendCancellableCoroutine] 里，协程取消时
  *   invokeOnCancellation 先置本次调用的取消标志，再调 [AiStreamResponse.cancel]
  *   中断底层连接，阻塞中的读立刻解除——停止按钮即时生效，不依赖下一块数据到达；
@@ -136,9 +137,11 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
     /**
      * 发起一次流式对话。
      *
-     * @param onDelta 每收到一段增量文本回调一次（在 AI 执行线程，须轻量）；协程取消后
+     * @param onDelta 每收到一段正文增量文本回调一次（在 AI 执行线程，须轻量）；协程取消后
      *   保证不再回调（读取循环与交付前各检查一次本次调用的取消标志）
-     * @return 完整回复文本（全部增量拼接）
+     * @param onReasoning 每收到一段思考增量回调一次（推理模型才有；同样在执行线程、
+     *   取消后不再回调）。思考内容不参与返回值，由调用方单独累积与展示
+     * @return 完整回复正文（全部正文增量拼接；思考增量不计入）
      * @throws AiException 分类错误（UI 按 [AiError] 展示）；协程取消时在挂起点
      *   原样传播 CancellationException（半截文本已通过 onDelta 交给调用方，不随异常丢失）
      */
@@ -148,6 +151,7 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         turns: List<AiChatTurn>,
         temperature: Double? = null,
         onDelta: (String) -> Unit = {},
+        onReasoning: (String) -> Unit = {},
     ): String = suspendCancellableCoroutine { cont ->
         // 每次调用一份取消标志：open() 阻塞期间 inFlight 还是 null，取消只能靠它在
         // 放行后立即断流（OkHttp 的阻塞 socket 读不响应线程中断）
@@ -158,7 +162,7 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
             try {
                 val codec = AiStreamCodec.of(connection.protocol)
                 val request = codec.buildRequest(connection, apiKey, turns, temperature)
-                val text = executeAndRead(codec, request, cancelled, inFlight, onDelta)
+                val text = executeAndRead(codec, request, cancelled, inFlight, onDelta, onReasoning)
                 cont.resume(text, onCancellation = null)
             } catch (_: StreamCancelled) {
                 // 协程已取消：没有等待者，无需 resume；use 已释放连接
@@ -189,6 +193,7 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         cancelled: AtomicBoolean,
         inFlight: AtomicReference<AiStreamResponse?>,
         onDelta: (String) -> Unit,
+        onReasoning: (String) -> Unit,
     ): String {
         val response = transport.open(request)
         inFlight.set(response)
@@ -203,7 +208,7 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
                 val body = response.readRemaining()
                 throw classifyStatus(response.status, body)
             }
-            readEventStream(codec, response, cancelled, onDelta)
+            readEventStream(codec, response, cancelled, onDelta, onReasoning)
         }
     }
 
@@ -214,8 +219,10 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         response: AiStreamResponse,
         cancelled: AtomicBoolean,
         onDelta: (String) -> Unit,
+        onReasoning: (String) -> Unit,
     ): String {
         val full = StringBuilder()
+        val reasoning = StringBuilder()
         var sawDone = false
         while (true) {
             if (cancelled.get()) throw StreamCancelled
@@ -228,6 +235,11 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
                     full.append(event.text)
                     onDelta(event.text)
                 }
+                is AiStreamEvent.Reasoning -> {
+                    if (cancelled.get()) throw StreamCancelled
+                    reasoning.append(event.text)
+                    onReasoning(event.text)
+                }
                 AiStreamEvent.Done -> {
                     sawDone = true
                     break
@@ -236,7 +248,8 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
             }
         }
         if (!sawDone) {
-            throw if (full.isEmpty()) {
+            // 只收到思考也算「已有半截内容」：按网络中断保留，而不是当作空响应
+            throw if (full.isEmpty() && reasoning.isEmpty()) {
                 AiException(AiError.BadResponse, detail = "stream ended without completion marker, no content")
             } else {
                 AiException(AiError.Network, detail = "stream ended without completion marker, partial content kept")

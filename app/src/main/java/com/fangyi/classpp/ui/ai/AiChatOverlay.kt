@@ -145,12 +145,13 @@ fun AiChatOverlay(
         }
     }
 
-    // 自动滚底：新消息（条数变化）、流式增量（尾部内容长度变化）与待办卡落位都把滚动列
-    // 压到底。等下一帧再滚：LaunchedEffect 在布局前执行，此时 maxValue 还是上一帧的值，
-    // 最后一块较大的增量会差一截滚不到底。
+    // 自动滚底：新消息（条数变化）、流式增量（尾部内容/思考长度变化）与待办卡落位都把
+    // 滚动列压到底。等下一帧再滚：LaunchedEffect 在布局前执行，此时 maxValue 还是上一帧的
+    // 值，最后一块较大的增量会差一截滚不到底。
     LaunchedEffect(
         messages.size,
         messages.lastOrNull()?.content?.length,
+        messages.lastOrNull()?.reasoning?.length,
         messages.lastOrNull()?.todoIds?.size,
         visible,
     ) {
@@ -281,8 +282,16 @@ fun AiChatOverlay(
             }
             else -> {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    messages.forEach { message ->
-                        AiChatMessageBubble(message = message)
+                    messages.forEachIndexed { index, message ->
+                        AiChatMessageBubble(
+                            message = message,
+                            // 思考阶段 = 本场流仍在进行、这是尾部消息、正文还没开始：
+                            // 折叠块默认展开，正文一到就自动收起
+                            thinkingInProgress = sending &&
+                                index == messages.lastIndex &&
+                                message.role == AiChatRole.Assistant &&
+                                message.content.isEmpty(),
+                        )
                         if (message.todoSaveFailed) {
                             AiChatTodoSaveFailedHint()
                         }

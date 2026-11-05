@@ -87,6 +87,9 @@ fun dayTaskCardShape(
 /** AI 对话消息气泡：四角统一 20dp 平滑圆角 */
 val ChatBubbleShape = RoundedRectangle(20.dp)
 
+/** AI 对话「思考过程」折叠块：16dp 平滑圆角，位于气泡上方的弱化容器 */
+val ChatThinkingShape = RoundedRectangle(16.dp)
+
 /** AI 对话错误条：14dp 平滑圆角 */
 val ChatErrorBannerShape = RoundedRectangle(14.dp)
 

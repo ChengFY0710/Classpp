@@ -15,6 +15,12 @@ internal sealed interface AiStreamEvent {
     /** 一段增量文本；空串不产生（调用侧不再判空） */
     data class Delta(val text: String) : AiStreamEvent
 
+    /**
+     * 一段思考/推理增量（推理模型的思维链）；与 [Delta] 分开交付，调用侧单独累积，
+     * 不参与正文拼接，也不回放进后续请求。
+     */
+    data class Reasoning(val text: String) : AiStreamEvent
+
     /** 流正常终止（OpenAI 的 `[DONE]` 行 / Anthropic 的 `message_stop` 事件） */
     data object Done : AiStreamEvent
 }
@@ -53,7 +59,9 @@ internal interface AiStreamCodec {
  * Ollama 同协议）——逻辑自原 AiClient 原样迁入，行为零变化。
  *
  * - 请求：Bearer 认证；体为 `{model, stream, temperature?, messages[{role,content}]}`；
- * - 解析：`data: [DONE]` 终止；`choices[0].delta.content` 为增量；
+ * - 解析：`data: [DONE]` 终止；`choices[0].delta.content` 为正文增量；
+ *   `delta.reasoning_content`（DeepSeek 等）或 `delta.reasoning`（部分兼容网关）
+ *   为思考增量，作为 [AiStreamEvent.Reasoning] 单独交付；
  *   流内 `{"error": {code, message}}` 按数值 code 分类。
  */
 internal object OpenAiStreamCodec : AiStreamCodec {
@@ -82,7 +90,11 @@ internal object OpenAiStreamCodec : AiStreamCodec {
             ?.get("delta") as? JsonObject
             ?: return null
         val text = delta["content"].stringContentOrNull().orEmpty()
-        return if (text.isEmpty()) null else AiStreamEvent.Delta(text)
+        if (text.isNotEmpty()) return AiStreamEvent.Delta(text)
+        // 推理模型的思考增量：DeepSeek 用 reasoning_content，部分兼容网关用 reasoning
+        val reasoning = delta["reasoning_content"].stringContentOrNull()
+            ?: delta["reasoning"].stringContentOrNull().orEmpty()
+        return if (reasoning.isEmpty()) null else AiStreamEvent.Reasoning(reasoning)
     }
 
     private fun encodeRequest(model: String, turns: List<AiChatTurn>, temperature: Double?): String {
@@ -130,9 +142,11 @@ internal object OpenAiStreamCodec : AiStreamCodec {
  *   公共下限，选旧模型也不会 400；
  * - **messages 须以 user 开头且严格交替**：丢弃开头 assistant（HISTORY_WINDOW 截断
  *   可能让窗口以 assistant 开头），连续同角色合并（覆盖草稿修复的连续 user 场景）；
- * - **事件按 `type` 分派**：`content_block_delta`（仅 `text_delta`）为增量，
- *   `message_stop` 终止，`ping`/`message_start`/`content_block_*`/`message_delta`
- *   及 `thinking_delta` 等非文本增量一律忽略；流内 `{"type":"error","error":{...}}`
+ * - **事件按 `type` 分派**：`content_block_delta` 的 `text_delta` 为正文增量、
+ *   `thinking_delta` 为思考增量（服务商返回扩展思考时，单独作为
+ *   [AiStreamEvent.Reasoning] 交付），`message_stop` 终止，
+ *   `ping`/`message_start`/`content_block_*`/`message_delta`/`signature_delta`
+ *   等非文本增量一律忽略；流内 `{"type":"error","error":{...}}`
  *   按错误类型串分类（无数值 code，语义对齐 HTTP 状态映射）。
  *
  * temperature 取值须在 0..1（Anthropic 约束；当前无调用方设置）。
@@ -160,9 +174,17 @@ internal object AnthropicStreamCodec : AiStreamCodec {
         return when (obj["type"].stringContentOrNull()) {
             TYPE_CONTENT_BLOCK_DELTA -> {
                 val delta = obj["delta"] as? JsonObject ?: return null
-                if (delta["type"].stringContentOrNull() != TYPE_TEXT_DELTA) return null
-                val text = delta["text"].stringContentOrNull().orEmpty()
-                if (text.isEmpty()) null else AiStreamEvent.Delta(text)
+                when (delta["type"].stringContentOrNull()) {
+                    TYPE_TEXT_DELTA -> {
+                        val text = delta["text"].stringContentOrNull().orEmpty()
+                        if (text.isEmpty()) null else AiStreamEvent.Delta(text)
+                    }
+                    TYPE_THINKING_DELTA -> {
+                        val thinking = delta["thinking"].stringContentOrNull().orEmpty()
+                        if (thinking.isEmpty()) null else AiStreamEvent.Reasoning(thinking)
+                    }
+                    else -> null
+                }
             }
             TYPE_MESSAGE_STOP -> AiStreamEvent.Done
             else -> null
@@ -235,6 +257,7 @@ internal object AnthropicStreamCodec : AiStreamCodec {
     private const val SYSTEM_JOIN_SEPARATOR = "\n\n"
     private const val TYPE_CONTENT_BLOCK_DELTA = "content_block_delta"
     private const val TYPE_TEXT_DELTA = "text_delta"
+    private const val TYPE_THINKING_DELTA = "thinking_delta"
     private const val TYPE_MESSAGE_STOP = "message_stop"
 }
 

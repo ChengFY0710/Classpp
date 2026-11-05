@@ -166,6 +166,23 @@ class AiChatRepositoryTest {
             },
         )
 
+    /** SSE data 行（思考增量：reasoning_content 字段） */
+    private fun reasoningSse(reasoning: String): String =
+        "data: " + Json.encodeToString(
+            buildJsonObject {
+                put(
+                    "choices",
+                    JsonArray(
+                        listOf(
+                            buildJsonObject {
+                                put("delta", buildJsonObject { put("reasoning_content", reasoning) })
+                            },
+                        ),
+                    ),
+                )
+            },
+        )
+
     /** 请求体里的消息序列（role + content），用于结构断言 */
     private fun turnsOf(jsonBody: String): List<Pair<String, String>> =
         Json.parseToJsonElement(jsonBody).jsonObject["messages"]!!.jsonArray.map {
@@ -220,6 +237,32 @@ class AiChatRepositoryTest {
         assertFalse(messages[1].todoSaveFailed)
         assertEquals(messages, store.file.messages)
         assertFalse(repo.sending.value)
+    }
+
+    @Test
+    fun `send records reasoning separately and persists it`() = runBlocking {
+        val store = FakeAiChatStore()
+        val repo = repository(
+            store = store,
+            transport = FakeAiTransport(
+                ScriptedResponse(
+                    listOf(
+                        reasoningSse("先看课表，"),
+                        reasoningSse("再排时间。"),
+                        sse("明天没课，可以复习。"),
+                        "data: [DONE]",
+                    ),
+                ),
+            ),
+        )
+
+        repo.send("明天有课吗")
+
+        val last = repo.messages.value.last()
+        assertEquals("明天没课，可以复习。", last.content)
+        assertEquals("先看课表，再排时间。", last.reasoning)
+        // 思考过程随对话落盘，重进浮层/重启后折叠块仍可展开查看
+        assertEquals("先看课表，再排时间。", store.file.messages.last().reasoning)
     }
 
     @Test
