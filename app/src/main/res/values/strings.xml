@@ -481,7 +481,6 @@
     <string name="day_adjust_source_day">原星期</string>
     <string name="day_adjust_target_week">目标周次</string>
     <string name="day_adjust_target_day">目标星期</string>
-    <string name="day_adjust_course_count">当天 %1$d 门课</string>
     <string name="day_adjust_empty">这一天没有课</string>
     <string name="day_adjust_summary">第 %1$d 周 %2$s %3$d 门课 → 第 %4$d 周 %5$s（节次不变）</string>
     <string name="day_adjust_weekend_hidden">当前为 5 天课表，周末列不显示；切换到 7 天视图可查看调休后的课程</string>

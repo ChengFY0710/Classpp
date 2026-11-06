@@ -41,7 +41,6 @@ import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetInfoBanner
-import com.fangyi.classpp.ui.components.SheetInfoPillRow
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PillShape
@@ -176,14 +175,6 @@ internal fun DayAdjustSheet(
         hazeState = sheetHazeState,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
-            SheetInfoPillRow(
-                values = listOf(
-                    stringResource(R.string.adjust_week_value, sourceWeek),
-                    weekdayNames.getOrElse(sourceDay - 1) { "" },
-                    stringResource(R.string.day_adjust_course_count, plan.occurrences.size),
-                ),
-            )
-
             CardSection(title = stringResource(R.string.day_adjust_section_source)) {
                 // 星期选择用内联方格而不是 SettingsCardItem.Select：后者会开一个独立的
                 // Popup 窗口，Haze 2 在该窗口与浮层内容同帧增删时会构建自引用 RenderNode，

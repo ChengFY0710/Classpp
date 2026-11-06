@@ -359,7 +359,6 @@
     <string name="day_adjust_source_day">Source weekday</string>
     <string name="day_adjust_target_week">Target week</string>
     <string name="day_adjust_target_day">Target weekday</string>
-    <string name="day_adjust_course_count">%1$d classes that day</string>
     <string name="day_adjust_empty">No classes on this day</string>
     <string name="day_adjust_summary">Week %1$d %2$s · %3$d classes → Week %4$d %5$s (periods unchanged)</string>
     <string name="day_adjust_weekend_hidden">This is a 5-day schedule; weekend columns are hidden. Switch to the 7-day view to see the moved classes.</string>
