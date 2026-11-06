@@ -45,6 +45,7 @@ import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.ai.AiChatMessage
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiChatRole
+import com.fangyi.classpp.data.ai.AiConversation
 import com.fangyi.classpp.data.ai.AiException
 import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.Todo
@@ -84,8 +85,10 @@ private val AuroraHeadroom = 120.dp
  *   备注/步骤/倒计时/归档全部落库），侧滑呼出删除动作卡（满色松手即软删）；
  * - 「编辑」打开预填的 [NewTodoSheet]（existing 整体回填），对话浮层随之 covered 后退，
  *   两层动效由 OverlaySheet 的 covered 机制同帧衔接；
- * - 顶栏（同其它浮层的顶栏规格）：左上蓝「对话」= 新建对话入口的占位（功能尚未实现，
- *   点击暂无动作），不显示居中标题，右上白「关闭」收起浮层；
+ * - 顶栏（同其它浮层的顶栏规格）：左上蓝「对话」= 打开「所有对话」管理浮层
+ *   （[AiConversationsSheet]，叠在本浮层之上、covered 后退分层动效）：新建 / 切换 /
+ *   删除对话；没有对话时按钮保持可点但点击无反应（列表空无从管理，发消息会隐式
+ *   建对话），不显示居中标题，右上白「关闭」收起浮层；
  * - AI 设置由设置页的「AI 设置」子页承载（设置 → AI 设置），浮层内不再有 ⚙ 入口：
  *   只有未配置引导卡经 [onOpenSettings] 请求宿主跳转（宿主先收起本浮层，再打开设置页
  *   并直达 AI 子页）。
@@ -117,6 +120,10 @@ fun AiChatOverlay(
     val lastError by aiChatRepository?.lastError?.collectAsState()
         ?: remember { mutableStateOf<AiException?>(null) }
     val configured by aiChatRepository?.configured?.collectAsState() ?: remember { mutableStateOf(false) }
+    val conversations by aiChatRepository?.conversations?.collectAsState()
+        ?: remember { mutableStateOf(emptyList<AiConversation>()) }
+    val activeConversationId by aiChatRepository?.activeConversationId?.collectAsState()
+        ?: remember { mutableStateOf<String?>(null) }
     val groups by todoRepository?.groups?.collectAsState()
         ?: remember { mutableStateOf(emptyList<TodoGroup>()) }
     val todos by todoRepository?.todos?.collectAsState() ?: remember { mutableStateOf(emptyList<Todo>()) }
@@ -143,6 +150,10 @@ fun AiChatOverlay(
     val todosById = remember(todos) { todos.associateBy { it.id } }
 
     var input by rememberSaveable { mutableStateOf("") }
+    // 「所有对话」管理浮层两态口径（同 ScheduleScreen 的 switcherVisible/mounted）：
+    // visible 请求进出场，mounted 是挂载快照（出场动画播完才卸载）
+    var conversationsVisible by remember { mutableStateOf(false) }
+    var conversationsMounted by remember { mutableStateOf(false) }
     // 详情/编辑目标两态口径（同 TodoScreen 的 detail/edit）：id 是期望目标，mounted 是
     // 挂载快照（详情随仓库回流刷新，编辑表单只取一次初值）
     var detailTodoId by remember { mutableStateOf("") }
@@ -164,14 +175,21 @@ fun AiChatOverlay(
         }
     }
 
-    // 主浮层由宿主外部收起（跳设置页等）时清掉详情/编辑目标：重开对话不会凭空弹回
-    // 上次的浮层（挂载快照由各自 onDismissed 在退场结束后清理）
+    // 主浮层由宿主外部收起（跳设置页等）时清掉管理浮层与详情/编辑目标：重开对话不会
+    // 凭空弹回上次的浮层（挂载快照由各自 onDismissed 在退场结束后清理）
     LaunchedEffect(visible) {
         if (!visible) {
+            conversationsVisible = false
             detailTodoId = ""
             editTodoId = ""
             swipeCoordinator.activeKey = null
         }
+    }
+
+    // 删光对话时自动收起管理浮层：列表空了无从管理，回到无对话态（入口点击不再有反应）。
+    // key 取「是否为空」而非列表本身：流式增量逐字刷新 conversations，不该反复重启本协程
+    LaunchedEffect(conversations.isEmpty()) {
+        if (conversations.isEmpty()) conversationsVisible = false
     }
 
     // 自动滚底：新消息（条数变化）、流式增量（尾部内容/思考长度变化）与待办卡落位都把
@@ -206,6 +224,41 @@ fun AiChatOverlay(
 
     fun retryLast() {
         aiChatRepository?.retryInBackground()
+    }
+
+    // ——— 对话管理（「所有对话」浮层的回调，执行在仓库、浮层随回流关闭） ———
+
+    /** 打开管理浮层：没有对话时不响应（按钮可点但无反应，见顶栏 KDoc） */
+    fun openConversations() {
+        if (conversations.isEmpty()) return
+        keyboard?.hide()
+        conversationsVisible = true
+    }
+
+    /** 新建对话并关闭管理浮层：新对话为空态，发首条消息时由仓库自动命名 */
+    fun createConversation() {
+        val repository = aiChatRepository ?: return
+        scope.launch {
+            repository.createConversation()
+            conversationsVisible = false
+        }
+    }
+
+    /** 切换对话并关闭管理浮层（同切换课表：切换即收） */
+    fun switchConversation(id: String) {
+        val repository = aiChatRepository ?: return
+        scope.launch {
+            repository.switchConversation(id)
+            conversationsVisible = false
+        }
+    }
+
+    /** 删除对话：留在管理浮层，列表随仓库回流更新（删光由 LaunchedEffect 收起浮层） */
+    fun deleteConversation(id: String) {
+        val repository = aiChatRepository ?: return
+        scope.launch {
+            repository.deleteConversation(id)
+        }
     }
 
     // 分组整表写回（编辑器里选分组浮层的「新建」用），与 DayScreen 的 commitGroups 同规格
@@ -248,10 +301,10 @@ fun AiChatOverlay(
     OverlaySheet(
         // 标题置空：对话浮层不显示顶栏标题，只保留左右两颗胶囊
         title = "",
-        // 左上「对话」= 新建对话入口的占位：功能尚未实现，onConfirm 暂为空
+        // 左上「对话」= 打开「所有对话」管理浮层；没有对话时按钮保持可点、点击无反应
         confirmLabel = stringResource(R.string.ai_sheet_chat),
         confirmIcon = R.drawable.ic_add_circle,
-        onConfirm = {},
+        onConfirm = ::openConversations,
         // 右上「关闭」：白胶囊深色 ✕，点击即收起浮层（与其它浮层顶栏关闭同一颗胶囊）
         rightAction = SheetTopAction(
             label = stringResource(R.string.ai_sheet_close),
@@ -263,8 +316,8 @@ fun AiChatOverlay(
         visible = visible,
         onDismiss = onDismiss,
         onDismissed = onDismissed,
-        // 详情/编辑浮层叠上来时本层缩小后退
-        covered = detailTodoId != "" || editTodoId != "",
+        // 管理浮层/详情/编辑浮层叠上来时本层缩小后退
+        covered = conversationsVisible || detailTodoId != "" || editTodoId != "",
         onScrollStateReady = { chatScroll.value = it },
         bottomScrim = false,
         bottomContent = {
@@ -394,6 +447,25 @@ fun AiChatOverlay(
         // 底部光场带比原输入栏高出一截：滚动内容末尾补同样高度，
         // 自动滚底时最后一条消息停在光场上方，不被 scrim 盖住
         Spacer(Modifier.height(AuroraHeadroom))
+    }
+
+    // ——— 「所有对话」管理浮层：左上「对话」胶囊唤起，交互同切换课表浮层 ———
+    // 挂载在主浮层之后：画到其上、BackHandler 后注册先收到（返回键先收管理层）。
+    // visible 叠加宿主 visible：主浮层收起时管理浮层一并退场，不留孤儿浮层
+    if (conversationsVisible) conversationsMounted = true
+    if (conversationsMounted) {
+        AiConversationsSheet(
+            visible = visible && conversationsVisible,
+            onDismissed = { conversationsMounted = false },
+            conversations = conversations,
+            activeConversationId = activeConversationId,
+            onCreate = ::createConversation,
+            onDismiss = { conversationsVisible = false },
+            onSwitch = ::switchConversation,
+            onDelete = ::deleteConversation,
+            // 详情/编辑浮层盖上来时缩小后退（与管理浮层互斥的路径，防御性接线同主浮层）
+            covered = detailTodoId != "" || editTodoId != "",
+        )
     }
 
     // ——— 待办详情浮层：点击 AI 创建的卡片唤起，接线同待办页 ———

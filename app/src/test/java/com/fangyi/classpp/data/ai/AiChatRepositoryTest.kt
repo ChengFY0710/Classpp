@@ -48,7 +48,7 @@ class AiChatRepositoryTest {
         var saveCount = 0
 
         override fun load(): LoadOutcome<AiChatFile> =
-            if (file.messages.isEmpty()) {
+            if (file.messages.isEmpty() && file.conversations.isEmpty()) {
                 LoadOutcome.Fresh(AiChatFile(), LoadIssue.None)
             } else {
                 LoadOutcome.Loaded(file, LoadIssue.None)
@@ -59,6 +59,10 @@ class AiChatRepositoryTest {
             saveCount++
             return StoreResult.Ok
         }
+
+        /** 落盘消息（v2 在 conversations 里；v1 顶层字段兜底，断言迁移前的种子用） */
+        fun persistedMessages(): List<AiChatMessage> =
+            file.conversations.singleOrNull()?.messages ?: file.messages
     }
 
     /** 落盘阻塞到放行：用于「取消/关闭时落盘仍要完成」的用例 */
@@ -79,6 +83,10 @@ class AiChatRepositoryTest {
         }
 
         fun releaseSave() = release.countDown()
+
+        /** 落盘消息（v2 在 conversations 里；与 FakeAiChatStore 同一口径的断言辅助） */
+        fun persistedMessages(): List<AiChatMessage> =
+            file.conversations.singleOrNull()?.messages ?: file.messages
     }
 
     /** 内存方案库：connection / apiKey 字段继续承载「自定义」槽位，既有用例语义不变 */
@@ -299,7 +307,7 @@ class AiChatRepositoryTest {
         assertFalse(messages[1].interrupted)
         assertTrue(messages[1].todoIds.isEmpty())
         assertFalse(messages[1].todoSaveFailed)
-        assertEquals(messages, store.file.messages)
+        assertEquals(messages, store.persistedMessages())
         assertFalse(repo.sending.value)
     }
 
@@ -326,7 +334,7 @@ class AiChatRepositoryTest {
         assertEquals("明天没课，可以复习。", last.content)
         assertEquals("先看课表，再排时间。", last.reasoning)
         // 思考过程随对话落盘，重进浮层/重启后折叠块仍可展开查看
-        assertEquals("先看课表，再排时间。", store.file.messages.last().reasoning)
+        assertEquals("先看课表，再排时间。", store.persistedMessages().last().reasoning)
     }
 
     @Test
@@ -483,7 +491,7 @@ class AiChatRepositoryTest {
         val last = repo.messages.value.last()
         assertEquals(listOf(created.id), last.todoIds)
         assertFalse(last.todoSaveFailed)
-        assertEquals(listOf(created.id), store.file.messages.last().todoIds)
+        assertEquals(listOf(created.id), store.persistedMessages().last().todoIds)
     }
 
     @Test
@@ -522,7 +530,7 @@ class AiChatRepositoryTest {
         assertEquals(reply, last.content)
         assertTrue(last.todoIds.isEmpty())
         assertTrue(last.todoSaveFailed)
-        assertTrue(store.file.messages.last().todoSaveFailed)
+        assertTrue(store.persistedMessages().last().todoSaveFailed)
     }
 
     @Test
@@ -558,12 +566,12 @@ class AiChatRepositoryTest {
             transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
         )
         repo.send("hi")
-        assertEquals(2, store.file.messages.size)
+        assertEquals(2, store.persistedMessages().size)
 
         repo.clearHistory()
 
         assertTrue(repo.messages.value.isEmpty())
-        assertTrue(store.file.messages.isEmpty())
+        assertTrue(store.persistedMessages().isEmpty())
     }
 
     @Test
@@ -682,7 +690,7 @@ class AiChatRepositoryTest {
             runCatching { job.join() }
         }
 
-        val persisted = store.file.messages.last()
+        val persisted = store.persistedMessages().last()
         assertEquals(reply, persisted.content) // 正文完整落盘（取消不丢）
         assertFalse(persisted.interrupted) // 正文完整，不应标中断
         assertTrue(persisted.todoIds.isEmpty()) // 修复没有结果，不创建待办
@@ -717,7 +725,7 @@ class AiChatRepositoryTest {
         val last = repo.messages.value.last()
         assertEquals("后台完成", last.content)
         assertFalse(last.interrupted)
-        assertEquals("后台完成", store.file.messages.last().content)
+        assertEquals("后台完成", store.persistedMessages().last().content)
     }
 
     @Test
@@ -737,7 +745,7 @@ class AiChatRepositoryTest {
         val last = repo.messages.value.last()
         assertEquals("前半", last.content)
         assertTrue(last.interrupted)
-        assertEquals("前半", store.file.messages.last().content)
+        assertEquals("前半", store.persistedMessages().last().content)
     }
 
     @Test
@@ -758,7 +766,7 @@ class AiChatRepositoryTest {
         assertEquals(1, persister.batches.size)
         assertEquals(listOf("甲", "乙"), persister.batches.single().map { it.name })
         assertEquals(2, repo.messages.value.last().todoIds.size)
-        assertEquals(repo.messages.value.last().todoIds, store.file.messages[1].todoIds)
+        assertEquals(repo.messages.value.last().todoIds, store.persistedMessages()[1].todoIds)
     }
 
     @Test
@@ -775,7 +783,7 @@ class AiChatRepositoryTest {
         repo.sendInBackground("hi")
         withTimeout(5000) {
             // 流仍阻塞在 gate（未收到 [DONE]），store 里已由 checkpoint 留下半截
-            while (store.file.messages.lastOrNull()?.content?.contains("部分内容") != true) delay(10)
+            while (store.persistedMessages().lastOrNull()?.content?.contains("部分内容") != true) delay(10)
         }
         assertTrue(repo.sending.value)
 
@@ -813,7 +821,7 @@ class AiChatRepositoryTest {
         runCatching { job.join() }
 
         assertTrue(repo.messages.value.isEmpty())
-        assertTrue(store.file.messages.isEmpty())
+        assertTrue(store.persistedMessages().isEmpty())
     }
 
     @Test
@@ -853,7 +861,278 @@ class AiChatRepositoryTest {
 
         // 空文件最后落盘：在途/排队的落盘（含 checkpoint 旧快照）不会把刚清空的旧历史写回磁盘
         assertTrue(repo.messages.value.isEmpty())
+        assertTrue(store.persistedMessages().isEmpty())
+    }
+
+    // ---------- 多对话管理（「所有对话」浮层的数据底座） ----------
+
+    @Test
+    fun `send with no conversation creates one implicitly and names it`() = runBlocking {
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse("回复"), "data: [DONE]"))),
+        )
+        assertTrue(repo.conversations.value.isEmpty())
+        assertNull(repo.activeConversationId.value)
+
+        repo.send("帮我看看下周安排")
+
+        // 首次发言隐式建对话：未命名状态借首条用户消息命名，消息落在其中
+        val conversation = repo.conversations.value.single()
+        assertEquals(conversation.id, repo.activeConversationId.value)
+        assertEquals("帮我看看下周安排", conversation.title)
+        assertEquals(2, repo.messages.value.size)
+    }
+
+    @Test
+    fun `conversation title is flattened and truncated from first user message`() = runBlocking {
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+
+        repo.send("第一行\n第二行 " + "很长".repeat(20))
+
+        val title = repo.conversations.value.single().title
+        assertFalse("换行要压平", title.contains('\n'))
+        assertEquals(AiChatRepository.TITLE_MAX_LENGTH, title.length)
+    }
+
+    @Test
+    fun `createConversation switches to empty active conversation`() = runBlocking {
+        var tick = 0L
+        val repo = repository(
+            transport = FakeAiTransport(
+                ScriptedResponse(listOf(sse("甲"), "data: [DONE]")),
+                ScriptedResponse(listOf(sse("乙"), "data: [DONE]")),
+            ),
+            nowMillis = { tick += 1_000; tick },
+        )
+        repo.send("第一场")
+        val first = repo.activeConversationId.value!!
+
+        val created = repo.createConversation()
+
+        assertEquals(created, repo.activeConversationId.value)
+        assertEquals(2, repo.conversations.value.size)
+        assertTrue(repo.messages.value.isEmpty())
+
+        // 切回旧对话：镜像随之切换，旧对话消息完整
+        repo.switchConversation(first)
+        assertEquals(first, repo.activeConversationId.value)
+        assertEquals(2, repo.messages.value.size)
+    }
+
+    @Test
+    fun `createConversation reuses active empty conversation`() = runBlocking {
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+
+        val created = repo.createConversation()
+        val again = repo.createConversation()
+
+        // 连点「新建」不堆积空对话
+        assertEquals(created, again)
+        assertEquals(1, repo.conversations.value.size)
+    }
+
+    @Test
+    fun `switchConversation ignores unknown and current ids`() = runBlocking {
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse("甲"), "data: [DONE]"))),
+        )
+        repo.send("hi")
+        val active = repo.activeConversationId.value!!
+
+        repo.switchConversation("missing")
+        repo.switchConversation(active)
+
+        assertEquals(active, repo.activeConversationId.value)
+        assertEquals(2, repo.messages.value.size)
+    }
+
+    @Test
+    fun `delete active conversation falls back to most recent remaining`() = runBlocking {
+        var tick = 0L
+        val repo = repository(
+            transport = FakeAiTransport(
+                ScriptedResponse(listOf(sse("甲"), "data: [DONE]")),
+                ScriptedResponse(listOf(sse("乙"), "data: [DONE]")),
+            ),
+            nowMillis = { tick += 1_000; tick },
+        )
+        repo.send("第一场")
+        val first = repo.activeConversationId.value!!
+        repo.createConversation()
+        repo.send("第二场")
+        val second = repo.activeConversationId.value!!
+
+        repo.deleteConversation(second)
+
+        // 删的是活跃对话：回落「最近更新」的剩余对话（这里只剩第一场）
+        assertEquals(listOf(first), repo.conversations.value.map { it.id })
+        assertEquals(first, repo.activeConversationId.value)
+        assertEquals(listOf("第一场", "甲"), repo.messages.value.map { it.content })
+    }
+
+    @Test
+    fun `delete non-active conversation keeps current chat`() = runBlocking {
+        var tick = 0L
+        val repo = repository(
+            transport = FakeAiTransport(
+                ScriptedResponse(listOf(sse("甲"), "data: [DONE]")),
+                ScriptedResponse(listOf(sse("乙"), "data: [DONE]")),
+            ),
+            nowMillis = { tick += 1_000; tick },
+        )
+        repo.send("第一场")
+        repo.createConversation()
+        repo.send("第二场")
+        val second = repo.activeConversationId.value!!
+
+        repo.deleteConversation("missing")
+        repo.deleteConversation(repo.conversations.value.first { it.id != second }.id)
+
+        // 删的是非活跃对话：当前对话与消息镜像不受影响；不存在的 id 静默返回
+        assertEquals(listOf(second), repo.conversations.value.map { it.id })
+        assertEquals(second, repo.activeConversationId.value)
+        assertEquals(listOf("第二场", "乙"), repo.messages.value.map { it.content })
+    }
+
+    @Test
+    fun `deleting last conversation leaves zero-conversation state`() = runBlocking {
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse("甲"), "data: [DONE]"))),
+        )
+        repo.send("hi")
+        val only = repo.activeConversationId.value!!
+
+        repo.deleteConversation(only)
+
+        // 删光：活跃置空、对话浮层走空态（入口按钮点击无反应，再发言隐式新建）
+        assertTrue(repo.conversations.value.isEmpty())
+        assertNull(repo.activeConversationId.value)
+        assertTrue(repo.messages.value.isEmpty())
+    }
+
+    @Test
+    fun `clearHistory deletes all conversations`() = runBlocking {
+        var tick = 0L
+        val repo = repository(
+            transport = FakeAiTransport(
+                ScriptedResponse(listOf(sse("甲"), "data: [DONE]")),
+                ScriptedResponse(listOf(sse("乙"), "data: [DONE]")),
+            ),
+            nowMillis = { tick += 1_000; tick },
+        )
+        repo.send("第一场")
+        repo.createConversation()
+        repo.send("第二场")
+        assertEquals(2, repo.conversations.value.size)
+
+        repo.clearHistory()
+
+        assertTrue(repo.conversations.value.isEmpty())
+        assertNull(repo.activeConversationId.value)
+        assertTrue(repo.messages.value.isEmpty())
+    }
+
+    @Test
+    fun `legacy bootstrap migrates flat history into one named conversation`() = runBlocking {
+        val store = FakeAiChatStore()
+        store.file = AiChatFile(
+            messages = listOf(
+                AiChatMessage(role = AiChatRole.User, content = "帮我看看下周安排", createdAtMillis = 5L),
+                AiChatMessage(role = AiChatRole.Assistant, content = "好的", createdAtMillis = 9L),
+            ),
+        )
+        val repo = AiChatRepository(
+            store = store,
+            settings = FakeAiSettingsStore(),
+            client = AiClient(FakeAiTransport(ScriptedResponse(listOf("data: [DONE]")))),
+            contextProvider = { AiChatContext() },
+            persister = FakeTodoPersister(),
+            clock = Clock { IsoDate.of(2026, 11, 1) },
+        )
+
+        repo.bootstrap()
+
+        // 顶层 messages 包装成一场对话：标题取首条用户消息、活跃指针指向它
+        val conversation = repo.conversations.value.single()
+        assertEquals("帮我看看下周安排", conversation.title)
+        assertEquals(conversation.id, repo.activeConversationId.value)
+        assertEquals(listOf("帮我看看下周安排", "好的"), repo.messages.value.map { it.content })
+        assertEquals(5L, conversation.createdAtMillis)
+        assertEquals(9L, conversation.updatedAtMillis)
+        // 迁移立即以 v2 形态重写落盘（幂等：失败下次装载会再迁移）
+        assertEquals(AI_CHAT_FORMAT_VERSION, store.file.formatVersion)
+        assertEquals(1, store.file.conversations.size)
         assertTrue(store.file.messages.isEmpty())
+    }
+
+    @Test
+    fun `stream keeps landing in bound conversation after switching away`() = runBlocking {
+        // 首个增量后流挂起：切走再放行，回复应完整落在发起时的对话里
+        val response = ScriptedResponse(listOf(sse("前半")))
+        val repo = repository(
+            transport = FakeAiTransport(
+                response,
+                ScriptedResponse(listOf("data: [DONE]")),
+            ),
+        )
+
+        repo.sendInBackground("hi")
+        withTimeout(5000) {
+            while (repo.messages.value.lastOrNull()?.content?.contains("前半") != true) delay(10)
+        }
+        val bound = repo.activeConversationId.value!!
+
+        // 在途发送未结束时新建并切换（管理操作不取主 mutex，立即生效）
+        repo.createConversation()
+        assertTrue(repo.messages.value.isEmpty())
+
+        response.gate.countDown() // EOF 无 [DONE]：按失败收口（保留半截 + interrupted）
+        withTimeout(5000) { while (repo.sending.value) delay(10) }
+
+        // 回复落在绑定的旧对话（interrupted 半截），当前对话不受打扰
+        assertEquals(2, repo.conversations.value.size)
+        val boundConversation = repo.conversations.value.first { it.id == bound }
+        assertEquals(2, boundConversation.messages.size)
+        assertEquals("前半", boundConversation.messages.last().content)
+        assertTrue(boundConversation.messages.last().interrupted)
+        assertTrue(repo.messages.value.isEmpty())
+        assertEquals(0, repo.conversations.value.first { it.id != bound }.messages.size)
+    }
+
+    @Test
+    fun `stream failure while switched away hides error until switching back`() = runBlocking {
+        // 在途流失败时用户已切走：错误条不串场；切回发起对话自动重现，关闭后不再复活
+        val response = ScriptedResponse(listOf(sse("前半")))
+        val repo = repository(
+            transport = FakeAiTransport(
+                response,
+                ScriptedResponse(listOf("data: [DONE]")),
+            ),
+        )
+
+        repo.sendInBackground("hi")
+        withTimeout(5000) {
+            while (repo.messages.value.lastOrNull()?.content?.contains("前半") != true) delay(10)
+        }
+        val bound = repo.activeConversationId.value!!
+        repo.createConversation()
+
+        response.gate.countDown() // EOF 无 [DONE]：按失败收口
+        withTimeout(5000) { while (repo.sending.value) delay(10) }
+
+        assertNull(repo.lastError.value) // 失败的对话不在当前显示，错误条不出现
+
+        repo.switchConversation(bound)
+        assertNotNull(repo.lastError.value) // 切回发起对话：错误条重现（含重试入口）
+
+        repo.dismissError()
+        repo.switchConversation(repo.conversations.value.first { it.id != bound }.id)
+        repo.switchConversation(bound)
+        assertNull(repo.lastError.value) // 用户已关闭：切走再切回也不复活
     }
 
     // ---------- 配置方案 ----------

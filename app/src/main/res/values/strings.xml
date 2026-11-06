@@ -784,6 +784,13 @@
     <string name="ai_sheet_title">AI 助手</string>
     <string name="ai_sheet_chat">对话</string>
     <string name="ai_sheet_close">关闭</string>
+
+    <!-- AI 对话管理浮层（AiConversationsSheet）：顶栏 / 列表行 / 删除确认 / 未命名回落 -->
+    <string name="ai_conversations_title">所有对话</string>
+    <string name="ai_conversations_new">新建</string>
+    <string name="ai_conversations_delete_title">删除对话</string>
+    <string name="ai_conversations_delete_message">「%1$s」将被删除，此操作不可撤销。</string>
+    <string name="ai_conversation_default_name">新对话</string>
     <string name="ai_input_hint">点击输入和AI对话</string>
     <string name="ai_input_sending_hint">AI正在回答</string>
     <string name="cd_ai_send">发送</string>

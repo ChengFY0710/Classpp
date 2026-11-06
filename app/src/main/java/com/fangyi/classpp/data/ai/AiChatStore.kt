@@ -6,10 +6,18 @@ import com.fangyi.classpp.data.store.StoreResult
 import java.io.File
 import kotlinx.serialization.Serializable
 
-/** 对话历史整库信封：ai_chat.json 的内容（system prompt 每次现拼，不入文件） */
+/**
+ * 对话历史整库信封：ai_chat.json 的内容（system prompt 每次现拼，不入文件）。
+ *
+ * v2 起为多对话模型：[conversations] 持有全部对话、[activeConversationId] 指向当前
+ * 活跃对话；[messages] 是 v1 的顶层消息列表，仅作旧文件迁移读取用——迁移后恒为
+ * 空列表（仓库 bootstrap 负责 v1 → v2 的包装与重写落盘）。
+ */
 @Serializable
 data class AiChatFile(
     val formatVersion: Int = AI_CHAT_FORMAT_VERSION,
+    val conversations: List<AiConversation> = emptyList(),
+    val activeConversationId: String? = null,
     val messages: List<AiChatMessage> = emptyList(),
 )
 

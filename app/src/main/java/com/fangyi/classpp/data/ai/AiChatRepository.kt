@@ -51,6 +51,11 @@ data class AiConfigSaveOutcome(
  * AI 对话仓库：内存真源（StateFlow）+ 磁盘持久化（[AiChatStore]），与 TodoRepository
  * 同构；流式增量直接写入消息流（UI 逐字渲染）。
  *
+ * **多对话模型**：真源是 [_conversations]（每场对话各自的消息），[_activeConversationId]
+ * 指向当前活跃对话；公开的 [messages] 是活跃对话消息的同步镜像（见 [updateConversation]）。
+ * 每场发送在锁内绑定一场对话（无活跃对话时隐式新建，未命名借首条用户消息命名），
+ * 流式增量按绑定 id 定向落库——中途切换对话，回复仍完整落在发起时的对话里。
+ *
  * **调用编排**（见 .mimocode/docs/AI功能计划.md §6.3）：
  * - [send] 先对历史窗口拍快照 → 追加 user 消息与空的 assistant 占位 → 拼 system
  *   prompt（上下文快照 + 历史快照 + 本轮 user）→ [AiClient.streamChat] 流式 →
@@ -69,7 +74,10 @@ data class AiConfigSaveOutcome(
  * [AiChatMessage.todoSaveFailed]。
  *
  * 写：Mutex 串行化（同一次对话期间禁止并发 send），流程 = 内存变更 → `store.save`
- * → 成功与否只影响下次装载（对话历史可弃，失败不回滚内存）。
+ * → 成功与否只影响下次装载（对话历史可弃，失败不回滚内存）。对话管理操作
+ * （[createConversation] / [switchConversation] / [deleteConversation]）刻意不取该
+ * Mutex——否则「新建/切换/删除」会卡到在途流式结束；安全性由定向写入保证（见
+ * [updateConversation]），落盘仍统一经 [persistMutex] 串行。
  */
 class AiChatRepository internal constructor(
     private val store: AiChatStore,
@@ -94,10 +102,28 @@ class AiChatRepository internal constructor(
     private val sendGate = AtomicBoolean(false)
     private val activeSend = AtomicReference<Job?>(null)
 
+    /** 在途发送绑定的对话 id（send/retry 锁内绑定）：删除对话时据此决定是否掐断在途流 */
+    private val activeSendConversationId = AtomicReference<String?>(null)
+
     /** 上次 checkpoint 时刻（[nowMillis] 口径）；只由流式回调线程写，读侧加 @Volatile */
     @Volatile
     private var lastCheckpointAt = 0L
 
+    private val _conversations = MutableStateFlow<List<AiConversation>>(emptyList())
+
+    /** 全部对话（含各自消息，按创建顺序）；「所有对话」浮层据此渲染列表 */
+    val conversations: StateFlow<List<AiConversation>> = _conversations.asStateFlow()
+
+    private val _activeConversationId = MutableStateFlow<String?>(null)
+
+    /** 当前活跃对话 id；null = 无对话（对话浮层走空态，「所有对话」入口点击无反应） */
+    val activeConversationId: StateFlow<String?> = _activeConversationId.asStateFlow()
+
+    /**
+     * 活跃对话的消息镜像（对话浮层渲染源）。真源是 [_conversations] 里活跃对话的
+     * messages，由 [updateConversation] 在每次定向变更后同步回填——保持同步赋值
+     * （而非派生流）让「发送 → UI 可见」在同帧内可见，也保证既有读侧语义不变。
+     */
     private val _messages = MutableStateFlow<List<AiChatMessage>>(emptyList())
     val messages: StateFlow<List<AiChatMessage>> = _messages.asStateFlow()
 
@@ -108,9 +134,43 @@ class AiChatRepository internal constructor(
     private val _sending = MutableStateFlow(false)
     val sending: StateFlow<Boolean> = _sending.asStateFlow()
 
-    /** 最近一次失败的分类错误（UI 错误条 + 重试）；成功发送或用户关闭时清空 */
+    /**
+     * 最近一次失败的分类错误（UI 错误条 + 重试）。错误**归属对话**：内部存「错误 +
+     * 归属对话 id」，公开的 [_lastError] 是活跃镜像——归属对话正在查看时才对外可见
+     * （在途流失败时用户可能已切到别的对话，错误条不能串场；切回来自动重现）。
+     * 成功发送或用户关闭时彻底清空。
+     */
     private val _lastError = MutableStateFlow<AiException?>(null)
     val lastError: StateFlow<AiException?> = _lastError.asStateFlow()
+
+    private val _lastErrorInternal = MutableStateFlow<AiException?>(null)
+    private val _lastErrorConversationId = MutableStateFlow<String?>(null)
+
+    /** 记录归属对话的失败；归属对话是活跃对话时同步对外可见 */
+    private fun storeLastError(error: AiException, conversationId: String?) {
+        _lastErrorInternal.value = error
+        _lastErrorConversationId.value = conversationId
+        mirrorLastError()
+    }
+
+    /** 重镜像 [lastError]：切换/新建/删除对话后，错误条随归属对话显隐 */
+    private fun mirrorLastError() {
+        _lastError.value = if (
+            _lastErrorConversationId.value != null &&
+            _lastErrorConversationId.value == _activeConversationId.value
+        ) {
+            _lastErrorInternal.value
+        } else {
+            null
+        }
+    }
+
+    /** 彻底清空错误（新一轮发送开始 / 用户关闭 / 清空历史） */
+    private fun clearLastError() {
+        _lastErrorInternal.value = null
+        _lastErrorConversationId.value = null
+        _lastError.value = null
+    }
 
     /** 配置是否就绪（连接 + Key）；bootstrap 与设置页保存后刷新，UI 据此走引导态 */
     private val _configured = MutableStateFlow(false)
@@ -149,8 +209,40 @@ class AiChatRepository internal constructor(
             is LoadOutcome.Loaded<AiChatFile> -> outcome.file
             is LoadOutcome.Fresh<AiChatFile> -> outcome.file
         }
-        _messages.value = file.messages
+        // v1 顶层 messages 包装成一场对话；活跃指针悬空（手工改档等）回落「最近更新」
+        val (normalized, migrated) = migrateFile(file)
+        _conversations.value = normalized.conversations
+        _activeConversationId.value = normalized.activeConversationId
+            ?.takeIf { id -> normalized.conversations.any { it.id == id } }
+            ?: normalized.conversations.maxByOrNull { it.updatedAtMillis }?.id
+        _messages.value = activeConversation()?.messages ?: emptyList()
+        // 重新装载（备份恢复等）丢弃旧错误：归属对话可能已不在新库里
+        clearLastError()
+        if (migrated) persist()
         refreshConfigured()
+    }
+
+    /**
+     * v1 → v2 迁移：旧信封的顶层 messages 包成一场对话（标题按命名规则取首条用户
+     * 消息截断），activeConversationId 指向它。v2 信封与空库原样返回（不动）。
+     * 迁移是幂等的：重写落盘失败时下次装载会再次走到这里。
+     */
+    private fun migrateFile(file: AiChatFile): Pair<AiChatFile, Boolean> {
+        if (file.conversations.isNotEmpty() || file.messages.isEmpty()) return file to false
+        val conversation = AiConversation(
+            id = java.util.UUID.randomUUID().toString(),
+            title = deriveTitle(
+                file.messages.firstOrNull { it.role == AiChatRole.User }?.content.orEmpty(),
+            ).orEmpty(),
+            createdAtMillis = file.messages.firstOrNull()?.createdAtMillis ?: 0L,
+            updatedAtMillis = file.messages.lastOrNull()?.createdAtMillis ?: 0L,
+            messages = file.messages,
+        )
+        return AiChatFile(
+            formatVersion = AI_CHAT_FORMAT_VERSION,
+            conversations = listOf(conversation),
+            activeConversationId = conversation.id,
+        ) to true
     }
 
     /**
@@ -215,7 +307,8 @@ class AiChatRepository internal constructor(
             } catch (_: CancellationException) {
                 // 停止：半截已由 send/retryLast 标记 interrupted 并（NonCancellable）落盘
             } catch (e: Exception) {
-                _lastError.value = AiException(AiError.BadResponse, detail = e.message)
+                // 非分类的意外异常：归到本次发送绑定的对话（尚未绑定则不挂到任何对话）
+                storeLastError(AiException(AiError.BadResponse, detail = e.message), activeSendConversationId.get())
             }
         }
         activeSend.set(job)
@@ -223,6 +316,7 @@ class AiChatRepository internal constructor(
         // 放在 finally 会把闸门永久卡死；完成回调对取消同样会触发
         job.invokeOnCompletion {
             activeSend.compareAndSet(job, null)
+            activeSendConversationId.set(null)
             sendGate.set(false)
         }
         return job
@@ -234,6 +328,10 @@ class AiChatRepository internal constructor(
      * 未配置（连接或 Key 缺失）时刷新 [configured] 后静默返回：UI 据此渲染引导态。
      * 流式过程中的分类错误发布到 [lastError]，不抛出。
      *
+     * 本轮发送在锁内绑定一场对话：无活跃对话（删光后首次发言）时隐式新建，未命名
+     * 对话借首条用户消息自动命名；流式增量按绑定的 id 定向落库——即使用户中途切换
+     * 对话，回复仍完整落在发起时的对话里，不打扰当前显示。
+     *
      * @throws CancellationException 调用方取消（半截文本已标记 interrupted 并落盘）
      */
     suspend fun send(text: String) {
@@ -244,7 +342,10 @@ class AiChatRepository internal constructor(
             _configured.value = connection.isConfigured && apiKey != null
             if (!connection.isConfigured || apiKey == null) return
 
-            _lastError.value = null
+            val conversationId = ensureConversationLocked(trimmed)
+            activeSendConversationId.set(conversationId)
+
+            clearLastError()
             _sending.value = true
             try {
                 val userMessage = AiChatMessage(
@@ -260,8 +361,8 @@ class AiChatRepository internal constructor(
                 )
                 // 历史快照必须在本轮 user/占位入流之前拍：否则请求里会重复本轮 user，
                 // 并夹带一条 content="" 的 assistant（部分网关直接回 400）
-                val history = _messages.value.takeLast(HISTORY_WINDOW)
-                _messages.update { it + userMessage + placeholder }
+                val history = boundMessages(conversationId).takeLast(HISTORY_WINDOW)
+                appendMessages(conversationId) { it + userMessage + placeholder }
                 lastCheckpointAt = nowMillis()
 
                 val full = try {
@@ -270,27 +371,27 @@ class AiChatRepository internal constructor(
                         apiKey = apiKey,
                         turns = buildTurns(history, trimmed),
                         onDelta = { chunk ->
-                            appendToLast(chunk)
+                            appendToLast(conversationId, chunk)
                         },
                         onReasoning = { chunk ->
-                            appendReasoningToLast(chunk)
+                            appendReasoningToLast(conversationId, chunk)
                         },
                     )
                 } catch (e: CancellationException) {
                     // 停止/退出：半截文本保留，标记 interrupted；取消的协程里 withContext
                     // 会直接抛出，落盘必须包 NonCancellable 才能执行完
-                    markLastInterrupted()
+                    markLastInterrupted(conversationId)
                     withContext(NonCancellable) { persist() }
                     throw e
                 } catch (e: AiException) {
-                    markLastInterrupted()
-                    _lastError.value = e
+                    markLastInterrupted(conversationId)
+                    storeLastError(e, conversationId)
                     persist()
                     return
                 }
 
                 try {
-                    finalizeLast(full, connection, apiKey)
+                    finalizeLast(conversationId, full, connection, apiKey)
                     persist()
                 } catch (e: CancellationException) {
                     // 正文已在 finalizeLast 第一步写全：草稿解析（可能含修复请求）阶段被取消
@@ -307,24 +408,27 @@ class AiChatRepository internal constructor(
     /**
      * 重试最后一场失败的对话：移除尾部 interrupted 的 assistant 消息后按原 user
      * 消息重新流式（不重复追加 user 消息）。无可重试状态（没有 interrupted 尾巴）
-     * 时静默返回。
+     * 时静默返回。绑定当前活跃对话——重试入口只存在于正在查看的对话里。
      */
     suspend fun retryLast() {
         mutex.withLock {
-            if (_messages.value.lastOrNull()?.takeIf { it.role == AiChatRole.Assistant }?.interrupted != true) {
+            val conversationId = _activeConversationId.value ?: return
+            val bound = boundMessages(conversationId)
+            if (bound.lastOrNull()?.takeIf { it.role == AiChatRole.Assistant }?.interrupted != true) {
                 return
             }
-            val userText = _messages.value.lastOrNull { it.role == AiChatRole.User }?.content ?: return
+            val userText = bound.lastOrNull { it.role == AiChatRole.User }?.content ?: return
             // 先确认凭据再动消息：未配置时直接返回，不留下「尾巴被摘掉」的坏状态
             val (connection, apiKey) = loadCredentials()
             _configured.value = connection.isConfigured && apiKey != null
             if (!connection.isConfigured || apiKey == null) return
-            _messages.update { list ->
-                list.dropLastWhile { it.role == AiChatRole.Assistant }
+            activeSendConversationId.set(conversationId)
+            updateConversation(conversationId) { conversation ->
+                conversation.copy(messages = conversation.messages.dropLastWhile { it.role == AiChatRole.Assistant })
             }
             // 尾部那条 user 就是本次要重发的：留在 history 里会与下面追加的 userText 重复
-            val history = _messages.value.dropLast(1).takeLast(HISTORY_WINDOW)
-            _lastError.value = null
+            val history = boundMessages(conversationId).dropLast(1).takeLast(HISTORY_WINDOW)
+            clearLastError()
             _sending.value = true
             try {
                 val placeholder = AiChatMessage(
@@ -332,29 +436,29 @@ class AiChatRepository internal constructor(
                     content = "",
                     createdAtMillis = nowMillis(),
                 )
-                _messages.update { it + placeholder }
+                appendMessages(conversationId) { it + placeholder }
                 lastCheckpointAt = nowMillis()
                 val full = try {
                     client.streamChat(
                         connection = connection,
                         apiKey = apiKey,
                         turns = buildTurns(history, userText),
-                        onDelta = { chunk -> appendToLast(chunk) },
-                        onReasoning = { chunk -> appendReasoningToLast(chunk) },
+                        onDelta = { chunk -> appendToLast(conversationId, chunk) },
+                        onReasoning = { chunk -> appendReasoningToLast(conversationId, chunk) },
                     )
                 } catch (e: CancellationException) {
                     // 取消路径的落盘同样包 NonCancellable（见 send 的同款注释）
-                    markLastInterrupted()
+                    markLastInterrupted(conversationId)
                     withContext(NonCancellable) { persist() }
                     throw e
                 } catch (e: AiException) {
-                    markLastInterrupted()
-                    _lastError.value = e
+                    markLastInterrupted(conversationId)
+                    storeLastError(e, conversationId)
                     persist()
                     return
                 }
                 try {
-                    finalizeLast(full, connection, apiKey)
+                    finalizeLast(conversationId, full, connection, apiKey)
                     persist()
                 } catch (e: CancellationException) {
                     // 同 send：正文已完整时落盘不能被取消吞掉
@@ -368,22 +472,85 @@ class AiChatRepository internal constructor(
     }
 
     /**
-     * 清空对话历史（设置页「清空对话历史」）；落盘失败不回滚内存（历史可弃）。
+     * 清空对话历史（设置页「清空对话历史」）：删除全部对话（多对话模型下回到无对话
+     * 状态，活跃指针置空）；落盘失败不回滚内存（历史可弃）。
      * 走 [persist] 而非直接 store.save：所有落盘在 [persistMutex] 上串行——在途
      * checkpoint 的旧快照不会晚于清空落盘，把刚清空的旧历史写回磁盘。
      */
     suspend fun clearHistory() {
         mutex.withLock {
+            _conversations.value = emptyList()
+            _activeConversationId.value = null
             _messages.value = emptyList()
-            _lastError.value = null
+            clearLastError()
             // 用户已两次确认：落盘不能被浮层关闭取消，否则重启后旧历史回归
             withContext(NonCancellable) { persist() }
         }
     }
 
+    // ---------- 对话管理（「所有对话」浮层经此读写） ----------
+
+    /**
+     * 新建空对话并置为活跃（「所有对话」浮层的「新建」）：不命名，发首条消息时自动
+     * 命名。返回新对话 id；活跃对话已是空对话时直接复用（连点「新建」不堆积空对话）。
+     *
+     * 刻意不取 [mutex]：与在途发送互斥会让「新建」卡到流式结束。安全性由定向写入
+     * 保证——在途流按发起时绑定的对话 id 落消息（见 [updateConversation]），新建只是
+     * 追加一个成员并移动活跃指针，互不干扰。
+     */
+    suspend fun createConversation(): String {
+        activeConversation()?.takeIf { it.messages.isEmpty() }?.let { return it.id }
+        val conversation = AiConversation(
+            id = java.util.UUID.randomUUID().toString(),
+            createdAtMillis = nowMillis(),
+            updatedAtMillis = nowMillis(),
+        )
+        _conversations.update { it + conversation }
+        _activeConversationId.value = conversation.id
+        _messages.value = emptyList()
+        mirrorLastError()
+        persist()
+        return conversation.id
+    }
+
+    /**
+     * 切换活跃对话（「所有对话」浮层点卡片）：镜像切换 [messages]，错误条随归属
+     * 对话显隐（[mirrorLastError]）。id 不存在或已是活跃对话时静默返回。并发安全与
+     * [createConversation] 同理——不取 [mutex]，在途流按绑定 id 落库，切换只影响
+     * 镜像与活跃指针。
+     */
+    suspend fun switchConversation(id: String) {
+        if (id == _activeConversationId.value) return
+        val target = _conversations.value.firstOrNull { it.id == id } ?: return
+        _activeConversationId.value = target.id
+        _messages.value = target.messages
+        mirrorLastError()
+        persist()
+    }
+
+    /**
+     * 删除对话（「所有对话」浮层删除确认后）；id 不存在时静默返回。
+     * 在途发送绑定该对话时先 [cancelSending]（对话已删，半截回复不再有意义，流式
+     * 增量随定向写入的目标消失而自然丢弃）；删除活跃对话时回落「最近更新」的剩余
+     * 对话，删光后活跃置空——对话浮层走空态，入口按钮点击无反应，再次发言隐式新建。
+     * 并发安全与 [createConversation] 同理。
+     */
+    suspend fun deleteConversation(id: String) {
+        if (_conversations.value.none { it.id == id }) return
+        if (activeSendConversationId.get() == id) cancelSending()
+        _conversations.update { list -> list.filterNot { it.id == id } }
+        if (_activeConversationId.value == id) {
+            _activeConversationId.value = _conversations.value
+                .maxByOrNull { it.updatedAtMillis }?.id
+            _messages.value = activeConversation()?.messages ?: emptyList()
+        }
+        mirrorLastError()
+        persist()
+    }
+
     /** 关闭错误条（UI 的「知道了」）；下次失败会重新发布 */
     fun dismissError() {
-        _lastError.value = null
+        clearLastError()
     }
 
     // ---------- 配置方案（AI 设置页与方案浮层经此读写，store 不直接出包） ----------
@@ -491,6 +658,90 @@ class AiChatRepository internal constructor(
         return deleted
     }
 
+    // ---------- 定向写入（多对话内核：一切消息变更按对话 id 落位） ----------
+
+    /** 当前活跃对话（同步读取，配合 [_activeConversationId] 使用） */
+    private fun activeConversation(): AiConversation? =
+        _conversations.value.firstOrNull { it.id == _activeConversationId.value }
+
+    /** 指定对话当前的消息快照（send/retry 的历史窗口读取用） */
+    private fun boundMessages(conversationId: String): List<AiChatMessage> =
+        _conversations.value.firstOrNull { it.id == conversationId }?.messages ?: emptyList()
+
+    /**
+     * 定向更新一场对话并同步 [messages] 镜像：目标是活跃对话时镜像随之刷新（发送中
+     * 逐字可见），非活跃目标（后台在途流）只落库、不打扰当前显示；目标已被删除时
+     * 整体静默跳过——「边发边删」的流式增量与收尾标记自然消失。
+     *
+     * 并发：`MutableStateFlow.update` 的 CAS 循环保证跨线程互不覆盖（流式回调线程与
+     * 锁内协程都会走到这里，故管理操作不需要与 [mutex] 互斥）。
+     */
+    private fun updateConversation(id: String, update: (AiConversation) -> AiConversation) {
+        _conversations.update { list -> list.map { if (it.id == id) update(it) else it } }
+        if (id == _activeConversationId.value) {
+            _messages.value = activeConversation()?.messages ?: emptyList()
+        }
+    }
+
+    /** 向指定对话追加消息并刷新 [AiConversation.updatedAtMillis]（最近排序 / 回落依据） */
+    private fun appendMessages(
+        conversationId: String,
+        transform: (List<AiChatMessage>) -> List<AiChatMessage>,
+    ) {
+        updateConversation(conversationId) { conversation ->
+            conversation.copy(
+                messages = transform(conversation.messages),
+                updatedAtMillis = nowMillis(),
+            )
+        }
+    }
+
+    /** 替换指定对话的尾部 assistant 消息（流式增量 / finalize / interrupted 共用） */
+    private fun updateLastMessage(conversationId: String, transform: (AiChatMessage) -> AiChatMessage) {
+        updateConversation(conversationId) { conversation ->
+            val list = conversation.messages
+            val last = list.lastOrNull() ?: return@updateConversation conversation
+            if (last.role != AiChatRole.Assistant) return@updateConversation conversation
+            conversation.copy(
+                messages = list.toMutableList().also { it[it.lastIndex] = transform(last) },
+                updatedAtMillis = nowMillis(),
+            )
+        }
+    }
+
+    /**
+     * 锁内：确保存在活跃对话，返回其 id。无活跃对话（删光后首次发言）时隐式新建；
+     * 未命名对话借本轮首条用户消息自动命名（迁移进来的历史对话已在 bootstrap 命名）。
+     */
+    private fun ensureConversationLocked(firstUserText: String): String {
+        val existing = activeConversation()
+        if (existing != null) {
+            if (existing.title.isBlank()) {
+                deriveTitle(firstUserText)?.let { title ->
+                    updateConversation(existing.id) { it.copy(title = title) }
+                }
+            }
+            return existing.id
+        }
+        val conversation = AiConversation(
+            id = java.util.UUID.randomUUID().toString(),
+            title = deriveTitle(firstUserText).orEmpty(),
+            createdAtMillis = nowMillis(),
+            updatedAtMillis = nowMillis(),
+        )
+        _conversations.update { it + conversation }
+        _activeConversationId.value = conversation.id
+        _messages.value = emptyList()
+        return conversation.id
+    }
+
+    /** 首条用户消息 → 对话名：压平换行取开头截断；空白返回 null（保持未命名） */
+    private fun deriveTitle(text: String): String? {
+        val flattened = text.replace('\n', ' ').trim()
+        if (flattened.isEmpty()) return null
+        return flattened.take(TITLE_MAX_LENGTH)
+    }
+
     // ---------- 待办落库 ----------
 
     /**
@@ -516,30 +767,18 @@ class AiChatRepository internal constructor(
             AiChatTurn(role = "user", content = userText)
     }
 
-    /** 流式增量追加到尾部 assistant 消息（StateFlow 原位更新，UI 逐字渲染） */
-    private fun appendToLast(chunk: String) {
-        _messages.update { list ->
-            if (list.isEmpty()) return@update list
-            val last = list.last()
-            if (last.role != AiChatRole.Assistant) return@update list
-            list.toMutableList().also { it[it.lastIndex] = last.copy(content = last.content + chunk) }
-        }
+    /** 流式增量追加到绑定对话的尾部 assistant 消息（UI 逐字渲染） */
+    private fun appendToLast(conversationId: String, chunk: String) {
+        updateLastMessage(conversationId) { it.copy(content = it.content + chunk) }
         maybeCheckpoint()
     }
 
     /**
-     * 思考增量追加到尾部 assistant 消息的 [AiChatMessage.reasoning]：与正文分列，
-     * UI 在气泡上方的折叠块里展示；同样参与 checkpoint 节流（长思考也要能恢复）。
+     * 思考增量追加到绑定对话尾部 assistant 消息的 [AiChatMessage.reasoning]：与正文
+     * 分列，UI 在气泡上方的折叠块里展示；同样参与 checkpoint 节流（长思考也要能恢复）。
      */
-    private fun appendReasoningToLast(chunk: String) {
-        _messages.update { list ->
-            if (list.isEmpty()) return@update list
-            val last = list.last()
-            if (last.role != AiChatRole.Assistant) return@update list
-            list.toMutableList().also {
-                it[it.lastIndex] = last.copy(reasoning = last.reasoning + chunk)
-            }
-        }
+    private fun appendReasoningToLast(conversationId: String, chunk: String) {
+        updateLastMessage(conversationId) { it.copy(reasoning = it.reasoning + chunk) }
         maybeCheckpoint()
     }
 
@@ -569,25 +808,20 @@ class AiChatRepository internal constructor(
      * 落库顺序：映射 → 过滤缺名称行 → 批量 addTodos（单次提交）→ 成功创建的 id 写回
      * 消息。落库失败只标记 [AiChatMessage.todoSaveFailed]，不影响正文与历史。
      */
-    private suspend fun finalizeLast(full: String, connection: AiConnection, apiKey: String) {
-        _messages.update { list ->
-            val last = list.lastOrNull() ?: return@update list
-            if (last.role != AiChatRole.Assistant) return@update list
-            list.toMutableList().also {
-                it[it.lastIndex] = last.copy(content = full, interrupted = false)
-            }
-        }
+    private suspend fun finalizeLast(
+        conversationId: String,
+        full: String,
+        connection: AiConnection,
+        apiKey: String,
+    ) {
+        updateLastMessage(conversationId) { it.copy(content = full, interrupted = false) }
         val payload = extractDrafts(full, connection, apiKey) ?: return
         val outcome = createTodos(payload)
-        _messages.update { list ->
-            val last = list.lastOrNull() ?: return@update list
-            if (last.role != AiChatRole.Assistant) return@update list
-            list.toMutableList().also {
-                it[it.lastIndex] = last.copy(
-                    todoIds = outcome.ids,
-                    todoSaveFailed = outcome.failed,
-                )
-            }
+        updateLastMessage(conversationId) { last ->
+            last.copy(
+                todoIds = outcome.ids,
+                todoSaveFailed = outcome.failed,
+            )
         }
     }
 
@@ -622,14 +856,8 @@ class AiChatRepository internal constructor(
      * 取消/失败：标记 interrupted。半截回复不创建待办——只认完整结束的回复，
      * 避免用户按下停止时把半截 JSON 写成真实待办。
      */
-    private fun markLastInterrupted() {
-        _messages.update { list ->
-            val last = list.lastOrNull() ?: return@update list
-            if (last.role != AiChatRole.Assistant) return@update list
-            list.toMutableList().also {
-                it[it.lastIndex] = last.copy(interrupted = true)
-            }
-        }
+    private fun markLastInterrupted(conversationId: String) {
+        updateLastMessage(conversationId) { it.copy(interrupted = true) }
     }
 
     /**
@@ -684,7 +912,13 @@ class AiChatRepository internal constructor(
     private suspend fun persist() {
         withContext(Dispatchers.IO) {
             persistMutex.withLock {
-                val file = AiChatFile(messages = _messages.value.takeLast(MAX_PERSISTED_MESSAGES))
+                // 每场对话各自截最旧：上限是单对话语义（一场长对话不会挤掉别的对话）
+                val file = AiChatFile(
+                    conversations = _conversations.value.map { conversation ->
+                        conversation.copy(messages = conversation.messages.takeLast(MAX_PERSISTED_MESSAGES))
+                    },
+                    activeConversationId = _activeConversationId.value,
+                )
                 store.save(file)
             }
         }
@@ -694,8 +928,11 @@ class AiChatRepository internal constructor(
         /** 发给模型的历史窗口（条数；system prompt 不在此） */
         const val HISTORY_WINDOW = 30
 
-        /** 落盘的消息上限（超限截最旧，见计划 §4.3） */
+        /** 落盘的消息上限（每场对话各自截最旧，见计划 §4.3） */
         const val MAX_PERSISTED_MESSAGES = 200
+
+        /** 对话名截断长度：取首条用户消息开头自动命名 */
+        const val TITLE_MAX_LENGTH = 16
 
         /** 修复重试时携带的原文上限（防超长回复撑爆重试请求） */
         const val REPAIR_CONTEXT_MAX = 4000

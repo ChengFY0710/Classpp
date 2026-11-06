@@ -4,6 +4,7 @@ import com.fangyi.classpp.data.ScheduleJson
 import com.fangyi.classpp.data.ai.AiChatFile
 import com.fangyi.classpp.data.ai.AiChatMessage
 import com.fangyi.classpp.data.ai.AiChatRole
+import com.fangyi.classpp.data.ai.AiConversation
 import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.TagFile
@@ -59,13 +60,22 @@ class BackupArchiveTest {
             ),
             aiChatJson = ScheduleJson.encodeStorage(
                 AiChatFile(
-                    messages = listOf(
-                        AiChatMessage(
-                            role = AiChatRole.User,
-                            content = "你好",
+                    conversations = listOf(
+                        AiConversation(
+                            id = "conv-1",
+                            title = "你好",
                             createdAtMillis = 1L,
+                            updatedAtMillis = 1L,
+                            messages = listOf(
+                                AiChatMessage(
+                                    role = AiChatRole.User,
+                                    content = "你好",
+                                    createdAtMillis = 1L,
+                                ),
+                            ),
                         ),
                     ),
+                    activeConversationId = "conv-1",
                 ),
             ),
             dayImagesJson = ScheduleJson.encodeStorage(
@@ -105,7 +115,8 @@ class BackupArchiveTest {
         val ai = ScheduleJson.decodeStorage<AiChatFile>(
             File(target, BackupArchive.ENTRY_AI_CHAT).readText(),
         )
-        assertEquals("你好", ai.messages.single().content)
+        assertEquals("conv-1", ai.activeConversationId)
+        assertEquals("你好", ai.conversations.single().messages.single().content)
 
         val dayImages = ScheduleJson.decodeStorage<BackupDayImages>(
             File(target, BackupArchive.ENTRY_DAY_IMAGES).readText(),

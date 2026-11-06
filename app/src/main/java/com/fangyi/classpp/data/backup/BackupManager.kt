@@ -113,7 +113,8 @@ class BackupManager(private val context: Context) {
                 courses = schedules.schedules.sumOf { it.courses.size },
                 todos = todos.todos.size,
                 tags = tags.tags.size,
-                aiMessages = aiChat.messages.size,
+                // 多对话模型（v2）：统计所有对话的消息总数；v1 旧文件迁移前顶层 messages 兜底
+                aiMessages = aiChat.conversations.sumOf { it.messages.size } + aiChat.messages.size,
                 dayImages = dayImageNames.size,
             ),
         )

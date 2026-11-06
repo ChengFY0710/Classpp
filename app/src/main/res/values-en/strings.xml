@@ -757,6 +757,13 @@
     <string name="ai_sheet_title">AI Assistant</string>
     <string name="ai_sheet_chat">Chat</string>
     <string name="ai_sheet_close">Close</string>
+
+    <!-- AI conversation manager sheet (AiConversationsSheet): top bar / rows / delete confirm / unnamed fallback -->
+    <string name="ai_conversations_title">All Chats</string>
+    <string name="ai_conversations_new">New</string>
+    <string name="ai_conversations_delete_title">Delete Chat</string>
+    <string name="ai_conversations_delete_message">“%1$s” will be deleted. This cannot be undone.</string>
+    <string name="ai_conversation_default_name">New chat</string>
     <string name="ai_input_hint">Tap to chat with AI</string>
     <string name="ai_input_sending_hint">AI is replying</string>
     <string name="cd_ai_send">Send</string>

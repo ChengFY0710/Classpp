@@ -109,7 +109,7 @@ class AiChatStoreTest {
             AiJson.storage.encodeToString(
                 AiChatFile.serializer(),
                 fileWith(message(AiChatRole.User, "未来版本")),
-            ).replace("\"formatVersion\":1", "\"formatVersion\":99"),
+            ).replace("\"formatVersion\":$AI_CHAT_FORMAT_VERSION", "\"formatVersion\":99"),
         )
 
         // bak 仍是上次提交的好数据：恢复它，而非清库
@@ -117,6 +117,43 @@ class AiChatStoreTest {
         assertTrue(outcome is LoadOutcome.Loaded)
         assertEquals(LoadIssue.RestoredFromBackup, outcome.issue)
         assertEquals(previous, (outcome as LoadOutcome.Loaded<AiChatFile>).file)
+    }
+
+    @Test
+    fun `legacy v1 envelope with top-level messages loads`() {
+        // 旧版本（v1）落盘的文件：只有顶层 messages，没有 conversations 字段——
+        // 反序列化得 conversations=[]、formatVersion=1（≤ 当前版本），正常载入；
+        // 包装成对话由仓库 bootstrap 的迁移负责，store 只认文件协议
+        mainFile().writeText(
+            """{"formatVersion":1,"messages":[{"role":"User","content":"旧消息","createdAtMillis":42}]}""",
+        )
+
+        val outcome = store().load()
+        assertTrue(outcome is LoadOutcome.Loaded)
+        assertEquals(LoadIssue.None, outcome.issue)
+        val file = (outcome as LoadOutcome.Loaded<AiChatFile>).file
+        assertTrue(file.conversations.isEmpty())
+        assertEquals(listOf("旧消息"), file.messages.map { it.content })
+    }
+
+    @Test
+    fun `v2 envelope roundtrips conversations and active pointer`() {
+        val conversation = AiConversation(
+            id = "conv-1",
+            title = "帮我看看",
+            createdAtMillis = 10L,
+            updatedAtMillis = 30L,
+            messages = listOf(message(AiChatRole.User, "帮我看看下周安排")),
+        )
+        val original = AiChatFile(
+            conversations = listOf(conversation),
+            activeConversationId = "conv-1",
+        )
+        assertEquals(StoreResult.Ok, store().save(original))
+
+        val outcome = store().load()
+        assertTrue(outcome is LoadOutcome.Loaded)
+        assertEquals(original, (outcome as LoadOutcome.Loaded<AiChatFile>).file)
     }
 
     @Test

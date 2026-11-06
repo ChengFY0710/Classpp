@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /** 对话历史存储文件的格式版本；装载时拒绝更高版本（与 TODO_FORMAT_VERSION 同策略） */
-const val AI_CHAT_FORMAT_VERSION = 1
+const val AI_CHAT_FORMAT_VERSION = 2
 
 /**
  * 请求协议（协议差异的编解码见 [AiStreamCodec]）：
@@ -54,6 +54,26 @@ data class AiProfile(
     val id: String,
     val name: String,
     val connection: AiConnection,
+)
+
+/**
+ * 一场独立对话（v2 格式）：ai_chat.json 里 [AiChatFile.conversations] 的成员。
+ *
+ * @param id UUID；对话身份以它为准
+ * @param title 列表显示名；空串 = 未命名（发首条消息时由仓库自动截取命名），
+ *   UI 层回落「新对话」文案，不在数据层写死中文
+ * @param createdAtMillis 创建时刻（epoch millis）
+ * @param updatedAtMillis 最近一次消息追加时刻（epoch millis）：删除活跃对话后回落
+ *   「最近更新」的对话、列表按最近在前排序，都以它为准
+ * @param messages 本场对话的消息（与 v1 顶层 messages 同构）
+ */
+@Serializable
+data class AiConversation(
+    val id: String,
+    val title: String = "",
+    val createdAtMillis: Long = 0,
+    val updatedAtMillis: Long = 0,
+    val messages: List<AiChatMessage> = emptyList(),
 )
 
 /** 对话消息的角色；历史里只存 user / assistant（system prompt 每次现拼，不入文件） */
