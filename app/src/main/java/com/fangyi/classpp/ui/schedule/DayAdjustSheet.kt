@@ -1,17 +1,9 @@
 package com.fangyi.classpp.ui.schedule
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -19,41 +11,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
-import com.fangyi.classpp.data.CourseOccurrence
 import com.fangyi.classpp.data.ScheduleError
 import com.fangyi.classpp.data.buildDayMovePlan
 import com.fangyi.classpp.data.model.CourseAdjustment
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.CardSection
+import com.fangyi.classpp.ui.components.CourseInfoCard
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SelectionGrid
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
-import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTopAction
-import com.fangyi.classpp.ui.theme.ClassppTextTokens
-import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
-import com.fangyi.classpp.ui.theme.classppColors
-import com.fangyi.classpp.ui.theme.classppTextStyles
-import com.fangyi.classpp.ui.theme.isDarkTheme
-
-/** 课程行色条宽：与课表卡片竖条同档（3dp，见间距规范 §2.1） */
-private val CourseBarWidth = 3.dp
-
-/** 课程行色条高：大图标档（32dp），与两行文字的行卡垂直居中 */
-private val CourseBarHeight = 32.dp
 
 /**
  * 整天调休浮层：把某周某天真正要上的全部课程，整体平移到另一周/另一天，每门课保持原节次。
@@ -212,7 +188,15 @@ internal fun DayAdjustSheet(
                 if (plan.occurrences.isEmpty()) {
                     SheetInfoBanner(text = stringResource(R.string.day_adjust_empty))
                 } else {
-                    plan.occurrences.forEach { occurrence -> DayCourseRow(occurrence) }
+                    plan.occurrences.forEach { occurrence ->
+                        CourseInfoCard(
+                            course = occurrence.course,
+                            detail = listOfNotNull(
+                                slotRangeText(occurrence.startSlot, occurrence.span),
+                                occurrence.course.location.takeIf { it.isNotBlank() },
+                            ).joinToString(" · "),
+                        )
+                    }
                 }
             }
 
@@ -256,14 +240,12 @@ internal fun DayAdjustSheet(
             }
 
             if (touched && errorLines.isNotEmpty()) {
-                Text(
-                    text = errorLines.joinToString("\n"),
-                    style = ClassppTextTokens.secondaryTextLarge,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 6.dp),
-                )
+                CardSection {
+                    SheetInfoBanner(
+                        text = errorLines.joinToString("\n"),
+                        isError = true,
+                    )
+                }
             }
         }
     }
@@ -306,50 +288,5 @@ internal fun DayAdjustSheet(
                 targetWeekPickerVisible = false
             },
         )
-    }
-}
-
-/**
- * 当天课程只读行：左侧课程色条 + 课名 + 节次/地点。
- * 样式对齐「设置调课」列表行（[SheetCard] + fieldLabel / settingsDescription），
- * 色条取课程卡同一套 [CourseColor.barColor] 映射。
- */
-@Composable
-private fun DayCourseRow(occurrence: CourseOccurrence) {
-    val course = occurrence.course
-    val barColor = CourseColor.valueOf(course.color.name).barColor(MaterialTheme.isDarkTheme)
-    val detail = listOfNotNull(
-        slotRangeText(occurrence.startSlot, occurrence.span),
-        course.location.takeIf { it.isNotBlank() },
-    ).joinToString(" · ")
-
-    SheetCard(modifier = Modifier.fillMaxWidth()) {
-        Box(
-            modifier = Modifier
-                .width(CourseBarWidth)
-                .height(CourseBarHeight)
-                .background(barColor, PillShape),
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.Start,
-        ) {
-            Text(
-                text = course.name,
-                style = MaterialTheme.classppTextStyles.fieldLabel,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = detail,
-                style = ClassppTextTokens.settingsDescription,
-                color = MaterialTheme.classppColors.secondaryText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
     }
 }

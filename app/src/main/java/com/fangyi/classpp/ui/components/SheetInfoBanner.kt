@@ -47,8 +47,9 @@ private val InfoBannerShape = RoundedRectangle(20.dp)
 /**
  * 浮层信息提示条：白底 [InfoBannerShape] 圆角条，左侧信息图标 + 说明文字，
  * 单行时整组水平垂直居中。底色走 [MaterialTheme.colorScheme.surface]（浮层画布为
- * background 浅灰，白条可读），图标与文字统一 primary 色，字号走
- * [ClassppTextTokens.secondaryTextLarge]。
+ * background 浅灰，白条可读），字号走 [ClassppTextTokens.secondaryTextLarge]。
+ * 常规信息态图标与文字取 secondaryText；[isError] = true（校验错误/不可继续的提示）
+ * 时两者统一换成 Error 红，与底部错误提示语义一致。
  *
  * 纯展示：无点击、按压反馈与描边；文案由调用方传入，组件不内置任何文案。
  * 文字支持换行：超宽时自动折行，行首左对齐、各行起始位置一致，图标随文字块垂直居中，
@@ -58,7 +59,14 @@ private val InfoBannerShape = RoundedRectangle(20.dp)
 fun SheetInfoBanner(
     text: String,
     modifier: Modifier = Modifier,
+    // true = 校验错误态：图标与文字都用 colorScheme.error
+    isError: Boolean = false,
 ) {
+    val contentColor = if (isError) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.classppColors.secondaryText
+    }
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -74,7 +82,7 @@ fun SheetInfoBanner(
         Icon(
             painter = painterResource(R.drawable.ic_info_regular),
             contentDescription = null,
-            tint = MaterialTheme.classppColors.secondaryText,
+            tint = contentColor,
             modifier = Modifier.size(InfoBannerIconSize),
         )
         Spacer(Modifier.width(InfoBannerIconGap))
@@ -82,7 +90,7 @@ fun SheetInfoBanner(
             text = text,
             // 文案含随编辑变化的节次数字：等宽避免整行居中时左右抖动
             style = ClassppTextTokens.secondaryTextLarge.tabularNumbers(),
-            color = MaterialTheme.classppColors.secondaryText,
+            color = contentColor,
         )
     }
 }

@@ -3,21 +3,16 @@ package com.fangyi.classpp.ui.schedule
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleError
@@ -27,14 +22,13 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.CardSection
+import com.fangyi.classpp.ui.components.CourseInfoCard
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SelectionGrid
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetInfoBanner
-import com.fangyi.classpp.ui.components.SheetInfoPillRow
 import com.fangyi.classpp.ui.components.SheetTopAction
-import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.rememberHazeState
@@ -173,12 +167,14 @@ internal fun AdjustCourseSheet(
         hazeState = sheetHazeState,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
-            SheetInfoPillRow(
-                values = listOfNotNull(
-                    course.name,
+            // 课程信息卡与调休浮层的当天课程行共用同一组件：色条 + 课名 + 教师 · 地点。
+            // 原课次（周/星期/节次）由下方「原课次」分组承载，这里只交代课程身份。
+            CourseInfoCard(
+                course = course,
+                detail = listOfNotNull(
                     course.teacher.takeIf { it.isNotBlank() },
                     course.location.takeIf { it.isNotBlank() },
-                ),
+                ).joinToString(" · "),
             )
 
             CardSection(title = stringResource(R.string.adjust_section_source)) {
@@ -271,14 +267,9 @@ internal fun AdjustCourseSheet(
             }
 
             errorText?.let { message ->
-                Text(
-                    text = message,
-                    style = ClassppTextTokens.secondaryTextLarge,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 6.dp),
-                )
+                CardSection {
+                    SheetInfoBanner(text = message, isError = true)
+                }
             }
         }
     }
