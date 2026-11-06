@@ -5,11 +5,12 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import com.fangyi.classpp.R
 
-// ===== 主题色六档（文件私有）=====
+// ===== 主题色八档（文件私有）=====
 // 每档手工调校浅/深两套主色、前景色、选中实色与压暗遮罩；默认蓝直接复用 Color.kt 既有
-// 常量，保证默认观感逐位一致。页面背景与次级说明文字不在此定义：由 HSL 从主色派生
-// （H = 主色色相，S/L 取对应中性色）。scrim 保持既有 alpha（浅 20% / 深 75%），只换
-// 暗色色相。对比度约束（primary/onPrimary ≥ 4.5:1）由 ThemeAccentTest 固化。
+// 常量，保证默认观感逐位一致。页面背景、深色 surface 与次级说明文字不在此定义：由 HSL
+// 从主色派生（H = 主色色相，S/L 取对应中性色；浅色 surface 恒 #FFFFFF）。scrim 保持
+// 既有 alpha（浅 20% / 深 75%），只换暗色色相。对比度约束（primary/onPrimary ≥ 4.5:1）
+// 由 ThemeAccentTest 固化。
 private val TealPrimary = Color(0xFF007C8C)
 private val TealPrimaryContainerSolid = Color(0xFFE0F1F3)
 private val TealScrim = Color(0x332A3B3D)
@@ -29,6 +30,16 @@ private val OrangeScrim = Color(0x333C332A)
 private val PinkPrimary = Color(0xFFD6336C)
 private val PinkPrimaryContainerSolid = Color(0xFFFAE6ED)
 private val PinkScrim = Color(0x333C2A33)
+
+// 厦大蓝：浅色取给定的品牌 navy #204586；深色按既有惯例提亮
+private val XmuBluePrimary = Color(0xFF204586)
+private val XmuBluePrimaryContainerSolid = Color(0xFFE4E9F4)
+private val XmuBlueScrim = Color(0x332A303C)
+
+// 山大红：浅色取给定的品牌 red #86201D；深色按既有惯例提亮
+private val SduRedPrimary = Color(0xFF86201D)
+private val SduRedPrimaryContainerSolid = Color(0xFFF6E5E3)
+private val SduRedScrim = Color(0x333C2A2A)
 
 private val DarkTealPrimary = Color(0xFF4FC8D4)
 private val DarkTealOnPrimary = Color(0xFF003A40)
@@ -55,6 +66,16 @@ private val DarkPinkOnPrimary = Color(0xFF4D0A20)
 private val DarkPinkPrimaryContainerSolid = Color(0xFF4C2F3B)
 private val DarkPinkScrim = Color(0xBF140A0D)
 
+private val DarkXmuBluePrimary = Color(0xFF8FB2FF)
+private val DarkXmuBlueOnPrimary = Color(0xFF0A1A40)
+private val DarkXmuBluePrimaryContainerSolid = Color(0xFF303C5C)
+private val DarkXmuBlueScrim = Color(0xBF0B0E14)
+
+private val DarkSduRedPrimary = Color(0xFFFF8A80)
+private val DarkSduRedOnPrimary = Color(0xFF450B08)
+private val DarkSduRedPrimaryContainerSolid = Color(0xFF4A2B29)
+private val DarkSduRedScrim = Color(0xBF140B0A)
+
 // 半透明槽位的派生透明度：与改动前的蓝值逐位一致（0x1F/0x4D/0x45/0x99）
 internal const val PrimaryContainerAlphaLight = 0x1F / 255f
 internal const val PrimaryContainerAlphaDark = 0x45 / 255f
@@ -77,6 +98,12 @@ private const val SecondaryTextLightnessLight = 175.5f / 255f
 private const val SecondaryTextSaturationDark = 15f / 243f
 private const val SecondaryTextLightnessDark = 133.5f / 255f
 
+// ===== 深色卡片面（surface）的 HSL 固定端 =====
+// S/L 取自默认深色 surface #292D32（S 9.89% / L 17.84%），H 取当前深色主色；
+// 浅色 surface 恒 #FFFFFF，不随主题色。
+private const val SurfaceSaturationDark = 9f / 91f
+private const val SurfaceLightnessDark = 45.5f / 255f
+
 /** sRGB 色相（0..360）；仅用于由主色派生页面背景。 */
 private fun Color.hueDegrees(): Float {
     val max = maxOf(red, green, blue)
@@ -91,11 +118,11 @@ private fun Color.hueDegrees(): Float {
 }
 
 /**
- * 主题色（强调色）六选一：换 primary 家族——primary / onPrimary / primaryContainer /
+ * 主题色（强调色）八选一：换 primary 家族——primary / onPrimary / primaryContainer /
  * inversePrimary / [ClassppColors.primaryContainerSolid]——以及页面背景 [background]、
- * 次级说明文字 [secondaryText] 与弹层压暗遮罩 [scrim]；其余背景层（surface、error、
- * 紧急旗标、AI 光场）与 [ClassppColors.storageApp] 均固定。枚举顺序即色板顺序
- * （蓝/青/绿/紫/橙/粉）。
+ * 深色卡片面 [surface]、次级说明文字 [secondaryText] 与弹层压暗遮罩 [scrim]；
+ * 其余背景层（error、紧急旗标、AI 光场）与 [ClassppColors.storageApp] 均固定。
+ * 枚举顺序即色板顺序（蓝/厦大蓝/青/绿/紫/橙/粉/山大红）。
  *
  * 业务代码只在主题色选择器里读色球颜色（[primary]），其余场景一律读
  * `colorScheme` / `classppColors` 槽位。
@@ -112,6 +139,19 @@ enum class ThemeAccent(@StringRes val labelRes: Int, private val tokens: AccentT
             darkOnPrimary = DarkOnPrimary,
             darkContainerSolid = DarkPrimaryContainerSolid,
             darkScrim = DarkScrim,
+        ),
+    ),
+    XmuBlue(
+        R.string.appearance_accent_xmu_blue,
+        AccentTokens(
+            lightPrimary = XmuBluePrimary,
+            lightOnPrimary = OnPrimary,
+            lightContainerSolid = XmuBluePrimaryContainerSolid,
+            lightScrim = XmuBlueScrim,
+            darkPrimary = DarkXmuBluePrimary,
+            darkOnPrimary = DarkXmuBlueOnPrimary,
+            darkContainerSolid = DarkXmuBluePrimaryContainerSolid,
+            darkScrim = DarkXmuBlueScrim,
         ),
     ),
     Teal(
@@ -179,6 +219,19 @@ enum class ThemeAccent(@StringRes val labelRes: Int, private val tokens: AccentT
             darkScrim = DarkPinkScrim,
         ),
     ),
+    SduRed(
+        R.string.appearance_accent_sdu_red,
+        AccentTokens(
+            lightPrimary = SduRedPrimary,
+            lightOnPrimary = OnPrimary,
+            lightContainerSolid = SduRedPrimaryContainerSolid,
+            lightScrim = SduRedScrim,
+            darkPrimary = DarkSduRedPrimary,
+            darkOnPrimary = DarkSduRedOnPrimary,
+            darkContainerSolid = DarkSduRedPrimaryContainerSolid,
+            darkScrim = DarkSduRedScrim,
+        ),
+    ),
     ;
 
     fun primary(darkTheme: Boolean): Color =
@@ -196,6 +249,18 @@ enum class ThemeAccent(@StringRes val labelRes: Int, private val tokens: AccentT
         saturation = if (darkTheme) BackgroundSaturationDark else BackgroundSaturationLight,
         lightness = if (darkTheme) BackgroundLightnessDark else BackgroundLightnessLight,
     )
+
+    /** 卡片/浮层底：浅色恒 #FFFFFF；深色 H 取当前主色，S/L 取默认深色 surface */
+    fun surface(darkTheme: Boolean): Color =
+        if (!darkTheme) {
+            Surface
+        } else {
+            Color.hsl(
+                hue = primary(true).hueDegrees(),
+                saturation = SurfaceSaturationDark,
+                lightness = SurfaceLightnessDark,
+            )
+        }
 
     /** 次级说明文字灰：H 取当前主色，S/L 固定取默认灰（见文件顶部的 HSL 常量） */
     fun secondaryText(darkTheme: Boolean): Color = Color.hsl(

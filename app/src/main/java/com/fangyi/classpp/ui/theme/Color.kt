@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.Color
 
 // 品牌：蓝 #0077FF（Primary 即其微调版，见下行）/ 黑 #000000 / 白 #FFFFFF / 背景浅灰 #F2F4F6（浅色专用）
 // Primary 微调为 #006FEF，使白字对比度达到 4.65:1（WCAG AA）
-// 主题色六档色板见 ThemeAccent.kt；默认蓝档即复用本文件的 Primary 家族
+// 主题色八档色板见 ThemeAccent.kt；默认蓝档即复用本文件的 Primary 家族
 val Primary = Color(0xFF006FEF)
 val OnPrimary = Color(0xFFFFFFFF)
 // primary/error 染色玻璃上的前景色（装配见 Theme.kt 的 ClassppColors.onPrimaryGlass）
@@ -23,6 +23,7 @@ val DarkPrimaryContainerSolid = Color(0xFF394C67)
 // 默认蓝档页面底；其余主题色由 ThemeAccent.background() 按 HSL 派生（H 取主色，S/L 同本值）
 val Background = Color(0xFFF2F4F6)
 
+// 浅色卡片面恒为白色，不随主题色
 val Surface = Color(0xFFFFFFFF)
 val OnSurface = Color(0xFF000000)
 val OnSurfaceVariant = Color(0xFF444746)
@@ -108,6 +109,7 @@ val DarkOnPrimaryContainer = Color(0x339AA2AC)
 // 默认蓝档深色页面底；其余主题色由 ThemeAccent.background() 按 HSL 派生（H 取主色，S/L 同本值）
 val DarkBackground = Color(0xFF0F1114)
 
+// 默认蓝档深色卡片面；其余主题色由 ThemeAccent.surface() 按 HSL 派生（H 取主色，S/L 同本值）
 val DarkSurface = Color(0xFF292D32)
 val DarkOnSurface = Color(0xFFE4E7EA)
 val DarkOnSurfaceVariant = Color(0xFF9BA2AB)

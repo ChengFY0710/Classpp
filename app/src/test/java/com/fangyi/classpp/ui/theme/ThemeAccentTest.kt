@@ -8,7 +8,7 @@ import org.junit.Test
 
 /**
  * 主题色板守卫：默认蓝必须与改动前逐位一致；半透明派生必须复现既有蓝值；
- * 六档 primary/onPrimary 对比度不得低于 WCAG AA 的 4.5:1。
+ * 各档 primary/onPrimary 对比度不得低于 WCAG AA 的 4.5:1。
  */
 class ThemeAccentTest {
 
@@ -26,6 +26,8 @@ class ThemeAccentTest {
         assertEquals(DarkScrim, ThemeAccent.Blue.scrim(true))
         assertEquals(SecondaryText, ThemeAccent.Blue.secondaryText(false))
         assertEquals(DarkSecondaryText, ThemeAccent.Blue.secondaryText(true))
+        assertEquals(Surface, ThemeAccent.Blue.surface(false))
+        assertEquals(DarkSurface, ThemeAccent.Blue.surface(true))
     }
 
     @Test
@@ -40,6 +42,15 @@ class ThemeAccentTest {
         // 非默认档也必须是「H 取主色、S/L 取默认灰」：绿色主色 H≈143° 的结果
         assertEquals(Color(0xFFABB4AE), ThemeAccent.Green.secondaryText(false))
         assertEquals(Color(0xFF7E8D83), ThemeAccent.Green.secondaryText(true))
+    }
+
+    @Test
+    fun darkSurfaceFollowsHslRuleAndLightSurfaceStaysWhite() {
+        ThemeAccent.entries.forEach { accent ->
+            assertEquals(Surface, accent.surface(false))
+        }
+        // 绿色深色主色 H≈140°，S/L 取默认深色 surface #292D32
+        assertEquals(Color(0xFF29322C), ThemeAccent.Green.surface(true))
     }
 
     @Test

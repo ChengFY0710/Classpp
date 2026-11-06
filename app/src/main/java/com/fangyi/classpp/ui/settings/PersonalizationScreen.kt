@@ -75,7 +75,7 @@ import kotlin.math.roundToInt
  * 骨架与设置根页同构（Scaffold + 滚动内容列 + 顶栏叠加），正文承载 app 级外观与个性化设置：
  * 「颜色模式」三选一（跟随系统/浅色/深色，[themeMode] / [onThemeModeChange]），
  * 行尾显示当前模式，点行弹选择对话框，点选项即时生效并关闭——对话框下方的页面同步变色，
- * 反馈直观，无需「确定」一步；「主题色」六选一（[themeAccent] / [onThemeAccentChange]），
+ * 反馈直观，无需「确定」一步；「主题色」八选一（[themeAccent] / [onThemeAccentChange]），
  * 点行唤起色球弹卡，确认后全局生效；「课表」分组为课程卡片高度滑条（[cardHeights] /
  * [onCardHeightsChange]，调节**用户倍率**：网格行高随每节课实际时长伸缩，倍率整体缩放；
  * 滑条可调下限 = 当前课表最短一节与「显示教师」开关触发卡片最低高度所需倍率，
@@ -123,7 +123,7 @@ fun PersonalizationScreen(
     // 采样源提到 Scaffold 之外：主题色弹卡挂在页面末尾，也要用它对页面做卡片磨砂
     val hazeState = rememberHazeState()
     val darkTheme = MaterialTheme.isDarkTheme
-    // 色球用当前深浅档的主色；色板固定六档，按深浅缓存列表实例
+    // 色球用当前深浅档的主色；色板固定八档，按深浅缓存列表实例
     val accentSwatches = remember(darkTheme) {
         ThemeAccent.entries.map { it.primary(darkTheme) }
     }
@@ -368,7 +368,7 @@ private fun TodoSection(
  * 外观分组：颜色模式 app 级三选一（跟随系统/浅色/深色），行尾显示当前模式。
  * 点行弹选择对话框，点选项即时生效并关闭——对话框下方的页面同步变色，反馈直观，
  * 无需「确定」一步。「主题色」行尾显示当前色名，点行唤起 [BottomColorSelectCard]
- * 色球弹卡（六档：蓝/青/绿/紫/橙/粉），确认才交回并全局生效（[themeAccent] /
+ * 色球弹卡（八档：蓝/厦大蓝/青/绿/紫/橙/粉/山大红），确认才交回并全局生效（[themeAccent] /
  * [onThemeAccentChange]，弹卡的挂载与状态在页面层）。同组下方为「更高级的玻璃材质」开关（[glassStyle] /
  * [onGlassStyleChange]，控制底部导航栏三胶囊、待办页顶栏胶囊、设置页顶栏返回按钮、
  * 课表页顶栏周数胶囊与 OverlaySheet / BottomSelectSheet 顶栏按钮的 Backdrop 液态
