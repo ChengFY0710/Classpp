@@ -476,6 +476,9 @@ fun ScheduleScreen(
             // 调课列表浮层（设置 → 设置调课）：可见性 + 挂载态两段式
             var adjustListVisible by rememberSaveable { mutableStateOf(false) }
             var adjustListMounted by remember { mutableStateOf(false) }
+            // 整天调休浮层（设置 → 设置调休）：可见性 + 挂载态两段式
+            var dayAdjustVisible by rememberSaveable { mutableStateOf(false) }
+            var dayAdjustMounted by remember { mutableStateOf(false) }
             // 课程剪贴板：被复制课程的完整快照。不随编辑会话/课表清除——退出编辑再进、
             // 甚至切换课表后仍可粘贴；源课被删不受影响（快照语义），再复制即覆盖
             var copiedEntry by rememberSaveable(stateSaver = CopiedEntrySaver) {
@@ -1592,7 +1595,12 @@ fun ScheduleScreen(
                         adjustListMounted = true
                         adjustListVisible = true
                     },
-                    extraCovered = adjustListVisible || adjustCourseId.isNotEmpty(),
+                    onOpenDayAdjust = {
+                        dayAdjustMounted = true
+                        dayAdjustVisible = true
+                    },
+                    extraCovered = adjustListVisible || adjustCourseId.isNotEmpty() ||
+                        dayAdjustVisible,
                 )
             }
 
@@ -1666,6 +1674,35 @@ fun ScheduleScreen(
                         },
                     )
                 }
+            }
+
+            // 整天调休浮层：设置 → 调休。确认只写编辑草稿（课程/调课同批保存），
+            // 与单次调课面板一致；收场动画期间用 mounted 快照保持内容稳定。
+            // 初值：原周 = 当前浏览周；原星期 = 浏览今周时取今天，否则周一
+            if (dayAdjustVisible) dayAdjustMounted = true
+            if (dayAdjustMounted) {
+                DayAdjustSheet(
+                    visible = dayAdjustVisible,
+                    schedule = effectiveSchedule,
+                    initialWeek = week.coerceIn(1, schedule.totalWeeks.coerceAtLeast(1)),
+                    initialDay = if (week == todayWeek) todayIso.isoDayOfWeek() else 1,
+                    onDismiss = { dayAdjustVisible = false },
+                    onDismissed = { dayAdjustMounted = false },
+                    onConfirm = { upserts, removals ->
+                        val session = editSession
+                        if (session != null) {
+                            removals.forEach(session::removeAdjustment)
+                            upserts.forEach { adjustment ->
+                                if (session.adjustments.any { it.id == adjustment.id }) {
+                                    session.updateAdjustment(adjustment.id, adjustment)
+                                } else {
+                                    session.addAdjustment(adjustment)
+                                }
+                            }
+                        }
+                        dayAdjustVisible = false
+                    },
+                )
             }
 
             // 长按卡片的上下文菜单（Popup 独立窗口，位置由卡片坐标决定）。

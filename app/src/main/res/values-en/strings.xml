@@ -310,7 +310,7 @@
     <string name="time_scheme_merge">Merge two periods into one</string>
     <string name="time_scheme_merge_done">Merged %1$d adjacent period pairs, confirm to apply</string>
     <string name="error_time_scheme_name">Scheme name must not be blank</string>
-    <!-- Rescheduling & holidays (schedule settings): rescheduling is live, holidays remain a placeholder -->
+    <!-- Rescheduling & holidays (schedule settings): both rescheduling modes are live -->
     <string name="section_adjustment">Rescheduling &amp; Holidays</string>
     <string name="adjust_course_label">Reschedule Classes</string>
     <string name="adjust_holiday_label">Adjust Holidays</string>
@@ -351,6 +351,24 @@
     <string name="course_adjusted_badge_description_full">Rescheduled class, originally %1$s %2$s</string>
     <string name="detail_adjust_label">Rescheduled</string>
     <string name="detail_adjust_from">Originally %1$s %2$s</string>
+    <!-- Day move (schedule edit mode): Settings → Rescheduling & Holidays → Adjust Holidays -->
+    <string name="day_adjust_sheet_title">Move Day</string>
+    <string name="day_adjust_section_source">Source day</string>
+    <string name="day_adjust_section_target">Move to</string>
+    <string name="day_adjust_source_week">Source week</string>
+    <string name="day_adjust_source_day">Source weekday</string>
+    <string name="day_adjust_target_week">Target week</string>
+    <string name="day_adjust_target_day">Target weekday</string>
+    <string name="day_adjust_course_count">%1$d classes that day</string>
+    <string name="day_adjust_empty">No classes on this day</string>
+    <string name="day_adjust_summary">Week %1$d %2$s · %3$d classes → Week %4$d %5$s (periods unchanged)</string>
+    <string name="day_adjust_weekend_hidden">This is a 5-day schedule; weekend columns are hidden. Switch to the 7-day view to see the moved classes.</string>
+    <string name="day_adjust_source_week_picker_title">Source week</string>
+    <string name="day_adjust_target_week_picker_title">Target week</string>
+    <string name="error_day_adjust_empty">No classes to move on this day</string>
+    <string name="error_day_adjust_unchanged">Source and target days are the same</string>
+    <string name="error_day_adjust_conflict">The target day conflicts with "%1$s"</string>
+    <string name="error_day_adjust_target_invalid">The target is outside the term</string>
     <!-- Timetable (Personalization) -->
     <string name="section_schedule">Timetable</string>
     <string name="card_height_label">Course card height</string>

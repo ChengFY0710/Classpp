@@ -432,7 +432,7 @@
     <string name="time_scheme_merge">合并两小节为一大节</string>
     <string name="time_scheme_merge_done">已合并 %1$d 对相邻小节，确认后生效</string>
     <string name="error_time_scheme_name">方案名称不能为空</string>
-    <!-- 调课与调休（课表设置）：调课已接入，调休仍为占位导航行 -->
+    <!-- 调课与调休（课表设置）：调课、调休均已接入 -->
     <string name="section_adjustment">调课与调休</string>
     <string name="adjust_course_label">设置调课</string>
     <string name="adjust_holiday_label">设置调休</string>
@@ -473,6 +473,24 @@
     <string name="course_adjusted_badge_description_full">已调课，原 %1$s %2$s</string>
     <string name="detail_adjust_label">调课</string>
     <string name="detail_adjust_from">原 %1$s %2$s</string>
+    <!-- 调休（课表编辑态）：设置 → 调课与调休 → 设置调休 -->
+    <string name="day_adjust_sheet_title">调休</string>
+    <string name="day_adjust_section_source">原上课日</string>
+    <string name="day_adjust_section_target">调到</string>
+    <string name="day_adjust_source_week">原周次</string>
+    <string name="day_adjust_source_day">原星期</string>
+    <string name="day_adjust_target_week">目标周次</string>
+    <string name="day_adjust_target_day">目标星期</string>
+    <string name="day_adjust_course_count">当天 %1$d 门课</string>
+    <string name="day_adjust_empty">这一天没有课</string>
+    <string name="day_adjust_summary">第 %1$d 周 %2$s %3$d 门课 → 第 %4$d 周 %5$s（节次不变）</string>
+    <string name="day_adjust_weekend_hidden">当前为 5 天课表，周末列不显示；切换到 7 天视图可查看调休后的课程</string>
+    <string name="day_adjust_source_week_picker_title">原周次</string>
+    <string name="day_adjust_target_week_picker_title">目标周次</string>
+    <string name="error_day_adjust_empty">当天没有可调动的课程</string>
+    <string name="error_day_adjust_unchanged">原上课日与目标日相同</string>
+    <string name="error_day_adjust_conflict">目标日与「%1$s」时间冲突</string>
+    <string name="error_day_adjust_target_invalid">目标超出学期范围</string>
     <!-- 课表（个性化页） -->
     <string name="section_schedule">课表</string>
     <string name="card_height_label">课程卡片高度</string>

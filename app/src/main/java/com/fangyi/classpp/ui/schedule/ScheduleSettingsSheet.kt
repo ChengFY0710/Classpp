@@ -97,6 +97,8 @@ internal fun ScheduleSettingsSheet(
     onAdjustmentsMerged: (List<CourseAdjustment>) -> Unit,
     // 打开「设置调课」列表（列表与编辑浮层由宿主叠在本浮层之上）
     onOpenAdjustments: () -> Unit,
+    // 打开「设置调休」浮层（整天课程平移，浮层由宿主叠在本浮层之上）
+    onOpenDayAdjust: () -> Unit,
     // 宿主的列表/编辑浮层可见时传 true：本浮层缩小后退（分层动效）
     extraCovered: Boolean = false,
     modifier: Modifier = Modifier,
@@ -232,6 +234,7 @@ internal fun ScheduleSettingsSheet(
                 schemeSheetVisible = true
             },
             onOpenAdjustments = onOpenAdjustments,
+            onOpenDayAdjust = onOpenDayAdjust,
             onRename = { name ->
                 scope.launch { submit(repository.renameSchedule(schedule.id, name)) }
             },
@@ -399,6 +402,8 @@ private fun SettingsContent(
     onOpenTimeScheme: () -> Unit,
     // 设置调课：叠开调课列表（列表与编辑浮层由宿主组合在本浮层之后）
     onOpenAdjustments: () -> Unit,
+    // 设置调休：叠开整天调休浮层（由宿主组合在本浮层之后）
+    onOpenDayAdjust: () -> Unit,
     onRename: (name: String) -> Unit,
     onTerm: (start: IsoDate, end: IsoDate) -> Unit,
     onDays: (days: Int) -> Unit,
@@ -465,7 +470,7 @@ private fun SettingsContent(
         }
 
         CardSection(title = stringResource(R.string.section_adjustment)) {
-            // 调课已接入（叠开列表）；调休仍是占位行，点击暂不响应
+            // 调课：单门课单次课次；调休：某一天当天全部课程整体平移到另一天
             SettingsCard(
                 items = listOf(
                     SettingsCardItem.Nav(
@@ -474,7 +479,7 @@ private fun SettingsContent(
                     ),
                     SettingsCardItem.Nav(
                         label = stringResource(R.string.adjust_holiday_label),
-                        onClick = {},
+                        onClick = onOpenDayAdjust,
                     ),
                 ),
             )
@@ -608,6 +613,7 @@ private fun SettingsContentPreview() {
             onPickWeeks = {},
             onOpenTimeScheme = {},
             onOpenAdjustments = {},
+            onOpenDayAdjust = {},
             onRename = {},
             onTerm = { _, _ -> },
             onDays = {},
