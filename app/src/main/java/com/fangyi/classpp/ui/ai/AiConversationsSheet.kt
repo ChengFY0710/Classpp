@@ -95,6 +95,11 @@ internal fun AiConversationsSheet(
         visible = visible,
         covered = covered,
         onDismissed = onDismissed,
+        // 整条链不挂 Haze（同 DayAdjustSheet 的退让规避，见 26d8c1f）：本浮层叠在对话
+        // 浮层之上，对话浮层本身就是最重的 Haze 用户——叠加态少一条模糊链，避开
+        // Adreno Vulkan 驱动建模糊管线的崩溃路径（RenderThread SIGSEGV，2026-11-06
+        // 23:51 复发）。无玻璃按钮、无共享 haze 需求，顶栏走静态渐变底材视觉一致。
+        hazeEnabled = false,
         // 列表没有输入框，键盘不必让位
         imeBehavior = SheetImeBehavior.IgnoreIme,
     ) {
