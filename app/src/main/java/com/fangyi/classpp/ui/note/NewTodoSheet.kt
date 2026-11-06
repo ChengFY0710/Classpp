@@ -733,7 +733,6 @@ private fun DeleteTodoConfirmDialog(
         visible = visible,
         onDismiss = onCancel,
         onDismissed = onDismissed,
-        cardHorizontalPadding = 32.dp,
     ) {
         ConfirmDialogCard(
             title = stringResource(R.string.todo_delete_title),

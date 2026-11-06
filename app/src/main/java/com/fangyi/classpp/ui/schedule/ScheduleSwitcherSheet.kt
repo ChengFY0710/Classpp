@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -162,24 +161,27 @@ private fun ScheduleCard(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = schedule.name,
-                style = ClassppTextTokens.listRowTitle,
-                color = if (isActive) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
+                style = MaterialTheme.classppTextStyles.fieldLabel.copy(
+                    color = if (isActive) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.size(3.dp))
             Text(
                 text = stringResource(
                     R.string.switcher_date_range,
                     schedule.termStart.toSlashText(),
                     schedule.termEnd.toSlashText(),
                 ),
-                style = ClassppTextTokens.captionText,
-                color = MaterialTheme.classppColors.secondaryText,
+                style = ClassppTextTokens.settingsDescription.copy(
+                    color = MaterialTheme.classppColors.secondaryText,
+                ),
+                modifier = Modifier.padding(end = 10.dp),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -260,7 +262,6 @@ private fun DeleteScheduleConfirmDialog(
         visible = visible,
         onDismiss = onCancel,
         onDismissed = onDismissed,
-        cardHorizontalPadding = 32.dp,
     ) {
         ConfirmDialogCard(
             title = stringResource(R.string.switcher_delete_title),
@@ -311,7 +312,6 @@ internal fun DiscardSwitchConfirmDialog(
         visible = visible,
         onDismiss = onCancel,
         onDismissed = onDismissed,
-        cardHorizontalPadding = 32.dp,
     ) {
         ConfirmDialogCard(
             title = stringResource(R.string.switcher_discard_title),

@@ -903,7 +903,6 @@ private fun DeleteConfirmDialog(
         visible = visible,
         onDismiss = onCancel,
         onDismissed = onDismissed,
-        cardHorizontalPadding = 32.dp,
     ) {
         ConfirmDialogCard(title = title, message = message) {
             DialogPillButton(

@@ -1,10 +1,14 @@
 package com.fangyi.classpp.ui.schedule
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -28,9 +32,11 @@ import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /**
  * 「设置调课」列表浮层：展示当前课表的全部单次调课，按原课次周次升序。
@@ -128,25 +134,38 @@ private fun AdjustmentRow(
     SheetCard(
         modifier = Modifier.fillMaxWidth(),
         onClick = onClick,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = course.name,
-                style = ClassppTextTokens.listRowTitle,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+                style = MaterialTheme.classppTextStyles.fieldLabel.copy(
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Spacer(Modifier.size(3.dp))
             Text(
                 text = stringResource(R.string.adjust_summary_arrow, source, target),
-                style = ClassppTextTokens.settingsDescription,
-                color = MaterialTheme.classppColors.secondaryText.copy(alpha = alpha),
+                style = ClassppTextTokens.settingsDescription.copy(
+                    color = MaterialTheme.classppColors.secondaryText.copy(alpha = alpha),
+                ),
+                modifier = Modifier.padding(end = 10.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
-        IconButton(onClick = onDelete) {
+        // 与切换课表卡同规格：删除钮 40dp + 独立按压源（不跟宿主卡共享、不会双亮）
+        val press = remember { MutableInteractionSource() }
+        IconButton(
+            onClick = onDelete,
+            interactionSource = press,
+            modifier = Modifier
+                .size(40.dp)
+                .pressFeedback(press, CircleShape),
+        ) {
             Icon(
-                painter = painterResource(R.drawable.ic_delete_filled),
+                painter = painterResource(R.drawable.ic_delete),
                 contentDescription = stringResource(R.string.edit_delete),
                 tint = MaterialTheme.colorScheme.error.copy(alpha = alpha),
             )

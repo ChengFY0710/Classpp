@@ -171,7 +171,6 @@ internal fun ScheduleImportConfirmDialog(
         visible = visible,
         onDismiss = onCancel,
         onDismissed = onDismissed,
-        cardHorizontalPadding = 32.dp,
     ) {
         ConfirmDialogCard(
             title = title,
