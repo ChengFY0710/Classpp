@@ -100,8 +100,10 @@ private const val SecondaryTextLightnessDark = 133.5f / 255f
 
 // ===== 深色卡片面（surface）的 HSL 固定端 =====
 // S/L 取自默认深色 surface #292D32（S 9.89% / L 17.84%），H 取当前深色主色；
-// 浅色 surface 恒 #FFFFFF，不随主题色。
+// 浅色 surface 恒 #FFFFFF，不随主题色。除默认蓝与厦大蓝外，其余档在深色面上
+// S 降至 6%，避免低明度底色过艳。
 private const val SurfaceSaturationDark = 9f / 91f
+private const val SurfaceSaturationDarkSoft = 0.06f
 private const val SurfaceLightnessDark = 45.5f / 255f
 
 /** sRGB 色相（0..360）；仅用于由主色派生页面背景。 */
@@ -165,6 +167,7 @@ enum class ThemeAccent(@StringRes val labelRes: Int, private val tokens: AccentT
             darkOnPrimary = DarkTealOnPrimary,
             darkContainerSolid = DarkTealPrimaryContainerSolid,
             darkScrim = DarkTealScrim,
+            darkSurfaceSaturation = SurfaceSaturationDarkSoft,
         ),
     ),
     Green(
@@ -178,6 +181,7 @@ enum class ThemeAccent(@StringRes val labelRes: Int, private val tokens: AccentT
             darkOnPrimary = DarkGreenOnPrimary,
             darkContainerSolid = DarkGreenPrimaryContainerSolid,
             darkScrim = DarkGreenScrim,
+            darkSurfaceSaturation = SurfaceSaturationDarkSoft,
         ),
     ),
     Purple(
@@ -191,6 +195,7 @@ enum class ThemeAccent(@StringRes val labelRes: Int, private val tokens: AccentT
             darkOnPrimary = DarkPurpleOnPrimary,
             darkContainerSolid = DarkPurplePrimaryContainerSolid,
             darkScrim = DarkPurpleScrim,
+            darkSurfaceSaturation = SurfaceSaturationDarkSoft,
         ),
     ),
     Orange(
@@ -204,6 +209,7 @@ enum class ThemeAccent(@StringRes val labelRes: Int, private val tokens: AccentT
             darkOnPrimary = DarkOrangeOnPrimary,
             darkContainerSolid = DarkOrangePrimaryContainerSolid,
             darkScrim = DarkOrangeScrim,
+            darkSurfaceSaturation = SurfaceSaturationDarkSoft,
         ),
     ),
     Pink(
@@ -217,6 +223,7 @@ enum class ThemeAccent(@StringRes val labelRes: Int, private val tokens: AccentT
             darkOnPrimary = DarkPinkOnPrimary,
             darkContainerSolid = DarkPinkPrimaryContainerSolid,
             darkScrim = DarkPinkScrim,
+            darkSurfaceSaturation = SurfaceSaturationDarkSoft,
         ),
     ),
     SduRed(
@@ -230,6 +237,7 @@ enum class ThemeAccent(@StringRes val labelRes: Int, private val tokens: AccentT
             darkOnPrimary = DarkSduRedOnPrimary,
             darkContainerSolid = DarkSduRedPrimaryContainerSolid,
             darkScrim = DarkSduRedScrim,
+            darkSurfaceSaturation = SurfaceSaturationDarkSoft,
         ),
     ),
     ;
@@ -250,14 +258,14 @@ enum class ThemeAccent(@StringRes val labelRes: Int, private val tokens: AccentT
         lightness = if (darkTheme) BackgroundLightnessDark else BackgroundLightnessLight,
     )
 
-    /** 卡片/浮层底：浅色恒 #FFFFFF；深色 H 取当前主色，S/L 取默认深色 surface */
+    /** 卡片/浮层底：浅色恒 #FFFFFF；深色 H 取当前主色，S/L 取默认深色 surface（除默认蓝/厦大蓝外 S 降至 6%） */
     fun surface(darkTheme: Boolean): Color =
         if (!darkTheme) {
             Surface
         } else {
             Color.hsl(
                 hue = primary(true).hueDegrees(),
-                saturation = SurfaceSaturationDark,
+                saturation = tokens.darkSurfaceSaturation,
                 lightness = SurfaceLightnessDark,
             )
         }
@@ -283,4 +291,5 @@ private data class AccentTokens(
     val darkOnPrimary: Color,
     val darkContainerSolid: Color,
     val darkScrim: Color,
+    val darkSurfaceSaturation: Float = SurfaceSaturationDark,
 )

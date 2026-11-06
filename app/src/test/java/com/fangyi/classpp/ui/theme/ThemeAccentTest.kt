@@ -49,8 +49,15 @@ class ThemeAccentTest {
         ThemeAccent.entries.forEach { accent ->
             assertEquals(Surface, accent.surface(false))
         }
-        // 绿色深色主色 H≈140°，S/L 取默认深色 surface #292D32
-        assertEquals(Color(0xFF29322C), ThemeAccent.Green.surface(true))
+        // 默认蓝与厦大蓝保持 #292D32 的原 S (9.89%)
+        assertEquals(Color(0xFF292C32), ThemeAccent.XmuBlue.surface(true))
+        // 其余档位 S 降至 6%，避免低明度底过艳
+        assertEquals(Color(0xFF2B3030), ThemeAccent.Teal.surface(true))
+        assertEquals(Color(0xFF2B302D), ThemeAccent.Green.surface(true))
+        assertEquals(Color(0xFF2C2B30), ThemeAccent.Purple.surface(true))
+        assertEquals(Color(0xFF302D2B), ThemeAccent.Orange.surface(true))
+        assertEquals(Color(0xFF302B2C), ThemeAccent.Pink.surface(true))
+        assertEquals(Color(0xFF302B2B), ThemeAccent.SduRed.surface(true))
     }
 
     @Test
