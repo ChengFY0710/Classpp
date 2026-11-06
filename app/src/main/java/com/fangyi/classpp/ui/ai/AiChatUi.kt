@@ -14,11 +14,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,6 +74,8 @@ import com.fangyi.classpp.ui.theme.PillShape
  * 一条消息气泡：user 右对齐（primary 底 / onPrimary 字）/ assistant 左对齐（surface 底 / onSurface 字）。
  * 正文统一 16sp；assistant 内容按 GFM Markdown 渲染（见 [ChatMarkdown]），user 内容为纯文本。
  * assistant 气泡在页边距内撑满宽度，user 气泡按内容自适应（上限 320dp）。
+ * 两种气泡的正文都支持长按选择与复制：每个气泡一个独立的 [SelectionContainer]，
+ * 选区不跨气泡；选中高亮随气泡底材取色（见函数内的 [TextSelectionColors]）。
  *
  * 推理模型的思考过程（[AiChatMessage.reasoning] 非空）渲染在气泡**上方**的可折叠块里；
  * [thinkingInProgress] = true（思考阶段、正文未开始）时默认展开，正文开始/结束后自动收起，
@@ -102,6 +108,19 @@ internal fun AiChatMessageBubble(
         MaterialTheme.colorScheme.onSurface
     }
     val shape = ChatBubbleShape
+    // 选中高亮：assistant 白底用 primary 40%（项目「选中用 primary」口径）；
+    // user 蓝底上 primary 40% 与底色同色、几乎看不出，改用 onPrimary 30% 的白晕
+    val selectionColors = if (isUser) {
+        TextSelectionColors(
+            handleColor = contentColor,
+            backgroundColor = contentColor.copy(alpha = 0.3f),
+        )
+    } else {
+        TextSelectionColors(
+            handleColor = MaterialTheme.colorScheme.primary,
+            backgroundColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+        )
+    }
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
@@ -124,17 +143,21 @@ internal fun AiChatMessageBubble(
                     // assistant 在页边距内撑满（Column 已有 fillMaxWidth），user 仍按内容自适应
                     modifier = if (isUser) Modifier else Modifier.fillMaxWidth(),
                 ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        when {
-                            content.isEmpty() -> {
-                                // 占位阶段（流式首字未到 / 只有思考还没有正文）：三点呼吸省略号
-                                Text(text = "…", style = ClassppTextTokens.chatBody)
+                    CompositionLocalProvider(LocalTextSelectionColors provides selectionColors) {
+                        SelectionContainer {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                when {
+                                    content.isEmpty() -> {
+                                        // 占位阶段（流式首字未到 / 只有思考还没有正文）：三点呼吸省略号
+                                        Text(text = "…", style = ClassppTextTokens.chatBody)
+                                    }
+                                    isUser -> Text(text = content, style = ClassppTextTokens.chatBody)
+                                    else -> ChatMarkdown(content = content)
+                                }
                             }
-                            isUser -> Text(text = content, style = ClassppTextTokens.chatBody)
-                            else -> ChatMarkdown(content = content)
                         }
                     }
                 }
