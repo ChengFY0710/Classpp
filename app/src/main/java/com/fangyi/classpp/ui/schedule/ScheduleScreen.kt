@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
@@ -344,16 +343,14 @@ fun ScheduleScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        // 顶部状态栏 inset 由头部自行吸收；底部不留白，网格直接延伸到导航栏（小白条）之下
-        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
-    ) { innerPadding ->
+        // 统一不避让横向 inset：内容全宽出血；纵向由头部与网格自理
+        contentWindowInsets = WindowInsets(0),
+    ) {
         if (schedule == null) {
             // 空状态：不组合头部与网格，「创建课表」按钮打开新建课表浮层
             EmptyScheduleContent(
                 onCreateSchedule = { newScheduleVisible = true },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
+                modifier = Modifier.fillMaxSize(),
             )
         } else {
             // ——— 内容区横向翻周 ———
@@ -1043,9 +1040,7 @@ fun ScheduleScreen(
             BackHandler(enabled = editSession != null) { cancelEdit() }
 
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
+                modifier = Modifier.fillMaxSize(),
             ) {
                 CourseGrid(
                     pagerState = pagerState,

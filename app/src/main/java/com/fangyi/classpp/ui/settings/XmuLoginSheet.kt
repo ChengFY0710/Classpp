@@ -135,9 +135,8 @@ internal fun XmuLoginSheet(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            // 沉浸式：吃左右 inset，状态栏/手势条交给内容与顶栏自己铺满
-            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
+            // 统一不避让横向 inset：铺满屏幕宽（左右顶到边缘），状态栏交给内容行自理
+            .background(MaterialTheme.colorScheme.background),
     ) {
         Row(
             modifier = Modifier

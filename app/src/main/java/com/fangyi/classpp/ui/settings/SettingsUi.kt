@@ -6,9 +6,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -228,7 +232,9 @@ internal fun SettingsTopBar(
                     modifier = Modifier.graphicsLayer { alpha = titleAlpha() },
                 )
             },
-            // 状态栏 inset 由顶栏自己吸收：磨砂背景一直铺到屏幕顶（沉浸式）
+            // 状态栏 inset 由顶栏自己吸收：磨砂背景一直铺到屏幕顶（沉浸式）；
+            // 横向一律不避让（统一全宽出血），只取 Top
+            windowInsets = WindowInsets.statusBars.only(WindowInsetsSides.Top),
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
         )
         // 不用 IconButton：其内部涟漪以按压点为圆心、20dp 半径封顶，偏心按压盖不满圆钮。
@@ -239,7 +245,7 @@ internal fun SettingsTopBar(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 //原槽位内垂直居中
-                .windowInsetsPadding(TopAppBarDefaults.windowInsets)
+                .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))
                 .padding(start = 24.dp, top = 8.dp)  // 返回按钮位置
                 .size(47.dp)
                 // 按压反馈接在柔影图层之前：缩放连投影一起放大。玻璃模式换官方 Q弹

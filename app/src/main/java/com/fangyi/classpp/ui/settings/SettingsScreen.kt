@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -449,15 +448,14 @@ private fun SettingsHomePage(
 ) {
     Scaffold(
         modifier = modifier,
-        // 沉浸式：只吃左右 inset，状态栏/手势条区域交给内容与顶栏自己铺满
-        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
-    ) { innerPadding ->
+        // 统一不避让横向 inset：内容全宽出血（左右顶到屏幕边缘）；纵向由内容与顶栏自理
+        contentWindowInsets = WindowInsets(0),
+    ) {
         // 顶栏叠在内容之上：内容整屏铺开（hazeSource），首屏经 topBarHeight 内缩到顶栏之下，
         // 上滑时从顶栏背后滚过，顶栏用 Haze 对其做自上而下的渐变背景模糊
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+                .fillMaxSize(),
         ) {
             val hazeState = rememberHazeState()
             // 顶栏返回按钮的液态玻璃：采样层挂下方滚动内容（与 hazeSource 同一节点，
