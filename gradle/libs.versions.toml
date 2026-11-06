@@ -22,7 +22,8 @@ composeBom = "2026.09.00"
 # haze-blur（内置 Blur）；2.1.0 由 Kotlin 2.4.21 / Compose Multiplatform 1.12.2 编译
 # （其 androidx.compose.ui 传递依赖为 1.12.1，与项目 Kotlin 2.4.21、Compose BOM
 # 2026.09.00 对齐）。注意 2.1 起 HazeBlurStyle { } 按 identity 比较（2.0.1 为值比较），
-# Style 必须在组合期 remember，否则每次重组都被判为新样式（见 HazeBlurStyles.kt）；
+# Style 必须在组合期 remember；滚动进度等动态值以 State 传入、在 Style 块内读，
+# 不再作为 remember key（见 HazeBlurStyles.kt / ScheduleScreen.blurProgressState）；
 # 1.x 的 hazeEffect 块 API、HazeTint、HazeInputScale 在 2.0 已移除
 haze = "2.1.0"
 # 1.12.0 为 RC 未取；1.11.0 为最新稳定

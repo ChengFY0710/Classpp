@@ -29,6 +29,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -207,7 +210,10 @@ internal fun collapsedPillX(
  * [blurProgress] ∈ [0,1]（与日期带渐隐同步）：>0 时头部背景改为
  * Haze 背景模糊（叠在 surface 兜底色之上），顶部最强、向下渐弱；
  * 同时驱动周数胶囊从扁平灰底过渡到半透明白 + 投影。
- * [hazeState] 为 null（如 @Preview）时保持不透明背景。
+ * 传 [State] 而非 Float：兜底色 / 胶囊底材 / 投影 / 玻璃 alpha 与 Haze Style 全在
+ * 绘制期（或 Style 解析时）读它，滚动不触发重组；null（如 @Preview）视作 0，
+ * 保持不透明背景。State 身份必须由宿主 remember 稳定持有。
+ * [hazeState] 为 null 时同样保持不透明背景。
  *
  * [tabTransition] 非 null 时启用转场冻结层（[transitionFreeze]）；此外，宿主通过
  * [LocalPageOverlayTransform] 注入设置页覆盖层视差状态后，视差期间同样冻结。两种
@@ -234,7 +240,7 @@ fun ScheduleHeader(
     onEditClick: () -> Unit,
     onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier,
-    blurProgress: Float = 0f,
+    blurProgress: State<Float>? = null,
     hazeState: HazeState? = null,
     pillBackdrop: Backdrop? = null,
     weekRange: IntRange = 1..20,
@@ -246,9 +252,16 @@ fun ScheduleHeader(
     tabTransition: TabTransitionState? = null,
 ) {
     val fraction = collapseFraction.coerceIn(0f, 1f)
-    val progress = blurProgress.coerceIn(0f, 1f)
     val iconAlpha = 1f - fraction
     val iconsEnabled = fraction < 0.5f
+    // 滚动进度只在绘制期读：兜底色、胶囊、Haze Style 块共用这一个读取口，组合期不读，
+    // 渐隐窗口内滚动不重组（State 身份由宿主 remember 稳定持有）
+    fun progress(): Float = (blurProgress?.value ?: 0f).coerceIn(0f, 1f)
+    // Haze 效果只在进度跨过 0 时挂载 / 卸载：派生成布尔，组合期只在端点翻转一次
+    val hazeActive by remember(blurProgress) { derivedStateOf { progress() > 0f } }
+    // 兜底色两端：随主题在组合期取好，插值进度留到 draw 阶段读
+    val fallbackSurface = MaterialTheme.colorScheme.surface
+    val fallbackBackground = MaterialTheme.colorScheme.background
 
     val calendar = remember(date) { Calendar.getInstance().apply { time = date } }
     val monthDay = stringResource(
@@ -442,7 +455,7 @@ fun ScheduleHeader(
                 currentWeek = todayWeek,
                 weekRange = weekRange,
                 onWeekSelected = onWeekSelected,
-                blurProgress = progress,
+                blurProgress = blurProgress,
                 hazeState = hazeState,
                 backdrop = pillBackdrop,
                 onMenuExpandedChange = onMenuExpandedChange,
@@ -465,22 +478,20 @@ fun ScheduleHeader(
             // progressive 渐弱到 0 的顶栏底缘）露出的就是这层兜底——对齐到下方页面基础底色
             // background，缺口才不会以亮一档的 surface 闪出白块（深色主题同理）。
             // 稳态下源图层满屏、兜底色完全被模糊盖住，此渐变对正常观感无影响
-            .background(
-                lerp(
-                    MaterialTheme.colorScheme.surface,
-                    MaterialTheme.colorScheme.background,
-                    progress,
-                ),
-            )
+            // 颜色在组合期取好，进度在 draw 阶段读——滚动不触发重组
+            .drawBehind {
+                drawRect(lerp(fallbackSurface, fallbackBackground, progress()))
+            }
             .then(
-                if (hazeState != null && progress > 0f) {
+                if (hazeState != null && hazeActive) {
                     // 背景模糊画在兜底色之上、内容之下；opacity 随进度渐入实现无缝衔接。
                     // Haze 2 由库内负责源失效与几何对齐（旧 forceInvalidateOnPreDraw 已移除），
                     // 原先「源重画后强制重采样、杜绝快速切 tab 首帧空白」的诉求由库接管；
-                    // 转场期另有 transitionFreeze 整帧重放兜底
+                    // 转场期另有 transitionFreeze 整帧重放兜底。Style 块内读进度 State，
+                    // 进度变化只让效果重解析 + 重绘，不重建 Style、不重组顶栏
                     Modifier.hazeBlur(
                         input = hazeSources(hazeState),
-                        style = hazeTopBarStyle(radius = 32.dp, opacity = progress),
+                        style = hazeTopBarStyle(radius = 32.dp, opacity = blurProgress),
                         performanceMode = HazePerformanceMode.Quality,
                     )
                 } else {
@@ -593,7 +604,7 @@ private fun WeekPill(
     onWeekSelected: (Int) -> Unit,
     hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
-    blurProgress: Float = 0f,
+    blurProgress: State<Float>? = null,
     backdrop: Backdrop? = null,
     onMenuExpandedChange: (Boolean) -> Unit = {},
 ) {
@@ -638,9 +649,14 @@ private fun WeekPill(
         val pressInteraction = remember { MutableInteractionSource() }
         // 玻璃双门控（开关 + SDK）已由宿主完成，此处只看非空
         val useGlass = backdrop != null && Build.VERSION.SDK_INT >= 31
-        // 玻璃表面染色：叠原 surface 底色——白玻璃（组合侧读好，onDrawSurface 是
-        // DrawScope，读不了 Composable 上下文）；玻璃参数取 ui.theme 的 Pill 档样式
-        val surfaceTint = MaterialTheme.colorScheme.surface.copy(alpha = LiquidGlassStyle.Pill.tintAlpha)
+        // 滚动进度只在绘制期读；null 视作 0（预览 / 无进度宿主）
+        fun pillProgress(): Float = (blurProgress?.value ?: 0f).coerceIn(0f, 1f)
+        // 底材两端色与玻璃染色随主题在组合期取好（DrawScope 读不了组合上下文），
+        // 插值进度留到 draw 阶段
+        val pillSurface = MaterialTheme.colorScheme.surface
+        val pillBackground = MaterialTheme.colorScheme.background
+        // 玻璃表面染色：叠原 surface 底色——白玻璃
+        val surfaceTint = pillSurface.copy(alpha = LiquidGlassStyle.Pill.tintAlpha)
         // 胶囊 = 按压反馈 + 柔影 + 手势 + 内容；底材单独拆成底层子 Box——玻璃要随
         // blurProgress 淡入，只有独立子图层才能只淡玻璃底、不牵连文字内容
         //（graphicsLayer 若放在同一链上，alpha 会连子内容一起淡掉）
@@ -655,11 +671,11 @@ private fun WeekPill(
                     shape = PillShape,
                     backdrop = backdrop,
                 )
-                // 投影随模糊进度长出；graphicsLayer 在 draw 阶段读值，不引发重组
+                // 投影随模糊进度长出；graphicsLayer 在 draw 阶段读进度 State，不引发重组
                 .graphicsLayer {
                     shape = PillShape
                     clip = true
-                    shadowElevation = 45.dp.toPx() * blurProgress
+                    shadowElevation = 45.dp.toPx() * pillProgress()
                     spotShadowColor = Color.Black.copy(alpha = 0.2f)
                 }
                 .clickable(
@@ -675,21 +691,17 @@ private fun WeekPill(
             // 底材层：扁平灰底 → surface 的原渐变原样保留（玻璃模式也不改终点）——
             // 玻璃输出本身不透明（采样层画了页面底色），直接在不透明底材上淡入即可：
             // 中段是两张不透明图像的干净叠化，不会有半透明底透出原始网格的发暗感。
-            // 玻璃层的 alpha 在 draw 阶段读 blurProgress，滚动折叠期间零重组
+            // 底材插值与玻璃 alpha 都在 draw 阶段读进度，滚动期间零重组
             Box(
                 Modifier
                     .matchParentSize()
-                    .background(
-                        lerp(
-                            MaterialTheme.colorScheme.background,
-                            MaterialTheme.colorScheme.surface,
-                            blurProgress,
-                        ),
-                    )
+                    .drawBehind {
+                        drawRect(lerp(pillBackground, pillSurface, pillProgress()))
+                    }
                     .then(
                         if (useGlass && backdrop != null) {
                             Modifier
-                                .graphicsLayer { alpha = blurProgress }
+                                .graphicsLayer { alpha = pillProgress() }
                                 .drawBackdrop(
                                     backdrop = backdrop,
                                     shape = { PillShape },

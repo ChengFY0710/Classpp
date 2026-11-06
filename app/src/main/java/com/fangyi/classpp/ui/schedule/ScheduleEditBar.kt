@@ -17,6 +17,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,6 +61,8 @@ import dev.chrisbanes.haze.blur.hazeBlur
  *
  * [blurProgress] / [hazeState]：与 [ScheduleHeader] 折叠后同一套背景模糊——
  * 内容滚到编辑栏下方时按 [blurProgress] 渐入，顶部最强、向下渐弱；回到顶部恢复不透明。
+ * 进度以 [State] 下传、只在 Haze Style 块与派生布尔里读，滚动不重组；null（如 @Preview）
+ * 视作 0。
  *
  * [tabTransition] 非 null 时启用同款转场冻结层（[transitionFreeze]）；宿主通过
  * [LocalPageOverlayTransform] 注入设置页覆盖层视差状态后，视差期间同样冻结：
@@ -71,7 +77,7 @@ fun ScheduleEditBar(
     onScheduleSettings: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
-    blurProgress: Float = 0f,
+    blurProgress: State<Float>? = null,
     hazeState: HazeState? = null,
     daysPerWeek: Int = 5,
     tabTransition: TabTransitionState? = null,
@@ -81,7 +87,10 @@ fun ScheduleEditBar(
     val days = daysPerWeek.coerceIn(1, weekdayNames.size)
     // 星期行的列标签用单字简称资源（同 ScheduleHeader），勿对全名做字符串假设
     val weekdays = stringArrayResource(R.array.weekdays_short).take(days)
-    val progress = blurProgress.coerceIn(0f, 1f)
+    // 滚动进度只在 Haze Style 块与派生布尔里读：组合期不读连续值，渐隐窗口内滚动不重组
+    val hazeActive by remember(blurProgress) {
+        derivedStateOf { (blurProgress?.value ?: 0f) > 0f }
+    }
     // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场/设置页视差期间整帧重放。
     // overlayTransform 只在组合期取引用；isTransforming 在绘制期读，禁止在组合期读
     val transitionFreezeLayer = rememberGraphicsLayer()
@@ -103,13 +112,14 @@ fun ScheduleEditBar(
             // surface 兜底：progress≈0 时与原不透明背景逐帧一致
             .background(Color.Transparent)
             .then(
-                if (hazeState != null && progress > 0f) {
+                if (hazeState != null && hazeActive) {
                     // 背景模糊画在兜底色之上、内容之下；opacity 随进度渐入实现无缝衔接。
                     // Haze 2 由库内负责源失效与几何对齐（旧 forceInvalidateOnPreDraw 已移除），
-                    // 转场期另有 transitionFreeze 整帧重放兜底
+                    // 转场期另有 transitionFreeze 整帧重放兜底。Style 块内读进度 State，
+                    // 进度变化只让效果重解析 + 重绘，不重建 Style、不重组编辑栏
                     Modifier.hazeBlur(
                         input = hazeSources(hazeState),
-                        style = hazeTopBarStyle(radius = 32.dp, opacity = progress),
+                        style = hazeTopBarStyle(radius = 32.dp, opacity = blurProgress),
                         performanceMode = HazePerformanceMode.Quality,
                     )
                 } else {

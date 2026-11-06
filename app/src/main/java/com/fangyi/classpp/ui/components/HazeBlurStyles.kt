@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.components
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -33,22 +34,28 @@ internal fun hazeSources(state: HazeState): HazeInput.Sources =
  *
  * 1.x 的 `hazeEffect { blurRadius = ...; progressive = ...; tints = ... }` 在 2.0 改为
  * 不可变、可共享的 [HazeBlurStyle]：属性写入变成 Style 函数，tint 由 [HazeColorEffect] 工厂创建。
- * [opacity] 供课表头 / 编辑栏随滚动进度渐入（旧 `alpha = progress`）。
+ * [opacity] 供课表头 / 编辑栏随滚动进度渐入（旧 `alpha = progress`），传 null 表示恒 1
+ * （设置 / 待办 / 日程等静态顶栏与 Preview）。
  *
  * 2.1 起 `HazeBlurStyle { }` 按 identity 比较（2.0.1 按值比较）：每次重组新建实例会被判为
- * 「样式变了」，触发效果重解析 + 重绘。故按影响外观的键 remember 一份；[opacity] 为滚动
- * 进度（逐帧变化），仍留在键里——进度不变时复用同一实例，只有真变化时才换 Style。
+ * 「样式变了」，触发效果重解析 + 重绘；同时 Style 块可以读快照状态，变化时由效果节点
+ * 重新解析并重绘，不重组调用点。故 remember 的键是进度 [State] 的**身份**而不是它当前的值：
+ * 宿主 remember 一次 State（滚动派生值）后，进度逐帧变化既不新建 Style、也不重组。
+ * 调用方不得传入每次重组都新建的 State——那等于退回逐帧重建。
  */
 @Composable
-internal fun hazeTopBarStyle(radius: Dp = 25.dp, opacity: Float = 1f): HazeBlurStyle {
+internal fun hazeTopBarStyle(
+    radius: Dp = 25.dp,
+    opacity: State<Float>? = null,
+): HazeBlurStyle {
     val tint = MaterialTheme.classppColors.hazeTint
-    return remember(radius, opacity, tint) {
+    return remember(radius, tint, opacity) {
         HazeBlurStyle {
             blurRadius(radius)
             progressive(HazeProgressive.verticalGradient(startIntensity = 1f, endIntensity = 0f))
             colorEffects(listOf(HazeColorEffect.tint(tint.copy(alpha = 0.30f))))
             noiseFactor(0f)
-            alpha(opacity)
+            alpha((opacity?.value ?: 1f).coerceIn(0f, 1f))
         }
     }
 }

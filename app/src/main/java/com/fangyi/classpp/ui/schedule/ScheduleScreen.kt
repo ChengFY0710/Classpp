@@ -330,8 +330,9 @@ fun ScheduleScreen(
     var editBarHeight by remember { mutableStateOf(EditBarHeightGuess) }
     val bandHeightPx = with(density) { DateBandHeight.toPx() }
     // 与日期带渐隐同步：index==0 时 offset/bandHeight 爬升，带滚过后恒为 1。
-    // derivedStateOf 只在输出变化时通知 → 渐隐窗口外零新增重组
-    val blurProgress by remember(bandHeightPx) {
+    // 保持为 State 原样下传（不在组合期 by 委托取值）：顶栏 / 编辑栏在绘制期与
+    // Haze Style 块内读它，渐隐窗口内滚动不触发重组，也不重建 HazeBlurStyle
+    val blurProgressState = remember(bandHeightPx) {
         derivedStateOf {
             if (listState.firstVisibleItemIndex == 0) {
                 (listState.firstVisibleItemScrollOffset / bandHeightPx).coerceIn(0f, 1f)
@@ -1138,7 +1139,7 @@ fun ScheduleScreen(
                             weekRange = 1..schedule.totalWeeks,
                             daysPerWeek = schedule.daysPerWeek,
                             onDaysPerWeekToggle = onToggleDaysPerWeek,
-                            blurProgress = blurProgress,
+                            blurProgress = blurProgressState,
                             hazeState = hazeState,
                             pillBackdrop = if (glassPillEnabled) weekPillBackdrop else null,
                             tabTransition = tabTransition,
@@ -1159,7 +1160,7 @@ fun ScheduleScreen(
                             // 取消：整库恢复进入编辑前的快照（切换/设置一并回滚）
                             onCancel = { cancelEdit() },
                             // 与折叠后的原顶栏同一套背景模糊：内容滚到栏下时渐入
-                            blurProgress = blurProgress,
+                            blurProgress = blurProgressState,
                             hazeState = hazeState,
                             tabTransition = tabTransition,
                             // 编辑态的星期行同样按课表天数分列，与网格列对齐
