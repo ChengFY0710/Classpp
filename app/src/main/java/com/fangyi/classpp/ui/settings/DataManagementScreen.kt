@@ -78,6 +78,7 @@ import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.isDarkTheme
+import com.fangyi.classpp.ui.theme.themeAccent
 import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -289,8 +290,9 @@ fun DataManagementScreen(
             val hazeActive = (overlayActive || LocalPageOverlayPrewarm.current) &&
                 !confirmMounted && !busyMounted
             val darkTheme = MaterialTheme.isDarkTheme
+            val themeAccent = MaterialTheme.themeAccent
             val freezeEpoch = LocalSettingsFreezeEpoch.current
-            val freezeKey: () -> Any = remember(darkTheme, scrollState, usage, freezeEpoch) {
+            val freezeKey: () -> Any = remember(darkTheme, themeAccent, scrollState, usage, freezeEpoch) {
                 {
                     SettingsTopBarFreezeKey(
                         page = SettingsPage.DataManagement,
@@ -298,7 +300,7 @@ fun DataManagementScreen(
                         topBarHeight = topBarHeight,
                         scroll = scrollState.value,
                         epoch = freezeEpoch,
-                        inputs = usage,
+                        inputs = listOf(themeAccent, usage),
                     )
                 }
             }

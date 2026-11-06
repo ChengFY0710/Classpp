@@ -18,7 +18,7 @@ import dev.chrisbanes.haze.HazeState
 
 /**
  * 颜色选择弹卡（BottomSelectSheet 变体）：内容为 [ColorSwatchCard] 色球阵列——逐行均布、
- * 每行球数随卡宽自适应，选中 = 外圈蓝环渐现（布局与动效全在该组件内，本壳只管骨架）。
+ * 每行球数随卡宽自适应，选中 = 外圈主题色环渐现（布局与动效全在该组件内，本壳只管骨架）。
  * 「新建标签挑颜色」等固定色板的选择场景。
  *
  * [colors] 色板可自定义，默认只放主题 Primary 一颗球；[selectedIndex] 为打开时的高亮位，

@@ -85,6 +85,7 @@ import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.isDarkTheme
+import com.fangyi.classpp.ui.theme.themeAccent
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -529,10 +530,12 @@ fun XmuSyncScreen(
             val hazeActive = (overlayActive || LocalPageOverlayPrewarm.current) &&
                 !loadingMounted && !logoutMounted && !switchMounted && !disableAutoMounted
             val darkTheme = MaterialTheme.isDarkTheme
+            val themeAccent = MaterialTheme.themeAccent
             val freezeEpoch = LocalSettingsFreezeEpoch.current
             // 冻结键：主题/顶栏高度/滚动位置/账号与对话框状态任一变化都回退实时绘制
             val freezeKey: () -> Any = remember(
                 darkTheme,
+                themeAccent,
                 scrollState,
                 repository,
                 freezeEpoch,
@@ -546,6 +549,7 @@ fun XmuSyncScreen(
                         scroll = scrollState.value,
                         epoch = freezeEpoch,
                         inputs = listOf(
+                            themeAccent,
                             sync?.uid,
                             sync?.accountName,
                             sessionExpired,

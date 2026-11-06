@@ -33,10 +33,10 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.isDarkTheme
 
 /**
- * 带图标设置卡条目：导航行（左侧图标 + label + 蓝色箭头），
+ * 带图标设置卡条目：导航行（左侧图标 + label + 主题色箭头），
  * 可带右侧 primary 色当前值与灰色描述文字（自动换行、行卡随之长高）。
  *
- * [trailingIcon] 覆盖尾部指示图标（null = 默认蓝色右箭头）：选择行传
+ * [trailingIcon] 覆盖尾部指示图标（null = 默认主题色右箭头）：选择行传
  * `R.drawable.ic_chevron_up_down`（上下箭头，同 [SettingsCardItem.Select] 行尾规格），
  * 提示「点行弹菜单」而非「进入下一层」。
  */

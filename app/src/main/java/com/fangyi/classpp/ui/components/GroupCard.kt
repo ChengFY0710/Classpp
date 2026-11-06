@@ -121,7 +121,7 @@ private val FloatBorderWidth = 1.dp
 private const val FloatBorderAlpha = 0.35f
 
 /**
- * 分组卡条目：左侧标题（+ 可选灰色描述），右侧蓝色当前值（可选）+ 蓝色箭头，与 [SettingsCard]
+ * 分组卡条目：左侧标题（+ 可选灰色描述），右侧蓝色当前值（可选）+ 主题色箭头，与 [SettingsCard]
  * 的 Nav 行同款。固定「标题 / 内容 + 箭头」两栏，不支持自定义尾部槽位。
  *
  * [id] 是条目身份键：拖拽排序与多选都按它匹配——重排后各行状态（让位位移、选中标记）跟着条目

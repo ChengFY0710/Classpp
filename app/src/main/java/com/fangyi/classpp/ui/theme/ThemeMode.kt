@@ -16,7 +16,7 @@ enum class ThemeMode(@StringRes val labelRes: Int) {
 }
 
 /**
- * 外观偏好持久化：SharedPreferences 单键存储。
+ * 外观偏好持久化：同一 SharedPreferences 文件内两个独立键（外观模式 / 主题色）。
  *
  * 选 SharedPreferences 而非 DataStore：单个枚举值不值得为此引入依赖；且 [load] 同步
  * 返回，冷启动在 super.onCreate 之前就能拿到模式（定窗口背景主题）并传入首帧组合，
@@ -25,6 +25,7 @@ enum class ThemeMode(@StringRes val labelRes: Int) {
 object ThemePreferences {
     private const val FILE_NAME = "theme_prefs"
     private const val KEY_MODE = "theme_mode"
+    private const val KEY_ACCENT = "theme_accent"
 
     /** 读取外观模式；无记录或记录无法识别时回退 [ThemeMode.System] */
     fun load(context: Context): ThemeMode {
@@ -38,6 +39,21 @@ object ThemePreferences {
         context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_MODE, mode.name)
+            .apply()
+    }
+
+    /** 读取主题色；无记录或记录无法识别（含版本回退）时回退默认蓝 */
+    fun loadAccent(context: Context): ThemeAccent {
+        val saved = context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_ACCENT, null) ?: return ThemeAccent.Blue
+        return ThemeAccent.entries.firstOrNull { it.name == saved } ?: ThemeAccent.Blue
+    }
+
+    /** 保存主题色（apply 异步落盘；UI 状态由调用方同步更新，不等落盘） */
+    fun saveAccent(context: Context, accent: ThemeAccent) {
+        context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_ACCENT, accent.name)
             .apply()
     }
 }

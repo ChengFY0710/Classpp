@@ -43,6 +43,7 @@ import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
 import com.fangyi.classpp.ui.theme.isDarkTheme
+import com.fangyi.classpp.ui.theme.themeAccent
 import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -147,10 +148,12 @@ fun AISettingsScreen(
             // 预热帧也要挂 Haze；隐藏态不录制，保留上一次活跃期的就位帧
             val hazeActive = LocalPageOverlayActive.current || LocalPageOverlayPrewarm.current
             val darkTheme = MaterialTheme.isDarkTheme
+            val themeAccent = MaterialTheme.themeAccent
             val freezeEpoch = LocalSettingsFreezeEpoch.current
             // 冻结键：主题/顶栏高度/滚动位置/方案与配置状态任一变化都回退实时绘制
             val freezeKey: () -> Any = remember(
                 darkTheme,
+                themeAccent,
                 scrollState,
                 profiles,
                 activeProfileId,
@@ -166,6 +169,7 @@ fun AISettingsScreen(
                         scroll = scrollState.value,
                         epoch = freezeEpoch,
                         inputs = listOf(
+                            themeAccent,
                             profiles,
                             activeProfileId,
                             activeConnection,

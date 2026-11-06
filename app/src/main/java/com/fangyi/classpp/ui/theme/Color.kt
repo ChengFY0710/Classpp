@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.Color
 
 // 品牌：蓝 #0077FF（Primary 即其微调版，见下行）/ 黑 #000000 / 白 #FFFFFF / 背景浅灰 #F2F4F6（浅色专用）
 // Primary 微调为 #006FEF，使白字对比度达到 4.65:1（WCAG AA）
+// 主题色六档色板见 ThemeAccent.kt；默认蓝档即复用本文件的 Primary 家族
 val Primary = Color(0xFF006FEF)
 val OnPrimary = Color(0xFFFFFFFF)
 // primary/error 染色玻璃上的前景色（装配见 Theme.kt 的 ClassppColors.onPrimaryGlass）
@@ -14,10 +15,12 @@ val OnPrimaryContainer = Color(0x1A000000)
 /**
  * 选中方格的 primaryContainer 不透明版：半透明底在按压反馈提亮/压暗时会透出下层色、
  * 产生色相跳变闪烁，方格式的选中底改用它。浅色 = 蓝 12% 叠白后的实色。
+ * 默认蓝档由 ThemeAccent.Blue 复用；其余主题色的实色在 ThemeAccent.kt 逐档手调。
  */
 val PrimaryContainerSolid = Color(0xFFE2EDFB)
 val DarkPrimaryContainerSolid = Color(0xFF394C67)
 
+// 默认蓝档页面底；其余主题色由 ThemeAccent.background() 按 HSL 派生（H 取主色，S/L 同本值）
 val Background = Color(0xFFF2F4F6)
 
 val Surface = Color(0xFFFFFFFF)
@@ -43,6 +46,7 @@ val OnError = Color(0xFFFFFFFF)
 val ErrorContainer = Color(0xFFF9DEDC)
 val OnErrorContainer = Color(0xFF410E0B)
 
+// 默认蓝档压暗遮罩（alpha 固定 20%）；其余主题色在 ThemeAccent.kt
 val Scrim = Color(0x332A333C)
 
 /**
@@ -61,8 +65,8 @@ val UrgentYellow = Color(0xFFF2C11C)
 val UrgentGreen = Color(0xFF3BC222)
 
 // ===== 存储用量三段（数据管理页用量条与图例专用）=====
-// 蓝 = 应用大小（与 primary 同源，保持设置页强调色一致）；黄/绿对齐设计稿的
-// 用户数据/缓存两段。只允许 DataManagementScreen 的用量条与图例消费。
+// 蓝 = 应用大小（固定品牌蓝，不随主题色切换，避免绿色系主题与缓存绿撞色）；
+// 黄/绿对齐设计稿的用户数据/缓存两段。只允许 DataManagementScreen 的用量条与图例消费。
 val StorageApp = Color(0xFF006FEF)
 val StorageUser = Color(0xFFF2B93E)
 val StorageCache = Color(0xFF4CC38A)
@@ -78,7 +82,7 @@ val AiAuroraLime = Color(0xFFD8EE9F)
 
 // ===== ClassppColors 扩展色的深浅取值（装配见 Theme.kt，语义注释也在装配处）=====
 
-/** 次级说明文字灰 */
+/** 默认蓝档次级说明文字灰；其余主题色由 ThemeAccent.secondaryText() 按 HSL 派生（H 取主色，S/L 同本值） */
 val SecondaryText = Color(0xFFABAFB4)
 val DarkSecondaryText = Color(0xFF7E858D)
 
@@ -101,6 +105,7 @@ val DarkOnPrimaryGlass = Color(0xFFE4E7EA)
 val DarkPrimaryContainer = Color(0x45479CFF)
 val DarkOnPrimaryContainer = Color(0x339AA2AC)
 
+// 默认蓝档深色页面底；其余主题色由 ThemeAccent.background() 按 HSL 派生（H 取主色，S/L 同本值）
 val DarkBackground = Color(0xFF0F1114)
 
 val DarkSurface = Color(0xFF292D32)
@@ -127,7 +132,7 @@ val DarkUrgentOrange = Color(0xFFF6A94C)
 val DarkUrgentYellow = Color(0xFFF6CE52)
 val DarkUrgentGreen = Color(0xFF67D257)
 
-// 存储用量三段：深色下与 primary / 紧急旗标同档提亮，保证深卡上的分段仍可区分
+// 存储用量三段：深色下与紧急旗标同档提亮，保证深卡上的分段仍可区分（应用段固定品牌蓝，不随主题色）
 val DarkStorageApp = Color(0xFF479CFF)
 val DarkStorageUser = Color(0xFFF6CE52)
 val DarkStorageCache = Color(0xFF67D257)
@@ -138,6 +143,7 @@ val DarkAiAuroraCyan = Color(0xFF2A7E8C)
 val DarkAiAuroraMint = Color(0xFF357A52)
 val DarkAiAuroraLime = Color(0xFF8A9A3A)
 
+// 默认蓝档深色压暗遮罩（alpha 固定 75%）；其余主题色在 ThemeAccent.kt
 val DarkScrim = Color(0xBF000000)
 
 // 开关（ClassppSwitch）不可点击时的置灰轨道色，无论 checked 取该值

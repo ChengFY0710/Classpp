@@ -53,8 +53,10 @@ import com.fangyi.classpp.ui.motion.rememberPageOverlayTransitionState
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.schedule.CardHeightScales
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
+import com.fangyi.classpp.ui.theme.ThemeAccent
 import com.fangyi.classpp.ui.theme.ThemeMode
 import com.fangyi.classpp.ui.theme.isDarkTheme
+import com.fangyi.classpp.ui.theme.themeAccent
 import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -191,6 +193,8 @@ fun SettingsScreen(
     onAiSettingsDirectlyOpened: () -> Unit = {},
     themeMode: ThemeMode = ThemeMode.System,
     onThemeModeChange: (ThemeMode) -> Unit = {},
+    themeAccent: ThemeAccent = ThemeAccent.Blue,
+    onThemeAccentChange: (ThemeAccent) -> Unit = {},
     // State 实例透传（本层不读 .value）：滑条拖动时本屏与个性化页整体 skip，只重组值的叶子
     cardHeights: State<CardHeightScales> = mutableStateOf(CardHeightScales()),
     onCardHeightsChange: (CardHeightScales) -> Unit = {},
@@ -371,6 +375,8 @@ fun SettingsScreen(
                                             onBack = closePersonalization,
                                             themeMode = themeMode,
                                             onThemeModeChange = onThemeModeChange,
+                                            themeAccent = themeAccent,
+                                            onThemeAccentChange = onThemeAccentChange,
                                             repository = repository,
                                             cardHeights = cardHeights,
                                             onCardHeightsChange = onCardHeightsChange,
@@ -466,9 +472,11 @@ private fun SettingsHomePage(
             // 冻结键：主题/顶栏高度/滚动位置/账号状态任一变化都回退实时绘制。
             // 只在绘制期求值，不逐帧重组
             val darkTheme = MaterialTheme.isDarkTheme
+            val themeAccent = MaterialTheme.themeAccent
             val freezeEpoch = LocalSettingsFreezeEpoch.current
             val freezeKey: () -> Any = remember(
                 darkTheme,
+                themeAccent,
                 scrollState,
                 xmuSyncRepository,
                 freezeEpoch,
@@ -481,7 +489,7 @@ private fun SettingsHomePage(
                         topBarHeight = topBarHeight,
                         scroll = scrollState.value,
                         epoch = freezeEpoch,
-                        inputs = sync?.let { listOf(it.uid, it.accountName) },
+                        inputs = listOf(themeAccent, sync?.uid, sync?.accountName),
                     )
                 }
             }

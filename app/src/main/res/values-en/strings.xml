@@ -268,6 +268,13 @@
     <string name="appearance_theme_system">Follow system</string>
     <string name="appearance_theme_light">Light</string>
     <string name="appearance_theme_dark">Dark</string>
+    <string name="appearance_theme_accent">Accent color</string>
+    <string name="appearance_accent_blue">Blue</string>
+    <string name="appearance_accent_teal">Teal</string>
+    <string name="appearance_accent_green">Green</string>
+    <string name="appearance_accent_purple">Purple</string>
+    <string name="appearance_accent_orange">Orange</string>
+    <string name="appearance_accent_pink">Pink</string>
     <string name="glass_material">Advanced glass material</string>
     <string name="glass_material_desc">Liquid glass blur and refraction. Requires Android 13+. Per-frame sampling costs performance — consider off on low-end devices</string>
     <string name="section_days">Days per week</string>

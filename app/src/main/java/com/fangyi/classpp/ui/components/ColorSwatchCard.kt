@@ -40,9 +40,9 @@ private val RowGap = 6.dp
  * 整行铺满：剩余宽度只均分给球与球之间（SpaceBetween），首末球贴齐卡片左右
  * 16dp 内距；末行不满不拉满，靠左按整行的实际球距排（行距上下一致）。
  * 色球固定尺寸、不参与权重，保证不被挤压、完整展示。
- * 选中态 = 外圈蓝环 + 白缝 + 色球。
+ * 选中态 = 外圈主题色环 + 白缝 + 色球。
  *
- * 选中动效：蓝环随选中渐隐渐现（Motion.FastMillis 先快后慢，与全局动效同一节奏）；
+ * 选中动效：主题色环随选中渐隐渐现（Motion.FastMillis 先快后慢，与全局动效同一节奏）；
  * 色球在选中/未选中两态下是同一布局（恒 [BallSize] 居中），环常驻叠加、只动透明度，
  * 切换时色球位置零位移。
  */
@@ -100,7 +100,7 @@ fun ColorSwatchCard(
                                         .clip(CircleShape)
                                         .background(color),
                                 )
-                                // 外圈蓝环：46dp 描边内缩绘制，环内缘与球缘之间留 RingGap 白缝
+                                // 外圈主题色环：46dp 描边内缩绘制，环内缘与球缘之间留 RingGap 白缝
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()

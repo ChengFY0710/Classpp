@@ -54,6 +54,7 @@ import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.isDarkTheme
+import com.fangyi.classpp.ui.theme.themeAccent
 import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
@@ -149,6 +150,7 @@ fun NotificationScreen(
     // 预热帧也要挂 Haze；隐藏态不录制，保留上一次活跃期的就位帧
     val hazeActive = LocalPageOverlayActive.current || LocalPageOverlayPrewarm.current
     val darkTheme = MaterialTheme.isDarkTheme
+    val themeAccent = MaterialTheme.themeAccent
 
     Scaffold(
         modifier = modifier,
@@ -166,7 +168,7 @@ fun NotificationScreen(
             val density = LocalDensity.current
             val freezeEpoch = LocalSettingsFreezeEpoch.current
             // 冻结键：主题/顶栏高度/滚动位置/通知偏好任一变化都回退实时绘制
-            val freezeKey: () -> Any = remember(darkTheme, scrollState, prefs, freezeEpoch) {
+            val freezeKey: () -> Any = remember(darkTheme, themeAccent, scrollState, prefs, freezeEpoch) {
                 {
                     SettingsTopBarFreezeKey(
                         page = SettingsPage.Notification,
@@ -174,7 +176,7 @@ fun NotificationScreen(
                         topBarHeight = topBarHeight,
                         scroll = scrollState.value,
                         epoch = freezeEpoch,
-                        inputs = prefs,
+                        inputs = listOf(themeAccent, prefs),
                     )
                 }
             }

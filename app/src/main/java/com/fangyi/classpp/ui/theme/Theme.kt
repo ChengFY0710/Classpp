@@ -63,8 +63,11 @@ private val DarkColorScheme = darkColorScheme(
  * 浅色/深色各一套取值，由 [ClassppTheme] 按模式 provide。
  */
 @Immutable
-class ClassppColors(
-    /** 次级说明文字灰 */
+data class ClassppColors(
+    /**
+     * 次级说明文字灰：H 取主色、S/L 取默认灰，随主题色切换
+     * （默认蓝为浅 #ABAFB4 / 深 #7E858D）。
+     */
     val secondaryText: Color,
     /**
      * primary/error 染色玻璃上的前景色（图标/文字）：浅 #FFFFFF / 深 #E4E7EA。
@@ -74,7 +77,8 @@ class ClassppColors(
     val onPrimaryGlass: Color,
     /**
      * 选中方格的不透明 primaryContainer 替身：半透明底色在按压反馈提亮/压暗时会透出
-     * 下层色导致闪烁，方格选中底改用本实色（浅 #E2EDFB / 深 #D4E5FD）。
+     * 下层色导致闪烁，方格选中底改用本实色。随 [ClassppTheme] 的主题色取值
+     * （见 [ThemeAccent]）；默认蓝为浅 #E2EDFB / 深 #394C67。
      */
     val primaryContainerSolid: Color,
     /** 卡面细弱元素（卡片内分隔线、点状轨道）：浅 = outline 同值，深 = 卡面上可见的中灰 */
@@ -107,8 +111,9 @@ class ClassppColors(
     val urgentYellow: Color,
     val urgentGreen: Color,
     /**
-     * 存储用量三段色（数据管理页的用量条与图例专用）：应用大小 = 蓝（与 primary
-     * 同源）、用户数据 = 黄、缓存 = 绿。深浅各一套；不用于任何业务强调或旗标。
+     * 存储用量三段色（数据管理页的用量条与图例专用）：应用大小 = 固定品牌蓝、
+     * 用户数据 = 黄、缓存 = 绿。深浅各一套；不参与主题色切换，避免绿色系主题
+     * 与缓存绿撞色；也不用于任何业务强调或旗标。
      */
     val storageApp: Color,
     val storageUser: Color,
@@ -175,6 +180,12 @@ private val LocalClassppTextStyles = staticCompositionLocalOf {
 
 private val LocalClassppDarkTheme = staticCompositionLocalOf { false }
 
+private val LocalThemeAccent = staticCompositionLocalOf { ThemeAccent.Blue }
+
+/** 当前主题色：设置页顶栏冻结键等色彩相关缓存的失效依据（同 [isDarkTheme]） */
+val MaterialTheme.themeAccent: ThemeAccent
+    @Composable get() = LocalThemeAccent.current
+
 /** 主题自定义色访问入口，用法：`MaterialTheme.classppColors.secondaryText` */
 val MaterialTheme.classppColors: ClassppColors
     @Composable get() = LocalClassppColors.current
@@ -193,11 +204,34 @@ val MaterialTheme.isDarkTheme: Boolean
 @Composable
 fun ClassppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    accent: ThemeAccent = ThemeAccent.Blue,
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
-    val classppColors = if (darkTheme) DarkClassppColors else LightClassppColors
-    // 角色化文字样式由主题色派生：深浅切换时重建，同一主题下实例稳定（static local 不额外失效）
+    // 主题色改 primary 家族、页面背景/遮罩与次级文字；ColorScheme 无 equals，必须 remember 住实例，
+    // 否则每次重组都会重建派生色并连带重建 textStyles
+    val colorScheme = remember(accent, darkTheme) {
+        val base = if (darkTheme) DarkColorScheme else LightColorScheme
+        val primary = accent.primary(darkTheme)
+        base.copy(
+            primary = primary,
+            onPrimary = accent.onPrimary(darkTheme),
+            primaryContainer = primary.copy(
+                alpha = if (darkTheme) PrimaryContainerAlphaDark else PrimaryContainerAlphaLight,
+            ),
+            inversePrimary = primary.copy(
+                alpha = if (darkTheme) InversePrimaryAlphaDark else InversePrimaryAlphaLight,
+            ),
+            background = accent.background(darkTheme),
+            scrim = accent.scrim(darkTheme),
+        )
+    }
+    val classppColors = remember(accent, darkTheme) {
+        (if (darkTheme) DarkClassppColors else LightClassppColors).copy(
+            secondaryText = accent.secondaryText(darkTheme),
+            primaryContainerSolid = accent.containerSolid(darkTheme),
+        )
+    }
+    // 角色化文字样式由主题色派生：深浅/主题色切换时重建，同一主题下实例稳定（static local 不额外失效）
     val textStyles = remember(colorScheme, classppColors) {
         classppTextStyles(colorScheme, classppColors)
     }
@@ -205,6 +239,7 @@ fun ClassppTheme(
         LocalClassppColors provides classppColors,
         LocalClassppTextStyles provides textStyles,
         LocalClassppDarkTheme provides darkTheme,
+        LocalThemeAccent provides accent,
         // 「今天」注入（见 [rememberTodayState]）：跨零点自动跳天、回前台对表。页面里所有
         // 按天派生的显示（倒计时、截止配色、今天/明天相对词、逾期分组）读 [LocalToday]
         // 而非系统时钟——后者挂过夜只会停在打开那天的日期

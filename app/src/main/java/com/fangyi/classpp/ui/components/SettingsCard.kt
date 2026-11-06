@@ -50,7 +50,7 @@ import com.fangyi.classpp.ui.theme.isDarkTheme
 import dev.chrisbanes.haze.HazeState
 
 /**
- * 设置卡条目：导航行（label + 蓝色箭头）、开关行（label + [ClassppSwitch]）、
+ * 设置卡条目：导航行（label + 主题色箭头）、开关行（label + [ClassppSwitch]）、
  * 选择行（label + 蓝色当前值 + 上下箭头，点行弹菜单）、滑块行（label + 右上当前值 +
  * 整宽 [ClassppSlider]）、滑块组（label + 多行「当前值 + 滑条」）或自定义行（尾部槽位
  * 放任意控件），均可带灰色描述文字（自动换行、行卡随之长高）。
@@ -59,7 +59,7 @@ sealed interface SettingsCardItem {
     val label: String
     val description: String?
 
-    /** 导航行：整行可点，右侧可带 primary 色当前值，尾部蓝色箭头 */
+    /** 导航行：整行可点，右侧可带 primary 色当前值，尾部主题色箭头 */
     data class Nav(
         override val label: String,
         override val description: String? = null,

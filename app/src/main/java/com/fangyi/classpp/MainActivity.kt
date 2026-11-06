@@ -3,6 +3,7 @@ package com.fangyi.classpp
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -36,6 +37,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
@@ -69,6 +71,7 @@ import com.fangyi.classpp.ui.settings.LocalSettingsFreezeEpoch
 import com.fangyi.classpp.ui.settings.SettingsScreen
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.LocalGlassStyle
+import com.fangyi.classpp.ui.theme.ThemeAccent
 import com.fangyi.classpp.ui.theme.ThemeMode
 import com.fangyi.classpp.ui.theme.ThemePreferences
 import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
@@ -117,6 +120,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         // 外观模式真源：冷启动只读这一次，早于 super.onCreate，下面的 setTheme 才能生效
         val savedThemeMode = ThemePreferences.load(this)
+        // 主题色（强调色）：同 prefs 真源，冷启动读一次；不影响窗口背景，无需早于 setTheme
+        val savedThemeAccent = ThemePreferences.loadAccent(this)
         // 手动浅色/深色时覆盖窗口背景主题：Compose 首帧之前窗口底色就是对的，不闪白。
         // 跟随系统不 setTheme：manifest 的 Theme.Classpp + values-night 已按系统深浅自动选中
         when (savedThemeMode) {
@@ -145,6 +150,11 @@ class MainActivity : ComponentActivity() {
             ThemeMode.Light -> false
             ThemeMode.Dark -> true
         }
+        // 窗口底色随主题色：默认蓝与 XML 完全一致；其余档位在首帧前覆盖窗口背景，
+        // 避免先闪一帧中性底（系统启动窗仍走 themes.xml，无法按用户主题色预渲染）
+        window.setBackgroundDrawable(
+            ColorDrawable(savedThemeAccent.background(initialDark).toArgb()),
+        )
         enableEdgeToEdge(
             statusBarStyle = systemBarStyle(initialDark),
             navigationBarStyle = systemBarStyle(initialDark),
@@ -156,6 +166,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             // 外观模式状态：prefs 是真源，旋转/系统深色切换等重建时 onCreate 重读，无需 saveable
             var themeMode by remember { mutableStateOf(savedThemeMode) }
+            // 主题色状态：同 themeMode，prefs 真源、重建时重读
+            var themeAccent by remember { mutableStateOf(savedThemeAccent) }
             // 课程卡片高度倍率状态：同 themeMode，prefs 真源、重建时重读。
             // 以 State 实例向下传递（实参不读 .value）：拖动滑条只失效真正消费值的
             // 叶子（个性化页滑条卡片、CourseGrid），根 lambda 与两块屏幕全部 skip
@@ -192,7 +204,7 @@ class MainActivity : ComponentActivity() {
             // 玻璃材质开关（更高级的玻璃材质）：组合根部下发，浮层顶栏按钮等共享组件
             // 经 LocalGlassStyle 读取；读 .value，翻转自根部重组（与 themeMode 同拍）
             CompositionLocalProvider(LocalGlassStyle provides glassStyleState.value) {
-                ClassppTheme(darkTheme = darkTheme) {
+                ClassppTheme(darkTheme = darkTheme, accent = themeAccent) {
                     // 主题切换（含设置页即时改选）后重设系统栏外观；enableEdgeToEdge 幂等
                     SideEffect {
                         this@MainActivity.enableEdgeToEdge(
@@ -289,6 +301,12 @@ class MainActivity : ComponentActivity() {
                         { mode: ThemeMode ->
                             themeMode = mode
                             ThemePreferences.save(this@MainActivity, mode)
+                        }
+                    }
+                    val onSettingsThemeAccentChange = remember {
+                        { accent: ThemeAccent ->
+                            themeAccent = accent
+                            ThemePreferences.saveAccent(this@MainActivity, accent)
                         }
                     }
                     val onSettingsCardHeightsChange = remember {
@@ -618,6 +636,8 @@ class MainActivity : ComponentActivity() {
                                 onAiSettingsDirectlyOpened = onAiSettingsDirectlyOpened,
                                 themeMode = themeMode,
                                 onThemeModeChange = onSettingsThemeModeChange,
+                                themeAccent = themeAccent,
+                                onThemeAccentChange = onSettingsThemeAccentChange,
                                 cardHeights = cardHeightsState,
                                 // 只改内存即时生效；落盘由上方 LaunchedEffect 去抖完成
                                 onCardHeightsChange = onSettingsCardHeightsChange,

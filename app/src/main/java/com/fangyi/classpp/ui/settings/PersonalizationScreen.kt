@@ -30,6 +30,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.model.Schedule
+import com.fangyi.classpp.ui.components.BottomColorSelectCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
@@ -58,6 +60,7 @@ import com.fangyi.classpp.ui.schedule.TimeSlot
 import com.fangyi.classpp.ui.schedule.cardHeightMinScale
 import com.fangyi.classpp.ui.schedule.shortestDurationMinutes
 import com.fangyi.classpp.ui.schedule.toUiSlots
+import com.fangyi.classpp.ui.theme.ThemeAccent
 import com.fangyi.classpp.ui.theme.ThemeMode
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -73,7 +76,8 @@ import kotlin.math.roundToInt
  * 骨架与设置根页同构（Scaffold + 滚动内容列 + 顶栏叠加），正文承载 app 级外观与个性化设置：
  * 「颜色模式」三选一（跟随系统/浅色/深色，[themeMode] / [onThemeModeChange]），
  * 行尾显示当前模式，点行弹选择对话框，点选项即时生效并关闭——对话框下方的页面同步变色，
- * 反馈直观，无需「确定」一步；「课表」分组为课程卡片高度滑条（[cardHeights] /
+ * 反馈直观，无需「确定」一步；「主题色」六选一（[themeAccent] / [onThemeAccentChange]），
+ * 点行唤起色球弹卡，确认后全局生效；「课表」分组为课程卡片高度滑条（[cardHeights] /
  * [onCardHeightsChange]，调节**用户倍率**：网格行高随每节课实际时长伸缩，倍率整体缩放；
  * 滑条可调下限 = 当前课表最短一节与「显示教师」开关触发卡片最低高度所需倍率，
  * 见 [ScheduleSection]；
@@ -90,6 +94,8 @@ fun PersonalizationScreen(
     modifier: Modifier = Modifier,
     themeMode: ThemeMode = ThemeMode.System,
     onThemeModeChange: (ThemeMode) -> Unit = {},
+    themeAccent: ThemeAccent = ThemeAccent.Blue,
+    onThemeAccentChange: (ThemeAccent) -> Unit = {},
     repository: ScheduleRepository? = null,
     // State 实例透传（本层不读 .value，值只在 ScheduleSection 叶子内读）：
     // 拖动滑条时本页整体 skip，只有滑条卡片子树每帧重组
@@ -115,6 +121,15 @@ fun PersonalizationScreen(
     val daysPerWeek = schedule?.daysPerWeek ?: 5
     // 滑条下限按当前课表最短一节推导（见 ScheduleSection）；无课表按默认作息
     val slots = remember(schedule) { schedule?.slots?.toUiSlots() ?: DefaultTimeSlots }
+    // 采样源提到 Scaffold 之外：主题色弹卡挂在页面末尾，也要用它对页面做卡片磨砂
+    val hazeState = rememberHazeState()
+    val darkTheme = MaterialTheme.isDarkTheme
+    // 色球用当前深浅档的主色；色板固定六档，按深浅缓存列表实例
+    val accentSwatches = remember(darkTheme) {
+        ThemeAccent.entries.map { it.primary(darkTheme) }
+    }
+    var accentPickerMounted by rememberSaveable { mutableStateOf(false) }
+    var accentPickerVisible by rememberSaveable { mutableStateOf(false) }
     Scaffold(
         modifier = modifier,
         // 沉浸式：只吃左右 inset，状态栏/手势条区域交给内容与顶栏自己铺满（同设置根页）
@@ -127,7 +142,6 @@ fun PersonalizationScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            val hazeState = rememberHazeState()
             // 顶栏返回按钮的液态玻璃：采样层挂下方正文列（与 hazeSource 同一节点，
             // Haze 管顶栏磨砂、Backdrop 只喂返回按钮）；null = 玻璃关闭，标记不挂载
             val glassBackdrop = rememberSettingsGlassBackdrop()
@@ -139,9 +153,8 @@ fun PersonalizationScreen(
             val overscrollEffect = rememberOffsetOverscrollEffect()
             // 预热帧也要挂 Haze；隐藏态不录制，保留上一次活跃期的就位帧
             val hazeActive = LocalPageOverlayActive.current || LocalPageOverlayPrewarm.current
-            val darkTheme = MaterialTheme.isDarkTheme
             val freezeEpoch = LocalSettingsFreezeEpoch.current
-            val freezeKey: () -> Any = remember(darkTheme, scrollState, freezeEpoch) {
+            val freezeKey: () -> Any = remember(darkTheme, themeAccent, scrollState, freezeEpoch) {
                 {
                     SettingsTopBarFreezeKey(
                         page = SettingsPage.Personalization,
@@ -155,6 +168,7 @@ fun PersonalizationScreen(
                             glassStyle.value,
                             todoMasonry.value,
                             themeMode,
+                            themeAccent,
                         ),
                     )
                 }
@@ -177,6 +191,11 @@ fun PersonalizationScreen(
                 ColorModeSection(
                     mode = themeMode,
                     onSelect = onThemeModeChange,
+                    themeAccent = themeAccent,
+                    onThemeAccentClick = {
+                        accentPickerMounted = true
+                        accentPickerVisible = true
+                    },
                     glassStyle = glassStyle,
                     onGlassStyleChange = onGlassStyleChange,
                 )
@@ -213,6 +232,23 @@ fun PersonalizationScreen(
                     },
             )
         }
+    }
+
+    // 主题色弹卡挂在页面末尾（Scaffold 之后）：确认才交回选中档位并全局生效
+    if (accentPickerMounted) {
+        BottomColorSelectCard(
+            visible = accentPickerVisible,
+            onDismiss = { accentPickerVisible = false },
+            onDismissed = { accentPickerMounted = false },
+            title = stringResource(R.string.appearance_theme_accent),
+            colors = accentSwatches,
+            selectedIndex = ThemeAccent.entries.indexOf(themeAccent),
+            hazeState = hazeState,
+            onConfirm = { index ->
+                accentPickerVisible = false
+                onThemeAccentChange(ThemeAccent.entries.getOrElse(index) { ThemeAccent.Blue })
+            },
+        )
     }
 }
 
@@ -331,9 +367,11 @@ private fun TodoSection(
 }
 
 /**
- * 颜色模式分组：app 级三选一（跟随系统/浅色/深色），行尾显示当前模式。
+ * 外观分组：颜色模式 app 级三选一（跟随系统/浅色/深色），行尾显示当前模式。
  * 点行弹选择对话框，点选项即时生效并关闭——对话框下方的页面同步变色，反馈直观，
- * 无需「确定」一步。同组下方为「更高级的玻璃材质」开关（[glassStyle] /
+ * 无需「确定」一步。「主题色」行尾显示当前色名，点行唤起 [BottomColorSelectCard]
+ * 色球弹卡（六档：蓝/青/绿/紫/橙/粉），确认才交回并全局生效（[themeAccent] /
+ * [onThemeAccentChange]，弹卡的挂载与状态在页面层）。同组下方为「更高级的玻璃材质」开关（[glassStyle] /
  * [onGlassStyleChange]，控制底部导航栏三胶囊、待办页顶栏胶囊、设置页顶栏返回按钮、
  * 课表页顶栏周数胶囊与 OverlaySheet / BottomSelectSheet 顶栏按钮的 Backdrop 液态
  * 玻璃渲染 + Q弹按压；关闭即各自原实现，低版本与性能说明见描述文案，持久化见
@@ -343,6 +381,8 @@ private fun TodoSection(
 private fun ColorModeSection(
     mode: ThemeMode,
     onSelect: (ThemeMode) -> Unit,
+    themeAccent: ThemeAccent,
+    onThemeAccentClick: () -> Unit,
     glassStyle: State<Boolean>,
     onGlassStyleChange: (Boolean) -> Unit,
 ) {
@@ -363,6 +403,11 @@ private fun ColorModeSection(
                     label = stringResource(R.string.appearance_theme_mode),
                     value = stringResource(mode.labelRes),
                     onClick = { picking = true },
+                ),
+                SettingsCardItem.Nav(
+                    label = stringResource(R.string.appearance_theme_accent),
+                    value = stringResource(themeAccent.labelRes),
+                    onClick = onThemeAccentClick,
                 ),
             ),
         )
