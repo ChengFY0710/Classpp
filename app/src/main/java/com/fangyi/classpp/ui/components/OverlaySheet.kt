@@ -100,6 +100,12 @@ private val DragDismissVelocity: Dp = 800.dp
 private val TopBarHeight = 78.dp
 
 /**
+ * 无 Haze 顶栏（[OverlaySheet] 的 `hazeEnabled = false`）底缘的渐隐高度：
+ * 内容从顶栏下滚过时柔和淡出，代替模糊的视觉收边。
+ */
+private val TopBarFadeHeight = 24.dp
+
+/**
  * 顶栏胶囊固定高度 = 默认图标 30dp + 上下 padding 各 8dp（[SheetPillButton] 的自然高）。
  * 锚死后图标单独调小（如待办详情「编辑」26dp）两颗胶囊仍等高——余量由行内垂直居中消化；
  * 图标不要调到 30dp 以上，否则会顶破固定高。
@@ -196,6 +202,10 @@ val LocalOverlayBottomHazeState = staticCompositionLocalOf<HazeState?> { null }
  * 只需模糊浮层自身内容。容器默认自建 hazeState（调用方无需传任何模糊状态）；宿主若要给
  * 叠在本浮层**之上**的弹层（BottomSelectSheet 一族）做背景模糊，可传入共享 [hazeState]——
  * 滚动内容仍是它的采样源，顶栏磨砂与上层弹窗的背景模糊同源。
+ *
+ * [hazeEnabled] = false 时本浮层整条链不挂 Haze：内容列不做采样源、顶栏改静态渐变底材、
+ * 钉底槽不下发状态。这是给「内容结构会随操作频繁重写采样源」的浮层做的结构性规避
+ * （见 DayAdjustSheet）；调用方必须同时不给叠层弹卡/菜单传 hazeState。
  */
 @Composable
 fun OverlaySheet(
@@ -227,6 +237,12 @@ fun OverlaySheet(
     // 共享 hazeState（可选）：给叠在本浮层之上的弹层做背景模糊时由宿主传入，见 KDoc；
     // null = 自建，仅供顶栏磨砂
     hazeState: HazeState? = null,
+    // 是否参与 Haze 采样链（顶栏磨砂 + 内容列的 hazeSource + bottom 槽共享状态）。
+    // false = 本浮层整条链零 Haze 源/效果节点：顶栏改静态渐变底材（复刻静止态 tint +
+    // 底缘渐隐），内容列不挂 hazeSource。供「内容结构会随操作频繁重写采样源」的浮层
+    // 结构上规避 Haze 2 的自引用 RenderNode 崩溃（见 DayAdjustSheet）。
+    // 调用方传 false 时必须同时不给叠层弹卡/菜单传 hazeState——它们都支持 null（实底）。
+    hazeEnabled: Boolean = true,
     // 钉底槽的渐变兜底：false = 槽内不画（内容随 AnimatedVisibility 进出场时由调用方自绘，
     // 渐变才能跟着一起滑入滑出，而不是在非编辑态常驻一条底部薄纱）
     bottomScrim: Boolean = true,
@@ -474,8 +490,15 @@ fun OverlaySheet(
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    // 顶栏模糊的采样源：滚动内容从顶栏底下滚过时被渐变模糊
-                                    .hazeSource(sheetHazeState)
+                                    // 顶栏模糊的采样源：滚动内容从顶栏底下滚过时被渐变模糊。
+                                    // hazeEnabled = false 的浮层整条链零 Haze 节点，不挂采样源
+                                    .then(
+                                        if (hazeEnabled) {
+                                            Modifier.hazeSource(sheetHazeState)
+                                        } else {
+                                            Modifier
+                                        },
+                                    )
                                     // 玻璃按钮开启时同一节点再挂液态玻璃采样标记
                                     // （Haze 管顶栏磨砂、Backdrop 只喂两颗玻璃按钮）
                                     .then(
@@ -528,7 +551,8 @@ fun OverlaySheet(
                                 onConfirm = { if (!closeRequested) onConfirm() },
                                 rightAction = guardedRightAction,
                                 confirmAtEnd = confirmAtEnd,
-                                hazeState = sheetHazeState,
+                                // hazeEnabled = false：顶栏改静态底材，不挂 hazeBlur
+                                hazeState = if (hazeEnabled) sheetHazeState else null,
                                 buttonBackdrop = glassButtonBackdrop,
                                 dragModifier = topBarDragModifier,
                                 modifier = Modifier.align(Alignment.TopCenter),
@@ -564,7 +588,9 @@ fun OverlaySheet(
                                     // Haze 状态给槽内弹出菜单做磨砂
                                     CompositionLocalProvider(
                                         LocalOverlayBottomGlassBackdrop provides glassButtonBackdrop,
-                                        LocalOverlayBottomHazeState provides sheetHazeState,
+                                        // 无 Haze 的浮层不给钉底槽下发状态：槽内弹出菜单退化为实底白卡
+                                        LocalOverlayBottomHazeState provides
+                                            if (hazeEnabled) sheetHazeState else null,
                                     ) {
                                         slot()
                                     }
@@ -594,7 +620,8 @@ private fun OverlaySheetTopBar(
     onConfirm: () -> Unit,
     rightAction: SheetTopAction,
     confirmAtEnd: Boolean = false,
-    hazeState: HazeState,
+    // null = 不挂 Haze：顶栏改静态渐变底材（OverlaySheet 的 hazeEnabled = false）
+    hazeState: HazeState?,
     buttonBackdrop: Backdrop? = null,
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
@@ -607,6 +634,23 @@ private fun OverlaySheetTopBar(
     }
     val actionContentColor =
         if (buttonBackdrop != null) rightAction.contentColorGlass else rightAction.contentColor
+    // 顶栏底材：有 Haze 时是不透明兜底（后面再叠渐变磨砂）；无 Haze（hazeState = null）时
+    // 换成复刻静止态 tint 曲线的静态渐变，并在底缘渐隐——整条链不挂任何采样/效果节点。
+    // 无 Haze 分支必须有底缘渐隐：内容从顶栏下滚过时靠它柔和收边，替代模糊。
+    val fallbackBackground = MaterialTheme.colorScheme.background
+    val fallbackTint = MaterialTheme.classppColors.hazeTint
+    val staticScrim = remember(fallbackBackground, fallbackTint) {
+        topBarStaticScrim(
+            background = fallbackBackground,
+            tint = fallbackTint,
+            fadeStartFraction = 1f - TopBarFadeHeight / TopBarHeight,
+        )
+    }
+    val backgroundModifier = if (hazeState != null) {
+        Modifier.background(fallbackBackground)
+    } else {
+        Modifier.background(staticScrim)
+    }
     // Haze 2：Style 在组合期构建（tint 由 hazeTopBarStyle 内部读主题）
     Column(
         modifier = modifier
@@ -615,11 +659,17 @@ private fun OverlaySheetTopBar(
             // 不透明兜底（同设置页顶栏）：haze 的渐进模糊是"均匀模糊层 × 渐变透明度"的混合，
             // 兜底若带透明度，锐利内容会从透明处透出、与模糊层叠成重影（蓝描边/蓝格子最明显）；
             // 不透明兜底让混合只发生在"模糊 vs 平色"之间，锐利内容被完全挡住
-            .background(MaterialTheme.colorScheme.background)
-            .hazeBlur(
-                input = hazeSources(hazeState),
-                style = hazeTopBarStyle(radius = 18.dp),
-                performanceMode = HazePerformanceMode.Balanced,
+            .then(backgroundModifier)
+            .then(
+                if (hazeState != null) {
+                    Modifier.hazeBlur(
+                        input = hazeSources(hazeState),
+                        style = hazeTopBarStyle(radius = 18.dp),
+                        performanceMode = HazePerformanceMode.Balanced,
+                    )
+                } else {
+                    Modifier
+                },
             )
             .then(dragModifier),
     ) {

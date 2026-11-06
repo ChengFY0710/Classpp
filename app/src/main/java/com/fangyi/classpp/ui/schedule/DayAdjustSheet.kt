@@ -48,7 +48,6 @@ import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.isDarkTheme
-import dev.chrisbanes.haze.rememberHazeState
 
 /** 课程行色条宽：与课表卡片竖条同档（3dp，见间距规范 §2.1） */
 private val CourseBarWidth = 3.dp
@@ -134,7 +133,12 @@ internal fun DayAdjustSheet(
         else -> listOfNotNull(conflictText) + otherErrorTexts
     }
 
-    val sheetHazeState = rememberHazeState()
+    // 本浮层有意保持「零 Haze 节点」：每次点星期格都会重写采样源子树（课程行 0↔N、
+    // 提示条/错误文案增删），叠层滚轮进出场又会在同一帧翻转祖先 graphicsLayer（covered
+    // 缩放）——Haze 2 在这类组合下会构建自引用 RenderNode，RenderThread 在
+    // prepareTreeImpl 无限递归、栈溢出。结构上直接退出 Haze 采样链（OverlaySheet 传
+    // hazeEnabled = false、滚轮卡不传 hazeState），崩溃条件因此不可达。
+    // 不要给本浮层加回 hazeState / 顶栏磨砂 / 滚轮磨砂；星期选择继续用内联 SelectionGrid。
     var sourceWeekPickerVisible by remember { mutableStateOf(false) }
     var sourceWeekPickerMounted by remember { mutableStateOf(false) }
     var targetWeekPickerVisible by remember { mutableStateOf(false) }
@@ -172,14 +176,14 @@ internal fun DayAdjustSheet(
         visible = visible,
         covered = sourceWeekPickerVisible || targetWeekPickerVisible,
         onDismissed = onDismissed,
-        hazeState = sheetHazeState,
+        // 本浮层整条链不挂 Haze（见上方约定）：顶栏用静态渐变底材，内容列不做采样源。
+        // covered 只是纯 graphicsLayer 缩放，没有 Haze 节点参与，无需错帧。
+        hazeEnabled = false,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
             CardSection(title = stringResource(R.string.day_adjust_section_source)) {
                 // 星期选择用内联方格而不是 SettingsCardItem.Select：后者会开一个独立的
-                // Popup 窗口，Haze 2 在该窗口与浮层内容同帧增删时会构建自引用 RenderNode，
-                // RenderThread 在 prepareTreeImpl 无限递归、栈溢出闪退
-                // （同 .zcode/device-logs/crash-analysis-20261031.md 的失败模式）。
+                // Popup 窗口，本浮层保持单窗口的实底结构，不引入任何跨窗口采样/弹层。
                 SettingsCard(
                     items = listOf(
                         SettingsCardItem.Nav(
@@ -264,7 +268,9 @@ internal fun DayAdjustSheet(
         }
     }
 
-    // 原周滚轮：画在浮层之后（组合顺序即绘制顺序），covered 让本浮层缩小后退
+    // 原周滚轮：画在浮层之后（组合顺序即绘制顺序），covered 让本浮层缩小后退。
+    // 不传 hazeState：滚轮卡走 BottomSelectSheet 的实底 bottomSheetColor 路径，
+    // 本浮层因此没有任何第二个 Haze 效果节点
     if (sourceWeekPickerMounted) {
         BottomNumberSelectCard(
             visible = sourceWeekPickerVisible,
@@ -274,7 +280,6 @@ internal fun DayAdjustSheet(
             valueRange = 1..maxWeek,
             initialValue = sourceWeek,
             unit = stringResource(R.string.adjust_unit_week),
-            hazeState = sheetHazeState,
             onConfirm = { picked ->
                 // 目标周原本跟着原周（同一周调休）时一起走，跨周调休则保持不变
                 if (targetWeek == sourceWeek) targetWeek = picked
@@ -285,7 +290,7 @@ internal fun DayAdjustSheet(
         )
     }
 
-    // 目标周滚轮
+    // 目标周滚轮（同原周滚轮：实底卡，不参与 Haze）
     if (targetWeekPickerMounted) {
         BottomNumberSelectCard(
             visible = targetWeekPickerVisible,
@@ -295,7 +300,6 @@ internal fun DayAdjustSheet(
             valueRange = 1..maxWeek,
             initialValue = targetWeek,
             unit = stringResource(R.string.adjust_unit_week),
-            hazeState = sheetHazeState,
             onConfirm = { picked ->
                 targetWeek = picked
                 touched = true

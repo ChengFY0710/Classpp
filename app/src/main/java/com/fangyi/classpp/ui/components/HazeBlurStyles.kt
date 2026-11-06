@@ -1,9 +1,13 @@
 package com.fangyi.classpp.ui.components
 
+import androidx.compose.animation.core.EaseIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.theme.classppColors
@@ -30,6 +34,15 @@ internal fun hazeSources(state: HazeState): HazeInput.Sources =
     )
 
 /**
+ * 顶栏磨砂的 tint 浓度：Haze 顶栏 Style 与无 Haze 的静态底材（[topBarStaticScrim]）
+ * 共用这一个值，两条路径的静止态颜色才不会随改动漂移。
+ */
+private const val HazeTopBarTintAlpha = 0.30f
+
+/** 静态底材的 tint 采样点数：与 Haze 的 HazeProgressive.asBrush 默认一致（20） */
+private const val TopBarScrimStops = 20
+
+/**
  * 顶栏渐变磨砂：顶部最强、向下渐弱（vertical 1→0），磨砂 tint 30%。
  *
  * 1.x 的 `hazeEffect { blurRadius = ...; progressive = ...; tints = ... }` 在 2.0 改为
@@ -53,11 +66,42 @@ internal fun hazeTopBarStyle(
         HazeBlurStyle {
             blurRadius(radius)
             progressive(HazeProgressive.verticalGradient(startIntensity = 1f, endIntensity = 0f))
-            colorEffects(listOf(HazeColorEffect.tint(tint.copy(alpha = 0.30f))))
+            colorEffects(listOf(HazeColorEffect.tint(tint.copy(alpha = HazeTopBarTintAlpha))))
             noiseFactor(0f)
             alpha((opacity?.value ?: 1f).coerceIn(0f, 1f))
         }
     }
+}
+
+/**
+ * 无 Haze 顶栏的静态底材（`OverlaySheet(hazeEnabled = false)` 用）。
+ *
+ * Haze 顶栏磨砂在静止态（内容还没滚到顶栏下）呈现为「不透明底色 + tint 自顶向下渐隐」：
+ * tint 曲线是 progressive 的 `lerp(1, 0, EaseIn(x))`，坐标取顶栏自身高度的 0~1（Haze 的
+ * progressive 以效果节点尺寸为坐标系，不含 blur 半径的外扩，见 BlurVisualEffectUtils
+ * 的 `contentSize = context.size`）。本函数按同一条曲线生成静态渐变，并在这里完成
+ * [tint] 与 [background] 的合成——顶段保持不透明，按钮与标题可读；整条链路不挂任何
+ * RenderNode 采样，因此不可能进入 Haze 的自引用崩溃路径。
+ *
+ * [fadeStartFraction] 之后渐隐到完全透明：内容从顶栏下滚过时柔和淡出，替代模糊的
+ * 视觉收边。渐隐终点的 RGB 仍取 [background]，避免渐透过程中发灰。
+ */
+internal fun topBarStaticScrim(
+    background: Color,
+    tint: Color,
+    fadeStartFraction: Float,
+): Brush {
+    val fadeStart = fadeStartFraction.coerceIn(0f, 1f)
+    val stops = buildList {
+        repeat(TopBarScrimStops) { index ->
+            val x = index.toFloat() / (TopBarScrimStops - 1)
+            val y = x * fadeStart
+            val intensity = 1f - EaseIn.transform(y)
+            add(y to tint.copy(alpha = HazeTopBarTintAlpha * intensity).compositeOver(background))
+        }
+        add(1f to background.copy(alpha = 0f))
+    }
+    return Brush.verticalGradient(colorStops = stops.toTypedArray())
 }
 
 /**
