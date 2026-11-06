@@ -1,10 +1,10 @@
 package com.fangyi.classpp.ui.settings
 
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
@@ -13,16 +13,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
@@ -34,14 +30,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.ui.components.BottomColorSelectCard
+import com.fangyi.classpp.ui.components.BottomSelectCard
+import com.fangyi.classpp.ui.components.BottomSelectSheet
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
@@ -49,8 +49,9 @@ import com.fangyi.classpp.ui.components.SettingsInfoHeaderCard
 import com.fangyi.classpp.ui.components.SheetBottomSlack
 import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
+import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
-import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
 import com.fangyi.classpp.ui.schedule.CardHeightPreferences
 import com.fangyi.classpp.ui.schedule.CardHeightScales
@@ -59,10 +60,14 @@ import com.fangyi.classpp.ui.schedule.TimeSlot
 import com.fangyi.classpp.ui.schedule.cardHeightMinScale
 import com.fangyi.classpp.ui.schedule.shortestDurationMinutes
 import com.fangyi.classpp.ui.schedule.toUiSlots
+import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
+import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.ThemeAccent
 import com.fangyi.classpp.ui.theme.ThemeMode
+import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.kyant.backdrop.backdrops.layerBackdrop
+import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -74,8 +79,8 @@ import kotlin.math.roundToInt
  *
  * 骨架与设置根页同构（Scaffold + 滚动内容列 + 顶栏叠加），正文承载 app 级外观与个性化设置：
  * 「颜色模式」三选一（跟随系统/浅色/深色，[themeMode] / [onThemeModeChange]），
- * 行尾显示当前模式，点行弹选择对话框，点选项即时生效并关闭——对话框下方的页面同步变色，
- * 反馈直观，无需「确定」一步；「主题色」八选一（[themeAccent] / [onThemeAccentChange]），
+ * 行尾显示当前模式，点行唤起 [ThemeModeSelectCard] 选择卡，确认并等收起动画播完才全局生效；
+ * 「主题色」八选一（[themeAccent] / [onThemeAccentChange]），
  * 点行唤起色球弹卡，确认后全局生效；「课表」分组为课程卡片高度滑条（[cardHeights] /
  * [onCardHeightsChange]，调节**用户倍率**：网格行高随每节课实际时长伸缩，倍率整体缩放；
  * 滑条可调下限 = 当前课表最短一节与「显示教师」开关触发卡片最低高度所需倍率，
@@ -129,6 +134,8 @@ fun PersonalizationScreen(
     }
     var accentPickerMounted by rememberSaveable { mutableStateOf(false) }
     var accentPickerVisible by rememberSaveable { mutableStateOf(false) }
+    var modePickerMounted by rememberSaveable { mutableStateOf(false) }
+    var modePickerVisible by rememberSaveable { mutableStateOf(false) }
     Scaffold(
         modifier = modifier,
         // 统一不避让横向 inset：内容全宽出血（左右顶到屏幕边缘）；纵向由内容与顶栏自理（同设置根页）
@@ -188,7 +195,10 @@ fun PersonalizationScreen(
             ) {
                 ColorModeSection(
                     mode = themeMode,
-                    onSelect = onThemeModeChange,
+                    onThemeModeClick = {
+                        modePickerMounted = true
+                        modePickerVisible = true
+                    },
                     themeAccent = themeAccent,
                     onThemeAccentClick = {
                         accentPickerMounted = true
@@ -232,7 +242,29 @@ fun PersonalizationScreen(
         }
     }
 
-    // 主题色弹卡挂在页面末尾（Scaffold 之后）：确认才交回选中档位并全局生效
+    // 颜色模式 / 主题色弹卡挂在页面末尾（Scaffold 之后）：都是确认才交回并全局生效。
+    // 模式切换等卡片收起动画播完（onDismissed）才应用，避免弹卡自己在退场途中先变色
+    var pendingThemeMode by remember { mutableStateOf<ThemeMode?>(null) }
+    if (modePickerMounted) {
+        ThemeModeSelectCard(
+            visible = modePickerVisible,
+            mode = themeMode,
+            onDismiss = { modePickerVisible = false },
+            onDismissed = {
+                modePickerMounted = false
+                pendingThemeMode?.let { picked ->
+                    pendingThemeMode = null
+                    onThemeModeChange(picked)
+                }
+            },
+            hazeState = hazeState,
+            onConfirm = { picked ->
+                // 先记下选择并请求收起，应用延迟到退场播完（见 onDismissed）
+                pendingThemeMode = picked
+                modePickerVisible = false
+            },
+        )
+    }
     if (accentPickerMounted) {
         BottomColorSelectCard(
             visible = accentPickerVisible,
@@ -365,9 +397,9 @@ private fun TodoSection(
 }
 
 /**
- * 外观分组：颜色模式 app 级三选一（跟随系统/浅色/深色），行尾显示当前模式。
- * 点行弹选择对话框，点选项即时生效并关闭——对话框下方的页面同步变色，反馈直观，
- * 无需「确定」一步。「主题色」行尾显示当前色名，点行唤起 [BottomColorSelectCard]
+ * 外观分组：颜色模式 app 级三选一（跟随系统/浅色/深色），行尾显示当前模式，点行唤起
+ * [ThemeModeSelectCard] 选择卡（挂载与状态在页面层，确认后等弹卡收起再全局生效）。
+ * 「主题色」行尾显示当前色名，点行唤起 [BottomColorSelectCard]
  * 色球弹卡（八档：蓝/厦大蓝/青/绿/紫/橙/粉/山大红），确认才交回并全局生效（[themeAccent] /
  * [onThemeAccentChange]，弹卡的挂载与状态在页面层）。同组下方为「更高级的玻璃材质」开关（[glassStyle] /
  * [onGlassStyleChange]，控制底部导航栏三胶囊、待办页顶栏胶囊、设置页顶栏返回按钮、
@@ -378,13 +410,12 @@ private fun TodoSection(
 @Composable
 private fun ColorModeSection(
     mode: ThemeMode,
-    onSelect: (ThemeMode) -> Unit,
+    onThemeModeClick: () -> Unit,
     themeAccent: ThemeAccent,
     onThemeAccentClick: () -> Unit,
     glassStyle: State<Boolean>,
     onGlassStyleChange: (Boolean) -> Unit,
 ) {
-    var picking by remember { mutableStateOf(false) }
     // 颜色模式与玻璃材质同属外观分组：两卡收进同一 CardSection（无标题纯分组容器，
     // 组内卡间距 10dp），与「课表」分组的两卡结构对齐；顶部信息头卡用个性化图标 +
     // Primary 色渐变（iconColor 传入后在卡内做 45° 同色淡出渐变，见 SettingsInfoHeaderCard）
@@ -400,7 +431,7 @@ private fun ColorModeSection(
                 SettingsCardItem.Nav(
                     label = stringResource(R.string.appearance_theme_mode),
                     value = stringResource(mode.labelRes),
-                    onClick = { picking = true },
+                    onClick = onThemeModeClick,
                 ),
                 SettingsCardItem.Nav(
                     label = stringResource(R.string.appearance_theme_accent),
@@ -421,54 +452,99 @@ private fun ColorModeSection(
             ),
         )
     }
+}
 
-    if (picking) {
-        AlertDialog(
-            onDismissRequest = { picking = false },
-            title = {
-                Text(stringResource(R.string.appearance_theme_mode))
-            },
-            text = {
-                Column {
-                    ThemeMode.entries.forEach { candidate ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                // 行上无 clip，原位把 clickable 换成 pressClickable（自带按压源，
-                                // 按压反馈取代涟漪）；通栏行用 RectangleShape，各行独立互不串亮
-                                .pressClickable(RectangleShape) {
-                                    onSelect(candidate)
-                                    picking = false
-                                }
-                                // 行高给足触达面积；radio 与文字的间距随行内边距统一
-                                .padding(vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            // 点击由整行承担：radio 本身 onClick = null，只做状态展示
-                            RadioButton(selected = candidate == mode, onClick = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = stringResource(candidate.labelRes),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
-                }
-            },
-            // 即时生效交互：唯一的按钮承担「关闭」，与设置页既有对话框的取消位一致
-            confirmButton = {
-                // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
-                // 按压源交给按钮形参，pressFeedback 接在 modifier 链末尾（贴按钮本体，对齐 textShape）
-                val press = remember { MutableInteractionSource() }
-                TextButton(
-                    onClick = { picking = false },
-                    interactionSource = press,
-                    modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
-                ) {
-                    Text(stringResource(R.string.settings_cancel))
-                }
-            },
+/**
+ * 颜色模式选择卡（[BottomSelectSheet] 变体，本页私有）：内容为 [BottomSelectCard] 白卡内
+ * 纵向无缝堆叠的三行模式（跟随系统/浅色/深色），行语言与 SelectCard 一致——选中行文字
+ * primary 色 + 行尾 ic_checkmark（20dp），选中过渡走 Motion.FastMillis 先快后慢。
+ *
+ * 草稿式：点行只改高亮草稿，**确认胶囊才经 [onConfirm] 交回选中模式**——宿主先收起
+ * 弹卡、等退场动画播完再全局应用，弹卡不会在退场途中先变色；取消/遮罩/返回键放弃草稿。
+ * 草稿在挂载期以 [mode] 为初值记忆，
+ * 弹卡移出组合（[onDismissed] 之后）再打开会重新对齐当前生效模式。
+ * 其余行为（两段式关闭、遮罩、卡片磨砂 [hazeState]、阴影参数 [shadowAlpha]）同
+ * [BottomSelectSheet]。
+ */
+@Composable
+private fun ThemeModeSelectCard(
+    visible: Boolean,
+    mode: ThemeMode,
+    onConfirm: (ThemeMode) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    onDismissed: () -> Unit = {},
+    hazeState: HazeState? = null,
+    shadowAlpha: Float = 0.3f,
+) {
+    var draft by remember { mutableStateOf(mode) }
+    BottomSelectSheet(
+        title = stringResource(R.string.appearance_theme_mode),
+        visible = visible,
+        onDismiss = onDismiss,
+        onDismissed = onDismissed,
+        shadowAlpha = shadowAlpha,
+        hazeState = hazeState,
+        modifier = modifier,
+        onConfirm = { onConfirm(draft) },
+    ) {
+        BottomSelectCard {
+            ThemeMode.entries.forEach { candidate ->
+                ThemeModeRow(
+                    label = stringResource(candidate.labelRes),
+                    selected = candidate == draft,
+                    onClick = { draft = candidate },
+                )
+            }
+        }
+    }
+}
+
+/** 模式行：文字占满、勾贴行尾（同 SelectCard 行的选中动效与按压反馈） */
+@Composable
+private fun ThemeModeRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    // 浅色模式下白底行加色白提亮无感（白色无法更亮），改用微微压暗表达按压；深色模式仍提亮
+    val rowShade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
+    val textColor by animateColorAsState(
+        targetValue = if (selected) colors.primary else colors.onSurface,
+        animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
+        label = "themeModeText",
+    )
+    // 勾随选中缩放出现/消失；恒在组合内（勾贴行尾，占位不推动文字），退场动画才有得播
+    val checkScale by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
+        label = "themeModeCheck",
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pressClickable(RectangleShape, shade = rowShade, onClick = onClick)
+            .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.classppTextStyles.fieldLabel,
+            color = textColor,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            painter = painterResource(R.drawable.ic_checkmark),
+            contentDescription = null,
+            tint = colors.primary,
+            modifier = Modifier
+                .size(20.dp)
+                .graphicsLayer {
+                    scaleX = checkScale
+                    scaleY = checkScale
+                    alpha = checkScale
+                },
         )
     }
 }
