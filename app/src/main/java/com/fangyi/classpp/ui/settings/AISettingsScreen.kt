@@ -33,7 +33,6 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiConnection
 import com.fangyi.classpp.data.ai.AiProfile
-import com.fangyi.classpp.data.ai.AiProviderPresets
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
@@ -200,14 +199,13 @@ fun AISettingsScreen(
                 }
 
                 else -> {
-                    // 展示用：当前方案名（活动方案名 / 自定义）与「服务商 · 模型」摘要
+                    // 展示用：当前方案名（活动方案名 / 自定义）与模型名摘要
                     val customLabel = stringResource(R.string.ai_profile_custom)
                     val activeProfileName = activeProfileId
                         ?.let { id -> profiles.firstOrNull { it.id == id }?.name }
                         ?: customLabel
-                    val providerLabel = AiProviderPresets.byId(activeConnection.providerId).label
                     val profileDescription = if (activeConnection.isConfigured) {
-                        "$providerLabel · ${activeConnection.model}"
+                        activeConnection.model
                     } else {
                         stringResource(R.string.ai_profile_entry_desc)
                     }
