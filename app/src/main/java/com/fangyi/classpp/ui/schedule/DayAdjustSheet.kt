@@ -36,6 +36,7 @@ import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.OverlaySheet
+import com.fangyi.classpp.ui.components.SelectionGrid
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetCard
@@ -104,6 +105,7 @@ internal fun DayAdjustSheet(
 
     val context = LocalContext.current
     val weekdayNames = stringArrayResource(R.array.weekdays)
+    val weekdaysShort = stringArrayResource(R.array.weekdays_short).toList()
     val emptyText = stringResource(R.string.error_day_adjust_empty)
     val unchangedText = stringResource(R.string.error_day_adjust_unchanged)
     val targetInvalidText = stringResource(R.string.error_day_adjust_target_invalid)
@@ -183,8 +185,11 @@ internal fun DayAdjustSheet(
             )
 
             CardSection(title = stringResource(R.string.day_adjust_section_source)) {
+                // 星期选择用内联方格而不是 SettingsCardItem.Select：后者会开一个独立的
+                // Popup 窗口，Haze 2 在该窗口与浮层内容同帧增删时会构建自引用 RenderNode，
+                // RenderThread 在 prepareTreeImpl 无限递归、栈溢出闪退
+                // （同 .zcode/device-logs/crash-analysis-20261031.md 的失败模式）。
                 SettingsCard(
-                    hazeState = sheetHazeState,
                     items = listOf(
                         SettingsCardItem.Nav(
                             label = stringResource(R.string.day_adjust_source_week),
@@ -194,21 +199,20 @@ internal fun DayAdjustSheet(
                                 sourceWeekPickerVisible = true
                             },
                         ),
-                        SettingsCardItem.Select(
-                            label = stringResource(R.string.day_adjust_source_day),
-                            value = weekdayNames.getOrElse(sourceDay - 1) { "" },
-                            items = (1..7).map { it to weekdayNames[it - 1] },
-                            selectedId = sourceDay,
-                            onPick = { picked ->
-                                // 原日改到与目标同一天时目标顺延一天，避免默认落到"无变化"
-                                if (targetWeek == sourceWeek && targetDay == picked) {
-                                    targetDay = picked % 7 + 1
-                                }
-                                sourceDay = picked
-                                touched = true
-                            },
-                        ),
                     ),
+                )
+                SelectionGrid(
+                    values = (1..7).toList(),
+                    labels = weekdaysShort,
+                    selected = setOf(sourceDay),
+                    onToggle = { picked ->
+                        // 原日改到与目标同一天时目标顺延一天，避免默认落到"无变化"
+                        if (targetWeek == sourceWeek && targetDay == picked) {
+                            targetDay = picked % 7 + 1
+                        }
+                        sourceDay = picked
+                        touched = true
+                    },
                 )
                 if (plan.occurrences.isEmpty()) {
                     SheetInfoBanner(text = stringResource(R.string.day_adjust_empty))
@@ -219,7 +223,6 @@ internal fun DayAdjustSheet(
 
             CardSection(title = stringResource(R.string.day_adjust_section_target)) {
                 SettingsCard(
-                    hazeState = sheetHazeState,
                     items = listOf(
                         SettingsCardItem.Nav(
                             label = stringResource(R.string.day_adjust_target_week),
@@ -229,17 +232,16 @@ internal fun DayAdjustSheet(
                                 targetWeekPickerVisible = true
                             },
                         ),
-                        SettingsCardItem.Select(
-                            label = stringResource(R.string.day_adjust_target_day),
-                            value = weekdayNames.getOrElse(targetDay - 1) { "" },
-                            items = (1..7).map { it to weekdayNames[it - 1] },
-                            selectedId = targetDay,
-                            onPick = { picked ->
-                                targetDay = picked
-                                touched = true
-                            },
-                        ),
                     ),
+                )
+                SelectionGrid(
+                    values = (1..7).toList(),
+                    labels = weekdaysShort,
+                    selected = setOf(targetDay),
+                    onToggle = { picked ->
+                        targetDay = picked
+                        touched = true
+                    },
                 )
                 if (plan.occurrences.isNotEmpty()) {
                     SheetInfoBanner(

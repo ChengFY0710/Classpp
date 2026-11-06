@@ -35,6 +35,9 @@ private const val CellsPerRowMin = 6
 private val GridCellGap = 6.dp
 private val GridCellMaxWidth = 60.dp
 
+/** 是否含中文（CJK 统一表意文字），用于选择降字号（中文格子走 [ClassppTextTokens.weekCellChinese]） */
+private fun String.hasChinese(): Boolean = any { it in '\u4E00'..'\u9FFF' }
+
 /**
  * 选择方格：卡片内的方格阵列多选控件（课程编辑的周数方格同款，重复设置复用）。
  * 卡片壳与 [SettingsCard] 同规格（surface 底 + [SettingsCardShape] 连续曲率圆角），
@@ -45,7 +48,8 @@ private val GridCellMaxWidth = 60.dp
  * 再点取消；[blocked] 里的值灰显不可点（如已被同格其它交替课占用的周）。
  *
  * [labels] 与 [values] 一一对应，为各格展示文字（周数方格即数字本身，重复设置的星期
- * 是「一/二/…」、月份是「N月」）。布局：每行最少 [CellsPerRowMin] 格，按卡内可用宽均分、
+ * 是「一/二/…」、月份是「N月」）；标签含中文时用 17sp 特殊展示字号（[ClassppTextTokens.weekCellChinese]），
+ * 纯数字保持 20sp。布局：每行最少 [CellsPerRowMin] 格，按卡内可用宽均分、
  * 单格宽超 [GridCellMaxWidth] 就加列，末行补空位保证每格同宽同高。选中/取消走 150ms
  * 颜色渐变，背景与字色同步过渡（[Motion.FastMillis] 先快后慢）；按压反馈铺满格子
  * （pressClickable 取代涟漪）。
@@ -114,9 +118,16 @@ fun SelectionGrid(
                                     .background(cellColor),
                                 contentAlignment = Alignment.Center,
                             ) {
+                                val label = labels[index]
+                                // 中文比数字宽：两字中文（「N月」）按 20sp 会贴边，换 17sp 特殊展示字号
+                                val labelStyle = if (label.hasChinese()) {
+                                    ClassppTextTokens.weekCellChinese
+                                } else {
+                                    ClassppTextTokens.weekCell
+                                }
                                 Text(
-                                    text = labels[index],
-                                    style = ClassppTextTokens.weekCell.copy(
+                                    text = label,
+                                    style = labelStyle.copy(
                                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                                     ),
                                     color = labelColor,

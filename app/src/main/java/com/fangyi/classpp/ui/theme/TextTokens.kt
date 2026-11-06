@@ -11,7 +11,8 @@ import androidx.compose.ui.unit.sp
  * 取值说明：
  * - 方案 B 阶梯：UI 文字 `11 / 12 / 14 / 16 / 20 / 23sp`，展示数字 `32 / 52 / 64sp`。
  * - 特殊展示字号（不进入常规阶梯）：`24sp` 仅台历日期副标题（[calendarSubtitle]）；
- *   `17sp` 仅课表页顶栏周数选择胶囊（[weekPill]）与课表日期带（[courseGridDate]）；
+ *   `17sp` 仅课表页顶栏周数选择胶囊（[weekPill]）、课表日期带（[courseGridDate]）
+ *   与选择方格中文标签（[weekCellChinese]）；
  *   `22sp` 仅周数选择卡内数字（[weekGridNumber]）；`40sp` 仅横向数字滚轮（[horizontalWheelNumber]）。
  * - 中文正文/描述字距统一 `0sp`；只有 ≥20sp 的展示标题保留负字距，
  *   14sp 动作标签（[actionLabel]）用 `0.8sp` 正字距补齐小字可读性。
@@ -153,6 +154,8 @@ object ClassppTextTokens {
     val weekGridNumber = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 周数/重复设置方格：20sp Medium。 */
     val weekCell = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
+    /** 选择方格中文标签（星期「一」、月份「1月」）：17sp Medium，中文比数字宽，用特殊展示字号降一档防贴边。 */
+    val weekCellChinese = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 课表日期带日期行：17sp Medium，特殊展示字号（与周数选择胶囊同档）。 */
     val courseGridDate = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 时间轴刻度：12sp Medium，等宽数字。 */
