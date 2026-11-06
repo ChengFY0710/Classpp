@@ -1287,7 +1287,7 @@ internal fun DayScreen(
                                 }
                                 .hazeBlur(
                                     input = hazeSources(imageHazeState),
-                                    style = dayBandStyle(),
+                                    style = DayBandStyle,
                                     performanceMode = HazePerformanceMode.Balanced,
                                 ),
                         )
@@ -1339,7 +1339,7 @@ internal fun DayScreen(
                         }
                         .hazeBlur(
                             input = hazeSources(imageHazeState),
-                            style = dayTopScrimStyle(),
+                            style = DayTopScrimStyle,
                             performanceMode = HazePerformanceMode.Balanced,
                         ),
                 )
@@ -2343,8 +2343,11 @@ private fun DayTopBar(
     }
 }
 
-/** 01 顶部磨砂配方：顶部最强向下渐隐，黑色 tint 24%（照片底恒定用黑，不随主题）。 */
-private fun dayTopScrimStyle(): HazeBlurStyle = HazeBlurStyle {
+/**
+ * 01 顶部磨砂配方：顶部最强向下渐隐，黑色 tint 24%（照片底恒定用黑，不随主题）。
+ * 无参数、不读主题，提成单例共享；2.1 的 Style 按 identity 比较，单例天然稳定。
+ */
+private val DayTopScrimStyle: HazeBlurStyle = HazeBlurStyle {
     blurRadius(25.dp)
     progressive(HazeProgressive.verticalGradient(startIntensity = 1f, endIntensity = 0f))
     colorEffects(listOf(HazeColorEffect.tint(Color.Black.copy(alpha = 0.24f))))
@@ -2352,7 +2355,7 @@ private fun dayTopScrimStyle(): HazeBlurStyle = HazeBlurStyle {
 }
 
 /** 图片卡下段模糊带：只出模糊，tint 由 drawWithContent 的渐变叠层按进度控制。 */
-private fun dayBandStyle(): HazeBlurStyle = HazeBlurStyle {
+private val DayBandStyle: HazeBlurStyle = HazeBlurStyle {
     blurRadius(25.dp)
     progressive(HazeProgressive.verticalGradient(startIntensity = 0f, endIntensity = 1f))
     noiseFactor(0f)
