@@ -30,3 +30,6 @@ local.properties
 /.idea/deviceManager.xml
 /.idea/misc.xml
 /.idea/runConfigurations.xml
+
+# 构建产物：release APK / 混淆映射 / 元数据，不入库（本地保留）
+/app/release/
