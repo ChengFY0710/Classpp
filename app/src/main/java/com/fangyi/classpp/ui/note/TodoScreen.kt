@@ -1709,8 +1709,8 @@ private fun TodoInboxContent(
  * 前移的「下一期」）才淡入，两段内容几乎相同的交叉动画错开，完成不再读作闪烁。
  * 分区头与卡片、常规列表与最近删除页共用同一套，同屏节奏才一致。
  *
- * 避让收拢另有一条删除帧专用的延迟变体 [TodoListPlaceDelayedSpec]（见 [TodoList] 的
- * 删除帧判定）：退场卡完整谢幕之后，其余条目再滑合缺口。
+ * 避让收拢另有一条退场帧专用的延迟变体 [TodoListPlaceDelayedSpec]（见 [TodoList] 的
+ * 退场帧判定）：退场卡完整谢幕之后，其余条目再滑合缺口。
  */
 private val TodoListFadeInSpec: FiniteAnimationSpec<Float> =
     tween(
@@ -1723,10 +1723,13 @@ private val TodoListPlaceSpec: FiniteAnimationSpec<IntOffset> =
     tween(durationMillis = Motion.TodoCardPlaceMillis, easing = Motion.Decelerate)
 
 /**
- * 删除帧的避让规格：与 [TodoListPlaceSpec] 同时长、同曲线，只多
+ * 退场帧的避让规格：与 [TodoListPlaceSpec] 同时长、同曲线，只多
  * [Motion.TodoCardPlaceDelayMillis] 启动延迟——条目移除当帧占位即释放，若避让同帧起步，
  * 淡出中的旧卡与滑上的邻居会整段交叠；延迟让「退场卡先消失、其余条目再靠拢」两段先后
- * 播放。只在列表变短的那一帧启用（见 [TodoList]），新增/排序等避让不受影响。
+ * 播放。只在有条目退场的那一帧启用（key 集缺项，见 [TodoList] 的退场帧判定）：侧滑删除/
+ * 撤回/彻底删除/取消归档等列表变短的帧，以及勾选完成/取消完成的 #done 换位、分组折叠、
+ * 分类菜单显隐、退出编辑收回折叠卡这些条数不变但有卡退场的帧；新增/排序/跨组移动等
+ * key 集不变的位移不受影响。
  */
 private val TodoListPlaceDelayedSpec: FiniteAnimationSpec<IntOffset> =
     tween(
@@ -1739,12 +1742,12 @@ private val TodoListFadeOutSpec: FiniteAnimationSpec<Float> =
     tween(durationMillis = Motion.TodoCardExitMillis, easing = Motion.Accelerate)
 
 /**
- * 上一次组合的列表条数（[TodoList] 的删除帧判定读它）。用普通对象而不是快照状态：它只
- * 服务本帧的动画规格选择，写它不该也不必触发重组——若用快照状态，每帧都会因自己的写入
- * 再排一轮重组，反而把动画起步拖后。
+ * 上一次组合渲染的列表条目 key 集（[TodoList] 的退场帧判定读它）。用普通对象而不是快照
+ * 状态：它只服务本帧的动画规格选择，写它不该也不必触发重组——若用快照状态，每帧都会因
+ * 自己的写入再排一轮重组，反而把动画起步拖后。
  */
-private class TodoListSizeMemory(initial: Int) {
-    var value = initial
+private class TodoListKeysMemory(initial: Set<String>) {
+    var keys: Set<String> = initial
 }
 
 /** 完成副本与未完成副本共享的基础 key（不含完成态段）：待办 id + 分期日期后缀（同侧滑互斥 key 口径） */
@@ -1769,6 +1772,53 @@ private fun Todo.listItemKeyBase(): String =
 private fun Todo.listItemKey(flyDoneKeys: Set<String>): String {
     val base = listItemKeyBase()
     return if (completed && base !in flyDoneKeys) base + "#done" else base
+}
+
+/**
+ * 本帧 [TodoList] 将渲染的 LazyColumn 条目 key 清单——与 [TodoList] 内 LazyColumn 构建块
+ * 逐分支镜像（回收站 / 已归档 / 常规分区，含空态与提示条 item）。退场帧判定（见 [TodoList]）
+ * 拿它和上一帧的 key 集（[TodoListKeysMemory]）对比：任一上帧 key 本帧缺席即「有条目退场」
+ * ——勾选完成/取消完成的 #done 换位、分组折叠、分类菜单显隐、退出编辑收回折叠卡这些
+ * 「条数不变但有卡退场」的帧由此不再漏判（旧实现只比条数，退场卡淡出时邻居同帧上移交叠）。
+ * 改动 LazyColumn 内容结构（增删 item 分支、改渲染条件、改 key 口径）时必须同步本函数，
+ * 否则退场帧漏判（重叠回归）或误判（无退场的位移被无谓拖后一拍）。
+ */
+private fun todoListItemKeys(
+    todos: List<Todo>,
+    sections: List<Pair<TodoSection, List<Todo>>>,
+    flyDoneKeys: Set<String>,
+    collapsedSections: Set<TodoSection>,
+    editing: Boolean,
+    deletedCards: Boolean,
+    archivedCards: Boolean,
+    emptyHint: String?,
+): List<String> = buildList {
+    when {
+        deletedCards ->
+            if (todos.isEmpty()) {
+                add("trashEmptyState")
+            } else {
+                add("trashRetentionBanner")
+                todos.forEach { add(it.listItemKey(flyDoneKeys)) }
+            }
+
+        archivedCards ->
+            if (todos.isNotEmpty()) {
+                todos.forEach { add(it.listItemKey(flyDoneKeys)) }
+            } else if (emptyHint != null) {
+                add("archivedEmptyState")
+            }
+
+        else -> {
+            if (sections.isEmpty() && emptyHint != null) add("emptyHint")
+            sections.forEach { (section, group) ->
+                add("header_" + section.name)
+                if (editing || section !in collapsedSections) {
+                    group.forEach { add(it.listItemKey(flyDoneKeys)) }
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -1918,9 +1968,10 @@ internal fun filterTodosByTag(todos: List<Todo>, tag: String): List<Todo> =
  * [Todo.listItemKey]），每项挂 Modifier.animateItem——进出场淡入淡出与邻居避让收拢
  * 全走 [TodoListFadeInSpec] / [TodoListPlaceSpec] / [TodoListFadeOutSpec] 三条规格
  * （Motion.TodoCard* 令牌）：勾选完成/侧滑删除/置顶的跨组移动 = 原组退场 + 新组进场
- * 两侧同时收拢，排序切换 = 组内避让，整组清空 = 分区头与余卡一起淡出。删除帧例外：
- * 本页条数变短的那一帧改用延迟启动的 [TodoListPlaceDelayedSpec]——退场卡先完整谢幕、
- * 余卡再滑合缺口（判定见 [TodoList] 内「删除帧判定」处）。分组/页面级
+ * 两侧同时收拢，排序切换 = 组内避让，整组清空 = 分区头与余卡一起淡出。退场帧例外：
+ * 有条目退场的那一帧（key 集缺项，含条数变短与 #done 换位/折叠/分类显隐这些条数不变的
+ * 退场）改用延迟启动的 [TodoListPlaceDelayedSpec]——退场卡先完整谢幕、
+ * 余卡再滑合缺口（判定见 [TodoList] 内「退场帧判定」处）。分组/页面级
  * 切换不经过条目动画——宿主以 CrossPages 按页叠放、整页交叉过渡（见 TodoScreen），
  * 本组件的条目进出场只服务页内增删移与折叠。折叠即宿主停止
  * 下发该组卡片项，收合同样由避让动画完成——分区头照常渲染（见 [NoteCardSectionHeader]），
@@ -2046,15 +2097,28 @@ private fun TodoList(
             )
         onToggleCompleted(todo, completed, flyIntoDone)
     }
-    // 删除帧判定：本页待办条数较上一次组合减少 = 有卡片退场（侧滑删除 / 撤回 / 彻底删除 /
-    // 取消归档），这一帧里其余条目的避让要延迟启动，等退场卡按 [TodoListFadeOutSpec] 完整
-    // 谢幕再滑合缺口（规格见 [TodoListPlaceDelayedSpec]）。条数不变的变化（勾选完成、置顶、
-    // 排序、折叠）不在此列——那些位移仍要同帧跟手
-    val lastTodosSize = remember { TodoListSizeMemory(todos.size) }
-    val removalFrame = todos.size < lastTodosSize.value
-    lastTodosSize.value = todos.size
-    // 本帧列表项共用的避让规格：删除帧延迟启动，其余（新增 / 排序 / 跨组移动 / 折叠）
-    // 维持同帧起步——那些位移要立即反馈，拖后一拍反而显慢
+    // 退场帧判定：本帧渲染条目的 key 集较上一次组合缺了条目 = 有条目退场——不止列表变短
+    // 的帧（侧滑删除 / 撤回 / 彻底删除 / 取消归档），勾选完成/取消完成的 #done 换位、分组
+    // 折叠、分类菜单显隐、退出编辑收回折叠卡这些「条数不变但有卡退场」的帧同样算数。退场
+    // 卡要按 [TodoListFadeOutSpec] 谢幕 TodoCardExitMillis，若其余条目同帧滑合，淡出中的卡
+    // 与上移的邻居整段交叠（旧实现只比条数，漏判的正是后一类帧）——延迟规格让退场先谢幕、
+    // 余卡再靠拢。key 清单与 [TodoListKeysMemory] 见 [todoListItemKeys]
+    val itemKeys = todoListItemKeys(
+        todos = todos,
+        sections = sections,
+        flyDoneKeys = flyDoneKeys,
+        collapsedSections = collapsedSections,
+        editing = editing,
+        deletedCards = deletedCards,
+        archivedCards = archivedCards,
+        emptyHint = emptyHint,
+    )
+    val keySet = itemKeys.toHashSet()
+    val lastItemKeys = remember { TodoListKeysMemory(keySet) }
+    val removalFrame = lastItemKeys.keys.any { it !in keySet }
+    lastItemKeys.keys = keySet
+    // 本帧列表项共用的避让规格：退场帧延迟启动；其余（新增 / 排序 / 跨组移动 / 同 key 飞入
+    // 已完成组——key 集不变、无条目退场）维持同帧起步，立即反馈的位移不拖后一拍
     val placeSpec: FiniteAnimationSpec<IntOffset> =
         if (removalFrame) TodoListPlaceDelayedSpec else TodoListPlaceSpec
     RubberBandLazyColumn(
@@ -2073,7 +2137,7 @@ private fun TodoList(
             // 末卡不带）——顺序由宿主按删除时刻倒序给定，与「最近删除」的时间语义一致；
             // 空列表沿用统一的居中占位文案（提示条与占位同处一个 item，占位仍在剩余空间
             // 居中，不因提示条把整页撑出可滚动的一屏）。撤回/彻底删除后卡片走 animateItem
-            // 退场，其余卡片等它谢幕完再避让收拢（删除帧的延迟规格）
+            // 退场，其余卡片等它谢幕完再避让收拢（退场帧的延迟规格）
             if (todos.isEmpty()) {
                 item(key = "trashEmptyState") {
                     Column(Modifier.fillParentMaxSize()) {
@@ -2128,7 +2192,7 @@ private fun TodoList(
             // 已归档页：逐卡平铺（无四组分组头；归档无保留期语义，也没有回收站那条提示条）
             // ——顺序由宿主按归档时刻倒序给定（最近归档的在最前），卡片为已归档样式
             // （右侧取消归档按钮；左滑软删进最近删除，归档标记保留）；取消归档/删除后卡片
-            // 走 animateItem 退场，其余卡片等它谢幕完再避让收拢（删除帧的延迟规格）。空页
+            // 走 animateItem 退场，其余卡片等它谢幕完再避让收拢（退场帧的延迟规格）。空页
             // 给居中占位文案（与特殊分组页共用 emptyHint）
             if (todos.isEmpty()) {
                 if (emptyHint != null) {
