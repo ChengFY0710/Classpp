@@ -34,6 +34,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.alarm.AlarmClockPlanner
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TimeText
@@ -149,6 +150,10 @@ internal fun TodoDetailSheet(
     // 把本待办写入系统日历（权限请求/账户选择/写入与 Toast 均由宿主编排）；所有待办
     // 都可写入（没有日期时落在截止日期、再退到当天），本回调在可点时总会被触发
     onAddToCalendar: () -> Unit,
+    // 「添加到闹钟」（更多菜单项）：把待办映射为系统时钟的一次性闹钟（截止时刻优先、
+    // 回退待办开始时刻，见 AlarmClockPlanner）；Intent 启动与 Toast 由宿主经
+    // rememberAddToAlarm 编排。无时刻或已完成的待办菜单项置灰，本回调不会被触发
+    onAddToAlarm: () -> Unit,
     // 当前视图是否提供倒计时开关：收集箱卡不渲染倒计时（TodoInboxCard 组件口径），
     // 从收集箱打开的详情传 false 把「开启倒计时」整体置灰（开关无可视反馈）
     countdownAvailable: Boolean = true,
@@ -255,6 +260,11 @@ internal fun TodoDetailSheet(
                         // （calendarAvailable = false）时置灰
                         calendarEnabled = calendarAvailable,
                         onAddToCalendar = onAddToCalendar,
+                        // 有截止时刻（优先）或待办开始时刻、且未完成时可点：系统闹钟只取
+                        // 「时:分」，具体日期不参与映射（见 AlarmClockPlanner）
+                        alarmEnabled = !todo.completed &&
+                            AlarmClockPlanner.minuteOf(todo) != null,
+                        onAddToAlarm = onAddToAlarm,
                         // 无截止日期、已标记完成或当前视图不显示倒计时（收集箱）：倒计时
                         // 项置灰不可点（无截止时仓库不变式也保证开关必为 false；完成后仅
                         // 禁用入口，开关值原样保留，取消完成即恢复可点）
@@ -478,7 +488,9 @@ internal fun TodoDetailSheet(
  *
  * 条目：添加到日历（[calendarEnabled] = false 即宿主没有日历编排上下文时置灰不可点；
  * 可时点按交 [onAddToCalendar] 由宿主写入系统日历，流程见 CalendarAddFlow——待办页与日程页
- * 两个详情浮层共用同一套）；倒计时在
+ * 两个详情浮层共用同一套）；添加到闹钟（[alarmEnabled] = false 即无截止时刻/待办开始时刻
+ * 或该待办已标记完成时置灰不可点；可时点按交 [onAddToAlarm]，由宿主经 rememberAddToAlarm
+ * 写入系统时钟的一次性闹钟——静默添加、不设重复星期）；倒计时在
  * [countdownEnabled] 为 false（无截止日期、该待办已标记完成，或当前视图不显示倒计时）
  * 时置灰不可点（`classppColors.negative`）、可点时点按把新开关值交 [onCountdownToggle]
  * 落库；文案：置灰时恒显「开启倒计时」（不暴露「关闭」误导用户以为还能操作），
@@ -493,15 +505,18 @@ private fun TitleMoreMenu(
     hazeState: HazeState,
     calendarEnabled: Boolean,
     onAddToCalendar: () -> Unit,
+    alarmEnabled: Boolean,
+    onAddToAlarm: () -> Unit,
     countdownEnabled: Boolean,
     countdownOn: Boolean,
     onCountdownToggle: (Boolean) -> Unit,
     onArchive: () -> Unit,
 ) {
     val gapPx = with(LocalDensity.current) { TitleMenuGap.roundToPx() }
-    // 三项动作都随落库重写本浮层内容列（被采样源：日历事件落待办、倒计时标签显隐、
-    // 归档让详情与列表条目消失），菜单退场活采样期间不可撞：延后到退场播完
-    // （PopupActionGate，机制见 PopupMenuPopup KDoc）
+    // 日历/倒计时/归档三项动作都随落库重写本浮层内容列（被采样源：日历事件落待办、
+    // 倒计时标签显隐、归档让详情与列表条目消失），菜单退场活采样期间不可撞：延后到
+    // 退场播完（PopupActionGate，机制见 PopupMenuPopup KDoc）。「添加到闹钟」只拉起
+    // 外部时钟应用、不改写采样源，收起菜单后直接执行
     val rewriteGate = rememberPopupActionGate()
     PopupMenuPopup(
         expanded = expanded,
@@ -520,6 +535,18 @@ private fun TitleMoreMenu(
                         onClick = {
                             onDismiss()
                             rewriteGate.defer(onAddToCalendar)
+                        },
+                    ),
+                    // 添加到闹钟：按截止时刻（优先）或待办开始时刻写入系统时钟的一次性
+                    // 闹钟；无时刻或已完成时置灰。拉起外部时钟应用不改写本浮层采样源，
+                    // 收起菜单后直接执行，不走 rewriteGate
+                    PopupMenuItem(
+                        label = stringResource(R.string.todo_menu_add_to_alarm),
+                        icon = R.drawable.ic_clock_alarm,
+                        enabled = alarmEnabled,
+                        onClick = {
+                            onDismiss()
+                            onAddToAlarm()
                         },
                     ),
                     PopupMenuItem(

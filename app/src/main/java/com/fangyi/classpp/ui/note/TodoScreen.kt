@@ -476,6 +476,9 @@ fun TodoScreen(
     // 权限/列账户/写入/账户选择卡全在 CalendarAddFlow 编排（与日程页详情共用同一套），
     // 这里取状态与总入口
     val calendarAdd = rememberCalendarAddState()
+    // 「添加到闹钟」（详情菜单项）：目标时刻映射（截止优先、回退开始）与结果 Toast
+    // 收口在 AddToAlarmFlow
+    val addToAlarm = rememberAddToAlarm()
 
     // 标签写回统一入口（分组浮层标签编辑态底栏触发）：标签库先落盘，待办侧回写随后——
     // tags.json 与 todos.json 两个文件无法同一次提交原子落盘，两步各自失败都 Toast 提示
@@ -1335,6 +1338,9 @@ fun TodoScreen(
                 // 传详情快照 detail（单元素列表，批量入口见编辑顶栏「同步」），写入目标
                 // 锁定点菜单那一刻的内容
                 onAddToCalendar = { calendarAdd.begin(listOf(detail)) },
+                // 「添加到闹钟」（详情菜单项）：按截止时刻（优先）或开始时刻把待办写入
+                // 系统时钟的一次性闹钟，跳转与 Toast 由 AddToAlarmFlow 编排
+                onAddToAlarm = { addToAlarm(detail) },
                 // 「归档」（详情菜单项）：落库后待办移入已归档页，本浮层随活跃列表反查
                 // 落空自动收起（同删除后详情的收场路径）；目标 id 同步显式清空——归档条目
                 // 取消归档后会重回活跃列表，残留 id 会让浮层凭空重新弹出；Err Toast 提示、

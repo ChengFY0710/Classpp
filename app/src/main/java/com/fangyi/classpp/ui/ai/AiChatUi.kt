@@ -485,7 +485,7 @@ internal fun AiChatNotConfigured(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Icon(
-            painter = painterResource(R.drawable.ic_chat_multiple),
+            painter = painterResource(R.drawable.ic_ai),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(44.dp),

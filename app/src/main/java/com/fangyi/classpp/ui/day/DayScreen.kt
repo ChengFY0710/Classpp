@@ -163,6 +163,7 @@ import com.fangyi.classpp.ui.note.CalendarPickerHost
 import com.fangyi.classpp.ui.note.NewTodoSheet
 import com.fangyi.classpp.ui.note.TodoDetailSheet
 import com.fangyi.classpp.ui.note.deadlineColor
+import com.fangyi.classpp.ui.note.rememberAddToAlarm
 import com.fangyi.classpp.ui.note.rememberCalendarAddState
 import com.fangyi.classpp.ui.note.repeatCardText
 import com.fangyi.classpp.ui.note.toAbsoluteDateText
@@ -316,6 +317,8 @@ internal fun DayScreen(
     // 「添加到日历」流程（待办详情菜单项唤起）：权限/列账户/写入/账户选择卡全在
     // CalendarAddFlow 编排（与待办页详情共用同一套），这里取状态与总入口
     val calendarAdd = rememberCalendarAddState()
+    // 「添加到闹钟」（待办详情菜单项）：目标时刻映射与结果 Toast 收口在 AddToAlarmFlow
+    val addToAlarm = rememberAddToAlarm()
 
     // 用户图片库与当前背景：持久化快照由 MainActivity 在 IO 线程预读后传入，
     // 之后改动即时落盘（DayImageStore）。key 用 initialData：数据管理页导入备份后
@@ -1817,6 +1820,9 @@ internal fun DayScreen(
                     // 传详情快照 detail（单元素列表，流程本身按待办列表批量写入），
                     // 写入目标锁定点菜单那一刻的内容
                     onAddToCalendar = { calendarAdd.begin(listOf(detail)) },
+                    // 「添加到闹钟」（详情菜单项）：按截止时刻（优先）或开始时刻把待办
+                    // 写入系统时钟的一次性闹钟，跳转与 Toast 由 AddToAlarmFlow 编排
+                    onAddToAlarm = { addToAlarm(detail) },
                     // 「归档」（详情菜单项）：落库后待办移入已归档页，本浮层随活跃列表反查
                     // 落空自动收起（同待办页详情的收场路径）；目标 id 同步显式清空——归档
                     // 条目取消归档后会重回活跃列表，残留 id 会让浮层凭空重新弹出；

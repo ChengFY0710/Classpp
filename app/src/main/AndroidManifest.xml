@@ -16,6 +16,11 @@
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
 
+    <!-- 待办添加到系统闹钟（AlarmClock.ACTION_SET_ALARM）：AOSP/小米等时钟应用的
+         HandleSetAlarmActivity 以该普通权限做调用方校验，未声明会 SecurityException；
+         普通权限安装即授予，无运行时弹窗 -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+
     <!-- 通知与提醒：发系统通知（API 33+ 运行时授权，UI 层请求）、开机后重排提醒闹钟。
          精确闹钟：SCHEDULE_EXACT_ALARM 覆盖 12/12L（彼时声明即默认授予）；USE_EXACT_ALARM
          覆盖 13+（自动授予，适用类目即日历/闹钟/日程提醒类应用，无需用户操作）。

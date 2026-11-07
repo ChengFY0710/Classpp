@@ -70,6 +70,7 @@ import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.note.NewTodoSheet
 import com.fangyi.classpp.ui.note.TodoDetailSheet
+import com.fangyi.classpp.ui.note.rememberAddToAlarm
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
@@ -141,6 +142,9 @@ fun AiChatOverlay(
     val saveFailedMessage = stringResource(R.string.todo_error_save_failed)
     val stepDeletedMessage = stringResource(R.string.toast_todo_step_deleted)
     val archivedMessage = stringResource(R.string.toast_todo_archived)
+    // 「添加到闹钟」（待办详情菜单项）：目标时刻映射与结果 Toast 收口在 AddToAlarmFlow；
+    // 与日历不同，闹钟不需要权限/账户编排上下文，AI 浮层同样可用
+    val addToAlarm = rememberAddToAlarm()
 
     val messages by aiChatRepository?.messages?.collectAsState()
         ?: remember { mutableStateOf(emptyList<AiChatMessage>()) }
@@ -799,6 +803,8 @@ fun AiChatOverlay(
                 // AI 浮层没有日历权限/账户选择编排上下文：菜单项置灰，不提供假入口
                 calendarAvailable = false,
                 onAddToCalendar = {},
+                // 「添加到闹钟」只拉起系统时钟（无需权限/编排上下文），AI 浮层照常可用
+                onAddToAlarm = { addToAlarm(detail) },
             )
         }
     }
