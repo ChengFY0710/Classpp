@@ -90,7 +90,7 @@ private val AuroraHeadroom = 120.dp
  *   两层动效由 OverlaySheet 的 covered 机制同帧衔接；
  * - 顶栏（同其它浮层的顶栏规格）：左上蓝「对话」= 打开「所有对话」管理浮层
  *   （[AiConversationsSheet]，叠在本浮层之上、covered 后退分层动效）：新建 / 切换 /
- *   删除对话；没有对话时按钮保持可点但点击无反应（列表空无从管理，发消息会隐式
+ *   删除对话，新建/切换先收浮层、退场播完再落库（淡出期间对话内容不动）；没有对话时按钮保持可点但点击无反应（列表空无从管理，发消息会隐式
  *   建对话），不显示居中标题，右上白「关闭」收起浮层；
  * - AI 设置由设置页的「AI 设置」子页承载（设置 → AI 设置），浮层内不再有 ⚙ 入口：
  *   只有未配置引导卡经 [onOpenSettings] 请求宿主跳转（宿主先收起本浮层，再打开设置页
@@ -157,6 +157,11 @@ fun AiChatOverlay(
     // visible 请求进出场，mounted 是挂载快照（出场动画播完才卸载）
     var conversationsVisible by remember { mutableStateOf(false) }
     var conversationsMounted by remember { mutableStateOf(false) }
+    // 浮层退场后待落库的对话动作（新建/切换共用，同 SelectCard 的 pendingMenuAction）：
+    // 选了对话先播完浮层退场，onDismissed 才落仓库——淡出期间对话内容与列表高亮不中途
+    // 变化。其余关闭路径（右上关闭/返回键/拖拽/主浮层外部收起/删光自动收）不置位，
+    // 退场后无动作
+    var pendingConversationAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     // 详情/编辑目标两态口径（同 TodoScreen 的 detail/edit）：id 是期望目标，mounted 是
     // 挂载快照（详情随仓库回流刷新，编辑表单只取一次初值）
     var detailTodoId by remember { mutableStateOf("") }
@@ -238,22 +243,21 @@ fun AiChatOverlay(
         conversationsVisible = true
     }
 
-    /** 新建对话并关闭管理浮层：新对话为空态，发首条消息时由仓库自动命名 */
+    /**
+     * 新建对话：先收管理浮层，退场播完（onDismissed）再落仓库——新对话为空态，
+     * 发首条消息时由仓库自动命名
+     */
     fun createConversation() {
         val repository = aiChatRepository ?: return
-        scope.launch {
-            repository.createConversation()
-            conversationsVisible = false
-        }
+        pendingConversationAction = { scope.launch { repository.createConversation() } }
+        conversationsVisible = false
     }
 
-    /** 切换对话并关闭管理浮层（同切换课表：切换即收） */
+    /** 切换对话：先收管理浮层，退场播完（onDismissed）再落仓库——淡出期间对话内容不动 */
     fun switchConversation(id: String) {
         val repository = aiChatRepository ?: return
-        scope.launch {
-            repository.switchConversation(id)
-            conversationsVisible = false
-        }
+        pendingConversationAction = { scope.launch { repository.switchConversation(id) } }
+        conversationsVisible = false
     }
 
     /** 删除对话：留在管理浮层，列表随仓库回流更新（删光由 LaunchedEffect 收起浮层） */
@@ -465,7 +469,12 @@ fun AiChatOverlay(
     if (conversationsMounted) {
         AiConversationsSheet(
             visible = visible && conversationsVisible,
-            onDismissed = { conversationsMounted = false },
+            onDismissed = {
+                conversationsMounted = false
+                // 选了对话的退场收口：浮层播完退场后才落仓库（新建/切换在此刻生效）
+                pendingConversationAction?.invoke()
+                pendingConversationAction = null
+            },
             conversations = conversations,
             activeConversationId = activeConversationId,
             onCreate = ::createConversation,
