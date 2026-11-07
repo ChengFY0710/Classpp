@@ -87,6 +87,12 @@ class AiChatRepository internal constructor(
     private val contextProvider: () -> AiChatContext,
     /** AI 创建待办的落库入口（AppContainer 接 TodoRepository.addTodos） */
     private val persister: AiTodoPersister,
+    /**
+     * 图片附件库（AppContainer 接 filesDir/ai_chat_images）：UI 借它导入相册/拍照图片，
+     * 发送时在锁内把消息引用的文件编码进请求。公开给 UI 是浮层直连仓库架构下的
+     * 服务定位（同 messages/sending 的取用方式）。
+     */
+    val imageStore: AiImageStore,
     private val clock: Clock = Clock.system,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
@@ -218,6 +224,13 @@ class AiChatRepository internal constructor(
         _messages.value = activeConversation()?.messages ?: emptyList()
         // 重新装载（备份恢复等）丢弃旧错误：归属对话可能已不在新库里
         clearLastError()
+        // 孤儿图片清理：persist 截最旧/装载降级后，历史已不引用的图片副本不再留着；
+        // 宽限期豁免「已导入未发送」的待发送图片（它们还没有消息引用）
+        withContext(Dispatchers.IO) {
+            val referenced = _conversations.value
+                .flatMap { conversation -> conversation.messages.flatMap { it.images } }
+            imageStore.deleteExcept(referenced.toHashSet(), minAgeMillis = ORPHAN_IMAGE_GRACE_MILLIS)
+        }
         if (migrated) persist()
         refreshConfigured()
     }
@@ -284,8 +297,11 @@ class AiChatRepository internal constructor(
     /**
      * UI 发送入口：Job 归仓库所有（不随浮层卸载/旋转取消），返回 null 表示已有
      * 发送在进行。异常不外抛——分类错误经 [lastError] 发布，停止走 [cancelSending]。
+     *
+     * @param images 随消息发送的图片附件（[AiImageStore] 目录内的文件名，UI 已导入完毕）
      */
-    fun sendInBackground(text: String): Job? = launchSend { send(text) }
+    fun sendInBackground(text: String, images: List<String> = emptyList()): Job? =
+        launchSend { send(text, images) }
 
     /** 同 [sendInBackground]，重试最后一场失败的对话 */
     fun retryInBackground(): Job? = launchSend { retryLast() }
@@ -332,11 +348,15 @@ class AiChatRepository internal constructor(
      * 对话借首条用户消息自动命名；流式增量按绑定的 id 定向落库——即使用户中途切换
      * 对话，回复仍完整落在发起时的对话里，不打扰当前显示。
      *
+     * 允许「有图无文本」（图片即提问）：正文与图片至少其一非空；纯图消息的对话名
+     * 借不到文本，保持未命名（UI 回落「新对话」）。
+     *
+     * @param images 随消息发送的图片附件（[AiImageStore] 目录内的文件名，UI 已导入完毕）
      * @throws CancellationException 调用方取消（半截文本已标记 interrupted 并落盘）
      */
-    suspend fun send(text: String) {
+    suspend fun send(text: String, images: List<String> = emptyList()) {
         val trimmed = text.trim()
-        if (trimmed.isEmpty()) return
+        if (trimmed.isEmpty() && images.isEmpty()) return
         mutex.withLock {
             val (connection, apiKey) = loadCredentials()
             _configured.value = connection.isConfigured && apiKey != null
@@ -352,6 +372,7 @@ class AiChatRepository internal constructor(
                     role = AiChatRole.User,
                     content = trimmed,
                     createdAtMillis = nowMillis(),
+                    images = images,
                 )
                 // 占位 assistant 消息先入流，onDelta 按位更新它的 content
                 val placeholder = AiChatMessage(
@@ -369,7 +390,7 @@ class AiChatRepository internal constructor(
                     client.streamChat(
                         connection = connection,
                         apiKey = apiKey,
-                        turns = buildTurns(history, trimmed),
+                        turns = buildTurns(history, trimmed, images),
                         onDelta = { chunk ->
                             appendToLast(conversationId, chunk)
                         },
@@ -417,7 +438,8 @@ class AiChatRepository internal constructor(
             if (bound.lastOrNull()?.takeIf { it.role == AiChatRole.Assistant }?.interrupted != true) {
                 return
             }
-            val userText = bound.lastOrNull { it.role == AiChatRole.User }?.content ?: return
+            // 尾部 user 消息整体重发（正文 + 图片附件；图片文件可能已被清理，编码侧跳过）
+            val lastUser = bound.lastOrNull { it.role == AiChatRole.User } ?: return
             // 先确认凭据再动消息：未配置时直接返回，不留下「尾巴被摘掉」的坏状态
             val (connection, apiKey) = loadCredentials()
             _configured.value = connection.isConfigured && apiKey != null
@@ -426,7 +448,7 @@ class AiChatRepository internal constructor(
             updateConversation(conversationId) { conversation ->
                 conversation.copy(messages = conversation.messages.dropLastWhile { it.role == AiChatRole.Assistant })
             }
-            // 尾部那条 user 就是本次要重发的：留在 history 里会与下面追加的 userText 重复
+            // 尾部那条 user 就是本次要重发的：留在 history 里会与下面的重发重复
             val history = boundMessages(conversationId).dropLast(1).takeLast(HISTORY_WINDOW)
             clearLastError()
             _sending.value = true
@@ -442,7 +464,7 @@ class AiChatRepository internal constructor(
                     client.streamChat(
                         connection = connection,
                         apiKey = apiKey,
-                        turns = buildTurns(history, userText),
+                        turns = buildTurns(history, lastUser.content, lastUser.images),
                         onDelta = { chunk -> appendToLast(conversationId, chunk) },
                         onReasoning = { chunk -> appendReasoningToLast(conversationId, chunk) },
                     )
@@ -479,12 +501,17 @@ class AiChatRepository internal constructor(
      */
     suspend fun clearHistory() {
         mutex.withLock {
+            val staleImages = _conversations.value
+                .flatMap { conversation -> conversation.messages.flatMap { it.images } }
             _conversations.value = emptyList()
             _activeConversationId.value = null
             _messages.value = emptyList()
             clearLastError()
             // 用户已两次确认：落盘不能被浮层关闭取消，否则重启后旧历史回归
             withContext(NonCancellable) { persist() }
+            withContext(Dispatchers.IO) {
+                staleImages.forEach { imageStore.delete(it) }
+            }
         }
     }
 
@@ -529,7 +556,8 @@ class AiChatRepository internal constructor(
     }
 
     /**
-     * 删除对话（「所有对话」浮层删除确认后）；id 不存在时静默返回。
+     * 删除对话（「所有对话」浮层删除确认后）；id 不存在时静默返回。消息引用的图片
+     * 副本一并删除（I/O 失败留下孤儿文件，bootstrap 装载时兜底清理）。
      * 在途发送绑定该对话时先 [cancelSending]（对话已删，半截回复不再有意义，流式
      * 增量随定向写入的目标消失而自然丢弃）；删除活跃对话时回落「最近更新」的剩余
      * 对话，删光后活跃置空——对话浮层走空态，入口按钮点击无反应，再次发言隐式新建。
@@ -538,6 +566,11 @@ class AiChatRepository internal constructor(
     suspend fun deleteConversation(id: String) {
         if (_conversations.value.none { it.id == id }) return
         if (activeSendConversationId.get() == id) cancelSending()
+        val staleImages = _conversations.value
+            .firstOrNull { it.id == id }
+            ?.messages
+            ?.flatMap { it.images }
+            .orEmpty()
         _conversations.update { list -> list.filterNot { it.id == id } }
         if (_activeConversationId.value == id) {
             _activeConversationId.value = _conversations.value
@@ -546,6 +579,10 @@ class AiChatRepository internal constructor(
         }
         mirrorLastError()
         persist()
+        // 图片副本的删除不回滚内存：I/O 失败留下孤儿文件，bootstrap 装载时兜底清理
+        withContext(Dispatchers.IO) {
+            staleImages.forEach { imageStore.delete(it) }
+        }
     }
 
     /** 关闭错误条（UI 的「知道了」）；下次失败会重新发布 */
@@ -749,8 +786,16 @@ class AiChatRepository internal constructor(
      * user）+ 本轮 user 消息。历史里的 assistant 正文原样回放（含已创建待办的
      * JSON 块，给模型连续上下文）；空 assistant（取消/失败残留的占位）不发送——
      * 对任何服务商都是噪声，个别网关会因 `content=""` 直接回 400。
+     *
+     * 图片附件随消息原样回放（历史窗口内的 user 消息与本轮都带，追问时模型仍看得到图）；
+     * 文件可能已被清理（删除对话/清空历史只清无引用文件，但极端时序下仍有竞争），
+     * 编码失败的图静默跳过，不阻断整条请求。编码涉及磁盘读取，在 IO 线程执行。
      */
-    private fun buildTurns(history: List<AiChatMessage>, userText: String): List<AiChatTurn> {
+    private suspend fun buildTurns(
+        history: List<AiChatMessage>,
+        userText: String,
+        userImages: List<String>,
+    ): List<AiChatTurn> {
         val context = contextProvider()
         val system = AiPromptBuilder.build(
             now = clock.today(),
@@ -762,10 +807,23 @@ class AiChatRepository internal constructor(
         )
         val turns = history
             .filterNot { it.role == AiChatRole.Assistant && it.content.isBlank() }
-            .map { AiChatTurn(role = it.role.name.lowercase(), content = it.content) }
+            .map { it.toTurn() }
         return listOf(AiChatTurn(role = "system", content = system)) + turns +
-            AiChatTurn(role = "user", content = userText)
+            AiChatTurn(role = "user", content = userText, images = encodeImages(userImages))
     }
+
+    /** 持久化消息 → wire 消息：role 落小写串，图片文件在 IO 线程编码 */
+    private suspend fun AiChatMessage.toTurn(): AiChatTurn = AiChatTurn(
+        role = role.name.lowercase(),
+        content = content,
+        images = encodeImages(images),
+    )
+
+    /** 图片文件名 → base64 附件：文件缺失/读取失败跳过（见 [AiImageStore.encode]） */
+    private suspend fun encodeImages(names: List<String>): List<AiTurnImage> =
+        withContext(Dispatchers.IO) {
+            names.mapNotNull { imageStore.encode(it) }
+        }
 
     /** 流式增量追加到绑定对话的尾部 assistant 消息（UI 逐字渲染） */
     private fun appendToLast(conversationId: String, chunk: String) {
@@ -937,6 +995,9 @@ class AiChatRepository internal constructor(
         /** 修复重试时携带的原文上限（防超长回复撑爆重试请求） */
         const val REPAIR_CONTEXT_MAX = 4000
 
+        /** 孤儿图片清理的宽限期：比它新的未引用文件（已导入未发送的待发送图片）不删 */
+        const val ORPHAN_IMAGE_GRACE_MILLIS = 24 * 60 * 60 * 1000L
+
         /** 流式期间半截 checkpoint 的节流间隔（进程被杀时尽量少丢内容） */
         const val CHECKPOINT_INTERVAL_MILLIS = 2000L
 
@@ -947,7 +1008,9 @@ class AiChatRepository internal constructor(
             client: AiClient,
             contextProvider: () -> AiChatContext,
             persister: AiTodoPersister,
+            imageStore: AiImageStore,
         ): AiChatRepository =
-            AiChatRepository(store, settings, client, contextProvider, persister).also { it.bootstrap() }
+            AiChatRepository(store, settings, client, contextProvider, persister, imageStore)
+                .also { it.bootstrap() }
     }
 }

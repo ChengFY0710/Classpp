@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AI 对话拍照（TakePicture）：系统相机写入 cacheDir/ai_capture/ 的临时文件经 FileProvider
+     授权给相机应用读取，导入压缩后即删，所以只开这一段 cache-path -->
+<paths>
+    <cache-path
+        name="ai_capture"
+        path="ai_capture/" />
+</paths>

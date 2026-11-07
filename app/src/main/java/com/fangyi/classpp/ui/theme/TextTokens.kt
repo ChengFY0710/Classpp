@@ -174,6 +174,8 @@ object ClassppTextTokens {
     val countdownNumber = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.SemiBold).tabularNumbers()
     /** 倒计时单位：14sp Normal，等宽数字。 */
     val countdownUnit = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal).tabularNumbers()
+    /** 概览统计数字：23sp SemiBold，等宽数字，行高收紧到 24——默认行盒的下延留白会把「数字+标签」整组顶偏（待办概览小卡）。 */
+    val statNumber = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp).tabularNumbers()
 
     // ---------- 头像族 ----------
     /** 账户头像圆内首字：20sp SemiBold，行高 24 与圆形留白同心（设置-账号与同步连接卡）。 */

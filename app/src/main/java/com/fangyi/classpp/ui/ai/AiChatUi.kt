@@ -8,12 +8,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.TextSelectionColors
@@ -33,15 +35,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ai.AiChatMessage
 import com.fangyi.classpp.data.ai.AiChatRole
 import com.fangyi.classpp.data.ai.AiError
+import com.fangyi.classpp.data.ai.AiImageStore
 import com.fangyi.classpp.data.ai.AiTodoDraftCodec
 import com.fangyi.classpp.data.checkInPercent
 import com.fangyi.classpp.data.model.IsoDate
@@ -84,12 +90,19 @@ import com.fangyi.classpp.ui.theme.PillShape
  * 本条回复已创建待办时（[AiChatMessage.todoIds] 非空或落库失败），原始 JSON 围栏块
  * 不再展示——信息已由下方的 NoteCard 卡片承接；正文若因此为空，气泡本身不渲染
  * （若回复带思考过程，上方的折叠块仍保留）。
+ *
+ * user 消息携带图片时（[AiChatMessage.images] 非空），缩略图渲染在正文上方（单张 160dp、
+ * 多张 96dp 换行网格），点缩略图经 [onImageClick] 请求宿主拉全屏预览；纯图无正文的
+ * 消息不渲染「…」占位（那是流式首字未到的 assistant 占位语义）。
  */
 @Composable
 internal fun AiChatMessageBubble(
     message: AiChatMessage,
     thinkingInProgress: Boolean = false,
     modifier: Modifier = Modifier,
+    // 图片附件库（仓库出借）：null = 无仓库（预览态），图片不渲染
+    imageStore: AiImageStore? = null,
+    onImageClick: (String) -> Unit = {},
 ) {
     val isUser = message.role == AiChatRole.User
     val hasTodos = !isUser && (message.todoIds.isNotEmpty() || message.todoSaveFailed)
@@ -149,10 +162,20 @@ internal fun AiChatMessageBubble(
                                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
+                                if (message.images.isNotEmpty() && imageStore != null) {
+                                    AiChatMessageImages(
+                                        names = message.images,
+                                        imageStore = imageStore,
+                                        onImageClick = onImageClick,
+                                    )
+                                }
                                 when {
-                                    content.isEmpty() -> {
+                                    content.isEmpty() && message.images.isEmpty() -> {
                                         // 占位阶段（流式首字未到 / 只有思考还没有正文）：三点呼吸省略号
                                         Text(text = "…", style = ClassppTextTokens.chatBody)
+                                    }
+                                    content.isEmpty() -> {
+                                        // 纯图无正文：缩略图即全部内容
                                     }
                                     isUser -> Text(text = content, style = ClassppTextTokens.chatBody)
                                     else -> ChatMarkdown(content = content)
@@ -164,6 +187,71 @@ internal fun AiChatMessageBubble(
             }
         }
     }
+}
+
+// ---------- 消息图片 ----------
+
+/** 气泡内缩略图尺寸：单张放大（看得清内容），多张小格换行 */
+private val SingleImageSize = 160.dp
+private val GridImageSize = 96.dp
+private val ImageCorner = 10.dp
+private val ImageSpacing = 6.dp
+
+/**
+ * user 消息携带的图片缩略图：单张 160dp 方图，多张 96dp 换行网格。
+ * 点击经 [onImageClick] 把文件名抛给宿主（全屏预览 Dialog）。
+ */
+@Composable
+private fun AiChatMessageImages(
+    names: List<String>,
+    imageStore: AiImageStore,
+    onImageClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (names.size == 1) {
+        AiChatImageThumb(
+            name = names.first(),
+            imageStore = imageStore,
+            size = SingleImageSize,
+            onImageClick = onImageClick,
+            modifier = modifier,
+        )
+    } else {
+        FlowRow(
+            modifier = modifier,
+            horizontalArrangement = Arrangement.spacedBy(ImageSpacing),
+            verticalArrangement = Arrangement.spacedBy(ImageSpacing),
+        ) {
+            names.forEach { name ->
+                AiChatImageThumb(
+                    name = name,
+                    imageStore = imageStore,
+                    size = GridImageSize,
+                    onImageClick = onImageClick,
+                )
+            }
+        }
+    }
+}
+
+/** 单张缩略图：Crop 裁进圆角方框，点击拉全屏预览 */
+@Composable
+private fun AiChatImageThumb(
+    name: String,
+    imageStore: AiImageStore,
+    size: Dp,
+    onImageClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AsyncImage(
+        model = imageStore.file(name),
+        contentDescription = stringResource(R.string.cd_ai_message_image),
+        contentScale = ContentScale.Crop,
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(ImageCorner))
+            .clickable { onImageClick(name) },
+    )
 }
 
 // ---------- 思考过程 ----------

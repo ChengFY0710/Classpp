@@ -92,6 +92,8 @@ enum class AiChatRole { User, Assistant }
  * @param reasoning 推理模型的思考过程（OpenAI 兼容的 `reasoning_content` / Anthropic 的
  *   `thinking_delta` 增量拼接），只供气泡上方的折叠块展示，**不回放进后续请求**
  *   （推理内容不属于对话上下文）；普通模型恒为空串，旧文件无此字段时默认空串
+ * @param images 随消息发送的图片附件（[AiImageStore] 目录内的文件名，恒 JPEG）：
+ *   发送时按历史窗口原样回放进请求（与正文不同，图片是视觉上下文）；旧文件无此字段时默认空
  */
 @Serializable
 data class AiChatMessage(
@@ -102,6 +104,7 @@ data class AiChatMessage(
     val todoIds: List<String> = emptyList(),
     val todoSaveFailed: Boolean = false,
     val reasoning: String = "",
+    val images: List<String> = emptyList(),
 )
 
 /**
@@ -117,9 +120,23 @@ enum class AiError { Auth, Quota, NotFound, RateLimited, Server, Network, BadRes
 class AiException(val error: AiError, val detail: String? = null) :
     Exception(detail ?: error.name)
 
-/** 一次对话调用中的一条 wire 消息（协议中性的内部表示，role 用小写串；各协议编解码器负责落成自己的请求形状） */
+/**
+ * 一次对话调用中的一条 wire 消息（协议中性的内部表示，role 用小写串；各协议编解码器
+ * 负责落成自己的请求形状）。
+ *
+ * @param images 随本条消息发给模型的图片（base64 已就绪）；无图时 content 保持纯字符串
+ *   编码（既有网关兼容面不变），有图时由编解码器落成多模态 content 数组
+ */
 @Serializable
-data class AiChatTurn(val role: String, val content: String)
+data class AiChatTurn(
+    val role: String,
+    val content: String,
+    val images: List<AiTurnImage> = emptyList(),
+)
+
+/** wire 层的图片附件：base64 已编码的 JPEG（当前导入管线统一转正压缩为 JPEG） */
+@Serializable
+data class AiTurnImage(val mediaType: String, val base64: String)
 
 /** AI 模块的 Json 配置：与 ScheduleJson.storage 同参（ignoreUnknownKeys + encodeDefaults + 严格） */
 internal object AiJson {

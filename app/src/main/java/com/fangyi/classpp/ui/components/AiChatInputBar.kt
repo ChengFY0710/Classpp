@@ -13,15 +13,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -45,6 +49,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
@@ -62,6 +67,7 @@ import com.fangyi.classpp.ui.theme.glassSurface
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.shadow.Shadow
 import dev.chrisbanes.haze.HazeState
+import java.io.File
 
 /** 动作图标边长（发送 / 停止 / 添加，均为动作图标档 30dp） */
 private val ActionIconSize = 30.dp
@@ -110,12 +116,17 @@ private val TextSentSapcing = 10.dp
  * 圆球直径恒定 60dp。值区宽度固定为「卡宽 - 内距 - + 号 - 间距」，不会横向滚动。
  *
  * 发送圆球三态（[sending] 优先）：无文字=surface 底 + onSurface 箭头、不可点；
- * 有非空文字=primary 底 + onPrimary 箭头、点击 [onSend]；发送中=primary 底 + onPrimary
- * 停止图标、点击 [onStop]。空白字符不算可发送。
+ * 有非空文字**或有待发送图片**=primary 底 + onPrimary 箭头、点击 [onSend]；发送中=
+ * primary 底 + onPrimary 停止图标、点击 [onStop]。空白字符不算可发送（有图可发）。
+ *
+ * 待发送图片预览条（[pendingImages] 非空时）：输入卡内文本行上方一排 64dp 圆角缩略图
+ * （Coil 本地加载），右上角小删除圆钮点击 [onRemoveImage]；纯图无文字也允许发送
+ * （图片即提问）。
  *
  * + 号点击经 [PopupMenuPopup] 弹出 [PopupMenuCard]：菜单向上浮在输入卡外、右对齐 + 号，
- * 纯文字「添加图片 / 添加文件」；选中项只收起菜单并回调 [onAddImage] / [onAddFile]，
- * 本轮不接图片/文件选择（默认空实现）。[hazeState] 非空时菜单卡走 Haze 磨砂
+ * 纯文字「拍照 / 添加图片 / 添加文件」；选中项只收起菜单并回调 [onTakePhoto] /
+ * [onAddImage] / [onAddFile]（拍照与选图的系统授权流程由宿主接，本组件不管）。
+ * [hazeState] 非空时菜单卡走 Haze 磨砂
  * （宿主传浮层的 haze 采样源，与顶栏同源），null 退化为不透明白卡。菜单为 focusable
  * Popup，打开会收起键盘并移除输入焦点，文本状态由宿主提升，不会丢失。
  *
@@ -141,8 +152,12 @@ fun AiChatInputBar(
     enabled: Boolean = true,
     onSend: () -> Unit = {},
     onStop: () -> Unit = {},
+    onTakePhoto: () -> Unit = {},
     onAddImage: () -> Unit = {},
     onAddFile: () -> Unit = {},
+    /** 待发送图片（已导入的压缩副本文件）；非空时输入卡上方渲染预览条 */
+    pendingImages: List<File> = emptyList(),
+    onRemoveImage: (File) -> Unit = {},
     // 附件菜单的磨砂采样源：非空时 PopupMenuCard 走 Haze 磨砂，null 为不透明白卡
     hazeState: HazeState? = null,
     backdrop: Backdrop? = null,
@@ -168,7 +183,8 @@ fun AiChatInputBar(
     )
     val strokeWidth = 2.dp * strokeProgress
 
-    val canSend = enabled && !sending && value.isNotBlank()
+    // 有字或有图都可发送：纯图无文字 = 图片即提问
+    val canSend = enabled && !sending && (value.isNotBlank() || pendingImages.isNotEmpty())
     val actionEnabled = sending || canSend
     val valueStyle = MaterialTheme.classppTextStyles.fieldValue
     val hint = if (sending) sendingPlaceholder else placeholder
@@ -178,8 +194,10 @@ fun AiChatInputBar(
     } else {
         MaterialTheme.colorScheme.onPrimary
     }
+    val takePhotoLabel = stringResource(R.string.ai_take_photo)
     val addImageLabel = stringResource(R.string.ai_add_image)
     val addFileLabel = stringResource(R.string.ai_add_file)
+    val removeImageLabel = stringResource(R.string.cd_ai_remove_pending_image)
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -217,6 +235,47 @@ fun AiChatInputBar(
                 // 单行时把 60dp 下限多出的高度上下均摊，文本与 + 号居中；多行无余量时不生效
                 verticalArrangement = Arrangement.Center,
             ) {
+                // 待发送图片预览条：64dp 圆角缩略图一排，右上角删除圆钮（悬出 4dp，
+                // 行的上内距让出空间避免被卡壳裁掉）
+                if (pendingImages.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = RowCardPaddingHorizontal, end = RowCardPaddingHorizontal, top = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        pendingImages.forEach { image ->
+                            Box(modifier = Modifier.size(64.dp)) {
+                                AsyncImage(
+                                    model = image,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .clip(RoundedCornerShape(10.dp)),
+                                )
+                                Surface(
+                                    onClick = { onRemoveImage(image) },
+                                    shape = CircleShape,
+                                    color = Color.Black.copy(alpha = 0.55f),
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .offset(x = 4.dp, y = (-4).dp)
+                                        .size(20.dp),
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_close),
+                                            contentDescription = removeImageLabel,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(12.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -295,6 +354,13 @@ fun AiChatInputBar(
                 sections = listOf(
                     PopupMenuSection(
                         items = listOf(
+                            PopupMenuItem(
+                                label = takePhotoLabel,
+                                onClick = {
+                                    menuExpanded = false
+                                    onTakePhoto()
+                                },
+                            ),
                             PopupMenuItem(
                                 label = addImageLabel,
                                 onClick = {
@@ -414,6 +480,7 @@ private fun AiChatInputBarMenuPreview() = ClassppTheme {
         sections = listOf(
             PopupMenuSection(
                 items = listOf(
+                    PopupMenuItem(label = "拍照"),
                     PopupMenuItem(label = "添加图片"),
                     PopupMenuItem(label = "添加文件"),
                 ),

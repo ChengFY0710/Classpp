@@ -7,7 +7,10 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.StoreResult
+import java.io.File
 import java.io.IOException
+import java.nio.file.Files
+import java.util.Base64
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
@@ -39,6 +42,9 @@ import org.junit.Test
 class AiChatRepositoryTest {
 
     // ---------- fakes ----------
+
+    /** 每个用例独立的图片附件临时目录（真实 AiImageStore，只测文件名到编码的通路） */
+    private fun tempImageDir(): File = Files.createTempDirectory("ai_images").toFile()
 
     private class FakeAiChatStore : AiChatStore {
         @Volatile
@@ -277,6 +283,7 @@ class AiChatRepositoryTest {
             client = AiClient(transport),
             contextProvider = { AiChatContext() },
             persister = persister,
+            imageStore = AiImageStore(tempImageDir()),
             clock = Clock { IsoDate.of(2026, 11, 1) },
             nowMillis = nowMillis,
         )
@@ -309,6 +316,97 @@ class AiChatRepositoryTest {
         assertFalse(messages[1].todoSaveFailed)
         assertEquals(messages, store.persistedMessages())
         assertFalse(repo.sending.value)
+    }
+
+    @Test
+    fun `send with images persists filenames and encodes them into wire turns`() = runBlocking {
+        val imageStore = AiImageStore(tempImageDir())
+        // 预置两张副本文件（模拟 UI 已导入完毕，文件名来自导入返回值）
+        val payloads = mapOf("a.jpg" to byteArrayOf(1), "b.jpg" to byteArrayOf(2, 3))
+        payloads.forEach { (name, bytes) ->
+            imageStore.file(name).parentFile.mkdirs()
+            imageStore.file(name).writeBytes(bytes)
+        }
+        val store = FakeAiChatStore()
+        val transport = FakeAiTransport(
+            ScriptedResponse(listOf(sse("收到"), "data: [DONE]")),
+        )
+        val repo = AiChatRepository(
+            store = store,
+            settings = FakeAiSettingsStore(),
+            client = AiClient(transport),
+            contextProvider = { AiChatContext() },
+            persister = FakeTodoPersister(),
+            imageStore = imageStore,
+            clock = Clock { IsoDate.of(2026, 11, 1) },
+        )
+        repo.bootstrap()
+
+        repo.send("这两张图里有什么", listOf("a.jpg", "b.jpg"))
+
+        // user 消息随文件名落库（图片是消息的一部分，历史回放/重试都依赖它）
+        val user = repo.messages.value.first()
+        assertEquals(AiChatRole.User, user.role)
+        assertEquals(listOf("a.jpg", "b.jpg"), user.images)
+
+        // wire 请求：user turn 的 content 是多模态数组（text 块 + 每图一个 data URL 块）
+        val body = Json.parseToJsonElement(transport.opened.single().jsonBody).jsonObject
+        val userTurn = body["messages"]!!.jsonArray
+            .last { it.jsonObject["role"]!!.jsonPrimitive.content == "user" }
+        val content = userTurn.jsonObject["content"]!!.jsonArray
+        assertEquals("text", content[0].jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals("这两张图里有什么", content[0].jsonObject["text"]!!.jsonPrimitive.content)
+        val imageBlocks = content.drop(1)
+        assertEquals(2, imageBlocks.size)
+        assertEquals(
+            "data:image/jpeg;base64,${Base64.getEncoder().encodeToString(byteArrayOf(1))}",
+            imageBlocks[0].jsonObject["image_url"]!!.jsonObject["url"]!!.jsonPrimitive.content,
+        )
+        // 已清理的文件不阻断请求：b.jpg 仍在，编码正常
+        assertEquals(
+            "data:image/jpeg;base64,${Base64.getEncoder().encodeToString(byteArrayOf(2, 3))}",
+            imageBlocks[1].jsonObject["image_url"]!!.jsonObject["url"]!!.jsonPrimitive.content,
+        )
+
+        assertEquals("收到", repo.messages.value.last().content)
+    }
+
+    @Test
+    fun `send supports image only message with missing file skipped`() = runBlocking {
+        val imageStore = AiImageStore(tempImageDir())
+        imageStore.file("kept.jpg").parentFile.mkdirs()
+        imageStore.file("kept.jpg").writeBytes(byteArrayOf(9))
+        // gone.jpg 从未落盘：编码侧应跳过而不是让整条请求失败
+        val transport = FakeAiTransport(
+            ScriptedResponse(listOf(sse("收到"), "data: [DONE]")),
+        )
+        val repo = AiChatRepository(
+            store = FakeAiChatStore(),
+            settings = FakeAiSettingsStore(),
+            client = AiClient(transport),
+            contextProvider = { AiChatContext() },
+            persister = FakeTodoPersister(),
+            imageStore = imageStore,
+            clock = Clock { IsoDate.of(2026, 11, 1) },
+        )
+        repo.bootstrap()
+
+        repo.send("", listOf("kept.jpg", "gone.jpg"))
+
+        val user = repo.messages.value.first()
+        assertEquals("", user.content)
+        assertEquals(listOf("kept.jpg", "gone.jpg"), user.images)
+
+        // content 数组只有图片块（无 text 块），缺失的 gone.jpg 被跳过
+        val body = Json.parseToJsonElement(transport.opened.single().jsonBody).jsonObject
+        val userTurn = body["messages"]!!.jsonArray
+            .last { it.jsonObject["role"]!!.jsonPrimitive.content == "user" }
+        val content = userTurn.jsonObject["content"]!!.jsonArray
+        assertEquals(1, content.size)
+        assertEquals(
+            "data:image/jpeg;base64,${Base64.getEncoder().encodeToString(byteArrayOf(9))}",
+            content[0].jsonObject["image_url"]!!.jsonObject["url"]!!.jsonPrimitive.content,
+        )
     }
 
     @Test
@@ -547,6 +645,7 @@ class AiChatRepositoryTest {
             client = AiClient(FakeAiTransport(ScriptedResponse(listOf("data: [DONE]")))),
             contextProvider = { AiChatContext() },
             persister = FakeTodoPersister(),
+            imageStore = AiImageStore(tempImageDir()),
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
         assertEquals(LoadState.Ready, repo.loadState.value)
@@ -584,6 +683,7 @@ class AiChatRepositoryTest {
             client = AiClient(transport),
             contextProvider = { context },
             persister = FakeTodoPersister(),
+            imageStore = AiImageStore(tempImageDir()),
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
         repo.bootstrap()
@@ -810,6 +910,7 @@ class AiChatRepositoryTest {
             client = AiClient(FakeAiTransport(ScriptedResponse(listOf("data: [DONE]")))),
             contextProvider = { AiChatContext() },
             persister = FakeTodoPersister(),
+            imageStore = AiImageStore(tempImageDir()),
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
         repo.bootstrap()
@@ -842,6 +943,7 @@ class AiChatRepositoryTest {
             client = AiClient(FakeAiTransport(response)),
             contextProvider = { AiChatContext() },
             persister = FakeTodoPersister(),
+            imageStore = AiImageStore(tempImageDir()),
             clock = Clock { IsoDate.of(2026, 11, 1) },
             nowMillis = { tick += 1_000; tick },
         )
@@ -1051,6 +1153,7 @@ class AiChatRepositoryTest {
             client = AiClient(FakeAiTransport(ScriptedResponse(listOf("data: [DONE]")))),
             contextProvider = { AiChatContext() },
             persister = FakeTodoPersister(),
+            imageStore = AiImageStore(tempImageDir()),
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
 

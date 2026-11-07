@@ -7,6 +7,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ai.AiChatContext
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiClient
+import com.fangyi.classpp.data.ai.AiImageStore
 import com.fangyi.classpp.data.ai.AiTodoPersister
 import com.fangyi.classpp.data.ai.FileAiChatStore
 import com.fangyi.classpp.data.ai.PrefsAiSettingsStore
@@ -161,6 +162,8 @@ class AppContainer internal constructor(
                     persister = AiTodoPersister { todos ->
                         todoRepository.addTodos(todos) is TodoReadResult.Ok
                     },
+                    // 对话图片附件（相册/拍照导入的压缩副本），UI 借仓库的 imageStore 导入
+                    imageStore = AiImageStore(File(context.filesDir, "ai_chat_images")),
                 ),
             )
         }

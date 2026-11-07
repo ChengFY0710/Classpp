@@ -1,7 +1,13 @@
 package com.fangyi.classpp.ui.ai
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,14 +34,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.FileProvider
+import coil3.compose.AsyncImage
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ScheduleRepository
@@ -63,11 +75,21 @@ import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
 import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
+import java.io.File
+import java.util.UUID
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** 光场在输入栏上方额外留出的可见高度：与输入栏、导航栏一起构成约 240dp 的光场带 */
 private val AuroraHeadroom = 120.dp
+
+/** 一条消息最多携带的图片数：视觉模型识别足够、单条请求体积可控 */
+private const val MaxImagesPerMessage = 4
+
+/** 拍照临时文件目录名（cacheDir 下；FileProvider 只对这一段授权给系统相机写入） */
+private const val CaptureDirName = "ai_capture"
 
 /**
  * AI 对话浮层（日程页顶栏右侧按钮唤起，M1 唯一 AI 入口）。
@@ -175,6 +197,107 @@ fun AiChatOverlay(
     val swipeCoordinator = remember { SwipeCoordinator() }
     val chatScroll = remember { mutableStateOf<androidx.compose.foundation.ScrollState?>(null) }
 
+    // ——— 图片附件：相册选图 / 拍照（Photo Picker 无需权限；TakePicture 唤系统相机） ———
+
+    val imageStore = aiChatRepository?.imageStore
+    // 待发送图片附件（已导入的压缩副本文件名）：发送时随消息入流；浮层退场仍未发送则删副本
+    var pendingImageNames by rememberSaveable { mutableStateOf(listOf<String>()) }
+    // 拍照临时文件（TakePicture 的输出目标）：结果回来后导入压缩，无论成败即删
+    var captureFile by remember { mutableStateOf<File?>(null) }
+    // 全屏预览的已发送图片文件名（气泡缩略图点开）；null = 无预览
+    var previewImageName by remember { mutableStateOf<String?>(null) }
+
+    /** 相册多选导入：Photo Picker 的 URI 是临时授权，先导入压缩副本（IO），超额度截断 */
+    fun importImages(uris: List<Uri>) {
+        val store = imageStore ?: return
+        val remaining = MaxImagesPerMessage - pendingImageNames.size
+        if (remaining <= 0 || uris.isEmpty()) return
+        scope.launch {
+            val imported = withContext(Dispatchers.IO) {
+                uris.take(remaining).mapNotNull { store.import(context, it) }
+            }
+            if (imported.isNotEmpty()) {
+                pendingImageNames = (pendingImageNames + imported).take(MaxImagesPerMessage)
+            }
+        }
+    }
+
+    /** 拍照结果导入：临时文件先压缩进副本库，导入完成即删（成败都删） */
+    fun importCapturedImage(temp: File) {
+        val store = imageStore ?: run {
+            temp.delete()
+            return
+        }
+        scope.launch {
+            val imported = withContext(Dispatchers.IO) {
+                store.import(context, Uri.fromFile(temp)).also { temp.delete() }
+            }
+            if (imported != null) {
+                if (pendingImageNames.size < MaxImagesPerMessage) {
+                    pendingImageNames = (pendingImageNames + imported).take(MaxImagesPerMessage)
+                } else {
+                    // 额度满（理论上入口已拦住）：不留孤儿副本
+                    withContext(Dispatchers.IO) { store.delete(imported) }
+                }
+            }
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MaxImagesPerMessage),
+    ) { uris -> importImages(uris) }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { captured ->
+        val temp = captureFile
+        captureFile = null
+        if (temp != null) {
+            if (captured) importCapturedImage(temp) else temp.delete()
+        }
+    }
+
+    /** 相册选图入口：额度满不再拉起选择器 */
+    fun launchGallery() {
+        if (imageStore == null) return
+        if (pendingImageNames.size >= MaxImagesPerMessage) return
+        galleryLauncher.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+        )
+    }
+
+    /** 拍照入口：预建 cacheDir 临时文件，经 FileProvider 授权给系统相机写入 */
+    fun startCapture() {
+        if (imageStore == null) return
+        if (pendingImageNames.size >= MaxImagesPerMessage) return
+        val dir = File(context.cacheDir, CaptureDirName).apply { mkdirs() }
+        // 上一次拍照没带回结果（拍照中途收浮层，结果回调不再执行）的残留临时文件顺手清掉
+        dir.listFiles()?.forEach { it.delete() }
+        val file = File(dir, "${UUID.randomUUID()}.jpg")
+        captureFile = file
+        cameraLauncher.launch(
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file),
+        )
+    }
+
+    /** 移除一张待发送图片：引用与副本文件一起删（还没随消息落库，没有别的持有方） */
+    fun removePendingImage(file: File) {
+        val store = imageStore ?: return
+        pendingImageNames = pendingImageNames - file.name
+        scope.launch(Dispatchers.IO) { store.delete(file.name) }
+    }
+
+    /** 浮层退场收尾：未发送的待发送图片没有持有方了，副本一并删除 */
+    fun clearPendingImages() {
+        val stale = pendingImageNames
+        if (stale.isEmpty()) return
+        pendingImageNames = emptyList()
+        val store = imageStore ?: return
+        scope.launch(Dispatchers.IO) {
+            stale.forEach { store.delete(it) }
+        }
+    }
+
     // 返回键：编辑器 → 详情 → 展开的侧滑卡 → 收起对话浮层（详情自身的返回拦截注册更晚，
     // 详情在场时由它先处理备注落盘，这里只兜底非详情场景）
     BackHandler(enabled = visible) {
@@ -222,11 +345,15 @@ fun AiChatOverlay(
 
     fun sendMessage(text: String) {
         val repository = aiChatRepository ?: return
-        if (text.isBlank() || sending) return
+        if (sending) return
+        if (text.isBlank() && pendingImageNames.isEmpty()) return
+        val images = pendingImageNames
         input = ""
+        // 图片随消息发出：文件名已由仓库随 user 消息持有，预览条清空但**不删副本**
+        pendingImageNames = emptyList()
         keyboard?.hide()
         // Job 归仓库所有：收起浮层/旋转不中断；停止走 cancelSending
-        repository.sendInBackground(text)
+        repository.sendInBackground(text, images)
     }
 
     fun stopSending() {
@@ -359,7 +486,11 @@ fun AiChatOverlay(
         ),
         visible = visible,
         onDismiss = onDismiss,
-        onDismissed = onDismissed,
+        onDismissed = {
+            // 退场播完才清：未发送的待发送图片副本删掉，不留孤儿文件
+            clearPendingImages()
+            onDismissed()
+        },
         // 管理浮层/详情/编辑浮层叠上来时本层缩小后退
         covered = conversationsVisible || detailTodoId != "" || editTodoId != "",
         onScrollStateReady = { chatScroll.value = it },
@@ -432,8 +563,13 @@ fun AiChatOverlay(
                         enabled = configured,
                         onSend = { sendMessage(input) },
                         onStop = ::stopSending,
-                        onAddImage = {},
+                        onTakePhoto = ::startCapture,
+                        onAddImage = ::launchGallery,
                         onAddFile = {},
+                        pendingImages = imageStore
+                            ?.let { store -> pendingImageNames.map(store::file) }
+                            ?: emptyList(),
+                        onRemoveImage = ::removePendingImage,
                         hazeState = bottomHazeState,
                         backdrop = auroraBackdrop,
                     )
@@ -459,6 +595,8 @@ fun AiChatOverlay(
                     messages.forEachIndexed { index, message ->
                         AiChatMessageBubble(
                             message = message,
+                            imageStore = imageStore,
+                            onImageClick = { name -> previewImageName = name },
                             // 思考阶段 = 本场流仍在进行、这是尾部消息、正文还没开始：
                             // 折叠块默认展开，正文一到就自动收起
                             thinkingInProgress = sending &&
@@ -502,6 +640,32 @@ fun AiChatOverlay(
         // 底部光场带比原输入栏高出一截：滚动内容末尾补同样高度，
         // 自动滚底时最后一条消息停在光场上方，不被 scrim 盖住
         Spacer(Modifier.height(AuroraHeadroom))
+    }
+
+    // ——— 已发送图片的全屏预览：气泡缩略图点开，点任意处关闭 ———
+    previewImageName?.takeIf { imageStore != null }?.let { name ->
+        Dialog(
+            onDismissRequest = { previewImageName = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.9f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { previewImageName = null },
+                contentAlignment = Alignment.Center,
+            ) {
+                AsyncImage(
+                    model = imageStore?.file(name),
+                    contentDescription = stringResource(R.string.cd_ai_image_preview),
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
     }
 
     // ——— 「所有对话」管理浮层：左上「对话」胶囊唤起，交互同切换课表浮层 ———

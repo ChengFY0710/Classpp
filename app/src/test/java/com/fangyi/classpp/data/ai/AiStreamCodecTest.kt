@@ -2,6 +2,7 @@ package com.fangyi.classpp.data.ai
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -138,6 +139,82 @@ class AiStreamCodecTest {
             "上一轮回复\n\n请按契约修复",
             body["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonPrimitive.content,
         )
+    }
+
+    // ---------- 带图 turn 的 content 形状 ----------
+
+    private fun openAiConnection(baseUrl: String = "https://api.openai.com/v1") = AiConnection(
+        providerId = "openai",
+        baseUrl = baseUrl,
+        model = "gpt-4o-mini",
+    )
+
+    private val image = AiTurnImage(mediaType = "image/jpeg", base64 = "QUJD")
+
+    @Test
+    fun `openai turn with images serializes multimodal content array`() = runBlocking {
+        val t = transport("data: [DONE]", null)
+        AiClient(t).streamChat(
+            openAiConnection(),
+            "sk",
+            listOf(AiChatTurn("user", "这是什么", listOf(image))),
+        )
+
+        val content = bodyOf(t.lastRequest!!)["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray
+        assertEquals(2, content.size)
+        assertEquals("text", content[0].jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals("这是什么", content[0].jsonObject["text"]!!.jsonPrimitive.content)
+        assertEquals("image_url", content[1].jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals(
+            "data:image/jpeg;base64,QUJD",
+            content[1].jsonObject["image_url"]!!.jsonObject["url"]!!.jsonPrimitive.content,
+        )
+    }
+
+    @Test
+    fun `openai image only turn omits text block`() = runBlocking {
+        val t = transport("data: [DONE]", null)
+        AiClient(t).streamChat(openAiConnection(), "sk", listOf(AiChatTurn("user", "", listOf(image))))
+
+        val content = bodyOf(t.lastRequest!!)["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray
+        assertEquals(1, content.size)
+        assertEquals("image_url", content[0].jsonObject["type"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `anthropic turn with images serializes base64 image blocks`() = runBlocking {
+        val t = transport(messageStop(), null)
+        AiClient(t).streamChat(
+            anthropicConnection(),
+            "sk",
+            listOf(AiChatTurn("user", "这是什么", listOf(image))),
+        )
+
+        val content = bodyOf(t.lastRequest!!)["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray
+        assertEquals(2, content.size)
+        assertEquals("text", content[0].jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals("这是什么", content[0].jsonObject["text"]!!.jsonPrimitive.content)
+        assertEquals("image", content[1].jsonObject["type"]!!.jsonPrimitive.content)
+        val source = content[1].jsonObject["source"]!!.jsonObject
+        assertEquals("base64", source["type"]!!.jsonPrimitive.content)
+        assertEquals("image/jpeg", source["media_type"]!!.jsonPrimitive.content)
+        assertEquals("QUJD", source["data"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `turn without images keeps plain string content on both protocols`() = runBlocking {
+        // 兼容面回归：无图请求的 content 保持字符串（部分网关对数组 content 支持不佳）
+        val openAi = transport("data: [DONE]", null)
+        AiClient(openAi).streamChat(openAiConnection(), "sk", listOf(AiChatTurn("user", "你好")))
+        val openAiContent = bodyOf(openAi.lastRequest!!)["messages"]!!.jsonArray[0].jsonObject["content"]!!
+        assertTrue("无图 content 应保持字符串", openAiContent is JsonPrimitive)
+        assertEquals("你好", openAiContent.jsonPrimitive.content)
+
+        val anthropic = transport(messageStop(), null)
+        AiClient(anthropic).streamChat(anthropicConnection(), "sk", listOf(AiChatTurn("user", "你好")))
+        val anthropicContent = bodyOf(anthropic.lastRequest!!)["messages"]!!.jsonArray[0].jsonObject["content"]!!
+        assertTrue("无图 content 应保持字符串", anthropicContent is JsonPrimitive)
+        assertEquals("你好", anthropicContent.jsonPrimitive.content)
     }
 
     // ---------- SSE 解析 ----------

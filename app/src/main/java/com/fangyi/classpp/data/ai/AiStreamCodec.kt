@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -105,11 +106,36 @@ internal object OpenAiStreamCodec : AiStreamCodec {
             put("messages", JsonArray(turns.map { turn ->
                 buildJsonObject {
                     put("role", turn.role)
-                    put("content", turn.content)
+                    put("content", contentElement(turn))
                 }
             }))
         }
         return requestJson.encodeToString(payload)
+    }
+
+    /**
+     * content 形状：纯文本 turn 保持字符串（既有网关兼容面与回归测试不变）；带图 turn
+     * 落成多模态数组——text 块（正文非空时）+ 每图一个 image_url 块（data URL base64）。
+     * 纯图无正文（content 为空串）时数组只有图片块，两种服务商均合法。
+     */
+    private fun contentElement(turn: AiChatTurn): JsonElement = when {
+        turn.images.isEmpty() -> JsonPrimitive(turn.content)
+        else -> buildJsonArray {
+            if (turn.content.isNotEmpty()) {
+                add(buildJsonObject {
+                    put("type", "text")
+                    put("text", turn.content)
+                })
+            }
+            turn.images.forEach { image ->
+                add(buildJsonObject {
+                    put("type", "image_url")
+                    put("image_url", buildJsonObject {
+                        put("url", "data:${image.mediaType};base64,${image.base64}")
+                    })
+                })
+            }
+        }
     }
 
     /** 流内错误对象（`{"error": {...}}`）按其数值 code 分类（与 HTTP 状态语义一致） */
@@ -205,7 +231,7 @@ internal object AnthropicStreamCodec : AiStreamCodec {
             put("messages", JsonArray(messages.map { turn ->
                 buildJsonObject {
                     put("role", turn.role)
-                    put("content", turn.content)
+                    put("content", contentElement(turn))
                 }
             }))
         }
@@ -213,9 +239,36 @@ internal object AnthropicStreamCodec : AiStreamCodec {
     }
 
     /**
+     * content 形状：纯文本 turn 保持字符串（既有行为与回归测试不变）；带图 turn 落成
+     * 多模态数组——text 块（正文非空时）+ 每图一个 image 块（base64 source）。
+     * 纯图无正文（content 为空串）时数组只有图片块，Anthropic 合法。
+     */
+    private fun contentElement(turn: AiChatTurn): JsonElement = when {
+        turn.images.isEmpty() -> JsonPrimitive(turn.content)
+        else -> buildJsonArray {
+            if (turn.content.isNotEmpty()) {
+                add(buildJsonObject {
+                    put("type", "text")
+                    put("text", turn.content)
+                })
+            }
+            turn.images.forEach { image ->
+                add(buildJsonObject {
+                    put("type", "image")
+                    put("source", buildJsonObject {
+                        put("type", "base64")
+                        put("media_type", image.mediaType)
+                        put("data", image.base64)
+                    })
+                })
+            }
+        }
+    }
+
+    /**
      * Anthropic 要求 messages 以 user 开头且严格交替：丢弃开头 assistant，
-     * 连续同角色合并（content 以空行连接）。前置条件：剩余序列非空（调用方
-     * 每次请求都以一条 user turn 收尾）。
+     * 连续同角色合并（content 以空行连接，图片顺次拼接）。前置条件：剩余序列非空
+     * （调用方每次请求都以一条 user turn 收尾）。
      */
     private fun sanitizeMessages(turns: List<AiChatTurn>): List<AiChatTurn> {
         val firstUser = turns.indexOfFirst { it.role != ROLE_ASSISTANT }
@@ -224,7 +277,10 @@ internal object AnthropicStreamCodec : AiStreamCodec {
         for (turn in turns.drop(firstUser)) {
             val last = merged.lastOrNull()
             if (last != null && last.role == turn.role) {
-                merged[merged.size - 1] = last.copy(content = "${last.content}$SYSTEM_JOIN_SEPARATOR${turn.content}")
+                merged[merged.size - 1] = last.copy(
+                    content = "${last.content}$SYSTEM_JOIN_SEPARATOR${turn.content}",
+                    images = last.images + turn.images,
+                )
             } else {
                 merged.add(turn)
             }

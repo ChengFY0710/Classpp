@@ -6,6 +6,12 @@
          联网同走此权限）。脚本与口令不写日志 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- AI 对话拍照（TakePicture 唤系统相机）：只声明特性不声明权限——拍摄由系统相机
+         应用完成，本应用不直接用摄像头；无相机设备上该功能入口自然失效 -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
     <!-- 待办加入系统日历（运行时授权流程在 UI 层） -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
@@ -46,6 +52,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- AI 对话拍照：TakePicture 的输出 URI 经 FileProvider 授权给系统相机应用写入
+             （临时文件在 cacheDir/ai_capture/，导入压缩后即删，路径见 res/xml/file_paths.xml） -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- 闹钟到点（显式 FIRE）+ 系统事件重排（开机/时间/时区/日期，均为受保护广播，
              exported=true 仅意味着系统可投递） -->
