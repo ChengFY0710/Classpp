@@ -843,4 +843,7 @@
     <string name="ai_profile_delete_title">Delete profile</string>
     <string name="ai_profile_delete_message">\"%1$s\" and its saved API key will be deleted permanently.</string>
     <string name="ai_profile_deleted">Profile deleted</string>
+    <string name="ai_profile_hint_section">Note</string>
+    <string name="ai_profile_hint_title">Vision-capable models recommended</string>
+    <string name="ai_profile_hint_message">Sending images requires a vision model, e.g. deepseek-flash; text-only models (e.g. deepseek-pro) return an error on images.</string>
 </resources>

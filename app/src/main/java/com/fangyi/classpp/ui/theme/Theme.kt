@@ -70,6 +70,12 @@ data class ClassppColors(
      */
     val secondaryText: Color,
     /**
+     * 说明行标题灰（SettingsCard 纯文字行）：固定中性灰、不随主题色切换，
+     * 比 [secondaryText] 更实——弱化层级但保持标题可读
+     * （浅 #787F87 / 深 #AEB2B7）。
+     */
+    val secondaryGrey: Color,
+    /**
      * primary/error 染色玻璃上的前景色（图标/文字）：浅 #FFFFFF / 深 #E4E7EA。
      * 玻璃染色后底材偏暗，深色下不能再沿用 [MaterialTheme.colorScheme.onPrimary]
      * 的深蓝图文；白色玻璃仍用各自的 onSurface/primary 内容色。
@@ -131,6 +137,7 @@ data class ClassppColors(
 
 private val LightClassppColors = ClassppColors(
     secondaryText = SecondaryText,
+    secondaryGrey = SecondaryGrey,
     onPrimaryGlass = OnPrimaryGlass,
     primaryContainerSolid = PrimaryContainerSolid,
     onSurfaceCard = OnSurfaceCard,
@@ -152,6 +159,7 @@ private val LightClassppColors = ClassppColors(
 
 private val DarkClassppColors = ClassppColors(
     secondaryText = DarkSecondaryText,
+    secondaryGrey = DarkSecondaryGrey,
     onPrimaryGlass = DarkOnPrimaryGlass,
     primaryContainerSolid = DarkPrimaryContainerSolid,
     onSurfaceCard = DarkOnSurfaceCard,

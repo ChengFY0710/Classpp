@@ -265,7 +265,7 @@ fun AiChatInputBar(
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(
-                                            painter = painterResource(R.drawable.ic_close),
+                                            painter = painterResource(R.drawable.ic_dismiss),
                                             contentDescription = removeImageLabel,
                                             tint = Color.White,
                                             modifier = Modifier.size(12.dp),

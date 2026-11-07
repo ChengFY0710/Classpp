@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
@@ -97,7 +98,8 @@ sealed interface SettingsCardItem {
      * 自定义行：label（+ 可选描述）与 [trailing] 同行垂直居中，无整行点击（尾部控件自理）。
      * 供暂未收敛为标准行型的控件使用（如节次卡的加减按钮、时间胶囊）；
      * [trailing] = null（默认）为纯文字行：不渲染尾部槽位，标题与描述撑满整行可用宽
-     * （描述不再预留避让尾部控件的间隙）——说明/简介类展示行同款；
+     * （描述不再预留避让尾部控件的间隙），标题取 secondaryGrey 弱化层级——说明/简介类
+     * 展示行同款；
      * [footer] 可选，画在整行之下、占满行宽（如节次上限的溢出提示），内距由内容自理。
      */
     data class Custom(
@@ -152,13 +154,15 @@ sealed interface SettingsCardItem {
  * [contentVerticalPadding] 为卡内首行之前 / 末行之后的额外留白（默认 0）。
  *
  * 规格（对齐 [SheetTextField]）：
- * - 字体：label 走 fieldLabel（16sp SemiBold onSurface），描述走 settingsDescription
+ * - 字体：label 走 fieldLabel（16sp SemiBold onSurface；[SettingsCardItem.Custom] 纯文字行
+ *   标题例外，取 secondaryGrey 弱化层级），描述走 settingsDescription
  *   （14sp Normal、20sp 行高、secondaryText）；
  * - 间距：行高下限 [rowMinHeight]（默认 60dp = [SheetFieldHeight]）判在**整卡**而非单行，
  *   整卡内容不足时差额均摊给各行撑高（单行卡与旧「行高 min 60」规格渲染一致）；行内
  *   左右 16，内距画在交互区**内侧**；[SettingsCardItem.Custom] 行仍自带该下限兜底；
- * 颜色只取四处主题色：surface（卡底）、onSurface（label）、primary（箭头/开关轨道/行值，
- *   值经 fieldValue 角色）、classppColors.secondaryText（描述），深浅模式自动适配。
+ * 颜色只取五处主题色：surface（卡底）、onSurface（label）、primary（箭头/开关轨道/行值，
+ *   值经 fieldValue 角色）、classppColors.secondaryText（描述）、
+ *   classppColors.secondaryGrey（纯文字行标题），深浅模式自动适配。
  *
  * [hazeState] 是选择行弹出菜单的磨砂采样源：交给 [PopupMenuPopup] 做背景模糊，须与菜单背后
  * 那层内容同源——浮层内的卡片传浮层的共享采样源（滚动内容即其采样源），设置页传页面自己的，
@@ -332,12 +336,18 @@ private fun CustomRow(item: SettingsCardItem.Custom, minHeight: Dp) {
                 .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 纯文字行（无尾部控件）时描述不留避让间隙，标题与描述撑满整行可用宽
+            // 纯文字行（无尾部控件）：描述不留避让间隙、标题与描述撑满整行可用宽；
+            // 标题取 secondaryGrey——纯说明行不是操作入口，弱化层级但保持可读
             SettingsRowText(
                 label = item.label,
                 description = item.description,
                 modifier = Modifier.weight(1f),
                 fillWidth = item.trailing == null,
+                labelColor = if (item.trailing == null) {
+                    MaterialTheme.classppColors.secondaryGrey
+                } else {
+                    Color.Unspecified
+                },
             )
             item.trailing?.invoke(this)
         }
@@ -413,6 +423,8 @@ private fun SliderGroupRow(item: SettingsCardItem.SliderGroup) {
  * label + 可选灰色描述：无描述时单行垂直居中，有描述时整块随行数长高、与尾部控件垂直居中
  * （internal：分组卡同规格复用）。[fillWidth] = true 表示行右侧无控件（纯文字块）：
  * 描述不再预留尾部 10dp 避让间隙，文字撑满整行可用宽；默认 false 维持原避让规格。
+ * [labelColor] 覆盖标题颜色（默认 Unspecified = 随 LocalContentColor onSurface）：
+ * 纯文字说明行传 classppColors.secondaryGrey 弱化层级（见 [CustomRow]）。
  */
 @Composable
 internal fun SettingsRowText(
@@ -420,11 +432,13 @@ internal fun SettingsRowText(
     description: String?,
     modifier: Modifier = Modifier,
     fillWidth: Boolean = false,
+    labelColor: Color = Color.Unspecified,
 ) {
     Column(modifier = modifier) {
         Text(
             text = label,
             style = MaterialTheme.classppTextStyles.fieldLabel,
+            color = labelColor,
         )
         if (description != null) {
             Spacer(modifier = Modifier.size(3.dp))

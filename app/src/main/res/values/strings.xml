@@ -870,4 +870,7 @@
     <string name="ai_profile_delete_title">删除方案</string>
     <string name="ai_profile_delete_message">「%1$s」及其保存的 API Key 将被删除，且无法恢复。</string>
     <string name="ai_profile_deleted">方案已删除</string>
+    <string name="ai_profile_hint_section">提示</string>
+    <string name="ai_profile_hint_title">推荐使用具备视觉理解能力的模型</string>
+    <string name="ai_profile_hint_message">发送图片需要视觉模型，如deepseek-flash等；纯文本模型（如 deepseek-pro）收到图片会返回错误。</string>
 </resources>

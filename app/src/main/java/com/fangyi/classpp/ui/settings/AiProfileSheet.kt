@@ -60,6 +60,7 @@ private data class PendingProfileSave(
  *   自动落回活动项（store 已把活动指针修正到「自定义」或其它方案）；
  * - 下方「连接」分组：服务商预设 / 接口格式（仅自定义服务商可改）+ 服务地址 / 模型名 /
  *   API Key 输入 + 「保存为新方案」（只入库不激活，成功后自动选中新方案）；
+ * - 末尾「提示」分组：纯展示行，说明对话图片需要多模态（视觉）模型；
  * - 确认时先做本地校验（服务地址 http 开头、模型名非空），失败 toast 并保留浮层；
  *   Key 缺失由宿主回调判定（保存后仍无可用 Key → 提示并保留浮层）。
  *
@@ -428,6 +429,19 @@ internal fun AiProfileSheet(
                     icon = R.drawable.ic_add_circle_regular,
                     enabled = true,
                     onClick = ::openSaveAs,
+                )
+            }
+
+            // C. 提示：图片输入需要多模态模型（纯展示行，无操作）
+            CardSection(title = stringResource(R.string.ai_profile_hint_section)) {
+                SettingsCard(
+                    items = listOf(
+                        SettingsCardItem.Custom(
+                            label = stringResource(R.string.ai_profile_hint_title),
+                            description = stringResource(R.string.ai_profile_hint_message),
+                        ),
+                    ),
+                    hazeState = sheetHazeState,
                 )
             }
         }
