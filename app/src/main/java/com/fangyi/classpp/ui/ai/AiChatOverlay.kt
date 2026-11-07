@@ -380,10 +380,11 @@ fun AiChatOverlay(
      * 崩溃史（tombstone_05，2026-11-07 03:39）：消息列是 Haze 采样源，切换对话时内容
      * 从长列表塌缩成空态——源子树在同一帧被整块重写，Haze 2 的 source fallback 会构建
      * 自引用 RenderNode，RenderThread 在 prepareTreeImpl 无限递归、栈溢出（tombstone 的
-     * 512 帧全是 libhwui 同一段递归）。顶栏效果与消息列在 [OverlaySheet] 里是兄弟节点、
-     * 没有祖先 hazeSource，Behind 采样修复覆盖不到这条路径，故在此显式退让：落库前先
-     * 等两帧，让整条 Haze 链（hazeEnabled=false 走静态底材，静止态与磨砂外观一致）
-     * 卸载并完整绘制一帧，源子树重写才落在零 Haze 节点的帧上；落库后再等两帧——重组
+     * 512 帧全是 libhwui 同一段递归）。消费方（顶栏磨砂——「浮层顶栏模糊」开关开启时）
+     * 与消息列没有祖先 hazeSource，Behind 采样修复覆盖不到这条路径，故在此显式退让：
+     * 落库前先等两帧，让整条 Haze 链（hazeEnabled=false：内容列不挂采样源、钉底槽不下发
+     * 状态；顶栏磨砂随之退回渐变遮罩）卸载并完整绘制一帧，源子树重写才落在零
+     * Haze 节点的帧上；落库后再等两帧——重组
      * 与绘制都走完——才挂回。稳态磨砂与其余浮层不受影响。
      *
      * 单飞：上一场切换在途时忽略再次点选（浮层已在退场，连点只认第一张），避免两场
@@ -501,10 +502,11 @@ fun AiChatOverlay(
         // 崩溃与修复史（ec9fa71 退让 → f958dbb 改 Behind → 本次再复现）：消息列是采样源，
         // 切换对话时内容从长列表塌缩成空态、流式期间逐字重写——「内容结构频繁重写采样源」
         // 曾触发 RenderThread SIGSEGV（切换到空对话必崩）。All→Behind 修复了效果位于源子树
-        // 内的路径，但本浮层顶栏与消息列是兄弟节点（无祖先 hazeSource），切换对话那一帧源
-        // 子树整块重写仍会构建自引用 RenderNode（tombstone_05，2026-11-07 03:39，
-        // prepareTreeImpl 512 帧递归栈溢出）。折中方案：切换落库/绘制窗口内由
-        // conversationHazeSuspended 让整条链退让为静态底材，落定后挂回——稳态磨砂保留。
+        // 内的路径，但消费方（顶栏磨砂、跨 Popup 窗口的钉底槽弹出菜单）与消息列没有祖先
+        // hazeSource，切换对话那一帧源子树整块重写仍可能构建自引用 RenderNode
+        // （tombstone_05，2026-11-07 03:39，prepareTreeImpl 512 帧递归栈溢出）。折中方案：
+        // 切换落库/绘制窗口内由 conversationHazeSuspended 让整条链退让（零采样/效果节点），
+        // 落定后挂回——稳态磨砂保留；退让期间顶栏磨砂退回渐变遮罩。
         // 光场与输入栏玻璃走 kyant backdrop（独立体系），不受影响。
         bottomContent = {
             // 与顶栏同源的 Haze 采样状态（供附件菜单跨 Popup 窗口做磨砂）

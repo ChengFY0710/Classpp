@@ -279,6 +279,8 @@
     <string name="appearance_accent_sdu_red">SDU Red</string>
     <string name="glass_material">Advanced glass material</string>
     <string name="glass_material_desc">Liquid glass blur and refraction. Requires Android 13+. Per-frame sampling costs performance — consider off on low-end devices</string>
+    <string name="overlay_topbar_blur">Overlay top bar blur</string>
+    <string name="overlay_topbar_blur_desc">Gradient blur for overlay sheet top bars. Per-frame sampling costs performance — consider off on low-end devices</string>
     <string name="section_days">Days per week</string>
     <string name="section_slots">Slots and times</string>
     <string name="section_display">Display</string>

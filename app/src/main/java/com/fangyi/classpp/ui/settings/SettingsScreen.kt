@@ -206,6 +206,9 @@ fun SettingsScreen(
     // 待办收集箱「瀑布流视图」开关（同 cardHeights 的透传纪律）
     todoMasonry: State<Boolean> = mutableStateOf(true),
     onTodoMasonryChange: (Boolean) -> Unit = {},
+    // 浮层顶栏模糊开关（同 cardHeights 的透传纪律）
+    overlayTopBarBlur: State<Boolean> = mutableStateOf(false),
+    onOverlayTopBarBlurChange: (Boolean) -> Unit = {},
     // 外层设置页覆盖层的进度状态（MainActivity 持有）：根页顶栏在设置页进出场视差
     // 期间冻结重放需要它。null = 独立预览等无覆盖层场景
     overlayTransitionState: PageOverlayTransitionState? = null,
@@ -385,6 +388,8 @@ fun SettingsScreen(
                                             onGlassStyleChange = onGlassStyleChange,
                                             todoMasonry = todoMasonry,
                                             onTodoMasonryChange = onTodoMasonryChange,
+                                            overlayTopBarBlur = overlayTopBarBlur,
+                                            onOverlayTopBarBlurChange = onOverlayTopBarBlurChange,
                                             settingsTransforming = settingsTransforming,
                                             modifier = fullSizeModifier,
                                         )

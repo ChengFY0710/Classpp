@@ -100,10 +100,10 @@ private val DragDismissVelocity: Dp = 800.dp
 private val TopBarHeight = 78.dp
 
 /**
- * 无 Haze 顶栏（[OverlaySheet] 的 `hazeEnabled = false`）底缘的渐隐高度：
- * 内容从顶栏下滚过时柔和淡出，代替模糊的视觉收边。
+ * 顶栏（[OverlaySheetTopBar]）渐变遮罩态的底缘渐隐高度：内容从顶栏下滚过时被同色
+ * 渐变遮罩柔和淡出，是遮罩的视觉收边（磨砂态由 hazeBlur 自己的 progressive 收边）。
  */
-private val TopBarFadeHeight = 24.dp
+private val TopBarFadeHeight = 50.dp
 
 /**
  * 顶栏胶囊固定高度 = 默认图标 30dp + 上下 padding 各 8dp（[SheetPillButton] 的自然高）。
@@ -153,20 +153,31 @@ data class SheetTopAction(
 val LocalOverlayBottomGlassBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
 /**
- * 钉底槽（[OverlaySheet] 的 [bottomContent]）可用的 Haze 采样状态：与浮层顶栏磨砂同源，
- * 恒为浮层当前使用的 hazeState。槽内的弹出菜单（PopupMenuCard）把它传给
+ * 钉底槽（[OverlaySheet] 的 [bottomContent]）可用的 Haze 采样状态：与浮层内容列采样
+ * 同源，恒为浮层当前使用的 hazeState。槽内的弹出菜单（PopupMenuCard）把它传给
  * PopupMenuPopup / PopupMenuCard，即可跨 Popup 窗口采样浮层内容，得到菜单磨砂底；
  * 不传则退化为不透明白卡。
  */
 val LocalOverlayBottomHazeState = staticCompositionLocalOf<HazeState?> { null }
 
 /**
+ * 「浮层顶栏模糊」开关的组合本地下发：开启 = OverlaySheet 顶栏恢复 Haze 渐变磨砂，
+ * 关闭（默认）= Background 同色渐变遮罩。开关复用于全部浮层，逐层传参会穿透大量调用
+ * 签名——组合根部提供（MainActivity 用「个性化 → 外观 → 浮层顶栏模糊」的即时值提供，
+ * 读 .value，翻转自根部重组，与 LocalGlassStyle 同一模式）、任意深处读取；未提供
+ * （预览等）时默认关闭 = 渐变遮罩。持久化见 ui.settings.OverlayTopBarPreferences。
+ */
+val LocalOverlayTopBarBlur = staticCompositionLocalOf { false }
+
+/**
  * 浮层卡片容器：贯穿整个 app 的浮层设计元素。
  *
  * 结构：全屏遮罩（点按关闭）→ 距顶 [topInset] 定位 → 上圆角 [SheetShape] 卡片撑到屏幕底。
  * 顶栏（拖拽条 + 居中标题 + 确认/动作双胶囊，[confirmAtEnd] 可对调左右）叠在滚动内容之上，
- * 用 haze 对其下的滚动内容做**渐变模糊**——照搬课表设置页顶栏的规格，
- * 并由 Surface 的 shape clip 收敛在圆角内，不溢出卡片。
+ * 两种收边效果随 [LocalOverlayTopBarBlur] 开关切换：关闭（默认）= Background 同色渐变
+ * 遮罩，顶段不透明、底缘渐隐（[TopBarFadeHeight]）；开启且本浮层参与 Haze 时 = 原来的
+ * 渐变磨砂（不透明兜底 + hazeBlur，与设置页顶栏同规格）。滚动内容从顶栏下滚过时柔和
+ * 淡出/模糊，由 Surface 的 shape clip 收敛在圆角内，不溢出卡片。
  *
  * 进出场与拖拽关闭由组件自己完成：
  * - 挂载即入场：从屏幕底部滑入（起步即快、长尾缓收，ui.motion 的 Motion.Overlay），
@@ -198,13 +209,14 @@ val LocalOverlayBottomHazeState = staticCompositionLocalOf<HazeState?> { null }
  * [ImeScrollTracker] 里，参与方式是给输入控件挂 [Modifier.imeFieldTracking]——
  * [SheetTextField] / [SheetTextArea] / [TagChoosingCard] 已内置）。
  *
- * haze 的采样源挂在浮层内部的滚动列上：浮层被遮罩盖住后背后的课表网格对顶栏不可见，
- * 只需模糊浮层自身内容。容器默认自建 hazeState（调用方无需传任何模糊状态）；宿主若要给
+ * haze 的采样源挂在浮层内部的滚动列上：顶栏磨砂（开关开启时）、叠层弹窗与钉底槽
+ * 弹出菜单都从这里采样。容器默认自建 hazeState（调用方无需传任何模糊状态）；宿主若要给
  * 叠在本浮层**之上**的弹层（BottomSelectSheet 一族）做背景模糊，可传入共享 [hazeState]——
- * 滚动内容仍是它的采样源，顶栏磨砂与上层弹窗的背景模糊同源。
+ * 滚动内容仍是它的采样源，顶栏磨砂与上层弹窗/钉底槽菜单的背景模糊同源。
  *
- * [hazeEnabled] = false 时本浮层整条链不挂 Haze：内容列不做采样源、顶栏改静态渐变底材、
- * 钉底槽不下发状态。这是给「内容结构会随操作频繁重写采样源」的浮层留的退让开关
+ * [hazeEnabled] = false 时本浮层整条链不挂 Haze：内容列不做采样源、钉底槽不下发状态，
+ * 顶栏磨砂随之退化为渐变遮罩（即使「浮层顶栏模糊」开关开启）。这是给「内容结构会随操作
+ * 频繁重写采样源」的浮层留的退让开关
  * （历史上 DayAdjustSheet / AiChatOverlay / AiConversationsSheet 曾因此退让，采样输入
  * 统一改 Behind 后已全部恢复，当前无调用方）；调用方传 false 时必须同时不给叠层弹卡/
  * 菜单传 hazeState。
@@ -237,13 +249,14 @@ fun OverlaySheet(
     topInset: Dp = Dp.Unspecified,
     imeBehavior: SheetImeBehavior = SheetImeBehavior.ContentScroll,
     // 共享 hazeState（可选）：给叠在本浮层之上的弹层做背景模糊时由宿主传入，见 KDoc；
-    // null = 自建，仅供顶栏磨砂
+    // null = 自建，供顶栏磨砂（开关开启时）与钉底槽弹出菜单
     hazeState: HazeState? = null,
-    // 是否参与 Haze 采样链（顶栏磨砂 + 内容列的 hazeSource + bottom 槽共享状态）。
-    // false = 本浮层整条链零 Haze 源/效果节点：顶栏改静态渐变底材（复刻静止态 tint +
-    // 底缘渐隐），内容列不挂 hazeSource。供「内容结构会随操作频繁重写采样源」的浮层
-    // 结构上规避 Haze 2 的自引用 RenderNode 崩溃（规避史见 DayAdjustSheet 顶部注释；
-    // 根因 All 采样已统一改 Behind，当前无调用方）。
+    // 是否参与 Haze 采样链（内容列的 hazeSource + 顶栏磨砂 + bottom 槽共享状态）。
+    // false = 本浮层整条链零 Haze 源/效果节点：内容列不挂 hazeSource、钉底槽不下发状态，
+    // 顶栏退化为 Background 同色渐变遮罩（即使「浮层顶栏模糊」开关开启）。
+    // 供「内容结构会随操作频繁重写采样源」的浮层结构上规避 Haze 2 的自引用 RenderNode
+    // 崩溃（规避史见 DayAdjustSheet 顶部注释、AiChatOverlay 的对话切换退让；
+    // 根因 All 采样已统一改 Behind）。
     // 调用方传 false 时必须同时不给叠层弹卡/菜单传 hazeState——它们都支持 null（实底）。
     hazeEnabled: Boolean = true,
     // 钉底槽的渐变兜底：false = 槽内不画（内容随 AnimatedVisibility 进出场时由调用方自绘，
@@ -262,8 +275,9 @@ fun OverlaySheet(
     // 双门控，关闭即原实心底（pressFeedback + background）。采样层 = 卡片底色 +
     // 滚动内容——内容从顶栏下滚过，玻璃才有东西可折射（底色必须画进
     // 采样层，否则漏透明像素）；按钮在顶栏层、不在采样节点内，玻璃不会照见自己。
-    // 采样与顶栏的 Haze 磨砂同源（hazeSource / layerBackdrop 挂同一内容节点），
-    // 两套采样互不干扰：Haze 管整条顶栏的磨砂，Backdrop 只喂两颗玻璃按钮
+    // 采样与顶栏/钉底槽的 Haze 链同源（hazeSource / layerBackdrop 挂同一内容节点），
+    // 两套采样互不干扰：Haze 喂顶栏磨砂（开启时）与上层弹窗/钉底槽菜单，Backdrop 只喂
+    // 两颗玻璃按钮
     val glassButtonsEnabled = isGlassStyleEnabled()
     val glassButtonsBackdrop = rememberGlassBackdrop(MaterialTheme.colorScheme.background)
     // 传给顶栏两颗按钮的采样层：关闭时传 null，按钮内部回退原实现
@@ -447,7 +461,7 @@ fun OverlaySheet(
                 .fillMaxSize()
                 .padding(top = resolvedTopInset)
                 .onSizeChanged { travelPx = it.height }
-                // 滑动位移只打在浮层这层：遮罩留在原地，卡片连阴影带模糊一起动
+                // 滑动位移只打在浮层这层：遮罩留在原地，卡片连阴影带顶栏遮罩一起动
                 .graphicsLayer {
                     translationY = hiddenFraction.value * travelPx
                     // 被上层盖住时后退：等比缩小、底边中心为锚（底边不离屏，顶边随之后退）；
@@ -493,8 +507,9 @@ fun OverlaySheet(
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    // 顶栏模糊的采样源：滚动内容从顶栏底下滚过时被渐变模糊。
-                                    // hazeEnabled = false 的浮层整条链零 Haze 节点，不挂采样源
+                                    // Haze 采样源：喂顶栏磨砂（开关开启时）、上层弹窗背景模糊
+                                    // 与钉底槽弹出菜单磨砂。hazeEnabled = false 的浮层整条链
+                                    // 零 Haze 节点，不挂采样源
                                     .then(
                                         if (hazeEnabled) {
                                             Modifier.hazeSource(sheetHazeState)
@@ -503,7 +518,7 @@ fun OverlaySheet(
                                         },
                                     )
                                     // 玻璃按钮开启时同一节点再挂液态玻璃采样标记
-                                    // （Haze 管顶栏磨砂、Backdrop 只喂两颗玻璃按钮）
+                                    // （Haze 喂上层弹窗/钉底槽菜单、Backdrop 只喂两颗玻璃按钮）
                                     .then(
                                         if (glassButtonsEnabled) {
                                             Modifier.layerBackdrop(glassButtonsBackdrop)
@@ -525,7 +540,7 @@ fun OverlaySheet(
                                     // 横向边距 = 设置页同款页边距（PageHorizontalSpacing），卡片宽度与设置页一致
                                     .padding(horizontal = PageHorizontalSpacing),
                             ) {
-                                // 为叠在上方的顶栏留位；滚动后内容进入顶栏区域并被模糊
+                                // 为叠在上方的顶栏留位；滚动后内容进入顶栏区域，被遮罩淡出或磨砂模糊
                                 Spacer(Modifier.height(TopBarHeight))
                                 // 键盘弹起时把正在编辑的输入框滚到键盘上方、收起后把内容滚回原位。
                                 // 不理会键盘的浮层（IgnoreIme）不接线：字段照旧只渲染
@@ -554,7 +569,7 @@ fun OverlaySheet(
                                 onConfirm = { if (!closeRequested) onConfirm() },
                                 rightAction = guardedRightAction,
                                 confirmAtEnd = confirmAtEnd,
-                                // hazeEnabled = false：顶栏改静态底材，不挂 hazeBlur
+                                // hazeEnabled = false：本浮层无采样内容，顶栏退回渐变遮罩
                                 hazeState = if (hazeEnabled) sheetHazeState else null,
                                 buttonBackdrop = glassButtonBackdrop,
                                 dragModifier = topBarDragModifier,
@@ -609,8 +624,11 @@ fun OverlaySheet(
 
 /**
  * 顶栏：拖拽条 + 确认胶囊 + 居中标题 + 动作胶囊（默认左确认右动作，[confirmAtEnd] 时对调）。
- * hazeBlur 打在这层上（渐变 1→0、白 30% tint，与设置页同规格），
- * 按钮与标题画在模糊层之上保持清晰；整层被 Surface 裁进浮层圆角。
+ * 底材随「浮层顶栏模糊」开关（[LocalOverlayTopBarBlur]）二选一：
+ * - 开启且 [hazeState] 非空：原来的 Haze 渐变磨砂（不透明兜底 + hazeBlur，1→0 渐变，
+ *   tint 见 [hazeTopBarStyle]）；
+ * - 其余（默认）：Background 同色渐变遮罩（顶段不透明、底缘 [TopBarFadeHeight] 渐隐）。
+ * 按钮与标题画在底材之上保持清晰；整层被 Surface 裁进浮层圆角。
  * 整条顶栏是下拉关闭的手势区（[dragModifier] 挂垂直拖拽），按钮点击不受影响。
  * [buttonBackdrop] 非空时两侧胶囊改液态玻璃底（见 [SheetPillButton]）。
  */
@@ -623,7 +641,7 @@ private fun OverlaySheetTopBar(
     onConfirm: () -> Unit,
     rightAction: SheetTopAction,
     confirmAtEnd: Boolean = false,
-    // null = 不挂 Haze：顶栏改静态渐变底材（OverlaySheet 的 hazeEnabled = false）
+    // null = 不挂 Haze 磨砂（hazeEnabled = false）：顶栏退化为渐变遮罩
     hazeState: HazeState?,
     buttonBackdrop: Backdrop? = null,
     dragModifier: Modifier = Modifier,
@@ -637,41 +655,35 @@ private fun OverlaySheetTopBar(
     }
     val actionContentColor =
         if (buttonBackdrop != null) rightAction.contentColorGlass else rightAction.contentColor
-    // 顶栏底材：有 Haze 时是不透明兜底（后面再叠渐变磨砂）；无 Haze（hazeState = null）时
-    // 换成复刻静止态 tint 曲线的静态渐变，并在底缘渐隐——整条链不挂任何采样/效果节点。
-    // 无 Haze 分支必须有底缘渐隐：内容从顶栏下滚过时靠它柔和收边，替代模糊。
-    val fallbackBackground = MaterialTheme.colorScheme.background
-    val fallbackTint = MaterialTheme.classppColors.hazeTint
-    val staticScrim = remember(fallbackBackground, fallbackTint) {
-        topBarStaticScrim(
-            background = fallbackBackground,
-            tint = fallbackTint,
-            fadeStartFraction = 1f - TopBarFadeHeight / TopBarHeight,
+    // 顶栏底材二选一（见 KDoc）：开关开启且本浮层参与 Haze → 渐变磨砂；否则渐变遮罩。
+    // 遮罩：顶段不透明保证按钮/标题可读，底缘 TopBarFadeHeight 渐隐，滚动内容从顶栏下
+    // 滚过时柔和淡出；渐隐终点 RGB 仍取 background，避免渐透过程发灰（同钉底槽渐变的做法）
+    val background = MaterialTheme.colorScheme.background
+    val topBarScrim = remember(background) {
+        Brush.verticalGradient(
+            0f to background,
+            (1f - TopBarFadeHeight / TopBarHeight) to background,
+            1f to background.copy(alpha = 0f),
         )
     }
-    val backgroundModifier = if (hazeState != null) {
-        Modifier.background(fallbackBackground)
-    } else {
-        Modifier.background(staticScrim)
-    }
-    // Haze 2：Style 在组合期构建（tint 由 hazeTopBarStyle 内部读主题）
+    val blurHazeState = if (LocalOverlayTopBarBlur.current) hazeState else null
     Column(
         modifier = modifier
             .fillMaxWidth()
             .height(TopBarHeight)
-            // 不透明兜底（同设置页顶栏）：haze 的渐进模糊是"均匀模糊层 × 渐变透明度"的混合，
-            // 兜底若带透明度，锐利内容会从透明处透出、与模糊层叠成重影（蓝描边/蓝格子最明显）；
-            // 不透明兜底让混合只发生在"模糊 vs 平色"之间，锐利内容被完全挡住
-            .then(backgroundModifier)
             .then(
-                if (hazeState != null) {
-                    Modifier.hazeBlur(
-                        input = hazeSources(hazeState),
-                        style = hazeTopBarStyle(radius = 18.dp),
-                        performanceMode = HazePerformanceMode.Balanced,
-                    )
-                } else {
+                if (blurHazeState != null) {
+                    // 磨砂：不透明兜底（haze 的渐进模糊是「均匀模糊层 × 渐变透明度」的
+                    // 混合，兜底带透明度会让锐利内容透出、与模糊层叠成重影）+ 渐变模糊
                     Modifier
+                        .background(background)
+                        .hazeBlur(
+                            input = hazeSources(blurHazeState),
+                            style = hazeTopBarStyle(radius = 18.dp),
+                            performanceMode = HazePerformanceMode.Balanced,
+                        )
+                } else {
+                    Modifier.background(topBarScrim)
                 },
             )
             .then(dragModifier),

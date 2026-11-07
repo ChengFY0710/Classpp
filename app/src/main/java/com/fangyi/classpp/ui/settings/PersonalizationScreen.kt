@@ -114,6 +114,9 @@ fun PersonalizationScreen(
     // 待办收集箱「瀑布流视图」开关（State 实例透传纪律同上，值只在 TodoSection 叶子内读）
     todoMasonry: State<Boolean> = mutableStateOf(true),
     onTodoMasonryChange: (Boolean) -> Unit = {},
+    // 浮层顶栏模糊开关（State 实例透传纪律同上，值只在 ColorModeSection 叶子内读）
+    overlayTopBarBlur: State<Boolean> = mutableStateOf(false),
+    onOverlayTopBarBlurChange: (Boolean) -> Unit = {},
     // 设置页任一覆盖层（外层 + 各子页）是否正在转场：顶栏据此冻结重放就位帧
     settingsTransforming: () -> Boolean = { false },
 ) {
@@ -171,6 +174,7 @@ fun PersonalizationScreen(
                             cardHeights.value,
                             showTeacher.value,
                             glassStyle.value,
+                            overlayTopBarBlur.value,
                             todoMasonry.value,
                             themeMode,
                             themeAccent,
@@ -206,6 +210,8 @@ fun PersonalizationScreen(
                     },
                     glassStyle = glassStyle,
                     onGlassStyleChange = onGlassStyleChange,
+                    overlayTopBarBlur = overlayTopBarBlur,
+                    onOverlayTopBarBlurChange = onOverlayTopBarBlurChange,
                 )
                 ScheduleSection(
                     daysPerWeek = daysPerWeek,
@@ -405,7 +411,10 @@ private fun TodoSection(
  * [onGlassStyleChange]，控制底部导航栏三胶囊、待办页顶栏胶囊、设置页顶栏返回按钮、
  * 课表页顶栏周数胶囊与 OverlaySheet / BottomSelectSheet 顶栏按钮的 Backdrop 液态
  * 玻璃渲染 + Q弹按压；关闭即各自原实现，低版本与性能说明见描述文案，持久化见
- * GlassPreferences）。
+ * GlassPreferences）。「浮层顶栏模糊」开关（[overlayTopBarBlur] /
+ * [onOverlayTopBarBlurChange]，开启时 OverlaySheet 顶栏恢复 Haze 渐变磨砂，关闭用
+ * Background 同色渐变遮罩；持久化见 OverlayTopBarPreferences）与其同卡：两者同属
+ * 材质观感开关。
  */
 @Composable
 private fun ColorModeSection(
@@ -415,6 +424,8 @@ private fun ColorModeSection(
     onThemeAccentClick: () -> Unit,
     glassStyle: State<Boolean>,
     onGlassStyleChange: (Boolean) -> Unit,
+    overlayTopBarBlur: State<Boolean>,
+    onOverlayTopBarBlurChange: (Boolean) -> Unit,
 ) {
     // 颜色模式与玻璃材质同属外观分组：两卡收进同一 CardSection（无标题纯分组容器，
     // 组内卡间距 10dp），与「课表」分组的两卡结构对齐；顶部信息头卡用个性化图标 +
@@ -440,7 +451,8 @@ private fun ColorModeSection(
                 ),
             ),
         )
-        // 独立一张卡片：开关与模式行分开（组内卡间距 10dp，见 CardSection）
+        // 独立一张卡片：开关与模式行分开（组内卡间距 10dp，见 CardSection）；
+        // 两枚开关同属材质观感，收在同一卡
         SettingsCard(
             items = listOf(
                 SettingsCardItem.Toggle(
@@ -448,6 +460,12 @@ private fun ColorModeSection(
                     description = stringResource(R.string.glass_material_desc),
                     checked = glassStyle.value,
                     onCheckedChange = onGlassStyleChange,
+                ),
+                SettingsCardItem.Toggle(
+                    label = stringResource(R.string.overlay_topbar_blur),
+                    description = stringResource(R.string.overlay_topbar_blur_desc),
+                    checked = overlayTopBarBlur.value,
+                    onCheckedChange = onOverlayTopBarBlurChange,
                 ),
             ),
         )

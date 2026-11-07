@@ -49,6 +49,7 @@ import com.fangyi.classpp.data.notification.NotificationScheduler
 import com.fangyi.classpp.data.xmu.XmuDailySyncRunner
 import com.fangyi.classpp.data.xmu.XmuDailySyncScheduler
 import com.fangyi.classpp.ui.LocalToday
+import com.fangyi.classpp.ui.components.LocalOverlayTopBarBlur
 import com.fangyi.classpp.ui.day.DayInitialData
 import com.fangyi.classpp.ui.day.DayScreen
 import com.fangyi.classpp.ui.motion.LocalPageOverlayTransform
@@ -68,6 +69,7 @@ import com.fangyi.classpp.ui.schedule.ScheduleScreen
 import com.fangyi.classpp.ui.schedule.TeacherDisplayPreferences
 import com.fangyi.classpp.ui.settings.GlassPreferences
 import com.fangyi.classpp.ui.settings.LocalSettingsFreezeEpoch
+import com.fangyi.classpp.ui.settings.OverlayTopBarPreferences
 import com.fangyi.classpp.ui.settings.SettingsScreen
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.LocalGlassStyle
@@ -138,6 +140,8 @@ class MainActivity : ComponentActivity() {
         val savedGlassStyle = GlassPreferences.load(this)
         // 待办收集箱「瀑布流视图」开关：同为 SharedPreferences 真源，冷启动读一次
         val savedTodoMasonry = TodoInboxPreferences.loadMasonryView(this)
+        // 浮层顶栏模糊开关：同为 SharedPreferences 真源，冷启动读一次
+        val savedOverlayTopBarBlur = OverlayTopBarPreferences.load(this)
         super.onCreate(savedInstanceState)
         // 系统栏外观随主题：状态栏/导航栏全透明、前景图标深浅按模式切换。
         // 必须显式 light 而非 auto：auto 会把 isNavigationBarContrastEnforced 置为 true，
@@ -196,14 +200,21 @@ class MainActivity : ComponentActivity() {
             // 待办收集箱「瀑布流视图」开关状态：同 showTeacher（prefs 真源、回调即时落盘）；
             // State 实例透传给待办页，收集箱布局在叶子内读值
             val todoMasonryState = remember { mutableStateOf(savedTodoMasonry) }
+            // 浮层顶栏模糊开关状态：同 showTeacher（prefs 真源、回调即时落盘）；
+            // 经 LocalOverlayTopBarBlur 在组合根部下发，OverlaySheet 顶栏在叶子内读值
+            val overlayTopBarBlurState = remember { mutableStateOf(savedOverlayTopBarBlur) }
             val darkTheme = when (themeMode) {
                 ThemeMode.System -> isSystemInDarkTheme()
                 ThemeMode.Light -> false
                 ThemeMode.Dark -> true
             }
-            // 玻璃材质开关（更高级的玻璃材质）：组合根部下发，浮层顶栏按钮等共享组件
-            // 经 LocalGlassStyle 读取；读 .value，翻转自根部重组（与 themeMode 同拍）
-            CompositionLocalProvider(LocalGlassStyle provides glassStyleState.value) {
+            // 玻璃材质开关（更高级的玻璃材质）与浮层顶栏模糊开关：组合根部下发，浮层
+            // 顶栏等共享组件经 LocalGlassStyle / LocalOverlayTopBarBlur 读取；读 .value，
+            // 翻转自根部重组（与 themeMode 同拍）
+            CompositionLocalProvider(
+                LocalGlassStyle provides glassStyleState.value,
+                LocalOverlayTopBarBlur provides overlayTopBarBlurState.value,
+            ) {
                 ClassppTheme(darkTheme = darkTheme, accent = themeAccent) {
                     // 主题切换（含设置页即时改选）后重设系统栏外观；enableEdgeToEdge 幂等
                     SideEffect {
@@ -328,6 +339,12 @@ class MainActivity : ComponentActivity() {
                         { enabled: Boolean ->
                             todoMasonryState.value = enabled
                             TodoInboxPreferences.saveMasonryView(this@MainActivity, enabled)
+                        }
+                    }
+                    val onSettingsOverlayTopBarBlurChange = remember {
+                        { enabled: Boolean ->
+                            overlayTopBarBlurState.value = enabled
+                            OverlayTopBarPreferences.save(this@MainActivity, enabled)
                         }
                     }
                     val settingsModifier = remember { Modifier.fillMaxSize() }
@@ -650,6 +667,9 @@ class MainActivity : ComponentActivity() {
                                 todoMasonry = todoMasonryState,
                                 // 只改内存即时生效 + 即时落盘（同 showTeacher）
                                 onTodoMasonryChange = onSettingsTodoMasonryChange,
+                                overlayTopBarBlur = overlayTopBarBlurState,
+                                // 只改内存即时生效 + 即时落盘（同 showTeacher）
+                                onOverlayTopBarBlurChange = onSettingsOverlayTopBarBlurChange,
                                 // 设置页根页顶栏的冻结层要读外层覆盖层进度
                                 overlayTransitionState = settingsOverlayState,
                                 modifier = settingsModifier,
