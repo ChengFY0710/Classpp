@@ -60,6 +60,7 @@ import com.fangyi.classpp.ui.components.SheetTextArea
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.SwipeAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
+import com.fangyi.classpp.ui.components.rememberPopupActionGate
 import com.fangyi.classpp.ui.components.customRuleText
 import com.fangyi.classpp.ui.components.endConditionText
 import com.fangyi.classpp.ui.components.flagColor
@@ -498,11 +499,16 @@ private fun TitleMoreMenu(
     onArchive: () -> Unit,
 ) {
     val gapPx = with(LocalDensity.current) { TitleMenuGap.roundToPx() }
+    // 三项动作都随落库重写本浮层内容列（被采样源：日历事件落待办、倒计时标签显隐、
+    // 归档让详情与列表条目消失），菜单退场活采样期间不可撞：延后到退场播完
+    // （PopupActionGate，机制见 PopupMenuPopup KDoc）
+    val rewriteGate = rememberPopupActionGate()
     PopupMenuPopup(
         expanded = expanded,
         onDismiss = onDismiss,
         // 菜单卡的背景模糊与本浮层的顶栏磨砂同源（见 sheetHazeState 声明处）
         hazeState = hazeState,
+        onExitFinished = { rewriteGate.flush() },
         sections = listOf(
             PopupMenuSection(
                 items = listOf(
@@ -512,8 +518,8 @@ private fun TitleMoreMenu(
                         // 所有待办都可添加到日历；置灰仅由宿主是否具备日历编排上下文决定
                         enabled = calendarEnabled,
                         onClick = {
-                            onAddToCalendar()
                             onDismiss()
+                            rewriteGate.defer(onAddToCalendar)
                         },
                     ),
                     PopupMenuItem(
@@ -529,9 +535,9 @@ private fun TitleMoreMenu(
                         icon = R.drawable.ic_hourglass_half,
                         enabled = countdownEnabled,
                         onClick = {
-                            // 交宿主落库（列表卡随即显示/收起剩余天数）；本层文案随回流切换
-                            onCountdownToggle(!countdownOn)
                             onDismiss()
+                            // 交宿主落库（列表卡随即显示/收起剩余天数）；本层文案随回流切换
+                            rewriteGate.defer { onCountdownToggle(!countdownOn) }
                         },
                     ),
                     // 归档：把待办移入「已归档」特殊分组页（纯标记隐藏，详情随宿主反查落空
@@ -541,8 +547,8 @@ private fun TitleMoreMenu(
                         label = stringResource(R.string.todo_menu_archive),
                         icon = R.drawable.ic_archive,
                         onClick = {
-                            onArchive()
                             onDismiss()
+                            rewriteGate.defer(onArchive)
                         },
                     ),
                 ),

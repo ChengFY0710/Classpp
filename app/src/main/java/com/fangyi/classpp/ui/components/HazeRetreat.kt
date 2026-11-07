@@ -34,6 +34,9 @@ private const val HazeCommitFallbackFrames = 30
  * 同步改写包 [forRewrite]，落库确认包 [forCommit]。
  *
  * 退让只覆盖「重写窗口」——稳态磨砂、弹卡外观与在场期间的弹窗磨砂均不受影响。
+ * 例外：菜单弹层（[com.fangyi.classpp.ui.components.PopupMenuPopup]）退场全程活采样
+ * （不读退让下发的 null）；退让窗口内的重写帧采样源已卸载，活采样效果节点零源可引，
+ * 效果节点以保留帧或短暂白闪度过窗口。「打开中的」弹卡仍按本约定退白卡。
  */
 @Stable
 internal class HazeRetreatState internal constructor(private val scope: CoroutineScope) {

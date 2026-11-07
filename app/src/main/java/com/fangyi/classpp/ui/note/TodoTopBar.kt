@@ -351,6 +351,9 @@ internal fun TodoTopBar(
     viewMenuExpanded: Boolean = false,
     onViewMenuDismiss: () -> Unit = {},
     viewMenuSections: List<PopupMenuSection> = emptyList(),
+    // 三份菜单弹层（排序/分类/视图）共用的退场播完回调：宿主借机冲刷 PopupActionGate
+    // 里延后的重写动作（点选即收 + 同帧重写采样源的动作，机制见 PopupMenuPopup KDoc）
+    onMenuExitFinished: () -> Unit = {},
 ) {
     val overscrollFactory = rememberOffsetOverscrollFactory(animationSpec = Motion.Settle)
     // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场/设置页视差期间整帧重放。
@@ -581,6 +584,7 @@ internal fun TodoTopBar(
                                     onDismiss = onSortMenuDismiss,
                                     sections = sortMenuSections,
                                     hazeState = hazeState,
+                                    onExitFinished = onMenuExitFinished,
                                 )
                             }
                         }
@@ -610,6 +614,7 @@ internal fun TodoTopBar(
                                     onDismiss = onCategoryMenuDismiss,
                                     sections = categoryMenuSections,
                                     hazeState = hazeState,
+                                    onExitFinished = onMenuExitFinished,
                                 )
                             }
                         }
@@ -643,6 +648,7 @@ internal fun TodoTopBar(
                                     onDismiss = onViewMenuDismiss,
                                     sections = viewMenuSections,
                                     hazeState = hazeState,
+                                    onExitFinished = onMenuExitFinished,
                                 )
                             }
                         }
@@ -670,6 +676,7 @@ internal fun TodoTopBar(
  * （0 = 贴住，DropdownMenu 原位）。
  * [hazeState] 下发给 [PopupMenuCard] 做毛玻璃（跨窗口采样页面 hazeSource，WeekPicker
  * 周数弹窗同款），null（如 @Preview）退化为不透明白卡。
+ * [onExitFinished] 透传 [PopupMenuPopup] 的退场播完回调（宿主冲刷延后的重写动作）。
  */
 @Composable
 private fun BarActionMenuPopup(
@@ -677,6 +684,7 @@ private fun BarActionMenuPopup(
     onDismiss: () -> Unit,
     sections: List<PopupMenuSection>,
     hazeState: HazeState? = null,
+    onExitFinished: () -> Unit = {},
 ) {
     val density = LocalDensity.current
     val gapPx = with(density) { BarActionMenuPopupGap.roundToPx() }
@@ -685,6 +693,7 @@ private fun BarActionMenuPopup(
         onDismiss = onDismiss,
         sections = sections,
         hazeState = hazeState,
+        onExitFinished = onExitFinished,
         cardPosition = { anchorBounds, _, _ ->
             IntOffset(anchorBounds.left, anchorBounds.bottom + gapPx)
         },

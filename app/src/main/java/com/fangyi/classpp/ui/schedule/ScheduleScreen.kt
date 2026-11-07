@@ -104,6 +104,7 @@ import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.LocalTodayState
 import com.fangyi.classpp.ui.components.BottomFadeScrim
+import com.fangyi.classpp.ui.components.rememberPopupActionGate
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.pressFeedback
@@ -490,6 +491,9 @@ fun ScheduleScreen(
             var pasteAnchor by remember { mutableStateOf<SlotMenuAnchor?>(null) }
             // 可见性同 menuVisible：收起只翻它，锚点保留到退场播完
             var pasteVisible by remember { mutableStateOf(false) }
+            // 粘贴 = 同帧往课表网格（被采样源）加课的结构重写，菜单退场活采样期间不可撞：
+            // 动作延后到退场播完（PopupActionGate，机制见 PopupMenuPopup KDoc）
+            val pasteGate = rememberPopupActionGate()
             // 切换课表浮层：开关、待切换目标（非空 = 脏草稿确认打开）、新建表单浮层开关
             //（叠在切换课表上，两段式挂载见浮层处；新建失败走系统 Toast，无表单内联错误）
             var switcherVisible by rememberSaveable { mutableStateOf(false) }
@@ -1778,23 +1782,29 @@ fun ScheduleScreen(
                     expanded = pasteVisible,
                     onDismiss = { pasteVisible = false },
                     hazeState = hazeState,
-                    // 锚点保留到退场播完，同上方 menuAnchor
-                    onExitFinished = { pasteAnchor = null },
+                    // 锚点保留到退场播完，同上方 menuAnchor；顺带冲刷延后的粘贴动作
+                    onExitFinished = {
+                        pasteAnchor = null
+                        pasteGate.flush()
+                    },
                     onPaste = {
                         pasteVisible = false
+                        // 会话与剪贴板快照在点选帧读取（与原即时语义一致），落格延后
                         val session = editSession
                         val source = copiedEntry
-                        if (session != null && source != null) {
-                            val entry = source.pastedAt(anchor.day, anchor.slotId)
-                            // 跨节粘贴会覆盖下方格子：整份预检兜住同格冲突 / 末节越界 /
-                            // 跨课表粘贴的周次越界；只拦与这门新课相关的错误，草稿里无关的旧错误不误伤
-                            val blocking = ScheduleValidator
-                                .validateCourses(schedule.copy(courses = session.courses + entry))
-                                .firstOrNull { it.involvesCourse(entry.id) }
-                            if (blocking != null) {
-                                AppToasts.show(context, blocking.toPasteMessage(context, entry.span))
-                            } else {
-                                session.add(entry)
+                        pasteGate.defer {
+                            if (session != null && source != null) {
+                                val entry = source.pastedAt(anchor.day, anchor.slotId)
+                                // 跨节粘贴会覆盖下方格子：整份预检兜住同格冲突 / 末节越界 /
+                                // 跨课表粘贴的周次越界；只拦与这门新课相关的错误，草稿里无关的旧错误不误伤
+                                val blocking = ScheduleValidator
+                                    .validateCourses(schedule.copy(courses = session.courses + entry))
+                                    .firstOrNull { it.involvesCourse(entry.id) }
+                                if (blocking != null) {
+                                    AppToasts.show(context, blocking.toPasteMessage(context, entry.span))
+                                } else {
+                                    session.add(entry)
+                                }
                             }
                         }
                     },

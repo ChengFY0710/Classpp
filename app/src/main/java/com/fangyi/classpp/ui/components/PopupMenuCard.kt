@@ -91,8 +91,7 @@ data class PopupMenuSection(
  * 材质：默认不透明白卡；[hazeState] 非空时白底之上叠 Haze 毛玻璃（跨 Popup 窗口采样
  * 宿主页面的 hazeSource，样式 16dp + 70% tint，为菜单卡单独调过的值）；null（如
  * @Preview）退化为不透明白卡。宿主 [com.fangyi.classpp.ui.components.PopupMenuPopup]
- * 在退场首帧即传 null（卸掉模糊），剩余退场帧按实底白卡渲染——整卡 90% 不透明度由
- * 宿主缩放层统一承担。
+ * 退场全程保持活采样（防护约定见其 KDoc 与 PopupActionGate），毛玻璃不中途卸载。
  */
 @Composable
 fun PopupMenuCard(

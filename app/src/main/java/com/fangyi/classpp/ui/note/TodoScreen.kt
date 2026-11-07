@@ -96,6 +96,8 @@ import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.components.TodoInboxCard
 import com.fangyi.classpp.ui.components.TodoInboxItem
 import com.fangyi.classpp.ui.components.labelText
+import com.fangyi.classpp.ui.components.rememberHazeRetreat
+import com.fangyi.classpp.ui.components.rememberPopupActionGate
 import com.fangyi.classpp.ui.motion.CrossPages
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
@@ -252,6 +254,12 @@ fun TodoScreen(
     var selectedTag by rememberSaveable { mutableStateOf<String?>(null) }
     var tagActive by rememberSaveable { mutableStateOf(false) }
     val hazeState = rememberHazeState()
+    // 分类菜单「点选不收菜单」：toggleSectionVisible 同帧结构重写被采样源（列表增减
+    // 分组），菜单开着持续活采样——包 forRewrite 源侧退让两帧，重写帧内采样源卸载、
+    // 顶栏磨砂与菜单的活采样效果节点零源可引（机制见 PopupMenuPopup KDoc）
+    val categoryRetreat = rememberHazeRetreat()
+    // 排序 / 视图菜单「点选即收 + 同帧重写列表」：重写延后到退场播完（PopupActionGate）
+    val menuRewriteGate = rememberPopupActionGate()
     // 顶栏胶囊的液态玻璃：设置页「更高级的玻璃材质」开关 + API 31+（RenderEffect）
     // 双门控，关闭即原实心底（pressFeedback + background）。采样层 = 页面底色 + 待办
     // 列表——列表从顶栏下滚过，玻璃才有东西可折射（底色必须画进采样层，
@@ -358,9 +366,12 @@ fun TodoScreen(
             visibleSections.mapTo(mutableSetOf()) { it.name },
         )
     }
-    // 分组显隐开关：在可见集合里增删该组（不可变更新触发重组），列表即时增减对应分组
+    // 分组显隐开关：在可见集合里增删该组（不可变更新触发重组），列表即时增减对应分组；
+    // 分类菜单开着不收（多选开关），重写同帧包源侧退让（categoryRetreat，见其声明处）
     val toggleSectionVisible: (TodoSection) -> Unit = { section ->
-        visibleSections = if (section in visibleSections) visibleSections - section else visibleSections + section
+        categoryRetreat.forRewrite {
+            visibleSections = if (section in visibleSections) visibleSections - section else visibleSections + section
+        }
     }
     // 顶栏「更多」展开态：翻转展开/收起动作行（分组/排序/分类/视图/概览）
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
@@ -772,7 +783,15 @@ fun TodoScreen(
             Box(
                 Modifier
                     .matchParentSize()
-                    .hazeSource(hazeState)
+                    // 分类开关的重写窗口（categoryRetreat.forRewrite）源侧退让：采样源
+                    // 卸载两帧，重写帧内活采样效果节点零源可引；挂回后照常采样
+                    .then(
+                        if (categoryRetreat.suspended) {
+                            Modifier
+                        } else {
+                            Modifier.hazeSource(hazeState)
+                        },
+                    )
                     // 玻璃顶栏胶囊开启时同一节点再挂液态玻璃采样标记（Haze 管顶栏磨砂、
                     // Backdrop 只喂顶栏胶囊）；关闭时不挂载，采样层零开销
                     .then(
@@ -1084,33 +1103,35 @@ fun TodoScreen(
                                     PopupMenuItem(
                                         label = stringResource(R.string.sort_created),
                                         checked = sort == TodoSort.Created,
+                                        // 点选即收 + 重写延后：排序改动同帧结构重排被采样源
+                                        // （待办列表），延后到退场播完（menuRewriteGate）
                                         onClick = {
-                                            sort = TodoSort.Created
                                             sortMenuExpanded = false
+                                            menuRewriteGate.defer { sort = TodoSort.Created }
                                         },
                                     ),
                                     PopupMenuItem(
                                         label = stringResource(R.string.sort_deadline),
                                         checked = sort == TodoSort.Deadline,
                                         onClick = {
-                                            sort = TodoSort.Deadline
                                             sortMenuExpanded = false
+                                            menuRewriteGate.defer { sort = TodoSort.Deadline }
                                         },
                                     ),
                                     PopupMenuItem(
                                         label = stringResource(R.string.sort_urgency),
                                         checked = sort == TodoSort.Urgency,
                                         onClick = {
-                                            sort = TodoSort.Urgency
                                             sortMenuExpanded = false
+                                            menuRewriteGate.defer { sort = TodoSort.Urgency }
                                         },
                                     ),
                                     PopupMenuItem(
                                         label = stringResource(R.string.sort_name),
                                         checked = sort == TodoSort.Name,
                                         onClick = {
-                                            sort = TodoSort.Name
                                             sortMenuExpanded = false
+                                            menuRewriteGate.defer { sort = TodoSort.Name }
                                         },
                                     ),
                                 ),
@@ -1122,16 +1143,16 @@ fun TodoScreen(
                                         label = stringResource(R.string.sort_ascending),
                                         checked = !sortDescending,
                                         onClick = {
-                                            sortDescending = false
                                             sortMenuExpanded = false
+                                            menuRewriteGate.defer { sortDescending = false }
                                         },
                                     ),
                                     PopupMenuItem(
                                         label = stringResource(R.string.sort_descending),
                                         checked = sortDescending,
                                         onClick = {
-                                            sortDescending = true
                                             sortMenuExpanded = false
+                                            menuRewriteGate.defer { sortDescending = true }
                                         },
                                     ),
                                 ),
@@ -1151,17 +1172,19 @@ fun TodoScreen(
                                     PopupMenuItem(
                                         label = stringResource(R.string.todo_view_list),
                                         checked = !inboxView,
+                                        // 点选即收 + 重写延后：列表/收集箱切换同帧结构重写
+                                        // 被采样源（视图菜单 KDoc 同 sortMenuSections）
                                         onClick = {
-                                            inboxView = false
                                             viewMenuExpanded = false
+                                            menuRewriteGate.defer { inboxView = false }
                                         },
                                     ),
                                     PopupMenuItem(
                                         label = stringResource(R.string.todo_view_inbox),
                                         checked = inboxView,
                                         onClick = {
-                                            inboxView = true
                                             viewMenuExpanded = false
+                                            menuRewriteGate.defer { inboxView = true }
                                         },
                                     ),
                                 ),
@@ -1172,6 +1195,8 @@ fun TodoScreen(
                         hazeState = hazeState,
                         pillBackdrop = if (glassPillsEnabled) topBarPillBackdrop else null,
                         tabTransition = tabTransition,
+                        // 菜单退场播完冲刷延后的排序/视图重写（分类开关走 forRewrite 不经此门）
+                        onMenuExitFinished = { menuRewriteGate.flush() },
                     )
                 } else {
                     TodoEditBar(

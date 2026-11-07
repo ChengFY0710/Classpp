@@ -258,9 +258,11 @@ internal fun AiProfileSheet(
     // 无限递归直到栈溢出（SIGSEGV code 2）。对策沿用项目内两处已验证修复（XmuSyncScreen
     // 对话框 gate / AiChatOverlay 整链退让）：重写与 Haze 卸载落同帧重组，该帧所有窗口零
     // 效果节点，源重写无效果可撞；内容落定两帧后挂回。
-    // 覆盖范围：① 服务商预设 / 接口格式点选（同步改写，两帧窗口）；② 改名 / 存为新方案 /
-    // 删除确认（重写随仓库回流异步到达，退让延续到 profiles 回流帧 + 两帧，见
-    // suspendHazeForCommit）。方案选择（SelectCard 点选）只动勾选与文本、无弹层在场，
+    // 覆盖范围：① 服务商预设 / 接口格式点选：点选帧的重写已由 SelectMenu 内建的
+    // PopupActionGate 延后到菜单退场播完（重写帧弹层已卸载，零效果节点可撞），本退让
+    // 窗口随之延后启动——保护对象变为顶栏磨砂（重写帧内容列仍是它的采样源）；② 改名 /
+    // 存为新方案 / 删除确认（重写随仓库回流异步到达，退让延续到 profiles 回流帧 + 两帧，
+    // 见 suspendHazeForCommit）。方案选择（SelectCard 点选）只动勾选与文本、无弹层在场，
     // 同全应用其余浮层的同类操作，不在退让范围。
     var hazeSuspended by remember { mutableStateOf(false) }
     // 确认类动作已落库、等待 profiles 回流的窗口
@@ -346,7 +348,8 @@ internal fun AiProfileSheet(
                 onPick = { index ->
                     val preset = presets.getOrNull(index)
                     if (preset != null) {
-                        // 菜单退场仍在采样，同帧重写采样源结构必崩——先整链退让（崩溃史见 hazeSuspended）
+                        // 动作已由 SelectMenu 的 PopupActionGate 延后到菜单退场播完（重写帧
+                        // 弹层已卸载）；此处退让窗口保护顶栏磨砂——重写帧内容列仍是它的采样源
                         suspendHazeForRewrite {
                             updateDraft(
                                 draftConnection.copy(
@@ -378,7 +381,8 @@ internal fun AiProfileSheet(
                     selectedId = draftConnection.protocol.ordinal,
                     onPick = { id ->
                         AiProtocol.entries.getOrNull(id)?.let { protocol ->
-                            // 同服务商预设：菜单退场采样中不改写采样源（崩溃史见 hazeSuspended）
+                            // 同服务商预设：动作延后到退场播完（SelectMenu 的 Gate），此处
+                            // 退让窗口保护顶栏磨砂（崩溃史见 hazeSuspended）
                             suspendHazeForRewrite {
                                 updateDraft(draftConnection.copy(protocol = protocol))
                             }

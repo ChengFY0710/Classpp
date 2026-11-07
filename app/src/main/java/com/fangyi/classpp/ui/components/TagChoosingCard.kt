@@ -152,6 +152,9 @@ fun TagChoosingCard(
     // 记待删标签与长按时刻的窗口坐标，收起/删除只翻 deleteVisible，锚点保留到退场播完清
     var deleteTarget by remember { mutableStateOf<DeleteTarget?>(null) }
     var deleteVisible by remember { mutableStateOf(false) }
+    // 删标签 = 同帧重写标签列表（被采样源），菜单退场活采样期间不可撞：
+    // 落库延后到退场播完（PopupActionGate，机制见 PopupMenuPopup KDoc）
+    val deleteGate = rememberPopupActionGate()
     // 课程标签区展开状态：默认收起；展开/收起动画走 motion 层 Expandable（下方部分实时让位）
     var courseExpanded by rememberSaveable { mutableStateOf(initialCourseExpanded) }
     // 标签行删空后的折叠快照：Expandable 收起动画期间列表已空，行内容若直接跟随列表清空
@@ -379,8 +382,8 @@ fun TagChoosingCard(
             }
         }
 
-        // 长按删除菜单挂在 Box 内（不随胶囊挂载）：删除标签后列表即时刷新也不打断退场播放
-        // （同 DayImageSheet 的宿主级挂载）
+        // 长按删除菜单挂在 Box 内（不随胶囊挂载）：宿主级挂载，锚点生命周期与胶囊无关
+        // （同 DayImageSheet）；删标签的重写延后到退场播完，退场期间列表保持原样
         deleteTarget?.let { target ->
             TagDeleteMenu(
                 anchor = target.anchor,
@@ -388,10 +391,13 @@ fun TagChoosingCard(
                 onDismiss = { deleteVisible = false },
                 onDelete = {
                     deleteVisible = false
-                    onDeleteTag(target.name)
+                    deleteGate.defer { onDeleteTag(target.name) }
                 },
                 hazeState = hazeState,
-                onExitFinished = { deleteTarget = null },
+                onExitFinished = {
+                    deleteTarget = null
+                    deleteGate.flush()
+                },
             )
         }
     }

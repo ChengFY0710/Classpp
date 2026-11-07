@@ -102,8 +102,10 @@ internal fun SlotContextMenu(
  * （DropdownMenu 的锚定策略做不到贴卡片），[anchor] 是长按那张卡/那格的窗口坐标
  * （见 CourseGrid 的 BoundsHolder），菜单贴在它的左下角，投影留白与越界钳制由宿主处理。
  * 生命周期走「锚点 + 可见性」两态：宿主收起只翻 [expanded]，锚点保留到退场播完
- * （[onExitFinished] 后再清）——退场 150ms 里菜单内容稳定、行点击动作仍可命中
- * （动作照旧与收起同帧执行，视觉移除交给退场动画，规避原「动画没播完就点动作被吞」问题）。
+ * （[onExitFinished] 后再清）——退场（[com.fangyi.classpp.ui.motion.Motion.PopupExitMillis]，
+ * 120ms）里菜单内容稳定、行点击动作仍可命中（复制 / 调课 / 新建与收起同帧执行，视觉移除
+ * 交给退场动画；它们只开编辑器 / 写剪贴板、不同帧重写课表采样源。粘贴不同——同帧往网格
+ * 加课，经 [com.fangyi.classpp.ui.components.PopupActionGate] 延后到退场播完，见 ScheduleScreen）。
  *
  * 行样式与其它菜单统一（PopupMenuCard 默认行）：onSurface 深色 + 左侧 20dp 勾选槽，
  * 整份菜单为单组无缝形态（不画项间分割线）。

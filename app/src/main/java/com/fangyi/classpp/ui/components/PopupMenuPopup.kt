@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.components
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
@@ -26,13 +27,6 @@ import dev.chrisbanes.haze.HazeState
  * 图标 20dp + 行上 padding 14dp（原 DropdownMenu offset -34dp，选择行 / 重复行共用）。
  */
 val MenuTopAlignLift = 34.dp
-
-/**
- * 退场整卡不透明度：退场动画首帧即与「卸掉毛玻璃」同帧生效（做法同 8038c0a 的同帧
- * Haze 退让），之后仍沿 [com.fangyi.classpp.ui.motion.Motion.PopupCardFadeMillis] 尾窗
- * 曲线淡到 0——卸模糊瞬间白卡不至于满不透明地「跳」一下。
- */
-private const val PopupExitCardAlpha = 0.9f
 
 /**
  * 弹层生长锚点：进场缩放自卡片边缘的哪个点长出。[TopLeft]（默认）= 卡片左上角，
@@ -101,11 +95,9 @@ internal fun menuGrowthForAnchor(anchorCenterX: Float, windowWidthPx: Int): Menu
  * 菜单挂在行尾 / 锚点靠屏幕右侧时传 [MenuGrowth.TopRight]（该点只影响缩放锚点，不参与布局），
  * 锚点位置随内容变化的宿主（如课表按星期列）用 [menuGrowthForAnchor] 按半屏现算。
  * 收起 scale 与内容淡出共用 [com.fangyi.classpp.ui.motion.Motion.PopupExitMillis] +
- * Accelerate，同步收尾，播完才移除弹层；退场首帧即卸掉毛玻璃（[hazeState] 当帧传
- * null，Haze 效果节点与退场同帧卸载——同 8038c0a 的同帧 Haze 退让，退场不再采样），
- * 整卡不透明度同时乘 90%（[PopupExitCardAlpha]），随后沿原尾窗曲线淡出
- * （[com.fangyi.classpp.ui.motion.Motion.PopupCardFadeMillis]），另有一段 scale 尾区间
- * 兜底淡出，杜绝任何残留帧显形成白卡。整卡淡入淡出都压在首尾短窗内、中段恒满强度——
+ * Accelerate，同步收尾，播完才移除弹层；退场全程保持活采样毛玻璃（见下），沿原尾窗
+ * 曲线淡出（[com.fangyi.classpp.ui.motion.Motion.PopupCardFadeMillis]），另有一段 scale
+ * 尾区间兜底淡出，杜绝任何残留帧显形。整卡淡入淡出都压在首尾短窗内、中段恒满强度——
  * 长时间整卡半透明会把锐利背景混进毛玻璃，模糊看起来「由弱变强」（6f7cae7 存档的
  * 已知问题）。
  * [onExitFinished] 在退场播完后回调一次（宿主借机清理「仅退场期保留」的锚点状态；
@@ -113,7 +105,21 @@ internal fun menuGrowthForAnchor(anchorCenterX: Float, windowWidthPx: Int): Menu
  * [animateExit] = false 时收起不播退场动画、立即卸载。
  *
  * [hazeState] 下发给 [PopupMenuCard] 做毛玻璃（跨 Popup 窗口采样宿主页面 hazeSource），
- * null（如 @Preview、浮层内嵌宿主，以及退场期间）退化为不透明白卡。
+ * null（如 @Preview、浮层内嵌宿主）退化为不透明白卡。
+ *
+ * 退场活采样与崩溃防护（3e4d4dc 曾以「退场首帧卸掉毛玻璃」防护，退场退化白卡，已回退；
+ * 尝试过的「退场冻结采样」（输入换空源态靠 KeepLastFrame 保留帧）真机证伪——保留帧只
+ * 覆盖同一 state 内源短暂不可用，换输入态不触发）：崩溃 = 效果节点对源子树**活采样引用**
+ * × 源子树**结构重写**同帧。不变量为「弹层在场（含退场）期间，被采样源不发生结构重写」，
+ * 由宿主侧两类接线承担：
+ * - 收起类重写动作（排序 / 调课 / 删除等，点选即收菜单）：经 [PopupActionGate] 延后到
+ *   退场播完执行（[rememberPopupMotion] 的 onExitFinished）——重写帧弹层已卸载，零效果
+ *   节点可撞（3e4d4dc 崩溃史的原始强不变量）；
+ * - 开关类重写动作（菜单点选不收起，如待办分组显隐）：包 [com.fangyi.classpp.ui.components.HazeRetreatState.forRewrite]
+ *   源侧退让——重写帧内 hazeSource 卸载两帧，活采样效果节点零源可引（防护方向同
+ *   8038c0a 的设备验证），效果节点以保留帧或短暂白闪度过该窗口；
+ * - 浮层内部非菜单触发的重写沿用既有 HazeRetreat 接线，不在本组件职责内。
+ * 周数弹窗（WeekPicker）与分类菜单的长期在线表现佐证：纯收起 / 开关类不卸载亦未崩。
  */
 @Composable
 fun PopupMenuPopup(
@@ -165,10 +171,9 @@ fun PopupMenuPopup(
         ) {
             PopupMenuCard(
                 sections = sections,
-                // 退场首帧即卸掉毛玻璃：在 Popup 内容里读 exiting，组合期订阅退场方向，
-                // 退场那一帧的（子）重组就把 Haze 效果节点挂掉——同 8038c0a 的同帧退让，
-                // 宿主同帧重写采样源也无效果可撞。null 走既有实底白卡退化路径
-                hazeState = if (motion.exiting) null else hazeState,
+                // 退场全程活采样毛玻璃（WeekPicker 同款）：纯收起与延后/退让过的重写动作
+                // 不构成「活引用 × 源重写」同帧，防护约定见上方 KDoc 与 PopupActionGate
+                hazeState = hazeState,
                 // 投影随缩放渐入（果冻回弹段恒满强度）；毛玻璃子层绕同一生长锚点反向
                 // 缩放，生长/回弹全程与真实背景 1:1 对位——联动进度均在 draw 阶段读值
                 blurProgress = motion::blurProgress,
@@ -181,8 +186,6 @@ fun PopupMenuPopup(
                 modifier = Modifier
                     .popupMotionScale(
                         motion,
-                        // 退场整卡（含内容与柔影）首帧降到 90%，再沿原尾窗淡出
-                        exitAlphaScale = PopupExitCardAlpha,
                         origin = { size ->
                             menuGrowthOrigin(
                                 growth = menuGrowth,
@@ -204,3 +207,35 @@ fun PopupMenuPopup(
         }
     }
 }
+
+/**
+ * 重写类菜单动作的退场门：菜单项 onClick 立即收起弹层、把动作交给 [defer]；
+ * 退场播完（[rememberPopupMotion] 的 onExitFinished）调 [flush] 执行。动作按到达顺序
+ * 排队（退场约 120ms 内连点两行不丢动作）。
+ *
+ * 弹层带 Haze 毛玻璃时退场全程活采样宿主源子树（[PopupMenuPopup] KDoc），同帧结构
+ * 重写采样源会构建自引用 RenderNode（3e4d4dc 崩溃史）：排序 / 调课 / 删除等会增删宿主
+ * 内容的动作一律过此门；打开选择器、纯文本草稿更新等无结构重写的动作不必。
+ * 前提 [PopupMenuPopup] 的 animateExit = true（默认）：无退场即无 onExitFinished，
+ * 延后动作不会执行。
+ */
+@Stable
+class PopupActionGate internal constructor() {
+    private val pending = ArrayDeque<() -> Unit>()
+
+    /** 菜单项 onClick 内调用：收起弹层由宿主负责，重写动作延后到退场播完 */
+    fun defer(action: () -> Unit) {
+        pending.add(action)
+    }
+
+    /** 退场播完回调内调用：按序执行并清空延后动作；可与锚点清理等其他回调同帧 */
+    fun flush() {
+        while (pending.isNotEmpty()) {
+            pending.removeFirst().invoke()
+        }
+    }
+}
+
+/** [PopupMenuPopup] 重写类动作的退场门，每份菜单一个（机制见 [PopupActionGate]） */
+@Composable
+fun rememberPopupActionGate(): PopupActionGate = remember { PopupActionGate() }

@@ -471,6 +471,13 @@ internal fun Chevron() {
  * 不受卡片圆角裁剪；PopupMenuCard 白卡 + 柔影，与排序/重复/右键菜单同材质）。
  * 卡片顶边贴行卡顶边（对齐设计稿）。
  * [hazeState] 转给菜单做背景模糊（采样菜单背后那层内容），null = 不透明白卡。
+ *
+ * 点选即收 + [SettingsCardItem.Select.onPick] 常随选值重写宿主内容列（被采样源：
+ * 服务商预设回填 / 调课参数行增删 / 重复规则行显隐等）：重写统一延后到退场播完
+ * （[PopupActionGate]，机制见 [PopupMenuPopup] KDoc）——防护内建于本组件，
+ * 各宿主（AiProfileSheet / AdjustCourseSheet / RepeatSettingsSheet / NotificationScreen
+ * 等）零接线；宿主自有的源侧退让（如 AiProfileSheet 的 hazeSuspended）照常生效，
+ * 只是随动作延后到退场播完才进入窗口。
  */
 @Composable
 private fun SelectMenu(
@@ -481,6 +488,7 @@ private fun SelectMenu(
 ) {
     val density = LocalDensity.current
     val topAlignLiftPx = with(density) { MenuTopAlignLift.roundToPx() }
+    val rewriteGate = rememberPopupActionGate()
     Box {
         Icon(
             painter = painterResource(R.drawable.ic_chevron_up_down),
@@ -491,6 +499,7 @@ private fun SelectMenu(
         PopupMenuPopup(
             expanded = expanded,
             onDismiss = onDismiss,
+            onExitFinished = { rewriteGate.flush() },
             sections = listOf(
                 PopupMenuSection(
                     items = item.items.map { (id, label) ->
@@ -499,7 +508,7 @@ private fun SelectMenu(
                             checked = id == item.selectedId,
                             onClick = {
                                 onDismiss()
-                                if (id != item.selectedId) item.onPick(id)
+                                if (id != item.selectedId) rewriteGate.defer { item.onPick(id) }
                             },
                         )
                     },
