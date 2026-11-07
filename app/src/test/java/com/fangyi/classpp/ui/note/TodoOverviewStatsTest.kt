@@ -16,8 +16,9 @@ import java.util.GregorianCalendar
  * - 本周完成/连续天数/最近完成走完成记录口径——非重复看 `completedAtMillis`，
  *   重复看 `completedOccurrences`，两者不混算；
  * - 最近完成窗口 7 天、每条待办只取最近一次；
- * - 今日收工口径是两层混合：todayTotal = todayCompleted（完成记录）+ dueToday + overdue
- *   （列表展开），清完所有欠账才算收工。
+ * - 今日收工口径是两层混合：todayTotal = todayCompleted（完成记录）+ dueToday + overdue +
+ *   scheduledToday（列表展开）——待办时间为今天（dates 含今天）的未完成卡也纳入，
+ *   同一张卡只归一个口径（逾期 > 今天截止 > 待办时间为今天），清完所有欠账才算收工。
  */
 class TodoOverviewStatsTest {
 
@@ -47,6 +48,7 @@ class TodoOverviewStatsTest {
         assertEquals(0, stats.weekActiveDays)
         assertEquals(0, stats.todayCompleted)
         assertEquals(0, stats.todayTotal)
+        assertEquals(0, stats.scheduledToday)
         assertEquals(0, stats.streak)
         assertEquals(0, stats.dueToday)
         assertEquals(0, stats.dueNext7)
@@ -99,6 +101,8 @@ class TodoOverviewStatsTest {
         assertEquals(3, stats.streak)
         assertEquals(1, stats.recent.size)
         assertEquals(today, stats.recent.single().day)
+        // 合并滚动卡的当期（今天）已完成，副本 dates 前移到明天 → 不进收工分母
+        assertEquals(0, stats.scheduledToday)
     }
 
     @Test
@@ -143,6 +147,35 @@ class TodoOverviewStatsTest {
     }
 
     @Test
+    fun `todos scheduled today without deadline join wrap up total`() {
+        // 待办时间为今天（无截止）的未完成卡纳入收工分母；明天的不纳入
+        val scheduledToday = testTodo(dates = listOf(today))
+        val scheduledTomorrow = testTodo(dates = listOf(today + 1))
+        val stats = stats(listOf(scheduledToday, scheduledTomorrow))
+        assertEquals(2, stats.total)
+        assertEquals(0, stats.dueToday)
+        assertEquals(1, stats.scheduledToday)
+        assertEquals(0, stats.todayCompleted)
+        assertEquals(1, stats.todayTotal)
+    }
+
+    @Test
+    fun `scheduled today does not double count with deadline or overdue`() {
+        // 同一张卡只归一个口径：今天截止 > 待办时间为今天；逾期卡同理
+        val dueTodayAlsoScheduled = testTodo(
+            dates = listOf(today),
+            deadlineDate = today,
+            deadlineMinute = 23 * 60 + 59,
+        )
+        val overdueAlsoScheduled = testTodo(dates = listOf(today), deadlineDate = today - 2)
+        val stats = stats(listOf(dueTodayAlsoScheduled, overdueAlsoScheduled))
+        assertEquals(1, stats.dueToday)
+        assertEquals(1, stats.overdue)
+        assertEquals(0, stats.scheduledToday)
+        assertEquals(2, stats.todayTotal)
+    }
+
+    @Test
     fun `today total is zero when nothing done due or overdue today`() {
         // 只有未来的待办：今天没做也没欠 → 全清特例（环形画满 + 绿勾）
         val future = testTodo(
@@ -154,6 +187,7 @@ class TodoOverviewStatsTest {
         assertEquals(0, stats.todayCompleted)
         assertEquals(0, stats.dueToday)
         assertEquals(0, stats.overdue)
+        assertEquals(0, stats.scheduledToday)
         assertEquals(0, stats.todayTotal)
     }
 

@@ -87,8 +87,9 @@ import kotlin.math.min
  * - 分布与提醒按「列表展开口径」统计：[List.expandRepeatOccurrences] 的虚拟卡片，
  *   与页面四个分组、逾期判定同源；合并重复（默认）只算一张滚动卡。
  * - 今日收工环形是两层混合：分子 [TodoOverviewStats.todayCompleted] 走完成记录，
- *   分母 [TodoOverviewStats.todayTotal] = 分子 + 今天截止未完成 + 逾期未完成
- *   （列表展开口径）——清完所有欠账才算收工。
+ *   分母 [TodoOverviewStats.todayTotal] = 分子 + 今天截止未完成 + 逾期未完成 +
+ *   待办时间为今天的未完成卡（列表展开口径）——清完所有欠账才算收工。
+ *   同一张卡只归一个口径（逾期 > 今天截止 > 待办时间为今天），不重复计数。
  *
  * 颜色只取主题语义色（完成 urgentGreen、逾期 error、其余 primary、次级 secondaryText），
  * 字号全部走 [ClassppTextTokens]，卡片/间距沿用浮层既有 token。顶栏只有右侧「关闭」胶囊，
@@ -162,8 +163,9 @@ internal data class OverviewRecent(val title: String, val day: IsoDate)
 /**
  * 概览全部派生数据：分布/提醒走列表展开口径，周/连续/最近走完成记录口径。
  *
- * [todayTotal] 是「今日收工口径」的分母：今天完成 + 今天截止未完成 + 逾期未完成，
- * 清完所有欠账才算收工；[todayCompleted] 是分子，进度 = 分子 / 分母。
+ * [todayTotal] 是「今日收工口径」的分母：今天完成 + 今天截止未完成 + 逾期未完成 +
+ * 待办时间为今天的未完成卡，清完所有欠账才算收工；[todayCompleted] 是分子，
+ * 进度 = 分子 / 分母。
  */
 internal data class TodoOverviewStats(
     val total: Int,
@@ -178,6 +180,7 @@ internal data class TodoOverviewStats(
     val streak: Int,
     val dueToday: Int,
     val dueNext7: Int,
+    val scheduledToday: Int,
     val recent: List<OverviewRecent>,
 )
 
@@ -247,15 +250,22 @@ internal fun buildTodoOverviewStats(
         cursor -= 1
     }
 
-    // 提醒：今天截止的已逾期时刻只归逾期行，不重复计数
+    // 提醒与收工分母：今天截止的已逾期时刻只归逾期行，不重复计数；
+    // 待办时间为今天（dates 含今天）且未被截止归口的未完成卡也纳入收工分母
     var dueToday = 0
     var dueNext7 = 0
+    var scheduledToday = 0
     for (todo in expanded) {
         if (todo.completed) continue
-        val deadline = todo.deadlineDate ?: continue
+        if (todo.isOverdue(today, nowMinute)) continue
+        val deadline = todo.deadlineDate
         when {
-            deadline == today -> if (!todo.isOverdue(today, nowMinute)) dueToday++
-            deadline.epochDay in (today.epochDay + 1)..(today.epochDay + 7) -> dueNext7++
+            deadline == today -> dueToday++
+            deadline != null && deadline.epochDay in (today.epochDay + 1)..(today.epochDay + 7) -> dueNext7++
+        }
+        // 截止在今天或更早的卡已按截止归口（今天截止/逾期），dates 不再重复计
+        if ((deadline == null || deadline.epochDay > today.epochDay) && today in todo.dates) {
+            scheduledToday++
         }
     }
 
@@ -296,10 +306,11 @@ internal fun buildTodoOverviewStats(
         weekCompleted = weekCompleted,
         weekActiveDays = weekActiveDays,
         todayCompleted = dayCounts[today] ?: 0,
-        todayTotal = (dayCounts[today] ?: 0) + dueToday + overdue,
+        todayTotal = (dayCounts[today] ?: 0) + dueToday + overdue + scheduledToday,
         streak = streak,
         dueToday = dueToday,
         dueNext7 = dueNext7,
+        scheduledToday = scheduledToday,
         recent = recent,
     )
 }
@@ -911,7 +922,7 @@ private const val MinSegmentFraction = 0.02f
 
 // ---------- 预览 ----------
 
-/** 概览浮层预览：今日完成 3 件、逾期 1 件、今天截止 1 件 → 环形 3/5（60%）+「还差 2 件就收工」 */
+/** 概览浮层预览：今日完成 2 件 + 逾期 1 + 今天截止 1 + 待办时间为今天（明天截止）1 → 环形 2/5（40%） */
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 900)
 @Composable
 private fun TodoOverviewSheetPreview() = ClassppTheme {
