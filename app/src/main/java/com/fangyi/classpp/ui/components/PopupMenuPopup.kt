@@ -28,6 +28,13 @@ import dev.chrisbanes.haze.HazeState
 val MenuTopAlignLift = 34.dp
 
 /**
+ * 退场整卡不透明度：退场动画首帧即与「卸掉毛玻璃」同帧生效（做法同 8038c0a 的同帧
+ * Haze 退让），之后仍沿 [com.fangyi.classpp.ui.motion.Motion.PopupCardFadeMillis] 尾窗
+ * 曲线淡到 0——卸模糊瞬间白卡不至于满不透明地「跳」一下。
+ */
+private const val PopupExitCardAlpha = 0.9f
+
+/**
  * 弹层生长锚点：进场缩放自卡片边缘的哪个点长出。[TopLeft]（默认）= 卡片左上角，
  * 菜单挂在行尾 / 锚点靠屏幕右侧时传 [TopRight]；[TopCenter] = 顶边中点（周数弹窗等
  * 居中弹层用）。
@@ -94,7 +101,9 @@ internal fun menuGrowthForAnchor(anchorCenterX: Float, windowWidthPx: Int): Menu
  * 菜单挂在行尾 / 锚点靠屏幕右侧时传 [MenuGrowth.TopRight]（该点只影响缩放锚点，不参与布局），
  * 锚点位置随内容变化的宿主（如课表按星期列）用 [menuGrowthForAnchor] 按半屏现算。
  * 收起 scale 与内容淡出共用 [com.fangyi.classpp.ui.motion.Motion.PopupExitMillis] +
- * Accelerate，同步收尾，播完才移除弹层；退场尾窗整卡淡出
+ * Accelerate，同步收尾，播完才移除弹层；退场首帧即卸掉毛玻璃（[hazeState] 当帧传
+ * null，Haze 效果节点与退场同帧卸载——同 8038c0a 的同帧 Haze 退让，退场不再采样），
+ * 整卡不透明度同时乘 90%（[PopupExitCardAlpha]），随后沿原尾窗曲线淡出
  * （[com.fangyi.classpp.ui.motion.Motion.PopupCardFadeMillis]），另有一段 scale 尾区间
  * 兜底淡出，杜绝任何残留帧显形成白卡。整卡淡入淡出都压在首尾短窗内、中段恒满强度——
  * 长时间整卡半透明会把锐利背景混进毛玻璃，模糊看起来「由弱变强」（6f7cae7 存档的
@@ -104,7 +113,7 @@ internal fun menuGrowthForAnchor(anchorCenterX: Float, windowWidthPx: Int): Menu
  * [animateExit] = false 时收起不播退场动画、立即卸载。
  *
  * [hazeState] 下发给 [PopupMenuCard] 做毛玻璃（跨 Popup 窗口采样宿主页面 hazeSource），
- * null（如 @Preview 或浮层内嵌宿主）退化为不透明白卡。
+ * null（如 @Preview、浮层内嵌宿主，以及退场期间）退化为不透明白卡。
  */
 @Composable
 fun PopupMenuPopup(
@@ -156,7 +165,10 @@ fun PopupMenuPopup(
         ) {
             PopupMenuCard(
                 sections = sections,
-                hazeState = hazeState,
+                // 退场首帧即卸掉毛玻璃：在 Popup 内容里读 exiting，组合期订阅退场方向，
+                // 退场那一帧的（子）重组就把 Haze 效果节点挂掉——同 8038c0a 的同帧退让，
+                // 宿主同帧重写采样源也无效果可撞。null 走既有实底白卡退化路径
+                hazeState = if (motion.exiting) null else hazeState,
                 // 投影随缩放渐入（果冻回弹段恒满强度）；毛玻璃子层绕同一生长锚点反向
                 // 缩放，生长/回弹全程与真实背景 1:1 对位——联动进度均在 draw 阶段读值
                 blurProgress = motion::blurProgress,
@@ -169,6 +181,8 @@ fun PopupMenuPopup(
                 modifier = Modifier
                     .popupMotionScale(
                         motion,
+                        // 退场整卡（含内容与柔影）首帧降到 90%，再沿原尾窗淡出
+                        exitAlphaScale = PopupExitCardAlpha,
                         origin = { size ->
                             menuGrowthOrigin(
                                 growth = menuGrowth,

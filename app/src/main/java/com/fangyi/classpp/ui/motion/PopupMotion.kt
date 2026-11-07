@@ -100,7 +100,11 @@ class PopupMotionState internal constructor(
     val shown: Boolean
         get() = visibleState.targetState || (animateExit && visibleState.currentState)
 
-    /** 当前是否处于收起方向（退场尾段淡出只在该方向生效），draw 阶段读取 */
+    /**
+     * 当前是否处于收起方向（退场尾段淡出只在该方向生效）：draw 阶段（尾淡）与组合阶段
+     * （菜单宿主退场首帧卸载 Haze，见 [com.fangyi.classpp.ui.components.PopupMenuPopup]）
+     * 都会读取。
+     */
     internal val exiting: Boolean
         get() = !visibleState.targetState
 
@@ -218,10 +222,16 @@ fun rememberPopupMotion(
  * 淡入淡出（退场尾段另取兜底下限）+ 生长锚点，全部在 draw 阶段读值、零重组。垫在
  * 投影留白 padding **之外**——整卡（含柔影）一起变换，锚点由 [origin] 按图层实测尺寸
  * （含留白）反推，未提供（首帧 size 未量出等）时沿用上一帧锚点。
+ *
+ * [exitAlphaScale] 退场整卡透明度的乘数（默认 1f = 原行为）：PopupMenuPopup 传 0.9f，
+ * 满强度退场的首帧即降到 90%，之后仍沿 [PopupMotionState.cardAlpha] 的尾窗曲线淡到 0。
+ * 用乘法而非封顶——进场中途被反向收起时从当前 alpha 相对下降 20%，封顶反而会从
+ * 进场中的低 alpha 向上跳回 90%。
  */
 fun Modifier.popupMotionScale(
     motion: PopupMotionState,
     origin: (Size) -> TransformOrigin? = { null },
+    exitAlphaScale: Float = 1f,
 ): Modifier = graphicsLayer {
     val scale = motion.scale.value
     scaleX = scale
@@ -232,7 +242,7 @@ fun Modifier.popupMotionScale(
     alpha = if (!motion.exiting) {
         motion.cardAlpha.value
     } else {
-        minOf(
+        exitAlphaScale * minOf(
             motion.cardAlpha.value,
             ((scale - motion.enterStartScale) / PopupExitTailFadeScaleSpan).coerceIn(0f, 1f),
         )
