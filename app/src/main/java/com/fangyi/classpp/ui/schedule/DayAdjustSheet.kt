@@ -30,6 +30,7 @@ import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
+import dev.chrisbanes.haze.rememberHazeState
 
 /**
  * 整天调休浮层：把某周某天真正要上的全部课程，整体平移到另一周/另一天，每门课保持原节次。
@@ -113,8 +114,9 @@ internal fun DayAdjustSheet(
     // 提示条/错误文案增删），叠层滚轮进出场又会在同一帧翻转祖先 graphicsLayer（covered
     // 缩放）——Haze 2 在这类组合下曾构建自引用 RenderNode，RenderThread 在
     // prepareTreeImpl 无限递归、栈溢出。根因是采样输入 HazeSourceSelection.All 无视
-    // z 序把前景/自身内容采进模糊；统一改 Behind（f958dbb）后顶栏磨砂重新挂回（滚轮卡
-    // 仍走实底路径，不传 hazeState），真机验证不再崩溃（2026-11-07）。
+    // z 序把前景/自身内容采进模糊；统一改 Behind（f958dbb）后真机确认不再崩溃
+    // （2026-11-07），原状全链恢复：自建 sheetHazeState 同源喂顶栏与滚轮卡磨砂。
+    val sheetHazeState = rememberHazeState()
     var sourceWeekPickerVisible by remember { mutableStateOf(false) }
     var sourceWeekPickerMounted by remember { mutableStateOf(false) }
     var targetWeekPickerVisible by remember { mutableStateOf(false) }
@@ -152,6 +154,8 @@ internal fun DayAdjustSheet(
         visible = visible,
         covered = sourceWeekPickerVisible || targetWeekPickerVisible,
         onDismissed = onDismissed,
+        // 共享 hazeState：顶栏磨砂与两个周数滚轮卡的背景模糊同源采样（滚动内容是源）
+        hazeState = sheetHazeState,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
             CardSection(title = stringResource(R.string.day_adjust_section_source)) {
@@ -248,8 +252,7 @@ internal fun DayAdjustSheet(
     }
 
     // 原周滚轮：画在浮层之后（组合顺序即绘制顺序），covered 让本浮层缩小后退。
-    // 不传 hazeState：滚轮卡走 BottomSelectSheet 的实底 bottomSheetColor 路径，
-    // 本浮层因此没有任何第二个 Haze 效果节点
+    // hazeState 与顶栏同源（sheetHazeState）：卡片磨砂采样缩退中的浮层内容
     if (sourceWeekPickerMounted) {
         BottomNumberSelectCard(
             visible = sourceWeekPickerVisible,
@@ -259,6 +262,7 @@ internal fun DayAdjustSheet(
             valueRange = 1..maxWeek,
             initialValue = sourceWeek,
             unit = stringResource(R.string.adjust_unit_week),
+            hazeState = sheetHazeState,
             onConfirm = { picked ->
                 // 目标周原本跟着原周（同一周调休）时一起走，跨周调休则保持不变
                 if (targetWeek == sourceWeek) targetWeek = picked
@@ -269,7 +273,7 @@ internal fun DayAdjustSheet(
         )
     }
 
-    // 目标周滚轮（同原周滚轮：实底卡，不参与 Haze）
+    // 目标周滚轮（同原周滚轮：卡片磨砂与顶栏同源）
     if (targetWeekPickerMounted) {
         BottomNumberSelectCard(
             visible = targetWeekPickerVisible,
@@ -279,6 +283,7 @@ internal fun DayAdjustSheet(
             valueRange = 1..maxWeek,
             initialValue = targetWeek,
             unit = stringResource(R.string.adjust_unit_week),
+            hazeState = sheetHazeState,
             onConfirm = { picked ->
                 targetWeek = picked
                 touched = true
