@@ -525,9 +525,10 @@ fun XmuSyncScreen(
             val scrollState = rememberScrollState()
             // 标题渐显要把过滚动算进内容位移（可滚页面读边缘橡皮筋，不足一屏读整页橡皮筋）
             val overscrollEffect = rememberOffsetOverscrollEffect()
-            // 预热帧也要挂 Haze；对话框在场或覆盖层隐藏时不挂、也不录制（保留上次的帧）
-            val hazeActive = (overlayActive || LocalPageOverlayPrewarm.current) &&
-                !loadingMounted && !logoutMounted && !switchMounted && !disableAutoMounted
+            // 预热帧也要挂 Haze；隐藏态不挂、也不录制（保留上一次活跃期的就位帧）。
+            // 对话框在场不再卸磨砂：那曾是 HyperOS 崩溃的退让，Behind 采样确认修复后
+            // 已移除（见下方 SettingsTopBar 注释）
+            val hazeActive = overlayActive || LocalPageOverlayPrewarm.current
             val darkTheme = MaterialTheme.isDarkTheme
             val themeAccent = MaterialTheme.themeAccent
             val freezeEpoch = LocalSettingsFreezeEpoch.current
@@ -772,11 +773,14 @@ fun XmuSyncScreen(
             SettingsTopBar(
                 title = stringResource(R.string.settings_account_sync),
                 onBack = onBack,
-                // 全屏模拟对话框（FadeOverlayDialog：加载/退出/换号确认）用整屏
-                // graphicsLayer(alpha) 做淡入淡出；与顶栏磨砂的 Haze 源层同帧增删时，
-                // 部分设备（实测 HyperOS / Android 17）会触发 RenderThread 自引用
-                // RenderNode 递归崩溃（SIGSEGV、栈溢出）。对话框在场时顶栏已被遮罩
-                // 压暗、磨砂不可见——期间卸掉效果，对话框彻底卸载后再恢复。
+                // 崩溃与修复史：全屏模拟对话框（FadeOverlayDialog：加载/退出/换号/关
+                // 自动同步确认）的整屏 graphicsLayer(alpha) 与顶栏磨砂的 Haze 源层同帧
+                // 增删时，部分设备（实测 HyperOS / Android 17）曾触发 RenderThread 自引用
+                // RenderNode 递归崩溃（SIGSEGV、栈溢出），当时对话框在场就卸掉磨砂、
+                // 彻底卸载后再恢复。根因是采样输入 HazeSourceSelection.All 无视 z 序采样，
+                // 统一改 Behind（f958dbb）后真机确认修复，卸载机制随之移除——对话框在场
+                // 时磨砂保持挂载（顶栏已被遮罩压暗，观感无差）。覆盖层隐藏时的卸载保留，
+                // 属转场冻结体系的共享约定（见 SettingsTopBar KDoc）。
                 hazeState = if (hazeActive) hazeState else null,
                 buttonBackdrop = glassBackdrop,
                 freezeKey = freezeKey,
