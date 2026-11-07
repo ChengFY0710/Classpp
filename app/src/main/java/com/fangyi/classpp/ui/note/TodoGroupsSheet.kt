@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,7 +42,6 @@ import com.fangyi.classpp.ui.components.FadeOverlayDialog
 import com.fangyi.classpp.ui.components.GroupCard
 import com.fangyi.classpp.ui.components.GroupCardItem
 import com.fangyi.classpp.ui.components.OverlaySheet
-import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.components.SettingsCardwithIcon
 import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
 import com.fangyi.classpp.ui.components.SheetImeBehavior
@@ -232,17 +230,6 @@ internal fun TodoGroupsSheet(
     // 的 sheetHazeState 接法）。不交给弹卡的话弹卡按 BottomSelectSheet 的默认平底渲染，
     // 与日期轮等其他 Bottom* 弹卡的磨砂玻璃质感不一致
     val sheetHazeState = rememberHazeState()
-    // 删除 / 新建 / 重命名的落库回流退让窗口（同 AiProfileSheet 的已验证配方）：整屏
-    // FadeOverlayDialog 淡出或输入弹卡退场期间，分组/标签行增删（含删空整节卸载）与仓库
-    // 回流重写同帧叠加，而顶栏磨砂与弹卡背景模糊都在采样这份内容——窗口内整条链退让，
-    // 回流落定两帧后挂回（机制见 HazeRetreatState）
-    val hazeRetreat = rememberHazeRetreat()
-    // 退让期间弹卡统一退实底（OverlaySheet 同规则：hazeEnabled=false 时不给叠层传采样源）
-    val cardHazeState = if (hazeRetreat.suspended) null else sheetHazeState
-    // 落库回流落定：重写帧仍在退让窗口内，此处只推迟挂回（见 hazeRetreat 声明处）
-    LaunchedEffect(groups, tags) {
-        hazeRetreat.onReflow()
-    }
 
     val displayGroups = if (editing) draft else groups
     // 标签合并视图：课程标签（只读）作锁定前缀 + 用户标签。课程标签只展示**有待办挂载**的
@@ -373,10 +360,8 @@ internal fun TodoGroupsSheet(
         dragDismissEnabled = !(editing || tagEditing),
         // 列表型浮层：没有输入框，键盘不必让位（同课表切换浮层）
         imeBehavior = SheetImeBehavior.IgnoreIme,
-        // 采样源交给容器（见 sheetHazeState 声明处）：顶栏磨砂与叠层弹卡的背景模糊同源；
-        // 落库窗口内整条链退让（崩溃史见 hazeRetreat 声明处）
+        // 采样源交给容器（见 sheetHazeState 声明处）：顶栏磨砂与叠层弹卡的背景模糊同源
         hazeState = sheetHazeState,
-        hazeEnabled = !hazeRetreat.suspended,
         // 钉底规格由底栏动画层自持（见 EditActionRow），容器只给钉底定位
         bottomScrim = false,
         bottomContent = {
@@ -624,15 +609,12 @@ internal fun TodoGroupsSheet(
                 val names = deleteTargets
                 deleteTargets = null
                 if (!names.isNullOrEmpty()) {
-                    // 立即生效：真实列表先删（不经顶栏取消撤销），草稿同步移除保持显示一致。
-                    // 同帧重写 + 落库回流都在退让窗口内（崩溃史见 hazeRetreat 声明处）
-                    hazeRetreat.forCommit {
-                        onDeleteGroups(names)
-                        val nameSet = names.toSet()
-                        draft = draft.filterNot { it.name in nameSet }
-                        selectedIds = selectedIds - nameSet
-                        if (draft.isEmpty()) exitEdit()
-                    }
+                    // 立即生效：真实列表先删（不经顶栏取消撤销），草稿同步移除保持显示一致
+                    onDeleteGroups(names)
+                    val nameSet = names.toSet()
+                    draft = draft.filterNot { it.name in nameSet }
+                    selectedIds = selectedIds - nameSet
+                    if (draft.isEmpty()) exitEdit()
                 }
             },
         )
@@ -662,15 +644,12 @@ internal fun TodoGroupsSheet(
                 val names = tagDeleteTargets
                 tagDeleteTargets = null
                 if (!names.isNullOrEmpty()) {
-                    // 立即生效：真实列表先删（不经顶栏取消撤销），草稿同步移除保持显示一致。
-                    // 同帧重写 + 落库回流都在退让窗口内（崩溃史见 hazeRetreat 声明处）
-                    hazeRetreat.forCommit {
-                        onDeleteTags(names)
-                        val nameSet = names.toSet()
-                        tagDraft = tagDraft.filterNot { it.name in nameSet }
-                        tagSelectedIds = tagSelectedIds - nameSet
-                        if (tagDraft.isEmpty()) exitTagEdit()
-                    }
+                    // 立即生效：真实列表先删（不经顶栏取消撤销），草稿同步移除保持显示一致
+                    onDeleteTags(names)
+                    val nameSet = names.toSet()
+                    tagDraft = tagDraft.filterNot { it.name in nameSet }
+                    tagSelectedIds = tagSelectedIds - nameSet
+                    if (tagDraft.isEmpty()) exitTagEdit()
                 }
             },
         )
@@ -692,14 +671,11 @@ internal fun TodoGroupsSheet(
             onValueChange = { createDraft = it },
             // 实时校验：空名或与现有分组重名时确认钮置灰（同前一版居中弹窗约定）
             confirmEnabled = createName.isNotEmpty() && createName !in groups.map { it.name },
-            // 卡片磨砂：采样源同本浮层顶栏（见 sheetHazeState 声明处）；退让窗口内退实底
-            hazeState = cardHazeState,
+            // 卡片磨砂：采样源同本浮层顶栏（见 sheetHazeState 声明处）
+            hazeState = sheetHazeState,
             onConfirm = {
                 createRequested = false
-                // 新行随仓库回流出现，走落库退让窗口（同 AiProfileSheet 的存为新方案）
-                hazeRetreat.forCommit {
-                    onGroupsChange(groups + TodoGroup(createName), emptyMap())
-                }
+                onGroupsChange(groups + TodoGroup(createName), emptyMap())
             },
         )
     }
@@ -722,22 +698,19 @@ internal fun TodoGroupsSheet(
             onValueChange = { renameDraft = it },
             confirmEnabled = renameName.isNotEmpty() &&
                 groups.none { it.name == renameName && it.name != renameFrom },
-            // 卡片磨砂：采样源同本浮层顶栏（见 sheetHazeState 声明处）；退让窗口内退实底
-            hazeState = cardHazeState,
+            // 卡片磨砂：采样源同本浮层顶栏（见 sheetHazeState 声明处）
+            hazeState = sheetHazeState,
             onConfirm = {
                 renameVisible = false
                 val to = renameDraft.trim()
                 if (to.isNotEmpty() && to != renameFrom) {
-                    // 立即生效：真实列表改名写回 + 草稿/选中集同步（保持名字集合一致）；
-                    // 落库回流在退让窗口内（崩溃史见 hazeRetreat 声明处）
-                    hazeRetreat.forCommit {
-                        onGroupsChange(
-                            groups.map { g -> if (g.name == renameFrom) g.copy(name = to) else g },
-                            mapOf(renameFrom to to),
-                        )
-                        draft = draft.map { g -> if (g.name == renameFrom) g.copy(name = to) else g }
-                        selectedIds = selectedIds.mapTo(mutableSetOf()) { if (it == renameFrom) to else it }
-                    }
+                    // 立即生效：真实列表改名写回 + 草稿/选中集同步（保持名字集合一致）
+                    onGroupsChange(
+                        groups.map { g -> if (g.name == renameFrom) g.copy(name = to) else g },
+                        mapOf(renameFrom to to),
+                    )
+                    draft = draft.map { g -> if (g.name == renameFrom) g.copy(name = to) else g }
+                    selectedIds = selectedIds.mapTo(mutableSetOf()) { if (it == renameFrom) to else it }
                 }
             },
         )
@@ -760,20 +733,17 @@ internal fun TodoGroupsSheet(
             onValueChange = { tagRenameDraft = it },
             confirmEnabled = tagRenameName.isNotEmpty() &&
                 mergedTags.none { it.name == tagRenameName && it.name != tagRenameFrom },
-            // 卡片磨砂：采样源同本浮层顶栏（见 sheetHazeState 声明处）；退让窗口内退实底
-            hazeState = cardHazeState,
+            // 卡片磨砂：采样源同本浮层顶栏（见 sheetHazeState 声明处）
+            hazeState = sheetHazeState,
             onConfirm = {
                 tagRenameVisible = false
                 val to = tagRenameDraft.trim()
                 if (to.isNotEmpty() && to != tagRenameFrom) {
                     // 立即生效：真实标签表改名写回（宿主先改标签库再回写全部待办），
-                    // 草稿与选中集同步改名（保持名字集合一致，同分组重命名）；
-                    // 落库回流在退让窗口内（崩溃史见 hazeRetreat 声明处）
-                    hazeRetreat.forCommit {
-                        onRenameTag(tagRenameFrom, to)
-                        tagDraft = tagDraft.map { if (it.name == tagRenameFrom) it.copy(name = to) else it }
-                        tagSelectedIds = tagSelectedIds.mapTo(mutableSetOf()) { if (it == tagRenameFrom) to else it }
-                    }
+                    // 草稿与选中集同步改名（保持名字集合一致，同分组重命名）
+                    onRenameTag(tagRenameFrom, to)
+                    tagDraft = tagDraft.map { if (it.name == tagRenameFrom) it.copy(name = to) else it }
+                    tagSelectedIds = tagSelectedIds.mapTo(mutableSetOf()) { if (it == tagRenameFrom) to else it }
                 }
             },
         )

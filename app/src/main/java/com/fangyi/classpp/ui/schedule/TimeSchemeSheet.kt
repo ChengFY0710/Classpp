@@ -56,7 +56,6 @@ import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTopAction
-import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.tabularNumbers
@@ -185,13 +184,6 @@ internal fun TimeSchemeSheet(
 
     val covered = slotCountVisible || durationVisible || timeVisible || nameVisible
     val sheetHazeState = rememberHazeState()
-    // 保存 / 重命名的落库回流退让窗口（同 AiProfileSheet 的已验证配方）：底部输入卡退场
-    // 期间，方案选项行的新增/改名与时间行整列重写随仓库回流到达，而方案列表与时间行都是
-    // 本浮层的采样源（顶栏磨砂 + 弹卡背景模糊）——窗口内整条链退让，回流落定两帧后挂回
-    // （机制见 HazeRetreatState）。滚轮确认等无弹窗在场路径不在窗口内
-    val hazeRetreat = rememberHazeRetreat()
-    // 退让期间弹卡统一退实底（OverlaySheet 同规则：hazeEnabled=false 时不给叠层传采样源）
-    val cardHazeState = if (hazeRetreat.suspended) null else sheetHazeState
 
     BackHandler(enabled = true) { onDismiss() }
 
@@ -248,12 +240,6 @@ internal fun TimeSchemeSheet(
         }
     }
 
-    // 落库回流落定：重写帧仍在退让窗口内，此处只推迟挂回（见 hazeRetreat 声明处）。
-    // 单独一个效果：上面 pendingSchemeSave 的效果有早退分支，不能复用
-    LaunchedEffect(timeSchemes) {
-        hazeRetreat.onReflow()
-    }
-
     OverlaySheet(
         title = stringResource(R.string.time_scheme_title),
         confirmLabel = stringResource(R.string.edit_confirm),
@@ -281,8 +267,6 @@ internal fun TimeSchemeSheet(
         // 内容列没有输入框：键盘只服务底部名称输入卡，让位由 BottomTextFieldCard 自理
         imeBehavior = SheetImeBehavior.IgnoreIme,
         hazeState = sheetHazeState,
-        // 保存 / 重命名的落库回流窗口内整条链退让（崩溃史见 hazeRetreat 声明处）
-        hazeEnabled = !hazeRetreat.suspended,
         modifier = modifier,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
@@ -339,7 +323,7 @@ internal fun TimeSchemeSheet(
                             )
                         }
                     },
-                    menuHazeState = cardHazeState,
+                    menuHazeState = sheetHazeState,
                 )
             }
 
@@ -507,7 +491,7 @@ internal fun TimeSchemeSheet(
             valueRange = ScheduleValidator.MIN_SLOTS..ScheduleValidator.MAX_SLOTS,
             initialValue = slotCountInitial,
             unit = stringResource(R.string.unit_slot),
-            hazeState = cardHazeState,
+            hazeState = sheetHazeState,
             onConfirm = { count ->
                 slotCountVisible = false
                 val adjusted = slotsWithCount(draftSlots, count, draftDuration)
@@ -534,7 +518,7 @@ internal fun TimeSchemeSheet(
             valueRange = MIN_SLOT_DURATION..MAX_SLOT_DURATION,
             initialValue = durationInitial,
             unit = stringResource(R.string.unit_min),
-            hazeState = cardHazeState,
+            hazeState = sheetHazeState,
             onConfirm = { minutes ->
                 durationVisible = false
                 // 确认原时长不算改动，仍留在原方案
@@ -558,7 +542,7 @@ internal fun TimeSchemeSheet(
             title = timeTitle,
             initialHour = timeInitial / 60,
             initialMinute = timeInitial % 60,
-            hazeState = cardHazeState,
+            hazeState = sheetHazeState,
             onConfirm = { hour, minute ->
                 timeVisible = false
                 timeCallback?.invoke(hour * 60 + minute)
@@ -586,14 +570,11 @@ internal fun TimeSchemeSheet(
             onValueChange = { nameDraft = it },
             placeholder = stringResource(R.string.time_scheme_name_hint),
             confirmEnabled = nameDraft.isNotBlank(),
-            hazeState = cardHazeState,
+            hazeState = sheetHazeState,
             onConfirm = {
                 nameVisible = false
                 if (renameTargetId != null) {
-                    // 改名随回流改方案行文本，同走落库退让窗口（见 hazeRetreat 声明处）
-                    hazeRetreat.forCommit {
-                        onRenameScheme(renameTargetId, nameDraft.trim())
-                    }
+                    onRenameScheme(renameTargetId, nameDraft.trim())
                 } else {
                     // 记下保存前的方案 id 与草稿，仓库回流新增项后自动选中它
                     pendingSchemeSave = PendingSchemeSave(
@@ -601,10 +582,7 @@ internal fun TimeSchemeSheet(
                         slots = draftSlots,
                         durationMinutes = draftDuration,
                     )
-                    // 新方案行随回流出现 + 自动选中整列重填草稿，走落库退让窗口
-                    hazeRetreat.forCommit {
-                        onSaveScheme(nameDraft.trim(), draftSlots, draftDuration)
-                    }
+                    onSaveScheme(nameDraft.trim(), draftSlots, draftDuration)
                 }
             },
         )
