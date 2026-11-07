@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -40,6 +41,7 @@ import com.fangyi.classpp.ui.components.SheetTextFieldItem
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import dev.chrisbanes.haze.rememberHazeState
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /** 一次「保存为新方案」的挂起信息：保存前的方案 id 集合 + 发起时的草稿，回流后据此选中新增方案 */
@@ -47,6 +49,9 @@ private data class PendingProfileSave(
     val knownIds: Set<String>,
     val connection: AiConnection,
 )
+
+/** 落库回流退让的兜底帧数：回流迟迟未到时按帧挂回，防磨砂被永久停用 */
+private const val HazeCommitFallbackFrames = 30
 
 /**
  * 「AI 配置方案」浮层（AI 设置页 →「AI 配置方案」入口打开），结构对照课程时间方案：
@@ -66,6 +71,10 @@ private data class PendingProfileSave(
  *
  * 容器为 [OverlaySheet]，取消在左、确认在右（同课程时间方案浮层）；底部输入卡与删除弹窗
  * 均为两段式挂载，在场时经 covered 让本浮层缩小后退。
+ *
+ * Haze 退让：切换服务商预设与确认类落库（改名 / 存为新方案 / 删除）会在 Haze 效果节点
+ * 在场时同帧或随仓库回流重写采样源结构，重写窗口内整条链退让为静态底材、落定两帧后
+ * 挂回（崩溃史与机制见 hazeSuspended 注释）。
  */
 @Composable
 internal fun AiProfileSheet(
@@ -240,6 +249,73 @@ internal fun AiProfileSheet(
     val covered = nameVisible || deleteDialogVisible
     val sheetHazeState = rememberHazeState()
 
+    // —— Haze 退让窗口（RenderThread SIGSEGV 防御，同 AiChatOverlay 的对话切换退让）——
+    // 崩溃史（2026-11-07，切换服务商预设必崩，签名同 tombstone_05 / 账号页退出登录）：
+    // 本浮层内容列是 OverlaySheet 顶栏磨砂与弹出菜单（独立 Popup 窗口）的共享采样源。
+    // 在服务商下拉菜单里点选那一帧，菜单开始退场但仍挂载采样（播完才卸载），onPick 同帧
+    // 重写草稿——「接口格式」行随 providerId 增删 + 三个输入框整值替换，采样源子树在效果
+    // 节点在场时被结构重写，Haze 2 构建出自引用 RenderNode，RenderThread 在 prepareTreeImpl
+    // 无限递归直到栈溢出（SIGSEGV code 2）。对策沿用项目内两处已验证修复（XmuSyncScreen
+    // 对话框 gate / AiChatOverlay 整链退让）：重写与 Haze 卸载落同帧重组，该帧所有窗口零
+    // 效果节点，源重写无效果可撞；内容落定两帧后挂回。
+    // 覆盖范围：① 服务商预设 / 接口格式点选（同步改写，两帧窗口）；② 改名 / 存为新方案 /
+    // 删除确认（重写随仓库回流异步到达，退让延续到 profiles 回流帧 + 两帧，见
+    // suspendHazeForCommit）。方案选择（SelectCard 点选）只动勾选与文本、无弹层在场，
+    // 同全应用其余浮层的同类操作，不在退让范围。
+    var hazeSuspended by remember { mutableStateOf(false) }
+    // 确认类动作已落库、等待 profiles 回流的窗口
+    var awaitingProfilesSettle by remember { mutableStateOf(false) }
+    // 挂回计时任务：新一轮退让先取消再重排，保证挂回永不与重写同帧
+    var hazeResumeJob by remember { mutableStateOf<Job?>(null) }
+
+    /**
+     * 同步改写退让：[block] 里的草稿写入与 Haze 卸载落在同一帧重组，两帧后内容稳定再挂回。
+     */
+    fun suspendHazeForRewrite(block: () -> Unit) {
+        hazeResumeJob?.cancel()
+        awaitingProfilesSettle = false
+        hazeSuspended = true
+        block()
+        hazeResumeJob = scope.launch {
+            withFrameNanos { }
+            withFrameNanos { }
+            hazeSuspended = false
+        }
+    }
+
+    /**
+     * 落库回流退让：[block] 触发的重写由仓库回流异步带到、时机未知，退让保持到 profiles
+     * 回流（见下方 LaunchedEffect）再延两帧；回流迟迟不来（如同名重命名未触发再发射——
+     * 内容相等即无重写，本就无需退让）由 [HazeCommitFallbackFrames] 兜底挂回。
+     */
+    fun suspendHazeForCommit(block: () -> Unit) {
+        hazeResumeJob?.cancel()
+        hazeSuspended = true
+        awaitingProfilesSettle = true
+        block()
+        hazeResumeJob = scope.launch {
+            repeat(HazeCommitFallbackFrames) { withFrameNanos { } }
+            if (awaitingProfilesSettle) {
+                awaitingProfilesSettle = false
+                hazeSuspended = false
+            }
+        }
+    }
+
+    // 回流落定：重写帧必然仍在退让窗口内，此处只推迟挂回；等待期间再来的回流会重启本
+    // 效果、重新计两帧
+    LaunchedEffect(profiles) {
+        if (!awaitingProfilesSettle) return@LaunchedEffect
+        withFrameNanos { }
+        withFrameNanos { }
+        awaitingProfilesSettle = false
+        hazeSuspended = false
+    }
+
+    // 退让期间叠层弹卡 / 菜单统一退为实底（OverlaySheet 同规则：hazeEnabled = false 时不给
+    // 叠层传采样源）
+    val cardHazeState = if (hazeSuspended) null else sheetHazeState
+
     BackHandler(enabled = true) { onDismiss() }
 
     // 服务商预设行（与旧 AI 设置页同一套回填规则）
@@ -270,21 +346,24 @@ internal fun AiProfileSheet(
                 onPick = { index ->
                     val preset = presets.getOrNull(index)
                     if (preset != null) {
-                        updateDraft(
-                            draftConnection.copy(
-                                providerId = preset.id,
-                                // 选中预设即回填端点与协议；建议模型仅在非手填预设下覆盖
-                                baseUrl = preset.baseUrl.ifBlank { draftConnection.baseUrl },
-                                model = if (!preset.requiresManualModel &&
-                                    preset.suggestedModel.isNotBlank()
-                                ) {
-                                    preset.suggestedModel
-                                } else {
-                                    draftConnection.model
-                                },
-                                protocol = preset.protocol,
-                            ),
-                        )
+                        // 菜单退场仍在采样，同帧重写采样源结构必崩——先整链退让（崩溃史见 hazeSuspended）
+                        suspendHazeForRewrite {
+                            updateDraft(
+                                draftConnection.copy(
+                                    providerId = preset.id,
+                                    // 选中预设即回填端点与协议；建议模型仅在非手填预设下覆盖
+                                    baseUrl = preset.baseUrl.ifBlank { draftConnection.baseUrl },
+                                    model = if (!preset.requiresManualModel &&
+                                        preset.suggestedModel.isNotBlank()
+                                    ) {
+                                        preset.suggestedModel
+                                    } else {
+                                        draftConnection.model
+                                    },
+                                    protocol = preset.protocol,
+                                ),
+                            )
+                        }
                     }
                 },
             ),
@@ -299,7 +378,10 @@ internal fun AiProfileSheet(
                     selectedId = draftConnection.protocol.ordinal,
                     onPick = { id ->
                         AiProtocol.entries.getOrNull(id)?.let { protocol ->
-                            updateDraft(draftConnection.copy(protocol = protocol))
+                            // 同服务商预设：菜单退场采样中不改写采样源（崩溃史见 hazeSuspended）
+                            suspendHazeForRewrite {
+                                updateDraft(draftConnection.copy(protocol = protocol))
+                            }
                         }
                     },
                 ),
@@ -333,6 +415,8 @@ internal fun AiProfileSheet(
         visible = visible,
         covered = covered,
         onDismissed = onDismissed,
+        // 退让窗口内整条链卸载 Haze（顶栏走静态底材），内容落定后再挂回（崩溃史见 hazeSuspended）
+        hazeEnabled = !hazeSuspended,
         hazeState = sheetHazeState,
         modifier = modifier,
     ) {
@@ -369,13 +453,13 @@ internal fun AiProfileSheet(
                             )
                         }
                     },
-                    menuHazeState = sheetHazeState,
+                    menuHazeState = cardHazeState,
                 )
             }
 
             // B. 连接明细：服务商 / 接口格式 + 三个输入行 + 保存为新方案
             CardSection(title = stringResource(R.string.ai_settings_section_connection)) {
-                SettingsCard(items = providerRows, hazeState = sheetHazeState)
+                SettingsCard(items = providerRows, hazeState = cardHazeState)
 
                 SheetTextFieldGroup(
                     fields = listOf(
@@ -441,7 +525,7 @@ internal fun AiProfileSheet(
                             description = stringResource(R.string.ai_profile_hint_message),
                         ),
                     ),
-                    hazeState = sheetHazeState,
+                    hazeState = cardHazeState,
                 )
             }
         }
@@ -465,11 +549,12 @@ internal fun AiProfileSheet(
             onValueChange = { nameDraft = it },
             placeholder = stringResource(R.string.ai_profile_name_hint),
             confirmEnabled = nameDraft.isNotBlank(),
-            hazeState = sheetHazeState,
+            hazeState = cardHazeState,
             onConfirm = {
                 if (renameTargetId != null) {
                     nameVisible = false
-                    onRename(renameTargetId, nameDraft.trim())
+                    // 落库回流会异步重写采样源（方案行文本），退让到回流落定（崩溃史见 hazeSuspended）
+                    suspendHazeForCommit { onRename(renameTargetId, nameDraft.trim()) }
                 } else {
                     val normalized = normalizeDraft()
                     if (normalized != null) {
@@ -478,11 +563,14 @@ internal fun AiProfileSheet(
                             knownIds = profiles.map { it.id }.toSet(),
                             connection = normalized,
                         )
-                        onSaveAs(
-                            nameDraft.trim(),
-                            normalized,
-                            keyInput.trim().takeIf { it.isNotEmpty() },
-                        )
+                        // 存为新方案：回流新增方案行（结构重写）+ 自动选中再改草稿，同走退让窗口
+                        suspendHazeForCommit {
+                            onSaveAs(
+                                nameDraft.trim(),
+                                normalized,
+                                keyInput.trim().takeIf { it.isNotEmpty() },
+                            )
+                        }
                     }
                 }
             },
@@ -523,7 +611,9 @@ internal fun AiProfileSheet(
                     enabled = deleteDialogVisible,
                     onClick = {
                         deleteDialogVisible = false
-                        target?.let { onDelete(it.id) }
+                        // 删除确认 = 整屏 FadeOverlayDialog 淡出 + 方案行增删同帧组合，是
+                        // 账号页退出登录已验证的崩溃配方——落库重写走退让窗口（见 hazeSuspended）
+                        suspendHazeForCommit { target?.let { onDelete(it.id) } }
                     },
                 )
             }
