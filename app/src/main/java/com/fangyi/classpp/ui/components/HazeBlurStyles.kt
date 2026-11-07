@@ -24,7 +24,9 @@ import dev.chrisbanes.haze.blur.HazeColorEffect
  * selection 固定 [HazeSourceSelection.Behind]（Haze 2 默认值，显式写出以锁定约定）：
  * 只采样 z 序位于最近祖先 hazeSource 之后的源，无匹配祖先时回退为全部源。
  * 项目**禁用 [HazeSourceSelection.All]**（见 docs/AGENTS.md）：它会无视 z 序采集
- * state 的全部源，效果与源交叠时会把前景 / 自身内容一并采进模糊。
+ * state 的全部源，效果与源交叠时会把前景 / 自身内容一并采进模糊——DayAdjustSheet /
+ * AiChatOverlay / AiConversationsSheet 三处闪退的根因，统一改 Behind 后真机确认修复
+ * （2026-11-07）。
  * [HazeSourceRetention.KeepLastFrame] 与 Haze 2 默认一致：源短暂不可用时保留上一帧，
  * 避免切换 / 重组瞬间闪空。
  */

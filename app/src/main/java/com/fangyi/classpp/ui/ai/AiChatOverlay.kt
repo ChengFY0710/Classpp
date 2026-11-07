@@ -72,8 +72,9 @@ private val AuroraHeadroom = 120.dp
  * AI 对话浮层（日程页顶栏右侧按钮唤起，M1 唯一 AI 入口）。
  *
  * 基于 [OverlaySheet]：遮罩/进出场/下拉关闭/键盘让位/顶栏磨砂全部复用组件内置规格
- * （消息列即采样源；曾因「切换对话内容塌缩 / 流式逐字重写」触发 Adreno Vulkan 驱动
- * 崩溃整链退让——26d8c1f 同款规避，采样输入改 Behind（f958dbb）后重新挂回验证）；
+ * （消息列即采样源；「切换对话内容塌缩 / 流式逐字重写」曾触发 Adreno Vulkan 驱动崩溃
+ * 而整链退让，根因是 HazeSourceSelection.All 无视 z 序采样，改 Behind（f958dbb）后
+ * 重新挂回，真机验证不再崩溃）；
  * 消息列表走浮层自带滚动列（onScrollStateReady 接管 ScrollState 做自动滚底），
  * 输入栏钉底（bottomScrim = false，底部光场/渐隐/导航栏留白自绘并随键盘上移）——
  * 光场由 [AiThinkingAurora] 绘制，AI 思考时缓慢游动、空闲保持静态；输入栏玻璃采样
@@ -322,12 +323,12 @@ fun AiChatOverlay(
         covered = conversationsVisible || detailTodoId != "" || editTodoId != "",
         onScrollStateReady = { chatScroll.value = it },
         bottomScrim = false,
-        // 崩溃规避史（ec9fa71）：消息列是采样源，切换对话时内容从长列表塌缩成空态、
-        // 流式期间逐字重写——「内容结构频繁重写采样源」曾触发 Adreno Vulkan 驱动
-        // RenderThread SIGSEGV（切换到空对话必崩，2026-11-07 定位），当时整条链退让为
-        // 零 Haze 节点。采样输入统一改 Behind（f958dbb）后按用户要求重新挂回整条链
-        // （顶栏磨砂 + 附件菜单磨砂），验证崩溃是否已随采样输入修复；若复现闪退，退回
-        // hazeEnabled = false。光场与输入栏玻璃走 kyant backdrop（独立体系），不受影响。
+        // 崩溃与修复史（ec9fa71 退让）：消息列是采样源，切换对话时内容从长列表塌缩成
+        // 空态、流式期间逐字重写——「内容结构频繁重写采样源」曾触发 Adreno Vulkan 驱动
+        // RenderThread SIGSEGV（切换到空对话必崩，2026-11-07 定位）。根因是采样输入
+        // HazeSourceSelection.All 无视 z 序采样；统一改 Behind（f958dbb）后整条链
+        // （顶栏磨砂 + 附件菜单磨砂）重新挂回，真机验证不再崩溃。光场与输入栏玻璃走
+        // kyant backdrop（独立体系），不受影响。
         bottomContent = {
             // 与顶栏同源的 Haze 采样状态（供附件菜单跨 Popup 窗口做磨砂）
             val bottomHazeState = LocalOverlayBottomHazeState.current

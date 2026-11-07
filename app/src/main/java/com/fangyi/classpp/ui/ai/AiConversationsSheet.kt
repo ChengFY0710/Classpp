@@ -95,11 +95,11 @@ internal fun AiConversationsSheet(
         visible = visible,
         covered = covered,
         onDismissed = onDismissed,
-        // 崩溃规避史（1b6d95e）：本浮层叠在对话浮层之上，对话浮层本身就是最重的 Haze
-        // 用户——叠加态两条模糊链曾触发 Adreno Vulkan 驱动崩溃（RenderThread SIGSEGV，
-        // 2026-11-06 23:51 复发），当时整条链退让为零 Haze 节点。采样输入统一改 Behind
-        // （f958dbb）后按用户要求重新挂回顶栏磨砂，验证崩溃是否已随采样输入修复；若复现
-        // 闪退，退回 hazeEnabled = false。
+        // 崩溃与修复史（1b6d95e 退让）：本浮层叠在对话浮层之上，对话浮层本身就是最重的
+        // Haze 用户——叠加态两条模糊链曾触发 Adreno Vulkan 驱动崩溃（RenderThread
+        // SIGSEGV，2026-11-06 23:51 复发）。根因是采样输入 HazeSourceSelection.All 无视
+        // z 序采样；统一改 Behind（f958dbb）后顶栏磨砂重新挂回，真机验证不再崩溃
+        // （含叠加态）。
         // 列表没有输入框，键盘不必让位
         imeBehavior = SheetImeBehavior.IgnoreIme,
     ) {

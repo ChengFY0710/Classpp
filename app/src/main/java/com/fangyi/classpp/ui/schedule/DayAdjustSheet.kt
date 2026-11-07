@@ -109,12 +109,12 @@ internal fun DayAdjustSheet(
         else -> listOfNotNull(conflictText) + otherErrorTexts
     }
 
-    // 崩溃规避史（26d8c1f）：每次点星期格都会重写采样源子树（课程行 0↔N、提示条/错误
-    // 文案增删），叠层滚轮进出场又会在同一帧翻转祖先 graphicsLayer（covered 缩放）——
-    // Haze 2 在这类组合下会构建自引用 RenderNode，RenderThread 在 prepareTreeImpl
-    // 无限递归、栈溢出，当时整条链退让为零 Haze 节点。采样输入统一改 Behind（f958dbb）
-    // 后按用户要求重新挂回顶栏磨砂（OverlaySheet 默认 haze 链），验证崩溃是否已随采样
-    // 输入修复；滚轮卡仍走实底路径（不传 hazeState）。若复现闪退，退回 hazeEnabled = false。
+    // 崩溃与修复史（26d8c1f 退让）：每次点星期格都会重写采样源子树（课程行 0↔N、
+    // 提示条/错误文案增删），叠层滚轮进出场又会在同一帧翻转祖先 graphicsLayer（covered
+    // 缩放）——Haze 2 在这类组合下曾构建自引用 RenderNode，RenderThread 在
+    // prepareTreeImpl 无限递归、栈溢出。根因是采样输入 HazeSourceSelection.All 无视
+    // z 序把前景/自身内容采进模糊；统一改 Behind（f958dbb）后顶栏磨砂重新挂回（滚轮卡
+    // 仍走实底路径，不传 hazeState），真机验证不再崩溃（2026-11-07）。
     var sourceWeekPickerVisible by remember { mutableStateOf(false) }
     var sourceWeekPickerMounted by remember { mutableStateOf(false) }
     var targetWeekPickerVisible by remember { mutableStateOf(false) }
