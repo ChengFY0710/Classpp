@@ -60,14 +60,16 @@
     <!-- 最近删除页列表顶部提示条：回收站保留期（与 TRASH_RETENTION_DAYS 一致） -->
     <string name="todo_trash_retention_hint">保留%1$d天，%1$d天后自动删除</string>
     <string name="todo_empty_tag">该标签下还没有待办</string>
-    <!-- 待办概览浮层（TodoOverviewSheet）：情绪指标 + 提醒 + 分布 + 最近完成 -->
+    <!-- 待办概览浮层（TodoOverviewSheet）：今日收工环形 + 三统计卡 + 提醒 + 分布 + 最近完成 -->
     <string name="todo_overview_title">待办概览</string>
     <string name="todo_overview_week_completed">本周完成</string>
     <string name="todo_overview_items">%1$d 项</string>
-    <string name="todo_overview_streak">连续 %1$d 天有完成</string>
-    <string name="todo_overview_today_done">今天已完成</string>
-    <string name="todo_overview_week_days">这周有 %1$d 天完成了待办</string>
-    <string name="todo_overview_start_small">从一件小事开始</string>
+    <string name="todo_overview_today_fraction">%1$d/%2$d</string>
+    <string name="todo_overview_today_percent">今日完成 %1$d%%</string>
+    <string name="todo_overview_today_progress">已完成 %1$d 件，还差 %2$d 件就收工</string>
+    <string name="todo_overview_today_all_done">今天的事都做完了，收工！</string>
+    <string name="todo_overview_today_clear">今天没有要做的，好好休息</string>
+    <string name="todo_overview_streak_short">连续天数</string>
     <string name="todo_overview_week_section">本周节奏</string>
     <string name="todo_overview_week_summary">这周完成 %1$d 项 · %2$d 天</string>
     <string name="todo_overview_week_empty">这周还没有完成记录</string>

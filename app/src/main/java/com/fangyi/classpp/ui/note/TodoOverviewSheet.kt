@@ -1,6 +1,9 @@
 package com.fangyi.classpp.ui.note
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,11 +21,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -64,11 +72,12 @@ import kotlin.math.min
  * 待办概览浮层：顶栏展开动作行「概览」进入（纯展示，无确认动作）。
  *
  * 设计重心是情绪价值，其次是提醒价值：
- * 1. 主卡：本周完成数 + 连续完成天数 / 状态文案，建立正反馈；
- * 2. 本周节奏：周一至周日 7 列，有完成的日期竖柱（urgentGreen）、今天列 primaryContainer 底；
- * 3. 需要留意：只列计数 > 0 的已逾期 / 今天截止 / 未来 7 天；三项全 0 时给一张绿勾提示卡；
- * 4. 全部待办：已完成 / 未完成 / 已逾期三列数字 + 三段分布条 + 总数；
- * 5. 最近完成：近 7 天每条待办取最近一次完成，倒序最多 3 条。
+ * 1. 今日收工卡：环形进度 + 收工文案（今天完成 N 件，还差 N 件就收工）；
+ * 2. 三统计卡：本周完成 / 连续天数 / 已逾期（>0 用 error，0 降级次级色）；
+ * 3. 本周节奏：周一至周日 7 列，有完成的日期竖柱（urgentGreen）、今天列 primaryContainer 底；
+ * 4. 需要留意：只列计数 > 0 的已逾期 / 今天截止 / 未来 7 天；三项全 0 时给一张绿勾提示卡；
+ * 5. 全部待办：已完成 / 未完成 / 已逾期三列数字 + 三段分布条 + 总数；
+ * 6. 最近完成：近 7 天每条待办取最近一次完成，倒序最多 3 条。
  *
  * **统计口径分两层**（关键）：
  * - 情绪指标（本周完成 / 连续天数 / 最近完成）按「完成记录」统计：非重复待办用
@@ -77,6 +86,9 @@ import kotlin.math.min
  *   `completedAtMillis` 缺失的旧数据不计入这三项（但仍计入分布）。
  * - 分布与提醒按「列表展开口径」统计：[List.expandRepeatOccurrences] 的虚拟卡片，
  *   与页面四个分组、逾期判定同源；合并重复（默认）只算一张滚动卡。
+ * - 今日收工环形是两层混合：分子 [TodoOverviewStats.todayCompleted] 走完成记录，
+ *   分母 [TodoOverviewStats.todayTotal] = 分子 + 今天截止未完成 + 逾期未完成
+ *   （列表展开口径）——清完所有欠账才算收工。
  *
  * 颜色只取主题语义色（完成 urgentGreen、逾期 error、其余 primary、次级 secondaryText），
  * 字号全部走 [ClassppTextTokens]，卡片/间距沿用浮层既有 token。顶栏只有右侧「关闭」胶囊，
@@ -118,7 +130,8 @@ internal fun TodoOverviewSheet(
             if (stats.total == 0) {
                 OverviewEmptyCard()
             } else {
-                OverviewHeroCard(stats)
+                OverviewTodayCard(stats)
+                OverviewStatCardsRow(stats)
                 CardSection(title = stringResource(R.string.todo_overview_week_section)) {
                     OverviewWeekCard(stats, today)
                 }
@@ -146,7 +159,12 @@ internal data class OverviewDay(val date: IsoDate, val count: Int)
 /** 最近完成的一条：待办标题 + 最近一次完成日期 */
 internal data class OverviewRecent(val title: String, val day: IsoDate)
 
-/** 概览全部派生数据：分布/提醒走列表展开口径，周/连续/最近走完成记录口径 */
+/**
+ * 概览全部派生数据：分布/提醒走列表展开口径，周/连续/最近走完成记录口径。
+ *
+ * [todayTotal] 是「今日收工口径」的分母：今天完成 + 今天截止未完成 + 逾期未完成，
+ * 清完所有欠账才算收工；[todayCompleted] 是分子，进度 = 分子 / 分母。
+ */
 internal data class TodoOverviewStats(
     val total: Int,
     val completed: Int,
@@ -156,6 +174,7 @@ internal data class TodoOverviewStats(
     val weekCompleted: Int,
     val weekActiveDays: Int,
     val todayCompleted: Int,
+    val todayTotal: Int,
     val streak: Int,
     val dueToday: Int,
     val dueNext7: Int,
@@ -277,6 +296,7 @@ internal fun buildTodoOverviewStats(
         weekCompleted = weekCompleted,
         weekActiveDays = weekActiveDays,
         todayCompleted = dayCounts[today] ?: 0,
+        todayTotal = (dayCounts[today] ?: 0) + dueToday + overdue,
         streak = streak,
         dueToday = dueToday,
         dueNext7 = dueNext7,
@@ -286,46 +306,173 @@ internal fun buildTodoOverviewStats(
 
 // ---------- 概览卡片 ----------
 
-/** 主卡：本周完成 + 连续天数/状态文案，用同色渐变勾选图标点题 */
+/** 今日收工卡：环形进度 + 收工文案；分子/分母口径见 [TodoOverviewStats.todayTotal] */
 @Composable
-private fun OverviewHeroCard(stats: TodoOverviewStats) {
-    val allCompleted = stats.completed == stats.total
-    val statusText = when {
-        // 全部完成优先给最强正反馈（复用未完成空态文案，全 app 同一句）
-        allCompleted -> stringResource(R.string.todo_empty_incomplete)
-        stats.streak >= 2 -> stringResource(R.string.todo_overview_streak, stats.streak)
-        // 连续 1 天可能是「昨天完成、今天还没做」，只有今天确有完成才说今天已完成
-        stats.todayCompleted > 0 -> stringResource(R.string.todo_overview_today_done)
-        stats.weekCompleted > 0 -> stringResource(R.string.todo_overview_week_days, stats.weekActiveDays)
-        else -> stringResource(R.string.todo_overview_start_small)
-    }
+private fun OverviewTodayCard(stats: TodoOverviewStats) {
     SheetCard {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                GradientTintedIcon(
-                    icon = R.drawable.ic_checkmark_circle,
-                    color = MaterialTheme.classppColors.urgentGreen,
-                    modifier = Modifier.size(OverviewHeroIconSize),
-                )
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = stringResource(R.string.todo_overview_week_completed),
-                        style = MaterialTheme.classppTextStyles.noteProperty,
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            TodayProgressRing(
+                completed = stats.todayCompleted,
+                total = stats.todayTotal,
+            ) {
+                if (stats.todayTotal == 0) {
+                    // 全清特例：今天没做也没欠，环心不放 0/0，放绿勾
+                    Icon(
+                        painter = painterResource(R.drawable.ic_checkmark_circle),
+                        contentDescription = null,
+                        tint = MaterialTheme.classppColors.urgentGreen,
+                        modifier = Modifier.size(TodayRingCenterIconSize),
                     )
-                    Text(
-                        text = stringResource(R.string.todo_overview_items, stats.weekCompleted),
-                        style = ClassppTextTokens.countdownNumber,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                    )
+                } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = stringResource(
+                                R.string.todo_overview_today_fraction,
+                                stats.todayCompleted,
+                                stats.todayTotal,
+                            ),
+                            style = ClassppTextTokens.countdownNumber,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                        )
+                        Text(
+                            text = stringResource(
+                                R.string.todo_overview_today_percent,
+                                stats.todayCompleted * 100 / stats.todayTotal,
+                            ),
+                            style = ClassppTextTokens.metaTextSmall,
+                            color = MaterialTheme.classppColors.secondaryText,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
             Text(
-                text = statusText,
-                style = ClassppTextTokens.secondaryText,
+                text = when {
+                    stats.todayTotal == 0 -> stringResource(R.string.todo_overview_today_clear)
+                    stats.todayCompleted == stats.todayTotal -> {
+                        stringResource(R.string.todo_overview_today_all_done)
+                    }
+                    else -> stringResource(
+                        R.string.todo_overview_today_progress,
+                        stats.todayCompleted,
+                        stats.todayTotal - stats.todayCompleted,
+                    )
+                },
+                style = ClassppTextTokens.secondaryTextLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+/** 今日完成环形：轨道一圈（onSurfaceCard，同无完成周柱）+ 进度弧（urgentGreen，完成语义色） */
+@Composable
+private fun TodayProgressRing(
+    completed: Int,
+    total: Int,
+    content: @Composable () -> Unit,
+) {
+    // 0/0 特例按全清处理画满环；进场从 0 生长（animateFloatAsState 首帧直接落位，没有进场动画）
+    val target = if (total <= 0) 1f else (completed.toFloat() / total).coerceIn(0f, 1f)
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(target) {
+        progress.animateTo(target, tween(durationMillis = TodayRingGrowMillis))
+    }
+    val trackColor = MaterialTheme.classppColors.onSurfaceCard
+    val progressColor = MaterialTheme.classppColors.urgentGreen
+    Box(modifier = Modifier.size(TodayRingSize), contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val stroke = TodayRingStroke.toPx()
+            val diameter = size.minDimension - stroke
+            val topLeft = Offset(stroke / 2, stroke / 2)
+            drawArc(
+                color = trackColor,
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = topLeft,
+                size = Size(diameter, diameter),
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+            )
+            if (progress.value > 0f) {
+                drawArc(
+                    color = progressColor,
+                    startAngle = -90f,
+                    sweepAngle = 360f * progress.value,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = Size(diameter, diameter),
+                    style = Stroke(width = stroke, cap = StrokeCap.Round),
+                )
+            }
+        }
+        content()
+    }
+}
+
+/** 三张统计卡：本周完成 / 连续天数 / 已逾期；逾期 >0 用 error，0 降级次级色（同分布卡规则） */
+@Composable
+private fun OverviewStatCardsRow(stats: TodoOverviewStats) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OverviewStatCard(
+            count = stats.weekCompleted,
+            label = stringResource(R.string.todo_overview_week_completed),
+            countColor = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        OverviewStatCard(
+            count = stats.streak,
+            label = stringResource(R.string.todo_overview_streak_short),
+            countColor = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        OverviewStatCard(
+            count = stats.overdue,
+            label = stringResource(R.string.todo_section_overdue),
+            countColor = if (stats.overdue > 0) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.classppColors.secondaryText
+            },
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** 单张统计小卡：数字 + 标签，纵向居中；颜色由调用方给（0 值降级在调用方处理） */
+@Composable
+private fun OverviewStatCard(
+    count: Int,
+    label: String,
+    countColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    SheetCard(modifier = modifier) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = count.toString(),
+                style = ClassppTextTokens.countdownNumber,
+                color = countColor,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = label,
+                style = ClassppTextTokens.metaTextSmall,
                 color = MaterialTheme.classppColors.secondaryText,
+                maxLines = 1,
             )
         }
     }
@@ -344,7 +491,7 @@ private fun OverviewEmptyCard() {
             GradientTintedIcon(
                 icon = R.drawable.ic_clipboard_task,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(OverviewHeroIconSize),
+                modifier = Modifier.size(OverviewEmptyIconSize),
             )
             Spacer(Modifier.height(10.dp))
             Text(
@@ -724,8 +871,20 @@ private fun relativeDayLabel(day: IsoDate, today: IsoDate): String {
 
 // ---------- 文件私有几何常量 ----------
 
-/** 主卡/空态图标边长：与设置页信息头部卡同级（40dp） */
-private val OverviewHeroIconSize = 40.dp
+/** 今日环外径：128dp，今日收工卡的视觉重心 */
+private val TodayRingSize = 128.dp
+
+/** 今日环描边宽：12dp，与分布条同档粗细 */
+private val TodayRingStroke = 12.dp
+
+/** 今日环环心绿勾边长：28dp，全清特例使用 */
+private val TodayRingCenterIconSize = 28.dp
+
+/** 今日环进场生长动效时长：600ms（短驻留浮层，进场播一次，不循环） */
+private const val TodayRingGrowMillis = 600
+
+/** 空态图标边长：与设置页信息头部卡同级（40dp） */
+private val OverviewEmptyIconSize = 40.dp
 
 /** 提醒/最近完成行内图标：20dp，同信息提示条 */
 private val OverviewRowIconSize = 20.dp
@@ -752,7 +911,7 @@ private const val MinSegmentFraction = 0.02f
 
 // ---------- 预览 ----------
 
-/** 概览浮层预览：近一周完成、今日截止、逾期与最近完成均有示例数据 */
+/** 概览浮层预览：今日完成 3 件、逾期 1 件、今天截止 1 件 → 环形 3/5（60%）+「还差 2 件就收工」 */
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 900)
 @Composable
 private fun TodoOverviewSheetPreview() = ClassppTheme {
@@ -793,6 +952,14 @@ private fun TodoOverviewSheetPreview() = ClassppTheme {
                 name = "课程论文",
                 dates = listOf(today - 5),
                 deadlineDate = today - 2,
+            ),
+            Todo(
+                id = "preview-6",
+                name = "整理错题本",
+                dates = listOf(today),
+                // 23:59 截止：预览在几乎所有时刻都走「今天截止」分支而非逾期
+                deadlineDate = today,
+                deadlineMinute = 23 * 60 + 59,
             ),
         ),
         onDismiss = {},

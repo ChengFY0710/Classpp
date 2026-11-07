@@ -15,7 +15,9 @@ import java.util.GregorianCalendar
  * - 分布/提醒走 [com.fangyi.classpp.data.expandRepeatOccurrences] 的卡片口径；
  * - 本周完成/连续天数/最近完成走完成记录口径——非重复看 `completedAtMillis`，
  *   重复看 `completedOccurrences`，两者不混算；
- * - 最近完成窗口 7 天、每条待办只取最近一次。
+ * - 最近完成窗口 7 天、每条待办只取最近一次；
+ * - 今日收工口径是两层混合：todayTotal = todayCompleted（完成记录）+ dueToday + overdue
+ *   （列表展开），清完所有欠账才算收工。
  */
 class TodoOverviewStatsTest {
 
@@ -44,6 +46,7 @@ class TodoOverviewStatsTest {
         assertEquals(0, stats.weekCompleted)
         assertEquals(0, stats.weekActiveDays)
         assertEquals(0, stats.todayCompleted)
+        assertEquals(0, stats.todayTotal)
         assertEquals(0, stats.streak)
         assertEquals(0, stats.dueToday)
         assertEquals(0, stats.dueNext7)
@@ -66,6 +69,8 @@ class TodoOverviewStatsTest {
         assertEquals(1, stats.weekCompleted)
         assertEquals(1, stats.weekActiveDays)
         assertEquals(1, stats.todayCompleted)
+        // 今天完成 1 件、无截止无逾期 → 1/1 收工
+        assertEquals(1, stats.todayTotal)
         assertEquals(1, stats.countOn(today))
         assertEquals(1, stats.streak)
         assertEquals(1, stats.recent.size)
@@ -117,6 +122,39 @@ class TodoOverviewStatsTest {
         assertEquals(4, stats.active)
         assertEquals(1, stats.dueToday)
         assertEquals(2, stats.dueNext7)
+        // 今日收工口径：今天完成 1 + 今天截止未完成 1 + 逾期 1 = 3
+        assertEquals(3, stats.todayTotal)
+    }
+
+    @Test
+    fun `today total mixes completion records with expanded backlog`() {
+        // 今天完成记录 1 件（无截止），欠账：今天截止 1 件 + 历史逾期 1 件 → 1/3
+        val doneToday = testTodo(
+            completed = true,
+            completedAtMillis = localNoonMillis(today),
+        )
+        val dueToday = testTodo(deadlineDate = today, deadlineMinute = 23 * 60 + 59)
+        val overdue = testTodo(deadlineDate = today - 2)
+        val stats = stats(listOf(doneToday, dueToday, overdue))
+        assertEquals(1, stats.todayCompleted)
+        assertEquals(1, stats.dueToday)
+        assertEquals(1, stats.overdue)
+        assertEquals(3, stats.todayTotal)
+    }
+
+    @Test
+    fun `today total is zero when nothing done due or overdue today`() {
+        // 只有未来的待办：今天没做也没欠 → 全清特例（环形画满 + 绿勾）
+        val future = testTodo(
+            name = "future",
+            deadlineDate = today + 3,
+        )
+        val stats = stats(listOf(future))
+        assertEquals(1, stats.total)
+        assertEquals(0, stats.todayCompleted)
+        assertEquals(0, stats.dueToday)
+        assertEquals(0, stats.overdue)
+        assertEquals(0, stats.todayTotal)
     }
 
     @Test
