@@ -63,6 +63,7 @@ import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
 import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /** 光场在输入栏上方额外留出的可见高度：与输入栏、导航栏一起构成约 240dp 的光场带 */
@@ -90,7 +91,8 @@ private val AuroraHeadroom = 120.dp
  *   两层动效由 OverlaySheet 的 covered 机制同帧衔接；
  * - 顶栏（同其它浮层的顶栏规格）：左上蓝「对话」= 打开「所有对话」管理浮层
  *   （[AiConversationsSheet]，叠在本浮层之上、covered 后退分层动效）：新建 / 切换 /
- *   删除对话，新建/切换先收浮层、退场播完再落库（淡出期间对话内容不动）；没有对话时按钮保持可点但点击无反应（列表空无从管理，发消息会隐式
+ *   删除对话，新建/切换即时落库（管理浮层同步收起，退场动画照播——播完时内容已切
+ *   到位、高亮已移到新对话）；没有对话时按钮保持可点但点击无反应（列表空无从管理，发消息会隐式
  *   建对话），不显示居中标题，右上白「关闭」收起浮层；
  * - AI 设置由设置页的「AI 设置」子页承载（设置 → AI 设置），浮层内不再有 ⚙ 入口：
  *   只有未配置引导卡经 [onOpenSettings] 请求宿主跳转（宿主先收起本浮层，再打开设置页
@@ -157,14 +159,12 @@ fun AiChatOverlay(
     // visible 请求进出场，mounted 是挂载快照（出场动画播完才卸载）
     var conversationsVisible by remember { mutableStateOf(false) }
     var conversationsMounted by remember { mutableStateOf(false) }
-    // 浮层退场后待落库的对话动作（新建/切换共用，同 SelectCard 的 pendingMenuAction）：
-    // 选了对话先播完浮层退场，onDismissed 才落仓库——淡出期间对话内容与列表高亮不中途
-    // 变化。其余关闭路径（右上关闭/返回键/拖拽/主浮层外部收起/删光自动收）不置位，
-    // 退场后无动作
-    var pendingConversationAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     // 切换对话期间顶栏 Haze 的退让开关（见 applyConversationChange 的崩溃史注释）：
     // true 时整条 Haze 链卸载、顶栏走静态底材；落库并绘制完成后再挂回
     var conversationHazeSuspended by remember { mutableStateOf(false) }
+    // 在途的对话切换协程（单飞闸门）：退场途中连点两张卡只认第一张，避免两场协程
+    // 交错把 Haze 提前挂回源子树重写窗口
+    var conversationChangeJob by remember { mutableStateOf<Job?>(null) }
     // 详情/编辑目标两态口径（同 TodoScreen 的 detail/edit）：id 是期望目标，mounted 是
     // 挂载快照（详情随仓库回流刷新，编辑表单只取一次初值）
     var detailTodoId by remember { mutableStateOf("") }
@@ -247,37 +247,43 @@ fun AiChatOverlay(
     }
 
     /**
-     * 对话切换的落库收口：先让顶栏 Haze 退让，浮层退场播完后落仓库，落库后再等两帧
-     * 绘制完成才挂回磨砂。
+     * 对话切换的落库收口：**即时落仓库**（管理浮层同步收起、退场动画照播，切换不再
+     * 等退场播完）。Haze 退让窗口收窄为「源子树重写的前后各两帧」：
      *
      * 崩溃史（tombstone_05，2026-11-07 03:39）：消息列是 Haze 采样源，切换对话时内容
      * 从长列表塌缩成空态——源子树在同一帧被整块重写，Haze 2 的 source fallback 会构建
      * 自引用 RenderNode，RenderThread 在 prepareTreeImpl 无限递归、栈溢出（tombstone 的
      * 512 帧全是 libhwui 同一段递归）。顶栏效果与消息列在 [OverlaySheet] 里是兄弟节点、
-     * 没有祖先 hazeSource，Behind 采样修复覆盖不到这条路径，故在此显式退让：切换前
-     * 就卸载 Haze 链（hazeEnabled=false 走静态底材，静止态与磨砂外观一致），源内容落定
-     * 并绘制完成后再挂回——稳态磨砂与其余浮层不受影响。
+     * 没有祖先 hazeSource，Behind 采样修复覆盖不到这条路径，故在此显式退让：落库前先
+     * 等两帧，让整条 Haze 链（hazeEnabled=false 走静态底材，静止态与磨砂外观一致）
+     * 卸载并完整绘制一帧，源子树重写才落在零 Haze 节点的帧上；落库后再等两帧——重组
+     * 与绘制都走完——才挂回。稳态磨砂与其余浮层不受影响。
+     *
+     * 单飞：上一场切换在途时忽略再次点选（浮层已在退场，连点只认第一张），避免两场
+     * 协程交错在前一场挂回 Haze 时后一场还在重写源子树。
      */
     fun applyConversationChange(block: suspend () -> Unit) {
+        if (conversationChangeJob?.isActive == true) return
         conversationHazeSuspended = true
-        pendingConversationAction = {
-            scope.launch {
-                try {
-                    block()
-                    // 崩溃发生在 RenderThread 准备新内容那一帧渲染树的阶段：源节点要在
-                    // 落库后的重组与绘制都走完之后才允许挂回
-                    withFrameNanos { }
-                    withFrameNanos { }
-                } finally {
-                    conversationHazeSuspended = false
-                }
+        conversationsVisible = false
+        conversationChangeJob = scope.launch {
+            try {
+                // 前两帧：Haze 链卸载并完整绘制一帧，源子树重写与卸载不同帧
+                withFrameNanos { }
+                withFrameNanos { }
+                block()
+                // 崩溃发生在 RenderThread 准备新内容那一帧渲染树的阶段：源节点要在
+                // 落库后的重组与绘制都走完之后才允许挂回
+                withFrameNanos { }
+                withFrameNanos { }
+            } finally {
+                conversationHazeSuspended = false
             }
         }
-        conversationsVisible = false
     }
 
     /**
-     * 新建对话：先收管理浮层，退场播完（onDismissed）再落仓库——新对话为空态，
+     * 新建对话：即时落仓库（管理浮层同步收起、退场动画照播）——新对话为空态，
      * 发首条消息时由仓库自动命名
      */
     fun createConversation() {
@@ -285,7 +291,7 @@ fun AiChatOverlay(
         applyConversationChange { repository.createConversation() }
     }
 
-    /** 切换对话：先收管理浮层，退场播完（onDismissed）再落仓库——淡出期间对话内容不动 */
+    /** 切换对话：即时落仓库（管理浮层同步收起），退场期间高亮已切到新对话 */
     fun switchConversation(id: String) {
         val repository = aiChatRepository ?: return
         applyConversationChange { repository.switchConversation(id) }
@@ -505,12 +511,7 @@ fun AiChatOverlay(
     if (conversationsMounted) {
         AiConversationsSheet(
             visible = visible && conversationsVisible,
-            onDismissed = {
-                conversationsMounted = false
-                // 选了对话的退场收口：浮层播完退场后才落仓库（新建/切换在此刻生效）
-                pendingConversationAction?.invoke()
-                pendingConversationAction = null
-            },
+            onDismissed = { conversationsMounted = false },
             conversations = conversations,
             activeConversationId = activeConversationId,
             onCreate = ::createConversation,
