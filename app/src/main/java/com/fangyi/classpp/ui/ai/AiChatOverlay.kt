@@ -67,6 +67,7 @@ import com.fangyi.classpp.ui.components.LocalOverlayBottomHazeState
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
+import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.note.NewTodoSheet
 import com.fangyi.classpp.ui.note.TodoDetailSheet
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
@@ -187,6 +188,10 @@ fun AiChatOverlay(
     // 在途的对话切换协程（单飞闸门）：退场途中连点两张卡只认第一张，避免两场协程
     // 交错把 Haze 提前挂回源子树重写窗口
     var conversationChangeJob by remember { mutableStateOf<Job?>(null) }
+    // 删除对话的落库回流窗口：删除是唯一留在管理浮层内落库的对话操作——列表行消失
+    // （删光为 N→0）与活动对话被删时的消息列整块换写都发生在窗口内，两层顶栏磨砂
+    // 一起退让（崩溃史同 applyConversationChange / tombstone_05；机制见 HazeRetreatState）
+    val deleteHazeRetreat = rememberHazeRetreat()
     // 详情/编辑目标两态口径（同 TodoScreen 的 detail/edit）：id 是期望目标，mounted 是
     // 挂载快照（详情随仓库回流刷新，编辑表单只取一次初值）
     var detailTodoId by remember { mutableStateOf("") }
@@ -326,6 +331,12 @@ fun AiChatOverlay(
         if (conversations.isEmpty()) conversationsVisible = false
     }
 
+    // 删除对话的落库回流落定：重写帧仍在 deleteHazeRetreat 的退让窗口内，此处只推迟挂回
+    // （key 必须取列表本身：删除非活动对话时 isEmpty 不变，只有列表内容回流可作落定信号）
+    LaunchedEffect(conversations) {
+        deleteHazeRetreat.onReflow()
+    }
+
     // 自动滚底：新消息（条数变化）、流式增量（尾部内容/思考长度变化）与待办卡落位都把
     // 滚动列压到底。等下一帧再滚：LaunchedEffect 在布局前执行，此时 maxValue 还是上一帧的
     // 值，最后一块较大的增量会差一截滚不到底。
@@ -425,11 +436,17 @@ fun AiChatOverlay(
         applyConversationChange { repository.switchConversation(id) }
     }
 
-    /** 删除对话：留在管理浮层，列表随仓库回流更新（删光由 LaunchedEffect 收起浮层） */
+    /**
+     * 删除对话：留在管理浮层，列表随仓库回流更新（删光由 LaunchedEffect 收起浮层）。
+     * 删除活动对话时消息列也会整块换写（tombstone_05 同型源重写），落库窗口内两层顶栏
+     * Haze 退让（机制见 HazeRetreatState），回流落定后再等两帧自动挂回。
+     */
     fun deleteConversation(id: String) {
         val repository = aiChatRepository ?: return
-        scope.launch {
-            repository.deleteConversation(id)
+        deleteHazeRetreat.forCommit {
+            scope.launch {
+                repository.deleteConversation(id)
+            }
         }
     }
 
@@ -496,9 +513,9 @@ fun AiChatOverlay(
         covered = conversationsVisible || detailTodoId != "" || editTodoId != "",
         onScrollStateReady = { chatScroll.value = it },
         bottomScrim = false,
-        // 切换对话的落库/绘制窗口内整条 Haze 链退让（崩溃史见 applyConversationChange）；
-        // 平时保持挂载，稳态磨砂不变
-        hazeEnabled = !conversationHazeSuspended,
+        // 切换 / 删除对话的落库与绘制窗口内整条 Haze 链退让（崩溃史见 applyConversationChange
+        // 与 deleteConversation）；平时保持挂载，稳态磨砂不变
+        hazeEnabled = !conversationHazeSuspended && !deleteHazeRetreat.suspended,
         // 崩溃与修复史（ec9fa71 退让 → f958dbb 改 Behind → 本次再复现）：消息列是采样源，
         // 切换对话时内容从长列表塌缩成空态、流式期间逐字重写——「内容结构频繁重写采样源」
         // 曾触发 RenderThread SIGSEGV（切换到空对话必崩）。All→Behind 修复了效果位于源子树
@@ -684,6 +701,8 @@ fun AiChatOverlay(
             onDismiss = { conversationsVisible = false },
             onSwitch = ::switchConversation,
             onDelete = ::deleteConversation,
+            // 删除落库窗口内管理浮层同样退让：它自己的列表也是采样源（行消失 / 删光 N→0）
+            hazeEnabled = !deleteHazeRetreat.suspended,
             // 详情/编辑浮层盖上来时缩小后退（与管理浮层互斥的路径，防御性接线同主浮层）
             covered = detailTodoId != "" || editTodoId != "",
         )

@@ -64,6 +64,9 @@ internal fun AiConversationsSheet(
     onSwitch: (String) -> Unit,
     onDelete: (String) -> Unit,
     covered: Boolean = false,
+    // 删除落库回流窗口内由宿主置 false：本浮层列表也是采样源（行消失 / 删光 N→0），
+    // 整条链退让到回流落定（机制见 HazeRetreatState，宿主 AiChatOverlay 的 deleteHazeRetreat）
+    hazeEnabled: Boolean = true,
 ) {
     // 待删除的对话 id（非空 = 删除确认框打开）
     var deletingId by remember { mutableStateOf<String?>(null) }
@@ -100,9 +103,10 @@ internal fun AiConversationsSheet(
         // Haze 用户——叠加态两条模糊链曾触发 Adreno Vulkan 驱动崩溃（RenderThread
         // SIGSEGV，2026-11-06 23:51 复发）。根因是采样输入 HazeSourceSelection.All 无视
         // z 序采样；统一改 Behind（f958dbb）后顶栏磨砂重新挂回，真机验证不再崩溃
-        // （含叠加态）。
+        // （含叠加态）。删除落库窗口的退让由宿主的 hazeEnabled 驱动（见参数注释）。
         // 列表没有输入框，键盘不必让位
         imeBehavior = SheetImeBehavior.IgnoreIme,
+        hazeEnabled = hazeEnabled,
     ) {
         // 对话卡是直接排成一列的同型卡列表：整列收进一个无题 CardSection（组内 10dp 卡间距）
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {

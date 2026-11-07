@@ -402,7 +402,7 @@
     <string name="appearance_accent_pink">粉色</string>
     <string name="appearance_accent_sdu_red">山大红</string>
     <string name="glass_material">更高级的玻璃材质</string>
-    <string name="glass_material_desc">液态玻璃模糊与折射，需 Android 13 起；逐帧采样有性能开销，低端设备建议关闭</string>
+    <string name="glass_material_desc">液态玻璃模糊与折射，需 Android 13 起，逐帧采样有性能开销，低端设备建议关闭</string>
     <string name="overlay_topbar_blur">浮层顶栏模糊</string>
     <string name="overlay_topbar_blur_desc">浮层顶栏渐变模糊效果，逐帧采样有性能开销，低端设备建议关闭</string>
     <string name="section_days">每周上课天数</string>
