@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -341,20 +342,20 @@ fun AiChatOverlay(
         deleteHazeRetreat.onReflow()
     }
 
-    // 自动滚底：新消息（条数变化）、流式增量（尾部内容/思考长度变化）与待办卡落位都把
-    // 滚动列压到底。等下一帧再滚：LaunchedEffect 在布局前执行，此时 maxValue 还是上一帧的
-    // 值，最后一块较大的增量会差一截滚不到底。
+    // 离散事件滚底：新消息入列 / 待办卡落位 / 切换对话 / 浮层可见——等下一帧布局完成后滚一次。
     LaunchedEffect(
         messages.size,
-        messages.lastOrNull()?.content?.length,
-        messages.lastOrNull()?.reasoning?.length,
         messages.lastOrNull()?.todoIds?.size,
+        activeConversationId,
         visible,
     ) {
         if (!visible) return@LaunchedEffect
         withFrameNanos { }
         chatScroll.value?.let { it.scrollTo(it.maxValue) }
     }
+    // 流式跟随：在消息列高度变化的同一帧布局内直接修正滚动位置（见消息列 onSizeChanged）。
+    // 不用 snapshotFlow / LaunchedEffect：它们在布局结束后才回调，scrollTo 要到下一帧才生效，
+    // 思考内容（同步 Text）每 chunk 高度立变而滚动晚一帧，内容先沉后拉回，逐 chunk 抖动。
 
     // ——— 动作集合 ———
 
@@ -614,7 +615,16 @@ fun AiChatOverlay(
                 )
             }
             else -> {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    // 流式滚底：高度变化的同一帧布局内直接钉底，不走帧后回调（消除一帧延迟抖动）
+                    modifier = Modifier.onSizeChanged {
+                        if (sending) chatScroll.value?.let { s ->
+                            val delta = (s.maxValue - s.value).toFloat()
+                            if (delta != 0f) s.dispatchRawDelta(delta)
+                        }
+                    },
+                ) {
                     messages.forEachIndexed { index, message ->
                         AiChatMessageBubble(
                             message = message,
