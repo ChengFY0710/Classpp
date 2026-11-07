@@ -162,6 +162,9 @@ fun AiChatOverlay(
     // 变化。其余关闭路径（右上关闭/返回键/拖拽/主浮层外部收起/删光自动收）不置位，
     // 退场后无动作
     var pendingConversationAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    // 切换对话期间顶栏 Haze 的退让开关（见 applyConversationChange 的崩溃史注释）：
+    // true 时整条 Haze 链卸载、顶栏走静态底材；落库并绘制完成后再挂回
+    var conversationHazeSuspended by remember { mutableStateOf(false) }
     // 详情/编辑目标两态口径（同 TodoScreen 的 detail/edit）：id 是期望目标，mounted 是
     // 挂载快照（详情随仓库回流刷新，编辑表单只取一次初值）
     var detailTodoId by remember { mutableStateOf("") }
@@ -244,20 +247,48 @@ fun AiChatOverlay(
     }
 
     /**
+     * 对话切换的落库收口：先让顶栏 Haze 退让，浮层退场播完后落仓库，落库后再等两帧
+     * 绘制完成才挂回磨砂。
+     *
+     * 崩溃史（tombstone_05，2026-11-07 03:39）：消息列是 Haze 采样源，切换对话时内容
+     * 从长列表塌缩成空态——源子树在同一帧被整块重写，Haze 2 的 source fallback 会构建
+     * 自引用 RenderNode，RenderThread 在 prepareTreeImpl 无限递归、栈溢出（tombstone 的
+     * 512 帧全是 libhwui 同一段递归）。顶栏效果与消息列在 [OverlaySheet] 里是兄弟节点、
+     * 没有祖先 hazeSource，Behind 采样修复覆盖不到这条路径，故在此显式退让：切换前
+     * 就卸载 Haze 链（hazeEnabled=false 走静态底材，静止态与磨砂外观一致），源内容落定
+     * 并绘制完成后再挂回——稳态磨砂与其余浮层不受影响。
+     */
+    fun applyConversationChange(block: suspend () -> Unit) {
+        conversationHazeSuspended = true
+        pendingConversationAction = {
+            scope.launch {
+                try {
+                    block()
+                    // 崩溃发生在 RenderThread 准备新内容那一帧渲染树的阶段：源节点要在
+                    // 落库后的重组与绘制都走完之后才允许挂回
+                    withFrameNanos { }
+                    withFrameNanos { }
+                } finally {
+                    conversationHazeSuspended = false
+                }
+            }
+        }
+        conversationsVisible = false
+    }
+
+    /**
      * 新建对话：先收管理浮层，退场播完（onDismissed）再落仓库——新对话为空态，
      * 发首条消息时由仓库自动命名
      */
     fun createConversation() {
         val repository = aiChatRepository ?: return
-        pendingConversationAction = { scope.launch { repository.createConversation() } }
-        conversationsVisible = false
+        applyConversationChange { repository.createConversation() }
     }
 
     /** 切换对话：先收管理浮层，退场播完（onDismissed）再落仓库——淡出期间对话内容不动 */
     fun switchConversation(id: String) {
         val repository = aiChatRepository ?: return
-        pendingConversationAction = { scope.launch { repository.switchConversation(id) } }
-        conversationsVisible = false
+        applyConversationChange { repository.switchConversation(id) }
     }
 
     /** 删除对话：留在管理浮层，列表随仓库回流更新（删光由 LaunchedEffect 收起浮层） */
@@ -327,12 +358,17 @@ fun AiChatOverlay(
         covered = conversationsVisible || detailTodoId != "" || editTodoId != "",
         onScrollStateReady = { chatScroll.value = it },
         bottomScrim = false,
-        // 崩溃与修复史（ec9fa71 退让）：消息列是采样源，切换对话时内容从长列表塌缩成
-        // 空态、流式期间逐字重写——「内容结构频繁重写采样源」曾触发 Adreno Vulkan 驱动
-        // RenderThread SIGSEGV（切换到空对话必崩，2026-11-07 定位）。根因是采样输入
-        // HazeSourceSelection.All 无视 z 序采样；统一改 Behind（f958dbb）后整条链
-        // （顶栏磨砂 + 附件菜单磨砂）重新挂回，真机验证不再崩溃。光场与输入栏玻璃走
-        // kyant backdrop（独立体系），不受影响。
+        // 切换对话的落库/绘制窗口内整条 Haze 链退让（崩溃史见 applyConversationChange）；
+        // 平时保持挂载，稳态磨砂不变
+        hazeEnabled = !conversationHazeSuspended,
+        // 崩溃与修复史（ec9fa71 退让 → f958dbb 改 Behind → 本次再复现）：消息列是采样源，
+        // 切换对话时内容从长列表塌缩成空态、流式期间逐字重写——「内容结构频繁重写采样源」
+        // 曾触发 RenderThread SIGSEGV（切换到空对话必崩）。All→Behind 修复了效果位于源子树
+        // 内的路径，但本浮层顶栏与消息列是兄弟节点（无祖先 hazeSource），切换对话那一帧源
+        // 子树整块重写仍会构建自引用 RenderNode（tombstone_05，2026-11-07 03:39，
+        // prepareTreeImpl 512 帧递归栈溢出）。折中方案：切换落库/绘制窗口内由
+        // conversationHazeSuspended 让整条链退让为静态底材，落定后挂回——稳态磨砂保留。
+        // 光场与输入栏玻璃走 kyant backdrop（独立体系），不受影响。
         bottomContent = {
             // 与顶栏同源的 Haze 采样状态（供附件菜单跨 Popup 窗口做磨砂）
             val bottomHazeState = LocalOverlayBottomHazeState.current
