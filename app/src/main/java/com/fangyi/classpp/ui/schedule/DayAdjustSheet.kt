@@ -109,12 +109,12 @@ internal fun DayAdjustSheet(
         else -> listOfNotNull(conflictText) + otherErrorTexts
     }
 
-    // 本浮层有意保持「零 Haze 节点」：每次点星期格都会重写采样源子树（课程行 0↔N、
-    // 提示条/错误文案增删），叠层滚轮进出场又会在同一帧翻转祖先 graphicsLayer（covered
-    // 缩放）——Haze 2 在这类组合下会构建自引用 RenderNode，RenderThread 在
-    // prepareTreeImpl 无限递归、栈溢出。结构上直接退出 Haze 采样链（OverlaySheet 传
-    // hazeEnabled = false、滚轮卡不传 hazeState），崩溃条件因此不可达。
-    // 不要给本浮层加回 hazeState / 顶栏磨砂 / 滚轮磨砂；星期选择继续用内联 SelectionGrid。
+    // 崩溃规避史（26d8c1f）：每次点星期格都会重写采样源子树（课程行 0↔N、提示条/错误
+    // 文案增删），叠层滚轮进出场又会在同一帧翻转祖先 graphicsLayer（covered 缩放）——
+    // Haze 2 在这类组合下会构建自引用 RenderNode，RenderThread 在 prepareTreeImpl
+    // 无限递归、栈溢出，当时整条链退让为零 Haze 节点。采样输入统一改 Behind（f958dbb）
+    // 后按用户要求重新挂回顶栏磨砂（OverlaySheet 默认 haze 链），验证崩溃是否已随采样
+    // 输入修复；滚轮卡仍走实底路径（不传 hazeState）。若复现闪退，退回 hazeEnabled = false。
     var sourceWeekPickerVisible by remember { mutableStateOf(false) }
     var sourceWeekPickerMounted by remember { mutableStateOf(false) }
     var targetWeekPickerVisible by remember { mutableStateOf(false) }
@@ -152,9 +152,6 @@ internal fun DayAdjustSheet(
         visible = visible,
         covered = sourceWeekPickerVisible || targetWeekPickerVisible,
         onDismissed = onDismissed,
-        // 本浮层整条链不挂 Haze（见上方约定）：顶栏用静态渐变底材，内容列不做采样源。
-        // covered 只是纯 graphicsLayer 缩放，没有 Haze 节点参与，无需错帧。
-        hazeEnabled = false,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
             CardSection(title = stringResource(R.string.day_adjust_section_source)) {

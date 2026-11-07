@@ -205,7 +205,8 @@ val LocalOverlayBottomHazeState = staticCompositionLocalOf<HazeState?> { null }
  *
  * [hazeEnabled] = false 时本浮层整条链不挂 Haze：内容列不做采样源、顶栏改静态渐变底材、
  * 钉底槽不下发状态。这是给「内容结构会随操作频繁重写采样源」的浮层做的结构性规避
- * （见 DayAdjustSheet）；调用方必须同时不给叠层弹卡/菜单传 hazeState。
+ * （此前 DayAdjustSheet / AiChatOverlay 曾退让，Behind 采样后已恢复）；调用方必须同时
+ * 不给叠层弹卡/菜单传 hazeState。
  */
 @Composable
 fun OverlaySheet(
@@ -240,7 +241,7 @@ fun OverlaySheet(
     // 是否参与 Haze 采样链（顶栏磨砂 + 内容列的 hazeSource + bottom 槽共享状态）。
     // false = 本浮层整条链零 Haze 源/效果节点：顶栏改静态渐变底材（复刻静止态 tint +
     // 底缘渐隐），内容列不挂 hazeSource。供「内容结构会随操作频繁重写采样源」的浮层
-    // 结构上规避 Haze 2 的自引用 RenderNode 崩溃（见 DayAdjustSheet）。
+    // 结构上规避 Haze 2 的自引用 RenderNode 崩溃（规避史见 DayAdjustSheet 顶部注释）。
     // 调用方传 false 时必须同时不给叠层弹卡/菜单传 hazeState——它们都支持 null（实底）。
     hazeEnabled: Boolean = true,
     // 钉底槽的渐变兜底：false = 槽内不画（内容随 AnimatedVisibility 进出场时由调用方自绘，
