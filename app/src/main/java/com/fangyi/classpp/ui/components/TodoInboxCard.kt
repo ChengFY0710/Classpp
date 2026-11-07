@@ -80,14 +80,21 @@ private val InboxHeaderCompactIconSize = 20.dp
 /** 头部图标与标题的间距。 */
 private val InboxHeaderIconGap = 8.dp
 
-/** 单行待办的最小高度：无属性行时标题垂直居中，有属性行时按内容自然高（50dp）。 */
+/** 单行待办的最小高度（内容区）：无属性行时标题垂直居中，有属性行时按内容自然高（50dp）。 */
 private val InboxRowMinHeight = 48.dp
 
 /**
- * 紧凑形态单行最小高度：28dp。两列网格的卡片按设计稿密排——标题行高 24dp、上下各留
- * 2dp，无属性行时不再撑到 48dp；勾选框热区同步收成 [InboxCheckboxCompactHitSize]。
+ * 紧凑形态单行最小高度（内容区）：28dp。两列网格的卡片按设计稿密排——无属性行时不再
+ * 撑到 48dp；勾选框热区同步收成 [InboxCheckboxCompactHitSize]。
  */
 private val InboxRowCompactMinHeight = 28.dp
+
+/**
+ * 单行待办上下的呼吸留白：相邻两行各出一份拼成 4dp 行距。画在点区内侧（同卡底留白
+ * 口径），按压高亮连同留白一起亮，行与行之间不露高亮缺口；末行底侧由卡底留白接管，
+ * 不再叠这份，卡底节奏与卡顶一致。
+ */
+private val InboxRowVerticalPadding = 2.dp
 
 /** 紧凑形态左右内距：12dp，给 184dp 左右的窄卡留出标题宽度。 */
 private val InboxCardCompactHorizontalPadding = 12.dp
@@ -202,8 +209,9 @@ data class TodoInboxItem(
  * @param headerColor 头部图标与标题的强调色：默认 primary；已逾期传 error、已完成传
  *   urgentGreen（与待办特殊分组页的强调色口径一致）
  * @param compact 紧凑形态（收集箱两列瀑布流）：左右内距 12dp、勾选框热区 28dp、行最小高
- *   28dp、头部图标 20dp、行标题 14sp（[ClassppTextTokens.masonryCardTitle]）；默认
- *   false = 整卡形态（16dp / 36dp / 48dp / 24dp / 16sp）
+ *   28dp（两种形态行上下另各留 2dp 呼吸留白）、头部图标 20dp、行标题 14sp
+ *   （[ClassppTextTokens.masonryCardTitle]）；默认 false = 整卡形态（16dp / 36dp / 48dp /
+ *   24dp / 16sp）
  * @param tagColors 标签配色表（标签名 → 颜色，与列表卡同一张表）；空表或表里没有的名字
  *   回落主题 primary
  * @param onItemCheckedChange 勾选切换回调（item, checked）；null = 勾选框不可点
@@ -294,6 +302,10 @@ fun TodoInboxCard(
  * [bottomInset] 只由末行传非 0（卡底留白）：行高下限同步抬高该值，留白全部画在
  * 内容下方——内容位置与其余行完全一致，按压高亮连同留白一起铺到卡片底缘
  * （对齐 [SettingsCard] 末行的整卡按压）。
+ *
+ * 行上下各留 [InboxRowVerticalPadding]（2dp）呼吸空间（末行底侧除外：卡底只承载
+ * [bottomInset]，节奏与卡顶一致），行高下限同步抬高：相邻两行的留白拼成 4dp 行距，
+ * 留白画在点区内侧，按压高亮连同留白一起亮。
  */
 @Composable
 private fun TodoInboxRow(
@@ -327,19 +339,22 @@ private fun TodoInboxRow(
     } else {
         MaterialTheme.classppTextStyles.fieldLabel
     }
+    // 行底留白：非末行是 2dp 行呼吸空间；末行只承载卡底留白（14dp），不叠行留白——
+    // 卡底节奏与卡顶一致，行距只在行与行之间生效
+    val rowBottomPadding = if (bottomInset > 0.dp) bottomInset else InboxRowVerticalPadding
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            // 行高下限含卡底留白（非末行 0）；留白全画在内容下方，末行内容与其余行
-            // 位置一致，只有按压区（含留白）下探到卡片底缘
-            .heightIn(min = rowMinHeight + bottomInset)
+            // 行高下限含行上留白与行底留白；末行的卡底留白画在内容下方，内容位置与
+            // 其余行一致，只有按压区（含留白）下探到卡片底缘
+            .heightIn(min = rowMinHeight + InboxRowVerticalPadding + rowBottomPadding)
             // 方角按压高亮：行与行之间不露圆角缺口，外缘圆角由卡片统一裁出
             .pressClickable(
                 shape = RectangleShape,
                 onClick = { onTodoClick(item) },
             )
             .padding(horizontal = horizontalPadding)
-            .padding(bottom = bottomInset),
+            .padding(top = InboxRowVerticalPadding, bottom = rowBottomPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(
