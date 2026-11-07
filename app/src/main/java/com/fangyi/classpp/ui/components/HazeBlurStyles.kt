@@ -21,15 +21,17 @@ import dev.chrisbanes.haze.blur.HazeColorEffect
 
 /**
  * Haze 2 的采样输入：本项目每个 [HazeState] 只承载「本页 / 本浮层滚动内容」一组源。
- * 显式用 [HazeSourceSelection.All] 绕过「最近祖先 hazeSource」的隐式关系——语义等价于
- * 1.x 的「按 state 采集全部源」，也避免以后把效果嵌进源子树时悄悄选不到源。
+ * selection 固定 [HazeSourceSelection.Behind]（Haze 2 默认值，显式写出以锁定约定）：
+ * 只采样 z 序位于最近祖先 hazeSource 之后的源，无匹配祖先时回退为全部源。
+ * 项目**禁用 [HazeSourceSelection.All]**（见 docs/AGENTS.md）：它会无视 z 序采集
+ * state 的全部源，效果与源交叠时会把前景 / 自身内容一并采进模糊。
  * [HazeSourceRetention.KeepLastFrame] 与 Haze 2 默认一致：源短暂不可用时保留上一帧，
  * 避免切换 / 重组瞬间闪空。
  */
 internal fun hazeSources(state: HazeState): HazeInput.Sources =
     HazeInput.Sources(
         state = state,
-        selection = HazeSourceSelection.All,
+        selection = HazeSourceSelection.Behind,
         retention = HazeSourceRetention.KeepLastFrame,
     )
 
