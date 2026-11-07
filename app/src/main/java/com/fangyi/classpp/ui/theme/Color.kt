@@ -34,6 +34,7 @@ val BottomSheetColor = Color(0xFFFFFFFF)
 // M3 对话框（AlertDialog/DatePickerDialog）的默认"高一级表面"底色，不可省
 val SurfaceContainerHigh = Color(0xFFEAEDF1)
 
+// 默认蓝档分割线；其余主题色由 ThemeAccent.outline() 按 HSL 派生（H 取主色，S/L 同本值）
 val Outline = Color(0xFFDCE2E7)
 
 // 卡面细弱元素（卡片内分隔线、点状轨道）：浅色与 outline 同值，深色取卡面上可见的中灰
@@ -122,6 +123,7 @@ val DarkBottomSheetColor = Color(0xFF0B0C0F)
 
 val DarkSurfaceContainerHigh = Color(0xFF1E2227)
 
+// 默认蓝档深色分割线；其余主题色由 ThemeAccent.outline() 按 HSL 派生（H 取主色，S/L 同本值）
 val DarkOutline = Color(0xFF2A2F36)
 
 val DarkOnSurfaceCard = Color(0xFF4D5157)

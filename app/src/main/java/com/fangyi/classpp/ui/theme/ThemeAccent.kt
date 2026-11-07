@@ -106,6 +106,14 @@ private const val SurfaceSaturationDark = 9f / 91f
 private const val SurfaceSaturationDarkSoft = 0.06f
 private const val SurfaceLightnessDark = 45.5f / 255f
 
+// ===== outline 的 HSL 固定端 =====
+// S/L 取自默认 outline：浅 #DCE2E7（S 18.64% / L 88.43%）、深 #2A2F36（S 12.5% / L 18.82%）；
+// H 取当前主色。默认蓝的 outline 色相与主色不完全一致，特判保留原值。
+private const val OutlineSaturationLight = 11f / 59f
+private const val OutlineLightnessLight = 225.5f / 255f
+private const val OutlineSaturationDark = 1f / 8f
+private const val OutlineLightnessDark = 48f / 255f
+
 /** sRGB 色相（0..360）；仅用于由主色派生页面背景。 */
 private fun Color.hueDegrees(): Float {
     val max = maxOf(red, green, blue)
@@ -122,8 +130,8 @@ private fun Color.hueDegrees(): Float {
 /**
  * 主题色（强调色）八选一：换 primary 家族——primary / onPrimary / primaryContainer /
  * inversePrimary / [ClassppColors.primaryContainerSolid]——以及页面背景 [background]、
- * 深色卡片面 [surface]、次级说明文字 [secondaryText] 与弹层压暗遮罩 [scrim]；
- * 其余背景层（error、紧急旗标、AI 光场）与 [ClassppColors.storageApp] 均固定。
+ * 深色卡片面 [surface]、分割线 [outline]、次级说明文字 [secondaryText] 与弹层压暗遮罩
+ * [scrim]；其余背景层（error、紧急旗标、AI 光场）与 [ClassppColors.storageApp] 均固定。
  * 枚举顺序即色板顺序（蓝/厦大蓝/青/绿/紫/橙/粉/山大红）。
  *
  * 业务代码只在主题色选择器里读色球颜色（[primary]），其余场景一律读
@@ -276,6 +284,16 @@ enum class ThemeAccent(@StringRes val labelRes: Int, private val tokens: AccentT
         saturation = if (darkTheme) SecondaryTextSaturationDark else SecondaryTextSaturationLight,
         lightness = if (darkTheme) SecondaryTextLightnessDark else SecondaryTextLightnessLight,
     )
+
+    /** 分割线/网格线：默认蓝保留原值；其余档 H 取当前主色，S/L 取默认 outline */
+    fun outline(darkTheme: Boolean): Color = when (this) {
+        Blue -> if (darkTheme) DarkOutline else Outline
+        else -> Color.hsl(
+            hue = primary(darkTheme).hueDegrees(),
+            saturation = if (darkTheme) OutlineSaturationDark else OutlineSaturationLight,
+            lightness = if (darkTheme) OutlineLightnessDark else OutlineLightnessLight,
+        )
+    }
 
     fun scrim(darkTheme: Boolean): Color =
         if (darkTheme) tokens.darkScrim else tokens.lightScrim

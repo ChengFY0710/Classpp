@@ -215,7 +215,7 @@ fun ClassppTheme(
     accent: ThemeAccent = ThemeAccent.Blue,
     content: @Composable () -> Unit,
 ) {
-    // 主题色改 primary 家族、页面背景、深色 surface、遮罩与次级文字；ColorScheme 无 equals，
+    // 主题色改 primary 家族、页面背景、深色 surface、分割线、遮罩与次级文字；ColorScheme 无 equals，
     // 必须 remember 住实例，否则每次重组都会重建派生色并连带重建 textStyles
     val colorScheme = remember(accent, darkTheme) {
         val base = if (darkTheme) DarkColorScheme else LightColorScheme
@@ -231,6 +231,7 @@ fun ClassppTheme(
             ),
             background = accent.background(darkTheme),
             surface = accent.surface(darkTheme),
+            outline = accent.outline(darkTheme),
             scrim = accent.scrim(darkTheme),
         )
     }
