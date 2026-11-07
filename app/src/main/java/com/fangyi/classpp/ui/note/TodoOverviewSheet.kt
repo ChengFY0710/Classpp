@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.expandRepeatOccurrences
 import com.fangyi.classpp.data.isOverdue
@@ -51,12 +52,13 @@ import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.GradientTintedIcon
 import com.fangyi.classpp.ui.components.OverlaySheet
+import com.fangyi.classpp.ui.components.SettingsCardwithIcon
+import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetCardPadding
 import com.fangyi.classpp.ui.components.SheetImeBehavior
-import com.fangyi.classpp.ui.components.SheetInfoCard
-import com.fangyi.classpp.ui.components.SheetInfoEntry
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.PillShape
@@ -75,7 +77,8 @@ import kotlin.math.min
  * 1. 今日收工卡：环形进度 + 收工文案（今天完成 N 件，还差 N 件就收工）；
  * 2. 三统计卡：本周完成 / 连续天数 / 已逾期（>0 用 error，0 降级次级色）；
  * 3. 本周节奏：周一至周日 7 列，有完成的日期竖柱（urgentGreen）、今天列 primaryContainer 底；
- * 4. 需要留意：只列计数 > 0 的已逾期 / 今天截止 / 未来 7 天；三项全 0 时给一张绿勾提示卡；
+ * 4. 需要留意：只列计数 > 0 的已逾期 / 今天截止 / 未来 7 天，行直接用 SettingsCardwithIcon
+ *    渲染（纯展示，行点击为空操作）；三项全 0 时给一张绿勾提示卡；
  * 5. 全部待办：已完成 / 未完成 / 已逾期三列数字 + 三段分布条 + 总数；
  * 6. 最近完成：近 7 天每条待办取最近一次完成，倒序最多 3 条。
  *
@@ -131,8 +134,12 @@ internal fun TodoOverviewSheet(
             if (stats.total == 0) {
                 OverviewEmptyCard()
             } else {
-                OverviewTodayCard(stats)
-                OverviewStatCardsRow(stats)
+                // 今日收工卡与三统计卡是一组视觉紧凑的顶部块：组内 10dp（卡↔卡），
+                // 与下方区块之间仍走浮层顶层 SheetSectionSpacingBetween（12dp）
+                Column(verticalArrangement = Arrangement.spacedBy(CardSectionSpacing)) {
+                    OverviewTodayCard(stats)
+                    OverviewStatCardsRow(stats)
+                }
                 CardSection(title = stringResource(R.string.todo_overview_week_section)) {
                     OverviewWeekCard(stats, today)
                 }
@@ -432,7 +439,7 @@ private fun TodayProgressRing(
 private fun OverviewStatCardsRow(stats: TodoOverviewStats) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(CardSectionSpacing),
     ) {
         OverviewStatCard(
             count = stats.weekCompleted,
@@ -474,7 +481,8 @@ private fun OverviewStatCard(
         ) {
             Text(
                 text = count.toString(),
-                style = ClassppTextTokens.countdownNumber,
+                // 行高收紧到字号档：默认行盒的下延留白会把「数字+描述」整组顶得偏上
+                style = ClassppTextTokens.countdownNumber.copy(lineHeight = 24.sp),
                 color = countColor,
                 maxLines = 1,
             )
@@ -623,65 +631,41 @@ private fun weekBarHeight(count: Int): Dp =
 /** 需要留意：只渲染计数 > 0 的行；三项全 0 时给绿勾提示卡 */
 @Composable
 private fun OverviewAttentionCard(stats: TodoOverviewStats) {
-    val overdueValue = stringResource(R.string.todo_overview_items, stats.overdue)
-    val dueTodayValue = stringResource(R.string.todo_overview_items, stats.dueToday)
-    val dueNext7Value = stringResource(R.string.todo_overview_items, stats.dueNext7)
-
-    val overdueItem = if (stats.overdue > 0) {
-        SheetInfoEntry(
-            label = stringResource(R.string.todo_section_overdue),
-            value = overdueValue,
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_checkbox_warning),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(OverviewRowIconSize),
-                )
-            },
-            valueColor = MaterialTheme.colorScheme.error,
-        )
-    } else {
-        null
-    }
-    val dueTodayItem = if (stats.dueToday > 0) {
-        SheetInfoEntry(
-            label = stringResource(R.string.todo_overview_due_today),
-            value = dueTodayValue,
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_clock_alarm),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(OverviewRowIconSize),
-                )
-            },
-            valueColor = MaterialTheme.colorScheme.error,
-        )
-    } else {
-        null
-    }
-    val dueNext7Item = if (stats.dueNext7 > 0) {
-        SheetInfoEntry(
-            label = stringResource(R.string.todo_overview_due_next7),
-            value = dueNext7Value,
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.ic_calendar_checkmark),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(OverviewRowIconSize),
-                )
-            },
-            valueColor = MaterialTheme.colorScheme.primary,
-        )
-    } else {
-        null
-    }
-
-    val items = listOfNotNull(overdueItem, dueTodayItem, dueNext7Item)
+    val items = listOfNotNull(
+        if (stats.overdue > 0) {
+            SettingsCardwithIconItem(
+                icon = R.drawable.ic_checkbox_warning,
+                label = stringResource(R.string.todo_section_overdue),
+                value = stringResource(R.string.todo_overview_items, stats.overdue),
+                // 纯展示浮层：行不承担动作，按压反馈与尾随箭头随组件规格
+                onClick = {},
+            )
+        } else {
+            null
+        },
+        if (stats.dueToday > 0) {
+            SettingsCardwithIconItem(
+                icon = R.drawable.ic_clock_alarm,
+                label = stringResource(R.string.todo_overview_due_today),
+                value = stringResource(R.string.todo_overview_items, stats.dueToday),
+                onClick = {},
+            )
+        } else {
+            null
+        },
+        if (stats.dueNext7 > 0) {
+            SettingsCardwithIconItem(
+                icon = R.drawable.ic_calendar_checkmark,
+                label = stringResource(R.string.todo_overview_due_next7),
+                value = stringResource(R.string.todo_overview_items, stats.dueNext7),
+                onClick = {},
+            )
+        } else {
+            null
+        },
+    )
     if (items.isEmpty()) {
-        SheetCard {
+        SheetCard(modifier = Modifier.fillMaxWidth()) {
             Icon(
                 painter = painterResource(R.drawable.ic_checkmark_circle),
                 contentDescription = null,
@@ -696,7 +680,7 @@ private fun OverviewAttentionCard(stats: TodoOverviewStats) {
             )
         }
     } else {
-        SheetInfoCard(entries = items)
+        SettingsCardwithIcon(items = items)
     }
 }
 
@@ -897,8 +881,8 @@ private const val TodayRingGrowMillis = 600
 /** 空态图标边长：与设置页信息头部卡同级（40dp） */
 private val OverviewEmptyIconSize = 40.dp
 
-/** 提醒/最近完成行内图标：20dp，同信息提示条 */
-private val OverviewRowIconSize = 20.dp
+/** 全零绿勾/最近完成行内图标：24dp，对齐 SettingsCardwithIcon 行首图标规格（提醒卡图标已随组件渲染） */
+private val OverviewRowIconSize = 24.dp
 
 /** 周列固定宽：7 列在卡片内容宽内居中，今天列底不会被拉成整格（32dp 在间距阶梯内） */
 private val WeekCellWidth = 32.dp
