@@ -45,10 +45,13 @@ class SchoolRegistry internal constructor(
     private val activeStore: ActiveSchoolStore = NoPersistActiveSchoolStore,
     private val onActiveSchoolChanged: (String) -> Unit = {},
 ) {
-    /** 注册序（首项为默认活跃学校） */
-    val schools: List<SchoolSpec>
+    /** 注册序（首项为默认活跃学校）；StateFlow：远端声明学校运行时合并后 UI 自动更新 */
+    private val _schools: MutableStateFlow<List<SchoolSpec>>
 
-    private val providersById: Map<String, SchoolProvider>
+    val schools: StateFlow<List<SchoolSpec>>
+
+    // 运行时可追加（后台刷新线程）与 UI 读并发：用并发容器，注册顺序由 _schools 维护
+    private val providersById: MutableMap<String, SchoolProvider>
 
     private val _activeSchoolId: MutableStateFlow<String>
 
@@ -66,7 +69,7 @@ class SchoolRegistry internal constructor(
     private val toggles = ConcurrentHashMap<String, DailySyncToggle>()
 
     /** 已通过校验的学校 WebView 白名单：装配时做跨校重叠检查（共用认证域 = 配置错误） */
-    private val webViewHosts = HashMap<String, Set<String>>()
+    private val webViewHosts = ConcurrentHashMap<String, Set<String>>()
 
     init {
         require(providers.isNotEmpty()) { "at least one school provider is required" }
@@ -86,10 +89,13 @@ class SchoolRegistry internal constructor(
                 (spec.timetableIntro != null) == (Capability.SCHEDULE_IMPORT in spec.capabilities),
             ) { "school '${spec.id}': timetableIntro must be present iff SCHEDULE_IMPORT is declared" }
         }
-        schools = providers.map { it.spec }
-        providersById = providers.associateBy { it.spec.id }
+        _schools = MutableStateFlow(providers.map { it.spec })
+        schools = _schools.asStateFlow()
+        providersById = ConcurrentHashMap()
+        for (provider in providers) providersById[provider.spec.id] = provider
         _activeSchoolId = MutableStateFlow(
-            activeStore.read()?.takeIf { it in providersById } ?: schools.first().id,
+            activeStore.read()?.takeIf { providersById.containsKey(it) }
+                ?: _schools.value.first().id,
         )
         activeSchoolId = _activeSchoolId.asStateFlow()
     }
@@ -172,6 +178,68 @@ class SchoolRegistry internal constructor(
         val provider = providersById[id]
             ?: throw IllegalArgumentException("unknown school id: '$id'")
         return provider.dailySyncFireIntent
+    }
+
+    /**
+     * 学校 WebView 登录声明的轻量访问（不装配会话）：远端声明学校首次连接确认浮层用
+     * 它读取登录域。null = 该校未声明（或适配层未暴露）。
+     */
+    fun webViewLoginSpec(id: String): WebViewLoginSpec? {
+        val provider = providersById[id]
+            ?: throw IllegalArgumentException("unknown school id: '$id'")
+        return provider.webViewLoginSpec
+    }
+
+    /**
+     * 运行时追加远端声明学校（data/sync/remote 分发链路）：逐个按 init 同规则校验，
+     * **非法/重复 id 跳过不抛**（数据驱动的容错——单个坏声明不拖垮整批、不波及已注册学校）。
+     *
+     * - 绝不移除已注册项：活跃会话可能正运行在远端学校上；
+     * - 追加后 [schools] 发出新列表（徽标/选择卡自动更新），活跃学校不受影响；
+     * - 会话仍惰性装配：新校首次被选中时才 [session]，装配期校验（[validateSession]）
+     *   照常执行，失败走既有 [SessionSlot.Failed] 路径。
+     *
+     * @return 实际新增的学校数（0 = 全部被跳过）
+     */
+    @Synchronized
+    fun registerRemote(providers: List<SchoolProvider>): Int {
+        val knownIds = _schools.value.mapTo(mutableSetOf()) { it.id }
+        val added = mutableListOf<SchoolProvider>()
+        // 本批已接受的白名单：批内两校重叠同样按配置错误跳过（不等装配）
+        val batchHosts = mutableMapOf<String, Set<String>>()
+        for (provider in providers) {
+            val spec = provider.spec
+            if (!ID_PATTERN.matches(spec.id) || spec.id in knownIds) continue
+            if (!spec.capabilities.any {
+                    it == Capability.NATIVE_LOGIN || it == Capability.WEBVIEW_LOGIN
+                }
+            ) {
+                continue
+            }
+            if ((spec.timetableIntro != null) !=
+                (Capability.SCHEDULE_IMPORT in spec.capabilities)
+            ) {
+                continue
+            }
+            // 白名单提前查重（不等装配）：与已装配/已注册/本批学校的认证域重叠 = 配置错误
+            val webView = provider.webViewLoginSpec
+            if (webView != null) {
+                val conflict = (webViewHosts.entries + batchHosts.entries).firstOrNull { (id, hosts) ->
+                    id != spec.id && (hosts intersect webView.allowedHosts).isNotEmpty()
+                }
+                if (conflict != null) continue
+                batchHosts[spec.id] = webView.allowedHosts
+            }
+            knownIds += spec.id
+            added += provider
+        }
+        if (added.isEmpty()) return 0
+        for (provider in added) {
+            providersById[provider.spec.id] = provider
+            batchHosts[provider.spec.id]?.let { webViewHosts[provider.spec.id] = it }
+        }
+        _schools.value = _schools.value + added.map { it.spec }
+        return added.size
     }
 
     private fun validateSession(spec: SchoolSpec, session: SchoolSession) {

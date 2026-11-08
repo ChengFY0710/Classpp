@@ -58,11 +58,15 @@ import com.fangyi.classpp.data.sync.LoginError
 import com.fangyi.classpp.data.sync.LoginRaw
 import com.fangyi.classpp.data.sync.PrepareOutcome
 import com.fangyi.classpp.data.sync.SchoolRegistry
+import com.fangyi.classpp.data.sync.SchoolSpec
+import com.fangyi.classpp.data.sync.SchoolText
 import com.fangyi.classpp.data.sync.SchoolSession
 import com.fangyi.classpp.data.sync.SessionSlot
 import com.fangyi.classpp.data.sync.SyncDebugLog
 import com.fangyi.classpp.data.sync.SyncError
 import com.fangyi.classpp.data.sync.SyncPlan
+import com.fangyi.classpp.data.sync.remote.RemoteRefreshOutcome
+import com.fangyi.classpp.data.sync.remote.RemoteSchoolManager
 import com.fangyi.classpp.data.sync.webview.SchoolCookieCleaner
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
@@ -80,6 +84,7 @@ import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
 import com.fangyi.classpp.ui.schools.SchoolUi
 import com.fangyi.classpp.ui.schools.WebViewLoginOutcome
+import com.fangyi.classpp.ui.schools.schoolText
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
@@ -297,16 +302,37 @@ private fun AccountSyncContent(
     var schoolPickerMounted by remember { mutableStateOf(false) }
     if (schoolPickerVisible) schoolPickerMounted = true
 
+    // 学校列表（含运行时合并的远端声明校）：StateFlow → Compose，选择卡自动更新。
+    // fallback flow 保证 collectAsState 无条件调用（schools 为空时占一个稳定槽）
+    val fallbackSchoolList = remember { MutableStateFlow(emptyList<SchoolSpec>()) }
+    val schoolList by (schools?.schools ?: fallbackSchoolList).collectAsState()
+
+    // 远端声明学校（Tier 1）：默认关闭，只有手动拉取 + 首次连接登录域确认。
+    // 拉取**只由用户点击「更新远端学校列表」触发**；冷启动不加载、不联网。
+    val remoteManager = remember(context, schools) {
+        schools?.let { RemoteSchoolManager(context, it) }
+    }
+    var remoteRefreshing by remember { mutableStateOf(false) }
+    // 两段式加载浮层（与「立即同步」同款）：置 true 立即压上，置 false 后播完淡出才卸载
+    var remoteLoadingMounted by remember { mutableStateOf(false) }
+    if (remoteRefreshing) remoteLoadingMounted = true
+    var remoteConfirmId by remember { mutableStateOf<String?>(null) }
+    var remoteConfirmHost by remember { mutableStateOf<String?>(null) }
+    // 退场期间 id 已清空，名称/域名用独立状态保住内容（不闪空白）
+    var remoteConfirmNameText by remember { mutableStateOf<SchoolText?>(null) }
+    var remoteConfirmMounted by remember { mutableStateOf(false) }
+    if (remoteConfirmId != null) remoteConfirmMounted = true
+
     // 错误文案在组合期解析（回调里只引用，不经 LocalContext 查资源——lint 惯例）。
     // 含学校/服务名措辞的条目由 spec 覆盖，其余复用无校名的旧键或中性键
     val errorTexts: Map<SyncError, String> = mapOf(
         SyncError.SessionExpired to stringResource(R.string.sync_error_expired),
-        SyncError.ServiceBusy to stringResource(spec.serviceBusyRes ?: R.string.sync_error_busy),
+        SyncError.ServiceBusy to schoolText(spec.serviceBusy ?: SchoolText.Res(R.string.sync_error_busy)),
         SyncError.NetworkError to stringResource(R.string.sync_error_network),
         SyncError.Timeout to stringResource(R.string.sync_error_timeout),
         SyncError.FormatChanged to stringResource(R.string.sync_error_format),
-        SyncError.AccountChanged to stringResource(
-            spec.accountChangedRes ?: R.string.sync_error_account_changed,
+        SyncError.AccountChanged to schoolText(
+            spec.accountChanged ?: SchoolText.Res(R.string.sync_error_account_changed),
         ),
         SyncError.TooSoon to stringResource(R.string.sync_error_too_soon),
         SyncError.PersistFailed to stringResource(R.string.sync_error_persist),
@@ -315,16 +341,16 @@ private fun AccountSyncContent(
     // 自动续期失败文案（浮层横幅与 Toast 共用；失败时两处都提示，避免只滚到输入框而漏看）
     val autoLoginErrorTexts: Map<LoginError, String> = mapOf(
         LoginError.NeedCaptcha to stringResource(R.string.sync_login_need_captcha),
-        LoginError.InvalidCredentials to stringResource(
-            spec.invalidCredentialsRes ?: R.string.sync_login_invalid_credentials,
+        LoginError.InvalidCredentials to schoolText(
+            spec.invalidCredentials ?: SchoolText.Res(R.string.sync_login_invalid_credentials),
         ),
         LoginError.StorageUnavailable to stringResource(R.string.sync_login_storage_unavailable),
-        LoginError.ServiceBusy to stringResource(spec.serviceBusyRes ?: R.string.sync_error_busy),
+        LoginError.ServiceBusy to schoolText(spec.serviceBusy ?: SchoolText.Res(R.string.sync_error_busy)),
         LoginError.NetworkError to stringResource(R.string.sync_error_network),
         LoginError.Timeout to stringResource(R.string.sync_error_timeout),
         LoginError.FormatChanged to stringResource(R.string.sync_error_format),
-        LoginError.SessionNotEstablished to stringResource(
-            spec.sessionNotEstablishedRes ?: R.string.sync_login_not_established,
+        LoginError.SessionNotEstablished to schoolText(
+            spec.sessionNotEstablished ?: SchoolText.Res(R.string.sync_login_not_established),
         ),
     )
     val upToDateText = stringResource(R.string.sync_up_to_date)
@@ -334,9 +360,30 @@ private fun AccountSyncContent(
     val logoutDoneText = stringResource(R.string.sync_logout_done)
     val schoolSwitchFailedText = stringResource(R.string.school_switch_failed)
     val deadlineWarningFormat = stringResource(R.string.sync_deadline_unparseable)
+    // 手动更新的结果/加载文案在组合期解析（回调里只引用）
+    val remoteRefreshingText = stringResource(R.string.settings_remote_refreshing)
+    val remoteRefreshAddedFormat = stringResource(R.string.settings_remote_refresh_added)
+    val remoteRefreshUpToDateText = stringResource(R.string.settings_remote_refresh_up_to_date)
+    val remoteRefreshFailedText = stringResource(R.string.settings_remote_refresh_failed)
 
     val showError: (SyncError) -> Unit = { error ->
         AppToasts.show(context, errorTexts[error] ?: genericErrorText)
+    }
+
+    /** 切校（装配在 IO，成功后整页按新校 id 重绑；失败保持原校并提示） */
+    fun switchToSchool(id: String) {
+        val registry = schools ?: return
+        scope.launch {
+            try {
+                registry.switchSchool(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // 装配失败等：注册表保持原校，页面不动，仅提示
+                SyncDebugLog.d("switchSchool failed ${e::class.simpleName}")
+                AppToasts.show(context, schoolSwitchFailedText)
+            }
+        }
     }
 
     // 无新增、无恢复 → 预览里没有任何可看得见的内容，不弹浮层；但仍要补写映射基线与
@@ -452,6 +499,28 @@ private fun AccountSyncContent(
         scope.launch {
             if (wantOn) dailySync?.runIfDue(context)
             dailySync?.scheduleNext(context)
+        }
+    }
+
+    // 远端学校（选择浮层顶部）：唯一的联网入口，纯手动触发；失败/成功都由这里提示
+    val onRefreshRemote: () -> Unit = {
+        val manager = remoteManager
+        if (manager != null && !remoteRefreshing) {
+            remoteRefreshing = true
+            scope.launch {
+                try {
+                    when (val outcome = manager.refresh()) {
+                        is RemoteRefreshOutcome.Updated ->
+                            AppToasts.show(context, remoteRefreshAddedFormat.format(outcome.added))
+                        RemoteRefreshOutcome.UpToDate ->
+                            AppToasts.show(context, remoteRefreshUpToDateText)
+                        RemoteRefreshOutcome.Failed ->
+                            AppToasts.show(context, remoteRefreshFailedText)
+                    }
+                } finally {
+                    remoteRefreshing = false
+                }
+            }
         }
     }
 
@@ -641,6 +710,7 @@ private fun AccountSyncContent(
                             state.accountName,
                             sessionExpired,
                             loadingMounted,
+                            remoteLoadingMounted,
                             logoutMounted,
                             switchMounted,
                             disableAutoMounted,
@@ -675,8 +745,8 @@ private fun AccountSyncContent(
                 CardSection {
                     SettingsInfoHeaderCard(
                         icon = R.drawable.ic_arrow_sync_circle,
-                        title = stringResource(spec.headerTitleRes),
-                        description = stringResource(spec.headerDescriptionRes),
+                        title = schoolText(spec.headerTitle),
+                        description = schoolText(spec.headerDescription),
                     )
 
                     if (!connected) {
@@ -832,8 +902,8 @@ private fun AccountSyncContent(
                     SettingsCard(
                         items = listOf(
                             SettingsCardItem.Custom(
-                                label = stringResource(spec.introTitleRes),
-                                description = stringResource(spec.introBodyRes),
+                                label = schoolText(spec.introTitle),
+                                description = schoolText(spec.introBody),
                             ),
                         ),
                     )
@@ -841,8 +911,8 @@ private fun AccountSyncContent(
                         SettingsCard(
                             items = listOf(
                                 SettingsCardItem.Custom(
-                                    label = stringResource(intro.titleRes),
-                                    description = stringResource(intro.bodyRes),
+                                    label = schoolText(intro.title),
+                                    description = schoolText(intro.body),
                                 ),
                             ),
                         )
@@ -857,7 +927,7 @@ private fun AccountSyncContent(
                         items = listOf(
                             SettingsCardItem.Nav(
                                 label = stringResource(R.string.settings_school_label),
-                                value = stringResource(spec.displayNameRes),
+                                value = schoolText(spec.displayName),
                                 onClick = {
                                     if (canSwitchSchool && schools != null) {
                                         schoolPickerVisible = true
@@ -933,7 +1003,7 @@ private fun AccountSyncContent(
             plan = previewPlan,
             visible = previewPlan != null,
             importing = committing,
-            fallbackGroupLabel = stringResource(spec.sourceBadgeRes),
+            fallbackGroupLabel = schoolText(spec.sourceBadge),
             onDismiss = { previewPlan = null },
             onDismissed = { previewMounted = false },
             onConfirm = onPreviewConfirm,
@@ -948,8 +1018,8 @@ private fun AccountSyncContent(
         ) {
             ConfirmDialogCard(
                 title = stringResource(R.string.sync_logout_confirm_title),
-                message = stringResource(
-                    spec.logoutMessageRes ?: R.string.sync_logout_confirm_message,
+                message = schoolText(
+                    spec.logoutMessage ?: SchoolText.Res(R.string.sync_logout_confirm_message),
                 ),
             ) {
                 DialogPillButton(
@@ -983,8 +1053,8 @@ private fun AccountSyncContent(
         ) {
             ConfirmDialogCard(
                 title = stringResource(R.string.sync_switch_title),
-                message = stringResource(
-                    spec.switchMessageRes ?: R.string.sync_switch_message,
+                message = schoolText(
+                    spec.switchMessage ?: SchoolText.Res(R.string.sync_switch_message),
                 ),
             ) {
                 DialogPillButton(
@@ -1035,8 +1105,9 @@ private fun AccountSyncContent(
         ) {
             ConfirmDialogCard(
                 title = stringResource(R.string.sync_auto_login_disable_title),
-                message = stringResource(
-                    spec.autoLoginDisableMessageRes ?: R.string.sync_auto_login_disable_message,
+                message = schoolText(
+                    spec.autoLoginDisableMessage
+                        ?: SchoolText.Res(R.string.sync_auto_login_disable_message),
                 ),
             ) {
                 DialogPillButton(
@@ -1062,33 +1133,95 @@ private fun AccountSyncContent(
         }
     }
 
+    // 远端声明学校首次连接确认：展示学校名与登录域，确认后才切校（信任边界）。
+    // 两段式挂载与其它确认框一致：visible 置 false 后播完淡出再卸载。
+    if (remoteConfirmMounted) {
+        val confirmName = remoteConfirmNameText?.let { schoolText(it) }.orEmpty()
+        FadeOverlayDialog(
+            visible = remoteConfirmId != null,
+            onDismiss = { remoteConfirmId = null },
+            onDismissed = { remoteConfirmMounted = false },
+        ) {
+            ConfirmDialogCard(
+                title = stringResource(R.string.remote_school_confirm_title),
+                message = stringResource(
+                    R.string.remote_school_confirm_message,
+                    confirmName,
+                    remoteConfirmHost.orEmpty(),
+                ),
+            ) {
+                DialogPillButton(
+                    label = stringResource(R.string.settings_cancel),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                    enabled = remoteConfirmId != null,
+                    onClick = { remoteConfirmId = null },
+                )
+                DialogPillButton(
+                    label = stringResource(R.string.settings_confirm),
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.weight(1f),
+                    enabled = remoteConfirmId != null,
+                    onClick = {
+                        val id = remoteConfirmId ?: return@DialogPillButton
+                        remoteManager?.confirm(id)
+                        remoteConfirmId = null
+                        switchToSchool(id)
+                    },
+                )
+            }
+        }
+    }
+
     // 学校选择浮层：两段式挂载（visible + mounted）。点当前学校只关浮层；点他校先把
     // 浮层收起再切（装配在 IO，成功后整页按新学校 id 重绑，旧页状态随 key 重置）。
     // busy 在浮层打开期间变化时也不切校——「整行不响应」对浮层行同样成立。
     if (schoolPickerMounted && schools != null) {
         SchoolPickerSheet(
             visible = schoolPickerVisible,
-            schools = schools.schools,
+            schools = schoolList,
             activeSchoolId = spec.id,
             onSelect = { id ->
                 schoolPickerVisible = false
                 if (id != spec.id && canSwitchSchool) {
-                    scope.launch {
-                        try {
-                            schools.switchSchool(id)
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            // 装配失败等：注册表保持原校，页面不动，仅提示
-                            SyncDebugLog.d("switchSchool failed ${e::class.simpleName}")
-                            AppToasts.show(context, schoolSwitchFailedText)
+                    // 远端声明学校首次连接：先让用户确认登录域（信任边界——远端白名单
+                    // 不再来自编译期代码）；已确认过的学校直接切
+                    val target = schoolList.firstOrNull { it.id == id }
+                    if (target != null && target.remote &&
+                        remoteManager?.isConfirmed(id) == false
+                    ) {
+                        val host = runCatching { schools.webViewLoginSpec(id)?.dataHost }.getOrNull()
+                        if (host != null) {
+                            remoteConfirmHost = host
+                            remoteConfirmNameText = target.displayName
+                            remoteConfirmId = id
+                        } else {
+                            // 声明缺失（理论不可达）：按普通切校兜底，装配期校验会兜底失败
+                            switchToSchool(id)
                         }
+                    } else {
+                        switchToSchool(id)
                     }
                 }
             },
             onDismiss = { schoolPickerVisible = false },
             onDismissed = { schoolPickerMounted = false },
+            onRefreshRemote = onRefreshRemote,
         )
+    }
+
+    // 远端列表更新加载浮层：与「立即同步」同款 FadeOverlayDialog + SyncLoadingCard。
+    // 组合序在选校浮层之后 = 压在浮层之上；在途不可关闭（网络请求自带超时兜底）。
+    if (remoteLoadingMounted) {
+        FadeOverlayDialog(
+            visible = remoteRefreshing,
+            onDismiss = {},
+            onDismissed = { remoteLoadingMounted = false },
+        ) {
+            SyncLoadingCard(message = remoteRefreshingText)
+        }
     }
 }
 
@@ -1134,9 +1267,9 @@ private fun AccountAvatar(name: String, image: AvatarImage?) {
 /** 头像圆直径：52dp，行卡内与文字块垂直居中*/
 private val AccountAvatarSize = 52.dp
 
-/** 同步加载卡：小转圈 + 「正在同步…」，垂直居中；浮层在途不可关闭 */
+/** 同步加载卡：小转圈 + 文案（默认「正在同步…」），垂直居中；浮层在途不可关闭 */
 @Composable
-private fun SyncLoadingCard() {
+private fun SyncLoadingCard(message: String = stringResource(R.string.sync_syncing)) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1149,7 +1282,7 @@ private fun SyncLoadingCard() {
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            text = stringResource(R.string.sync_syncing),
+            text = message,
             style = ClassppTextTokens.dialogMessage,
             color = MaterialTheme.classppColors.secondaryText,
         )

@@ -211,6 +211,8 @@
     <string name="sync_switch_message">The account differs from the last sync. Continuing requires clearing the old sync records. Imported todos can be kept or deleted.</string>
     <string name="sync_login_notes">Signing in stores your account and password. Credentials are encrypted with the Android Keystore and excluded from backups. Sign-in happens only on this device, directly with your school\'s authentication service. If a captcha appears, the password changes, or authentication fails, sign-in pauses immediately and deletes the saved password — it never retries in a loop. Do not sign in on a shared device.</string>
     <string name="sync_login_blank_hint">Enter your account and password first</string>
+    <string name="sync_login_username_label">Account</string>
+    <string name="sync_login_username_hint">Identity account</string>
     <string name="sync_error_busy">The service is busy, try again later</string>
     <string name="sync_login_invalid_credentials">Incorrect account or password</string>
     <string name="sync_login_not_established">Signed in but could not read remote data. Use the web sign-in instead.</string>
@@ -220,10 +222,20 @@
     <!-- School selection (multi-school): shared by the settings section title and the
          picker sheet title; a single registered school still uses the same sheet -->
     <string name="school_picker_title">Choose school</string>
+    <string name="school_picker_all_schools">All schools</string>
     <string name="school_picker_sync_hint">Daily auto-sync applies to the current school only</string>
     <string name="school_capability_todo_sync">Todo sync</string>
     <string name="school_capability_schedule_import">Timetable import</string>
     <string name="school_switch_failed">Failed to switch school. Try again.</string>
+    <!-- Remote declarative schools (Tier 1): off by default; manual update + first-connect confirmation -->
+    <string name="settings_remote_refresh_title">Update remote schools</string>
+    <string name="settings_remote_refresh_desc">Tap to fetch the latest school list from the remote repository</string>
+    <string name="settings_remote_refreshing">Updating school list…</string>
+    <string name="settings_remote_refresh_added">Updated: %1$d new school(s)</string>
+    <string name="settings_remote_refresh_up_to_date">Already up to date</string>
+    <string name="settings_remote_refresh_failed">Update failed. Check your network and try again.</string>
+    <string name="remote_school_confirm_title">Connect remote school</string>
+    <string name="remote_school_confirm_message">“%1$s” is provided by a remote adapter declaration and will fetch sign-in and todo data from %2$s. Trust this school domain and continue?</string>
     <!-- Notifications & reminders -->
     <string name="settings_notifications">Notifications &amp; reminders</string>
     <string name="notification_header_title">Notifications &amp; reminders</string>

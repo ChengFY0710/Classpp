@@ -4,7 +4,6 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager
 import android.webkit.WebView
-import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -39,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import com.fangyi.classpp.data.sync.SchoolText
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
@@ -74,7 +74,7 @@ import com.fangyi.classpp.ui.theme.glassSurface
  */
 class GenericSchoolUi(
     private val spec: WebViewLoginSpec,
-    @StringRes private val titleRes: Int,
+    private val title: SchoolText,
     private val profileValidator: ((String) -> Boolean)? = null,
 ) : SchoolUi {
 
@@ -85,7 +85,7 @@ class GenericSchoolUi(
     ) {
         GenericWebViewLoginSheet(
             spec = spec,
-            titleRes = titleRes,
+            title = title,
             profileValidator = profileValidator ?: WebViewPolicy::defaultProfileValidator,
             onDismiss = onDismiss,
             onResult = onResult,
@@ -96,7 +96,7 @@ class GenericSchoolUi(
 @Composable
 private fun GenericWebViewLoginSheet(
     spec: WebViewLoginSpec,
-    @StringRes titleRes: Int,
+    title: SchoolText,
     profileValidator: (String) -> Boolean,
     onDismiss: () -> Unit,
     onResult: (WebViewLoginOutcome) -> Unit,
@@ -171,7 +171,7 @@ private fun GenericWebViewLoginSheet(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(titleRes),
+                    text = schoolText(title),
                     style = MaterialTheme.classppTextStyles.fieldLabel,
                     color = MaterialTheme.colorScheme.onSurface,
                 )

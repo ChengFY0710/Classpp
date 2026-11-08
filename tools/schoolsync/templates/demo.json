@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "id": "demo",
+  "capabilities": ["WEBVIEW_LOGIN"],
+  "displayName": {
+    "zh": "示例大学",
+    "en": "Demo University"
+  },
+  "webView": {
+    "entryUrl": "https://lms.demo.edu.cn/user/index?version=v1",
+    "allowedHosts": ["lms.demo.edu.cn", "ids.demo.edu.cn"],
+    "dataHost": "lms.demo.edu.cn",
+    "profilePath": "/api/profile",
+    "todosPath": "/api/todos",
+    "userAgent": "desktop"
+  },
+  "copy": {
+    "headerTitle": {
+      "zh": "示例大学课程中心",
+      "en": "Demo University LMS"
+    },
+    "headerDescription": {
+      "zh": "登录后同步作业与测验到待办",
+      "en": "Sign in to sync assignments and quizzes to your todos"
+    },
+    "introTitle": {
+      "zh": "同步可以做什么",
+      "en": "What sync does"
+    },
+    "introBody": {
+      "zh": "网页登录成功后，应用会读取课程中心的待办列表，把作业与测验导入待办，并在每日自动同步时检查新增内容。",
+      "en": "After signing in through the web page, the app reads the LMS todo list, imports assignments and quizzes, and checks for new items during daily auto-sync."
+    },
+    "loginSheetTitle": {
+      "zh": "登录示例大学课程中心",
+      "en": "Sign in to Demo University LMS"
+    },
+    "sourceBadge": {
+      "zh": "示例大学",
+      "en": "Demo University"
+    },
+    "groupHomework": {
+      "zh": "示例大学作业",
+      "en": "Demo assignments"
+    },
+    "groupQuiz": {
+      "zh": "示例大学测验",
+      "en": "Demo quizzes"
+    },
+    "syncNotifTitle": {
+      "zh": "示例大学自动同步完成",
+      "en": "Demo University auto-sync complete"
+    },
+    "accountChanged": {
+      "zh": "当前登录的示例大学账号与上次同步的不一致，继续同步需要先清空旧的同步记录。",
+      "en": "The signed-in Demo University account differs from the last sync. Continuing requires clearing the old sync records."
+    },
+    "logoutMessage": {
+      "zh": "退出后将清除示例大学的同步记录与登录状态，已导入的待办可保留。",
+      "en": "Signing out clears Demo University sync records and the session. Imported todos can be kept."
+    },
+    "switchMessage": {
+      "zh": "账号与上次同步的不一致，继续同步需要先清空旧的同步记录。已导入的待办可保留，或一并删除。",
+      "en": "The account differs from the last sync. Continuing requires clearing the old sync records. Imported todos can be kept or deleted."
+    },
+    "serviceBusy": {
+      "zh": "示例大学服务繁忙，请稍后重试",
+      "en": "Demo University service is busy, try again later"
+    },
+    "invalidCredentials": {
+      "zh": "示例大学账号或密码不正确",
+      "en": "Incorrect Demo University account or password"
+    },
+    "sessionNotEstablished": {
+      "zh": "登录成功但无法读取示例大学数据，请改用网页登录",
+      "en": "Signed in but could not read Demo University data. Use the web sign-in instead."
+    },
+    "autoLoginDisableMessage": {
+      "zh": "关闭后不再自动续期示例大学登录，已保存的账号与密码会被删除。",
+      "en": "Disabling stops renewing the Demo University session and deletes the saved account and password."
+    }
+  },
+  "profile": {
+    "uidPath": "user.uid",
+    "namePath": "user.name",
+    "avatar": {
+      "candidates": ["avatar_big_url", "avatar_small_url", "avatar_url"],
+      "baseUrl": "https://lms.demo.edu.cn",
+      "cookieHosts": ["lms.demo.edu.cn"]
+    }
+  },
+  "todo": {
+    "listPath": "todo_list",
+    "keyFields": [
+      { "name": "courseId", "path": "course.id" },
+      { "name": "id", "path": "id" }
+    ],
+    "remoteKeyTemplate": "demo:{courseId}:{id}",
+    "localIdTemplate": "demo-{courseId}-{id}",
+    "fields": {
+      "titlePath": "title",
+      "courseNamePath": "course.name",
+      "typePath": "type",
+      "endTimePath": "end_time"
+    },
+    "endTime": {
+      "format": "ISO",
+      "zone": "Asia/Shanghai"
+    },
+    "filters": {
+      "requireStudent": "is_student",
+      "skipLocked": "locked",
+      "skipOverdue": true
+    },
+    "noteTemplate": "课程：{courseName}\n类型：{type}\n{activityUrl}",
+    "activityUrlTemplate": "https://lms.demo.edu.cn/course/{courseId}/learning-activity#/{id}",
+    "autoGroups": [
+      { "type": "homework", "group": "homework" },
+      { "type": "quiz", "group": "quiz" }
+    ]
+  }
+}

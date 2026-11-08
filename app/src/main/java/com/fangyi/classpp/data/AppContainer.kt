@@ -18,10 +18,15 @@ import com.fangyi.classpp.data.sync.SchoolProvider
 import com.fangyi.classpp.data.sync.SchoolRegistry
 import com.fangyi.classpp.data.sync.SessionDeps
 import com.fangyi.classpp.data.sync.SyncDebugLog
+import com.fangyi.classpp.data.sync.remote.SchoolRemoteCatalog
+import com.fangyi.classpp.data.sync.remote.SchoolRemoteConfig
+import com.fangyi.classpp.data.sync.remote.toRemoteProviders
 import com.fangyi.classpp.schools.xmu.XmuSchoolProvider
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * 进程级依赖容器：各仓库的唯一装配点（原各自 companion 的手动单例——多份
@@ -64,8 +69,10 @@ class AppContainer internal constructor(
          */
         fun scheduleDailySyncInBackground(context: Context) {
             val appContext = context.applicationContext
+            // 轻量路径同样并入本地缓存的远端校：活跃校可能是手动更新后切过去的远端校，
+            // 闹钟必须按它重排。只读缓存，不联网、不装配会话。
             val registry = SchoolRegistry(
-                providers = schoolProviders(),
+                providers = mergedProviders(loadCachedRemoteProviders(appContext)),
                 // 轻量路径不应装配会话：真被调用即接线错误，直接失败暴露
                 assembler = { error("background daily sync must not assemble a session") },
                 toggleOf = { provider -> provider.dailySyncToggle(appContext) },
@@ -77,6 +84,27 @@ class AppContainer internal constructor(
         /** 学校注册列表：新校接入 = 在此加一行（指导 §2.5 装配点唯一） */
         private fun schoolProviders(): List<SchoolProvider> = listOf(XmuSchoolProvider())
 
+        /** 编译期学校在前（默认活跃校不变），远端声明按 id 去重追加 */
+        private fun mergedProviders(remote: List<SchoolProvider>): List<SchoolProvider> {
+            val base = schoolProviders()
+            val known = base.mapTo(HashSet()) { it.spec.id }
+            return base + remote
+                .distinctBy { it.spec.id }
+                .filter { it.spec.id !in known }
+        }
+
+        /**
+         * 本地缓存的远端声明 → provider：**只读磁盘、不联网**。用户手动更新过的声明
+         * 已由 [SchoolRemoteCatalog] 落盘，冷启动据此恢复远端校；从未手动更新则返回空
+         * （远端学校默认关闭）。坏声明单条跳过，不拖垮冷启动。
+         */
+        private fun loadCachedRemoteProviders(context: Context): List<SchoolProvider> =
+            runCatching {
+                SchoolRemoteCatalog(cacheDir = SchoolRemoteConfig.cacheDir(context))
+                    .loadCached()
+                    .toRemoteProviders()
+            }.getOrDefault(emptyList())
+
         /** 构建并从磁盘载入各库（测试可用：传入应用上下文，仓库目录取 filesDir） */
         internal suspend fun create(context: Context): AppContainer {
             val appContext = context.applicationContext
@@ -85,12 +113,19 @@ class AppContainer internal constructor(
             val scheduleRepository = ScheduleRepository.create(FileScheduleStore(dir))
             val tagRepository = TagRepository.create(FileTagStore(dir))
 
+            // 远端声明学校默认关闭：从未手动更新（无本地缓存）时不注册任何远端校。
+            // 用户手动更新过的声明已落盘，冷启动**只读本地缓存**恢复远端校（不联网）；
+            // 联网只发生在用户点击「更新远端学校列表」时（见 data/sync/remote）。
+            val remoteProviders = withContext(Dispatchers.IO) {
+                loadCachedRemoteProviders(appContext)
+            }
+
             // 学校注册表：装配点唯一。这里只提供共享依赖与 provider 列表（新校注册 = 加一行）；
             // 厦大的全部装配逻辑在其 provider 内（搬移自本文件的历史实现，逻辑与注释保留）。
             // 活跃学校 id 落 school_prefs；切校成功后的闹钟重排经 onActiveSchoolChanged 接线。
             var dailySyncController: DailySyncController? = null
             val schools = SchoolRegistry(
-                providers = schoolProviders(),
+                providers = mergedProviders(remoteProviders),
                 assembler = { provider ->
                     provider.createSession(
                         SessionDeps(

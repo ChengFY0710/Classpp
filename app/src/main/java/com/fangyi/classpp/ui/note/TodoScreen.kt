@@ -83,6 +83,7 @@ import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.isOverdue
 import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.LocalToday
+import com.fangyi.classpp.ui.schools.schoolText
 import com.fangyi.classpp.ui.components.BottomFadeScrim
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSectionHeader
@@ -2330,8 +2331,8 @@ private fun TodoList(
 @Composable
 private fun Todo.sourceLabel(): String? {
     val source = source ?: return null
-    val badgeRes = LocalTodoSourceBadges.current[source] ?: return null
-    return (sourceDetail?.takeIf { it.isNotBlank() } ?: stringResource(badgeRes))
+    val badge = LocalTodoSourceBadges.current[source] ?: return null
+    return (sourceDetail?.takeIf { it.isNotBlank() } ?: schoolText(badge))
         .takeIf { it !in tags }
 }
 

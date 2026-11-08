@@ -138,6 +138,13 @@ class ArchitectureGuardTest {
             "net/HttpTransport.kt",
             "net/CookieMirror.kt",
             "media/AvatarCache.kt",
+            "remote/SchoolDeclaration.kt",
+            "remote/DeclarativeSyncCodec.kt",
+            "remote/RemoteSchoolProvider.kt",
+            "remote/SchoolRemoteCatalog.kt",
+            "remote/RemoteSchoolPrefs.kt",
+            "remote/RemoteSchoolManager.kt",
+            "remote/SchoolDailySyncReceiver.kt",
         )
         for (relative in expected) {
             assertTrue("missing toolkit file: $relative", File(root, relative).isFile)
@@ -147,7 +154,8 @@ class ArchitectureGuardTest {
             File(root, "credential").walkTopDown() +
             File(root, "webview").walkTopDown() +
             File(root, "net").walkTopDown() +
-            File(root, "media").walkTopDown()) {
+            File(root, "media").walkTopDown() +
+            File(root, "remote").walkTopDown()) {
             if (!file.isFile || file.extension != "kt") continue
             assertFalse(
                 "${file.name} must not mention any school id",

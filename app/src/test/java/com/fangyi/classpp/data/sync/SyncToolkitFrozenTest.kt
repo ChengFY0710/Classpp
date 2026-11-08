@@ -4,6 +4,7 @@ import com.fangyi.classpp.data.sync.credential.KeystoreCipher
 import com.fangyi.classpp.data.sync.credential.KeystoreEnvelope
 import com.fangyi.classpp.data.sync.credential.SchoolSecureStore
 import com.fangyi.classpp.data.sync.engine.SchoolSyncStore
+import com.fangyi.classpp.data.sync.remote.RemoteSchoolPrefs
 import com.fangyi.classpp.data.xmu.XmuKeystoreEnvelope
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -89,6 +90,14 @@ class SyncToolkitFrozenTest {
         assertEquals("fzu/daily_sync_enabled", PrefsDailySyncToggle.enabledKey("fzu"))
     }
 
+    // ---------- 远端声明分发 ----------
+
+    @Test
+    fun `remote declaration prefs file and confirmation key are frozen`() {
+        assertEquals("remote_sync_prefs", RemoteSchoolPrefs.FILE_NAME)
+        assertEquals("remote/fzu/confirmed", RemoteSchoolPrefs.confirmedKey("fzu"))
+    }
+
     // ---------- 备份规则 ----------
 
     @Test
@@ -117,7 +126,9 @@ class SyncToolkitFrozenTest {
             Regex("""<exclude domain="sharedpref" path="sync_prefs.xml" />""")
                 .findAll(extraction).count(),
         )
-        // school_prefs 非敏感、不排除（恢复后指向无数据的学校 = 未连接，无害）
+        // school_prefs / remote_sync_prefs 非敏感、不排除（恢复后指向无数据的学校 = 未连接，
+        // 远端开关/确认记录丢失只会触发一次重新拉取/确认，无害）
         assertFalse(backup.contains("""path="school_prefs.xml""""))
+        assertFalse(backup.contains("""path="remote_sync_prefs.xml""""))
     }
 }

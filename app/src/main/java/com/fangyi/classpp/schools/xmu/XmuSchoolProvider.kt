@@ -18,6 +18,8 @@ import com.fangyi.classpp.data.sync.ImportSemester
 import com.fangyi.classpp.data.sync.PrefsDailySyncToggle
 import com.fangyi.classpp.data.sync.ScheduleImportService
 import com.fangyi.classpp.data.sync.SchoolProvider
+import com.fangyi.classpp.data.sync.SchoolText
+import com.fangyi.classpp.data.sync.resolve
 import com.fangyi.classpp.data.sync.SchoolSession
 import com.fangyi.classpp.data.sync.SchoolSpec
 import com.fangyi.classpp.data.sync.SemestersOutcome
@@ -170,8 +172,8 @@ class XmuSchoolProvider : SchoolProvider {
             api = AutoRenewSessionRouter(autoRenew, WebFetcher(appContext, XMU_WEB_VIEW_LOGIN, ::isXmuProfile)),
             groupNames = SchoolAutoGroupNames(
                 source = spec.id,
-                homework = appContext.getString(spec.groupHomeworkRes),
-                quiz = appContext.getString(spec.groupQuizRes),
+                homework = spec.groupHomework.resolve(appContext),
+                quiz = spec.groupQuiz.resolve(appContext),
             ),
             clock = clock,
             avatar = AvatarCache(
@@ -190,7 +192,7 @@ class XmuSchoolProvider : SchoolProvider {
             importer = scheduleImporter,
             syncState = engine.state,
             autoRenewState = autoRenew.state,
-            fallbackScheduleName = appContext.getString(spec.defaultScheduleNameRes),
+            fallbackScheduleName = spec.defaultScheduleName.resolve(appContext),
         )
         return XmuSchoolSession(
             spec = spec,
@@ -321,38 +323,38 @@ internal val XMU_WEB_VIEW_LOGIN = WebViewLoginSpec(
 /** 厦大静态声明：全部文案指向现有 `xmu_*` 资源键，视觉效果与改造前逐字一致（测试锁值） */
 internal val XMU_SCHOOL_SPEC = SchoolSpec(
     id = "xmu",
-    displayNameRes = R.string.xmu_school_name,
+    displayName = SchoolText.Res(R.string.xmu_school_name),
     capabilities = setOf(
         Capability.NATIVE_LOGIN,
         Capability.WEBVIEW_LOGIN,
         Capability.SCHEDULE_IMPORT,
     ),
-    headerTitleRes = R.string.xmu_header_title,
-    headerDescriptionRes = R.string.xmu_header_description,
-    introTitleRes = R.string.xmu_intro_title,
-    introBodyRes = R.string.xmu_intro_body,
-    usernameLabelRes = R.string.xmu_auto_login_username,
-    usernameHintRes = R.string.xmu_auto_login_username_hint,
-    loginBlankHintRes = R.string.xmu_auto_login_blank,
-    loginNotesRes = R.string.xmu_auto_login_warning,
-    loginSheetTitleRes = R.string.xmu_login_sheet_title,
-    sourceBadgeRes = R.string.xmu_source_badge,
-    groupHomeworkRes = R.string.xmu_group_homework,
-    groupQuizRes = R.string.xmu_group_quiz,
-    defaultScheduleNameRes = R.string.sync_import_default_name,
-    syncNotifTitleRes = R.string.xmu_auto_sync_notif_title,
-    accountChangedRes = R.string.xmu_error_account_changed,
-    logoutMessageRes = R.string.xmu_logout_confirm_message,
-    switchMessageRes = R.string.xmu_switch_message,
+    headerTitle = SchoolText.Res(R.string.xmu_header_title),
+    headerDescription = SchoolText.Res(R.string.xmu_header_description),
+    introTitle = SchoolText.Res(R.string.xmu_intro_title),
+    introBody = SchoolText.Res(R.string.xmu_intro_body),
+    usernameLabel = SchoolText.Res(R.string.xmu_auto_login_username),
+    usernameHint = SchoolText.Res(R.string.xmu_auto_login_username_hint),
+    loginBlankHint = SchoolText.Res(R.string.xmu_auto_login_blank),
+    loginNotes = SchoolText.Res(R.string.xmu_auto_login_warning),
+    loginSheetTitle = SchoolText.Res(R.string.xmu_login_sheet_title),
+    sourceBadge = SchoolText.Res(R.string.xmu_source_badge),
+    groupHomework = SchoolText.Res(R.string.xmu_group_homework),
+    groupQuiz = SchoolText.Res(R.string.xmu_group_quiz),
+    defaultScheduleName = SchoolText.Res(R.string.sync_import_default_name),
+    syncNotifTitle = SchoolText.Res(R.string.xmu_auto_sync_notif_title),
+    accountChanged = SchoolText.Res(R.string.xmu_error_account_changed),
+    logoutMessage = SchoolText.Res(R.string.xmu_logout_confirm_message),
+    switchMessage = SchoolText.Res(R.string.xmu_switch_message),
     // 以下四项的旧文案含「课程中心/学号」等校别措辞，指向旧键保持视觉零变化；
     // 新校不提供时回落到 data/sync 的通用 UI 中性默认键
-    serviceBusyRes = R.string.xmu_error_busy,
-    invalidCredentialsRes = R.string.xmu_auto_login_invalid_credentials,
-    sessionNotEstablishedRes = R.string.xmu_auto_login_not_established,
-    autoLoginDisableMessageRes = R.string.xmu_auto_login_disable_message,
+    serviceBusy = SchoolText.Res(R.string.xmu_error_busy),
+    invalidCredentials = SchoolText.Res(R.string.xmu_auto_login_invalid_credentials),
+    sessionNotEstablished = SchoolText.Res(R.string.xmu_auto_login_not_established),
+    autoLoginDisableMessage = SchoolText.Res(R.string.xmu_auto_login_disable_message),
     loginImages = listOf(R.drawable.xmu1, R.drawable.xmu2),
     timetableIntro = TimetableIntro(
-        titleRes = R.string.xmu_intro_timetable_title,
-        bodyRes = R.string.xmu_intro_timetable_body,
+        title = SchoolText.Res(R.string.xmu_intro_timetable_title),
+        body = SchoolText.Res(R.string.xmu_intro_timetable_body),
     ),
 )

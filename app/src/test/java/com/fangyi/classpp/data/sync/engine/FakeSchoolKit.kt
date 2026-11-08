@@ -6,6 +6,7 @@ import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.sync.Capability
 import com.fangyi.classpp.data.sync.LoginRaw
 import com.fangyi.classpp.data.sync.SchoolSpec
+import com.fangyi.classpp.data.sync.SchoolText
 import java.security.MessageDigest
 import java.util.GregorianCalendar
 import java.util.TimeZone
@@ -201,20 +202,20 @@ internal fun fakeSchoolSpec(
     capabilities: Set<Capability> = setOf(Capability.NATIVE_LOGIN),
 ): SchoolSpec = SchoolSpec(
     id = id,
-    displayNameRes = 0,
+    displayName = SchoolText.Res(0),
     capabilities = capabilities,
-    headerTitleRes = 0,
-    headerDescriptionRes = 0,
-    introTitleRes = 0,
-    introBodyRes = 0,
-    usernameLabelRes = 0,
-    usernameHintRes = 0,
-    loginBlankHintRes = 0,
-    loginNotesRes = 0,
-    loginSheetTitleRes = 0,
-    sourceBadgeRes = 0,
-    groupHomeworkRes = 0,
-    groupQuizRes = 0,
-    defaultScheduleNameRes = 0,
-    syncNotifTitleRes = 0,
+    headerTitle = SchoolText.Res(0),
+    headerDescription = SchoolText.Res(0),
+    introTitle = SchoolText.Res(0),
+    introBody = SchoolText.Res(0),
+    usernameLabel = SchoolText.Res(0),
+    usernameHint = SchoolText.Res(0),
+    loginBlankHint = SchoolText.Res(0),
+    loginNotes = SchoolText.Res(0),
+    loginSheetTitle = SchoolText.Res(0),
+    sourceBadge = SchoolText.Res(0),
+    groupHomework = SchoolText.Res(0),
+    groupQuiz = SchoolText.Res(0),
+    defaultScheduleName = SchoolText.Res(0),
+    syncNotifTitle = SchoolText.Res(0),
 )

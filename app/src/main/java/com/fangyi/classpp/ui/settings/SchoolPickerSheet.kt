@@ -23,10 +23,13 @@ import com.fangyi.classpp.data.sync.Capability
 import com.fangyi.classpp.data.sync.SchoolSpec
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.OverlaySheet
+import com.fangyi.classpp.ui.components.SettingsCard
+import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.schools.schoolText
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
@@ -40,7 +43,9 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  *   副行 = 能力摘要（待办同步 · 教务课表导入）；
  * - 只注册一所学校时照常渲染（仅一行选中态），底部多校提示 [R.string.school_picker_sync_hint]
  *   仅在 [schools] 多于一项时显示；
- * - `busy`（同步/自动续期在途）时整行不响应：宿主传入的回调自行判定，浮层不弹 toast。
+ * - `busy`（同步/自动续期在途）时整行不响应：宿主传入的回调自行判定，浮层不弹 toast；
+ * - 顶部是远端学校（Tier 1）的手动更新入口：远端学校默认关闭，只有用户点这一行才会
+ *   联网拉取；下载的声明保存到本地，重启后仍可用。浮层自身不发起任何请求。
  */
 @Composable
 internal fun SchoolPickerSheet(
@@ -50,6 +55,7 @@ internal fun SchoolPickerSheet(
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit,
     onDismissed: () -> Unit,
+    onRefreshRemote: () -> Unit = {},
 ) {
     // 返回键关浮层（与其余浮层一致的两段式：visible 复位后播退场，播完才卸载）
     BackHandler(enabled = visible) {
@@ -72,7 +78,23 @@ internal fun SchoolPickerSheet(
         imeBehavior = SheetImeBehavior.IgnoreIme,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
+            // 远端学校（Tier 1）：默认关闭，只保留手动更新入口。联网与结果提示由宿主负责，
+            // 浮层自身不发起任何请求。
             CardSection(spacing = SchoolRowSpacing) {
+                SettingsCard(
+                    items = listOf(
+                        SettingsCardItem.Nav(
+                            label = stringResource(R.string.settings_remote_refresh_title),
+                            description = stringResource(R.string.settings_remote_refresh_desc),
+                            onClick = onRefreshRemote,
+                        ),
+                    ),
+                )
+            }
+            CardSection(
+                title = stringResource(R.string.school_picker_all_schools),
+                spacing = SchoolRowSpacing,
+            ) {
                 schools.forEach { spec ->
                     SchoolRow(
                         spec = spec,
@@ -106,7 +128,7 @@ private fun SchoolRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = stringResource(spec.displayNameRes),
+                text = schoolText(spec.displayName),
                 style = MaterialTheme.classppTextStyles.fieldLabel.copy(
                     color = if (selected) colors.primary else colors.onSurface,
                 ),

@@ -62,7 +62,7 @@ class SchoolRegistryTest {
                     FakeProvider(
                         schoolSpec(
                             capabilities = setOf(Capability.SCHEDULE_IMPORT),
-                            timetableIntro = TimetableIntro(0, 0),
+                            timetableIntro = TimetableIntro(SchoolText.Res(0), SchoolText.Res(0)),
                         ),
                     ),
                 ),
@@ -94,7 +94,7 @@ class SchoolRegistryTest {
                     FakeProvider(
                         schoolSpec(
                             capabilities = setOf(Capability.NATIVE_LOGIN),
-                            timetableIntro = TimetableIntro(0, 0),
+                            timetableIntro = TimetableIntro(SchoolText.Res(0), SchoolText.Res(0)),
                         ),
                     ),
                 ),
@@ -113,7 +113,7 @@ class SchoolRegistryTest {
             ),
         )
         assertEquals("xmu", registry.activeSchoolId.value)
-        assertEquals(listOf("xmu", "fzu"), registry.schools.map { it.id })
+        assertEquals(listOf("xmu", "fzu"), registry.schools.value.map { it.id })
     }
 
     @Test
@@ -400,6 +400,93 @@ class SchoolRegistryTest {
         assertFalse(SchoolRegistry.canSwitchSchool(syncBusy = true, autoRenewBusy = true))
     }
 
+    // ---------- 运行时追加远端声明学校 ----------
+
+    @Test
+    fun `registerRemote appends valid schools and updates the flow`() {
+        val registry = buildRegistry(listOf(FakeProvider(schoolSpec("xmu"))))
+        val remote = FakeProvider(schoolSpec("demo", remote = true))
+
+        registry.registerRemote(listOf(remote))
+
+        assertEquals(listOf("xmu", "demo"), registry.schools.value.map { it.id })
+        assertTrue(registry.schools.value.last().remote)
+        assertSame(remote.toggle, registry.dailySyncToggle("demo"))
+    }
+
+    @Test
+    fun `registerRemote skips duplicates and invalid declarations`() {
+        val registry = buildRegistry(listOf(FakeProvider(schoolSpec("xmu"))))
+
+        registry.registerRemote(
+            listOf(
+                FakeProvider(schoolSpec("xmu")), // 与已注册学校重复
+                FakeProvider(schoolSpec("Bad")), // 非法 id
+                FakeProvider(
+                    schoolSpec(
+                        id = "nologin",
+                        capabilities = setOf(Capability.SCHEDULE_IMPORT),
+                        timetableIntro = TimetableIntro(SchoolText.Res(0), SchoolText.Res(0)),
+                    ),
+                ),
+                FakeProvider(schoolSpec("demo")),
+                FakeProvider(schoolSpec("demo")), // 本批内重复
+            ),
+        )
+
+        assertEquals(listOf("xmu", "demo"), registry.schools.value.map { it.id })
+    }
+
+    @Test
+    fun `registerRemote never removes registered schools or touches the active session`() = runBlocking {
+        val registry = buildRegistry(
+            listOf(
+                FakeProvider(schoolSpec("xmu")),
+                FakeProvider(schoolSpec("fzu")),
+            ),
+        )
+        val active = registry.session()
+        assertEquals("xmu", registry.activeSchoolId.value)
+
+        registry.registerRemote(listOf(FakeProvider(schoolSpec("demo"))))
+
+        assertEquals(listOf("xmu", "fzu", "demo"), registry.schools.value.map { it.id })
+        assertEquals("xmu", registry.activeSchoolId.value)
+        val slot = registry.activeSession.value
+        assertTrue(slot is SessionSlot.Ready)
+        assertSame(active, (slot as SessionSlot.Ready).session)
+    }
+
+    @Test
+    fun `registerRemote skips overlapping web view hosts`() {
+        val registry = buildRegistry(listOf(FakeProvider(schoolSpec("xmu"))))
+        val shared = testWebViewLogin("shared")
+
+        registry.registerRemote(listOf(FakeProvider(schoolSpec("one"), shared)))
+        registry.registerRemote(listOf(FakeProvider(schoolSpec("two"), shared)))
+
+        assertEquals(listOf("xmu", "one"), registry.schools.value.map { it.id })
+    }
+
+    @Test
+    fun `registered remote school can be switched to and assembled lazily`() = runBlocking {
+        val store = FakeActiveSchoolStore()
+        val registry = buildRegistry(
+            listOf(FakeProvider(schoolSpec("xmu"))),
+            activeStore = store,
+        )
+        registry.session()
+
+        registry.registerRemote(listOf(FakeProvider(schoolSpec("demo"))))
+        registry.switchSchool("demo")
+
+        assertEquals("demo", registry.activeSchoolId.value)
+        assertEquals("demo", store.stored)
+        val slot = registry.activeSession.value
+        assertTrue(slot is SessionSlot.Ready)
+        assertEquals("demo", (slot as SessionSlot.Ready).session.spec.id)
+    }
+
     // ---------- 每日同步开关 ----------
 
     @Test
@@ -438,25 +525,27 @@ class SchoolRegistryTest {
             Capability.WEBVIEW_LOGIN,
         ),
         timetableIntro: TimetableIntro? = null,
+        remote: Boolean = false,
     ) = SchoolSpec(
         id = id,
-        displayNameRes = 0,
+        displayName = SchoolText.Res(0),
         capabilities = capabilities,
-        headerTitleRes = 0,
-        headerDescriptionRes = 0,
-        introTitleRes = 0,
-        introBodyRes = 0,
-        usernameLabelRes = 0,
-        usernameHintRes = 0,
-        loginBlankHintRes = 0,
-        loginNotesRes = 0,
-        loginSheetTitleRes = 0,
-        sourceBadgeRes = 0,
-        groupHomeworkRes = 0,
-        groupQuizRes = 0,
-        defaultScheduleNameRes = 0,
-        syncNotifTitleRes = 0,
+        headerTitle = SchoolText.Res(0),
+        headerDescription = SchoolText.Res(0),
+        introTitle = SchoolText.Res(0),
+        introBody = SchoolText.Res(0),
+        usernameLabel = SchoolText.Res(0),
+        usernameHint = SchoolText.Res(0),
+        loginBlankHint = SchoolText.Res(0),
+        loginNotes = SchoolText.Res(0),
+        loginSheetTitle = SchoolText.Res(0),
+        sourceBadge = SchoolText.Res(0),
+        groupHomework = SchoolText.Res(0),
+        groupQuiz = SchoolText.Res(0),
+        defaultScheduleName = SchoolText.Res(0),
+        syncNotifTitle = SchoolText.Res(0),
         timetableIntro = timetableIntro,
+        remote = remote,
     )
 
     private fun fakeSession(
@@ -476,7 +565,10 @@ class SchoolRegistryTest {
         scheduleImport = scheduleImport,
     )
 
-    private class FakeProvider(override val spec: SchoolSpec) : SchoolProvider {
+    private class FakeProvider(
+        override val spec: SchoolSpec,
+        override val webViewLoginSpec: WebViewLoginSpec? = null,
+    ) : SchoolProvider {
         val toggle = FakeToggle()
 
         override fun dailySyncToggle(context: Context): DailySyncToggle = toggle

@@ -3,7 +3,6 @@ package com.fangyi.classpp.data.sync
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import androidx.annotation.StringRes
 import androidx.core.app.NotificationManagerCompat
 import com.fangyi.classpp.MainActivity
 import com.fangyi.classpp.R
@@ -25,7 +24,7 @@ import com.fangyi.classpp.data.notification.ensureNotificationChannels
  * 必须用户确认）、服务/网络问题都只留诊断日志，下次触发自愈，绝不自动 resetSyncData。
  *
  * 通用层不引用学校日志实现：诊断出口由构造注入（厦大注入 `XmuDebugLog::d`）。
- * 通知标题读 `spec.syncNotifTitleRes`，正文用中性键 `sync_notif_text`（文案与旧键一致）。
+ * 通知标题读 `spec.syncNotifTitle`（双源文案，见 SchoolText），正文用中性键 `sync_notif_text`（文案与旧键一致）。
  */
 class DailySyncRunner(
     private val registry: SchoolRegistry,
@@ -97,7 +96,7 @@ class DailySyncRunner(
                 if (result.report.imported + result.report.restored > 0) {
                     notifyResult(
                         context = context,
-                        titleRes = session.spec.syncNotifTitleRes,
+                        title = session.spec.syncNotifTitle,
                         imported = result.report.imported,
                         restored = result.report.restored,
                     )
@@ -113,23 +112,23 @@ class DailySyncRunner(
 
     /**
      * 结果汇报通知：单 id 覆盖式；点按进 App 主页（落默认 tab），用户自行查看待办。
-     * 标题来自 `SchoolSpec.syncNotifTitleRes`（厦大指向旧键，文案不变），正文用中性键。
+     * 标题来自 `SchoolSpec.syncNotifTitle`（双源文案，见 SchoolText），正文用中性键。
      */
     private fun notifyResult(
         context: Context,
-        @StringRes titleRes: Int,
+        title: SchoolText,
         imported: Int,
         restored: Int,
     ) {
         ensureNotificationChannels(context)
         val manager = NotificationManagerCompat.from(context)
         if (!manager.areNotificationsEnabled()) return
-        val title = context.getString(titleRes)
+        val resolvedTitle = title.resolve(context)
         val text = context.getString(R.string.sync_notif_text, imported, restored)
         val notification = NotificationPoster.buildStandard(
             context = context,
             channel = CHANNEL_SYNC,
-            title = title,
+            title = resolvedTitle,
             text = text,
             isCourse = false,
             contentIntent = openAppIntent(context),

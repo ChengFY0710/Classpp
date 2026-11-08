@@ -64,6 +64,12 @@ interface SchoolProvider {
      */
     val dailySyncFireIntent: ((Context) -> PendingIntent)? get() = null
 
+    /**
+     * WebView 登录声明的轻量访问（不装配完整会话）：远端声明学校在首次连接确认浮层里
+     * 读取登录域（`dataHost`）用。默认 null（编译期学校不需要；确需时由适配层覆盖）。
+     */
+    val webViewLoginSpec: WebViewLoginSpec? get() = null
+
     /** 装配运行时会话；耗时操作应下沉 IO（注册表保证只装配一次） */
     suspend fun createSession(deps: SessionDeps): SchoolSession
 }

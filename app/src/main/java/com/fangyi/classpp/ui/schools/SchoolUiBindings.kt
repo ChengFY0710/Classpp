@@ -17,7 +17,7 @@ object SchoolUiBindings {
     fun of(session: SchoolSession): SchoolUi? = session.webViewLogin?.let { webView ->
         GenericSchoolUi(
             spec = webView,
-            titleRes = session.spec.loginSheetTitleRes,
+            title = session.spec.loginSheetTitle,
             profileValidator = session.webViewProfileValidator,
         )
     }

@@ -24,6 +24,7 @@ import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.sync.LoginError
 import com.fangyi.classpp.data.sync.SchoolSpec
+import com.fangyi.classpp.data.sync.SchoolText
 import com.fangyi.classpp.data.sync.SyncDebugLog
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.OverlaySheet
@@ -33,6 +34,7 @@ import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTextFieldGroup
 import com.fangyi.classpp.ui.components.SheetTextFieldItem
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.schools.schoolText
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 
@@ -69,7 +71,7 @@ internal fun CredentialLoginSheet(
     val usernameBlank = username.isBlank()
     val passwordBlank = password.isEmpty()
     val context = LocalContext.current
-    val blankHint = stringResource(spec.loginBlankHintRes)
+    val blankHint = schoolText(spec.loginBlankHint)
 
     // 读实时 state（不经组合期快照）：诊断「点了没反应」时，uLen/pLen 是判定
     // 「打字有没有进 state」的唯一可信值
@@ -86,17 +88,17 @@ internal fun CredentialLoginSheet(
 
     val errorText = when (error) {
         LoginError.NeedCaptcha -> stringResource(R.string.sync_login_need_captcha)
-        LoginError.InvalidCredentials -> stringResource(
-            spec.invalidCredentialsRes ?: R.string.sync_login_invalid_credentials,
+        LoginError.InvalidCredentials -> schoolText(
+            spec.invalidCredentials ?: SchoolText.Res(R.string.sync_login_invalid_credentials),
         )
         LoginError.StorageUnavailable ->
             stringResource(R.string.sync_login_storage_unavailable)
-        LoginError.ServiceBusy -> stringResource(spec.serviceBusyRes ?: R.string.sync_error_busy)
+        LoginError.ServiceBusy -> schoolText(spec.serviceBusy ?: SchoolText.Res(R.string.sync_error_busy))
         LoginError.NetworkError -> stringResource(R.string.sync_error_network)
         LoginError.Timeout -> stringResource(R.string.sync_error_timeout)
         LoginError.FormatChanged -> stringResource(R.string.sync_error_format)
-        LoginError.SessionNotEstablished -> stringResource(
-            spec.sessionNotEstablishedRes ?: R.string.sync_login_not_established,
+        LoginError.SessionNotEstablished -> schoolText(
+            spec.sessionNotEstablished ?: SchoolText.Res(R.string.sync_login_not_established),
         )
         null -> null
     }
@@ -142,13 +144,13 @@ internal fun CredentialLoginSheet(
                 SheetTextFieldGroup(
                     fields = listOf(
                         SheetTextFieldItem(
-                            label = stringResource(spec.usernameLabelRes),
+                            label = schoolText(spec.usernameLabel),
                             value = username,
                             onValueChange = {
                                 username = it
                                 validationShown = false
                             },
-                            placeholder = stringResource(spec.usernameHintRes),
+                            placeholder = schoolText(spec.usernameHint),
                             isError = validationShown && usernameBlank,
                             imeAction = ImeAction.Next,
                         ),
@@ -172,7 +174,7 @@ internal fun CredentialLoginSheet(
                     items = listOf(
                         SettingsCardItem.Custom(
                             label = stringResource(R.string.sync_login_notes_title),
-                            description = stringResource(spec.loginNotesRes),
+                            description = schoolText(spec.loginNotes),
                         ),
                     ),
                 )

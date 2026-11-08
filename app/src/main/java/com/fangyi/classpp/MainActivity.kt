@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -255,9 +256,13 @@ class MainActivity : ComponentActivity() {
                     val schools = container?.schools
                     val dailySync = container?.dailySync
                     // 待办来源徽标表（source → 徽标文案）：来自学校注册表，待办页据此显示
-                    // 来源徽标（未注册来源不显示，不再硬编码学校 id）
-                    val todoSourceBadges = remember(schools) {
-                        schools?.schools?.associate { it.id to it.sourceBadgeRes }.orEmpty()
+                    // 来源徽标（未注册来源不显示，不再硬编码学校 id）。collect 注册表学校列表
+                    // ——远端学校运行时合并后徽标自动补齐（远端声明见 data/sync/remote）
+                    val todoSourceBadges = if (schools != null) {
+                        schools.schools.collectAsState().value
+                            .associate { it.id to it.sourceBadge }
+                    } else {
+                        emptyMap()
                     }
                     // AI 对话（日程页顶栏右侧按钮唤起对话浮层，M1 唯一 AI 入口）
                     val aiChatRepository = container?.aiChatRepository

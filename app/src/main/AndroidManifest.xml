@@ -94,6 +94,12 @@
                 <action android:name="android.intent.action.DATE_CHANGED" />
             </intent-filter>
         </receiver>
+
+        <!-- 远端声明学校共享的每日同步到点锚点：只有调度器自己发显式广播
+             （无 intent-filter；系统事件重排由上面的厦大冻结 receiver 全局承担） -->
+        <receiver
+            android:name=".data.sync.remote.SchoolDailySyncReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

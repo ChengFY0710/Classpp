@@ -345,6 +345,8 @@
     <string name="sync_switch_message">账号与上次同步的不一致，继续同步需要先清空旧的同步记录。已导入的待办可保留，或一并删除。</string>
     <string name="sync_login_notes">登录需要保存你的账号与密码。凭据由 Android Keystore 加密，不随备份迁移；登录只在本机直接与学校认证服务交互。遇到验证码、密码变更或认证失败会立即暂停并删除密码，不会连续重试。请勿在共用设备上登录。</string>
     <string name="sync_login_blank_hint">请先输入账号和密码</string>
+    <string name="sync_login_username_label">账号</string>
+    <string name="sync_login_username_hint">统一认证账号</string>
     <string name="sync_error_busy">服务繁忙，请稍后重试</string>
     <string name="sync_login_invalid_credentials">账号或密码不正确</string>
     <string name="sync_login_not_established">登录成功但无法读取远端数据，请改用网页登录</string>
@@ -354,10 +356,20 @@
     <!-- 学校选择（多校适配）：页面分组标题与选择浮层标题共用同一文案；
          只注册一所学校时同样可用，仅多校时显示浮层底部提示 -->
     <string name="school_picker_title">选择学校</string>
+    <string name="school_picker_all_schools">所有学校</string>
     <string name="school_picker_sync_hint">每日自动同步仅对当前学校生效</string>
     <string name="school_capability_todo_sync">待办同步</string>
     <string name="school_capability_schedule_import">教务课表导入</string>
     <string name="school_switch_failed">切换学校失败，请重试</string>
+    <!-- 远端声明学校（Tier 1）：默认关闭，只有手动更新入口 + 首次连接确认（文案不含校名） -->
+    <string name="settings_remote_refresh_title">更新远端学校列表</string>
+    <string name="settings_remote_refresh_desc">点击从远端仓库获取最新学校列表</string>
+    <string name="settings_remote_refreshing">正在更新学校列表…</string>
+    <string name="settings_remote_refresh_added">已更新，新增 %1$d 所学校</string>
+    <string name="settings_remote_refresh_up_to_date">已是最新</string>
+    <string name="settings_remote_refresh_failed">更新失败，请检查网络后重试</string>
+    <string name="remote_school_confirm_title">连接远端学校</string>
+    <string name="remote_school_confirm_message">「%1$s」由远端适配声明提供，将从 %2$s 获取登录与待办数据。确认信任该学校域名并继续？</string>
     <!-- 通知与提醒 -->
     <string name="settings_notifications">通知与提醒</string>
     <string name="notification_header_title">通知与提醒</string>
