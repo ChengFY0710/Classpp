@@ -67,7 +67,7 @@ object XmuTodoMapper {
 
     /**
      * formatVersion 1 的本地 id 口径（不含 courseId）：**只用于**升级或映射丢失时找回旧条目，
-     * 新导入不再使用。见 [com.fangyi.classpp.data.xmu.XmuSyncRepository] 的 buildPlan。
+     * 新导入不再使用。迁移期映射丢失时由通用引擎按确定性 id 找回（v1 口径仅发布前老版本）。
      */
     fun legacyLocalId(dto: XmuTodoDto): String = "$ID_PREFIX${dto.id}"
 

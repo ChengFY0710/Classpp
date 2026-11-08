@@ -40,7 +40,7 @@ internal sealed interface XmuLoginOutcome {
  *
  * 纪律：
  * - **一次 login() 最多提交一次密码**，任何失败都不在内部重试；重试策略由
- *   [XmuAutoLoginManager] 统一裁决（失败即 BLOCKED）；
+ *   通用 AutoRenewManager 统一裁决（失败即 BLOCKED）；
  * - 重定向手动跟随，只放行 https + 学校域名；c-mobile 回调只解析 code，不请求；
  * - 不写任何日志（学号、密码、cookie、URL 参数都不落日志）；
  * - 传输层异常按 Timeout / NetworkError 分类，5xx 单独返回 [XmuLoginOutcome.ServiceBusy]。

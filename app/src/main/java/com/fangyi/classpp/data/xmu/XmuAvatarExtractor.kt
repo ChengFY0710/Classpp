@@ -7,7 +7,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 
 /**
- * 从 `/api/profile` 原文里取头像地址（[XmuSyncRepository] 每次拿到 profile 时顺带调用）。
+ * 从 `/api/profile` 原文里取头像地址（通用引擎（SchoolSyncEngine，经 schools/xmu 编码器）每次拿到 profile 时顺带调用）。
  *
  * 2026-11-03 实测（lnt.xmu.edu.cn 已登录账号）：响应顶层带 `avatar_big_url` 与
  * `avatar_small_url`，均为 lnt 域下的绝对地址（`/api/uploads/<id>/modified-image`），

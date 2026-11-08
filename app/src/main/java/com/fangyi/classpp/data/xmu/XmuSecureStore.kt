@@ -17,6 +17,21 @@ import kotlinx.serialization.Serializable
 internal data class XmuCredentials(val username: String, val password: String)
 
 /**
+ * 自动续期策略（指导 §6.2，冻结枚举——落盘值即策略名，改名会让存量策略失效）：
+ * - [ENABLED]：用户显式开启且凭据存在，会话过期时允许自动登录；
+ * - [BLOCKED]：自动登录失败一次即置位，凭据已删除，必须手动登录后重新开启；
+ * - [USER_LOGGED_OUT]：用户主动退出 / 从未开启，等价于「自动登录关闭」。
+ *
+ * 只有 `ENABLED + 有凭据` 才允许自动登录；其余一律回退 WebView。
+ * 编排由通用 `AutoRenewManager` 承担（同名镜像 `AutoRenewPolicy`，迁移按名一一对应）。
+ */
+enum class XmuAutoLoginPolicy {
+    ENABLED,
+    BLOCKED,
+    USER_LOGGED_OUT,
+}
+
+/**
  * 自动续期的持久化（`SharedPreferences` 文件 `xmu_secure`）：
  * - 策略（ENABLED/BLOCKED/USER_LOGGED_OUT）是明文，便于 Keystore 失效时仍能展示暂停态；
  * - 学号/密码与 lnt Cookie 头经 Android Keystore 的 AES-256/GCM 加密后落盘；

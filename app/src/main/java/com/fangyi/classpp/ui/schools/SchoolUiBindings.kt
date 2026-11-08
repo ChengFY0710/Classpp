@@ -1,38 +1,24 @@
 package com.fangyi.classpp.ui.schools
 
 import com.fangyi.classpp.data.sync.SchoolSession
-import com.fangyi.classpp.schools.xmu.XmuUi
 
 /**
- * UI 绑定的唯一注册点（指导 §3.4）：学校 id → [SchoolUi]。
+ * WebView 登录浮层的通用绑定（指导 §3.4）：所有声明了 `webViewLogin` 的学校统一走
+ * [GenericSchoolUi]——入口/白名单/端点/文案全部由 spec 驱动，不写任何学校 UI 代码。
+ * 学校需要特殊页面结构/交互时才在这里注册自己的 [SchoolUi] 实现（当前无注册项）。
  *
- * - 已注册自定义 UI 的学校（厦大）沿用自家浮层，WebView 行为零改动；
- * - 其余声明了 `webViewLogin` 的纯声明学校走 [GenericSchoolUi]：新学校不写任何
- *   UI 代码即可获得完整网页登录流程；
- * - 没有 WebView 登录能力的学校返回 null（调用方隐藏网页登录入口）。
+ * 没有 WebView 登录能力的学校返回 null（调用方隐藏网页登录入口）。
  *
  * `data` 层不依赖 Compose：绑定只发生在 UI 层，通用会话契约保持不变。
  */
 object SchoolUiBindings {
 
-    /** 会话感知的绑定：优先自定义 UI，缺省为通用 WebView 浮层 */
-    fun of(session: SchoolSession): SchoolUi? = when (session.spec.id) {
-        "xmu" -> XmuUi
-        else -> session.webViewLogin?.let { webView ->
-            GenericSchoolUi(
-                spec = webView,
-                titleRes = session.spec.loginSheetTitleRes,
-                profileValidator = session.webViewProfileValidator,
-            )
-        }
-    }
-
-    /**
-     * 仅按 id 取自定义绑定：未注册返回 null。
-     * 新代码应使用 [of]（会话感知），以便纯声明学校获得通用浮层兜底。
-     */
-    fun of(schoolId: String): SchoolUi? = when (schoolId) {
-        "xmu" -> XmuUi
-        else -> null
+    /** 会话感知绑定：声明了 webViewLogin 的学校一律走通用浮层（spec 驱动，零学校分支） */
+    fun of(session: SchoolSession): SchoolUi? = session.webViewLogin?.let { webView ->
+        GenericSchoolUi(
+            spec = webView,
+            titleRes = session.spec.loginSheetTitleRes,
+            profileValidator = session.webViewProfileValidator,
+        )
     }
 }

@@ -13,11 +13,11 @@ import com.fangyi.classpp.data.store.FileTagStore
 import com.fangyi.classpp.data.store.FileTodoStore
 import com.fangyi.classpp.data.sync.DailySyncController
 import com.fangyi.classpp.data.sync.PrefsActiveSchoolStore
+import com.fangyi.classpp.data.sync.SchoolDailySyncController
 import com.fangyi.classpp.data.sync.SchoolProvider
 import com.fangyi.classpp.data.sync.SchoolRegistry
 import com.fangyi.classpp.data.sync.SessionDeps
-import com.fangyi.classpp.data.xmu.XmuDebugLog
-import com.fangyi.classpp.schools.xmu.XmuDailySyncController
+import com.fangyi.classpp.data.sync.SyncDebugLog
 import com.fangyi.classpp.schools.xmu.XmuSchoolProvider
 import java.io.File
 import kotlinx.coroutines.sync.Mutex
@@ -71,7 +71,7 @@ class AppContainer internal constructor(
                 toggleOf = { provider -> provider.dailySyncToggle(appContext) },
                 activeStore = PrefsActiveSchoolStore(appContext),
             )
-            XmuDailySyncController(registry).scheduleNext(appContext)
+            SchoolDailySyncController(registry).scheduleNext(appContext)
         }
 
         /** 学校注册列表：新校接入 = 在此加一行（指导 §2.5 装配点唯一） */
@@ -80,7 +80,6 @@ class AppContainer internal constructor(
         /** 构建并从磁盘载入各库（测试可用：传入应用上下文，仓库目录取 filesDir） */
         internal suspend fun create(context: Context): AppContainer {
             val appContext = context.applicationContext
-            XmuDebugLog.init(appContext)
             val dir = appContext.filesDir
             val todoRepository = TodoRepository.create(FileTodoStore(dir))
             val scheduleRepository = ScheduleRepository.create(FileScheduleStore(dir))
@@ -115,14 +114,14 @@ class AppContainer internal constructor(
             // 异常继续抛出（原路径同样会抛）。
             schools.session()
 
-            val dailySync = XmuDailySyncController(schools).also { dailySyncController = it }
+            val dailySync = SchoolDailySyncController(schools).also { dailySyncController = it }
 
             return AppContainer(
                 scheduleRepository = scheduleRepository,
                 todoRepository = todoRepository,
                 tagRepository = tagRepository,
                 schools = schools,
-                // 每日同步实现：通用 scheduler/runner + 厦大 receiver 薄壳
+                // 每日同步实现：通用 scheduler/runner 接活跃学校声明的闹钟锚点
                 dailySync = dailySync,
                 aiChatRepository = AiChatRepository.create(
                     store = FileAiChatStore(dir),

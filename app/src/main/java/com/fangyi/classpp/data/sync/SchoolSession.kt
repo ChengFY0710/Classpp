@@ -1,5 +1,6 @@
 package com.fangyi.classpp.data.sync
 
+import android.app.PendingIntent
 import android.content.Context
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.TodoRepository
@@ -55,6 +56,13 @@ interface SchoolProvider {
      * 实现应让两者返回同一实例/同一份状态）。
      */
     fun dailySyncToggle(context: Context): DailySyncToggle
+
+    /**
+     * 每日同步的到点广播 PendingIntent 工厂（学校适配层声明）：接收类 + requestCode + action
+     * 是已发布闹钟的冻结锚点，由各校薄壳持有，通用层不引用任何 receiver 类。
+     * null = 本校不参与每日同步闹钟（[DailySyncController] 对该校跳过排期）。
+     */
+    val dailySyncFireIntent: ((Context) -> PendingIntent)? get() = null
 
     /** 装配运行时会话；耗时操作应下沉 IO（注册表保证只装配一次） */
     suspend fun createSession(deps: SessionDeps): SchoolSession

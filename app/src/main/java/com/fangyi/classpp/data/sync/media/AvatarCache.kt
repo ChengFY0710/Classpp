@@ -10,6 +10,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -103,9 +104,12 @@ class HttpAvatarFetcher(
     /** 允许携带 cookie 的域（含子域）；空集 = 头像请求一律匿名 */
     private val cookieHosts: Set<String> = emptySet(),
     private val userAgent: String? = null,
+    /** null = 系统解析；学校主机 IPv6 路由不可达时由适配层注入自己的 DNS 策略 */
+    dns: Dns? = null,
 ) : AvatarFetcher {
 
     private val client = OkHttpClient.Builder()
+        .dns(dns ?: Dns.SYSTEM)
         .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .callTimeout(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)

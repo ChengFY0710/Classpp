@@ -3,6 +3,7 @@ package com.fangyi.classpp.data.sync.net
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Dns
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -50,11 +51,17 @@ class OkHttpTransport(
     /** null = 交由 OkHttp 默认 UA；需要桌面版页面的学校显式传入 */
     private val userAgent: String? = null,
     private val acceptLanguage: String = "zh-CN,zh;q=0.9",
+    /**
+     * null = 系统解析。学校主机若同时发布 A + AAAA 记录而 IPv6 路由不可达
+     * （先试 v6 会 TCP 黑洞到超时），由学校适配层注入自己的 DNS 策略。
+     */
+    dns: Dns? = null,
 ) : HttpTransport {
 
     private val client = OkHttpClient.Builder()
         .followRedirects(false)
         .followSslRedirects(false)
+        .dns(dns ?: Dns.SYSTEM)
         .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .callTimeout(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)

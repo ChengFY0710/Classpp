@@ -24,6 +24,7 @@ class ArchitectureGuardTest {
     fun `generalized UI and host files do not import school implementation`() {
         val files = listOf(
             "com/fangyi/classpp/MainActivity.kt",
+            "com/fangyi/classpp/data/AppContainer.kt",
             "com/fangyi/classpp/ui/settings/AccountSyncScreen.kt",
             "com/fangyi/classpp/ui/settings/CredentialLoginSheet.kt",
             "com/fangyi/classpp/ui/settings/SchoolPickerSheet.kt",
@@ -45,27 +46,46 @@ class ArchitectureGuardTest {
     }
 
     @Test
-    fun `generalized settings files use neutral or spec-provided copy only`() {
-        // 含校名/服务名/学号的旧键只允许出现在学校适配层；通用 UI 的账号流文案由 spec 覆盖
-        val forbidden = listOf(
-            "R.string.xmu_school_name",
-            "R.string.xmu_header_title",
-            "R.string.xmu_error_account_changed",
-            "R.string.xmu_auto_login_warning",
-            "R.string.xmu_auto_login_blank",
-            "R.string.xmu_auto_login_invalid_credentials",
-            "R.string.xmu_auto_login_not_established",
-            "R.string.xmu_auto_login_disable_message",
+    fun `generalized UI files have no school id literals`() {
+        // 学校 id 只能出现在 schools/<id>/ 适配层与注册表装配点；通用 UI 按 spec 驱动，
+        // 不允许 `"xmu" -> ...` 式的分发（Phase 5 收编了 SchoolUiBindings 的最后一处）
+        val files = listOf(
+            "com/fangyi/classpp/MainActivity.kt",
+            "com/fangyi/classpp/data/AppContainer.kt",
+            "com/fangyi/classpp/ui/settings/AccountSyncScreen.kt",
+            "com/fangyi/classpp/ui/settings/CredentialLoginSheet.kt",
+            "com/fangyi/classpp/ui/settings/SchoolPickerSheet.kt",
+            "com/fangyi/classpp/ui/settings/SettingsScreen.kt",
+            "com/fangyi/classpp/ui/schedule/SchoolImportSheet.kt",
+            "com/fangyi/classpp/ui/schedule/ScheduleScreen.kt",
+            "com/fangyi/classpp/ui/schools/GenericSchoolUi.kt",
+            "com/fangyi/classpp/ui/schools/SchoolUiBindings.kt",
         )
+        for (relative in files) {
+            val text = source(relative)
+            assertFalse(
+                "$relative must not contain school id literals",
+                SCHOOL_ID_LITERAL.containsMatchIn(text) || text.contains("\"xmu\""),
+            )
+        }
+    }
+
+    @Test
+    fun `generalized UI files reference no school-named resource keys`() {
+        // 含校名/学号/服务名的文案只能由 spec 从学校适配层提供（指导 §2.3 文案纪律）；
+        // Phase 5 起通用 UI 的全部文案走 `sync_*` 中性键，不再有任何 xmu_* 直引
         val files = listOf(
             "com/fangyi/classpp/ui/settings/AccountSyncScreen.kt",
             "com/fangyi/classpp/ui/settings/CredentialLoginSheet.kt",
+            "com/fangyi/classpp/ui/settings/SettingsScreen.kt",
+            "com/fangyi/classpp/ui/schedule/SchoolImportSheet.kt",
+            "com/fangyi/classpp/ui/schedule/ScheduleScreen.kt",
             "com/fangyi/classpp/ui/schools/GenericSchoolUi.kt",
         )
         for (relative in files) {
             val text = source(relative)
-            for (key in forbidden) {
-                assertFalse("$relative must not reference $key", text.contains(key))
+            for (pattern in listOf("R.string.xmu_", "R.string.error_xmu_", "R.string.import_xmu_")) {
+                assertFalse("$relative must not reference $pattern", text.contains(pattern))
             }
         }
     }

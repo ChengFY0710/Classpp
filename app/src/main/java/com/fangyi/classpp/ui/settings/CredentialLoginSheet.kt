@@ -57,7 +57,7 @@ internal fun CredentialLoginSheet(
     onDismissed: () -> Unit,
     onSubmit: (String, String) -> Unit,
     modifier: Modifier = Modifier,
-    title: String = stringResource(R.string.xmu_native_login_title),
+    title: String = stringResource(R.string.sync_native_login_title),
 ) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -85,16 +85,16 @@ internal fun CredentialLoginSheet(
     }
 
     val errorText = when (error) {
-        LoginError.NeedCaptcha -> stringResource(R.string.xmu_auto_login_need_captcha)
+        LoginError.NeedCaptcha -> stringResource(R.string.sync_login_need_captcha)
         LoginError.InvalidCredentials -> stringResource(
             spec.invalidCredentialsRes ?: R.string.sync_login_invalid_credentials,
         )
         LoginError.StorageUnavailable ->
-            stringResource(R.string.xmu_auto_login_storage_unavailable)
+            stringResource(R.string.sync_login_storage_unavailable)
         LoginError.ServiceBusy -> stringResource(spec.serviceBusyRes ?: R.string.sync_error_busy)
-        LoginError.NetworkError -> stringResource(R.string.xmu_error_network)
-        LoginError.Timeout -> stringResource(R.string.xmu_error_timeout)
-        LoginError.FormatChanged -> stringResource(R.string.xmu_error_format)
+        LoginError.NetworkError -> stringResource(R.string.sync_error_network)
+        LoginError.Timeout -> stringResource(R.string.sync_error_timeout)
+        LoginError.FormatChanged -> stringResource(R.string.sync_error_format)
         LoginError.SessionNotEstablished -> stringResource(
             spec.sessionNotEstablishedRes ?: R.string.sync_login_not_established,
         )
@@ -102,8 +102,8 @@ internal fun CredentialLoginSheet(
     }
 
     OverlaySheet(
-        title = if (busy) stringResource(R.string.xmu_auto_login_sheet_title_busy) else title,
-        confirmLabel = stringResource(R.string.xmu_auto_login_confirm),
+        title = if (busy) stringResource(R.string.sync_login_sheet_title_busy) else title,
+        confirmLabel = stringResource(R.string.sync_login_confirm),
         confirmAtEnd = true,
         onConfirm = ::submit,
         rightAction = SheetTopAction(
@@ -123,7 +123,7 @@ internal fun CredentialLoginSheet(
             // 进行中/失败都放在最上方：键盘弹起时内容可能已滚到输入框，
             // 错误若在长说明卡之后容易被用户忽略（表现为「点了没反应」）
             if (busy) {
-                SheetInfoBanner(text = stringResource(R.string.xmu_auto_login_busy))
+                SheetInfoBanner(text = stringResource(R.string.sync_login_busy))
             }
             errorText?.let { SheetInfoBanner(text = it) }
 
@@ -153,13 +153,13 @@ internal fun CredentialLoginSheet(
                             imeAction = ImeAction.Next,
                         ),
                         SheetTextFieldItem(
-                            label = stringResource(R.string.xmu_auto_login_password),
+                            label = stringResource(R.string.sync_login_password),
                             value = password,
                             onValueChange = {
                                 password = it
                                 validationShown = false
                             },
-                            placeholder = stringResource(R.string.xmu_auto_login_password_hint),
+                            placeholder = stringResource(R.string.sync_login_password_hint),
                             isError = validationShown && passwordBlank,
                             imeAction = ImeAction.Done,
                             onImeAction = ::submit,
@@ -171,7 +171,7 @@ internal fun CredentialLoginSheet(
                 SettingsCard(
                     items = listOf(
                         SettingsCardItem.Custom(
-                            label = stringResource(R.string.xmu_auto_login_notes_title),
+                            label = stringResource(R.string.sync_login_notes_title),
                             description = stringResource(spec.loginNotesRes),
                         ),
                     ),

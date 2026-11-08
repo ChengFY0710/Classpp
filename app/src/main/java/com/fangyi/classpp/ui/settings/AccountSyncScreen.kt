@@ -107,8 +107,8 @@ import kotlinx.coroutines.withTimeout
  * - 「备用登录方式」分组：原生登录与 WebView 登录**都**支持时显示（`available=false` 仍显示，
  *   默认入口回退 WebView，用户仍可直达备用入口）；
  * - 「自动续期」开关：仅 `autoRenew != null`；「每日同步」开关：已连接时；
- * - 头部/介绍/错误文案：学校专属部分来自 [SchoolSession.spec]，其余走中性键与旧 `xmu_*`
- *   无校名键（资源名不影响显示，见指导 §2.3 文案纪律）；
+ * - 头部/介绍/错误文案：学校专属部分来自 [SchoolSession.spec]，其余走 `sync_*` 中性键
+ *   （文案纪律：含校名/学号/服务名的文案只能由 spec 覆盖，指导 §2.3）；
  * - 退出登录只清本校数据：同步记录按 source/id 前缀过滤（会话实现保证），网页 cookie 按
  *   [com.fangyi.classpp.data.sync.WebViewLoginSpec.allowedHosts] 逐域置过期，**不清**
  *   WebStorage、不调用 `removeAllCookies`（跨校隔离，指导 §2.4 第 10 条）。
@@ -300,40 +300,40 @@ private fun AccountSyncContent(
     // 错误文案在组合期解析（回调里只引用，不经 LocalContext 查资源——lint 惯例）。
     // 含学校/服务名措辞的条目由 spec 覆盖，其余复用无校名的旧键或中性键
     val errorTexts: Map<SyncError, String> = mapOf(
-        SyncError.SessionExpired to stringResource(R.string.xmu_error_expired),
+        SyncError.SessionExpired to stringResource(R.string.sync_error_expired),
         SyncError.ServiceBusy to stringResource(spec.serviceBusyRes ?: R.string.sync_error_busy),
-        SyncError.NetworkError to stringResource(R.string.xmu_error_network),
-        SyncError.Timeout to stringResource(R.string.xmu_error_timeout),
-        SyncError.FormatChanged to stringResource(R.string.xmu_error_format),
+        SyncError.NetworkError to stringResource(R.string.sync_error_network),
+        SyncError.Timeout to stringResource(R.string.sync_error_timeout),
+        SyncError.FormatChanged to stringResource(R.string.sync_error_format),
         SyncError.AccountChanged to stringResource(
             spec.accountChangedRes ?: R.string.sync_error_account_changed,
         ),
-        SyncError.TooSoon to stringResource(R.string.xmu_error_too_soon),
-        SyncError.PersistFailed to stringResource(R.string.xmu_error_persist),
+        SyncError.TooSoon to stringResource(R.string.sync_error_too_soon),
+        SyncError.PersistFailed to stringResource(R.string.sync_error_persist),
     )
-    val genericErrorText = stringResource(R.string.xmu_error_generic)
+    val genericErrorText = stringResource(R.string.sync_error_generic)
     // 自动续期失败文案（浮层横幅与 Toast 共用；失败时两处都提示，避免只滚到输入框而漏看）
     val autoLoginErrorTexts: Map<LoginError, String> = mapOf(
-        LoginError.NeedCaptcha to stringResource(R.string.xmu_auto_login_need_captcha),
+        LoginError.NeedCaptcha to stringResource(R.string.sync_login_need_captcha),
         LoginError.InvalidCredentials to stringResource(
             spec.invalidCredentialsRes ?: R.string.sync_login_invalid_credentials,
         ),
-        LoginError.StorageUnavailable to stringResource(R.string.xmu_auto_login_storage_unavailable),
+        LoginError.StorageUnavailable to stringResource(R.string.sync_login_storage_unavailable),
         LoginError.ServiceBusy to stringResource(spec.serviceBusyRes ?: R.string.sync_error_busy),
-        LoginError.NetworkError to stringResource(R.string.xmu_error_network),
-        LoginError.Timeout to stringResource(R.string.xmu_error_timeout),
-        LoginError.FormatChanged to stringResource(R.string.xmu_error_format),
+        LoginError.NetworkError to stringResource(R.string.sync_error_network),
+        LoginError.Timeout to stringResource(R.string.sync_error_timeout),
+        LoginError.FormatChanged to stringResource(R.string.sync_error_format),
         LoginError.SessionNotEstablished to stringResource(
             spec.sessionNotEstablishedRes ?: R.string.sync_login_not_established,
         ),
     )
-    val upToDateText = stringResource(R.string.xmu_up_to_date)
-    val importDoneFormat = stringResource(R.string.xmu_import_done)
-    val importFailedText = stringResource(R.string.xmu_error_import)
-    val persistFailedText = stringResource(R.string.xmu_error_persist)
-    val logoutDoneText = stringResource(R.string.xmu_logout_done)
+    val upToDateText = stringResource(R.string.sync_up_to_date)
+    val importDoneFormat = stringResource(R.string.sync_import_done)
+    val importFailedText = stringResource(R.string.sync_error_import)
+    val persistFailedText = stringResource(R.string.sync_error_persist)
+    val logoutDoneText = stringResource(R.string.sync_logout_done)
     val schoolSwitchFailedText = stringResource(R.string.school_switch_failed)
-    val deadlineWarningFormat = stringResource(R.string.xmu_deadline_unparseable)
+    val deadlineWarningFormat = stringResource(R.string.sync_deadline_unparseable)
 
     val showError: (SyncError) -> Unit = { error ->
         AppToasts.show(context, errorTexts[error] ?: genericErrorText)
@@ -521,7 +521,7 @@ private fun AccountSyncContent(
                 } catch (e: TimeoutCancellationException) {
                     SyncDebugLog.d("enable timeout")
                     autoLoginError = LoginError.Timeout
-                    AppToasts.show(context, context.getString(R.string.xmu_error_timeout))
+                    AppToasts.show(context, context.getString(R.string.sync_error_timeout))
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -668,7 +668,7 @@ private fun AccountSyncContent(
                 bottomPadding = navBarPadding + SheetBottomSlack,
             ) {
                 if (sessionExpired) {
-                    SheetInfoBanner(text = stringResource(R.string.xmu_error_expired))
+                    SheetInfoBanner(text = stringResource(R.string.sync_error_expired))
                 }
 
                 // 顶部无题分组：头部卡 + 账号状态/登录入口，组内卡间距 10dp
@@ -684,7 +684,7 @@ private fun AccountSyncContent(
                             SettingsCard(
                                 items = listOf(
                                     SettingsCardItem.Nav(
-                                        label = stringResource(R.string.xmu_login_button),
+                                        label = stringResource(R.string.sync_login_button),
                                         onClick = {
                                             sessionExpired = false
                                             if (
@@ -711,15 +711,15 @@ private fun AccountSyncContent(
                                     // 已连接后标题直接是账户名（不再加「已连接：」前缀），
                                     // 姓名缺省时退回「已连接」单字
                                     label = syncState.accountName.ifBlank {
-                                        stringResource(R.string.xmu_connected_label)
+                                        stringResource(R.string.sync_connected_label)
                                     },
                                     description = if (syncState.lastSyncAtMillis > 0L) {
                                         stringResource(
-                                            R.string.xmu_last_sync_at,
+                                            R.string.sync_last_sync_at,
                                             formatSyncTime(syncState.lastSyncAtMillis),
                                         )
                                     } else {
-                                        stringResource(R.string.xmu_last_sync_never)
+                                        stringResource(R.string.sync_last_sync_never)
                                     },
                                     // 头像圆只在已连接分支出现：未连接时这张卡不存在，圆随之不渲染。
                                     // 放尾部槽、与文字块留 12dp（对齐原先左侧头像的行卡图标↔文本间距）
@@ -736,11 +736,11 @@ private fun AccountSyncContent(
                         SettingsCard(
                             items = listOf(
                                 SettingsCardItem.Nav(
-                                    label = stringResource(R.string.xmu_sync_button),
+                                    label = stringResource(R.string.sync_now_button),
                                     onClick = onSyncClick,
                                 ),
                                 SettingsCardItem.Nav(
-                                    label = stringResource(R.string.xmu_logout_button),
+                                    label = stringResource(R.string.sync_logout_button),
                                     onClick = { logoutVisible = true },
                                 ),
                             ),
@@ -755,26 +755,26 @@ private fun AccountSyncContent(
                 // 未开自动续期时登录过期该次静默跳过（行为不变，文案统一不区分）
                 if (canNativeLogin || connected) {
                     CardSection(
-                        title = stringResource(R.string.xmu_section_auto_login_sync),
+                        title = stringResource(R.string.sync_section_auto_login),
                     ) {
                         SettingsCard(
                             items = buildList {
                                 if (autoRenew != null) {
                                     add(
                                         SettingsCardItem.Toggle(
-                                            label = stringResource(R.string.xmu_auto_login_title),
+                                            label = stringResource(R.string.sync_auto_login_title),
                                             // 正常态（开/关）共用同一句描述；
                                             // 暂停/不可用保留原因与操作提示
                                             description = when {
                                                 !autoRenewState.available -> stringResource(
-                                                    R.string.xmu_auto_login_desc_unavailable,
+                                                    R.string.sync_auto_login_desc_unavailable,
                                                 )
                                                 autoRenewState.policy ==
                                                     AutoRenewPolicy.BLOCKED -> stringResource(
-                                                    R.string.xmu_auto_login_desc_blocked,
+                                                    R.string.sync_auto_login_desc_blocked,
                                                 )
                                                 else -> stringResource(
-                                                    R.string.xmu_auto_login_desc,
+                                                    R.string.sync_auto_login_desc,
                                                 )
                                             },
                                             checked = autoRenewState.policy ==
@@ -791,9 +791,9 @@ private fun AccountSyncContent(
                                 if (connected) {
                                     add(
                                         SettingsCardItem.Toggle(
-                                            label = stringResource(R.string.xmu_auto_sync_title),
+                                            label = stringResource(R.string.sync_daily_title),
                                             description =
-                                                stringResource(R.string.xmu_auto_sync_desc),
+                                                stringResource(R.string.sync_daily_desc),
                                             checked = dailySyncEnabled,
                                             onCheckedChange = onDailySyncToggle,
                                         ),
@@ -809,13 +809,13 @@ private fun AccountSyncContent(
                 // 风险，也是原生登录遇验证码/页面改版时的自动回退目标。
                 // 仅「原生 + 网页都支持」时显示（`available=false` 仍显示，见矩阵）
                 if (canNativeLogin && canWebViewLogin) {
-                    CardSection(title = stringResource(R.string.xmu_section_alt_login)) {
+                    CardSection(title = stringResource(R.string.sync_section_alt_login)) {
                         SettingsCard(
                             items = listOf(
                                 SettingsCardItem.Nav(
-                                    label = stringResource(R.string.xmu_webview_login),
+                                    label = stringResource(R.string.sync_webview_login_entry),
                                     description =
-                                        stringResource(R.string.xmu_webview_login_desc),
+                                        stringResource(R.string.sync_webview_login_desc),
                                     onClick = {
                                         sessionExpired = false
                                         loginVisible = true
@@ -828,7 +828,7 @@ private fun AccountSyncContent(
 
                 // 「同步可以做什么」说明分组：两张纯标题 + 完整说明的介绍卡。
                 // 教务导入是可选能力：学校未声明（或未给介绍卡）时整卡隐藏
-                CardSection(title = stringResource(R.string.xmu_section_capabilities)) {
+                CardSection(title = stringResource(R.string.sync_section_capabilities)) {
                     SettingsCard(
                         items = listOf(
                             SettingsCardItem.Custom(
@@ -849,9 +849,10 @@ private fun AccountSyncContent(
                     }
                 }
 
-                // 学校选择入口：页面最底部（「同步可以做什么」之后），连接/未连接两态都
-                // 显示；同步/自动续期在途时整行不响应（不弹 toast）。浮层见下方挂载。
-                CardSection {
+                // 学校选择入口：页面最底部（「同步可以做什么」之后），分组标题沿用
+                // 选择浮层标题「选择学校」；连接/未连接两态都显示；同步/自动续期在途时
+                // 整行不响应（不弹 toast）。浮层见下方挂载。
+                CardSection(title = stringResource(R.string.school_picker_title)) {
                     SettingsCard(
                         items = listOf(
                             SettingsCardItem.Nav(
@@ -932,6 +933,7 @@ private fun AccountSyncContent(
             plan = previewPlan,
             visible = previewPlan != null,
             importing = committing,
+            fallbackGroupLabel = stringResource(spec.sourceBadgeRes),
             onDismiss = { previewPlan = null },
             onDismissed = { previewMounted = false },
             onConfirm = onPreviewConfirm,
@@ -945,7 +947,7 @@ private fun AccountSyncContent(
             onDismissed = { logoutMounted = false },
         ) {
             ConfirmDialogCard(
-                title = stringResource(R.string.xmu_logout_confirm_title),
+                title = stringResource(R.string.sync_logout_confirm_title),
                 message = stringResource(
                     spec.logoutMessageRes ?: R.string.sync_logout_confirm_message,
                 ),
@@ -959,7 +961,7 @@ private fun AccountSyncContent(
                     onClick = { logoutVisible = false },
                 )
                 DialogPillButton(
-                    label = stringResource(R.string.xmu_logout_confirm),
+                    label = stringResource(R.string.sync_logout_confirm),
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.weight(1f),
@@ -980,13 +982,13 @@ private fun AccountSyncContent(
             onDismissed = { switchMounted = false },
         ) {
             ConfirmDialogCard(
-                title = stringResource(R.string.xmu_switch_title),
+                title = stringResource(R.string.sync_switch_title),
                 message = stringResource(
                     spec.switchMessageRes ?: R.string.sync_switch_message,
                 ),
             ) {
                 DialogPillButton(
-                    label = stringResource(R.string.xmu_switch_keep_records),
+                    label = stringResource(R.string.sync_switch_keep_records),
                     containerColor = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
@@ -997,7 +999,7 @@ private fun AccountSyncContent(
                     },
                 )
                 DialogPillButton(
-                    label = stringResource(R.string.xmu_switch_delete_all),
+                    label = stringResource(R.string.sync_switch_delete_all),
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.weight(1f),
@@ -1032,7 +1034,7 @@ private fun AccountSyncContent(
             onDismissed = { disableAutoMounted = false },
         ) {
             ConfirmDialogCard(
-                title = stringResource(R.string.xmu_auto_login_disable_title),
+                title = stringResource(R.string.sync_auto_login_disable_title),
                 message = stringResource(
                     spec.autoLoginDisableMessageRes ?: R.string.sync_auto_login_disable_message,
                 ),
@@ -1046,7 +1048,7 @@ private fun AccountSyncContent(
                     onClick = { disableAutoVisible = false },
                 )
                 DialogPillButton(
-                    label = stringResource(R.string.xmu_auto_login_disable_confirm),
+                    label = stringResource(R.string.sync_auto_login_disable_confirm),
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.weight(1f),
@@ -1147,7 +1149,7 @@ private fun SyncLoadingCard() {
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            text = stringResource(R.string.xmu_syncing),
+            text = stringResource(R.string.sync_syncing),
             style = ClassppTextTokens.dialogMessage,
             color = MaterialTheme.classppColors.secondaryText,
         )
@@ -1160,6 +1162,8 @@ private fun SyncPreviewSheet(
     plan: SyncPlan?,
     visible: Boolean,
     importing: Boolean,
+    /** 分组标题兜底：课程名为空时用当前学校的来源徽标文案（spec 驱动，不含通用层学校引用） */
+    fallbackGroupLabel: String,
     onDismiss: () -> Unit,
     onDismissed: () -> Unit,
     onConfirm: (Set<String>) -> Unit,
@@ -1179,12 +1183,12 @@ private fun SyncPreviewSheet(
         current?.let { selected = it.newItems.mapTo(mutableSetOf()) { item -> item.todo.id } }
     }
 
-    val summaryFormat = stringResource(R.string.xmu_preview_summary)
-    val restoreFormat = stringResource(R.string.xmu_preview_restore)
+    val summaryFormat = stringResource(R.string.sync_preview_summary)
+    val restoreFormat = stringResource(R.string.sync_preview_restore)
 
     OverlaySheet(
-        title = stringResource(R.string.xmu_preview_title),
-        confirmLabel = stringResource(R.string.xmu_preview_confirm),
+        title = stringResource(R.string.sync_preview_title),
+        confirmLabel = stringResource(R.string.sync_preview_confirm),
         confirmAtEnd = true,
         onConfirm = {
             if (!importing && current != null) onConfirm(selected)
@@ -1213,7 +1217,7 @@ private fun SyncPreviewSheet(
                 CardSection {
                     Text(
                         text = stringResource(
-                            R.string.xmu_deadline_unparseable,
+                            R.string.sync_deadline_unparseable,
                             p.deadlineUnparseableCount,
                         ),
                         style = ClassppTextTokens.settingsDescription,
@@ -1227,7 +1231,7 @@ private fun SyncPreviewSheet(
             if (p.newItems.isEmpty()) {
                 CardSection {
                     Text(
-                        text = stringResource(R.string.xmu_preview_empty),
+                        text = stringResource(R.string.sync_preview_empty),
                         style = ClassppTextTokens.settingsDescription,
                         color = MaterialTheme.classppColors.secondaryText,
                         modifier = Modifier
@@ -1241,7 +1245,7 @@ private fun SyncPreviewSheet(
                 p.newItems.groupBy { item -> item.todo.sourceDetail.orEmpty() }
                     .forEach { (course, items) ->
                         CardSection(
-                            title = course.ifEmpty { stringResource(R.string.xmu_source_badge) },
+                            title = course.ifEmpty { fallbackGroupLabel },
                         ) {
                             SettingsCard(
                                 items = items.map { item ->
@@ -1278,7 +1282,7 @@ private fun SyncPreviewSheet(
 private fun deadlineText(date: IsoDate?, minute: Int?): String {
     if (date == null || minute == null) return ""
     val (_, month, day) = date.yearMonthDay()
-    return stringResource(R.string.xmu_deadline_format, month, day, minute / 60, minute % 60)
+    return stringResource(R.string.sync_deadline_format, month, day, minute / 60, minute % 60)
 }
 
 /** 同步时刻展示（设备本地时区的 yyyy-MM-dd HH:mm；数字形态两种语言通用） */

@@ -90,10 +90,10 @@ private fun SettingsAccountSyncCard(
     val sync = (slot as? SessionSlot.Ready)?.session?.sync?.state?.collectAsState()?.value
     val label = stringResource(R.string.settings_account_sync)
     val valueText = if (sync != null && sync.uid.isNotEmpty()) {
-        if (sync.accountName.isBlank()) stringResource(R.string.xmu_connected_label)
-        else stringResource(R.string.xmu_connected_name, sync.accountName)
+        if (sync.accountName.isBlank()) stringResource(R.string.sync_connected_label)
+        else stringResource(R.string.sync_connected_name, sync.accountName)
     } else {
-        stringResource(R.string.xmu_not_connected_label)
+        stringResource(R.string.sync_not_connected_label)
     }
     val items = remember(label, valueText, onClick) {
         listOf(

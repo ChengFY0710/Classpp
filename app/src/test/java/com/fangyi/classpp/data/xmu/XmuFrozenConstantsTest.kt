@@ -36,9 +36,15 @@ class XmuFrozenConstantsTest {
 
     @Test
     fun `avatar cache file name is frozen`() {
-        val source = frozenSource("XmuAvatarStore.kt")
-        assertTrue(source.contains("const val FILE_NAME = \"avatar.img\""))
-        assertTrue(source.contains("const val TMP_NAME = \"avatar.img.tmp\""))
+        // 通用落盘名（AvatarCache，filesDir/sync/<id>/avatar.img）
+        val toolkitSource = source(
+            "com/fangyi/classpp/data/sync/media/AvatarCache.kt",
+        )
+        assertTrue(toolkitSource.contains("private const val FILE_NAME = \"avatar.img\""))
+        assertTrue(toolkitSource.contains("private const val TMP_NAME = \"avatar.img.tmp\""))
+        // 旧目录头像名（迁移读取 filesDir/xmu/avatar.img 用）
+        val migratorSource = xmuSchoolsSource("XmuLegacyMigrator.kt")
+        assertTrue(migratorSource.contains("AVATAR_FILE_NAME = \"avatar.img\""))
     }
 
     // ---------- 凭据存储 ----------
@@ -81,8 +87,9 @@ class XmuFrozenConstantsTest {
             "com.fangyi.classpp.xmu.action.DAILY_SYNC_FIRE",
             XmuDailySyncAlarmReceiver.ACTION_FIRE,
         )
-        // requestCode 与接收类由厦大薄壳注入（Phase 3 迁入 data/sync）：锁源码文本
-        assertTrue(xmuSchoolsSource("XmuDailySyncController.kt").contains("REQUEST_CODE = 1001"))
+        // requestCode 与接收类由厦大薄壳注入（provider 声明 dailySyncFireIntent 槽位）：
+        // 锁源码文本
+        assertTrue(xmuSchoolsSource("XmuSchoolProvider.kt").contains("REQUEST_CODE = 1001"))
         // Manifest 锚点：已发布的 PendingIntent 与系统广播继续命中
         assertTrue(
             frozenManifest().contains("android:name=\".data.xmu.XmuDailySyncAlarmReceiver\""),
@@ -124,6 +131,14 @@ class XmuFrozenConstantsTest {
     }
 
     // ---------- 源码快照工具 ----------
+
+    /** 任意主源码（仓库根或模块目录兼容） */
+    private fun source(relative: String): String {
+        val roots = listOf(File("src/main/java"), File("app/src/main/java"))
+        val file = roots.map { File(it, relative) }.firstOrNull { it.isFile }
+            ?: error("source not found: $relative")
+        return file.readText(Charsets.UTF_8)
+    }
 
     private fun frozenSource(name: String): String {
         val dirs = listOf(

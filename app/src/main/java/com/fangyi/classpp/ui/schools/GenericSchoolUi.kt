@@ -177,7 +177,7 @@ private fun GenericWebViewLoginSheet(
                 )
                 Text(
                     // 不含校名的通用提示：可复用既有资源键（资源名不影响显示）
-                    text = stringResource(R.string.xmu_login_hint),
+                    text = stringResource(R.string.sync_login_hint),
                     style = ClassppTextTokens.settingsDescription,
                     color = MaterialTheme.classppColors.secondaryText,
                 )
@@ -255,13 +255,13 @@ private fun GenericWebViewLoginSheet(
                         )
                         Spacer(Modifier.height(10.dp))
                         Text(
-                            text = stringResource(R.string.xmu_login_load_error),
+                            text = stringResource(R.string.sync_login_load_error),
                             style = ClassppTextTokens.settingsDescription,
                             color = MaterialTheme.classppColors.secondaryText,
                         )
                         Spacer(Modifier.height(14.dp))
                         DialogPillButton(
-                            label = stringResource(R.string.xmu_login_retry),
+                            label = stringResource(R.string.sync_login_retry),
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary,
                             onClick = {

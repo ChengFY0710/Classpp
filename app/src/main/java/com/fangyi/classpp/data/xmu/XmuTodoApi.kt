@@ -4,7 +4,7 @@ package com.fangyi.classpp.data.xmu
  * 课程中心只读取数接口。一次会话 = 探活（/api/profile）+ 拉待办（/api/todos），
  * 在同一个 lnt.xmu.edu.cn 页面上下文里同源 fetch 完成（httpOnly cookie 由 WebView 自动携带）。
  *
- * MVP 实现：[XmuWebFetcher]（无头 WebView）；可见登录流程直接驱动用户正在操作的 WebView，
+ * MVP 实现：通用 WebFetcher（无头 WebView，声明驱动）；可见登录流程直接驱动用户正在操作的 WebView，
  * 不经此接口。测试注入 fake。
  */
 interface XmuTodoApi {

@@ -511,10 +511,10 @@ fun ScheduleScreen(
             val schoolSyncState = schoolSession?.sync?.state?.collectAsState()?.value
             val schoolAccountStatus = when {
                 schoolSyncState == null || schoolSyncState.uid.isEmpty() ->
-                    stringResource(R.string.xmu_not_connected_label)
+                    stringResource(R.string.sync_not_connected_label)
                 schoolSyncState.accountName.isBlank() ->
-                    stringResource(R.string.xmu_connected_label)
-                else -> stringResource(R.string.xmu_connected_name, schoolSyncState.accountName)
+                    stringResource(R.string.sync_connected_label)
+                else -> stringResource(R.string.sync_connected_name, schoolSyncState.accountName)
             }
             // 教务导入服务（可选槽位）与阻断原因：不再由 UI 自己拼 hasCredentials
             val schoolScheduleImport: ScheduleImportService? = schoolSession?.scheduleImport
@@ -525,7 +525,7 @@ fun ScheduleScreen(
             val schoolImportBlockedText: String? = when (schoolImportBlockedReason) {
                 ImportBlockReason.NoCredentials,
                 ImportBlockReason.Unsupported,
-                -> stringResource(R.string.import_xmu_unsupported)
+                -> stringResource(R.string.sync_import_unsupported)
                 ImportBlockReason.NotConnected,
                 null,
                 -> null
@@ -989,17 +989,17 @@ fun ScheduleScreen(
             // 失败分类 → 文案（组合期解析 stringResource，协程里只查表）。这些键不含校名，
             // 通用 UI 直接复用旧键（资源名不影响显示）
             val schoolImportErrorTexts: Map<ImportError, String> = mapOf(
-                ImportError.NeedLogin to stringResource(R.string.error_xmu_need_login),
-                ImportError.NeedCaptcha to stringResource(R.string.error_xmu_captcha),
-                ImportError.InvalidCredentials to stringResource(R.string.error_xmu_credentials),
-                ImportError.SessionExpired to stringResource(R.string.error_xmu_session),
-                ImportError.ServiceBusy to stringResource(R.string.error_xmu_busy),
-                ImportError.NetworkError to stringResource(R.string.error_xmu_network),
-                ImportError.Timeout to stringResource(R.string.error_xmu_timeout),
-                ImportError.LoginFormatChanged to stringResource(R.string.error_xmu_login_format),
-                ImportError.FormatChanged to stringResource(R.string.error_xmu_format),
+                ImportError.NeedLogin to stringResource(R.string.sync_import_error_need_login),
+                ImportError.NeedCaptcha to stringResource(R.string.sync_import_error_captcha),
+                ImportError.InvalidCredentials to stringResource(R.string.sync_import_error_credentials),
+                ImportError.SessionExpired to stringResource(R.string.sync_import_error_session),
+                ImportError.ServiceBusy to stringResource(R.string.sync_import_error_busy),
+                ImportError.NetworkError to stringResource(R.string.sync_import_error_network),
+                ImportError.Timeout to stringResource(R.string.sync_import_error_timeout),
+                ImportError.LoginFormatChanged to stringResource(R.string.sync_import_error_login_format),
+                ImportError.FormatChanged to stringResource(R.string.sync_import_error_format),
             )
-            val schoolNoCoursesToast = stringResource(R.string.error_xmu_no_courses)
+            val schoolNoCoursesToast = stringResource(R.string.sync_import_error_no_courses)
             // 学期列表只在服务未阻断时拉取（阻断原因来自服务端 blockedReason，不再由 UI 拼
             // hasCredentials）；其余状态由浮层的账号行与拦截横幅引导，不出请求
             val schoolCanFetch = schoolScheduleImport != null &&
@@ -1422,7 +1422,7 @@ fun ScheduleScreen(
                         onDismiss = { importSheetVisible = false },
                         // 教务导入浮层盖上来时本浮层缩小后退（分层动效与新建表单一致）。
                         // 活跃学校未实现教务导入（无 scheduleImport 槽位）→ 入口整行隐藏
-                        onImportXmu = if (schoolScheduleImport != null) {
+                        onImportSchedule = if (schoolScheduleImport != null) {
                             { schoolImportVisible = true }
                         } else {
                             null
@@ -1532,7 +1532,7 @@ fun ScheduleScreen(
                 if (schoolConfirmVisible) schoolConfirmMounted = true
                 if (schoolConfirmMounted) {
                     ScheduleImportConfirmDialog(
-                        title = stringResource(R.string.import_xmu_confirm_title),
+                        title = stringResource(R.string.sync_import_confirm_title),
                         courseCount = schoolParsed?.courses?.size ?: 0,
                         scheduleName = schoolParsed?.name.orEmpty(),
                         // 开学日为推算默认值：确认时展示，导入后仍可在课表设置里调整

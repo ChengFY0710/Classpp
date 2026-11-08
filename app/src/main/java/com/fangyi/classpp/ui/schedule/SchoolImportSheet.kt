@@ -87,7 +87,7 @@ internal fun SchoolImportSheet(
     }
 
     OverlaySheet(
-        title = stringResource(R.string.import_xmu_sheet_title),
+        title = stringResource(R.string.sync_import_sheet_title),
         confirmLabel = stringResource(R.string.edit_confirm),
         // 确认在右、取消（关闭）在其外侧（同 Wakeup 口令导入的顶栏排布）
         confirmAtEnd = true,
@@ -125,11 +125,11 @@ internal fun SchoolImportSheet(
             when {
                 // 拉取课表中：进度行替代学期卡（同 Wakeup 导入的进行中样式）
                 importing -> CardSection {
-                    ProgressRow(text = stringResource(R.string.import_xmu_running))
+                    ProgressRow(text = stringResource(R.string.sync_import_running))
                 }
                 // 学期拉取中：进度行替代学期卡
                 semestersLoading -> CardSection {
-                    ProgressRow(text = stringResource(R.string.import_xmu_loading_semesters))
+                    ProgressRow(text = stringResource(R.string.sync_import_loading_semesters))
                 }
                 // 学期拉取失败：横幅说明 + 重试行
                 semestersError != null -> {
@@ -145,7 +145,7 @@ internal fun SchoolImportSheet(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = stringResource(R.string.import_xmu_semesters_failed),
+                                text = stringResource(R.string.sync_import_semesters_failed),
                                 style = MaterialTheme.classppTextStyles.fieldPlaceholder,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
@@ -153,7 +153,7 @@ internal fun SchoolImportSheet(
                             )
                             Spacer(Modifier.width(12.dp))
                             DialogPillButton(
-                                label = stringResource(R.string.import_xmu_retry),
+                                label = stringResource(R.string.sync_import_retry),
                                 containerColor = MaterialTheme.colorScheme.surface,
                                 contentColor = MaterialTheme.colorScheme.onSurface,
                                 onClick = onRetrySemesters,

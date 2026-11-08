@@ -14,7 +14,7 @@ import java.io.File
  * `xmu-sync.corrupt-<millis>.json` 留证并返回空状态。主文件缺失（进程在删主与改名之间
  * 被杀）同样由 bak 兜底。formatVersion 高于当前版本按损坏处理。
  *
- * open + [save] open：单测可注入「落盘失败」替身（见 XmuSyncRepositoryTest.FailingStore）。
+ * open + [save] open：单测可注入「落盘失败」替身（通用引擎与各校仓库同协议，替身模式相同）。
  */
 open class XmuSyncStore(private val dir: File) {
 

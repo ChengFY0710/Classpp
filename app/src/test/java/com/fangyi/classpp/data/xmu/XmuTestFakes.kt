@@ -170,28 +170,6 @@ internal fun jvmCipher(): XmuPasswordCipher = XmuPasswordCipher(
     base64Encoder = { java.util.Base64.getEncoder().encodeToString(it) },
 )
 
-internal class XmuTestHarness(
-    policy: XmuAutoLoginPolicy = XmuAutoLoginPolicy.ENABLED,
-    credentials: XmuCredentials? = XmuCredentials("20260001", "secret"),
-    cookie: String? = "session=OLD",
-    sessionValid: Boolean = false,
-) {
-    var now = 1_000_000L
-
-    val store = FakeXmuSecureStore(policy, credentials, cookie)
-    val server = FakeXmuServer().apply { this.sessionValid = sessionValid }
-    val session = XmuSessionCookieHolder()
-
-    val manager = XmuAutoLoginManager(
-        store = store,
-        loginClient = XmuLoginClient(server.transport, jvmCipher()),
-        nativeApi = XmuNativeTodoApi(server.transport, session),
-        session = session,
-        cookieMirror = XmuCookieMirror {},
-        nowMillis = { now },
-    )
-}
-
 internal const val XMU_JW_TEST_LOGIN_REDIRECT =
     "https://ids.xmu.edu.cn/authserver/login?service=https%3A%2F%2Fjw.xmu.edu.cn%2Fgsapp%2Fsys%2Fwdkbapp%2Fmodules%2Fxskcb%2Fkfdxnxqcx.do"
 internal const val XMU_JW_TEST_TICKET_URL =

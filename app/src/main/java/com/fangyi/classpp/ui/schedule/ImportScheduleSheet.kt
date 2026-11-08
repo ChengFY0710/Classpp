@@ -24,7 +24,7 @@ import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
  * 教务入口再叠一层教务导入浮层（[SchoolImportSheet]，调用方挂载）、Wakeup 入口再叠一层输入浮层
  * （[WakeupImportSheet]，调用方挂载），盖上来时本浮层经 covered 缩小后退。
  *
- * [onImportXmu] 为 null = 活跃学校未实现教务导入（可选能力）：该行整张卡隐藏。
+ * [onImportSchedule] 为 null = 活跃学校未实现教务导入（可选能力）：该行整张卡隐藏。
  *
  * 顶栏只有右侧「关闭」胶囊（confirmLabel = null 时自动右对齐、文字在前图标在后）；
  * 列表无输入框，键盘不必让位（IgnoreIme）。
@@ -34,7 +34,7 @@ internal fun ImportScheduleSheet(
     visible: Boolean,
     onDismissed: () -> Unit,
     onDismiss: () -> Unit,
-    onImportXmu: (() -> Unit)?,
+    onImportSchedule: (() -> Unit)?,
     onImportJsonFile: () -> Unit,
     onImportClipboard: () -> Unit,
     onImportWakeup: () -> Unit,
@@ -69,13 +69,13 @@ internal fun ImportScheduleSheet(
             CardSection {
                 // 教务导入：打开教务导入浮层（调用方挂载，叠在本浮层之上）。
                 // 未实现教务导入的学校整卡隐藏
-                if (onImportXmu != null) {
+                if (onImportSchedule != null) {
                     SettingsCard(
                         items = listOf(
                             SettingsCardItem.Nav(
-                                label = stringResource(R.string.import_xmu_label),
-                                description = stringResource(R.string.import_xmu_desc),
-                                onClick = onImportXmu,
+                                label = stringResource(R.string.sync_import_label),
+                                description = stringResource(R.string.sync_import_desc),
+                                onClick = onImportSchedule,
                             ),
                         ),
                     )

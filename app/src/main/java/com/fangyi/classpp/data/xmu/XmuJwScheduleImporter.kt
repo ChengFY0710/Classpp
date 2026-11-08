@@ -55,7 +55,7 @@ private sealed interface XmuJwBundleResult {
  * 教务导入编排层：会话过期自动重登一次 + 瞬时失败退避，随后把取到的原始数据交给
  * [XmuJwScheduleMapper] 映射成课表。
  *
- * 与 [XmuAutoLoginManager] 的边界：这里**只读**已存凭据（[credentialsProvider]），
+ * 与通用 AutoRenewManager 的边界：这里**只读**已存凭据（[credentialsProvider]），
  * 登录只对教务站（jw 域）建立会话——任何失败都**不触碰**课程中心的登录态与凭据策略
  * （不 BLOCKED、不删凭据），用户在课程中心的同步不受影响。
  *
@@ -230,7 +230,7 @@ class XmuJwScheduleImporter internal constructor(
 
     /**
      * 退避判定：wall clock 回拨后 `backoffUntil - now` 会远大于退避时长，
-     * 此时必须视为已过期，否则用户会被「一直在退避」卡住（同 XmuAutoLoginManager）。
+     * 此时必须视为已过期，否则用户会被「一直在退避」卡住（同通用 AutoRenewManager）。
      */
     private fun isBackingOff(): Boolean {
         val remaining = backoffUntilMillis - nowMillis()

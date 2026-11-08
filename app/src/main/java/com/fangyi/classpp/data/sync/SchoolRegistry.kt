@@ -1,5 +1,7 @@
 package com.fangyi.classpp.data.sync
 
+import android.app.PendingIntent
+import android.content.Context
 import com.fangyi.classpp.data.sync.webview.WebViewPolicy
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
@@ -160,6 +162,16 @@ class SchoolRegistry internal constructor(
         val provider = providersById[id]
             ?: throw IllegalArgumentException("unknown school id: '$id'")
         return toggles.computeIfAbsent(id) { toggleOf(provider) }
+    }
+
+    /**
+     * 每日同步的到点广播锚点工厂：读活跃学校 [SchoolProvider.dailySyncFireIntent] 的声明
+     * （不装配完整 session，与 [dailySyncToggle] 同级轻量）。null = 该校不参与每日闹钟。
+     */
+    fun dailySyncFireIntent(id: String = activeSchoolId.value): ((Context) -> PendingIntent)? {
+        val provider = providersById[id]
+            ?: throw IllegalArgumentException("unknown school id: '$id'")
+        return provider.dailySyncFireIntent
     }
 
     private fun validateSession(spec: SchoolSpec, session: SchoolSession) {

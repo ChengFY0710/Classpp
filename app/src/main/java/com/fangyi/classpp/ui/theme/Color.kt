@@ -89,8 +89,8 @@ val SecondaryText = Color(0xFFABAFB4)
 val DarkSecondaryText = Color(0xFF7E858D)
 
 /** SettingsCard 纯文字行标题（说明/简介类）：固定中性灰，不随主题色切换；比 secondaryText 更实，弱化但不失读 */
-val SecondaryGrey = Color(0xFF787F87)
-val DarkSecondaryGrey = Color(0xFFAEB2B7)
+val SecondaryGrey = Color(0xFF575B61)
+val DarkSecondaryGrey = Color(0xFFD4D6D9)
 
 /** 「刻意弱化」置灰：浅色取卡片底；深色卡底上取更暗的灰，保持同等弱化视觉强度 */
 val Negative = Color(0xFFCBCBCB)

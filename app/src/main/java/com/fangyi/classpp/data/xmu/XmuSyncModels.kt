@@ -26,7 +26,7 @@ data class XmuSyncFile(
     /** 展示用姓名（连接状态卡显示），可空 */
     val accountName: String = "",
     /**
-     * 已缓存的头像来源地址（`/api/profile` 里取到的 URL）：与 [XmuAvatarStore] 里的本地
+     * 已缓存的头像来源地址（`/api/profile` 里取到的 URL）：与 通用 AvatarCache 里的本地
      * `avatar.img` 成对——地址没变且文件在就不再重复下载。旧文件缺该字段按空串读入，
      * 下次同步自动补。
      */

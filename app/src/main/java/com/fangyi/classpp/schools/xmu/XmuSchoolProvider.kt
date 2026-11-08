@@ -1,24 +1,21 @@
 package com.fangyi.classpp.schools.xmu
 
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.util.Base64
 import android.webkit.CookieManager
 import com.fangyi.classpp.R
-import com.fangyi.classpp.data.sync.AutoRenewPolicy
-import com.fangyi.classpp.data.sync.AutoRenewService
+import com.fangyi.classpp.data.ScheduleJson
 import com.fangyi.classpp.data.sync.AutoRenewState
-import com.fangyi.classpp.data.sync.AvatarImage
+import com.fangyi.classpp.data.sync.AutoRenewService
 import com.fangyi.classpp.data.sync.Capability
-import com.fangyi.classpp.data.sync.CommitOutcome
 import com.fangyi.classpp.data.sync.DailySyncToggle
-import com.fangyi.classpp.data.sync.EnableOutcome
 import com.fangyi.classpp.data.sync.ImportBlockReason
 import com.fangyi.classpp.data.sync.ImportError
 import com.fangyi.classpp.data.sync.ImportOutcome
 import com.fangyi.classpp.data.sync.ImportSemester
-import com.fangyi.classpp.data.sync.LoginError
-import com.fangyi.classpp.data.sync.LoginRaw
-import com.fangyi.classpp.data.sync.PrepareOutcome
+import com.fangyi.classpp.data.sync.PrefsDailySyncToggle
 import com.fangyi.classpp.data.sync.ScheduleImportService
 import com.fangyi.classpp.data.sync.SchoolProvider
 import com.fangyi.classpp.data.sync.SchoolSession
@@ -26,29 +23,28 @@ import com.fangyi.classpp.data.sync.SchoolSpec
 import com.fangyi.classpp.data.sync.SemestersOutcome
 import com.fangyi.classpp.data.sync.SessionDeps
 import com.fangyi.classpp.data.sync.SyncDebugLog
-import com.fangyi.classpp.data.sync.SyncError
-import com.fangyi.classpp.data.sync.SyncPlan
-import com.fangyi.classpp.data.sync.SyncPlanItem
-import com.fangyi.classpp.data.sync.SyncReport
 import com.fangyi.classpp.data.sync.SyncService
 import com.fangyi.classpp.data.sync.SyncState
 import com.fangyi.classpp.data.sync.TimetableIntro
 import com.fangyi.classpp.data.sync.WebViewLoginSpec
 import com.fangyi.classpp.data.sync.combineState
-import com.fangyi.classpp.data.sync.mapState
-import com.fangyi.classpp.data.xmu.AndroidXmuCookieMirror
+import com.fangyi.classpp.data.sync.net.AndroidCookieMirror
+import com.fangyi.classpp.data.sync.credential.AutoRenewManager
+import com.fangyi.classpp.data.sync.credential.AutoRenewSessionRouter
+import com.fangyi.classpp.data.sync.credential.SchoolSecureStore
+import com.fangyi.classpp.data.sync.engine.SchoolAutoGroupNames
+import com.fangyi.classpp.data.sync.engine.SchoolSyncEngine
+import com.fangyi.classpp.data.sync.engine.SchoolSyncStore
+import com.fangyi.classpp.data.sync.media.AvatarCache
+import com.fangyi.classpp.data.sync.media.HttpAvatarFetcher
+import com.fangyi.classpp.data.sync.net.OkHttpTransport
+import com.fangyi.classpp.data.sync.net.SessionCookieHolder
+import com.fangyi.classpp.data.sync.webview.WebFetcher
+import com.fangyi.classpp.data.xmu.Ipv4FirstXmuDns
 import com.fangyi.classpp.data.xmu.KeystoreXmuSecureStore
-import com.fangyi.classpp.data.xmu.XmuAutoGroupNames
-import com.fangyi.classpp.data.xmu.SkipReason
-import com.fangyi.classpp.data.xmu.XmuAutoLoginError
-import com.fangyi.classpp.data.xmu.XmuAutoLoginManager
-import com.fangyi.classpp.data.xmu.XmuAutoLoginPolicy
-import com.fangyi.classpp.data.xmu.XmuAvatarStore
-import com.fangyi.classpp.data.xmu.XmuCommitOutcome
 import com.fangyi.classpp.data.xmu.XmuCookieJar
+import com.fangyi.classpp.data.xmu.XmuCredentials
 import com.fangyi.classpp.data.xmu.XmuDebugLog
-import com.fangyi.classpp.data.xmu.XmuEnableOutcome
-import com.fangyi.classpp.data.xmu.XmuHttpAvatarLoader
 import com.fangyi.classpp.data.xmu.XmuJwImportError
 import com.fangyi.classpp.data.xmu.XmuJwLoginClient
 import com.fangyi.classpp.data.xmu.XmuJwScheduleApi
@@ -57,30 +53,22 @@ import com.fangyi.classpp.data.xmu.XmuJwScheduleResult
 import com.fangyi.classpp.data.xmu.XmuJwSemester
 import com.fangyi.classpp.data.xmu.XmuJwSemestersResult
 import com.fangyi.classpp.data.xmu.XmuLoginClient
-import com.fangyi.classpp.data.xmu.XmuNativeTodoApi
-import com.fangyi.classpp.data.xmu.XmuOkHttpTransport
 import com.fangyi.classpp.data.xmu.XmuPasswordCipher
-import com.fangyi.classpp.data.xmu.XmuPrepareOutcome
-import com.fangyi.classpp.data.xmu.XmuSessionCookieHolder
-import com.fangyi.classpp.data.xmu.XmuSyncError
-import com.fangyi.classpp.data.xmu.XmuSyncPlan
-import com.fangyi.classpp.data.xmu.XmuSyncPreferences
-import com.fangyi.classpp.data.xmu.XmuSyncRepository
-import com.fangyi.classpp.data.xmu.XmuSyncStore
-import com.fangyi.classpp.data.xmu.XmuTodoApiRouter
-import com.fangyi.classpp.data.xmu.XmuWebFetcher
+import com.fangyi.classpp.data.xmu.XmuProfileDto
 import com.fangyi.classpp.data.xmu.XmuWebViewPolicy
-import java.util.concurrent.atomic.AtomicInteger
-import kotlinx.coroutines.flow.MutableStateFlow
+import com.fangyi.classpp.data.xmu.XmuDailySyncAlarmReceiver
+import java.io.File
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * 厦大适配：把冻结的 `data/xmu` 协议实现装配进通用会话契约。
+ * 厦大适配（指导 §2）：把冻结的 `data/xmu` **协议实现**（DTO/映射/CAS 登录链路/教务导入）
+ * 装配进通用方案——同步编排走 [SchoolSyncEngine]、自动续期走 [AutoRenewManager]、
+ * WebView 取数走 [WebFetcher]、头像走 [AvatarCache]、开关走 [PrefsDailySyncToggle]，
+ * 存量数据由 [XmuLegacyMigrator] 一次性搬进通用存储。
  *
- * 装配代码自 `AppContainer.create` 原样搬入（逻辑与注释保留）；归一化包装
- * （[SyncService] / [AutoRenewService] / [ScheduleImportService] / [SyncPlan] /
- * [DailySyncToggle]）只做类型映射，不改变任何行为。`data/xmu` 协议实现零改动。
+ * 厦大保留自己的部分只有协议与网络特化：CAS/OAuth 登录链路（[XmuLoginClient]）、
+ * IPv4 优先 DNS（[Ipv4FirstXmuDns]，XMU 主机发布不可达 AAAA 记录，先试 v6 会黑洞）、
+ * 教务站独立登录链路、每日同步的冻结闹钟锚点（[XmuDailySyncAlarmReceiver]）。
  */
 class XmuSchoolProvider : SchoolProvider {
 
@@ -92,101 +80,156 @@ class XmuSchoolProvider : SchoolProvider {
     private val toggleLock = Any()
 
     /**
-     * provider 级与 session 级共用同一 toggle 实例（同一 `xmu_sync_prefs` 单键）：
+     * 每日同步的到点广播锚点：接收类、requestCode、action 三项是已发布闹钟的冻结锚点，
+     * 不得改动（[SchoolDailySyncController] 按活跃学校取用，通用层不引用 receiver 类）。
+     */
+    override val dailySyncFireIntent: ((Context) -> PendingIntent)? = ::firePendingIntent
+
+    /**
+     * provider 级与 session 级共用同一 toggle 实例（同一 `sync_prefs` 分键）：
      * 后台重排只读开关时不会装配完整会话。
      */
     override fun dailySyncToggle(context: Context): DailySyncToggle {
+        XmuLegacyMigrator.migrateDailySyncToggle(context)
         toggle?.let { return it }
         return synchronized(toggleLock) {
-            toggle ?: XmuDailySyncToggle(context.applicationContext).also { toggle = it }
+            toggle ?: PrefsDailySyncToggle(context.applicationContext, spec.id).also { toggle = it }
         }
     }
 
     override suspend fun createSession(deps: SessionDeps): SchoolSession {
         val appContext = deps.appContext
-        // 通用层（UI/编排）的诊断出口接到现有厦大日志：日志纪律与实现零改动
+        // 通用层（引擎/续期/取数）的诊断出口接到厦大日志实现：日志纪律与冻结层零改动
+        XmuDebugLog.init(appContext)
         SyncDebugLog.init(XmuDebugLog::d)
 
-        // 方案 B：原生 OAuth 登录 + 自动续期。传输层（OkHttp + IPv4 优先 DNS，
-        // XMU 主机发布不可达 AAAA 记录，HttpURLConnection 会先试 v6 黑洞）与
-        // cookie 持有者由登录客户端和原生取数共享；WebView 路径仍由 XmuWebFetcher 保持原样。
-        val transport = XmuOkHttpTransport()
-        val session = XmuSessionCookieHolder()
+        // 存量迁移（幂等）：状态文件/头像/凭据/开关搬进通用存储，先于引擎与凭据的磁盘载入
+        XmuLegacyMigrator(
+            filesDir = deps.filesDir,
+            legacySecure = KeystoreXmuSecureStore(appContext),
+            secure = SchoolSecureStore(appContext, spec.id),
+        ).run()
+
+        // 原生 OAuth 登录 + 自动续期：通用 OkHttp 传输 + IPv4 优先 DNS，登录客户端、
+        // 原生取数与教务链路共享同一条传输
+        val transport = XmuTransportAdapter(
+            OkHttpTransport(
+                userAgent = XmuWebViewPolicy.DESKTOP_USER_AGENT,
+                dns = Ipv4FirstXmuDns(),
+            ),
+        )
         // minSdk 24 不能用 java.util.Base64；密码加密的编码器在此注入（两条登录链路共用）
         val cipher = XmuPasswordCipher(
             base64Encoder = { Base64.encodeToString(it, Base64.NO_WRAP) },
         )
-        val autoLoginManager = XmuAutoLoginManager(
-            store = KeystoreXmuSecureStore(appContext),
-            loginClient = XmuLoginClient(
-                transport = transport,
-                cipher = cipher,
+        val cookies = SessionCookieHolder()
+        val autoRenew = AutoRenewManager(
+            store = SchoolSecureStore(appContext, spec.id),
+            loginClient = XmuNativeLoginClient(
+                XmuLoginClient(transport = transport, cipher = cipher),
             ),
-            nativeApi = XmuNativeTodoApi(transport, session),
-            session = session,
-            cookieMirror = AndroidXmuCookieMirror,
+            sessionApi = XmuNativeSessionApi(transport = transport, session = cookies),
+            cookieHolder = cookies,
+            cookieMirror = AndroidCookieMirror,
+            mirrorHost = XmuWebViewPolicy.LNT_HOST,
         ).also { it.bootstrap() }
 
-        // 教务导入：与课程中心共用传输层与密码加密，但登录链路（CAS service 指回
-        // 教务站）与会话 cookie（jw 域，仅内存）各自独立；cookie 罐由登录与业务
-        // 取数共享，随响应继续演进（负载均衡路由 cookie 等）
+        // 教务导入：与课程中心共用传输层与密码加密，但登录链路（CAS service 指回教务站）
+        // 与会话 cookie（jw 域，仅内存）各自独立；cookie 罐由登录与业务取数共享，
+        // 随响应继续演进（负载均衡路由 cookie 等）
         val jwCookieJar = XmuCookieJar()
         val scheduleImporter = XmuJwScheduleImporter(
             loginClient = XmuJwLoginClient(transport = transport, cipher = cipher),
             api = XmuJwScheduleApi(transport = transport, cookieJar = jwCookieJar),
-            credentialsProvider = { autoLoginManager.peekCredentials() },
+            credentialsProvider = {
+                autoRenew.peekCredentials()?.let { XmuCredentials(it.username, it.password) }
+            },
             cookieJar = jwCookieJar,
         )
 
-        // 头像抓取：与同步同一次会话里下载，缓存进 filesDir/xmu/。Cookie 两路合并——
-        // 原生登录写进 session.header，网页登录/mirror 在 WebView 的 CookieManager 里；
-        // 实际是否带上由 loader 按域名判定（只发给 xmu.edu.cn，外域头像按匿名请求取）
+        // 头像抓取：与同步同一次会话里下载，缓存进 filesDir/sync/xmu/。Cookie 两路合并——
+        // 原生登录写进 cookies.header，网页登录/mirror 在 WebView 的 CookieManager 里；
+        // 实际是否带上由 fetcher 按域名判定（只发给 xmu.edu.cn，外域头像按匿名请求取）
         val avatarCookie: () -> String? = {
             val mirrored = runCatching {
-                CookieManager.getInstance()
-                    .getCookie("https://${XmuWebViewPolicy.LNT_HOST}")
+                CookieManager.getInstance().getCookie("https://${XmuWebViewPolicy.LNT_HOST}")
             }.getOrNull()
-            listOfNotNull(session.header, mirrored)
+            listOfNotNull(cookies.header, mirrored)
                 .filter { it.isNotBlank() }
                 .joinToString("; ")
                 .ifBlank { null }
         }
 
-        val repository = XmuSyncRepository(
-            store = XmuSyncStore(deps.filesDir),
+        val clock = System::currentTimeMillis
+        val engine = SchoolSyncEngine(
+            spec = spec,
+            codec = XmuSyncCodec(clock = clock),
+            store = SchoolSyncStore(deps.filesDir, spec.id),
             todoRepository = deps.todoRepository,
-            // 自动续期关闭/暂停/不可用时原样委托无头 WebView（方案 A）
-            api = XmuTodoApiRouter(XmuWebFetcher(appContext), autoLoginManager),
-            avatarStore = XmuAvatarStore(deps.filesDir),
-            avatarLoader = XmuHttpAvatarLoader(avatarCookie),
-            autoGroupNames = XmuAutoGroupNames(
-                homework = appContext.getString(R.string.xmu_group_homework),
-                quiz = appContext.getString(R.string.xmu_group_quiz),
+            // 自动续期关闭/暂停/不可用时原样委托无头 WebView（方案 A，路由语义不变）
+            api = AutoRenewSessionRouter(autoRenew, WebFetcher(appContext, XMU_WEB_VIEW_LOGIN, ::isXmuProfile)),
+            groupNames = SchoolAutoGroupNames(
+                source = spec.id,
+                homework = appContext.getString(spec.groupHomeworkRes),
+                quiz = appContext.getString(spec.groupQuizRes),
             ),
+            clock = clock,
+            avatar = AvatarCache(
+                dir = File(File(deps.filesDir, SchoolSyncStore.ROOT_DIR_NAME), spec.id),
+                fetcher = HttpAvatarFetcher(
+                    cookie = avatarCookie,
+                    cookieHosts = setOf(XMU_DOMAIN),
+                    userAgent = XmuWebViewPolicy.DESKTOP_USER_AGENT,
+                    dns = Ipv4FirstXmuDns(),
+                ),
+            ),
+            logger = SyncDebugLog::d,
         ).also { it.bootstrap() }
 
-        val sync = XmuSyncService(repository)
-        val autoRenew = XmuAutoRenewService(autoLoginManager)
         val scheduleImport = XmuScheduleImportService(
             importer = scheduleImporter,
-            syncState = sync.state,
+            syncState = engine.state,
             autoRenewState = autoRenew.state,
             fallbackScheduleName = appContext.getString(spec.defaultScheduleNameRes),
         )
         return XmuSchoolSession(
             spec = spec,
-            sync = sync,
+            sync = engine,
             autoRenew = autoRenew,
             scheduleImport = scheduleImport,
             webViewLogin = XMU_WEB_VIEW_LOGIN,
             dailySync = dailySyncToggle(appContext),
+            webViewProfileValidator = ::isXmuProfile,
         )
+    }
+
+    /** 登录态确认口径：profile 正文含有效 id（与冻结驱动器 `isProfileBody` 一致） */
+    private fun isXmuProfile(raw: String): Boolean = try {
+        ScheduleJson.decodeStorage<XmuProfileDto>(raw).id > 0
+    } catch (_: Exception) {
+        false
     }
 }
 
+/** 到点执行广播：接收类、requestCode、action 三项是已发布闹钟的冻结锚点，不得改动 */
+private fun firePendingIntent(context: Context): PendingIntent =
+    PendingIntent.getBroadcast(
+        context,
+        REQUEST_CODE,
+        Intent(context, XmuDailySyncAlarmReceiver::class.java)
+            .setAction(XmuDailySyncAlarmReceiver.ACTION_FIRE),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+/** 单条闹钟的固定 requestCode（本功能只有一个闹钟位） */
+private const val REQUEST_CODE = 1001
+
+/** XMU 域（含子域）才携带会话 cookie 的判定域（与冻结头像加载器的口径一致） */
+private const val XMU_DOMAIN = "xmu.edu.cn"
+
 /**
- * 厦大运行时会话：对外只暴露通用契约（内部协议对象都包在对应的 service 适配器里，
- * 不再向外部泄漏任何学校类型）。
+ * 厦大运行时会话：对外只暴露通用契约（引擎/续期管理器直接实现通用接口，
+ * 教务导入仍由适配层包装组合派生 blockedReason）。
  */
 internal class XmuSchoolSession(
     override val spec: SchoolSpec,
@@ -195,112 +238,8 @@ internal class XmuSchoolSession(
     override val scheduleImport: ScheduleImportService,
     override val webViewLogin: WebViewLoginSpec,
     override val dailySync: DailySyncToggle,
+    override val webViewProfileValidator: (String) -> Boolean,
 ) : SchoolSession
-
-/** [XmuSyncRepository] 的归一化包装（状态/头像/计划全部映射到 data.sync 类型） */
-internal class XmuSyncService(
-    private val repository: XmuSyncRepository,
-) : SyncService {
-
-    override val state: StateFlow<SyncState> = repository.state.mapState { state ->
-        SyncState(
-            uid = state.uid,
-            accountName = state.accountName,
-            avatarUrl = state.avatarUrl,
-            lastSyncAtMillis = state.lastSyncAtMillis,
-            lastProbeAtMillis = state.lastProbeAtMillis,
-        )
-    }
-
-    override val avatarImage: StateFlow<AvatarImage?> = repository.avatarImage.mapState { image ->
-        image?.let { AvatarImage(file = it.file, version = it.version) }
-    }
-
-    private val busyTracker = BusyTracker()
-    override val busy: StateFlow<Boolean> = busyTracker.busy
-
-    override suspend fun prepareSync(force: Boolean): PrepareOutcome = busyTracker.track {
-        when (val outcome = repository.prepareSync(force)) {
-            is XmuPrepareOutcome.Ready ->
-                PrepareOutcome.Ready(XmuSyncPlanView(outcome.plan, this@XmuSyncService))
-            is XmuPrepareOutcome.Failed -> PrepareOutcome.Failed(outcome.error.toSyncError())
-        }
-    }
-
-    override suspend fun prepareFromLogin(raw: LoginRaw): PrepareOutcome = busyTracker.track {
-        when (val outcome = repository.prepareFromLogin(raw.profileRaw, raw.todosRaw)) {
-            is XmuPrepareOutcome.Ready ->
-                PrepareOutcome.Ready(XmuSyncPlanView(outcome.plan, this@XmuSyncService))
-            is XmuPrepareOutcome.Failed -> PrepareOutcome.Failed(outcome.error.toSyncError())
-        }
-    }
-
-    override suspend fun commitSync(
-        plan: SyncPlan,
-        selectedNewIds: Set<String>,
-    ): CommitOutcome = busyTracker.track {
-        when (val outcome = repository.commitSync(claim(plan).plan, selectedNewIds)) {
-            is XmuCommitOutcome.Done -> CommitOutcome.Done(
-                SyncReport(
-                    imported = outcome.report.imported,
-                    restored = outcome.report.restored,
-                    skippedFiltered = outcome.report.skippedFiltered,
-                ),
-            )
-            is XmuCommitOutcome.Failed -> CommitOutcome.Failed(outcome.error)
-        }
-    }
-
-    override suspend fun markSynced(plan: SyncPlan): Boolean = busyTracker.track {
-        repository.markSynced(claim(plan).plan)
-    }
-
-    override suspend fun resetSyncData(deleteSyncedTodos: Boolean) {
-        busyTracker.track { repository.resetSyncData(deleteSyncedTodos) }
-    }
-
-    /**
-     * 会话认领计划（指导 §2.4 #11）：plan 是产出它的会话持有的不透明句柄，跨 session
-     * 传入是编程错误（不能静默按新校解释），直接失败而非返回误导性结果。
-     */
-    private fun claim(plan: SyncPlan): XmuSyncPlanView {
-        require(plan is XmuSyncPlanView && plan.owner === this) {
-            "sync plan was produced by another school session"
-        }
-        return plan
-    }
-}
-
-/** [XmuAutoLoginManager] 的归一化包装 */
-internal class XmuAutoRenewService(
-    private val manager: XmuAutoLoginManager,
-) : AutoRenewService {
-
-    override val state: StateFlow<AutoRenewState> = manager.state.mapState { state ->
-        AutoRenewState(
-            policy = state.policy.toAutoRenewPolicy(),
-            hasCredentials = state.hasCredentials,
-            available = state.available,
-        )
-    }
-
-    private val busyTracker = BusyTracker()
-    override val busy: StateFlow<Boolean> = busyTracker.busy
-
-    override suspend fun enable(username: String, password: String): EnableOutcome =
-        busyTracker.track {
-            when (val outcome = manager.enable(username, password)) {
-                is XmuEnableOutcome.Ready ->
-                    EnableOutcome.Ready(LoginRaw(outcome.profileRaw, outcome.todosRaw))
-                is XmuEnableOutcome.Failed ->
-                    EnableOutcome.Failed(outcome.error.toLoginError())
-            }
-        }
-
-    override suspend fun disable() {
-        busyTracker.track { manager.disable() }
-    }
-}
 
 /**
  * [XmuJwScheduleImporter] 的归一化包装：只取数 + 映射，落库仍由 UI 调
@@ -342,80 +281,7 @@ internal class XmuScheduleImportService(
         ImportSemester(id = code, name = label)
 }
 
-/** 每日同步开关：包装冻结的 `xmu_sync_prefs` 单键存储 */
-internal class XmuDailySyncToggle(context: Context) : DailySyncToggle {
-
-    private val appContext = context.applicationContext
-    private val _enabled = MutableStateFlow(XmuSyncPreferences.isDailySyncEnabled(appContext))
-
-    override val enabled: StateFlow<Boolean> = _enabled.asStateFlow()
-
-    override fun setEnabled(enabled: Boolean) {
-        XmuSyncPreferences.setDailySyncEnabled(appContext, enabled)
-        _enabled.value = enabled
-    }
-}
-
-/**
- * 同步计划的归一化视图：只读属性来自 [XmuSyncPlan]；[owner] 用于会话认领校验。
- * `courseName` 仅作引擎内部分组键（UI 按 `todo.sourceDetail` 分组，与现状一致）。
- */
-internal class XmuSyncPlanView(
-    internal val plan: XmuSyncPlan,
-    internal val owner: XmuSyncService,
-) : SyncPlan {
-
-    override val newItems: List<SyncPlanItem> = plan.newItems.map { item ->
-        SyncPlanItem(todo = item.todo, courseName = item.dto.courseName)
-    }
-
-    override val restoreCount: Int = plan.restoreItems.size
-
-    override val skippedTotal: Int = plan.skipped.values.sum()
-
-    override val deadlineUnparseableCount: Int =
-        plan.skipped[SkipReason.DeadlineUnparseable] ?: 0
-}
-
-/** 在途计数：单飞调用期间 [busy] 为 true（并发调用只在计数归零时复位） */
-private class BusyTracker {
-    private val active = AtomicInteger(0)
-    private val _busy = MutableStateFlow(false)
-    val busy: StateFlow<Boolean> = _busy.asStateFlow()
-
-    suspend fun <T> track(block: suspend () -> T): T {
-        if (active.incrementAndGet() == 1) _busy.value = true
-        try {
-            return block()
-        } finally {
-            if (active.decrementAndGet() == 0) _busy.value = false
-        }
-    }
-}
-
 // ---------- 失败分类映射（一一同构，不做兜底合并） ----------
-
-private fun XmuSyncError.toSyncError(): SyncError = when (this) {
-    XmuSyncError.SessionExpired -> SyncError.SessionExpired
-    XmuSyncError.ServiceBusy -> SyncError.ServiceBusy
-    XmuSyncError.NetworkError -> SyncError.NetworkError
-    XmuSyncError.Timeout -> SyncError.Timeout
-    XmuSyncError.FormatChanged -> SyncError.FormatChanged
-    XmuSyncError.AccountChanged -> SyncError.AccountChanged
-    XmuSyncError.TooSoon -> SyncError.TooSoon
-    XmuSyncError.PersistFailed -> SyncError.PersistFailed
-}
-
-private fun XmuAutoLoginError.toLoginError(): LoginError = when (this) {
-    XmuAutoLoginError.NeedCaptcha -> LoginError.NeedCaptcha
-    XmuAutoLoginError.InvalidCredentials -> LoginError.InvalidCredentials
-    XmuAutoLoginError.StorageUnavailable -> LoginError.StorageUnavailable
-    XmuAutoLoginError.ServiceBusy -> LoginError.ServiceBusy
-    XmuAutoLoginError.NetworkError -> LoginError.NetworkError
-    XmuAutoLoginError.Timeout -> LoginError.Timeout
-    XmuAutoLoginError.FormatChanged -> LoginError.FormatChanged
-    XmuAutoLoginError.SessionNotEstablished -> LoginError.SessionNotEstablished
-}
 
 private fun XmuJwImportError.toImportError(): ImportError = when (this) {
     XmuJwImportError.NeedLogin -> ImportError.NeedLogin
@@ -427,12 +293,6 @@ private fun XmuJwImportError.toImportError(): ImportError = when (this) {
     XmuJwImportError.Timeout -> ImportError.Timeout
     XmuJwImportError.LoginFormatChanged -> ImportError.LoginFormatChanged
     XmuJwImportError.FormatChanged -> ImportError.FormatChanged
-}
-
-private fun XmuAutoLoginPolicy.toAutoRenewPolicy(): AutoRenewPolicy = when (this) {
-    XmuAutoLoginPolicy.ENABLED -> AutoRenewPolicy.ENABLED
-    XmuAutoLoginPolicy.BLOCKED -> AutoRenewPolicy.BLOCKED
-    XmuAutoLoginPolicy.USER_LOGGED_OUT -> AutoRenewPolicy.USER_LOGGED_OUT
 }
 
 // ---------- 静态声明 ----------
@@ -458,8 +318,8 @@ internal val XMU_WEB_VIEW_LOGIN = WebViewLoginSpec(
     userAgent = XmuWebViewPolicy.DESKTOP_USER_AGENT,
 )
 
-/** 厦大静态声明：全部文案指向现有 `xmu_*` 资源键，视觉效果与改造前逐字一致 */
-private val XMU_SCHOOL_SPEC = SchoolSpec(
+/** 厦大静态声明：全部文案指向现有 `xmu_*` 资源键，视觉效果与改造前逐字一致（测试锁值） */
+internal val XMU_SCHOOL_SPEC = SchoolSpec(
     id = "xmu",
     displayNameRes = R.string.xmu_school_name,
     capabilities = setOf(
@@ -479,7 +339,7 @@ private val XMU_SCHOOL_SPEC = SchoolSpec(
     sourceBadgeRes = R.string.xmu_source_badge,
     groupHomeworkRes = R.string.xmu_group_homework,
     groupQuizRes = R.string.xmu_group_quiz,
-    defaultScheduleNameRes = R.string.import_xmu_default_name,
+    defaultScheduleNameRes = R.string.sync_import_default_name,
     syncNotifTitleRes = R.string.xmu_auto_sync_notif_title,
     accountChangedRes = R.string.xmu_error_account_changed,
     logoutMessageRes = R.string.xmu_logout_confirm_message,
