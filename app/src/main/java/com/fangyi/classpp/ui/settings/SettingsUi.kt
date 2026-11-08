@@ -279,7 +279,14 @@ internal fun SettingsTopBar(
 }
 
 /** 设置页身份：冻结键的一部分，保证各屏顶栏的帧绝不互相重放 */
-internal enum class SettingsPage { Root, Personalization, Notification, AiSettings, XmuSync, DataManagement }
+internal enum class SettingsPage {
+    Root,
+    Personalization,
+    Notification,
+    AiSettings,
+    AccountSync,
+    DataManagement,
+}
 
 /**
  * 设置页冻结帧的会话代际：进多任务/回桌面后窗口不可见，系统会丢弃 RenderNode 的

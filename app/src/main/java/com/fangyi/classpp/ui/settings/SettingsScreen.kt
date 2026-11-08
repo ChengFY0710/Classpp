@@ -38,8 +38,9 @@ import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.TagRepository
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.ai.AiChatRepository
-import com.fangyi.classpp.data.xmu.XmuAutoLoginManager
-import com.fangyi.classpp.data.xmu.XmuSyncRepository
+import com.fangyi.classpp.data.sync.DailySyncController
+import com.fangyi.classpp.data.sync.SchoolRegistry
+import com.fangyi.classpp.data.sync.SessionSlot
 import com.fangyi.classpp.ui.components.SettingsCardwithIcon
 import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
 import com.fangyi.classpp.ui.components.SheetBottomSlack
@@ -51,6 +52,7 @@ import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.rememberPageOverlayTransitionState
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.schedule.CardHeightScales
+import com.fangyi.classpp.ui.schools.SchoolUiBindings
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.ThemeAccent
 import com.fangyi.classpp.ui.theme.ThemeMode
@@ -59,6 +61,7 @@ import com.fangyi.classpp.ui.theme.themeAccent
 import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import kotlinx.coroutines.flow.MutableStateFlow
 
 // 纵向节奏：首项距顶栏为页自有节奏（18dp）；分组间距与课表设置浮层同源
 // （ui.theme 的 SettingsSectionSpacing），尾部余量与 overlay 浮层同源
@@ -72,18 +75,19 @@ private val EntryCardSpacing = 12.dp
 
 /**
  * 「账号与同步」入口卡的行值：未连接 / 已连接 姓名 / 登录已过期。
- * 状态流在这一行内 collect（repository == null 时显示未连接）；过期态没有独立落盘标志，
+ * 状态流在这一行内 collect（活跃会话未就绪时显示未连接）；过期态没有独立落盘标志，
  * 仅由同步流程的探活结果驱动（子页横幅同一份判定），这里只呈现「已连接与否」。
  *
  * 订阅收敛在本卡：账号状态变化只重组这一行（item 列表按 label/value 记忆化），
- * 不再向上失效整个设置根页。
+ * 不再向上失效整个设置根页。学校身份由 [SchoolRegistry] 的活跃槽位决定，不认学校 id。
  */
 @Composable
 private fun SettingsAccountSyncCard(
-    repository: XmuSyncRepository?,
+    schools: SchoolRegistry?,
     onClick: () -> Unit,
 ) {
-    val sync = if (repository != null) repository.state.collectAsState().value else null
+    val slot = schools?.activeSession?.collectAsState()?.value
+    val sync = (slot as? SessionSlot.Ready)?.session?.sync?.state?.collectAsState()?.value
     val label = stringResource(R.string.settings_account_sync)
     val valueText = if (sync != null && sync.uid.isNotEmpty()) {
         if (sync.accountName.isBlank()) stringResource(R.string.xmu_connected_label)
@@ -159,7 +163,7 @@ private fun rememberSettingsEntryItem(
  * - 「个性化」子页（[PersonalizationScreen]）承载 app 级外观设置，已实装；
  *   「通知与提醒」子页（[NotificationScreen]）承载通知设置项 UI，已实装；
  *   「AI 设置」子页（[AISettingsScreen]）承载 AI 服务商/连接/Key 配置，已实装；
- *   「账号与同步」子页（[XmuSyncScreen]）承载课程中心待办同步，已实装；
+ *   「账号与同步」子页（[AccountSyncScreen]）承载学校账号与待办同步，已实装；
  *   「数据管理」子页（[DataManagementScreen]）承载存储用量与全量备份导出/导入，已实装；
  *   「关于」入口本次仅占位（点击暂无响应，子页后续接入）；
  * - 各子页互斥（各自从根页打开、经根页返回，永不同屏）：「账号与同步」覆盖层嵌在最外层，
@@ -174,8 +178,11 @@ fun SettingsScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     repository: ScheduleRepository? = null,
-    xmuSyncRepository: XmuSyncRepository? = null,
-    xmuAutoLoginManager: XmuAutoLoginManager? = null,
+    // 学校注册表：账号与同步子页与入口卡只读活跃会话（SessionSlot）/活跃学校 id，
+    // 不再穿学校内部对象（Phase 2 删除三层穿透参数）
+    schools: SchoolRegistry? = null,
+    // 每日同步调度入口（校无关）：开关变化后重排闹钟并跑一次补漏
+    dailySync: DailySyncController? = null,
     // 待办/标签仓库：数据管理子页导入备份后需要整体重载内存态
     todoRepository: TodoRepository? = null,
     tagRepository: TagRepository? = null,
@@ -216,7 +223,7 @@ fun SettingsScreen(
     var showPersonalization by rememberSaveable { mutableStateOf(false) }
     var showNotifications by rememberSaveable { mutableStateOf(false) }
     var showAiSettings by rememberSaveable { mutableStateOf(false) }
-    var showXmuSync by rememberSaveable { mutableStateOf(false) }
+    var showAccountSync by rememberSaveable { mutableStateOf(false) }
     var showDataManagement by rememberSaveable { mutableStateOf(false) }
     // 覆盖层内容常驻组合（ui.motion 的 PageOverlayTransition）：隐藏态下页面只是停在
     // 屏外、返回键处理必须让位给系统（否则主界面按返回会被吃掉）；转场彻底结束后把
@@ -230,14 +237,22 @@ fun SettingsScreen(
     val personalizationTransition = rememberPageOverlayTransitionState()
     val notificationTransition = rememberPageOverlayTransitionState()
     val aiSettingsTransition = rememberPageOverlayTransitionState()
-    val xmuSyncTransition = rememberPageOverlayTransitionState()
+    val accountSyncTransition = rememberPageOverlayTransitionState()
     val dataManagementTransition = rememberPageOverlayTransitionState()
+    // 活跃学校与就绪会话：账号与同步子页的唯一数据源。
+    // fallback flow 保证 collectAsState 无条件调用（registry 首帧未装配时按 Loading 展示）
+    val fallbackSlot = remember { MutableStateFlow<SessionSlot>(SessionSlot.Loading) }
+    val fallbackSchoolId = remember { MutableStateFlow("") }
+    val activeSlot by (schools?.activeSession ?: fallbackSlot).collectAsState()
+    val activeSchoolId by (schools?.activeSchoolId ?: fallbackSchoolId).collectAsState()
+    // 学校选择/切换是 Phase 3 的产品面；本次只在已有绑定上按 id 取 UI（未绑定返回 null）
+    val activeSchoolUi = activeSchoolId.takeIf { it.isNotEmpty() }?.let(SchoolUiBindings::of)
     val settingsTransforming: () -> Boolean = remember(
         overlayTransitionState,
         personalizationTransition,
         notificationTransition,
         aiSettingsTransition,
-        xmuSyncTransition,
+        accountSyncTransition,
         dataManagementTransition,
     ) {
         {
@@ -245,7 +260,7 @@ fun SettingsScreen(
                 personalizationTransition.isTransforming ||
                 notificationTransition.isTransforming ||
                 aiSettingsTransition.isTransforming ||
-                xmuSyncTransition.isTransforming ||
+                accountSyncTransition.isTransforming ||
                 dataManagementTransition.isTransforming
         }
     }
@@ -254,18 +269,18 @@ fun SettingsScreen(
     val openPersonalization = remember { { showPersonalization = true } }
     val openNotifications = remember { { showNotifications = true } }
     val openAiSettings = remember { { showAiSettings = true } }
-    val openXmuSync = remember { { showXmuSync = true } }
+    val openAccountSync = remember { { showAccountSync = true } }
     val openDataManagement = remember { { showDataManagement = true } }
     val closePersonalization = remember { { showPersonalization = false } }
     val closeNotifications = remember { { showNotifications = false } }
     val closeAiSettings = remember { { showAiSettings = false } }
-    val closeXmuSync = remember { { showXmuSync = false } }
+    val closeAccountSync = remember { { showAccountSync = false } }
     val closeDataManagement = remember { { showDataManagement = false } }
     val fullSizeModifier = remember { Modifier.fillMaxSize() }
     BackHandler(enabled = overlayActive) {
         when {
             // 子页逐层退：账号与同步在最外层，优先于 AI 设置/通知页/个性化页/数据管理页
-            showXmuSync -> showXmuSync = false
+            showAccountSync -> showAccountSync = false
             showAiSettings -> showAiSettings = false
             showNotifications -> showNotifications = false
             showPersonalization -> showPersonalization = false
@@ -278,7 +293,7 @@ fun SettingsScreen(
             showPersonalization = false
             showNotifications = false
             showAiSettings = false
-            showXmuSync = false
+            showAccountSync = false
             showDataManagement = false
         }
     }
@@ -286,7 +301,7 @@ fun SettingsScreen(
     // 首帧两个效果依次执行时直达请求后跑、不被隐藏态复位吞掉
     LaunchedEffect(openAccountSyncDirectly) {
         if (openAccountSyncDirectly) {
-            showXmuSync = true
+            showAccountSync = true
             onAccountSyncDirectlyOpened()
         }
     }
@@ -310,9 +325,9 @@ fun SettingsScreen(
             // 它们的 behind，各子页永不同屏。prewarm 逐层下发：预热帧里各屏都停在 x=0
             // （子页屏外预热会让 Haze 效果落在屏外，触发 RenderThread 递归）
             PageOverlayTransition(
-                visible = showXmuSync,
+                visible = showAccountSync,
                 modifier = fullSizeModifier,
-                state = xmuSyncTransition,
+                state = accountSyncTransition,
                 prewarm = prewarm,
                 behind = {
                     PageOverlayTransition(
@@ -346,9 +361,9 @@ fun SettingsScreen(
                                                         onOpenPersonalization = openPersonalization,
                                                         onOpenNotifications = openNotifications,
                                                         onOpenAiSettings = openAiSettings,
-                                                        onOpenXmuSync = openXmuSync,
+                                                        onOpenAccountSync = openAccountSync,
                                                         onOpenDataManagement = openDataManagement,
-                                                        xmuSyncRepository = xmuSyncRepository,
+                                                        schools = schools,
                                                         aiChatRepository = aiChatRepository,
                                                         repository = repository,
                                                         // 设置覆盖层隐藏时整页停在屏外仍是常驻组合：Haze 效果只在
@@ -413,10 +428,12 @@ fun SettingsScreen(
                     }
                 },
             ) {
-                XmuSyncScreen(
-                    onBack = closeXmuSync,
-                    repository = xmuSyncRepository,
-                    autoLogin = xmuAutoLoginManager,
+                AccountSyncScreen(
+                    slot = activeSlot,
+                    onBack = closeAccountSync,
+                    // 学校 UI 绑定（目前是网页登录浮层）；未绑定 = 不显示网页登录入口
+                    schoolUi = activeSchoolUi,
+                    dailySync = dailySync,
                     settingsTransforming = settingsTransforming,
                     modifier = fullSizeModifier,
                 )
@@ -431,9 +448,9 @@ fun SettingsScreen(
  * 课表级设置（课表名/学期/天数/节数时间/显示开关）在编辑态的「课表设置」浮层
  * （见 Schedule ui 的 [com.fangyi.classpp.ui.schedule.ScheduleSettingsSheet]），
  * 外观设置在「个性化」子页、通知设置在「通知与提醒」子页、AI 服务商配置在
- * 「AI 设置」子页、课程中心待办同步在「账号与同步」子页，本页只承担导航分发。
+ * 「AI 设置」子页、学校账号与待办同步在「账号与同步」子页，本页只承担导航分发。
  * 账号与 AI 两张入口卡的行内同步展示状态（账号：未连接 / 已连接 姓名 / 登录已过期，
- * 取自 [xmuSyncRepository] 的状态流；AI：已配置 / 未配置，取自 [aiChatRepository]）。
+ * 取自活跃 [SessionSlot] 的同步状态流；AI：已配置 / 未配置，取自 [aiChatRepository]）。
  * [repository] = null → 加载指示（仅首帧毫秒级）。
  */
 @Composable
@@ -442,13 +459,13 @@ private fun SettingsHomePage(
     onOpenPersonalization: () -> Unit,
     onOpenNotifications: () -> Unit,
     onOpenAiSettings: () -> Unit,
-    onOpenXmuSync: () -> Unit,
+    onOpenAccountSync: () -> Unit,
     onOpenDataManagement: () -> Unit,
     repository: ScheduleRepository?,
     overlayActive: Boolean,
     settingsTransforming: () -> Boolean = { false },
     modifier: Modifier = Modifier,
-    xmuSyncRepository: XmuSyncRepository? = null,
+    schools: SchoolRegistry? = null,
     aiChatRepository: AiChatRepository? = null,
 ) {
     Scaffold(
@@ -481,18 +498,25 @@ private fun SettingsHomePage(
                 darkTheme,
                 themeAccent,
                 scrollState,
-                xmuSyncRepository,
+                schools,
                 freezeEpoch,
             ) {
                 {
-                    val sync = xmuSyncRepository?.state?.value
+                    // 切校后活跃 id/会话都变：输入一并纳入，旧校的冻结帧不会被重放
+                    val slot = schools?.activeSession?.value
+                    val sync = (slot as? SessionSlot.Ready)?.session?.sync?.state?.value
                     SettingsTopBarFreezeKey(
                         page = SettingsPage.Root,
                         darkTheme = darkTheme,
                         topBarHeight = topBarHeight,
                         scroll = scrollState.value,
                         epoch = freezeEpoch,
-                        inputs = listOf(themeAccent, sync?.uid, sync?.accountName),
+                        inputs = listOf(
+                            themeAccent,
+                            schools?.activeSchoolId?.value,
+                            sync?.uid,
+                            sync?.accountName,
+                        ),
                     )
                 }
             }
@@ -568,8 +592,8 @@ private fun SettingsHomePage(
                             onClick = onOpenAiSettings,
                         )
                         SettingsAccountSyncCard(
-                            repository = xmuSyncRepository,
-                            onClick = onOpenXmuSync,
+                            schools = schools,
+                            onClick = onOpenAccountSync,
                         )
                         SettingsCardwithIcon(
                             items = rememberSettingsEntryItem(

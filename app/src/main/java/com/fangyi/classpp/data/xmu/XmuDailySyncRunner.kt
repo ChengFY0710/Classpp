@@ -3,6 +3,7 @@ package com.fangyi.classpp.data.xmu
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import androidx.annotation.StringRes
 import androidx.core.app.NotificationManagerCompat
 import com.fangyi.classpp.MainActivity
 import com.fangyi.classpp.R
@@ -10,9 +11,17 @@ import com.fangyi.classpp.data.AppContainer
 import com.fangyi.classpp.data.notification.CHANNEL_SYNC
 import com.fangyi.classpp.data.notification.NotificationPoster
 import com.fangyi.classpp.data.notification.ensureNotificationChannels
+import com.fangyi.classpp.data.sync.CommitOutcome
+import com.fangyi.classpp.data.sync.PrepareOutcome
+import com.fangyi.classpp.data.sync.SchoolSession
+import com.fangyi.classpp.data.sync.SyncPlan
 
 /**
  * 每日自动同步的执行体：后台闹钟到点与进 App 补漏共用同一条路径。
+ *
+ * 依赖来源是**活跃学校的通用会话**（[SchoolSession]），不再直接读厦大仓库：
+ * 开关读 `session.dailySync`（与设置页/调度器同一存储），连接与上次同步读
+ * `session.sync.state`，同步走 `SyncService` 的通用契约。不变量与验收（指导 §2.4/§2.7）：
  *
  * 与手动同步的差异是**静默语义**：不开预览、不问确认——到期后按预览页「默认全选」
  * 的口径导入全部新条目（restoreItems 在 commitSync 内必然全部恢复），完成发系统通知
@@ -40,15 +49,17 @@ object XmuDailySyncRunner {
     /**
      * 到点执行入口：[XmuDailySyncScheduler.shouldRun] 判定 → prepareSync(force=true)
      * （绕过 3 秒去抖；路由按自动续期状态自动选原生/WebView 路径）→ 全量导入或补基线
-     * → 发通知汇报。
+     * → 发通知汇报。活跃学校的会话由注册表装配/复用。
      */
     suspend fun runIfDue(context: Context): Outcome {
         val appContext = context.applicationContext
-        val sync = AppContainer.get(appContext).xmuSyncRepository
+        val session = AppContainer.get(appContext).schools.session()
+        val sync = session.sync
+        val state = sync.state.value
         if (!XmuDailySyncScheduler.shouldRun(
-                enabled = XmuSyncPreferences.isDailySyncEnabled(appContext),
-                connected = sync.state.value.uid.isNotEmpty(),
-                lastSyncAtMillis = sync.state.value.lastSyncAtMillis,
+                enabled = session.dailySync.enabled.value,
+                connected = state.uid.isNotEmpty(),
+                lastSyncAtMillis = state.lastSyncAtMillis,
                 nowMillis = System.currentTimeMillis(),
             )
         ) {
@@ -56,8 +67,8 @@ object XmuDailySyncRunner {
         }
         XmuDebugLog.d("dailySync begin")
         return when (val outcome = sync.prepareSync(force = true)) {
-            is XmuPrepareOutcome.Ready -> importAll(appContext, sync, outcome.plan)
-            is XmuPrepareOutcome.Failed -> {
+            is PrepareOutcome.Ready -> importAll(appContext, session, outcome.plan)
+            is PrepareOutcome.Failed -> {
                 XmuDebugLog.d("dailySync prepare failed ${outcome.error}")
                 Outcome.Failed
             }
@@ -66,40 +77,54 @@ object XmuDailySyncRunner {
 
     private suspend fun importAll(
         context: Context,
-        sync: XmuSyncRepository,
-        plan: XmuSyncPlan,
+        session: SchoolSession,
+        plan: SyncPlan,
     ): Outcome {
+        val sync = session.sync
         // 无新增无恢复：与手动同步「已是最新」分支同口径，只补映射基线与 lastSyncAt；
         // 落盘失败按失败处理（下次触发重拉）
-        if (plan.newItems.isEmpty() && plan.restoreItems.isEmpty()) {
+        if (plan.newItems.isEmpty() && plan.restoreCount == 0) {
             return if (sync.markSynced(plan)) Outcome.UpToDate else Outcome.Failed
         }
         return when (
             val result = sync.commitSync(plan, plan.newItems.mapTo(mutableSetOf()) { it.todo.id })
         ) {
-            is XmuCommitOutcome.Done -> {
+            is CommitOutcome.Done -> {
                 XmuDebugLog.d(
                     "dailySync imported=${result.report.imported} restored=${result.report.restored}",
                 )
                 if (result.report.imported + result.report.restored > 0) {
-                    notifyResult(context, result.report.imported, result.report.restored)
+                    notifyResult(
+                        context = context,
+                        titleRes = session.spec.syncNotifTitleRes,
+                        imported = result.report.imported,
+                        restored = result.report.restored,
+                    )
                 }
                 Outcome.Imported(result.report.imported, result.report.restored)
             }
-            is XmuCommitOutcome.Failed -> {
+            is CommitOutcome.Failed -> {
                 XmuDebugLog.d("dailySync commit failed ${result.error}")
                 Outcome.Failed
             }
         }
     }
 
-    /** 结果汇报通知：单 id 覆盖式；点按进 App 主页（落默认 tab），用户自行查看待办 */
-    private fun notifyResult(context: Context, imported: Int, restored: Int) {
+    /**
+     * 结果汇报通知：单 id 覆盖式；点按进 App 主页（落默认 tab），用户自行查看待办。
+     * 标题来自 `SchoolSpec.syncNotifTitleRes`（厦大指向旧键，文案不变），正文用中性键。
+     */
+    private fun notifyResult(
+        context: Context,
+        @StringRes titleRes: Int,
+        imported: Int,
+        restored: Int,
+    ) {
         ensureNotificationChannels(context)
         val manager = NotificationManagerCompat.from(context)
         if (!manager.areNotificationsEnabled()) return
-        val title = context.getString(R.string.xmu_auto_sync_notif_title)
-        val text = context.getString(R.string.xmu_auto_sync_notif_text, imported, restored)
+        val title = context.getString(titleRes)
+        val text = context.getString(R.string.sync_notif_text, imported, restored)
         val notification = NotificationPoster.buildStandard(
             context = context,
             channel = CHANNEL_SYNC,

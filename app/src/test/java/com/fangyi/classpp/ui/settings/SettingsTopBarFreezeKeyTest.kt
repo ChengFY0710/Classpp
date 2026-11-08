@@ -27,7 +27,7 @@ class SettingsTopBarFreezeKeyTest {
 
     @Test
     fun pageIdentitySeparatesFrames() {
-        assertNotEquals(key(page = SettingsPage.Root), key(page = SettingsPage.XmuSync))
+        assertNotEquals(key(page = SettingsPage.Root), key(page = SettingsPage.AccountSync))
     }
 
     @Test

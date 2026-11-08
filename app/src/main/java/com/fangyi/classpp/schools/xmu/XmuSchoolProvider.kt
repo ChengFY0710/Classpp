@@ -25,6 +25,7 @@ import com.fangyi.classpp.data.sync.SchoolSession
 import com.fangyi.classpp.data.sync.SchoolSpec
 import com.fangyi.classpp.data.sync.SemestersOutcome
 import com.fangyi.classpp.data.sync.SessionDeps
+import com.fangyi.classpp.data.sync.SyncDebugLog
 import com.fangyi.classpp.data.sync.SyncError
 import com.fangyi.classpp.data.sync.SyncPlan
 import com.fangyi.classpp.data.sync.SyncPlanItem
@@ -45,6 +46,7 @@ import com.fangyi.classpp.data.xmu.XmuAutoLoginPolicy
 import com.fangyi.classpp.data.xmu.XmuAvatarStore
 import com.fangyi.classpp.data.xmu.XmuCommitOutcome
 import com.fangyi.classpp.data.xmu.XmuCookieJar
+import com.fangyi.classpp.data.xmu.XmuDebugLog
 import com.fangyi.classpp.data.xmu.XmuEnableOutcome
 import com.fangyi.classpp.data.xmu.XmuHttpAvatarLoader
 import com.fangyi.classpp.data.xmu.XmuJwImportError
@@ -102,6 +104,8 @@ class XmuSchoolProvider : SchoolProvider {
 
     override suspend fun createSession(deps: SessionDeps): SchoolSession {
         val appContext = deps.appContext
+        // 通用层（UI/编排）的诊断出口接到现有厦大日志：日志纪律与实现零改动
+        SyncDebugLog.init(XmuDebugLog::d)
 
         // 方案 B：原生 OAuth 登录 + 自动续期。传输层（OkHttp + IPv4 优先 DNS，
         // XMU 主机发布不可达 AAAA 记录，HttpURLConnection 会先试 v6 黑洞）与
@@ -171,9 +175,6 @@ class XmuSchoolProvider : SchoolProvider {
         )
         return XmuSchoolSession(
             spec = spec,
-            repository = repository,
-            autoLoginManager = autoLoginManager,
-            scheduleImporter = scheduleImporter,
             sync = sync,
             autoRenew = autoRenew,
             scheduleImport = scheduleImport,
@@ -184,15 +185,11 @@ class XmuSchoolProvider : SchoolProvider {
 }
 
 /**
- * 厦大运行时会话：对外只暴露通用契约；[repository] / [autoLoginManager] /
- * [scheduleImporter] 供 `AppContainer` 在 Phase 2 前保留的旧字段做引用别名
- * （单一装配源，不是第二份数据源）。
+ * 厦大运行时会话：对外只暴露通用契约（内部协议对象都包在对应的 service 适配器里，
+ * 不再向外部泄漏任何学校类型）。
  */
 internal class XmuSchoolSession(
     override val spec: SchoolSpec,
-    internal val repository: XmuSyncRepository,
-    internal val autoLoginManager: XmuAutoLoginManager,
-    internal val scheduleImporter: XmuJwScheduleImporter,
     override val sync: SyncService,
     override val autoRenew: AutoRenewService,
     override val scheduleImport: ScheduleImportService,
@@ -486,6 +483,12 @@ private val XMU_SCHOOL_SPEC = SchoolSpec(
     accountChangedRes = R.string.xmu_error_account_changed,
     logoutMessageRes = R.string.xmu_logout_confirm_message,
     switchMessageRes = R.string.xmu_switch_message,
+    // 以下四项的旧文案含「课程中心/学号」等校别措辞，指向旧键保持视觉零变化；
+    // 新校不提供时回落到 data/sync 的通用 UI 中性默认键
+    serviceBusyRes = R.string.xmu_error_busy,
+    invalidCredentialsRes = R.string.xmu_auto_login_invalid_credentials,
+    sessionNotEstablishedRes = R.string.xmu_auto_login_not_established,
+    autoLoginDisableMessageRes = R.string.xmu_auto_login_disable_message,
     loginImages = listOf(R.drawable.xmu1, R.drawable.xmu2),
     timetableIntro = TimetableIntro(
         titleRes = R.string.xmu_intro_timetable_title,

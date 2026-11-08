@@ -38,26 +38,28 @@ import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppTextStyles
 
 /**
- * 「教务导入」浮层：导入课表浮层的教务入口打开，叠在它之上（本浮层盖上来时导入浮层经
- * covered 缩小后退，同 Wakeup 输入浮层的分层动效）。数据获取由调用方执行，这里纯 UI。
+ * 「教务导入」浮层（校无关）：导入课表浮层的教务入口打开，叠在它之上（本浮层盖上来时
+ * 导入浮层经 covered 缩小后退，同 Wakeup 输入浮层的分层动效）。数据获取由调用方经
+ * `ScheduleImportService` 执行（取学期 / 拉课表只取数 + 映射），这里纯 UI，只认已经
+ * 映射好的字符串。
  *
  * 内容两组卡（[CardSection] 分组、组间 [SheetSectionSpacingBetween]）：
  * - 账号与同步行（[SettingsCardwithIcon]）：照搬设置页「账号与同步」入口（设计稿漏画图标，
  *   行首取设置页同款 ic_arrow_sync_circle），行值随连接状态展示（未连接 / 已连接 / 已连接：
  *   姓名，文案由调用方解析后经 [accountStatus] 传入）；点击后由调用方收起整串浮层、编辑态
  *   取消更改并转到设置页-账号与同步（[onOpenAccountSync]）。
- * - 可导入学期单选卡（[SelectCard]）：选项为调用方从教务拉取的真实学期（[semesters]）；
+ * - 可导入学期单选卡（[SelectCard]）：选项为调用方从教务拉取的真实学期名（[semesters]）；
  *   拉取中显示进度行、失败显示横幅加重试行，两者都替代学期卡且确认胶囊不响应；
  *   拉取课表期间（[importing]）确认胶囊同样不响应并显示进度行。选中态随浮层卸载复位。
  *
- * [importBlockedReason] 非空 = 当前登录方式不支持教务导入（已连接但没保存凭据，即网页
- * 登录或已关自动续期）：内容顶部横幅说明原因，确认胶囊不响应。
+ * [importBlockedReason] 非空 = 当前登录方式不支持教务导入（来自服务端 `blockedReason`，
+ * 不再由 UI 自己拼 hasCredentials）：内容顶部横幅说明原因，确认胶囊不响应。
  *
  * 顶栏排布同 Wakeup 口令导入：取消在左（X 圆图标）、确认在右（确认胶囊自带对勾图标）；
  * 列表无输入框，键盘不必让位（IgnoreIme）。
  */
 @Composable
-internal fun XmuImportSheet(
+internal fun SchoolImportSheet(
     visible: Boolean,
     onDismissed: () -> Unit,
     onDismiss: () -> Unit,

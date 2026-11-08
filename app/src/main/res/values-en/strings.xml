@@ -204,6 +204,18 @@
     <string name="xmu_auto_sync_desc">When enabled, syncs daily at 6:00</string>
     <string name="xmu_auto_sync_notif_title">Course Center auto sync finished</string>
     <string name="xmu_auto_sync_notif_text">Auto-imported %1$d, restored %2$d</string>
+    <!-- School-neutral copy (multi-school support: used when a spec provides no override) -->
+    <string name="sync_error_account_changed">An account change was detected. Sign in again or clear sync records.</string>
+    <string name="sync_logout_confirm_message">Signing out clears the sign-in session and sync records. After signing in and syncing again, todos still listed remotely will be re-imported.</string>
+    <string name="sync_switch_message">The account differs from the last sync. Continuing requires clearing the old sync records. Imported todos can be kept or deleted.</string>
+    <string name="sync_login_notes">Signing in stores your account and password. Credentials are encrypted with the Android Keystore and excluded from backups. Sign-in happens only on this device, directly with your school\'s authentication service. If a captcha appears, the password changes, or authentication fails, sign-in pauses immediately and deletes the saved password — it never retries in a loop. Do not sign in on a shared device.</string>
+    <string name="sync_login_blank_hint">Enter your account and password first</string>
+    <string name="sync_error_busy">The service is busy, try again later</string>
+    <string name="sync_login_invalid_credentials">Incorrect account or password</string>
+    <string name="sync_login_not_established">Signed in but could not read remote data. Use the web sign-in instead.</string>
+    <string name="sync_auto_login_disable_message">Turning this off deletes the saved account and password. The current sign-in is kept; after the session expires you will need to sign in manually.</string>
+    <string name="sync_notif_text">Auto-imported %1$d, restored %2$d</string>
+    <string name="account_sync_load_failed">Failed to load account info. Go back and try again.</string>
     <!-- Notifications & reminders -->
     <string name="settings_notifications">Notifications &amp; reminders</string>
     <string name="notification_header_title">Notifications &amp; reminders</string>

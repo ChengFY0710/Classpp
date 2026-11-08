@@ -127,7 +127,7 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.sortedFor
-import com.fangyi.classpp.data.xmu.withMatchedCourseTag
+import com.fangyi.classpp.data.withMatchedCourseTag
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.ai.AiChatOverlay
 import com.fangyi.classpp.ui.components.BottomFadeScrim

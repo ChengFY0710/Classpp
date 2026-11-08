@@ -46,8 +46,6 @@ import com.fangyi.classpp.data.AppContainer
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.notification.NotificationAlarmReceiver
 import com.fangyi.classpp.data.notification.NotificationScheduler
-import com.fangyi.classpp.data.xmu.XmuDailySyncRunner
-import com.fangyi.classpp.data.xmu.XmuDailySyncScheduler
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.LocalOverlayTopBarBlur
 import com.fangyi.classpp.ui.day.DayInitialData
@@ -61,6 +59,7 @@ import com.fangyi.classpp.ui.navigation.BottomNavBar
 import com.fangyi.classpp.ui.navigation.NavBarTransitionHeadroom
 import com.fangyi.classpp.ui.navigation.TabPager
 import com.fangyi.classpp.ui.navigation.rememberTabPagerState
+import com.fangyi.classpp.ui.note.LocalTodoSourceBadges
 import com.fangyi.classpp.ui.note.TodoInboxPreferences
 import com.fangyi.classpp.ui.note.TodoScreen
 import com.fangyi.classpp.ui.schedule.CardHeightPreferences
@@ -251,9 +250,15 @@ class MainActivity : ComponentActivity() {
                     val repository = container?.scheduleRepository
                     val todoRepository = container?.todoRepository
                     val tagRepository = container?.tagRepository
-                    val xmuSyncRepository = container?.xmuSyncRepository
-                    val xmuAutoLoginManager = container?.xmuAutoLoginManager
-                    val xmuScheduleImporter = container?.xmuScheduleImporter
+                    // 学校注册表与每日同步入口（校无关契约）：三屏只通过它们接触学校能力，
+                    // 不再穿学校内部对象（Phase 2 删除三层穿透参数）
+                    val schools = container?.schools
+                    val dailySync = container?.dailySync
+                    // 待办来源徽标表（source → 徽标文案）：来自学校注册表，待办页据此显示
+                    // 来源徽标（未注册来源不显示，不再硬编码学校 id）
+                    val todoSourceBadges = remember(schools) {
+                        schools?.schools?.associate { it.id to it.sourceBadgeRes }.orEmpty()
+                    }
                     // AI 对话（日程页顶栏右侧按钮唤起对话浮层，M1 唯一 AI 入口）
                     val aiChatRepository = container?.aiChatRepository
                     // tab 页转场状态机：惰性挂载/常驻/切页动画/停靠页冻结帧回位的全部机制
@@ -421,11 +426,11 @@ class MainActivity : ComponentActivity() {
 
                     // 每日自动同步：进 App 幂等续排闹钟（自愈一切漏排）+ 补漏判定——
                     // 当天 6:00 已过且还没同步过就当场同步一次，与后台闹钟同一条静默路径
-                    LaunchedEffect(repository) {
-                        if (repository == null) return@LaunchedEffect
+                    LaunchedEffect(dailySync) {
+                        val controller = dailySync ?: return@LaunchedEffect
                         val appContext = applicationContext
-                        XmuDailySyncScheduler.scheduleNext(appContext)
-                        XmuDailySyncRunner.runIfDue(appContext)
+                        controller.scheduleNext(appContext)
+                        controller.runIfDue(appContext)
                     }
 
                     // 回前台重录顶栏转场冻结帧：进多任务/回桌面时窗口不可见，系统会丢弃
@@ -562,27 +567,29 @@ class MainActivity : ComponentActivity() {
                                                 onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                                 onOpenSettings = onOpenSettings,
                                                 onOpenAccountSync = onOpenAccountSync,
-                                                xmuSyncRepository = xmuSyncRepository,
-                                                xmuAutoLoginManager = xmuAutoLoginManager,
-                                                xmuScheduleImporter = xmuScheduleImporter,
+                                                schools = schools,
                                                 tabTransition = transition,
                                                 // 网格读降频态（即时态只喂个性化页滑条）
                                                 cardHeights = gridCardHeightsState,
                                                 // 课程卡片教师行显隐（个性化页开关写入）
                                                 showTeacher = showTeacherState,
                                             )
-                                            AppTab.Todo -> TodoScreen(
-                                                modifier = pageModifier,
-                                                repository = todoRepository,
-                                                tagRepository = tagRepository,
-                                                scheduleRepository = repository,
-                                                showNewTodoSheet = showNewTodoSheet,
-                                                onNewTodoSheetDismiss = onNewTodoSheetDismiss,
-                                                onOverlayOverNavBarChange = onOverlayOverNavBarChange,
-                                                tabTransition = transition,
-                                                // 收集箱「瀑布流视图」开关（个性化页写入，默认开启）
-                                                masonryView = todoMasonryState,
-                                            )
+                                            AppTab.Todo -> CompositionLocalProvider(
+                                                LocalTodoSourceBadges provides todoSourceBadges,
+                                            ) {
+                                                TodoScreen(
+                                                    modifier = pageModifier,
+                                                    repository = todoRepository,
+                                                    tagRepository = tagRepository,
+                                                    scheduleRepository = repository,
+                                                    showNewTodoSheet = showNewTodoSheet,
+                                                    onNewTodoSheetDismiss = onNewTodoSheetDismiss,
+                                                    onOverlayOverNavBarChange = onOverlayOverNavBarChange,
+                                                    tabTransition = transition,
+                                                    // 收集箱「瀑布流视图」开关（个性化页写入，默认开启）
+                                                    masonryView = todoMasonryState,
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -639,8 +646,8 @@ class MainActivity : ComponentActivity() {
                             SettingsScreen(
                                 onClose = onCloseSettings,
                                 repository = repository,
-                                xmuSyncRepository = xmuSyncRepository,
-                                xmuAutoLoginManager = xmuAutoLoginManager,
+                                schools = schools,
+                                dailySync = dailySync,
                                 // 数据管理子页：备份导入后重载待办/标签内存态，并回调重读日程页快照
                                 todoRepository = todoRepository,
                                 tagRepository = tagRepository,

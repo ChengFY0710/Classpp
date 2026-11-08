@@ -11,14 +11,12 @@ import com.fangyi.classpp.data.ai.PrefsAiSettingsStore
 import com.fangyi.classpp.data.store.FileScheduleStore
 import com.fangyi.classpp.data.store.FileTagStore
 import com.fangyi.classpp.data.store.FileTodoStore
+import com.fangyi.classpp.data.sync.DailySyncController
 import com.fangyi.classpp.data.sync.SchoolRegistry
 import com.fangyi.classpp.data.sync.SessionDeps
-import com.fangyi.classpp.data.xmu.XmuAutoLoginManager
 import com.fangyi.classpp.data.xmu.XmuDebugLog
-import com.fangyi.classpp.data.xmu.XmuJwScheduleImporter
-import com.fangyi.classpp.data.xmu.XmuSyncRepository
+import com.fangyi.classpp.schools.xmu.XmuDailySyncController
 import com.fangyi.classpp.schools.xmu.XmuSchoolProvider
-import com.fangyi.classpp.schools.xmu.XmuSchoolSession
 import java.io.File
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -29,8 +27,8 @@ import kotlinx.coroutines.sync.withLock
  * 磁盘载入，之后进程内恒定同一实例）。
  *
  * 学校装配自 Phase 1 起收敛到 [schools]（[SchoolRegistry]）：厦大的 provider 把
- * 冻结的 `data/xmu` 组件组装成通用会话；`xmu*` 三个字段只是该会话内部对象的引用别名
- * （单一装配源，不是第二份数据源），供 Phase 2 之前的 UI 签名保持零改动。
+ * 冻结的 `data/xmu` 组件组装成通用会话；UI 只读 [SchoolRegistry.activeSession]，不再持有
+ * 任何学校内部对象（Phase 2 删除了迁移期的 `xmu*` 引用别名与三层穿透参数）。
  *
  * 测试不走这里——各仓库的 [create] 注入 fake store，容器只是应用侧的装配胶水。
  */
@@ -40,12 +38,8 @@ class AppContainer internal constructor(
     val tagRepository: TagRepository,
     /** 学校注册表：多校适配的唯一装配点与活跃会话入口 */
     val schools: SchoolRegistry,
-    /** 厦大同步仓库（活跃会话内的同一实例；Phase 2 迁移期保留的引用别名） */
-    val xmuSyncRepository: XmuSyncRepository,
-    /** 方案 B 自动续期的状态与凭据（UI 的「自动续期」开关读写它） */
-    val xmuAutoLoginManager: XmuAutoLoginManager,
-    /** 教务导入（jw.xmu.edu.cn）：用已存凭据登录教务站拉课表，与课程中心不共享登录态 */
-    val xmuScheduleImporter: XmuJwScheduleImporter,
+    /** 每日同步的调度/补漏入口（校无关契约；学校适配层提供实现） */
+    val dailySync: DailySyncController,
     /** AI 对话（BYOK）：日程页顶栏入口，见 data.ai 与 .mimocode/docs/AI功能计划.md */
     val aiChatRepository: AiChatRepository,
 ) {
@@ -89,16 +83,15 @@ class AppContainer internal constructor(
 
             // 冷启动装配活跃学校（默认注册首项 = 厦大）：与改造前一致，容器返回即各库载入完成。
             // 装配失败时 registry 已把 activeSession 置 Failed，异常继续抛出（原路径同样会抛）。
-            val xmuSession = schools.session() as XmuSchoolSession
+            schools.session()
 
             return AppContainer(
                 scheduleRepository = scheduleRepository,
                 todoRepository = todoRepository,
                 tagRepository = tagRepository,
                 schools = schools,
-                xmuSyncRepository = xmuSession.repository,
-                xmuAutoLoginManager = xmuSession.autoLoginManager,
-                xmuScheduleImporter = xmuSession.scheduleImporter,
+                // 每日同步实现：当前由厦大薄壳委托冻结的三件套（Phase 3 迁入 data/sync 后替换）
+                dailySync = XmuDailySyncController,
                 aiChatRepository = AiChatRepository.create(
                     store = FileAiChatStore(dir),
                     settings = PrefsAiSettingsStore(appContext),

@@ -22,8 +22,9 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
-import com.fangyi.classpp.data.xmu.XmuAutoLoginError
-import com.fangyi.classpp.data.xmu.XmuDebugLog
+import com.fangyi.classpp.data.sync.LoginError
+import com.fangyi.classpp.data.sync.SchoolSpec
+import com.fangyi.classpp.data.sync.SyncDebugLog
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SettingsCard
@@ -35,23 +36,23 @@ import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 
-/** 登录浮层顶部随机图的候选资源（每次打开随机取一张）。 */
-private val XmuLoginImages = intArrayOf(R.drawable.xmu1, R.drawable.xmu2)
-
 /**
- * 原生 OAuth 登录凭据浮层：学号 + 密码 → 原生登录一次。默认登录（「去登录」）与开启
- * 自动续期共用本浮层（[title] 由调用方按入口传入，语义相同：登录即保存凭据）。
+ * 原生登录凭据浮层（校无关）：账号 + 密码 → 原生登录一次。默认登录（「去登录」，当学校
+ * 支持原生登录且密钥库可用）与开启自动续期共用本浮层（[title] 由调用方按入口传入，
+ * 语义相同：登录即保存凭据）。
  *
- * 密码框用 [PasswordVisualTransformation]；输入值用 remember 而非 rememberSaveable，
- * 避免密码进入 savedInstanceState（旋转后重输可接受）。
+ * 学校专属文案（账号框标签/占位、注意事项、顶部图）全部来自 [spec]；密码框与其余
+ * 通用标签走中性键。密码框用 [PasswordVisualTransformation]；输入值用 remember 而非
+ * rememberSaveable，避免密码进入 savedInstanceState（旋转后重输可接受）。
  *
  * 忙碌期间禁止关闭（下拉/取消/确认），登录本身有 60 秒超时兜底。
  */
 @Composable
-internal fun XmuAutoLoginSheet(
+internal fun CredentialLoginSheet(
+    spec: SchoolSpec,
     visible: Boolean,
     busy: Boolean,
-    error: XmuAutoLoginError?,
+    error: LoginError?,
     onDismiss: () -> Unit,
     onDismissed: () -> Unit,
     onSubmit: (String, String) -> Unit,
@@ -61,18 +62,19 @@ internal fun XmuAutoLoginSheet(
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var validationShown by remember { mutableStateOf(false) }
-    // 顶部随机图：浮层每次打开都重新挂载（关闭即卸载），remember 正好等于「每次打开重 roll」
-    val imageRes = remember { XmuLoginImages.random() }
+    // 顶部随机图：浮层每次打开都重新挂载（关闭即卸载），remember 正好等于「每次打开重 roll」；
+    // 学校未提供图片（新校常见）时整块不渲染
+    val imageRes = remember(spec.loginImages) { spec.loginImages.randomOrNull() }
 
     val usernameBlank = username.isBlank()
     val passwordBlank = password.isEmpty()
     val context = LocalContext.current
-    val blankHint = stringResource(R.string.xmu_auto_login_blank)
+    val blankHint = stringResource(spec.loginBlankHintRes)
 
     // 读实时 state（不经组合期快照）：诊断「点了没反应」时，uLen/pLen 是判定
     // 「打字有没有进 state」的唯一可信值
     fun submit() {
-        XmuDebugLog.d("sheet submit busy=$busy uLen=${username.length} pLen=${password.length}")
+        SyncDebugLog.d("sheet submit busy=$busy uLen=${username.length} pLen=${password.length}")
         if (busy) return
         if (username.isBlank() || password.isEmpty()) {
             validationShown = true
@@ -83,17 +85,19 @@ internal fun XmuAutoLoginSheet(
     }
 
     val errorText = when (error) {
-        XmuAutoLoginError.NeedCaptcha -> stringResource(R.string.xmu_auto_login_need_captcha)
-        XmuAutoLoginError.InvalidCredentials ->
-            stringResource(R.string.xmu_auto_login_invalid_credentials)
-        XmuAutoLoginError.StorageUnavailable ->
+        LoginError.NeedCaptcha -> stringResource(R.string.xmu_auto_login_need_captcha)
+        LoginError.InvalidCredentials -> stringResource(
+            spec.invalidCredentialsRes ?: R.string.sync_login_invalid_credentials,
+        )
+        LoginError.StorageUnavailable ->
             stringResource(R.string.xmu_auto_login_storage_unavailable)
-        XmuAutoLoginError.ServiceBusy -> stringResource(R.string.xmu_error_busy)
-        XmuAutoLoginError.NetworkError -> stringResource(R.string.xmu_error_network)
-        XmuAutoLoginError.Timeout -> stringResource(R.string.xmu_error_timeout)
-        XmuAutoLoginError.FormatChanged -> stringResource(R.string.xmu_error_format)
-        XmuAutoLoginError.SessionNotEstablished ->
-            stringResource(R.string.xmu_auto_login_not_established)
+        LoginError.ServiceBusy -> stringResource(spec.serviceBusyRes ?: R.string.sync_error_busy)
+        LoginError.NetworkError -> stringResource(R.string.xmu_error_network)
+        LoginError.Timeout -> stringResource(R.string.xmu_error_timeout)
+        LoginError.FormatChanged -> stringResource(R.string.xmu_error_format)
+        LoginError.SessionNotEstablished -> stringResource(
+            spec.sessionNotEstablishedRes ?: R.string.sync_login_not_established,
+        )
         null -> null
     }
 
@@ -124,25 +128,27 @@ internal fun XmuAutoLoginSheet(
             errorText?.let { SheetInfoBanner(text = it) }
 
             CardSection {
-                AsyncImage(
-                    model = imageRes,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                        .clip(SheetCardShape),
-                )
+                if (imageRes != null) {
+                    AsyncImage(
+                        model = imageRes,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .clip(SheetCardShape),
+                    )
+                }
                 SheetTextFieldGroup(
                     fields = listOf(
                         SheetTextFieldItem(
-                            label = stringResource(R.string.xmu_auto_login_username),
+                            label = stringResource(spec.usernameLabelRes),
                             value = username,
                             onValueChange = {
                                 username = it
                                 validationShown = false
                             },
-                            placeholder = stringResource(R.string.xmu_auto_login_username_hint),
+                            placeholder = stringResource(spec.usernameHintRes),
                             isError = validationShown && usernameBlank,
                             imeAction = ImeAction.Next,
                         ),
@@ -166,7 +172,7 @@ internal fun XmuAutoLoginSheet(
                     items = listOf(
                         SettingsCardItem.Custom(
                             label = stringResource(R.string.xmu_auto_login_notes_title),
-                            description = stringResource(R.string.xmu_auto_login_warning),
+                            description = stringResource(spec.loginNotesRes),
                         ),
                     ),
                 )

@@ -62,6 +62,26 @@ data class SchoolSpec(
     @StringRes val logoutMessageRes: Int? = null,
     /** 账号变化确认正文；null = 使用中性默认键 `sync_switch_message` */
     @StringRes val switchMessageRes: Int? = null,
+    /**
+     * 服务繁忙文案（[SyncError.ServiceBusy] / [LoginError.ServiceBusy]）；原有实现里可能含
+     * 服务名（如「课程中心服务繁忙」），故由 spec 覆盖；null = 中性默认键 `sync_error_busy`
+     */
+    @StringRes val serviceBusyRes: Int? = null,
+    /**
+     * 账号或密码错误文案（[LoginError.InvalidCredentials]）；原有实现里可能含「学号」等
+     * 校别措辞，故由 spec 覆盖；null = 中性默认键 `sync_login_invalid_credentials`
+     */
+    @StringRes val invalidCredentialsRes: Int? = null,
+    /**
+     * 「登录成功但取数仍判过期」文案（[LoginError.SessionNotEstablished]）；原有实现里可能
+     * 含服务名，故由 spec 覆盖；null = 中性默认键 `sync_login_not_established`
+     */
+    @StringRes val sessionNotEstablishedRes: Int? = null,
+    /**
+     * 关闭自动续期确认正文（含「学号/账号」措辞）；null = 中性默认键
+     * `sync_auto_login_disable_message`
+     */
+    @StringRes val autoLoginDisableMessageRes: Int? = null,
     /** 原生登录浮层顶部图（drawable 资源；每次打开随机取一张）；空 = 不显示（新校不必提供） */
     val loginImages: List<Int> = emptyList(),
     /** 教务导入介绍卡；无 [Capability.SCHEDULE_IMPORT] 时必须为 null（注册表校验） */

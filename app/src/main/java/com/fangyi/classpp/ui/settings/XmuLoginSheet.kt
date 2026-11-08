@@ -54,10 +54,11 @@ import com.fangyi.classpp.ui.theme.glassPressFeedback
 import com.fangyi.classpp.ui.theme.glassSurface
 
 /**
- * 课程中心登录浮层（全屏，由 [XmuSyncScreen] 挂在子页之上）：内嵌可见 WebView 走学校
- * 统一身份认证，App 不接触学号密码。加载 lnt.xmu.edu.cn 后由 [XmuWebSessionDriver]
- * 驱动——用户完成登录回到 lnt 域时自动页内 fetch /api/profile 与 /api/todos，拿到完整
- * 结果经 [onResult] 交还宿主（宿主负责关浮层）；用户主动关闭经 [onDismiss]。
+ * 课程中心登录浮层（全屏，由 [AccountSyncScreen] 经学校 UI 绑定挂在子页之上）：内嵌可见
+ * WebView 走学校统一身份认证，App 不接触学号密码。加载 lnt.xmu.edu.cn 后由
+ * [XmuWebSessionDriver] 驱动——用户完成登录回到 lnt 域时自动页内 fetch /api/profile 与
+ * /api/todos，拿到完整结果经 [onResult] 交还宿主（宿主负责关浮层）；用户主动关闭经
+ * [onDismiss]。
  *
  * 生命周期要点：
  * - WebView 由组合持有（AndroidView factory 创建、onDispose 销毁并 flush cookie——

@@ -71,8 +71,7 @@ import com.fangyi.classpp.data.TRASH_RETENTION_DAYS
 import com.fangyi.classpp.data.comparator
 import com.fangyi.classpp.data.checkInPercent
 import com.fangyi.classpp.data.expandRepeatOccurrences
-import com.fangyi.classpp.data.xmu.XmuTodoMapper
-import com.fangyi.classpp.data.xmu.withMatchedCourseTag
+import com.fangyi.classpp.data.withMatchedCourseTag
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
@@ -2323,18 +2322,18 @@ private fun TodoList(
 }
 
 /**
- * 来源徽标文本：课程中心同步的待办显示课程名（缺失时回落「课程中心」）；用户手建无徽标。
+ * 来源徽标文本：已注册同步来源的待办显示课程名（缺失时回落该校徽标文案）；用户手建无徽标。
  * 与 [tags] 重名时不显示——匹配到课表课程的同步待办已直接打上课程标签（见
  * [withMatchedCourseTag]），同名徽标不再重复；用户手动打了同名标签的同理。
+ * 文案来自宿主注入的 [LocalTodoSourceBadges]（学校注册表），不硬编码任何学校 id。
  */
 @Composable
-private fun Todo.sourceLabel(): String? =
-    if (source == XmuTodoMapper.SOURCE_XMU) {
-        (sourceDetail?.takeIf { it.isNotBlank() } ?: stringResource(R.string.xmu_source_badge))
-            .takeIf { it !in tags }
-    } else {
-        null
-    }
+private fun Todo.sourceLabel(): String? {
+    val source = source ?: return null
+    val badgeRes = LocalTodoSourceBadges.current[source] ?: return null
+    return (sourceDetail?.takeIf { it.isNotBlank() } ?: stringResource(badgeRes))
+        .takeIf { it !in tags }
+}
 
 /**
  * 单条待办卡片：[Todo] → [NoteCard] 的字段接线——标题、完成态与勾选直通，

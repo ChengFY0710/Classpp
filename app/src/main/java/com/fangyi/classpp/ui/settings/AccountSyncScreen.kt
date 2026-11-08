@@ -1,7 +1,5 @@
 package com.fangyi.classpp.ui.settings
 
-import android.webkit.CookieManager
-import android.webkit.WebStorage
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -21,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -51,23 +48,21 @@ import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.TodoError
 import com.fangyi.classpp.data.model.IsoDate
-import com.fangyi.classpp.data.xmu.SkipReason
-import com.fangyi.classpp.data.xmu.XmuAutoLoginError
-import com.fangyi.classpp.data.xmu.XmuAutoLoginManager
-import com.fangyi.classpp.data.xmu.XmuAutoLoginPolicy
-import com.fangyi.classpp.data.xmu.XmuAutoLoginState
-import com.fangyi.classpp.data.xmu.XmuAvatarImage
-import com.fangyi.classpp.data.xmu.XmuCommitOutcome
-import com.fangyi.classpp.data.xmu.XmuDailySyncRunner
-import com.fangyi.classpp.data.xmu.XmuDailySyncScheduler
-import com.fangyi.classpp.data.xmu.XmuDebugLog
-import com.fangyi.classpp.data.xmu.XmuEnableOutcome
-import com.fangyi.classpp.data.xmu.XmuFetchResult
-import com.fangyi.classpp.data.xmu.XmuPrepareOutcome
-import com.fangyi.classpp.data.xmu.XmuSyncError
-import com.fangyi.classpp.data.xmu.XmuSyncPlan
-import com.fangyi.classpp.data.xmu.XmuSyncPreferences
-import com.fangyi.classpp.data.xmu.XmuSyncRepository
+import com.fangyi.classpp.data.sync.AutoRenewPolicy
+import com.fangyi.classpp.data.sync.AutoRenewState
+import com.fangyi.classpp.data.sync.AvatarImage
+import com.fangyi.classpp.data.sync.CommitOutcome
+import com.fangyi.classpp.data.sync.DailySyncController
+import com.fangyi.classpp.data.sync.EnableOutcome
+import com.fangyi.classpp.data.sync.LoginError
+import com.fangyi.classpp.data.sync.LoginRaw
+import com.fangyi.classpp.data.sync.PrepareOutcome
+import com.fangyi.classpp.data.sync.SchoolSession
+import com.fangyi.classpp.data.sync.SessionSlot
+import com.fangyi.classpp.data.sync.SyncDebugLog
+import com.fangyi.classpp.data.sync.SyncError
+import com.fangyi.classpp.data.sync.SyncPlan
+import com.fangyi.classpp.data.sync.webview.SchoolCookieCleaner
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
 import com.fangyi.classpp.ui.components.DialogPillButton
@@ -82,12 +77,14 @@ import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
+import com.fangyi.classpp.ui.schools.SchoolUi
+import com.fangyi.classpp.ui.schools.WebViewLoginOutcome
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
-import com.fangyi.classpp.ui.theme.isDarkTheme
-import com.fangyi.classpp.ui.theme.themeAccent
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.fangyi.classpp.ui.theme.isDarkTheme
+import com.fangyi.classpp.ui.theme.themeAccent
 import com.kyant.backdrop.backdrops.layerBackdrop
 import coil3.compose.AsyncImage
 import dev.chrisbanes.haze.hazeSource
@@ -100,36 +97,132 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 
 /**
- * 账号与同步子页（设置 → 账号与同步）：课程中心待办同步的唯一入口。
+ * 账号与同步子页（设置 → 账号与同步）：**能力驱动**的学校账号入口，不认学校 id。
  *
- * 结构：未连接 → 隐私说明卡 +「去登录」（默认原生 OAuth 登录：输入学号/密码，登录即
- * 保存凭据并开启自动续期；Keystore 不可用时直接回退网页登录）；已连接 → 连接状态卡
- * （头像圆 + 姓名 + 上次同步时间，头像未抓到时圆内显示姓名首字）+「立即同步」+「退出登录」。页面底部「备用登录方式」提供可见
- * WebView 登录（[XmuLoginSheet]：统一身份认证页完成登录，App 不接触密码、不保存凭据，
- * 不支持教务课表导入与自动续期；原生登录遇验证码/页面改版时也自动切换到它）。同步一律
- * 走「预览 → 确认导入」（[XmuSyncPreviewSheet]，按课程分组、默认全选）；错误按类提示
- * （过期给横幅 + 重登入口，**不把所有失败说成登录过期**）。退出登录两档：仅清登录态与
- * 同步记录 / 连课程中心导入的待办一并删除。
+ * [SessionSlot] 三态：加载中显示转圈、装配失败显示错误卡、就绪按会话能力渲染：
+ * - 默认登录入口：`autoRenew != null && available` → 通用凭据浮层（[CredentialLoginSheet]）；
+ *   否则有 WebView 登录（且 UI 已绑定）→ 学校网页登录浮层；两者皆无 = 不可达（注册表校验
+ *   至少一种登录方式）；
+ * - 「备用登录方式」分组：原生登录与 WebView 登录**都**支持时显示（`available=false` 仍显示，
+ *   默认入口回退 WebView，用户仍可直达备用入口）；
+ * - 「自动续期」开关：仅 `autoRenew != null`；「每日同步」开关：已连接时；
+ * - 头部/介绍/错误文案：学校专属部分来自 [SchoolSession.spec]，其余走中性键与旧 `xmu_*`
+ *   无校名键（资源名不影响显示，见指导 §2.3 文案纪律）；
+ * - 退出登录只清本校数据：同步记录按 source/id 前缀过滤（会话实现保证），网页 cookie 按
+ *   [com.fangyi.classpp.data.sync.WebViewLoginSpec.allowedHosts] 逐域置过期，**不清**
+ *   WebStorage、不调用 `removeAllCookies`（跨校隔离，指导 §2.4 第 10 条）。
  *
- * [repository] = null（容器未装配完）→ 加载指示。在途标记与同步预览用 remember 非
- * saveable——旋转/进程重建时协程一并取消、导入就地作废（同 Wakeup 导入的取舍）。
+ * 页面状态（预览计划、待登录结果、各类浮层开关）随活跃学校重置：[key] 以学校 id 为键，
+ * 切校不会把 A 校的 plan 提交给 B 校（指导 §3.1 切校状态重置；plan 的会话认领由
+ * [com.fangyi.classpp.data.sync.SyncService] 保证）。
  *
- * 「自动续期」：[autoLogin] 非空时在连接卡下方展示开关。原生登录成功即保存凭据并开启
- * （开关随登录点亮）；关闭会删除已保存的密码（教务导入随之不可用），同步自动回退到
- * WebView 路径。
+ * 同步一律走「预览 → 确认导入」（[SyncPreviewSheet]，按课程分组、默认全选）；错误按类
+ * 提示（过期给横幅 + 重登入口，**不把所有失败说成登录过期**）。原生登录遇验证码/页面
+ * 改版/取数未建立时收起浮层自动转网页登录（学校支持网页登录时），其余错误留在浮层内
+ * 允许重试。
  */
 @Composable
-fun XmuSyncScreen(
+fun AccountSyncScreen(
+    slot: SessionSlot,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    repository: XmuSyncRepository? = null,
-    autoLogin: XmuAutoLoginManager? = null,
-    // 设置页任一覆盖层是否正在转场：顶栏据此冻结重放就位帧
+    schoolUi: SchoolUi? = null,
+    dailySync: DailySyncController? = null,
     settingsTransforming: () -> Boolean = { false },
+) {
+    when (slot) {
+        SessionSlot.Loading -> AccountSyncPlaceholder(
+            onBack = onBack,
+            modifier = modifier,
+            settingsTransforming = settingsTransforming,
+        )
+
+        is SessionSlot.Failed -> AccountSyncPlaceholder(
+            onBack = onBack,
+            modifier = modifier,
+            settingsTransforming = settingsTransforming,
+            failed = true,
+        )
+
+        is SessionSlot.Ready -> key(slot.session.spec.id) {
+            AccountSyncContent(
+                session = slot.session,
+                onBack = onBack,
+                modifier = modifier,
+                schoolUi = schoolUi,
+                dailySync = dailySync,
+                settingsTransforming = settingsTransforming,
+            )
+        }
+    }
+}
+
+/** 加载中/装配失败的极简页：顶栏保持一致，正文只给状态（不提供假操作） */
+@Composable
+private fun AccountSyncPlaceholder(
+    onBack: () -> Unit,
+    modifier: Modifier,
+    settingsTransforming: () -> Boolean,
+    failed: Boolean = false,
+) {
+    Scaffold(
+        modifier = modifier,
+        contentWindowInsets = WindowInsets(0),
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            val hazeState = rememberHazeState()
+            val glassBackdrop = rememberSettingsGlassBackdrop()
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .hazeSource(hazeState),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (failed) {
+                    Text(
+                        text = stringResource(R.string.account_sync_load_failed),
+                        style = ClassppTextTokens.settingsDescription,
+                        color = MaterialTheme.classppColors.secondaryText,
+                    )
+                } else {
+                    CircularProgressIndicator()
+                }
+            }
+            SettingsTopBar(
+                title = stringResource(R.string.settings_account_sync),
+                onBack = onBack,
+                hazeState = hazeState,
+                buttonBackdrop = glassBackdrop,
+                recordWhen = { true },
+                isTransforming = settingsTransforming,
+                modifier = Modifier.align(Alignment.TopStart),
+            )
+        }
+    }
+}
+
+/**
+ * 已就绪的账号与同步页：所有页内状态与浮层都在这里（外层按学校 id `key` 重置）。
+ */
+@Composable
+private fun AccountSyncContent(
+    session: SchoolSession,
+    onBack: () -> Unit,
+    modifier: Modifier,
+    schoolUi: SchoolUi?,
+    dailySync: DailySyncController?,
+    settingsTransforming: () -> Boolean,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val overlayActive = LocalPageOverlayActive.current
+    val spec = session.spec
+    val sync = session.sync
+    val autoRenew = session.autoRenew
+    // 网页登录需要「学校声明了 WebView 登录」+「UI 已绑定」两个条件；未绑定的纯声明学校
+    // 暂不显示网页登录入口（Phase 4 的 GenericSchoolUi 会补齐缺省绑定）
+    val canWebViewLogin = session.webViewLogin != null && schoolUi != null
+    val canNativeLogin = autoRenew != null
 
     // 会话过期横幅：只在探活/登录明确判定过期时点亮；重新登录或探活成功即熄灭
     var sessionExpired by remember { mutableStateOf(false) }
@@ -142,7 +235,7 @@ fun XmuSyncScreen(
     if (preparing) loadingMounted = true
 
     // 同步预览（两段式挂载）：plan 非 null 即可见；onDismiss 清 plan（转场退场），播完才卸载
-    var previewPlan by remember { mutableStateOf<XmuSyncPlan?>(null) }
+    var previewPlan by remember { mutableStateOf<SyncPlan?>(null) }
     var previewMounted by remember { mutableStateOf(false) }
     if (previewPlan != null) previewMounted = true
 
@@ -151,13 +244,13 @@ fun XmuSyncScreen(
     // 不会出现「框还在、pendingLogin 已丢」的死对话框。
     var loginVisible by rememberSaveable { mutableStateOf(false) }
     var pendingLogin by rememberSaveable(
-        stateSaver = Saver<XmuFetchResult.Ok?, ArrayList<String>>(
+        stateSaver = Saver<LoginRaw?, ArrayList<String>>(
             save = { ok -> ok?.let { arrayListOf(it.profileRaw, it.todosRaw) } },
             restore = { saved ->
-                saved.takeIf { it.size == 2 }?.let { XmuFetchResult.Ok(it[0], it[1]) }
+                saved.takeIf { it.size == 2 }?.let { LoginRaw(it[0], it[1]) }
             },
         ),
-    ) { mutableStateOf<XmuFetchResult.Ok?>(null) }
+    ) { mutableStateOf<LoginRaw?>(null) }
 
     // 退出登录：一次确认（保留已同步待办）；账号切换确认。
     // 两个确认框都走两段式挂载：visible 置 false 后仍留在组合里播淡出，onDismissed 才卸载
@@ -168,53 +261,53 @@ fun XmuSyncScreen(
     var switchMounted by remember { mutableStateOf(false) }
     if (switchVisible) switchMounted = true
 
-    // 自动续期（方案 B）：策略状态来自 manager。凭据浮层不 saveable——密码只活在本次
+    // 自动续期（方案 B）：策略状态来自会话。凭据浮层不 saveable——密码只活在本次
     // 组合里，旋转后重输可接受，避免密码进入 savedInstanceState。
     // fallback flow 保证 collectAsState 是无条件 composable 调用（条件调用会破坏槽位表）。
-    val fallbackAutoLoginState = remember { MutableStateFlow(XmuAutoLoginState()) }
-    val autoLoginState = (autoLogin?.state ?: fallbackAutoLoginState).collectAsState().value
+    val fallbackAutoRenewState = remember { MutableStateFlow(AutoRenewState()) }
+    val autoRenewState = (autoRenew?.state ?: fallbackAutoRenewState).collectAsState().value
     var autoLoginSheetVisible by remember { mutableStateOf(false) }
     var autoLoginSheetMounted by remember { mutableStateOf(false) }
     if (autoLoginSheetVisible) autoLoginSheetMounted = true
     var autoLoginBusy by remember { mutableStateOf(false) }
-    var autoLoginError by remember { mutableStateOf<XmuAutoLoginError?>(null) }
+    var autoLoginError by remember { mutableStateOf<LoginError?>(null) }
     var disableAutoVisible by remember { mutableStateOf(false) }
     var disableAutoMounted by remember { mutableStateOf(false) }
     if (disableAutoVisible) disableAutoMounted = true
 
-    // 每日自动同步：开关是 SharedPreferences 单键（后台 receiver 也读），进页读一次；
-    // 切换即落盘（回调里），本状态只跟随开关刷新 UI
-    var dailySyncEnabled by remember {
-        mutableStateOf(XmuSyncPreferences.isDailySyncEnabled(context))
-    }
+    // 每日自动同步：开关状态来自会话（与后台 receiver 同一存储）；切换即落盘 + 重排闹钟
+    val dailySyncEnabled by session.dailySync.enabled.collectAsState()
 
-    // 错误文案在组合期解析（回调里只引用，不经 LocalContext 查资源——lint 惯例）
-    val errorTexts = remember {
-        mapOf(
-            XmuSyncError.SessionExpired to R.string.xmu_error_expired,
-            XmuSyncError.ServiceBusy to R.string.xmu_error_busy,
-            XmuSyncError.NetworkError to R.string.xmu_error_network,
-            XmuSyncError.Timeout to R.string.xmu_error_timeout,
-            XmuSyncError.FormatChanged to R.string.xmu_error_format,
-            XmuSyncError.AccountChanged to R.string.xmu_error_account_changed,
-            XmuSyncError.TooSoon to R.string.xmu_error_too_soon,
-            XmuSyncError.PersistFailed to R.string.xmu_error_persist,
-        )
-    }
+    // 错误文案在组合期解析（回调里只引用，不经 LocalContext 查资源——lint 惯例）。
+    // 含学校/服务名措辞的条目由 spec 覆盖，其余复用无校名的旧键或中性键
+    val errorTexts: Map<SyncError, String> = mapOf(
+        SyncError.SessionExpired to stringResource(R.string.xmu_error_expired),
+        SyncError.ServiceBusy to stringResource(spec.serviceBusyRes ?: R.string.sync_error_busy),
+        SyncError.NetworkError to stringResource(R.string.xmu_error_network),
+        SyncError.Timeout to stringResource(R.string.xmu_error_timeout),
+        SyncError.FormatChanged to stringResource(R.string.xmu_error_format),
+        SyncError.AccountChanged to stringResource(
+            spec.accountChangedRes ?: R.string.sync_error_account_changed,
+        ),
+        SyncError.TooSoon to stringResource(R.string.xmu_error_too_soon),
+        SyncError.PersistFailed to stringResource(R.string.xmu_error_persist),
+    )
     val genericErrorText = stringResource(R.string.xmu_error_generic)
     // 自动续期失败文案（浮层横幅与 Toast 共用；失败时两处都提示，避免只滚到输入框而漏看）
-    val autoLoginErrorTexts = remember {
-        mapOf(
-            XmuAutoLoginError.NeedCaptcha to R.string.xmu_auto_login_need_captcha,
-            XmuAutoLoginError.InvalidCredentials to R.string.xmu_auto_login_invalid_credentials,
-            XmuAutoLoginError.StorageUnavailable to R.string.xmu_auto_login_storage_unavailable,
-            XmuAutoLoginError.ServiceBusy to R.string.xmu_error_busy,
-            XmuAutoLoginError.NetworkError to R.string.xmu_error_network,
-            XmuAutoLoginError.Timeout to R.string.xmu_error_timeout,
-            XmuAutoLoginError.FormatChanged to R.string.xmu_error_format,
-            XmuAutoLoginError.SessionNotEstablished to R.string.xmu_auto_login_not_established,
-        )
-    }
+    val autoLoginErrorTexts: Map<LoginError, String> = mapOf(
+        LoginError.NeedCaptcha to stringResource(R.string.xmu_auto_login_need_captcha),
+        LoginError.InvalidCredentials to stringResource(
+            spec.invalidCredentialsRes ?: R.string.sync_login_invalid_credentials,
+        ),
+        LoginError.StorageUnavailable to stringResource(R.string.xmu_auto_login_storage_unavailable),
+        LoginError.ServiceBusy to stringResource(spec.serviceBusyRes ?: R.string.sync_error_busy),
+        LoginError.NetworkError to stringResource(R.string.xmu_error_network),
+        LoginError.Timeout to stringResource(R.string.xmu_error_timeout),
+        LoginError.FormatChanged to stringResource(R.string.xmu_error_format),
+        LoginError.SessionNotEstablished to stringResource(
+            spec.sessionNotEstablishedRes ?: R.string.sync_login_not_established,
+        ),
+    )
     val upToDateText = stringResource(R.string.xmu_up_to_date)
     val importDoneFormat = stringResource(R.string.xmu_import_done)
     val importFailedText = stringResource(R.string.xmu_error_import)
@@ -222,25 +315,21 @@ fun XmuSyncScreen(
     val logoutDoneText = stringResource(R.string.xmu_logout_done)
     val deadlineWarningFormat = stringResource(R.string.xmu_deadline_unparseable)
 
-    val showError: (XmuSyncError) -> Unit = { error ->
-        AppToasts.show(
-            context,
-            errorTexts[error]?.let { context.getString(it) } ?: genericErrorText,
-        )
+    val showError: (SyncError) -> Unit = { error ->
+        AppToasts.show(context, errorTexts[error] ?: genericErrorText)
     }
 
     // 无新增、无恢复 → 预览里没有任何可看得见的内容，不弹浮层；但仍要补写映射基线与
     // lastSyncAt（备份恢复/「仅退出」后重新登录靠这一步重建「上次同步」）。落盘失败不能报
     // 「已是最新」，否则用户以为同步成功、实际映射没保存。全部条目都因截止格式被跳过时同理：
     // 不能说「已是最新」，否则接口改版会被当成同步成功。
-    suspend fun showPlanOrUpToDate(plan: XmuSyncPlan) {
-        if (plan.newItems.isNotEmpty() || plan.restoreItems.isNotEmpty()) {
+    suspend fun showPlanOrUpToDate(plan: SyncPlan) {
+        if (plan.newItems.isNotEmpty() || plan.restoreCount > 0) {
             previewPlan = plan
             return
         }
-        val repo = repository
-        val unparseable = plan.skipped[SkipReason.DeadlineUnparseable] ?: 0
-        if (repo == null || repo.markSynced(plan)) {
+        val unparseable = plan.deadlineUnparseableCount
+        if (sync.markSynced(plan)) {
             AppToasts.show(
                 context,
                 if (unparseable > 0) deadlineWarningFormat.format(unparseable) else upToDateText,
@@ -253,19 +342,18 @@ fun XmuSyncScreen(
     // ---------- 动作 ----------
 
     val onSyncClick: () -> Unit = {
-        val repo = repository
-        if (repo != null && !preparing) {
+        if (!preparing) {
             // 立即点亮加载浮层：网络拉取期间用户看到转圈，而不是卡在原页面
             preparing = true
             scope.launch {
                 try {
-                    when (val outcome = repo.prepareSync()) {
-                        is XmuPrepareOutcome.Ready -> {
+                    when (val outcome = sync.prepareSync()) {
+                        is PrepareOutcome.Ready -> {
                             sessionExpired = false
                             showPlanOrUpToDate(outcome.plan)
                         }
-                        is XmuPrepareOutcome.Failed -> {
-                            if (outcome.error == XmuSyncError.SessionExpired) sessionExpired = true
+                        is PrepareOutcome.Failed -> {
+                            if (outcome.error == SyncError.SessionExpired) sessionExpired = true
                             showError(outcome.error)
                         }
                     }
@@ -282,28 +370,27 @@ fun XmuSyncScreen(
         }
     }
 
-    fun onLoginResult(result: XmuFetchResult) {
+    fun onLoginResult(result: WebViewLoginOutcome) {
         loginVisible = false
-        val repo = repository ?: return
         when (result) {
-            is XmuFetchResult.Ok -> scope.launch {
+            is WebViewLoginOutcome.Ok -> scope.launch {
                 try {
                     // 网页登录不保存密码：此前若有原生登录留下的凭据，一并清除（与
                     // 「WebView 登录不保存账号密码」的定位一致）；CookieManager 里刚建立的
                     // 会话不受影响，关闭续期后同步回退到 WebView 路径正好复用它
-                    autoLogin?.disable()
-                    when (val outcome = repo.prepareFromLogin(result.profileRaw, result.todosRaw)) {
-                        is XmuPrepareOutcome.Ready -> {
+                    autoRenew?.disable()
+                    when (val outcome = sync.prepareFromLogin(result.raw)) {
+                        is PrepareOutcome.Ready -> {
                             sessionExpired = false
                             showPlanOrUpToDate(outcome.plan)
                         }
-                        is XmuPrepareOutcome.Failed -> when (outcome.error) {
-                            XmuSyncError.AccountChanged -> {
-                                pendingLogin = result
+                        is PrepareOutcome.Failed -> when (outcome.error) {
+                            SyncError.AccountChanged -> {
+                                pendingLogin = result.raw
                                 switchVisible = true
                             }
                             else -> {
-                                if (outcome.error == XmuSyncError.SessionExpired) sessionExpired = true
+                                if (outcome.error == SyncError.SessionExpired) sessionExpired = true
                                 showError(outcome.error)
                             }
                         }
@@ -316,21 +403,17 @@ fun XmuSyncScreen(
             }
             // 未登录的探活失败已在驱动器里复位等待（浮层不关、不提示）；
             // 能走到这里的只剩真实异常（5xx/超时/接口形态变化），按类提示
-            XmuFetchResult.SessionExpired -> {
-                sessionExpired = true
-                showError(XmuSyncError.SessionExpired)
+            is WebViewLoginOutcome.Failed -> {
+                if (result.error == SyncError.SessionExpired) sessionExpired = true
+                showError(result.error)
             }
-            XmuFetchResult.ServiceBusy -> showError(XmuSyncError.ServiceBusy)
-            XmuFetchResult.NetworkError -> showError(XmuSyncError.NetworkError)
-            XmuFetchResult.Timeout -> showError(XmuSyncError.Timeout)
-            XmuFetchResult.FormatChanged -> showError(XmuSyncError.FormatChanged)
         }
     }
 
     // 自动续期：打开开关 → 输入凭据并原生登录一次；关闭 → 确认后删除已保存密码。
     // 关闭只删凭据，不动当前连接（原生登录时已把 cookie 镜像进 WebView）。
     val onAutoLoginToggle: (Boolean) -> Unit = { wantOn ->
-        XmuDebugLog.d("autoLogin toggle wantOn=$wantOn policy=${autoLoginState.policy}")
+        SyncDebugLog.d("autoLogin toggle wantOn=$wantOn policy=${autoRenewState.policy}")
         if (wantOn) {
             if (!autoLoginBusy) {
                 autoLoginError = null
@@ -341,22 +424,21 @@ fun XmuSyncScreen(
         }
     }
 
-    // 每日自动同步开关：先落盘再调度（scheduleNext 读 prefs 决定排或取消）；开启时
+    // 每日自动同步开关：先落盘再调度（scheduleNext 读开关决定排或取消）；开启时
     // 立即跑一次补漏判定——当天 6:00 已过且还没同步过就当场同步，与「进 App 补漏」
     // 同一条静默路径（导入不问确认、失败只留日志）
     val onDailySyncToggle: (Boolean) -> Unit = { wantOn ->
-        XmuSyncPreferences.setDailySyncEnabled(context, wantOn)
-        dailySyncEnabled = wantOn
+        session.dailySync.setEnabled(wantOn)
         scope.launch {
-            if (wantOn) XmuDailySyncRunner.runIfDue(context)
-            XmuDailySyncScheduler.scheduleNext(context)
+            if (wantOn) dailySync?.runIfDue(context)
+            dailySync?.scheduleNext(context)
         }
     }
 
     val onEnableAutoLogin: (String, String) -> Unit = { username, password ->
         // 诊断点：点确认后第一行日志。若这行都没出现 = 点击没到达本回调（UI 层问题）
-        XmuDebugLog.d("enable submit received manager=${autoLogin != null} busy=$autoLoginBusy")
-        val manager = autoLogin
+        SyncDebugLog.d("enable submit received manager=${autoRenew != null} busy=$autoLoginBusy")
+        val manager = autoRenew
         if (manager != null && !autoLoginBusy) {
             autoLoginBusy = true
             autoLoginError = null
@@ -366,75 +448,65 @@ fun XmuSyncScreen(
                     val outcome = withTimeout(ENABLE_TIMEOUT_MS) {
                         manager.enable(username, password)
                     }
-                    XmuDebugLog.d("enable outcome=${outcome::class.simpleName}")
+                    SyncDebugLog.d("enable outcome=${outcome::class.simpleName}")
                     when (outcome) {
-                        is XmuEnableOutcome.Ready -> {
+                        is EnableOutcome.Ready -> {
                             autoLoginSheetVisible = false
-                            val repo = repository
-                            if (repo != null) {
-                                // 与网页登录共用同一条「预览 → 导入」路径
-                                when (
-                                    val prepared = repo.prepareFromLogin(
-                                        outcome.profileRaw,
-                                        outcome.todosRaw,
-                                    )
-                                ) {
-                                    is XmuPrepareOutcome.Ready -> {
-                                        sessionExpired = false
-                                        showPlanOrUpToDate(prepared.plan)
+                            // 与网页登录共用同一条「预览 → 导入」路径
+                            when (val prepared = sync.prepareFromLogin(outcome.raw)) {
+                                is PrepareOutcome.Ready -> {
+                                    sessionExpired = false
+                                    showPlanOrUpToDate(prepared.plan)
+                                }
+                                is PrepareOutcome.Failed -> when (prepared.error) {
+                                    // 原生登录进了另一个账号：与网页登录同一套换号确认；
+                                    // 确认后 autoRenew.disable() 会清掉刚保存的凭据
+                                    SyncError.AccountChanged -> {
+                                        pendingLogin = outcome.raw
+                                        switchVisible = true
                                     }
-                                    is XmuPrepareOutcome.Failed -> when (prepared.error) {
-                                        // 原生登录进了另一个账号：与网页登录同一套换号确认；
-                                        // 确认后 autoLogin.disable() 会清掉刚保存的凭据
-                                        XmuSyncError.AccountChanged -> {
-                                            pendingLogin = XmuFetchResult.Ok(
-                                                outcome.profileRaw,
-                                                outcome.todosRaw,
-                                            )
-                                            switchVisible = true
+                                    else -> {
+                                        if (prepared.error == SyncError.SessionExpired) {
+                                            sessionExpired = true
                                         }
-                                        else -> {
-                                            if (prepared.error == XmuSyncError.SessionExpired) {
-                                                sessionExpired = true
-                                            }
-                                            showError(prepared.error)
-                                        }
+                                        showError(prepared.error)
                                     }
                                 }
                             }
                         }
-                        is XmuEnableOutcome.Failed -> {
-                            XmuDebugLog.d("enable failed error=${outcome.error}")
+                        is EnableOutcome.Failed -> {
+                            SyncDebugLog.d("enable failed error=${outcome.error}")
                             AppToasts.show(
                                 context,
-                                autoLoginErrorTexts[outcome.error]
-                                    ?.let { context.getString(it) }
-                                    ?: genericErrorText,
+                                autoLoginErrorTexts[outcome.error] ?: genericErrorText,
                             )
                             // 验证码/页面改版/登录后仍读不到数据：原生链路走不通，收起浮层
-                            // 自动转网页登录（浮层先关，网页登录浮层叠上）；其余错误（密码
-                            // 错误、存储不可用、网络等）留在浮层内横幅提示，便于直接重试
+                            // 自动转网页登录（浮层先关，网页登录浮层叠上）；不支持网页登录的
+                            // 学校留在浮层内横幅提示（不让用户点进死路）；其余错误（密码
+                            // 错误、存储不可用、网络等）同样留在浮层内便于直接重试
                             when (outcome.error) {
-                                XmuAutoLoginError.NeedCaptcha,
-                                XmuAutoLoginError.FormatChanged,
-                                XmuAutoLoginError.SessionNotEstablished,
-                                -> {
+                                LoginError.NeedCaptcha,
+                                LoginError.FormatChanged,
+                                LoginError.SessionNotEstablished,
+                                -> if (canWebViewLogin) {
                                     autoLoginSheetVisible = false
                                     loginVisible = true
+                                } else {
+                                    autoLoginError = outcome.error
                                 }
                                 else -> autoLoginError = outcome.error
                             }
                         }
                     }
                 } catch (e: TimeoutCancellationException) {
-                    XmuDebugLog.d("enable timeout")
-                    autoLoginError = XmuAutoLoginError.Timeout
+                    SyncDebugLog.d("enable timeout")
+                    autoLoginError = LoginError.Timeout
                     AppToasts.show(context, context.getString(R.string.xmu_error_timeout))
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    XmuDebugLog.d("enable crashed ${e::class.simpleName}")
-                    autoLoginError = XmuAutoLoginError.NetworkError
+                    SyncDebugLog.d("enable crashed ${e::class.simpleName}")
+                    autoLoginError = LoginError.NetworkError
                 } finally {
                     autoLoginBusy = false
                 }
@@ -445,32 +517,28 @@ fun XmuSyncScreen(
     val doLogout: () -> Unit = {
         scope.launch {
             // 退出登录 = 连自动续期凭据一起清掉，否则下次同步会再次自动登录
-            autoLogin?.disable()
-            repository?.resetSyncData(deleteSyncedTodos = false)
-            // localStorage / IndexedDB 同属登录态残留，一并清
-            WebStorage.getInstance().deleteAllData()
-            val cookieManager = CookieManager.getInstance()
-            // 异步删除：等回调再 flush，保证提示「已退出登录」时旧 cookie 已不可用
-            cookieManager.removeAllCookies {
-                cookieManager.flush()
-                sessionExpired = false
-                pendingLogin = null
-                AppToasts.show(context, logoutDoneText)
-            }
+            autoRenew?.disable()
+            // 只清本校同步数据（会话按 source + id 前缀过滤，跨校隔离）
+            sync.resetSyncData(deleteSyncedTodos = false)
+            // 跨校边界：只让本校声明域的网页 cookie 过期；不清 WebStorage、不清全局 cookie
+            //（全局清理会登出其他学校的网页登录，见指导 §2.4 第 10 条 / §2.6）
+            SchoolCookieCleaner.clearForHosts(session.webViewLogin?.allowedHosts.orEmpty())
+            sessionExpired = false
+            pendingLogin = null
+            AppToasts.show(context, logoutDoneText)
         }
     }
 
     val onSwitchResolved: (Boolean) -> Unit = { deleteSyncedTodos ->
         val pending = pendingLogin
-        val repo = repository
-        if (pending != null && repo != null) {
+        if (pending != null) {
             scope.launch {
                 // 换号时旧账号的自动续期凭据必须一起清掉，否则下次会登回旧账号
-                autoLogin?.disable()
-                repo.resetSyncData(deleteSyncedTodos)
-                when (val outcome = repo.prepareFromLogin(pending.profileRaw, pending.todosRaw)) {
-                    is XmuPrepareOutcome.Ready -> showPlanOrUpToDate(outcome.plan)
-                    is XmuPrepareOutcome.Failed -> showError(outcome.error)
+                autoRenew?.disable()
+                sync.resetSyncData(deleteSyncedTodos)
+                when (val outcome = sync.prepareFromLogin(pending)) {
+                    is PrepareOutcome.Ready -> showPlanOrUpToDate(outcome.plan)
+                    is PrepareOutcome.Failed -> showError(outcome.error)
                 }
             }
         }
@@ -479,19 +547,18 @@ fun XmuSyncScreen(
 
     val onPreviewConfirm: (Set<String>) -> Unit = { selected ->
         val plan = previewPlan
-        val repo = repository
-        if (plan != null && repo != null && !committing) {
+        if (plan != null && !committing) {
             committing = true
             scope.launch {
-                when (val r = repo.commitSync(plan, selected)) {
-                    is XmuCommitOutcome.Done -> {
+                when (val r = sync.commitSync(plan, selected)) {
+                    is CommitOutcome.Done -> {
                         AppToasts.show(
                             context,
                             importDoneFormat.format(r.report.imported, r.report.restored),
                         )
                         previewPlan = null
                     }
-                    is XmuCommitOutcome.Failed -> {
+                    is CommitOutcome.Failed -> {
                         // 落盘失败单独提示：待办可能已导入但映射没保存，重试前先修存储
                         val message = if (r.error is TodoError.PersistFailed) {
                             persistFailedText
@@ -537,21 +604,21 @@ fun XmuSyncScreen(
                 darkTheme,
                 themeAccent,
                 scrollState,
-                repository,
+                sync,
                 freezeEpoch,
             ) {
                 {
-                    val sync = repository?.state?.value
+                    val state = sync.state.value
                     SettingsTopBarFreezeKey(
-                        page = SettingsPage.XmuSync,
+                        page = SettingsPage.AccountSync,
                         darkTheme = darkTheme,
                         topBarHeight = topBarHeight,
                         scroll = scrollState.value,
                         epoch = freezeEpoch,
                         inputs = listOf(
                             themeAccent,
-                            sync?.uid,
-                            sync?.accountName,
+                            state.uid,
+                            state.accountName,
                             sessionExpired,
                             loadingMounted,
                             logoutMounted,
@@ -566,206 +633,199 @@ fun XmuSyncScreen(
                 .asPaddingValues()
                 .calculateBottomPadding()
 
-            when {
-                // 采样源始终存在：加载态也挂 hazeSource，避免顶栏背后无源可采
-                repository == null -> Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .hazeSource(hazeState),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator()
+            val syncState by sync.state.collectAsState()
+            // 已缓存的头像（null = 还没抓到/已退出登录）：随同步下载、退出登录更新
+            val avatarImage by sync.avatarImage.collectAsState()
+            val connected = syncState.uid.isNotEmpty()
+            val showLoginEntry = canNativeLogin || canWebViewLogin
+
+            SettingsScrollContent(
+                scrollState = scrollState,
+                overscrollEffect = overscrollEffect,
+                hazeState = hazeState,
+                glassBackdrop = glassBackdrop,
+                topPadding = topBarHeight + TopBarContentGap,
+                bottomPadding = navBarPadding + SheetBottomSlack,
+            ) {
+                if (sessionExpired) {
+                    SheetInfoBanner(text = stringResource(R.string.xmu_error_expired))
                 }
 
-                else -> {
-                    val syncState by repository.state.collectAsState()
-                    // 已缓存的头像（null = 还没抓到/已退出登录）：随同步下载、退出登录更新
-                    val avatarImage by repository.avatarImage.collectAsState()
-                    val connected = syncState.uid.isNotEmpty()
+                // 顶部无题分组：头部卡 + 账号状态/登录入口，组内卡间距 10dp
+                CardSection {
+                    SettingsInfoHeaderCard(
+                        icon = R.drawable.ic_arrow_sync_circle,
+                        title = stringResource(spec.headerTitleRes),
+                        description = stringResource(spec.headerDescriptionRes),
+                    )
 
-                    SettingsScrollContent(
-                        scrollState = scrollState,
-                        overscrollEffect = overscrollEffect,
-                        hazeState = hazeState,
-                        glassBackdrop = glassBackdrop,
-                        topPadding = topBarHeight + TopBarContentGap,
-                        bottomPadding = navBarPadding + SheetBottomSlack,
-                    ) {
-                        if (sessionExpired) {
-                            SheetInfoBanner(text = stringResource(R.string.xmu_error_expired))
-                        }
-
-                        // 顶部无题分组：头部卡 + 账号状态/登录入口，组内卡间距 10dp
-                        CardSection {
-                            SettingsInfoHeaderCard(
-                                icon = R.drawable.ic_arrow_sync_circle,
-                                title = stringResource(R.string.xmu_header_title),
-                                description = stringResource(R.string.xmu_header_description),
-                            )
-
-                            if (!connected) {
-                                SettingsCard(
-                                    items = listOf(
-                                        SettingsCardItem.Nav(
-                                            label = stringResource(R.string.xmu_login_button),
-                                            onClick = {
-                                                sessionExpired = false
-                                                if (autoLogin != null && autoLoginState.available) {
-                                                    // 默认原生 OAuth 登录：输学号/密码，成功即
-                                                    // 保存凭据并开启自动续期
-                                                    autoLoginError = null
-                                                    autoLoginSheetVisible = true
-                                                } else {
-                                                    // 自动续期未装配或 Keystore 不可用：原生
-                                                    // 登录不了，直接走网页登录兜底
-                                                    loginVisible = true
-                                                }
-                                            },
-                                        ),
-                                    ),
-                                )
-                            } else {
-                                SettingsCard(
-                                    items = listOf(
-                                        SettingsCardItem.Custom(
-                                            // 已连接后标题直接是账户名（不再加「已连接：」前缀），
-                                            // 姓名缺省时退回「已连接」单字
-                                            label = syncState.accountName.ifBlank {
-                                                stringResource(R.string.xmu_connected_label)
-                                            },
-                                            description = if (syncState.lastSyncAtMillis > 0L) {
-                                                stringResource(
-                                                    R.string.xmu_last_sync_at,
-                                                    formatSyncTime(syncState.lastSyncAtMillis),
-                                                )
-                                            } else {
-                                                stringResource(R.string.xmu_last_sync_never)
-                                            },
-                                            // 头像圆只在已连接分支出现：未连接时这张卡不存在，圆随之不渲染。
-                                            // 放尾部槽、与文字块留 12dp（对齐原先左侧头像的行卡图标↔文本间距）
-                                            trailing = {
-                                                Spacer(Modifier.width(12.dp))
-                                                AccountAvatar(
-                                                    name = syncState.accountName,
-                                                    image = avatarImage,
-                                                )
-                                            },
-                                        ),
-                                    ),
-                                )
-                                SettingsCard(
-                                    items = listOf(
-                                        SettingsCardItem.Nav(
-                                            label = stringResource(R.string.xmu_sync_button),
-                                            onClick = onSyncClick,
-                                        ),
-                                        SettingsCardItem.Nav(
-                                            label = stringResource(R.string.xmu_logout_button),
-                                            onClick = { logoutVisible = true },
-                                        ),
-                                    ),
-                                )
-                            }
-                        }
-
-                        // 「自动续期和同步」分组：两个开关合并一张卡，能力缺失时逐行隐藏。
-                        // 自动续期未连接时置灰（原生登录即保存凭据并自动开启，无需先开），
-                        // 关闭/暂停/不可用时同步仍走 WebView 路径，开启需要现场输入凭据完成
-                        // 一次原生登录；自动同步每天 6:00 后台跑一次并自动导入（需已连接），
-                        // 未开自动续期时登录过期该次静默跳过（行为不变，文案统一不区分）
-                        if (autoLogin != null || connected) {
-                            CardSection(
-                                title = stringResource(R.string.xmu_section_auto_login_sync),
-                            ) {
-                                SettingsCard(
-                                    items = buildList {
-                                        if (autoLogin != null) {
-                                            add(
-                                                SettingsCardItem.Toggle(
-                                                    label =
-                                                        stringResource(R.string.xmu_auto_login_title),
-                                                    // 正常态（开/关）共用同一句描述；
-                                                    // 暂停/不可用保留原因与操作提示
-                                                    description = when {
-                                                        !autoLoginState.available -> stringResource(
-                                                            R.string.xmu_auto_login_desc_unavailable,
-                                                        )
-                                                        autoLoginState.policy ==
-                                                            XmuAutoLoginPolicy.BLOCKED ->
-                                                            stringResource(
-                                                                R.string.xmu_auto_login_desc_blocked,
-                                                            )
-                                                        else -> stringResource(
-                                                            R.string.xmu_auto_login_desc,
-                                                        )
-                                                    },
-                                                    checked = autoLoginState.policy ==
-                                                        XmuAutoLoginPolicy.ENABLED,
-                                                    onCheckedChange = onAutoLoginToggle,
-                                                    // 未连接时置灰：登录（原生 OAuth）即保存
-                                                    // 凭据并自动开启，没有「先开开关再登录」
-                                                    enabled =
-                                                        !autoLoginBusy &&
-                                                            autoLoginState.available &&
-                                                            connected,
-                                                ),
-                                            )
-                                        }
-                                        if (connected) {
-                                            add(
-                                                SettingsCardItem.Toggle(
-                                                    label =
-                                                        stringResource(R.string.xmu_auto_sync_title),
-                                                    description =
-                                                        stringResource(R.string.xmu_auto_sync_desc),
-                                                    checked = dailySyncEnabled,
-                                                    onCheckedChange = onDailySyncToggle,
-                                                ),
-                                            )
-                                        }
-                                    },
-                                )
-                            }
-                        }
-
-                        // 「备用登录方式」分组：可见 WebView 登录。默认登录走原生 OAuth
-                        // （保存凭据，支持自动续期与教务导入）；网页登录不保存密码、存在过期
-                        // 风险，也是原生登录遇验证码/页面改版时的自动回退目标
-                        CardSection(title = stringResource(R.string.xmu_section_alt_login)) {
+                    if (!connected) {
+                        if (showLoginEntry) {
                             SettingsCard(
                                 items = listOf(
                                     SettingsCardItem.Nav(
-                                        label = stringResource(R.string.xmu_webview_login),
-                                        description =
-                                            stringResource(R.string.xmu_webview_login_desc),
+                                        label = stringResource(R.string.xmu_login_button),
                                         onClick = {
                                             sessionExpired = false
-                                            loginVisible = true
+                                            if (
+                                                canNativeLogin &&
+                                                autoRenewState.available
+                                            ) {
+                                                // 默认原生 OAuth 登录：输账号/密码，成功即
+                                                // 保存凭据并开启自动续期
+                                                autoLoginError = null
+                                                autoLoginSheetVisible = true
+                                            } else if (canWebViewLogin) {
+                                                // 无原生登录、或密钥库不可用：直接走网页登录
+                                                loginVisible = true
+                                            }
                                         },
                                     ),
                                 ),
                             )
                         }
+                    } else {
+                        SettingsCard(
+                            items = listOf(
+                                SettingsCardItem.Custom(
+                                    // 已连接后标题直接是账户名（不再加「已连接：」前缀），
+                                    // 姓名缺省时退回「已连接」单字
+                                    label = syncState.accountName.ifBlank {
+                                        stringResource(R.string.xmu_connected_label)
+                                    },
+                                    description = if (syncState.lastSyncAtMillis > 0L) {
+                                        stringResource(
+                                            R.string.xmu_last_sync_at,
+                                            formatSyncTime(syncState.lastSyncAtMillis),
+                                        )
+                                    } else {
+                                        stringResource(R.string.xmu_last_sync_never)
+                                    },
+                                    // 头像圆只在已连接分支出现：未连接时这张卡不存在，圆随之不渲染。
+                                    // 放尾部槽、与文字块留 12dp（对齐原先左侧头像的行卡图标↔文本间距）
+                                    trailing = {
+                                        Spacer(Modifier.width(12.dp))
+                                        AccountAvatar(
+                                            name = syncState.accountName,
+                                            image = avatarImage,
+                                        )
+                                    },
+                                ),
+                            ),
+                        )
+                        SettingsCard(
+                            items = listOf(
+                                SettingsCardItem.Nav(
+                                    label = stringResource(R.string.xmu_sync_button),
+                                    onClick = onSyncClick,
+                                ),
+                                SettingsCardItem.Nav(
+                                    label = stringResource(R.string.xmu_logout_button),
+                                    onClick = { logoutVisible = true },
+                                ),
+                            ),
+                        )
+                    }
+                }
 
-                        // 「同步可以做什么」说明分组：两张纯标题 + 完整说明的介绍卡
-                        CardSection(title = stringResource(R.string.xmu_section_capabilities)) {
-                            SettingsCard(
-                                items = listOf(
-                                    SettingsCardItem.Custom(
-                                        label = stringResource(R.string.xmu_intro_title),
-                                        description = stringResource(R.string.xmu_intro_body),
-                                    ),
+                // 「自动续期和同步」分组：两个开关合并一张卡，能力缺失时逐行隐藏。
+                // 自动续期未连接时置灰（原生登录即保存凭据并自动开启，无需先开），
+                // 关闭/暂停/不可用时同步仍走 WebView 路径，开启需要现场输入凭据完成
+                // 一次原生登录；自动同步每天 6:00 后台跑一次并自动导入（需已连接），
+                // 未开自动续期时登录过期该次静默跳过（行为不变，文案统一不区分）
+                if (canNativeLogin || connected) {
+                    CardSection(
+                        title = stringResource(R.string.xmu_section_auto_login_sync),
+                    ) {
+                        SettingsCard(
+                            items = buildList {
+                                if (autoRenew != null) {
+                                    add(
+                                        SettingsCardItem.Toggle(
+                                            label = stringResource(R.string.xmu_auto_login_title),
+                                            // 正常态（开/关）共用同一句描述；
+                                            // 暂停/不可用保留原因与操作提示
+                                            description = when {
+                                                !autoRenewState.available -> stringResource(
+                                                    R.string.xmu_auto_login_desc_unavailable,
+                                                )
+                                                autoRenewState.policy ==
+                                                    AutoRenewPolicy.BLOCKED -> stringResource(
+                                                    R.string.xmu_auto_login_desc_blocked,
+                                                )
+                                                else -> stringResource(
+                                                    R.string.xmu_auto_login_desc,
+                                                )
+                                            },
+                                            checked = autoRenewState.policy ==
+                                                AutoRenewPolicy.ENABLED,
+                                            onCheckedChange = onAutoLoginToggle,
+                                            // 未连接时置灰：登录（原生 OAuth）即保存
+                                            // 凭据并自动开启，没有「先开开关再登录」
+                                            enabled = !autoLoginBusy &&
+                                                autoRenewState.available &&
+                                                connected,
+                                        ),
+                                    )
+                                }
+                                if (connected) {
+                                    add(
+                                        SettingsCardItem.Toggle(
+                                            label = stringResource(R.string.xmu_auto_sync_title),
+                                            description =
+                                                stringResource(R.string.xmu_auto_sync_desc),
+                                            checked = dailySyncEnabled,
+                                            onCheckedChange = onDailySyncToggle,
+                                        ),
+                                    )
+                                }
+                            },
+                        )
+                    }
+                }
+
+                // 「备用登录方式」分组：可见 WebView 登录。默认登录走原生 OAuth
+                // （保存凭据，支持自动续期与教务导入）；网页登录不保存密码、存在过期
+                // 风险，也是原生登录遇验证码/页面改版时的自动回退目标。
+                // 仅「原生 + 网页都支持」时显示（`available=false` 仍显示，见矩阵）
+                if (canNativeLogin && canWebViewLogin) {
+                    CardSection(title = stringResource(R.string.xmu_section_alt_login)) {
+                        SettingsCard(
+                            items = listOf(
+                                SettingsCardItem.Nav(
+                                    label = stringResource(R.string.xmu_webview_login),
+                                    description =
+                                        stringResource(R.string.xmu_webview_login_desc),
+                                    onClick = {
+                                        sessionExpired = false
+                                        loginVisible = true
+                                    },
                                 ),
-                            )
-                            SettingsCard(
-                                items = listOf(
-                                    SettingsCardItem.Custom(
-                                        label = stringResource(R.string.xmu_intro_timetable_title),
-                                        description = stringResource(R.string.xmu_intro_timetable_body),
-                                    ),
+                            ),
+                        )
+                    }
+                }
+
+                // 「同步可以做什么」说明分组：两张纯标题 + 完整说明的介绍卡。
+                // 教务导入是可选能力：学校未声明（或未给介绍卡）时整卡隐藏
+                CardSection(title = stringResource(R.string.xmu_section_capabilities)) {
+                    SettingsCard(
+                        items = listOf(
+                            SettingsCardItem.Custom(
+                                label = stringResource(spec.introTitleRes),
+                                description = stringResource(spec.introBodyRes),
+                            ),
+                        ),
+                    )
+                    spec.timetableIntro?.let { intro ->
+                        SettingsCard(
+                            items = listOf(
+                                SettingsCardItem.Custom(
+                                    label = stringResource(intro.titleRes),
+                                    description = stringResource(intro.bodyRes),
                                 ),
-                            )
-                        }
+                            ),
+                        )
                     }
                 }
             }
@@ -795,11 +855,10 @@ fun XmuSyncScreen(
             )
 
             // 登录浮层：组合序在内容之后 = 画在上层；返回键优先关登录浮层
-            if (loginVisible) {
-                XmuLoginSheet(
+            if (loginVisible && schoolUi != null) {
+                schoolUi.WebViewLoginSheet(
                     onDismiss = { loginVisible = false },
                     onResult = { onLoginResult(it) },
-                    modifier = Modifier.fillMaxSize(),
                 )
             }
         }
@@ -826,12 +885,12 @@ fun XmuSyncScreen(
             onDismiss = {},
             onDismissed = { loadingMounted = false },
         ) {
-            XmuSyncLoadingCard()
+            SyncLoadingCard()
         }
     }
 
     if (previewMounted) {
-        XmuSyncPreviewSheet(
+        SyncPreviewSheet(
             plan = previewPlan,
             visible = previewPlan != null,
             importing = committing,
@@ -849,7 +908,9 @@ fun XmuSyncScreen(
         ) {
             ConfirmDialogCard(
                 title = stringResource(R.string.xmu_logout_confirm_title),
-                message = stringResource(R.string.xmu_logout_confirm_message),
+                message = stringResource(
+                    spec.logoutMessageRes ?: R.string.sync_logout_confirm_message,
+                ),
             ) {
                 DialogPillButton(
                     label = stringResource(R.string.settings_cancel),
@@ -882,7 +943,9 @@ fun XmuSyncScreen(
         ) {
             ConfirmDialogCard(
                 title = stringResource(R.string.xmu_switch_title),
-                message = stringResource(R.string.xmu_switch_message),
+                message = stringResource(
+                    spec.switchMessageRes ?: R.string.sync_switch_message,
+                ),
             ) {
                 DialogPillButton(
                     label = stringResource(R.string.xmu_switch_keep_records),
@@ -910,9 +973,10 @@ fun XmuSyncScreen(
         }
     }
 
-    // 原生登录凭据浮层（默认「去登录」与开启自动续期共用）：输入学号/密码 → 原生登录一次
+    // 原生登录凭据浮层（默认「去登录」与开启自动续期共用）：输入账号/密码 → 原生登录一次
     if (autoLoginSheetMounted) {
-        XmuAutoLoginSheet(
+        CredentialLoginSheet(
+            spec = spec,
             visible = autoLoginSheetVisible,
             busy = autoLoginBusy,
             error = autoLoginError,
@@ -931,7 +995,9 @@ fun XmuSyncScreen(
         ) {
             ConfirmDialogCard(
                 title = stringResource(R.string.xmu_auto_login_disable_title),
-                message = stringResource(R.string.xmu_auto_login_disable_message),
+                message = stringResource(
+                    spec.autoLoginDisableMessageRes ?: R.string.sync_auto_login_disable_message,
+                ),
             ) {
                 DialogPillButton(
                     label = stringResource(R.string.settings_cancel),
@@ -949,7 +1015,7 @@ fun XmuSyncScreen(
                     enabled = disableAutoVisible,
                     onClick = {
                         disableAutoVisible = false
-                        scope.launch { autoLogin?.disable() }
+                        scope.launch { autoRenew?.disable() }
                     },
                 )
             }
@@ -967,7 +1033,7 @@ fun XmuSyncScreen(
  * 版本变了整块重建，Coil 才会丢掉旧结果重新解码。
  */
 @Composable
-private fun AccountAvatar(name: String, image: XmuAvatarImage?) {
+private fun AccountAvatar(name: String, image: AvatarImage?) {
     Box(
         modifier = Modifier
             .size(AccountAvatarSize)
@@ -1001,7 +1067,7 @@ private val AccountAvatarSize = 52.dp
 
 /** 同步加载卡：小转圈 + 「正在同步…」，垂直居中；浮层在途不可关闭 */
 @Composable
-private fun XmuSyncLoadingCard() {
+private fun SyncLoadingCard() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1023,8 +1089,8 @@ private fun XmuSyncLoadingCard() {
 
 /** 同步预览浮层：内容顶部用横幅汇总（随勾选实时变化）与复活计数，按课程分组列新增项（默认全选可取消） */
 @Composable
-private fun XmuSyncPreviewSheet(
-    plan: XmuSyncPlan?,
+private fun SyncPreviewSheet(
+    plan: SyncPlan?,
     visible: Boolean,
     importing: Boolean,
     onDismiss: () -> Unit,
@@ -1036,7 +1102,7 @@ private fun XmuSyncPreviewSheet(
     BackHandler(enabled = visible, onBack = onDismiss)
 
     // 退场动画期间保留最后一次非空数据（WakeupImportConfirmDialog 的 stale-content retention）
-    var shownPlan by remember { mutableStateOf<XmuSyncPlan?>(null) }
+    var shownPlan by remember { mutableStateOf<SyncPlan?>(null) }
     if (plan != null) shownPlan = plan
     val current = shownPlan
 
@@ -1070,17 +1136,19 @@ private fun XmuSyncPreviewSheet(
         val p = current ?: return@OverlaySheet
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
             // 顶部汇总：条数随勾选实时变化，SheetInfoBanner 的等宽数字避免整行居中抖动
-            SheetInfoBanner(text = summaryFormat.format(selected.size, p.skipped.values.sum()))
-            if (p.restoreItems.isNotEmpty()) {
-                SheetInfoBanner(text = restoreFormat.format(p.restoreItems.size))
+            SheetInfoBanner(text = summaryFormat.format(selected.size, p.skippedTotal))
+            if (p.restoreCount > 0) {
+                SheetInfoBanner(text = restoreFormat.format(p.restoreCount))
             }
             // 截止时间非空但解析失败：单条不阻断导入，但要让用户看到接口可能已变化。
             // 用可换行的文本块而不是单行横幅，长文案不会被省略号截断。
-            val unparseable = p.skipped[SkipReason.DeadlineUnparseable] ?: 0
-            if (unparseable > 0) {
+            if (p.deadlineUnparseableCount > 0) {
                 CardSection {
                     Text(
-                        text = stringResource(R.string.xmu_deadline_unparseable, unparseable),
+                        text = stringResource(
+                            R.string.xmu_deadline_unparseable,
+                            p.deadlineUnparseableCount,
+                        ),
                         style = ClassppTextTokens.settingsDescription,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier
@@ -1101,15 +1169,21 @@ private fun XmuSyncPreviewSheet(
                     )
                 }
             } else {
-                // 按课程分组（组间留缝，组内逐条勾选行）；组序 = 远端返回序
+                // 按课程分组（组间留缝，组内逐条勾选行）；组序 = 远端返回序。
+                // 分组键是归一化的 todo.sourceDetail（与改造前一致；courseName 不读）
                 p.newItems.groupBy { item -> item.todo.sourceDetail.orEmpty() }
                     .forEach { (course, items) ->
-                        CardSection(title = course.ifEmpty { stringResource(R.string.xmu_source_badge) }) {
+                        CardSection(
+                            title = course.ifEmpty { stringResource(R.string.xmu_source_badge) },
+                        ) {
                             SettingsCard(
                                 items = items.map { item ->
                                     SettingsCardItem.Custom(
                                         label = item.todo.name,
-                                        description = deadlineText(item.todo.deadlineDate, item.todo.deadlineMinute),
+                                        description = deadlineText(
+                                            item.todo.deadlineDate,
+                                            item.todo.deadlineMinute,
+                                        ),
                                         trailing = {
                                             Checkbox(
                                                 checked = item.todo.id in selected,

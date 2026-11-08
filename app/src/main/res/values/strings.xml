@@ -337,6 +337,18 @@
     <string name="xmu_auto_sync_desc">开启后，每日 6:00 自动同步</string>
     <string name="xmu_auto_sync_notif_title">课程中心自动同步完成</string>
     <string name="xmu_auto_sync_notif_text">已自动导入 %1$d 条，恢复 %2$d 条</string>
+    <!-- 校无关中性文案（多学校适配：spec 未覆盖时使用；文本不含校名/学号） -->
+    <string name="sync_error_account_changed">检测到账号变化，请重新登录或清空同步记录</string>
+    <string name="sync_logout_confirm_message">退出后将清除登录状态与同步记录。重新登录并同步后，远端仍列出的待办会再次导入。</string>
+    <string name="sync_switch_message">账号与上次同步的不一致，继续同步需要先清空旧的同步记录。已导入的待办可保留，或一并删除。</string>
+    <string name="sync_login_notes">登录需要保存你的账号与密码。凭据由 Android Keystore 加密，不随备份迁移；登录只在本机直接与学校认证服务交互。遇到验证码、密码变更或认证失败会立即暂停并删除密码，不会连续重试。请勿在共用设备上登录。</string>
+    <string name="sync_login_blank_hint">请先输入账号和密码</string>
+    <string name="sync_error_busy">服务繁忙，请稍后重试</string>
+    <string name="sync_login_invalid_credentials">账号或密码不正确</string>
+    <string name="sync_login_not_established">登录成功但无法读取远端数据，请改用网页登录</string>
+    <string name="sync_auto_login_disable_message">关闭后将删除已保存的账号与密码。当前登录状态会保留，会话过期后需手动登录。</string>
+    <string name="sync_notif_text">已自动导入 %1$d 条，恢复 %2$d 条</string>
+    <string name="account_sync_load_failed">账号信息加载失败，请返回后重试</string>
     <!-- 通知与提醒 -->
     <string name="settings_notifications">通知与提醒</string>
     <string name="notification_header_title">通知与提醒</string>
