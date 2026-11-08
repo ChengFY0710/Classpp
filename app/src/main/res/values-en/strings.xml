@@ -231,6 +231,9 @@
     <string name="settings_remote_refresh_desc">Tap to fetch the latest school list from the remote repository</string>
     <string name="settings_remote_refreshing">Updating school list…</string>
     <string name="settings_remote_refresh_added">Updated: %1$d new school(s)</string>
+    <string name="settings_remote_refresh_changed">Saved changes to %1$d school(s). Restart the app to apply.</string>
+    <string name="settings_remote_refresh_skipped">%1$d school declaration(s) invalid or conflicting; skipped.</string>
+    <string name="settings_remote_refresh_join">"; "</string>
     <string name="settings_remote_refresh_up_to_date">Already up to date</string>
     <string name="settings_remote_refresh_failed">Update failed. Check your network and try again.</string>
     <string name="remote_school_confirm_title">Connect remote school</string>

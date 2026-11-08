@@ -365,6 +365,9 @@ private fun AccountSyncContent(
     // 手动更新的结果/加载文案在组合期解析（回调里只引用）
     val remoteRefreshingText = stringResource(R.string.settings_remote_refreshing)
     val remoteRefreshAddedFormat = stringResource(R.string.settings_remote_refresh_added)
+    val remoteRefreshChangedFormat = stringResource(R.string.settings_remote_refresh_changed)
+    val remoteRefreshSkippedFormat = stringResource(R.string.settings_remote_refresh_skipped)
+    val remoteRefreshJoin = stringResource(R.string.settings_remote_refresh_join)
     val remoteRefreshUpToDateText = stringResource(R.string.settings_remote_refresh_up_to_date)
     val remoteRefreshFailedText = stringResource(R.string.settings_remote_refresh_failed)
 
@@ -512,8 +515,21 @@ private fun AccountSyncContent(
             scope.launch {
                 try {
                     when (val outcome = manager.refresh()) {
-                        is RemoteRefreshOutcome.Updated ->
-                            AppToasts.show(context, remoteRefreshAddedFormat.format(outcome.added))
+                        is RemoteRefreshOutcome.Refreshed -> {
+                            // 新增（立即生效）/ 变更（重启生效）/ 跳过（无效或冲突）可同时出现
+                            val message = buildList {
+                                if (outcome.added > 0) {
+                                    add(remoteRefreshAddedFormat.format(outcome.added))
+                                }
+                                if (outcome.changed > 0) {
+                                    add(remoteRefreshChangedFormat.format(outcome.changed))
+                                }
+                                if (outcome.skipped > 0) {
+                                    add(remoteRefreshSkippedFormat.format(outcome.skipped))
+                                }
+                            }.joinToString(remoteRefreshJoin)
+                            AppToasts.show(context, message)
+                        }
                         RemoteRefreshOutcome.UpToDate ->
                             AppToasts.show(context, remoteRefreshUpToDateText)
                         RemoteRefreshOutcome.Failed ->

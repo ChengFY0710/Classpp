@@ -24,6 +24,18 @@ sealed interface SessionSlot {
 }
 
 /**
+ * 运行时追加远端学校的结果：
+ * - [added]：本次新增并立即出现在列表里的学校数；
+ * - [changed]：已注册、但声明内容变化的学校数（已写入缓存，**重启 App 后生效**）；
+ * - [rejected]：声明无效或与已注册学校冲突、被本批忽略的学校数。
+ */
+data class RemoteRegistrationResult(
+    val added: Int,
+    val changed: Int,
+    val rejected: Int,
+)
+
+/**
  * 学校注册表 + 单活账号状态（指导 §2.5）。
  *
  * - 注册顺序即展示顺序，**首项 = 默认活跃学校**（厦大注册第一，冷启动路径与改造前一致）；
@@ -201,31 +213,63 @@ class SchoolRegistry internal constructor(
      * 运行时追加远端声明学校（data/sync/remote 分发链路）：逐个按 init 同规则校验，
      * **非法/重复 id 跳过不抛**（数据驱动的容错——单个坏声明不拖垮整批、不波及已注册学校）。
      *
-     * - 绝不移除已注册项：活跃会话可能正运行在远端学校上；
+     * - 绝不移除/替换已注册项：活跃会话可能正运行在远端学校上；同 id 声明内容变化只计数
+     *   （[RemoteRegistrationResult.changed]），由 UI 提示重启后生效，缓存已由拉取层更新；
      * - 追加后 [schools] 发出新列表（徽标/选择卡自动更新），活跃学校不受影响；
      * - 会话仍惰性装配：新校首次被选中时才 [session]，装配期校验（[validateSession]）
      *   照常执行，失败走既有 [SessionSlot.Failed] 路径。
      *
-     * @return 实际新增的学校数（0 = 全部被跳过）
+     * @return 新增 / 声明变化 / 被拒三个计数（被拒原因进 [SyncDebugLog]）
      */
     @Synchronized
-    fun registerRemote(providers: List<SchoolProvider>): Int {
+    fun registerRemote(providers: List<SchoolProvider>): RemoteRegistrationResult {
         val knownIds = _schools.value.mapTo(mutableSetOf()) { it.id }
         val added = mutableListOf<SchoolProvider>()
+        var changed = 0
+        var rejected = 0
         // 本批已接受的白名单：批内两校重叠同样按配置错误跳过（不等装配）
         val batchHosts = mutableMapOf<String, Set<String>>()
         for (provider in providers) {
             val spec = provider.spec
-            if (!ID_PATTERN.matches(spec.id) || spec.id in knownIds) continue
+            if (!ID_PATTERN.matches(spec.id)) {
+                rejected++
+                SyncDebugLog.d("remote school '${spec.id}' rejected: invalid id")
+                continue
+            }
+            if (spec.id in knownIds) {
+                // 已注册：只比较内容令牌（不替换 provider）。任一方无令牌 = 与编译期学校
+                // 同 id 或来源不可比较，按配置错误拒绝。
+                val before = providersById[spec.id]?.remoteDeclarationToken
+                val after = provider.remoteDeclarationToken
+                when {
+                    before == null || after == null -> {
+                        rejected++
+                        SyncDebugLog.d("remote school '${spec.id}' rejected: id already registered")
+                    }
+                    before != after -> {
+                        changed++
+                        SyncDebugLog.d(
+                            "remote school '${spec.id}' declaration changed; restart to apply",
+                        )
+                    }
+                }
+                continue
+            }
             if (!spec.capabilities.any {
                     it == Capability.NATIVE_LOGIN || it == Capability.WEBVIEW_LOGIN
                 }
             ) {
+                rejected++
+                SyncDebugLog.d("remote school '${spec.id}' rejected: no login capability")
                 continue
             }
             if ((spec.timetableIntro != null) !=
                 (Capability.SCHEDULE_IMPORT in spec.capabilities)
             ) {
+                rejected++
+                SyncDebugLog.d(
+                    "remote school '${spec.id}' rejected: timetable slot mismatch",
+                )
                 continue
             }
             // 白名单提前查重（不等装配）：登录域 + 课表页域的并集，与已装配/已注册/
@@ -240,19 +284,31 @@ class SchoolRegistry internal constructor(
                 val conflict = existing.firstOrNull { (id, known) ->
                     id != spec.id && known.isNotEmpty() && (known intersect hosts).isNotEmpty()
                 }
-                if (conflict != null) continue
+                if (conflict != null) {
+                    rejected++
+                    SyncDebugLog.d(
+                        "remote school '${spec.id}' rejected: hosts overlap with '${conflict.first}'",
+                    )
+                    continue
+                }
                 batchHosts[spec.id] = hosts
             }
             knownIds += spec.id
             added += provider
         }
-        if (added.isEmpty()) return 0
+        if (added.isEmpty()) {
+            return RemoteRegistrationResult(added = 0, changed = changed, rejected = rejected)
+        }
         for (provider in added) {
             providersById[provider.spec.id] = provider
             batchHosts[provider.spec.id]?.let { webViewHosts[provider.spec.id] = it }
         }
         _schools.value = _schools.value + added.map { it.spec }
-        return added.size
+        return RemoteRegistrationResult(
+            added = added.size,
+            changed = changed,
+            rejected = rejected,
+        )
     }
 
     private fun validateSession(spec: SchoolSpec, session: SchoolSession) {

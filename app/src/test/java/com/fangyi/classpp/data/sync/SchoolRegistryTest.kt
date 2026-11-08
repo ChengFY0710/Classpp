@@ -475,9 +475,9 @@ class SchoolRegistryTest {
     fun `registerRemote skips duplicates and invalid declarations`() {
         val registry = buildRegistry(listOf(FakeProvider(schoolSpec("xmu"))))
 
-        registry.registerRemote(
+        val result = registry.registerRemote(
             listOf(
-                FakeProvider(schoolSpec("xmu")), // 与已注册学校重复
+                FakeProvider(schoolSpec("xmu")), // 与已注册学校重复（且无内容令牌）
                 FakeProvider(schoolSpec("Bad")), // 非法 id
                 FakeProvider(
                     schoolSpec(
@@ -487,10 +487,13 @@ class SchoolRegistryTest {
                     ),
                 ),
                 FakeProvider(schoolSpec("demo")),
-                FakeProvider(schoolSpec("demo")), // 本批内重复
+                FakeProvider(schoolSpec("demo")), // 本批内重复（无令牌，不可比较）
             ),
         )
 
+        assertEquals(1, result.added)
+        assertEquals(0, result.changed)
+        assertEquals(4, result.rejected)
         assertEquals(listOf("xmu", "demo"), registry.schools.value.map { it.id })
     }
 
@@ -544,14 +547,16 @@ class SchoolRegistryTest {
             webViewLoginSpec = testWebViewLogin("demo"),
             webViewTimetableSpec = testWebViewTimetable("xmu"),
         )
-        assertEquals(0, registry.registerRemote(listOf(overlapping)))
+        val rejected = registry.registerRemote(listOf(overlapping))
+        assertEquals(0, rejected.added)
+        assertEquals(1, rejected.rejected)
 
         val clean = FakeProvider(
             schoolSpec("clean", capabilities = capabilities, timetableIntro = intro),
             webViewLoginSpec = testWebViewLogin("clean"),
             webViewTimetableSpec = testWebViewTimetable("clean"),
         )
-        assertEquals(1, registry.registerRemote(listOf(clean)))
+        assertEquals(1, registry.registerRemote(listOf(clean)).added)
     }
 
     @Test
@@ -571,9 +576,64 @@ class SchoolRegistryTest {
             webViewTimetableSpec = testWebViewTimetable("shared_timetable"),
         )
 
-        assertEquals(1, registry.registerRemote(listOf(first)))
-        assertEquals(0, registry.registerRemote(listOf(second)))
+        assertEquals(1, registry.registerRemote(listOf(first)).added)
+        assertEquals(0, registry.registerRemote(listOf(second)).added)
         assertEquals(listOf("xmu", "one"), registry.schools.value.map { it.id })
+    }
+
+    @Test
+    fun `registerRemote reports changed declarations without replacing the provider`() {
+        val registry = buildRegistry(listOf(FakeProvider(schoolSpec("xmu"))))
+        val original = FakeProvider(
+            schoolSpec("demo", remote = true),
+            remoteDeclarationToken = "v1",
+        )
+        assertEquals(1, registry.registerRemote(listOf(original)).added)
+
+        val updated = FakeProvider(
+            schoolSpec("demo", remote = true),
+            remoteDeclarationToken = "v2",
+        )
+        val result = registry.registerRemote(listOf(updated))
+
+        assertEquals(0, result.added)
+        assertEquals(1, result.changed)
+        assertEquals(0, result.rejected)
+        // append-only：列表仍是旧 spec，provider 未被替换（重启后才生效）
+        assertEquals(original.spec, registry.schools.value.single { it.id == "demo" })
+    }
+
+    @Test
+    fun `registerRemote treats an unchanged declaration as up to date`() {
+        val registry = buildRegistry(listOf(FakeProvider(schoolSpec("xmu"))))
+        val token = Any()
+        assertEquals(
+            1,
+            registry.registerRemote(
+                listOf(FakeProvider(schoolSpec("demo"), remoteDeclarationToken = token)),
+            ).added,
+        )
+
+        val result = registry.registerRemote(
+            listOf(FakeProvider(schoolSpec("demo"), remoteDeclarationToken = token)),
+        )
+
+        assertEquals(0, result.added)
+        assertEquals(0, result.changed)
+        assertEquals(0, result.rejected)
+    }
+
+    @Test
+    fun `registerRemote rejects id collisions with compiled schools`() {
+        val registry = buildRegistry(listOf(FakeProvider(schoolSpec("xmu"))))
+
+        val result = registry.registerRemote(
+            listOf(FakeProvider(schoolSpec("xmu"), remoteDeclarationToken = "v1")),
+        )
+
+        assertEquals(0, result.added)
+        assertEquals(0, result.changed)
+        assertEquals(1, result.rejected)
     }
 
     @Test
@@ -704,6 +764,7 @@ class SchoolRegistryTest {
         override val spec: SchoolSpec,
         override val webViewLoginSpec: WebViewLoginSpec? = null,
         override val webViewTimetableSpec: WebViewTimetableSpec? = null,
+        override val remoteDeclarationToken: Any? = null,
     ) : SchoolProvider {
         val toggle = FakeToggle()
 

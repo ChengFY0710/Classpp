@@ -76,6 +76,13 @@ interface SchoolProvider {
      */
     val webViewTimetableSpec: WebViewTimetableSpec? get() = null
 
+    /**
+     * 远端声明的内容令牌：注册表据此判断「同 id 的声明是否已变化」（变化只提示重启，
+     * 不热替换 provider）。只需要**同一进程内**可按 `==` 比较，不落盘、不做版本兼容；
+     * 默认 null = 不参与变更检测（编译期学校）。
+     */
+    val remoteDeclarationToken: Any? get() = null
+
     /** 装配运行时会话；耗时操作应下沉 IO（注册表保证只装配一次） */
     suspend fun createSession(deps: SessionDeps): SchoolSession
 }

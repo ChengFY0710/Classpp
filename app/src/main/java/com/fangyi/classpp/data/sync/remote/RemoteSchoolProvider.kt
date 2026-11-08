@@ -46,6 +46,9 @@ class RemoteSchoolProvider(private val declaration: SchoolDeclaration) : SchoolP
 
     override val spec: SchoolSpec = declaration.toSpec()
 
+    /** 内容令牌 = 声明本身（data class 结构相等）：注册表据此识别已注册校的声明变化 */
+    override val remoteDeclarationToken: Any = declaration
+
     @Volatile
     private var toggle: DailySyncToggle? = null
 

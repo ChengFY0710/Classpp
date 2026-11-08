@@ -7,7 +7,6 @@ import com.fangyi.classpp.data.sync.net.HttpTransport
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -35,8 +34,9 @@ class SchoolRemoteCatalogTest {
             ),
         )
 
-        val refreshed = SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh()
-        assertEquals(listOf("demo"), refreshed!!.map { it.id })
+        val refreshed = SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh().success()
+        assertEquals(listOf("demo"), refreshed.declarations.map { it.id })
+        assertEquals(emptyList<RemoteSkippedSchool>(), refreshed.skipped)
 
         val cached = SchoolRemoteCatalog(FakeTransport(emptyMap()), dir, indexUrl, baseUrl)
             .loadCached()
@@ -84,9 +84,9 @@ class SchoolRemoteCatalogTest {
             ),
         )
 
-        val refreshed = SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh()
+        val refreshed = SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh().success()
 
-        assertEquals(listOf("demo"), refreshed!!.map { it.id })
+        assertEquals(listOf("demo"), refreshed.declarations.map { it.id })
         assertTrue(cdn in transport.requested)
     }
 
@@ -99,7 +99,9 @@ class SchoolRemoteCatalogTest {
             ),
         )
 
-        assertNull(SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh())
+        assertTrue(
+            SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh() is RemoteCatalogResult.Failed,
+        )
         assertEquals(listOf(indexUrl), transport.requested)
     }
 
@@ -117,7 +119,7 @@ class SchoolRemoteCatalogTest {
         val offline = FakeTransport(emptyMap())
         val refreshed = SchoolRemoteCatalog(offline, dir, indexUrl, baseUrl).refresh()
 
-        assertNull(refreshed)
+        assertTrue(refreshed is RemoteCatalogResult.Failed)
         assertEquals(listOf(indexUrl), offline.requested)
         // 缓存原样保留：下次冷启动仍能加载
         assertEquals(
@@ -139,9 +141,10 @@ class SchoolRemoteCatalogTest {
             ),
         )
 
-        val refreshed = SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh()
+        val refreshed = SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh().success()
 
-        assertEquals(listOf("demo"), refreshed!!.map { it.id })
+        assertEquals(listOf("demo"), refreshed.declarations.map { it.id })
+        assertEquals(listOf("broken"), refreshed.skipped.map { it.id })
         assertTrue(baseUrl + "schools/broken.json" in transport.requested)
     }
 
@@ -155,10 +158,11 @@ class SchoolRemoteCatalogTest {
             ),
         )
 
-        assertEquals(
-            emptyList<SchoolDeclaration>(),
-            SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh(),
-        )
+        val refreshed = SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh().success()
+
+        assertEquals(emptyList<SchoolDeclaration>(), refreshed.declarations)
+        assertEquals(listOf("demo"), refreshed.skipped.map { it.id })
+        assertTrue(refreshed.skipped.single().reason.contains("404"))
     }
 
     @Test
@@ -168,9 +172,11 @@ class SchoolRemoteCatalogTest {
             mapOf(indexUrl to ok(indexJson("demo" to "../evil.json"))),
         )
 
-        val refreshed = SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh()
+        val refreshed = SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh().success()
 
-        assertEquals(emptyList<SchoolDeclaration>(), refreshed!!)
+        assertEquals(emptyList<SchoolDeclaration>(), refreshed.declarations)
+        assertEquals(listOf("demo"), refreshed.skipped.map { it.id })
+        assertTrue(refreshed.skipped.single().reason.contains("invalid file path"))
         assertEquals(listOf(indexUrl), transport.requested)
     }
 
@@ -193,23 +199,72 @@ class SchoolRemoteCatalogTest {
             ),
         )
 
-        assertEquals(
-            emptyList<SchoolDeclaration>(),
-            SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh(),
-        )
+        val refreshed = SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh().success()
+
+        assertEquals(emptyList<SchoolDeclaration>(), refreshed.declarations)
+        assertEquals(listOf("demo"), refreshed.skipped.map { it.id })
+        assertTrue(refreshed.skipped.single().reason.contains("does not match"))
     }
 
     @Test
-    fun `unsupported index schema version is ignored`() = runBlocking {
+    fun `unsupported index schema version is rejected`() = runBlocking {
         val dir = folder.newFolder()
         val transport = FakeTransport(
             mapOf(indexUrl to ok("""{"schemaVersion":2,"schools":[]}""")),
         )
 
-        assertNull(SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh())
+        assertTrue(
+            SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh() is RemoteCatalogResult.Failed,
+        )
+    }
+
+    @Test
+    fun `invalid declaration is skipped with its validation reason`() = runBlocking {
+        val dir = folder.newFolder()
+        val invalid = demoDeclaration().let { demo ->
+            demo.copy(
+                todo = demo.todo.copy(localIdTemplate = "other-{courseId}-{id}"),
+            )
+        }
+        val transport = FakeTransport(
+            mapOf(
+                indexUrl to ok(indexJson("demo" to "schools/demo.json")),
+                baseUrl + "schools/demo.json" to ok(ScheduleJson.encodeStorage(invalid)),
+            ),
+        )
+
+        val refreshed = SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh().success()
+
+        assertEquals(emptyList<SchoolDeclaration>(), refreshed.declarations)
+        val skipped = refreshed.skipped.single()
+        assertEquals("demo", skipped.id)
+        assertTrue(skipped.reason.contains("localIdTemplate must start with 'demo-'"))
+    }
+
+    @Test
+    fun `duplicate index entries are skipped`() = runBlocking {
+        val dir = folder.newFolder()
+        val transport = FakeTransport(
+            mapOf(
+                indexUrl to ok(
+                    indexJson("demo" to "schools/demo.json", "demo" to "schools/demo2.json"),
+                ),
+                baseUrl + "schools/demo.json" to ok(ScheduleJson.encodeStorage(demoDeclaration())),
+            ),
+        )
+
+        val refreshed = SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh().success()
+
+        assertEquals(listOf("demo"), refreshed.declarations.map { it.id })
+        assertEquals(listOf("demo"), refreshed.skipped.map { it.id })
+        assertTrue(refreshed.skipped.single().reason.contains("duplicate"))
+        assertTrue(baseUrl + "schools/demo2.json" !in transport.requested)
     }
 
     // ---------- 工具 ----------
+
+    private fun RemoteCatalogResult.success(): RemoteCatalogResult.Success =
+        this as? RemoteCatalogResult.Success ?: error("expected success but was $this")
 
     private fun ok(body: String): HttpResponse = HttpResponse(status = 200, body = body)
 
