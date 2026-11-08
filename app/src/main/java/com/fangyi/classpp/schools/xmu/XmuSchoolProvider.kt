@@ -77,6 +77,13 @@ class XmuSchoolProvider : SchoolProvider {
 
     override val spec: SchoolSpec = XMU_SCHOOL_SPEC
 
+    /**
+     * 轻量声明访问：远端学校注册/会话互斥检查时直接读取厦大的登录域与课表页域，
+     * 不依赖活跃会话是否已装配（远端声明与厦大域重叠会被当场拒绝）。
+     */
+    override val webViewLoginSpec: WebViewLoginSpec = XMU_WEB_VIEW_LOGIN
+    override val webViewTimetableSpec: WebViewTimetableSpec = XMU_WEB_VIEW_TIMETABLE
+
     @Volatile
     private var toggle: DailySyncToggle? = null
 

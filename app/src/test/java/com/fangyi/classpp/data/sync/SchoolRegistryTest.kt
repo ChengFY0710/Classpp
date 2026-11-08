@@ -526,6 +526,84 @@ class SchoolRegistryTest {
     }
 
     @Test
+    fun `remote registration sees lightweight hosts of existing providers`() {
+        val intro = TimetableIntro(SchoolText.Res(0), SchoolText.Res(0))
+        val capabilities = setOf(Capability.WEBVIEW_LOGIN, Capability.SCHEDULE_IMPORT)
+        val registry = buildRegistry(
+            listOf(
+                FakeProvider(
+                    schoolSpec("xmu", capabilities = capabilities, timetableIntro = intro),
+                    webViewLoginSpec = testWebViewLogin("xmu"),
+                    webViewTimetableSpec = testWebViewTimetable("xmu"),
+                ),
+            ),
+        )
+
+        val overlapping = FakeProvider(
+            schoolSpec("demo", capabilities = capabilities, timetableIntro = intro),
+            webViewLoginSpec = testWebViewLogin("demo"),
+            webViewTimetableSpec = testWebViewTimetable("xmu"),
+        )
+        assertEquals(0, registry.registerRemote(listOf(overlapping)))
+
+        val clean = FakeProvider(
+            schoolSpec("clean", capabilities = capabilities, timetableIntro = intro),
+            webViewLoginSpec = testWebViewLogin("clean"),
+            webViewTimetableSpec = testWebViewTimetable("clean"),
+        )
+        assertEquals(1, registry.registerRemote(listOf(clean)))
+    }
+
+    @Test
+    fun `registerRemote skips overlapping timetable hosts`() {
+        val intro = TimetableIntro(SchoolText.Res(0), SchoolText.Res(0))
+        val capabilities = setOf(Capability.WEBVIEW_LOGIN, Capability.SCHEDULE_IMPORT)
+        val registry = buildRegistry(listOf(FakeProvider(schoolSpec("xmu"))))
+
+        val first = FakeProvider(
+            schoolSpec("one", capabilities = capabilities, timetableIntro = intro),
+            webViewLoginSpec = testWebViewLogin("one"),
+            webViewTimetableSpec = testWebViewTimetable("shared_timetable"),
+        )
+        val second = FakeProvider(
+            schoolSpec("two", capabilities = capabilities, timetableIntro = intro),
+            webViewLoginSpec = testWebViewLogin("two"),
+            webViewTimetableSpec = testWebViewTimetable("shared_timetable"),
+        )
+
+        assertEquals(1, registry.registerRemote(listOf(first)))
+        assertEquals(0, registry.registerRemote(listOf(second)))
+        assertEquals(listOf("xmu", "one"), registry.schools.value.map { it.id })
+    }
+
+    @Test
+    fun `remote timetable session passes capability and host validation`() = runBlocking {
+        val intro = TimetableIntro(SchoolText.Res(0), SchoolText.Res(0))
+        val capabilities = setOf(Capability.WEBVIEW_LOGIN, Capability.SCHEDULE_IMPORT)
+        val spec = schoolSpec("demo", capabilities = capabilities, timetableIntro = intro)
+        val provider = FakeProvider(
+            spec,
+            webViewLoginSpec = testWebViewLogin("demo"),
+            webViewTimetableSpec = testWebViewTimetable("demo"),
+        )
+        val registry = buildRegistry(
+            listOf(provider),
+            assembler = {
+                fakeSession(
+                    spec = spec,
+                    toggle = provider.toggle,
+                    scheduleImport = FakeTimetableImport(testWebViewTimetable("demo")),
+                )
+            },
+        )
+
+        val session = registry.session()
+
+        assertTrue(session.scheduleImport != null)
+        assertTrue(session.scheduleImport?.webViewTimetable != null)
+    }
+
+    @Test
     fun `registered remote school can be switched to and assembled lazily`() = runBlocking {
         val store = FakeActiveSchoolStore()
         val registry = buildRegistry(
@@ -625,6 +703,7 @@ class SchoolRegistryTest {
     private class FakeProvider(
         override val spec: SchoolSpec,
         override val webViewLoginSpec: WebViewLoginSpec? = null,
+        override val webViewTimetableSpec: WebViewTimetableSpec? = null,
     ) : SchoolProvider {
         val toggle = FakeToggle()
 

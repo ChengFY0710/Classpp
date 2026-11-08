@@ -148,6 +148,10 @@ class ArchitectureGuardTest {
             "remote/RemoteSchoolPrefs.kt",
             "remote/RemoteSchoolManager.kt",
             "remote/SchoolDailySyncReceiver.kt",
+            "remote/SchoolTimetableDeclaration.kt",
+            "remote/RemoteTimetableScript.kt",
+            "remote/RemoteTimetableMapper.kt",
+            "remote/RemoteScheduleImportService.kt",
         )
         for (relative in expected) {
             assertTrue("missing toolkit file: $relative", File(root, relative).isFile)

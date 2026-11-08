@@ -1,15 +1,17 @@
 # Classpp 远端学校适配声明（Tier 1）
 
 本仓库是 Classpp 的**远端学校适配分发源**。用户在 App 设置页手动点击「更新远端学校列表」时，
-App 会拉取 `index.json` 与各校声明文件，把「WebView 登录 + JSON 待办接口」类学校动态注册进
-学校选择器。**接入一所新学校 = 本仓库增加一个 JSON 文件并在 `index.json` 登记，无需发版。**
+App 会拉取 `index.json` 与各校声明文件，把「WebView 登录 + JSON 待办接口（+ 可选声明式
+教务课表导入）」类学校动态注册进学校选择器。**接入一所新学校 = 本仓库增加一个 JSON 文件
+并在 `index.json` 登记，无需发版。**
 
 > 远端学校**默认关闭**，拉取是**纯手动**的：App 不会在启动时或后台自动访问本仓库。
 > 用户在学校选择浮层点击「更新远端学校列表」后，声明会下载并保存到本地，
 > 之后每次冷启动从本地缓存恢复（仍不会自动联网更新）。
 
-> 适用范围（Tier 1）：只支持网页（WebView）登录 + JSON 接口取待办。
-> 需要原生登录（保存凭据/自动续期）或教务课表导入的学校，仍走 App 内编译期适配（Tier 2）。
+> 适用范围（Tier 1）：网页（WebView）登录 + JSON 接口取待办；可选 `timetable` 块声明
+> 教务课表页的接口与字段映射（WebView 内固定脚本取数、App 侧映射，**不接收远端 JS**）。
+> 需要原生登录（保存凭据/自动续期）的学校，仍走 App 内编译期适配（Tier 2）。
 
 ---
 
@@ -19,6 +21,7 @@ App 会拉取 `index.json` 与各校声明文件，把「WebView 登录 + JSON �
 index.json               # 清单：登记哪些学校、各自的声明文件
 schools/<id>.json        # 单校声明（文件名随意，index 里登记即可）
 templates/demo.json      # 模板：复制起点，不入 index（生产用户不可见）
+examples/xmu.json        # 厦大真实协议参考范例，不入 index（见 §1.1）
 ```
 
 `index.json`：
@@ -38,6 +41,28 @@ templates/demo.json      # 模板：复制起点，不入 index（生产用户�
 - `file`：仓库内相对路径，必须 `.json` 结尾；禁止 `..`、绝对路径、反斜杠与 `://`。
 - 单条登记非法只跳过该条，不影响其它学校。
 
+### 1.1 厦大协议范例（`examples/xmu.json`）
+
+`examples/xmu.json` 用厦大**课程中心（lnt.xmu.edu.cn）+ 教务「我的课表」
+（jw.xmu.edu.cn）**的真实协议写了一份 Tier 1 声明：`/api/profile` 的 `id`/`name` 与头像
+候选键、`/api/todos` 的 `todo_list`、`course_id + id` 唯一键、UTC ISO 截止时间、
+`is_student`/`is_locked` 过滤、作业/测验自动分组与详情链接；`timetable` 块演示页面选学期、
+可选学生信息、排课/作息/当前周接口与位图周次。
+
+它**不进入 `index.json`，也不应被登记**，原因有三：
+
+1. 厦大是 App 内置学校（id `xmu`），远端 id 不得与内置 id 冲突；范例改用 `xmu_example`；
+2. 即使换 id，它的白名单（`lnt` / `ids` / `c-identity` / `pass` / `jw`）与内置厦大
+   WebView 声明重叠，注册表会按「跨校白名单不得重叠」拒绝（共用认证域会让 cookie 互串）；
+3. 远端 Tier 1 仍不支持原生登录/自动续期；厦大的这些能力属于 Tier 2 编译期适配，
+   见 `schools/xmu/` 与 `data/xmu/`。`timetable` 块只表达 WebView 课表导入。
+
+使用方式：把它当作**字段路径与文案的参考**，为新学校替换 `id`、`displayName`、hosts、
+路径与模板后，另存到 `schools/<id>.json` 并登记；不要直接登记本文件。
+`templates/demo.json` 仍是新校复制的起点。`invalidCredentials` /
+`sessionNotEstablished` / `autoLoginDisableMessage` 属原生登录专属槽位，Tier 1 不会渲染，
+范例保留它们只为展示 schema 的完整字段。
+
 ---
 
 ## 2. 信任边界（重要）
@@ -55,6 +80,7 @@ templates/demo.json      # 模板：复制起点，不入 index（生产用户�
 
 1. 复制 `templates/demo.json` 为 `schools/<id>.json`，把 `id` 改成学校标识；
 2. 按 §4/§5 填 `webView` / `copy` / `profile` / `todo`（真实抓包确认路径与字段）；
+   需要 WebView 教务课表导入时再加可选 `timetable` 块（§4.6）；
 3. 在 `index.json` 的 `schools` 里登记 `{ "id": "<id>", "file": "schools/<id>.json" }`；
 4. push 到本仓库 `main` 分支；
 5. 用户在学校选择浮层手动点击「更新远端学校列表」；更新成功后新学校出现在选择器，
@@ -67,7 +93,9 @@ templates/demo.json      # 模板：复制起点，不入 index（生产用户�
 - `/todos` 的 `listPath` 是数组，`fields.*` 路径能取到值；
 - `endTime` 是 UTC `Z` 结尾（`ISO`）或按声明的 `PATTERN` 能整串解析；
 - `localIdTemplate` 以 `<id>-` 开头，`remoteKeyTemplate` 在校内唯一；
-- 分组 `type` 取值与 `autoGroups` 精确匹配（大小写/首尾空白容错）。
+- 分组 `type` 取值与 `autoGroups` 精确匹配（大小写/首尾空白容错）；
+- 有 `timetable` 时：页面学期 selector/global 能取到代码；接口返回的课程数组与
+  `listPath` 一致；`ZCBH` 类位图第 i 位对应第 i+1 周；开学日前端可在页面确认一次。
 
 ---
 
@@ -85,6 +113,7 @@ templates/demo.json      # 模板：复制起点，不入 index（生产用户�
 | `copy` | 是 | 页面文案（§4.3） |
 | `profile` | 是 | 探活响应字段与头像（§4.4） |
 | `todo` | 是 | 待办映射（§4.5） |
+| `timetable` | 否 | 可选：声明式教务课表导入（§4.6） |
 
 `LocalizedText` = `{ "zh": "...", "en": "..." }`：`zh` 必填非空；`en` 可省，缺省回退中文。
 App 只支持 zh/en 两种语言，其它系统语言回落中文（与内置资源语义一致）。
@@ -158,6 +187,49 @@ dot-path 只支持对象逐层下探（如 `user.uid`），段字符限 `[A-Za-z
 **本地 id**：由 `localIdTemplate` 渲染；重复同步天然幂等，不会产生重复待办。
 **跨校隔离**：退出/换号只清理 `source == <id>` 或 id 前缀 `<id>-` 的待办。
 
+### 4.6 `timetable`（可选：声明式教务课表导入）
+
+声明一个教务课表页与「页面内取数接口」。App 用**固定脚本**执行下列请求（不接收远端
+JS），把原始数组与学期/周次回传给 App 侧通用映射器；落库仍走既有导入确认与仓库路径。
+字段路径是 array-aware dot-path（数字段可索引数组，如 `data.0.XH`）。
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `entryUrl` | 是 | 教务课表页入口（https、默认端口，host ∈ `allowedHosts`） |
+| `allowedHosts` | 是 | 课表页/认证跳转域（全部 `.edu.cn`） |
+| `userAgent` | 否 | `desktop` = 内置桌面 UA；也可自定义；省略 = 系统 UA |
+| `introTitle` / `introBody` | 是 | 账号页「教务课表导入」介绍卡（`LocalizedText`） |
+| `defaultName` | 是 | 接口未给学期名时的兜底课表名（`LocalizedText`） |
+| `basePath` | 否 | 接口基准路径（如 `/gsapp/sys/wdkbapp`）；与 `baseMarker` 二选一 |
+| `baseMarker` | 否 | 从页面 URL 推导 context path 的标记（如 `/sys/wdkbapp/`） |
+| `semester.selector` | 条件 | 页面学期下拉框 CSS 选择器（读取 value 与选中项文本） |
+| `semester.global` | 条件 | 页面全局变量名（selector 取不到时兜底） |
+| `semester.codePath` / `labelPath` | 条件 | `global` 对象里的学期代码/展示名路径（`codePath` 必填） |
+| `requests.student` | 否 | 取学号：`path` / `method` / `fields` / `idPath`；供后续 `{studentId}` 使用 |
+| `requests.schedule` | 是 | 排课结果接口（必需；返回课程数组） |
+| `requests.slots` | 条件 | 作息接口；与 `fixedSlots` 二选一 |
+| `requests.week` | 条件 | 当前周接口；`term.source=CURRENT_WEEK` 时必需 |
+| `requests.*.path` | 是 | 同源相对路径（`/` 开头，禁 `://`/`..`/反斜杠） |
+| `requests.*.method` | 否 | `GET` / `POST`（默认 `POST`） |
+| `requests.*.fields` | 否 | 表单字段；值可用 `{semesterCode}` / `{semesterLabel}` / `{studentId}` |
+| `slots.request` / `listPath` | 条件 | 作息数组所在请求与路径 |
+| `slots.fields` | 条件 | `code` / `start` / `end` 必需；`name` / `order` 可选 |
+| `slots.timeFormat` | 否 | `HHMM`（800/1430，默认）/ `H_MM`（`8:00`）/ `MINUTES`（480） |
+| `slots.excludeNameContains` | 否 | 名称包含该文本的行剔除（如「中午」） |
+| `fixedSlots` | 条件 | 固定作息 `[{start,end}]`；此时 `courses.slotRef` 必须为 `INDEX` |
+| `courses.request` / `listPath` | 是 | 排课数组所在请求与路径（通常 `schedule` / `pkjgList`） |
+| `courses.fields` | 是 | `name` / `day` / `startSlot` / `endSlot` / `weeks` 必需；`teacher` / `location` / `note` / `code` 可选 |
+| `courses.weeksFormat` | 否 | 首版仅 `BITMAP`（第 i 位 = 第 i+1 周，上限 30） |
+| `courses.slotRef` | 否 | `CODE`（节次代码，默认）/ `INDEX`（1-based 位置） |
+| `courses.mergeSameSessions` | 否 | 默认 `true`：同课拆行按「代码/名称/星期/起止/周次」合并教师与教室 |
+| `term.source` | 否 | `CURRENT_WEEK`（默认，当前周 + 今天反推）/ `DATE`（响应字段按 pattern 解析） |
+| `term.request` / `path` | 条件 | 读取当前周/开学日的请求与路径 |
+| `term.pattern` / `zone` | 条件 | `DATE` 时必填 Java `SimpleDateFormat` 模式；时区缺省 `Asia/Shanghai` |
+
+约束：`slots` 与 `fixedSlots` 二选一；周次首版只有位图；课程起止用代码时必须能在作息表
+中找到；无法映射的行单独丢弃，全空才报「未解析到课程」；开学日缺失/解析失败时兜底
+今天所在周一（导入后可在课表设置调整）。
+
 ---
 
 ## 5. 校验与容错
@@ -165,13 +237,17 @@ dot-path 只支持对象逐层下探（如 `user.uid`），段字符限 `[A-Za-z
 App 在解码后逐条执行以下硬校验，任一失败即跳过该学校（不影响其它学校）：
 
 - `schemaVersion ≤ 1`；`id` 合法且与内置学校不冲突；
-- `capabilities` 恰为 `["WEBVIEW_LOGIN"]`；
+- `capabilities` 恰为 `["WEBVIEW_LOGIN"]`（`timetable` 是可选增量块，不写进能力列表）；
 - `webView` 通过 `WebViewPolicy`（https/默认端口/无 userinfo/无 IP/无通配符/`dataHost` 在白名单内）；
-- 所有 host 以 `.edu.cn` 结尾；
+- 所有 host 以 `.edu.cn` 结尾（含 `timetable.allowedHosts`）；
 - dot-path 形态合法；模板占位符均已声明；`localIdTemplate` 以 `<id>-` 开头；
 - 模板不含控制字符/反斜杠/路径分隔符（键模板），文本模板允许换行与 URL 斜杠；
 - `endTime.zone` 是合法时区 ID；`PATTERN` 必填 `pattern`；
-- `autoGroups.type` 非空、`group` 合法。
+- `autoGroups.type` 非空、`group` 合法；
+- `timetable`：`WebViewPolicy.validateTimetable` 通过；请求路径为同源相对路径；
+  请求字段模板只允许三个占位符，`{studentId}` 必须配 `student` 请求；`slots` 与
+  `fixedSlots` 二选一；`fixedSlots` 时间合法且不重叠、`slotRef=INDEX`；`slots.timeFormat`
+  合法；`courses.weeksFormat=BITMAP`；`term` 的请求/路径/pattern 完整。
 
 拉取纪律：
 
@@ -191,3 +267,8 @@ App 在解码后逐条执行以下硬校验，任一失败即跳过该学校（�
 - **不要降低 host 信任边界**：只允许 `.edu.cn`；需要其它域名请走 App 内编译期适配；
 - **schema 演进**：新增字段必须可选（旧客户端 `ignoreUnknownKeys` 会忽略）；
   破坏性变更提升 `schemaVersion`，旧客户端会整体跳过而不是误读。
+- **`timetable` 兼容策略**：它是可选增量块，`capabilities` 仍写 `["WEBVIEW_LOGIN"]`。
+  旧客户端会忽略该块、继续同步待办；新客户端据此启用课表导入。**不要**把
+  `SCHEDULE_IMPORT` 写进 `capabilities`（旧客户端的精确能力校验会整校拒绝）。
+- **课表块不加可执行内容**：只允许声明请求/字段/模板，App 生成固定脚本；不要试图在
+  JSON 里塞 JS/HTML。

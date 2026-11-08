@@ -70,6 +70,12 @@ interface SchoolProvider {
      */
     val webViewLoginSpec: WebViewLoginSpec? get() = null
 
+    /**
+     * 教务课表页声明的轻量访问（不装配完整会话）：远端声明学校首次连接确认浮层展示
+     * 课表页域名用。默认 null（无课表页的学校/未覆盖的编译期学校）。
+     */
+    val webViewTimetableSpec: WebViewTimetableSpec? get() = null
+
     /** 装配运行时会话；耗时操作应下沉 IO（注册表保证只装配一次） */
     suspend fun createSession(deps: SessionDeps): SchoolSession
 }

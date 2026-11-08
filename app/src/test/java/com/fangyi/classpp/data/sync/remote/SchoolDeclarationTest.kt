@@ -152,6 +152,23 @@ class SchoolDeclarationTest {
     }
 
     @Test
+    fun `timetable block derives schedule import capability and inline copy`() {
+        val spec = demoDeclarationWithTimetable().toSpec()
+
+        assertEquals(
+            setOf(Capability.WEBVIEW_LOGIN, Capability.SCHEDULE_IMPORT),
+            spec.capabilities,
+        )
+        assertEquals("导入教务课表", (spec.timetableIntro!!.title as SchoolText.Inline).zh)
+        assertEquals(
+            "从教务课表页导入本学期课程",
+            (spec.timetableIntro.body as SchoolText.Inline).zh,
+        )
+        assertEquals("教务课表", (spec.defaultScheduleName as SchoolText.Inline).zh)
+        assertTrue(spec.remote)
+    }
+
+    @Test
     fun `to web view login spec maps desktop alias to built-in ua`() {
         val spec = demoDeclaration().toWebViewLoginSpec()
         assertEquals("lms.demo.edu.cn", spec.dataHost)
@@ -180,6 +197,55 @@ class SchoolDeclarationTest {
         val declaration = SchoolDeclaration.decode(file.readText(Charsets.UTF_8))
         assertEquals(emptyList<String>(), declaration.validate())
         assertEquals("demo", declaration.id)
+    }
+
+    @Test
+    fun `shipped xmu example decodes and validates as a reference only`() {
+        val file = listOf(
+            java.io.File("../tools/schoolsync/examples/xmu.json"),
+            java.io.File("tools/schoolsync/examples/xmu.json"),
+        ).firstOrNull { it.isFile } ?: error("xmu example not found")
+
+        val declaration = SchoolDeclaration.decode(file.readText(Charsets.UTF_8))
+        assertEquals(emptyList<String>(), declaration.validate())
+        // 内置厦大 id 被占用，范例用独立 id（不参与分发）
+        assertEquals("xmu_example", declaration.id)
+
+        // 与内置厦大课程中心协议同路径：登录/取数端点与字段
+        assertEquals("https://lnt.xmu.edu.cn/user/index?version=v1", declaration.webView.entryUrl)
+        assertEquals("lnt.xmu.edu.cn", declaration.webView.dataHost)
+        assertEquals("/api/profile", declaration.webView.profilePath)
+        assertEquals("/api/todos", declaration.webView.todosPath)
+        assertEquals("id", declaration.profile.uidPath)
+        assertEquals("name", declaration.profile.namePath)
+        assertEquals("todo_list", declaration.todo.listPath)
+        assertEquals(listOf("courseId", "id"), declaration.todo.keyFields.map { it.name })
+        assertEquals(listOf("course_id", "id"), declaration.todo.keyFields.map { it.path })
+        assertEquals("xmu_example-{courseId}-{id}", declaration.todo.localIdTemplate)
+        assertEquals("ISO", declaration.todo.endTime?.format)
+        assertEquals("Asia/Shanghai", declaration.todo.endTime?.zone)
+
+        // 课表块：教务「我的课表」页 + 声明式接口 + 位图周次
+        val timetable = declaration.timetable!!
+        assertEquals(
+            "https://jw.xmu.edu.cn/gsapp/sys/wdkbapp/*default/index.do",
+            timetable.entryUrl,
+        )
+        assertEquals("#myXnxqSelect", timetable.semester.selector)
+        assertEquals("/wdkcb/queryXspkjg.do", timetable.requests.schedule.path)
+        assertEquals("pkjgList", timetable.courses.listPath)
+        assertEquals("BITMAP", timetable.courses.weeksFormat)
+        assertEquals("CURRENT_WEEK", timetable.term.source)
+        assertTrue(Capability.SCHEDULE_IMPORT in declaration.toSpec().capabilities)
+
+        // 参考范例不参与分发
+        val indexFile = listOf(
+            java.io.File("../tools/schoolsync/index.json"),
+            java.io.File("tools/schoolsync/index.json"),
+        ).firstOrNull { it.isFile } ?: error("index.json not found")
+        val index = com.fangyi.classpp.data.ScheduleJson
+            .decodeStorage<SchoolRemoteIndex>(indexFile.readText(Charsets.UTF_8))
+        assertTrue(index.schools.none { it.id == declaration.id })
     }
 
     @Test

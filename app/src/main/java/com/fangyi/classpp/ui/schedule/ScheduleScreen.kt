@@ -1860,7 +1860,7 @@ fun ScheduleScreen(
             }
 
             // 教务课表页：WebView 登录模式下从教务导入浮层进入（全屏页，组合序最后 =
-            // 画在所有浮层之上）；本期只打开页面、不做数据抽取与落库
+            // 画在所有浮层之上）；页面内脚本回传原文 → 学校适配层映射成课表
             if (schoolTimetableVisible && schoolWebViewTimetable != null) {
                 SchoolTimetableWebViewSheet(
                     spec = schoolWebViewTimetable,

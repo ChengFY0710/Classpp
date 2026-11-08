@@ -190,6 +190,13 @@ class SchoolRegistry internal constructor(
         return provider.webViewLoginSpec
     }
 
+    /** 轻量读取课表页声明（首次连接确认浮层展示课表域用）；未声明 = null */
+    fun webViewTimetableSpec(id: String): WebViewTimetableSpec? {
+        val provider = providersById[id]
+            ?: throw IllegalArgumentException("unknown school id: '$id'")
+        return provider.webViewTimetableSpec
+    }
+
     /**
      * 运行时追加远端声明学校（data/sync/remote 分发链路）：逐个按 init 同规则校验，
      * **非法/重复 id 跳过不抛**（数据驱动的容错——单个坏声明不拖垮整批、不波及已注册学校）。
@@ -221,14 +228,20 @@ class SchoolRegistry internal constructor(
             ) {
                 continue
             }
-            // 白名单提前查重（不等装配）：与已装配/已注册/本批学校的认证域重叠 = 配置错误
-            val webView = provider.webViewLoginSpec
-            if (webView != null) {
-                val conflict = (webViewHosts.entries + batchHosts.entries).firstOrNull { (id, hosts) ->
-                    id != spec.id && (hosts intersect webView.allowedHosts).isNotEmpty()
+            // 白名单提前查重（不等装配）：登录域 + 课表页域的并集，与已装配/已注册/
+            // 本批/已存在 provider 的轻量声明重叠 = 配置错误（共用认证域会让 cookie 互串）。
+            // 轻量声明让尚未装配的内建学校（如厦大）也参与互斥，但不反向要求它先装配。
+            val hosts = claimedHosts(provider)
+            if (hosts.isNotEmpty()) {
+                val existing = mutableListOf<Pair<String, Set<String>>>()
+                webViewHosts.forEach { (id, known) -> existing += id to known }
+                batchHosts.forEach { (id, known) -> existing += id to known }
+                providersById.forEach { (id, known) -> existing += id to claimedHosts(known) }
+                val conflict = existing.firstOrNull { (id, known) ->
+                    id != spec.id && known.isNotEmpty() && (known intersect hosts).isNotEmpty()
                 }
                 if (conflict != null) continue
-                batchHosts[spec.id] = webView.allowedHosts
+                batchHosts[spec.id] = hosts
             }
             knownIds += spec.id
             added += provider
@@ -275,16 +288,24 @@ class SchoolRegistry internal constructor(
         require(issues.isEmpty()) {
             "school '${spec.id}': invalid webViewLogin spec: ${issues.joinToString("; ")}"
         }
-        // 不同学校的白名单不得重叠：共用 CAS/认证域会让 cookie 互串，属配置错误
+        // 不同学校的白名单不得重叠：登录域 + 课表页域的并集（共用 CAS/认证域会让
+        // cookie 互串，属配置错误）
+        val claimed = webView.allowedHosts +
+            (session.scheduleImport?.webViewTimetable?.allowedHosts ?: emptySet())
         val conflict = webViewHosts.entries.firstOrNull { (id, hosts) ->
-            id != spec.id && (hosts intersect webView.allowedHosts).isNotEmpty()
+            id != spec.id && (hosts intersect claimed).isNotEmpty()
         }
         require(conflict == null) {
-            "school '${spec.id}': webViewLogin hosts overlap with '${conflict?.key}': " +
-                (conflict?.value?.intersect(webView.allowedHosts) ?: emptySet<String>())
+            "school '${spec.id}': webView hosts overlap with '${conflict?.key}': " +
+                (conflict?.value?.intersect(claimed) ?: emptySet<String>())
         }
-        webViewHosts[spec.id] = webView.allowedHosts
+        webViewHosts[spec.id] = claimed
     }
+
+    /** 一所学校声明的全部 WebView 域：登录白名单 + 可选课表页白名单（跨校互斥口径） */
+    private fun claimedHosts(provider: SchoolProvider): Set<String> =
+        (provider.webViewLoginSpec?.allowedHosts ?: emptySet()) +
+            (provider.webViewTimetableSpec?.allowedHosts ?: emptySet())
 
     companion object {
         /** 存储命名空间 / todo source / 本地 id 前缀共用，不得含分隔符 */

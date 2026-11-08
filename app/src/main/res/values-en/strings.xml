@@ -235,7 +235,8 @@
     <string name="settings_remote_refresh_up_to_date">Already up to date</string>
     <string name="settings_remote_refresh_failed">Update failed. Check your network and try again.</string>
     <string name="remote_school_confirm_title">Connect remote school</string>
-    <string name="remote_school_confirm_message">“%1$s” is provided by a remote adapter declaration and will fetch sign-in and todo data from %2$s. Trust this school domain and continue?</string>
+    <string name="remote_school_confirm_message">“%1$s” is provided by a remote adapter declaration and will fetch sign-in and sync data from %2$s. Trust this school domain and continue?</string>
+    <string name="remote_school_confirm_timetable_host">Timetable page: %1$s</string>
     <!-- Notifications & reminders -->
     <string name="settings_notifications">Notifications &amp; reminders</string>
     <string name="notification_header_title">Notifications &amp; reminders</string>

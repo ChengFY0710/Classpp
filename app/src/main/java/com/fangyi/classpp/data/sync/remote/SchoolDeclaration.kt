@@ -5,6 +5,7 @@ import com.fangyi.classpp.data.ScheduleJson
 import com.fangyi.classpp.data.sync.Capability
 import com.fangyi.classpp.data.sync.SchoolSpec
 import com.fangyi.classpp.data.sync.SchoolText
+import com.fangyi.classpp.data.sync.TimetableIntro
 import com.fangyi.classpp.data.sync.WebViewLoginSpec
 import com.fangyi.classpp.data.sync.webview.WebViewPolicy
 import java.util.TimeZone
@@ -69,7 +70,7 @@ data class SchoolRemoteEntry(
 )
 
 /**
- * 一所远端声明学校的完整声明（Tier 1：仅 WebView 登录 + JSON 待办接口）。
+ * 一所远端声明学校的完整声明（Tier 1：WebView 登录 + JSON 待办，可选声明式教务课表导入）。
  *
  * 校验在 [validate]：registry 的 id 规则、edu.cn 信任边界、`WebViewPolicy.validate`
  * 加固声明、模板/路径形态——校验通过才允许装配；装配期 `SchoolRegistry` 还会做
@@ -80,8 +81,9 @@ data class SchoolDeclaration(
     val schemaVersion: Int = SCHOOL_DECLARATION_SCHEMA_VERSION,
     val id: String,
     /**
-     * 能力声明：Tier 1 只支持 `["WEBVIEW_LOGIN"]`。显式声明是为了在 schema 演进
-     * （未来增加能力）时让旧客户端**拒绝**而不是静默忽略未知能力。
+     * 能力声明：Tier 1 登录能力恒为 `["WEBVIEW_LOGIN"]`。教务课表导入是**可选 timetable
+     * 块**（[timetable]），不写进本列表：旧客户端会忽略该块、降级为仅同步待办，而不是
+     * 因未知能力整校拒绝。新客户端在 [toSpec] 里由该块推导 `SCHEDULE_IMPORT`。
      */
     val capabilities: List<String> = listOf(CAPABILITY_WEBVIEW_LOGIN),
     /** 学校名（选择卡/入口卡行值） */
@@ -94,6 +96,11 @@ data class SchoolDeclaration(
     val profile: DeclarationProfile,
     /** /todos 待办列表的映射声明（声明式 codec 的全部输入） */
     val todo: DeclarationTodo,
+    /**
+     * 可选：教务课表页的声明式接口与字段映射（见 [DeclarationTimetable]）。
+     * null = 不提供教务导入；旧客户端读取带本块的声明时会忽略它。
+     */
+    val timetable: DeclarationTimetable? = null,
 ) {
 
     /** 声明合法性问题清单；空 = 可装配 */
@@ -110,16 +117,21 @@ data class SchoolDeclaration(
         copy.validate().forEach { add("copy.$it") }
         profile.validate().forEach { add("profile.$it") }
         todo.validate(id).forEach { add("todo.$it") }
+        timetable?.validate()?.forEach { add("timetable.$it") }
     }
 
     /** 转成注册表/UI 消费的通用 spec（文案全部 Inline，[SchoolSpec.remote] = true） */
     fun toSpec(): SchoolSpec {
         val issues = validate()
         require(issues.isEmpty()) { "invalid school declaration '$id': ${issues.joinToString("; ")}" }
+        val timetable = timetable
         return SchoolSpec(
             id = id,
             displayName = displayName.toSchoolText(),
-            capabilities = setOf(Capability.WEBVIEW_LOGIN),
+            capabilities = buildSet {
+                add(Capability.WEBVIEW_LOGIN)
+                if (timetable != null) add(Capability.SCHEDULE_IMPORT)
+            },
             headerTitle = copy.headerTitle.toSchoolText(),
             headerDescription = copy.headerDescription.toSchoolText(),
             introTitle = copy.introTitle.toSchoolText(),
@@ -133,8 +145,9 @@ data class SchoolDeclaration(
             sourceBadge = copy.sourceBadge.toSchoolText(),
             groupHomework = copy.groupHomework.toSchoolText(),
             groupQuiz = copy.groupQuiz.toSchoolText(),
-            // 无 SCHEDULE_IMPORT：默认课表名槽位填中性键（永不渲染）
-            defaultScheduleName = SchoolText.Res(R.string.sync_import_default_name),
+            // 有 timetable 块才声明课表导入；无则保持中性占位（永不渲染）
+            defaultScheduleName = timetable?.defaultName?.toSchoolText()
+                ?: SchoolText.Res(R.string.sync_import_default_name),
             syncNotifTitle = copy.syncNotifTitle.toSchoolText(),
             accountChanged = copy.accountChanged?.toSchoolText(),
             logoutMessage = copy.logoutMessage?.toSchoolText(),
@@ -144,7 +157,12 @@ data class SchoolDeclaration(
             sessionNotEstablished = copy.sessionNotEstablished?.toSchoolText(),
             autoLoginDisableMessage = copy.autoLoginDisableMessage?.toSchoolText(),
             loginImages = emptyList(),
-            timetableIntro = null,
+            timetableIntro = timetable?.let { block ->
+                TimetableIntro(
+                    title = block.introTitle.toSchoolText(),
+                    body = block.introBody.toSchoolText(),
+                )
+            },
             remote = true,
         )
     }

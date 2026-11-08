@@ -83,9 +83,83 @@ internal fun demoDeclaration(): SchoolDeclaration = SchoolDeclaration(
     ),
 )
 
+/**
+ * 测试用「声明式课表」块：与 demo 学校同域，接口形状是通用教务排课（页面选学期、
+ * 可选学生信息、排课/作息/当前周），周次为位图。数据本身在测试里构造。
+ */
+internal fun demoTimetable(): DeclarationTimetable = DeclarationTimetable(
+    entryUrl = "https://jw.demo.edu.cn/gsapp/sys/wdkbapp/*default/index.do",
+    allowedHosts = listOf("jw.demo.edu.cn", "ids.demo.edu.cn"),
+    userAgent = "desktop",
+    introTitle = LocalizedText("导入教务课表"),
+    introBody = LocalizedText("从教务课表页导入本学期课程"),
+    defaultName = LocalizedText("教务课表"),
+    baseMarker = "/sys/wdkbapp/",
+    semester = DeclarationTimetableSemester(
+        selector = "#semesterSelect",
+        global = "currentSemester",
+        codePath = "XNXQDM",
+        labelPath = "XNXQDM_DISPLAY",
+    ),
+    requests = DeclarationTimetableRequests(
+        student = DeclarationTimetableRequest(
+            path = "/wdkcb/initStudent.do",
+            fields = mapOf("XH" to ""),
+            idPath = "data.0.XH",
+        ),
+        schedule = DeclarationTimetableRequest(
+            path = "/wdkcb/querySchedule.do",
+            fields = mapOf("XNXQDM" to "{semesterCode}", "XH" to "{studentId}"),
+        ),
+        slots = DeclarationTimetableRequest(
+            path = "/wdkcb/querySlots.do",
+            fields = mapOf("XNXQDM" to "{semesterCode}"),
+        ),
+        week = DeclarationTimetableRequest(
+            path = "/wdkcb/queryWeek.do",
+            fields = mapOf("XNXQDM" to "{semesterCode}"),
+        ),
+    ),
+    slots = DeclarationSlotMapping(
+        request = "slots",
+        listPath = "data",
+        fields = DeclarationSlotFields(
+            code = "DM",
+            name = "MC",
+            order = "PX",
+            start = "KSSJ",
+            end = "JSSJ",
+        ),
+        timeFormat = DeclarationTimetable.TIME_HHMM,
+        excludeNameContains = "中午",
+    ),
+    courses = DeclarationCourseMapping(
+        request = "schedule",
+        listPath = "pkjgList",
+        fields = DeclarationCourseFields(
+            name = "KCMC",
+            teacher = "JSXM",
+            location = "JASMC",
+            day = "XQ",
+            startSlot = "KSJCDM",
+            endSlot = "JSJCDM",
+            weeks = "ZCBH",
+            note = "KBBZ",
+            code = "KCDM",
+        ),
+    ),
+    term = DeclarationTerm(
+        source = DeclarationTimetable.TERM_CURRENT_WEEK,
+        request = "week",
+        path = "currentZc",
+    ),
+)
+
+internal fun demoDeclarationWithTimetable(): SchoolDeclaration =
+    demoDeclaration().copy(timetable = demoTimetable())
+
 /** 与契约测试基类的远端条目同构的 demo 条目 */
-internal data class DemoRemoteTodo(
-    val id: Long,
+internal data class DemoRemoteTodo(    val id: Long,
     val courseId: Long,
     val courseName: String,
     val title: String,

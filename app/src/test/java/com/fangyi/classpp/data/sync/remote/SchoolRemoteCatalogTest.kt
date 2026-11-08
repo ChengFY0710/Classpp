@@ -45,6 +45,34 @@ class SchoolRemoteCatalogTest {
     }
 
     @Test
+    fun `timetable block survives cache round trip`() = runBlocking {
+        val dir = folder.newFolder()
+        val declaration = demoDeclarationWithTimetable()
+        val transport = FakeTransport(
+            mapOf(
+                indexUrl to ok(indexJson("demo" to "schools/demo.json")),
+                baseUrl + "schools/demo.json" to ok(ScheduleJson.encodeStorage(declaration)),
+            ),
+        )
+
+        SchoolRemoteCatalog(transport, dir, indexUrl, baseUrl).refresh()
+
+        val cached = SchoolRemoteCatalog(FakeTransport(emptyMap()), dir, indexUrl, baseUrl)
+            .loadCached()
+        val loaded = cached.single()
+        assertEquals(emptyList<String>(), loaded.validate())
+        assertEquals(
+            "https://jw.demo.edu.cn/gsapp/sys/wdkbapp/*default/index.do",
+            loaded.timetable?.entryUrl,
+        )
+        assertEquals("BITMAP", loaded.timetable?.courses?.weeksFormat)
+        assertEquals(
+            "/wdkcb/querySchedule.do",
+            loaded.timetable?.requests?.schedule?.path,
+        )
+    }
+
+    @Test
     fun `https redirects are followed manually`() = runBlocking {
         val dir = folder.newFolder()
         val cdn = "https://cdn.example.test/index.json"

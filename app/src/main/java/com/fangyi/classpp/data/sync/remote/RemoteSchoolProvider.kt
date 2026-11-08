@@ -6,6 +6,7 @@ import android.content.Intent
 import android.webkit.CookieManager
 import com.fangyi.classpp.data.sync.DailySyncToggle
 import com.fangyi.classpp.data.sync.PrefsDailySyncToggle
+import com.fangyi.classpp.data.sync.ScheduleImportService
 import com.fangyi.classpp.data.sync.SchoolProvider
 import com.fangyi.classpp.data.sync.SchoolSession
 import com.fangyi.classpp.data.sync.SchoolSpec
@@ -13,6 +14,7 @@ import com.fangyi.classpp.data.sync.SessionDeps
 import com.fangyi.classpp.data.sync.SyncDebugLog
 import com.fangyi.classpp.data.sync.SyncService
 import com.fangyi.classpp.data.sync.WebViewLoginSpec
+import com.fangyi.classpp.data.sync.WebViewTimetableSpec
 import com.fangyi.classpp.data.sync.resolve
 import com.fangyi.classpp.data.sync.engine.SchoolAutoGroupNames
 import com.fangyi.classpp.data.sync.engine.SchoolSyncEngine
@@ -26,8 +28,9 @@ import java.io.File
  * 远端声明学校（Tier 1）的通用装配：声明 → spec（内联文案）→ [SchoolSyncEngine] +
  * 无头 [WebFetcher]（WebView 登录/取数）+ [AvatarCache]，零学校代码。
  *
- * 能力集固定 {WEBVIEW_LOGIN}（声明校验强制）：无凭据保存/自动续期/教务导入，
- * 对应槽位为 null，UI 按能力显隐。全部远端学校**共享同一个**每日同步锚点
+ * 能力集：登录恒为 {WEBVIEW_LOGIN}；声明带可选 `timetable` 块时追加
+ * {SCHEDULE_IMPORT} 并装配 [RemoteScheduleImportService]（WebView-only，无凭据保存/
+ * 自动续期）。对应槽位按能力显隐，全部远端学校**共享同一个**每日同步锚点
  * （[SchoolDailySyncReceiver]，requestCode 2002 与厦大冻结锚点 1001 区分）——
  * 单活语义下同一时刻只有一个活跃学校、一个闹钟位，换校锚点切换由
  * `SchoolDailySyncController` 的换轨逻辑兜住。
@@ -52,6 +55,13 @@ class RemoteSchoolProvider(private val declaration: SchoolDeclaration) : SchoolP
 
     /** 首次连接确认浮层读取登录域：声明在构造期已校验，这里直接暴露 */
     override val webViewLoginSpec: WebViewLoginSpec = declaration.toWebViewLoginSpec()
+
+    /** 首次连接确认浮层读取课表页域名 + 会话装配复用同一份（含生成脚本） */
+    override val webViewTimetableSpec: WebViewTimetableSpec? by lazy {
+        declaration.timetable?.let { timetable ->
+            timetable.toWebViewTimetableSpec(RemoteTimetableScript.script(timetable))
+        }
+    }
 
     override fun dailySyncToggle(context: Context): DailySyncToggle {
         toggle?.let { return it }
@@ -99,10 +109,21 @@ class RemoteSchoolProvider(private val declaration: SchoolDeclaration) : SchoolP
             logger = SyncDebugLog::d,
         ).also { it.bootstrap() }
 
+        val scheduleImport = declaration.timetable?.let { timetable ->
+            RemoteScheduleImportService(
+                syncState = engine.state,
+                timetable = timetable,
+                fallbackName = timetable.defaultName.toSchoolText().resolve(appContext),
+                webViewTimetable = webViewTimetableSpec
+                    ?: timetable.toWebViewTimetableSpec(RemoteTimetableScript.script(timetable)),
+            )
+        }
+
         return RemoteSchoolSession(
             spec = spec,
             sync = engine,
             webViewLogin = webView,
+            scheduleImport = scheduleImport,
             dailySync = dailySyncToggle(appContext),
             webViewProfileValidator = codec.profileValidator(),
         )
@@ -118,16 +139,16 @@ class RemoteSchoolProvider(private val declaration: SchoolDeclaration) : SchoolP
     }.getOrNull()
 }
 
-/** 远端学校运行时会话：只暴露通用契约（无 autoRenew / scheduleImport） */
+/** 远端学校运行时会话：只暴露通用契约（无 autoRenew；课表导入按声明可选） */
 internal class RemoteSchoolSession(
     override val spec: SchoolSpec,
     override val sync: SyncService,
     override val webViewLogin: WebViewLoginSpec,
+    override val scheduleImport: ScheduleImportService?,
     override val dailySync: DailySyncToggle,
     override val webViewProfileValidator: (String) -> Boolean,
 ) : SchoolSession {
     override val autoRenew = null
-    override val scheduleImport = null
 }
 
 /** 到点执行广播：全部远端学校共享的通用锚点（接收类 + requestCode + action 由本文件锁定） */

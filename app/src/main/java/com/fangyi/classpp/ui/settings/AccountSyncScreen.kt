@@ -318,6 +318,8 @@ private fun AccountSyncContent(
     if (remoteRefreshing) remoteLoadingMounted = true
     var remoteConfirmId by remember { mutableStateOf<String?>(null) }
     var remoteConfirmHost by remember { mutableStateOf<String?>(null) }
+    // 可选课表页域名：与登录域分开展示，信任确认覆盖两类 WebView 目标
+    var remoteConfirmTimetableHost by remember { mutableStateOf<String?>(null) }
     // 退场期间 id 已清空，名称/域名用独立状态保住内容（不闪空白）
     var remoteConfirmNameText by remember { mutableStateOf<SchoolText?>(null) }
     var remoteConfirmMounted by remember { mutableStateOf(false) }
@@ -1142,13 +1144,19 @@ private fun AccountSyncContent(
             onDismiss = { remoteConfirmId = null },
             onDismissed = { remoteConfirmMounted = false },
         ) {
+            // 课表页域与登录域分开披露：远端声明可以带可选 timetable 块，
+            // 确认浮层必须让用户看到全部 WebView 目标
+            val timetableLine = remoteConfirmTimetableHost
+                ?.takeIf { it.isNotBlank() }
+                ?.let { "\n" + stringResource(R.string.remote_school_confirm_timetable_host, it) }
+                .orEmpty()
             ConfirmDialogCard(
                 title = stringResource(R.string.remote_school_confirm_title),
                 message = stringResource(
                     R.string.remote_school_confirm_message,
                     confirmName,
                     remoteConfirmHost.orEmpty(),
-                ),
+                ) + timetableLine,
             ) {
                 DialogPillButton(
                     label = stringResource(R.string.settings_cancel),
@@ -1193,8 +1201,13 @@ private fun AccountSyncContent(
                         remoteManager?.isConfirmed(id) == false
                     ) {
                         val host = runCatching { schools.webViewLoginSpec(id)?.dataHost }.getOrNull()
+                        val timetableHost = runCatching {
+                            schools.webViewTimetableSpec(id)?.entryUrl
+                                ?.let { java.net.URI(it).host }
+                        }.getOrNull()
                         if (host != null) {
                             remoteConfirmHost = host
+                            remoteConfirmTimetableHost = timetableHost
                             remoteConfirmNameText = target.displayName
                             remoteConfirmId = id
                         } else {

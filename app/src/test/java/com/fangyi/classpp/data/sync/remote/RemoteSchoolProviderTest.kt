@@ -26,6 +26,20 @@ class RemoteSchoolProviderTest {
     }
 
     @Test
+    fun `provider exposes timetable spec and schedule capability when declared`() {
+        val provider = RemoteSchoolProvider(demoDeclarationWithTimetable())
+
+        assertEquals(
+            setOf(Capability.WEBVIEW_LOGIN, Capability.SCHEDULE_IMPORT),
+            provider.spec.capabilities,
+        )
+        assertEquals("教务课表", (provider.spec.defaultScheduleName as com.fangyi.classpp.data.sync.SchoolText.Inline).zh)
+        val timetable = provider.webViewTimetableSpec
+        assertEquals("https://jw.demo.edu.cn/gsapp/sys/wdkbapp/*default/index.do", timetable?.entryUrl)
+        assertTrue(timetable?.importScript?.isNotBlank() == true)
+    }
+
+    @Test
     fun `invalid declaration is rejected at construction`() {
         assertThrows(IllegalArgumentException::class.java) {
             RemoteSchoolProvider(demoDeclaration().copy(id = "Bad"))

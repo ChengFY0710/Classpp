@@ -369,7 +369,8 @@
     <string name="settings_remote_refresh_up_to_date">已是最新</string>
     <string name="settings_remote_refresh_failed">更新失败，请检查网络后重试</string>
     <string name="remote_school_confirm_title">连接远端学校</string>
-    <string name="remote_school_confirm_message">「%1$s」由远端适配声明提供，将从 %2$s 获取登录与待办数据。确认信任该学校域名并继续？</string>
+    <string name="remote_school_confirm_message">「%1$s」由远端适配声明提供，将从 %2$s 获取登录与同步数据。确认信任该学校域名并继续？</string>
+    <string name="remote_school_confirm_timetable_host">课表页：%1$s</string>
     <!-- 通知与提醒 -->
     <string name="settings_notifications">通知与提醒</string>
     <string name="notification_header_title">通知与提醒</string>
