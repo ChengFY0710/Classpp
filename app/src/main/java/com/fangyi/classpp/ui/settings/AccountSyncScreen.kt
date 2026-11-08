@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.settings
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,9 +15,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -37,8 +34,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -50,7 +45,6 @@ import com.fangyi.classpp.data.TodoError
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.sync.AutoRenewPolicy
 import com.fangyi.classpp.data.sync.AutoRenewState
-import com.fangyi.classpp.data.sync.AvatarImage
 import com.fangyi.classpp.data.sync.CommitOutcome
 import com.fangyi.classpp.data.sync.DailySyncController
 import com.fangyi.classpp.data.sync.EnableOutcome
@@ -68,6 +62,8 @@ import com.fangyi.classpp.data.sync.SyncPlan
 import com.fangyi.classpp.data.sync.remote.RemoteRefreshOutcome
 import com.fangyi.classpp.data.sync.remote.RemoteSchoolManager
 import com.fangyi.classpp.data.sync.webview.SchoolCookieCleaner
+import com.fangyi.classpp.ui.components.AccountStatusCard
+import com.fangyi.classpp.ui.components.AccountStatusUi
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
 import com.fangyi.classpp.ui.components.DialogPillButton
@@ -92,10 +88,8 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.fangyi.classpp.ui.theme.themeAccent
 import com.kyant.backdrop.backdrops.layerBackdrop
-import coil3.compose.AsyncImage
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
-import java.util.GregorianCalendar
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -800,32 +794,12 @@ private fun AccountSyncContent(
                             )
                         }
                     } else {
-                        SettingsCard(
-                            items = listOf(
-                                SettingsCardItem.Custom(
-                                    // 已连接后标题直接是账户名（不再加「已连接：」前缀），
-                                    // 姓名缺省时退回「已连接」单字
-                                    label = syncState.accountName.ifBlank {
-                                        stringResource(R.string.sync_connected_label)
-                                    },
-                                    description = if (syncState.lastSyncAtMillis > 0L) {
-                                        stringResource(
-                                            R.string.sync_last_sync_at,
-                                            formatSyncTime(syncState.lastSyncAtMillis),
-                                        )
-                                    } else {
-                                        stringResource(R.string.sync_last_sync_never)
-                                    },
-                                    // 头像圆只在已连接分支出现：未连接时这张卡不存在，圆随之不渲染。
-                                    // 放尾部槽、与文字块留 12dp（对齐原先左侧头像的行卡图标↔文本间距）
-                                    trailing = {
-                                        Spacer(Modifier.width(12.dp))
-                                        AccountAvatar(
-                                            name = syncState.accountName,
-                                            image = avatarImage,
-                                        )
-                                    },
-                                ),
+                        // 已连接账户状态卡（与教务导入浮层共用），头像圆只在本分支出现
+                        AccountStatusCard(
+                            account = AccountStatusUi(
+                                accountName = syncState.accountName,
+                                lastSyncAtMillis = syncState.lastSyncAtMillis,
+                                avatarImage = avatarImage,
                             ),
                         )
                         SettingsCard(
@@ -1261,48 +1235,6 @@ private fun AccountSyncContent(
     }
 }
 
-/**
- * 账户头像圆：[AccountAvatarSize] 圆底取 `primaryContainer` 蓝染，圆内先铺账户名首字
- * （`primary`，20sp SemiBold），有缓存头像时再用 [AsyncImage] 盖满整圆——图片加载中或
- * 加载失败都自然露出首字，不需要额外的占位/错误态。深浅模式随主题走；
- * 只在已连接分支渲染（未连接没有这张卡，圆自然不出现）。
- *
- * 换头像时文件路径不变（`avatar.img` 就地覆盖），所以用[image]的版本号做 `key`：
- * 版本变了整块重建，Coil 才会丢掉旧结果重新解码。
- */
-@Composable
-private fun AccountAvatar(name: String, image: AvatarImage?) {
-    Box(
-        modifier = Modifier
-            .size(AccountAvatarSize)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primaryContainer),
-        contentAlignment = Alignment.Center,
-    ) {
-        val initial = name.trim().firstOrNull()
-        if (initial != null) {
-            Text(
-                text = initial.toString(),
-                style = ClassppTextTokens.avatarInitial,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-        if (image != null) {
-            key(image.version) {
-                AsyncImage(
-                    model = image.file,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.matchParentSize(),
-                )
-            }
-        }
-    }
-}
-
-/** 头像圆直径：52dp，行卡内与文字块垂直居中*/
-private val AccountAvatarSize = 52.dp
-
 /** 同步加载卡：小转圈 + 文案（默认「正在同步…」），垂直居中；浮层在途不可关闭 */
 @Composable
 private fun SyncLoadingCard(message: String = stringResource(R.string.sync_syncing)) {
@@ -1452,18 +1384,6 @@ private fun deadlineText(date: IsoDate?, minute: Int?): String {
     if (date == null || minute == null) return ""
     val (_, month, day) = date.yearMonthDay()
     return stringResource(R.string.sync_deadline_format, month, day, minute / 60, minute % 60)
-}
-
-/** 同步时刻展示（设备本地时区的 yyyy-MM-dd HH:mm；数字形态两种语言通用） */
-private fun formatSyncTime(millis: Long): String {
-    val cal = GregorianCalendar().apply { timeInMillis = millis }
-    return "%d/%d/%d %d:%02d".format(
-        cal.get(GregorianCalendar.YEAR),
-        cal.get(GregorianCalendar.MONTH) + 1,
-        cal.get(GregorianCalendar.DAY_OF_MONTH),
-        cal.get(GregorianCalendar.HOUR_OF_DAY),
-        cal.get(GregorianCalendar.MINUTE),
-    )
 }
 
 /** 开启自动续期的兜底超时：登录（60s）+ 首次取数（30s）上限再留余量 */

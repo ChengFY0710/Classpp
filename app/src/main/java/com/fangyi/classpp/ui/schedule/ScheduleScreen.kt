@@ -81,6 +81,7 @@ import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.overlappingCourses
+import com.fangyi.classpp.data.sync.AvatarImage
 import com.fangyi.classpp.data.sync.ImportBlockReason
 import com.fangyi.classpp.data.sync.ImportError
 import com.fangyi.classpp.data.sync.ImportOutcome
@@ -97,6 +98,7 @@ import com.fangyi.classpp.data.wakeup.WakeupShareText
 import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.LocalTodayState
+import com.fangyi.classpp.ui.components.AccountStatusUi
 import com.fangyi.classpp.ui.components.BottomFadeScrim
 import com.fangyi.classpp.ui.components.EmptyState
 import com.fangyi.classpp.ui.components.EmptyStateActionButton
@@ -519,6 +521,21 @@ fun ScheduleScreen(
             val schoolSession = (activeSchoolSlot as? SessionSlot.Ready)?.session
             // 教务账号连接状态文案（与设置页同口径：uid 非空即已连接，姓名缺省只显示「已连接」）
             val schoolSyncState = schoolSession?.sync?.state?.collectAsState()?.value
+            // 已连接账户状态卡（设置页同款）：头像随同步下载。fallback flow 保证
+            // collectAsState 无条件调用（同上面的 slot）
+            val fallbackAvatarImage = remember { MutableStateFlow<AvatarImage?>(null) }
+            val schoolAvatarImage by
+                (schoolSession?.sync?.avatarImage ?: fallbackAvatarImage).collectAsState()
+            // 未连接（uid 为空）→ null：浮层不渲染状态卡，只留「账号与同步」行
+            val schoolAccountCard: AccountStatusUi? = schoolSyncState
+                ?.takeIf { it.uid.isNotEmpty() }
+                ?.let { state ->
+                    AccountStatusUi(
+                        accountName = state.accountName,
+                        lastSyncAtMillis = state.lastSyncAtMillis,
+                        avatarImage = schoolAvatarImage,
+                    )
+                }
             val schoolAccountStatus = when {
                 schoolSyncState == null || schoolSyncState.uid.isEmpty() ->
                     stringResource(R.string.sync_not_connected_label)
@@ -1536,6 +1553,8 @@ fun ScheduleScreen(
                             null
                         },
                         accountStatus = schoolAccountStatus,
+                        // 已连接账户的带头像状态卡（与设置页「账号与同步」同款）
+                        account = schoolAccountCard,
                         // 非空 = 当前登录方式不支持教务导入：浮层内横幅说明并拦截确认
                         importBlockedReason = schoolImportBlockedText,
                         semesters = schoolSemesters?.map { it.name }.orEmpty(),

@@ -662,6 +662,8 @@
 
     <!-- 导入课表浮层 -->
     <string name="import_sheet_title">导入课表</string>
+    <string name="import_sheet_header_title">以各种方式导入课表</string>
+    <string name="import_sheet_header_desc">若教务导入未适配您的学校，不妨试试Wakeup课表分享口令导入</string>
     <string name="import_json_label">从 JSON 文件导入</string>
     <string name="import_json_desc">仅支持 Classpp 格式的 JSON 文件</string>
     <string name="import_clipboard_label">从剪贴板导入</string>
@@ -697,9 +699,9 @@
     <string name="import_wakeup_label">从 Wakeup 课表分享口令导入</string>
     <string name="import_wakeup_desc">输入Wakeup课表的分享口令导入</string>
     <string name="import_clipboard_empty">剪贴板中没有可导入的内容</string>
-    <string name="import_wakeup_sheet_title">Wakeup 口令导入</string>
+    <string name="import_wakeup_sheet_title">Wakeup 口令</string>
     <string name="import_wakeup_field_label">分享口令</string>
-    <string name="import_wakeup_field_hint">粘贴 Wakeup 分享口令或完整分享文案</string>
+    <string name="import_wakeup_field_hint">粘贴 Wakeup 完整文案或口令</string>
     <string name="import_wakeup_action">导入</string>
     <string name="import_wakeup_running">正在获取 Wakeup 课表…</string>
     <string name="import_wakeup_confirm_title">导入 Wakeup 课表</string>

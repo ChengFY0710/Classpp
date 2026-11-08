@@ -523,6 +523,8 @@
 
     <!-- Import schedule sheet -->
     <string name="import_sheet_title">Import Schedule</string>
+    <string name="import_sheet_header_title">Import a Schedule Your Way</string>
+    <string name="import_sheet_header_desc">If academic system import isn\'t supported for your school, try importing with a Wakeup schedule share code</string>
     <string name="import_json_label">Import from JSON File</string>
     <string name="import_json_desc">Classpp-format JSON files only</string>
     <string name="import_clipboard_label">Import from Clipboard</string>
