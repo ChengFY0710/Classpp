@@ -4,7 +4,8 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
@@ -48,37 +50,49 @@ private const val AuroraSpeed = 8f
 /** 相位累计上限（1× 秒）：按 8× 速度约 30 小时归零一次，避免 Float 精度导致游动发涩。 */
 private const val PhaseWrapSeconds = 864_000f
 
-/** 思考时每颗光斑叠加的明暗起伏幅度：alpha = 基值 × (1 ± 0.20 × motion)。 */
+/** 思考时每颗光斑叠加的明暗起伏幅度：alpha = 基值 × (1 ± 0.20 × reveal)。 */
 private const val PulseDepth = 0.20f
 
-/** 思考时每颗光斑的半径呼吸幅度：半径 = 基值 × (1 ± 0.08 × motion)。 */
+/** 思考时每颗光斑的半径呼吸幅度：半径 = 基值 × (1 ± 0.08 × reveal)。 */
 private const val BreatheDepth = 0.08f
+
+/**
+ * 出现 / 退出时整片光场沿竖直方向的位移比例（以可见高度计）：0 = 设计稿原位，
+ * 1 = 完全沉到输入栏后方。取 0.55——配合同步收放的 alpha 与随层移动的顶部遮罩，
+ * 光斑看起来是从输入栏后方升上来 / 沉回去，而不是凭空显隐。
+ */
+private const val RevealSlideFraction = 0.55f
 
 /**
  * AI 对话浮层底部「思考光场」：四颗软边径向渐变光斑（蓝 → 青 → 薄荷 → 黄绿）叠成
  * 设计稿的极光场，顶部用垂直 alpha 遮罩淡出到浮层底色。
  *
- * 状态：
- * - [active] = false（空闲）：光斑停在基准位置、基准 alpha，即设计稿的静态彩色光场；
- * - [active] = true（AI 发送/思考）：[motion] 用 600ms 渐入，四颗光斑先向外散开一段
- *   （thinkX/thinkY，观感上像光场「醒过来」），再各自沿 Lissajous 路径游动
- *   （x/y 周期互质，避免机械的短循环；实际节奏 = 1× 周期 ÷ [AuroraSpeed]），
- *   alpha 错相起伏形成「蓝 → 青 → 绿 → 黄」的视觉重心交替；停止时 900ms 回落到
- *   设计稿的静态基准位，相位冻结、不留跳变。
+ * 只在 AI 思考 / 回答期间（[active] = true）出现：
+ * - 进场（[Motion.AiAuroraEnterMillis]，[Motion.Decelerate]）：整片光场从输入栏后方
+ *   向上升起并淡入，四颗光斑同时向外散开一段（thinkX/thinkY，观感上像光场「醒过来」）；
+ * - 在场期间：光斑各自沿 Lissajous 路径游动（x/y 周期互质，避免机械的短循环；
+ *   实际节奏 = 1× 周期 ÷ [AuroraSpeed]），alpha 错相起伏形成「蓝 → 青 → 绿 → 黄」的
+ *   视觉重心交替；
+ * - 退场（[Motion.AiAuroraExitMillis]，[Motion.Accelerate]）：光斑回落到基准位，
+ *   整片光场下沉并淡出，相位冻结、不留跳变；
+ * - 空闲（[active] = false 且退场播完）：完全不绘制，不再保留静态彩色底，底部只剩
+ *   浮层自身的渐变遮罩。
  *
  * 实现约束：
  * - 不挂 `Modifier.blur`：径向渐变自带软边，避免 API 31+ 与整层离屏的开销；
- * - 只在 active 时跑 `withFrameNanos` 帧循环，空闲零重绘；系统关闭动画
- *   （`ValueAnimator.areAnimatorsEnabled()` / `ANIMATOR_DURATION_SCALE`）时直接静态；
+ * - 只在 active 时跑 `withFrameNanos` 帧循环，退场与空闲不推进相位；系统关闭动画
+ *   （`ValueAnimator.areAnimatorsEnabled()` / `ANIMATOR_DURATION_SCALE`）时直接
+ *   呈现 / 收起，不做位移过渡；
  * - 绘制走 `graphicsLayer(compositingStrategy = Offscreen)` + `BlendMode.DstIn` 遮罩，
  *   只影响本组件这一条底部区域。
  *
- * [imeReservePx] 是键盘高出导航栏的预留高度：光斑的纵向基准与遮罩终点都锚在可见区域
- * 底边（`height - imeReservePx`），键盘弹起时渐隐带不会被 IME 预留撑长。
+ * [imeReservePx] 是键盘高出导航栏的预留高度：光斑的纵向基准、遮罩终点与出场位移都锚在
+ * 可见区域底边（`height - imeReservePx`），键盘弹起时渐隐带不会被 IME 预留撑长。
  *
  * 玻璃采样：本组件不创建 Backdrop。宿主若要让输入栏玻璃透出光场颜色，需把本组件包在
  * 一个挂了 `layerBackdrop` 的节点里（采样层须在输入栏之外，避免读写同一层的反馈环），
- * 再把该 Backdrop 传给玻璃组件；玻璃关闭/API<31 时传 null 即可回退实心底。
+ * 再把该 Backdrop 传给玻璃组件；玻璃关闭/API<31 时传 null 即可回退实心底。光场隐藏
+ * （reveal = 0）时采样层只剩宿主底色，玻璃自然回退为素色。
  *
  * 色值只允许经 [ClassppColors.aiAuroraBlue] / [ClassppColors.aiAuroraCyan] /
  * [ClassppColors.aiAuroraMint] / [ClassppColors.aiAuroraLime] 取用；这是全 app 唯一的
@@ -97,31 +111,27 @@ fun AiThinkingAurora(
     val context = LocalContext.current
     val animationsEnabled = remember(context) { areSystemAnimationsEnabled(context) }
 
-    // 游动强度：0 = 静态基准位，1 = 完整游动。位移/明暗/呼吸都乘它，停下来自然归位
-    val motion = remember { Animatable(0f) }
-    // 相位（秒）：只在 active 时推进；空闲冻结，再次思考从冻结点继续
-    val phase = remember { mutableFloatStateOf(0f) }
-
-    LaunchedEffect(active, animationsEnabled) {
-        val target = if (active) 1f else 0f
-        if (!animationsEnabled) {
-            // 系统关闭动画：不做过渡，但仍直接呈现「思考态」构图（散开 + 更亮），
-            // 让用户至少能看出 AI 在工作；连续游动按无障碍规范保持静止。
-            motion.snapTo(target)
-            return@LaunchedEffect
-        }
-        motion.animateTo(
-            targetValue = target,
-            animationSpec = tween(
+    // 出现进度：0 = 完全沉在输入栏后方（不绘制），1 = 完整光场。纵向位移、alpha 与光斑
+    // 散开幅度都乘它；首帧即按目标值起算——预览、以及「浮层重开时正在回答」直接呈现终态
+    val reveal by animateFloatAsState(
+        targetValue = if (active) 1f else 0f,
+        animationSpec = if (animationsEnabled) {
+            tween(
                 durationMillis = if (active) {
-                    Motion.AiAuroraWakeMillis
+                    Motion.AiAuroraEnterMillis
                 } else {
-                    Motion.AiAuroraSettleMillis
+                    Motion.AiAuroraExitMillis
                 },
                 easing = if (active) Motion.Decelerate else Motion.Accelerate,
-            ),
-        )
-    }
+            )
+        } else {
+            // 系统关闭动画：不做位移过渡，直接呈现 / 收起（思考构图仍保留散开 + 更亮）
+            snap()
+        },
+        label = "aiAuroraReveal",
+    )
+    // 相位（秒）：只在 active 时推进；退场/空闲冻结，下次思考从冻结点继续
+    val phase = remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(active, animationsEnabled) {
         if (!active || !animationsEnabled) return@LaunchedEffect
@@ -139,26 +149,34 @@ fun AiThinkingAurora(
 
     Box(
         modifier = modifier
-            // DstIn 遮罩需要独立图层；只覆盖底部光场这一块，不触发整屏离屏
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .graphicsLayer {
+                // 出现自下而上浮入、退出向下沉出：位移与 alpha 同走 reveal。位移按可见高度
+                // （扣除 IME 预留）计，键盘弹起时滑动距离不变
+                val visibleHeight = (size.height - imeReservePx).coerceAtLeast(0f)
+                translationY = (1f - reveal) * visibleHeight * RevealSlideFraction
+                alpha = reveal
+                // DstIn 遮罩需要独立图层；只覆盖底部光场这一块，不触发整屏离屏
+                compositingStrategy = CompositingStrategy.Offscreen
+            }
             .drawBehind {
+                // 完全沉下去后不画任何像素：空闲时这一层零绘制
+                if (reveal <= 0f) return@drawBehind
                 // 可见底边：键盘弹起时 height 包含 IME 预留，基准与遮罩都要扣掉它
                 val visibleHeight = (size.height - imeReservePx).coerceAtLeast(1f)
-                val motionAmount = motion.value
                 val t = phase.floatValue
 
                 blobs.forEach { blob ->
                     val center = Offset(
-                        x = (blob.baseX + motionAmount * (blob.thinkX + blob.moveX *
+                        x = (blob.baseX + reveal * (blob.thinkX + blob.moveX *
                             sin(TwoPi * t / blob.periodX + blob.phase))) * size.width,
-                        y = (blob.baseY + motionAmount * (blob.thinkY + blob.moveY *
+                        y = (blob.baseY + reveal * (blob.thinkY + blob.moveY *
                             cos(TwoPi * t / blob.periodY + blob.phase))) * visibleHeight,
                     )
-                    val pulse = 1f + motionAmount * PulseDepth *
+                    val pulse = 1f + reveal * PulseDepth *
                         sin(TwoPi * t / blob.pulsePeriod + blob.pulsePhase)
                     val alpha = (blob.baseAlpha * pulse).coerceIn(0f, 1f)
                     val radius = (blob.radius * size.width *
-                        (1f + motionAmount * BreatheDepth *
+                        (1f + reveal * BreatheDepth *
                             sin(TwoPi * t / blob.periodX + blob.phase + 1.1f)))
                         .coerceAtLeast(1f)
                     drawCircle(
@@ -202,7 +220,7 @@ private data class AuroraBlob(
     val baseX: Float,
     val baseY: Float,
     val radius: Float,
-    /** 思考时的整体偏移（乘 motion）：让光场在唤醒的 600ms 内明显「散开」，而不是只靠慢速摆动 */
+    /** 思考时的整体偏移（乘 reveal）：让光场在进场 600ms 内明显「散开」，而不是只靠慢速摆动 */
     val thinkX: Float,
     val thinkY: Float,
     val moveX: Float,
@@ -289,7 +307,7 @@ private fun auroraBlobs(colors: ClassppColors): List<AuroraBlob> = listOf(
 /**
  * 系统是否允许动画：API 26+ 用 [ValueAnimator.areAnimatorsEnabled]（覆盖开发者选项里的
  * 「动画程序时长缩放」关闭）；API 24–25 回退读 `ANIMATOR_DURATION_SCALE`。
- * 关闭时只保留静态光场，不启动帧循环。
+ * 关闭时只做瞬时的出现 / 收起，不启动帧循环。
  */
 private fun areSystemAnimationsEnabled(context: Context): Boolean =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -304,30 +322,30 @@ private fun areSystemAnimationsEnabled(context: Context): Boolean =
 
 // ---------- 预览 ----------
 
-/** 设计稿静态态：四颗光斑停在基准位，即空闲时的光场 */
+/** 思考态（进场终态）：预览没有帧时钟，animateFloatAsState 直接以目标值呈现完整光场 */
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 240)
 @Composable
-private fun AiThinkingAuroraIdlePreview() = ClassppTheme {
+private fun AiThinkingAuroraThinkingPreview() = ClassppTheme {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(240.dp)
             .background(MaterialTheme.colorScheme.background),
     ) {
-        AiThinkingAurora(active = false, modifier = Modifier.fillMaxSize())
+        AiThinkingAurora(active = true, modifier = Modifier.fillMaxSize())
     }
 }
 
-/** 深色静态态：同色相压暗的深极光 */
+/** 深色思考态：同色相压暗的深极光 */
 @Preview(showBackground = true, backgroundColor = 0xFF0F1114, widthDp = 390, heightDp = 240)
 @Composable
-private fun AiThinkingAuroraDarkPreview() = ClassppTheme(darkTheme = true) {
+private fun AiThinkingAuroraDarkThinkingPreview() = ClassppTheme(darkTheme = true) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(240.dp)
             .background(MaterialTheme.colorScheme.background),
     ) {
-        AiThinkingAurora(active = false, modifier = Modifier.fillMaxSize())
+        AiThinkingAurora(active = true, modifier = Modifier.fillMaxSize())
     }
 }

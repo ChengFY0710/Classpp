@@ -833,7 +833,7 @@
     <string name="day_image_parallax_title">壁纸视差</string>
     <string name="day_image_parallax_desc">倾斜手机时，背景图随之轻微移动</string>
 
-    <!-- AI 对话浮层（AiChatOverlay）：标题 / 顶栏胶囊 / 输入 / 示例 / 错误分类 / 直接创建的待办 -->
+    <!-- AI 对话浮层（AiChatOverlay）：标题 / 顶栏胶囊 / 输入 / 空态 / 错误分类 / 直接创建的待办 -->
     <string name="ai_sheet_title">AI 助手</string>
     <string name="ai_sheet_chat">对话</string>
     <string name="ai_sheet_close">关闭</string>
@@ -860,7 +860,6 @@
     <string name="ai_thinking_in_progress">正在思考…</string>
     <string name="ai_interrupted">回复已中断</string>
     <string name="ai_retry">重试</string>
-    <string name="ai_dismiss_error">知道了</string>
     <string name="ai_error_auth">API Key 无效或已过期，请到 AI 设置检查</string>
     <string name="ai_error_quota">账户余额不足或无该模型权限</string>
     <string name="ai_error_not_found">模型名或服务地址不正确</string>
@@ -871,8 +870,8 @@
     <string name="ai_not_configured_title">先配置 AI 服务商</string>
     <string name="ai_not_configured_hint">填入你自己的 API Key（DeepSeek、智谱、通义、Claude 等均可），对话内容与课表、待办摘要会发送给你所选的服务商</string>
     <string name="ai_go_settings">去 AI 设置</string>
-    <string name="ai_example_1">帮我看看下周安排</string>
-    <string name="ai_example_2">添加：周五交实验报告</string>
+    <string name="ai_empty_title">与 AI 助手对话</string>
+    <string name="ai_empty_hint">我可以帮你查看课表与待办、安排学习计划，或把聊天里提到的事项直接添加成待办</string>
     <string name="ai_todo_save_failed">待办创建失败，请重试</string>
     <string name="ai_save_failed">保存失败，请重试</string>
 

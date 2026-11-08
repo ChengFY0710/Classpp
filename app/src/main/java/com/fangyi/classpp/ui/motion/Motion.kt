@@ -119,17 +119,17 @@ object Motion {
     const val DialogMillis = 200
 
     /**
-     * AI 对话浮层底部光场从静止到游动的唤醒时长：光斑位移与明暗起伏同步渐入，
-     * 配合 [Decelerate]——起步即全速、收尾渐缓，观感像光场被「唤醒」。
+     * AI 对话浮层底部光场「出现」时长：整片光场从输入栏后方向上浮入（纵向位移与 alpha
+     * 同步），光斑同时向外散开、开始游动，配合 [Decelerate]——起步即全速、收尾渐缓。
      * 光斑各自的 Lissajous 周期属单一效果参数，留在 AiThinkingAurora 内。
      */
-    const val AiAuroraWakeMillis = 600
+    const val AiAuroraEnterMillis = 600
 
     /**
-     * 光场从游动回落到静止的时长：位移归位与明暗起伏一起收束，配合 [Accelerate]。
-     * 比唤醒长一拍，收场更从容；空闲时只保留静态光场，不持续占用帧循环。
+     * 光场「退出」时长：回答结束 / 收起浮层时整片光场下沉并淡出，光斑同时回落到基准位，
+     * 配合 [Accelerate]。比进场长一拍，彩色光场从容退场、不与收尾文字抢注意力。
      */
-    const val AiAuroraSettleMillis = 900
+    const val AiAuroraExitMillis = 900
 
     /**
      * 弹出菜单内容层淡入时长（alpha 0→1），与进场果冻曲线同帧启动。

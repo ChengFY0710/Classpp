@@ -141,41 +141,33 @@ class AiChatRepository internal constructor(
     val sending: StateFlow<Boolean> = _sending.asStateFlow()
 
     /**
-     * 最近一次失败的分类错误（UI 错误条 + 重试）。错误**归属对话**：内部存「错误 +
-     * 归属对话 id」，公开的 [_lastError] 是活跃镜像——归属对话正在查看时才对外可见
-     * （在途流失败时用户可能已切到别的对话，错误条不能串场；切回来自动重现）。
-     * 成功发送或用户关闭时彻底清空。
+     * 最近一次失败的分类错误（UI 错误条 + 重试）。错误**归属对话**：真源是
+     * [AiConversation.lastError]，随对话落盘——退出浮层、切走再切回、进程重启后错误条
+     * 都还在原位。公开流是活跃对话的镜像：归属对话正在查看时才对外可见（在途流失败时
+     * 用户可能已切到别的对话，错误条不能串场）。新发送 / 用户关闭时清空。
      */
     private val _lastError = MutableStateFlow<AiException?>(null)
     val lastError: StateFlow<AiException?> = _lastError.asStateFlow()
 
-    private val _lastErrorInternal = MutableStateFlow<AiException?>(null)
-    private val _lastErrorConversationId = MutableStateFlow<String?>(null)
-
-    /** 记录归属对话的失败；归属对话是活跃对话时同步对外可见 */
+    /** 记录归属对话的失败（定向写入对话，[mirrorLastError] 决定是否对外可见） */
     private fun storeLastError(error: AiException, conversationId: String?) {
-        _lastErrorInternal.value = error
-        _lastErrorConversationId.value = conversationId
+        val id = conversationId ?: return
+        updateConversation(id) { it.copy(lastError = error.error) }
         mirrorLastError()
     }
 
     /** 重镜像 [lastError]：切换/新建/删除对话后，错误条随归属对话显隐 */
     private fun mirrorLastError() {
-        _lastError.value = if (
-            _lastErrorConversationId.value != null &&
-            _lastErrorConversationId.value == _activeConversationId.value
-        ) {
-            _lastErrorInternal.value
-        } else {
-            null
-        }
+        _lastError.value = activeConversation()?.lastError?.let { AiException(it) }
     }
 
-    /** 彻底清空错误（新一轮发送开始 / 用户关闭 / 清空历史） */
+    /** 清空活跃对话的错误（新一轮发送开始 / 用户关闭 / 清空历史） */
     private fun clearLastError() {
-        _lastErrorInternal.value = null
-        _lastErrorConversationId.value = null
-        _lastError.value = null
+        val active = activeConversation()
+        if (active != null && active.lastError != null) {
+            updateConversation(active.id) { it.copy(lastError = null) }
+        }
+        mirrorLastError()
     }
 
     /** 配置是否就绪（连接 + Key）；bootstrap 与设置页保存后刷新，UI 据此走引导态 */
@@ -222,8 +214,8 @@ class AiChatRepository internal constructor(
             ?.takeIf { id -> normalized.conversations.any { it.id == id } }
             ?: normalized.conversations.maxByOrNull { it.updatedAtMillis }?.id
         _messages.value = activeConversation()?.messages ?: emptyList()
-        // 重新装载（备份恢复等）丢弃旧错误：归属对话可能已不在新库里
-        clearLastError()
+        // 错误随对话落盘：重新装载后按活跃对话镜像恢复（退出浮层 / 重启后错误条仍在）
+        mirrorLastError()
         // 孤儿图片清理：persist 截最旧/装载降级后，历史已不引用的图片副本不再留着；
         // 宽限期豁免「已导入未发送」的待发送图片（它们还没有消息引用）
         withContext(Dispatchers.IO) {
@@ -325,6 +317,8 @@ class AiChatRepository internal constructor(
             } catch (e: Exception) {
                 // 非分类的意外异常：归到本次发送绑定的对话（尚未绑定则不挂到任何对话）
                 storeLastError(AiException(AiError.BadResponse, detail = e.message), activeSendConversationId.get())
+                // 错误随对话落盘：退出浮层 / 重启后仍能看到失败提示
+                persist()
             }
         }
         activeSend.set(job)
@@ -585,9 +579,10 @@ class AiChatRepository internal constructor(
         }
     }
 
-    /** 关闭错误条（UI 的「知道了」）；下次失败会重新发布 */
+    /** 关闭错误条（UI 的「知道了」）：清空并落盘，退出/重启后不再出现；下次失败会重新发布 */
     fun dismissError() {
         clearLastError()
+        scope.launch { persist() }
     }
 
     // ---------- 配置方案（AI 设置页与方案浮层经此读写，store 不直接出包） ----------

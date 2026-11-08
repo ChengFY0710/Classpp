@@ -805,7 +805,7 @@
     <string name="day_image_parallax_title">Wallpaper Perspective</string>
     <string name="day_image_parallax_desc">Background shifts subtly as you tilt your phone</string>
 
-    <!-- AI chat overlay (AiChatOverlay): title / top bar pills / input / examples / error classes / draft card -->
+    <!-- AI chat overlay (AiChatOverlay): title / top bar pills / input / empty state / error classes / draft card -->
     <string name="ai_sheet_title">AI Assistant</string>
     <string name="ai_sheet_chat">Chat</string>
     <string name="ai_sheet_close">Close</string>
@@ -832,7 +832,6 @@
     <string name="ai_thinking_in_progress">Thinking…</string>
     <string name="ai_interrupted">Reply interrupted</string>
     <string name="ai_retry">Retry</string>
-    <string name="ai_dismiss_error">Got it</string>
     <string name="ai_error_auth">API key is invalid or expired — check it in AI settings</string>
     <string name="ai_error_quota">Insufficient balance or no access to this model</string>
     <string name="ai_error_not_found">Incorrect model name or service URL</string>
@@ -843,8 +842,8 @@
     <string name="ai_not_configured_title">Set up an AI provider first</string>
     <string name="ai_not_configured_hint">Bring your own API key (DeepSeek, Zhipu, Qwen, Claude, and more). Your messages plus schedule and todo summaries are sent to the provider you choose</string>
     <string name="ai_go_settings">Open AI settings</string>
-    <string name="ai_example_1">What does next week look like?</string>
-    <string name="ai_example_2">Add: lab report due Friday</string>
+    <string name="ai_empty_title">Chat with the AI assistant</string>
+    <string name="ai_empty_hint">I can check your timetable and todos, plan your study schedule, or turn things you mention into todos</string>
     <string name="ai_todo_save_failed">Couldn\'t create todos, please try again</string>
     <string name="ai_save_failed">Save failed — try again</string>
 

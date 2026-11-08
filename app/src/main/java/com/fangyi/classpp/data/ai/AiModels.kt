@@ -66,6 +66,8 @@ data class AiProfile(
  * @param updatedAtMillis 最近一次消息追加时刻（epoch millis）：删除活跃对话后回落
  *   「最近更新」的对话、列表按最近在前排序，都以它为准
  * @param messages 本场对话的消息（与 v1 顶层 messages 同构）
+ * @param lastError 本场对话最近一次失败的分类错误：随对话一起落盘，退出浮层 / 切走再
+ *   切回 / 进程重启后错误条仍在原位；用户关闭或重新发送时清空。旧文件无此字段时为 null
  */
 @Serializable
 data class AiConversation(
@@ -74,6 +76,7 @@ data class AiConversation(
     val createdAtMillis: Long = 0,
     val updatedAtMillis: Long = 0,
     val messages: List<AiChatMessage> = emptyList(),
+    val lastError: AiError? = null,
 )
 
 /** 对话消息的角色；历史里只存 user / assistant（system prompt 每次现拼，不入文件） */
@@ -110,7 +113,9 @@ data class AiChatMessage(
 /**
  * AI 调用的错误分类。数据层只分类不产出文案——文案由 UI 层映射 stringResource
  * （项目有 values-en，中文硬编码在数据层会破坏本地化）。
+ * 随 [AiConversation.lastError] 落盘，故需序列化。
  */
+@Serializable
 enum class AiError { Auth, Quota, NotFound, RateLimited, Server, Network, BadResponse }
 
 /**

@@ -85,7 +85,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 光场在输入栏上方额外留出的可见高度：与输入栏、导航栏一起构成约 240dp 的光场带 */
+/**
+ * 光场在输入栏上方额外留出的可见高度：与输入栏、导航栏一起构成约 240dp 的光场带。
+ * 空闲时光场完全隐藏，但这条带子（含内容末尾的同高留白）高度恒定——若随光场出现
+ * 收放，思考开始 / 结束时消息列表会整体跳动。
+ */
 private val AuroraHeadroom = 120.dp
 
 /** 一条消息最多携带的图片数：视觉模型识别足够、单条请求体积可控 */
@@ -103,7 +107,8 @@ private const val CaptureDirName = "ai_capture"
  * 重新挂回，真机验证不再崩溃）；
  * 消息列表走浮层自带滚动列（onScrollStateReady 接管 ScrollState 做自动滚底），
  * 输入栏钉底（bottomScrim = false，底部光场/渐隐/导航栏留白自绘并随键盘上移）——
- * 光场由 [AiThinkingAurora] 绘制，AI 思考时缓慢游动、空闲保持静态；输入栏玻璃采样
+ * 光场由 [AiThinkingAurora] 绘制，只在 AI 思考 / 回答（sending）期间自输入栏后方上浮
+ * 出现并缓慢游动，结束即下沉淡出、空闲完全不绘制；输入栏玻璃采样
  * 光场层（见底部槽的 layerBackdrop），玻璃关闭/API<31 时回退实心底。
  *
  * - 发送中输入禁用、发送键变停止键：发送 Job 由 [AiChatRepository] 自己的 scope 驱动，
@@ -562,7 +567,8 @@ fun AiChatOverlay(
                         ),
                 ) {
                     AiThinkingAurora(
-                        // 收起浮层或空闲时停止帧循环：光场保持设计稿的静态彩色
+                        // 只在思考 / 回答期间出现：进场自输入栏后方向上浮入，结束后下沉淡出
+                        // 并停掉帧循环；收起浮层同样触发退场
                         active = visible && sending,
                         imeReservePx = imeReservePx,
                         modifier = Modifier.fillMaxSize(),
@@ -606,13 +612,7 @@ fun AiChatOverlay(
                 AiChatNotConfigured(onOpenSettings = onOpenSettings)
             }
             messages.isEmpty() -> {
-                AiChatEmptyState(
-                    examples = listOf(
-                        stringResource(R.string.ai_example_1),
-                        stringResource(R.string.ai_example_2),
-                    ),
-                    onExample = { sendMessage(it) },
-                )
+                AiChatEmptyState()
             }
             else -> {
                 Column(
@@ -664,7 +664,6 @@ fun AiChatOverlay(
                         AiChatErrorBanner(
                             error = error.error,
                             onRetry = ::retryLast,
-                            onDismiss = { aiChatRepository?.dismissError() },
                         )
                     }
                 }

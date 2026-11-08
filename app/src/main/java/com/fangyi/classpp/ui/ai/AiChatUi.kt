@@ -3,7 +3,6 @@ package com.fangyi.classpp.ui.ai
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -93,7 +92,7 @@ import com.fangyi.classpp.ui.theme.PillShape
  *
  * user 消息携带图片时（[AiChatMessage.images] 非空），缩略图渲染在正文上方（单张 160dp、
  * 多张 96dp 换行网格），点缩略图经 [onImageClick] 请求宿主拉全屏预览；纯图无正文的
- * 消息不渲染「…」占位（那是流式首字未到的 assistant 占位语义）。
+ * 消息不渲染「正在思考…」占位（那是流式首字未到的 assistant 占位语义）。
  */
 @Composable
 internal fun AiChatMessageBubble(
@@ -171,8 +170,11 @@ internal fun AiChatMessageBubble(
                                 }
                                 when {
                                     content.isEmpty() && message.images.isEmpty() -> {
-                                        // 占位阶段（流式首字未到 / 只有思考还没有正文）：三点呼吸省略号
-                                        Text(text = "…", style = ClassppTextTokens.chatBody)
+                                        // 占位阶段（流式首字未到 / 只有思考还没有正文）：明确提示正在思考
+                                        Text(
+                                            text = stringResource(R.string.ai_thinking_in_progress),
+                                            style = ClassppTextTokens.chatBody,
+                                        )
                                     }
                                     content.isEmpty() -> {
                                         // 纯图无正文：缩略图即全部内容
@@ -409,12 +411,11 @@ internal fun AiChatTodoSaveFailedHint(modifier: Modifier = Modifier) {
 
 // ---------- 错误条 ----------
 
-/** 分类错误条：文案 + 重试 + 关闭。重试对最后一场失败的对话重新发起（不重复追加用户消息） */
+/** 分类错误条：文案 + 重试。重试对最后一场失败的对话重新发起（不重复追加用户消息） */
 @Composable
 internal fun AiChatErrorBanner(
     error: AiError,
     onRetry: () -> Unit,
-    onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val messageText = when (error) {
@@ -455,16 +456,6 @@ internal fun AiChatErrorBanner(
                 .clip(CircleShape)
                 .clickable(onClick = onRetry)
                 .padding(horizontal = 8.dp, vertical = 4.dp),
-        )
-        Icon(
-            painter = painterResource(R.drawable.ic_dismiss),
-            contentDescription = stringResource(R.string.ai_dismiss_error),
-            tint = MaterialTheme.colorScheme.onErrorContainer,
-            modifier = Modifier
-                .size(18.dp)
-                .clip(CircleShape)
-                .clickable(onClick = onDismiss)
-                .padding(2.dp),
         )
     }
 }
@@ -518,13 +509,9 @@ internal fun AiChatNotConfigured(
     }
 }
 
-/** 已配置的空会话：示例提问 chips，点按即发送 */
+/** 已配置的空会话：与未配置引导态同一套居中排布（标题 + 说明文案） */
 @Composable
-internal fun AiChatEmptyState(
-    examples: List<String>,
-    onExample: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
+internal fun AiChatEmptyState(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -538,26 +525,18 @@ internal fun AiChatEmptyState(
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(44.dp),
         )
-        for (example in examples) {
-            Box(
-                modifier = Modifier
-                    .clip(PillShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                        shape = PillShape,
-                    )
-                    .clickable { onExample(example) }
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                Text(
-                    text = example,
-                    style = ClassppTextTokens.secondaryTextSmall,
-                    color = MaterialTheme.classppColors.secondaryText,
-                )
-            }
-        }
+        Text(
+            text = stringResource(R.string.ai_empty_title),
+            style = ClassppTextTokens.emptyTitle,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = stringResource(R.string.ai_empty_hint),
+            style = ClassppTextTokens.emptyHint,
+            color = MaterialTheme.classppColors.secondaryText,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp),
+        )
     }
 }
 

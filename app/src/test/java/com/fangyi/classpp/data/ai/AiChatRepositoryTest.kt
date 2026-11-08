@@ -1238,6 +1238,39 @@ class AiChatRepositoryTest {
         assertNull(repo.lastError.value) // 用户已关闭：切走再切回也不复活
     }
 
+    @Test
+    fun `stream failure error persists with conversation and survives reload`() = runBlocking {
+        // 错误条是对话的一部分：退出浮层 / 进程重启后仍应出现，用户关闭后才消失
+        val store = FakeAiChatStore()
+        val repo = repository(
+            store = store,
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse("半截")), failAfterLines = true)),
+        )
+
+        repo.send("hi")
+        assertEquals(AiError.Network, repo.lastError.value?.error)
+        assertNotNull(store.file.conversations.single().lastError)
+
+        // 模拟进程重启：同一份落盘重新装配，错误条随对话恢复
+        val restarted = repository(
+            store = store,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+        assertNotNull(restarted.lastError.value)
+        assertEquals(AiError.Network, restarted.lastError.value?.error)
+
+        // 用户关闭：落盘清空，再次装载不再出现
+        restarted.dismissError()
+        withTimeout(5000) {
+            while (store.file.conversations.single().lastError != null) delay(10)
+        }
+        val reloaded = repository(
+            store = store,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+        assertNull(reloaded.lastError.value)
+    }
+
     // ---------- 配置方案 ----------
 
     @Test
