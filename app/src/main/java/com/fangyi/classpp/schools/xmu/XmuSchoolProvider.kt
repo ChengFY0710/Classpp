@@ -285,6 +285,10 @@ internal class XmuScheduleImportService(
             is XmuJwScheduleResult.Failed -> ImportOutcome.Failed(result.error.toImportError())
         }
 
+    /** 网页方式导入：教务课表页脚本回传原文 → 复用原生导入的映射器 */
+    override fun importFromWebTimetable(raw: String): ImportOutcome =
+        XmuWebTimetableImport.toImportOutcome(raw, fallbackScheduleName)
+
     private fun XmuJwSemester.toImportSemester(): ImportSemester =
         ImportSemester(id = code, name = label)
 }
@@ -330,6 +334,9 @@ internal val XMU_WEB_VIEW_LOGIN = WebViewLoginSpec(
  * 教务课表页（WebView 登录模式下的网页导入入口）：入口 = 教务「我的课表」应用页
  * （[XmuJwLoginClient.APP_INDEX_URL]，与原生导入同一页面）；白名单 = 教务站 + CAS
  * 身份域（未登录时页面会跳转身份认证；`ALLOWED_HOSTS` 与冻结登录链路按值一致）。
+ * [WebViewTimetableSpec.importScript] 由 [XmuWebTimetableImport] 提供：读取页面
+ * 当前选中学期并同源取数，结果经 [XmuScheduleImportService.importFromWebTimetable]
+ * 复用原生映射器。
  */
 internal val XMU_WEB_VIEW_TIMETABLE = WebViewTimetableSpec(
     entryUrl = XmuJwLoginClient.APP_INDEX_URL,
@@ -339,6 +346,7 @@ internal val XMU_WEB_VIEW_TIMETABLE = WebViewTimetableSpec(
         "pass.xmu.edu.cn",
     ),
     userAgent = XmuWebViewPolicy.DESKTOP_USER_AGENT,
+    importScript = XmuWebTimetableImport.script(),
 )
 
 /** 厦大静态声明：全部文案指向现有 `xmu_*` 资源键，视觉效果与改造前逐字一致（测试锁值） */

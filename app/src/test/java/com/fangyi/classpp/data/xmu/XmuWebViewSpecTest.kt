@@ -2,6 +2,7 @@ package com.fangyi.classpp.data.xmu
 
 import com.fangyi.classpp.data.sync.WebViewLoginSpec
 import com.fangyi.classpp.data.sync.webview.WebViewPolicy
+import com.fangyi.classpp.data.sync.webview.WebViewTimetableJs
 import com.fangyi.classpp.schools.xmu.XMU_WEB_VIEW_LOGIN
 import com.fangyi.classpp.schools.xmu.XMU_WEB_VIEW_TIMETABLE
 import org.junit.Assert.assertEquals
@@ -61,6 +62,11 @@ class XmuWebViewSpecTest {
         assertEquals(
             XmuWebViewPolicy.DESKTOP_USER_AGENT,
             XMU_WEB_VIEW_TIMETABLE.userAgent,
+        )
+        // 网页导入脚本必须写回宿主约定的结果变量（原生侧轮询读取）
+        assertTrue(
+            XMU_WEB_VIEW_TIMETABLE.importScript
+                ?.contains(WebViewTimetableJs.RESULT_VAR) == true,
         )
     }
 }

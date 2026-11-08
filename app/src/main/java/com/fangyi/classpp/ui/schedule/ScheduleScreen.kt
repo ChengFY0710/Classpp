@@ -1002,6 +1002,10 @@ fun ScheduleScreen(
             var schoolImporting by remember { mutableStateOf(false) }
             var schoolImportJob by remember { mutableStateOf<Job?>(null) }
             var schoolParsed by remember { mutableStateOf<Schedule?>(null) }
+            // 教务确认框所在的浮层块挂载标志：网页方式导入时浮层串已收起，靠它把块
+            // 留到确认框退场播完（onDismissed 清），否则取消/确认瞬间会硬切掉动画
+            var schoolConfirmBlockMounted by remember { mutableStateOf(false) }
+            if (schoolParsed != null) schoolConfirmBlockMounted = true
             // 失败分类 → 文案（组合期解析 stringResource，协程里只查表）。这些键不含校名，
             // 通用 UI 直接复用旧键（资源名不影响显示）
             val schoolImportErrorTexts: Map<ImportError, String> = mapOf(
@@ -1410,7 +1414,12 @@ fun ScheduleScreen(
             // 导入浮层同样两段式；挂载后独立于切换浮层存活（切换先关时不会被提前卸载）
             var importSheetMounted by remember { mutableStateOf(false) }
             if (importSheetVisible) importSheetMounted = true
-            if (switcherMounted || importSheetMounted) {
+            // 教务网页导入完成后浮层串已收起，但确认框仍要能挂载并播完退场：
+            // schoolParsed 非空时置挂载标志，onDismissed 才清。确认后的切课可能因
+            // 脏草稿打开确认框——pendingSwitchId 非空同样保块存活
+            if (switcherMounted || importSheetMounted || schoolConfirmBlockMounted ||
+                pendingSwitchId.isNotEmpty()
+            ) {
                 // 切换浮层本身只在它自己挂载时组合：从编辑栏直接开导入时下方不应有它
                 if (switcherMounted) {
                     ScheduleSwitcherSheet(
@@ -1563,7 +1572,10 @@ fun ScheduleScreen(
                             stringResource(R.string.import_confirm_detail, it.termStart.toString())
                         },
                         visible = schoolConfirmVisible,
-                        onDismissed = { schoolConfirmMounted = false },
+                        onDismissed = {
+                            schoolConfirmMounted = false
+                            schoolConfirmBlockMounted = false
+                        },
                         onCancel = { schoolParsed = null },
                         onConfirm = {
                             val parsed = schoolParsed
@@ -1853,6 +1865,26 @@ fun ScheduleScreen(
                 SchoolTimetableWebViewSheet(
                     spec = schoolWebViewTimetable,
                     onDismiss = { schoolTimetableVisible = false },
+                    // 网页方式导入：页面脚本回传原文 → 学校适配层映射成课表 →
+                    // 关页面并复用既有教务导入确认框（确认后走 JSON 导入路径落库）
+                    onExtract = if (schoolWebViewTimetable.importScript != null) {
+                        { raw ->
+                            when (val r = schoolScheduleImport.importFromWebTimetable(raw)) {
+                                is ImportOutcome.Ok -> {
+                                    schoolTimetableVisible = false
+                                    schoolParsed = r.schedule
+                                }
+                                ImportOutcome.NoCourses ->
+                                    AppToasts.show(context, schoolNoCoursesToast)
+                                is ImportOutcome.Failed -> AppToasts.show(
+                                    context,
+                                    schoolImportErrorTexts[r.error] ?: schoolNoCoursesToast,
+                                )
+                            }
+                        }
+                    } else {
+                        null
+                    },
                 )
             }
             // 全屏页在场（含开关翻转帧）就藏底部导航栏；页面关闭后放回（同课程详情浮层）

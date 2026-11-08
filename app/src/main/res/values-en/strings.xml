@@ -531,6 +531,9 @@
     <string name="sync_import_webview_desc">Sign in on the academic timetable page to import</string>
     <string name="sync_import_webview_title">Academic Timetable</string>
     <string name="sync_import_webview_hint">Sign in and view your timetable on this page</string>
+    <string name="sync_import_webview_extract">Import current semester timetable</string>
+    <string name="sync_import_webview_extracting">Reading timetable…</string>
+    <string name="sync_import_webview_extract_failed">Failed to read the timetable. Make sure you are signed in on this page and retry.</string>
     <string name="sync_import_unsupported">The current sign-in method does not support academic system import. Sign in again with Account sign-in on the Account &amp; sync page.</string>
     <string name="sync_import_loading_semesters">Loading available semesters…</string>
     <string name="sync_import_semesters_failed">Failed to load the semester list</string>

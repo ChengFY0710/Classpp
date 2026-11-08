@@ -149,6 +149,13 @@ interface ScheduleImportService {
      */
     val webViewTimetable: WebViewTimetableSpec? get() = null
 
+    /**
+     * 网页方式导入：把课表页抓取脚本回传的原文解析成课表（只取数 + 映射，落库仍由 UI 做）。
+     * 默认不支持；声明了 [webViewTimetable] 且带 `importScript` 的学校必须覆盖。
+     */
+    fun importFromWebTimetable(raw: String): ImportOutcome =
+        ImportOutcome.Failed(ImportError.FormatChanged)
+
     suspend fun fetchSemesters(): SemestersOutcome
 
     /** 只取数 + 映射；落库仍由 UI 调 `ScheduleRepository.importSchedule(ShareCodec…)` */
@@ -207,7 +214,7 @@ data class WebViewLoginSpec(
 )
 
 /**
- * 教务课表页的 WebView 声明（纯数据：入口 URL / 白名单 / UA）。
+ * 教务课表页的 WebView 声明（纯数据：入口 URL / 白名单 / UA / 抓取脚本）。
  *
  * 用途：WebView 登录模式下没有保存凭据、无法走原生教务导入时，从「教务导入」浮层
  * 打开学校教务课表页（登录与查看由页面完成）。加固策略与 [WebViewLoginSpec] 同源，
@@ -219,4 +226,11 @@ data class WebViewTimetableSpec(
     val allowedHosts: Set<String>,
     /** null = 系统默认；教务站通常需要桌面 UA */
     val userAgent: String? = null,
+    /**
+     * 页面内抓取脚本（null = 只浏览页面，不提供导入按钮）。脚本由学校适配层提供，
+     * 在已登录的教务课表页上下文执行；完成后必须把原文（JSON 字符串）写回
+     * [com.fangyi.classpp.data.sync.webview.WebViewTimetableJs.RESULT_VAR]，
+     * 原生侧轮询取回后交给 [ScheduleImportService.importFromWebTimetable]。
+     */
+    val importScript: String? = null,
 )
