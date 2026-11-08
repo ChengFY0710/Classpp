@@ -151,7 +151,7 @@ class TabPagerState internal constructor(initialTab: AppTab) {
     }
 
     /**
-     * 停靠页顶栏冻结帧回位重录（回前台与深浅主题切换共用，时机由调用方的
+     * 停靠页顶栏冻结帧回位重录（回前台与主题切换共用，时机由调用方的
      * LaunchedEffect 触发）：给停靠页造一帧原位绘制时机——x 归零（alpha=0 且压在
      * 当前页之下，不可见、无实际命中风险）→ 位置回调把 haze 几何刷回就位值 →
      * 该帧绘制照常走录制分支、冻结帧重录 → 再弹回停靠位。两次 withFrameNanos：
