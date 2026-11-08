@@ -6,14 +6,21 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,7 +31,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.fangyi.classpp.R
@@ -33,12 +42,17 @@ import com.fangyi.classpp.ui.ai.AiChatNotConfigured
 import com.fangyi.classpp.ui.ai.AiThinkingAurora
 import com.fangyi.classpp.ui.components.EmptyState
 import com.fangyi.classpp.ui.components.OverlaySheet
-import com.fangyi.classpp.ui.components.SettingsInfoHeaderCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.components.TopBarHeight
+import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SettingsCardShape
+import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.fangyi.classpp.ui.theme.isDarkTheme
 
 /** 舞台高度下限：选图卡 / 图片在上半区垂直居中的定位基准（设计稿量取）。 */
 private val AiImportStageHeight = 380.dp
@@ -56,6 +70,23 @@ private val AiImportSidePadding = 36.dp
 private const val AiImportPreviewAspectRatio = 3f / 2f
 
 /**
+ * 光场在整卡背景层里的纵向起点：让 600dp 光带的中心正对内容舞台（图片）中心。
+ * 背景层不裁剪，光带顶部会伸到顶栏渐变遮罩下方——淡入过程连续，不会在顶栏下沿
+ * 出现一条硬边（此前背景层自顶栏以下起算时，光带在该边界被截断）。
+ */
+private val AiImportAuroraTop =
+    TopBarHeight + AiImportStageHeight * 0.5f - AiImportAuroraHeight * 0.5f
+
+// 选图卡的内距与间距：镜像 SettingsInfoHeaderCard 的首屏规格（组件本身不为本浮层加参数，
+// 这里独立维护；若共享组件规格调整，按需同步）。
+private val PickCardTopPadding = 24.dp
+private val PickCardBottomPadding = 20.dp
+private val PickCardHorizontalPadding = 32.dp
+private val PickCardIconSize = 40.dp
+private val PickCardIconTitleGap = 8.dp
+private val PickCardTitleDescriptionGap = 3.dp
+
+/**
  * 「AI 识别导入」浮层：导入课表浮层的第一张入口卡打开，叠在其上（本浮层在场时导入浮层经
  * covered 缩小后退）。浮层只做展示与交互，识别请求 / 结果 / 临时图片生命周期都由宿主
  * （ScheduleScreen）持有——同 Wakeup 导入「浮层纯 UI、宿主做数据工作」的职责划分。
@@ -63,7 +94,8 @@ private const val AiImportPreviewAspectRatio = 3f / 2f
  * 状态与顶栏（胶囊排布由 [OverlaySheet] 的 confirmAtEnd 规则给出）：
  * - 未配置 AI 服务商：正文复用 AI 对话浮层的 [AiChatNotConfigured]（「先配置 AI 服务商」+
  *   去 AI 设置），右上只有「关闭」；
- * - 未选图：白底选图卡（图标 + 标题 + 说明，间距同 [SettingsInfoHeaderCard]），点卡拉起
+ * - 未选图：白底选图卡（[AiImportPickCard]，图标 + 标题 + 说明，间距沿用
+ *   SettingsInfoHeaderCard 的规格但组件独立），点卡拉起
  *   系统相册（Photo Picker，无需权限）；右上只有「关闭」；
  * - 已选图：预览图替换选图卡（点图可重选），左上「取消」+ 右上「开始」；
  * - 分析中（[analyzing]）：右上「取消」回调 [onStopAnalyze]；图片背后浮出
@@ -153,26 +185,21 @@ internal fun AiImportSheet(
         onDismissed = onDismissed,
         // 无输入框，键盘不必让位
         imeBehavior = SheetImeBehavior.IgnoreIme,
-        // 光场走卡片背景层：横向铺满整张卡片（不受内容列 12dp 页边距限制）；图层高度
-        // 大于舞台并向上下溢出，下方淡出在分析提示背后，不被 EmptyState 裁断。
-        // 背景层从顶栏以下开始，因此这个舞台高度的 Box 正好对齐内容里的图片区
+        // 光场走整卡背景层：横向铺满卡片（不吃内容列 12dp 页边距），纵向由 AiImportAuroraTop
+        // 对齐图片中心；600dp 光带向上下溢出，顶部伸进顶栏渐变遮罩下方连续淡入，下方越过
+        // 舞台淡出在分析提示背后——两条边界都不再裁断光场
         backgroundContent = {
             if (configured) {
-                Box(
+                AiThinkingAurora(
+                    // 只在分析中亮起：进场从中心轻微浮入，取消后冻结相位并淡出
+                    active = analyzing,
+                    anchor = AiAuroraAnchor.Center,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(AiImportStageHeight),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    AiThinkingAurora(
-                        // 只在分析中亮起：进场从中心轻微浮入，取消后冻结相位并淡出
-                        active = analyzing,
-                        anchor = AiAuroraAnchor.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .requiredHeight(AiImportAuroraHeight),
-                    )
-                }
+                        .requiredHeight(AiImportAuroraHeight)
+                        .align(Alignment.TopCenter)
+                        .offset(y = AiImportAuroraTop),
+                )
             }
         },
     ) {
@@ -194,11 +221,7 @@ internal fun AiImportSheet(
                 contentAlignment = Alignment.Center,
             ) {
                 if (imageUri == null) {
-                    SettingsInfoHeaderCard(
-                        icon = R.drawable.ic_image_add,
-                        title = stringResource(R.string.import_ai_pick_title),
-                        description = stringResource(R.string.import_ai_pick_desc),
-                        titleColor = MaterialTheme.colorScheme.primary,
+                    AiImportPickCard(
                         onClick = launchPicker,
                         modifier = Modifier.padding(horizontal = AiImportSidePadding),
                     )
@@ -239,6 +262,63 @@ internal fun AiImportSheet(
                 // 识别失败：错误条替代分析提示；图片与「开始」都保留，点开始重试
                 SheetInfoBanner(text = errorText, isError = true)
             }
+        }
+    }
+}
+
+/**
+ * 选图卡：白底 [SettingsCardShape] + 纯色主题色图标/标题 + 说明，整卡可点拉起相册。
+ *
+ * 间距与排版沿用 `SettingsInfoHeaderCard` 的首屏规格（上下 24/20、左右 32、图标 40dp、
+ * 图标↔标题 8dp、标题↔说明 3dp），但不改动那个共享组件：本卡只需要纯色图标与可点语义，
+ * 且文案固定属于本浮层。
+ */
+@Composable
+private fun AiImportPickCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val pressShade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .pressClickable(shape = SettingsCardShape, shade = pressShade, onClick = onClick)
+            .clip(SettingsCardShape)
+            .background(MaterialTheme.colorScheme.surface),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier.padding(
+                start = PickCardHorizontalPadding,
+                top = PickCardTopPadding,
+                end = PickCardHorizontalPadding,
+                bottom = PickCardBottomPadding,
+            ),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_image_add),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(PickCardIconSize),
+            )
+            Spacer(Modifier.height(PickCardIconTitleGap))
+            Text(
+                text = stringResource(R.string.import_ai_pick_title),
+                style = MaterialTheme.classppTextStyles.fieldLabel,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(PickCardTitleDescriptionGap))
+            Text(
+                text = stringResource(R.string.import_ai_pick_desc),
+                style = ClassppTextTokens.settingsDescription.copy(
+                    color = MaterialTheme.classppColors.secondaryText,
+                ),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }

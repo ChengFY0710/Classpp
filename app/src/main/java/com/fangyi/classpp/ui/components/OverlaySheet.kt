@@ -98,7 +98,11 @@ private const val DragDismissFraction = 0.25f
 private val DragDismissVelocity: Dp = 800.dp
 
 /** 顶栏总高（拖拽条 + 按钮行），滚动内容顶部为它留位。 */
-private val TopBarHeight = 78.dp
+/**
+ * 顶栏高度：内容列顶部预留的占位。需要把卡片背景层（[OverlaySheet] 的 [backgroundContent]）
+ * 对齐到内容区时使用（背景层本身铺满整卡，不吃这一高度）。
+ */
+internal val TopBarHeight = 78.dp
 
 /**
  * 顶栏（[OverlaySheetTopBar]）渐变遮罩态的底缘渐隐高度：内容从顶栏下滚过时被同色
@@ -201,9 +205,10 @@ val LocalOverlayTopBarBlur = staticCompositionLocalOf { false }
  * 槽内容自带进出场动画时由调用方把这三样包进动画层，规格才不脱离动画（见 TodoGroupsSheet 编辑态底栏）。
  * [dragDismissEnabled] = false 关掉下拉关闭（超阈值松手回弹归位）：编辑态把下拉拦成
  * 「退出编辑」的场景必须用它——只拦 [onDismiss] 不拦手势会把浮层卡在半拖出位置。
- * [backgroundContent] 可选卡片背景层：顶栏以下的整块卡片（不吃滚动内容列的横向页边距），
- * 画在滚动内容与顶栏之下、随 SheetShape 裁剪；本层不裁剪内容，装饰背景可越过上下边界
- * 淡出到内容背后（如 AI 识别导入浮层图片背后的光场）。
+ * [backgroundContent] 可选卡片背景层：铺满整张卡片（含顶栏盖住的区域，不吃滚动内容列的
+ * 横向页边距），画在滚动内容与顶栏之下、随 SheetShape 裁剪；本层不裁剪内容，装饰背景可
+ * 越过上下边界淡出到内容背后（如 AI 识别导入浮层图片背后的光场，用 [TopBarHeight] 与
+ * 内容区对齐）。
  * [shadowAlpha] 调卡片投影的透明度（0f~1f，默认 1f 与原样纯黑投影一致）：Surface 的
  * shadowElevation 不暴露投影颜色，投影改由卡片 graphicsLayer 的 spot/ambientShadowColor
  * 绘制（同 SheetPillButton 的做法），强度才可按浮层单独调。
@@ -270,9 +275,10 @@ fun OverlaySheet(
     // 可选：把内部滚动列的 ScrollState 交给宿主（AI 对话浮层用它做「新消息自动滚到
     // 底部」）。null = 不需要；只在挂载后回调一次，既有调用零变化
     onScrollStateReady: ((ScrollState) -> Unit)? = null,
-    // 卡片背景层（可选）：顶栏以下的整张卡片，不吃滚动内容列的 12dp 页边距，画在
-    // Surface 之上、滚动内容与顶栏之下，随 SheetShape 裁剪。本层自身不裁剪——内容可
-    // 越过它的边界绘制（如光场向上下溢出、淡出到下方内容背后）。null = 无背景层（现状）
+    // 卡片背景层（可选）：铺满整张卡片（含顶栏盖住的区域），画在 Surface 之上、滚动内容
+    // 与顶栏之下，随 SheetShape 裁剪。本层自身不裁剪——内容可越过它的边界绘制。需要与
+    // 内容列对齐时用 [TopBarHeight] 自行偏移（顶栏最后组合，仍盖在其上）。
+    // null = 无背景层（现状）
     backgroundContent: (@Composable BoxScope.() -> Unit)? = null,
     // 内容列的作用域由卡片内的 SheetScrollHost 显式转交（那里不在 Column 的接收者作用域里）
     content: @Composable ColumnScope.() -> Unit,
@@ -512,14 +518,10 @@ fun OverlaySheet(
                         // 「输入框滚到键盘上方」的换算都以它为准，量不了就没有依据
                         viewportHeightPx = constraints.maxHeight
                         Box {
-                            // 卡片背景层：顶栏以下的整张卡片（不含内容列的横向页边距）。
-                            // 本层不裁剪，允许光场越过上下边界绘制；顶栏最后组合，仍盖在其上
+                            // 卡片背景层：铺满整张卡片（含顶栏盖住的区域），本层不裁剪；
+                            // 顶栏最后组合仍盖在其上，内容列的 12dp 页边距不作用于本层
                             backgroundContent?.let { background ->
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(top = TopBarHeight),
-                                ) {
+                                Box(modifier = Modifier.fillMaxSize()) {
                                     background()
                                 }
                             }

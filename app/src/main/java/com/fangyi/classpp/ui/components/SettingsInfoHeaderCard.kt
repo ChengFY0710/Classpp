@@ -27,13 +27,10 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.fangyi.classpp.ui.motion.PressShade
-import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
-import com.fangyi.classpp.ui.theme.isDarkTheme
 
 /**
  * 卡内上留白：24dp（大于下留白，内容整组略偏下）。两行说明时卡高为 159dp
@@ -66,11 +63,10 @@ private const val IconGradientEndAlpha = 0.25f
  * 规格（对齐 [SettingsCard]）：
  * - 图标 40dp：[iconColor] 为 45° 斜向渐变起点（100% 不透明 → 25% 同色，右下淡出），
  *   调用点可换色；图标本身的 fillColor 不参与着色，镂空处透出卡面底色；
- * - 标题：fieldLabel（16sp SemiBold，默认沿用 LocalContentColor = onSurface），与设置卡行 label 同款；
+ * - 标题：fieldLabel（16sp SemiBold onSurface），与设置卡行 label 同款；
  * - 说明：settingsDescription（14sp/20sp Normal secondaryText），不限行数、按文案自然换行，
  *   行数增减时卡片高度随之伸缩，说明距卡底的留白保持不变；
- * - 纯展示：无点击与按压反馈；[onClick] 非空时整卡可点（按压走 [pressClickable]，
- *   浅色模式压暗 / 深色模式提亮，同设置卡行），用于「大块可点入口」类卡片。
+ * - 纯展示：无点击与按压反馈。
  */
 @Composable
 fun SettingsInfoHeaderCard(
@@ -79,26 +75,10 @@ fun SettingsInfoHeaderCard(
     description: String,
     modifier: Modifier = Modifier,
     iconColor: Color = MaterialTheme.colorScheme.primary,
-    // Color.Unspecified = 沿用 LocalContentColor（默认 onSurface）；需要强调色时传 primary
-    titleColor: Color = Color.Unspecified,
-    // null = 纯展示（现状）；非空 = 整卡可点，带按压反馈
-    onClick: (() -> Unit)? = null,
 ) {
-    val pressShade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .then(
-                if (onClick != null) {
-                    Modifier.pressClickable(
-                        shape = SettingsCardShape,
-                        shade = pressShade,
-                        onClick = onClick,
-                    )
-                } else {
-                    Modifier
-                },
-            )
             .clip(SettingsCardShape)
             .background(MaterialTheme.colorScheme.surface),
         contentAlignment = Alignment.Center,
@@ -122,7 +102,6 @@ fun SettingsInfoHeaderCard(
             Text(
                 text = title,
                 style = MaterialTheme.classppTextStyles.fieldLabel,
-                color = titleColor,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(InfoHeaderTitleDescriptionGap))
