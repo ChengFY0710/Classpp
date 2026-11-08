@@ -296,6 +296,63 @@ class SchoolRegistryTest {
     }
 
     @Test
+    fun `web view timetable requires web view login capability`() = runBlocking {
+        val spec = schoolSpec(
+            capabilities = setOf(Capability.NATIVE_LOGIN, Capability.SCHEDULE_IMPORT),
+            timetableIntro = TimetableIntro(SchoolText.Res(0), SchoolText.Res(0)),
+        )
+        val provider = FakeProvider(spec)
+        val registry = buildRegistry(
+            listOf(provider),
+            assembler = {
+                fakeSession(
+                    spec = spec,
+                    toggle = provider.toggle,
+                    scheduleImport = FakeTimetableImport(testWebViewTimetable()),
+                )
+            },
+        )
+
+        val failure = runCatching { registry.session() }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertTrue(failure?.message.orEmpty().contains("webViewTimetable"))
+    }
+
+    @Test
+    fun `registry rejects invalid web view timetable spec`() = runBlocking {
+        val spec = schoolSpec(
+            capabilities = setOf(
+                Capability.NATIVE_LOGIN,
+                Capability.WEBVIEW_LOGIN,
+                Capability.SCHEDULE_IMPORT,
+            ),
+            timetableIntro = TimetableIntro(SchoolText.Res(0), SchoolText.Res(0)),
+        )
+        val provider = FakeProvider(spec)
+        val registry = buildRegistry(
+            listOf(provider),
+            assembler = {
+                fakeSession(
+                    spec = spec,
+                    toggle = provider.toggle,
+                    scheduleImport = FakeTimetableImport(
+                        WebViewTimetableSpec(
+                            entryUrl = "http://jw.example.test/index.do",
+                            allowedHosts = setOf("jw.example.test"),
+                        ),
+                    ),
+                )
+            },
+        )
+
+        val failure = runCatching { registry.session() }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertTrue(failure?.message.orEmpty().contains("invalid webViewTimetable spec"))
+    }
+
+    @Test
     fun `unknown school id is rejected`() {
         val registry = buildRegistry(listOf(FakeProvider(schoolSpec())))
         assertThrows(IllegalArgumentException::class.java) {
@@ -650,6 +707,19 @@ class SchoolRegistryTest {
             error("unused in registry tests")
     }
 
+    /** 带教务课表页声明的导入服务：只用于注册表的槽位一致性/声明校验 */
+    private class FakeTimetableImport(
+        override val webViewTimetable: WebViewTimetableSpec?,
+    ) : ScheduleImportService {
+        override val blockedReason = MutableStateFlow<ImportBlockReason?>(null)
+
+        override suspend fun fetchSemesters(): SemestersOutcome =
+            error("unused in registry tests")
+
+        override suspend fun fetchSchedule(semester: ImportSemester): ImportOutcome =
+            error("unused in registry tests")
+    }
+
     private companion object {
         /** 每校一个独立 host：不同学校的 WebView 白名单不得重叠（共用认证域 = cookie 互串） */
         fun testWebViewLogin(id: String): WebViewLoginSpec {
@@ -660,6 +730,16 @@ class SchoolRegistryTest {
                 dataHost = host,
                 profilePath = "/api/profile",
                 todosPath = "/api/todos",
+                userAgent = null,
+            )
+        }
+
+        /** 教务课表页声明：入口与白名单同校域（与登录声明的重叠由真实学校各自保证） */
+        fun testWebViewTimetable(id: String = "xmu"): WebViewTimetableSpec {
+            val host = "$id.example.test"
+            return WebViewTimetableSpec(
+                entryUrl = "https://$host/gsapp/sys/wdkbapp/*default/index.do",
+                allowedHosts = setOf(host),
                 userAgent = null,
             )
         }

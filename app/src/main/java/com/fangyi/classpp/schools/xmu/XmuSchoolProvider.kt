@@ -29,6 +29,7 @@ import com.fangyi.classpp.data.sync.SyncService
 import com.fangyi.classpp.data.sync.SyncState
 import com.fangyi.classpp.data.sync.TimetableIntro
 import com.fangyi.classpp.data.sync.WebViewLoginSpec
+import com.fangyi.classpp.data.sync.WebViewTimetableSpec
 import com.fangyi.classpp.data.sync.combineState
 import com.fangyi.classpp.data.sync.net.AndroidCookieMirror
 import com.fangyi.classpp.data.sync.credential.AutoRenewManager
@@ -193,6 +194,7 @@ class XmuSchoolProvider : SchoolProvider {
             syncState = engine.state,
             autoRenewState = autoRenew.state,
             fallbackScheduleName = spec.defaultScheduleName.resolve(appContext),
+            webViewTimetable = XMU_WEB_VIEW_TIMETABLE,
         )
         return XmuSchoolSession(
             spec = spec,
@@ -246,12 +248,16 @@ internal class XmuSchoolSession(
 /**
  * [XmuJwScheduleImporter] 的归一化包装：只取数 + 映射，落库仍由 UI 调
  * `ScheduleRepository.importSchedule`。
+ *
+ * [webViewTimetable]：WebView 登录（无保存凭据）时的网页导入入口——打开教务
+ * 「我的课表」页，由用户在页面内登录/查看；本期不做数据抽取。
  */
 internal class XmuScheduleImportService(
     private val importer: XmuJwScheduleImporter,
     syncState: StateFlow<SyncState>,
     autoRenewState: StateFlow<AutoRenewState>,
     private val fallbackScheduleName: String,
+    override val webViewTimetable: WebViewTimetableSpec? = null,
 ) : ScheduleImportService {
 
     override val blockedReason: StateFlow<ImportBlockReason?> = combineState(
@@ -317,6 +323,21 @@ internal val XMU_WEB_VIEW_LOGIN = WebViewLoginSpec(
     dataHost = XmuWebViewPolicy.LNT_HOST,
     profilePath = "/api/profile",
     todosPath = "/api/todos",
+    userAgent = XmuWebViewPolicy.DESKTOP_USER_AGENT,
+)
+
+/**
+ * 教务课表页（WebView 登录模式下的网页导入入口）：入口 = 教务「我的课表」应用页
+ * （[XmuJwLoginClient.APP_INDEX_URL]，与原生导入同一页面）；白名单 = 教务站 + CAS
+ * 身份域（未登录时页面会跳转身份认证；`ALLOWED_HOSTS` 与冻结登录链路按值一致）。
+ */
+internal val XMU_WEB_VIEW_TIMETABLE = WebViewTimetableSpec(
+    entryUrl = XmuJwLoginClient.APP_INDEX_URL,
+    allowedHosts = setOf(
+        XmuJwLoginClient.JW_HOST,
+        "ids.xmu.edu.cn",
+        "pass.xmu.edu.cn",
+    ),
     userAgent = XmuWebViewPolicy.DESKTOP_USER_AGENT,
 )
 

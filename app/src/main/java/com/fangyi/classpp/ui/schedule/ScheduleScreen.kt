@@ -149,9 +149,9 @@ private fun weekOfPage(page: Int, firstPageWeek: Int): Int = page + firstPageWee
  * 底部导航栏由调用方隐藏；空位渲染添加卡片，点它开弹窗加课。改动只落进
  * [ScheduleEditSession] 的草稿，点保存才写回仓库，取消（或返回键）整份丢弃。
  *
- * [onOverlayOverNavBarChange]：需要盖住底部导航栏的全屏浮层（课程详情/新建课表）在场与否。
- * 导航栏在组合顺序上位于本页之上、会画在浮层头顶，故由调用方以「藏」实现「盖」——
- * 浮层入场即上报、退场动画播完（卸载）才解除。
+ * [onOverlayOverNavBarChange]：需要盖住底部导航栏的全屏浮层（课程详情/新建课表/
+ * 教务课表网页）在场与否。导航栏在组合顺序上位于本页之上、会画在浮层头顶，故由调用方以
+ * 「藏」实现「盖」——浮层入场即上报、退场动画播完（卸载）才解除。
  *
  * [tabTransition]：tab 转场状态只读视图（ui.navigation 的 TabPager 状态机）。非空时顶栏与
  * 编辑栏启用「转场冻结层」——转场进行中重放就位帧、绕开 haze 对中间态几何的重采样，
@@ -501,6 +501,8 @@ fun ScheduleScreen(
             var wakeupSheetVisible by rememberSaveable { mutableStateOf(false) }
             // 教务导入浮层：导入浮层第一入口打开，叠在导入浮层之上（同分层动效）
             var schoolImportVisible by rememberSaveable { mutableStateOf(false) }
+            // 教务课表页（WebView 登录模式）：教务导入浮层第二张卡打开，全屏盖住课表页
+            var schoolTimetableVisible by rememberSaveable { mutableStateOf(false) }
             // 活跃学校会话（fallback flow 保证 collectAsState 无条件调用，同设置页）：
             // 教务导入是可选能力——`scheduleImport == null` = 该校不实现，入口隐藏
             val fallbackSchoolSlot = remember { MutableStateFlow<SessionSlot>(SessionSlot.Loading) }
@@ -520,15 +522,20 @@ fun ScheduleScreen(
             val schoolScheduleImport: ScheduleImportService? = schoolSession?.scheduleImport
             val schoolImportBlockedReason: ImportBlockReason? =
                 schoolScheduleImport?.blockedReason?.collectAsState()?.value
+            // 网页方式导入：学校为教务导入声明了教务课表页，且当前是 WebView 登录模式
+            //（已连接但没有原生凭据）。原生凭据可用（blockedReason == null）时不显示。
+            val schoolWebViewTimetable = schoolScheduleImport?.webViewTimetable
+            val schoolWebViewImportMode = schoolWebViewTimetable != null &&
+                schoolImportBlockedReason == ImportBlockReason.NoCredentials
             // 未连接不额外加横幅：浮层账号行已是「未连接」，与改造前视觉一致；
-            // 其余两类（无凭据/不支持）给出说明并拦截确认
-            val schoolImportBlockedText: String? = when (schoolImportBlockedReason) {
-                ImportBlockReason.NoCredentials,
-                ImportBlockReason.Unsupported,
-                -> stringResource(R.string.sync_import_unsupported)
-                ImportBlockReason.NotConnected,
-                null,
-                -> null
+            // 网页方式导入可用时不显示「不支持」横幅（改用课表页入口）；其余两类给出
+            // 说明并拦截确认
+            val schoolImportBlockedText: String? = when {
+                schoolWebViewImportMode -> null
+                schoolImportBlockedReason == ImportBlockReason.NoCredentials ||
+                    schoolImportBlockedReason == ImportBlockReason.Unsupported ->
+                    stringResource(R.string.sync_import_unsupported)
+                else -> null
             }
             // 教务导入浮层「账号与同步」：收起整串浮层（教务导入 → 导入 → 切换），编辑态取消
             // 更改（整库回滚，同编辑栏取消），再转到设置页-账号与同步（调用方直达子页）
@@ -539,6 +546,15 @@ fun ScheduleScreen(
                 switcherVisible = false
                 if (editing) cancelEdit()
                 onOpenAccountSync()
+            }
+            // 教务导入浮层「从教务网页导入」：收起整串浮层（教务导入 → 导入 → 切换），
+            // 不取消编辑态，直接打开教务课表页；关页面后回到编辑中的课表
+            val onSchoolWebViewImportClick: () -> Unit = {
+                schoolImportVisible = false
+                wakeupSheetVisible = false
+                importSheetVisible = false
+                switcherVisible = false
+                schoolTimetableVisible = true
             }
 
             // 课表设置浮层：编辑栏按钮打开（内容自原设置页迁入，见 ScheduleSettingsSheet）
@@ -1483,6 +1499,13 @@ fun ScheduleScreen(
                         },
                         onDismiss = { schoolImportVisible = false },
                         onOpenAccountSync = onSchoolAccountClick,
+                        // 非空 = WebView 登录模式：账号卡下方追加教务课表页入口，
+                        // 同时浮层隐藏「不支持」横幅与确认胶囊
+                        onOpenWebViewTimetable = if (schoolWebViewImportMode) {
+                            onSchoolWebViewImportClick
+                        } else {
+                            null
+                        },
                         accountStatus = schoolAccountStatus,
                         // 非空 = 当前登录方式不支持教务导入：浮层内横幅说明并拦截确认
                         importBlockedReason = schoolImportBlockedText,
@@ -1823,8 +1846,22 @@ fun ScheduleScreen(
                     },
                 )
             }
-        }
 
+            // 教务课表页：WebView 登录模式下从教务导入浮层进入（全屏页，组合序最后 =
+            // 画在所有浮层之上）；本期只打开页面、不做数据抽取与落库
+            if (schoolTimetableVisible && schoolWebViewTimetable != null) {
+                SchoolTimetableWebViewSheet(
+                    spec = schoolWebViewTimetable,
+                    onDismiss = { schoolTimetableVisible = false },
+                )
+            }
+            // 全屏页在场（含开关翻转帧）就藏底部导航栏；页面关闭后放回（同课程详情浮层）
+            LaunchedEffect(schoolTimetableVisible, schoolWebViewTimetable) {
+                onOverlayOverNavBarChange(
+                    schoolTimetableVisible && schoolWebViewTimetable != null,
+                )
+            }
+        }
         // 新建课表浮层：无激活课表的空态经「创建课表」按钮打开。挂在空态/网格 if-else 之外——
         // 创建成功瞬间新课表就位、空态翻转为网格，浮层照常播完出场动画（onDismissed）才卸载
         if (newScheduleVisible) newScheduleMounted = true

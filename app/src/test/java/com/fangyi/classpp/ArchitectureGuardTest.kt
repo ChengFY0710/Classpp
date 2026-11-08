@@ -31,6 +31,7 @@ class ArchitectureGuardTest {
             "com/fangyi/classpp/ui/settings/SettingsScreen.kt",
             "com/fangyi/classpp/ui/schedule/SchoolImportSheet.kt",
             "com/fangyi/classpp/ui/schedule/ScheduleScreen.kt",
+            "com/fangyi/classpp/ui/schedule/SchoolTimetableWebViewSheet.kt",
             "com/fangyi/classpp/ui/note/TodoScreen.kt",
             "com/fangyi/classpp/ui/day/DayScreen.kt",
             "com/fangyi/classpp/ui/schools/GenericSchoolUi.kt",
@@ -58,6 +59,7 @@ class ArchitectureGuardTest {
             "com/fangyi/classpp/ui/settings/SettingsScreen.kt",
             "com/fangyi/classpp/ui/schedule/SchoolImportSheet.kt",
             "com/fangyi/classpp/ui/schedule/ScheduleScreen.kt",
+            "com/fangyi/classpp/ui/schedule/SchoolTimetableWebViewSheet.kt",
             "com/fangyi/classpp/ui/schools/GenericSchoolUi.kt",
             "com/fangyi/classpp/ui/schools/SchoolUiBindings.kt",
         )
@@ -80,6 +82,7 @@ class ArchitectureGuardTest {
             "com/fangyi/classpp/ui/settings/SettingsScreen.kt",
             "com/fangyi/classpp/ui/schedule/SchoolImportSheet.kt",
             "com/fangyi/classpp/ui/schedule/ScheduleScreen.kt",
+            "com/fangyi/classpp/ui/schedule/SchoolTimetableWebViewSheet.kt",
             "com/fangyi/classpp/ui/schools/GenericSchoolUi.kt",
         )
         for (relative in files) {

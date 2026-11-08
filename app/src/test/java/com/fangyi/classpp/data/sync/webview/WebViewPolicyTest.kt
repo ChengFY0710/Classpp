@@ -1,6 +1,7 @@
 package com.fangyi.classpp.data.sync.webview
 
 import com.fangyi.classpp.data.sync.WebViewLoginSpec
+import com.fangyi.classpp.data.sync.WebViewTimetableSpec
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -161,5 +162,71 @@ class WebViewPolicyTest {
         val spec = validSpec(profilePath = "/api/me", todosPath = "/api/items")
         assertTrue(WebLoginJs.profileFetchJs(spec).contains("fetch('/api/me'"))
         assertTrue(WebLoginJs.todosFetchJs(spec).contains("fetch('/api/items'"))
+    }
+
+    // ---------- 教务课表页（WebView 登录模式的网页导入入口） ----------
+
+    private fun validTimetable(
+        entryUrl: String = "https://jw.example.test/gsapp/sys/wdkbapp/*default/index.do",
+        allowedHosts: Set<String> = setOf("jw.example.test", "ids.example.test"),
+        userAgent: String? = "Mozilla/5.0",
+    ) = WebViewTimetableSpec(entryUrl, allowedHosts, userAgent)
+
+    @Test
+    fun `valid timetable spec passes`() {
+        assertEquals(emptyList<String>(), WebViewPolicy.validateTimetable(validTimetable()))
+    }
+
+    @Test
+    fun `timetable entry url follows the same https and host rules`() {
+        assertTrue(
+            WebViewPolicy.validateTimetable(
+                validTimetable(entryUrl = "http://jw.example.test/index.do"),
+            ).any { it.contains("entryUrl must use https") },
+        )
+        assertTrue(
+            WebViewPolicy.validateTimetable(
+                validTimetable(entryUrl = "https://evil.example.test/index.do"),
+            ).any { it.contains("entryUrl host must be in allowedHosts") },
+        )
+        assertTrue(
+            WebViewPolicy.validateTimetable(
+                validTimetable(entryUrl = "https://user:pass@jw.example.test/index.do"),
+            ).any { it.contains("userinfo") },
+        )
+    }
+
+    @Test
+    fun `timetable hosts reject ip literals uppercase and wildcards`() {
+        assertTrue(
+            WebViewPolicy.validateTimetable(
+                validTimetable(
+                    entryUrl = "https://10.0.0.1/index.do",
+                    allowedHosts = setOf("10.0.0.1"),
+                ),
+            ).any { it.contains("IP literal") },
+        )
+        assertTrue(
+            WebViewPolicy.validateTimetable(
+                validTimetable(
+                    entryUrl = "https://JW.example.test/index.do",
+                    allowedHosts = setOf("JW.example.test"),
+                ),
+            ).any { it.contains("lowercase") },
+        )
+        assertTrue(
+            WebViewPolicy.validateTimetable(
+                validTimetable(allowedHosts = setOf("*.example.test", "jw.example.test")),
+            ).any { it.contains("invalid host") || it.contains("wildcard") },
+        )
+    }
+
+    @Test
+    fun `timetable user agent must not contain line breaks`() {
+        assertTrue(
+            WebViewPolicy.validateTimetable(
+                validTimetable(userAgent = "Mozilla\r\nX-Injected: 1"),
+            ).any { it.contains("line breaks") },
+        )
     }
 }

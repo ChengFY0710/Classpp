@@ -140,7 +140,7 @@
     <string name="xmu_intro_title">Sync course center todos</string>
     <string name="xmu_intro_body">After signing in to the XMU Course Center, unfinished assignments are synced into your todo list. Read-only: no submissions, no data changes. Sign-in happens on the university\'s official identity page — the app never stores your password. Sign out anytime to wipe stored data.</string>
     <string name="xmu_intro_timetable_title">Import academic timetable</string>
-    <string name="xmu_intro_timetable_body">Once signed in with your account, fetch this semester\'s timetable from the academic system in one tap — class times and locations are filled in automatically. Read-only: nothing in the academic system is modified. Requires account sign-in (with auto renewal); WebView sign-in is not supported.</string>
+    <string name="xmu_intro_timetable_body">Once signed in with your account, fetch this semester\'s timetable from the academic system in one tap — class times and locations are filled in automatically. Read-only: nothing in the academic system is modified. Requires account sign-in (with auto renewal); WebView sign-in can import from the academic timetable page.</string>
     <string name="sync_login_button">Sign in</string>
     <string name="sync_now_button">Sync now</string>
     <string name="sync_syncing">Syncing…</string>
@@ -151,7 +151,7 @@
     <string name="sync_login_load_error">Failed to load the page. Check your network and retry.</string>
     <string name="sync_login_retry">Retry</string>
     <string name="sync_webview_login_entry">WebView sign-in</string>
-    <string name="sync_webview_login_desc">A secure sign-in that does not store your account or password. The session can expire, and academic system import and auto renewal are unavailable.</string>
+    <string name="sync_webview_login_desc">A secure sign-in that does not store your account or password. The session can expire, and auto renewal is unavailable.</string>
     <string name="sync_preview_title">Sync preview</string>
     <string name="sync_preview_confirm">Import</string>
     <string name="sync_preview_summary">%1$d to import, %2$d skipped</string>
@@ -527,6 +527,10 @@
     <string name="sync_import_label">Import from Academic System</string>
     <string name="sync_import_desc">Sign in via Account &amp; Sync settings to import</string>
     <string name="sync_import_sheet_title">Academic System Import</string>
+    <string name="sync_import_webview_entry">Import from Academic Web Page</string>
+    <string name="sync_import_webview_desc">Sign in on the academic timetable page to import</string>
+    <string name="sync_import_webview_title">Academic Timetable</string>
+    <string name="sync_import_webview_hint">Sign in and view your timetable on this page</string>
     <string name="sync_import_unsupported">The current sign-in method does not support academic system import. Sign in again with Account sign-in on the Account &amp; sync page.</string>
     <string name="sync_import_loading_semesters">Loading available semesters…</string>
     <string name="sync_import_semesters_failed">Failed to load the semester list</string>

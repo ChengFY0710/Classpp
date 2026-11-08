@@ -48,6 +48,9 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  *   行首取设置页同款 ic_arrow_sync_circle），行值随连接状态展示（未连接 / 已连接 / 已连接：
  *   姓名，文案由调用方解析后经 [accountStatus] 传入）；点击后由调用方收起整串浮层、编辑态
  *   取消更改并转到设置页-账号与同步（[onOpenAccountSync]）。
+ * - 网页方式导入卡（[onOpenWebViewTimetable] 非空时显示，同一无题 [CardSection] 内）：
+ *   WebView 登录没有保存凭据、无法走原生导入时，点它打开教务课表页（调用方挂载全屏
+ *   WebView）；此时没有学期可选，顶栏不渲染确认胶囊、只留关闭动作。
  * - 可导入学期单选卡（[SelectCard]）：选项为调用方从教务拉取的真实学期名（[semesters]）；
  *   拉取中显示进度行、失败显示横幅加重试行，两者都替代学期卡且确认胶囊不响应；
  *   拉取课表期间（[importing]）确认胶囊同样不响应并显示进度行。选中态随浮层卸载复位。
@@ -64,6 +67,9 @@ internal fun SchoolImportSheet(
     onDismissed: () -> Unit,
     onDismiss: () -> Unit,
     onOpenAccountSync: () -> Unit,
+    // 非空 = WebView 登录模式：账号卡下方追加教务课表页入口（同一无题 CardSection）；
+    // null = 不显示（原生凭据导入仍走学期选择）
+    onOpenWebViewTimetable: (() -> Unit)? = null,
     accountStatus: String,
     onConfirm: (semesterIndex: Int) -> Unit,
     importBlockedReason: String? = null,
@@ -88,7 +94,12 @@ internal fun SchoolImportSheet(
 
     OverlaySheet(
         title = stringResource(R.string.sync_import_sheet_title),
-        confirmLabel = stringResource(R.string.edit_confirm),
+        // 网页方式导入没有学期可选：隐藏确认胶囊，只留右侧关闭；原生流程保持原确认语义
+        confirmLabel = if (onOpenWebViewTimetable == null) {
+            stringResource(R.string.edit_confirm)
+        } else {
+            null
+        },
         // 确认在右、取消（关闭）在其外侧（同 Wakeup 口令导入的顶栏排布）
         confirmAtEnd = true,
         onConfirm = { if (confirmEnabled) onConfirm(selected) },
@@ -121,55 +132,72 @@ internal fun SchoolImportSheet(
                         ),
                     ),
                 )
+                // 网页方式导入：WebView 登录模式下与账号卡同组、卡间露灰底；
+                // 点击由调用方收起浮层串并打开教务课表页（本期只打开页面）
+                if (onOpenWebViewTimetable != null) {
+                    SettingsCardwithIcon(
+                        items = listOf(
+                            SettingsCardwithIconItem(
+                                icon = R.drawable.ic_calendar_regular,
+                                label = stringResource(R.string.sync_import_webview_entry),
+                                description = stringResource(R.string.sync_import_webview_desc),
+                                onClick = onOpenWebViewTimetable,
+                            ),
+                        ),
+                    )
+                }
             }
-            when {
-                // 拉取课表中：进度行替代学期卡（同 Wakeup 导入的进行中样式）
-                importing -> CardSection {
-                    ProgressRow(text = stringResource(R.string.sync_import_running))
-                }
-                // 学期拉取中：进度行替代学期卡
-                semestersLoading -> CardSection {
-                    ProgressRow(text = stringResource(R.string.sync_import_loading_semesters))
-                }
-                // 学期拉取失败：横幅说明 + 重试行
-                semestersError != null -> {
-                    SheetInfoBanner(text = semestersError)
-                    CardSection {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    horizontal = RowCardPaddingHorizontal,
-                                    vertical = RowCardPaddingVertical,
-                                ),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = stringResource(R.string.sync_import_semesters_failed),
-                                style = MaterialTheme.classppTextStyles.fieldPlaceholder,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            DialogPillButton(
-                                label = stringResource(R.string.sync_import_retry),
-                                containerColor = MaterialTheme.colorScheme.surface,
-                                contentColor = MaterialTheme.colorScheme.onSurface,
-                                onClick = onRetrySemesters,
-                            )
+            // 网页方式导入没有学期可选：学期/进度/错误区整体不渲染，只留上方两张卡
+            if (onOpenWebViewTimetable == null) {
+                when {
+                    // 拉取课表中：进度行替代学期卡（同 Wakeup 导入的进行中样式）
+                    importing -> CardSection {
+                        ProgressRow(text = stringResource(R.string.sync_import_running))
+                    }
+                    // 学期拉取中：进度行替代学期卡
+                    semestersLoading -> CardSection {
+                        ProgressRow(text = stringResource(R.string.sync_import_loading_semesters))
+                    }
+                    // 学期拉取失败：横幅说明 + 重试行
+                    semestersError != null -> {
+                        SheetInfoBanner(text = semestersError)
+                        CardSection {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        horizontal = RowCardPaddingHorizontal,
+                                        vertical = RowCardPaddingVertical,
+                                    ),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.sync_import_semesters_failed),
+                                    style = MaterialTheme.classppTextStyles.fieldPlaceholder,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                DialogPillButton(
+                                    label = stringResource(R.string.sync_import_retry),
+                                    containerColor = MaterialTheme.colorScheme.surface,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                    onClick = onRetrySemesters,
+                                )
+                            }
                         }
                     }
-                }
-                // 学期单选卡（点击未选项替换旧选，组件内部已按单选语义处理）
-                semesters.isNotEmpty() -> CardSection {
-                    SelectCard(
-                        options = semesters,
-                        selectedIndices = setOf(selected),
-                        onSelectionChange = { next ->
-                            next.firstOrNull()?.let { selectedSemester = it }
-                        },
-                    )
+                    // 学期单选卡（点击未选项替换旧选，组件内部已按单选语义处理）
+                    semesters.isNotEmpty() -> CardSection {
+                        SelectCard(
+                            options = semesters,
+                            selectedIndices = setOf(selected),
+                            onSelectionChange = { next ->
+                                next.firstOrNull()?.let { selectedSemester = it }
+                            },
+                        )
+                    }
                 }
             }
         }

@@ -16,6 +16,7 @@ import android.webkit.WebViewClient
 import com.fangyi.classpp.data.ScheduleJson
 import com.fangyi.classpp.data.destroySafely
 import com.fangyi.classpp.data.sync.WebViewLoginSpec
+import com.fangyi.classpp.data.sync.WebViewTimetableSpec
 import java.net.URI
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.serializer
@@ -56,15 +57,7 @@ object WebViewPolicy {
      */
     fun validate(spec: WebViewLoginSpec): List<String> {
         val issues = mutableListOf<String>()
-        if (spec.allowedHosts.isEmpty()) issues += "allowedHosts must not be empty"
-        for (host in spec.allowedHosts) {
-            when {
-                host != host.lowercase() -> issues += "host must be lowercase: '$host'"
-                !HOST_PATTERN.matches(host) -> issues += "invalid host: '$host'"
-                IPV4_LITERAL.matches(host) -> issues += "IP literal not allowed: '$host'"
-                host.contains('*') -> issues += "wildcard not allowed: '$host'"
-            }
-        }
+        issues += validateHosts(spec.allowedHosts)
         when {
             spec.dataHost !in spec.allowedHosts -> issues += "dataHost must be in allowedHosts"
             !HOST_PATTERN.matches(spec.dataHost) -> issues += "invalid dataHost: '${spec.dataHost}'"
@@ -75,10 +68,20 @@ object WebViewPolicy {
         if (!PATH_PATTERN.matches(spec.todosPath)) {
             issues += "invalid todosPath: '${spec.todosPath}'"
         }
-        if (spec.userAgent?.let { "\r" in it || "\n" in it } == true) {
-            issues += "userAgent must not contain line breaks"
-        }
-        issues += validateUrl("entryUrl", spec.entryUrl, spec)
+        issues += validateUserAgent(spec.userAgent)
+        issues += validateUrl("entryUrl", spec.entryUrl, spec.allowedHosts)
+        return issues
+    }
+
+    /**
+     * 校验教务课表页声明（与 [validate] 同一套主机/入口/UA 规则；没有取数端点）。
+     * 注册表在会话装配后硬校验，任何问题都拒绝装配。
+     */
+    fun validateTimetable(spec: WebViewTimetableSpec): List<String> {
+        val issues = mutableListOf<String>()
+        issues += validateHosts(spec.allowedHosts)
+        issues += validateUserAgent(spec.userAgent)
+        issues += validateUrl("entryUrl", spec.entryUrl, spec.allowedHosts)
         return issues
     }
 
@@ -96,7 +99,10 @@ object WebViewPolicy {
     // ---------- 运行时判定 ----------
 
     fun isAllowedHost(spec: WebViewLoginSpec, host: String?): Boolean =
-        host != null && host in spec.allowedHosts
+        isHostAllowed(host, spec.allowedHosts)
+
+    private fun isHostAllowed(host: String?, allowedHosts: Set<String>): Boolean =
+        host != null && host in allowedHosts
 
     fun isDataHost(spec: WebViewLoginSpec, url: String?): Boolean =
         url != null && hostOf(url) == spec.dataHost
@@ -140,6 +146,33 @@ object WebViewPolicy {
         onDataPageFinished: () -> Unit,
         onLoadError: () -> Unit = {},
         onPageStarted: (String?) -> Unit = {},
+    ): WebViewClient = whitelistClient(
+        allowedHosts = spec.allowedHosts,
+        onPageFinished = { url -> if (isDataHost(spec, url)) onDataPageFinished() },
+        onLoadError = onLoadError,
+        onPageStarted = onPageStarted,
+    )
+
+    /**
+     * 教务课表页的白名单客户端：只放行声明域，不注入任何脚本、不挂钩数据页回调；
+     * 主文档失败经 [onLoadError] 交给 UI 显示错误态 + 重试。
+     */
+    fun createTimetableClient(
+        spec: WebViewTimetableSpec,
+        onLoadError: () -> Unit = {},
+        onPageStarted: (String?) -> Unit = {},
+    ): WebViewClient = whitelistClient(
+        allowedHosts = spec.allowedHosts,
+        onPageFinished = {},
+        onLoadError = onLoadError,
+        onPageStarted = onPageStarted,
+    )
+
+    private fun whitelistClient(
+        allowedHosts: Set<String>,
+        onPageFinished: (String?) -> Unit,
+        onLoadError: () -> Unit,
+        onPageStarted: (String?) -> Unit,
     ): WebViewClient =
         object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
@@ -151,7 +184,7 @@ object WebViewPolicy {
                 request: WebResourceRequest,
             ): Boolean {
                 val url = request.url
-                return !(url.scheme == "https" && isAllowedHost(spec, url.host))
+                return !(url.scheme == "https" && isHostAllowed(url.host, allowedHosts))
             }
 
             override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
@@ -173,7 +206,7 @@ object WebViewPolicy {
             }
 
             override fun onPageFinished(view: WebView, url: String?) {
-                if (isDataHost(spec, url)) onDataPageFinished()
+                onPageFinished(url)
             }
         }
 
@@ -184,6 +217,30 @@ object WebViewPolicy {
      */
     fun createChromeClient(
         spec: WebViewLoginSpec,
+        onProgress: (Int) -> Unit,
+        onOpenWindow: (String) -> Unit,
+    ): WebChromeClient = chromeClient(
+        allowedHosts = spec.allowedHosts,
+        userAgent = spec.userAgent,
+        onProgress = onProgress,
+        onOpenWindow = onOpenWindow,
+    )
+
+    /** 教务课表页的 Chrome 客户端：规格同 [createChromeClient]，没有 dataHost 概念 */
+    fun createTimetableChromeClient(
+        spec: WebViewTimetableSpec,
+        onProgress: (Int) -> Unit,
+        onOpenWindow: (String) -> Unit,
+    ): WebChromeClient = chromeClient(
+        allowedHosts = spec.allowedHosts,
+        userAgent = spec.userAgent,
+        onProgress = onProgress,
+        onOpenWindow = onOpenWindow,
+    )
+
+    private fun chromeClient(
+        allowedHosts: Set<String>,
+        userAgent: String?,
         onProgress: (Int) -> Unit,
         onOpenWindow: (String) -> Unit,
     ): WebChromeClient =
@@ -212,14 +269,14 @@ object WebViewPolicy {
                     if (forwarded[0]) return
                     forwarded[0] = true
                     val uri = Uri.parse(url)
-                    if (uri.scheme == "https" && isAllowedHost(spec, uri.host)) {
+                    if (uri.scheme == "https" && isHostAllowed(uri.host, allowedHosts)) {
                         onOpenWindow(url)
                     }
                     destroyTemp()
                 }
                 temp = WebView(view.context).apply {
                     // 与主 WebView 同一套加固：禁 file/content、禁混合内容、学校 UA
-                    harden(this, spec.userAgent)
+                    harden(this, userAgent)
                     webViewClient = object : WebViewClient() {
                         override fun onReceivedSslError(
                             v: WebView,
@@ -259,6 +316,29 @@ object WebViewPolicy {
 
     // ---------- 内部：URL 校验 ----------
 
+    /** 白名单主机集合：非空、全小写、合法域名、禁 IP 字面量 / 通配符 */
+    private fun validateHosts(allowedHosts: Set<String>): List<String> {
+        val issues = mutableListOf<String>()
+        if (allowedHosts.isEmpty()) issues += "allowedHosts must not be empty"
+        for (host in allowedHosts) {
+            when {
+                host != host.lowercase() -> issues += "host must be lowercase: '$host'"
+                !HOST_PATTERN.matches(host) -> issues += "invalid host: '$host'"
+                IPV4_LITERAL.matches(host) -> issues += "IP literal not allowed: '$host'"
+                host.contains('*') -> issues += "wildcard not allowed: '$host'"
+            }
+        }
+        return issues
+    }
+
+    /** UA 不得含换行（防请求头注入） */
+    private fun validateUserAgent(userAgent: String?): List<String> =
+        if (userAgent?.let { "\r" in it || "\n" in it } == true) {
+            listOf("userAgent must not contain line breaks")
+        } else {
+            emptyList()
+        }
+
     /** 纯 JVM 取 host（不依赖 android.net.Uri，校验逻辑可在单测直接覆盖） */
     private fun hostOf(url: String): String? = try {
         URI(url).host?.lowercase()
@@ -266,7 +346,12 @@ object WebViewPolicy {
         null
     }
 
-    private fun validateUrl(field: String, raw: String, spec: WebViewLoginSpec): List<String> {        val issues = mutableListOf<String>()
+    private fun validateUrl(
+        field: String,
+        raw: String,
+        allowedHosts: Set<String>,
+    ): List<String> {
+        val issues = mutableListOf<String>()
         val uri = try {
             URI(raw)
         } catch (_: Exception) {
@@ -280,7 +365,7 @@ object WebViewPolicy {
         val host = uri.host?.lowercase()
         if (host == null) {
             issues += "$field must contain a host"
-        } else if (host !in spec.allowedHosts) {
+        } else if (host !in allowedHosts) {
             issues += "$field host must be in allowedHosts"
         }
         return issues

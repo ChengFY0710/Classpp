@@ -256,6 +256,18 @@ class SchoolRegistry internal constructor(
         require((session.scheduleImport != null) == (Capability.SCHEDULE_IMPORT in capabilities)) {
             "school '${spec.id}': scheduleImport slot must match SCHEDULE_IMPORT capability"
         }
+        // 教务课表页入口只服务于 WebView 登录模式（无保存凭据时的网页兜底），
+        // 因此声明它必须同时具备 WEBVIEW_LOGIN；页面声明与登录声明同一套硬校验
+        session.scheduleImport?.webViewTimetable?.let { timetable ->
+            require(Capability.WEBVIEW_LOGIN in capabilities) {
+                "school '${spec.id}': webViewTimetable requires WEBVIEW_LOGIN capability"
+            }
+            val timetableIssues = WebViewPolicy.validateTimetable(timetable)
+            require(timetableIssues.isEmpty()) {
+                "school '${spec.id}': invalid webViewTimetable spec: " +
+                    timetableIssues.joinToString("; ")
+            }
+        }
         val webView = session.webViewLogin ?: return
         // 声明校验（指导 §2.3）：只允许 https/默认端口/无 userinfo/IP/通配符，dataHost 在
         // 白名单内；加固策略锁死在 WebViewPolicy，spec 无法关闭任何加固

@@ -142,6 +142,13 @@ interface ScheduleImportService {
     /** null = 可导入；否则 UI 直接显示阻断提示（不再由 UI 拼 hasCredentials） */
     val blockedReason: StateFlow<ImportBlockReason?>
 
+    /**
+     * 非空 = 支持网页方式导入：WebView 登录（无保存凭据）时，教务导入浮层在
+     * 「账号与同步」卡下方显示入口，点击打开 [entryUrl] 对应的教务课表页。
+     * null = 不提供该入口。
+     */
+    val webViewTimetable: WebViewTimetableSpec? get() = null
+
     suspend fun fetchSemesters(): SemestersOutcome
 
     /** 只取数 + 映射；落库仍由 UI 调 `ScheduleRepository.importSchedule(ShareCodec…)` */
@@ -197,4 +204,19 @@ data class WebViewLoginSpec(
     val todosPath: String,
     /** null = 系统默认；厦大用桌面 UA */
     val userAgent: String?,
+)
+
+/**
+ * 教务课表页的 WebView 声明（纯数据：入口 URL / 白名单 / UA）。
+ *
+ * 用途：WebView 登录模式下没有保存凭据、无法走原生教务导入时，从「教务导入」浮层
+ * 打开学校教务课表页（登录与查看由页面完成）。加固策略与 [WebViewLoginSpec] 同源，
+ * 锁死在 `WebViewPolicy`，spec 无法关闭任何加固项。
+ */
+data class WebViewTimetableSpec(
+    val entryUrl: String,
+    /** 允许导航的 host（仅 https）；入口域名与登录跳转涉及的 CAS 域都要列入 */
+    val allowedHosts: Set<String>,
+    /** null = 系统默认；教务站通常需要桌面 UA */
+    val userAgent: String? = null,
 )
