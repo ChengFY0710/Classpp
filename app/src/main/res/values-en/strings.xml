@@ -119,6 +119,8 @@
     <string name="cd_settings_close">Close</string>
     <!-- Account & sync (course center todo sync) -->
     <string name="settings_account_sync">Account &amp; sync</string>
+    <!-- School name (multi-school: picker/entry row value and SchoolSpec.displayNameRes) -->
+    <string name="xmu_school_name">Xiamen University</string>
     <string name="xmu_header_title">Sync your XMU account</string>
     <string name="xmu_header_description">Sign in with XMU Unified Identity to sync assignments, quizzes, and your academic timetable in one tap</string>
     <string name="xmu_section_auto_login_sync">Auto renewal and sync</string>

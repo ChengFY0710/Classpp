@@ -1,0 +1,65 @@
+package com.fangyi.classpp.data.sync
+
+import android.content.Context
+import com.fangyi.classpp.data.ScheduleRepository
+import com.fangyi.classpp.data.TodoRepository
+import java.io.File
+import kotlinx.coroutines.flow.StateFlow
+
+/**
+ * 运行时会话契约（指导 §2.3）：槽位是否为 null 必须与 [SchoolSpec.capabilities] 一致，
+ * 由 [SchoolRegistry] 在装配后硬校验。
+ *
+ * `autoRenew != null` ⇔ 支持原生登录（保存凭据 + 自动续期）；`webViewLogin != null`
+ * ⇔ 支持 WebView 登录；两者可任选其一或都实现。UI 按槽位逐行显隐，不认学校 id。
+ */
+interface SchoolSession {
+    val spec: SchoolSpec
+
+    /** 必备：待办同步 */
+    val sync: SyncService
+
+    /** null ⇔ 无 [Capability.NATIVE_LOGIN] */
+    val autoRenew: AutoRenewService?
+
+    /** null ⇔ 无 [Capability.SCHEDULE_IMPORT] */
+    val scheduleImport: ScheduleImportService?
+
+    /** null ⇔ 无 [Capability.WEBVIEW_LOGIN] */
+    val webViewLogin: WebViewLoginSpec?
+
+    /** 每日同步开关（与 [SchoolProvider.dailySyncToggle] 同一存储） */
+    val dailySync: DailySyncToggle
+}
+
+/**
+ * 学校适配的装配入口：一校一个实现，注册进 [SchoolRegistry]。
+ *
+ * 通用层只通过本接口取学校能力，不 import 任何 `schools/<id>` 目录或学校协议类型。
+ */
+interface SchoolProvider {
+    val spec: SchoolSpec
+
+    /**
+     * 轻量开关读写：后台重排不装配完整 session（与 [SchoolSession.dailySync] 共用同一存储，
+     * 实现应让两者返回同一实例/同一份状态）。
+     */
+    fun dailySyncToggle(context: Context): DailySyncToggle
+
+    /** 装配运行时会话；耗时操作应下沉 IO（注册表保证只装配一次） */
+    suspend fun createSession(deps: SessionDeps): SchoolSession
+}
+
+/** 每日同步开关（按校持久化；写操作的闹钟重排由通用 scheduler 负责） */
+interface DailySyncToggle {
+    val enabled: StateFlow<Boolean>
+    fun setEnabled(enabled: Boolean)
+}
+
+/** 会话装配所需的共享依赖（仓库与应用上下文；学校实现不得把仓库实例外泄到通用层） */
+data class SessionDeps(
+    val appContext: Context,
+    val filesDir: File,
+    val todoRepository: TodoRepository,
+    val scheduleRepository: ScheduleRepository,
+)

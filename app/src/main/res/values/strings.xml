@@ -252,6 +252,8 @@
     <string name="cd_settings_close">关闭</string>
     <!-- 账号与同步（课程中心待办同步） -->
     <string name="settings_account_sync">账号与同步</string>
+    <!-- 学校名（多校适配：选择卡/入口卡的行值与学校静态声明用；Phase 3 起展示） -->
+    <string name="xmu_school_name">厦门大学</string>
     <string name="xmu_header_title">同步你的厦大账号</string>
     <string name="xmu_header_description">支持厦大统一身份认证登录，一键同步作业、测验及教务课表</string>
     <string name="xmu_section_auto_login_sync">自动续期和同步</string>
