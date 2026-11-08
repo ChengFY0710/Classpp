@@ -57,6 +57,7 @@ import com.fangyi.classpp.data.sync.EnableOutcome
 import com.fangyi.classpp.data.sync.LoginError
 import com.fangyi.classpp.data.sync.LoginRaw
 import com.fangyi.classpp.data.sync.PrepareOutcome
+import com.fangyi.classpp.data.sync.SchoolRegistry
 import com.fangyi.classpp.data.sync.SchoolSession
 import com.fangyi.classpp.data.sync.SessionSlot
 import com.fangyi.classpp.data.sync.SyncDebugLog
@@ -116,6 +117,10 @@ import kotlinx.coroutines.withTimeout
  * 切校不会把 A 校的 plan 提交给 B 校（指导 §3.1 切校状态重置；plan 的会话认领由
  * [com.fangyi.classpp.data.sync.SyncService] 保证）。
  *
+ * 页面最底部常驻「学校」入口（卡片 + [SchoolPickerSheet]，指导 §3.2）：连接/未连接两态
+ * 都显示；同步或自动续期在途时整行不响应。点他校经 [SchoolRegistry.switchSchool] 切换
+ * （无确认对话框——切换不破坏数据），当前学校只关浮层。
+ *
  * 同步一律走「预览 → 确认导入」（[SyncPreviewSheet]，按课程分组、默认全选）；错误按类
  * 提示（过期给横幅 + 重登入口，**不把所有失败说成登录过期**）。原生登录遇验证码/页面
  * 改版/取数未建立时收起浮层自动转网页登录（学校支持网页登录时），其余错误留在浮层内
@@ -128,6 +133,7 @@ fun AccountSyncScreen(
     modifier: Modifier = Modifier,
     schoolUi: SchoolUi? = null,
     dailySync: DailySyncController? = null,
+    schools: SchoolRegistry? = null,
     settingsTransforming: () -> Boolean = { false },
 ) {
     when (slot) {
@@ -151,6 +157,7 @@ fun AccountSyncScreen(
                 modifier = modifier,
                 schoolUi = schoolUi,
                 dailySync = dailySync,
+                schools = schools,
                 settingsTransforming = settingsTransforming,
             )
         }
@@ -211,6 +218,7 @@ private fun AccountSyncContent(
     modifier: Modifier,
     schoolUi: SchoolUi?,
     dailySync: DailySyncController?,
+    schools: SchoolRegistry?,
     settingsTransforming: () -> Boolean,
 ) {
     val context = LocalContext.current
@@ -278,6 +286,17 @@ private fun AccountSyncContent(
     // 每日自动同步：开关状态来自会话（与后台 receiver 同一存储）；切换即落盘 + 重排闹钟
     val dailySyncEnabled by session.dailySync.enabled.collectAsState()
 
+    // 学校选择（Phase 3）：入口卡常驻页面最底部，连接/未连接两态都显示。
+    // 同步或自动续期在途时整行不响应（不弹 toast，指导 §3.2）；fallback flow 保证
+    // collectAsState 无条件调用（无原生登录的学校同样占一个槽）
+    val fallbackBusy = remember { MutableStateFlow(false) }
+    val syncBusy by sync.busy.collectAsState()
+    val autoRenewBusy by (autoRenew?.busy ?: fallbackBusy).collectAsState()
+    val canSwitchSchool = SchoolRegistry.canSwitchSchool(syncBusy, autoRenewBusy)
+    var schoolPickerVisible by remember { mutableStateOf(false) }
+    var schoolPickerMounted by remember { mutableStateOf(false) }
+    if (schoolPickerVisible) schoolPickerMounted = true
+
     // 错误文案在组合期解析（回调里只引用，不经 LocalContext 查资源——lint 惯例）。
     // 含学校/服务名措辞的条目由 spec 覆盖，其余复用无校名的旧键或中性键
     val errorTexts: Map<SyncError, String> = mapOf(
@@ -313,6 +332,7 @@ private fun AccountSyncContent(
     val importFailedText = stringResource(R.string.xmu_error_import)
     val persistFailedText = stringResource(R.string.xmu_error_persist)
     val logoutDoneText = stringResource(R.string.xmu_logout_done)
+    val schoolSwitchFailedText = stringResource(R.string.school_switch_failed)
     val deadlineWarningFormat = stringResource(R.string.xmu_deadline_unparseable)
 
     val showError: (SyncError) -> Unit = { error ->
@@ -828,6 +848,24 @@ private fun AccountSyncContent(
                         )
                     }
                 }
+
+                // 学校选择入口：页面最底部（「同步可以做什么」之后），连接/未连接两态都
+                // 显示；同步/自动续期在途时整行不响应（不弹 toast）。浮层见下方挂载。
+                CardSection {
+                    SettingsCard(
+                        items = listOf(
+                            SettingsCardItem.Nav(
+                                label = stringResource(R.string.settings_school_label),
+                                value = stringResource(spec.displayNameRes),
+                                onClick = {
+                                    if (canSwitchSchool && schools != null) {
+                                        schoolPickerVisible = true
+                                    }
+                                },
+                            ),
+                        ),
+                    )
+                }
             }
 
             SettingsTopBar(
@@ -1020,6 +1058,35 @@ private fun AccountSyncContent(
                 )
             }
         }
+    }
+
+    // 学校选择浮层：两段式挂载（visible + mounted）。点当前学校只关浮层；点他校先把
+    // 浮层收起再切（装配在 IO，成功后整页按新学校 id 重绑，旧页状态随 key 重置）。
+    // busy 在浮层打开期间变化时也不切校——「整行不响应」对浮层行同样成立。
+    if (schoolPickerMounted && schools != null) {
+        SchoolPickerSheet(
+            visible = schoolPickerVisible,
+            schools = schools.schools,
+            activeSchoolId = spec.id,
+            onSelect = { id ->
+                schoolPickerVisible = false
+                if (id != spec.id && canSwitchSchool) {
+                    scope.launch {
+                        try {
+                            schools.switchSchool(id)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            // 装配失败等：注册表保持原校，页面不动，仅提示
+                            SyncDebugLog.d("switchSchool failed ${e::class.simpleName}")
+                            AppToasts.show(context, schoolSwitchFailedText)
+                        }
+                    }
+                }
+            },
+            onDismiss = { schoolPickerVisible = false },
+            onDismissed = { schoolPickerMounted = false },
+        )
     }
 }
 

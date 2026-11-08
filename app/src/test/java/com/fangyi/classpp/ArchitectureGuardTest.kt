@@ -26,6 +26,7 @@ class ArchitectureGuardTest {
             "com/fangyi/classpp/MainActivity.kt",
             "com/fangyi/classpp/ui/settings/AccountSyncScreen.kt",
             "com/fangyi/classpp/ui/settings/CredentialLoginSheet.kt",
+            "com/fangyi/classpp/ui/settings/SchoolPickerSheet.kt",
             "com/fangyi/classpp/ui/settings/SettingsScreen.kt",
             "com/fangyi/classpp/ui/schedule/SchoolImportSheet.kt",
             "com/fangyi/classpp/ui/schedule/ScheduleScreen.kt",

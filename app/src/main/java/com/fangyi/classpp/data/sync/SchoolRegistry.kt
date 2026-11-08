@@ -27,16 +27,20 @@ sealed interface SessionSlot {
  * - 启动硬校验：id 唯一且匹配 `^[a-z][a-z0-9_]{0,31}$`、至少一种登录方式、
  *   `timetableIntro ⇔ SCHEDULE_IMPORT`；会话装配后再校验 capabilities 与槽位一致；
  * - [session] 惰性装配 + 进程级缓存：同 id 同实例，并发首创只装配一次；
- * - [activeSession] 是 UI 的唯一入口；[dailySyncToggle] 不装配完整会话，供后台重排闹钟读取。
+ * - [activeSession] 是 UI 的唯一入口；[dailySyncToggle] 不装配完整会话，供后台重排闹钟读取；
+ * - 单活切换 [switchSchool]：先装配目标学校（失败保持原校），再持久化、更新 flow、
+ *   通知宿主重排每日同步（指导 §2.5）。
  *
  * 装配动作由构造参数注入（生产 = `provider.createSession(deps)`），使注册表本身不持有
- * Android Context，纯 JVM 可测；`data/sync` 因此不依赖任何学校实现。
+ * Android Context，纯 JVM 可测；`data/sync` 因此不依赖任何学校实现。活跃学校 id 的持久化
+ * 同样以 [ActiveSchoolStore] 注入（生产 = `school_prefs`，测试 = 内存 fake）。
  */
 class SchoolRegistry internal constructor(
     providers: List<SchoolProvider>,
     private val assembler: suspend (SchoolProvider) -> SchoolSession,
     private val toggleOf: (SchoolProvider) -> DailySyncToggle,
-    initialActiveSchoolId: String? = null,
+    private val activeStore: ActiveSchoolStore = NoPersistActiveSchoolStore,
+    private val onActiveSchoolChanged: (String) -> Unit = {},
 ) {
     /** 注册序（首项为默认活跃学校） */
     val schools: List<SchoolSpec>
@@ -45,15 +49,16 @@ class SchoolRegistry internal constructor(
 
     private val _activeSchoolId: MutableStateFlow<String>
 
-    /** 当前活跃学校 id；传入的初始 id 失效时回退注册首项（见 init） */
+    /** 当前活跃学校 id；启动时读 [ActiveSchoolStore]，失效 id 回退注册首项（见 init） */
     val activeSchoolId: StateFlow<String>
 
     private val _activeSession = MutableStateFlow<SessionSlot>(SessionSlot.Loading)
 
-    /** UI 唯一入口：Compose 直接 collect；切校装配期间为 [SessionSlot.Loading] */
+    /** UI 唯一入口：Compose 直接 collect；切校装配期间保持旧校就绪态，成功后一次切换 */
     val activeSession: StateFlow<SessionSlot> = _activeSession.asStateFlow()
 
     private val sessionMutex = Mutex()
+    private val switchMutex = Mutex()
     private val sessions = ConcurrentHashMap<String, SchoolSession>()
     private val toggles = ConcurrentHashMap<String, DailySyncToggle>()
 
@@ -78,7 +83,7 @@ class SchoolRegistry internal constructor(
         schools = providers.map { it.spec }
         providersById = providers.associateBy { it.spec.id }
         _activeSchoolId = MutableStateFlow(
-            initialActiveSchoolId?.takeIf { it in providersById } ?: schools.first().id,
+            activeStore.read()?.takeIf { it in providersById } ?: schools.first().id,
         )
         activeSchoolId = _activeSchoolId.asStateFlow()
     }
@@ -119,6 +124,31 @@ class SchoolRegistry internal constructor(
     }
 
     /**
+     * 切到指定学校（单活账号，指导 §2.5）：校验 → IO 装配 → 持久化 → 更新 flow →
+     * 通知宿主重排每日同步。
+     *
+     * 装配在切换生效**之前**完成，因此：
+     * - 装配失败时活跃学校、持久化值与 [activeSession] 全部保持原样（可继续用旧校）；
+     * - 装配期间 UI 仍显示旧校（不闪 Loading），成功后一次切成新校 Ready。
+     *
+     * 切换到当前学校是幂等空操作（不重复装配、不写盘、不重排闹钟）。busy 状态由 UI 侧
+     * 用 [canSwitchSchool] 拦截；这里不做静默拒绝，避免调用方误以为切换成功。
+     */
+    suspend fun switchSchool(id: String) {
+        if (id == _activeSchoolId.value) return
+        providersById[id] ?: throw IllegalArgumentException("unknown school id: '$id'")
+        switchMutex.withLock {
+            if (id == _activeSchoolId.value) return
+            // 目标学校尚未活跃：session(id) 不会触碰 activeSession，失败也不会污染旧校
+            val assembled = session(id)
+            activeStore.write(id)
+            _activeSchoolId.value = id
+            _activeSession.value = SessionSlot.Ready(assembled)
+            onActiveSchoolChanged(id)
+        }
+    }
+
+    /**
      * 每日同步开关：只读轻量状态，不装配完整 session（后台重排闹钟用）。
      * 同 id 恒返回同一实例，与 [SchoolSession.dailySync] 共用同一存储。
      */
@@ -144,8 +174,17 @@ class SchoolRegistry internal constructor(
         }
     }
 
-    private companion object {
+    companion object {
         /** 存储命名空间 / todo source / 本地 id 前缀共用，不得含分隔符 */
-        val ID_PATTERN = Regex("^[a-z][a-z0-9_]{0,31}$")
+        private val ID_PATTERN = Regex("^[a-z][a-z0-9_]{0,31}$")
+
+        /**
+         * 切校入口的禁用判定（指导 §3.2）：同步在途或自动续期在途时不允许切校。
+         *
+         * 抽成纯函数供 UI 与单测共用——「整行不响应、不弹 toast」是产品约束，
+         * 不依赖调用方各自的布尔拼接。
+         */
+        fun canSwitchSchool(syncBusy: Boolean, autoRenewBusy: Boolean): Boolean =
+            !syncBusy && !autoRenewBusy
     }
 }

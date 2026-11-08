@@ -434,6 +434,8 @@ fun SettingsScreen(
                     // 学校 UI 绑定（目前是网页登录浮层）；未绑定 = 不显示网页登录入口
                     schoolUi = activeSchoolUi,
                     dailySync = dailySync,
+                    // 学校选择入口/浮层：列表与切换都经注册表（切校后闹钟由注册表重排）
+                    schools = schools,
                     settingsTransforming = settingsTransforming,
                     modifier = fullSizeModifier,
                 )

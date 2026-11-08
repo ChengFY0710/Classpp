@@ -12,6 +12,8 @@ import com.fangyi.classpp.data.store.FileScheduleStore
 import com.fangyi.classpp.data.store.FileTagStore
 import com.fangyi.classpp.data.store.FileTodoStore
 import com.fangyi.classpp.data.sync.DailySyncController
+import com.fangyi.classpp.data.sync.PrefsActiveSchoolStore
+import com.fangyi.classpp.data.sync.SchoolProvider
 import com.fangyi.classpp.data.sync.SchoolRegistry
 import com.fangyi.classpp.data.sync.SessionDeps
 import com.fangyi.classpp.data.xmu.XmuDebugLog
@@ -55,6 +57,26 @@ class AppContainer internal constructor(
             }
         }
 
+        /**
+         * 系统事件（开机 / 时间·时区·日期变化）只重排每日闹钟的轻量入口：
+         * 只读 `school_prefs` 的活跃学校与各校开关，不载入数据仓库、不装配完整会话
+         * （指导 §2.7）。到点执行仍走 [get] 的完整容器。
+         */
+        fun scheduleDailySyncInBackground(context: Context) {
+            val appContext = context.applicationContext
+            val registry = SchoolRegistry(
+                providers = schoolProviders(),
+                // 轻量路径不应装配会话：真被调用即接线错误，直接失败暴露
+                assembler = { error("background daily sync must not assemble a session") },
+                toggleOf = { provider -> provider.dailySyncToggle(appContext) },
+                activeStore = PrefsActiveSchoolStore(appContext),
+            )
+            XmuDailySyncController(registry).scheduleNext(appContext)
+        }
+
+        /** 学校注册列表：新校接入 = 在此加一行（指导 §2.5 装配点唯一） */
+        private fun schoolProviders(): List<SchoolProvider> = listOf(XmuSchoolProvider())
+
         /** 构建并从磁盘载入各库（测试可用：传入应用上下文，仓库目录取 filesDir） */
         internal suspend fun create(context: Context): AppContainer {
             val appContext = context.applicationContext
@@ -66,8 +88,10 @@ class AppContainer internal constructor(
 
             // 学校注册表：装配点唯一。这里只提供共享依赖与 provider 列表（新校注册 = 加一行）；
             // 厦大的全部装配逻辑在其 provider 内（搬移自本文件的历史实现，逻辑与注释保留）。
+            // 活跃学校 id 落 school_prefs；切校成功后的闹钟重排经 onActiveSchoolChanged 接线。
+            var dailySyncController: DailySyncController? = null
             val schools = SchoolRegistry(
-                providers = listOf(XmuSchoolProvider()),
+                providers = schoolProviders(),
                 assembler = { provider ->
                     provider.createSession(
                         SessionDeps(
@@ -79,19 +103,27 @@ class AppContainer internal constructor(
                     )
                 },
                 toggleOf = { provider -> provider.dailySyncToggle(appContext) },
+                activeStore = PrefsActiveSchoolStore(appContext),
+                onActiveSchoolChanged = {
+                    // 切校后闹钟必须按新校开关重排，否则会停留在旧校状态
+                    dailySyncController?.scheduleNext(appContext)
+                },
             )
 
-            // 冷启动装配活跃学校（默认注册首项 = 厦大）：与改造前一致，容器返回即各库载入完成。
-            // 装配失败时 registry 已把 activeSession 置 Failed，异常继续抛出（原路径同样会抛）。
+            // 冷启动装配活跃学校（默认注册首项 / 上次切校的学校）：与改造前一致，
+            // 容器返回即各库载入完成。装配失败时 registry 已把 activeSession 置 Failed，
+            // 异常继续抛出（原路径同样会抛）。
             schools.session()
+
+            val dailySync = XmuDailySyncController(schools).also { dailySyncController = it }
 
             return AppContainer(
                 scheduleRepository = scheduleRepository,
                 todoRepository = todoRepository,
                 tagRepository = tagRepository,
                 schools = schools,
-                // 每日同步实现：当前由厦大薄壳委托冻结的三件套（Phase 3 迁入 data/sync 后替换）
-                dailySync = XmuDailySyncController,
+                // 每日同步实现：通用 scheduler/runner + 厦大 receiver 薄壳
+                dailySync = dailySync,
                 aiChatRepository = AiChatRepository.create(
                     store = FileAiChatStore(dir),
                     settings = PrefsAiSettingsStore(appContext),

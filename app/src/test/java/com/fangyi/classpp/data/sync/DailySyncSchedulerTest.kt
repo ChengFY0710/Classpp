@@ -1,4 +1,4 @@
-package com.fangyi.classpp.data.xmu
+package com.fangyi.classpp.data.sync
 
 import java.util.Calendar
 import java.util.GregorianCalendar
@@ -9,8 +9,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/** 每日自动同步的纯函数：6:00 触发时刻计算与 [XmuDailySyncScheduler.shouldRun] 各分支 */
-class XmuDailySyncTest {
+/**
+ * 每日自动同步的纯函数（随调度器自 `data/xmu` 迁入）：6:00 触发时刻计算与
+ * [DailySyncScheduler.shouldRun] 各分支。断言与迁移前逐条一致（指导 Phase 3）。
+ */
+class DailySyncSchedulerTest {
 
     @Before
     fun fixedTimeZone() {
@@ -30,7 +33,7 @@ class XmuDailySyncTest {
     @Test
     fun `scheduledAtOfDay 取当天 6 点整`() {
         val cal = Calendar.getInstance().apply {
-            timeInMillis = XmuDailySyncScheduler.scheduledAtOfDay(at(7, 30))
+            timeInMillis = DailySyncScheduler.scheduledAtOfDay(at(7, 30))
         }
         assertEquals(1, cal.get(Calendar.DAY_OF_MONTH))
         assertEquals(6, cal.get(Calendar.HOUR_OF_DAY))
@@ -40,14 +43,14 @@ class XmuDailySyncTest {
 
     @Test
     fun `nextTrigger 未到 6 点取今天`() {
-        assertEquals(at(6), XmuDailySyncScheduler.nextTriggerMillis(at(5, 59)))
-        assertEquals(at(6), XmuDailySyncScheduler.nextTriggerMillis(at(0)))
+        assertEquals(at(6), DailySyncScheduler.nextTriggerMillis(at(5, 59)))
+        assertEquals(at(6), DailySyncScheduler.nextTriggerMillis(at(0)))
     }
 
     @Test
     fun `nextTrigger 已过 6 点取明天`() {
-        assertEquals(at(6, dayOffset = 1), XmuDailySyncScheduler.nextTriggerMillis(at(6)))
-        assertEquals(at(6, dayOffset = 1), XmuDailySyncScheduler.nextTriggerMillis(at(23, 59)))
+        assertEquals(at(6, dayOffset = 1), DailySyncScheduler.nextTriggerMillis(at(6)))
+        assertEquals(at(6, dayOffset = 1), DailySyncScheduler.nextTriggerMillis(at(23, 59)))
     }
 
     // ---------- shouldRun 各分支 ----------
@@ -57,7 +60,7 @@ class XmuDailySyncTest {
         connected: Boolean = true,
         lastSync: Long = 0,
         now: Long = at(7),
-    ): Boolean = XmuDailySyncScheduler.shouldRun(enabled, connected, lastSync, now)
+    ): Boolean = DailySyncScheduler.shouldRun(enabled, connected, lastSync, now)
 
     @Test
     fun `开关关或未连接不跑`() {
@@ -79,7 +82,7 @@ class XmuDailySyncTest {
     @Test
     fun `今天 6 点后已同步过不跑`() {
         assertFalse(run(now = at(7), lastSync = at(6)))
-        assertFalse(run(now = at(7), lastSync = XmuDailySyncScheduler.scheduledAtOfDay(at(7))))
+        assertFalse(run(now = at(7), lastSync = DailySyncScheduler.scheduledAtOfDay(at(7))))
     }
 
     @Test

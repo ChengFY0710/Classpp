@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -115,13 +117,13 @@ class SchoolRegistryTest {
     }
 
     @Test
-    fun `active school accepts known initial id`() {
+    fun `active school accepts known persisted id`() {
         val registry = buildRegistry(
             listOf(
                 FakeProvider(schoolSpec("xmu")),
                 FakeProvider(schoolSpec("fzu")),
             ),
-            initialActiveSchoolId = "fzu",
+            activeStore = FakeActiveSchoolStore("fzu"),
         )
         assertEquals("fzu", registry.activeSchoolId.value)
     }
@@ -133,7 +135,7 @@ class SchoolRegistryTest {
                 FakeProvider(schoolSpec("xmu")),
                 FakeProvider(schoolSpec("fzu")),
             ),
-            initialActiveSchoolId = "gone",
+            activeStore = FakeActiveSchoolStore("gone"),
         )
         assertEquals("xmu", registry.activeSchoolId.value)
     }
@@ -245,6 +247,103 @@ class SchoolRegistryTest {
         }
     }
 
+    // ---------- 切校（单活账号） ----------
+
+    @Test
+    fun `switchSchool assembles persists and activates target`() = runBlocking {
+        val store = FakeActiveSchoolStore()
+        val changes = mutableListOf<String>()
+        val registry = buildRegistry(
+            listOf(
+                FakeProvider(schoolSpec("xmu")),
+                FakeProvider(schoolSpec("fzu")),
+            ),
+            activeStore = store,
+            onActiveSchoolChanged = { changes += it },
+        )
+        registry.session() // 冷启动先装配活跃校
+
+        registry.switchSchool("fzu")
+
+        assertEquals("fzu", registry.activeSchoolId.value)
+        assertEquals("fzu", store.stored)
+        assertEquals(listOf("fzu"), changes)
+        assertEquals(1, store.writes)
+        val slot = registry.activeSession.value
+        assertTrue(slot is SessionSlot.Ready)
+        assertEquals("fzu", (slot as SessionSlot.Ready).session.spec.id)
+        // 缓存的会话与 session() 取值一致
+        assertSame(slot.session, registry.session())
+    }
+
+    @Test
+    fun `switchSchool to current school is a no-op`() = runBlocking {
+        val store = FakeActiveSchoolStore()
+        var changes = 0
+        val registry = buildRegistry(
+            listOf(FakeProvider(schoolSpec("xmu"))),
+            activeStore = store,
+            onActiveSchoolChanged = { changes++ },
+        )
+        registry.session()
+
+        registry.switchSchool("xmu")
+
+        assertEquals(0, store.writes)
+        assertEquals(0, changes)
+        assertEquals("xmu", registry.activeSchoolId.value)
+    }
+
+    @Test
+    fun `switchSchool failure keeps previous active school`() = runBlocking {
+        val store = FakeActiveSchoolStore()
+        var changes = 0
+        val registry = buildRegistry(
+            listOf(
+                FakeProvider(schoolSpec("xmu")),
+                FakeProvider(schoolSpec("fzu")),
+            ),
+            activeStore = store,
+            onActiveSchoolChanged = { changes++ },
+            assembler = { provider ->
+                val fake = provider as FakeProvider
+                if (fake.spec.id == "fzu") error("boom")
+                fakeSession(fake.spec, fake.toggle)
+            },
+        )
+        registry.session()
+
+        val failure = runCatching { registry.switchSchool("fzu") }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertEquals("xmu", registry.activeSchoolId.value)
+        assertNull(store.stored)
+        assertEquals(0, changes)
+        val slot = registry.activeSession.value
+        assertTrue(slot is SessionSlot.Ready)
+        assertEquals("xmu", (slot as SessionSlot.Ready).session.spec.id)
+    }
+
+    @Test
+    fun `switchSchool rejects unknown school without touching state`() = runBlocking {
+        val store = FakeActiveSchoolStore()
+        val registry = buildRegistry(listOf(FakeProvider(schoolSpec("xmu"))), activeStore = store)
+        registry.session()
+
+        val failure = runCatching { registry.switchSchool("fzu") }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException)
+        assertEquals("xmu", registry.activeSchoolId.value)
+        assertEquals(0, store.writes)
+    }
+
+    @Test
+    fun `switch is disabled while sync or auto renew is busy`() {
+        assertTrue(SchoolRegistry.canSwitchSchool(syncBusy = false, autoRenewBusy = false))
+        assertFalse(SchoolRegistry.canSwitchSchool(syncBusy = true, autoRenewBusy = false))
+        assertFalse(SchoolRegistry.canSwitchSchool(syncBusy = false, autoRenewBusy = true))
+        assertFalse(SchoolRegistry.canSwitchSchool(syncBusy = true, autoRenewBusy = true))
+    }
+
     // ---------- 每日同步开关 ----------
 
     @Test
@@ -262,7 +361,8 @@ class SchoolRegistryTest {
 
     private fun buildRegistry(
         providers: List<SchoolProvider>,
-        initialActiveSchoolId: String? = null,
+        activeStore: ActiveSchoolStore = FakeActiveSchoolStore(),
+        onActiveSchoolChanged: (String) -> Unit = {},
         assembler: suspend (SchoolProvider) -> SchoolSession = { provider ->
             val fake = provider as FakeProvider
             fakeSession(fake.spec, fake.toggle)
@@ -271,7 +371,8 @@ class SchoolRegistryTest {
         providers = providers,
         assembler = assembler,
         toggleOf = { provider -> (provider as FakeProvider).toggle },
-        initialActiveSchoolId = initialActiveSchoolId,
+        activeStore = activeStore,
+        onActiveSchoolChanged = onActiveSchoolChanged,
     )
 
     private fun schoolSpec(
@@ -333,6 +434,19 @@ class SchoolRegistryTest {
         override val enabled: StateFlow<Boolean> = _enabled
         override fun setEnabled(enabled: Boolean) {
             _enabled.value = enabled
+        }
+    }
+
+    /** 活跃学校 id 的内存持久化：记录读取值与写入次数，验证切校往返 */
+    private class FakeActiveSchoolStore(initial: String? = null) : ActiveSchoolStore {
+        var stored: String? = initial
+        var writes = 0
+
+        override fun read(): String? = stored
+
+        override fun write(schoolId: String) {
+            stored = schoolId
+            writes++
         }
     }
 

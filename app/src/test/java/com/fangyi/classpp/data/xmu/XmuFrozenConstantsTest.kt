@@ -1,5 +1,7 @@
 package com.fangyi.classpp.data.xmu
 
+import com.fangyi.classpp.data.sync.DailySyncScheduler
+import com.fangyi.classpp.data.sync.PrefsActiveSchoolStore
 import com.fangyi.classpp.schools.xmu.XmuSchoolProvider
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -70,7 +72,7 @@ class XmuFrozenConstantsTest {
 
     @Test
     fun `daily sync alarm contract is frozen`() {
-        assertEquals(6, XmuDailySyncScheduler.TRIGGER_HOUR)
+        assertEquals(6, DailySyncScheduler.TRIGGER_HOUR)
         assertEquals(
             "com.fangyi.classpp.data.xmu.XmuDailySyncAlarmReceiver",
             XmuDailySyncAlarmReceiver::class.java.name,
@@ -79,12 +81,19 @@ class XmuFrozenConstantsTest {
             "com.fangyi.classpp.xmu.action.DAILY_SYNC_FIRE",
             XmuDailySyncAlarmReceiver.ACTION_FIRE,
         )
-        // requestCode 是私有常量：锁源码文本
-        assertTrue(frozenSource("XmuDailySyncScheduler.kt").contains("REQUEST_CODE = 1001"))
+        // requestCode 与接收类由厦大薄壳注入（Phase 3 迁入 data/sync）：锁源码文本
+        assertTrue(xmuSchoolsSource("XmuDailySyncController.kt").contains("REQUEST_CODE = 1001"))
         // Manifest 锚点：已发布的 PendingIntent 与系统广播继续命中
         assertTrue(
             frozenManifest().contains("android:name=\".data.xmu.XmuDailySyncAlarmReceiver\""),
         )
+    }
+
+    @Test
+    fun `active school prefs storage is frozen`() {
+        // school_prefs 非敏感、不排除备份；改名会让用户丢失上次选择的学校（回退首校）
+        assertEquals("school_prefs", PrefsActiveSchoolStore.FILE_NAME)
+        assertEquals("active_school", PrefsActiveSchoolStore.KEY_ACTIVE_SCHOOL)
     }
 
     // ---------- todo 标识 ----------
@@ -123,6 +132,17 @@ class XmuFrozenConstantsTest {
         )
         val file = dirs.map { File(it, name) }.firstOrNull { it.isFile }
             ?: error("frozen source not found: $name")
+        return file.readText(Charsets.UTF_8)
+    }
+
+    /** 厦大适配层源码（`schools/xmu`）：只读文本断言冻结常量，不依赖可见性 */
+    private fun xmuSchoolsSource(name: String): String {
+        val dirs = listOf(
+            File("src/main/java/com/fangyi/classpp/schools/xmu"),
+            File("app/src/main/java/com/fangyi/classpp/schools/xmu"),
+        )
+        val file = dirs.map { File(it, name) }.firstOrNull { it.isFile }
+            ?: error("schools/xmu source not found: $name")
         return file.readText(Charsets.UTF_8)
     }
 

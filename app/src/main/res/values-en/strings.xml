@@ -119,6 +119,8 @@
     <string name="cd_settings_close">Close</string>
     <!-- Account & sync (course center todo sync) -->
     <string name="settings_account_sync">Account &amp; sync</string>
+    <!-- School picker entry (bottom of Account &amp; sync; multi-school Phase 3) -->
+    <string name="settings_school_label">School</string>
     <!-- School name (multi-school: picker/entry row value and SchoolSpec.displayNameRes) -->
     <string name="xmu_school_name">Xiamen University</string>
     <string name="xmu_header_title">Sync your XMU account</string>
@@ -216,6 +218,12 @@
     <string name="sync_auto_login_disable_message">Turning this off deletes the saved account and password. The current sign-in is kept; after the session expires you will need to sign in manually.</string>
     <string name="sync_notif_text">Auto-imported %1$d, restored %2$d</string>
     <string name="account_sync_load_failed">Failed to load account info. Go back and try again.</string>
+    <!-- School picker (multi-school; single registered school still uses the same sheet) -->
+    <string name="school_picker_title">Choose school</string>
+    <string name="school_picker_sync_hint">Daily auto-sync applies to the current school only</string>
+    <string name="school_capability_todo_sync">Todo sync</string>
+    <string name="school_capability_schedule_import">Timetable import</string>
+    <string name="school_switch_failed">Failed to switch school. Try again.</string>
     <!-- Notifications & reminders -->
     <string name="settings_notifications">Notifications &amp; reminders</string>
     <string name="notification_header_title">Notifications &amp; reminders</string>

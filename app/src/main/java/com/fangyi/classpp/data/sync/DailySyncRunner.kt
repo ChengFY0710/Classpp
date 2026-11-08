@@ -1,4 +1,4 @@
-package com.fangyi.classpp.data.xmu
+package com.fangyi.classpp.data.sync
 
 import android.app.PendingIntent
 import android.content.Context
@@ -7,29 +7,30 @@ import androidx.annotation.StringRes
 import androidx.core.app.NotificationManagerCompat
 import com.fangyi.classpp.MainActivity
 import com.fangyi.classpp.R
-import com.fangyi.classpp.data.AppContainer
 import com.fangyi.classpp.data.notification.CHANNEL_SYNC
 import com.fangyi.classpp.data.notification.NotificationPoster
 import com.fangyi.classpp.data.notification.ensureNotificationChannels
-import com.fangyi.classpp.data.sync.CommitOutcome
-import com.fangyi.classpp.data.sync.PrepareOutcome
-import com.fangyi.classpp.data.sync.SchoolSession
-import com.fangyi.classpp.data.sync.SyncPlan
 
 /**
- * 每日自动同步的执行体：后台闹钟到点与进 App 补漏共用同一条路径。
+ * 每日自动同步的执行体（校无关）：后台闹钟到点与进 App 补漏共用同一条路径。
  *
- * 依赖来源是**活跃学校的通用会话**（[SchoolSession]），不再直接读厦大仓库：
- * 开关读 `session.dailySync`（与设置页/调度器同一存储），连接与上次同步读
- * `session.sync.state`，同步走 `SyncService` 的通用契约。不变量与验收（指导 §2.4/§2.7）：
+ * 依赖来源是**活跃学校的通用会话**（[SchoolRegistry.session]）：开关读
+ * `session.dailySync`（与设置页/调度器同一存储），连接与上次同步读 `session.sync.state`，
+ * 同步走 [SyncService] 的通用契约。不变量与验收（指导 §2.4/§2.7）：
  *
  * 与手动同步的差异是**静默语义**：不开预览、不问确认——到期后按预览页「默认全选」
  * 的口径导入全部新条目（restoreItems 在 commitSync 内必然全部恢复），完成发系统通知
  * 汇报；无新增仅补基线（markSynced，与手动同步「已是最新」分支同口径）；
  * **所有失败一律静默**——登录过期（未开自动续期无法后台重登）、账号变化（清空记录
  * 必须用户确认）、服务/网络问题都只留诊断日志，下次触发自愈，绝不自动 resetSyncData。
+ *
+ * 通用层不引用学校日志实现：诊断出口由构造注入（厦大注入 `XmuDebugLog::d`）。
+ * 通知标题读 `spec.syncNotifTitleRes`，正文用中性键 `sync_notif_text`（文案与旧键一致）。
  */
-object XmuDailySyncRunner {
+class DailySyncRunner(
+    private val registry: SchoolRegistry,
+    private val logger: (String) -> Unit = {},
+) {
 
     /** 执行结果（诊断/测试用，UI 不消费） */
     sealed interface Outcome {
@@ -47,16 +48,16 @@ object XmuDailySyncRunner {
     }
 
     /**
-     * 到点执行入口：[XmuDailySyncScheduler.shouldRun] 判定 → prepareSync(force=true)
+     * 到点执行入口：[DailySyncScheduler.shouldRun] 判定 → prepareSync(force=true)
      * （绕过 3 秒去抖；路由按自动续期状态自动选原生/WebView 路径）→ 全量导入或补基线
      * → 发通知汇报。活跃学校的会话由注册表装配/复用。
      */
     suspend fun runIfDue(context: Context): Outcome {
         val appContext = context.applicationContext
-        val session = AppContainer.get(appContext).schools.session()
+        val session = registry.session()
         val sync = session.sync
         val state = sync.state.value
-        if (!XmuDailySyncScheduler.shouldRun(
+        if (!DailySyncScheduler.shouldRun(
                 enabled = session.dailySync.enabled.value,
                 connected = state.uid.isNotEmpty(),
                 lastSyncAtMillis = state.lastSyncAtMillis,
@@ -65,11 +66,11 @@ object XmuDailySyncRunner {
         ) {
             return Outcome.Skipped
         }
-        XmuDebugLog.d("dailySync begin")
+        logger("dailySync begin")
         return when (val outcome = sync.prepareSync(force = true)) {
             is PrepareOutcome.Ready -> importAll(appContext, session, outcome.plan)
             is PrepareOutcome.Failed -> {
-                XmuDebugLog.d("dailySync prepare failed ${outcome.error}")
+                logger("dailySync prepare failed ${outcome.error}")
                 Outcome.Failed
             }
         }
@@ -90,7 +91,7 @@ object XmuDailySyncRunner {
             val result = sync.commitSync(plan, plan.newItems.mapTo(mutableSetOf()) { it.todo.id })
         ) {
             is CommitOutcome.Done -> {
-                XmuDebugLog.d(
+                logger(
                     "dailySync imported=${result.report.imported} restored=${result.report.restored}",
                 )
                 if (result.report.imported + result.report.restored > 0) {
@@ -104,7 +105,7 @@ object XmuDailySyncRunner {
                 Outcome.Imported(result.report.imported, result.report.restored)
             }
             is CommitOutcome.Failed -> {
-                XmuDebugLog.d("dailySync commit failed ${result.error}")
+                logger("dailySync commit failed ${result.error}")
                 Outcome.Failed
             }
         }
@@ -149,5 +150,7 @@ object XmuDailySyncRunner {
         )
 
     /** 与通知落页 intent（tab extras、requestCode 0）区分开，避免 filterEquals 相同互相覆盖 */
-    private const val REQUEST_CODE_OPEN_APP = 1002
+    private companion object {
+        const val REQUEST_CODE_OPEN_APP = 1002
+    }
 }
