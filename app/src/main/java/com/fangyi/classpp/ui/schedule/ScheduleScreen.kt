@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -73,6 +74,8 @@ import com.fangyi.classpp.data.TodoReadResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.TodoSort
 import com.fangyi.classpp.data.ai.AiChatRepository
+import com.fangyi.classpp.data.ai.AiError
+import com.fangyi.classpp.data.ai.AiScheduleRecognition
 import com.fangyi.classpp.data.expandRepeatOccurrences
 import com.fangyi.classpp.data.export.ShareCodec
 import com.fangyi.classpp.data.filterTodos
@@ -115,10 +118,12 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlin.math.abs
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** [selectedWeek] 的「未初始化」哨兵：0 与负数都是合法周号（开学前的日历周），故取最小值 */
 private const val WEEK_UNSET = Int.MIN_VALUE
@@ -798,6 +803,7 @@ fun ScheduleScreen(
                 switcherCreateVisible = false
                 importSheetVisible = false
                 wakeupSheetVisible = false
+                aiImportVisible = false
                 addTarget = emptyList()
                 editTargetId = ""
                 chooserSourceId = ""
@@ -1513,17 +1519,176 @@ fun ScheduleScreen(
                 if (aiImportMounted) {
                     val aiConfigured by aiChatRepository?.configured?.collectAsState()
                         ?: remember { mutableStateOf(false) }
+                    // 识别运行态：浮层纯展示，请求 / 临时图 / 结果都由本屏持有（同 Wakeup 导入）。
+                    // 刻意不 rememberSaveable：旋转/进程重建时 scope 一并取消，识别就地作废
+                    var aiAnalyzing by remember { mutableStateOf(false) }
+                    var aiError by remember { mutableStateOf<String?>(null) }
+                    var aiParsed by remember { mutableStateOf<Schedule?>(null) }
+                    var aiJob by remember { mutableStateOf<Job?>(null) }
+                    var aiImageName by remember { mutableStateOf<String?>(null) }
+                    // 请求代号：取消后立刻重开时，旧协程的 finally / 迟到结果不得改写新请求的状态
+                    var aiRequestId by remember { mutableIntStateOf(0) }
+                    val aiRepo = aiChatRepository
+
+                    // 错误文案在组合期解析，协程里只查表（同教务导入的映射方式）
+                    val aiErrorTexts: Map<AiError, String> = mapOf(
+                        AiError.Auth to stringResource(R.string.ai_error_auth),
+                        AiError.Quota to stringResource(R.string.ai_error_quota),
+                        AiError.NotFound to stringResource(R.string.ai_error_not_found),
+                        AiError.RateLimited to stringResource(R.string.ai_error_rate_limited),
+                        AiError.Server to stringResource(R.string.ai_error_server),
+                        AiError.Network to stringResource(R.string.ai_error_network),
+                        AiError.BadResponse to stringResource(R.string.ai_error_bad_response),
+                    )
+                    val aiVisionHint = stringResource(R.string.import_ai_error_vision_hint)
+                    val aiNoJsonText = stringResource(R.string.import_ai_error_no_json)
+                    val aiNoCoursesText = stringResource(R.string.import_ai_error_no_courses)
+                    val aiFormatText = stringResource(R.string.import_ai_error_invalid)
+                    val aiUnreadableText = stringResource(R.string.import_ai_error_unreadable)
+                    val aiNotConfiguredText = stringResource(R.string.ai_not_configured_hint)
+                    val aiConfirmDetail = stringResource(R.string.import_ai_confirm_detail)
+
+                    // 临时图片只保留当前这一份：换图 / 重试 / 收场都清掉旧文件
+                    val clearAiImage: () -> Unit = {
+                        val name = aiImageName
+                        aiImageName = null
+                        if (name != null) aiRepo?.imageStore?.delete(name)
+                    }
+                    // 课表格式类错误（模型没按契约输出）给 AI 专属文案；其余校验错误沿用现有映射
+                    val aiInvalidText: (ScheduleError) -> String = { error ->
+                        when (error) {
+                            is ScheduleError.ImportFormatInvalid,
+                            is ScheduleError.ImportVersionUnsupported,
+                            is ScheduleError.ImportKindMismatch,
+                            -> aiFormatText
+                            else -> error.toEditMessage(context)
+                        }
+                    }
+                    val onAiAnalyze: (Uri) -> Unit = { uri ->
+                        if (aiRepo != null && !aiAnalyzing) {
+                            aiAnalyzing = true
+                            aiError = null
+                            aiJob?.cancel()
+                            val requestId = aiRequestId + 1
+                            aiRequestId = requestId
+                            aiJob = scope.launch {
+                                try {
+                                    val name = withContext(Dispatchers.IO) {
+                                        aiRepo.imageStore.import(context, uri)
+                                    }
+                                    if (aiRequestId != requestId) return@launch
+                                    if (name == null) {
+                                        aiError = aiUnreadableText
+                                    } else {
+                                        clearAiImage()
+                                        aiImageName = name
+                                        val recognition = aiRepo.recognizeSchedule(name)
+                                        // 取消后立即重开：旧请求的结果直接丢弃
+                                        if (aiRequestId != requestId) return@launch
+                                        aiError = when (recognition) {
+                                            is AiScheduleRecognition.Ok -> {
+                                                aiParsed = recognition.schedule
+                                                null
+                                            }
+                                            is AiScheduleRecognition.AiFailed -> {
+                                                val base = aiErrorTexts.getValue(recognition.error)
+                                                // 纯文本模型收到图片通常落到 BadResponse：补一句换视觉模型
+                                                if (recognition.error == AiError.BadResponse) {
+                                                    base + "\n" + aiVisionHint
+                                                } else {
+                                                    base
+                                                }
+                                            }
+                                            is AiScheduleRecognition.Invalid ->
+                                                aiInvalidText(recognition.error)
+                                            AiScheduleRecognition.NoJson -> aiNoJsonText
+                                            AiScheduleRecognition.NoCourses -> aiNoCoursesText
+                                            AiScheduleRecognition.ImageUnavailable -> aiUnreadableText
+                                            AiScheduleRecognition.NotConfigured -> aiNotConfiguredText
+                                        }
+                                    }
+                                } finally {
+                                    if (aiRequestId == requestId) aiAnalyzing = false
+                                }
+                            }
+                        }
+                    }
+
                     AiImportSheet(
                         visible = aiImportVisible,
                         onDismissed = { aiImportMounted = false },
-                        onDismiss = { aiImportVisible = false },
+                        onDismiss = {
+                            aiImportVisible = false
+                            aiRequestId++
+                            aiJob?.cancel()
+                            aiJob = null
+                            aiAnalyzing = false
+                            aiError = null
+                            aiParsed = null
+                            clearAiImage()
+                        },
                         configured = aiConfigured,
                         onOpenSettings = {
                             aiImportVisible = false
                             importSheetVisible = false
                             onOpenAiSettings()
                         },
+                        analyzing = aiAnalyzing,
+                        errorText = aiError,
+                        onAnalyze = onAiAnalyze,
+                        onStopAnalyze = {
+                            aiRequestId++
+                            aiJob?.cancel()
+                            aiJob = null
+                            aiAnalyzing = false
+                            clearAiImage()
+                        },
+                        onImageChanged = { aiError = null },
                     )
+
+                    // 识别结果确认：复用 Wakeup / 教务同一个导入确认弹窗（课程数 + 课表名）。
+                    // 取消留在本浮层（图片仍在）可重试；确认 → 统一导入管线新建课表并切换
+                    var aiConfirmMounted by remember { mutableStateOf(false) }
+                    val aiConfirmVisible = aiParsed != null
+                    if (aiConfirmVisible) aiConfirmMounted = true
+                    if (aiConfirmMounted) {
+                        ScheduleImportConfirmDialog(
+                            title = stringResource(R.string.import_ai_confirm_title),
+                            courseCount = aiParsed?.courses?.size ?: 0,
+                            scheduleName = aiParsed?.name.orEmpty(),
+                            detailLine = aiConfirmDetail,
+                            visible = aiConfirmVisible,
+                            onDismissed = { aiConfirmMounted = false },
+                            onCancel = {
+                                aiParsed = null
+                                clearAiImage()
+                            },
+                            onConfirm = {
+                                val parsed = aiParsed
+                                aiParsed = null
+                                if (parsed != null) {
+                                    scope.launch {
+                                        when (
+                                            val r = repository.importSchedule(
+                                                ShareCodec.encode(parsed, System.currentTimeMillis()),
+                                            )
+                                        ) {
+                                            is ReadResult.Ok -> {
+                                                aiImportVisible = false
+                                                importSheetVisible = false
+                                                clearAiImage()
+                                                requestSwitch(r.value)
+                                            }
+                                            is ReadResult.Err -> AppToasts.show(
+                                                context,
+                                                r.error.toEditMessage(context),
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                        )
+                    }
                 }
                 // Wakeup 口令导入浮层：叠在导入浮层之上（粘贴分享文案 → 跑云端适配脚本）。
                 // 关浮层 = 取消导入（onDismissed 取消协程，执行器 finally 销毁 WebView）

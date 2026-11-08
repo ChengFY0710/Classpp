@@ -191,13 +191,12 @@ class AiChatRepositoryTest {
     private class ScriptedResponse(
         private val lines: List<String?>,
         private val failAfterLines: Boolean = false,
+        override val status: Int = 200,
     ) : AiStreamResponse {
         val gate = CountDownLatch(1)
         var cancelled = false
             private set
         private var index = 0
-
-        override val status: Int = 200
 
         override fun readLine(): String? {
             if (failAfterLines && index >= lines.size) throw IOException("connection reset")
@@ -291,6 +290,28 @@ class AiChatRepositoryTest {
         return repo
     }
 
+    /** 识别导入用例：预置一张已导入的图片副本，仓库走真实 AiImageStore 编码 */
+    private fun repositoryWithImage(
+        transport: FakeAiTransport,
+        settings: FakeAiSettingsStore = FakeAiSettingsStore(),
+        imageBytes: ByteArray = byteArrayOf(1),
+    ): AiChatRepository {
+        val imageStore = AiImageStore(tempImageDir())
+        imageStore.file("page.jpg").parentFile?.mkdirs()
+        imageStore.file("page.jpg").writeBytes(imageBytes)
+        val repo = AiChatRepository(
+            store = FakeAiChatStore(),
+            settings = settings,
+            client = AiClient(transport),
+            contextProvider = { AiChatContext() },
+            persister = FakeTodoPersister(),
+            imageStore = imageStore,
+            clock = Clock { IsoDate.of(2026, 11, 1) },
+        )
+        runBlocking { repo.bootstrap() }
+        return repo
+    }
+
     // ---------- 用例 ----------
 
     @Test
@@ -369,6 +390,87 @@ class AiChatRepositoryTest {
         )
 
         assertEquals("收到", repo.messages.value.last().content)
+    }
+
+    // ---------- AI 识别导入 ----------
+
+    @Test
+    fun `recognizeSchedule sends import prompt with image and parses schedule`() = runBlocking {
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    sse("```json\n$AI_SCHEDULE_IMPORT_VALID_JSON\n```"),
+                    "data: [DONE]",
+                ),
+            ),
+        )
+        val repo = repositoryWithImage(transport, imageBytes = byteArrayOf(42))
+
+        val result = repo.recognizeSchedule("page.jpg")
+
+        val ok = result as AiScheduleRecognition.Ok
+        assertEquals("2026-2027 第1学期", ok.schedule.name)
+        assertEquals(1, ok.schedule.courses.size)
+        // 识别请求不进对话：不产生消息、不翻转发送态
+        assertTrue(repo.messages.value.isEmpty())
+        assertFalse(repo.sending.value)
+
+        // wire 请求：system 是课表解析提示词，user 是文字 + 图片块
+        val body = Json.parseToJsonElement(transport.opened.single().jsonBody).jsonObject
+        val messages = body["messages"]!!.jsonArray
+        assertEquals("system", messages.first().jsonObject["role"]!!.jsonPrimitive.content)
+        assertTrue(
+            messages.first().jsonObject["content"]!!.jsonPrimitive.content
+                .contains("课表截图解析器"),
+        )
+        val userTurn = messages.last().jsonObject
+        assertEquals("user", userTurn["role"]!!.jsonPrimitive.content)
+        val content = userTurn["content"]!!.jsonArray
+        assertEquals("text", content[0].jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals(
+            "data:image/jpeg;base64,${Base64.getEncoder().encodeToString(byteArrayOf(42))}",
+            content[1].jsonObject["image_url"]!!.jsonObject["url"]!!.jsonPrimitive.content,
+        )
+    }
+
+    @Test
+    fun `recognizeSchedule maps http failure`() = runBlocking {
+        val repo = repositoryWithImage(
+            FakeAiTransport(ScriptedResponse(lines = emptyList(), status = 401)),
+        )
+
+        val result = repo.recognizeSchedule("page.jpg")
+
+        assertEquals(AiError.Auth, (result as AiScheduleRecognition.AiFailed).error)
+    }
+
+    @Test
+    fun `recognizeSchedule reports no json and empty courses`() = runBlocking {
+        val noJson = repositoryWithImage(
+            FakeAiTransport(ScriptedResponse(listOf(sse("抱歉，无法识别"), "data: [DONE]"))),
+        )
+        assertEquals(AiScheduleRecognition.NoJson, noJson.recognizeSchedule("page.jpg"))
+
+        val noCourses = repositoryWithImage(
+            FakeAiTransport(
+                ScriptedResponse(
+                    listOf(sse("```json\n$AI_SCHEDULE_IMPORT_EMPTY_JSON\n```"), "data: [DONE]"),
+                ),
+            ),
+        )
+        assertEquals(AiScheduleRecognition.NoCourses, noCourses.recognizeSchedule("page.jpg"))
+    }
+
+    @Test
+    fun `recognizeSchedule requires configured provider`() = runBlocking {
+        val transport = FakeAiTransport()
+        val repo = repositoryWithImage(
+            transport,
+            settings = FakeAiSettingsStore(apiKey = null),
+        )
+
+        assertEquals(AiScheduleRecognition.NotConfigured, repo.recognizeSchedule("page.jpg"))
+        assertTrue(transport.opened.isEmpty())
     }
 
     @Test

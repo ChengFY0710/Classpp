@@ -35,6 +35,7 @@ import com.fangyi.classpp.ui.components.EmptyState
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SettingsInfoHeaderCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
+import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.SettingsCardShape
@@ -56,20 +57,24 @@ private const val AiImportPreviewAspectRatio = 3f / 2f
 
 /**
  * 「AI 识别导入」浮层：导入课表浮层的第一张入口卡打开，叠在其上（本浮层在场时导入浮层经
- * covered 缩小后退）。本期只做 UI：选图、状态切换与光场动画真实可用，识别请求尚未接入。
+ * covered 缩小后退）。浮层只做展示与交互，识别请求 / 结果 / 临时图片生命周期都由宿主
+ * （ScheduleScreen）持有——同 Wakeup 导入「浮层纯 UI、宿主做数据工作」的职责划分。
  *
- * 四个状态与顶栏（胶囊排布由 [OverlaySheet] 的 confirmAtEnd 规则给出）：
+ * 状态与顶栏（胶囊排布由 [OverlaySheet] 的 confirmAtEnd 规则给出）：
  * - 未配置 AI 服务商：正文复用 AI 对话浮层的 [AiChatNotConfigured]（「先配置 AI 服务商」+
  *   去 AI 设置），右上只有「关闭」；
  * - 未选图：白底选图卡（图标 + 标题 + 说明，间距同 [SettingsInfoHeaderCard]），点卡拉起
  *   系统相册（Photo Picker，无需权限）；右上只有「关闭」；
  * - 已选图：预览图替换选图卡（点图可重选），左上「取消」+ 右上「开始」；
- * - 分析中：右上「取消」停止分析并回到已选图态；图片背后浮出 [AiThinkingAurora] 的
- *   [AiAuroraAnchor.Center] 光场（与 AI 对话浮层同一实现，走 OverlaySheet 的卡片背景层：
- *   横向铺满整卡、向下淡出到分析提示背后），下方用 [EmptyState] 显示分析提示。
- *   分析态一直保持到用户取消，本版不产出结果。
+ * - 分析中（[analyzing]）：右上「取消」回调 [onStopAnalyze]；图片背后浮出
+ *   [AiThinkingAurora] 的 [AiAuroraAnchor.Center] 光场（与 AI 对话浮层同一实现，走
+ *   OverlaySheet 的卡片背景层：横向铺满整卡、向下淡出到分析提示背后），下方用
+ *   [EmptyState] 显示分析提示；
+ * - 识别失败（[errorText]）：下方改为信息错误条；图片与「开始」保留，点开始即可重试，
+ *   换图会先回调 [onImageChanged] 清掉旧错误。
  *
  * 分析中禁用下拉关闭（下拉会被拦成回弹），返回键先停止分析、再按才关浮层。
+ * 识别成功由宿主弹出导入确认弹窗，本浮层不感知结果。
  *
  * [onOpenSettings] 由宿主接线：先收起本浮层与导入浮层，再直达设置页 AI 子页。
  */
@@ -80,11 +85,20 @@ internal fun AiImportSheet(
     onDismiss: () -> Unit,
     configured: Boolean,
     onOpenSettings: () -> Unit,
+    // 宿主持有的识别运行态：浮层只读，不发请求
+    analyzing: Boolean,
+    // 宿主映射后的错误文案；null = 无错误
+    errorText: String?,
+    // 开始分析：宿主负责图片落盘、发请求与结果处理
+    onAnalyze: (Uri) -> Unit,
+    // 分析中取消（顶栏取消 / 返回键）；回到已选图态
+    onStopAnalyze: () -> Unit,
+    // 换图后清掉宿主的旧错误
+    onImageChanged: () -> Unit,
     covered: Boolean = false,
 ) {
     // 选中的图片以 Uri 字符串保存：配置变更后仍能还原（Photo Picker 的读授权随进程存活）
     var imageUriString by rememberSaveable { mutableStateOf<String?>(null) }
-    var analyzing by remember { mutableStateOf(false) }
     val imageUri = remember(imageUriString) { imageUriString?.let(Uri::parse) }
 
     // 系统相册单图选择：ImageOnly 只出图片，视频等文件类型不可选；不申请任何权限
@@ -93,8 +107,8 @@ internal fun AiImportSheet(
     ) { uri ->
         if (uri != null) {
             imageUriString = uri.toString()
-            // 换图即退出分析态，重新走「已选图」编排
-            analyzing = false
+            // 换图即作废旧错误；分析态由宿主在开始/停止时维护
+            onImageChanged()
         }
     }
     val launchPicker: () -> Unit = {
@@ -105,7 +119,7 @@ internal fun AiImportSheet(
 
     // 返回键：分析中先停止分析；否则关浮层（后注册先收到，优先于导入浮层）
     BackHandler(enabled = true) {
-        if (analyzing) analyzing = false else onDismiss()
+        if (analyzing) onStopAnalyze() else onDismiss()
     }
 
     val canStart = configured && imageUri != null && !analyzing
@@ -123,13 +137,13 @@ internal fun AiImportSheet(
         // 动作胶囊自动回到右侧并改写成「取消」
         confirmLabel = if (canStart) stringResource(R.string.import_ai_start) else null,
         confirmAtEnd = true,
-        onConfirm = { analyzing = true },
+        onConfirm = { imageUri?.let(onAnalyze) },
         rightAction = SheetTopAction(
             label = stringResource(actionLabel),
             icon = R.drawable.ic_dismiss_circle,
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.onSurface,
-            onClick = { if (analyzing) analyzing = false else onDismiss() },
+            onClick = { if (analyzing) onStopAnalyze() else onDismiss() },
         ),
         onDismiss = onDismiss,
         visible = visible,
@@ -221,6 +235,9 @@ internal fun AiImportSheet(
                     title = stringResource(R.string.import_ai_analyzing_title),
                     description = stringResource(R.string.import_ai_analyzing_desc),
                 )
+            } else if (errorText != null) {
+                // 识别失败：错误条替代分析提示；图片与「开始」都保留，点开始重试
+                SheetInfoBanner(text = errorText, isError = true)
             }
         }
     }

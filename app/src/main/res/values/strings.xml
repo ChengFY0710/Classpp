@@ -672,6 +672,13 @@
     <string name="import_ai_start">开始</string>
     <string name="import_ai_analyzing_title">正在分析…</string>
     <string name="import_ai_analyzing_desc">结果由 AI 生成，不保证准确，请仔细核对</string>
+    <string name="import_ai_confirm_title">导入 AI 识别结果</string>
+    <string name="import_ai_confirm_detail">识别结果由 AI 生成，请核对课表内容后再导入。</string>
+    <string name="import_ai_error_no_json">AI 没有返回可识别的课表，请重试或换一张更清晰的图片</string>
+    <string name="import_ai_error_no_courses">没有识别到课程，请换一张更清晰的课表图片</string>
+    <string name="import_ai_error_invalid">AI 返回的课表格式无法解析，请重试</string>
+    <string name="import_ai_error_unreadable">图片读取失败，请重新选择</string>
+    <string name="import_ai_error_vision_hint">若当前模型不支持图片输入，请在 AI 设置中切换到支持视觉的模型</string>
     <string name="cd_ai_import_image">待识别的课表图片</string>
     <string name="import_json_label">从 JSON 文件导入</string>
     <string name="import_json_desc">仅支持 Classpp 格式的 JSON 文件</string>

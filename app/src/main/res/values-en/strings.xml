@@ -533,6 +533,13 @@
     <string name="import_ai_start">Start</string>
     <string name="import_ai_analyzing_title">Analyzing…</string>
     <string name="import_ai_analyzing_desc">AI-generated results may be inaccurate. Please double-check.</string>
+    <string name="import_ai_confirm_title">Import AI Scan Result</string>
+    <string name="import_ai_confirm_detail">AI-generated results may be inaccurate — review the schedule before importing.</string>
+    <string name="import_ai_error_no_json">AI did not return a readable schedule. Try again or use a clearer photo.</string>
+    <string name="import_ai_error_no_courses">No courses were recognized. Try a clearer timetable image.</string>
+    <string name="import_ai_error_invalid">AI returned a schedule that couldn\'t be parsed — try again</string>
+    <string name="import_ai_error_unreadable">Couldn\'t read the image — pick it again</string>
+    <string name="import_ai_error_vision_hint">If the current model doesn\'t accept images, switch to a vision-capable model in AI settings</string>
     <string name="cd_ai_import_image">Timetable image to scan</string>
     <string name="import_json_label">Import from JSON File</string>
     <string name="import_json_desc">Classpp-format JSON files only</string>

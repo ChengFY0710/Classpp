@@ -2,6 +2,7 @@ package com.fangyi.classpp.data.ai
 
 import com.fangyi.classpp.data.Clock
 import com.fangyi.classpp.data.LoadState
+import com.fangyi.classpp.data.ReadResult
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.store.LoadIssue
@@ -484,6 +485,56 @@ class AiChatRepository internal constructor(
             } finally {
                 _sending.value = false
             }
+        }
+    }
+
+    /**
+     * AI 识别导入：把 [imageName]（[imageStore] 里的临时图片）交给当前配置的模型，
+     * 按 [AiScheduleImportPrompt] 的契约解析成可导入课表。
+     *
+     * 独立于对话：不读写 [messages] / [conversations]、不解析待办、不落盘；取消原样抛出
+     * [CancellationException]（调用方取消协程即中断请求）。通道失败 / 无 JSON / 空课表 /
+     * 校验失败分别用 [AiScheduleRecognition] 的分支表达，UI 据此显示错误条。
+     *
+     * 图片必须先经 [imageStore] 的 `import` 落盘（UI 层做），这里只按文件名编码。
+     */
+    suspend fun recognizeSchedule(imageName: String): AiScheduleRecognition {
+        val (connection, apiKey) = loadCredentials()
+        _configured.value = connection.isConfigured && apiKey != null
+        if (!connection.isConfigured || apiKey == null) {
+            return AiScheduleRecognition.NotConfigured
+        }
+
+        val image = withContext(Dispatchers.IO) { imageStore.encode(imageName) }
+            ?: return AiScheduleRecognition.ImageUnavailable
+
+        val reply = try {
+            client.streamChat(
+                connection = connection,
+                apiKey = apiKey,
+                turns = listOf(
+                    AiChatTurn(role = "system", content = AiScheduleImportPrompt.SYSTEM),
+                    AiChatTurn(
+                        role = "user",
+                        content = AiScheduleImportPrompt.USER,
+                        images = listOf(image),
+                    ),
+                ),
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: AiException) {
+            return AiScheduleRecognition.AiFailed(e.error)
+        }
+
+        return when (val parsed = AiScheduleImportCodec.parse(reply)) {
+            null -> AiScheduleRecognition.NoJson
+            is ReadResult.Ok -> if (parsed.value.courses.isEmpty()) {
+                AiScheduleRecognition.NoCourses
+            } else {
+                AiScheduleRecognition.Ok(parsed.value)
+            }
+            is ReadResult.Err -> AiScheduleRecognition.Invalid(parsed.error)
         }
     }
 
