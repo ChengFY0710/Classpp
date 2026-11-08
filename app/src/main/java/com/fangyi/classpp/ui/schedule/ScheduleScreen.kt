@@ -104,6 +104,7 @@ import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.LocalTodayState
 import com.fangyi.classpp.ui.components.BottomFadeScrim
+import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.components.rememberPopupActionGate
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.TabTransitionState
@@ -202,6 +203,16 @@ fun ScheduleScreen(
     // State 对象本身稳定（remember），供 Pager 的 pageCount 闭包长期读取；schedule 为当前值
     val scheduleState = repository.activeSchedule.collectAsState()
     val schedule = scheduleState.value
+    // 全部课表（切换浮层列表 + 落库退让的回流信号）：无条件收集——退让窗口不随浮层
+    // 挂载态断开，列表重写后的回流总能被 onReflow 看见
+    val schedulesState = repository.schedules.collectAsState()
+    // 切换课表浮层的 Haze 退让：列表行增删（删除 / 新建的落库回流）就是该浮层顶栏磨砂的
+    // 采样源重写，窗口内整条链卸载、回流落定两帧后挂回（机制见 HazeRetreatState）。
+    // 回流信号走 snapshotFlow 而非组合期读值：它只喂状态机，不该驱动本屏重组
+    val switcherHazeRetreat = rememberHazeRetreat()
+    LaunchedEffect(schedulesState) {
+        snapshotFlow { schedulesState.value }.collect { switcherHazeRetreat.onReflow() }
+    }
     // 待办仓库仅供课程详情浮层展示该课程标签下的待办；未注入（预览/首帧）视为空列表
     val todosState = todoRepository?.todos?.collectAsState()
     // 展示用待办：课程中心同步的待办匹配到激活课表课程时直接并入对应课程标签——与待办页/
@@ -826,15 +837,18 @@ fun ScheduleScreen(
                 }
             }
             // 新建：成功先关表单浮层回切换列表再走切换（脏则弹确认；取消确认也不会停在
-            // 表单里重复点创建）；失败走系统 Toast（新建失败多为重名/名称非法，表单内容无需改动引导）
+            // 表单里重复点创建）；失败走系统 Toast（新建失败多为重名/名称非法，表单内容无需改动引导）。
+            // 新课表随仓库回流追加到切换浮层列表末尾（采样源结构重写），落库窗口内退让
             val onCreateConfirm: (String, IsoDate, IsoDate) -> Unit = { name, start, end ->
-                scope.launch {
-                    when (val r = repository.createSchedule(name, start, end)) {
-                        is ReadResult.Ok -> {
-                            switcherCreateVisible = false
-                            requestSwitch(r.value)
+                switcherHazeRetreat.forCommit {
+                    scope.launch {
+                        when (val r = repository.createSchedule(name, start, end)) {
+                            is ReadResult.Ok -> {
+                                switcherCreateVisible = false
+                                requestSwitch(r.value)
+                            }
+                            is ReadResult.Err -> AppToasts.show(context, r.error.toEditMessage(context))
                         }
-                        is ReadResult.Err -> AppToasts.show(context, r.error.toEditMessage(context))
                     }
                 }
             }
@@ -842,29 +856,33 @@ fun ScheduleScreen(
             // 删的是当前激活课表时周选择复位防越界（同 performSwitch 的复位思路）；
             // 删空则关浮层回无课表空态（新建课表页）。
             // 删除为最终态（弹窗已告知不可撤销）：同步把被删课表从编辑基线里移除——
-            // 取消编辑的整库回滚因此不会复活它，其余改动照旧可回滚
+            // 取消编辑的整库回滚因此不会复活它，其余改动照旧可回滚。
+            // 被删行随仓库回流从切换浮层列表消失（删空为 N→0），落库窗口内整条 Haze 链退让
             val onDeleteSchedule: (String) -> Unit = { id ->
-                scope.launch {
-                    when (val r = repository.deleteSchedule(id)) {
-                        is OpResult.Ok -> {
-                            if (id == schedule.id) selectedWeek = WEEK_UNSET
-                            if (repository.schedules.value.isEmpty()) {
-                                switcherVisible = false
-                                switcherCreateVisible = false
+                switcherHazeRetreat.forCommit {
+                    scope.launch {
+                        when (val r = repository.deleteSchedule(id)) {
+                            is OpResult.Ok -> {
+                                if (id == schedule.id) selectedWeek = WEEK_UNSET
+                                if (repository.schedules.value.isEmpty()) {
+                                    switcherVisible = false
+                                    switcherCreateVisible = false
+                                }
+                                if (editing && editBaselineJson.isNotEmpty()) {
+                                    val baseline =
+                                        ScheduleJson.decodeStorage<ScheduleFile>(editBaselineJson)
+                                    editBaselineJson = ScheduleJson.encodeStorage(
+                                        baseline.copy(
+                                            schedules = baseline.schedules.filterNot { it.id == id },
+                                            // 基线激活 id 指向被删课表时回落到剩余第一张（同仓库语义）
+                                            activeScheduleId = baseline.activeScheduleId?.takeIf { it != id }
+                                                ?: baseline.schedules.firstOrNull { it.id != id }?.id,
+                                        ),
+                                    )
+                                }
                             }
-                            if (editing && editBaselineJson.isNotEmpty()) {
-                                val baseline = ScheduleJson.decodeStorage<ScheduleFile>(editBaselineJson)
-                                editBaselineJson = ScheduleJson.encodeStorage(
-                                    baseline.copy(
-                                        schedules = baseline.schedules.filterNot { it.id == id },
-                                        // 基线激活 id 指向被删课表时回落到剩余第一张（同仓库语义）
-                                        activeScheduleId = baseline.activeScheduleId?.takeIf { it != id }
-                                            ?: baseline.schedules.firstOrNull { it.id != id }?.id,
-                                    ),
-                                )
-                            }
+                            is OpResult.Err -> AppToasts.show(context, r.error.toEditMessage(context))
                         }
-                        is OpResult.Err -> AppToasts.show(context, r.error.toEditMessage(context))
                     }
                 }
             }
@@ -1425,7 +1443,8 @@ fun ScheduleScreen(
                     ScheduleSwitcherSheet(
                         visible = switcherVisible,
                         onDismissed = { switcherMounted = false },
-                        schedules = repository.schedules.collectAsState().value,
+                        // 全部课表流无条件收集于页面顶部（退让回流信号同源）
+                        schedules = schedulesState.value,
                         activeScheduleId = schedule.id,
                         // 「新建」= 打开表单浮层（复用 NewScheduleSheet）；盖上来时本浮层经
                         // covered 缩小后退，清开关（取消/确认）的瞬间同步回位
@@ -1436,6 +1455,8 @@ fun ScheduleScreen(
                         onSwitch = requestSwitch,
                         onDelete = onDeleteSchedule,
                         onExport = onExport,
+                        // 删除 / 新建落库回流窗口内整条 Haze 链退让（列表行增删即采样源重写）
+                        hazeEnabled = !switcherHazeRetreat.suspended,
                     )
                 }
                 // 导入课表浮层：编辑栏「导入」打开；与切换浮层共用挂载块，后注册因此先收到返回键。

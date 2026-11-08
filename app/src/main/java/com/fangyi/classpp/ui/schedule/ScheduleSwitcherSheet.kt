@@ -67,6 +67,11 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  *
  * 与 [com.fangyi.classpp.ui.components.OverlaySheet] 同一约定：页内覆盖层而非窗口类对话框，
  * 键盘不必让位（列表无输入框走 IgnoreIme；表单浮层自己走 ContentScroll）。
+ *
+ * 课表卡列表就是本浮层顶栏磨砂的采样源：删除 / 新建的落库回流会让整列行数变化（行消失 /
+ * 行追加），与效果节点在场同帧即可能构建自引用 RenderNode。宿主在落库窗口内经
+ * [hazeEnabled] 让整条链退让，回流落定两帧后挂回（机制见
+ * [com.fangyi.classpp.ui.components.HazeRetreatState]）。
  */
 @Composable
 internal fun ScheduleSwitcherSheet(
@@ -80,6 +85,9 @@ internal fun ScheduleSwitcherSheet(
     onDelete: (String) -> Unit,
     onExport: () -> Unit,
     covered: Boolean = false,
+    // false = 本浮层整条 Haze 链卸载（内容列不挂采样源、顶栏退回渐变遮罩）：
+    // 删除 / 新建的落库回流窗口内由宿主置 false，见上方 KDoc
+    hazeEnabled: Boolean = true,
 ) {
     // 待删除的课表 id（非空 = 删除确认框打开）
     var deletingId by remember { mutableStateOf<String?>(null) }
@@ -109,6 +117,8 @@ internal fun ScheduleSwitcherSheet(
         onDismissed = onDismissed,
         // 列表没有输入框，键盘不必让位（表单浮层自己走 ContentScroll）
         imeBehavior = SheetImeBehavior.IgnoreIme,
+        // 落库回流窗口内整条链退让（崩溃机制与退让时序见上方 KDoc / HazeRetreatState）
+        hazeEnabled = hazeEnabled,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
             // 课表卡是直接排成一列的同型卡列表：整列收进一个无题 CardSection（组内 10dp 卡间距）；
