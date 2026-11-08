@@ -70,9 +70,8 @@ data class ClassppColors(
      */
     val secondaryText: Color,
     /**
-     * 说明行标题灰（SettingsCard 纯文字行）：固定中性灰、不随主题色切换，
-     * 比 [secondaryText] 更实——弱化层级但保持标题可读
-     * （浅 #787F87 / 深 #AEB2B7）。
+     * 说明行标题灰（SettingsCard 纯文字行）：比 [secondaryText] 更实——弱化层级但保持标题可读。
+     * 随主题色（H 取主色，S/L 取默认灰；默认蓝为浅 #60656C / 深 #C3C7CA）。
      */
     val secondaryGrey: Color,
     /**
@@ -215,7 +214,7 @@ fun ClassppTheme(
     accent: ThemeAccent = ThemeAccent.Blue,
     content: @Composable () -> Unit,
 ) {
-    // 主题色改 primary 家族、页面背景、深色 surface、分割线、遮罩与次级文字；ColorScheme 无 equals，
+    // 主题色改 primary 家族、页面背景、深色 surface、分割线、遮罩与次级文字/灰；ColorScheme 无 equals，
     // 必须 remember 住实例，否则每次重组都会重建派生色并连带重建 textStyles
     val colorScheme = remember(accent, darkTheme) {
         val base = if (darkTheme) DarkColorScheme else LightColorScheme
@@ -238,6 +237,7 @@ fun ClassppTheme(
     val classppColors = remember(accent, darkTheme) {
         (if (darkTheme) DarkClassppColors else LightClassppColors).copy(
             secondaryText = accent.secondaryText(darkTheme),
+            secondaryGrey = accent.secondaryGrey(darkTheme),
             primaryContainerSolid = accent.containerSolid(darkTheme),
         )
     }

@@ -1,6 +1,11 @@
 # 项目开发要求
 在未特殊指明情况下，禁止任何模拟器/真机验证！
 
+## CardSection 间距规范
+- 全项目禁止覆盖 `CardSection` 的默认间距：调用点一律不传 `spacing` / `titleSpacing`。
+- 分组纵向节奏只由 `ui/theme` 的 `CardSectionSpacing` / `CardSectionTitleSpacing` 统一决定
+  （当前卡↔卡与标题↔首卡均为 10dp）；不得为实现局部视觉而在调用点覆盖。
+
 ## Haze 磨砂规范
 - 禁用 `HazeSourceSelection.All`。所有 `HazeInput.Sources` 一律使用 `HazeSourceSelection.Behind`
   （Haze 2 默认值）：只采样 z 序位于最近祖先 hazeSource 之后的源（无匹配祖先时回退为全部源），

@@ -88,9 +88,9 @@ val AiAuroraLime = Color(0xFFD8EE9F)
 val SecondaryText = Color(0xFFABAFB4)
 val DarkSecondaryText = Color(0xFF7E858D)
 
-/** SettingsCard 纯文字行标题（说明/简介类）：固定中性灰，不随主题色切换；比 secondaryText 更实，弱化但不失读 */
-val SecondaryGrey = Color(0xFF575B61)
-val DarkSecondaryGrey = Color(0xFFD4D6D9)
+/** 默认蓝档 SettingsCard 纯文字行标题灰；其余主题色由 ThemeAccent.secondaryGrey() 按 HSL 派生（H 取主色，S/L 同本值）；比 secondaryText 更实 */
+val SecondaryGrey = Color(0xFF60656C)
+val DarkSecondaryGrey = Color(0xFFC3C7CA)
 
 /** 「刻意弱化」置灰：浅色取卡片底；深色卡底上取更暗的灰，保持同等弱化视觉强度 */
 val Negative = Color(0xFFCBCBCB)

@@ -223,7 +223,6 @@
          picker sheet title; a single registered school still uses the same sheet -->
     <string name="school_picker_title">Choose school</string>
     <string name="school_picker_all_schools">All schools</string>
-    <string name="school_picker_sync_hint">Daily auto-sync applies to the current school only</string>
     <string name="school_capability_todo_sync">Todo sync</string>
     <string name="school_capability_schedule_import">Timetable import</string>
     <string name="school_switch_failed">Failed to switch school. Try again.</string>

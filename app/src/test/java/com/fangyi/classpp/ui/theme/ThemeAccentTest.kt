@@ -30,6 +30,8 @@ class ThemeAccentTest {
         assertEquals(DarkSurface, ThemeAccent.Blue.surface(true))
         assertEquals(Outline, ThemeAccent.Blue.outline(false))
         assertEquals(DarkOutline, ThemeAccent.Blue.outline(true))
+        assertEquals(SecondaryGrey, ThemeAccent.Blue.secondaryGrey(false))
+        assertEquals(DarkSecondaryGrey, ThemeAccent.Blue.secondaryGrey(true))
     }
 
     @Test
@@ -51,6 +53,13 @@ class ThemeAccentTest {
         // 绿色：H 取主色，S/L 取默认 outline
         assertEquals(Color(0xFFDCE7E0), ThemeAccent.Green.outline(false))
         assertEquals(Color(0xFF2A362E), ThemeAccent.Green.outline(true))
+    }
+
+    @Test
+    fun secondaryGreyFollowsHslRuleForNonDefaultAccents() {
+        // 绿色：H 取主色，S/L 取默认灰
+        assertEquals(Color(0xFF606C65), ThemeAccent.Green.secondaryGrey(false))
+        assertEquals(Color(0xFFC3CAC5), ThemeAccent.Green.secondaryGrey(true))
     }
 
     @Test
