@@ -239,14 +239,13 @@ fun SettingsScreen(
     val aiSettingsTransition = rememberPageOverlayTransitionState()
     val accountSyncTransition = rememberPageOverlayTransitionState()
     val dataManagementTransition = rememberPageOverlayTransitionState()
-    // 活跃学校与就绪会话：账号与同步子页的唯一数据源。
+    // 活跃会话：账号与同步子页的唯一数据源。
     // fallback flow 保证 collectAsState 无条件调用（registry 首帧未装配时按 Loading 展示）
     val fallbackSlot = remember { MutableStateFlow<SessionSlot>(SessionSlot.Loading) }
-    val fallbackSchoolId = remember { MutableStateFlow("") }
     val activeSlot by (schools?.activeSession ?: fallbackSlot).collectAsState()
-    val activeSchoolId by (schools?.activeSchoolId ?: fallbackSchoolId).collectAsState()
-    // 学校选择/切换是 Phase 3 的产品面；本次只在已有绑定上按 id 取 UI（未绑定返回 null）
-    val activeSchoolUi = activeSchoolId.takeIf { it.isNotEmpty() }?.let(SchoolUiBindings::of)
+    // 学校选择/切换是 Phase 3 的产品面。UI 绑定按会话取：已注册自定义 UI 的学校走自家
+    // 浮层，纯声明学校缺省走 GenericSchoolUi（Phase 4）；装配中/失败态没有可用会话 → null
+    val activeSchoolUi = (activeSlot as? SessionSlot.Ready)?.session?.let(SchoolUiBindings::of)
     val settingsTransforming: () -> Boolean = remember(
         overlayTransitionState,
         personalizationTransition,

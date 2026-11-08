@@ -1,13 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   自动备份排除规则（API 30 及以下，指导 §8.2）：
+   自动备份排除规则（API 30 及以下，指导 §8.2 / §2.6）：
    - 课程中心同步状态目录 xmu/：含账号 id、姓名、远端/本地 id 映射与损坏隔离文件
      （xmu-sync.corrupt-*），整目录排除，缩小隐私面；
+   - 多学校通用同步目录 sync/：状态文件、头像与损坏隔离文件（sync.corrupt-*），
+     一次排除永久覆盖所有新校（不用每校改 XML）；
    - 旧的根目录单文件排除保留，兜住升级后尚未迁移的数据；
    - app_webview：WebView 的 cookie（含课程中心 httpOnly 会话）与站点数据，凭据绝不随备份迁移；
    - sharedpref/xmu_secure.xml：自动续期保存的学号/密码与 cookie 密文（Keystore 密钥
      本身不可导出、不在备份里，密文恢复后也无法解密，排除是必须的）；
+   - sharedpref/sync_secure.xml：新校共用的凭据 prefs（按校分键，Keystore 密文），同因排除；
+   - sharedpref/sync_prefs.xml：新校共用的每日同步开关（按校分键，非敏感，但与账号状态
+     同目录提交保持成对；排除可避免换机后带着旧校开关）；
    - sharedpref/ai_secure.xml：AI 连接配置与 API Key 密文（Keystore 密钥不随备份迁移，
      密文恢复后同样解不开，同因同果必须排除）。
+   school_prefs.xml 不排除：恢复后指向无数据的学校 = 显示未连接，无害。
    todos.json 不排除：待办是用户自身数据，应随备份恢复。
 -->
 <full-backup-content>
@@ -15,7 +21,10 @@
     <exclude domain="file" path="xmu-sync.json" />
     <exclude domain="file" path="xmu-sync.json.tmp" />
     <exclude domain="file" path="xmu-sync.json.bak" />
+    <exclude domain="file" path="sync" />
     <exclude domain="sharedpref" path="xmu_secure.xml" />
+    <exclude domain="sharedpref" path="sync_secure.xml" />
+    <exclude domain="sharedpref" path="sync_prefs.xml" />
     <exclude domain="sharedpref" path="ai_secure.xml" />
     <exclude domain="root" path="app_webview" />
 </full-backup-content>

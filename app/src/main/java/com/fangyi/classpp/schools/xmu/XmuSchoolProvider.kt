@@ -448,7 +448,8 @@ private val XMU_ALLOWED_HOSTS = setOf(
     "pass.xmu.edu.cn",
 )
 
-private val XMU_WEB_VIEW_LOGIN = WebViewLoginSpec(
+/** 厦大白名单与端点声明：注册表装配时经 `WebViewPolicy.validate` 硬校验（测试锁值） */
+internal val XMU_WEB_VIEW_LOGIN = WebViewLoginSpec(
     entryUrl = XmuWebViewPolicy.ENTRY_URL,
     allowedHosts = XMU_ALLOWED_HOSTS,
     dataHost = XmuWebViewPolicy.LNT_HOST,

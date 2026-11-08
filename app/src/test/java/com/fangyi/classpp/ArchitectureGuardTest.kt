@@ -32,6 +32,8 @@ class ArchitectureGuardTest {
             "com/fangyi/classpp/ui/schedule/ScheduleScreen.kt",
             "com/fangyi/classpp/ui/note/TodoScreen.kt",
             "com/fangyi/classpp/ui/day/DayScreen.kt",
+            "com/fangyi/classpp/ui/schools/GenericSchoolUi.kt",
+            "com/fangyi/classpp/ui/schools/SchoolUiBindings.kt",
         )
         for (relative in files) {
             val text = source(relative)
@@ -58,6 +60,7 @@ class ArchitectureGuardTest {
         val files = listOf(
             "com/fangyi/classpp/ui/settings/AccountSyncScreen.kt",
             "com/fangyi/classpp/ui/settings/CredentialLoginSheet.kt",
+            "com/fangyi/classpp/ui/schools/GenericSchoolUi.kt",
         )
         for (relative in files) {
             val text = source(relative)
@@ -95,6 +98,40 @@ class ArchitectureGuardTest {
             assertFalse(
                 "${file.name} must not contain school id literals",
                 SCHOOL_ID_LITERAL.containsMatchIn(text) || text.contains("\"xmu\""),
+            )
+        }
+    }
+
+    @Test
+    fun `phase 4 toolkit packages are present and stay school agnostic`() {
+        // 通用工具包按指导 §2.2 分包；守卫随目录遍历生效（net/engine/media/webview/credential）
+        val root = File(sourceRoot(), "com/fangyi/classpp/data/sync")
+        val expected = listOf(
+            "engine/SchoolSyncEngine.kt",
+            "engine/SchoolSyncStore.kt",
+            "engine/SyncCodec.kt",
+            "credential/SchoolSecureStore.kt",
+            "credential/AutoRenewManager.kt",
+            "webview/WebViewPolicy.kt",
+            "webview/WebSessionDriver.kt",
+            "webview/WebFetcher.kt",
+            "net/HttpTransport.kt",
+            "net/CookieMirror.kt",
+            "media/AvatarCache.kt",
+        )
+        for (relative in expected) {
+            assertTrue("missing toolkit file: $relative", File(root, relative).isFile)
+        }
+        // 通用层不得泄漏学校名（含注释）：大小写无关地查学校 id 前缀
+        for (file in File(root, "engine").walkTopDown() +
+            File(root, "credential").walkTopDown() +
+            File(root, "webview").walkTopDown() +
+            File(root, "net").walkTopDown() +
+            File(root, "media").walkTopDown()) {
+            if (!file.isFile || file.extension != "kt") continue
+            assertFalse(
+                "${file.name} must not mention any school id",
+                Regex("xmu", RegexOption.IGNORE_CASE).containsMatchIn(file.readText()),
             )
         }
     }

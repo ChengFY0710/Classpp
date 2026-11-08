@@ -28,6 +28,16 @@ interface SchoolSession {
     /** null ⇔ 无 [Capability.WEBVIEW_LOGIN] */
     val webViewLogin: WebViewLoginSpec?
 
+    /**
+     * 通用 WebView 登录浮层的登录态判定（profile 正文有效性）：
+     * 由 provider 在装配驱动器时注入，UI 只转发给 [com.fangyi.classpp.data.sync.webview.WebSessionDriver]。
+     * null = 通用默认口径（正文是 JSON 对象）。学校可在此做更严格校验（如必须含非空 uid）。
+     *
+     * 默认实现返回 null：不支持 WebView 登录的学校无需关心；自定义 UI 的学校不消费它。
+     */
+    val webViewProfileValidator: ((String) -> Boolean)?
+        get() = null
+
     /** 每日同步开关（与 [SchoolProvider.dailySyncToggle] 同一存储） */
     val dailySync: DailySyncToggle
 }

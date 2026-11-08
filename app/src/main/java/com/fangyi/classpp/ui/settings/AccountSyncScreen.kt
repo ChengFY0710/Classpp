@@ -227,8 +227,8 @@ private fun AccountSyncContent(
     val spec = session.spec
     val sync = session.sync
     val autoRenew = session.autoRenew
-    // 网页登录需要「学校声明了 WebView 登录」+「UI 已绑定」两个条件；未绑定的纯声明学校
-    // 暂不显示网页登录入口（Phase 4 的 GenericSchoolUi 会补齐缺省绑定）
+    // 网页登录需要「学校声明了 WebView 登录」+「UI 已绑定」两个条件；Phase 4 起纯声明
+    // 学校的缺省绑定是 GenericSchoolUi（SchoolUiBindings.of(session) 兜底）
     val canWebViewLogin = session.webViewLogin != null && schoolUi != null
     val canNativeLogin = autoRenew != null
 

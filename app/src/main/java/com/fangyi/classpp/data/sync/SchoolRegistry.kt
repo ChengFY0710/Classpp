@@ -1,5 +1,6 @@
 package com.fangyi.classpp.data.sync
 
+import com.fangyi.classpp.data.sync.webview.WebViewPolicy
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -61,6 +62,9 @@ class SchoolRegistry internal constructor(
     private val switchMutex = Mutex()
     private val sessions = ConcurrentHashMap<String, SchoolSession>()
     private val toggles = ConcurrentHashMap<String, DailySyncToggle>()
+
+    /** 已通过校验的学校 WebView 白名单：装配时做跨校重叠检查（共用认证域 = 配置错误） */
+    private val webViewHosts = HashMap<String, Set<String>>()
 
     init {
         require(providers.isNotEmpty()) { "at least one school provider is required" }
@@ -172,6 +176,22 @@ class SchoolRegistry internal constructor(
         require((session.scheduleImport != null) == (Capability.SCHEDULE_IMPORT in capabilities)) {
             "school '${spec.id}': scheduleImport slot must match SCHEDULE_IMPORT capability"
         }
+        val webView = session.webViewLogin ?: return
+        // 声明校验（指导 §2.3）：只允许 https/默认端口/无 userinfo/IP/通配符，dataHost 在
+        // 白名单内；加固策略锁死在 WebViewPolicy，spec 无法关闭任何加固
+        val issues = WebViewPolicy.validate(webView)
+        require(issues.isEmpty()) {
+            "school '${spec.id}': invalid webViewLogin spec: ${issues.joinToString("; ")}"
+        }
+        // 不同学校的白名单不得重叠：共用 CAS/认证域会让 cookie 互串，属配置错误
+        val conflict = webViewHosts.entries.firstOrNull { (id, hosts) ->
+            id != spec.id && (hosts intersect webView.allowedHosts).isNotEmpty()
+        }
+        require(conflict == null) {
+            "school '${spec.id}': webViewLogin hosts overlap with '${conflict?.key}': " +
+                (conflict?.value?.intersect(webView.allowedHosts) ?: emptySet<String>())
+        }
+        webViewHosts[spec.id] = webView.allowedHosts
     }
 
     companion object {

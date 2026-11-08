@@ -240,6 +240,62 @@ class SchoolRegistryTest {
     }
 
     @Test
+    fun `registry rejects overlapping web view whitelists`() = runBlocking {
+        val first = FakeProvider(schoolSpec("xmu"))
+        val second = FakeProvider(schoolSpec("fzu"))
+        val shared = testWebViewLogin("shared")
+        val registry = buildRegistry(
+            listOf(first, second),
+            assembler = { provider ->
+                val fake = provider as FakeProvider
+                FakeSession(
+                    spec = fake.spec,
+                    dailySync = fake.toggle,
+                    autoRenew = FakeAutoRenew,
+                    webViewLogin = shared,
+                    scheduleImport = null,
+                )
+            },
+        )
+        registry.session() // 先装配的学校占用白名单
+
+        val failure = runCatching { registry.session("fzu") }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertTrue(failure?.message.orEmpty().contains("overlap"))
+        assertTrue(registry.activeSession.value is SessionSlot.Ready)
+    }
+
+    @Test
+    fun `registry rejects invalid web view spec`() = runBlocking {
+        val provider = FakeProvider(schoolSpec())
+        val registry = buildRegistry(
+            listOf(provider),
+            assembler = {
+                FakeSession(
+                    spec = provider.spec,
+                    dailySync = provider.toggle,
+                    autoRenew = FakeAutoRenew,
+                    webViewLogin = WebViewLoginSpec(
+                        entryUrl = "http://shared.example.test/login",
+                        allowedHosts = setOf("shared.example.test"),
+                        dataHost = "shared.example.test",
+                        profilePath = "/api/profile",
+                        todosPath = "/api/todos",
+                        userAgent = null,
+                    ),
+                    scheduleImport = null,
+                )
+            },
+        )
+
+        val failure = runCatching { registry.session() }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertTrue(failure?.message.orEmpty().contains("invalid webViewLogin spec"))
+    }
+
+    @Test
     fun `unknown school id is rejected`() {
         val registry = buildRegistry(listOf(FakeProvider(schoolSpec())))
         assertThrows(IllegalArgumentException::class.java) {
@@ -409,7 +465,7 @@ class SchoolRegistryTest {
         autoRenew: AutoRenewService? =
             if (Capability.NATIVE_LOGIN in spec.capabilities) FakeAutoRenew else null,
         webViewLogin: WebViewLoginSpec? =
-            if (Capability.WEBVIEW_LOGIN in spec.capabilities) TEST_WEB_VIEW_LOGIN else null,
+            if (Capability.WEBVIEW_LOGIN in spec.capabilities) testWebViewLogin(spec.id) else null,
         scheduleImport: ScheduleImportService? =
             if (Capability.SCHEDULE_IMPORT in spec.capabilities) FakeScheduleImport else null,
     ) = FakeSession(
@@ -503,13 +559,17 @@ class SchoolRegistryTest {
     }
 
     private companion object {
-        val TEST_WEB_VIEW_LOGIN = WebViewLoginSpec(
-            entryUrl = "https://example.test/login",
-            allowedHosts = setOf("example.test"),
-            dataHost = "example.test",
-            profilePath = "/api/profile",
-            todosPath = "/api/todos",
-            userAgent = null,
-        )
+        /** 每校一个独立 host：不同学校的 WebView 白名单不得重叠（共用认证域 = cookie 互串） */
+        fun testWebViewLogin(id: String): WebViewLoginSpec {
+            val host = "$id.example.test"
+            return WebViewLoginSpec(
+                entryUrl = "https://$host/login",
+                allowedHosts = setOf(host),
+                dataHost = host,
+                profilePath = "/api/profile",
+                todosPath = "/api/todos",
+                userAgent = null,
+            )
+        }
     }
 }
