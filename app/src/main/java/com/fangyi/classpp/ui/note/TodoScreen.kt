@@ -85,6 +85,7 @@ import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.schools.schoolText
 import com.fangyi.classpp.ui.components.BottomFadeScrim
+import com.fangyi.classpp.ui.components.EmptyState
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSectionHeader
 import com.fangyi.classpp.ui.components.NoteCardSwipe
@@ -841,6 +842,73 @@ fun TodoScreen(
                         page.special != null -> stringResource(page.special.emptyHintRes)
                         page.tag != null -> stringResource(R.string.todo_empty_tag)
                         else -> null
+                    }
+                    // 常规分组页（全部/未分组/用户分组）无待办：整页空态，列表与收集箱共用。
+                    // 判空用 pageTodos（未按分类显隐过滤）：用户把四类全隐藏时页面虽空，
+                    // 但并不是「没有待办」，仍维持原空白行为
+                    if (page.special == null && page.tag == null && pageTodos.isEmpty()) {
+                        // 空态也放进橡皮筋滚动容器：内容不足一屏时 RubberBandLazyColumn
+                        // 走兜底面，整页下拉/上推都能拉出回弹，与有卡片时的列表手感一致
+                        RubberBandLazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            item(key = "groupEmptyState") {
+                                Box(
+                                    modifier = Modifier.fillParentMaxSize(),
+                                    contentAlignment = Alignment.TopCenter,
+                                ) {
+                                    EmptyState(
+                                        icon = R.drawable.ic_note_regular,
+                                        title = stringResource(R.string.todo_empty_group_title),
+                                        description = stringResource(R.string.todo_empty_group_hint),
+                                        modifier = Modifier.padding(top = 250.dp),
+                                    )
+                                }
+                            }
+                        }
+                        return@CrossPages
+                    }
+                    // 特殊分组页无待办：同一套空态组件，图标/标题/空文案取各自分组；
+                    // 回收站空页保留顶部保留期提示条，位置与列表 contentPadding 对齐
+                    val emptySection = page.special
+                    if (emptySection != null && pageTodos.isEmpty()) {
+                        RubberBandLazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            item(key = "specialEmptyState") {
+                                Box(modifier = Modifier.fillParentMaxSize()) {
+                                    if (emptySection == TodoSpecialSection.Trash) {
+                                        val density = LocalDensity.current
+                                        val topInset = with(density) {
+                                            WindowInsets.statusBars.getTop(density).toDp()
+                                        }
+                                        SheetInfoBanner(
+                                            text = stringResource(
+                                                R.string.todo_trash_retention_hint,
+                                                TRASH_RETENTION_DAYS,
+                                            ),
+                                            modifier = Modifier
+                                                .align(Alignment.TopCenter)
+                                                .padding(
+                                                    start = PageHorizontalSpacing,
+                                                    end = PageHorizontalSpacing,
+                                                    top = topInset + TopBarRowSpace +
+                                                        ListTopSpacing + topBarExtraSpace,
+                                                ),
+                                        )
+                                    }
+                                    EmptyState(
+                                        icon = emptySection.iconRes,
+                                        title = stringResource(emptySection.labelRes),
+                                        description = stringResource(emptySection.emptyHintRes),
+                                        modifier = Modifier
+                                            .align(Alignment.TopCenter)
+                                            .padding(top = 250.dp),
+                                    )
+                                }
+                            }
+                        }
+                        return@CrossPages
                     }
                     // 详情入口：列表卡与收集箱卡共用（分期上下文由所点条目的 dates[0] 带入；
                     // 倒计时开关可用性由当前页面的视图段决定——收集箱卡不渲染倒计时）

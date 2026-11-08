@@ -16,23 +16,18 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -62,7 +57,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.AppToasts
@@ -104,14 +98,13 @@ import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.LocalTodayState
 import com.fangyi.classpp.ui.components.BottomFadeScrim
+import com.fangyi.classpp.ui.components.EmptyState
+import com.fangyi.classpp.ui.components.EmptyStateActionButton
 import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.components.rememberPopupActionGate
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.TabTransitionState
-import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.navigation.NavReserve
-import com.fangyi.classpp.ui.theme.ButtonShape
-import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
 import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
@@ -354,12 +347,16 @@ fun ScheduleScreen(
         modifier = modifier.fillMaxSize(),
         // 统一不避让横向 inset：内容全宽出血；纵向由头部与网格自理
         contentWindowInsets = WindowInsets(0),
-    ) {
+    ) { contentPadding ->
+        // contentWindowInsets = WindowInsets(0)：padding 恒为 0；显式消费以满足 Scaffold
+        // 的内容内距约定，纵向 inset 仍由头部与网格自理
         if (schedule == null) {
             // 空状态：不组合头部与网格，「创建课表」按钮打开新建课表浮层
             EmptyScheduleContent(
                 onCreateSchedule = { newScheduleVisible = true },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding),
             )
         } else {
             // ——— 内容区横向翻周 ———
@@ -1094,7 +1091,9 @@ fun ScheduleScreen(
             BackHandler(enabled = editSession != null) { cancelEdit() }
 
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding),
             ) {
                 CourseGrid(
                     pagerState = pagerState,
@@ -2059,43 +2058,25 @@ private fun ScheduleError.toPasteMessage(context: Context, span: Int): String = 
     else -> toEditMessage(context)
 }
 
-/** 无激活课表时的空状态：标题 + 说明 + 新建按钮（打开 [NewScheduleSheet]） */
+/** 无激活课表时的空状态：图标 + 标题 + 说明 + 新建按钮（打开 [NewScheduleSheet]） */
 @Composable
 private fun EmptyScheduleContent(
     onCreateSchedule: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier.padding(horizontal = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.TopCenter,
     ) {
-        Text(
-            text = stringResource(R.string.empty_title),
-            style = ClassppTextTokens.emptyTitle,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.empty_desc),
-            style = ClassppTextTokens.emptyHint,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(24.dp))
-        // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
-        // 按压源交给按钮形参，pressFeedback 追加在 modifier 链末尾（最靠近按钮本体）；
-        // shape 双侧同传 ButtonShape，提亮轮廓与按钮自身胶囊轮廓完全一致
-        val press = remember { MutableInteractionSource() }
-        Button(
-            onClick = onCreateSchedule,
-            shape = ButtonShape,
-            interactionSource = press,
-            modifier = Modifier.pressFeedback(press, ButtonShape),
+        EmptyState(
+            icon = R.drawable.ic_calendar_regular,
+            title = stringResource(R.string.empty_title),
+            description = stringResource(R.string.empty_desc),
+            modifier = Modifier.padding(top = 250.dp),
         ) {
-            Text(
-                text = stringResource(R.string.create_schedule),
-                style = ClassppTextTokens.buttonText,
+            EmptyStateActionButton(
+                label = stringResource(R.string.create_schedule),
+                onClick = onCreateSchedule,
             )
         }
     }

@@ -5,7 +5,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -37,7 +36,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -52,6 +50,8 @@ import com.fangyi.classpp.data.checkInPercent
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.ui.components.EmptyState
+import com.fangyi.classpp.ui.components.EmptyStateActionButton
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSwipe
 import com.fangyi.classpp.ui.components.SwipeAction
@@ -66,7 +66,6 @@ import com.fangyi.classpp.ui.theme.ChatErrorBannerShape
 import com.fangyi.classpp.ui.theme.ChatThinkingShape
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.classppColors
-import com.fangyi.classpp.ui.theme.PillShape
 
 /**
  * AI 对话浮层的子组件（气泡 / 已创建待办卡 / 错误条 / 空态）。
@@ -468,76 +467,28 @@ internal fun AiChatNotConfigured(
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 48.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    EmptyState(
+        icon = R.drawable.ic_ai,
+        title = stringResource(R.string.ai_not_configured_title),
+        description = stringResource(R.string.ai_not_configured_hint),
+        modifier = modifier,
     ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_ai),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(44.dp),
+        EmptyStateActionButton(
+            label = stringResource(R.string.ai_go_settings),
+            onClick = onOpenSettings,
         )
-        Text(
-            text = stringResource(R.string.ai_not_configured_title),
-            style = ClassppTextTokens.emptyTitle,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Text(
-            text = stringResource(R.string.ai_not_configured_hint),
-            style = ClassppTextTokens.emptyHint,
-            color = MaterialTheme.classppColors.secondaryText,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 24.dp),
-        )
-        Box(
-            modifier = Modifier
-                .clip(PillShape)
-                .background(MaterialTheme.colorScheme.primary)
-                .clickable(onClick = onOpenSettings)
-                .padding(horizontal = 20.dp, vertical = 10.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.ai_go_settings),
-                style = ClassppTextTokens.buttonText,
-                color = MaterialTheme.colorScheme.onPrimary,
-            )
-        }
     }
 }
 
 /** 已配置的空会话：与未配置引导态同一套居中排布（标题 + 说明文案） */
 @Composable
 internal fun AiChatEmptyState(modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 48.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_ai),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(44.dp),
-        )
-        Text(
-            text = stringResource(R.string.ai_empty_title),
-            style = ClassppTextTokens.emptyTitle,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Text(
-            text = stringResource(R.string.ai_empty_hint),
-            style = ClassppTextTokens.emptyHint,
-            color = MaterialTheme.classppColors.secondaryText,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 24.dp),
-        )
-    }
+    EmptyState(
+        icon = R.drawable.ic_ai,
+        title = stringResource(R.string.ai_empty_title),
+        description = stringResource(R.string.ai_empty_hint),
+        modifier = modifier,
+    )
 }
 
 // ---------- 预览 ----------

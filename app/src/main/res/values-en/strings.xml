@@ -592,6 +592,9 @@
     <string name="todo_empty_pinned">No pinned todos yet</string>
     <string name="todo_empty_archived">No archived todos yet</string>
     <string name="todo_empty_trash">Nothing recently deleted</string>
+    <!-- Empty state for regular group pages (All / Ungrouped / user groups) with no todos -->
+    <string name="todo_empty_group_title">No todos yet</string>
+    <string name="todo_empty_group_hint">Add something you want to do</string>
     <!-- Banner at the top of the Recently Deleted list: trash retention period -->
     <string name="todo_trash_retention_hint">Kept %1$d days, then auto-deleted</string>
     <string name="todo_error_save_failed">Save failed, please try again later</string>

@@ -60,6 +60,9 @@
     <!-- 最近删除页列表顶部提示条：回收站保留期（与 TRASH_RETENTION_DAYS 一致） -->
     <string name="todo_trash_retention_hint">保留%1$d天，%1$d天后自动删除</string>
     <string name="todo_empty_tag">该标签下还没有待办</string>
+    <!-- 常规分组页（全部/未分组/用户分组）无待办时的整页空态 -->
+    <string name="todo_empty_group_title">还没有待办</string>
+    <string name="todo_empty_group_hint">先记下一件想做的事</string>
     <!-- 待办概览浮层（TodoOverviewSheet）：今日收工环形 + 三统计卡 + 提醒 + 分布 + 最近完成 -->
     <string name="todo_overview_title">待办概览</string>
     <string name="todo_overview_week_completed">本周完成</string>

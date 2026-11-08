@@ -272,10 +272,12 @@ fun DataManagementScreen(
         modifier = modifier,
         // 统一不避让横向 inset：内容全宽出血（左右顶到屏幕边缘）；纵向由内容与顶栏自理（同设置根页）
         contentWindowInsets = WindowInsets(0),
-    ) {
+    ) { contentPadding ->
+        // contentWindowInsets = WindowInsets(0)：padding 恒为 0，显式消费以满足 Scaffold 内距约定
         Box(
             modifier = Modifier
-                .fillMaxSize(),
+                .fillMaxSize()
+                .padding(contentPadding),
         ) {
             val hazeState = rememberHazeState()
             val glassBackdrop = rememberSettingsGlassBackdrop()

@@ -155,12 +155,14 @@ fun NotificationScreen(
         modifier = modifier,
         // 统一不避让横向 inset：内容全宽出血（左右顶到屏幕边缘）；纵向由内容与顶栏自理（同设置根页）
         contentWindowInsets = WindowInsets(0),
-    ) {
+    ) { contentPadding ->
+        // contentWindowInsets = WindowInsets(0)：padding 恒为 0，显式消费以满足 Scaffold 内距约定
         // 顶栏叠在内容之上：内容整屏铺开（hazeSource），首屏经 topBarHeight 内缩到顶栏之下，
         // 上滑时从顶栏背后滚过，顶栏用 Haze 对其做自上而下的渐变背景模糊
         Box(
             modifier = Modifier
-                .fillMaxSize(),
+                .fillMaxSize()
+                .padding(contentPadding),
         ) {
             var topBarHeight by remember { mutableStateOf(0.dp) }
             val density = LocalDensity.current
