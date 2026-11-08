@@ -573,6 +573,9 @@ class MainActivity : ComponentActivity() {
                                                 onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                                 onOpenSettings = onOpenSettings,
                                                 onOpenAccountSync = onOpenAccountSync,
+                                                // AI 识别导入：未配置引导态与设置页 AI 子页直达
+                                                aiChatRepository = aiChatRepository,
+                                                onOpenAiSettings = onOpenAiSettings,
                                                 schools = schools,
                                                 tabTransition = transition,
                                                 // 网格读降频态（即时态只喂个性化页滑条）

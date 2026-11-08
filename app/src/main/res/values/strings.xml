@@ -664,6 +664,15 @@
     <string name="import_sheet_title">导入课表</string>
     <string name="import_sheet_header_title">以各种方式导入课表</string>
     <string name="import_sheet_header_desc">若教务导入未适配您的学校，不妨试试Wakeup课表分享口令导入</string>
+    <string name="import_ai_label">AI 识别导入</string>
+    <string name="import_ai_desc">选择课表截图，由 AI 识别课程信息</string>
+    <string name="import_ai_sheet_title">AI 识别导入</string>
+    <string name="import_ai_pick_title">添加一张图片</string>
+    <string name="import_ai_pick_desc">图片最好包含尽可能多的课程信息</string>
+    <string name="import_ai_start">开始</string>
+    <string name="import_ai_analyzing_title">正在分析…</string>
+    <string name="import_ai_analyzing_desc">结果由 AI 生成，不保证准确，请仔细核对</string>
+    <string name="cd_ai_import_image">待识别的课表图片</string>
     <string name="import_json_label">从 JSON 文件导入</string>
     <string name="import_json_desc">仅支持 Classpp 格式的 JSON 文件</string>
     <string name="import_clipboard_label">从剪贴板导入</string>

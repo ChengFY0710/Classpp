@@ -11,6 +11,7 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -200,6 +201,9 @@ val LocalOverlayTopBarBlur = staticCompositionLocalOf { false }
  * 槽内容自带进出场动画时由调用方把这三样包进动画层，规格才不脱离动画（见 TodoGroupsSheet 编辑态底栏）。
  * [dragDismissEnabled] = false 关掉下拉关闭（超阈值松手回弹归位）：编辑态把下拉拦成
  * 「退出编辑」的场景必须用它——只拦 [onDismiss] 不拦手势会把浮层卡在半拖出位置。
+ * [backgroundContent] 可选卡片背景层：顶栏以下的整块卡片（不吃滚动内容列的横向页边距），
+ * 画在滚动内容与顶栏之下、随 SheetShape 裁剪；本层不裁剪内容，装饰背景可越过上下边界
+ * 淡出到内容背后（如 AI 识别导入浮层图片背后的光场）。
  * [shadowAlpha] 调卡片投影的透明度（0f~1f，默认 1f 与原样纯黑投影一致）：Surface 的
  * shadowElevation 不暴露投影颜色，投影改由卡片 graphicsLayer 的 spot/ambientShadowColor
  * 绘制（同 SheetPillButton 的做法），强度才可按浮层单独调。
@@ -266,6 +270,10 @@ fun OverlaySheet(
     // 可选：把内部滚动列的 ScrollState 交给宿主（AI 对话浮层用它做「新消息自动滚到
     // 底部」）。null = 不需要；只在挂载后回调一次，既有调用零变化
     onScrollStateReady: ((ScrollState) -> Unit)? = null,
+    // 卡片背景层（可选）：顶栏以下的整张卡片，不吃滚动内容列的 12dp 页边距，画在
+    // Surface 之上、滚动内容与顶栏之下，随 SheetShape 裁剪。本层自身不裁剪——内容可
+    // 越过它的边界绘制（如光场向上下溢出、淡出到下方内容背后）。null = 无背景层（现状）
+    backgroundContent: (@Composable BoxScope.() -> Unit)? = null,
     // 内容列的作用域由卡片内的 SheetScrollHost 显式转交（那里不在 Column 的接收者作用域里）
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -504,6 +512,17 @@ fun OverlaySheet(
                         // 「输入框滚到键盘上方」的换算都以它为准，量不了就没有依据
                         viewportHeightPx = constraints.maxHeight
                         Box {
+                            // 卡片背景层：顶栏以下的整张卡片（不含内容列的横向页边距）。
+                            // 本层不裁剪，允许光场越过上下边界绘制；顶栏最后组合，仍盖在其上
+                            backgroundContent?.let { background ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(top = TopBarHeight),
+                                ) {
+                                    background()
+                                }
+                            }
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()

@@ -64,8 +64,26 @@ private const val BreatheDepth = 0.08f
 private const val RevealSlideFraction = 0.55f
 
 /**
- * AI 对话浮层底部「思考光场」：四颗软边径向渐变光斑（蓝 → 青 → 薄荷 → 黄绿）叠成
- * 设计稿的极光场，顶部用垂直 alpha 遮罩淡出到浮层底色。
+ * [AiAuroraAnchor.Center] 的出现 / 退出位移比例：光场本就围绕内容居中，只需很轻的
+ * 浮入（0.55 那种从输入栏后方升起的效果只在底部光带成立）。
+ */
+private const val CenterRevealSlideFraction = 0.15f
+
+/**
+ * 光场构图锚点：
+ * - [Bottom]：贴可见区底边、顶部渐隐成一条底部光带——AI 对话浮层输入栏后方（默认，现状）；
+ * - [Center]：以组件中线为基准向上下扩散、上下双向渐隐——AI 识别导入浮层图片背后的环绕光场。
+ *
+ * 两者共用同一套光斑游动 / 帧循环 / 离屏遮罩，只切换光斑基准位、遮罩曲线与出现位移，
+ * 色值仍只取自 [ClassppColors.aiAuroraBlue] / [ClassppColors.aiAuroraCyan] /
+ * [ClassppColors.aiAuroraMint] / [ClassppColors.aiAuroraLime]。
+ */
+enum class AiAuroraAnchor { Bottom, Center }
+
+/**
+ * AI「思考光场」：四颗软边径向渐变光斑（蓝 → 青 → 薄荷 → 黄绿）叠成设计稿的极光场。
+ * 默认（[AiAuroraAnchor.Bottom]）为 AI 对话浮层底部光带、顶部用垂直 alpha 遮罩淡出到浮层底色；
+ * [AiAuroraAnchor.Center] 为 AI 识别导入浮层图片背后的中部光场、上下双向渐隐。
  *
  * 只在 AI 思考 / 回答期间（[active] = true）出现：
  * - 进场（[Motion.AiAuroraEnterMillis]，[Motion.Decelerate]）：整片光场从输入栏后方
@@ -103,9 +121,11 @@ fun AiThinkingAurora(
     active: Boolean,
     modifier: Modifier = Modifier,
     imeReservePx: Int = 0,
+    // 光场构图锚点：默认底部光带（AI 对话浮层），Center = 围绕内容中线的环绕光场
+    anchor: AiAuroraAnchor = AiAuroraAnchor.Bottom,
 ) {
     val palette = MaterialTheme.classppColors
-    val blobs = remember(palette) { auroraBlobs(palette) }
+    val blobs = remember(palette, anchor) { auroraBlobs(palette, anchor) }
     // 遮罩只需要 alpha：用 surface 的深浅色值承载透明度，避免在业务代码里写恒白色
     val maskColor = MaterialTheme.colorScheme.surface
     val context = LocalContext.current
@@ -132,6 +152,33 @@ fun AiThinkingAurora(
     )
     // 相位（秒）：只在 active 时推进；退场/空闲冻结，下次思考从冻结点继续
     val phase = remember { mutableFloatStateOf(0f) }
+    // 出场位移比例：底部光带从输入栏后方升起，中部光带只做轻微浮入
+    val slideFraction = if (anchor == AiAuroraAnchor.Center) {
+        CenterRevealSlideFraction
+    } else {
+        RevealSlideFraction
+    }
+    // 遮罩曲线：Bottom = 顶部渐隐（底部保留实色光带）；Center = 上下双向渐隐（四周淡出）
+    val maskStops = remember(anchor, maskColor) {
+        when (anchor) {
+            AiAuroraAnchor.Bottom -> arrayOf(
+                0f to maskColor.copy(alpha = 0f),
+                0.28f to maskColor.copy(alpha = 0.10f),
+                0.62f to maskColor.copy(alpha = 0.62f),
+                0.86f to maskColor.copy(alpha = 1f),
+                1f to maskColor.copy(alpha = 1f),
+            )
+            AiAuroraAnchor.Center -> arrayOf(
+                0f to maskColor.copy(alpha = 0f),
+                0.16f to maskColor.copy(alpha = 0.18f),
+                0.36f to maskColor.copy(alpha = 0.88f),
+                0.52f to maskColor.copy(alpha = 1f),
+                0.66f to maskColor.copy(alpha = 0.90f),
+                0.84f to maskColor.copy(alpha = 0.22f),
+                1f to maskColor.copy(alpha = 0f),
+            )
+        }
+    }
 
     LaunchedEffect(active, animationsEnabled) {
         if (!active || !animationsEnabled) return@LaunchedEffect
@@ -153,7 +200,7 @@ fun AiThinkingAurora(
                 // 出现自下而上浮入、退出向下沉出：位移与 alpha 同走 reveal。位移按可见高度
                 // （扣除 IME 预留）计，键盘弹起时滑动距离不变
                 val visibleHeight = (size.height - imeReservePx).coerceAtLeast(0f)
-                translationY = (1f - reveal) * visibleHeight * RevealSlideFraction
+                translationY = (1f - reveal) * visibleHeight * slideFraction
                 alpha = reveal
                 // DstIn 遮罩需要独立图层；只覆盖底部光场这一块，不触发整屏离屏
                 compositingStrategy = CompositingStrategy.Offscreen
@@ -195,16 +242,10 @@ fun AiThinkingAurora(
                     )
                 }
 
-                // 顶部淡出：0 → 28% 几乎透明，62% 后逐渐接近实色，86% 起完全保留光场
+                // 竖向遮罩：Bottom 顶部淡出到浮层底色；Center 上下双向淡出成一条光带
                 drawRect(
                     brush = Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0f to maskColor.copy(alpha = 0f),
-                            0.28f to maskColor.copy(alpha = 0.10f),
-                            0.62f to maskColor.copy(alpha = 0.62f),
-                            0.86f to maskColor.copy(alpha = 1f),
-                            1f to maskColor.copy(alpha = 1f),
-                        ),
+                        colorStops = maskStops,
                         startY = 0f,
                         endY = visibleHeight,
                     ),
@@ -233,7 +274,14 @@ private data class AuroraBlob(
     val pulsePhase: Float,
 )
 
-private fun auroraBlobs(colors: ClassppColors): List<AuroraBlob> = listOf(
+private fun auroraBlobs(colors: ClassppColors, anchor: AiAuroraAnchor): List<AuroraBlob> =
+    when (anchor) {
+        AiAuroraAnchor.Bottom -> bottomAuroraBlobs(colors)
+        AiAuroraAnchor.Center -> centerAuroraBlobs(colors)
+    }
+
+/** 底部光带：光斑基准位压在可见区底边（baseY > 1），配合顶部渐隐成为输入栏后方的光场。 */
+private fun bottomAuroraBlobs(colors: ClassppColors): List<AuroraBlob> = listOf(
     // 左：蓝，最饱和、略压出左缘，撑起设计图左下角的蓝
     AuroraBlob(
         color = colors.aiAuroraBlue,
@@ -299,6 +347,81 @@ private fun auroraBlobs(colors: ClassppColors): List<AuroraBlob> = listOf(
         periodY = 19f,
         phase = 4.8f,
         baseAlpha = 0.85f,
+        pulsePeriod = 17f,
+        pulsePhase = 4.4f,
+    ),
+)
+
+/**
+ * 中部光带：光斑围绕组件中线（baseY ≈ 0.5）分布，上下遮罩对称渐隐，用于图片背后的
+ * 环绕光场——图片本身盖住中心，四周留下蓝 → 青 → 薄荷 → 黄绿的呼吸光晕。
+ */
+private fun centerAuroraBlobs(colors: ClassppColors): List<AuroraBlob> = listOf(
+    // 左：蓝，最饱和、略压出左缘
+    AuroraBlob(
+        color = colors.aiAuroraBlue,
+        baseX = 0.02f,
+        baseY = 0.52f,
+        radius = 0.62f,
+        thinkX = 0.10f,
+        thinkY = -0.05f,
+        moveX = 0.10f,
+        moveY = 0.04f,
+        periodX = 14f,
+        periodY = 20f,
+        phase = 0f,
+        baseAlpha = 0.92f,
+        pulsePeriod = 13f,
+        pulsePhase = 0f,
+    ),
+    // 左中：青，衔接蓝与薄荷
+    AuroraBlob(
+        color = colors.aiAuroraCyan,
+        baseX = 0.44f,
+        baseY = 0.43f,
+        radius = 0.34f,
+        thinkX = -0.08f,
+        thinkY = -0.04f,
+        moveX = 0.12f,
+        moveY = 0.05f,
+        periodX = 18f,
+        periodY = 15f,
+        phase = 1.9f,
+        baseAlpha = 0.88f,
+        pulsePeriod = 16f,
+        pulsePhase = 1.6f,
+    ),
+    // 右中：薄荷绿
+    AuroraBlob(
+        color = colors.aiAuroraMint,
+        baseX = 0.70f,
+        baseY = 0.56f,
+        radius = 0.42f,
+        thinkX = 0.08f,
+        thinkY = 0.04f,
+        moveX = 0.12f,
+        moveY = 0.05f,
+        periodX = 22f,
+        periodY = 17f,
+        phase = 3.4f,
+        baseAlpha = 0.92f,
+        pulsePeriod = 11f,
+        pulsePhase = 3.0f,
+    ),
+    // 右：黄绿，右侧最亮的一档
+    AuroraBlob(
+        color = colors.aiAuroraLime,
+        baseX = 1.02f,
+        baseY = 0.43f,
+        radius = 0.38f,
+        thinkX = -0.10f,
+        thinkY = -0.05f,
+        moveX = 0.10f,
+        moveY = 0.04f,
+        periodX = 24f,
+        periodY = 19f,
+        phase = 4.8f,
+        baseAlpha = 0.82f,
         pulsePeriod = 17f,
         pulsePhase = 4.4f,
     ),

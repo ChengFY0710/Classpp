@@ -525,6 +525,15 @@
     <string name="import_sheet_title">Import Schedule</string>
     <string name="import_sheet_header_title">Import a Schedule Your Way</string>
     <string name="import_sheet_header_desc">If academic system import isn\'t supported for your school, try importing with a Wakeup schedule share code</string>
+    <string name="import_ai_label">AI Scan Import</string>
+    <string name="import_ai_desc">Pick a timetable photo and let AI read the courses</string>
+    <string name="import_ai_sheet_title">AI Scan Import</string>
+    <string name="import_ai_pick_title">Add a Photo</string>
+    <string name="import_ai_pick_desc">A photo with as much course info as possible works best</string>
+    <string name="import_ai_start">Start</string>
+    <string name="import_ai_analyzing_title">Analyzing…</string>
+    <string name="import_ai_analyzing_desc">AI-generated results may be inaccurate. Please double-check.</string>
+    <string name="cd_ai_import_image">Timetable image to scan</string>
     <string name="import_json_label">Import from JSON File</string>
     <string name="import_json_desc">Classpp-format JSON files only</string>
     <string name="import_clipboard_label">Import from Clipboard</string>

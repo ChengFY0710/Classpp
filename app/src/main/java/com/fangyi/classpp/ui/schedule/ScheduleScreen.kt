@@ -72,6 +72,7 @@ import com.fangyi.classpp.data.TodoFilter
 import com.fangyi.classpp.data.TodoReadResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.TodoSort
+import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.expandRepeatOccurrences
 import com.fangyi.classpp.data.export.ShareCodec
 import com.fangyi.classpp.data.filterTodos
@@ -167,6 +168,9 @@ fun ScheduleScreen(
     onOpenSettings: () -> Unit = {},
     // 教务导入浮层「账号与同步」：收起浮层串、编辑态取消更改后由调用方转到设置页-账号与同步
     onOpenAccountSync: () -> Unit = {},
+    // AI 识别导入浮层的数据源与设置出口：未配置引导态读 configured，按钮直达设置页 AI 子页
+    aiChatRepository: AiChatRepository? = null,
+    onOpenAiSettings: () -> Unit = {},
     // 学校注册表：教务导入的账号状态、拦截原因与取数编排全部来自活跃会话的
     // `scheduleImport` 槽位（可选能力）。null = 容器未装配，按未连接展示
     schools: SchoolRegistry? = null,
@@ -511,6 +515,8 @@ fun ScheduleScreen(
             var wakeupSheetVisible by rememberSaveable { mutableStateOf(false) }
             // 教务导入浮层：导入浮层第一入口打开，叠在导入浮层之上（同分层动效）
             var schoolImportVisible by rememberSaveable { mutableStateOf(false) }
+            // AI 识别导入浮层：导入浮层第一张入口卡打开，叠在导入浮层之上（同分层动效）
+            var aiImportVisible by rememberSaveable { mutableStateOf(false) }
             // 教务课表页（WebView 登录模式）：教务导入浮层第二张卡打开，全屏盖住课表页
             var schoolTimetableVisible by rememberSaveable { mutableStateOf(false) }
             // 活跃学校会话（fallback flow 保证 collectAsState 无条件调用，同设置页）：
@@ -1440,7 +1446,7 @@ fun ScheduleScreen(
             // 切换课表浮层与导入课表浮层共用这一块挂载：导入浮层从编辑栏「导入」打开，
             // 不依赖切换浮层是否曾打开过，故挂载条件是两者任一在场（含收场动画期）。
             // 组合顺序保证返回键优先级：脏草稿确认 → 新建表单 → 教务/Wakeup 确认框 →
-            // 教务/Wakeup 输入浮层 → 导入浮层 → 切换浮层 → 编辑取消。
+            // 教务/Wakeup 输入浮层 → AI 识别导入浮层 → 导入浮层 → 切换浮层 → 编辑取消。
             // 挂载与可见性分离（同课程面板的两段式关闭）：关闭先播浮层出场动画，
             // 播完（onDismissed）才真正卸载
             var switcherMounted by remember { mutableStateOf(false) }
@@ -1448,11 +1454,14 @@ fun ScheduleScreen(
             // 导入浮层同样两段式；挂载后独立于切换浮层存活（切换先关时不会被提前卸载）
             var importSheetMounted by remember { mutableStateOf(false) }
             if (importSheetVisible) importSheetMounted = true
+            // AI 识别导入浮层同样两段式：叠在导入浮层之上，其存活期可长于导入浮层
+            var aiImportMounted by remember { mutableStateOf(false) }
+            if (aiImportVisible) aiImportMounted = true
             // 教务网页导入完成后浮层串已收起，但确认框仍要能挂载并播完退场：
             // schoolParsed 非空时置挂载标志，onDismissed 才清。确认后的切课可能因
             // 脏草稿打开确认框——pendingSwitchId 非空同样保块存活
-            if (switcherMounted || importSheetMounted || schoolConfirmBlockMounted ||
-                pendingSwitchId.isNotEmpty()
+            if (switcherMounted || importSheetMounted || aiImportMounted ||
+                schoolConfirmBlockMounted || pendingSwitchId.isNotEmpty()
             ) {
                 // 切换浮层本身只在它自己挂载时组合：从编辑栏直接开导入时下方不应有它
                 if (switcherMounted) {
@@ -1482,6 +1491,8 @@ fun ScheduleScreen(
                         visible = importSheetVisible,
                         onDismissed = { importSheetMounted = false },
                         onDismiss = { importSheetVisible = false },
+                        // AI 识别导入浮层盖上来时本浮层同样缩小后退（分层动效与新建表单一致）
+                        onImportAi = { aiImportVisible = true },
                         // 教务导入浮层盖上来时本浮层缩小后退（分层动效与新建表单一致）。
                         // 活跃学校未实现教务导入（无 scheduleImport 槽位）→ 入口整行隐藏
                         onImportSchedule = if (schoolScheduleImport != null) {
@@ -1493,7 +1504,25 @@ fun ScheduleScreen(
                         onImportClipboard = onImportClipboard,
                         // Wakeup 输入浮层盖上来时本浮层缩小后退（分层动效与新建表单一致）
                         onImportWakeup = { wakeupSheetVisible = true },
-                        covered = wakeupSheetVisible || schoolImportVisible,
+                        covered = wakeupSheetVisible || schoolImportVisible || aiImportVisible,
+                    )
+                }
+                // AI 识别导入浮层：叠在导入浮层之上，后注册因此先收到返回键。
+                // 未配置服务商时浮层内走「先配置 AI 服务商」引导态（与 AI 对话浮层一致）；
+                // 设置入口先收起 AI 浮层与导入浮层，再由宿主直达设置页 AI 子页（保留编辑态）
+                if (aiImportMounted) {
+                    val aiConfigured by aiChatRepository?.configured?.collectAsState()
+                        ?: remember { mutableStateOf(false) }
+                    AiImportSheet(
+                        visible = aiImportVisible,
+                        onDismissed = { aiImportMounted = false },
+                        onDismiss = { aiImportVisible = false },
+                        configured = aiConfigured,
+                        onOpenSettings = {
+                            aiImportVisible = false
+                            importSheetVisible = false
+                            onOpenAiSettings()
+                        },
                     )
                 }
                 // Wakeup 口令导入浮层：叠在导入浮层之上（粘贴分享文案 → 跑云端适配脚本）。
