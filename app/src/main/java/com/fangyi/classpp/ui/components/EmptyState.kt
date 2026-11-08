@@ -38,8 +38,8 @@ private val EmptyStateIconTitleSpacing = 8.dp
 /** 标题 ↔ 描述默认间距：3dp。 */
 private val EmptyStateTitleDescriptionSpacing = 3.dp
 
-/** 描述 ↔ 操作默认间距：8dp。 */
-private val EmptyStateDescriptionActionSpacing = 8.dp
+/** 描述 ↔ 操作默认间距：12dp。 */
+private val EmptyStateDescriptionActionSpacing = 12.dp
 
 /** 描述左右留白：24dp，长文案换行时不贴到浮层边缘。 */
 private val EmptyStateDescriptionHorizontalPadding = 24.dp
