@@ -34,6 +34,12 @@
     <string name="todo_group_create_hint">Enter group name</string>
     <!-- Todo groups sheet: edit-mode rename card -->
     <string name="todo_group_rename_title">Rename Group</string>
+    <!-- Todo groups sheet: tag section (after group contents) and tag long-press actions (rename / delete only) -->
+    <string name="todo_tag_rename_title">Rename Tag</string>
+    <string name="todo_tag_rename_hint">Enter tag name</string>
+    <string name="todo_tag_delete_title">Delete Tag</string>
+    <string name="todo_tag_delete_message">“%1$s” will be deleted. Todos are unaffected. This cannot be undone.</string>
+    <string name="todo_tag_delete_message_multi">%1$d selected tags will be deleted. Todos are unaffected. This cannot be undone.</string>
     <string name="todo_new_title">New Todo</string>
     <string name="todo_edit_title">Edit Todo</string>
     <string name="todo_name_label">Todo name</string>
@@ -308,7 +314,7 @@
     <string name="unit_week">weeks</string>
     <string name="unit_slot">periods</string>
     <string name="unit_min">min</string>
-    <!-- 外观 -->
+    <!-- Appearance -->
     <string name="appearance_theme_mode">Color mode</string>
     <string name="appearance_theme_system">Follow system</string>
     <string name="appearance_theme_light">Light</string>
@@ -491,9 +497,16 @@
     <string name="detail_title">Course Details</string>
     <string name="detail_close">Close</string>
     <string name="detail_edit">Edit</string>
+    <string name="detail_create_todo">New</string>
     <string name="detail_teacher">Teacher</string>
     <string name="detail_location">Location</string>
     <string name="detail_note_ph">Tap to add a note</string>
+    <!-- Course todo sheet (CourseTodoSheet): deadline options are "Next class" / "Custom week";
+         the todo is auto-tagged with the course name, other fields use the new-todo defaults -->
+    <string name="course_todo_title">New Course Todo</string>
+    <string name="course_todo_deadline_next">Next class</string>
+    <string name="course_todo_deadline_custom">Custom</string>
+    <string name="course_todo_custom_desc">Due at the start of this class in week X</string>
     <!-- Quoted so the surrounding spaces survive resource compilation -->
     <string name="edit_alternate_meta_separator">" | "</string>
     <string name="edit_alternate_taken_hint">Taken by “%1$s”: %2$s</string>
@@ -623,6 +636,8 @@
     <string name="todo_empty_group_hint">Add something you want to do</string>
     <!-- Banner at the top of the Recently Deleted list: trash retention period -->
     <string name="todo_trash_retention_hint">Kept %1$d days, then auto-deleted</string>
+    <!-- Empty state for a tag page -->
+    <string name="todo_empty_tag">No todos under this tag yet</string>
     <string name="todo_error_save_failed">Save failed, please try again later</string>
     <!-- Todo overview sheet (TodoOverviewSheet): today's wrap-up ring, stat cards, reminders, distribution, recent completions -->
     <string name="todo_overview_title">Todo overview</string>
@@ -680,6 +695,8 @@
     <string name="todo_detail_completion">Completion</string>
     <string name="todo_completion_rate">Completion rate</string>
     <string name="todo_completion_percent">%1$d%%</string>
+    <!-- NoteCard check-in progress: only the "%" unit, the number is concatenated in code -->
+    <string name="check_in_percent_unit" formatted="false">%</string>
     <string name="todo_detail_completed_count">Completed</string>
     <string name="todo_detail_overdue_count">Overdue</string>
     <string name="todo_count_times">%1$d times</string>
@@ -710,6 +727,17 @@
     <string name="toast_todo_step_deleted">Step deleted</string>
     <string name="toast_todo_pinned">Pinned</string>
     <string name="toast_todo_unpinned">Unpinned</string>
+    <string name="toast_todo_moved">Moved</string>
+    <!-- Todo edit mode (long-press a list card): top-bar actions and group-header select-all button;
+         actions are persisted immediately, "Confirm" only exits -->
+    <string name="todo_edit_delete">Delete</string>
+    <string name="todo_edit_move">Move</string>
+    <string name="todo_edit_sync">Sync</string>
+    <string name="todo_edit_pin">Pin</string>
+    <string name="todo_edit_unpin">Unpin</string>
+    <string name="todo_edit_confirm">Confirm</string>
+    <string name="todo_edit_select_all">Select all</string>
+    <string name="todo_edit_deselect_all">Deselect all</string>
     <!-- New todo sheet: section titles and form fields -->
     <string name="todo_section_reminder">Reminders &amp; priority</string>
     <string name="todo_section_date_time">Date &amp; time</string>
@@ -783,8 +811,12 @@
     <string name="repeat_end_invalid">The end date is too early. Please choose a later date</string>
     <string name="repeat_merge_title">Merge repeating todos</string>
     <string name="repeat_merge_desc">When on, repeating todos are shown as a single merged todo; when off, overdue or completed occurrences split into multiple entries. Recommended for long-running repeats to avoid lag from rendering too many items.</string>
+    <string name="repeat_check_in_title">Check-in mode</string>
+    <string name="repeat_check_in_desc">When on, the todo stays visible until the set number of check-ins is reached</string>
+    <string name="repeat_check_in_label">Check-in</string>
     <string name="repeat_summary_until">%1$s · until %2$s</string>
     <string name="repeat_summary_count">%1$s · %2$d times total</string>
+    <string name="repeat_summary_check_in">%1$s · check-in</string>
 
     <!-- Deadline card (DeadlineCard): single-tap picker row -->
     <string name="deadline_card_label">Deadline</string>
