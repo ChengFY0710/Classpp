@@ -30,6 +30,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -76,6 +81,17 @@ private const val AiImportPreviewAspectRatio = 3f / 2f
  */
 private val AiImportAuroraTop =
     TopBarHeight + AiImportStageHeight * 0.5f - AiImportAuroraHeight * 0.5f
+
+/**
+ * 顶栏底缘在光带内的比例位置：该高度以上光场完全隐去。磨砂顶栏是不透明实底，
+ * 光场若一直画到顶栏下沿会在边界处形成硬边；从这里开始往下 64dp 淡入即可消除。
+ */
+private val AiImportAuroraTopFadeStart =
+    (TopBarHeight - AiImportAuroraTop).value / AiImportAuroraHeight.value
+
+/** 顶栏下沿往下的淡入长度（64dp，换算成光带高度比例）。 */
+private val AiImportAuroraTopFadeEnd =
+    AiImportAuroraTopFadeStart + 64f / AiImportAuroraHeight.value
 
 // 选图卡的内距与间距：镜像 SettingsInfoHeaderCard 的首屏规格（组件本身不为本浮层加参数，
 // 这里独立维护；若共享组件规格调整，按需同步）。
@@ -190,6 +206,17 @@ internal fun AiImportSheet(
         // 舞台淡出在分析提示背后——两条边界都不再裁断光场
         backgroundContent = {
             if (configured) {
+                val maskColor = MaterialTheme.colorScheme.surface
+                val topFade = remember(maskColor) {
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0f to maskColor.copy(alpha = 0f),
+                            AiImportAuroraTopFadeStart to maskColor.copy(alpha = 0f),
+                            AiImportAuroraTopFadeEnd to maskColor,
+                            1f to maskColor,
+                        ),
+                    )
+                }
                 AiThinkingAurora(
                     // 只在分析中亮起：进场从中心轻微浮入，取消后冻结相位并淡出
                     active = analyzing,
@@ -198,7 +225,14 @@ internal fun AiImportSheet(
                         .fillMaxWidth()
                         .requiredHeight(AiImportAuroraHeight)
                         .align(Alignment.TopCenter)
-                        .offset(y = AiImportAuroraTop),
+                        .offset(y = AiImportAuroraTop)
+                        // 顶栏磨砂是不透明实底：顶栏底缘以上完全隐去、其下 64dp 渐入，
+                        // 光场从顶栏下沿平滑开始，不会在边界处被裁成硬边（渐变遮罩同理）
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            drawRect(brush = topFade, blendMode = BlendMode.DstIn)
+                        },
                 )
             }
         },
