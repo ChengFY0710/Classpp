@@ -86,7 +86,10 @@ data class ClassppColors(
      * （见 [ThemeAccent]）；默认蓝为浅 #E2EDFB / 深 #394C67。
      */
     val primaryContainerSolid: Color,
-    /** 卡面细弱元素（卡片内分隔线、点状轨道）：浅 = outline 同值，深 = 卡面上可见的中灰 */
+    /**
+     * 卡面细弱元素（卡片内分隔线、点状轨道）：浅 = outline 同值，深 = 卡面上可见的中灰。
+     * 随主题色（H 取主色，S/L 取默认值；默认蓝为 #DCE2E7 / #4D5157）。
+     */
     val onSurfaceCard: Color,
     /**
      * 顶栏等 Haze 磨砂的叠加基础色（浅色 = 白提亮、深色 = 深底色压暗）。
@@ -238,6 +241,7 @@ fun ClassppTheme(
         (if (darkTheme) DarkClassppColors else LightClassppColors).copy(
             secondaryText = accent.secondaryText(darkTheme),
             secondaryGrey = accent.secondaryGrey(darkTheme),
+            onSurfaceCard = accent.onSurfaceCard(darkTheme),
             primaryContainerSolid = accent.containerSolid(darkTheme),
         )
     }

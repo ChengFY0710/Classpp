@@ -7,11 +7,11 @@ import com.fangyi.classpp.R
 
 // ===== 主题色八档（文件私有）=====
 // 每档手工调校浅/深两套主色、前景色、选中实色与压暗遮罩；默认蓝直接复用 Color.kt 既有
-// 常量，保证默认观感逐位一致。页面背景、深色 surface、outline、secondaryText 与
-// secondaryGrey 不在此定义：由 HSL 从主色派生（H = 主色色相，S/L 取对应中性色；
-// 浅色 surface 恒 #FFFFFF）；outline 与 secondaryGrey 的默认蓝保留原值。
-// scrim 保持既有 alpha（浅 20% / 深 75%），只换暗色色相。对比度约束
-// （primary/onPrimary ≥ 4.5:1）由 ThemeAccentTest 固化。
+// 常量，保证默认观感逐位一致。页面背景、深色 surface、outline、secondaryText、
+// secondaryGrey 与 onSurfaceCard 不在此定义：由 HSL 从主色派生（H = 主色色相，
+// S/L 取对应中性色；浅色 surface 恒 #FFFFFF）；outline、secondaryGrey 与 onSurfaceCard
+// 的默认蓝保留原值。scrim 保持既有 alpha（浅 20% / 深 75%），只换暗色色相。
+// 对比度约束（primary/onPrimary ≥ 4.5:1）由 ThemeAccentTest 固化。
 private val TealPrimary = Color(0xFF007C8C)
 private val TealPrimaryContainerSolid = Color(0xFFE0F1F3)
 private val TealScrim = Color(0x332A3B3D)
@@ -123,6 +123,14 @@ private const val SecondaryGreyLightnessLight = 102f / 255f
 private const val SecondaryGreySaturationDark = 7f / 113f
 private const val SecondaryGreyLightnessDark = 198.5f / 255f
 
+// ===== onSurfaceCard 的 HSL 固定端 =====
+// S/L 取自默认值：浅 #DCE2E7（S 18.64% / L 88.43%）、深 #4D5157（S 6.10% / L 32.16%）；
+// H 取当前主色。默认蓝特判保留原值（按主色色相会偏移 1 个色阶）。
+private const val OnSurfaceCardSaturationLight = 11f / 59f
+private const val OnSurfaceCardLightnessLight = 225.5f / 255f
+private const val OnSurfaceCardSaturationDark = 10f / 164f
+private const val OnSurfaceCardLightnessDark = 82f / 255f
+
 /** sRGB 色相（0..360）；仅用于由主色派生页面背景。 */
 private fun Color.hueDegrees(): Float {
     val max = maxOf(red, green, blue)
@@ -140,7 +148,8 @@ private fun Color.hueDegrees(): Float {
  * 主题色（强调色）八选一：换 primary 家族——primary / onPrimary / primaryContainer /
  * inversePrimary / [ClassppColors.primaryContainerSolid]——以及页面背景 [background]、
  * 深色卡片面 [surface]、分割线 [outline]、次级说明文字 [secondaryText]、
- * SettingsCard 说明行标题 [secondaryGrey] 与弹层压暗遮罩 [scrim]；其余背景层（error、
+ * SettingsCard 说明行标题 [secondaryGrey]、卡面细弱元素 [ClassppColors.onSurfaceCard]
+ * 与弹层压暗遮罩 [scrim]；其余背景层（error、
  * 紧急旗标、AI 光场）与 [ClassppColors.storageApp] 均固定。
  * 枚举顺序即色板顺序（蓝/厦大蓝/青/绿/紫/橙/粉/山大红）。
  *
@@ -302,6 +311,16 @@ enum class ThemeAccent(@StringRes val labelRes: Int, private val tokens: AccentT
             hue = primary(darkTheme).hueDegrees(),
             saturation = if (darkTheme) SecondaryGreySaturationDark else SecondaryGreySaturationLight,
             lightness = if (darkTheme) SecondaryGreyLightnessDark else SecondaryGreyLightnessLight,
+        )
+    }
+
+    /** 卡面细弱元素：默认蓝保留原值；其余档 H 取当前主色，S/L 取默认值 */
+    fun onSurfaceCard(darkTheme: Boolean): Color = when (this) {
+        Blue -> if (darkTheme) DarkOnSurfaceCard else OnSurfaceCard
+        else -> Color.hsl(
+            hue = primary(darkTheme).hueDegrees(),
+            saturation = if (darkTheme) OnSurfaceCardSaturationDark else OnSurfaceCardSaturationLight,
+            lightness = if (darkTheme) OnSurfaceCardLightnessDark else OnSurfaceCardLightnessLight,
         )
     }
 

@@ -32,6 +32,8 @@ class ThemeAccentTest {
         assertEquals(DarkOutline, ThemeAccent.Blue.outline(true))
         assertEquals(SecondaryGrey, ThemeAccent.Blue.secondaryGrey(false))
         assertEquals(DarkSecondaryGrey, ThemeAccent.Blue.secondaryGrey(true))
+        assertEquals(OnSurfaceCard, ThemeAccent.Blue.onSurfaceCard(false))
+        assertEquals(DarkOnSurfaceCard, ThemeAccent.Blue.onSurfaceCard(true))
     }
 
     @Test
@@ -60,6 +62,13 @@ class ThemeAccentTest {
         // 绿色：H 取主色，S/L 取默认灰
         assertEquals(Color(0xFF606C65), ThemeAccent.Green.secondaryGrey(false))
         assertEquals(Color(0xFFC3CAC5), ThemeAccent.Green.secondaryGrey(true))
+    }
+
+    @Test
+    fun onSurfaceCardFollowsHslRuleForNonDefaultAccents() {
+        // 绿色：H 取主色，S/L 取默认值
+        assertEquals(Color(0xFFDCE7E0), ThemeAccent.Green.onSurfaceCard(false))
+        assertEquals(Color(0xFF4D5750), ThemeAccent.Green.onSurfaceCard(true))
     }
 
     @Test

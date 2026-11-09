@@ -37,7 +37,8 @@ val SurfaceContainerHigh = Color(0xFFEAEDF1)
 // 默认蓝档分割线；其余主题色由 ThemeAccent.outline() 按 HSL 派生（H 取主色，S/L 同本值）
 val Outline = Color(0xFFDCE2E7)
 
-// 卡面细弱元素（卡片内分隔线、点状轨道）：浅色与 outline 同值，深色取卡面上可见的中灰
+// 默认蓝档卡面细弱元素（卡片内分隔线、点状轨道，浅色与 outline 同值）；其余主题色由
+// ThemeAccent.onSurfaceCard() 按 HSL 派生（H 取主色，S/L 同本值）
 val OnSurfaceCard = Color(0xFFDCE2E7)
 
 val InversePrimary = Color(0x4D006FEF)
@@ -126,6 +127,7 @@ val DarkSurfaceContainerHigh = Color(0xFF1E2227)
 // 默认蓝档深色分割线；其余主题色由 ThemeAccent.outline() 按 HSL 派生（H 取主色，S/L 同本值）
 val DarkOutline = Color(0xFF2A2F36)
 
+// 默认蓝档深色卡面细弱元素；其余主题色由 ThemeAccent.onSurfaceCard() 按 HSL 派生（H 取主色，S/L 同本值）
 val DarkOnSurfaceCard = Color(0xFF4D5157)
 
 val DarkInversePrimary = Color(0x99479CFF)
