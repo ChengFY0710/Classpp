@@ -291,8 +291,8 @@ class DayTaskPlacementTest {
     fun parallelCardsEndingTogetherInsertMaxOnce() {
         // 两条同时段短课程并排、同一结束时刻：并行车道共用一段轴，按最大差额只插
         // 一次（不累加），两卡底边都落在结束刻度
-        // 区域宽取 380dp：两列各 189dp ≥ 180dp 窄卡阈值，并排的短卡才仍是紧凑形态
-        // （328dp 区域下半宽 163dp 已低于阈值，会切窄卡、不参与补轴）
+        // 区域宽取 380dp：两列各 189dp ≥ 180dp 窄卡阈值，并排的短卡保持紧凑形态，
+        // 专门覆盖紧凑卡的同刻取最大值路径（窄卡同款逻辑见 narrowCardInsertsDeficitAtItsEnd）
         val wideRegion = 380.dp
         val layout = listOf(course(480, 500), course(480, 500))
             .solveDayTaskLayout(wideRegion, hourSpacing, anchorMinute = 480)
@@ -366,14 +366,74 @@ class DayTaskPlacementTest {
     }
 
     @Test
-    fun narrowCardDoesNotInsertAtEnd() {
-        // 窄卡的内容撑高不参与最低高度拉伸（本次范围外）：无冲突时不插轴
+    fun narrowCardInsertsDeficitAtItsEnd() {
+        // 窄卡内容（时间置顶 + 标题 + 信息）高于比例高度时，同样在结束时刻插入差额：
+        // 卡底落到结束刻度，之后的小时跨度随之下移（不再让内容溢出到后续刻度里）
         val layout = listOf(course(480, 600), todo(540, 560))
             .solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 480)
         val narrowTodo = layout.placements.single { it.task is DayTask.Todo }
         assertTrue(narrowTodo.narrow)
         assertTrue(narrowTodo.height > 40.dp)
-        assertTrue(layout.pushes.isEmpty())
+        assertEquals(
+            layout.yAt(560).value,
+            (narrowTodo.offsetY + narrowTodo.height).value,
+            1e-3f,
+        )
+        assertTrue(layout.extraAt(560) > 0.dp)
+    }
+
+    @Test
+    fun overlappingShortCardStretchesAxisAtItsEnd() {
+        // 8:00-9:40 课 + 8:00-8:30 待办重叠 → 两列窄卡：短卡从紧凑兜底改为窄卡样式后
+        // 内容仍高于比例高度，差额必须插在 8:30，卡底落到结束刻度；横跨该时刻的课程
+        // 同步加高，卡底仍对齐 9:40 刻度
+        val layout = listOf(course(480, 580), todo(480, 510))
+            .solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 480)
+        val courseCard = layout.placements[0]
+        val shortCard = layout.placements[1]
+        assertTrue(shortCard.narrow)
+        assertFalse(shortCard.compact)
+        assertTrue(layout.extraAt(510) > 0.dp)
+        assertEquals(
+            layout.yAt(510).value,
+            (shortCard.offsetY + shortCard.height).value,
+            1e-3f,
+        )
+        assertEquals(
+            layout.yAt(580).value,
+            (courseCard.offsetY + courseCard.height).value,
+            1e-3f,
+        )
+    }
+
+    @Test
+    fun measuredNarrowContentHeightDrivesEndInsertion() {
+        // 渲染侧实测窄卡内容高于基线估算时，结束时刻的差额按实测值重算，卡底仍与
+        // 结束刻度对齐
+        val tasks = listOf(course(480, 580), todo(480, 510))
+        val estimated = tasks.solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 480)
+        val estimatedShortHeight = estimated.placements[1].height
+        val measured = tasks.solveDayTaskLayout(
+            regionWidth = regionWidth,
+            hourSpacing = hourSpacing,
+            anchorMinute = 480,
+            contentHeights = listOf(
+                estimated.placements[0].height,
+                estimatedShortHeight + 12.dp,
+            ),
+        )
+        val shortCard = measured.placements[1]
+        assertEquals(
+            (estimatedShortHeight + 12.dp).value,
+            shortCard.height.value,
+            1e-3f,
+        )
+        assertEquals(
+            measured.yAt(510).value,
+            (shortCard.offsetY + shortCard.height).value,
+            1e-3f,
+        )
+        assertTrue(measured.extraAt(510) > estimated.extraAt(510))
     }
 
     @Test

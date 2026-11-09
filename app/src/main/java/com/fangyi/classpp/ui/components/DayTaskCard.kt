@@ -64,9 +64,10 @@ import com.kyant.shapes.RoundedRectangle
  * - 同一横向范围内上下相邻卡至少留 2dp，时间贴背恰好 2dp；空间不足时由
  *   [solveDayTaskLayout] 在冲突时刻插入额外轴空间（左侧整点跨度局部变大）；
  * - 紧凑卡（比例高度 < [DayTaskCompactThreshold]，≈84 分钟）有 [CompactMinHeight]
- *   呼吸高下限：时长太短导致比例高度不足该下限时，在卡的**结束时刻**插入差额——卡顶
- *   仍锚定开始时刻、卡底正好落到结束刻度，其后刻度/卡片/当前时刻线整体下移；窄卡与
- *   竖排卡的内容撑高不参与该规则（仍只在压住下卡时推轴）；
+ *   呼吸高下限，窄卡（分列后卡宽不足 [DayTask.narrowThreshold]）的置顶堆叠内容也可能
+ *   高于比例高度：两者都在卡的**结束时刻**插入差额——卡顶仍锚定开始时刻、卡底正好
+ *   落到结束刻度，其后刻度/卡片/当前时刻线整体下移；竖排卡的内容撑高不参与该规则
+ *   （仍只在压住下卡时推轴）；
  * - 比例高度 < [DayTaskCompactThreshold] 切紧凑单行（时间 + 标签 + 时间 + 标题横排
  *   一行）；
  * - 分列后卡宽不足 [DayTask.narrowThreshold]（课程/待办均 180dp）时切窄卡样式：
@@ -279,9 +280,9 @@ private const val DayTaskNoteBaseLines = 2
  * - 纵向排布：保持 1 小时 = [hourSpacing] 的基础比例，按「开始组 + 结束时刻」双流
  *   合并推进；同一横向范围（x 区间严格相交）内、时间不重叠的上下卡之间至少留
  *   [DayTaskVerticalGap]，不足时在下方卡开始时刻插入额外轴空间（[DayTaskPush]）；
- *   紧凑卡的比例高度低于内容最小高度（≥ [CompactMinHeight]）时，还在其结束时刻插入
- *   差额（同刻结束的并行卡取最大、不累加），卡底恰好落到结束刻度——整点刻度跨度随
- *   插入量局部变大，贴背任务恰好 2dp，未受影响的小时仍为 [hourSpacing]；
+ *   紧凑卡与窄卡的比例高度低于内容最小高度时，还在其结束时刻插入差额（同刻结束的
+ *   并行卡取最大、不累加），卡底恰好落到结束刻度——整点刻度跨度随插入量局部变大，
+ *   贴背任务恰好 2dp，未受影响的小时仍为 [hourSpacing]；
  * - 高度：先取 max(比例高度, 内容最小高度)，再把卡片时间区间内插入的额外空间计入，
  *   保证卡片仍覆盖被拉伸的时间段（结束时刻的差额插入正是把结束刻度抬到卡底，下卡
  *   只再补 2dp 间距）；内容最小高度优先取 [contentHeights]（渲染侧对
@@ -395,9 +396,9 @@ internal fun List<DayTask>.solveDayTaskLayout(
     }
 
     // 纵向排布：开始组与结束时刻两路事件按分钟合并推进。同组卡片顶边对齐；每放置
-    // 一组前，先消化该组开始时刻及之前的结束事件——紧凑卡的比例高度装不下内容最低
-    // 高度时，在结束时刻插入差额（卡底落到结束刻度），跨越该时刻的卡同步加高；之后
-    // 再按现有逻辑检查与已放置卡的 2dp 间距，不足时在组开始时刻补插空间
+    // 一组前，先消化该组开始时刻及之前的结束事件——紧凑卡/窄卡的比例高度装不下
+    // 内容最低高度时，在结束时刻插入差额（卡底落到结束刻度），跨越该时刻的卡同步
+    // 加高；之后再按现有逻辑检查与已放置卡的 2dp 间距，不足时在组开始时刻补插空间
     val sortedIndices = indices.sortedWith(
         compareBy({ this[it].startMinute }, { this[it].endMinute }),
     )
@@ -421,7 +422,10 @@ internal fun List<DayTask>.solveDayTaskLayout(
                 val index = endOrder[endCursor++]
                 // 未放置（零时长等非法区间）的卡不产生轴空间
                 if (index !in placed) continue
-                val deficit = if (compact[index]) {
+                // 紧凑卡的 40dp 呼吸高与窄卡置顶堆叠的内容最小高度高于比例高度时，
+                // 差额插在结束时刻，卡底正好落到结束刻度（竖排卡的内容撑高仍只在
+                // 压住下卡时推轴，见上方分组推进逻辑）
+                val deficit = if (compact[index] || narrow[index]) {
                     maxOf(
                         0.dp,
                         requireNotNull(contentMins[index]) -
