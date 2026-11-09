@@ -128,6 +128,7 @@
     <string name="sync_section_auto_login">Auto renewal and sync</string>
     <string name="sync_section_capabilities">What sync can do</string>
     <string name="sync_section_alt_login">Alternative sign-in</string>
+    <string name="sync_section_preferences">Preferences</string>
     <string name="xmu_source_badge">Course Center</string>
     <!-- Course Center sync: default names for auto-created groups (only on first creation; autoKey afterwards) -->
     <string name="xmu_group_homework">Assignments</string>
@@ -154,11 +155,15 @@
     <string name="sync_webview_login_desc">A secure sign-in that does not store your account or password. The session can expire, and auto renewal is unavailable.</string>
     <string name="sync_preview_title">Sync preview</string>
     <string name="sync_preview_confirm">Import</string>
+    <string name="sync_preview_confirm_apply">Apply</string>
     <string name="sync_preview_summary">%1$d to import, %2$d skipped</string>
     <string name="sync_preview_restore">%1$d deleted synced todos will be restored</string>
-    <string name="sync_preview_empty">No todos</string>
+    <string name="sync_preview_vanished">%1$d vanished remote todos will be marked completed</string>
+    <string name="sync_preview_vanished_title">Will mark as completed</string>
+    <string name="sync_preview_reopened">%1$d todos reappeared remotely and will be reopened</string>
+    <string name="sync_preview_empty">No new todos</string>
     <string name="sync_deadline_unparseable">%1$d entries have an unrecognized deadline format; the remote interface may have changed</string>
-    <string name="sync_import_done">Imported %1$d, restored %2$d</string>
+    <string name="sync_import_done">Imported %1$d, restored %2$d, completed %3$d, reopened %4$d</string>
     <string name="sync_deadline_format">%3$02d:%4$02d, %1$d/%2$d</string>
     <string name="sync_error_expired">Session expired, please sign in again</string>
     <string name="xmu_error_busy">Course Center is busy, try again later</string>
@@ -204,6 +209,9 @@
     <!-- Daily auto sync -->
     <string name="sync_daily_title">Daily auto sync</string>
     <string name="sync_daily_desc">When enabled, syncs daily at 6:00</string>
+    <!-- Preferences: mark completed when the remote item disappears -->
+    <string name="sync_auto_complete_title">Mark completed when removed remotely</string>
+    <string name="sync_auto_complete_desc">Synced todos that disappear from the remote are marked completed automatically. Overdue todos are left unchanged.</string>
     <string name="xmu_auto_sync_notif_title">Course Center auto sync finished</string>
     <!-- School-neutral copy (multi-school support: used when a spec provides no override) -->
     <string name="sync_error_account_changed">An account change was detected. Sign in again or clear sync records.</string>
@@ -217,7 +225,7 @@
     <string name="sync_login_invalid_credentials">Incorrect account or password</string>
     <string name="sync_login_not_established">Signed in but could not read remote data. Use the web sign-in instead.</string>
     <string name="sync_auto_login_disable_message">Turning this off deletes the saved account and password. The current sign-in is kept; after the session expires you will need to sign in manually.</string>
-    <string name="sync_notif_text">Auto-imported %1$d, restored %2$d</string>
+    <string name="sync_notif_text">Auto-imported %1$d, restored %2$d, completed %3$d, reopened %4$d</string>
     <string name="account_sync_load_failed">Failed to load account info. Go back and try again.</string>
     <!-- School selection (multi-school): shared by the settings section title and the
          picker sheet title; a single registered school still uses the same sheet -->

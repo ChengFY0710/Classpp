@@ -11,6 +11,7 @@ import com.fangyi.classpp.data.xmu.XmuProfileDto
 import com.fangyi.classpp.data.xmu.XmuTodoDto
 import com.fangyi.classpp.data.xmu.XmuTodoListDto
 import com.fangyi.classpp.data.xmu.XmuTodoMapper
+import com.fangyi.classpp.data.xmu.XmuTime
 import com.fangyi.classpp.data.xmu.SkipReason as XmuSkipReason
 
 /**
@@ -81,6 +82,12 @@ internal class XmuSyncCodec(
     override fun autoGroupKey(remote: XmuTodoDto): String? = XmuTodoMapper.autoGroupKey(remote.type)
 
     override fun isOwned(todo: Todo): Boolean = todo.source == source || matchesLocalId(todo.id)
+
+    override fun isOverdue(todo: Todo, nowMillis: Long): Boolean {
+        val date = todo.deadlineDate ?: return false
+        val minute = todo.deadlineMinute ?: return false
+        return XmuTime.isOverdue(XmuTime.Deadline(date, minute), nowMillis)
+    }
 
     /** 两个枚举同名同值（引擎与冻结层各持一份）：一一同构映射，不做兜底合并 */
     private fun XmuSkipReason.toEngineReason(): SkipReason = when (this) {

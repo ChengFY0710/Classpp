@@ -809,6 +809,7 @@ class SchoolRegistryTest {
         override val state = MutableStateFlow(SyncState())
         override val avatarImage = MutableStateFlow<AvatarImage?>(null)
         override val busy = MutableStateFlow(false)
+        override val preferences = MutableSyncPreferences()
 
         override suspend fun prepareSync(force: Boolean): PrepareOutcome =
             error("unused in registry tests")

@@ -265,6 +265,7 @@
     <string name="sync_section_auto_login">自动续期和同步</string>
     <string name="sync_section_capabilities">同步可以做什么</string>
     <string name="sync_section_alt_login">备用登录方式</string>
+    <string name="sync_section_preferences">偏好设置</string>
     <string name="xmu_source_badge">课程中心</string>
     <!-- 课程中心同步：按远端 type 自动创建的分组默认名（仅首次创建时使用，之后以 autoKey 定位） -->
     <string name="xmu_group_homework">作业</string>
@@ -291,11 +292,15 @@
     <string name="sync_webview_login_desc">不保存账号密码的安全登录方式，存在过期风险，且不支持自动续登</string>
     <string name="sync_preview_title">同步预览</string>
     <string name="sync_preview_confirm">导入</string>
+    <string name="sync_preview_confirm_apply">应用</string>
     <string name="sync_preview_summary">新增 %1$d 条，跳过 %2$d 条</string>
     <string name="sync_preview_restore">将恢复 %1$d 条已删除的同步待办</string>
-    <string name="sync_preview_empty">暂无待办</string>
+    <string name="sync_preview_vanished">将把 %1$d 条远端已消失的待办标记为已完成</string>
+    <string name="sync_preview_vanished_title">将标记为已完成</string>
+    <string name="sync_preview_reopened">远端重新出现 %1$d 条，将恢复为未完成</string>
+    <string name="sync_preview_empty">没有新增待办</string>
     <string name="sync_deadline_unparseable">有 %1$d 条截止时间格式无法识别，接口可能已变化</string>
-    <string name="sync_import_done">已导入 %1$d 条，恢复 %2$d 条</string>
+    <string name="sync_import_done">已导入 %1$d 条，恢复 %2$d 条，标记完成 %3$d 条，恢复未完成 %4$d 条</string>
     <string name="sync_deadline_format">%1$d月%2$d日 %3$02d:%4$02d</string>
     <string name="sync_error_expired">登录已过期，请重新登录</string>
     <string name="xmu_error_busy">课程中心服务繁忙，请稍后重试</string>
@@ -341,6 +346,9 @@
     <!-- 每日自动同步 -->
     <string name="sync_daily_title">每日自动同步</string>
     <string name="sync_daily_desc">开启后，每日 6:00 自动同步</string>
+    <!-- 偏好设置：远端消失时自动标记完成 -->
+    <string name="sync_auto_complete_title">远端消失时标记完成</string>
+    <string name="sync_auto_complete_desc">同步的待办若在远端消失，自动标记为已完成，已逾期的待办保持未完成</string>
     <string name="xmu_auto_sync_notif_title">课程中心自动同步完成</string>
     <!-- 校无关中性文案（多学校适配：spec 未覆盖时使用；文本不含校名/学号） -->
     <string name="sync_error_account_changed">检测到账号变化，请重新登录或清空同步记录</string>
@@ -354,7 +362,7 @@
     <string name="sync_login_invalid_credentials">账号或密码不正确</string>
     <string name="sync_login_not_established">登录成功但无法读取远端数据，请改用网页登录</string>
     <string name="sync_auto_login_disable_message">关闭后将删除已保存的账号与密码。当前登录状态会保留，会话过期后需手动登录。</string>
-    <string name="sync_notif_text">已自动导入 %1$d 条，恢复 %2$d 条</string>
+    <string name="sync_notif_text">已自动导入 %1$d 条，恢复 %2$d 条，标记完成 %3$d 条，恢复未完成 %4$d 条</string>
     <string name="account_sync_load_failed">账号信息加载失败，请返回后重试</string>
     <!-- 学校选择（多校适配）：页面分组标题与选择浮层标题共用同一文案；
          只注册一所学校时同样可用 -->

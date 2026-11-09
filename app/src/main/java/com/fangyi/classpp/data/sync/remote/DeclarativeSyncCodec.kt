@@ -123,6 +123,16 @@ internal class DeclarativeSyncCodec(
 
     override fun isOwned(todo: Todo): Boolean = todo.source == source || matchesLocalId(todo.id)
 
+    override fun isOverdue(todo: Todo, nowMillis: Long): Boolean {
+        val date = todo.deadlineDate ?: return false
+        val minute = todo.deadlineMinute ?: return false
+        return DeclarationTime.isOverdue(
+            DeclarationTime.Deadline(date, minute),
+            nowMillis,
+            zone,
+        )
+    }
+
     // ---------- 映射（skipReason / toTodo 共用单一逻辑路径） ----------
 
     private sealed interface Eval {

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.webkit.CookieManager
 import com.fangyi.classpp.data.sync.DailySyncToggle
 import com.fangyi.classpp.data.sync.PrefsDailySyncToggle
+import com.fangyi.classpp.data.sync.PrefsSyncPreferences
 import com.fangyi.classpp.data.sync.ScheduleImportService
 import com.fangyi.classpp.data.sync.SchoolProvider
 import com.fangyi.classpp.data.sync.SchoolSession
@@ -109,6 +110,7 @@ class RemoteSchoolProvider(private val declaration: SchoolDeclaration) : SchoolP
             ),
             clock = clock,
             avatar = avatar,
+            syncPreferences = PrefsSyncPreferences(appContext, spec.id),
             logger = SyncDebugLog::d,
         ).also { it.bootstrap() }
 

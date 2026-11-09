@@ -10,8 +10,8 @@
    - sharedpref/xmu_secure.xml：自动续期保存的学号/密码与 cookie 密文（Keystore 密钥
      本身不可导出、不在备份里，密文恢复后也无法解密，排除是必须的）；
    - sharedpref/sync_secure.xml：新校共用的凭据 prefs（按校分键，Keystore 密文），同因排除；
-   - sharedpref/sync_prefs.xml：新校共用的每日同步开关（按校分键，非敏感，但与账号状态
-     同目录提交保持成对；排除可避免换机后带着旧校开关）；
+   - sharedpref/sync_prefs.xml：新校共用的每日同步开关与同步行为偏好（按校分键，非敏感，
+     但与账号状态同目录提交保持成对；排除可避免换机后带着旧校开关）；
    - sharedpref/ai_secure.xml：AI 连接配置与 API Key 密文（Keystore 密钥不随备份迁移，
      密文恢复后同样解不开，同因同果必须排除）。
    school_prefs.xml 不排除：恢复后指向无数据的学校 = 显示未连接，无害。

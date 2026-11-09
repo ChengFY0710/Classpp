@@ -18,8 +18,9 @@ import com.fangyi.classpp.data.notification.ensureNotificationChannels
  * 同步走 [SyncService] 的通用契约。不变量与验收（指导 §2.4/§2.7）：
  *
  * 与手动同步的差异是**静默语义**：不开预览、不问确认——到期后按预览页「默认全选」
- * 的口径导入全部新条目（restoreItems 在 commitSync 内必然全部恢复），完成发系统通知
- * 汇报；无新增仅补基线（markSynced，与手动同步「已是最新」分支同口径）；
+ * 的口径导入全部新条目（restoreItems 在 commitSync 内必然全部恢复，远端消失/重新出现
+ * 的完成/回滚也一并落库），完成发系统通知汇报；无任何变更仅补基线（markSynced，
+ * 与手动同步「已是最新」分支同口径）；
  * **所有失败一律静默**——登录过期（未开自动续期无法后台重登）、账号变化（清空记录
  * 必须用户确认）、服务/网络问题都只留诊断日志，下次触发自愈，绝不自动 resetSyncData。
  *
@@ -39,8 +40,13 @@ class DailySyncRunner(
         /** 同步成功，无新增无恢复，仅补映射基线 */
         data object UpToDate : Outcome
 
-        /** 已提交导入/恢复（数值可为 0：恢复条目全部失败时） */
-        data class Imported(val imported: Int, val restored: Int) : Outcome
+        /** 已提交导入/恢复/完成/回滚（数值可为 0：条目全部失败时） */
+        data class Imported(
+            val imported: Int,
+            val restored: Int,
+            val completed: Int = 0,
+            val reopened: Int = 0,
+        ) : Outcome
 
         /** 拉取或提交失败：已静默记录 */
         data object Failed : Outcome
@@ -81,9 +87,11 @@ class DailySyncRunner(
         plan: SyncPlan,
     ): Outcome {
         val sync = session.sync
-        // 无新增无恢复：与手动同步「已是最新」分支同口径，只补映射基线与 lastSyncAt；
-        // 落盘失败按失败处理（下次触发重拉）
-        if (plan.newItems.isEmpty() && plan.restoreCount == 0) {
+        // 无新增无恢复、也无消失/回滚：与手动同步「已是最新」分支同口径，只补映射基线
+        // 与 lastSyncAt；落盘失败按失败处理（下次触发重拉）
+        if (plan.newItems.isEmpty() && plan.restoreCount == 0 &&
+            plan.vanishedItems.isEmpty() && plan.reactivatedItems.isEmpty()
+        ) {
             return if (sync.markSynced(plan)) Outcome.UpToDate else Outcome.Failed
         }
         return when (
@@ -91,17 +99,27 @@ class DailySyncRunner(
         ) {
             is CommitOutcome.Done -> {
                 logger(
-                    "dailySync imported=${result.report.imported} restored=${result.report.restored}",
+                    "dailySync imported=${result.report.imported} restored=${result.report.restored} " +
+                        "completed=${result.report.completed} reopened=${result.report.reopened}",
                 )
-                if (result.report.imported + result.report.restored > 0) {
+                if (result.report.imported + result.report.restored +
+                    result.report.completed + result.report.reopened > 0
+                ) {
                     notifyResult(
                         context = context,
                         title = session.spec.syncNotifTitle,
                         imported = result.report.imported,
                         restored = result.report.restored,
+                        completed = result.report.completed,
+                        reopened = result.report.reopened,
                     )
                 }
-                Outcome.Imported(result.report.imported, result.report.restored)
+                Outcome.Imported(
+                    imported = result.report.imported,
+                    restored = result.report.restored,
+                    completed = result.report.completed,
+                    reopened = result.report.reopened,
+                )
             }
             is CommitOutcome.Failed -> {
                 logger("dailySync commit failed ${result.error}")
@@ -119,12 +137,20 @@ class DailySyncRunner(
         title: SchoolText,
         imported: Int,
         restored: Int,
+        completed: Int,
+        reopened: Int,
     ) {
         ensureNotificationChannels(context)
         val manager = NotificationManagerCompat.from(context)
         if (!manager.areNotificationsEnabled()) return
         val resolvedTitle = title.resolve(context)
-        val text = context.getString(R.string.sync_notif_text, imported, restored)
+        val text = context.getString(
+            R.string.sync_notif_text,
+            imported,
+            restored,
+            completed,
+            reopened,
+        )
         val notification = NotificationPoster.buildStandard(
             context = context,
             channel = CHANNEL_SYNC,

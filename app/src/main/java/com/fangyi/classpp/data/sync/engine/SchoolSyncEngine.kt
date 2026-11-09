@@ -4,6 +4,7 @@ import com.fangyi.classpp.data.TodoError
 import com.fangyi.classpp.data.TodoOpResult
 import com.fangyi.classpp.data.TodoReadResult
 import com.fangyi.classpp.data.TodoRepository
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.store.LoadOutcome
@@ -14,8 +15,10 @@ import com.fangyi.classpp.data.sync.LoginRaw
 import com.fangyi.classpp.data.sync.PrepareOutcome
 import com.fangyi.classpp.data.sync.SchoolSpec
 import com.fangyi.classpp.data.sync.SyncError
+import com.fangyi.classpp.data.sync.MutableSyncPreferences
 import com.fangyi.classpp.data.sync.SyncPlan
 import com.fangyi.classpp.data.sync.SyncPlanItem
+import com.fangyi.classpp.data.sync.SyncPreferences
 import com.fangyi.classpp.data.sync.SyncReport
 import com.fangyi.classpp.data.sync.SyncService
 import com.fangyi.classpp.data.sync.SyncState
@@ -40,9 +43,12 @@ import kotlinx.coroutines.withContext
  *    时钟回拨不卡死）；
  * 2. **预览-确认**：prepare 不写待办与映射，commit 才落库；但 prepare 会落盘连接与
  *    探活状态（uid、账号名、头像地址、上次探活时刻）——落盘失败不能报 Ready；
- * 3. **只增不改**：远端变化不回写、远端消失不删；回收站条目允许复活；
+ * 3. **只增不改**：远端变化不回写；远端列表非空且已映射条目消失时，把对应本地活跃待办
+ *    标记完成（可回滚：远端重新出现且完成时刻未变则恢复未完成；受
+ *    [com.fangyi.classpp.data.sync.SyncPreferences.autoCompleteOnVanish] 开关控制，默认关）；
+ *    远端列表为空、或本地已逾期时不做标记；回收站条目允许复活；
  * 4. **账号一致性**：uid 与已存映射不一致 → [SyncError.AccountChanged]；
- * 5. **entries 只存哈希**，不存标题原文；键 = [SyncCodec.remoteKey]（校内唯一）；
+ * 5. **entries 只存映射、哈希与同步状态**，不存标题原文；键 = [SyncCodec.remoteKey]（校内唯一）；
  * 6. **原子写**：tmp(fsync)→bak→rename，双坏隔离留证（[SchoolSyncStore]）；
  * 7. **退出清理按 [SyncCodec.isOwned] 过滤**，只删本校同步待办（活跃 + 归档 + 回收站）；
  * 8. **失败分类不兜底**：绝不把所有失败说成登录过期；
@@ -66,6 +72,7 @@ class SchoolSyncEngine<R : Any>(
     private val groupNames: SchoolAutoGroupNames,
     private val clock: () -> Long = System::currentTimeMillis,
     private val avatar: AvatarCache? = null,
+    private val syncPreferences: SyncPreferences = MutableSyncPreferences(),
     private val logger: (String) -> Unit = SyncDebugLog::d,
 ) : SyncService {
 
@@ -100,6 +107,8 @@ class SchoolSyncEngine<R : Any>(
 
     private val busyTracker = BusyTracker()
     override val busy: StateFlow<Boolean> = busyTracker.busy
+
+    override val preferences: SyncPreferences get() = syncPreferences
 
     /** 进程内是否已从磁盘载入：provider 装配时调用一次（与 status/avatar 成对） */
     suspend fun bootstrap() {
@@ -241,10 +250,16 @@ class SchoolSyncEngine<R : Any>(
         val archived = todoRepository.archivedTodos.value.associateBy { it.id }
         val trashed = todoRepository.deletedTodos.value.associateBy { it.id }
         val knownEntries = _state.value.entries.associateBy { it.remoteKey }
+        // 原始远端键集合（含 locked/overdue 等稍后会被跳过的条目）：跳过不等于消失
+        val presentKeys = remotes.mapTo(mutableSetOf()) { codec.remoteKey(it) }
 
         val newItems = mutableListOf<PlanItem<R>>()
         val restoreItems = mutableListOf<PlanItem<R>>()
+        val vanishedItems = mutableListOf<VanishedItem>()
+        val reactivatedItems = mutableListOf<ReactivatedItem>()
         val entriesForActive = mutableListOf<SchoolSyncEntry>()
+        // 本次同步要更新的既有映射（清空/写入自动完成基线）
+        val entryUpdates = mutableMapOf<String, SchoolSyncEntry>()
         val skipped = mutableMapOf<SkipReason, Int>()
         val groupBackfill = mutableMapOf<String, String>()
 
@@ -264,10 +279,27 @@ class SchoolSyncEngine<R : Any>(
             }
             val liveTodo = active[localId] ?: archived[localId]
             val trashedTodo = trashed[localId]
+            val existing = liveTodo ?: trashedTodo
+
+            // 上次因消失被自动完成、本次又出现：只有完成时刻仍等于自动标记基线才回滚
+            //（用户手动勾选/取消过完成态则尊重用户，只清基线）。归档/回收站条目不回滚。
+            val known = knownEntries[rKey]
+            if (known?.autoCompletedAtMillis != null) {
+                // 基线属于映射里的 todoId；映射失效/旧 id 时不能拿确定性 id 的新条目顶替
+                val activeTodo = active[known.todoId]
+                if (activeTodo != null && activeTodo.completed &&
+                    activeTodo.completedAtMillis == known.autoCompletedAtMillis &&
+                    codec.isOwned(activeTodo) &&
+                    activeTodo.repeat.type == RepeatType.None
+                ) {
+                    reactivatedItems += ReactivatedItem(activeTodo)
+                }
+                // 远端已重新出现：基线失效（回滚/用户手动改过都只清基线）
+                entryUpdates[known.remoteKey] = known.copy(autoCompletedAtMillis = null)
+            }
 
             // 存量同步待办按远端类型补自动分组：只补本地确实存在且仍未分组的，
             // 用户改过分组就尊重；远端新增候选不在这里回填（导入时按类型直接设置）
-            val existing = liveTodo ?: trashedTodo
             if (existing != null && existing.group == null) {
                 codec.autoGroupKey(remote)?.let { groupBackfill[localId] = it }
             }
@@ -310,11 +342,44 @@ class SchoolSyncEngine<R : Any>(
                 )
             }
         }
+
+        // 远端列表非空才做消失判定：空列表可能是学期切换/接口异常，不能把全部待办误标完成。
+        // 只认有映射的条目（entries），避免同步状态丢失后按 id 前缀误伤历史/旧口径条目。
+        var overdueSkipped = 0
+        if (remotes.isNotEmpty() && syncPreferences.autoCompleteOnVanish.value) {
+            val seenTodoIds = mutableSetOf<String>()
+            for (entry in knownEntries.values) {
+                if (entry.remoteKey in presentKeys) continue
+                // 映射重建/历史数据可能让多条 entry 指向同一待办：只处理一次
+                if (!seenTodoIds.add(entry.todoId)) continue
+                val todo = active[entry.todoId] ?: continue
+                if (!codec.isOwned(todo)) continue
+                // 已完成（含自动完成）跳过；用户手动取消后 completed=false，会再次进入候选。
+                // 远端列表仍是完成判定的唯一依据：远端不返回就再次标记完成。
+                if (todo.completed || todo.repeat.type != RepeatType.None) continue
+                // 逾期条目不因远端消失而自动完成：远端停止返回更可能是过期清理，不是提交完成
+                if (codec.isOverdue(todo, fetchedAt)) {
+                    overdueSkipped++
+                    continue
+                }
+                vanishedItems += VanishedItem(entry, todo)
+            }
+        }
+        if (vanishedItems.isNotEmpty() || reactivatedItems.isNotEmpty() || overdueSkipped > 0) {
+            logger(
+                "sync diff present=${presentKeys.size} vanished=${vanishedItems.size} " +
+                    "reactivated=${reactivatedItems.size} overdueSkipped=$overdueSkipped",
+            )
+        }
+
         return EngineSyncPlan(
             owner = this,
             plannedNewItems = newItems,
             restoreItems = restoreItems,
+            plannedVanished = vanishedItems,
+            plannedReactivated = reactivatedItems,
             entriesForActive = entriesForActive,
+            entryUpdates = entryUpdates,
             skipped = skipped,
             totalRemote = remotes.size,
             groupBackfill = groupBackfill,
@@ -364,9 +429,28 @@ class SchoolSyncEngine<R : Any>(
             }
         }
 
+        // 远端消失 → 完成；远端重新出现 → 恢复未完成（单次批量落库，无候选时不写盘）
+        val completedAt = clock()
+        val completion = when (
+            val r = todoRepository.applySyncCompletion(
+                completeIds = plan.plannedVanished.map { it.todo.id },
+                reopenIds = plan.plannedReactivated.map { it.todo.id },
+                completedAtMillis = completedAt,
+            )
+        ) {
+            is TodoReadResult.Ok -> r.value
+            is TodoReadResult.Err -> return CommitOutcome.Failed(r.error)
+        }
+
         // entries 增量合并：新增/复活写新哈希基线，活跃条目只补缺（不洗掉既有基线）。
         // 键是 codec.remoteKey（校内唯一）：单键会让跨课程的映射互相覆盖
         val byRemote = _state.value.entries.associateBy { it.remoteKey }.toMutableMap()
+        // 远端重新出现：清空自动完成基线（无论是否回滚，基线都已失效）
+        for (update in plan.entryUpdates.values) byRemote[update.remoteKey] = update
+        // 自动完成基线必须与本地 completedAtMillis 完全一致，供下次远端重新出现时判断能否回滚
+        for (item in plan.plannedVanished) {
+            byRemote[item.entry.remoteKey] = item.entry.copy(autoCompletedAtMillis = completedAt)
+        }
         for (item in selected) {
             byRemote[codec.remoteKey(item.remote)] = entryOf(item.remote, item.todo)
         }
@@ -388,6 +472,8 @@ class SchoolSyncEngine<R : Any>(
                 imported = imported,
                 restored = restored,
                 skippedFiltered = plan.skipped.values.sum(),
+                completed = completion.completed,
+                reopened = completion.reopened,
             ),
         )
     }
@@ -396,6 +482,8 @@ class SchoolSyncEngine<R : Any>(
         // 「无新增」同样要回填存量分组：每日自动同步/手动同步的已是最新分支都走这里
         if (!applyGroupBackfill(plan)) return false
         val byRemote = _state.value.entries.associateBy { it.remoteKey }.toMutableMap()
+        // 远端重新出现但无需回滚（用户手动改过完成态）时，也要把基线清掉
+        for (update in plan.entryUpdates.values) byRemote[update.remoteKey] = update
         for (entry in plan.entriesForActive) byRemote.putIfAbsent(entry.remoteKey, entry)
         return persist(
             _state.value.copy(
@@ -530,6 +618,12 @@ class SchoolSyncEngine<R : Any>(
 /** 预览计划的一项：远端对象只供引擎内部分组/哈希使用，UI 只读 [todo]/[courseName] */
 private data class PlanItem<R : Any>(val remote: R, val todo: Todo, val courseName: String)
 
+/** 远端已消失的已映射条目：commit 时标记完成并写入自动完成基线 */
+private data class VanishedItem(val entry: SchoolSyncEntry, val todo: Todo)
+
+/** 远端重新出现的自动完成条目：commit 时恢复未完成（基线由 entryUpdates 清空） */
+private data class ReactivatedItem(val todo: Todo)
+
 /**
  * 引擎持有的计划句柄：UI 只读归一化属性；commit/markSynced 由 [owner] 认领。
  * `courseName` 仅作引擎内部分组键（UI 按 `todo.sourceDetail` 分组，与现状一致）。
@@ -538,7 +632,11 @@ private class EngineSyncPlan<R : Any>(
     val owner: SchoolSyncEngine<R>,
     val plannedNewItems: List<PlanItem<R>>,
     val restoreItems: List<PlanItem<R>>,
+    val plannedVanished: List<VanishedItem>,
+    val plannedReactivated: List<ReactivatedItem>,
     val entriesForActive: List<SchoolSyncEntry>,
+    /** 既有映射的更新（清空自动完成基线等）；commit 与 markSynced 都要合并 */
+    val entryUpdates: Map<String, SchoolSyncEntry>,
     val skipped: Map<SkipReason, Int>,
     @Suppress("unused") val totalRemote: Int,
     val groupBackfill: Map<String, String>,
@@ -548,6 +646,12 @@ private class EngineSyncPlan<R : Any>(
         plannedNewItems.map { SyncPlanItem(it.todo, it.courseName) }
 
     override val restoreCount: Int = restoreItems.size
+
+    override val vanishedItems: List<SyncPlanItem> =
+        plannedVanished.map { SyncPlanItem(it.todo, it.todo.sourceDetail.orEmpty()) }
+
+    override val reactivatedItems: List<SyncPlanItem> =
+        plannedReactivated.map { SyncPlanItem(it.todo, it.todo.sourceDetail.orEmpty()) }
 
     override val skippedTotal: Int = skipped.values.sum()
 

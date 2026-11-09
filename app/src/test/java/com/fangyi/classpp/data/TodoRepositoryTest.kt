@@ -432,6 +432,50 @@ class TodoRepositoryTest {
     }
 
     @Test
+    fun `applySyncCompletion completes and reopens active todos only`() = runBlocking {
+        val r = repo()
+        val active = r.addTodo(testTodo(name = "活跃")).okId()
+        val archived = r.addTodo(testTodo(name = "归档")).okId()
+        val trashed = r.addTodo(testTodo(name = "回收站")).okId()
+        val repeating = r.addTodo(
+            testTodo(name = "重复", repeat = RepeatRule(type = RepeatType.Weekly)),
+        ).okId()
+        r.archiveTodo(archived).assertOk()
+        r.removeTodos(listOf(trashed)).assertOk()
+
+        val completedAt = now.millis + 500
+        val result = r.applySyncCompletion(
+            completeIds = listOf(active, archived, trashed, repeating),
+            reopenIds = emptyList(),
+            completedAtMillis = completedAt,
+        )
+        assertTrue(result is TodoReadResult.Ok)
+        assertEquals(
+            SyncCompletionCounts(completed = 1, reopened = 0),
+            (result as TodoReadResult.Ok).value,
+        )
+        assertEquals(true, r.todos.value.single { it.id == active }.completed)
+        assertEquals(completedAt, r.todos.value.single { it.id == active }.completedAtMillis)
+        assertEquals(false, r.archivedTodos.value.single { it.id == archived }.completed)
+        assertEquals(false, r.deletedTodos.value.single { it.id == trashed }.completed)
+        assertEquals(false, r.todos.value.single { it.id == repeating }.completed)
+
+        now.advanceBy(1_000)
+        val reopen = r.applySyncCompletion(
+            completeIds = emptyList(),
+            reopenIds = listOf(active, archived, trashed, repeating),
+            completedAtMillis = now.millis,
+        )
+        assertTrue(reopen is TodoReadResult.Ok)
+        assertEquals(
+            SyncCompletionCounts(completed = 0, reopened = 1),
+            (reopen as TodoReadResult.Ok).value,
+        )
+        assertEquals(false, r.todos.value.single { it.id == active }.completed)
+        assertNull(r.todos.value.single { it.id == active }.completedAtMillis)
+    }
+
+    @Test
     fun `setOccurrenceCompleted maintains per-occurrence set`() = runBlocking {
         now.millis = millisOf(IsoDate.parse("2026-03-20"))
         val r = repo()

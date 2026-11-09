@@ -10,7 +10,9 @@ import java.util.GregorianCalendar
 import java.util.TimeZone
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -22,7 +24,8 @@ import org.junit.rules.TemporaryFolder
  * 既有厦大实现（经归一化包装）与通用 [com.fangyi.classpp.data.sync.engine.SchoolSyncEngine]。
  *
  * 覆盖：首次导入、幂等去重、软删复活、账号切换、探活去抖、过滤计数、自动分组回填、
- * 跨校退出隔离、状态丢失后的映射重建。两套实现必须给出完全一致的可观察行为——
+ * 跨校退出隔离、状态丢失后的映射重建、远端消失标记完成与重新出现回滚。
+ * 两套实现必须给出完全一致的可观察行为——
  * 任何一边改了 §2.4 不变量，这里都会红。
  *
  * 子类只负责装配（fake api / 编码器）与远端夹具的序列化；断言全部写在本类。
@@ -52,6 +55,8 @@ abstract class SyncInvariantContractTest {
     fun setUp() = runBlocking {
         todoRepository = TodoRepository.create(FileTodoStore(folder.root), { nowMillis })
         service = createService(todoRepository)
+        // 偏好默认关闭；契约用例以既有「自动完成」行为为基线，这里显式开启
+        service.preferences.setAutoCompleteOnVanish(true)
     }
 
     /** 配下一次取数的账号与远端条目 */
@@ -295,6 +300,215 @@ abstract class SyncInvariantContractTest {
         val again = ready(service.prepareSync(force = true))
         assertTrue(again.newItems.isEmpty())
         assertEquals(ids, todoRepository.todos.value.map { it.id }.toSet())
+    }
+
+    // ---------- 远端消失 / 回滚 ----------
+
+    @Test
+    fun `remote disappearance marks active synced todo completed`() = runBlocking {
+        setRemote(RemoteProfile(), defaultRemotes())
+        syncAll()
+        val goneId = expectedLocalId(110846, 1013424)
+        val keptId = expectedLocalId(106160, 925512)
+
+        setRemote(RemoteProfile(), listOf(defaultRemotes().first()))
+        val plan = ready(service.prepareSync(force = true))
+        assertEquals(listOf(goneId), plan.vanishedItems.map { it.todo.id })
+        assertTrue(plan.newItems.isEmpty())
+
+        val report = done(service.commitSync(plan, emptySet()))
+        assertEquals(1, report.completed)
+        assertEquals(0, report.reopened)
+        assertTrue(todo(goneId).completed)
+        assertEquals(nowMillis, todo(goneId).completedAtMillis)
+        assertFalse(todo(keptId).completed)
+    }
+
+    @Test
+    fun `auto complete preference off keeps vanished todo uncompleted`() = runBlocking {
+        setRemote(RemoteProfile(), defaultRemotes())
+        syncAll()
+        val goneId = expectedLocalId(110846, 1013424)
+
+        service.preferences.setAutoCompleteOnVanish(false)
+        setRemote(RemoteProfile(), listOf(defaultRemotes().first()))
+        val offPlan = ready(service.prepareSync(force = true))
+        assertTrue(offPlan.vanishedItems.isEmpty())
+        done(service.commitSync(offPlan, emptySet()))
+        assertFalse(todo(goneId).completed)
+
+        // 重新开启：下一次同步仍能扫到并标记完成
+        service.preferences.setAutoCompleteOnVanish(true)
+        val onPlan = ready(service.prepareSync(force = true))
+        assertEquals(listOf(goneId), onPlan.vanishedItems.map { it.todo.id })
+        done(service.commitSync(onPlan, emptySet()))
+        assertTrue(todo(goneId).completed)
+    }
+
+    @Test
+    fun `overdue vanished todo is not marked completed`() = runBlocking {
+        setRemote(RemoteProfile(), defaultRemotes())
+        syncAll()
+        // 第一条截止 2026-11-04 18:30（北京时间），第二条截止 2026-11-05 23:59
+        val overdueId = expectedLocalId(106160, 925512)
+        val activeId = expectedLocalId(110846, 1013424)
+
+        // 推进到第一项截止之后、第二项截止之前
+        nowMillis = GregorianCalendar(TimeZone.getTimeZone("Asia/Shanghai")).apply {
+            clear()
+            set(2026, 10, 5, 12, 0, 0)
+        }.timeInMillis
+
+        // 两条都已从远端消失；用一条新条目保持远端列表非空
+        val extra = RemoteTodo(
+            id = 3,
+            courseId = 12,
+            courseName = "大学物理",
+            title = "新作业",
+        )
+        setRemote(RemoteProfile(), listOf(extra))
+        val plan = ready(service.prepareSync(force = true))
+
+        // 逾期的第一条不标记；未逾期的第二条照常标记
+        assertEquals(listOf(activeId), plan.vanishedItems.map { it.todo.id })
+        val report = done(service.commitSync(plan, emptySet()))
+        assertEquals(1, report.completed)
+        assertFalse(todo(overdueId).completed)
+        assertTrue(todo(activeId).completed)
+    }
+
+    @Test
+    fun `empty remote list does not complete synced todos`() = runBlocking {
+        setRemote(RemoteProfile(), defaultRemotes())
+        syncAll()
+
+        setRemote(RemoteProfile(), emptyList())
+        val plan = ready(service.prepareSync(force = true))
+        assertTrue(plan.vanishedItems.isEmpty())
+        assertTrue(service.markSynced(plan))
+        assertTrue(todoRepository.todos.value.none { it.completed })
+    }
+
+    @Test
+    fun `reappearing remote reopens auto completed todo`() = runBlocking {
+        setRemote(RemoteProfile(), defaultRemotes())
+        syncAll()
+        val goneId = expectedLocalId(110846, 1013424)
+
+        setRemote(RemoteProfile(), listOf(defaultRemotes().first()))
+        done(service.commitSync(ready(service.prepareSync(force = true)), emptySet()))
+        assertTrue(todo(goneId).completed)
+
+        setRemote(RemoteProfile(), defaultRemotes())
+        val plan = ready(service.prepareSync(force = true))
+        assertEquals(listOf(goneId), plan.reactivatedItems.map { it.todo.id })
+        val report = done(service.commitSync(plan, emptySet()))
+        assertEquals(1, report.reopened)
+        assertFalse(todo(goneId).completed)
+        assertNull(todo(goneId).completedAtMillis)
+    }
+
+    @Test
+    fun `user uncompleted auto completed todo is detected again`() = runBlocking {
+        setRemote(RemoteProfile(), defaultRemotes())
+        syncAll()
+        val goneId = expectedLocalId(110846, 1013424)
+
+        setRemote(RemoteProfile(), listOf(defaultRemotes().first()))
+        done(service.commitSync(ready(service.prepareSync(force = true)), emptySet()))
+        assertTrue(todo(goneId).completed)
+        assertEquals(TodoOpResult.Ok, todoRepository.setCompleted(goneId, false))
+
+        // 远端仍未返回：手动取消不会让条目永久脱离同步，下次仍应扫到并标记完成
+        val plan = ready(service.prepareSync(force = true))
+        assertEquals(listOf(goneId), plan.vanishedItems.map { it.todo.id })
+        val report = done(service.commitSync(plan, emptySet()))
+        assertEquals(1, report.completed)
+        assertTrue(todo(goneId).completed)
+    }
+
+    @Test
+    fun `user uncompleted manually completed vanished todo is detected again`() = runBlocking {
+        setRemote(RemoteProfile(), defaultRemotes())
+        syncAll()
+        val goneId = expectedLocalId(110846, 1013424)
+
+        // 用户先手动完成，随后远端不再返回：已完成状态不参与消失标记
+        assertEquals(TodoOpResult.Ok, todoRepository.setCompleted(goneId, true))
+        setRemote(RemoteProfile(), listOf(defaultRemotes().first()))
+        val first = ready(service.prepareSync(force = true))
+        assertTrue(first.vanishedItems.isEmpty())
+        done(service.commitSync(first, emptySet()))
+
+        // 用户取消完成：远端仍未返回，下次同步重新扫到并标记完成
+        assertEquals(TodoOpResult.Ok, todoRepository.setCompleted(goneId, false))
+        val second = ready(service.prepareSync(force = true))
+        assertEquals(listOf(goneId), second.vanishedItems.map { it.todo.id })
+        done(service.commitSync(second, emptySet()))
+        assertTrue(todo(goneId).completed)
+    }
+
+    @Test
+    fun `manual re-completion after auto completion is not reopened`() = runBlocking {
+        setRemote(RemoteProfile(), defaultRemotes())
+        syncAll()
+        val goneId = expectedLocalId(110846, 1013424)
+
+        setRemote(RemoteProfile(), listOf(defaultRemotes().first()))
+        done(service.commitSync(ready(service.prepareSync(force = true)), emptySet()))
+        assertEquals(TodoOpResult.Ok, todoRepository.setCompleted(goneId, false))
+        // 让手动重新勾选的时间戳与自动完成基线不同
+        nowMillis += 1_000
+        assertEquals(TodoOpResult.Ok, todoRepository.setCompleted(goneId, true))
+
+        setRemote(RemoteProfile(), defaultRemotes())
+        val plan = ready(service.prepareSync(force = true))
+        assertTrue(plan.reactivatedItems.isEmpty())
+        done(service.commitSync(plan, emptySet()))
+        assertTrue(todo(goneId).completed)
+    }
+
+    @Test
+    fun `vanished detection skips archived trashed and manual todos`() = runBlocking {
+        setRemote(RemoteProfile(), defaultRemotes())
+        syncAll()
+        val archivedId = expectedLocalId(106160, 925512)
+        val trashedId = expectedLocalId(110846, 1013424)
+        assertEquals(TodoOpResult.Ok, todoRepository.archiveTodo(archivedId))
+        assertEquals(TodoOpResult.Ok, todoRepository.removeTodos(listOf(trashedId)))
+        assertTrue(
+            todoRepository.addTodo(Todo(id = "manual-1", name = "手动待办")) is TodoReadResult.Ok,
+        )
+
+        // 保留一条新远端条目让列表非空，同时让两条已映射条目都不在列表里
+        val extra = RemoteTodo(
+            id = 3,
+            courseId = 12,
+            courseName = "大学物理",
+            title = "新作业",
+        )
+        setRemote(RemoteProfile(), listOf(extra))
+        val plan = ready(service.prepareSync(force = true))
+        assertTrue(plan.vanishedItems.isEmpty())
+        done(service.commitSync(plan, plan.newItems.mapTo(mutableSetOf()) { it.todo.id }))
+
+        assertFalse(todoRepository.archivedTodos.value.single().completed)
+        assertFalse(todoRepository.deletedTodos.value.single().completed)
+        assertFalse(todoRepository.todos.value.first { it.id == "manual-1" }.completed)
+    }
+
+    @Test
+    fun `filtered remote items are still present for vanish detection`() = runBlocking {
+        setRemote(RemoteProfile(), defaultRemotes())
+        syncAll()
+
+        // locked/overdue 会被映射层跳过，但仍在远端原始列表里：不算消失
+        setRemote(RemoteProfile(), defaultRemotes().map { it.copy(locked = true) })
+        val plan = ready(service.prepareSync(force = true))
+        assertTrue(plan.vanishedItems.isEmpty())
+        assertTrue(plan.reactivatedItems.isEmpty())
+        done(service.commitSync(plan, emptySet()))
+        assertTrue(todoRepository.todos.value.none { it.completed })
     }
 
     // ---------- 工具 ----------

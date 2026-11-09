@@ -48,6 +48,13 @@ interface SyncCodec<R : Any> {
 
     /** 是否本校同步产生的待办（`source` 优先，id 前缀兜底） */
     fun isOwned(todo: Todo): Boolean
+
+    /**
+     * 本地待办是否已过截止（按本校固定时区，不能依赖设备时区）。远端消失判定用它
+     * 排除逾期条目：逾期条目即使远端不再返回也保持未完成，避免把“过期清理”
+     * 误判成提交完成；无截止/无时刻按未逾期处理。
+     */
+    fun isOverdue(todo: Todo, nowMillis: Long): Boolean
 }
 
 /** 账号信息（探活结果）：uid 是账号切换检测的比对键 */

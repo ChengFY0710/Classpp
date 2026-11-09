@@ -157,6 +157,23 @@ internal class FakeSyncCodec(
     override fun isOwned(todo: Todo): Boolean =
         todo.source == source || matchesLocalId(todo.id)
 
+    override fun isOverdue(todo: Todo, nowMillis: Long): Boolean {
+        val date = todo.deadlineDate ?: return false
+        val minute = todo.deadlineMinute ?: return false
+        val cal = GregorianCalendar(TimeZone.getTimeZone("Asia/Shanghai")).apply {
+            timeInMillis = nowMillis
+        }
+        val today = IsoDate.of(
+            cal.get(GregorianCalendar.YEAR),
+            cal.get(GregorianCalendar.MONTH) + 1,
+            cal.get(GregorianCalendar.DAY_OF_MONTH),
+        )
+        val nowMinute = cal.get(GregorianCalendar.HOUR_OF_DAY) * 60 +
+            cal.get(GregorianCalendar.MINUTE)
+        return date.epochDay < today.epochDay ||
+            (date.epochDay == today.epochDay && minute < nowMinute)
+    }
+
     private fun deadline(text: String?): Deadline? {
         val m = text?.let(DATE_TIME_UTC::matchEntire) ?: return null
         val (y, mo, d, h, mi) = m.destructured

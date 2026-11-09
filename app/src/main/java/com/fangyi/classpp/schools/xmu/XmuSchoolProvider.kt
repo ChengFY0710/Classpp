@@ -16,6 +16,7 @@ import com.fangyi.classpp.data.sync.ImportError
 import com.fangyi.classpp.data.sync.ImportOutcome
 import com.fangyi.classpp.data.sync.ImportSemester
 import com.fangyi.classpp.data.sync.PrefsDailySyncToggle
+import com.fangyi.classpp.data.sync.PrefsSyncPreferences
 import com.fangyi.classpp.data.sync.ScheduleImportService
 import com.fangyi.classpp.data.sync.SchoolProvider
 import com.fangyi.classpp.data.sync.SchoolText
@@ -193,6 +194,7 @@ class XmuSchoolProvider : SchoolProvider {
                     dns = Ipv4FirstXmuDns(),
                 ),
             ),
+            syncPreferences = PrefsSyncPreferences(appContext, spec.id),
             logger = SyncDebugLog::d,
         ).also { it.bootstrap() }
 

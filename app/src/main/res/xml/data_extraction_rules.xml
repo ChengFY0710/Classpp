@@ -5,7 +5,7 @@
    尚未迁移的数据。
    sharedpref/xmu_secure.xml 是自动续期凭据密文，同样排除（Keystore 密钥不随备份迁移）；
    sharedpref/sync_secure.xml 是新校共用凭据（按校分键、Keystore 密文），同因排除；
-   sharedpref/sync_prefs.xml 是新校共用每日同步开关（与账号状态成对，排除避免带旧开关）；
+   sharedpref/sync_prefs.xml 是新校共用每日同步开关与同步行为偏好（与账号状态成对，排除避免带旧开关）；
    sharedpref/ai_secure.xml 是 AI 连接配置与 API Key 密文，同因同果排除。
    school_prefs.xml 不排除；todos.json 不排除。
 -->

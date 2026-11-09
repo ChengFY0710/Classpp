@@ -13,9 +13,11 @@ import kotlinx.coroutines.flow.StateFlow
  * 通用编排不变量（指导 §2.4，两套编排共同遵守）：
  * 1. 单飞：探活/同步/清空共用一把互斥；
  * 2. 预览-确认：prepare 不写待办与映射，commit 才落库；但 prepare 会落盘连接与探活状态；
- * 3. 只增不改：远端变化不回写、远端消失不删；回收站条目允许复活；
+ * 3. 只增不改：远端变化不回写；远端列表非空且已映射条目消失时，把对应本地活跃待办
+ *    标记完成（可回滚，见 [SyncPlan.vanishedItems]；受 [SyncPreferences.autoCompleteOnVanish]
+ *    开关控制，默认关）；远端列表为空、或本地已逾期时不做标记；回收站条目允许复活；
  * 4. 账号一致性：uid 与已存映射不一致 → [SyncError.AccountChanged]，UI 确认后才清；
- * 5. entries 只存哈希，不存标题原文；
+ * 5. entries 只存映射、哈希与同步状态，不存标题原文；
  * 6. 原子写：tmp(fsync)→bak→rename，双坏隔离留证；
  * 7. 退出清理按 source + id 前缀过滤，只删本校同步待办；
  * 8. 失败分类不兜底：绝不把所有失败说成登录过期；
@@ -50,6 +52,9 @@ interface SyncService {
     val avatarImage: StateFlow<AvatarImage?>
     val busy: StateFlow<Boolean>
 
+    /** 同步行为偏好（与引擎内部读同一实例；切换后下一次 prepare 生效） */
+    val preferences: SyncPreferences
+
     suspend fun prepareSync(force: Boolean = false): PrepareOutcome
     suspend fun prepareFromLogin(raw: LoginRaw): PrepareOutcome
     suspend fun commitSync(plan: SyncPlan, selectedNewIds: Set<String>): CommitOutcome
@@ -65,6 +70,16 @@ interface SyncService {
 interface SyncPlan {
     val newItems: List<SyncPlanItem>
     val restoreCount: Int
+    /**
+     * 本次远端列表非空、但这些已映射条目不再返回：commit 时把对应本地活跃待办标记完成。
+     * 空列表时恒为空（防学期切换/接口异常把全部待办误标完成）。
+     */
+    val vanishedItems: List<SyncPlanItem>
+    /**
+     * 上次因消失被自动标记完成、本次又出现在远端列表的条目：commit 时恢复为未完成。
+     * 仅当本地完成时刻仍等于自动标记基线；用户手动改过完成状态则不会出现在这里。
+     */
+    val reactivatedItems: List<SyncPlanItem>
     val skippedTotal: Int
     val deadlineUnparseableCount: Int
 }
@@ -76,7 +91,15 @@ sealed interface PrepareOutcome {
     data class Failed(val error: SyncError) : PrepareOutcome
 }
 
-data class SyncReport(val imported: Int, val restored: Int, val skippedFiltered: Int)
+data class SyncReport(
+    val imported: Int,
+    val restored: Int,
+    val skippedFiltered: Int,
+    /** 因远端消失被标记完成的条数 */
+    val completed: Int = 0,
+    /** 因远端重新出现被恢复为未完成的条数 */
+    val reopened: Int = 0,
+)
 
 sealed interface CommitOutcome {
     data class Done(val report: SyncReport) : CommitOutcome

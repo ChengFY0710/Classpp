@@ -14,7 +14,7 @@ const val SCHOOL_SYNC_FORMAT_VERSION = 1
  * 通用同步状态文件：远端键 ↔ 本地 id 的映射、内容哈希、账号 id 与上次同步/探活时刻。
  * 与 `todos.json` 完全独立——同步失败/损坏不波及用户待办库。
  *
- * 隐私纪律：条目只存哈希，不存标题/课程名原文（指导 §2.4 第 5 条）。
+ * 隐私纪律：条目只存映射、哈希与同步状态，不存标题/课程名原文（指导 §2.4 第 5 条）。
  */
 @Serializable
 data class SchoolSyncFile(
@@ -45,6 +45,12 @@ data class SchoolSyncEntry(
     val remoteHash: String,
     /** 同步时刻的本地内容哈希（判断用户是否编辑过用） */
     val localHash: String,
+    /**
+     * 因「远端条目消失」被自动标记完成的时刻（= 当时写入 Todo.completedAtMillis）。
+     * null = 未自动标记过；非 null 时若远端重新出现，且本地完成时刻仍与此值一致，
+     * 则同步自动恢复为未完成（用户手动改过完成状态则只清空本基线，不回滚）。
+     */
+    val autoCompletedAtMillis: Long? = null,
 )
 
 /**

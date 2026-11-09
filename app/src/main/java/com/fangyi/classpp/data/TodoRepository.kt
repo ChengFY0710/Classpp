@@ -36,6 +36,9 @@ const val TRASH_RETENTION_DAYS = 30
 /** 回收站保留期的毫秒长度 */
 private const val TRASH_RETENTION_MILLIS = TRASH_RETENTION_DAYS * 86_400_000L
 
+/** 外部同步批量完成/恢复的落库计数（供 SyncReport 展示） */
+data class SyncCompletionCounts(val completed: Int, val reopened: Int)
+
 /**
  * 待办仓库：内存真源（StateFlow）+ 磁盘持久化（[TodoStore]），与 ScheduleRepository 同构。
  * 同时持有**待办分组**（[TodoFile.groups]）：与待办同文件、同 mutex 原子写入，
@@ -361,6 +364,50 @@ class TodoRepository internal constructor(
             result += group.copy(name = name, pinned = false)
         }
         return normalizeGroups(result)
+    }
+
+    /**
+     * 外部同步的批量完成/恢复（单次 commit）：
+     * - [completeIds]：远端已消失的同步待办 → `completed=true` + 指定完成时刻；
+     * - [reopenIds]：远端重新出现的同步待办 → `completed=false` + `completedAtMillis=null`；
+     * - 只处理活跃条目（已删除/已归档不认），重复待办不整条完成（跳过），
+     *   已完成/已未完成的条目宽容忽略；不做全量 [normalize]，避免同步顺带改写用户字段。
+     *
+     * 返回实际变更条数，供同步报告展示。无变化时不写盘。
+     */
+    suspend fun applySyncCompletion(
+        completeIds: Collection<String>,
+        reopenIds: Collection<String>,
+        completedAtMillis: Long,
+    ): TodoReadResult<SyncCompletionCounts> = mutex.withLock {
+        val complete = completeIds.toSet()
+        val reopen = reopenIds.toSet()
+        if (complete.isEmpty() && reopen.isEmpty()) {
+            return@withLock TodoReadResult.Ok(SyncCompletionCounts(0, 0))
+        }
+        var completed = 0
+        var reopened = 0
+        val todos = fileState.value.todos.map { todo ->
+            when {
+                todo.id in complete && !todo.isDeleted && !todo.isArchived &&
+                    !todo.completed && todo.repeat.type == RepeatType.None -> {
+                    completed++
+                    todo.copy(completed = true, completedAtMillis = completedAtMillis)
+                }
+                todo.id in reopen && !todo.isDeleted && !todo.isArchived && todo.completed -> {
+                    reopened++
+                    todo.copy(completed = false, completedAtMillis = null)
+                }
+                else -> todo
+            }
+        }
+        if (completed == 0 && reopened == 0) {
+            return@withLock TodoReadResult.Ok(SyncCompletionCounts(0, 0))
+        }
+        when (val r = commit(fileState.value.copy(todos = todos))) {
+            TodoOpResult.Ok -> TodoReadResult.Ok(SyncCompletionCounts(completed, reopened))
+            is TodoOpResult.Err -> TodoReadResult.Err(r.error)
+        }
     }
 
     // ---------- 待办 CRUD ----------

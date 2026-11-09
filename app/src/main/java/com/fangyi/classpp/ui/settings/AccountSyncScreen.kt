@@ -68,6 +68,7 @@ import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
 import com.fangyi.classpp.ui.components.DialogPillButton
 import com.fangyi.classpp.ui.components.FadeOverlayDialog
+import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
@@ -230,6 +231,7 @@ private fun AccountSyncContent(
     val overlayActive = LocalPageOverlayActive.current
     val spec = session.spec
     val sync = session.sync
+    val syncPreferences = sync.preferences
     val autoRenew = session.autoRenew
     // 网页登录需要「学校声明了 WebView 登录」+「UI 已绑定」两个条件；Phase 4 起纯声明
     // 学校的缺省绑定是 GenericSchoolUi（SchoolUiBindings.of(session) 兜底）
@@ -289,6 +291,9 @@ private fun AccountSyncContent(
 
     // 每日自动同步：开关状态来自会话（与后台 receiver 同一存储）；切换即落盘 + 重排闹钟
     val dailySyncEnabled by session.dailySync.enabled.collectAsState()
+
+    // 同步行为偏好：远端消失时自动标记完成（与引擎共用同一实例，下一次 prepare 生效）
+    val autoCompleteOnVanish by syncPreferences.autoCompleteOnVanish.collectAsState()
 
     // 学校选择（Phase 3）：入口卡常驻页面最底部，连接/未连接两态都显示。
     // 同步或自动续期在途时整行不响应（不弹 toast，指导 §3.2）；fallback flow 保证
@@ -395,7 +400,10 @@ private fun AccountSyncContent(
     // 「已是最新」，否则用户以为同步成功、实际映射没保存。全部条目都因截止格式被跳过时同理：
     // 不能说「已是最新」，否则接口改版会被当成同步成功。
     suspend fun showPlanOrUpToDate(plan: SyncPlan) {
-        if (plan.newItems.isNotEmpty() || plan.restoreCount > 0) {
+        // 消失/回滚也是可见变更：必须走预览确认，不能落到下面的「已是最新」分支
+        if (plan.newItems.isNotEmpty() || plan.restoreCount > 0 ||
+            plan.vanishedItems.isNotEmpty() || plan.reactivatedItems.isNotEmpty()
+        ) {
             previewPlan = plan
             return
         }
@@ -660,7 +668,12 @@ private fun AccountSyncContent(
                     is CommitOutcome.Done -> {
                         AppToasts.show(
                             context,
-                            importDoneFormat.format(r.report.imported, r.report.restored),
+                            importDoneFormat.format(
+                                r.report.imported,
+                                r.report.restored,
+                                r.report.completed,
+                                r.report.reopened,
+                            ),
                         )
                         previewPlan = null
                     }
@@ -871,6 +884,24 @@ private fun AccountSyncContent(
                             },
                         )
                     }
+                }
+
+                // 「偏好设置」分组：同步行为偏好（按校持久化，与引擎共用同一实例）
+                CardSection(title = stringResource(R.string.sync_section_preferences)) {
+                    SettingsCard(
+                        items = listOf(
+                            SettingsCardItem.Toggle(
+                                label = stringResource(R.string.sync_auto_complete_title),
+                                description = stringResource(R.string.sync_auto_complete_desc),
+                                checked = autoCompleteOnVanish,
+                                onCheckedChange = {
+                                    syncPreferences.setAutoCompleteOnVanish(it)
+                                },
+                                // 未登录（未连接）时置灰不可点
+                                enabled = connected,
+                            ),
+                        ),
+                    )
                 }
 
                 // 「备用登录方式」分组：可见 WebView 登录。默认登录走原生 OAuth
@@ -1286,10 +1317,17 @@ private fun SyncPreviewSheet(
 
     val summaryFormat = stringResource(R.string.sync_preview_summary)
     val restoreFormat = stringResource(R.string.sync_preview_restore)
+    val vanishedFormat = stringResource(R.string.sync_preview_vanished)
+    val reopenedFormat = stringResource(R.string.sync_preview_reopened)
+    // 只有完成/回滚等状态变更、没有新增/恢复时，按钮说「应用」而不是「导入」
+    val applyOnly = current != null &&
+        current.newItems.isEmpty() && current.restoreCount == 0
 
     OverlaySheet(
         title = stringResource(R.string.sync_preview_title),
-        confirmLabel = stringResource(R.string.sync_preview_confirm),
+        confirmLabel = stringResource(
+            if (applyOnly) R.string.sync_preview_confirm_apply else R.string.sync_preview_confirm,
+        ),
         confirmAtEnd = true,
         onConfirm = {
             if (!importing && current != null) onConfirm(selected)
@@ -1312,6 +1350,33 @@ private fun SyncPreviewSheet(
             if (p.restoreCount > 0) {
                 SheetInfoBanner(text = restoreFormat.format(p.restoreCount))
             }
+            if (p.vanishedItems.isNotEmpty()) {
+                SheetInfoBanner(text = vanishedFormat.format(p.vanishedItems.size))
+                // 逐条列出将被标记完成的待办：只读完成态（划线置灰、勾选框选中），
+                // 课程名走来源徽标，避免与新增项按课程分组的标题重复
+                CardSection(title = stringResource(R.string.sync_preview_vanished_title)) {
+                    p.vanishedItems.forEach { item ->
+                        val deadline = deadlineText(
+                            item.todo.deadlineDate,
+                            item.todo.deadlineMinute,
+                        )
+                        NoteCard(
+                            title = item.todo.name,
+                            deadline = deadline.takeIf { it.isNotEmpty() },
+                            tags = item.todo.tags,
+                            sourceLabel = item.todo.sourceDetail?.takeIf { it.isNotBlank() }
+                                ?: fallbackGroupLabel,
+                            urgency = item.todo.urgency,
+                            completed = true,
+                            // 只读展示：勾选框纯展示，不接完成切换
+                            selected = false,
+                        )
+                    }
+                }
+            }
+            if (p.reactivatedItems.isNotEmpty()) {
+                SheetInfoBanner(text = reopenedFormat.format(p.reactivatedItems.size))
+            }
             // 截止时间非空但解析失败：单条不阻断导入，但要让用户看到接口可能已变化。
             // 用可换行的文本块而不是单行横幅，长文案不会被省略号截断。
             if (p.deadlineUnparseableCount > 0) {
@@ -1329,7 +1394,10 @@ private fun SyncPreviewSheet(
                     )
                 }
             }
-            if (p.newItems.isEmpty()) {
+            // 没有任何可见内容时才显示空态；只有消失/回滚条目时由上面的卡片/横幅承载
+            if (p.newItems.isEmpty() && p.vanishedItems.isEmpty() &&
+                p.reactivatedItems.isEmpty() && p.restoreCount == 0
+            ) {
                 CardSection {
                     Text(
                         text = stringResource(R.string.sync_preview_empty),
@@ -1340,7 +1408,8 @@ private fun SyncPreviewSheet(
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                     )
                 }
-            } else {
+            }
+            if (p.newItems.isNotEmpty()) {
                 // 按课程分组（组间留缝，组内逐条勾选行）；组序 = 远端返回序。
                 // 分组键是归一化的 todo.sourceDetail（与改造前一致；courseName 不读）
                 p.newItems.groupBy { item -> item.todo.sourceDetail.orEmpty() }
