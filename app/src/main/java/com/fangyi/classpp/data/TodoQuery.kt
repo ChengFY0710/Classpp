@@ -206,6 +206,35 @@ fun List<Todo>.expandRepeatOccurrences(today: IsoDate): List<Todo> = buildList {
 }
 
 /**
+ * 日程页时间轴口径的重复展开：在列表口径 [expandRepeatOccurrences] 的基础上，补回
+ * 「[day] 当天已完成的分期」。
+ *
+ * 合并/打卡口径勾选完成后会把滚动卡前移到下一期（列表里「过去的就过去吧」），时间轴
+ * 当天这一格会当场消失；时间轴要求完成态卡片原地保留（划线置灰），直到翻篇。补卡
+ * 条件：展开结果里没有任何一张卡落在 [day]（拆分口径的已完成期已逐期展开、系列收口
+ * 停在当天的卡都在此列，不重复补）+ 该待办是有效重复且非整条完成的历史形态 +
+ * [day] 在 [Todo.completedOccurrences] 里。补出的副本 `dates = [day]`、
+ * `completed = true`，截止按 [withOccurrenceDeadline] 折算，与列表口径的已完成期一致。
+ */
+fun List<Todo>.expandTimelineOccurrences(day: IsoDate): List<Todo> = buildList {
+    val expanded = this@expandTimelineOccurrences.expandRepeatOccurrences(day)
+    addAll(expanded)
+    val covered = expanded.asSequence()
+        .filter { day in it.dates }
+        .mapTo(mutableSetOf()) { it.id }
+    for (todo in this@expandTimelineOccurrences) {
+        if (todo.id in covered) continue
+        if (todo.repeat.type == RepeatType.None || todo.completed) continue
+        if (day !in todo.completedOccurrences) continue
+        val anchor = todo.dates.minByOrNull { it.epochDay } ?: continue
+        add(
+            todo.copy(completed = true, dates = listOf(day))
+                .withOccurrenceDeadline(anchor, day),
+        )
+    }
+}
+
+/**
  * 合并口径的单条副本：今天起（含今天）最近一期未完成分期；系列走完（次数/日期档到头）
  * 或未来期全部已完成时，回退到最后一期（完成态照实），保证整条待办始终有一张入口卡，
  * 不因合并从列表消失。逾期/已完成的历史分期不再逐期成卡。

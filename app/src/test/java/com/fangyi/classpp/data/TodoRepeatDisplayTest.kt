@@ -30,6 +30,9 @@ class TodoRepeatDisplayTest {
     private fun expand(todo: Todo, today: String): List<Todo> =
         listOf(todo).expandRepeatOccurrences(IsoDate.parse(today))
 
+    private fun expandTimeline(todo: Todo, day: String): List<Todo> =
+        listOf(todo).expandTimelineOccurrences(IsoDate.parse(day))
+
     private fun active(shown: List<Todo>): List<String> =
         shown.filterNot { it.completed }.map { it.dates.single().toString() }
 
@@ -205,6 +208,66 @@ class TodoRepeatDisplayTest {
         val shownUnfinished = expand(unfinished, "2026-03-20")
         assertEquals(listOf("2026-03-16"), active(shownUnfinished))
         assertTrue(done(shownUnfinished).isEmpty())
+    }
+
+    @Test
+    fun `timeline keeps today's completed occurrence when merge rolls forward`() {
+        // 每周锚 3/16、今天 3/16 完成后：列表卡前移到 3/23（合并口径「过去的就过去吧」）；
+        // 时间轴口径额外补回 3/16 的完成态副本，勾选瞬间卡片原地划线置灰而不消失
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-16")),
+            repeat = mergedWeekly,
+            completedOccurrences = listOf(IsoDate.parse("2026-03-16")),
+        )
+        assertEquals(listOf("2026-03-23"), active(expand(todo, "2026-03-16")))
+        val timeline = expandTimeline(todo, "2026-03-16")
+        assertEquals(listOf("2026-03-23"), active(timeline))
+        assertEquals(listOf("2026-03-16"), done(timeline))
+    }
+
+    @Test
+    fun `timeline keeps the completed occurrence of a viewed past day`() {
+        // 回看 3/16（当天已完成后合并卡早滚到 3/23）：时间轴仍保留 3/16 的完成态
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-02")),
+            repeat = mergedWeekly,
+            completedOccurrences = listOf(IsoDate.parse("2026-03-16")),
+        )
+        assertEquals(listOf("2026-03-16"), done(expandTimeline(todo, "2026-03-16")))
+        // 当天未完成的普通日期不受影响：仍只出滚动卡
+        val fresh = testTodo(dates = listOf(IsoDate.parse("2026-03-02")), repeat = mergedWeekly)
+        assertEquals(listOf("2026-03-16"), active(expandTimeline(fresh, "2026-03-16")))
+    }
+
+    @Test
+    fun `timeline completed copy folds occurrence deadline`() {
+        // 补回的完成态副本同样走「下一次重复开始前」折算：3/16 → 下一期 3/23 − 2 = 3/21
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-09")),
+            repeat = mergedWeekly,
+            completedOccurrences = listOf(IsoDate.parse("2026-03-16")),
+            deadlineDate = IsoDate.parse("2026-03-10"),
+            deadlineMinute = 600,
+            deadlineBeforeRepeat = true,
+            deadlineBeforeDays = 2,
+        )
+        val card = expandTimeline(todo, "2026-03-16")
+            .single { IsoDate.parse("2026-03-16") in it.dates }
+        assertTrue(card.completed)
+        assertEquals(IsoDate.parse("2026-03-21"), card.deadlineDate)
+        assertEquals(600, card.deadlineMinute)
+    }
+
+    @Test
+    fun `timeline does not duplicate split-mode completed occurrences`() {
+        // 拆分口径已完成期本来就逐期成卡：3/16 只有一张完成态，不由时间轴口径重复补
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-02")),
+            repeat = splitWeekly,
+            completedOccurrences = listOf(IsoDate.parse("2026-03-16")),
+        )
+        val timeline = expandTimeline(todo, "2026-03-16")
+        assertEquals(1, timeline.count { IsoDate.parse("2026-03-16") in it.dates })
     }
 
     @Test
@@ -384,6 +447,38 @@ class TodoRepeatDisplayTest {
         val shown = expand(todo, "2026-03-20")
         assertEquals(listOf("2026-03-20"), shown.map { it.dates.single().toString() })
         assertTrue(shown.none { it.completed })
+    }
+
+    @Test
+    fun `timeline keeps today's check-in completion before the target`() {
+        // 打卡目标 3 次、已勾 3/19 + 3/20（未达标）：列表卡前移到 3/21；
+        // 时间轴补回 3/20 的完成态卡
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-02")),
+            repeat = checkInRule(),
+            completedOccurrences = listOf(IsoDate.parse("2026-03-19"), IsoDate.parse("2026-03-20")),
+        )
+        assertEquals(listOf("2026-03-21"), active(expand(todo, "2026-03-20")))
+        val timeline = expandTimeline(todo, "2026-03-20")
+        assertEquals(listOf("2026-03-21"), active(timeline))
+        assertEquals(listOf("2026-03-20"), done(timeline))
+    }
+
+    @Test
+    fun `timeline does not duplicate check-in card at the target`() {
+        // 达标后列表口径已停在完成态的最后一天 3/20：时间轴口径不再补第二条
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-02")),
+            repeat = checkInRule(),
+            completedOccurrences = listOf(
+                IsoDate.parse("2026-03-18"),
+                IsoDate.parse("2026-03-19"),
+                IsoDate.parse("2026-03-20"),
+            ),
+        )
+        val timeline = expandTimeline(todo, "2026-03-20")
+        assertEquals(1, timeline.count { IsoDate.parse("2026-03-20") in it.dates })
+        assertEquals(listOf("2026-03-20"), done(timeline))
     }
 
     @Test

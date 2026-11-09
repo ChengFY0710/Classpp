@@ -116,6 +116,7 @@ import com.fangyi.classpp.data.calendar.ChineseDayMarks
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.datesCoveredWithin
 import com.fangyi.classpp.data.expandRepeatOccurrences
+import com.fangyi.classpp.data.expandTimelineOccurrences
 import com.fangyi.classpp.data.filterTodos
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
@@ -2453,9 +2454,11 @@ private fun todayCourseEntries(schedule: Schedule, today: IsoDate): List<CourseE
  * 今天该上的课 + 当天有起止时刻（Period 档）的待办。
  * 课程口径同 [todayCourseEntries]，时刻经大节定义解析（跨节 span > 1 = 末节下课时刻）；
  * 上课卡经 [onCourseClick]（课程 id）、待办卡经 [onTodoClick]（分期副本，宿主取 id + 分期
- * 日期）接详情浮层的唤起；待办先按重复规则展开分期再取落在今天的，已完成分期也上轴
- * （卡片内置灰划线呈现），AllDay/无时刻的待办在比例时间轴上无处安放、不上轴；
- * 截止文案取绝对日期（如「10/27 6:00」），重复规则取档位名（如「每天」）。
+ * 日期）接详情浮层的唤起；待办先按 [expandTimelineOccurrences] 展开分期再取落在今天的，
+ * 已完成分期也上轴（卡片内置灰划线呈现）——合并/打卡口径勾选完成后滚动卡会前移到下一
+ * 期，时间轴靠该口径把当天这一张补回、原地保留完成态；AllDay/无时刻的待办在比例时间轴
+ * 上无处安放、不上轴；截止文案取绝对日期（如「10/27 6:00」），重复规则取档位名
+ * （如「每天」）。
  */
 @Composable
 private fun dayTasks(
@@ -2487,7 +2490,7 @@ private fun dayTasks(
             )
         }
     }
-    for (todo in todos.expandRepeatOccurrences(today)) {
+    for (todo in todos.expandTimelineOccurrences(today)) {
         if (today !in todo.dates) continue
         if (todo.timeKind != TodoTimeKind.Period) continue
         val startMinute = todo.startMinute ?: continue
