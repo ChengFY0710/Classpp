@@ -162,6 +162,9 @@ fun AiChatOverlay(
         ?: remember { mutableStateOf(emptyList<AiConversation>()) }
     val activeConversationId by aiChatRepository?.activeConversationId?.collectAsState()
         ?: remember { mutableStateOf<String?>(null) }
+    // 正在应用确认卡的消息 id：null = 空闲。只影响对应消息的按钮态，不阻塞输入
+    val changesApplyingMessageId by aiChatRepository?.todoChangesApplyingMessageId?.collectAsState()
+        ?: remember { mutableStateOf<String?>(null) }
     val groups by todoRepository?.groups?.collectAsState()
         ?: remember { mutableStateOf(emptyList<TodoGroup>()) }
     val todos by todoRepository?.todos?.collectAsState() ?: remember { mutableStateOf(emptyList<Todo>()) }
@@ -351,6 +354,7 @@ fun AiChatOverlay(
     LaunchedEffect(
         messages.size,
         messages.lastOrNull()?.todoIds?.size,
+        messages.lastOrNull()?.todoChanges?.size,
         activeConversationId,
         visible,
     ) {
@@ -651,6 +655,23 @@ fun AiChatOverlay(
                                 onDelete = ::deleteTodo,
                                 onCheckedChange = ::toggleCompleted,
                             )
+                        }
+                        // 待确认的修改/删除：确认前不写库；目标已消失时卡片仍按名称快照展示
+                        if (message.todoChanges.isNotEmpty()) {
+                            AiChatTodoChangeCard(
+                                changes = message.todoChanges,
+                                todosById = todosById,
+                                applying = changesApplyingMessageId == message.id,
+                                onApply = {
+                                    aiChatRepository?.applyTodoChangesInBackground(message.id)
+                                },
+                                onDismiss = {
+                                    aiChatRepository?.dismissTodoChanges(message.id)
+                                },
+                            )
+                        }
+                        if (message.todoChangeDropped) {
+                            AiChatTodoChangeDroppedHint()
                         }
                         if (message.interrupted && message.role == AiChatRole.Assistant) {
                             Text(

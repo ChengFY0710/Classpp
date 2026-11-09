@@ -3,6 +3,7 @@ package com.fangyi.classpp.data.ai
 import com.fangyi.classpp.data.Clock
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.ReadResult
+import com.fangyi.classpp.data.TodoValidator
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.store.LoadIssue
@@ -42,6 +43,21 @@ fun interface AiTodoPersister {
     suspend fun addAll(todos: List<Todo>): Boolean
 }
 
+/**
+ * AI 修改/删除待办的写入口（用户确认后才会调用）。
+ *
+ * 与 [AiTodoPersister] 分开：新建仍是「立即落库」语义，修改/删除走确认卡，
+ * 两者的失败处理与测试替身都不同。实现侧接 `TodoRepository.updateTodo`（归一化 +
+ * 校验 + 单次提交）与 `removeTodos`（批量软删除、单次提交）。
+ */
+interface AiTodoChangeWriter {
+    /** 写入一条修改后的待办；false = 归一化/校验/落盘失败 */
+    suspend fun update(todo: Todo): Boolean
+
+    /** 批量软删除（移入回收站）；false = 落盘失败 */
+    suspend fun deleteAll(ids: List<String>): Boolean
+}
+
 /** 保存 AI 配置的结果：配置本身是否落盘 + 保存后是否具备可解密的 Key */
 data class AiConfigSaveOutcome(
     val configSaved: Boolean,
@@ -74,6 +90,11 @@ data class AiConfigSaveOutcome(
  * 缺名称的草稿会被映射器滤掉（否则整批校验失败），落库抛错则消息标记
  * [AiChatMessage.todoSaveFailed]。
  *
+ * **修改/删除待办**：updates/deletes 不直接写库——解析后校验目标与补丁，挂到消息的
+ * [AiChatMessage.todoChanges] 上等待用户确认；确认卡「应用变更」经 [changeWriter]
+ * 逐条写入（删除为软删除），状态随消息落盘；「忽略」只把待确认标记为已忽略。
+ * 只有完整结束的回复才会生成待确认变更（半截回复不产生）。
+ *
  * 写：Mutex 串行化（同一次对话期间禁止并发 send），流程 = 内存变更 → `store.save`
  * → 成功与否只影响下次装载（对话历史可弃，失败不回滚内存）。对话管理操作
  * （[createConversation] / [switchConversation] / [deleteConversation]）刻意不取该
@@ -88,6 +109,8 @@ class AiChatRepository internal constructor(
     private val contextProvider: () -> AiChatContext,
     /** AI 创建待办的落库入口（AppContainer 接 TodoRepository.addTodos） */
     private val persister: AiTodoPersister,
+    /** AI 修改/删除待办的写入口（用户确认后调用；AppContainer 接 updateTodo/removeTodos） */
+    private val changeWriter: AiTodoChangeWriter,
     /**
      * 图片附件库（AppContainer 接 filesDir/ai_chat_images）：UI 借它导入相册/拍照图片，
      * 发送时在锁内把消息引用的文件编码进请求。公开给 UI 是浮层直连仓库架构下的
@@ -140,6 +163,14 @@ class AiChatRepository internal constructor(
     /** 发送中（发送键变停止键、输入禁用）；一次只允许一场对话 */
     private val _sending = MutableStateFlow(false)
     val sending: StateFlow<Boolean> = _sending.asStateFlow()
+
+    /** 正在应用待确认变更的消息 id（null = 空闲）；UI 据此显示进度并禁用按钮 */
+    private val _todoChangesApplyingMessageId = MutableStateFlow<String?>(null)
+    val todoChangesApplyingMessageId: StateFlow<String?> =
+        _todoChangesApplyingMessageId.asStateFlow()
+
+    /** 应用闸门：确认落库一次只允许一批（连点「应用变更」只认第一批） */
+    private val applyChangesGate = AtomicBoolean(false)
 
     /**
      * 最近一次失败的分类错误（UI 错误条 + 重试）。错误**归属对话**：真源是
@@ -368,12 +399,14 @@ class AiChatRepository internal constructor(
                     content = trimmed,
                     createdAtMillis = nowMillis(),
                     images = images,
+                    id = newMessageId(),
                 )
                 // 占位 assistant 消息先入流，onDelta 按位更新它的 content
                 val placeholder = AiChatMessage(
                     role = AiChatRole.Assistant,
                     content = "",
                     createdAtMillis = nowMillis(),
+                    id = newMessageId(),
                 )
                 // 历史快照必须在本轮 user/占位入流之前拍：否则请求里会重复本轮 user，
                 // 并夹带一条 content="" 的 assistant（部分网关直接回 400）
@@ -452,6 +485,7 @@ class AiChatRepository internal constructor(
                     role = AiChatRole.Assistant,
                     content = "",
                     createdAtMillis = nowMillis(),
+                    id = newMessageId(),
                 )
                 appendMessages(conversationId) { it + placeholder }
                 lastCheckpointAt = nowMillis()
@@ -741,6 +775,165 @@ class AiChatRepository internal constructor(
         return deleted
     }
 
+    // ---------- 待确认的修改/删除 ----------
+
+    /**
+     * UI「应用变更」入口：Job 归仓库自有 scope（收起浮层/旋转不中断），同一时刻只处理
+     * 一批。待办写入在**应用时**基于最新状态重新套补丁——确认前用户可能在别处改过
+     * 同一待办，未涉及字段不会被旧快照覆盖。
+     */
+    fun applyTodoChangesInBackground(messageId: String) {
+        if (messageId.isBlank()) return
+        if (!applyChangesGate.compareAndSet(false, true)) return
+        _todoChangesApplyingMessageId.value = messageId
+        scope.launch {
+            try {
+                applyTodoChanges(messageId)
+            } catch (_: CancellationException) {
+                // 仓库 scope 不主动取消；防御 apply 内部的可取消挂起点
+            } catch (_: Exception) {
+                // 意外异常不能让后台 Job 崩掉进程；已写入的条目保留状态，未写入的仍为 Pending
+            } finally {
+                _todoChangesApplyingMessageId.value = null
+                applyChangesGate.set(false)
+            }
+        }
+    }
+
+    /** UI「忽略」入口：只把待确认标记为已忽略（不触碰待办库），并落盘 */
+    fun dismissTodoChanges(messageId: String) {
+        val located = findMessage(messageId) ?: return
+        val (conversationId, message) = located
+        if (message.todoChanges.none { it.status == AiTodoChangeStatus.Pending }) return
+        updateMessageById(conversationId, messageId) { current ->
+            current.copy(
+                todoChanges = current.todoChanges.map { change ->
+                    if (change.status == AiTodoChangeStatus.Pending) {
+                        change.copy(status = AiTodoChangeStatus.Dismissed)
+                    } else {
+                        change
+                    }
+                },
+            )
+        }
+        scope.launch {
+            try {
+                persist()
+            } catch (_: Exception) {
+                // 忽略是纯 UI 状态：落盘失败只影响下次装载，不打扰用户
+            }
+        }
+    }
+
+    /**
+     * 应用一批待确认变更：修改先于删除执行；逐条记录 Applied/Failed 并落盘。
+     *
+     * - 修改：按 id 取**当前**待办 → 重新套补丁 → 校验 → [changeWriter] 写入；
+     * - 删除：目标已不存在的记 NotFound，其余一次性批量软删除；
+     * - 消息可能属于非活跃对话（用户中途切走），按消息 id 定位后定向写回。
+     */
+    private suspend fun applyTodoChanges(messageId: String) {
+        val (conversationId, message) = findMessage(messageId) ?: return
+        val pending = message.todoChanges.filter { it.status == AiTodoChangeStatus.Pending }
+        if (pending.isEmpty()) return
+
+        val context = contextProvider()
+        // 工作快照：同一待办可能有多条修改，逐条写入后把新值回填，后一条基于前一条的结果
+        // 继续套补丁（否则第二条会拿旧快照覆盖第一条的字段）
+        val workingTodos = context.todos.associateBy { it.id }.toMutableMap()
+        val results = pending.toMutableList()
+
+        // 修改先行：同一目标同时出现在 updates 与 deletes 时，后续删除仍按最新状态执行
+        for (index in pending.indices) {
+            val change = pending[index]
+            if (change.kind == AiTodoChangeKind.Update) {
+                results[index] = applyUpdate(change, workingTodos, context)
+            }
+        }
+
+        // 删除：目标不存在的不送去批量删除（避免把「目标已消失」记成删除成功）
+        val deleteIndices = pending.indices.filter {
+            pending[it].kind == AiTodoChangeKind.Delete
+        }
+        val existingDeleteIndices = deleteIndices.filter {
+            workingTodos.containsKey(pending[it].todoId)
+        }
+        for (index in deleteIndices - existingDeleteIndices.toSet()) {
+            results[index] = pending[index].copy(
+                status = AiTodoChangeStatus.Failed,
+                failure = AiTodoChangeFailure.NotFound,
+            )
+        }
+        val deleteIds = existingDeleteIndices.map { pending[it].todoId }.distinct()
+        if (deleteIds.isNotEmpty()) {
+            val ok = try {
+                changeWriter.deleteAll(deleteIds)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                false
+            }
+            for (index in existingDeleteIndices) {
+                results[index] = pending[index].copy(
+                    status = if (ok) AiTodoChangeStatus.Applied else AiTodoChangeStatus.Failed,
+                    failure = if (ok) AiTodoChangeFailure.None else AiTodoChangeFailure.SaveFailed,
+                )
+            }
+        }
+
+        // pending 是 todoChanges 里 Pending 的有序子集：按顺序把结果回填到原列表
+        var cursor = 0
+        val merged = message.todoChanges.map { change ->
+            if (change.status == AiTodoChangeStatus.Pending) results[cursor++] else change
+        }
+        updateMessageById(conversationId, messageId) { it.copy(todoChanges = merged) }
+        persist()
+    }
+
+    /** 单条修改：目标/补丁/校验任一不成立都标记失败，不写库；无实际变化视为已应用 */
+    private suspend fun applyUpdate(
+        change: AiTodoChange,
+        todosById: MutableMap<String, Todo>,
+        context: AiChatContext,
+    ): AiTodoChange {
+        val current = todosById[change.todoId]
+            ?: return change.copy(status = AiTodoChangeStatus.Failed, failure = AiTodoChangeFailure.NotFound)
+        val patch = change.patch
+            ?: return change.copy(status = AiTodoChangeStatus.Failed, failure = AiTodoChangeFailure.InvalidPatch)
+        val mapping = AiTodoPatchMapper.apply(current, patch, context.groups, context.tags)
+        val next = mapping.todo
+            ?: return change.copy(status = AiTodoChangeStatus.Failed, failure = AiTodoChangeFailure.InvalidPatch)
+        if (!mapping.changed) return change.copy(status = AiTodoChangeStatus.Applied)
+        val errors = TodoValidator.validate(next)
+        if (errors.isNotEmpty()) {
+            return change.copy(status = AiTodoChangeStatus.Failed, failure = AiTodoChangeFailure.InvalidPatch)
+        }
+        val ok = try {
+            changeWriter.update(next)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            false
+        }
+        return if (ok) {
+            // 写成功才回填：同一待办的下一条修改基于最新值继续
+            todosById[change.todoId] = next
+            change.copy(status = AiTodoChangeStatus.Applied)
+        } else {
+            change.copy(status = AiTodoChangeStatus.Failed, failure = AiTodoChangeFailure.SaveFailed)
+        }
+    }
+
+    /** 按消息 id 在所有对话中定位（用户可能已切走）；返回对话 id + 当前消息快照 */
+    private fun findMessage(messageId: String): Pair<String, AiChatMessage>? {
+        if (messageId.isBlank()) return null
+        for (conversation in _conversations.value) {
+            val message = conversation.messages.firstOrNull { it.id == messageId }
+            if (message != null) return conversation.id to message
+        }
+        return null
+    }
+
     // ---------- 定向写入（多对话内核：一切消息变更按对话 id 落位） ----------
 
     /** 当前活跃对话（同步读取，配合 [_activeConversationId] 使用） */
@@ -793,6 +986,27 @@ class AiChatRepository internal constructor(
     }
 
     /**
+     * 按消息 id 定向替换一条消息（确认卡状态回写用）：消息所在的对话可能已不是活跃
+     * 对话，定向写保证不打扰当前显示。刻意**不刷新** [AiConversation.updatedAtMillis]
+     * ——确认/忽略是一次历史消息上的操作，不该把旧对话顶到「最近」最前面。
+     */
+    private fun updateMessageById(
+        conversationId: String,
+        messageId: String,
+        transform: (AiChatMessage) -> AiChatMessage,
+    ) {
+        updateConversation(conversationId) { conversation ->
+            val index = conversation.messages.indexOfFirst { it.id == messageId }
+            if (index < 0) return@updateConversation conversation
+            conversation.copy(
+                messages = conversation.messages.toMutableList().also {
+                    it[index] = transform(it[index])
+                },
+            )
+        }
+    }
+
+    /**
      * 锁内：确保存在活跃对话，返回其 id。无活跃对话（删光后首次发言）时隐式新建；
      * 未命名对话借本轮首条用户消息自动命名（迁移进来的历史对话已在 bootstrap 命名）。
      */
@@ -824,6 +1038,9 @@ class AiChatRepository internal constructor(
         if (flattened.isEmpty()) return null
         return flattened.take(TITLE_MAX_LENGTH)
     }
+
+    /** 新消息标识：确认卡的应用/忽略按它定位消息（旧文件里的消息没有 id） */
+    private fun newMessageId(): String = java.util.UUID.randomUUID().toString()
 
     // ---------- 待办落库 ----------
 
@@ -906,11 +1123,14 @@ class AiChatRepository internal constructor(
     }
 
     /**
-     * 流结束（成功）：先把完整正文写进消息（取消也不会丢），再解析草稿块并**直接落库**。
-     * 草稿解析失败会发起一次修复重试（同连接复用契约），该阶段被取消时正文已成立。
+     * 流结束（成功）：先把完整正文写进消息（取消也不会丢），再解析动作块。
+     * 新建草稿**直接落库**（现状不变）；修改/删除方案只校验并挂成待确认变更，
+     * 等用户在确认卡上点「应用变更」。草稿解析失败会发起一次修复重试（同连接复用
+     * 契约），该阶段被取消时正文已成立。
      *
      * 落库顺序：映射 → 过滤缺名称行 → 批量 addTodos（单次提交）→ 成功创建的 id 写回
      * 消息。落库失败只标记 [AiChatMessage.todoSaveFailed]，不影响正文与历史。
+     * 只有完整结束的回复才会生成待确认变更（半截回复不产生）。
      */
     private suspend fun finalizeLast(
         conversationId: String,
@@ -919,12 +1139,20 @@ class AiChatRepository internal constructor(
         apiKey: String,
     ) {
         updateLastMessage(conversationId) { it.copy(content = full, interrupted = false) }
-        val payload = extractDrafts(full, connection, apiKey) ?: return
-        val outcome = createTodos(payload)
+        val payload = extractActions(full, connection, apiKey) ?: return
+        // 只有 updates/deletes 时不能走 addTodos（空批次会误报创建失败）
+        val created = if (payload.todos.isNotEmpty()) {
+            createTodos(payload)
+        } else {
+            CreateTodosOutcome(emptyList(), failed = false)
+        }
+        val (changes, dropped) = buildTodoChanges(payload)
         updateLastMessage(conversationId) { last ->
             last.copy(
-                todoIds = outcome.ids,
-                todoSaveFailed = outcome.failed,
+                todoIds = created.ids,
+                todoSaveFailed = created.failed,
+                todoChanges = changes,
+                todoChangeDropped = dropped,
             )
         }
     }
@@ -957,6 +1185,59 @@ class AiChatRepository internal constructor(
     }
 
     /**
+     * 校验 updates/deletes 并生成待确认变更。
+     *
+     * 目标必须存在于当前活跃待办（归档/回收站不可操作）；补丁必须能通过
+     * [AiTodoPatchMapper] 与 [TodoValidator]；合法但无实际变化的补丁不生成确认项。
+     * 任何一条不成立都丢弃并置 dropped——确认卡只展示真正可应用的变更，避免用户确认后
+     * 才发现失败。删除按 id 去重。
+     */
+    private fun buildTodoChanges(payload: AiTodoDraftPayload): Pair<List<AiTodoChange>, Boolean> {
+        val context = contextProvider()
+        val todosById = context.todos.associateBy { it.id }
+        val changes = mutableListOf<AiTodoChange>()
+        var dropped = false
+
+        for (draft in payload.updates) {
+            val id = draft.id.trim()
+            val existing = todosById[id]
+            if (id.isEmpty() || existing == null) {
+                dropped = true
+                continue
+            }
+            val mapping = AiTodoPatchMapper.apply(existing, draft.patch, context.groups, context.tags)
+            val next = mapping.todo
+            if (next == null || !mapping.changed || TodoValidator.validate(next).isNotEmpty()) {
+                dropped = true
+                continue
+            }
+            changes += AiTodoChange(
+                kind = AiTodoChangeKind.Update,
+                todoId = id,
+                todoName = existing.name,
+                patch = draft.patch,
+            )
+        }
+
+        val seenDeletes = mutableSetOf<String>()
+        for (draft in payload.deletes) {
+            val id = draft.id.trim()
+            val existing = todosById[id]
+            if (id.isEmpty() || existing == null) {
+                dropped = true
+                continue
+            }
+            if (!seenDeletes.add(id)) continue
+            changes += AiTodoChange(
+                kind = AiTodoChangeKind.Delete,
+                todoId = id,
+                todoName = existing.name,
+            )
+        }
+        return changes to dropped
+    }
+
+    /**
      * 取消/失败：标记 interrupted。半截回复不创建待办——只认完整结束的回复，
      * 避免用户按下停止时把半截 JSON 写成真实待办。
      */
@@ -965,13 +1246,14 @@ class AiChatRepository internal constructor(
     }
 
     /**
-     * 从回复文本提取草稿（无块或空批次 = null）；解析失败带错误自动重试一次（把上次
-     * 输出原样附回，请模型修正后重新输出），仍失败返回 null（视为纯对话）。
+     * 从回复文本提取动作信封（无块或空动作 = null）；解析失败带错误自动重试一次
+     * （把上次输出原样附回，请模型修正后重新输出），仍失败返回 null（视为纯对话）。
      *
-     * 凭据由本次发送一路传入（同一场对话内不会变），省掉每次回复的重复解密；
-     * 取消必须原样抛出——否则调用方的落盘会被跳过。
+     * 信封可同时包含新建（todos）、修改（updates）与删除（deletes）；后者只生成待确认
+     * 变更，不会直接写库。凭据由本次发送一路传入（同一场对话内不会变），省掉每次回复的
+     * 重复解密；取消必须原样抛出——否则调用方的落盘会被跳过。
      */
-    private suspend fun extractDrafts(
+    private suspend fun extractActions(
         reply: String,
         connection: AiConnection,
         apiKey: String,
@@ -979,10 +1261,10 @@ class AiChatRepository internal constructor(
         if (!connection.isConfigured) return null
 
         val json = AiTodoDraftCodec.extractJsonBlock(reply) ?: return null
-        AiTodoDraftCodec.parseTodoDrafts(json)?.takeIf { it.todos.isNotEmpty() }?.let { return it }
+        AiTodoDraftCodec.parseTodoDrafts(json)?.let { return it }
 
         // 修复重试：非流式轻量收口——复用流式通道但整块收，UI 无感（增量丢弃）。
-        // system 带上草稿 JSON 契约：原实现只说「之前声明的格式」，模型手里并没有声明。
+        // system 同时带上新建与修改/删除的契约：修复请求里说「严格遵循格式」必须真的有声明可循。
         val repairPrompt = "你上一条回复里的 JSON 无法解析。请只输出一个修正后的 ```json 代码块，" +
             "严格遵循系统消息给出的格式，不要输出其他内容。"
         val repaired = try {
@@ -992,8 +1274,9 @@ class AiChatRepository internal constructor(
                 turns = listOf(
                     AiChatTurn(
                         role = "system",
-                        content = "待办草稿必须是可解析的 json 代码块，格式（字段都可省略）：\n" +
-                            AiPromptBuilder.TODO_JSON_SHAPE,
+                        content = "待办动作必须是可解析的 json 代码块。\n" +
+                            "新建（立即落库）格式：\n" + AiPromptBuilder.TODO_JSON_SHAPE + "\n" +
+                            "修改/删除（等待用户确认）格式：\n" + AiPromptBuilder.TODO_CHANGE_JSON_SHAPE,
                     ),
                     AiChatTurn(role = "user", content = reply.take(REPAIR_CONTEXT_MAX)),
                     AiChatTurn(role = "user", content = repairPrompt),
@@ -1002,10 +1285,10 @@ class AiChatRepository internal constructor(
         } catch (e: CancellationException) {
             throw e // 取消语义不能吞：吞掉会让「正文已完整」的落盘被跳过
         } catch (_: Exception) {
-            null // 修复失败按「无草稿」处理
+            null // 修复失败按「无动作」处理
         } ?: return null
         val repairedJson = AiTodoDraftCodec.extractJsonBlock(repaired) ?: return null
-        return AiTodoDraftCodec.parseTodoDrafts(repairedJson)?.takeIf { it.todos.isNotEmpty() }
+        return AiTodoDraftCodec.parseTodoDrafts(repairedJson)
     }
 
     /**
@@ -1047,16 +1330,24 @@ class AiChatRepository internal constructor(
         /** 流式期间半截 checkpoint 的节流间隔（进程被杀时尽量少丢内容） */
         const val CHECKPOINT_INTERVAL_MILLIS = 2000L
 
-        /** 应用侧装配入口（AppContainer）；测试直接构造注入 fake store / fake client / fake persister */
+        /** 应用侧装配入口（AppContainer）；测试直接构造注入 fake store / fake client / fake writer */
         suspend fun create(
             store: AiChatStore,
             settings: AiSettingsStore,
             client: AiClient,
             contextProvider: () -> AiChatContext,
             persister: AiTodoPersister,
+            changeWriter: AiTodoChangeWriter,
             imageStore: AiImageStore,
         ): AiChatRepository =
-            AiChatRepository(store, settings, client, contextProvider, persister, imageStore)
-                .also { it.bootstrap() }
+            AiChatRepository(
+                store,
+                settings,
+                client,
+                contextProvider,
+                persister,
+                changeWriter,
+                imageStore,
+            ).also { it.bootstrap() }
     }
 }

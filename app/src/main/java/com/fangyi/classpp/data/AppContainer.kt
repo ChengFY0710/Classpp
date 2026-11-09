@@ -5,9 +5,11 @@ import com.fangyi.classpp.data.ai.AiChatContext
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiClient
 import com.fangyi.classpp.data.ai.AiImageStore
+import com.fangyi.classpp.data.ai.AiTodoChangeWriter
 import com.fangyi.classpp.data.ai.AiTodoPersister
 import com.fangyi.classpp.data.ai.FileAiChatStore
 import com.fangyi.classpp.data.ai.PrefsAiSettingsStore
+import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.store.FileScheduleStore
 import com.fangyi.classpp.data.store.FileTagStore
 import com.fangyi.classpp.data.store.FileTodoStore
@@ -177,6 +179,14 @@ class AppContainer internal constructor(
                     // 回复里的待办直接落库（无需确认）：与手建同路径，走全量校验与单次提交
                     persister = AiTodoPersister { todos ->
                         todoRepository.addTodos(todos) is TodoReadResult.Ok
+                    },
+                    // 修改/删除待办：用户点确认后才会调用，走仓库既有归一化/校验/软删除路径
+                    changeWriter = object : AiTodoChangeWriter {
+                        override suspend fun update(todo: Todo): Boolean =
+                            todoRepository.updateTodo(todo) is TodoOpResult.Ok
+
+                        override suspend fun deleteAll(ids: List<String>): Boolean =
+                            todoRepository.removeTodos(ids) is TodoOpResult.Ok
                     },
                     // 对话图片附件（相册/拍照导入的压缩副本），UI 借仓库的 imageStore 导入
                     imageStore = AiImageStore(File(appContext.filesDir, "ai_chat_images")),

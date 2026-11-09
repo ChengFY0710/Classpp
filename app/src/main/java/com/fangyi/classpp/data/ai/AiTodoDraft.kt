@@ -74,9 +74,24 @@ data class AiRepeatDraft(
     val checkIn: Boolean = false,
 )
 
-/** 围栏 JSON 的信封：`{"todos": [...]}` */
+/**
+ * 围栏 JSON 的信封。
+ *
+ * - `todos`：新建待办草稿，解析成功后**立即落库**（无需确认，现状不变）；
+ * - `updates` / `deletes`：对已有待办的修改/删除方案，只生成**待确认变更**挂到消息上，
+ *   用户点确认后才写入（见 [AiTodoChange]）。
+ *
+ * 三段都可省略；[hasActions] 判断信封里是否有任何可用动作。
+ */
 @Serializable
-data class AiTodoDraftPayload(val todos: List<AiTodoDraft> = emptyList())
+data class AiTodoDraftPayload(
+    val todos: List<AiTodoDraft> = emptyList(),
+    val updates: List<AiTodoUpdateDraft> = emptyList(),
+    val deletes: List<AiTodoDeleteDraft> = emptyList(),
+) {
+    val hasActions: Boolean
+        get() = todos.isNotEmpty() || updates.isNotEmpty() || deletes.isNotEmpty()
+}
 
 /**
  * 从回复文本提取并解析待办草稿。
@@ -104,30 +119,35 @@ object AiTodoDraftCodec {
             ?: reply.trim()
 
     /**
-     * 解析围栏内容为草稿列表；结构完全解析不了返回 null（调用方据此发起修复重试）。
+     * 解析围栏内容为动作信封；结构完全解析不了返回 null（调用方据此发起修复重试）。
      *
-     * 宽容形态：标准信封 `{"todos":[...]}`；裸数组 `[...]`；单个裸对象 `{"name":...}`
-     * ——三者都收，降低对模型遵循度的要求（裸对象须含 "name" 键才收，避免把模型
-     * 偶尔围起来的错误对象包成无名草稿）。
+     * 宽容形态：标准信封 `{"todos":[...],"updates":[...],"deletes":[...]}`；裸数组
+     * `[...]`（视为新建列表）；仅含 updates 或 deletes 的对象；单个裸新建对象
+     * `{"name":...}`——都收，降低对模型遵循度的要求（裸对象须含 "name" 键且不含
+     * 动作键才收，避免把模型偶尔围起来的错误对象包成无名草稿）。
      */
     fun parseTodoDrafts(json: String): AiTodoDraftPayload? {
         val text = json.trim()
-        return runCatching {
+        val payload = runCatching {
             when {
                 text.startsWith("[") ->
                     AiJson.storage.decodeFromString(
                         AiTodoDraftPayload.serializer(),
                         """{"todos":$text}""",
                     )
-                text.startsWith("{") && text.contains("\"todos\"") ->
-                    AiJson.storage.decodeFromString(AiTodoDraftPayload.serializer(), text)
-                text.startsWith("{") && text.contains("\"name\"") ->
+                text.startsWith("{") && text.contains("\"name\"") &&
+                    !text.contains("\"todos\"") &&
+                    !text.contains("\"updates\"") &&
+                    !text.contains("\"deletes\"") ->
                     AiJson.storage.decodeFromString(
                         AiTodoDraftPayload.serializer(),
                         """{"todos":[$text]}""",
                     )
+                text.startsWith("{") ->
+                    AiJson.storage.decodeFromString(AiTodoDraftPayload.serializer(), text)
                 else -> null
             }
         }.getOrNull()
+        return payload?.takeIf { it.hasActions }
     }
 }

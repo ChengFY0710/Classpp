@@ -187,6 +187,24 @@ class AiChatRepositoryTest {
         }
     }
 
+    /** 修改/删除写入口假实现：记录写入的待办与删除的 id，result 控制成功/失败 */
+    private class FakeTodoChangeWriter : AiTodoChangeWriter {
+        val updates = mutableListOf<Todo>()
+        val deletions = mutableListOf<List<String>>()
+        var updateResult = true
+        var deleteResult = true
+
+        override suspend fun update(todo: Todo): Boolean {
+            updates += todo
+            return updateResult
+        }
+
+        override suspend fun deleteAll(ids: List<String>): Boolean {
+            deletions += ids
+            return deleteResult
+        }
+    }
+
     /** 脚本化响应：按序吐 lines，耗尽后阻塞在 gate（模拟流挂起），cancel 后放行 EOF */
     private class ScriptedResponse(
         private val lines: List<String?>,
@@ -274,14 +292,17 @@ class AiChatRepositoryTest {
         settings: FakeAiSettingsStore = FakeAiSettingsStore(),
         transport: FakeAiTransport,
         persister: FakeTodoPersister = FakeTodoPersister(),
+        changeWriter: FakeTodoChangeWriter = FakeTodoChangeWriter(),
+        contextProvider: () -> AiChatContext = { AiChatContext() },
         nowMillis: () -> Long = System::currentTimeMillis,
     ): AiChatRepository {
         val repo = AiChatRepository(
             store = store,
             settings = settings,
             client = AiClient(transport),
-            contextProvider = { AiChatContext() },
+            contextProvider = contextProvider,
             persister = persister,
+            changeWriter = changeWriter,
             imageStore = AiImageStore(tempImageDir()),
             clock = Clock { IsoDate.of(2026, 11, 1) },
             nowMillis = nowMillis,
@@ -305,6 +326,7 @@ class AiChatRepositoryTest {
             client = AiClient(transport),
             contextProvider = { AiChatContext() },
             persister = FakeTodoPersister(),
+            changeWriter = FakeTodoChangeWriter(),
             imageStore = imageStore,
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
@@ -358,6 +380,7 @@ class AiChatRepositoryTest {
             client = AiClient(transport),
             contextProvider = { AiChatContext() },
             persister = FakeTodoPersister(),
+            changeWriter = FakeTodoChangeWriter(),
             imageStore = imageStore,
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
@@ -488,6 +511,7 @@ class AiChatRepositoryTest {
             client = AiClient(transport),
             contextProvider = { AiChatContext() },
             persister = FakeTodoPersister(),
+            changeWriter = FakeTodoChangeWriter(),
             imageStore = imageStore,
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
@@ -747,6 +771,7 @@ class AiChatRepositoryTest {
             client = AiClient(FakeAiTransport(ScriptedResponse(listOf("data: [DONE]")))),
             contextProvider = { AiChatContext() },
             persister = FakeTodoPersister(),
+            changeWriter = FakeTodoChangeWriter(),
             imageStore = AiImageStore(tempImageDir()),
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
@@ -785,6 +810,7 @@ class AiChatRepositoryTest {
             client = AiClient(transport),
             contextProvider = { context },
             persister = FakeTodoPersister(),
+            changeWriter = FakeTodoChangeWriter(),
             imageStore = AiImageStore(tempImageDir()),
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
@@ -1012,6 +1038,7 @@ class AiChatRepositoryTest {
             client = AiClient(FakeAiTransport(ScriptedResponse(listOf("data: [DONE]")))),
             contextProvider = { AiChatContext() },
             persister = FakeTodoPersister(),
+            changeWriter = FakeTodoChangeWriter(),
             imageStore = AiImageStore(tempImageDir()),
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
@@ -1045,6 +1072,7 @@ class AiChatRepositoryTest {
             client = AiClient(FakeAiTransport(response)),
             contextProvider = { AiChatContext() },
             persister = FakeTodoPersister(),
+            changeWriter = FakeTodoChangeWriter(),
             imageStore = AiImageStore(tempImageDir()),
             clock = Clock { IsoDate.of(2026, 11, 1) },
             nowMillis = { tick += 1_000; tick },
@@ -1255,6 +1283,7 @@ class AiChatRepositoryTest {
             client = AiClient(FakeAiTransport(ScriptedResponse(listOf("data: [DONE]")))),
             contextProvider = { AiChatContext() },
             persister = FakeTodoPersister(),
+            changeWriter = FakeTodoChangeWriter(),
             imageStore = AiImageStore(tempImageDir()),
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
@@ -1570,5 +1599,248 @@ class AiChatRepositoryTest {
         assertEquals(settings.connection, connection)
         assertTrue(hasKey)
         assertFalse(repo.loadProfileKeyPresent("missing"))
+    }
+
+    // ---------- 修改/删除待办（确认后生效） ----------
+
+    private fun existingTodo(id: String, name: String) = Todo(
+        id = id,
+        name = name,
+        dates = listOf(IsoDate.of(2026, 11, 5)),
+    )
+
+    /** 等确认卡的应用协程收口：消息里不再有 Pending 条目即视为完成 */
+    private suspend fun awaitChangesSettled(repo: AiChatRepository, messageId: String) {
+        withTimeout(5000) {
+            while (
+                repo.messages.value.firstOrNull { it.id == messageId }
+                    ?.todoChanges?.any { it.status == AiTodoChangeStatus.Pending } == true
+            ) {
+                delay(10)
+            }
+        }
+    }
+
+    @Test
+    fun `updates and deletes become pending changes without writing`() = runBlocking {
+        val store = FakeAiChatStore()
+        val writer = FakeTodoChangeWriter()
+        val todos = listOf(existingTodo("todo-1", "实验报告"), existingTodo("todo-2", "英语作业"))
+        val reply = "已生成方案，请确认：\n```json\n" +
+            """{"updates":[{"id":"todo-1","patch":{"name":"实验报告（终稿）"}}],""" +
+            """"deletes":[{"id":"todo-2"}]}""" + "\n```"
+        val repo = repository(
+            store = store,
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = todos) },
+        )
+
+        repo.send("把实验报告改个名，再删掉英语作业")
+
+        val last = repo.messages.value.last()
+        assertFalse(last.todoSaveFailed)
+        assertEquals(2, last.todoChanges.size)
+        assertTrue(last.todoChanges.all { it.status == AiTodoChangeStatus.Pending })
+        assertEquals(AiTodoChangeKind.Update, last.todoChanges[0].kind)
+        assertEquals("实验报告", last.todoChanges[0].todoName)
+        assertEquals(AiTodoChangeKind.Delete, last.todoChanges[1].kind)
+        assertEquals("英语作业", last.todoChanges[1].todoName)
+        assertFalse(last.todoChangeDropped)
+        // 确认前不写库
+        assertTrue(writer.updates.isEmpty())
+        assertTrue(writer.deletions.isEmpty())
+        // 待确认状态随消息落盘
+        assertEquals(2, store.persistedMessages().last().todoChanges.size)
+    }
+
+    @Test
+    fun `unknown ids and invalid patches are dropped and flagged`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" +
+            """{"updates":[{"id":"missing","patch":{"name":"x"}},""" +
+            """{"id":"todo-1","patch":{"name":"   "}}],""" +
+            """"deletes":[{"id":"missing-2"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告"))) },
+        )
+
+        repo.send("随便改改")
+
+        val last = repo.messages.value.last()
+        assertTrue(last.todoChanges.isEmpty())
+        assertTrue(last.todoChangeDropped)
+        assertTrue(writer.updates.isEmpty())
+        assertTrue(writer.deletions.isEmpty())
+    }
+
+    @Test
+    fun `apply update writes against latest todo and records applied`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" +
+            """{"updates":[{"id":"todo-1","patch":{"name":"新名字","pinned":true}}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告"))) },
+        )
+        repo.send("改名并置顶")
+        val messageId = repo.messages.value.last().id
+        assertTrue(messageId.isNotBlank())
+
+        repo.applyTodoChangesInBackground(messageId)
+        awaitChangesSettled(repo, messageId)
+
+        val change = repo.messages.value.last().todoChanges.single()
+        assertEquals(AiTodoChangeStatus.Applied, change.status)
+        assertEquals(AiTodoChangeFailure.None, change.failure)
+        val updated = writer.updates.single()
+        assertEquals("todo-1", updated.id)
+        assertEquals("新名字", updated.name)
+        assertTrue(updated.pinned)
+        assertNull(repo.todoChangesApplyingMessageId.value)
+    }
+
+    @Test
+    fun `multiple updates to same todo compose sequentially`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" +
+            """{"updates":[{"id":"todo-1","patch":{"name":"新名字"}},""" +
+            """{"id":"todo-1","patch":{"pinned":true}}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告"))) },
+        )
+        repo.send("改名并置顶")
+        val messageId = repo.messages.value.last().id
+
+        repo.applyTodoChangesInBackground(messageId)
+        awaitChangesSettled(repo, messageId)
+
+        assertEquals(2, writer.updates.size)
+        // 第二条基于第一条的结果继续套补丁，不能拿旧快照把名字覆盖回去
+        assertEquals("新名字", writer.updates[1].name)
+        assertTrue(writer.updates[1].pinned)
+    }
+
+    @Test
+    fun `apply delete batches existing targets`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val todos = listOf(existingTodo("todo-1", "实验报告"), existingTodo("todo-2", "英语作业"))
+        val reply = "```json\n" +
+            """{"deletes":[{"id":"todo-1"},{"id":"todo-2"},{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = todos) },
+        )
+
+        repo.send("删掉这两个")
+        val messageId = repo.messages.value.last().id
+        repo.applyTodoChangesInBackground(messageId)
+        awaitChangesSettled(repo, messageId)
+
+        // 同一 id 的重复删除只保留一条确认项，且批量删除只调用一次
+        assertEquals(2, repo.messages.value.last().todoChanges.size)
+        assertEquals(listOf(listOf("todo-1", "todo-2")), writer.deletions)
+        assertTrue(
+            repo.messages.value.last().todoChanges.all {
+                it.status == AiTodoChangeStatus.Applied
+            },
+        )
+    }
+
+    @Test
+    fun `apply marks vanished target as not found`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        var context = AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告")))
+        val reply = "```json\n" +
+            """{"updates":[{"id":"todo-1","patch":{"name":"新名字"}}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { context },
+        )
+        repo.send("改名")
+        val messageId = repo.messages.value.last().id
+        // 确认前目标在别处被删除/归档：应用时按最新活跃待办反查不到
+        context = AiChatContext()
+
+        repo.applyTodoChangesInBackground(messageId)
+        awaitChangesSettled(repo, messageId)
+
+        val change = repo.messages.value.last().todoChanges.single()
+        assertEquals(AiTodoChangeStatus.Failed, change.status)
+        assertEquals(AiTodoChangeFailure.NotFound, change.failure)
+        assertTrue(writer.updates.isEmpty())
+    }
+
+    @Test
+    fun `apply marks writer failure as save failed`() = runBlocking {
+        val writer = FakeTodoChangeWriter().apply { updateResult = false }
+        val reply = "```json\n" +
+            """{"updates":[{"id":"todo-1","patch":{"name":"新名字"}}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告"))) },
+        )
+        repo.send("改名")
+        val messageId = repo.messages.value.last().id
+
+        repo.applyTodoChangesInBackground(messageId)
+        awaitChangesSettled(repo, messageId)
+
+        val change = repo.messages.value.last().todoChanges.single()
+        assertEquals(AiTodoChangeStatus.Failed, change.status)
+        assertEquals(AiTodoChangeFailure.SaveFailed, change.failure)
+    }
+
+    @Test
+    fun `dismiss marks pending changes dismissed without writing`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" +
+            """{"updates":[{"id":"todo-1","patch":{"name":"新名字"}}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告"))) },
+        )
+        repo.send("改名")
+        val messageId = repo.messages.value.last().id
+
+        repo.dismissTodoChanges(messageId)
+
+        assertEquals(
+            AiTodoChangeStatus.Dismissed,
+            repo.messages.value.last().todoChanges.single().status,
+        )
+        assertTrue(writer.updates.isEmpty())
+    }
+
+    @Test
+    fun `updates only reply repairs malformed json once`() = runBlocking {
+        val malformed = "```json\n{\"updates\":[{\"id\":\"todo-1\",\"patch\":\n```"
+        val repaired = "```json\n" +
+            """{"updates":[{"id":"todo-1","patch":{"name":"修复后"}}]}""" + "\n```"
+        val transport = FakeAiTransport(
+            ScriptedResponse(listOf(sse(malformed), "data: [DONE]")),
+            ScriptedResponse(listOf(sse(repaired), "data: [DONE]")),
+        )
+        val repo = repository(
+            transport = transport,
+            contextProvider = { AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告"))) },
+        )
+
+        repo.send("改名")
+
+        // 主请求 + 一次修复重试
+        assertEquals(2, transport.opened.size)
+        val change = repo.messages.value.last().todoChanges.single()
+        assertEquals("修复后", change.patch?.name)
+        assertFalse(repo.messages.value.last().todoSaveFailed)
     }
 }

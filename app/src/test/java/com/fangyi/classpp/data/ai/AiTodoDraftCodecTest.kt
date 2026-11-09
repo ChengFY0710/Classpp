@@ -81,8 +81,41 @@ class AiTodoDraftCodecTest {
     }
 
     @Test
-    fun `parse empty envelope stays empty`() {
-        assertEquals(0, AiTodoDraftCodec.parseTodoDrafts("""{"todos":[]}""")!!.todos.size)
+    fun `empty envelope has no actions and is rejected`() {
+        assertNull(AiTodoDraftCodec.parseTodoDrafts("""{"todos":[]}"""))
+        assertNull(AiTodoDraftCodec.parseTodoDrafts("""{"updates":[],"deletes":[]}"""))
+    }
+
+    @Test
+    fun `parse mixed envelope with updates and deletes`() {
+        val payload = AiTodoDraftCodec.parseTodoDrafts(
+            """{"todos":[{"name":"新建"}],""" +
+                """"updates":[{"id":"t1","patch":{"name":"改名","deadlineDate":"","deadlineTime":""}}],""" +
+                """"deletes":[{"id":"t2"},{"id":"t3"}]}""",
+        )!!
+        assertEquals(listOf("新建"), payload.todos.map { it.name })
+        assertEquals(1, payload.updates.size)
+        assertEquals("t1", payload.updates[0].id)
+        assertEquals("改名", payload.updates[0].patch.name)
+        assertEquals("", payload.updates[0].patch.deadlineDate)
+        assertEquals(listOf("t2", "t3"), payload.deletes.map { it.id })
+        assertEquals(true, payload.hasActions)
+    }
+
+    @Test
+    fun `parse updates only`() {
+        val payload = AiTodoDraftCodec.parseTodoDrafts(
+            """{"updates":[{"id":"t1","patch":{"pinned":true}}]}""",
+        )!!
+        assertEquals(0, payload.todos.size)
+        assertEquals("t1", payload.updates.single().id)
+        assertEquals(true, payload.updates.single().patch.pinned)
+    }
+
+    @Test
+    fun `parse deletes only`() {
+        val payload = AiTodoDraftCodec.parseTodoDrafts("""{"deletes":[{"id":"t9"}]}""")!!
+        assertEquals(listOf("t9"), payload.deletes.map { it.id })
     }
 
     @Test

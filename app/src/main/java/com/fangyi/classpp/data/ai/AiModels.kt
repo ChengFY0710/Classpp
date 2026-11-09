@@ -97,6 +97,12 @@ enum class AiChatRole { User, Assistant }
  *   （推理内容不属于对话上下文）；普通模型恒为空串，旧文件无此字段时默认空串
  * @param images 随消息发送的图片附件（[AiImageStore] 目录内的文件名，恒 JPEG）：
  *   发送时按历史窗口原样回放进请求（与正文不同，图片是视觉上下文）；旧文件无此字段时默认空
+ * @param id 消息标识（仓库追加时生成 UUID）：确认卡的应用/忽略按它定向定位消息；
+ *   旧文件无此字段时默认空串（旧消息不可能有待确认变更，无需迁移）
+ * @param todoChanges AI 生成、等待用户确认的修改/删除方案：确认前不写待办库，
+ *   状态（待确认/已应用/失败/已忽略）随消息落盘
+ * @param todoChangeDropped 解析出了修改/删除动作，但目标不存在或 patch 非法被丢弃；
+ *   UI 在原处提示「部分变更无法识别」
  */
 @Serializable
 data class AiChatMessage(
@@ -108,6 +114,9 @@ data class AiChatMessage(
     val todoSaveFailed: Boolean = false,
     val reasoning: String = "",
     val images: List<String> = emptyList(),
+    val id: String = "",
+    val todoChanges: List<AiTodoChange> = emptyList(),
+    val todoChangeDropped: Boolean = false,
 )
 
 /**

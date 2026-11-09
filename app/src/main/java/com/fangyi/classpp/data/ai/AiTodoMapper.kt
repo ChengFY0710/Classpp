@@ -155,8 +155,13 @@ object AiTodoMapper {
      * 重复规则映射：类型/单位/结束条件大小写不敏感；Custom 的 interval 夹紧到 1..99、
      * marks 按单位合法域过滤；结束日期解析失败回退「永不」并标注；次数档缺省用
      * [REPEAT_END_COUNT_DEFAULT]、夹紧到合法区间；打卡只随次数档成立。
+     *
+     * internal：新建草稿与修改补丁（[AiTodoPatchMapper]）共用同一套归一化口径。
      */
-    private fun mapRepeat(draft: AiRepeatDraft?, invalid: MutableSet<AiDraftField>): RepeatRule {
+    internal fun mapRepeat(
+        draft: AiRepeatDraft?,
+        invalid: MutableSet<AiDraftField>,
+    ): RepeatRule {
         if (draft == null) return RepeatRule()
         val type = matchEnum<RepeatType>(draft.type)
         if (type == null || type == RepeatType.None) {

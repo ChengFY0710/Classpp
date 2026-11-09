@@ -20,7 +20,10 @@ import com.fangyi.classpp.data.model.isDeleted
  */
 object AiPromptBuilder {
 
-    /** 注入的待办行数上限（token 预算控制；未完成、非删除、非归档里取最近的） */
+    /**
+     * 注入的待办行数上限（token 预算控制）：未完成优先，已完成随后，共享此上限；
+     * 删除/归档的待办不注入。
+     */
     const val MAX_TODO_LINES = 30
 
     /**
@@ -38,6 +41,24 @@ object AiPromptBuilder {
             """"repeat":{"type":"None|Daily|Weekly|Monthly|Yearly|Custom","unit":"Day|Week|Month|Year",""" +
             """"interval":1,"marks":[1],"endType":"Never|Date|Count","endDate":"yyyy-MM-dd",""" +
             """"endCount":5,"merge":true,"checkIn":false}}]}"""
+
+    /**
+     * 修改/删除已有待办的 JSON 契约（system prompt 与修复重试共用）。
+     *
+     * patch 是**部分更新**语义：只写要改的字段，未写 = 保持不变；字符串空串与空数组表示
+     * 清空。完整语义见 [AiTodoPatchMapper] 的类注释。
+     */
+    internal const val TODO_CHANGE_JSON_SHAPE: String =
+        """{"updates":[{"id":"<待办 id>","patch":{"name":"...","dates":["yyyy-MM-dd"],""" +
+            """"allDay":true,"startTime":"HH:mm","endTime":"HH:mm",""" +
+            """"deadlineDate":"yyyy-MM-dd","deadlineTime":"HH:mm",""" +
+            """"deadlineBeforeRepeat":false,"deadlineBeforeDays":0,""" +
+            """"urgency":"Critical|High|Medium|Low|None","tags":["..."],"group":"...",""" +
+            """"note":"...","steps":["..."],"location":"...","countdown":false,"pinned":false,""" +
+            """"repeat":{"type":"None|Daily|Weekly|Monthly|Yearly|Custom","unit":"Day|Week|Month|Year",""" +
+            """"interval":1,"marks":[1],"endType":"Never|Date|Count","endDate":"yyyy-MM-dd",""" +
+            """"endCount":5,"merge":true,"checkIn":false}}}],""" +
+            """"deletes":[{"id":"<待办 id>"}]}"""
 
     private val WEEKDAY_ZH = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
@@ -84,16 +105,16 @@ object AiPromptBuilder {
         }
 
         append("[待办] ")
-        val active = todos.asSequence()
-            .filterNot { it.isDeleted || it.isArchived || it.completed }
-            .sortedBy { it.sortKey() }
-            .take(MAX_TODO_LINES)
-            .toList()
-        if (active.isEmpty()) {
-            appendLine("（暂无未完成待办）")
+        val visible = todos.filterNot { it.isDeleted || it.isArchived }
+        val active = visible.filterNot { it.completed }.sortedBy { it.sortKey() }
+        val completed = visible.filter { it.completed }
+            .sortedByDescending { it.completedAtMillis ?: 0L }
+        val shown = (active + completed).take(MAX_TODO_LINES)
+        if (shown.isEmpty()) {
+            appendLine("（暂无待办）")
         } else {
-            appendLine()
-            for (todo in active) appendLine(todoLine(todo))
+            appendLine("（未完成在前、已完成在后；行首方括号内是待办 id，修改/删除时必须原样引用）")
+            for (todo in shown) appendLine(todoLine(todo))
         }
 
         appendLine("[可选分组] ${groups.ifEmpty { listOf("（无）") }.joinToString("、")}")
@@ -112,6 +133,19 @@ object AiPromptBuilder {
         appendLine("  endType=Date 必须给 endDate（该日期当天不含）；endType=Count 必须给 endCount（1..999）；checkIn=true 仅配合 Count；不需要重复就省略 repeat；")
         appendLine("- deadlineBeforeRepeat=true 表示截止随重复自动取下一次重复开始前 deadlineBeforeDays 天，需同时有 repeat 与截止；")
         appendLine("- 新建待办一律带上用户指定的日期；用户表达含糊时先在回答里问清，再输出代码块；")
+        appendLine()
+        appendLine("当用户要修改或删除已有待办时，仍输出一个 ```json 代码块：")
+        appendLine(TODO_CHANGE_JSON_SHAPE)
+        appendLine("规则：")
+        appendLine("- id 必须原样取自 [待办] 行首方括号里的值，禁止编造；列表里找不到目标就先在正文追问，不要猜；")
+        appendLine("- patch 只写要改的字段，未写的字段保持不变；字符串给空串=清空（name 不能为空），数组给 [] =清空；")
+        appendLine("- 改日期给完整的新日期列表（替换原日期）；时段 startTime/endTime 成对且 end 晚于 start；allDay=true 改为全天；allDay=false 且不给时段=取消时间；")
+        appendLine("- 截止 deadlineDate/deadlineTime 成对，要清除时两者都给空串；urgency 用 None 清除；repeat 用 {\"type\":\"None\"} 取消重复；")
+        appendLine("- 修改与删除不会立即生效：应用会先展示确认卡，用户点「应用变更」后才写入。正文只简短说明改了什么并请用户确认，禁止声称已经改好/删好；")
+        appendLine("- 用户说「确认/应用/好的」是在点下方按钮，不要重复输出同一批 updates/deletes；只有用户提出新的改动时才输出新的代码块；")
+        appendLine("- 删除是把待办移入回收站（可在回收站恢复），不是永久删除；")
+        appendLine("- 新建待办写在 todos 里并立即落库；修改/删除写在 updates/deletes 里等待确认；两者可同时出现在一个代码块里；")
+        appendLine("- 一次回复只输出一个 ```json 代码块（匹配取最后一个块，多个块会丢失前一个块里的动作）；")
         appendLine("- 其余情况正常对话，不要输出 JSON 代码块。")
     }.trimEnd() + "\n"
 
@@ -161,8 +195,9 @@ object AiPromptBuilder {
     private fun Todo.sortKey(): Long =
         deadlineDate?.epochDay ?: dates.minByOrNull { it.epochDay }?.epochDay ?: Long.MAX_VALUE
 
-    /** 一条待办一行：`名称｜截止 2026-11-05 18:00｜急｜组：学习｜标签：期末、实验` */
+    /** 一条待办一行：`[id] 名称｜截止 2026-11-05 18:00｜急｜组：学习｜标签：期末、实验｜已完成` */
     private fun todoLine(todo: Todo): String = buildString {
+        append('[').append(todo.id).append("] ")
         append(todo.name.ifBlank { "（未命名）" })
         val deadline = todo.deadlineDate?.let { date ->
             val minute = todo.deadlineMinute
@@ -176,5 +211,6 @@ object AiPromptBuilder {
         if (todo.steps.isNotEmpty()) {
             append("｜步骤：${todo.steps.joinToString("、") { it.title }}")
         }
+        if (todo.completed) append("｜已完成")
     }
 }

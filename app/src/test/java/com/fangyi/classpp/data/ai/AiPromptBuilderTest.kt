@@ -72,7 +72,7 @@ class AiPromptBuilderTest {
         val prompt = AiPromptBuilder.build(now, null, null, emptyList(), emptyList(), emptyList())
         assertTrue(prompt.contains("[课表] （未设置课表）"))
         assertTrue(prompt.contains("[作息] （未设置）"))
-        assertTrue(prompt.contains("[待办] （暂无未完成待办）"))
+        assertTrue(prompt.contains("[待办] （暂无待办）"))
         assertTrue(prompt.contains("[可选分组] （无）"))
         assertTrue(prompt.contains("[可选标签] （无）"))
         assertTrue(prompt.contains("今天是 2026-11-01 周日"))
@@ -124,17 +124,17 @@ class AiPromptBuilderTest {
             emptyList(),
             emptyList(),
         )
-        assertTrue(prompt.contains("实验报告｜截止 2026-11-05 18:00｜很急｜组：学习｜标签：期末、实验｜步骤：查资料、写正文"))
+        assertTrue(prompt.contains("[t-实验报告] 实验报告｜截止 2026-11-05 18:00｜很急｜组：学习｜标签：期末、实验｜步骤：查资料、写正文"))
     }
 
     @Test
-    fun `completed deleted archived todos are excluded`() {
+    fun `completed todos are listed after active ones with marker`() {
         val prompt = AiPromptBuilder.build(
             now,
             null,
             null,
             listOf(
-                todo("已完成").copy(completed = true),
+                todo("已完成").copy(completed = true, completedAtMillis = 2L),
                 todo("已删除").copy(deletedAtMillis = 1L),
                 todo("已归档").copy(archivedAtMillis = 1L),
                 todo("未完成"),
@@ -142,10 +142,12 @@ class AiPromptBuilderTest {
             emptyList(),
             emptyList(),
         )
-        assertFalse(prompt.contains("已完成"))
+        assertTrue(prompt.contains("[t-未完成] 未完成"))
+        assertTrue(prompt.contains("[t-已完成] 已完成｜已完成"))
         assertFalse(prompt.contains("已删除"))
         assertFalse(prompt.contains("已归档"))
-        assertTrue(prompt.contains("未完成"))
+        // 未完成在前、已完成在后
+        assertTrue(prompt.indexOf("[t-未完成]") < prompt.indexOf("[t-已完成]"))
     }
 
     @Test
@@ -185,7 +187,12 @@ class AiPromptBuilderTest {
         val prompt = AiPromptBuilder.build(now, null, null, emptyList(), emptyList(), emptyList())
         assertTrue(prompt.contains("```json"))
         assertTrue(prompt.contains("\"todos\""))
+        assertTrue(prompt.contains("\"updates\""))
+        assertTrue(prompt.contains("\"deletes\""))
         assertTrue(prompt.contains("deadlineDate"))
         assertTrue(prompt.contains("要么都给，要么都不给"))
+        // 修改/删除需要确认，正文不得声称已完成
+        assertTrue(prompt.contains("不会立即生效"))
+        assertTrue(prompt.contains("禁止声称已经改好/删好"))
     }
 }

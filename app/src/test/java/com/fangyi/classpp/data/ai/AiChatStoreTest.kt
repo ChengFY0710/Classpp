@@ -157,6 +157,55 @@ class AiChatStoreTest {
     }
 
     @Test
+    fun `todo changes and message id roundtrip`() {
+        val message = AiChatMessage(
+            role = AiChatRole.Assistant,
+            content = "请确认",
+            createdAtMillis = 1L,
+            id = "m-1",
+            todoChanges = listOf(
+                AiTodoChange(
+                    kind = AiTodoChangeKind.Update,
+                    todoId = "todo-1",
+                    todoName = "实验报告",
+                    patch = AiTodoPatch(name = "新名字", tags = listOf("期末")),
+                ),
+                AiTodoChange(
+                    kind = AiTodoChangeKind.Delete,
+                    todoId = "todo-2",
+                    todoName = "英语作业",
+                ),
+            ),
+            todoChangeDropped = true,
+        )
+        val original = AiChatFile(
+            conversations = listOf(AiConversation(id = "conv-1", messages = listOf(message))),
+            activeConversationId = "conv-1",
+        )
+        assertEquals(StoreResult.Ok, store().save(original))
+
+        val outcome = store().load()
+        assertTrue(outcome is LoadOutcome.Loaded)
+        assertEquals(original, (outcome as LoadOutcome.Loaded<AiChatFile>).file)
+    }
+
+    @Test
+    fun `legacy message without new fields defaults empty`() {
+        mainFile().writeText(
+            """{"formatVersion":2,"conversations":[{"id":"c","messages":[""" +
+                """{"role":"Assistant","content":"旧回复"}]}]}""",
+        )
+
+        val outcome = store().load()
+        assertTrue(outcome is LoadOutcome.Loaded)
+        val message = (outcome as LoadOutcome.Loaded<AiChatFile>)
+            .file.conversations.single().messages.single()
+        assertEquals("", message.id)
+        assertTrue(message.todoChanges.isEmpty())
+        assertFalse(message.todoChangeDropped)
+    }
+
+    @Test
     fun `future version without bak resets`() {
         mainFile().writeText("""{"formatVersion":99,"messages":[]}""")
 

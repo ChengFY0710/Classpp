@@ -908,6 +908,47 @@
     <string name="ai_todo_save_failed">Couldn\'t create todos, please try again</string>
     <string name="ai_save_failed">Save failed — try again</string>
 
+    <!-- AI todo change confirmation card: edits/deletes are written only after confirmation -->
+    <string name="ai_todo_change_title">Pending todo changes</string>
+    <string name="ai_todo_change_update">Edit</string>
+    <string name="ai_todo_change_delete">Delete</string>
+    <string name="ai_todo_change_apply">Apply changes</string>
+    <string name="ai_todo_change_applying">Applying…</string>
+    <string name="ai_todo_change_dismiss">Dismiss</string>
+    <string name="ai_todo_change_applied">Applied</string>
+    <string name="ai_todo_change_failed">Couldn\'t apply</string>
+    <string name="ai_todo_change_dismissed">Dismissed</string>
+    <string name="ai_todo_change_not_found">The target todo no longer exists</string>
+    <string name="ai_todo_change_invalid">Invalid change</string>
+    <string name="ai_todo_change_save_failed">Couldn\'t write to todos</string>
+    <string name="ai_todo_change_delete_hint">Moved to trash — you can restore it</string>
+    <string name="ai_todo_change_sync_hint">Synced todo — the next sync may restore it</string>
+    <string name="ai_todo_change_dropped">Some changes couldn\'t be recognized and were skipped</string>
+    <string name="ai_todo_change_line">%1$s: %2$s</string>
+    <string name="ai_todo_change_clear">Clear</string>
+    <string name="ai_todo_change_all_day">All day</string>
+    <string name="ai_todo_change_on">On</string>
+    <string name="ai_todo_change_off">Off</string>
+    <string name="ai_todo_change_yes">Yes</string>
+    <string name="ai_todo_change_no">No</string>
+    <string name="ai_todo_change_updated">Updated</string>
+    <string name="ai_todo_change_days">%1$d days</string>
+    <string name="ai_todo_change_field_name">Name</string>
+    <string name="ai_todo_change_field_dates">Dates</string>
+    <string name="ai_todo_change_field_time">Time</string>
+    <string name="ai_todo_change_field_deadline">Deadline</string>
+    <string name="ai_todo_change_field_deadline_before_repeat">Deadline tracks repeat</string>
+    <string name="ai_todo_change_field_deadline_before_days">Days before</string>
+    <string name="ai_todo_change_field_urgency">Urgency</string>
+    <string name="ai_todo_change_field_tags">Tags</string>
+    <string name="ai_todo_change_field_group">Group</string>
+    <string name="ai_todo_change_field_note">Note</string>
+    <string name="ai_todo_change_field_steps">Steps</string>
+    <string name="ai_todo_change_field_location">Location</string>
+    <string name="ai_todo_change_field_repeat">Repeat</string>
+    <string name="ai_todo_change_field_countdown">Countdown</string>
+    <string name="ai_todo_change_field_pinned">Pinned</string>
+
     <!-- AI settings page (AISettingsScreen, Settings → AI settings): presets / connection / key / privacy -->
     <string name="ai_settings_title">AI Settings</string>
     <string name="ai_settings_header_title">AI assistant</string>

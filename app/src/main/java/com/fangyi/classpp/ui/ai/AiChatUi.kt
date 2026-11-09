@@ -45,17 +45,24 @@ import com.fangyi.classpp.data.ai.AiChatMessage
 import com.fangyi.classpp.data.ai.AiChatRole
 import com.fangyi.classpp.data.ai.AiError
 import com.fangyi.classpp.data.ai.AiImageStore
+import com.fangyi.classpp.data.ai.AiTodoChange
+import com.fangyi.classpp.data.ai.AiTodoChangeFailure
+import com.fangyi.classpp.data.ai.AiTodoChangeKind
+import com.fangyi.classpp.data.ai.AiTodoChangeStatus
 import com.fangyi.classpp.data.ai.AiTodoDraftCodec
+import com.fangyi.classpp.data.ai.AiTodoPatch
 import com.fangyi.classpp.data.checkInPercent
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.ui.components.EmptyState
 import com.fangyi.classpp.ui.components.EmptyStateActionButton
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSwipe
 import com.fangyi.classpp.ui.components.SwipeAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
+import com.fangyi.classpp.ui.components.labelText
 import com.fangyi.classpp.ui.note.cardTimeText
 import com.fangyi.classpp.ui.note.deadlineCardText
 import com.fangyi.classpp.ui.note.deadlineColor
@@ -85,8 +92,9 @@ import com.fangyi.classpp.ui.theme.classppColors
  * [thinkingInProgress] = true（思考阶段、正文未开始）时默认展开，正文开始/结束后自动收起，
  * 用户手动点过标题行后不再自动切换（见 [AiChatThinkingBlock]）。
  *
- * 本条回复已创建待办时（[AiChatMessage.todoIds] 非空或落库失败），原始 JSON 围栏块
- * 不再展示——信息已由下方的 NoteCard 卡片承接；正文若因此为空，气泡本身不渲染
+ * 本条回复已创建待办或生成了待确认的修改/删除时（[AiChatMessage.todoIds] 非空、
+ * 落库失败、[AiChatMessage.todoChanges] 非空或有动作被丢弃），原始 JSON 围栏块
+ * 不再展示——信息已由下方卡片承接；正文若因此为空，气泡本身不渲染
  * （若回复带思考过程，上方的折叠块仍保留）。
  *
  * user 消息携带图片时（[AiChatMessage.images] 非空），缩略图渲染在正文上方（单张 160dp、
@@ -103,7 +111,12 @@ internal fun AiChatMessageBubble(
     onImageClick: (String) -> Unit = {},
 ) {
     val isUser = message.role == AiChatRole.User
-    val hasTodos = !isUser && (message.todoIds.isNotEmpty() || message.todoSaveFailed)
+    val hasTodos = !isUser && (
+        message.todoIds.isNotEmpty() ||
+            message.todoSaveFailed ||
+            message.todoChanges.isNotEmpty() ||
+            message.todoChangeDropped
+        )
     val content = if (hasTodos) AiTodoDraftCodec.stripJsonBlock(message.content) else message.content
     // 正文与思考都没有可展示的内容：整条消息不占位
     if (hasTodos && content.isEmpty() && message.reasoning.isEmpty()) return
@@ -402,6 +415,320 @@ internal fun AiChatCreatedTodoList(
 internal fun AiChatTodoSaveFailedHint(modifier: Modifier = Modifier) {
     Text(
         text = stringResource(R.string.ai_todo_save_failed),
+        style = ClassppTextTokens.secondaryTextSmall,
+        color = MaterialTheme.colorScheme.error,
+        modifier = modifier,
+    )
+}
+
+// ---------- 待确认的待办变更 ----------
+
+/** 一行变更摘要：字段文案资源 + 已本地化的值（值在组合期由 [aiTodoChangeLines] 生成） */
+private data class AiTodoChangeLine(val labelRes: Int, val value: String)
+
+/** 备注等长文本在确认卡里的展示上限：确认卡只做摘要，完整内容去详情页看 */
+private const val NotePreviewMaxLength = 40
+
+/**
+ * AI 生成的修改/删除确认卡：确认前不写待办库，用户点「应用变更」整批执行，
+ * 点「忽略」整批作废。每条变更展示目标名称、变更摘要与状态（已应用/失败/已忽略）。
+ *
+ * [todosById] 用于判断目标是否仍存在、是否为学校同步待办；删除后目标从活跃流消失，
+ * 卡片仍按落盘时的名称快照展示，不会凭空消失。
+ */
+@Composable
+internal fun AiChatTodoChangeCard(
+    changes: List<AiTodoChange>,
+    todosById: Map<String, Todo>,
+    applying: Boolean,
+    onApply: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (changes.isEmpty()) return
+    val tint = MaterialTheme.classppColors.secondaryText
+    val pending = changes.any { it.status == AiTodoChangeStatus.Pending }
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = ChatThinkingShape,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.ai_todo_change_title),
+                style = ClassppTextTokens.sectionAction,
+                color = tint,
+            )
+            changes.forEach { change ->
+                AiChatTodoChangeRow(change = change, todosById = todosById)
+            }
+            if (pending) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    EmptyStateActionButton(
+                        label = stringResource(
+                            if (applying) R.string.ai_todo_change_applying
+                            else R.string.ai_todo_change_apply,
+                        ),
+                        onClick = { if (!applying) onApply() },
+                    )
+                    Text(
+                        text = stringResource(R.string.ai_todo_change_dismiss),
+                        style = ClassppTextTokens.sectionAction,
+                        color = tint,
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .clickable(enabled = !applying, onClick = onDismiss)
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiChatTodoChangeRow(
+    change: AiTodoChange,
+    todosById: Map<String, Todo>,
+) {
+    val tint = MaterialTheme.classppColors.secondaryText
+    val error = MaterialTheme.colorScheme.error
+    val isDelete = change.kind == AiTodoChangeKind.Delete
+    val target = todosById[change.todoId]
+    val pending = change.status == AiTodoChangeStatus.Pending
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(
+                    if (isDelete) R.string.ai_todo_change_delete else R.string.ai_todo_change_update,
+                ),
+                style = ClassppTextTokens.sectionAction,
+                color = if (isDelete) error else MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = change.todoName.ifBlank { "—" },
+                style = ClassppTextTokens.cardTitle,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            AiChatTodoChangeStatusLabel(change)
+        }
+        if (!isDelete && change.patch != null) {
+            val lines = aiTodoChangeLines(change.patch)
+            if (lines.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.ai_todo_change_updated),
+                    style = ClassppTextTokens.secondaryTextSmall,
+                    color = tint,
+                )
+            } else {
+                lines.forEach { line ->
+                    Text(
+                        text = stringResource(
+                            R.string.ai_todo_change_line,
+                            stringResource(line.labelRes),
+                            line.value,
+                        ),
+                        style = ClassppTextTokens.secondaryTextSmall,
+                        color = tint,
+                    )
+                }
+            }
+        }
+        if (isDelete) {
+            Text(
+                text = stringResource(R.string.ai_todo_change_delete_hint),
+                style = ClassppTextTokens.secondaryTextSmall,
+                color = tint,
+            )
+        }
+        if (pending && target == null) {
+            Text(
+                text = stringResource(R.string.ai_todo_change_not_found),
+                style = ClassppTextTokens.secondaryTextSmall,
+                color = error,
+            )
+        }
+        if (pending && isDelete && target?.source != null) {
+            Text(
+                text = stringResource(R.string.ai_todo_change_sync_hint),
+                style = ClassppTextTokens.secondaryTextSmall,
+                color = tint,
+            )
+        }
+    }
+}
+
+/** 状态标签：Pending 不占位；失败按分类给出具体原因 */
+@Composable
+private fun AiChatTodoChangeStatusLabel(change: AiTodoChange) {
+    if (change.status == AiTodoChangeStatus.Pending) return
+    val textRes = when (change.status) {
+        AiTodoChangeStatus.Applied -> R.string.ai_todo_change_applied
+        AiTodoChangeStatus.Dismissed -> R.string.ai_todo_change_dismissed
+        AiTodoChangeStatus.Failed -> when (change.failure) {
+            AiTodoChangeFailure.NotFound -> R.string.ai_todo_change_not_found
+            AiTodoChangeFailure.InvalidPatch -> R.string.ai_todo_change_invalid
+            AiTodoChangeFailure.SaveFailed -> R.string.ai_todo_change_save_failed
+            AiTodoChangeFailure.None -> R.string.ai_todo_change_failed
+        }
+        AiTodoChangeStatus.Pending -> return
+    }
+    Text(
+        text = stringResource(textRes),
+        style = ClassppTextTokens.secondaryTextSmall,
+        color = if (change.status == AiTodoChangeStatus.Failed) {
+            MaterialTheme.colorScheme.error
+        } else {
+            MaterialTheme.classppColors.secondaryText
+        },
+    )
+}
+
+/** 补丁 → 展示行：只出现模型明确给出的字段；清空类字段显示「清除」 */
+@Composable
+private fun aiTodoChangeLines(patch: AiTodoPatch): List<AiTodoChangeLine> {
+    val clear = stringResource(R.string.ai_todo_change_clear)
+    val on = stringResource(R.string.ai_todo_change_on)
+    val off = stringResource(R.string.ai_todo_change_off)
+    val yes = stringResource(R.string.ai_todo_change_yes)
+    val no = stringResource(R.string.ai_todo_change_no)
+    val updated = stringResource(R.string.ai_todo_change_updated)
+    val lines = mutableListOf<AiTodoChangeLine>()
+
+    patch.name?.let {
+        lines += AiTodoChangeLine(R.string.ai_todo_change_field_name, it)
+    }
+    patch.dates?.let { dates ->
+        lines += AiTodoChangeLine(
+            R.string.ai_todo_change_field_dates,
+            if (dates.isEmpty()) clear else dates.joinToString("、"),
+        )
+    }
+    if (patch.startTime != null && patch.endTime != null) {
+        lines += AiTodoChangeLine(
+            R.string.ai_todo_change_field_time,
+            "${patch.startTime}-${patch.endTime}",
+        )
+    } else {
+        patch.allDay?.let { allDay ->
+            lines += AiTodoChangeLine(
+                R.string.ai_todo_change_field_time,
+                if (allDay) stringResource(R.string.ai_todo_change_all_day) else clear,
+            )
+        }
+    }
+    if (patch.deadlineDate != null || patch.deadlineTime != null) {
+        val cleared = (patch.deadlineDate != null && patch.deadlineDate.isBlank()) ||
+            (patch.deadlineTime != null && patch.deadlineTime.isBlank())
+        val value = if (cleared) {
+            clear
+        } else {
+            listOfNotNull(patch.deadlineDate, patch.deadlineTime)
+                .filter { it.isNotBlank() }
+                .joinToString(" ")
+        }
+        lines += AiTodoChangeLine(R.string.ai_todo_change_field_deadline, value)
+    }
+    patch.deadlineBeforeRepeat?.let {
+        lines += AiTodoChangeLine(
+            R.string.ai_todo_change_field_deadline_before_repeat,
+            if (it) yes else no,
+        )
+    }
+    patch.deadlineBeforeDays?.let {
+        lines += AiTodoChangeLine(
+            R.string.ai_todo_change_field_deadline_before_days,
+            stringResource(R.string.ai_todo_change_days, it),
+        )
+    }
+    patch.urgency?.let { raw ->
+        val urgency = TodoUrgency.entries.firstOrNull { it.name.equals(raw.trim(), ignoreCase = true) }
+        lines += AiTodoChangeLine(
+            R.string.ai_todo_change_field_urgency,
+            urgency?.let { stringResource(it.labelRes()) } ?: raw,
+        )
+    }
+    patch.tags?.let { tags ->
+        lines += AiTodoChangeLine(
+            R.string.ai_todo_change_field_tags,
+            if (tags.isEmpty()) clear else tags.joinToString("、"),
+        )
+    }
+    patch.group?.let { group ->
+        lines += AiTodoChangeLine(
+            R.string.ai_todo_change_field_group,
+            group.ifBlank { clear },
+        )
+    }
+    patch.note?.let { note ->
+        lines += AiTodoChangeLine(
+            R.string.ai_todo_change_field_note,
+            if (note.isBlank()) clear else note.take(NotePreviewMaxLength),
+        )
+    }
+    patch.steps?.let { steps ->
+        lines += AiTodoChangeLine(
+            R.string.ai_todo_change_field_steps,
+            if (steps.isEmpty()) clear else steps.joinToString("、"),
+        )
+    }
+    patch.location?.let { location ->
+        lines += AiTodoChangeLine(
+            R.string.ai_todo_change_field_location,
+            location.ifBlank { clear },
+        )
+    }
+    patch.repeat?.let { repeat ->
+        val type = RepeatType.entries.firstOrNull {
+            it.name.equals(repeat.type.trim(), ignoreCase = true)
+        }
+        val value = when {
+            type == null -> updated
+            type == RepeatType.None -> clear
+            else -> type.labelText()
+        }
+        lines += AiTodoChangeLine(R.string.ai_todo_change_field_repeat, value)
+    }
+    patch.countdown?.let {
+        lines += AiTodoChangeLine(
+            R.string.ai_todo_change_field_countdown,
+            if (it) on else off,
+        )
+    }
+    patch.pinned?.let {
+        lines += AiTodoChangeLine(
+            R.string.ai_todo_change_field_pinned,
+            if (it) yes else no,
+        )
+    }
+    return lines
+}
+
+/** 紧急度 → 现有文案资源（与待办页同一份口径） */
+private fun TodoUrgency.labelRes(): Int = when (this) {
+    TodoUrgency.Critical -> R.string.urgency_critical
+    TodoUrgency.High -> R.string.urgency_high
+    TodoUrgency.Medium -> R.string.urgency_medium
+    TodoUrgency.Low -> R.string.urgency_low
+    TodoUrgency.None -> R.string.urgency_none
+}
+
+/** 有修改/删除动作被丢弃（目标不存在或补丁非法）时的提示 */
+@Composable
+internal fun AiChatTodoChangeDroppedHint(modifier: Modifier = Modifier) {
+    Text(
+        text = stringResource(R.string.ai_todo_change_dropped),
         style = ClassppTextTokens.secondaryTextSmall,
         color = MaterialTheme.colorScheme.error,
         modifier = modifier,
