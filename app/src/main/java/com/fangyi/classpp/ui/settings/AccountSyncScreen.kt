@@ -312,7 +312,7 @@ private fun AccountSyncContent(
     val schoolList by (schools?.schools ?: fallbackSchoolList).collectAsState()
 
     // 远端声明学校（Tier 1）：默认关闭，只有手动拉取 + 首次连接登录域确认。
-    // 拉取**只由用户点击「更新远端学校列表」触发**；冷启动不加载、不联网。
+    // 拉取**只由用户点击「更新学校列表」触发**；冷启动不加载、不联网。
     val remoteManager = remember(context, schools) {
         schools?.let { RemoteSchoolManager(context, it) }
     }

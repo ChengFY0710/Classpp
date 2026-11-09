@@ -372,7 +372,7 @@
     <string name="school_capability_schedule_import">教务课表导入</string>
     <string name="school_switch_failed">切换学校失败，请重试</string>
     <!-- 远端声明学校（Tier 1）：默认关闭，只有手动更新入口 + 首次连接确认（文案不含校名） -->
-    <string name="settings_remote_refresh_title">更新远端学校列表</string>
+    <string name="settings_remote_refresh_title">更新学校列表</string>
     <string name="settings_remote_refresh_desc">点击从远端仓库获取最新学校列表</string>
     <string name="settings_remote_refreshing">正在更新学校列表…</string>
     <string name="settings_remote_refresh_added">已更新，新增 %1$d 所学校</string>

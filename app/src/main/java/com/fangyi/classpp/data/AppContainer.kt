@@ -115,7 +115,7 @@ class AppContainer internal constructor(
 
             // 远端声明学校默认关闭：从未手动更新（无本地缓存）时不注册任何远端校。
             // 用户手动更新过的声明已落盘，冷启动**只读本地缓存**恢复远端校（不联网）；
-            // 联网只发生在用户点击「更新远端学校列表」时（见 data/sync/remote）。
+            // 联网只发生在用户点击「更新学校列表」时（见 data/sync/remote）。
             val remoteProviders = withContext(Dispatchers.IO) {
                 loadCachedRemoteProviders(appContext)
             }

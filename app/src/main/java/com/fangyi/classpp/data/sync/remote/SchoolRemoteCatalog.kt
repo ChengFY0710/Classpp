@@ -49,7 +49,7 @@ data class RemoteSkippedSchool(val id: String, val reason: String)
 /**
  * 远端学校声明的**手动**拉取与缓存：
  *
- * - [refresh]：**仅由用户手动触发**（学校选择浮层「更新远端学校列表」）拉取清单 → 逐校
+ * - [refresh]：**仅由用户手动触发**（学校选择浮层「更新学校列表」）拉取清单 → 逐校
  *   声明 → 解码 + 校验（**单校失败跳过，不拖垮整批**，跳过原因进 [SyncDebugLog]）→
  *   回写缓存 → 返回有效声明与跳过条目；清单层失败返回 [RemoteCatalogResult.Failed]，
  *   缓存原样保留（不自动重试、不后台拉取、不启动拉取）；
