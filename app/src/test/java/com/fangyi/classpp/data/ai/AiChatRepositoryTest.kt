@@ -196,9 +196,13 @@ class AiChatRepositoryTest {
         val updates = mutableListOf<Todo>()
         val deletions = mutableListOf<List<String>>()
         val completionCalls = mutableListOf<CompletionCall>()
+        val archives = mutableListOf<String>()
+        val unarchives = mutableListOf<String>()
+        val restores = mutableListOf<String>()
         var updateResult = true
         var deleteResult = true
         var completionResult = true
+        var lifecycleResult = true
 
         override suspend fun update(todo: Todo): Boolean {
             updates += todo
@@ -222,6 +226,21 @@ class AiChatRepositoryTest {
         ): Boolean {
             completionCalls += CompletionCall(id, date, completed)
             return completionResult
+        }
+
+        override suspend fun archive(id: String): Boolean {
+            archives += id
+            return lifecycleResult
+        }
+
+        override suspend fun unarchive(id: String): Boolean {
+            unarchives += id
+            return lifecycleResult
+        }
+
+        override suspend fun restore(id: String): Boolean {
+            restores += id
+            return lifecycleResult
         }
     }
 
@@ -2133,5 +2152,238 @@ class AiChatRepositoryTest {
         val completion = repo.messages.value.last().todoCompletions.single()
         assertEquals(AiTodoCompletionStatus.UndoFailed, completion.status)
         assertEquals(AiTodoChangeFailure.SaveFailed, completion.failure)
+    }
+
+    // ---------- 归档 / 取消归档 / 恢复（直接生效，可撤销） ----------
+
+    private fun archivedTodo(id: String, name: String) =
+        existingTodo(id, name).copy(archivedAtMillis = 1L)
+
+    private fun deletedTodo(id: String, name: String) =
+        existingTodo(id, name).copy(deletedAtMillis = 1L)
+
+    private suspend fun awaitLifecycleSettled(
+        repo: AiChatRepository,
+        messageId: String,
+        index: Int,
+    ) {
+        withTimeout(5000) {
+            while (
+                repo.messages.value.firstOrNull { it.id == messageId }
+                    ?.todoLifecycles?.getOrNull(index)?.status == AiTodoLifecycleStatus.Applied
+            ) {
+                delay(10)
+            }
+        }
+    }
+
+    @Test
+    fun `archives active todo immediately`() = runBlocking {
+        val store = FakeAiChatStore()
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" + """{"archives":[{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            store = store,
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告"))) },
+        )
+
+        repo.send("把实验报告归档")
+
+        val lifecycle = repo.messages.value.last().todoLifecycles.single()
+        assertEquals(AiTodoLifecycleAction.Archive, lifecycle.action)
+        assertEquals(AiTodoLifecycleStatus.Applied, lifecycle.status)
+        assertEquals(listOf("todo-1"), writer.archives)
+        assertEquals(1, store.persistedMessages().last().todoLifecycles.size)
+    }
+
+    @Test
+    fun `archiving an already archived todo is a no-op`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" + """{"archives":[{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = {
+                AiChatContext(archivedTodos = listOf(archivedTodo("todo-1", "实验报告")))
+            },
+        )
+
+        repo.send("归档实验报告")
+
+        val lifecycle = repo.messages.value.last().todoLifecycles.single()
+        assertEquals(AiTodoLifecycleStatus.Applied, lifecycle.status)
+        assertFalse(lifecycle.changed)
+        assertTrue(writer.archives.isEmpty())
+    }
+
+    @Test
+    fun `archiving a deleted todo fails with wrong state`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" + """{"archives":[{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = {
+                AiChatContext(deletedTodos = listOf(deletedTodo("todo-1", "实验报告")))
+            },
+        )
+
+        repo.send("归档实验报告")
+
+        val lifecycle = repo.messages.value.last().todoLifecycles.single()
+        assertEquals(AiTodoLifecycleStatus.Failed, lifecycle.status)
+        assertEquals(AiTodoChangeFailure.WrongState, lifecycle.failure)
+        assertTrue(writer.archives.isEmpty())
+    }
+
+    @Test
+    fun `unarchives archived todo immediately`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" + """{"unarchives":[{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = {
+                AiChatContext(archivedTodos = listOf(archivedTodo("todo-1", "实验报告")))
+            },
+        )
+
+        repo.send("取消归档实验报告")
+
+        assertEquals(listOf("todo-1"), writer.unarchives)
+        assertEquals(
+            AiTodoLifecycleStatus.Applied,
+            repo.messages.value.last().todoLifecycles.single().status,
+        )
+    }
+
+    @Test
+    fun `restores deleted todo immediately`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" + """{"restores":[{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = {
+                AiChatContext(deletedTodos = listOf(deletedTodo("todo-1", "实验报告")))
+            },
+        )
+
+        repo.send("恢复实验报告")
+
+        assertEquals(listOf("todo-1"), writer.restores)
+        assertEquals(
+            AiTodoLifecycleStatus.Applied,
+            repo.messages.value.last().todoLifecycles.single().status,
+        )
+    }
+
+    @Test
+    fun `restoring a todo already out of trash is a no-op`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" + """{"restores":[{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告"))) },
+        )
+
+        repo.send("恢复实验报告")
+
+        val lifecycle = repo.messages.value.last().todoLifecycles.single()
+        assertFalse(lifecycle.changed)
+        assertTrue(writer.restores.isEmpty())
+    }
+
+    @Test
+    fun `unknown lifecycle target fails`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" + """{"unarchives":[{"id":"missing"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+        )
+
+        repo.send("取消归档它")
+
+        val lifecycle = repo.messages.value.last().todoLifecycles.single()
+        assertEquals(AiTodoLifecycleStatus.Failed, lifecycle.status)
+        assertEquals(AiTodoChangeFailure.NotFound, lifecycle.failure)
+        assertTrue(writer.unarchives.isEmpty())
+    }
+
+    @Test
+    fun `undo archive calls unarchive`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        var context = AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告")))
+        val reply = "```json\n" + """{"archives":[{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { context },
+        )
+        repo.send("归档实验报告")
+        val messageId = repo.messages.value.last().id
+        // 模拟归档已落库
+        context = AiChatContext(archivedTodos = listOf(archivedTodo("todo-1", "实验报告")))
+
+        repo.undoTodoLifecycleInBackground(messageId, 0)
+        awaitLifecycleSettled(repo, messageId, 0)
+
+        assertEquals(listOf("todo-1"), writer.unarchives)
+        assertEquals(
+            AiTodoLifecycleStatus.Undone,
+            repo.messages.value.last().todoLifecycles.single().status,
+        )
+    }
+
+    @Test
+    fun `undo restore deletes the todo again`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        var context = AiChatContext(deletedTodos = listOf(deletedTodo("todo-1", "实验报告")))
+        val reply = "```json\n" + """{"restores":[{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { context },
+        )
+        repo.send("恢复实验报告")
+        val messageId = repo.messages.value.last().id
+        // 模拟恢复已落库
+        context = AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告")))
+
+        repo.undoTodoLifecycleInBackground(messageId, 0)
+        awaitLifecycleSettled(repo, messageId, 0)
+
+        assertEquals(listOf(listOf("todo-1")), writer.deletions)
+        assertEquals(
+            AiTodoLifecycleStatus.Undone,
+            repo.messages.value.last().todoLifecycles.single().status,
+        )
+    }
+
+    @Test
+    fun `undo lifecycle failure marks undo failed`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        var context = AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告")))
+        val reply = "```json\n" + """{"archives":[{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { context },
+        )
+        repo.send("归档实验报告")
+        val messageId = repo.messages.value.last().id
+        context = AiChatContext(archivedTodos = listOf(archivedTodo("todo-1", "实验报告")))
+        writer.lifecycleResult = false
+
+        repo.undoTodoLifecycleInBackground(messageId, 0)
+        awaitLifecycleSettled(repo, messageId, 0)
+
+        val lifecycle = repo.messages.value.last().todoLifecycles.single()
+        assertEquals(AiTodoLifecycleStatus.UndoFailed, lifecycle.status)
+        assertEquals(AiTodoChangeFailure.SaveFailed, lifecycle.failure)
     }
 }

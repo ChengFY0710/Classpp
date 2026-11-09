@@ -104,6 +104,7 @@ enum class AiChatRole { User, Assistant }
  * @param todoChangeDropped 解析出了修改/删除动作，但目标不存在或 patch 非法被丢弃；
  *   UI 在原处提示「部分变更无法识别」
  * @param todoCompletions AI 直接执行的完成/取消完成记录：可撤销，状态随消息落盘
+ * @param todoLifecycles AI 直接执行的归档/取消归档/恢复记录：可撤销，状态随消息落盘
  */
 @Serializable
 data class AiChatMessage(
@@ -119,6 +120,7 @@ data class AiChatMessage(
     val todoChanges: List<AiTodoChange> = emptyList(),
     val todoChangeDropped: Boolean = false,
     val todoCompletions: List<AiTodoCompletion> = emptyList(),
+    val todoLifecycles: List<AiTodoLifecycle> = emptyList(),
 )
 
 /**

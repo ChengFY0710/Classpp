@@ -963,6 +963,12 @@
     <string name="ai_todo_completion_invalid_date">Invalid occurrence date</string>
     <string name="ai_todo_completion_save_failed">Couldn\'t write to todos</string>
 
+    <!-- AI archive/unarchive/restore: applied immediately and undoable -->
+    <string name="ai_todo_lifecycle_archive">Archive \"%1$s\"</string>
+    <string name="ai_todo_lifecycle_unarchive">Unarchive \"%1$s\"</string>
+    <string name="ai_todo_lifecycle_restore">Restore \"%1$s\"</string>
+    <string name="ai_todo_lifecycle_wrong_state">Not valid in the current state</string>
+
     <!-- AI settings page (AISettingsScreen, Settings → AI settings): presets / connection / key / privacy -->
     <string name="ai_settings_title">AI Settings</string>
     <string name="ai_settings_header_title">AI assistant</string>

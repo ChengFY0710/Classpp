@@ -186,6 +186,13 @@ class AiChatStoreTest {
                     date = IsoDate.of(2026, 11, 9),
                 ),
             ),
+            todoLifecycles = listOf(
+                AiTodoLifecycle(
+                    action = AiTodoLifecycleAction.Archive,
+                    todoId = "todo-4",
+                    todoName = "旧任务",
+                ),
+            ),
         )
         val original = AiChatFile(
             conversations = listOf(AiConversation(id = "conv-1", messages = listOf(message))),
@@ -213,6 +220,7 @@ class AiChatStoreTest {
         assertTrue(message.todoChanges.isEmpty())
         assertFalse(message.todoChangeDropped)
         assertTrue(message.todoCompletions.isEmpty())
+        assertTrue(message.todoLifecycles.isEmpty())
     }
 
     @Test

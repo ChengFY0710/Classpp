@@ -81,6 +81,8 @@ class AiPromptBuilderTest {
         assertTrue(prompt.contains("[课表] （未设置课表）"))
         assertTrue(prompt.contains("[作息] （未设置）"))
         assertTrue(prompt.contains("[待办] （暂无待办）"))
+        assertTrue(prompt.contains("[已归档] （无）"))
+        assertTrue(prompt.contains("[回收站] （无）"))
         assertTrue(prompt.contains("[可选分组] （无）"))
         assertTrue(prompt.contains("[可选标签] （无）"))
         assertTrue(prompt.contains("今天是 2026-11-01 周日"))
@@ -152,8 +154,9 @@ class AiPromptBuilderTest {
         )
         assertTrue(prompt.contains("[t-未完成] 未完成"))
         assertTrue(prompt.contains("[t-已完成] 已完成｜已完成"))
-        assertFalse(prompt.contains("已删除"))
-        assertFalse(prompt.contains("已归档"))
+        // 删除/归档的待办不会混进 [待办]（归档/回收站由各自的注入参数提供）
+        assertFalse(prompt.contains("[t-已删除]"))
+        assertFalse(prompt.contains("[t-已归档]"))
         // 未完成在前、已完成在后
         assertTrue(prompt.indexOf("[t-未完成]") < prompt.indexOf("[t-已完成]"))
     }
@@ -205,6 +208,26 @@ class AiPromptBuilderTest {
     }
 
     @Test
+    fun `archived and deleted todos are injected in their own sections`() {
+        val archived = todo("旧任务").copy(archivedAtMillis = 1L)
+        val deleted = todo("误删任务").copy(deletedAtMillis = 2L)
+        val prompt = AiPromptBuilder.build(
+            now,
+            null,
+            null,
+            emptyList(),
+            emptyList(),
+            emptyList(),
+            archivedTodos = listOf(archived),
+            deletedTodos = listOf(deleted),
+        )
+        assertTrue(prompt.contains("[已归档] （取消归档时引用行首 id"))
+        assertTrue(prompt.contains("[t-旧任务] 旧任务｜已归档"))
+        assertTrue(prompt.contains("[回收站] （恢复时引用行首 id"))
+        assertTrue(prompt.contains("[t-误删任务] 误删任务｜已删除"))
+    }
+
+    @Test
     fun `json contract block is present`() {
         val prompt = AiPromptBuilder.build(now, null, null, emptyList(), emptyList(), emptyList())
         assertTrue(prompt.contains("```json"))
@@ -213,12 +236,16 @@ class AiPromptBuilderTest {
         assertTrue(prompt.contains("\"deletes\""))
         assertTrue(prompt.contains("\"completes\""))
         assertTrue(prompt.contains("\"reopens\""))
+        assertTrue(prompt.contains("\"archives\""))
+        assertTrue(prompt.contains("\"unarchives\""))
+        assertTrue(prompt.contains("\"restores\""))
         assertTrue(prompt.contains("deadlineDate"))
         assertTrue(prompt.contains("要么都给，要么都不给"))
         // 修改/删除需要确认，正文不得声称已完成
         assertTrue(prompt.contains("不会立即生效"))
         assertTrue(prompt.contains("禁止声称已经改好/删好"))
-        // 完成/取消完成直接生效
+        // 完成/取消完成与归档/恢复直接生效
         assertTrue(prompt.contains("完成/取消完成会立即生效"))
+        assertTrue(prompt.contains("归档/取消归档/恢复会立即生效"))
     }
 }

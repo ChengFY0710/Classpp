@@ -173,6 +173,8 @@ class AppContainer internal constructor(
                                 scheduleRepository.currentWeek(it.id)
                             },
                             todos = todoRepository.todos.value,
+                            archivedTodos = todoRepository.archivedTodos.value,
+                            deletedTodos = todoRepository.deletedTodos.value,
                             groups = todoRepository.groups.value.map { it.name },
                             tags = tagRepository.tags.value.map { it.name },
                         )
@@ -198,6 +200,15 @@ class AppContainer internal constructor(
                             completed: Boolean,
                         ): Boolean =
                             todoRepository.setOccurrenceCompleted(id, date, completed) is TodoOpResult.Ok
+
+                        override suspend fun archive(id: String): Boolean =
+                            todoRepository.archiveTodo(id) is TodoOpResult.Ok
+
+                        override suspend fun unarchive(id: String): Boolean =
+                            todoRepository.unarchiveTodo(id) is TodoOpResult.Ok
+
+                        override suspend fun restore(id: String): Boolean =
+                            todoRepository.restoreTodo(id) is TodoOpResult.Ok
                     },
                     // 对话图片附件（相册/拍照导入的压缩副本），UI 借仓库的 imageStore 导入
                     imageStore = AiImageStore(File(appContext.filesDir, "ai_chat_images")),

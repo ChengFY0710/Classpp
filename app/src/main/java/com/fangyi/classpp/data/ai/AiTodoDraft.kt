@@ -81,7 +81,9 @@ data class AiRepeatDraft(
  * - `updates` / `deletes`：对已有待办的修改/删除方案，只生成**待确认变更**挂到消息上，
  *   用户点确认后才写入（见 [AiTodoChange]）；
  * - `completes` / `reopens`：完成/取消完成，解析后**直接执行**（可撤销，见
- *   [AiTodoCompletion]）；重复待办必须带期次日期。
+ *   [AiTodoCompletion]）；重复待办必须带期次日期；
+ * - `archives` / `unarchives` / `restores`：归档/取消归档/从回收站恢复，解析后
+ *   **直接执行**（可撤销，见 [AiTodoLifecycle]）。
  *
  * 各段都可省略；[hasActions] 判断信封里是否有任何可用动作。
  */
@@ -92,10 +94,14 @@ data class AiTodoDraftPayload(
     val deletes: List<AiTodoDeleteDraft> = emptyList(),
     val completes: List<AiTodoCompletionDraft> = emptyList(),
     val reopens: List<AiTodoCompletionDraft> = emptyList(),
+    val archives: List<AiTodoLifecycleDraft> = emptyList(),
+    val unarchives: List<AiTodoLifecycleDraft> = emptyList(),
+    val restores: List<AiTodoLifecycleDraft> = emptyList(),
 ) {
     val hasActions: Boolean
         get() = todos.isNotEmpty() || updates.isNotEmpty() || deletes.isNotEmpty() ||
-            completes.isNotEmpty() || reopens.isNotEmpty()
+            completes.isNotEmpty() || reopens.isNotEmpty() ||
+            archives.isNotEmpty() || unarchives.isNotEmpty() || restores.isNotEmpty()
 }
 
 /**

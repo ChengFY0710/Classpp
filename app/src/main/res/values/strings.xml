@@ -959,6 +959,12 @@
     <string name="ai_todo_completion_invalid_date">期次日期无效</string>
     <string name="ai_todo_completion_save_failed">写入待办失败</string>
 
+    <!-- AI 归档/取消归档/恢复：直接生效，可撤销 -->
+    <string name="ai_todo_lifecycle_archive">归档「%1$s」</string>
+    <string name="ai_todo_lifecycle_unarchive">取消归档「%1$s」</string>
+    <string name="ai_todo_lifecycle_restore">恢复「%1$s」</string>
+    <string name="ai_todo_lifecycle_wrong_state">当前状态不支持该操作</string>
+
     <!-- AI 设置页（AISettingsScreen，设置 → AI 设置）：预设 / 连接 / Key / 隐私说明 -->
     <string name="ai_settings_title">AI 设置</string>
     <string name="ai_settings_header_title">AI 助手</string>

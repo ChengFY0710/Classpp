@@ -38,6 +38,9 @@ object AiPromptBuilder {
     private const val OCCURRENCE_PAST_DAYS = 14
     private const val OCCURRENCE_FUTURE_DAYS = 30
 
+    /** 已归档 / 回收站区块各自注入的条数上限（最近更新在前） */
+    const val MAX_STALE_TODO_LINES = 10
+
     /**
      * 待办草稿的 JSON 字段契约（单行示例）。system prompt 与仓库的草稿修复重试
      * 共用同一份文本——修复请求里说「严格遵循格式」必须真的有声明可循。
@@ -82,6 +85,15 @@ object AiPromptBuilder {
         """{"completes":[{"id":"<待办 id>","date":"yyyy-MM-dd"}],""" +
             """"reopens":[{"id":"<待办 id>","date":"yyyy-MM-dd"}]}"""
 
+    /**
+     * 归档/取消归档/恢复的 JSON 契约。id 分别取自 [待办] / [已归档] / [回收站]，
+     * 解析后直接执行（可撤销）。
+     */
+    internal const val TODO_LIFECYCLE_JSON_SHAPE: String =
+        """{"archives":[{"id":"<待办 id>"}],""" +
+            """"unarchives":[{"id":"<已归档 id>"}],""" +
+            """"restores":[{"id":"<回收站 id>"}]}"""
+
     private val WEEKDAY_ZH = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
     private val URGENCY_ZH = mapOf(
@@ -98,6 +110,8 @@ object AiPromptBuilder {
         todos: List<Todo>,
         groups: List<String>,
         tags: List<String>,
+        archivedTodos: List<Todo> = emptyList(),
+        deletedTodos: List<Todo> = emptyList(),
     ): String = buildString {
         appendLine("你是课表应用 Classpp 内置的学习助手。用简洁中文回答，默认给出可执行的建议。")
         appendLine("以下为用户的当前上下文（可能与提问相关）：")
@@ -139,6 +153,26 @@ object AiPromptBuilder {
             for (todo in shown) appendLine(todoLine(todo, now))
         }
 
+        append("[已归档] ")
+        val archivedShown = archivedTodos.sortedByDescending { it.archivedAtMillis ?: 0L }
+            .take(MAX_STALE_TODO_LINES)
+        if (archivedTodos.isEmpty()) {
+            appendLine("（无）")
+        } else {
+            appendLine("（取消归档时引用行首 id；共 ${archivedTodos.size} 条，列出最近 ${archivedShown.size} 条）")
+            for (todo in archivedShown) appendLine(staleTodoLine(todo))
+        }
+
+        append("[回收站] ")
+        val deletedShown = deletedTodos.sortedByDescending { it.deletedAtMillis ?: 0L }
+            .take(MAX_STALE_TODO_LINES)
+        if (deletedTodos.isEmpty()) {
+            appendLine("（无）")
+        } else {
+            appendLine("（恢复时引用行首 id；共 ${deletedTodos.size} 条，列出最近 ${deletedShown.size} 条）")
+            for (todo in deletedShown) appendLine(staleTodoLine(todo))
+        }
+
         appendLine("[可选分组] ${groups.ifEmpty { listOf("（无）") }.joinToString("、")}")
         appendLine("[可选标签] ${tags.ifEmpty { listOf("（无）") }.joinToString("、")}")
         appendLine()
@@ -176,6 +210,16 @@ object AiPromptBuilder {
         appendLine("- id 必须原样取自 [待办]；不重复的待办省略 date；")
         appendLine("- 重复待办的 date 必填，且必须是该待办行「待完成期次」或「已完成期次」里列出的日期，禁止自行推算或编造；")
         appendLine("- 不要在同一条待办上同时输出完成与取消完成；")
+        appendLine("- 用户说「确认」时不要重复输出同一批动作；")
+        appendLine()
+        appendLine("当用户要归档、取消归档或从回收站恢复待办时，输出：")
+        appendLine(TODO_LIFECYCLE_JSON_SHAPE)
+        appendLine("规则：")
+        appendLine("- 归档/取消归档/恢复会立即生效（消息下方可撤销），不生成确认卡；正文简短说明即可；")
+        appendLine("- archives 的 id 只能取自 [待办]；unarchives 只能取自 [已归档]；restores 只能取自 [回收站]；")
+        appendLine("- 归档后待办不在活跃列表且被冻结（不能修改/完成）；要改它就先取消归档；")
+        appendLine("- 恢复后待办回到活跃列表（若删除前已归档则回到归档）；")
+        appendLine("- 已归档/回收站里的待办不能直接修改、完成或删除；先取消归档/恢复再操作；")
         appendLine("- 用户说「确认」时不要重复输出同一批动作；")
         appendLine("- 其余情况正常对话，不要输出 JSON 代码块。")
     }.trimEnd() + "\n"
@@ -254,6 +298,25 @@ object AiPromptBuilder {
             if (done.isNotEmpty()) append("｜已完成期次：${done.joinToString("、")}")
         }
         if (todo.completed) append("｜已完成")
+    }
+
+    /** 已归档 / 回收站行的紧凑格式：只保留识别信息，不带重复期次（这些待办已冻结） */
+    private fun staleTodoLine(todo: Todo): String = buildString {
+        append('[').append(todo.id).append("] ")
+        append(todo.name.ifBlank { "（未命名）" })
+        todo.deadlineDate?.let { date ->
+            val minute = todo.deadlineMinute
+            append("｜截止 $date")
+            if (minute != null) {
+                append(" ${minute / 60}:${(minute % 60).toString().padStart(2, '0')}")
+            }
+        }
+        if (todo.dates.isNotEmpty()) append("｜日期 ${todo.dates.joinToString("、")}")
+        todo.group?.let { append("｜组：$it") }
+        if (todo.tags.isNotEmpty()) append("｜标签：${todo.tags.joinToString("、")}")
+        if (todo.completed) append("｜已完成")
+        if (todo.isArchived) append("｜已归档")
+        if (todo.isDeleted) append("｜已删除")
     }
 
     /** 重复规则的紧凑文本：`每周（周1、3）`、`每2周`、`每天，共5期`、`每周，打卡10次` */

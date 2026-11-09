@@ -85,6 +85,11 @@ class AiTodoDraftCodecTest {
         assertNull(AiTodoDraftCodec.parseTodoDrafts("""{"todos":[]}"""))
         assertNull(AiTodoDraftCodec.parseTodoDrafts("""{"updates":[],"deletes":[]}"""))
         assertNull(AiTodoDraftCodec.parseTodoDrafts("""{"completes":[],"reopens":[]}"""))
+        assertNull(
+            AiTodoDraftCodec.parseTodoDrafts(
+                """{"archives":[],"unarchives":[],"restores":[]}""",
+            ),
+        )
     }
 
     @Test
@@ -128,6 +133,17 @@ class AiTodoDraftCodecTest {
         assertEquals("2026-11-09", payload.completes.single().date)
         assertEquals("t2", payload.reopens.single().id)
         assertNull(payload.reopens.single().date)
+        assertEquals(true, payload.hasActions)
+    }
+
+    @Test
+    fun `parse lifecycle actions`() {
+        val payload = AiTodoDraftCodec.parseTodoDrafts(
+            """{"archives":[{"id":"a"}],"unarchives":[{"id":"b"}],"restores":[{"id":"c"}]}""",
+        )!!
+        assertEquals("a", payload.archives.single().id)
+        assertEquals("b", payload.unarchives.single().id)
+        assertEquals("c", payload.restores.single().id)
         assertEquals(true, payload.hasActions)
     }
 

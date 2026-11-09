@@ -32,7 +32,12 @@ import kotlinx.coroutines.withContext
 data class AiChatContext(
     val schedule: Schedule? = null,
     val currentWeek: Int? = null,
+    /** 活跃待办（不含归档/软删除），含已完成 */
     val todos: List<Todo> = emptyList(),
+    /** 已归档待办（不含软删除）：AI 的「取消归档」目标来源 */
+    val archivedTodos: List<Todo> = emptyList(),
+    /** 回收站待办（软删除）：AI 的「恢复」目标来源 */
+    val deletedTodos: List<Todo> = emptyList(),
     val groups: List<String> = emptyList(),
     val tags: List<String> = emptyList(),
 )
@@ -65,6 +70,15 @@ interface AiTodoChangeWriter {
 
     /** 重复待办某一期的完成/取消完成；false = 落盘失败 */
     suspend fun setOccurrenceCompleted(id: String, date: IsoDate, completed: Boolean): Boolean
+
+    /** 归档（隐藏并冻结）；false = 落盘失败 */
+    suspend fun archive(id: String): Boolean
+
+    /** 取消归档；false = 落盘失败 */
+    suspend fun unarchive(id: String): Boolean
+
+    /** 从回收站恢复；false = 落盘失败 */
+    suspend fun restore(id: String): Boolean
 }
 
 /** 保存 AI 配置的结果：配置本身是否落盘 + 保存后是否具备可解密的 Key */
@@ -107,6 +121,10 @@ data class AiConfigSaveOutcome(
  * **完成/取消完成**：completes/reopens 解析后**直接执行**（重复待办按注入的期次日期
  * 校验），结果挂到 [AiChatMessage.todoCompletions]；[undoTodoCompletionInBackground]
  * 可按记录反向写回（撤销失败只标记状态，不谎报原操作未发生）。
+ *
+ * **归档/取消归档/恢复**：archives/unarchives/restores 同样**直接执行**（目标必须处于
+ * 对应状态：活跃→归档、已归档→取消归档、回收站→恢复），结果挂到
+ * [AiChatMessage.todoLifecycles]，[undoTodoLifecycleInBackground] 反向写回。
  *
  * 写：Mutex 串行化（同一次对话期间禁止并发 send），流程 = 内存变更 → `store.save`
  * → 成功与否只影响下次装载（对话历史可弃，失败不回滚内存）。对话管理操作
@@ -192,6 +210,14 @@ class AiChatRepository internal constructor(
 
     /** 撤销闸门：一次只处理一条撤销（连点只认第一次） */
     private val undoCompletionGate = AtomicBoolean(false)
+
+    /** 正在撤销归档/恢复操作的消息 id（null = 空闲） */
+    private val _todoLifecycleUndoingMessageId = MutableStateFlow<String?>(null)
+    val todoLifecycleUndoingMessageId: StateFlow<String?> =
+        _todoLifecycleUndoingMessageId.asStateFlow()
+
+    /** 归档/恢复撤销闸门：一次只处理一条 */
+    private val undoLifecycleGate = AtomicBoolean(false)
 
     /**
      * 最近一次失败的分类错误（UI 错误条 + 重试）。错误**归属对话**：真源是
@@ -1088,6 +1114,8 @@ class AiChatRepository internal constructor(
             todos = context.todos,
             groups = context.groups,
             tags = context.tags,
+            archivedTodos = context.archivedTodos,
+            deletedTodos = context.deletedTodos,
         )
         val turns = history
             .filterNot { it.role == AiChatRole.Assistant && it.content.isBlank() }
@@ -1145,9 +1173,10 @@ class AiChatRepository internal constructor(
 
     /**
      * 流结束（成功）：先把完整正文写进消息（取消也不会丢），再解析动作块。
-     * 新建草稿**直接落库**（现状不变）；完成/取消完成**直接执行**（UI 可撤销）；
-     * 修改/删除方案只校验并挂成待确认变更，等用户在确认卡上点「应用变更」。草稿解析
-     * 失败会发起一次修复重试（同连接复用契约），该阶段被取消时正文已成立。
+     * 新建草稿**直接落库**（现状不变）；完成/取消完成、归档/取消归档/恢复**直接执行**
+     * （UI 可撤销）；修改/删除方案只校验并挂成待确认变更，等用户在确认卡上点
+     * 「应用变更」。草稿解析失败会发起一次修复重试（同连接复用契约），该阶段被取消时
+     * 正文已成立。
      *
      * 落库顺序：映射 → 过滤缺名称行 → 批量 addTodos（单次提交）→ 成功创建的 id 写回
      * 消息。落库失败只标记 [AiChatMessage.todoSaveFailed]，不影响正文与历史。
@@ -1169,6 +1198,7 @@ class AiChatRepository internal constructor(
         }
         // 完成/取消完成直接落库（可撤销）；修改/删除只生成待确认变更
         val completions = applyCompletions(payload)
+        val lifecycles = applyLifecycleActions(payload)
         val (changes, dropped) = buildTodoChanges(payload)
         updateLastMessage(conversationId) { last ->
             last.copy(
@@ -1177,6 +1207,7 @@ class AiChatRepository internal constructor(
                 todoChanges = changes,
                 todoChangeDropped = dropped,
                 todoCompletions = completions,
+                todoLifecycles = lifecycles,
             )
         }
     }
@@ -1443,6 +1474,224 @@ class AiChatRepository internal constructor(
         persist()
     }
 
+    // ---------- 归档 / 取消归档 / 恢复（直接生效，可撤销） ----------
+
+    private enum class TodoPresence { Active, Archived, Deleted, Missing }
+
+    private fun AiChatContext.locateTodo(id: String): TodoPresence = when {
+        todos.any { it.id == id } -> TodoPresence.Active
+        archivedTodos.any { it.id == id } -> TodoPresence.Archived
+        deletedTodos.any { it.id == id } -> TodoPresence.Deleted
+        else -> TodoPresence.Missing
+    }
+
+    private fun AiChatContext.todoById(id: String): Todo? =
+        todos.firstOrNull { it.id == id }
+            ?: archivedTodos.firstOrNull { it.id == id }
+            ?: deletedTodos.firstOrNull { it.id == id }
+
+    /**
+     * 执行归档/取消归档/恢复：全部直接落库（可撤销），不生成确认卡。
+     * 目标按所在状态校验——归档只接受活跃待办、取消归档只接受已归档、恢复只接受
+     * 回收站中的待办；已在目标状态的记 changed=false（不写库、无需撤销）。
+     */
+    private suspend fun applyLifecycleActions(payload: AiTodoDraftPayload): List<AiTodoLifecycle> {
+        if (payload.archives.isEmpty() && payload.unarchives.isEmpty() && payload.restores.isEmpty()) {
+            return emptyList()
+        }
+        val context = contextProvider()
+        val results = mutableListOf<AiTodoLifecycle>()
+        val seen = mutableSetOf<Pair<AiTodoLifecycleAction, String>>()
+        fun accept(action: AiTodoLifecycleAction, rawId: String): Boolean =
+            seen.add(action to rawId.trim())
+
+        for (draft in payload.archives) {
+            if (accept(AiTodoLifecycleAction.Archive, draft.id)) {
+                results += executeLifecycle(AiTodoLifecycleAction.Archive, draft.id.trim(), context)
+            }
+        }
+        for (draft in payload.unarchives) {
+            if (accept(AiTodoLifecycleAction.Unarchive, draft.id)) {
+                results += executeLifecycle(AiTodoLifecycleAction.Unarchive, draft.id.trim(), context)
+            }
+        }
+        for (draft in payload.restores) {
+            if (accept(AiTodoLifecycleAction.Restore, draft.id)) {
+                results += executeLifecycle(AiTodoLifecycleAction.Restore, draft.id.trim(), context)
+            }
+        }
+        return results
+    }
+
+    private suspend fun executeLifecycle(
+        action: AiTodoLifecycleAction,
+        id: String,
+        context: AiChatContext,
+    ): AiTodoLifecycle {
+        val presence = if (id.isEmpty()) TodoPresence.Missing else context.locateTodo(id)
+        val todo = if (id.isEmpty()) null else context.todoById(id)
+        if (todo == null) {
+            return AiTodoLifecycle(
+                action = action,
+                todoId = id,
+                changed = false,
+                status = AiTodoLifecycleStatus.Failed,
+                failure = AiTodoChangeFailure.NotFound,
+            )
+        }
+        return when (action) {
+            AiTodoLifecycleAction.Archive -> when (presence) {
+                TodoPresence.Active -> lifecycleWritten(
+                    action,
+                    todo,
+                    safeWrite { changeWriter.archive(id) },
+                )
+                TodoPresence.Archived -> lifecycleNoop(action, todo)
+                else -> lifecycleWrongState(action, todo)
+            }
+            AiTodoLifecycleAction.Unarchive -> when (presence) {
+                TodoPresence.Archived -> lifecycleWritten(
+                    action,
+                    todo,
+                    safeWrite { changeWriter.unarchive(id) },
+                )
+                TodoPresence.Active -> lifecycleNoop(action, todo)
+                else -> lifecycleWrongState(action, todo)
+            }
+            AiTodoLifecycleAction.Restore -> when (presence) {
+                TodoPresence.Deleted -> lifecycleWritten(
+                    action,
+                    todo,
+                    safeWrite { changeWriter.restore(id) },
+                )
+                // 已不在回收站：视为「已恢复」，不写库
+                else -> lifecycleNoop(action, todo)
+            }
+        }
+    }
+
+    private fun lifecycleNoop(action: AiTodoLifecycleAction, todo: Todo): AiTodoLifecycle =
+        AiTodoLifecycle(
+            action = action,
+            todoId = todo.id,
+            todoName = todo.name,
+            changed = false,
+            status = AiTodoLifecycleStatus.Applied,
+        )
+
+    private fun lifecycleWrongState(action: AiTodoLifecycleAction, todo: Todo): AiTodoLifecycle =
+        AiTodoLifecycle(
+            action = action,
+            todoId = todo.id,
+            todoName = todo.name,
+            changed = false,
+            status = AiTodoLifecycleStatus.Failed,
+            failure = AiTodoChangeFailure.WrongState,
+        )
+
+    private fun lifecycleWritten(
+        action: AiTodoLifecycleAction,
+        todo: Todo,
+        ok: Boolean,
+    ): AiTodoLifecycle = AiTodoLifecycle(
+        action = action,
+        todoId = todo.id,
+        todoName = todo.name,
+        changed = true,
+        status = if (ok) AiTodoLifecycleStatus.Applied else AiTodoLifecycleStatus.Failed,
+        failure = if (ok) AiTodoChangeFailure.None else AiTodoChangeFailure.SaveFailed,
+    )
+
+    /** UI「撤销」入口：归档↔取消归档；恢复→重新软删除。Job 归仓库自有 scope。 */
+    fun undoTodoLifecycleInBackground(messageId: String, lifecycleIndex: Int) {
+        if (messageId.isBlank()) return
+        if (!undoLifecycleGate.compareAndSet(false, true)) return
+        _todoLifecycleUndoingMessageId.value = messageId
+        scope.launch {
+            try {
+                undoTodoLifecycle(messageId, lifecycleIndex)
+            } catch (_: CancellationException) {
+                // 仓库 scope 不主动取消；防御内部可取消挂起点
+            } catch (_: Exception) {
+                // 意外异常不能崩进程；原记录保持「已生效」状态
+            } finally {
+                _todoLifecycleUndoingMessageId.value = null
+                undoLifecycleGate.set(false)
+            }
+        }
+    }
+
+    private suspend fun undoTodoLifecycle(messageId: String, lifecycleIndex: Int) {
+        val (conversationId, message) = findMessage(messageId) ?: return
+        val record = message.todoLifecycles.getOrNull(lifecycleIndex) ?: return
+        if (record.status != AiTodoLifecycleStatus.Applied || !record.changed) return
+        val context = contextProvider()
+        val presence = context.locateTodo(record.todoId)
+        val todo = context.todoById(record.todoId)
+        val next = if (todo == null || presence == TodoPresence.Missing) {
+            record.copy(
+                status = AiTodoLifecycleStatus.UndoFailed,
+                failure = AiTodoChangeFailure.NotFound,
+            )
+        } else when (record.action) {
+            AiTodoLifecycleAction.Archive -> when (presence) {
+                TodoPresence.Archived -> undoLifecycleWritten(
+                    record,
+                    safeWrite { changeWriter.unarchive(todo.id) },
+                )
+                TodoPresence.Active -> record.copy(
+                    status = AiTodoLifecycleStatus.Undone,
+                    failure = AiTodoChangeFailure.None,
+                )
+                else -> record.copy(
+                    status = AiTodoLifecycleStatus.UndoFailed,
+                    failure = AiTodoChangeFailure.WrongState,
+                )
+            }
+            AiTodoLifecycleAction.Unarchive -> when (presence) {
+                TodoPresence.Active -> undoLifecycleWritten(
+                    record,
+                    safeWrite { changeWriter.archive(todo.id) },
+                )
+                TodoPresence.Archived -> record.copy(
+                    status = AiTodoLifecycleStatus.Undone,
+                    failure = AiTodoChangeFailure.None,
+                )
+                else -> record.copy(
+                    status = AiTodoLifecycleStatus.UndoFailed,
+                    failure = AiTodoChangeFailure.WrongState,
+                )
+            }
+            AiTodoLifecycleAction.Restore -> when (presence) {
+                TodoPresence.Deleted -> record.copy(
+                    status = AiTodoLifecycleStatus.Undone,
+                    failure = AiTodoChangeFailure.None,
+                )
+                TodoPresence.Active,
+                TodoPresence.Archived,
+                -> undoLifecycleWritten(
+                    record,
+                    safeWrite { changeWriter.deleteAll(listOf(todo.id)) },
+                )
+                TodoPresence.Missing -> record.copy(
+                    status = AiTodoLifecycleStatus.UndoFailed,
+                    failure = AiTodoChangeFailure.NotFound,
+                )
+            }
+        }
+        val updated = message.todoLifecycles.toMutableList().also {
+            it[lifecycleIndex] = next
+        }
+        updateMessageById(conversationId, messageId) { it.copy(todoLifecycles = updated) }
+        persist()
+    }
+
+    private fun undoLifecycleWritten(record: AiTodoLifecycle, ok: Boolean): AiTodoLifecycle =
+        record.copy(
+            status = if (ok) AiTodoLifecycleStatus.Undone else AiTodoLifecycleStatus.UndoFailed,
+            failure = if (ok) AiTodoChangeFailure.None else AiTodoChangeFailure.SaveFailed,
+        )
+
     /**
      * 取消/失败：标记 interrupted。半截回复不创建待办——只认完整结束的回复，
      * 避免用户按下停止时把半截 JSON 写成真实待办。
@@ -1483,7 +1732,8 @@ class AiChatRepository internal constructor(
                         content = "待办动作必须是可解析的 json 代码块。\n" +
                             "新建（立即落库）格式：\n" + AiPromptBuilder.TODO_JSON_SHAPE + "\n" +
                             "修改/删除（等待用户确认）格式：\n" + AiPromptBuilder.TODO_CHANGE_JSON_SHAPE + "\n" +
-                            "完成/取消完成（立即生效）格式：\n" + AiPromptBuilder.TODO_COMPLETE_JSON_SHAPE,
+                            "完成/取消完成（立即生效）格式：\n" + AiPromptBuilder.TODO_COMPLETE_JSON_SHAPE + "\n" +
+                            "归档/取消归档/恢复（立即生效）格式：\n" + AiPromptBuilder.TODO_LIFECYCLE_JSON_SHAPE,
                     ),
                     AiChatTurn(role = "user", content = reply.take(REPAIR_CONTEXT_MAX)),
                     AiChatTurn(role = "user", content = repairPrompt),

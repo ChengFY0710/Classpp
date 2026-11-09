@@ -67,7 +67,7 @@ enum class AiTodoChangeStatus { Pending, Applied, Failed, Dismissed }
 
 /** 失败原因分类（文案由 UI 映射 stringResource，数据层不产出文案） */
 @Serializable
-enum class AiTodoChangeFailure { None, NotFound, InvalidPatch, InvalidDate, SaveFailed }
+enum class AiTodoChangeFailure { None, NotFound, InvalidPatch, InvalidDate, WrongState, SaveFailed }
 
 /**
  * 挂在 assistant 消息上的待确认变更（随 ai_chat.json 落盘）。
@@ -119,5 +119,32 @@ data class AiTodoCompletion(
     val date: IsoDate? = null,
     val changed: Boolean = true,
     val status: AiTodoCompletionStatus = AiTodoCompletionStatus.Applied,
+    val failure: AiTodoChangeFailure = AiTodoChangeFailure.None,
+)
+
+/** 归档 / 取消归档 / 恢复的草稿：id 必须来自对应的注入区块（[待办]/[已归档]/[回收站]） */
+@Serializable
+data class AiTodoLifecycleDraft(val id: String = "")
+
+/** 生命周期动作：归档（隐藏并冻结）、取消归档、从回收站恢复 */
+@Serializable
+enum class AiTodoLifecycleAction { Archive, Unarchive, Restore }
+
+/** 生命周期动作的执行结果；UndoFailed = 撤销失败但原操作仍成立 */
+@Serializable
+enum class AiTodoLifecycleStatus { Applied, Failed, Undone, UndoFailed }
+
+/**
+ * 挂在 assistant 消息上的归档/恢复记录（随 ai_chat.json 落盘）。
+ *
+ * @param changed false = 执行时待办已处于目标状态（没有写库，也就无需撤销）
+ */
+@Serializable
+data class AiTodoLifecycle(
+    val action: AiTodoLifecycleAction,
+    val todoId: String,
+    val todoName: String = "",
+    val changed: Boolean = true,
+    val status: AiTodoLifecycleStatus = AiTodoLifecycleStatus.Applied,
     val failure: AiTodoChangeFailure = AiTodoChangeFailure.None,
 )

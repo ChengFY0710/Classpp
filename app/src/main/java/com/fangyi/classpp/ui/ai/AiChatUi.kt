@@ -52,6 +52,9 @@ import com.fangyi.classpp.data.ai.AiTodoChangeStatus
 import com.fangyi.classpp.data.ai.AiTodoCompletion
 import com.fangyi.classpp.data.ai.AiTodoCompletionStatus
 import com.fangyi.classpp.data.ai.AiTodoDraftCodec
+import com.fangyi.classpp.data.ai.AiTodoLifecycle
+import com.fangyi.classpp.data.ai.AiTodoLifecycleAction
+import com.fangyi.classpp.data.ai.AiTodoLifecycleStatus
 import com.fangyi.classpp.data.ai.AiTodoPatch
 import com.fangyi.classpp.data.checkInPercent
 import com.fangyi.classpp.data.model.IsoDate
@@ -119,7 +122,8 @@ internal fun AiChatMessageBubble(
             message.todoSaveFailed ||
             message.todoChanges.isNotEmpty() ||
             message.todoChangeDropped ||
-            message.todoCompletions.isNotEmpty()
+            message.todoCompletions.isNotEmpty() ||
+            message.todoLifecycles.isNotEmpty()
         )
     val content = if (hasTodos) AiTodoDraftCodec.stripJsonBlock(message.content) else message.content
     // 正文与思考都没有可展示的内容：整条消息不占位
@@ -584,6 +588,7 @@ private fun AiChatTodoChangeStatusLabel(change: AiTodoChange) {
             AiTodoChangeFailure.NotFound -> R.string.ai_todo_change_not_found
             AiTodoChangeFailure.InvalidPatch -> R.string.ai_todo_change_invalid
             AiTodoChangeFailure.InvalidDate -> R.string.ai_todo_completion_invalid_date
+            AiTodoChangeFailure.WrongState -> R.string.ai_todo_lifecycle_wrong_state
             AiTodoChangeFailure.SaveFailed -> R.string.ai_todo_change_save_failed
             AiTodoChangeFailure.None -> R.string.ai_todo_change_failed
         }
@@ -831,14 +836,14 @@ private fun AiChatTodoCompletionRow(
                 color = MaterialTheme.classppColors.secondaryText,
             )
             AiTodoCompletionStatus.Failed -> Text(
-                text = stringResource(completionFailureTextRes(completion.failure)),
+                text = stringResource(todoActionFailureTextRes(completion.failure)),
                 style = ClassppTextTokens.secondaryTextSmall,
                 color = MaterialTheme.colorScheme.error,
             )
             AiTodoCompletionStatus.UndoFailed -> Text(
                 text = stringResource(
                     R.string.ai_todo_completion_undo_failed,
-                    stringResource(completionFailureTextRes(completion.failure)),
+                    stringResource(todoActionFailureTextRes(completion.failure)),
                 ),
                 style = ClassppTextTokens.secondaryTextSmall,
                 color = MaterialTheme.colorScheme.error,
@@ -848,13 +853,114 @@ private fun AiChatTodoCompletionRow(
 }
 
 /** 完成/撤销失败的分类文案（与修改/删除的失败分类分开，避免语义串台） */
-private fun completionFailureTextRes(failure: AiTodoChangeFailure): Int = when (failure) {
+private fun todoActionFailureTextRes(failure: AiTodoChangeFailure): Int = when (failure) {
     AiTodoChangeFailure.NotFound -> R.string.ai_todo_completion_not_found
     AiTodoChangeFailure.InvalidDate -> R.string.ai_todo_completion_invalid_date
+    AiTodoChangeFailure.WrongState -> R.string.ai_todo_lifecycle_wrong_state
     AiTodoChangeFailure.SaveFailed -> R.string.ai_todo_completion_save_failed
     AiTodoChangeFailure.InvalidPatch,
     AiTodoChangeFailure.None,
     -> R.string.ai_todo_completion_failed
+}
+
+// ---------- 归档 / 取消归档 / 恢复（直接生效，可撤销） ----------
+
+/** 一条 assistant 回复里 AI 直接执行的归档/取消归档/恢复记录：紧凑行 + 撤销按钮 */
+@Composable
+internal fun AiChatTodoLifecycleList(
+    lifecycles: List<AiTodoLifecycle>,
+    undoing: Boolean,
+    onUndo: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (lifecycles.isEmpty()) return
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        lifecycles.forEachIndexed { index, lifecycle ->
+            AiChatTodoLifecycleRow(
+                lifecycle = lifecycle,
+                undoing = undoing,
+                onUndo = { onUndo(index) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AiChatTodoLifecycleRow(
+    lifecycle: AiTodoLifecycle,
+    undoing: Boolean,
+    onUndo: () -> Unit,
+) {
+    val action = when (lifecycle.action) {
+        AiTodoLifecycleAction.Archive ->
+            stringResource(R.string.ai_todo_lifecycle_archive, lifecycle.todoName)
+        AiTodoLifecycleAction.Unarchive ->
+            stringResource(R.string.ai_todo_lifecycle_unarchive, lifecycle.todoName)
+        AiTodoLifecycleAction.Restore ->
+            stringResource(R.string.ai_todo_lifecycle_restore, lifecycle.todoName)
+    }
+    val applied = lifecycle.status == AiTodoLifecycleStatus.Applied
+    val actionColor = when {
+        applied && lifecycle.action != AiTodoLifecycleAction.Archive ->
+            MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.classppColors.secondaryText
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = action,
+            style = ClassppTextTokens.secondaryTextSmall,
+            color = actionColor,
+            modifier = Modifier.weight(1f),
+        )
+        when (lifecycle.status) {
+            AiTodoLifecycleStatus.Applied -> if (lifecycle.changed) {
+                Text(
+                    text = stringResource(R.string.ai_todo_completion_undo),
+                    style = ClassppTextTokens.sectionAction,
+                    color = if (undoing) {
+                        MaterialTheme.classppColors.secondaryText
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(enabled = !undoing, onClick = onUndo)
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.ai_todo_completion_already),
+                    style = ClassppTextTokens.secondaryTextSmall,
+                    color = MaterialTheme.classppColors.secondaryText,
+                )
+            }
+            AiTodoLifecycleStatus.Undone -> Text(
+                text = stringResource(R.string.ai_todo_completion_undone),
+                style = ClassppTextTokens.secondaryTextSmall,
+                color = MaterialTheme.classppColors.secondaryText,
+            )
+            AiTodoLifecycleStatus.Failed -> Text(
+                text = stringResource(todoActionFailureTextRes(lifecycle.failure)),
+                style = ClassppTextTokens.secondaryTextSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            AiTodoLifecycleStatus.UndoFailed -> Text(
+                text = stringResource(
+                    R.string.ai_todo_completion_undo_failed,
+                    stringResource(todoActionFailureTextRes(lifecycle.failure)),
+                ),
+                style = ClassppTextTokens.secondaryTextSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
 }
 
 // ---------- 错误条 ----------

@@ -168,6 +168,9 @@ fun AiChatOverlay(
     // 正在撤销完成记录的消息 id：同上，只禁用撤销按钮
     val completionUndoingMessageId by aiChatRepository?.todoCompletionUndoingMessageId?.collectAsState()
         ?: remember { mutableStateOf<String?>(null) }
+    // 正在撤销归档/恢复记录的消息 id
+    val lifecycleUndoingMessageId by aiChatRepository?.todoLifecycleUndoingMessageId?.collectAsState()
+        ?: remember { mutableStateOf<String?>(null) }
     val groups by todoRepository?.groups?.collectAsState()
         ?: remember { mutableStateOf(emptyList<TodoGroup>()) }
     val todos by todoRepository?.todos?.collectAsState() ?: remember { mutableStateOf(emptyList<Todo>()) }
@@ -359,6 +362,7 @@ fun AiChatOverlay(
         messages.lastOrNull()?.todoIds?.size,
         messages.lastOrNull()?.todoChanges?.size,
         messages.lastOrNull()?.todoCompletions?.size,
+        messages.lastOrNull()?.todoLifecycles?.size,
         activeConversationId,
         visible,
     ) {
@@ -667,6 +671,16 @@ fun AiChatOverlay(
                                 undoing = completionUndoingMessageId == message.id,
                                 onUndo = { index ->
                                     aiChatRepository?.undoTodoCompletionInBackground(message.id, index)
+                                },
+                            )
+                        }
+                        // 归档/取消归档/恢复：直接生效，行尾可撤销
+                        if (message.todoLifecycles.isNotEmpty()) {
+                            AiChatTodoLifecycleList(
+                                lifecycles = message.todoLifecycles,
+                                undoing = lifecycleUndoingMessageId == message.id,
+                                onUndo = { index ->
+                                    aiChatRepository?.undoTodoLifecycleInBackground(message.id, index)
                                 },
                             )
                         }
