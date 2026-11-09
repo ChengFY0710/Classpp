@@ -95,7 +95,7 @@ val DarkSecondaryGrey = Color(0xFFC3C7CA)
 
 /** 「刻意弱化」置灰：浅色取卡片底；深色卡底上取更暗的灰，保持同等弱化视觉强度 */
 val Negative = Color(0xFFCBCBCB)
-val DarkNegative = Color(0xFF5C6269)
+val DarkNegative = Color(0xFF666666)
 
 /** Haze 磨砂叠加基础色：浅色白提亮、深色黑压暗，调用处按强度 copy(alpha) */
 val HazeTint = Color.White
@@ -157,4 +157,4 @@ val DarkAiAuroraLime = Color(0xFF8A9A3A)
 val DarkScrim = Color(0xBF000000)
 
 // 开关（ClassppSwitch）不可点击时的置灰轨道色，无论 checked 取该值
-val DarkSwitchDisabled = Color(0xFF1C1E22)
+val DarkSwitchDisabled = Color(0xFF1F1F1F)

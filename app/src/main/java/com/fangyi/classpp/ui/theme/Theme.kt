@@ -102,7 +102,7 @@ data class ClassppColors(
      */
     val negative: Color,
     /**
-     * 开关（ClassppSwitch）不可点击时的置灰轨道色：浅 #EEEEEE / 深 #1C1E22，
+     * 开关（ClassppSwitch）不可点击时的置灰轨道色：浅 #EEEEEE / 深 #1F1F1F，
      * 不论 checked 与否——与 [negative] 的「弱化」语义分开，专表禁用。
      */
     val switchDisabled: Color,

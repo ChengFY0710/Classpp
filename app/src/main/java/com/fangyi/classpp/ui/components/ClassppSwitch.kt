@@ -34,8 +34,9 @@ private val ThumbInset = 4.dp
  * 开关按钮：胶囊轨道 + 恒定大小的白色圆点滑块。
  *
  * 颜色规格：[enabled] 为 false（不可点击）时轨道固定取 [MaterialTheme.classppColors.switchDisabled]
- * （浅 #EEEEEE / 深 #1C1E22），不论 checked；否则激活 = [MaterialTheme.colorScheme.primary] 轨道、
- * 未激活 = [MaterialTheme.classppColors.negative] 置灰轨道（浅 #CBCBCB / 深 #5C6269）。
+ * （浅 #EEEEEE / 深 #1F1F1F），不论 checked；否则激活 = [MaterialTheme.colorScheme.primary] 轨道、
+ * 未激活 = [MaterialTheme.classppColors.onSurfaceCard]（默认蓝档浅 #DCE2E7 / 深 #4D5157，
+ * 其余档随主题色派生）。
  * [onCheckedChange] 为 null 表示点击自理（如设置卡整行可点、开关只做指示），颜色仍按 checked 正常显示。
  * 圆点无论状态与深浅模式都保持 White。
  *
@@ -56,7 +57,7 @@ fun ClassppSwitch(
         targetValue = when {
             !enabled -> MaterialTheme.classppColors.switchDisabled
             checked -> MaterialTheme.colorScheme.primary
-            else -> MaterialTheme.classppColors.negative
+            else -> MaterialTheme.classppColors.onSurfaceCard
         },
         animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
         label = "classppSwitchTrack",

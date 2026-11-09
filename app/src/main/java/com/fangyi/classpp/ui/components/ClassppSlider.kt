@@ -36,6 +36,7 @@ import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.detectHorizontalSwipeGestures
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.isDarkTheme
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -48,8 +49,15 @@ private val ThumbInset = 4.dp
 /** 默认值标记小球直径：明显小于滑块、又能在 32dp 轨道上读得清 */
 private val MarkerSize = 8.dp
 
+/** 默认值标记小球的黑色透明度：浅 10% / 深 36%（深浅分档，仅本组件私有，不进 theme） */
+private const val MarkerAlphaLight = 0.1f
+private const val MarkerAlphaDark = 0.36f
+
 /** 当前值越过默认值后标记小球的颜色：#FFFFFF 40%（仅本组件私有，不进 theme） */
 private val MarkerPassedColor = Color(0x66FFFFFF)
+
+/** 未填充轨道不透明度：80%，叠卡片底形成更轻的轨道（仅本组件私有，不进 theme） */
+private const val TrackAlpha = 0.8f
 
 /**
  * 滑动选择条：胶囊轨道 + 与 [ClassppSwitch] 同尺寸的白色圆球，宽度由调用方 modifier
@@ -58,10 +66,11 @@ private val MarkerPassedColor = Color(0x66FFFFFF)
  * - **点击跳转**：点轨道任意位置，圆球以 Motion.FastMillis 节奏动画滑到点击处；
  *   落进默认值吸附半径则吸附到默认值，动画到位补一次震动。
  *
- * 颜色严格取自 theme：已填充轨道 = [MaterialTheme.colorScheme.primary]，未填充轨道 =
- * [MaterialTheme.colorScheme.onPrimaryContainer]，默认值标记小球未越过默认值时 =
- * [MaterialTheme.classppColors.negative]，当前值越过默认值后 = 白色 40%（组件私有
- * [MarkerPassedColor]）；圆球与开关一致，任何模式恒白。
+ * 颜色主要取自 theme：已填充轨道 = [MaterialTheme.colorScheme.primary]，未填充轨道 =
+ * [MaterialTheme.classppColors.onSurfaceCard] 按 [TrackAlpha]（80%）降不透明度叠卡片底，
+ * 默认值标记小球未越过默认值时 = Color.Black 按浅 10% / 深 36% 取透明度
+ * （组件私有 [MarkerAlphaLight] / [MarkerAlphaDark]），当前值越过默认值后 =
+ * 白色 40%（组件私有 [MarkerPassedColor]）；圆球与开关一致，任何模式恒白。
  *
  * 形状与全局胶囊同源：轨道走 [PillShape] 连续曲率圆角，圆球与标记小球为纯圆（CircleShape）。
  *
@@ -80,12 +89,16 @@ fun ClassppSlider(
     defaultValue: Float,
     snapThreshold: Dp = 10.dp,
 ) {
-    val trackColor = MaterialTheme.colorScheme.onPrimaryContainer
+    // 未填充轨道取 onSurfaceCard 的 80% 不透明度；标记改走组件私有黑白常量，不再取 theme 扩展色
+    val trackColor = MaterialTheme.classppColors.onSurfaceCard.copy(alpha = TrackAlpha)
     val fillColor = MaterialTheme.colorScheme.primary
-    // 标记小球：未越过默认值 = negative；越过之后 = 白色 40%，与开关轨道变色同一节奏
+    // 标记小球黑色透明度按深浅分档：浅 10% / 深 36%（规范 6.4 第 6 类既定场景）
+    val markerAlpha = if (MaterialTheme.isDarkTheme) MarkerAlphaDark else MarkerAlphaLight
+    val markerDefaultColor = Color.Black.copy(alpha = markerAlpha)
+    // 未越过默认值 = 分档黑色；越过之后 = 白色 40%，与开关轨道变色同一节奏
     val markerColor by animateColorAsState(
         targetValue = if (value > defaultValue) MarkerPassedColor
-        else MaterialTheme.classppColors.negative,
+        else markerDefaultColor,
         animationSpec = tween(Motion.FastMillis, easing = Motion.Decelerate),
         label = "classppSliderMarker",
     )

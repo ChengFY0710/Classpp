@@ -13,7 +13,7 @@ import java.io.File
  * 2. 不得直接 import `ui/theme/Color.kt` 的顶层色值 val（`Error` / `Correct` / `Primary` 等），
  *    取色必须经 `MaterialTheme.colorScheme` / `MaterialTheme.classppColors`。
  * 3. `MaterialTheme.isDarkTheme` 只允许既定的深浅分档场景（课程调色板参数、按压反馈方向、
- *    标签文字压暗系数、台历视觉/remember key），不得用于手动挑选不同色值。
+ *    标签文字压暗系数、台历视觉/remember key、滑杆标记透明度分档），不得用于手动挑选不同色值。
  * 4. `colorScheme.onSurfaceVariant` 已归一到 `classppColors.secondaryText`，业务代码零使用。
  *
  * 新增颜色请先在 `ui/theme/Color.kt` 定义浅/深成对值并在 `Theme.kt` 装配；确需例外时，
@@ -94,6 +94,8 @@ class ColorUsageRulesTest {
             Rule("按压反馈方向", Regex("""\bPressShade\.""")),
             // 标签文字压暗系数：TagTextDimFactor* / TaskTagTextDimFactor*
             Rule("压暗系数", Regex("""\w*DimFactor""")),
+            // 滑杆默认值标记黑色透明度分档：MarkerAlphaLight / MarkerAlphaDark（规范 6.4 第 6 类）
+            Rule("标记透明度分档", Regex("""\bMarkerAlpha(Light|Dark)\b""")),
             // 台历视觉 / 标签色 remember key 的局部变量
             Rule("局部变量", Regex("""\bval\s+(dark|darkTheme)\s*=""")),
         )
@@ -115,8 +117,8 @@ class ColorUsageRulesTest {
             }
         }
         assertTrue(
-            "颜色规范守卫失败：isDarkTheme 只允许调色板参数 / 按压反馈方向 / 压暗系数 / " +
-                "台历视觉与 remember key 四类场景（规范 6.4）：\n" + violations.joinToString("\n"),
+            "颜色规范守卫失败：isDarkTheme 只允许规范 6.4 的既定场景（调色板参数 / 按压反馈方向 / " +
+                "压暗系数 / 台历视觉与 remember key / 滑杆标记透明度分档）：\n" + violations.joinToString("\n"),
             violations.isEmpty(),
         )
     }
