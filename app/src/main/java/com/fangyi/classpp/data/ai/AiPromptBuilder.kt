@@ -3,11 +3,16 @@ package com.fangyi.classpp.data.ai
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Parity
+import com.fangyi.classpp.data.model.RepeatEndType
+import com.fangyi.classpp.data.model.RepeatRule
+import com.fangyi.classpp.data.model.RepeatType
+import com.fangyi.classpp.data.model.RepeatUnit
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.data.model.isArchived
 import com.fangyi.classpp.data.model.isDeleted
+import com.fangyi.classpp.data.model.occurrencesBetween
 
 /**
  * 上下文注入与 system prompt 构建（纯函数，重点单测对象）。
@@ -25,6 +30,13 @@ object AiPromptBuilder {
      * 删除/归档的待办不注入。
      */
     const val MAX_TODO_LINES = 30
+
+    /** 重复待办注入的「待完成期次 / 已完成期次」条数上限（token 预算控制） */
+    private const val MAX_OCCURRENCE_LINES = 5
+
+    /** 期次注入窗口：最近 14 天（含逾期）到未来 30 天 */
+    private const val OCCURRENCE_PAST_DAYS = 14
+    private const val OCCURRENCE_FUTURE_DAYS = 30
 
     /**
      * 待办草稿的 JSON 字段契约（单行示例）。system prompt 与仓库的草稿修复重试
@@ -59,6 +71,16 @@ object AiPromptBuilder {
             """"interval":1,"marks":[1],"endType":"Never|Date|Count","endDate":"yyyy-MM-dd",""" +
             """"endCount":5,"merge":true,"checkIn":false}}}],""" +
             """"deletes":[{"id":"<待办 id>"}]}"""
+
+    /**
+     * 完成/取消完成的 JSON 契约（system prompt 与修复重试共用）。
+     *
+     * 与修改/删除不同，这类动作解析后**直接执行**（可在消息下方撤销）；重复待办的
+     * `date` 必须是注入行里「待完成期次/已完成期次」列出的日期。
+     */
+    internal const val TODO_COMPLETE_JSON_SHAPE: String =
+        """{"completes":[{"id":"<待办 id>","date":"yyyy-MM-dd"}],""" +
+            """"reopens":[{"id":"<待办 id>","date":"yyyy-MM-dd"}]}"""
 
     private val WEEKDAY_ZH = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
@@ -113,8 +135,8 @@ object AiPromptBuilder {
         if (shown.isEmpty()) {
             appendLine("（暂无待办）")
         } else {
-            appendLine("（未完成在前、已完成在后；行首方括号内是待办 id，修改/删除时必须原样引用）")
-            for (todo in shown) appendLine(todoLine(todo))
+            appendLine("（未完成在前、已完成在后；行首方括号内是待办 id，修改/删除/完成时必须原样引用）")
+            for (todo in shown) appendLine(todoLine(todo, now))
         }
 
         appendLine("[可选分组] ${groups.ifEmpty { listOf("（无）") }.joinToString("、")}")
@@ -146,6 +168,15 @@ object AiPromptBuilder {
         appendLine("- 删除是把待办移入回收站（可在回收站恢复），不是永久删除；")
         appendLine("- 新建待办写在 todos 里并立即落库；修改/删除写在 updates/deletes 里等待确认；两者可同时出现在一个代码块里；")
         appendLine("- 一次回复只输出一个 ```json 代码块（匹配取最后一个块，多个块会丢失前一个块里的动作）；")
+        appendLine()
+        appendLine("当用户要完成或取消完成待办时，输出：")
+        appendLine(TODO_COMPLETE_JSON_SHAPE)
+        appendLine("规则：")
+        appendLine("- 完成/取消完成会立即生效（消息下方可撤销），不生成确认卡；正文简短说明即可；")
+        appendLine("- id 必须原样取自 [待办]；不重复的待办省略 date；")
+        appendLine("- 重复待办的 date 必填，且必须是该待办行「待完成期次」或「已完成期次」里列出的日期，禁止自行推算或编造；")
+        appendLine("- 不要在同一条待办上同时输出完成与取消完成；")
+        appendLine("- 用户说「确认」时不要重复输出同一批动作；")
         appendLine("- 其余情况正常对话，不要输出 JSON 代码块。")
     }.trimEnd() + "\n"
 
@@ -195,8 +226,12 @@ object AiPromptBuilder {
     private fun Todo.sortKey(): Long =
         deadlineDate?.epochDay ?: dates.minByOrNull { it.epochDay }?.epochDay ?: Long.MAX_VALUE
 
-    /** 一条待办一行：`[id] 名称｜截止 2026-11-05 18:00｜急｜组：学习｜标签：期末、实验｜已完成` */
-    private fun todoLine(todo: Todo): String = buildString {
+    /**
+     * 一条待办一行：`[id] 名称｜截止 2026-11-05 18:00｜急｜组：学习｜标签：期末、实验｜已完成`。
+     * 重复待办额外带 `｜重复：每周（周1、3）｜待完成期次：…｜已完成期次：…`——模型完成
+     * 某一期时必须引用这里列出的日期，不能自行推算。
+     */
+    private fun todoLine(todo: Todo, now: IsoDate): String = buildString {
         append('[').append(todo.id).append("] ")
         append(todo.name.ifBlank { "（未命名）" })
         val deadline = todo.deadlineDate?.let { date ->
@@ -211,6 +246,71 @@ object AiPromptBuilder {
         if (todo.steps.isNotEmpty()) {
             append("｜步骤：${todo.steps.joinToString("、") { it.title }}")
         }
+        if (todo.repeat.type != RepeatType.None) {
+            append("｜重复：${repeatText(todo.repeat)}")
+            val pending = pendingOccurrenceDates(todo, now)
+            if (pending.isNotEmpty()) append("｜待完成期次：${pending.joinToString("、")}")
+            val done = completedOccurrenceDates(todo)
+            if (done.isNotEmpty()) append("｜已完成期次：${done.joinToString("、")}")
+        }
         if (todo.completed) append("｜已完成")
     }
+
+    /** 重复规则的紧凑文本：`每周（周1、3）`、`每2周`、`每天，共5期`、`每周，打卡10次` */
+    private fun repeatText(rule: RepeatRule): String {
+        val base = when (rule.type) {
+            RepeatType.None -> "不重复"
+            RepeatType.Daily -> "每天"
+            RepeatType.Weekly -> "每周"
+            RepeatType.Monthly -> "每月"
+            RepeatType.Yearly -> "每年"
+            RepeatType.Custom -> {
+                val unit = when (rule.unit) {
+                    RepeatUnit.Day -> "天"
+                    RepeatUnit.Week -> "周"
+                    RepeatUnit.Month -> "月"
+                    RepeatUnit.Year -> "年"
+                }
+                "每${rule.interval}$unit"
+            }
+        }
+        val marks = if (rule.type == RepeatType.Custom) {
+            when (rule.unit) {
+                RepeatUnit.Week -> rule.marks.sorted().joinToString("、") { "周$it" }
+                RepeatUnit.Month -> rule.marks.sorted().joinToString("、") { "${it}号" }
+                RepeatUnit.Year -> rule.marks.sorted().joinToString("、") { "${it}月" }
+                RepeatUnit.Day -> ""
+            }
+        } else {
+            ""
+        }
+        val marksText = marks.takeIf { it.isNotEmpty() }?.let { "（$it）" }.orEmpty()
+        val end = when {
+            rule.endType == RepeatEndType.Date -> rule.endDate?.let { "，至$it" }.orEmpty()
+            rule.endType == RepeatEndType.Count && rule.checkIn ->
+                rule.endCount?.let { "，打卡$it 次" }.orEmpty()
+            rule.endType == RepeatEndType.Count -> rule.endCount?.let { "，共$it 期" }.orEmpty()
+            else -> ""
+        }
+        return base + marksText + end
+    }
+
+    /**
+     * 重复待办近期未完成的期次（含最近逾期）：窗口 [now-14, now+30]；系列锚在更远的未来
+     * 时把窗口后移，保证至少能看到开头几期。条数由 [MAX_OCCURRENCE_LINES] 控制。
+     */
+    private fun pendingOccurrenceDates(todo: Todo, now: IsoDate): List<IsoDate> {
+        val anchor = todo.dates.minByOrNull { it.epochDay } ?: return emptyList()
+        val start = now - OCCURRENCE_PAST_DAYS
+        val horizon = now + OCCURRENCE_FUTURE_DAYS
+        val end = if (horizon.epochDay >= anchor.epochDay) horizon else anchor + OCCURRENCE_FUTURE_DAYS
+        val completed = todo.completedOccurrences.toSet()
+        return todo.repeat.occurrencesBetween(anchor, start, end)
+            .filter { it !in completed }
+            .take(MAX_OCCURRENCE_LINES)
+    }
+
+    /** 最近完成的期次（升序取最后几条）：取消完成时可引用的合法日期 */
+    private fun completedOccurrenceDates(todo: Todo): List<IsoDate> =
+        todo.completedOccurrences.sortedBy { it.epochDay }.takeLast(MAX_OCCURRENCE_LINES)
 }

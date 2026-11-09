@@ -1,5 +1,6 @@
 package com.fangyi.classpp.data.ai
 
+import com.fangyi.classpp.data.model.IsoDate
 import kotlinx.serialization.Serializable
 
 /**
@@ -66,7 +67,7 @@ enum class AiTodoChangeStatus { Pending, Applied, Failed, Dismissed }
 
 /** 失败原因分类（文案由 UI 映射 stringResource，数据层不产出文案） */
 @Serializable
-enum class AiTodoChangeFailure { None, NotFound, InvalidPatch, SaveFailed }
+enum class AiTodoChangeFailure { None, NotFound, InvalidPatch, InvalidDate, SaveFailed }
 
 /**
  * 挂在 assistant 消息上的待确认变更（随 ai_chat.json 落盘）。
@@ -81,5 +82,42 @@ data class AiTodoChange(
     val todoName: String = "",
     val patch: AiTodoPatch? = null,
     val status: AiTodoChangeStatus = AiTodoChangeStatus.Pending,
+    val failure: AiTodoChangeFailure = AiTodoChangeFailure.None,
+)
+
+/**
+ * 完成/取消完成的草稿：与修改/删除不同，这类动作**解析后直接执行**（可撤销），
+ * 不生成确认卡。
+ *
+ * @param id 必须是 [AiPromptBuilder] 注入的 [待办] 行里的 id
+ * @param date 重复待办的期次日期（yyyy-MM-dd），必须是注入的「待完成期次/已完成期次」
+ *   之一；普通待办省略
+ */
+@Serializable
+data class AiTodoCompletionDraft(
+    val id: String = "",
+    val date: String? = null,
+)
+
+/** 完成/取消完成的执行结果：Applied = 已写入（可撤销）；Undone = 已撤销 */
+@Serializable
+enum class AiTodoCompletionStatus { Applied, Failed, Undone, UndoFailed }
+
+/**
+ * 挂在 assistant 消息上的完成/取消完成记录（随 ai_chat.json 落盘）。
+ *
+ * @param completed true = 标记完成，false = 取消完成
+ * @param date 重复待办的期次日期；普通待办为 null
+ * @param changed false = 执行时待办已处于目标状态（没有写库，也就无需撤销）
+ * @param status 执行结果；Failed 时 [failure] 给出原因，UndoFailed 表示撤销失败但原操作仍成立
+ */
+@Serializable
+data class AiTodoCompletion(
+    val todoId: String,
+    val todoName: String = "",
+    val completed: Boolean,
+    val date: IsoDate? = null,
+    val changed: Boolean = true,
+    val status: AiTodoCompletionStatus = AiTodoCompletionStatus.Applied,
     val failure: AiTodoChangeFailure = AiTodoChangeFailure.None,
 )

@@ -1,5 +1,6 @@
 package com.fangyi.classpp.data.ai
 
+import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.StoreResult
@@ -177,6 +178,14 @@ class AiChatStoreTest {
                 ),
             ),
             todoChangeDropped = true,
+            todoCompletions = listOf(
+                AiTodoCompletion(
+                    todoId = "todo-3",
+                    todoName = "晨跑",
+                    completed = true,
+                    date = IsoDate.of(2026, 11, 9),
+                ),
+            ),
         )
         val original = AiChatFile(
             conversations = listOf(AiConversation(id = "conv-1", messages = listOf(message))),
@@ -203,6 +212,7 @@ class AiChatStoreTest {
         assertEquals("", message.id)
         assertTrue(message.todoChanges.isEmpty())
         assertFalse(message.todoChangeDropped)
+        assertTrue(message.todoCompletions.isEmpty())
     }
 
     @Test

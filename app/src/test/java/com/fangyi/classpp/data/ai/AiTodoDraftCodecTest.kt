@@ -84,6 +84,7 @@ class AiTodoDraftCodecTest {
     fun `empty envelope has no actions and is rejected`() {
         assertNull(AiTodoDraftCodec.parseTodoDrafts("""{"todos":[]}"""))
         assertNull(AiTodoDraftCodec.parseTodoDrafts("""{"updates":[],"deletes":[]}"""))
+        assertNull(AiTodoDraftCodec.parseTodoDrafts("""{"completes":[],"reopens":[]}"""))
     }
 
     @Test
@@ -116,6 +117,18 @@ class AiTodoDraftCodecTest {
     fun `parse deletes only`() {
         val payload = AiTodoDraftCodec.parseTodoDrafts("""{"deletes":[{"id":"t9"}]}""")!!
         assertEquals(listOf("t9"), payload.deletes.map { it.id })
+    }
+
+    @Test
+    fun `parse completes and reopens`() {
+        val payload = AiTodoDraftCodec.parseTodoDrafts(
+            """{"completes":[{"id":"t1","date":"2026-11-09"}],"reopens":[{"id":"t2"}]}""",
+        )!!
+        assertEquals("t1", payload.completes.single().id)
+        assertEquals("2026-11-09", payload.completes.single().date)
+        assertEquals("t2", payload.reopens.single().id)
+        assertNull(payload.reopens.single().date)
+        assertEquals(true, payload.hasActions)
     }
 
     @Test

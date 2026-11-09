@@ -949,6 +949,20 @@
     <string name="ai_todo_change_field_countdown">Countdown</string>
     <string name="ai_todo_change_field_pinned">Pinned</string>
 
+    <!-- AI complete/reopen: applied immediately and undoable -->
+    <string name="ai_todo_completion_action_done">Complete \"%1$s\"</string>
+    <string name="ai_todo_completion_action_done_on">Complete \"%1$s\" (%2$s)</string>
+    <string name="ai_todo_completion_action_reopened">Reopen \"%1$s\"</string>
+    <string name="ai_todo_completion_action_reopened_on">Reopen \"%1$s\" (%2$s)</string>
+    <string name="ai_todo_completion_undo">Undo</string>
+    <string name="ai_todo_completion_undone">Undone</string>
+    <string name="ai_todo_completion_already">Already in that state</string>
+    <string name="ai_todo_completion_undo_failed">Couldn\'t undo (%1$s)</string>
+    <string name="ai_todo_completion_failed">Not applied</string>
+    <string name="ai_todo_completion_not_found">The target todo no longer exists</string>
+    <string name="ai_todo_completion_invalid_date">Invalid occurrence date</string>
+    <string name="ai_todo_completion_save_failed">Couldn\'t write to todos</string>
+
     <!-- AI settings page (AISettingsScreen, Settings → AI settings): presets / connection / key / privacy -->
     <string name="ai_settings_title">AI Settings</string>
     <string name="ai_settings_header_title">AI assistant</string>

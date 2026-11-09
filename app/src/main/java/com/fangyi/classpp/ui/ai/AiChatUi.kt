@@ -49,6 +49,8 @@ import com.fangyi.classpp.data.ai.AiTodoChange
 import com.fangyi.classpp.data.ai.AiTodoChangeFailure
 import com.fangyi.classpp.data.ai.AiTodoChangeKind
 import com.fangyi.classpp.data.ai.AiTodoChangeStatus
+import com.fangyi.classpp.data.ai.AiTodoCompletion
+import com.fangyi.classpp.data.ai.AiTodoCompletionStatus
 import com.fangyi.classpp.data.ai.AiTodoDraftCodec
 import com.fangyi.classpp.data.ai.AiTodoPatch
 import com.fangyi.classpp.data.checkInPercent
@@ -92,8 +94,9 @@ import com.fangyi.classpp.ui.theme.classppColors
  * [thinkingInProgress] = true（思考阶段、正文未开始）时默认展开，正文开始/结束后自动收起，
  * 用户手动点过标题行后不再自动切换（见 [AiChatThinkingBlock]）。
  *
- * 本条回复已创建待办或生成了待确认的修改/删除时（[AiChatMessage.todoIds] 非空、
- * 落库失败、[AiChatMessage.todoChanges] 非空或有动作被丢弃），原始 JSON 围栏块
+ * 本条回复已创建待办、执行了完成/取消完成，或生成了待确认的修改/删除时
+ * （[AiChatMessage.todoIds] 非空、落库失败、[AiChatMessage.todoChanges] 非空、
+ * 有动作被丢弃或 [AiChatMessage.todoCompletions] 非空），原始 JSON 围栏块
  * 不再展示——信息已由下方卡片承接；正文若因此为空，气泡本身不渲染
  * （若回复带思考过程，上方的折叠块仍保留）。
  *
@@ -115,7 +118,8 @@ internal fun AiChatMessageBubble(
         message.todoIds.isNotEmpty() ||
             message.todoSaveFailed ||
             message.todoChanges.isNotEmpty() ||
-            message.todoChangeDropped
+            message.todoChangeDropped ||
+            message.todoCompletions.isNotEmpty()
         )
     val content = if (hasTodos) AiTodoDraftCodec.stripJsonBlock(message.content) else message.content
     // 正文与思考都没有可展示的内容：整条消息不占位
@@ -579,6 +583,7 @@ private fun AiChatTodoChangeStatusLabel(change: AiTodoChange) {
         AiTodoChangeStatus.Failed -> when (change.failure) {
             AiTodoChangeFailure.NotFound -> R.string.ai_todo_change_not_found
             AiTodoChangeFailure.InvalidPatch -> R.string.ai_todo_change_invalid
+            AiTodoChangeFailure.InvalidDate -> R.string.ai_todo_completion_invalid_date
             AiTodoChangeFailure.SaveFailed -> R.string.ai_todo_change_save_failed
             AiTodoChangeFailure.None -> R.string.ai_todo_change_failed
         }
@@ -733,6 +738,123 @@ internal fun AiChatTodoChangeDroppedHint(modifier: Modifier = Modifier) {
         color = MaterialTheme.colorScheme.error,
         modifier = modifier,
     )
+}
+
+// ---------- 完成 / 取消完成（直接生效，可撤销） ----------
+
+/**
+ * 一条 assistant 回复里 AI 直接执行的完成/取消完成记录：紧凑行 + 撤销按钮。
+ *
+ * 重复待办的期次日期跟在名称后；失败/撤销失败在行尾按原因着 error 色。
+ * [undoing] 为 true 时所有撤销按钮禁用（仓库一次只处理一条撤销）。
+ */
+@Composable
+internal fun AiChatTodoCompletionList(
+    completions: List<AiTodoCompletion>,
+    undoing: Boolean,
+    onUndo: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (completions.isEmpty()) return
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        completions.forEachIndexed { index, completion ->
+            AiChatTodoCompletionRow(
+                completion = completion,
+                undoing = undoing,
+                onUndo = { onUndo(index) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AiChatTodoCompletionRow(
+    completion: AiTodoCompletion,
+    undoing: Boolean,
+    onUndo: () -> Unit,
+) {
+    val date = completion.date?.toString()
+    val action = when {
+        completion.completed && date != null ->
+            stringResource(R.string.ai_todo_completion_action_done_on, completion.todoName, date)
+        completion.completed ->
+            stringResource(R.string.ai_todo_completion_action_done, completion.todoName)
+        date != null ->
+            stringResource(R.string.ai_todo_completion_action_reopened_on, completion.todoName, date)
+        else ->
+            stringResource(R.string.ai_todo_completion_action_reopened, completion.todoName)
+    }
+    val applied = completion.status == AiTodoCompletionStatus.Applied
+    val actionColor = when {
+        applied && completion.completed -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.classppColors.secondaryText
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = action,
+            style = ClassppTextTokens.secondaryTextSmall,
+            color = actionColor,
+            modifier = Modifier.weight(1f),
+        )
+        when (completion.status) {
+            AiTodoCompletionStatus.Applied -> if (completion.changed) {
+                Text(
+                    text = stringResource(R.string.ai_todo_completion_undo),
+                    style = ClassppTextTokens.sectionAction,
+                    color = if (undoing) {
+                        MaterialTheme.classppColors.secondaryText
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(enabled = !undoing, onClick = onUndo)
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.ai_todo_completion_already),
+                    style = ClassppTextTokens.secondaryTextSmall,
+                    color = MaterialTheme.classppColors.secondaryText,
+                )
+            }
+            AiTodoCompletionStatus.Undone -> Text(
+                text = stringResource(R.string.ai_todo_completion_undone),
+                style = ClassppTextTokens.secondaryTextSmall,
+                color = MaterialTheme.classppColors.secondaryText,
+            )
+            AiTodoCompletionStatus.Failed -> Text(
+                text = stringResource(completionFailureTextRes(completion.failure)),
+                style = ClassppTextTokens.secondaryTextSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            AiTodoCompletionStatus.UndoFailed -> Text(
+                text = stringResource(
+                    R.string.ai_todo_completion_undo_failed,
+                    stringResource(completionFailureTextRes(completion.failure)),
+                ),
+                style = ClassppTextTokens.secondaryTextSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+/** 完成/撤销失败的分类文案（与修改/删除的失败分类分开，避免语义串台） */
+private fun completionFailureTextRes(failure: AiTodoChangeFailure): Int = when (failure) {
+    AiTodoChangeFailure.NotFound -> R.string.ai_todo_completion_not_found
+    AiTodoChangeFailure.InvalidDate -> R.string.ai_todo_completion_invalid_date
+    AiTodoChangeFailure.SaveFailed -> R.string.ai_todo_completion_save_failed
+    AiTodoChangeFailure.InvalidPatch,
+    AiTodoChangeFailure.None,
+    -> R.string.ai_todo_completion_failed
 }
 
 // ---------- 错误条 ----------

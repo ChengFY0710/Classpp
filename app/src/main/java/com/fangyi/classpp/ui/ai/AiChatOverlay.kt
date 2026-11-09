@@ -165,6 +165,9 @@ fun AiChatOverlay(
     // 正在应用确认卡的消息 id：null = 空闲。只影响对应消息的按钮态，不阻塞输入
     val changesApplyingMessageId by aiChatRepository?.todoChangesApplyingMessageId?.collectAsState()
         ?: remember { mutableStateOf<String?>(null) }
+    // 正在撤销完成记录的消息 id：同上，只禁用撤销按钮
+    val completionUndoingMessageId by aiChatRepository?.todoCompletionUndoingMessageId?.collectAsState()
+        ?: remember { mutableStateOf<String?>(null) }
     val groups by todoRepository?.groups?.collectAsState()
         ?: remember { mutableStateOf(emptyList<TodoGroup>()) }
     val todos by todoRepository?.todos?.collectAsState() ?: remember { mutableStateOf(emptyList<Todo>()) }
@@ -355,6 +358,7 @@ fun AiChatOverlay(
         messages.size,
         messages.lastOrNull()?.todoIds?.size,
         messages.lastOrNull()?.todoChanges?.size,
+        messages.lastOrNull()?.todoCompletions?.size,
         activeConversationId,
         visible,
     ) {
@@ -654,6 +658,16 @@ fun AiChatOverlay(
                                 onOpen = ::openTodo,
                                 onDelete = ::deleteTodo,
                                 onCheckedChange = ::toggleCompleted,
+                            )
+                        }
+                        // 已完成/取消完成：直接生效，行尾可撤销（先于待确认项展示）
+                        if (message.todoCompletions.isNotEmpty()) {
+                            AiChatTodoCompletionList(
+                                completions = message.todoCompletions,
+                                undoing = completionUndoingMessageId == message.id,
+                                onUndo = { index ->
+                                    aiChatRepository?.undoTodoCompletionInBackground(message.id, index)
+                                },
                             )
                         }
                         // 待确认的修改/删除：确认前不写库；目标已消失时卡片仍按名称快照展示

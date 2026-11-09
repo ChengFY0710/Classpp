@@ -945,6 +945,20 @@
     <string name="ai_todo_change_field_countdown">倒计时</string>
     <string name="ai_todo_change_field_pinned">置顶</string>
 
+    <!-- AI 完成/取消完成：直接生效，可撤销 -->
+    <string name="ai_todo_completion_action_done">完成「%1$s」</string>
+    <string name="ai_todo_completion_action_done_on">完成「%1$s」（%2$s）</string>
+    <string name="ai_todo_completion_action_reopened">取消完成「%1$s」</string>
+    <string name="ai_todo_completion_action_reopened_on">取消完成「%1$s」（%2$s）</string>
+    <string name="ai_todo_completion_undo">撤销</string>
+    <string name="ai_todo_completion_undone">已撤销</string>
+    <string name="ai_todo_completion_already">已是该状态</string>
+    <string name="ai_todo_completion_undo_failed">撤销失败（%1$s）</string>
+    <string name="ai_todo_completion_failed">未执行</string>
+    <string name="ai_todo_completion_not_found">目标待办已不存在</string>
+    <string name="ai_todo_completion_invalid_date">期次日期无效</string>
+    <string name="ai_todo_completion_save_failed">写入待办失败</string>
+
     <!-- AI 设置页（AISettingsScreen，设置 → AI 设置）：预设 / 连接 / Key / 隐私说明 -->
     <string name="ai_settings_title">AI 设置</string>
     <string name="ai_settings_header_title">AI 助手</string>

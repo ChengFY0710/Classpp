@@ -4,8 +4,11 @@ import com.fangyi.classpp.data.Clock
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.ReadResult
 import com.fangyi.classpp.data.TodoValidator
+import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.occurrencesBetween
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import java.util.concurrent.atomic.AtomicBoolean
@@ -56,6 +59,12 @@ interface AiTodoChangeWriter {
 
     /** 批量软删除（移入回收站）；false = 落盘失败 */
     suspend fun deleteAll(ids: List<String>): Boolean
+
+    /** 普通待办的完成/取消完成；false = 落盘失败 */
+    suspend fun setCompleted(id: String, completed: Boolean): Boolean
+
+    /** 重复待办某一期的完成/取消完成；false = 落盘失败 */
+    suspend fun setOccurrenceCompleted(id: String, date: IsoDate, completed: Boolean): Boolean
 }
 
 /** 保存 AI 配置的结果：配置本身是否落盘 + 保存后是否具备可解密的 Key */
@@ -94,6 +103,10 @@ data class AiConfigSaveOutcome(
  * [AiChatMessage.todoChanges] 上等待用户确认；确认卡「应用变更」经 [changeWriter]
  * 逐条写入（删除为软删除），状态随消息落盘；「忽略」只把待确认标记为已忽略。
  * 只有完整结束的回复才会生成待确认变更（半截回复不产生）。
+ *
+ * **完成/取消完成**：completes/reopens 解析后**直接执行**（重复待办按注入的期次日期
+ * 校验），结果挂到 [AiChatMessage.todoCompletions]；[undoTodoCompletionInBackground]
+ * 可按记录反向写回（撤销失败只标记状态，不谎报原操作未发生）。
  *
  * 写：Mutex 串行化（同一次对话期间禁止并发 send），流程 = 内存变更 → `store.save`
  * → 成功与否只影响下次装载（对话历史可弃，失败不回滚内存）。对话管理操作
@@ -171,6 +184,14 @@ class AiChatRepository internal constructor(
 
     /** 应用闸门：确认落库一次只允许一批（连点「应用变更」只认第一批） */
     private val applyChangesGate = AtomicBoolean(false)
+
+    /** 正在撤销完成操作的消息 id（null = 空闲）；UI 据此禁用撤销按钮 */
+    private val _todoCompletionUndoingMessageId = MutableStateFlow<String?>(null)
+    val todoCompletionUndoingMessageId: StateFlow<String?> =
+        _todoCompletionUndoingMessageId.asStateFlow()
+
+    /** 撤销闸门：一次只处理一条撤销（连点只认第一次） */
+    private val undoCompletionGate = AtomicBoolean(false)
 
     /**
      * 最近一次失败的分类错误（UI 错误条 + 重试）。错误**归属对话**：真源是
@@ -1124,9 +1145,9 @@ class AiChatRepository internal constructor(
 
     /**
      * 流结束（成功）：先把完整正文写进消息（取消也不会丢），再解析动作块。
-     * 新建草稿**直接落库**（现状不变）；修改/删除方案只校验并挂成待确认变更，
-     * 等用户在确认卡上点「应用变更」。草稿解析失败会发起一次修复重试（同连接复用
-     * 契约），该阶段被取消时正文已成立。
+     * 新建草稿**直接落库**（现状不变）；完成/取消完成**直接执行**（UI 可撤销）；
+     * 修改/删除方案只校验并挂成待确认变更，等用户在确认卡上点「应用变更」。草稿解析
+     * 失败会发起一次修复重试（同连接复用契约），该阶段被取消时正文已成立。
      *
      * 落库顺序：映射 → 过滤缺名称行 → 批量 addTodos（单次提交）→ 成功创建的 id 写回
      * 消息。落库失败只标记 [AiChatMessage.todoSaveFailed]，不影响正文与历史。
@@ -1140,12 +1161,14 @@ class AiChatRepository internal constructor(
     ) {
         updateLastMessage(conversationId) { it.copy(content = full, interrupted = false) }
         val payload = extractActions(full, connection, apiKey) ?: return
-        // 只有 updates/deletes 时不能走 addTodos（空批次会误报创建失败）
+        // 只有 updates/deletes/completes/reopens 时不能走 addTodos（空批次会误报创建失败）
         val created = if (payload.todos.isNotEmpty()) {
             createTodos(payload)
         } else {
             CreateTodosOutcome(emptyList(), failed = false)
         }
+        // 完成/取消完成直接落库（可撤销）；修改/删除只生成待确认变更
+        val completions = applyCompletions(payload)
         val (changes, dropped) = buildTodoChanges(payload)
         updateLastMessage(conversationId) { last ->
             last.copy(
@@ -1153,6 +1176,7 @@ class AiChatRepository internal constructor(
                 todoSaveFailed = created.failed,
                 todoChanges = changes,
                 todoChangeDropped = dropped,
+                todoCompletions = completions,
             )
         }
     }
@@ -1238,6 +1262,188 @@ class AiChatRepository internal constructor(
     }
 
     /**
+     * 执行完成/取消完成（直接落库、不生成确认卡）。
+     *
+     * 重复待办必须带合法期次日期（按当前 repeat 规则展开校验），否则记
+     * Failed(InvalidDate)；普通待办忽略 date。未知 id 记 Failed(NotFound)。
+     * 同一 (id, date, completed) 去重，避免模型重复输出产生重复结果行。
+     */
+    private suspend fun applyCompletions(payload: AiTodoDraftPayload): List<AiTodoCompletion> {
+        if (payload.completes.isEmpty() && payload.reopens.isEmpty()) return emptyList()
+        val todosById = contextProvider().todos.associateBy { it.id }
+        val results = mutableListOf<AiTodoCompletion>()
+        val seen = mutableSetOf<Triple<String, String?, Boolean>>()
+        for (draft in payload.completes) {
+            val key = Triple(draft.id.trim(), draft.date?.trim()?.takeIf { it.isNotEmpty() }, true)
+            if (seen.add(key)) results += executeCompletion(draft, completed = true, todosById)
+        }
+        for (draft in payload.reopens) {
+            val key = Triple(draft.id.trim(), draft.date?.trim()?.takeIf { it.isNotEmpty() }, false)
+            if (seen.add(key)) results += executeCompletion(draft, completed = false, todosById)
+        }
+        return results
+    }
+
+    private suspend fun executeCompletion(
+        draft: AiTodoCompletionDraft,
+        completed: Boolean,
+        todosById: Map<String, Todo>,
+    ): AiTodoCompletion {
+        val id = draft.id.trim()
+        val requestedDate = parseDate(draft.date)
+        val todo = todosById[id]
+            ?: return AiTodoCompletion(
+                todoId = id,
+                completed = completed,
+                date = requestedDate,
+                status = AiTodoCompletionStatus.Failed,
+                failure = AiTodoChangeFailure.NotFound,
+            )
+        if (todo.repeat.type != RepeatType.None) {
+            if (requestedDate == null || !isValidOccurrence(todo, requestedDate)) {
+                return AiTodoCompletion(
+                    todoId = id,
+                    todoName = todo.name,
+                    completed = completed,
+                    date = requestedDate,
+                    status = AiTodoCompletionStatus.Failed,
+                    failure = AiTodoChangeFailure.InvalidDate,
+                )
+            }
+            // 已经是目标状态：不写库，也不提供撤销（否则会把用户原有的完成态翻掉）
+            if ((requestedDate in todo.completedOccurrences) == completed) {
+                return completionResult(todo, completed, requestedDate, changed = false, ok = true)
+            }
+            val ok = safeWrite { changeWriter.setOccurrenceCompleted(id, requestedDate, completed) }
+            return completionResult(todo, completed, requestedDate, changed = true, ok = ok)
+        }
+        if (todo.completed == completed) {
+            return completionResult(todo, completed, date = null, changed = false, ok = true)
+        }
+        val ok = safeWrite { changeWriter.setCompleted(id, completed) }
+        return completionResult(todo, completed, date = null, changed = true, ok = ok)
+    }
+
+    private fun completionResult(
+        todo: Todo,
+        completed: Boolean,
+        date: IsoDate?,
+        changed: Boolean,
+        ok: Boolean,
+    ): AiTodoCompletion = AiTodoCompletion(
+        todoId = todo.id,
+        todoName = todo.name,
+        completed = completed,
+        date = date,
+        changed = changed,
+        status = if (ok) AiTodoCompletionStatus.Applied else AiTodoCompletionStatus.Failed,
+        failure = if (ok) AiTodoChangeFailure.None else AiTodoChangeFailure.SaveFailed,
+    )
+
+    /** 期次日期必须属于当前重复系列（与仓库同一套展开规则，日期档/次数档一并生效） */
+    private fun isValidOccurrence(todo: Todo, date: IsoDate): Boolean {
+        val anchor = todo.dates.minByOrNull { it.epochDay } ?: return false
+        return todo.repeat.occurrencesBetween(anchor, date, date + 1).contains(date)
+    }
+
+    private fun parseDate(text: String?): IsoDate? =
+        text?.trim()?.takeIf { it.isNotEmpty() }?.let { IsoDate.parseOrNull(it) }
+
+    /** 写待办统一收口：取消原样抛出（落盘不能被跳过），其余异常按失败处理 */
+    private suspend inline fun safeWrite(block: suspend () -> Boolean): Boolean = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        false
+    }
+
+    /**
+     * UI「撤销」入口：把一条已执行的完成/取消完成反向写回。Job 归仓库自有 scope。
+     */
+    fun undoTodoCompletionInBackground(messageId: String, completionIndex: Int) {
+        if (messageId.isBlank()) return
+        if (!undoCompletionGate.compareAndSet(false, true)) return
+        _todoCompletionUndoingMessageId.value = messageId
+        scope.launch {
+            try {
+                undoTodoCompletion(messageId, completionIndex)
+            } catch (_: CancellationException) {
+                // 仓库 scope 不主动取消；防御内部可取消挂起点
+            } catch (_: Exception) {
+                // 意外异常不能崩进程；原记录保持「已生效」状态
+            } finally {
+                _todoCompletionUndoingMessageId.value = null
+                undoCompletionGate.set(false)
+            }
+        }
+    }
+
+    /**
+     * 撤销一条完成记录：把 completed 取反写回（重复待办按记录里的期次日期）。
+     * 目标不存在 → UndoFailed(NotFound)；期次失效 → UndoFailed(InvalidDate)；
+     * 写库失败 → UndoFailed(SaveFailed)。原记录仍表示「操作已生效」。
+     */
+    private suspend fun undoTodoCompletion(messageId: String, completionIndex: Int) {
+        val (conversationId, message) = findMessage(messageId) ?: return
+        val completion = message.todoCompletions.getOrNull(completionIndex) ?: return
+        if (completion.status != AiTodoCompletionStatus.Applied) return
+        // 无实际变化的记录本来就没有可撤销的写入
+        if (!completion.changed) return
+        val todo = contextProvider().todos.firstOrNull { it.id == completion.todoId }
+        val next = if (todo == null) {
+            completion.copy(
+                status = AiTodoCompletionStatus.UndoFailed,
+                failure = AiTodoChangeFailure.NotFound,
+            )
+        } else if (todo.repeat.type != RepeatType.None) {
+            val date = completion.date
+            if (date == null || !isValidOccurrence(todo, date)) {
+                completion.copy(
+                    status = AiTodoCompletionStatus.UndoFailed,
+                    failure = AiTodoChangeFailure.InvalidDate,
+                )
+            } else if ((date in todo.completedOccurrences) != !completion.completed) {
+                // 已经是撤销后的目标状态（用户可能在别处手动改回）：不重复写库
+                completion.copy(
+                    status = AiTodoCompletionStatus.Undone,
+                    failure = AiTodoChangeFailure.None,
+                )
+            } else {
+                val ok = safeWrite {
+                    changeWriter.setOccurrenceCompleted(todo.id, date, !completion.completed)
+                }
+                completion.copy(
+                    status = if (ok) AiTodoCompletionStatus.Undone else AiTodoCompletionStatus.UndoFailed,
+                    failure = if (ok) AiTodoChangeFailure.None else AiTodoChangeFailure.SaveFailed,
+                )
+            }
+        } else {
+            val target = !completion.completed
+            if (todo.completed == target) {
+                // 已经是撤销后的目标状态：不重复写库
+                completion.copy(
+                    status = AiTodoCompletionStatus.Undone,
+                    failure = AiTodoChangeFailure.None,
+                )
+            } else {
+                val ok = safeWrite {
+                    changeWriter.setCompleted(todo.id, target)
+                }
+                completion.copy(
+                    status = if (ok) AiTodoCompletionStatus.Undone else AiTodoCompletionStatus.UndoFailed,
+                    failure = if (ok) AiTodoChangeFailure.None else AiTodoChangeFailure.SaveFailed,
+                )
+            }
+        }
+        val updated = message.todoCompletions.toMutableList().also {
+            it[completionIndex] = next
+        }
+        updateMessageById(conversationId, messageId) { it.copy(todoCompletions = updated) }
+        persist()
+    }
+
+    /**
      * 取消/失败：标记 interrupted。半截回复不创建待办——只认完整结束的回复，
      * 避免用户按下停止时把半截 JSON 写成真实待办。
      */
@@ -1276,7 +1482,8 @@ class AiChatRepository internal constructor(
                         role = "system",
                         content = "待办动作必须是可解析的 json 代码块。\n" +
                             "新建（立即落库）格式：\n" + AiPromptBuilder.TODO_JSON_SHAPE + "\n" +
-                            "修改/删除（等待用户确认）格式：\n" + AiPromptBuilder.TODO_CHANGE_JSON_SHAPE,
+                            "修改/删除（等待用户确认）格式：\n" + AiPromptBuilder.TODO_CHANGE_JSON_SHAPE + "\n" +
+                            "完成/取消完成（立即生效）格式：\n" + AiPromptBuilder.TODO_COMPLETE_JSON_SHAPE,
                     ),
                     AiChatTurn(role = "user", content = reply.take(REPAIR_CONTEXT_MAX)),
                     AiChatTurn(role = "user", content = repairPrompt),

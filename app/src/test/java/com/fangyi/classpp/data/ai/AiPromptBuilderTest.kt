@@ -3,6 +3,8 @@ package com.fangyi.classpp.data.ai
 import com.fangyi.classpp.data.model.CourseColor
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatRule
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.WeekPattern
 import com.fangyi.classpp.data.model.WeekSegment
@@ -55,10 +57,16 @@ class AiPromptBuilderTest {
         group: String? = null,
         tags: List<String> = emptyList(),
         steps: List<String> = emptyList(),
+        repeat: RepeatRule = RepeatRule(),
+        completedOccurrences: List<IsoDate> = emptyList(),
+        completed: Boolean = false,
     ) = Todo(
         id = "t-$name",
         name = name,
         dates = dates,
+        repeat = repeat,
+        completedOccurrences = completedOccurrences,
+        completed = completed,
         deadlineDate = deadlineDate,
         deadlineMinute = deadlineMinute,
         urgency = urgency,
@@ -183,16 +191,34 @@ class AiPromptBuilderTest {
     }
 
     @Test
+    fun `repeating todo carries repeat rule and occurrence dates`() {
+        val task = todo(
+            "跑步",
+            dates = listOf(IsoDate.of(2026, 11, 2)),
+            repeat = RepeatRule(type = RepeatType.Weekly),
+            completedOccurrences = listOf(IsoDate.of(2026, 11, 2)),
+        )
+        val prompt = AiPromptBuilder.build(now, null, null, listOf(task), emptyList(), emptyList())
+        assertTrue(prompt.contains("｜重复：每周"))
+        assertTrue(prompt.contains("｜待完成期次：2026-11-09"))
+        assertTrue(prompt.contains("｜已完成期次：2026-11-02"))
+    }
+
+    @Test
     fun `json contract block is present`() {
         val prompt = AiPromptBuilder.build(now, null, null, emptyList(), emptyList(), emptyList())
         assertTrue(prompt.contains("```json"))
         assertTrue(prompt.contains("\"todos\""))
         assertTrue(prompt.contains("\"updates\""))
         assertTrue(prompt.contains("\"deletes\""))
+        assertTrue(prompt.contains("\"completes\""))
+        assertTrue(prompt.contains("\"reopens\""))
         assertTrue(prompt.contains("deadlineDate"))
         assertTrue(prompt.contains("要么都给，要么都不给"))
         // 修改/删除需要确认，正文不得声称已完成
         assertTrue(prompt.contains("不会立即生效"))
         assertTrue(prompt.contains("禁止声称已经改好/删好"))
+        // 完成/取消完成直接生效
+        assertTrue(prompt.contains("完成/取消完成会立即生效"))
     }
 }

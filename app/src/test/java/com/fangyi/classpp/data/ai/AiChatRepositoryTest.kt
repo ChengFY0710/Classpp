@@ -3,6 +3,8 @@ package com.fangyi.classpp.data.ai
 import com.fangyi.classpp.data.Clock
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatRule
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
@@ -187,12 +189,16 @@ class AiChatRepositoryTest {
         }
     }
 
-    /** 修改/删除写入口假实现：记录写入的待办与删除的 id，result 控制成功/失败 */
+    /** 修改/删除/完成写入口假实现：记录调用入参，result 控制成功/失败 */
     private class FakeTodoChangeWriter : AiTodoChangeWriter {
+        data class CompletionCall(val id: String, val date: IsoDate?, val completed: Boolean)
+
         val updates = mutableListOf<Todo>()
         val deletions = mutableListOf<List<String>>()
+        val completionCalls = mutableListOf<CompletionCall>()
         var updateResult = true
         var deleteResult = true
+        var completionResult = true
 
         override suspend fun update(todo: Todo): Boolean {
             updates += todo
@@ -202,6 +208,20 @@ class AiChatRepositoryTest {
         override suspend fun deleteAll(ids: List<String>): Boolean {
             deletions += ids
             return deleteResult
+        }
+
+        override suspend fun setCompleted(id: String, completed: Boolean): Boolean {
+            completionCalls += CompletionCall(id, date = null, completed = completed)
+            return completionResult
+        }
+
+        override suspend fun setOccurrenceCompleted(
+            id: String,
+            date: IsoDate,
+            completed: Boolean,
+        ): Boolean {
+            completionCalls += CompletionCall(id, date, completed)
+            return completionResult
         }
     }
 
@@ -1842,5 +1862,276 @@ class AiChatRepositoryTest {
         val change = repo.messages.value.last().todoChanges.single()
         assertEquals("修复后", change.patch?.name)
         assertFalse(repo.messages.value.last().todoSaveFailed)
+    }
+
+    // ---------- 完成 / 取消完成（直接生效，可撤销） ----------
+
+    private fun repeatingTodo(id: String, name: String) = Todo(
+        id = id,
+        name = name,
+        dates = listOf(IsoDate.of(2026, 11, 2)), // 周一；测试时钟 2026-11-01
+        repeat = RepeatRule(type = RepeatType.Weekly),
+    )
+
+    /** 等撤销协程收口：该条记录不再是 Applied 即视为完成 */
+    private suspend fun awaitCompletionSettled(
+        repo: AiChatRepository,
+        messageId: String,
+        index: Int,
+    ) {
+        withTimeout(5000) {
+            while (
+                repo.messages.value.firstOrNull { it.id == messageId }
+                    ?.todoCompletions?.getOrNull(index)?.status == AiTodoCompletionStatus.Applied
+            ) {
+                delay(10)
+            }
+        }
+    }
+
+    @Test
+    fun `completes non repeating todo immediately`() = runBlocking {
+        val store = FakeAiChatStore()
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" + """{"completes":[{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            store = store,
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告"))) },
+        )
+
+        repo.send("把实验报告标记完成")
+
+        val last = repo.messages.value.last()
+        assertFalse(last.todoSaveFailed)
+        val completion = last.todoCompletions.single()
+        assertEquals(AiTodoCompletionStatus.Applied, completion.status)
+        assertTrue(completion.completed)
+        assertNull(completion.date)
+        assertEquals(
+            FakeTodoChangeWriter.CompletionCall("todo-1", null, true),
+            writer.completionCalls.single(),
+        )
+        // 结果随消息落盘
+        assertEquals(1, store.persistedMessages().last().todoCompletions.size)
+    }
+
+    @Test
+    fun `reopens non repeating todo immediately`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" + """{"reopens":[{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = {
+                AiChatContext(
+                    todos = listOf(existingTodo("todo-1", "实验报告").copy(completed = true)),
+                )
+            },
+        )
+
+        repo.send("取消完成实验报告")
+
+        assertEquals(
+            FakeTodoChangeWriter.CompletionCall("todo-1", null, false),
+            writer.completionCalls.single(),
+        )
+        assertEquals(
+            AiTodoCompletionStatus.Applied,
+            repo.messages.value.last().todoCompletions.single().status,
+        )
+    }
+
+    @Test
+    fun `completes repeating occurrence with injected date`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" +
+            """{"completes":[{"id":"repeat-1","date":"2026-11-09"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(repeatingTodo("repeat-1", "跑步"))) },
+        )
+
+        repo.send("这周一的跑步完成了")
+
+        assertEquals(
+            FakeTodoChangeWriter.CompletionCall("repeat-1", IsoDate.of(2026, 11, 9), true),
+            writer.completionCalls.single(),
+        )
+        assertEquals(
+            IsoDate.of(2026, 11, 9),
+            repo.messages.value.last().todoCompletions.single().date,
+        )
+    }
+
+    @Test
+    fun `repeating completion without valid occurrence date fails without writing`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" +
+            """{"completes":[{"id":"repeat-1"},{"id":"repeat-1","date":"2026-11-03"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(repeatingTodo("repeat-1", "跑步"))) },
+        )
+
+        repo.send("完成跑步")
+
+        val completions = repo.messages.value.last().todoCompletions
+        assertEquals(2, completions.size)
+        assertTrue(completions.all { it.status == AiTodoCompletionStatus.Failed })
+        assertTrue(completions.all { it.failure == AiTodoChangeFailure.InvalidDate })
+        assertTrue(writer.completionCalls.isEmpty())
+    }
+
+    @Test
+    fun `unknown completion target is recorded as failed`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" + """{"completes":[{"id":"missing"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+        )
+
+        repo.send("完成它")
+
+        val completion = repo.messages.value.last().todoCompletions.single()
+        assertEquals(AiTodoCompletionStatus.Failed, completion.status)
+        assertEquals(AiTodoChangeFailure.NotFound, completion.failure)
+        assertTrue(writer.completionCalls.isEmpty())
+    }
+
+    @Test
+    fun `completing an already completed todo is a no-op`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" + """{"completes":[{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = {
+                AiChatContext(
+                    todos = listOf(existingTodo("todo-1", "实验报告").copy(completed = true)),
+                )
+            },
+        )
+
+        repo.send("完成实验报告")
+
+        val completion = repo.messages.value.last().todoCompletions.single()
+        assertEquals(AiTodoCompletionStatus.Applied, completion.status)
+        assertFalse(completion.changed)
+        assertTrue(writer.completionCalls.isEmpty())
+    }
+
+    @Test
+    fun `completing an already completed occurrence is a no-op`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val reply = "```json\n" +
+            """{"completes":[{"id":"repeat-1","date":"2026-11-09"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = {
+                AiChatContext(
+                    todos = listOf(
+                        repeatingTodo("repeat-1", "跑步").copy(
+                            completedOccurrences = listOf(IsoDate.of(2026, 11, 9)),
+                        ),
+                    ),
+                )
+            },
+        )
+
+        repo.send("完成这周一的跑步")
+
+        val completion = repo.messages.value.last().todoCompletions.single()
+        assertEquals(AiTodoCompletionStatus.Applied, completion.status)
+        assertFalse(completion.changed)
+        assertTrue(writer.completionCalls.isEmpty())
+    }
+
+    @Test
+    fun `undo reverses applied completion`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        var context = AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告")))
+        val reply = "```json\n" + """{"completes":[{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { context },
+        )
+        repo.send("完成实验报告")
+        val messageId = repo.messages.value.last().id
+        // 模拟完成态已落库：撤销时基于最新待办判断当前状态
+        context = AiChatContext(
+            todos = listOf(existingTodo("todo-1", "实验报告").copy(completed = true)),
+        )
+
+        repo.undoTodoCompletionInBackground(messageId, 0)
+        awaitCompletionSettled(repo, messageId, 0)
+
+        assertEquals(
+            AiTodoCompletionStatus.Undone,
+            repo.messages.value.last().todoCompletions.single().status,
+        )
+        assertEquals(
+            listOf(
+                FakeTodoChangeWriter.CompletionCall("todo-1", null, true),
+                FakeTodoChangeWriter.CompletionCall("todo-1", null, false),
+            ),
+            writer.completionCalls,
+        )
+    }
+
+    @Test
+    fun `undo is a no-op when target already reversed elsewhere`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        // 上下文始终是未完成态：模拟用户在别处已手动取消完成
+        val reply = "```json\n" + """{"completes":[{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告"))) },
+        )
+        repo.send("完成实验报告")
+        val messageId = repo.messages.value.last().id
+
+        repo.undoTodoCompletionInBackground(messageId, 0)
+        awaitCompletionSettled(repo, messageId, 0)
+
+        assertEquals(
+            AiTodoCompletionStatus.Undone,
+            repo.messages.value.last().todoCompletions.single().status,
+        )
+        // 只发生一次「完成」写入；撤销发现已处于目标状态，不再写库
+        assertEquals(1, writer.completionCalls.size)
+        assertTrue(writer.completionCalls.single().completed)
+    }
+
+    @Test
+    fun `undo failure keeps completion applied and marks undo failed`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        var context = AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告")))
+        val reply = "```json\n" + """{"completes":[{"id":"todo-1"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { context },
+        )
+        repo.send("完成实验报告")
+        val messageId = repo.messages.value.last().id
+        context = AiChatContext(
+            todos = listOf(existingTodo("todo-1", "实验报告").copy(completed = true)),
+        )
+        writer.completionResult = false
+
+        repo.undoTodoCompletionInBackground(messageId, 0)
+        awaitCompletionSettled(repo, messageId, 0)
+
+        val completion = repo.messages.value.last().todoCompletions.single()
+        assertEquals(AiTodoCompletionStatus.UndoFailed, completion.status)
+        assertEquals(AiTodoChangeFailure.SaveFailed, completion.failure)
     }
 }

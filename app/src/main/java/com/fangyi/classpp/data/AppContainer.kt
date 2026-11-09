@@ -9,6 +9,7 @@ import com.fangyi.classpp.data.ai.AiTodoChangeWriter
 import com.fangyi.classpp.data.ai.AiTodoPersister
 import com.fangyi.classpp.data.ai.FileAiChatStore
 import com.fangyi.classpp.data.ai.PrefsAiSettingsStore
+import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.store.FileScheduleStore
 import com.fangyi.classpp.data.store.FileTagStore
@@ -187,6 +188,16 @@ class AppContainer internal constructor(
 
                         override suspend fun deleteAll(ids: List<String>): Boolean =
                             todoRepository.removeTodos(ids) is TodoOpResult.Ok
+
+                        override suspend fun setCompleted(id: String, completed: Boolean): Boolean =
+                            todoRepository.setCompleted(id, completed) is TodoOpResult.Ok
+
+                        override suspend fun setOccurrenceCompleted(
+                            id: String,
+                            date: IsoDate,
+                            completed: Boolean,
+                        ): Boolean =
+                            todoRepository.setOccurrenceCompleted(id, date, completed) is TodoOpResult.Ok
                     },
                     // 对话图片附件（相册/拍照导入的压缩副本），UI 借仓库的 imageStore 导入
                     imageStore = AiImageStore(File(appContext.filesDir, "ai_chat_images")),
