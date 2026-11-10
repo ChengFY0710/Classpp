@@ -82,7 +82,8 @@ sealed interface SettingsCardItem {
     ) : SettingsCardItem
 
     /**
-     * 选择行：整行可点弹出菜单（打开前自动收起键盘与焦点），
+     * 选择行：整行可点弹出菜单（打开前自动收起键盘与焦点；菜单为非 focusable 弹层，
+     * 不抢窗口焦点，避免 IME 收起动画期间键盘闪烁），
      * [value] 为当前值的展示文字，[items] 只传合法选项（由调用方裁剪）。
      */
     data class Select(
@@ -246,6 +247,9 @@ private fun SettingsCardRow(item: SettingsCardItem, hazeState: HazeState?) {
     var menuExpanded by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    // 选择行在输入中打开菜单：这次收键盘不回滚内容（被点的行保持原位，菜单锚点不漂）
+    val imeVisible = rememberImeVisible()
+    val imeRestoreGate = LocalImeRestoreGate.current
     // 行的按压反馈：Nav/Select 用 pressClickable 一行接入（内部自建按压源）；
     // Toggle 要与 toggleable 共享按压源，故手动配对（indication 置 null，涟漪由按压反馈取代）。
     // 浅色模式下白底行加色白提亮无感（白色无法更亮），改用微微压暗表达按压；深色模式仍提亮
@@ -270,6 +274,9 @@ private fun SettingsCardRow(item: SettingsCardItem, hazeState: HazeState?) {
         else Modifier
         is SettingsCardItem.Select -> Modifier.pressClickable(RectangleShape, shade = rowShade) {
             // 打开菜单前先收起键盘与焦点：键盘若开着，菜单会被盖住、焦点还留在原输入框上
+            // 键盘在场时登记「这次收起不回滚」：被点的行原地不动，向下展开的菜单不会跟着
+            // 内容回滚滑走（见 ImeRestoreGate）
+            if (imeVisible) imeRestoreGate?.suppressNextRestore()
             focusManager.clearFocus()
             keyboard?.hide()
             menuExpanded = true
@@ -472,6 +479,11 @@ internal fun Chevron() {
  * 卡片顶边贴行卡顶边（对齐设计稿）。
  * [hazeState] 转给菜单做背景模糊（采样菜单背后那层内容），null = 不透明白卡。
  *
+ * 弹层**非 focusable**：输入中的键盘由行点击显式收起一次，弹层不再抢窗口焦点——
+ * focusable 弹层会在 IME 收起动画期间再切一次焦点，键盘表现为「闪一下才退出」
+ * （README 记录的 popupSelectCard 已知坑）。返回键由 PopupMenuPopup 内的
+ * [MenuBackHandler] 兜底；点外部仍由 ACTION_OUTSIDE 收起。
+ *
  * 点选即收 + [SettingsCardItem.Select.onPick] 常随选值重写宿主内容列（被采样源：
  * 服务商预设回填 / 调课参数行增删 / 重复规则行显隐等）：重写统一延后到退场播完
  * （[PopupActionGate]，机制见 [PopupMenuPopup] KDoc）——防护内建于本组件，
@@ -521,6 +533,9 @@ private fun SelectMenu(
                 IntOffset(anchorBounds.left, anchorBounds.bottom - topAlignLiftPx)
             },
             menuGrowth = MenuGrowth.TopRight,
+            // 非 focusable：行点击已经显式收过一次键盘，弹层不能再切窗口焦点，
+            // 否则 IME 收起动画会被打断/重启，表现为键盘闪烁
+            focusable = false,
         )
     }
 }

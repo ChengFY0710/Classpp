@@ -313,6 +313,8 @@ fun OverlaySheet(
     // 滚动内容末尾而非容器上——容器的位置与高度因此不随键盘变化。键盘收起时 IME 让位部分
     // 按 TailReserveMillis 缩回（rememberTailReservePx），缩回过程即「内容滚回原位」的可见部分
     val imeBottomPx = WindowInsets.ime.getBottom(density)
+    // 键盘终值高度（动画期间不变）：只给「把输入框滚到键盘上方」的自动滚动当换算输入
+    val imeTargetBottomPx = rememberImeTargetInsetPx()
     val navBottomPx = WindowInsets.navigationBars.getBottom(density)
     val imeVisible = when (imeBehavior) {
         SheetImeBehavior.ContentScroll -> rememberImeVisible()
@@ -323,12 +325,10 @@ fun OverlaySheet(
         target = (imeBottomPx - navBottomPx).coerceAtLeast(0),
         imeVisible = imeVisible,
     )
-    val bottomInsetDp = with(density) {
-        when (imeBehavior) {
-            SheetImeBehavior.ContentScroll -> navBottomPx + tailReservePx
-            SheetImeBehavior.IgnoreIme -> navBottomPx
-        }.toDp()
-    }
+    // 底部留白只放导航栏：键盘让位由下方 TailReserveSpacer（动画值）承担，**只出现一次**。
+    // 这里若再算一次 tailReservePx，键盘在场时尾部空白会多出整整一个 IME 高度——
+    // 滚动范围过大，AI 对话滚到底会看到大片空白，末条还会被顶到顶栏后面。
+    val bottomInsetDp = with(density) { navBottomPx.toDp() }
     // 滚动视口尺寸与位置：键盘让位与「输入框滚到键盘上方」的换算依据（滚动列被
     // fillMaxSize 撑满卡片，量它与量视口等价）。位置取滚动列自身在根坐标系里的 y——
     // 滚动列自己的放置位置不随其内容滚动而变，是内容坐标系的稳定原点
@@ -570,16 +570,18 @@ fun OverlaySheet(
                                     scrollState = scrollState,
                                     viewportHeightPx = viewportHeightPx,
                                     viewportTopInRootPx = viewportTopInRootPx,
-                                    imeInsetPx = imeBottomPx,
+                                    // 终值而不是逐帧值：自动滚动的 effect 才不会每帧重启
+                                    imeTargetInsetPx = imeTargetBottomPx,
                                     imeVisible = imeVisible,
                                     // 滚动列本体的接收者：这里正处在 Column 的接收者作用域里
                                     scope = this,
                                     content = content,
                                 )
-                                // 尾部余量 = 键盘让位 + 可调滚动余量，拉大可滑动范围
+                                // 尾部余量 = 导航栏 + 可调滚动余量；键盘让位不在这里
                                 Spacer(Modifier.height(bottomInsetDp + SheetBottomSlack))
-                                // 键盘弹起时额外撑出的那一截（收起键盘逐帧缩回）：键盘让位
-                                // 的可见部分——缩回吃掉的是多出来的空白，不产生位移
+                                // 键盘弹起时额外撑出的那一截（收起键盘按 TailReserveMillis
+                                // 缩回）：这是**唯一**一处键盘让位。缩回减小滚动上限——
+                                // 停在底部的列表随之回落，其余滚动位置不动
                                 TailReserveSpacer(tailReservePx)
                             }
                             OverlaySheetTopBar(

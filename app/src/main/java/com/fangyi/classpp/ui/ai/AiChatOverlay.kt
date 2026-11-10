@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,9 +68,11 @@ import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.ui.components.AiChatInputBar
 import com.fangyi.classpp.ui.components.LocalOverlayBottomHazeState
 import com.fangyi.classpp.ui.components.OverlaySheet
+import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.components.rememberHazeRetreat
+import com.fangyi.classpp.ui.components.rememberImeVisible
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.rememberSystemAnimationsEnabled
 import com.fangyi.classpp.ui.note.NewTodoSheet
@@ -114,8 +117,12 @@ private const val CaptureDirName = "ai_capture"
  * 光场由 [AiThinkingAurora] 绘制，只在 AI 思考 / 回答（sending）期间自输入栏后方上浮
  * 出现并缓慢游动，结束即下沉淡出、空闲完全不绘制；输入栏玻璃采样
  * 光场层（见底部槽的 layerBackdrop），玻璃关闭/API<31 时回退实心底。
+ * 无消息空态（含未配置引导）里内容列没有输入框，浮层切 [SheetImeBehavior.IgnoreIme]：
+ * 键盘弹起时内容不追加 IME 余量、空态不避让键盘；滚动容器与橡皮筋过滚动保留。
+ * 有消息时恢复 [SheetImeBehavior.ContentScroll]，输入框照常滚到键盘上方/收起回滚。
  *
- * - 发送中输入禁用、发送键变停止键：发送 Job 由 [AiChatRepository] 自己的 scope 驱动，
+ * - 发送中输入禁用、发送键变停止键（产品取舍：为回答让出屏幕；发送即收键盘，2026-11-10
+ *   确认保留）：发送 Job 由 [AiChatRepository] 自己的 scope 驱动，
  *   收起浮层/旋转屏幕不会中断流；停止 = [AiChatRepository.cancelSending]，半截回复由
  *   仓库标记 interrupted 保留（重试走 [AiChatRepository.retryInBackground]）；
  * - AI 回复里的待办由仓库**直接落库**（无需确认）：本层按消息里的 todo id 从
@@ -191,6 +198,8 @@ fun AiChatOverlay(
     val imeBottomPx = WindowInsets.ime.getBottom(density)
     val navBottomPx = WindowInsets.navigationBars.getBottom(density)
     val imeReservePx = (imeBottomPx - navBottomPx).coerceAtLeast(0)
+    // 键盘可见性：消息列表跟随键盘的触发源（输入栏在钉底槽，不参与内容列的滚动追踪）
+    val imeVisible = rememberImeVisible()
 
     // 标签配色表（标签名 → 颜色）：用户标签取 TagEntry.colorArgb，未挑色回落主题 Primary；
     // 与待办页列表卡/详情浮层同一份口径（表里没有的名字由 NoteCard 自己兜底）
@@ -432,6 +441,37 @@ fun AiChatOverlay(
             sendEntrance = null
         }
     }
+    // ——— 键盘弹起时消息列表跟随 ———
+    // 输入栏在钉底槽里，不在内容列 ImeScrollTracker 的作用域内：键盘弹起时尾部余量逐帧
+    // 增长，但 ScrollState 不会自己动，末条消息因此滑进键盘区。这里只在「弹起前就在底部」
+    // 时跟随——正在翻历史的用户不该被拽走。
+    val chatScrollState = chatScroll.value
+    var chatAtBottomBeforeIme by remember { mutableStateOf(true) }
+    // 键盘未弹起期间持续记录底部状态，供弹起那一帧取用（弹起后冻结，避免被自身补偿改写）
+    LaunchedEffect(chatScrollState, imeVisible, visible) {
+        val scroll = chatScrollState ?: return@LaunchedEffect
+        if (!visible || imeVisible) return@LaunchedEffect
+        val slopPx = with(density) { SendAtBottomSlop.roundToPx() }
+        snapshotFlow { scroll.maxValue - scroll.value }.collect { gap ->
+            chatAtBottomBeforeIme = gap <= slopPx
+        }
+    }
+    // 弹起动画期间尾部余量逐帧增长：逐帧钉到新的 maxValue，内容随输入栏一起上移。
+    // 跟随窗口取 IME 动画量级（600ms）而不是「连续 N 帧不变」：动画起止段可能连续几帧
+    // 高度相同，按稳定帧收手会提前退出；窗口内用户一开始拖动就把控制权交还。
+    // 收起不需要另做动画：尾部余量收缩把 maxValue 压小，停在底部的滚动值会被
+    // ScrollState 自动钳制，内容随输入栏一起回落。
+    LaunchedEffect(chatScrollState, imeVisible, visible) {
+        val scroll = chatScrollState ?: return@LaunchedEffect
+        if (!visible || !imeVisible || !chatAtBottomBeforeIme) return@LaunchedEffect
+        val startNanos = withFrameNanos { it }
+        while (withFrameNanos { it } - startNanos < ImeFollowWindowMillis * 1_000_000L) {
+            if (scroll.isScrollInProgress) return@LaunchedEffect
+            val max = scroll.maxValue
+            if (max != scroll.value) scroll.scrollTo(max)
+        }
+    }
+
     // 流式跟随：在消息列高度变化的同一帧布局内直接修正滚动位置（见消息列 onSizeChanged）。
     // 不用 snapshotFlow / LaunchedEffect：它们在布局结束后才回调，scrollTo 要到下一帧才生效，
     // 思考内容（同步 Text）每 chunk 高度立变而滚动晚一帧，内容先沉后拉回，逐 chunk 抖动。
@@ -605,6 +645,14 @@ fun AiChatOverlay(
         covered = conversationsVisible || detailTodoId != "" || editTodoId != "",
         onScrollStateReady = { chatScroll.value = it },
         bottomScrim = false,
+        // 空态（未配置 / 无消息）里内容列没有输入框：不参与键盘让位——键盘弹起时尾部
+        // 不再撑出 IME 余量（否则空态可被拖进一大片空白）。滚动容器与橡皮筋过滚动仍由
+        // OverlaySheet 正常提供，不受本开关影响。有消息时恢复 ContentScroll 的输入框让位。
+        imeBehavior = if (messages.isEmpty()) {
+            SheetImeBehavior.IgnoreIme
+        } else {
+            SheetImeBehavior.ContentScroll
+        },
         // 切换 / 删除对话的落库与绘制窗口内整条 Haze 链退让（崩溃史见 applyConversationChange
         // 与 deleteConversation）；平时保持挂载，稳态磨砂不变
         hazeEnabled = !conversationHazeSuspended && !deleteHazeRetreat.suspended,
@@ -1044,3 +1092,10 @@ private val ScrollCatchMinSlop = 24.dp
  * 不能太长：残留的请求会被下一次列表变化误认成发送。
  */
 private const val SendEntranceTimeoutMillis = 1200L
+
+/**
+ * 键盘弹起后消息列表跟随的最大窗口：覆盖系统 IME 动画时长即可。窗口内逐帧把滚动钉到
+ * `maxValue`（尾部余量随 IME 增长），用户拖动会提前退出。取固定窗口而不是「连续 N 帧
+ * 不变」：IME 动画起止段可能连续几帧高度相同，按稳定帧判断会提前收手。
+ */
+private const val ImeFollowWindowMillis = 600L

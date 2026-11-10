@@ -83,7 +83,8 @@ fun SheetTextField(
     placeholder: String = "",
     isError: Boolean = false,
     imeAction: ImeAction = ImeAction.Next,
-    onImeAction: () -> Unit = {},
+    // null = 保留 Compose 的默认键盘动作（Next 跳焦点 / Done 收键盘）；只有显式传回调时才接管
+    onImeAction: (() -> Unit)? = null,
     focusRequester: FocusRequester? = null,
     keyboardType: KeyboardType = KeyboardType.Text,
     visualTransformation: VisualTransformation = VisualTransformation.None,
@@ -120,7 +121,11 @@ data class SheetTextFieldItem(
     val placeholder: String = "",
     val isError: Boolean = false,
     val imeAction: ImeAction = ImeAction.Next,
-    val onImeAction: () -> Unit = {},
+    /**
+     * 键盘动作回调：null = 不覆盖 Compose 的默认实现（Next 跳焦点 / Done 收键盘）；
+     * 显式传值才接管。见 [sheetTextFieldKeyboardActions]。
+     */
+    val onImeAction: (() -> Unit)? = null,
     val focusRequester: FocusRequester? = null,
     /** 密码框等场景：[KeyboardType.Password] + [VisualTransformation] */
     val keyboardType: KeyboardType = KeyboardType.Text,
@@ -190,6 +195,23 @@ fun SheetTextFieldGroup(
     }
 }
 
+/**
+ * 行内键盘动作：**只在调用点显式传了 [onImeAction] 时才覆盖** Compose 的默认实现。
+ *
+ * `KeyboardActions` 的 `onNext` / `onDone` 为 null 时才会走默认动作（Next = 焦点下移、
+ * Done = 收起键盘）；恒定塞一个空 lambda 会把两者都吞成空操作——登录用户名按「下一项」
+ * 不跳密码框、AI 设置按「完成」不收键盘，都是这个原因。默认值因此改成可空。
+ */
+internal fun sheetTextFieldKeyboardActions(onImeAction: (() -> Unit)?): KeyboardActions =
+    if (onImeAction == null) {
+        KeyboardActions.Default
+    } else {
+        KeyboardActions(
+            onNext = { onImeAction() },
+            onDone = { onImeAction() },
+        )
+    }
+
 /** 单行渲染：行内距画在这里（卡壳不带纵向留白），行与行因此无缝衔接。 */
 @Composable
 private fun SheetTextFieldRow(item: SheetTextFieldItem) {
@@ -233,10 +255,7 @@ private fun SheetTextFieldRow(item: SheetTextFieldItem) {
                 imeAction = item.imeAction,
             ),
             visualTransformation = item.visualTransformation,
-            keyboardActions = KeyboardActions(
-                onNext = { item.onImeAction() },
-                onDone = { item.onImeAction() },
-            ),
+            keyboardActions = sheetTextFieldKeyboardActions(item.onImeAction),
             modifier = Modifier
                 .weight(1f)
                 .then(

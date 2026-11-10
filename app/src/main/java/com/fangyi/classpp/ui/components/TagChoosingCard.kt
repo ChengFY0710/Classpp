@@ -464,6 +464,10 @@ private fun TagCapsule(
  * 生长角按标签所在半屏现算（菜单贴着标签长出）。删除不做二次确认：设计稿只有一层菜单，
  * 点「删除」直接生效。
  *
+ * 弹层非 focusable：打开时不抢窗口焦点，正在输入时的键盘与焦点都保留。focusable 弹层会
+ * 让系统收起 IME，进而触发内容列的「键盘收起滚回原位」动画——被长按的胶囊会在菜单进场
+ * 期间随内容移动，锚点在视觉上就漂了（P2-5）。
+ *
  * @param anchor 长按时刻标签的窗口坐标（[DeleteTarget.anchor] 快照，菜单不随标签移动）
  */
 @Composable
@@ -509,6 +513,10 @@ private fun TagDeleteMenu(
         },
         hazeState = hazeState,
         onExitFinished = onExitFinished,
+        // 非 focusable：不抢窗口焦点，输入中的键盘不会收起——ImeScrollTracker 因此不会
+        // 在菜单进场期间播放「滚回原位」，被长按的胶囊也就不会跟着内容跑（P2-5）。
+        // 返回键由 PopupMenuPopup 内的 MenuBackHandler 兜底。
+        focusable = false,
     )
 }
 

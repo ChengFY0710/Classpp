@@ -1,5 +1,7 @@
 package com.fangyi.classpp.ui.components
 
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
@@ -107,6 +109,12 @@ internal fun menuGrowthForAnchor(anchorCenterX: Float, windowWidthPx: Int): Menu
  * [hazeState] 下发给 [PopupMenuCard] 做毛玻璃（跨 Popup 窗口采样宿主页面 hazeSource），
  * null（如 @Preview、浮层内嵌宿主）退化为不透明白卡。
  *
+ * [focusable] 默认 true：弹层窗口接管焦点，返回键收起、点外部收起（focusable 窗口会消费
+ * 外部触摸）。原位输入类菜单（AI 输入栏附件、标签长按删除）传 false：不抢窗口焦点，
+ * 正在输入的键盘与 Compose 焦点都保留；点外部仍由 `FLAG_WATCH_OUTSIDE_TOUCH` 的
+ * ACTION_OUTSIDE 收起（触摸同时也会落到下层窗口，需要下层自行防重入），返回键由
+ * [MenuBackHandler] 在宿主组合里兜底。
+ *
  * 退场活采样与崩溃防护（3e4d4dc 曾以「退场首帧卸掉毛玻璃」防护，退场退化白卡，已回退；
  * 尝试过的「退场冻结采样」（输入换空源态靠 KeepLastFrame 保留帧）真机证伪——保留帧只
  * 覆盖同一 state 内源短暂不可用，换输入态不触发）：崩溃 = 效果节点对源子树**活采样引用**
@@ -131,6 +139,10 @@ fun PopupMenuPopup(
     menuGrowth: MenuGrowth = MenuGrowth.TopLeft,
     animateExit: Boolean = true,
     onExitFinished: () -> Unit = {},
+    // false = 弹层窗口不抢焦点：输入中的键盘与 Compose 焦点都保留（原位输入类的菜单用）。
+    // 代价是返回键不再由 Popup 窗口接收，由下方 MenuBackHandler 兜底；点外部照常收起
+    // （FLAG_WATCH_OUTSIDE_TOUCH 的 ACTION_OUTSIDE）。
+    focusable: Boolean = true,
 ) {
     val motion = rememberPopupMotion(expanded, animateExit, onExitFinished)
 
@@ -162,12 +174,18 @@ fun PopupMenuPopup(
         }
     }
 
+    // 非 focusable 弹层不收返回键（窗口没有输入焦点）：在宿主组合里补一层等价的分发
+    if (!focusable) {
+        MenuBackHandler(enabled = expanded, onBack = onDismiss)
+    }
+
     if (motion.shown) {
         Popup(
             onDismissRequest = onDismiss,
             popupPositionProvider = positionProvider,
-            // focusable：返回键收起；dismissOnClickOutside 默认开启
-            properties = PopupProperties(focusable = true),
+            // focusable：返回键收起；dismissOnClickOutside 默认开启（非 focusable 时
+            // 靠 FLAG_WATCH_OUTSIDE_TOUCH 的 ACTION_OUTSIDE 收起）
+            properties = PopupProperties(focusable = focusable),
         ) {
             PopupMenuCard(
                 sections = sections,
@@ -205,6 +223,19 @@ fun PopupMenuPopup(
                     ),
             )
         }
+    }
+}
+
+/**
+ * 非 focusable 弹层的返回键兜底：弹层窗口没有输入焦点，收不到返回键，由宿主组合里的
+ * BackHandler 承担（语义同 focusable Popup 的「返回键收起」）。
+ *
+ * 宿主没有 dispatcher（@Preview 等）时直接跳过——BackHandler 在没有 owner 时会抛异常。
+ */
+@Composable
+internal fun MenuBackHandler(enabled: Boolean, onBack: () -> Unit) {
+    if (LocalOnBackPressedDispatcherOwner.current != null) {
+        BackHandler(enabled = enabled, onBack = onBack)
     }
 }
 

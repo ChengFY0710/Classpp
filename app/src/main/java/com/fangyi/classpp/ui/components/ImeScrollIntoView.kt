@@ -8,11 +8,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imeAnimationTarget
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -69,6 +71,38 @@ private class ImeFieldReporting(
 private val LocalImeFieldReporting = compositionLocalOf<ImeFieldReporting?> { null }
 
 /**
+ * 「这一次键盘收起不要滚回原位」的请求闸：输入中打开菜单类弹层时，调用方在收键盘前登记一次。
+ *
+ * 菜单在输入中打开时，内容回滚会让被点的那一行离开原位——菜单锚点随之漂移，用户也会先
+ * 看到一整段回滚才看到菜单。保持当前滚动位置既稳住锚点，也让交互更安静。
+ *
+ * 登记在下一次键盘收起时消费；调用方应只在**键盘在场**时登记，否则未消费的登记会留到
+ * 下一次键盘会话，误吞一次正常的回滚。
+ */
+@Stable
+internal class ImeRestoreGate {
+    private var suppressNext = false
+
+    /** 登记一次：下一次键盘收起跳过「滚回原位」 */
+    fun suppressNextRestore() {
+        suppressNext = true
+    }
+
+    internal fun consumeSuppressed(): Boolean {
+        val suppressed = suppressNext
+        suppressNext = false
+        return suppressed
+    }
+}
+
+/**
+ * 由 [ImeScrollTracker] 下发给内容列的「收起不回滚」请求闸；不在 tracker 作用域内
+ * （设置页等直排表单）为 null。菜单类弹层（如 `SettingsCardItem.Select`）在输入中打开时
+ * 读取它登记，内容保持不动。
+ */
+internal val LocalImeRestoreGate = compositionLocalOf<ImeRestoreGate?> { null }
+
+/**
  * 让输入框参与宿主的「键盘弹起自动滚动」（[ImeScrollTracker]）：把位置与焦点回报给宿主。
  *
  * 挂在输入控件本身（[SheetTextField] / [SheetTextArea] / [TagChoosingCard] 已内置），而不是
@@ -115,25 +149,55 @@ internal fun Modifier.imeFieldTracking(): Modifier {
 internal fun rememberImeVisible(): Boolean = WindowInsets.isImeVisible
 
 /**
+ * 键盘的**终值**高度（px）：`imeAnimationTarget` 在弹起动画开始那一帧就已经是终态，
+ * 动画期间保持不变；`ime` 则是逐帧变化的动画中间值。
+ *
+ * 自动滚动只能拿它当 `LaunchedEffect` 的 key：用逐帧变化的 `ime` 当 key 会让 effect
+ * 每帧重启，`animateScrollTo` 被反复取消，内容滚动因此滞后于键盘。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun rememberImeTargetInsetPx(): Int {
+    val density = LocalDensity.current
+    return WindowInsets.imeAnimationTarget.getBottom(density)
+}
+
+/**
  * 键盘收起后内容尾部余量回落的时长：与 [ImeScrollTracker] 里「滚回原位」的动画**用同一个值、
  * 同一条曲线**。
  *
  * 必须同拍：余量缩小等于把滚动上限往下压，`ScrollState` 会把当前滚动值同步钳到上限。
  * 两者同拍时，滚动动画每一帧的目标都正好落在上限之内，画面是连续的；一旦余量缩得比滚动
  * 快，滚动值就会被钳着走——表现就是「卡」。改时长只改这一个值，两边自动一致。
+ *
+ * 取 300ms（与系统 IME 收起动画同量级）：曾用 600ms，键盘窗口约 200~300ms 就消失了，
+ * 而余量/内容还要再走一截——观感是「键盘退出很慢、有拖尾」，与弹起时不一致。
  */
-private const val TailReserveMillis = 600
+private const val TailReserveMillis = 300
+
+/** 键盘弹起时把输入框带到让位位置的时长：与系统 IME 动画同量级，曲线与回落同族 */
+private const val ImeScrollMillis = TailReserveMillis
+
 /**
  * 内容尾部余量（px）：键盘弹起当帧就位成 [target]（滚动范围不够时靠下的输入框根本滚不到
  * 键盘上方，光靠滚动定位拉不动）；键盘收起后按 [TailReserveMillis] 缩回 0。
+ *
+ * 弹起与收起拆成两个 effect：
+ * - 弹起支的 key 带 [target]（键盘高度会晚一两拍才到终值，visible 期间逐帧跟到）；
+ * - 收起支的 key **只有** [imeVisible]。键盘收起动画期间 [target] 逐帧变小，若把它也当
+ *   key，回落动画会被每帧重启（每次都从当前值重新起一条回落曲线），键盘早已消失、
+ *   卡片/余量却还在半空慢慢落——这就是「降落拖尾」的根因。
  */
 @Composable
 internal fun rememberTailReservePx(target: Int, imeVisible: Boolean): Int {
     var reserve by remember { mutableIntStateOf(0) }
+    // 弹起：余量跟住键盘高度（逐帧到终值；直接赋值，不播动画）
     LaunchedEffect(imeVisible, target) {
-        if (imeVisible) {
-            reserve = target
-        } else {
+        if (imeVisible) reserve = target
+    }
+    // 收起：只由 imeVisible 翻转触发一次，与 ImeScrollTracker 的「滚回原位」同拍
+    LaunchedEffect(imeVisible) {
+        if (!imeVisible) {
             animate(
                 initialValue = reserve.toFloat(),
                 targetValue = 0f,
@@ -164,7 +228,7 @@ internal fun SheetScrollHost(
     scrollState: ScrollState,
     viewportHeightPx: Int,
     viewportTopInRootPx: Int,
-    imeInsetPx: Int,
+    imeTargetInsetPx: Int,
     imeVisible: Boolean,
     scope: ColumnScope,
     content: @Composable ColumnScope.() -> Unit,
@@ -174,7 +238,7 @@ internal fun SheetScrollHost(
             scrollState = scrollState,
             viewportHeightPx = viewportHeightPx,
             viewportTopInRootPx = viewportTopInRootPx,
-            imeInsetPx = imeInsetPx,
+            imeTargetInsetPx = imeTargetInsetPx,
             imeVisible = imeVisible,
             scope = scope,
             content = content,
@@ -201,14 +265,15 @@ internal fun SheetScrollHost(
  *
  * @param viewportHeightPx 滚动视口高度（px）
  * @param viewportTopInRootPx 滚动列上缘在根坐标系里的 y（px）
- * @param imeInsetPx 键盘占去的高度（px），滚动定位时用它算可见区下缘
+ * @param imeTargetInsetPx 键盘的**终值**高度（px，取 `imeAnimationTarget`）：滚动定位时用
+ *   它算可见区下缘。不能传逐帧变化的 `ime`——那会让自动滚动的 effect 每帧重启
  */
 @Composable
 internal fun ImeScrollTracker(
     scrollState: ScrollState,
     viewportHeightPx: Int,
     viewportTopInRootPx: Int,
-    imeInsetPx: Int,
+    imeTargetInsetPx: Int,
     imeVisible: Boolean,
     scope: ColumnScope,
     content: @Composable ColumnScope.() -> Unit,
@@ -220,13 +285,23 @@ internal fun ImeScrollTracker(
     var focusTicket by remember { mutableIntStateOf(0) }
     // 键盘弹起前的滚动位置（收起键盘时滚回这里）
     var restoreTarget by remember { mutableStateOf<Int?>(null) }
+    // 本次键盘会话里是否追踪到内容列内的输入框：只有这种会话才存在「为排除键盘把内容
+    // 顶上去、收起再滚回原位」这件事。AI 对话的输入栏在钉底槽（不在本 tracker 作用域），
+    // 恒为 false——否则收起键盘时的回滚会与「滚到底」抢同一个 ScrollState（P2-4）
+    var imeSessionTracked by remember { mutableStateOf(false) }
+    // 菜单类弹层在输入中打开时可以登记「这次收起不回滚」（见 [ImeRestoreGate]）
+    val restoreGate = remember { ImeRestoreGate() }
     // 滚动列上缘在根坐标系里的 y：被位置回报经由闭包读取，故包成 State（换值要能读到新值）
     val viewportTopInRootPxState = rememberUpdatedState(viewportTopInRootPx)
+    // 焦点/位置回报回调里判断「此刻键盘是否在场」，同样要读最新值
+    val imeVisibleState = rememberUpdatedState(imeVisible)
 
     val reporting = remember {
         ImeFieldReporting(
             reportBounds = { coords ->
                 if (coords.isAttached) {
+                    // 键盘在场时回报过位置 = 本次会话确实在内容列里编辑，收起才需要滚回原位
+                    if (imeVisibleState.value && !imeSessionTracked) imeSessionTracked = true
                     val top = coords.positionInRoot().y - viewportTopInRootPxState.value
                     val next = FocusedField(
                         topPx = top.toInt(),
@@ -240,6 +315,7 @@ internal fun ImeScrollTracker(
             reportFocus = { focused ->
                 if (focused) {
                     focusTicket++
+                    if (imeVisibleState.value) imeSessionTracked = true
                 } else {
                     field = null
                 }
@@ -254,37 +330,55 @@ internal fun ImeScrollTracker(
     LaunchedEffect(imeVisible) {
         if (imeVisible) {
             restoreTarget = scrollState.value
+            // 弹起那一刻若已有内容列输入框聚焦（挂载自动聚焦），也算本次会话有追踪
+            imeSessionTracked = field != null
         } else {
-            restoreTarget?.let {
-                scrollState.animateScrollTo(
-                    value = it,
-                    animationSpec = tween(TailReserveMillis, easing = Motion.Standard),
-                )
+            // 只有内容列里真的编辑过才存在回滚；菜单打开时调用方可登记跳过（内容原地不动）
+            val suppressRestore = restoreGate.consumeSuppressed()
+            if (imeSessionTracked && !suppressRestore) {
+                restoreTarget?.let {
+                    scrollState.animateScrollTo(
+                        value = it,
+                        animationSpec = tween(TailReserveMillis, easing = Motion.Standard),
+                    )
+                }
             }
             restoreTarget = null
+            imeSessionTracked = false
         }
     }
 
     // 键盘弹起、或弹着键盘换输入框：把正在编辑的输入框滚到视口顶端。
-    // key 带上 [imeInsetPx]：`isImeVisible` 会先于「键盘高度」一拍变真（那一拍 ime 还是 0，
-    // 按 0 算会得出「输入框本来就可见、不用滚」），键盘高度的真实值到下一拍才来，没这个
-    // key 就再也不会重算，表现为整件事没发生。
-    LaunchedEffect(imeVisible, imeInsetPx, focusTicket) {
+    // key 里的 [imeTargetInsetPx] 是键盘**终值**（imeAnimationTarget，动画期间不变）：
+    // - 用逐帧变化的 ime 当 key 会让本 effect 每帧重启，animateScrollTo 被反复取消，
+    //   滚动几乎不动，表现为「键盘先压住输入框，内容再慢慢追上来」；
+    // - 终值在弹起动画开始那一帧就到了，不会出现「按 0 算发现不用滚」的漏执行。
+    LaunchedEffect(imeVisible, imeTargetInsetPx, focusTicket) {
         val focused = field ?: return@LaunchedEffect
         if (!imeVisible) return@LaunchedEffect
+        // 有内容列输入框参与本次键盘会话：收起时才需要滚回原位（覆盖「弹起后才聚焦」的路径）
+        imeSessionTracked = true
         val target = targetScrollForIme(
             fieldTopPx = focused.topPx,
             fieldBottomPx = focused.bottomPx,
             scrollPx = scrollState.value,
             viewportPx = viewportHeightPx,
-            imeInsetPx = imeInsetPx,
+            imeInsetPx = imeTargetInsetPx,
             marginPx = with(density) { ImeFieldTopMargin.roundToPx() },
             gapPx = with(density) { ImeFieldGapAboveKeyboard.roundToPx() },
         )
-        scrollState.animateScrollTo(target)
+        // 与回落同族曲线、同一时长（tween + Motion.Standard）：弹起与收起对称，
+        // 不再出现「弹起快、回落拖尾」
+        scrollState.animateScrollTo(
+            value = target,
+            animationSpec = tween(ImeScrollMillis, easing = Motion.Standard),
+        )
     }
 
-    CompositionLocalProvider(LocalImeFieldReporting provides reporting) {
+    CompositionLocalProvider(
+        LocalImeFieldReporting provides reporting,
+        LocalImeRestoreGate provides restoreGate,
+    ) {
         scope.content()
     }
 }

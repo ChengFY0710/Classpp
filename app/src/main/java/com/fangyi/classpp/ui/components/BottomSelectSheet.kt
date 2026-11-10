@@ -113,8 +113,8 @@ private val CardBlurRadius: Dp = 20.dp
  * （0 = 无影），同 [SheetPillButton] 的投影做法。
  *
  * **键盘让位**：卡片底部除导航栏外还让开键盘（只补 ime 超出导航栏的差值）——键盘弹起时
- * 整卡抬到键盘上方不被遮住，弹起当帧就位、收起后 600ms 缓回（同 OverlaySheet 尾部余量
- * 的机制）；出场滑出量程同步计入让位量。滚轮卡族键盘恒收起，渲染与动画行为不变。
+ * 整卡抬到键盘上方不被遮住，弹起当帧就位、收起后与 IME 动画同量级缓回（同 OverlaySheet
+ * 尾部余量的机制）；出场滑出量程同步计入让位量。滚轮卡族键盘恒收起，渲染与动画行为不变。
  */
 @Composable
 fun BottomSelectSheet(
@@ -164,7 +164,7 @@ fun BottomSelectSheet(
     val density = LocalDensity.current
     val scrimColor = MaterialTheme.colorScheme.scrim
     // 键盘让位：键盘弹起时整卡抬到键盘上方（只补 ime 超出导航栏的差值，不与
-    // navigationBarsPadding 双计；弹起当帧就位、收起后 600ms 缓回，复用 OverlaySheet
+    // navigationBarsPadding 双计；弹起当帧就位、收起后与 IME 动画同量级缓回，复用 OverlaySheet
     // 尾部余量的同一机制）。滚轮卡族键盘恒收起 → 让位量恒 0，渲染与动画不变。
     // 让位量必须同时计入 bottomClearancePx：出场滑出量程 = 卡高 + 底部让位，
     // 不含键盘高度的话带键盘收场会滑不到底、卡在半途

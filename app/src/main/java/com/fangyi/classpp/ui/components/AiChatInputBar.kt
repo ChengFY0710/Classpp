@@ -1,5 +1,6 @@
 package com.fangyi.classpp.ui.components
 
+import android.os.SystemClock
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
@@ -29,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -36,9 +38,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -48,6 +53,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.fangyi.classpp.R
@@ -68,6 +74,7 @@ import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.shadow.Shadow
 import dev.chrisbanes.haze.HazeState
 import java.io.File
+import kotlin.math.roundToInt
 
 /** 动作图标边长（发送 / 停止 / 添加，均为动作图标档 30dp） */
 private val ActionIconSize = 30.dp
@@ -100,6 +107,25 @@ private val SendGlassShadow = Shadow(
 private val TextSentSapcing = 10.dp
 
 /**
+ * 非 focusable 菜单收起后，极短窗口内忽略「+」的打开请求：点 + 收起菜单时，Popup 的
+ * ACTION_OUTSIDE 与落到 + 上的点击是同一个事件（非 focusable 窗口不消费外部触摸），
+ * 不拦的话菜单会「刚收起又立刻重开」。
+ */
+private const val MenuReopenGuardMillis = 200L
+
+/** 输入卡在窗口里的坐标（菜单锚点）：布局回调逐帧写普通字段，不写 snapshot state */
+private class MenuAnchorBounds {
+    var value: Rect = Rect.Zero
+}
+
+private fun Rect.toIntRect(): IntRect = IntRect(
+    left = left.roundToInt(),
+    top = top.roundToInt(),
+    right = right.roundToInt(),
+    bottom = bottom.roundToInt(),
+)
+
+/**
  * AI 对话底部输入栏：左侧输入卡 + 右侧 60dp 发送圆球。
  *
  * 输入卡沿用 [SheetTextField] 的卡壳与聚焦规格：
@@ -127,11 +153,16 @@ private val TextSentSapcing = 10.dp
  * 纯文字「拍照 / 添加图片 / 添加文件」；选中项只收起菜单并回调 [onTakePhoto] /
  * [onAddImage] / [onAddFile]（拍照与选图的系统授权流程由宿主接，本组件不管）。
  * [hazeState] 非空时菜单卡走 Haze 磨砂
- * （宿主传浮层的 haze 采样源，与顶栏同源），null 退化为不透明白卡。菜单为 focusable
- * Popup，打开会收起键盘并移除输入焦点，文本状态由宿主提升，不会丢失。
+ * （宿主传浮层的 haze 采样源，与顶栏同源），null 退化为不透明白卡。
  *
- * 输入框带 `imeFieldTracking()`：在带 ImeScrollTracker 的宿主（OverlaySheet 滚动列）里
- * 参与「键盘弹起把输入框滚到键盘上方」，直排宿主里空转。
+ * 菜单是**非 focusable** 弹层：打开不抢窗口焦点，正在输入的键盘与 Compose 焦点都保留
+ * （focusable 弹层会让系统收起 IME，菜单锚点还会跟着 imePadding 抬升的输入栏下移）。
+ * 锚点固定在点 + 那一刻，inset 变化时菜单也不漂移；返回键由 [MenuBackHandler] 兜底收起。
+ * 文本状态由宿主提升，不会丢失。
+ *
+ * 输入框带 `imeFieldTracking()`：AI 浮层里输入栏位于钉底槽、不在内容列 ImeScrollTracker
+ * 的作用域内，此修饰符空转（键盘弹起时消息列表的跟随由 AiChatOverlay 的 IME 补偿负责）；
+ * 直排宿主里同样空转。
  *
  * 玻璃材质：宿主按「更高级的玻璃材质」开关下发 [backdrop]（null = 普通材质）。非空时
  * 输入卡与发送圆球改 [glassSurface] 出底（通用 Pill 玻璃参数，染色 70%），圆球按压走
@@ -165,6 +196,14 @@ fun AiChatInputBar(
     // 卡级焦点：聚焦描边、占位显隐共用；输入框禁用（发送中）时自然回落 false
     var cardFocused by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
+    // 输入卡在窗口里的实时坐标：点 + 时快照成菜单锚点（见 frozenMenuAnchor）
+    val anchorBounds = remember { MenuAnchorBounds() }
+    // 菜单展开期间的固定锚点：非 focusable 菜单不会让键盘收起；但用户若按返回键收键盘、
+    // 或系统改 inset，输入栏仍会下移——锚点固定在点 + 那一刻，菜单才不会跟着滑下去
+    var frozenMenuAnchor by remember { mutableStateOf<IntRect?>(null) }
+    // 非 focusable 菜单点「+」时，Popup 先收到 ACTION_OUTSIDE 收起、本次点击又落到 + 上：
+    // 记录收起时刻，极短窗口内忽略这次「打开」，否则菜单会立刻重开
+    var menuDismissedAtMillis by remember { mutableLongStateOf(0L) }
     val interactionSource = remember { MutableInteractionSource() }
     val sendInteractionSource = remember { MutableInteractionSource() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -206,7 +245,12 @@ fun AiChatInputBar(
         verticalAlignment = Alignment.Bottom,
     ) {
         // 输入卡整体作为菜单锚点：菜单向上浮在输入栏外，多行时也不会压住正文
-        Box(modifier = Modifier.weight(1f)) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                // 只记普通字段、不写 snapshot state：坐标逐帧变化，写 state 会让整条输入栏逐帧重组
+                .onGloballyPositioned { anchorBounds.value = it.boundsInWindow() },
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -289,6 +333,8 @@ fun AiChatInputBar(
                     BasicTextField(
                         value = value,
                         onValueChange = onValueChange,
+                        // 发送中禁用输入框 = 产品取舍（为回答让出屏幕，2026-11-10 确认保留）：
+                        // 失去焦点时键盘一并收起，回答结束后不自动恢复，连续发送需再点输入框
                         enabled = enabled && !sending,
                         textStyle = valueStyle.copy(
                             // 空值本身不可见，占位由 decorationBox 负责
@@ -332,7 +378,17 @@ fun AiChatInputBar(
                                 shape = CircleShape,
                                 enabled = enabled,
                                 role = Role.Button,
-                            ) { menuExpanded = true },
+                            ) {
+                                // 见 menuDismissedAtMillis：本次点击若同时触发了「点外部收起」，
+                                // 不要再把它当成一次新的打开
+                                if (
+                                    SystemClock.uptimeMillis() - menuDismissedAtMillis >
+                                    MenuReopenGuardMillis
+                                ) {
+                                    frozenMenuAnchor = anchorBounds.value.toIntRect()
+                                    menuExpanded = true
+                                }
+                            },
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
@@ -350,7 +406,15 @@ fun AiChatInputBar(
             val addIconInsetPx = with(LocalDensity.current) { RowCardPaddingHorizontal.roundToPx() }
             PopupMenuPopup(
                 expanded = menuExpanded,
-                onDismiss = { menuExpanded = false },
+                onDismiss = {
+                    menuDismissedAtMillis = SystemClock.uptimeMillis()
+                    menuExpanded = false
+                },
+                // 退场播完才清锚点：退场期间沿用固定位置，菜单不会在收起时跳一下
+                onExitFinished = { frozenMenuAnchor = null },
+                // 非 focusable：菜单不抢窗口焦点，键盘与输入框焦点都保留。
+                // 配合上面的固定锚点，菜单既不会把键盘顶掉，也不会跟着输入栏下移
+                focusable = false,
                 sections = listOf(
                     PopupMenuSection(
                         items = listOf(
@@ -379,9 +443,11 @@ fun AiChatInputBar(
                     ),
                 ),
                 cardPosition = { anchor, _, card ->
+                    // 优先用点 + 那一刻的快照：键盘/inset 变化导致输入栏移动时菜单原地不动
+                    val anchorRect = frozenMenuAnchor ?: anchor
                     IntOffset(
-                        x = anchor.right - addIconInsetPx - card.width,
-                        y = anchor.top - gapPx - card.height,
+                        x = anchorRect.right - addIconInsetPx - card.width,
+                        y = anchorRect.top - gapPx - card.height,
                     )
                 },
                 // 输入栏钉底，菜单自卡片上缘向上长
