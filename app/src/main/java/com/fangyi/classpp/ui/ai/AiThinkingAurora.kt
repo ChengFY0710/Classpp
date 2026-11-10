@@ -1,9 +1,5 @@
 package com.fangyi.classpp.ui.ai
 
-import android.animation.ValueAnimator
-import android.content.Context
-import android.os.Build
-import android.provider.Settings
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
@@ -27,10 +23,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.rememberSystemAnimationsEnabled
 import com.fangyi.classpp.ui.theme.ClassppColors
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.classppColors
@@ -99,7 +95,7 @@ enum class AiAuroraAnchor { Bottom, Center }
  * 实现约束：
  * - 不挂 `Modifier.blur`：径向渐变自带软边，避免 API 31+ 与整层离屏的开销；
  * - 只在 active 时跑 `withFrameNanos` 帧循环，退场与空闲不推进相位；系统关闭动画
- *   （`ValueAnimator.areAnimatorsEnabled()` / `ANIMATOR_DURATION_SCALE`）时直接
+ *   （`rememberSystemAnimationsEnabled`，与对话气泡落位共用同一处判定）时直接
  *   呈现 / 收起，不做位移过渡；
  * - 绘制走 `graphicsLayer(compositingStrategy = Offscreen)` + `BlendMode.DstIn` 遮罩，
  *   只影响本组件这一条底部区域。
@@ -128,8 +124,7 @@ fun AiThinkingAurora(
     val blobs = remember(palette, anchor) { auroraBlobs(palette, anchor) }
     // 遮罩只需要 alpha：用 surface 的深浅色值承载透明度，避免在业务代码里写恒白色
     val maskColor = MaterialTheme.colorScheme.surface
-    val context = LocalContext.current
-    val animationsEnabled = remember(context) { areSystemAnimationsEnabled(context) }
+    val animationsEnabled = rememberSystemAnimationsEnabled()
 
     // 出现进度：0 = 完全沉在输入栏后方（不绘制），1 = 完整光场。纵向位移、alpha 与光斑
     // 散开幅度都乘它；首帧即按目标值起算——预览、以及「浮层重开时正在回答」直接呈现终态
@@ -426,22 +421,6 @@ private fun centerAuroraBlobs(colors: ClassppColors): List<AuroraBlob> = listOf(
         pulsePhase = 4.4f,
     ),
 )
-
-/**
- * 系统是否允许动画：API 26+ 用 [ValueAnimator.areAnimatorsEnabled]（覆盖开发者选项里的
- * 「动画程序时长缩放」关闭）；API 24–25 回退读 `ANIMATOR_DURATION_SCALE`。
- * 关闭时只做瞬时的出现 / 收起，不启动帧循环。
- */
-private fun areSystemAnimationsEnabled(context: Context): Boolean =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        ValueAnimator.areAnimatorsEnabled()
-    } else {
-        Settings.Global.getFloat(
-            context.contentResolver,
-            Settings.Global.ANIMATOR_DURATION_SCALE,
-            1f,
-        ) > 0f
-    }
 
 // ---------- 预览 ----------
 

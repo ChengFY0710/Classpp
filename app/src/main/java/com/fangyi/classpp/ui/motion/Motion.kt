@@ -132,6 +132,29 @@ object Motion {
     const val AiAuroraExitMillis = 900
 
     /**
+     * AI 对话新气泡「抬升落位」时长：用户发送后，新气泡自下方少许上移到位（位移与
+     * alpha 同帧起播），配合 [Decelerate]——起步即全速，指尖松开的瞬间就开始动，
+     * 无迟滞感。量级与列表条目进场 [TodoCardEnterMillis] 同档，但独立成 token：
+     * 气泡是「我发出的东西」，比被动出现的列表卡片再快半拍。
+     */
+    const val ChatBubbleRiseMillis = 240
+
+    /**
+     * 气泡落位时 alpha 的完成时刻：与位移同帧起播、但更早收尾——文字先可读，位移的
+     * 长尾只负责「落稳」。单独成一条动画（而非由 [ChatBubbleRiseMillis] 的进度重映射），
+     * 是为了让「多久能读」与「多久落稳」各自可调。取值须小于 [ChatBubbleRiseMillis]。
+     */
+    const val ChatBubbleFadeMillis = 160
+
+    /**
+     * 发送后列表「接住」新气泡的滚动时长：新消息入列时不再下一帧硬跳到底，而是用
+     * 这一小段滚动把气泡托上来。配合 [Overlay]——前重后轻，起步吃掉大部分距离、
+     * 尾巴轻收，与浮层进出场同族。
+     * 只用于离散新消息；流式逐字仍走逐帧钉底，不能动画化（会逐 chunk 抖）。
+     */
+    const val ChatScrollCatchMillis = 200
+
+    /**
      * 弹出菜单内容层淡入时长（alpha 0→1），与进场果冻曲线同帧启动。
      * 淡入只作用于内容行——毛玻璃卡壳在本组件内不淡入（整卡只在进出场首尾一个
      * [PopupCardFadeMillis] 短窗内由宿主缩放层统一淡入淡出，中段恒满强度）：
