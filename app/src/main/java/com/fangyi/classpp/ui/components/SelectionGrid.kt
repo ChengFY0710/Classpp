@@ -45,7 +45,9 @@ private fun String.hasChinese(): Boolean = any { it in '\u4E00'..'\u9FFF' }
  * 格子以 [values] 的值为身份键——未选中 = background 底 + onSurface 字（白卡上仍看得见
  * 格子边界），[selected] 中的值 primaryContainerSolid 底 + primary 字（选中底取不透明色，
  * 避免按压反馈提亮时半透明 primaryContainer 透底闪烁），点一下选中 /
- * 再点取消；[blocked] 里的值灰显不可点（如已被同格其它交替课占用的周）。
+ * 再点取消；[blocked] 里的值禁用不可点（如已被同格其它交替课占用的周）——底取
+ * onSurfaceCard（卡面细弱元素色）、字取 secondaryText，与普通格子的 background 底 +
+ * onSurface 字拉开层级但保持同色系。
  *
  * [labels] 与 [values] 一一对应，为各格展示文字（周数方格即数字本身，重复设置的星期
  * 是「一/二/…」、月份是「N月」）；标签含中文时用 17sp 特殊展示字号（[ClassppTextTokens.weekCellChinese]），
@@ -91,7 +93,8 @@ fun SelectionGrid(
                                 targetValue = when {
                                     // 选中底用不透明实色：半透明 primaryContainer 在按压提亮/压暗时会透底变色
                                     isSelected -> MaterialTheme.classppColors.primaryContainerSolid
-                                    isBlocked -> MaterialTheme.colorScheme.onPrimaryContainer
+                                    // 禁用态：卡面细弱元素底，与普通格子的 background 底区分
+                                    isBlocked -> MaterialTheme.classppColors.onSurfaceCard
 
                                     else -> MaterialTheme.colorScheme.background
                                 },
@@ -101,7 +104,7 @@ fun SelectionGrid(
                             val labelColor by animateColorAsState(
                                 targetValue = when {
                                     isSelected -> MaterialTheme.colorScheme.primary
-                                    isBlocked -> MaterialTheme.classppColors.secondaryText.copy(alpha = 0.4f)
+                                    isBlocked -> MaterialTheme.classppColors.secondaryText
                                     else -> MaterialTheme.colorScheme.onSurface
                                 },
                                 animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),

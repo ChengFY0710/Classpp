@@ -101,7 +101,7 @@ enum class DayCalendarBackAction { Today, CurrentMonth }
  *     圆球 Primary、数字 onPrimary（[onDateClick] 点选即切日，选中/取消走 150ms 背景+
  *     字色渐变，与课程编辑的周数方格同款）；今天圆球 primaryContainer、
  *     数字 primary（选中今天即回到实心 Primary）；非本月日期数字 secondaryText（圆球颜色
- *     不变）。有待办的日期（[markedDates]）在圆球下方画一枚 3dp secondaryText 小点——小点从
+ *     不变）。有待办的日期（[markedDates]）在圆球下方画一枚 3dp onSurfaceCard 小点——小点从
  *     34dp 圆球 Box 底对齐后 offset 出球体，落在行距之间，不占布局空间、不撑开行距。
  *     [dayStates] 给日期上完成状态色（仅本月生效，今天/选中日有状态时状态色优先）：
  *     已完成 = urgentGreen 底 + 白字、已逾期 = error 底 + 白字；[clickableDates] 非空时
@@ -604,7 +604,7 @@ private fun WeekdayHeader(
 
 /**
  * 单个日期：34dp 圆球 + 数字。选中实心 Primary、数字 onPrimary；今天未选中 primaryContainer
- * 淡底、数字 primary；[marked] 时球下画 3dp secondaryText 小点（不占布局空间）。[status] 为
+ * 淡底、数字 primary；[marked] 时球下画 3dp onSurfaceCard 小点（不占布局空间）。[status] 为
  * 完成状态球（仅本月生效；今天/选中日有状态时状态色优先）：已完成 urgentGreen 底 + 白字、
  * 已逾期 error 底 + 白字；[clickable] = false 时不挂点按（无按压反馈）。背景与字色各走一条
  * 渐变（[Motion.FastMillis] 先快后慢，与课程编辑的周数方格同节奏）。
@@ -677,7 +677,7 @@ private fun DayCell(
                         .align(Alignment.BottomCenter)
                         .offset(y = DotDrop)
                         .size(DotSize)
-                        .background(MaterialTheme.classppColors.secondaryText, CircleShape),
+                        .background(MaterialTheme.classppColors.onSurfaceCard, CircleShape),
                 )
             }
         }

@@ -87,7 +87,8 @@ data class ClassppColors(
      */
     val primaryContainerSolid: Color,
     /**
-     * 卡面细弱元素（卡片内分隔线、点状轨道）：浅 = outline 同值，深 = 卡面上可见的中灰。
+     * 卡面细弱元素（卡片内分隔线、点状轨道、滑杆未填充轨道、开关未选中轨道、
+     * 日历待办小点、选择方格禁用底）：浅 = outline 同值，深 = 卡面上可见的中灰。
      * 随主题色（H 取主色，S/L 取默认值；默认蓝为 #DCE2E7 / #4D5157）。
      */
     val onSurfaceCard: Color,
