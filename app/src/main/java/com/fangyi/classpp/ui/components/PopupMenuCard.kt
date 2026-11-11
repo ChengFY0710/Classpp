@@ -65,12 +65,7 @@ private val CheckIconSize = 20.dp
 private val MenuIconSize = 24.dp
 
 private val RowHorizontalPadding = 25.dp
-
-/**
- * 行垂直内距：12dp → 14dp（B8）。行高 = 28 + fieldLabel 行高（约 20dp）≈ 48dp，
- * 满足 Android 无障碍建议的最小触控目标；视觉上仍是与 iOS 44pt 同量级的紧凑菜单行。
- */
-private val RowVerticalPadding = 14.dp
+private val RowVerticalPadding = 12.dp
 
 /** 勾选图标与文字的间距 */
 private val CheckLabelSpacing = 12.dp

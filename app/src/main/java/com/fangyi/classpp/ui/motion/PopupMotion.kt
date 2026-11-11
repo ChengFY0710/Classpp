@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.motion
 
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.keyframes
@@ -27,7 +28,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.sqrt
 import com.fangyi.classpp.ui.components.hazeCardStyle
 import com.fangyi.classpp.ui.components.hazeSources
 import dev.chrisbanes.haze.HazePerformanceMode
@@ -44,8 +50,9 @@ import dev.chrisbanes.haze.blur.hazeBlur
 private const val PopupExitTailFadeScaleSpan = 0.05f
 
 /**
- * 果冻回弹的峰值缩放：生长冲过 1 的最高点。[popupEnterJelly] 与毛玻璃快照的扩采边距
- * （[BlurSnapshotOverscan]）共用——峰值一变，快照需要补盖的差值随之自动推算。
+ * 果冻回弹的峰值缩放（≈1.05）：进场 spring 的过冲量由 [popupEnterJelly] 的阻尼比决定，
+ * 本常量只服务毛玻璃快照的扩采边距（[BlurSnapshotOverscan]）——两者必须保持同一量级，
+ * 调 spring 参数导致过冲变化时同步这里（扩采不足会让回弹越过快照、露出卡壳白底）。
  */
 private const val PopupJellyPeakScale = 1.05f
 
@@ -62,20 +69,87 @@ private const val BlurSnapshotOverscanFactor = 2f
 /** 见 [BlurSnapshotOverscanFactor]：每边扩采边距 = (峰值 − 1) × 该系数。 */
 private val BlurSnapshotOverscan = (PopupJellyPeakScale - 1f) * BlurSnapshotOverscanFactor
 
+/** 进场上升段的阻尼比：0.64 → 过冲约 7% 步长（峰值 ≈1.05，与 [PopupJellyPeakScale] 对齐） */
+internal const val PopupEnterDampingRatio = 0.64f
+
 /**
- * 进场 + 果冻回弹一体曲线：[startScale] → [PopupJellyPeakScale] → 1 一条 keyframes 走完
- * （520ms）。生长冲过 1 后顺势回缩定住，没有「先减速停住、再重新起拍」的 velocity 死点，
- * 两段端点（峰值 / 1.0）都落在振幅极值（速度为零），读起来是一条连续的阻尼振荡：
- * - 0 → 180ms 生长段（[Motion.Standard]）：起步逐渐加速上冲到峰值；
- * - 180 → 520ms 收定段（[Motion.Standard]）：回到 1 定住。
- * 锚点为生长角：整条曲线绕同一锚点，果冻回弹朝锚点反方向撑开，与「贴着锚点长出来」同构。
- * 时长维持既有手感（审计 B7 曾建议压到 340ms，经确认不改）。
+ * 进场弹簧刚度（上升段与回程段共用）：220 → 上升段峰值约 272ms；回程 =
+ * [PopupEnterTotalMillis] − 峰值时刻（约 208ms）。
  */
-private fun popupEnterJelly(startScale: Float): FiniteAnimationSpec<Float> = keyframes {
-    durationMillis = 520
-    startScale at 0
-    PopupJellyPeakScale at 180 using Motion.Standard
-    1f at 520 using Motion.Accelerate
+internal const val PopupEnterStiffness = 220f
+
+/** 进场动画总时长（上升段 + 回程段）：480ms；回程时长由总时长减去上升段峰值时刻得到 */
+internal const val PopupEnterTotalMillis = 480
+
+/** 采样间隔：60Hz 下约 2 帧一个点、120Hz 下约 1 帧一个点，折线误差在 1e-4 量级 */
+private const val PopupEnterSampleIntervalMillis = 8
+
+/**
+ * 进场果冻曲线（两段解析曲线按 [PopupEnterSampleIntervalMillis] 采样成 keyframes）：
+ *
+ * - 上升段：欠阻尼 spring 的自然响应（[PopupEnterDampingRatio] / [PopupEnterStiffness]），
+ *   先穿过目标 1.0、在约 272ms 到达峰值 ≈1.05，峰值处速度为零；
+ * - 回程段：同刚度的临界阻尼衰减（从峰值位移平滑衰减到 0），并用 smoothstep 修正让终点
+ *   值与速度精确归零；回程时长 = [PopupEnterTotalMillis] − 上升段峰值时刻；
+ * - 两段在峰值处的速度都为零、加速度都约为 -ω² × 峰值位移（实测差 <1%），所以没有分段
+ *   easing 的加速度断点；回程单调下降、无二次下冲，落点零速。
+ *
+ * 锚点为生长角：整条曲线绕同一锚点，果冻回弹朝锚点反方向撑开，与「贴着锚点长出来」同构。
+ */
+internal fun popupEnterJelly(startScale: Float): FiniteAnimationSpec<Float> {
+    val samples = popupEnterJellySamples(startScale)
+    return keyframes {
+        durationMillis = samples.last().first
+        samples.forEach { (millis, value) ->
+            value at millis using LinearEasing
+        }
+    }
+}
+
+/**
+ * [popupEnterJelly] 的采样表（internal 供单测守卫）：上升段 = 欠阻尼 spring 自然响应，
+ * 回程段 = 临界阻尼衰减 + smoothstep 终点修正。起点 [startScale]、终点精确为 1f。
+ */
+internal fun popupEnterJellySamples(startScale: Float): List<Pair<Int, Float>> {
+    val zeta = PopupEnterDampingRatio.toDouble()
+    val omega = sqrt(PopupEnterStiffness.toDouble())
+    val dampedOmega = omega * sqrt(1.0 - zeta * zeta)
+    val decay = zeta * omega
+    val step = 1.0 - startScale
+    val peakSeconds = PI / dampedOmega
+    val peakValue = 1.0 + step * exp(-PI * zeta / sqrt(1.0 - zeta * zeta))
+    val returnDeviation = peakValue - 1.0
+    val returnSeconds = (PopupEnterTotalMillis / 1000.0 - peakSeconds).coerceAtLeast(0.001)
+    val returnEndDecay = (1.0 + omega * returnSeconds) * exp(-omega * returnSeconds)
+
+    fun rise(seconds: Double): Double =
+        1.0 - step * exp(-decay * seconds) *
+            (cos(dampedOmega * seconds) + (decay / dampedOmega) * sin(dampedOmega * seconds))
+
+    fun settle(seconds: Double): Double {
+        val x = omega * seconds
+        val decayed = (1.0 + x) * exp(-x)
+        val progress = (seconds / returnSeconds).coerceIn(0.0, 1.0)
+        val endCorrection =
+            returnEndDecay * (3.0 * progress * progress - 2.0 * progress * progress * progress)
+        return 1.0 + returnDeviation * (decayed - endCorrection)
+    }
+
+    val totalMillis = PopupEnterTotalMillis.toLong()
+    val samples = ArrayList<Pair<Int, Float>>((totalMillis / PopupEnterSampleIntervalMillis).toInt() + 2)
+    var millis = 0L
+    while (millis <= totalMillis) {
+        val seconds = millis / 1000.0
+        val value = if (seconds <= peakSeconds) rise(seconds) else settle(seconds - peakSeconds)
+        samples += millis.toInt() to value.toFloat()
+        millis += PopupEnterSampleIntervalMillis
+    }
+    if (samples.last().first.toLong() == totalMillis) {
+        samples[samples.lastIndex] = totalMillis.toInt() to 1f
+    } else {
+        samples += totalMillis.toInt() to 1f
+    }
+    return samples
 }
 
 /**
@@ -124,14 +198,14 @@ class PopupMotionState internal constructor(
 
 /**
  * 弹层进出场动画的共享实现（PopupMenuPopup / WeekPicker 等玻璃弹层共用）：
- * 进场 scale 走 [popupEnterJelly] 一体曲线（生长冲过 1 顺势回缩定住）+ 整卡开头淡入
- * （[Motion.PopupCardFadeMillis]）+ 内容淡入（[Motion.PopupFadeMillis]），退场 scale 与
- * 内容淡出共用 [Motion.PopupExitMillis] + Accelerate 同步收尾、尾窗整卡淡出；
+ * 进场 scale 走 [popupEnterJelly] 的两段解析曲线（欠阻尼上升 → 峰值 → 临界阻尼回程）+
+ * 整卡开头淡入（[Motion.PopupCardFadeMillis]）+ 内容淡入（[Motion.PopupFadeMillis]），
+ * 退场 scale 与内容淡出共用 [Motion.PopupExitMillis] + Accelerate 同步收尾、尾窗整卡淡出；
  * [animateExit] = false 时收起不播退场、立即卸载。
  *
- * [enterStartScale] 是进场起始缩放（默认 0.8）：锚点离卡片很近的弹层用默认值即可；
- * 锚点要表达「从某个宿主控件里长出来」（如周数卡从胶囊中心涌出）时调小它（如 0.5f），
- * 起始卡面越小、从锚点涌现的读感越强。
+ * [enterStartScale] 是进场起始缩放（默认 [Motion.PopupEnterStartScale]）：锚点离卡片很近
+ * 的弹层用默认值即可；锚点要表达「从某个宿主控件里长出来」（如周数卡从胶囊中心涌出）时
+ * 调小它（如 0.5f），起始卡面越小、从锚点涌现的读感越强。
  *
  * 退场播完经 [onExitFinished] 回调一次（宿主借机清理「仅退场期保留」的锚点状态；
  * 仅退场动画存在时才会触发）。transition 恒常驻组合——若随「是否显示」条件一起
