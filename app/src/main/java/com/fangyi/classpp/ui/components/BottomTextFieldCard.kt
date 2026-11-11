@@ -97,6 +97,8 @@ fun BottomTextFieldCard(
         confirmEnabled = confirmEnabled,
         shadowAlpha = shadowAlpha,
         hazeState = hazeState,
+        // 输入弹卡挂载后要自己 requestFocus + keyboard.show()：框架不能在打开时收键盘
+        dismissImeOnShow = false,
         // 键盘「完成」与顶栏「确认」同路；确认闸门在框架内已由 confirmEnabled 把住
         onConfirm = onConfirm,
     ) {

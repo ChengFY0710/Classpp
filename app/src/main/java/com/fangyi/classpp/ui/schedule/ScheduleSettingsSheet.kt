@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.schedule
 
 import android.content.Context
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +35,7 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeScheme
 import com.fangyi.classpp.data.model.TimeSlotDef
+import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
 import com.fangyi.classpp.ui.components.BottomDateSelectCard
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.CardSection
@@ -145,8 +145,9 @@ internal fun ScheduleSettingsSheet(
         return true
     }
 
-    // 返回键关浮层（同切换课表浮层：组合顺序上晚于编辑态的取消 BackHandler，优先接管）
-    BackHandler(enabled = true) { onDismiss() }
+    // 返回键优先收键盘，键盘已收起时才关浮层（同切换课表浮层：组合顺序上晚于编辑态的
+    // 取消 BackHandler，优先接管）
+    BackHandlerHidesKeyboard(onBack = onDismiss)
 
     // 学期起止日期滚轮弹窗（BottomDateSelectCard）：期望态 + 挂载态两段式（同新建待办
     // 的各滚轮弹窗）——弹窗在场时经 covered 让本浮层缩小后退（分层动效）

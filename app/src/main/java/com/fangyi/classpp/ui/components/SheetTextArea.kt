@@ -49,7 +49,7 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  * 键盘一旦被收起就唤不回来（上机踩过）。
  *
  * 「聚焦后点空白取消聚焦（收起键盘）」与 [SheetTextField] 同款，由宿主容器的
- * `clearFocusOnTap` 提供（OverlaySheet 内容列已内置），字段自身无需处理。
+ * `clearFocusOnTap` 提供（OverlaySheet 的内容列、顶栏与钉底槽已内置），字段自身无需处理。
  */
 @Composable
 fun SheetTextArea(

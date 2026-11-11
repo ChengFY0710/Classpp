@@ -110,10 +110,11 @@ internal fun menuGrowthForAnchor(anchorCenterX: Float, windowWidthPx: Int): Menu
  * null（如 @Preview、浮层内嵌宿主）退化为不透明白卡。
  *
  * [focusable] 默认 true：弹层窗口接管焦点，返回键收起、点外部收起（focusable 窗口会消费
- * 外部触摸）。原位输入类菜单（AI 输入栏附件、标签长按删除）传 false：不抢窗口焦点，
- * 正在输入的键盘与 Compose 焦点都保留；点外部仍由 `FLAG_WATCH_OUTSIDE_TOUCH` 的
- * ACTION_OUTSIDE 收起（触摸同时也会落到下层窗口，需要下层自行防重入），返回键由
- * [MenuBackHandler] 在宿主组合里兜底。
+ * 外部触摸）。**它只影响弹层窗口焦点**：窗口失焦可能让系统收起 IME，但不会清除宿主的
+ * Compose 焦点（输入框描边仍在），关闭弹层后键盘也不会自动回来。原位输入类菜单（AI 输入栏
+ * 附件、标签长按删除）传 false：不抢窗口焦点，正在输入的键盘与 Compose 焦点都保留；
+ * 点外部仍由 `FLAG_WATCH_OUTSIDE_TOUCH` 的 ACTION_OUTSIDE 收起（触摸同时也会落到下层
+ * 窗口，需要下层自行防重入），返回键由 [MenuBackHandler] 在宿主组合里兜底。
  *
  * 退场活采样与崩溃防护（3e4d4dc 曾以「退场首帧卸掉毛玻璃」防护，退场退化白卡，已回退；
  * 尝试过的「退场冻结采样」（输入换空源态靠 KeepLastFrame 保留帧）真机证伪——保留帧只

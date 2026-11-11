@@ -14,7 +14,7 @@ import org.junit.Test
  * 取两者较小者：正常框走 1，放不下的高框走 2。
  *
  * 断言用的都是「滚完之后看得见什么」这类不变量，而不是硬编码某个 px 值：
- * - 上缘永远不低于 [margin]（不会被顶栏/屏幕顶切掉）；
+ * - 上缘永远不低于 `topInsetPx + margin`（不会被顶栏/屏幕顶切掉）；
  * - 下缘最多推到键盘上方 [gap] 处（该让的空间一定让出来）；
  * - 放得下的框一定整框露在键盘上方；放不下的框上缘贴住可见区顶部；
  * - 已经整个露在键盘上方就不动（不为一点余量来回滚）；
@@ -28,17 +28,23 @@ class ImeScrollTargetTest {
     /** 键盘高度：可见区下缘（键盘上缘）= 2700 − 1008 = 1692 */
     private val ime = 1008
 
-    /** 输入框上缘与可见区顶部的最小余量 */
+    /** 输入框上缘与可见区顶部的最小余量（12dp @3x） */
     private val margin = 36
 
-    /** 输入框下缘与键盘上缘之间要留的间距（12dp @3x） */
-    private val gap = 48
+    /** 输入框下缘与键盘上缘之间要留的间距（24dp @3x，与 ImeFieldGapAboveKeyboard 同值） */
+    private val gap = 72
 
     /** 单行输入框高度（SheetTextField 的 60dp @3x 量级） */
     private val fieldHeight = 180
 
     /** 多行备注框高度（minLines = 3 再长一点） */
     private val noteHeight = 900
+
+    /** 真正放不下可见区的高输入框，用来走到「上缘对齐」分支 */
+    private val tallHeight = 2000
+
+    /** 顶栏高度（OverlaySheet 的 TopBarHeight = 78dp @3x） */
+    private val topBar = (TopBarHeight.value * 3).toInt()
 
     /** 键盘上缘（= 可见区下缘） */
     private val keyboardTop = viewport - ime
@@ -48,6 +54,7 @@ class ImeScrollTargetTest {
         scroll: Int = 0,
         height: Int = fieldHeight,
         gapPx: Int = gap,
+        topInsetPx: Int = 0,
     ) = targetScrollForIme(
         fieldTopPx = fieldTop,
         fieldBottomPx = fieldTop + height,
@@ -56,6 +63,7 @@ class ImeScrollTargetTest {
         imeInsetPx = ime,
         marginPx = margin,
         gapPx = gapPx,
+        topInsetPx = topInsetPx,
     )
 
     /** 滚完之后输入框在视口里的上/下缘位置 */
@@ -141,6 +149,38 @@ class ImeScrollTargetTest {
         }
         // 起点框（fieldTop = 0）本来就在可见区顶部，无处可滚：不动即可，别把它推下去
         assertEquals(0, target(0))
+    }
+
+    /**
+     * 顶栏下的可见区：真正放不下的高框（高度 > 可见区高 − gap − margin）走「上缘对齐」，
+     * 上缘停在「顶栏下缘 + margin」，而不是卡片顶 + margin（否则上半截藏在顶栏后面）。
+     */
+    @Test
+    fun tallFieldStopsBelowTopBar() {
+        val fieldTop = 3500
+        val scroll = target(fieldTop, height = tallHeight, topInsetPx = topBar)
+        val (top, bottom) = visibleRange(fieldTop, scroll, tallHeight)
+        assertEquals(topBar + margin, top)
+        assertTrue("高框放不下时下缘允许钻进键盘", bottom > keyboardTop)
+    }
+
+    /** 顶栏占据的可见高度会等量减少可滚动量：同样的高框，带顶栏时比不带顶栏少滚 topBar */
+    @Test
+    fun topBarReducesScrollForTallFieldByItsHeight() {
+        val fieldTop = 3500
+        val noBar = target(fieldTop, height = tallHeight)
+        val withBar = target(fieldTop, height = tallHeight, topInsetPx = topBar)
+        assertEquals(topBar, noBar - withBar)
+    }
+
+    /** 上缘已经进入顶栏区、下缘仍在键盘上方：不反手把内容再往上推 */
+    @Test
+    fun fieldAlreadyUnderTopBarAndAboveKeyboardDoesNotMove() {
+        val fieldTop = 100
+        val (top, bottom) = visibleRange(fieldTop, 0)
+        assertTrue("前提：上缘在顶栏后面", top < topBar)
+        assertTrue("前提：下缘在键盘上方", bottom <= keyboardTop - gap)
+        assertEquals(0, target(fieldTop, topInsetPx = topBar))
     }
 
     /** 单行框（可见区放得下）：滚完之后下缘一定在键盘上方（要么本来就在，要么刚被让出来） */

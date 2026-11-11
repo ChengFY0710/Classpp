@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -114,7 +115,12 @@ private val CardBlurRadius: Dp = 20.dp
  *
  * **键盘让位**：卡片底部除导航栏外还让开键盘（只补 ime 超出导航栏的差值）——键盘弹起时
  * 整卡抬到键盘上方不被遮住，弹起当帧就位、收起后与 IME 动画同量级缓回（同 OverlaySheet
- * 尾部余量的机制）；出场滑出量程同步计入让位量。滚轮卡族键盘恒收起，渲染与动画行为不变。
+ * 尾部余量的机制）；出场滑出量程同步计入让位量。
+ *
+ * **打开时收键盘**：滚轮/日期/数字/颜色卡族由框架统一 `keyboard.hide()`（[dismissImeOnShow]），
+ * 不再依赖各调用点自觉——键盘占掉半屏后较高的滚轮卡可能被抬出屏幕顶部。只收 IME、
+ * 不清 Compose 焦点（保留 TagChoosingCard 一类「失焦才提交」的草稿语义）。输入弹卡
+ * （`BottomTextFieldCard`）传 false：它挂载后要主动聚焦并弹键盘，不能被框架覆盖。
  */
 @Composable
 fun BottomSelectSheet(
@@ -134,6 +140,8 @@ fun BottomSelectSheet(
     // 卡片磨砂的采样源：非空时卡片在 bottomSheetColor 底色之上叠背景模糊（见 KDoc），
     // null = 纯 bottomSheetColor 平底卡。宿主把页面/浮层内容挂 hazeSource 后将同一状态传进来
     hazeState: HazeState? = null,
+    // 打开时统一收键盘（见 KDoc）；输入弹卡传 false，保留挂载聚焦与弹键盘
+    dismissImeOnShow: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     // 点空白处收起（无涟漪）
@@ -162,7 +170,14 @@ fun BottomSelectSheet(
     var closeRequested by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+    val keyboard = LocalSoftwareKeyboardController.current
     val scrimColor = MaterialTheme.colorScheme.scrim
+    // 滚轮卡族打开时统一收键盘（输入弹卡由调用方传 false 自行弹键盘）：否则键盘占掉
+    // 半屏后较高的卡片会被 imeLift 抬出屏幕顶部。只收 IME、不清焦点——TagChoosingCard
+    // 等「失焦才提交」的草稿语义不受影响
+    LaunchedEffect(visible, dismissImeOnShow) {
+        if (visible && dismissImeOnShow) keyboard?.hide()
+    }
     // 键盘让位：键盘弹起时整卡抬到键盘上方（只补 ime 超出导航栏的差值，不与
     // navigationBarsPadding 双计；弹起当帧就位、收起后与 IME 动画同量级缓回，复用 OverlaySheet
     // 尾部余量的同一机制）。滚轮卡族键盘恒收起 → 让位量恒 0，渲染与动画不变。

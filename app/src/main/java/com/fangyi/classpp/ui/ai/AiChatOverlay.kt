@@ -108,10 +108,12 @@ private const val CaptureDirName = "ai_capture"
 /**
  * AI 对话浮层（日程页顶栏右侧按钮唤起，M1 唯一 AI 入口）。
  *
- * 基于 [OverlaySheet]：遮罩/进出场/下拉关闭/键盘让位/顶栏磨砂全部复用组件内置规格
- * （消息列即采样源；「切换对话内容塌缩 / 流式逐字重写」曾触发 Adreno Vulkan 驱动崩溃
+ * 基于 [OverlaySheet]：遮罩/进出场/下拉关闭/顶栏磨砂复用组件内置规格；键盘让位不走
+ * 内容列的滚动追踪——输入栏在钉底槽里用 `imePadding()` 自行让位，消息列表的跟随由本层
+ * 的 IME 补偿实现（见下方「键盘弹起时消息列表跟随」）。
+ * 消息列即采样源；「切换对话内容塌缩 / 流式逐字重写」曾触发 Adreno Vulkan 驱动崩溃
  * 而整链退让，根因是 HazeSourceSelection.All 无视 z 序采样，改 Behind（f958dbb）后
- * 重新挂回，真机验证不再崩溃）；
+ * 重新挂回，真机验证不再崩溃；
  * 消息列表走浮层自带滚动列（onScrollStateReady 接管 ScrollState 做自动滚底），
  * 输入栏钉底（bottomScrim = false，底部光场/渐隐/导航栏留白自绘并随键盘上移）——
  * 光场由 [AiThinkingAurora] 绘制，只在 AI 思考 / 回答（sending）期间自输入栏后方上浮
@@ -119,7 +121,9 @@ private const val CaptureDirName = "ai_capture"
  * 光场层（见底部槽的 layerBackdrop），玻璃关闭/API<31 时回退实心底。
  * 无消息空态（含未配置引导）里内容列没有输入框，浮层切 [SheetImeBehavior.IgnoreIme]：
  * 键盘弹起时内容不追加 IME 余量、空态不避让键盘；滚动容器与橡皮筋过滚动保留。
- * 有消息时恢复 [SheetImeBehavior.ContentScroll]，输入框照常滚到键盘上方/收起回滚。
+ * 有消息时恢复 [SheetImeBehavior.ContentScroll] 只为尾部余量：「输入框随内容列滚到键盘
+ * 上方/收起回滚」在这里不适用——输入栏在钉底槽、不参与内容列 ImeScrollTracker，收起时
+ * 也不会触发该 tracker 的回滚（P2-4）。
  *
  * - 发送中输入禁用、发送键变停止键（产品取舍：为回答让出屏幕；发送即收键盘，2026-11-10
  *   确认保留）：发送 Job 由 [AiChatRepository] 自己的 scope 驱动，
@@ -344,13 +348,14 @@ fun AiChatOverlay(
         }
     }
 
-    // 返回键：编辑器 → 详情 → 展开的侧滑卡 → 收起对话浮层（详情自身的返回拦截注册更晚，
-    // 详情在场时由它先处理备注落盘，这里只兜底非详情场景）
+    // 返回键：编辑器 → 详情 → 展开的侧滑卡 → 先收输入键盘 → 收起对话浮层
+    //（详情自身的返回拦截注册更晚，详情在场时由它先处理备注落盘，这里只兜底非详情场景）
     BackHandler(enabled = visible) {
         when {
             editTodoId != "" -> editTodoId = ""
             detailTodoId != "" -> detailTodoId = ""
             swipeCoordinator.activeKey != null -> swipeCoordinator.activeKey = null
+            imeVisible -> keyboard?.hide()
             else -> onDismiss()
         }
     }

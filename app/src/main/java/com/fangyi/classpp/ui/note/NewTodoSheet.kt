@@ -4,8 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -20,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -44,6 +41,7 @@ import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.cycleDays
 import com.fangyi.classpp.data.model.occurrencesBetween
+import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
 import com.fangyi.classpp.ui.components.BottomColorSelectCard
 import com.fangyi.classpp.ui.components.BottomDateSelectCard
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
@@ -171,8 +169,6 @@ internal fun NewTodoSheet(
 
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    val imeInsets = WindowInsets.ime
-    val density = LocalDensity.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val datesRequiredMessage = stringResource(R.string.todo_error_dates_required)
@@ -198,9 +194,7 @@ internal fun NewTodoSheet(
     }
 
     // 返回键优先收键盘（键盘收起后不返回给应用），键盘已收起时才关浮层
-    BackHandler {
-        if (imeInsets.getBottom(density) > 0) keyboard?.hide() else onDismiss()
-    }
+    BackHandlerHidesKeyboard(onBack = onDismiss)
 
     // 删除二次确认：期望态 + 挂载态两段式（同浮层）；确认/取消先清请求播淡出，播完才卸载。
     // 声明在 OverlaySheet 之前：确认框在场时经 covered 让本浮层缩小后退（分层动效）

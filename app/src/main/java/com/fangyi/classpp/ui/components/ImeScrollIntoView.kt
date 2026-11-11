@@ -41,8 +41,9 @@ import com.fangyi.classpp.ui.motion.Motion
 private val ImeFieldGapAboveKeyboard: Dp = 24.dp
 
 /**
- * 输入框上缘与视口顶端之间保留的最小余量：只在输入框高到「下缘对齐会把上缘顶出可见区」
- * 时才起作用（多行备注框），此时退化成上缘对齐、至少保证顶部不被顶栏切掉。
+ * 输入框上缘与**可见视口顶端**（顶栏下缘，见 `targetScrollForIme` 的 `topInsetPx`）之间
+ * 保留的最小余量：只在输入框高到「下缘对齐会把上缘顶出可见区」时才起作用（多行备注框），
+ * 此时退化成上缘对齐、至少保证顶部不被顶栏切掉。
  */
 private val ImeFieldTopMargin: Dp = 12.dp
 
@@ -230,6 +231,7 @@ internal fun SheetScrollHost(
     viewportTopInRootPx: Int,
     imeTargetInsetPx: Int,
     imeVisible: Boolean,
+    topInsetPx: Int = 0,
     scope: ColumnScope,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -240,6 +242,7 @@ internal fun SheetScrollHost(
             viewportTopInRootPx = viewportTopInRootPx,
             imeTargetInsetPx = imeTargetInsetPx,
             imeVisible = imeVisible,
+            topInsetPx = topInsetPx,
             scope = scope,
             content = content,
         )
@@ -256,7 +259,8 @@ internal fun SheetScrollHost(
  *
  * 三件事：
  * 1. **输入框滚到键盘上方**：键盘弹起、或弹着键盘换到另一个输入框时，把正在编辑的输入框
- *    滚到视口顶端——视口顶端离键盘最远，贴顶即最大程度让开键盘（换算见 [targetScrollForIme]）；
+ *    滚到可见区顶端（顶栏下缘）附近——它离键盘最远，贴顶即最大程度让开键盘
+ *    （换算见 [targetScrollForIme]）；
  * 2. **内容滚回原位**：弹起前记下滚动位置，键盘收起时用**与尾部余量回落同一时长、同一曲线**
  *    的动画滚回去（见下方注释：两者必须同拍，否则滚动值会被逐帧收缩的滚动上限钳着走）；
  * 3. **坐标系**：字段报的是 `positionInRoot`，布局阶段已把滚动量落在子节点的放置位置上，
@@ -267,6 +271,8 @@ internal fun SheetScrollHost(
  * @param viewportTopInRootPx 滚动列上缘在根坐标系里的 y（px）
  * @param imeTargetInsetPx 键盘的**终值**高度（px，取 `imeAnimationTarget`）：滚动定位时用
  *   它算可见区下缘。不能传逐帧变化的 `ime`——那会让自动滚动的 effect 每帧重启
+ * @param topInsetPx 滚动列顶部被顶栏盖住的高度（px，OverlaySheet 传 `TopBarHeight`）：
+ *   内容可见区实际上从顶栏下缘开始，上缘对齐必须在它之下留出 [ImeFieldTopMargin]
  */
 @Composable
 internal fun ImeScrollTracker(
@@ -275,6 +281,7 @@ internal fun ImeScrollTracker(
     viewportTopInRootPx: Int,
     imeTargetInsetPx: Int,
     imeVisible: Boolean,
+    topInsetPx: Int = 0,
     scope: ColumnScope,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -366,6 +373,7 @@ internal fun ImeScrollTracker(
             imeInsetPx = imeTargetInsetPx,
             marginPx = with(density) { ImeFieldTopMargin.roundToPx() },
             gapPx = with(density) { ImeFieldGapAboveKeyboard.roundToPx() },
+            topInsetPx = topInsetPx,
         )
         // 与回落同族曲线、同一时长（tween + Motion.Standard）：弹起与收起对称，
         // 不再出现「弹起快、回落拖尾」
@@ -388,16 +396,16 @@ internal fun ImeScrollTracker(
  * （输入框已经满足条件就不动，免得为一点余量来回滚）。
  *
  * 换算约定（[fieldTopPx] / [fieldBottomPx] 是视口坐标系，已含当前滚动位移 [scrollPx]；
- * 视口顶端 = 顶栏下缘）：
+ * 视口原点 = 滚动列（卡片）顶端，内容可见区从 [topInsetPx]（顶栏下缘）开始）：
  * - 键盘弹起后可见区下缘（= 键盘上缘）= `viewportPx − imeInsetPx`；
  * - **不动**的条件：下缘已在「可见区下缘 − [gapPx]」之上，且上缘没有夹在
- *   `[0, marginPx)` 这条带子里（上缘已经滚出可见区顶部不算问题——那是上半截被顶栏盖住，
- *   不是被键盘压住，不该反手把内容再往上推）；
+ *   `[topInsetPx, topInsetPx + marginPx)` 这条带子里（上缘已经滚出可见区顶部不算问题——
+ *   那是上半截被顶栏盖住，不是被键盘压住，不该反手把内容再往上推）；
  * - 需要滚动时：
  *   1. **下缘对齐**（落点）：把下缘停在「可见区下缘 − [gapPx]」，即贴键盘上方停住。
  *      **不想再改停的位置就只调 [gapPx]**（调大 = 让得更多、停得更靠上）；
- *   2. **上缘上界**：推得再高也不能让上缘越过距可见区顶部 [marginPx] 那条线——输入框高到
- *      放不下时（多行备注框）由此接管，表现是上缘贴住可见区顶部、下缘钻进键盘。
+ *   2. **上缘上界**：推得再高也不能让上缘越过「距可见区顶部 [marginPx]」那条线——输入框高到
+ *      放不下时（多行备注框）由此接管，表现是上缘贴住可见区顶部（顶栏下缘）、下缘钻进键盘。
  *   取两者较小者，再夹到不早于内容起点（0）。
  *
  * @param fieldTopPx 输入框上缘的距离（视口坐标系）
@@ -405,8 +413,10 @@ internal fun ImeScrollTracker(
  * @param scrollPx 当前滚动值
  * @param viewportPx 滚动视口高度
  * @param imeInsetPx 键盘占去的高度
- * @param marginPx 输入框上缘与视口顶端之间保留的最小余量（放不下时退化为上缘对齐）
+ * @param marginPx 输入框上缘与可见区顶端（顶栏下缘）之间保留的最小余量
  * @param gapPx 输入框下缘与键盘上缘之间保留的间距（停靠位置的主参数）
+ * @param topInsetPx 视口顶端被顶栏盖住的高度（px）：可见区从它开始，上缘上界取
+ *   `topInsetPx + marginPx`。默认 0 = 没有顶栏遮挡
  */
 internal fun targetScrollForIme(
     fieldTopPx: Int,
@@ -416,18 +426,21 @@ internal fun targetScrollForIme(
     imeInsetPx: Int,
     marginPx: Int,
     gapPx: Int,
+    topInsetPx: Int = 0,
 ): Int {
     val visibleTop = fieldTopPx - scrollPx
     val visibleBottom = fieldBottomPx - scrollPx
+    val visibleTopLimit = topInsetPx
     val visibleBottomLimit = viewportPx - imeInsetPx
     // 已经达成目标就不用动：整个露在键盘上方，或虽有一截滚出可见区顶部、但下缘已在
     // 键盘上方（这时再滚只会把它推得更高）。上半截被顶栏盖住不算「被键盘压住」——
     // 用户在下滑状态点一个上方的框，不该反手把内容再往上推
-    val topVisibleEnough = visibleTop >= gapPx || visibleTop < 0
+    val topVisibleEnough =
+        visibleTop >= visibleTopLimit + marginPx || visibleTop < visibleTopLimit
     if (topVisibleEnough && visibleBottom <= visibleBottomLimit - gapPx) return scrollPx
     // 落点：下缘贴键盘上方（留 gapPx）停住——这是默认想要的位置
     val bottomAligned = visibleBottom - visibleBottomLimit + gapPx + scrollPx
-    // 上界：推得再高也不能让上缘越过「距可见区顶部 marginPx」那条线（高框放不下时由此接管）
-    val topAligned = fieldTopPx - marginPx
+    // 上界：推得再高也不能让上缘越过「距可见区顶部（顶栏下缘）marginPx」那条线
+    val topAligned = fieldTopPx - visibleTopLimit - marginPx
     return minOf(bottomAligned, topAligned).coerceAtLeast(0)
 }

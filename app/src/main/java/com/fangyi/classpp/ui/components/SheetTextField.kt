@@ -72,7 +72,7 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  *   换行符一律滤掉。
  *
  * 「聚焦后点空白取消聚焦（收起键盘）」由宿主容器提供（`clearFocusOnTap`，
- * OverlaySheet 内容列与设置页根列已内置），字段自身无需处理。
+ * OverlaySheet 的内容列、顶栏与钉底槽已内置），字段自身无需处理。
  */
 @Composable
 fun SheetTextField(

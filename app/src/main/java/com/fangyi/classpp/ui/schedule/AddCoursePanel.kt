@@ -1,11 +1,8 @@
 package com.fangyi.classpp.ui.schedule
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -21,7 +18,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringArrayResource
@@ -43,6 +39,7 @@ import com.fangyi.classpp.data.model.overlappingCourses
 import com.fangyi.classpp.data.model.weeksFromSelection
 import com.fangyi.classpp.data.model.weeksTakenByOthers
 import com.fangyi.classpp.ui.components.CardSection
+import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
 import com.fangyi.classpp.ui.components.ColorSwatchCard
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.RowChoiceCard
@@ -247,8 +244,6 @@ fun AddCoursePanel(
     val nameFocus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    val imeInsets = WindowInsets.ime
-    val density = LocalDensity.current
     val context = LocalContext.current
 
     // 校验失败 = 系统 Toast（不占版面）+ error 状态（驱动课程名红框）。
@@ -266,9 +261,7 @@ fun AddCoursePanel(
         }
     }
     // 返回键优先收键盘（键盘收起后不返回给应用），键盘已收起时才关面板
-    BackHandler {
-        if (imeInsets.getBottom(density) > 0) keyboard?.hide() else onDismiss()
-    }
+    BackHandlerHidesKeyboard(onBack = onDismiss)
 
     fun submit() {
         if (selectedWeeks.isEmpty()) {

@@ -1,6 +1,5 @@
 package com.fangyi.classpp.ui.schedule
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -26,6 +25,7 @@ import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.ui.LocalToday
+import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.OverlaySheet
@@ -106,7 +106,7 @@ fun CourseDetailSheet(
     }
     // 系统返回 = 收起浮层而非退出 app；与关闭/下拉同走 closeWithSave，备注照常先落盘。
     // enabled 跟 visible：出场动画期间不再拦截（visible 已 false，重复提交被挡在门外）
-    BackHandler(enabled = visible, onBack = closeWithSave)
+    BackHandlerHidesKeyboard(enabled = visible, onBack = closeWithSave)
 
     // 标签配色（课程名 → 课程卡配色）：课程标签取与主题相反的课程卡配色；其余标签
     // （用户标签）不在表内，由 NoteCard 回落主题 Primary（本浮层无标签仓库）

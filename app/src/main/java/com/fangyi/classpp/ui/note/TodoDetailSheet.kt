@@ -42,6 +42,7 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.withOccurrenceDeadline
 import com.fangyi.classpp.ui.LocalToday
+import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.MenuGrowth
@@ -186,8 +187,9 @@ internal fun TodoDetailSheet(
         onDismiss()
     }
     // 系统返回 = 收起浮层而非退出 app；与关闭/下拉同走 closeWithSave，备注照常先落盘。
+    // 键盘在场时返回键只收键盘（避免把输入中的备注直接落盘关层）。
     // enabled 跟 visible：出场动画期间不再拦截（visible 已 false，重复提交被挡在门外）
-    BackHandler(enabled = visible, onBack = closeWithSave)
+    BackHandlerHidesKeyboard(enabled = visible, onBack = closeWithSave)
     // 步骤侧滑互斥协调器：同一时刻至多一张步骤卡展开。其 BackHandler 注册在上面的浮层
     // 出口之后（后注册者优先，同项目分层出口约定）——展开态下系统返回先收起卡片，
     // 无展开卡才轮到关浮层

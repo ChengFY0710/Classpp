@@ -1,11 +1,8 @@
 package com.fangyi.classpp.ui.schedule
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -14,7 +11,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -31,6 +27,7 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.WeekPattern
 import com.fangyi.classpp.data.occurrencesOn
 import com.fangyi.classpp.ui.LocalToday
+import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.MenuGrowth
@@ -122,13 +119,9 @@ internal fun CourseTodoSheet(
 
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    val imeInsets = WindowInsets.ime
-    val density = LocalDensity.current
 
     // 返回键优先收键盘（键盘收起后不返回给应用），键盘已收起时才关浮层（新建待办浮层同款）
-    BackHandler {
-        if (imeInsets.getBottom(density) > 0) keyboard?.hide() else onDismiss()
-    }
+    BackHandlerHidesKeyboard(onBack = onDismiss)
 
     // 截止解析的基准量：第 1 周 = 开学所在日历周（周一），周号公式与课表页 todayWeek 同源
     val today = LocalToday

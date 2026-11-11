@@ -1,13 +1,10 @@
 package com.fangyi.classpp.ui.schedule
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,14 +19,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
 import com.fangyi.classpp.ui.components.DialogPillButton
@@ -68,14 +64,9 @@ internal fun WakeupImportSheet(
 ) {
     var text by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
-    val keyboard = LocalSoftwareKeyboardController.current
-    val imeInsets = WindowInsets.ime
-    val density = LocalDensity.current
 
     // 返回键优先收键盘（键盘收起后不返回给应用），键盘已收起时才关浮层（同新建课表表单）
-    BackHandler {
-        if (imeInsets.getBottom(density) > 0) keyboard?.hide() else onDismiss()
-    }
+    BackHandlerHidesKeyboard(onBack = onDismiss)
 
     OverlaySheet(
         title = stringResource(R.string.import_wakeup_sheet_title),

@@ -309,9 +309,10 @@ fun OverlaySheet(
     } else {
         with(density) { WindowInsets.statusBars.getTop(density).toDp() }
     }
-    // 内容让位键盘：取 IME 与导航栏的较大者（键盘弹起时 IME 已包含导航区）。让位挂在
-    // 滚动内容末尾而非容器上——容器的位置与高度因此不随键盘变化。键盘收起时 IME 让位部分
-    // 按 TailReserveMillis 缩回（rememberTailReservePx），缩回过程即「内容滚回原位」的可见部分
+    // 内容让位键盘：尾部余量取 IME **超出导航栏**的高度（导航区由下面的底部留白承担，
+    // 不双计）。让位挂在滚动内容末尾而非容器上——容器的位置与高度因此不随键盘变化。
+    // 键盘收起时余量按 TailReserveMillis 缩回（rememberTailReservePx）：它只降低滚动上限，
+    // 停在底部的滚动值随之回落；「滚回弹起前的位置」是 ImeScrollTracker 另一条同拍动画
     val imeBottomPx = WindowInsets.ime.getBottom(density)
     // 键盘终值高度（动画期间不变）：只给「把输入框滚到键盘上方」的自动滚动当换算输入
     val imeTargetBottomPx = rememberImeTargetInsetPx()
@@ -573,6 +574,9 @@ fun OverlaySheet(
                                     // 终值而不是逐帧值：自动滚动的 effect 才不会每帧重启
                                     imeTargetInsetPx = imeTargetBottomPx,
                                     imeVisible = imeVisible,
+                                    // 滚动列顶部被顶栏盖住的高度：可见区从顶栏下缘开始，
+                                    // 高输入框的上缘对齐必须让开这一截（P3-1）
+                                    topInsetPx = with(density) { TopBarHeight.roundToPx() },
                                     // 滚动列本体的接收者：这里正处在 Column 的接收者作用域里
                                     scope = this,
                                     content = content,
@@ -580,8 +584,10 @@ fun OverlaySheet(
                                 // 尾部余量 = 导航栏 + 可调滚动余量；键盘让位不在这里
                                 Spacer(Modifier.height(bottomInsetDp + SheetBottomSlack))
                                 // 键盘弹起时额外撑出的那一截（收起键盘按 TailReserveMillis
-                                // 缩回）：这是**唯一**一处键盘让位。缩回减小滚动上限——
-                                // 停在底部的列表随之回落，其余滚动位置不动
+                                // 缩回）：在本浮层内容列内这是**唯一**一处键盘让位（AI 钉底槽
+                                // 用 imePadding，BottomSelectSheet 自己算整卡抬升）。
+                                // 缩回只减小滚动上限：停在底部的列表随之回落；其他滚动位置
+                                // 由 ImeScrollTracker 的「滚回原位」同拍动画负责，不是不动
                                 TailReserveSpacer(tailReservePx)
                             }
                             OverlaySheetTopBar(
@@ -596,7 +602,12 @@ fun OverlaySheet(
                                 hazeState = if (hazeEnabled) sheetHazeState else null,
                                 buttonBackdrop = glassButtonBackdrop,
                                 dragModifier = topBarDragModifier,
-                                modifier = Modifier.align(Alignment.TopCenter),
+                                // 顶栏空白/标题也属于「卡片留白」：点击清焦收键盘
+                                //（与内容列的 clearFocusOnTap 一致；拖拽越过触摸阈值时
+                                // clickable 自动取消，不影响下拉关闭）
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .clearFocusOnTap(),
                             )
                             // 钉底内容槽（可选）：渐变兜底让滚动内容从其下淡出，导航栏留白由 inset 吃掉。
                             // bottomScrim = false 时容器退化为纯钉底定位：渐变/导航栏留白/12-24 内距
@@ -607,6 +618,9 @@ fun OverlaySheet(
                                     modifier = Modifier
                                         .align(Alignment.BottomCenter)
                                         .fillMaxWidth()
+                                        // 钉底槽的留白（AI 光场 headroom、输入栏外缘等）
+                                        // 同样点空白清焦；槽内输入框/按钮会先消费点击
+                                        .clearFocusOnTap()
                                         .then(
                                             if (bottomScrim) {
                                                 Modifier

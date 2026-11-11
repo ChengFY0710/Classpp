@@ -105,8 +105,8 @@ private const val TagBackgroundAlpha = 0.1f
  * 与 SheetTextField 的差异：描边挂整卡（聚焦时标签区也在框内），输入左对齐、单行。
  *
  * 「点击空白处或其他地方自动保存提交」拆成两半：
- * - 点空白：宿主容器的 clearFocusOnTap（OverlaySheet 内容列已内置）让输入框失焦，
- *   失焦即提交（下方 LaunchedEffect）；
+ * - 点空白：宿主容器的 clearFocusOnTap（OverlaySheet 的内容列、顶栏与钉底槽已内置）
+ *   让输入框失焦，失焦即提交（下方 LaunchedEffect）；
  * - 点其他地方（标签胶囊、课程标签头部）：子级可点元素会消费点击、clearFocusOnTap
  *   收不到，故这些点击里主动 clearFocus——统一走失焦提交。
  *

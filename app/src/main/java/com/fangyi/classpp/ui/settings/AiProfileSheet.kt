@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.settings
 
 import android.content.pm.ApplicationInfo
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
@@ -26,6 +25,7 @@ import com.fangyi.classpp.data.ai.AiProfile
 import com.fangyi.classpp.data.ai.AiProtocol
 import com.fangyi.classpp.data.ai.AiProviderPresets
 import com.fangyi.classpp.ui.components.ActionRowCard
+import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
@@ -318,7 +318,8 @@ internal fun AiProfileSheet(
     // 叠层传采样源）
     val cardHazeState = if (hazeSuspended) null else sheetHazeState
 
-    BackHandler(enabled = true) { onDismiss() }
+    // 返回键优先收键盘，键盘已收起时才关浮层
+    BackHandlerHidesKeyboard(onBack = onDismiss)
 
     // 服务商预设行（与旧 AI 设置页同一套回填规则）
     val debuggable = remember(context) {

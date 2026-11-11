@@ -12,8 +12,9 @@ import androidx.compose.ui.platform.LocalFocusManager
  * 时清除输入焦点，键盘随之收起；子级可点元素（输入框、卡片、按钮）照常消费点击、不受影响。
  *
  * 这是给 [SheetTextField] / [SheetTextArea] 一族配套的宿主能力：字段只能看到自己
- * 范围内的点击，「聚焦后点空白收起键盘」只能由承载它们的容器实现——挂在这些字段
- * 所在滚动容器的根部（OverlaySheet 的内容列已内置；页面直排的表单需自行挂载）。
+ * 范围内的点击，「聚焦后点空白收起键盘」只能由承载它们的容器实现。OverlaySheet 已在
+ * 三处内置：滚动内容列、顶栏（标题/空白）与钉底槽（含 AI 光场 headroom）；页面直排的
+ * 表单需自行挂载。
  */
 @Composable
 fun Modifier.clearFocusOnTap(): Modifier {

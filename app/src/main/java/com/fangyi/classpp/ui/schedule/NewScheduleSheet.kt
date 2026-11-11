@@ -1,10 +1,7 @@
 package com.fangyi.classpp.ui.schedule
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -13,13 +10,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
 import com.fangyi.classpp.ui.components.BottomDateSelectCard
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.CardSection
@@ -66,14 +62,9 @@ internal fun NewScheduleSheet(
     var weeksMounted by remember { mutableStateOf(false) }
     var weeksInitial by remember { mutableIntStateOf(TERM_WEEKS_MIN) }
     val focusManager = LocalFocusManager.current
-    val keyboard = LocalSoftwareKeyboardController.current
-    val imeInsets = WindowInsets.ime
-    val density = LocalDensity.current
 
     // 返回键优先收键盘（键盘收起后不返回给应用），键盘已收起时才关浮层
-    BackHandler {
-        if (imeInsets.getBottom(density) > 0) keyboard?.hide() else onDismiss()
-    }
+    BackHandlerHidesKeyboard(onBack = onDismiss)
 
     // 表单内容的 haze 采样源：OverlaySheet 顶栏磨砂用，叠在其上的开学/结束日期滚轮弹窗
     // 也拿它做卡片磨砂背景模糊——同一状态同源采样

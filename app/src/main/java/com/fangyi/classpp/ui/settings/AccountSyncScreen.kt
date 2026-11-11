@@ -64,6 +64,7 @@ import com.fangyi.classpp.data.sync.remote.RemoteSchoolManager
 import com.fangyi.classpp.data.sync.webview.SchoolCookieCleaner
 import com.fangyi.classpp.ui.components.AccountStatusCard
 import com.fangyi.classpp.ui.components.AccountStatusUi
+import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
 import com.fangyi.classpp.ui.components.DialogPillButton
@@ -1007,9 +1008,9 @@ private fun AccountSyncContent(
         loginVisible = false
     }
 
-    // 自动续期凭据浮层（OverlaySheet 自身不接返回键）：未在登录时收起浮层；
-    // 登录进行中吞掉返回，避免把整页退掉导致协程取消在半途
-    BackHandler(enabled = autoLoginSheetVisible) {
+    // 自动续期凭据浮层（OverlaySheet 自身不接返回键）：键盘在场时先收键盘；
+    // 未在登录时收起浮层；登录进行中吞掉返回，避免把整页退掉导致协程取消在半途
+    BackHandlerHidesKeyboard(enabled = autoLoginSheetVisible) {
         if (!autoLoginBusy) autoLoginSheetVisible = false
     }
 
