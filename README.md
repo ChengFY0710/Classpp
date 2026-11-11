@@ -53,6 +53,8 @@ Developing...
 + 允许任何**非商业目的**的使用、修改与分发（个人学习、研究、爱好项目、非营利组织等均属非商业用途）；
 + **禁止**将本项目（含基于本项目的修改版、衍生作品）用于任何商业用途。
 
+`tools/schoolsync/` 是 `classpp_schoolsync` 仓库的镜像备份，该目录内容按 Apache-2.0 授权（见 `tools/schoolsync/LICENSE`），不适用本项目的 PolyForm 非商业条款。
+
 Copyright (c) 2026 ChengFY
 
 本项目依赖的第三方组件（haze、Cresto、Shapes、AndroidX、kotlinx.serialization 等）均遵循其各自的 Apache-2.0 协议。

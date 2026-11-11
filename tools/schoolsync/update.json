@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "packageName": "com.fangyi.classpp",
+  "versionCode": 4,
+  "versionName": "0.1.5-alpha",
+  "minSupportedVersionCode": 0,
+  "publishedAt": "2026-10-30",
+  "apk": {
+    "urls": [
+      "https://github.com/ChengFY0710/Classpp/releases/download/v0.1.5-alpha/Classpp-v0.1.5-alpha.apk"
+    ],
+    "sizeBytes": 3065193,
+    "sha256": "93477ff5bc8126ef8ed16caf6980b7e94e7d522e902883f8546dbca7134a1584"
+  },
+  "releasePageUrl": "https://github.com/ChengFY0710/Classpp/releases/tag/v0.1.5-alpha",
+  "changelog": {
+    "zh": [],
+    "en": []
+  }
+}

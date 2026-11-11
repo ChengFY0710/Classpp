@@ -1,27 +1,34 @@
-# Classpp 远端学校适配声明（Tier 1）
+# Classpp 远端分发仓库（学校声明 + App 更新清单）
 
-本仓库是 Classpp 的**远端学校适配分发源**。用户在 App 设置页手动点击「更新学校列表」时，
-App 会拉取 `index.json` 与各校声明文件，把「WebView 登录 + JSON 待办接口（+ 可选声明式
-教务课表导入）」类学校动态注册进学校选择器。**接入一所新学校 = 本仓库增加一个 JSON 文件
-并在 `index.json` 登记，无需发版。**
+本仓库是 Classpp 的**远端分发源**，包含两类彼此独立的数据：
 
-> **使用、登记或分发本仓库内容前，请完整阅读 [DISCLAIMER.md](DISCLAIMER.md)。**
+1. **远端学校适配**：用户在 App 设置页手动点击「更新远端学校列表」时，App 会拉取
+   `index.json` 与各校声明文件，把「WebView 登录 + JSON 待办接口（+ 可选声明式
+   教务课表导入）」类学校动态注册进学校选择器。**接入一所新学校 = 本仓库增加一个 JSON
+   文件并在 `index.json` 登记，无需发版。**
+2. **App 更新清单**：用户在关于页手动点击「检查更新」时，App 拉取 `update.json`
+   比对 `versionCode`；清单只含版本、下载地址与校验值等 JSON 元数据，**不托管 APK
+   或其他可执行文件**（安装包由 GitHub Releases 提供，见 §7）。
 
 > 远端学校**默认关闭**，拉取是**纯手动**的：App 不会在启动时或后台自动访问本仓库。
-> 用户在学校选择浮层点击「更新学校列表」后，声明会下载并保存到本地，
+> 用户在学校选择浮层点击「更新远端学校列表」后，声明会下载并保存到本地，
 > 之后每次冷启动从本地缓存恢复（仍不会自动联网更新）。
 
 > 适用范围（Tier 1）：网页（WebView）登录 + JSON 接口取待办；可选 `timetable` 块声明
 > 教务课表页的接口与字段映射（WebView 内固定脚本取数、App 侧映射，**不接收远端 JS**）。
 > 需要原生登录（保存凭据/自动续期）的学校，仍走 App 内编译期适配（Tier 2）。
 
+> **免责声明**：本仓库为社区维护，与任何高校无隶属或授权关系；使用本仓库声明前，
+> 请务必阅读并同意 [DISCLAIMER.md](DISCLAIMER.md)。
+
 ---
 
 ## 1. 仓库结构
 
 ```
-index.json               # 清单：登记哪些学校、各自的声明文件
+index.json               # 学校清单：登记哪些学校、各自的声明文件
 schools/<id>.json        # 单校声明（文件名随意，index 里登记即可）
+update.json              # App 更新清单：版本、APK 下载地址与校验值（见 §7）
 templates/demo.json      # 模板：复制起点，不入 index（生产用户不可见）
 examples/xmu.json        # 厦大真实协议参考范例，不入 index（见 §1.1）
 ```
@@ -85,7 +92,7 @@ examples/xmu.json        # 厦大真实协议参考范例，不入 index（见 �
    需要 WebView 教务课表导入时再加可选 `timetable` 块（§4.6）；
 3. 在 `index.json` 的 `schools` 里登记 `{ "id": "<id>", "file": "schools/<id>.json" }`；
 4. push 到本仓库 `main` 分支；
-5. 用户在学校选择浮层手动点击「更新学校列表」；更新成功后新学校出现在选择器，
+5. 用户在学校选择浮层手动点击「更新远端学校列表」；更新成功后新学校出现在选择器，
    声明保存到本地，重启后仍可用（不会自动联网更新）。
 
 **自测清单（不依赖 App 发版）：**
@@ -253,7 +260,7 @@ App 在解码后逐条执行以下硬校验，任一失败即跳过该学校（�
 
 拉取纪律：
 
-- **默认关闭，只由用户手动触发**（学校选择浮层「更新学校列表」），没有启动/后台/定时拉取；
+- **默认关闭，只由用户手动触发**（学校选择浮层「更新远端学校列表」），没有启动/后台/定时拉取；
 - 清单/单校文件非 2xx、JSON 坏、校验失败 → 跳过（清单坏则本次更新失败，缓存原样保留）；
   被跳过的条目会出现在更新提示的「已跳过」计数里，具体校验问题写入调试日志；
 - 成功后写缓存（`filesDir/sync_remote/`），冷启动从本地缓存恢复远端校（不联网）；
@@ -279,7 +286,95 @@ App 在解码后逐条执行以下硬校验，任一失败即跳过该学校（�
 
 ---
 
-## 7. 许可
+## 7. App 更新清单（`update.json`）
 
-本仓库的声明文件与文档按 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)
-提供，完整条文见发布仓库根目录的 `LICENSE`。提交内容即视为同意按该许可证授权。
+`update.json` 是 Classpp 关于页「检查更新」的数据源。**检查同样是纯手动的**：只有用户
+在关于页点击「检查更新」时 App 才会请求本文件；App 不会在启动、后台或定时任务中自动
+检查更新。
+
+地址（main 分支）：
+
+```
+https://gitee.com/ChengFY0710/classpp_schoolsync/raw/main/update.json
+```
+
+### 7.1 字段
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `schemaVersion` | 是 | 当前 App 支持 `≤ 1`；更高的清单会被整体忽略 |
+| `packageName` | 是 | 固定 `com.fangyi.classpp`；与当前 App 不一致时拒绝 |
+| `versionCode` | 是 | 最新版本号（整数，**更新判断的唯一依据**） |
+| `versionName` | 是 | 展示用版本名，如 `0.1.6-alpha` |
+| `minSupportedVersionCode` | 否 | 低于该值的客户端必须更新；缺省或 `0` = 不强制 |
+| `publishedAt` | 是 | 发布日期，`yyyy-MM-dd` |
+| `apk.urls` | 是 | APK 直链数组（**仅 https**），按顺序尝试；空数组 = 只能打开发布页 |
+| `apk.sizeBytes` | 是 | APK 字节数，下载后校验 |
+| `apk.sha256` | 是 | APK 的 SHA-256（64 位小写十六进制），下载后校验 |
+| `releasePageUrl` | 否 | 发布页/下载页；无法应用内下载时兜底打开 |
+| `changelog` | 否 | 分语言更新说明，键为语言标签（当前 `zh` / `en`）；缺省或空数组 = 不显示 |
+
+示例（发布 `0.1.6-alpha` 时）：
+
+```json
+{
+  "schemaVersion": 1,
+  "packageName": "com.fangyi.classpp",
+  "versionCode": 5,
+  "versionName": "0.1.6-alpha",
+  "minSupportedVersionCode": 0,
+  "publishedAt": "2026-11-20",
+  "apk": {
+    "urls": [
+      "https://github.com/ChengFY0710/Classpp/releases/download/v0.1.6-alpha/Classpp-v0.1.6-alpha.apk"
+    ],
+    "sizeBytes": 3123456,
+    "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
+  "releasePageUrl": "https://github.com/ChengFY0710/Classpp/releases/tag/v0.1.6-alpha",
+  "changelog": {
+    "zh": ["新增：关于页检查更新", "修复：……"],
+    "en": ["New: update check on the About page", "Fixed: …"]
+  }
+}
+```
+
+### 7.2 发布流程（每个版本必做）
+
+1. 在 App 的 `app/build.gradle.kts` 提升 `versionCode` 与 `versionName`；
+   **`versionCode` 必须严格大于上一版**，否则检查不会命中；
+2. 构建并签名 release APK；
+3. 在 GitHub 创建 release（tag `vX.Y.Z-alpha`），上传资产
+   `Classpp-vX.Y.Z-alpha.apk`；
+4. 计算 APK 大小与 SHA-256：
+
+   ```bash
+   stat -c '%s' Classpp-vX.Y.Z-alpha.apk      # Linux / Git Bash
+   sha256sum Classpp-vX.Y.Z-alpha.apk
+   ```
+
+   Windows PowerShell：
+
+   ```powershell
+   (Get-Item .\Classpp-vX.Y.Z-alpha.apk).Length
+   Get-FileHash .\Classpp-vX.Y.Z-alpha.apk -Algorithm SHA256
+   ```
+
+5. 更新本文件的 `versionCode` / `versionName` / `publishedAt` / `apk.*` /
+   `releasePageUrl` / `changelog`；
+6. push 到本仓库 `main` 分支，再用手机网络访问一次上面的 raw 地址确认内容已生效
+   （Gitee raw 可能有 CDN 缓存，必要时等待几分钟或加查询参数重试）。
+
+> **不要让 `update.json` 指向尚未发布的版本**：否则用户会看到更新提示但下载 404。
+> 发布失败或需要撤回时，先把 `versionCode` 回退到上一个已发布版本。
+
+### 7.3 安全与校验
+
+- App 只接受 `https://` 的 `apk.urls`，并校验 `packageName`、`sizeBytes` 与 `sha256`
+  后才交给系统安装器；
+- GitHub 资产直链会 `302` 到 `release-assets.githubusercontent.com`，下载器需要跟随
+  重定向，并且每一跳都只接受 `https://`；
+- Android 安装器还会校验 APK 签名必须与已安装版本一致，签名不同的包无法覆盖安装；
+- 本仓库**不托管 APK**，也不执行 `update.json` 中的任何内容，它只是静态元数据；
+- `sha256` 只能防传输损坏/替换，不能防清单本身被篡改；如本仓库或 Gitee 账号失守，
+  请同时核对 GitHub Release 资产与哈希，并以系统签名校验为最后一道防线。

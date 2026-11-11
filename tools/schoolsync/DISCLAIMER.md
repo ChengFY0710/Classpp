@@ -1,9 +1,9 @@
-# Classpp 远端学校声明仓库免责声明
+# Classpp 远端分发仓库免责声明
 
-**Classpp / Class Plus Plus（Classpp / Class++）远端学校适配分发源**
+**Classpp / Class Plus Plus（Classpp / Class++）远端学校适配与 App 更新清单分发源**
 （主项目目录：`tools/schoolsync/`；发布地址：<https://gitee.com/ChengFY0710/classpp_schoolsync>）
 
-最后更新：2026-11-08
+最后更新：2026-11-11
 
 > **请在使用、登记、分发或依赖本仓库任何内容之前，完整阅读本声明。您访问、拉取、使用、复制、修改、提交或分发本仓库内容，即视为您已阅读、理解并同意本声明的全部内容。如不同意，请立即停止使用并删除本仓库及其全部副本。**
 
@@ -11,7 +11,7 @@
 
 ## 1. 仓库性质
 
-1.1 本仓库是 Classpp 的**远端学校适配分发源**，仅包含 JSON 声明与说明文档：`index.json`（学校清单）、`schools/<id>.json`（单校声明）、`templates/demo.json`（模板）与 `examples/xmu.json`（参考范例）。声明面向 Tier 1 能力（WebView 登录 + JSON 待办接口 + 可选声明式教务课表导入），仅描述请求、字段与模板；App 使用固定脚本取数，**不执行远端 JavaScript/HTML**。它不是 App 本体的发布渠道，不包含 APK、安装包、更新器或任何可执行程序。需要原生登录/自动续期的学校属于 App 内编译期适配，不在本仓库范围内。
+1.1 本仓库是 Classpp 的**远端分发源**，仅包含 JSON 数据与说明文档：`index.json`（学校清单）、`schools/<id>.json`（单校声明）、`templates/demo.json`（模板）、`examples/xmu.json`（参考范例）与 `update.json`（App 更新清单）。学校声明面向 Tier 1 能力（WebView 登录 + JSON 待办接口 + 可选声明式教务课表导入），仅描述请求、字段与模板；App 使用固定脚本取数，**不执行远端 JavaScript/HTML**。`update.json` 仅包含版本号、安装包下载地址、文件大小、SHA-256 与更新说明等元数据，供用户在关于页手动检查更新。**本仓库不是 APK 的托管或分发渠道，不包含 APK、安装包、可执行程序或更新器程序**；安装包由 GitHub Releases 等第三方平台提供。需要原生登录/自动续期的学校属于 App 内编译期适配，不在本仓库范围内。
 
 1.2 本仓库由个人开发者出于兴趣爱好维护，属于**非官方**项目，与 Classpp 主项目同源；内容可能由 AI 编程工具辅助生成、整理或校对，**未经学校、教育机构或任何第三方的审核、授权或认证**。
 
@@ -21,7 +21,7 @@
 
 ## 2. 非官方声明与第三方关系
 
-2.1 本仓库与任何学校、教育机构、教务系统、课程中心、统一身份认证服务提供方，以及 Gitee 等托管平台**均无隶属、合作、授权、代理或背书关系**。本仓库不代表上述任何机构的立场。
+2.1 本仓库与任何学校、教育机构、教务系统、课程中心、统一身份认证服务提供方，以及 Gitee、GitHub 等托管平台**均无隶属、合作、授权、代理或背书关系**。本仓库不代表上述任何机构的立场。
 
 2.2 声明中出现的学校名称、系统名称、接口路径、字段名、界面文案等，仅用于描述互操作配置（登录域名、取数路径、字段映射等），**不构成对任何学校的授权、认证或官方适配**，也不代表学校允许、认可或推荐本仓库或 Classpp。
 
@@ -31,7 +31,7 @@
 
 ## 3. 信任边界与使用风险（致用户）
 
-3.1 远端学校能力在 Classpp 中**默认关闭**，只在用户于学校选择浮层手动点击「更新学校列表」时联网拉取；App 不会在启动、后台或定时任务中自动访问本仓库。拉取成功后声明缓存在本机，冷启动只读本地缓存，不自动联网更新。
+3.1 远端学校能力在 Classpp 中**默认关闭**，只在用户于学校选择浮层手动点击「更新远端学校列表」时联网拉取；App 不会在启动、后台或定时任务中自动访问本仓库。拉取成功后声明缓存在本机，冷启动只读本地缓存，不自动联网更新。
 
 3.2 首次连接某所远端学校时，App 会展示学校名与登录域，要求用户确认；可选教务课表页的域名也会一并展示。确认记录仅保存在本机。**请务必核对域名是否为该校真实域名，再确认登录。**
 
@@ -53,15 +53,19 @@
 
 3.7 远端声明可能因本地缓存、Gitee/CDN 缓存或客户端版本差异而滞后；已注册学校的声明变更通常需要重启 App 后才生效。不同版本的 App 对 `schemaVersion` 的支持范围不同，旧客户端可能整体忽略较新的清单。
 
+3.8 App 的「检查更新」同样是**纯手动**的：仅在用户于关于页点击时请求本仓库的 `update.json`，不会在启动、后台或定时任务中自动检查。更新清单只包含版本号、安装包下载地址、文件大小、SHA-256 与更新说明等元数据；APK 由 GitHub Releases 等第三方平台托管，下载由您的设备直接发往该平台。App 会在交给系统安装器前校验包名、大小与 SHA-256，Android 系统还会校验 APK 签名是否与已安装版本一致。**这些校验只能降低部分风险，不构成对第三方托管平台、下载链路或您网络环境的安全保证。**
+
 ## 4. 数据处理与隐私
 
 4.1 本仓库是**静态数据仓库**，作者不运营用于收集用户数据的服务器，也不会通过本仓库主动收集、上传或存储您的账号、密码、Cookie、学号、待办、课表或其他个人信息。
 
-4.2 拉取声明时，您的设备会向 Gitee 的 raw 地址发起普通 HTTPS 请求。该请求本身不包含账号、密码、Cookie 或待办内容；但作为网络访问，Gitee、CDN 及其基础设施可能按平台规则记录 IP 地址、访问时间、User-Agent、请求路径等日志。这些日志由平台控制，作者通常无法访问或删除，其处理规则以 Gitee 的隐私政策为准。
+4.2 拉取学校声明或更新清单时，您的设备会向 Gitee 的 raw 地址发起普通 HTTPS 请求。该请求本身不包含账号、密码、Cookie 或待办内容；但作为网络访问，Gitee、CDN 及其基础设施可能按平台规则记录 IP 地址、访问时间、User-Agent、请求路径等日志。这些日志由平台控制，作者通常无法访问或删除，其处理规则以 Gitee 的隐私政策为准。
 
 4.3 声明在本机缓存后，其读取、更新与删除由 Classpp 在本地完成；App 如何处理本地数据、系统备份与导出，见主项目 [DISCLAIMER.md](https://github.com/ChengFY0710/Classpp/blob/main/DISCLAIMER.md) 的相关章节。
 
 4.4 请勿在提交的声明、示例、文档、issue 或 PR 中放入任何个人数据、账号密码、Cookie、Token、学号、身份证号、联系方式或其他敏感信息。
+
+4.5 从应用内下载更新时，您的设备会直接访问 `update.json` 中给出的第三方地址（当前为 GitHub Releases 及其 CDN）。该请求会向相应平台暴露 IP 地址、访问时间、User-Agent 等常规网络信息；平台日志由该平台控制，其处理规则以其隐私政策为准。作者不运营下载服务器，也不会收到您的下载记录。
 
 ## 5. 贡献与登记纪律
 
@@ -79,7 +83,7 @@
 - 不侵犯学校、第三方或任何人的知识产权、商标权、隐私权或其他合法权益；
 - 不包含商业推广、收费服务、引流或与 Classpp 无关的内容。
 
-5.2 作者有权自行决定是否接受、修改、删除或拒绝任何提交，且无义务说明理由。对于错误、过时、存在安全风险、违反学校规定或法律法规、或收到权利人异议的声明，作者可在不事先通知的情况下修改或移除。
+5.2 作者有权自行决定是否接受、修改、删除或拒绝任何提交，且无义务说明理由。对于错误、过时、存在安全风险、违反学校规定或法律法规、或收到权利人异议的声明，作者可在不事先通知的情况下修改或移除。为避免供应链风险，`update.json` 中的版本号、下载地址、文件大小与哈希由作者维护，不接受第三方提交或修改。
 
 5.3 **已发布学校的 `id` 不应随意更改**：`id` 是存储命名空间、待办来源与本地 id 前缀，更改会导致已导入数据的归属丢失。声明发布后请保持 `id` 稳定。
 
@@ -133,9 +137,9 @@
 
 ## English Summary
 
-This repository (`classpp_schoolsync`) is the **data-only** remote school declaration source for Classpp, a personal non-commercial open-source project. It contains JSON declarations and documentation only — **no executable code, no APK, no remote JavaScript**. The declarations are consumed by the Classpp app only when the user manually triggers “Update remote school list”; the app does not fetch them automatically in the background. The repository is **not affiliated with, authorized by, or endorsed by any school, academic system, LMS provider, or Gitee**. School names and trademarks belong to their respective owners.
+This repository (`classpp_schoolsync`) is the **data-only** remote distribution source for Classpp, a personal non-commercial open-source project. It contains JSON declarations, `update.json` (app release metadata), and documentation only — **no executable code, no APK, no remote JavaScript**. School declarations are consumed by the Classpp app only when the user manually triggers “Update remote school list”; `update.json` is fetched only when the user manually taps “Check for updates” on the About page. The app does not fetch either automatically in the background. APKs are hosted on GitHub Releases, not in this repository. The repository is **not affiliated with, authorized by, or endorsed by any school, academic system, LMS provider, Gitee, or GitHub**. School names and trademarks belong to their respective owners.
 
-All content is provided **“AS IS”, without warranty of any kind**. Declarations may be outdated, incorrect, or tampered with; the app’s validation is a risk reduction, not a security guarantee. The repository does not collect your credentials, cookies, todos, or personal data; fetching a declaration is a normal HTTPS request to Gitee, whose platform logs are governed by Gitee’s policies. Contributors must only submit information obtained lawfully from their own accounts, must not include credentials or personal data, and must not attempt to bypass authentication, access controls, or rate limits or disrupt school systems. Repository content is licensed under the **Apache License 2.0**.
+All content is provided **“AS IS”, without warranty of any kind**. Declarations may be outdated, incorrect, or tampered with; the app’s validation is a risk reduction, not a security guarantee. The repository does not collect your credentials, cookies, todos, or personal data; fetching a declaration or the update manifest is a normal HTTPS request to Gitee, whose platform logs are governed by Gitee’s policies. Downloading an APK connects directly to GitHub Releases and is subject to GitHub’s policies. Contributors must only submit information obtained lawfully from their own accounts, must not include credentials or personal data, and must not attempt to bypass authentication, access controls, or rate limits or disrupt school systems. Repository content is licensed under the **Apache License 2.0**.
 
 To the maximum extent permitted by applicable law, the author is **not liable for any damages or losses** arising from the use of or inability to use this repository or its content, including account restriction, data loss, academic loss, or third-party claims. If you do not agree with this disclaimer, do not use this repository or its declarations. For takedown or infringement concerns, please contact the author through the main project’s public contact channel.
 
