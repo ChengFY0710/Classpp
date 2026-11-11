@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -27,6 +26,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -53,13 +53,16 @@ private val AboutAppIconSize = 64.dp
 /** 应用图标在槽位内再放大，让品牌图标铺满连续曲率轮廓 */
 private const val AboutAppIconScale = 1.7f
 
+/** 作者主页：点击作者卡片经系统浏览器打开 */
+private const val AboutAuthorUrl = "https://github.com/ChengFY0710"
+
 /**
  * 关于子页：应用 Logo / 名称与副标题、作者、当前版本、更新日志、致谢，以及
  * 「用前须知」分组（免责声明 / 开源协议 / 隐私与政策）。
  *
  * 「用前须知」三行分别打开 [AboutDocumentSheet] 文档浮层，致谢行打开 [AboutThanksSheet]
- * 第三方项目列表；作者 / 检查更新仍为占位，更新日志只展示「标题 + 下箭头」的折叠态，
- * 展开内容后续再接。版本号经 [appVersionName] 运行时读取 Gradle `versionName`，
+ * 第三方项目列表；作者卡片经系统浏览器打开作者主页，检查更新 / 更新日志仍为占位
+ * （两者同卡同款导航行），版本号经 [appVersionName] 运行时读取 Gradle `versionName`，
  * 不在界面层写死，也不依赖 BuildConfig 生成类。
  *
  * 页面骨架与其余设置子页一致：Scaffold 全宽出血 + [SettingsScrollContent] 统一页边距 /
@@ -114,8 +117,13 @@ fun AboutScreen(
                 .only(WindowInsetsSides.Bottom)
                 .asPaddingValues()
                 .calculateBottomPadding()
-            // 占位回调：作者 / 检查更新后续再接各自目标；用前须知走文档浮层，致谢走列表浮层
+            // 占位回调：检查更新 / 更新日志后续再接目标；用前须知走文档浮层，致谢走列表浮层
             val placeholder = remember { {} }
+            val uriHandler = LocalUriHandler.current
+            // 作者卡片：与致谢列表一致，经系统浏览器打开作者主页，失败静默降级
+            val openAuthorProfile: () -> Unit = {
+                runCatching { uriHandler.openUri(AboutAuthorUrl) }
+            }
             // 文档浮层两段式开关：visible 复位后播退场，mounted 在 onDismissed 才清空
             var documentVisible by remember { mutableStateOf<AboutDocument?>(null) }
             var documentMounted by remember { mutableStateOf<AboutDocument?>(null) }
@@ -135,7 +143,7 @@ fun AboutScreen(
                 topPadding = topBarHeight + TopBarContentGap,
                 bottomPadding = navBarPadding + SheetBottomSlack,
             ) {
-                // 顶部无题分组：应用信息 + 作者 + 检查更新 + 更新日志 + 致谢，组内卡间距走默认
+                // 顶部无题分组：应用信息 + 作者 + 版本（检查更新 / 更新日志）+ 致谢，组内卡间距走默认
                 CardSection {
                     SettingsInfoHeaderCard(
                         // 关于页应用 Logo：设计稿导出的位图资源
@@ -156,7 +164,7 @@ fun AboutScreen(
                                 description = stringResource(R.string.about_author_role),
                                 leading = { AuthorAvatar() },
                                 trailing = { Chevron() },
-                                onClick = placeholder,
+                                onClick = openAuthorProfile,
                             ),
                         ),
                     )
@@ -171,21 +179,10 @@ fun AboutScreen(
                                 ),
                                 onClick = placeholder,
                             ),
-                        ),
-                    )
-                    SettingsCard(
-                        items = listOf(
-                            SettingsCardItem.Custom(
+                            // 与检查更新同卡同款行型：右侧统一主题色箭头，日志内容后续再接
+                            SettingsCardItem.Nav(
                                 label = stringResource(R.string.about_changelog),
-                                // 折叠态：不接点击，展开后的日志内容后续再接
-                                trailing = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_chevron_down),
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                },
+                                onClick = placeholder,
                             ),
                         ),
                     )

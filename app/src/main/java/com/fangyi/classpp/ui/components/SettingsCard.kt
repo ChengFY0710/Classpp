@@ -404,8 +404,8 @@ private fun CustomRow(item: SettingsCardItem.Custom, minHeight: Dp) {
     }
 }
 
-/** 自定义行前导槽（头像圆等）与文字块的间距：12dp，对齐行卡图标↔文本档 */
-private val CustomRowLeadingGap = 12.dp
+/** 自定义行前导槽（头像圆等）与文字块的间距：14dp，对齐行卡图标↔文本档 */
+private val CustomRowLeadingGap = 14.dp
 
 /** 滑块行渲染：label + 右上当前值同行，下方整宽滑条；内距同普通行（16/14），label↔滑条 14 复用行纵向内距节奏 */
 @Composable
