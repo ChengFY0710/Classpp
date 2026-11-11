@@ -222,6 +222,20 @@
     <string name="settings_ai">AI 设置</string>
     <string name="settings_data_management">数据管理</string>
     <string name="settings_about">关于</string>
+    <!-- 关于子页（应用信息 / 作者 / 版本 / 更新日志 / 致谢 / 用前须知） -->
+    <string name="about_app_title">Class++</string>
+    <string name="about_app_description">一款简洁高颜值安卓课表app</string>
+    <string name="about_author_name">ChengFY</string>
+    <string name="about_author_role">设计 / 开发</string>
+    <string name="about_check_update">检查更新</string>
+    <!-- 版本号运行时读取 Gradle versionName，不写死 -->
+    <string name="about_current_version">当前版本：v%1$s</string>
+    <string name="about_changelog">更新日志</string>
+    <string name="about_thanks">致谢</string>
+    <string name="about_section_before_use">用前须知</string>
+    <string name="about_disclaimer">免责声明</string>
+    <string name="about_open_source_license">开源协议</string>
+    <string name="about_privacy_policy">隐私与政策</string>
     <!-- 数据管理（存储用量 / 全量备份导出与导入） -->
     <string name="data_management_header_title">数据管理</string>
     <string name="data_management_header_description">备份课表、待办、标签、日程背景图与 AI 对话记录，并查看存储空间用量</string>

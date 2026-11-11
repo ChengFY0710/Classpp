@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -23,9 +25,11 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SettingsCardShape
@@ -61,8 +65,11 @@ private const val IconGradientEndAlpha = 0.25f
  * （图标 + 标题 + 说明）自适应，内容整组水平居中；两行说明时卡高 159dp（上留白 24、下留白 20）。
  *
  * 规格（对齐 [SettingsCard]）：
- * - 图标 40dp：[iconColor] 为 45° 斜向渐变起点（100% 不透明 → 25% 同色，右下淡出），
- *   调用点可换色；图标本身的 fillColor 不参与着色，镂空处透出卡面底色；
+ * - 图标 [InfoHeaderIconSize]（[iconSize] 可调）：[iconColor] 为 45° 斜向渐变起点
+ *   （100% 不透明 → 25% 同色，右下淡出），调用点可换色；图标本身的 fillColor 不参与
+ *   着色，镂空处透出卡面底色；
+ *   [tintIcon] = false 时图标保持原色（应用 Logo 等自带配色的资源），不做渐变着色；
+ *   [iconShape] 非空时按该连续曲率形状裁剪（应用图标位图用）；
  * - 标题：fieldLabel（16sp SemiBold onSurface），与设置卡行 label 同款；
  * - 说明：settingsDescription（14sp/20sp Normal secondaryText），不限行数、按文案自然换行，
  *   行数增减时卡片高度随之伸缩，说明距卡底的留白保持不变；
@@ -75,6 +82,12 @@ fun SettingsInfoHeaderCard(
     description: String,
     modifier: Modifier = Modifier,
     iconColor: Color = MaterialTheme.colorScheme.primary,
+    // false = 保留图标原色（应用 Logo 等品牌资源）；true = 走 [GradientTintedIcon] 渐变成色
+    tintIcon: Boolean = true,
+    // 图标边长（默认 40dp）；关于页应用图标可传更大值
+    iconSize: Dp = InfoHeaderIconSize,
+    // 可选裁剪形状（连续曲率圆角等）；null = 不裁剪（默认，既有调用点渲染不变）
+    iconShape: Shape? = null,
 ) {
     Box(
         modifier = modifier
@@ -93,11 +106,26 @@ fun SettingsInfoHeaderCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement =  Arrangement.Center,
         ) {
-            GradientTintedIcon(
-                icon = icon,
-                color = iconColor,
-                modifier = Modifier.size(InfoHeaderIconSize),
-            )
+            val iconModifier = if (iconShape != null) {
+                Modifier
+                    .size(iconSize)
+                    .clip(iconShape)
+            } else {
+                Modifier.size(iconSize)
+            }
+            if (tintIcon) {
+                GradientTintedIcon(
+                    icon = icon,
+                    color = iconColor,
+                    modifier = iconModifier,
+                )
+            } else {
+                Image(
+                    painter = painterResource(icon),
+                    contentDescription = null,
+                    modifier = iconModifier,
+                )
+            }
             Spacer(Modifier.height(InfoHeaderIconTitleGap))
             Text(
                 text = title,

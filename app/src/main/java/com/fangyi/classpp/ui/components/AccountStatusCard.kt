@@ -108,8 +108,8 @@ private fun AccountAvatar(name: String, image: AvatarImage?) {
     }
 }
 
-/** 头像圆直径：52dp，行卡内与文字块垂直居中 */
-private val AccountAvatarSize = 52.dp
+/** 头像圆直径：52dp，行卡内与文字块垂直居中（关于页作者行复用同一尺寸） */
+internal val AccountAvatarSize = 52.dp
 
 /** 同步时刻展示（设备本地时区的 yyyy-MM-dd HH:mm；数字形态两种语言通用） */
 private fun formatSyncTime(millis: Long): String {

@@ -165,13 +165,13 @@ private fun rememberSettingsEntryItem(
  *   「AI 设置」子页（[AISettingsScreen]）承载 AI 服务商/连接/Key 配置，已实装；
  *   「账号与同步」子页（[AccountSyncScreen]）承载学校账号与待办同步，已实装；
  *   「数据管理」子页（[DataManagementScreen]）承载存储用量与全量备份导出/导入，已实装；
- *   「关于」入口本次仅占位（点击暂无响应，子页后续接入）；
+ *   「关于」子页（[AboutScreen]）承载应用信息、版本、更新日志与用前须知，本轮先做 UI；
  * - 各子页互斥（各自从根页打开、经根页返回，永不同屏）：「账号与同步」覆盖层嵌在最外层，
- *   「AI 设置」次之，通知页与「个性化页 + 数据管理页 + 根页」整体作为它们的 behind——根页
- *   仍只组合一次，嵌套层的让位视差与压暗遮罩把下层内容当一个整体对待；
- * - 返回键优先关子页（账号与同步 → AI 设置 → 通知页 → 个性化页 → 数据管理页）；无子页时经
- *   [onClose] 退出设置。子页退场动画期间标志已复位，此时再按返回会直接退出设置——与设置页
- *   覆盖层「退场中幂等关闭」同语义。
+ *   「AI 设置」次之，通知页与「个性化页 + 数据管理页 + 关于页 + 根页」整体作为它们的
+ *   behind——根页仍只组合一次，嵌套层的让位视差与压暗遮罩把下层内容当一个整体对待；
+ * - 返回键优先关子页（账号与同步 → AI 设置 → 通知页 → 个性化页 → 数据管理页 → 关于页）；
+ *   无子页时经 [onClose] 退出设置。子页退场动画期间标志已复位，此时再按返回会直接退出
+ *   设置——与设置页覆盖层「退场中幂等关闭」同语义。
  */
 @Composable
 fun SettingsScreen(
@@ -225,6 +225,7 @@ fun SettingsScreen(
     var showAiSettings by rememberSaveable { mutableStateOf(false) }
     var showAccountSync by rememberSaveable { mutableStateOf(false) }
     var showDataManagement by rememberSaveable { mutableStateOf(false) }
+    var showAbout by rememberSaveable { mutableStateOf(false) }
     // 覆盖层内容常驻组合（ui.motion 的 PageOverlayTransition）：隐藏态下页面只是停在
     // 屏外、返回键处理必须让位给系统（否则主界面按返回会被吃掉）；转场彻底结束后把
     // 子页复位到根页——与此前 AnimatedVisibility「关闭即销毁」的重开语义一致
@@ -232,13 +233,14 @@ fun SettingsScreen(
     // 启动空闲预热帧（MainActivity 在首帧后触发）：整页停在 x=0 近透明画两帧，
     // 让各屏顶栏的 Haze 初始化并录下就位帧。交互仍按 overlayActive 判定
     val prewarm = LocalPageOverlayPrewarm.current
-    // 五个嵌套覆盖层的进度状态上提：既传给嵌套转场，也让各屏顶栏在「任意一层在动」
-    // 时统一走冻结重放（根页在全部五层之外，子页也可能被祖先的 behind 视差带走）
+    // 六个嵌套覆盖层的进度状态上提：既传给嵌套转场，也让各屏顶栏在「任意一层在动」
+    // 时统一走冻结重放（根页在全部六层之外，子页也可能被祖先的 behind 视差带走）
     val personalizationTransition = rememberPageOverlayTransitionState()
     val notificationTransition = rememberPageOverlayTransitionState()
     val aiSettingsTransition = rememberPageOverlayTransitionState()
     val accountSyncTransition = rememberPageOverlayTransitionState()
     val dataManagementTransition = rememberPageOverlayTransitionState()
+    val aboutTransition = rememberPageOverlayTransitionState()
     // 活跃会话：账号与同步子页的唯一数据源。
     // fallback flow 保证 collectAsState 无条件调用（registry 首帧未装配时按 Loading 展示）
     val fallbackSlot = remember { MutableStateFlow<SessionSlot>(SessionSlot.Loading) }
@@ -253,6 +255,7 @@ fun SettingsScreen(
         aiSettingsTransition,
         accountSyncTransition,
         dataManagementTransition,
+        aboutTransition,
     ) {
         {
             overlayTransitionState?.isTransforming == true ||
@@ -260,7 +263,8 @@ fun SettingsScreen(
                 notificationTransition.isTransforming ||
                 aiSettingsTransition.isTransforming ||
                 accountSyncTransition.isTransforming ||
-                dataManagementTransition.isTransforming
+                dataManagementTransition.isTransforming ||
+                aboutTransition.isTransforming
         }
     }
     // 导航回调记忆化（同 MainActivity 的范式）：闭包捕获同一 MutableState 实例，
@@ -270,20 +274,23 @@ fun SettingsScreen(
     val openAiSettings = remember { { showAiSettings = true } }
     val openAccountSync = remember { { showAccountSync = true } }
     val openDataManagement = remember { { showDataManagement = true } }
+    val openAbout = remember { { showAbout = true } }
     val closePersonalization = remember { { showPersonalization = false } }
     val closeNotifications = remember { { showNotifications = false } }
     val closeAiSettings = remember { { showAiSettings = false } }
     val closeAccountSync = remember { { showAccountSync = false } }
     val closeDataManagement = remember { { showDataManagement = false } }
+    val closeAbout = remember { { showAbout = false } }
     val fullSizeModifier = remember { Modifier.fillMaxSize() }
     BackHandler(enabled = overlayActive) {
         when {
-            // 子页逐层退：账号与同步在最外层，优先于 AI 设置/通知页/个性化页/数据管理页
+            // 子页逐层退：账号与同步在最外层，优先于 AI 设置/通知页/个性化页/数据管理页/关于页
             showAccountSync -> showAccountSync = false
             showAiSettings -> showAiSettings = false
             showNotifications -> showNotifications = false
             showPersonalization -> showPersonalization = false
             showDataManagement -> showDataManagement = false
+            showAbout -> showAbout = false
             else -> onClose()
         }
     }
@@ -294,6 +301,7 @@ fun SettingsScreen(
             showAiSettings = false
             showAccountSync = false
             showDataManagement = false
+            showAbout = false
         }
     }
     // 直达子页请求：展开「账号与同步」（转场与手动进入一致）。声明在上方复位效果之后，
@@ -347,31 +355,46 @@ fun SettingsScreen(
                                         state = personalizationTransition,
                                         prewarm = prewarm,
                                         behind = {
-                                            // 「数据管理」紧贴根页：它是与个性化同级的根级子页，
-                                            // 打开时盖住根页，其余子页此时全部停在屏外（互斥）
+                                            // 「数据管理」与「关于」都是根级子页：数据管理在外、
+                                            // 「关于」紧贴根页；两者互斥，打开时其余子页停在屏外
                                             PageOverlayTransition(
                                                 visible = showDataManagement,
                                                 modifier = fullSizeModifier,
                                                 state = dataManagementTransition,
                                                 prewarm = prewarm,
                                                 behind = {
-                                                    SettingsHomePage(
-                                                        onClose = onClose,
-                                                        onOpenPersonalization = openPersonalization,
-                                                        onOpenNotifications = openNotifications,
-                                                        onOpenAiSettings = openAiSettings,
-                                                        onOpenAccountSync = openAccountSync,
-                                                        onOpenDataManagement = openDataManagement,
-                                                        schools = schools,
-                                                        aiChatRepository = aiChatRepository,
-                                                        repository = repository,
-                                                        // 设置覆盖层隐藏时整页停在屏外仍是常驻组合：Haze 效果只在
-                                                        // 覆盖层活跃期挂载，避免对屏外页面做源捕获/模糊（Haze 2 下
-                                                        // 屏外页面上的效果会触发 RenderThread 递归崩溃）
-                                                        overlayActive = overlayActive,
-                                                        settingsTransforming = settingsTransforming,
+                                                    PageOverlayTransition(
+                                                        visible = showAbout,
                                                         modifier = fullSizeModifier,
-                                                    )
+                                                        state = aboutTransition,
+                                                        prewarm = prewarm,
+                                                        behind = {
+                                                            SettingsHomePage(
+                                                                onClose = onClose,
+                                                                onOpenPersonalization = openPersonalization,
+                                                                onOpenNotifications = openNotifications,
+                                                                onOpenAiSettings = openAiSettings,
+                                                                onOpenAccountSync = openAccountSync,
+                                                                onOpenDataManagement = openDataManagement,
+                                                                onOpenAbout = openAbout,
+                                                                schools = schools,
+                                                                aiChatRepository = aiChatRepository,
+                                                                repository = repository,
+                                                                // 设置覆盖层隐藏时整页停在屏外仍是常驻组合：Haze 效果只在
+                                                                // 覆盖层活跃期挂载，避免对屏外页面做源捕获/模糊（Haze 2 下
+                                                                // 屏外页面上的效果会触发 RenderThread 递归崩溃）
+                                                                overlayActive = overlayActive,
+                                                                settingsTransforming = settingsTransforming,
+                                                                modifier = fullSizeModifier,
+                                                            )
+                                                        },
+                                                    ) {
+                                                        AboutScreen(
+                                                            onBack = closeAbout,
+                                                            settingsTransforming = settingsTransforming,
+                                                            modifier = fullSizeModifier,
+                                                        )
+                                                    }
                                                 },
                                             ) {
                                                 DataManagementScreen(
@@ -449,7 +472,8 @@ fun SettingsScreen(
  * 课表级设置（课表名/学期/天数/节数时间/显示开关）在编辑态的「课表设置」浮层
  * （见 Schedule ui 的 [com.fangyi.classpp.ui.schedule.ScheduleSettingsSheet]），
  * 外观设置在「个性化」子页、通知设置在「通知与提醒」子页、AI 服务商配置在
- * 「AI 设置」子页、学校账号与待办同步在「账号与同步」子页，本页只承担导航分发。
+ * 「AI 设置」子页、学校账号与待办同步在「账号与同步」子页、数据备份与恢复在
+ * 「数据管理」子页、应用信息与用前须知在「关于」子页，本页只承担导航分发。
  * 账号与 AI 两张入口卡的行内同步展示状态（账号：未连接 / 已连接 姓名 / 登录已过期，
  * 取自活跃 [SessionSlot] 的同步状态流；AI：已配置 / 未配置，取自 [aiChatRepository]）。
  * [repository] = null → 加载指示（仅首帧毫秒级）。
@@ -462,6 +486,7 @@ private fun SettingsHomePage(
     onOpenAiSettings: () -> Unit,
     onOpenAccountSync: () -> Unit,
     onOpenDataManagement: () -> Unit,
+    onOpenAbout: () -> Unit,
     repository: ScheduleRepository?,
     overlayActive: Boolean,
     settingsTransforming: () -> Boolean = { false },
@@ -572,10 +597,9 @@ private fun SettingsHomePage(
                             ),
                         verticalArrangement = Arrangement.spacedBy(EntryCardSpacing),
                     ) {
-                        // 六张独立入口卡（设计稿形态）；「关于」子页待实装，入口先占位。
+                        // 六张独立入口卡（设计稿形态）；「关于」子页见 AboutScreen。
                         // 入口 item 列表按标签/回调记忆化，账号与 AI 行在各自卡内 collect，
                         // 状态变化只重组对应行
-                        val noop = remember { {} }
                         SettingsCardwithIcon(
                             items = rememberSettingsEntryItem(
                                 icon = R.drawable.ic_paint_brush,
@@ -609,7 +633,7 @@ private fun SettingsHomePage(
                             items = rememberSettingsEntryItem(
                                 icon = R.drawable.ic_info,
                                 labelRes = R.string.settings_about,
-                                onClick = noop,
+                                onClick = onOpenAbout,
                             ),
                         )
                     }

@@ -92,6 +92,19 @@
     <string name="settings_ai">AI Settings</string>
     <string name="settings_data_management">Data management</string>
     <string name="settings_about">About</string>
+    <!-- About page (app info / author / version / changelog / acknowledgements / before use) -->
+    <string name="about_app_title">Class++</string>
+    <string name="about_app_description">A clean, beautiful schedule app for Android</string>
+    <string name="about_author_name">ChengFY</string>
+    <string name="about_author_role">Design / Development</string>
+    <string name="about_check_update">Check for updates</string>
+    <string name="about_current_version">Current version: v%1$s</string>
+    <string name="about_changelog">Changelog</string>
+    <string name="about_thanks">Acknowledgements</string>
+    <string name="about_section_before_use">Before you start</string>
+    <string name="about_disclaimer">Disclaimer</string>
+    <string name="about_open_source_license">Open source license</string>
+    <string name="about_privacy_policy">Privacy &amp; policy</string>
     <!-- Data management (storage usage / full backup export & import) -->
     <string name="data_management_header_title">Data management</string>
     <string name="data_management_header_description">Back up schedules, todos, tags, agenda wallpapers, and AI chat history, and review storage usage</string>

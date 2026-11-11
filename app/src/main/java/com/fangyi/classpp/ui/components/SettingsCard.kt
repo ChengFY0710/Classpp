@@ -64,8 +64,8 @@ private const val MenuReopenGuardMillis = 200L
 /**
  * 设置卡条目：导航行（label + 主题色箭头）、开关行（label + [ClassppSwitch]）、
  * 选择行（label + 蓝色当前值 + 上下箭头，点行弹菜单）、滑块行（label + 右上当前值 +
- * 整宽 [ClassppSlider]）、滑块组（label + 多行「当前值 + 滑条」）或自定义行（尾部槽位
- * 放任意控件），均可带灰色描述文字（自动换行、行卡随之长高）。
+ * 整宽 [ClassppSlider]）、滑块组（label + 多行「当前值 + 滑条」）或自定义行（前后槽位
+ * 放任意控件、可选整行点击），均可带灰色描述文字（自动换行、行卡随之长高）。
  */
 sealed interface SettingsCardItem {
     val label: String
@@ -108,18 +108,23 @@ sealed interface SettingsCardItem {
     ) : SettingsCardItem
 
     /**
-     * 自定义行：label（+ 可选描述）与 [trailing] 同行垂直居中，无整行点击（尾部控件自理）。
-     * 供暂未收敛为标准行型的控件使用（如节次卡的加减按钮、时间胶囊）；
+     * 自定义行：可选 [leading]（画在文字块之前，如头像圆）、label（+ 可选描述）与
+     * [trailing] 同行垂直居中；[onClick] 非空时整行可点（按压反馈铺满整行），
+     * null（默认）无整行点击（尾部控件自理）。
+     * 供暂未收敛为标准行型的控件使用（如节次卡的加减按钮、时间胶囊）；应用 Logo/
+     * 作者头像行也可用它组合左右槽位。
      * [trailing] = null（默认）为纯文字行：不渲染尾部槽位，标题与描述撑满整行可用宽
-     * （描述不再预留避让尾部控件的间隙），标题取 secondaryGrey 弱化层级——说明/简介类
-     * 展示行同款；
+     * （描述不再预留避让尾部控件的间隙）；无可点行为时标题取 secondaryGrey 弱化层级
+     * ——说明/简介类展示行同款；
      * [footer] 可选，画在整行之下、占满行宽（如节次上限的溢出提示），内距由内容自理。
      */
     data class Custom(
         override val label: String,
         override val description: String? = null,
+        val leading: (@Composable RowScope.() -> Unit)? = null,
         val trailing: (@Composable RowScope.() -> Unit)? = null,
         val footer: (@Composable () -> Unit)? = null,
+        val onClick: (() -> Unit)? = null,
     ) : SettingsCardItem
 
     /**
@@ -358,17 +363,28 @@ private fun SettingsCardRow(item: SettingsCardItem, hazeState: HazeState?) {
     }
 }
 
-/** 自定义行渲染：文字块与尾部槽同行居中（trailing = null 时不渲染尾部槽），[SettingsCardItem.Custom.footer] 画在行下、占满行宽；行高下限随 [minHeight] */
+/** 自定义行渲染：可选前导槽、文字块与尾部槽同行居中（槽位为 null 时不渲染），[SettingsCardItem.Custom.footer] 画在行下、占满行宽；行高下限随 [minHeight] */
 @Composable
 private fun CustomRow(item: SettingsCardItem.Custom, minHeight: Dp) {
+    // 与标准行同款按压反馈；浅色白底行加色白提亮无感，改用微微压暗（同 SettingsCardRow）
+    val rowShade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
+    val clickModifier = item.onClick?.let { onClick ->
+        Modifier.pressClickable(RectangleShape, shade = rowShade, onClick = onClick)
+    } ?: Modifier
+    // 纯展示行（无尾部控件、无点击）：弱化标题并让文字撑满整行；
+    // 有前导槽不影响这个判定（作者头像行另有尾部箭头，仍按正常行渲染）
+    val pureTextRow = item.trailing == null && item.onClick == null
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(clickModifier)
                 .heightIn(min = minHeight)
                 .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            item.leading?.invoke(this)
+            if (item.leading != null) Spacer(Modifier.width(CustomRowLeadingGap))
             // 纯文字行（无尾部控件）：描述不留避让间隙、标题与描述撑满整行可用宽；
             // 标题取 secondaryGrey——纯说明行不是操作入口，弱化层级但保持可读
             SettingsRowText(
@@ -376,7 +392,7 @@ private fun CustomRow(item: SettingsCardItem.Custom, minHeight: Dp) {
                 description = item.description,
                 modifier = Modifier.weight(1f),
                 fillWidth = item.trailing == null,
-                labelColor = if (item.trailing == null) {
+                labelColor = if (pureTextRow) {
                     MaterialTheme.classppColors.secondaryGrey
                 } else {
                     Color.Unspecified
@@ -387,6 +403,9 @@ private fun CustomRow(item: SettingsCardItem.Custom, minHeight: Dp) {
         item.footer?.invoke()
     }
 }
+
+/** 自定义行前导槽（头像圆等）与文字块的间距：12dp，对齐行卡图标↔文本档 */
+private val CustomRowLeadingGap = 12.dp
 
 /** 滑块行渲染：label + 右上当前值同行，下方整宽滑条；内距同普通行（16/14），label↔滑条 14 复用行纵向内距节奏 */
 @Composable

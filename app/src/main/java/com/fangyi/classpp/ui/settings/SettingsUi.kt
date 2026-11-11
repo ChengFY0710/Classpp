@@ -286,6 +286,7 @@ internal enum class SettingsPage {
     AiSettings,
     AccountSync,
     DataManagement,
+    About,
 }
 
 /**

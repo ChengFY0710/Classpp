@@ -2,6 +2,7 @@ package com.fangyi.classpp.data.backup
 
 import android.content.Context
 import android.net.Uri
+import com.fangyi.classpp.appVersionName
 import com.fangyi.classpp.data.ScheduleJson
 import com.fangyi.classpp.data.ai.AI_CHAT_FORMAT_VERSION
 import com.fangyi.classpp.data.ai.AiChatFile
@@ -106,7 +107,7 @@ class BackupManager(private val context: Context) {
             tiltEnabled = DayImageStore.loadTiltParallaxEnabled(context),
         )
         val manifest = BackupManifest(
-            appVersionName = appVersionName(),
+            appVersionName = appVersionName(context),
             exportedAtMillis = System.currentTimeMillis(),
             counts = BackupCounts(
                 schedules = schedules.schedules.size,
@@ -292,11 +293,6 @@ class BackupManager(private val context: Context) {
             ScheduleJson.decodeStorage<T>(file.readText(Charsets.UTF_8))
         }.getOrNull()
     }
-
-    @Suppress("DEPRECATION")
-    private fun appVersionName(): String = runCatching {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName
-    }.getOrNull().orEmpty()
 
     private fun <F> LoadOutcome<F>.asFile(): F = when (this) {
         is LoadOutcome.Loaded<F> -> file
