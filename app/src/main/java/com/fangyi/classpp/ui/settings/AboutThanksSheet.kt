@@ -11,6 +11,7 @@ import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
+import com.fangyi.classpp.ui.components.SettingsInfoHeaderCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTopAction
 
@@ -69,6 +70,11 @@ private val Acknowledgements = listOf(
         url = "https://gitee.com/XingHeYuZhuan-gh/shiguang_warehouse",
     ),
     Acknowledgement(
+        name = "Fluent UI System Icons",
+        usageRes = R.string.about_thanks_fluent_icons,
+        url = "https://github.com/microsoft/fluentui-system-icons",
+    ),
+    Acknowledgement(
         name = "Source Han Serif",
         usageRes = R.string.about_thanks_source_han_serif,
         url = "https://github.com/adobe-fonts/source-han-serif",
@@ -112,6 +118,12 @@ internal fun AboutThanksSheet(
         imeBehavior = SheetImeBehavior.IgnoreIme,
     ) {
         CardSection {
+            // 顶部信息头部卡：与设置页同款，说明这一屏是第三方项目致谢列表
+            SettingsInfoHeaderCard(
+                icon = R.drawable.ic_heart,
+                title = stringResource(R.string.about_thanks_header_title),
+                description = stringResource(R.string.about_thanks_header_description),
+            )
             SettingsCard(
                 items = Acknowledgements.map { item ->
                     SettingsCardItem.Nav(

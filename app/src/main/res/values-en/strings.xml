@@ -107,7 +107,9 @@
     <string name="about_privacy_policy">Privacy &amp; policy</string>
     <!-- Fallback shown when a document sheet fails to read its raw markdown -->
     <string name="about_document_load_failed">Failed to load the document. Please try again later.</string>
-    <!-- Acknowledgements sheet: what each third-party project is used for in the app -->
+    <!-- Acknowledgements sheet: header card + what each third-party project is used for in the app -->
+    <string name="about_thanks_header_title">Acknowledgement list</string>
+    <string name="about_thanks_header_description">Classpp would not be possible without these excellent projects.</string>
     <string name="about_thanks_haze">Frosted glass blur for top bars, sheets, and popup menus</string>
     <string name="about_thanks_shapes">Continuous rounded corners and smooth shapes</string>
     <string name="about_thanks_liquid_glass">Liquid glass material with refraction</string>
@@ -117,6 +119,7 @@
     <string name="about_thanks_serialization">JSON serialization for schedules, todos, and backups</string>
     <string name="about_thanks_cresto">Cross-page transitions and rubber-band overscroll animations</string>
     <string name="about_thanks_wakeup">Adapter script for Wakeup share-key import (wake_up.js)</string>
+    <string name="about_thanks_fluent_icons">Icon resources used throughout the app (navigation, actions, and status)</string>
     <string name="about_thanks_source_han_serif">Serif display font for calendar dates (SIL OFL 1.1)</string>
     <!-- Data management (storage usage / full backup export & import) -->
     <string name="data_management_header_title">Data management</string>
