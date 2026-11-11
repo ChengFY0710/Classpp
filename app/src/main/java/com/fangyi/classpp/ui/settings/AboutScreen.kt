@@ -57,9 +57,10 @@ private const val AboutAppIconScale = 1.7f
  * 关于子页：应用 Logo / 名称与副标题、作者、当前版本、更新日志、致谢，以及
  * 「用前须知」分组（免责声明 / 开源协议 / 隐私与政策）。
  *
- * 「用前须知」三行分别打开 [AboutDocumentSheet] 文档浮层；作者 / 检查更新 / 致谢仍为占位，
- * 更新日志只展示「标题 + 下箭头」的折叠态，展开内容后续再接。版本号经 [appVersionName]
- * 运行时读取 Gradle `versionName`，不在界面层写死，也不依赖 BuildConfig 生成类。
+ * 「用前须知」三行分别打开 [AboutDocumentSheet] 文档浮层，致谢行打开 [AboutThanksSheet]
+ * 第三方项目列表；作者 / 检查更新仍为占位，更新日志只展示「标题 + 下箭头」的折叠态，
+ * 展开内容后续再接。版本号经 [appVersionName] 运行时读取 Gradle `versionName`，
+ * 不在界面层写死，也不依赖 BuildConfig 生成类。
  *
  * 页面骨架与其余设置子页一致：Scaffold 全宽出血 + [SettingsScrollContent] 统一页边距 /
  * 分组节奏 + [SettingsTopBar] 磨砂顶栏（Haze、玻璃返回钮、转场冻结、标题渐显）。
@@ -113,7 +114,7 @@ fun AboutScreen(
                 .only(WindowInsetsSides.Bottom)
                 .asPaddingValues()
                 .calculateBottomPadding()
-            // 占位回调：作者 / 检查更新 / 致谢后续再接各自目标；用前须知走文档浮层
+            // 占位回调：作者 / 检查更新后续再接各自目标；用前须知走文档浮层，致谢走列表浮层
             val placeholder = remember { {} }
             // 文档浮层两段式开关：visible 复位后播退场，mounted 在 onDismissed 才清空
             var documentVisible by remember { mutableStateOf<AboutDocument?>(null) }
@@ -122,6 +123,9 @@ fun AboutScreen(
                 documentVisible = document
                 documentMounted = document
             }
+            // 致谢浮层同样两段式：展示期间保持 mounted，退场播完才卸载
+            var thanksVisible by remember { mutableStateOf(false) }
+            var thanksMounted by remember { mutableStateOf(false) }
 
             SettingsScrollContent(
                 scrollState = scrollState,
@@ -189,7 +193,10 @@ fun AboutScreen(
                         items = listOf(
                             SettingsCardItem.Nav(
                                 label = stringResource(R.string.about_thanks),
-                                onClick = placeholder,
+                                onClick = {
+                                    thanksVisible = true
+                                    thanksMounted = true
+                                },
                             ),
                         ),
                     )
@@ -240,6 +247,15 @@ fun AboutScreen(
                     visible = documentVisible == document,
                     onDismiss = { documentVisible = null },
                     onDismissed = { documentMounted = null },
+                )
+            }
+
+            // 致谢列表浮层同样挂在顶栏之后；与文档浮层互斥（入口被浮层遮住）
+            if (thanksMounted) {
+                AboutThanksSheet(
+                    visible = thanksVisible,
+                    onDismiss = { thanksVisible = false },
+                    onDismissed = { thanksMounted = false },
                 )
             }
         }

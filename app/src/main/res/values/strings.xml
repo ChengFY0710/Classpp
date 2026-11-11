@@ -238,6 +238,17 @@
     <string name="about_privacy_policy">隐私与政策</string>
     <!-- 文档浮层正文读取失败时的降级提示 -->
     <string name="about_document_load_failed">文档加载失败，请稍后重试。</string>
+    <!-- 致谢浮层：第三方项目在 app 内的具体用途 -->
+    <string name="about_thanks_haze">毛玻璃模糊效果（顶栏、浮层与弹出菜单）</string>
+    <string name="about_thanks_shapes">连续圆角与平滑形状</string>
+    <string name="about_thanks_liquid_glass">液态玻璃材质与折射效果</string>
+    <string name="about_thanks_coil">图片加载与缓存（日程背景、AI 对话图片、头像）</string>
+    <string name="about_thanks_markdown">Markdown 渲染（AI 对话气泡与关于页文档）</string>
+    <string name="about_thanks_okhttp">网络请求与流式响应（AI 对话、教务同步）</string>
+    <string name="about_thanks_serialization">课表、待办与备份的 JSON 序列化</string>
+    <string name="about_thanks_cresto">层级交叉切页与橡皮筋回弹动效</string>
+    <string name="about_thanks_wakeup">Wakeup 分享口令导入适配脚本（wake_up.js）</string>
+    <string name="about_thanks_source_han_serif">台历大日期衬线展示字体（SIL OFL 1.1）</string>
     <!-- 数据管理（存储用量 / 全量备份导出与导入） -->
     <string name="data_management_header_title">数据管理</string>
     <string name="data_management_header_description">备份课表、待办、标签、日程背景图与 AI 对话记录，并查看存储空间用量</string>
