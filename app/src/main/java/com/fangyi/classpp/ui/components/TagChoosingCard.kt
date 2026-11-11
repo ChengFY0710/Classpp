@@ -38,22 +38,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Expandable
@@ -69,7 +69,6 @@ import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import dev.chrisbanes.haze.HazeState
-import kotlin.math.roundToInt
 
 /** 标签选择卡里的一项：名字 + 颜色。
  *  用户自定义标签的颜色来自颜色选择器（未挑色时跟随主题 Primary）；课程标签的颜色
@@ -155,6 +154,18 @@ fun TagChoosingCard(
     // 删标签 = 同帧重写标签列表（被采样源），菜单退场活采样期间不可撞：
     // 落库延后到退场播完（PopupActionGate，机制见 PopupMenuPopup KDoc）
     val deleteGate = rememberPopupActionGate()
+    // B5：标签横滑行滚动时收起删除菜单（非 focusable 弹层的锚点是长按快照，
+    // 滚动后菜单会与标签脱节）。只在用户手势滚动时触发，程序化滚动不误收。
+    val dismissDeleteMenuOnScroll = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && (available.x != 0f || available.y != 0f)) {
+                    deleteVisible = false
+                }
+                return Offset.Zero
+            }
+        }
+    }
     // 课程标签区展开状态：默认收起；展开/收起动画走 motion 层 Expandable（下方部分实时让位）
     var courseExpanded by rememberSaveable { mutableStateOf(initialCourseExpanded) }
     // 标签行删空后的折叠快照：Expandable 收起动画期间列表已空，行内容若直接跟随列表清空
@@ -290,6 +301,9 @@ fun TagChoosingCard(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        // B5：菜单打开时横向滚动标签行 → 收起删除菜单（非 focusable 弹层
+                        // 不消费外部触摸，滚动会穿透，冻结的锚点会与标签脱节）
+                        .nestedScroll(dismissDeleteMenuOnScroll)
                         .rubberBandHorizontalScroll(rememberScrollState())
                         // padding 在滚动之内 = 两端内容边距：静止时与输入文字左缘对齐，
                         // 滑到头也能停在 16dp 上；视觉裁切由外卡 clip 承担
@@ -460,13 +474,14 @@ private fun TagCapsule(
  * 整卡首尾淡入淡出 + 毛玻璃卡壳，同长按图片菜单的 ImageMenuPopup 范式）。
  *
  * 定位：贴标签**上方**、与标签左缘对齐（菜单语义是「对这个标签做动作」，压住标签本身
- * 会挡住长按的高亮），上方放不下（标签贴屏顶）再落到下方；投影留白与越界钳制由宿主处理。
- * 生长角按标签所在半屏现算（菜单贴着标签长出）。删除不做二次确认：设计稿只有一层菜单，
- * 点「删除」直接生效。
+ * 会挡住长按的高亮），上方放不下（标签贴屏顶）再落到下方——由 [MenuPlacement] 的自动
+ * 翻转负责；长按快照锚点显式传入（Popup 自身 anchorBounds 不是标签）。删除不做二次确认：
+ * 设计稿只有一层菜单，点「删除」直接生效。
  *
  * 弹层非 focusable：打开时不抢窗口焦点，正在输入时的键盘与焦点都保留。focusable 弹层会
  * 让系统收起 IME，进而触发内容列的「键盘收起滚回原位」动画——被长按的胶囊会在菜单进场
- * 期间随内容移动，锚点在视觉上就漂了（P2-5）。
+ * 期间随内容移动，锚点在视觉上就漂了（P2-5）。非 focusable 窗口不消费外部触摸，
+ * 标签横向列表滚动时菜单会与锚点脱节，故标签行滚动即收起（B5，见 dismissDeleteMenuOnScroll）。
  *
  * @param anchor 长按时刻标签的窗口坐标（[DeleteTarget.anchor] 快照，菜单不随标签移动）
  */
@@ -479,9 +494,6 @@ private fun TagDeleteMenu(
     hazeState: HazeState?,
     onExitFinished: () -> Unit = {},
 ) {
-    val gap = with(LocalDensity.current) { DeletePopupGap.roundToPx() }
-    val windowWidthPx = LocalWindowInfo.current.containerSize.width.takeIf { it > 0 }
-        ?: LocalView.current.width
     PopupMenuPopup(
         expanded = expanded,
         onDismiss = onDismiss,
@@ -491,26 +503,17 @@ private fun TagDeleteMenu(
                     PopupMenuItem(
                         label = stringResource(R.string.edit_delete),
                         icon = R.drawable.ic_delete,
+                        destructive = true,
                         onClick = onDelete,
                     ),
                 ),
             ),
         ),
-        cardPosition = { _, _, cardSize ->
-            IntOffset(
-                x = anchor.left.roundToInt(),
-                y = if (anchor.top - gap - cardSize.height >= 0) {
-                    anchor.top - gap - cardSize.height
-                } else {
-                    anchor.bottom + gap
-                }.roundToInt(),
-            )
-        },
-        menuGrowth = if (windowWidthPx > 0 && anchor.center.x > windowWidthPx / 2f) {
-            MenuGrowth.BottomRight
-        } else {
-            MenuGrowth.BottomLeft
-        },
+        placement = MenuPlacement(
+            gravity = MenuGravity.TopStart,
+            gap = DeletePopupGap,
+        ),
+        anchor = anchor,
         hazeState = hazeState,
         onExitFinished = onExitFinished,
         // 非 focusable：不抢窗口焦点，输入中的键盘不会收起——ImeScrollTracker 因此不会

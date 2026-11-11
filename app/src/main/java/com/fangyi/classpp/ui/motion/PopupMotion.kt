@@ -64,11 +64,12 @@ private val BlurSnapshotOverscan = (PopupJellyPeakScale - 1f) * BlurSnapshotOver
 
 /**
  * 进场 + 果冻回弹一体曲线：[startScale] → [PopupJellyPeakScale] → 1 一条 keyframes 走完
- * （600ms）。生长冲过 1 后顺势回缩定住，没有「先减速停住、再重新起拍」的 velocity 死点，
+ * （520ms）。生长冲过 1 后顺势回缩定住，没有「先减速停住、再重新起拍」的 velocity 死点，
  * 两段端点（峰值 / 1.0）都落在振幅极值（速度为零），读起来是一条连续的阻尼振荡：
- * - 0 → 200ms 生长段（[Motion.Standard]）：起步逐渐加速上冲到峰值；
- * - 200 → 600ms 收定段（[Motion.Standard]）：回到 1 定住。
+ * - 0 → 180ms 生长段（[Motion.Standard]）：起步逐渐加速上冲到峰值；
+ * - 180 → 520ms 收定段（[Motion.Standard]）：回到 1 定住。
  * 锚点为生长角：整条曲线绕同一锚点，果冻回弹朝锚点反方向撑开，与「贴着锚点长出来」同构。
+ * 时长维持既有手感（审计 B7 曾建议压到 340ms，经确认不改）。
  */
 private fun popupEnterJelly(startScale: Float): FiniteAnimationSpec<Float> = keyframes {
     durationMillis = 520

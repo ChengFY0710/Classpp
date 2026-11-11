@@ -453,6 +453,8 @@ internal fun AiProfileSheet(
                                 PopupMenuItem(
                                     label = deleteLabel,
                                     icon = R.drawable.ic_delete,
+                                    // 危险操作：error 色 + 自动分割线与「重命名」隔离（B6）
+                                    destructive = true,
                                     onClick = { requestDelete(profile) },
                                 ),
                             )

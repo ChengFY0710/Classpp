@@ -11,6 +11,8 @@
     <string name="todo_group_all">All</string>
     <string name="todo_group_ungrouped">Ungrouped</string>
     <string name="cd_todo_more">More</string>
+    <!-- Accessibility pane title announced when TalkBack enters a popup menu -->
+    <string name="cd_popup_menu">Menu</string>
     <string name="todo_action_group">Group</string>
     <string name="todo_action_sort">Sort</string>
     <string name="todo_action_category">Category</string>

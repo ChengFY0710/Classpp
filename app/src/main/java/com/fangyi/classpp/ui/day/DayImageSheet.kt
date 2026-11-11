@@ -34,14 +34,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.components.MenuGravity
+import com.fangyi.classpp.ui.components.MenuPlacement
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.PopupMenuPopup
@@ -50,14 +48,12 @@ import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTopAction
-import com.fangyi.classpp.ui.components.menuGrowthForAnchor
 import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.DayImageCellShape
 import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.rememberHazeState
-import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -288,11 +284,11 @@ private val MenuLeftInset = 8.dp
  * 长按图片弹出的上下文菜单（单组单项「删除」）：[PopupMenuPopup] 共享宿主
  * （同课表右键菜单的 ContextMenuPopup 范式）。
  *
- * 定位只认长按那张图的窗口坐标 [anchor]（菜单贴它的左下角长出，投影留白与越界钳制由
- * 宿主处理），生长角按锚点所在半屏现算（[menuGrowthForAnchor]）。
+ * 定位只认长按那张图的窗口坐标 [anchor]（菜单贴它的左下角长出），翻转、安全区钳位与
+ * 生长锚点由 [PopupMenuPopup] 的 [com.fangyi.classpp.ui.components.MenuPlacement] 统一处理。
  * 生命周期走「锚点 + 可见性」两态（同 ScheduleScreen）：宿主收起只翻 [expanded]，锚点
  * 保留到退场播完（[onExitFinished] 后再清）——删除动作照旧与收起同帧执行，视觉移除
- * 交给退场动画；退场 150ms 里菜单内容稳定、行点击动作仍可命中。
+ * 交给退场动画；退场 120ms 里菜单内容稳定、行点击动作仍可命中（退场期间行已锁，A2）。
  * [hazeState] 传浮层的共享采样源（滚动列）：菜单卡对背后的网格内容做毛玻璃
  * （跨 Popup 窗口采样，同周数弹窗/排序菜单材质）；null 退化为不透明白卡（@Preview 用）。
  * [deleteEnabled] = false（长按的是当前背景图）时删除项置灰（negative 色）不可点。
@@ -307,11 +303,6 @@ private fun ImageMenuPopup(
     hazeState: HazeState?,
     onExitFinished: () -> Unit = {},
 ) {
-    val density = LocalDensity.current
-    val overlapPx = with(density) { MenuOverlap.roundToPx() }
-    val insetPx = with(density) { MenuLeftInset.roundToPx() }
-    val windowWidthPx = LocalWindowInfo.current.containerSize.width.takeIf { it > 0 }
-        ?: LocalView.current.width
     PopupMenuPopup(
         expanded = expanded,
         onDismiss = onDismiss,
@@ -322,18 +313,19 @@ private fun ImageMenuPopup(
                         label = stringResource(R.string.day_image_delete),
                         icon = R.drawable.ic_delete,
                         enabled = deleteEnabled,
+                        destructive = true,
                         onClick = onDelete,
                     ),
                 ),
             ),
         ),
-        cardPosition = { _, _, _ ->
-            IntOffset(
-                x = anchor.left.roundToInt() + insetPx,
-                y = anchor.bottom.roundToInt() - overlapPx,
-            )
-        },
-        menuGrowth = menuGrowthForAnchor(anchor.center.x, windowWidthPx),
+        placement = MenuPlacement(
+            gravity = MenuGravity.BottomStart,
+            gap = 0.dp,
+            overlap = MenuOverlap,
+            inset = MenuLeftInset,
+        ),
+        anchor = anchor,
         hazeState = hazeState,
         onExitFinished = onExitFinished,
     )

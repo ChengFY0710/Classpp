@@ -30,7 +30,6 @@ import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.CardSection
-import com.fangyi.classpp.ui.components.MenuGrowth
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.PopupMenuPopup
@@ -287,9 +286,11 @@ internal fun CourseTodoSheet(
                             ),
                         ),
                         hazeState = sheetHazeState,
-                        // 锚点 = 整张入口行卡：菜单卡右缘对齐行卡右缘、顶边贴行顶边；
-                        // 锚点贴屏幕右缘，生长角取右上
-                        menuGrowth = MenuGrowth.TopRight,
+                        // 单选型菜单（下一步 / 自定义）：行暴露已选中语义（B4）
+                        selectionMode = true,
+                        // 锚点 = 整张入口行卡：菜单卡右缘对齐行卡右缘、顶边贴行顶边。
+                        // 自定义落位仍走共享层：安全区钳位兜住贴屏右缘的溢出，生长锚点
+                        // 按最终落位反推（不再固定从右上角长出）
                         cardPosition = { anchorBounds, _, cardSize ->
                             IntOffset(anchorBounds.right - cardSize.width, anchorBounds.top)
                         },

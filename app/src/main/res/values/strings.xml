@@ -11,6 +11,8 @@
     <string name="todo_group_all">全部</string>
     <string name="todo_group_ungrouped">未分组</string>
     <string name="cd_todo_more">更多</string>
+    <!-- 弹层菜单的无障碍窗格标题（TalkBack 进入菜单时播报） -->
+    <string name="cd_popup_menu">菜单</string>
     <string name="todo_action_group">分组</string>
     <string name="todo_action_sort">排序</string>
     <string name="todo_action_category">分类</string>

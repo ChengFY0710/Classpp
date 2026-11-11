@@ -30,12 +30,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
@@ -50,7 +46,6 @@ import com.fangyi.classpp.ui.theme.SheetFieldHeight
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import dev.chrisbanes.haze.HazeState
-import kotlin.math.roundToInt
 
 /**
  * 选择卡：白卡（[SettingsCardShape] 连续曲率圆角 + surface 底）内纵向无缝堆叠的选项行，
@@ -267,12 +262,12 @@ private val LongPressMenuGap = 8.dp
  * 行窗口坐标快照，不随行/列表变化移动。
  *
  * 定位：菜单左缘对齐行左缘（即卡片左缘），优先落在行下缘外侧 [LongPressMenuGap] 处；
- * 下方放不下且上方放得下时翻到行上方，菜单不压住长按的那一行。生长角按行在窗口上半/下半
- * 取 TopLeft / BottomLeft，菜单始终自贴近行的一侧长出。
+ * 由 [MenuPlacement] 的自动翻转负责「下方放不下就翻到行上方」，生长锚点按最终落位反推
+ * （菜单始终自贴近行的那条边长出）。长按快照锚点显式传入（Popup 自身 anchorBounds 不是行）。
  *
  * 点击任一项先收起菜单（[onItemClick] 把动作交给宿主延迟到退场播完再执行）：动作可能
  * 删除/改名当前行并打开下一层浮层，菜单内容在长按时已快照，退场期间内容稳定、不会出现
- * 空菜单或跳变。
+ * 空菜单或跳变；退场期间行已锁（A2），不会重复触发。
  */
 @Composable
 private fun SelectCardLongPressMenu(
@@ -284,9 +279,6 @@ private fun SelectCardLongPressMenu(
     hazeState: HazeState?,
     onExitFinished: () -> Unit,
 ) {
-    val gapPx = with(LocalDensity.current) { LongPressMenuGap.roundToPx() }
-    val windowHeightPx = LocalWindowInfo.current.containerSize.height.takeIf { it > 0 }
-        ?: LocalView.current.height
     PopupMenuPopup(
         expanded = expanded,
         onDismiss = onDismiss,
@@ -295,19 +287,11 @@ private fun SelectCardLongPressMenu(
                 items = items.map { item -> item.copy(onClick = { onItemClick(item.onClick) }) },
             ),
         ),
-        cardPosition = { _, windowSize, cardSize ->
-            val below = anchor.bottom.roundToInt() + gapPx
-            val above = anchor.top.roundToInt() - gapPx - cardSize.height
-            IntOffset(
-                x = anchor.left.roundToInt(),
-                y = if (below + cardSize.height > windowSize.height && above >= 0) above else below,
-            )
-        },
-        menuGrowth = if (windowHeightPx > 0 && anchor.center.y > windowHeightPx / 2f) {
-            MenuGrowth.BottomLeft
-        } else {
-            MenuGrowth.TopLeft
-        },
+        placement = MenuPlacement(
+            gravity = MenuGravity.BottomStart,
+            gap = LongPressMenuGap,
+        ),
+        anchor = anchor,
         hazeState = hazeState,
         onExitFinished = onExitFinished,
     )

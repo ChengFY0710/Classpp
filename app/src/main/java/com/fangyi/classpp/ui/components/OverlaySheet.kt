@@ -297,6 +297,9 @@ fun OverlaySheet(
     // 传给顶栏两颗按钮的采样层：关闭时传 null，按钮内部回退原实现
     val glassButtonBackdrop = if (glassButtonsEnabled) glassButtonsBackdrop else null
     val scrollState = rememberScrollState()
+    // B5：内容列用户滚动信号——打开中的弹层菜单（非 focusable 不消费外部触摸）据此收起，
+    // 避免锚点行滚走后菜单停在冻结的窗口坐标上
+    val menuScrollSignal = remember { MenuScrollSignal() }
     // 滚动列的 ScrollState 交给宿主（对话浮层自动滚底等）；一次性回调，重组不重发
     LaunchedEffect(onScrollStateReady) {
         onScrollStateReady?.invoke(scrollState)
@@ -555,6 +558,8 @@ fun OverlaySheet(
                                     }
                                     // 橡皮筋增强版 verticalScroll：内容不足一屏（如课程详情等
                                     // 短浮层）时也能拉出橡皮筋（ui.motion 的 rubberBandVerticalScroll）
+                                    // 外圈再挂菜单滚动信号：用户滚动内容列 → 打开中的弹层菜单收起（B5）
+                                    .menuScrollDismiss(menuScrollSignal)
                                     .rubberBandVerticalScroll(scrollState)
                                     // 点空白（卡片间隙/留白/尾部余量）取消聚焦收起键盘：
                                     // SheetTextField / SheetTextArea 一族的通用宿主行为
@@ -566,21 +571,26 @@ fun OverlaySheet(
                                 Spacer(Modifier.height(TopBarHeight))
                                 // 键盘弹起时把正在编辑的输入框滚到键盘上方、收起后把内容滚回原位。
                                 // 不理会键盘的浮层（IgnoreIme）不接线：字段照旧只渲染
-                                SheetScrollHost(
-                                    enabled = imeBehavior == SheetImeBehavior.ContentScroll,
-                                    scrollState = scrollState,
-                                    viewportHeightPx = viewportHeightPx,
-                                    viewportTopInRootPx = viewportTopInRootPx,
-                                    // 终值而不是逐帧值：自动滚动的 effect 才不会每帧重启
-                                    imeTargetInsetPx = imeTargetBottomPx,
-                                    imeVisible = imeVisible,
-                                    // 滚动列顶部被顶栏盖住的高度：可见区从顶栏下缘开始，
-                                    // 高输入框的上缘对齐必须让开这一截（P3-1）
-                                    topInsetPx = with(density) { TopBarHeight.roundToPx() },
-                                    // 滚动列本体的接收者：这里正处在 Column 的接收者作用域里
-                                    scope = this,
-                                    content = content,
-                                )
+                                // 同时下发菜单滚动信号：内容里的弹层菜单在用户滚动时收起（B5）
+                                CompositionLocalProvider(
+                                    LocalMenuScrollSignal provides menuScrollSignal,
+                                ) {
+                                    SheetScrollHost(
+                                        enabled = imeBehavior == SheetImeBehavior.ContentScroll,
+                                        scrollState = scrollState,
+                                        viewportHeightPx = viewportHeightPx,
+                                        viewportTopInRootPx = viewportTopInRootPx,
+                                        // 终值而不是逐帧值：自动滚动的 effect 才不会每帧重启
+                                        imeTargetInsetPx = imeTargetBottomPx,
+                                        imeVisible = imeVisible,
+                                        // 滚动列顶部被顶栏盖住的高度：可见区从顶栏下缘开始，
+                                        // 高输入框的上缘对齐必须让开这一截（P3-1）
+                                        topInsetPx = with(density) { TopBarHeight.roundToPx() },
+                                        // 滚动列本体的接收者：这里正处在 Column 的接收者作用域里
+                                        scope = this,
+                                        content = content,
+                                    )
+                                }
                                 // 尾部余量 = 导航栏 + 可调滚动余量；键盘让位不在这里
                                 Spacer(Modifier.height(bottomInsetDp + SheetBottomSlack))
                                 // 键盘弹起时额外撑出的那一截（收起键盘按 TailReserveMillis
@@ -646,6 +656,8 @@ fun OverlaySheet(
                                         // 无 Haze 的浮层不给钉底槽下发状态：槽内弹出菜单退化为实底白卡
                                         LocalOverlayBottomHazeState provides
                                             if (hazeEnabled) sheetHazeState else null,
+                                        // 钉底槽里的弹层菜单（AI 附件菜单）同样接滚动即收起（B5）
+                                        LocalMenuScrollSignal provides menuScrollSignal,
                                     ) {
                                         slot()
                                     }

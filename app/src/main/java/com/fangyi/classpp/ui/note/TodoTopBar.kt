@@ -57,17 +57,17 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Constraints
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.components.MenuGravity
+import com.fangyi.classpp.ui.components.MenuPlacement
 import com.fangyi.classpp.ui.components.PopupMenuCard
 import com.fangyi.classpp.ui.components.PopupMenuPopup
 import com.fangyi.classpp.ui.components.PopupMenuSection
@@ -673,7 +673,8 @@ internal fun TodoTopBar(
  * （见 [PopupMenuPopup]）。
  *
  * 定位：卡片左缘对齐动作块左缘、顶缘与动作块底缘保持 [BarActionMenuPopupGap] 间距
- * （0 = 贴住，DropdownMenu 原位）。
+ * （0 = 贴住，DropdownMenu 原位）；下方放不下时由共享层自动翻到动作块上方，生长锚点按
+ * 最终落位反推（屏底动作块不再「在别处长出来」）。
  * [hazeState] 下发给 [PopupMenuCard] 做毛玻璃（跨窗口采样页面 hazeSource，WeekPicker
  * 周数弹窗同款），null（如 @Preview）退化为不透明白卡。
  * [onExitFinished] 透传 [PopupMenuPopup] 的退场播完回调（宿主冲刷延后的重写动作）。
@@ -686,17 +687,16 @@ private fun BarActionMenuPopup(
     hazeState: HazeState? = null,
     onExitFinished: () -> Unit = {},
 ) {
-    val density = LocalDensity.current
-    val gapPx = with(density) { BarActionMenuPopupGap.roundToPx() }
     PopupMenuPopup(
         expanded = expanded,
         onDismiss = onDismiss,
         sections = sections,
         hazeState = hazeState,
         onExitFinished = onExitFinished,
-        cardPosition = { anchorBounds, _, _ ->
-            IntOffset(anchorBounds.left, anchorBounds.bottom + gapPx)
-        },
+        placement = MenuPlacement(
+            gravity = MenuGravity.BottomStart,
+            gap = BarActionMenuPopupGap,
+        ),
     )
 }
 

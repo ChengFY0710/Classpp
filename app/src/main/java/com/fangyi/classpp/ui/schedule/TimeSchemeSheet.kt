@@ -313,6 +313,8 @@ internal fun TimeSchemeSheet(
                                 PopupMenuItem(
                                     label = deleteSchemeLabel,
                                     icon = R.drawable.ic_delete,
+                                    // 危险操作：error 色 + 自动分割线与「重命名」隔离（B6）
+                                    destructive = true,
                                     onClick = {
                                         onDeleteScheme(scheme.id)
                                         // 删的是当前选中方案 → 落回「自定义」，当前草稿留作

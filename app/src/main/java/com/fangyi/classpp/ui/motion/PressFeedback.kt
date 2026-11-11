@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -187,6 +188,38 @@ fun Modifier.pressClickable(
         scale = scale,
         shade = shade,
     ).clickable(
+        interactionSource = press,
+        indication = null,
+        enabled = enabled,
+        role = role,
+        onClick = onClick,
+    )
+}
+
+/**
+ * [pressFeedback] + selectable 的便捷封装（[pressClickable] 的选中态版本）：菜单勾选行 /
+ * 单选列表项用——按压反馈与选中语义共用同一个 interactionSource，TalkBack 报「已选中」，
+ * 置灰态自动带 disabled 语义。方向键由调用方另接（clickable/selectable 自带 Enter / 空格
+ * 触发，不要重复处理）。
+ */
+@Composable
+fun Modifier.pressSelectable(
+    selected: Boolean,
+    shape: Shape,
+    scale: Float = DefaultPressScale,
+    shade: PressShade = PressShade.Brighten,
+    enabled: Boolean = true,
+    role: Role? = Role.RadioButton,
+    onClick: () -> Unit,
+): Modifier {
+    val press = remember { MutableInteractionSource() }
+    return pressFeedback(
+        interactionSource = press,
+        shape = shape,
+        scale = scale,
+        shade = shade,
+    ).selectable(
+        selected = selected,
         interactionSource = press,
         indication = null,
         enabled = enabled,

@@ -556,12 +556,13 @@ private fun SelectMenu(
                 ),
             ),
             hazeState = hazeState,
-            // 卡片左缘对齐图标左缘（DropdownMenu 原位），上移量使卡顶边贴行顶边；
-            // 行尾箭头贴屏幕右缘，菜单放不下会被钳到右缘 → 锚点取卡片右上角
+            // 单选型菜单：行暴露 selectable(selected) + RadioButton 角色（TalkBack 播报已选中）
+            selectionMode = true,
+            // 卡片左缘对齐图标左缘（DropdownMenu 原位），上移量使卡顶边贴行顶边。
+            // 自定义落位仍走共享层：安全区钳位兜住贴屏右缘的溢出，生长锚点按最终落位反推
             cardPosition = { anchorBounds, _, _ ->
                 IntOffset(anchorBounds.left, anchorBounds.bottom - topAlignLiftPx)
             },
-            menuGrowth = MenuGrowth.TopRight,
             // 非 focusable：行点击已经显式收过一次键盘，弹层不能再切窗口焦点，
             // 否则 IME 收起动画会被打断/重启，表现为键盘闪烁
             focusable = false,

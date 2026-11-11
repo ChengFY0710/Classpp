@@ -27,11 +27,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.alarm.AlarmClockPlanner
@@ -45,7 +43,8 @@ import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.CardSection
-import com.fangyi.classpp.ui.components.MenuGrowth
+import com.fangyi.classpp.ui.components.MenuGravity
+import com.fangyi.classpp.ui.components.MenuPlacement
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSwipe
 import com.fangyi.classpp.ui.components.OverlaySheet
@@ -484,9 +483,9 @@ internal fun TodoDetailSheet(
 }
 
 /**
- * 标题行「更多」菜单（本文件私有）：[PopupMenuPopup] 共享弹层宿主——投影留白、越界钳制
- * 与 scale/alpha 进出场由宿主处理；卡片右缘对齐锚点（按钮）右缘、顶缘与按钮底缘留
- * [TitleMenuGap]，锚点在行尾故自卡片右上角长出。
+ * 标题行「更多」菜单（本文件私有）：[PopupMenuPopup] 共享弹层宿主——投影留白、安全区
+ * 钳位、自动翻转与 scale/alpha 进出场由宿主处理；卡片右缘对齐锚点（按钮）右缘、顶缘与
+ * 按钮底缘留 [TitleMenuGap]，下方放不下时自动翻到按钮上方；生长锚点按最终落位反推。
  *
  * 条目：添加到日历（[calendarEnabled] = false 即宿主没有日历编排上下文时置灰不可点；
  * 可时点按交 [onAddToCalendar] 由宿主写入系统日历，流程见 CalendarAddFlow——待办页与日程页
@@ -514,7 +513,6 @@ private fun TitleMoreMenu(
     onCountdownToggle: (Boolean) -> Unit,
     onArchive: () -> Unit,
 ) {
-    val gapPx = with(LocalDensity.current) { TitleMenuGap.roundToPx() }
     // 日历/倒计时/归档三项动作都随落库重写本浮层内容列（被采样源：日历事件落待办、
     // 倒计时标签显隐、归档让详情与列表条目消失），菜单退场活采样期间不可撞：延后到
     // 退场播完（PopupActionGate，机制见 PopupMenuPopup KDoc）。「添加到闹钟」只拉起
@@ -571,10 +569,12 @@ private fun TitleMoreMenu(
                     ),
                     // 归档：把待办移入「已归档」特殊分组页（纯标记隐藏，详情随宿主反查落空
                     // 自动收起，同删除后详情的收场路径）；重复待办整系列一并归档
-                    //（单模型字段语义，同删除/置顶），无置灰态——详情只可能被活跃待办打开
+                    //（单模型字段语义，同删除/置顶），无置灰态——详情只可能被活跃待办打开。
+                    // destructive：error 色 + 自动与常规项用分割线隔离（B6）
                     PopupMenuItem(
                         label = stringResource(R.string.todo_menu_archive),
                         icon = R.drawable.ic_archive,
+                        destructive = true,
                         onClick = {
                             onDismiss()
                             rewriteGate.defer(onArchive)
@@ -583,13 +583,10 @@ private fun TitleMoreMenu(
                 ),
             ),
         ),
-        cardPosition = { anchorBounds, _, cardSize ->
-            IntOffset(
-                x = anchorBounds.right - cardSize.width,
-                y = anchorBounds.bottom + gapPx,
-            )
-        },
-        menuGrowth = MenuGrowth.TopRight,
+        placement = MenuPlacement(
+            gravity = MenuGravity.BottomEnd,
+            gap = TitleMenuGap,
+        ),
     )
 }
 

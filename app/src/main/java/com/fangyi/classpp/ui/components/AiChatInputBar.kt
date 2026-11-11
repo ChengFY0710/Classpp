@@ -450,8 +450,11 @@ fun AiChatInputBar(
                         y = anchorRect.top - gapPx - card.height,
                     )
                 },
-                // 输入栏钉底，菜单自卡片上缘向上长
-                menuGrowth = MenuGrowth.BottomRight,
+                // 生长锚点按最终落位 + 冻结锚点（+ 号）反推：输入栏钉底时菜单自卡片
+                // 下缘向上长，钳位后也不会跑到左上角
+                anchor = frozenMenuAnchor?.let {
+                    Rect(it.left.toFloat(), it.top.toFloat(), it.right.toFloat(), it.bottom.toFloat())
+                },
                 hazeState = hazeState,
             )
         }
