@@ -1,5 +1,6 @@
 package com.fangyi.classpp.ui.components
 
+import android.os.SystemClock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -19,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -49,6 +51,15 @@ import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import dev.chrisbanes.haze.HazeState
+
+/**
+ * 非 focusable 菜单收起后，极短窗口内忽略行的「打开」请求：点开着的选择行时，
+ * 弹层的 ACTION_OUTSIDE（收起）与落到行上的点击是同一个手势（非 focusable 窗口
+ * 不消费外部触摸），不拦的话菜单会「刚收起又立刻重开」——退场动画播到一半被反向
+ * 进场，果冻回弹被截断，看起来像重播了一段无回弹的开场。
+ * 同 [AiChatInputBar] 的非 focusable 弹层防重开。
+ */
+private const val MenuReopenGuardMillis = 200L
 
 /**
  * 设置卡条目：导航行（label + 主题色箭头）、开关行（label + [ClassppSwitch]）、
@@ -82,7 +93,8 @@ sealed interface SettingsCardItem {
     ) : SettingsCardItem
 
     /**
-     * 选择行：整行可点弹出菜单（打开前自动收起键盘与焦点；菜单为非 focusable 弹层，
+     * 选择行：整行可点弹出菜单，菜单开着时再点整行收起（完整播放退场动画），
+     * 再点一次重新打开（打开前自动收起键盘与焦点；菜单为非 focusable 弹层，
      * 不抢窗口焦点，避免 IME 收起动画期间键盘闪烁），
      * [value] 为当前值的展示文字，[items] 只传合法选项（由调用方裁剪）。
      */
@@ -245,6 +257,9 @@ fun SettingsCard(
 private fun SettingsCardRow(item: SettingsCardItem, hazeState: HazeState?) {
     // 菜单开合只有选择行用得到，其余行型状态恒为 false 不产生行为
     var menuExpanded by remember { mutableStateOf(false) }
+    // 菜单收起时刻：非 focusable 弹层的 ACTION_OUTSIDE 与落回行上的点击是同一个手势，
+    // 收起后的这次点击不再把菜单重新打开（见 MenuReopenGuardMillis）
+    var menuDismissedAtMillis by remember { mutableLongStateOf(0L) }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     // 选择行在输入中打开菜单：这次收键盘不回滚内容（被点的行保持原位，菜单锚点不漂）
@@ -273,13 +288,20 @@ private fun SettingsCardRow(item: SettingsCardItem, hazeState: HazeState?) {
             )
         else Modifier
         is SettingsCardItem.Select -> Modifier.pressClickable(RectangleShape, shade = rowShade) {
-            // 打开菜单前先收起键盘与焦点：键盘若开着，菜单会被盖住、焦点还留在原输入框上
-            // 键盘在场时登记「这次收起不回滚」：被点的行原地不动，向下展开的菜单不会跟着
-            // 内容回滚滑走（见 ImeRestoreGate）
-            if (imeVisible) imeRestoreGate?.suppressNextRestore()
-            focusManager.clearFocus()
-            keyboard?.hide()
-            menuExpanded = true
+            if (menuExpanded) {
+                // 菜单开着：再点行 = 收起（退场动画照常播完）。点外部收起可能已在按下时
+                // 先走 ACTION_OUTSIDE，这里兜住另一种到达顺序，并记下收起时刻供防重开用
+                menuDismissedAtMillis = SystemClock.uptimeMillis()
+                menuExpanded = false
+            } else if (SystemClock.uptimeMillis() - menuDismissedAtMillis > MenuReopenGuardMillis) {
+                // 打开菜单前先收起键盘与焦点：键盘若开着，菜单会被盖住、焦点还留在原输入框上
+                // 键盘在场时登记「这次收起不回滚」：被点的行原地不动，向下展开的菜单不会跟着
+                // 内容回滚滑走（见 ImeRestoreGate）
+                if (imeVisible) imeRestoreGate?.suppressNextRestore()
+                focusManager.clearFocus()
+                keyboard?.hide()
+                menuExpanded = true
+            }
         }
         // 自定义行无整行点击（尾部控件自理）
         is SettingsCardItem.Custom -> Modifier
@@ -321,7 +343,11 @@ private fun SettingsCardRow(item: SettingsCardItem, hazeState: HazeState?) {
             is SettingsCardItem.Select -> SelectMenu(
                 item = item,
                 expanded = menuExpanded,
-                onDismiss = { menuExpanded = false },
+                onDismiss = {
+                    // 点外部 / 返回键收起也记时刻：同一手势落回行上的点击不再重开
+                    menuDismissedAtMillis = SystemClock.uptimeMillis()
+                    menuExpanded = false
+                },
                 hazeState = hazeState,
             )
             // 自定义行由 CustomRow 渲染，走不到这里
@@ -482,7 +508,10 @@ internal fun Chevron() {
  * 弹层**非 focusable**：输入中的键盘由行点击显式收起一次，弹层不再抢窗口焦点——
  * focusable 弹层会在 IME 收起动画期间再切一次焦点，键盘表现为「闪一下才退出」
  * （README 记录的 popupSelectCard 已知坑）。返回键由 PopupMenuPopup 内的
- * [MenuBackHandler] 兜底；点外部仍由 ACTION_OUTSIDE 收起。
+ * [MenuBackHandler] 兜底；点外部仍由 ACTION_OUTSIDE 收起。代价是非 focusable 窗口
+ * 不消费外部触摸：点开着的行时，ACTION_OUTSIDE 收起与落回行上的点击是同一个手势，
+ * 行点击靠 [MenuReopenGuardMillis] 忽略收起后那一下，表现为「再点行收起（退场动画
+ * 完整播完）、再点一次打开」，而不是收起动画播到一半又反向进场。
  *
  * 点选即收 + [SettingsCardItem.Select.onPick] 常随选值重写宿主内容列（被采样源：
  * 服务商预设回填 / 调课参数行增删 / 重复规则行显隐等）：重写统一延后到退场播完
