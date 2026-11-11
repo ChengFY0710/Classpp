@@ -12,7 +12,7 @@ import java.net.URI
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** 远端适配分发仓库的地址与缓存路径常量（仓库内容由 tools/schoolsync/ 撰写并 push） */
+/** 远端适配分发仓库的地址与缓存路径常量（仓库内容在 classpp_schoolsync 仓库维护） */
 object SchoolRemoteConfig {
     /** 缓存目录内清单文件名；声明文件按 `school-<id>.json` 落盘（id 经校验，防路径注入） */
     const val INDEX_FILE = "index.json"

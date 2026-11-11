@@ -11,7 +11,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
 /**
- * 测试夹具：与 `tools/schoolsync/templates/demo.json` 同构的声明 + 按声明路径产出的
+ * 测试夹具：与 `classpp_schoolsync` 仓库 `templates/demo.json` 同构的声明 + 按声明路径产出的
  * JSON 响应。只在测试里使用——demo 学校**不**进入 `index.json`，生产不可见。
  */
 internal fun demoDeclaration(): SchoolDeclaration = SchoolDeclaration(
