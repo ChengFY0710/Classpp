@@ -11,6 +11,7 @@ import com.fangyi.classpp.data.model.WeekSegment
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoStep
 import com.fangyi.classpp.data.model.TodoUrgency
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -247,5 +248,21 @@ class AiPromptBuilderTest {
         // 完成/取消完成与归档/恢复直接生效
         assertTrue(prompt.contains("完成/取消完成会立即生效"))
         assertTrue(prompt.contains("归档/取消归档/恢复会立即生效"))
+    }
+
+    @Test
+    fun `json contracts come from the tool registry`() {
+        val contracts = AiToolRegistry.fallbackContracts
+        // 提示词里的四段契约与修复重试引用同一份注册表生成结果，不是各自手写
+        assertEquals(contracts.createTodos, AiPromptBuilder.TODO_JSON_SHAPE)
+        assertEquals(contracts.updateAndDelete, AiPromptBuilder.TODO_CHANGE_JSON_SHAPE)
+        assertEquals(contracts.complete, AiPromptBuilder.TODO_COMPLETE_JSON_SHAPE)
+        assertEquals(contracts.lifecycle, AiPromptBuilder.TODO_LIFECYCLE_JSON_SHAPE)
+
+        val prompt = AiPromptBuilder.build(now, null, null, emptyList(), emptyList(), emptyList())
+        assertTrue(prompt.contains(contracts.createTodos))
+        assertTrue(prompt.contains(contracts.updateAndDelete))
+        assertTrue(prompt.contains(contracts.complete))
+        assertTrue(prompt.contains(contracts.lifecycle))
     }
 }

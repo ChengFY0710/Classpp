@@ -1729,11 +1729,8 @@ class AiChatRepository internal constructor(
                 turns = listOf(
                     AiChatTurn(
                         role = "system",
-                        content = "待办动作必须是可解析的 json 代码块。\n" +
-                            "新建（立即落库）格式：\n" + AiPromptBuilder.TODO_JSON_SHAPE + "\n" +
-                            "修改/删除（等待用户确认）格式：\n" + AiPromptBuilder.TODO_CHANGE_JSON_SHAPE + "\n" +
-                            "完成/取消完成（立即生效）格式：\n" + AiPromptBuilder.TODO_COMPLETE_JSON_SHAPE + "\n" +
-                            "归档/取消归档/恢复（立即生效）格式：\n" + AiPromptBuilder.TODO_LIFECYCLE_JSON_SHAPE,
+                        // 契约文本由注册表统一生成（与 system prompt 同一份），避免两处手写漂移
+                        content = AiToolRegistry.repairSystemPrompt,
                     ),
                     AiChatTurn(role = "user", content = reply.take(REPAIR_CONTEXT_MAX)),
                     AiChatTurn(role = "user", content = repairPrompt),

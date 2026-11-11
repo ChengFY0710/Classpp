@@ -42,57 +42,38 @@ object AiPromptBuilder {
     const val MAX_STALE_TODO_LINES = 10
 
     /**
-     * 待办草稿的 JSON 字段契约（单行示例）。system prompt 与仓库的草稿修复重试
-     * 共用同一份文本——修复请求里说「严格遵循格式」必须真的有声明可循。
+     * 待办草稿的 JSON 字段契约（单行示例）。由 [AiToolRegistry] 生成，system prompt 与
+     * 仓库的草稿修复重试共用同一份文本——修复请求里说「严格遵循格式」必须真的有声明可循。
      * 字段与 Todo 的完整参数面对齐（日期/全天/时段/截止/截止随重复/紧急度/标签/
      * 分组/备注/步骤/地点/倒计时/置顶/重复规则）。
      */
-    internal const val TODO_JSON_SHAPE: String =
-        """{"todos":[{"name":"...","dates":["yyyy-MM-dd"],"allDay":false,"startTime":"HH:mm",""" +
-            """"endTime":"HH:mm","deadlineDate":"yyyy-MM-dd","deadlineTime":"HH:mm",""" +
-            """"deadlineBeforeRepeat":false,"deadlineBeforeDays":0,""" +
-            """"urgency":"Critical|High|Medium|Low","tags":["..."],"group":"...",""" +
-            """"note":"...","steps":["..."],"location":"...","countdown":false,"pinned":false,""" +
-            """"repeat":{"type":"None|Daily|Weekly|Monthly|Yearly|Custom","unit":"Day|Week|Month|Year",""" +
-            """"interval":1,"marks":[1],"endType":"Never|Date|Count","endDate":"yyyy-MM-dd",""" +
-            """"endCount":5,"merge":true,"checkIn":false}}]}"""
+    internal val TODO_JSON_SHAPE: String
+        get() = AiToolRegistry.fallbackContracts.createTodos
 
     /**
-     * 修改/删除已有待办的 JSON 契约（system prompt 与修复重试共用）。
+     * 修改/删除已有待办的 JSON 契约（由 [AiToolRegistry] 生成，system prompt 与修复重试共用）。
      *
      * patch 是**部分更新**语义：只写要改的字段，未写 = 保持不变；字符串空串与空数组表示
      * 清空。完整语义见 [AiTodoPatchMapper] 的类注释。
      */
-    internal const val TODO_CHANGE_JSON_SHAPE: String =
-        """{"updates":[{"id":"<待办 id>","patch":{"name":"...","dates":["yyyy-MM-dd"],""" +
-            """"allDay":true,"startTime":"HH:mm","endTime":"HH:mm",""" +
-            """"deadlineDate":"yyyy-MM-dd","deadlineTime":"HH:mm",""" +
-            """"deadlineBeforeRepeat":false,"deadlineBeforeDays":0,""" +
-            """"urgency":"Critical|High|Medium|Low|None","tags":["..."],"group":"...",""" +
-            """"note":"...","steps":["..."],"location":"...","countdown":false,"pinned":false,""" +
-            """"repeat":{"type":"None|Daily|Weekly|Monthly|Yearly|Custom","unit":"Day|Week|Month|Year",""" +
-            """"interval":1,"marks":[1],"endType":"Never|Date|Count","endDate":"yyyy-MM-dd",""" +
-            """"endCount":5,"merge":true,"checkIn":false}}}],""" +
-            """"deletes":[{"id":"<待办 id>"}]}"""
+    internal val TODO_CHANGE_JSON_SHAPE: String
+        get() = AiToolRegistry.fallbackContracts.updateAndDelete
 
     /**
-     * 完成/取消完成的 JSON 契约（system prompt 与修复重试共用）。
+     * 完成/取消完成的 JSON 契约（由 [AiToolRegistry] 生成，system prompt 与修复重试共用）。
      *
      * 与修改/删除不同，这类动作解析后**直接执行**（可在消息下方撤销）；重复待办的
      * `date` 必须是注入行里「待完成期次/已完成期次」列出的日期。
      */
-    internal const val TODO_COMPLETE_JSON_SHAPE: String =
-        """{"completes":[{"id":"<待办 id>","date":"yyyy-MM-dd"}],""" +
-            """"reopens":[{"id":"<待办 id>","date":"yyyy-MM-dd"}]}"""
+    internal val TODO_COMPLETE_JSON_SHAPE: String
+        get() = AiToolRegistry.fallbackContracts.complete
 
     /**
-     * 归档/取消归档/恢复的 JSON 契约。id 分别取自 [待办] / [已归档] / [回收站]，
-     * 解析后直接执行（可撤销）。
+     * 归档/取消归档/恢复的 JSON 契约（由 [AiToolRegistry] 生成）。id 分别取自
+     * [待办] / [已归档] / [回收站]，解析后直接执行（可撤销）。
      */
-    internal const val TODO_LIFECYCLE_JSON_SHAPE: String =
-        """{"archives":[{"id":"<待办 id>"}],""" +
-            """"unarchives":[{"id":"<已归档 id>"}],""" +
-            """"restores":[{"id":"<回收站 id>"}]}"""
+    internal val TODO_LIFECYCLE_JSON_SHAPE: String
+        get() = AiToolRegistry.fallbackContracts.lifecycle
 
     private val WEEKDAY_ZH = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
