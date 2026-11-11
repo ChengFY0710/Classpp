@@ -134,9 +134,9 @@ class AiToolRegistryTest {
     @Test
     fun `openai tools wrap schemas in function objects`() {
         val tools = AiToolRegistry.openAiTools()
-        assertEquals(AiToolRegistry.specs.size, tools.size)
+        assertEquals(AiToolRegistry.nativeSpecs.size, tools.size)
         tools.forEachIndexed { index, element ->
-            val spec = AiToolRegistry.specs[index]
+            val spec = AiToolRegistry.nativeSpecs[index]
             val tool = element.jsonObject
             assertEquals("function", tool.getValue("type").jsonPrimitive.content)
             val function = tool.getValue("function").jsonObject
@@ -151,15 +151,40 @@ class AiToolRegistryTest {
     @Test
     fun `anthropic tools wrap schemas in input_schema`() {
         val tools = AiToolRegistry.anthropicTools()
-        assertEquals(AiToolRegistry.specs.size, tools.size)
+        assertEquals(AiToolRegistry.nativeSpecs.size, tools.size)
         tools.forEachIndexed { index, element ->
-            val spec = AiToolRegistry.specs[index]
+            val spec = AiToolRegistry.nativeSpecs[index]
             val tool = element.jsonObject
             assertEquals(spec.name, tool.getValue("name").jsonPrimitive.content)
             assertEquals(spec.description, tool.getValue("description").jsonPrimitive.content)
             assertEquals(spec.parameters, tool.getValue("input_schema").jsonObject)
             assertNull("Anthropic tools must not carry OpenAI function envelope", tool["function"])
             assertConservativeSchema(tool.getValue("input_schema"))
+        }
+    }
+
+    @Test
+    fun `native tools are exactly the three read-only tools`() {
+        assertEquals(
+            listOf(
+                AiToolRegistry.GET_DAY_PLAN,
+                AiToolRegistry.SEARCH_TODOS,
+                AiToolRegistry.GET_WEEK_SCHEDULE,
+            ),
+            AiToolRegistry.nativeSpecs.map { it.name },
+        )
+        assertTrue(AiToolRegistry.nativeSpecs.all { it.permission == AiToolPermission.Read })
+        assertTrue(AiToolRegistry.nativeSpecs.all { it.execute != null })
+        // 写工具仍在注册表里（回退契约/find 可用），但不进入原生 wire
+        listOf(
+            AiToolRegistry.CREATE_TODOS,
+            AiToolRegistry.UPDATE_TODOS,
+            AiToolRegistry.DELETE_TODOS,
+            AiToolRegistry.COMPLETE_TODOS,
+            AiToolRegistry.ARCHIVE_TODOS,
+        ).forEach { name ->
+            assertNotNull(AiToolRegistry.find(name))
+            assertTrue(AiToolRegistry.nativeSpecs.none { it.name == name })
         }
     }
 

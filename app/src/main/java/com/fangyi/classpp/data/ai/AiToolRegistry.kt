@@ -32,6 +32,11 @@ object AiToolRegistry {
     const val COMPLETE_TODOS = "complete_todos"
     const val ARCHIVE_TODOS = "archive_todos"
 
+    // 首版只读查询工具（P1）：原生 tools 只发送这几个；写工具仍走 JSON 回退契约
+    const val GET_DAY_PLAN = "get_day_plan"
+    const val SEARCH_TODOS = "search_todos"
+    const val GET_WEEK_SCHEDULE = "get_week_schedule"
+
     // ---------- 枚举值（schema 与回退契约共用的唯一来源） ----------
 
     private val URGENCY_VALUES = listOf("Critical", "High", "Medium", "Low")
@@ -233,7 +238,39 @@ object AiToolRegistry {
 
     // ---------- 工具定义（必须在 schema / 示例之后初始化） ----------
 
-    val specs: List<AiToolSpec> = listOf(
+    /**
+     * 首版只读工具：带 [AiToolSpec.execute]，因此进入原生 tools 的 wire 数组。
+     * 描述限定 1~3 句，避免每次请求都付大额 schema token。
+     */
+    private val readSpecs: List<AiToolSpec> = listOf(
+        AiToolSpec(
+            name = GET_DAY_PLAN,
+            description = "查询某一天的课程、待办与空闲时段。用户问“某天有没有空/那天有什么课”时调用；" +
+                "省略 date = 今天。",
+            parameters = AiReadTools.dayPlanParameters,
+            permission = AiToolPermission.Read,
+            execute = AiReadTools::executeDayPlan,
+        ),
+        AiToolSpec(
+            name = SEARCH_TODOS,
+            description = "按关键词、状态、分组、标签或日期范围查询待办。上下文里的待办列表可能被截断，" +
+                "需要完整/精确结果时调用。",
+            parameters = AiReadTools.searchTodosParameters,
+            permission = AiToolPermission.Read,
+            execute = AiReadTools::executeSearchTodos,
+        ),
+        AiToolSpec(
+            name = GET_WEEK_SCHEDULE,
+            description = "查询某一周的课表（按天分组）。用户问“下周怎么安排/这周有什么课”时调用；" +
+                "weekOffset：-1=上周，0=本周，1=下周。",
+            parameters = AiReadTools.weekScheduleParameters,
+            permission = AiToolPermission.Read,
+            execute = AiReadTools::executeWeekSchedule,
+        ),
+    )
+
+    /** 写工具仍只有 JSON 回退契约：P1 不暴露为原生 tools，避免与现有确认卡/撤销双写 */
+    private val writeSpecs: List<AiToolSpec> = listOf(
         AiToolSpec(
             name = CREATE_TODOS,
             description = "新建待办。用户要求记录要做的事（可带日期、截止、重复）时调用；" +
@@ -279,6 +316,12 @@ object AiToolRegistry {
             ),
         ),
     )
+
+    /** 全部工具定义：只读在前、写工具在后（回退契约与查找共用） */
+    val specs: List<AiToolSpec> = readSpecs + writeSpecs
+
+    /** 可原生执行的工具（P1 = 3 个只读）；wire 只发送这些，写工具继续走 JSON 回退 */
+    val nativeSpecs: List<AiToolSpec> = specs.filter { it.execute != null }
 
     /** 按名称查找工具；未注册返回 null（未知工具名由执行层转成 `unknown_tool` 结果） */
     fun find(name: String): AiToolSpec? = specs.firstOrNull { it.name == name }
@@ -331,7 +374,7 @@ object AiToolRegistry {
     // ---------- Wire 形态 ----------
 
     /** OpenAI 兼容 `tools` 数组：`{type:"function",function:{name,description,parameters}}` */
-    fun openAiTools(): JsonArray = buildJsonArray {
+    fun openAiTools(specs: List<AiToolSpec> = nativeSpecs): JsonArray = buildJsonArray {
         specs.forEach { spec ->
             add(
                 buildJsonObject {
@@ -347,7 +390,7 @@ object AiToolRegistry {
     }
 
     /** Anthropic `tools` 数组：`{name,description,input_schema}` */
-    fun anthropicTools(): JsonArray = buildJsonArray {
+    fun anthropicTools(specs: List<AiToolSpec> = nativeSpecs): JsonArray = buildJsonArray {
         specs.forEach { spec ->
             add(
                 buildJsonObject {
@@ -360,9 +403,12 @@ object AiToolRegistry {
     }
 
     /** 按协议生成 `tools` 字段；空列表的语义由调用方决定（不发送 tools 字段 = 回退） */
-    fun wireTools(protocol: AiProtocol): JsonArray = when (protocol) {
-        AiProtocol.OpenAiCompat -> openAiTools()
-        AiProtocol.Anthropic -> anthropicTools()
+    fun wireTools(
+        protocol: AiProtocol,
+        specs: List<AiToolSpec> = nativeSpecs,
+    ): JsonArray = when (protocol) {
+        AiProtocol.OpenAiCompat -> openAiTools(specs)
+        AiProtocol.Anthropic -> anthropicTools(specs)
     }
 
     // ---------- Schema 构件 ----------

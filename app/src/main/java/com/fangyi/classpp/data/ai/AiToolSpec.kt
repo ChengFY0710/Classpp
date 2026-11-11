@@ -18,6 +18,21 @@ enum class AiToolPermission {
 }
 
 /**
+ * 原生工具能力探测结果（按连接缓存，非敏感，明文 SharedPreferences）：
+ * - [Unknown]：下一次请求带 tools 探测；
+ * - [Supported]：曾成功收到 tool_calls；
+ * - [Unsupported]：带 tools 失败、去掉 tools 重试成功——后续按 JSON 回退。
+ */
+enum class AiToolCapability { Unknown, Supported, Unsupported }
+
+/**
+ * 能力缓存的键：连接身份（不含 API Key）。端点/模型/协议任一变化都重新探测，
+ * 避免把一套配置的结论错误复用到另一套。
+ */
+internal fun AiConnection.toolCapabilityKey(): String =
+    "$providerId|$baseUrl|$model|${protocol.name}"
+
+/**
  * JSON 回退信封里的一段动作（例如 `todos`、`updates`）。
  *
  * 原生 tools 模式不发送这些段落；回退模式由 [AiToolRegistry] 把各段的 [example]

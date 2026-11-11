@@ -193,6 +193,27 @@ class AiChatStoreTest {
                     todoName = "旧任务",
                 ),
             ),
+            toolRounds = listOf(
+                AiToolRound(
+                    text = "我先查一下。",
+                    calls = listOf(
+                        AiToolCall(
+                            id = "call-1",
+                            name = AiToolRegistry.GET_DAY_PLAN,
+                            argumentsJson = """{"date":"2026-11-09"}""",
+                        ),
+                    ),
+                    results = listOf(
+                        AiToolResult(
+                            callId = "call-1",
+                            name = AiToolRegistry.GET_DAY_PLAN,
+                            contentJson = """{"ok":true,"data":{}}""",
+                        ),
+                    ),
+                    status = AiToolRoundStatus.Completed,
+                ),
+            ),
+            toolLoopCapped = true,
         )
         val original = AiChatFile(
             conversations = listOf(AiConversation(id = "conv-1", messages = listOf(message))),
@@ -221,6 +242,8 @@ class AiChatStoreTest {
         assertFalse(message.todoChangeDropped)
         assertTrue(message.todoCompletions.isEmpty())
         assertTrue(message.todoLifecycles.isEmpty())
+        assertTrue(message.toolRounds.isEmpty())
+        assertFalse(message.toolLoopCapped)
     }
 
     @Test

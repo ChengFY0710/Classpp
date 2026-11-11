@@ -34,6 +34,18 @@ interface AiSettingsStore {
     /** Keystore 是否可用；任何加解密异常后置 false，本次进程内不再尝试 */
     val secureAvailable: Boolean
 
+    // ---------- 工具调用（非敏感，明文段） ----------
+
+    /** 原生只读工具总开关；默认开启，关闭后完全走现有 JSON 回退 */
+    fun loadToolsEnabled(): Boolean = true
+
+    fun saveToolsEnabled(enabled: Boolean): Boolean = true
+
+    /** 某连接的原生工具能力探测缓存；键见 [toolCapabilityKey] */
+    fun loadToolCapability(key: String): AiToolCapability = AiToolCapability.Unknown
+
+    fun saveToolCapability(key: String, capability: AiToolCapability) {}
+
     // ---------- 方案库 ----------
 
     fun loadProfiles(): List<AiProfile>
@@ -91,6 +103,31 @@ class PrefsAiSettingsStore(context: Context) : AiSettingsStore {
     }
 
     override val secureAvailable: Boolean get() = cipher.available
+
+    // ---------- 工具调用（非敏感，明文段） ----------
+
+    @Synchronized
+    override fun loadToolsEnabled(): Boolean = prefs.getBoolean(KEY_TOOLS_ENABLED, true)
+
+    @Synchronized
+    override fun saveToolsEnabled(enabled: Boolean): Boolean =
+        prefs.edit().putBoolean(KEY_TOOLS_ENABLED, enabled).commit()
+
+    @Synchronized
+    override fun loadToolCapability(key: String): AiToolCapability {
+        val raw = prefs.getString(KEY_TOOL_CAPABILITY_PREFIX + key, null) ?: return AiToolCapability.Unknown
+        return try {
+            AiToolCapability.valueOf(raw)
+        } catch (_: IllegalArgumentException) {
+            // 单字段损坏不放大成功能故障：回落 Unknown，下次请求重新探测
+            AiToolCapability.Unknown
+        }
+    }
+
+    @Synchronized
+    override fun saveToolCapability(key: String, capability: AiToolCapability) {
+        prefs.edit().putString(KEY_TOOL_CAPABILITY_PREFIX + key, capability.name).commit()
+    }
 
     // ---------- 方案库 ----------
 
@@ -253,6 +290,12 @@ class PrefsAiSettingsStore(context: Context) : AiSettingsStore {
 
         /** 每方案 Key 的键前缀，完整键 = 前缀 + 方案 id */
         const val KEY_API_KEY_PREFIX = "api_key_"
+
+        /** 原生只读工具总开关 */
+        const val KEY_TOOLS_ENABLED = "tools_enabled"
+
+        /** 能力缓存键前缀，完整键 = 前缀 + 连接指纹（含 URL，SharedPreferences 键允许任意字符串） */
+        const val KEY_TOOL_CAPABILITY_PREFIX = "tool_capability_"
     }
 }
 

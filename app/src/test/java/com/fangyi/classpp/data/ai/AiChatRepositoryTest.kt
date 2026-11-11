@@ -9,6 +9,7 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.StoreResult
+import com.fangyi.classpp.data.testSchedule
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -25,6 +26,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -106,6 +108,22 @@ class AiChatRepositoryTest {
         val profiles = mutableListOf<AiProfile>()
         val profileKeys = mutableMapOf<String, String>()
         var activeId: String? = null
+        var toolsEnabled: Boolean = true
+        val toolCapabilities = mutableMapOf<String, AiToolCapability>()
+
+        override fun loadToolsEnabled(): Boolean = toolsEnabled
+
+        override fun saveToolsEnabled(enabled: Boolean): Boolean {
+            toolsEnabled = enabled
+            return true
+        }
+
+        override fun loadToolCapability(key: String): AiToolCapability =
+            toolCapabilities[key] ?: AiToolCapability.Unknown
+
+        override fun saveToolCapability(key: String, capability: AiToolCapability) {
+            toolCapabilities[key] = capability
+        }
 
         override fun loadProfiles(): List<AiProfile> = profiles.toList()
 
@@ -316,6 +334,61 @@ class AiChatRepositoryTest {
                 )
             },
         )
+
+    /** SSE data 行（工具调用分片：OpenAI delta.tool_calls[]） */
+    private fun toolCallSse(
+        index: Int,
+        id: String? = null,
+        name: String? = null,
+        arguments: String? = null,
+    ): String = "data: " + Json.encodeToString(
+        buildJsonObject {
+            put(
+                "choices",
+                JsonArray(
+                    listOf(
+                        buildJsonObject {
+                            put(
+                                "delta",
+                                buildJsonObject {
+                                    put(
+                                        "tool_calls",
+                                        JsonArray(
+                                            listOf(
+                                                buildJsonObject {
+                                                    put("index", index)
+                                                    id?.let { put("id", it) }
+                                                    put(
+                                                        "function",
+                                                        buildJsonObject {
+                                                            name?.let { put("name", it) }
+                                                            arguments?.let { put("arguments", it) }
+                                                        },
+                                                    )
+                                                },
+                                            ),
+                                        ),
+                                    )
+                                },
+                            )
+                        },
+                    ),
+                ),
+            )
+        },
+    )
+
+    private fun finishSse(reason: String): String =
+        """data: {"choices":[{"delta":{},"finish_reason":"$reason"}]}"""
+
+    /** 请求体里的 assistant tool_calls 与 tool 消息（用于配对断言） */
+    private fun toolMessagesOf(jsonBody: String): List<JsonObject> =
+        Json.parseToJsonElement(jsonBody).jsonObject["messages"]!!.jsonArray
+            .map { it.jsonObject }
+            .filter { it["tool_calls"] != null || it["role"]!!.jsonPrimitive.content == "tool" }
+
+    private fun requestHasTools(jsonBody: String): Boolean =
+        Json.parseToJsonElement(jsonBody).jsonObject["tools"] != null
 
     /** 请求体里的消息序列（role + content），用于结构断言 */
     private fun turnsOf(jsonBody: String): List<Pair<String, String>> =
@@ -2385,5 +2458,261 @@ class AiChatRepositoryTest {
         val lifecycle = repo.messages.value.last().todoLifecycles.single()
         assertEquals(AiTodoLifecycleStatus.UndoFailed, lifecycle.status)
         assertEquals(AiTodoChangeFailure.SaveFailed, lifecycle.failure)
+    }
+
+    // ---------- 原生只读工具与多轮循环 ----------
+
+    @Test
+    fun `send executes read tool then streams final answer`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.GET_DAY_PLAN,
+                        arguments = """{"date":"2026-11-01"}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("那天下午有空。"), "data: [DONE]")),
+        )
+        val context = AiChatContext(schedule = testSchedule(), currentWeek = 12)
+        val repo = repository(
+            settings = settings,
+            transport = transport,
+            contextProvider = { context },
+        )
+
+        repo.send("我 11 月 1 日下午有空吗")
+
+        assertEquals(2, transport.opened.size)
+        assertTrue(requestHasTools(transport.opened[0].jsonBody))
+        assertTrue(requestHasTools(transport.opened[1].jsonBody))
+        // 第二次请求必须把 assistant.tool_calls 与 tool 结果成对带回去
+        val paired = toolMessagesOf(transport.opened[1].jsonBody)
+        assertEquals(2, paired.size)
+        assertEquals("assistant", paired[0].getValue("role").jsonPrimitive.content)
+        assertNotNull(paired[0]["tool_calls"])
+        assertEquals("tool", paired[1].getValue("role").jsonPrimitive.content)
+        assertEquals("call_1", paired[1].getValue("tool_call_id").jsonPrimitive.content)
+
+        val message = repo.messages.value.last()
+        assertEquals("那天下午有空。", message.content)
+        assertFalse(message.interrupted)
+        assertEquals(1, message.toolRounds.size)
+        val round = message.toolRounds.single()
+        assertEquals(AiToolRoundStatus.Completed, round.status)
+        assertEquals(1, round.results.size)
+        assertEquals("get_day_plan", round.results.single().name)
+        assertFalse(round.results.single().isError)
+        assertTrue(round.results.single().contentJson.contains("\"ok\":true"))
+        assertEquals(
+            AiToolCapability.Supported,
+            settings.toolCapabilities[settings.connection.toolCapabilityKey()],
+        )
+    }
+
+    @Test
+    fun `send caps tool rounds and keeps partial text`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val toolRound = listOf(
+            toolCallSse(
+                index = 0,
+                id = "call_1",
+                name = AiToolRegistry.SEARCH_TODOS,
+                arguments = "{}",
+            ),
+            finishSse("tool_calls"),
+            "data: [DONE]",
+        )
+        val transport = FakeAiTransport(
+            ScriptedResponse(toolRound),
+            ScriptedResponse(toolRound),
+            ScriptedResponse(toolRound),
+            ScriptedResponse(toolRound),
+        )
+        val repo = repository(settings = settings, transport = transport)
+
+        repo.send("一直查")
+
+        // 第 4 次请求仍有 tool_calls：预算停止，不再发第 5 次
+        assertEquals(AiChatRepository.MAX_TOOL_ROUNDS, transport.opened.size)
+        val message = repo.messages.value.last()
+        assertTrue(message.toolLoopCapped)
+        assertEquals(AiChatRepository.MAX_TOOL_ROUNDS, message.toolRounds.size)
+        val lastRound = message.toolRounds.last()
+        assertEquals(AiToolRoundStatus.Failed, lastRound.status)
+        assertTrue(lastRound.results.single().isError)
+        assertTrue(lastRound.results.single().contentJson.contains("limit_exceeded"))
+    }
+
+    @Test
+    fun `send limits calls per round and still continues`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val calls = (0..4).flatMap { index ->
+            listOf(
+                toolCallSse(
+                    index = index,
+                    id = "call_$index",
+                    name = AiToolRegistry.SEARCH_TODOS,
+                    arguments = "{}",
+                ),
+            )
+        } + listOf(finishSse("tool_calls"), "data: [DONE]")
+        val transport = FakeAiTransport(
+            ScriptedResponse(calls),
+            ScriptedResponse(listOf(sse("查完了。"), "data: [DONE]")),
+        )
+        val repo = repository(settings = settings, transport = transport)
+
+        repo.send("查五条")
+
+        assertEquals(2, transport.opened.size)
+        val round = repo.messages.value.last().toolRounds.single()
+        assertEquals(5, round.calls.size)
+        assertEquals(5, round.results.size)
+        assertEquals(4, round.results.count { !it.isError })
+        assertEquals(1, round.results.count { it.contentJson.contains("limit_exceeded") })
+    }
+
+    @Test
+    fun `send falls back when provider rejects tools`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val transport = FakeAiTransport(
+            ScriptedResponse(lines = emptyList(), status = 400),
+            ScriptedResponse(listOf(sse("回退回答"), "data: [DONE]")),
+        )
+        val context = AiChatContext()
+        val repo = repository(
+            settings = settings,
+            transport = transport,
+            contextProvider = { context },
+        )
+
+        repo.send("你好")
+
+        assertEquals(2, transport.opened.size)
+        assertTrue(requestHasTools(transport.opened[0].jsonBody))
+        assertFalse(requestHasTools(transport.opened[1].jsonBody))
+        assertEquals(
+            AiToolCapability.Unsupported,
+            settings.toolCapabilities[settings.connection.toolCapabilityKey()],
+        )
+        val message = repo.messages.value.last()
+        assertEquals("回退回答", message.content)
+        assertTrue(message.toolRounds.isEmpty())
+    }
+
+    @Test
+    fun `tools disabled skips native wire and prompt`() = runBlocking {
+        val settings = FakeAiSettingsStore().apply { toolsEnabled = false }
+        val transport = FakeAiTransport(
+            ScriptedResponse(listOf(sse("普通回答"), "data: [DONE]")),
+        )
+        val repo = repository(settings = settings, transport = transport)
+
+        repo.send("你好")
+
+        val request = transport.opened.single()
+        assertFalse(requestHasTools(request.jsonBody))
+        assertFalse(request.jsonBody.contains("已启用只读查询工具"))
+        assertEquals("普通回答", repo.messages.value.last().content)
+        assertTrue(repo.messages.value.last().toolRounds.isEmpty())
+    }
+
+    @Test
+    fun `history replays recent tool pairing exactly`() = runBlocking {
+        val call = AiToolCall(
+            id = "call_1",
+            name = AiToolRegistry.GET_DAY_PLAN,
+            argumentsJson = """{"date":"2026-11-01"}""",
+        )
+        val result = AiToolResult(
+            callId = "call_1",
+            name = AiToolRegistry.GET_DAY_PLAN,
+            contentJson = """{"ok":true,"data":{}}""",
+        )
+        val store = FakeAiChatStore()
+        store.file = AiChatFile(
+            conversations = listOf(
+                AiConversation(
+                    id = "c1",
+                    title = "旧对话",
+                    messages = listOf(
+                        AiChatMessage(role = AiChatRole.User, content = "查一下"),
+                        AiChatMessage(
+                            role = AiChatRole.Assistant,
+                            content = "有空。",
+                            id = "m1",
+                            toolRounds = listOf(
+                                AiToolRound(
+                                    text = "",
+                                    calls = listOf(call),
+                                    results = listOf(result),
+                                    status = AiToolRoundStatus.Completed,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            activeConversationId = "c1",
+        )
+        val transport = FakeAiTransport(
+            ScriptedResponse(listOf(sse("继续回答"), "data: [DONE]")),
+        )
+        val repo = repository(store = store, transport = transport)
+
+        repo.send("继续")
+
+        val paired = toolMessagesOf(transport.opened.single().jsonBody)
+        assertEquals(2, paired.size)
+        assertEquals("assistant", paired[0].getValue("role").jsonPrimitive.content)
+        assertEquals(
+            "call_1",
+            paired[0].getValue("tool_calls").jsonArray.single().jsonObject
+                .getValue("id").jsonPrimitive.content,
+        )
+        assertEquals("tool", paired[1].getValue("role").jsonPrimitive.content)
+        assertEquals("call_1", paired[1].getValue("tool_call_id").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `bootstrap normalizes unfinished tool rounds to cancelled`() = runBlocking {
+        val store = FakeAiChatStore()
+        store.file = AiChatFile(
+            conversations = listOf(
+                AiConversation(
+                    id = "c1",
+                    messages = listOf(
+                        AiChatMessage(
+                            role = AiChatRole.Assistant,
+                            content = "半截",
+                            id = "m1",
+                            toolRounds = listOf(
+                                AiToolRound(
+                                    calls = listOf(AiToolCall("c1", AiToolRegistry.GET_DAY_PLAN)),
+                                    status = AiToolRoundStatus.Running,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            activeConversationId = "c1",
+        )
+        val repo = repository(
+            store = store,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+
+        assertEquals(
+            AiToolRoundStatus.Cancelled,
+            repo.messages.value.single().toolRounds.single().status,
+        )
     }
 }

@@ -265,4 +265,28 @@ class AiPromptBuilderTest {
         assertTrue(prompt.contains(contracts.complete))
         assertTrue(prompt.contains(contracts.lifecycle))
     }
+
+    @Test
+    fun `native tools mode adds guidance and keeps json write contracts`() {
+        val fallback = AiPromptBuilder.build(now, null, null, emptyList(), emptyList(), emptyList())
+        val native = AiPromptBuilder.build(
+            now = now,
+            schedule = null,
+            currentWeek = null,
+            todos = emptyList(),
+            groups = emptyList(),
+            tags = emptyList(),
+            nativeTools = true,
+        )
+
+        assertFalse(fallback.contains("已启用只读查询工具"))
+        assertTrue(native.contains("已启用只读查询工具"))
+        assertTrue(native.contains("get_day_plan"))
+        assertTrue(native.contains("search_todos"))
+        assertTrue(native.contains("get_week_schedule"))
+        // P1 取舍：只读查询走原生 tools，写操作仍保留 JSON 契约（不回归）
+        assertTrue(native.contains("```json"))
+        assertTrue(native.contains(AiToolRegistry.fallbackContracts.createTodos))
+        assertTrue(native.contains(AiToolRegistry.fallbackContracts.updateAndDelete))
+    }
 }

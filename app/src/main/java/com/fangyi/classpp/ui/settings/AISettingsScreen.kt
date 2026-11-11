@@ -95,6 +95,9 @@ fun AISettingsScreen(
         ?: remember { mutableStateOf<String?>(null) }
     val activeConnection by aiChatRepository?.activeConnection?.collectAsState()
         ?: remember { mutableStateOf(AiConnection()) }
+    // 原生只读工具总开关：关闭后完全走现有 JSON 回退
+    val toolsEnabled by aiChatRepository?.toolsEnabled?.collectAsState()
+        ?: remember { mutableStateOf(true) }
 
     var loaded by remember { mutableStateOf(false) }
     // 「清空对话历史」两击确认：第一次点击置位，3s 无后续点击自动解除，覆盖层收起复位
@@ -248,6 +251,22 @@ fun AISettingsScreen(
                                         onClick = {
                                             profileSheetMounted = true
                                             profileSheetVisible = true
+                                        },
+                                    ),
+                                ),
+                            )
+                        }
+
+                        // 工具调用：原生只读 tools 总开关（关闭后完全走 JSON 回退）
+                        CardSection(title = stringResource(R.string.ai_settings_section_tools)) {
+                            SettingsCard(
+                                items = listOf(
+                                    SettingsCardItem.Toggle(
+                                        label = stringResource(R.string.ai_settings_tools_toggle),
+                                        description = stringResource(R.string.ai_settings_tools_desc),
+                                        checked = toolsEnabled,
+                                        onCheckedChange = { enabled ->
+                                            scope.launch { aiChatRepository.setToolsEnabled(enabled) }
                                         },
                                     ),
                                 ),
