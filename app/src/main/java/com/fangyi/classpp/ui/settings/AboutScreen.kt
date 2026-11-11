@@ -57,7 +57,7 @@ private const val AboutAppIconScale = 1.7f
  * 关于子页：应用 Logo / 名称与副标题、作者、当前版本、更新日志、致谢，以及
  * 「用前须知」分组（免责声明 / 开源协议 / 隐私与政策）。
  *
- * 本轮只落地 UI：除「更新日志」外各行都有整行按压反馈，但点击暂无目标（占位）；
+ * 「用前须知」三行分别打开 [AboutDocumentSheet] 文档浮层；作者 / 检查更新 / 致谢仍为占位，
  * 更新日志只展示「标题 + 下箭头」的折叠态，展开内容后续再接。版本号经 [appVersionName]
  * 运行时读取 Gradle `versionName`，不在界面层写死，也不依赖 BuildConfig 生成类。
  *
@@ -113,8 +113,15 @@ fun AboutScreen(
                 .only(WindowInsetsSides.Bottom)
                 .asPaddingValues()
                 .calculateBottomPadding()
-            // 占位回调：本页先做 UI，检查更新 / 作者 / 致谢 / 用前须知后续再接各自目标
+            // 占位回调：作者 / 检查更新 / 致谢后续再接各自目标；用前须知走文档浮层
             val placeholder = remember { {} }
+            // 文档浮层两段式开关：visible 复位后播退场，mounted 在 onDismissed 才清空
+            var documentVisible by remember { mutableStateOf<AboutDocument?>(null) }
+            var documentMounted by remember { mutableStateOf<AboutDocument?>(null) }
+            val openDocument: (AboutDocument) -> Unit = { document ->
+                documentVisible = document
+                documentMounted = document
+            }
 
             SettingsScrollContent(
                 scrollState = scrollState,
@@ -193,15 +200,15 @@ fun AboutScreen(
                         items = listOf(
                             SettingsCardItem.Nav(
                                 label = stringResource(R.string.about_disclaimer),
-                                onClick = placeholder,
+                                onClick = { openDocument(AboutDocument.Disclaimer) },
                             ),
                             SettingsCardItem.Nav(
                                 label = stringResource(R.string.about_open_source_license),
-                                onClick = placeholder,
+                                onClick = { openDocument(AboutDocument.OpenSourceLicense) },
                             ),
                             SettingsCardItem.Nav(
                                 label = stringResource(R.string.about_privacy_policy),
-                                onClick = placeholder,
+                                onClick = { openDocument(AboutDocument.PrivacyPolicy) },
                             ),
                         ),
                     )
@@ -225,6 +232,16 @@ fun AboutScreen(
                         topBarHeight = with(density) { coords.size.height.toFloat().toDp() }
                     },
             )
+
+            // 文档浮层放在顶栏之后：画在顶栏之上，BackHandler 也后注册（与其余子页浮层一致）
+            documentMounted?.let { document ->
+                AboutDocumentSheet(
+                    document = document,
+                    visible = documentVisible == document,
+                    onDismiss = { documentVisible = null },
+                    onDismissed = { documentMounted = null },
+                )
+            }
         }
     }
 }

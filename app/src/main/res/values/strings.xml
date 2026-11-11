@@ -236,6 +236,8 @@
     <string name="about_disclaimer">免责声明</string>
     <string name="about_open_source_license">开源协议</string>
     <string name="about_privacy_policy">隐私与政策</string>
+    <!-- 文档浮层正文读取失败时的降级提示 -->
+    <string name="about_document_load_failed">文档加载失败，请稍后重试。</string>
     <!-- 数据管理（存储用量 / 全量备份导出与导入） -->
     <string name="data_management_header_title">数据管理</string>
     <string name="data_management_header_description">备份课表、待办、标签、日程背景图与 AI 对话记录，并查看存储空间用量</string>

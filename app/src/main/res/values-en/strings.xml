@@ -105,6 +105,8 @@
     <string name="about_disclaimer">Disclaimer</string>
     <string name="about_open_source_license">Open source license</string>
     <string name="about_privacy_policy">Privacy &amp; policy</string>
+    <!-- Fallback shown when a document sheet fails to read its raw markdown -->
+    <string name="about_document_load_failed">Failed to load the document. Please try again later.</string>
     <!-- Data management (storage usage / full backup export & import) -->
     <string name="data_management_header_title">Data management</string>
     <string name="data_management_header_description">Back up schedules, todos, tags, agenda wallpapers, and AI chat history, and review storage usage</string>
