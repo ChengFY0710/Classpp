@@ -50,6 +50,9 @@ import dev.chrisbanes.haze.rememberHazeState
 /** 关于页头部应用图标边长：比常规信息头部卡图标（40dp）更大，突出品牌 */
 private val AboutAppIconSize = 64.dp
 
+/** 应用图标在槽位内再放大，让品牌图标铺满连续曲率轮廓 */
+private const val AboutAppIconScale = 1.7f
+
 /**
  * 关于子页：应用 Logo / 名称与副标题、作者、当前版本、更新日志、致谢，以及
  * 「用前须知」分组（免责声明 / 开源协议 / 隐私与政策）。
@@ -124,8 +127,8 @@ fun AboutScreen(
                 // 顶部无题分组：应用信息 + 作者 + 检查更新 + 更新日志 + 致谢，组内卡间距走默认
                 CardSection {
                     SettingsInfoHeaderCard(
-                        // 启动图标的位图版本：adaptive-icon 的 XML 不能被 painterResource 加载
-                        icon = R.drawable.about_app_icon,
+                        // 关于页应用 Logo：设计稿导出的位图资源
+                        icon = R.drawable.app_logo,
                         title = stringResource(R.string.about_app_title),
                         description = stringResource(R.string.about_app_description),
                         // 应用图标保留原色，不做主题色渐变
@@ -133,6 +136,7 @@ fun AboutScreen(
                         // 品牌图标比常规头部卡图标更大，并按连续曲率圆角裁出圆滑轮廓
                         iconSize = AboutAppIconSize,
                         iconShape = AppIconShape,
+                        iconScale = AboutAppIconScale,
                     )
                     SettingsCard(
                         items = listOf(

@@ -85,7 +85,7 @@ fun dayTaskCardShape(
 }
 
 /** 关于页头部应用图标：56dp 位图的连续曲率圆角（约 25%，与启动图标观感一致） */
-val AppIconShape = RoundedRectangle(120.dp)
+val AppIconShape = RoundedRectangle(16.dp)
 
 /** AI 对话消息气泡：四角统一 20dp 平滑圆角 */
 val ChatBubbleShape = RoundedRectangle(20.dp)

@@ -26,7 +26,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -70,6 +73,7 @@ private const val IconGradientEndAlpha = 0.25f
  *   着色，镂空处透出卡面底色；
  *   [tintIcon] = false 时图标保持原色（应用 Logo 等自带配色的资源），不做渐变着色；
  *   [iconShape] 非空时按该连续曲率形状裁剪（应用图标位图用）；
+ *   [iconScale] 可把图标内容在槽位内再放大（超出部分被 [iconShape] 裁掉）；
  * - 标题：fieldLabel（16sp SemiBold onSurface），与设置卡行 label 同款；
  * - 说明：settingsDescription（14sp/20sp Normal secondaryText），不限行数、按文案自然换行，
  *   行数增减时卡片高度随之伸缩，说明距卡底的留白保持不变；
@@ -88,6 +92,8 @@ fun SettingsInfoHeaderCard(
     iconSize: Dp = InfoHeaderIconSize,
     // 可选裁剪形状（连续曲率圆角等）；null = 不裁剪（默认，既有调用点渲染不变）
     iconShape: Shape? = null,
+    // 图标内容在槽位内的额外缩放（1f = 不缩放）；> 1 需同时传 [iconShape] 兜住溢出
+    iconScale: Float = 1f,
 ) {
     Box(
         modifier = modifier
@@ -112,7 +118,19 @@ fun SettingsInfoHeaderCard(
                     .clip(iconShape)
             } else {
                 Modifier.size(iconSize)
-            }
+            }.then(
+                // 缩放放在裁剪层内侧：图标内容放大后仍被槽位形状裁掉，布局尺寸不变
+                if (iconScale != 1f) {
+                    Modifier.graphicsLayer {
+                        // 以槽位中心为缩放原点，四周等量裁切
+                        transformOrigin = TransformOrigin.Center
+                        scaleX = iconScale
+                        scaleY = iconScale
+                    }
+                } else {
+                    Modifier
+                },
+            )
             if (tintIcon) {
                 GradientTintedIcon(
                     icon = icon,
@@ -123,6 +141,8 @@ fun SettingsInfoHeaderCard(
                 Image(
                     painter = painterResource(icon),
                     contentDescription = null,
+                    // 位图图标铺满槽位（不做 letterbox），再由 [iconShape] 裁出圆滑轮廓
+                    contentScale = ContentScale.Crop,
                     modifier = iconModifier,
                 )
             }
