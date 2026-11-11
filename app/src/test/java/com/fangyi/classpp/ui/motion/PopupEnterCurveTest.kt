@@ -10,25 +10,36 @@ import org.junit.Test
  * 进场果冻曲线的守卫（直接采样 [popupEnterJelly] 的 keyframes）：
  * - 从起始缩放 0.3 出发，先穿过目标 1.0，再冲过峰值（约 1.05），最后精确落回 1.0；
  * - 峰值幅度 ≈ 1.05（`PopupJellyPeakScale`，毛玻璃快照扩采按它推算——过冲变大必须同步常量）；
- * - 峰值约 272ms；回程约 208ms，总时长 480ms；
- * - 峰值之后单调回落（无二次下冲），落点零速。
+ * - 默认时间轴（全部玻璃弹层共用）：峰值 200ms、回程 240ms（总 440ms）；
+ * - 回程拉长不影响峰值：同一 peakMillis 下改 returnMillis，峰值时刻与峰值幅度都不动；
+ * - 峰值之后单调回落（无二次下冲），落点精确 1.0。
  */
 class PopupEnterCurveTest {
 
     private val startScale = 0.3f
 
-    private val animation = TargetBasedAnimation(
-        animationSpec = popupEnterJelly(startScale),
+    private fun curve(timing: PopupEnterTiming) = TargetBasedAnimation(
+        animationSpec = popupEnterJelly(startScale, timing),
         typeConverter = Float.VectorConverter,
         initialValue = startScale,
         targetValue = 1f,
     )
 
-    private val durationMs = animation.durationNanos / 1_000_000L
+    private fun TargetBasedAnimation<Float, *>.durationMs(): Long = durationNanos / 1_000_000L
 
-    private fun valueAt(ms: Long): Float = animation.getValueFromNanos(ms * 1_000_000L)
+    private fun TargetBasedAnimation<Float, *>.valueAt(ms: Long): Float =
+        getValueFromNanos(ms * 1_000_000L)
 
-    private fun peakAt(): Long = (0..durationMs).maxBy { valueAt(it) }
+    private fun TargetBasedAnimation<Float, *>.peakAt(): Long =
+        (0..durationMs()).maxBy { valueAt(it) }
+
+    private val animation = curve(PopupEnterDefaultTiming)
+
+    private val durationMs = animation.durationMs()
+
+    private fun valueAt(ms: Long): Float = animation.valueAt(ms)
+
+    private fun peakAt(): Long = animation.peakAt()
 
     @Test
     fun startsAtStartScaleAndEndsExactlyAtTarget() {
@@ -52,13 +63,16 @@ class PopupEnterCurveTest {
     }
 
     @Test
-    fun peakArrivesAroundThreeHundredMilliseconds() {
-        assertTrue("peakAt=${peakAt()}ms", peakAt() in 250L..380L)
+    fun peakLandsOnTheConfiguredPeakMillis() {
+        assertEquals(PopupEnterDefaultTiming.peakMillis.toLong(), peakAt())
     }
 
     @Test
-    fun settlesInAboutHalfASecond() {
-        assertTrue("duration=${durationMs}ms", durationMs in 400L..650L)
+    fun lastsTheSumOfPeakAndReturn() {
+        assertEquals(
+            (PopupEnterDefaultTiming.peakMillis + PopupEnterDefaultTiming.returnMillis).toLong(),
+            durationMs,
+        )
     }
 
     @Test
@@ -72,6 +86,33 @@ class PopupEnterCurveTest {
                 current <= previous + 1e-4f,
             )
             previous = current
+        }
+    }
+
+    @Test
+    fun longerReturnLegKeepsThePeakMomentAndOvershoot() {
+        val peakMillis = PopupEnterDefaultTiming.peakMillis
+        val shortReturn = curve(PopupEnterTiming(peakMillis = peakMillis, returnMillis = 136))
+        val longReturn = curve(PopupEnterDefaultTiming)
+
+        assertEquals(peakMillis.toLong(), shortReturn.peakAt())
+        assertEquals(peakMillis.toLong(), longReturn.peakAt())
+        assertEquals(
+            shortReturn.valueAt(shortReturn.peakAt()),
+            longReturn.valueAt(longReturn.peakAt()),
+            1e-6f,
+        )
+        assertEquals((peakMillis + 136).toLong(), shortReturn.durationMs())
+        assertEquals(
+            (peakMillis + PopupEnterDefaultTiming.returnMillis).toLong(),
+            longReturn.durationMs(),
+        )
+    }
+
+    @Test
+    fun longerReturnLegNeverDipsBelowTarget() {
+        for (ms in (peakAt() + 1)..durationMs) {
+            assertTrue("dipped below target at ${ms}ms: ${valueAt(ms)}", valueAt(ms) >= 1f)
         }
     }
 }

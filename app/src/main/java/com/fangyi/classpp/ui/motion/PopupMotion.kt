@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
@@ -73,13 +74,34 @@ private val BlurSnapshotOverscan = (PopupJellyPeakScale - 1f) * BlurSnapshotOver
 internal const val PopupEnterDampingRatio = 0.64f
 
 /**
- * 进场弹簧刚度（上升段与回程段共用）：220 → 上升段峰值约 272ms；回程 =
- * [PopupEnterTotalMillis] − 峰值时刻（约 208ms）。
+ * 进场果冻曲线的时间轴（[popupEnterJelly] 的两段）：先按欠阻尼 spring 冲到 [peakMillis]
+ * 处的峰值（≈1.05），再从峰值用 [returnMillis] 落回 1.0。
+ *
+ * 两段时长**互相独立**：峰值时刻只由上升段决定，回程时长单独给。这样拉长回程不会推迟
+ * 峰值、也不会改变过冲幅度——峰值是「长出来」的读感锚点，回程只是收尾的余韵，两者不必
+ * 共享同一个时间常数。若把总时长当成唯一参数再反推刚度（旧做法），改总时长会连带推迟
+ * 峰值，无法只动回程。
  */
-internal const val PopupEnterStiffness = 220f
+@Immutable
+data class PopupEnterTiming(
+    /** 进场上升段的峰值时刻（ms）：曲线在此刻到达最大值，之后转入回程 */
+    val peakMillis: Int,
+    /** 回程时长（ms）：从峰值落回 1.0 的时间 */
+    val returnMillis: Int,
+) {
+    /** 进场总时长 = 上升段峰值时刻 + 回程时长，也是 keyframes 的总时长 */
+    val totalMillis: Int get() = peakMillis + returnMillis
+}
 
-/** 进场动画总时长（上升段 + 回程段）：480ms；回程时长由总时长减去上升段峰值时刻得到 */
-internal const val PopupEnterTotalMillis = 480
+/**
+ * 全部玻璃弹层的进场时间轴（两族共用一套：普通弹层菜单与周数弹窗等模态弹层同节奏）：
+ * 峰值 200ms、回程 240ms（总 440ms）。
+ *
+ * 上升段定的是「长出来」的读感，菜单这类高频弹层收得快一拍，模态弹层跟着同一拍即可——
+ * 弹层的分量由过冲幅度（1.051）和锚点表达，不再靠拉长进场时长区分。回程在这套基准上
+ * 又比原值（136ms）拉长约 1.8 倍，峰值时刻与过冲幅度都不受影响，只是尾部收得更缓。
+ */
+val PopupEnterDefaultTiming = PopupEnterTiming(peakMillis = 200, returnMillis = 240)
 
 /** 采样间隔：60Hz 下约 2 帧一个点、120Hz 下约 1 帧一个点，折线误差在 1e-4 量级 */
 private const val PopupEnterSampleIntervalMillis = 8
@@ -87,17 +109,22 @@ private const val PopupEnterSampleIntervalMillis = 8
 /**
  * 进场果冻曲线（两段解析曲线按 [PopupEnterSampleIntervalMillis] 采样成 keyframes）：
  *
- * - 上升段：欠阻尼 spring 的自然响应（[PopupEnterDampingRatio] / [PopupEnterStiffness]），
- *   先穿过目标 1.0、在约 272ms 到达峰值 ≈1.05，峰值处速度为零；
- * - 回程段：同刚度的临界阻尼衰减（从峰值位移平滑衰减到 0），并用 smoothstep 修正让终点
- *   值与速度精确归零；回程时长 = [PopupEnterTotalMillis] − 上升段峰值时刻；
+ * - 上升段：欠阻尼 spring 的自然响应（[PopupEnterDampingRatio] + 由 [PopupEnterTiming.peakMillis]
+ *   反推的刚度），先穿过目标 1.0、到达峰值 ≈1.05，峰值精确落在 [PopupEnterTiming.peakMillis]
+ *   （默认 200ms），峰值处速度为零；
+ * - 回程段：同刚度的临界阻尼衰减（从峰值位移平滑衰减到 0），时长取
+ *   [PopupEnterTiming.returnMillis]（默认 240ms），并用 smoothstep 修正让
+ *   终点值与速度精确归零；
  * - 两段在峰值处的速度都为零、加速度都约为 -ω² × 峰值位移（实测差 <1%），所以没有分段
  *   easing 的加速度断点；回程单调下降、无二次下冲，落点零速。
  *
  * 锚点为生长角：整条曲线绕同一锚点，果冻回弹朝锚点反方向撑开，与「贴着锚点长出来」同构。
+ *
+ * @param timing 进场时间轴（峰值时刻 + 回程时长）；不传时用 [PopupEnterDefaultTiming]，
+ *   全部玻璃弹层（菜单、周数弹窗等模态弹层）共用这一套
  */
-internal fun popupEnterJelly(startScale: Float): FiniteAnimationSpec<Float> {
-    val samples = popupEnterJellySamples(startScale)
+internal fun popupEnterJelly(startScale: Float, timing: PopupEnterTiming): FiniteAnimationSpec<Float> {
+    val samples = popupEnterJellySamples(startScale, timing)
     return keyframes {
         durationMillis = samples.last().first
         samples.forEach { (millis, value) ->
@@ -109,17 +136,26 @@ internal fun popupEnterJelly(startScale: Float): FiniteAnimationSpec<Float> {
 /**
  * [popupEnterJelly] 的采样表（internal 供单测守卫）：上升段 = 欠阻尼 spring 自然响应，
  * 回程段 = 临界阻尼衰减 + smoothstep 终点修正。起点 [startScale]、终点精确为 1f。
+ * [timing] 的两段时长各管一段时轴：峰值时刻定上升段刚度（ωd = π / peak），回程时长定
+ * 回程段的长度，互不牵连。
  */
-internal fun popupEnterJellySamples(startScale: Float): List<Pair<Int, Float>> {
+internal fun popupEnterJellySamples(
+    startScale: Float,
+    timing: PopupEnterTiming,
+): List<Pair<Int, Float>> {
     val zeta = PopupEnterDampingRatio.toDouble()
-    val omega = sqrt(PopupEnterStiffness.toDouble())
-    val dampedOmega = omega * sqrt(1.0 - zeta * zeta)
+    val oscillation = sqrt(1.0 - zeta * zeta)
+    // 峰值时刻反推上升段刚度：ωd = π / peakSeconds，ω = ωd / √(1−ζ²)。
+    // 这样 cos(ωd·peak) = cos(π) = -1、sin(ωd·peak) = 0，峰值恰好落在 peakMillis 上，
+    // 不再受采样量化影响；过冲幅度只由 ζ 决定，与时刻无关
+    val peakSeconds = (timing.peakMillis / 1000.0).coerceAtLeast(0.001)
+    val dampedOmega = PI / peakSeconds
+    val omega = dampedOmega / oscillation
     val decay = zeta * omega
     val step = 1.0 - startScale
-    val peakSeconds = PI / dampedOmega
-    val peakValue = 1.0 + step * exp(-PI * zeta / sqrt(1.0 - zeta * zeta))
+    val peakValue = 1.0 + step * exp(-PI * zeta / oscillation)
     val returnDeviation = peakValue - 1.0
-    val returnSeconds = (PopupEnterTotalMillis / 1000.0 - peakSeconds).coerceAtLeast(0.001)
+    val returnSeconds = (timing.returnMillis / 1000.0).coerceAtLeast(0.001)
     val returnEndDecay = (1.0 + omega * returnSeconds) * exp(-omega * returnSeconds)
 
     fun rise(seconds: Double): Double =
@@ -135,19 +171,19 @@ internal fun popupEnterJellySamples(startScale: Float): List<Pair<Int, Float>> {
         return 1.0 + returnDeviation * (decayed - endCorrection)
     }
 
-    val totalMillis = PopupEnterTotalMillis.toLong()
-    val samples = ArrayList<Pair<Int, Float>>((totalMillis / PopupEnterSampleIntervalMillis).toInt() + 2)
+    val total = timing.totalMillis.toLong()
+    val samples = ArrayList<Pair<Int, Float>>((total / PopupEnterSampleIntervalMillis).toInt() + 2)
     var millis = 0L
-    while (millis <= totalMillis) {
+    while (millis <= total) {
         val seconds = millis / 1000.0
         val value = if (seconds <= peakSeconds) rise(seconds) else settle(seconds - peakSeconds)
         samples += millis.toInt() to value.toFloat()
         millis += PopupEnterSampleIntervalMillis
     }
-    if (samples.last().first.toLong() == totalMillis) {
-        samples[samples.lastIndex] = totalMillis.toInt() to 1f
+    if (samples.last().first.toLong() == total) {
+        samples[samples.lastIndex] = total.toInt() to 1f
     } else {
-        samples += totalMillis.toInt() to 1f
+        samples += total.toInt() to 1f
     }
     return samples
 }
@@ -206,6 +242,9 @@ class PopupMotionState internal constructor(
  * [enterStartScale] 是进场起始缩放（默认 [Motion.PopupEnterStartScale]）：锚点离卡片很近
  * 的弹层用默认值即可；锚点要表达「从某个宿主控件里长出来」（如周数卡从胶囊中心涌出）时
  * 调小它（如 0.5f），起始卡面越小、从锚点涌现的读感越强。
+ * [enterTiming] 是进场时间轴（默认 [PopupEnterDefaultTiming]：峰值 200ms + 回程 240ms）。
+ * 菜单与模态弹层共用同一套节奏，只有起始缩放按锚点远近区分；峰值时刻与回程时长各自独立，
+ * 拉长回程不会推迟峰值。
  *
  * 退场播完经 [onExitFinished] 回调一次（宿主借机清理「仅退场期保留」的锚点状态；
  * 仅退场动画存在时才会触发）。transition 恒常驻组合——若随「是否显示」条件一起
@@ -221,6 +260,7 @@ fun rememberPopupMotion(
     animateExit: Boolean = true,
     onExitFinished: () -> Unit = {},
     enterStartScale: Float = Motion.PopupEnterStartScale,
+    enterTiming: PopupEnterTiming = PopupEnterDefaultTiming,
 ): PopupMotionState {
     val visibleState = remember { MutableTransitionState(false) }
     visibleState.targetState = expanded
@@ -242,7 +282,7 @@ fun rememberPopupMotion(
     val scaleState = transition.animateFloat(
         transitionSpec = {
             if (targetState) {
-                popupEnterJelly(enterStartScale)
+                popupEnterJelly(enterStartScale, enterTiming)
             } else {
                 tween(Motion.PopupExitMillis, easing = Motion.Accelerate)
             }
@@ -279,7 +319,15 @@ fun rememberPopupMotion(
         label = "PopupMotionCardAlpha",
     ) { visible -> if (visible) 1f else 0f }
 
-    return remember(visibleState, scaleState, contentAlphaState, cardAlphaState, animateExit, enterStartScale) {
+    return remember(
+        visibleState,
+        scaleState,
+        contentAlphaState,
+        cardAlphaState,
+        animateExit,
+        enterStartScale,
+        enterTiming,
+    ) {
         PopupMotionState(
             animateExit,
             enterStartScale,

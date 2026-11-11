@@ -16,6 +16,8 @@ import org.junit.Test
  * - 生长锚点 [menuAnchorFraction]：由**最终**卡片矩形与锚点中心反推。锚点在卡片下方 →
  *   顶边（0f）；在上方 → 底边（1f）；横向/纵向落在卡内 → 按中心投影，越界钳到 0/1。
  *   翻转、钳位后不需要调用点再猜角；
+ * - 参考点换算 [anchorPointOf]：锚点矩形内的比例点 → 窗口坐标。默认几何中心；锚点比菜单
+ *   宽得多时（整行卡 + 自适应宽菜单）必须取靠边一端，否则中心落在菜单外被钳到卡缘；
  * - 图层换算 [menuAnchorOrigin]：缩放图层 = 卡片 + 四周透明投影留白，锚点必须按卡片
  *   边缘反推（直接写 0f/1f 会锚在留白外缘，动画中卡片会横竖各偏约 3dp）；尺寸未量出
  *   时返回 null，调用方沿用上一帧锚点，不能把 NaN 灌进 TransformOrigin；
@@ -71,6 +73,35 @@ class MenuPlacementTest {
         assertEquals(1f, right.pivotFractionX, 0f)
         // 纵向落在卡内：按比例投影（460 在 400..520 正中）
         assertEquals(0.5f, right.pivotFractionY, 1e-6f)
+    }
+
+    @Test
+    fun anchorPointOfScalesInsideTheAnchorRect() {
+        val rect = IntRect(100, 500, 300, 560)
+        assertEquals(Offset(100f, 500f), anchorPointOf(rect, Offset(0f, 0f)))
+        assertEquals(Offset(200f, 530f), anchorPointOf(rect, Offset(0.5f, 0.5f)))
+        assertEquals(Offset(300f, 560f), anchorPointOf(rect, Offset(1f, 1f)))
+    }
+
+    /**
+     * 宽锚点 + 窄菜单（新建课程待办的截止菜单就是这个形状）：整行卡 366×60、菜单 125×96
+     * 右对齐顶对齐。参考点用矩形中心（默认值）时中心落在菜单左缘的左侧，被钳到菜单左缘
+     * ——读感是「从卡左侧往右撑开」；改用行卡右缘的垂直中心后回到右上角，即行尾箭头处。
+     */
+    @Test
+    fun wideAnchorWithNarrowCardProjectsToTrailingEdgeWithEdgeReferencePoint() {
+        val rowCard = IntRect(0, 500, 366, 560)
+        val menuCard = IntRect(366 - 125, 500, 366, 596)
+
+        // 默认参考点 = 几何中心 (183, 530)：横向在菜单左缘 241 之外 → 钳到 0（左缘）
+        val centered = fraction(menuCard, anchorCenter = anchorPointOf(rowCard, MenuAnchorCenter))
+        assertEquals(0f, centered.pivotFractionX, 0f)
+        assertEquals(0.3125f, centered.pivotFractionY, 1e-6f)
+
+        // 参考点取行右缘垂直中心 (366, 530)：横向落在菜单右缘 → 1（右上角）
+        val trailing = fraction(menuCard, anchorCenter = anchorPointOf(rowCard, Offset(1f, 0.5f)))
+        assertEquals(1f, trailing.pivotFractionX, 0f)
+        assertEquals(0.3125f, trailing.pivotFractionY, 1e-6f)
     }
 
     @Test

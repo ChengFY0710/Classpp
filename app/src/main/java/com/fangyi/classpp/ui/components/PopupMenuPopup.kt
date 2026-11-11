@@ -64,6 +64,13 @@ private val MenuDefaultGap = 8.dp
 /** 菜单贴安全区时的默认留白：钳位先按系统栏 / IME 内缩，再留这圈边距 */
 private val MenuSafeMargin = 8.dp
 
+/**
+ * 锚点参考点的默认位置：锚点矩形的几何中心（等价于「按矩形中心反推生长锚点」）。
+ * 宽锚点配窄菜单的宿主（整行卡 + 自适应宽菜单）用 [PopupMenuPopup] 的 `anchorFraction`
+ * 挪到靠边一端，否则中心会落在菜单外被钳到卡缘（见 [anchorPointOf]）。
+ */
+internal val MenuAnchorCenter = Offset(0.5f, 0.5f)
+
 /** 菜单高度上限占窗口高度的比例：超过后转内部滚动（Material 菜单可滚动形态的量级） */
 internal const val MenuMaxHeightFraction = 0.7f
 
@@ -202,6 +209,20 @@ internal fun clampCard(rect: IntRect, cardSize: IntSize, available: IntRect): In
 }
 
 /**
+ * 锚点矩形 + 参考点比例 → 参考点的窗口坐标（[PopupMenuPopup] 的 `anchorFraction` 换算）。
+ * 默认 (0.5, 0.5) 即几何中心，与原「按矩形中心反推」一致。
+ *
+ * 宽锚点（如整张入口行卡）+ 窄菜单（按内容收窄）的组合必须改用靠边一端：菜单右对齐行
+ * 右缘时，行中心常落在菜单左缘的左侧，[menuAnchorFraction] 的 `coerceIn` 会把锚点钳到
+ * 菜单左缘，读感变成「从卡左侧往右撑开」，与「从行尾长出」相反。传 (1f, 0.5f) 即取行
+ * 右缘的垂直中心，反推回卡片就是右上角。
+ */
+internal fun anchorPointOf(rect: IntRect, fraction: Offset): Offset = Offset(
+    x = rect.left + rect.width * fraction.x,
+    y = rect.top + rect.height * fraction.y,
+)
+
+/**
  * 卡片矩形 + 锚点中心 → 生长锚点（卡面比例）。锚点在卡片上方/下方时取整条顶边/底边，
  * 横向/纵向落在卡片内时按中心投影；超出左右范围钳到 0/1。矩形未量出返回 null，
  * 调用方跳过赋值、沿用上一帧锚点（不能把 NaN 灌进 TransformOrigin）。
@@ -302,8 +323,11 @@ fun Modifier.menuScrollDismiss(signal: MenuScrollSignal): Modifier {
  * - [cardPosition]：逃生口，返回**卡片**左上角的期望窗口坐标（未扣投影留白）；传了就完全
  *   接管首选落位，但仍参与安全区钳位与生长锚点反推。[anchor] 同样用于反推生长锚点。
  *
- * 生长锚点恒由**最终**卡片矩形与锚点中心反推（[menuAnchorOrigin]）：翻转、钳位、贴边后
- * 菜单自最靠近锚点的那条边长出，不再由调用点猜角。
+ * 生长锚点恒由**最终**卡片矩形与锚点参考点反推（[menuAnchorOrigin]）：翻转、钳位、贴边后
+ * 菜单自最靠近锚点的那条边长出，不再由调用点猜角。参考点默认是锚点矩形的几何中心
+ * （[MenuAnchorCenter]），可经 [anchorFraction] 挪到矩形内的任意比例位置——锚点比菜单宽
+ * 得多时（整行卡 + 自适应宽菜单）必须挪到靠边一端，否则中心落在菜单外、锚点被钳到卡缘
+ * （见 [anchorPointOf]）。
  * [cardSize] 是去掉了投影留白的卡片尺寸（需要按卡片自身尺寸计算位置时用）；宿主不必再扣
  * 四周透明投影留白——留白只影响 Popup 窗口大小，不改变卡片的视觉位置。
  * [anchorBounds] 是 Popup 所在锚点的窗口坐标（弹层应挂在锚点内的 Box 上）。
@@ -366,6 +390,10 @@ fun PopupMenuPopup(
     placement: MenuPlacement = MenuPlacement(),
     cardPosition: ((anchorBounds: IntRect, windowSize: IntSize, cardSize: IntSize) -> IntOffset)? = null,
     anchor: Rect? = null,
+    // 锚点矩形内的参考点比例（默认几何中心）：生长锚点按这个点反推，而不是按矩形中心。
+    // 锚点比菜单宽得多时（整行卡 + 内容自适应宽的菜单）中心会落在菜单外、被钳到卡缘，
+    // 此时传 (1f, …) 之类的靠边比例，才能表达「从行尾长出」
+    anchorFraction: Offset = MenuAnchorCenter,
     hazeState: HazeState? = null,
     paneTitle: String? = null,
     // null = 自动判定（任一行带勾选态即按单选菜单暴露选中语义）；动作型 / 单选型菜单
@@ -379,7 +407,13 @@ fun PopupMenuPopup(
     focusable: Boolean = true,
     dismissOnScroll: Boolean = true,
 ) {
-    val motion = rememberPopupMotion(expanded, animateExit, onExitFinished)
+    // 进场时间轴走全部玻璃弹层共用的默认值（PopupEnterDefaultTiming），菜单与模态弹层
+    // 同节奏，不再单独传
+    val motion = rememberPopupMotion(
+        expanded = expanded,
+        animateExit = animateExit,
+        onExitFinished = onExitFinished,
+    )
 
     val density = LocalDensity.current
     val shadowPaddingPx = with(density) { CardShadowPadding.roundToPx() }
@@ -418,6 +452,7 @@ fun PopupMenuPopup(
         cardPosition,
         placement,
         anchor,
+        anchorFraction,
         shadowPaddingPx,
         shadowBottomPx,
         menuInsets,
@@ -464,10 +499,7 @@ fun PopupMenuPopup(
                     right = offsetX + shadowPaddingPx + cardSize.width,
                     bottom = offsetY + shadowPaddingPx + cardSize.height,
                 )
-                geometry.anchorCenter = Offset(
-                    (anchorRect.left + anchorRect.right) / 2f,
-                    (anchorRect.top + anchorRect.bottom) / 2f,
-                )
+                geometry.anchorCenter = anchorPointOf(anchorRect, anchorFraction)
                 return IntOffset(offsetX, offsetY)
             }
         }

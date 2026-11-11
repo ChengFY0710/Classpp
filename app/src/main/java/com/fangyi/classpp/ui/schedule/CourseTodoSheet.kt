@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -288,12 +289,15 @@ internal fun CourseTodoSheet(
                         hazeState = sheetHazeState,
                         // 单选型菜单（下一步 / 自定义）：行暴露已选中语义（B4）
                         selectionMode = true,
-                        // 锚点 = 整张入口行卡：菜单卡右缘对齐行卡右缘、顶边贴行顶边。
-                        // 自定义落位仍走共享层：安全区钳位兜住贴屏右缘的溢出，生长锚点
-                        // 按最终落位反推（不再固定从右上角长出）
+                        // 落位 = 整张入口行卡：菜单卡右缘对齐行卡右缘、顶边贴行顶边。
+                        // 自定义落位仍走共享层：安全区钳位兜住贴屏右缘的溢出
                         cardPosition = { anchorBounds, _, cardSize ->
                             IntOffset(anchorBounds.right - cardSize.width, anchorBounds.top)
                         },
+                        // 生长锚点取行卡右缘的垂直中心，不是整行几何中心：菜单按内容收窄
+                        // 后只占行尾约三分之一宽，行中心落在菜单左缘之外、会被钳成「从
+                        // 菜单左侧往右撑开」；取右缘才回到「从行尾上下箭头处长出」的读感
+                        anchorFraction = Offset(1f, 0.5f),
                     )
                 }
                 // 「自定义」档位展开的周次行：独立白卡（组内间距 CardSection 默认 10dp，
