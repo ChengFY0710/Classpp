@@ -915,7 +915,6 @@
     <string name="cd_ai_add_attachment">Add attachment</string>
     <string name="ai_take_photo">Take photo</string>
     <string name="ai_add_image">Add image</string>
-    <string name="ai_add_file">Add file</string>
     <string name="cd_ai_remove_pending_image">Remove this image</string>
     <string name="cd_ai_message_image">Message image</string>
     <string name="cd_ai_image_preview">Image preview, tap to close</string>

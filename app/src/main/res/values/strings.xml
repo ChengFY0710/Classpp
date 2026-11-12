@@ -912,7 +912,6 @@
     <string name="cd_ai_add_attachment">添加附件</string>
     <string name="ai_take_photo">拍照</string>
     <string name="ai_add_image">添加图片</string>
-    <string name="ai_add_file">添加文件</string>
     <string name="cd_ai_remove_pending_image">移除这张图片</string>
     <string name="cd_ai_message_image">消息图片</string>
     <string name="cd_ai_image_preview">图片预览，点击关闭</string>

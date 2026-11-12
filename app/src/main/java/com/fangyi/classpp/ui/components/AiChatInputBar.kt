@@ -151,8 +151,8 @@ private fun Rect.toIntRect(): IntRect = IntRect(
  * （图片即提问）。
  *
  * + 号点击经 [PopupMenuPopup] 弹出 [PopupMenuCard]：菜单向上浮在输入卡外、右对齐 + 号，
- * 纯文字「拍照 / 添加图片 / 添加文件」；选中项只收起菜单并回调 [onTakePhoto] /
- * [onAddImage] / [onAddFile]（拍照与选图的系统授权流程由宿主接，本组件不管）。
+ * 行首带图标（拍照 / 添加图片）；选中项只收起菜单并回调 [onTakePhoto] /
+ * [onAddImage]（拍照与选图的系统授权流程由宿主接，本组件不管）。
  * [hazeState] 非空时菜单卡走 Haze 磨砂
  * （宿主传浮层的 haze 采样源，与顶栏同源），null 退化为不透明白卡。
  *
@@ -186,7 +186,6 @@ fun AiChatInputBar(
     onStop: () -> Unit = {},
     onTakePhoto: () -> Unit = {},
     onAddImage: () -> Unit = {},
-    onAddFile: () -> Unit = {},
     /** 待发送图片（已导入的压缩副本文件）；非空时输入卡上方渲染预览条 */
     pendingImages: List<File> = emptyList(),
     onRemoveImage: (File) -> Unit = {},
@@ -236,7 +235,6 @@ fun AiChatInputBar(
     }
     val takePhotoLabel = stringResource(R.string.ai_take_photo)
     val addImageLabel = stringResource(R.string.ai_add_image)
-    val addFileLabel = stringResource(R.string.ai_add_file)
     val removeImageLabel = stringResource(R.string.cd_ai_remove_pending_image)
 
     Row(
@@ -421,6 +419,7 @@ fun AiChatInputBar(
                         items = listOf(
                             PopupMenuItem(
                                 label = takePhotoLabel,
+                                icon = R.drawable.ic_camera,
                                 onClick = {
                                     menuExpanded = false
                                     onTakePhoto()
@@ -428,16 +427,10 @@ fun AiChatInputBar(
                             ),
                             PopupMenuItem(
                                 label = addImageLabel,
+                                icon = R.drawable.ic_image_add,
                                 onClick = {
                                     menuExpanded = false
                                     onAddImage()
-                                },
-                            ),
-                            PopupMenuItem(
-                                label = addFileLabel,
-                                onClick = {
-                                    menuExpanded = false
-                                    onAddFile()
                                 },
                             ),
                         ),
@@ -553,9 +546,8 @@ private fun AiChatInputBarMenuPreview() = ClassppTheme {
         sections = listOf(
             PopupMenuSection(
                 items = listOf(
-                    PopupMenuItem(label = "拍照"),
-                    PopupMenuItem(label = "添加图片"),
-                    PopupMenuItem(label = "添加文件"),
+                    PopupMenuItem(label = "拍照", icon = R.drawable.ic_camera),
+                    PopupMenuItem(label = "添加图片", icon = R.drawable.ic_image_add),
                 ),
             ),
         ),

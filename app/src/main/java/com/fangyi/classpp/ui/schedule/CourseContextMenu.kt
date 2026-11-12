@@ -42,19 +42,34 @@ internal fun CourseContextMenu(
     onExitFinished: () -> Unit = {},
 ) {
     val items = buildList {
-        if (onCopy != null) add(PopupMenuItem(stringResource(R.string.edit_copy_course), onClick = onCopy))
+        if (onCopy != null) {
+            add(
+                PopupMenuItem(
+                    label = stringResource(R.string.edit_copy_course),
+                    icon = R.drawable.ic_copy,
+                    onClick = onCopy,
+                ),
+            )
+        }
         if (onAdjust != null) {
             add(
                 PopupMenuItem(
                     label = stringResource(
                         if (adjustIsEditing) R.string.edit_edit_adjust else R.string.edit_adjust_course,
                     ),
+                    icon = R.drawable.ic_calendar_arrow_repeat_all,
                     onClick = onAdjust,
                 ),
             )
         }
         if (onNewAlternate != null) {
-            add(PopupMenuItem(stringResource(R.string.edit_new_alternate), onClick = onNewAlternate))
+            add(
+                PopupMenuItem(
+                    label = stringResource(R.string.edit_new_alternate),
+                    icon = R.drawable.ic_table_cell_center_arrow_repeat_all,
+                    onClick = onNewAlternate,
+                ),
+            )
         }
     }
     ContextMenuPopup(
@@ -84,7 +99,13 @@ internal fun SlotContextMenu(
         anchor = anchor,
         expanded = expanded,
         onDismiss = onDismiss,
-        items = listOf(PopupMenuItem(stringResource(R.string.edit_paste_course), onClick = onPaste)),
+        items = listOf(
+            PopupMenuItem(
+                label = stringResource(R.string.edit_paste_course),
+                icon = R.drawable.ic_clipboard_paste,
+                onClick = onPaste,
+            ),
+        ),
         hazeState = hazeState,
         onExitFinished = onExitFinished,
     )

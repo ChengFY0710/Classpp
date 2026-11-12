@@ -808,7 +808,6 @@ fun AiChatOverlay(
                         onStop = ::stopSending,
                         onTakePhoto = ::startCapture,
                         onAddImage = ::launchGallery,
-                        onAddFile = {},
                         pendingImages = imageStore
                             ?.let { store -> pendingImageNames.map(store::file) }
                             ?: emptyList(),
