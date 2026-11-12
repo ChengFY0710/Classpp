@@ -13,8 +13,9 @@ import androidx.compose.ui.platform.LocalFocusManager
  *
  * 这是给 [SheetTextField] / [SheetTextArea] 一族配套的宿主能力：字段只能看到自己
  * 范围内的点击，「聚焦后点空白收起键盘」只能由承载它们的容器实现。OverlaySheet 已在
- * 三处内置：滚动内容列、顶栏（标题/空白）与钉底槽（含 AI 光场 headroom）；页面直排的
- * 表单需自行挂载。
+ * 两处内置：滚动内容列与顶栏（标题/空白）；钉底槽只在容器自绘规格（bottomScrim = true）
+ * 时内置——自绘槽（如 AI 对话的输入栏 + 光场 headroom）不挂，否则槽会整块截走滚动列
+ * 的手势，空白清焦由背后的内容列兜住。页面直排的表单需自行挂载。
  */
 @Composable
 fun Modifier.clearFocusOnTap(): Modifier {

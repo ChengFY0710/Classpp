@@ -406,11 +406,12 @@ fun AiChatOverlay(
         val appended = isPureAppend(lastMessageIds, ids)
         lastMessageIds = ids
         try {
-            if (scroll != null) {
+            // 用户手势 / 惯性接管期间不滚：scrollTo 是 Default 优先级的挂起滚动，拖动期间
+            // 会排队、等松手后再把列表拉到底——读感是「刚滑上去又弹回底部」。这次离散滚底
+            // 直接作废即可：停到底部后由流式跟底或下一次离散事件恢复。
+            if (scroll != null && !scroll.isScrollInProgress) {
                 val catchUp = request != null && appended && request.atBottom && animationsEnabled &&
-                    scroll.maxValue - scroll.value > with(density) { ScrollCatchMinSlop.roundToPx() } &&
-                    // 手指还在列表上：动画会被触摸打断，此时保持原来的立即到底
-                    !scroll.isScrollInProgress
+                    scroll.maxValue - scroll.value > with(density) { ScrollCatchMinSlop.roundToPx() }
                 if (catchUp) {
                     scroll.animateScrollTo(
                         value = scroll.maxValue,

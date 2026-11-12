@@ -203,6 +203,9 @@ val LocalOverlayTopBarBlur = staticCompositionLocalOf { false }
  * 画在导航栏上方、带自底向上渐变兜底，滚动内容从其下淡出（如待办分组浮层底部常驻的操作栏）；
  * [bottomScrim] = false 关掉钉底容器的整套内置规格（渐变/导航栏留白/内距），退化为纯钉底定位——
  * 槽内容自带进出场动画时由调用方把这三样包进动画层，规格才不脱离动画（见 TodoGroupsSheet 编辑态底栏）。
+ * 空白点击清焦（[clearFocusOnTap]）也属于这套规格：只有 bottomScrim = true 时容器才替槽挂上，
+ * 自绘槽（如 AI 对话的输入栏 + 光场 headroom）不挂——槽盖在滚动列之上，整块挂 clickable 会把
+ * 槽矩形内起手的手势全部截走，消息列从槽区滑不动；自绘槽的空白点击清焦由背后内容列兜住。
  * [dragDismissEnabled] = false 关掉下拉关闭（超阈值松手回弹归位）：编辑态把下拉拦成
  * 「退出编辑」的场景必须用它——只拦 [onDismiss] 不拦手势会把浮层卡在半拖出位置。
  * [backgroundContent] 可选卡片背景层：铺满整张卡片（含顶栏盖住的区域，不吃滚动内容列的
@@ -628,12 +631,17 @@ fun OverlaySheet(
                                     modifier = Modifier
                                         .align(Alignment.BottomCenter)
                                         .fillMaxWidth()
-                                        // 钉底槽的留白（AI 光场 headroom、输入栏外缘等）
-                                        // 同样点空白清焦；槽内输入框/按钮会先消费点击
-                                        .clearFocusOnTap()
+                                        // 钉底槽空白点击清焦只跟「容器自绘规格」走（bottomScrim）：
+                                        // bottomScrim = false 时槽的整块外部规格（含 AI 光场 headroom
+                                        // 这类透明留白）由调用方自持，这里不能再整块挂 clickable——
+                                        // 槽在 z 序上盖住滚动列，Compose 命中测试对重叠兄弟默认只把
+                                        // 事件派给最上层命中节点（不共享），从槽矩形内起手的手势到不了
+                                        // 消息列的 verticalScroll，表现为「上下滑动有时失效」。
+                                        // 空白点击清焦由背后内容列内置的 clearFocusOnTap 兜住。
                                         .then(
                                             if (bottomScrim) {
                                                 Modifier
+                                                    .clearFocusOnTap()
                                                     .background(
                                                         Brush.verticalGradient(
                                                             listOf(
