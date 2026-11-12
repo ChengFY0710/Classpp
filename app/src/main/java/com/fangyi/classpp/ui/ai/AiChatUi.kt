@@ -56,6 +56,7 @@ import com.fangyi.classpp.data.ai.AiTodoLifecycle
 import com.fangyi.classpp.data.ai.AiTodoLifecycleAction
 import com.fangyi.classpp.data.ai.AiTodoLifecycleStatus
 import com.fangyi.classpp.data.ai.AiTodoPatch
+import com.fangyi.classpp.data.ai.AiToolRound
 import com.fangyi.classpp.data.checkInPercent
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
@@ -125,10 +126,18 @@ internal fun AiChatMessageBubble(
             message.todoCompletions.isNotEmpty() ||
             message.todoLifecycles.isNotEmpty()
         )
-    val content = if (hasTodos) AiTodoDraftCodec.stripJsonBlock(message.content) else message.content
-    // 正文与思考都没有可展示的内容：整条消息不占位
-    if (hasTodos && content.isEmpty() && message.reasoning.isEmpty()) return
-    val showBubble = !(hasTodos && content.isEmpty())
+    val hasTools = !isUser && message.toolRounds.isNotEmpty()
+    val content = if (hasTodos || hasTools) {
+        AiTodoDraftCodec.stripJsonBlock(message.content)
+    } else {
+        message.content
+    }
+    // 工具轮次与最终正文交错渲染：每轮「文本 → 工具卡」，最后是最终正文
+    val segments = if (hasTools) message.assistantSegments(content) else emptyList()
+    // 正文与思考都没有可展示的内容（待办卡片承接了全部信息）：整条消息不占位；
+    // 有工具轮次时即使正文为空也要渲染工具卡
+    if (!hasTools && hasTodos && content.isEmpty() && message.reasoning.isEmpty()) return
+    val showBubble = hasTools || !(hasTodos && content.isEmpty())
     val bubbleColor = if (isUser) {
         MaterialTheme.colorScheme.primary
     } else {
@@ -175,32 +184,71 @@ internal fun AiChatMessageBubble(
                     // assistant 在页边距内撑满（Column 已有 fillMaxWidth），user 仍按内容自适应
                     modifier = if (isUser) Modifier else Modifier.fillMaxWidth(),
                 ) {
-                    CompositionLocalProvider(LocalTextSelectionColors provides selectionColors) {
-                        SelectionContainer {
-                            Column(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                if (message.images.isNotEmpty() && imageStore != null) {
-                                    AiChatMessageImages(
-                                        names = message.images,
-                                        imageStore = imageStore,
-                                        onImageClick = onImageClick,
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (message.images.isNotEmpty() && imageStore != null) {
+                            AiChatMessageImages(
+                                names = message.images,
+                                imageStore = imageStore,
+                                onImageClick = onImageClick,
+                            )
+                        }
+                        when {
+                            isUser -> when {
+                                content.isEmpty() && message.images.isEmpty() -> {
+                                    // 占位阶段（流式首字未到 / 只有思考还没有正文）：明确提示正在思考
+                                    Text(
+                                        text = stringResource(R.string.ai_thinking_in_progress),
+                                        style = ClassppTextTokens.chatBody,
                                     )
                                 }
-                                when {
-                                    content.isEmpty() && message.images.isEmpty() -> {
-                                        // 占位阶段（流式首字未到 / 只有思考还没有正文）：明确提示正在思考
-                                        Text(
-                                            text = stringResource(R.string.ai_thinking_in_progress),
-                                            style = ClassppTextTokens.chatBody,
-                                        )
+                                content.isEmpty() -> {
+                                    // 纯图无正文：缩略图即全部内容
+                                }
+                                else -> CompositionLocalProvider(
+                                    LocalTextSelectionColors provides selectionColors,
+                                ) {
+                                    SelectionContainer {
+                                        Text(text = content, style = ClassppTextTokens.chatBody)
                                     }
-                                    content.isEmpty() -> {
-                                        // 纯图无正文：缩略图即全部内容
+                                }
+                            }
+                            hasTools -> {
+                                segments.forEach { segment ->
+                                    if (segment.text.isNotBlank()) {
+                                        CompositionLocalProvider(
+                                            LocalTextSelectionColors provides selectionColors,
+                                        ) {
+                                            SelectionContainer {
+                                                ChatMarkdown(content = segment.text)
+                                            }
+                                        }
                                     }
-                                    isUser -> Text(text = content, style = ClassppTextTokens.chatBody)
-                                    else -> ChatMarkdown(content = content)
+                                    segment.round?.let { round ->
+                                        AiChatToolRoundBlock(round = round)
+                                    }
+                                }
+                                if (message.toolLoopCapped) {
+                                    AiChatToolLoopCappedHint()
+                                }
+                            }
+                            content.isEmpty() && message.images.isEmpty() -> {
+                                // 占位阶段（流式首字未到 / 只有思考还没有正文）：明确提示正在思考
+                                Text(
+                                    text = stringResource(R.string.ai_thinking_in_progress),
+                                    style = ClassppTextTokens.chatBody,
+                                )
+                            }
+                            content.isEmpty() -> {
+                                // 纯图无正文：缩略图即全部内容
+                            }
+                            else -> CompositionLocalProvider(
+                                LocalTextSelectionColors provides selectionColors,
+                            ) {
+                                SelectionContainer {
+                                    ChatMarkdown(content = content)
                                 }
                             }
                         }
@@ -209,6 +257,30 @@ internal fun AiChatMessageBubble(
             }
         }
     }
+}
+
+/**
+ * assistant 消息的分段展示：按 toolRounds 顺序切出「工具轮文本」，最后追加最终正文。
+ *
+ * content 是各轮文本的顺序拼接（设计稿 §8.1），工具轮文本长度是切分依据；持久化数据
+ * 异常（长度不足等）时按剩余内容兜底，绝不越界。
+ */
+private data class AiAssistantSegment(
+    val text: String,
+    val round: AiToolRound?,
+)
+
+private fun AiChatMessage.assistantSegments(displayContent: String): List<AiAssistantSegment> {
+    val segments = mutableListOf<AiAssistantSegment>()
+    var offset = 0
+    for (round in toolRounds) {
+        val start = offset.coerceAtMost(displayContent.length)
+        val end = (offset + round.text.length).coerceAtMost(displayContent.length)
+        segments += AiAssistantSegment(displayContent.substring(start, end), round)
+        offset += round.text.length
+    }
+    segments += AiAssistantSegment(displayContent.drop(offset.coerceAtMost(displayContent.length)), null)
+    return segments
 }
 
 // ---------- 消息图片 ----------

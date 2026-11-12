@@ -1000,6 +1000,71 @@
     <string name="ai_todo_lifecycle_restore">Restore \"%1$s\"</string>
     <string name="ai_todo_lifecycle_wrong_state">Not valid in the current state</string>
 
+    <!-- AI read-only tool rounds (native tools): tool cards, statuses and result summaries -->
+    <string name="ai_tool_name_get_day_plan">Day plan</string>
+    <string name="ai_tool_name_search_todos">Search todos</string>
+    <string name="ai_tool_name_get_week_schedule">Week schedule</string>
+    <string name="ai_tool_name_get_todo">Todo detail</string>
+    <string name="ai_tool_name_create_todos">Create todos</string>
+    <string name="ai_tool_name_update_todos">Update todos</string>
+    <string name="ai_tool_name_delete_todos">Delete todos</string>
+    <string name="ai_tool_name_complete_todos">Complete todos</string>
+    <string name="ai_tool_name_archive_todos">Archive todos</string>
+    <string name="ai_tool_status_running">Running</string>
+    <string name="ai_tool_status_completed">Done</string>
+    <string name="ai_tool_status_failed">Failed</string>
+    <string name="ai_tool_status_cancelled">Cancelled</string>
+    <string name="ai_tool_expand">Expand tool result</string>
+    <string name="ai_tool_collapse">Collapse tool result</string>
+    <string name="ai_tool_loop_capped">Tool call limit reached. Ask a follow-up to continue.</string>
+    <string name="ai_tool_result_courses">%1$d classes</string>
+    <string name="ai_tool_result_todos">%1$d todos</string>
+    <string name="ai_tool_result_free_slots">%1$d free slots</string>
+    <string name="ai_tool_result_week">Week %1$d</string>
+    <string name="ai_tool_result_days">%1$d days</string>
+    <string name="ai_tool_result_empty">No result</string>
+    <string name="ai_tool_result_truncated">Result truncated</string>
+    <string name="ai_tool_result_cancelled">Last run did not finish</string>
+    <string name="ai_tool_arg_date">Date %1$s</string>
+    <string name="ai_tool_arg_week_offset">Offset %1$d weeks</string>
+    <string name="ai_tool_arg_query">“%1$s”</string>
+    <string name="ai_tool_arg_status">Status %1$s</string>
+    <string name="ai_tool_arg_limit">%1$d items</string>
+    <string name="ai_tool_arg_items">%1$d items</string>
+    <string name="ai_tool_result_created">Created %1$d</string>
+    <string name="ai_tool_result_pending">%1$d pending</string>
+    <string name="ai_tool_result_applied">Applied %1$d</string>
+    <string name="ai_tool_result_skipped">Some skipped</string>
+    <string name="ai_tool_detail_created">Created “%1$s”</string>
+    <string name="ai_tool_detail_updated">Updated “%1$s”</string>
+    <string name="ai_tool_detail_deleted">Deleted “%1$s”</string>
+    <string name="ai_tool_detail_free_slot">Free %1$s-%2$s</string>
+    <string name="ai_tool_detail_empty">(none)</string>
+    <string name="ai_tool_detail_truncated">(result truncated)</string>
+    <string name="ai_tool_arg_todo_id">id %1$s</string>
+    <string name="ai_tool_detail_deadline">Due %1$s</string>
+    <string name="ai_tool_detail_time">Time %1$s</string>
+    <string name="ai_tool_detail_group">Group %1$s</string>
+    <string name="ai_tool_detail_tags">Tags %1$s</string>
+    <string name="ai_tool_detail_repeat">Repeat %1$s</string>
+    <string name="ai_tool_detail_note">Note %1$s</string>
+    <string name="ai_tool_detail_steps">Steps %1$s</string>
+    <string name="ai_tool_todo_status_active">In progress</string>
+    <string name="ai_tool_todo_status_completed">Done</string>
+    <string name="ai_tool_todo_status_archived">Archived</string>
+    <string name="ai_tool_todo_status_deleted">Deleted</string>
+
+    <!-- AI debug panel (debug builds only): tokens / first-token latency / tool errors, in memory only -->
+    <string name="ai_settings_section_debug">Debug</string>
+    <string name="ai_debug_trace_title">Tool call log</string>
+    <string name="ai_debug_trace_desc">Tokens, first-token latency and tool errors from recent turns (debug builds only)</string>
+    <string name="ai_debug_trace_value">%1$d turns</string>
+    <string name="ai_debug_trace_empty">No records yet. Send a message first.</string>
+    <string name="ai_debug_trace_hint">Sizes and timings only; no message text, tool arguments or todo titles</string>
+    <string name="ai_debug_trace_clear">Clear</string>
+    <string name="ai_debug_trace_close">Close</string>
+    <string name="ai_debug_trace_dialog">Tool call log</string>
+
     <!-- AI settings page (AISettingsScreen, Settings → AI settings): presets / connection / key / privacy -->
     <string name="ai_settings_title">AI Settings</string>
     <string name="ai_settings_header_title">AI assistant</string>
@@ -1033,6 +1098,9 @@
     <string name="ai_settings_key_required">Enter an API key</string>
     <!-- AI profiles (AI settings entry + profile sheet): save / switch / rename / delete multiple setups -->
     <string name="ai_settings_section_profile">Profiles</string>
+    <string name="ai_settings_section_tools">Tool calls</string>
+    <string name="ai_settings_tools_toggle">Let AI query and edit todos</string>
+    <string name="ai_settings_tools_desc">When on, AI can query your timetable, todos and free slots on demand, and create/complete/archive todos with tools (updates and deletes still need your confirmation); unsupported providers fall back automatically</string>
     <string name="ai_profile_title">AI profiles</string>
     <string name="ai_profile_entry_desc">Save multiple provider and model setups and switch anytime</string>
     <string name="ai_profile_custom">Custom</string>

@@ -9,6 +9,7 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.StoreResult
+import com.fangyi.classpp.data.testSchedule
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -25,6 +26,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -106,6 +108,22 @@ class AiChatRepositoryTest {
         val profiles = mutableListOf<AiProfile>()
         val profileKeys = mutableMapOf<String, String>()
         var activeId: String? = null
+        var toolsEnabled: Boolean = true
+        val toolCapabilities = mutableMapOf<String, AiToolCapability>()
+
+        override fun loadToolsEnabled(): Boolean = toolsEnabled
+
+        override fun saveToolsEnabled(enabled: Boolean): Boolean {
+            toolsEnabled = enabled
+            return true
+        }
+
+        override fun loadToolCapability(key: String): AiToolCapability =
+            toolCapabilities[key] ?: AiToolCapability.Unknown
+
+        override fun saveToolCapability(key: String, capability: AiToolCapability) {
+            toolCapabilities[key] = capability
+        }
 
         override fun loadProfiles(): List<AiProfile> = profiles.toList()
 
@@ -316,6 +334,61 @@ class AiChatRepositoryTest {
                 )
             },
         )
+
+    /** SSE data 行（工具调用分片：OpenAI delta.tool_calls[]） */
+    private fun toolCallSse(
+        index: Int,
+        id: String? = null,
+        name: String? = null,
+        arguments: String? = null,
+    ): String = "data: " + Json.encodeToString(
+        buildJsonObject {
+            put(
+                "choices",
+                JsonArray(
+                    listOf(
+                        buildJsonObject {
+                            put(
+                                "delta",
+                                buildJsonObject {
+                                    put(
+                                        "tool_calls",
+                                        JsonArray(
+                                            listOf(
+                                                buildJsonObject {
+                                                    put("index", index)
+                                                    id?.let { put("id", it) }
+                                                    put(
+                                                        "function",
+                                                        buildJsonObject {
+                                                            name?.let { put("name", it) }
+                                                            arguments?.let { put("arguments", it) }
+                                                        },
+                                                    )
+                                                },
+                                            ),
+                                        ),
+                                    )
+                                },
+                            )
+                        },
+                    ),
+                ),
+            )
+        },
+    )
+
+    private fun finishSse(reason: String): String =
+        """data: {"choices":[{"delta":{},"finish_reason":"$reason"}]}"""
+
+    /** 请求体里的 assistant tool_calls 与 tool 消息（用于配对断言） */
+    private fun toolMessagesOf(jsonBody: String): List<JsonObject> =
+        Json.parseToJsonElement(jsonBody).jsonObject["messages"]!!.jsonArray
+            .map { it.jsonObject }
+            .filter { it["tool_calls"] != null || it["role"]!!.jsonPrimitive.content == "tool" }
+
+    private fun requestHasTools(jsonBody: String): Boolean =
+        Json.parseToJsonElement(jsonBody).jsonObject["tools"] != null
 
     /** 请求体里的消息序列（role + content），用于结构断言 */
     private fun turnsOf(jsonBody: String): List<Pair<String, String>> =
@@ -2385,5 +2458,537 @@ class AiChatRepositoryTest {
         val lifecycle = repo.messages.value.last().todoLifecycles.single()
         assertEquals(AiTodoLifecycleStatus.UndoFailed, lifecycle.status)
         assertEquals(AiTodoChangeFailure.SaveFailed, lifecycle.failure)
+    }
+
+    // ---------- 原生只读工具与多轮循环 ----------
+
+    @Test
+    fun `send executes read tool then streams final answer`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.GET_DAY_PLAN,
+                        arguments = """{"date":"2026-11-01"}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("那天下午有空。"), "data: [DONE]")),
+        )
+        val context = AiChatContext(schedule = testSchedule(), currentWeek = 12)
+        val repo = repository(
+            settings = settings,
+            transport = transport,
+            contextProvider = { context },
+        )
+
+        repo.send("我 11 月 1 日下午有空吗")
+
+        assertEquals(2, transport.opened.size)
+        assertTrue(requestHasTools(transport.opened[0].jsonBody))
+        assertTrue(requestHasTools(transport.opened[1].jsonBody))
+        // 第二次请求必须把 assistant.tool_calls 与 tool 结果成对带回去
+        val paired = toolMessagesOf(transport.opened[1].jsonBody)
+        assertEquals(2, paired.size)
+        assertEquals("assistant", paired[0].getValue("role").jsonPrimitive.content)
+        assertNotNull(paired[0]["tool_calls"])
+        assertEquals("tool", paired[1].getValue("role").jsonPrimitive.content)
+        assertEquals("call_1", paired[1].getValue("tool_call_id").jsonPrimitive.content)
+
+        val message = repo.messages.value.last()
+        assertEquals("那天下午有空。", message.content)
+        assertFalse(message.interrupted)
+        assertEquals(1, message.toolRounds.size)
+        val round = message.toolRounds.single()
+        assertEquals(AiToolRoundStatus.Completed, round.status)
+        assertEquals(1, round.results.size)
+        assertEquals("get_day_plan", round.results.single().name)
+        assertFalse(round.results.single().isError)
+        assertTrue(round.results.single().contentJson.contains("\"ok\":true"))
+        assertEquals(
+            AiToolCapability.Supported,
+            settings.toolCapabilities[settings.connection.toolCapabilityKey()],
+        )
+    }
+
+    @Test
+    fun `send caps tool rounds and keeps partial text`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val toolRound = listOf(
+            toolCallSse(
+                index = 0,
+                id = "call_1",
+                name = AiToolRegistry.SEARCH_TODOS,
+                arguments = "{}",
+            ),
+            finishSse("tool_calls"),
+            "data: [DONE]",
+        )
+        val transport = FakeAiTransport(
+            ScriptedResponse(toolRound),
+            ScriptedResponse(toolRound),
+            ScriptedResponse(toolRound),
+            ScriptedResponse(toolRound),
+        )
+        val repo = repository(settings = settings, transport = transport)
+
+        repo.send("一直查")
+
+        // 第 4 次请求仍有 tool_calls：预算停止，不再发第 5 次
+        assertEquals(AiChatRepository.MAX_TOOL_ROUNDS, transport.opened.size)
+        val message = repo.messages.value.last()
+        assertTrue(message.toolLoopCapped)
+        assertEquals(AiChatRepository.MAX_TOOL_ROUNDS, message.toolRounds.size)
+        val lastRound = message.toolRounds.last()
+        assertEquals(AiToolRoundStatus.Failed, lastRound.status)
+        assertTrue(lastRound.results.single().isError)
+        assertTrue(lastRound.results.single().contentJson.contains("limit_exceeded"))
+    }
+
+    @Test
+    fun `send limits calls per round and still continues`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val calls = (0..4).flatMap { index ->
+            listOf(
+                toolCallSse(
+                    index = index,
+                    id = "call_$index",
+                    name = AiToolRegistry.SEARCH_TODOS,
+                    arguments = "{}",
+                ),
+            )
+        } + listOf(finishSse("tool_calls"), "data: [DONE]")
+        val transport = FakeAiTransport(
+            ScriptedResponse(calls),
+            ScriptedResponse(listOf(sse("查完了。"), "data: [DONE]")),
+        )
+        val repo = repository(settings = settings, transport = transport)
+
+        repo.send("查五条")
+
+        assertEquals(2, transport.opened.size)
+        val round = repo.messages.value.last().toolRounds.single()
+        assertEquals(5, round.calls.size)
+        assertEquals(5, round.results.size)
+        assertEquals(4, round.results.count { !it.isError })
+        assertEquals(1, round.results.count { it.contentJson.contains("limit_exceeded") })
+    }
+
+    @Test
+    fun `send falls back when provider rejects tools`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val transport = FakeAiTransport(
+            ScriptedResponse(lines = emptyList(), status = 400),
+            ScriptedResponse(listOf(sse("回退回答"), "data: [DONE]")),
+        )
+        val context = AiChatContext()
+        val repo = repository(
+            settings = settings,
+            transport = transport,
+            contextProvider = { context },
+        )
+
+        repo.send("你好")
+
+        assertEquals(2, transport.opened.size)
+        assertTrue(requestHasTools(transport.opened[0].jsonBody))
+        assertFalse(requestHasTools(transport.opened[1].jsonBody))
+        assertEquals(
+            AiToolCapability.Unsupported,
+            settings.toolCapabilities[settings.connection.toolCapabilityKey()],
+        )
+        val message = repo.messages.value.last()
+        assertEquals("回退回答", message.content)
+        assertTrue(message.toolRounds.isEmpty())
+    }
+
+    @Test
+    fun `tools disabled skips native wire and prompt`() = runBlocking {
+        val settings = FakeAiSettingsStore().apply { toolsEnabled = false }
+        val transport = FakeAiTransport(
+            ScriptedResponse(listOf(sse("普通回答"), "data: [DONE]")),
+        )
+        val repo = repository(settings = settings, transport = transport)
+
+        repo.send("你好")
+
+        val request = transport.opened.single()
+        assertFalse(requestHasTools(request.jsonBody))
+        assertFalse(request.jsonBody.contains("已启用只读查询工具"))
+        assertEquals("普通回答", repo.messages.value.last().content)
+        assertTrue(repo.messages.value.last().toolRounds.isEmpty())
+    }
+
+    @Test
+    fun `native prompt carries today summary and trace records the turn`() = runBlocking {
+        AiDebugTrace.init(debuggable = true)
+        AiDebugTrace.reset()
+        try {
+            var tick = 0L
+            val transport = FakeAiTransport(
+                ScriptedResponse(
+                    listOf(
+                        toolCallSse(
+                            index = 0,
+                            id = "call_1",
+                            name = AiToolRegistry.GET_TODO,
+                            arguments = """{"id":"todo-today"}""",
+                        ),
+                        finishSse("tool_calls"),
+                        "data: [DONE]",
+                    ),
+                ),
+                ScriptedResponse(listOf(sse("看完了。"), "data: [DONE]")),
+            )
+            val repo = repository(
+                transport = transport,
+                contextProvider = {
+                    AiChatContext(
+                        todos = listOf(
+                            existingTodo("todo-today", "今天的作业")
+                                .copy(dates = listOf(IsoDate.of(2026, 11, 1))),
+                            existingTodo("todo-far", "很远的事")
+                                .copy(dates = listOf(IsoDate.of(2026, 12, 20))),
+                            existingTodo("todo-archived", "归档的事").copy(archivedAtMillis = 1L),
+                        ),
+                    )
+                },
+                nowMillis = {
+                    tick += 100
+                    tick
+                },
+            )
+
+            repo.send("今天的作业还有什么")
+
+            // P3：上下文只给今日摘要，其余待办（含归档）不再整段注入
+            val system = turnsOf(transport.opened.first().jsonBody).first().second
+            assertTrue(system.contains("[今日课程]"))
+            assertTrue(system.contains("[todo-today] 今天的作业"))
+            assertTrue(system.contains("[待办概况]"))
+            assertFalse(system.contains("很远的事"))
+            assertFalse(system.contains("归档的事"))
+
+            // P3：一轮的规模/延迟/工具调用进入诊断缓冲（仅 debug）
+            val trace = AiDebugTrace.recent().single()
+            assertTrue(trace.toolsAttached)
+            assertTrue(trace.promptChars > 0)
+            assertTrue(trace.promptTokens > 0)
+            assertEquals(2, trace.requestCount)
+            assertEquals(1, trace.toolCallCount)
+            assertEquals(AiToolRegistry.GET_TODO, trace.calls.single().name)
+            assertTrue(trace.calls.single().ok)
+            assertNotNull(trace.firstDeltaMillis)
+            assertNull(trace.error)
+        } finally {
+            AiDebugTrace.reset()
+            AiDebugTrace.init(debuggable = false)
+        }
+    }
+
+    @Test
+    fun `history replays recent tool pairing exactly`() = runBlocking {
+        val call = AiToolCall(
+            id = "call_1",
+            name = AiToolRegistry.GET_DAY_PLAN,
+            argumentsJson = """{"date":"2026-11-01"}""",
+        )
+        val result = AiToolResult(
+            callId = "call_1",
+            name = AiToolRegistry.GET_DAY_PLAN,
+            contentJson = """{"ok":true,"data":{}}""",
+        )
+        val store = FakeAiChatStore()
+        store.file = AiChatFile(
+            conversations = listOf(
+                AiConversation(
+                    id = "c1",
+                    title = "旧对话",
+                    messages = listOf(
+                        AiChatMessage(role = AiChatRole.User, content = "查一下"),
+                        AiChatMessage(
+                            role = AiChatRole.Assistant,
+                            content = "有空。",
+                            id = "m1",
+                            toolRounds = listOf(
+                                AiToolRound(
+                                    text = "",
+                                    calls = listOf(call),
+                                    results = listOf(result),
+                                    status = AiToolRoundStatus.Completed,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            activeConversationId = "c1",
+        )
+        val transport = FakeAiTransport(
+            ScriptedResponse(listOf(sse("继续回答"), "data: [DONE]")),
+        )
+        val repo = repository(store = store, transport = transport)
+
+        repo.send("继续")
+
+        val paired = toolMessagesOf(transport.opened.single().jsonBody)
+        assertEquals(2, paired.size)
+        assertEquals("assistant", paired[0].getValue("role").jsonPrimitive.content)
+        assertEquals(
+            "call_1",
+            paired[0].getValue("tool_calls").jsonArray.single().jsonObject
+                .getValue("id").jsonPrimitive.content,
+        )
+        assertEquals("tool", paired[1].getValue("role").jsonPrimitive.content)
+        assertEquals("call_1", paired[1].getValue("tool_call_id").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `bootstrap normalizes unfinished tool rounds to cancelled`() = runBlocking {
+        val store = FakeAiChatStore()
+        store.file = AiChatFile(
+            conversations = listOf(
+                AiConversation(
+                    id = "c1",
+                    messages = listOf(
+                        AiChatMessage(
+                            role = AiChatRole.Assistant,
+                            content = "半截",
+                            id = "m1",
+                            toolRounds = listOf(
+                                AiToolRound(
+                                    calls = listOf(AiToolCall("c1", AiToolRegistry.GET_DAY_PLAN)),
+                                    status = AiToolRoundStatus.Running,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            activeConversationId = "c1",
+        )
+        val repo = repository(
+            store = store,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+
+        assertEquals(
+            AiToolRoundStatus.Cancelled,
+            repo.messages.value.single().toolRounds.single().status,
+        )
+    }
+
+    // ---------- 原生写工具与确认流（P2） ----------
+
+    @Test
+    fun `create tool writes todos and attaches ids`() = runBlocking {
+        val persister = FakeTodoPersister()
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.CREATE_TODOS,
+                        arguments = """{"todos":[{"name":"交实验报告","dates":["2026-11-18"],""" +
+                            """"urgency":"High"}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("已创建，记得按时交。"), "data: [DONE]")),
+        )
+        val repo = repository(transport = transport, persister = persister)
+
+        repo.send("11 月 18 日交实验报告，很急")
+
+        assertEquals(1, persister.batches.size)
+        assertEquals("交实验报告", persister.batches.single().single().name)
+        val message = repo.messages.value.last()
+        assertEquals(1, message.todoIds.size)
+        assertFalse(message.todoSaveFailed)
+        assertEquals("已创建，记得按时交。", message.content)
+        val round = message.toolRounds.single()
+        assertEquals(AiToolRoundStatus.Completed, round.status)
+        val result = round.results.single()
+        assertFalse(result.isError)
+        assertTrue(result.contentJson.contains("\"ok\":true"))
+        assertTrue(result.contentJson.contains("可在消息下方撤销"))
+        // 写工具已执行，正文不再解析出任何待确认变更
+        assertTrue(message.todoChanges.isEmpty())
+    }
+
+    @Test
+    fun `complete tool applies completion and records undo entry`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.COMPLETE_TODOS,
+                        arguments = """{"completes":[{"id":"todo-1"}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("已标记完成。"), "data: [DONE]")),
+        )
+        val repo = repository(
+            transport = transport,
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告"))) },
+        )
+
+        repo.send("实验报告交了")
+
+        assertEquals(listOf("todo-1"), writer.completionCalls.map { it.id })
+        assertTrue(writer.completionCalls.single().completed)
+        val completion = repo.messages.value.last().todoCompletions.single()
+        assertEquals(AiTodoCompletionStatus.Applied, completion.status)
+        assertEquals("实验报告", completion.todoName)
+        assertTrue(repo.messages.value.last().toolRounds.single().results.single().contentJson.contains("已生效"))
+    }
+
+    @Test
+    fun `update tool only records pending change`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.UPDATE_TODOS,
+                        arguments = """{"updates":[{"id":"todo-1","patch":{"name":"新实验报告"}}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("已生成确认卡。"), "data: [DONE]")),
+        )
+        val repo = repository(
+            transport = transport,
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告"))) },
+        )
+
+        repo.send("把实验报告改名为新实验报告")
+
+        // 确认前不写库：写入只由确认卡的 changeWriter 完成
+        assertTrue(writer.updates.isEmpty())
+        val change = repo.messages.value.last().todoChanges.single()
+        assertEquals(AiTodoChangeStatus.Pending, change.status)
+        assertEquals("新实验报告", change.patch?.name)
+        val result = repo.messages.value.last().toolRounds.single().results.single()
+        assertFalse(result.isError)
+        assertTrue(result.contentJson.contains("pending_user_confirmation"))
+    }
+
+    @Test
+    fun `delete tool with unknown id returns failure result`() = runBlocking {
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.DELETE_TODOS,
+                        arguments = """{"deletes":[{"id":"missing"}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("没找到这条待办。"), "data: [DONE]")),
+        )
+        val repo = repository(transport = transport)
+
+        repo.send("删掉没有的那条")
+
+        val message = repo.messages.value.last()
+        assertTrue(message.todoChanges.isEmpty())
+        val result = message.toolRounds.single().results.single()
+        assertTrue(result.isError)
+        assertTrue(result.contentJson.contains("not_found"))
+    }
+
+    @Test
+    fun `retry after native write reminds model not to repeat`() = runBlocking {
+        val persister = FakeTodoPersister()
+        val transport = FakeAiTransport(
+            // 第一轮工具成功落库，随后最终回答的流断开：尾部消息 interrupted
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.CREATE_TODOS,
+                        arguments = """{"todos":[{"name":"工具创建"}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("半截")), failAfterLines = true),
+            ScriptedResponse(listOf(sse("完整回答"), "data: [DONE]")),
+        )
+        val repo = repository(transport = transport, persister = persister)
+
+        repo.send("记一下")
+        assertTrue(repo.messages.value.last().interrupted)
+        assertEquals(1, persister.batches.size)
+
+        repo.retryLast()
+
+        // 工具轮次随消息被摘掉：靠一句提醒挡住重复创建（脚本本身不会再调工具）
+        assertEquals(1, persister.batches.size)
+        assertEquals("完整回答", repo.messages.value.last().content)
+        assertTrue(transport.opened[2].jsonBody.contains("不要重复创建、完成或归档"))
+    }
+
+    @Test
+    fun `native tool round ignores body json blocks`() = runBlocking {        val persister = FakeTodoPersister()
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.CREATE_TODOS,
+                        arguments = """{"todos":[{"name":"工具创建"}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(
+                listOf(
+                    sse(
+                        "已创建。\n```json\n" +
+                            """{"todos":[{"name":"正文创建","dates":["2026-11-18"]}]}""" +
+                            "\n```",
+                    ),
+                    "data: [DONE]",
+                ),
+            ),
+        )
+        val repo = repository(transport = transport, persister = persister)
+
+        repo.send("记一下")
+
+        // 原生模式只认工具：正文里的 JSON 块不再执行，避免同一动作落库两次
+        assertEquals(1, persister.batches.size)
+        assertEquals("工具创建", persister.batches.single().single().name)
+        assertEquals(1, repo.messages.value.last().todoIds.size)
     }
 }

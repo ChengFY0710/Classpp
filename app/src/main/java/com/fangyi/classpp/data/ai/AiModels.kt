@@ -3,8 +3,13 @@ package com.fangyi.classpp.data.ai
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-/** 对话历史存储文件的格式版本；装载时拒绝更高版本（与 TODO_FORMAT_VERSION 同策略） */
-const val AI_CHAT_FORMAT_VERSION = 2
+/**
+ * 对话历史存储文件的格式版本；装载时拒绝更高版本（与 TODO_FORMAT_VERSION 同策略）。
+ *
+ * v3 起 `AiChatMessage` 增加工具轮次（`toolRounds`）：旧 v2 文件因字段默认值可正常装载；
+ * 旧版应用读到 v3 会按「未来版本」隔离重置（项目既有策略，降级丢历史）。
+ */
+const val AI_CHAT_FORMAT_VERSION = 3
 
 /**
  * 请求协议（协议差异的编解码见 [AiStreamCodec]）：
@@ -84,6 +89,52 @@ data class AiConversation(
 enum class AiChatRole { User, Assistant }
 
 /**
+ * 一次工具调用（协议中性）：OpenAI 的 `tool_calls[]` / Anthropic 的 `tool_use` 块
+ * 都归一到这里，仓库与执行层不感知 wire 形状。
+ *
+ * @param argumentsJson 模型给出的参数原文（JSON 字符串）；非法 JSON 不在这里抛错，
+ *   由执行层转成 `invalid_arguments` 结果交还模型
+ */
+@Serializable
+data class AiToolCall(
+    val id: String,
+    val name: String,
+    val argumentsJson: String = "{}",
+)
+
+/**
+ * 一次工具结果（协议中性）：OpenAI 的 `role=tool` 消息 / Anthropic 的 `tool_result` 块。
+ *
+ * @param contentJson 统一结果信封 `{ok,data}` 或 `{ok:false,error}` 的序列化文本
+ * @param isError 结果是否失败（Anthropic 侧同时落 `is_error`）
+ */
+@Serializable
+data class AiToolResult(
+    val callId: String,
+    val name: String,
+    val contentJson: String,
+    val isError: Boolean = false,
+)
+
+/** 工具轮次的执行状态；装载时 Pending/Running 会被归一为 Cancelled */
+@Serializable
+enum class AiToolRoundStatus { Pending, Running, Completed, Failed, Cancelled }
+
+/**
+ * 一条 assistant 消息内的一轮工具执行：本轮模型输出的文本 + 发起的调用 + 回填结果。
+ *
+ * 消息的 `content` 仍是全部轮次文本的拼接（复制/搜索/旧 UI 兼容）；[text] 保存该轮
+ * 文本前缀，用于气泡内与工具卡交错渲染，以及回放时重建配对。
+ */
+@Serializable
+data class AiToolRound(
+    val text: String = "",
+    val calls: List<AiToolCall> = emptyList(),
+    val results: List<AiToolResult> = emptyList(),
+    val status: AiToolRoundStatus = AiToolRoundStatus.Pending,
+)
+
+/**
  * 一条对话消息（ai_chat.json 的成员）。
  *
  * @param createdAtMillis 创建时刻（epoch millis），由仓库在追加时补齐
@@ -105,6 +156,9 @@ enum class AiChatRole { User, Assistant }
  *   UI 在原处提示「部分变更无法识别」
  * @param todoCompletions AI 直接执行的完成/取消完成记录：可撤销，状态随消息落盘
  * @param todoLifecycles AI 直接执行的归档/取消归档/恢复记录：可撤销，状态随消息落盘
+ * @param toolRounds 本条回复内的工具轮次（按发生顺序；v2 消息为空列表）：只读查询的
+ *   调用与结果成对持久化，回放时最近两轮精确重放、更早轮次折叠
+ * @param toolLoopCapped 工具循环因预算停止（UI 轻提示，不参与回放）
  */
 @Serializable
 data class AiChatMessage(
@@ -121,6 +175,8 @@ data class AiChatMessage(
     val todoChangeDropped: Boolean = false,
     val todoCompletions: List<AiTodoCompletion> = emptyList(),
     val todoLifecycles: List<AiTodoLifecycle> = emptyList(),
+    val toolRounds: List<AiToolRound> = emptyList(),
+    val toolLoopCapped: Boolean = false,
 )
 
 /**
@@ -144,12 +200,18 @@ class AiException(val error: AiError, val detail: String? = null) :
  *
  * @param images 随本条消息发给模型的图片（base64 已就绪）；无图时 content 保持纯字符串
  *   编码（既有网关兼容面不变），有图时由编解码器落成多模态 content 数组
+ * @param toolCalls assistant 本轮发起的工具调用（有值时不编码成 multimodal content，
+ *   OpenAI 侧同时落 `tool_calls`，Anthropic 侧落 `tool_use` 块）
+ * @param toolResults tool 轮回填的结果（OpenAI 一条结果一条 tool 消息；Anthropic 合并进
+ *   紧随其后的 user 消息 `tool_result` 块）
  */
 @Serializable
 data class AiChatTurn(
     val role: String,
-    val content: String,
+    val content: String = "",
     val images: List<AiTurnImage> = emptyList(),
+    val toolCalls: List<AiToolCall> = emptyList(),
+    val toolResults: List<AiToolResult> = emptyList(),
 )
 
 /** wire 层的图片附件：base64 已编码的 JPEG（当前导入管线统一转正压缩为 JPEG） */

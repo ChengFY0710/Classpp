@@ -997,6 +997,72 @@
     <string name="ai_todo_lifecycle_restore">恢复「%1$s」</string>
     <string name="ai_todo_lifecycle_wrong_state">当前状态不支持该操作</string>
 
+    <!-- AI 只读工具轮次（原生 tools）：工具卡、状态与结果摘要 -->
+    <string name="ai_tool_name_get_day_plan">查询日程</string>
+    <string name="ai_tool_name_search_todos">查询待办</string>
+    <string name="ai_tool_name_get_week_schedule">查询周课表</string>
+    <string name="ai_tool_name_get_todo">查看待办详情</string>
+    <!-- AI 写工具轮次（P2）：新建/完成/归档自动执行，修改/删除只生成确认卡 -->
+    <string name="ai_tool_name_create_todos">新建待办</string>
+    <string name="ai_tool_name_update_todos">修改待办</string>
+    <string name="ai_tool_name_delete_todos">删除待办</string>
+    <string name="ai_tool_name_complete_todos">完成待办</string>
+    <string name="ai_tool_name_archive_todos">归档待办</string>
+    <string name="ai_tool_status_running">执行中</string>
+    <string name="ai_tool_status_completed">已完成</string>
+    <string name="ai_tool_status_failed">执行失败</string>
+    <string name="ai_tool_status_cancelled">已取消</string>
+    <string name="ai_tool_expand">展开工具结果</string>
+    <string name="ai_tool_collapse">收起工具结果</string>
+    <string name="ai_tool_loop_capped">已达到工具调用上限，可继续追问</string>
+    <string name="ai_tool_result_courses">%1$d 节课</string>
+    <string name="ai_tool_result_todos">%1$d 条待办</string>
+    <string name="ai_tool_result_free_slots">%1$d 段空闲</string>
+    <string name="ai_tool_result_week">第 %1$d 周</string>
+    <string name="ai_tool_result_days">%1$d 天</string>
+    <string name="ai_tool_result_empty">无结果</string>
+    <string name="ai_tool_result_truncated">结果已截断</string>
+    <string name="ai_tool_result_cancelled">上次执行未完成</string>
+    <string name="ai_tool_arg_date">日期 %1$s</string>
+    <string name="ai_tool_arg_week_offset">偏移 %1$d 周</string>
+    <string name="ai_tool_arg_query">“%1$s”</string>
+    <string name="ai_tool_arg_status">状态 %1$s</string>
+    <string name="ai_tool_arg_limit">%1$d 条</string>
+    <string name="ai_tool_arg_items">%1$d 条</string>
+    <string name="ai_tool_result_created">新建 %1$d 条</string>
+    <string name="ai_tool_result_pending">待确认 %1$d 条</string>
+    <string name="ai_tool_result_applied">已生效 %1$d 条</string>
+    <string name="ai_tool_result_skipped">部分已跳过</string>
+    <string name="ai_tool_detail_created">新建「%1$s」</string>
+    <string name="ai_tool_detail_updated">修改「%1$s」</string>
+    <string name="ai_tool_detail_deleted">删除「%1$s」</string>
+    <string name="ai_tool_detail_free_slot">空闲 %1$s-%2$s</string>
+    <string name="ai_tool_detail_empty">（无）</string>
+    <string name="ai_tool_detail_truncated">（结果已截断）</string>
+    <string name="ai_tool_arg_todo_id">id %1$s</string>
+    <string name="ai_tool_detail_deadline">截止 %1$s</string>
+    <string name="ai_tool_detail_time">时间 %1$s</string>
+    <string name="ai_tool_detail_group">分组 %1$s</string>
+    <string name="ai_tool_detail_tags">标签 %1$s</string>
+    <string name="ai_tool_detail_repeat">重复 %1$s</string>
+    <string name="ai_tool_detail_note">备注 %1$s</string>
+    <string name="ai_tool_detail_steps">步骤 %1$s</string>
+    <string name="ai_tool_todo_status_active">进行中</string>
+    <string name="ai_tool_todo_status_completed">已完成</string>
+    <string name="ai_tool_todo_status_archived">已归档</string>
+    <string name="ai_tool_todo_status_deleted">已删除</string>
+
+    <!-- AI 调试面板（仅 debug 构建）：观察 token / 首字延迟 / 工具误用，不落盘 -->
+    <string name="ai_settings_section_debug">调试</string>
+    <string name="ai_debug_trace_title">工具调用日志</string>
+    <string name="ai_debug_trace_desc">最近几轮的 token、首字延迟与工具错误（仅调试构建记录）</string>
+    <string name="ai_debug_trace_value">%1$d 轮</string>
+    <string name="ai_debug_trace_empty">还没有记录，先发一条消息</string>
+    <string name="ai_debug_trace_hint">只记规模与耗时，不含消息正文、工具参数与待办标题</string>
+    <string name="ai_debug_trace_clear">清空</string>
+    <string name="ai_debug_trace_close">关闭</string>
+    <string name="ai_debug_trace_dialog">工具调用日志</string>
+
     <!-- AI 设置页（AISettingsScreen，设置 → AI 设置）：预设 / 连接 / Key / 隐私说明 -->
     <string name="ai_settings_title">AI 设置</string>
     <string name="ai_settings_header_title">AI 助手</string>
@@ -1030,6 +1096,9 @@
     <string name="ai_settings_key_required">请填写 API Key</string>
     <!-- AI 配置方案（AI 设置页入口 + 方案浮层）：多套连接方案的保存 / 切换 / 重命名 / 删除 -->
     <string name="ai_settings_section_profile">配置方案</string>
+    <string name="ai_settings_section_tools">工具调用</string>
+    <string name="ai_settings_tools_toggle">允许 AI 查询与修改待办</string>
+    <string name="ai_settings_tools_desc">开启后 AI 可按需查询课表、待办与空闲时段，并用工具新建/完成/归档待办（修改与删除仍需你确认）；连接不支持时会自动回退</string>
     <string name="ai_profile_title">AI 配置方案</string>
     <string name="ai_profile_entry_desc">保存多套服务商/模型配置，随时切换</string>
     <string name="ai_profile_custom">自定义</string>

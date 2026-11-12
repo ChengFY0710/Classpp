@@ -1,6 +1,7 @@
 package com.fangyi.classpp.data.ai
 
 import java.io.IOException
+import java.util.TreeMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -111,23 +112,34 @@ class OkHttpAiTransport : AiHttpTransport {
 }
 
 /**
+ * 一次流式调用的完整结果：正文、思考、工具调用与结束原因。
+ *
+ * 工具调用按 `index` 合并后按序给出；参数原文可能不是合法 JSON（流被掐断/模型输出
+ * 坏），这里不抛错，交给执行层转成 `invalid_arguments` 结果。
+ */
+data class AiStreamResult(
+    val text: String,
+    val reasoning: String,
+    val toolCalls: List<AiToolCall> = emptyList(),
+    val finishReason: String? = null,
+)
+
+/**
  * 流式客户端：请求编码与 SSE 载荷解析按 [AiConnection.protocol] 委托给协议编解码器
  * （[OpenAiStreamCodec] = OpenAI 兼容，[AnthropicStreamCodec] = Anthropic Messages），
  * 传输、取消与 HTTP 状态分类是协议无关的，在此收口。
  *
  * - SSE 逐行解析 `data:` 载荷交编解码器分派（增量形状与终止标记随协议），增量经
  *   onDelta 回调交给调用方（UI 逐字渲染）；推理模型的思考增量经 onReasoning 单独
- *   交付（不进正文返回值）。整个流（打开 + 阻塞读）跑在专用执行线程上，回调也在
- *   该线程触发——调用方须用线程安全的方式发布状态（如 StateFlow.value 赋值），
- *   不要在回调里直接碰 UI；
+ *   交付（不进正文返回值）；工具调用增量由每次调用新建的 [ToolCallAccumulator] 合并。
+ *   整个流（打开 + 阻塞读）跑在专用执行线程上，回调也在该线程触发——调用方须用
+ *   线程安全的方式发布状态（如 StateFlow.value 赋值），不要在回调里直接碰 UI；
  * - **取消即断流**：整个阻塞管线包在 [suspendCancellableCoroutine] 里，协程取消时
  *   invokeOnCancellation 先置本次调用的取消标志，再调 [AiStreamResponse.cancel]
  *   中断底层连接，阻塞中的读立刻解除——停止按钮即时生效，不依赖下一块数据到达；
- *   `open()` 阻塞期间（DNS/连接/TLS/等响应头）还没有句柄可取消，线程中断对阻塞
- *   socket 读也无效，此时由取消标志在 `open()` 放行后立即收口：不读一行、不再回调；
  * - 容错：`:` 开头的 SSE 注释/心跳行、解析不了的 data 载荷一律跳过不致命；
  *   服务商把错误放进流里（`data: {...}` 携带错误对象）时由编解码器按协议分类抛 [AiException]；
- * - EOF 无终止标记（协议各自的 Done 形态未出现）：已收到过增量 = 流被掐断
+ * - EOF 无终止标记（协议各自的 Done 形态未出现）：已收到过正文/思考/工具调用 = 流被掐断
  *   （[AiError.Network]，调用方保留半截），一个字都没有 = 响应不合法（[AiError.BadResponse]）。
  *
  * @param transport 传输层，默认 OkHttp 生产实现；单测注入脚本化假流
@@ -135,13 +147,9 @@ class OkHttpAiTransport : AiHttpTransport {
 class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
 
     /**
-     * 发起一次流式对话。
+     * 发起一次流式对话（不发送原生工具；JSON 回退路径与既有调用方使用）。
      *
-     * @param onDelta 每收到一段正文增量文本回调一次（在 AI 执行线程，须轻量）；协程取消后
-     *   保证不再回调（读取循环与交付前各检查一次本次调用的取消标志）
-     * @param onReasoning 每收到一段思考增量回调一次（推理模型才有；同样在执行线程、
-     *   取消后不再回调）。思考内容不参与返回值，由调用方单独累积与展示
-     * @return 完整回复正文（全部正文增量拼接；思考增量不计入）
+     * @return 完整回复正文（全部正文增量拼接；思考与工具调用不计入）
      * @throws AiException 分类错误（UI 按 [AiError] 展示）；协程取消时在挂起点
      *   原样传播 CancellationException（半截文本已通过 onDelta 交给调用方，不随异常丢失）
      */
@@ -152,7 +160,35 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         temperature: Double? = null,
         onDelta: (String) -> Unit = {},
         onReasoning: (String) -> Unit = {},
-    ): String = suspendCancellableCoroutine { cont ->
+    ): String = streamChatWithTools(
+        connection = connection,
+        apiKey = apiKey,
+        turns = turns,
+        tools = emptyList(),
+        temperature = temperature,
+        onDelta = onDelta,
+        onReasoning = onReasoning,
+    ).text
+
+    /**
+     * 发起一次带原生工具的流式对话。
+     *
+     * @param tools 本次可用的工具；空 = 请求体不发送 `tools` 字段（回退/普通对话）
+     * @param onDelta 每收到一段正文增量文本回调一次（在 AI 执行线程，须轻量）；协程取消后
+     *   保证不再回调（读取循环与交付前各检查一次本次调用的取消标志）
+     * @param onReasoning 每收到一段思考增量回调一次（推理模型才有；同样在执行线程、
+     *   取消后不再回调）。思考内容不参与返回值，由调用方单独累积与展示
+     * @throws AiException 分类错误；协程取消时原样传播 CancellationException
+     */
+    suspend fun streamChatWithTools(
+        connection: AiConnection,
+        apiKey: String,
+        turns: List<AiChatTurn>,
+        tools: List<AiToolSpec>,
+        temperature: Double? = null,
+        onDelta: (String) -> Unit = {},
+        onReasoning: (String) -> Unit = {},
+    ): AiStreamResult = suspendCancellableCoroutine { cont ->
         // 每次调用一份取消标志：open() 阻塞期间 inFlight 还是 null，取消只能靠它在
         // 放行后立即断流（OkHttp 的阻塞 socket 读不响应线程中断）
         val cancelled = AtomicBoolean(false)
@@ -161,9 +197,9 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         val future = EXECUTOR.submit {
             try {
                 val codec = AiStreamCodec.of(connection.protocol)
-                val request = codec.buildRequest(connection, apiKey, turns, temperature)
-                val text = executeAndRead(codec, request, cancelled, inFlight, onDelta, onReasoning)
-                cont.resume(text, onCancellation = null)
+                val request = codec.buildRequest(connection, apiKey, turns, temperature, tools)
+                val result = executeAndRead(codec, request, cancelled, inFlight, onDelta, onReasoning)
+                cont.resume(result, onCancellation = null)
             } catch (_: StreamCancelled) {
                 // 协程已取消：没有等待者，无需 resume；use 已释放连接
             } catch (e: Throwable) {
@@ -194,7 +230,7 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         inFlight: AtomicReference<AiStreamResponse?>,
         onDelta: (String) -> Unit,
         onReasoning: (String) -> Unit,
-    ): String {
+    ): AiStreamResult {
         val response = transport.open(request)
         inFlight.set(response)
         return response.use {
@@ -220,42 +256,55 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         cancelled: AtomicBoolean,
         onDelta: (String) -> Unit,
         onReasoning: (String) -> Unit,
-    ): String {
+    ): AiStreamResult {
         val full = StringBuilder()
         val reasoning = StringBuilder()
+        val toolCalls = ToolCallAccumulator()
+        var finishReason: String? = null
         var sawDone = false
-        while (true) {
+        loop@ while (true) {
             if (cancelled.get()) throw StreamCancelled
             val line = response.readLine() ?: break
             if (line.isBlank() || line.startsWith(":")) continue // 空行与 SSE 注释/心跳
             if (!line.startsWith(DATA_PREFIX)) continue // event: 等无关字段
-            when (val event = codec.onData(line.removePrefix(DATA_PREFIX).trim())) {
-                is AiStreamEvent.Delta -> {
-                    if (cancelled.get()) throw StreamCancelled // 取消后不再交付副作用
-                    full.append(event.text)
-                    onDelta(event.text)
+            for (event in codec.onData(line.removePrefix(DATA_PREFIX).trim())) {
+                when (event) {
+                    is AiStreamEvent.Delta -> {
+                        if (cancelled.get()) throw StreamCancelled // 取消后不再交付副作用
+                        full.append(event.text)
+                        onDelta(event.text)
+                    }
+                    is AiStreamEvent.Reasoning -> {
+                        if (cancelled.get()) throw StreamCancelled
+                        reasoning.append(event.text)
+                        onReasoning(event.text)
+                    }
+                    is AiStreamEvent.ToolCallDelta -> {
+                        if (cancelled.get()) throw StreamCancelled
+                        toolCalls.accept(event)
+                    }
+                    is AiStreamEvent.Finish -> finishReason = event.reason
+                    AiStreamEvent.Done -> {
+                        sawDone = true
+                        break@loop
+                    }
                 }
-                is AiStreamEvent.Reasoning -> {
-                    if (cancelled.get()) throw StreamCancelled
-                    reasoning.append(event.text)
-                    onReasoning(event.text)
-                }
-                AiStreamEvent.Done -> {
-                    sawDone = true
-                    break
-                }
-                null -> Unit // 容忍无关/不可解析载荷
             }
         }
         if (!sawDone) {
-            // 只收到思考也算「已有半截内容」：按网络中断保留，而不是当作空响应
-            throw if (full.isEmpty() && reasoning.isEmpty()) {
+            // 只收到思考/工具调用也算「已有半截内容」：按网络中断保留，而不是当作空响应
+            throw if (full.isEmpty() && reasoning.isEmpty() && toolCalls.isEmpty()) {
                 AiException(AiError.BadResponse, detail = "stream ended without completion marker, no content")
             } else {
                 AiException(AiError.Network, detail = "stream ended without completion marker, partial content kept")
             }
         }
-        return full.toString()
+        return AiStreamResult(
+            text = full.toString(),
+            reasoning = reasoning.toString(),
+            toolCalls = toolCalls.build(),
+            finishReason = finishReason,
+        )
     }
 
     // ---------- 错误分类 ----------
@@ -293,4 +342,42 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
             Thread(runnable, "classpp-ai-stream").apply { isDaemon = true }
         }
     }
+}
+
+/**
+ * 工具调用增量累积器（每次 [AiClient.streamChatWithTools] 新建，绝不放进 codec 单例）。
+ *
+ * - OpenAI：index 来自 `delta.tool_calls[].index`，id/name 通常只在首片出现，
+ *   arguments 是字符串分片；
+ * - Anthropic：index 来自 `content_block_start.index`，参数来自 `input_json_delta`；
+ * - index 可能乱序/跳号，用 [TreeMap] 保证输出按 index 升序；
+ * - 参数可能不是合法 JSON（流被掐断/模型输出坏），原样保留，由执行层转
+ *   `invalid_arguments` 结果交给模型。
+ */
+private class ToolCallAccumulator {
+
+    private val calls = TreeMap<Int, MutableCall>()
+
+    fun accept(delta: AiStreamEvent.ToolCallDelta) {
+        val call = calls.getOrPut(delta.index) { MutableCall() }
+        delta.id?.let { call.id = it }
+        delta.name?.let { call.name = it }
+        call.arguments.append(delta.argumentsDelta)
+    }
+
+    fun isEmpty(): Boolean = calls.isEmpty()
+
+    fun build(): List<AiToolCall> = calls.entries.map { (index, call) ->
+        AiToolCall(
+            id = call.id ?: "tool_call_$index",
+            name = call.name.orEmpty(),
+            argumentsJson = call.arguments.toString().ifBlank { "{}" },
+        )
+    }
+
+    private class MutableCall(
+        var id: String? = null,
+        var name: String? = null,
+        val arguments: StringBuilder = StringBuilder(),
+    )
 }
