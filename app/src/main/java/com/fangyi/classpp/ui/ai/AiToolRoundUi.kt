@@ -214,6 +214,11 @@ private fun toolDisplayName(name: String): String = when (name) {
     AiToolRegistry.GET_DAY_PLAN -> stringResource(R.string.ai_tool_name_get_day_plan)
     AiToolRegistry.SEARCH_TODOS -> stringResource(R.string.ai_tool_name_search_todos)
     AiToolRegistry.GET_WEEK_SCHEDULE -> stringResource(R.string.ai_tool_name_get_week_schedule)
+    AiToolRegistry.CREATE_TODOS -> stringResource(R.string.ai_tool_name_create_todos)
+    AiToolRegistry.UPDATE_TODOS -> stringResource(R.string.ai_tool_name_update_todos)
+    AiToolRegistry.DELETE_TODOS -> stringResource(R.string.ai_tool_name_delete_todos)
+    AiToolRegistry.COMPLETE_TODOS -> stringResource(R.string.ai_tool_name_complete_todos)
+    AiToolRegistry.ARCHIVE_TODOS -> stringResource(R.string.ai_tool_name_archive_todos)
     else -> name
 }
 
@@ -242,8 +247,26 @@ private fun toolParamSummary(call: AiToolCall): String {
             }
             parts.joinToString(" · ")
         }
+        AiToolRegistry.CREATE_TODOS -> itemsSummary(args, "todos")
+        AiToolRegistry.UPDATE_TODOS -> itemsSummary(args, "updates")
+        AiToolRegistry.DELETE_TODOS -> itemsSummary(args, "deletes")
+        AiToolRegistry.COMPLETE_TODOS -> itemsSummary(args, "completes", "reopens")
+        AiToolRegistry.ARCHIVE_TODOS -> itemsSummary(args, "archives", "unarchives", "restores")
         else -> ""
     }
+}
+
+/** 写工具的参数摘要：动作数组的元素数（单个对象按 1 条算） */
+@Composable
+private fun itemsSummary(args: JsonObject, vararg keys: String): String {
+    val count = keys.sumOf { key ->
+        when (val element = args[key]) {
+            is JsonArray -> element.size
+            is JsonObject -> 1
+            else -> 0
+        }
+    }
+    return if (count == 0) "" else stringResource(R.string.ai_tool_arg_items, count)
 }
 
 /** 折叠态摘要：只给数量与关键统计，避免长文本占据气泡 */
@@ -287,6 +310,29 @@ private fun toolResultSummary(name: String, result: AiToolResult?): String {
                 parts += stringResource(R.string.ai_tool_result_days, it)
             }
             parts.joinToString(" · ")
+        }
+        AiToolRegistry.CREATE_TODOS -> {
+            val count = data["count"].textOrNull()?.toIntOrNull()
+                ?: (data["created"] as? JsonArray)?.size
+                ?: 0
+            val text = stringResource(R.string.ai_tool_result_created, count)
+            if (data["dropped"].textOrNull() == "true") {
+                "$text · ${stringResource(R.string.ai_tool_result_skipped)}"
+            } else {
+                text
+            }
+        }
+        AiToolRegistry.UPDATE_TODOS, AiToolRegistry.DELETE_TODOS -> {
+            val count = data["count"].textOrNull()?.toIntOrNull()
+                ?: (data["items"] as? JsonArray)?.size
+                ?: 0
+            stringResource(R.string.ai_tool_result_pending, count)
+        }
+        AiToolRegistry.COMPLETE_TODOS, AiToolRegistry.ARCHIVE_TODOS -> {
+            val count = data["count"].textOrNull()?.toIntOrNull()
+                ?: (data["applied"] as? JsonArray)?.size
+                ?: 0
+            stringResource(R.string.ai_tool_result_applied, count)
         }
         else -> ""
     }
@@ -338,6 +384,48 @@ private fun toolResultDetails(name: String, result: AiToolResult?): List<String>
                 val date = day["date"].textOrNull().orEmpty()
                 val courses = (day["courses"] as? JsonArray)?.size ?: 0
                 lines += "$weekday $date · ${stringResource(R.string.ai_tool_result_courses, courses)}"
+            }
+        }
+        AiToolRegistry.CREATE_TODOS -> {
+            (data["created"] as? JsonArray)?.forEach { element ->
+                val item = element as? JsonObject ?: return@forEach
+                lines += stringResource(
+                    R.string.ai_tool_detail_created,
+                    item["name"].textOrNull().orEmpty(),
+                )
+            }
+        }
+        AiToolRegistry.UPDATE_TODOS, AiToolRegistry.DELETE_TODOS -> {
+            (data["items"] as? JsonArray)?.forEach { element ->
+                val item = element as? JsonObject ?: return@forEach
+                val label = if (item["kind"].textOrNull() == "delete") {
+                    R.string.ai_tool_detail_deleted
+                } else {
+                    R.string.ai_tool_detail_updated
+                }
+                lines += stringResource(label, item["name"].textOrNull().orEmpty())
+            }
+        }
+        AiToolRegistry.COMPLETE_TODOS -> {
+            (data["applied"] as? JsonArray)?.forEach { element ->
+                val item = element as? JsonObject ?: return@forEach
+                val label = if (item["completed"].textOrNull() == "false") {
+                    R.string.ai_todo_completion_action_reopened
+                } else {
+                    R.string.ai_todo_completion_action_done
+                }
+                lines += stringResource(label, item["name"].textOrNull().orEmpty())
+            }
+        }
+        AiToolRegistry.ARCHIVE_TODOS -> {
+            (data["applied"] as? JsonArray)?.forEach { element ->
+                val item = element as? JsonObject ?: return@forEach
+                val label = when (item["action"].textOrNull()) {
+                    "unarchive" -> R.string.ai_todo_lifecycle_unarchive
+                    "restore" -> R.string.ai_todo_lifecycle_restore
+                    else -> R.string.ai_todo_lifecycle_archive
+                }
+                lines += stringResource(label, item["name"].textOrNull().orEmpty())
             }
         }
     }
@@ -515,6 +603,58 @@ private fun ToolMultiRoundPreview() {
                 ),
             )
             AiChatToolLoopCappedHint()
+        }
+    }
+}
+
+@Preview(name = "工具-写操作待确认", showBackground = true, widthDp = 360)
+@Composable
+private fun ToolWritePendingPreview() {
+    MaterialTheme {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // 可逆写：自动执行，业务卡片在气泡下方提供撤销
+            AiChatToolRoundBlock(
+                round = AiToolRound(
+                    calls = listOf(
+                        AiToolCall(
+                            id = "call_1",
+                            name = AiToolRegistry.CREATE_TODOS,
+                            argumentsJson = """{"todos":[{"name":"交实验报告"}]}""",
+                        ),
+                    ),
+                    results = listOf(
+                        AiToolResult(
+                            callId = "call_1",
+                            name = AiToolRegistry.CREATE_TODOS,
+                            contentJson = """{"ok":true,"data":{"count":1,"created":[{"id":"t1",""" +
+                                """"name":"交实验报告"}],"message":"已创建，可在消息下方撤销"}}""",
+                        ),
+                    ),
+                    status = AiToolRoundStatus.Completed,
+                ),
+            )
+            // 破坏性写：只生成待确认记录，确认卡仍由气泡下方渲染
+            AiChatToolRoundBlock(
+                round = AiToolRound(
+                    calls = listOf(
+                        AiToolCall(
+                            id = "call_2",
+                            name = AiToolRegistry.UPDATE_TODOS,
+                            argumentsJson = """{"updates":[{"id":"t1","patch":{"urgency":"High"}}]}""",
+                        ),
+                    ),
+                    results = listOf(
+                        AiToolResult(
+                            callId = "call_2",
+                            name = AiToolRegistry.UPDATE_TODOS,
+                            contentJson = """{"ok":true,"data":{"status":"pending_user_confirmation",""" +
+                                """"count":1,"items":[{"id":"t1","name":"交实验报告","kind":"update"}],""" +
+                                """"message":"已在消息下方生成确认卡，等待用户点击「应用变更」"}}""",
+                        ),
+                    ),
+                    status = AiToolRoundStatus.Completed,
+                ),
+            )
         }
     }
 }

@@ -55,8 +55,8 @@ data class AiToolEnvelopeSection(
  *   不使用 $ref / oneOf / anyOf / allOf / patternProperties）
  * @param permission 执行策略
  * @param envelope JSON 回退信封里的动作段；空 = 该工具仅支持原生 tools
- * @param execute 参数已通过校验后的执行入口，返回结构化 JSON；P0 只落契约，
- *   执行器在 P1/P2 接入，未接入时为 null
+ * @param execute 参数已通过校验后的执行入口，返回结构化 JSON；null = 未接入，
+ *   该工具不会进入原生 wire（P2 起全部工具都已接入）
  */
 data class AiToolSpec(
     val name: String,

@@ -164,28 +164,31 @@ class AiToolRegistryTest {
     }
 
     @Test
-    fun `native tools are exactly the three read-only tools`() {
+    fun `native tools cover the three read tools and five write tools`() {
         assertEquals(
             listOf(
                 AiToolRegistry.GET_DAY_PLAN,
                 AiToolRegistry.SEARCH_TODOS,
                 AiToolRegistry.GET_WEEK_SCHEDULE,
+                AiToolRegistry.CREATE_TODOS,
+                AiToolRegistry.UPDATE_TODOS,
+                AiToolRegistry.DELETE_TODOS,
+                AiToolRegistry.COMPLETE_TODOS,
+                AiToolRegistry.ARCHIVE_TODOS,
             ),
             AiToolRegistry.nativeSpecs.map { it.name },
         )
-        assertTrue(AiToolRegistry.nativeSpecs.all { it.permission == AiToolPermission.Read })
+        // P2 起写工具也进入原生 wire：每个 spec 都必须有执行入口
         assertTrue(AiToolRegistry.nativeSpecs.all { it.execute != null })
-        // 写工具仍在注册表里（回退契约/find 可用），但不进入原生 wire
-        listOf(
-            AiToolRegistry.CREATE_TODOS,
-            AiToolRegistry.UPDATE_TODOS,
-            AiToolRegistry.DELETE_TODOS,
-            AiToolRegistry.COMPLETE_TODOS,
-            AiToolRegistry.ARCHIVE_TODOS,
-        ).forEach { name ->
-            assertNotNull(AiToolRegistry.find(name))
-            assertTrue(AiToolRegistry.nativeSpecs.none { it.name == name })
-        }
+        assertEquals(AiToolRegistry.specs.size, AiToolRegistry.nativeSpecs.size)
+        assertTrue(
+            AiToolRegistry.nativeSpecs.filter { it.permission == AiToolPermission.Read }
+                .map { it.name } == listOf(
+                AiToolRegistry.GET_DAY_PLAN,
+                AiToolRegistry.SEARCH_TODOS,
+                AiToolRegistry.GET_WEEK_SCHEDULE,
+            ),
+        )
     }
 
     @Test

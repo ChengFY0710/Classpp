@@ -18,8 +18,9 @@ import kotlinx.serialization.json.putJsonObject
  * - Anthropic `tools` 数组（[anthropicTools]）；
  * - JSON 回退模式的提示词契约文本（[fallbackContracts] / [fallbackShape]）。
  *
- * P0 只落「契约」：工具执行器在 P1/P2 接入，仓库行为零变化。写工具的权限语义与现有
- * 动作一致——新建/完成/归档可撤销、修改/删除只生成确认卡，注册表不改变这条边界。
+ * P0 只落「契约」，P1 接入三个只读工具，P2 接入全部写工具。写工具的权限语义与现有
+ * 动作一致——新建/完成/归档可撤销、修改/删除只生成确认卡；注册表只声明权限，
+ * 真正执行由仓库注入的 [AiToolWriteGateway] 完成，不改变这条边界。
  *
  * **注意**：不要在这里保存任何流式累积状态（codec 是 object 单例，累积器由 AiClient
  * 每次调用新建）。
@@ -32,7 +33,7 @@ object AiToolRegistry {
     const val COMPLETE_TODOS = "complete_todos"
     const val ARCHIVE_TODOS = "archive_todos"
 
-    // 首版只读查询工具（P1）：原生 tools 只发送这几个；写工具仍走 JSON 回退契约
+    // 首版（P1）只读查询工具；写工具在 P2 起同样进入原生 tools（见 writeSpecs）
     const val GET_DAY_PLAN = "get_day_plan"
     const val SEARCH_TODOS = "search_todos"
     const val GET_WEEK_SCHEDULE = "get_week_schedule"
@@ -269,7 +270,7 @@ object AiToolRegistry {
         ),
     )
 
-    /** 写工具仍只有 JSON 回退契约：P1 不暴露为原生 tools，避免与现有确认卡/撤销双写 */
+    /** 写工具（P2）：与 JSON 回退契约一一对应，执行由仓库注入的 [AiToolWriteGateway] 完成 */
     private val writeSpecs: List<AiToolSpec> = listOf(
         AiToolSpec(
             name = CREATE_TODOS,
@@ -278,6 +279,7 @@ object AiToolRegistry {
             parameters = createTodosParameters,
             permission = AiToolPermission.WriteReversible,
             envelope = listOf(AiToolEnvelopeSection("todos", todosEnvelopeExample)),
+            execute = AiWriteTools::executeCreateTodos,
         ),
         AiToolSpec(
             name = UPDATE_TODOS,
@@ -286,6 +288,7 @@ object AiToolRegistry {
             parameters = updateTodosParameters,
             permission = AiToolPermission.WriteConfirm,
             envelope = listOf(AiToolEnvelopeSection("updates", updatesEnvelopeExample)),
+            execute = AiWriteTools::executeUpdateTodos,
         ),
         AiToolSpec(
             name = DELETE_TODOS,
@@ -293,6 +296,7 @@ object AiToolRegistry {
             parameters = deleteTodosParameters,
             permission = AiToolPermission.WriteConfirm,
             envelope = listOf(AiToolEnvelopeSection("deletes", deletesEnvelopeExample)),
+            execute = AiWriteTools::executeDeleteTodos,
         ),
         AiToolSpec(
             name = COMPLETE_TODOS,
@@ -303,6 +307,7 @@ object AiToolRegistry {
                 AiToolEnvelopeSection("completes", completesEnvelopeExample),
                 AiToolEnvelopeSection("reopens", reopensEnvelopeExample),
             ),
+            execute = AiWriteTools::executeCompleteTodos,
         ),
         AiToolSpec(
             name = ARCHIVE_TODOS,
@@ -314,17 +319,21 @@ object AiToolRegistry {
                 AiToolEnvelopeSection("unarchives", unarchivesEnvelopeExample),
                 AiToolEnvelopeSection("restores", restoresEnvelopeExample),
             ),
+            execute = AiWriteTools::executeArchiveTodos,
         ),
     )
 
     /** 全部工具定义：只读在前、写工具在后（回退契约与查找共用） */
     val specs: List<AiToolSpec> = readSpecs + writeSpecs
 
-    /** 可原生执行的工具（P1 = 3 个只读）；wire 只发送这些，写工具继续走 JSON 回退 */
+    /** 可原生执行的工具（P2 起 = 全部：3 个只读 + 5 个写）；wire 只发送这些 */
     val nativeSpecs: List<AiToolSpec> = specs.filter { it.execute != null }
 
     /** 按名称查找工具；未注册返回 null（未知工具名由执行层转成 `unknown_tool` 结果） */
     fun find(name: String): AiToolSpec? = specs.firstOrNull { it.name == name }
+
+    /** 写工具（会改待办库或生成确认卡）：重试时据此判断上一轮是否已经执行过写操作 */
+    fun isWriteTool(name: String): Boolean = writeSpecs.any { it.name == name }
 
     // ---------- JSON 回退契约 ----------
 

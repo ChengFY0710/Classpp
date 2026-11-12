@@ -2715,4 +2715,213 @@ class AiChatRepositoryTest {
             repo.messages.value.single().toolRounds.single().status,
         )
     }
+
+    // ---------- 原生写工具与确认流（P2） ----------
+
+    @Test
+    fun `create tool writes todos and attaches ids`() = runBlocking {
+        val persister = FakeTodoPersister()
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.CREATE_TODOS,
+                        arguments = """{"todos":[{"name":"交实验报告","dates":["2026-11-18"],""" +
+                            """"urgency":"High"}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("已创建，记得按时交。"), "data: [DONE]")),
+        )
+        val repo = repository(transport = transport, persister = persister)
+
+        repo.send("11 月 18 日交实验报告，很急")
+
+        assertEquals(1, persister.batches.size)
+        assertEquals("交实验报告", persister.batches.single().single().name)
+        val message = repo.messages.value.last()
+        assertEquals(1, message.todoIds.size)
+        assertFalse(message.todoSaveFailed)
+        assertEquals("已创建，记得按时交。", message.content)
+        val round = message.toolRounds.single()
+        assertEquals(AiToolRoundStatus.Completed, round.status)
+        val result = round.results.single()
+        assertFalse(result.isError)
+        assertTrue(result.contentJson.contains("\"ok\":true"))
+        assertTrue(result.contentJson.contains("可在消息下方撤销"))
+        // 写工具已执行，正文不再解析出任何待确认变更
+        assertTrue(message.todoChanges.isEmpty())
+    }
+
+    @Test
+    fun `complete tool applies completion and records undo entry`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.COMPLETE_TODOS,
+                        arguments = """{"completes":[{"id":"todo-1"}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("已标记完成。"), "data: [DONE]")),
+        )
+        val repo = repository(
+            transport = transport,
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告"))) },
+        )
+
+        repo.send("实验报告交了")
+
+        assertEquals(listOf("todo-1"), writer.completionCalls.map { it.id })
+        assertTrue(writer.completionCalls.single().completed)
+        val completion = repo.messages.value.last().todoCompletions.single()
+        assertEquals(AiTodoCompletionStatus.Applied, completion.status)
+        assertEquals("实验报告", completion.todoName)
+        assertTrue(repo.messages.value.last().toolRounds.single().results.single().contentJson.contains("已生效"))
+    }
+
+    @Test
+    fun `update tool only records pending change`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.UPDATE_TODOS,
+                        arguments = """{"updates":[{"id":"todo-1","patch":{"name":"新实验报告"}}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("已生成确认卡。"), "data: [DONE]")),
+        )
+        val repo = repository(
+            transport = transport,
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告"))) },
+        )
+
+        repo.send("把实验报告改名为新实验报告")
+
+        // 确认前不写库：写入只由确认卡的 changeWriter 完成
+        assertTrue(writer.updates.isEmpty())
+        val change = repo.messages.value.last().todoChanges.single()
+        assertEquals(AiTodoChangeStatus.Pending, change.status)
+        assertEquals("新实验报告", change.patch?.name)
+        val result = repo.messages.value.last().toolRounds.single().results.single()
+        assertFalse(result.isError)
+        assertTrue(result.contentJson.contains("pending_user_confirmation"))
+    }
+
+    @Test
+    fun `delete tool with unknown id returns failure result`() = runBlocking {
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.DELETE_TODOS,
+                        arguments = """{"deletes":[{"id":"missing"}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("没找到这条待办。"), "data: [DONE]")),
+        )
+        val repo = repository(transport = transport)
+
+        repo.send("删掉没有的那条")
+
+        val message = repo.messages.value.last()
+        assertTrue(message.todoChanges.isEmpty())
+        val result = message.toolRounds.single().results.single()
+        assertTrue(result.isError)
+        assertTrue(result.contentJson.contains("not_found"))
+    }
+
+    @Test
+    fun `retry after native write reminds model not to repeat`() = runBlocking {
+        val persister = FakeTodoPersister()
+        val transport = FakeAiTransport(
+            // 第一轮工具成功落库，随后最终回答的流断开：尾部消息 interrupted
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.CREATE_TODOS,
+                        arguments = """{"todos":[{"name":"工具创建"}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("半截")), failAfterLines = true),
+            ScriptedResponse(listOf(sse("完整回答"), "data: [DONE]")),
+        )
+        val repo = repository(transport = transport, persister = persister)
+
+        repo.send("记一下")
+        assertTrue(repo.messages.value.last().interrupted)
+        assertEquals(1, persister.batches.size)
+
+        repo.retryLast()
+
+        // 工具轮次随消息被摘掉：靠一句提醒挡住重复创建（脚本本身不会再调工具）
+        assertEquals(1, persister.batches.size)
+        assertEquals("完整回答", repo.messages.value.last().content)
+        assertTrue(transport.opened[2].jsonBody.contains("不要重复创建、完成或归档"))
+    }
+
+    @Test
+    fun `native tool round ignores body json blocks`() = runBlocking {        val persister = FakeTodoPersister()
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.CREATE_TODOS,
+                        arguments = """{"todos":[{"name":"工具创建"}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(
+                listOf(
+                    sse(
+                        "已创建。\n```json\n" +
+                            """{"todos":[{"name":"正文创建","dates":["2026-11-18"]}]}""" +
+                            "\n```",
+                    ),
+                    "data: [DONE]",
+                ),
+            ),
+        )
+        val repo = repository(transport = transport, persister = persister)
+
+        repo.send("记一下")
+
+        // 原生模式只认工具：正文里的 JSON 块不再执行，避免同一动作落库两次
+        assertEquals(1, persister.batches.size)
+        assertEquals("工具创建", persister.batches.single().single().name)
+        assertEquals(1, repo.messages.value.last().todoIds.size)
+    }
 }

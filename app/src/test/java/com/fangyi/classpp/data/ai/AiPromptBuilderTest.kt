@@ -267,7 +267,7 @@ class AiPromptBuilderTest {
     }
 
     @Test
-    fun `native tools mode adds guidance and keeps json write contracts`() {
+    fun `native tools mode swaps json contracts for tool contract`() {
         val fallback = AiPromptBuilder.build(now, null, null, emptyList(), emptyList(), emptyList())
         val native = AiPromptBuilder.build(
             now = now,
@@ -279,14 +279,25 @@ class AiPromptBuilderTest {
             nativeTools = true,
         )
 
-        assertFalse(fallback.contains("已启用只读查询工具"))
-        assertTrue(native.contains("已启用只读查询工具"))
-        assertTrue(native.contains("get_day_plan"))
-        assertTrue(native.contains("search_todos"))
-        assertTrue(native.contains("get_week_schedule"))
-        // P1 取舍：只读查询走原生 tools，写操作仍保留 JSON 契约（不回归）
-        assertTrue(native.contains("```json"))
-        assertTrue(native.contains(AiToolRegistry.fallbackContracts.createTodos))
-        assertTrue(native.contains(AiToolRegistry.fallbackContracts.updateAndDelete))
+        assertFalse(fallback.contains("已启用工具调用"))
+        assertTrue(native.contains("已启用工具调用"))
+        listOf(
+            AiToolRegistry.GET_DAY_PLAN,
+            AiToolRegistry.SEARCH_TODOS,
+            AiToolRegistry.GET_WEEK_SCHEDULE,
+            AiToolRegistry.CREATE_TODOS,
+            AiToolRegistry.UPDATE_TODOS,
+            AiToolRegistry.DELETE_TODOS,
+            AiToolRegistry.COMPLETE_TODOS,
+            AiToolRegistry.ARCHIVE_TODOS,
+        ).forEach { name -> assertTrue("native prompt must mention $name", native.contains(name)) }
+        // 原生模式不再给出 JSON 信封契约：动作由工具执行，代码块会被忽略（避免双写）
+        assertTrue(native.contains("不要输出 ```json 代码块"))
+        assertFalse(native.contains(AiToolRegistry.fallbackContracts.createTodos))
+        assertFalse(native.contains(AiToolRegistry.fallbackContracts.updateAndDelete))
+        assertFalse(native.contains(AiToolRegistry.fallbackContracts.complete))
+        assertFalse(native.contains(AiToolRegistry.fallbackContracts.lifecycle))
+        // 回退模式仍是完整 JSON 契约（BYOK 兼容面不缩小）
+        assertTrue(fallback.contains(AiToolRegistry.fallbackContracts.createTodos))
     }
 }
