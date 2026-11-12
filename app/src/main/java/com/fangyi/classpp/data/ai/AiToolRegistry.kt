@@ -257,9 +257,9 @@ object AiToolRegistry {
         AiToolSpec(
             name = SEARCH_TODOS,
             description = "按关键词、状态、分组、标签或日期范围查询待办，默认只查活跃待办（不含归档与回收站）。" +
-                "用户明确要求完整列表或精确统计时用 all=true 一次取完（items 条数=total 即完整；" +
-                "compact=true 表示只含精简字段）；status=completed 且未给 limit/offset 时默认完整返回；" +
-                "普通浏览可用 limit/offset 分页。",
+                "默认一次返回全部匹配（items 条数=total 即完整；compact=true 表示只含精简字段；" +
+                "需要强调完整/精确统计时可显式传 all=true）。只有用户明确只要“最近 N 条/先看几条/下一页”时，" +
+                "才传 limit/offset 走普通浏览。",
             parameters = AiReadTools.searchTodosParameters,
             permission = AiToolPermission.Read,
             maxResultChars = AiReadTools.MAX_SEARCH_RESULT_CHARS,

@@ -63,15 +63,20 @@ internal object AiReadTools {
             stringProperty("completedFrom", "完成日期下界 yyyy-MM-dd（只匹配已完成条目，含当天）")
             stringProperty("completedTo", "完成日期上界 yyyy-MM-dd（只匹配已完成条目，含当天）")
             booleanProperty("includeDetail", "是否返回备注/步骤/地点（默认 false）")
-            integerProperty("limit", "单页条数 1..30，默认 10（all=true 时忽略）")
+            integerProperty(
+                "limit",
+                "预览/分页条数 1..30，默认 10；只有用户明确只要“最近 N 条/先看几条/下一页”时才传，" +
+                    "否则不要传（不传 limit/offset = 默认完整返回）",
+            )
             integerProperty(
                 "offset",
-                "分页偏移，0 起（默认 0）；需要下一页时传「上一页 offset + 本页条数」，配合 limit 逐页取完（all=true 时忽略）",
+                "分页偏移，0 起；只有继续翻页时才传「上一页 offset + 本页条数」；" +
+                    "不传 limit/offset 时默认完整返回",
             )
             booleanProperty(
                 "all",
-                "true = 一次返回全部匹配结果（忽略 limit/offset）。用户明确要求完整列表或精确统计时用；" +
-                    "status=completed 且没给 limit/offset 时默认 true；" +
+                "true = 一次返回全部匹配结果（忽略 limit/offset）。默认即为完整返回，" +
+                    "显式传 true 只用于强调完整/精确统计；" +
                     "结果过大时自动降级为精简字段（compact=true），仍装不下才返回 limit_exceeded",
             )
         }
@@ -202,18 +207,20 @@ internal object AiReadTools {
         if (status !in STATUS_VALUES) {
             return failure("invalid_arguments", "status 只能是 ${STATUS_VALUES.joinToString("/")}")
         }
-        // all=true：一次返回全部匹配，忽略分页参数——用户要求“完整列表”时不靠模型翻页。
-        // 完成历史默认走完整口径：status=completed 且没主动分页时不需要模型额外记得传 all。
-        val pagingRequested = args.containsKey("limit") || (args.intOrNull("offset") ?: 0) > 0
-        val all = args.booleanOrNull("all") ?: (status == STATUS_COMPLETED && !pagingRequested)
+        // 显式给出的分页参数始终要合法（即使 all=true 会忽略它们）
+        val limitProvided = args.containsKey("limit")
         val limit = args.intOrNull("limit") ?: DEFAULT_SEARCH_LIMIT
-        if (!all && limit !in 1..MAX_SEARCH_LIMIT) {
+        if (limitProvided && limit !in 1..MAX_SEARCH_LIMIT) {
             return failure("invalid_arguments", "limit 必须在 1..$MAX_SEARCH_LIMIT")
         }
         val offset = args.intOrNull("offset") ?: 0
-        if (!all && offset < 0) {
+        if (offset < 0) {
             return failure("invalid_arguments", "offset 不能为负")
         }
+        // 默认完整返回：只有模型显式传 limit/offset（明确只要少量或继续翻页）才走普通浏览。
+        // 这样“查完整”不依赖模型记得传 all=true；显式 all=false 仍可强制分页。
+        val pagingRequested = limitProvided || offset > 0
+        val all = args.booleanOrNull("all") ?: !pagingRequested
         val dueFrom = args.stringOrNull("dueFrom")?.takeIf { it.isNotBlank() }?.let { text ->
             IsoDate.parseOrNull(text) ?: return failure("invalid_arguments", "dueFrom 必须是 yyyy-MM-dd")
         }

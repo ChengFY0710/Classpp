@@ -299,6 +299,51 @@ class AiReadToolsTest {
     }
 
     @Test
+    fun `search without limit or offset defaults to complete result`() = kotlinx.coroutines.runBlocking {
+        val todos = (1..35).map { i ->
+            testTodo(
+                id = "p$i",
+                name = "任务$i",
+                deadlineDate = wedWeek12 + i,
+                createdAtMillis = i.toLong(),
+            )
+        }
+        val context = AiChatContext(today = wedWeek12, todos = todos)
+
+        val data = AiReadTools.executeSearchTodos(args(), context).data()
+
+        assertEquals(35, data.getValue("total").jsonPrimitive.int)
+        assertEquals(35, data.getValue("items").jsonArray.size)
+        assertFalse(data.getValue("truncated").jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `explicit limit keeps completed search paged`() = kotlinx.coroutines.runBlocking {
+        val todos = (1..35).map { i ->
+            testTodo(
+                id = "c$i",
+                name = "完成$i",
+                completed = true,
+                completedAtMillis = millisOf(2026, 5, (i % 28) + 1),
+                createdAtMillis = i.toLong(),
+            )
+        }
+        val context = AiChatContext(today = wedWeek12, todos = todos)
+
+        val data = AiReadTools.executeSearchTodos(
+            args(
+                "status" to JsonPrimitive("completed"),
+                "limit" to JsonPrimitive(10),
+            ),
+            context,
+        ).data()
+
+        assertEquals(35, data.getValue("total").jsonPrimitive.int)
+        assertEquals(10, data.getValue("items").jsonArray.size)
+        assertTrue(data.getValue("truncated").jsonPrimitive.boolean)
+    }
+
+    @Test
     fun `all mode returns every match in one page`() = kotlinx.coroutines.runBlocking {
         val todos = (1..35).map { i ->
             testTodo(

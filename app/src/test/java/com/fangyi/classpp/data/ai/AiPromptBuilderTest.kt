@@ -344,9 +344,9 @@ class AiPromptBuilderTest {
         assertTrue(prompt.contains("不要把回收站条目当成待办"))
         assertTrue(prompt.contains("status=deleted"))
         assertTrue(prompt.contains("status=incomplete"))
-        // search_todos：完整列表走 all=true；普通浏览才分页
-        assertTrue(prompt.contains("search_todos(all=true)"))
-        assertTrue(prompt.contains("status=completed 且未给 limit/offset 时工具会自动完整返回"))
+        // search_todos：默认完整返回；只有明确的“最近 N 条”才用 limit/offset
+        assertTrue(prompt.contains("查待办默认就是完整返回"))
+        assertTrue(prompt.contains("只有用户明确只要“最近 N 条/先看几条/下一页”时才传 limit/offset"))
         assertTrue(prompt.contains("offset=上一次 offset+本页条数"))
         assertTrue(prompt.contains("completedFrom/completedTo"))
         // 全量区块整体消失
