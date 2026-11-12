@@ -331,6 +331,11 @@ fun OverlaySheet(
     val tailReservePx = rememberTailReservePx(
         target = (imeBottomPx - navBottomPx).coerceAtLeast(0),
         imeVisible = imeVisible,
+        // 菜单弹层在场（含退场）期间暂缓回落：回落尾段让内容从「可滚」翻成「不可滚」，
+        // rubberBandVerticalScroll 随之切换修饰符分支；菜单毛玻璃正活采样本内容列，
+        // 同帧改写采样源结构即构建自引用 RenderNode（2026-11-12 AI 服务商菜单
+        // RenderThread SIGSEGV；崩溃帧 = 300ms 回落结束、可滚性翻转的那一帧）
+        holdCollapse = menuScrollSignal.menuShown,
     )
     // 底部留白只放导航栏：键盘让位由下方 TailReserveSpacer（动画值）承担，**只出现一次**。
     // 这里若再算一次 tailReservePx，键盘在场时尾部空白会多出整整一个 IME 高度——

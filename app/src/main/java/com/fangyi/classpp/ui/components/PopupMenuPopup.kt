@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -281,13 +283,38 @@ private data class MenuInsets(val left: Int, val top: Int, val right: Int, val b
 class MenuScrollSignal {
     private var versionState by mutableLongStateOf(0L)
 
+    // 在场菜单（含退场）的持有人集合：同一宿主可能同时挂着内容列菜单与钉底槽菜单
+    private var menuOwners by mutableStateOf<Set<Any>>(emptySet())
+
     /** 单调递增的滚动版本；菜单侧经 snapshotFlow 观察，不触发宿主重组 */
     val version: Long
         get() = versionState
 
+    /**
+     * 是否有菜单弹层在场（含退场）。宿主据此**暂缓会改写采样源结构的动画**：
+     * 典型是浮层尾部余量的回落——回落尾段把内容从「可滚」翻成「不可滚」，
+     * `rubberBandVerticalScroll` 随之切换修饰符分支；菜单毛玻璃效果节点正活采样
+     * 内容列时同帧改写采样源结构，即构建自引用 RenderNode 的崩溃配方（Haze 2，
+     * RenderThread 在 prepareTreeImpl 递归到栈溢出）。见 [PopupMenuPopup] 的崩溃史。
+     */
+    val menuShown: Boolean
+        get() = menuOwners.isNotEmpty()
+
     /** 滚动容器在用户滚动时调用 */
     fun notifyScrolled() {
         versionState++
+    }
+
+    /** 菜单开始在场（[PopupMenuPopup] 在 `motion.shown` 期间调用，含退场） */
+    internal fun attachMenu(owner: Any) {
+        if (owner in menuOwners) return
+        menuOwners = menuOwners + owner
+    }
+
+    /** 菜单退场播完、弹层卸载时调用；与 [attachMenu] 成对，重复调用幂等 */
+    internal fun detachMenu(owner: Any) {
+        if (owner !in menuOwners) return
+        menuOwners = menuOwners - owner
     }
 }
 
@@ -521,6 +548,18 @@ fun PopupMenuPopup(
             val openedAt = scrollSignal.version
             snapshotFlow { scrollSignal.version }.first { it != openedAt }
             onDismiss()
+        }
+    }
+    // 在场上报（含退场，直到弹层卸载）：宿主据此暂缓会改写采样源结构的动画
+    // （浮层尾部余量回落 → 可滚性翻转 → 橡皮筋修饰符换分支）。菜单毛玻璃活采样宿主
+    // 内容列期间，这类同帧结构改写会构建自引用 RenderNode（崩溃史见 MenuScrollSignal
+    // 与 PopupActionGate 的 KDoc）。
+    if (scrollSignal != null) {
+        val presenceOwner = remember { Any() }
+        DisposableEffect(scrollSignal, motion.shown) {
+            val active = motion.shown
+            if (active) scrollSignal.attachMenu(presenceOwner)
+            onDispose { if (active) scrollSignal.detachMenu(presenceOwner) }
         }
     }
 

@@ -185,20 +185,33 @@ private const val ImeScrollMillis = TailReserveMillis
  *
  * 弹起与收起拆成两个 effect：
  * - 弹起支的 key 带 [target]（键盘高度会晚一两拍才到终值，visible 期间逐帧跟到）；
- * - 收起支的 key **只有** [imeVisible]。键盘收起动画期间 [target] 逐帧变小，若把它也当
- *   key，回落动画会被每帧重启（每次都从当前值重新起一条回落曲线），键盘早已消失、
- *   卡片/余量却还在半空慢慢落——这就是「降落拖尾」的根因。
+ * - 收起支的 key **只有** [imeVisible]（+ [holdCollapse]）。键盘收起动画期间 [target]
+ *   逐帧变小，若把它也当 key，回落动画会被每帧重启（每次都从当前值重新起一条回落曲线），
+ *   键盘早已消失、卡片/余量却还在半空慢慢落——这就是「降落拖尾」的根因。
+ *
+ * [holdCollapse] = true 时收起支挂起（余量保持当前值）：宿主有弹层菜单在场（含退场）
+ * 时传。回落会收缩滚动上限、让内容在动画尾段从「可滚」翻成「不可滚」，
+ * `rubberBandVerticalScroll` 随即切换修饰符分支——菜单毛玻璃效果节点正活采样内容列，
+ * 同帧改写采样源结构即构建自引用 RenderNode，RenderThread 在 prepareTreeImpl 递归到
+ * 栈溢出（2026-11-12 AI 配置方案「切到服务商预设 → 唤起键盘 → 点服务商弹卡」真机崩溃：
+ * 崩溃帧正好是 300ms 回落动画把短内容翻回不可滚的那一帧）。菜单卸载后回落从头播完，
+ * 效果节点已不在场，结构改写安全。
  */
 @Composable
-internal fun rememberTailReservePx(target: Int, imeVisible: Boolean): Int {
+internal fun rememberTailReservePx(
+    target: Int,
+    imeVisible: Boolean,
+    holdCollapse: Boolean = false,
+): Int {
     var reserve by remember { mutableIntStateOf(0) }
     // 弹起：余量跟住键盘高度（逐帧到终值；直接赋值，不播动画）
     LaunchedEffect(imeVisible, target) {
         if (imeVisible) reserve = target
     }
-    // 收起：只由 imeVisible 翻转触发一次，与 ImeScrollTracker 的「滚回原位」同拍
-    LaunchedEffect(imeVisible) {
-        if (!imeVisible) {
+    // 收起：只由 imeVisible / holdCollapse 翻转触发一次，与 ImeScrollTracker 的
+    // 「滚回原位」同拍；菜单在场期间挂起，卸载后再回落（见 [holdCollapse]）
+    LaunchedEffect(imeVisible, holdCollapse) {
+        if (!imeVisible && !holdCollapse) {
             animate(
                 initialValue = reserve.toFloat(),
                 targetValue = 0f,
