@@ -1029,6 +1029,8 @@
     <string name="ai_tool_arg_week_offset">Offset %1$d weeks</string>
     <string name="ai_tool_arg_query">“%1$s”</string>
     <string name="ai_tool_arg_status">Status %1$s</string>
+    <string name="ai_tool_arg_offset">From #%1$d</string>
+    <string name="ai_tool_arg_all">All</string>
     <string name="ai_tool_arg_limit">%1$d items</string>
     <string name="ai_tool_arg_items">%1$d items</string>
     <string name="ai_tool_result_created">Created %1$d</string>
@@ -1040,7 +1042,6 @@
     <string name="ai_tool_detail_deleted">Deleted “%1$s”</string>
     <string name="ai_tool_detail_free_slot">Free %1$s-%2$s</string>
     <string name="ai_tool_detail_empty">(none)</string>
-    <string name="ai_tool_detail_truncated">(result truncated)</string>
     <string name="ai_tool_arg_todo_id">id %1$s</string>
     <string name="ai_tool_detail_deadline">Due %1$s</string>
     <string name="ai_tool_detail_time">Time %1$s</string>

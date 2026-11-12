@@ -51,15 +51,29 @@ internal object AiReadTools {
             stringProperty("query", "名称/备注包含匹配（大小写不敏感）")
             enumProperty(
                 "status",
-                "状态：active（默认，未归档未删除）/completed/archived/deleted/all",
-                listOf("active", "completed", "archived", "deleted", "all"),
+                "状态：active（默认，未归档未删除，含已完成）/incomplete（仅未完成）/completed/" +
+                    "archived（已归档）/deleted（回收站，仅在用户明确要求查看或恢复时用）/" +
+                    "all（同 active，不含归档与回收站）",
+                listOf("active", "incomplete", "completed", "archived", "deleted", "all"),
             )
             stringProperty("group", "分组名精确匹配")
             stringProperty("tag", "标签精确匹配")
             stringProperty("dueFrom", "日期/截止的下界 yyyy-MM-dd")
             stringProperty("dueTo", "日期/截止的上界 yyyy-MM-dd")
+            stringProperty("completedFrom", "完成日期下界 yyyy-MM-dd（只匹配已完成条目，含当天）")
+            stringProperty("completedTo", "完成日期上界 yyyy-MM-dd（只匹配已完成条目，含当天）")
             booleanProperty("includeDetail", "是否返回备注/步骤/地点（默认 false）")
-            integerProperty("limit", "返回条数 1..30，默认 10")
+            integerProperty("limit", "单页条数 1..30，默认 10（all=true 时忽略）")
+            integerProperty(
+                "offset",
+                "分页偏移，0 起（默认 0）；需要下一页时传「上一页 offset + 本页条数」，配合 limit 逐页取完（all=true 时忽略）",
+            )
+            booleanProperty(
+                "all",
+                "true = 一次返回全部匹配结果（忽略 limit/offset）。用户明确要求完整列表或精确统计时用；" +
+                    "status=completed 且没给 limit/offset 时默认 true；" +
+                    "结果过大时自动降级为精简字段（compact=true），仍装不下才返回 limit_exceeded",
+            )
         }
     }
 
@@ -188,9 +202,17 @@ internal object AiReadTools {
         if (status !in STATUS_VALUES) {
             return failure("invalid_arguments", "status 只能是 ${STATUS_VALUES.joinToString("/")}")
         }
+        // all=true：一次返回全部匹配，忽略分页参数——用户要求“完整列表”时不靠模型翻页。
+        // 完成历史默认走完整口径：status=completed 且没主动分页时不需要模型额外记得传 all。
+        val pagingRequested = args.containsKey("limit") || (args.intOrNull("offset") ?: 0) > 0
+        val all = args.booleanOrNull("all") ?: (status == STATUS_COMPLETED && !pagingRequested)
         val limit = args.intOrNull("limit") ?: DEFAULT_SEARCH_LIMIT
-        if (limit !in 1..MAX_SEARCH_LIMIT) {
+        if (!all && limit !in 1..MAX_SEARCH_LIMIT) {
             return failure("invalid_arguments", "limit 必须在 1..$MAX_SEARCH_LIMIT")
+        }
+        val offset = args.intOrNull("offset") ?: 0
+        if (!all && offset < 0) {
+            return failure("invalid_arguments", "offset 不能为负")
         }
         val dueFrom = args.stringOrNull("dueFrom")?.takeIf { it.isNotBlank() }?.let { text ->
             IsoDate.parseOrNull(text) ?: return failure("invalid_arguments", "dueFrom 必须是 yyyy-MM-dd")
@@ -200,6 +222,15 @@ internal object AiReadTools {
         }
         if (dueFrom != null && dueTo != null && dueFrom.epochDay > dueTo.epochDay) {
             return failure("invalid_arguments", "dueFrom 不能晚于 dueTo")
+        }
+        val completedFrom = args.stringOrNull("completedFrom")?.takeIf { it.isNotBlank() }?.let { text ->
+            IsoDate.parseOrNull(text) ?: return failure("invalid_arguments", "completedFrom 必须是 yyyy-MM-dd")
+        }
+        val completedTo = args.stringOrNull("completedTo")?.takeIf { it.isNotBlank() }?.let { text ->
+            IsoDate.parseOrNull(text) ?: return failure("invalid_arguments", "completedTo 必须是 yyyy-MM-dd")
+        }
+        if (completedFrom != null && completedTo != null && completedFrom.epochDay > completedTo.epochDay) {
+            return failure("invalid_arguments", "completedFrom 不能晚于 completedTo")
         }
         val query = args.stringOrNull("query")?.trim()?.takeIf { it.isNotEmpty() }
         val group = args.stringOrNull("group")?.trim()?.takeIf { it.isNotEmpty() }
@@ -215,23 +246,61 @@ internal object AiReadTools {
             .filter { todo -> group == null || todo.group == group }
             .filter { todo -> tag == null || todo.tags.contains(tag) }
             .filter { todo -> dueFrom == null && dueTo == null || todo.occursWithin(dueFrom, dueTo) }
-        val sorted = candidates.sortedWith(todoComparator())
-        val shown = sorted.take(limit)
-        return success(
-            buildJsonObject {
-                put("total", sorted.size)
-                put("truncated", sorted.size > shown.size)
-                put("items", buildJsonArray { shown.forEach { add(it.toSearchItem(includeDetail)) } })
-            },
-        )
+            .filter { todo -> completedFrom == null && completedTo == null || todo.completedWithin(completedFrom, completedTo) }
+        // 完成相关查询按完成时刻倒序：与「最近完成了什么」的直觉一致，分页/区间也稳定
+        val sorted = if (completedFrom != null || completedTo != null || status == STATUS_COMPLETED) {
+            candidates.sortedWith(completedComparator())
+        } else {
+            candidates.sortedWith(todoComparator())
+        }
+        val shown = if (all) sorted else sorted.drop(offset).take(limit)
+        val data = buildJsonObject {
+            put("total", sorted.size)
+            put("offset", if (all) 0 else offset)
+            // 还有下一页（而不是「本页被 limit 截断」）：模型按 offset + items.size 继续取
+            put("truncated", if (all) false else offset.toLong() + shown.size < sorted.size)
+            put("items", buildJsonArray { shown.forEach { add(it.toSearchItem(includeDetail)) } })
+        }
+        if (all) {
+            val chars = data.toString().length
+            if (chars + RESULT_ENVELOPE_MARGIN > MAX_SEARCH_RESULT_CHARS) {
+                // 完整集合装不下完整字段时，降级为精简字段（id/name/时间），
+                // 优先保证「条数完整」；详情仍可用 get_todo 单条取。
+                val compact = buildJsonObject {
+                    put("total", sorted.size)
+                    put("offset", 0)
+                    put("truncated", false)
+                    put("compact", true)
+                    put("items", buildJsonArray { sorted.forEach { add(it.toCompactSearchItem()) } })
+                }
+                val compactChars = compact.toString().length
+                if (compactChars + RESULT_ENVELOPE_MARGIN <= MAX_SEARCH_RESULT_CHARS) {
+                    return success(compact)
+                }
+                // 连精简字段都装不下：显式失败，至少让模型拿到准确 total 并请用户缩小范围
+                return failure(
+                    "limit_exceeded",
+                    "共 ${sorted.size} 条，精简结果 $compactChars 字符，超过单次上限 $MAX_SEARCH_RESULT_CHARS；" +
+                        "请用 completedFrom/completedTo、dueFrom/dueTo、group 或 tag 缩小范围",
+                )
+            }
+        }
+        return success(data)
     }
 
+    /**
+     * 候选集：默认与 `all` 都只取活跃待办（未归档未删除，含已完成）。
+     *
+     * `all` **不**并入归档/回收站：这两个空间只在 status 显式指定时返回，否则模型
+     * 会把回收站条目当成活跃待办列进查询结果（`all` 是最容易被误用的取值）。
+     */
     private fun candidates(ctx: AiChatContext, status: String): List<Todo> = when (status) {
-        STATUS_ACTIVE -> ctx.todos.filterNot { it.isDeleted || it.isArchived }
+        STATUS_ACTIVE, STATUS_ALL -> ctx.todos.filterNot { it.isDeleted || it.isArchived }
+        STATUS_INCOMPLETE -> ctx.todos.filter { !it.completed && !it.isDeleted && !it.isArchived }
         STATUS_COMPLETED -> ctx.todos.filter { it.completed && !it.isDeleted && !it.isArchived }
         STATUS_ARCHIVED -> ctx.archivedTodos.filterNot { it.isDeleted }
         STATUS_DELETED -> ctx.deletedTodos
-        else -> (ctx.todos + ctx.archivedTodos + ctx.deletedTodos).distinctBy { it.id }
+        else -> error("unreachable: status already validated")
     }
 
     private fun Todo.toSearchItem(includeDetail: Boolean): JsonObject = buildJsonObject {
@@ -245,6 +314,10 @@ internal object AiReadTools {
             putJsonArray("tags") { tags.forEach { add(it) } }
         }
         put("completed", completed)
+        if (completed) {
+            // 完成日期按本地时区落天（与 TodoOverviewSheet 的完成记录口径一致）
+            completedAtMillis?.let { put("completedAt", IsoDate.today(it).toString()) }
+        }
         put("pinned", pinned)
         if (repeat.type != RepeatType.None) {
             put("repeat", AiPromptBuilder.repeatText(repeat))
@@ -264,6 +337,24 @@ internal object AiReadTools {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * all 模式超预算时的精简条目：只保留识别与时间字段。
+     *
+     * 目标是把「完整条数」优先带回（`compact=true`），字段细节交给 `get_todo` 单条取；
+     * 模型不能把精简结果当成包含备注/标签的完整详情。
+     */
+    private fun Todo.toCompactSearchItem(): JsonObject = buildJsonObject {
+        put("id", id)
+        put("name", name)
+        group?.let { put("group", it) }
+        if (completed) {
+            put("completed", true)
+            completedAtMillis?.let { put("completedAt", IsoDate.today(it).toString()) }
+        } else {
+            (deadlineDate ?: dates.minByOrNull { it.epochDay })?.let { put("date", it.toString()) }
         }
     }
 
@@ -432,12 +523,26 @@ internal object AiReadTools {
         }
     }
 
+    /** 完成日期是否落在 [from, to]（端点含）；没有完成时刻的旧数据不算命中 */
+    private fun Todo.completedWithin(from: IsoDate?, to: IsoDate?): Boolean {
+        if (from == null && to == null) return true
+        val millis = completedAtMillis ?: return false
+        val date = IsoDate.today(millis)
+        return (from == null || date.epochDay >= from.epochDay) &&
+            (to == null || date.epochDay <= to.epochDay)
+    }
+
     /** 未完成在前 → 截止/首个日期升序 → 创建时间倒序 */
     private fun todoComparator(): Comparator<Todo> = compareBy<Todo> { it.completed }
         .thenBy { todo ->
             (todo.deadlineDate ?: todo.dates.minByOrNull { it.epochDay } ?: FAR_FUTURE).epochDay
         }
         .thenByDescending { it.createdAtMillis }
+
+    /** 完成相关查询：完成时刻倒序（没有完成时刻的旧数据垫底）→ 创建时间倒序 */
+    private fun completedComparator(): Comparator<Todo> =
+        compareByDescending<Todo> { it.completedAtMillis ?: Long.MIN_VALUE }
+            .thenByDescending { it.createdAtMillis }
 
     private fun Todo.deadlineText(): String? {
         val date = deadlineDate ?: return null
@@ -518,18 +623,32 @@ internal object AiReadTools {
     private val FAR_FUTURE = IsoDate(Long.MAX_VALUE / 2)
 
     private const val STATUS_ACTIVE = "active"
+    private const val STATUS_INCOMPLETE = "incomplete"
     private const val STATUS_COMPLETED = "completed"
     private const val STATUS_ARCHIVED = "archived"
     private const val STATUS_DELETED = "deleted"
+    private const val STATUS_ALL = "all"
     private val STATUS_VALUES = listOf(
         STATUS_ACTIVE,
+        STATUS_INCOMPLETE,
         STATUS_COMPLETED,
         STATUS_ARCHIVED,
         STATUS_DELETED,
-        "all",
+        STATUS_ALL,
     )
     private const val DEFAULT_SEARCH_LIMIT = 10
     private const val MAX_SEARCH_LIMIT = 30
+
+    /**
+     * all=true 一次返回完整集合的字符上限（比普通工具结果的 8K 宽得多）。
+     *
+     * 约合 600~800 条摘要；超过则显式返回 `limit_exceeded` 与总数，由用户缩小范围，
+     * 而不是悄悄截断成“看起来完整”的列表。
+     */
+    internal const val MAX_SEARCH_RESULT_CHARS = 120_000
+
+    /** 结果信封 `{ok,data}` 的余量，保证 executor 的最终字符串仍在上限内 */
+    private const val RESULT_ENVELOPE_MARGIN = 64
 
     /** get_todo 的详情上限：备注/步骤/期次都截断，避免单条结果撑爆 8KB 预算 */
     private const val MAX_NOTE_CHARS = 800

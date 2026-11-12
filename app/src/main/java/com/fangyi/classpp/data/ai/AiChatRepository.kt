@@ -719,6 +719,7 @@ class AiChatRepository internal constructor(
             var toolsMode = _toolsEnabled.value && capability != AiToolCapability.Unsupported
             var turns = buildTurnsFor(toolsMode)
             var totalCalls = 0
+            var turnResultChars = 0
             var usedTools = false
 
             while (true) {
@@ -825,7 +826,14 @@ class AiChatRepository internal constructor(
                 }
                 totalCalls += round.toolCalls.size
 
-                val results = executeToolCalls(conversationId, roundIndex, round.toolCalls, callTraces)
+                val results = executeToolCalls(
+                    conversationId = conversationId,
+                    roundIndex = roundIndex,
+                    calls = round.toolCalls,
+                    traces = callTraces,
+                    carriedChars = turnResultChars,
+                )
+                turnResultChars += results.sumOf { it.contentJson.length }
                 val status = if (results.any { it.isError }) {
                     AiToolRoundStatus.Failed
                 } else {
@@ -868,22 +876,26 @@ class AiChatRepository internal constructor(
     /**
      * 顺序执行一轮的全部调用（结果顺序与 calls 对齐）：
      * - 单轮超过 [MAX_TOOL_CALLS_PER_ROUND] 的调用不执行，返回 `limit_exceeded`；
-     * - 单轮结果总量超过 [AiToolExecutor.MAX_ROUND_RESULT_CHARS] 的后续结果同样降级为错误；
+     * - 单轮结果总量超过 [AiToolExecutor.MAX_ROUND_RESULT_CHARS]、或整轮累计超过
+     *   [MAX_TURN_RESULT_CHARS] 的后续结果同样降级为错误；
      * - 取消时把已执行结果先写回，未执行的调用补 `cancelled`，round 标 Cancelled 后原样抛出；
      * - [traces] 收集每次调用的耗时/错误码，只进 debug 诊断（P3），不参与业务判断。
+     *
+     * @param carriedChars 本用户轮次此前各轮已返回的工具结果字符数
      */
     private suspend fun executeToolCalls(
         conversationId: String,
         roundIndex: Int,
         calls: List<AiToolCall>,
         traces: MutableList<AiToolTrace>,
+        carriedChars: Int,
     ): List<AiToolResult> {
         val context = contextProvider().copy(
             today = clock.today(),
             writes = toolWriteGateway(conversationId),
         )
         val results = mutableListOf<AiToolResult>()
-        var totalChars = 0
+        var totalChars = carriedChars
         try {
             for ((index, call) in calls.withIndex()) {
                 currentCoroutineContext().ensureActive()
@@ -897,12 +909,13 @@ class AiChatRepository internal constructor(
                 }
                 val callStartedAt = nowMillis()
                 val result = AiToolExecutor.executeSafely(call, context)
-                val bounded = if (totalChars + result.contentJson.length >
-                    AiToolExecutor.MAX_ROUND_RESULT_CHARS
-                ) {
-                    AiToolExecutor.limitExceededResult(call, "单轮工具结果总量超过上限")
-                } else {
-                    result
+                val roundChars = totalChars - carriedChars
+                val bounded = when {
+                    totalChars + result.contentJson.length > MAX_TURN_RESULT_CHARS ->
+                        AiToolExecutor.limitExceededResult(call, "本轮对话工具结果总量超过上限")
+                    roundChars + result.contentJson.length > AiToolExecutor.MAX_ROUND_RESULT_CHARS ->
+                        AiToolExecutor.limitExceededResult(call, "单轮工具结果总量超过上限")
+                    else -> result
                 }
                 totalChars += bounded.contentJson.length
                 traces += AiToolTrace(
@@ -2516,6 +2529,12 @@ class AiChatRepository internal constructor(
 
         /** 整个用户轮次的总工具调用上限 */
         const val MAX_TOTAL_CALLS = 10
+
+        /**
+         * 整个用户轮次的工具结果总量上限：防止多轮大结果叠加把上下文撑爆。
+         * 单条 search_todos(all=true) 最大 120K，其余轮次合计仍有约 40K 余量。
+         */
+        const val MAX_TURN_RESULT_CHARS = 160_000
 
         /** 落盘的消息上限（每场对话各自截最旧，见计划 §4.3） */
         const val MAX_PERSISTED_MESSAGES = 200

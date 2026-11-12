@@ -17,15 +17,20 @@ import kotlinx.serialization.json.intOrNull
  * - 参数不是合法 JSON / 不符合 schema → `invalid_arguments`（原始参数截断进 message）；
  * - 执行异常 → `internal_error`，绝不抛到工具循环外；
  * - 取消原样传播（调用方需要保留已完成的工具结果并落盘）；
- * - 结果统一包成 `{ok,data}` / `{ok:false,error:{code,message}}`，单条 8KB 上限。
+ * - 结果统一包成 `{ok,data}` / `{ok:false,error:{code,message}}`，单条默认 8KB 上限
+ *   （查询工具的 all 模式可按 [AiToolSpec.maxResultChars] 放宽）。
  */
 internal object AiToolExecutor {
 
     /** 单条结果字符上限（设计稿 §4.5） */
     const val MAX_RESULT_CHARS = 8_000
 
-    /** 单轮工具结果总字符上限（由仓库在回填时执行） */
-    const val MAX_ROUND_RESULT_CHARS = 24_000
+    /**
+     * 单轮工具结果总字符上限（由仓库在回填时执行）。
+     *
+     * 必须容得下一条 `search_todos(all=true)` 的完整结果，否则单条大结果会被整条降级。
+     */
+    const val MAX_ROUND_RESULT_CHARS = 128_000
 
     /** 参数校验失败时附回原文的上限（避免把超长畸形参数塞回模型） */
     private const val RAW_ARGUMENTS_MAX = 300
@@ -51,7 +56,7 @@ internal object AiToolExecutor {
         } catch (e: Exception) {
             failure("internal_error", e.message ?: "工具执行失败")
         }
-        val bounded = truncateResult(result)
+        val bounded = truncateResult(result, spec.maxResultChars)
         return AiToolResult(
             callId = call.id,
             name = call.name,
@@ -139,14 +144,20 @@ internal object AiToolExecutor {
     /**
      * 单条结果上限：超限时反复对半砍最大的 data 数组，尽量保留可读数据并标记
      * `truncated:true`；仍放不下则退化为 `limit_exceeded` 失败结果。
+     *
+     * [maxChars] 由 [AiToolSpec.maxResultChars] 传入：查询工具的一次性完整返回
+     * 需要比默认 8K 更宽的预算。
      */
-    internal fun truncateResult(result: JsonObject): JsonObject {
-        if (result.toString().length <= MAX_RESULT_CHARS) return result
+    internal fun truncateResult(
+        result: JsonObject,
+        maxChars: Int = MAX_RESULT_CHARS,
+    ): JsonObject {
+        if (result.toString().length <= maxChars) return result
         val data = result["data"] as? JsonObject
         if (data != null) {
             var current: JsonObject = data
             var guard = 0
-            while (envelope(current).toString().length > MAX_RESULT_CHARS && guard++ < 16) {
+            while (envelope(current).toString().length > maxChars && guard++ < 16) {
                 val largest = current.entries
                     .filter { it.value is JsonArray }
                     .maxByOrNull { (it.value as JsonArray).size }
@@ -159,9 +170,9 @@ internal object AiToolExecutor {
             }
             val withFlag = JsonObject(current + ("truncated" to JsonPrimitive(true)))
             val candidate = envelope(withFlag)
-            if (candidate.toString().length <= MAX_RESULT_CHARS) return candidate
+            if (candidate.toString().length <= maxChars) return candidate
         }
-        return failure("limit_exceeded", "工具结果超过 ${MAX_RESULT_CHARS} 字符，已截断")
+        return failure("limit_exceeded", "工具结果超过 $maxChars 字符，已截断")
     }
 
     private fun envelope(data: JsonObject): JsonObject = JsonObject(

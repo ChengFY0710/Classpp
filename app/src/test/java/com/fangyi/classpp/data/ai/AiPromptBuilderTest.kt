@@ -226,6 +226,8 @@ class AiPromptBuilderTest {
         assertTrue(prompt.contains("[t-旧任务] 旧任务｜已归档"))
         assertTrue(prompt.contains("[回收站] （恢复时引用行首 id"))
         assertTrue(prompt.contains("[t-误删任务] 误删任务｜已删除"))
+        // 回退模式没有查询工具，必须在 prompt 里明确归档/回收站不算活跃待办
+        assertTrue(prompt.contains("[已归档] 与 [回收站] 不是活跃待办"))
     }
 
     @Test
@@ -337,7 +339,16 @@ class AiPromptBuilderTest {
         assertFalse(prompt.contains("归档任务"))
         assertFalse(prompt.contains("误删任务"))
         assertTrue(prompt.contains("已归档 1 条"))
-        assertTrue(prompt.contains("回收站 1 条"))
+        assertTrue(prompt.contains("回收站 1 条（不是活跃待办"))
+        // 工具契约里明确：查询默认不含回收站/归档，回收站只在明确要求时查
+        assertTrue(prompt.contains("不要把回收站条目当成待办"))
+        assertTrue(prompt.contains("status=deleted"))
+        assertTrue(prompt.contains("status=incomplete"))
+        // search_todos：完整列表走 all=true；普通浏览才分页
+        assertTrue(prompt.contains("search_todos(all=true)"))
+        assertTrue(prompt.contains("status=completed 且未给 limit/offset 时工具会自动完整返回"))
+        assertTrue(prompt.contains("offset=上一次 offset+本页条数"))
+        assertTrue(prompt.contains("completedFrom/completedTo"))
         // 全量区块整体消失
         assertFalse(prompt.contains("[课表] "))
         assertFalse(prompt.contains("[待办] "))

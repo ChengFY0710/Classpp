@@ -195,13 +195,13 @@ private fun AiChatToolCallCard(
                             color = MaterialTheme.classppColors.secondaryText,
                         )
                     } else {
-                        details.forEach { line ->
-                            Text(
-                                text = line,
-                                style = ClassppTextTokens.secondaryTextSmall,
-                                color = MaterialTheme.classppColors.secondaryText,
-                            )
-                        }
+                        // 不设行数上限：用单个 Text 承载全部明细（每行一个换行），
+                        // 避免上千条结果时创建上千个 Text 组合项。
+                        Text(
+                            text = details.joinToString("\n"),
+                            style = ClassppTextTokens.secondaryTextSmall,
+                            color = MaterialTheme.classppColors.secondaryText,
+                        )
                     }
                 }
             }
@@ -243,8 +243,15 @@ private fun toolParamSummary(call: AiToolCall): String {
             args["status"].textOrNull()?.takeIf { it.isNotBlank() }?.let {
                 parts += stringResource(R.string.ai_tool_arg_status, it)
             }
-            args["limit"].textOrNull()?.toIntOrNull()?.let {
-                parts += stringResource(R.string.ai_tool_arg_limit, it)
+            if (args["all"].textOrNull() == "true") {
+                parts += stringResource(R.string.ai_tool_arg_all)
+            } else {
+                args["offset"].textOrNull()?.toIntOrNull()?.takeIf { it > 0 }?.let {
+                    parts += stringResource(R.string.ai_tool_arg_offset, it + 1)
+                }
+                args["limit"].textOrNull()?.toIntOrNull()?.let {
+                    parts += stringResource(R.string.ai_tool_arg_limit, it)
+                }
             }
             parts.joinToString(" · ")
         }
@@ -349,7 +356,7 @@ private fun toolResultSummary(name: String, result: AiToolResult?): String {
     }
 }
 
-/** 展开态明细：按已知结构渲染列表/键值，不展示原始 JSON；最多 [MAX_DETAIL_LINES] 行 */
+/** 展开态明细：按已知结构渲染列表/键值，不展示原始 JSON；返回全部行（不截断） */
 @Composable
 private fun toolResultDetails(name: String, result: AiToolResult?): List<String> {
     if (result == null) return emptyList()
@@ -471,10 +478,6 @@ private fun toolResultDetails(name: String, result: AiToolResult?): List<String>
             }
         }
     }
-    if (lines.size > MAX_DETAIL_LINES) {
-        return lines.take(MAX_DETAIL_LINES) +
-            stringResource(R.string.ai_tool_detail_truncated)
-    }
     return lines
 }
 
@@ -482,7 +485,10 @@ private fun toolResultDetails(name: String, result: AiToolResult?): List<String>
 private fun todoLine(todo: JsonObject?): String {
     if (todo == null) return stringResource(R.string.ai_tool_result_empty)
     val name = todo["name"].textOrNull().orEmpty()
+    // compact 结果（all 模式装不下完整字段时的降级）只带 date/completedAt
     val deadline = todo["deadline"].textOrNull()
+        ?: todo["date"].textOrNull()
+        ?: todo["completedAt"].textOrNull()
     val completed = todo["completed"].textOrNull() == "true"
     return buildString {
         if (completed) append("✓ ")
@@ -524,8 +530,6 @@ private fun parseObject(raw: String): JsonObject? = try {
 } catch (_: Exception) {
     null
 }
-
-private const val MAX_DETAIL_LINES = 8
 
 /** get_todo 卡片上展示的 id 前缀长度（完整 id 只给模型，气泡里不需要） */
 private const val TODO_ID_PREVIEW_CHARS = 8

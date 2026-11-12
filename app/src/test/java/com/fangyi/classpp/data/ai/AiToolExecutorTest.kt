@@ -154,6 +154,36 @@ class AiToolExecutorTest {
     }
 
     @Test
+    fun `per-spec budget keeps bulk results beyond the default cap`() {
+        val items = buildJsonArray {
+            repeat(300) { index ->
+                add(
+                    buildJsonObject {
+                        put("id", "t$index")
+                        put("name", "待办标题 $index ".repeat(8))
+                    },
+                )
+            }
+        }
+        val huge = buildJsonObject {
+            put("ok", true)
+            put(
+                "data",
+                buildJsonObject {
+                    put("total", 300)
+                    put("items", items)
+                },
+            )
+        }
+
+        val defaultBounded = AiToolExecutor.truncateResult(huge)
+        assertTrue(defaultBounded.toString().length <= AiToolExecutor.MAX_RESULT_CHARS)
+
+        val bulkBounded = AiToolExecutor.truncateResult(huge, maxChars = 120_000)
+        assertEquals(huge, bulkBounded)
+    }
+
+    @Test
     fun `small results are returned unchanged`() {
         val small = buildJsonObject {
             put("ok", true)

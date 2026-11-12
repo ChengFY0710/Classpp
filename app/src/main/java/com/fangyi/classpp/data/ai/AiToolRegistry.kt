@@ -256,10 +256,13 @@ object AiToolRegistry {
         ),
         AiToolSpec(
             name = SEARCH_TODOS,
-            description = "按关键词、状态、分组、标签或日期范围查询待办。上下文里的待办列表可能被截断，" +
-                "需要完整/精确结果时调用。",
+            description = "按关键词、状态、分组、标签或日期范围查询待办，默认只查活跃待办（不含归档与回收站）。" +
+                "用户明确要求完整列表或精确统计时用 all=true 一次取完（items 条数=total 即完整；" +
+                "compact=true 表示只含精简字段）；status=completed 且未给 limit/offset 时默认完整返回；" +
+                "普通浏览可用 limit/offset 分页。",
             parameters = AiReadTools.searchTodosParameters,
             permission = AiToolPermission.Read,
+            maxResultChars = AiReadTools.MAX_SEARCH_RESULT_CHARS,
             execute = AiReadTools::executeSearchTodos,
         ),
         AiToolSpec(

@@ -21,7 +21,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 三个只读工具的行为：日期/调课/单双周、待办过滤排序与 limit、周偏移与越界。
+ * 三个只读工具的行为：日期/调课/单双周、待办过滤排序与 limit/offset 分页、周偏移与越界。
  * 纯 JVM，不依赖 Android。
  */
 class AiReadToolsTest {
@@ -215,14 +215,21 @@ class AiReadToolsTest {
         val completed = AiReadTools.executeSearchTodos(args("status" to JsonPrimitive("completed")), context)
         assertEquals(listOf("t2"), completed.data().itemIds())
 
+        // “未完成”必须用 incomplete：active 含已完成，不能代替
+        val incomplete = AiReadTools.executeSearchTodos(args("status" to JsonPrimitive("incomplete")), context)
+        assertEquals(listOf("t1", "t3"), incomplete.data().itemIds())
+
         val archived = AiReadTools.executeSearchTodos(args("status" to JsonPrimitive("archived")), context)
         assertEquals(listOf("a1"), archived.data().itemIds())
 
         val deleted = AiReadTools.executeSearchTodos(args("status" to JsonPrimitive("deleted")), context)
         assertEquals(listOf("d1"), deleted.data().itemIds())
 
+        // all 只等同于「全部活跃待办」：归档/回收站必须用显式 status 才返回，
+        // 否则模型会把回收站条目当成活跃待办列进查询结果。
         val all = AiReadTools.executeSearchTodos(args("status" to JsonPrimitive("all")), context)
-        assertEquals(5, all.data().getValue("total").jsonPrimitive.int)
+        assertEquals(3, all.data().getValue("total").jsonPrimitive.int)
+        assertEquals(listOf("t1", "t3", "t2"), all.data().itemIds())
 
         val group = AiReadTools.executeSearchTodos(args("group" to JsonPrimitive("学习")), context)
         assertEquals(listOf("t1"), group.data().itemIds())
@@ -238,6 +245,182 @@ class AiReadToolsTest {
             context,
         )
         assertEquals(listOf("t1", "t2"), due.data().itemIds())
+    }
+
+    @Test
+    fun `default and all searches exclude archived and recycled todos`() = kotlinx.coroutines.runBlocking {
+        val context = searchContext()
+
+        for (parameters in listOf(args(), args("status" to JsonPrimitive("all")))) {
+            val ids = AiReadTools.executeSearchTodos(parameters, context).data().itemIds()
+            assertFalse(ids.contains("a1"))
+            assertFalse(ids.contains("d1"))
+        }
+    }
+
+    @Test
+    fun `search offset pages through all matches without overlap`() = kotlinx.coroutines.runBlocking {
+        val todos = (1..35).map { i ->
+            testTodo(
+                id = "p$i",
+                name = "任务$i",
+                deadlineDate = wedWeek12 + i,
+                createdAtMillis = i.toLong(),
+            )
+        }
+        val context = AiChatContext(today = wedWeek12, todos = todos)
+
+        val first = AiReadTools.executeSearchTodos(args("limit" to JsonPrimitive(30)), context).data()
+        assertEquals(35, first.getValue("total").jsonPrimitive.int)
+        assertEquals(0, first.getValue("offset").jsonPrimitive.int)
+        assertTrue(first.getValue("truncated").jsonPrimitive.boolean)
+        val firstIds = first.itemIds()
+        assertEquals(30, firstIds.size)
+
+        val second = AiReadTools.executeSearchTodos(
+            args("limit" to JsonPrimitive(30), "offset" to JsonPrimitive(30)),
+            context,
+        ).data()
+        assertEquals(35, second.getValue("total").jsonPrimitive.int)
+        assertEquals(30, second.getValue("offset").jsonPrimitive.int)
+        assertFalse(second.getValue("truncated").jsonPrimitive.boolean)
+        val secondIds = second.itemIds()
+        assertEquals(5, secondIds.size)
+        // 两页无重叠：offset 以排序后的稳定顺序切分，不会重复或漏条
+        assertTrue(firstIds.intersect(secondIds.toSet()).isEmpty())
+
+        val beyond = AiReadTools.executeSearchTodos(
+            args("offset" to JsonPrimitive(100)),
+            context,
+        ).data()
+        assertEquals(35, beyond.getValue("total").jsonPrimitive.int)
+        assertTrue(beyond.itemIds().isEmpty())
+        assertFalse(beyond.getValue("truncated").jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `all mode returns every match in one page`() = kotlinx.coroutines.runBlocking {
+        val todos = (1..35).map { i ->
+            testTodo(
+                id = "p$i",
+                name = "任务$i",
+                deadlineDate = wedWeek12 + i,
+                createdAtMillis = i.toLong(),
+            )
+        }
+        val context = AiChatContext(today = wedWeek12, todos = todos)
+
+        val data = AiReadTools.executeSearchTodos(args("all" to JsonPrimitive(true)), context).data()
+
+        assertEquals(35, data.getValue("total").jsonPrimitive.int)
+        assertEquals(0, data.getValue("offset").jsonPrimitive.int)
+        assertFalse(data.getValue("truncated").jsonPrimitive.boolean)
+        assertEquals(35, data.getValue("items").jsonArray.size)
+    }
+
+    @Test
+    fun `completed search defaults to complete result when no paging args`() = kotlinx.coroutines.runBlocking {
+        val todos = (1..35).map { i ->
+            testTodo(
+                id = "c$i",
+                name = "完成$i",
+                completed = true,
+                completedAtMillis = millisOf(2026, 5, (i % 28) + 1),
+                createdAtMillis = i.toLong(),
+            )
+        }
+        val context = AiChatContext(today = wedWeek12, todos = todos)
+
+        val data = AiReadTools.executeSearchTodos(
+            args("status" to JsonPrimitive("completed")),
+            context,
+        ).data()
+
+        assertEquals(35, data.getValue("total").jsonPrimitive.int)
+        assertEquals(35, data.getValue("items").jsonArray.size)
+        assertFalse(data.getValue("truncated").jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `all mode falls back to compact items to keep every match`() = kotlinx.coroutines.runBlocking {
+        // 完整字段超预算，但精简字段装得下：必须优先保证条数完整
+        val todos = (1..800).map { i ->
+            testTodo(
+                id = "p$i",
+                name = "任务$i",
+                repeat = RepeatRule(type = RepeatType.Weekly),
+                deadlineDate = wedWeek12 + 1,
+                tags = listOf("标签A", "标签B"),
+                group = "学习",
+                createdAtMillis = i.toLong(),
+            )
+        }
+        val context = AiChatContext(today = wedWeek12, todos = todos)
+
+        val data = AiReadTools.executeSearchTodos(args("all" to JsonPrimitive(true)), context).data()
+
+        assertEquals(800, data.getValue("total").jsonPrimitive.int)
+        assertEquals(800, data.getValue("items").jsonArray.size)
+        assertTrue(data.getValue("compact").jsonPrimitive.boolean)
+        assertFalse(data.getValue("truncated").jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `all mode fails explicitly when result exceeds budget`() = kotlinx.coroutines.runBlocking {
+        // 800 条 × 400 字名称，远超 120K 字符的单次完整返回上限
+        val todos = (1..800).map { i ->
+            testTodo(id = "p$i", name = "任".repeat(400), createdAtMillis = i.toLong())
+        }
+        val context = AiChatContext(today = wedWeek12, todos = todos)
+
+        val result = AiReadTools.executeSearchTodos(args("all" to JsonPrimitive(true)), context)
+
+        assertEquals("limit_exceeded", result.errorCode())
+    }
+
+    @Test
+    fun `completed filters use completion date and sort newest first`() = kotlinx.coroutines.runBlocking {
+        val context = AiChatContext(
+            today = wedWeek12,
+            todos = listOf(
+                testTodo(
+                    id = "c1",
+                    name = "五月一日完成",
+                    completed = true,
+                    completedAtMillis = millisOf(2026, 5, 1),
+                    createdAtMillis = 1,
+                ),
+                testTodo(
+                    id = "c2",
+                    name = "六月一日完成",
+                    completed = true,
+                    completedAtMillis = millisOf(2026, 6, 1),
+                    createdAtMillis = 2,
+                ),
+                testTodo(
+                    id = "c3",
+                    name = "五月二十日完成",
+                    completed = true,
+                    completedAtMillis = millisOf(2026, 5, 20),
+                    createdAtMillis = 3,
+                ),
+                testTodo(id = "a1", name = "未完成", createdAtMillis = 4),
+            ),
+        )
+
+        val data = AiReadTools.executeSearchTodos(
+            args(
+                "status" to JsonPrimitive("completed"),
+                "completedFrom" to JsonPrimitive("2026-05-15"),
+                "completedTo" to JsonPrimitive("2026-06-30"),
+            ),
+            context,
+        ).data()
+
+        assertEquals(2, data.getValue("total").jsonPrimitive.int)
+        assertEquals(listOf("c2", "c3"), data.itemIds())
+        val first = data.getValue("items").jsonArray.first().jsonObject
+        assertEquals("2026-06-01", first.getValue("completedAt").jsonPrimitive.content)
     }
 
     @Test
@@ -267,6 +450,9 @@ class AiReadToolsTest {
         val badLimit = AiReadTools.executeSearchTodos(args("limit" to JsonPrimitive(99)), context)
         assertEquals("invalid_arguments", badLimit.errorCode())
 
+        val badOffset = AiReadTools.executeSearchTodos(args("offset" to JsonPrimitive(-1)), context)
+        assertEquals("invalid_arguments", badOffset.errorCode())
+
         val badRange = AiReadTools.executeSearchTodos(
             args(
                 "dueFrom" to JsonPrimitive("2026-06-01"),
@@ -275,6 +461,15 @@ class AiReadToolsTest {
             context,
         )
         assertEquals("invalid_arguments", badRange.errorCode())
+
+        val badCompletedRange = AiReadTools.executeSearchTodos(
+            args(
+                "completedFrom" to JsonPrimitive("2026-06-01"),
+                "completedTo" to JsonPrimitive("2026-05-01"),
+            ),
+            context,
+        )
+        assertEquals("invalid_arguments", badCompletedRange.errorCode())
     }
 
     // ---------- get_week_schedule ----------
@@ -407,6 +602,10 @@ class AiReadToolsTest {
         assertEquals("not_found", missing.errorCode())
     }
 
+    /** 本地时区某天中午的 epoch millis：用于构造稳定的 completedAtMillis */
+    private fun millisOf(year: Int, month: Int, day: Int): Long =
+        java.util.GregorianCalendar(year, month - 1, day, 12, 0).timeInMillis
+
     private fun JsonObject.itemIds(): List<String> =
         getValue("items").jsonArray.map { it.jsonObject.getValue("id").jsonPrimitive.content }
 
@@ -425,6 +624,7 @@ class AiReadToolsTest {
         note: String = "",
         location: String = "",
         completed: Boolean = false,
+        completedAtMillis: Long? = null,
         createdAtMillis: Long = 0,
         archivedAtMillis: Long? = null,
         deletedAtMillis: Long? = null,
@@ -440,6 +640,7 @@ class AiReadToolsTest {
         note = note,
         location = location,
         completed = completed,
+        completedAtMillis = completedAtMillis,
         createdAtMillis = createdAtMillis,
         deletedAtMillis = deletedAtMillis,
     ).copy(archivedAtMillis = archivedAtMillis)

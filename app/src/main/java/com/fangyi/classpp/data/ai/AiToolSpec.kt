@@ -55,6 +55,8 @@ data class AiToolEnvelopeSection(
  *   不使用 $ref / oneOf / anyOf / allOf / patternProperties）
  * @param permission 执行策略
  * @param envelope JSON 回退信封里的动作段；空 = 该工具仅支持原生 tools
+ * @param maxResultChars 单条结果的字符上限；默认 8K，只有需要一次返回完整集合的
+ *   查询工具（如 `search_todos` 的 all 模式）才放宽
  * @param execute 参数已通过校验后的执行入口，返回结构化 JSON；null = 未接入，
  *   该工具不会进入原生 wire（P2 起全部工具都已接入）
  */
@@ -64,5 +66,6 @@ data class AiToolSpec(
     val parameters: JsonObject,
     val permission: AiToolPermission,
     val envelope: List<AiToolEnvelopeSection> = emptyList(),
+    val maxResultChars: Int = AiToolExecutor.MAX_RESULT_CHARS,
     val execute: (suspend (args: JsonObject, ctx: AiChatContext) -> JsonObject)? = null,
 )
