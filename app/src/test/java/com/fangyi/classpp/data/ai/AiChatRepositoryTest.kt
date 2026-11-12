@@ -2625,6 +2625,73 @@ class AiChatRepositoryTest {
     }
 
     @Test
+    fun `native prompt carries today summary and trace records the turn`() = runBlocking {
+        AiDebugTrace.init(debuggable = true)
+        AiDebugTrace.reset()
+        try {
+            var tick = 0L
+            val transport = FakeAiTransport(
+                ScriptedResponse(
+                    listOf(
+                        toolCallSse(
+                            index = 0,
+                            id = "call_1",
+                            name = AiToolRegistry.GET_TODO,
+                            arguments = """{"id":"todo-today"}""",
+                        ),
+                        finishSse("tool_calls"),
+                        "data: [DONE]",
+                    ),
+                ),
+                ScriptedResponse(listOf(sse("看完了。"), "data: [DONE]")),
+            )
+            val repo = repository(
+                transport = transport,
+                contextProvider = {
+                    AiChatContext(
+                        todos = listOf(
+                            existingTodo("todo-today", "今天的作业")
+                                .copy(dates = listOf(IsoDate.of(2026, 11, 1))),
+                            existingTodo("todo-far", "很远的事")
+                                .copy(dates = listOf(IsoDate.of(2026, 12, 20))),
+                            existingTodo("todo-archived", "归档的事").copy(archivedAtMillis = 1L),
+                        ),
+                    )
+                },
+                nowMillis = {
+                    tick += 100
+                    tick
+                },
+            )
+
+            repo.send("今天的作业还有什么")
+
+            // P3：上下文只给今日摘要，其余待办（含归档）不再整段注入
+            val system = turnsOf(transport.opened.first().jsonBody).first().second
+            assertTrue(system.contains("[今日课程]"))
+            assertTrue(system.contains("[todo-today] 今天的作业"))
+            assertTrue(system.contains("[待办概况]"))
+            assertFalse(system.contains("很远的事"))
+            assertFalse(system.contains("归档的事"))
+
+            // P3：一轮的规模/延迟/工具调用进入诊断缓冲（仅 debug）
+            val trace = AiDebugTrace.recent().single()
+            assertTrue(trace.toolsAttached)
+            assertTrue(trace.promptChars > 0)
+            assertTrue(trace.promptTokens > 0)
+            assertEquals(2, trace.requestCount)
+            assertEquals(1, trace.toolCallCount)
+            assertEquals(AiToolRegistry.GET_TODO, trace.calls.single().name)
+            assertTrue(trace.calls.single().ok)
+            assertNotNull(trace.firstDeltaMillis)
+            assertNull(trace.error)
+        } finally {
+            AiDebugTrace.reset()
+            AiDebugTrace.init(debuggable = false)
+        }
+    }
+
+    @Test
     fun `history replays recent tool pairing exactly`() = runBlocking {
         val call = AiToolCall(
             id = "call_1",

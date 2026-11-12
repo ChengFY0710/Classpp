@@ -330,6 +330,83 @@ class AiReadToolsTest {
         assertEquals("not_found", missing.errorCode())
     }
 
+    // ---------- get_todo ----------
+
+    @Test
+    fun `get todo returns detail for a repeating todo`() = kotlinx.coroutines.runBlocking {
+        val repeating = com.fangyi.classpp.data.testTodo(
+            id = "t1",
+            name = "交实验报告",
+            dates = listOf(wedWeek12 - 7),
+            repeat = RepeatRule(type = RepeatType.Weekly),
+            deadlineDate = wedWeek12,
+            deadlineMinute = 18 * 60,
+            note = "实验楼 3 层提交",
+            steps = listOf(
+                com.fangyi.classpp.data.model.TodoStep(id = "s1", title = "查资料", done = true),
+                com.fangyi.classpp.data.model.TodoStep(id = "s2", title = "写正文"),
+            ),
+            tags = listOf("物理"),
+            group = "学习",
+            location = "实验楼",
+            urgency = com.fangyi.classpp.data.model.TodoUrgency.High,
+        )
+        val context = AiChatContext(today = wedWeek12, todos = listOf(repeating))
+
+        val result = AiReadTools.executeGetTodo(args("id" to JsonPrimitive("t1")), context)
+
+        assertTrue(result.ok())
+        val data = result.data()
+        assertEquals("t1", data.getValue("id").jsonPrimitive.content)
+        assertEquals("active", data.getValue("status").jsonPrimitive.content)
+        assertEquals(false, data.getValue("completed").jsonPrimitive.boolean)
+        assertEquals("2026-05-20 18:00", data.getValue("deadline").jsonPrimitive.content)
+        assertEquals("学习", data.getValue("group").jsonPrimitive.content)
+        assertEquals("实验楼 3 层提交", data.getValue("note").jsonPrimitive.content)
+        assertEquals(2, data.getValue("steps").jsonArray.size)
+        assertEquals("每周", data.getValue("repeat").jsonPrimitive.content)
+        assertEquals(
+            "Weekly",
+            data.getValue("repeatRule").jsonObject.getValue("type").jsonPrimitive.content,
+        )
+        // 期次与提示词同一口径：今天这一期必须在待完成里
+        assertTrue(
+            data.getValue("pendingOccurrences").jsonArray
+                .any { it.jsonPrimitive.content == wedWeek12.toString() },
+        )
+    }
+
+    @Test
+    fun `get todo resolves archived and deleted entries by id`() = kotlinx.coroutines.runBlocking {
+        val archived = testTodo(id = "a1", name = "旧任务", archivedAtMillis = 1L)
+        val deleted = testTodo(id = "d1", name = "误删", deletedAtMillis = 2L)
+        val context = AiChatContext(
+            today = wedWeek12,
+            archivedTodos = listOf(archived),
+            deletedTodos = listOf(deleted),
+        )
+
+        val archivedResult = AiReadTools.executeGetTodo(args("id" to JsonPrimitive("a1")), context)
+        val deletedResult = AiReadTools.executeGetTodo(args("id" to JsonPrimitive("d1")), context)
+
+        assertEquals("archived", archivedResult.data().getValue("status").jsonPrimitive.content)
+        assertEquals("deleted", deletedResult.data().getValue("status").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `get todo rejects blank id and reports not_found`() = kotlinx.coroutines.runBlocking {
+        val context = AiChatContext(
+            today = wedWeek12,
+            todos = listOf(testTodo(id = "t1", name = "任务")),
+        )
+
+        val blank = AiReadTools.executeGetTodo(args("id" to JsonPrimitive("  ")), context)
+        assertEquals("invalid_arguments", blank.errorCode())
+
+        val missing = AiReadTools.executeGetTodo(args("id" to JsonPrimitive("nope")), context)
+        assertEquals("not_found", missing.errorCode())
+    }
+
     private fun JsonObject.itemIds(): List<String> =
         getValue("items").jsonArray.map { it.jsonObject.getValue("id").jsonPrimitive.content }
 

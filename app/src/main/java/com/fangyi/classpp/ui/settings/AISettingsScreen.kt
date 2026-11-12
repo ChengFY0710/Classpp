@@ -1,17 +1,30 @@
 package com.fangyi.classpp.ui.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -26,12 +39,16 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiConnection
+import com.fangyi.classpp.data.ai.AiDebugTrace
 import com.fangyi.classpp.data.ai.AiProfile
+import com.fangyi.classpp.data.ai.AiToolTrace
+import com.fangyi.classpp.data.ai.AiTurnTrace
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
@@ -41,11 +58,18 @@ import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
+import com.fangyi.classpp.ui.theme.DialogShape
+import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
+import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.fangyi.classpp.ui.theme.themeAccent
 import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -105,6 +129,8 @@ fun AISettingsScreen(
     // 「AI 配置方案」子浮层：挂载与可见性分离（同其他叠层）
     var profileSheetVisible by remember { mutableStateOf(false) }
     var profileSheetMounted by remember { mutableStateOf(false) }
+    // 工具调用日志（仅 debug 构建）：页内覆盖层，不需要挂载/可见性分离（无进场动画）
+    var debugTraceVisible by remember { mutableStateOf(false) }
     val overlayActive = LocalPageOverlayActive.current
 
     // 仓库就绪后装载一次：刷新方案库 / 活动配置 / 配置就绪态
@@ -273,6 +299,27 @@ fun AISettingsScreen(
                             )
                         }
 
+                        // 调试（仅 debug 构建）：观察 token / 首字延迟 / 工具误用（设计稿 §13 P3）
+                        if (AiDebugTrace.enabled) {
+                            val traceCount = AiDebugTrace.recent().size
+                            CardSection(title = stringResource(R.string.ai_settings_section_debug)) {
+                                SettingsCard(
+                                    items = listOf(
+                                        SettingsCardItem.Nav(
+                                            label = stringResource(R.string.ai_debug_trace_title),
+                                            description = stringResource(R.string.ai_debug_trace_desc),
+                                            value = if (traceCount == 0) {
+                                                null
+                                            } else {
+                                                stringResource(R.string.ai_debug_trace_value, traceCount)
+                                            },
+                                            onClick = { debugTraceVisible = true },
+                                        ),
+                                    ),
+                                )
+                            }
+                        }
+
                         // 隐私与安全：固定展示数据流向与 Key 的存储方式
                         CardSection(title = stringResource(R.string.ai_settings_section_privacy)) {
                             SettingsCard(
@@ -404,6 +451,193 @@ fun AISettingsScreen(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+
+            // 工具调用日志（仅 debug 构建）：叠在设置页之上的页内覆盖层
+            if (debugTraceVisible) {
+                AiDebugTracePanel(
+                    onDismiss = { debugTraceVisible = false },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
+    }
+}
+
+/** 覆盖层展示的轮次上限：够看最近几次提问，又不至于滚成一片 */
+private const val DEBUG_TRACE_MAX_ROWS = 8
+
+/**
+ * 工具调用日志覆盖层（仅 debug 构建可达）：每轮两行摘要 + 每次调用一行。
+ *
+ * 只读 [AiDebugTrace] 的内存快照（进入时取一次）；文案由数据侧给出结构、这里拼 ASCII，
+ * 刻意不做本地化——它是开发期排查工具，不是用户功能。点遮罩/「关闭」收起，
+ * 「清空」清掉缓冲并收起。
+ */
+@Composable
+private fun AiDebugTracePanel(
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** 默认读内存快照；Preview 直接喂假数据（Preview 没有运行时记录） */
+    traces: List<AiTurnTrace> = remember { AiDebugTrace.recent().take(DEBUG_TRACE_MAX_ROWS) },
+) {
+    val lines = remember(traces) { traceLines(traces) }
+    Box(
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = DEBUG_TRACE_SCRIM_ALPHA))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onDismiss,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = DialogShape,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = PageHorizontalSpacing)
+                // 吃掉卡片内的点击，避免穿透到遮罩把面板关掉
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                ),
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = stringResource(R.string.ai_debug_trace_dialog),
+                    style = ClassppTextTokens.dialogTitle,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = stringResource(R.string.ai_debug_trace_hint),
+                    style = ClassppTextTokens.secondaryTextSmall,
+                    color = MaterialTheme.classppColors.secondaryText,
+                )
+                Spacer(Modifier.height(12.dp))
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = DEBUG_TRACE_MAX_HEIGHT)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (lines.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.ai_debug_trace_empty),
+                            style = ClassppTextTokens.metaTextSmall,
+                            color = MaterialTheme.classppColors.secondaryText,
+                        )
+                    } else {
+                        lines.forEach { line ->
+                            Text(
+                                text = line,
+                                style = ClassppTextTokens.metaTextSmall,
+                                color = MaterialTheme.classppColors.secondaryText,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    Text(
+                        text = stringResource(R.string.ai_debug_trace_clear),
+                        style = ClassppTextTokens.textButton,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clickable {
+                                AiDebugTrace.reset()
+                                onDismiss()
+                            }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.ai_debug_trace_close),
+                        style = ClassppTextTokens.textButton,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clickable(onClick = onDismiss)
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 一轮 = 两行（规模 / 延迟）+ 每次调用一行；纯 ASCII，便于对照 logcat */
+private fun traceLines(traces: List<AiTurnTrace>): List<String> {
+    if (traces.isEmpty()) return emptyList()
+    val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.US)
+    return buildList {
+        traces.forEachIndexed { index, trace ->
+            add(
+                "#${index + 1} ${timeFormat.format(Date(trace.atMillis))} " +
+                    "tools=${if (trace.toolsAttached) "on" else "off"} turns=${trace.turnCount}",
+            )
+            add(
+                "    chars=${trace.promptChars} tokens~${trace.promptTokens} " +
+                    "first=${trace.firstDeltaMillis?.let { "${it}ms" } ?: "-"} " +
+                    "req=${trace.requestCount} calls=${trace.toolCallCount} " +
+                    "errors=${trace.toolErrorCount}${if (trace.capped) " capped" else ""} " +
+                    "err=${trace.error ?: "-"}",
+            )
+            trace.calls.forEach { call ->
+                add(
+                    "    · ${call.name} " +
+                        (if (call.ok) "ok" else "ERR:${call.errorCode ?: "unknown"}") +
+                        " ${call.resultChars}ch ${call.elapsedMillis}ms",
+                )
+            }
+        }
+    }
+}
+
+/** 遮罩浓度：比图片预览轻，仍能压住底下的设置内容 */
+private const val DEBUG_TRACE_SCRIM_ALPHA = 0.32f
+
+/** 日志列表的最大高度：超出后内部滚动（单次几何，不进间距阶梯——调试覆盖层专用） */
+private val DEBUG_TRACE_MAX_HEIGHT = 380.dp
+
+@Preview(name = "工具调用日志", showBackground = true)
+@Composable
+private fun AiDebugTracePanelPreview() {
+    MaterialTheme {
+        AiDebugTracePanel(
+            onDismiss = {},
+            traces = listOf(
+                AiTurnTrace(
+                    atMillis = 0,
+                    promptChars = 4_120,
+                    promptTokens = 2_640,
+                    turnCount = 8,
+                    toolsAttached = true,
+                    firstDeltaMillis = 820,
+                    requestCount = 2,
+                    calls = listOf(
+                        AiToolTrace("search_todos", true, null, 412, 12),
+                        AiToolTrace("get_todo", false, "not_found", 96, 3),
+                    ),
+                    capped = false,
+                    error = null,
+                ),
+                AiTurnTrace(
+                    atMillis = 0,
+                    promptChars = 5_960,
+                    promptTokens = 3_810,
+                    turnCount = 12,
+                    toolsAttached = true,
+                    firstDeltaMillis = null,
+                    requestCount = 1,
+                    calls = emptyList(),
+                    capped = true,
+                    error = "Network",
+                ),
+            ),
+        )
     }
 }

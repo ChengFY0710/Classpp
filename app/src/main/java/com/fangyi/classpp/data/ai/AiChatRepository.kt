@@ -30,6 +30,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -141,7 +142,7 @@ data class AiConfigSaveOutcome(
  * 对应状态：活跃→归档、已归档→取消归档、回收站→恢复），结果挂到
  * [AiChatMessage.todoLifecycles]，[undoTodoLifecycleInBackground] 反向写回。
  *
- * **原生工具（P1 只读 / P2 写）**：连接支持时把 3 个只读工具与 5 个写工具作为 native
+ * **原生工具（P1 只读 / P2 写 / P3 精简上下文）**：连接支持时把 4 个只读工具与 5 个写工具作为 native
  * tools 发送；模型返回 tool_calls 就顺序执行、回填 `tool(results)` 再请求，最多
  * [MAX_TOOL_ROUNDS] 轮 / [MAX_TOTAL_CALLS] 次调用。只读自动执行；新建/完成/归档经
  * [AiToolWriteGateway] 立即落库并可撤销；修改/删除只生成待确认变更（确认卡仍是唯一
@@ -673,7 +674,8 @@ class AiChatRepository internal constructor(
      * - 能力 Unknown 且带 tools 请求被判为 `BadResponse` 且未交付任何增量时，去掉 tools
      *   重试一次；成功才缓存 Unsupported（失败保留原错误，不写缓存）；
      * - 工具执行异常不抛出：执行器转成 `{ok:false}` 结果交回模型，让模型自行解释/重试；
-     * - 取消原样传播：已执行结果先落盘，未执行的调用补 `cancelled` 结果。
+     * - 取消原样传播：已执行结果先落盘，未执行的调用补 `cancelled` 结果；
+     * - 结束时把本轮规模/延迟/工具调用写进 [AiDebugTrace]（仅 debug 构建记录，P3 观察口径）。
      */
     private suspend fun streamConversationTurn(
         conversationId: String,
@@ -686,123 +688,180 @@ class AiChatRepository internal constructor(
         systemNote: String? = null,
     ): StreamedTurn {
         val capabilityKey = connection.toolCapabilityKey()
-        var capability = withContext(Dispatchers.IO) { settings.loadToolCapability(capabilityKey) }
-        var toolsMode = _toolsEnabled.value && capability != AiToolCapability.Unsupported
-        var turns = buildTurns(history, userText, userImages, nativeTools = toolsMode, systemNote = systemNote)
+        // 诊断口径（P3）：首字延迟从进入本函数算起，含鉴权与建连；上下文规模取首次拼装的 turns
+        val startedAt = nowMillis()
+        var firstDeltaAt: Long? = null
+        var promptChars = 0
+        var promptTokens = 0
+        var turnCount = 0
+        var toolsAttached = false
         var requestCount = 0
-        var totalCalls = 0
-        var usedTools = false
+        val callTraces = mutableListOf<AiToolTrace>()
+        var capped = false
+        var failure: String? = null
 
-        while (true) {
-            currentCoroutineContext().ensureActive()
-            var delivered = false
-            val round = try {
-                client.streamChatWithTools(
-                    connection = connection,
-                    apiKey = apiKey,
-                    turns = turns,
-                    tools = if (toolsMode) AiToolRegistry.nativeSpecs else emptyList(),
-                    onDelta = { chunk ->
-                        delivered = true
-                        appendToLast(conversationId, chunk)
-                    },
-                    onReasoning = { chunk ->
-                        delivered = true
-                        appendReasoningToLast(conversationId, chunk)
-                    },
-                )
-            } catch (e: AiException) {
-                // 能力探测：Unknown 且带 tools 的 400/422（未交付任何增量）→ 去掉 tools 重试一次
-                if (toolsMode && capability == AiToolCapability.Unknown &&
-                    e.error == AiError.BadResponse && !delivered
-                ) {
-                    toolsMode = false
-                    turns = buildTurns(
-                        history,
-                        userText,
-                        userImages,
-                        nativeTools = false,
-                        systemNote = systemNote,
-                    )
-                    val fallback = try {
-                        client.streamChatWithTools(
-                            connection = connection,
-                            apiKey = apiKey,
-                            turns = turns,
-                            tools = emptyList(),
-                            onDelta = { chunk -> appendToLast(conversationId, chunk) },
-                            onReasoning = { chunk -> appendReasoningToLast(conversationId, chunk) },
-                        )
-                    } catch (retry: CancellationException) {
-                        throw retry
-                    } catch (_: AiException) {
-                        throw e // 重试也失败：按原错误分类展示，不改能力缓存
-                    }
-                    withContext(Dispatchers.IO) {
-                        settings.saveToolCapability(capabilityKey, AiToolCapability.Unsupported)
-                    }
-                    capability = AiToolCapability.Unsupported
-                    toolsMode = false
-                    // 无 tools 请求不应产生 tool_calls；即便网关乱回也按纯文本处理
-                    return StreamedTurn(fallback.text, usedTools = false)
+        suspend fun buildTurnsFor(native: Boolean): List<AiChatTurn> =
+            buildTurns(history, userText, userImages, nativeTools = native, systemNote = systemNote)
+                .also { built ->
+                    val text = built.joinToString("") { it.content }
+                    promptChars = text.length
+                    promptTokens = AiDebugTrace.estimateTokens(text)
+                    turnCount = built.size
+                    toolsAttached = native
                 }
-                throw e
-            }
 
-            requestCount++
-            if (round.toolCalls.isEmpty()) {
-                // 最终回答：本轮请求已成功，且此前有过工具调用 → 确认连接支持原生 tools
-                if (usedTools && toolsMode) {
+        fun markDelivered() {
+            if (firstDeltaAt == null) firstDeltaAt = nowMillis() - startedAt
+        }
+
+        try {
+            var capability = withContext(Dispatchers.IO) { settings.loadToolCapability(capabilityKey) }
+            var toolsMode = _toolsEnabled.value && capability != AiToolCapability.Unsupported
+            var turns = buildTurnsFor(toolsMode)
+            var totalCalls = 0
+            var usedTools = false
+
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                var delivered = false
+                val round = try {
+                    client.streamChatWithTools(
+                        connection = connection,
+                        apiKey = apiKey,
+                        turns = turns,
+                        tools = if (toolsMode) AiToolRegistry.nativeSpecs else emptyList(),
+                        onDelta = { chunk ->
+                            delivered = true
+                            markDelivered()
+                            appendToLast(conversationId, chunk)
+                        },
+                        onReasoning = { chunk ->
+                            delivered = true
+                            markDelivered()
+                            appendReasoningToLast(conversationId, chunk)
+                        },
+                    )
+                } catch (e: AiException) {
+                    // 能力探测：Unknown 且带 tools 的 400/422（未交付任何增量）→ 去掉 tools 重试一次
+                    if (toolsMode && capability == AiToolCapability.Unknown &&
+                        e.error == AiError.BadResponse && !delivered
+                    ) {
+                        toolsMode = false
+                        turns = buildTurnsFor(native = false)
+                        val fallback = try {
+                            client.streamChatWithTools(
+                                connection = connection,
+                                apiKey = apiKey,
+                                turns = turns,
+                                tools = emptyList(),
+                                onDelta = { chunk ->
+                                    markDelivered()
+                                    appendToLast(conversationId, chunk)
+                                },
+                                onReasoning = { chunk ->
+                                    markDelivered()
+                                    appendReasoningToLast(conversationId, chunk)
+                                },
+                            )
+                        } catch (retry: CancellationException) {
+                            throw retry
+                        } catch (_: AiException) {
+                            throw e // 重试也失败：按原错误分类展示，不改能力缓存
+                        }
+                        withContext(Dispatchers.IO) {
+                            settings.saveToolCapability(capabilityKey, AiToolCapability.Unsupported)
+                        }
+                        capability = AiToolCapability.Unsupported
+                        toolsMode = false
+                        // 无 tools 请求不应产生 tool_calls；即便网关乱回也按纯文本处理
+                        return StreamedTurn(fallback.text, usedTools = false)
+                    }
+                    throw e
+                }
+
+                requestCount++
+                if (round.toolCalls.isEmpty()) {
+                    // 最终回答：本轮请求已成功，且此前有过工具调用 → 确认连接支持原生 tools
+                    if (usedTools && toolsMode) {
+                        withContext(Dispatchers.IO) {
+                            settings.saveToolCapability(capabilityKey, AiToolCapability.Supported)
+                        }
+                        capability = AiToolCapability.Supported
+                    }
+                    return StreamedTurn(round.text, usedTools)
+                }
+
+                usedTools = true
+                if (toolsMode) {
                     withContext(Dispatchers.IO) {
                         settings.saveToolCapability(capabilityKey, AiToolCapability.Supported)
                     }
                     capability = AiToolCapability.Supported
                 }
-                return StreamedTurn(round.text, usedTools)
-            }
+                val roundIndex = appendToolRound(conversationId, round.text, round.toolCalls)
 
-            usedTools = true
-            if (toolsMode) {
-                withContext(Dispatchers.IO) {
-                    settings.saveToolCapability(capabilityKey, AiToolCapability.Supported)
+                // 预算：轮数（含首次请求）或总调用数超限 → 保留正文，结果成对回填后结束
+                if (requestCount >= MAX_TOOL_ROUNDS) {
+                    capped = true
+                    val results = round.toolCalls.map { call ->
+                        callTraces += AiToolTrace(call.name, false, "limit_exceeded", 0, 0L)
+                        AiToolExecutor.limitExceededResult(call, "已达到工具轮次上限")
+                    }
+                    completeToolRound(conversationId, roundIndex, results, AiToolRoundStatus.Failed)
+                    markToolLoopCapped(conversationId)
+                    maybeCheckpoint(force = true)
+                    return StreamedTurn(round.text, usedTools = true)
                 }
-                capability = AiToolCapability.Supported
-            }
-            val roundIndex = appendToolRound(conversationId, round.text, round.toolCalls)
+                if (totalCalls + round.toolCalls.size > MAX_TOTAL_CALLS) {
+                    capped = true
+                    val results = round.toolCalls.map { call ->
+                        callTraces += AiToolTrace(call.name, false, "limit_exceeded", 0, 0L)
+                        AiToolExecutor.limitExceededResult(call, "已达到工具调用总次数上限")
+                    }
+                    completeToolRound(conversationId, roundIndex, results, AiToolRoundStatus.Failed)
+                    markToolLoopCapped(conversationId)
+                    maybeCheckpoint(force = true)
+                    return StreamedTurn(round.text, usedTools = true)
+                }
+                totalCalls += round.toolCalls.size
 
-            // 预算：轮数（含首次请求）或总调用数超限 → 保留正文，结果成对回填后结束
-            if (requestCount >= MAX_TOOL_ROUNDS) {
-                val results = round.toolCalls.map { call ->
-                    AiToolExecutor.limitExceededResult(call, "已达到工具轮次上限")
+                val results = executeToolCalls(conversationId, roundIndex, round.toolCalls, callTraces)
+                val status = if (results.any { it.isError }) {
+                    AiToolRoundStatus.Failed
+                } else {
+                    AiToolRoundStatus.Completed
                 }
-                completeToolRound(conversationId, roundIndex, results, AiToolRoundStatus.Failed)
-                markToolLoopCapped(conversationId)
+                completeToolRound(conversationId, roundIndex, results, status)
                 maybeCheckpoint(force = true)
-                return StreamedTurn(round.text, usedTools = true)
-            }
-            if (totalCalls + round.toolCalls.size > MAX_TOTAL_CALLS) {
-                val results = round.toolCalls.map { call ->
-                    AiToolExecutor.limitExceededResult(call, "已达到工具调用总次数上限")
-                }
-                completeToolRound(conversationId, roundIndex, results, AiToolRoundStatus.Failed)
-                markToolLoopCapped(conversationId)
-                maybeCheckpoint(force = true)
-                return StreamedTurn(round.text, usedTools = true)
-            }
-            totalCalls += round.toolCalls.size
 
-            val results = executeToolCalls(conversationId, roundIndex, round.toolCalls)
-            val status = if (results.any { it.isError }) {
-                AiToolRoundStatus.Failed
-            } else {
-                AiToolRoundStatus.Completed
+                turns = turns +
+                    AiChatTurn(role = "assistant", content = round.text, toolCalls = round.toolCalls) +
+                    AiChatTurn(role = "tool", toolResults = results)
             }
-            completeToolRound(conversationId, roundIndex, results, status)
-            maybeCheckpoint(force = true)
-
-            turns = turns +
-                AiChatTurn(role = "assistant", content = round.text, toolCalls = round.toolCalls) +
-                AiChatTurn(role = "tool", toolResults = results)
+        } catch (e: CancellationException) {
+            failure = "cancelled"
+            throw e
+        } catch (e: AiException) {
+            failure = e.error.name
+            throw e
+        } finally {
+            // release 构建不分配诊断对象（enabled 恒 false），只留一行判断
+            if (AiDebugTrace.enabled) {
+                AiDebugTrace.record(
+                    AiTurnTrace(
+                        atMillis = startedAt,
+                        promptChars = promptChars,
+                        promptTokens = promptTokens,
+                        turnCount = turnCount,
+                        toolsAttached = toolsAttached,
+                        firstDeltaMillis = firstDeltaAt,
+                        requestCount = requestCount,
+                        calls = callTraces.toList(),
+                        capped = capped,
+                        error = failure,
+                    ),
+                )
+            }
         }
     }
 
@@ -810,12 +869,14 @@ class AiChatRepository internal constructor(
      * 顺序执行一轮的全部调用（结果顺序与 calls 对齐）：
      * - 单轮超过 [MAX_TOOL_CALLS_PER_ROUND] 的调用不执行，返回 `limit_exceeded`；
      * - 单轮结果总量超过 [AiToolExecutor.MAX_ROUND_RESULT_CHARS] 的后续结果同样降级为错误；
-     * - 取消时把已执行结果先写回，未执行的调用补 `cancelled`，round 标 Cancelled 后原样抛出。
+     * - 取消时把已执行结果先写回，未执行的调用补 `cancelled`，round 标 Cancelled 后原样抛出；
+     * - [traces] 收集每次调用的耗时/错误码，只进 debug 诊断（P3），不参与业务判断。
      */
     private suspend fun executeToolCalls(
         conversationId: String,
         roundIndex: Int,
         calls: List<AiToolCall>,
+        traces: MutableList<AiToolTrace>,
     ): List<AiToolResult> {
         val context = contextProvider().copy(
             today = clock.today(),
@@ -827,12 +888,14 @@ class AiChatRepository internal constructor(
             for ((index, call) in calls.withIndex()) {
                 currentCoroutineContext().ensureActive()
                 if (index >= MAX_TOOL_CALLS_PER_ROUND) {
+                    traces += AiToolTrace(call.name, false, "limit_exceeded", 0, 0L)
                     results += AiToolExecutor.limitExceededResult(
                         call,
                         "单轮最多执行 $MAX_TOOL_CALLS_PER_ROUND 个调用",
                     )
                     continue
                 }
+                val callStartedAt = nowMillis()
                 val result = AiToolExecutor.executeSafely(call, context)
                 val bounded = if (totalChars + result.contentJson.length >
                     AiToolExecutor.MAX_ROUND_RESULT_CHARS
@@ -842,9 +905,19 @@ class AiChatRepository internal constructor(
                     result
                 }
                 totalChars += bounded.contentJson.length
+                traces += AiToolTrace(
+                    name = call.name,
+                    ok = !bounded.isError,
+                    errorCode = bounded.errorCodeOrNull(),
+                    resultChars = bounded.contentJson.length,
+                    elapsedMillis = nowMillis() - callStartedAt,
+                )
                 results += bounded
             }
         } catch (e: CancellationException) {
+            for (call in calls.drop(results.size)) {
+                traces += AiToolTrace(call.name, false, "cancelled", 0, 0L)
+            }
             // 已按顺序执行的结果原样保留；未处理到的调用补 cancelled（保持与 calls 对齐）
             val cancelled = calls.drop(results.size).map { AiToolExecutor.cancelledResult(it) }
             withContext(NonCancellable) {
@@ -859,6 +932,16 @@ class AiChatRepository internal constructor(
             throw e
         }
         return results
+    }
+
+    /** 失败结果里的 `error.code`（诊断用；解析失败按 internal_error 计） */
+    private fun AiToolResult.errorCodeOrNull(): String? {
+        if (!isError) return null
+        return runCatching {
+            val obj = AiJson.storage.parseToJsonElement(contentJson) as? JsonObject
+            val error = obj?.get("error") as? JsonObject
+            (error?.get("code") as? JsonPrimitive)?.content
+        }.getOrNull() ?: "internal_error"
     }
 
     /** 追加一轮工具执行记录（状态 Running），返回它在消息 toolRounds 里的下标 */
@@ -1629,6 +1712,9 @@ class AiChatRepository internal constructor(
     /**
      * 本次请求的消息序列：system prompt（上下文快照）+ 历史窗口快照（不含本轮
      * user）+ 本轮 user 消息。
+     *
+     * 上下文分两档（P3）：原生工具模式只拼今日摘要 + 计数（`nativeTools = true`），
+     * 回退模式仍是全量课表/待办（回退侧没有工具可查，id 只能来自上下文）。
      *
      * 历史按「user 消息边界」切成逻辑对话轮，保留最近 [HISTORY_TURNS] 轮；最近
      * [EXACT_TOOL_REPLAY_TURNS] 轮精确回放工具配对，更早轮次折叠成最终正文 + 工具

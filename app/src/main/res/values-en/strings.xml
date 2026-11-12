@@ -1004,6 +1004,7 @@
     <string name="ai_tool_name_get_day_plan">Day plan</string>
     <string name="ai_tool_name_search_todos">Search todos</string>
     <string name="ai_tool_name_get_week_schedule">Week schedule</string>
+    <string name="ai_tool_name_get_todo">Todo detail</string>
     <string name="ai_tool_name_create_todos">Create todos</string>
     <string name="ai_tool_name_update_todos">Update todos</string>
     <string name="ai_tool_name_delete_todos">Delete todos</string>
@@ -1040,6 +1041,29 @@
     <string name="ai_tool_detail_free_slot">Free %1$s-%2$s</string>
     <string name="ai_tool_detail_empty">(none)</string>
     <string name="ai_tool_detail_truncated">(result truncated)</string>
+    <string name="ai_tool_arg_todo_id">id %1$s</string>
+    <string name="ai_tool_detail_deadline">Due %1$s</string>
+    <string name="ai_tool_detail_time">Time %1$s</string>
+    <string name="ai_tool_detail_group">Group %1$s</string>
+    <string name="ai_tool_detail_tags">Tags %1$s</string>
+    <string name="ai_tool_detail_repeat">Repeat %1$s</string>
+    <string name="ai_tool_detail_note">Note %1$s</string>
+    <string name="ai_tool_detail_steps">Steps %1$s</string>
+    <string name="ai_tool_todo_status_active">In progress</string>
+    <string name="ai_tool_todo_status_completed">Done</string>
+    <string name="ai_tool_todo_status_archived">Archived</string>
+    <string name="ai_tool_todo_status_deleted">Deleted</string>
+
+    <!-- AI debug panel (debug builds only): tokens / first-token latency / tool errors, in memory only -->
+    <string name="ai_settings_section_debug">Debug</string>
+    <string name="ai_debug_trace_title">Tool call log</string>
+    <string name="ai_debug_trace_desc">Tokens, first-token latency and tool errors from recent turns (debug builds only)</string>
+    <string name="ai_debug_trace_value">%1$d turns</string>
+    <string name="ai_debug_trace_empty">No records yet. Send a message first.</string>
+    <string name="ai_debug_trace_hint">Sizes and timings only; no message text, tool arguments or todo titles</string>
+    <string name="ai_debug_trace_clear">Clear</string>
+    <string name="ai_debug_trace_close">Close</string>
+    <string name="ai_debug_trace_dialog">Tool call log</string>
 
     <!-- AI settings page (AISettingsScreen, Settings → AI settings): presets / connection / key / privacy -->
     <string name="ai_settings_title">AI Settings</string>

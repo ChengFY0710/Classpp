@@ -4,6 +4,7 @@ import android.content.Context
 import com.fangyi.classpp.data.ai.AiChatContext
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiClient
+import com.fangyi.classpp.data.ai.AiDebugTrace
 import com.fangyi.classpp.data.ai.AiImageStore
 import com.fangyi.classpp.data.ai.AiTodoChangeWriter
 import com.fangyi.classpp.data.ai.AiTodoPersister
@@ -112,6 +113,8 @@ class AppContainer internal constructor(
         internal suspend fun create(context: Context): AppContainer {
             val appContext = context.applicationContext
             val dir = appContext.filesDir
+            // AI 工具链路诊断（仅 debug 构建）：token/首字延迟/工具误用的观察口径
+            AiDebugTrace.init(appContext)
             val todoRepository = TodoRepository.create(FileTodoStore(dir))
             val scheduleRepository = ScheduleRepository.create(FileScheduleStore(dir))
             val tagRepository = TagRepository.create(FileTagStore(dir))

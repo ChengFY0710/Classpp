@@ -164,12 +164,13 @@ class AiToolRegistryTest {
     }
 
     @Test
-    fun `native tools cover the three read tools and five write tools`() {
+    fun `native tools cover the four read tools and five write tools`() {
         assertEquals(
             listOf(
                 AiToolRegistry.GET_DAY_PLAN,
                 AiToolRegistry.SEARCH_TODOS,
                 AiToolRegistry.GET_WEEK_SCHEDULE,
+                AiToolRegistry.GET_TODO,
                 AiToolRegistry.CREATE_TODOS,
                 AiToolRegistry.UPDATE_TODOS,
                 AiToolRegistry.DELETE_TODOS,
@@ -187,8 +188,22 @@ class AiToolRegistryTest {
                 AiToolRegistry.GET_DAY_PLAN,
                 AiToolRegistry.SEARCH_TODOS,
                 AiToolRegistry.GET_WEEK_SCHEDULE,
+                AiToolRegistry.GET_TODO,
             ),
         )
+    }
+
+    @Test
+    fun `get_todo requires id and stays the only detail entry`() {
+        val spec = requireNotNull(AiToolRegistry.find(AiToolRegistry.GET_TODO))
+        assertEquals(AiToolPermission.Read, spec.permission)
+        // 必填只有 id：模型不需要为了看详情再多猜参数
+        assertEquals(
+            listOf("id"),
+            (spec.parameters.getValue("required") as JsonArray).map { it.jsonPrimitive.content },
+        )
+        // 精简上下文（P3）后，单条详情只能由 get_todo 提供
+        assertTrue(spec.description.contains("详情"))
     }
 
     @Test

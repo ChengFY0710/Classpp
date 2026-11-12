@@ -1001,6 +1001,7 @@
     <string name="ai_tool_name_get_day_plan">查询日程</string>
     <string name="ai_tool_name_search_todos">查询待办</string>
     <string name="ai_tool_name_get_week_schedule">查询周课表</string>
+    <string name="ai_tool_name_get_todo">查看待办详情</string>
     <!-- AI 写工具轮次（P2）：新建/完成/归档自动执行，修改/删除只生成确认卡 -->
     <string name="ai_tool_name_create_todos">新建待办</string>
     <string name="ai_tool_name_update_todos">修改待办</string>
@@ -1038,6 +1039,29 @@
     <string name="ai_tool_detail_free_slot">空闲 %1$s-%2$s</string>
     <string name="ai_tool_detail_empty">（无）</string>
     <string name="ai_tool_detail_truncated">（结果已截断）</string>
+    <string name="ai_tool_arg_todo_id">id %1$s</string>
+    <string name="ai_tool_detail_deadline">截止 %1$s</string>
+    <string name="ai_tool_detail_time">时间 %1$s</string>
+    <string name="ai_tool_detail_group">分组 %1$s</string>
+    <string name="ai_tool_detail_tags">标签 %1$s</string>
+    <string name="ai_tool_detail_repeat">重复 %1$s</string>
+    <string name="ai_tool_detail_note">备注 %1$s</string>
+    <string name="ai_tool_detail_steps">步骤 %1$s</string>
+    <string name="ai_tool_todo_status_active">进行中</string>
+    <string name="ai_tool_todo_status_completed">已完成</string>
+    <string name="ai_tool_todo_status_archived">已归档</string>
+    <string name="ai_tool_todo_status_deleted">已删除</string>
+
+    <!-- AI 调试面板（仅 debug 构建）：观察 token / 首字延迟 / 工具误用，不落盘 -->
+    <string name="ai_settings_section_debug">调试</string>
+    <string name="ai_debug_trace_title">工具调用日志</string>
+    <string name="ai_debug_trace_desc">最近几轮的 token、首字延迟与工具错误（仅调试构建记录）</string>
+    <string name="ai_debug_trace_value">%1$d 轮</string>
+    <string name="ai_debug_trace_empty">还没有记录，先发一条消息</string>
+    <string name="ai_debug_trace_hint">只记规模与耗时，不含消息正文、工具参数与待办标题</string>
+    <string name="ai_debug_trace_clear">清空</string>
+    <string name="ai_debug_trace_close">关闭</string>
+    <string name="ai_debug_trace_dialog">工具调用日志</string>
 
     <!-- AI 设置页（AISettingsScreen，设置 → AI 设置）：预设 / 连接 / Key / 隐私说明 -->
     <string name="ai_settings_title">AI 设置</string>

@@ -214,6 +214,7 @@ private fun toolDisplayName(name: String): String = when (name) {
     AiToolRegistry.GET_DAY_PLAN -> stringResource(R.string.ai_tool_name_get_day_plan)
     AiToolRegistry.SEARCH_TODOS -> stringResource(R.string.ai_tool_name_search_todos)
     AiToolRegistry.GET_WEEK_SCHEDULE -> stringResource(R.string.ai_tool_name_get_week_schedule)
+    AiToolRegistry.GET_TODO -> stringResource(R.string.ai_tool_name_get_todo)
     AiToolRegistry.CREATE_TODOS -> stringResource(R.string.ai_tool_name_create_todos)
     AiToolRegistry.UPDATE_TODOS -> stringResource(R.string.ai_tool_name_update_todos)
     AiToolRegistry.DELETE_TODOS -> stringResource(R.string.ai_tool_name_delete_todos)
@@ -247,6 +248,11 @@ private fun toolParamSummary(call: AiToolCall): String {
             }
             parts.joinToString(" · ")
         }
+        // 待办 id 是 UUID：卡片上只留前 8 位做识别，完整值在模型侧
+        AiToolRegistry.GET_TODO -> args["id"].textOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { stringResource(R.string.ai_tool_arg_todo_id, it.take(TODO_ID_PREVIEW_CHARS)) }
+            .orEmpty()
         AiToolRegistry.CREATE_TODOS -> itemsSummary(args, "todos")
         AiToolRegistry.UPDATE_TODOS -> itemsSummary(args, "updates")
         AiToolRegistry.DELETE_TODOS -> itemsSummary(args, "deletes")
@@ -310,6 +316,11 @@ private fun toolResultSummary(name: String, result: AiToolResult?): String {
                 parts += stringResource(R.string.ai_tool_result_days, it)
             }
             parts.joinToString(" · ")
+        }
+        AiToolRegistry.GET_TODO -> {
+            val name = data["name"].textOrNull().orEmpty()
+            val status = todoStatusText(data)
+            listOf(name, status).filter { it.isNotBlank() }.joinToString(" · ")
         }
         AiToolRegistry.CREATE_TODOS -> {
             val count = data["count"].textOrNull()?.toIntOrNull()
@@ -386,6 +397,37 @@ private fun toolResultDetails(name: String, result: AiToolResult?): List<String>
                 lines += "$weekday $date · ${stringResource(R.string.ai_tool_result_courses, courses)}"
             }
         }
+        AiToolRegistry.GET_TODO -> {
+            data["deadline"].textOrNull()?.takeIf { it.isNotBlank() }?.let {
+                lines += stringResource(R.string.ai_tool_detail_deadline, it)
+            }
+            data["time"].textOrNull()?.takeIf { it.isNotBlank() }?.let {
+                lines += stringResource(R.string.ai_tool_detail_time, it)
+            }
+            data["group"].textOrNull()?.takeIf { it.isNotBlank() }?.let {
+                lines += stringResource(R.string.ai_tool_detail_group, it)
+            }
+            (data["tags"] as? JsonArray)?.takeIf { it.isNotEmpty() }?.let { tags ->
+                lines += stringResource(
+                    R.string.ai_tool_detail_tags,
+                    tags.mapNotNull { (it as? JsonPrimitive)?.content }.joinToString("、"),
+                )
+            }
+            data["repeat"].textOrNull()?.takeIf { it.isNotBlank() }?.let {
+                lines += stringResource(R.string.ai_tool_detail_repeat, it)
+            }
+            data["note"].textOrNull()?.takeIf { it.isNotBlank() }?.let {
+                lines += stringResource(R.string.ai_tool_detail_note, it)
+            }
+            (data["steps"] as? JsonArray)?.takeIf { it.isNotEmpty() }?.let { steps ->
+                lines += stringResource(
+                    R.string.ai_tool_detail_steps,
+                    steps.mapNotNull { step ->
+                        (step as? JsonObject)?.get("title").textOrNull()
+                    }.joinToString("、"),
+                )
+            }
+        }
         AiToolRegistry.CREATE_TODOS -> {
             (data["created"] as? JsonArray)?.forEach { element ->
                 val item = element as? JsonObject ?: return@forEach
@@ -449,6 +491,15 @@ private fun todoLine(todo: JsonObject?): String {
     }
 }
 
+/** get_todo 的状态文案：归档/回收站优先，其次完成态 */
+@Composable
+private fun todoStatusText(data: JsonObject): String = when {
+    data["status"].textOrNull() == "deleted" -> stringResource(R.string.ai_tool_todo_status_deleted)
+    data["status"].textOrNull() == "archived" -> stringResource(R.string.ai_tool_todo_status_archived)
+    data["completed"].textOrNull() == "true" -> stringResource(R.string.ai_tool_todo_status_completed)
+    else -> stringResource(R.string.ai_tool_todo_status_active)
+}
+
 private enum class ToolStatus { Running, Completed, Failed, Cancelled }
 
 private fun toolStatus(result: AiToolResult?, roundStatus: AiToolRoundStatus): ToolStatus = when {
@@ -475,6 +526,9 @@ private fun parseObject(raw: String): JsonObject? = try {
 }
 
 private const val MAX_DETAIL_LINES = 8
+
+/** get_todo 卡片上展示的 id 前缀长度（完整 id 只给模型，气泡里不需要） */
+private const val TODO_ID_PREVIEW_CHARS = 8
 
 // ---------- Preview ----------
 
@@ -656,6 +710,37 @@ private fun ToolWritePendingPreview() {
                 ),
             )
         }
+    }
+}
+
+@Preview(name = "工具-待办详情", showBackground = true, widthDp = 360)
+@Composable
+private fun ToolTodoDetailPreview() {
+    MaterialTheme {
+        AiChatToolRoundBlock(
+            round = AiToolRound(
+                calls = listOf(
+                    AiToolCall(
+                        id = "call_1",
+                        name = AiToolRegistry.GET_TODO,
+                        argumentsJson = """{"id":"5b0f7c2a-1e44-4a2f-9d19-8c4e2b7a1f30"}""",
+                    ),
+                ),
+                results = listOf(
+                    AiToolResult(
+                        callId = "call_1",
+                        name = AiToolRegistry.GET_TODO,
+                        contentJson = """{"ok":true,"data":{"id":"5b0f7c2a-1e44-4a2f-9d19-8c4e2b7a1f30",""" +
+                            """"name":"交实验报告","status":"active","completed":false,""" +
+                            """"deadline":"2026-11-18 18:00","time":"14:00-16:00","group":"学习",""" +
+                            """"tags":["物理"],"note":"实验楼 3 层提交","repeat":"每周（周1、3）",""" +
+                            """"steps":[{"title":"查资料","done":true},{"title":"写正文","done":false}]}}""",
+                    ),
+                ),
+                status = AiToolRoundStatus.Completed,
+            ),
+            expandedByDefault = true,
+        )
     }
 }
 

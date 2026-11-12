@@ -18,9 +18,10 @@ import kotlinx.serialization.json.putJsonObject
  * - Anthropic `tools` 数组（[anthropicTools]）；
  * - JSON 回退模式的提示词契约文本（[fallbackContracts] / [fallbackShape]）。
  *
- * P0 只落「契约」，P1 接入三个只读工具，P2 接入全部写工具。写工具的权限语义与现有
- * 动作一致——新建/完成/归档可撤销、修改/删除只生成确认卡；注册表只声明权限，
- * 真正执行由仓库注入的 [AiToolWriteGateway] 完成，不改变这条边界。
+ * P0 只落「契约」，P1 接入三个只读工具，P2 接入全部写工具，P3 补 `get_todo` 并让上下文
+ * 只留今日摘要（细节由工具按需取）。写工具的权限语义与现有动作一致——新建/完成/归档
+ * 可撤销、修改/删除只生成确认卡；注册表只声明权限，真正执行由仓库注入的
+ * [AiToolWriteGateway] 完成，不改变这条边界。
  *
  * **注意**：不要在这里保存任何流式累积状态（codec 是 object 单例，累积器由 AiClient
  * 每次调用新建）。
@@ -33,10 +34,11 @@ object AiToolRegistry {
     const val COMPLETE_TODOS = "complete_todos"
     const val ARCHIVE_TODOS = "archive_todos"
 
-    // 首版（P1）只读查询工具；写工具在 P2 起同样进入原生 tools（见 writeSpecs）
+    // 只读查询工具（P1 三个 + P3 的 get_todo）；写工具在 P2 起同样进入原生 tools（见 writeSpecs）
     const val GET_DAY_PLAN = "get_day_plan"
     const val SEARCH_TODOS = "search_todos"
     const val GET_WEEK_SCHEDULE = "get_week_schedule"
+    const val GET_TODO = "get_todo"
 
     // ---------- 枚举值（schema 与回退契约共用的唯一来源） ----------
 
@@ -240,7 +242,7 @@ object AiToolRegistry {
     // ---------- 工具定义（必须在 schema / 示例之后初始化） ----------
 
     /**
-     * 首版只读工具：带 [AiToolSpec.execute]，因此进入原生 tools 的 wire 数组。
+     * 只读工具：带 [AiToolSpec.execute]，因此进入原生 tools 的 wire 数组。
      * 描述限定 1~3 句，避免每次请求都付大额 schema token。
      */
     private val readSpecs: List<AiToolSpec> = listOf(
@@ -267,6 +269,14 @@ object AiToolRegistry {
             parameters = AiReadTools.weekScheduleParameters,
             permission = AiToolPermission.Read,
             execute = AiReadTools::executeWeekSchedule,
+        ),
+        AiToolSpec(
+            name = GET_TODO,
+            description = "查询单个待办的完整详情（备注、步骤、重复规则与期次、所在状态）。" +
+                "拿到 id 后要改内容/改期限/完成某一期时先用它看清现状。",
+            parameters = AiReadTools.getTodoParameters,
+            permission = AiToolPermission.Read,
+            execute = AiReadTools::executeGetTodo,
         ),
     )
 
@@ -326,7 +336,7 @@ object AiToolRegistry {
     /** 全部工具定义：只读在前、写工具在后（回退契约与查找共用） */
     val specs: List<AiToolSpec> = readSpecs + writeSpecs
 
-    /** 可原生执行的工具（P2 起 = 全部：3 个只读 + 5 个写）；wire 只发送这些 */
+    /** 可原生执行的工具（P3 起 = 全部：4 个只读 + 5 个写）；wire 只发送这些 */
     val nativeSpecs: List<AiToolSpec> = specs.filter { it.execute != null }
 
     /** 按名称查找工具；未注册返回 null（未知工具名由执行层转成 `unknown_tool` 结果） */

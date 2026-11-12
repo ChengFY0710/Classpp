@@ -285,6 +285,7 @@ class AiPromptBuilderTest {
             AiToolRegistry.GET_DAY_PLAN,
             AiToolRegistry.SEARCH_TODOS,
             AiToolRegistry.GET_WEEK_SCHEDULE,
+            AiToolRegistry.GET_TODO,
             AiToolRegistry.CREATE_TODOS,
             AiToolRegistry.UPDATE_TODOS,
             AiToolRegistry.DELETE_TODOS,
@@ -299,5 +300,124 @@ class AiPromptBuilderTest {
         assertFalse(native.contains(AiToolRegistry.fallbackContracts.lifecycle))
         // 回退模式仍是完整 JSON 契约（BYOK 兼容面不缩小）
         assertTrue(fallback.contains(AiToolRegistry.fallbackContracts.createTodos))
+    }
+
+    // ---------- P3：今日摘要（原生工具模式） ----------
+
+    @Test
+    fun `native mode injects today summary instead of full lists`() {
+        val prompt = AiPromptBuilder.build(
+            now = now, // 2026-11-01 周日
+            schedule = schedule(
+                course("今天的课", dayOfWeek = 7, startSlot = 3, span = 2, location = "教学楼A-301"),
+                course("明天的课", dayOfWeek = 1, startSlot = 1),
+            ),
+            currentWeek = 9,
+            todos = listOf(
+                todo("今天的待办", dates = listOf(now)),
+                todo("别的日子的待办", dates = listOf(now + 3)),
+                todo("已完成的待办", completed = true),
+            ),
+            groups = listOf("学习"),
+            tags = listOf("期末"),
+            archivedTodos = listOf(todo("归档任务").copy(archivedAtMillis = 1L)),
+            deletedTodos = listOf(todo("误删任务").copy(deletedAtMillis = 2L)),
+            nativeTools = true,
+        )
+
+        // 今日课程：只列当天的，且带节次/时间/地点
+        assertTrue(prompt.contains("[今日课程]"))
+        assertTrue(prompt.contains("- 第3-4节 14:30-18:20 今天的课 @教学楼A-301"))
+        assertFalse(prompt.contains("明天的课"))
+        // 今日待办：只列今天命中的，带 id 供完成/归档引用
+        assertTrue(prompt.contains("[今日待办]"))
+        assertTrue(prompt.contains("[t-今天的待办] 今天的待办"))
+        assertFalse(prompt.contains("别的日子的待办"))
+        // 归档/回收站只给计数（明细交给 search_todos）
+        assertFalse(prompt.contains("归档任务"))
+        assertFalse(prompt.contains("误删任务"))
+        assertTrue(prompt.contains("已归档 1 条"))
+        assertTrue(prompt.contains("回收站 1 条"))
+        // 全量区块整体消失
+        assertFalse(prompt.contains("[课表] "))
+        assertFalse(prompt.contains("[待办] "))
+        assertFalse(prompt.contains("[已归档] "))
+        assertFalse(prompt.contains("[回收站] "))
+    }
+
+    @Test
+    fun `native prompt costs much less than the full prompt`() {
+        val courses = (1..20).map { i ->
+            course("课程$i", dayOfWeek = (i % 7) + 1, startSlot = (i % 6) + 1, location = "教学楼$i")
+        }
+        val todos = (1..40).map { i ->
+            todo(
+                "待办$i",
+                deadlineDate = now + i,
+                group = "学习",
+                tags = listOf("标签$i"),
+                steps = listOf("步骤A", "步骤B"),
+            )
+        }
+        val archived = (1..8).map { i -> todo("归档$i").copy(archivedAtMillis = i.toLong()) }
+        val deleted = (1..5).map { i -> todo("回收$i").copy(deletedAtMillis = i.toLong()) }
+        val schedule = schedule(*courses.toTypedArray())
+
+        val full = AiPromptBuilder.build(
+            now, schedule, 9, todos, listOf("学习"), listOf("期末"), archived, deleted,
+        )
+        val native = AiPromptBuilder.build(
+            now, schedule, 9, todos, listOf("学习"), listOf("期末"), archived, deleted,
+            nativeTools = true,
+        )
+
+        // 验收口径（设计稿 §13 P3）：常见场景 token 明显下降——至少砍掉一半
+        assertTrue(
+            "native=${native.length} full=${full.length}",
+            native.length * 2 < full.length,
+        )
+        // 无工具调用时仍能正常对话：日期/星期/周数/可选分组标签都在
+        assertTrue(native.contains("今天是 2026-11-01 周日，学期第 9 周"))
+        assertTrue(native.contains("[可选分组] 学习"))
+        assertTrue(native.contains("[可选标签] 期末"))
+    }
+
+    @Test
+    fun `today summary caps listed todos and points at search_todos`() {
+        val todos = (1..AiPromptBuilder.MAX_TODAY_TODO_LINES + 4).map { i ->
+            todo("今日$i", dates = listOf(now))
+        }
+
+        val prompt = AiPromptBuilder.build(
+            now, null, null, todos, emptyList(), emptyList(), nativeTools = true,
+        )
+
+        assertTrue(prompt.contains("[t-今日1]"))
+        assertTrue(prompt.contains("另有 4 条今日待办未列出，用 search_todos 查"))
+        assertTrue(prompt.contains("未完成 ${todos.size} 条"))
+        assertTrue(prompt.contains("今日 ${todos.size} 条"))
+    }
+
+    @Test
+    fun `today summary reports overdue and empty states`() {
+        val prompt = AiPromptBuilder.build(
+            now = now,
+            schedule = null,
+            currentWeek = null,
+            todos = listOf(
+                todo("逾期任务", deadlineDate = now - 2),
+                todo("今天任务", dates = listOf(now)),
+            ),
+            groups = emptyList(),
+            tags = emptyList(),
+            nativeTools = true,
+        )
+
+        assertTrue(prompt.contains("未完成 2 条（今日 1 条、逾期 1 条）"))
+        assertTrue(prompt.contains("[今日课程] （未设置课表）"))
+
+        val empty = AiPromptBuilder.build(now, null, null, emptyList(), emptyList(), emptyList(), nativeTools = true)
+        assertTrue(empty.contains("[今日待办] （今天没有待办）"))
+        assertTrue(empty.contains("[待办概况] 未完成 0 条（今日 0 条、逾期 0 条）"))
     }
 }
