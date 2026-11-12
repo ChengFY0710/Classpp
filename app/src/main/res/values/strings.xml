@@ -1040,6 +1040,7 @@
     <string name="ai_tool_detail_deleted">删除「%1$s」</string>
     <string name="ai_tool_detail_free_slot">空闲 %1$s-%2$s</string>
     <string name="ai_tool_detail_empty">（无）</string>
+    <string name="ai_tool_detail_truncated">（超过%1$d条后省略）</string>
     <string name="ai_tool_arg_todo_id">id %1$s</string>
     <string name="ai_tool_detail_deadline">截止 %1$s</string>
     <string name="ai_tool_detail_time">时间 %1$s</string>

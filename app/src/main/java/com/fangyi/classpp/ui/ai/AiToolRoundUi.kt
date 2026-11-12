@@ -356,7 +356,7 @@ private fun toolResultSummary(name: String, result: AiToolResult?): String {
     }
 }
 
-/** 展开态明细：按已知结构渲染列表/键值，不展示原始 JSON；返回全部行（不截断） */
+/** 展开态明细：按已知结构渲染列表/键值，不展示原始 JSON；最多 [MAX_DETAIL_LINES] 行，超出追加省略提示 */
 @Composable
 private fun toolResultDetails(name: String, result: AiToolResult?): List<String> {
     if (result == null) return emptyList()
@@ -478,6 +478,10 @@ private fun toolResultDetails(name: String, result: AiToolResult?): List<String>
             }
         }
     }
+    if (lines.size > MAX_DETAIL_LINES) {
+        return lines.take(MAX_DETAIL_LINES) +
+            stringResource(R.string.ai_tool_detail_truncated, MAX_DETAIL_LINES)
+    }
     return lines
 }
 
@@ -530,6 +534,9 @@ private fun parseObject(raw: String): JsonObject? = try {
 } catch (_: Exception) {
     null
 }
+
+/** 展开态最多显示的明细行数，超出后只留省略提示 */
+private const val MAX_DETAIL_LINES = 100
 
 /** get_todo 卡片上展示的 id 前缀长度（完整 id 只给模型，气泡里不需要） */
 private const val TODO_ID_PREVIEW_CHARS = 8
