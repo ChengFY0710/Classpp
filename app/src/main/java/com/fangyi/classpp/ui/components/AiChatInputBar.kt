@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -450,8 +451,11 @@ fun AiChatInputBar(
                         y = anchorRect.top - gapPx - card.height,
                     )
                 },
-                // 生长锚点按最终落位 + 冻结锚点（+ 号）反推：输入栏钉底时菜单自卡片
-                // 下缘向上长，钳位后也不会跑到左上角
+                // 生长锚点按最终落位 + 冻结锚点反推：冻结的是整张输入卡（菜单向上浮在
+                // 输入栏外），取卡右缘垂直中心——菜单右对齐 + 号、宽度按内容收窄，若用
+                // 默认几何中心，卡中心会落在菜单左缘外被钳成「从左侧撑开」；取右缘才回到
+                // 「从 + 号一角长出」的读感（同 CourseTodoSheet 的宽锚点写法）
+                anchorFraction = Offset(1f, 0.5f),
                 anchor = frozenMenuAnchor?.let {
                     Rect(it.left.toFloat(), it.top.toFloat(), it.right.toFloat(), it.bottom.toFloat())
                 },

@@ -470,7 +470,10 @@ fun PopupMenuPopup(
                     width = (popupContentSize.width - shadowPaddingPx * 2).coerceAtLeast(0),
                     height = (popupContentSize.height - shadowPaddingPx - shadowBottomPx).coerceAtLeast(0),
                 )
-                // 可用区 = 窗口 − 系统栏/IME − margin；翻转与钳位都以它为准
+                // 可用区 = 窗口 − 系统栏/IME − margin；翻转与钳位都以它为准。
+                // windowSize 必须是窗口边界而不是可视区（见 Popup 的 clippingEnabled =
+                // false）：可视区已扣过 IME/系统栏，这里再按 menuInsets 扣一次会把上边界
+                // 顶进键盘上方，键盘在场时菜单卡被钳到锚点上方很远（AI 附件菜单即此形状）
                 val marginPx = with(density) { placement.margin.roundToPx() }
                 val available = IntRect(
                     left = menuInsets.left + marginPx,
@@ -539,8 +542,13 @@ fun PopupMenuPopup(
             onDismissRequest = onDismiss,
             popupPositionProvider = positionProvider,
             // focusable：返回键收起；dismissOnClickOutside 默认开启（非 focusable 时
-            // 靠 FLAG_WATCH_OUTSIDE_TOUCH 的 ACTION_OUTSIDE 收起）
-            properties = PopupProperties(focusable = focusable),
+            // 靠 FLAG_WATCH_OUTSIDE_TOUCH 的 ACTION_OUTSIDE 收起）。
+            // clippingEnabled = false：开启时 Compose 传给 PopupPositionProvider 的
+            // windowSize 是 getWindowVisibleDisplayFrame（已扣掉 IME 与系统栏），定位里
+            // 再按 menuInsets 扣一次 IME，可用区会被顶到键盘上方——键盘在场时菜单被
+            // 钳到锚点上方一截（AI 附件菜单）。关掉后 windowSize 是窗口边界，与
+            // params 的坐标空间一致；越界仍由 clampCard 按安全区兜住
+            properties = PopupProperties(focusable = focusable, clippingEnabled = false),
         ) {
             PopupMenuCard(
                 sections = sections,

@@ -21,11 +21,19 @@ import com.mikepenz.markdown.annotator.buildMarkdownAnnotatedString
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
+import com.mikepenz.markdown.model.DefaultMarkdownAnimation
 import com.mikepenz.markdown.model.MarkdownAnnotator
 import com.mikepenz.markdown.model.ReferenceLinkHandlerImpl
 import com.mikepenz.markdown.model.markdownAnnotator
 import com.mikepenz.markdown.model.rememberMarkdownState
 import org.intellij.markdown.MarkdownElementTypes
+
+/**
+ * 关闭库给每个文本块默认套的 `animateContentSize`：流式重解析时块尺寸持续变化，
+ * 尺寸 spring 会和消息列的流式钉底抢同一段时间轴，气泡/思考卡会跟着上下抖。
+ * 库的尺寸动画主要服务行内图片占位→实图的过渡，AI 文本回复没有行内图片，不需要。
+ */
+private val NoTextSizeAnimation = DefaultMarkdownAnimation(animateTextSize = { this })
 
 /**
  * AI 回复的 Markdown 渲染（GFM）：解析与块级布局交给
@@ -116,6 +124,8 @@ internal fun ChatMarkdown(
         colors = colors,
         typography = typography,
         annotator = strongAnnotator.annotator,
+        // 流式期间不做块级尺寸动画（原因见 NoTextSizeAnimation）
+        animations = NoTextSizeAnimation,
         // 不传库默认的 fillMaxSize：短回复的气泡宽度仍按内容自适应
         modifier = modifier,
         // 正常不会走到（immediate + retainState），万一 Loading 也先显示原文而不是空白

@@ -32,6 +32,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -41,7 +42,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -387,7 +387,7 @@ fun AiChatOverlay(
     // 用户主动发送那一次改走短缓动「接住」新气泡（Motion.ChatScrollCatchMillis + Overlay）；
     // 其余路径（打开浮层、切对话、待办卡落位）保持原来的立即到底——它们没有「我刚发了一条」
     // 这个因果，缓动只会让页面看起来在自作主张地动。
-    // 流式逐字不走这里（见消息列 onSizeChanged 的逐帧钉底），那一层不能动画化。
+    // 流式逐字不走这里（见下方「流式钉底」），那一层不能动画化。
     LaunchedEffect(
         messages.size,
         messages.lastOrNull()?.todoIds?.size,
@@ -419,8 +419,9 @@ fun AiChatOverlay(
                             easing = Motion.Overlay,
                         ),
                     )
-                    // IME 收起 / 布局回流会让 maxValue 在动画期间变化，差一截就补齐
-                    if (scroll.maxValue - scroll.value > 1) scroll.scrollTo(scroll.maxValue)
+                    // 动画目标固定在启动时的 maxValue；动画期间内容若继续增长，剩余差值
+                    // 交给流式平滑跟底逐帧补齐——这里不能再硬 scrollTo，否则会把「回复正在
+                    // 快速出字」的那段积压在一帧内拉完，读感就是卡片突然变长后猛地闪现上移
                 } else {
                     scroll.scrollTo(scroll.maxValue)
                 }
@@ -477,9 +478,85 @@ fun AiChatOverlay(
         }
     }
 
-    // 流式跟随：在消息列高度变化的同一帧布局内直接修正滚动位置（见消息列 onSizeChanged）。
-    // 不用 snapshotFlow / LaunchedEffect：它们在布局结束后才回调，scrollTo 要到下一帧才生效，
-    // 思考内容（同步 Text）每 chunk 高度立变而滚动晚一帧，内容先沉后拉回，逐 chunk 抖动。
+    // 流式钉底（平滑跟随）：内容高度在布局阶段写回 ScrollState.maxValue，这里每帧把滚动
+    // 位置向 maxValue 逼近，而不是一帧内瞬移。瞬移会把「一个 chunk 带来的整段高度」直接
+    // 读成一次上跳——回复/思考很快时，卡片先突然变长、再猛地闪上去了。按帧逼近后同样的
+    // 高度增量会被摊成几帧的平滑上移；流结束或中途停顿时也能在几帧内收敛到底。
+    // 用户手势/惯性接管（用户上滑读历史）即停止跟随，回到底部后自动恢复；发送接住动画
+    // 期间让位，不抢它的目标值。
+    val currentSendEntrance by rememberUpdatedState(sendEntrance)
+    val streamFollow = remember { StreamFollowState() }
+    LaunchedEffect(chatScrollState, visible, sending) {
+        val scroll = chatScrollState ?: return@LaunchedEffect
+        if (!visible) {
+            // 收起浮层期间不跟；重开时由 visible 的离散滚底直接到底
+            streamFollow.settleNeeded = false
+            return@LaunchedEffect
+        }
+        val slopPx = with(density) { SendAtBottomSlop.roundToPx() }
+        val maxStepPx = with(density) { StreamFollowMaxStep.roundToPx() }
+        fun easeStep() {
+            val gap = scroll.maxValue - scroll.value
+            if (gap <= 0) return
+            val step = if (gap <= 1) {
+                gap
+            } else {
+                minOf(maxStepPx, (gap * StreamFollowFraction).toInt().coerceAtLeast(1))
+            }
+            scroll.dispatchRawDelta(step.toFloat())
+        }
+
+        if (!sending) {
+            // 回复收尾：最后一批内容的尺寸 tween 可能还有一小段尾巴（maxValue 还在长），
+            // 继续跟几帧到底；用户已上滑读历史时不打扰
+            if (!streamFollow.settleNeeded || !streamFollow.following ||
+                scroll.isScrollInProgress
+            ) {
+                streamFollow.settleNeeded = false
+                return@LaunchedEffect
+            }
+            val start = withFrameNanos { it }
+            while (withFrameNanos { it } - start < StreamFollowSettleMillis * 1_000_000L) {
+                if (scroll.isScrollInProgress) break
+                val gap = scroll.maxValue - scroll.value
+                if (gap <= 0) break
+                easeStep()
+            }
+            streamFollow.settleNeeded = false
+            return@LaunchedEffect
+        }
+
+        streamFollow.settleNeeded = true
+        streamFollow.following = true
+        var userTookOver = false
+        var scrollingFrames = 0
+        while (true) {
+            withFrameNanos { }
+            val sendCatchUp = currentSendEntrance?.atBottom == true
+            if (scroll.isScrollInProgress) {
+                // 发送接住动画也是「滚动进行中」，但由程序发起，不算用户接管。
+                // 非动画的 scrollTo 只占同一帧，连续两帧仍在滚动才认成手势/惯性。
+                if (!sendCatchUp && ++scrollingFrames >= 2) userTookOver = true
+                continue
+            }
+            scrollingFrames = 0
+            if (userTookOver) {
+                // 手势/惯性结束：停在底部才继续跟随，否则把控制权交还用户
+                streamFollow.following = scroll.maxValue - scroll.value <= slopPx
+                userTookOver = false
+            }
+            if (!streamFollow.following) {
+                // 用户自己回到底部后恢复跟随
+                if (scroll.maxValue - scroll.value <= slopPx) {
+                    streamFollow.following = true
+                } else {
+                    continue
+                }
+            }
+            if (sendCatchUp) continue
+            easeStep()
+        }
+    }
 
     // ——— 动作集合 ———
 
@@ -750,21 +827,7 @@ fun AiChatOverlay(
                 AiChatEmptyState()
             }
             else -> {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    // 流式滚底：高度变化的同一帧布局内直接钉底，不走帧后回调（消除一帧延迟抖动）。
-                    // 用户主动发送的那一帧例外：钉底会把「滚动接住」要走的距离当场吃掉，列表先
-                    // 瞬移到底、动画再无处可走——故由 sendEntrance 在**布局阶段**让开（早于
-                    // LaunchedEffect，必须在这里读，不能挪到 effect 里判）。
-                    modifier = Modifier.onSizeChanged {
-                        if (sending && sendEntrance?.atBottom != true) {
-                            chatScroll.value?.let { s ->
-                                val delta = (s.maxValue - s.value).toFloat()
-                                if (delta != 0f) s.dispatchRawDelta(delta)
-                            }
-                        }
-                    },
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     // 尾部 user 消息的 id：气泡落位只认这一条（发送后追加的第一条用户消息）
                     val lastUserId = messages.lastOrNull { it.role == AiChatRole.User }?.id
                     messages.forEachIndexed { index, message ->
@@ -1079,6 +1142,17 @@ fun AiChatOverlay(
  */
 private class SendEntrance(val atBottom: Boolean, val sentAtMillis: Long)
 
+/**
+ * 流式跟底状态：跨 `sending` 翻转存活。
+ * - [following]：用户是否仍在跟底（上滑读过历史则为 false），收尾阶段据此决定
+ *   要不要把尺寸 tween 的尾巴补完；
+ * - [settleNeeded]：本次是否刚从流式回复结束，避免打开历史对话时误做收尾滚动。
+ */
+private class StreamFollowState {
+    var following = true
+    var settleNeeded = false
+}
+
 /** 气泡抬升幅度（列表在底部）：末尾 [AuroraHeadroom] 空带足够容纳，不会压到上一条消息。 */
 private val BubbleRiseAtBottom = 10.dp
 
@@ -1090,6 +1164,15 @@ private val SendAtBottomSlop = 8.dp
 
 /** 缓动接住的最小滚动距离：比这更近时直接到底——位移看不出来，动画白跑一趟。 */
 private val ScrollCatchMinSlop = 24.dp
+
+/** 流式跟底的单帧最大步长：一个 chunk 带来一大段高度时，摊成多帧补，避免一帧闪上去。 */
+private val StreamFollowMaxStep = 24.dp
+
+/** 流式跟底每帧补齐剩余差值的比例：约 8~12 帧收敛到底。 */
+private const val StreamFollowFraction = 0.28f
+
+/** 回复结束后的收尾跟随窗口：把气泡高度过渡的最后一段尾巴补到底。 */
+private const val StreamFollowSettleMillis = 300L
 
 /**
  * 落位请求的存活上限：正常路径由滚底 effect 消费后立即清掉，这里只兜「仓库迟迟没追加」

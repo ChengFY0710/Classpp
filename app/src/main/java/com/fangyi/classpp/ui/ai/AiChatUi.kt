@@ -1,6 +1,8 @@
 package com.fangyi.classpp.ui.ai
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,7 +25,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +70,7 @@ import com.fangyi.classpp.ui.components.NoteCardSwipe
 import com.fangyi.classpp.ui.components.SwipeAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.components.labelText
+import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.note.cardTimeText
 import com.fangyi.classpp.ui.note.deadlineCardText
 import com.fangyi.classpp.ui.note.deadlineColor
@@ -167,7 +169,20 @@ internal fun AiChatMessageBubble(
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
     ) {
         Column(
-            modifier = if (isUser) Modifier.widthIn(max = 320.dp) else Modifier.fillMaxWidth(),
+            modifier = if (isUser) {
+                Modifier.widthIn(max = 320.dp)
+            } else {
+                Modifier
+                    .fillMaxWidth()
+                    // 流式正文按解析批次长高：整条消息（思考卡 + 气泡）的高度走短 tween，
+                    // 把一次大增量摊成几帧，避免卡片一帧内突然变长再被滚动猛拉上去
+                    .animateContentSize(
+                        animationSpec = tween(
+                            durationMillis = Motion.ChatBubbleResizeMillis,
+                            easing = Motion.Standard,
+                        ),
+                    )
+            },
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (!isUser && message.reasoning.isNotEmpty()) {
@@ -366,9 +381,9 @@ internal fun AiChatThinkingBlock(
 ) {
     var expanded by rememberSaveable { mutableStateOf(thinkingInProgress) }
     var userToggled by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(thinkingInProgress) {
-        if (!userToggled) expanded = thinkingInProgress
-    }
+    // 未手动切换时直接跟随思考阶段，不在 LaunchedEffect 里二次写状态：那会让正文首帧
+    // 与自动收合差一帧（正文已出现、思考仍展开），气泡先冲高再缩回，读感是上下抖一下。
+    val shownExpanded = if (userToggled) expanded else thinkingInProgress
     val tint = MaterialTheme.classppColors.secondaryText
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -383,7 +398,7 @@ internal fun AiChatThinkingBlock(
                     .fillMaxWidth()
                     .clickable {
                         userToggled = true
-                        expanded = !expanded
+                        expanded = !shownExpanded
                     }
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -405,14 +420,14 @@ internal fun AiChatThinkingBlock(
                 )
                 Icon(
                     painter = painterResource(
-                        if (expanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down,
+                        if (shownExpanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down,
                     ),
                     contentDescription = stringResource(R.string.cd_ai_thinking_toggle),
                     tint = tint,
                     modifier = Modifier.size(18.dp),
                 )
             }
-            AnimatedVisibility(visible = expanded) {
+            AnimatedVisibility(visible = shownExpanded) {
                 Text(
                     text = reasoning.trim(),
                     style = ClassppTextTokens.secondaryTextSmall,

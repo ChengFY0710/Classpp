@@ -104,6 +104,27 @@ class MenuPlacementTest {
         assertEquals(0.3125f, trailing.pivotFractionY, 1e-6f)
     }
 
+    /**
+     * AI 对话输入栏的附件菜单（宽输入卡 366×60、菜单 125×120 向上展开并右对齐 + 号
+     * 右侧 16dp）：菜单整体落在卡上方，纵向锚点本来就是底边（1f）；横向若用默认矩形
+     * 中心，中心落在菜单左缘外被钳到 0f，读感变成「从卡左侧撑开」。取卡右缘垂直中心
+     * 后回到右下角，即 + 号一侧。
+     */
+    @Test
+    fun aiAttachmentMenuGrowsFromTrailingEdgeAboveWideInputCard() {
+        val inputCard = IntRect(100, 500, 466, 560)
+        // 菜单右缘 = 卡右缘 - 16dp（RowCardPaddingHorizontal），底边在卡上方 8dp
+        val menuCard = IntRect(325, 372, 450, 492)
+
+        val centered = fraction(menuCard, anchorCenter = anchorPointOf(inputCard, MenuAnchorCenter))
+        assertEquals(0f, centered.pivotFractionX, 0f)
+        assertEquals(1f, centered.pivotFractionY, 0f)
+
+        val trailing = fraction(menuCard, anchorCenter = anchorPointOf(inputCard, Offset(1f, 0.5f)))
+        assertEquals(1f, trailing.pivotFractionX, 0f)
+        assertEquals(1f, trailing.pivotFractionY, 0f)
+    }
+
     @Test
     fun unmeasuredCardYieldsNoFraction() {
         assertNull(menuAnchorFraction(IntRect.Zero, Offset(10f, 10f)))
