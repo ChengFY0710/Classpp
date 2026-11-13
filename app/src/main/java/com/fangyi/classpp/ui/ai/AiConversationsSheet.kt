@@ -12,6 +12,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,7 +58,8 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
 internal fun AiConversationsSheet(
     visible: Boolean,
     onDismissed: () -> Unit,
-    conversations: List<AiConversation>,
+    // State 实例透传：流式增量只让本浮层（打开时）重组，不失效 AiChatOverlay 根作用域
+    conversationsState: State<List<AiConversation>>,
     activeConversationId: String?,
     onCreate: () -> Unit,
     onDismiss: () -> Unit,
@@ -68,6 +70,7 @@ internal fun AiConversationsSheet(
     // 整条链退让到回流落定（机制见 HazeRetreatState，宿主 AiChatOverlay 的 deleteHazeRetreat）
     hazeEnabled: Boolean = true,
 ) {
+    val conversations = conversationsState.value
     // 待删除的对话 id（非空 = 删除确认框打开）
     var deletingId by remember { mutableStateOf<String?>(null) }
 

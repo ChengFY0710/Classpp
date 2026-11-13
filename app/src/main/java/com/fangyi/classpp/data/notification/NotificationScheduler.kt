@@ -8,8 +8,20 @@ import android.os.Build
 import androidx.core.app.NotificationManagerCompat
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.AppContainer
+import com.fangyi.classpp.data.model.Schedule
+import com.fangyi.classpp.data.model.ScheduleFile
+import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.TodoFile
+import com.fangyi.classpp.data.model.activeSchedule
+import com.fangyi.classpp.data.model.activeTodos
+import com.fangyi.classpp.data.store.FileScheduleStore
+import com.fangyi.classpp.data.store.FileTodoStore
 import com.fangyi.classpp.ui.settings.NotificationPreferences
 import com.fangyi.classpp.ui.settings.NotificationSettings
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * 通知排期的系统层（AlarmManager 胶水）：把 [NotificationPlanner] 的排期结果注册成系统闹钟，
@@ -35,13 +47,30 @@ object NotificationScheduler {
     /** cancel 闹钟在持久化 key 集里的前缀（与 fire key 同源加前缀，requestCode 同 hash） */
     private const val CANCEL_KEY_PREFIX = "X:"
 
-    /** 读设置与两个仓库的当前数据 → 排期 → 整体替换系统闹钟。设置全关时计划为空 = 全部取消。 */
+    /** 重排串行化：UI 数据变更、通知设置保存、receiver 续排可能并发进入，避免互踩 key 集 */
+    private val rescheduleMutex = Mutex()
+
+    /**
+     * 读设置与数据 → 排期 → 整体替换系统闹钟。全程 IO：AlarmManager/PendingIntent/
+     * SharedPreferences 都不要求主线程，调用方（Compose effect / receiver）无需再切线程。
+     *
+     * 通知关闭（或课程/待办两类都关）时只做一次“取消旧闹钟”短路：不装配容器、不读
+     * JSON、不执行计划。默认安装即走此分支，成本约等于一次 SharedPreferences 读。
+     */
     suspend fun reschedule(context: Context) {
         val appContext = context.applicationContext
+        rescheduleMutex.withLock {
+            withContext(Dispatchers.IO) { rescheduleLocked(appContext) }
+        }
+    }
+
+    private fun rescheduleLocked(appContext: Context) {
         val settings: NotificationSettings = NotificationPreferences.load(appContext)
-        val container = AppContainer.get(appContext)
-        val schedule = container.scheduleRepository.activeSchedule.value
-        val todos = container.todoRepository.todos.value
+        if (!settings.enabled || (!settings.courseEnabled && !settings.todoEnabled)) {
+            replaceAll(appContext, emptyList())
+            return
+        }
+        val (schedule, todos) = loadData(appContext)
         val planned = NotificationPlanner.plan(
             schedule = schedule,
             todos = todos,
@@ -53,6 +82,25 @@ object NotificationScheduler {
     }
 
     /**
+     * 排期数据源：容器已装配则复用内存态；冷进程（receiver）直接读两个轻量 JSON，
+     * 不为一条提醒加载 AI 全量历史、学校会话或 Keystore。
+     *
+     * 读取必须走 Store 的只读快照 [FileScheduleStore.peek] / [FileTodoStore.peek]：
+     * 常规 `load()` 在双坏/未来版本时会把主文件改名隔离，旁路先跑一遍会让仓库装载
+     * 只剩「主文件不存在」，数据损坏提示被吞掉。活跃课表与活跃待办的判定复用
+     * [ScheduleFile.activeSchedule] / [TodoFile.activeTodos]，与仓库同一实现。
+     */
+    private fun loadData(context: Context): Pair<Schedule?, List<Todo>> {
+        AppContainer.peek()?.let { container ->
+            return container.scheduleRepository.activeSchedule.value to
+                container.todoRepository.todos.value
+        }
+        val schedule = FileScheduleStore(context.filesDir).peek()?.activeSchedule
+        val todos = FileTodoStore(context.filesDir).peek()?.activeTodos.orEmpty()
+        return schedule to todos
+    }
+
+    /**
      * 整体替换：先按持久化的 key 集取消全部旧闹钟，再注册新计划、回写 key 集。
      * 取消用的 PendingIntent 与注册的 filterEquals（action + 组件）一致、requestCode 同源
      * （extras 不参与匹配），旧闹钟必能精确命中取消。key 集混合 fire / cancel 两类
@@ -61,7 +109,10 @@ object NotificationScheduler {
     private fun replaceAll(context: Context, planned: List<PlannedNotification>) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        for (key in prefs.getStringSet(KEY_SCHEDULED, emptySet()).orEmpty()) {
+        val oldKeys = prefs.getStringSet(KEY_SCHEDULED, emptySet()).orEmpty()
+        // 通知关闭且从未排过：默认安装的最常见路径，连 prefs 写都不做
+        if (planned.isEmpty() && oldKeys.isEmpty()) return
+        for (key in oldKeys) {
             if (key.startsWith(CANCEL_KEY_PREFIX)) {
                 alarmManager.cancel(
                     cancelPendingIntent(context, key.removePrefix(CANCEL_KEY_PREFIX).hashCode()),
@@ -89,7 +140,13 @@ object NotificationScheduler {
             scheduledKeys += item.key
             scheduledKeys += cancelKey(item.key)
         }
-        prefs.edit().putStringSet(KEY_SCHEDULED, scheduledKeys).apply()
+        val editor = prefs.edit()
+        if (planned.isEmpty()) {
+            editor.remove(KEY_SCHEDULED)
+        } else {
+            editor.putStringSet(KEY_SCHEDULED, scheduledKeys)
+        }
+        editor.apply()
     }
 
     private fun cancelKey(key: String): String = CANCEL_KEY_PREFIX + key

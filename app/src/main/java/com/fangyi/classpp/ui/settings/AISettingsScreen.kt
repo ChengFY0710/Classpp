@@ -123,7 +123,9 @@ fun AISettingsScreen(
     val toolsEnabled by aiChatRepository?.toolsEnabled?.collectAsState()
         ?: remember { mutableStateOf(true) }
 
-    var loaded by remember { mutableStateOf(false) }
+    // 仓库非空即 bootstrap 已完成（含 refreshConfigured），首帧可直接展示；
+    // null（后台预热未完成）才走加载态
+    var loaded by remember { mutableStateOf(aiChatRepository != null) }
     // 「清空对话历史」两击确认：第一次点击置位，3s 无后续点击自动解除，覆盖层收起复位
     var clearArmed by remember { mutableStateOf(false) }
     // 「AI 配置方案」子浮层：挂载与可见性分离（同其他叠层）
@@ -133,8 +135,10 @@ fun AISettingsScreen(
     var debugTraceVisible by remember { mutableStateOf(false) }
     val overlayActive = LocalPageOverlayActive.current
 
-    // 仓库就绪后装载一次：刷新方案库 / 活动配置 / 配置就绪态
-    LaunchedEffect(aiChatRepository) {
+    // 子页首次打开（或从隐藏态重新展开）时才读方案库/活动连接/解密 Key：
+    // 设置子页懒挂载后隐藏态不再执行该副作用，避免冷启动无谓的 Keystore 往返
+    LaunchedEffect(aiChatRepository, overlayActive) {
+        if (!overlayActive) return@LaunchedEffect
         val repository = aiChatRepository ?: return@LaunchedEffect
         repository.refreshConfigured()
         loaded = true

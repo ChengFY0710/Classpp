@@ -84,10 +84,31 @@ class FileScheduleStore(private val dir: File) : ScheduleStore {
         return LoadOutcome.Fresh(ScheduleFile(), LoadIssue.ResetAfterCorruption)
     }
 
+    /**
+     * 只读快照（旁路用）：**[load] 减去「隔离改名」**——降级顺序完全一致（主文件可解析
+     * 且版本兼容 → 用它；否则试 bak；主文件缺失时不看 bak），差别只在于不建目录、不把
+     * 主文件搬成 `.corrupt-*`。
+     *
+     * 供通知排期这类「只要当前数据、不拥有数据生命周期」的调用方使用：数据损坏的判定与
+     * 取证只留给 [load]，否则旁路先一步隔离主文件，仓库装载时只会看到「主文件不存在」，
+     * `ResetAfterCorruption` 的提示就丢了。降级也要一致，否则「主文件坏、bak 好」时
+     * 应用能显示课表而通知不排期。
+     */
+    fun peek(): ScheduleFile? {
+        val mainParsed = parseFile(main)
+        if (mainParsed != null && mainParsed.formatVersion <= SCHEDULE_FORMAT_VERSION) {
+            return mainParsed
+        }
+        // 主文件缺失 = 确实没有数据（与 load 同序，不看 bak）
+        if (!main.exists()) return null
+        val bakParsed = parseFile(bak) ?: return null
+        return if (bakParsed.formatVersion <= SCHEDULE_FORMAT_VERSION) bakParsed else null
+    }
+
     override fun save(file: ScheduleFile): StoreResult {
         if (!dir.exists()) dir.mkdirs()
         val text = try {
-            ScheduleJson.encodeStorage(file)
+            ScheduleJson.encodeStorageLean(file)
         } catch (e: Exception) {
             return StoreResult.Failed("serialize failed: ${e.message}")
         }

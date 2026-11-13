@@ -254,4 +254,25 @@ class AiChatStoreTest {
         assertTrue(outcome is LoadOutcome.Fresh)
         assertEquals(LoadIssue.ResetAfterCorruption, outcome.issue)
     }
+
+    @Test
+    fun `checkpoint updates main without touching bak`() {
+        val durable = fileWith(message(AiChatRole.User, "完整落盘"))
+        store().save(durable)
+        val checkpoint = fileWith(
+            message(AiChatRole.User, "完整落盘"),
+            message(AiChatRole.Assistant, "半截"),
+        )
+
+        assertEquals(StoreResult.Ok, store().saveCheckpoint(checkpoint))
+
+        // 主文件立即是 checkpoint 内容（rename 原子替换）
+        val outcome = store().load()
+        assertTrue(outcome is LoadOutcome.Loaded)
+        assertEquals(checkpoint, (outcome as LoadOutcome.Loaded<AiChatFile>).file)
+        // bak 仍是上次 durable 的数据：checkpoint 不复制整库，流式期间没有额外写放大
+        assertTrue("bak 应保留上次完整落盘", bakFile().readText().contains("完整落盘"))
+        assertFalse("checkpoint 不应更新 bak", bakFile().readText().contains("半截"))
+        assertFalse("tmp must not remain", tmpFile().exists())
+    }
 }

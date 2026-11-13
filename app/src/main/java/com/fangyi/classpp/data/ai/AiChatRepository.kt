@@ -11,6 +11,7 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.occurrencesBetween
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
@@ -20,6 +21,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -105,7 +107,7 @@ data class AiConfigSaveOutcome(
 
 /**
  * AI 对话仓库：内存真源（StateFlow）+ 磁盘持久化（[AiChatStore]），与 TodoRepository
- * 同构；流式增量直接写入消息流（UI 逐字渲染）。
+ * 同构；流式增量按 33ms 合并后写入消息流（UI 约 30 次/秒刷新）。
  *
  * **多对话模型**：真源是 [_conversations]（每场对话各自的消息），[_activeConversationId]
  * 指向当前活跃对话；公开的 [messages] 是活跃对话消息的同步镜像（见 [updateConversation]）。
@@ -194,6 +196,15 @@ class AiChatRepository internal constructor(
     /** 上次 checkpoint 时刻（[nowMillis] 口径）；只由流式回调线程写，读侧加 @Volatile */
     @Volatile
     private var lastCheckpointAt = 0L
+
+    /** checkpoint 在途闸门：上一次整库写未完成时跳过本次，避免流式期间排队堆积 */
+    private val checkpointInFlight = AtomicBoolean(false)
+
+    /**
+     * 流式增量缓冲：SSE 回调线程只 append（O(chunk)），经 [STREAM_FLUSH_INTERVAL_MILLIS]
+     * 合并后一次性更新 StateFlow。避免每个 token 都复制全部对话/消息列表并重组整棵浮层。
+     */
+    private val streamAccumulators = ConcurrentHashMap<String, StreamAccumulator>()
 
     private val _conversations = MutableStateFlow<List<AiConversation>>(emptyList())
 
@@ -700,15 +711,27 @@ class AiChatRepository internal constructor(
         var capped = false
         var failure: String? = null
 
-        suspend fun buildTurnsFor(native: Boolean): List<AiChatTurn> =
-            buildTurns(history, userText, userImages, nativeTools = native, systemNote = systemNote)
-                .also { built ->
-                    val text = built.joinToString("") { it.content }
-                    promptChars = text.length
-                    promptTokens = AiDebugTrace.estimateTokens(text)
-                    turnCount = built.size
-                    toolsAttached = native
-                }
+        // 当前轮图片只编码一次：native-tools 能力回退会重建 turns，复用同一批 base64
+        var encodedUserImages: List<AiTurnImage>? = null
+        suspend fun buildTurnsFor(native: Boolean): List<AiChatTurn> {
+            val encoded = encodedUserImages ?: encodeImages(userImages).also {
+                encodedUserImages = it
+            }
+            return buildTurns(
+                history,
+                userText,
+                userImages,
+                nativeTools = native,
+                systemNote = systemNote,
+                encodedUserImages = encoded,
+            ).also { built ->
+                val text = built.joinToString("") { it.content }
+                promptChars = text.length
+                promptTokens = AiDebugTrace.estimateTokens(text)
+                turnCount = built.size
+                toolsAttached = native
+            }
+        }
 
         fun markDelivered() {
             if (firstDeltaAt == null) firstDeltaAt = nowMillis() - startedAt
@@ -799,6 +822,9 @@ class AiChatRepository internal constructor(
                     }
                     capability = AiToolCapability.Supported
                 }
+                // 工具轮边界：先把本轮已收到的正文增量落进消息，再记录工具轮，
+                // 否则 content（各轮文本顺序拼接）会缺 round.text 对应的增量
+                flushStream(conversationId)
                 val roundIndex = appendToolRound(conversationId, round.text, round.toolCalls)
 
                 // 预算：轮数（含首次请求）或总调用数超限 → 保留正文，结果成对回填后结束
@@ -853,6 +879,10 @@ class AiChatRepository internal constructor(
             failure = e.error.name
             throw e
         } finally {
+            // 流结束（成功/取消/失败）先把缓冲尾部写回消息，再由 finalize/markInterrupted
+            // 读取完整正文；随后移除 accumulator，避免迟到 flush 污染最终消息
+            flushStream(conversationId)
+            streamAccumulators.remove(conversationId)
             // release 构建不分配诊断对象（enabled 恒 false），只留一行判断
             if (AiDebugTrace.enabled) {
                 AiDebugTrace.record(
@@ -1263,6 +1293,8 @@ class AiChatRepository internal constructor(
             _conversations.value = emptyList()
             _activeConversationId.value = null
             _messages.value = emptyList()
+            streamAccumulators.values.forEach { it.discard() }
+            streamAccumulators.clear()
             clearLastError()
             // 用户已两次确认：落盘不能被浮层关闭取消，否则重启后旧历史回归
             withContext(NonCancellable) { persist() }
@@ -1323,6 +1355,7 @@ class AiChatRepository internal constructor(
     suspend fun deleteConversation(id: String) {
         if (_conversations.value.none { it.id == id }) return
         if (activeSendConversationId.get() == id) cancelSending()
+        streamAccumulators.remove(id)?.discard()
         val staleImages = _conversations.value
             .firstOrNull { it.id == id }
             ?.messages
@@ -1624,7 +1657,7 @@ class AiChatRepository internal constructor(
 
     /**
      * 定向更新一场对话并同步 [messages] 镜像：目标是活跃对话时镜像随之刷新（发送中
-     * 逐字可见），非活跃目标（后台在途流）只落库、不打扰当前显示；目标已被删除时
+     * 按合并批次可见），非活跃目标（后台在途流）只落库、不打扰当前显示；目标已被删除时
      * 整体静默跳过——「边发边删」的流式增量与收尾标记自然消失。
      *
      * 并发：`MutableStateFlow.update` 的 CAS 循环保证跨线程互不覆盖（流式回调线程与
@@ -1741,6 +1774,8 @@ class AiChatRepository internal constructor(
         userImages: List<String>,
         nativeTools: Boolean,
         systemNote: String? = null,
+        /** 已编码的当前轮图片（能力回退重建 turns 时复用，避免重复读盘/base64） */
+        encodedUserImages: List<AiTurnImage>? = null,
     ): List<AiChatTurn> {
         val context = contextProvider()
         val prompt = AiPromptBuilder.build(
@@ -1757,7 +1792,11 @@ class AiChatRepository internal constructor(
         val system = if (systemNote.isNullOrBlank()) prompt else prompt + systemNote + "\n"
         return listOf(AiChatTurn(role = "system", content = system)) +
             replayTurns(history) +
-            AiChatTurn(role = "user", content = userText, images = encodeImages(userImages))
+            AiChatTurn(
+                role = "user",
+                content = userText,
+                images = encodedUserImages ?: encodeImages(userImages),
+            )
     }
 
     /** 历史窗口：按 user 边界保留最近 N 个逻辑轮，最近两轮精确回放工具 */
@@ -1767,7 +1806,12 @@ class AiChatRepository internal constructor(
         val turns = mutableListOf<AiChatTurn>()
         groups.forEachIndexed { index, group ->
             val exact = index >= exactFrom
-            for (message in group) turns += message.toTurns(exact)
+            for (message in group) {
+                // 历史图片不再每轮读盘 + base64 上传：最多 15 轮 × 4 张会让请求体膨胀到
+                // 几十 MB。历史 user 消息用 [HISTORY_IMAGE_PLACEHOLDER] 占位，当前轮图片
+                // 仍由 buildTurns 正常编码。
+                turns += message.toTurns(exact, includeImages = false)
+            }
         }
         return turns
     }
@@ -1792,11 +1836,14 @@ class AiChatRepository internal constructor(
      * - assistant 有工具轮：exact=true 时按轮重建 `assistant(toolCalls)` + `tool(results)`，
      *   只回放状态完整且结果配对的轮次；exact=false 时折叠成一条文本，绝不暴露半截配对。
      */
-    private suspend fun AiChatMessage.toTurns(exact: Boolean): List<AiChatTurn> {
-        if (role == AiChatRole.User) return listOf(toTurn())
+    private suspend fun AiChatMessage.toTurns(
+        exact: Boolean,
+        includeImages: Boolean = true,
+    ): List<AiChatTurn> {
+        if (role == AiChatRole.User) return listOf(toTurn(includeImages))
         if (interrupted) return emptyList()
         if (toolRounds.isEmpty()) {
-            return if (content.isBlank()) emptyList() else listOf(toTurn())
+            return if (content.isBlank()) emptyList() else listOf(toTurn(includeImages))
         }
         val toolCallCount = toolRounds.sumOf { it.calls.size }
         if (!exact) {
@@ -1844,12 +1891,23 @@ class AiChatRepository internal constructor(
             copy(contentJson = contentJson.take(REPLAY_RESULT_MAX_CHARS))
         }
 
-    /** 持久化消息 → wire 消息：role 落小写串，图片文件在 IO 线程编码 */
-    private suspend fun AiChatMessage.toTurn(): AiChatTurn = AiChatTurn(
-        role = role.name.lowercase(),
-        content = content,
-        images = encodeImages(images),
-    )
+    /** 持久化消息 → wire 消息：role 落小写串；includeImages=false 时历史图片只回占位文本 */
+    private suspend fun AiChatMessage.toTurn(includeImages: Boolean = true): AiChatTurn {
+        val turnContent = if (!includeImages && images.isNotEmpty()) {
+            if (content.isBlank()) {
+                HISTORY_IMAGE_PLACEHOLDER
+            } else {
+                content + "\n" + HISTORY_IMAGE_PLACEHOLDER
+            }
+        } else {
+            content
+        }
+        return AiChatTurn(
+            role = role.name.lowercase(),
+            content = turnContent,
+            images = if (includeImages) encodeImages(images) else emptyList(),
+        )
+    }
 
     /** 图片文件名 → base64 附件：文件缺失/读取失败跳过（见 [AiImageStore.encode]） */
     private suspend fun encodeImages(names: List<String>): List<AiTurnImage> =
@@ -1857,37 +1915,136 @@ class AiChatRepository internal constructor(
             names.mapNotNull { imageStore.encode(it) }
         }
 
-    /** 流式增量追加到绑定对话的尾部 assistant 消息（UI 逐字渲染） */
+    /** 流式正文增量：只进缓冲，按帧合并后 flush（见 [scheduleStreamFlush]） */
     private fun appendToLast(conversationId: String, chunk: String) {
-        updateLastMessage(conversationId) { it.copy(content = it.content + chunk) }
-        maybeCheckpoint()
+        appendStreamChunk(conversationId, chunk, reasoning = false)
     }
 
     /**
      * 思考增量追加到绑定对话尾部 assistant 消息的 [AiChatMessage.reasoning]：与正文
-     * 分列，UI 在气泡上方的折叠块里展示；同样参与 checkpoint 节流（长思考也要能恢复）。
+     * 分列，UI 在气泡上方的折叠块里展示；同样进缓冲，参与 checkpoint 节流。
      */
     private fun appendReasoningToLast(conversationId: String, chunk: String) {
-        updateLastMessage(conversationId) { it.copy(reasoning = it.reasoning + chunk) }
+        appendStreamChunk(conversationId, chunk, reasoning = true)
+    }
+
+    private fun appendStreamChunk(conversationId: String, chunk: String, reasoning: Boolean) {
+        val accumulator = streamAccumulators.getOrPut(conversationId) { StreamAccumulator() }
+        synchronized(accumulator.lock) {
+            if (reasoning) accumulator.reasoning.append(chunk) else accumulator.content.append(chunk)
+        }
+        scheduleStreamFlush(conversationId, accumulator)
+    }
+
+    /**
+     * 单飞调度：同一对话同时最多一个 flush 协程。flush 期间到达的增量只进缓冲，
+     * soon 由 finally 再补一拍——不会为每个 token 起 Job，也不会丢尾部文本。
+     */
+    private fun scheduleStreamFlush(conversationId: String, accumulator: StreamAccumulator) {
+        val shouldSchedule = synchronized(accumulator.lock) {
+            if (accumulator.flushScheduled) {
+                false
+            } else {
+                accumulator.flushScheduled = true
+                true
+            }
+        }
+        if (!shouldSchedule) return
+        scope.launch {
+            delay(STREAM_FLUSH_INTERVAL_MILLIS)
+            try {
+                flushStream(conversationId)
+            } finally {
+                synchronized(accumulator.lock) { accumulator.flushScheduled = false }
+                // 只有 accumulator 仍是该对话的当前缓冲时才续拍：对话被删除/清空后
+                // 无主缓冲不再自调度（否则会形成“空转 job”循环）
+                if (streamAccumulators[conversationId] === accumulator &&
+                    !accumulator.isEmpty()
+                ) {
+                    scheduleStreamFlush(conversationId, accumulator)
+                }
+            }
+        }
+    }
+
+    /**
+     * 缓冲 → 一次 assistant 消息更新：一轮流式最多约 30 次 StateFlow 发射 / checkpoint 判定。
+     *
+     * **取走缓冲与写回消息必须在同一临界区**：flush 有三个并发入口（调度协程、
+     * checkpoint 的 [flushAllStreams]、流协程的工具轮边界/收尾），都跑在多线程的
+     * [scope] 上。若在锁外写回，A 取走 "abc" 尚未落地时、B 取走 "def" 并先落地，
+     * 正文就会变成 "…defabc"；工具轮次没有 [finalizeLast] 的正文回写兜底，乱序会
+     * 直接落盘。锁内只做非挂起的 StateFlow 更新（读取侧不被阻塞），不会形成挂起点。
+     */
+    private fun flushStream(conversationId: String) {
+        val accumulator = streamAccumulators[conversationId] ?: return
+        synchronized(accumulator.lock) {
+            if (accumulator.content.isEmpty() && accumulator.reasoning.isEmpty()) return
+            val content = accumulator.content.toString()
+            accumulator.content.setLength(0)
+            val reasoning = accumulator.reasoning.toString()
+            accumulator.reasoning.setLength(0)
+            updateLastMessage(conversationId) { message ->
+                message.copy(
+                    content = if (content.isEmpty()) message.content else message.content + content,
+                    reasoning = if (reasoning.isEmpty()) {
+                        message.reasoning
+                    } else {
+                        message.reasoning + reasoning
+                    },
+                )
+            }
+        }
         maybeCheckpoint()
+    }
+
+    /** 工具轮/收尾/落盘前把全部缓冲清空，保证消息正文与持久化快照一致 */
+    private fun flushAllStreams() {
+        streamAccumulators.keys.forEach(::flushStream)
+    }
+
+    private class StreamAccumulator {
+        val lock = Any()
+        val content = StringBuilder()
+        val reasoning = StringBuilder()
+        var flushScheduled = false
+
+        fun isEmpty(): Boolean = synchronized(lock) {
+            content.isEmpty() && reasoning.isEmpty()
+        }
+
+        /** 丢弃尚未 flush 的文本（对话删除/清空后不再有落点） */
+        fun discard() {
+            synchronized(lock) {
+                content.setLength(0)
+                reasoning.setLength(0)
+            }
+        }
     }
 
     /**
      * 长流中途落盘（默认节流到 [CHECKPOINT_INTERVAL_MILLIS]）：进程被杀时至少恢复已收到的
-     * 部分。运行在流式回调线程，异步交给仓库 scope，不阻塞读循环。工具结果每轮回填后
-     * 用 `force = true` 强制落盘（设计稿 §6.4）。
+     * 部分。运行在仓库 scope，不阻塞读循环；上一次写未完成时跳过本次（不排队堆积）——
+     * `force = true`（工具结果每轮回填）同样让位：这一拍不落盘，后续照常节流触发，
+     * 本轮结束的 [persist] 还会做一次完整 durable 落盘兜底。checkpoint 走非 durable 写
+     * （不 fsync/bak）。
      */
     private fun maybeCheckpoint(force: Boolean = false) {
         val now = nowMillis()
         if (!force && now - lastCheckpointAt < CHECKPOINT_INTERVAL_MILLIS) return
+        // 在途时直接放弃：lastCheckpointAt 不推进，下一次触达仍会按节流窗口重试
+        if (!checkpointInFlight.compareAndSet(false, true)) return
         lastCheckpointAt = now
         scope.launch {
             try {
-                persist()
+                flushAllStreams()
+                persist(durable = false)
             } catch (_: CancellationException) {
                 // 仓库 scope 不主动取消任务；这里只防御 persist 内部的可取消挂起点
             } catch (_: Exception) {
                 // checkpoint 是尽力而为：失败由最终落盘兜底，不能让后台 Job 崩掉进程
+            } finally {
+                checkpointInFlight.set(false)
             }
         }
     }
@@ -2495,8 +2652,11 @@ class AiChatRepository internal constructor(
      * 落盘（阻塞 I/O，经 Dispatchers.IO）；失败只影响下次装载（历史可弃）。
      * [persistMutex] 串行化所有落盘，且快照在锁内取：后台 checkpoint 的旧快照不会
      * 覆盖随后完成的最终落盘。
+     *
+     * @param durable false = 流式 checkpoint：不 fsync、不复制整库 bak（见
+     *   [AiChatStore.saveCheckpoint]）；最终回复/管理操作保持 true。
      */
-    private suspend fun persist() {
+    private suspend fun persist(durable: Boolean = true) {
         withContext(Dispatchers.IO) {
             persistMutex.withLock {
                 // 每场对话各自截最旧：上限是单对话语义（一场长对话不会挤掉别的对话）
@@ -2506,7 +2666,7 @@ class AiChatRepository internal constructor(
                     },
                     activeConversationId = _activeConversationId.value,
                 )
-                store.save(file)
+                if (durable) store.save(file) else store.saveCheckpoint(file)
             }
         }
     }
@@ -2548,8 +2708,14 @@ class AiChatRepository internal constructor(
         /** 孤儿图片清理的宽限期：比它新的未引用文件（已导入未发送的待发送图片）不删 */
         const val ORPHAN_IMAGE_GRACE_MILLIS = 24 * 60 * 60 * 1000L
 
-        /** 流式期间半截 checkpoint 的节流间隔（进程被杀时尽量少丢内容） */
-        const val CHECKPOINT_INTERVAL_MILLIS = 2000L
+        /** 历史回放时图片消息的文本占位：当前轮图片仍正常编码 */
+        const val HISTORY_IMAGE_PLACEHOLDER = "[图片]"
+
+        /** 流式期间半截 checkpoint 的节流间隔（进程被杀时尽量少丢内容；写放大下降 2.5 倍） */
+        const val CHECKPOINT_INTERVAL_MILLIS = 5_000L
+
+        /** 流式增量合并窗口：约 30 次/秒 StateFlow 更新（60Hz 屏上每两帧一次） */
+        const val STREAM_FLUSH_INTERVAL_MILLIS = 33L
 
         /** 应用侧装配入口（AppContainer）；测试直接构造注入 fake store / fake client / fake writer */
         suspend fun create(

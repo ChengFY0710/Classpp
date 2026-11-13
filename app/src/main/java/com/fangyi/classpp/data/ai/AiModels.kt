@@ -218,11 +218,18 @@ data class AiChatTurn(
 @Serializable
 data class AiTurnImage(val mediaType: String, val base64: String)
 
-/** AI 模块的 Json 配置：与 ScheduleJson.storage 同参（ignoreUnknownKeys + encodeDefaults + 严格） */
+/** AI 模块的 Json 配置：storage 与 ScheduleJson.storage 同参；storageLean 用于整库紧凑写入 */
 internal object AiJson {
     val storage: Json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
+        isLenient = false
+        prettyPrint = false
+    }
+
+    val storageLean: Json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = false
         isLenient = false
         prettyPrint = false
     }

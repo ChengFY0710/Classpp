@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -73,6 +74,16 @@ internal val TopBarContentGap = 18.dp
 /** 根页三张入口卡之间的间距（设计稿：独立卡片、留缝堆叠） */
 private val EntryCardSpacing = 12.dp
 
+/** 六个懒挂载子页：首次打开前先 prewarm 三帧，再启动转场 */
+private enum class SettingsSubPage {
+    Personalization,
+    Notifications,
+    AiSettings,
+    AccountSync,
+    DataManagement,
+    About,
+}
+
 /**
  * 「账号与同步」入口卡的行值：未连接 / 已连接 姓名 / 登录已过期。
  * 状态流在这一行内 collect（活跃会话未就绪时显示未连接）；过期态没有独立落盘标志，
@@ -89,11 +100,14 @@ private fun SettingsAccountSyncCard(
     val slot = schools?.activeSession?.collectAsState()?.value
     val sync = (slot as? SessionSlot.Ready)?.session?.sync?.state?.collectAsState()?.value
     val label = stringResource(R.string.settings_account_sync)
-    val valueText = if (sync != null && sync.uid.isNotEmpty()) {
-        if (sync.accountName.isBlank()) stringResource(R.string.sync_connected_label)
-        else stringResource(R.string.sync_connected_name, sync.accountName)
-    } else {
-        stringResource(R.string.sync_not_connected_label)
+    val valueText = when {
+        // 容器/会话尚未就绪：不能误显示“未连接”
+        slot == null || slot is SessionSlot.Loading ->
+            stringResource(R.string.settings_value_loading)
+        sync != null && sync.uid.isNotEmpty() ->
+            if (sync.accountName.isBlank()) stringResource(R.string.sync_connected_label)
+            else stringResource(R.string.sync_connected_name, sync.accountName)
+        else -> stringResource(R.string.sync_not_connected_label)
     }
     val items = remember(label, valueText, onClick) {
         listOf(
@@ -121,10 +135,12 @@ private fun SettingsAiEntryCard(
 ) {
     val configured = if (repository != null) repository.configured.collectAsState().value else false
     val label = stringResource(R.string.settings_ai)
-    val valueText = stringResource(
-        if (configured) R.string.ai_settings_status_configured
-        else R.string.ai_settings_status_not_configured,
-    )
+    val valueText = when {
+        // AI 历史在容器就绪后后台预热：null ≠ 未配置，先显示加载中
+        repository == null -> stringResource(R.string.settings_value_loading)
+        configured -> stringResource(R.string.ai_settings_status_configured)
+        else -> stringResource(R.string.ai_settings_status_not_configured)
+    }
     val items = remember(label, valueText, onClick) {
         listOf(
             SettingsCardwithIconItem(
@@ -226,9 +242,27 @@ fun SettingsScreen(
     var showAccountSync by rememberSaveable { mutableStateOf(false) }
     var showDataManagement by rememberSaveable { mutableStateOf(false) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
-    // 覆盖层内容常驻组合（ui.motion 的 PageOverlayTransition）：隐藏态下页面只是停在
-    // 屏外、返回键处理必须让位给系统（否则主界面按返回会被吃掉）；转场彻底结束后把
-    // 子页复位到根页——与此前 AnimatedVisibility「关闭即销毁」的重开语义一致
+    // 子页懒挂载（P0）：从未打开过的页面不参与组合，冷启动只组合设置根页。
+    // 首次打开后保持挂载（退出动画、滚动位置、冻结帧复用），关闭设置只复位 visible。
+    //
+    // 三条约定（改这里之前先读）：
+    // 1. everXxx 只置真、不清零：用户访问过的子页会一直留在组合里，六个页都访问过后
+    //    设置页回到「全量常驻」。收益只在「首次打开前」成立——这是与「关闭即卸载会
+    //    丢滚动位置/冻结帧/重播退出动画」之间的取舍，不是遗漏；
+    // 2. prewarmPage 是**一次性播放令牌**而非可见性：预热窗口内整层停在 x=0 近透明
+    //    并消费触摸（见 PageOverlayTransition），所以只允许持续 3 帧；
+    // 3. prewarmPage 不进 rememberSaveable：预热帧只有 3 帧，进程重建后无从续播，
+    //    请求直接丢弃即可（重建后停在设置根页，用户再点一次入口）。
+    var everPersonalization by rememberSaveable { mutableStateOf(false) }
+    var everNotifications by rememberSaveable { mutableStateOf(false) }
+    var everAiSettings by rememberSaveable { mutableStateOf(false) }
+    var everAccountSync by rememberSaveable { mutableStateOf(false) }
+    var everDataManagement by rememberSaveable { mutableStateOf(false) }
+    var everAbout by rememberSaveable { mutableStateOf(false) }
+    // 首次打开前的三帧预热：先以 prewarm 态把页面画在 x=0（Haze 初始化 + 冻结帧录制），
+    // 再置 visible 启动正式转场；否则页面首次从屏外滑入时 Haze 效果落在屏外，
+    // 与既有「子页屏外预热会触发 RenderThread 递归」的约束冲突
+    var prewarmPage by remember { mutableStateOf<SettingsSubPage?>(null) }
     val overlayActive = LocalPageOverlayActive.current
     // 启动空闲预热帧（MainActivity 在首帧后触发）：整页停在 x=0 近透明画两帧，
     // 让各屏顶栏的 Haze 初始化并录下就位帧。交互仍按 overlayActive 判定
@@ -268,13 +302,56 @@ fun SettingsScreen(
         }
     }
     // 导航回调记忆化（同 MainActivity 的范式）：闭包捕获同一 MutableState 实例，
-    // 语义与内联写法一致；避免每次重组都把各屏的入参变成新实例、连带重组
-    val openPersonalization = remember { { showPersonalization = true } }
-    val openNotifications = remember { { showNotifications = true } }
-    val openAiSettings = remember { { showAiSettings = true } }
-    val openAccountSync = remember { { showAccountSync = true } }
-    val openDataManagement = remember { { showDataManagement = true } }
-    val openAbout = remember { { showAbout = true } }
+    // 语义与内联写法一致；避免每次重组都把各屏的入参变成新实例、连带重组。
+    // 首次进入某子页时先置 prewarmPage（两帧预热后再 visible），已访问过的直接展开
+    fun isEverOpened(page: SettingsSubPage): Boolean = when (page) {
+        SettingsSubPage.Personalization -> everPersonalization
+        SettingsSubPage.Notifications -> everNotifications
+        SettingsSubPage.AiSettings -> everAiSettings
+        SettingsSubPage.AccountSync -> everAccountSync
+        SettingsSubPage.DataManagement -> everDataManagement
+        SettingsSubPage.About -> everAbout
+    }
+
+    fun markOpened(page: SettingsSubPage) {
+        when (page) {
+            SettingsSubPage.Personalization -> {
+                showPersonalization = true
+                everPersonalization = true
+            }
+            SettingsSubPage.Notifications -> {
+                showNotifications = true
+                everNotifications = true
+            }
+            SettingsSubPage.AiSettings -> {
+                showAiSettings = true
+                everAiSettings = true
+            }
+            SettingsSubPage.AccountSync -> {
+                showAccountSync = true
+                everAccountSync = true
+            }
+            SettingsSubPage.DataManagement -> {
+                showDataManagement = true
+                everDataManagement = true
+            }
+            SettingsSubPage.About -> {
+                showAbout = true
+                everAbout = true
+            }
+        }
+    }
+
+    fun requestOpen(page: SettingsSubPage) {
+        if (isEverOpened(page)) markOpened(page) else prewarmPage = page
+    }
+
+    val openPersonalization = remember { { requestOpen(SettingsSubPage.Personalization) } }
+    val openNotifications = remember { { requestOpen(SettingsSubPage.Notifications) } }
+    val openAiSettings = remember { { requestOpen(SettingsSubPage.AiSettings) } }
+    val openAccountSync = remember { { requestOpen(SettingsSubPage.AccountSync) } }
+    val openDataManagement = remember { { requestOpen(SettingsSubPage.DataManagement) } }
+    val openAbout = remember { { requestOpen(SettingsSubPage.About) } }
     val closePersonalization = remember { { showPersonalization = false } }
     val closeNotifications = remember { { showNotifications = false } }
     val closeAiSettings = remember { { showAiSettings = false } }
@@ -302,23 +379,54 @@ fun SettingsScreen(
             showAccountSync = false
             showDataManagement = false
             showAbout = false
+            prewarmPage = null
         }
+    }
+    // 首次打开子页：先以 prewarm 态画三帧（顶栏 Haze 初始化 + 冻结帧录制，含
+    // onGloballyPositioned 量高后第二帧重录），再置 visible 启动正式滑动
+    LaunchedEffect(prewarmPage, overlayActive) {
+        val page = prewarmPage ?: return@LaunchedEffect
+        if (!overlayActive) {
+            prewarmPage = null
+            return@LaunchedEffect
+        }
+        withFrameNanos { }
+        withFrameNanos { }
+        withFrameNanos { }
+        if (prewarmPage != page) return@LaunchedEffect
+        markOpened(page)
+        prewarmPage = null
     }
     // 直达子页请求：展开「账号与同步」（转场与手动进入一致）。声明在上方复位效果之后，
     // 首帧两个效果依次执行时直达请求后跑、不被隐藏态复位吞掉
     LaunchedEffect(openAccountSyncDirectly) {
         if (openAccountSyncDirectly) {
-            showAccountSync = true
+            requestOpen(SettingsSubPage.AccountSync)
             onAccountSyncDirectlyOpened()
         }
     }
     // 直达「AI 设置」请求（AI 对话浮层的设置入口）：语义同上
     LaunchedEffect(openAiSettingsDirectly) {
         if (openAiSettingsDirectly) {
-            showAiSettings = true
+            requestOpen(SettingsSubPage.AiSettings)
             onAiSettingsDirectlyOpened()
         }
     }
+
+    // 懒挂载条件：可见 / 已访问过 / 正在首次打开的预热帧。未访问过的子页不组合，
+    // 冷启动只保留设置根页一屏；访问过的保持挂载，退出动画与滚动状态不重来
+    val personalizationMounted = showPersonalization || everPersonalization ||
+        (overlayActive && prewarmPage == SettingsSubPage.Personalization)
+    val notificationsMounted = showNotifications || everNotifications ||
+        (overlayActive && prewarmPage == SettingsSubPage.Notifications)
+    val aiSettingsMounted = showAiSettings || everAiSettings ||
+        (overlayActive && prewarmPage == SettingsSubPage.AiSettings)
+    val accountSyncMounted = showAccountSync || everAccountSync ||
+        (overlayActive && prewarmPage == SettingsSubPage.AccountSync)
+    val dataManagementMounted = showDataManagement || everDataManagement ||
+        (overlayActive && prewarmPage == SettingsSubPage.DataManagement)
+    val aboutMounted = showAbout || everAbout ||
+        (overlayActive && prewarmPage == SettingsSubPage.About)
 
     Box(modifier.fillMaxSize()) {
         // 整页（根页 + 各子页）滚动内容启用 iOS 式橡皮筋 overscroll（ui.motion 的
@@ -335,25 +443,26 @@ fun SettingsScreen(
                 visible = showAccountSync,
                 modifier = fullSizeModifier,
                 state = accountSyncTransition,
-                prewarm = prewarm,
+                prewarm = prewarm || prewarmPage == SettingsSubPage.AccountSync,
                 behind = {
                     PageOverlayTransition(
                         visible = showAiSettings,
                         modifier = fullSizeModifier,
                         state = aiSettingsTransition,
-                        prewarm = prewarm,
+                        prewarm = prewarm || prewarmPage == SettingsSubPage.AiSettings,
                         behind = {
                             PageOverlayTransition(
                                 visible = showNotifications,
                                 modifier = fullSizeModifier,
                                 state = notificationTransition,
-                                prewarm = prewarm,
+                                prewarm = prewarm || prewarmPage == SettingsSubPage.Notifications,
                                 behind = {
                                     PageOverlayTransition(
                                         visible = showPersonalization,
                                         modifier = fullSizeModifier,
                                         state = personalizationTransition,
-                                        prewarm = prewarm,
+                                        prewarm = prewarm ||
+                                            prewarmPage == SettingsSubPage.Personalization,
                                         behind = {
                                             // 「数据管理」与「关于」都是根级子页：数据管理在外、
                                             // 「关于」紧贴根页；两者互斥，打开时其余子页停在屏外
@@ -361,13 +470,15 @@ fun SettingsScreen(
                                                 visible = showDataManagement,
                                                 modifier = fullSizeModifier,
                                                 state = dataManagementTransition,
-                                                prewarm = prewarm,
+                                                prewarm = prewarm ||
+                                                    prewarmPage == SettingsSubPage.DataManagement,
                                                 behind = {
                                                     PageOverlayTransition(
                                                         visible = showAbout,
                                                         modifier = fullSizeModifier,
                                                         state = aboutTransition,
-                                                        prewarm = prewarm,
+                                                        prewarm = prewarm ||
+                                                            prewarmPage == SettingsSubPage.About,
                                                         behind = {
                                                             SettingsHomePage(
                                                                 onClose = onClose,
@@ -389,78 +500,90 @@ fun SettingsScreen(
                                                             )
                                                         },
                                                     ) {
-                                                        AboutScreen(
-                                                            onBack = closeAbout,
-                                                            settingsTransforming = settingsTransforming,
-                                                            modifier = fullSizeModifier,
-                                                        )
+                                                        if (aboutMounted) {
+                                                            AboutScreen(
+                                                                onBack = closeAbout,
+                                                                settingsTransforming = settingsTransforming,
+                                                                modifier = fullSizeModifier,
+                                                            )
+                                                        }
                                                     }
                                                 },
                                             ) {
-                                                DataManagementScreen(
-                                                    onBack = closeDataManagement,
-                                                    scheduleRepository = repository,
-                                                    todoRepository = todoRepository,
-                                                    tagRepository = tagRepository,
-                                                    aiChatRepository = aiChatRepository,
-                                                    onDataRestored = onDataRestored,
-                                                    settingsTransforming = settingsTransforming,
-                                                    modifier = fullSizeModifier,
-                                                )
+                                                if (dataManagementMounted) {
+                                                    DataManagementScreen(
+                                                        onBack = closeDataManagement,
+                                                        scheduleRepository = repository,
+                                                        todoRepository = todoRepository,
+                                                        tagRepository = tagRepository,
+                                                        aiChatRepository = aiChatRepository,
+                                                        onDataRestored = onDataRestored,
+                                                        settingsTransforming = settingsTransforming,
+                                                        modifier = fullSizeModifier,
+                                                    )
+                                                }
                                             }
                                         },
                                     ) {
-                                        PersonalizationScreen(
-                                            onBack = closePersonalization,
-                                            themeMode = themeMode,
-                                            onThemeModeChange = onThemeModeChange,
-                                            themeAccent = themeAccent,
-                                            onThemeAccentChange = onThemeAccentChange,
-                                            repository = repository,
-                                            cardHeights = cardHeights,
-                                            onCardHeightsChange = onCardHeightsChange,
-                                            showTeacher = showTeacher,
-                                            onShowTeacherChange = onShowTeacherChange,
-                                            glassStyle = glassStyle,
-                                            onGlassStyleChange = onGlassStyleChange,
-                                            todoMasonry = todoMasonry,
-                                            onTodoMasonryChange = onTodoMasonryChange,
-                                            overlayTopBarBlur = overlayTopBarBlur,
-                                            onOverlayTopBarBlurChange = onOverlayTopBarBlurChange,
-                                            settingsTransforming = settingsTransforming,
-                                            modifier = fullSizeModifier,
-                                        )
+                                        if (personalizationMounted) {
+                                            PersonalizationScreen(
+                                                onBack = closePersonalization,
+                                                themeMode = themeMode,
+                                                onThemeModeChange = onThemeModeChange,
+                                                themeAccent = themeAccent,
+                                                onThemeAccentChange = onThemeAccentChange,
+                                                repository = repository,
+                                                cardHeights = cardHeights,
+                                                onCardHeightsChange = onCardHeightsChange,
+                                                showTeacher = showTeacher,
+                                                onShowTeacherChange = onShowTeacherChange,
+                                                glassStyle = glassStyle,
+                                                onGlassStyleChange = onGlassStyleChange,
+                                                todoMasonry = todoMasonry,
+                                                onTodoMasonryChange = onTodoMasonryChange,
+                                                overlayTopBarBlur = overlayTopBarBlur,
+                                                onOverlayTopBarBlurChange = onOverlayTopBarBlurChange,
+                                                settingsTransforming = settingsTransforming,
+                                                modifier = fullSizeModifier,
+                                            )
+                                        }
                                     }
                                 },
                             ) {
-                                NotificationScreen(
-                                    onBack = closeNotifications,
-                                    settingsTransforming = settingsTransforming,
-                                    modifier = fullSizeModifier,
-                                )
+                                if (notificationsMounted) {
+                                    NotificationScreen(
+                                        onBack = closeNotifications,
+                                        settingsTransforming = settingsTransforming,
+                                        modifier = fullSizeModifier,
+                                    )
+                                }
                             }
                         },
                     ) {
-                        AISettingsScreen(
-                            onBack = closeAiSettings,
-                            aiChatRepository = aiChatRepository,
-                            settingsTransforming = settingsTransforming,
-                            modifier = fullSizeModifier,
-                        )
+                        if (aiSettingsMounted) {
+                            AISettingsScreen(
+                                onBack = closeAiSettings,
+                                aiChatRepository = aiChatRepository,
+                                settingsTransforming = settingsTransforming,
+                                modifier = fullSizeModifier,
+                            )
+                        }
                     }
                 },
             ) {
-                AccountSyncScreen(
-                    slot = activeSlot,
-                    onBack = closeAccountSync,
-                    // 学校 UI 绑定（目前是网页登录浮层）；未绑定 = 不显示网页登录入口
-                    schoolUi = activeSchoolUi,
-                    dailySync = dailySync,
-                    // 学校选择入口/浮层：列表与切换都经注册表（切校后闹钟由注册表重排）
-                    schools = schools,
-                    settingsTransforming = settingsTransforming,
-                    modifier = fullSizeModifier,
-                )
+                if (accountSyncMounted) {
+                    AccountSyncScreen(
+                        slot = activeSlot,
+                        onBack = closeAccountSync,
+                        // 学校 UI 绑定（目前是网页登录浮层）；未绑定 = 不显示网页登录入口
+                        schoolUi = activeSchoolUi,
+                        dailySync = dailySync,
+                        // 学校选择入口/浮层：列表与切换都经注册表（切校后闹钟由注册表重排）
+                        schools = schools,
+                        settingsTransforming = settingsTransforming,
+                        modifier = fullSizeModifier,
+                    )
+                }
             }
         }
     }

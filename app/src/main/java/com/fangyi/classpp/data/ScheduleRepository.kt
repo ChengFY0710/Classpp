@@ -10,6 +10,7 @@ import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.TimeScheme
 import com.fangyi.classpp.data.model.TimeSlotDef
 import com.fangyi.classpp.data.model.TimeText
+import com.fangyi.classpp.data.model.activeSchedule
 import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
@@ -96,7 +97,9 @@ class ScheduleRepository internal constructor(
         fileState.value = file
         _schedules.value = file.schedules
         _activeScheduleId.value = file.activeScheduleId
-        _activeSchedule.value = file.schedules.firstOrNull { it.id == file.activeScheduleId }
+        // 悬空 id 的回落规则与只读旁路共用（见 ScheduleFile.activeSchedule）：
+        // bootstrap 会先把悬空 id 修好，这里再读一遍只是为了两条路径同一实现
+        _activeSchedule.value = file.activeSchedule
         _timeSchemes.value = file.timeSchemes
     }
 

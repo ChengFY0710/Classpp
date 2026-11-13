@@ -15,6 +15,7 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoFile
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoStep
+import com.fangyi.classpp.data.model.activeTodos
 import com.fangyi.classpp.data.model.isDeleted
 import com.fangyi.classpp.data.model.isArchived
 import com.fangyi.classpp.data.model.newUuid
@@ -141,8 +142,9 @@ class TodoRepository internal constructor(
     private fun publish(file: TodoFile) {
         fileState.value = file
         // 单文件三流：活跃/已归档/回收站按软删与归档标记分流（回收站优先——归档条目被删
-        // 后只在回收站流），写入路径无需在多条列表间搬运条目
-        _todos.value = file.todos.filterNot { it.isDeleted || it.isArchived }
+        // 后只在回收站流），写入路径无需在多条列表间搬运条目。活跃流的过滤规则与
+        // 通知排期等只读旁路共用（见 TodoFile.activeTodos）
+        _todos.value = file.activeTodos
         _deletedTodos.value = file.todos.filter { it.isDeleted }
         _archivedTodos.value = file.todos.filter { it.isArchived && !it.isDeleted }
         _groups.value = file.groups

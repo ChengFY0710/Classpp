@@ -1,6 +1,7 @@
 package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.model.TodoFile
+import com.fangyi.classpp.data.model.activeTodos
 import com.fangyi.classpp.data.store.FileTodoStore
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
@@ -140,5 +141,38 @@ class FileTodoStoreTest {
         assertEquals(v2, (store().load() as LoadOutcome.Loaded<TodoFile>).file)
         // 两次保存后：bak = 最新 = main
         assertEquals(v2, ScheduleJson.decodeStorage<TodoFile>(bakFile().readText()))
+    }
+
+    @Test
+    fun `peek reads without side effects and falls back to bak`() {
+        val saved = fileWith(testTodo(id = "t1", name = "A"))
+        store().save(saved)
+        assertEquals(saved, store().peek())
+
+        // 主文件缺失：save 先写 bak 再 rename，崩在中间时只有 bak——peek 与 load 同序降级
+        mainFile().delete()
+        assertEquals(saved, store().peek())
+
+        // 主备双坏：peek 只返回 null，不隔离改名、不改动任何文件
+        mainFile().writeText("not json")
+        bakFile().writeText("also not json")
+        org.junit.Assert.assertNull(store().peek())
+        assertTrue("peek 不得搬走主文件", mainFile().exists())
+        assertTrue(
+            "peek 不得生成 .corrupt-* 留证文件",
+            folder.root.listFiles { f -> f.name.startsWith(FileTodoStore.CORRUPT_PREFIX) }
+                .orEmpty().isEmpty(),
+        )
+    }
+
+    @Test
+    fun `activeTodos excludes deleted and archived`() {
+        val live = testTodo(id = "t1", name = "活跃")
+        val archived = testTodo(id = "t2", name = "归档").copy(archivedAtMillis = 1L)
+        val deleted = testTodo(id = "t3", name = "回收站").copy(deletedAtMillis = 2L)
+        val file = TodoFile(todos = listOf(live, archived, deleted))
+
+        // 与仓库分流同一口径：软删优先于归档，两者都不参与提醒
+        assertEquals(listOf(live), file.activeTodos)
     }
 }

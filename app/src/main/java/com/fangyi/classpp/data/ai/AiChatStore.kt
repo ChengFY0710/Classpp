@@ -4,6 +4,8 @@ import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.StoreResult
 import java.io.File
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 /**
@@ -13,8 +15,11 @@ import kotlinx.serialization.Serializable
  * 活跃对话；[messages] 是 v1 的顶层消息列表，仅作旧文件迁移读取用——迁移后恒为
  * 空列表（仓库 bootstrap 负责 v1 → v2 的包装与重写落盘）。
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class AiChatFile(
+    // 整库 lean 写入时版本号仍强制落盘（见 ScheduleFile 同款说明）
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     val formatVersion: Int = AI_CHAT_FORMAT_VERSION,
     val conversations: List<AiConversation> = emptyList(),
     val activeConversationId: String? = null,
@@ -27,7 +32,15 @@ data class AiChatFile(
  */
 interface AiChatStore {
     fun load(): LoadOutcome<AiChatFile>
+
+    /** 完整落盘：tmp fsync + bak + rename（最终回复/管理操作） */
     fun save(file: AiChatFile): StoreResult
+
+    /**
+     * 流式中的半截 checkpoint：最终落盘会兜底，checkpoint 只求“进程被杀时尽量少丢”，
+     * 不值得每次 fsync + 复制整库 bak。默认退化为 [save]（测试 fake / 其它实现零改动）。
+     */
+    fun saveCheckpoint(file: AiChatFile): StoreResult = save(file)
 }
 
 /**
@@ -74,30 +87,42 @@ class FileAiChatStore(private val dir: File) : AiChatStore {
         return LoadOutcome.Fresh(AiChatFile(), LoadIssue.ResetAfterCorruption)
     }
 
-    override fun save(file: AiChatFile): StoreResult {
+    override fun save(file: AiChatFile): StoreResult = saveInternal(file, durable = true)
+
+    override fun saveCheckpoint(file: AiChatFile): StoreResult =
+        saveInternal(file, durable = false)
+
+    /**
+     * @param durable true = 最终/管理落盘：tmp fsync + 复制 bak；false = 流式 checkpoint：
+     *   只写 tmp 并 rename（文件仍是原子替换，崩溃最多丢最近 5s 的半截文本），
+     *   不承担整库 bak 的写放大与 fsync 等待。
+     */
+    private fun saveInternal(file: AiChatFile, durable: Boolean): StoreResult {
         if (!dir.exists()) dir.mkdirs()
         val text = try {
-            AiJson.storage.encodeToString(AiChatFile.serializer(), file)
+            AiJson.storageLean.encodeToString(AiChatFile.serializer(), file)
         } catch (e: Exception) {
             return StoreResult.Failed("serialize failed: ${e.message}")
         }
 
-        // 1. tmp 落盘
+        // 1. tmp 落盘（checkpoint 不 fsync：写合并阶段允许掉电丢最后一小段）
         try {
             tmp.outputStream().use { out ->
                 out.write(text.toByteArray(Charsets.UTF_8))
-                out.fd.sync()
+                if (durable) out.fd.sync()
             }
         } catch (e: Exception) {
             tmp.delete()
             return StoreResult.Failed("write tmp failed: ${e.message}")
         }
 
-        // 2. tmp → bak（备份 = 本次将提交的新数据，损坏恢复零丢失）
-        try {
-            tmp.copyTo(bak, overwrite = true)
-        } catch (_: Exception) {
-            // 备份失败不阻断主流程：本次保存的数据本身是完好的
+        // 2. tmp → bak（仅完整落盘；checkpoint 不复制整库，避免流式期间常驻写放大）
+        if (durable) {
+            try {
+                tmp.copyTo(bak, overwrite = true)
+            } catch (_: Exception) {
+                // 备份失败不阻断主流程：本次保存的数据本身是完好的
+            }
         }
 
         // 3. tmp → 主文件（POSIX 原子替换；失败删主重试，间隙由 bak 兜底）

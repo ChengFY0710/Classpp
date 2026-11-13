@@ -548,6 +548,9 @@ fun ScheduleScreen(
                     )
                 }
             val schoolAccountStatus = when {
+                // 学校会话改为容器发布后后台装配：Loading 期间显示加载中，避免误报未连接
+                activeSchoolSlot is SessionSlot.Loading ->
+                    stringResource(R.string.settings_value_loading)
                 schoolSyncState == null || schoolSyncState.uid.isEmpty() ->
                     stringResource(R.string.sync_not_connected_label)
                 schoolSyncState.accountName.isBlank() ->

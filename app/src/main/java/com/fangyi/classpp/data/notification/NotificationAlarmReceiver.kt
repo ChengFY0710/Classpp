@@ -21,9 +21,9 @@ import kotlinx.coroutines.launch
  *   普通通知不自动清除，留在通知栏由用户处理；
  * - 系统事件（开机 / 时间·时区·日期变化，均为受保护广播仅系统可发）：重排。
  *
- * goAsync + 独立协程：reschedule 要重建仓库单例（冷进程首次含磁盘读）、发通知走系统调用，
- * 同步做完有超时风险；finish 放在 finally 保证收尾。后台路径崩溃会弹系统级「应用已停止」
- * 对话框——CoroutineExceptionHandler 兜底静默，错过的重排由下一次触发时机自愈。
+ * goAsync + 独立协程：reschedule 在 IO 上读轻量 JSON（通知关闭时直接短路）、发通知走
+ * 系统调用，同步做完有超时风险；finish 放在 finally 保证收尾。后台路径崩溃会弹系统级
+ * 「应用已停止」对话框——CoroutineExceptionHandler 兜底静默，错过的重排由下一次触发时机自愈。
  * 通知的构建逻辑在 [NotificationPoster]（与测试入口共用）。
  */
 class NotificationAlarmReceiver : BroadcastReceiver() {

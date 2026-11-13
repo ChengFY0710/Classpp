@@ -1,5 +1,7 @@
 package com.fangyi.classpp.data.model
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 /** 标签存储文件的格式版本；读取时拒绝更高版本 */
@@ -24,8 +26,11 @@ data class TagEntry(
 )
 
 /** 标签整库文件信封：tags.json 的内容 */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class TagFile(
+    // 整库 lean 写入时版本号仍强制落盘（见 ScheduleFile 同款说明）
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     val formatVersion: Int = TAG_FORMAT_VERSION,
     val tags: List<TagEntry> = emptyList(),
 )

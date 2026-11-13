@@ -1,5 +1,7 @@
 package com.fangyi.classpp.data.model
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 /** 待办存储文件与分享信封的格式版本；导入时拒绝更高版本 */
@@ -117,12 +119,23 @@ val Todo.isArchived: Boolean get() = archivedAtMillis != null
  * [formatVersion] 不随 [groups] 增设而升版：纯增量字段，旧版本靠 ignoreUnknownKeys + 默认值
  * 兼容读（降级只丢分组、不触发损坏闸门），与 Todo 字段的前向兼容策略一致。
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class TodoFile(
+    // 整库 lean 写入时版本号仍强制落盘（见 ScheduleFile 同款说明）
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     val formatVersion: Int = TODO_FORMAT_VERSION,
     val todos: List<Todo> = emptyList(),
     val groups: List<TodoGroup> = emptyList(),
 )
+
+/**
+ * 活跃待办：软删除与归档都不参与提醒/统计（与 [com.fangyi.classpp.data.TodoRepository]
+ * 的活跃/回收站/已归档三路分流同源）。通知排期等只读旁路直接读文件时也必须走这里，
+ * 避免「哪些待办该提醒」在两处各写一遍后漂移。
+ */
+val TodoFile.activeTodos: List<Todo>
+    get() = todos.filterNot { it.isDeleted || it.isArchived }
 
 /**
  * 一个待办分组：[name] 即身份键（当前以名字唯一，多选/重排/删除都按它匹配），[pinned] 为置顶标记。

@@ -26,6 +26,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -57,6 +58,10 @@ class AiChatRepositoryTest {
         @Volatile
         var saveCount = 0
 
+        /** 流式半截落盘（非 durable）次数：与 [saveCount] 分开计，用于区分两条落盘路径 */
+        @Volatile
+        var checkpointCount = 0
+
         override fun load(): LoadOutcome<AiChatFile> =
             if (file.messages.isEmpty() && file.conversations.isEmpty()) {
                 LoadOutcome.Fresh(AiChatFile(), LoadIssue.None)
@@ -67,6 +72,13 @@ class AiChatRepositoryTest {
         override fun save(file: AiChatFile): StoreResult {
             this.file = file
             saveCount++
+            return StoreResult.Ok
+        }
+
+        /** 半截 checkpoint：落盘产物同 [save]，但单独计数以便断言「流式走 non-durable」 */
+        override fun saveCheckpoint(file: AiChatFile): StoreResult {
+            this.file = file
+            checkpointCount++
             return StoreResult.Ok
         }
 
@@ -471,6 +483,49 @@ class AiChatRepositoryTest {
         assertFalse(messages[1].todoSaveFailed)
         assertEquals(messages, store.persistedMessages())
         assertFalse(repo.sending.value)
+    }
+
+    @Test
+    fun `history images become text placeholder while current turn keeps image blocks`() = runBlocking {
+        val imageStore = AiImageStore(tempImageDir())
+        imageStore.file("a.jpg").parentFile.mkdirs()
+        imageStore.file("a.jpg").writeBytes(byteArrayOf(1))
+        val transport = FakeAiTransport(
+            ScriptedResponse(listOf(sse("第一轮回答"), "data: [DONE]")),
+            ScriptedResponse(listOf(sse("第二轮回答"), "data: [DONE]")),
+        )
+        val repo = AiChatRepository(
+            store = FakeAiChatStore(),
+            settings = FakeAiSettingsStore(),
+            client = AiClient(transport),
+            contextProvider = { AiChatContext() },
+            persister = FakeTodoPersister(),
+            changeWriter = FakeTodoChangeWriter(),
+            imageStore = imageStore,
+            clock = Clock { IsoDate.of(2026, 11, 1) },
+        )
+        repo.bootstrap()
+
+        repo.send("第一轮", listOf("a.jpg"))
+        repo.send("第二轮", emptyList())
+
+        // 第一轮请求：当前 user turn 仍是多模态数组（text + image）
+        val firstUser = Json.parseToJsonElement(transport.opened[0].jsonBody).jsonObject["messages"]!!
+            .jsonArray.last { it.jsonObject["role"]!!.jsonPrimitive.content == "user" }
+        assertEquals(2, firstUser.jsonObject["content"]!!.jsonArray.size)
+
+        // 第二轮请求：历史里的第一轮图片退化为文本占位，不再携带 base64
+        val secondUserTurns = Json.parseToJsonElement(transport.opened[1].jsonBody).jsonObject["messages"]!!
+            .jsonArray
+            .filter { it.jsonObject["role"]!!.jsonPrimitive.content == "user" }
+        assertEquals(2, secondUserTurns.size)
+        val historyContent = secondUserTurns[0].jsonObject["content"]!!
+        assertTrue("历史 user turn 应退化为单段文本", historyContent is JsonPrimitive)
+        assertTrue(historyContent.jsonPrimitive.content.contains("第一轮"))
+        assertTrue(historyContent.jsonPrimitive.content.contains(AiChatRepository.HISTORY_IMAGE_PLACEHOLDER))
+        val currentContent = secondUserTurns[1].jsonObject["content"]!!
+        assertTrue("本轮无图仍应是纯文本", currentContent is JsonPrimitive)
+        assertEquals("第二轮", currentContent.jsonPrimitive.content)
     }
 
     @Test
@@ -1117,7 +1172,8 @@ class AiChatRepositoryTest {
         val repo = repository(
             store = store,
             transport = FakeAiTransport(response),
-            nowMillis = { tick += 1_000; tick },
+            // 6s 步进：checkpoint 间隔已提到 5s，首个增量后的 flush 即触发半截落盘
+            nowMillis = { tick += 6_000; tick },
         )
 
         repo.sendInBackground("hi")
@@ -1129,6 +1185,67 @@ class AiChatRepositoryTest {
 
         response.gate.countDown()
         withTimeout(5000) { while (repo.sending.value) delay(10) }
+    }
+
+    @Test
+    fun `streaming checkpoint is non durable while the final write is durable`() = runBlocking {
+        var tick = 0L
+        val response = ScriptedResponse(listOf(sse("半截"), sse("正文")))
+        val store = FakeAiChatStore()
+        val repo = repository(
+            store = store,
+            transport = FakeAiTransport(response),
+            nowMillis = { tick += 6_000; tick },
+        )
+        val durableBefore = store.saveCount
+
+        repo.sendInBackground("hi")
+        withTimeout(5000) {
+            while (store.checkpointCount == 0) delay(10)
+        }
+        // 流式期间只有半截 checkpoint（saveCheckpoint），没有 durable 写
+        assertEquals(durableBefore, store.saveCount)
+
+        response.gate.countDown()
+        withTimeout(5000) { while (repo.sending.value) delay(10) }
+
+        // 收尾回到 durable 写；正文恰好是两段拼接（不丢、不重复）
+        assertTrue(store.saveCount > durableBefore)
+        assertEquals("半截正文", store.persistedMessages().last().content)
+    }
+
+    @Test
+    fun `tool run keeps every delta of the final answer in order`() = runBlocking {
+        // 工具轮的正文只由 flush 拼接（finalizeLast 不覆盖 content），
+        // 是「批发布是否保序、是否重复」最直接的回归点
+        val expected = (1..40).joinToString("") { "段$it|" }
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.GET_DAY_PLAN,
+                        arguments = """{"date":"2026-11-01"}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse((1..40).map { sse("段$it|") } + "data: [DONE]"),
+        )
+        val store = FakeAiChatStore()
+        val repo = repository(
+            store = store,
+            transport = transport,
+            contextProvider = { AiChatContext(schedule = testSchedule(), currentWeek = 12) },
+        )
+
+        repo.send("我 11 月 1 日下午有空吗")
+
+        val message = repo.messages.value.last()
+        assertEquals(expected, message.content)
+        assertEquals(expected, store.persistedMessages().last().content)
     }
 
     @Test
@@ -1187,7 +1304,8 @@ class AiChatRepositoryTest {
             changeWriter = FakeTodoChangeWriter(),
             imageStore = AiImageStore(tempImageDir()),
             clock = Clock { IsoDate.of(2026, 11, 1) },
-            nowMillis = { tick += 1_000; tick },
+            // 6s 步进：checkpoint 间隔 5s，第二个增量后的 flush 触发半截落盘
+            nowMillis = { tick += 6_000; tick },
         )
         repo.bootstrap()
 

@@ -58,10 +58,25 @@ class FileTodoStore(private val dir: File) : TodoStore {
         return LoadOutcome.Fresh(TodoFile(), LoadIssue.ResetAfterCorruption)
     }
 
+    /**
+     * 只读快照（旁路用）：**不隔离改名、不建目录**，降级顺序与 [load] 一致（主文件坏 →
+     * 试 bak；主文件缺失时也试 bak，因为 save 先写 bak 再 rename，崩在中间时只剩 bak）。
+     * 供通知排期这类「只要当前数据、不拥有数据生命周期」的调用方使用，避免旁路先一步把
+     * 主文件搬成 `.corrupt-*`，让仓库装载丢掉 `ResetAfterCorruption` 的提示。
+     */
+    fun peek(): TodoFile? {
+        val mainParsed = parseFile(main)
+        if (mainParsed != null && mainParsed.formatVersion <= TODO_FORMAT_VERSION) {
+            return mainParsed
+        }
+        val bakParsed = parseFile(bak) ?: return null
+        return if (bakParsed.formatVersion <= TODO_FORMAT_VERSION) bakParsed else null
+    }
+
     override fun save(file: TodoFile): StoreResult {
         if (!dir.exists()) dir.mkdirs()
         val text = try {
-            ScheduleJson.encodeStorage(file)
+            ScheduleJson.encodeStorageLean(file)
         } catch (e: Exception) {
             return StoreResult.Failed("serialize failed: ${e.message}")
         }

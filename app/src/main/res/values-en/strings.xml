@@ -173,6 +173,7 @@
     <string name="sync_connected_label">Connected</string>
     <string name="sync_connected_name">Connected: %1$s</string>
     <string name="sync_not_connected_label">Not connected</string>
+    <string name="settings_value_loading">Loading…</string>
     <string name="sync_last_sync_at">Last sync: %1$s</string>
     <string name="sync_last_sync_never">Never synced</string>
     <string name="xmu_intro_title">Sync course center todos</string>

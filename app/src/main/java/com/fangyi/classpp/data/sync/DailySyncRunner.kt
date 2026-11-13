@@ -59,6 +59,9 @@ class DailySyncRunner(
      */
     suspend fun runIfDue(context: Context): Outcome {
         val appContext = context.applicationContext
+        // 轻量门控先行：每日同步关闭时（默认安装即如此）不触发 registry.session()，
+        // 避免进 App 补漏路径把 Keystore/凭据解密拉进启动窗口
+        if (!registry.dailySyncToggle().enabled.value) return Outcome.Skipped
         val session = registry.session()
         val sync = session.sync
         val state = sync.state.value

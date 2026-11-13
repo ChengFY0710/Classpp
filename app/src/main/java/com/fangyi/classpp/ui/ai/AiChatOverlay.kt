@@ -22,11 +22,15 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -62,6 +66,7 @@ import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiChatRole
 import com.fangyi.classpp.data.ai.AiConversation
 import com.fangyi.classpp.data.ai.AiException
+import com.fangyi.classpp.data.ai.AiImageStore
 import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
@@ -84,12 +89,15 @@ import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
 import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
+import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
+import dev.chrisbanes.haze.HazeState
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -168,14 +176,38 @@ fun AiChatOverlay(
     // 与日历不同，闹钟不需要权限/账户编排上下文，AI 浮层同样可用
     val addToAlarm = rememberAddToAlarm()
 
-    val messages by aiChatRepository?.messages?.collectAsState()
-        ?: remember { mutableStateOf(emptyList<AiChatMessage>()) }
+    // 收集为 State 实例而非直接解包：根组合只读 derived 后的 hasMessages/scrollSignal，
+    // 流式增量（每 33ms 一批）不再让整个浮层根函数重组
+    val messagesState: State<List<AiChatMessage>> =
+        aiChatRepository?.messages?.collectAsState()
+            ?: remember { mutableStateOf(emptyList<AiChatMessage>()) }
+    val hasMessages by remember(messagesState) {
+        derivedStateOf { messagesState.value.isNotEmpty() }
+    }
+    // 只在这些信号变化时做离散滚底：流式正文增长（size/卡计数不变）不触发
+    val scrollSignal by remember(messagesState) {
+        derivedStateOf {
+            val list = messagesState.value
+            val last = list.lastOrNull()
+            ChatScrollSignal(
+                size = list.size,
+                todoIds = last?.todoIds?.size ?: 0,
+                changes = last?.todoChanges?.size ?: 0,
+                completions = last?.todoCompletions?.size ?: 0,
+                lifecycles = last?.todoLifecycles?.size ?: 0,
+            )
+        }
+    }
     val sending by aiChatRepository?.sending?.collectAsState() ?: remember { mutableStateOf(false) }
     val lastError by aiChatRepository?.lastError?.collectAsState()
         ?: remember { mutableStateOf<AiException?>(null) }
     val configured by aiChatRepository?.configured?.collectAsState() ?: remember { mutableStateOf(false) }
-    val conversations by aiChatRepository?.conversations?.collectAsState()
-        ?: remember { mutableStateOf(emptyList<AiConversation>()) }
+    val conversationsState: State<List<AiConversation>> =
+        aiChatRepository?.conversations?.collectAsState()
+            ?: remember { mutableStateOf(emptyList<AiConversation>()) }
+    val hasConversations by remember(conversationsState) {
+        derivedStateOf { conversationsState.value.isNotEmpty() }
+    }
     val activeConversationId by aiChatRepository?.activeConversationId?.collectAsState()
         ?: remember { mutableStateOf<String?>(null) }
     // 正在应用确认卡的消息 id：null = 空闲。只影响对应消息的按钮态，不阻塞输入
@@ -214,7 +246,7 @@ fun AiChatOverlay(
     }
     val todosById = remember(todos) { todos.associateBy { it.id } }
 
-    var input by rememberSaveable { mutableStateOf("") }
+    val inputState = rememberSaveable { mutableStateOf("") }
     // 「所有对话」管理浮层两态口径（同 ScheduleScreen 的 switcherVisible/mounted）：
     // visible 请求进出场，mounted 是挂载快照（出场动画播完才卸载）
     var conversationsVisible by remember { mutableStateOf(false) }
@@ -245,14 +277,15 @@ fun AiChatOverlay(
     // 新消息首帧就会被「发送中逐帧钉底」直接钉到底，滚动接住整段看不见。
     var sendEntrance by remember { mutableStateOf<SendEntrance?>(null) }
     // 上一次已响应的消息 id 序列：滚底 effect 也会被切对话/打开浮层/待办卡落位触发，
-    // 只有「原列表原样延长」才算发送追加（判定见 isPureAppend）
-    var lastMessageIds by remember { mutableStateOf(messages.map { it.id }) }
+    // 只有「原列表原样延长」才算发送追加（判定见 isPureAppend）。初值留空，
+    // 由滚底 effect 首跑时写入——避免根组合读 messagesState（会订阅每批流式发射）
+    var lastMessageIds by remember { mutableStateOf<List<String>>(emptyList()) }
 
     // ——— 图片附件：相册选图 / 拍照（Photo Picker 无需权限；TakePicture 唤系统相机） ———
 
     val imageStore = aiChatRepository?.imageStore
     // 待发送图片附件（已导入的压缩副本文件名）：发送时随消息入流；浮层退场仍未发送则删副本
-    var pendingImageNames by rememberSaveable { mutableStateOf(listOf<String>()) }
+    val pendingImagesState = rememberSaveable { mutableStateOf(listOf<String>()) }
     // 拍照临时文件（TakePicture 的输出目标）：结果回来后导入压缩，无论成败即删
     var captureFile by remember { mutableStateOf<File?>(null) }
     // 全屏预览的已发送图片文件名（气泡缩略图点开）；null = 无预览
@@ -261,14 +294,15 @@ fun AiChatOverlay(
     /** 相册多选导入：Photo Picker 的 URI 是临时授权，先导入压缩副本（IO），超额度截断 */
     fun importImages(uris: List<Uri>) {
         val store = imageStore ?: return
-        val remaining = MaxImagesPerMessage - pendingImageNames.size
+        val remaining = MaxImagesPerMessage - pendingImagesState.value.size
         if (remaining <= 0 || uris.isEmpty()) return
         scope.launch {
             val imported = withContext(Dispatchers.IO) {
                 uris.take(remaining).mapNotNull { store.import(context, it) }
             }
             if (imported.isNotEmpty()) {
-                pendingImageNames = (pendingImageNames + imported).take(MaxImagesPerMessage)
+                pendingImagesState.value =
+                    (pendingImagesState.value + imported).take(MaxImagesPerMessage)
             }
         }
     }
@@ -284,8 +318,9 @@ fun AiChatOverlay(
                 store.import(context, Uri.fromFile(temp)).also { temp.delete() }
             }
             if (imported != null) {
-                if (pendingImageNames.size < MaxImagesPerMessage) {
-                    pendingImageNames = (pendingImageNames + imported).take(MaxImagesPerMessage)
+                if (pendingImagesState.value.size < MaxImagesPerMessage) {
+                    pendingImagesState.value =
+                        (pendingImagesState.value + imported).take(MaxImagesPerMessage)
                 } else {
                     // 额度满（理论上入口已拦住）：不留孤儿副本
                     withContext(Dispatchers.IO) { store.delete(imported) }
@@ -311,7 +346,7 @@ fun AiChatOverlay(
     /** 相册选图入口：额度满不再拉起选择器 */
     fun launchGallery() {
         if (imageStore == null) return
-        if (pendingImageNames.size >= MaxImagesPerMessage) return
+        if (pendingImagesState.value.size >= MaxImagesPerMessage) return
         galleryLauncher.launch(
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
         )
@@ -320,7 +355,7 @@ fun AiChatOverlay(
     /** 拍照入口：预建 cacheDir 临时文件，经 FileProvider 授权给系统相机写入 */
     fun startCapture() {
         if (imageStore == null) return
-        if (pendingImageNames.size >= MaxImagesPerMessage) return
+        if (pendingImagesState.value.size >= MaxImagesPerMessage) return
         val dir = File(context.cacheDir, CaptureDirName).apply { mkdirs() }
         // 上一次拍照没带回结果（拍照中途收浮层，结果回调不再执行）的残留临时文件顺手清掉
         dir.listFiles()?.forEach { it.delete() }
@@ -334,15 +369,15 @@ fun AiChatOverlay(
     /** 移除一张待发送图片：引用与副本文件一起删（还没随消息落库，没有别的持有方） */
     fun removePendingImage(file: File) {
         val store = imageStore ?: return
-        pendingImageNames = pendingImageNames - file.name
+        pendingImagesState.value = pendingImagesState.value - file.name
         scope.launch(Dispatchers.IO) { store.delete(file.name) }
     }
 
     /** 浮层退场收尾：未发送的待发送图片没有持有方了，副本一并删除 */
     fun clearPendingImages() {
-        val stale = pendingImageNames
+        val stale = pendingImagesState.value
         if (stale.isEmpty()) return
-        pendingImageNames = emptyList()
+        pendingImagesState.value = emptyList()
         val store = imageStore ?: return
         scope.launch(Dispatchers.IO) {
             stale.forEach { store.delete(it) }
@@ -373,37 +408,31 @@ fun AiChatOverlay(
     }
 
     // 删光对话时自动收起管理浮层：列表空了无从管理，回到无对话态（入口点击不再有反应）。
-    // key 取「是否为空」而非列表本身：流式增量逐字刷新 conversations，不该反复重启本协程
-    LaunchedEffect(conversations.isEmpty()) {
-        if (conversations.isEmpty()) conversationsVisible = false
+    // key 取「是否为空」而非列表本身：流式增量刷新 conversations 不该反复重启本协程
+    LaunchedEffect(hasConversations) {
+        if (!hasConversations) conversationsVisible = false
     }
 
-    // 删除对话的落库回流落定：重写帧仍在 deleteHazeRetreat 的退让窗口内，此处只推迟挂回
-    // （key 必须取列表本身：删除非活动对话时 isEmpty 不变，只有列表内容回流可作落定信号）
-    LaunchedEffect(conversations) {
-        deleteHazeRetreat.onReflow()
+    // 删除对话的落库回流落定：重写帧仍在 deleteHazeRetreat 的退让窗口内，此处只推迟挂回。
+    // snapshotFlow 只观察对话 id 序列：流式增量只改消息内容，不该每 33ms 重启一次
+    LaunchedEffect(deleteHazeRetreat, conversationsState) {
+        snapshotFlow { conversationsState.value.map { it.id } }
+            .distinctUntilChanged()
+            .collect { deleteHazeRetreat.onReflow() }
     }
 
     // 离散事件滚底：新消息入列 / 待办卡落位 / 切换对话 / 浮层可见——等下一帧布局完成后滚一次。
     // 用户主动发送那一次改走短缓动「接住」新气泡（Motion.ChatScrollCatchMillis + Overlay）；
     // 其余路径（打开浮层、切对话、待办卡落位）保持原来的立即到底——它们没有「我刚发了一条」
     // 这个因果，缓动只会让页面看起来在自作主张地动。
-    // 流式逐字不走这里（见下方「流式钉底」），那一层不能动画化。
-    LaunchedEffect(
-        messages.size,
-        messages.lastOrNull()?.todoIds?.size,
-        messages.lastOrNull()?.todoChanges?.size,
-        messages.lastOrNull()?.todoCompletions?.size,
-        messages.lastOrNull()?.todoLifecycles?.size,
-        activeConversationId,
-        visible,
-    ) {
+    // 流式增量不走这里（见下方「流式钉底」），那一层不能动画化。
+    LaunchedEffect(scrollSignal, activeConversationId, visible) {
         if (!visible) return@LaunchedEffect
         withFrameNanos { }
         val scroll = chatScroll.value
         val request = sendEntrance
-        // 流式逐字只改内容不改条数，这里天然不会被触发；切对话 / 删除是整体换写，追加判定为假
-        val ids = messages.map { it.id }
+        // 流式增量只改内容不改条数，这里天然不会被触发；切对话 / 删除是整体换写，追加判定为假
+        val ids = messagesState.value.map { it.id }
         val appended = isPureAppend(lastMessageIds, ids)
         lastMessageIds = ids
         try {
@@ -565,8 +594,8 @@ fun AiChatOverlay(
     fun sendMessage(text: String) {
         val repository = aiChatRepository ?: return
         if (sending) return
-        if (text.isBlank() && pendingImageNames.isEmpty()) return
-        val images = pendingImageNames
+        if (text.isBlank() && pendingImagesState.value.isEmpty()) return
+        val images = pendingImagesState.value
         // 落位请求必须在清空输入、仓库追加之前定：atBottom 读的是「用户按下发送那一刻」
         // 的滚动位置，消息入列之后再读已经不是同一件事了
         val scroll = chatScroll.value
@@ -575,9 +604,9 @@ fun AiChatOverlay(
                 scroll.maxValue - scroll.value <= with(density) { SendAtBottomSlop.roundToPx() },
             sentAtMillis = System.currentTimeMillis(),
         )
-        input = ""
+        inputState.value = ""
         // 图片随消息发出：文件名已由仓库随 user 消息持有，预览条清空但**不删副本**
-        pendingImageNames = emptyList()
+        pendingImagesState.value = emptyList()
         keyboard?.hide()
         // Job 归仓库所有：收起浮层/旋转不中断；停止走 cancelSending
         repository.sendInBackground(text, images)
@@ -595,7 +624,7 @@ fun AiChatOverlay(
 
     /** 打开管理浮层：没有对话时不响应（按钮可点但无反应，见顶栏 KDoc） */
     fun openConversations() {
-        if (conversations.isEmpty()) return
+        if (!hasConversations) return
         keyboard?.hide()
         conversationsVisible = true
     }
@@ -732,7 +761,7 @@ fun AiChatOverlay(
         // 空态（未配置 / 无消息）里内容列没有输入框：不参与键盘让位——键盘弹起时尾部
         // 不再撑出 IME 余量（否则空态可被拖进一大片空白）。滚动容器与橡皮筋过滚动仍由
         // OverlaySheet 正常提供，不受本开关影响。有消息时恢复 ContentScroll 的输入框让位。
-        imeBehavior = if (messages.isEmpty()) {
+        imeBehavior = if (!hasMessages) {
             SheetImeBehavior.IgnoreIme
         } else {
             SheetImeBehavior.ContentScroll
@@ -798,20 +827,17 @@ fun AiChatOverlay(
                 ) {
                     // 光场在输入栏上方再留出一段可见高度，整体接近设计稿的底部光场带
                     Spacer(Modifier.height(AuroraHeadroom))
-                    AiChatInputBar(
-                        value = input,
-                        onValueChange = { input = it },
-                        placeholder = stringResource(R.string.ai_input_hint),
-                        sendingPlaceholder = stringResource(R.string.ai_input_sending_hint),
+                    // 输入状态由本叶子读取：键入只重组输入栏，不失效整个对话浮层
+                    AiChatComposer(
+                        inputState = inputState,
+                        pendingImagesState = pendingImagesState,
+                        imageStore = imageStore,
                         sending = sending,
                         enabled = configured,
-                        onSend = { sendMessage(input) },
+                        onSend = ::sendMessage,
                         onStop = ::stopSending,
                         onTakePhoto = ::startCapture,
                         onAddImage = ::launchGallery,
-                        pendingImages = imageStore
-                            ?.let { store -> pendingImageNames.map(store::file) }
-                            ?: emptyList(),
                         onRemoveImage = ::removePendingImage,
                         hazeState = bottomHazeState,
                         backdrop = auroraBackdrop,
@@ -821,124 +847,39 @@ fun AiChatOverlay(
         },
     ) {
         when {
+            aiChatRepository == null -> AiChatLoadingState()
             !configured -> {
                 AiChatNotConfigured(onOpenSettings = onOpenSettings)
             }
-            messages.isEmpty() -> {
+            !hasMessages -> {
                 AiChatEmptyState()
             }
-            else -> {
-                // 消息之间（含回复气泡与下方待办卡）统一走全局「卡↔卡」节奏（10dp）
-                Column(verticalArrangement = Arrangement.spacedBy(CardSectionSpacing)) {
-                    // 尾部 user 消息的 id：气泡落位只认这一条（发送后追加的第一条用户消息）
-                    val lastUserId = messages.lastOrNull { it.role == AiChatRole.User }?.id
-                    messages.forEachIndexed { index, message ->
-                        // key 让入场状态跟着消息 id 走：切对话 / 删除导致槽位复用时，上一条的
-                        // 「正在入场」不会串到别的气泡上（key 不产生布局节点，spacedBy 不变）
-                        key(message.id) {
-                            // 入场判定只在首次组合时求一次：之后清 sendEntrance 既不撤图层、也不重播。
-                            // 只给 user 条入场——assistant 占位与它同帧追加，两条一起抬读不出因果
-                            val entering = remember {
-                                val request = sendEntrance
-                                request != null &&
-                                    message.role == AiChatRole.User &&
-                                    message.id == lastUserId &&
-                                    message.createdAtMillis >= request.sentAtMillis
-                            }
-                            // 不在底部（用户正在翻历史）时位移减半：这次滚动仍是硬跳，
-                            // 大幅抬升会和它叠成两段方向相反的运动
-                            val riseDp = remember {
-                                if (sendEntrance?.atBottom == false) {
-                                    BubbleRiseNearBottom
-                                } else {
-                                    BubbleRiseAtBottom
-                                }
-                            }
-                            AiChatMessageBubble(
-                                message = message,
-                                imageStore = imageStore,
-                                onImageClick = { name -> previewImageName = name },
-                                // 思考阶段 = 本场流仍在进行、这是尾部消息、正文还没开始：
-                                // 折叠块默认展开，正文一到就自动收起
-                                thinkingInProgress = sending &&
-                                    index == messages.lastIndex &&
-                                    message.role == AiChatRole.Assistant &&
-                                    message.content.isEmpty(),
-                                modifier = if (entering) {
-                                    Modifier.chatBubbleEntrance(message.id, riseDp)
-                                } else {
-                                    Modifier
-                                },
-                            )
-                            if (message.todoSaveFailed) {
-                                AiChatTodoSaveFailedHint()
-                            }
-                            // 已创建待办：按落盘的 id 顺序从活跃待办流反查（被删除/归档的自然消失）
-                            if (message.todoIds.isNotEmpty()) {
-                                val created = message.todoIds.mapNotNull(todosById::get)
-                                AiChatCreatedTodoList(
-                                    todos = created,
-                                    tagColors = tagColors,
-                                    swipeCoordinator = swipeCoordinator,
-                                    onOpen = ::openTodo,
-                                    onDelete = ::deleteTodo,
-                                    onCheckedChange = ::toggleCompleted,
-                                )
-                            }
-                            // 已完成/取消完成：直接生效，行尾可撤销（先于待确认项展示）
-                            if (message.todoCompletions.isNotEmpty()) {
-                                AiChatTodoCompletionList(
-                                    completions = message.todoCompletions,
-                                    undoing = completionUndoingMessageId == message.id,
-                                    onUndo = { index ->
-                                        aiChatRepository?.undoTodoCompletionInBackground(message.id, index)
-                                    },
-                                )
-                            }
-                            // 归档/取消归档/恢复：直接生效，行尾可撤销
-                            if (message.todoLifecycles.isNotEmpty()) {
-                                AiChatTodoLifecycleList(
-                                    lifecycles = message.todoLifecycles,
-                                    undoing = lifecycleUndoingMessageId == message.id,
-                                    onUndo = { index ->
-                                        aiChatRepository?.undoTodoLifecycleInBackground(message.id, index)
-                                    },
-                                )
-                            }
-                            // 待确认的修改/删除：确认前不写库；目标已消失时卡片仍按名称快照展示
-                            if (message.todoChanges.isNotEmpty()) {
-                                AiChatTodoChangeCard(
-                                    changes = message.todoChanges,
-                                    todosById = todosById,
-                                    applying = changesApplyingMessageId == message.id,
-                                    onApply = {
-                                        aiChatRepository?.applyTodoChangesInBackground(message.id)
-                                    },
-                                    onDismiss = {
-                                        aiChatRepository?.dismissTodoChanges(message.id)
-                                    },
-                                )
-                            }
-                            if (message.todoChangeDropped) {
-                                AiChatTodoChangeDroppedHint()
-                            }
-                            if (message.interrupted && message.role == AiChatRole.Assistant) {
-                                Text(
-                                    text = stringResource(R.string.ai_interrupted),
-                                    style = ClassppTextTokens.secondaryTextSmall,
-                                    color = MaterialTheme.classppColors.secondaryText,
-                                )
-                            }
-                        }
-                    }
-                    lastError?.let { error ->
-                        AiChatErrorBanner(
-                            error = error.error,
-                            onRetry = ::retryLast,
-                        )
-                    }
-                }
-            }
+            else -> AiChatMessageList(
+                messagesState = messagesState,
+                sending = sending,
+                sendEntrance = sendEntrance,
+                lastError = lastError,
+                todosById = todosById,
+                tagColors = tagColors,
+                imageStore = imageStore,
+                swipeCoordinator = swipeCoordinator,
+                changesApplyingMessageId = changesApplyingMessageId,
+                completionUndoingMessageId = completionUndoingMessageId,
+                lifecycleUndoingMessageId = lifecycleUndoingMessageId,
+                onImageClick = { name -> previewImageName = name },
+                onOpenTodo = ::openTodo,
+                onDeleteTodo = ::deleteTodo,
+                onToggleCompleted = ::toggleCompleted,
+                onApplyChanges = { id -> aiChatRepository.applyTodoChangesInBackground(id) },
+                onDismissChanges = { id -> aiChatRepository.dismissTodoChanges(id) },
+                onUndoCompletion = { id, index ->
+                    aiChatRepository.undoTodoCompletionInBackground(id, index)
+                },
+                onUndoLifecycle = { id, index ->
+                    aiChatRepository.undoTodoLifecycleInBackground(id, index)
+                },
+                onRetry = ::retryLast,
+            )
         }
         // 底部光场带比原输入栏高出一截：滚动内容末尾补同样高度，
         // 自动滚底时最后一条消息停在光场上方，不被 scrim 盖住
@@ -979,7 +920,7 @@ fun AiChatOverlay(
         AiConversationsSheet(
             visible = visible && conversationsVisible,
             onDismissed = { conversationsMounted = false },
-            conversations = conversations,
+            conversationsState = conversationsState,
             activeConversationId = activeConversationId,
             onCreate = ::createConversation,
             onDismiss = { conversationsVisible = false },
@@ -1133,6 +1074,218 @@ fun AiChatOverlay(
         }
     }
 }
+
+/**
+ * AI 消息列：自己读 [messagesState]，流式增量只重组本列，不失效 AiChatOverlay 根作用域。
+ * 非懒加载 Column（OverlaySheet 的 verticalScroll 契约与本文件 Haze 采样约束见上方注释）：
+ * 每批合并只有尾部一条消息换了实例，其余消息按下标槽位跳过重组——**前提是卡片段的
+ * 入参也保持稳定**，所以待办卡的反查列表与撤销/应用回调都在各自 `if` 里用 remember 固定
+ * （见下方注释）。列本身仍会随每批重组（它要读新内容），这是「批发布」的固有成本。
+ */
+@Composable
+private fun AiChatMessageList(
+    messagesState: State<List<AiChatMessage>>,
+    sending: Boolean,
+    sendEntrance: SendEntrance?,
+    lastError: AiException?,
+    todosById: Map<String, Todo>,
+    tagColors: Map<String, Color>,
+    imageStore: AiImageStore?,
+    swipeCoordinator: SwipeCoordinator,
+    changesApplyingMessageId: String?,
+    completionUndoingMessageId: String?,
+    lifecycleUndoingMessageId: String?,
+    onImageClick: (String) -> Unit,
+    onOpenTodo: (Todo) -> Unit,
+    onDeleteTodo: (Todo) -> Unit,
+    onToggleCompleted: (Todo, Boolean) -> Unit,
+    onApplyChanges: (String) -> Unit,
+    onDismissChanges: (String) -> Unit,
+    onUndoCompletion: (String, Int) -> Unit,
+    onUndoLifecycle: (String, Int) -> Unit,
+    onRetry: () -> Unit,
+) {
+    val messages = messagesState.value
+    // 消息之间（含回复气泡与下方待办卡）统一走全局「卡↔卡」节奏（10dp）
+    Column(verticalArrangement = Arrangement.spacedBy(CardSectionSpacing)) {
+        // 尾部 user 消息的 id：气泡落位只认这一条（发送后追加的第一条用户消息）
+        val lastUserId = messages.lastOrNull { it.role == AiChatRole.User }?.id
+        messages.forEachIndexed { index, message ->
+            // key 让入场状态跟着消息 id 走：切对话 / 删除导致槽位复用时，上一条的
+            // 「正在入场」不会串到别的气泡上（key 不产生布局节点，spacedBy 不变）
+            key(message.id) {
+                // 入场判定只在首次组合时求一次：之后清 sendEntrance 既不撤图层、也不重播。
+                // 只给 user 条入场——assistant 占位与它同帧追加，两条一起抬读不出因果
+                val entering = remember {
+                    val request = sendEntrance
+                    request != null &&
+                        message.role == AiChatRole.User &&
+                        message.id == lastUserId &&
+                        message.createdAtMillis >= request.sentAtMillis
+                }
+                // 不在底部（用户正在翻历史）时位移减半：这次滚动仍是硬跳，
+                // 大幅抬升会和它叠成两段方向相反的运动
+                val riseDp = remember {
+                    if (sendEntrance?.atBottom == false) {
+                        BubbleRiseNearBottom
+                    } else {
+                        BubbleRiseAtBottom
+                    }
+                }
+                val isTail = index == messages.lastIndex
+                AiChatMessageBubble(
+                    message = message,
+                    imageStore = imageStore,
+                    onImageClick = onImageClick,
+                    // 思考阶段 = 本场流仍在进行、这是尾部消息、正文还没开始：
+                    // 折叠块默认展开，正文一到就自动收起
+                    thinkingInProgress = sending && isTail &&
+                        message.role == AiChatRole.Assistant &&
+                        message.content.isEmpty(),
+                    // 流式尾部不挂尺寸 tween：合并批次本身就是平滑的
+                    streamingTail = sending && isTail && message.role == AiChatRole.Assistant,
+                    modifier = if (entering) {
+                        Modifier.chatBubbleEntrance(message.id, riseDp)
+                    } else {
+                        Modifier
+                    },
+                )
+                if (message.todoSaveFailed) {
+                    AiChatTodoSaveFailedHint()
+                }
+                // 已创建待办：按落盘的 id 顺序从活跃待办流反查（被删除/归档的自然消失）。
+                // 反查结果与回调都用 remember 固定：否则每批流式都会生成新 List / 新 lambda，
+                // 让这张卡（以及带卡的尾部消息）在正文增长期间白重组
+                if (message.todoIds.isNotEmpty()) {
+                    val created = remember(message.todoIds, todosById) {
+                        message.todoIds.mapNotNull(todosById::get)
+                    }
+                    AiChatCreatedTodoList(
+                        todos = created,
+                        tagColors = tagColors,
+                        swipeCoordinator = swipeCoordinator,
+                        onOpen = onOpenTodo,
+                        onDelete = onDeleteTodo,
+                        onCheckedChange = onToggleCompleted,
+                    )
+                }
+                // 已完成/取消完成：直接生效，行尾可撤销（先于待确认项展示）
+                if (message.todoCompletions.isNotEmpty()) {
+                    val onUndo = remember(onUndoCompletion) {
+                        { index: Int -> onUndoCompletion(message.id, index) }
+                    }
+                    AiChatTodoCompletionList(
+                        completions = message.todoCompletions,
+                        undoing = completionUndoingMessageId == message.id,
+                        onUndo = onUndo,
+                    )
+                }
+                // 归档/取消归档/恢复：直接生效，行尾可撤销
+                if (message.todoLifecycles.isNotEmpty()) {
+                    val onUndo = remember(onUndoLifecycle) {
+                        { index: Int -> onUndoLifecycle(message.id, index) }
+                    }
+                    AiChatTodoLifecycleList(
+                        lifecycles = message.todoLifecycles,
+                        undoing = lifecycleUndoingMessageId == message.id,
+                        onUndo = onUndo,
+                    )
+                }
+                // 待确认的修改/删除：确认前不写库；目标已消失时卡片仍按名称快照展示
+                if (message.todoChanges.isNotEmpty()) {
+                    val onApply = remember(onApplyChanges) { { onApplyChanges(message.id) } }
+                    val onDismiss = remember(onDismissChanges) { { onDismissChanges(message.id) } }
+                    AiChatTodoChangeCard(
+                        changes = message.todoChanges,
+                        todosById = todosById,
+                        applying = changesApplyingMessageId == message.id,
+                        onApply = onApply,
+                        onDismiss = onDismiss,
+                    )
+                }
+                if (message.todoChangeDropped) {
+                    AiChatTodoChangeDroppedHint()
+                }
+                if (message.interrupted && message.role == AiChatRole.Assistant) {
+                    Text(
+                        text = stringResource(R.string.ai_interrupted),
+                        style = ClassppTextTokens.secondaryTextSmall,
+                        color = MaterialTheme.classppColors.secondaryText,
+                    )
+                }
+            }
+        }
+        lastError?.let { error ->
+            AiChatErrorBanner(
+                error = error.error,
+                onRetry = onRetry,
+            )
+        }
+    }
+}
+
+/**
+ * 输入栏叶子：键入只读 [inputState]，不把根 Composable 拉进重组；
+ * 待发送图片同理交给本叶子读取，发送时根回调再取当前值。
+ */
+@Composable
+private fun AiChatComposer(
+    inputState: MutableState<String>,
+    pendingImagesState: State<List<String>>,
+    imageStore: AiImageStore?,
+    sending: Boolean,
+    enabled: Boolean,
+    onSend: (String) -> Unit,
+    onStop: () -> Unit,
+    onTakePhoto: () -> Unit,
+    onAddImage: () -> Unit,
+    onRemoveImage: (File) -> Unit,
+    hazeState: HazeState?,
+    backdrop: Backdrop?,
+) {
+    AiChatInputBar(
+        value = inputState.value,
+        onValueChange = { inputState.value = it },
+        placeholder = stringResource(R.string.ai_input_hint),
+        sendingPlaceholder = stringResource(R.string.ai_input_sending_hint),
+        sending = sending,
+        enabled = enabled,
+        onSend = { onSend(inputState.value) },
+        onStop = onStop,
+        onTakePhoto = onTakePhoto,
+        onAddImage = onAddImage,
+        pendingImages = imageStore
+            ?.let { store -> pendingImagesState.value.map(store::file) }
+            ?: emptyList(),
+        onRemoveImage = onRemoveImage,
+        hazeState = hazeState,
+        backdrop = backdrop,
+    )
+}
+
+/** AI 仓库尚未完成后台预热：既不显示“未配置”引导，也不允许发送 */
+@Composable
+private fun AiChatLoadingState() {
+    // 内容列在 verticalScroll 内（高度约束无限）：只铺宽 + 固定上留白居中，
+    // 不用 fillMaxSize（无限高时不会真正撑满）
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 120.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator()
+    }
+}
+
+/** 离散滚底信号：只包含会改变列表结构/待办卡数量的维度，流式正文增长不在此列 */
+private data class ChatScrollSignal(
+    val size: Int,
+    val todoIds: Int,
+    val changes: Int,
+    val completions: Int,
+    val lifecycles: Int,
+)
 
 /**
  * 一次发送的「落位请求」：只在用户主动发送这一条路径上存在，滚底 effect 消费后即清。

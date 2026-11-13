@@ -115,6 +115,8 @@ import com.fangyi.classpp.ui.theme.classppColors
 internal fun AiChatMessageBubble(
     message: AiChatMessage,
     thinkingInProgress: Boolean = false,
+    /** 正在流式增长的尾部消息：关闭尺寸 tween，避免每个合并帧重设动画目标 */
+    streamingTail: Boolean = false,
     modifier: Modifier = Modifier,
     // 图片附件库（仓库出借）：null = 无仓库（预览态），图片不渲染
     imageStore: AiImageStore? = null,
@@ -130,13 +132,21 @@ internal fun AiChatMessageBubble(
             message.todoLifecycles.isNotEmpty()
         )
     val hasTools = !isUser && message.toolRounds.isNotEmpty()
-    val content = if (hasTodos || hasTools) {
-        AiTodoDraftCodec.stripJsonBlock(message.content)
-    } else {
-        message.content
+    // 每批流式更新都会重组气泡：围栏解析/分段只在 content 或卡片集合变化时重算
+    val content = remember(message.content, hasTodos, hasTools) {
+        if (hasTodos || hasTools) {
+            AiTodoDraftCodec.stripJsonBlock(message.content)
+        } else {
+            message.content
+        }
     }
-    // 工具轮次与最终正文交错渲染：每轮「文本 → 工具卡」，最后是最终正文
-    val segments = if (hasTools) message.assistantSegments(content) else emptyList()
+    // 工具轮次与最终正文交错渲染：每轮「文本 → 工具卡」，最后是最终正文。
+    // 分段依赖 content 与 toolRounds；用「轮数 + 最后一轮状态」做轻量键——
+    // 工具结果 contentJson 可能很大，避免每批流式都做整表结构比较
+    val roundsSignature = message.toolRounds.size to message.toolRounds.lastOrNull()?.status
+    val segments = remember(content, roundsSignature) {
+        if (hasTools) message.assistantSegments(content) else emptyList()
+    }
     // 正文与思考都没有可展示的内容（待办卡片承接了全部信息）：整条消息不占位；
     // 有工具轮次时即使正文为空也要渲染工具卡
     if (!hasTools && hasTodos && content.isEmpty() && message.reasoning.isEmpty()) return
@@ -175,13 +185,19 @@ internal fun AiChatMessageBubble(
             } else {
                 Modifier
                     .fillMaxWidth()
-                    // 流式正文按解析批次长高：整条消息（思考卡 + 气泡）的高度走短 tween，
-                    // 把一次大增量摊成几帧，避免卡片一帧内突然变长再被滚动猛拉上去
-                    .animateContentSize(
-                        animationSpec = tween(
-                            durationMillis = Motion.ChatBubbleResizeMillis,
-                            easing = Motion.Standard,
-                        ),
+                    // 流式尾部按合并批次直接长高：不再每批重设 150ms 尺寸 tween
+                    // （连续重设会让整列反复测量/布局，正是长回复掉帧的主因之一）
+                    .then(
+                        if (streamingTail) {
+                            Modifier
+                        } else {
+                            Modifier.animateContentSize(
+                                animationSpec = tween(
+                                    durationMillis = Motion.ChatBubbleResizeMillis,
+                                    easing = Motion.Standard,
+                                ),
+                            )
+                        },
                     )
             },
             // 思考卡↔回复气泡：回复内卡片堆叠统一按全局「卡↔卡」节奏（10dp）

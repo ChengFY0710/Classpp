@@ -45,6 +45,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.fangyi.classpp.data.AppContainer
 import com.fangyi.classpp.data.LoadState
+import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.notification.NotificationAlarmReceiver
 import com.fangyi.classpp.data.notification.NotificationScheduler
 import com.fangyi.classpp.ui.LocalToday
@@ -78,6 +79,7 @@ import com.fangyi.classpp.ui.theme.ThemeMode
 import com.fangyi.classpp.ui.theme.ThemePreferences
 import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
@@ -97,6 +99,12 @@ private const val CardHeightSettleMillis = 300L
  * 打开设置通常远晚于此。
  */
 private const val SettingsPrewarmDelayMillis = 1000L
+
+/**
+ * 冷启动首次通知排期的延迟：等首帧与 tab/设置预热先落定，避免数据就绪后 500ms
+ * 的 debounce 正好撞上同一批绘制。之后的数据变更仍按 debounce 合并，不重复延迟。
+ */
+private const val NotificationInitialDelayMillis = 1000L
 
 class MainActivity : ComponentActivity() {
 
@@ -228,9 +236,12 @@ class MainActivity : ComponentActivity() {
                     // 设置页覆盖层转场状态：进度提升到组合外，供 behind 里的 tab 页面
                     // （课表/待办顶栏、日程页 Haze）在视差期间读取并冻结模糊输出
                     val settingsOverlayState = rememberPageOverlayTransitionState()
-                    // 设置页覆盖层空闲预热帧：首帧后 idle 把整页在 x=0 近透明画两帧，
-                    // 让各屏顶栏的 Haze 初始化并录下带模糊的就位帧（见下方 effect）
+                    // 设置页覆盖层空闲预热帧：首帧后 idle 把根页在 x=0 近透明画两帧，
+                    // 让顶栏的 Haze 初始化并录下带模糊的就位帧（子页首次打开时才挂载/预热）
                     var settingsPrewarm by remember { mutableStateOf(false) }
+                    // 一次性标记：预热只做一次。设置页已打开过（用户已看到真实帧）或预热
+                    // 已完成后，关闭设置不再重复预热整棵树
+                    var settingsPrewarmed by remember { mutableStateOf(false) }
                     // 设置页冻结帧代际：离开 RESUMED 递增（窗口不可见后系统可能清空
                     // 冻结层显示列表；设置页隐藏期不录制，旧帧会变空帧）
                     var settingsFreezeEpoch by remember { mutableStateOf(0) }
@@ -264,8 +275,11 @@ class MainActivity : ComponentActivity() {
                     } else {
                         emptyMap()
                     }
-                    // AI 对话（日程页顶栏右侧按钮唤起对话浮层，M1 唯一 AI 入口）
-                    val aiChatRepository = container?.aiChatRepository
+                    // AI 对话（日程页顶栏右侧按钮唤起对话浮层，M1 唯一 AI 入口）。
+                    // 容器只发布句柄：AI 历史在容器就绪后后台预热，本 State 负责接住
+                    // null→Ready 的一次翻转；未就绪时 AI 浮层/AI 设置显示加载态
+                    val aiChatRepository by container?.aiChatRepository?.collectAsState()
+                        ?: remember { mutableStateOf<AiChatRepository?>(null) }
                     // tab 页转场状态机：惰性挂载/常驻/切页动画/停靠页冻结帧回位的全部机制
                     // 见 ui.navigation 的 TabPagerState（原内联于此，纯搬移）
                     val pagerState = rememberTabPagerState()
@@ -378,19 +392,31 @@ class MainActivity : ComponentActivity() {
                     }
 
                     // 设置页覆盖层预热帧：等 tab 预热与首批重录落定后再做，避免与切页/
-                    // 首挂载抢同一帧。预热期整页停在 x=0、alpha≈0.01（见 PageOverlayTransition），
+                    // 首挂载抢同一帧。预热期根页停在 x=0、alpha≈0.01（见 PageOverlayTransition），
                     // 两帧就够 Haze 初始化 + 冻结层录制；用户若在此期间打开设置，visible
-                    // 翻转会让位给正常转场，finally 保证近透明覆盖层不会残留
+                    // 翻转会让位给正常转场，finally 保证近透明覆盖层不会残留。
+                    // 一次性：首轮完成后（或用户已打开过设置）不再重复，关闭设置不重新预热
                     LaunchedEffect(pagerState, dayInitial, showSettings) {
-                        if (dayInitial == null || showSettings) return@LaunchedEffect
+                        if (settingsPrewarmed || dayInitial == null) return@LaunchedEffect
+                        if (showSettings) {
+                            // 用户已打开设置：真实帧已经渲染，无需预热，也不再重复
+                            settingsPrewarmed = true
+                            return@LaunchedEffect
+                        }
                         withFrameNanos { }
                         delay(SettingsPrewarmDelayMillis)
-                        if (showSettings) return@LaunchedEffect
+                        if (showSettings) {
+                            settingsPrewarmed = true
+                            return@LaunchedEffect
+                        }
                         // 与切页动画互斥：预热会抢同一帧，先等选中页落定再画
                         snapshotFlow {
                             pagerState.transitionFor(pagerState.selectedTab)?.isTransitioning == true
                         }.first { !it }
-                        if (showSettings) return@LaunchedEffect
+                        if (showSettings) {
+                            settingsPrewarmed = true
+                            return@LaunchedEffect
+                        }
                         settingsPrewarm = true
                         try {
                             withFrameNanos { }
@@ -400,6 +426,7 @@ class MainActivity : ComponentActivity() {
                             withFrameNanos { }
                         } finally {
                             settingsPrewarm = false
+                            settingsPrewarmed = true
                         }
                     }
 
@@ -418,10 +445,12 @@ class MainActivity : ComponentActivity() {
 
                     // 通知续排：课表/待办数据首次加载完成与每次变化（编辑课程、增删改待办等）
                     // 都整体重排提醒闹钟（首条 emit 即冷启动排闹）；通知设置的变化由通知页自己
-                    // 触发重排，不经过这里。debounce 合并连发的数据变更，只重排一次
+                    // 触发重排，不经过这里。debounce 合并连发的数据变更，只重排一次；
+                    // 首个窗口再延后到首帧/预热之后，排期本身已下沉 IO，不再占主线程
                     LaunchedEffect(repository, todoRepository) {
                         val scheduleRepository = repository ?: return@LaunchedEffect
                         val todoRepository = todoRepository ?: return@LaunchedEffect
+                        delay(NotificationInitialDelayMillis)
                         combine(scheduleRepository.activeSchedule, todoRepository.todos) { _, _ -> }
                             .debounce(500)
                             .collect {
@@ -430,12 +459,41 @@ class MainActivity : ComponentActivity() {
                     }
 
                     // 每日自动同步：进 App 幂等续排闹钟（自愈一切漏排）+ 补漏判定——
-                    // 当天 6:00 已过且还没同步过就当场同步一次，与后台闹钟同一条静默路径
+                    // 当天 6:00 已过且还没同步过就当场同步一次，与后台闹钟同一条静默路径。
+                    // 学校会话改为惰性装配后，失败只影响本次同步（runCatching），不拖垮 UI
                     LaunchedEffect(dailySync) {
                         val controller = dailySync ?: return@LaunchedEffect
                         val appContext = applicationContext
-                        controller.scheduleNext(appContext)
-                        controller.runIfDue(appContext)
+                        try {
+                            controller.scheduleNext(appContext)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            // 学校适配失败只影响本次同步，不影响其它页面
+                        }
+                        try {
+                            controller.runIfDue(appContext)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            // 同上：错过的同步由下一次触发时机自愈
+                        }
+                    }
+
+                    // 容器就绪后的后台预热：AI 历史延后 300ms 装配（不阻塞首帧）；
+                    // 学校会话立即在后台装配（ScheduleScreen/设置页读 activeSession 槽位）
+                    LaunchedEffect(container) {
+                        container?.warmUpAiChat()
+                    }
+                    LaunchedEffect(container?.schools) {
+                        val schools = container?.schools ?: return@LaunchedEffect
+                        try {
+                            schools.session()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            // activeSession 已置 Failed，UI 按槽位展示；下次触发可重试
+                        }
                     }
 
                     // 回前台重录顶栏转场冻结帧：进多任务/回桌面时窗口不可见，系统会丢弃
@@ -700,7 +758,8 @@ class MainActivity : ComponentActivity() {
 
 /**
  * 进程级依赖容器：remember 持有、LaunchedEffect 内调起 suspend [AppContainer.get]。
- * 返回即三库磁盘加载完成 ⇒ 非 null 即数据就绪；null 仅首帧毫秒级（各屏自行显示加载态）。
+ * 返回即核心三库磁盘加载完成（并行装配）；学校会话与 AI 历史不再阻塞容器返回，
+ * 分别由宿主后台预热/惰性装配。null 仅首帧毫秒级（各屏自行显示加载态）。
  */
 @Composable
 private fun rememberAppContainer(): AppContainer? {

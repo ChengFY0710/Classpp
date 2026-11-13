@@ -13,6 +13,7 @@ import com.fangyi.classpp.data.model.SharePayload
 import com.fangyi.classpp.data.model.WeekPattern
 import com.fangyi.classpp.data.model.WeekSegment
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -101,6 +102,24 @@ class ScheduleJsonRoundTripTest {
         assertTrue("showInactiveCourses must be persisted", json.contains("\"showInactiveCourses\":true"))
         assertTrue("slots must be persisted", json.contains("\"startTime\":\"8:00\""))
         assertEquals(minimal, ScheduleJson.decodeStorage<Schedule>(json))
+    }
+
+    @Test
+    fun `lean storage omits defaults but keeps format version`() {
+        val minimal = Schedule(
+            id = "s2", name = "min",
+            termStart = IsoDate.parse("2026-03-02"),
+            termEnd = IsoDate.parse("2026-06-19"),
+        )
+        val file = ScheduleFile(activeScheduleId = "s2", schedules = listOf(minimal))
+        val json = ScheduleJson.encodeStorageLean(file)
+        // 版本闸门依赖 formatVersion 始终落盘（@EncodeDefault ALWAYS）
+        assertTrue(json.contains("\"formatVersion\":$SCHEDULE_FORMAT_VERSION"))
+        assertFalse("daysPerWeek 为默认值应省略", json.contains("\"daysPerWeek\""))
+        assertFalse("空 timeSchemes 应省略", json.contains("\"timeSchemes\""))
+        assertFalse("默认 slots 应省略", json.contains("\"slots\""))
+        // 缺省字段由 Kotlin 默认值补齐，round-trip 语义不变
+        assertEquals(file, ScheduleJson.decodeStorage<ScheduleFile>(json))
     }
 
     @Test

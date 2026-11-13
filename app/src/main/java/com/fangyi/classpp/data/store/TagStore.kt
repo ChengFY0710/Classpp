@@ -55,7 +55,7 @@ class FileTagStore(private val dir: File) : TagStore {
     override fun save(file: TagFile): StoreResult {
         if (!dir.exists()) dir.mkdirs()
         val text = try {
-            ScheduleJson.encodeStorage(file)
+            ScheduleJson.encodeStorageLean(file)
         } catch (e: Exception) {
             return StoreResult.Failed("serialize failed: ${e.message}")
         }
