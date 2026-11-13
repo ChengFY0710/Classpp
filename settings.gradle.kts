@@ -24,3 +24,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "Classpp"
 include(":app")
+// Baseline Profile 规则生成与 Macrobenchmark 启动基准测量（仅本地连设备运行）
+include(":baselineprofile")

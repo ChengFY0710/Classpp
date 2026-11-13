@@ -57,6 +57,11 @@ okhttp = "5.5.1"
 # material3 提供；只取 Android 变体，无需 Compose Multiplatform Gradle 插件。
 # GFM 解析器为 org.jetbrains:markdown（表格/任务列表/自动链接/GitHub alerts 均支持）。
 markdownRenderer = "0.46.0"
+# Baseline Profile / Macrobenchmark：启动基准测量与 profile 规则生成。1.5.0 为当前稳定版，
+# 其 Gradle 插件最低要求 AGP 8.0、推荐上限 < 10.0.0-alpha01，与本项目 AGP 9.4.1 兼容。
+# 仅 :baselineprofile 测试模块与 app 的 profile 消费接线使用，不进入运行时依赖。
+benchmark = "1.5.0"
+baselineProfile = "1.5.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -82,9 +87,12 @@ androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterfa
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 markdown-renderer-m3 = { group = "com.mikepenz", name = "multiplatform-markdown-renderer-m3", version.ref = "markdownRenderer" }
+androidx-benchmark-macro-junit4 = { group = "androidx.benchmark", name = "benchmark-macro-junit4", version.ref = "benchmark" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-test = { id = "com.android.test", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+androidx-baselineprofile = { id = "androidx.baselineprofile", version.ref = "baselineProfile" }
 
