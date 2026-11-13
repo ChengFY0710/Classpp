@@ -29,6 +29,7 @@ import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import dev.chrisbanes.haze.rememberHazeState
 
@@ -117,6 +118,11 @@ internal fun DayAdjustSheet(
     // z 序把前景/自身内容采进模糊；统一改 Behind（f958dbb）后真机确认不再崩溃
     // （2026-11-07），原状全链恢复：自建 sheetHazeState 同源喂顶栏与滚轮卡磨砂。
     val sheetHazeState = rememberHazeState()
+    // 重写窗口的动态退让（机制与时序见 HazeRetreatState）：点星期格 / 滚轮确认 / 确认调休
+    // 都会在同一帧改写内容列结构（课程行 0↔N、提示条与错误区增删）——改写与随后两帧整条
+    // 链卸下 Haze（内容列不做采样源、顶栏与滚轮卡不挂效果节点），内容落定再挂回；稳态
+    // 磨砂、滚轮卡外观与退场活采样均不受影响。
+    val retreat = rememberHazeRetreat()
     var sourceWeekPickerVisible by remember { mutableStateOf(false) }
     var sourceWeekPickerMounted by remember { mutableStateOf(false) }
     var targetWeekPickerVisible by remember { mutableStateOf(false) }
@@ -133,7 +139,9 @@ internal fun DayAdjustSheet(
             AppToasts.show(context, message)
             return
         }
-        onConfirm(plan.upserts, plan.removals)
+        // 确认写入调课草稿：宿主回传的 schedule 同帧变化，本浮层内容列随之重写（课程行/
+        // 提示条），落退让窗口后再收场
+        retreat.forRewrite { onConfirm(plan.upserts, plan.removals) }
     }
 
     BackHandler(enabled = true) { onDismiss() }
@@ -154,8 +162,10 @@ internal fun DayAdjustSheet(
         visible = visible,
         covered = sourceWeekPickerVisible || targetWeekPickerVisible,
         onDismissed = onDismissed,
-        // 共享 hazeState：顶栏磨砂与两个周数滚轮卡的背景模糊同源采样（滚动内容是源）
+        // 共享 hazeState：顶栏磨砂与两个周数滚轮卡的背景模糊同源采样（滚动内容是源）。
+        // hazeEnabled 由退让状态驱动：重写窗口内整条链不挂采样源/效果节点
         hazeState = sheetHazeState,
+        hazeEnabled = !retreat.suspended,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
             CardSection(title = stringResource(R.string.day_adjust_section_source)) {
@@ -178,12 +188,15 @@ internal fun DayAdjustSheet(
                     labels = weekdaysShort,
                     selected = setOf(sourceDay),
                     onToggle = { picked ->
-                        // 原日改到与目标同一天时目标顺延一天，避免默认落到"无变化"
-                        if (targetWeek == sourceWeek && targetDay == picked) {
-                            targetDay = picked % 7 + 1
+                        // 原日切换改写课程行 0↔N / 提示条 / 错误区：重写包退让
+                        retreat.forRewrite {
+                            // 原日改到与目标同一天时目标顺延一天，避免默认落到"无变化"
+                            if (targetWeek == sourceWeek && targetDay == picked) {
+                                targetDay = picked % 7 + 1
+                            }
+                            sourceDay = picked
+                            touched = true
                         }
-                        sourceDay = picked
-                        touched = true
                     },
                 )
                 if (plan.occurrences.isEmpty()) {
@@ -219,8 +232,11 @@ internal fun DayAdjustSheet(
                     labels = weekdaysShort,
                     selected = setOf(targetDay),
                     onToggle = { picked ->
-                        targetDay = picked
-                        touched = true
+                        // 目标日切换改写汇总条 / 周末隐藏提示 / 错误区：同走退让
+                        retreat.forRewrite {
+                            targetDay = picked
+                            touched = true
+                        }
                     },
                 )
                 if (plan.occurrences.isNotEmpty()) {
@@ -262,13 +278,17 @@ internal fun DayAdjustSheet(
             valueRange = 1..maxWeek,
             initialValue = sourceWeek,
             unit = stringResource(R.string.adjust_unit_week),
-            hazeState = sheetHazeState,
+            // 退让窗口内卡片不采样（源侧卸载，采样会退白卡）
+            hazeState = if (retreat.suspended) null else sheetHazeState,
             onConfirm = { picked ->
-                // 目标周原本跟着原周（同一周调休）时一起走，跨周调休则保持不变
-                if (targetWeek == sourceWeek) targetWeek = picked
-                sourceWeek = picked
-                touched = true
-                sourceWeekPickerVisible = false
+                // 滚轮确认改写课程行 / 提示条；卡片尚在退场，源侧先退让
+                retreat.forRewrite {
+                    // 目标周原本跟着原周（同一周调休）时一起走，跨周调休则保持不变
+                    if (targetWeek == sourceWeek) targetWeek = picked
+                    sourceWeek = picked
+                    touched = true
+                    sourceWeekPickerVisible = false
+                }
             },
         )
     }
@@ -283,11 +303,14 @@ internal fun DayAdjustSheet(
             valueRange = 1..maxWeek,
             initialValue = targetWeek,
             unit = stringResource(R.string.adjust_unit_week),
-            hazeState = sheetHazeState,
+            hazeState = if (retreat.suspended) null else sheetHazeState,
             onConfirm = { picked ->
-                targetWeek = picked
-                touched = true
-                targetWeekPickerVisible = false
+                // 目标周确认改写汇总条 / 错误区：同走退让
+                retreat.forRewrite {
+                    targetWeek = picked
+                    touched = true
+                    targetWeekPickerVisible = false
+                }
             },
         )
     }

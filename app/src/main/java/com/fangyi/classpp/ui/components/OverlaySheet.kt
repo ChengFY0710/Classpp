@@ -229,9 +229,9 @@ val LocalOverlayTopBarBlur = staticCompositionLocalOf { false }
  * [hazeEnabled] = false 时本浮层整条链不挂 Haze：内容列不做采样源、钉底槽不下发状态，
  * 顶栏磨砂随之退化为渐变遮罩（即使「浮层顶栏模糊」开关开启）。这是给「内容结构会随操作
  * 频繁重写采样源」的浮层留的退让开关（DayAdjustSheet 曾因此整体退让，采样输入统一改
- * Behind 后恢复；AiChatOverlay / AiConversationsSheet / ScheduleSwitcherSheet 的落库回流
- * 窗口由 [com.fangyi.classpp.ui.components.HazeRetreatState] 动态驱动）；
- * 调用方传 false 时必须同时不给叠层弹卡/菜单传 hazeState。
+ * Behind 后恢复，重写窗口现由 [com.fangyi.classpp.ui.components.HazeRetreatState] 动态
+ * 驱动；AiChatOverlay / AiConversationsSheet / ScheduleSwitcherSheet 的落库回流窗口同理）；
+ * 调用方传 true/false 时必须与叠层弹卡/菜单的 hazeState 下发保持一致。
  */
 @Composable
 fun OverlaySheet(
