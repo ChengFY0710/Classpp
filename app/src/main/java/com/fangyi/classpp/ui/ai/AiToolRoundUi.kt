@@ -39,6 +39,7 @@ import com.fangyi.classpp.data.ai.AiToolRegistry
 import com.fangyi.classpp.data.ai.AiToolResult
 import com.fangyi.classpp.data.ai.AiToolRound
 import com.fangyi.classpp.data.ai.AiToolRoundStatus
+import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.ChatThinkingShape
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.classppColors
@@ -64,7 +65,8 @@ internal fun AiChatToolRoundBlock(
     if (round.calls.isEmpty()) return
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        // 同一轮内的工具调用卡：与回复内其他卡片同节奏（10dp）
+        verticalArrangement = Arrangement.spacedBy(CardSectionSpacing),
     ) {
         round.calls.forEach { call ->
             val result = round.results.firstOrNull { it.callId == call.id }

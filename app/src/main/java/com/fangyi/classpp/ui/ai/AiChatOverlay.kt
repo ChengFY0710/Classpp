@@ -78,6 +78,7 @@ import com.fangyi.classpp.ui.motion.rememberSystemAnimationsEnabled
 import com.fangyi.classpp.ui.note.NewTodoSheet
 import com.fangyi.classpp.ui.note.TodoDetailSheet
 import com.fangyi.classpp.ui.note.rememberAddToAlarm
+import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
@@ -827,7 +828,8 @@ fun AiChatOverlay(
                 AiChatEmptyState()
             }
             else -> {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // 消息之间（含回复气泡与下方待办卡）统一走全局「卡↔卡」节奏（10dp）
+                Column(verticalArrangement = Arrangement.spacedBy(CardSectionSpacing)) {
                     // 尾部 user 消息的 id：气泡落位只认这一条（发送后追加的第一条用户消息）
                     val lastUserId = messages.lastOrNull { it.role == AiChatRole.User }?.id
                     messages.forEachIndexed { index, message ->

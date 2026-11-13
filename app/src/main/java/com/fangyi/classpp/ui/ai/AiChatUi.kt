@@ -76,6 +76,7 @@ import com.fangyi.classpp.ui.note.deadlineCardText
 import com.fangyi.classpp.ui.note.deadlineColor
 import com.fangyi.classpp.ui.note.deadlineDaysLeft
 import com.fangyi.classpp.ui.note.repeatCardText
+import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.ChatBubbleShape
 import com.fangyi.classpp.ui.theme.ChatErrorBannerShape
 import com.fangyi.classpp.ui.theme.ChatThinkingShape
@@ -183,7 +184,8 @@ internal fun AiChatMessageBubble(
                         ),
                     )
             },
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            // 思考卡↔回复气泡：回复内卡片堆叠统一按全局「卡↔卡」节奏（10dp）
+            verticalArrangement = Arrangement.spacedBy(CardSectionSpacing),
         ) {
             if (!isUser && message.reasoning.isNotEmpty()) {
                 AiChatThinkingBlock(
@@ -201,7 +203,10 @@ internal fun AiChatMessageBubble(
                 ) {
                     Column(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        // 回复内的正文分段与工具卡同样按「卡↔卡」节奏；用户气泡的图片↔正文仍是 8dp
+                        verticalArrangement = Arrangement.spacedBy(
+                            if (hasTools) CardSectionSpacing else 8.dp,
+                        ),
                     ) {
                         if (message.images.isNotEmpty() && imageStore != null) {
                             AiChatMessageImages(
@@ -463,7 +468,8 @@ internal fun AiChatCreatedTodoList(
     if (todos.isEmpty()) return
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        // 一次回复创建的多张待办卡：与回复内其他卡片同节奏（10dp）
+        verticalArrangement = Arrangement.spacedBy(CardSectionSpacing),
     ) {
         for (todo in todos) {
             val daysLeft = todo.deadlineDaysLeft()
