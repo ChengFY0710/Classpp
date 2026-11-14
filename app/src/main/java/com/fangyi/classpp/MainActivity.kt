@@ -78,6 +78,8 @@ import com.fangyi.classpp.ui.theme.ThemeAccent
 import com.fangyi.classpp.ui.theme.ThemeMode
 import com.fangyi.classpp.ui.theme.ThemePreferences
 import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
+import com.fangyi.classpp.widget.WidgetRefresh
+import com.fangyi.classpp.widget.refreshTodayCoursesWidget
 import com.kyant.backdrop.backdrops.layerBackdrop
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -458,6 +460,20 @@ class MainActivity : ComponentActivity() {
                             }
                     }
 
+                    // 今日课程小组件：课表首次加载完成与每次变化（编辑课程、同步、切换课表）
+                    // 都整体重绘，并续排节次边界闹钟。debounce 与通知续排同拍合并连发变更；
+                    // widget 无实例时 updateAll 为空操作，不影响没装组件的用户
+                    LaunchedEffect(repository) {
+                        val scheduleRepository = repository ?: return@LaunchedEffect
+                        val appContext = this@MainActivity.applicationContext
+                        scheduleRepository.activeSchedule
+                            .debounce(500)
+                            .collect {
+                                refreshTodayCoursesWidget(appContext)
+                                WidgetRefresh.scheduleNext(appContext)
+                            }
+                    }
+
                     // 每日自动同步：进 App 幂等续排闹钟（自愈一切漏排）+ 补漏判定——
                     // 当天 6:00 已过且还没同步过就当场同步一次，与后台闹钟同一条静默路径。
                     // 学校会话改为惰性装配后，失败只影响本次同步（runCatching），不拖垮 UI
@@ -524,6 +540,12 @@ class MainActivity : ComponentActivity() {
                     // 不换深浅时同样是整条栏面换色，必须一并重录
                     LaunchedEffect(darkTheme, themeAccent) {
                         pagerState.reRecordParkedTabs()
+                    }
+
+                    // 今日课程小组件跟随外观：切深浅 / 换主题色后立即重绘。widget 侧从
+                    // theme_prefs 读同一份外观，颜色仍由 buildClassppColorScheme 装配
+                    LaunchedEffect(darkTheme, themeAccent) {
+                        refreshTodayCoursesWidget(this@MainActivity.applicationContext)
                     }
 
                     // 跨天后重录停靠页冻结帧：日程页背景图/日期随 LocalToday 变化，旧帧

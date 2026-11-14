@@ -104,6 +104,33 @@
         <receiver
             android:name=".data.sync.remote.SchoolDailySyncReceiver"
             android:exported="false" />
+
+        <!-- 首页「今日课程」小组件（4×2）：Glance receiver + appwidget-provider 元数据 -->
+        <receiver
+            android:name=".widget.TodayCoursesWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_today_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/today_courses_widget_info" />
+        </receiver>
+
+        <!-- 组件节次边界刷新：闹钟到点（显式 FIRE，不进 filter）+ 系统事件/更新后自愈。
+             exported=true 只代表系统可投递；无组件实例时接收器只撤闹钟，不排新闹钟 -->
+        <receiver
+            android:name=".widget.TodayCoursesWidgetRefreshReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

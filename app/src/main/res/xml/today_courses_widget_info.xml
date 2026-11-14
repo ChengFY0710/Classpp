@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  首页「今日课程」组件（4×2）。
+
+  - targetCellWidth / targetCellHeight / description 为 API 31+ 属性，旧版本忽略并回退
+    到 minWidth / minHeight（4 格宽 = 4*70-30 = 250dp，2 格高 = 2*70-30 = 110dp）。
+  - updatePeriodMillis 仅作兜底：当前节高亮由 WidgetRefresh 的节次边界精确闹钟驱动。
+  - initialLayout 用 Glance 自带的加载布局，真实内容由 TodayCoursesWidget 提供。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:description="@string/widget_today_description"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:minHeight="110dp"
+    android:minResizeHeight="110dp"
+    android:minResizeWidth="180dp"
+    android:minWidth="250dp"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellHeight="2"
+    android:targetCellWidth="4"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen"
+    tools:targetApi="31" />

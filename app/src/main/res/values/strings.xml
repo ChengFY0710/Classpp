@@ -1163,4 +1163,20 @@
     <string name="ai_profile_hint_section">提示</string>
     <string name="ai_profile_hint_title">推荐使用具备视觉理解能力的模型</string>
     <string name="ai_profile_hint_message">发送图片需要视觉模型，如deepseek-flash等；纯文本模型（如 deepseek-pro）收到图片会返回错误。</string>
+
+    <!-- 首页「今日课程」小组件（4×2）：组件名 / 选择器描述 / 头部与行文案 -->
+    <string name="widget_today_label">今日课程</string>
+    <string name="widget_today_description">4×2 · 今日课程，当前节高亮</string>
+    <string name="widget_week_weekday">%1$s · %2$s</string>
+    <string name="widget_today_count">今日 %1$d 节</string>
+    <string name="widget_no_course_today">今天没有课</string>
+    <string name="widget_course_time">%1$s–%2$s</string>
+    <string name="widget_course_detail">%1$s · %2$s</string>
+    <!-- 组件选择器预览示意数据（不读用户课表） -->
+    <string name="widget_preview_course_1">微积分 I-2</string>
+    <string name="widget_preview_course_2">电路原理</string>
+    <string name="widget_preview_course_3">形式与政策</string>
+    <string name="widget_preview_location_1">学武楼 C201</string>
+    <string name="widget_preview_location_2">学武楼 A206</string>
+    <string name="widget_preview_location_3">学武楼 B101</string>
 </resources>

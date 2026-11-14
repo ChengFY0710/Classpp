@@ -56,6 +56,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    // 首页「今日课程」小组件（Glance）：卡片/行渲染见 ui/widget，取色与字号仍走 ui/theme
+    implementation(libs.androidx.glance.appwidget)
     implementation(libs.haze.core)
     implementation(libs.haze.blur)
     implementation(libs.kyant.shapes)

@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.theme
 
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -212,6 +213,40 @@ val MaterialTheme.classppTextStyles: ClassppTextStyles
 val MaterialTheme.isDarkTheme: Boolean
     @Composable get() = LocalClassppDarkTheme.current
 
+/**
+ * 按深浅 + 主题色装配 colorScheme。
+ *
+ * 从 [ClassppTheme] 抽出：桌面小组件（Glance）在组合之外也要拿到同一套色，
+ * 不允许在 widget 侧另抄一份色值（见 `ui/theme/WidgetTheme.kt`）。
+ */
+internal fun buildClassppColorScheme(darkTheme: Boolean, accent: ThemeAccent): ColorScheme {
+    val base = if (darkTheme) DarkColorScheme else LightColorScheme
+    val primary = accent.primary(darkTheme)
+    return base.copy(
+        primary = primary,
+        onPrimary = accent.onPrimary(darkTheme),
+        primaryContainer = primary.copy(
+            alpha = if (darkTheme) PrimaryContainerAlphaDark else PrimaryContainerAlphaLight,
+        ),
+        inversePrimary = primary.copy(
+            alpha = if (darkTheme) InversePrimaryAlphaDark else InversePrimaryAlphaLight,
+        ),
+        background = accent.background(darkTheme),
+        surface = accent.surface(darkTheme),
+        outline = accent.outline(darkTheme),
+        scrim = accent.scrim(darkTheme),
+    )
+}
+
+/** 按深浅 + 主题色装配 [ClassppColors]；与 [buildClassppColorScheme] 同源。 */
+internal fun buildClassppColors(darkTheme: Boolean, accent: ThemeAccent): ClassppColors =
+    (if (darkTheme) DarkClassppColors else LightClassppColors).copy(
+        secondaryText = accent.secondaryText(darkTheme),
+        secondaryGrey = accent.secondaryGrey(darkTheme),
+        onSurfaceCard = accent.onSurfaceCard(darkTheme),
+        primaryContainerSolid = accent.containerSolid(darkTheme),
+    )
+
 @Composable
 fun ClassppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -220,32 +255,8 @@ fun ClassppTheme(
 ) {
     // 主题色改 primary 家族、页面背景、深色 surface、分割线、遮罩与次级文字/灰；ColorScheme 无 equals，
     // 必须 remember 住实例，否则每次重组都会重建派生色并连带重建 textStyles
-    val colorScheme = remember(accent, darkTheme) {
-        val base = if (darkTheme) DarkColorScheme else LightColorScheme
-        val primary = accent.primary(darkTheme)
-        base.copy(
-            primary = primary,
-            onPrimary = accent.onPrimary(darkTheme),
-            primaryContainer = primary.copy(
-                alpha = if (darkTheme) PrimaryContainerAlphaDark else PrimaryContainerAlphaLight,
-            ),
-            inversePrimary = primary.copy(
-                alpha = if (darkTheme) InversePrimaryAlphaDark else InversePrimaryAlphaLight,
-            ),
-            background = accent.background(darkTheme),
-            surface = accent.surface(darkTheme),
-            outline = accent.outline(darkTheme),
-            scrim = accent.scrim(darkTheme),
-        )
-    }
-    val classppColors = remember(accent, darkTheme) {
-        (if (darkTheme) DarkClassppColors else LightClassppColors).copy(
-            secondaryText = accent.secondaryText(darkTheme),
-            secondaryGrey = accent.secondaryGrey(darkTheme),
-            onSurfaceCard = accent.onSurfaceCard(darkTheme),
-            primaryContainerSolid = accent.containerSolid(darkTheme),
-        )
-    }
+    val colorScheme = remember(accent, darkTheme) { buildClassppColorScheme(darkTheme, accent) }
+    val classppColors = remember(accent, darkTheme) { buildClassppColors(darkTheme, accent) }
     // 角色化文字样式由主题色派生：深浅/主题色切换时重建，同一主题下实例稳定（static local 不额外失效）
     val textStyles = remember(colorScheme, classppColors) {
         classppTextStyles(colorScheme, classppColors)

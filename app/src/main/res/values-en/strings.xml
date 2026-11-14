@@ -1166,4 +1166,20 @@
     <string name="ai_profile_hint_section">Note</string>
     <string name="ai_profile_hint_title">Vision-capable models recommended</string>
     <string name="ai_profile_hint_message">Sending images requires a vision model, e.g. deepseek-flash; text-only models (e.g. deepseek-pro) return an error on images.</string>
+
+    <!-- Home screen "Today's classes" widget (4x2) -->
+    <string name="widget_today_label">Today\'s classes</string>
+    <string name="widget_today_description">4×2 · today\'s classes, current class highlighted</string>
+    <string name="widget_week_weekday">%1$s · %2$s</string>
+    <string name="widget_today_count">%1$d classes today</string>
+    <string name="widget_no_course_today">No classes today</string>
+    <string name="widget_course_time">%1$s–%2$s</string>
+    <string name="widget_course_detail">%1$s · %2$s</string>
+    <!-- Widget picker preview sample (does not read the user's timetable) -->
+    <string name="widget_preview_course_1">Calculus I-2</string>
+    <string name="widget_preview_course_2">Circuit Theory</string>
+    <string name="widget_preview_course_3">Politics &amp; Policy</string>
+    <string name="widget_preview_location_1">Xuewu Bldg C201</string>
+    <string name="widget_preview_location_2">Xuewu Bldg A206</string>
+    <string name="widget_preview_location_3">Xuewu Bldg B101</string>
 </resources>
