@@ -39,6 +39,7 @@ object AiToolRegistry {
     const val CREATE_TODO_TAGS = "create_todo_tags"
 
     // 只读查询工具（P1 三个 + P3 的 get_todo）；写工具在 P2 起同样进入原生 tools（见 writeSpecs）
+    const val GET_CURRENT_TIME = "get_current_time"
     const val GET_DAY_PLAN = "get_day_plan"
     const val SEARCH_TODOS = "search_todos"
     const val GET_WEEK_SCHEDULE = "get_week_schedule"
@@ -266,6 +267,15 @@ object AiToolRegistry {
      * 描述限定 1~3 句，避免每次请求都付大额 schema token。
      */
     private val readSpecs: List<AiToolSpec> = listOf(
+        AiToolSpec(
+            name = GET_CURRENT_TIME,
+            description = "查询当前日期、星期与时刻（本地时区），无参数。" +
+                "排日程或需要判断“现在/今天晚些时候/距离某时刻还有多久”时调用；" +
+                "对话跨过午夜时重新调用一次以刷新日期。",
+            parameters = AiReadTools.currentTimeParameters,
+            permission = AiToolPermission.Read,
+            execute = AiReadTools::executeCurrentTime,
+        ),
         AiToolSpec(
             name = GET_DAY_PLAN,
             description = "查询某一天的课程、待办与空闲时段。用户问“某天有没有空/那天有什么课”时调用；" +

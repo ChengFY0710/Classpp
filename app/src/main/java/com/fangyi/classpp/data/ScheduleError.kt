@@ -2,6 +2,7 @@ package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
+import java.util.GregorianCalendar
 
 /** 课程的轻量引用（错误上下文用，避免在错误里携带整门课） */
 data class CourseRef(
@@ -145,11 +146,20 @@ sealed interface TermPosition {
 /** 存储载入状态，供未来 UI 提示“已从备份恢复/已重置” */
 enum class LoadState { Ready, RestoredFromBackup, ResetAfterCorruption }
 
-/** “今天”的来源；测试注入 FakeClock */
+/** “今天”与“当前时刻”的来源；测试注入 FakeClock */
 fun interface Clock {
     fun today(): IsoDate
+
+    /** 当天第几分钟（0..1439）；默认取系统本地时间，测试可覆写固定时刻 */
+    fun minuteOfDay(): Int = systemMinuteOfDay()
 
     companion object {
         val system: Clock = Clock { IsoDate.today() }
     }
+}
+
+/** 系统本地时间当天第几分钟（0..1439）。minSdk 24 未开脱糖，用 Calendar 而非 java.time。 */
+fun systemMinuteOfDay(millis: Long = System.currentTimeMillis()): Int {
+    val cal = GregorianCalendar().apply { timeInMillis = millis }
+    return cal.get(GregorianCalendar.HOUR_OF_DAY) * 60 + cal.get(GregorianCalendar.MINUTE)
 }

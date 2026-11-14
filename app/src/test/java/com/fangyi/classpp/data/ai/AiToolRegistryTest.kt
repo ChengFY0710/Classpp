@@ -166,9 +166,10 @@ class AiToolRegistryTest {
     }
 
     @Test
-    fun `native tools cover the four read tools and seven write tools`() {
+    fun `native tools cover the five read tools and seven write tools`() {
         assertEquals(
             listOf(
+                AiToolRegistry.GET_CURRENT_TIME,
                 AiToolRegistry.GET_DAY_PLAN,
                 AiToolRegistry.SEARCH_TODOS,
                 AiToolRegistry.GET_WEEK_SCHEDULE,
@@ -189,12 +190,23 @@ class AiToolRegistryTest {
         assertTrue(
             AiToolRegistry.nativeSpecs.filter { it.permission == AiToolPermission.Read }
                 .map { it.name } == listOf(
+                AiToolRegistry.GET_CURRENT_TIME,
                 AiToolRegistry.GET_DAY_PLAN,
                 AiToolRegistry.SEARCH_TODOS,
                 AiToolRegistry.GET_WEEK_SCHEDULE,
                 AiToolRegistry.GET_TODO,
             ),
         )
+    }
+
+    @Test
+    fun `get current time takes no arguments and stays native only`() {
+        val spec = requireNotNull(AiToolRegistry.find(AiToolRegistry.GET_CURRENT_TIME))
+        assertEquals(AiToolPermission.Read, spec.permission)
+        assertNull(spec.parameters["required"])
+        assertTrue((spec.parameters.getValue("properties") as JsonObject).isEmpty())
+        // 只读、无信封段：JSON 回退模式没有工具可调，不生成契约文本
+        assertTrue(spec.envelope.isEmpty())
     }
 
     @Test

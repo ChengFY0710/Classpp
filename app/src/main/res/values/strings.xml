@@ -1038,6 +1038,7 @@
     <string name="ai_todo_lifecycle_wrong_state">当前状态不支持该操作</string>
 
     <!-- AI 只读工具轮次（原生 tools）：工具卡、状态与结果摘要 -->
+    <string name="ai_tool_name_get_current_time">查询时间</string>
     <string name="ai_tool_name_get_day_plan">查询日程</string>
     <string name="ai_tool_name_search_todos">查询待办</string>
     <string name="ai_tool_name_get_week_schedule">查询周课表</string>

@@ -284,6 +284,7 @@ class AiPromptBuilderTest {
         assertFalse(fallback.contains("已启用工具调用"))
         assertTrue(native.contains("已启用工具调用"))
         listOf(
+            AiToolRegistry.GET_CURRENT_TIME,
             AiToolRegistry.GET_DAY_PLAN,
             AiToolRegistry.SEARCH_TODOS,
             AiToolRegistry.GET_WEEK_SCHEDULE,

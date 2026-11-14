@@ -17,6 +17,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -35,6 +36,67 @@ class AiReadToolsTest {
     private fun JsonObject.data(): JsonObject = getValue("data").jsonObject
 
     private fun JsonObject.ok(): Boolean = getValue("ok").jsonPrimitive.boolean
+
+    // ---------- get_current_time ----------
+
+    @Test
+    fun `current time returns date weekday clock and week`() = kotlinx.coroutines.runBlocking {
+        val context = AiChatContext(
+            schedule = testSchedule(),
+            currentWeek = 12,
+            today = wedWeek12,
+            nowMinute = 14 * 60 + 32,
+        )
+
+        val result = AiReadTools.executeCurrentTime(args(), context)
+
+        assertTrue(result.ok())
+        val data = result.data()
+        assertEquals("2026-05-20", data.getValue("date").jsonPrimitive.content)
+        assertEquals("周三", data.getValue("weekday").jsonPrimitive.content)
+        assertEquals("14:32", data.getValue("time").jsonPrimitive.content)
+        assertEquals("2026-05-20 14:32", data.getValue("dateTime").jsonPrimitive.content)
+        assertEquals(872, data.getValue("minuteOfDay").jsonPrimitive.int)
+        assertEquals("下午", data.getValue("partOfDay").jsonPrimitive.content)
+        assertEquals(12, data.getValue("week").jsonPrimitive.int)
+    }
+
+    @Test
+    fun `current time omits week without schedule and clamps bad minute`() = kotlinx.coroutines.runBlocking {
+        val midnight = AiReadTools.executeCurrentTime(
+            args(),
+            AiChatContext(today = wedWeek12, nowMinute = 0),
+        )
+        assertTrue(midnight.ok())
+        assertNull(midnight.data()["week"])
+        assertEquals("00:00", midnight.data().getValue("time").jsonPrimitive.content)
+        assertEquals("凌晨", midnight.data().getValue("partOfDay").jsonPrimitive.content)
+
+        // 注入值越界时钳到当天最后一分钟，不抛错
+        val clamped = AiReadTools.executeCurrentTime(
+            args(),
+            AiChatContext(today = wedWeek12, nowMinute = 2_000),
+        )
+        assertEquals("23:59", clamped.data().getValue("time").jsonPrimitive.content)
+        assertEquals("晚上", clamped.data().getValue("partOfDay").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `current time maps part of day boundaries`() = kotlinx.coroutines.runBlocking {
+        suspend fun partOfDay(minute: Int): String = AiReadTools.executeCurrentTime(
+            args(),
+            AiChatContext(today = wedWeek12, nowMinute = minute),
+        ).data().getValue("partOfDay").jsonPrimitive.content
+
+        assertEquals("凌晨", partOfDay(0))
+        assertEquals("凌晨", partOfDay(4 * 60 + 59))
+        assertEquals("早上", partOfDay(5 * 60))
+        assertEquals("上午", partOfDay(8 * 60))
+        assertEquals("中午", partOfDay(11 * 60))
+        assertEquals("下午", partOfDay(13 * 60))
+        assertEquals("晚上", partOfDay(18 * 60))
+        assertEquals("晚上", partOfDay(23 * 60 + 59))
+    }
 
     // ---------- get_day_plan ----------
 

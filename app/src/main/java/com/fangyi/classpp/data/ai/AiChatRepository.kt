@@ -11,6 +11,7 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.occurrencesBetween
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
+import com.fangyi.classpp.data.systemMinuteOfDay
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -52,6 +53,11 @@ data class AiChatContext(
     val tags: List<String> = emptyList(),
     /** “今天”：工具执行时由仓库用自身时钟覆盖，与 system prompt 的日期口径一致 */
     val today: IsoDate = IsoDate.today(),
+    /**
+     * 当前时刻（当天第几分钟 0..1439）：工具执行时由仓库用自身时钟覆盖，与 [today] 同源。
+     * `get_current_time` 用它回答“现在几点”，避免跨午夜后日期与时刻来自两个时钟。
+     */
+    val nowMinute: Int = systemMinuteOfDay(),
     /**
      * 写工具的执行通道：由仓库在原生工具循环里按当前 assistant 消息绑定。
      * **不是注入内容**——不参与提示词拼装，只把「参数已校验的动作」交回仓库执行；
@@ -953,6 +959,7 @@ class AiChatRepository internal constructor(
     ): List<AiToolResult> {
         val context = contextProvider().copy(
             today = clock.today(),
+            nowMinute = clock.minuteOfDay(),
             writes = toolWriteGateway(conversationId),
         )
         val results = mutableListOf<AiToolResult>()

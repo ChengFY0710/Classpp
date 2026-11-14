@@ -1042,6 +1042,7 @@
     <string name="ai_todo_lifecycle_wrong_state">Not valid in the current state</string>
 
     <!-- AI read-only tool rounds (native tools): tool cards, statuses and result summaries -->
+    <string name="ai_tool_name_get_current_time">Current time</string>
     <string name="ai_tool_name_get_day_plan">Day plan</string>
     <string name="ai_tool_name_search_todos">Search todos</string>
     <string name="ai_tool_name_get_week_schedule">Week schedule</string>

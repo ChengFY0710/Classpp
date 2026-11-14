@@ -23,10 +23,12 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
 /**
- * 只读工具（设计稿 §4.3 + P3 的 `get_todo`）：查某天、查待办、查某周课表、查单条详情。
+ * 只读工具（设计稿 §4.3 + P3 的 `get_todo`）：查当前时刻、查某天、查待办、查某周课表、
+ * 查单条详情。
  *
- * 全部是纯函数：只吃 [AiChatContext] 快照，不碰仓库、不落盘、不读时钟（`today` 由
- * 调用方注入）；结果统一由 [AiToolExecutor] 包成 `{ok,data}` 信封。
+ * 全部是纯函数：只吃 [AiChatContext] 快照，不碰仓库、不落盘、不读系统时钟
+ * （`today`/`nowMinute` 由调用方用同一时钟注入）；结果统一由 [AiToolExecutor] 包成
+ * `{ok,data}` 信封。
  *
  * 参数 schema 只用 `type/properties/required/enum/description`，保持自定义网关兼容面。
  *
@@ -37,6 +39,11 @@ import kotlinx.serialization.json.putJsonObject
 internal object AiReadTools {
 
     // ---------- Schema ----------
+
+    val currentTimeParameters: JsonObject = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {}
+    }
 
     val dayPlanParameters: JsonObject = buildJsonObject {
         put("type", "object")
@@ -95,6 +102,43 @@ internal object AiReadTools {
             stringProperty("id", "待办 id，必须原样取自上下文或 search_todos 结果")
         }
         putJsonArray("required") { add("id") }
+    }
+
+    // ---------- get_current_time ----------
+
+    /**
+     * 当前日期与时刻（本地时区）。
+     *
+     * 时钟只经 [AiChatContext] 注入（`today` + `nowMinute`，仓库在每轮工具执行前用同一
+     * 时钟刷新），函数本身不读系统时间：跨午夜的长对话里模型重新调用一次即可拿到新日期。
+     */
+    suspend fun executeCurrentTime(args: JsonObject, ctx: AiChatContext): JsonObject {
+        val minute = ctx.nowMinute.coerceIn(0, MINUTES_PER_DAY - 1)
+        val time = TimeText.formatDisplay(minute)
+        return success(
+            buildJsonObject {
+                put("date", ctx.today.toString())
+                put("weekday", weekdayZh(ctx.today))
+                put("time", time)
+                put("dateTime", "${ctx.today} $time")
+                put("minuteOfDay", minute)
+                put("partOfDay", partOfDayZh(minute))
+                ctx.currentWeek?.let { put("week", it) }
+            },
+        )
+    }
+
+    /** 时段（24 小时制）：凌晨 0-4、早上 5-7、上午 8-10、中午 11-12、下午 13-17、晚上 18-23 */
+    private fun partOfDayZh(minute: Int): String {
+        val hour = minute / 60
+        return when {
+            hour < 5 -> "凌晨"
+            hour < 8 -> "早上"
+            hour < 11 -> "上午"
+            hour < 13 -> "中午"
+            hour < 18 -> "下午"
+            else -> "晚上"
+        }
     }
 
     // ---------- get_day_plan ----------
@@ -645,6 +689,7 @@ internal object AiReadTools {
     )
     private const val DEFAULT_SEARCH_LIMIT = 10
     private const val MAX_SEARCH_LIMIT = 30
+    private const val MINUTES_PER_DAY = 24 * 60
 
     /**
      * all=true 一次返回完整集合的字符上限（比普通工具结果的 8K 宽得多）。

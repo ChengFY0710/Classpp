@@ -2655,6 +2655,49 @@ class AiChatRepositoryTest {
     }
 
     @Test
+    fun `current time tool takes date and minute from the same clock`() = runBlocking {
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.GET_CURRENT_TIME,
+                        arguments = "{}",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("现在是 14:32。"), "data: [DONE]")),
+        )
+        val repo = AiChatRepository(
+            store = FakeAiChatStore(),
+            settings = FakeAiSettingsStore(),
+            client = AiClient(transport),
+            contextProvider = { AiChatContext(currentWeek = 12) },
+            persister = FakeTodoPersister(),
+            changeWriter = FakeTodoChangeWriter(),
+            imageStore = AiImageStore(tempImageDir()),
+            // 日期与时刻必须来自同一时钟，跨午夜时不能一个旧一个新
+            clock = object : Clock {
+                override fun today(): IsoDate = IsoDate.of(2026, 11, 1)
+                override fun minuteOfDay(): Int = 14 * 60 + 32
+            },
+        )
+        repo.bootstrap()
+
+        repo.send("现在几点")
+
+        val result = repo.messages.value.last().toolRounds.single().results.single()
+        assertFalse(result.isError)
+        assertTrue(result.contentJson.contains("\"date\":\"2026-11-01\""))
+        assertTrue(result.contentJson.contains("\"weekday\":\"周日\""))
+        assertTrue(result.contentJson.contains("\"time\":\"14:32\""))
+        assertTrue(result.contentJson.contains("\"week\":12"))
+    }
+
+    @Test
     fun `send caps tool rounds and keeps partial text`() = runBlocking {
         val settings = FakeAiSettingsStore()
         val toolRound = listOf(

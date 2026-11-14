@@ -211,6 +211,7 @@ private fun AiChatToolCallCard(
 
 @Composable
 private fun toolDisplayName(name: String): String = when (name) {
+    AiToolRegistry.GET_CURRENT_TIME -> stringResource(R.string.ai_tool_name_get_current_time)
     AiToolRegistry.GET_DAY_PLAN -> stringResource(R.string.ai_tool_name_get_day_plan)
     AiToolRegistry.SEARCH_TODOS -> stringResource(R.string.ai_tool_name_search_todos)
     AiToolRegistry.GET_WEEK_SCHEDULE -> stringResource(R.string.ai_tool_name_get_week_schedule)
@@ -390,6 +391,15 @@ private fun toolResultDetails(name: String, result: AiToolResult?): List<String>
     val data = obj["data"] as? JsonObject ?: return emptyList()
     val lines = mutableListOf<String>()
     when (name) {
+        // 展开后就是这次查询得到的“当前时间”，一屏即可读完
+        AiToolRegistry.GET_CURRENT_TIME -> {
+            val dateTime = data["dateTime"].textOrNull()
+                ?: listOfNotNull(data["date"].textOrNull(), data["time"].textOrNull())
+                    .joinToString(" ")
+            if (dateTime.isNotBlank()) {
+                lines += listOfNotNull(data["weekday"].textOrNull(), dateTime).joinToString(" ")
+            }
+        }
         AiToolRegistry.GET_DAY_PLAN -> {
             (data["courses"] as? JsonArray)?.forEach { element ->
                 val course = element as? JsonObject ?: return@forEach

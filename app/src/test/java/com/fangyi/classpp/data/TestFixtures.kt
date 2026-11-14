@@ -60,9 +60,14 @@ internal fun oddWeeks(end: Int = 16, from: Int = 1): WeekPattern =
 internal fun evenWeeks(end: Int = 16, from: Int = 1): WeekPattern =
     WeekPattern(listOf(WeekSegment(from, end, Parity.EVEN)))
 
-/** 可注入固定日期的时钟 */
-internal class FakeClock(@Volatile var date: IsoDate) : Clock {
+/** 可注入固定日期与时刻的时钟（minute 默认 00:00，与 date 同源） */
+internal class FakeClock(
+    @Volatile var date: IsoDate,
+    @Volatile var minute: Int = 0,
+) : Clock {
     override fun today(): IsoDate = date
+
+    override fun minuteOfDay(): Int = minute
 }
 
 // ---------- 待办 ----------
