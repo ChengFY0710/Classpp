@@ -87,17 +87,11 @@ fun dayTaskCardShape(
 /** 关于页头部应用图标：56dp 位图的连续曲率圆角（约 25%，与启动图标观感一致） */
 val AppIconShape = RoundedRectangle(16.dp)
 
-/** AI 对话消息气泡：四角统一 20dp 平滑圆角 */
-val ChatBubbleShape = RoundedRectangle(20.dp)
-
-/** AI 对话「思考过程」折叠块：16dp 平滑圆角，位于气泡上方的弱化容器 */
-val ChatThinkingShape = RoundedRectangle(16.dp)
-
-/** AI 对话错误条：14dp 平滑圆角 */
-val ChatErrorBannerShape = RoundedRectangle(14.dp)
-
-/** AI 对话底部输入框：22dp 平滑圆角 */
-val ChatInputShape = RoundedRectangle(22.dp)
+/**
+ * AI 对话浮层内的消息气泡与各卡片（思考块、工具调用卡、变更确认卡、错误条）：
+ * 四角统一 20dp 平滑圆角，与浮层内其它卡片同规格。
+ */
+val ChatCardShape = RoundedRectangle(20.dp)
 
 /** 顶栏胶囊按钮（全圆角）；投影与背景共用同一个形状 */
 val PillShape = Capsule()

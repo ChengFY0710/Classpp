@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.ai
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,7 +39,7 @@ import com.fangyi.classpp.data.ai.AiToolResult
 import com.fangyi.classpp.data.ai.AiToolRound
 import com.fangyi.classpp.data.ai.AiToolRoundStatus
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
-import com.fangyi.classpp.ui.theme.ChatThinkingShape
+import com.fangyi.classpp.ui.theme.ChatCardShape
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.classppColors
 import kotlinx.serialization.json.JsonArray
@@ -108,8 +107,7 @@ private fun AiChatToolCallCard(
     }
     Surface(
         color = MaterialTheme.colorScheme.surface,
-        shape = ChatThinkingShape,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+        shape = ChatCardShape,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column {

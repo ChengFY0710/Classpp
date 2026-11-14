@@ -3,7 +3,6 @@ package com.fangyi.classpp.ui.ai
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -77,9 +76,7 @@ import com.fangyi.classpp.ui.note.deadlineColor
 import com.fangyi.classpp.ui.note.deadlineDaysLeft
 import com.fangyi.classpp.ui.note.repeatCardText
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
-import com.fangyi.classpp.ui.theme.ChatBubbleShape
-import com.fangyi.classpp.ui.theme.ChatErrorBannerShape
-import com.fangyi.classpp.ui.theme.ChatThinkingShape
+import com.fangyi.classpp.ui.theme.ChatCardShape
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.classppColors
 
@@ -161,7 +158,7 @@ internal fun AiChatMessageBubble(
     } else {
         MaterialTheme.colorScheme.onSurface
     }
-    val shape = ChatBubbleShape
+    val shape = ChatCardShape
     // 选中高亮：assistant 白底用 primary 40%（项目「选中用 primary」口径）；
     // user 蓝底上 primary 40% 与底色同色、几乎看不出，改用 onPrimary 30% 的白晕
     val selectionColors = if (isUser) {
@@ -387,7 +384,7 @@ private fun AiChatImageThumb(
 // ---------- 思考过程 ----------
 
 /**
- * 推理模型的思考过程折叠块：弱化容器（surface 底 + outline 描边）+ 标题行（sparkle 图标 /
+ * 推理模型的思考过程折叠块：弱化容器（surface 底，无描边）+ 标题行（sparkle 图标 /
  * 文案 / 折叠箭头），点标题行切换展开。
  *
  * 展开态由 [thinkingInProgress] 自动驱动：思考阶段（正文还没开始）默认展开，正文开始或
@@ -409,8 +406,7 @@ internal fun AiChatThinkingBlock(
     Surface(
         color = MaterialTheme.colorScheme.surface,
         contentColor = tint,
-        shape = ChatThinkingShape,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        shape = ChatCardShape,
         modifier = modifier.fillMaxWidth(),
     ) {
         Column {
@@ -567,8 +563,7 @@ internal fun AiChatTodoChangeCard(
     val pending = changes.any { it.status == AiTodoChangeStatus.Pending }
     Surface(
         color = MaterialTheme.colorScheme.surface,
-        shape = ChatThinkingShape,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        shape = ChatCardShape,
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(
@@ -1093,7 +1088,7 @@ internal fun AiChatErrorBanner(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(ChatErrorBannerShape)
+            .clip(ChatCardShape)
             .background(MaterialTheme.colorScheme.errorContainer)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
