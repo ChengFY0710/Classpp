@@ -37,3 +37,7 @@ local.properties
 
 # 构建产物：release APK / 混淆映射 / 元数据，不入库（本地保留）
 /app/release/
+
+# baselineprofile 模块的构建产物（该目录下仅有 build/，无纳入构建的模块源码）
+/baselineprofile/build/
+
