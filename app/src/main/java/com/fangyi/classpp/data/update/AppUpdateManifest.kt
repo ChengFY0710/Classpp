@@ -25,9 +25,8 @@ object AppUpdateConfig {
     /** 单次更新 APK 上限：防止异常清单诱导下载超大文件 */
     const val MAX_APK_BYTES = 200L * 1024 * 1024
 
-    /** changelog 条目数量与单条长度上限：展示用文案不允许拖垮 UI */
-    const val MAX_CHANGELOG_ENTRIES = 30
-    const val MAX_CHANGELOG_ENTRY_LENGTH = 500
+    /** 单语言 Markdown 更新说明的长度上限：远端文案再长也做一次截断保护 */
+    const val MAX_CHANGELOG_MARKDOWN_CHARS = 20_000
 
     /** 更新日志最多展示的已发布版本数：远端历史再长也只保留最近这些版本 */
     const val MAX_RELEASE_HISTORY = 20
@@ -52,10 +51,11 @@ data class AppUpdateManifest(
     val publishedAt: String = "",
     val apk: AppUpdateApk? = null,
     val releasePageUrl: String? = null,
-    val changelog: Map<String, List<String>> = emptyMap(),
+    /** 最新版本的分语言 Markdown 更新说明（`zh` / `en`） */
+    val changelog: Map<String, String> = emptyMap(),
     /**
      * 已发布版本的历史更新说明（可选）：App 按 versionCode 降序展示；
-     * 缺省或为空时回退到顶层 [changelog]（只显示最新一版），旧客户端会忽略本字段。
+     * 缺省或为空时回退到顶层 [changelog]（只显示最新一版）。
      */
     val releases: List<AppUpdateReleaseManifest> = emptyList(),
 )
@@ -69,7 +69,8 @@ data class AppUpdateReleaseManifest(
     val versionCode: Long = 0,
     val versionName: String = "",
     val publishedAt: String = "",
-    val changelog: Map<String, List<String>> = emptyMap(),
+    /** 该版本的分语言 Markdown 更新说明（`zh` / `en`） */
+    val changelog: Map<String, String> = emptyMap(),
 )
 
 /** APK 元数据：直链按顺序尝试，下载后必须同时通过大小与 SHA-256 校验 */
@@ -89,10 +90,10 @@ internal fun String.isSafeHttpsUrl(): Boolean = runCatching {
 }.getOrDefault(false)
 
 /**
- * 取分语言 changelog：先按应用语言（zh/en）取，缺失回退中文，再回退英文；
- * 空行丢弃、条目与长度做上限截断。
+ * 取分语言 Markdown 更新说明：先按应用语言（zh/en）取，缺失或空白回退中文，再回退英文；
+ * 结果做 trim 与长度截断。返回空串表示没有可展示说明。
  */
-internal fun Map<String, List<String>>.changelogFor(language: String): List<String> {
+internal fun Map<String, String>.markdownFor(language: String): String {
     val normalized = language.lowercase(Locale.ROOT)
     val preferred = when {
         normalized.startsWith("zh") -> "zh"
@@ -100,13 +101,8 @@ internal fun Map<String, List<String>>.changelogFor(language: String): List<Stri
         // App 只提供 zh/en，其他系统语言按项目既有语义回落中文
         else -> "zh"
     }
-    val entries = this[preferred].takeUnless { it.isNullOrEmpty() }
-        ?: this["zh"].takeUnless { it.isNullOrEmpty() }
+    val markdown = this[preferred]?.takeIf { it.isNotBlank() }
+        ?: this["zh"]?.takeIf { it.isNotBlank() }
         ?: this["en"].orEmpty()
-    return entries.asSequence()
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-        .take(AppUpdateConfig.MAX_CHANGELOG_ENTRIES)
-        .map { it.take(AppUpdateConfig.MAX_CHANGELOG_ENTRY_LENGTH) }
-        .toList()
+    return markdown.trim().take(AppUpdateConfig.MAX_CHANGELOG_MARKDOWN_CHARS)
 }

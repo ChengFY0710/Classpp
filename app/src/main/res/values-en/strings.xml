@@ -100,8 +100,12 @@
     <string name="about_check_update">Check for updates</string>
     <string name="about_current_version">Current version: v%1$s</string>
     <string name="about_changelog">Changelog</string>
-    <!-- In-app updates: check for updates and changelog share one OverlaySheet
-         (manifest: classpp_schoolsync/update.json on the remote distribution repo) -->
+    <!-- In-app updates: check for updates and changelog are independent
+         (manifest: classpp_schoolsync/update.json on the remote distribution repo);
+         the changelog shows the installed version and older releases only -->
+    <string name="about_changelog_loading">Loading changelog…</string>
+    <string name="about_changelog_load_error_title">Load failed</string>
+    <string name="about_changelog_load_failed">Failed to load the changelog. Check your connection and try again</string>
     <string name="about_update_checking">Checking for updates…</string>
     <string name="about_update_up_to_date_title">You are up to date</string>
     <string name="about_update_up_to_date_desc">v%1$s</string>
@@ -111,10 +115,10 @@
     <string name="about_update_forced_hint">This version is no longer supported. Please update to continue.</string>
     <string name="about_update_section_changelog">Release notes</string>
     <string name="about_update_changelog_empty">No release notes</string>
-    <string name="about_update_action_update">Update now</string>
+    <string name="about_update_action_update">Update</string>
     <string name="about_update_action_back">Back</string>
     <string name="about_update_action_open_release">Open release page</string>
-    <string name="about_update_action_open_settings">Open settings</string>
+    <string name="about_update_action_open_settings">Settings</string>
     <string name="about_update_action_retry">Retry</string>
     <string name="about_update_downloading_title">Updating</string>
     <string name="about_update_downloading_percent">Downloading update… %1$d%%</string>

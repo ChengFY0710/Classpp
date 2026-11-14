@@ -10,11 +10,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,7 +42,9 @@ import com.fangyi.classpp.data.update.ApkInstaller
 import com.fangyi.classpp.data.update.AppUpdateChecker
 import com.fangyi.classpp.data.update.AppUpdateRelease
 import com.fangyi.classpp.data.update.AvailableUpdate
+import com.fangyi.classpp.data.update.ChangelogResult
 import com.fangyi.classpp.data.update.UpdateCheckResult
+import com.fangyi.classpp.ui.ai.ChatMarkdown
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SettingsCard
@@ -60,11 +65,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 关于页两个更新入口：检查最新版本 / 只看更新说明 */
+/** 关于页两个更新入口：检查最新版本 / 只看更新日志 */
 internal enum class AboutUpdateAction { Check, Changelog }
 
 /**
- * 一次更新入口请求。[id] 单调递增：同一 Action 连续点击也能重新触发检查，
+ * 一次更新入口请求。[id] 单调递增：同一入口连续点击也能重新触发加载，
  * 不用把「请求已消费」写回 AboutScreen。
  */
 internal data class AboutUpdateRequest(
@@ -72,35 +77,30 @@ internal data class AboutUpdateRequest(
     val action: AboutUpdateAction,
 )
 
-/** changelog 条目之间的纵向节奏（条目之间，不是卡片内距） */
-private val UpdateChangelogLineSpacing = 10.dp
-
-/** 单条 changelog 圆点与文字的间距（图标↔文本四档中的 8dp） */
-private val UpdateChangelogBulletGap = 8.dp
-
 /** 下载进度块内部的文字/进度条间距 */
 private val UpdateProgressTextGap = 8.dp
 private val UpdateProgressSizeGap = 6.dp
 
-/** 浮层状态：检查、结果、下载、安装授权与失败都在同一个 OverlaySheet 内切换 */
+/**
+ * 浮层状态：「检查更新」走检查 → 下载 → 安装整条链路；
+ * 「更新日志」只有加载 → 展示（失败可重试），不出现任何版本比对或更新动作。
+ */
 private sealed interface UpdateSheetState {
-    data class Checking(val action: AboutUpdateAction) : UpdateSheetState
+    data object CheckingUpdate : UpdateSheetState
 
-    data class UpToDate(
-        val fromChangelog: Boolean,
-        val releases: List<AppUpdateRelease>,
-    ) : UpdateSheetState
+    data object LoadingChangelog : UpdateSheetState
 
-    data class Available(
-        val update: AvailableUpdate,
-        val fromChangelog: Boolean,
-    ) : UpdateSheetState
+    /** 只读更新日志：当前安装版本及更早版本，按 versionCode 降序 */
+    data class Changelog(val releases: List<AppUpdateRelease>) : UpdateSheetState
+
+    data object UpToDate : UpdateSheetState
+
+    data class Available(val update: AvailableUpdate) : UpdateSheetState
 
     data class Downloading(
         val update: AvailableUpdate,
         val downloadedBytes: Long,
         val totalBytes: Long,
-        val fromChangelog: Boolean,
     ) : UpdateSheetState {
         val fraction: Float
             get() = if (totalBytes <= 0L) {
@@ -110,19 +110,15 @@ private sealed interface UpdateSheetState {
             }
     }
 
-    data class InstallPermission(
-        val update: AvailableUpdate,
-        val fromChangelog: Boolean,
-    ) : UpdateSheetState
+    data class InstallPermission(val update: AvailableUpdate) : UpdateSheetState
 
     data class Failed(
         val kind: UpdateFailureKind,
         val update: AvailableUpdate?,
-        val action: AboutUpdateAction,
     ) : UpdateSheetState
 }
 
-private enum class UpdateFailureKind { Check, Download, Verify, Install }
+private enum class UpdateFailureKind { Check, Changelog, Download, Verify, Install }
 
 /** OverlaySheet 顶栏/底部动作的当前配置；[dismissible] = 遮罩/返回/下拉是否允许关闭 */
 private data class UpdateSheetSpec(
@@ -132,15 +128,20 @@ private data class UpdateSheetSpec(
     val onConfirm: () -> Unit = {},
     val rightAction: SheetTopAction,
     val dismissible: Boolean,
+    /** true = 确认胶囊在右、动作胶囊在左（有更新时「取消」在左、「更新」在右） */
+    val confirmAtEnd: Boolean = false,
 )
 
 /**
- * 关于页「检查更新 / 更新日志」浮层（两者共用同一套 [OverlaySheet] 状态机）：
+ * 关于页「检查更新 / 更新日志」浮层（两个入口共用一层 [OverlaySheet]，状态机互不干扰）：
  *
- * - 点击入口立即拉起浮层并显示「检查中」，结果在原浮层内切换；
- * - 有新版本时展示版本、日期与 changelog；可应用内下载并校验 APK，失败回退发布页；
- * - `forced`（当前版本低于 `minSupportedVersionCode`）时浮层不可关闭，只保留更新动作；
- * - 检查/下载协程由本组件持有，关闭或取消时一并取消，不把结果写回已关闭的浮层。
+ * - 检查更新：浮层标题恒为「检查更新」；已是最新时顶栏只有右侧关闭，有更新时
+ *   左侧「取消」、右侧「更新」（图标沿用更新动作），可应用内下载并校验 APK，
+ *   失败回退发布页；`forced`（当前版本低于 `minSupportedVersionCode`）时浮层
+ *   不可关闭，只保留更新动作；
+ * - 更新日志：只加载并展示**当前安装版本及更早版本**的更新说明，不做版本比对、
+ *   不出现「发现新版本」，也不提供任何下载/安装动作；
+ * - 检查/加载协程由本组件持有，关闭或取消时一并取消，不把结果写回已关闭的浮层。
  *
  * 明确的信任边界：清单与 APK 直链只接受 https；APK 下载后必须同时通过大小与 SHA-256；
  * 安装交给系统安装器，本组件不做静默安装。
@@ -187,7 +188,7 @@ internal fun AboutUpdateSheet(
         }
     }
 
-    fun startDownload(update: AvailableUpdate, fromChangelog: Boolean) {
+    fun startDownload(update: AvailableUpdate) {
         // 防同一帧双击：下载已启动后忽略重复触发，避免取消/重启协程互相清临时文件
         if (state is UpdateSheetState.Downloading) return
         if (!update.canDownload) {
@@ -195,7 +196,7 @@ internal fun AboutUpdateSheet(
             return
         }
         if (!ApkInstaller.canInstall(context)) {
-            state = UpdateSheetState.InstallPermission(update, fromChangelog)
+            state = UpdateSheetState.InstallPermission(update)
             return
         }
         currentJob?.cancel()
@@ -203,7 +204,6 @@ internal fun AboutUpdateSheet(
             update = update,
             downloadedBytes = 0L,
             totalBytes = update.apkSizeBytes,
-            fromChangelog = fromChangelog,
         )
         currentJob = scope.launch {
             val result = downloader.download(
@@ -220,7 +220,6 @@ internal fun AboutUpdateSheet(
                                 update = update,
                                 downloadedBytes = downloaded,
                                 totalBytes = total,
-                                fromChangelog = fromChangelog,
                             )
                         }
                     }
@@ -236,7 +235,6 @@ internal fun AboutUpdateSheet(
                         state = UpdateSheetState.Failed(
                             kind = UpdateFailureKind.Install,
                             update = update,
-                            action = actionOf(fromChangelog),
                         )
                     }
                 }
@@ -248,31 +246,38 @@ internal fun AboutUpdateSheet(
                             UpdateFailureKind.Download
                         },
                         update = update,
-                        action = actionOf(fromChangelog),
                     )
                 }
             }
         }
     }
 
-    fun runCheck(action: AboutUpdateAction) {
+    fun runUpdateCheck() {
         currentJob?.cancel()
-        state = UpdateSheetState.Checking(action)
+        state = UpdateSheetState.CheckingUpdate
         visible = true
         currentJob = scope.launch {
             when (val result = checker.check()) {
-                is UpdateCheckResult.UpToDate -> state = UpdateSheetState.UpToDate(
-                    fromChangelog = action == AboutUpdateAction.Changelog,
-                    releases = result.releases,
-                )
-                is UpdateCheckResult.Available -> state = UpdateSheetState.Available(
-                    update = result.update,
-                    fromChangelog = action == AboutUpdateAction.Changelog,
-                )
+                is UpdateCheckResult.UpToDate -> state = UpdateSheetState.UpToDate
+                is UpdateCheckResult.Available -> state = UpdateSheetState.Available(result.update)
                 is UpdateCheckResult.Failed -> state = UpdateSheetState.Failed(
                     kind = UpdateFailureKind.Check,
                     update = null,
-                    action = action,
+                )
+            }
+        }
+    }
+
+    fun runChangelogLoad() {
+        currentJob?.cancel()
+        state = UpdateSheetState.LoadingChangelog
+        visible = true
+        currentJob = scope.launch {
+            when (val result = checker.loadChangelog()) {
+                is ChangelogResult.Success -> state = UpdateSheetState.Changelog(result.releases)
+                is ChangelogResult.Failed -> state = UpdateSheetState.Failed(
+                    kind = UpdateFailureKind.Changelog,
+                    update = null,
                 )
             }
         }
@@ -280,7 +285,10 @@ internal fun AboutUpdateSheet(
 
     LaunchedEffect(request?.id) {
         val currentRequest = request ?: return@LaunchedEffect
-        runCheck(currentRequest.action)
+        when (currentRequest.action) {
+            AboutUpdateAction.Check -> runUpdateCheck()
+            AboutUpdateAction.Changelog -> runChangelogLoad()
+        }
     }
 
     val current = state ?: return
@@ -294,22 +302,29 @@ internal fun AboutUpdateSheet(
     val releaseLabel = stringResource(R.string.about_update_action_open_release)
     val settingsLabel = stringResource(R.string.about_update_action_open_settings)
     val retryLabel = stringResource(R.string.about_update_action_retry)
-    val errorTitle = stringResource(R.string.about_update_error_title)
-    val checkErrorTitle = stringResource(R.string.about_update_check_error_title)
+    val changelogErrorTitle = stringResource(R.string.about_changelog_load_error_title)
 
     val spec: UpdateSheetSpec = when (current) {
-        is UpdateSheetState.Checking -> UpdateSheetSpec(
-            title = if (current.action == AboutUpdateAction.Changelog) {
-                changelogTitle
-            } else {
-                checkTitle
-            },
+        is UpdateSheetState.CheckingUpdate -> UpdateSheetSpec(
+            title = checkTitle,
             rightAction = sheetAction(cancelLabel, R.drawable.ic_dismiss_circle) { dismiss() },
             dismissible = false,
         )
 
+        is UpdateSheetState.LoadingChangelog -> UpdateSheetSpec(
+            title = changelogTitle,
+            rightAction = sheetAction(cancelLabel, R.drawable.ic_dismiss_circle) { dismiss() },
+            dismissible = false,
+        )
+
+        is UpdateSheetState.Changelog -> UpdateSheetSpec(
+            title = changelogTitle,
+            rightAction = sheetAction(closeLabel, R.drawable.ic_dismiss_circle) { dismiss() },
+            dismissible = true,
+        )
+
         is UpdateSheetState.UpToDate -> UpdateSheetSpec(
-            title = if (current.fromChangelog) changelogTitle else checkTitle,
+            title = checkTitle,
             rightAction = sheetAction(closeLabel, R.drawable.ic_dismiss_circle) { dismiss() },
             dismissible = true,
         )
@@ -317,26 +332,22 @@ internal fun AboutUpdateSheet(
         is UpdateSheetState.Available -> {
             val actionLabel = if (current.update.canDownload) updateLabel else releaseLabel
             val actionIcon = if (current.update.canDownload) {
-                R.drawable.ic_arrow_download
+                // 与确认按钮同款图标
+                R.drawable.ic_checkmark_circle
             } else {
                 R.drawable.ic_arrow_export_up
             }
             val action: () -> Unit = {
                 if (current.update.canDownload) {
-                    startDownload(current.update, current.fromChangelog)
+                    startDownload(current.update)
                 } else {
                     openRelease(current.update)
                 }
             }
-            val title = if (current.fromChangelog) {
-                changelogTitle
-            } else {
-                stringResource(R.string.about_update_available_title)
-            }
             if (current.update.forced) {
                 // 强制更新：只保留唯一主操作，禁用遮罩/返回/下拉关闭
                 UpdateSheetSpec(
-                    title = title,
+                    title = checkTitle,
                     rightAction = sheetAction(
                         label = actionLabel,
                         icon = actionIcon,
@@ -346,86 +357,73 @@ internal fun AboutUpdateSheet(
                     dismissible = false,
                 )
             } else {
+                // 有更新：左「取消」、右「更新」（图标沿用更新动作的图标）
                 UpdateSheetSpec(
-                    title = title,
+                    title = checkTitle,
                     confirmLabel = actionLabel,
                     confirmIcon = actionIcon,
                     onConfirm = action,
                     rightAction = sheetAction(
-                        closeLabel,
+                        cancelLabel,
                         R.drawable.ic_dismiss_circle,
                     ) { dismiss() },
                     dismissible = true,
+                    confirmAtEnd = true,
                 )
             }
         }
 
         is UpdateSheetState.Downloading -> UpdateSheetSpec(
-            title = stringResource(R.string.about_update_downloading_title),
+            title = checkTitle,
             rightAction = sheetAction(cancelLabel, R.drawable.ic_dismiss_circle) {
                 currentJob?.cancel()
                 currentJob = null
-                state = UpdateSheetState.Available(
-                    update = current.update,
-                    fromChangelog = current.fromChangelog,
-                )
+                state = UpdateSheetState.Available(current.update)
             },
             dismissible = false,
         )
 
         is UpdateSheetState.InstallPermission -> UpdateSheetSpec(
-            title = stringResource(R.string.about_update_permission_title),
+            title = checkTitle,
             confirmLabel = settingsLabel,
-            confirmIcon = R.drawable.ic_arrow_circle_right,
+            confirmIcon = R.drawable.ic_arrow_circle_right_filled,
             onConfirm = {
                 if (ApkInstaller.openInstallPermissionSettings(context)) {
-                    // 授权页返回后停在更新提示，用户可直接再次点「立即更新」
-                    state = UpdateSheetState.Available(
-                        update = current.update,
-                        fromChangelog = current.fromChangelog,
-                    )
+                    // 授权页返回后停在更新提示，用户可直接再次点「更新」
+                    state = UpdateSheetState.Available(current.update)
                 } else {
                     AppToasts.show(context, permissionFailedText)
                 }
             },
-            rightAction = sheetAction(backLabel, R.drawable.ic_arrow_circle_left) {
-                state = UpdateSheetState.Available(
-                    update = current.update,
-                    fromChangelog = current.fromChangelog,
-                )
-            },
-            dismissible = false,
+            // 左「取消」直接关闭浮层，右「去设置」打开系统安装权限页
+            rightAction = sheetAction(cancelLabel, R.drawable.ic_dismiss_circle) { dismiss() },
+            dismissible = true,
+            confirmAtEnd = true,
         )
 
         is UpdateSheetState.Failed -> {
             val update = current.update
             val forcedUpdate = update?.takeIf { it.forced }
             val primaryAction: () -> Unit = when {
-                current.kind == UpdateFailureKind.Check -> ({ runCheck(current.action) })
-                update != null -> ({
-                    startDownload(
-                        update,
-                        fromChangelog = current.action == AboutUpdateAction.Changelog,
-                    )
-                })
-                else -> ({ runCheck(current.action) })
+                current.kind == UpdateFailureKind.Check -> ({ runUpdateCheck() })
+                current.kind == UpdateFailureKind.Changelog -> ({ runChangelogLoad() })
+                update != null -> ({ startDownload(update) })
+                else -> ({ runUpdateCheck() })
             }
             val rightAction = if (forcedUpdate != null) {
                 // 强制更新失败：先回到不可关闭的更新提示，避免把用户留在失败页
                 sheetAction(backLabel, R.drawable.ic_arrow_circle_left) {
-                    state = UpdateSheetState.Available(
-                        update = forcedUpdate,
-                        fromChangelog = current.action == AboutUpdateAction.Changelog,
-                    )
+                    state = UpdateSheetState.Available(forcedUpdate)
                 }
             } else {
                 sheetAction(closeLabel, R.drawable.ic_dismiss_circle) { dismiss() }
             }
             UpdateSheetSpec(
-                title = if (current.kind == UpdateFailureKind.Check) {
-                    checkErrorTitle
+                // 检查更新链路标题恒为「检查更新」，具体失败类型由内容卡说明
+                title = if (current.kind == UpdateFailureKind.Changelog) {
+                    changelogErrorTitle
                 } else {
-                    errorTitle
+                    checkTitle
                 },
                 confirmLabel = retryLabel,
                 confirmIcon = R.drawable.ic_arrow_repeat,
@@ -439,20 +437,10 @@ internal fun AboutUpdateSheet(
     BackHandler(enabled = visible) {
         when {
             spec.dismissible -> dismiss()
-            current is UpdateSheetState.InstallPermission -> {
-                state = UpdateSheetState.Available(
-                    update = current.update,
-                    fromChangelog = current.fromChangelog,
-                )
-            }
             current is UpdateSheetState.Failed && current.update?.forced == true -> {
-                val update = current.update
-                state = UpdateSheetState.Available(
-                    update = update,
-                    fromChangelog = current.action == AboutUpdateAction.Changelog,
-                )
+                state = UpdateSheetState.Available(current.update)
             }
-            // Checking / Downloading / 强制更新提示：返回键不打断，只能点顶栏动作
+            // 检查中/更新日志加载中/下载中/强制更新提示：返回键不打断，只能点顶栏动作
         }
     }
 
@@ -462,6 +450,7 @@ internal fun AboutUpdateSheet(
         confirmIcon = spec.confirmIcon,
         onConfirm = spec.onConfirm,
         rightAction = spec.rightAction,
+        confirmAtEnd = spec.confirmAtEnd,
         onDismiss = { if (spec.dismissible) dismiss() },
         visible = visible,
         onDismissed = {
@@ -479,18 +468,20 @@ internal fun AboutUpdateSheet(
             verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween),
         ) {
             when (current) {
-                is UpdateSheetState.Checking -> UpdateCheckingContent()
-
-                is UpdateSheetState.UpToDate -> UpdateUpToDateContent(
-                    localVersionName = localVersionName,
-                    fromChangelog = current.fromChangelog,
-                    releases = current.releases,
+                is UpdateSheetState.CheckingUpdate -> UpdateLoadingContent(
+                    text = stringResource(R.string.about_update_checking),
                 )
 
-                is UpdateSheetState.Available -> UpdateAvailableContent(
-                    update = current.update,
-                    fromChangelog = current.fromChangelog,
+                is UpdateSheetState.LoadingChangelog -> UpdateLoadingContent(
+                    text = stringResource(R.string.about_changelog_loading),
                 )
+
+                // 更新日志：纯只读，按版本分组展示当前安装版本及更早版本
+                is UpdateSheetState.Changelog -> UpdateReleaseHistory(current.releases)
+
+                is UpdateSheetState.UpToDate -> UpdateUpToDateContent(localVersionName)
+
+                is UpdateSheetState.Available -> UpdateAvailableContent(current.update)
 
                 is UpdateSheetState.Downloading -> UpdateDownloadingContent(current)
 
@@ -516,9 +507,9 @@ internal fun AboutUpdateSheet(
     }
 }
 
-/** 检查中：与同步/备份加载卡同款「小转圈 + 文案」 */
+/** 加载中（检查更新 / 更新日志共用）：与同步/备份加载卡同款「小转圈 + 文案」 */
 @Composable
-private fun UpdateCheckingContent() {
+private fun UpdateLoadingContent(text: String) {
     CardSection {
         SheetCard(modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -534,7 +525,7 @@ private fun UpdateCheckingContent() {
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    text = stringResource(R.string.about_update_checking),
+                    text = text,
                     style = ClassppTextTokens.dialogMessage,
                     color = MaterialTheme.classppColors.secondaryText,
                 )
@@ -543,13 +534,9 @@ private fun UpdateCheckingContent() {
     }
 }
 
-/** 已是最新：更新日志入口按版本分组展示已发布版本的历史说明 */
+/** 已是最新：只给版本状态，不展示历史说明（历史说明走「更新日志」入口） */
 @Composable
-private fun UpdateUpToDateContent(
-    localVersionName: String,
-    fromChangelog: Boolean,
-    releases: List<AppUpdateRelease>,
-) {
+private fun UpdateUpToDateContent(localVersionName: String) {
     CardSection {
         SettingsInfoHeaderCard(
             icon = R.drawable.ic_checkmark_circle,
@@ -560,21 +547,19 @@ private fun UpdateUpToDateContent(
             ),
         )
     }
-    if (fromChangelog) {
-        UpdateReleaseHistory(releases)
-    }
 }
 
 /**
  * 更新日志历史：按版本分组，只渲染有说明的版本；全空时给一行「暂无更新说明」。
+ * 数据由 `AppUpdateChecker.loadChangelog()` 提供，只含当前安装版本及更早版本；
  * 更新提示（检查更新入口）只展示目标版本说明，不走这里。
  */
 @Composable
 private fun UpdateReleaseHistory(releases: List<AppUpdateRelease>) {
-    val withNotes = releases.filter { it.changelog.isNotEmpty() }
+    val withNotes = releases.filter { it.changelog.isNotBlank() }
     if (withNotes.isEmpty()) {
         CardSection(title = stringResource(R.string.about_update_section_changelog)) {
-            UpdateChangelogCard(emptyList())
+            UpdateChangelogCard("")
         }
     } else {
         withNotes.forEach { release ->
@@ -585,18 +570,14 @@ private fun UpdateReleaseHistory(releases: List<AppUpdateRelease>) {
     }
 }
 
-/** 有新版本：版本头部 + 强制提示；「更新日志」入口展示完整历史，检查更新入口只展示目标版本 */
+/** 有新版本：版本头部 + 强制提示 + 目标版本说明；不展示历史列表 */
 @Composable
-private fun UpdateAvailableContent(
-    update: AvailableUpdate,
-    fromChangelog: Boolean,
-) {
+private fun UpdateAvailableContent(update: AvailableUpdate) {
     CardSection {
         SettingsInfoHeaderCard(
-            icon = R.drawable.app_logo,
+            icon = R.drawable.ic_arrow_circle_up_filled,
             title = stringResource(R.string.about_update_available_title),
             description = updateVersionDescription(update),
-            tintIcon = false,
         )
         if (update.forced) {
             SheetInfoBanner(
@@ -605,12 +586,8 @@ private fun UpdateAvailableContent(
             )
         }
     }
-    if (fromChangelog) {
-        UpdateReleaseHistory(update.releases)
-    } else {
-        CardSection(title = stringResource(R.string.about_update_section_changelog)) {
-            UpdateChangelogCard(update.changelog)
-        }
+    CardSection(title = stringResource(R.string.about_update_section_changelog)) {
+        UpdateChangelogCard(update.changelog)
     }
 }
 
@@ -663,7 +640,7 @@ private fun UpdateDownloadingContent(state: UpdateSheetState.Downloading) {
 private fun UpdatePermissionContent(update: AvailableUpdate) {
     CardSection {
         SettingsInfoHeaderCard(
-            icon = R.drawable.ic_info_regular,
+            icon = R.drawable.ic_info,
             title = stringResource(R.string.about_update_permission_title),
             description = updateVersionDescription(update),
         )
@@ -681,13 +658,14 @@ private fun UpdateFailedContent(
     localVersionName: String,
     onOpenRelease: (() -> Unit)?,
 ) {
-    val titleRes = if (kind == UpdateFailureKind.Check) {
-        R.string.about_update_check_error_title
-    } else {
-        R.string.about_update_error_title
+    val titleRes = when (kind) {
+        UpdateFailureKind.Check -> R.string.about_update_check_error_title
+        UpdateFailureKind.Changelog -> R.string.about_changelog_load_error_title
+        else -> R.string.about_update_error_title
     }
     val messageRes = when (kind) {
         UpdateFailureKind.Check -> R.string.about_update_check_failed
+        UpdateFailureKind.Changelog -> R.string.about_changelog_load_failed
         UpdateFailureKind.Download -> R.string.about_update_download_failed
         UpdateFailureKind.Verify -> R.string.about_update_verify_failed
         UpdateFailureKind.Install -> R.string.about_update_install_failed
@@ -718,35 +696,26 @@ private fun UpdateFailedContent(
     }
 }
 
-/** 更新内容卡：逐条圆点列表；没有说明时给一行中性占位 */
+/** 更新内容卡：分语言 Markdown 渲染；没有说明时给一行中性占位 */
 @Composable
-private fun UpdateChangelogCard(entries: List<String>) {
+private fun UpdateChangelogCard(markdown: String) {
     SheetCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.weight(1f)) {
-            if (entries.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.about_update_changelog_empty),
-                    style = ClassppTextTokens.settingsDescription,
-                    color = MaterialTheme.classppColors.secondaryText,
-                )
-            } else {
-                entries.forEachIndexed { index, entry ->
-                    if (index > 0) Spacer(Modifier.height(UpdateChangelogLineSpacing))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Top,
-                    ) {
-                        Text(
-                            text = "•",
-                            style = ClassppTextTokens.settingsDescription,
-                            color = MaterialTheme.classppColors.secondaryText,
-                        )
-                        Spacer(Modifier.width(UpdateChangelogBulletGap))
-                        Text(
-                            text = entry,
-                            style = ClassppTextTokens.settingsDescription,
-                            color = MaterialTheme.classppColors.secondaryText,
-                            modifier = Modifier.weight(1f),
+            // SheetCard 只铺白底；显式对齐 onSurface，Markdown 的正文/表格/代码块颜色从它派生
+            CompositionLocalProvider(
+                LocalContentColor provides MaterialTheme.colorScheme.onSurface,
+            ) {
+                if (markdown.isBlank()) {
+                    Text(
+                        text = stringResource(R.string.about_update_changelog_empty),
+                        style = ClassppTextTokens.settingsDescription,
+                        color = MaterialTheme.classppColors.secondaryText,
+                    )
+                } else {
+                    SelectionContainer {
+                        ChatMarkdown(
+                            content = markdown,
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }
@@ -812,10 +781,3 @@ private fun sheetAction(
         onClick = onClick,
     )
 }
-
-/**
- * 下载/安装失败后的来源动作：用于「返回」时重建更新提示。
- * 下载完成/失败发生在 Available 之后，统一视为来自「检查更新」入口的提示。
- */
-private fun actionOf(fromChangelog: Boolean): AboutUpdateAction =
-    if (fromChangelog) AboutUpdateAction.Changelog else AboutUpdateAction.Check

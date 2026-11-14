@@ -11,7 +11,7 @@ import org.junit.Test
 
 /**
  * 更新清单的拉取/校验/比较链路：版本比较、强制更新、包名/schema/URL 校验、
- * https 重定向与分语言 changelog 选择。下载链路不在这里覆盖（见 ApkVerifierTest）。
+ * https 重定向与分语言 Markdown 更新说明。下载链路不在这里覆盖（见 ApkVerifierTest）。
  */
 class AppUpdateCheckerTest {
 
@@ -44,9 +44,9 @@ class AppUpdateCheckerTest {
         ).check().upToDate()
 
         assertEquals(listOf(5L), same.releases.map { it.versionCode })
-        assertEquals(listOf("新增 A"), same.releases.single().changelog)
+        assertEquals("新增 A", same.releases.single().changelog)
         assertEquals(listOf(4L), older.releases.map { it.versionCode })
-        assertEquals(listOf("新增 A"), older.releases.single().changelog)
+        assertEquals("新增 A", older.releases.single().changelog)
     }
 
     @Test
@@ -62,25 +62,25 @@ class AppUpdateCheckerTest {
                                 "versionCode": 5,
                                 "versionName": "0.1.6-alpha",
                                 "publishedAt": "2026-11-20",
-                                "changelog": { "zh": ["v5 说明"], "en": ["v5 notes"] }
+                                "changelog": { "zh": "v5 说明", "en": "v5 notes" }
                               },
                               {
                                 "versionCode": 6,
                                 "versionName": "0.1.7-alpha",
                                 "publishedAt": "2026-12-01",
-                                "changelog": { "zh": ["v6 说明"], "en": ["v6 notes"] }
+                                "changelog": { "zh": "v6 说明", "en": "v6 notes" }
                               },
                               {
                                 "versionCode": 4,
                                 "versionName": "0.1.5-alpha",
                                 "publishedAt": "2026-10-30",
-                                "changelog": { "zh": ["v4 说明"], "en": ["v4 notes"] }
+                                "changelog": { "zh": "v4 说明", "en": "v4 notes" }
                               },
                               {
                                 "versionCode": 6,
                                 "versionName": "0.1.7-alpha duplicate",
                                 "publishedAt": "2026-12-02",
-                                "changelog": { "zh": ["重复"], "en": ["duplicate"] }
+                                "changelog": { "zh": "重复", "en": "duplicate" }
                               }
                             ]
                         """.trimIndent(),
@@ -91,7 +91,7 @@ class AppUpdateCheckerTest {
 
         val update = checker(transport, currentVersionCode = 5).check().available()
         assertEquals(listOf(6L, 5L, 4L), update.releases.map { it.versionCode })
-        assertEquals(listOf("v6 说明"), update.changelog)
+        assertEquals("v6 说明", update.changelog)
 
         val english = checker(
             transport,
@@ -99,7 +99,7 @@ class AppUpdateCheckerTest {
             language = "en",
         ).check().available()
         assertEquals(
-            listOf("v5 notes"),
+            "v5 notes",
             english.releases.first { it.versionCode == 5L }.changelog,
         )
     }
@@ -117,13 +117,13 @@ class AppUpdateCheckerTest {
                                 "versionCode": 7,
                                 "versionName": "0.1.8-alpha",
                                 "publishedAt": "2027-01-01",
-                                "changelog": { "zh": ["未发布"], "en": ["unreleased"] }
+                                "changelog": { "zh": "未发布", "en": "unreleased" }
                               },
                               {
                                 "versionCode": 5,
                                 "versionName": "0.1.6-alpha",
                                 "publishedAt": "2026-11-20",
-                                "changelog": { "zh": ["v5 说明"], "en": ["v5 notes"] }
+                                "changelog": { "zh": "v5 说明", "en": "v5 notes" }
                               }
                             ]
                         """.trimIndent(),
@@ -134,7 +134,7 @@ class AppUpdateCheckerTest {
 
         val update = checker(transport, currentVersionCode = 5).check().available()
         assertEquals(listOf(6L, 5L), update.releases.map { it.versionCode })
-        assertEquals(listOf("新增 A"), update.releases.first().changelog)
+        assertEquals("新增 A", update.releases.first().changelog)
     }
 
     @Test
@@ -148,7 +148,99 @@ class AppUpdateCheckerTest {
         assertEquals(6L, release.versionCode)
         assertEquals("0.1.7-alpha", release.versionName)
         assertEquals("2026-11-20", release.publishedAt)
-        assertEquals(listOf("新增 A"), release.changelog)
+        assertEquals("新增 A", release.changelog)
+    }
+
+    @Test
+    fun `changelog only returns current and past versions`() = runBlocking {
+        val transport = FakeTransport(
+            mapOf(
+                manifestUrl to ok(
+                    manifestJson(
+                        versionCode = 6,
+                        releases = """
+                            [
+                              {
+                                "versionCode": 6,
+                                "versionName": "0.1.7-alpha",
+                                "publishedAt": "2026-12-01",
+                                "changelog": { "zh": "v6 说明", "en": "v6 notes" }
+                              },
+                              {
+                                "versionCode": 5,
+                                "versionName": "0.1.6-alpha",
+                                "publishedAt": "2026-11-20",
+                                "changelog": { "zh": "v5 说明", "en": "v5 notes" }
+                              },
+                              {
+                                "versionCode": 4,
+                                "versionName": "0.1.5-alpha",
+                                "publishedAt": "2026-10-30",
+                                "changelog": { "zh": "v4 说明", "en": "v4 notes" }
+                              }
+                            ]
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+
+        // 当前安装版本 5：远端 6 是新版本，不能出现在更新日志里
+        val releases = checker(transport, currentVersionCode = 5).loadChangelog().successReleases()
+        assertEquals(listOf(5L, 4L), releases.map { it.versionCode })
+        assertEquals("v5 说明", releases.first().changelog)
+    }
+
+    @Test
+    fun `changelog does not require apk or release page`() = runBlocking {
+        val transport = FakeTransport(
+            mapOf(
+                manifestUrl to ok(
+                    manifestJson(
+                        versionCode = 6,
+                        apkUrls = "[]",
+                        sizeBytes = 0,
+                        sha256 = "",
+                        releasePageUrl = null,
+                        releases = """
+                            [
+                              {
+                                "versionCode": 5,
+                                "versionName": "0.1.6-alpha",
+                                "publishedAt": "2026-11-20",
+                                "changelog": { "zh": "v5 说明", "en": "v5 notes" }
+                              }
+                            ]
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+
+        // 检查更新会因缺少可下载信息失败，但更新日志只展示说明，不应受影响
+        assertTrue(checker(transport).check() is UpdateCheckResult.Failed)
+        val releases = checker(transport).loadChangelog().successReleases()
+        assertEquals(listOf(5L), releases.map { it.versionCode })
+        assertEquals("v5 说明", releases.single().changelog)
+    }
+
+    @Test
+    fun `changelog for local build newer than manifest keeps released history`() = runBlocking {
+        val transport = FakeTransport(
+            mapOf(manifestUrl to ok(manifestJson(versionCode = 6))),
+        )
+
+        // 本地开发版本 7 > 远端 6：6 属于过往版本，仍应出现在更新日志里
+        val releases = checker(transport, currentVersionCode = 7).loadChangelog().successReleases()
+        assertEquals(listOf(6L), releases.map { it.versionCode })
+        assertEquals("新增 A", releases.single().changelog)
+    }
+
+    @Test
+    fun `changelog load failure is reported`() = runBlocking {
+        val transport = FakeTransport(mapOf(manifestUrl to ok("{not-json")))
+
+        assertTrue(checker(transport).loadChangelog() is ChangelogResult.Failed)
     }
 
     @Test
@@ -252,22 +344,48 @@ class AppUpdateCheckerTest {
     }
 
     @Test
-    fun `changelog follows app language with chinese fallback`() = runBlocking {
+    fun `markdown changelog follows app language and is trimmed`() = runBlocking {
         val transport = FakeTransport(
             mapOf(
                 manifestUrl to ok(
                     manifestJson(
                         versionCode = 6,
-                        changelogZh = """["新增 A"]""",
-                        changelogEn = """["New A"]""",
+                        changelogZh = "  ### 新增\\n- A  ",
+                        changelogEn = "### Added\\n- A",
                     ),
                 ),
             ),
         )
 
-        assertEquals(listOf("New A"), checker(transport, language = "en").check().available().changelog)
-        assertEquals(listOf("新增 A"), checker(transport, language = "zh").check().available().changelog)
-        assertEquals(listOf("新增 A"), checker(transport, language = "fr").check().available().changelog)
+        assertEquals(
+            "### 新增\n- A",
+            checker(transport, language = "zh").check().available().changelog,
+        )
+        assertEquals(
+            "### Added\n- A",
+            checker(transport, language = "en").check().available().changelog,
+        )
+        assertEquals(
+            "### 新增\n- A",
+            checker(transport, language = "fr").check().available().changelog,
+        )
+    }
+
+    @Test
+    fun `markdown changelog is capped`() = runBlocking {
+        val longMarkdown = "a".repeat(AppUpdateConfig.MAX_CHANGELOG_MARKDOWN_CHARS + 100)
+        val transport = FakeTransport(
+            mapOf(
+                manifestUrl to ok(
+                    manifestJson(versionCode = 6, changelogZh = longMarkdown),
+                ),
+            ),
+        )
+
+        assertEquals(
+            AppUpdateConfig.MAX_CHANGELOG_MARKDOWN_CHARS,
+            checker(transport).check().available().changelog.length,
+        )
     }
 
     // ---------- 工具 ----------
@@ -291,6 +409,10 @@ class AppUpdateCheckerTest {
     private fun UpdateCheckResult.upToDate(): UpdateCheckResult.UpToDate =
         this as? UpdateCheckResult.UpToDate
             ?: error("expected UpToDate but was $this")
+
+    private fun ChangelogResult.successReleases(): List<AppUpdateRelease> =
+        (this as? ChangelogResult.Success)?.releases
+            ?: error("expected Success but was $this")
 
     private fun ok(body: String): HttpResponse = HttpResponse(status = 200, body = body)
 
@@ -318,8 +440,8 @@ class AppUpdateCheckerTest {
             sizeBytes: Long = 3_000_000,
             sha256: String = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             releasePageUrl: String? = null,
-            changelogZh: String = """["新增 A"]""",
-            changelogEn: String = """["New A"]""",
+            changelogZh: String = "新增 A",
+            changelogEn: String = "New A",
             releases: String = "[]",
         ): String = """
             {
@@ -336,8 +458,8 @@ class AppUpdateCheckerTest {
               },
               "releasePageUrl": ${releasePageUrl?.let { "\"$it\"" } ?: "null"},
               "changelog": {
-                "zh": $changelogZh,
-                "en": $changelogEn
+                "zh": "$changelogZh",
+                "en": "$changelogEn"
               },
               "releases": $releases
             }

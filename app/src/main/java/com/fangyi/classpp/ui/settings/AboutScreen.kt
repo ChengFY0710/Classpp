@@ -61,8 +61,9 @@ private const val AboutAuthorUrl = "https://github.com/ChengFY0710"
  * 关于子页：应用 Logo / 名称与副标题、作者、当前版本、更新日志、致谢，以及
  * 「用前须知」分组（免责声明 / 开源协议 / 隐私与政策）。
  *
- * 「检查更新 / 更新日志」两行共用 [AboutUpdateSheet]（OverlaySheet）：点击后拉取远端
- * `update.json` 并比对 versionCode，结果、下载进度、失败与安装授权都在同一浮层内切换；
+ * 「检查更新 / 更新日志」两行共用 [AboutUpdateSheet]（OverlaySheet），但职责分离：
+ * 检查更新拉取远端 `update.json` 比对 versionCode，结果、下载进度、失败与安装授权都在
+ * 同一浮层内切换；更新日志只加载并展示当前安装版本及更早版本的说明，不提供任何更新动作。
  * 版本号经 [appVersionName] 运行时读取 Gradle `versionName`，不在界面层写死，也不依赖
  * BuildConfig 生成类。「用前须知」三行分别打开 [AboutDocumentSheet] 文档浮层，致谢行
  * 打开 [AboutThanksSheet] 第三方项目列表；作者卡片经系统浏览器打开作者主页。
@@ -119,7 +120,7 @@ fun AboutScreen(
                 .only(WindowInsetsSides.Bottom)
                 .asPaddingValues()
                 .calculateBottomPadding()
-            // 检查更新 / 更新日志：每次点击都用递增 id 投递请求，同一入口重复点击也会重新检查
+            // 检查更新 / 更新日志：每次点击都用递增 id 投递请求，同一入口重复点击也会重新加载
             var updateRequest by remember { mutableStateOf<AboutUpdateRequest?>(null) }
             var updateRequestSeq by remember { mutableLongStateOf(0L) }
             val openUpdate: (AboutUpdateAction) -> Unit = { action ->
@@ -263,7 +264,8 @@ fun AboutScreen(
                 )
             }
 
-            // 检查更新 / 更新日志共用同一 OverlaySheet：点击入口后由该层接管检查、下载与安装
+            // 检查更新 / 更新日志共用同一 OverlaySheet：检查更新接管检查、下载与安装，
+            // 更新日志只读展示当前及过往版本的说明，不触发版本比对
             AboutUpdateSheet(request = updateRequest)
         }
     }
