@@ -293,7 +293,12 @@ class AiPromptBuilderTest {
             AiToolRegistry.DELETE_TODOS,
             AiToolRegistry.COMPLETE_TODOS,
             AiToolRegistry.ARCHIVE_TODOS,
+            AiToolRegistry.CREATE_TODO_GROUPS,
+            AiToolRegistry.CREATE_TODO_TAGS,
         ).forEach { name -> assertTrue("native prompt must mention $name", native.contains(name)) }
+        // 新建分组/标签的引导：不存在时先调工具，再在 create_todos/update_todos 里引用
+        assertTrue(native.contains("先调用 create_todo_groups / create_todo_tags"))
+        assertTrue(native.contains("尚不存在的分组"))
         // 原生模式不再给出 JSON 信封契约：动作由工具执行，代码块会被忽略（避免双写）
         assertTrue(native.contains("不要输出 ```json 代码块"))
         assertFalse(native.contains(AiToolRegistry.fallbackContracts.createTodos))

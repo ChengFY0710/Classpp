@@ -274,6 +274,24 @@ class AiChatRepositoryTest {
         }
     }
 
+    /** 新建分组/标签写入口假实现：记录调用，按名字返回预设结果 */
+    private class FakeTodoOrganizerWriter : AiTodoOrganizerWriter {
+        val groups = mutableListOf<String>()
+        val tags = mutableListOf<String>()
+        var groupOutcomeFor: (String) -> AiOrganizerWriteOutcome = { AiOrganizerWriteOutcome.Created }
+        var tagOutcomeFor: (String) -> AiOrganizerWriteOutcome = { AiOrganizerWriteOutcome.Created }
+
+        override suspend fun ensureGroup(name: String): AiOrganizerWriteOutcome {
+            groups += name
+            return groupOutcomeFor(name)
+        }
+
+        override suspend fun ensureTag(name: String): AiOrganizerWriteOutcome {
+            tags += name
+            return tagOutcomeFor(name)
+        }
+    }
+
     /** 脚本化响应：按序吐 lines，耗尽后阻塞在 gate（模拟流挂起），cancel 后放行 EOF */
     private class ScriptedResponse(
         private val lines: List<String?>,
@@ -417,6 +435,7 @@ class AiChatRepositoryTest {
         transport: FakeAiTransport,
         persister: FakeTodoPersister = FakeTodoPersister(),
         changeWriter: FakeTodoChangeWriter = FakeTodoChangeWriter(),
+        organizerWriter: AiTodoOrganizerWriter = FakeTodoOrganizerWriter(),
         contextProvider: () -> AiChatContext = { AiChatContext() },
         nowMillis: () -> Long = System::currentTimeMillis,
     ): AiChatRepository {
@@ -427,6 +446,7 @@ class AiChatRepositoryTest {
             contextProvider = contextProvider,
             persister = persister,
             changeWriter = changeWriter,
+            organizerWriter = organizerWriter,
             imageStore = AiImageStore(tempImageDir()),
             clock = Clock { IsoDate.of(2026, 11, 1) },
             nowMillis = nowMillis,
@@ -3038,6 +3058,80 @@ class AiChatRepositoryTest {
         val result = message.toolRounds.single().results.single()
         assertTrue(result.isError)
         assertTrue(result.contentJson.contains("not_found"))
+    }
+
+    @Test
+    fun `organizer tools create groups and tags and report existing names`() = runBlocking {
+        val organizerWriter = FakeTodoOrganizerWriter().apply {
+            groupOutcomeFor = { name ->
+                if (name == "生活") AiOrganizerWriteOutcome.Existing else AiOrganizerWriteOutcome.Created
+            }
+            tagOutcomeFor = { AiOrganizerWriteOutcome.Created }
+        }
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.CREATE_TODO_GROUPS,
+                        arguments = """{"groups":["学习","生活","学习"]}""",
+                    ),
+                    toolCallSse(
+                        index = 1,
+                        id = "call_2",
+                        name = AiToolRegistry.CREATE_TODO_TAGS,
+                        arguments = """{"tags":["期末"]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("分组和标签都建好了。"), "data: [DONE]")),
+        )
+        val repo = repository(transport = transport, organizerWriter = organizerWriter)
+
+        repo.send("建个学习分组，再加个期末标签")
+
+        // 工具层去重后按序交给写入口
+        assertEquals(listOf("学习", "生活"), organizerWriter.groups)
+        assertEquals(listOf("期末"), organizerWriter.tags)
+        val results = repo.messages.value.last().toolRounds.single().results
+        assertEquals(2, results.size)
+        assertFalse(results[0].isError)
+        assertTrue(results[0].contentJson.contains("\"created\":[\"学习\"]"))
+        assertTrue(results[0].contentJson.contains("\"existing\":[\"生活\"]"))
+        assertFalse(results[1].isError)
+        assertTrue(results[1].contentJson.contains("\"created\":[\"期末\"]"))
+    }
+
+    @Test
+    fun `organizer tool reports failure when nothing could be written`() = runBlocking {
+        val organizerWriter = FakeTodoOrganizerWriter().apply {
+            groupOutcomeFor = { AiOrganizerWriteOutcome.Failed }
+        }
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.CREATE_TODO_GROUPS,
+                        arguments = """{"groups":["学习"]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("分组没能建成功。"), "data: [DONE]")),
+        )
+        val repo = repository(transport = transport, organizerWriter = organizerWriter)
+
+        repo.send("建个学习分组")
+
+        val result = repo.messages.value.last().toolRounds.single().results.single()
+        assertTrue(result.isError)
+        assertTrue(result.contentJson.contains("internal_error"))
     }
 
     @Test

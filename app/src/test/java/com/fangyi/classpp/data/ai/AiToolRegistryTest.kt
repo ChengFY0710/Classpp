@@ -120,10 +120,12 @@ class AiToolRegistryTest {
     @Test
     fun `permissions follow existing write semantics`() {
         val permissions = AiToolRegistry.specs.associate { it.name to it.permission }
-        // 新建/完成/归档：可逆写，自动执行 + 撤销
+        // 新建/完成/归档/新建分组标签：可逆写，自动执行 + 撤销
         assertEquals(AiToolPermission.WriteReversible, permissions[AiToolRegistry.CREATE_TODOS])
         assertEquals(AiToolPermission.WriteReversible, permissions[AiToolRegistry.COMPLETE_TODOS])
         assertEquals(AiToolPermission.WriteReversible, permissions[AiToolRegistry.ARCHIVE_TODOS])
+        assertEquals(AiToolPermission.WriteReversible, permissions[AiToolRegistry.CREATE_TODO_GROUPS])
+        assertEquals(AiToolPermission.WriteReversible, permissions[AiToolRegistry.CREATE_TODO_TAGS])
         // 修改/删除：破坏性写，只生成待确认记录
         assertEquals(AiToolPermission.WriteConfirm, permissions[AiToolRegistry.UPDATE_TODOS])
         assertEquals(AiToolPermission.WriteConfirm, permissions[AiToolRegistry.DELETE_TODOS])
@@ -164,7 +166,7 @@ class AiToolRegistryTest {
     }
 
     @Test
-    fun `native tools cover the four read tools and five write tools`() {
+    fun `native tools cover the four read tools and seven write tools`() {
         assertEquals(
             listOf(
                 AiToolRegistry.GET_DAY_PLAN,
@@ -176,6 +178,8 @@ class AiToolRegistryTest {
                 AiToolRegistry.DELETE_TODOS,
                 AiToolRegistry.COMPLETE_TODOS,
                 AiToolRegistry.ARCHIVE_TODOS,
+                AiToolRegistry.CREATE_TODO_GROUPS,
+                AiToolRegistry.CREATE_TODO_TAGS,
             ),
             AiToolRegistry.nativeSpecs.map { it.name },
         )
@@ -191,6 +195,26 @@ class AiToolRegistryTest {
                 AiToolRegistry.GET_TODO,
             ),
         )
+    }
+
+    @Test
+    fun `organizer tools require a name array and stay native only`() {
+        val groups = requireNotNull(AiToolRegistry.find(AiToolRegistry.CREATE_TODO_GROUPS))
+        val tags = requireNotNull(AiToolRegistry.find(AiToolRegistry.CREATE_TODO_TAGS))
+
+        assertEquals(
+            listOf("groups"),
+            (groups.parameters.getValue("required") as JsonArray).map { it.jsonPrimitive.content },
+        )
+        assertEquals(
+            listOf("tags"),
+            (tags.parameters.getValue("required") as JsonArray).map { it.jsonPrimitive.content },
+        )
+        // 只进原生 tools，不生成 JSON 回退契约段
+        assertTrue(groups.envelope.isEmpty())
+        assertTrue(tags.envelope.isEmpty())
+        assertTrue(AiToolRegistry.isWriteTool(AiToolRegistry.CREATE_TODO_GROUPS))
+        assertTrue(AiToolRegistry.isWriteTool(AiToolRegistry.CREATE_TODO_TAGS))
     }
 
     @Test

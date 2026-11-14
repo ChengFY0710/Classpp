@@ -69,6 +69,35 @@ fun interface AiTodoPersister {
     suspend fun addAll(todos: List<Todo>): Boolean
 }
 
+/** 新建分组/标签的写入结果：同名已存在也算成功（工具层据此回报「已存在」而不是报错）。 */
+enum class AiOrganizerWriteOutcome { Created, Existing, Failed }
+
+/**
+ * AI 新建待办分组/标签的写入口（立即落库）。
+ *
+ * 与 [AiTodoPersister] 同样抽成接口：AiChatRepository 不反向依赖具体数据仓库，单测可注入
+ * fake。实现侧接 `TodoRepository.applyGroupAssignments`（分组在 mutex 内原子追加，同名幂等）
+ * 与 `TagRepository.addTag`（同名返回 DuplicateName，转为 [AiOrganizerWriteOutcome.Existing]）。
+ *
+ * 只负责新建；重命名/删除仍走现有分组/标签管理 UI。
+ */
+interface AiTodoOrganizerWriter {
+    suspend fun ensureGroup(name: String): AiOrganizerWriteOutcome
+
+    suspend fun ensureTag(name: String): AiOrganizerWriteOutcome
+
+    companion object {
+        /** 未装配时的安全默认：写失败，避免工具在漏装配时静默成功 */
+        val Unavailable: AiTodoOrganizerWriter = object : AiTodoOrganizerWriter {
+            override suspend fun ensureGroup(name: String): AiOrganizerWriteOutcome =
+                AiOrganizerWriteOutcome.Failed
+
+            override suspend fun ensureTag(name: String): AiOrganizerWriteOutcome =
+                AiOrganizerWriteOutcome.Failed
+        }
+    }
+}
+
 /**
  * AI 修改/删除待办的写入口（用户确认后才会调用）。
  *
@@ -169,6 +198,8 @@ class AiChatRepository internal constructor(
     private val persister: AiTodoPersister,
     /** AI 修改/删除待办的写入口（用户确认后调用；AppContainer 接 updateTodo/removeTodos） */
     private val changeWriter: AiTodoChangeWriter,
+    /** AI 新建分组/标签的写入口（立即落库；AppContainer 接分组归并与标签库） */
+    private val organizerWriter: AiTodoOrganizerWriter = AiTodoOrganizerWriter.Unavailable,
     /**
      * 图片附件库（AppContainer 接 filesDir/ai_chat_images）：UI 借它导入相册/拍照图片，
      * 发送时在锁内把消息引用的文件编码进请求。公开给 UI 是浮层直连仓库架构下的
@@ -1109,7 +1140,61 @@ class AiChatRepository internal constructor(
                 }
                 return lifecycleEnvelope(results)
             }
+
+            override suspend fun createGroups(names: List<String>): JsonObject =
+                createOrganizers(names, kindLabel = "分组", ensure = organizerWriter::ensureGroup)
+
+            override suspend fun createTags(names: List<String>): JsonObject =
+                createOrganizers(names, kindLabel = "标签", ensure = organizerWriter::ensureTag)
         }
+
+    /**
+     * 新建分组/标签的公共执行：逐个确保存在，按 [AiOrganizerWriteOutcome] 汇总。
+     *
+     * 同名已存在不算失败（模型重试/重复调用是常态）；全部写入失败才返回失败信封，
+     * 避免模型声称「已经建好了」。成功结果同时给出 created/existing 两个数组，
+     * 模型据此决定后续 create_todos 的 group/tags 是否可引用。
+     */
+    private suspend fun createOrganizers(
+        names: List<String>,
+        kindLabel: String,
+        ensure: suspend (String) -> AiOrganizerWriteOutcome,
+    ): JsonObject {
+        val created = mutableListOf<String>()
+        val existing = mutableListOf<String>()
+        val failed = mutableListOf<String>()
+        for (name in names) {
+            when (ensure(name)) {
+                AiOrganizerWriteOutcome.Created -> created += name
+                AiOrganizerWriteOutcome.Existing -> existing += name
+                AiOrganizerWriteOutcome.Failed -> failed += name
+            }
+        }
+        if (created.isEmpty() && existing.isEmpty()) {
+            return toolFailure("internal_error", "没有新建任何${kindLabel}：写入失败")
+        }
+        return toolSuccess(
+            buildJsonObject {
+                put("count", created.size)
+                putJsonArray("created") { created.forEach { add(it) } }
+                putJsonArray("existing") { existing.forEach { add(it) } }
+                if (failed.isNotEmpty()) {
+                    putJsonArray("failed") { failed.forEach { add(it) } }
+                }
+                put(
+                    "message",
+                    buildString {
+                        when {
+                            created.isEmpty() -> append("这些${kindLabel}已存在，无需重复创建")
+                            existing.isEmpty() -> append("已新建 ${created.size} 个${kindLabel}")
+                            else -> append("已新建 ${created.size} 个${kindLabel}，${existing.size} 个已存在")
+                        }
+                        if (failed.isNotEmpty()) append("；${failed.size} 个写入失败")
+                    },
+                )
+            },
+        )
+    }
 
     /**
      * 修改/删除：只校验并生成待确认变更，返回 `pending_user_confirmation`。
@@ -2725,6 +2810,7 @@ class AiChatRepository internal constructor(
             contextProvider: () -> AiChatContext,
             persister: AiTodoPersister,
             changeWriter: AiTodoChangeWriter,
+            organizerWriter: AiTodoOrganizerWriter,
             imageStore: AiImageStore,
         ): AiChatRepository =
             AiChatRepository(
@@ -2734,6 +2820,7 @@ class AiChatRepository internal constructor(
                 contextProvider,
                 persister,
                 changeWriter,
+                organizerWriter,
                 imageStore,
             ).also { it.bootstrap() }
     }

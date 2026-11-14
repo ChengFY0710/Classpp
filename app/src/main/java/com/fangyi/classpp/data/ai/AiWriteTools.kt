@@ -4,6 +4,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -42,6 +43,12 @@ interface AiToolWriteGateway {
         unarchives: List<AiTodoLifecycleDraft>,
         restores: List<AiTodoLifecycleDraft>,
     ): JsonObject
+
+    /** 新建待办分组：立即落库；同名已存在视为成功（幂等） */
+    suspend fun createGroups(names: List<String>): JsonObject
+
+    /** 新建待办标签：立即落库到标签库；同名已存在视为成功（幂等） */
+    suspend fun createTags(names: List<String>): JsonObject
 }
 
 /**
@@ -107,6 +114,22 @@ internal object AiWriteTools {
         return gateway.archiveTodos(archives, unarchives, restores)
     }
 
+    /** 新建分组：names trim / 去空 / 去重后交给网关；建分组不改任何待办，因此无需确认卡。 */
+    suspend fun executeCreateTodoGroups(args: JsonObject, ctx: AiChatContext): JsonObject {
+        val gateway = ctx.writes ?: return wrongState()
+        val names = args.decodeNames("groups") ?: return invalidArguments("groups 必须是字符串数组")
+        if (names.isEmpty()) return invalidArguments("groups 不能为空")
+        return gateway.createGroups(names)
+    }
+
+    /** 新建标签：语义同 [executeCreateTodoGroups]；标签名是标签库的唯一键。 */
+    suspend fun executeCreateTodoTags(args: JsonObject, ctx: AiChatContext): JsonObject {
+        val gateway = ctx.writes ?: return wrongState()
+        val names = args.decodeNames("tags") ?: return invalidArguments("tags 必须是字符串数组")
+        if (names.isEmpty()) return invalidArguments("tags 不能为空")
+        return gateway.createTags(names)
+    }
+
     /**
      * 读取一个动作数组：缺席/`null` 视为空列表（只有 optional 段会走到这里；
      * required 段在 [AiToolExecutor] 的 schema 校验里已被拦下），不是数组时返回 null。
@@ -122,6 +145,23 @@ internal object AiWriteTools {
             val obj = item as? JsonObject ?: return@mapNotNull null
             runCatching { AiJson.storage.decodeFromJsonElement(serializer, obj) }.getOrNull()
         }
+    }
+
+    /**
+     * 读取一个字符串数组（分组/标签名）：非字符串条目丢弃，trim 后去空、按出现顺序去重；
+     * 不是数组时返回 null（由执行器回 `invalid_arguments`）。
+     */
+    private fun JsonObject.decodeNames(name: String): List<String>? {
+        val element = this[name] ?: return emptyList()
+        if (element is JsonNull) return emptyList()
+        val items = element as? JsonArray ?: return null
+        return items
+            .mapNotNull { item ->
+                (item as? JsonPrimitive)?.takeIf { it.isString }?.content
+            }
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
     }
 }
 

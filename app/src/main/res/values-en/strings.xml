@@ -1010,6 +1010,8 @@
     <string name="ai_tool_name_delete_todos">Delete todos</string>
     <string name="ai_tool_name_complete_todos">Complete todos</string>
     <string name="ai_tool_name_archive_todos">Archive todos</string>
+    <string name="ai_tool_name_create_todo_groups">Create group</string>
+    <string name="ai_tool_name_create_todo_tags">Create tag</string>
     <string name="ai_tool_status_running">Running</string>
     <string name="ai_tool_status_completed">Done</string>
     <string name="ai_tool_status_failed">Failed</string>
@@ -1033,13 +1035,18 @@
     <string name="ai_tool_arg_all">All</string>
     <string name="ai_tool_arg_limit">%1$d items</string>
     <string name="ai_tool_arg_items">%1$d items</string>
+    <string name="ai_tool_arg_organizers">%1$d items</string>
     <string name="ai_tool_result_created">Created %1$d</string>
     <string name="ai_tool_result_pending">%1$d pending</string>
     <string name="ai_tool_result_applied">Applied %1$d</string>
+    <string name="ai_tool_result_organizers_created">Created %1$d</string>
+    <string name="ai_tool_result_organizers_existing">%1$d already existed</string>
     <string name="ai_tool_result_skipped">Some skipped</string>
     <string name="ai_tool_detail_created">Created “%1$s”</string>
     <string name="ai_tool_detail_updated">Updated “%1$s”</string>
     <string name="ai_tool_detail_deleted">Deleted “%1$s”</string>
+    <string name="ai_tool_detail_organizer_existing">Already existed “%1$s”</string>
+    <string name="ai_tool_detail_organizer_failed">Failed to write “%1$s”</string>
     <string name="ai_tool_detail_free_slot">Free %1$s-%2$s</string>
     <string name="ai_tool_detail_empty">(none)</string>
     <string name="ai_tool_detail_truncated">(Omitted after %1$d items)</string>
@@ -1102,7 +1109,7 @@
     <string name="ai_settings_section_profile">Profiles</string>
     <string name="ai_settings_section_tools">Tool calls</string>
     <string name="ai_settings_tools_toggle">Let AI query and edit todos</string>
-    <string name="ai_settings_tools_desc">When on, AI can query your timetable, todos and free slots on demand, and create/complete/archive todos with tools (updates and deletes still need your confirmation); unsupported providers fall back automatically</string>
+    <string name="ai_settings_tools_desc">When on, AI can query your timetable, todos and free slots on demand, and create/complete/archive todos plus create groups and tags with tools (updates and deletes still need your confirmation); unsupported providers fall back automatically</string>
     <string name="ai_profile_title">AI profiles</string>
     <string name="ai_profile_entry_desc">Save multiple provider and model setups and switch anytime</string>
     <string name="ai_profile_custom">Custom</string>

@@ -29,6 +29,8 @@ class AiWriteToolsTest {
         var archives: List<AiTodoLifecycleDraft> = emptyList()
         var unarchives: List<AiTodoLifecycleDraft> = emptyList()
         var restores: List<AiTodoLifecycleDraft> = emptyList()
+        var groups: List<String> = emptyList()
+        var tags: List<String> = emptyList()
         var result: JsonObject = toolSuccess(buildJsonObject { put("count", 1) })
 
         override suspend fun createTodos(drafts: List<AiTodoDraft>): JsonObject {
@@ -63,6 +65,16 @@ class AiWriteToolsTest {
             this.archives = archives
             this.unarchives = unarchives
             this.restores = restores
+            return result
+        }
+
+        override suspend fun createGroups(names: List<String>): JsonObject {
+            groups = names
+            return result
+        }
+
+        override suspend fun createTags(names: List<String>): JsonObject {
+            tags = names
             return result
         }
     }
@@ -203,6 +215,53 @@ class AiWriteToolsTest {
         assertEquals("invalid_arguments", errorCode(result))
     }
 
+    // ---------- create_todo_groups / create_todo_tags ----------
+
+    @Test
+    fun `organizer tools trim dedupe and delegate names`() = kotlinx.coroutines.runBlocking {
+        val gateway = FakeGateway()
+        val groupsResult = AiWriteTools.executeCreateTodoGroups(
+            args("""{"groups":[" 学习 ","生活","学习","  ",""]}"""),
+            context(gateway),
+        )
+        val tagsResult = AiWriteTools.executeCreateTodoTags(
+            args("""{"tags":["期末"," 期末 ","考研"]}"""),
+            context(gateway),
+        )
+
+        assertTrue(ok(groupsResult))
+        assertTrue(ok(tagsResult))
+        assertEquals(listOf("学习", "生活"), gateway.groups)
+        assertEquals(listOf("期末", "考研"), gateway.tags)
+    }
+
+    @Test
+    fun `organizer tools reject empty and non array payloads`() = kotlinx.coroutines.runBlocking {
+        val gateway = FakeGateway()
+        assertEquals(
+            "invalid_arguments",
+            errorCode(AiWriteTools.executeCreateTodoGroups(args("""{"groups":[]}"""), context(gateway))),
+        )
+        assertEquals(
+            "invalid_arguments",
+            errorCode(AiWriteTools.executeCreateTodoGroups(args("""{"groups":["  "]}"""), context(gateway))),
+        )
+        assertEquals(
+            "invalid_arguments",
+            errorCode(AiWriteTools.executeCreateTodoGroups(args("""{"groups":"学习"}"""), context(gateway))),
+        )
+        assertEquals(
+            "invalid_arguments",
+            errorCode(AiWriteTools.executeCreateTodoTags(args("""{"tags":[]}"""), context(gateway))),
+        )
+        assertEquals(
+            "invalid_arguments",
+            errorCode(AiWriteTools.executeCreateTodoTags(args("""{"tags":{"name":"期末"}}"""), context(gateway))),
+        )
+        assertTrue(gateway.groups.isEmpty())
+        assertTrue(gateway.tags.isEmpty())
+    }
+
     // ---------- 缺网关 ----------
 
     @Test
@@ -214,6 +273,8 @@ class AiWriteToolsTest {
             AiWriteTools.executeDeleteTodos(args("""{"deletes":[{"id":"a"}]}"""), ctx),
             AiWriteTools.executeCompleteTodos(args("""{"completes":[{"id":"a"}]}"""), ctx),
             AiWriteTools.executeArchiveTodos(args("""{"archives":[{"id":"a"}]}"""), ctx),
+            AiWriteTools.executeCreateTodoGroups(args("""{"groups":["学习"]}"""), ctx),
+            AiWriteTools.executeCreateTodoTags(args("""{"tags":["期末"]}"""), ctx),
         )
 
         results.forEach { result ->

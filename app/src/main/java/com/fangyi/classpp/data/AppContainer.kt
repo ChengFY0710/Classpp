@@ -6,12 +6,15 @@ import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiClient
 import com.fangyi.classpp.data.ai.AiDebugTrace
 import com.fangyi.classpp.data.ai.AiImageStore
+import com.fangyi.classpp.data.ai.AiOrganizerWriteOutcome
 import com.fangyi.classpp.data.ai.AiTodoChangeWriter
+import com.fangyi.classpp.data.ai.AiTodoOrganizerWriter
 import com.fangyi.classpp.data.ai.AiTodoPersister
 import com.fangyi.classpp.data.ai.FileAiChatStore
 import com.fangyi.classpp.data.ai.PrefsAiSettingsStore
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.store.FileScheduleStore
 import com.fangyi.classpp.data.store.FileTagStore
 import com.fangyi.classpp.data.store.FileTodoStore
@@ -321,6 +324,35 @@ class AppContainer internal constructor(
 
                             override suspend fun restore(id: String): Boolean =
                                 todoRepository.restoreTodo(id) is TodoOpResult.Ok
+                        },
+                        // 新建分组/标签（AI 立即落库）：分组在仓库 mutex 内原子追加，同名幂等
+                        organizerWriter = object : AiTodoOrganizerWriter {
+                            override suspend fun ensureGroup(name: String): AiOrganizerWriteOutcome {
+                                val prepared = name.trim()
+                                if (prepared.isEmpty()) return AiOrganizerWriteOutcome.Failed
+                                val existed = todoRepository.groups.value.any { it.name == prepared }
+                                val result = todoRepository.applyGroupAssignments(
+                                    ensureGroups = listOf(TodoGroup(prepared)),
+                                    assignments = emptyMap(),
+                                )
+                                return when {
+                                    result is TodoOpResult.Err -> AiOrganizerWriteOutcome.Failed
+                                    existed -> AiOrganizerWriteOutcome.Existing
+                                    else -> AiOrganizerWriteOutcome.Created
+                                }
+                            }
+
+                            override suspend fun ensureTag(name: String): AiOrganizerWriteOutcome {
+                                val prepared = name.trim()
+                                if (prepared.isEmpty()) return AiOrganizerWriteOutcome.Failed
+                                return when (val result = tagRepository.addTag(prepared)) {
+                                    TagOpResult.Ok -> AiOrganizerWriteOutcome.Created
+                                    is TagOpResult.Err -> when (result.error) {
+                                        is TagError.DuplicateName -> AiOrganizerWriteOutcome.Existing
+                                        else -> AiOrganizerWriteOutcome.Failed
+                                    }
+                                }
+                            }
                         },
                         // 对话图片附件（相册/拍照导入的压缩副本），UI 借仓库的 imageStore 导入
                         imageStore = AiImageStore(File(appContext.filesDir, "ai_chat_images")),

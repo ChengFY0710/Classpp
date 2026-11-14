@@ -222,6 +222,8 @@ private fun toolDisplayName(name: String): String = when (name) {
     AiToolRegistry.DELETE_TODOS -> stringResource(R.string.ai_tool_name_delete_todos)
     AiToolRegistry.COMPLETE_TODOS -> stringResource(R.string.ai_tool_name_complete_todos)
     AiToolRegistry.ARCHIVE_TODOS -> stringResource(R.string.ai_tool_name_archive_todos)
+    AiToolRegistry.CREATE_TODO_GROUPS -> stringResource(R.string.ai_tool_name_create_todo_groups)
+    AiToolRegistry.CREATE_TODO_TAGS -> stringResource(R.string.ai_tool_name_create_todo_tags)
     else -> name
 }
 
@@ -267,6 +269,8 @@ private fun toolParamSummary(call: AiToolCall): String {
         AiToolRegistry.DELETE_TODOS -> itemsSummary(args, "deletes")
         AiToolRegistry.COMPLETE_TODOS -> itemsSummary(args, "completes", "reopens")
         AiToolRegistry.ARCHIVE_TODOS -> itemsSummary(args, "archives", "unarchives", "restores")
+        AiToolRegistry.CREATE_TODO_GROUPS -> organizerNamesSummary(args, "groups")
+        AiToolRegistry.CREATE_TODO_TAGS -> organizerNamesSummary(args, "tags")
         else -> ""
     }
 }
@@ -282,6 +286,13 @@ private fun itemsSummary(args: JsonObject, vararg keys: String): String {
         }
     }
     return if (count == 0) "" else stringResource(R.string.ai_tool_arg_items, count)
+}
+
+/** 新建分组/标签的参数摘要：名字数组的元素数 */
+@Composable
+private fun organizerNamesSummary(args: JsonObject, key: String): String {
+    val count = (args[key] as? JsonArray)?.size ?: 0
+    return if (count == 0) "" else stringResource(R.string.ai_tool_arg_organizers, count)
 }
 
 /** 折叠态摘要：只给数量与关键统计，避免长文本占据气泡 */
@@ -353,6 +364,18 @@ private fun toolResultSummary(name: String, result: AiToolResult?): String {
                 ?: (data["applied"] as? JsonArray)?.size
                 ?: 0
             stringResource(R.string.ai_tool_result_applied, count)
+        }
+        AiToolRegistry.CREATE_TODO_GROUPS, AiToolRegistry.CREATE_TODO_TAGS -> {
+            val created = data["count"].textOrNull()?.toIntOrNull()
+                ?: (data["created"] as? JsonArray)?.size
+                ?: 0
+            val existing = (data["existing"] as? JsonArray)?.size ?: 0
+            val text = stringResource(R.string.ai_tool_result_organizers_created, created)
+            if (existing > 0) {
+                "$text · ${stringResource(R.string.ai_tool_result_organizers_existing, existing)}"
+            } else {
+                text
+            }
         }
         else -> ""
     }
@@ -477,6 +500,26 @@ private fun toolResultDetails(name: String, result: AiToolResult?): List<String>
                     else -> R.string.ai_todo_lifecycle_archive
                 }
                 lines += stringResource(label, item["name"].textOrNull().orEmpty())
+            }
+        }
+        AiToolRegistry.CREATE_TODO_GROUPS, AiToolRegistry.CREATE_TODO_TAGS -> {
+            (data["created"] as? JsonArray)?.forEach { element ->
+                lines += stringResource(
+                    R.string.ai_tool_detail_created,
+                    element.textOrNull().orEmpty(),
+                )
+            }
+            (data["existing"] as? JsonArray)?.forEach { element ->
+                lines += stringResource(
+                    R.string.ai_tool_detail_organizer_existing,
+                    element.textOrNull().orEmpty(),
+                )
+            }
+            (data["failed"] as? JsonArray)?.forEach { element ->
+                lines += stringResource(
+                    R.string.ai_tool_detail_organizer_failed,
+                    element.textOrNull().orEmpty(),
+                )
             }
         }
     }

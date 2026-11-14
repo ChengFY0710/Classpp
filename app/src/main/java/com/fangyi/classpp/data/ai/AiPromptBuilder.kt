@@ -34,7 +34,7 @@ object AiPromptBuilder {
      * 记录；不显式提醒就可能把同一条待办再创建/再完成一遍。
      */
     internal const val RETRY_WRITE_NOTE =
-        "（上一轮已通过工具完成写操作并生效，不要重复创建、完成或归档同一条待办。）"
+        "（上一轮已通过工具完成写操作并生效，不要重复创建、完成或归档同一条待办，也不要重复新建同一分组或标签。）"
 
     /**
      * 全量注入（JSON 回退模式）的待办行数上限：未完成优先，已完成随后，共享此上限；
@@ -294,6 +294,7 @@ object AiPromptBuilder {
         appendLine("- 查询：get_day_plan（某天课程/待办/空闲）、get_week_schedule（某周课表，weekOffset 0=本周、1=下周）；")
         appendLine("  search_todos（按关键词/状态/分组/标签/日期查待办）、get_todo（单个待办的备注/步骤/重复期次等详情）；")
         appendLine("- create_todos：新建待办，立即落库（消息下方可撤销）；")
+        appendLine("- create_todo_groups / create_todo_tags：新建待办分组或标签，立即生效；同名不会重复创建；")
         appendLine("- complete_todos：完成或取消完成，立即生效（可撤销）；重复待办必须给期次日期 date；")
         appendLine("- archive_todos：归档、取消归档或从回收站恢复，立即生效（可撤销）；")
         appendLine("- update_todos / delete_todos：修改或删除，不会立即写入——应用会生成确认卡，用户点「应用变更」后才生效。")
@@ -315,7 +316,9 @@ object AiPromptBuilder {
         appendLine("- 日期从今天的日期与星期推算（含“下周三”这类相对说法），不要编造具体日期；")
         appendLine("- 时段只有 startTime 与 endTime 成对出现才成立（endTime 须晚于 startTime）；全天待办用 allDay=true 且不要给时段；")
         appendLine("- 截止的日期（deadlineDate）与时刻（deadlineTime）要么都给，要么都不给；")
-        appendLine("- group/tag 只用【可选分组】【可选标签】里出现的值，没有匹配就省略该字段；")
+        appendLine("- 用户要新建分组/标签，或要把待办放进尚不存在的分组、加尚不存在的标签时，先调用 " +
+            "create_todo_groups / create_todo_tags，再在 create_todos/update_todos 里引用；" +
+            "其余情况 group/tag 只用【可选分组】【可选标签】里出现的值，没有匹配就省略该字段；")
         appendLine("- 一次可以连续调用多个工具，但不要用同一参数重复调用同一个工具；")
         appendLine("- 其余情况正常对话。")
     }

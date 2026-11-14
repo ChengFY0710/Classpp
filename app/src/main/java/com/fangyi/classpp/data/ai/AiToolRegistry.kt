@@ -34,6 +34,10 @@ object AiToolRegistry {
     const val COMPLETE_TODOS = "complete_todos"
     const val ARCHIVE_TODOS = "archive_todos"
 
+    // 分组/标签新建工具（立即落库、同名幂等）：仅原生 tools，不进入 JSON 回退契约
+    const val CREATE_TODO_GROUPS = "create_todo_groups"
+    const val CREATE_TODO_TAGS = "create_todo_tags"
+
     // 只读查询工具（P1 三个 + P3 的 get_todo）；写工具在 P2 起同样进入原生 tools（见 writeSpecs）
     const val GET_DAY_PLAN = "get_day_plan"
     const val SEARCH_TODOS = "search_todos"
@@ -78,8 +82,8 @@ object AiToolRegistry {
             booleanProperty("deadlineBeforeRepeat", "截止随重复自动取下一次重复开始前")
             integerProperty("deadlineBeforeDays", "截止提前天数")
             enumProperty("urgency", "紧急度", urgencyValues)
-            stringArrayProperty("tags", "标签列表")
-            stringProperty("group", "分组名")
+            stringArrayProperty("tags", "标签列表；库内不存在的标签可先用 create_todo_tags 新建")
+            stringProperty("group", "分组名；须已存在，可先用 create_todo_groups 新建")
             stringProperty("note", "备注")
             stringArrayProperty("steps", "步骤标题列表")
             stringProperty("location", "地点")
@@ -157,6 +161,22 @@ object AiToolRegistry {
             arrayOfObjectsProperty("unarchives", "要取消归档的已归档待办", idItemParameters)
             arrayOfObjectsProperty("restores", "要从回收站恢复的待办", idItemParameters)
         }
+    }
+
+    private val createTodoGroupsParameters: JsonObject = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+            stringArrayProperty("groups", "要新建的分组名列表；同名分组已存在时不会重复创建")
+        }
+        putJsonArray("required") { add("groups") }
+    }
+
+    private val createTodoTagsParameters: JsonObject = buildJsonObject {
+        put("type", "object")
+        putJsonObject("properties") {
+            stringArrayProperty("tags", "要新建的标签名列表；同名标签已存在时不会重复创建")
+        }
+        putJsonArray("required") { add("tags") }
     }
 
     // ---------- 回退信封示例（提示词契约的单一来源） ----------
@@ -333,6 +353,24 @@ object AiToolRegistry {
                 AiToolEnvelopeSection("restores", restoresEnvelopeExample),
             ),
             execute = AiWriteTools::executeArchiveTodos,
+        ),
+        AiToolSpec(
+            name = CREATE_TODO_GROUPS,
+            description = "新建一个或多个待办分组。立即生效；同名分组已存在时不会重复创建。" +
+                "用户要新建分组，或要把待办放进一个尚不存在的分组时，先调用它，再在 " +
+                "create_todos / update_todos 的 group 里引用。",
+            parameters = createTodoGroupsParameters,
+            permission = AiToolPermission.WriteReversible,
+            execute = AiWriteTools::executeCreateTodoGroups,
+        ),
+        AiToolSpec(
+            name = CREATE_TODO_TAGS,
+            description = "新建一个或多个待办标签（进入用户标签库）。立即生效；同名标签已存在时不会重复创建。" +
+                "用户要新建标签，或要给待办加一个库内尚不存在的标签时，先调用它，再在 " +
+                "create_todos / update_todos 的 tags 里引用。",
+            parameters = createTodoTagsParameters,
+            permission = AiToolPermission.WriteReversible,
+            execute = AiWriteTools::executeCreateTodoTags,
         ),
     )
 
