@@ -100,6 +100,35 @@
     <string name="about_check_update">Check for updates</string>
     <string name="about_current_version">Current version: v%1$s</string>
     <string name="about_changelog">Changelog</string>
+    <!-- In-app updates: check for updates and changelog share one OverlaySheet
+         (manifest: classpp_schoolsync/update.json on the remote distribution repo) -->
+    <string name="about_update_checking">Checking for updates…</string>
+    <string name="about_update_up_to_date_title">You are up to date</string>
+    <string name="about_update_up_to_date_desc">v%1$s</string>
+    <string name="about_update_available_title">New version available</string>
+    <string name="about_update_version_desc">v%1$s · Released %2$s</string>
+    <string name="about_update_version_desc_no_date">v%1$s</string>
+    <string name="about_update_forced_hint">This version is no longer supported. Please update to continue.</string>
+    <string name="about_update_section_changelog">Release notes</string>
+    <string name="about_update_changelog_empty">No release notes</string>
+    <string name="about_update_action_update">Update now</string>
+    <string name="about_update_action_back">Back</string>
+    <string name="about_update_action_open_release">Open release page</string>
+    <string name="about_update_action_open_settings">Open settings</string>
+    <string name="about_update_action_retry">Retry</string>
+    <string name="about_update_downloading_title">Updating</string>
+    <string name="about_update_downloading_percent">Downloading update… %1$d%%</string>
+    <string name="about_update_downloading_size">%1$s / %2$s</string>
+    <string name="about_update_error_title">Update failed</string>
+    <string name="about_update_check_error_title">Check failed</string>
+    <string name="about_update_check_failed">Failed to check for updates. Check your connection and try again</string>
+    <string name="about_update_download_failed">Failed to download the update. Check your connection and try again</string>
+    <string name="about_update_verify_failed">APK verification failed. Update canceled</string>
+    <string name="about_update_install_failed">Could not open the system installer. Please try again</string>
+    <string name="about_update_permission_title">Install permission required</string>
+    <string name="about_update_permission_message">Allow Classpp to install apps in system settings, then come back and try again.</string>
+    <string name="about_update_permission_settings_failed">Could not open system settings. Please allow installing unknown apps manually</string>
+    <string name="about_update_open_release_failed">Could not open the link. Check your system browser</string>
     <string name="about_thanks">Acknowledgements</string>
     <string name="about_section_before_use">Before you start</string>
     <string name="about_disclaimer">Disclaimer</string>

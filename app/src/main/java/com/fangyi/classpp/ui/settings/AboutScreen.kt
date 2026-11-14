@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -60,10 +61,11 @@ private const val AboutAuthorUrl = "https://github.com/ChengFY0710"
  * 关于子页：应用 Logo / 名称与副标题、作者、当前版本、更新日志、致谢，以及
  * 「用前须知」分组（免责声明 / 开源协议 / 隐私与政策）。
  *
- * 「用前须知」三行分别打开 [AboutDocumentSheet] 文档浮层，致谢行打开 [AboutThanksSheet]
- * 第三方项目列表；作者卡片经系统浏览器打开作者主页，检查更新 / 更新日志仍为占位
- * （两者同卡同款导航行），版本号经 [appVersionName] 运行时读取 Gradle `versionName`，
- * 不在界面层写死，也不依赖 BuildConfig 生成类。
+ * 「检查更新 / 更新日志」两行共用 [AboutUpdateSheet]（OverlaySheet）：点击后拉取远端
+ * `update.json` 并比对 versionCode，结果、下载进度、失败与安装授权都在同一浮层内切换；
+ * 版本号经 [appVersionName] 运行时读取 Gradle `versionName`，不在界面层写死，也不依赖
+ * BuildConfig 生成类。「用前须知」三行分别打开 [AboutDocumentSheet] 文档浮层，致谢行
+ * 打开 [AboutThanksSheet] 第三方项目列表；作者卡片经系统浏览器打开作者主页。
  *
  * 页面骨架与其余设置子页一致：Scaffold 全宽出血 + [SettingsScrollContent] 统一页边距 /
  * 分组节奏 + [SettingsTopBar] 磨砂顶栏（Haze、玻璃返回钮、转场冻结、标题渐显）。
@@ -117,8 +119,13 @@ fun AboutScreen(
                 .only(WindowInsetsSides.Bottom)
                 .asPaddingValues()
                 .calculateBottomPadding()
-            // 占位回调：检查更新 / 更新日志后续再接目标；用前须知走文档浮层，致谢走列表浮层
-            val placeholder = remember { {} }
+            // 检查更新 / 更新日志：每次点击都用递增 id 投递请求，同一入口重复点击也会重新检查
+            var updateRequest by remember { mutableStateOf<AboutUpdateRequest?>(null) }
+            var updateRequestSeq by remember { mutableLongStateOf(0L) }
+            val openUpdate: (AboutUpdateAction) -> Unit = { action ->
+                updateRequestSeq += 1
+                updateRequest = AboutUpdateRequest(updateRequestSeq, action)
+            }
             val uriHandler = LocalUriHandler.current
             // 作者卡片：与致谢列表一致，经系统浏览器打开作者主页，失败静默降级
             val openAuthorProfile: () -> Unit = {
@@ -177,12 +184,12 @@ fun AboutScreen(
                                     R.string.about_current_version,
                                     versionName,
                                 ),
-                                onClick = placeholder,
+                                onClick = { openUpdate(AboutUpdateAction.Check) },
                             ),
-                            // 与检查更新同卡同款行型：右侧统一主题色箭头，日志内容后续再接
+                            // 与检查更新同卡同款行型：右侧统一主题色箭头，展示远端清单的更新说明
                             SettingsCardItem.Nav(
                                 label = stringResource(R.string.about_changelog),
-                                onClick = placeholder,
+                                onClick = { openUpdate(AboutUpdateAction.Changelog) },
                             ),
                         ),
                     )
@@ -255,6 +262,9 @@ fun AboutScreen(
                     onDismissed = { thanksMounted = false },
                 )
             }
+
+            // 检查更新 / 更新日志共用同一 OverlaySheet：点击入口后由该层接管检查、下载与安装
+            AboutUpdateSheet(request = updateRequest)
         }
     }
 }

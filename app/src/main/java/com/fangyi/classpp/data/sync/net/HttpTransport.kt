@@ -1,5 +1,6 @@
 package com.fangyi.classpp.data.sync.net
 
+import java.net.URI
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -113,3 +114,30 @@ class SessionCookieHolder {
     @Volatile
     var header: String? = null
 }
+
+/**
+ * 手动跟随重定向（[OkHttpTransport] 为登录链路设计，默认不跟随）：
+ * 远端 raw / release 资产常经 CDN 302，最多 [maxRedirects] 跳且**每一跳只接受 https**；
+ * 超限、缺 Location、非 https 或 URI 解析失败返回 null，由调用方按失败处理。
+ *
+ * 学校声明清单与应用更新清单共用这条路径；返回值是最终响应（非重定向），
+ * 网络异常原样抛出，交由调用方 `runCatching` 收口。
+ */
+suspend fun HttpTransport.executeFollowingHttpsRedirects(
+    url: String,
+    maxRedirects: Int = DEFAULT_MAX_REDIRECTS,
+): HttpResponse? {
+    var current = url
+    repeat(maxRedirects + 1) {
+        val response = execute(HttpRequest(method = "GET", url = current))
+        if (response.status !in REDIRECT_STATUSES) return response
+        val location = response.location ?: return null
+        current = runCatching { URI(current).resolve(location).toString() }.getOrNull()
+            ?: return null
+        if (!current.startsWith("https://")) return null
+    }
+    return null
+}
+
+private const val DEFAULT_MAX_REDIRECTS = 3
+private val REDIRECT_STATUSES = setOf(301, 302, 303, 307, 308)

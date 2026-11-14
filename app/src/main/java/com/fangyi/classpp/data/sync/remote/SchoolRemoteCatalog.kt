@@ -3,12 +3,11 @@ package com.fangyi.classpp.data.sync.remote
 import android.content.Context
 import com.fangyi.classpp.data.ScheduleJson
 import com.fangyi.classpp.data.sync.SyncDebugLog
-import com.fangyi.classpp.data.sync.net.HttpRequest
 import com.fangyi.classpp.data.sync.net.HttpResponse
 import com.fangyi.classpp.data.sync.net.HttpTransport
 import com.fangyi.classpp.data.sync.net.OkHttpTransport
+import com.fangyi.classpp.data.sync.net.executeFollowingHttpsRedirects
 import java.io.File
-import java.net.URI
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -82,7 +81,8 @@ class SchoolRemoteCatalog(
      */
     suspend fun refresh(): RemoteCatalogResult = withContext(Dispatchers.IO) {
         val index = runCatching {
-            val response = fetch(indexUrl) ?: return@runCatching null
+            val response = transport.executeFollowingHttpsRedirects(indexUrl)
+                ?: return@runCatching null
             if (!response.isSuccess) return@runCatching null
             ScheduleJson.decodeStorage<SchoolRemoteIndex>(response.body)
         }.getOrNull() ?: return@withContext failed("index fetch or decode failed")
@@ -103,7 +103,9 @@ class SchoolRemoteCatalog(
             if (!seenIds.add(entry.id)) {
                 return@mapNotNull skip(skipped, entry.id, "duplicate school id")
             }
-            val response = runCatching { fetch(resolveFileUrl(entry.file)) }.getOrNull()
+            val response = runCatching {
+                transport.executeFollowingHttpsRedirects(resolveFileUrl(entry.file))
+            }.getOrNull()
                 ?: return@mapNotNull skip(skipped, entry.id, "declaration fetch failed")
             if (!response.isSuccess) {
                 return@mapNotNull skip(skipped, entry.id, "HTTP ${response.status}")
@@ -144,32 +146,12 @@ class SchoolRemoteCatalog(
         if (declaration.validate().isEmpty() && declaration.id == id) declaration else null
     }.getOrNull()
 
-    /**
-     * 手动跟随重定向（[OkHttpTransport] 为登录链路设计，默认不跟随）：
-     * Gitee raw 可能 302 到 CDN；最多 [MAX_REDIRECTS] 跳，只接受 https，失败返回 null。
-     */
-    private suspend fun fetch(url: String): HttpResponse? {
-        var current = url
-        repeat(MAX_REDIRECTS + 1) {
-            val response = transport.execute(HttpRequest(method = "GET", url = current))
-            if (response.status !in REDIRECT_STATUSES) return response
-            val location = response.location ?: return null
-            current = runCatching { URI(current).resolve(location).toString() }.getOrNull()
-                ?: return null
-            if (!current.startsWith("https://")) return null
-        }
-        return null
-    }
-
     /** 清单路径已由 [SchoolRemoteIndex.isSafeRelativeFile] 限定为仓库内相对路径 */
     private fun resolveFileUrl(file: String): String = baseUrl + file
 
     private fun cacheFile(name: String): File = File(cacheDir, name)
 
     private companion object {
-        const val MAX_REDIRECTS = 3
-        val REDIRECT_STATUSES = setOf(301, 302, 303, 307, 308)
-
         /** 缓存文件名只允许安全字符（id 由声明校验约束为 `[a-z0-9_]`，双保险防路径注入） */
         fun cachedSchoolFileName(id: String): String =
             SchoolRemoteConfig.SCHOOLS_CACHE_PREFIX +

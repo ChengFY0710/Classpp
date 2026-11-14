@@ -6,6 +6,10 @@
          联网同走此权限）。脚本与口令不写日志 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 应用内更新：下载并校验 APK 后交给系统安装器；「安装未知应用」授权由系统设置页
+         处理，最终仍由系统安装器与签名校验把关 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- AI 对话拍照（TakePicture 唤系统相机）：只声明特性不声明权限——拍摄由系统相机
          应用完成，本应用不直接用摄像头；无相机设备上该功能入口自然失效 -->
     <uses-feature
