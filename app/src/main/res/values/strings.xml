@@ -270,6 +270,14 @@
     <string name="about_privacy_policy">隐私与政策</string>
     <!-- 文档浮层正文读取失败时的降级提示 -->
     <string name="about_document_load_failed">文档加载失败，请稍后重试。</string>
+    <!-- Markdown 无障碍标签：读屏用，覆盖库默认英文 -->
+    <string name="markdown_a11y_quote">引用</string>
+    <string name="markdown_a11y_code_block">代码块</string>
+    <string name="markdown_a11y_code_block_with_language">代码块，语言 %1$s</string>
+    <string name="markdown_a11y_code_language">语言 %1$s</string>
+    <string name="markdown_a11y_code_fallback">代码</string>
+    <string name="markdown_a11y_copy_code">复制代码</string>
+    <string name="markdown_a11y_alert">提示：%1$s</string>
     <!-- 致谢浮层：顶部信息头部卡 + 第三方项目在 app 内的具体用途 -->
     <string name="about_thanks_header_title">致谢列表</string>
     <string name="about_thanks_header_description">Classpp的成功运行，离不开这些优秀项目</string>

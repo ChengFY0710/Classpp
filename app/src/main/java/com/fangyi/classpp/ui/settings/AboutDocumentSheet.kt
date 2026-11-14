@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.ai.ChatMarkdown
+import com.fangyi.classpp.ui.ai.ChatMarkdownMode
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
@@ -90,6 +91,7 @@ internal fun AboutDocumentSheet(
                         ChatMarkdown(
                             content = markdown,
                             modifier = Modifier.fillMaxWidth(),
+                            mode = ChatMarkdownMode.Document,
                         )
                     }
                 }

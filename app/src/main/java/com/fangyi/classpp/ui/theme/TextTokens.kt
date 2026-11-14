@@ -82,8 +82,14 @@ object ClassppTextTokens {
     val chatHeading1 = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp, letterSpacing = 0.sp)
     /** AI 对话 Markdown 二级标题：16sp SemiBold。 */
     val chatHeading2 = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp, letterSpacing = 0.sp)
-    /** AI 对话 Markdown 三级及以下标题：16sp Medium；字号不再降档，靠字重区分层级。 */
+    /** AI 对话 Markdown 三级标题：16sp Medium；四级及以下走 [chatHeading4]。 */
     val chatHeading3 = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
+    /** Markdown 四级及以下标题：14sp Medium，h4/h5/h6 共用，靠字号与 h3 分层。 */
+    val chatHeading4 = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp, letterSpacing = 0.sp)
+    /** Markdown 表格正文：14sp Normal，行高 20 与表格密度一致；AI 对话与关于页文档共用。 */
+    val chatTable = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal, lineHeight = 20.sp, letterSpacing = 0.sp)
+    /** Markdown 表格表头：14sp SemiBold；库默认表头强制 Bold，自定义表头使用本 token。 */
+    val chatTableHeader = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** AI 对话行内代码：16sp 等宽，与正文同档。 */
     val chatInlineCode = TextStyle(
         fontSize = 16.sp,

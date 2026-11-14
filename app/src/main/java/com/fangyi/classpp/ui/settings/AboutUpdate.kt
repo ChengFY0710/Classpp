@@ -45,6 +45,7 @@ import com.fangyi.classpp.data.update.AvailableUpdate
 import com.fangyi.classpp.data.update.ChangelogResult
 import com.fangyi.classpp.data.update.UpdateCheckResult
 import com.fangyi.classpp.ui.ai.ChatMarkdown
+import com.fangyi.classpp.ui.ai.ChatMarkdownMode
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SettingsCard
@@ -716,6 +717,7 @@ private fun UpdateChangelogCard(markdown: String) {
                         ChatMarkdown(
                             content = markdown,
                             modifier = Modifier.fillMaxWidth(),
+                            mode = ChatMarkdownMode.Document,
                         )
                     }
                 }
