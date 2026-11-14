@@ -61,9 +61,9 @@ import java.util.TimeZone
  * 日期档卡内追加「结束日期」导航行唤起 [BottomDateSelectCard]，次数档追加「重复次数」
  * 导航行（唤起 [BottomNumberSelectCard]）与其下的「打卡模式」开关行，卡高变化经
  * animateContentSize 过渡）→ 选「自定义」
- * 时经 [Expandable] 展开自定义区——「自定义重复」分组（[SettingsCard]：
- * 「频率」选择行弹行内菜单切天/周/月/年；「每」导航行经 [BottomNumberSelectCard] 选 1..99
- * 的间隔）+ 方格（[SelectionGrid]，多选）：周 = 一~日、月 = 1~31、年 = 1月~12月，天无方格。
+ * 时经 [Expandable] 展开自定义区——「自定义重复」分组内是 [SettingsCard]
+ * （「频率」选择行弹行内菜单切天/周/月/年；「每」导航行经 [BottomNumberSelectCard] 选 1..99
+ * 的间隔）与方格（[SelectionGrid]，多选）：周 = 一~日、月 = 1~31、年 = 1月~12月，天无方格。
  *
  * 草稿态语义：挂载即从 [initial] 快照，确认才经 [onConfirm] 回写（取消/遮罩/返回/下拉的
  * 改动不外泄，出场播完由宿主卸载）。切频率单位即以 [anchorDate]（自定义日期）为锚播种
@@ -267,55 +267,52 @@ internal fun RepeatSettingsSheet(
                     }
                 }
             }
-            // 自定义区随「自定义」档位展开/收起（高度动画，兄弟内容逐帧让位，同日期卡子行）
+            // 自定义区随「自定义」档位展开/收起（高度动画，兄弟内容逐帧让位，同日期卡子行）；
+            // 频率/间隔卡与方格同属「自定义重复」一个分组，组内走 CardSection 默认节奏
             Expandable(expanded = draft.type == RepeatType.Custom) {
-                Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
-                    CardSection(title = stringResource(R.string.repeat_custom_section)) {
-                        SettingsCard(
-                            // 选择行菜单叠在本浮层上，模糊本层内容（采样源同顶栏）
-                            hazeState = sheetHazeState,
-                            items = listOf(
-                                SettingsCardItem.Select(
-                                    label = stringResource(R.string.repeat_frequency),
-                                    value = draft.unit.unitText(),
-                                    items = RepeatUnit.entries.map { it.ordinal to it.unitText() },
-                                    selectedId = draft.unit.ordinal,
-                                    onPick = { id ->
-                                        val unit = RepeatUnit.entries[id]
-                                        // 切单位即以自定义日期为锚播种方格（周几/几号/几月），
-                                        // 换了语义的旧标记不留存，方格选择从不带空入场
-                                        draft = draft.copy(unit = unit, marks = unit.seedMarks(anchorDate))
-                                    },
-                                ),
-                                SettingsCardItem.Nav(
-                                    label = stringResource(R.string.repeat_every),
-                                    description = stringResource(R.string.repeat_every_desc),
-                                    value = draft.interval.toString(),
-                                    onClick = {
-                                        intervalMounted = true
-                                        intervalVisible = true
-                                    },
-                                ),
+                CardSection(title = stringResource(R.string.repeat_custom_section)) {
+                    SettingsCard(
+                        // 选择行菜单叠在本浮层上，模糊本层内容（采样源同顶栏）
+                        hazeState = sheetHazeState,
+                        items = listOf(
+                            SettingsCardItem.Select(
+                                label = stringResource(R.string.repeat_frequency),
+                                value = draft.unit.unitText(),
+                                items = RepeatUnit.entries.map { it.ordinal to it.unitText() },
+                                selectedId = draft.unit.ordinal,
+                                onPick = { id ->
+                                    val unit = RepeatUnit.entries[id]
+                                    // 切单位即以自定义日期为锚播种方格（周几/几号/几月），
+                                    // 换了语义的旧标记不留存，方格选择从不带空入场
+                                    draft = draft.copy(unit = unit, marks = unit.seedMarks(anchorDate))
+                                },
                             ),
-                        )
-                    }
+                            SettingsCardItem.Nav(
+                                label = stringResource(R.string.repeat_every),
+                                description = stringResource(R.string.repeat_every_desc),
+                                value = draft.interval.toString(),
+                                onClick = {
+                                    intervalMounted = true
+                                    intervalVisible = true
+                                },
+                            ),
+                        ),
+                    )
                     // 方格只随 周/月/年 出现（天无方格语义）；标记以 RepeatRule.marks 落库，
                     // 值域随单位（周几 1..7 / 几号 1..31 / 几月 1..12）
                     if (draft.unit != RepeatUnit.Day) {
-                        CardSection {
-                            SelectionGrid(
-                                values = draft.unit.markRange.toList(),
-                                labels = draft.unit.markLabels(),
-                                selected = draft.marks,
-                                onToggle = { mark ->
-                                    draft = if (mark in draft.marks) {
-                                        draft.copy(marks = draft.marks - mark)
-                                    } else {
-                                        draft.copy(marks = draft.marks + mark)
-                                    }
-                                },
-                            )
-                        }
+                        SelectionGrid(
+                            values = draft.unit.markRange.toList(),
+                            labels = draft.unit.markLabels(),
+                            selected = draft.marks,
+                            onToggle = { mark ->
+                                draft = if (mark in draft.marks) {
+                                    draft.copy(marks = draft.marks - mark)
+                                } else {
+                                    draft.copy(marks = draft.marks + mark)
+                                }
+                            },
+                        )
                     }
                 }
             }

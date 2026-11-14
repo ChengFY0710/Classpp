@@ -107,8 +107,8 @@ private val TitleMenuGap = 12.dp
  * 紧急程度走 [flagColor]（非常紧急红 / 很紧急橙 / 紧急黄 / 不紧急绿 / 无档灰）；
  * 时间与地点保持默认 primary。
  *
- * 正文按浮层内容规范排版：标题与标签行保持裸元素（规范里唯二的例外），信息卡与备注
- * 同收进一个无题 [CardSection]；顶层块间距走 [SheetSectionSpacingBetween]。
+ * 正文按浮层内容规范排版：标题行、标签行、信息卡与备注同收进一个无题 [CardSection]
+ * （组内走 CardSection 默认节奏）；顶层块间距走 [SheetSectionSpacingBetween]。
  *
  * 顶栏左「编辑」右「关闭」：编辑把**最新快照**（备注 trim 后、可尚未落盘）经 [onEdit] 交回调用方，
  * 据此打开编辑待办浮层（叠在本浮层之上，本浮层保持打开）；备注在任意关闭路径
@@ -226,94 +226,95 @@ internal fun TodoDetailSheet(
         hazeState = sheetHazeState,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp),
-                // 顶对齐：标题换行长高时「更多」按钮钉在首行右侧不动
-                //（按钮 28dp = detailTitle 行高，首行内视觉居中）
-                verticalAlignment = Alignment.Top,
-            ) {
-                Text(
-                    text = todo.name,
-                    style = ClassppTextTokens.detailTitle,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    // 避让按钮：占满剩余宽度，过长自动换行
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(TitleMoreSpacing))
-                // 菜单锚点：弹层挂在按钮的 Box 内，锚点窗口坐标即按钮窗口坐标（PopupMenuPopup 约定）
-                Box {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_more_circle),
-                        contentDescription = stringResource(R.string.cd_todo_more),
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .size(TitleMoreIconSize)
-                            .pressClickable(CircleShape, onClick = { moreExpanded = true }),
+            // 空值占位灰字「无」（同截止入口行的未设态文案），下方信息卡与「更多信息」分组共用；
+            // 「今天」在组合期取一次：下面 [listOfNotNull] 的 let 不是组合上下文，值先落地
+            val noneText = stringResource(R.string.deadline_card_none)
+            val today = LocalToday
+            // 标题行、标签行、四行信息卡与备注输入收进同一个无题 CardSection：标题与标签
+            // 不再是裸元素，组内间距统一走 CardSection 默认节奏（10dp）
+            CardSection {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 12.dp),
+                    // 顶对齐：标题换行长高时「更多」按钮钉在首行右侧不动
+                    //（按钮 28dp = detailTitle 行高，首行内视觉居中）
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Text(
+                        text = todo.name,
+                        style = ClassppTextTokens.detailTitle,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        // 避让按钮：占满剩余宽度，过长自动换行
+                        modifier = Modifier.weight(1f),
                     )
-                    TitleMoreMenu(
-                        expanded = moreExpanded,
-                        onDismiss = { moreExpanded = false },
-                        hazeState = sheetHazeState,
-                        // 所有待办都可添加到日历（没有待办日期时落在截止日期、再退到当天，
-                        // 见 CalendarEventPlanner）；宿主没有日历编排上下文
-                        // （calendarAvailable = false）时置灰
-                        calendarEnabled = calendarAvailable,
-                        onAddToCalendar = onAddToCalendar,
-                        // 有截止时刻（优先）或待办开始时刻、且未完成时可点：系统闹钟只取
-                        // 「时:分」，具体日期不参与映射（见 AlarmClockPlanner）
-                        alarmEnabled = !todo.completed &&
-                            AlarmClockPlanner.minuteOf(todo) != null,
-                        onAddToAlarm = onAddToAlarm,
-                        // 无截止日期、已标记完成或当前视图不显示倒计时（收集箱）：倒计时
-                        // 项置灰不可点（无截止时仓库不变式也保证开关必为 false；完成后仅
-                        // 禁用入口，开关值原样保留，取消完成即恢复可点）
-                        countdownEnabled = countdownAvailable &&
-                            todo.deadlineDate != null && !todo.completed,
-                        countdownOn = todo.countdown,
-                        onCountdownToggle = onCountdownToggle,
-                        onArchive = onArchive,
-                    )
-                }
-            }
-            if (todo.tags.isNotEmpty()) {
-                // 标签色与列表卡同源（tagColors 缺席的名字回落主题 Primary）；胶囊几何走浮层
-                // 信息行同款 [SheetPillRow] / [SheetPill]——与课程详情标题下的胶囊严格同形
-                //（全圆角、12/8 内距、14sp 字排、10dp 间距），只有配色换成 NoteCard 的
-                // 标签色（10% 底 + 标签色文字）
-                val fallbackTagColor = MaterialTheme.colorScheme.primary
-                SheetPillRow {
-                    todo.tags.forEach { tag ->
-                        val color = tagColors[tag] ?: fallbackTagColor
-                        SheetPill(
-                            text = tag,
-                            containerColor = color.copy(alpha = 0.1f),
-                            contentColor = color,
+                    Spacer(Modifier.width(TitleMoreSpacing))
+                    // 菜单锚点：弹层挂在按钮的 Box 内，锚点窗口坐标即按钮窗口坐标（PopupMenuPopup 约定）
+                    Box {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_more_circle),
+                            contentDescription = stringResource(R.string.cd_todo_more),
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .size(TitleMoreIconSize)
+                                .pressClickable(CircleShape, onClick = { moreExpanded = true }),
+                        )
+                        TitleMoreMenu(
+                            expanded = moreExpanded,
+                            onDismiss = { moreExpanded = false },
+                            hazeState = sheetHazeState,
+                            // 所有待办都可添加到日历（没有待办日期时落在截止日期、再退到当天，
+                            // 见 CalendarEventPlanner）；宿主没有日历编排上下文
+                            // （calendarAvailable = false）时置灰
+                            calendarEnabled = calendarAvailable,
+                            onAddToCalendar = onAddToCalendar,
+                            // 有截止时刻（优先）或待办开始时刻、且未完成时可点：系统闹钟只取
+                            // 「时:分」，具体日期不参与映射（见 AlarmClockPlanner）
+                            alarmEnabled = !todo.completed &&
+                                AlarmClockPlanner.minuteOf(todo) != null,
+                            onAddToAlarm = onAddToAlarm,
+                            // 无截止日期、已标记完成或当前视图不显示倒计时（收集箱）：倒计时
+                            // 项置灰不可点（无截止时仓库不变式也保证开关必为 false；完成后仅
+                            // 禁用入口，开关值原样保留，取消完成即恢复可点）
+                            countdownEnabled = countdownAvailable &&
+                                todo.deadlineDate != null && !todo.completed,
+                            countdownOn = todo.countdown,
+                            onCountdownToggle = onCountdownToggle,
+                            onArchive = onArchive,
                         )
                     }
                 }
-            }
-            // 四行常显：截止日期与紧急程度是结构化字段（未设也占位），时间/地点同理——
-            // 值一律右对齐走 fieldValue，空值占位灰字「无」（同截止入口行的未设态文案）；
-            // 行首图标同 NoteCard 属性行（闹钟/旗/时钟/定位针），尺寸与着色见 [InfoRowIcon]
-            val noneText = stringResource(R.string.deadline_card_none)
-            // 「今天」在组合期取一次：下面 [listOfNotNull] 的 let 不是组合上下文，值先落地
-            val today = LocalToday
-            // 截止行的展示视图：随重复的待办按所点条目的分期折算出该条目的具体截止
-            // （下一期开始前 N 天，见 [withOccurrenceDeadline]），无逐期上下文按首期折算；
-            // 值与色同源都取折算视图，存储的载体截止不外显
-            val deadlineView = remember(todo, occurrenceDate) {
-                val anchor = todo.dates.minByOrNull { it.epochDay }
-                if (anchor != null) {
-                    todo.withOccurrenceDeadline(anchor, occurrenceDate ?: anchor)
-                } else {
-                    todo
+                if (todo.tags.isNotEmpty()) {
+                    // 标签色与列表卡同源（tagColors 缺席的名字回落主题 Primary）；胶囊几何走浮层
+                    // 信息行同款 [SheetPillRow] / [SheetPill]——与课程详情标题下的胶囊严格同形
+                    //（全圆角、12/8 内距、14sp 字排、10dp 间距），只有配色换成 NoteCard 的
+                    // 标签色（10% 底 + 标签色文字）
+                    val fallbackTagColor = MaterialTheme.colorScheme.primary
+                    SheetPillRow {
+                        todo.tags.forEach { tag ->
+                            val color = tagColors[tag] ?: fallbackTagColor
+                            SheetPill(
+                                text = tag,
+                                containerColor = color.copy(alpha = 0.1f),
+                                contentColor = color,
+                            )
+                        }
+                    }
                 }
-            }
-            // 信息卡与备注输入是浮层规范里的两个"孤块"，同收进一个无题 CardSection
-            // （组内间距走 CardSection 默认节奏）
-            CardSection {
+                // 四行常显：截止日期与紧急程度是结构化字段（未设也占位），时间/地点同理——
+                // 值一律右对齐走 fieldValue，空值占位灰字「无」（noneText 见上方共用声明）；
+                // 行首图标同 NoteCard 属性行（闹钟/旗/时钟/定位针），尺寸与着色见 [InfoRowIcon]
+                // 截止行的展示视图：随重复的待办按所点条目的分期折算出该条目的具体截止
+                // （下一期开始前 N 天，见 [withOccurrenceDeadline]），无逐期上下文按首期折算；
+                // 值与色同源都取折算视图，存储的载体截止不外显
+                val deadlineView = remember(todo, occurrenceDate) {
+                    val anchor = todo.dates.minByOrNull { it.epochDay }
+                    if (anchor != null) {
+                        todo.withOccurrenceDeadline(anchor, occurrenceDate ?: anchor)
+                    } else {
+                        todo
+                    }
+                }
                 SheetInfoCard(
                     entries = listOf(
                         SheetInfoEntry(

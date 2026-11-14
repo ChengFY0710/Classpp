@@ -78,7 +78,7 @@ import kotlinx.coroutines.launch
  * 滚动、键盘让位（课表名输入框在场 → ContentScroll）由 OverlaySheet 内建，
  * 这里只负责内容与日期/时间对话框。内容列按浮层规范排版：顶层块一律 [CardSection]——
  * 课表名是孤立的输入卡、收进无题分组，其余是带题分组；顶层块间距走
- * [SheetSectionSpacingBetween]（12dp，改走浮层节奏，不再与设置页面的 18dp 分组间距同步）。
+ * [SheetSectionSpacingBetween]（18dp，与设置页面的分组节奏一致）。
  */
 @Composable
 internal fun ScheduleSettingsSheet(
@@ -411,7 +411,7 @@ private fun SettingsContent(
     onShowInactive: (show: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 滚动由 OverlaySheet 的内容列承担，这里只排内容；顶层块间距 = 浮层统一值（12dp）
+    // 滚动由 OverlaySheet 的内容列承担，这里只排内容；顶层块间距 = 浮层统一值（18dp）
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween),

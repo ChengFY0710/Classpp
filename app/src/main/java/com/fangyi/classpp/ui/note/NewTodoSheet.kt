@@ -110,7 +110,7 @@ private val NewTagColorPalette = listOf(
  * 其余按语义分组：分组（[SettingsCardwithIcon] 待办分组入口 → [GroupPickSheet] 选择分组浮层）→
  * 提醒与优先级（截止日期 + 紧急旗帜）→ 日期与时间（DateSelectionCard + 无/全天/时段，
  * 选「时段」展开 TimeRangeSlider）→ 标签 → 更多（待办地点 + 备注）。顶层块间距走
- * [SheetSectionSpacingBetween]（12dp），组内卡间距由 CardSection 默认值负责（10dp）。
+ * [SheetSectionSpacingBetween]（18dp），组内卡间距由 CardSection 默认值负责（10dp）。
  *
  * 分组选择随表单落库：编辑初值从 [Todo.group] 回填，选中值进 [onConfirm] 组装的 [Todo]
  * （引用不存在的组由仓库归一化清回 null）；未选 = 「未分组」。计数口径与 [TodoGroupsSheet]

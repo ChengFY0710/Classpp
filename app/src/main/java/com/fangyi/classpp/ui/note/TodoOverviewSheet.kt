@@ -134,7 +134,7 @@ internal fun TodoOverviewSheet(
                 OverviewEmptyCard()
             } else {
                 // 今日收工卡与三统计卡是一组视觉紧凑的顶部块：组内 10dp（卡↔卡），
-                // 与下方区块之间仍走浮层顶层 SheetSectionSpacingBetween（12dp）
+                // 与下方区块之间仍走浮层顶层 SheetSectionSpacingBetween（18dp）
                 Column(verticalArrangement = Arrangement.spacedBy(CardSectionSpacing)) {
                     OverviewTodayCard(stats)
                     OverviewStatCardsRow(stats)

@@ -38,18 +38,20 @@ val CardSectionTitleSpacing: Dp = 8.dp
  *
  * 与组内间距的分工：分组的**组内**「卡↔卡」是 [CardSectionSpacing]、「标题↔首卡」是
  * [CardSectionTitleSpacing]（当前均为 10dp），这里是**组与组之间**（以及组与组外的裸元素
- * 之间）的 12dp——组内节奏与组间节奏分开，两个维度各自独立。
+ * 之间）的 18dp——组内节奏与组间节奏分开，两个维度各自独立。
+ * 与设置页的 [SettingsSectionSpacing] 同值（18dp），全应用组与组之间共用一套节奏。
  * 课程详情卡片单独设置10dp，其余统一使用SheetSectionSpacingBetween变量
  */
-val SheetSectionSpacingBetween: Dp = 12.dp
+val SheetSectionSpacingBetween: Dp = 18.dp
 
 /**
  * 设置类页面的**分组间距**：设置根页 / 个性化 / 通知与提醒的内容分组之间用它。
- * 只管设置页面——浮层（OverlaySheet）一律走 [SheetSectionSpacingBetween]（12dp）。
+ * 与浮层（OverlaySheet）顶层块的 [SheetSectionSpacingBetween] 同值（18dp），两侧节奏一致；
+ * 两个 token 仍按场景分开，便于日后单独调整。
  *
- * 三档分工：分组内「卡↔卡」是 [CardSectionSpacing]（10dp）、「标题↔首卡」是
- * [CardSectionTitleSpacing]（8dp）；浮层内容列的顶层块之间是 [SheetSectionSpacingBetween]
- * （12dp）（课程详情卡片单独设置10dp，其余统一使用SheetSectionSpacingBetween变量）；设置类页面组与组之间的留白最大，取本值（18dp）。
+ * 两档分工：分组内「卡↔卡」是 [CardSectionSpacing]（10dp）、「标题↔首卡」是
+ * [CardSectionTitleSpacing]（8dp）；组与组之间（浮层顶层块 / 设置页分组）统一取 18dp
+ * （课程详情卡片单独设置10dp，其余统一使用SheetSectionSpacingBetween变量）。
  */
 val SettingsSectionSpacing: Dp = 18.dp
 

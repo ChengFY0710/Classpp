@@ -83,7 +83,7 @@ import dev.chrisbanes.haze.rememberHazeState
  * - 表单内容按浮层内容规范排版：顶层块一律 [CardSection]——课程名单卡与
  *   「教师/地点」两行合并卡同收在一个无题分组，其余是带题分组；位置信息胶囊行
  *   （星期 / 节次 / 起止时间，[SheetInfoPillRow]）是唯一的裸元素（规范里的直接文本例外）。
- *   顶层块间距走 [SheetSectionSpacingBetween]（12dp），组内卡间距由 CardSection 默认值负责。
+ *   顶层块间距走 [SheetSectionSpacingBetween]（18dp），组内卡间距由 CardSection 默认值负责。
  *
  * **生命周期**：[visible] 为 true 时面板从底部滑入；关闭流程是两段式——所有关闭入口
  * （确认/删除/返回/点遮罩/下拉）只回调 [onDismiss]（调用方据此清状态 → visible 变 false），
@@ -470,14 +470,6 @@ fun AddCoursePanel(
                                 }
                             },
                         ),
-                    ),
-                )
-                SheetInfoBanner(
-                    text = stringResource(
-                        R.string.edit_span_hint,
-                        startSlotId,
-                        endSlotId,
-                        endSlotId - startSlotId + 1,
                     ),
                 )
             }

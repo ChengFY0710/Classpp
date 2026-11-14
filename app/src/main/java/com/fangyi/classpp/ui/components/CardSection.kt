@@ -31,7 +31,7 @@ import com.fangyi.classpp.ui.theme.settingsRowMetrics
  *
  * **浮层（OverlaySheet）侧约定**：内容列的顶层块一律用它——成组的卡片列表与孤块
  * （输入框、单张卡片）都收进分组（无标题 = 不渲染标题行），唯二的例外是直接的文本内容
- * 与待办标签行；顶层块之间走 `SheetSectionSpacingBetween`（12dp），由调用方的内容列给出。
+ * 与待办标签行；顶层块之间走 `SheetSectionSpacingBetween`（18dp），由调用方的内容列给出。
  */
 @Composable
 fun CardSection(

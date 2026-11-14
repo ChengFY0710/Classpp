@@ -215,7 +215,7 @@ private const val ContentPrewarmDelayMillis = 200L
 private const val TopBarPrewarmDelayMillis = 200L
 
 /** 时间轴与上方提醒卡（全天任务卡 / 待办提醒卡）的间距；两张卡都折叠时自然成为与上课提醒卡的间距 */
-private val TimelineTopSpacing = 12.dp
+private val TimelineTopSpacing = 10.dp
 
 /**
  * 末行之后的尾部留白：扩大内容列表的可滚动范围（与课表页 CourseGrid 同款，
