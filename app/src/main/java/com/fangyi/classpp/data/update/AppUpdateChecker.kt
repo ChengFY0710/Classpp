@@ -12,9 +12,9 @@ import kotlinx.coroutines.withContext
 
 /** 一次手动检查的结果：已是最新、发现可更新版本，或清单层失败（原因仅进调试日志） */
 sealed interface UpdateCheckResult {
-    /** 远端 versionCode ≤ 当前：可展示远端清单里的更新说明（更新日志入口） */
+    /** 远端 versionCode ≤ 当前：带回可展示的版本历史（更新日志入口） */
     data class UpToDate(
-        val changelog: List<String>,
+        val releases: List<AppUpdateRelease>,
     ) : UpdateCheckResult
 
     /** 远端 versionCode > 当前：已校验并裁剪过的可展示/可下载数据 */
@@ -25,6 +25,17 @@ sealed interface UpdateCheckResult {
 }
 
 /**
+ * 更新日志中的单个版本记录：已按语言裁剪、按 versionCode 降序排列。
+ * [changelog] 为空表示该版本没有可展示的说明，UI 可跳过。
+ */
+data class AppUpdateRelease(
+    val versionCode: Long,
+    val versionName: String,
+    val publishedAt: String,
+    val changelog: List<String>,
+)
+
+/**
  * 更新提示所需的清单快照：只保留通过校验的 https 直链与发布页。
  * [apkUrls] 为空或 [canDownload] = false 时只能走 [releasePageUrl] 手动下载。
  */
@@ -32,13 +43,18 @@ data class AvailableUpdate(
     val versionName: String,
     val versionCode: Long,
     val publishedAt: String,
-    val changelog: List<String>,
     val apkUrls: List<String>,
     val apkSizeBytes: Long,
     val apkSha256: String,
     val releasePageUrl: String?,
     val forced: Boolean,
+    /** 版本历史（降序）；更新提示只展示与 [versionCode] 匹配的那一版说明 */
+    val releases: List<AppUpdateRelease>,
 ) {
+    /** 当前待更新版本的说明（来自版本历史，找不到时为空） */
+    val changelog: List<String>
+        get() = releases.firstOrNull { it.versionCode == versionCode }?.changelog.orEmpty()
+
     /** 有直链且大小/哈希合法才尝试应用内下载 */
     val canDownload: Boolean
         get() = apkUrls.isNotEmpty() &&
@@ -102,8 +118,13 @@ class AppUpdateChecker(
         if (versionName.isEmpty()) return@withContext failed("manifest versionName is blank")
 
         val changelog = manifest.changelog.changelogFor(language)
+        val releaseHistory = buildReleaseHistory(
+            manifest = manifest,
+            latestVersionName = versionName,
+            latestChangelog = changelog,
+        )
         if (manifest.versionCode <= currentVersionCode) {
-            return@withContext UpdateCheckResult.UpToDate(changelog = changelog)
+            return@withContext UpdateCheckResult.UpToDate(releases = releaseHistory)
         }
 
         val apk = manifest.apk
@@ -129,15 +150,74 @@ class AppUpdateChecker(
                 versionName = versionName,
                 versionCode = manifest.versionCode,
                 publishedAt = manifest.publishedAt.trim(),
-                changelog = changelog,
                 // 校验不过的 APK 元数据整体丢弃：宁可只给发布页，也不把坏哈希交给下载器
                 apkUrls = if (downloadable) apkUrls else emptyList(),
                 apkSizeBytes = if (downloadable) apkSizeBytes else 0L,
                 apkSha256 = if (downloadable) apkSha256 else "",
                 releasePageUrl = releasePageUrl,
                 forced = currentVersionCode < manifest.minSupportedVersionCode,
+                releases = releaseHistory,
             ),
         )
+    }
+
+    /**
+     * 把顶层最新版本与可选 `releases` 合并成展示用历史：
+     *
+     * - 只接受 `versionCode ∈ [1, 顶层 versionCode]` 且 versionName 非空的条目，
+     *   防止把尚未发布的版本写进历史；
+     * - 按 versionCode 降序、同版本去重，最多 [AppUpdateConfig.MAX_RELEASE_HISTORY] 条；
+     * - `releases` 缺省时回退为「顶层最新版本」单条（兼容旧清单）；
+     * - `releases` 里缺顶层最新版本时补一条顶层记录；最新版本条目的说明为空时
+     *   用顶层 `changelog` 兜底。
+     */
+    private fun buildReleaseHistory(
+        manifest: AppUpdateManifest,
+        latestVersionName: String,
+        latestChangelog: List<String>,
+    ): List<AppUpdateRelease> {
+        val latestVersionCode = manifest.versionCode
+        val declared = manifest.releases
+            .asSequence()
+            .filter { it.versionCode in 1..latestVersionCode }
+            .mapNotNull { release ->
+                val name = release.versionName.trim()
+                if (name.isEmpty()) null else release to name
+            }
+            .sortedByDescending { (release, _) -> release.versionCode }
+            .distinctBy { (release, _) -> release.versionCode }
+            .map { (release, name) ->
+                val notes = release.changelog.changelogFor(language)
+                AppUpdateRelease(
+                    versionCode = release.versionCode,
+                    versionName = name,
+                    publishedAt = release.publishedAt.trim(),
+                    // 最新版本的 release 条目没写说明时，用顶层 changelog 兜底
+                    changelog = if (release.versionCode == latestVersionCode && notes.isEmpty()) {
+                        latestChangelog
+                    } else {
+                        notes
+                    },
+                )
+            }
+            .toList()
+
+        val withLatest = if (declared.any { it.versionCode == latestVersionCode }) {
+            declared
+        } else {
+            listOf(
+                AppUpdateRelease(
+                    versionCode = latestVersionCode,
+                    versionName = latestVersionName,
+                    publishedAt = manifest.publishedAt.trim(),
+                    changelog = latestChangelog,
+                ),
+            ) + declared
+        }
+
+        return withLatest
+            .sortedByDescending { it.versionCode }
+            .take(AppUpdateConfig.MAX_RELEASE_HISTORY)
     }
 
     private fun failed(reason: String): UpdateCheckResult.Failed {

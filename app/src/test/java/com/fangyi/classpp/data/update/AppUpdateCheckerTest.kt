@@ -38,13 +38,117 @@ class AppUpdateCheckerTest {
     fun `same or older remote version is up to date`() = runBlocking {
         val same = checker(
             FakeTransport(mapOf(manifestUrl to ok(manifestJson(versionCode = 5)))),
-        ).check()
+        ).check().upToDate()
         val older = checker(
             FakeTransport(mapOf(manifestUrl to ok(manifestJson(versionCode = 4)))),
-        ).check()
+        ).check().upToDate()
 
-        assertEquals(UpdateCheckResult.UpToDate(listOf("新增 A")), same)
-        assertEquals(UpdateCheckResult.UpToDate(listOf("新增 A")), older)
+        assertEquals(listOf(5L), same.releases.map { it.versionCode })
+        assertEquals(listOf("新增 A"), same.releases.single().changelog)
+        assertEquals(listOf(4L), older.releases.map { it.versionCode })
+        assertEquals(listOf("新增 A"), older.releases.single().changelog)
+    }
+
+    @Test
+    fun `release history is sorted deduplicated and localized`() = runBlocking {
+        val transport = FakeTransport(
+            mapOf(
+                manifestUrl to ok(
+                    manifestJson(
+                        versionCode = 6,
+                        releases = """
+                            [
+                              {
+                                "versionCode": 5,
+                                "versionName": "0.1.6-alpha",
+                                "publishedAt": "2026-11-20",
+                                "changelog": { "zh": ["v5 说明"], "en": ["v5 notes"] }
+                              },
+                              {
+                                "versionCode": 6,
+                                "versionName": "0.1.7-alpha",
+                                "publishedAt": "2026-12-01",
+                                "changelog": { "zh": ["v6 说明"], "en": ["v6 notes"] }
+                              },
+                              {
+                                "versionCode": 4,
+                                "versionName": "0.1.5-alpha",
+                                "publishedAt": "2026-10-30",
+                                "changelog": { "zh": ["v4 说明"], "en": ["v4 notes"] }
+                              },
+                              {
+                                "versionCode": 6,
+                                "versionName": "0.1.7-alpha duplicate",
+                                "publishedAt": "2026-12-02",
+                                "changelog": { "zh": ["重复"], "en": ["duplicate"] }
+                              }
+                            ]
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+
+        val update = checker(transport, currentVersionCode = 5).check().available()
+        assertEquals(listOf(6L, 5L, 4L), update.releases.map { it.versionCode })
+        assertEquals(listOf("v6 说明"), update.changelog)
+
+        val english = checker(
+            transport,
+            currentVersionCode = 5,
+            language = "en",
+        ).check().available()
+        assertEquals(
+            listOf("v5 notes"),
+            english.releases.first { it.versionCode == 5L }.changelog,
+        )
+    }
+
+    @Test
+    fun `unreleased future versions are excluded from history`() = runBlocking {
+        val transport = FakeTransport(
+            mapOf(
+                manifestUrl to ok(
+                    manifestJson(
+                        versionCode = 6,
+                        releases = """
+                            [
+                              {
+                                "versionCode": 7,
+                                "versionName": "0.1.8-alpha",
+                                "publishedAt": "2027-01-01",
+                                "changelog": { "zh": ["未发布"], "en": ["unreleased"] }
+                              },
+                              {
+                                "versionCode": 5,
+                                "versionName": "0.1.6-alpha",
+                                "publishedAt": "2026-11-20",
+                                "changelog": { "zh": ["v5 说明"], "en": ["v5 notes"] }
+                              }
+                            ]
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+
+        val update = checker(transport, currentVersionCode = 5).check().available()
+        assertEquals(listOf(6L, 5L), update.releases.map { it.versionCode })
+        assertEquals(listOf("新增 A"), update.releases.first().changelog)
+    }
+
+    @Test
+    fun `release history falls back to top level latest entry`() = runBlocking {
+        val transport = FakeTransport(
+            mapOf(manifestUrl to ok(manifestJson(versionCode = 6))),
+        )
+
+        val history = checker(transport, currentVersionCode = 7).check().upToDate().releases
+        val release = history.single()
+        assertEquals(6L, release.versionCode)
+        assertEquals("0.1.7-alpha", release.versionName)
+        assertEquals("2026-11-20", release.publishedAt)
+        assertEquals(listOf("新增 A"), release.changelog)
     }
 
     @Test
@@ -184,6 +288,10 @@ class AppUpdateCheckerTest {
         (this as? UpdateCheckResult.Available)?.update
             ?: error("expected Available but was $this")
 
+    private fun UpdateCheckResult.upToDate(): UpdateCheckResult.UpToDate =
+        this as? UpdateCheckResult.UpToDate
+            ?: error("expected UpToDate but was $this")
+
     private fun ok(body: String): HttpResponse = HttpResponse(status = 200, body = body)
 
     private class FakeTransport(
@@ -212,6 +320,7 @@ class AppUpdateCheckerTest {
             releasePageUrl: String? = null,
             changelogZh: String = """["新增 A"]""",
             changelogEn: String = """["New A"]""",
+            releases: String = "[]",
         ): String = """
             {
               "schemaVersion": $schemaVersion,
@@ -229,7 +338,8 @@ class AppUpdateCheckerTest {
               "changelog": {
                 "zh": $changelogZh,
                 "en": $changelogEn
-              }
+              },
+              "releases": $releases
             }
         """.trimIndent()
     }

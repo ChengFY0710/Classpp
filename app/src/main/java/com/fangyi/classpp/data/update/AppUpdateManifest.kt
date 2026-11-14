@@ -29,6 +29,9 @@ object AppUpdateConfig {
     const val MAX_CHANGELOG_ENTRIES = 30
     const val MAX_CHANGELOG_ENTRY_LENGTH = 500
 
+    /** 更新日志最多展示的已发布版本数：远端历史再长也只保留最近这些版本 */
+    const val MAX_RELEASE_HISTORY = 20
+
     /** APK SHA-256：64 位十六进制（大小写容错，比较前统一小写） */
     val SHA256_PATTERN = Regex("^[0-9a-f]{64}$")
 }
@@ -49,6 +52,23 @@ data class AppUpdateManifest(
     val publishedAt: String = "",
     val apk: AppUpdateApk? = null,
     val releasePageUrl: String? = null,
+    val changelog: Map<String, List<String>> = emptyMap(),
+    /**
+     * 已发布版本的历史更新说明（可选）：App 按 versionCode 降序展示；
+     * 缺省或为空时回退到顶层 [changelog]（只显示最新一版），旧客户端会忽略本字段。
+     */
+    val releases: List<AppUpdateReleaseManifest> = emptyList(),
+)
+
+/**
+ * 单个已发布版本的说明（`releases` 数组项）。
+ * 版本号必须 ≤ 顶层 [AppUpdateManifest.versionCode]，避免把尚未发布的版本写进历史。
+ */
+@Serializable
+data class AppUpdateReleaseManifest(
+    val versionCode: Long = 0,
+    val versionName: String = "",
+    val publishedAt: String = "",
     val changelog: Map<String, List<String>> = emptyMap(),
 )
 

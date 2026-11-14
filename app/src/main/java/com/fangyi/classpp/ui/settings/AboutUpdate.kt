@@ -37,6 +37,7 @@ import com.fangyi.classpp.data.update.ApkDownloadResult
 import com.fangyi.classpp.data.update.ApkDownloader
 import com.fangyi.classpp.data.update.ApkInstaller
 import com.fangyi.classpp.data.update.AppUpdateChecker
+import com.fangyi.classpp.data.update.AppUpdateRelease
 import com.fangyi.classpp.data.update.AvailableUpdate
 import com.fangyi.classpp.data.update.UpdateCheckResult
 import com.fangyi.classpp.ui.components.CardSection
@@ -87,7 +88,7 @@ private sealed interface UpdateSheetState {
 
     data class UpToDate(
         val fromChangelog: Boolean,
-        val changelog: List<String>,
+        val releases: List<AppUpdateRelease>,
     ) : UpdateSheetState
 
     data class Available(
@@ -262,7 +263,7 @@ internal fun AboutUpdateSheet(
             when (val result = checker.check()) {
                 is UpdateCheckResult.UpToDate -> state = UpdateSheetState.UpToDate(
                     fromChangelog = action == AboutUpdateAction.Changelog,
-                    changelog = result.changelog,
+                    releases = result.releases,
                 )
                 is UpdateCheckResult.Available -> state = UpdateSheetState.Available(
                     update = result.update,
@@ -483,10 +484,13 @@ internal fun AboutUpdateSheet(
                 is UpdateSheetState.UpToDate -> UpdateUpToDateContent(
                     localVersionName = localVersionName,
                     fromChangelog = current.fromChangelog,
-                    changelog = current.changelog,
+                    releases = current.releases,
                 )
 
-                is UpdateSheetState.Available -> UpdateAvailableContent(current.update)
+                is UpdateSheetState.Available -> UpdateAvailableContent(
+                    update = current.update,
+                    fromChangelog = current.fromChangelog,
+                )
 
                 is UpdateSheetState.Downloading -> UpdateDownloadingContent(current)
 
@@ -539,12 +543,12 @@ private fun UpdateCheckingContent() {
     }
 }
 
-/** 已是最新：更新日志入口额外展示清单里的最新说明（空则显示「暂无更新说明」） */
+/** 已是最新：更新日志入口按版本分组展示已发布版本的历史说明 */
 @Composable
 private fun UpdateUpToDateContent(
     localVersionName: String,
     fromChangelog: Boolean,
-    changelog: List<String>,
+    releases: List<AppUpdateRelease>,
 ) {
     CardSection {
         SettingsInfoHeaderCard(
@@ -557,15 +561,36 @@ private fun UpdateUpToDateContent(
         )
     }
     if (fromChangelog) {
+        UpdateReleaseHistory(releases)
+    }
+}
+
+/**
+ * 更新日志历史：按版本分组，只渲染有说明的版本；全空时给一行「暂无更新说明」。
+ * 更新提示（检查更新入口）只展示目标版本说明，不走这里。
+ */
+@Composable
+private fun UpdateReleaseHistory(releases: List<AppUpdateRelease>) {
+    val withNotes = releases.filter { it.changelog.isNotEmpty() }
+    if (withNotes.isEmpty()) {
         CardSection(title = stringResource(R.string.about_update_section_changelog)) {
-            UpdateChangelogCard(changelog)
+            UpdateChangelogCard(emptyList())
+        }
+    } else {
+        withNotes.forEach { release ->
+            CardSection(title = updateReleaseTitle(release)) {
+                UpdateChangelogCard(release.changelog)
+            }
         }
     }
 }
 
-/** 有新版本：版本头部 + 强制提示 + 更新内容 */
+/** 有新版本：版本头部 + 强制提示；「更新日志」入口展示完整历史，检查更新入口只展示目标版本 */
 @Composable
-private fun UpdateAvailableContent(update: AvailableUpdate) {
+private fun UpdateAvailableContent(
+    update: AvailableUpdate,
+    fromChangelog: Boolean,
+) {
     CardSection {
         SettingsInfoHeaderCard(
             icon = R.drawable.app_logo,
@@ -580,8 +605,12 @@ private fun UpdateAvailableContent(update: AvailableUpdate) {
             )
         }
     }
-    CardSection(title = stringResource(R.string.about_update_section_changelog)) {
-        UpdateChangelogCard(update.changelog)
+    if (fromChangelog) {
+        UpdateReleaseHistory(update.releases)
+    } else {
+        CardSection(title = stringResource(R.string.about_update_section_changelog)) {
+            UpdateChangelogCard(update.changelog)
+        }
     }
 }
 
@@ -736,6 +765,19 @@ private fun updateVersionDescription(update: AvailableUpdate): String =
             R.string.about_update_version_desc,
             update.versionName,
             update.publishedAt,
+        )
+    }
+
+/** 更新日志分组标题：版本号 + 发布日期（与更新提示的版本描述同一套文案） */
+@Composable
+private fun updateReleaseTitle(release: AppUpdateRelease): String =
+    if (release.publishedAt.isBlank()) {
+        stringResource(R.string.about_update_version_desc_no_date, release.versionName)
+    } else {
+        stringResource(
+            R.string.about_update_version_desc,
+            release.versionName,
+            release.publishedAt,
         )
     }
 
