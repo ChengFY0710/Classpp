@@ -11,7 +11,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -39,9 +38,9 @@ import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetTextFieldGroup
 import com.fangyi.classpp.ui.components.SheetTextFieldItem
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import dev.chrisbanes.haze.rememberHazeState
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /** 一次「保存为新方案」的挂起信息：保存前的方案 id 集合 + 发起时的草稿 + 草稿来源 */
@@ -51,9 +50,6 @@ private data class PendingProfileSave(
     /** 发起时选中的是「自定义」槽位：Key 已随方案迁走，回流后同步清掉会话内草稿 */
     val fromCustom: Boolean,
 )
-
-/** 落库回流退让的兜底帧数：回流迟迟未到时按帧挂回，防磨砂被永久停用 */
-private const val HazeCommitFallbackFrames = 30
 
 /**
  * 「AI 配置方案」浮层（AI 设置页 →「AI 配置方案」入口打开），结构对照课程时间方案：
@@ -82,7 +78,7 @@ private const val HazeCommitFallbackFrames = 30
  *
  * Haze 退让：切换服务商预设与确认类落库（改名 / 存为新方案 / 删除）会在 Haze 效果节点
  * 在场时同帧或随仓库回流重写采样源结构，重写窗口内整条链退让为静态底材、落定两帧后
- * 挂回（崩溃史与机制见 hazeSuspended 注释）。
+ * 挂回（崩溃史与机制见下方 [com.fangyi.classpp.ui.components.HazeRetreatState] 注释）。
  */
 @Composable
 internal fun AiProfileSheet(
@@ -301,66 +297,25 @@ internal fun AiProfileSheet(
     // 节点在场时被结构重写，Haze 2 构建出自引用 RenderNode，RenderThread 在 prepareTreeImpl
     // 无限递归直到栈溢出（SIGSEGV code 2）。对策沿用项目内两处已验证修复（XmuSyncScreen
     // 对话框 gate / AiChatOverlay 整链退让）：重写与 Haze 卸载落同帧重组，该帧所有窗口零
-    // 效果节点，源重写无效果可撞；内容落定两帧后挂回。
+    // 效果节点，源重写无效果可撞；内容落定两帧后挂回（状态机与时序见
+    // [com.fangyi.classpp.ui.components.HazeRetreatState]）。
     // 覆盖范围：① 服务商预设 / 接口格式点选：点选帧的重写已由 SelectMenu 内建的
     // PopupActionGate 延后到菜单退场播完（重写帧弹层已卸载，零效果节点可撞），本退让
     // 窗口随之延后启动——保护对象变为顶栏磨砂（重写帧内容列仍是它的采样源）；② 改名 /
     // 存为新方案 / 删除确认（重写随仓库回流异步到达，退让延续到 profiles 回流帧 + 两帧，
-    // 见 suspendHazeForCommit）。方案选择（SelectCard 点选）只动勾选与文本、无弹层在场，
-    // 同全应用其余浮层的同类操作，不在退让范围。
-    var hazeSuspended by remember { mutableStateOf(false) }
-    // 确认类动作已落库、等待 profiles 回流的窗口
-    var awaitingProfilesSettle by remember { mutableStateOf(false) }
-    // 挂回计时任务：新一轮退让先取消再重排，保证挂回永不与重写同帧
-    var hazeResumeJob by remember { mutableStateOf<Job?>(null) }
-
-    /**
-     * 同步改写退让：[block] 里的草稿写入与 Haze 卸载落在同一帧重组，两帧后内容稳定再挂回。
-     */
-    fun suspendHazeForRewrite(block: () -> Unit) {
-        hazeResumeJob?.cancel()
-        awaitingProfilesSettle = false
-        hazeSuspended = true
-        block()
-        hazeResumeJob = scope.launch {
-            withFrameNanos { }
-            withFrameNanos { }
-            hazeSuspended = false
-        }
-    }
-
-    /**
-     * 落库回流退让：[block] 触发的重写由仓库回流异步带到、时机未知，退让保持到 profiles
-     * 回流（见下方 LaunchedEffect）再延两帧；回流迟迟不来（如同名重命名未触发再发射——
-     * 内容相等即无重写，本就无需退让）由 [HazeCommitFallbackFrames] 兜底挂回。
-     */
-    fun suspendHazeForCommit(block: () -> Unit) {
-        hazeResumeJob?.cancel()
-        hazeSuspended = true
-        awaitingProfilesSettle = true
-        block()
-        hazeResumeJob = scope.launch {
-            repeat(HazeCommitFallbackFrames) { withFrameNanos { } }
-            if (awaitingProfilesSettle) {
-                awaitingProfilesSettle = false
-                hazeSuspended = false
-            }
-        }
-    }
+    // 见下方 forCommit / onReflow）。方案选择（SelectCard 点选）只动勾选与文本、无弹层
+    // 在场，同全应用其余浮层的同类操作，不在退让范围。
+    val hazeRetreat = rememberHazeRetreat()
 
     // 回流落定：重写帧必然仍在退让窗口内，此处只推迟挂回；等待期间再来的回流会重启本
-    // 效果、重新计两帧
+    // 效果、重新计两帧（未处于退让窗口时为空操作）
     LaunchedEffect(profiles) {
-        if (!awaitingProfilesSettle) return@LaunchedEffect
-        withFrameNanos { }
-        withFrameNanos { }
-        awaitingProfilesSettle = false
-        hazeSuspended = false
+        hazeRetreat.onReflow()
     }
 
     // 退让期间叠层弹卡 / 菜单统一退为实底（OverlaySheet 同规则：hazeEnabled = false 时不给
     // 叠层传采样源）
-    val cardHazeState = if (hazeSuspended) null else sheetHazeState
+    val cardHazeState = if (hazeRetreat.suspended) null else sheetHazeState
 
     /** 添加模型名：只入列表，当前模型为空时（新方案）首个模型自动成为当前 */
     fun addModel() {
@@ -371,7 +326,7 @@ internal fun AiProfileSheet(
             return
         }
         modelInputVisible = false
-        suspendHazeForRewrite {
+        hazeRetreat.forRewrite {
             updateDraft(
                 draftConnection.copy(
                     // 没有当前模型时（新方案）优先选列表首个；列表为空才用刚添加的这个
@@ -389,7 +344,7 @@ internal fun AiProfileSheet(
         val remaining = draftConnection.modelOptions
             .filterNot { it.equals(model, ignoreCase = true) }
         if (remaining.isEmpty()) return
-        suspendHazeForRewrite {
+        hazeRetreat.forRewrite {
             updateDraft(
                 draftConnection.copy(
                     model = if (draftConnection.model.equals(model, ignoreCase = true)) {
@@ -436,7 +391,7 @@ internal fun AiProfileSheet(
                     if (preset != null) {
                         // 动作已由 SelectMenu 的 PopupActionGate 延后到菜单退场播完（重写帧
                         // 弹层已卸载）；此处退让窗口保护顶栏磨砂——重写帧内容列仍是它的采样源
-                        suspendHazeForRewrite {
+                        hazeRetreat.forRewrite {
                             val providerChanged = preset.id != draftConnection.providerId
                             // 选中预设即回填端点与协议；建议模型仅在非手填预设下覆盖
                             val nextModel = if (!preset.requiresManualModel &&
@@ -477,8 +432,8 @@ internal fun AiProfileSheet(
                     onPick = { id ->
                         AiProtocol.entries.getOrNull(id)?.let { protocol ->
                             // 同服务商预设：动作延后到退场播完（SelectMenu 的 Gate），此处
-                            // 退让窗口保护顶栏磨砂（崩溃史见 hazeSuspended）
-                            suspendHazeForRewrite {
+                            // 退让窗口保护顶栏磨砂（崩溃史见上方退让窗口）
+                            hazeRetreat.forRewrite {
                                 updateDraft(draftConnection.copy(protocol = protocol))
                             }
                         }
@@ -514,8 +469,8 @@ internal fun AiProfileSheet(
         visible = visible,
         covered = covered,
         onDismissed = onDismissed,
-        // 退让窗口内整条链卸载 Haze（顶栏走静态底材），内容落定后再挂回（崩溃史见 hazeSuspended）
-        hazeEnabled = !hazeSuspended,
+        // 退让窗口内整条链卸载 Haze（顶栏走静态底材），内容落定后再挂回（崩溃史见上方退让窗口）
+        hazeEnabled = !hazeRetreat.suspended,
         hazeState = sheetHazeState,
         modifier = modifier,
     ) {
@@ -692,8 +647,8 @@ internal fun AiProfileSheet(
             onConfirm = {
                 if (renameTargetId != null) {
                     nameVisible = false
-                    // 落库回流会异步重写采样源（方案行文本），退让到回流落定（崩溃史见 hazeSuspended）
-                    suspendHazeForCommit { onRename(renameTargetId, nameDraft.trim()) }
+                    // 落库回流会异步重写采样源（方案行文本），退让到回流落定（崩溃史见上方退让窗口）
+                    hazeRetreat.forCommit { onRename(renameTargetId, nameDraft.trim()) }
                 } else {
                     val normalized = normalizeDraft()
                     if (normalized != null) {
@@ -706,7 +661,7 @@ internal fun AiProfileSheet(
                             fromCustom = sourceProfileId == null,
                         )
                         // 存为新方案：回流新增方案行（结构重写）+ 自动选中再改草稿，同走退让窗口
-                        suspendHazeForCommit {
+                        hazeRetreat.forCommit {
                             onSaveAs(
                                 nameDraft.trim(),
                                 normalized,
@@ -771,8 +726,8 @@ internal fun AiProfileSheet(
                     onClick = {
                         deleteDialogVisible = false
                         // 删除确认 = 整屏 FadeOverlayDialog 淡出 + 方案行增删同帧组合，是
-                        // 账号页退出登录已验证的崩溃配方——落库重写走退让窗口（见 hazeSuspended）
-                        suspendHazeForCommit { target?.let { onDelete(it.id) } }
+                        // 账号页退出登录已验证的崩溃配方——落库重写走退让窗口（见上方退让窗口）
+                        hazeRetreat.forCommit { target?.let { onDelete(it.id) } }
                     },
                 )
             }

@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
 private const val HazeCommitFallbackFrames = 30
 
 /**
- * Haze 退让窗口的可复用状态机（参考实现：`AiProfileSheet` 内的同名机制）。
+ * Haze 退让窗口的可复用状态机（自 `AiProfileSheet` 的原始手写实现提取，现由各浮层 / 页面统一复用）。
  *
  * 崩溃史（Haze 2 自引用 RenderNode，RenderThread 在 prepareTreeImpl 无限递归栈溢出）：
  * 浮层内容列是顶栏磨砂与叠层弹卡的共享采样源，源子树在效果节点在场时被结构重写
