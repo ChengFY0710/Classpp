@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -41,15 +42,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.zIndex
+import androidx.core.content.IntentCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import com.fangyi.classpp.data.AppContainer
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.ai.AiChatRepository
+import com.fangyi.classpp.data.ai.AiImageStore
 import com.fangyi.classpp.data.notification.NotificationAlarmReceiver
 import com.fangyi.classpp.data.notification.NotificationScheduler
 import com.fangyi.classpp.ui.LocalToday
+import com.fangyi.classpp.ui.ai.AiChatDraft
 import com.fangyi.classpp.ui.ai.AiChatOverlay
+import com.fangyi.classpp.ui.ai.MaxImagesPerMessage
 import com.fangyi.classpp.ui.components.LocalOverlayTopBarBlur
 import com.fangyi.classpp.ui.day.DayInitialData
 import com.fangyi.classpp.ui.day.DayScreen
@@ -82,12 +88,15 @@ import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.fangyi.classpp.widget.WidgetRefresh
 import com.fangyi.classpp.widget.refreshTodayCoursesWidget
 import com.kyant.backdrop.backdrops.layerBackdrop
+import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -109,6 +118,11 @@ private const val SettingsPrewarmDelayMillis = 1000L
  */
 private const val NotificationInitialDelayMillis = 1000L
 
+/** 系统分享草稿的实例状态键：旋转重建后继续预填，不重新读分享 URI */
+private const val AiShareStateId = "ai_share_state_id"
+private const val AiShareStatePrompt = "ai_share_state_prompt"
+private const val AiShareStateImages = "ai_share_state_images"
+
 class MainActivity : ComponentActivity() {
 
     /**
@@ -117,9 +131,19 @@ class MainActivity : ComponentActivity() {
      */
     private val pendingNotificationTab = mutableStateOf<AppTab?>(null)
 
+    /**
+     * 系统分享草稿：图片导入完成后写入，组合层消费后打开 AI 浮层。
+     * 分享只预填输入栏，不自动发送。
+     */
+    private val pendingAiShare = mutableStateOf<AiChatDraft?>(null)
+
+    /** 分享导入世代：连续分享时只认最后一次，前一次已导入的副本在完成后清掉 */
+    private var aiShareGeneration = 0
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         pendingNotificationTab.value = notificationTabOf(intent)
+        handleShareIntent(intent)
     }
 
     /** 通知 extras → 落页 tab：课程提醒进课表、待办提醒进待办；无标记返回 null */
@@ -129,6 +153,103 @@ class MainActivity : ComponentActivity() {
             NotificationAlarmReceiver.TAB_TODO -> AppTab.Todo
             else -> null
         }
+
+    /**
+     * 系统分享 → AI 草稿：图片先经 [AiImageStore] 压进对话副本目录（分享 URI 是临时
+     * 授权，不能跨生命周期引用），文本包进「新建待办」提示词。导入完成后写入
+     * [pendingAiShare]，由组合层打开 AI 浮层预填；用户仍需自己确认发送。
+     */
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent == null) return
+        if (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE) {
+            return
+        }
+        val sharedText = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.trim().orEmpty()
+        val uris = sharedStreamUris(intent)
+        if (uris.isEmpty() && sharedText.isEmpty()) return
+
+        val generation = ++aiShareGeneration
+        val requestId = UUID.randomUUID().toString()
+        if (uris.isEmpty()) {
+            pendingAiShare.value = AiChatDraft(
+                id = requestId,
+                prompt = getString(R.string.ai_share_text_prompt, sharedText),
+            )
+            return
+        }
+        lifecycleScope.launch {
+            val store = AiImageStore(File(applicationContext.filesDir, AiImageStore.DirectoryName))
+            val imported = withContext(Dispatchers.IO) {
+                uris.take(MaxImagesPerMessage).mapNotNull { uri ->
+                    runCatching { store.import(applicationContext, uri) }.getOrNull()
+                }
+            }
+            if (generation != aiShareGeneration) {
+                // 后一次分享已覆盖本次请求：这批副本没有持有方，直接清掉
+                if (imported.isNotEmpty()) {
+                    withContext(Dispatchers.IO) { imported.forEach(store::delete) }
+                }
+                return@launch
+            }
+            pendingAiShare.value = AiChatDraft(
+                id = requestId,
+                // 有分享文本时把文本包进待办指令：图配文也走同一条提示，避免只发来一句
+                // 说明或文件标题、模型不知道要建待办
+                prompt = if (sharedText.isEmpty()) {
+                    getString(R.string.ai_share_todo_prompt)
+                } else {
+                    getString(R.string.ai_share_text_prompt, sharedText)
+                },
+                images = imported,
+            )
+            if (imported.isEmpty()) {
+                Toast.makeText(
+                    this@MainActivity,
+                    R.string.ai_share_import_failed,
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
+    }
+
+    /** 分享附带的图片 URI：兼容 EXTRA_STREAM 单值/多值与 ClipData 三种投递方式 */
+    private fun sharedStreamUris(intent: Intent): List<Uri> {
+        // 按 action 读对应形态：SEND_MULTIPLE 的 EXTRA_STREAM 是 ArrayList，不能按单值取
+        val streams = when (intent.action) {
+            Intent.ACTION_SEND_MULTIPLE ->
+                IntentCompat.getParcelableArrayListExtra(
+                    intent,
+                    Intent.EXTRA_STREAM,
+                    Uri::class.java,
+                ).orEmpty()
+            else -> listOfNotNull(
+                IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java),
+            )
+        }
+        val clipped = intent.clipData?.let { data ->
+            (0 until data.itemCount).mapNotNull { index -> data.getItemAt(index).uri }
+        }.orEmpty()
+        return (streams + clipped).distinct()
+    }
+
+    /** 旋转等重建：恢复已导入的分享草稿，不再重新读取原分享 URI */
+    private fun restorePendingAiShare(state: Bundle) {
+        val id = state.getString(AiShareStateId) ?: return
+        pendingAiShare.value = AiChatDraft(
+            id = id,
+            prompt = state.getString(AiShareStatePrompt).orEmpty(),
+            images = state.getStringArrayList(AiShareStateImages).orEmpty(),
+        )
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        pendingAiShare.value?.let { draft ->
+            outState.putString(AiShareStateId, draft.id)
+            outState.putString(AiShareStatePrompt, draft.prompt)
+            outState.putStringArrayList(AiShareStateImages, ArrayList(draft.images))
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // 外观模式真源：冷启动只读这一次，早于 super.onCreate，下面的 setTheme 才能生效
@@ -174,9 +295,13 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = systemBarStyle(initialDark),
             navigationBarStyle = systemBarStyle(initialDark),
         )
-        // 通知点击冷启动：extras 指定落页 tab（旋转等重建不复读，避免把用户已切走的 tab 拉回）
+        // 通知点击冷启动：extras 指定落页 tab（旋转等重建不复读，避免把用户已切走的 tab 拉回）。
+        // 系统分享同理：重建时只恢复已导入的草稿，不重新读取原分享 URI
         if (savedInstanceState == null) {
             pendingNotificationTab.value = notificationTabOf(intent)
+            handleShareIntent(intent)
+        } else {
+            restorePendingAiShare(savedInstanceState)
         }
         setContent {
             // 外观模式状态：prefs 是真源，旋转/系统深色切换等重建时 onCreate 重读，无需 saveable
@@ -349,6 +474,24 @@ class MainActivity : ComponentActivity() {
                         {
                             aiChatVisible = false
                             onOpenAiSettings()
+                        }
+                    }
+                    // 系统分享草稿消费：只清掉同一份草稿，避免连续分享时把后一份也清掉
+                    val onAiShareDraftConsumed = remember {
+                        { id: String ->
+                            if (pendingAiShare.value?.id == id) {
+                                pendingAiShare.value = null
+                            }
+                        }
+                    }
+                    // 分享草稿就绪（图片已导入）后拉起 AI 浮层。分享来自设置页时先收起设置，
+                    // 否则浮层会被设置覆盖层压在下面
+                    val aiShareDraft = pendingAiShare.value
+                    LaunchedEffect(aiShareDraft?.id) {
+                        if (aiShareDraft != null) {
+                            showSettings = false
+                            aiChatMounted = true
+                            aiChatVisible = true
                         }
                     }
                     val onNewTodoSheetDismiss = remember { { showNewTodoSheet = false } }
@@ -781,6 +924,8 @@ class MainActivity : ComponentActivity() {
                                         tagRepository = tagRepository,
                                         scheduleRepository = repository,
                                         onOpenSettings = onAiChatOpenSettings,
+                                        draft = aiShareDraft,
+                                        onDraftConsumed = onAiShareDraftConsumed,
                                     )
                                 }
                             }

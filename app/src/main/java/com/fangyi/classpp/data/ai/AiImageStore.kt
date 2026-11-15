@@ -140,10 +140,13 @@ class AiImageStore(private val dir: File) {
         }
     }
 
-    private companion object {
+    companion object {
+        /** 对话图片副本目录名（filesDir 下）：仓库装配与系统分享导入共用同一真源 */
+        const val DirectoryName = "ai_chat_images"
+
         /** 落盘前把最长边压到该值：视觉模型识别足够，同时钉住多图请求体积 */
-        const val MaxDimension = 1280
-        const val JpegQuality = 85
-        const val JPEG_MEDIA_TYPE = "image/jpeg"
+        private const val MaxDimension = 1280
+        private const val JpegQuality = 85
+        private const val JPEG_MEDIA_TYPE = "image/jpeg"
     }
 }

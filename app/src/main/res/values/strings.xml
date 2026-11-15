@@ -943,6 +943,11 @@
     <string name="ai_sheet_chat">对话</string>
     <string name="ai_sheet_close">关闭</string>
 
+    <!-- 系统分享入口：只预填输入栏，用户确认后发送 -->
+    <string name="ai_share_todo_prompt">根据截图中的内容帮我新建待办</string>
+    <string name="ai_share_text_prompt">帮我根据这段内容新建待办：\n%1$s</string>
+    <string name="ai_share_import_failed">图片读取失败，请重新分享</string>
+
     <!-- AI 对话管理浮层（AiConversationsSheet）：顶栏 / 列表行 / 删除确认 / 未命名回落 -->
     <string name="ai_conversations_title">所有对话</string>
     <string name="ai_conversations_new">新建</string>

@@ -355,7 +355,7 @@ class AppContainer internal constructor(
                             }
                         },
                         // 对话图片附件（相册/拍照导入的压缩副本），UI 借仓库的 imageStore 导入
-                        imageStore = AiImageStore(File(appContext.filesDir, "ai_chat_images")),
+                        imageStore = AiImageStore(File(appContext.filesDir, AiImageStore.DirectoryName)),
                     )
                 },
             )

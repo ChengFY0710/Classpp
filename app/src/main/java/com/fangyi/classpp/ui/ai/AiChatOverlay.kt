@@ -109,9 +109,6 @@ import kotlinx.coroutines.withContext
  */
 private val AuroraHeadroom = 120.dp
 
-/** 一条消息最多携带的图片数：视觉模型识别足够、单条请求体积可控 */
-private const val MaxImagesPerMessage = 4
-
 /** 拍照临时文件目录名（cacheDir 下；FileProvider 只对这一段授权给系统相机写入） */
 private const val CaptureDirName = "ai_capture"
 
@@ -155,6 +152,8 @@ private const val CaptureDirName = "ai_capture"
  * - 输入栏上方模型胶囊：活动方案保存了多个模型时出现，点开切换当前模型（落库到活动
  *   方案 / 自定义槽位，对后续消息生效；发送中禁用）。单模型时不显示，保持原布局。
  *   玻璃材质与输入栏同源采样（底部光场层），玻璃关闭 / API<31 时回退实心 surface 底。
+ * - 系统分享草稿（[draft]）：图片与提示词由宿主经分享入口投递，进入输入栏后由用户
+ *   确认发送，不做自动发送；消费后回调 [onDraftConsumed] 清掉宿主侧待处理草稿。
  *
  * 未配置（[AiChatRepository.configured] = false）时渲染引导态，输入栏禁用。
  */
@@ -169,6 +168,8 @@ fun AiChatOverlay(
     scheduleRepository: ScheduleRepository?,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    draft: AiChatDraft? = null,
+    onDraftConsumed: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -390,6 +391,34 @@ fun AiChatOverlay(
         scope.launch(Dispatchers.IO) {
             stale.forEach { store.delete(it) }
         }
+    }
+
+    // ——— 系统分享草稿 ———
+
+    // 分享只把图片与提示词送进输入栏，发送仍由用户确认；同一份草稿（id）只消费一次。
+    // 输入栏已有用户草稿时另起一段提示词，不覆盖正在编辑的内容。
+    LaunchedEffect(draft?.id) {
+        val incoming = draft ?: return@LaunchedEffect
+        if (incoming.prompt.isNotBlank()) {
+            inputState.value = when {
+                inputState.value.isBlank() -> incoming.prompt
+                else -> inputState.value.trimEnd() + "\n\n" + incoming.prompt
+            }
+        }
+        if (incoming.images.isNotEmpty()) {
+            val existing = pendingImagesState.value
+            val room = (MaxImagesPerMessage - existing.size).coerceAtLeast(0)
+            val incomingImages = incoming.images.distinct()
+            val accepted = incomingImages.filterNot { it in existing }.take(room)
+            pendingImagesState.value = existing + accepted
+            // 超出额度或已在输入栏里的副本没有新持有方：只删没被接住的那几张
+            val rejected = incomingImages.filterNot { it in existing || it in accepted }
+            val store = imageStore
+            if (rejected.isNotEmpty() && store != null) {
+                scope.launch(Dispatchers.IO) { rejected.forEach(store::delete) }
+            }
+        }
+        onDraftConsumed(incoming.id)
     }
 
     // 返回键：编辑器 → 详情 → 展开的侧滑卡 → 先收输入键盘 → 收起对话浮层

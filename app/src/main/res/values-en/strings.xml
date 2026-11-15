@@ -947,6 +947,11 @@
     <string name="ai_sheet_chat">Chat</string>
     <string name="ai_sheet_close">Close</string>
 
+    <!-- System share entry: prefills the composer only; the user confirms sending -->
+    <string name="ai_share_todo_prompt">Create todos from what\'s in the screenshot</string>
+    <string name="ai_share_text_prompt">Create todos from this content:\n%1$s</string>
+    <string name="ai_share_import_failed">Couldn\'t read the image. Try sharing it again</string>
+
     <!-- AI conversation manager sheet (AiConversationsSheet): top bar / rows / delete confirm / unnamed fallback -->
     <string name="ai_conversations_title">All Chats</string>
     <string name="ai_conversations_new">New</string>
