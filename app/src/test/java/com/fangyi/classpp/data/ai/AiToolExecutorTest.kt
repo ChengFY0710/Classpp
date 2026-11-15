@@ -47,6 +47,17 @@ class AiToolExecutorTest {
     }
 
     @Test
+    fun `blank tool name returns missing_tool_name`() = runBlocking {
+        val result = AiToolExecutor.executeSafely(
+            AiToolCall(id = "c1", name = "", argumentsJson = "{}"),
+            context,
+        )
+
+        assertTrue(result.isError)
+        assertEquals("missing_tool_name", result.errorCode())
+    }
+
+    @Test
     fun `malformed arguments return invalid_arguments`() = runBlocking {
         val result = AiToolExecutor.executeSafely(
             AiToolCall(id = "c1", name = AiToolRegistry.GET_DAY_PLAN, argumentsJson = "{not-json"),

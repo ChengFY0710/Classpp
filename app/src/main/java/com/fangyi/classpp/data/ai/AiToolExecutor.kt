@@ -13,6 +13,7 @@ import kotlinx.serialization.json.intOrNull
  * 工具执行器：把协议中性的 [AiToolCall] 变成回给模型的 [AiToolResult]。
  *
  * 边界（设计稿 §4.5/§6.3）：
+ * - 工具名为空 → `missing_tool_name`（流式网关丢 name 时给模型更明确的反馈）；
  * - 未知/未接入工具 → `unknown_tool`，不崩溃；
  * - 参数不是合法 JSON / 不符合 schema → `invalid_arguments`（原始参数截断进 message）；
  * - 执行异常 → `internal_error`，绝不抛到工具循环外；
@@ -36,6 +37,9 @@ internal object AiToolExecutor {
     private const val RAW_ARGUMENTS_MAX = 300
 
     suspend fun executeSafely(call: AiToolCall, ctx: AiChatContext): AiToolResult {
+        if (call.name.isBlank()) {
+            return errorResult(call, "missing_tool_name", "工具调用缺少工具名（name 为空）")
+        }
         val spec = AiToolRegistry.find(call.name)
         if (spec == null || spec.execute == null) {
             return errorResult(call, "unknown_tool", "未知工具：${call.name}")

@@ -127,6 +127,34 @@ class AiToolStreamTest {
     }
 
     @Test
+    fun `openai keeps first tool id and name when later deltas send empty strings`() = runBlocking {
+        val (client, _) = client(
+            openAiToolDelta(
+                index = 0,
+                id = "call_1",
+                name = "search_todos",
+                arguments = """{"query":""",
+            ),
+            // 真机兼容网关会在后续 arguments 分片里回传空 id/name，不能覆盖首片真实值
+            openAiToolDelta(index = 0, id = "", name = "", arguments = """"长尾"}"""),
+            finish("tool_calls"),
+            "data: [DONE]",
+        )
+
+        val result = client.streamChatWithTools(
+            connection = connection(),
+            apiKey = "sk",
+            turns = listOf(AiChatTurn("user", "查一下")),
+            tools = listOf(AiToolRegistry.find(AiToolRegistry.SEARCH_TODOS)!!),
+        )
+
+        val call = result.toolCalls.single()
+        assertEquals("call_1", call.id)
+        assertEquals("search_todos", call.name)
+        assertEquals("""{"query":"长尾"}""", call.argumentsJson)
+    }
+
+    @Test
     fun `openai sorts out-of-order indexes and keeps content plus tool calls`() = runBlocking {
         val contentAndTool = "data: " + buildJsonObject {
             put(

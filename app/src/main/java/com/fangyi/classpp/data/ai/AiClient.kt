@@ -360,8 +360,10 @@ private class ToolCallAccumulator {
 
     fun accept(delta: AiStreamEvent.ToolCallDelta) {
         val call = calls.getOrPut(delta.index) { MutableCall() }
-        delta.id?.let { call.id = it }
-        delta.name?.let { call.name = it }
+        // 空串不覆盖首片的真实值：部分兼容网关会在后续 arguments 分片里回传
+        // "id": "" / "name": ""，照收会把工具名与 id 一起抹掉
+        delta.id?.takeIf { it.isNotBlank() }?.let { call.id = it }
+        delta.name?.takeIf { it.isNotBlank() }?.let { call.name = it }
         call.arguments.append(delta.argumentsDelta)
     }
 
@@ -369,8 +371,8 @@ private class ToolCallAccumulator {
 
     fun build(): List<AiToolCall> = calls.entries.map { (index, call) ->
         AiToolCall(
-            id = call.id ?: "tool_call_$index",
-            name = call.name.orEmpty(),
+            id = call.id?.takeIf { it.isNotBlank() } ?: "tool_call_$index",
+            name = call.name?.takeIf { it.isNotBlank() }.orEmpty(),
             argumentsJson = call.arguments.toString().ifBlank { "{}" },
         )
     }

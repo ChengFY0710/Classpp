@@ -130,8 +130,10 @@ internal object OpenAiStreamCodec : AiStreamCodec {
                 val index = call["index"].intOrNull() ?: fallbackIndex
                 val function = call["function"] as? JsonObject
                 val arguments = function?.get("arguments").argumentsText()
-                val id = call["id"].stringContentOrNull()
-                val name = function?.get("name").stringContentOrNull()
+                // 部分兼容网关后续分片会带 "id": "" / "name": ""：按缺失处理，否则
+                // 累积器会把首片的真实值覆盖成空串（真机 MiMo 上表现为 unknown_tool）
+                val id = call["id"].stringContentOrNull()?.takeIf { it.isNotBlank() }
+                val name = function?.get("name").stringContentOrNull()?.takeIf { it.isNotBlank() }
                 if (id != null || name != null || arguments.isNotEmpty()) {
                     events += AiStreamEvent.ToolCallDelta(index, id, name, arguments)
                 }
