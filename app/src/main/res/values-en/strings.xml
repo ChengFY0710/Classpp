@@ -1141,7 +1141,7 @@
     <string name="ai_settings_base_url">Service URL</string>
     <string name="ai_settings_base_url_hint">https://api.example.com/v1</string>
     <string name="ai_settings_model">Model</string>
-    <string name="ai_settings_model_hint">e.g. deepseek-chat</string>
+    <string name="ai_settings_model_hint">e.g. deepseek-flash</string>
     <string name="ai_settings_section_models">Models</string>
     <string name="ai_settings_model_add">Add model</string>
     <string name="ai_settings_model_duplicate">This model already exists</string>
@@ -1178,7 +1178,7 @@
     <string name="ai_profile_deleted">Profile deleted</string>
     <string name="ai_profile_hint_section">Note</string>
     <string name="ai_profile_hint_title">Vision-capable models recommended</string>
-    <string name="ai_profile_hint_message">Sending images requires a vision model, e.g. deepseek-flash; text-only models (e.g. deepseek-pro) return an error on images.</string>
+    <string name="ai_profile_hint_message">Sending images requires a vision model, e.g. deepseek-flash; text-only models (e.g. deepseek-v4-pro) return an error on images.</string>
 
     <!-- Home screen "Today's classes" widget (4x2) -->
     <string name="widget_today_label">Today\'s classes</string>

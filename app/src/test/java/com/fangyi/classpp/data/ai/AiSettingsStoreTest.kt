@@ -166,8 +166,13 @@ class AiProviderPresetsTest {
 
     @Test
     fun `known id resolves`() {
-        assertEquals("https://api.deepseek.com/v1", AiProviderPresets.byId("deepseek").baseUrl)
-        assertEquals("glm-4-flash", AiProviderPresets.byId("zhipu").suggestedModel)
+        assertEquals("https://api.deepseek.com", AiProviderPresets.byId("deepseek").baseUrl)
+        assertEquals("deepseek-flash", AiProviderPresets.byId("deepseek").suggestedModel)
+        assertEquals("glm-4.7-flash", AiProviderPresets.byId("zhipu").suggestedModel)
+        assertEquals("qwen3.8-flash", AiProviderPresets.byId("qwen").suggestedModel)
+        assertEquals("kimi-k3.1-pro", AiProviderPresets.byId("moonshot").suggestedModel)
+        assertEquals("https://api.xiaomimimo.com/v1", AiProviderPresets.byId("mimo").baseUrl)
+        assertEquals("mimo-v2.6-pro", AiProviderPresets.byId("mimo").suggestedModel)
     }
 
     @Test
@@ -177,35 +182,26 @@ class AiProviderPresetsTest {
     }
 
     @Test
-    fun `manual model flag on local and custom presets`() {
-        assertTrue(AiProviderPresets.byId("ollama").requiresManualModel)
+    fun `only custom preset requires manual model`() {
         assertTrue(AiProviderPresets.byId("custom").requiresManualModel)
-        assertTrue(AiProviderPresets.all.none { it.id == "deepseek" && it.requiresManualModel })
-    }
-
-    @Test
-    fun `ollama preset is debug only but still resolvable`() {
-        // 发布版隐藏必然失败的明文预设；DEBUG 保留以便本地联调
-        assertTrue(AiProviderPresets.available(debuggable = true).any { it.id == "ollama" })
-        assertTrue(AiProviderPresets.available(debuggable = false).none { it.id == "ollama" })
-        assertTrue(AiProviderPresets.available(debuggable = false).any { it.id == "deepseek" })
-        // 已有配置仍能解析，不因下架变成 custom
-        assertEquals("ollama", AiProviderPresets.byId("ollama").id)
-    }
-
-    @Test
-    fun `anthropic preset carries anthropic protocol and is release visible`() {
-        val preset = AiProviderPresets.byId("anthropic")
-        assertEquals("https://api.anthropic.com/v1", preset.baseUrl)
-        assertEquals("claude-sonnet-4-5", preset.suggestedModel)
-        assertEquals(AiProtocol.Anthropic, preset.protocol)
-        assertTrue(AiProviderPresets.available(debuggable = false).any { it.id == "anthropic" })
-        // 其余预设保持 OpenAI 兼容默认，不受新增条目影响
         assertTrue(
             AiProviderPresets.all
-                .filter { it.id != "anthropic" }
-                .all { it.protocol == AiProtocol.OpenAiCompat },
+                .filter { it.id != AiProviderPresets.CUSTOM_ID }
+                .none { it.requiresManualModel },
         )
+    }
+
+    @Test
+    fun `removed presets fall back to custom`() {
+        // 下架的旧预设不能让已存配置失效：providerId 回落 custom，端点与模型仍按原配置
+        listOf("openai", "anthropic", "ollama").forEach { id ->
+            assertEquals(AiProviderPresets.custom, AiProviderPresets.byId(id))
+        }
+    }
+
+    @Test
+    fun `presets use openai compatible protocol`() {
+        assertTrue(AiProviderPresets.all.all { it.protocol == AiProtocol.OpenAiCompat })
     }
 }
 

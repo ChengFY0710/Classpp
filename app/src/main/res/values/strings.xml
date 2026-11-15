@@ -1138,7 +1138,7 @@
     <string name="ai_settings_base_url">服务地址</string>
     <string name="ai_settings_base_url_hint">https://api.example.com/v1</string>
     <string name="ai_settings_model">模型名</string>
-    <string name="ai_settings_model_hint">如 deepseek-chat</string>
+    <string name="ai_settings_model_hint">如 deepseek-flash</string>
     <string name="ai_settings_section_models">模型</string>
     <string name="ai_settings_model_add">添加模型名</string>
     <string name="ai_settings_model_duplicate">该模型已存在</string>
@@ -1179,7 +1179,7 @@
     <string name="ai_profile_deleted">方案已删除</string>
     <string name="ai_profile_hint_section">提示</string>
     <string name="ai_profile_hint_title">推荐使用具备视觉理解能力的模型</string>
-    <string name="ai_profile_hint_message">发送图片需要视觉模型，如deepseek-flash等；纯文本模型（如 deepseek-pro）收到图片会返回错误。</string>
+    <string name="ai_profile_hint_message">发送图片需要视觉模型，如deepseek-flash等；纯文本模型（如 deepseek-v4-pro）收到图片会返回错误。</string>
 
     <!-- 首页「今日课程」小组件（4×2）：组件名 / 选择器描述 / 头部与行文案 -->
     <string name="widget_today_label">今日课程</string>

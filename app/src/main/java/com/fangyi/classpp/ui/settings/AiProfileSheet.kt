@@ -1,6 +1,5 @@
 package com.fangyi.classpp.ui.settings
 
-import android.content.pm.ApplicationInfo
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
@@ -362,10 +361,7 @@ internal fun AiProfileSheet(
     BackHandlerHidesKeyboard(onBack = onDismiss)
 
     // 服务商预设行（与旧 AI 设置页同一套回填规则）
-    val debuggable = remember(context) {
-        context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-    }
-    val presets = remember(debuggable) { AiProviderPresets.available(debuggable) }
+    val presets = AiProviderPresets.all
     val providerItems = remember(presets) {
         presets.mapIndexed { index, preset -> index to preset.label }
     }

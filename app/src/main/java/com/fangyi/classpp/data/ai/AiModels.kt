@@ -33,8 +33,8 @@ enum class AiProtocol { OpenAiCompat, Anthropic }
  * 备份/迁移规则同步排除 `ai_secure.xml`（Keystore 密钥不随备份迁移，密文解不开）。
  *
  * @param providerId 服务商预设 id（[AiProviderPresets]，"custom" = 用户自定义）
- * @param baseUrl 端点根路径（如 https://api.deepseek.com/v1，路径拼接由各协议编解码器负责）
- * @param model 当前生效的模型名（如 deepseek-chat）
+ * @param baseUrl 端点根路径（如 https://api.deepseek.com，路径拼接由各协议编解码器负责）
+ * @param model 当前生效的模型名（如 deepseek-flash）
  * @param models 方案内保存的模型名列表（含当前模型）；空列表 = 旧配置，按 [model] 单模型解释
  * @param protocol 接口协议；带默认值——旧版本落盘的 JSON 无此字段，反序列化得
  *   [AiProtocol.OpenAiCompat]，既有配置行为不变
