@@ -20,6 +20,9 @@ import kotlinx.serialization.encodeToString
  * - [loadActiveProfileId] 非空 → 取该方案（[AiProfile.connection] + `api_key_<id>`）；
  * - 为空 → 取「自定义」槽位（复用旧版 `connection` / `api_key` 键，老配置无需迁移）。
  *
+ * 一份连接可带多个模型名（[AiConnection.models]），[AiConnection.model] 是当前生效项；
+ * 对话浮层切换模型走 [setActiveModel]，API Key 与活动指针不变。
+ *
  * - 连接配置非敏感，明文 JSON 落 SharedPreferences；
  * - API Key（含每个方案各自的 Key）经 Android Keystore 的 AES-256/GCM 加密后落盘，
  *   **绝不退回明文**：任何加解密异常后 [secureAvailable] 置 false，本次进程内不再尝试，
@@ -71,6 +74,13 @@ interface AiSettingsStore {
 
     /** null = 切回「自定义」槽位 */
     fun setActiveProfile(id: String?): Boolean
+
+    /**
+     * 切换活动连接（活动方案 / 自定义槽位）的当前模型；模型必须在该连接的
+     * [AiConnection.modelOptions] 中（忽略大小写匹配并保存列表里的写法）。
+     * 只改当前模型，不动 API Key 与活动指针。
+     */
+    fun setActiveModel(model: String): Boolean
 
     // ---------- 「自定义」槽位（旧版单配置的存储位置） ----------
 
@@ -151,6 +161,8 @@ class PrefsAiSettingsStore(context: Context) : AiSettingsStore {
         val raw = prefs.getString(KEY_PROFILES, null) ?: return emptyList()
         return try {
             AiJson.storage.decodeFromString<List<AiProfile>>(raw)
+                // 旧配置无 models 字段：读出来即补成 [当前模型]，口径与写入一致
+                .map { it.copy(connection = it.connection.withNormalizedModels()) }
         } catch (_: Exception) {
             // 单字段损坏不放大成功能故障：方案库回落空列表，用户重存即可
             emptyList()
@@ -166,14 +178,15 @@ class PrefsAiSettingsStore(context: Context) : AiSettingsStore {
 
     @Synchronized
     override fun saveProfile(profile: AiProfile, activate: Boolean): Boolean {
+        val normalized = profile.copy(connection = profile.connection.withNormalizedModels())
         val profiles = loadProfiles()
-        val next = if (profiles.any { it.id == profile.id }) {
-            profiles.map { if (it.id == profile.id) profile else it }
+        val next = if (profiles.any { it.id == normalized.id }) {
+            profiles.map { if (it.id == normalized.id) normalized else it }
         } else {
-            profiles + profile
+            profiles + normalized
         }
         val editor = prefs.edit().putString(KEY_PROFILES, encodeProfiles(next))
-        if (activate) editor.putString(KEY_ACTIVE_PROFILE, profile.id)
+        if (activate) editor.putString(KEY_ACTIVE_PROFILE, normalized.id)
         return editor.commit()
     }
 
@@ -210,13 +223,34 @@ class PrefsAiSettingsStore(context: Context) : AiSettingsStore {
         return editor.commit()
     }
 
+    @Synchronized
+    override fun setActiveModel(model: String): Boolean {
+        val target = model.trim()
+        if (target.isEmpty()) return false
+        val activeId = loadActiveProfileId()
+        if (activeId != null) {
+            val profile = loadProfiles().firstOrNull { it.id == activeId } ?: return false
+            val canonical = profile.connection.modelOptions
+                .firstOrNull { it.equals(target, ignoreCase = true) } ?: return false
+            // 活动指针保持不动：这里只换当前模型，不是「切换方案」
+            return saveProfile(
+                profile.copy(connection = profile.connection.copy(model = canonical)),
+                activate = false,
+            )
+        }
+        val connection = loadCustomConnection()
+        val canonical = connection.modelOptions
+            .firstOrNull { it.equals(target, ignoreCase = true) } ?: return false
+        return saveCustomConnection(connection.copy(model = canonical))
+    }
+
     // ---------- 「自定义」槽位 ----------
 
     @Synchronized
     override fun loadCustomConnection(): AiConnection {
         val raw = prefs.getString(KEY_CONNECTION, null) ?: return AiConnection()
         return try {
-            AiJson.storage.decodeFromString<AiConnection>(raw)
+            AiJson.storage.decodeFromString<AiConnection>(raw).withNormalizedModels()
         } catch (_: Exception) {
             AiConnection()
         }
@@ -231,7 +265,7 @@ class PrefsAiSettingsStore(context: Context) : AiSettingsStore {
     @Synchronized
     override fun saveCustomConnection(connection: AiConnection): Boolean =
         prefs.edit()
-            .putString(KEY_CONNECTION, encodeConnection(connection))
+            .putString(KEY_CONNECTION, encodeConnection(connection.withNormalizedModels()))
             // 写自定义配置即切回自定义槽位：活动指针置空，读取路径不再命中旧方案
             .remove(KEY_ACTIVE_PROFILE)
             .commit()

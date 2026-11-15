@@ -23,13 +23,19 @@ enum class AiProtocol { OpenAiCompat, Anthropic }
 /**
  * AI 连接配置（BYOK）：服务商预设 id + 端点根路径 + 模型名 + 接口协议。
  *
+ * 一份连接可保存多个模型名（[models]），[model] 始终是**当前生效**的那一个：供应商与
+ * API Key 配置一次，对话浮层即可在列表里切换，请求层只读 [model]。旧版本落盘的 JSON
+ * 只有单模型字段，反序列化后 [models] 为空列表，[modelOptions] 自动回落为 `[model]`，
+ * 不需要迁移。
+ *
  * 这份是**明文可备份**的全部——API Key 永不在此，只存 Keystore 加密后的
  * SharedPreferences（见 [AiSettingsStore]，与 xmu_secure 的凭据策略同源），
  * 备份/迁移规则同步排除 `ai_secure.xml`（Keystore 密钥不随备份迁移，密文解不开）。
  *
  * @param providerId 服务商预设 id（[AiProviderPresets]，"custom" = 用户自定义）
  * @param baseUrl 端点根路径（如 https://api.deepseek.com/v1，路径拼接由各协议编解码器负责）
- * @param model 模型名（如 deepseek-chat）
+ * @param model 当前生效的模型名（如 deepseek-chat）
+ * @param models 方案内保存的模型名列表（含当前模型）；空列表 = 旧配置，按 [model] 单模型解释
  * @param protocol 接口协议；带默认值——旧版本落盘的 JSON 无此字段，反序列化得
  *   [AiProtocol.OpenAiCompat]，既有配置行为不变
  */
@@ -38,10 +44,42 @@ data class AiConnection(
     val providerId: String = AiProviderPresets.CUSTOM_ID,
     val baseUrl: String = "",
     val model: String = "",
+    val models: List<String> = emptyList(),
     val protocol: AiProtocol = AiProtocol.OpenAiCompat,
 ) {
     /** 是否已具备发起请求的最低配置；API Key 由 [AiSettingsStore.loadApiKey] 另查 */
     val isConfigured: Boolean get() = baseUrl.isNotBlank() && model.isNotBlank()
+
+    /**
+     * 展示与切换用的模型列表：`models` + 当前模型，去首尾空白、去空串，忽略大小写去重
+     * （保留首次出现的写法）。旧配置 `models` 为空时即 `[model]`。
+     */
+    val modelOptions: List<String>
+        get() = normalizedModelOptions(models, model)
+
+    /**
+     * 保存前的模型规范化：当前模型与列表某项忽略大小写相同时统一为列表里的写法；
+     * 当前模型非空且不在列表时补进列表。当前模型为空时原样保留（由 UI 决定是否补选）。
+     */
+    fun withNormalizedModels(): AiConnection {
+        val trimmedModel = model.trim()
+        val options = normalizedModelOptions(models, trimmedModel)
+        val canonicalModel = options.firstOrNull { it.equals(trimmedModel, ignoreCase = true) }
+            ?: trimmedModel
+        return copy(model = canonicalModel, models = options)
+    }
+}
+
+/** 合并模型列表与当前模型：trim、去空串、忽略大小写去重，保留首次出现的写法 */
+private fun normalizedModelOptions(models: List<String>, current: String): List<String> {
+    val options = ArrayList<String>(models.size + 1)
+    (models + current).forEach { raw ->
+        val candidate = raw.trim()
+        if (candidate.isNotEmpty() && options.none { it.equals(candidate, ignoreCase = true) }) {
+            options += candidate
+        }
+    }
+    return options
 }
 
 /**

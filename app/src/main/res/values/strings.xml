@@ -762,7 +762,7 @@
     <string name="import_ai_error_no_courses">没有识别到课程，请换一张更清晰的课表图片</string>
     <string name="import_ai_error_invalid">AI 返回的课表格式无法解析，请重试</string>
     <string name="import_ai_error_unreadable">图片读取失败，请重新选择</string>
-    <string name="import_ai_error_vision_hint">若当前模型不支持图片输入，请在 AI 设置中切换到支持视觉的模型</string>
+    <string name="import_ai_error_vision_hint">若当前模型不支持图片输入，请在 AI 设置中添加视觉模型，再到对话输入栏上方切换</string>
     <string name="cd_ai_import_image">待识别的课表图片</string>
     <string name="import_json_label">从 JSON 文件导入</string>
     <string name="import_json_desc">仅支持 Classpp 格式的 JSON 文件</string>
@@ -1139,6 +1139,12 @@
     <string name="ai_settings_base_url_hint">https://api.example.com/v1</string>
     <string name="ai_settings_model">模型名</string>
     <string name="ai_settings_model_hint">如 deepseek-chat</string>
+    <string name="ai_settings_section_models">模型</string>
+    <string name="ai_settings_model_add">添加模型名</string>
+    <string name="ai_settings_models_empty">尚未添加模型名</string>
+    <string name="ai_settings_model_required">请添加至少一个模型名</string>
+    <string name="ai_settings_model_duplicate">该模型已存在</string>
+    <string name="cd_ai_switch_model">切换模型，当前 %1$s</string>
     <string name="ai_settings_api_key">API Key</string>
     <string name="ai_settings_api_key_hint">sk-…</string>
     <string name="ai_settings_api_key_saved">已配置，留空保持不变</string>

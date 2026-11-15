@@ -64,6 +64,7 @@ import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.ai.AiChatMessage
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiChatRole
+import com.fangyi.classpp.data.ai.AiConnection
 import com.fangyi.classpp.data.ai.AiConversation
 import com.fangyi.classpp.data.ai.AiException
 import com.fangyi.classpp.data.ai.AiImageStore
@@ -150,7 +151,9 @@ private const val CaptureDirName = "ai_capture"
  *   建对话），不显示居中标题，右上白「关闭」收起浮层；
  * - AI 设置由设置页的「AI 设置」子页承载（设置 → AI 设置），浮层内不再有 ⚙ 入口：
  *   只有未配置引导卡经 [onOpenSettings] 请求宿主跳转（宿主先收起本浮层，再打开设置页
- *   并直达 AI 子页）。
+ *   并直达 AI 子页）；
+ * - 输入栏上方模型胶囊：活动方案保存了多个模型时出现，点开切换当前模型（落库到活动
+ *   方案 / 自定义槽位，对后续消息生效；发送中禁用）。单模型时不显示，保持原布局。
  *
  * 未配置（[AiChatRepository.configured] = false）时渲染引导态，输入栏禁用。
  */
@@ -170,6 +173,7 @@ fun AiChatOverlay(
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
     val saveFailedMessage = stringResource(R.string.todo_error_save_failed)
+    val aiSaveFailedMessage = stringResource(R.string.ai_save_failed)
     val stepDeletedMessage = stringResource(R.string.toast_todo_step_deleted)
     val archivedMessage = stringResource(R.string.toast_todo_archived)
     // 「添加到闹钟」（待办详情菜单项）：目标时刻映射与结果 Toast 收口在 AddToAlarmFlow；
@@ -202,6 +206,9 @@ fun AiChatOverlay(
     val lastError by aiChatRepository?.lastError?.collectAsState()
         ?: remember { mutableStateOf<AiException?>(null) }
     val configured by aiChatRepository?.configured?.collectAsState() ?: remember { mutableStateOf(false) }
+    // 当前生效连接：模型胶囊据此展示与切换；只在切换模型时发射，不随流式增量重组
+    val activeConnection by aiChatRepository?.activeConnection?.collectAsState()
+        ?: remember { mutableStateOf(AiConnection()) }
     val conversationsState: State<List<AiConversation>> =
         aiChatRepository?.conversations?.collectAsState()
             ?: remember { mutableStateOf(emptyList<AiConversation>()) }
@@ -779,8 +786,16 @@ fun AiChatOverlay(
         // 落定后挂回——稳态磨砂保留；退让期间顶栏磨砂退回渐变遮罩。
         // 光场与输入栏玻璃走 kyant backdrop（独立体系），不受影响。
         bottomContent = {
-            // 与顶栏同源的 Haze 采样状态（供附件菜单跨 Popup 窗口做磨砂）
+            // 与顶栏同源的 Haze 采样状态（供附件菜单 / 模型菜单跨 Popup 窗口做磨砂）
             val bottomHazeState = LocalOverlayBottomHazeState.current
+            // 模型胶囊只在本方案保存了多个模型时出现：单模型保持原输入栏布局
+            val modelOptions = activeConnection.modelOptions
+            val showModelChip = configured && modelOptions.size > 1
+            val modelChipBlockHeight = if (showModelChip) {
+                ModelSwitchChipHeight + ModelSwitchChipGap
+            } else {
+                0.dp
+            }
             // 钉底光场 + 输入栏：光场画在 scrim 之上、输入栏之下；输入栏玻璃采样光场层。
             // inset 消费顺序：navigationBarsPadding 先吃掉导航栏，imePadding 补键盘高出
             // 导航栏的部分。光场自身不参与 inset，随整个槽一起被键盘顶起。
@@ -825,8 +840,28 @@ fun AiChatOverlay(
                         .padding(top = 12.dp, bottom = 24.dp)
                         .padding(horizontal = PageHorizontalSpacing),
                 ) {
-                    // 光场在输入栏上方再留出一段可见高度，整体接近设计稿的底部光场带
-                    Spacer(Modifier.height(AuroraHeadroom))
+                    // 光场在输入栏上方再留出一段可见高度，整体接近设计稿的底部光场带。
+                    // 模型胶囊占用的高度从这段头寸里扣：钉底槽总高度不变，消息列末尾留白
+                    // （Spacer(AuroraHeadroom)）不用跟着模型数量变化
+                    Spacer(Modifier.height(AuroraHeadroom - modelChipBlockHeight))
+                    if (showModelChip) {
+                        AiModelSwitchChip(
+                            models = modelOptions,
+                            currentModel = activeConnection.model,
+                            // 发送中禁用：回答期间不切模型，避免「这条回复用的哪个模型」歧义
+                            enabled = !sending,
+                            hazeState = bottomHazeState,
+                            onSwitch = { model ->
+                                scope.launch {
+                                    val repository = aiChatRepository
+                                    if (repository == null || !repository.switchModel(model)) {
+                                        AppToasts.show(context, aiSaveFailedMessage)
+                                    }
+                                }
+                            },
+                        )
+                        Spacer(Modifier.height(ModelSwitchChipGap))
+                    }
                     // 输入状态由本叶子读取：键入只重组输入栏，不失效整个对话浮层
                     AiChatComposer(
                         inputState = inputState,

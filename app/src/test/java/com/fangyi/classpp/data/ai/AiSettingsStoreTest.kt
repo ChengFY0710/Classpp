@@ -97,6 +97,68 @@ class AiConnectionTest {
         assertEquals(false, AiConnection(model = "m").isConfigured)
         assertEquals(true, AiConnection(baseUrl = "https://x", model = "m").isConfigured)
     }
+
+    @Test
+    fun `connection models json roundtrip`() {
+        val original = AiConnection(
+            providerId = "deepseek",
+            baseUrl = "https://api.deepseek.com/v1",
+            model = "deepseek-reasoner",
+            models = listOf("deepseek-chat", "deepseek-reasoner"),
+        )
+        val decoded = AiJson.storage.decodeFromString(
+            AiConnection.serializer(),
+            AiJson.storage.encodeToString(AiConnection.serializer(), original),
+        )
+        assertEquals(original, decoded)
+    }
+
+    @Test
+    fun `legacy connection json without models decodes to empty list`() {
+        // 旧版本只有单个 model 字段：models 回落空列表，展示列表仍含当前模型
+        val legacy = AiJson.storage.decodeFromString<AiConnection>(
+            AiConnection.serializer(),
+            """{"providerId":"custom","baseUrl":"https://x/v1","model":"m"}""",
+        )
+        assertEquals(emptyList<String>(), legacy.models)
+        assertEquals(listOf("m"), legacy.modelOptions)
+    }
+
+    @Test
+    fun `modelOptions trims and dedupes case insensitively`() {
+        val connection = AiConnection(
+            baseUrl = "https://x/v1",
+            model = " deepseek-chat ",
+            models = listOf("DeepSeek-Chat", " ", "deepseek-reasoner"),
+        )
+        assertEquals(listOf("DeepSeek-Chat", "deepseek-reasoner"), connection.modelOptions)
+    }
+
+    @Test
+    fun `withNormalizedModels canonicalizes current and keeps order`() {
+        val normalized = AiConnection(
+            baseUrl = "https://x/v1",
+            model = "deepseek-chat",
+            models = listOf("DeepSeek-Chat", "deepseek-reasoner"),
+        ).withNormalizedModels()
+
+        assertEquals("DeepSeek-Chat", normalized.model)
+        assertEquals(listOf("DeepSeek-Chat", "deepseek-reasoner"), normalized.models)
+        // 幂等：落库前重复调用不会改变结果
+        assertEquals(normalized, normalized.withNormalizedModels())
+    }
+
+    @Test
+    fun `withNormalizedModels appends current when missing`() {
+        val normalized = AiConnection(
+            baseUrl = "https://x/v1",
+            model = "deepseek-reasoner",
+            models = listOf("deepseek-chat"),
+        ).withNormalizedModels()
+
+        assertEquals("deepseek-reasoner", normalized.model)
+        assertEquals(listOf("deepseek-chat", "deepseek-reasoner"), normalized.models)
+    }
 }
 
 /** 预设表：未知 id 一律回落 custom，不抛异常 */
@@ -160,6 +222,7 @@ class AiProfileTest {
                     providerId = "deepseek",
                     baseUrl = "https://api.deepseek.com/v1",
                     model = "deepseek-chat",
+                    models = listOf("deepseek-chat", "deepseek-reasoner"),
                 ),
             ),
             AiProfile(
@@ -189,6 +252,7 @@ class AiProfileTest {
 
         assertEquals("A", decoded.single().name)
         assertEquals("m", decoded.single().connection.model)
+        assertEquals(emptyList<String>(), decoded.single().connection.models)
         assertEquals(AiProtocol.OpenAiCompat, decoded.single().connection.protocol)
         assertEquals(AiProviderPresets.CUSTOM_ID, decoded.single().connection.providerId)
     }

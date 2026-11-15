@@ -179,6 +179,25 @@ class AiChatRepositoryTest {
             return true
         }
 
+        override fun setActiveModel(model: String): Boolean {
+            val id = loadActiveProfileId()
+            if (id != null) {
+                val index = profiles.indexOfFirst { it.id == id }
+                if (index < 0) return false
+                val target = profiles[index]
+                val canonical = target.connection.modelOptions
+                    .firstOrNull { it.equals(model, ignoreCase = true) } ?: return false
+                profiles[index] = target.copy(
+                    connection = target.connection.copy(model = canonical),
+                )
+                return true
+            }
+            val canonical = connection.modelOptions
+                .firstOrNull { it.equals(model, ignoreCase = true) } ?: return false
+            connection = connection.copy(model = canonical)
+            return true
+        }
+
         override fun loadCustomConnection(): AiConnection = connection
 
         override fun loadCustomKey(): String? = apiKey
@@ -1726,6 +1745,78 @@ class AiChatRepositoryTest {
         assertEquals(openai.id, repo.activeProfileId.value)
         assertEquals("sk-openai-new", settings.loadApiKey())
         assertTrue(repo.configured.value)
+    }
+
+    @Test
+    fun `switchModel updates active profile model and keeps its key`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val repo = repository(
+            settings = settings,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+        val profile = repo.createProfile(
+            name = "DeepSeek",
+            connection = AiConnection(
+                providerId = "deepseek",
+                baseUrl = "https://api.deepseek.com/v1",
+                model = "deepseek-chat",
+                models = listOf("deepseek-chat", "deepseek-reasoner"),
+            ),
+            apiKey = "sk-deepseek",
+        )!!
+        repo.updateProfile(profile.id, profile.connection, apiKey = null)
+
+        assertTrue(repo.switchModel("deepseek-reasoner"))
+
+        // 活动指针与 Key 不动，只换当前模型
+        assertEquals(profile.id, repo.activeProfileId.value)
+        assertEquals("deepseek-reasoner", repo.activeConnection.value.model)
+        assertEquals("sk-deepseek", settings.loadApiKey())
+        assertTrue(repo.configured.value)
+        assertEquals("deepseek-reasoner", settings.profiles.single().connection.model)
+    }
+
+    @Test
+    fun `switchModel updates custom slot model`() = runBlocking {
+        val settings = FakeAiSettingsStore(
+            connection = AiConnection(
+                baseUrl = "https://custom.example/v1",
+                model = "a",
+                models = listOf("a", "b"),
+            ),
+            apiKey = "sk-custom",
+        )
+        val repo = repository(
+            settings = settings,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+
+        assertTrue(repo.switchModel("b"))
+
+        assertEquals("b", settings.connection.model)
+        assertEquals("b", repo.activeConnection.value.model)
+        assertEquals("sk-custom", settings.loadApiKey())
+        assertTrue(repo.configured.value)
+    }
+
+    @Test
+    fun `switchModel rejects model outside saved list`() = runBlocking {
+        val settings = FakeAiSettingsStore(
+            connection = AiConnection(
+                baseUrl = "https://custom.example/v1",
+                model = "a",
+                models = listOf("a", "b"),
+            ),
+        )
+        val repo = repository(
+            settings = settings,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+
+        assertFalse(repo.switchModel("c"))
+
+        assertEquals("a", settings.connection.model)
+        assertEquals("a", repo.activeConnection.value.model)
     }
 
     @Test

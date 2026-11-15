@@ -1517,7 +1517,8 @@ class AiChatRepository internal constructor(
         val profile = AiProfile(
             id = java.util.UUID.randomUUID().toString(),
             name = trimmed,
-            connection = connection,
+            // 返回值与落库口径一致：旧调用点只传单个 model 时也补出 models 列表
+            connection = connection.withNormalizedModels(),
         )
         val saved = withContext(Dispatchers.IO) {
             val profileSaved = settings.saveProfile(profile, activate = false)
@@ -1589,6 +1590,18 @@ class AiChatRepository internal constructor(
         val deleted = withContext(Dispatchers.IO) { settings.deleteProfile(id) }
         if (deleted) refreshConfigured()
         return deleted
+    }
+
+    /**
+     * 对话浮层模型胶囊的切换入口：只改活动连接（活动方案 / 自定义槽位）的当前模型，
+     * 不动 API Key 与活动指针；模型必须在该连接的 [AiConnection.modelOptions] 中。
+     * 落盘成功后刷新 `activeConnection` / `profiles` / `configured`。只影响后续消息，
+     * 在途流沿用发送时捕获的连接。
+     */
+    suspend fun switchModel(model: String): Boolean {
+        val saved = withContext(Dispatchers.IO) { settings.setActiveModel(model) }
+        if (saved) refreshConfigured()
+        return saved
     }
 
     // ---------- 待确认的修改/删除 ----------

@@ -636,7 +636,7 @@
     <string name="import_ai_error_no_courses">No courses were recognized. Try a clearer timetable image.</string>
     <string name="import_ai_error_invalid">AI returned a schedule that couldn\'t be parsed — try again</string>
     <string name="import_ai_error_unreadable">Couldn\'t read the image — pick it again</string>
-    <string name="import_ai_error_vision_hint">If the current model doesn\'t accept images, switch to a vision-capable model in AI settings</string>
+    <string name="import_ai_error_vision_hint">If the current model doesn\'t accept images, add a vision model in AI settings, then switch above the chat input bar</string>
     <string name="cd_ai_import_image">Timetable image to scan</string>
     <string name="import_json_label">Import from JSON File</string>
     <string name="import_json_desc">Classpp-format JSON files only</string>
@@ -1142,6 +1142,12 @@
     <string name="ai_settings_base_url_hint">https://api.example.com/v1</string>
     <string name="ai_settings_model">Model</string>
     <string name="ai_settings_model_hint">e.g. deepseek-chat</string>
+    <string name="ai_settings_section_models">Models</string>
+    <string name="ai_settings_model_add">Add model</string>
+    <string name="ai_settings_models_empty">No models yet</string>
+    <string name="ai_settings_model_required">Add at least one model</string>
+    <string name="ai_settings_model_duplicate">This model already exists</string>
+    <string name="cd_ai_switch_model">Switch model, current: %1$s</string>
     <string name="ai_settings_api_key">API Key</string>
     <string name="ai_settings_api_key_hint">sk-…</string>
     <string name="ai_settings_api_key_saved">Configured — leave blank to keep</string>
