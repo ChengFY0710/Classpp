@@ -419,12 +419,7 @@ internal fun TodoDetailSheet(
                     SettingsCardwithIcon(
                         items = todo.attachments.map { attachment ->
                             SettingsCardwithIconItem(
-                                // 图片用图片图标，其余统一文档图标（ic_note 是折角文件页）
-                                icon = if (attachment.mimeType.startsWith("image/", ignoreCase = true)) {
-                                    R.drawable.ic_image
-                                } else {
-                                    R.drawable.ic_note
-                                },
+                                icon = todoAttachmentIcon(attachment),
                                 label = attachment.name,
                                 onClick = { onAttachmentOpen(attachment) },
                                 // 同步附件只允许点击下载/打开，不长按删除（下次同步会重新出现）
@@ -714,6 +709,25 @@ private fun AddItemCard(label: String, onClick: () -> Unit) {
             text = label,
             style = MaterialTheme.classppTextStyles.fieldValue,
         )
+    }
+}
+
+/**
+ * 附件行图标：按 MIME 分派到各格式的文档图标——图片 / PDF / Word 各有专属图标，
+ * 其余类型（含未知与 `application/octet-stream`）回落通用文档图标 `ic_document`。
+ * 同步附件的 MIME 由 [com.fangyi.classpp.data.xmu.XmuAttachmentMime] 按扩展名解析，
+ * 本机附件取系统 Provider 的类型，都会落到这里。
+ */
+@DrawableRes
+private fun todoAttachmentIcon(attachment: TodoAttachment): Int {
+    val mime = attachment.mimeType.trim().lowercase()
+    return when {
+        mime.startsWith("image/") -> R.drawable.ic_document_image
+        mime == "application/pdf" -> R.drawable.ic_document_pdf
+        mime == "application/msword" ||
+            mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ->
+            R.drawable.ic_document_word
+        else -> R.drawable.ic_document
     }
 }
 
