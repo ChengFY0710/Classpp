@@ -1,6 +1,14 @@
 # 项目开发要求
 在未特殊指明情况下，禁止任何模拟器/真机验证！
 
+## 中文文案标点规范
+- 界面中文文案禁止使用全角分号「；」：并列项用「、」，句间停顿用「，」。
+- 界面中文文案禁止出现句号「。」（含多句文案的每个句尾）：需要断句时用「，」，或拆成多条文案。
+- 适用范围：`strings.xml`、Kotlin / Compose 中用户可见的硬编码文案（按钮、提示、Toast、通知、
+  小组件、描述等）、WebView / JS 桥接展示给用户的 Toast 与错误提示，以及会展示给用户的拼接文本
+  （如多个上课地点）。不含代码注释、AI 提示词与工具描述、测试数据、应用内 Markdown 文档。
+- 新增或修改文案后按上述两条自查。
+
 ## CardSection 间距规范
 - 全项目禁止覆盖 `CardSection` 的默认间距：调用点一律不传 `spacing` / `titleSpacing`。
 - 分组纵向节奏只由 `ui/theme` 的 `CardSectionSpacing` / `CardSectionTitleSpacing` 统一决定

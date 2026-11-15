@@ -240,7 +240,7 @@ internal object RemoteTimetableMapper {
                     location = group.asSequence()
                         .mapNotNull { it.location.takeIf(String::isNotBlank) }
                         .distinct()
-                        .joinToString("；"),
+                        .joinToString("、"),
                     note = group.mapNotNull { it.note.takeIf(String::isNotBlank) }.firstOrNull()
                         .orEmpty(),
                 )

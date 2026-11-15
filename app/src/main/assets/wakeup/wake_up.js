@@ -46,7 +46,7 @@ function validateKey(input) {
     const key = extractKeyFromText(input);
     if (!key) return "输入不能为空！";
     if (!/^[A-Za-z0-9_-]{8,200}$/.test(key)) {
-        return "未检测到有效的 WakeUP 分享口令，请粘贴完整分享文本或口令。";
+        return "未检测到有效的 WakeUP 分享口令，请粘贴完整分享文本或口令";
     }
     return false;
 }
@@ -335,7 +335,7 @@ function wakeupDesPermute(bits, table) {
 
 function wakeupDesSubkeys(key) {
     const keyBytes = wakeupToBytes(key);
-    if (keyBytes.length !== 8) throw new Error("WakeUP 私有 DES 密钥长度必须为 8 字节。");
+    if (keyBytes.length !== 8) throw new Error("WakeUP 私有 DES 密钥长度必须为 8 字节");
     const bits = wakeupDesPermute(wakeupDesBitsFromBytes(keyBytes), WAKEUP_DES_PC1);
     let left = bits.slice(0, 28);
     let right = bits.slice(28);
@@ -397,13 +397,13 @@ function wakeupDesEncrypt(plain, key) {
 
 function wakeupDesDecrypt(cipher, key) {
     const source = wakeupToBytes(cipher);
-    if (source.length % 8 !== 0) throw new Error("WakeUP 私有 DES 密文长度无效。");
+    if (source.length % 8 !== 0) throw new Error("WakeUP 私有 DES 密文长度无效");
     const subkeys = wakeupDesSubkeys(key).reverse();
     const blocks = [];
     for (let offset = 0; offset < source.length; offset += 8) blocks.push(wakeupDesBlock(source.subarray(offset, offset + 8), subkeys));
     const plain = wakeupConcatBytes(blocks);
     const padLength = plain[plain.length - 1];
-    if (padLength > plain.length) throw new Error("WakeUP 私有 DES 填充无效。");
+    if (padLength > plain.length) throw new Error("WakeUP 私有 DES 填充无效");
     return plain.subarray(0, plain.length - padLength);
 }
 
@@ -467,7 +467,7 @@ function wakeupAdidFromAndroidId(androidId) {
 function wakeupGenerateRand10() {
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     const bytes = new Uint8Array(10);
-    if (!globalThis.crypto || !globalThis.crypto.getRandomValues) throw new Error("当前 WebView 不支持安全随机数生成。");
+    if (!globalThis.crypto || !globalThis.crypto.getRandomValues) throw new Error("当前 WebView 不支持安全随机数生成");
     globalThis.crypto.getRandomValues(bytes);
     return Array.from(bytes, byte => alphabet[byte % alphabet.length]).join("");
 }
@@ -498,7 +498,7 @@ function wakeupMakeSignA(cuid) {
 function wakeupTokenFromSignB(signB, rand10) {
     const plain = wakeupDesDecrypt(wakeupNativeHexDecode(signB), `${rand10.slice(0, 5)}#G4`);
     const text = wakeupBytesToLatin1(plain);
-    if (text.length < 22 || text.slice(0, 10) !== rand10) throw new Error("WakeUP antispam token 校验失败。");
+    if (text.length < 22 || text.slice(0, 10) !== rand10) throw new Error("WakeUP antispam token 校验失败");
     return text.slice(12, 22);
 }
 
@@ -553,7 +553,7 @@ async function wakeupPostForm(url, body, device) {
     try {
         const response = await fetch(url, { method: "POST", headers, body, signal: controller ? controller.signal : undefined });
         const text = await response.text();
-        if (!response.ok) throw new Error(`WakeUP 服务请求失败（HTTP ${response.status}）。`);
+        if (!response.ok) throw new Error(`WakeUP 服务请求失败（HTTP ${response.status}）`);
         return text;
     } finally {
         if (timeout) clearTimeout(timeout);
@@ -574,10 +574,10 @@ async function wakeupDecodeShareCode(code) {
     try {
         antispamJson = JSON.parse(antispamText);
     } catch {
-        throw new Error("WakeUP antispam 响应格式无效。");
+        throw new Error("WakeUP antispam 响应格式无效");
     }
     const signB = wakeupExtractSignB(antispamJson);
-    if (!signB) throw new Error("WakeUP antispam 响应未包含签名数据。");
+    if (!signB) throw new Error("WakeUP antispam 响应未包含签名数据");
 
     const token = wakeupTokenFromSignB(signB, rand10);
     const shareRequest = wakeupBuildShareRequest(code, token, device, commonParams);
@@ -586,18 +586,18 @@ async function wakeupDecodeShareCode(code) {
     try {
         shareJson = JSON.parse(shareText);
     } catch {
-        throw new Error("WakeUP 课表响应格式无效。");
+        throw new Error("WakeUP 课表响应格式无效");
     }
 
     const encrypted = shareJson && typeof shareJson.data === "object" ? shareJson.data.data : shareJson && shareJson.data;
-    if (typeof encrypted !== "string" || !encrypted) throw new Error("WakeUP 课表响应未包含加密数据。");
+    if (typeof encrypted !== "string" || !encrypted) throw new Error("WakeUP 课表响应未包含加密数据");
     let decrypted;
     try {
         decrypted = JSON.parse(wakeupBytesToUtf8(wakeupRc4(wakeupBase64ToBytes(encrypted), shareRequest.rc4Key)));
     } catch {
-        throw new Error("WakeUP 课表响应解密失败。");
+        throw new Error("WakeUP 课表响应解密失败");
     }
-    if (!decrypted || typeof decrypted.shareData !== "string") throw new Error("WakeUP 解密数据中未找到 shareData。");
+    if (!decrypted || typeof decrypted.shareData !== "string") throw new Error("WakeUP 解密数据中未找到 shareData");
     return decrypted.shareData;
 }
 
@@ -605,7 +605,7 @@ async function wakeupDecodeShareCode(code) {
 function parseRawScheduleData(rawData) {
     window.shiguangBridge.showToast("正在解析原始数据...");
     const parts = rawData.trim().split("\n");
-    if (parts.length < 5) throw new Error("数据格式不完整，预期至少包含 5 个部分。");
+    if (parts.length < 5) throw new Error("数据格式不完整，预期至少包含 5 个部分");
     return {
         baseConfig: JSON.parse(parts[0]),
         timeSlotsRaw: JSON.parse(parts[1]),
@@ -732,7 +732,7 @@ function convertToCourseJsonModel(parsedData) {
 
 async function saveTimeSlots(timeSlots) {
     if (timeSlots.length === 0) {
-        window.shiguangBridge.showToast("没有可导入的时间段数据。");
+        window.shiguangBridge.showToast("没有可导入的时间段数据");
         return true;
     }
     try {
@@ -762,7 +762,7 @@ async function saveConfig(configData) {
 
 async function saveCourses(courses) {
     if (courses.length === 0) {
-        window.shiguangBridge.showToast("没有课程数据需要导入。");
+        window.shiguangBridge.showToast("没有课程数据需要导入");
         return true;
     }
     try {
@@ -789,7 +789,7 @@ async function runImportFlow() {
         "validateKey"
     );
     if (userInput === null) {
-        window.shiguangBridge.showToast("导入已取消。");
+        window.shiguangBridge.showToast("导入已取消");
         return;
     }
 

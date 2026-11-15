@@ -112,7 +112,7 @@ internal object XmuJwScheduleMapper {
                         .ifEmpty { null },
                     location = group.mapNotNull { it.location?.takeIf(String::isNotBlank) }
                         .distinct()
-                        .joinToString("；")
+                        .joinToString("、")
                         .ifEmpty { null },
                     note = group.mapNotNull { it.note?.takeIf(String::isNotBlank) }.firstOrNull(),
                 )
