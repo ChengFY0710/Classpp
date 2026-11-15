@@ -154,6 +154,7 @@ private const val CaptureDirName = "ai_capture"
  *   并直达 AI 子页）；
  * - 输入栏上方模型胶囊：活动方案保存了多个模型时出现，点开切换当前模型（落库到活动
  *   方案 / 自定义槽位，对后续消息生效；发送中禁用）。单模型时不显示，保持原布局。
+ *   玻璃材质与输入栏同源采样（底部光场层），玻璃关闭 / API<31 时回退实心 surface 底。
  *
  * 未配置（[AiChatRepository.configured] = false）时渲染引导态，输入栏禁用。
  */
@@ -851,6 +852,9 @@ fun AiChatOverlay(
                             // 发送中禁用：回答期间不切模型，避免「这条回复用的哪个模型」歧义
                             enabled = !sending,
                             hazeState = bottomHazeState,
+                            // 与输入栏同源的玻璃采样层：玻璃关闭 / API<31 时为 null，
+                            // 胶囊回退实心 surface 底
+                            backdrop = auroraBackdrop,
                             onSwitch = { model ->
                                 scope.launch {
                                     val repository = aiChatRepository
