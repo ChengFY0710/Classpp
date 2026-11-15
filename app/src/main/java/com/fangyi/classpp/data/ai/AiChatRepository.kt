@@ -1519,8 +1519,9 @@ class AiChatRepository internal constructor(
     /**
      * 保存为新方案：只入库，**不激活**（当前生效配置不变，需在浮层「确认」后才切换）。
      * API Key 随方案一同保存：优先用 [apiKey]（本次输入），为空时按 [keySource] 沿用
-     * 草稿来源条目已存的 Key。来源是「自定义」槽位且 Key 迁移成功时，槽位里的原 Key
-     * 置空——旧单配置的凭据移到方案库，不再留两份。名称为空返回 null。
+     * 草稿来源条目已存的 Key。来源是「自定义」槽位时整份草稿搬到新方案：Key 迁移成功后
+     * 清空槽位里的原 Key，模型名（当前模型 + 列表）也一并清空——旧单配置不再留半套。
+     * 名称为空返回 null。
      */
     suspend fun createProfile(
         name: String,
@@ -1547,9 +1548,13 @@ class AiChatRepository internal constructor(
                 }
                 val keyToSave = apiKey ?: storedKey
                 val keySaved = keyToSave == null || settings.saveProfileKey(profile.id, keyToSave)
-                if (keySource == AiProfileKeySource.CustomSlot && storedKey != null && keySaved) {
-                    // 「自定义」槽位的 Key 已迁入新方案：置空旧槽位，避免两份 Key 各自漂移
-                    settings.saveCustomKey(null)
+                if (keySource == AiProfileKeySource.CustomSlot) {
+                    if (storedKey != null && keySaved) {
+                        // 「自定义」槽位的 Key 已迁入新方案：置空旧槽位，避免两份 Key 各自漂移
+                        settings.saveCustomKey(null)
+                    }
+                    // 模型名同样随草稿迁走：清空旧槽位，切回自定义不再看到已搬走的模型
+                    settings.clearCustomModels()
                 }
             }
             _secureAvailable.value = settings.secureAvailable

@@ -95,6 +95,12 @@ interface AiSettingsStore {
     /** null = 清除已存 Key */
     fun saveCustomKey(key: String?): Boolean
 
+    /**
+     * 「保存为新方案」把自定义草稿搬到新方案后，清空槽位里的模型名（当前模型 + 列表），
+     * 其它连接字段与活动指针不动。已是空模型时直接成功。
+     */
+    fun clearCustomModels(): Boolean
+
     // ---------- 方案 Key ----------
 
     fun loadProfileKey(profileId: String): String?
@@ -278,6 +284,18 @@ class PrefsAiSettingsStore(context: Context) : AiSettingsStore {
         }
         val blob = cipher.encrypt(key) ?: return false
         return editor.putString(KEY_API_KEY, blob).commit()
+    }
+
+    @Synchronized
+    override fun clearCustomModels(): Boolean {
+        val connection = loadCustomConnection()
+        if (connection.model.isBlank() && connection.models.isEmpty()) return true
+        return prefs.edit()
+            .putString(
+                KEY_CONNECTION,
+                encodeConnection(connection.copy(model = "", models = emptyList())),
+            )
+            .commit()
     }
 
     // ---------- 方案 Key ----------

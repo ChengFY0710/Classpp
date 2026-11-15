@@ -67,7 +67,8 @@ private const val HazeCommitFallbackFrames = 30
  *   自动落回活动项（store 已把活动指针修正到「自定义」或其它方案）；
  * - 下方「连接」分组：服务商预设 / 接口格式（仅自定义服务商可改）+ 服务地址 / API Key
  *   + 末尾「保存为新方案」（只入库不激活，成功后自动选中新方案；API Key 随方案一同保存：
- *   输入框留空时沿用来源条目已存的 Key，来源是「自定义」槽位时迁移后槽位置空）；
+ *   输入框留空时沿用来源条目已存的 Key，来源是「自定义」槽位时整份草稿搬到新方案，
+ *   迁移后清空槽位里的 Key 与模型名）；
  * - 「模型」分组：同一服务商 + Key 可保存多个模型名，SelectCard 点选设为当前模型、
  *   长按行呼出删除菜单，末尾「添加模型名」底部输入卡；新增只入列表（当前模型为空时
  *   首个自动选中），对话浮层输入栏上方也可切换；
@@ -269,10 +270,11 @@ internal fun AiProfileSheet(
         val saved = profiles.firstOrNull { it.id !in pending.knownIds } ?: return@LaunchedEffect
         pendingSave = null
         if (pending.fromCustom) {
-            // 原「自定义」槽位的 Key 已随方案保存并置空：会话内草稿同步清掉，
-            // 切回自定义时不回显已迁走的 Key，也不会再次写回旧槽位
+            // 原「自定义」槽位的 Key 与模型名已随方案保存并清空：会话内草稿同步清掉，
+            // 切回自定义时不回显已迁走的内容，也不会再次写回旧槽位
             customKeyInput = ""
             customHadKey = false
+            customConnection = customConnection.copy(model = "", models = emptyList())
         }
         if (draftConnection == pending.connection) {
             selectedProfileId = saved.id

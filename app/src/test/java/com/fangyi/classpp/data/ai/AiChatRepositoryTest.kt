@@ -213,6 +213,11 @@ class AiChatRepositoryTest {
             return true
         }
 
+        override fun clearCustomModels(): Boolean {
+            connection = connection.copy(model = "", models = emptyList())
+            return true
+        }
+
         override fun loadProfileKey(profileId: String): String? = profileKeys[profileId]
 
         override fun saveProfileKey(profileId: String, key: String?): Boolean {
@@ -1728,9 +1733,13 @@ class AiChatRepositoryTest {
             keySource = AiProfileKeySource.CustomSlot,
         )!!
 
-        // Key 随方案一同保存，原「自定义」槽位置空（移动而非复制）
+        // Key 随方案一同保存，原「自定义」槽位的 Key 与模型名一并清空（移动而非复制）
         assertEquals("sk-custom", settings.profileKeys[profile.id])
         assertNull(settings.loadCustomKey())
+        assertEquals("", settings.connection.model)
+        assertTrue(settings.connection.models.isEmpty())
+        // 其它连接字段保留：只搬走 Key 与模型名
+        assertEquals("https://api.example.com/v1", settings.connection.baseUrl)
     }
 
     @Test
@@ -1750,6 +1759,7 @@ class AiChatRepositoryTest {
 
         assertEquals("sk-typed", settings.profileKeys[profile.id])
         assertNull(settings.loadCustomKey())
+        assertEquals("", settings.connection.model)
     }
 
     @Test
@@ -1772,10 +1782,11 @@ class AiChatRepositoryTest {
             keySource = AiProfileKeySource.SavedProfile(source.id),
         )!!
 
-        // 来源方案是复制语义：新方案拿到同一把 Key，来源方案与自定义槽位都不动
+        // 来源方案是复制语义：新方案拿到同一把 Key，来源方案、自定义槽位与模型名都不动
         assertEquals("sk-a", settings.profileKeys[copy.id])
         assertEquals("sk-a", settings.profileKeys[source.id])
         assertEquals("sk-test", settings.loadCustomKey())
+        assertEquals("test", settings.connection.model)
     }
 
     @Test
