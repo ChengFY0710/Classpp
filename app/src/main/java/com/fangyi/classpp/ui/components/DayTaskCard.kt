@@ -63,11 +63,10 @@ import com.kyant.shapes.RoundedRectangle
  *   传入），备注折行/字体行高等任何撑高都会参与下方的 2dp 间距与时间轴局部拉伸；
  * - 同一横向范围内上下相邻卡至少留 2dp，时间贴背恰好 2dp；空间不足时由
  *   [solveDayTaskLayout] 在冲突时刻插入额外轴空间（左侧整点跨度局部变大）；
- * - 紧凑卡（比例高度 < [DayTaskCompactThreshold]，≈84 分钟）有 [CompactMinHeight]
- *   呼吸高下限，窄卡（分列后卡宽不足 [DayTask.narrowThreshold]）的置顶堆叠内容也可能
- *   高于比例高度：两者都在卡的**结束时刻**插入差额——卡顶仍锚定开始时刻、卡底正好
- *   落到结束刻度，其后刻度/卡片/当前时刻线整体下移；竖排卡的内容撑高不参与该规则
- *   （仍只在压住下卡时推轴）；
+ * - 任何形态的内容高于比例高度时（紧凑卡的 [CompactMinHeight] 呼吸高、窄卡的置顶
+ *   堆叠内容、竖排卡的信息/备注撑高），都在卡的**结束时刻**插入差额——卡顶仍锚定
+ *   开始时刻、卡底正好落到结束刻度，其后刻度/卡片/当前时刻线整体下移；同刻结束的
+ *   并行卡按最大差额只插一次，并一起加高到该刻度；
  * - 比例高度 < [DayTaskCompactThreshold] 切紧凑单行（时间 + 标签 + 时间 + 标题横排
  *   一行）；
  * - 分列后卡宽不足 [DayTask.narrowThreshold]（课程/待办均 200dp）时切窄卡样式：
@@ -81,13 +80,13 @@ import com.kyant.shapes.RoundedRectangle
  *   [com.fangyi.classpp.ui.theme.dayTaskCardShape]。
  *
  * **维护约定（实测高度缓存）**：[DayTimeline] 会把 [DayTaskCardContent] 的实测高度按
- * [DayTaskMeasureKey]（内容 + 形态 + 卡宽 + 行数计划；字体度量由缓存生命周期保证）缓存，
- * 重测命中时不再组合测量副本。以后给卡片内容新增**任何影响高度的字段或排版**（新的
- * 可见性开关、字号/行高、备注样式开关、行数限制、内容内边距等）时，必须同步更新
- * [DayTaskMeasureKey]/[DayTask.measureKey] 或 DayTimeline 的实测缓存键；否则高度变化
- * 不会触发重新测量，时间轴仍按过期高度排布，会破坏上下卡 ≥ 2dp 的间距。只影响颜色/
- * 点击等尺寸无关的字段不需要加。缓存的失效时机见 DayTimeline 的 cache remember 键
- * （密度/字号缩放、字体解析器、布局方向、区域配置、环境文字样式）。
+ * [DayTaskMeasureKey]（内容含起止时间 + 形态 + 卡宽 + 行数计划；字体度量由缓存生命周期
+ * 保证）缓存，重测命中时不再组合测量副本。以后给卡片内容新增**任何影响高度的字段或
+ * 排版**（新的可见性开关、字号/行高、备注样式开关、行数限制、内容内边距等）时，必须
+ * 同步更新 [DayTaskMeasureKey]/[DayTask.measureKey] 或 DayTimeline 的实测缓存键；
+ * 否则高度变化不会触发重新测量，时间轴仍按过期高度排布，会破坏上下卡 ≥ 2dp 的间距。
+ * 只影响颜色/点击等尺寸无关的字段不需要加。缓存的失效时机见 DayTimeline 的 cache
+ * remember 键（密度/字号缩放、字体解析器、布局方向、区域配置、环境文字样式）。
  */
 internal sealed interface DayTask {
     val startMinute: Int
@@ -131,10 +130,11 @@ private val DayTask.tagLabel: String
     }
 
 /**
- * 卡片内容高度的缓存键：只含真正影响排版的字段。`onClick`/`onToggle` 每次重建任务
- * 列表都是新 lambda（且不影响尺寸），颜色也不影响行高，入键会让缓存永远命中不了或
- * 无谓失效。新增任何会影响内容高度的字段（文字、可见性开关等）时必须同步加进来，
- * 否则缓存会返回过期高度。
+ * 卡片内容高度的缓存键：只含真正影响排版的字段。起止时间会渲染进窄卡顶行与竖排
+ * 左时间列（时间文字宽度/折行会影响内容高度），因此也入键。`onClick`/`onToggle`
+ * 每次重建任务列表都是新 lambda（且不影响尺寸），颜色也不影响行高，入键会让缓存
+ * 永远命中不了或无谓失效。新增任何会影响内容高度的字段（文字、可见性开关等）时
+ * 必须同步加进来，否则缓存会返回过期高度。
  */
 internal data class DayTaskMeasureKey(
     val course: Boolean,
@@ -145,9 +145,11 @@ internal data class DayTaskMeasureKey(
     val deadlineText: String?,
     val repeatText: String?,
     val completed: Boolean,
+    val startMinute: Int,
+    val endMinute: Int,
 )
 
-/** 见 [DayTaskMeasureKey]：任务 → 内容高度缓存键（不含回调/颜色/时间范围） */
+/** 见 [DayTaskMeasureKey]：任务 → 内容高度缓存键（不含回调/颜色；起止时间已入键） */
 internal val DayTask.measureKey: DayTaskMeasureKey
     get() = when (this) {
         is DayTask.Course -> DayTaskMeasureKey(
@@ -159,6 +161,8 @@ internal val DayTask.measureKey: DayTaskMeasureKey
             deadlineText = null,
             repeatText = null,
             completed = false,
+            startMinute = startMinute,
+            endMinute = endMinute,
         )
         is DayTask.Todo -> DayTaskMeasureKey(
             course = false,
@@ -169,6 +173,8 @@ internal val DayTask.measureKey: DayTaskMeasureKey
             deadlineText = deadlineText,
             repeatText = repeatText,
             completed = completed,
+            startMinute = startMinute,
+            endMinute = endMinute,
         )
     }
 
@@ -270,7 +276,8 @@ private val CompactMinHeight = 40.dp
 private val DayTaskContactGap = 6.dp
 
 /** 短卡备注基线行数：预算不足时至少保留两行，卡高足够时由 [solveDayTaskTextLines]
- *  向上扩展；无实测上下文时的保守估算也按该值封顶（防止长备注把时间轴拉长） */
+ *  向上扩展；无实测上下文时的保守估算也按该值封顶（限制基线高度；短卡内容仍高于
+ *  比例高度时由结束时刻的差额插轴处理） */
 private const val DayTaskNoteBaseLines = 2
 
 /**
@@ -280,14 +287,15 @@ private const val DayTaskNoteBaseLines = 2
  * - 纵向排布：保持 1 小时 = [hourSpacing] 的基础比例，按「开始组 + 结束时刻」双流
  *   合并推进；同一横向范围（x 区间严格相交）内、时间不重叠的上下卡之间至少留
  *   [DayTaskVerticalGap]，不足时在下方卡开始时刻插入额外轴空间（[DayTaskPush]）；
- *   紧凑卡与窄卡的比例高度低于内容最小高度时，还在其结束时刻插入差额（同刻结束的
- *   并行卡取最大、不累加），卡底恰好落到结束刻度——整点刻度跨度随插入量局部变大，
+ *   任何形态的比例高度低于内容最小高度时（紧凑卡 40dp 呼吸高、窄卡置顶内容、竖排卡
+ *   信息/备注撑高），还在其结束时刻插入差额（同刻结束的并行卡取最大、不累加），并把
+ *   这些同刻结束的卡同步加高——卡底都对齐结束刻度；整点刻度跨度随插入量局部变大，
  *   贴背任务恰好 2dp，未受影响的小时仍为 [hourSpacing]；
- * - 高度：先取 max(比例高度, 内容最小高度)，再把卡片时间区间内插入的额外空间计入，
- *   保证卡片仍覆盖被拉伸的时间段（结束时刻的差额插入正是把结束刻度抬到卡底，下卡
- *   只再补 2dp 间距）；内容最小高度优先取 [contentHeights]（渲染侧对
- *   [DayTaskCardContent] 的实测高度，按输入顺序对应），缺省时用镜像排版常量的估算值
- *   （单测/预览等无排版上下文场景）；
+ * - 高度：先取 max(比例高度, 内容最小高度)，再把卡片时间区间内（含结束时刻的内容
+ *   差额插入）插入的额外空间计入，保证卡片仍覆盖被拉伸的时间段；下卡开始时刻的
+ *   2dp 间距不计入上卡高度（下卡只再补 2dp 间距）；内容最小高度优先取 [contentHeights]
+ *   （渲染侧对 [DayTaskCardContent] 的实测高度，按输入顺序对应），缺省时用镜像排版
+ *   常量的估算值（单测/预览等无排版上下文场景）；
  * - 文字行数：以 `max(比例高度, 估算内容最小高度)` 为预算调用
  *   [solveDayTaskTextLines]，结果写入 [DayTaskPlacement.lines]。预算不依赖实测高度，
  *   因此两次求解计划一致，内容实测与最终渲染的 maxLines 不会互相追着放大；
@@ -396,9 +404,9 @@ internal fun List<DayTask>.solveDayTaskLayout(
     }
 
     // 纵向排布：开始组与结束时刻两路事件按分钟合并推进。同组卡片顶边对齐；每放置
-    // 一组前，先消化该组开始时刻及之前的结束事件——紧凑卡/窄卡的比例高度装不下
-    // 内容最低高度时，在结束时刻插入差额（卡底落到结束刻度），跨越该时刻的卡同步
-    // 加高；之后再按现有逻辑检查与已放置卡的 2dp 间距，不足时在组开始时刻补插空间
+    // 一组前，先消化该组开始时刻及之前的结束事件——任何形态的比例高度装不下内容
+    // 最小高度时，在结束时刻插入差额（卡底落到结束刻度），跨越该时刻与同刻结束的
+    // 卡同步加高；之后再检查与已放置卡的 2dp 间距，不足时在组开始时刻补插空间
     val sortedIndices = indices.sortedWith(
         compareBy({ this[it].startMinute }, { this[it].endMinute }),
     )
@@ -414,7 +422,8 @@ internal fun List<DayTask>.solveDayTaskLayout(
         while (endCursor < endOrder.size && this[endOrder[endCursor]].endMinute <= limit) {
             val minute = this[endOrder[endCursor]].endMinute
             // 同刻结束的卡同组处理：并行车道共用同一段轴，按最大差额只插一次；
-            // 差额此时重算——已放置卡可能被卡内更早的插入抬高过比例高度
+            // 差额此时重算——已放置卡可能被卡内更早的插入抬高过比例高度。
+            // 任何形态（紧凑/窄/竖排）的比例高度装不下内容最小高度，都在结束时刻补差
             var inserted = 0.dp
             while (endCursor < endOrder.size &&
                 this[endOrder[endCursor]].endMinute == minute
@@ -422,28 +431,22 @@ internal fun List<DayTask>.solveDayTaskLayout(
                 val index = endOrder[endCursor++]
                 // 未放置（零时长等非法区间）的卡不产生轴空间
                 if (index !in placed) continue
-                // 紧凑卡的 40dp 呼吸高与窄卡置顶堆叠的内容最小高度高于比例高度时，
-                // 差额插在结束时刻，卡底正好落到结束刻度（竖排卡的内容撑高仍只在
-                // 压住下卡时推轴，见上方分组推进逻辑）
-                val deficit = if (compact[index] || narrow[index]) {
-                    maxOf(
-                        0.dp,
-                        requireNotNull(contentMins[index]) -
-                            requireNotNull(baseHeights[index]),
-                    )
-                } else {
-                    0.dp
-                }
+                val deficit = maxOf(
+                    0.dp,
+                    requireNotNull(contentMins[index]) -
+                        requireNotNull(baseHeights[index]),
+                )
                 inserted = maxOf(inserted, deficit)
             }
             if (inserted <= 0.dp) continue
             extra += inserted
             pushes.add(DayTaskPush(minute, extra))
-            // 时间轴从这里整体下移：正在跨越该时刻的卡片同步加高，保持覆盖自己的
-            // 时间段
+            // 时间轴从这里整体下移：正在跨越该时刻的卡片，以及恰好在该时刻结束的
+            // 卡片同步加高——后者借此把卡底对齐结束刻度（同刻最大差额卡自身的高度
+            // 仍等于内容最小高度，不会重复增长）
             for (placedIndex in placed) {
                 val placedTask = this[placedIndex]
-                if (placedTask.startMinute < minute && minute < placedTask.endMinute) {
+                if (placedTask.startMinute < minute && minute <= placedTask.endMinute) {
                     baseHeights[placedIndex] =
                         requireNotNull(baseHeights[placedIndex]) + inserted
                 }
@@ -493,7 +496,8 @@ internal fun List<DayTask>.solveDayTaskLayout(
             extra += inserted
             pushes.add(DayTaskPush(start, extra))
             // 时间轴从这里整体下移：正在跨越该时刻的卡片同步加高，保持覆盖自己的
-            // 时间段；结束边界上的插入不算卡内（留给下卡间距）
+            // 时间段；本组开始时刻的插入不算已放置卡卡内（上一张卡的结束边界，留给
+            // 下卡间距；结束时刻的内容差额插入不在此列）
             for (placedIndex in placed) {
                 val placedTask = this[placedIndex]
                 if (placedTask.startMinute < start && start < placedTask.endMinute) {
@@ -511,8 +515,9 @@ internal fun List<DayTask>.solveDayTaskLayout(
     // 最后一批卡没有后续开始组来触发结束事件：收尾消化，末刻度（次日 0:00）随之下移
     flushEndsUpTo(Int.MAX_VALUE)
 
-    // 最终高度：比例高度 + 本卡时间区间内插入的空间，并保证不低于内容最小高度。
-    // 结束时刻的差额插入抬的是结束刻度（卡底对齐），不计入本卡高度；下卡只再补 2dp
+    // 最终高度：比例高度 + 本卡时间区间内（含结束时刻）插入的空间，并保证不低于
+    // 内容最小高度。结束时刻的内容差额插入计入本卡（同刻结束的卡借此对齐刻度）；
+    // 下卡开始时刻的 2dp 间距不计入上卡高度，留给下卡间距
     val results = arrayOfNulls<DayTaskPlacement>(size)
     for (index in indices) {
         val task = this[index]

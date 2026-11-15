@@ -223,6 +223,24 @@ class DayTaskPlacementTest {
     private fun xIntersects(a: DayTaskPlacement, b: DayTaskPlacement): Boolean =
         a.offsetX < b.offsetX + b.width && b.offsetX < a.offsetX + a.width
 
+    /** 结束刻度不变量：卡顶 = y(start)；卡底不超过结束刻度，且最多落后结束刻度
+     *  [DayTaskVerticalGap]（贴背时下卡的 2dp 间距落在结束边界上） */
+    private fun DayTaskLayout.assertCardEndsAligned() {
+        placements.forEach { placement ->
+            if (placement.task.endMinute <= placement.task.startMinute) return@forEach
+            assertEquals(
+                yAt(placement.task.startMinute).value,
+                placement.offsetY.value,
+                1e-3f,
+            )
+            val endGap = (yAt(placement.task.endMinute) - placement.bottom()).value
+            val label = "start=${placement.task.startMinute} " +
+                "end=${placement.task.endMinute} endGap=$endGap"
+            assertTrue(label, endGap >= -1e-3f)
+            assertTrue(label, endGap <= DayTaskVerticalGap.value + 1e-3f)
+        }
+    }
+
     @Test
     fun backToBackCardsKeepExactlyTwoDpGap() {
         // 8:00-9:00 + 9:00-10:00：贴背后下卡被下推 2dp，轴在 9:00 处局部拉伸
@@ -306,6 +324,26 @@ class DayTaskPlacementTest {
             assertEquals(
                 layout.yAt(500).value,
                 (it.offsetY + it.height).value,
+                1e-3f,
+            )
+        }
+    }
+
+    @Test
+    fun sameEndParallelCardsAlignToEndTick() {
+        // 同刻结束但差额不同：课程窄卡内容高于比例高度、待办无属性行差额为 0；
+        // 按最大差额只插一次轴，同时把两张卡的卡底都对齐到结束刻度
+        val layout = listOf(richCourse(480, 580), todo(480, 580))
+            .solveDayTaskLayout(regionWidth, hourSpacing, anchorMinute = 480)
+        val course = layout.placements[0]
+        val todo = layout.placements[1]
+        assertTrue(course.narrow)
+        assertTrue(todo.narrow)
+        assertTrue(layout.extraAt(580) > 0.dp)
+        layout.placements.forEach {
+            assertEquals(
+                layout.yAt(580).value,
+                it.bottom().value,
                 1e-3f,
             )
         }
@@ -613,6 +651,73 @@ class DayTaskPlacementTest {
     }
 
     @Test
+    fun verticalContentOverflowStretchesAtItsEnd() {
+        // 竖排卡内容高于比例高度时同样在结束时刻补差额：卡底落到结束刻度，不再
+        // 依赖下一张卡开始时推轴（最后一张卡不会有下一次开始组）
+        val layout = listOf(richCourse(480, 580)).solveDayTaskLayout(
+            regionWidth = regionWidth,
+            hourSpacing = hourSpacing,
+            anchorMinute = 480,
+            contentHeights = listOf(140.dp),
+        )
+        val card = layout.placements.single()
+        assertFalse(card.compact)
+        assertFalse(card.narrow)
+        assertEquals(140f, card.height.value, 1e-3f)
+        assertEquals(
+            layout.yAt(580).value,
+            card.bottom().value,
+            1e-3f,
+        )
+        assertTrue(layout.extraAt(580) > 0.dp)
+    }
+
+    @Test
+    fun verticalContentOverflowPreservesFollowingGap() {
+        // 竖排内容撑高后，下一张卡与卡底的间距是真实课间（10 分钟 ≈ 8.3dp），
+        // 不再被“下卡开始时刻推轴”压成 2dp
+        val layout = listOf(richCourse(480, 580), todo(590, 640))
+            .solveDayTaskLayout(
+                regionWidth = regionWidth,
+                hourSpacing = hourSpacing,
+                anchorMinute = 480,
+                contentHeights = listOf(140.dp, 40.dp),
+            )
+        val course = layout.placements[0]
+        val todo = layout.placements[1]
+        assertEquals(
+            (hourSpacing * (10f / 60f)).value,
+            (todo.offsetY - course.bottom()).value,
+            1e-3f,
+        )
+        layout.assertCardEndsAligned()
+    }
+
+    @Test
+    fun cardEndsStayAlignedAcrossForms() {
+        // 混合竖排、贴背紧凑卡与并行窄卡：所有卡顶 = y(start)，卡底与结束刻度的
+        // 差不超过 2dp（贴背时下卡的间距落在结束边界）
+        val layout = listOf(
+            richCourse(480, 580),
+            todo(580, 590),
+            richCourse(600, 720),
+            todo(600, 610),
+        ).solveDayTaskLayout(
+            regionWidth = regionWidth,
+            hourSpacing = hourSpacing,
+            anchorMinute = 480,
+        )
+        layout.assertCardEndsAligned()
+        // 贴背：第一张卡的结束边界抬升后，下卡再补 2dp，不会把间距吃进上卡高度
+        val first = layout.placements[0]
+        assertEquals(
+            DayTaskVerticalGap.value,
+            (layout.yAt(580) - first.bottom()).value,
+            1e-3f,
+        )
+    }
+
+    @Test
     fun measuredContentHeightsDriveCardHeightAndPushes() {
         // 渲染侧实测内容高度优先于常量估算：课程实测比估算高一行（18dp），卡片应
         // 精确按实测撑高，贴背的下卡同步下推，间距仍恰好 2dp，9:00 处的轴拉伸量变大
@@ -670,6 +775,19 @@ class DayTaskPlacementTest {
         assertNotEquals(todo.measureKey, todo.copy(name = "改名").measureKey)
         assertNotEquals(todo.measureKey, todo.copy(repeatText = null).measureKey)
         assertNotEquals(todo.measureKey, todo.copy(completed = true).measureKey)
+    }
+
+    @Test
+    fun measureKeyDistinguishesRenderedTimeRange() {
+        // 起止时间会渲染进窄卡顶行与竖排左时间列，时间文字宽度/折行影响内容高度，
+        // 因此必须进入实测高度缓存键（否则同内容不同时刻会复用过期高度）
+        val todo = todo(480, 600)
+        assertNotEquals(todo.measureKey, todo.copy(startMinute = 540).measureKey)
+        assertNotEquals(todo.measureKey, todo.copy(endMinute = 660).measureKey)
+
+        val course = course(480, 600)
+        assertNotEquals(course.measureKey, course.copy(startMinute = 540).measureKey)
+        assertNotEquals(course.measureKey, course.copy(endMinute = 660).measureKey)
     }
 
     @Test

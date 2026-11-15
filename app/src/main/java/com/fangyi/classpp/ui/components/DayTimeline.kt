@@ -65,9 +65,9 @@ private const val TimelineBodySlot = "day-timeline-body"
 /** 实测内容高度缓存的容量上限：按日期切换才会累积，64 条足够覆盖数天 */
 private const val MeasuredHeightCacheLimit = 64
 
-/** 实测内容高度缓存键：内容 + 形态 + 卡宽 + 行数计划；字体度量由缓存生命周期（见
- *  remember 键）保证。行数计划进入键：内容相同但时长不同（行数预算不同）的卡实测高度
- *  可能不同 */
+/** 实测内容高度缓存键：内容（含起止时间文字）+ 形态 + 卡宽 + 行数计划；字体度量由
+ *  缓存生命周期（见 remember 键）保证。行数计划进入键：内容相同但时长不同（行数预算
+ *  不同）的卡实测高度可能不同 */
 private data class CardHeightKey(
     val content: DayTaskMeasureKey,
     val compact: Boolean,
@@ -82,13 +82,14 @@ private data class CardHeightKey(
  * 比例排布（基础比例 1 小时 = [HourSpacing]），由 [tasks] 传入当天任务，无任务时整块留白。
  *
  * 时间轴跨度是动态的：卡片需要更多纵向空间时（内容撑高、贴背 2dp 间距），在下方卡
- * 开始时刻插入额外空间；短卡触发紧凑卡 40dp 最低高度（≈48 分钟）或分列后的窄卡内容
- * 高于比例高度时，差额插在卡自己的结束时刻，卡底恰好落到结束刻度。整点刻度跨度随
- * 插入量局部变大，没有插入的小时仍保持 [HourSpacing]。卡片内容高度由
+ * 开始时刻插入额外空间；任何形态的卡片内容高于比例高度时（紧凑卡 40dp 最低高度、
+ * 窄卡置顶内容、竖排卡信息/备注撑高），差额插在卡自己的结束时刻，卡底恰好落到
+ * 结束刻度，同刻结束的并行卡按最大差额一起对齐该刻度。整点刻度跨度随插入量局部
+ * 变大，没有插入的小时仍保持 [HourSpacing]。卡片内容高度由
  * [DayTaskCardContent] 在求解前**实测**（与渲染同一 composable、同一卡宽），而不是靠
  * 镜像排版常量估算——备注折行、字体行高等任何撑高都会同步推后下卡并让轴局部拉伸，
- * 上下卡间距始终 ≥ 2dp。实测结果按 [DayTaskMeasureKey] + 形态 + 卡宽缓存
- * （见 [CardHeightKey]），重测命中时直接复用，不再组合测量副本。映射：
+ * 上下卡间距始终 ≥ 2dp。实测结果按 [DayTaskMeasureKey]（内容含起止时间）+ 形态 +
+ * 卡宽缓存（见 [CardHeightKey]），重测命中时直接复用，不再组合测量副本。映射：
  * y(t) = [HourSpacing] × ((t − 锚点) / 60 + 0.5) + 已插入的累计额外空间。
  * 卡片顶边 = y(开始时刻)，高度见 [solveDayTaskLayout]（上下卡至少 2dp、贴背恰好 2dp）。
  *
@@ -125,8 +126,9 @@ internal fun DayTimeline(
     val fontFamilyResolver = LocalFontFamilyResolver.current
     val configuration = LocalConfiguration.current
     val textStyle = LocalTextStyle.current
-    // 实测内容高度缓存：内容/形态/卡宽/行数计划与字体度量都相同时，重测不再组合测量副本。
-    // 字体解析器、密度（含字号缩放）、布局方向、区域配置或环境文字样式变化时整体重建
+    // 实测内容高度缓存：内容（含起止时间）/形态/卡宽/行数计划与字体度量都相同时，
+    // 重测不再组合测量副本。字体解析器、密度（含字号缩放）、布局方向、区域配置或
+    // 环境文字样式变化时整体重建
     val cardHeightCache = remember(
         density,
         layoutDirection,
