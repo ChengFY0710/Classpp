@@ -134,8 +134,8 @@ class DayTaskPlacementTest {
 
     @Test
     fun halfWidthCourseAndTodoBothSwitchToNarrow() {
-        // 课程 + 待办重叠各占半宽（163dp）：均 < 180dp → 同切窄卡；
-        // 单列全宽（328dp ≥ 180dp）的课程仍保持竖排
+        // 课程 + 待办重叠各占半宽（163dp）：均 < 200dp → 同切窄卡；
+        // 单列全宽（328dp ≥ 200dp）的课程仍保持竖排
         val placements = listOf(course(480, 600), todo(540, 660))
             .solveDayTaskPlacements(regionWidth, hourSpacing)
         val coursePlacement = placements.single { it.task is DayTask.Course }
@@ -152,7 +152,7 @@ class DayTaskPlacementTest {
 
     @Test
     fun quarterWidthCoursesSwitchToNarrow() {
-        // 4 条同时段课程 → 列宽 (328 − 3×2) / 4 = 80.5dp < 180dp：全部窄卡
+        // 4 条同时段课程 → 列宽 (328 − 3×2) / 4 = 80.5dp < 200dp：全部窄卡
         val placements = List(4) { course(480, 540) }
             .solveDayTaskPlacements(regionWidth, hourSpacing)
         val columnWidth = ((regionWidth - DayTaskColumnGap * 3) / 4).value
@@ -291,9 +291,9 @@ class DayTaskPlacementTest {
     fun parallelCardsEndingTogetherInsertMaxOnce() {
         // 两条同时段短课程并排、同一结束时刻：并行车道共用一段轴，按最大差额只插
         // 一次（不累加），两卡底边都落在结束刻度
-        // 区域宽取 380dp：两列各 189dp ≥ 180dp 窄卡阈值，并排的短卡保持紧凑形态，
+        // 区域宽取 420dp：两列各 209dp ≥ 200dp 窄卡阈值，并排的短卡保持紧凑形态，
         // 专门覆盖紧凑卡的同刻取最大值路径（窄卡同款逻辑见 narrowCardInsertsDeficitAtItsEnd）
-        val wideRegion = 380.dp
+        val wideRegion = 420.dp
         val layout = listOf(course(480, 500), course(480, 500))
             .solveDayTaskLayout(wideRegion, hourSpacing, anchorMinute = 480)
         assertEquals(
@@ -334,9 +334,9 @@ class DayTaskPlacementTest {
     @Test
     fun spanningCardGrowsWithEndInsertion() {
         // 长课程横跨短课程的结束时刻：差额插轴后长卡同步加高，卡底仍对齐自己的
-        // 结束刻度（同样用 380dp 宽区域让并排卡保持紧凑形态，见上条说明）
+        // 结束刻度（同样用 420dp 宽区域让并排卡保持紧凑形态，见上条说明）
         val layout = listOf(course(480, 600), course(490, 510))
-            .solveDayTaskLayout(380.dp, hourSpacing, anchorMinute = 480)
+            .solveDayTaskLayout(420.dp, hourSpacing, anchorMinute = 480)
         val spanning = layout.placements[0]
         val short = layout.placements[1]
         assertTrue(short.compact)
@@ -438,7 +438,7 @@ class DayTaskPlacementTest {
 
     @Test
     fun narrowCourseLongNoteIsCappedAtTwoLines() {
-        // 窄卡（90dp < 180dp）：备注上限两行，长备注不再按字符数无限撑高；
+        // 窄卡（90dp < 200dp）：备注上限两行，长备注不再按字符数无限撑高；
         // 与刚好两行的备注同高，避免把当天时间轴整体拉长
         fun narrowHeight(note: String): Dp = listOf(
             DayTask.Course(

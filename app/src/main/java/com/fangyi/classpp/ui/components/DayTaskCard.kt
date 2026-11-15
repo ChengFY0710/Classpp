@@ -70,7 +70,7 @@ import com.kyant.shapes.RoundedRectangle
  *   （仍只在压住下卡时推轴）；
  * - 比例高度 < [DayTaskCompactThreshold] 切紧凑单行（时间 + 标签 + 时间 + 标题横排
  *   一行）；
- * - 分列后卡宽不足 [DayTask.narrowThreshold]（课程/待办均 180dp）时切窄卡样式：
+ * - 分列后卡宽不足 [DayTask.narrowThreshold]（课程/待办均 200dp）时切窄卡样式：
  *   起止时间置顶单行 + 标题 + 内容（待办不画勾选框），优先于紧凑单行；
  * - 文字行数随卡高动态分配：求解器取 `max(比例高度, 短卡基线内容高)` 作为行数预算，
  *   按「标题 → 地点/info → 备注」顺序把行数扩到自然行数（[solveDayTaskTextLines]），
@@ -180,10 +180,10 @@ private val DayTask.columnPriority: Int
     }
 
 /** 窄卡分界（课程）：分列后卡宽小于该值时切窄卡样式（时间置顶单行、无左侧时间列） */
-internal val DayTaskNarrowThresholdCourse = 180.dp
+internal val DayTaskNarrowThresholdCourse = 200.dp
 
 /** 窄卡分界（待办）：与课程同分界（待办竖排还占一列 36dp 勾选框） */
-internal val DayTaskNarrowThresholdTodo = 180.dp
+internal val DayTaskNarrowThresholdTodo = 200.dp
 
 /** 窄卡判定阈值：由任务类型取对应分界 */
 internal val DayTask.narrowThreshold: Dp
@@ -866,7 +866,7 @@ private fun estimateTextLineCount(
 /**
  * 单张任务卡：位置尺寸由 [placement] 给出（由 DayTimeline 在卡片区域放置），高度作
  * heightIn 下限——内容更高的竖排卡自然撑底（顶边仍锚定开始时刻）。圆角按接触标记
- * 逐角取 20dp/6dp（theme 的平滑圆角），贴背/重叠时邻角收敛。
+ * 逐角取 16dp/6dp（theme 的平滑圆角），贴背/重叠时邻角收敛。
  *
  * 两型卡片带 [DayTask.Course.onClick] / [DayTask.Todo.onClick] 时整卡可点（按压反馈形状
  * 同卡壳圆角，含收敛的接触角），宿主分别用它唤起课程/待办详情浮层；待办勾选框仍是
@@ -1485,7 +1485,7 @@ private fun DayTaskCardPreview() {
                         startMinute = 9 * 60 + 40,
                         endMinute = 10 * 60,
                     ),
-                    // 10 分钟间距（8.3dp > 6dp）：圆角保持 20dp
+                    // 10 分钟间距（8.3dp > 6dp）：圆角保持 16dp
                     DayTask.Course(
                         name = "计算机科学与技术导论",
                         teacher = "陈锦秀",
