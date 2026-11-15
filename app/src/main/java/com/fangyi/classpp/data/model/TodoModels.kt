@@ -24,6 +24,28 @@ data class TodoStep(
 )
 
 /**
+ * 一条待办附件：文件副本存放在应用私有目录
+ * `filesDir/todo_attachments/<id>/<fileName>`，这里只持久化元数据。
+ *
+ * 文件复制 / 删除 / 系统打开由 [com.fangyi.classpp.data.TodoRepository] 与
+ * [com.fangyi.classpp.data.store.TodoAttachmentStore] 负责；分享载荷不携带附件。
+ *
+ * @param id 附件 id，同时作为私有目录名（内部生成 UUID，不允许路径分隔符）
+ * @param name 原始显示名（界面行标题）
+ * @param fileName 私有目录内的安全文件名（清洗路径分隔符与非法字符后的原名）
+ * @param mimeType 系统打开时的 Intent MIME
+ * @param sizeBytes 文件字节数
+ */
+@Serializable
+data class TodoAttachment(
+    val id: String,
+    val name: String,
+    val fileName: String,
+    val mimeType: String = "application/octet-stream",
+    val sizeBytes: Long = 0,
+)
+
+/**
  * 一条待办。合法性由 TodoValidator 全量校验；此模型只承载数据。
  *
  * 字段全部带默认值：旧文件缺字段照常反序列化，新字段被旧版本 ignoreUnknownKeys
@@ -42,6 +64,7 @@ data class TodoStep(
  * @param deadlineBeforeDays 「下一次重复开始前」提前的天数（开始前 N 天，0 = 当期开始当天）；
  *   选取上限为重复周期天数（[RepeatRule.cycleDays]）
  * @param tags 纯字符串标签；与课表课程标签的联动后续再做
+ * @param attachments 附件元数据列表；文件副本在应用私有目录，随待办彻底删除一并清理
  * @param group 所属分组名（[TodoGroup] 的身份键），null = 未分组。引用完整性由仓库在
  *   归一化时维护：trim、空串与引用不存在的组一律清回 null
  * @param completed 完成情况，新建默认 false
@@ -87,6 +110,7 @@ data class Todo(
     val urgency: TodoUrgency = TodoUrgency.None,
     val note: String = "",
     val steps: List<TodoStep> = emptyList(),
+    val attachments: List<TodoAttachment> = emptyList(),
     val completed: Boolean = false,
     val completedAtMillis: Long? = null,
     val createdAtMillis: Long = 0,

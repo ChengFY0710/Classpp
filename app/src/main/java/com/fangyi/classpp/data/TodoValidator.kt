@@ -2,6 +2,7 @@ package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoTimeKind
+import com.fangyi.classpp.data.store.TodoAttachmentStore
 
 /**
  * 待办全量校验：返回全部错误而非 fail-fast，便于 UI 一次展示。
@@ -54,6 +55,20 @@ object TodoValidator {
                 else -> null
             }
             if (reason != null) errors += TodoError.StepInvalid(index, reason)
+        }
+
+        // 附件：显示名非空、id 唯一且可作目录名、fileName 为安全纯文件名
+        val attachmentIds = mutableSetOf<String>()
+        todo.attachments.forEachIndexed { index, attachment ->
+            val reason = when {
+                attachment.name.isBlank() -> TodoAttachmentReason.BlankName
+                !TodoAttachmentStore.isSafeId(attachment.id) -> TodoAttachmentReason.InvalidId
+                !TodoAttachmentStore.isSafeFileName(attachment.fileName) ->
+                    TodoAttachmentReason.InvalidFileName
+                !attachmentIds.add(attachment.id) -> TodoAttachmentReason.DuplicateId
+                else -> null
+            }
+            if (reason != null) errors += TodoError.AttachmentInvalid(index, reason)
         }
 
         // 标签：trim 后非空（重复/空白由仓库归一化，这里只拦非法值）

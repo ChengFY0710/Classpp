@@ -1,7 +1,10 @@
 package com.fangyi.classpp.ui.components
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,17 +17,22 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
 import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.SettingsCardShape
@@ -39,6 +47,8 @@ import com.fangyi.classpp.ui.theme.isDarkTheme
  * [trailingIcon] 覆盖尾部指示图标（null = 默认主题色右箭头）：选择行传
  * `R.drawable.ic_chevron_up_down`（上下箭头，同 [SettingsCardItem.Select] 行尾规格），
  * 提示「点行弹菜单」而非「进入下一层」。
+ *
+ * [onLongClick] 可选长按回调（带该行窗口坐标，供调用方锚定上下文菜单）；null = 只支持单击。
  */
 @Immutable
 data class SettingsCardwithIconItem(
@@ -47,6 +57,7 @@ data class SettingsCardwithIconItem(
     val description: String? = null,
     val value: String? = null,
     @DrawableRes val trailingIcon: Int? = null,
+    val onLongClick: ((Rect) -> Unit)? = null,
     val onClick: () -> Unit,
 )
 
@@ -132,16 +143,36 @@ fun SettingsCardwithIcon(
 /**
  * 单行渲染：padding 在按压反馈内侧，放大提亮铺满整行宽。行高随内容，
  * 不再自行兜底 60dp——下限由 [SettingsCardwithIcon] 判在整卡上。
+ *
+ * 未传 [SettingsCardwithIconItem.onLongClick] 时走单一点击的 [pressClickable]（既有行为不变）；
+ * 传入时改用 [pressFeedback] + [combinedClickable] 手动配对，并在 [onGloballyPositioned] 里
+ * 记录行窗口坐标，作为长按上下文菜单的锚点（同 DayImageGrid 的图片长按菜单）。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SettingsCardwithIconRow(item: SettingsCardwithIconItem) {
     // 浅色模式下白底行加色白提亮无感（白色无法更亮），改用微微压暗表达按压；深色模式仍提亮
     val rowShade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
+    val longClick = item.onLongClick
+    val press = remember { MutableInteractionSource() }
+    val bounds = remember { SettingsRowBoundsHolder() }
+    val interactionModifier = if (longClick != null) {
+        Modifier
+            .onGloballyPositioned { bounds.value = it.boundsInWindow() }
+            .pressFeedback(press, RectangleShape, shade = rowShade)
+            .combinedClickable(
+                interactionSource = press,
+                indication = null,
+                onClick = item.onClick,
+                onLongClick = { longClick(bounds.value) },
+            )
+    } else {
+        Modifier.pressClickable(RectangleShape, shade = rowShade, onClick = item.onClick)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            // 行无自有 clip，矩形明暗原位接在行上；溢出由卡片圆角壳兜住
-            .pressClickable(RectangleShape, shade = rowShade, onClick = item.onClick)
+            .then(interactionModifier)
             .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -171,4 +202,12 @@ private fun SettingsCardwithIconRow(item: SettingsCardwithIconItem) {
             Chevron()
         }
     }
+}
+
+/**
+ * 行窗口坐标（长按弹菜单的锚点）：普通字段而非 Compose state——在
+ * [onGloballyPositioned] 里写入不会像 state 那样让布局阶段触发重组（同 DayImageGrid）。
+ */
+private class SettingsRowBoundsHolder {
+    var value: Rect = Rect.Zero
 }

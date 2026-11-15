@@ -18,6 +18,7 @@ import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.store.FileScheduleStore
 import com.fangyi.classpp.data.store.FileTagStore
 import com.fangyi.classpp.data.store.FileTodoStore
+import com.fangyi.classpp.data.store.TodoAttachmentStore
 import com.fangyi.classpp.data.sync.DailySyncController
 import com.fangyi.classpp.data.sync.PrefsActiveSchoolStore
 import com.fangyi.classpp.data.sync.SchoolDailySyncController
@@ -219,7 +220,13 @@ class AppContainer internal constructor(
 
             // 显式指定 IO：create() 的调用方在 Main（Compose effect / receiver），不指定会
             // 让每个 async 在首个挂起点前占用主线程
-            val todoDeferred = async(Dispatchers.IO) { TodoRepository.create(FileTodoStore(dir)) }
+            val todoDeferred = async(Dispatchers.IO) {
+                TodoRepository.create(
+                    store = FileTodoStore(dir),
+                    // 附件文件副本目录：与 todos.json 同属应用私有 filesDir，随整机自动备份
+                    attachmentStore = TodoAttachmentStore(File(dir, TodoAttachmentStore.DIRECTORY_NAME)),
+                )
+            }
             val scheduleDeferred = async(Dispatchers.IO) {
                 ScheduleRepository.create(FileScheduleStore(dir))
             }

@@ -12,6 +12,7 @@ import com.fangyi.classpp.data.model.RepeatUnit
 import com.fangyi.classpp.data.model.markRange
 import com.fangyi.classpp.data.model.occurrencesBetween
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.TodoAttachment
 import com.fangyi.classpp.data.model.TodoFile
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoStep
@@ -22,7 +23,11 @@ import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.StoreResult
+import com.fangyi.classpp.data.store.TodoAttachmentStore
 import com.fangyi.classpp.data.store.TodoStore
+import java.io.File
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -71,6 +76,8 @@ data class SyncCompletionCounts(val completed: Int, val reopened: Int)
 class TodoRepository internal constructor(
     private val store: TodoStore,
     private val nowMillis: () -> Long = System::currentTimeMillis,
+    // 附件文件仓库：应用内由 AppContainer 注入；测试可缺省（附件写操作返回错误）
+    private val attachmentStore: TodoAttachmentStore? = null,
 ) {
     private val mutex = Mutex()
 
@@ -111,16 +118,27 @@ class TodoRepository internal constructor(
             is LoadOutcome.Fresh<TodoFile> -> outcome.file
         }
         val expiredIds = loaded.expiredDeletedIds(nowMillis())
-        if (expiredIds.isEmpty()) {
-            publish(loaded)
-            return
-        }
         // 过期条目不再进内存也不写回磁盘：内存立即隐藏（保留期是硬约束），落盘失败
         // 只影响下次装载时再清一遍——与写路径「落盘先行」相反是有意的例外
-        val purged = loaded.copy(todos = loaded.todos.filterNot { it.id in expiredIds })
+        val purged = if (expiredIds.isEmpty()) {
+            loaded
+        } else {
+            loaded.copy(todos = loaded.todos.filterNot { it.id in expiredIds })
+        }
         publish(purged)
-        withContext(Dispatchers.IO) { store.save(purged) }
+        withContext(Dispatchers.IO) {
+            if (expiredIds.isNotEmpty()) store.save(purged)
+            // 清扫崩溃 / 备份回退留下的孤儿附件目录；参照集取内存真源（含回收站与归档）。
+            // 带 24h 年龄阈值，刚写入但尚未进旧快照的附件不会被立刻误删
+            attachmentStore?.cleanupOrphans(purged.todos.attachmentIds())
+        }
     }
+
+    /** 全部待办（含回收站 / 归档）引用的附件 id 集：孤儿清扫的参照集 */
+    private fun List<Todo>.attachmentIds(): Set<String> =
+        asSequence()
+            .flatMap { it.attachments.asSequence() }
+            .mapTo(mutableSetOf()) { it.id }
 
     /** 回收站里已满保留期（[TRASH_RETENTION_DAYS] 天）的条目 id 集 */
     private fun TodoFile.expiredDeletedIds(now: Long): Set<String> =
@@ -207,6 +225,14 @@ class TodoRepository internal constructor(
             overdueOccurrences = sweepOverdue(migrated, migrated.dates.minByOrNull { it.epochDay }),
             tags = migrated.tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
             steps = migrated.steps.map { it.copy(title = it.title.trim()) },
+            attachments = migrated.attachments.map {
+                it.copy(
+                    name = it.name.trim(),
+                    fileName = it.fileName.trim(),
+                    mimeType = it.mimeType.trim().ifEmpty { "application/octet-stream" },
+                    sizeBytes = it.sizeBytes.coerceAtLeast(0),
+                )
+            },
             completedAtMillis = if (migrated.completed) migrated.completedAtMillis ?: nowMillis() else null,
             countdown = migrated.countdown && migrated.deadlineDate != null,
             // 打卡模式的截止只能是固定日期（「下一次重复开始前」在设置页置灰），悬挂开关归 false
@@ -544,33 +570,59 @@ class TodoRepository internal constructor(
     /**
      * 彻底删除（仅最近删除页的侧滑动作走这条）：才真正从 todos.json 移除、不可恢复。
      * 只允许删回收站里的条目——活跃条目误调返回 NotFound，避免绕过软删直接毁数据。
+     * 落库成功后一并删除该待办的附件文件。
      */
-    suspend fun purgeTodo(id: String): TodoOpResult = mutex.withLock {
-        if (deletedTodoOrNull(id) == null) return@withLock TodoOpResult.Err(TodoError.NotFound(id))
-        commit(fileState.value.copy(todos = fileState.value.todos.filterNot { it.id == id }))
+    suspend fun purgeTodo(id: String): TodoOpResult {
+        var removedAttachments: List<TodoAttachment> = emptyList()
+        val result = mutex.withLock {
+            val target = deletedTodoOrNull(id) ?: return@withLock TodoOpResult.Err(TodoError.NotFound(id))
+            removedAttachments = target.attachments
+            commit(fileState.value.copy(todos = fileState.value.todos.filterNot { it.id == id }))
+        }
+        if (result == TodoOpResult.Ok) deleteAttachmentFiles(removedAttachments)
+        return result
     }
 
     /**
      * 批量彻底删除（仅回收站条目）：一次 commit 完成，未知/活跃 id 宽容忽略。
      * 与 [purgeTodo] 同语义，供外部同步的「退出并删除」等批量场景使用——
      * 逐条 purge 会每条全量写一次 todos.json，条目多时落盘次数与中间态都不可接受。
+     * 落库成功后一并删除被删条目的附件文件。
      */
-    suspend fun purgeTodos(ids: Collection<String>): TodoOpResult = mutex.withLock {
-        val drop = ids.toSet()
-        val remaining = fileState.value.todos.filterNot { it.id in drop && it.isDeleted }
-        if (remaining.size == fileState.value.todos.size) return@withLock TodoOpResult.Ok
-        commit(fileState.value.copy(todos = remaining))
+    suspend fun purgeTodos(ids: Collection<String>): TodoOpResult {
+        val removedAttachments = mutableListOf<TodoAttachment>()
+        val result = mutex.withLock {
+            val drop = ids.toSet()
+            val remaining = fileState.value.todos.filterNot { todo ->
+                val dropping = todo.id in drop && todo.isDeleted
+                if (dropping) removedAttachments += todo.attachments
+                dropping
+            }
+            if (remaining.size == fileState.value.todos.size) return@withLock TodoOpResult.Ok
+            commit(fileState.value.copy(todos = remaining))
+        }
+        if (result == TodoOpResult.Ok) deleteAttachmentFiles(removedAttachments)
+        return result
     }
 
     /**
      * 清理最近删除里已满保留期（[TRASH_RETENTION_DAYS] 天）的条目：真正从 todos.json 移除，
      * 不可恢复。装载时由 [bootstrap] 自动跑一次；最近删除页打开时再跑一次，补上应用装载后
      * 新到期的条目（应用长时间驻留时不重新装载也能按时清掉）。没有到期条目时不写盘。
+     * 落库成功后一并删除被清条目的附件文件。
      */
-    suspend fun purgeExpiredDeleted(): TodoOpResult = mutex.withLock {
-        val expiredIds = fileState.value.expiredDeletedIds(nowMillis())
-        if (expiredIds.isEmpty()) return@withLock TodoOpResult.Ok
-        commit(fileState.value.copy(todos = fileState.value.todos.filterNot { it.id in expiredIds }))
+    suspend fun purgeExpiredDeleted(): TodoOpResult {
+        var removedAttachments: List<TodoAttachment> = emptyList()
+        val result = mutex.withLock {
+            val expiredIds = fileState.value.expiredDeletedIds(nowMillis())
+            if (expiredIds.isEmpty()) return@withLock TodoOpResult.Ok
+            removedAttachments = fileState.value.todos
+                .filter { it.id in expiredIds }
+                .flatMap { it.attachments }
+            commit(fileState.value.copy(todos = fileState.value.todos.filterNot { it.id in expiredIds }))
+        }
+        if (result == TodoOpResult.Ok) deleteAttachmentFiles(removedAttachments)
+        return result
     }
 
     /**
@@ -697,6 +749,116 @@ class TodoRepository internal constructor(
         commit(fileState.value.copy(todos = fileState.value.todos.map { if (it.id == todoId) updated else it }))
     }
 
+    // ---------- 附件 ----------
+
+    /**
+     * 追加一批附件：**复制阶段不持锁**（大文件不阻塞其他待办写），复制完再在 mutex 内
+     * 一次 commit 追加元数据。全有或全无——任一文件读取/写入失败或落库失败，已复制的
+     * 文件全部清理，返回 [TodoError.AttachmentImportFailed]。
+     *
+     * 文件落在 `todo_attachments/<附件 id>/<安全文件名>`（见 [TodoAttachmentStore]）；
+     * 待办在复制期间被删除/归档则落库时反查落空，同样清理文件并返回 NotFound。
+     */
+    suspend fun addAttachments(
+        todoId: String,
+        sources: List<TodoAttachmentSource>,
+    ): TodoOpResult {
+        if (sources.isEmpty()) return TodoOpResult.Ok
+        val fileStore = attachmentStore
+            ?: return TodoOpResult.Err(TodoError.AttachmentImportFailed("attachment storage unavailable"))
+        // 复制前先做一次宽松反查：大部分「待办已被删」的请求不必白拷贝文件
+        if (todoOrNull(todoId) == null) return TodoOpResult.Err(TodoError.NotFound(todoId))
+
+        val prepared = mutableListOf<TodoAttachment>()
+        try {
+            withContext(Dispatchers.IO) {
+                sources.forEach { source ->
+                    val id = newUuid()
+                    val displayName = source.displayName.trim().ifEmpty {
+                        TodoAttachmentStore.safeFileName(source.displayName)
+                    }
+                    val fileName = TodoAttachmentStore.safeFileName(displayName)
+                    val size = fileStore.write(id, fileName, source.openStream())
+                        ?: throw IOException("cannot write attachment: $displayName")
+                    prepared += TodoAttachment(
+                        id = id,
+                        name = displayName,
+                        fileName = fileName,
+                        mimeType = source.mimeType.trim().ifEmpty { "application/octet-stream" },
+                        sizeBytes = size,
+                    )
+                }
+            }
+        } catch (e: CancellationException) {
+            fileStore.deleteAll(prepared)
+            throw e
+        } catch (e: Exception) {
+            fileStore.deleteAll(prepared)
+            return TodoOpResult.Err(
+                TodoError.AttachmentImportFailed(e.message ?: e::class.simpleName ?: "?"),
+            )
+        }
+
+        val result = mutex.withLock {
+            val target = todoOrNull(todoId)
+                ?: return@withLock TodoOpResult.Err(TodoError.NotFound(todoId))
+            commit(
+                fileState.value.copy(
+                    todos = fileState.value.todos.map {
+                        if (it.id == todoId) it.copy(attachments = it.attachments + prepared) else it
+                    },
+                ),
+            )
+        }
+        // 落库失败（或反查落空）时文件不能留在私有目录里
+        if (result != TodoOpResult.Ok) deleteAttachmentFiles(prepared)
+        return result
+    }
+
+    /** 删除一条附件：落库成功后删除文件；附件不存在返回 NotFound（文件删除失败留给下次装载清扫） */
+    suspend fun removeAttachment(todoId: String, attachmentId: String): TodoOpResult {
+        var removed: TodoAttachment? = null
+        val result = mutex.withLock {
+            val target = todoOrNull(todoId) ?: return@withLock TodoOpResult.Err(TodoError.NotFound(todoId))
+            val attachment = target.attachments.firstOrNull { it.id == attachmentId }
+                ?: return@withLock TodoOpResult.Err(TodoError.NotFound(attachmentId))
+            removed = attachment
+            commit(
+                fileState.value.copy(
+                    todos = fileState.value.todos.map {
+                        if (it.id == todoId) {
+                            it.copy(attachments = it.attachments.filterNot { a -> a.id == attachmentId })
+                        } else {
+                            it
+                        }
+                    },
+                ),
+            )
+        }
+        if (result == TodoOpResult.Ok) removed?.let { deleteAttachmentFiles(listOf(it)) }
+        return result
+    }
+
+    /**
+     * 附件文件（供 FileProvider 授权给系统 App 打开）：附件元数据不存在或文件已丢失返回 null。
+     * 读内存快照，非挂起；调用方自行处理 FileProvider / ACTION_VIEW 失败提示。
+     */
+    fun attachmentFile(todoId: String, attachmentId: String): File? {
+        val attachment = fileState.value.todos
+            .firstOrNull { it.id == todoId }
+            ?.attachments
+            ?.firstOrNull { it.id == attachmentId }
+            ?: return null
+        return attachmentStore?.file(attachment)?.takeIf { it.isFile }
+    }
+
+    /** 删除附件文件（IO 线程，失败静默——孤儿目录由下次装载清扫兜底） */
+    private suspend fun deleteAttachmentFiles(attachments: Collection<TodoAttachment>) {
+        if (attachments.isEmpty()) return
+        val fileStore = attachmentStore ?: return
+        withContext(Dispatchers.IO) { fileStore.deleteAll(attachments) }
+    }
+
     // ---------- 标签批量回写 ----------
 
     /**
@@ -783,6 +945,8 @@ class TodoRepository internal constructor(
         suspend fun create(
             store: TodoStore,
             nowMillis: () -> Long = System::currentTimeMillis,
-        ): TodoRepository = TodoRepository(store, nowMillis).also { it.bootstrap() }
+            attachmentStore: TodoAttachmentStore? = null,
+        ): TodoRepository =
+            TodoRepository(store, nowMillis, attachmentStore).also { it.bootstrap() }
     }
 }

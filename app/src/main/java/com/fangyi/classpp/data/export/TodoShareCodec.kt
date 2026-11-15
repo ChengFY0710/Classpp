@@ -18,7 +18,12 @@ internal object TodoShareCodec {
 
     fun encode(todos: List<Todo>, exportedAtMillis: Long): String =
         ScheduleJson.encodeShare(
-            TodoSharePayload(exportedAtMillis = exportedAtMillis, todos = todos),
+            TodoSharePayload(
+                exportedAtMillis = exportedAtMillis,
+                // 附件是设备本地私有文件：分享载荷既不带文件也不带本机元数据，
+                // 避免接收方出现打不开的悬空附件（导入侧同样清空）
+                todos = todos.map { it.copy(attachments = emptyList()) },
+            ),
         )
 
     /** 解析并产出可直接追加入库的待办列表（todo 与 step 均为新 id、逐条校验） */
@@ -40,6 +45,8 @@ internal object TodoShareCodec {
             todo.copy(
                 id = newUuid(),
                 steps = todo.steps.map { it.copy(id = newUuid()) },
+                // 附件文件不随分享传输：导入后从空附件列表开始
+                attachments = emptyList(),
                 // 分享导入永远是活跃待办：载荷若带软删/归档标记（导出自其它版本/手工编辑），一并清掉
                 deletedAtMillis = null,
                 archivedAtMillis = null,

@@ -2,9 +2,11 @@ package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.export.TodoShareCodec
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.TodoAttachment
 import com.fangyi.classpp.data.model.TodoSharePayload
 import com.fangyi.classpp.data.model.TodoTimeKind
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -115,6 +117,30 @@ class TodoShareCodecTest {
     fun `decode validates todos`() {
         val json = TodoShareCodec.encode(listOf(testTodo(id = "t1", name = "  ")), exportedAtMillis = 1)
         assertTrue(TodoShareCodec.decodeForImport(json).readErr() is TodoError.BlankName)
+    }
+
+    @Test
+    fun `attachments are stripped from share payload`() {
+        val todo = testTodo(
+            id = "t1",
+            attachments = listOf(
+                TodoAttachment(
+                    id = "a1",
+                    name = "报告.pdf",
+                    fileName = "报告.pdf",
+                    mimeType = "application/pdf",
+                    sizeBytes = 1,
+                ),
+            ),
+        )
+        val json = TodoShareCodec.encode(listOf(todo), exportedAtMillis = 1)
+        assertFalse(json.contains("报告.pdf"))
+
+        val imported = TodoShareCodec.decodeForImport(json).let {
+            assertTrue("expected Ok, got $it", it is TodoReadResult.Ok)
+            (it as TodoReadResult.Ok).value.single()
+        }
+        assertTrue(imported.attachments.isEmpty())
     }
 
     private fun TodoReadResult<*>.readErr(): TodoError {

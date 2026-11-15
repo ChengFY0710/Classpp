@@ -8,6 +8,7 @@ import com.fangyi.classpp.data.model.Parity
 import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.TodoAttachment
 import com.fangyi.classpp.data.model.TodoStep
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
@@ -99,6 +100,7 @@ internal fun testTodo(
     urgency: TodoUrgency = TodoUrgency.Low,
     note: String = "",
     steps: List<TodoStep> = emptyList(),
+    attachments: List<TodoAttachment> = emptyList(),
     completed: Boolean = false,
     completedAtMillis: Long? = null,
     createdAtMillis: Long = 0,
@@ -123,6 +125,7 @@ internal fun testTodo(
     urgency = urgency,
     note = note,
     steps = steps,
+    attachments = attachments,
     completed = completed,
     completedAtMillis = completedAtMillis,
     createdAtMillis = createdAtMillis,

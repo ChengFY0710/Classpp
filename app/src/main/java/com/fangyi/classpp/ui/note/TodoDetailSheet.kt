@@ -1,6 +1,9 @@
 package com.fangyi.classpp.ui.note
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
@@ -37,6 +41,7 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.TodoAttachment
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.withOccurrenceDeadline
 import com.fangyi.classpp.ui.LocalToday
@@ -53,6 +58,8 @@ import com.fangyi.classpp.ui.components.PopupMenuPopup
 import com.fangyi.classpp.ui.components.PopupMenuSection
 import com.fangyi.classpp.ui.components.SettingsCard
 import com.fangyi.classpp.ui.components.SettingsCardItem
+import com.fangyi.classpp.ui.components.SettingsCardwithIcon
+import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
 import com.fangyi.classpp.ui.components.SheetInfoCard
 import com.fangyi.classpp.ui.components.SheetInfoEntry
 import com.fangyi.classpp.ui.components.SheetPill
@@ -97,7 +104,10 @@ private val TitleMenuGap = 12.dp
  * 空值显灰「无」）、备注输入（[SheetTextArea]）、「步骤」分组（列表走 [NoteCard]
  * 右侧勾选框、支持向右滑呼出删除动作卡（双阈值手势见
  * [com.fangyi.classpp.ui.components.NoteCardSwipeLayer]），其下是等高的
- * 「添加步骤」行卡 [AddStepCard]）、条件渲染的「重复」分组（[SheetInfoCard] 只读信息行：
+ * 「添加步骤」行卡 [AddItemCard]）、「附件」分组（[SettingsCardwithIcon] 多行卡：
+ * 点击交宿主用系统 App 打开、长按弹「删除附件」菜单，其下是等高的「添加附件」行卡
+ * [AddItemCard]——与添加步骤同款，点击拉起系统文件选择器多选）、条件渲染的
+ * 「重复」分组（[SheetInfoCard] 只读信息行：
  * 重复类型 /（自定义时）重复规则 / 结束，其下一张 [SettingsCard] 的「完成情况」导航行
  * 唤起 [TodoCompletionSheet]——逐日完成状态日历 + 完成率/次数卡）与带标题的「更多信息」
  * 分组（[SheetInfoCard] 时刻戳：分组、创建时间常显、完成时间仅已完成时渲染）。
@@ -139,6 +149,12 @@ internal fun TodoDetailSheet(
     onStepToggle: (String, Boolean) -> Unit,
     // 侧滑删除一条步骤（展开后再拖到完全变色松手才执行，无确认框）；由宿主落库、失败 Toast
     onStepDelete: (stepId: String) -> Unit,
+    // 添加附件：系统文件选择器多选后交回 URI 列表，由宿主复制进私有目录并落库
+    onAttachmentsAdd: (List<Uri>) -> Unit,
+    // 点击一条附件：宿主经 FileProvider 交给系统 App 打开，失败 Toast
+    onAttachmentOpen: (TodoAttachment) -> Unit,
+    // 长按附件行菜单「删除附件」：宿主落库并从私有目录删除文件
+    onAttachmentDelete: (attachmentId: String) -> Unit,
     // 完成情况浮层里点绿/红球切换某一期的完成状态（true = 补完成、false = 取消完成）；
     // 由宿主落库（repository.setOccurrenceCompleted），失败 Toast
     onOccurrenceCompletedChange: (date: IsoDate, completed: Boolean) -> Unit,
@@ -172,6 +188,15 @@ internal fun TodoDetailSheet(
     var stepDraft by remember { mutableStateOf("") }
     var stepRequested by remember { mutableStateOf(false) }
     var stepMounted by remember { mutableStateOf(false) }
+    // 附件长按菜单：目标（附件快照 + 行窗口坐标锚点）与展开态
+    var attachmentMenuTarget by remember { mutableStateOf<AttachmentMenuTarget?>(null) }
+    var attachmentMenuVisible by remember { mutableStateOf(false) }
+    // 系统文件选择器（多选）：结果 URI 列表交宿主复制进私有目录并落库；取消时列表为空
+    val attachmentPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        if (uris.isNotEmpty()) onAttachmentsAdd(uris)
+    }
     // 完成情况浮层的两段式挂载（同步骤弹卡）：requested = 可见请求，mounted 在退场播完
     // 前保持内容在场；打开时详情缩小后退（covered 见 OverlaySheet 参数）
     var completionRequested by remember { mutableStateOf(false) }
@@ -376,12 +401,41 @@ internal fun TodoDetailSheet(
                         ),
                     )
                 }
-                AddStepCard(
+                AddItemCard(
+                    label = stringResource(R.string.todo_step_add),
                     onClick = {
                         stepDraft = ""
                         stepMounted = true
                         stepRequested = true
                     },
+                )
+            }
+            // 附件：多行卡走 SettingsCardwithIcon（点击系统打开、长按弹删除菜单），其下是
+            // 与「添加步骤」同款的添加行卡；附件为空时只渲染按钮卡
+            CardSection(title = stringResource(R.string.todo_section_attachments)) {
+                if (todo.attachments.isNotEmpty()) {
+                    SettingsCardwithIcon(
+                        items = todo.attachments.map { attachment ->
+                            SettingsCardwithIconItem(
+                                // 图片用图片图标，其余统一文档图标（ic_note 是折角文件页）
+                                icon = if (attachment.mimeType.startsWith("image/", ignoreCase = true)) {
+                                    R.drawable.ic_image
+                                } else {
+                                    R.drawable.ic_note
+                                },
+                                label = attachment.name,
+                                onClick = { onAttachmentOpen(attachment) },
+                                onLongClick = { anchor ->
+                                    attachmentMenuTarget = AttachmentMenuTarget(attachment, anchor)
+                                    attachmentMenuVisible = true
+                                },
+                            )
+                        },
+                    )
+                }
+                AddItemCard(
+                    label = stringResource(R.string.todo_attachment_add),
+                    onClick = { attachmentPicker.launch(arrayOf("*/*")) },
                 )
             }
             // 重复：仅设置过重复的待办显示（重复待办 = 一组截止日期不同的虚拟独立待办，
@@ -449,6 +503,38 @@ internal fun TodoDetailSheet(
                 )
             }
         }
+    }
+    // 附件长按菜单：锚定为被长按的行，删除是破坏性动作。删除会重写本浮层内容列
+    //（被采样源），与标题「更多」菜单同规——经 PopupActionGate 延后到退场播完再执行，
+    // 弹层退场期间保持活采样毛玻璃
+    attachmentMenuTarget?.let { target ->
+        val rewriteGate = rememberPopupActionGate()
+        PopupMenuPopup(
+            expanded = attachmentMenuVisible,
+            onDismiss = { attachmentMenuVisible = false },
+            sections = listOf(
+                PopupMenuSection(
+                    items = listOf(
+                        PopupMenuItem(
+                            label = stringResource(R.string.todo_attachment_delete),
+                            icon = R.drawable.ic_delete,
+                            destructive = true,
+                            onClick = {
+                                attachmentMenuVisible = false
+                                rewriteGate.defer { onAttachmentDelete(target.attachment.id) }
+                            },
+                        ),
+                    ),
+                ),
+            ),
+            placement = MenuPlacement(gravity = MenuGravity.BottomStart, gap = 8.dp),
+            anchor = target.anchor,
+            hazeState = sheetHazeState,
+            onExitFinished = {
+                rewriteGate.flush()
+                attachmentMenuTarget = null
+            },
+        )
     }
     // 新增步骤弹卡（[BottomTextFieldCard]）：组合在浮层之后（画到浮层之上），返回键/遮罩/
     // 键盘让位由弹卡框架接管；确认即关并交宿主落库，空名时确认钮置灰
@@ -592,12 +678,12 @@ private fun TitleMoreMenu(
 }
 
 /**
- * 「添加步骤」行卡（本文件私有）：白底 + [NoteCardShape]（与步骤卡同形），
+ * 「添加步骤 / 添加附件」行卡（本文件私有）：白底 + [NoteCardShape]（与步骤卡同形），
  * 行高下限同步骤卡（[SheetFieldHeight]），内容居中——primary 着色的 ic_add_circle
  * 24dp 与文案（[classppTextStyles] 的 fieldValue），两者间距 12dp。
  */
 @Composable
-private fun AddStepCard(onClick: () -> Unit) {
+private fun AddItemCard(label: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -618,7 +704,7 @@ private fun AddStepCard(onClick: () -> Unit) {
         )
         Spacer(Modifier.width(12.dp))
         Text(
-            text = stringResource(R.string.todo_step_add),
+            text = label,
             style = MaterialTheme.classppTextStyles.fieldValue,
         )
     }
@@ -678,3 +764,9 @@ private fun Todo.scheduledText(): String? {
         .joinToString(" ")
         .takeIf { it.isNotEmpty() }
 }
+
+/** 附件长按菜单的目标：附件快照 + 长按那一刻该行的窗口坐标（菜单锚点） */
+private class AttachmentMenuTarget(
+    val attachment: TodoAttachment,
+    val anchor: Rect,
+)

@@ -5,6 +5,7 @@ import com.fangyi.classpp.data.model.RepeatEndType
 import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.TodoAttachment
 import com.fangyi.classpp.data.model.TodoFile
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoTimeKind
@@ -43,6 +44,23 @@ class TodoJsonRoundTripTest {
     @Test
     fun `defaults survive roundtrip`() {
         val todo = testTodo(id = "t1")
+        assertEquals(todo, ScheduleJson.decodeStorage<Todo>(ScheduleJson.encodeStorage(todo)))
+    }
+
+    @Test
+    fun `attachments survive roundtrip`() {
+        val todo = testTodo(
+            id = "t1",
+            attachments = listOf(
+                TodoAttachment(
+                    id = "a1",
+                    name = "实验报告.pdf",
+                    fileName = "实验报告.pdf",
+                    mimeType = "application/pdf",
+                    sizeBytes = 42,
+                ),
+            ),
+        )
         assertEquals(todo, ScheduleJson.decodeStorage<Todo>(ScheduleJson.encodeStorage(todo)))
     }
 

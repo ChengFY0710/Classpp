@@ -2,6 +2,7 @@ package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.TodoAttachment
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
 import org.junit.Assert.assertEquals
@@ -80,6 +81,41 @@ class TodoValidatorTest {
             steps = listOf(testStep(id = "s1"), testStep(id = "s1", title = "另一条")),
         )
         assertTrue(duplicate.anyErrIs(TodoError.StepInvalid(1, TodoStepReason.DuplicateId)))
+    }
+
+    @Test
+    fun `attachments need names unique ids and safe file names`() {
+        val blankName = testTodo(
+            attachments = listOf(TodoAttachment(id = "a1", name = " ", fileName = "a.txt")),
+        )
+        assertTrue(blankName.anyErrIs(TodoError.AttachmentInvalid(0, TodoAttachmentReason.BlankName)))
+
+        val duplicate = testTodo(
+            attachments = listOf(
+                TodoAttachment(id = "a1", name = "a", fileName = "a.txt"),
+                TodoAttachment(id = "a1", name = "b", fileName = "b.txt"),
+            ),
+        )
+        assertTrue(duplicate.anyErrIs(TodoError.AttachmentInvalid(1, TodoAttachmentReason.DuplicateId)))
+
+        val unsafeFileName = testTodo(
+            attachments = listOf(TodoAttachment(id = "a1", name = "a", fileName = "../a.txt")),
+        )
+        assertTrue(
+            unsafeFileName.anyErrIs(
+                TodoError.AttachmentInvalid(0, TodoAttachmentReason.InvalidFileName),
+            ),
+        )
+
+        val unsafeId = testTodo(
+            attachments = listOf(TodoAttachment(id = "../a1", name = "a", fileName = "a.txt")),
+        )
+        assertTrue(unsafeId.anyErrIs(TodoError.AttachmentInvalid(0, TodoAttachmentReason.InvalidId)))
+
+        val valid = testTodo(
+            attachments = listOf(TodoAttachment(id = "a1", name = "a", fileName = "a.txt")),
+        )
+        assertEquals(emptyList<TodoError>(), TodoValidator.validate(valid))
     }
 
     @Test

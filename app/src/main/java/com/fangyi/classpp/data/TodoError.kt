@@ -5,6 +5,9 @@ import com.fangyi.classpp.data.model.TodoTimeKind
 /** [TodoError.StepInvalid] 的具体原因 */
 enum class TodoStepReason { BlankTitle, DuplicateId }
 
+/** [TodoError.AttachmentInvalid] 的具体原因 */
+enum class TodoAttachmentReason { BlankName, InvalidId, InvalidFileName, DuplicateId }
+
 /** [TodoError.DeadlineInvalid] 的具体原因 */
 enum class TodoDeadlineReason { MissingMinute, MissingDate, MinuteOutOfRange }
 
@@ -28,6 +31,13 @@ sealed class TodoError(val message: String) {
 
     data class StepInvalid(val index: Int, val reason: TodoStepReason) :
         TodoError("step #$index invalid: $reason")
+
+    data class AttachmentInvalid(val index: Int, val reason: TodoAttachmentReason) :
+        TodoError("attachment #$index invalid: $reason")
+
+    /** 附件流读取 / 复制到私有目录失败（权限失效、磁盘满等） */
+    data class AttachmentImportFailed(val detail: String) :
+        TodoError("attachment import failed: $detail")
 
     data class TagInvalid(val index: Int) : TodoError("tag #$index must not be blank")
 

@@ -140,6 +140,8 @@ import com.fangyi.classpp.ui.components.DayTimeline
 import com.fangyi.classpp.ui.components.DayTodoAlert
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
+import com.fangyi.classpp.ui.components.openTodoAttachment
+import com.fangyi.classpp.ui.components.todoAttachmentSources
 import com.fangyi.classpp.ui.motion.DragDirection
 import com.fangyi.classpp.ui.motion.DragDirectionLock
 import com.fangyi.classpp.ui.motion.FreezeFrame
@@ -1732,6 +1734,8 @@ internal fun DayScreen(
             // 回调（协程）里不是组合上下文，字符串在组合期解析（同待办页浮层约定）
             val stepDeletedMessage = stringResource(R.string.toast_todo_step_deleted)
             val todoArchivedMessage = stringResource(R.string.toast_todo_archived)
+            val attachmentDeletedMessage = stringResource(R.string.toast_todo_attachment_deleted)
+            val attachmentOpenFailedMessage = stringResource(R.string.toast_todo_attachment_open_failed)
             key(detail.id) {
                 TodoDetailSheet(
                     visible = todoDetailEntry != null,
@@ -1784,6 +1788,32 @@ internal fun DayScreen(
                         scope.launch {
                             when (repository.removeStep(detail.id, stepId)) {
                                 TodoOpResult.Ok -> AppToasts.show(context, stepDeletedMessage)
+                                is TodoOpResult.Err -> AppToasts.show(context, todoSaveFailedMessage)
+                            }
+                        }
+                    },
+                    // 附件：多选 URI 交仓库复制并落库；点击经 FileProvider 交系统 App 打开；
+                    // 长按菜单删除后落库并清理文件
+                    onAttachmentsAdd = { uris ->
+                        scope.launch {
+                            val sources = todoAttachmentSources(context, uris)
+                            if (sources.isNotEmpty() &&
+                                repository.addAttachments(detail.id, sources) is TodoOpResult.Err
+                            ) {
+                                AppToasts.show(context, todoSaveFailedMessage)
+                            }
+                        }
+                    },
+                    onAttachmentOpen = { attachment ->
+                        val file = repository.attachmentFile(detail.id, attachment.id)
+                        if (file == null || !openTodoAttachment(context, file, attachment.mimeType)) {
+                            AppToasts.show(context, attachmentOpenFailedMessage)
+                        }
+                    },
+                    onAttachmentDelete = { attachmentId ->
+                        scope.launch {
+                            when (repository.removeAttachment(detail.id, attachmentId)) {
+                                TodoOpResult.Ok -> AppToasts.show(context, attachmentDeletedMessage)
                                 is TodoOpResult.Err -> AppToasts.show(context, todoSaveFailedMessage)
                             }
                         }

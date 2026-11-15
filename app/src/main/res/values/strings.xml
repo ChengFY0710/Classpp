@@ -132,6 +132,13 @@
     <string name="todo_section_steps">步骤</string>
     <string name="todo_step_add">添加步骤</string>
     <string name="todo_step_create_hint">输入步骤名称</string>
+    <!-- 待办详情浮层：附件分组（SettingsCardwithIcon 列表 + 添加附件行卡，长按附件行弹删除菜单） -->
+    <string name="todo_section_attachments">附件</string>
+    <string name="todo_attachment_add">添加附件</string>
+    <string name="todo_attachment_delete">删除附件</string>
+    <string name="todo_attachment_unnamed">未命名附件</string>
+    <string name="toast_todo_attachment_deleted">附件已删除</string>
+    <string name="toast_todo_attachment_open_failed">无法打开附件</string>
     <!-- 编辑待办浮层：删除二次确认（软删：条目进最近删除，可从回收站恢复） -->
     <string name="todo_delete_title">删除待办</string>
     <string name="todo_delete_message">「%1$s」将移到最近删除，可在回收站恢复</string>

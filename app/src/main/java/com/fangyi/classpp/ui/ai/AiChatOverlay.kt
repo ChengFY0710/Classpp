@@ -77,8 +77,10 @@ import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
+import com.fangyi.classpp.ui.components.openTodoAttachment
 import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.components.rememberImeVisible
+import com.fangyi.classpp.ui.components.todoAttachmentSources
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.rememberSystemAnimationsEnabled
 import com.fangyi.classpp.ui.note.NewTodoSheet
@@ -178,6 +180,8 @@ fun AiChatOverlay(
     val aiSaveFailedMessage = stringResource(R.string.ai_save_failed)
     val stepDeletedMessage = stringResource(R.string.toast_todo_step_deleted)
     val archivedMessage = stringResource(R.string.toast_todo_archived)
+    val attachmentDeletedMessage = stringResource(R.string.toast_todo_attachment_deleted)
+    val attachmentOpenFailedMessage = stringResource(R.string.toast_todo_attachment_open_failed)
     // 「添加到闹钟」（待办详情菜单项）：目标时刻映射与结果 Toast 收口在 AddToAlarmFlow；
     // 与日历不同，闹钟不需要权限/账户编排上下文，AI 浮层同样可用
     val addToAlarm = rememberAddToAlarm()
@@ -1053,6 +1057,36 @@ fun AiChatOverlay(
                         scope.launch {
                             when (repository.removeStep(detail.id, stepId)) {
                                 TodoOpResult.Ok -> AppToasts.show(context, stepDeletedMessage)
+                                is TodoOpResult.Err -> AppToasts.show(context, saveFailedMessage)
+                            }
+                        }
+                    }
+                },
+                // 附件：多选 URI 交仓库复制并落库；点击经 FileProvider 交系统 App 打开；
+                // 长按菜单删除后落库并清理文件（AI 浮层仓库未装配时全部跳过）
+                onAttachmentsAdd = { uris ->
+                    if (repository != null) {
+                        scope.launch {
+                            val sources = todoAttachmentSources(context, uris)
+                            if (sources.isNotEmpty() &&
+                                repository.addAttachments(detail.id, sources) is TodoOpResult.Err
+                            ) {
+                                AppToasts.show(context, saveFailedMessage)
+                            }
+                        }
+                    }
+                },
+                onAttachmentOpen = { attachment ->
+                    val file = repository?.attachmentFile(detail.id, attachment.id)
+                    if (file == null || !openTodoAttachment(context, file, attachment.mimeType)) {
+                        AppToasts.show(context, attachmentOpenFailedMessage)
+                    }
+                },
+                onAttachmentDelete = { attachmentId ->
+                    if (repository != null) {
+                        scope.launch {
+                            when (repository.removeAttachment(detail.id, attachmentId)) {
+                                TodoOpResult.Ok -> AppToasts.show(context, attachmentDeletedMessage)
                                 is TodoOpResult.Err -> AppToasts.show(context, saveFailedMessage)
                             }
                         }
