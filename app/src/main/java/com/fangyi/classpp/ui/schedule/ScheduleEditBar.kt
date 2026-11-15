@@ -5,12 +5,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material3.Icon
@@ -47,6 +45,7 @@ import com.fangyi.classpp.ui.theme.EditActionInnerPadding
 import com.fangyi.classpp.ui.theme.EditActionLabelGap
 import com.fangyi.classpp.ui.theme.EditActionShape
 import com.fangyi.classpp.ui.theme.EditBarTopPadding
+import com.fangyi.classpp.ui.theme.LocalStatusBarInsets
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.hazeBlur
@@ -126,7 +125,7 @@ fun ScheduleEditBar(
                     Modifier
                 },
             )
-            .windowInsetsPadding(WindowInsets.statusBars),
+            .windowInsetsPadding(LocalStatusBarInsets.current),
     ) {
         Spacer(modifier = Modifier.fillMaxWidth().height(EditBarTopPadding))
         Row(

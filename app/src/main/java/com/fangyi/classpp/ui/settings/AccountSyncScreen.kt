@@ -5,12 +5,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -84,6 +80,7 @@ import com.fangyi.classpp.ui.schools.SchoolUi
 import com.fangyi.classpp.ui.schools.WebViewLoginOutcome
 import com.fangyi.classpp.ui.schools.schoolText
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
+import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -752,10 +749,7 @@ private fun AccountSyncContent(
                     )
                 }
             }
-            val navBarPadding = WindowInsets.navigationBars
-                .only(WindowInsetsSides.Bottom)
-                .asPaddingValues()
-                .calculateBottomPadding()
+            val navBarPadding = LocalNavigationBarHeight.current
 
             val syncState by sync.state.collectAsState()
             // 已缓存的头像（null = 还没抓到/已退出登录）：随同步下载、退出登录更新

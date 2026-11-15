@@ -13,13 +13,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
@@ -83,6 +81,7 @@ import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.Correct
 import com.fangyi.classpp.ui.theme.Error
 import com.fangyi.classpp.ui.theme.LiquidGlassStyle
+import com.fangyi.classpp.ui.theme.LocalStatusBarInsets
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.SettingsCardShape
 import com.fangyi.classpp.ui.theme.WeekCellShape
@@ -498,7 +497,7 @@ fun ScheduleHeader(
                     Modifier
                 },
             )
-            .windowInsetsPadding(WindowInsets.statusBars),
+            .windowInsetsPadding(LocalStatusBarInsets.current),
     ) { measurables, constraints ->
         // 本 Layout 自身用了 fillMaxWidth → 收到的约束是 minWidth == maxWidth，
         // 若原样下发给子项，每个子项都会被撑满整屏（周数胶囊实测宽度也会变成屏宽，

@@ -15,9 +15,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -42,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.BottomSelectSheetShape
+import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
+import com.fangyi.classpp.ui.theme.LocalNavigationBarInsets
 import com.fangyi.classpp.ui.theme.TopBarRowHorizontalPadding
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -179,11 +180,11 @@ fun BottomSelectSheet(
         if (visible && dismissImeOnShow) keyboard?.hide()
     }
     // 键盘让位：键盘弹起时整卡抬到键盘上方（只补 ime 超出导航栏的差值，不与
-    // navigationBarsPadding 双计；弹起当帧就位、收起后与 IME 动画同量级缓回，复用 OverlaySheet
-    // 尾部余量的同一机制）。滚轮卡族键盘恒收起 → 让位量恒 0，渲染与动画不变。
+    // LocalNavigationBarInsets 的底部让位双计；弹起当帧就位、收起后与 IME 动画同量级缓回，
+    // 复用 OverlaySheet 尾部余量的同一机制）。滚轮卡族键盘恒收起 → 让位量恒 0，渲染与动画不变。
     // 让位量必须同时计入 bottomClearancePx：出场滑出量程 = 卡高 + 底部让位，
     // 不含键盘高度的话带键盘收场会滑不到底、卡在半途
-    val navBottomPx = WindowInsets.navigationBars.getBottom(density)
+    val navBottomPx = with(density) { LocalNavigationBarHeight.current.roundToPx() }
     val imeLiftPx = rememberTailReservePx(
         target = (WindowInsets.ime.getBottom(density) - navBottomPx).coerceAtLeast(0),
         imeVisible = rememberImeVisible(),
@@ -242,7 +243,7 @@ fun BottomSelectSheet(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
+                .windowInsetsPadding(LocalNavigationBarInsets.current)
                 // 键盘让位（见 imeLiftPx 声明处）：键盘在场时把卡片整体抬到键盘上方，
                 // 键盘收起后缓回——输入类弹卡因此不会被键盘遮住
                 .padding(bottom = with(density) { imeLiftPx.toDp() })

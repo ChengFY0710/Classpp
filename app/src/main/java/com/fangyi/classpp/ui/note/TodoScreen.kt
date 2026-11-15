@@ -22,12 +22,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -50,7 +47,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -112,6 +108,8 @@ import com.fangyi.classpp.ui.schedule.courseTagColors
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.CardSectionTitleSpacing
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
+import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
+import com.fangyi.classpp.ui.theme.LocalStatusBarHeight
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isDarkTheme
@@ -881,10 +879,7 @@ fun TodoScreen(
                             item(key = "specialEmptyState") {
                                 Box(modifier = Modifier.fillParentMaxSize()) {
                                     if (emptySection == TodoSpecialSection.Trash) {
-                                        val density = LocalDensity.current
-                                        val topInset = with(density) {
-                                            WindowInsets.statusBars.getTop(density).toDp()
-                                        }
+                                        val topInset = LocalStatusBarHeight.current
                                         SheetInfoBanner(
                                             text = stringResource(
                                                 R.string.todo_trash_retention_hint,
@@ -1715,9 +1710,8 @@ private fun TodoInboxContent(
     val sections = remember(todos, sort, sortDescending, today, nowMinute, visibleSections) {
         buildTodoSections(todos, sort, sortDescending, today, nowMinute, visibleSections)
     }
-    val density = LocalDensity.current
-    val topInset = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
-    val bottomInset = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
+    val topInset = LocalStatusBarHeight.current
+    val bottomInset = LocalNavigationBarHeight.current
     // 网格滚动位提升到空结果早返回之前：组清空再恢复时不重置滚动；状态随 CrossPages 的
     // SaveableStateProvider 按页面 key 保活（列表视图与收集箱视图各存各的滚动位）
     val gridState = rememberLazyStaggeredGridState()
@@ -2188,9 +2182,8 @@ private fun TodoList(
         collapsedSections =
             if (section in collapsedSections) collapsedSections - section else collapsedSections + section
     }
-    val density = LocalDensity.current
-    val topInset = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
-    val bottomInset = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
+    val topInset = LocalStatusBarHeight.current
+    val bottomInset = LocalNavigationBarHeight.current
     // 列表状态提升到本组件（RubberBandLazyColumn 本有默认参数，显式传入）：勾选路由要读
     // layoutInfo 判定「飞入已完成组」的落点可见性（见 onCardToggleCompleted）
     val listState = rememberLazyListState()

@@ -19,9 +19,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -89,6 +88,8 @@ import com.fangyi.classpp.ui.note.TodoDetailSheet
 import com.fangyi.classpp.ui.note.rememberAddToAlarm
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
+import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
+import com.fangyi.classpp.ui.theme.LocalNavigationBarInsets
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
@@ -250,7 +251,7 @@ fun AiChatOverlay(
     val density = LocalDensity.current
     // 键盘高出导航栏的预留：光场把可见底边锚在键盘上沿，渐隐带不被 IME 预留撑长
     val imeBottomPx = WindowInsets.ime.getBottom(density)
-    val navBottomPx = WindowInsets.navigationBars.getBottom(density)
+    val navBottomPx = with(density) { LocalNavigationBarHeight.current.roundToPx() }
     val imeReservePx = (imeBottomPx - navBottomPx).coerceAtLeast(0)
     // 键盘可见性：消息列表跟随键盘的触发源（输入栏在钉底槽，不参与内容列的滚动追踪）
     val imeVisible = rememberImeVisible()
@@ -835,7 +836,7 @@ fun AiChatOverlay(
                 0.dp
             }
             // 钉底光场 + 输入栏：光场画在 scrim 之上、输入栏之下；输入栏玻璃采样光场层。
-            // inset 消费顺序：navigationBarsPadding 先吃掉导航栏，imePadding 补键盘高出
+            // inset 消费顺序：底部导航栏让位先吃掉小白条，imePadding 补键盘高出
             // 导航栏的部分。光场自身不参与 inset，随整个槽一起被键盘顶起。
             Box(
                 modifier = Modifier
@@ -873,7 +874,7 @@ fun AiChatOverlay(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .navigationBarsPadding()
+                        .windowInsetsPadding(LocalNavigationBarInsets.current)
                         .imePadding()
                         .padding(top = 12.dp, bottom = 24.dp)
                         .padding(horizontal = PageHorizontalSpacing),

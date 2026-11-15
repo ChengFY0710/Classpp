@@ -8,11 +8,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -23,12 +20,12 @@ import androidx.compose.ui.unit.Dp
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.navigation.GradientOverhang
 import com.fangyi.classpp.ui.navigation.NavReserve
+import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
 
 /** 遮罩总高：系统 inset + 导航胶囊区 + 上沿延伸（几何与 BottomNavBar 同源，见其常量） */
 @Composable
 private fun scrimHeight(): Dp =
-    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
-        NavReserve + GradientOverhang
+    LocalNavigationBarHeight.current + NavReserve + GradientOverhang
 
 /** 渐变本体：底部 Background、向上渐隐到透明（两种显隐模式共用同一材质）。 */
 @Composable

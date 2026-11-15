@@ -6,12 +6,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -60,6 +56,7 @@ import com.fangyi.classpp.ui.schedule.TimeSlot
 import com.fangyi.classpp.ui.schedule.cardHeightMinScale
 import com.fangyi.classpp.ui.schedule.shortestDurationMinutes
 import com.fangyi.classpp.ui.schedule.toUiSlots
+import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
 import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
 import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.ThemeAccent
@@ -185,10 +182,7 @@ fun PersonalizationScreen(
                 }
             }
             // 手势条（小白条）区域：内容可铺到屏幕底，末尾留出这段避免被遮挡
-            val navBarPadding = WindowInsets.navigationBars
-                .only(WindowInsetsSides.Bottom)
-                .asPaddingValues()
-                .calculateBottomPadding()
+            val navBarPadding = LocalNavigationBarHeight.current
 
             // 采样源始终存在：正文列挂 hazeSource，顶栏背后才有内容可采（不可省）
             SettingsScrollContent(

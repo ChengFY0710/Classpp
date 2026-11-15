@@ -75,7 +75,8 @@ import dev.chrisbanes.haze.rememberHazeState
  * 编辑已有课时同样灰显组内其它课占用的周。
  *
  * **UI 层已按设计稿改造为顶栏浮层（见 [OverlaySheet]）**：
- * - 浮层距屏幕顶端 = 设备状态栏高度（`OverlaySheet` 默认读取 `WindowInsets.statusBars`），
+ * - 浮层距屏幕顶端 = 全 app 统一的稳定状态栏高度（`OverlaySheet` 默认读
+ *   `LocalStatusBarHeight`，见 `ui.theme.StableWindowInsets`），
  *   **键盘弹起不改变浮层位置与高度**——
  *   让位发生在滚动内容末尾，容器本身不动；
  * - 顶栏 = 左确认 / 中标题 / 右取消（编辑态删除），背景对滚动内容做渐变模糊并收敛在圆角内；

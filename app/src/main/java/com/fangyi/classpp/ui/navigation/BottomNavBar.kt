@@ -10,16 +10,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +42,8 @@ import com.fangyi.classpp.ui.components.BottomFadeScrim
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.LiquidGlassStyle
+import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
+import com.fangyi.classpp.ui.theme.LocalNavigationBarInsets
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.glassPressFeedback
@@ -129,8 +128,7 @@ fun BottomNavBar(
             // 系统 inset + 胶囊区：遮罩不再属于导航栏，页面滚进胶囊区上方的淡出
             // 由各页面的 BottomFadeScrim 负责
             .height(
-                WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
-                    NavReserve,
+                LocalNavigationBarHeight.current + NavReserve,
             ),
     ) {
         Row(
@@ -138,7 +136,7 @@ fun BottomNavBar(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .padding(horizontal = PillHorizontalPadding)
-                .navigationBarsPadding()
+                .windowInsetsPadding(LocalNavigationBarInsets.current)
                 .padding(bottom = PillBottomOffset)
                 .selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(PillSpacing),

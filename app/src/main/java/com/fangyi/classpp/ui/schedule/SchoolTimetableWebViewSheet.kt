@@ -10,15 +10,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
@@ -48,6 +43,8 @@ import com.fangyi.classpp.data.sync.webview.WebViewTimetableJs
 import com.fangyi.classpp.data.sync.webview.unquoteJsResult
 import com.fangyi.classpp.ui.components.DialogPillButton
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
+import com.fangyi.classpp.ui.theme.LocalNavigationBarInsets
+import com.fangyi.classpp.ui.theme.LocalStatusBarInsets
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -180,7 +177,7 @@ internal fun SchoolTimetableWebViewSheet(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                .windowInsetsPadding(LocalStatusBarInsets.current)
                 .padding(horizontal = PageHorizontalSpacing, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -315,7 +312,7 @@ internal fun SchoolTimetableWebViewSheet(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .navigationBarsPadding()
+                    .windowInsetsPadding(LocalNavigationBarInsets.current)
                     .padding(horizontal = PageHorizontalSpacing, vertical = 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {

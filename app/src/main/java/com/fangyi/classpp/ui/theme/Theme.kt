@@ -284,7 +284,11 @@ fun ClassppTheme(
             CompositionLocalProvider(
                 LocalIndication provides NoOpIndication,
                 LocalRippleConfiguration provides null,
-            ) { content() }
+            ) {
+                // 全 app 的稳定系统栏让位（见 StableWindowInsets.kt）：顶栏 / 浮层 / 列表
+                // 留白 / 底部导航统一从这里取，不再各自跟随系统 insets 的瞬时变化
+                ProvideStableWindowInsets { content() }
+            }
         }
     }
 }

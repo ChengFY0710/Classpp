@@ -21,17 +21,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -175,6 +171,9 @@ import com.fangyi.classpp.ui.schedule.CourseTodoSheet
 import com.fangyi.classpp.ui.schedule.courseTagColors
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.DayCardShape
+import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
+import com.fangyi.classpp.ui.theme.LocalStatusBarHeight
+import com.fangyi.classpp.ui.theme.LocalStatusBarInsets
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.kyant.shapes.RoundedRectangle
@@ -1047,8 +1046,8 @@ internal fun DayScreen(
                 }
             }
     ) {
-        val statusBarDp = WindowInsets.statusBars.asPaddingValues().calculateTopPadding().value
-        val navBarDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding().value
+        val statusBarDp = LocalStatusBarHeight.current.value
+        val navBarDp = LocalNavigationBarHeight.current.value
         val metrics = remember(
             maxWidth.value,
             maxHeight.value,
@@ -1348,7 +1347,7 @@ internal fun DayScreen(
             Row(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .windowInsetsPadding(LocalStatusBarInsets.current)
                     .padding(top = DayHintTopPadding)
                     .graphicsLayer {
                         val alpha = 1f - transition.open
@@ -2305,7 +2304,7 @@ private fun DayTopBar(
                     alpha = contentAlpha()
                     translationY = translationYDp() * density
                 }
-                .windowInsetsPadding(WindowInsets.statusBars),
+                .windowInsetsPadding(LocalStatusBarInsets.current),
         ) {
             Row(
                 modifier = Modifier
