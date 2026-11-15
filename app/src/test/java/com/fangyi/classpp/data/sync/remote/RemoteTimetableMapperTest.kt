@@ -56,7 +56,7 @@ class RemoteTimetableMapperTest {
 
         val dataStructure = schedule.courses.first { it.name == "数据结构" }
         assertEquals("张三、李四", dataStructure.teacher)
-        assertEquals("A101；A102", dataStructure.location)
+        assertEquals("A101、A102", dataStructure.location)
         assertEquals(2, dataStructure.dayOfWeek)
         assertEquals(3, dataStructure.startSlot)
         assertEquals(2, dataStructure.span)

@@ -206,7 +206,7 @@ class XmuJwScheduleMapperTest {
 
         assertEquals(2, schedule.courses.size)
         val merged = schedule.courses.single { it.span == 4 }
-        assertEquals("文宣楼（4号楼）B406；文宣楼（4号楼）B313", merged.location)
+        assertEquals("文宣楼（4号楼）B406、文宣楼（4号楼）B313", merged.location)
         assertEquals("林子雨", merged.teacher)
         assertTrue(ScheduleValidator.validateCourses(schedule).isEmpty())
     }
@@ -230,7 +230,7 @@ class XmuJwScheduleMapperTest {
         assertEquals(1, schedule.courses.size)
         assertEquals("陈锦秀、张琦、罗斌、苏淑文", schedule.courses[0].teacher)
         assertEquals(
-            "文宣楼（4号楼）A404；文宣楼（4号楼）A405；文宣楼（4号楼）A406；文宣楼（4号楼）A407",
+            "文宣楼（4号楼）A404、文宣楼（4号楼）A405、文宣楼（4号楼）A406、文宣楼（4号楼）A407",
             schedule.courses[0].location,
         )
         assertTrue(ScheduleValidator.validateCourses(schedule).isEmpty())
