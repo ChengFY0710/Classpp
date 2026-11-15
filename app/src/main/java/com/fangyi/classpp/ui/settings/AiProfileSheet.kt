@@ -44,10 +44,12 @@ import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-/** 一次「保存为新方案」的挂起信息：保存前的方案 id 集合 + 发起时的草稿，回流后据此选中新增方案 */
+/** 一次「保存为新方案」的挂起信息：保存前的方案 id 集合 + 发起时的草稿 + 草稿来源 */
 private data class PendingProfileSave(
     val knownIds: Set<String>,
     val connection: AiConnection,
+    /** 发起时选中的是「自定义」槽位：Key 已随方案迁走，回流后同步清掉会话内草稿 */
+    val fromCustom: Boolean,
 )
 
 /** 落库回流退让的兜底帧数：回流迟迟未到时按帧挂回，防磨砂被永久停用 */
@@ -64,7 +66,8 @@ private const val HazeCommitFallbackFrames = 30
  *   输入卡，确认即落库；删除先弹确认（方案及其 API Key 一并删除），删除当前选中方案时
  *   自动落回活动项（store 已把活动指针修正到「自定义」或其它方案）；
  * - 下方「连接」分组：服务商预设 / 接口格式（仅自定义服务商可改）+ 服务地址 / API Key
- *   + 末尾「保存为新方案」（只入库不激活，成功后自动选中新方案）；
+ *   + 末尾「保存为新方案」（只入库不激活，成功后自动选中新方案；API Key 随方案一同保存：
+ *   输入框留空时沿用来源条目已存的 Key，来源是「自定义」槽位时迁移后槽位置空）；
  * - 「模型」分组：同一服务商 + Key 可保存多个模型名，SelectCard 点选设为当前模型、
  *   长按行呼出删除菜单，末尾「添加模型名」底部输入卡；新增只入列表（当前模型为空时
  *   首个自动选中），对话浮层输入栏上方也可切换；
@@ -88,7 +91,8 @@ internal fun AiProfileSheet(
     onDismissed: () -> Unit,
     // profileId 为 null = 保存「自定义」槽位
     onApply: (profileId: String?, connection: AiConnection, apiKey: String?) -> Unit,
-    onSaveAs: (name: String, connection: AiConnection, apiKey: String?) -> Unit,
+    // sourceProfileId 为 null = 草稿来自「自定义」槽位（已存 Key 随之迁入新方案并置空槽位）
+    onSaveAs: (name: String, connection: AiConnection, apiKey: String?, sourceProfileId: String?) -> Unit,
     onRename: (id: String, name: String) -> Unit,
     onDelete: (id: String) -> Unit,
     loadCustomConfig: suspend () -> Pair<AiConnection, Boolean>,
@@ -258,6 +262,12 @@ internal fun AiProfileSheet(
         val pending = pendingSave ?: return@LaunchedEffect
         val saved = profiles.firstOrNull { it.id !in pending.knownIds } ?: return@LaunchedEffect
         pendingSave = null
+        if (pending.fromCustom) {
+            // 原「自定义」槽位的 Key 已随方案保存并置空：会话内草稿同步清掉，
+            // 切回自定义时不回显已迁走的 Key，也不会再次写回旧槽位
+            customKeyInput = ""
+            customHadKey = false
+        }
         if (draftConnection == pending.connection) {
             selectedProfileId = saved.id
             draftConnection = saved.connection
@@ -696,9 +706,12 @@ internal fun AiProfileSheet(
                     val normalized = normalizeDraft()
                     if (normalized != null) {
                         nameVisible = false
+                        // 来源在发起时记下：回流后草稿已被自动切到新方案，届时无从判断
+                        val sourceProfileId = selectedProfileId
                         pendingSave = PendingProfileSave(
                             knownIds = profiles.map { it.id }.toSet(),
                             connection = normalized,
+                            fromCustom = sourceProfileId == null,
                         )
                         // 存为新方案：回流新增方案行（结构重写）+ 自动选中再改草稿，同走退让窗口
                         suspendHazeForCommit {
@@ -706,6 +719,7 @@ internal fun AiProfileSheet(
                                 nameDraft.trim(),
                                 normalized,
                                 keyInput.trim().takeIf { it.isNotEmpty() },
+                                sourceProfileId,
                             )
                         }
                     }

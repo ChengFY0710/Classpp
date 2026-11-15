@@ -141,6 +141,19 @@ data class AiConfigSaveOutcome(
 )
 
 /**
+ * 「保存为新方案」时沿用已存 API Key 的来源（[AiChatRepository.createProfile] 的
+ * `apiKey` 为空时生效）：浮层草稿来自哪个条目，Key 就从哪里带进新方案。
+ */
+sealed interface AiProfileKeySource {
+
+    /** 「自定义」槽位：Key 迁入新方案后，槽位里的 Key 一并置空（移动而非复制） */
+    data object CustomSlot : AiProfileKeySource
+
+    /** 已保存方案：Key 复制进新方案，来源方案的 Key 保留 */
+    data class SavedProfile(val id: String) : AiProfileKeySource
+}
+
+/**
  * AI 对话仓库：内存真源（StateFlow）+ 磁盘持久化（[AiChatStore]），与 TodoRepository
  * 同构；流式增量按 33ms 合并后写入消息流（UI 约 30 次/秒刷新）。
  *
@@ -1505,12 +1518,15 @@ class AiChatRepository internal constructor(
 
     /**
      * 保存为新方案：只入库，**不激活**（当前生效配置不变，需在浮层「确认」后才切换）。
-     * [apiKey] 非空时一并加密保存；名称为空返回 null。
+     * API Key 随方案一同保存：优先用 [apiKey]（本次输入），为空时按 [keySource] 沿用
+     * 草稿来源条目已存的 Key。来源是「自定义」槽位且 Key 迁移成功时，槽位里的原 Key
+     * 置空——旧单配置的凭据移到方案库，不再留两份。名称为空返回 null。
      */
     suspend fun createProfile(
         name: String,
         connection: AiConnection,
         apiKey: String?,
+        keySource: AiProfileKeySource? = null,
     ): AiProfile? {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return null
@@ -1523,8 +1539,18 @@ class AiChatRepository internal constructor(
         val saved = withContext(Dispatchers.IO) {
             val profileSaved = settings.saveProfile(profile, activate = false)
             // Key 落盘失败不回滚方案：方案仍在库中，补填 Key 即可，失败原因由 secureAvailable 呈现
-            if (profileSaved && apiKey != null) {
-                settings.saveProfileKey(profile.id, apiKey)
+            if (profileSaved) {
+                val storedKey = when (keySource) {
+                    null -> null
+                    AiProfileKeySource.CustomSlot -> settings.loadCustomKey()
+                    is AiProfileKeySource.SavedProfile -> settings.loadProfileKey(keySource.id)
+                }
+                val keyToSave = apiKey ?: storedKey
+                val keySaved = keyToSave == null || settings.saveProfileKey(profile.id, keyToSave)
+                if (keySource == AiProfileKeySource.CustomSlot && storedKey != null && keySaved) {
+                    // 「自定义」槽位的 Key 已迁入新方案：置空旧槽位，避免两份 Key 各自漂移
+                    settings.saveCustomKey(null)
+                }
             }
             _secureAvailable.value = settings.secureAvailable
             profileSaved

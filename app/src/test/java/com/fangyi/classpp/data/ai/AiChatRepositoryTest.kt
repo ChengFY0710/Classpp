@@ -1710,6 +1710,75 @@ class AiChatRepositoryTest {
     }
 
     @Test
+    fun `createProfile migrates custom key into new profile and clears custom slot`() = runBlocking {
+        val settings = FakeAiSettingsStore(apiKey = "sk-custom")
+        val repo = repository(
+            settings = settings,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+
+        val profile = repo.createProfile(
+            name = "DeepSeek",
+            connection = AiConnection(
+                providerId = "deepseek",
+                baseUrl = "https://api.deepseek.com/v1",
+                model = "deepseek-chat",
+            ),
+            apiKey = null,
+            keySource = AiProfileKeySource.CustomSlot,
+        )!!
+
+        // Key 随方案一同保存，原「自定义」槽位置空（移动而非复制）
+        assertEquals("sk-custom", settings.profileKeys[profile.id])
+        assertNull(settings.loadCustomKey())
+    }
+
+    @Test
+    fun `createProfile prefers typed key and still clears custom slot`() = runBlocking {
+        val settings = FakeAiSettingsStore(apiKey = "sk-custom")
+        val repo = repository(
+            settings = settings,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+
+        val profile = repo.createProfile(
+            name = "DeepSeek",
+            connection = AiConnection(baseUrl = "https://api.deepseek.com/v1", model = "deepseek-chat"),
+            apiKey = "sk-typed",
+            keySource = AiProfileKeySource.CustomSlot,
+        )!!
+
+        assertEquals("sk-typed", settings.profileKeys[profile.id])
+        assertNull(settings.loadCustomKey())
+    }
+
+    @Test
+    fun `createProfile copies key from source profile without clearing it`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val repo = repository(
+            settings = settings,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+        val source = repo.createProfile(
+            name = "A",
+            connection = AiConnection(baseUrl = "https://a.example/v1", model = "a"),
+            apiKey = "sk-a",
+        )!!
+
+        val copy = repo.createProfile(
+            name = "B",
+            connection = AiConnection(baseUrl = "https://b.example/v1", model = "b"),
+            apiKey = null,
+            keySource = AiProfileKeySource.SavedProfile(source.id),
+        )!!
+
+        // 来源方案是复制语义：新方案拿到同一把 Key，来源方案与自定义槽位都不动
+        assertEquals("sk-a", settings.profileKeys[copy.id])
+        assertEquals("sk-a", settings.profileKeys[source.id])
+        assertEquals("sk-test", settings.loadCustomKey())
+    }
+
+    @Test
     fun `updateProfile activates profile and uses its own key`() = runBlocking {
         val settings = FakeAiSettingsStore()
         val repo = repository(

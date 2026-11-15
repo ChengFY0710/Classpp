@@ -47,6 +47,7 @@ import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiConnection
 import com.fangyi.classpp.data.ai.AiDebugTrace
 import com.fangyi.classpp.data.ai.AiProfile
+import com.fangyi.classpp.data.ai.AiProfileKeySource
 import com.fangyi.classpp.data.ai.AiToolTrace
 import com.fangyi.classpp.data.ai.AiTurnTrace
 import com.fangyi.classpp.ui.components.CardSection
@@ -450,9 +451,16 @@ fun AISettingsScreen(
                             }
                         }
                     },
-                    onSaveAs = { name, connection, apiKey ->
+                    onSaveAs = { name, connection, apiKey, sourceProfileId ->
                         scope.launch {
-                            if (repository.createProfile(name, connection, apiKey) != null) {
+                            // Key 随方案一同保存：草稿来自哪个条目就从那里沿用已存 Key，
+                            // 来源是「自定义」槽位时迁移后槽位置空（见 createProfile）
+                            val keySource = if (sourceProfileId != null) {
+                                AiProfileKeySource.SavedProfile(sourceProfileId)
+                            } else {
+                                AiProfileKeySource.CustomSlot
+                            }
+                            if (repository.createProfile(name, connection, apiKey, keySource) != null) {
                                 AppToasts.show(context, profileSavedMessage)
                             } else {
                                 AppToasts.show(context, saveFailedMessage)
