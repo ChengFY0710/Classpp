@@ -735,8 +735,6 @@ fun AiChatOverlay(
     OverlaySheet(
         // 标题置空：对话浮层不显示顶栏标题，只保留左右两颗胶囊
         title = "",
-        // 宿主修饰符（根级挂载时用于层级 zIndex）
-        modifier = modifier,
         // 左上「对话」= 打开「所有对话」管理浮层；没有对话时按钮保持可点、点击无反应
         confirmLabel = stringResource(R.string.ai_sheet_chat),
         confirmIcon = R.drawable.ic_add_circle,

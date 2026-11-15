@@ -763,20 +763,26 @@ class MainActivity : ComponentActivity() {
                             }
 
                             // AI 对话浮层：根级挂载，任 tab 的选中胶囊长按都能唤起；位于页面世界
-                            // 与导航栏之上、设置页覆盖层之下。与导航栏同级 zIndex 且后组合，
-                            // 进出场期间盖住正在下滑的导航栏
+                            // 与导航栏之上、设置页覆盖层之下。整棵浮层树包在一层同级 zIndex 的
+                            // Box 里——浮层内部「所有对话」/待办详情等叠层必须留在同一 z 组内；
+                            // 若只给主浮层挂 zIndex，后组合的叠层会被主浮层压住（管理浮层错位）
                             if (aiChatMounted) {
-                                AiChatOverlay(
-                                    visible = aiChatVisible,
-                                    onDismiss = onAiChatDismiss,
-                                    onDismissed = onAiChatDismissed,
-                                    aiChatRepository = aiChatRepository,
-                                    todoRepository = todoRepository,
-                                    tagRepository = tagRepository,
-                                    scheduleRepository = repository,
-                                    onOpenSettings = onAiChatOpenSettings,
-                                    modifier = Modifier.zIndex(Float.MAX_VALUE),
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .zIndex(Float.MAX_VALUE),
+                                ) {
+                                    AiChatOverlay(
+                                        visible = aiChatVisible,
+                                        onDismiss = onAiChatDismiss,
+                                        onDismissed = onAiChatDismissed,
+                                        aiChatRepository = aiChatRepository,
+                                        todoRepository = todoRepository,
+                                        tagRepository = tagRepository,
+                                        scheduleRepository = repository,
+                                        onOpenSettings = onAiChatOpenSettings,
+                                    )
+                                }
                             }
                         },
                     ) {
