@@ -1,6 +1,5 @@
 package com.fangyi.classpp.data.update
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -15,7 +14,9 @@ import java.io.File
  * - API 26+ 先检查「安装未知应用」授权；未授权时只负责打开系统授权页，
  *   下载/安装由用户授权后重新触发；
  * - 通过既有 `${applicationId}.fileprovider` 授权单个 APK URI，不暴露目录；
- * - 不静默安装、不绕过系统签名校验——签名不一致时由系统安装器拒绝。
+ * - 不静默安装、不绕过系统签名校验——签名不一致时由系统安装器拒绝；
+ * - 授权页与安装器一律跨任务拉起（[Intent.FLAG_ACTIVITY_NEW_TASK]）：系统页面在自己的
+ *   task 里，进出走系统任务切换动画，也不会把系统 Activity 压进本 app 的 task。
  */
 object ApkInstaller {
 
@@ -30,8 +31,7 @@ object ApkInstaller {
         val intent = Intent(
             Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
             "package:${context.packageName}".toUri(),
-        )
-        if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return runCatching { context.startActivity(intent) }.isSuccess
     }
 
@@ -45,8 +45,7 @@ object ApkInstaller {
         )
         val intent = Intent(Intent.ACTION_VIEW)
             .setDataAndType(uri, APK_MIME_TYPE)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
     }.isSuccess
 
