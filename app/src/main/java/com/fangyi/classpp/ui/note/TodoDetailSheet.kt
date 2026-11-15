@@ -104,14 +104,15 @@ private val TitleMenuGap = 12.dp
  * 空值显灰「无」）、备注输入（[SheetTextArea]）、「步骤」分组（列表走 [NoteCard]
  * 右侧勾选框、支持向右滑呼出删除动作卡（双阈值手势见
  * [com.fangyi.classpp.ui.components.NoteCardSwipeLayer]），其下是等高的
- * 「添加步骤」行卡 [AddItemCard]）、「附件」分组（[SettingsCardwithIcon] 多行卡：
- * 点击交宿主用系统 App 打开（同步附件未下载时先下载再打开）、**本机附件**长按弹
- * 「删除附件」菜单（同步附件不可删除，下次同步会恢复），其下是等高的「添加附件」行卡
- * [AddItemCard]——与添加步骤同款，点击拉起系统文件选择器多选）、条件渲染的
+ * 「添加步骤」行卡 [AddItemCard]）、条件渲染的
  * 「重复」分组（[SheetInfoCard] 只读信息行：
  * 重复类型 /（自定义时）重复规则 / 结束，其下一张 [SettingsCard] 的「完成情况」导航行
- * 唤起 [TodoCompletionSheet]——逐日完成状态日历 + 完成率/次数卡）与带标题的「更多信息」
- * 分组（[SheetInfoCard] 时刻戳：分组、创建时间常显、完成时间仅已完成时渲染）。
+ * 唤起 [TodoCompletionSheet]——逐日完成状态日历 + 完成率/次数卡）、带标题的「更多信息」
+ * 分组（[SheetInfoCard] 时刻戳：分组、创建时间常显、完成时间仅已完成时渲染）与最后的
+ * 「附件」分组（[SettingsCardwithIcon] 多行卡：
+ * 点击交宿主用系统 App 打开（同步附件未下载时先下载再打开）、**本机附件**长按弹
+ * 「删除附件」菜单（同步附件不可删除，下次同步会恢复），其下是等高的「添加附件」行卡
+ * [AddItemCard]——与添加步骤同款，点击拉起系统文件选择器多选）。
  *
  * 信息行行首各带 24dp onSurface 图标（[InfoRowIcon]），值色两处按紧急度取色、与
  * 列表卡同源：截止值走 [deadlineColor]（剩 2 天黄 / 1 天橙 / 当天及逾期红 / 其余 primary）、
@@ -411,35 +412,6 @@ internal fun TodoDetailSheet(
                     },
                 )
             }
-            // 附件：多行卡走 SettingsCardwithIcon（本机附件点击打开、长按弹删除菜单；
-            // 同步附件点击才下载再打开、不提供删除），其下是与「添加步骤」同款的添加行卡；
-            // 附件为空时只渲染按钮卡
-            CardSection(title = stringResource(R.string.todo_section_attachments)) {
-                if (todo.attachments.isNotEmpty()) {
-                    SettingsCardwithIcon(
-                        items = todo.attachments.map { attachment ->
-                            SettingsCardwithIconItem(
-                                icon = todoAttachmentIcon(attachment),
-                                label = attachment.name,
-                                onClick = { onAttachmentOpen(attachment) },
-                                // 同步附件只允许点击下载/打开，不长按删除（下次同步会重新出现）
-                                onLongClick = if (attachment.remoteUrl == null) {
-                                    { anchor ->
-                                        attachmentMenuTarget = AttachmentMenuTarget(attachment, anchor)
-                                        attachmentMenuVisible = true
-                                    }
-                                } else {
-                                    null
-                                },
-                            )
-                        },
-                    )
-                }
-                AddItemCard(
-                    label = stringResource(R.string.todo_attachment_add),
-                    onClick = { attachmentPicker.launch(arrayOf("*/*")) },
-                )
-            }
             // 重复：仅设置过重复的待办显示（重复待办 = 一组截止日期不同的虚拟独立待办，
             // 统计按 repeat 规则展开的应完成日期序列计）——信息卡（只读行：类型 / 自定义时
             // 的完整策略 / 结束）+ 完成情况入口卡；逐日状态与计数在完成情况浮层里看
@@ -502,6 +474,35 @@ internal fun TodoDetailSheet(
                             )
                         },
                     ),
+                )
+            }
+            // 附件：多行卡走 SettingsCardwithIcon（本机附件点击打开、长按弹删除菜单；
+            // 同步附件点击才下载再打开、不提供删除），其下是与「添加步骤」同款的添加行卡；
+            // 附件为空时只渲染按钮卡
+            CardSection(title = stringResource(R.string.todo_section_attachments)) {
+                if (todo.attachments.isNotEmpty()) {
+                    SettingsCardwithIcon(
+                        items = todo.attachments.map { attachment ->
+                            SettingsCardwithIconItem(
+                                icon = todoAttachmentIcon(attachment),
+                                label = attachment.name,
+                                onClick = { onAttachmentOpen(attachment) },
+                                // 同步附件只允许点击下载/打开，不长按删除（下次同步会重新出现）
+                                onLongClick = if (attachment.remoteUrl == null) {
+                                    { anchor ->
+                                        attachmentMenuTarget = AttachmentMenuTarget(attachment, anchor)
+                                        attachmentMenuVisible = true
+                                    }
+                                } else {
+                                    null
+                                },
+                            )
+                        },
+                    )
+                }
+                AddItemCard(
+                    label = stringResource(R.string.todo_attachment_add),
+                    onClick = { attachmentPicker.launch(arrayOf("*/*")) },
                 )
             }
         }
