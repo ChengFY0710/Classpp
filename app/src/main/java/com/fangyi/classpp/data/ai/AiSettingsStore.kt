@@ -46,6 +46,13 @@ interface AiSettingsStore {
 
     fun saveToolCapability(key: String, capability: AiToolCapability) {}
 
+    // ---------- 交互（非敏感，明文段） ----------
+
+    /** 长按已选中的底部导航胶囊呼出 AI 对话；默认开启 */
+    fun loadNavAiLongPressEnabled(): Boolean = true
+
+    fun saveNavAiLongPressEnabled(enabled: Boolean): Boolean = true
+
     // ---------- 方案库 ----------
 
     fun loadProfiles(): List<AiProfile>
@@ -128,6 +135,14 @@ class PrefsAiSettingsStore(context: Context) : AiSettingsStore {
     override fun saveToolCapability(key: String, capability: AiToolCapability) {
         prefs.edit().putString(KEY_TOOL_CAPABILITY_PREFIX + key, capability.name).commit()
     }
+
+    @Synchronized
+    override fun loadNavAiLongPressEnabled(): Boolean =
+        prefs.getBoolean(KEY_NAV_AI_LONG_PRESS, true)
+
+    @Synchronized
+    override fun saveNavAiLongPressEnabled(enabled: Boolean): Boolean =
+        prefs.edit().putBoolean(KEY_NAV_AI_LONG_PRESS, enabled).commit()
 
     // ---------- 方案库 ----------
 
@@ -296,6 +311,9 @@ class PrefsAiSettingsStore(context: Context) : AiSettingsStore {
 
         /** 能力缓存键前缀，完整键 = 前缀 + 连接指纹（含 URL，SharedPreferences 键允许任意字符串） */
         const val KEY_TOOL_CAPABILITY_PREFIX = "tool_capability_"
+
+        /** 长按已选中的底部导航胶囊呼出 AI 对话 */
+        const val KEY_NAV_AI_LONG_PRESS = "nav_ai_long_press"
     }
 }
 

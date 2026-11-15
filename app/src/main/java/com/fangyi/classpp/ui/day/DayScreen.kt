@@ -113,7 +113,6 @@ import com.fangyi.classpp.data.TodoReadResult
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.TodoSort
 import com.fangyi.classpp.data.calendar.ChineseDayMarks
-import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.datesCoveredWithin
 import com.fangyi.classpp.data.expandRepeatOccurrences
 import com.fangyi.classpp.data.expandTimelineOccurrences
@@ -130,7 +129,6 @@ import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.sortedFor
 import com.fangyi.classpp.data.withMatchedCourseTag
 import com.fangyi.classpp.ui.LocalToday
-import com.fangyi.classpp.ui.ai.AiChatOverlay
 import com.fangyi.classpp.ui.components.BottomFadeScrim
 import com.fangyi.classpp.ui.components.DayCalendar
 import com.fangyi.classpp.ui.components.DayCalendarFoldState
@@ -270,10 +268,8 @@ internal fun DayScreen(
     todoRepository: TodoRepository? = null,
     scheduleRepository: ScheduleRepository? = null,
     tagRepository: TagRepository? = null,
-    /** AI 对话仓库（顶栏右侧 AI 按钮唤起对话浮层）；null = 预览等无 AI 场景 */
-    aiChatRepository: AiChatRepository? = null,
-    /** 对话浮层的 AI 设置入口：关浮层并让宿主打开设置页的 AI 设置子页 */
-    onOpenAiSettings: () -> Unit = {},
+    /** 顶栏右侧 AI 按钮：唤起宿主（MainActivity）根级的 AI 对话浮层 */
+    onOpenAiChat: () -> Unit = {},
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
     tabTransition: TabTransitionState? = null,
 ) {
@@ -361,10 +357,6 @@ internal fun DayScreen(
     // 浮层两段式：mounted 决定是否在组合里，visible 管进出场——出场播完才移出组合
     var sheetMounted by remember { mutableStateOf(false) }
     var sheetVisible by remember { mutableStateOf(false) }
-    // AI 对话浮层（顶栏右侧 AI 按钮唤起）：两段式约定同图片浮层——visible 驱动进出场，
-    // mounted 管挂载/收场移出组合。AI 设置已迁到设置页，浮层内的设置入口只做跳转
-    var aiChatMounted by remember { mutableStateOf(false) }
-    var aiChatVisible by remember { mutableStateOf(false) }
     // 课程详情浮层：被点课程 id（点上课提醒卡/时间轴上课卡进入）；空 = 未打开。
     // 条目从当前课表反查，课程被删/切课表后反查落空 → 请求清空 → 浮层自动关闭
     //（两段式约定同课表页，宿主块见底部挂载处）
@@ -379,12 +371,12 @@ internal fun DayScreen(
     // 编辑待办浮层：详情顶栏「编辑」进入（快照表单同待办页，叠在详情之上）；空 = 未打开
     var todoEditTargetId by rememberSaveable { mutableStateOf("") }
     var todoEditMounted by remember { mutableStateOf<Todo?>(null) }
-    // 任一浮层（图片/课程详情/待办详情/待办编辑/AI 对话）在场：根级转场手势、
+    // 任一浮层（图片/课程详情/待办详情/待办编辑）在场：根级转场手势、
     // 嵌套滚动接管与内容列表滚动一并闭闸——根级 pointerInput 走 Initial pass，先于浮层
     // 子树拿到事件，不闭闸会把浮层顶栏的下拉关闭抢去驱动 02↔04 转场（浮层自身手势被吞，
-    // 表现为列表跟手）
+    // 表现为列表跟手）。AI 对话浮层已上提到宿主根级，不在此列
     val overlayMounted = sheetMounted || detailMounted != null ||
-        todoDetailMounted != null || todoEditMounted != null || aiChatMounted
+        todoDetailMounted != null || todoEditMounted != null
     LaunchedEffect(overlayMounted) {
         onOverlayOverNavBarChange(overlayMounted)
     }
@@ -1621,11 +1613,8 @@ internal fun DayScreen(
             if (showTopBar || topBarMounted) {
                 DayTopBar(
                     title = topBarTitle,
-                    // AI 对话入口：唤起 AI 对话浮层（两段式同图片浮层）
-                    onChatClick = {
-                        aiChatMounted = true
-                        aiChatVisible = true
-                    },
+                    // AI 对话入口：唤起宿主根级的 AI 对话浮层（与长按选中导航胶囊共用）
+                    onChatClick = onOpenAiChat,
                     height = statusBarDp.dp + DayTopBarRowHeight + DayTopBarGap,
                     contentAlpha = { dayFrame.value.topBarContentAlpha },
                     backgroundAlpha = { dayFrame.value.topBarBackgroundAlpha },
@@ -1889,25 +1878,6 @@ internal fun DayScreen(
                     },
                 )
             }
-        }
-
-        // 10.5) AI 对话浮层（顶栏右侧 AI 按钮唤起）。AI 设置已迁到设置页：浮层内的
-        // 设置入口先收起对话浮层，再经 [onOpenAiSettings] 让宿主打开设置页 AI 子页。
-        // 图片选择浮层挂载顺序仍在其后，保持最顶层（盖住 AI 浮层，含顶栏）。
-        if (aiChatMounted) {
-            AiChatOverlay(
-                visible = aiChatVisible,
-                onDismiss = { aiChatVisible = false },
-                onDismissed = { aiChatMounted = false },
-                aiChatRepository = aiChatRepository,
-                todoRepository = todoRepository,
-                tagRepository = tagRepository,
-                scheduleRepository = scheduleRepository,
-                onOpenSettings = {
-                    aiChatVisible = false
-                    onOpenAiSettings()
-                },
-            )
         }
 
         // 11) 图片选择浮层保持最后挂载，盖住整个页面（含顶栏）。

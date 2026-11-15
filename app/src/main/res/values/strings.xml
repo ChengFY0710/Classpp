@@ -1152,6 +1152,10 @@
     <string name="ai_settings_section_tools">工具调用</string>
     <string name="ai_settings_tools_toggle">允许 AI 查询与修改待办</string>
     <string name="ai_settings_tools_desc">开启后 AI 可按需查询课表、待办与空闲时段，并用工具新建/完成/归档待办、新建分组与标签（修改与删除仍需你确认），连接不支持时会自动回退</string>
+    <string name="ai_settings_section_interaction">交互</string>
+    <string name="ai_settings_nav_ai_long_press_toggle">长按已选中的导航按钮呼出 AI</string>
+    <string name="ai_settings_nav_ai_long_press_desc">开启后长按底部导航中已选中的按钮即可打开 AI 对话浮层</string>
+    <string name="cd_nav_ai_long_press">呼出 AI 对话</string>
     <string name="ai_profile_title">AI 配置方案</string>
     <string name="ai_profile_entry_desc">保存多套服务商/模型配置，随时切换</string>
     <string name="ai_profile_custom">自定义</string>

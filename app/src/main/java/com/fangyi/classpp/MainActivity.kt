@@ -49,6 +49,7 @@ import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.notification.NotificationAlarmReceiver
 import com.fangyi.classpp.data.notification.NotificationScheduler
 import com.fangyi.classpp.ui.LocalToday
+import com.fangyi.classpp.ui.ai.AiChatOverlay
 import com.fangyi.classpp.ui.components.LocalOverlayTopBarBlur
 import com.fangyi.classpp.ui.day.DayInitialData
 import com.fangyi.classpp.ui.day.DayScreen
@@ -260,6 +261,11 @@ class MainActivity : ComponentActivity() {
                     var navBarHiddenByOverlay by rememberSaveable { mutableStateOf(false) }
                     // 新建待办浮层开关：待办页已选中时再点底部导航的「新建」胶囊置真
                     var showNewTodoSheet by rememberSaveable { mutableStateOf(false) }
+                    // AI 对话浮层（日程页顶栏按钮 / 长按已选中的导航胶囊唤起）：浮层必须挂在
+                    // 页面世界之上——页内挂载会被当前 tab 的页层 zIndex 压住，只有日程页可见。
+                    // 两段式约定同页内浮层：visible 驱动进出场，mounted 管收场移出组合
+                    var aiChatMounted by remember { mutableStateOf(false) }
+                    var aiChatVisible by remember { mutableStateOf(false) }
                     val container = rememberAppContainer()
                     val repository = container?.scheduleRepository
                     val todoRepository = container?.todoRepository
@@ -282,6 +288,11 @@ class MainActivity : ComponentActivity() {
                     // null→Ready 的一次翻转；未就绪时 AI 浮层/AI 设置显示加载态
                     val aiChatRepository by container?.aiChatRepository?.collectAsState()
                         ?: remember { mutableStateOf<AiChatRepository?>(null) }
+                    // 长按已选中的导航胶囊呼出 AI：AI 仓库预热完成前按默认开启。
+                    // 开关在 AI 设置页（默认开启），关闭时导航栏不注册长按动作
+                    val navAiLongPressEnabled by aiChatRepository?.navAiLongPressEnabled
+                        ?.collectAsState()
+                        ?: remember { mutableStateOf(true) }
                     // tab 页转场状态机：惰性挂载/常驻/切页动画/停靠页冻结帧回位的全部机制
                     // 见 ui.navigation 的 TabPagerState（原内联于此，纯搬移）
                     val pagerState = rememberTabPagerState()
@@ -324,6 +335,22 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     val onAiSettingsDirectlyOpened = remember { { settingsOpenAi = false } }
+                    // AI 对话浮层：日程页顶栏按钮与长按已选中导航胶囊共用同一实例
+                    val onOpenAiChat = remember {
+                        {
+                            aiChatMounted = true
+                            aiChatVisible = true
+                        }
+                    }
+                    val onAiChatDismiss = remember { { aiChatVisible = false } }
+                    val onAiChatDismissed = remember { { aiChatMounted = false } }
+                    // 浮层内的设置入口：先收起浮层，再直达设置页 AI 子页
+                    val onAiChatOpenSettings = remember {
+                        {
+                            aiChatVisible = false
+                            onOpenAiSettings()
+                        }
+                    }
                     val onNewTodoSheetDismiss = remember { { showNewTodoSheet = false } }
                     // 页面 modifier 同理记忆化：Modifier.fillMaxSize() 每次调用都是新实例，
                     // 内联写在调用点上会让三页在每次切 tab 时都白重组一遍
@@ -565,10 +592,10 @@ class MainActivity : ComponentActivity() {
                     // layerBackdrop 不挂载，采样层零开销
                     val useGlass = glassStyleState.value && Build.VERSION.SDK_INT >= 31
                     val navBackdrop = rememberGlassBackdrop(MaterialTheme.colorScheme.background)
-                    // 导航栏显隐：编辑态 / 页内全屏浮层在场时隐藏（退场动画仍占组合）。
+                    // 导航栏显隐：编辑态 / 页内全屏浮层 / AI 对话浮层在场时隐藏（退场动画仍占组合）。
                     // 采样层只在导航栏真正留在组合里时挂载——退场动画中胶囊仍在屏上取样，
                     // 提前摘层会采到过期底图；完全离场后再摘，长时间编辑/浮层期间采样零开销
-                    val navBarVisible = !editing && !navBarHiddenByOverlay
+                    val navBarVisible = !editing && !navBarHiddenByOverlay && !aiChatMounted
                     val navBarVisibility = remember { MutableTransitionState(navBarVisible) }
                     navBarVisibility.targetState = navBarVisible
                     val navBarMounted =
@@ -633,10 +660,8 @@ class MainActivity : ComponentActivity() {
                                                         scheduleRepository = repository,
                                                         // 待办提醒卡标签配色数据源（与待办页同源）
                                                         tagRepository = tagRepository,
-                                                        // AI 对话（日程页顶栏右侧按钮唤起对话浮层）
-                                                        aiChatRepository = aiChatRepository,
-                                                        // 对话浮层的设置入口：关浮层并直达设置页 AI 子页
-                                                        onOpenAiSettings = onOpenAiSettings,
+                                                        // AI 对话入口：宿主根级浮层，与长按选中导航胶囊共用
+                                                        onOpenAiChat = onOpenAiChat,
                                                         // 选择图片浮层在场时藏底部导航栏（同课表/待办页浮层）
                                                         onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                                                         // tab 转场状态：01/02 的 Haze 冻结层据此重放就位帧
@@ -715,7 +740,7 @@ class MainActivity : ComponentActivity() {
                                     // 退场动画期间仍在组合中，挡掉点击：编辑中途或浮层打开时不许切 tab。
                                     // 待办页已选中时胶囊即「新建」入口：再点呼起新建待办浮层
                                     onTabSelected = { tab ->
-                                        if (!editing && !navBarHiddenByOverlay) {
+                                        if (!editing && !navBarHiddenByOverlay && !aiChatMounted) {
                                             if (tab == pagerState.selectedTab && tab == AppTab.Todo) {
                                                 showNewTodoSheet = true
                                             } else {
@@ -723,6 +748,34 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                     },
+                                    // 长按已选中的胶囊呼出 AI 对话浮层（AI 设置页可关，默认开启）：
+                                    // 与点击同款闸门，编辑态/页内浮层退场期间不响应
+                                    onTabLongPress = if (navAiLongPressEnabled) {
+                                        { _ ->
+                                            if (!editing && !navBarHiddenByOverlay && !aiChatMounted) {
+                                                onOpenAiChat()
+                                            }
+                                        }
+                                    } else {
+                                        null
+                                    },
+                                )
+                            }
+
+                            // AI 对话浮层：根级挂载，任 tab 的选中胶囊长按都能唤起；位于页面世界
+                            // 与导航栏之上、设置页覆盖层之下。与导航栏同级 zIndex 且后组合，
+                            // 进出场期间盖住正在下滑的导航栏
+                            if (aiChatMounted) {
+                                AiChatOverlay(
+                                    visible = aiChatVisible,
+                                    onDismiss = onAiChatDismiss,
+                                    onDismissed = onAiChatDismissed,
+                                    aiChatRepository = aiChatRepository,
+                                    todoRepository = todoRepository,
+                                    tagRepository = tagRepository,
+                                    scheduleRepository = repository,
+                                    onOpenSettings = onAiChatOpenSettings,
+                                    modifier = Modifier.zIndex(Float.MAX_VALUE),
                                 )
                             }
                         },

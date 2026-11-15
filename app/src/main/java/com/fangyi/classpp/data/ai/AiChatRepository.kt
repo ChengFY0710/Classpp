@@ -349,6 +349,10 @@ class AiChatRepository internal constructor(
     private val _toolsEnabled = MutableStateFlow(true)
     val toolsEnabled: StateFlow<Boolean> = _toolsEnabled.asStateFlow()
 
+    /** 长按已选中的底部导航胶囊呼出 AI 对话（设置页可见，默认开启） */
+    private val _navAiLongPressEnabled = MutableStateFlow(true)
+    val navAiLongPressEnabled: StateFlow<Boolean> = _navAiLongPressEnabled.asStateFlow()
+
     // ---------- 生命周期 ----------
 
     /** 从磁盘装载（阻塞 I/O，经 Dispatchers.IO）；对话历史可弃，损坏降级零负担 */
@@ -375,6 +379,8 @@ class AiChatRepository internal constructor(
         // 错误随对话落盘：重新装载后按活跃对话镜像恢复（退出浮层 / 重启后错误条仍在）
         mirrorLastError()
         _toolsEnabled.value = withContext(Dispatchers.IO) { settings.loadToolsEnabled() }
+        _navAiLongPressEnabled.value =
+            withContext(Dispatchers.IO) { settings.loadNavAiLongPressEnabled() }
         // 孤儿图片清理：persist 截最旧/装载降级后，历史已不引用的图片副本不再留着；
         // 宽限期豁免「已导入未发送」的待发送图片（它们还没有消息引用）
         withContext(Dispatchers.IO) {
@@ -483,6 +489,13 @@ class AiChatRepository internal constructor(
             ok
         }
         if (saved) _toolsEnabled.value = enabled
+        return saved
+    }
+
+    /** 设置页「长按已选中的导航胶囊呼出 AI」开关：写设置并同步内存 */
+    suspend fun setNavAiLongPressEnabled(enabled: Boolean): Boolean {
+        val saved = withContext(Dispatchers.IO) { settings.saveNavAiLongPressEnabled(enabled) }
+        if (saved) _navAiLongPressEnabled.value = enabled
         return saved
     }
 

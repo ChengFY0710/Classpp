@@ -122,6 +122,9 @@ fun AISettingsScreen(
     // 原生只读工具总开关：关闭后完全走现有 JSON 回退
     val toolsEnabled by aiChatRepository?.toolsEnabled?.collectAsState()
         ?: remember { mutableStateOf(true) }
+    // 长按已选中的底部导航胶囊呼出 AI 对话：默认开启
+    val navAiLongPressEnabled by aiChatRepository?.navAiLongPressEnabled?.collectAsState()
+        ?: remember { mutableStateOf(true) }
 
     // 仓库非空即 bootstrap 已完成（含 refreshConfigured），首帧可直接展示；
     // null（后台预热未完成）才走加载态
@@ -297,6 +300,28 @@ fun AISettingsScreen(
                                         checked = toolsEnabled,
                                         onCheckedChange = { enabled ->
                                             scope.launch { aiChatRepository.setToolsEnabled(enabled) }
+                                        },
+                                    ),
+                                ),
+                            )
+                        }
+
+                        // 交互：长按已选中的底部导航胶囊呼出 AI 对话（默认开启）
+                        CardSection(title = stringResource(R.string.ai_settings_section_interaction)) {
+                            SettingsCard(
+                                items = listOf(
+                                    SettingsCardItem.Toggle(
+                                        label = stringResource(
+                                            R.string.ai_settings_nav_ai_long_press_toggle,
+                                        ),
+                                        description = stringResource(
+                                            R.string.ai_settings_nav_ai_long_press_desc,
+                                        ),
+                                        checked = navAiLongPressEnabled,
+                                        onCheckedChange = { enabled ->
+                                            scope.launch {
+                                                aiChatRepository.setNavAiLongPressEnabled(enabled)
+                                            }
                                         },
                                     ),
                                 ),

@@ -3,6 +3,7 @@ package com.fangyi.classpp.ui.navigation
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -30,9 +30,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
@@ -98,6 +103,10 @@ val NavBarTransitionHeadroom = 20.dp
  * BottomFadeScrim（ui.components），高度与此处几何常量对齐。
  * 调用方负责对齐（如 Modifier.align(Alignment.BottomCenter)）。
  *
+ * [onTabLongPress] 只为**当前选中**的胶囊注册长按（日程/课表/待办任一选中态），
+ * 未选中胶囊长按无反应；传 null（设置关闭）时长按动作与触感都不挂。
+ * 长按触发时先播 [HapticFeedbackType.LongPress] 触感再回调。
+ *
  * 玻璃样式（[backdrop] 非空时启用，与全 app 玻璃按钮同一判定——调用方经
  * isGlassStyleEnabled 门控、关闭传 null）：胶囊白底改由 Backdrop 液态
  * 玻璃渲染——模糊 + 折射 + 表面染色（选中项主题蓝、未选中白玻璃），选中蓝底指示器
@@ -111,6 +120,7 @@ fun BottomNavBar(
     onTabSelected: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
     backdrop: Backdrop? = null,
+    onTabLongPress: ((AppTab) -> Unit)? = null,
 ) {
     val useGlass = backdrop != null
     Box(
@@ -134,12 +144,19 @@ fun BottomNavBar(
             horizontalArrangement = Arrangement.spacedBy(PillSpacing),
         ) {
             AppTab.entries.forEach { tab ->
+                val selected = tab == selectedTab
                 NavPill(
                     tab = tab,
-                    selected = tab == selectedTab,
+                    selected = selected,
                     useGlass = useGlass,
                     backdrop = backdrop,
                     onClick = { onTabSelected(tab) },
+                    // 仅选中项响应长按：未选中胶囊不注册长按动作
+                    onLongClick = if (selected) {
+                        onTabLongPress?.let { callback -> { callback(tab) } }
+                    } else {
+                        null
+                    },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -154,6 +171,7 @@ private fun NavPill(
     useGlass: Boolean,
     backdrop: Backdrop?,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     // 玻璃模式下选中项转白：染了主题蓝的玻璃上用主题蓝/深色图文都读不清
@@ -175,8 +193,17 @@ private fun NavPill(
     // 选中态的胶囊内容可整体换装（待办 → 新建入口），未定义则与常态相同
     val iconRes = if (selected) tab.selectedIconRes ?: tab.iconRes else tab.iconRes
     val labelRes = if (selected) tab.selectedLabelRes ?: tab.labelRes else tab.labelRes
-    // 按压态的唯一来源：pressFeedback 与 selectable 共用（涟漪由按压反馈取代，故 selectable 不再要 Indication）
+    // 按压态的唯一来源：pressFeedback 与 combinedClickable 共用（涟漪由按压反馈取代，
+    // 故手势不再挂 Indication）
     val pressInteraction = remember { MutableInteractionSource() }
+    // 长按语义：仅启用的选中项声明标签，无障碍朗读与触感同步
+    val isSelected = selected
+    val longClickLabel = if (onLongClick != null) {
+        stringResource(R.string.cd_nav_ai_long_press)
+    } else {
+        null
+    }
+    val haptics = LocalHapticFeedback.current
     Box(
         modifier = modifier
             .height(PillHeight)
@@ -208,11 +235,22 @@ private fun NavPill(
                 style = LiquidGlassStyle.NavPill,
                 tint = surfaceTint,
             )
-            .selectable(
-                selected = selected,
+            // selectable 换成 combinedClickable（长按需与单击同源分流）：按压反馈仍共用
+            // 同一个 interactionSource；Tab 角色与选中态经 semantics 补回，无障碍语义不变
+            .semantics {
+                this.role = Role.Tab
+                this.selected = isSelected
+            }
+            .combinedClickable(
                 interactionSource = pressInteraction,
                 indication = null,
-                role = Role.Tab,
+                onLongClickLabel = longClickLabel,
+                onLongClick = onLongClick?.let { action ->
+                    {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        action()
+                    }
+                },
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,

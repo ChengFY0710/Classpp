@@ -121,12 +121,20 @@ class AiChatRepositoryTest {
         val profileKeys = mutableMapOf<String, String>()
         var activeId: String? = null
         var toolsEnabled: Boolean = true
+        var navAiLongPressEnabled: Boolean = true
         val toolCapabilities = mutableMapOf<String, AiToolCapability>()
 
         override fun loadToolsEnabled(): Boolean = toolsEnabled
 
         override fun saveToolsEnabled(enabled: Boolean): Boolean {
             toolsEnabled = enabled
+            return true
+        }
+
+        override fun loadNavAiLongPressEnabled(): Boolean = navAiLongPressEnabled
+
+        override fun saveNavAiLongPressEnabled(enabled: Boolean): Boolean {
+            navAiLongPressEnabled = enabled
             return true
         }
 
@@ -2803,6 +2811,30 @@ class AiChatRepositoryTest {
         assertFalse(request.jsonBody.contains("已启用只读查询工具"))
         assertEquals("普通回答", repo.messages.value.last().content)
         assertTrue(repo.messages.value.last().toolRounds.isEmpty())
+    }
+
+    @Test
+    fun `nav ai long press loads persisted value on bootstrap`() = runBlocking {
+        val settings = FakeAiSettingsStore().apply { navAiLongPressEnabled = false }
+        val repo = repository(settings = settings, transport = FakeAiTransport())
+
+        assertFalse(repo.navAiLongPressEnabled.value)
+    }
+
+    @Test
+    fun `nav ai long press defaults on and persists toggle`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val repo = repository(settings = settings, transport = FakeAiTransport())
+
+        assertTrue(repo.navAiLongPressEnabled.value)
+
+        assertTrue(repo.setNavAiLongPressEnabled(false))
+        assertFalse(repo.navAiLongPressEnabled.value)
+        assertFalse(settings.navAiLongPressEnabled)
+
+        assertTrue(repo.setNavAiLongPressEnabled(true))
+        assertTrue(repo.navAiLongPressEnabled.value)
+        assertTrue(settings.navAiLongPressEnabled)
     }
 
     @Test
