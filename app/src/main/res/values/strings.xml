@@ -349,9 +349,9 @@
     <string name="sync_last_sync_at">上次同步：%1$s</string>
     <string name="sync_last_sync_never">尚未同步</string>
     <string name="xmu_intro_title">同步课程中心待办</string>
-    <string name="xmu_intro_body">登录厦门大学课程中心后，把未完成的作业同步进待办库，只读取待办列表，不提交作业、不修改任何数据，登录由学校统一身份认证页面完成，App 不保存密码，可随时退出登录并清除数据</string>
+    <string name="xmu_intro_body">登录厦门大学课程中心后，把未完成的作业同步进待办库。只读取待办列表，不提交作业、不修改任何数据；登录由学校统一身份认证页面完成，App 不保存密码；可随时退出登录并清除数据。</string>
     <string name="xmu_intro_timetable_title">导入教务课表</string>
-    <string name="xmu_intro_timetable_body">账号登录后，可从教务系统一键获取本学期课表，自动生成含上课时间与地点的课程，导入只读取课表数据，不会修改教务系统中的任何信息，需使用账号登录（支持自动续期），WebView 登录可在教务课表页面导入</string>
+    <string name="xmu_intro_timetable_body">账号登录后，可从教务系统一键获取本学期课表，自动生成含上课时间与地点的课程；导入只读取课表数据，不会修改教务系统中的任何信息；需使用账号登录（支持自动续期）；WebView 登录可在教务课表页面导入。</string>
     <string name="sync_login_button">去登录</string>
     <string name="sync_now_button">立即同步</string>
     <string name="sync_syncing">正在同步…</string>
@@ -401,7 +401,7 @@
     <string name="sync_auto_login_desc_unavailable">不可用：无法访问系统密钥库</string>
     <string name="sync_login_sheet_title_busy">正在登录</string>
     <string name="sync_login_notes_title">注意事项</string>
-    <string name="xmu_auto_login_warning">登录需要保存你的学号与密码，凭据由 Android Keystore 加密，不随备份迁移，登录只在本机直接与学校认证服务交互，遇到验证码、密码变更或认证失败会立即暂停并删除密码，不会连续重试，请勿在共用设备上登录</string>
+    <string name="xmu_auto_login_warning">登录需要保存你的学号与密码。凭据由 Android Keystore 加密，不随备份迁移；登录只在本机直接与学校认证服务交互。遇到验证码、密码变更或认证失败会立即暂停并删除密码，不会连续重试。请勿在共用设备上登录。</string>
     <string name="xmu_auto_login_username">学号</string>
     <string name="xmu_auto_login_username_hint">统一身份认证账号</string>
     <string name="sync_login_password">密码</string>
@@ -427,7 +427,7 @@
     <string name="sync_error_account_changed">检测到账号变化，请重新登录或清空同步记录</string>
     <string name="sync_logout_confirm_message">退出后将清除登录状态与同步记录，重新登录并同步后，远端仍列出的待办会再次导入</string>
     <string name="sync_switch_message">账号与上次同步的不一致，继续同步需要先清空旧的同步记录，已导入的待办可保留，或一并删除</string>
-    <string name="sync_login_notes">登录需要保存你的账号与密码，凭据由 Android Keystore 加密，不随备份迁移，登录只在本机直接与学校认证服务交互，遇到验证码、密码变更或认证失败会立即暂停并删除密码，不会连续重试，请勿在共用设备上登录</string>
+    <string name="sync_login_notes">登录需要保存你的账号与密码。凭据由 Android Keystore 加密，不随备份迁移；登录只在本机直接与学校认证服务交互。遇到验证码、密码变更或认证失败会立即暂停并删除密码，不会连续重试。请勿在共用设备上登录。</string>
     <string name="sync_login_blank_hint">请先输入账号和密码</string>
     <string name="sync_login_username_label">账号</string>
     <string name="sync_login_username_hint">统一认证账号</string>
@@ -1140,7 +1140,7 @@
     <string name="ai_settings_api_key_saved">已配置，留空保持不变</string>
     <string name="ai_settings_invalid">服务地址与模型名必填</string>
     <string name="ai_settings_saved">已保存</string>
-    <string name="ai_settings_privacy">对话内容与你的课表、待办摘要会发送到你配置的服务商，API Key 经系统安全加密存储，不随备份迁移</string>
+    <string name="ai_settings_privacy">对话内容与你的课表、待办摘要会发送到你配置的服务商；API Key 经系统安全加密存储，不随备份迁移。</string>
     <string name="ai_settings_secure_unavailable">系统安全存储不可用，无法保存 API Key（可重启后再试）</string>
     <string name="ai_settings_clear_history">清空对话历史</string>
     <string name="ai_settings_clear_history_desc">删除本机保存的对话记录，不影响已保存的待办</string>
@@ -1166,7 +1166,7 @@
     <string name="ai_profile_deleted">方案已删除</string>
     <string name="ai_profile_hint_section">提示</string>
     <string name="ai_profile_hint_title">推荐使用具备视觉理解能力的模型</string>
-    <string name="ai_profile_hint_message">发送图片需要视觉模型，如deepseek-flash等，纯文本模型（如 deepseek-pro）收到图片会返回错误</string>
+    <string name="ai_profile_hint_message">发送图片需要视觉模型，如deepseek-flash等；纯文本模型（如 deepseek-pro）收到图片会返回错误。</string>
 
     <!-- 首页「今日课程」小组件（4×2）：组件名 / 选择器描述 / 头部与行文案 -->
     <string name="widget_today_label">今日课程</string>
