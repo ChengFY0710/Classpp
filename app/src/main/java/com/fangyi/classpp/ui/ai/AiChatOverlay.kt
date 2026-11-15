@@ -79,13 +79,13 @@ import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.components.rememberImeVisible
-import com.fangyi.classpp.ui.components.rememberTodoAttachmentOpener
-import com.fangyi.classpp.ui.components.todoAttachmentSources
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.rememberSystemAnimationsEnabled
 import com.fangyi.classpp.ui.note.NewTodoSheet
 import com.fangyi.classpp.ui.note.TodoDetailSheet
 import com.fangyi.classpp.ui.note.rememberAddToAlarm
+import com.fangyi.classpp.ui.note.rememberTodoAttachmentOpener
+import com.fangyi.classpp.ui.note.todoAttachmentSources
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight

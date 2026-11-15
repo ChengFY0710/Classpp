@@ -137,8 +137,6 @@ import com.fangyi.classpp.ui.components.DayTodoAlert
 import com.fangyi.classpp.ui.components.LoadingOverlay
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
-import com.fangyi.classpp.ui.components.rememberTodoAttachmentOpener
-import com.fangyi.classpp.ui.components.todoAttachmentSources
 import com.fangyi.classpp.ui.motion.DragDirection
 import com.fangyi.classpp.ui.motion.DragDirectionLock
 import com.fangyi.classpp.ui.motion.FreezeFrame
@@ -163,8 +161,10 @@ import com.fangyi.classpp.ui.note.TodoDetailSheet
 import com.fangyi.classpp.ui.note.deadlineColor
 import com.fangyi.classpp.ui.note.rememberAddToAlarm
 import com.fangyi.classpp.ui.note.rememberCalendarAddState
+import com.fangyi.classpp.ui.note.rememberTodoAttachmentOpener
 import com.fangyi.classpp.ui.note.repeatCardText
 import com.fangyi.classpp.ui.note.toAbsoluteDateText
+import com.fangyi.classpp.ui.note.todoAttachmentSources
 import com.fangyi.classpp.ui.schedule.CourseColor
 import com.fangyi.classpp.ui.schedule.CourseDetailSheet
 import com.fangyi.classpp.ui.schedule.CourseTodoSheet

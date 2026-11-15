@@ -1,6 +1,5 @@
-package com.fangyi.classpp.ui.components
+package com.fangyi.classpp.ui.note
 
-import android.app.Activity
 import android.content.ClipData
 import android.content.ContentResolver
 import android.content.Context
@@ -56,15 +55,19 @@ internal suspend fun todoAttachmentSources(
  * 用系统 App 打开附件：FileProvider 生成 content URI（路径见 res/xml/file_paths.xml 的
  * `todo_attachments`），ACTION_VIEW + MIME + 读授权 + ClipData 兜住需要 clipData 才认授权的
  * 接收方。没有可处理的应用 / Provider 路径不匹配等异常统一返回 false，由调用方 Toast。
+ *
+ * 一律带 [Intent.FLAG_ACTIVITY_NEW_TASK] 让查看器落在自己的 task：不带时目标 Activity 会
+ * 压进本 app 的 task（Activity.startActivity 的约定），task 没有切换，系统不会播放跨任务的
+ * 应用打开/切换动画，只有任务内转场（通常是一帧切过去）。FileProvider 的读授权跟着 Intent
+ * 走，不受任务归属影响；返回时走系统任务切换动画，最近任务里的身份也归查看器自己。
  */
 internal fun openTodoAttachment(context: Context, file: File, mimeType: String): Boolean = runCatching {
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     val intent = Intent(Intent.ACTION_VIEW)
         .setDataAndType(uri, mimeType.ifBlank { "application/octet-stream" })
-        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
     // 部分接收方只认 clipData 里的 URI 授权；setClipData 在新 SDK 返回 Unit，单独赋值
     intent.clipData = ClipData.newRawUri(null, uri)
-    if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     context.startActivity(intent)
 }.isSuccess
 
