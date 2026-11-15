@@ -1141,14 +1141,13 @@
     <string name="ai_settings_model_hint">如 deepseek-chat</string>
     <string name="ai_settings_section_models">模型</string>
     <string name="ai_settings_model_add">添加模型名</string>
-    <string name="ai_settings_models_empty">尚未添加模型名</string>
-    <string name="ai_settings_model_required">请添加至少一个模型名</string>
     <string name="ai_settings_model_duplicate">该模型已存在</string>
+    <string name="ai_settings_model_empty">模型名不能为空</string>
     <string name="cd_ai_switch_model">切换模型，当前 %1$s</string>
     <string name="ai_settings_api_key">API Key</string>
     <string name="ai_settings_api_key_hint">sk-…</string>
     <string name="ai_settings_api_key_saved">已配置，留空保持不变</string>
-    <string name="ai_settings_invalid">服务地址与模型名必填</string>
+    <string name="ai_settings_invalid">服务地址必须以 http 开头</string>
     <string name="ai_settings_saved">已保存</string>
     <string name="ai_settings_privacy">对话内容与你的课表、待办摘要会发送到你配置的服务商；API Key 经系统安全加密存储，不随备份迁移。</string>
     <string name="ai_settings_secure_unavailable">系统安全存储不可用，无法保存 API Key（可重启后再试）</string>

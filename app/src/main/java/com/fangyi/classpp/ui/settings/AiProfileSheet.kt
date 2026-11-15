@@ -75,8 +75,9 @@ private const val HazeCommitFallbackFrames = 30
  * - 确认时先做本地校验（服务地址 http 开头、至少一个模型名），失败 toast 并保留浮层；
  *   Key 缺失由宿主回调判定（保存后仍无可用 Key → 提示并保留浮层）。
  *
- * 容器为 [OverlaySheet]，取消在左、确认在右（同课程时间方案浮层）；底部输入卡与删除弹窗
- * 均为两段式挂载，在场时经 covered 让本浮层缩小后退。
+ * 容器为 [OverlaySheet]，取消在左、确认在右（同课程时间方案浮层）；底部输入卡为两段式挂载，
+ * 在场时经 covered 让本浮层缩小后退；删除确认是整屏压暗的 [FadeOverlayDialog]，层级已由
+ * 遮罩表达，本浮层保持原位不缩小（同课表切换浮层的删除确认）。
  *
  * Haze 退让：切换服务商预设与确认类落库（改名 / 存为新方案 / 删除）会在 Haze 效果节点
  * 在场时同帧或随仓库回流重写采样源结构，重写窗口内整条链退让为静态底材、落定两帧后
@@ -104,6 +105,7 @@ internal fun AiProfileSheet(
 
     val customLabel = stringResource(R.string.ai_profile_custom)
     val invalidMessage = stringResource(R.string.ai_settings_invalid)
+    val modelEmptyMessage = stringResource(R.string.ai_settings_model_empty)
     val duplicateModelMessage = stringResource(R.string.ai_settings_model_duplicate)
     val renameLabel = stringResource(R.string.edit_rename)
     val deleteLabel = stringResource(R.string.edit_delete)
@@ -117,7 +119,6 @@ internal fun AiProfileSheet(
     var keyInput by remember { mutableStateOf("") }
     var hadKey by remember { mutableStateOf(false) }
     var baseUrlInvalid by remember { mutableStateOf(false) }
-    var modelInvalid by remember { mutableStateOf(false) }
 
     // 「自定义」槽位的会话内草稿：切去已保存方案再切回时恢复
     var customConnection by remember { mutableStateOf(AiConnection()) }
@@ -153,9 +154,8 @@ internal fun AiProfileSheet(
         if (selectedProfileId == null) customKeyInput = value
     }
 
-    fun clearErrors() {
+    fun clearBaseUrlError() {
         baseUrlInvalid = false
-        modelInvalid = false
     }
 
     fun normalizeDraft(): AiConnection? {
@@ -173,10 +173,16 @@ internal fun AiProfileSheet(
             }
         // 规范化结果写回草稿：后续「保存为新方案」的 pendingSave 比较才能与落库值一致
         updateDraft(normalized)
+        // 两类必填分开提示：合并成一条文案时，用户看不出到底缺的是哪一项
         baseUrlInvalid = !trimmedUrl.startsWith("http")
-        modelInvalid = normalized.model.isBlank()
-        if (baseUrlInvalid || modelInvalid) {
+        if (baseUrlInvalid) {
             AppToasts.show(context, invalidMessage)
+            return null
+        }
+        // 模型列表为空才会走到这里（列表非空时上面已回填首个模型）：
+        // 拦下确认 / 保存为新方案，提示到具体字段
+        if (normalized.model.isBlank()) {
+            AppToasts.show(context, modelEmptyMessage)
             return null
         }
         return normalized
@@ -198,7 +204,7 @@ internal fun AiProfileSheet(
             val keyPresent = loadProfileKeyPresent(profile.id)
             if (selectedProfileId == profile.id) hadKey = keyPresent
         }
-        clearErrors()
+        clearBaseUrlError()
     }
 
     fun openRename(profile: AiProfile) {
@@ -273,14 +279,16 @@ internal fun AiProfileSheet(
             draftConnection = saved.connection
             keyInput = ""
             hadKey = loadProfileKeyPresent(saved.id)
-            clearErrors()
+            clearBaseUrlError()
         }
     }
 
     val customIndex = profiles.size
     val selectedIndex = profiles.indexOfFirst { it.id == selectedProfileId }
         .takeIf { it >= 0 } ?: customIndex
-    val covered = nameVisible || deleteDialogVisible || modelInputVisible
+    // 只有底部输入卡让本浮层缩小后退：删除确认是整屏压暗的 FadeOverlayDialog，遮罩本身
+    // 已表达层级，本浮层保持原位（缩小反而是同一动作的重复表达）
+    val covered = nameVisible || modelInputVisible
     val sheetHazeState = rememberHazeState()
 
     // —— Haze 退让窗口（RenderThread SIGSEGV 防御，同 AiChatOverlay 的对话切换退让）——
@@ -371,7 +379,6 @@ internal fun AiProfileSheet(
                     models = draftConnection.modelOptions + trimmed,
                 ),
             )
-            modelInvalid = false
         }
     }
 
@@ -391,7 +398,6 @@ internal fun AiProfileSheet(
                     models = remaining,
                 ),
             )
-            modelInvalid = false
         }
     }
 
@@ -453,7 +459,6 @@ internal fun AiProfileSheet(
                                     protocol = preset.protocol,
                                 ),
                             )
-                            modelInvalid = false
                         }
                     }
                 },
@@ -602,24 +607,9 @@ internal fun AiProfileSheet(
             // C. 模型列表：点选设为当前模型，长按行呼出菜单删除
             CardSection(title = stringResource(R.string.ai_settings_section_models)) {
                 val modelOptions = draftConnection.modelOptions
-                if (modelOptions.isEmpty()) {
-                    SettingsCard(
-                        items = listOf(
-                            SettingsCardItem.Custom(
-                                // 空列表是校验失败时唯一可能的形态：直接把这行文案换成错误提示，
-                                // 避免在校验时插入/移除文本节点重写 Haze 采样源结构
-                                label = stringResource(
-                                    if (modelInvalid) {
-                                        R.string.ai_settings_model_required
-                                    } else {
-                                        R.string.ai_settings_models_empty
-                                    },
-                                ),
-                            ),
-                        ),
-                        hazeState = cardHazeState,
-                    )
-                } else {
+                // 空列表不出占位卡：没有模型时只保留下方「添加模型名」入口，
+                // 缺模型的校验由保存 / 确认时的 toast 提示
+                if (modelOptions.isNotEmpty()) {
                     val selectedIndex = modelOptions.indexOfFirst {
                         it.equals(draftConnection.model, ignoreCase = true)
                     }

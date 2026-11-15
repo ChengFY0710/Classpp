@@ -16,6 +16,15 @@
 - 分组纵向节奏只由 `ui/theme` 的 `CardSectionSpacing` / `CardSectionTitleSpacing` 统一决定
   （当前卡↔卡与标题↔首卡均为 10dp）；不得为实现局部视觉而在调用点覆盖。
 
+## 浮层层级动效规范
+- `FadeOverlayDialog`（整屏压暗的页内居中对话框）永不触发 `OverlaySheet` 缩小后退：
+  调用点传 `OverlaySheet(covered = ...)` 时，一律不得把 `FadeOverlayDialog` 的可见态 /
+  挂载态并入 `covered`。
+- 层级由 `FadeOverlayDialog` 自带的整屏遮罩表达，浮层保持原位即可；再叠一层缩小后退
+  是对同一动作的重复表达。
+- `covered` 只用于「上层是浮层或底部弹卡」的叠层场景（另一个 `OverlaySheet`、
+  `BottomSelectSheet` 及其上搭的 `BottomTextFieldCard` 输入卡），此时两层同帧同曲线反向播放。
+
 ## Haze 磨砂规范
 - 禁用 `HazeSourceSelection.All`。所有 `HazeInput.Sources` 一律使用 `HazeSourceSelection.Behind`
   （Haze 2 默认值）：只采样 z 序位于最近祖先 hazeSource 之后的源（无匹配祖先时回退为全部源），

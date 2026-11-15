@@ -103,8 +103,8 @@ private val NewTagColorPalette = listOf(
  *
  * 模式差异：标题「新建待办」/「编辑待办」；左上胶囊「取消」/ 红色「删除」（[onDelete] 非空时，
  * 同 AddCoursePanel）。删除先弹 [DeleteTodoConfirmDialog] 应用内二次确认（破坏性操作，
- * 同课表删除确认），确认才回调 [onDelete]；弹窗在场时本浮层经 [OverlaySheet] 的 covered
- * 缩小后退（同分层动效）。编辑初值整体回填。
+ * 同课表删除确认），确认才回调 [onDelete]；弹窗是整屏压暗的页内对话框，层级由遮罩表达，
+ * 本浮层保持原位不缩小（项目规范：FadeOverlayDialog 永不触发 covered）。编辑初值整体回填。
  *
  * 表单按浮层内容规范排版：顶层块一律 [CardSection]——待办名是孤立的输入卡，收进无题分组；
  * 其余按语义分组：分组（[SettingsCardwithIcon] 待办分组入口 → [GroupPickSheet] 选择分组浮层）→
@@ -197,7 +197,8 @@ internal fun NewTodoSheet(
     BackHandlerHidesKeyboard(onBack = onDismiss)
 
     // 删除二次确认：期望态 + 挂载态两段式（同浮层）；确认/取消先清请求播淡出，播完才卸载。
-    // 声明在 OverlaySheet 之前：确认框在场时经 covered 让本浮层缩小后退（分层动效）
+    // 确认框是整屏压暗的 FadeOverlayDialog，不参与 covered——弹窗盖上来时本浮层保持原位
+    //（项目规范：FadeOverlayDialog 永不触发 OverlaySheet 缩小后退）
     var deleteRequested by remember { mutableStateOf(false) }
     var deleteMounted by remember { mutableStateOf(false) }
     if (deleteRequested) deleteMounted = true
@@ -337,7 +338,9 @@ internal fun NewTodoSheet(
         },
         onDismiss = onDismiss,
         visible = visible,
-        covered = deleteRequested || deadlineSheetVisible || customDateVisible || rangeTimeVisible ||
+        // 删除确认框是整屏压暗的 FadeOverlayDialog：层级由遮罩表达，不并入 covered
+        //（项目规范：FadeOverlayDialog 永不触发 OverlaySheet 缩小后退）
+        covered = deadlineSheetVisible || customDateVisible || rangeTimeVisible ||
             groupPickVisible || repeatVisible || colorPickVisible,
         onDismissed = onDismissed,
         imeBehavior = SheetImeBehavior.ContentScroll,
