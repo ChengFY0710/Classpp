@@ -423,6 +423,7 @@ fun DataManagementScreen(
                         manifest.counts.tags,
                         manifest.counts.dayImages,
                         manifest.counts.aiMessages,
+                        manifest.counts.attachments,
                     )
                 } else {
                     ""

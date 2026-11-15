@@ -1,6 +1,7 @@
 package com.fangyi.classpp.data.backup
 
 import com.fangyi.classpp.data.ScheduleJson
+import com.fangyi.classpp.data.store.TodoAttachmentStore
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
@@ -25,11 +26,12 @@ class BackupArchiveException(message: String) : Exception(message)
  * data/ai_chat.json         AI 对话整库（AiChatFile）
  * data/day_images.json      背景图图库元数据（BackupDayImages）
  * images/<name>.jpg         背景图原文件（逐张流式写入，不攒内存）
+ * attachments/<id>/<name>   待办附件原文件（逐条流式写入，不攒内存）
  * ```
  *
- * 安全约束：只接受上述白名单 entry 名；图片名必须是纯文件名（无路径分隔符），
- * 因此解压天然不会写出目标目录（zip-slip）。单 entry 与整包解压体积都设上限，
- * 防压缩炸弹。
+ * 安全约束：只接受上述白名单 entry 名；图片名必须是纯文件名（无路径分隔符），附件
+ * entry 必须是 `<安全附件 id>/<安全纯文件名>` 两段，因此解压天然不会写出目标目录
+ * （zip-slip）。单 entry 与整包解压体积都设上限，防压缩炸弹。
  */
 object BackupArchive {
     const val ENTRY_MANIFEST = "manifest.json"
@@ -39,6 +41,7 @@ object BackupArchive {
     const val ENTRY_AI_CHAT = "data/ai_chat.json"
     const val ENTRY_DAY_IMAGES = "data/day_images.json"
     const val IMAGE_ENTRY_PREFIX = "images/"
+    const val ATTACHMENT_ENTRY_PREFIX = "attachments/"
 
     /** manifest 上限：正常只有几百字节，超过视为损坏 */
     private const val MaxManifestBytes = 1L * 1024 * 1024
@@ -58,7 +61,16 @@ object BackupArchive {
         ENTRY_DAY_IMAGES,
     )
 
-    /** 导出所需内容：各整库 JSON 文本 + 图片源目录与文件名列表 */
+    /** 备份内的一个待办附件：附件 id 即目录名，[fileName] 是私有目录内的安全文件名 */
+    data class AttachmentRef(
+        val id: String,
+        val fileName: String,
+    ) {
+        /** 包内相对路径（不含 [ATTACHMENT_ENTRY_PREFIX]）：`<id>/<fileName>` */
+        val relativePath: String get() = "$id/$fileName"
+    }
+
+    /** 导出所需内容：各整库 JSON 文本 + 背景图 / 附件源目录与文件列表 */
     data class Payload(
         val manifest: BackupManifest,
         val schedulesJson: String,
@@ -68,6 +80,8 @@ object BackupArchive {
         val dayImagesJson: String,
         val imageDir: File,
         val imageNames: List<String>,
+        val attachmentDir: File? = null,
+        val attachments: List<AttachmentRef> = emptyList(),
     )
 
     /** 按固定结构写出 ZIP；流由调用方提供（导出走 contentResolver） */
@@ -104,6 +118,23 @@ object BackupArchive {
                 val file = File(payload.imageDir, name)
                 if (!file.isFile) throw BackupArchiveException("missing image: $name")
                 zip.putNextEntry(ZipEntry(IMAGE_ENTRY_PREFIX + name))
+                file.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
+
+            // 待办附件逐条流式写入；源文件缺失 / 路径非法直接判失败，不生成残缺备份。
+            // 调用方（BackupManager）负责只收集仍存在的附件并把缺失项从导出的 todos 里剔除
+            payload.attachments.distinctBy { it.relativePath }.forEach { attachment ->
+                val attachmentDir = payload.attachmentDir
+                    ?: throw BackupArchiveException("missing attachment dir")
+                if (!isSafeAttachmentEntry(attachment.relativePath)) {
+                    throw BackupArchiveException("unsafe attachment: ${attachment.relativePath}")
+                }
+                val file = File(attachmentDir, attachment.relativePath)
+                if (!file.isFile) {
+                    throw BackupArchiveException("missing attachment: ${attachment.relativePath}")
+                }
+                zip.putNextEntry(ZipEntry(ATTACHMENT_ENTRY_PREFIX + attachment.relativePath))
                 file.inputStream().use { it.copyTo(zip) }
                 zip.closeEntry()
             }
@@ -175,10 +206,26 @@ object BackupArchive {
         return true
     }
 
+    /**
+     * 附件 entry 相对路径安全判定：必须恰好是 `<附件 id>/<纯文件名>` 两段，
+     * 且两段分别通过附件私有目录的 id / 文件名安全规则（复用 TodoAttachmentStore）。
+     */
+    fun isSafeAttachmentEntry(relativePath: String): Boolean {
+        val parts = relativePath.split('/')
+        if (parts.size != 2) return false
+        return TodoAttachmentStore.isSafeId(parts[0]) &&
+            TodoAttachmentStore.isSafeFileName(parts[1])
+    }
+
     private fun isAllowedEntry(name: String): Boolean {
         if (name in FixedEntries) return true
-        if (!name.startsWith(IMAGE_ENTRY_PREFIX)) return false
-        return isSafeImageName(name.removePrefix(IMAGE_ENTRY_PREFIX))
+        if (name.startsWith(IMAGE_ENTRY_PREFIX)) {
+            return isSafeImageName(name.removePrefix(IMAGE_ENTRY_PREFIX))
+        }
+        if (name.startsWith(ATTACHMENT_ENTRY_PREFIX)) {
+            return isSafeAttachmentEntry(name.removePrefix(ATTACHMENT_ENTRY_PREFIX))
+        }
+        return false
     }
 
     private fun ZipOutputStream.writeText(text: String) {

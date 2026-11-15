@@ -179,7 +179,7 @@
     <string name="data_management_import">Import backup</string>
     <string name="data_management_import_desc">Restore from a backup file; replaces all current user data</string>
     <string name="data_management_import_confirm_title">Import backup?</string>
-    <string name="data_management_import_confirm_message">This will replace all current data with the backup: %1$d schedules, %2$d todos, %3$d tags, %4$d wallpapers, %5$d AI messages. This cannot be undone.</string>
+    <string name="data_management_import_confirm_message">This will replace all current data with the backup: %1$d schedules, %2$d todos, %3$d tags, %4$d wallpapers, %5$d AI messages, %6$d attachments. This cannot be undone.</string>
     <string name="data_management_import_confirm_action">Replace &amp; import</string>
     <string name="data_management_import_done">Import complete</string>
     <string name="data_management_import_failed">Import failed; current data is unchanged</string>

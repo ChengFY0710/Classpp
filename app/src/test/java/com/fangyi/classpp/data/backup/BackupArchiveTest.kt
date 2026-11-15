@@ -8,6 +8,7 @@ import com.fangyi.classpp.data.ai.AiConversation
 import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.TagFile
+import com.fangyi.classpp.data.model.TodoAttachment
 import com.fangyi.classpp.data.model.TodoFile
 import com.fangyi.classpp.data.testSchedule
 import com.fangyi.classpp.data.testTodo
@@ -18,6 +19,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -31,10 +33,19 @@ class BackupArchiveTest {
     @get:Rule
     val folder = TemporaryFolder()
 
-    private fun payload(imageNames: List<String> = emptyList()): BackupArchive.Payload {
+    private fun payload(
+        imageNames: List<String> = emptyList(),
+        attachments: List<BackupArchive.AttachmentRef> = emptyList(),
+    ): BackupArchive.Payload {
         val imageDir = folder.newFolder("images-src")
         imageNames.forEach { name ->
             File(imageDir, name).writeBytes(byteArrayOf(0x11, 0x22, 0x33))
+        }
+        val attachmentDir = folder.newFolder("attachments-src")
+        attachments.forEach { attachment ->
+            val file = File(attachmentDir, attachment.relativePath)
+            file.parentFile?.mkdirs()
+            file.writeBytes(byteArrayOf(0x44, 0x55))
         }
         return BackupArchive.Payload(
             manifest = BackupManifest(
@@ -47,13 +58,30 @@ class BackupArchiveTest {
                     tags = 1,
                     aiMessages = 1,
                     dayImages = imageNames.size,
+                    attachments = attachments.size,
                 ),
             ),
             schedulesJson = ScheduleJson.encodeStorage(
                 ScheduleFile(schedules = listOf(testSchedule())),
             ),
             todosJson = ScheduleJson.encodeStorage(
-                TodoFile(todos = listOf(testTodo(id = "t1", name = "高数作业"))),
+                TodoFile(
+                    todos = listOf(
+                        testTodo(
+                            id = "t1",
+                            name = "高数作业",
+                            attachments = attachments.map {
+                                TodoAttachment(
+                                    id = it.id,
+                                    name = it.fileName,
+                                    fileName = it.fileName,
+                                    mimeType = "application/octet-stream",
+                                    sizeBytes = 2,
+                                )
+                            },
+                        ),
+                    ),
+                ),
             ),
             tagsJson = ScheduleJson.encodeStorage(
                 TagFile(tags = listOf(TagEntry(name = "数学"))),
@@ -83,6 +111,8 @@ class BackupArchiveTest {
             ),
             imageDir = imageDir,
             imageNames = imageNames,
+            attachmentDir = attachmentDir,
+            attachments = attachments,
         )
     }
 
@@ -92,7 +122,11 @@ class BackupArchiveTest {
     @Test
     fun `write then extract roundtrips all entries`() {
         val names = listOf("a.jpg", "b.jpg")
-        val bytes = writeToBytes(payload(names))
+        val attachments = listOf(
+            BackupArchive.AttachmentRef(id = "att-1", fileName = "报告.pdf"),
+            BackupArchive.AttachmentRef(id = "att-2", fileName = "截图 1.png"),
+        )
+        val bytes = writeToBytes(payload(names, attachments))
         val target = folder.newFolder("extracted")
 
         BackupArchive.extract(ByteArrayInputStream(bytes), target)
@@ -106,6 +140,7 @@ class BackupArchiveTest {
             File(target, BackupArchive.ENTRY_TODOS).readText(),
         )
         assertEquals("高数作业", todos.todos.single().name)
+        assertEquals(attachments.map { it.id }, todos.todos.single().attachments.map { it.id })
 
         val tags = ScheduleJson.decodeStorage<TagFile>(
             File(target, BackupArchive.ENTRY_TAGS).readText(),
@@ -129,14 +164,22 @@ class BackupArchiveTest {
                 File(target, BackupArchive.IMAGE_ENTRY_PREFIX + name).readBytes(),
             )
         }
+        attachments.forEach { attachment ->
+            assertArrayEquals(
+                byteArrayOf(0x44, 0x55),
+                File(target, BackupArchive.ATTACHMENT_ENTRY_PREFIX + attachment.relativePath).readBytes(),
+            )
+        }
     }
 
     @Test
     fun `readManifest returns manifest without extracting images`() {
-        val bytes = writeToBytes(payload(listOf("a.jpg")))
+        val attachments = listOf(BackupArchive.AttachmentRef(id = "att-1", fileName = "报告.pdf"))
+        val bytes = writeToBytes(payload(listOf("a.jpg"), attachments))
         val manifest = BackupArchive.readManifest(ByteArrayInputStream(bytes))
         assertEquals(BACKUP_KIND, manifest?.kind)
         assertEquals(1, manifest?.counts?.dayImages)
+        assertEquals(1, manifest?.counts?.attachments)
         assertTrue(manifest!!.isSupported())
     }
 
@@ -195,6 +238,34 @@ class BackupArchiveTest {
         assertTrue(!BackupArchive.isSafeImageName(".."))
         assertTrue(!BackupArchive.isSafeImageName("dir/a.jpg"))
         assertTrue(!BackupArchive.isSafeImageName("dir\\a.jpg"))
+    }
+
+    @Test
+    fun `attachment entry guard requires exactly two safe segments`() {
+        assertTrue(BackupArchive.isSafeAttachmentEntry("att-1/report.pdf"))
+        assertTrue(BackupArchive.isSafeAttachmentEntry("att_2/截图 1.png"))
+        assertFalse(BackupArchive.isSafeAttachmentEntry(""))
+        assertFalse(BackupArchive.isSafeAttachmentEntry("../report.pdf"))
+        assertFalse(BackupArchive.isSafeAttachmentEntry("att-1/../report.pdf"))
+        assertFalse(BackupArchive.isSafeAttachmentEntry("att-1/sub/report.pdf"))
+        assertFalse(BackupArchive.isSafeAttachmentEntry("att-1\\report.pdf"))
+    }
+
+    @Test
+    fun `extract rejects unsafe attachment entries`() {
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(ZipEntry(BackupArchive.ATTACHMENT_ENTRY_PREFIX + "att-1/../../evil.txt"))
+            zip.write("bad".toByteArray())
+            zip.closeEntry()
+        }
+        try {
+            BackupArchive.extract(ByteArrayInputStream(out.toByteArray()), folder.newFolder("target3"))
+            fail("traversal attachment entry must be rejected")
+        } catch (_: BackupArchiveException) {
+            // expected
+        }
+        assertFalse(File(folder.root, "evil.txt").exists())
     }
 
     @Test

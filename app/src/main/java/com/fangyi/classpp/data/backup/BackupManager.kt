@@ -21,6 +21,7 @@ import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.ScheduleStore
 import com.fangyi.classpp.data.store.StoreResult
 import com.fangyi.classpp.data.store.TagStore
+import com.fangyi.classpp.data.store.TodoAttachmentStore
 import com.fangyi.classpp.data.store.TodoStore
 import com.fangyi.classpp.ui.day.DayImageStore
 import java.io.File
@@ -57,11 +58,13 @@ enum class BackupError {
  * ID、丢弃回收站/归档条目并清来源标记，只能用于分享，不能用于完整备份。整库直读直写
  * 保留原 ID，AI 对话里的 `todoIds` 与 XMU 同步映射的引用因此不会断。
  *
- * 备份范围 = 课表（含时间方案）、待办（含回收站/归档/分组/步骤）、标签、日程背景图
+ * 备份范围 = 课表（含时间方案）、待办（含回收站/归档/分组/步骤/附件）、标签、日程背景图
  * 及图库元数据、AI 对话记录。**不含**任何账号凭据、WebView 数据、XMU 同步状态、
  * 应用偏好设置与可再下载的脚本缓存（见 [StorageUsage] 的口径说明）。待办附件文件
- * （`filesDir/todo_attachments`）也不进自定义备份 ZIP：同设备恢复时文件仍在，换机恢复后
- * 元数据虽在但文件可能缺失（详情里点开会提示无法打开）；系统自动备份默认包含该目录。
+ * 随 `attachments/` entry 一并打包（元数据在 `todos.json` 里）；导出时只收集仍存在的
+ * 附件文件，缺失项会从**备份内**的待办元数据中剔除，避免生成打不开的悬空附件。
+ * 导入时备份里没有对应文件的附件元数据同样会被剔除，兼容旧版本不含附件文件的备份。
+ * 系统自动备份默认也包含 `filesDir/todo_attachments`。
  *
  * 导入语义为**覆盖恢复**：先整包解压到 cache 暂存目录并解析校验全部 JSON，全部合法
  * 后才落盘；任一整库写入失败会回滚已写入的域。调用方（数据管理页）负责在成功后
@@ -98,6 +101,24 @@ class BackupManager(private val context: Context) {
         val todos = FileTodoStore(filesDir).load().asFile()
         val tags = FileTagStore(filesDir).load().asFile()
         val aiChat = FileAiChatStore(filesDir).load().asFile()
+        val attachmentDir = File(filesDir, TodoAttachmentStore.DIRECTORY_NAME)
+        val attachmentStore = TodoAttachmentStore(attachmentDir)
+        // 只打包仍存在的附件文件；元数据里的悬空项从备份内剔除（本机数据不动）
+        val attachmentRefs = todos.todos.asSequence()
+            .flatMap { it.attachments.asSequence() }
+            .filter { attachmentStore.file(it)?.isFile == true }
+            .map { BackupArchive.AttachmentRef(id = it.id, fileName = it.fileName) }
+            .distinctBy { it.relativePath }
+            .toList()
+        val includedAttachmentPaths = attachmentRefs.mapTo(mutableSetOf()) { it.relativePath }
+        val backupTodos = todos.copy(
+            todos = todos.todos.map { todo ->
+                val kept = todo.attachments.filter {
+                    "${it.id}/${it.fileName}" in includedAttachmentPaths
+                }
+                if (kept.size == todo.attachments.size) todo else todo.copy(attachments = kept)
+            },
+        )
         val dayImageNames = DayImageStore.loadImages(context)
             .filter { BackupArchive.isSafeImageName(it) }
             .filter { DayImageStore.imageFile(context, it).isFile }
@@ -119,17 +140,20 @@ class BackupManager(private val context: Context) {
                 // 多对话模型（v2）：统计所有对话的消息总数；v1 旧文件迁移前顶层 messages 兜底
                 aiMessages = aiChat.conversations.sumOf { it.messages.size } + aiChat.messages.size,
                 dayImages = dayImageNames.size,
+                attachments = attachmentRefs.size,
             ),
         )
         val payload = BackupArchive.Payload(
             manifest = manifest,
             schedulesJson = ScheduleJson.encodeStorage(schedules),
-            todosJson = ScheduleJson.encodeStorage(todos),
+            todosJson = ScheduleJson.encodeStorage(backupTodos),
             tagsJson = ScheduleJson.encodeStorage(tags),
             aiChatJson = ScheduleJson.encodeStorage(aiChat),
             dayImagesJson = ScheduleJson.encodeStorage(dayImages),
             imageDir = DayImageStore.imageDir(context),
             imageNames = dayImageNames,
+            attachmentDir = attachmentDir,
+            attachments = attachmentRefs,
         )
         try {
             context.contentResolver.openOutputStream(uri)?.use { out ->
@@ -177,6 +201,30 @@ class BackupManager(private val context: Context) {
                 return@withContext BackupResult.Err(BackupError.UnsupportedVersion)
             }
 
+            // 附件自洽：只还原包内确实有文件、且路径安全的元数据；旧版本备份（不含
+            // attachments entry）或悬空项从待办里剔除，避免恢复后出现打不开的附件行
+            val attachmentPrefix = BackupArchive.ATTACHMENT_ENTRY_PREFIX
+            val restoredAttachments = todos.todos.asSequence()
+                .flatMap { it.attachments.asSequence() }
+                .filter { attachment ->
+                    val relativePath = "${attachment.id}/${attachment.fileName}"
+                    BackupArchive.isSafeAttachmentEntry(relativePath) &&
+                        File(staging, attachmentPrefix + relativePath).isFile
+                }
+                .map { BackupArchive.AttachmentRef(id = it.id, fileName = it.fileName) }
+                .distinctBy { it.relativePath }
+                .toList()
+            val restoredAttachmentPaths = restoredAttachments
+                .mapTo(mutableSetOf()) { it.relativePath }
+            val restoredTodos = todos.copy(
+                todos = todos.todos.map { todo ->
+                    val kept = todo.attachments.filter {
+                        "${it.id}/${it.fileName}" in restoredAttachmentPaths
+                    }
+                    if (kept.size == todo.attachments.size) todo else todo.copy(attachments = kept)
+                },
+            )
+
             // 图片列表必须自洽：名字安全、且包里确实有对应文件。任何缺项都按损坏处理，
             // 不做「静默少还原几张」——覆盖语义下用户无从发现缺了图
             val imageNames = dayImages.images.distinct()
@@ -188,10 +236,27 @@ class BackupManager(private val context: Context) {
                 return@withContext BackupResult.Err(BackupError.InvalidArchive)
             }
 
-            if (!applyData(schedules, todos, tags, aiChat)) {
+            if (!applyData(schedules, restoredTodos, tags, aiChat)) {
                 return@withContext BackupResult.Err(BackupError.WriteFailed)
             }
-            if (!replaceImageDir(staging, imageNames)) {
+            if (
+                !replaceDir(
+                    staging = staging,
+                    entryPrefix = BackupArchive.IMAGE_ENTRY_PREFIX,
+                    live = DayImageStore.imageDir(context),
+                    entryNames = imageNames,
+                )
+            ) {
+                return@withContext BackupResult.Err(BackupError.WriteFailed)
+            }
+            if (
+                !replaceDir(
+                    staging = staging,
+                    entryPrefix = BackupArchive.ATTACHMENT_ENTRY_PREFIX,
+                    live = File(context.filesDir, TodoAttachmentStore.DIRECTORY_NAME),
+                    entryNames = restoredAttachments.map { it.relativePath },
+                )
+            ) {
                 return@withContext BackupResult.Err(BackupError.WriteFailed)
             }
             DayImageStore.saveImages(context, imageNames)
@@ -250,11 +315,17 @@ class BackupManager(private val context: Context) {
     }
 
     /**
-     * 用备份内图片替换 `filesDir/day_images`：先在同级目录组装，再整体换名，
-     * 避免清空旧图后拷贝失败留下半套图库。失败时旧目录原样保留。
+     * 用备份内文件替换应用私有目录（背景图 `day_images` / 待办附件 `todo_attachments`）：
+     * 先在同级目录组装，再整体换名，避免清空旧目录后拷贝失败留下半套文件。失败时旧目录
+     * 原样保留。[entryNames] 是相对 entry 前缀的路径（附件为 `<id>/<fileName>`，可含一层
+     * 子目录）。空列表 = 备份里没有该类文件，恢复后目录为空（覆盖语义）。
      */
-    private fun replaceImageDir(staging: File, imageNames: List<String>): Boolean {
-        val live = DayImageStore.imageDir(context)
+    private fun replaceDir(
+        staging: File,
+        entryPrefix: String,
+        live: File,
+        entryNames: List<String>,
+    ): Boolean {
         val parent = live.parentFile ?: return false
         val staged = File(parent, "${live.name}.staged")
         val old = File(parent, "${live.name}.old")
@@ -262,13 +333,18 @@ class BackupManager(private val context: Context) {
         old.deleteRecursively()
         if (!staged.mkdirs()) return false
 
-        for (name in imageNames) {
-            val source = File(staging, BackupArchive.IMAGE_ENTRY_PREFIX + name)
+        for (name in entryNames) {
+            val source = File(staging, entryPrefix + name)
             if (!source.isFile) {
                 staged.deleteRecursively()
                 return false
             }
-            if (!runCatching { source.copyTo(File(staged, name), overwrite = true) }.isSuccess) {
+            val target = File(staged, name)
+            val copied = runCatching {
+                target.parentFile?.mkdirs()
+                source.copyTo(target, overwrite = true)
+            }.isSuccess
+            if (!copied) {
                 staged.deleteRecursively()
                 return false
             }

@@ -2,8 +2,9 @@ package com.fangyi.classpp.data.backup
 
 import kotlinx.serialization.Serializable
 
-/** 备份包格式版本；读取时拒绝更高版本（与各整库 formatVersion 同策略） */
-const val BACKUP_FORMAT_VERSION = 1
+/** 备份包格式版本；读取时拒绝更高版本（与各整库 formatVersion 同策略）。
+ *  v2 起包内新增 `attachments/` entry，旧版本应用会按不支持版本拒绝。 */
+const val BACKUP_FORMAT_VERSION = 2
 
 /** 备份包类型标识：manifest 里与 formatVersion 一起构成合法性闸门 */
 const val BACKUP_KIND = "classpp.backup"
@@ -12,8 +13,8 @@ const val BACKUP_KIND = "classpp.backup"
  * 备份包清单（manifest.json，ZIP 的第一个 entry）。
  *
  * 只描述「这个包是什么、由哪个版本导出、里面有多少内容」——真正可还原的数据在
- * `data` 目录的 JSON 与 `images` 目录的图片里。计数用于导入前的覆盖确认弹窗，也让
- * 用户能在解压后快速核对包内容。
+ * `data` 目录的 JSON、`images` 目录的背景图与 `attachments` 目录的待办附件里。计数
+ * 用于导入前的覆盖确认弹窗，也让用户能在解压后快速核对包内容。
  */
 @Serializable
 data class BackupManifest(
@@ -33,6 +34,7 @@ data class BackupCounts(
     val tags: Int = 0,
     val aiMessages: Int = 0,
     val dayImages: Int = 0,
+    val attachments: Int = 0,
 )
 
 /**
