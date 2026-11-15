@@ -5,17 +5,21 @@ import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.store.FileTodoStore
 import com.fangyi.classpp.data.store.StoreResult
 import com.fangyi.classpp.data.sync.CommitOutcome
+import com.fangyi.classpp.data.sync.MutableSyncPreferences
 import com.fangyi.classpp.data.sync.PrepareOutcome
 import com.fangyi.classpp.data.sync.SyncError
 import com.fangyi.classpp.data.sync.SyncPlan
+import com.fangyi.classpp.data.sync.SyncPreferences
 import com.fangyi.classpp.data.sync.media.AvatarCache
 import com.fangyi.classpp.data.sync.media.AvatarFetcher
 import java.io.File
+import java.security.MessageDigest
 import java.util.GregorianCalendar
 import java.util.TimeZone
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -79,6 +83,23 @@ class SchoolSyncEngineTest {
         }
     }
 
+    private class FakeNoteEnricher(
+        var notes: Map<String, String> = emptyMap(),
+        var failure: Exception? = null,
+    ) : SyncNoteEnricher<FakeRemoteTodo> {
+        var calls = 0
+            private set
+        var lastRemotes: List<FakeRemoteTodo> = emptyList()
+            private set
+
+        override suspend fun notesFor(remotes: List<FakeRemoteTodo>): Map<String, String> {
+            calls++
+            lastRemotes = remotes
+            failure?.let { throw it }
+            return notes
+        }
+    }
+
     private suspend fun repo(): TodoRepository =
         TodoRepository.create(FileTodoStore(folder.root), { nowMillis })
 
@@ -87,6 +108,8 @@ class SchoolSyncEngineTest {
         todoRepository: TodoRepository? = null,
         store: SchoolSyncStore = SchoolSyncStore(folder.root, "fakeu"),
         avatar: AvatarCache? = null,
+        noteEnricher: SyncNoteEnricher<FakeRemoteTodo>? = null,
+        preferences: SyncPreferences = MutableSyncPreferences(),
     ): SchoolSyncEngine<FakeRemoteTodo> = SchoolSyncEngine(
         spec = fakeSchoolSpec(),
         codec = FakeSyncCodec(source = "fakeu") { nowMillis },
@@ -96,6 +119,8 @@ class SchoolSyncEngineTest {
         groupNames = SchoolAutoGroupNames(source = "fakeu"),
         clock = { nowMillis },
         avatar = avatar,
+        syncPreferences = preferences,
+        noteEnricher = noteEnricher,
     )
 
     @Test
@@ -237,5 +262,137 @@ class SchoolSyncEngineTest {
             runBlocking { second.markSynced(plan) }
         }
         Unit
+    }
+
+    @Test
+    fun `new items use enriched notes and entry hashes the enriched content`() = runBlocking {
+        val api = FakeSessionApi().apply { respond(todos = remotes) }
+        val repository = repo()
+        val enricher = FakeNoteEnricher(
+            notes = mapOf(
+                "fakeu:10:1" to "REQ-1",
+                "fakeu:10:2" to "REQ-2",
+            ),
+        )
+        val engine = engine(api, todoRepository = repository, noteEnricher = enricher)
+
+        val plan = (engine.prepareSync(force = true) as PrepareOutcome.Ready).plan
+
+        assertEquals(listOf("REQ-1", "REQ-2"), plan.newItems.map { it.todo.note })
+        assertEquals(1, enricher.calls)
+        assertTrue(engine.commitSync(plan, plan.newItems.mapTo(mutableSetOf()) { it.todo.id }) is CommitOutcome.Done)
+        assertEquals("REQ-1", repository.todos.value.first { it.id == "fakeu-10-1" }.note)
+        assertEquals("REQ-2", repository.todos.value.first { it.id == "fakeu-10-2" }.note)
+
+        val entry = engine.fileState.value.entries.first { it.remoteKey == "fakeu:10:1" }
+        val enrichedHash = localHash("作业一", "2026-11-05", 1439, "REQ-1")
+        assertEquals(enrichedHash, entry.localHash)
+        assertNotEquals(localHash("作业一", "2026-11-05", 1439, "课程：课程A\n类型：homework"), entry.localHash)
+    }
+
+    @Test
+    fun `existing notes are refreshed on mark synced without new items`() = runBlocking {
+        val api = FakeSessionApi().apply { respond(todos = remotes) }
+        val repository = repo()
+        val enricher = FakeNoteEnricher()
+        val engine = engine(api, todoRepository = repository, noteEnricher = enricher)
+        val first = (engine.prepareSync(force = true) as PrepareOutcome.Ready).plan
+        engine.commitSync(first, first.newItems.mapTo(mutableSetOf()) { it.todo.id })
+        assertEquals(
+            "课程：课程A\n类型：homework",
+            repository.todos.value.first { it.id == "fakeu-10-1" }.note,
+        )
+
+        enricher.notes = mapOf("fakeu:10:1" to "REQ-1")
+        val second = (engine.prepareSync(force = true) as PrepareOutcome.Ready).plan
+        assertTrue(second.newItems.isEmpty())
+        assertTrue(engine.markSynced(second))
+
+        assertEquals("REQ-1", repository.todos.value.first { it.id == "fakeu-10-1" }.note)
+        assertEquals(
+            "课程：课程A\n类型：homework",
+            repository.todos.value.first { it.id == "fakeu-10-2" }.note,
+        )
+        val entry = engine.fileState.value.entries.first { it.remoteKey == "fakeu:10:1" }
+        assertEquals(localHash("作业一", "2026-11-05", 1439, "REQ-1"), entry.localHash)
+    }
+
+    @Test
+    fun `commit refreshes existing notes while importing new items`() = runBlocking {
+        val api = FakeSessionApi().apply { respond(todos = remotes.take(1)) }
+        val repository = repo()
+        val enricher = FakeNoteEnricher()
+        val engine = engine(api, todoRepository = repository, noteEnricher = enricher)
+        val first = (engine.prepareSync(force = true) as PrepareOutcome.Ready).plan
+        engine.commitSync(first, first.newItems.mapTo(mutableSetOf()) { it.todo.id })
+
+        enricher.notes = mapOf(
+            "fakeu:10:1" to "REQ-1",
+            "fakeu:10:2" to "REQ-2",
+        )
+        api.respond(todos = remotes)
+        val second = (engine.prepareSync(force = true) as PrepareOutcome.Ready).plan
+        assertEquals(1, second.newItems.size)
+
+        assertTrue(engine.commitSync(second, setOf("fakeu-10-2")) is CommitOutcome.Done)
+        assertEquals("REQ-1", repository.todos.value.first { it.id == "fakeu-10-1" }.note)
+        assertEquals("REQ-2", repository.todos.value.first { it.id == "fakeu-10-2" }.note)
+    }
+
+    @Test
+    fun `disabled preference skips enrichment entirely`() = runBlocking {
+        val api = FakeSessionApi().apply { respond(todos = remotes) }
+        val enricher = FakeNoteEnricher(notes = mapOf("fakeu:10:1" to "REQ-1"))
+        val engine = engine(
+            api,
+            noteEnricher = enricher,
+            preferences = MutableSyncPreferences(initialSyncHomeworkNotes = false),
+        )
+
+        val plan = (engine.prepareSync(force = true) as PrepareOutcome.Ready).plan
+
+        assertEquals(0, enricher.calls)
+        assertEquals("课程：课程A\n类型：homework", plan.newItems.first().todo.note)
+    }
+
+    @Test
+    fun `enricher failure keeps base notes and does not fail import`() = runBlocking {
+        val api = FakeSessionApi().apply { respond(todos = remotes) }
+        val repository = repo()
+        val enricher = FakeNoteEnricher(failure = IllegalStateException("boom"))
+        val engine = engine(api, todoRepository = repository, noteEnricher = enricher)
+
+        val plan = (engine.prepareSync(force = true) as PrepareOutcome.Ready).plan
+        assertEquals("课程：课程A\n类型：homework", plan.newItems.first().todo.note)
+        assertTrue(engine.commitSync(plan, plan.newItems.mapTo(mutableSetOf()) { it.todo.id }) is CommitOutcome.Done)
+        assertEquals("课程：课程A\n类型：homework", repository.todos.value.first().note)
+    }
+
+    @Test
+    fun `restored item receives refreshed note on commit`() = runBlocking {
+        val api = FakeSessionApi().apply { respond(todos = remotes.take(1)) }
+        val repository = repo()
+        val enricher = FakeNoteEnricher()
+        val engine = engine(api, todoRepository = repository, noteEnricher = enricher)
+        val first = (engine.prepareSync(force = true) as PrepareOutcome.Ready).plan
+        engine.commitSync(first, first.newItems.mapTo(mutableSetOf()) { it.todo.id })
+        assertTrue(repository.removeTodo("fakeu-10-1") is com.fangyi.classpp.data.TodoOpResult.Ok)
+
+        enricher.notes = mapOf("fakeu:10:1" to "REQ-1")
+        val second = (engine.prepareSync(force = true) as PrepareOutcome.Ready).plan
+        assertEquals(1, second.restoreCount)
+
+        assertTrue(engine.commitSync(second, emptySet()) is CommitOutcome.Done)
+        val restored = repository.todos.value.first { it.id == "fakeu-10-1" }
+        assertEquals("REQ-1", restored.note)
+        assertNull(restored.deletedAtMillis)
+    }
+
+    /** 与引擎 localHash 同口径：name|deadlineDate|deadlineMinute|note 的 SHA-256 */
+    private fun localHash(name: String, date: String, minute: Int, note: String): String {
+        val text = listOf(name, date, minute.toString(), note).joinToString("|")
+        return MessageDigest.getInstance("SHA-256")
+            .digest(text.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
     }
 }

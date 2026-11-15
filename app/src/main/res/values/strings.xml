@@ -422,6 +422,9 @@
     <!-- 偏好设置：远端消失时自动标记完成 -->
     <string name="sync_auto_complete_title">远端消失时标记完成</string>
     <string name="sync_auto_complete_desc">同步的待办若在远端消失，自动标记为已完成，已逾期的待办保持未完成</string>
+    <!-- 偏好设置：同步作业要求到待办备注（默认开启） -->
+    <string name="sync_homework_note_title">同步作业要求</string>
+    <string name="sync_homework_note_desc">把作业要求与附件名写入待办备注，已有备注会被覆盖</string>
     <string name="xmu_auto_sync_notif_title">课程中心自动同步完成</string>
     <!-- 校无关中性文案（多学校适配：spec 未覆盖时使用；文本不含校名/学号） -->
     <string name="sync_error_account_changed">检测到账号变化，请重新登录或清空同步记录</string>

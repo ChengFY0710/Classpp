@@ -412,7 +412,29 @@ class TodoRepository internal constructor(
         }
     }
 
-    // ---------- 待办 CRUD ----------
+    /**
+     * 外部同步的批量备注覆盖（单次 commit）：只替换 [Todo.note]，其余字段原样保留
+     * （不做全量 [normalize]，避免同步顺带改写用户字段）；未知 id 宽容忽略，
+     * 文本无变化时不写盘。
+     *
+     * 与 [applySyncCompletion] 同口径：这是同步的增量写路径，调用方已经完成映射与过滤；
+     * note 没有校验约束，生成方负责 trim/截断。
+     */
+    suspend fun updateTodoNotes(notes: Map<String, String>): TodoOpResult = mutex.withLock {
+        if (notes.isEmpty()) return@withLock TodoOpResult.Ok
+        var changed = 0
+        val todos = fileState.value.todos.map { todo ->
+            val note = notes[todo.id] ?: return@map todo
+            if (note == todo.note) {
+                todo
+            } else {
+                changed++
+                todo.copy(note = note)
+            }
+        }
+        if (changed == 0) return@withLock TodoOpResult.Ok
+        commit(fileState.value.copy(todos = todos))
+    }
 
     /** 新增待办：id 空则生成、createdAt 缺省（0）补当前时刻；归一化 + 校验后追加 */
     suspend fun addTodo(todo: Todo): TodoReadResult<String> = mutex.withLock {

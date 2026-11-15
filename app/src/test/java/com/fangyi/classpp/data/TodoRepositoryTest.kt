@@ -145,6 +145,29 @@ class TodoRepositoryTest {
     }
 
     @Test
+    fun `updateTodoNotes overwrites only note with one commit and ignores unknown ids`() = runBlocking {
+        val store = CountingTodoStore(com.fangyi.classpp.data.store.FileTodoStore(folder.root))
+        val r = repo(store)
+        val target = r.addTodo(
+            testTodo(name = "作业", note = "旧备注", completed = true),
+        ).okId()
+        val other = r.addTodo(testTodo(name = "另一条", note = "保持不变")).okId()
+        val savesBefore = store.saves
+
+        r.updateTodoNotes(mapOf(target to "新备注", "ghost" to "忽略")).assertOk()
+
+        val updated = r.todos.value.single { it.id == target }
+        assertEquals("新备注", updated.note)
+        assertEquals("作业", updated.name)
+        assertTrue(updated.completed)
+        assertEquals("保持不变", r.todos.value.single { it.id == other }.note)
+        assertEquals("批量备注更新只落盘一次", savesBefore + 1, store.saves)
+
+        r.updateTodoNotes(mapOf(target to "新备注")).assertOk()
+        assertEquals("文本无变化不落盘", savesBefore + 1, store.saves)
+    }
+
+    @Test
     fun `removeTodo and batch removeTodos move todos to recently deleted`() = runBlocking {
         val r = repo()
         val a = r.addTodo(testTodo(name = "A")).okId()

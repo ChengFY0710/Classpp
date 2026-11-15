@@ -138,6 +138,63 @@ class XmuTodoMapperTest {
     }
 
     @Test
+    fun `无要求时备注与旧版本逐字一致`() {
+        val dto = XmuTodoDto(
+            id = 7,
+            title = "作业",
+            type = "homework",
+            courseId = 10,
+            courseName = "高数",
+        )
+
+        assertEquals(
+            "课程：高数\n类型：homework\n" +
+                "https://lnt.xmu.edu.cn/course/10/learning-activity#/7",
+            XmuTodoMapper.buildNote(dto),
+        )
+    }
+
+    @Test
+    fun `有要求时正文与附件插入到活动链接之前`() {
+        val dto = XmuTodoDto(
+            id = 7,
+            title = "作业",
+            type = "homework",
+            courseId = 10,
+            courseName = "高数",
+        )
+        val requirement = XmuActivityRequirement(
+            description = "如图说明",
+            attachments = listOf("a.png", "b.pdf"),
+        )
+
+        assertEquals(
+            "课程：高数\n类型：homework\n作业要求：如图说明\n附件：a.png、b.pdf\n" +
+                "https://lnt.xmu.edu.cn/course/10/learning-activity#/7",
+            XmuTodoMapper.buildNote(dto, requirement),
+        )
+    }
+
+    @Test
+    fun `有附件但无正文时不产生空的作业要求行`() {
+        val dto = XmuTodoDto(
+            id = 7,
+            title = "作业",
+            type = "homework",
+            courseId = 10,
+            courseName = "高数",
+        )
+
+        val note = XmuTodoMapper.buildNote(
+            dto,
+            XmuActivityRequirement(description = " ", attachments = listOf("Talk9-作业.pdf")),
+        )
+
+        assertFalse(note.contains("作业要求："))
+        assertTrue(note.contains("附件：Talk9-作业.pdf"))
+    }
+
+    @Test
     fun `自动分组默认名与键对应`() {
         val names = XmuAutoGroupNames()
         assertEquals("作业", names.nameFor(XmuTodoMapper.AUTO_GROUP_KEY_HOMEWORK))

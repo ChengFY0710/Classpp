@@ -44,3 +44,41 @@ data class XmuProfileDto(
     @SerialName("user_no") val userNo: String = "",
     val name: String = "",
 )
+
+/**
+ * `/api/courses/{courseId}/activities?sub_course_id=0` 的课程活动列表。
+ *
+ * 用于同步「作业要求」到待办备注：列表接口 `/api/todos` 只有标题/课程/截止，没有正文；
+ * 课程活动列表按课程一次返回全部活动（含 `data.description` 与 `uploads`），比逐条调
+ * `/api/activities/{id}` 少 N-1 次请求。实测 2026-11 返回 `{ "activities": [...] }`；
+ * 字段全部容错可空——要求同步是增强项，解析失败只能退化为不同步，不能阻断待办导入。
+ */
+@Serializable
+data class XmuCourseActivitiesDto(
+    val activities: List<XmuCourseActivityDto>? = null,
+)
+
+/** 课程活动列表中的单条活动；这里只关心作业要求的正文与附件，其余字段忽略 */
+@Serializable
+data class XmuCourseActivityDto(
+    val id: Long = 0,
+    val type: String = "",
+    val data: XmuActivityDataDto? = null,
+    val uploads: List<XmuUploadDto>? = null,
+)
+
+/** 活动详情里的 `data`；作业要求正文是 HTML（可能为空），不能当纯文本直接使用 */
+@Serializable
+data class XmuActivityDataDto(
+    val description: String? = null,
+)
+
+/**
+ * 附件项：`name` 是展示文件名（实测 PDF/PNG）；`deleted=true` 的已删除附件不展示。
+ * 下载地址/大小等字段本次不用，交给 ignoreUnknownKeys 丢弃。
+ */
+@Serializable
+data class XmuUploadDto(
+    val name: String = "",
+    val deleted: Boolean = false,
+)

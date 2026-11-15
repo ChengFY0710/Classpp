@@ -124,7 +124,7 @@ class XmuFrozenConstantsTest {
         val spec = XmuSchoolProvider().spec
         assertEquals("xmu", spec.id)
         assertEquals(
-            setOf("NATIVE_LOGIN", "WEBVIEW_LOGIN", "SCHEDULE_IMPORT"),
+            setOf("NATIVE_LOGIN", "WEBVIEW_LOGIN", "SCHEDULE_IMPORT", "TODO_NOTE_SYNC"),
             spec.capabilities.map { it.name }.toSet(),
         )
         assertEquals(2, spec.loginImages.size)

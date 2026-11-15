@@ -16,4 +16,15 @@ class SyncPreferencesTest {
         preferences.setAutoCompleteOnVanish(false)
         assertFalse(preferences.autoCompleteOnVanish.value)
     }
+
+    @Test
+    fun `homework notes default on and can toggle`() {
+        val preferences = MutableSyncPreferences()
+
+        assertTrue(preferences.syncHomeworkNotes.value)
+        preferences.setSyncHomeworkNotes(false)
+        assertFalse(preferences.syncHomeworkNotes.value)
+        preferences.setSyncHomeworkNotes(true)
+        assertTrue(preferences.syncHomeworkNotes.value)
+    }
 }

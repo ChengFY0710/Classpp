@@ -26,6 +26,7 @@ import com.fangyi.classpp.data.sync.SyncDebugLog
 import com.fangyi.classpp.data.sync.mapState
 import com.fangyi.classpp.data.sync.media.AvatarCache
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -60,6 +61,10 @@ import kotlinx.coroutines.withContext
  * 头像：可选传入 [avatar]（`filesDir/sync/<id>/avatar.img`）；不传则 `avatarImage` 恒为
  * null，UI 走姓名首字占位。头像失败只留日志，不影响同步结果。
  *
+ * 备注补充（可选）：注入 [noteEnricher] 且 [SyncPreferences.syncHomeworkNotes] 开启时，
+ * prepare 会为新增/已映射条目抓取完整备注；新增条目随计划导入，存量条目在 commit/markSynced
+ * 时批量覆盖。取数失败一律退化为原备注，不阻断导入；未注入时行为与旧版本完全一致。
+ *
  * 构造：学校 provider 装配时注入 [SchoolSyncStore] 与 [SyncCodec]；测试注入 fake
  * [SessionApi] 与固定时钟。
  */
@@ -73,6 +78,11 @@ class SchoolSyncEngine<R : Any>(
     private val clock: () -> Long = System::currentTimeMillis,
     private val avatar: AvatarCache? = null,
     private val syncPreferences: SyncPreferences = MutableSyncPreferences(),
+    /**
+     * 可选备注补充（如作业要求）：只在偏好开启时调用；未注入 = 行为与旧版本完全一致。
+     * 失败由引擎兜底为「保持原备注」，不阻断导入。
+     */
+    private val noteEnricher: SyncNoteEnricher<R>? = null,
     private val logger: (String) -> Unit = SyncDebugLog::d,
 ) : SyncService {
 
@@ -243,7 +253,7 @@ class SchoolSyncEngine<R : Any>(
         return url
     }
 
-    private fun buildPlan(remotes: List<R>, fetchedAt: Long): EngineSyncPlan<R> {
+    private suspend fun buildPlan(remotes: List<R>, fetchedAt: Long): EngineSyncPlan<R> {
         val active = todoRepository.todos.value.associateBy { it.id }
         // 已归档条目不在活跃流里（归档 = 隐藏），比对时要算「已导入」——漏掉会把归档的
         // 同步待办当新增候选，用户确认导入后撞 DuplicateId 整批失败
@@ -262,6 +272,9 @@ class SchoolSyncEngine<R : Any>(
         val entryUpdates = mutableMapOf<String, SchoolSyncEntry>()
         val skipped = mutableMapOf<SkipReason, Int>()
         val groupBackfill = mutableMapOf<String, String>()
+        // 备注补充候选：远端条目 → 本地待办。已映射的存量条目即使本次因锁定/逾期被跳过
+        // 也照样可以刷新要求；新条目与回收站复活条目在下方确定对象后加入。
+        val noteTargets = mutableListOf<NoteTarget<R>>()
 
         for (remote in remotes.distinctBy { codec.remoteKey(it) }) {
             val rKey = codec.remoteKey(remote)
@@ -304,6 +317,12 @@ class SchoolSyncEngine<R : Any>(
                 codec.autoGroupKey(remote)?.let { groupBackfill[localId] = it }
             }
 
+            // 存量条目的备注刷新候选先于 skip 判定收集：锁定/逾期的作业仍可能已有本地
+            // 待办，要求正文与能否再次导入无关
+            if (liveTodo != null && codec.isOwned(liveTodo)) {
+                noteTargets += NoteTarget(remote, liveTodo, refreshExisting = true)
+            }
+
             val reason = codec.skipReason(remote)
             if (reason != null) {
                 skipped.merge(reason, 1, Int::plus)
@@ -330,16 +349,26 @@ class SchoolSyncEngine<R : Any>(
                         )
                     }
                 }
-                trashedTodo != null -> restoreItems += PlanItem(
-                    remote = remote,
-                    todo = trashedTodo,
-                    courseName = trashedTodo.sourceDetail ?: "",
-                )
-                else -> newItems += PlanItem(
-                    remote = remote,
-                    todo = todo.copy(id = localId),
-                    courseName = todo.sourceDetail ?: "",
-                )
+                trashedTodo != null -> {
+                    // 回收站复活：备注同样要刷新（restoreTodo 只清删除标记，不带新备注）
+                    if (codec.isOwned(trashedTodo)) {
+                        noteTargets += NoteTarget(remote, trashedTodo, refreshExisting = true)
+                    }
+                    restoreItems += PlanItem(
+                        remote = remote,
+                        todo = trashedTodo,
+                        courseName = trashedTodo.sourceDetail ?: "",
+                    )
+                }
+                else -> {
+                    val item = PlanItem(
+                        remote = remote,
+                        todo = todo.copy(id = localId),
+                        courseName = todo.sourceDetail ?: "",
+                    )
+                    noteTargets += NoteTarget(remote, item.todo, refreshExisting = false)
+                    newItems += item
+                }
             }
         }
 
@@ -372,10 +401,14 @@ class SchoolSyncEngine<R : Any>(
             )
         }
 
+        // 备注补充（作业要求等）：偏好关闭/未注入 enricher 时完全不发请求；
+        // 取数或解析失败只退化为原备注，不影响待办导入
+        val enriched = enrichNotes(newItems, restoreItems, noteTargets)
+
         return EngineSyncPlan(
             owner = this,
-            plannedNewItems = newItems,
-            restoreItems = restoreItems,
+            plannedNewItems = enriched.newItems,
+            restoreItems = enriched.restoreItems,
             plannedVanished = vanishedItems,
             plannedReactivated = reactivatedItems,
             entriesForActive = entriesForActive,
@@ -383,6 +416,63 @@ class SchoolSyncEngine<R : Any>(
             skipped = skipped,
             totalRemote = remotes.size,
             groupBackfill = groupBackfill,
+            noteRefresh = enriched.noteRefresh,
+            noteHashes = enriched.noteHashes,
+        )
+    }
+
+    /**
+     * 给新增/复活条目写完整备注，并给已映射存量条目生成备注刷新表。
+     *
+     * - 新增条目：直接替换计划里的 todo.note（导入时随 addTodos 落库）；
+     * - 回收站复活：替换计划里的 todo.note，同时加入 [noteRefresh]（restoreTodo 只清删除标记，
+     *   不会把新备注写进去）；
+     * - 存量条目：只记录 todoId → 新备注，commit/markSynced 时批量覆盖；
+     * - 缺失的 remoteKey / 空备注 = 保持原备注（enricher 约定）。
+     */
+    private suspend fun enrichNotes(
+        newItems: List<PlanItem<R>>,
+        restoreItems: List<PlanItem<R>>,
+        noteTargets: List<NoteTarget<R>>,
+    ): NoteEnrichment<R> {
+        if (noteEnricher == null || noteTargets.isEmpty() ||
+            !syncPreferences.syncHomeworkNotes.value
+        ) {
+            return NoteEnrichment(newItems, restoreItems, emptyMap(), emptyMap())
+        }
+        val remotes = noteTargets.map { it.remote }.distinctBy { codec.remoteKey(it) }
+        val notes = try {
+            // 网络/HTML 解析/文本整理都不占主线程（UI 触发同步时调用方可能在 Main）
+            withContext(Dispatchers.IO) { noteEnricher.notesFor(remotes) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger("note enrich failed: ${e::class.simpleName}")
+            emptyMap()
+        }
+        if (notes.isEmpty()) {
+            return NoteEnrichment(newItems, restoreItems, emptyMap(), emptyMap())
+        }
+
+        fun PlanItem<R>.withEnrichedNote(): PlanItem<R> {
+            val note = notes[codec.remoteKey(remote)]?.takeIf { it.isNotBlank() } ?: return this
+            return copy(todo = todo.copy(note = note))
+        }
+
+        val noteRefresh = mutableMapOf<String, String>()
+        val noteHashes = mutableMapOf<String, String>()
+        for (target in noteTargets) {
+            if (!target.refreshExisting) continue
+            val note = notes[codec.remoteKey(target.remote)]?.takeIf { it.isNotBlank() } ?: continue
+            if (note == target.todo.note) continue
+            noteRefresh[target.todo.id] = note
+            noteHashes[target.todo.id] = localHash(target.todo.copy(note = note))
+        }
+        return NoteEnrichment(
+            newItems = newItems.map { it.withEnrichedNote() },
+            restoreItems = restoreItems.map { it.withEnrichedNote() },
+            noteRefresh = noteRefresh,
+            noteHashes = noteHashes,
         )
     }
 
@@ -442,6 +532,15 @@ class SchoolSyncEngine<R : Any>(
             is TodoReadResult.Err -> return CommitOutcome.Failed(r.error)
         }
 
+        // 存量同步待办的备注刷新：只改 note，单次落盘。失败按持久化失败返回——此时待办
+        // 可能已导入，下次同步会重试备注，但映射尚未保存
+        if (plan.noteRefresh.isNotEmpty()) {
+            when (val r = todoRepository.updateTodoNotes(plan.noteRefresh)) {
+                TodoOpResult.Ok -> Unit
+                is TodoOpResult.Err -> return CommitOutcome.Failed(r.error)
+            }
+        }
+
         // entries 增量合并：新增/复活写新哈希基线，活跃条目只补缺（不洗掉既有基线）。
         // 键是 codec.remoteKey（校内唯一）：单键会让跨课程的映射互相覆盖
         val byRemote = _state.value.entries.associateBy { it.remoteKey }.toMutableMap()
@@ -458,6 +557,8 @@ class SchoolSyncEngine<R : Any>(
             byRemote[codec.remoteKey(item.remote)] = entryOf(item.remote, item.todo)
         }
         for (entry in plan.entriesForActive) byRemote.putIfAbsent(entry.remoteKey, entry)
+        // 备注刷新后本地哈希基线跟着更新，避免下次把刷新误判成用户编辑
+        applyNoteHashes(byRemote, plan.noteHashes)
 
         val next = _state.value.copy(
             entries = byRemote.values.toList(),
@@ -481,16 +582,36 @@ class SchoolSyncEngine<R : Any>(
     private suspend fun markSyncedLocked(plan: EngineSyncPlan<R>): Boolean {
         // 「无新增」同样要回填存量分组：每日自动同步/手动同步的已是最新分支都走这里
         if (!applyGroupBackfill(plan)) return false
+        // 只有备注发生变化时才走 repository；失败返回 false，映射基线保持旧值
+        if (plan.noteRefresh.isNotEmpty()) {
+            when (todoRepository.updateTodoNotes(plan.noteRefresh)) {
+                TodoOpResult.Ok -> Unit
+                is TodoOpResult.Err -> return false
+            }
+        }
         val byRemote = _state.value.entries.associateBy { it.remoteKey }.toMutableMap()
         // 远端重新出现但无需回滚（用户手动改过完成态）时，也要把基线清掉
         for (update in plan.entryUpdates.values) byRemote[update.remoteKey] = update
         for (entry in plan.entriesForActive) byRemote.putIfAbsent(entry.remoteKey, entry)
+        applyNoteHashes(byRemote, plan.noteHashes)
         return persist(
             _state.value.copy(
                 entries = byRemote.values.toList(),
                 lastSyncAtMillis = clock(),
             ),
         )
+    }
+
+    /** 备注刷新后同步更新条目的本地哈希基线（todoId 命中才改；无刷新时不写状态文件） */
+    private fun applyNoteHashes(
+        byRemote: MutableMap<String, SchoolSyncEntry>,
+        noteHashes: Map<String, String>,
+    ) {
+        if (noteHashes.isEmpty()) return
+        for ((remoteKey, entry) in byRemote.entries.toList()) {
+            val hash = noteHashes[entry.todoId] ?: continue
+            byRemote[remoteKey] = entry.copy(localHash = hash)
+        }
     }
 
     private fun entryOf(remote: R, todo: Todo): SchoolSyncEntry = SchoolSyncEntry(
@@ -618,6 +739,21 @@ class SchoolSyncEngine<R : Any>(
 /** 预览计划的一项：远端对象只供引擎内部分组/哈希使用，UI 只读 [todo]/[courseName] */
 private data class PlanItem<R : Any>(val remote: R, val todo: Todo, val courseName: String)
 
+/** 备注补充候选：新条目 [refreshExisting]=false；存量/回收站条目=true（要写回本地仓库） */
+private data class NoteTarget<R : Any>(
+    val remote: R,
+    val todo: Todo,
+    val refreshExisting: Boolean,
+)
+
+/** 备注补充结果：新增/复活条目的 todo 已带新备注；存量走 [noteRefresh] */
+private data class NoteEnrichment<R : Any>(
+    val newItems: List<PlanItem<R>>,
+    val restoreItems: List<PlanItem<R>>,
+    val noteRefresh: Map<String, String>,
+    val noteHashes: Map<String, String>,
+)
+
 /** 远端已消失的已映射条目：commit 时标记完成并写入自动完成基线 */
 private data class VanishedItem(val entry: SchoolSyncEntry, val todo: Todo)
 
@@ -640,6 +776,10 @@ private class EngineSyncPlan<R : Any>(
     val skipped: Map<SkipReason, Int>,
     @Suppress("unused") val totalRemote: Int,
     val groupBackfill: Map<String, String>,
+    /** 存量待办备注刷新：todoId → 完整备注；commit/markSynced 时单次批量覆盖 */
+    val noteRefresh: Map<String, String>,
+    /** 备注刷新后的本地哈希基线：todoId → localHash；写入 entries 时覆盖旧基线 */
+    val noteHashes: Map<String, String>,
 ) : SyncPlan {
 
     override val newItems: List<SyncPlanItem> =

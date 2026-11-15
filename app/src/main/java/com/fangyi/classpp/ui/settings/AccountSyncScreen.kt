@@ -45,6 +45,7 @@ import com.fangyi.classpp.data.TodoError
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.sync.AutoRenewPolicy
 import com.fangyi.classpp.data.sync.AutoRenewState
+import com.fangyi.classpp.data.sync.Capability
 import com.fangyi.classpp.data.sync.CommitOutcome
 import com.fangyi.classpp.data.sync.DailySyncController
 import com.fangyi.classpp.data.sync.EnableOutcome
@@ -295,6 +296,7 @@ private fun AccountSyncContent(
 
     // 同步行为偏好：远端消失时自动标记完成（与引擎共用同一实例，下一次 prepare 生效）
     val autoCompleteOnVanish by syncPreferences.autoCompleteOnVanish.collectAsState()
+    val syncHomeworkNotes by syncPreferences.syncHomeworkNotes.collectAsState()
 
     // 学校选择（Phase 3）：入口卡常驻页面最底部，连接/未连接两态都显示。
     // 同步或自动续期在途时整行不响应（不弹 toast，指导 §3.2）；fallback flow 保证
@@ -890,18 +892,34 @@ private fun AccountSyncContent(
                 // 「偏好设置」分组：同步行为偏好（按校持久化，与引擎共用同一实例）
                 CardSection(title = stringResource(R.string.sync_section_preferences)) {
                     SettingsCard(
-                        items = listOf(
-                            SettingsCardItem.Toggle(
-                                label = stringResource(R.string.sync_auto_complete_title),
-                                description = stringResource(R.string.sync_auto_complete_desc),
-                                checked = autoCompleteOnVanish,
-                                onCheckedChange = {
-                                    syncPreferences.setAutoCompleteOnVanish(it)
-                                },
-                                // 未登录（未连接）时置灰不可点
-                                enabled = connected,
-                            ),
-                        ),
+                        items = buildList {
+                            add(
+                                SettingsCardItem.Toggle(
+                                    label = stringResource(R.string.sync_auto_complete_title),
+                                    description = stringResource(R.string.sync_auto_complete_desc),
+                                    checked = autoCompleteOnVanish,
+                                    onCheckedChange = {
+                                        syncPreferences.setAutoCompleteOnVanish(it)
+                                    },
+                                    // 未登录（未连接）时置灰不可点
+                                    enabled = connected,
+                                ),
+                            )
+                            // 作业要求同步：只有声明了能力的学校才显示（当前为厦大）
+                            if (Capability.TODO_NOTE_SYNC in spec.capabilities) {
+                                add(
+                                    SettingsCardItem.Toggle(
+                                        label = stringResource(R.string.sync_homework_note_title),
+                                        description = stringResource(R.string.sync_homework_note_desc),
+                                        checked = syncHomeworkNotes,
+                                        onCheckedChange = {
+                                            syncPreferences.setSyncHomeworkNotes(it)
+                                        },
+                                        enabled = connected,
+                                    ),
+                                )
+                            }
+                        },
                     )
                 }
 

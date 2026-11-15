@@ -291,6 +291,8 @@
     <!-- Preferences: mark completed when the remote item disappears -->
     <string name="sync_auto_complete_title">Mark completed when removed remotely</string>
     <string name="sync_auto_complete_desc">Synced todos that disappear from the remote are marked completed automatically. Overdue todos are left unchanged.</string>
+    <string name="sync_homework_note_title">Sync assignment requirements</string>
+    <string name="sync_homework_note_desc">Write assignment requirements and attachment names into todo notes, overwriting existing notes</string>
     <string name="xmu_auto_sync_notif_title">Course Center auto sync finished</string>
     <!-- School-neutral copy (multi-school support: used when a spec provides no override) -->
     <string name="sync_error_account_changed">An account change was detected. Sign in again or clear sync records.</string>

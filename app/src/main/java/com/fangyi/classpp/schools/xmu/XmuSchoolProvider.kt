@@ -46,6 +46,7 @@ import com.fangyi.classpp.data.sync.net.SessionCookieHolder
 import com.fangyi.classpp.data.sync.webview.WebFetcher
 import com.fangyi.classpp.data.xmu.Ipv4FirstXmuDns
 import com.fangyi.classpp.data.xmu.KeystoreXmuSecureStore
+import com.fangyi.classpp.data.xmu.XmuActivityRequirementsClient
 import com.fangyi.classpp.data.xmu.XmuCookieJar
 import com.fangyi.classpp.data.xmu.XmuCredentials
 import com.fangyi.classpp.data.xmu.XmuDebugLog
@@ -158,10 +159,9 @@ class XmuSchoolProvider : SchoolProvider {
             cookieJar = jwCookieJar,
         )
 
-        // 头像抓取：与同步同一次会话里下载，缓存进 filesDir/sync/xmu/。Cookie 两路合并——
-        // 原生登录写进 cookies.header，网页登录/mirror 在 WebView 的 CookieManager 里；
-        // 实际是否带上由 fetcher 按域名判定（只发给 xmu.edu.cn，外域头像按匿名请求取）
-        val avatarCookie: () -> String? = {
+        // 头像与作业要求共用同一次会话的 Cookie：原生登录写进 cookies.header，
+        // 网页登录/mirror 在 WebView 的 CookieManager 里；实际是否带上由各自 fetcher 判定
+        val sessionCookie: () -> String? = {
             val mirrored = runCatching {
                 CookieManager.getInstance().getCookie("https://${XmuWebViewPolicy.LNT_HOST}")
             }.getOrNull()
@@ -188,10 +188,17 @@ class XmuSchoolProvider : SchoolProvider {
             avatar = AvatarCache(
                 dir = File(File(deps.filesDir, SchoolSyncStore.ROOT_DIR_NAME), spec.id),
                 fetcher = HttpAvatarFetcher(
-                    cookie = avatarCookie,
+                    cookie = sessionCookie,
                     cookieHosts = setOf(XMU_DOMAIN),
                     userAgent = XmuWebViewPolicy.DESKTOP_USER_AGENT,
                     dns = Ipv4FirstXmuDns(),
+                ),
+            ),
+            // 作业要求同步：按课程活动列表批量取 description/uploads，失败只丢备注增强
+            noteEnricher = XmuNoteEnricher(
+                requirements = XmuActivityRequirementsClient(
+                    transport = transport,
+                    cookie = sessionCookie,
                 ),
             ),
             syncPreferences = PrefsSyncPreferences(appContext, spec.id),
@@ -366,6 +373,7 @@ internal val XMU_SCHOOL_SPEC = SchoolSpec(
         Capability.NATIVE_LOGIN,
         Capability.WEBVIEW_LOGIN,
         Capability.SCHEDULE_IMPORT,
+        Capability.TODO_NOTE_SYNC,
     ),
     headerTitle = SchoolText.Res(R.string.xmu_header_title),
     headerDescription = SchoolText.Res(R.string.xmu_header_description),
