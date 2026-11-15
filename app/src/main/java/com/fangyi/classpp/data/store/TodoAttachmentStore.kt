@@ -24,7 +24,8 @@ class TodoAttachmentStore(private val dir: File) {
 
     /**
      * 把 [input] 复制成附件文件，返回字节数；流为空、id / 文件名不安全或写入失败返回 null
-     * （失败会删掉半成品目录）。
+     * （失败会删掉半成品目录）。写入先落同目录的 `.part` 临时文件，成功后再改名——下载/导入
+     * 中途被取消或进程被杀时，不会留下一个看起来可打开的半个目标文件。
      */
     fun write(id: String, fileName: String, input: InputStream?): Long? {
         if (!isSafeId(id) || !isSafeFileName(fileName) || input == null) return null
@@ -33,8 +34,14 @@ class TodoAttachmentStore(private val dir: File) {
             targetDir.deleteRecursively()
             if (!targetDir.mkdirs() && !targetDir.isDirectory) return null
             val target = File(targetDir, fileName)
-            target.outputStream().use { out ->
+            val temp = File(targetDir, "$fileName.part")
+            temp.outputStream().use { out ->
                 input.use { it.copyTo(out, CopyBufferSize) }
+            }
+            if (!temp.renameTo(target)) {
+                temp.delete()
+                targetDir.deleteRecursively()
+                return null
             }
             target.length()
         } catch (_: Exception) {

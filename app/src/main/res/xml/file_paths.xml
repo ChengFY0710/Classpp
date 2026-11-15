@@ -2,8 +2,8 @@
 <!-- AI 对话拍照（TakePicture）：系统相机写入 cacheDir/ai_capture/ 的临时文件经 FileProvider
      授权给相机应用读取，导入压缩后即删，所以只开这一段 cache-path。
      应用内更新：已校验的 APK 落在 cacheDir/updates/，经同一 provider 授权给系统安装器。
-     待办附件：导入后复制进 filesDir/todo_attachments/，点击附件时经同一 provider 交给
-     系统 App（ACTION_VIEW）读取，因此额外开放这段 files-path。 -->
+     待办附件：本机导入或同步附件按需下载后都落在 filesDir/todo_attachments/，点击附件时
+     经同一 provider 交给系统 App（ACTION_VIEW）读取，因此额外开放这段 files-path。 -->
 <paths>
     <cache-path
         name="ai_capture"

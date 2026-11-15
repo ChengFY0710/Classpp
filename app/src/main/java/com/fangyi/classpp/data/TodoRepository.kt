@@ -78,6 +78,8 @@ class TodoRepository internal constructor(
     private val nowMillis: () -> Long = System::currentTimeMillis,
     // 附件文件仓库：应用内由 AppContainer 注入；测试可缺省（附件写操作返回错误）
     private val attachmentStore: TodoAttachmentStore? = null,
+    // 远端附件流式下载：应用内由 AppContainer 注入；缺省时同步附件只能打开已下载文件
+    private val remoteAttachmentFetcher: RemoteAttachmentFetcher? = null,
 ) {
     private val mutex = Mutex()
 
@@ -231,6 +233,7 @@ class TodoRepository internal constructor(
                     fileName = it.fileName.trim(),
                     mimeType = it.mimeType.trim().ifEmpty { "application/octet-stream" },
                     sizeBytes = it.sizeBytes.coerceAtLeast(0),
+                    remoteUrl = it.remoteUrl?.trim()?.ifEmpty { null },
                 )
             },
             completedAtMillis = if (migrated.completed) migrated.completedAtMillis ?: nowMillis() else null,
@@ -460,6 +463,77 @@ class TodoRepository internal constructor(
         }
         if (changed == 0) return@withLock TodoOpResult.Ok
         commit(fileState.value.copy(todos = todos))
+    }
+
+    /**
+     * 外部同步的批量内容刷新（备注 + 同步附件，单次 commit）：
+     * - [notes]：todoId → 新备注；
+     * - [remoteAttachments]：todoId → 最新远端附件列表。**只替换 [TodoAttachment.remoteUrl]
+     *   非空的同步附件**，本机附件（remoteUrl = null）原样保留；空列表 = 远端已无附件；
+     *   未知 todoId 宽容忽略。
+     *
+     * 只有真正变化的条目会写入；附件变化时校验更新后的待办（不允许非法远端元数据落库）。
+     * 落盘成功后清理被移除/改名旧附件的已下载文件；失败时文件与数据都不动。
+     */
+    suspend fun updateSyncedContent(
+        notes: Map<String, String> = emptyMap(),
+        remoteAttachments: Map<String, List<TodoAttachment>> = emptyMap(),
+    ): TodoOpResult {
+        if (notes.isEmpty() && remoteAttachments.isEmpty()) return TodoOpResult.Ok
+        val removedFiles = mutableListOf<TodoAttachment>()
+        var invalid: TodoError? = null
+        val result = mutex.withLock {
+            var changed = 0
+            val todos = fileState.value.todos.map { todo ->
+                val newNote = notes[todo.id]
+                val incoming = remoteAttachments[todo.id]
+                if (newNote == null && incoming == null) return@map todo
+                val currentRemote = todo.attachments.filter { it.remoteUrl != null }
+                val nextAttachments = if (incoming == null) {
+                    todo.attachments
+                } else {
+                    val sanitized = incoming.asSequence()
+                        .filter { !it.remoteUrl.isNullOrBlank() }
+                        .map {
+                            it.copy(
+                                name = it.name.trim(),
+                                fileName = it.fileName.trim(),
+                                mimeType = it.mimeType.trim()
+                                    .ifEmpty { "application/octet-stream" },
+                                sizeBytes = it.sizeBytes.coerceAtLeast(0),
+                                remoteUrl = it.remoteUrl?.trim(),
+                            )
+                        }
+                        .distinctBy { it.id }
+                        .toList()
+                    val locals = todo.attachments.filter { it.remoteUrl == null }
+                    val merged = (locals + sanitized).distinctBy { it.id }
+                    currentRemote.asSequence()
+                        .filter { old -> merged.none { it.id == old.id && it.fileName == old.fileName } }
+                        .forEach { removedFiles += it }
+                    merged
+                }
+                val nextNote = newNote ?: todo.note
+                if (nextNote == todo.note && nextAttachments == todo.attachments) {
+                    return@map todo
+                }
+                val updated = todo.copy(note = nextNote, attachments = nextAttachments)
+                if (incoming != null) {
+                    val errors = TodoValidator.validate(updated)
+                    if (errors.isNotEmpty()) {
+                        invalid = errors.first()
+                        return@map todo
+                    }
+                }
+                changed++
+                updated
+            }
+            invalid?.let { return@withLock TodoOpResult.Err(it) }
+            if (changed == 0) return@withLock TodoOpResult.Ok
+            commit(fileState.value.copy(todos = todos))
+        }
+        if (result == TodoOpResult.Ok) deleteAttachmentFiles(removedFiles)
+        return result
     }
 
     /** 新增待办：id 空则生成、createdAt 缺省（0）补当前时刻；归一化 + 校验后追加 */
@@ -852,6 +926,77 @@ class TodoRepository internal constructor(
         return attachmentStore?.file(attachment)?.takeIf { it.isFile }
     }
 
+    /**
+     * 下载一条同步附件到私有目录并返回文件；本机附件或已下载文件直接返回。
+     *
+     * 只对 [TodoAttachment.remoteUrl] 非空的附件工作；下载在 IO 线程进行，流由
+     * [TodoAttachmentStore.write] 落成 `.part` 后原子改名，取消/失败不会留下半个目标文件。
+     * 下载期间待办被删除或附件被同步移除时，丢弃本次结果并清理文件。
+     */
+    suspend fun downloadRemoteAttachment(todoId: String, attachmentId: String): File? {
+        val attachment = fileState.value.todos
+            .firstOrNull { it.id == todoId }
+            ?.attachments
+            ?.firstOrNull { it.id == attachmentId }
+            ?: return null
+        val fileStore = attachmentStore ?: return null
+        fileStore.file(attachment)?.takeIf { it.isFile }?.let { return it }
+        val url = attachment.remoteUrl?.takeIf { it.isNotBlank() } ?: return null
+        val fetcher = remoteAttachmentFetcher ?: return null
+        val input = try {
+            withContext(Dispatchers.IO) { fetcher.open(url, attachment.mimeType) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        val size = try {
+            withContext(Dispatchers.IO) {
+                fileStore.write(attachment.id, attachment.fileName, input)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        // 下载期间待办/附件可能已被删除或同步移除：不留孤儿文件
+        val stillReferenced = fileState.value.todos.any { todo ->
+            todo.id == todoId && todo.attachments.any { it.id == attachmentId }
+        }
+        if (!stillReferenced) {
+            fileStore.delete(attachment)
+            return null
+        }
+        // 远端大小未知（0）时用实际字节数补齐元数据；失败不影响本次打开
+        if (attachment.sizeBytes <= 0L && size > 0L) {
+            mutex.withLock {
+                val current = fileState.value.todos.firstOrNull { it.id == todoId }
+                if (current != null && current.attachments.any { it.id == attachmentId }) {
+                    commit(
+                        fileState.value.copy(
+                            todos = fileState.value.todos.map { todo ->
+                                if (todo.id != todoId) {
+                                    todo
+                                } else {
+                                    todo.copy(
+                                        attachments = todo.attachments.map {
+                                            if (it.id == attachmentId) {
+                                                it.copy(sizeBytes = size)
+                                            } else {
+                                                it
+                                            }
+                                        },
+                                    )
+                                }
+                            },
+                        ),
+                    )
+                }
+            }
+        }
+        return fileStore.file(attachment)?.takeIf { it.isFile }
+    }
+
     /** 删除附件文件（IO 线程，失败静默——孤儿目录由下次装载清扫兜底） */
     private suspend fun deleteAttachmentFiles(attachments: Collection<TodoAttachment>) {
         if (attachments.isEmpty()) return
@@ -946,7 +1091,9 @@ class TodoRepository internal constructor(
             store: TodoStore,
             nowMillis: () -> Long = System::currentTimeMillis,
             attachmentStore: TodoAttachmentStore? = null,
+            remoteAttachmentFetcher: RemoteAttachmentFetcher? = null,
         ): TodoRepository =
-            TodoRepository(store, nowMillis, attachmentStore).also { it.bootstrap() }
+            TodoRepository(store, nowMillis, attachmentStore, remoteAttachmentFetcher)
+                .also { it.bootstrap() }
     }
 }

@@ -5,15 +5,26 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * 一条作业要求：正文（已转纯文本）+ 可见附件名。两者都为空时视为「没有要求」，
- * 不写入备注（避免把存量备注清成空内容）。
+ * 一条作业要求：正文（已转纯文本）+ 可下载附件元数据。正文为空时仍可能有附件，
+ * 两者都由同步层转成待办的备注/附件 UI；取不到活动时整条不产生。
  */
 data class XmuActivityRequirement(
     val description: String,
-    val attachments: List<String>,
-) {
-    val hasContent: Boolean get() = description.isNotBlank() || attachments.isNotEmpty()
-}
+    val attachments: List<XmuActivityAttachment>,
+)
+
+/**
+ * 远端附件（课程活动 `uploads[]` 的安全子集）：
+ * [referenceId] 用于下载路径，[id] 是上传 id（reference 缺失时兜底），
+ * [name] 是展示名，[sizeBytes] 取远端上报大小（未知为 0）。
+ */
+data class XmuActivityAttachment(
+    val id: Long,
+    val referenceId: Long,
+    val name: String,
+    val type: String,
+    val sizeBytes: Long,
+)
 
 /**
  * 课程活动要求取数抽象：courseId → (activityId → 要求)。
@@ -99,9 +110,20 @@ internal class XmuActivityRequirementsClient(
                 activity.id to XmuActivityRequirement(
                     description = XmuHtmlText.toPlainText(activity.data?.description),
                     attachments = activity.uploads.orEmpty()
-                        .filter { !it.deleted && it.name.isNotBlank() }
-                        .map { it.name.trim() }
-                        .distinct(),
+                        .filter {
+                            !it.deleted && it.allowDownload && it.name.isNotBlank() &&
+                                (it.referenceId > 0L || it.id > 0L)
+                        }
+                        .map {
+                            XmuActivityAttachment(
+                                id = it.id,
+                                referenceId = it.referenceId,
+                                name = it.name.trim(),
+                                type = it.type,
+                                sizeBytes = it.size.coerceAtLeast(0),
+                            )
+                        }
+                        .distinctBy { if (it.referenceId > 0L) it.referenceId else it.id },
                 )
             }
     }

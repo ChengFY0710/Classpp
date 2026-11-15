@@ -291,8 +291,8 @@
     <!-- Preferences: mark completed when the remote item disappears -->
     <string name="sync_auto_complete_title">Mark completed when removed remotely</string>
     <string name="sync_auto_complete_desc">Synced todos that disappear from the remote are marked completed automatically. Overdue todos are left unchanged.</string>
-    <string name="sync_homework_note_title">Sync assignment requirements</string>
-    <string name="sync_homework_note_desc">Write assignment requirements and attachment names into todo notes, overwriting existing notes</string>
+    <string name="sync_homework_note_title">Sync requirements and attachments</string>
+    <string name="sync_homework_note_desc">Sync assignment requirements and attachments. Attachments download only when tapped, and existing notes are overwritten.</string>
     <string name="xmu_auto_sync_notif_title">Course Center auto sync finished</string>
     <!-- School-neutral copy (multi-school support: used when a spec provides no override) -->
     <string name="sync_error_account_changed">An account change was detected. Sign in again or clear sync records.</string>
@@ -785,13 +785,15 @@
     <string name="todo_section_steps">Steps</string>
     <string name="todo_step_add">Add step</string>
     <string name="todo_step_create_hint">Enter step name</string>
-    <!-- Todo details sheet: attachments section (SettingsCardwithIcon list + add-attachment row; long-press a row to delete) -->
+    <!-- Todo details sheet: attachments section (SettingsCardwithIcon list + add-attachment row; local attachments support long-press delete, synced attachments download on tap) -->
     <string name="todo_section_attachments">Attachments</string>
     <string name="todo_attachment_add">Add attachment</string>
     <string name="todo_attachment_delete">Delete attachment</string>
     <string name="todo_attachment_unnamed">Unnamed attachment</string>
     <string name="toast_todo_attachment_deleted">Attachment deleted</string>
     <string name="toast_todo_attachment_open_failed">Unable to open attachment</string>
+    <string name="toast_todo_attachment_download_failed">Attachment download failed</string>
+    <string name="todo_attachment_downloading">Downloading attachment…</string>
     <!-- Edit todo sheet: delete confirmation (soft delete: the item moves to Recently Deleted) -->
     <string name="todo_delete_title">Delete Todo</string>
     <string name="todo_delete_message">“%1$s” will be moved to Recently Deleted.</string>

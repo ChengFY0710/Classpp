@@ -129,11 +129,13 @@ object XmuTodoMapper {
     }
 
     /**
-     * 备注正文：课程名 + 类型 + 作业要求（可选）+ 附件（可选）+ 跳转链接
+     * 备注正文：课程名 + 类型 + 作业要求（可选）+ 跳转链接
      * （详情浮层直接可见可复制）。
      *
-     * [requirement] 为 null 时输出与旧版本逐字一致——未开启要求同步、要求取数失败或
-     * 该作业确实没有要求时，存量备注不受影响。
+     * 附件**不写入备注**：同步附件以结构化 [com.fangyi.classpp.data.model.TodoAttachment]
+     * 进入详情页「附件」区，按需下载。附件的远端正文由 [requirement.description] 提供。
+     *
+     * [requirement] 为 null 或正文为空时输出与旧版本逐字一致。
      */
     fun buildNote(
         dto: XmuTodoDto,
@@ -141,14 +143,9 @@ object XmuTodoMapper {
     ): String = buildString {
         append("课程：").append(dto.courseName)
         append("\n类型：").append(dto.type)
-        if (requirement != null) {
-            val description = requirement.description.trim()
-            if (description.isNotEmpty()) {
-                append("\n作业要求：").append(description)
-            }
-            if (requirement.attachments.isNotEmpty()) {
-                append("\n附件：").append(requirement.attachments.joinToString("、"))
-            }
+        val description = requirement?.description?.trim().orEmpty()
+        if (description.isNotEmpty()) {
+            append("\n作业要求：").append(description)
         }
         append("\n").append(activityUrl(dto))
     }

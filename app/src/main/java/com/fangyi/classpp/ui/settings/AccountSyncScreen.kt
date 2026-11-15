@@ -4,13 +4,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -70,6 +68,7 @@ import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
 import com.fangyi.classpp.ui.components.DialogPillButton
 import com.fangyi.classpp.ui.components.FadeOverlayDialog
+import com.fangyi.classpp.ui.components.LoadingCard
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SettingsCard
@@ -1043,7 +1042,7 @@ private fun AccountSyncContent(
             onDismiss = {},
             onDismissed = { loadingMounted = false },
         ) {
-            SyncLoadingCard()
+            LoadingCard(stringResource(R.string.sync_syncing))
         }
     }
 
@@ -1280,30 +1279,8 @@ private fun AccountSyncContent(
             onDismiss = {},
             onDismissed = { remoteLoadingMounted = false },
         ) {
-            SyncLoadingCard(message = remoteRefreshingText)
+            LoadingCard(remoteRefreshingText)
         }
-    }
-}
-
-/** 同步加载卡：小转圈 + 文案（默认「正在同步…」），垂直居中；浮层在途不可关闭 */
-@Composable
-private fun SyncLoadingCard(message: String = stringResource(R.string.sync_syncing)) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(32.dp),
-            strokeWidth = 3.dp,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = message,
-            style = ClassppTextTokens.dialogMessage,
-            color = MaterialTheme.classppColors.secondaryText,
-        )
     }
 }
 

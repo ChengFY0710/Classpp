@@ -86,6 +86,7 @@ import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.schools.schoolText
 import com.fangyi.classpp.ui.components.BottomFadeScrim
 import com.fangyi.classpp.ui.components.EmptyState
+import com.fangyi.classpp.ui.components.LoadingOverlay
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSectionHeader
 import com.fangyi.classpp.ui.components.NoteCardSwipe
@@ -97,9 +98,9 @@ import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.components.TodoInboxCard
 import com.fangyi.classpp.ui.components.TodoInboxItem
 import com.fangyi.classpp.ui.components.labelText
-import com.fangyi.classpp.ui.components.openTodoAttachment
 import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.components.rememberPopupActionGate
+import com.fangyi.classpp.ui.components.rememberTodoAttachmentOpener
 import com.fangyi.classpp.ui.components.todoAttachmentSources
 import com.fangyi.classpp.ui.motion.CrossPages
 import com.fangyi.classpp.ui.motion.Motion
@@ -1336,6 +1337,15 @@ fun TodoScreen(
         val stepDeletedMessage = stringResource(R.string.toast_todo_step_deleted)
         val attachmentDeletedMessage = stringResource(R.string.toast_todo_attachment_deleted)
         val attachmentOpenFailedMessage = stringResource(R.string.toast_todo_attachment_open_failed)
+        val attachmentDownloadFailedMessage =
+            stringResource(R.string.toast_todo_attachment_download_failed)
+        val attachmentDownloadingMessage = stringResource(R.string.todo_attachment_downloading)
+        val attachmentOpener = rememberTodoAttachmentOpener(
+            todoId = detail.id,
+            repository = repository,
+            onOpenFailed = { AppToasts.show(context, attachmentOpenFailedMessage) },
+            onDownloadFailed = { AppToasts.show(context, attachmentDownloadFailedMessage) },
+        )
         key(detail.id) {
             TodoDetailSheet(
                 visible = detailEntry != null,
@@ -1389,8 +1399,8 @@ fun TodoScreen(
                         }
                     }
                 },
-                // 附件：多选 URI 交仓库复制进私有目录并落库；点击经 FileProvider 交系统 App
-                // 打开（文件丢失 / 无处理应用统一 Toast）；长按菜单删除后落库并清理文件
+                // 附件：多选 URI 交仓库复制进私有目录并落库；点击本机附件直接打开，
+                // 同步附件先下载再打开（下载浮层在详情之后）；长按删除仅本机附件
                 onAttachmentsAdd = { uris ->
                     scope.launch {
                         val sources = todoAttachmentSources(context, uris)
@@ -1401,12 +1411,7 @@ fun TodoScreen(
                         }
                     }
                 },
-                onAttachmentOpen = { attachment ->
-                    val file = repository.attachmentFile(detail.id, attachment.id)
-                    if (file == null || !openTodoAttachment(context, file, attachment.mimeType)) {
-                        AppToasts.show(context, attachmentOpenFailedMessage)
-                    }
-                },
+                onAttachmentOpen = attachmentOpener.open,
                 onAttachmentDelete = { attachmentId ->
                     scope.launch {
                         when (repository.removeAttachment(detail.id, attachmentId)) {
@@ -1457,6 +1462,10 @@ fun TodoScreen(
                 },
             )
         }
+        LoadingOverlay(
+            visible = attachmentOpener.downloading,
+            message = attachmentDownloadingMessage,
+        )
     }
     // 日历账户选择卡：详情菜单「添加到日历」（单条）与编辑顶栏「同步」（整批）共用；
     // 画在详情浮层之后（组合顺序即绘制顺序，盖在详情之上），两段式挂载收口在

@@ -58,6 +58,7 @@ class TodoAttachmentStoreTest {
         val file = store.file(attachment)!!
         assertTrue(file.isFile)
         assertEquals("hello", file.readText())
+        assertFalse("成功后不残留 .part 临时文件", File(root, "a1/$fileName.part").exists())
 
         store.delete(attachment)
         assertFalse(File(root, "a1").exists())

@@ -74,11 +74,19 @@ data class XmuActivityDataDto(
 )
 
 /**
- * 附件项：`name` 是展示文件名（实测 PDF/PNG）；`deleted=true` 的已删除附件不展示。
- * 下载地址/大小等字段本次不用，交给 ignoreUnknownKeys 丢弃。
+ * 附件项：`id` 是上传 id，`reference_id` 是下载引用 id（页面下载链接用后者），
+ * `name` 是展示文件名（实测 PDF/PPTX/PNG），`size` 为字节数。
+ *
+ * `deleted=true` 或 `allow_download=false` 的附件不进入待办 UI；下载地址/课程信息等
+ * 其余字段本次不用，交给 ignoreUnknownKeys 丢弃。
  */
 @Serializable
 data class XmuUploadDto(
+    val id: Long = 0,
+    @SerialName("reference_id") val referenceId: Long = 0,
     val name: String = "",
+    val type: String = "",
+    val size: Long = 0,
     val deleted: Boolean = false,
+    @SerialName("allow_download") val allowDownload: Boolean = true,
 )

@@ -138,9 +138,10 @@ import com.fangyi.classpp.ui.components.DayTask
 import com.fangyi.classpp.ui.components.DayTaskAlldayAlert
 import com.fangyi.classpp.ui.components.DayTimeline
 import com.fangyi.classpp.ui.components.DayTodoAlert
+import com.fangyi.classpp.ui.components.LoadingOverlay
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
-import com.fangyi.classpp.ui.components.openTodoAttachment
+import com.fangyi.classpp.ui.components.rememberTodoAttachmentOpener
 import com.fangyi.classpp.ui.components.todoAttachmentSources
 import com.fangyi.classpp.ui.motion.DragDirection
 import com.fangyi.classpp.ui.motion.DragDirectionLock
@@ -1736,6 +1737,15 @@ internal fun DayScreen(
             val todoArchivedMessage = stringResource(R.string.toast_todo_archived)
             val attachmentDeletedMessage = stringResource(R.string.toast_todo_attachment_deleted)
             val attachmentOpenFailedMessage = stringResource(R.string.toast_todo_attachment_open_failed)
+            val attachmentDownloadFailedMessage =
+                stringResource(R.string.toast_todo_attachment_download_failed)
+            val attachmentDownloadingMessage = stringResource(R.string.todo_attachment_downloading)
+            val attachmentOpener = rememberTodoAttachmentOpener(
+                todoId = detail.id,
+                repository = repository,
+                onOpenFailed = { AppToasts.show(context, attachmentOpenFailedMessage) },
+                onDownloadFailed = { AppToasts.show(context, attachmentDownloadFailedMessage) },
+            )
             key(detail.id) {
                 TodoDetailSheet(
                     visible = todoDetailEntry != null,
@@ -1792,8 +1802,8 @@ internal fun DayScreen(
                             }
                         }
                     },
-                    // 附件：多选 URI 交仓库复制并落库；点击经 FileProvider 交系统 App 打开；
-                    // 长按菜单删除后落库并清理文件
+                    // 附件：多选 URI 交仓库复制并落库；点击本机附件直接打开，同步附件先下载
+                    // 再打开；长按菜单删除仅本机附件，落库后清理文件
                     onAttachmentsAdd = { uris ->
                         scope.launch {
                             val sources = todoAttachmentSources(context, uris)
@@ -1804,12 +1814,7 @@ internal fun DayScreen(
                             }
                         }
                     },
-                    onAttachmentOpen = { attachment ->
-                        val file = repository.attachmentFile(detail.id, attachment.id)
-                        if (file == null || !openTodoAttachment(context, file, attachment.mimeType)) {
-                            AppToasts.show(context, attachmentOpenFailedMessage)
-                        }
-                    },
+                    onAttachmentOpen = attachmentOpener.open,
                     onAttachmentDelete = { attachmentId ->
                         scope.launch {
                             when (repository.removeAttachment(detail.id, attachmentId)) {
@@ -1861,6 +1866,10 @@ internal fun DayScreen(
                     },
                 )
             }
+            LoadingOverlay(
+                visible = attachmentOpener.downloading,
+                message = attachmentDownloadingMessage,
+            )
         }
         // 日历账户选择卡：画在待办详情浮层之后（组合顺序即绘制顺序，盖在详情之上），
         // 两段式挂载收口在 CalendarPickerHost

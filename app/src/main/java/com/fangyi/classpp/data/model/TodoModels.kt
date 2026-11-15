@@ -24,17 +24,20 @@ data class TodoStep(
 )
 
 /**
- * 一条待办附件：文件副本存放在应用私有目录
- * `filesDir/todo_attachments/<id>/<fileName>`，这里只持久化元数据。
+ * 一条待办附件元数据。本机附件的文件副本存放在应用私有目录
+ * `filesDir/todo_attachments/<id>/<fileName>`；同步来源的附件（[remoteUrl] 非空）
+ * 在用户点击前**没有本地文件**，点击时才下载到同一目录，之后复用同一套打开链路。
  *
- * 文件复制 / 删除 / 系统打开由 [com.fangyi.classpp.data.TodoRepository] 与
+ * 文件复制 / 下载 / 删除 / 系统打开由 [com.fangyi.classpp.data.TodoRepository] 与
  * [com.fangyi.classpp.data.store.TodoAttachmentStore] 负责；分享载荷不携带附件。
  *
- * @param id 附件 id，同时作为私有目录名（内部生成 UUID，不允许路径分隔符）
+ * @param id 附件 id，同时作为私有目录名（内部生成 UUID，不允许路径分隔符；
+ *   同步附件使用稳定的 `xmu-<课程>-<活动>-<远端 id>`，重复同步不会重复下载）
  * @param name 原始显示名（界面行标题）
  * @param fileName 私有目录内的安全文件名（清洗路径分隔符与非法字符后的原名）
  * @param mimeType 系统打开时的 Intent MIME
- * @param sizeBytes 文件字节数
+ * @param sizeBytes 文件字节数；同步附件取远端上报大小，下载前也可为 0
+ * @param remoteUrl 远端附件地址：null = 本机附件；非 null = 同步附件，文件缺失时按需下载
  */
 @Serializable
 data class TodoAttachment(
@@ -43,6 +46,7 @@ data class TodoAttachment(
     val fileName: String,
     val mimeType: String = "application/octet-stream",
     val sizeBytes: Long = 0,
+    val remoteUrl: String? = null,
 )
 
 /**

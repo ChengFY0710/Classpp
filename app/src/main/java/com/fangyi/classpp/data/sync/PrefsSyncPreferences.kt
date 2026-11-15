@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * 文件（备份排除规则已覆盖），按 `<id>/auto_complete_on_vanish`、
  * `<id>/sync_homework_notes` 分键。
  *
- * 「远端消失自动完成」默认关闭；「同步作业要求」默认开启（新增能力按默认有用的方向）。
+ * 「远端消失自动完成」默认关闭；「同步作业要求与附件」默认开启（新增能力按默认有用的方向）。
  * 单值不值得引入 DataStore，apply 异步落盘，冷进程可直接读。
  * 与 [PrefsDailySyncToggle] 同模式：provider 装配 session 时创建，UI 与引擎共用同一实例。
  */

@@ -105,7 +105,8 @@ private val TitleMenuGap = 12.dp
  * 右侧勾选框、支持向右滑呼出删除动作卡（双阈值手势见
  * [com.fangyi.classpp.ui.components.NoteCardSwipeLayer]），其下是等高的
  * 「添加步骤」行卡 [AddItemCard]）、「附件」分组（[SettingsCardwithIcon] 多行卡：
- * 点击交宿主用系统 App 打开、长按弹「删除附件」菜单，其下是等高的「添加附件」行卡
+ * 点击交宿主用系统 App 打开（同步附件未下载时先下载再打开）、**本机附件**长按弹
+ * 「删除附件」菜单（同步附件不可删除，下次同步会恢复），其下是等高的「添加附件」行卡
  * [AddItemCard]——与添加步骤同款，点击拉起系统文件选择器多选）、条件渲染的
  * 「重复」分组（[SheetInfoCard] 只读信息行：
  * 重复类型 /（自定义时）重复规则 / 结束，其下一张 [SettingsCard] 的「完成情况」导航行
@@ -151,7 +152,7 @@ internal fun TodoDetailSheet(
     onStepDelete: (stepId: String) -> Unit,
     // 添加附件：系统文件选择器多选后交回 URI 列表，由宿主复制进私有目录并落库
     onAttachmentsAdd: (List<Uri>) -> Unit,
-    // 点击一条附件：宿主经 FileProvider 交给系统 App 打开，失败 Toast
+    // 点击一条附件：本机附件直接打开；同步附件先按需下载再打开，失败 Toast
     onAttachmentOpen: (TodoAttachment) -> Unit,
     // 长按附件行菜单「删除附件」：宿主落库并从私有目录删除文件
     onAttachmentDelete: (attachmentId: String) -> Unit,
@@ -410,8 +411,9 @@ internal fun TodoDetailSheet(
                     },
                 )
             }
-            // 附件：多行卡走 SettingsCardwithIcon（点击系统打开、长按弹删除菜单），其下是
-            // 与「添加步骤」同款的添加行卡；附件为空时只渲染按钮卡
+            // 附件：多行卡走 SettingsCardwithIcon（本机附件点击打开、长按弹删除菜单；
+            // 同步附件点击才下载再打开、不提供删除），其下是与「添加步骤」同款的添加行卡；
+            // 附件为空时只渲染按钮卡
             CardSection(title = stringResource(R.string.todo_section_attachments)) {
                 if (todo.attachments.isNotEmpty()) {
                     SettingsCardwithIcon(
@@ -425,9 +427,14 @@ internal fun TodoDetailSheet(
                                 },
                                 label = attachment.name,
                                 onClick = { onAttachmentOpen(attachment) },
-                                onLongClick = { anchor ->
-                                    attachmentMenuTarget = AttachmentMenuTarget(attachment, anchor)
-                                    attachmentMenuVisible = true
+                                // 同步附件只允许点击下载/打开，不长按删除（下次同步会重新出现）
+                                onLongClick = if (attachment.remoteUrl == null) {
+                                    { anchor ->
+                                        attachmentMenuTarget = AttachmentMenuTarget(attachment, anchor)
+                                        attachmentMenuVisible = true
+                                    }
+                                } else {
+                                    null
                                 },
                             )
                         },

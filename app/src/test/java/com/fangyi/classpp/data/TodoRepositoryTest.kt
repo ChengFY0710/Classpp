@@ -4,17 +4,21 @@ import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatEndType
 import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.RepeatType
+import com.fangyi.classpp.data.model.TodoAttachment
 import com.fangyi.classpp.data.model.TodoFile
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoSharePayload
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.StoreResult
+import com.fangyi.classpp.data.store.TodoAttachmentStore
 import com.fangyi.classpp.data.store.TodoStore
+import java.io.ByteArrayInputStream
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -34,6 +38,33 @@ class TodoRepositoryTest {
     private suspend fun repo(
         store: TodoStore = com.fangyi.classpp.data.store.FileTodoStore(folder.root),
     ) = TodoRepository.create(store, now)
+
+    /** 带附件目录/远端下载器的仓库：返回仓库与附件根目录，供同步附件用例检查文件 */
+    private suspend fun repoWithAttachments(
+        fetcher: RemoteAttachmentFetcher? = null,
+    ): Pair<TodoRepository, TodoAttachmentStore> {
+        val attachmentStore = TodoAttachmentStore(folder.newFolder("todo_attachments"))
+        val repository = TodoRepository.create(
+            store = com.fangyi.classpp.data.store.FileTodoStore(folder.root),
+            nowMillis = now,
+            attachmentStore = attachmentStore,
+            remoteAttachmentFetcher = fetcher,
+        )
+        return repository to attachmentStore
+    }
+
+    private fun remoteAttachment(
+        id: String = "xmu-10-1-10898379",
+        name: String = "Talk9-作业.pdf",
+        sizeBytes: Long = 1_320_718,
+    ): TodoAttachment = TodoAttachment(
+        id = id,
+        name = name,
+        fileName = name,
+        mimeType = "application/pdf",
+        sizeBytes = sizeBytes,
+        remoteUrl = "https://lnt.xmu.edu.cn/api/uploads/reference/10898379/blob",
+    )
 
     private suspend fun TodoReadResult<String>.okId(): String {
         assertTrue("expected Ok, got ${(this as? TodoReadResult.Err)?.error?.message}", this is TodoReadResult.Ok)
@@ -1136,6 +1167,95 @@ class TodoRepositoryTest {
 
         assertTrue(r.addTodo(testTodo(name = "A")).readErr() is TodoError.PersistFailed)
         assertTrue("失败后内存不得出现新待办", r.todos.value.isEmpty())
+    }
+
+    // ---------- 同步附件 ----------
+
+    @Test
+    fun `updateSyncedContent keeps local attachments and replaces remote ones`() = runBlocking {
+        val (r, store) = repoWithAttachments()
+        val id = r.addTodo(testTodo(name = "作业", note = "旧备注")).okId()
+        r.addAttachments(
+            id,
+            listOf(
+                TodoAttachmentSource("本地.pdf", "application/pdf") {
+                    ByteArrayInputStream("local".toByteArray())
+                },
+            ),
+        ).assertOk()
+        val local = r.todos.value.single().attachments.single()
+        assertNull(local.remoteUrl)
+
+        val remote = remoteAttachment()
+        r.updateSyncedContent(
+            notes = mapOf(id to "新备注"),
+            remoteAttachments = mapOf(id to listOf(remote)),
+        ).assertOk()
+
+        val updated = r.todos.value.single()
+        assertEquals("新备注", updated.note)
+        assertEquals(setOf(local.id, remote.id), updated.attachments.map { it.id }.toSet())
+        assertEquals("local", store.file(local)!!.readText())
+        assertFalse("同步附件未下载前不应有文件", store.file(remote)!!.exists())
+
+        // 远端附件消失：只删远端，本机附件与文件保留
+        r.updateSyncedContent(remoteAttachments = mapOf(id to emptyList())).assertOk()
+        val cleared = r.todos.value.single()
+        assertEquals(listOf(local.id), cleared.attachments.map { it.id })
+        assertEquals("local", store.file(local)!!.readText())
+    }
+
+    @Test
+    fun `updateSyncedContent deletes removed remote attachment file`() = runBlocking {
+        val (r, store) = repoWithAttachments()
+        val id = r.addTodo(testTodo(name = "作业")).okId()
+        val remote = remoteAttachment()
+        r.updateSyncedContent(remoteAttachments = mapOf(id to listOf(remote))).assertOk()
+        store.write(remote.id, remote.fileName, ByteArrayInputStream("cached".toByteArray()))
+        assertTrue(store.file(remote)!!.isFile)
+
+        r.updateSyncedContent(remoteAttachments = mapOf(id to emptyList())).assertOk()
+
+        assertFalse(store.file(remote)!!.exists())
+    }
+
+    @Test
+    fun `downloadRemoteAttachment caches file and fills unknown size`() = runBlocking {
+        var calls = 0
+        val urls = mutableListOf<String>()
+        val fetcher = RemoteAttachmentFetcher { url, _ ->
+            calls++
+            urls += url
+            ByteArrayInputStream("pdf-bytes".toByteArray())
+        }
+        val (r, _) = repoWithAttachments(fetcher)
+        val id = r.addTodo(testTodo(name = "作业")).okId()
+        val remote = remoteAttachment(sizeBytes = 0)
+        r.updateSyncedContent(remoteAttachments = mapOf(id to listOf(remote))).assertOk()
+
+        val file = r.downloadRemoteAttachment(id, remote.id)
+
+        assertNotNull(file)
+        assertEquals("pdf-bytes", file!!.readText())
+        assertEquals(1, calls)
+        assertEquals(listOf(remote.remoteUrl), urls)
+        assertEquals(9L, r.todos.value.single().attachments.single().sizeBytes)
+
+        // 第二次命中本地文件，不再请求远端
+        assertEquals(file, r.downloadRemoteAttachment(id, remote.id))
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun `downloadRemoteAttachment failure returns null without file`() = runBlocking {
+        val fetcher = RemoteAttachmentFetcher { _, _ -> null }
+        val (r, store) = repoWithAttachments(fetcher)
+        val id = r.addTodo(testTodo(name = "作业")).okId()
+        val remote = remoteAttachment()
+        r.updateSyncedContent(remoteAttachments = mapOf(id to listOf(remote))).assertOk()
+
+        assertNull(r.downloadRemoteAttachment(id, remote.id))
+        assertFalse(store.file(remote)!!.exists())
     }
 
     private suspend fun TodoReadResult<*>.readErr(): TodoError {

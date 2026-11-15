@@ -72,14 +72,15 @@ import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.ui.components.AiChatInputBar
+import com.fangyi.classpp.ui.components.LoadingOverlay
 import com.fangyi.classpp.ui.components.LocalOverlayBottomHazeState
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
-import com.fangyi.classpp.ui.components.openTodoAttachment
 import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.components.rememberImeVisible
+import com.fangyi.classpp.ui.components.rememberTodoAttachmentOpener
 import com.fangyi.classpp.ui.components.todoAttachmentSources
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.rememberSystemAnimationsEnabled
@@ -182,6 +183,9 @@ fun AiChatOverlay(
     val archivedMessage = stringResource(R.string.toast_todo_archived)
     val attachmentDeletedMessage = stringResource(R.string.toast_todo_attachment_deleted)
     val attachmentOpenFailedMessage = stringResource(R.string.toast_todo_attachment_open_failed)
+    val attachmentDownloadFailedMessage =
+        stringResource(R.string.toast_todo_attachment_download_failed)
+    val attachmentDownloadingMessage = stringResource(R.string.todo_attachment_downloading)
     // 「添加到闹钟」（待办详情菜单项）：目标时刻映射与结果 Toast 收口在 AddToAlarmFlow；
     // 与日历不同，闹钟不需要权限/账户编排上下文，AI 浮层同样可用
     val addToAlarm = rememberAddToAlarm()
@@ -1010,6 +1014,12 @@ fun AiChatOverlay(
     if (detailEntry != null) detailMounted = detailEntry
     detailMounted?.let { detail ->
         val repository = todoRepository
+        val attachmentOpener = rememberTodoAttachmentOpener(
+            todoId = detail.id,
+            repository = repository,
+            onOpenFailed = { AppToasts.show(context, attachmentOpenFailedMessage) },
+            onDownloadFailed = { AppToasts.show(context, attachmentDownloadFailedMessage) },
+        )
         key(detail.id) {
             TodoDetailSheet(
                 // 主浮层收起时详情一并退场（宿主外部关闭不会留下孤儿浮层）
@@ -1062,8 +1072,8 @@ fun AiChatOverlay(
                         }
                     }
                 },
-                // 附件：多选 URI 交仓库复制并落库；点击经 FileProvider 交系统 App 打开；
-                // 长按菜单删除后落库并清理文件（AI 浮层仓库未装配时全部跳过）
+                // 附件：多选 URI 交仓库复制并落库；点击本机附件直接打开，同步附件先下载
+                // 再打开；长按菜单删除仅本机附件，落库后清理文件（AI 浮层仓库未装配时全部跳过）
                 onAttachmentsAdd = { uris ->
                     if (repository != null) {
                         scope.launch {
@@ -1076,12 +1086,7 @@ fun AiChatOverlay(
                         }
                     }
                 },
-                onAttachmentOpen = { attachment ->
-                    val file = repository?.attachmentFile(detail.id, attachment.id)
-                    if (file == null || !openTodoAttachment(context, file, attachment.mimeType)) {
-                        AppToasts.show(context, attachmentOpenFailedMessage)
-                    }
-                },
+                onAttachmentOpen = attachmentOpener.open,
                 onAttachmentDelete = { attachmentId ->
                     if (repository != null) {
                         scope.launch {
@@ -1130,6 +1135,10 @@ fun AiChatOverlay(
                 onAddToAlarm = { addToAlarm(detail) },
             )
         }
+        LoadingOverlay(
+            visible = attachmentOpener.downloading,
+            message = attachmentDownloadingMessage,
+        )
     }
 
     // ——— 待办编辑浮层：预填的 NewTodoSheet，叠在详情/对话之上 ———

@@ -26,6 +26,7 @@ import com.fangyi.classpp.data.sync.SchoolProvider
 import com.fangyi.classpp.data.sync.SchoolRegistry
 import com.fangyi.classpp.data.sync.SessionDeps
 import com.fangyi.classpp.data.sync.SyncDebugLog
+import com.fangyi.classpp.data.sync.net.HttpRemoteAttachmentFetcher
 import com.fangyi.classpp.data.sync.remote.SchoolRemoteCatalog
 import com.fangyi.classpp.data.sync.remote.SchoolRemoteConfig
 import com.fangyi.classpp.data.sync.remote.toRemoteProviders
@@ -225,6 +226,8 @@ class AppContainer internal constructor(
                     store = FileTodoStore(dir),
                     // 附件文件副本目录：与 todos.json 同属应用私有 filesDir，随整机自动备份
                     attachmentStore = TodoAttachmentStore(File(dir, TodoAttachmentStore.DIRECTORY_NAME)),
+                    // 同步附件的按需下载：点击后经 CookieManager 带会话取 blob 流
+                    remoteAttachmentFetcher = HttpRemoteAttachmentFetcher(),
                 )
             }
             val scheduleDeferred = async(Dispatchers.IO) {

@@ -194,8 +194,8 @@ class XmuSchoolProvider : SchoolProvider {
                     dns = Ipv4FirstXmuDns(),
                 ),
             ),
-            // 作业要求同步：按课程活动列表批量取 description/uploads，失败只丢备注增强
-            noteEnricher = XmuNoteEnricher(
+            // 作业要求/附件同步：按课程活动列表批量取 description/uploads，失败只丢内容增强
+            todoEnricher = XmuTodoEnricher(
                 requirements = XmuActivityRequirementsClient(
                     transport = transport,
                     cookie = sessionCookie,

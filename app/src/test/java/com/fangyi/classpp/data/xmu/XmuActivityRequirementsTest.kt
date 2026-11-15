@@ -41,11 +41,33 @@ class XmuActivityRequirementsTest {
 
         val course = requireNotNull(result[105713L])
         assertEquals(
-            XmuActivityRequirement(description = "", attachments = listOf("Talk9-作业.pdf")),
+            XmuActivityRequirement(
+                description = "",
+                attachments = listOf(
+                    XmuActivityAttachment(
+                        id = 17141442,
+                        referenceId = 10898379,
+                        name = "Talk9-作业.pdf",
+                        type = "document",
+                        sizeBytes = 1320718,
+                    ),
+                ),
+            ),
             course[1029546L],
         )
         assertEquals(
-            XmuActivityRequirement(description = "如图说明", attachments = listOf("a.png")),
+            XmuActivityRequirement(
+                description = "如图说明",
+                attachments = listOf(
+                    XmuActivityAttachment(
+                        id = 17141370,
+                        referenceId = 10898322,
+                        name = "a.png",
+                        type = "image",
+                        sizeBytes = 592747,
+                    ),
+                ),
+            ),
             course[1025592L],
         )
         assertTrue(result.containsKey(105714L))
@@ -125,13 +147,18 @@ class XmuActivityRequirementsTest {
               {"id":1029546,"type":"homework",
                "data":{"description":""},
                "uploads":[
-                 {"name":"Talk9-作业.pdf","deleted":false},
-                 {"name":"deleted.pdf","deleted":true},
-                 {"name":""}
+                 {"id":17141442,"reference_id":10898379,"name":"Talk9-作业.pdf",
+                  "type":"document","size":1320718,"deleted":false,"allow_download":true},
+                 {"id":1,"reference_id":1,"name":"deleted.pdf","deleted":true},
+                 {"id":2,"reference_id":2,"name":"no-download.pdf","allow_download":false},
+                 {"id":3,"reference_id":3,"name":""}
                ]},
               {"id":1025592,"type":"homework",
                "data":{"description":"<p>如图说明</p>"},
-               "uploads":[{"name":"a.png"}]}
+               "uploads":[
+                 {"id":17141370,"reference_id":10898322,"name":"a.png",
+                  "type":"image","size":592747,"allow_download":true}
+               ]}
             ]}
         """
     }

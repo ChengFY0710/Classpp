@@ -18,9 +18,10 @@ interface SyncPreferences {
     val autoCompleteOnVanish: StateFlow<Boolean>
 
     /**
-     * 是否把作业要求（正文 + 附件名）同步到待办备注（默认开启）。
-     * 开启后存量同步待办的备注会被最新抓取结果覆盖；关闭后完全不发要求请求，
-     * 已有备注不受影响。只影响**后续同步**，切换后下一次 prepare 生效。
+     * 是否把所有远端内容（作业要求 + 附件元数据）同步到待办（默认开启）。
+     * 开启后存量同步待办的备注会被最新抓取结果覆盖，附件列表随远端更新；附件文件
+     * 只在用户点击时下载。关闭后完全不发内容请求，已有备注/附件不受影响。
+     * 只影响**后续同步**，切换后下一次 prepare 生效。
      */
     val syncHomeworkNotes: StateFlow<Boolean>
 

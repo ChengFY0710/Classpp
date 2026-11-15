@@ -61,9 +61,10 @@ enum class BackupError {
  * 备份范围 = 课表（含时间方案）、待办（含回收站/归档/分组/步骤/附件）、标签、日程背景图
  * 及图库元数据、AI 对话记录。**不含**任何账号凭据、WebView 数据、XMU 同步状态、
  * 应用偏好设置与可再下载的脚本缓存（见 [StorageUsage] 的口径说明）。待办附件文件
- * 随 `attachments/` entry 一并打包（元数据在 `todos.json` 里）；导出时只收集仍存在的
- * 附件文件，缺失项会从**备份内**的待办元数据中剔除，避免生成打不开的悬空附件。
- * 导入时备份里没有对应文件的附件元数据同样会被剔除，兼容旧版本不含附件文件的备份。
+ * 随 `attachments/` entry 一并打包（元数据在 `todos.json` 里）；导出时收集仍存在的附件
+ * 文件，缺失的本机附件元数据会从**备份内**的待办中剔除，避免生成打不开的悬空附件；
+ * 同步附件（`remoteUrl` 非空）允许没有本地文件，元数据始终保留，恢复后按需重新下载。
+ * 导入时备份里没有对应文件的本机附件元数据同样会被剔除，兼容旧版本不含附件文件的备份。
  * 系统自动备份默认也包含 `filesDir/todo_attachments`。
  *
  * 导入语义为**覆盖恢复**：先整包解压到 cache 暂存目录并解析校验全部 JSON，全部合法
@@ -113,8 +114,11 @@ class BackupManager(private val context: Context) {
         val includedAttachmentPaths = attachmentRefs.mapTo(mutableSetOf()) { it.relativePath }
         val backupTodos = todos.copy(
             todos = todos.todos.map { todo ->
+                // 同步附件只有元数据、文件按需下载：即使还没有本地文件也要保留，
+                // 恢复后仍能展示附件行并重新下载
                 val kept = todo.attachments.filter {
-                    "${it.id}/${it.fileName}" in includedAttachmentPaths
+                    "${it.id}/${it.fileName}" in includedAttachmentPaths ||
+                        it.remoteUrl != null
                 }
                 if (kept.size == todo.attachments.size) todo else todo.copy(attachments = kept)
             },
@@ -218,8 +222,10 @@ class BackupManager(private val context: Context) {
                 .mapTo(mutableSetOf()) { it.relativePath }
             val restoredTodos = todos.copy(
                 todos = todos.todos.map { todo ->
+                    // 同步附件允许只有元数据（文件在点击时再下载）；本机附件仍要求文件在场
                     val kept = todo.attachments.filter {
-                        "${it.id}/${it.fileName}" in restoredAttachmentPaths
+                        "${it.id}/${it.fileName}" in restoredAttachmentPaths ||
+                            it.remoteUrl != null
                     }
                     if (kept.size == todo.attachments.size) todo else todo.copy(attachments = kept)
                 },

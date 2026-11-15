@@ -7,11 +7,23 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.TodoAttachmentSource
+import com.fangyi.classpp.data.TodoRepository
+import com.fangyi.classpp.data.model.TodoAttachment
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -65,3 +77,61 @@ private fun queryDisplayName(resolver: ContentResolver, uri: Uri): String? = run
         cursor.getString(index)
     }
 }.getOrNull()?.takeIf { it.isNotBlank() }
+
+/**
+ * 附件点击处理器：本机文件直接交系统打开；同步附件在没有本地文件时先下载再打开。
+ * [downloading] 驱动宿主渲染与「同步中」同款的 [com.fangyi.classpp.ui.components.LoadingOverlay]。
+ */
+internal class TodoAttachmentOpener(
+    val open: (TodoAttachment) -> Unit,
+    val downloading: Boolean,
+)
+
+/**
+ * 生成附件打开器（[TodoAttachmentOpener]）：点击 → 本地已有文件直接打开；同步附件
+ * （[TodoAttachment.remoteUrl] 非空）则先经仓库下载到私有目录（`.part` 原子改名），
+ * 下载期间 [TodoAttachmentOpener.downloading] 为 true，打开沿用 FileProvider + ACTION_VIEW。
+ *
+ * 同一时刻只允许一个下载（原子闸门）；失败分别回调 [onOpenFailed] / [onDownloadFailed]。
+ * 仓库未装配、附件既无本地文件也无远端地址时按打开失败处理。
+ */
+@Composable
+internal fun rememberTodoAttachmentOpener(
+    todoId: String,
+    repository: TodoRepository?,
+    onOpenFailed: () -> Unit,
+    onDownloadFailed: () -> Unit,
+): TodoAttachmentOpener {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val busy = remember(todoId) { AtomicBoolean(false) }
+    var downloading by remember(todoId) { mutableStateOf(false) }
+    val currentOpenFailed by rememberUpdatedState(onOpenFailed)
+    val currentDownloadFailed by rememberUpdatedState(onDownloadFailed)
+    val open: (TodoAttachment) -> Unit = { attachment ->
+        val local = repository?.attachmentFile(todoId, attachment.id)
+        if (local != null) {
+            if (!openTodoAttachment(context, local, attachment.mimeType)) {
+                currentOpenFailed()
+            }
+        } else if (repository == null || attachment.remoteUrl.isNullOrBlank()) {
+            currentOpenFailed()
+        } else if (busy.compareAndSet(false, true)) {
+            downloading = true
+            scope.launch {
+                try {
+                    val file = repository.downloadRemoteAttachment(todoId, attachment.id)
+                    if (file == null) {
+                        currentDownloadFailed()
+                    } else if (!openTodoAttachment(context, file, attachment.mimeType)) {
+                        currentOpenFailed()
+                    }
+                } finally {
+                    busy.set(false)
+                    downloading = false
+                }
+            }
+        }
+    }
+    return TodoAttachmentOpener(open = open, downloading = downloading)
+}

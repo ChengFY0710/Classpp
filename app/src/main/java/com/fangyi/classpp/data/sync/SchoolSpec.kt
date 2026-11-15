@@ -11,8 +11,8 @@ import java.util.Locale
  * - [WEBVIEW_LOGIN]：WebView 登录，对应 [SchoolSession.webViewLogin]；
  * - [SCHEDULE_IMPORT]：教务课表导入（可选能力），对应 [SchoolSession.scheduleImport]
  *   与 [SchoolSpec.timetableIntro]；
- * - [TODO_NOTE_SYNC]：同步作业要求到待办备注（可选能力）。声明后「同步偏好」显示开关，
- *   由学校适配层提供批量取数实现；未声明的学校不显示、不发起请求。
+ * - [TODO_NOTE_SYNC]：同步作业要求与附件到待办（可选能力）。附件只同步元数据，
+ *   用户点击时才下载；声明后「同步偏好」显示开关，由学校适配层提供批量取数实现。
  */
 enum class Capability {
     NATIVE_LOGIN,
