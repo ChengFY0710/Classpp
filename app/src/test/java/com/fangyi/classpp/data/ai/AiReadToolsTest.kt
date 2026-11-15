@@ -22,7 +22,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 三个只读工具的行为：日期/调课/单双周、待办过滤排序与 limit/offset 分页、周偏移与越界。
+ * 三个只读工具的行为：日期/调课/单双周、待办过滤排序与 limit/offset 分页、周偏移/绝对周次/课表概况与越界。
  * 纯 JVM，不依赖 Android。
  */
 class AiReadToolsTest {
@@ -582,7 +582,7 @@ class AiReadToolsTest {
     // ---------- get_week_schedule ----------
 
     @Test
-    fun `week schedule groups days and applies offsets`() = kotlinx.coroutines.runBlocking {
+    fun `week schedule resolves offsets and absolute weeks across the term`() = kotlinx.coroutines.runBlocking {
         val schedule = testSchedule(
             courses = listOf(
                 testCourse(id = "c1", name = "英语", day = 1, startSlot = 1),
@@ -593,40 +593,81 @@ class AiReadToolsTest {
 
         val thisWeek = AiReadTools.executeWeekSchedule(args(), context)
         val nextWeek = AiReadTools.executeWeekSchedule(args("weekOffset" to JsonPrimitive(1)), context)
+        val firstWeek = AiReadTools.executeWeekSchedule(args("week" to JsonPrimitive(1)), context)
+        val lastWeek = AiReadTools.executeWeekSchedule(args("week" to JsonPrimitive(16)), context)
+        // week 优先于 weekOffset：两者同时出现时不按偏移回退
+        val weekWins = AiReadTools.executeWeekSchedule(
+            args("week" to JsonPrimitive(3), "weekOffset" to JsonPrimitive(-2)),
+            context,
+        )
 
         assertTrue(thisWeek.ok())
         assertEquals(12, thisWeek.data().getValue("week").jsonPrimitive.int)
+        assertEquals(16, thisWeek.data().getValue("totalWeeks").jsonPrimitive.int)
         assertEquals(5, thisWeek.data().getValue("days").jsonArray.size)
         val monday = thisWeek.data().getValue("days").jsonArray.first().jsonObject
         assertEquals("2026-05-18", monday.getValue("date").jsonPrimitive.content)
         assertEquals(1, monday.getValue("courses").jsonArray.size)
         assertEquals(13, nextWeek.data().getValue("week").jsonPrimitive.int)
+
+        assertTrue(firstWeek.ok())
+        assertEquals(1, firstWeek.data().getValue("week").jsonPrimitive.int)
+        assertEquals(
+            "2026-03-02",
+            firstWeek.data().getValue("days").jsonArray.first().jsonObject
+                .getValue("date").jsonPrimitive.content,
+        )
+        assertTrue(lastWeek.ok())
+        assertEquals(16, lastWeek.data().getValue("week").jsonPrimitive.int)
+        assertEquals(3, weekWins.data().getValue("week").jsonPrimitive.int)
     }
 
     @Test
-    fun `week schedule outside term returns empty days`() = kotlinx.coroutines.runBlocking {
-        val context = AiChatContext(
-            schedule = testSchedule(courses = listOf(testCourse())),
-            currentWeek = 100,
-            today = wedWeek12,
-        )
+    fun `week schedule overview returns term facts without days`() = kotlinx.coroutines.runBlocking {
+        val context = AiChatContext(schedule = testSchedule(), currentWeek = 12, today = wedWeek12)
 
-        val result = AiReadTools.executeWeekSchedule(args("weekOffset" to JsonPrimitive(1)), context)
+        val result = AiReadTools.executeWeekSchedule(args("overview" to JsonPrimitive(true)), context)
 
         assertTrue(result.ok())
-        assertEquals(101, result.data().getValue("week").jsonPrimitive.int)
-        assertTrue(
-            result.data().getValue("days").jsonArray.all {
-                it.jsonObject.getValue("courses").jsonArray.isEmpty()
-            },
+        val data = result.data()
+        assertEquals(true, data.getValue("overview").jsonPrimitive.boolean)
+        assertEquals(16, data.getValue("totalWeeks").jsonPrimitive.int)
+        assertEquals(12, data.getValue("currentWeek").jsonPrimitive.int)
+        assertEquals("2026-03-02", data.getValue("termStart").jsonPrimitive.content)
+        assertEquals("2026-06-19", data.getValue("termEnd").jsonPrimitive.content)
+        assertEquals(5, data.getValue("daysPerWeek").jsonPrimitive.int)
+        assertNull(data["days"])
+
+        // overview 忽略 week / weekOffset：越界周也不影响概况查询
+        val withWeek = AiReadTools.executeWeekSchedule(
+            args("overview" to JsonPrimitive(true), "week" to JsonPrimitive(99)),
+            context,
         )
+        assertTrue(withWeek.ok())
+
+        // 学期外没有当前周时省略 currentWeek
+        val offTerm = AiReadTools.executeWeekSchedule(
+            args("overview" to JsonPrimitive(true)),
+            AiChatContext(schedule = testSchedule(), today = wedWeek12),
+        )
+        assertNull(offTerm.data()["currentWeek"])
     }
 
     @Test
-    fun `week schedule rejects offset out of range and missing schedule`() = kotlinx.coroutines.runBlocking {
+    fun `week schedule rejects weeks outside the term and missing schedule`() = kotlinx.coroutines.runBlocking {
         val context = AiChatContext(schedule = testSchedule(), currentWeek = 12, today = wedWeek12)
         val outOfRange = AiReadTools.executeWeekSchedule(args("weekOffset" to JsonPrimitive(5)), context)
         assertEquals("invalid_arguments", outOfRange.errorCode())
+
+        val badAbsolute = AiReadTools.executeWeekSchedule(args("week" to JsonPrimitive(0)), context)
+        assertEquals("invalid_arguments", badAbsolute.errorCode())
+
+        // 学期外不再静默返回空周：目标周超出课表周次即报错
+        val afterTerm = AiReadTools.executeWeekSchedule(
+            args("weekOffset" to JsonPrimitive(1)),
+            AiChatContext(schedule = testSchedule(), currentWeek = 100, today = wedWeek12),
+        )
+        assertEquals("invalid_arguments", afterTerm.errorCode())
 
         val missing = AiReadTools.executeWeekSchedule(args(), AiChatContext(today = wedWeek12))
         assertEquals("not_found", missing.errorCode())

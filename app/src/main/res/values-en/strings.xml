@@ -1069,11 +1069,14 @@
     <string name="ai_tool_result_free_slots">%1$d free slots</string>
     <string name="ai_tool_result_week">Week %1$d</string>
     <string name="ai_tool_result_days">%1$d days</string>
+    <string name="ai_tool_result_total_weeks">%1$d weeks total</string>
     <string name="ai_tool_result_empty">No result</string>
     <string name="ai_tool_result_truncated">Result truncated</string>
     <string name="ai_tool_result_cancelled">Last run did not finish</string>
     <string name="ai_tool_arg_date">Date %1$s</string>
+    <string name="ai_tool_arg_week">Week %1$d</string>
     <string name="ai_tool_arg_week_offset">Offset %1$d weeks</string>
+    <string name="ai_tool_arg_overview">Timetable overview</string>
     <string name="ai_tool_arg_query">“%1$s”</string>
     <string name="ai_tool_arg_status">Status %1$s</string>
     <string name="ai_tool_arg_offset">From #%1$d</string>
@@ -1097,6 +1100,7 @@
     <string name="ai_tool_detail_truncated">(Omitted after %1$d items)</string>
     <string name="ai_tool_arg_todo_id">id %1$s</string>
     <string name="ai_tool_detail_deadline">Due %1$s</string>
+    <string name="ai_tool_detail_term">Term %1$s to %2$s</string>
     <string name="ai_tool_detail_time">Time %1$s</string>
     <string name="ai_tool_detail_group">Group %1$s</string>
     <string name="ai_tool_detail_tags">Tags %1$s</string>

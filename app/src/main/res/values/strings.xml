@@ -1066,11 +1066,14 @@
     <string name="ai_tool_result_free_slots">%1$d 段空闲</string>
     <string name="ai_tool_result_week">第 %1$d 周</string>
     <string name="ai_tool_result_days">%1$d 天</string>
+    <string name="ai_tool_result_total_weeks">共 %1$d 周</string>
     <string name="ai_tool_result_empty">无结果</string>
     <string name="ai_tool_result_truncated">结果已截断</string>
     <string name="ai_tool_result_cancelled">上次执行未完成</string>
     <string name="ai_tool_arg_date">日期 %1$s</string>
+    <string name="ai_tool_arg_week">第 %1$d 周</string>
     <string name="ai_tool_arg_week_offset">偏移 %1$d 周</string>
+    <string name="ai_tool_arg_overview">课表概况</string>
     <string name="ai_tool_arg_query">“%1$s”</string>
     <string name="ai_tool_arg_status">状态 %1$s</string>
     <string name="ai_tool_arg_offset">从第 %1$d 条起</string>
@@ -1094,6 +1097,7 @@
     <string name="ai_tool_detail_truncated">（超过%1$d条后省略）</string>
     <string name="ai_tool_arg_todo_id">id %1$s</string>
     <string name="ai_tool_detail_deadline">截止 %1$s</string>
+    <string name="ai_tool_detail_term">学期 %1$s 至 %2$s</string>
     <string name="ai_tool_detail_time">时间 %1$s</string>
     <string name="ai_tool_detail_group">分组 %1$s</string>
     <string name="ai_tool_detail_tags">标签 %1$s</string>

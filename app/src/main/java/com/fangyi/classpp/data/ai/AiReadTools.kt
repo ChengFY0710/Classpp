@@ -92,7 +92,19 @@ internal object AiReadTools {
     val weekScheduleParameters: JsonObject = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
-            integerProperty("weekOffset", "周偏移：0=本周（默认），-1=上周，1=下周；范围 -4..4")
+            integerProperty(
+                "week",
+                "学期周次（1 起）；已知具体第几周时传它，优先于 weekOffset",
+            )
+            integerProperty(
+                "weekOffset",
+                "相对当前周的偏移：0=本周（默认），-1=上周，1=下周；目标周须落在课表周次内",
+            )
+            booleanProperty(
+                "overview",
+                "true = 只返回课表概况（总周数、当前周、学期起止、每周天数），不返回每天课程；" +
+                    "用于回答“一共几周/什么时候结课”，忽略 week 与 weekOffset",
+            )
         }
     }
 
@@ -412,15 +424,43 @@ internal object AiReadTools {
     // ---------- get_week_schedule ----------
 
     suspend fun executeWeekSchedule(args: JsonObject, ctx: AiChatContext): JsonObject {
-        val offset = args.intOrNull("weekOffset") ?: 0
-        if (offset !in -4..4) {
-            return failure("invalid_arguments", "weekOffset 必须在 -4..4")
-        }
         val schedule = ctx.schedule
             ?: return failure("not_found", "未设置课表")
-        val baseWeek = ctx.currentWeek ?: schedule.weekOf(ctx.today)
-        val targetWeek = baseWeek + offset
-        // 目标周的周一由学期起点推算（而非 today + offset）：越界周/学期外也不会读错周
+        val totalWeeks = schedule.totalWeeks
+        // 概况模式：回答“一共几周/什么时候结课”只需要学期信息，不必把整周课程带回来
+        if (args.booleanOrNull("overview") == true) {
+            return success(
+                buildJsonObject {
+                    put("overview", true)
+                    put("totalWeeks", totalWeeks)
+                    ctx.currentWeek?.let { put("currentWeek", it) }
+                    put("termStart", schedule.termStart.toString())
+                    put("termEnd", schedule.termEnd.toString())
+                    put("daysPerWeek", schedule.daysPerWeek)
+                },
+            )
+        }
+        val requestedWeek = args.intOrNull("week")
+        val targetWeek = if (requestedWeek != null) {
+            // 绝对周次优先：学期外也能直接查任意一周，不依赖“当前第几周”
+            if (requestedWeek !in 1..totalWeeks) {
+                return failure("invalid_arguments", "week 必须在 1..$totalWeeks（课表共 $totalWeeks 周）")
+            }
+            requestedWeek
+        } else {
+            val offset = args.intOrNull("weekOffset") ?: 0
+            val baseWeek = ctx.currentWeek ?: schedule.weekOf(ctx.today)
+            val week = baseWeek + offset
+            if (week !in 1..totalWeeks) {
+                return failure(
+                    "invalid_arguments",
+                    "weekOffset=$offset 指向第 $week 周，超出课表范围" +
+                        "（课表共 $totalWeeks 周，可查第 1..$totalWeeks 周）",
+                )
+            }
+            week
+        }
+        // 目标周的周一由学期起点推算（而非 today + offset）：周次与日期始终按学期对齐
         val monday = schedule.termStart.mondayOfWeek() + (targetWeek - 1) * 7
         val dayCount = schedule.daysPerWeek.coerceIn(1, 7)
         val days = (0 until dayCount).map { index ->
@@ -434,6 +474,7 @@ internal object AiReadTools {
         return success(
             buildJsonObject {
                 put("week", targetWeek)
+                put("totalWeeks", totalWeeks)
                 putJsonArray("dates") { days.forEach { add(it["date"] ?: JsonPrimitive("")) } }
                 put("days", buildJsonArray { days.forEach { add(it) } })
             },

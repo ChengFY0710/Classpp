@@ -297,8 +297,10 @@ object AiToolRegistry {
         ),
         AiToolSpec(
             name = GET_WEEK_SCHEDULE,
-            description = "查询某一周的课表（按天分组）。用户问“下周怎么安排/这周有什么课”时调用；" +
-                "weekOffset：-1=上周，0=本周，1=下周。",
+            description = "查询某一周的课表（按天分组），课表全部周都可查；overview=true 只返回课表概况" +
+                "（总周数、当前周、学期起止）。用户问“下周怎么安排/这周有什么课/第几周上什么/一共几周”" +
+                "时调用；week 传绝对周次（1 起），weekOffset 相对本周（-1=上周，0=本周，1=下周），" +
+                "都省略 = 本周。",
             parameters = AiReadTools.weekScheduleParameters,
             permission = AiToolPermission.Read,
             execute = AiReadTools::executeWeekSchedule,

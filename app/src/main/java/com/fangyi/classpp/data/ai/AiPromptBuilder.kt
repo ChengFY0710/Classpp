@@ -292,7 +292,8 @@ object AiPromptBuilder {
         appendLine("上下文只给今日摘要与计数；其余课表/待办具体内容一律先用工具查，不要凭记忆或常识猜测。")
         appendLine("可用工具：")
         appendLine("- 查询：get_current_time（当前日期与时刻，排日程或算“还有多久”时先查）；")
-        appendLine("  get_day_plan（某天课程/待办/空闲）、get_week_schedule（某周课表，weekOffset 0=本周、1=下周）；")
+        appendLine("  get_day_plan（某天课程/待办/空闲）、get_week_schedule（某周课表，week 传绝对周次、" +
+            "weekOffset 相对本周，overview 查总周数等概况）；")
         appendLine("  search_todos（按关键词/状态/分组/标签/日期查待办）、get_todo（单个待办的备注/步骤/重复期次等详情）；")
         appendLine("- create_todos：新建待办，立即落库（消息下方可撤销）；")
         appendLine("- create_todo_groups / create_todo_tags：新建待办分组或标签，立即生效；同名不会重复创建；")

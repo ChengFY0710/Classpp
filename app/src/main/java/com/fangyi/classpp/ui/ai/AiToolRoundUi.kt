@@ -235,8 +235,14 @@ private fun toolParamSummary(call: AiToolCall): String {
             if (date.isNullOrBlank()) "" else stringResource(R.string.ai_tool_arg_date, date)
         }
         AiToolRegistry.GET_WEEK_SCHEDULE -> {
+            val week = args["week"].textOrNull()?.toIntOrNull()
             val offset = args["weekOffset"].textOrNull()?.toIntOrNull()
-            if (offset == null) "" else stringResource(R.string.ai_tool_arg_week_offset, offset)
+            when {
+                args["overview"].textOrNull() == "true" -> stringResource(R.string.ai_tool_arg_overview)
+                week != null -> stringResource(R.string.ai_tool_arg_week, week)
+                offset != null -> stringResource(R.string.ai_tool_arg_week_offset, offset)
+                else -> ""
+            }
         }
         AiToolRegistry.SEARCH_TODOS -> {
             val parts = mutableListOf<String>()
@@ -328,11 +334,17 @@ private fun toolResultSummary(name: String, result: AiToolResult?): String {
         }
         AiToolRegistry.GET_WEEK_SCHEDULE -> {
             val parts = mutableListOf<String>()
-            data["week"].textOrNull()?.toIntOrNull()?.let {
-                parts += stringResource(R.string.ai_tool_result_week, it)
-            }
-            (data["days"] as? JsonArray)?.size?.let {
-                parts += stringResource(R.string.ai_tool_result_days, it)
+            if (data["overview"].textOrNull() == "true") {
+                data["totalWeeks"].textOrNull()?.toIntOrNull()?.let {
+                    parts += stringResource(R.string.ai_tool_result_total_weeks, it)
+                }
+            } else {
+                data["week"].textOrNull()?.toIntOrNull()?.let {
+                    parts += stringResource(R.string.ai_tool_result_week, it)
+                }
+                (data["days"] as? JsonArray)?.size?.let {
+                    parts += stringResource(R.string.ai_tool_result_days, it)
+                }
             }
             parts.joinToString(" · ")
         }
@@ -429,12 +441,20 @@ private fun toolResultDetails(name: String, result: AiToolResult?): List<String>
             }
         }
         AiToolRegistry.GET_WEEK_SCHEDULE -> {
-            (data["days"] as? JsonArray)?.forEach { element ->
-                val day = element as? JsonObject ?: return@forEach
-                val weekday = day["weekday"].textOrNull().orEmpty()
-                val date = day["date"].textOrNull().orEmpty()
-                val courses = (day["courses"] as? JsonArray)?.size ?: 0
-                lines += "$weekday $date · ${stringResource(R.string.ai_tool_result_courses, courses)}"
+            if (data["overview"].textOrNull() == "true") {
+                val start = data["termStart"].textOrNull().orEmpty()
+                val end = data["termEnd"].textOrNull().orEmpty()
+                if (start.isNotBlank() && end.isNotBlank()) {
+                    lines += stringResource(R.string.ai_tool_detail_term, start, end)
+                }
+            } else {
+                (data["days"] as? JsonArray)?.forEach { element ->
+                    val day = element as? JsonObject ?: return@forEach
+                    val weekday = day["weekday"].textOrNull().orEmpty()
+                    val date = day["date"].textOrNull().orEmpty()
+                    val courses = (day["courses"] as? JsonArray)?.size ?: 0
+                    lines += "$weekday $date · ${stringResource(R.string.ai_tool_result_courses, courses)}"
+                }
             }
         }
         AiToolRegistry.GET_TODO -> {
