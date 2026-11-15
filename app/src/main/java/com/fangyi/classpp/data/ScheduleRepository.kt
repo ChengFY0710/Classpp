@@ -533,7 +533,7 @@ class ScheduleRepository internal constructor(
 
     // ---------- 分享 ----------
 
-    /** 导出为 pretty JSON 文本（分享载荷），供系统分享面板发送 */
+    /** 导出为 pretty JSON 文本（分享载荷），由调用方写入用户选定的文件 */
     suspend fun exportSchedule(id: String): ReadResult<String> {
         val s = scheduleOrNull(id) ?: return ReadResult.Err(ScheduleError.NotFound(id))
         return ReadResult.Ok(ShareCodec.encode(s, System.currentTimeMillis()))

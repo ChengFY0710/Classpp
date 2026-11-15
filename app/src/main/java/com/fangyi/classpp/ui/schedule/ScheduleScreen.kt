@@ -1,9 +1,7 @@
 package com.fangyi.classpp.ui.schedule
 
-import android.content.ActivityNotFoundException
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -117,6 +115,9 @@ import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -836,34 +837,60 @@ fun ScheduleScreen(
                     }
                 }
             }
-            // 导出：当前激活课表 → pretty JSON → 系统分享面板。
-            // 读的是仓库已保存状态，草稿里未保存的改动不包含在内（已接受的限制）
-            val exportFailedToast = stringResource(R.string.error_unexpected)
-            val onExport: () -> Unit = {
-                scope.launch {
-                    when (val r = repository.exportSchedule(schedule.id)) {
-                        is ReadResult.Ok -> {
-                            val send = Intent(Intent.ACTION_SEND).apply {
-                                type = "application/json"
-                                putExtra(Intent.EXTRA_TEXT, r.value)
-                            }
-                            try {
-                                context.startActivity(Intent.createChooser(send, null))
-                            } catch (e: ActivityNotFoundException) {
+            // 导出：当前激活课表 → pretty JSON 文件，经系统文件选择器写到用户选定位置
+            // （文件名 = 课表名 + 时间戳）。读的是仓库已保存状态，草稿里未保存的改动不包含在内
+            // （已接受的限制）
+            val exportDoneToast = stringResource(R.string.switcher_export_done)
+            val exportFailedToast = stringResource(R.string.switcher_export_failed)
+            // 点击时锁定的课表 id：文件选择器在场期间激活课表仍可能被切换，回调按点击时导出。
+            // 选择器是外部 Activity，进程/配置重建后靠 rememberSaveable 恢复
+            var pendingExportId by rememberSaveable { mutableStateOf("") }
+            val exportLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("application/json"),
+            ) { uri ->
+                val exportId = pendingExportId
+                pendingExportId = ""
+                if (uri != null) {
+                    scope.launch {
+                        when (val r = repository.exportSchedule(exportId)) {
+                            is ReadResult.Ok -> {
+                                // 写盘失败（URI 失效 / 存储已满）统一提示，不区分原因
+                                val written = withContext(Dispatchers.IO) {
+                                    try {
+                                        context.contentResolver.openOutputStream(uri)
+                                            ?.bufferedWriter()
+                                            ?.use { it.write(r.value) } != null
+                                    } catch (_: Exception) {
+                                        false
+                                    }
+                                }
                                 Toast.makeText(
                                     context,
-                                    exportFailedToast,
+                                    if (written) exportDoneToast else exportFailedToast,
                                     Toast.LENGTH_SHORT,
                                 ).show()
                             }
+                            is ReadResult.Err -> Toast.makeText(
+                                context,
+                                r.error.toEditMessage(context),
+                                Toast.LENGTH_SHORT,
+                            ).show()
                         }
-                        is ReadResult.Err -> Toast.makeText(
-                            context,
-                            r.error.toEditMessage(context),
-                            Toast.LENGTH_SHORT,
-                        ).show()
                     }
                 }
+            }
+            val onExport: () -> Unit = {
+                val exportId = schedule.id
+                val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date())
+                // 课表名用户可自由输入，去掉文件系统保留字符并限长，避免选择器侧写文件名失败
+                val name = schedule.name
+                    .replace(Regex("""[\\/:*?"<>|]"""), "_")
+                    .trim()
+                    .take(40)
+                pendingExportId = exportId
+                exportLauncher.launch(
+                    context.getString(R.string.switcher_export_file_name, name, stamp),
+                )
             }
             // 新建：成功先关表单浮层回切换列表再走切换（脏则弹确认；取消确认也不会停在
             // 表单里重复点创建）；失败走系统 Toast（新建失败多为重名/名称非法，表单内容无需改动引导）。

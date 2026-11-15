@@ -722,6 +722,9 @@
 
     <!-- 切换课表浮层 -->
     <string name="switcher_export">导出当前课表</string>
+    <string name="switcher_export_done">课表已导出</string>
+    <string name="switcher_export_failed">导出失败，请检查存储空间后重试</string>
+    <string name="switcher_export_file_name">课表-%1$s-%2$s.json</string>
     <string name="switcher_new">新建课表</string>
     <string name="switcher_new_action">新建</string>
     <string name="switcher_title">切换课表</string>

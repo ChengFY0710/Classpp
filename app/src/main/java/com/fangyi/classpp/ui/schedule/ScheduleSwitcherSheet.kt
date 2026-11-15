@@ -132,7 +132,7 @@ internal fun ScheduleSwitcherSheet(
                         onDelete = { deletingId = schedule.id },
                     )
                 }
-                // 导出当前课表：整份课表 → pretty JSON → 系统分享面板（行为同原底部「导出课表」胶囊）
+                // 导出当前课表：整份课表 → pretty JSON 文件（系统文件选择器选保存位置）
                 ExportCurrentScheduleRow(onClick = onExport)
             }
         }

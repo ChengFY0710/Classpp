@@ -2,7 +2,7 @@ package com.fangyi.classpp.data.model
 
 import kotlinx.serialization.Serializable
 
-/** 分享载荷信封：导出为 JSON 文本经系统分享面板发出，接收方原样导入 */
+/** 分享载荷信封：导出为 JSON 文件，接收方原样导入 */
 @Serializable
 data class SharePayload(
     val formatVersion: Int = SCHEDULE_FORMAT_VERSION,
