@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -27,7 +28,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
@@ -39,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -233,6 +235,7 @@ val LocalOverlayTopBarBlur = staticCompositionLocalOf { false }
  * 驱动；AiChatOverlay / AiConversationsSheet / ScheduleSwitcherSheet 的落库回流窗口同理）；
  * 调用方传 true/false 时必须与叠层弹卡/菜单的 hazeState 下发保持一致。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun OverlaySheet(
     title: String,
@@ -309,12 +312,22 @@ fun OverlaySheet(
     }
     val density = LocalDensity.current
     // 距屏幕顶端 = 状态栏（顶部信息栏）实际高度；调用方显式传 topInset 时用传入值。
-    // 键盘弹起仍不改变浮层位置——让位只发生在滚动内容末尾
-    val resolvedTopInset = if (topInset != Dp.Unspecified) {
-        topInset
-    } else {
-        with(density) { WindowInsets.statusBars.getTop(density).toDp() }
+    // 键盘弹起仍不改变浮层位置——让位只发生在滚动内容末尾。
+    //
+    // 实取「忽略可见性」的状态栏高度（状态栏被隐藏时仍给出其占位高度），并用「0 不覆盖
+    // 已有正值」兜住窗口转场期间 insets 整包瞬时空派发：把待办附件交给系统 App 打开等
+    // 跨应用转场里，宿主窗口会短暂失焦/隐藏，随之收到的 statusBars 可能报 0。
+    // 浮层若跟随这个 0，整张卡会窜到屏幕顶端、回来再落下——即待办详情打开附件时的
+    // 上下闪。隐藏期间保持最后一次有效高度，转场结束状态栏复原后高度不变，浮层零位移；
+    // 分屏 / 桌面模式等「本窗口本就没有状态栏」的形态初值即 0，不受影响
+    val liveTopInset = with(density) {
+        WindowInsets.statusBarsIgnoringVisibility.getTop(density).toDp()
     }
+    var stableTopInset by remember { mutableStateOf(liveTopInset) }
+    SideEffect {
+        if (liveTopInset > 0.dp) stableTopInset = liveTopInset
+    }
+    val resolvedTopInset = if (topInset != Dp.Unspecified) topInset else stableTopInset
     // 内容让位键盘：尾部余量取 IME **超出导航栏**的高度（导航区由下面的底部留白承担，
     // 不双计）。让位挂在滚动内容末尾而非容器上——容器的位置与高度因此不随键盘变化。
     // 键盘收起时余量按 TailReserveMillis 缩回（rememberTailReservePx）：它只降低滚动上限，
