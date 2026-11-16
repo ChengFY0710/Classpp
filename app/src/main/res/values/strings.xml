@@ -646,7 +646,7 @@
     <!-- 日程（个性化页） -->
     <string name="section_agenda">日程</string>
     <string name="show_overdue_todos">显示逾期待办</string>
-    <string name="show_overdue_todos_desc">开启后，查看其他日期时仍显示已逾期的待办</string>
+    <string name="show_overdue_todos_desc">开启后，日程页查看其他日期时仍显示已逾期的待办</string>
     <string name="time_range_start">开始时间</string>
     <string name="time_range_end">结束时间</string>
     <string name="show_inactive">显示非本周课程</string>
