@@ -510,7 +510,7 @@
     <!-- Agenda (Personalization) -->
     <string name="section_agenda">Agenda</string>
     <string name="show_overdue_todos">Show overdue tasks</string>
-    <string name="show_overdue_todos_desc">When on, the Agenda page still shows overdue todos on other dates</string>
+    <string name="show_overdue_todos_desc">When on, the Agenda page still shows overdue todos</string>
     <string name="time_range_start">Start time</string>
     <string name="time_range_end">End time</string>
     <string name="show_inactive">Show classes not held this week</string>

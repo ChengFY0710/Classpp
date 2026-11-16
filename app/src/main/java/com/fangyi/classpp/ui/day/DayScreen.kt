@@ -243,9 +243,9 @@ private val TrailingScrollSpace = 120.dp
  *
  * [todoRepository] 喂日历卡的待办小点与日历卡下方的待办提醒卡（DayTodoAlert）：前者
  * 按 DayCalendar 回报的网格窗口取覆盖日期（[datesCoveredWithin]），后者按截止窗口
- * （逾期 ~ 后天）取未完成待办；未注入（预览/首帧）都按无待办处理。查看其他日期时
- * 是否仍带上已逾期待办由 [showOverdueTodos] 决定（个性化「日程」开关，默认关闭，
- * 看今天的卡片不受影响）。待办提醒卡行与时间轴
+ * （逾期 ~ 后天）取未完成待办；未注入（预览/首帧）都按无待办处理。是否显示相对查看日
+ * 已逾期的待办由 [showOverdueTodos] 决定（个性化「日程」开关，默认关闭，关闭后只看
+ * 查看日起 2 天内截止的）。待办提醒卡行与时间轴
  * 待办卡可点击唤起待办详情浮层（TodoDetailSheet，与待办页同款两段式接线，含备注/步骤/
  * 倒计时与「编辑」叠层 NewTodoSheet）。
  *
@@ -272,7 +272,7 @@ internal fun DayScreen(
     todoRepository: TodoRepository? = null,
     scheduleRepository: ScheduleRepository? = null,
     tagRepository: TagRepository? = null,
-    /** 查看非今天日期时是否仍显示已逾期待办（个性化「日程」开关，默认关闭） */
+    /** 是否显示相对查看日已逾期的待办（个性化「日程」开关，默认关闭） */
     showOverdueTodos: State<Boolean> = mutableStateOf(false),
     /** 顶栏右侧 AI 按钮：唤起宿主（MainActivity）根级的 AI 对话浮层 */
     onOpenAiChat: () -> Unit = {},
@@ -1992,7 +1992,7 @@ internal fun DayScreen(
  * （[DayTodayCourseAlert]）、[DayTodoAlert] 的今天行与 [DayTimeline] 主体，30s 对表
  * 只失效这些叶子，不再重组横滑轨里的三页整页内容。
  *
- * [showOverdueTodos] 透传给两张提醒卡的候选口径：查看非今天日期时是否保留已逾期待办
+ * [showOverdueTodos] 透传给两张提醒卡的候选口径：是否显示相对查看日已逾期的待办
  * （个性化「日程」开关，默认关闭），两张卡同值传入以保证让位互斥一致。
  *
  * [revision] 在每次换日提交时自增（横滑松手判定 / 日历跳日），用作两张提醒卡
@@ -2061,9 +2061,10 @@ private fun DayDateContent(
                 ),
             )
         }
-        // 待办提醒卡：截止窗口随查看日期推算——今天收「今明后天 + 已逾期」的未完成待办；
-        // 查看其他日期收「那天起 2 天内」窗口，已逾期的拖欠是否一并带来看
-        // [showOverdueTodos]。无候选时整卡折叠不占位。倒计时（含取色）与标题逾期标红随
+        // 待办提醒卡：截止窗口随查看日期推算——[showOverdueTodos] 开启时今天收
+        //「今明后天 + 已逾期」、查看其他日期收「那天起 2 天内」窗口 + 全部已逾期；
+        // 关闭后只收查看日起 2 天内截止的，查看日当天未逾期的照常显示，相对查看日
+        // 已逾期的不上卡。无候选时整卡折叠不占位。倒计时（含取色）与标题逾期标红随
         // 查看日期同源推算；非今天截止文案取绝对日期（避免与倒计时错位）。完成勾选走
         // 落库路由，行点击经 openTodoDetail 唤起待办详情浮层。key(revision) 的落位重置
         // 口径见函数 KDoc。

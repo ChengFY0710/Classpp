@@ -87,10 +87,10 @@ import kotlin.math.roundToInt
  * 「待办」分组为收集箱「瀑布流视图」开关（[todoMasonry] / [onTodoMasonryChange]）：
  * 开启时收集箱非空分组达 3 个后自动两列瀑布流，关闭后始终整宽竖排（默认开启，
  * 保持既有布局行为，设置项只提供关闭入口）。
- * 「日程」分组（页末）为「其他日期显示逾期待办」开关（[showOverdueTodos] /
- * [onShowOverdueTodosChange]）：决定日程页查看非今天日期时是否仍带上已逾期待办，
- * 默认关闭（只看该日期前后截止的待办）；看今天的提醒卡不受影响。持久化见
- * [AgendaPreferences]。
+ * 「日程」分组（页末）为「显示逾期待办」开关（[showOverdueTodos] /
+ * [onShowOverdueTodosChange]）：决定日程页是否显示相对查看日已逾期的待办。关闭（默认）
+ * 时只显示查看日起 2 天内截止的（查看日当天未逾期的照常显示），开启后恢复「逾期始终
+ * 在场」原口径。持久化见 [AgendaPreferences]。
  * 后续外观类设置项（字号、图标风格等）继续加入本页。
  */
 @Composable
@@ -411,10 +411,10 @@ private fun TodoSection(
 }
 
 /**
- * 「日程」分组（页末）：日程页「其他日期显示逾期待办」开关单独一张卡
- * （[showOverdueTodos] / [onShowOverdueTodosChange]）。关闭（默认）时查看非今天日期
- * 只显示该日期前后截止的待办，开启后已逾期的拖欠始终在场；看今天的提醒卡不受影响。
- * 持久化见 [AgendaPreferences]。
+ * 「日程」分组（页末）：日程页「显示逾期待办」开关单独一张卡
+ * （[showOverdueTodos] / [onShowOverdueTodosChange]）。关闭（默认）时只显示查看日起
+ * 2 天内截止的待办，相对查看日已逾期的不上卡（查看日当天未逾期的照常显示），开启后
+ * 恢复「逾期始终在场」原口径。持久化见 [AgendaPreferences]。
  *
  * State 实例由调用方透传、值只在本叶子读取：切换开关只重组本卡片，不牵动整页
  * （同 ScheduleSection / TodoSection 的透传纪律）。

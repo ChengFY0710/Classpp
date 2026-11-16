@@ -6,9 +6,9 @@ import android.content.Context
  * 日程页提醒卡「其他日期显示逾期待办」开关持久化：SharedPreferences 单键存储
  * （模式同 [OverlayTopBarPreferences]）。
  *
- * 开启时 [com.fangyi.classpp.ui.components.DayTodoAlert] 在查看非今天的日期时仍带上
- * 已逾期（截止早于今天）的未完成待办；关闭（默认）时只看该日期前后截止的待办，
- * 逾期拖欠不跨日期常驻。看今天的卡片不受开关影响（「今明后天 + 逾期」是原口径）。
+ * 开启时 [com.fangyi.classpp.ui.components.DayTodoAlert] 保留原口径：相对查看日已逾期
+ * （截止早于查看日）的未完成待办在任何日期都始终在场；关闭（默认）时只显示查看日起
+ * 2 天内截止的待办，相对查看日已逾期的不上卡（查看日当天未逾期的照常显示）。
  * 关闭时全天任务提醒卡（[com.fangyi.classpp.ui.components.DayTaskAlldayAlert]）的
  * 让位口径同步变化，同一期不会在两卡重复。
  */

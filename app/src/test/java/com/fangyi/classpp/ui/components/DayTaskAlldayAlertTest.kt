@@ -216,9 +216,44 @@ class DayTaskAlldayAlertTest {
     }
 
     @Test
-    fun todayCardKeepsOverdueRegardlessOfSwitch() {
+    fun todayCardHidesOverdueWhenSwitchOff() {
         val overdue = allDay("overdue", listOf(today), deadline = today - 3)
-        assertTrue(overdue.isDayTodoAlertCandidate(today, today, showOverdueTodos = false))
+        // 开关开：今天仍按「今明后天 + 逾期」原口径显示逾期拖欠
+        assertTrue(overdue.isDayTodoAlertCandidate(today, today, showOverdueTodos = true))
+        // 开关关：真实今天也不再显示已逾期待办
+        assertFalse(overdue.isDayTodoAlertCandidate(today, today, showOverdueTodos = false))
+        // 今天/明天/后天截止的仍显示
+        assertTrue(
+            allDay("due-today", listOf(today), deadline = today)
+                .isDayTodoAlertCandidate(today, today, showOverdueTodos = false),
+        )
+        assertTrue(
+            allDay("due-in-two", listOf(today), deadline = today + 2)
+                .isDayTodoAlertCandidate(today, today, showOverdueTodos = false),
+        )
+        assertFalse(
+            allDay("due-in-three", listOf(today), deadline = today + 3)
+                .isDayTodoAlertCandidate(today, today, showOverdueTodos = false),
+        )
+    }
+
+    @Test
+    fun viewDateDueTodoStillShownWhenSwitchOff() {
+        // 查看过去日期：当天截止（0 天）相对查看日未逾期，开关关闭也照常显示
+        val viewDate = today - 8
+        assertTrue(
+            allDay("due-that-day", listOf(viewDate), deadline = viewDate)
+                .isDayTodoAlertCandidate(today, viewDate, showOverdueTodos = false),
+        )
+        assertTrue(
+            allDay("due-next-two", listOf(viewDate), deadline = viewDate + 2)
+                .isDayTodoAlertCandidate(today, viewDate, showOverdueTodos = false),
+        )
+        // 相对查看日已逾期（截止早于查看日，哪怕晚于真实今天）→ 关闭时不显示
+        assertFalse(
+            allDay("overdue-before-view", listOf(viewDate), deadline = viewDate - 1)
+                .isDayTodoAlertCandidate(today, viewDate, showOverdueTodos = false),
+        )
     }
 
     @Test
