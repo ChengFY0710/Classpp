@@ -67,8 +67,8 @@ internal fun List<Todo>.allDayAlertCandidates(
  * @param today 今天（跨零点自动跳天的 [com.fangyi.classpp.ui.LocalToday]），用于判定
  *   DayTodoAlert 的「已逾期」让位口径
  * @param viewDate 卡片锚定日期：只显示命中这天的全天任务，默认 = 今天
- * @param showOverdueTodos 非今天视图是否保留已逾期待办（个性化「日程」开关）：须与
- *   [DayTodoAlert] 同值传入，让位口径才一致
+ * @param showOverdueTodos 非今天视图是否保留截止早于查看日的待办（个性化「日程」
+ *   开关）：须与 [DayTodoAlert] 同值传入，让位口径才一致
  * @param tagColors 标签配色表（标签名 → 颜色，同待办页口径）
  * @param onComplete 勾选完成回调：组件只做回显与停一拍，落库路由（分期/整条）在宿主
  * @param onTodoClick 行点击回调（传分期副本）：宿主唤起待办详情；null = 行不可点

@@ -192,11 +192,25 @@ class DayTaskAlldayAlertTest {
         // 开关开（默认口径）：查看其他日期时逾期拖欠始终在场
         assertTrue(overdue.isDayTodoAlertCandidate(today, viewDate, showOverdueTodos = true))
         assertTrue(overdue.isDayTodoAlertCandidate(today, viewDate))
-        // 开关关：只收该日期前后截止的待办，逾期不再跨日期常驻
+        // 开关关：只收该日期起两天内截止的，逾期不再跨日期常驻
         assertFalse(overdue.isDayTodoAlertCandidate(today, viewDate, showOverdueTodos = false))
         // 未逾期且落在窗口内的仍显示
         assertTrue(
             allDay("due-soon", listOf(today), deadline = viewDate + 2)
+                .isDayTodoAlertCandidate(today, viewDate, showOverdueTodos = false),
+        )
+    }
+
+    @Test
+    fun deadlineBeforeViewDateHiddenWhenSwitchOff() {
+        // 远看未来日期：截止日虽晚于真实今天，但早于查看日，倒计时按锚定日显示「逾期N天」
+        val viewDate = today + 11
+        val dueBeforeView = allDay("due-before-view", listOf(viewDate), deadline = today + 2)
+        assertTrue(dueBeforeView.isDayTodoAlertCandidate(today, viewDate, showOverdueTodos = true))
+        assertFalse(dueBeforeView.isDayTodoAlertCandidate(today, viewDate, showOverdueTodos = false))
+        // 查看日当天截止（0 天）仍显示
+        assertTrue(
+            allDay("due-that-day", listOf(viewDate), deadline = viewDate)
                 .isDayTodoAlertCandidate(today, viewDate, showOverdueTodos = false),
         )
     }
