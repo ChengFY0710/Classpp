@@ -43,6 +43,7 @@ import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.previewSlotMerge
 import com.fangyi.classpp.data.model.slotsWithAdjustedStart
 import com.fangyi.classpp.data.model.slotsWithCount
+import com.fangyi.classpp.data.model.slotsWithDuration
 import com.fangyi.classpp.ui.components.ActionRowCard
 import com.fangyi.classpp.ui.components.BottomNumberSelectCard
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
@@ -87,7 +88,8 @@ private data class PendingSchemeSave(
  *   「自定义」无菜单）：重命名走底部名称输入卡，确认即落库；删除即时生效，删的是当前选中
  *   方案时落回「自定义」并保留当前草稿；
  * - 下方同一个 [CardSection]（节次与时间）依次是：总节数 / 每节课时间、逐节起止时间、
- *   保存方案、合并两小节为一大节；
+ *   保存方案、合并两小节为一大节；改「每节课时间」后逐节时间随即按新时长重算
+ *   （见 [slotsWithDuration]）；
  * - 合并只改本地草稿（节表 + 课程映射），右上「确认」才随整套配置落库。可点条件由
  *   [previewSlotMerge] 判定：至少有一门课真正占用 ≥2 节（空课表 / 全是单节课时没有可
  *   重映射的课程）、所有课程 span ≥ 2、每门课起止都能精确对齐、且至少有一对可合并；
@@ -510,7 +512,8 @@ internal fun TimeSchemeSheet(
         )
     }
 
-    // 每节课时间滚轮：只改推算依据，不改写现有各节时间（与课表设置原行为一致）
+    // 每节课时间滚轮：确认后立即按新时长重算下方逐节时间（各节开始不动、结束按新时长
+    // 推算，变长压到下一节时级联顺延），用户无需再逐节改一遍
     if (durationMounted) {
         BottomNumberSelectCard(
             visible = durationVisible,
@@ -525,8 +528,15 @@ internal fun TimeSchemeSheet(
                 durationVisible = false
                 // 确认原时长不算改动，仍留在原方案
                 if (minutes != draftDuration) {
-                    draftDuration = minutes
-                    markCustom()
+                    val adjusted = slotsWithDuration(draftSlots, minutes)
+                    if (adjusted != null) {
+                        draftDuration = minutes
+                        draftSlots = adjusted
+                        markCustom()
+                    } else {
+                        // 新时长让某节越过 23:59：整次修改放弃，节表与时长都保持原样
+                        AppToasts.show(context, dayOverflowToast)
+                    }
                 }
             },
         )

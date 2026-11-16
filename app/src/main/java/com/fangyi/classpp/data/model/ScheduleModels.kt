@@ -181,7 +181,8 @@ data class Schedule(
     val slots: List<TimeSlotDef> = DEFAULT_SLOTS,
     /**
      * 每节课时长（分钟）：设置页「每节课时间」。改某节**开始时间**时结束按它自动推算，
-     * 与下一节冲突则后续节级联顺延（见 [slotsWithAdjustedStart]）；改结束时间不联动。
+     * 与下一节冲突则后续节级联顺延（见 [slotsWithAdjustedStart]）；改**本值**时整张
+     * 节表按新时长重算（见 [slotsWithDuration]）；改结束时间不联动。
      * 「加节」生成新节同样用它（见 [appendSlot]）。
      */
     val slotDurationMinutes: Int = 100,
@@ -302,6 +303,37 @@ fun slotsWithAdjustedStart(
         start = end
         i = next
     }
+}
+
+/**
+ * 「每节课时间」改动后按新时长重新推算整张节表（设置页滚轮确认时调用）：
+ *
+ * - 各节**开始时间保持不变**（用户排好的作息锚点不被抹平，午休等不规则课间保留），
+ *   结束时间一律按「开始 + [durationMinutes]」重算；
+ * - 新时长让本节结束越过下一节开始时，下一节开始顺延到本节新结束，之后各节同样重算
+ *   并级联——与 [slotsWithAdjustedStart] 的级联语义一致（变短只改结束，不会把后面
+ *   各节往前拉）；
+ * - 任一节结束越过当天末尾（23:59）返回 null（调用方提示后放弃本次修改，不产生部分
+ *   生效的中间态）。
+ *
+ * 纯函数，便于单测；空表原样返回。
+ */
+fun slotsWithDuration(
+    slots: List<TimeSlotDef>,
+    durationMinutes: Int,
+): List<TimeSlotDef>? {
+    val result = ArrayList<TimeSlotDef>(slots.size)
+    var previousEnd: Int? = null
+    for (slot in slots) {
+        val originalStart = TimeText.parseMinutes(slot.startTime) ?: return null
+        // 上一节变长压过来时本节顺延，否则保留用户原开始时间
+        val start = previousEnd?.let { maxOf(originalStart, it) } ?: originalStart
+        val end = start + durationMinutes
+        if (end > LAST_MINUTE_OF_DAY) return null
+        result += TimeSlotDef(TimeText.format(start), TimeText.format(end))
+        previousEnd = end
+    }
+    return result
 }
 
 /**
