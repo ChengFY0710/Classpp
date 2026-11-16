@@ -29,15 +29,21 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -170,6 +176,42 @@ private const val AddCardRevealStartScale = 0.92f
 private val AddCardRevealRise = 6.dp
 
 /**
+ * 跨多周跳转的离场页捕获：跳转起手时先让当前可见页把**绘制内容**录进 [layer]，
+ * 退场层随后直接重放该图层，而不是再组合/测量一整页。
+ *
+ * 为什么需要：旧周页面在 Pager 瞬移后立即退出组合，退场层只能另起炉灶。现组合同一页
+ * 要重跑全部卡片与文本排版，正好落在跳转起手那一帧上，是动画最大的卡顿源；录制只
+ * 重放已有的绘制指令，绘制一次即可，没有组合/测量成本。
+ *
+ * [page] 是待录制的 Pager 页索引，由 ScheduleScreen 在跳转前指定；页面在绘制期把自身
+ * 内容录进 [layer] 并把 [ready] 置真。页面绘制 lambda 读 [page]，普通浏览期不产生
+ * 额外重组或绘制开销。
+ */
+class WeekPageCapture(val layer: GraphicsLayer) {
+    /** 待录制的页索引；null = 不录制 */
+    var page by mutableStateOf<Int?>(null)
+
+    /**
+     * 录制请求计数：绘制 lambda 在绘制期读它。同一页被连续请求时 [page] 值不变，
+     * 不产生重组；靠它失效一次绘制，保证一定重新录制
+     */
+    var revision by mutableIntStateOf(0)
+
+    /** 是否已完成录制（绘制期写入、跳转协程轮询，不参与组合观察） */
+    var ready = false
+
+    fun request(page: Int) {
+        ready = false
+        this.page = page
+        revision++
+    }
+
+    fun clear() {
+        page = null
+    }
+}
+
+/**
  * 课表网格：整块内容区是一个横向 Pager，**每周一页**（日期数字带 + 按节次分行的课程格）。
  * 左右滑动即切换上一周/下一周，卡片与网格线跟手横移，顶栏不动。
  *
@@ -209,8 +251,13 @@ fun CourseGrid(
     // 全部由这一条进度派生。用 State 实例传递：值在本组件组合内读取，
     // ScheduleScreen 不跟着逐帧重组（与 cardHeights 同一条纪律）
     editProgress: State<Float> = remember { mutableStateOf(0f) },
-    // 跨多周跳转的旧周定格内容（null = 无转场）：渲染在移动网格下方的静态快照，
-    // 随 jumpProgress 原位缩小淡出。旧页在 Pager 瞬移后即退出组合，快照负责退场
+    // 跨多周跳转的离场页捕获：非空时当前页会在绘制期把内容录进它的 layer，
+    // 退场层优先重放该图层；页面组合本身不受影响
+    weekPageCapture: WeekPageCapture? = null,
+    // 跨多周跳转的退场层：捕获层优先；为空时退回 jumpExitContent 现场组合快照
+    jumpExitCapturedLayer: GraphicsLayer? = null,
+    // 跨多周跳转的旧周定格内容（兜底：捕获不可用时才组合）：渲染在移动网格下方的
+    // 静态快照，随 jumpProgress 原位缩小淡出。旧页在 Pager 瞬移后即退出组合，快照负责退场
     jumpExitContent: WeekPageContent? = null,
     // 跨多周跳转进度（0 = 旧周完整、目标周屏外；1 = 目标周落定）。
     // 值只在快照图层的 graphicsLayer 内读取，动画期间本组件不重组
@@ -297,8 +344,9 @@ fun CourseGrid(
     // 网格整体 + 跨多周跳转的旧周定格层：快照先画（下），移动中的 Pager 网格后画（上），
     // 与底部导航切页「新页盖住旧页」的层级一致
     Box(modifier = modifier.fillMaxSize()) {
-        if (jumpExitContent != null) {
+        if (jumpExitCapturedLayer != null || jumpExitContent != null) {
             WeekExitLayer(
+                capturedLayer = jumpExitCapturedLayer,
                 content = jumpExitContent,
                 progress = jumpProgress,
                 topPadding = topPadding,
@@ -338,6 +386,9 @@ fun CourseGrid(
                         pagerSnapDistance = PagerSnapDistance.atMost(1),
                     ),
                 ) { page ->
+                    // 离场页录制：只有被指定的当前页在绘制时把内容录进捕获层，
+                    // 其余页与普通浏览期都是空 modifier，不增加绘制开销
+                    val capture = weekPageCapture
                     WeekPage(
                         // 这里刻意不 remember：编辑态的 provider 会读草稿 state，
                         // 记忆会让"刚加的课"刷不出来（key 没变 → 计算不重跑）。
@@ -359,6 +410,22 @@ fun CourseGrid(
                         onEditClick = onEditClick,
                         onCourseLongClick = onCourseLongClick,
                         onSlotLongClick = onSlotLongClick,
+                        modifier = if (capture?.page == page) {
+                            Modifier.drawWithContent {
+                                // 读 revision：同一页连续请求时页面不重组，也能靠本状态
+                                // 失效一次绘制，保证录制一定发生
+                                val revision = capture.revision
+                                if (revision >= 0 && !capture.ready) {
+                                    // 录进离场层供跳转退场重放：只执行绘制指令，
+                                    // 不触发重组/测量；ready 置真后本帧其余重绘直接跳过
+                                    capture.layer.record { this@drawWithContent.drawContent() }
+                                    capture.ready = true
+                                }
+                                drawContent()
+                            }
+                        } else {
+                            Modifier
+                        },
                     )
                 }
             }
@@ -379,12 +446,19 @@ private val PagerState.isSeamVisible: Boolean
  * 切页的旧页退场共用 [Motion.TabMillis] / [Motion.Overlay] / [Motion.TabShrinkScale]：
  * 同一进度派生透明度与缩放，两条属性同帧同曲线。
  *
+ * 内容优先用 [capturedLayer]（跳转前从离场页录下的绘制指令，零重组/零测量）；只有捕获
+ * 不可用时才退回 [content] 现场组合一整页。两条路径画面一致，前者把起手帧的最大
+ * CPU 开销（整页组合 + 文本测量）省掉。
+ *
  * 图层自带整屏底色：目标周从屏外滑入前旧周仍铺满视口，不会漏出页面背景色；
  * 目标周滑入后从上方逐段盖住它，等价于 tab 切页「新页盖旧页」的层级。
  */
 @Composable
 private fun WeekExitLayer(
-    content: WeekPageContent,
+    // 捕获层：跳转前录下的离场页绘制内容，优先使用（零重组/零测量）
+    capturedLayer: GraphicsLayer?,
+    // 兜底内容：捕获不可用时现场组合快照，保证视觉一致
+    content: WeekPageContent?,
     progress: State<Float>,
     topPadding: Dp,
     pageHeight: Dp,
@@ -435,25 +509,37 @@ private fun WeekExitLayer(
                 .padding(start = startPadding, end = endPadding)
                 .height(pageHeight),
         ) {
-            WeekPage(
-                content = content,
-                timeSlots = timeSlots,
-                days = days,
-                rowHeights = rowHeights,
-                showTeacher = showTeacher,
-                seamVisible = seamVisible,
-                listState = listState,
-                showDates = showDates,
-                dateBandHeight = dateBandHeight,
-                editProgress = editProgress,
-                addCardsMounted = addCardsMounted,
-                editMode = editMode,
-                // 纯展示：回调全为 null，转场途中误触不会打开旧周的课程/添加面板
-                onAddClick = null,
-                onEditClick = null,
-                onCourseLongClick = null,
-                onSlotLongClick = null,
-            )
+            when {
+                capturedLayer != null -> {
+                    // 捕获层：直接重放跳转前录下的页面绘制指令，与离场页逐像素等价；
+                    // 跳过了整页重新组合/测量，起手帧只剩一次图层重放
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .drawBehind { drawLayer(capturedLayer) },
+                    )
+                }
+
+                content != null -> WeekPage(
+                    content = content,
+                    timeSlots = timeSlots,
+                    days = days,
+                    rowHeights = rowHeights,
+                    showTeacher = showTeacher,
+                    seamVisible = seamVisible,
+                    listState = listState,
+                    showDates = showDates,
+                    dateBandHeight = dateBandHeight,
+                    editProgress = editProgress,
+                    addCardsMounted = addCardsMounted,
+                    editMode = editMode,
+                    // 纯展示：回调全为 null，转场途中误触不会打开旧周的课程/添加面板
+                    onAddClick = null,
+                    onEditClick = null,
+                    onCourseLongClick = null,
+                    onSlotLongClick = null,
+                )
+            }
         }
     }
 }
@@ -499,13 +585,16 @@ private fun WeekPage(
     onEditClick: ((courseId: String, adjustmentId: String?) -> Unit)?,
     onCourseLongClick: ((courseId: String, adjustmentId: String?, anchor: Rect) -> Unit)?,
     onSlotLongClick: ((day: Int, slot: TimeSlot, anchor: Rect) -> Unit)?,
+    // 最外层修饰符：跨多周跳转录制离场屏时在这里挂 drawWithContent，
+    // 包住整页绘制（含页自己的隔离图层），默认空
+    modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
     val bandPx = with(density) { dateBandHeight.toPx() }
     val trailingPx = with(density) { TrailingScrollSpace.toPx() }
     val outline = MaterialTheme.colorScheme.outline
     Box(
-        modifier = Modifier
+        modifier = modifier
             .graphicsLayer { }
             .drawBehind {
                 if (seamVisible.value) {

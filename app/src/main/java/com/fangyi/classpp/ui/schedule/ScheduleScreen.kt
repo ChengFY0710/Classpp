@@ -48,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -710,11 +711,16 @@ fun ScheduleScreen(
             // 共用 Motion.TabMillis / Motion.Overlay / Motion.TabShrinkScale。
             // jumpProgress：0 = 旧周完整、目标周停在屏外；1 = 目标周落定（空闲）。
             // 一个进度派生目标周位移、旧周淡出、旧周缩小三层效果，天然同帧同曲线；
-            // 值只在图层块内读取，动画期间本屏不重组。旧页在 scrollToPage 后即退出组合，
-            // 故把跳转前的整周内容定格成快照（jumpExitContent）垫在移动网格下方承担退场
+            // 值只在图层块内读取，动画期间本屏不重组。
+            // 旧页在 scrollToPage 后即退出组合：跳转前先把它**录进捕获层**（只重放绘制
+            // 指令，不重新组合/测量整页），退场层直接画这一层——现场重组合一整页正是
+            // 起手帧最大的卡顿源。捕获失败才退回现组合快照兜底
             val jumpProgress = remember { Animatable(1f) }
             val jumpProgressState = remember(jumpProgress) { jumpProgress.asState() }
+            val jumpCaptureLayer = rememberGraphicsLayer()
+            val jumpCapture = remember(jumpCaptureLayer) { WeekPageCapture(jumpCaptureLayer) }
             var jumpDir by remember { mutableFloatStateOf(0f) }
+            var jumpExitCaptured by remember { mutableStateOf(false) }
             var jumpExitContent by remember { mutableStateOf<WeekPageContent?>(null) }
             var jumpGeneration by remember { mutableIntStateOf(0) }
 
@@ -728,41 +734,74 @@ fun ScheduleScreen(
             }
 
             // 周次 → 翻页：周数弹窗、返回本周、学期范围钳制触发的换周。
-            // 相邻周走 Pager 原生滑动（与手势翻页连贯）；跨多周把旧周定格成快照、
-            // 目标周瞬移落位后从相对方向滑入一页宽。动画挂在 scope 上而非本效果里：
+            // 相邻周走 Pager 原生滑动（与手势翻页连贯）；跨多周先把旧周录成捕获层、
+            // 目标周瞬移落位后从相对方向滑入一页宽。滑入动画挂在 scope 上而非本效果里：
             // week 途中再变时本效果会重启，动画不能被连带取消、停在半程偏移上；
             // snapTo(0) 同时会打断上一次未完成的跳转，连续跳转收敛到最后一次。
             // 跳多远都恒定一页宽——不途经中间页（途经页的组合成本随距离线性涨）
             LaunchedEffect(week, firstPageWeek) {
                 val target = pageOfWeek(week, firstPageWeek)
                 val current = pagerState.currentPage
-                if (current != target) {
-                    if (abs(current - target) == 1) {
-                        pagerState.animateScrollToPage(target)
-                    } else {
-                        val forward = target > current
-                        // scrollToPage 会立刻把旧页移出组合：先把当前周按现有内容定格成
-                        // 快照，与目标页同帧就位——下一帧合成时旧周仍完整在屏、目标周已
-                        // 停在屏外，不会漏出背景色
-                        jumpDir = if (forward) 1f else -1f
-                        jumpExitContent = displayedContentForPage(current)
-                        jumpProgress.snapTo(0f)
-                        pagerState.scrollToPage(target)
-                        val generation = ++jumpGeneration
-                        scope.launch {
-                            // 首帧留给快照挂载/布局（与 TabPager 新页首帧同一处理），
-                            // 动画从完整旧周起步，不会因首帧排版开销吞掉开头
-                            withFrameNanos { }
-                            if (generation != jumpGeneration) return@launch
-                            jumpProgress.animateTo(
-                                targetValue = 1f,
-                                animationSpec = tween(
-                                    durationMillis = Motion.TabMillis,
-                                    easing = Motion.Overlay,
-                                ),
-                            )
-                            if (generation == jumpGeneration) jumpExitContent = null
-                        }
+                if (current == target) return@LaunchedEffect
+                if (abs(current - target) == 1) {
+                    pagerState.animateScrollToPage(target)
+                    return@LaunchedEffect
+                }
+
+                val forward = target > current
+                jumpDir = if (forward) 1f else -1f
+                val generation = ++jumpGeneration
+
+                // 上一段跨周转场还没播完：先让它落定并卸载退场层（捕获层此时正被绘制，
+                // 不能立刻重录），等一帧后再开始新转场。只在快速连选时发生
+                if (jumpExitCaptured || jumpExitContent != null) {
+                    jumpProgress.snapTo(1f)
+                    jumpExitCaptured = false
+                    jumpExitContent = null
+                    withFrameNanos { }
+                    if (generation != jumpGeneration) return@LaunchedEffect
+                }
+
+                // 离场页录制：当前页在下一帧绘制时把内容录进捕获层；等待期间画面
+                // 完全不动（还没滚动、也没挂退场层），最多等 4 帧兜底
+                jumpCapture.request(current)
+                val captured = try {
+                    var frames = 0
+                    while (!jumpCapture.ready && frames < 4) {
+                        withFrameNanos { }
+                        frames++
+                    }
+                    jumpCapture.ready
+                } finally {
+                    // 被新一轮跳转接管时不能清掉它的录制请求
+                    if (generation == jumpGeneration) jumpCapture.clear()
+                }
+                if (generation != jumpGeneration) return@LaunchedEffect
+
+                if (captured) {
+                    jumpExitCaptured = true
+                } else {
+                    // 兜底：捕获失败（极端情况）才现场组合快照，视觉一致、起手成本高
+                    jumpExitContent = displayedContentForPage(current)
+                }
+
+                // 退场层与目标页同帧就位，再起播
+                jumpProgress.snapTo(0f)
+                pagerState.scrollToPage(target)
+                scope.launch {
+                    // 首帧留给退场层/目标页合成，动画从完整旧周起步
+                    withFrameNanos { }
+                    if (generation != jumpGeneration) return@launch
+                    jumpProgress.animateTo(
+                        targetValue = 1f,
+                        animationSpec = tween(
+                            durationMillis = Motion.TabMillis,
+                            easing = Motion.Overlay,
+                        ),
+                    )
+                    if (generation == jumpGeneration) {
+                        jumpExitCaptured = false
+                        jumpExitContent = null
                     }
                 }
             }
@@ -1201,8 +1240,10 @@ fun ScheduleScreen(
                     onEditClick = onEditClick,
                     onCourseLongClick = onCourseLongClick,
                     onSlotLongClick = onSlotLongClick,
-                    // 跨多周跳转：旧周定格快照垫在移动网格下方缩小淡出，
-                    // 目标周按进度从相对方向滑入（与底部导航切页同一套 token）
+                    // 跨多周跳转：离场页先录进捕获层（退场层直接重放，避免现场重组合
+                    // 整页）；捕获失败才退回组合快照。目标周按进度从相对方向滑入
+                    weekPageCapture = jumpCapture,
+                    jumpExitCapturedLayer = if (jumpExitCaptured) jumpCapture.layer else null,
                     jumpExitContent = jumpExitContent,
                     jumpProgress = jumpProgressState,
                     // Haze / 玻璃胶囊的采样源固定在根容器（快照 + 移动网格的合成层）：
