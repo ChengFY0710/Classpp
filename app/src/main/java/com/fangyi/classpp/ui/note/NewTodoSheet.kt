@@ -112,7 +112,8 @@ private val NewTagColorPalette = listOf(
  * 选「时段」展开 TimeRangeSlider）→ 标签 → 更多（待办地点 + 备注）。顶层块间距走
  * [SheetSectionSpacingBetween]（18dp），组内卡间距由 CardSection 默认值负责（10dp）。
  *
- * 分组选择随表单落库：编辑初值从 [Todo.group] 回填，选中值进 [onConfirm] 组装的 [Todo]
+ * 分组选择随表单落库：编辑初值从 [Todo.group] 回填，新建初值取 [initialGroup]（宿主按当前
+ * 页面身份传入——自定义分组页默认该组，其余页未分组），选中值进 [onConfirm] 组装的 [Todo]
  * （引用不存在的组由仓库归一化清回 null）；未选 = 「未分组」。计数口径与 [TodoGroupsSheet]
  * 一致（未分组 = `group == null` 的待办数、自定义分组 = 该组名的待办数）。
  * 选择分组浮层的左上「新建」可当场建组（命名卡 → 追加分组，**[onGroupsChange] 交给宿主落库**），
@@ -145,6 +146,9 @@ internal fun NewTodoSheet(
     onGroupsChange: (groups: List<TodoGroup>, renames: Map<String, String>) -> Unit = { _, _ -> },
     onConfirm: (todo: Todo) -> Unit,
     existing: Todo? = null,
+    // 新建模式的默认分组（仅 existing == null 生效；编辑模式仍从 existing.group 回填）：
+    // 宿主按当前页面身份传入——自定义分组页 = 该组名，其余页面 null = 未分组
+    initialGroup: String? = null,
     onDelete: (() -> Unit)? = null,
 ) {
     // 表单初值：编辑模式从 existing 整体回填（快照语义，挂载时取一次）
@@ -242,10 +246,11 @@ internal fun NewTodoSheet(
     var colorPickVisible by remember { mutableStateOf(false) }
     var colorPickMounted by remember { mutableStateOf(false) }
 
-    // 待办分组选择：selectedGroupName 为 null = 未分组，编辑模式从 existing.group 回填，
-    // 确认时随 Todo 组装落库（引用完整性由仓库归一化维护）。选择分组浮层期望态 + 挂载态
-    // 两段式（同滚轮弹窗），声明在 OverlaySheet 之前——浮层在场时经 covered 让本浮层缩小后退
-    var selectedGroupName by remember { mutableStateOf(existing?.group) }
+    // 待办分组选择：selectedGroupName 为 null = 未分组，编辑模式从 existing.group 回填、
+    // 新建模式取 [initialGroup]（宿主随页面身份传入），确认时随 Todo 组装落库（引用完整性
+    // 由仓库归一化维护）。选择分组浮层期望态 + 挂载态两段式（同滚轮弹窗），声明在
+    // OverlaySheet 之前——浮层在场时经 covered 让本浮层缩小后退
+    var selectedGroupName by remember { mutableStateOf(existing?.group ?: initialGroup) }
     var groupPickVisible by remember { mutableStateOf(false) }
     var groupPickMounted by remember { mutableStateOf(false) }
 

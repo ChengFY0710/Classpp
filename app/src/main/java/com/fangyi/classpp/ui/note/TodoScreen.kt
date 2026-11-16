@@ -172,7 +172,8 @@ private val SectionSpacing = 20.dp
  * 动作，切视图不播动画、内容不变），顶栏视图块在该页置灰不可点。收集箱卡不渲染
  * 倒计时，从该视图打开的详情里「开启倒计时」菜单项同样置灰（开关无可视反馈）。
  * 新建待办浮层（[NewTodoSheet]）两段式挂载：[showNewTodoSheet] 置真即挂载滑入，
- * 关闭先清 visible 播完出场，onDismissed 才卸载；点卡片拉起待办详情浮层
+ * 关闭先清 visible 播完出场，onDismissed 才卸载；分组初值随页面身份（[newTodoDefaultGroup]）——
+ * 自定义分组页默认该组，其余页面未分组。点卡片拉起待办详情浮层
  * （[TodoDetailSheet]，挂载接线同课表页课程详情）。任一浮层在场时经
  * [onOverlayOverNavBarChange] 请求藏底部导航栏（同课表页全屏浮层）。
  *
@@ -558,6 +559,9 @@ fun TodoScreen(
     // 顶栏当前页签的排序规则（排序菜单的勾选态与点击都读它）：常规分组页取本页规则、
     // 没单独设置回落全局；特殊分组页/标签页恒用全局排序
     val regularPageActive = special == null && activeTag == null
+    // 新建待办的分组初值：自定义分组页带入该组名（新建浮层「待办分组」项默认选中该组），
+    // 全部/未分组/特殊分组页/标签页维持未分组；收集箱视图与列表同属一个页面身份，口径一致
+    val newTodoInitialGroup = newTodoDefaultGroup(selectedGroupIndex, groups, regularPageActive)
     val activeSortRule = if (regularPageActive) {
         pageSorts.sortRuleFor(selectedGroupIndex, groups, TodoSortRule(sort, sortDescending))
     } else {
@@ -1387,6 +1391,8 @@ fun TodoScreen(
             todos = todos,
             // 选择分组浮层的「新建」走同一套整表写回（落盘失败 Toast 由 commitGroups 统一弹）
             onGroupsChange = commitGroups,
+            // 新建模式的分组初值：自定义分组页默认归属当前分组，其余页未分组
+            initialGroup = newTodoInitialGroup,
             onConfirm = { todo ->
                 scope.launch {
                     // 空名等非法值已在浮层内拦截，Err 仅剩落盘失败等异常，Toast 提示、表单保持原样
@@ -2105,6 +2111,20 @@ private val CollapsedSectionsSaver = listSaver<Set<TodoSection>, String>(
 internal fun currentMinuteOfDay(): Int {
     val now = GregorianCalendar()
     return now.get(GregorianCalendar.HOUR_OF_DAY) * 60 + now.get(GregorianCalendar.MINUTE)
+}
+
+/**
+ * 新建待办的分组初值：仅在自定义分组页带入该组名——[regularPageActive] 为真（非特殊分组页/
+ * 标签页）且顶栏下标 2 起时取 [groups] 对应组；全部（0）/未分组（1）、特殊分组页、标签页
+ * 恒为 null（未分组）。越界下标（组被删后残留的保存态等）同样兜底 null。
+ */
+internal fun newTodoDefaultGroup(
+    selectedGroupIndex: Int,
+    groups: List<TodoGroup>,
+    regularPageActive: Boolean,
+): String? = when {
+    !regularPageActive || selectedGroupIndex < 2 -> null
+    else -> groups.getOrNull(selectedGroupIndex - 2)?.name
 }
 
 /**

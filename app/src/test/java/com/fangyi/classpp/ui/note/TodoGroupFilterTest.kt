@@ -37,4 +37,27 @@ class TodoGroupFilterTest {
         assertEquals(todos, filterTodosByGroup(todos, 9, groups))
         assertEquals(todos, filterTodosByGroup(todos, -1, groups))
     }
+
+    @Test
+    fun `new todo defaults to the group of a custom group page`() {
+        assertEquals("作业", newTodoDefaultGroup(2, groups, regularPageActive = true))
+        assertEquals("日常琐事", newTodoDefaultGroup(3, groups, regularPageActive = true))
+    }
+
+    @Test
+    fun `new todo on all or ungrouped page stays ungrouped`() {
+        assertEquals(null, newTodoDefaultGroup(0, groups, regularPageActive = true))
+        assertEquals(null, newTodoDefaultGroup(1, groups, regularPageActive = true))
+    }
+
+    @Test
+    fun `new todo on special or tag page stays ungrouped`() {
+        assertEquals(null, newTodoDefaultGroup(2, groups, regularPageActive = false))
+    }
+
+    @Test
+    fun `new todo default group falls back to null for out of range index`() {
+        assertEquals(null, newTodoDefaultGroup(9, groups, regularPageActive = true))
+        assertEquals(null, newTodoDefaultGroup(-1, groups, regularPageActive = true))
+    }
 }
