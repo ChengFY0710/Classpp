@@ -290,7 +290,9 @@ internal enum class TodoSpecialSection(
  * [onOverviewClick]；分类块配色/可用性经
  * [categoryEnabled]/[categoryFiltered] 下发——特殊分组页在场置灰（negative）不可点，
  * 分组显隐未全选（有分组被隐藏）时 primary 提示；视图块可用性经 [viewEnabled] 下发——
- * 最近删除页置灰（negative）不可点（该页恒走列表，视图切换无意义）；
+ * 最近删除页置灰（negative）不可点（该页恒走列表，视图切换无意义）；排序块可用性经
+ * [sortEnabled] 下发——最近删除/已归档页置灰（negative）不可点（两页固定按删除/归档
+ * 时刻倒序，排序规则不参与）；
  * 排序菜单
  * 经 [sortMenuExpanded]/[onSortMenuDismiss]/[sortMenuSections] 三件套下发，
  * 分类菜单经 [categoryMenuExpanded]/[onCategoryMenuDismiss]/[categoryMenuSections]
@@ -334,6 +336,9 @@ internal fun TodoTopBar(
     pillBackdrop: Backdrop? = null,
     tabTransition: TabTransitionState? = null,
     menuExpanded: Boolean = false,
+    // 排序块可用性：false = 置灰（negative）不可点（最近删除/已归档页固定按删除/归档
+    // 时刻倒序，列表不消费排序规则，排序选择无意义）
+    sortEnabled: Boolean = true,
     sortMenuExpanded: Boolean = false,
     onSortMenuDismiss: () -> Unit = {},
     sortMenuSections: List<PopupMenuSection> = emptyList(),
@@ -567,7 +572,9 @@ internal fun TodoTopBar(
                         // 排序块 + 锚定其下的排序菜单：BarActionMenuPopup 挂在动作块同一
                         // Box 里（内层 Box 包住动作块即锚点，菜单卡左缘对齐动作块左缘，与
                         // 原先锚定常驻胶囊的行为一致），展开态与菜单分组内容由宿主下发。
-                        // 外层 Box 只负责占一等份格槽并居中，避免锚点扩大到整格
+                        // 外层 Box 只负责占一等份格槽并居中，避免锚点扩大到整格。
+                        // 块色随可用性：最近删除/已归档页 = negative 置灰不可点（两页固定按
+                        // 删除/归档时刻倒序，排序规则不参与），其余默认 onSurface
                         Box(
                             modifier = Modifier.weight(1f),
                             contentAlignment = Alignment.Center,
@@ -577,9 +584,15 @@ internal fun TodoTopBar(
                                     label = stringResource(R.string.todo_action_sort),
                                     iconRes = R.drawable.ic_arrow_sort,
                                     onClick = onSortClick,
+                                    contentColor = if (sortEnabled) {
+                                        MaterialTheme.colorScheme.onSurface
+                                    } else {
+                                        MaterialTheme.classppColors.negative
+                                    },
+                                    enabled = sortEnabled,
                                 )
                                 BarActionMenuPopup(
-                                    expanded = sortMenuExpanded,
+                                    expanded = sortMenuExpanded && sortEnabled,
                                     onDismiss = onSortMenuDismiss,
                                     sections = sortMenuSections,
                                     hazeState = hazeState,

@@ -4,17 +4,25 @@ import android.content.Context
 import com.fangyi.classpp.data.TodoSort
 
 /**
- * 待办顶栏排序/分类/视图偏好：SharedPreferences 单文件四键存储（同 [TodoInboxPreferences]
+ * 待办顶栏排序/分类/视图偏好：SharedPreferences 单文件多键存储（同 [TodoInboxPreferences]
  * 模式；apply 异步落盘，UI 状态由调用方同步更新）。
  *
  * 顶栏动作行的「排序」「分类」「视图」是跨会话选择：rememberSaveable 只覆盖旋转/切 tab/
- * 进程重建，普通冷启动会回默认——本对象把四个选择落盘，冷启动即回到上次口径。
+ * 进程重建，普通冷启动会回默认——本对象把选择落盘，冷启动即回到上次口径。
+ *
+ * 排序是两层结构：**全局排序**（[loadSort] / [loadSortDescending]，特殊分组页与标签页
+ * 使用，也是常规分组页的回落值）+ **分组页覆盖**（[loadSortRules] / [saveSortRules]，
+ * 全部/未分组/每个自定义分组各一套，按分组页身份取规则，见 [sortRuleFor]）。没单独
+ * 设过的分组页沿用全局排序——全局默认就是截止日期降序，升级后行为与原先一致。
  *
  * - **排序键**（[loadSort] / [saveSort]）：默认 [TodoSort.Deadline]——截止日期早的
  *   在前（Deadline 的降序定义见 [TodoSort]）；存枚举名，读到未知名字（旧版本写入/
  *   枚举重命名）回退默认。
  * - **排序方向**（[loadSortDescending] / [saveSortDescending]）：默认降序（true，
  *   更要紧的在前）。
+ * - **分组页排序规则**（[loadSortRules] / [saveSortRules]）：整表编码成 JSON 存单键
+ *   （组名作 JSON key，任意字符安全）；无记录/损坏回空表 = 全部页签回落全局排序。
+ *   分组重命名/删除时由宿主经 [remapSortRules] 搬移/清理。
  * - **分类显隐**（[loadVisibleSectionNames] / [saveVisibleSectionNames]）：存分组名
  *   的逗号分隔串（分组名由调用方以 `TodoSection.name` 提供）。默认返回 null = 无
  *   记录（调用方回四组全选）；空集编码为空串，是合法记录——用户把四组全部取消勾选
@@ -27,6 +35,7 @@ object TodoTopBarPreferences {
     private const val FILE_NAME = "todo_top_bar_prefs"
     private const val KEY_SORT = "sort"
     private const val KEY_SORT_DESCENDING = "sort_descending"
+    private const val KEY_SORT_RULES = "sort_rules"
     private const val KEY_VISIBLE_SECTIONS = "visible_sections"
     private const val KEY_INBOX_VIEW = "inbox_view"
 
@@ -57,6 +66,20 @@ object TodoTopBarPreferences {
     fun saveSortDescending(context: Context, descending: Boolean) {
         prefs(context).edit()
             .putBoolean(KEY_SORT_DESCENDING, descending)
+            .apply()
+    }
+
+    /**
+     * 读取分组页排序规则表（页签身份 → 规则，键见 [sortRuleKey]）；无记录或记录损坏
+     * 返回空表——各分组页按 [sortRuleFor] 回落全局排序（默认截止日期降序）。
+     */
+    fun loadSortRules(context: Context): Map<String, TodoSortRule> =
+        decodeSortRules(prefs(context).getString(KEY_SORT_RULES, null))
+
+    /** 保存分组页排序规则表（整表 JSON；apply 异步落盘，不阻塞点击） */
+    fun saveSortRules(context: Context, rules: Map<String, TodoSortRule>) {
+        prefs(context).edit()
+            .putString(KEY_SORT_RULES, encodeSortRules(rules))
             .apply()
     }
 

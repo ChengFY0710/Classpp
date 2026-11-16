@@ -39,6 +39,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -150,10 +151,11 @@ private val SectionSpacing = 20.dp
  * （列表与收集箱各存各的滚动位）。顶栏不参与过渡（页面 chrome 常驻原位）。
  *
  * 列表分「已置顶」「已逾期」「未完成」「已完成」四组，已置顶在最上（无置顶待办时整组
- * 隐藏）、已逾期次之、已完成在下（默认收起），组内按顶栏选定的排序与方向（默认截止
- * 日期降序——截止早的在前；排序与分类选择经 [TodoTopBarPreferences] 持久化，冷启动
- * 回到上次口径）；勾选切换写回仓库，完成即移组，截止日期已过的待办移入已逾期组、
- * 标题标红。
+ * 隐藏）、已逾期次之、已完成在下（默认收起），组内按本页分组选定的排序与方向（顶栏
+ * 排序菜单作用于当前分组页：全部/未分组/每个自定义分组各存一套，没单独设置的分组
+ * 回落全局排序，默认截止日期降序——截止早的在前；特殊分组页与标签页沿用全局排序；
+ * 排序与分类选择经 [TodoTopBarPreferences] 持久化，冷启动回到上次口径）；勾选切换
+ * 写回仓库，完成即移组，截止日期已过的待办移入已逾期组、标题标红。
  * 顶栏分类菜单（分类块唤起，与排序菜单同款弹层）是四组显隐的多选开关：
  * 默认全勾选，取消勾选即整组隐藏（[visibleSections] 派生，点选不收菜单；勾选态同样
  * 经 [TodoTopBarPreferences] 持久化）。
@@ -319,14 +321,15 @@ fun TodoScreen(
     val archivedTodos = remember(rawArchivedTodos, courseTagNameSet) {
         rawArchivedTodos.map { it.withMatchedCourseTag(courseTagNameSet) }
     }
-    // 排序状态：初值取偏好里的上次选择（[TodoTopBarPreferences]），无记录回默认截止日期
-    // 降序（Deadline 的降序定义 = 截止早的在前，见 TodoSort）
+    // 全局排序状态（特殊分组页/标签页使用，也是常规分组页没单独设置时的回落值）：
+    // 初值取偏好里的上次选择（[TodoTopBarPreferences]），无记录回默认截止日期降序
+    // （Deadline 的降序定义 = 截止早的在前，见 TodoSort）
     var sort by rememberSaveable { mutableStateOf(TodoTopBarPreferences.loadSort(context)) }
     var sortDescending by rememberSaveable {
         mutableStateOf(TodoTopBarPreferences.loadSortDescending(context))
     }
-    // 排序选择即时落盘（枚举/布尔翻转无连续变化，无需去抖）：以 LaunchedEffect 统一收口，
-    // 菜单项与将来新增入口都无需各自记得写盘；首帧写入与读到的值相同，幂等无副作用
+    // 全局排序选择即时落盘（枚举/布尔翻转无连续变化，无需去抖）：以 LaunchedEffect 统一
+    // 收口；常规分组页的覆盖规则另存 sort_rules（见下方 pageSorts），不经过这里
     LaunchedEffect(sort, sortDescending) {
         TodoTopBarPreferences.saveSort(context, sort)
         TodoTopBarPreferences.saveSortDescending(context, sortDescending)
@@ -440,6 +443,18 @@ fun TodoScreen(
     // 分组列表（顺序 + 置顶标记）：仓库 todos.json 持久化，顶栏胶囊与分组浮层共享同一份；
     // 分组写回失败的 Toast 文案在组合期解析（commitGroups 回调里非组合上下文，同编辑浮层约定）
     val groups by repository.groups.collectAsState()
+    // 分组页排序规则（页签身份 → 规则）：全部/未分组/每个自定义分组各自一套，按组名而非
+    // 下标存——重排/置顶不丢；重命名在 commitGroups 里搬 key、删除清 key（见 remapSortRules）。
+    // 没单独设置过的页签回落全局 sort/sortDescending（默认截止日期降序），升级后行为不变；
+    // 特殊分组页与标签页不做覆盖，恒用全局排序。rememberSaveable 的 Saver 与 prefs 同一套
+    // JSON 编解码（Bundle 只能存基本类型，整表编码成字符串）
+    var pageSorts by rememberSaveable(stateSaver = TodoSortRulesSaver) {
+        mutableStateOf(TodoTopBarPreferences.loadSortRules(context))
+    }
+    // 规则表即时落盘：菜单点选/分组改名清理都经这一处收口，首帧写入与读到的值相同（幂等）
+    LaunchedEffect(pageSorts) {
+        TodoTopBarPreferences.saveSortRules(context, pageSorts)
+    }
     val groupSaveFailedMessage = stringResource(R.string.todo_error_save_failed)
     // 侧滑动作结果 Toast 文案（组合期解析——回调里非组合上下文，同 groupSaveFailedMessage 约定）
     val todoDeletedMessage = stringResource(R.string.toast_todo_deleted)
@@ -457,6 +472,11 @@ fun TodoScreen(
     // 分组下标需要跟随，0（全部）/1（未分组）与分组编辑无关；选中的组被重命名时经
     // [renames] 映射跟随到新名字；组被删则 indexOfFirst 得 -1 → 回 0（全部）
     val commitGroups: (List<TodoGroup>, Map<String, String>) -> Unit = { newGroups, renames ->
+        // 分组页排序规则跟随分组身份：重命名搬 key、删除清 key（新建/重排/置顶无名字变化，
+        // 原样保留）。removed 排除被重命名的原名——规则已搬到新名，不算删除
+        val oldNames = groups.mapTo(mutableSetOf()) { it.name }
+        val keptNames = newGroups.mapTo(mutableSetOf()) { it.name }
+        pageSorts = remapSortRules(pageSorts, renames, oldNames - keptNames - renames.keys)
         if (selectedGroupIndex >= 2) {
             val selectedName = groups.getOrNull(selectedGroupIndex - 2)?.name
             val followedName = selectedName?.let { renames[it] ?: it }
@@ -535,6 +555,25 @@ fun TodoScreen(
     val nowMinute = currentMinuteOfDay()
     val special = if (specialActive) specialSection else null
     val activeTag = if (tagActive) selectedTag else null
+    // 顶栏当前页签的排序规则（排序菜单的勾选态与点击都读它）：常规分组页取本页规则、
+    // 没单独设置回落全局；特殊分组页/标签页恒用全局排序
+    val regularPageActive = special == null && activeTag == null
+    val activeSortRule = if (regularPageActive) {
+        pageSorts.sortRuleFor(selectedGroupIndex, groups, TodoSortRule(sort, sortDescending))
+    } else {
+        TodoSortRule(sort, sortDescending)
+    }
+    // 菜单点选：常规分组页只改本页规则（各分组互不影响），特殊/标签页仍改全局排序
+    val applyActiveSortRule: (TodoSortRule) -> Unit = { rule ->
+        if (regularPageActive) {
+            sortRuleKey(selectedGroupIndex, groups)?.let { key ->
+                pageSorts = pageSorts + (key to rule)
+            }
+        } else {
+            sort = rule.sort
+            sortDescending = rule.descending
+        }
+    }
     val displayTodos = remember(todos, today) { todos.expandRepeatOccurrences(today) }
     // 页面身份编码为 CrossPages 的 key（字符串——SaveableStateProvider 的状态保活要把
     // key 存进 Bundle；前缀决定身份段，标签名含下划线也不冲突，解码只按前缀 removePrefix）。
@@ -552,13 +591,14 @@ fun TodoScreen(
     val inboxActive = inboxView && !todoEditing &&
         special != TodoSpecialSection.Trash && special != TodoSpecialSection.Archived
     val todoPageKey = if (inboxActive) TodoPageKeyInboxPrefix + todoPageBaseKey else todoPageBaseKey
-    // 最近删除页与已归档页恒走列表，顶栏视图块置灰不可点；进入这两页时顺手收起可能残留
-    // 的视图菜单（弹层是 Popup，不受动作块置灰约束，状态不清理会在离开该页后重新弹出）；
-    // 最近删除页另补跑一次到期清理——装载时已清过一轮，这里兜住应用长时间驻留期间
-    // 新满 30 天的条目
+    // 最近删除页与已归档页恒走列表、固定按删除/归档时刻倒序：顶栏视图块与排序块都置灰
+    // 不可点。进入这两页时顺手收起可能残留的视图/排序菜单（弹层是 Popup，不受动作块
+    // 置灰约束，状态不清理会在离开该页后重新弹出）；最近删除页另补跑一次到期清理——
+    // 装载时已清过一轮，这里兜住应用长时间驻留期间新满 30 天的条目
     LaunchedEffect(special) {
         if (special == TodoSpecialSection.Trash || special == TodoSpecialSection.Archived) {
             viewMenuExpanded = false
+            sortMenuExpanded = false
         }
         if (special == TodoSpecialSection.Trash) {
             repository.purgeExpiredDeleted()
@@ -830,6 +870,18 @@ fun TodoScreen(
                         page.tag != null -> filterTodosByTag(displayTodos, page.tag)
                         else -> filterTodosByGroup(displayTodos, page.groupIndex, groups)
                     }
+                    // 本页排序规则从页面身份解析（退场中的旧页继续用自己的规则渲染）：
+                    // 常规分组页取该分组的规则、没设置回落全局；特殊分组页/标签页恒用全局。
+                    // 回收站/归档页不用它（各自按删除/归档时刻倒序，见上）
+                    val pageSortRule = if (page.special != null || page.tag != null) {
+                        TodoSortRule(sort, sortDescending)
+                    } else {
+                        pageSorts.sortRuleFor(
+                            groupIndex = page.groupIndex,
+                            groups = groups,
+                            fallback = TodoSortRule(sort, sortDescending),
+                        )
+                    }
                     // 特殊分组页 = 该页本身就是过滤口径，分类菜单的分组显隐不再参与（全组可见）；
                     // 标签页的分类菜单可用，显隐开关照常作用于其过滤结果
                     val pageVisibleSections = if (page.special != null) {
@@ -920,8 +972,8 @@ fun TodoScreen(
                     if (page.inbox) {
                         TodoInboxContent(
                             todos = pageTodos,
-                            sort = sort,
-                            sortDescending = sortDescending,
+                            sort = pageSortRule.sort,
+                            sortDescending = pageSortRule.descending,
                             visibleSections = pageVisibleSections,
                             emptyHint = pageEmptyHint,
                             topBarExtraSpace = topBarExtraSpace,
@@ -939,8 +991,8 @@ fun TodoScreen(
                     }
                     TodoList(
                         todos = pageTodos,
-                        sort = sort,
-                        sortDescending = sortDescending,
+                        sort = pageSortRule.sort,
+                        sortDescending = pageSortRule.descending,
                         // 标签配色表（用户标签所选颜色）：透传给列表卡的 NoteCard
                         tagColors = tagColorMap,
                         // 特殊分组页 = 该页本身就是过滤口径，分类菜单的分组显隐不再参与（全组可见）；
@@ -1127,6 +1179,10 @@ fun TodoScreen(
                         // 概览块打开待办概览浮层（纯展示，不改页面过滤状态）
                         onOverviewClick = { overviewVisible = true },
                         menuExpanded = menuExpanded,
+                        // 排序块可用性：最近删除页与已归档页固定按删除/归档时刻倒序，
+                        // 列表不消费排序规则——排序块置灰不可点（与视图块同一口径）
+                        sortEnabled = special != TodoSpecialSection.Trash &&
+                            special != TodoSpecialSection.Archived,
                         sortMenuExpanded = sortMenuExpanded,
                         onSortMenuDismiss = { sortMenuExpanded = false },
                         categoryMenuExpanded = categoryMenuExpanded,
@@ -1164,41 +1220,60 @@ fun TodoScreen(
                                 ),
                             ),
                         ),
+                        // 排序菜单读写「当前页签规则」（activeSortRule）：常规分组页改本页
+                        // 规则、只影响该分组；特殊分组页/标签页仍改全局排序。勾选态即本页
+                        // 当前规则，切分组后再打开即显示新分组的选择
                         sortMenuSections = listOf(
                             PopupMenuSection(
                                 items = listOf(
                                     PopupMenuItem(
                                         label = stringResource(R.string.sort_created),
-                                        checked = sort == TodoSort.Created,
+                                        checked = activeSortRule.sort == TodoSort.Created,
                                         // 点选即收 + 重写延后：排序改动同帧结构重排被采样源
                                         // （待办列表），延后到退场播完（menuRewriteGate）
                                         onClick = {
                                             sortMenuExpanded = false
-                                            menuRewriteGate.defer { sort = TodoSort.Created }
+                                            menuRewriteGate.defer {
+                                                applyActiveSortRule(
+                                                    activeSortRule.copy(sort = TodoSort.Created),
+                                                )
+                                            }
                                         },
                                     ),
                                     PopupMenuItem(
                                         label = stringResource(R.string.sort_deadline),
-                                        checked = sort == TodoSort.Deadline,
+                                        checked = activeSortRule.sort == TodoSort.Deadline,
                                         onClick = {
                                             sortMenuExpanded = false
-                                            menuRewriteGate.defer { sort = TodoSort.Deadline }
+                                            menuRewriteGate.defer {
+                                                applyActiveSortRule(
+                                                    activeSortRule.copy(sort = TodoSort.Deadline),
+                                                )
+                                            }
                                         },
                                     ),
                                     PopupMenuItem(
                                         label = stringResource(R.string.sort_urgency),
-                                        checked = sort == TodoSort.Urgency,
+                                        checked = activeSortRule.sort == TodoSort.Urgency,
                                         onClick = {
                                             sortMenuExpanded = false
-                                            menuRewriteGate.defer { sort = TodoSort.Urgency }
+                                            menuRewriteGate.defer {
+                                                applyActiveSortRule(
+                                                    activeSortRule.copy(sort = TodoSort.Urgency),
+                                                )
+                                            }
                                         },
                                     ),
                                     PopupMenuItem(
                                         label = stringResource(R.string.sort_name),
-                                        checked = sort == TodoSort.Name,
+                                        checked = activeSortRule.sort == TodoSort.Name,
                                         onClick = {
                                             sortMenuExpanded = false
-                                            menuRewriteGate.defer { sort = TodoSort.Name }
+                                            menuRewriteGate.defer {
+                                                applyActiveSortRule(
+                                                    activeSortRule.copy(sort = TodoSort.Name),
+                                                )
+                                            }
                                         },
                                     ),
                                 ),
@@ -1208,18 +1283,26 @@ fun TodoScreen(
                                 items = listOf(
                                     PopupMenuItem(
                                         label = stringResource(R.string.sort_ascending),
-                                        checked = !sortDescending,
+                                        checked = !activeSortRule.descending,
                                         onClick = {
                                             sortMenuExpanded = false
-                                            menuRewriteGate.defer { sortDescending = false }
+                                            menuRewriteGate.defer {
+                                                applyActiveSortRule(
+                                                    activeSortRule.copy(descending = false),
+                                                )
+                                            }
                                         },
                                     ),
                                     PopupMenuItem(
                                         label = stringResource(R.string.sort_descending),
-                                        checked = sortDescending,
+                                        checked = activeSortRule.descending,
                                         onClick = {
                                             sortMenuExpanded = false
-                                            menuRewriteGate.defer { sortDescending = true }
+                                            menuRewriteGate.defer {
+                                                applyActiveSortRule(
+                                                    activeSortRule.copy(descending = true),
+                                                )
+                                            }
                                         },
                                     ),
                                 ),
@@ -1627,7 +1710,8 @@ private val TodoSection.titleRes: Int
  * 四个分组的口径（列表视图与收集箱视图共用同一份）：
  * - 置顶组收编全部置顶条目（移动语义，不与其余组重复）；其余组只在非置顶里划分；
  * - 分类菜单取消勾选的组整组不进结果（visibleSections 过滤，空列表 = 四组全隐）；
- * - 组内按当前排序 [sort]/[sortDescending] 排；
+ * - 组内按本页排序规则 [sort]/[sortDescending] 排（宿主按页面身份解析：常规分组页取
+ *   该分组的规则、没设置回落全局，特殊分组页/标签页恒用全局）；
  * - 空组不返回（列表不渲染空分区头、收集箱不渲染空卡）。
  */
 private fun buildTodoSections(
@@ -2000,6 +2084,15 @@ private fun String.toTodoPageIdentity(): TodoPageIdentity {
     }
 }
 
+/**
+ * 分组页排序规则表的保存器：整表编成 JSON 串（Bundle 只能存基本类型，编解码与 prefs
+ * 同一套；损坏/未知排序名在 [decodeSortRules] 内回落，不会让恢复崩溃）
+ */
+private val TodoSortRulesSaver = Saver<Map<String, TodoSortRule>, String>(
+    save = { encodeSortRules(it) },
+    restore = { decodeSortRules(it) },
+)
+
 /** 已折叠分区集的保存器：枚举按名字存取（未知名字丢弃，防枚举变更后恢复崩溃） */
 private val CollapsedSectionsSaver = listSaver<Set<TodoSection>, String>(
     save = { sections -> sections.map(TodoSection::name) },
@@ -2066,7 +2159,8 @@ internal fun filterTodosByTag(todos: List<Todo>, tag: String): List<Todo> =
  * 待办列表：已置顶、已逾期、未完成、已完成各归一组——已置顶组在最上（所有置顶待办，
  * 无置顶待办时整组不渲染）、已逾期组次之（标题标红的卡片，截止日期已过且未完成）、
  * 未完成居中、已完成在下（默认收起），空组不渲染；
- * 组内按顶栏选定的排序与方向（默认截止日期降序——截止早的在前）。置顶条目归已置顶组、
+ * 组内按本页排序规则（排序菜单作用于当前分组页，各常规分组独立保存，默认截止日期
+ * 降序——截止早的在前）。置顶条目归已置顶组、
  * 不再进其余三组（移动而非重复展示，同分组置顶的语义）。空组不渲染的另一条路是
  * 分类菜单：[visibleSections] 未含的组整组隐藏（默认全组可见）。渲染结构：分区头与
  * 卡片各自是独立 LazyColumn item（头 key = "header_" + 分区名、卡 key 见
