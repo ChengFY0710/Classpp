@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.schedule
 
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -100,6 +101,8 @@ import kotlin.math.roundToInt
 internal val TopBarHeight = 56.dp  //顶栏行自然高度，也是最大折叠量
 
 private val WeekPillHeight = 40.dp
+/** 周数胶囊尾部箭头旋转时长：打开/关闭同值 */
+private const val WeekPillArrowRotateMillis = 360
 private val HeaderEdgePadding = 33.dp
 
 /**
@@ -609,6 +612,13 @@ private fun WeekPill(
 ) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         var menuExpanded by remember { mutableStateOf(false) }
+        // 尾部箭头随弹窗开合旋转：同一张 chevron 下箭头转 180° 当上箭头用，
+        // 打开与关闭同走固定时长，转角读在 layer 内不触发重组
+        val arrowRotation by animateFloatAsState(
+            targetValue = if (menuExpanded) 180f else 0f,
+            animationSpec = tween(WeekPillArrowRotateMillis, easing = Motion.Standard),
+            label = "weekPillArrow",
+        )
         // 进出场动画（果冻曲线 + 整卡首尾淡入淡出 + 分层淡入 + 尾淡兜底，与弹出菜单族
         // 同一套 motion）：收起动画期间 motion.shown 保持 Popup 在场
         val motion = rememberPopupMotion(
@@ -735,7 +745,9 @@ private fun WeekPill(
                 Icon(
                     painter = painterResource(R.drawable.ic_chevron_down),
                     contentDescription = null,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier
+                        .size(18.dp)
+                        .graphicsLayer { rotationZ = arrowRotation },
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
