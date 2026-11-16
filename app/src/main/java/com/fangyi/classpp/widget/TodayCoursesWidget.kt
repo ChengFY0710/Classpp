@@ -38,10 +38,10 @@ class TodayCoursesWidget : GlanceAppWidget() {
     // Exact：按 launcher 实际给的尺寸渲染，行数由 LocalSize 自适应
     override val sizeMode: SizeMode = SizeMode.Exact
 
-    // 组件选择器预览固定按 4×2 目标尺寸渲染：默认 Single 会取 minWidth/minHeight
-    // （250×110dp），只够 1 行，预览看不出「三行 + 当前节高亮」的版式
+    // 组件选择器预览按 4×2 目标尺寸渲染：默认 Single 会取 minWidth/minHeight
+    // （250×110dp），只够 2 行，预览看不出「三行 + 当前节高亮」的版式
     override val previewSizeMode: PreviewSizeMode =
-        SizeMode.Responsive(setOf(DpSize(320.dp, 170.dp)))
+        SizeMode.Responsive(setOf(DpSize(320.dp, 150.dp)))
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val initialState = withContext(Dispatchers.IO) { loadTodayCoursesWidgetState(context) }

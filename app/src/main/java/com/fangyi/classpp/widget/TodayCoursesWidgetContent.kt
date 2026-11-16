@@ -192,25 +192,25 @@ private fun CourseRow(
 }
 
 /** 按组件实际高度算能放几行：卡内边距 + 标题行 + 标题下间距之后，按「行高 + 行距」步进。 */
-private fun maxRowsForHeight(height: Dp): Int {
+internal fun maxRowsForHeight(height: Dp): Int {
     val usable = height - CardPaddingVertical * 2 - HeaderHeight - HeaderGap
     if (usable <= 0.dp) return 0
     val rows = ((usable + RowGap) / (RowHeight + RowGap)).toInt()
     return rows.coerceIn(0, MaxRows)
 }
 
-// ---- 几何（4×2 目标 ≈ 320×170dp：卡内 3 行需要约 169dp，矮屏由 maxRowsForHeight 降行） ----
+// ---- 几何（4×2 目标 ≈ 320×150dp：卡内 3 行需要约 143dp，110dp 最小高度放 2 行） ----
 // 注：Glance 的 cornerRadius 只在 Android 12+ 生效，更低版本回退直角；这是平台限制，
 // 不影响卡面颜色与行布局。
 private val CardCornerRadius = 20.dp
 private val CardBorderWidth = 1.dp
 private val CardPaddingHorizontal = 16.dp
-private val CardPaddingVertical = 5.dp
-private val HeaderHeight = 22.dp
-private val HeaderGap = 3.dp
+private val CardPaddingVertical = 2.dp
+private val HeaderHeight = 20.dp
+private val HeaderGap = 1.dp
 private val HeaderCountGap = 8.dp
-private val RowHeight = 42.dp
-private val RowGap = 4.dp
+private val RowHeight = 38.dp
+private val RowGap = 2.dp
 private val RowCornerRadius = 12.dp
 private val RowPaddingHorizontal = 6.dp
 private val BarWidth = 4.dp

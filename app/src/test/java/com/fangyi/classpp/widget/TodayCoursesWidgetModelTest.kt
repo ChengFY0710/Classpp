@@ -2,6 +2,7 @@ package com.fangyi.classpp.widget
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.data.model.CourseColor
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.IsoDate
@@ -88,6 +89,29 @@ class TodayCoursesWidgetModelTest {
         )
         assertEquals(fiveRows, selectWindow(fiveRows, nowMinute = 15 * 60, limit = 6))
         assertTrue(selectWindow(fiveRows, nowMinute = 15 * 60, limit = 0).isEmpty())
+    }
+
+    @Test
+    fun fourByTwoHeightFitsThreeRows() {
+        // 4×2 目标高度约 150dp：紧凑布局后 3 行只需 143dp，不再因为高度算成 2 行
+        assertEquals(3, maxRowsForHeight(150.dp))
+        assertEquals(3, maxRowsForHeight(170.dp))
+    }
+
+    @Test
+    fun shorterWidgetDegradesGracefully() {
+        assertEquals(2, maxRowsForHeight(110.dp))
+        assertEquals(2, maxRowsForHeight(140.dp))
+        assertEquals(1, maxRowsForHeight(75.dp))
+        assertEquals(0, maxRowsForHeight(20.dp))
+        assertEquals(6, maxRowsForHeight(400.dp))
+    }
+
+    @Test
+    fun fourByTwoShowsThreeCoursesOutOfFive() {
+        // 回归：当天有 5 节时，4×2 小组件应渲染 3 节而不是只有 2 节
+        val rows = selectWindow(fiveRows, nowMinute = 15 * 60, maxRowsForHeight(150.dp))
+        assertEquals(listOf("b", "c", "d"), rows.map { it.courseId })
     }
 
     @Test
