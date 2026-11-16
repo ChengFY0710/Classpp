@@ -243,7 +243,9 @@ private val TrailingScrollSpace = 120.dp
  *
  * [todoRepository] 喂日历卡的待办小点与日历卡下方的待办提醒卡（DayTodoAlert）：前者
  * 按 DayCalendar 回报的网格窗口取覆盖日期（[datesCoveredWithin]），后者按截止窗口
- * （逾期 ~ 后天）取未完成待办；未注入（预览/首帧）都按无待办处理。待办提醒卡行与时间轴
+ * （逾期 ~ 后天）取未完成待办；未注入（预览/首帧）都按无待办处理。查看其他日期时
+ * 是否仍带上已逾期待办由 [showOverdueTodos] 决定（个性化「日程」开关，默认关闭，
+ * 看今天的卡片不受影响）。待办提醒卡行与时间轴
  * 待办卡可点击唤起待办详情浮层（TodoDetailSheet，与待办页同款两段式接线，含备注/步骤/
  * 倒计时与「编辑」叠层 NewTodoSheet）。
  *
@@ -270,6 +272,8 @@ internal fun DayScreen(
     todoRepository: TodoRepository? = null,
     scheduleRepository: ScheduleRepository? = null,
     tagRepository: TagRepository? = null,
+    /** 查看非今天日期时是否仍显示已逾期待办（个性化「日程」开关，默认关闭） */
+    showOverdueTodos: State<Boolean> = mutableStateOf(false),
     /** 顶栏右侧 AI 按钮：唤起宿主（MainActivity）根级的 AI 对话浮层 */
     onOpenAiChat: () -> Unit = {},
     onOverlayOverNavBarChange: (Boolean) -> Unit = {},
@@ -1594,6 +1598,7 @@ internal fun DayScreen(
                                         today = today,
                                         nowMinute = nowMinute,
                                         tagColors = tagColorMap,
+                                        showOverdueTodos = showOverdueTodos.value,
                                         onCompleteTodo = completeAlertTodo,
                                         onToggleTodo = toggleTaskTodo,
                                         onTodoClick = openTodoDetail,
@@ -1987,6 +1992,9 @@ internal fun DayScreen(
  * （[DayTodayCourseAlert]）、[DayTodoAlert] 的今天行与 [DayTimeline] 主体，30s 对表
  * 只失效这些叶子，不再重组横滑轨里的三页整页内容。
  *
+ * [showOverdueTodos] 透传给两张提醒卡的候选口径：查看非今天日期时是否保留已逾期待办
+ * （个性化「日程」开关，默认关闭），两张卡同值传入以保证让位互斥一致。
+ *
  * [revision] 在每次换日提交时自增（横滑松手判定 / 日历跳日），用作两张提醒卡
  * （[DayTodoAlert] / [DayTaskAlldayAlert]）的行镜重置键：提交瞬间内容必须从新日期的
  * 完整行集起画——若复用旧日期的行镜，会先重播一遍「跨日行增减」动画（表现为新页面
@@ -2001,6 +2009,7 @@ private fun DayDateContent(
     today: IsoDate,
     nowMinute: State<Int>,
     tagColors: Map<String, Color>,
+    showOverdueTodos: Boolean,
     onCompleteTodo: (Todo) -> Unit,
     onToggleTodo: (Todo, Boolean) -> Unit,
     onTodoClick: (Todo) -> Unit,
@@ -2053,10 +2062,11 @@ private fun DayDateContent(
             )
         }
         // 待办提醒卡：截止窗口随查看日期推算——今天收「今明后天 + 已逾期」的未完成待办；
-        // 查看其他日期收「那天起 2 天内」窗口 + 全部已逾期（拖欠始终在场）。无候选时整卡
-        // 折叠不占位。倒计时（含取色）与标题逾期标红随查看日期同源推算；非今天截止文案
-        // 取绝对日期（避免与倒计时错位）。完成勾选走落库路由，行点击经 openTodoDetail
-        // 唤起待办详情浮层。key(revision) 的落位重置口径见函数 KDoc。
+        // 查看其他日期收「那天起 2 天内」窗口，已逾期的拖欠是否一并带来看
+        // [showOverdueTodos]。无候选时整卡折叠不占位。倒计时（含取色）与标题逾期标红随
+        // 查看日期同源推算；非今天截止文案取绝对日期（避免与倒计时错位）。完成勾选走
+        // 落库路由，行点击经 openTodoDetail 唤起待办详情浮层。key(revision) 的落位重置
+        // 口径见函数 KDoc。
         key(revision) {
             DayTodoAlert(
                 todos = todos,
@@ -2066,11 +2076,14 @@ private fun DayDateContent(
                 tagColors = tagColors,
                 onComplete = onCompleteTodo,
                 onTodoClick = onTodoClick,
+                showOverdueTodos = showOverdueTodos,
                 modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
             )
             // 全天任务提醒卡：只收查看日命中的全天（AllDay）未完成待办；截止窗口内的
             // 全天任务已在上一张卡显示，这里让位不重复。行不显示截止/倒计时（只回答
             //「这一天有哪些全天任务」）。无候选时整卡折叠，10dp 间距随内容一并收起。
+            // 逾期待办的让位口径与上一张卡同源（showOverdueTodos 关闭时过期的全天任务
+            // 不再让位，在本卡按查看日正常显示）
             DayTaskAlldayAlert(
                 todos = todos,
                 today = today,
@@ -2078,6 +2091,7 @@ private fun DayDateContent(
                 tagColors = tagColors,
                 onComplete = onCompleteTodo,
                 onTodoClick = onTodoClick,
+                showOverdueTodos = showOverdueTodos,
                 modifier = Modifier.padding(horizontal = PageHorizontalSpacing),
             )
         }

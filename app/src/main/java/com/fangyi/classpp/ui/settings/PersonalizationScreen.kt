@@ -87,6 +87,10 @@ import kotlin.math.roundToInt
  * 「待办」分组为收集箱「瀑布流视图」开关（[todoMasonry] / [onTodoMasonryChange]）：
  * 开启时收集箱非空分组达 3 个后自动两列瀑布流，关闭后始终整宽竖排（默认开启，
  * 保持既有布局行为，设置项只提供关闭入口）。
+ * 「日程」分组（页末）为「其他日期显示逾期待办」开关（[showOverdueTodos] /
+ * [onShowOverdueTodosChange]）：决定日程页查看非今天日期时是否仍带上已逾期待办，
+ * 默认关闭（只看该日期前后截止的待办）；看今天的提醒卡不受影响。持久化见
+ * [AgendaPreferences]。
  * 后续外观类设置项（字号、图标风格等）继续加入本页。
  */
 @Composable
@@ -111,6 +115,9 @@ fun PersonalizationScreen(
     // 待办收集箱「瀑布流视图」开关（State 实例透传纪律同上，值只在 TodoSection 叶子内读）
     todoMasonry: State<Boolean> = mutableStateOf(true),
     onTodoMasonryChange: (Boolean) -> Unit = {},
+    // 日程页「其他日期显示逾期待办」开关（State 实例透传纪律同上，值只在 AgendaSection 叶子内读）
+    showOverdueTodos: State<Boolean> = mutableStateOf(false),
+    onShowOverdueTodosChange: (Boolean) -> Unit = {},
     // 浮层顶栏模糊开关（State 实例透传纪律同上，值只在 ColorModeSection 叶子内读）
     overlayTopBarBlur: State<Boolean> = mutableStateOf(false),
     onOverlayTopBarBlurChange: (Boolean) -> Unit = {},
@@ -175,6 +182,7 @@ fun PersonalizationScreen(
                             glassStyle.value,
                             overlayTopBarBlur.value,
                             todoMasonry.value,
+                            showOverdueTodos.value,
                             themeMode,
                             themeAccent,
                         ),
@@ -220,6 +228,10 @@ fun PersonalizationScreen(
                 TodoSection(
                     masonryView = todoMasonry,
                     onMasonryViewChange = onTodoMasonryChange,
+                )
+                AgendaSection(
+                    showOverdueTodos = showOverdueTodos,
+                    onShowOverdueTodosChange = onShowOverdueTodosChange,
                 )
             }
 
@@ -392,6 +404,34 @@ private fun TodoSection(
                     description = stringResource(R.string.todo_masonry_view_desc),
                     checked = masonryView.value,
                     onCheckedChange = onMasonryViewChange,
+                ),
+            ),
+        )
+    }
+}
+
+/**
+ * 「日程」分组（页末）：日程页「其他日期显示逾期待办」开关单独一张卡
+ * （[showOverdueTodos] / [onShowOverdueTodosChange]）。关闭（默认）时查看非今天日期
+ * 只显示该日期前后截止的待办，开启后已逾期的拖欠始终在场；看今天的提醒卡不受影响。
+ * 持久化见 [AgendaPreferences]。
+ *
+ * State 实例由调用方透传、值只在本叶子读取：切换开关只重组本卡片，不牵动整页
+ * （同 ScheduleSection / TodoSection 的透传纪律）。
+ */
+@Composable
+private fun AgendaSection(
+    showOverdueTodos: State<Boolean>,
+    onShowOverdueTodosChange: (Boolean) -> Unit,
+) {
+    CardSection(title = stringResource(R.string.section_agenda)) {
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Toggle(
+                    label = stringResource(R.string.show_overdue_todos),
+                    description = stringResource(R.string.show_overdue_todos_desc),
+                    checked = showOverdueTodos.value,
+                    onCheckedChange = onShowOverdueTodosChange,
                 ),
             ),
         )

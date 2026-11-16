@@ -507,6 +507,10 @@
     <string name="section_todo">Todo</string>
     <string name="todo_masonry_view">Waterfall view</string>
     <string name="todo_masonry_view_desc">When on, the waterfall view is enabled once there are 3 inbox cards</string>
+    <!-- Agenda (Personalization) -->
+    <string name="section_agenda">Agenda</string>
+    <string name="show_overdue_todos">Show overdue tasks on other dates</string>
+    <string name="show_overdue_todos_desc">When on, overdue todos still appear on other dates, and when off only todos due around that date are shown</string>
     <string name="time_range_start">Start time</string>
     <string name="time_range_end">End time</string>
     <string name="show_inactive">Show classes not held this week</string>

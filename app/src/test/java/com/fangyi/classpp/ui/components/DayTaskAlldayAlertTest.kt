@@ -184,4 +184,39 @@ class DayTaskAlldayAlertTest {
                 .isDayTodoAlertCandidate(today, today - 8),
         )
     }
+
+    @Test
+    fun overdueNotCarriedToOtherDatesWhenSwitchOff() {
+        val viewDate = today + 3
+        val overdue = allDay("overdue", listOf(today), deadline = today - 3)
+        // 开关开（默认口径）：查看其他日期时逾期拖欠始终在场
+        assertTrue(overdue.isDayTodoAlertCandidate(today, viewDate, showOverdueTodos = true))
+        assertTrue(overdue.isDayTodoAlertCandidate(today, viewDate))
+        // 开关关：只收该日期前后截止的待办，逾期不再跨日期常驻
+        assertFalse(overdue.isDayTodoAlertCandidate(today, viewDate, showOverdueTodos = false))
+        // 未逾期且落在窗口内的仍显示
+        assertTrue(
+            allDay("due-soon", listOf(today), deadline = viewDate + 2)
+                .isDayTodoAlertCandidate(today, viewDate, showOverdueTodos = false),
+        )
+    }
+
+    @Test
+    fun todayCardKeepsOverdueRegardlessOfSwitch() {
+        val overdue = allDay("overdue", listOf(today), deadline = today - 3)
+        assertTrue(overdue.isDayTodoAlertCandidate(today, today, showOverdueTodos = false))
+    }
+
+    @Test
+    fun disabledSwitchShowsOverdueAllDayTaskOnItsDate() {
+        val viewDate = today - 8
+        val todos = listOf(allDay("overdue", listOf(viewDate), deadline = today - 3))
+        // 开关开：逾期全天任务让位待办提醒卡
+        assertTrue(todos.allDayAlertCandidates(today, viewDate).isEmpty())
+        // 开关关：待办提醒卡不再收逾期，全天任务卡按查看日正常显示，不丢也不重复
+        assertEquals(
+            listOf("overdue"),
+            todos.allDayAlertCandidates(today, viewDate, showOverdueTodos = false).ids(),
+        )
+    }
 }

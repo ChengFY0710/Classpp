@@ -75,6 +75,7 @@ import com.fangyi.classpp.ui.schedule.CardHeightPreferences
 import com.fangyi.classpp.ui.schedule.CardHeightScales
 import com.fangyi.classpp.ui.schedule.ScheduleScreen
 import com.fangyi.classpp.ui.schedule.TeacherDisplayPreferences
+import com.fangyi.classpp.ui.settings.AgendaPreferences
 import com.fangyi.classpp.ui.settings.GlassPreferences
 import com.fangyi.classpp.ui.settings.LocalSettingsFreezeEpoch
 import com.fangyi.classpp.ui.settings.OverlayTopBarPreferences
@@ -274,6 +275,8 @@ class MainActivity : ComponentActivity() {
         val savedTodoMasonry = TodoInboxPreferences.loadMasonryView(this)
         // 浮层顶栏模糊开关：同为 SharedPreferences 真源，冷启动读一次
         val savedOverlayTopBarBlur = OverlayTopBarPreferences.load(this)
+        // 日程页「其他日期显示逾期待办」开关：同为 SharedPreferences 真源，冷启动读一次
+        val savedShowOverdueTodos = AgendaPreferences.loadShowOverdueTodos(this)
         super.onCreate(savedInstanceState)
         // 系统栏外观随主题：状态栏/导航栏全透明、前景图标深浅按模式切换。
         // 必须显式 light 而非 auto：auto 会把 isNavigationBarContrastEnforced 置为 true，
@@ -339,6 +342,9 @@ class MainActivity : ComponentActivity() {
             // 浮层顶栏模糊开关状态：同 showTeacher（prefs 真源、回调即时落盘）；
             // 经 LocalOverlayTopBarBlur 在组合根部下发，OverlaySheet 顶栏在叶子内读值
             val overlayTopBarBlurState = remember { mutableStateOf(savedOverlayTopBarBlur) }
+            // 日程页「其他日期显示逾期待办」开关状态：同 showTeacher（prefs 真源、
+            // 回调即时落盘）；State 实例同时喂个性化页开关与日程页两张提醒卡的候选口径
+            val showOverdueTodosState = remember { mutableStateOf(savedShowOverdueTodos) }
             val darkTheme = when (themeMode) {
                 ThemeMode.System -> isSystemInDarkTheme()
                 ThemeMode.Light -> false
@@ -541,6 +547,12 @@ class MainActivity : ComponentActivity() {
                         { enabled: Boolean ->
                             overlayTopBarBlurState.value = enabled
                             OverlayTopBarPreferences.save(this@MainActivity, enabled)
+                        }
+                    }
+                    val onSettingsShowOverdueTodosChange = remember {
+                        { enabled: Boolean ->
+                            showOverdueTodosState.value = enabled
+                            AgendaPreferences.saveShowOverdueTodos(this@MainActivity, enabled)
                         }
                     }
                     val settingsModifier = remember { Modifier.fillMaxSize() }
@@ -803,6 +815,8 @@ class MainActivity : ComponentActivity() {
                                                         scheduleRepository = repository,
                                                         // 待办提醒卡标签配色数据源（与待办页同源）
                                                         tagRepository = tagRepository,
+                                                        // 查看非今天日期时是否仍显示逾期待办（个性化页开关）
+                                                        showOverdueTodos = showOverdueTodosState,
                                                         // AI 对话入口：宿主根级浮层，与长按选中导航胶囊共用
                                                         onOpenAiChat = onOpenAiChat,
                                                         // 选择图片浮层在场时藏底部导航栏（同课表/待办页浮层）
@@ -970,6 +984,9 @@ class MainActivity : ComponentActivity() {
                                 overlayTopBarBlur = overlayTopBarBlurState,
                                 // 只改内存即时生效 + 即时落盘（同 showTeacher）
                                 onOverlayTopBarBlurChange = onSettingsOverlayTopBarBlurChange,
+                                showOverdueTodos = showOverdueTodosState,
+                                // 只改内存即时生效 + 即时落盘（同 showTeacher）
+                                onShowOverdueTodosChange = onSettingsShowOverdueTodosChange,
                                 // 设置页根页顶栏的冻结层要读外层覆盖层进度
                                 overlayTransitionState = settingsOverlayState,
                                 modifier = settingsModifier,

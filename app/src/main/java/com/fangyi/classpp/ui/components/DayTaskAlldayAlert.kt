@@ -28,9 +28,15 @@ internal val DayAlertAllDayRowOrder: Comparator<Todo> = TodoSort.Urgency.compara
 /**
  * 全天任务提醒卡的候选：查看日命中、时刻形态为全天、未完成，且未落入 [DayTodoAlert] 的
  * 截止窗口——截止临近/已逾期的全天任务优先由待办提醒卡显示，两张卡不重复同一期。
- * 重复待办按分期粒度展开，只取 [viewDate] 当期。
+ * 重复待办按分期粒度展开，只取 [viewDate] 当期。[showOverdueTodos] 与非今天视图的
+ * 逾期待办口径同源（见 [isDayTodoAlertCandidate]）：关闭时过期的全天任务不再让位，
+ * 在本卡按查看日正常显示。
  */
-internal fun List<Todo>.allDayAlertCandidates(today: IsoDate, viewDate: IsoDate): List<Todo> {
+internal fun List<Todo>.allDayAlertCandidates(
+    today: IsoDate,
+    viewDate: IsoDate,
+    showOverdueTodos: Boolean = true,
+): List<Todo> {
     // 没有全天任务时跳过整次重复展开（本卡最常见的空态）
     if (none { it.timeKind == TodoTimeKind.AllDay }) return emptyList()
     return expandRepeatOccurrences(viewDate)
@@ -38,7 +44,7 @@ internal fun List<Todo>.allDayAlertCandidates(today: IsoDate, viewDate: IsoDate)
             !todo.completed &&
                 todo.timeKind == TodoTimeKind.AllDay &&
                 viewDate in todo.dates &&
-                !todo.isDayTodoAlertCandidate(today, viewDate)
+                !todo.isDayTodoAlertCandidate(today, viewDate, showOverdueTodos)
         }
         .sortedWith(DayAlertAllDayRowOrder)
 }
@@ -49,9 +55,9 @@ internal fun List<Todo>.allDayAlertCandidates(today: IsoDate, viewDate: IsoDate)
  * [TodoTimeKind.AllDay] 未完成待办——时间轴只排有起止时刻（Period）的待办，本卡是
  * 全天任务在日程页的入口。
  *
- * 候选与 [DayTodoAlert] 互斥：落在截止窗口（截止 ≤ [viewDate] + 2 天或已逾期）的全天
- * 任务由待办提醒卡显示，本卡让位，同一期不会出现两次。重复待办按分期粒度去重——
- * 当天这期在本卡、同系列的其他拖欠期仍可能在待办提醒卡。
+ * 候选与 [DayTodoAlert] 互斥：落在截止窗口（截止 ≤ [viewDate] + 2 天，或按开关一并带上的
+ * 已逾期拖欠）的全天任务由待办提醒卡显示，本卡让位，同一期不会出现两次。重复待办按
+ * 分期粒度去重——当天这期在本卡、同系列的其他拖欠期仍可能在待办提醒卡。
  *
  * 行内容与待办提醒卡同款（NoteCard），但**不显示截止文案、倒计时与逾期红**：本卡只回答
  * 「这一天有哪些全天任务」；时间项只拼查看日 +「全天」（不取 todo.cardTimeText()——
@@ -61,6 +67,8 @@ internal fun List<Todo>.allDayAlertCandidates(today: IsoDate, viewDate: IsoDate)
  * @param today 今天（跨零点自动跳天的 [com.fangyi.classpp.ui.LocalToday]），用于判定
  *   DayTodoAlert 的「已逾期」让位口径
  * @param viewDate 卡片锚定日期：只显示命中这天的全天任务，默认 = 今天
+ * @param showOverdueTodos 非今天视图是否保留已逾期待办（个性化「日程」开关）：须与
+ *   [DayTodoAlert] 同值传入，让位口径才一致
  * @param tagColors 标签配色表（标签名 → 颜色，同待办页口径）
  * @param onComplete 勾选完成回调：组件只做回显与停一拍，落库路由（分期/整条）在宿主
  * @param onTodoClick 行点击回调（传分期副本）：宿主唤起待办详情；null = 行不可点
@@ -74,9 +82,10 @@ fun DayTaskAlldayAlert(
     onComplete: (Todo) -> Unit,
     modifier: Modifier = Modifier,
     onTodoClick: ((Todo) -> Unit)? = null,
+    showOverdueTodos: Boolean = true,
 ) {
-    val candidates = remember(todos, today, viewDate) {
-        todos.allDayAlertCandidates(today, viewDate)
+    val candidates = remember(todos, today, viewDate, showOverdueTodos) {
+        todos.allDayAlertCandidates(today, viewDate, showOverdueTodos)
     }
     DayAlertCard(
         candidates = candidates,

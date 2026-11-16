@@ -226,6 +226,9 @@ fun SettingsScreen(
     // 待办收集箱「瀑布流视图」开关（同 cardHeights 的透传纪律）
     todoMasonry: State<Boolean> = mutableStateOf(true),
     onTodoMasonryChange: (Boolean) -> Unit = {},
+    // 日程页「其他日期显示逾期待办」开关（同 cardHeights 的透传纪律）
+    showOverdueTodos: State<Boolean> = mutableStateOf(false),
+    onShowOverdueTodosChange: (Boolean) -> Unit = {},
     // 浮层顶栏模糊开关（同 cardHeights 的透传纪律）
     overlayTopBarBlur: State<Boolean> = mutableStateOf(false),
     onOverlayTopBarBlurChange: (Boolean) -> Unit = {},
@@ -538,6 +541,8 @@ fun SettingsScreen(
                                                 onGlassStyleChange = onGlassStyleChange,
                                                 todoMasonry = todoMasonry,
                                                 onTodoMasonryChange = onTodoMasonryChange,
+                                                showOverdueTodos = showOverdueTodos,
+                                                onShowOverdueTodosChange = onShowOverdueTodosChange,
                                                 overlayTopBarBlur = overlayTopBarBlur,
                                                 onOverlayTopBarBlurChange = onOverlayTopBarBlurChange,
                                                 settingsTransforming = settingsTransforming,

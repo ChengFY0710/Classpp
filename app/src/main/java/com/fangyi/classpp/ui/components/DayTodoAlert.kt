@@ -33,10 +33,10 @@ import com.fangyi.classpp.ui.theme.ClassppTheme
  *   不再逐行亮成独立的小圆角胶囊。
  *
  * **截止窗口随锚定日期推算**（[viewDate]）：锚定今天（默认）收「今明后天 + 已逾期」的
- * 未完成待办（原口径）；锚定其他日期收「[viewDate, viewDate + 2] 窗口 + 全部已逾期」——
- * 窗口随查看日期整体前移（临近的天接着显示，过头的自动隐去），而已逾期的拖欠始终在场
- * （欠着的到哪天都要还）。倒计时（含取色）同锚推算——看哪天就显示「从那天起还剩几天/
- * 逾期几天」；标题逾期标红与倒计时同源（截止早于锚定日期，或今天卡上当天已过点）。
+ * 未完成待办（原口径）；锚定其他日期收「[viewDate, viewDate + 2] 窗口」，已逾期的拖欠
+ * 是否一并带来看 [showOverdueTodos]——开启时始终在场（欠着的到哪天都要还），关闭时
+ * 只显示该日期前后截止的待办。倒计时（含取色）同锚推算——看哪天就显示「从那天起还剩
+ * 几天/逾期几天」；标题逾期标红与倒计时同源（截止早于锚定日期，或今天卡上当天已过点）。
  * 右侧截止文案：今天卡取相对词（按真实今天），非今天卡取绝对日期（详情浮层同款「确定
  * 日期」口径）——相对词按真实今天算，会与随日期推算的倒计时错位。
  *
@@ -50,6 +50,9 @@ import com.fangyi.classpp.ui.theme.ClassppTheme
  * @param todos 活跃待办（仓库原样；删除由仓库分流，不在流里）
  * @param today 今天（跨零点自动跳天的 [com.fangyi.classpp.ui.LocalToday]）
  * @param viewDate 卡片锚定日期：截止窗口按它推算（截止 ≤ viewDate + 2 天），默认 = 今天
+ * @param showOverdueTodos 查看非今天日期时是否仍显示已逾期待办（个性化「日程」开关）：
+ *   开启 = 欠着的到哪天都要还；关闭 = 只看该日期前后截止的待办。看今天不受影响
+ *   （「今明后天 + 逾期」原口径）。默认 true 保留既有预览/旧调用口径，应用内默认关闭
  * @param nowMinute 当天分钟数（State，逾期判定用，宿主对表驱动）：只在本卡锚定今天时
  *   由行内容读取——非今天卡不订阅对表，30s 一跳不会重组横滑三页里的邻页
  * @param tagColors 标签配色表（标签名 → 颜色，同待办页口径）
@@ -66,18 +69,19 @@ fun DayTodoAlert(
     onComplete: (Todo) -> Unit,
     modifier: Modifier = Modifier,
     onTodoClick: ((Todo) -> Unit)? = null,
+    showOverdueTodos: Boolean = true,
 ) {
     // 候选集：重复待办先按锚定日期展开逐期（分期副本自带逐期折算的截止与完成态），再过滤
-    // 排序。截止窗口随锚定日期推算，已逾期的拖欠始终在场：
+    // 排序。截止窗口随锚定日期推算：
     // - 今天：截止 ≤ 今天 + 2（含逾期），原口径；
-    // - 非今天：[那天, 那天 + 2] 的窗口 + 全部已逾期（截止早于真实今天的未完成待办）——
-    //   窗口随查看日期整体前移（临近的天接着显示，过头的自动隐去），欠着的到哪天都要还。
+    // - 非今天：[那天, 那天 + 2] 的窗口；已逾期的拖欠是否一并带来看 showOverdueTodos
+    //   （开启始终在场，关闭只显示该日期前后截止的待办）。
     // 窗口只看日期：截止时刻已过的仍是「0 天」组，只是标题转逾期红（isOverdue），
     // 与待办页口径一致
-    val candidates = remember(todos, today, viewDate) {
+    val candidates = remember(todos, today, viewDate, showOverdueTodos) {
         todos
             .expandRepeatOccurrences(viewDate)
-            .filter { it.isDayTodoAlertCandidate(today, viewDate) }
+            .filter { it.isDayTodoAlertCandidate(today, viewDate, showOverdueTodos) }
             .sortedFor(TodoSort.Deadline)
     }
     DayAlertCard(
@@ -101,13 +105,23 @@ fun DayTodoAlert(
 
 /**
  * 本卡的候选口径（[DayTaskAlldayAlert] 据此让位，确保同一任务不在两张卡重复）：未完成、
- * 有截止日期，且落在截止窗口内——截止 ≤ [viewDate] + 2 天（窗口随查看日推算），或早于
- * 真实今天的已逾期拖欠。
+ * 有截止日期，且落在截止窗口内——截止 ≤ [viewDate] + 2 天（窗口随查看日推算）。查看
+ * 非今天日期时，已逾期（截止早于 [today]）的拖欠是否保留由 [showOverdueTodos] 决定：
+ * 开启 = 原口径「窗口 + 全部已逾期」，关闭 = 只收窗口内且未逾期的。看今天时逾期本来
+ * 就在「今明后天」窗口内，不受开关影响。
  */
-internal fun Todo.isDayTodoAlertCandidate(today: IsoDate, viewDate: IsoDate): Boolean {
+internal fun Todo.isDayTodoAlertCandidate(
+    today: IsoDate,
+    viewDate: IsoDate,
+    showOverdueTodos: Boolean = true,
+): Boolean {
     if (completed) return false
     val deadline = deadlineDate ?: return false
-    return deadline - viewDate <= 2L || deadline.epochDay < today.epochDay
+    val withinWindow = deadline - viewDate <= 2L
+    // 看今天：逾期截止日早于今天，必然落在两天的余量里，withinWindow 即原口径
+    if (viewDate == today) return withinWindow
+    val overdue = deadline.epochDay < today.epochDay
+    return if (showOverdueTodos) withinWindow || overdue else withinWindow && !overdue
 }
 
 /**
