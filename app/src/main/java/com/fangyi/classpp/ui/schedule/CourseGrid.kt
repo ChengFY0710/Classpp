@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -42,11 +43,14 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
+import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.Correct
@@ -191,7 +195,13 @@ fun CourseGrid(
     pagerState: PagerState,
     timeSlots: List<TimeSlot>,
     contentForPage: (Int) -> WeekPageContent,
+    // 根容器（包住旧周快照与移动网格）的修饰符：Haze / Backdrop 采样标记挂在这里。
+    // 采样源必须是这个坐标固定的容器——跨多周跳转的位移发生在其子层，源节点窗口坐标
+    // 不变，顶栏磨砂才能连续采到「旧周快照 + 目标周」的合成内容；挂在移动中的网格上
+    // 会让源滑出屏幕，磨砂采不到快照、露出兜底色
     modifier: Modifier = Modifier,
+    // 网格层（LazyColumn）的修饰符：只放跟内容移动/滚动相关的装饰（转场位移、嵌套滚动）
+    gridModifier: Modifier = Modifier,
     state: LazyListState = rememberLazyListState(),
     contentPadding: PaddingValues = PaddingValues(0.dp),
     editMode: Boolean = false,
@@ -199,6 +209,12 @@ fun CourseGrid(
     // 全部由这一条进度派生。用 State 实例传递：值在本组件组合内读取，
     // ScheduleScreen 不跟着逐帧重组（与 cardHeights 同一条纪律）
     editProgress: State<Float> = remember { mutableStateOf(0f) },
+    // 跨多周跳转的旧周定格内容（null = 无转场）：渲染在移动网格下方的静态快照，
+    // 随 jumpProgress 原位缩小淡出。旧页在 Pager 瞬移后即退出组合，快照负责退场
+    jumpExitContent: WeekPageContent? = null,
+    // 跨多周跳转进度（0 = 旧周完整、目标周屏外；1 = 目标周落定）。
+    // 值只在快照图层的 graphicsLayer 内读取，动画期间本组件不重组
+    jumpProgress: State<Float> = remember { mutableStateOf(1f) },
     // 加号卡的两段式挂载：退场期间保持 true、随进度淡出，播完才卸载；
     // 只按 editMode 组合会让卡片在退场第一帧凭空消失
     addCardsMounted: Boolean = editMode,
@@ -270,55 +286,81 @@ fun CourseGrid(
     // 顶部留白在这里合并：调用方只给底部导航预留等静态留白，
     // 顶部随编辑进度逐帧变化（读 State 的范围止于本组件）
     val layoutDirection = LocalLayoutDirection.current
+    val contentStartPadding = contentPadding.calculateStartPadding(layoutDirection)
+    val contentEndPadding = contentPadding.calculateEndPadding(layoutDirection)
     val resolvedPadding = PaddingValues(
-        start = contentPadding.calculateStartPadding(layoutDirection),
+        start = contentStartPadding,
         top = topPadding,
-        end = contentPadding.calculateEndPadding(layoutDirection),
+        end = contentEndPadding,
         bottom = contentPadding.calculateBottomPadding(),
     )
-    LazyColumn(
-        state = state,
-        contentPadding = resolvedPadding,
-        modifier = modifier.background(MaterialTheme.colorScheme.background),
-    ) {
-        item(key = "weekPager") {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(pageHeight),
-                // 编辑态固定当前周（设计稿里编辑态没有周次指示，翻周无从判断），
-                // 顺带不必预组合邻页
-                beyondViewportPageCount = if (editMode) 0 else 1,
-                userScrollEnabled = !editMode,
-                // 一次手势最多翻一周（对应「上一周/下一周」），甩动不跨周跳
-                flingBehavior = PagerDefaults.flingBehavior(
+    // 网格整体 + 跨多周跳转的旧周定格层：快照先画（下），移动中的 Pager 网格后画（上），
+    // 与底部导航切页「新页盖住旧页」的层级一致
+    Box(modifier = modifier.fillMaxSize()) {
+        if (jumpExitContent != null) {
+            WeekExitLayer(
+                content = jumpExitContent,
+                progress = jumpProgress,
+                topPadding = topPadding,
+                pageHeight = pageHeight,
+                listState = state,
+                startPadding = contentStartPadding,
+                endPadding = contentEndPadding,
+                timeSlots = timeSlots,
+                days = days,
+                rowHeights = rowHeights,
+                showTeacher = showTeacherOnCard,
+                showDates = showDates,
+                dateBandHeight = dateBandHeight,
+                editProgress = editProgress,
+                addCardsMounted = addCardsMounted,
+                editMode = editMode,
+            )
+        }
+        LazyColumn(
+            state = state,
+            contentPadding = resolvedPadding,
+            modifier = gridModifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        ) {
+            item(key = "weekPager") {
+                HorizontalPager(
                     state = pagerState,
-                    pagerSnapDistance = PagerSnapDistance.atMost(1),
-                ),
-            ) { page ->
-                WeekPage(
-                    // 这里刻意不 remember：编辑态的 provider 会读草稿 state，
-                    // 记忆会让"刚加的课"刷不出来（key 没变 → 计算不重跑）。
-                    // 入参是**页索引**：页 0 = 最左页（学期前为第 0 周/当今周，学期后为
-                    // 第 1 周），页 → 周的换算由调用方在 contentForPage 内完成
-                    content = contentForPage(page),
-                    timeSlots = timeSlots,
-                    days = days,
-                    rowHeights = rowHeights,
-                    showTeacher = showTeacherOnCard,
-                    seamVisible = seamVisible,
-                    listState = state,
-                    showDates = showDates,
-                    dateBandHeight = dateBandHeight,
-                    editProgress = editProgress,
-                    addCardsMounted = addCardsMounted,
-                    editMode = editMode,
-                    onAddClick = onAddClick,
-                    onEditClick = onEditClick,
-                    onCourseLongClick = onCourseLongClick,
-                    onSlotLongClick = onSlotLongClick,
-                )
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(pageHeight),
+                    // 编辑态固定当前周（设计稿里编辑态没有周次指示，翻周无从判断），
+                    // 顺带不必预组合邻页
+                    beyondViewportPageCount = if (editMode) 0 else 1,
+                    userScrollEnabled = !editMode,
+                    // 一次手势最多翻一周（对应「上一周/下一周」），甩动不跨周跳
+                    flingBehavior = PagerDefaults.flingBehavior(
+                        state = pagerState,
+                        pagerSnapDistance = PagerSnapDistance.atMost(1),
+                    ),
+                ) { page ->
+                    WeekPage(
+                        // 这里刻意不 remember：编辑态的 provider 会读草稿 state，
+                        // 记忆会让"刚加的课"刷不出来（key 没变 → 计算不重跑）。
+                        // 入参是**页索引**：页 0 = 最左页（学期前为第 0 周/当今周，学期后为
+                        // 第 1 周），页 → 周的换算由调用方在 contentForPage 内完成
+                        content = contentForPage(page),
+                        timeSlots = timeSlots,
+                        days = days,
+                        rowHeights = rowHeights,
+                        showTeacher = showTeacherOnCard,
+                        seamVisible = seamVisible,
+                        listState = state,
+                        showDates = showDates,
+                        dateBandHeight = dateBandHeight,
+                        editProgress = editProgress,
+                        addCardsMounted = addCardsMounted,
+                        editMode = editMode,
+                        onAddClick = onAddClick,
+                        onEditClick = onEditClick,
+                        onCourseLongClick = onCourseLongClick,
+                        onSlotLongClick = onSlotLongClick,
+                    )
+                }
             }
         }
     }
@@ -330,6 +372,91 @@ fun CourseGrid(
  */
 private val PagerState.isSeamVisible: Boolean
     get() = currentPageOffsetFraction != 0f
+
+/**
+ * 跨多周跳转的旧周定格层：与 Pager 页逐像素同形（同一内容、行高、日期带与纵向滚动偏移），
+ * 但纯展示、不参与交互。它垫在移动中的网格下方，随 [progress] 原位缩小淡出——与底部导航
+ * 切页的旧页退场共用 [Motion.TabMillis] / [Motion.Overlay] / [Motion.TabShrinkScale]：
+ * 同一进度派生透明度与缩放，两条属性同帧同曲线。
+ *
+ * 图层自带整屏底色：目标周从屏外滑入前旧周仍铺满视口，不会漏出页面背景色；
+ * 目标周滑入后从上方逐段盖住它，等价于 tab 切页「新页盖旧页」的层级。
+ */
+@Composable
+private fun WeekExitLayer(
+    content: WeekPageContent,
+    progress: State<Float>,
+    topPadding: Dp,
+    pageHeight: Dp,
+    listState: LazyListState,
+    startPadding: Dp,
+    endPadding: Dp,
+    timeSlots: List<TimeSlot>,
+    days: Int,
+    rowHeights: List<Dp>,
+    showTeacher: Boolean,
+    showDates: Boolean,
+    dateBandHeight: Dp,
+    editProgress: State<Float>,
+    addCardsMounted: Boolean,
+    editMode: Boolean,
+) {
+    // 快照是静止页：翻页接缝线恒不画（起跳时 Pager 已落定，静止态本就无接缝）
+    val seamVisible = remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            // 纯展示快照：清空语义，转场期间无障碍不把旧周内容与目标周重复暴露
+            // （同 TabPager 对非选中页的处理）
+            .clearAndSetSemantics { }
+            // 与导航栏切页的旧页同款：居中缩小 + 淡出；值只在图层内读，不触发重组
+            .graphicsLayer {
+                val fraction = progress.value.coerceIn(0f, 1f)
+                alpha = 1f - fraction
+                val shrink = 1f - (1f - Motion.TabShrinkScale) * fraction
+                scaleX = shrink
+                scaleY = shrink
+            }
+            .clipToBounds()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        Box(
+            modifier = Modifier
+                // offset 必须在最外层：位移的是整页（日期带 + 各行），不是页内内容
+                .offset {
+                    IntOffset(
+                        x = 0,
+                        // 与 LazyColumn 的 Pager item 同一位置：顶部留白 − 列表已滚动像素。
+                        // Pager 是列表唯一 item，firstVisibleItemIndex 恒为 0，无需累加前序项高度
+                        y = topPadding.roundToPx() - listState.firstVisibleItemScrollOffset,
+                    )
+                }
+                .fillMaxWidth()
+                .padding(start = startPadding, end = endPadding)
+                .height(pageHeight),
+        ) {
+            WeekPage(
+                content = content,
+                timeSlots = timeSlots,
+                days = days,
+                rowHeights = rowHeights,
+                showTeacher = showTeacher,
+                seamVisible = seamVisible,
+                listState = listState,
+                showDates = showDates,
+                dateBandHeight = dateBandHeight,
+                editProgress = editProgress,
+                addCardsMounted = addCardsMounted,
+                editMode = editMode,
+                // 纯展示：回调全为 null，转场途中误触不会打开旧周的课程/添加面板
+                onAddClick = null,
+                onEditClick = null,
+                onCourseLongClick = null,
+                onSlotLongClick = null,
+            )
+        }
+    }
+}
 
 /**
  * 一周的整页：日期带 + 各节次行 + 尾部留白。

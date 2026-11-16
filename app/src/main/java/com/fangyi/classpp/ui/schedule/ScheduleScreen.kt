@@ -34,6 +34,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +43,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
@@ -116,6 +118,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -703,11 +706,17 @@ fun ScheduleScreen(
                 }
             }
 
-            // 跨多周跳转的单页滑入进度：1 = 整块网格从右侧一页宽处入场（跳向更后的周）、
-            // -1 = 从左侧（跳向更前的周）、0 = 落定。存"页宽倍数"而非像素，图层里乘自身宽度即
-            // 得位移，跳多远都恒定一页宽——不途经中间页（途经页的组合成本随距离线性涨，
-            // 超远跳转峰值帧会吃紧）
-            val jumpSlideFraction = remember { Animatable(0f) }
+            // 跨多周跳转：与底部导航切页同源——旧周原位缩小淡出、目标周从相对方向滑入，
+            // 共用 Motion.TabMillis / Motion.Overlay / Motion.TabShrinkScale。
+            // jumpProgress：0 = 旧周完整、目标周停在屏外；1 = 目标周落定（空闲）。
+            // 一个进度派生目标周位移、旧周淡出、旧周缩小三层效果，天然同帧同曲线；
+            // 值只在图层块内读取，动画期间本屏不重组。旧页在 scrollToPage 后即退出组合，
+            // 故把跳转前的整周内容定格成快照（jumpExitContent）垫在移动网格下方承担退场
+            val jumpProgress = remember { Animatable(1f) }
+            val jumpProgressState = remember(jumpProgress) { jumpProgress.asState() }
+            var jumpDir by remember { mutableFloatStateOf(0f) }
+            var jumpExitContent by remember { mutableStateOf<WeekPageContent?>(null) }
+            var jumpGeneration by remember { mutableIntStateOf(0) }
 
             // 手势 → 周次：currentPage 在拖动过半时即翻转，顶栏周数胶囊与日期随之切换；
             // 写回同值时 State 自身忽略，不产生额外重组。
@@ -719,10 +728,11 @@ fun ScheduleScreen(
             }
 
             // 周次 → 翻页：周数弹窗、返回本周、学期范围钳制触发的换周。
-            // 相邻周走 Pager 原生滑动（与手势翻页连贯）；跨多周先瞬移落位、再让整块网格从
-            // 手势方向滑入一页宽。滑入动画挂在 scope 上而非本效果里：week 途中再变时本效果
-            // 会重启，滑入不能被连带取消、停在半程偏移上；snapTo 同时会打断上一次未完成的
-            // 滑入，连续跳转天然收敛到最后一次
+            // 相邻周走 Pager 原生滑动（与手势翻页连贯）；跨多周把旧周定格成快照、
+            // 目标周瞬移落位后从相对方向滑入一页宽。动画挂在 scope 上而非本效果里：
+            // week 途中再变时本效果会重启，动画不能被连带取消、停在半程偏移上；
+            // snapTo(0) 同时会打断上一次未完成的跳转，连续跳转收敛到最后一次。
+            // 跳多远都恒定一页宽——不途经中间页（途经页的组合成本随距离线性涨）
             LaunchedEffect(week, firstPageWeek) {
                 val target = pageOfWeek(week, firstPageWeek)
                 val current = pagerState.currentPage
@@ -731,13 +741,27 @@ fun ScheduleScreen(
                         pagerState.animateScrollToPage(target)
                     } else {
                         val forward = target > current
+                        // scrollToPage 会立刻把旧页移出组合：先把当前周按现有内容定格成
+                        // 快照，与目标页同帧就位——下一帧合成时旧周仍完整在屏、目标周已
+                        // 停在屏外，不会漏出背景色
+                        jumpDir = if (forward) 1f else -1f
+                        jumpExitContent = displayedContentForPage(current)
+                        jumpProgress.snapTo(0f)
                         pagerState.scrollToPage(target)
+                        val generation = ++jumpGeneration
                         scope.launch {
-                            jumpSlideFraction.snapTo(if (forward) 1f else -1f)
-                            jumpSlideFraction.animateTo(
-                                0f,
-                                tween(durationMillis = 240, easing = Motion.Decelerate),
+                            // 首帧留给快照挂载/布局（与 TabPager 新页首帧同一处理），
+                            // 动画从完整旧周起步，不会因首帧排版开销吞掉开头
+                            withFrameNanos { }
+                            if (generation != jumpGeneration) return@launch
+                            jumpProgress.animateTo(
+                                targetValue = 1f,
+                                animationSpec = tween(
+                                    durationMillis = Motion.TabMillis,
+                                    easing = Motion.Overlay,
+                                ),
                             )
+                            if (generation == jumpGeneration) jumpExitContent = null
                         }
                     }
                 }
@@ -1177,24 +1201,39 @@ fun ScheduleScreen(
                     onEditClick = onEditClick,
                     onCourseLongClick = onCourseLongClick,
                     onSlotLongClick = onSlotLongClick,
+                    // 跨多周跳转：旧周定格快照垫在移动网格下方缩小淡出，
+                    // 目标周按进度从相对方向滑入（与底部导航切页同一套 token）
+                    jumpExitContent = jumpExitContent,
+                    jumpProgress = jumpProgressState,
+                    // Haze / 玻璃胶囊的采样源固定在根容器（快照 + 移动网格的合成层）：
+                    // 跨多周跳转的位移只发生在网格子层，源节点窗口坐标不变，顶栏磨砂
+                    // 才能连续采到「旧周快照 + 目标周」；挂在移动网格上会让源滑出屏幕，
+                    // 模糊采不到快照、只剩兜底色
                     modifier = Modifier
                         .fillMaxSize()
-                        // 跨多周跳转的单页滑入：位移 = 滑入进度 × 自身宽度（即页宽），只动图层不触发布局
-                        .graphicsLayer { translationX = jumpSlideFraction.value * size.width }
-                        // 编辑态不折叠：顶栏换成了固定编辑栏，滚动连接不参与
-                        .then(
-                            if (editSession == null) {
-                                Modifier.nestedScroll(collapseState.nestedScrollConnection)
-                            } else {
-                                Modifier
-                            },
-                        )
                         .hazeSource(hazeState)
                         // 玻璃周数胶囊开启时同一节点再挂液态玻璃采样标记（Haze 管顶栏
                         // 磨砂、Backdrop 只喂周数胶囊）；关闭时不挂载，采样层零开销
                         .then(
                             if (glassPillEnabled) {
                                 Modifier.layerBackdrop(weekPillBackdrop)
+                            } else {
+                                Modifier
+                            },
+                        ),
+                    gridModifier = Modifier
+                        .fillMaxSize()
+                        // 跨多周跳转的目标周滑入：位移 = 方向 × (1 − 进度) × 自身宽度，
+                        // 只动图层不触发布局；取整避免动画期间文字亚像素发虚
+                        .graphicsLayer {
+                            translationX = (jumpDir * (1f - jumpProgress.value) * size.width)
+                                .roundToInt()
+                                .toFloat()
+                        }
+                        // 编辑态不折叠：顶栏换成了固定编辑栏，滚动连接不参与
+                        .then(
+                            if (editSession == null) {
+                                Modifier.nestedScroll(collapseState.nestedScrollConnection)
                             } else {
                                 Modifier
                             },
