@@ -227,6 +227,39 @@ fun PageOverlayTransition(
 }
 
 /**
+ * 整页滑入/滑出覆盖层（无下层视差）：与设置页覆盖层 [PageOverlayTransition] 同源——
+ * 同一条 [Motion.PageEnterMillis] / [Motion.PageExitMillis] + [Motion.Overlay] 节奏、
+ * 同一层整屏压暗遮罩、同样的转场期左缘机身圆角，只是不接收 behind。
+ *
+ * 用于 WebView 等全屏页：承载它们的内容散落在宿主各处，无法像设置页子页那样把被盖住的
+ * 整页作为兄弟层传入，所以下层只压暗、不位移。遮罩画在本组件之内、覆盖其下方全部同级
+ * 内容，观感与设置页进场一致，仅少了下层 1/3 视差让位。
+ *
+ * 内容只在覆盖层活跃期（[LocalPageOverlayActive]：可见或退场进行中）组合：
+ * - 隐藏态不保留内容，WebView 全屏页不会在屏外常驻；
+ * - 退场动画播完（进度归零）才卸载，页面内的 DisposableEffect 到这时才销毁 WebView，
+ *   与旧「可见性即组合」的销毁时机一致，只是推迟到退场结束；
+ * - 预热帧（[LocalPageOverlayPrewarm]）不参与：WebView 页没有 Haze 需要初始化。
+ */
+@Composable
+fun PageSlideOverlay(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    state: PageOverlayTransitionState = rememberPageOverlayTransitionState(),
+    content: @Composable BoxScope.() -> Unit,
+) {
+    PageOverlayTransition(
+        visible = visible,
+        modifier = modifier,
+        state = state,
+        // 空 behind：不移动任何下层内容，只保留遮罩 + 页面滑动 + 左缘圆角
+        behind = {},
+    ) {
+        if (LocalPageOverlayActive.current) content()
+    }
+}
+
+/**
  * tab 转场状态的最小只读视图：持有与 ui.navigation 的 TabPageState（TabPager 状态机）
  * 同源的 x/scale 动画值，
  * 供页内需要在转场期间冻结 haze 模糊的组件（顶栏/编辑栏）在**绘制期**读取——Animatable
@@ -369,9 +402,9 @@ private const val PageOverlayPrewarmAlpha = 0.01f
 
 /**
  * 覆盖层转场的背景视差位移比例：下层页面向左挪自身宽度的这个比例让位，滑出时滑回。
- * 量级「微微」即可——iOS push 是 1/3 宽，明显重于本效果；想更含蓄可下调至 0.06 左右
+ * 取 iOS push 的下层让位量级（约 1/3 宽）；想更含蓄可下调至 0.2 左右。
  */
-private const val PageOverlayParallaxFraction = 0.1f
+private const val PageOverlayParallaxFraction = 1f / 3f
 
 /**
  * 机身圆角半径：API 31+ 读系统真实 R 角、四角取最大，低版本退化 24dp 近似。

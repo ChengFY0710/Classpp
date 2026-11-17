@@ -75,7 +75,9 @@ import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
+import com.fangyi.classpp.ui.motion.PageSlideOverlay
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
+import com.fangyi.classpp.ui.motion.rememberPageOverlayTransitionState
 import com.fangyi.classpp.ui.schools.SchoolUi
 import com.fangyi.classpp.ui.schools.WebViewLoginOutcome
 import com.fangyi.classpp.ui.schools.schoolText
@@ -255,6 +257,8 @@ private fun AccountSyncContent(
     // 原文都是字符串，用 Saver 一并存进 savedInstanceState：旋转后换号确认框的按钮仍可用，
     // 不会出现「框还在、pendingLogin 已丢」的死对话框。
     var loginVisible by rememberSaveable { mutableStateOf(false) }
+    // 全屏网页登录页转场进度：设置页覆盖层同款右滑进出场（无下层视差）
+    val loginTransition = rememberPageOverlayTransitionState()
     var pendingLogin by rememberSaveable(
         stateSaver = Saver<LoginRaw?, ArrayList<String>>(
             save = { ok -> ok?.let { arrayListOf(it.profileRaw, it.todosRaw) } },
@@ -1005,12 +1009,22 @@ private fun AccountSyncContent(
                     },
             )
 
-            // 登录浮层：组合序在内容之后 = 画在上层；返回键优先关登录浮层
-            if (loginVisible && schoolUi != null) {
-                schoolUi.WebViewLoginSheet(
-                    onDismiss = { loginVisible = false },
-                    onResult = { onLoginResult(it) },
-                )
+            // 登录浮层：组合序在内容之后 = 画在上层；返回键优先关登录浮层。
+            // 进/退场取设置页覆盖层同款整页滑动（无下层视差）：退场播完才卸载，
+            // 页面 DisposableEffect 到这时才销毁 WebView
+            PageSlideOverlay(
+                visible = loginVisible && schoolUi != null,
+                state = loginTransition,
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                if (schoolUi != null) {
+                    schoolUi.WebViewLoginSheet(
+                        onDismiss = { loginVisible = false },
+                        // 退场动画期间页面仍挂载：用户已关页时丢弃迟到的登录结果
+                        //（旧「卸载即销毁驱动器」语义，页面卸载推迟到退场播完）
+                        onResult = { if (loginVisible) onLoginResult(it) },
+                    )
+                }
             }
         }
     }

@@ -106,7 +106,9 @@ import com.fangyi.classpp.ui.components.EmptyStateActionButton
 import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.components.rememberPopupActionGate
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.PageSlideOverlay
 import com.fangyi.classpp.ui.motion.TabTransitionState
+import com.fangyi.classpp.ui.motion.rememberPageOverlayTransitionState
 import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
@@ -526,6 +528,8 @@ fun ScheduleScreen(
             var aiImportVisible by rememberSaveable { mutableStateOf(false) }
             // 教务课表页（WebView 登录模式）：教务导入浮层第二张卡打开，全屏盖住课表页
             var schoolTimetableVisible by rememberSaveable { mutableStateOf(false) }
+            // 全屏网页转场进度：设置页同款右滑进出场（无下层视差）
+            val schoolWebTransition = rememberPageOverlayTransitionState()
             // 活跃学校会话（fallback flow 保证 collectAsState 无条件调用，同设置页）：
             // 教务导入是可选能力——`scheduleImport == null` = 该校不实现，入口隐藏
             val fallbackSchoolSlot = remember { MutableStateFlow<SessionSlot>(SessionSlot.Loading) }
@@ -568,6 +572,8 @@ fun ScheduleScreen(
             val schoolWebViewTimetable = schoolScheduleImport?.webViewTimetable
             val schoolWebViewImportMode = schoolWebViewTimetable != null &&
                 schoolImportBlockedReason == ImportBlockReason.NoCredentials
+            // 全屏教务课表页在场（含退场动画）：转场与导航栏显隐共用同一判定
+            val schoolWebVisible = schoolTimetableVisible && schoolWebViewTimetable != null
             // 未连接不额外加横幅：浮层账号行已是「未连接」，与改造前视觉一致；
             // 网页方式导入可用时不显示「不支持」横幅（改用课表页入口）；其余两类给出
             // 说明并拦截确认
@@ -1638,6 +1644,8 @@ fun ScheduleScreen(
                     // 运行态与图片识别一样不 rememberSaveable（旋转即取消）；aiWebUrl
                     // 只记最近一次明确打开的地址，重开页面时预填/直接加载
                     var aiWebVisible by rememberSaveable { mutableStateOf(false) }
+                    // 全屏网页转场进度：设置页同款右滑进出场（无下层视差）
+                    val aiWebTransition = rememberPageOverlayTransitionState()
                     var aiWebUrl by rememberSaveable { mutableStateOf("") }
                     var aiWebRecognizing by remember { mutableStateOf(false) }
                     var aiWebError by remember { mutableStateOf<String?>(null) }
@@ -1826,8 +1834,14 @@ fun ScheduleScreen(
                     )
 
                     // 全屏教务网页：叠在 AI 浮层之上（页内自带底部地址栏）；确认弹窗在其后
-                    // 组合，因此识别成功后始终盖在网页上方。网页关闭/取消识别都取消在途请求
-                    if (aiWebVisible) {
+                    // 组合，因此识别成功后始终盖在网页上方。网页关闭/取消识别都取消在途请求。
+                    // 进/退场取设置页覆盖层同款整页滑动（无下层视差）：退场播完才卸载，页面
+                    // DisposableEffect 到这时才销毁 WebView
+                    PageSlideOverlay(
+                        visible = aiWebVisible,
+                        state = aiWebTransition,
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
                         AiWebImportSheet(
                             initialUrl = aiWebUrl,
                             recognizing = aiWebRecognizing,
@@ -1842,7 +1856,9 @@ fun ScheduleScreen(
                                 aiWebRecognizing = false
                                 aiWebError = null
                             },
-                            onExtract = onAiWebExtract,
+                            // 退场动画期间页面仍挂载：迟到的抓取结果不再触发识别
+                            //（旧「卸载即取消」语义，页面卸载推迟到退场播完）
+                            onExtract = { content -> if (aiWebVisible) onAiWebExtract(content) },
                             onStopRecognize = {
                                 aiWebRequestId++
                                 aiWebJob?.cancel()
@@ -2302,38 +2318,56 @@ fun ScheduleScreen(
             }
 
             // 教务课表页：WebView 登录模式下从教务导入浮层进入（全屏页，组合序最后 =
-            // 画在所有浮层之上）；页面内脚本回传原文 → 学校适配层映射成课表
-            if (schoolTimetableVisible && schoolWebViewTimetable != null) {
-                SchoolTimetableWebViewSheet(
-                    spec = schoolWebViewTimetable,
-                    onDismiss = { schoolTimetableVisible = false },
-                    // 网页方式导入：页面脚本回传原文 → 学校适配层映射成课表 →
-                    // 关页面并复用既有教务导入确认框（确认后走 JSON 导入路径落库）
-                    onExtract = if (schoolWebViewTimetable.importScript != null) {
-                        { raw ->
-                            when (val r = schoolScheduleImport.importFromWebTimetable(raw)) {
-                                is ImportOutcome.Ok -> {
-                                    schoolTimetableVisible = false
-                                    schoolParsed = r.schedule
+            // 画在所有浮层之上）；页面内脚本回传原文 → 学校适配层映射成课表。
+            // 转场取设置页覆盖层同款整页滑动（无下层视差）：退场播完才卸载，页面
+            // DisposableEffect 到这时才销毁 WebView
+            PageSlideOverlay(
+                visible = schoolWebVisible,
+                state = schoolWebTransition,
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                val spec = schoolWebViewTimetable
+                val importService = schoolScheduleImport
+                if (spec != null) {
+                    SchoolTimetableWebViewSheet(
+                        spec = spec,
+                        onDismiss = { schoolTimetableVisible = false },
+                        // 网页方式导入：页面脚本回传原文 → 学校适配层映射成课表 →
+                        // 关页面并复用既有教务导入确认框（确认后走 JSON 导入路径落库）
+                        onExtract = if (spec.importScript != null) {
+                            { raw ->
+                                // 退场动画期间页面仍挂载：用户已关页时丢弃迟到的抓取结果
+                                //（旧「卸载即取消」语义，页面卸载推迟到退场播完）
+                                if (schoolTimetableVisible) {
+                                    when (val r = importService.importFromWebTimetable(raw)) {
+                                        is ImportOutcome.Ok -> {
+                                            schoolTimetableVisible = false
+                                            schoolParsed = r.schedule
+                                        }
+                                        ImportOutcome.NoCourses ->
+                                            AppToasts.show(context, schoolNoCoursesToast)
+                                        is ImportOutcome.Failed -> AppToasts.show(
+                                            context,
+                                            schoolImportErrorTexts[r.error] ?: schoolNoCoursesToast,
+                                        )
+                                    }
                                 }
-                                ImportOutcome.NoCourses ->
-                                    AppToasts.show(context, schoolNoCoursesToast)
-                                is ImportOutcome.Failed -> AppToasts.show(
-                                    context,
-                                    schoolImportErrorTexts[r.error] ?: schoolNoCoursesToast,
-                                )
                             }
-                        }
-                    } else {
-                        null
-                    },
-                )
+                        } else {
+                            null
+                        },
+                    )
+                }
             }
-            // 全屏页在场（含开关翻转帧）就藏底部导航栏；页面关闭后放回（同课程详情浮层）
-            LaunchedEffect(schoolTimetableVisible, schoolWebViewTimetable) {
-                onOverlayOverNavBarChange(
-                    schoolTimetableVisible && schoolWebViewTimetable != null,
-                )
+            // 全屏页在场（含退场动画）就藏底部导航栏；进度归零、内容卸载后才放回
+            // （同课程详情浮层）。derivedStateOf 的结果只在跨端点时翻转，动画帧不触发重组
+            val schoolWebActive by remember(schoolWebVisible, schoolWebTransition) {
+                derivedStateOf {
+                    schoolWebVisible || schoolWebTransition.progress.value > 0f
+                }
+            }
+            LaunchedEffect(schoolWebActive) {
+                onOverlayOverNavBarChange(schoolWebActive)
             }
         }
         // 新建课表浮层：无激活课表的空态经「创建课表」按钮打开。挂在空态/网格 if-else 之外——
