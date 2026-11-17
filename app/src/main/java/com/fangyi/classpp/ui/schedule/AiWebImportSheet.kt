@@ -84,6 +84,7 @@ import com.fangyi.classpp.ui.theme.glassPressFeedback
 import com.fangyi.classpp.ui.theme.glassSurface
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import kotlin.coroutines.resume
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -261,6 +262,8 @@ internal fun AiWebImportSheet(
         try {
             wv.evaluateJavascript(AiWebPageExtract.resetResult(), null)
             wv.evaluateJavascript(AiWebPageExtract.script, null)
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             extracting = false
             readError = readErrorMessage
@@ -275,6 +278,8 @@ internal fun AiWebImportSheet(
                         if (cont.isActive) cont.resume(unquoteJsResult(value))
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 null
             }
