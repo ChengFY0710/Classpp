@@ -232,8 +232,9 @@ fun PageOverlayTransition(
  * 同一层整屏压暗遮罩、同样的转场期左缘机身圆角，只是不接收 behind。
  *
  * 用于 WebView 等全屏页：承载它们的内容散落在宿主各处，无法像设置页子页那样把被盖住的
- * 整页作为兄弟层传入，所以下层只压暗、不位移。遮罩画在本组件之内、覆盖其下方全部同级
- * 内容，观感与设置页进场一致，仅少了下层 1/3 视差让位。
+ * 整页作为兄弟层传入，所以本组件本身不移动下层。遮罩画在本组件之内、覆盖其下方全部同级
+ * 内容；需要设置页同款的下层让位时，由宿主把当前可见的底层内容套上
+ * [pageOverlayParallax] 并传入同一个 state。
  *
  * 内容只在覆盖层活跃期（[LocalPageOverlayActive]：可见或退场进行中）组合：
  * - 隐藏态不保留内容，WebView 全屏页不会在屏外常驻；
@@ -258,6 +259,23 @@ fun PageSlideOverlay(
         if (LocalPageOverlayActive.current) content()
     }
 }
+
+/**
+ * 覆盖层视差修饰符：随 [PageOverlayTransitionState] 的进度把本层向左平移自身宽度的
+ * [PageOverlayParallaxFraction]，与设置页覆盖层 behind 的让位量级一致。
+ *
+ * 给「无法把被盖住的内容作为 behind 兄弟层传入」的宿主补视差：把当前可见的底层页面
+ * 单独包一层挂上本修饰符，再让 [PageSlideOverlay] 从右缘滑入，即可得到与设置页相同的
+ * 下层让位观感。进度在绘制期读取（Animatable 是快照状态），逐帧只更新 layer 矩阵、
+ * 不触发重组；静止时 translationX=0，渲染零开销。
+ *
+ * 注意：本层内若挂 Haze 效果，宿主仍需让对应顶栏的 transitionFreeze 在视差期间生效
+ * （Haze 会按窗口坐标重采样中间态几何）。
+ */
+fun Modifier.pageOverlayParallax(state: PageOverlayTransitionState): Modifier =
+    graphicsLayer {
+        translationX = -state.progress.value * size.width * PageOverlayParallaxFraction
+    }
 
 /**
  * tab 转场状态的最小只读视图：持有与 ui.navigation 的 TabPageState（TabPager 状态机）

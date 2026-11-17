@@ -34,6 +34,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.components.hazeSources
 import com.fangyi.classpp.ui.components.hazeTopBarStyle
 import com.fangyi.classpp.ui.motion.LocalPageOverlayTransform
+import com.fangyi.classpp.ui.motion.PageOverlayTransitionState
 import com.fangyi.classpp.ui.motion.TabTransitionState
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.transitionFreeze
@@ -64,7 +65,8 @@ import dev.chrisbanes.haze.blur.hazeBlur
  * 视作 0。
  *
  * [tabTransition] 非 null 时启用同款转场冻结层（[transitionFreeze]）；宿主通过
- * [LocalPageOverlayTransform] 注入设置页覆盖层视差状态后，视差期间同样冻结：
+ * [LocalPageOverlayTransform] 注入设置页覆盖层视差状态（或经 [overlayTransitionState]
+ * 传入本页自己的覆盖层状态）后，视差期间同样冻结：
  * 覆盖「转场中途点编辑」的边角情况——编辑栏在转场结束前进场时同样重放就位帧，
  * 不让 haze 用中间态几何重采样。
  */
@@ -80,6 +82,9 @@ fun ScheduleEditBar(
     hazeState: HazeState? = null,
     daysPerWeek: Int = 5,
     tabTransition: TabTransitionState? = null,
+    // 本页自己的覆盖层转场状态（AI/教务网页的视差）：非空时优先于
+    // [LocalPageOverlayTransform] 注入的外层状态，用于视差期间顶栏冻结
+    overlayTransitionState: PageOverlayTransitionState? = null,
 ) {
     // 列数只认资源里真有的星期名（同 ScheduleHeader）
     val weekdayNames = stringArrayResource(R.array.weekdays)
@@ -93,7 +98,7 @@ fun ScheduleEditBar(
     // 转场冻结层：就位帧（含模糊输出）录制于此，tab 转场/设置页视差期间整帧重放。
     // overlayTransform 只在组合期取引用；isTransforming 在绘制期读，禁止在组合期读
     val transitionFreezeLayer = rememberGraphicsLayer()
-    val overlayTransform = LocalPageOverlayTransform.current
+    val overlayTransform = overlayTransitionState ?: LocalPageOverlayTransform.current
     val hasFreezeSource = tabTransition != null || overlayTransform != null
     Column(
         modifier = modifier

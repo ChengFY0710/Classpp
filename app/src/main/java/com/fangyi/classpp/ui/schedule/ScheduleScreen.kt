@@ -105,9 +105,11 @@ import com.fangyi.classpp.ui.components.EmptyState
 import com.fangyi.classpp.ui.components.EmptyStateActionButton
 import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.components.rememberPopupActionGate
+import com.fangyi.classpp.ui.motion.LocalPageOverlayTransform
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.PageSlideOverlay
 import com.fangyi.classpp.ui.motion.TabTransitionState
+import com.fangyi.classpp.ui.motion.pageOverlayParallax
 import com.fangyi.classpp.ui.motion.rememberPageOverlayTransitionState
 import com.fangyi.classpp.ui.navigation.NavReserve
 import com.fangyi.classpp.ui.theme.ClassppTheme
@@ -528,7 +530,9 @@ fun ScheduleScreen(
             var aiImportVisible by rememberSaveable { mutableStateOf(false) }
             // 教务课表页（WebView 登录模式）：教务导入浮层第二张卡打开，全屏盖住课表页
             var schoolTimetableVisible by rememberSaveable { mutableStateOf(false) }
-            // 全屏网页转场进度：设置页同款右滑进出场（无下层视差）
+            // 全屏网页转场进度：设置页同款右滑进出场。AI 网页页的进度上提到这里，
+            // 因为背后的课表页也要按它做视差（与教务课表页共用同一条课表页视差通道）
+            val aiWebTransition = rememberPageOverlayTransitionState()
             val schoolWebTransition = rememberPageOverlayTransitionState()
             // 活跃学校会话（fallback flow 保证 collectAsState 无条件调用，同设置页）：
             // 教务导入是可选能力——`scheduleImport == null` = 该校不实现，入口隐藏
@@ -572,8 +576,27 @@ fun ScheduleScreen(
             val schoolWebViewTimetable = schoolScheduleImport?.webViewTimetable
             val schoolWebViewImportMode = schoolWebViewTimetable != null &&
                 schoolImportBlockedReason == ImportBlockReason.NoCredentials
-            // 全屏教务课表页在场（含退场动画）：转场与导航栏显隐共用同一判定
+            // 全屏教务课表页在场（含退场动画）：转场与导航栏显隐共用同一判定。
+            // derivedStateOf 的结果只在跨端点时翻转，动画帧不触发重组
             val schoolWebVisible = schoolTimetableVisible && schoolWebViewTimetable != null
+            val schoolWebActive by remember(schoolWebVisible, schoolWebTransition) {
+                derivedStateOf {
+                    schoolWebVisible || schoolWebTransition.progress.value > 0f
+                }
+            }
+            // 视差期间顶栏冻结要读最近一层覆盖层状态：AI/教务网页任一在场时用其转场，
+            // 否则沿用外层设置页覆盖层经 LocalPageOverlayTransform 注入的状态
+            val webPageTransition by remember(aiWebTransition, schoolWebTransition) {
+                derivedStateOf {
+                    when {
+                        schoolWebTransition.progress.value > 0f -> schoolWebTransition
+                        aiWebTransition.progress.value > 0f -> aiWebTransition
+                        else -> null
+                    }
+                }
+            }
+            val effectiveOverlayTransform =
+                webPageTransition ?: LocalPageOverlayTransform.current
             // 未连接不额外加横幅：浮层账号行已是「未连接」，与改造前视觉一致；
             // 网页方式导入可用时不显示「不支持」横幅（改用课表页入口）；其余两类给出
             // 说明并拦截确认
@@ -594,13 +617,10 @@ fun ScheduleScreen(
                 if (editing) cancelEdit()
                 onOpenAccountSync()
             }
-            // 教务导入浮层「从教务网页导入」：收起整串浮层（教务导入 → 导入 → 切换），
-            // 不取消编辑态，直接打开教务课表页；关页面后回到编辑中的课表
+            // 教务导入浮层「从教务网页导入」：不收起浮层链，直接打开教务课表页——
+            // 未导入就关页面时回到原浮层（教务导入浮层仍在意）；导入成功后的确认
+            // 流程再按既有逻辑收起整串浮层
             val onSchoolWebViewImportClick: () -> Unit = {
-                schoolImportVisible = false
-                wakeupSheetVisible = false
-                importSheetVisible = false
-                switcherVisible = false
                 schoolTimetableVisible = true
             }
 
@@ -1218,7 +1238,11 @@ fun ScheduleScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(contentPadding),
+                    .padding(contentPadding)
+                    // AI/教务网页进/退场：背后课表页（网格 + 顶栏）跟随对应转场左移
+                    // 1/3 让位（设置页覆盖层同款视差）；只动图层，不触发布局
+                    .pageOverlayParallax(schoolWebTransition)
+                    .pageOverlayParallax(aiWebTransition),
             ) {
                 CourseGrid(
                     pagerState = pagerState,
@@ -1331,6 +1355,8 @@ fun ScheduleScreen(
                             hazeState = hazeState,
                             pillBackdrop = if (glassPillEnabled) weekPillBackdrop else null,
                             tabTransition = tabTransition,
+                            // AI/教务网页视差期间顶栏冻结（Haze 不重采样中间态几何）
+                            overlayTransitionState = effectiveOverlayTransform,
                             termStartWeekdayIndex = termStartWeekdayIndex,
                             termEndWeekdayIndex = termEndWeekdayIndex,
                             modifier = Modifier.onGloballyPositioned { coords ->
@@ -1351,6 +1377,8 @@ fun ScheduleScreen(
                             blurProgress = blurProgressState,
                             hazeState = hazeState,
                             tabTransition = tabTransition,
+                            // AI/教务网页视差期间编辑栏冻结（同顶栏）
+                            overlayTransitionState = effectiveOverlayTransform,
                             // 编辑态的星期行同样按课表天数分列，与网格列对齐
                             daysPerWeek = schedule.daysPerWeek,
                             modifier = Modifier.onGloballyPositioned { coords ->
@@ -1644,8 +1672,6 @@ fun ScheduleScreen(
                     // 运行态与图片识别一样不 rememberSaveable（旋转即取消）；aiWebUrl
                     // 只记最近一次明确打开的地址，重开页面时预填/直接加载
                     var aiWebVisible by rememberSaveable { mutableStateOf(false) }
-                    // 全屏网页转场进度：设置页同款右滑进出场（无下层视差）
-                    val aiWebTransition = rememberPageOverlayTransitionState()
                     var aiWebUrl by rememberSaveable { mutableStateOf("") }
                     var aiWebRecognizing by remember { mutableStateOf(false) }
                     var aiWebError by remember { mutableStateOf<String?>(null) }
@@ -1789,54 +1815,62 @@ fun ScheduleScreen(
                         }
                     }
 
-                    AiImportSheet(
-                        visible = aiImportVisible,
-                        onDismissed = { aiImportMounted = false },
-                        onDismiss = {
-                            aiImportVisible = false
-                            aiRequestId++
-                            aiJob?.cancel()
-                            aiJob = null
-                            aiAnalyzing = false
-                            aiError = null
-                            aiParsed = null
-                            clearAiImage()
-                            // 网页识别同样收场：取消在途请求，关掉网页
-                            aiWebRequestId++
-                            aiWebJob?.cancel()
-                            aiWebJob = null
-                            aiWebRecognizing = false
-                            aiWebError = null
-                            aiWebVisible = false
-                        },
-                        configured = aiConfigured,
-                        onOpenSettings = {
-                            aiImportVisible = false
-                            importSheetVisible = false
-                            onOpenAiSettings()
-                        },
-                        // 直接打开全屏网页页：地址栏在页内，用户可随时改网址
-                        onOpenWebImport = {
-                            aiWebError = null
-                            aiWebVisible = true
-                        },
-                        analyzing = aiAnalyzing,
-                        errorText = aiError,
-                        onAnalyze = onAiAnalyze,
-                        onStopAnalyze = {
-                            aiRequestId++
-                            aiJob?.cancel()
-                            aiJob = null
-                            aiAnalyzing = false
-                            clearAiImage()
-                        },
-                        onImageChanged = { aiError = null },
-                    )
+                    // AI 浮层作为全屏网页的下层页面：网页进/退场时随进度左移 1/3 让位
+                    //（设置页覆盖层同款视差）。浮层自身的两段式显隐与层内动效不受影响
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pageOverlayParallax(aiWebTransition),
+                    ) {
+                        AiImportSheet(
+                            visible = aiImportVisible,
+                            onDismissed = { aiImportMounted = false },
+                            onDismiss = {
+                                aiImportVisible = false
+                                aiRequestId++
+                                aiJob?.cancel()
+                                aiJob = null
+                                aiAnalyzing = false
+                                aiError = null
+                                aiParsed = null
+                                clearAiImage()
+                                // 网页识别同样收场：取消在途请求，关掉网页
+                                aiWebRequestId++
+                                aiWebJob?.cancel()
+                                aiWebJob = null
+                                aiWebRecognizing = false
+                                aiWebError = null
+                                aiWebVisible = false
+                            },
+                            configured = aiConfigured,
+                            onOpenSettings = {
+                                aiImportVisible = false
+                                importSheetVisible = false
+                                onOpenAiSettings()
+                            },
+                            // 直接打开全屏网页页：地址栏在页内，用户可随时改网址
+                            onOpenWebImport = {
+                                aiWebError = null
+                                aiWebVisible = true
+                            },
+                            analyzing = aiAnalyzing,
+                            errorText = aiError,
+                            onAnalyze = onAiAnalyze,
+                            onStopAnalyze = {
+                                aiRequestId++
+                                aiJob?.cancel()
+                                aiJob = null
+                                aiAnalyzing = false
+                                clearAiImage()
+                            },
+                            onImageChanged = { aiError = null },
+                        )
+                    }
 
                     // 全屏教务网页：叠在 AI 浮层之上（页内自带底部地址栏）；确认弹窗在其后
                     // 组合，因此识别成功后始终盖在网页上方。网页关闭/取消识别都取消在途请求。
-                    // 进/退场取设置页覆盖层同款整页滑动（无下层视差）：退场播完才卸载，页面
-                    // DisposableEffect 到这时才销毁 WebView
+                    // 进/退场取设置页覆盖层同款整页滑动 + 下方 AI 浮层左移让位：退场播完才
+                    // 卸载，页面 DisposableEffect 到这时才销毁 WebView
                     PageSlideOverlay(
                         visible = aiWebVisible,
                         state = aiWebTransition,
@@ -1848,6 +1882,7 @@ fun ScheduleScreen(
                             errorText = aiWebError,
                             // 记住最近一次明确打开的地址，重开页面时直接加载
                             onUrlChanged = { aiWebUrl = it },
+                            // 未导入就关闭全屏页：回到下方 AI 识别导入浮层（浮层保持打开）
                             onDismiss = {
                                 aiWebVisible = false
                                 aiWebRequestId++
@@ -1951,38 +1986,46 @@ fun ScheduleScreen(
                     }
                 }
                 if (schoolImportMounted) {
-                    SchoolImportSheet(
-                        visible = schoolImportVisible,
-                        onDismissed = {
-                            schoolImportMounted = false
-                            // 浮层收场即取消在途请求与解析态（同 Wakeup 输入浮层）
-                            schoolImportJob?.cancel()
-                            schoolImporting = false
-                            schoolParsed = null
-                            schoolSemesters = null
-                            schoolSemestersError = null
-                        },
-                        onDismiss = { schoolImportVisible = false },
-                        onOpenAccountSync = onSchoolAccountClick,
-                        // 非空 = WebView 登录模式：账号卡下方追加教务课表页入口，
-                        // 同时浮层隐藏「不支持」横幅与确认胶囊
-                        onOpenWebViewTimetable = if (schoolWebViewImportMode) {
-                            onSchoolWebViewImportClick
-                        } else {
-                            null
-                        },
-                        accountStatus = schoolAccountStatus,
-                        // 已连接账户的带头像状态卡（与设置页「账号与同步」同款）
-                        account = schoolAccountCard,
-                        // 非空 = 当前登录方式不支持教务导入：浮层内横幅说明并拦截确认
-                        importBlockedReason = schoolImportBlockedText,
-                        semesters = schoolSemesters?.map { it.name }.orEmpty(),
-                        semestersLoading = schoolSemestersLoading,
-                        semestersError = schoolSemestersError?.let { schoolImportErrorTexts[it] },
-                        onRetrySemesters = loadSchoolSemesters,
-                        importing = schoolImporting,
-                        onConfirm = onSchoolImportConfirm,
-                    )
+                    // 教务课表网页进/退场时，教务导入浮层作为下层页面随进度左移 1/3
+                    //让位（与 AI 浮层同款视差）；浮层自身显隐与层内动效不受影响
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pageOverlayParallax(schoolWebTransition),
+                    ) {
+                        SchoolImportSheet(
+                            visible = schoolImportVisible,
+                            onDismissed = {
+                                schoolImportMounted = false
+                                // 浮层收场即取消在途请求与解析态（同 Wakeup 输入浮层）
+                                schoolImportJob?.cancel()
+                                schoolImporting = false
+                                schoolParsed = null
+                                schoolSemesters = null
+                                schoolSemestersError = null
+                            },
+                            onDismiss = { schoolImportVisible = false },
+                            onOpenAccountSync = onSchoolAccountClick,
+                            // 非空 = WebView 登录模式：账号卡下方追加教务课表页入口，
+                            // 同时浮层隐藏「不支持」横幅与确认胶囊
+                            onOpenWebViewTimetable = if (schoolWebViewImportMode) {
+                                onSchoolWebViewImportClick
+                            } else {
+                                null
+                            },
+                            accountStatus = schoolAccountStatus,
+                            // 已连接账户的带头像状态卡（与设置页「账号与同步」同款）
+                            account = schoolAccountCard,
+                            // 非空 = 当前登录方式不支持教务导入：浮层内横幅说明并拦截确认
+                            importBlockedReason = schoolImportBlockedText,
+                            semesters = schoolSemesters?.map { it.name }.orEmpty(),
+                            semestersLoading = schoolSemestersLoading,
+                            semestersError = schoolSemestersError?.let { schoolImportErrorTexts[it] },
+                            onRetrySemesters = loadSchoolSemesters,
+                            importing = schoolImporting,
+                            onConfirm = onSchoolImportConfirm,
+                        )
+                    }
                 }
                 if (wakeupConfirmMounted) {
                     ScheduleImportConfirmDialog(
@@ -2319,8 +2362,8 @@ fun ScheduleScreen(
 
             // 教务课表页：WebView 登录模式下从教务导入浮层进入（全屏页，组合序最后 =
             // 画在所有浮层之上）；页面内脚本回传原文 → 学校适配层映射成课表。
-            // 转场取设置页覆盖层同款整页滑动（无下层视差）：退场播完才卸载，页面
-            // DisposableEffect 到这时才销毁 WebView
+            // 转场取设置页覆盖层同款整页滑动 + 教务导入浮层左移让位（背后课表页不动）：
+            // 退场播完才卸载，页面 DisposableEffect 到这时才销毁 WebView
             PageSlideOverlay(
                 visible = schoolWebVisible,
                 state = schoolWebTransition,
@@ -2360,12 +2403,7 @@ fun ScheduleScreen(
                 }
             }
             // 全屏页在场（含退场动画）就藏底部导航栏；进度归零、内容卸载后才放回
-            // （同课程详情浮层）。derivedStateOf 的结果只在跨端点时翻转，动画帧不触发重组
-            val schoolWebActive by remember(schoolWebVisible, schoolWebTransition) {
-                derivedStateOf {
-                    schoolWebVisible || schoolWebTransition.progress.value > 0f
-                }
-            }
+            // （同课程详情浮层）
             LaunchedEffect(schoolWebActive) {
                 onOverlayOverNavBarChange(schoolWebActive)
             }

@@ -76,6 +76,7 @@ import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.LocalPageOverlayActive
 import com.fangyi.classpp.ui.motion.LocalPageOverlayPrewarm
 import com.fangyi.classpp.ui.motion.PageSlideOverlay
+import com.fangyi.classpp.ui.motion.pageOverlayParallax
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
 import com.fangyi.classpp.ui.motion.rememberPageOverlayTransitionState
 import com.fangyi.classpp.ui.schools.SchoolUi
@@ -768,6 +769,9 @@ private fun AccountSyncContent(
                 glassBackdrop = glassBackdrop,
                 topPadding = topBarHeight + TopBarContentGap,
                 bottomPadding = navBarPadding + SheetBottomSlack,
+                // 网页登录页进/退场：账号页正文与顶栏一起左移 1/3 让位
+                //（设置页覆盖层同款视差）
+                modifier = Modifier.pageOverlayParallax(loginTransition),
             ) {
                 if (sessionExpired) {
                     SheetInfoBanner(text = stringResource(R.string.sync_error_expired))
@@ -1000,17 +1004,20 @@ private fun AccountSyncContent(
                 buttonBackdrop = glassBackdrop,
                 freezeKey = freezeKey,
                 recordWhen = { hazeActive },
-                isTransforming = settingsTransforming,
+                // 网页登录页视差期间顶栏同样冻结：与设置页覆盖层转场合并判定，
+                // 避免 Haze 按窗口坐标重采样移动中的中间态几何
+                isTransforming = { settingsTransforming() || loginTransition.isTransforming },
                 titleAlpha = rememberSettingsTitleAlpha(scrollState, overscrollEffect),
                 modifier = Modifier
                     .align(Alignment.TopStart)
+                    .pageOverlayParallax(loginTransition)
                     .onGloballyPositioned { coords ->
                         topBarHeight = with(density) { coords.size.height.toFloat().toDp() }
                     },
             )
 
             // 登录浮层：组合序在内容之后 = 画在上层；返回键优先关登录浮层。
-            // 进/退场取设置页覆盖层同款整页滑动（无下层视差）：退场播完才卸载，
+            // 进/退场取设置页覆盖层同款整页滑动 + 账号页左移让位：退场播完才卸载，
             // 页面 DisposableEffect 到这时才销毁 WebView
             PageSlideOverlay(
                 visible = loginVisible && schoolUi != null,
