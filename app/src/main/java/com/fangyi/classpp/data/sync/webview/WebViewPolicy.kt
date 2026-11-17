@@ -28,10 +28,14 @@ import kotlinx.serialization.json.JsonObject
  *
  * **加固项锁死在本文件**，[WebViewLoginSpec] 只能声明入口 URL/白名单/端点/UA，
  * 无法关闭任何加固：
- * - 仅 https、域名白名单内才放行导航；SSL 错误一律 cancel；
+ * - 学校声明路径仅 https、域名白名单内才放行导航；SSL 错误一律 cancel；
  * - 禁 file/content 访问、禁混合内容；
  * - **登录页（身份域）不注入任何脚本**，页内 fetch 只在 `dataHost` 页面上下文执行；
  * - 不用 addJavascriptInterface——结果写页面变量，原生侧 evaluateJavascript 轮询读取。
+ *
+ * 例外：AI 识别教务网页使用用户自填的任意网址（[createUserPageClient]），无法预声明
+ * 白名单，因此按协议放行 http/https；其余加固项（SSL 错误 cancel、禁 file/content、
+ * 禁混合内容、无 JS 接口）不变。
  *
  * 白名单校验（注册表装配后硬校验）：仅 https、默认 443 端口、禁 userinfo、禁 IP 字面量/
  * 通配符、`dataHost ∈ allowedHosts`；不同学校的 `allowedHosts` 不得重叠（共用 CAS/
@@ -104,6 +108,12 @@ object WebViewPolicy {
     private fun isHostAllowed(host: String?, allowedHosts: Set<String>): Boolean =
         host != null && host in allowedHosts
 
+    /** 用户页面只按协议放行：http/https（大小写不敏感），其余一律拒绝 */
+    private fun isHttpUrl(uri: Uri): Boolean {
+        val scheme = uri.scheme?.lowercase()
+        return scheme == "http" || scheme == "https"
+    }
+
     fun isDataHost(spec: WebViewLoginSpec, url: String?): Boolean =
         url != null && hostOf(url) == spec.dataHost
 
@@ -168,6 +178,52 @@ object WebViewPolicy {
         onPageStarted = onPageStarted,
     )
 
+    /**
+     * 用户自填教务网址的客户端：域名完全由用户决定，无法预先声明白名单，因此只按协议
+     * 放行——任意主机的 http/https 导航通过，其余 scheme（file/content/intent/javascript
+     * 等）一律吞掉。SSL 错误仍然不 proceed，主文档失败交给 UI 显示错误态 + 重试。
+     *
+     * 这是 [WebViewPolicy] 里唯一的「非白名单」路径，专供 AI 识别教务网页；学校声明路径
+     * 仍走 [createClient] / [createTimetableClient] 的 https + 域名白名单。
+     */
+    fun createUserPageClient(
+        onLoadError: () -> Unit = {},
+        onPageStarted: (String?) -> Unit = {},
+        onPageFinished: (String?) -> Unit = {},
+    ): WebViewClient =
+        object : WebViewClient() {
+            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                onPageStarted(url)
+            }
+
+            override fun shouldOverrideUrlLoading(
+                view: WebView,
+                request: WebResourceRequest,
+            ): Boolean = !isHttpUrl(request.url)
+
+            override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+                // 只记错误码，不记 URL/证书细节（避免敏感信息进日志）
+                Log.w(TAG, "ssl error, primary=${error.primaryError}")
+                handler.cancel()
+                onLoadError()
+            }
+
+            override fun onReceivedError(
+                view: WebView,
+                request: WebResourceRequest,
+                error: WebResourceError,
+            ) {
+                if (request.isForMainFrame) {
+                    Log.w(TAG, "main frame error, code=${error.errorCode}")
+                    onLoadError()
+                }
+            }
+
+            override fun onPageFinished(view: WebView, url: String?) {
+                onPageFinished(url)
+            }
+        }
+
     private fun whitelistClient(
         allowedHosts: Set<String>,
         onPageFinished: (String?) -> Unit,
@@ -220,8 +276,8 @@ object WebViewPolicy {
         onProgress: (Int) -> Unit,
         onOpenWindow: (String) -> Unit,
     ): WebChromeClient = chromeClient(
-        allowedHosts = spec.allowedHosts,
         userAgent = spec.userAgent,
+        allowUrl = { uri -> uri.scheme == "https" && isHostAllowed(uri.host, spec.allowedHosts) },
         onProgress = onProgress,
         onOpenWindow = onOpenWindow,
     )
@@ -232,15 +288,26 @@ object WebViewPolicy {
         onProgress: (Int) -> Unit,
         onOpenWindow: (String) -> Unit,
     ): WebChromeClient = chromeClient(
-        allowedHosts = spec.allowedHosts,
         userAgent = spec.userAgent,
+        allowUrl = { uri -> uri.scheme == "https" && isHostAllowed(uri.host, spec.allowedHosts) },
+        onProgress = onProgress,
+        onOpenWindow = onOpenWindow,
+    )
+
+    /** 用户自填网址的 Chrome 客户端：弹窗目标同样只接受 http/https（任意主机） */
+    fun createUserPageChromeClient(
+        onProgress: (Int) -> Unit,
+        onOpenWindow: (String) -> Unit,
+    ): WebChromeClient = chromeClient(
+        userAgent = null,
+        allowUrl = ::isHttpUrl,
         onProgress = onProgress,
         onOpenWindow = onOpenWindow,
     )
 
     private fun chromeClient(
-        allowedHosts: Set<String>,
         userAgent: String?,
+        allowUrl: (Uri) -> Boolean,
         onProgress: (Int) -> Unit,
         onOpenWindow: (String) -> Unit,
     ): WebChromeClient =
@@ -269,7 +336,7 @@ object WebViewPolicy {
                     if (forwarded[0]) return
                     forwarded[0] = true
                     val uri = Uri.parse(url)
-                    if (uri.scheme == "https" && isHostAllowed(uri.host, allowedHosts)) {
+                    if (allowUrl(uri)) {
                         onOpenWindow(url)
                     }
                     destroyTemp()

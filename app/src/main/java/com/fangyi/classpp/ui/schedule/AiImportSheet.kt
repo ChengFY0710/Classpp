@@ -102,6 +102,9 @@ private val PickCardIconSize = 40.dp
 private val PickCardIconTitleGap = 8.dp
 private val PickCardTitleDescriptionGap = 3.dp
 
+/** 两张入口卡之间的间距（图片识别 / 从教务网页识别） */
+private val PickCardGap = 12.dp
+
 /**
  * 「AI 识别导入」浮层：导入课表浮层的第一张入口卡打开，叠在其上（本浮层在场时导入浮层经
  * covered 缩小后退）。浮层只做展示与交互，识别请求 / 结果 / 临时图片生命周期都由宿主
@@ -110,10 +113,10 @@ private val PickCardTitleDescriptionGap = 3.dp
  * 状态与顶栏（胶囊排布由 [OverlaySheet] 的 confirmAtEnd 规则给出）：
  * - 未配置 AI 服务商：正文复用 AI 对话浮层的 [AiChatNotConfigured]（「先配置 AI 服务商」+
  *   去 AI 设置），右上只有「关闭」；
- * - 未选图：白底选图卡（[AiImportPickCard]，图标 + 标题 + 说明，间距沿用
- *   SettingsInfoHeaderCard 的规格但组件独立），点卡拉起
- *   系统相册（Photo Picker，无需权限）；右上只有「关闭」；
- * - 已选图：预览图替换选图卡（点图可重选），左上「取消」+ 右上「开始」；
+ * - 未选图：白底两张入口卡（[AiImportActionCard]：图片识别 + 从教务网页识别），点图片卡
+ *   拉起系统相册（Photo Picker，无需权限），点网页卡回调 [onOpenWebImport] 打开全屏网页页
+ *   （地址栏在页内，可随时改网址）；右上只有「关闭」；
+ * - 已选图：预览图替换入口卡（点图可重选），左上「取消」+ 右上「开始」；
  * - 分析中（[analyzing]）：右上「取消」回调 [onStopAnalyze]；图片背后浮出
  *   [AiThinkingAurora] 的 [AiAuroraAnchor.Center] 光场（与 AI 对话浮层同一实现，走
  *   OverlaySheet 的卡片背景层：横向铺满整卡、向下淡出到分析提示背后），下方用
@@ -121,6 +124,7 @@ private val PickCardTitleDescriptionGap = 3.dp
  * - 识别失败（[errorText]）：下方改为信息错误条；图片与「开始」保留，点开始即可重试，
  *   换图会先回调 [onImageChanged] 清掉旧错误。
  *
+ * 网页识别（[onOpenWebImport]）的全屏页面由宿主挂载（页内自带底部地址栏）；本浮层只提供入口。
  * 分析中禁用下拉关闭（下拉会被拦成回弹），返回键先停止分析、再按才关浮层。
  * 识别成功由宿主弹出导入确认弹窗，本浮层不感知结果。
  *
@@ -133,6 +137,8 @@ internal fun AiImportSheet(
     onDismiss: () -> Unit,
     configured: Boolean,
     onOpenSettings: () -> Unit,
+    // 打开「从教务网页识别」：宿主直接挂载全屏网页页（地址栏在页内）
+    onOpenWebImport: () -> Unit,
     // 宿主持有的识别运行态：浮层只读，不发请求
     analyzing: Boolean,
     // 宿主映射后的错误文案；null = 无错误
@@ -143,7 +149,6 @@ internal fun AiImportSheet(
     onStopAnalyze: () -> Unit,
     // 换图后清掉宿主的旧错误
     onImageChanged: () -> Unit,
-    covered: Boolean = false,
 ) {
     // 选中的图片以 Uri 字符串保存：配置变更后仍能还原（Photo Picker 的读授权随进程存活）
     var imageUriString by rememberSaveable { mutableStateOf<String?>(null) }
@@ -195,7 +200,6 @@ internal fun AiImportSheet(
         ),
         onDismiss = onDismiss,
         visible = visible,
-        covered = covered,
         // 分析中拦下拉：下拉只回弹，退出分析走右上「取消」，避免半拖出位置卡住
         dragDismissEnabled = !analyzing,
         onDismissed = onDismissed,
@@ -255,10 +259,23 @@ internal fun AiImportSheet(
                 contentAlignment = Alignment.Center,
             ) {
                 if (imageUri == null) {
-                    AiImportPickCard(
-                        onClick = launchPicker,
+                    Column(
                         modifier = Modifier.padding(horizontal = AiImportSidePadding),
-                    )
+                        verticalArrangement = Arrangement.spacedBy(PickCardGap),
+                    ) {
+                        AiImportActionCard(
+                            iconRes = R.drawable.ic_image_add,
+                            title = stringResource(R.string.import_ai_pick_title),
+                            description = stringResource(R.string.import_ai_pick_desc),
+                            onClick = launchPicker,
+                        )
+                        AiImportActionCard(
+                            iconRes = R.drawable.ic_globe,
+                            title = stringResource(R.string.import_ai_web_card_title),
+                            description = stringResource(R.string.import_ai_web_card_desc),
+                            onClick = onOpenWebImport,
+                        )
+                    }
                 } else {
                     AsyncImage(
                         model = imageUri,
@@ -301,14 +318,17 @@ internal fun AiImportSheet(
 }
 
 /**
- * 选图卡：白底 [SettingsCardShape] + 纯色主题色图标/标题 + 说明，整卡可点拉起相册。
+ * 入口卡：白底 [SettingsCardShape] + 纯色主题色图标/标题 + 说明，整卡可点。
  *
  * 间距与排版沿用 `SettingsInfoHeaderCard` 的首屏规格（上下 24/20、左右 32、图标 40dp、
  * 图标↔标题 8dp、标题↔说明 3dp），但不改动那个共享组件：本卡只需要纯色图标与可点语义，
- * 且文案固定属于本浮层。
+ * 且文案固定属于本浮层。图片识别与教务网页识别共用同一张卡。
  */
 @Composable
-private fun AiImportPickCard(
+private fun AiImportActionCard(
+    iconRes: Int,
+    title: String,
+    description: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -332,21 +352,21 @@ private fun AiImportPickCard(
             verticalArrangement = Arrangement.Center,
         ) {
             Icon(
-                painter = painterResource(R.drawable.ic_image_add),
+                painter = painterResource(iconRes),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(PickCardIconSize),
             )
             Spacer(Modifier.height(PickCardIconTitleGap))
             Text(
-                text = stringResource(R.string.import_ai_pick_title),
+                text = title,
                 style = MaterialTheme.classppTextStyles.fieldLabel,
                 color = MaterialTheme.colorScheme.primary,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(PickCardTitleDescriptionGap))
             Text(
-                text = stringResource(R.string.import_ai_pick_desc),
+                text = description,
                 style = ClassppTextTokens.settingsDescription.copy(
                     color = MaterialTheme.classppColors.secondaryText,
                 ),

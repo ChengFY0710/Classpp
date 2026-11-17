@@ -716,6 +716,92 @@ class AiChatRepositoryTest {
     }
 
     @Test
+    fun `recognizeScheduleFromWeb sends web prompt with page content and parses schedule`() = runBlocking {
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    sse("```json\n$AI_SCHEDULE_IMPORT_VALID_JSON\n```"),
+                    "data: [DONE]",
+                ),
+            ),
+        )
+        val repo = repository(transport = transport)
+
+        val result = repo.recognizeScheduleFromWeb(
+            "URL: https://jw.example.edu.cn\n[TABLE 1]\n节次\t星期一\n第1-2节\t高等数学 1-16周",
+        )
+
+        val ok = result as AiScheduleRecognition.Ok
+        assertEquals("2026-2027 第1学期", ok.schedule.name)
+        assertEquals(1, ok.schedule.courses.size)
+        // 网页识别同样不进对话：不产生消息、不翻转发送态
+        assertTrue(repo.messages.value.isEmpty())
+        assertFalse(repo.sending.value)
+
+        // wire 请求：system 是网页解析提示词，user 是纯文本（今天日期 + 页面内容），没有图片块
+        val body = Json.parseToJsonElement(transport.opened.single().jsonBody).jsonObject
+        val messages = body["messages"]!!.jsonArray
+        assertEquals("system", messages.first().jsonObject["role"]!!.jsonPrimitive.content)
+        assertTrue(
+            messages.first().jsonObject["content"]!!.jsonPrimitive.content
+                .contains("教务系统课表网页解析器"),
+        )
+        val userTurn = messages.last().jsonObject
+        assertEquals("user", userTurn["role"]!!.jsonPrimitive.content)
+        val userContent = userTurn["content"]!!.jsonPrimitive.content
+        assertTrue(userContent.contains("2026-11-01"))
+        assertTrue(userContent.contains("高等数学 1-16周"))
+    }
+
+    @Test
+    fun `recognizeScheduleFromWeb maps http failure`() = runBlocking {
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(lines = emptyList(), status = 401)),
+        )
+
+        val result = repo.recognizeScheduleFromWeb("URL: https://jw.example.edu.cn")
+
+        assertEquals(AiError.Auth, (result as AiScheduleRecognition.AiFailed).error)
+    }
+
+    @Test
+    fun `recognizeScheduleFromWeb reports no json and empty courses`() = runBlocking {
+        val noJson = repository(
+            transport = FakeAiTransport(
+                ScriptedResponse(listOf(sse("抱歉，无法识别这个页面"), "data: [DONE]")),
+            ),
+        )
+        assertEquals(
+            AiScheduleRecognition.NoJson,
+            noJson.recognizeScheduleFromWeb("URL: https://jw.example.edu.cn"),
+        )
+
+        val noCourses = repository(
+            transport = FakeAiTransport(
+                ScriptedResponse(
+                    listOf(sse("```json\n$AI_SCHEDULE_IMPORT_EMPTY_JSON\n```"), "data: [DONE]"),
+                ),
+            ),
+        )
+        assertEquals(
+            AiScheduleRecognition.NoCourses,
+            noCourses.recognizeScheduleFromWeb("URL: https://jw.example.edu.cn"),
+        )
+    }
+
+    @Test
+    fun `recognizeScheduleFromWeb requires configured provider`() = runBlocking {
+        val transport = FakeAiTransport()
+        val repo = repository(transport = transport, settings = FakeAiSettingsStore(apiKey = null))
+
+        assertEquals(
+            AiScheduleRecognition.NotConfigured,
+            repo.recognizeScheduleFromWeb("URL: https://jw.example.edu.cn"),
+        )
+        assertTrue(transport.opened.isEmpty())
+    }
+
+    @Test
     fun `send supports image only message with missing file skipped`() = runBlocking {
         val imageStore = AiImageStore(tempImageDir())
         imageStore.file("kept.jpg").parentFile.mkdirs()

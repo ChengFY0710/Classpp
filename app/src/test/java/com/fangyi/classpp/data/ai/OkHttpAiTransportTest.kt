@@ -78,7 +78,8 @@ class OkHttpAiTransportTest {
                 out.flush()
             },
         ) { server ->
-            val client = AiClient(OkHttpAiTransport())
+            // 本地 ServerSocket 只有 http：测试专用开关放行明文，其余行为与生产一致
+            val client = AiClient(OkHttpAiTransport(allowCleartextForTests = true))
             val deltas = mutableListOf<String>()
             val text = client.streamChat(
                 connection = connection(server.localPort),
@@ -104,7 +105,8 @@ class OkHttpAiTransportTest {
                 release.await(10, TimeUnit.SECONDS)
             },
         ) { server ->
-            val client = AiClient(OkHttpAiTransport())
+            // 本地 ServerSocket 只有 http：测试专用开关放行明文，其余行为与生产一致
+            val client = AiClient(OkHttpAiTransport(allowCleartextForTests = true))
             var sawFirstDelta = false
             val job: Job = launch {
                 try {
@@ -149,7 +151,8 @@ class OkHttpAiTransportTest {
                 out.flush()
             },
         ) { server ->
-            val client = AiClient(OkHttpAiTransport())
+            // 本地 ServerSocket 只有 http：测试专用开关放行明文，其余行为与生产一致
+            val client = AiClient(OkHttpAiTransport(allowCleartextForTests = true))
             val exception = runCatching {
                 client.streamChat(connection(server.localPort), "sk-wrong", listOf(AiChatTurn("user", "hi")))
             }.exceptionOrNull()

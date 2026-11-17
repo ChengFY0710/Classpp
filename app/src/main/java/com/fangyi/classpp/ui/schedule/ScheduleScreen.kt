@@ -1634,6 +1634,30 @@ fun ScheduleScreen(
                     var aiRequestId by remember { mutableIntStateOf(0) }
                     val aiRepo = aiChatRepository
 
+                    // 教务网页识别：全屏 WebView 页自带底部地址栏，用户可直接改网址。
+                    // 运行态与图片识别一样不 rememberSaveable（旋转即取消）；aiWebUrl
+                    // 只记最近一次明确打开的地址，重开页面时预填/直接加载
+                    var aiWebVisible by rememberSaveable { mutableStateOf(false) }
+                    var aiWebUrl by rememberSaveable { mutableStateOf("") }
+                    var aiWebRecognizing by remember { mutableStateOf(false) }
+                    var aiWebError by remember { mutableStateOf<String?>(null) }
+                    var aiWebJob by remember { mutableStateOf<Job?>(null) }
+                    // 请求代号：取消后立刻重开时，旧协程的 finally / 迟到结果不得改写新请求的状态
+                    var aiWebRequestId by remember { mutableIntStateOf(0) }
+
+                    // 外部收起整串浮层（如切换课表）时 aiImportVisible 直接翻转，不会走
+                    // onDismiss：这里兜底取消在途网页识别，避免浮层卸载后请求仍占着 AI 配额
+                    LaunchedEffect(aiImportVisible) {
+                        if (!aiImportVisible) {
+                            aiWebRequestId++
+                            aiWebJob?.cancel()
+                            aiWebJob = null
+                            aiWebRecognizing = false
+                            aiWebError = null
+                            aiWebVisible = false
+                        }
+                    }
+
                     // 错误文案在组合期解析，协程里只查表（同教务导入的映射方式）
                     val aiErrorTexts: Map<AiError, String> = mapOf(
                         AiError.Auth to stringResource(R.string.ai_error_auth),
@@ -1651,6 +1675,9 @@ fun ScheduleScreen(
                     val aiUnreadableText = stringResource(R.string.import_ai_error_unreadable)
                     val aiNotConfiguredText = stringResource(R.string.ai_not_configured_hint)
                     val aiConfirmDetail = stringResource(R.string.import_ai_confirm_detail)
+                    // 网页识别的专属失败文案：网页/登录页里没有课表，与截图版的「换一张图」区分
+                    val aiWebNoCourseText = stringResource(R.string.import_ai_web_error_no_course)
+                    val aiWebReadErrorText = stringResource(R.string.import_ai_web_error_empty)
 
                     // 临时图片只保留当前这一份：换图 / 重试 / 收场都清掉旧文件
                     val clearAiImage: () -> Unit = {
@@ -1718,6 +1745,42 @@ fun ScheduleScreen(
                         }
                     }
 
+                    // 网页识别：WebView 已提取页面文本；结果复用同一个确认弹窗。
+                    // 失败只更新网页页内的错误条，网页保持打开，用户可继续登录/切页后重试
+                    val onAiWebExtract: (String) -> Unit = { pageContent ->
+                        if (aiRepo != null && !aiWebRecognizing) {
+                            aiWebRecognizing = true
+                            aiWebError = null
+                            aiWebJob?.cancel()
+                            val requestId = aiWebRequestId + 1
+                            aiWebRequestId = requestId
+                            aiWebJob = scope.launch {
+                                try {
+                                    val recognition = aiRepo.recognizeScheduleFromWeb(pageContent)
+                                    // 取消后立即重开：旧请求的结果直接丢弃
+                                    if (aiWebRequestId != requestId) return@launch
+                                    aiWebError = when (recognition) {
+                                        is AiScheduleRecognition.Ok -> {
+                                            aiParsed = recognition.schedule
+                                            null
+                                        }
+                                        // 网页识别是纯文本，BadResponse 不再补「换视觉模型」提示
+                                        is AiScheduleRecognition.AiFailed ->
+                                            aiErrorTexts.getValue(recognition.error)
+                                        is AiScheduleRecognition.Invalid ->
+                                            aiInvalidText(recognition.error)
+                                        AiScheduleRecognition.NoJson -> aiWebNoCourseText
+                                        AiScheduleRecognition.NoCourses -> aiWebNoCourseText
+                                        AiScheduleRecognition.ImageUnavailable -> aiWebReadErrorText
+                                        AiScheduleRecognition.NotConfigured -> aiNotConfiguredText
+                                    }
+                                } finally {
+                                    if (aiWebRequestId == requestId) aiWebRecognizing = false
+                                }
+                            }
+                        }
+                    }
+
                     AiImportSheet(
                         visible = aiImportVisible,
                         onDismissed = { aiImportMounted = false },
@@ -1730,12 +1793,24 @@ fun ScheduleScreen(
                             aiError = null
                             aiParsed = null
                             clearAiImage()
+                            // 网页识别同样收场：取消在途请求，关掉网页
+                            aiWebRequestId++
+                            aiWebJob?.cancel()
+                            aiWebJob = null
+                            aiWebRecognizing = false
+                            aiWebError = null
+                            aiWebVisible = false
                         },
                         configured = aiConfigured,
                         onOpenSettings = {
                             aiImportVisible = false
                             importSheetVisible = false
                             onOpenAiSettings()
+                        },
+                        // 直接打开全屏网页页：地址栏在页内，用户可随时改网址
+                        onOpenWebImport = {
+                            aiWebError = null
+                            aiWebVisible = true
                         },
                         analyzing = aiAnalyzing,
                         errorText = aiError,
@@ -1749,6 +1824,34 @@ fun ScheduleScreen(
                         },
                         onImageChanged = { aiError = null },
                     )
+
+                    // 全屏教务网页：叠在 AI 浮层之上（页内自带底部地址栏）；确认弹窗在其后
+                    // 组合，因此识别成功后始终盖在网页上方。网页关闭/取消识别都取消在途请求
+                    if (aiWebVisible) {
+                        AiWebImportSheet(
+                            initialUrl = aiWebUrl,
+                            recognizing = aiWebRecognizing,
+                            errorText = aiWebError,
+                            // 记住最近一次明确打开的地址，重开页面时直接加载
+                            onUrlChanged = { aiWebUrl = it },
+                            onDismiss = {
+                                aiWebVisible = false
+                                aiWebRequestId++
+                                aiWebJob?.cancel()
+                                aiWebJob = null
+                                aiWebRecognizing = false
+                                aiWebError = null
+                            },
+                            onExtract = onAiWebExtract,
+                            onStopRecognize = {
+                                aiWebRequestId++
+                                aiWebJob?.cancel()
+                                aiWebJob = null
+                                aiWebRecognizing = false
+                                aiWebError = null
+                            },
+                        )
+                    }
 
                     // 识别结果确认：复用 Wakeup / 教务同一个导入确认弹窗（课程数 + 课表名）。
                     // 取消留在本浮层（图片仍在）可重试；确认 → 统一导入管线新建课表并切换
@@ -1780,6 +1883,8 @@ fun ScheduleScreen(
                                             is ReadResult.Ok -> {
                                                 aiImportVisible = false
                                                 importSheetVisible = false
+                                                // 网页识别成功后确认：连同全屏网页一起收起
+                                                aiWebVisible = false
                                                 clearAiImage()
                                                 requestSwitch(r.value)
                                             }

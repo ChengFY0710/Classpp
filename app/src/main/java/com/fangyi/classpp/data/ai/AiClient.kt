@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
+import okhttp3.ConnectionSpec
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -66,9 +67,23 @@ interface AiHttpTransport {
  * - 超时/IO 异常原样抛出，由 [AiClient] 分类为 [AiError.Network]；
  * - **日志零请求头**：本类不打印任何东西，Authorization 只进请求，不进任何日志。
  */
-class OkHttpAiTransport : AiHttpTransport {
+class OkHttpAiTransport internal constructor(
+    /**
+     * 单测专用：本地 `ServerSocket` 只能起 http，传 true 放行明文以便回归真实传输层；
+     * 生产调用方（[AiClient] 默认参数、AppContainer）一律用默认 false，强制仅 TLS。
+     */
+    private val allowCleartextForTests: Boolean = false,
+) : AiHttpTransport {
 
     private val client = OkHttpClient.Builder()
+        // AI 请求只走 TLS：为支持用户自填的 http 教务网页，App 在 Manifest 放行了明文
+        // WebView，但这不能顺带把 API Key 暴露给 http 端点——OkHttp 默认连接规格含
+        // CLEARTEXT，这里收窄到 MODERN_TLS，用户误填 http 服务地址只会得到网络错误
+        .apply {
+            if (!allowCleartextForTests) {
+                connectionSpecs(listOf(ConnectionSpec.MODERN_TLS))
+            }
+        }
         .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .callTimeout(0, TimeUnit.SECONDS)

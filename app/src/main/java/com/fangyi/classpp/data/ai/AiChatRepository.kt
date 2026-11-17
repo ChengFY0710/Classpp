@@ -1387,7 +1387,49 @@ class AiChatRepository internal constructor(
             return AiScheduleRecognition.AiFailed(e.error)
         }
 
-        return when (val parsed = AiScheduleImportCodec.parse(reply)) {
+        return parseRecognition(reply)
+    }
+
+    /**
+     * AI 识别教务网页：把 WebView 提取的页面文本交给当前配置的模型，按
+     * [AiScheduleWebImportPrompt] 的契约解析成可导入课表。
+     *
+     * 与 [recognizeSchedule] 同一套「一次性识别、不读写对话、不落盘」语义：教务页的登录态
+     * 由 WebView 持有，模型侧只拿到已经提取好的文本；纯文本模型即可，不要求视觉能力。
+     * 取消原样抛出 [CancellationException]；通道失败 / 无 JSON / 空课表 / 校验失败分别用
+     * [AiScheduleRecognition] 的分支表达。
+     */
+    suspend fun recognizeScheduleFromWeb(pageContent: String): AiScheduleRecognition {
+        val (connection, apiKey) = loadCredentials()
+        _configured.value = connection.isConfigured && apiKey != null
+        if (!connection.isConfigured || apiKey == null) {
+            return AiScheduleRecognition.NotConfigured
+        }
+
+        val reply = try {
+            client.streamChat(
+                connection = connection,
+                apiKey = apiKey,
+                turns = listOf(
+                    AiChatTurn(role = "system", content = AiScheduleWebImportPrompt.SYSTEM),
+                    AiChatTurn(
+                        role = "user",
+                        content = AiScheduleWebImportPrompt.userMessage(clock.today(), pageContent),
+                    ),
+                ),
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: AiException) {
+            return AiScheduleRecognition.AiFailed(e.error)
+        }
+
+        return parseRecognition(reply)
+    }
+
+    /** 识别回复的统一解析：截图与网页两条入口共用同一套代码块提取与导入校验 */
+    private fun parseRecognition(reply: String): AiScheduleRecognition =
+        when (val parsed = AiScheduleImportCodec.parse(reply)) {
             null -> AiScheduleRecognition.NoJson
             is ReadResult.Ok -> if (parsed.value.courses.isEmpty()) {
                 AiScheduleRecognition.NoCourses
@@ -1396,7 +1438,6 @@ class AiChatRepository internal constructor(
             }
             is ReadResult.Err -> AiScheduleRecognition.Invalid(parsed.error)
         }
-    }
 
     /**
      * 清空对话历史（设置页「清空对话历史」）：删除全部对话（多对话模型下回到无对话
