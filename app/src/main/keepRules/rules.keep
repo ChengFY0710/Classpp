@@ -10,3 +10,13 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
+
+# Room 数据库实现类由 Room 运行时反射实例化（Class.forName(..._Impl).newInstance()）。
+# room-runtime 2.2.5 自带的 keep 规则只保住类名（-keep class * extends RoomDatabase
+# 不带成员列表），R8 会把无参构造器裁掉；WorkManager 2.7.1（经 Glance 传递引入）用
+# Room 建 WorkDatabase 时随即抛 InstantiationException，表现为
+# 「Failed to create an instance of androidx.work.impl.WorkDatabase」，
+# InitializationProvider 初始化失败 → 进程一启动就闪退（仅在 release 出现）。
+# 只需保住构造器：建库用的 createOpenHelper/createInvalidationTracker 是
+# RoomDatabase.init 里的虚调用，R8 自己会保留（实测启动、建库正常）
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
