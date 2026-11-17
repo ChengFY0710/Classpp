@@ -106,6 +106,10 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * - 页面跳转/重定向时，地址栏在未编辑状态下跟随当前 URL；
  * - 输入框聚焦时全选，便于整段替换；键盘「前往」与右侧箭头同路，先经
  *   [AiWebImportUrl] 归一化校验再加载，成功后回调 [onUrlChanged] 记住地址。
+ *
+ * 视口：页面按自身宽视口渲染（[WebSettings.setUseWideViewPort]），不再缩放到设备宽度
+ * （[WebSettings.setLoadWithOverviewMode] 关闭），宽课表保持原始尺寸、横向拖动查看；
+ * 同时开启 WebView 内置缩放，用户可捏合放大/缩小（不显示悬浮缩放钮）。
  */
 @Composable
 internal fun AiWebImportSheet(
@@ -427,10 +431,14 @@ internal fun AiWebImportSheet(
                             wv,
                             if (desktopMode) DESKTOP_USER_AGENT else mobileUserAgent,
                         )
-                        // 教务系统多为桌面布局：按视口宽度渲染并整体缩放，避免窄视口把
-                        // 课表列挤成一条；有 viewport meta 的移动页仍按设备宽度排版
+                        // 教务系统多为桌面布局：保留页面自身的宽视口，不缩放到设备宽度。
+                        // 宽表格按原始尺寸渲染、左右拖动查看，再配合捏合缩放看清细节
                         wv.settings.useWideViewPort = true
-                        wv.settings.loadWithOverviewMode = true
+                        wv.settings.loadWithOverviewMode = false
+                        wv.settings.setSupportZoom(true)
+                        wv.settings.builtInZoomControls = true
+                        // 只保留捏合手势，不显示悬浮的 +/− 缩放钮
+                        wv.settings.displayZoomControls = false
                         // 登录链路跨多个域跳转：放行跨站 cookie
                         CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
                         wv.webViewClient = WebViewPolicy.createUserPageClient(
