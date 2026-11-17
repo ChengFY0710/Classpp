@@ -21,8 +21,16 @@ internal object ShareCodec {
             SharePayload(exportedAtMillis = exportedAtMillis, schedule = schedule),
         )
 
-    /** 解析并产出可直接入库的新课表（新 id、课程/调课新 id、名称未去重） */
-    fun decodeForImport(json: String): ReadResult<Schedule> {
+    /**
+     * 解析并产出可直接入库的新课表（新 id、课程/调课新 id、名称未去重）。
+     *
+     * [transform] 在 id 重铸后、全量校验前执行：AI 识别导入用它清理同一门课重复出现的
+     * 平行班/按周拆分记录；普通文件/剪贴板/Wakeup/教务导入保持默认原样校验。
+     */
+    fun decodeForImport(
+        json: String,
+        transform: (Schedule) -> Schedule = { it },
+    ): ReadResult<Schedule> {
         val payload = try {
             ScheduleJson.decodeShare<SharePayload>(json)
         } catch (e: Exception) {
@@ -55,10 +63,11 @@ internal object ShareCodec {
             },
         )
 
-        val errors = ScheduleValidator.validate(rebuilt)
+        val sanitized = transform(rebuilt)
+        val errors = ScheduleValidator.validate(sanitized)
         if (errors.isNotEmpty()) {
             return ReadResult.Err(errors.first())
         }
-        return ReadResult.Ok(rebuilt)
+        return ReadResult.Ok(sanitized)
     }
 }

@@ -98,4 +98,13 @@ class AiScheduleImportCodecTest {
         val ok = result as ReadResult.Ok
         assertTrue(ok.value.courses.isEmpty())
     }
+
+    @Test
+    fun `parallel same-name sections are merged before validation`() {
+        val result = AiScheduleImportCodec.parse(AI_SCHEDULE_IMPORT_PARALLEL_JSON)
+
+        val ok = result as ReadResult.Ok
+        assertEquals(1, ok.value.courses.size)
+        assertEquals("数据结构(03)", ok.value.courses.single().name)
+    }
 }

@@ -35,9 +35,12 @@ internal object AiScheduleImportCodec {
     /**
      * 解析回复；null = 回复里没有 JSON（模型纯文字回复），否则返回导入管线的结果。
      * 错误只承载解析/校验原因，网络与通道错误由仓库层另行映射。
+     *
+     * 校验前先经 [AiScheduleSanitizer] 合并同一门课的平行班/按周拆分重复记录——模型常把
+     * 教务表格同一格里的多个教学班全部列出，直接导入会被判成「与某门课时间冲突」。
      */
     fun parse(reply: String): ReadResult<Schedule>? {
         val json = extractJsonBlock(reply) ?: return null
-        return ShareCodec.decodeForImport(json)
+        return ShareCodec.decodeForImport(json, AiScheduleSanitizer::sanitize)
     }
 }

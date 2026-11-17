@@ -56,3 +56,52 @@ internal const val AI_SCHEDULE_IMPORT_EMPTY_JSON: String = """{
     "showInactiveCourses": true
   }
 }"""
+
+/**
+ * 同一门课在同一格出现两个平行班（不同教师/教室、周次完全相同）：
+ * 直接校验会触发 GridConflict，清理后应只保留一条。
+ */
+internal const val AI_SCHEDULE_IMPORT_PARALLEL_JSON: String = """{
+  "formatVersion": 1,
+  "kind": "classpp.schedule",
+  "exportedAtMillis": 1792250752103,
+  "schedule": {
+    "id": "s-2026-2027-1",
+    "name": "2026-2027 第1学期",
+    "termStart": "2026-08-31",
+    "termEnd": "2027-01-03",
+    "daysPerWeek": 7,
+    "slots": [
+      { "startTime": "8:20", "endTime": "10:00" },
+      { "startTime": "10:20", "endTime": "12:00" }
+    ],
+    "slotDurationMinutes": 100,
+    "courses": [
+      {
+        "id": "c01",
+        "name": "数据结构(03)",
+        "teacher": "苏淑文",
+        "location": "文宣楼 B312",
+        "dayOfWeek": 3,
+        "startSlot": 1,
+        "span": 1,
+        "weeks": { "segments": [ { "start": 1, "end": 18, "parity": "ALL" } ] },
+        "color": "Blue",
+        "note": ""
+      },
+      {
+        "id": "c02",
+        "name": "数据结构(03)",
+        "teacher": "陈锦秀",
+        "location": "文宣楼 A404",
+        "dayOfWeek": 3,
+        "startSlot": 1,
+        "span": 1,
+        "weeks": { "segments": [ { "start": 1, "end": 18, "parity": "ALL" } ] },
+        "color": "Blue",
+        "note": ""
+      }
+    ],
+    "showInactiveCourses": true
+  }
+}"""

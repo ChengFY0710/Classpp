@@ -47,7 +47,7 @@ internal object AiWebPageExtract {
           var MAX_TABLES = 20;
           var MAX_TABLE_CHARS = 16000;
           var MAX_TEXT_CHARS = 6000;
-          var MAX_CELL_CHARS = 300;
+          var MAX_CELL_CHARS = 1200;
           var MAX_ROWS = 200;
           var MAX_COLS = 40;
 
@@ -62,8 +62,25 @@ internal object AiWebPageExtract {
               .trim();
           }
 
+          // 只收真正渲染出来的单元格：部分教务表格在 rowspan 覆盖行里放了
+          // display:none 的重复内容（如 XMU 课表），这些单元格会污染网格列对齐
+          function isRendered(el) {
+            if (!el) return false;
+            if (el.getClientRects && el.getClientRects().length === 0) return false;
+            try {
+              var win = el.ownerDocument && el.ownerDocument.defaultView;
+              var style = win ? win.getComputedStyle(el) : null;
+              if (style && (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0')) {
+                return false;
+              }
+            } catch (e) {}
+            return true;
+          }
+
           function cellText(cell) {
-            var t = norm(cell.innerText || cell.textContent || '');
+            // 单元格内换行改成 " / "：保证 TSV 一行就是一个表格行，模型不会把
+            // 单元格里的多行课程拆成多条网格行
+            var t = norm(cell.innerText || cell.textContent || '').replace(/\n+/g, ' / ');
             if (t.length > MAX_CELL_CHARS) t = t.slice(0, MAX_CELL_CHARS) + '…';
             return t;
           }
@@ -80,9 +97,11 @@ internal object AiWebPageExtract {
               var cols = [];
               var c = 0;
               for (var i = 0; i < cells.length; i++) {
+                var cell = cells[i];
+                // 先跳过隐藏的重复单元格，再推进列号：隐藏格不占网格列
+                if (!isRendered(cell)) continue;
                 while (occupied[r] && occupied[r][c]) c++;
                 if (c >= MAX_COLS) break;
-                var cell = cells[i];
                 var text = cellText(cell);
                 var rs = cell.rowSpan || 1;
                 var cs = cell.colSpan || 1;
@@ -106,7 +125,8 @@ internal object AiWebPageExtract {
                 else if (k < c) lineParts.push('');
                 else break;
               }
-              while (lineParts.length && lineParts[lineParts.length - 1] === '') lineParts.pop();
+              // 不裁掉行尾空单元格：保留完整列数，rowspan 覆盖的行才能看出
+              // 「这一列的课来自上方」，否则第 2 节行只剩节次/时间两列
               lines.push(lineParts.join('\t'));
             }
             return lines.join('\n');

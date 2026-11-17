@@ -1380,6 +1380,8 @@ class AiChatRepository internal constructor(
                         images = listOf(image),
                     ),
                 ),
+                // 识别是确定性任务：greedy 采样，避免模型在多种排版假设间反复权衡
+                temperature = 0.0,
             )
         } catch (e: CancellationException) {
             throw e
@@ -1417,6 +1419,8 @@ class AiChatRepository internal constructor(
                         content = AiScheduleWebImportPrompt.userMessage(clock.today(), pageContent),
                     ),
                 ),
+                // 识别是确定性任务：greedy 采样，避免模型在多种排版假设间反复权衡
+                temperature = 0.0,
             )
         } catch (e: CancellationException) {
             throw e
