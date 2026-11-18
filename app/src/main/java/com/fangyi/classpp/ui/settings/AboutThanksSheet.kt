@@ -65,7 +65,7 @@ private val Acknowledgements = listOf(
         url = "https://github.com/Nevodev/Cresto",
     ),
     Acknowledgement(
-        name = "Wakeup Script",
+        name = "Shiguang Warehouse",
         usageRes = R.string.about_thanks_wakeup,
         url = "https://gitee.com/XingHeYuZhuan-gh/shiguang_warehouse",
     ),

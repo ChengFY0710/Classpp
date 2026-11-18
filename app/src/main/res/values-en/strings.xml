@@ -159,7 +159,7 @@
     <string name="about_thanks_okhttp">Network requests and streaming for AI chat and school sync</string>
     <string name="about_thanks_serialization">JSON serialization for schedules, todos, and backups</string>
     <string name="about_thanks_cresto">Cross-page transitions and rubber-band overscroll animations</string>
-    <string name="about_thanks_wakeup">Adapter script for Wakeup share-key import (wake_up.js)</string>
+    <string name="about_thanks_wakeup">Adapter scripts for Wakeup share-key and Shiguang academic import (public repository)</string>
     <string name="about_thanks_fluent_icons">Icon resources used throughout the app (navigation, actions, and status)</string>
     <string name="about_thanks_source_han_serif">Serif display font for calendar dates (SIL OFL 1.1)</string>
     <!-- Data management (storage usage / full backup export & import) -->
@@ -627,7 +627,7 @@
     <!-- Import schedule sheet -->
     <string name="import_sheet_title">Import Schedule</string>
     <string name="import_sheet_header_title">Import a Schedule Your Way</string>
-    <string name="import_sheet_header_desc">If academic system import isn\'t supported for your school, try importing with a Wakeup schedule share code</string>
+    <string name="import_sheet_header_desc">If academic system import isn\'t supported for your school, try Shiguang academic import or a Wakeup schedule share code</string>
     <string name="import_ai_label">AI Scan Import</string>
     <string name="import_ai_desc">Pick a timetable photo or campus webpage and let AI read the courses</string>
     <string name="import_ai_sheet_title">AI Scan Import</string>
@@ -686,6 +686,31 @@
     <string name="sync_import_running">Fetching the academic schedule…</string>
     <string name="sync_import_confirm_title">Import Academic Schedule</string>
     <string name="sync_import_default_name">Academic Schedule</string>
+    <string name="import_shiguang_label">Import via Shiguang</string>
+    <string name="import_shiguang_desc">Pick a school adapted by the Shiguang warehouse, sign in, then import</string>
+    <string name="shiguang_sheet_title">Shiguang Academic Import</string>
+    <string name="shiguang_sheet_header_title">Import from the Shiguang Warehouse</string>
+    <string name="shiguang_sheet_header_desc">Adapter scripts come from the open-source Shiguang timetable warehouse. Pick a school and sign in to its academic system, then import</string>
+    <string name="shiguang_search_placeholder">Search school or adapter</string>
+    <string name="shiguang_search_clear">Clear search</string>
+    <string name="shiguang_loading">Loading the adapter list…</string>
+    <string name="shiguang_load_failed_title">Couldn\'t load the adapter list</string>
+    <string name="shiguang_load_failed_desc">Check your connection and retry</string>
+    <string name="shiguang_load_failed_cached">Couldn\'t refresh the list; showing cached schools</string>
+    <string name="shiguang_empty_title">No matching schools</string>
+    <string name="shiguang_empty_desc">Try a different keyword</string>
+    <string name="shiguang_retry">Retry</string>
+    <string name="shiguang_list_title">All schools</string>
+    <string name="shiguang_script_loading">Loading the adapter script…</string>
+    <string name="shiguang_script_failed">Couldn\'t load the adapter script. Check your connection and retry</string>
+    <string name="shiguang_web_hint">Sign in, open your timetable page, then tap Execute Import below</string>
+    <string name="shiguang_web_execute">Execute Import</string>
+    <string name="shiguang_web_executing">Importing…</string>
+    <string name="shiguang_web_timeout">Import timed out. Make sure you are signed in and on the timetable page</string>
+    <string name="shiguang_web_failed">Import failed. Make sure you are signed in and on the timetable page</string>
+    <string name="shiguang_no_courses">No courses were parsed. Make sure the timetable page has loaded</string>
+    <string name="shiguang_confirm_title">Import Shiguang Schedule</string>
+    <string name="shiguang_default_name">Shiguang Schedule</string>
     <string name="import_confirm_detail">Week 1 starts on %1$s; adjust it later in schedule settings.</string>
     <string name="sync_import_error_need_login">Sign in on the Account &amp; Sync page first, then retry</string>
     <string name="sync_import_error_captcha">The academic system requires a captcha, so automatic sign-in is unavailable right now. Try again later, or open the academic system site in a browser first</string>

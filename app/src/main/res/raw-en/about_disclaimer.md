@@ -57,7 +57,13 @@ This is not a purely offline app. The following features rely on **third-party s
 - AI output may be **wrong, outdated, incomplete, or misleading** and does not represent the author's views. Todo drafts parsed from AI replies are written directly to the todo store without extra confirmation; always verify them. Do not rely on AI output for medical, legal, financial, or other professional decisions.
 - You are responsible for safeguarding your API key, controlling usage, and paying fees. The author is not liable for losses caused by key leaks, unauthorized charges, provider bans, or misconfiguration; you bear the risks of custom endpoints or unofficial proxies.
 
-### 4.5 Other third-party dependencies
+### 4.5 Shiguang academic import
+
+- "Import via Shiguang" downloads the school index and the matching adapter script from the public Shiguang timetable adapter repository (`shiguang_warehouse` on Gitee), then executes the script inside the WebView page where you sign in to your school's academic system.
+- Adapter scripts are maintained by third-party authors. The author cannot guarantee their content, security, or continued availability. A script runs only after you tap "Execute Import"; it can read the current page and session and make same-origin requests. Executing third-party scripts carries risks such as data being read or transmitted, or features breaking.
+- The app only caches the index and scripts locally and does not upload your timetable or personal data to the Shiguang warehouse. The author is not liable for consequences of script behavior, repository changes, school system changes, or third-party terms.
+
+### 4.6 Other third-party dependencies
 
 - The project depends on open-source components (see the project README acknowledgements), each under its own license. The author is not liable for consequences of third-party service changes, bans, data errors, API failures, or terms disputes.
 - Third-party names and marks remain the property of their respective owners.
@@ -70,7 +76,7 @@ This project is an **unofficial, non-profit** third-party client. It has no affi
 
 The app requests or uses the following system capabilities. Whether to grant them is your decision:
 
-- **Network access**: access school systems, the Gitee remote school repository, Wakeup services, and your configured AI provider;
+- **Network access**: access school systems, the Gitee remote school repository, the Shiguang adapter repository, Wakeup services, and your configured AI provider;
 - **Notifications**: course/todo reminders and sync result notifications; some Android versions use promoted ongoing (Live Updates) notifications;
 - **Calendar read/write**: read the calendar account list to choose a target and write todo events to the calendar you select;
 - **Exact alarms and boot-completed**: reschedule reminder alarms and daily sync tasks;

@@ -20,15 +20,18 @@ import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
  * 「导入课表」浮层：课表编辑栏的「导入」按钮打开（导入入口仅在编辑态提供）。
  *
  * 顶部复用设置页信息头部卡（[SettingsInfoHeaderCard]）：图标 + 标题 + 说明（教务未适配时
- * 引导去试 Wakeup 分享口令）。其下五张独立白卡（设计稿即独立卡、卡间露灰底），整列收进
- * 同一个无题 [CardSection]：AI 识别导入、教务、JSON 文件、剪贴板、Wakeup 分享口令。与
+ * 引导去试拾光或 Wakeup 导入）。其下四张白卡（设计稿即独立卡、卡间露灰底），整列收进
+ * 同一个无题 [CardSection]：AI 识别导入、教务 + 拾光（合并为一张卡）、JSON 文件 +
+ * 剪贴板（合并为一张两行卡）、Wakeup 分享口令。与
  * [ScheduleSwitcherSheet] 同一职责划分——实际导入（AI 识别 / 教务会话 / 文件选择器 /
- * 读剪贴板 / 跑 Wakeup 适配脚本 / 仓库落盘）全由调用方执行，这里纯 UI。
+ * 读剪贴板 / 跑 Wakeup 适配脚本 / 拾光适配脚本 / 仓库落盘）全由调用方执行，这里纯 UI。
  * AI 识别入口再叠一层 [AiImportSheet]、教务入口再叠一层教务导入浮层
- * （[SchoolImportSheet]）、Wakeup 入口再叠一层输入浮层（[WakeupImportSheet]），
- * 均由调用方挂载；盖上来时本浮层经 covered 缩小后退。
+ * （[SchoolImportSheet]）、拾光入口再叠一层 [ShiguangImportSheet]、
+ * Wakeup 入口再叠一层输入浮层（[WakeupImportSheet]），均由调用方挂载；盖上来时本浮层
+ * 经 covered 缩小后退。
  *
- * [onImportSchedule] 为 null = 活跃学校未实现教务导入（可选能力）：该行整张卡隐藏。
+ * [onImportSchedule] 始终可用：活跃学校未实现教务导入时入口仍显示，点开后的浮层行为
+ * 与原来一致（不额外加「未适配」说明）；拾光入口同样始终保留。
  *
  * 顶栏只有右侧「关闭」胶囊（confirmLabel = null 时自动右对齐、文字在前图标在后）；
  * 列表无输入框，键盘不必让位（IgnoreIme）。
@@ -39,7 +42,8 @@ internal fun ImportScheduleSheet(
     onDismissed: () -> Unit,
     onDismiss: () -> Unit,
     onImportAi: () -> Unit,
-    onImportSchedule: (() -> Unit)?,
+    onImportSchedule: () -> Unit,
+    onImportShiguang: () -> Unit,
     onImportJsonFile: () -> Unit,
     onImportClipboard: () -> Unit,
     onImportWakeup: () -> Unit,
@@ -69,11 +73,11 @@ internal fun ImportScheduleSheet(
         imeBehavior = SheetImeBehavior.IgnoreIme,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
-            // 三行是视觉上彼此独立的入口卡（不是一张卡内的三行）：整列收进一个无题
-            // CardSection，组内卡间距走 CardSectionSpacing
+            // 各入口是视觉上彼此独立的入口卡（教务 + 拾光、JSON + 剪贴板各合成一张多行卡）：
+            // 整列收进一个无题 CardSection，组内卡间距走 CardSectionSpacing
             CardSection {
-                // 顶部信息头部卡（与设置页同款）：四种导入方式的总说明，
-                // 教务未适配时引导去试 Wakeup 分享口令
+                // 顶部信息头部卡（与设置页同款）：各类导入方式的总说明，
+                // 教务未适配时引导去试拾光或 Wakeup 导入
                 SettingsInfoHeaderCard(
                     icon = R.drawable.ic_calendar_arrow_down,
                     title = stringResource(R.string.import_sheet_header_title),
@@ -89,19 +93,23 @@ internal fun ImportScheduleSheet(
                         ),
                     ),
                 )
-                // 教务导入：打开教务导入浮层（调用方挂载，叠在本浮层之上）。
-                // 未实现教务导入的学校整卡隐藏
-                if (onImportSchedule != null) {
-                    SettingsCard(
-                        items = listOf(
-                            SettingsCardItem.Nav(
-                                label = stringResource(R.string.sync_import_label),
-                                description = stringResource(R.string.sync_import_desc),
-                                onClick = onImportSchedule,
-                            ),
+                // 教务导入与拾光教务导入同属「从教务系统取课表」，合并为一张两行卡。
+                // 两行始终显示，浮层内容与原来保持一致
+                SettingsCard(
+                    items = listOf(
+                        SettingsCardItem.Nav(
+                            label = stringResource(R.string.sync_import_label),
+                            description = stringResource(R.string.sync_import_desc),
+                            onClick = onImportSchedule,
                         ),
-                    )
-                }
+                        SettingsCardItem.Nav(
+                            label = stringResource(R.string.import_shiguang_label),
+                            description = stringResource(R.string.import_shiguang_desc),
+                            onClick = onImportShiguang,
+                        ),
+                    ),
+                )
+                // JSON 文件与剪贴板同属「手动粘贴课表数据」的两种取数方式，合成一张两行的卡
                 SettingsCard(
                     items = listOf(
                         SettingsCardItem.Nav(
@@ -109,10 +117,6 @@ internal fun ImportScheduleSheet(
                             description = stringResource(R.string.import_json_desc),
                             onClick = onImportJsonFile,
                         ),
-                    ),
-                )
-                SettingsCard(
-                    items = listOf(
                         SettingsCardItem.Nav(
                             label = stringResource(R.string.import_clipboard_label),
                             description = stringResource(R.string.import_clipboard_desc),

@@ -77,7 +77,13 @@
 + AI 输出可能**错误、过时、不完整或具有误导性**，不代表作者观点。AI 回复中解析出的待办草稿会直接写入待办库，无需额外确认，请务必自行核对；不要把 AI 输出作为医疗、法律、财务等专业决策的依据。
 + 您应自行保管 API Key、控制额度并承担相应费用。因 Key 泄露、被盗刷、服务商封禁或配置错误造成的损失，作者不承担责任；使用自定义端点或非官方代理的风险由您自行承担。
 
-### 4.5 其他第三方依赖
+### 4.5 拾光教务导入
+
++ 「从拾光教务导入」会从公开的拾光课表适配仓库（`shiguang_warehouse`，Gitee）下载学校索引与对应适配脚本，并在你登录学校教务系统的 WebView 页面内执行。
++ 适配脚本由第三方作者维护，作者无法保证其内容、安全性或持续可用性。脚本在你点「执行导入」后运行，可读取当前页面与登录态并发起同源请求；执行第三方脚本存在数据被读取、传输或功能异常等风险。
++ 应用只在本机缓存索引与脚本，不向拾光仓库上传课表或个人数据。因脚本行为、仓库变更、学校系统变更或第三方条款产生的后果，作者不承担责任。
+
+### 4.6 其他第三方依赖
 
 + 本项目依赖若干开源组件（见 README 致谢），它们遵循各自的许可证。第三方服务的变更、封禁、数据错误、接口失效或条款纠纷所导致的任何后果，作者不承担责任。
 + 第三方服务的名称、标识如涉及商标，其权利归各自权利人所有。
@@ -90,7 +96,7 @@
 
 本项目会请求或使用以下系统能力，是否授予由您自行判断：
 
-+ **网络访问**：访问学校系统、Gitee 远端学校仓库、Wakeup 服务及您配置的 AI 服务商；
++ **网络访问**：访问学校系统、Gitee 远端学校仓库、拾光课表适配仓库、Wakeup 服务及您配置的 AI 服务商；
 + **通知**：课程/待办提醒与同步结果通知；部分 Android 版本会使用 promoted ongoing（Live Updates）样式；
 + **日历读写**：读取日历账户列表以选择写入目标，并向您选择的日历写入待办事件；
 + **精确闹钟与开机自启**：重排提醒闹钟与每日同步任务；
@@ -127,7 +133,7 @@
 
 Classpp is a personal, non-commercial open-source project developed with the help of AI coding tools ("Vibe Coding"). It is provided **"AS IS", without warranty of any kind**, and has **not been security-audited**. You use it **entirely at your own risk**. To the maximum extent permitted by applicable law, the author is **not liable for any security issues, data loss, damages, or losses** arising from the use of this project.
 
-The app includes network and import features that rely on third parties: school LMS/academic systems accessed through an in-app WebView, Wakeup share-key import (which sends the key to Wakeup and executes a third-party script), an optional manually-fetched remote school catalog (JSON declarations only, no remote JavaScript, restricted to `.edu.cn` hosts), and bring-your-own-key AI chat. **AI chat sends your messages, images, timetable, and up to 30 unfinished todos to the AI provider you choose**; the author does not operate a server that collects your data and does not relay these requests. Third-party terms, privacy policies, availability, and data accuracy are outside the author's control. Backups you export are unencrypted ZIP files; keep them safe. Sensitive data (credentials, cookies, and API keys) is excluded from system backup, but other local data may be included depending on your system settings. Please back up your data, review the full Chinese text above, and do not use this project in sensitive or production environments. If you do not agree, do not use this project.
+The app includes network and import features that rely on third parties: school LMS/academic systems accessed through an in-app WebView, Wakeup share-key import (which sends the key to Wakeup and executes a third-party script), Shiguang academic import (which downloads a public school index and adapter scripts and runs a script in the login WebView only after you tap Execute Import), an optional manually-fetched remote school catalog (JSON declarations only, no remote JavaScript, restricted to `.edu.cn` hosts), and bring-your-own-key AI chat. **AI chat sends your messages, images, timetable, and up to 30 unfinished todos to the AI provider you choose**; the author does not operate a server that collects your data and does not relay these requests. Third-party terms, privacy policies, availability, and data accuracy are outside the author's control. Backups you export are unencrypted ZIP files; keep them safe. Sensitive data (credentials, cookies, and API keys) is excluded from system backup, but other local data may be included depending on your system settings. Please back up your data, review the full Chinese text above, and do not use this project in sensitive or production environments. If you do not agree, do not use this project.
 
 ---
 

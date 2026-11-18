@@ -528,6 +528,9 @@ fun ScheduleScreen(
             var schoolImportVisible by rememberSaveable { mutableStateOf(false) }
             // AI 识别导入浮层：导入浮层第一张入口卡打开，叠在导入浮层之上（同分层动效）
             var aiImportVisible by rememberSaveable { mutableStateOf(false) }
+            // 拾光教务导入流程：导入浮层「从拾光教务导入」打开，学校列表/网页/确认框
+            // 由 ShiguangImportFlow 自包含管理（避免本屏继续膨胀）
+            var shiguangImportVisible by rememberSaveable { mutableStateOf(false) }
             // 教务课表页（WebView 登录模式）：教务导入浮层第二张卡打开，全屏盖住课表页
             var schoolTimetableVisible by rememberSaveable { mutableStateOf(false) }
             // 全屏网页转场进度：设置页同款右滑进出场。AI 网页页的进度上提到这里，
@@ -612,6 +615,7 @@ fun ScheduleScreen(
             val onSchoolAccountClick: () -> Unit = {
                 schoolImportVisible = false
                 wakeupSheetVisible = false
+                shiguangImportVisible = false
                 importSheetVisible = false
                 switcherVisible = false
                 if (editing) cancelEdit()
@@ -894,6 +898,7 @@ fun ScheduleScreen(
                 importSheetVisible = false
                 wakeupSheetVisible = false
                 aiImportVisible = false
+                shiguangImportVisible = false
                 addTarget = emptyList()
                 editTargetId = ""
                 chooserSourceId = ""
@@ -1601,11 +1606,14 @@ fun ScheduleScreen(
             // AI 识别导入浮层同样两段式：叠在导入浮层之上，其存活期可长于导入浮层
             var aiImportMounted by remember { mutableStateOf(false) }
             if (aiImportVisible) aiImportMounted = true
+            // 拾光导入流程同样两段式：其内部学校列表/网页/确认框收场后才卸载
+            var shiguangFlowMounted by remember { mutableStateOf(false) }
+            if (shiguangImportVisible) shiguangFlowMounted = true
             // 教务网页导入完成后浮层串已收起，但确认框仍要能挂载并播完退场：
             // schoolParsed 非空时置挂载标志，onDismissed 才清。确认后的切课可能因
             // 脏草稿打开确认框——pendingSwitchId 非空同样保块存活
             if (switcherMounted || importSheetMounted || aiImportMounted ||
-                schoolConfirmBlockMounted || pendingSwitchId.isNotEmpty()
+                shiguangFlowMounted || schoolConfirmBlockMounted || pendingSwitchId.isNotEmpty()
             ) {
                 // 切换浮层本身只在它自己挂载时组合：从编辑栏直接开导入时下方不应有它
                 if (switcherMounted) {
@@ -1638,17 +1646,34 @@ fun ScheduleScreen(
                         // AI 识别导入浮层盖上来时本浮层同样缩小后退（分层动效与新建表单一致）
                         onImportAi = { aiImportVisible = true },
                         // 教务导入浮层盖上来时本浮层缩小后退（分层动效与新建表单一致）。
-                        // 活跃学校未实现教务导入（无 scheduleImport 槽位）→ 入口整行隐藏
-                        onImportSchedule = if (schoolScheduleImport != null) {
-                            { schoolImportVisible = true }
-                        } else {
-                            null
-                        },
+                        // 入口始终显示：活跃学校未实现教务导入时，浮层内用横幅说明并保留
+                        // 账号与同步入口（不再整行隐藏）
+                        onImportSchedule = { schoolImportVisible = true },
+                        // 拾光学校选择浮层盖上来时本浮层同样缩小后退
+                        onImportShiguang = { shiguangImportVisible = true },
                         onImportJsonFile = { importLauncher.launch(ScheduleJsonMimeTypes) },
                         onImportClipboard = onImportClipboard,
                         // Wakeup 输入浮层盖上来时本浮层缩小后退（分层动效与新建表单一致）
                         onImportWakeup = { wakeupSheetVisible = true },
-                        covered = wakeupSheetVisible || schoolImportVisible || aiImportVisible,
+                        covered = wakeupSheetVisible || schoolImportVisible || aiImportVisible ||
+                            shiguangImportVisible,
+                    )
+                }
+                // 拾光教务导入流程：自包含宿主（学校列表 → 适配脚本 → WebView → 确认框
+                // → 仓库落库）。组合顺序在导入浮层之后，因此学校列表/网页先收到返回键；
+                // 成功后只回调新课表 id，关闭浮层链与统一切换仍由本屏处理
+                if (shiguangFlowMounted) {
+                    ShiguangImportFlow(
+                        visible = shiguangImportVisible,
+                        onDismiss = { shiguangImportVisible = false },
+                        onDismissed = { shiguangFlowMounted = false },
+                        onImported = { id ->
+                            shiguangImportVisible = false
+                            importSheetVisible = false
+                            requestSwitch(id)
+                        },
+                        repository = repository,
+                        onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                     )
                 }
                 // AI 识别导入浮层：叠在导入浮层之上，后注册因此先收到返回键。
@@ -1978,10 +2003,12 @@ fun ScheduleScreen(
                 // 随浮层打开拉取、卸载即弃；确认 → 拉课表映射 → 确认弹窗
                 var schoolImportMounted by remember { mutableStateOf(false) }
                 if (schoolImportVisible) schoolImportMounted = true
-                LaunchedEffect(schoolImportVisible) {
+                LaunchedEffect(schoolImportVisible, schoolScheduleImport) {
                     if (schoolImportVisible) {
                         schoolSemesters = null
                         schoolSemestersError = null
+                        // 入口始终显示：冷启动会话仍在 Loading 时用户也可能先打开浮层，
+                        // 等 scheduleImport 就绪后这里随 key 变化再拉一次学期
                         loadSchoolSemesters()
                     }
                 }
@@ -2502,7 +2529,7 @@ private data class AdjustRequest(
  * 数据层错误 → 用户可读文案（编辑流程的 Toast 用）。课程类错误一律点名到课程或给中文结论，
  * 绝不把内部 id / 英文 message 直接抛给用户；真正没覆盖到的形态才落到通用文案。
  */
-private fun ScheduleError.toEditMessage(context: Context): String = when (this) {
+internal fun ScheduleError.toEditMessage(context: Context): String = when (this) {
     is ScheduleError.CourseFieldInvalid -> when (reason) {
         FieldReason.BlankName -> context.getString(R.string.error_course_name_blank)
         else -> context.getString(R.string.error_unexpected)

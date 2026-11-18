@@ -12,7 +12,7 @@ https://github.com/coil-kt/coil
 
 https://github.com/mikepenz/multiplatform-markdown-renderer
 
-https://gitee.com/XingHeYuZhuan-gh/shiguang_warehouse （Wakeup 导入适配脚本 wake_up.js 来源）
+https://gitee.com/XingHeYuZhuan-gh/shiguang_warehouse （Wakeup 口令与拾光教务导入适配脚本来源）
 
 ---
 

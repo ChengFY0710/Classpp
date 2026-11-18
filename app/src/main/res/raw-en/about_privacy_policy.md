@@ -34,7 +34,13 @@ Except for the scenarios you explicitly trigger below, the app does not send you
 - When updating, the app accesses the author-maintained Gitee repository (`classpp_schoolsync`), downloads JSON declarations, and caches them locally.
 - Declarations contain no remote JavaScript, and the app hard-validates fields such as domains. The first time you connect to a remote school, the app shows its name and login domain for confirmation.
 
-### 3.4 AI provider (BYOK)
+### 3.4 Shiguang academic import
+
+- When you use "Import via Shiguang", the app accesses the public Gitee Shiguang timetable adapter repository (`shiguang_warehouse`), downloads the school index and adapter script, and caches them locally.
+- A script runs only after you tap "Execute Import" inside the WebView page where you are signed in to your academic system. Scripts are maintained by third-party authors and may read the current page and make same-origin requests using your existing session.
+- Timetable parsing happens on your device. The app does not upload your timetable, account, or session to the Shiguang warehouse.
+
+### 3.5 AI provider (BYOK)
 
 - When you use AI chat, the app sends your chat content, images attached to messages, and automatically injected context (timetable, schedule, up to 30 unfinished todos, groups, tags) to the provider you choose.
 - Requests go directly from your device to the provider (including custom endpoints); the author does not participate in, relay, or record them.
@@ -51,7 +57,7 @@ Except for the scenarios you explicitly trigger below, the app does not send you
 
 The app requests or uses the following system capabilities. Whether to grant them is your decision:
 
-- **Network access**: access school systems, the Gitee remote school repository, Wakeup services, and your configured AI provider;
+- **Network access**: access school systems, the Gitee remote school repository, the Shiguang adapter repository, Wakeup services, and your configured AI provider;
 - **Notifications**: course/todo reminders and sync result notifications; some Android versions use promoted ongoing (Live Updates) notifications;
 - **Calendar read/write**: read the calendar account list to choose a target and write todo events to the calendar you select;
 - **Exact alarms and boot-completed**: reschedule reminder alarms and daily sync tasks;
