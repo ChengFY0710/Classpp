@@ -6,10 +6,11 @@ import org.junit.Test
 /**
  * 拾光学校浮层的外置搜索条位移：只验证「占位项根坐标 − 浮层卡片根坐标」这一层纯逻辑。
  *
- * 固定一组像素值：卡片顶端在根坐标系的 y = 100，顶栏高 234px，列表在顶部时占位项
- * （紧跟说明卡）在 y = 900 —— 搜索条就该画在相对卡片的 800。上机形态由
- * ShiguangImportSheet 组合，这里只锁规则：位置只认占位项的实测坐标；占位项滚到顶栏下缘
- * 以上后钳成顶栏高（不是 0，否则会滑进顶栏后面）。
+ * 固定一组像素值：卡片顶端在根坐标系的 y = 100，顶栏高 234px，钉住抬升 15px（5dp @3x），
+ * 列表在顶部时占位项（紧跟说明卡）在 y = 900 —— 搜索条就该画在相对卡片的 800。
+ * 上机形态由 ShiguangImportSheet 组合，这里只锁规则：位置只认占位项的实测坐标；
+ * 占位项滚到钉住位置以上后钳成 `顶栏高 − 抬升` = 219（不是 0，否则会滑进顶栏后面；
+ * 也不是 234，钉住位置要比顶栏下缘高 5dp）。
  */
 class ShiguangSearchPinOffsetTest {
 
@@ -18,6 +19,7 @@ class ShiguangSearchPinOffsetTest {
             anchorRootY = anchorRootY,
             containerTopRootY = containerTopRootY,
             topBarPx = 234,
+            pinLiftPx = 15,
         )
 
     @Test
@@ -33,12 +35,12 @@ class ShiguangSearchPinOffsetTest {
     }
 
     @Test
-    fun `bar pins at the bottom edge of the top bar`() {
-        // 占位项滚到与卡片顶端齐平：条停在顶栏下缘（234），不钻进顶栏
-        assertEquals(234, pin(anchorRootY = 100))
-        // 继续上滚：仍是顶栏下缘，不出更小的位移
-        assertEquals(234, pin(anchorRootY = 0))
-        assertEquals(234, pin(anchorRootY = -400))
+    fun `bar pins 5dp above the bottom edge of the top bar`() {
+        // 占位项滚到与卡片顶端齐平：条停在顶栏下缘上方 5dp（234 − 15 = 219）
+        assertEquals(219, pin(anchorRootY = 100))
+        // 继续上滚：仍是钉住位置，不出更小的位移
+        assertEquals(219, pin(anchorRootY = 0))
+        assertEquals(219, pin(anchorRootY = -400))
     }
 
     @Test

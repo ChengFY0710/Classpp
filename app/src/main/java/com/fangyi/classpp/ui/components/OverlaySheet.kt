@@ -320,7 +320,8 @@ fun OverlaySheet(
     // 且在 LazyImeScrollHost 追踪作用域内，外置输入条（拾光搜索框）既可安全接
     // [LocalOverlayContentGlassBackdrop] 玻璃采样，又经 imeFieldTracking 参与键盘让位
     // 与收起回滚（钉顶条位置随列表滚动变化，tracker 的换算对它同样成立）。
-    // 槽内容自行 align / offset 定位、不随内容滚动。null = 无覆盖层（现状）
+    // 槽内容自行 align / offset 定位、不随内容滚动；需要与顶栏底缘轻微叠压时，由槽内容
+    // 自行用 `zIndex` 抬到顶栏之上（默认层序仍是滚动容器之后、顶栏之下）。null = 无覆盖层（现状）
     contentOverlay: (@Composable BoxScope.() -> Unit)? = null,
     // lazy 内容模式（可选，见 KDoc）：非 null 时整张卡片的滚动内容改为 LazyColumn，
     // content 不再参与组合；调用方在该模式内自行声明 item / stickyHeader。

@@ -40,6 +40,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.shiguang.ShiguangAdapter
@@ -86,7 +87,7 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  *
  * 可见的搜索条不在列表里，而是画在浮层的 contentOverlay 覆盖槽（滚动容器外、顶栏下）：
  * 列表只留一个同高占位项，条的位置就取这一项的实测屏幕坐标——它滚到哪儿条到哪儿，
- * 被顶到顶栏下缘后钉住不再上移，列表标题与行从它下方滚过。覆盖槽始终组合（焦点/光标/
+ * 被顶到顶栏下缘上方 5dp 后钉住不再上移，列表标题与行从它下方滚过。覆盖槽始终组合（焦点/光标/
  * 键盘状态不丢），且在采样层之外——「更高级的玻璃材质」开启时（OverlaySheet 经覆盖槽
  * 下发 backdrop）搜索条出液态玻璃底，钉住时折射下方滚过的行；关闭回退实心白底。
  * 不垫通栏底色、不做渐变收边，列表内容照常从顶栏下缘渐隐滚过。
@@ -217,10 +218,11 @@ internal fun ShiguangImportSheet(
             )
         },
         lazyContent = {
-            // 说明卡：原来的 18dp 分段间距从「搜索框顶部」移到本项底部——sticky 搜索条
-            // 不能自带顶部留白（钉住时那截留白会一起钉在顶栏下缘）
+            // 说明卡：搜索框与上方卡片的间距单独取 10dp（不随浮层顶层块默认的 18dp）——
+            // 这段间距从「搜索框顶部」移到本项底部：sticky 搜索条不能自带顶部留白
+            //（钉住时那截留白会一起钉在钉住位置）
             item(key = ShiguangIntroKey) {
-                CardSection(modifier = Modifier.padding(bottom = SheetSectionSpacingBetween)) {
+                CardSection(modifier = Modifier.padding(bottom = ShiguangSearchSectionSpacing)) {
                     SettingsInfoHeaderCard(
                         icon = R.drawable.ic_globe,
                         title = stringResource(R.string.shiguang_sheet_header_title),
@@ -405,10 +407,13 @@ private fun ShiguangAdapterRow(
 }
 
 /**
- * 外置搜索条：画在浮层 contentOverlay 覆盖槽（滚动容器外、顶栏之下），位置跟着列表里
+ * 外置搜索条：画在浮层 contentOverlay 覆盖槽（滚动容器外）里，位置跟着列表里
  * 那个同高占位项（key = [ShiguangSearchKey]）走——占位项在屏幕上到哪儿，条就在哪儿，
- * 被顶到顶栏下缘之后不再上移（见 [shiguangSearchPinOffsetPx]）。始终组合、随卡进出场，
+ * 被顶到顶栏下缘上方 5dp 之后不再上移（见 [shiguangSearchPinOffsetPx]）。始终组合、随卡进出场，
  * 焦点/光标/键盘状态不丢。
+ *
+ * 覆盖槽默认画在顶栏之下；钉住位置比顶栏下缘高 5dp，抬高的那一截会压进顶栏的渐变底缘，
+ * 被遮罩盖住——因此整层用 zIndex 抬到顶栏之上绘制，搜索条上缘保持完整可见。
  *
  * 玻璃材质经 [LocalOverlayContentGlassBackdrop] 下发：覆盖槽在采样层（卡片底色 +
  * 滚动内容）之外，可安全采样——钉住时折射从条下方滚过的行，不会读写同一层；
@@ -434,6 +439,8 @@ private fun BoxScope.ShiguangSearchOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // 抬到顶栏之上：钉住位置比顶栏下缘高 5dp，默认层级会被顶栏渐变遮罩盖住上缘
+            .zIndex(1f)
             .onGloballyPositioned { containerTopRootY.intValue = it.positionInRoot().y.roundToInt() },
     ) {
         // 定位与内容分开：定位层跟着锚点重组，搜索框走稳定插槽不被带着重组
@@ -459,7 +466,8 @@ private fun BoxScope.ShiguangSearchOverlay(
  * 位置**不从滚动状态推算，只认占位项的实测坐标**：覆盖槽里的节点不在滚动容器内，
  * 滚动不会让它重新放置，按滚动量算出来的位移实测会停在某一帧不动（条悬在半空、
  * 压住下面的行）。改为跟随占位项坐标后，内容滚多少、被橡皮筋拉多少，条就跟着走多少，
- * 折到顶栏下缘之后被 [shiguangSearchPinOffsetPx] 钳成 0 贴住。
+ * 折到顶栏下缘之后被 [shiguangSearchPinOffsetPx] 钳在顶栏下缘上方 [ShiguangSearchPinLift]
+ * 处贴住。
  *
  * 两个坐标都在这里才读：读在上层会把整张浮层（连同列表 item provider）拖进逐帧重组。
  * 搜索框经 [content] 插槽传入，本层重组时插槽实例不变，输入框不会跟着滚动手势重组。
@@ -472,10 +480,13 @@ private fun BoxScope.PinnedSearchBar(
 ) {
     val density = LocalDensity.current
     val topBarPx = with(density) { OverlaySheetTopBarHeight.roundToPx() }
+    // 钉住位置在顶栏下缘之上再抬 5dp：换算成 px 交给纯逻辑，规则本身在测试里锁住
+    val pinLiftPx = with(density) { ShiguangSearchPinLift.roundToPx() }
     val pinOffsetPx = shiguangSearchPinOffsetPx(
         anchorRootY = anchorRootY.intValue,
         containerTopRootY = containerTopRootY.intValue,
         topBarPx = topBarPx,
+        pinLiftPx = pinLiftPx,
     )
     Box(
         modifier = Modifier
@@ -490,12 +501,13 @@ private fun BoxScope.PinnedSearchBar(
 }
 
 /**
- * 搜索条相对浮层顶端（卡片顶边）的位移（px）：钉住时等于顶栏高（= 停在顶栏下缘），
- * 更大 = 还在说明卡下方、随内容一起走。
+ * 搜索条相对浮层顶端（卡片顶边）的位移（px）：钉住时等于顶栏高减 [pinLiftPx]
+ * （= 停在顶栏下缘上方 5dp），更大 = 还在说明卡下方、随内容一起走。
  *
  * 两个坐标都是根坐标系的实测值：[anchorRootY] 是列表里搜索条占位项的 y，
  * [containerTopRootY] 是浮层卡片的 y。两者相减就是占位项相对卡片的位置——也就是搜索条
- * 该画的位置；占位项被滚到顶栏下缘以上后钳成 [topBarPx]，条贴住顶栏下缘不再上移。
+ * 该画的位置；占位项被滚到钉住位置以上后钳成 `topBarPx - pinLiftPx`，条贴住钉住位置
+ * 不再上移。
  *
  * 只做一次减法、不掺任何滚动状态的推算：这一项在屏幕上到哪儿，条就到哪儿。
  */
@@ -503,7 +515,8 @@ internal fun shiguangSearchPinOffsetPx(
     anchorRootY: Int,
     containerTopRootY: Int,
     topBarPx: Int,
-): Int = (anchorRootY - containerTopRootY).coerceAtLeast(topBarPx)
+    pinLiftPx: Int,
+): Int = (anchorRootY - containerTopRootY).coerceAtLeast(topBarPx - pinLiftPx)
 
 /** 副行：描述优先；多适配学校前置适配名；都缺时退回适配 id，保证行不空 */
 private fun adapterSecondaryText(adapter: ShiguangAdapter, showAdapterName: Boolean): String {
@@ -555,3 +568,9 @@ private val ShiguangRowHeight = 72.dp
 
 /** 外置搜索条的首帧默认高度：14×2 上下内距 + 24dp 图标（量准后由实测高度接管） */
 private val ShiguangSearchDefaultHeight = 52.dp
+
+/** 搜索框与其上方说明卡的间距：本浮层单独取 10dp，不跟随顶层块默认的 18dp */
+private val ShiguangSearchSectionSpacing = 10.dp
+
+/** 搜索条钉住位置在顶栏下缘之上的抬升量：贴住后再上移 5dp */
+private val ShiguangSearchPinLift = 5.dp
