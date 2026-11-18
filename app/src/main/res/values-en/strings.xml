@@ -311,6 +311,10 @@
     <!-- School selection (multi-school): shared by the settings section title and the
          picker sheet title; a single registered school still uses the same sheet -->
     <string name="school_picker_title">Choose school</string>
+    <string name="school_search_placeholder">Search school name</string>
+    <string name="school_search_clear">Clear search</string>
+    <string name="school_search_no_result_title">No matching schools</string>
+    <string name="school_search_no_result_desc">Try a different keyword</string>
     <string name="school_capability_todo_sync">Todo sync</string>
     <string name="school_capability_schedule_import">Timetable import</string>
     <string name="school_switch_failed">Failed to switch school. Try again.</string>

@@ -1,21 +1,22 @@
-package com.fangyi.classpp.ui.schedule
+package com.fangyi.classpp.ui.components
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * 拾光学校浮层的外置搜索条位移：只验证「占位项根坐标 − 浮层卡片根坐标」这一层纯逻辑。
+ * 浮层外置搜索条（[PinnedSheetSearchField]）的位移：只验证「占位项根坐标 − 浮层卡片根坐标」
+ * 这一层纯逻辑，拾光导入与学校选择浮层共用同一规则。
  *
  * 固定一组像素值：卡片顶端在根坐标系的 y = 100，顶栏高 234px，钉住抬升 15px（5dp @3x），
  * 列表在顶部时占位项（紧跟说明卡）在 y = 900 —— 搜索条就该画在相对卡片的 800。
- * 上机形态由 ShiguangImportSheet 组合，这里只锁规则：位置只认占位项的实测坐标；
+ * 这里只锁规则：位置只认占位项的实测坐标；
  * 占位项滚到钉住位置以上后钳成 `顶栏高 − 抬升` = 219（不是 0，否则会滑进顶栏后面；
  * 也不是 234，钉住位置要比顶栏下缘高 5dp）。位移按 Float 计算，小数像素不被取整。
  */
-class ShiguangSearchPinOffsetTest {
+class SheetSearchPinOffsetTest {
 
     private fun pin(anchorRootY: Float, containerTopRootY: Float = 100f): Float =
-        shiguangSearchPinOffsetPx(
+        sheetSearchPinOffsetPx(
             anchorRootY = anchorRootY,
             containerTopRootY = containerTopRootY,
             topBarPx = 234,
