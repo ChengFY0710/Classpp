@@ -3,6 +3,7 @@ package com.fangyi.classpp.ui.components
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imeAnimationTarget
 import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -265,6 +267,129 @@ internal fun SheetScrollHost(
 }
 
 /**
+ * lazy 内容模式的键盘让位宿主（[OverlaySheet] 的 `lazyContent` 分支）：包裹 LazyColumn
+ * 调用，向 item 下发 [LocalImeFieldReporting] / [LocalImeRestoreGate]。
+ *
+ * 与 [ImeScrollTracker] 同一套状态机（焦点位置回报、`focusTicket`、`imeSessionTracked`、
+ * 收起闸门），区别在滚动操作：
+ * - 列模式有全局 `ScrollState.value`，收/弹都把目标换算成**绝对滚动值**再 `animateScrollTo`；
+ * - LazyColumn 没有全局滚动值（内容高度未知），改为按视觉位移求 **delta**，用
+ *   `ScrollableState.animateScrollBy` 交给列表，到顶/到底的夹取由列表自己完成；
+ * - 收起键盘时反向滚回本次会话里 IME 让位累计消费的位移（而非列模式的「回弹起前绝对
+ *   位置」）：用户在键盘会话里自己滚过的距离会保留，不会被一起抹掉。
+ *
+ * `enabled = false` 时原样渲染、不下发任何组合本地（`imeFieldTracking` 自动空转）。
+ *
+ * @param state lazy 列表状态（与 LazyColumn 使用的是同一个实例）
+ * @param viewportHeightPx 滚动视口高度（卡片高度，与列模式同源）
+ * @param viewportTopInRootPx 滚动容器在根坐标系里的 y（内容坐标系的稳定原点）
+ * @param imeTargetInsetPx 键盘终值高度（`imeAnimationTarget`，动画期间不变）
+ * @param imeVisible 键盘是否可见
+ * @param topInsetPx 视口顶端被顶栏盖住的高度（px）
+ */
+@Composable
+internal fun LazyImeScrollHost(
+    enabled: Boolean,
+    state: LazyListState,
+    viewportHeightPx: Int,
+    viewportTopInRootPx: Int,
+    imeTargetInsetPx: Int,
+    imeVisible: Boolean,
+    topInsetPx: Int = 0,
+    content: @Composable () -> Unit,
+) {
+    if (!enabled) {
+        content()
+        return
+    }
+    val density = LocalDensity.current
+    // 正在编辑的输入框（视口坐标）
+    var field by remember { mutableStateOf<FocusedField?>(null) }
+    // 每次「获得焦点」自增：弹着键盘换输入框时它变化，触发重新滚动；同一框内移动光标不自增
+    var focusTicket by remember { mutableIntStateOf(0) }
+    // 本次键盘会话内 IME 让位累计消费的滚动量（收起时按同一时长/曲线反向滚回）
+    var sessionScrollPx by remember { mutableIntStateOf(0) }
+    var imeSessionTracked by remember { mutableStateOf(false) }
+    // 菜单类弹层在输入中打开时可以登记「这次收起不回滚」（见 [ImeRestoreGate]）
+    val restoreGate = remember { ImeRestoreGate() }
+    val viewportTopInRootPxState = rememberUpdatedState(viewportTopInRootPx)
+    val imeVisibleState = rememberUpdatedState(imeVisible)
+
+    val reporting = remember {
+        ImeFieldReporting(
+            reportBounds = { coords ->
+                if (coords.isAttached) {
+                    if (imeVisibleState.value && !imeSessionTracked) imeSessionTracked = true
+                    val top = coords.positionInRoot().y - viewportTopInRootPxState.value
+                    val next = FocusedField(
+                        topPx = top.toInt(),
+                        bottomPx = (top + coords.size.height).toInt(),
+                    )
+                    // 位置逐帧变化，值没变就不写状态（免得白重组一帧）
+                    if (next != field) field = next
+                }
+            },
+            reportFocus = { focused ->
+                if (focused) {
+                    focusTicket++
+                    if (imeVisibleState.value) imeSessionTracked = true
+                } else {
+                    field = null
+                }
+            },
+        )
+    }
+
+    // 键盘收起：撤销本次会话里 IME 造成的位移。
+    // 时长/曲线与尾部余量回落（rememberTailReservePx）一致：余量缩小就是滚动上限收紧，
+    // 同拍时每一帧的目标都在上限内，画面连续
+    LaunchedEffect(imeVisible) {
+        if (!imeVisible) {
+            val suppressRestore = restoreGate.consumeSuppressed()
+            if (imeSessionTracked && !suppressRestore && sessionScrollPx != 0) {
+                state.animateScrollBy(
+                    value = -sessionScrollPx.toFloat(),
+                    animationSpec = tween(TailReserveMillis, easing = Motion.Standard),
+                )
+            }
+            sessionScrollPx = 0
+            imeSessionTracked = false
+        }
+    }
+
+    // 键盘弹起、或弹着键盘换输入框：把正在编辑的输入框滚到键盘上方。
+    // key 用键盘终值（imeAnimationTarget）：逐帧变化的 ime 会让 effect 每帧重启
+    LaunchedEffect(imeVisible, imeTargetInsetPx, focusTicket) {
+        val focused = field ?: return@LaunchedEffect
+        if (!imeVisible) return@LaunchedEffect
+        imeSessionTracked = true
+        val delta = imeScrollDelta(
+            fieldTopPx = focused.topPx,
+            fieldBottomPx = focused.bottomPx,
+            viewportPx = viewportHeightPx,
+            imeInsetPx = imeTargetInsetPx,
+            marginPx = with(density) { ImeFieldTopMargin.roundToPx() },
+            gapPx = with(density) { ImeFieldGapAboveKeyboard.roundToPx() },
+            topInsetPx = topInsetPx,
+        )
+        if (delta != 0) {
+            // 只累计实际消费量：到顶/到底时列表会少滚一部分
+            val consumed = state.animateScrollBy(
+                value = delta.toFloat(),
+                animationSpec = tween(ImeScrollMillis, easing = Motion.Standard),
+            )
+            sessionScrollPx += consumed.toInt()
+        }
+    }
+
+    CompositionLocalProvider(
+        LocalImeFieldReporting provides reporting,
+        LocalImeRestoreGate provides restoreGate,
+        content = content,
+    )
+}
+
+/**
  * 键盘弹起/收起时把正在编辑的输入框滚到键盘上方、把内容滚回原位。
  *
  * 挂在与滚动视口同尺寸的位置（滚动列被 `fillMaxSize` 撑满浮层卡片，量它等价于量视口），
@@ -456,4 +581,40 @@ internal fun targetScrollForIme(
     // 上界：推得再高也不能让上缘越过「距可见区顶部（顶栏下缘）marginPx」那条线
     val topAligned = fieldTopPx - visibleTopLimit - marginPx
     return minOf(bottomAligned, topAligned).coerceAtLeast(0)
+}
+
+/**
+ * lazy 列表的键盘让位位移（px）：[targetScrollForIme] 的增量版。
+ *
+ * 输入是**视口坐标**（[fieldTopPx] / [fieldBottomPx] 是 `positionInRoot - 视口顶端`，
+ * 即屏幕上实际看到的位置），返回需要额外滚动的距离；正数 = 内容向上滚（让出键盘），
+ * 负数 = 向上回滚（高输入框上缘已被顶栏盖住、但下缘又被键盘压住时的冲突解）。
+ * 到顶/到底的夹取交给滚动容器（`animateScrollBy` 只消费可用范围）。
+ *
+ * 与列模式公式的差别：列模式把目标换算成绝对滚动值，`visible = field - scroll` 中的
+ * `scroll` 项在两边相减时抵消；这里直接以视觉位置为输入，因此不再需要「当前滚动值」——
+ * LazyColumn 也没有全局滚动值。两条规则一致：下缘停在键盘上方留 [gapPx]，
+ * 上缘不得高于「顶栏下缘 + [marginPx]」。
+ *
+ * 无位移条件只判「下缘是否被键盘压住」：为对齐 12dp 余量而主动回滚在列模式里是轻微
+ * 修正，但在 lazy 模式里会把**钉在顶栏下缘的 sticky 搜索条**（上缘恰好等于 topInset）
+ * 当成「上缘贴边」而反手把列表往回拽，故这里不做这条带子的主动吸附。
+ */
+internal fun imeScrollDelta(
+    fieldTopPx: Int,
+    fieldBottomPx: Int,
+    viewportPx: Int,
+    imeInsetPx: Int,
+    marginPx: Int,
+    gapPx: Int,
+    topInsetPx: Int = 0,
+): Int {
+    val visibleBottomLimit = viewportPx - imeInsetPx
+    // 下缘已在键盘上方（留出 gapPx）：不需要滚动
+    if (fieldBottomPx <= visibleBottomLimit - gapPx) return 0
+    // 落点：下缘贴键盘上方停住
+    val bottomAligned = fieldBottomPx - visibleBottomLimit + gapPx
+    // 上界：再往上推也不能越过「顶栏下缘 + marginPx」
+    val topAligned = fieldTopPx - topInsetPx - marginPx
+    return minOf(bottomAligned, topAligned)
 }

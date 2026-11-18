@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -27,6 +28,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,6 +67,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
+import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.motion.rubberBandVerticalScroll
 import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
 import com.fangyi.classpp.ui.theme.LocalNavigationBarInsets
@@ -233,6 +238,21 @@ val LocalOverlayTopBarBlur = staticCompositionLocalOf { false }
  * Behind 后恢复，重写窗口现由 [com.fangyi.classpp.ui.components.HazeRetreatState] 动态
  * 驱动；AiChatOverlay / AiConversationsSheet / ScheduleSwitcherSheet 的落库回流窗口同理）；
  * 调用方传 true/false 时必须与叠层弹卡/菜单的 hazeState 下发保持一致。
+ *
+ * [lazyContent] 非 null 时进入 lazy 内容模式：卡片内的滚动容器由 `Column` +
+ * `rubberBandVerticalScroll` 换成 [RubberBandLazyColumn]（同一张卡片、同一套顶栏/钉底槽/
+ * 采样节点），内容由调用方以 `LazyListScope` 声明。此时：
+ * - 顶部留白、尾部余量改由 `contentPadding` 承担（`top = TopBarHeight`、
+ *   `bottom = 导航栏 + SheetBottomSlack + 键盘尾部余量`），滚动范围与列模式逐像素一致；
+ * - `hazeSource` / `layerBackdrop` / `viewportTop` 量取 / 菜单滚动信号仍挂在列表节点上，
+ *   Haze 的采样源身份不变；列表项增删发生在该节点内部，属正常列表改写；
+ * - [imeBehavior] = [SheetImeBehavior.ContentScroll] 时由 [LazyImeScrollHost] 接管键盘让位
+ *   （按视觉位移的 delta 滚动，规则与列模式一致）；
+ * - [onScrollStateReady] 只在列模式回调（lazy 模式没有 `ScrollState`）；
+ * - 本模式在单个浮层实例内固定：不得在运行时把 lazyContent 在 null / 非 null 间切换，
+ *   否则滚动容器与采样源节点会被重建，违反 Haze 2 的采样源结构不重写约束。
+ * 需要读列表状态（例如让 stickyHeader 精确钉在顶栏下缘）的调用方自行创建
+ * [LazyListState] 并传入 [lazyState]。
  */
 @Composable
 fun OverlaySheet(
@@ -285,8 +305,17 @@ fun OverlaySheet(
     // 内容列对齐时用 [TopBarHeight] 自行偏移（顶栏最后组合，仍盖在其上）。
     // null = 无背景层（现状）
     backgroundContent: (@Composable BoxScope.() -> Unit)? = null,
-    // 内容列的作用域由卡片内的 SheetScrollHost 显式转交（那里不在 Column 的接收者作用域里）
-    content: @Composable ColumnScope.() -> Unit,
+    // lazy 内容模式（可选，见 KDoc）：非 null 时整张卡片的滚动内容改为 LazyColumn，
+    // content 不再参与组合；调用方在该模式内自行声明 item / stickyHeader。
+    // 模式在单个浮层实例内固定，禁止运行时在 Column 与 LazyColumn 之间切换
+    //（切换即重写 Haze 采样源结构，见 KDoc 的 Haze 约束）
+    lazyContent: (LazyListScope.() -> Unit)? = null,
+    // lazy 模式使用的列表状态：调用方需要读 layoutInfo（如 sticky 搜索条的钉住偏移）时
+    // 自行创建并传入；null = 容器内部 rememberLazyListState()。非 lazy 模式忽略
+    lazyState: LazyListState? = null,
+    // 内容列的作用域由卡片内的 SheetScrollHost 显式转交（那里不在 Column 的接收者作用域里）。
+    // lazy 模式下不使用（有默认空实现，只用于让 lazy 调用点省略尾随 lambda）
+    content: @Composable ColumnScope.() -> Unit = {},
 ) {
     // 采样源状态：调用方传入共享 hazeState 则复用（叠层弹窗同源采样），否则自建
     val sheetHazeState = hazeState ?: rememberHazeState()
@@ -305,9 +334,12 @@ fun OverlaySheet(
     // B5：内容列用户滚动信号——打开中的弹层菜单（非 focusable 不消费外部触摸）据此收起，
     // 避免锚点行滚走后菜单停在冻结的窗口坐标上
     val menuScrollSignal = remember { MenuScrollSignal() }
-    // 滚动列的 ScrollState 交给宿主（对话浮层自动滚底等）；一次性回调，重组不重发
-    LaunchedEffect(onScrollStateReady) {
-        onScrollStateReady?.invoke(scrollState)
+    // 滚动列的 ScrollState 交给宿主（对话浮层自动滚底等）；一次性回调，重组不重发。
+    // lazy 内容模式没有 ScrollState，不回调（调用方改传 lazyState 自行持有列表状态）。
+    // key 用布尔而不是 lambda 实例：lazyContent 每次重组都是新 lambda，不能反复触发回调
+    val isLazyMode = lazyContent != null
+    LaunchedEffect(onScrollStateReady, isLazyMode) {
+        if (!isLazyMode) onScrollStateReady?.invoke(scrollState)
     }
     val density = LocalDensity.current
     // 距屏幕顶端 = 全 app 统一的稳定状态栏高度（见 ui.theme 的 ProvideStableWindowInsets：
@@ -536,76 +568,114 @@ fun OverlaySheet(
                                     background()
                                 }
                             }
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    // Haze 采样源：喂顶栏磨砂（开关开启时）、上层弹窗背景模糊
-                                    // 与钉底槽弹出菜单磨砂。hazeEnabled = false 的浮层整条链
-                                    // 零 Haze 节点，不挂采样源
-                                    .then(
-                                        if (hazeEnabled) {
-                                            Modifier.hazeSource(sheetHazeState)
-                                        } else {
-                                            Modifier
-                                        },
-                                    )
-                                    // 玻璃按钮开启时同一节点再挂液态玻璃采样标记
-                                    // （Haze 喂上层弹窗/钉底槽菜单、Backdrop 只喂两颗玻璃按钮）
-                                    .then(
-                                        if (glassButtonsEnabled) {
-                                            Modifier.layerBackdrop(glassButtonsBackdrop)
-                                        } else {
-                                            Modifier
-                                        },
-                                    )
-                                    // 滚动列自身在根坐标系里的位置：内容坐标系的稳定原点
-                                    //（滚动列自己的放置位置不随其内容滚动而变）
-                                    .onGloballyPositioned {
-                                        viewportTopInRootPx = it.positionInRoot().y.toInt()
-                                    }
-                                    // 橡皮筋增强版 verticalScroll：内容不足一屏（如课程详情等
-                                    // 短浮层）时也能拉出橡皮筋（ui.motion 的 rubberBandVerticalScroll）
-                                    // 外圈再挂菜单滚动信号：用户滚动内容列 → 打开中的弹层菜单收起（B5）
-                                    .menuScrollDismiss(menuScrollSignal)
-                                    .rubberBandVerticalScroll(scrollState)
-                                    // 点空白（卡片间隙/留白/尾部余量）取消聚焦收起键盘：
-                                    // SheetTextField / SheetTextArea 一族的通用宿主行为
-                                    .clearFocusOnTap()
-                                    // 横向边距 = 设置页同款页边距（PageHorizontalSpacing），卡片宽度与设置页一致
-                                    .padding(horizontal = PageHorizontalSpacing),
-                            ) {
-                                // 为叠在上方的顶栏留位；滚动后内容进入顶栏区域，被遮罩淡出或磨砂模糊
-                                Spacer(Modifier.height(TopBarHeight))
-                                // 键盘弹起时把正在编辑的输入框滚到键盘上方、收起后把内容滚回原位。
-                                // 不理会键盘的浮层（IgnoreIme）不接线：字段照旧只渲染
-                                // 同时下发菜单滚动信号：内容里的弹层菜单在用户滚动时收起（B5）
-                                CompositionLocalProvider(
-                                    LocalMenuScrollSignal provides menuScrollSignal,
-                                ) {
-                                    SheetScrollHost(
-                                        enabled = imeBehavior == SheetImeBehavior.ContentScroll,
-                                        scrollState = scrollState,
-                                        viewportHeightPx = viewportHeightPx,
-                                        viewportTopInRootPx = viewportTopInRootPx,
-                                        // 终值而不是逐帧值：自动滚动的 effect 才不会每帧重启
-                                        imeTargetInsetPx = imeTargetBottomPx,
-                                        imeVisible = imeVisible,
-                                        // 滚动列顶部被顶栏盖住的高度：可见区从顶栏下缘开始，
-                                        // 高输入框的上缘对齐必须让开这一截（P3-1）
-                                        topInsetPx = with(density) { TopBarHeight.roundToPx() },
-                                        // 滚动列本体的接收者：这里正处在 Column 的接收者作用域里
-                                        scope = this,
-                                        content = content,
-                                    )
+                            // 采样源 / 视口量取 / 菜单滚动信号在两种滚动容器上完全同款：
+                            // 挂的是同一个节点身份（Haze 源不随列表实现变化），只有滚动实现不同。
+                            // hazeSource 喂顶栏磨砂（开关开启时）、上层弹窗背景模糊与钉底槽
+                            // 弹出菜单磨砂；hazeEnabled = false 的浮层整条链零 Haze 节点。
+                            // 玻璃按钮开启时同一节点再挂液态玻璃采样标记（Haze 与 Backdrop 互不干扰）。
+                            // 视口位置是内容坐标系的稳定原点，两种容器都不随内容滚动而变。
+                            // 菜单滚动信号挂在滚动节点外侧：用户滚动内容列 → 打开中的弹层菜单收起（B5）
+                            val scrollSourceModifier = Modifier
+                                .fillMaxSize()
+                                .then(
+                                    if (hazeEnabled) {
+                                        Modifier.hazeSource(sheetHazeState)
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                                .then(
+                                    if (glassButtonsEnabled) {
+                                        Modifier.layerBackdrop(glassButtonsBackdrop)
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                                .onGloballyPositioned {
+                                    viewportTopInRootPx = it.positionInRoot().y.toInt()
                                 }
-                                // 尾部余量 = 导航栏 + 可调滚动余量；键盘让位不在这里
-                                Spacer(Modifier.height(bottomInsetDp + SheetBottomSlack))
-                                // 键盘弹起时额外撑出的那一截（收起键盘按 TailReserveMillis
-                                // 缩回）：在本浮层内容列内这是**唯一**一处键盘让位（AI 钉底槽
-                                // 用 imePadding，BottomSelectSheet 自己算整卡抬升）。
-                                // 缩回只减小滚动上限：停在底部的列表随之回落；其他滚动位置
-                                // 由 ImeScrollTracker 的「滚回原位」同拍动画负责，不是不动
-                                TailReserveSpacer(tailReservePx)
+                                .menuScrollDismiss(menuScrollSignal)
+
+                            if (lazyContent != null) {
+                                // lazy 内容模式：整张卡片内只有这一个 LazyColumn 滚动容器
+                                //（不再叠任何 verticalScroll）。顶部留白/尾部余量折算成
+                                // contentPadding，滚动范围与列模式逐像素一致
+                                val lazyListState = lazyState ?: rememberLazyListState()
+                                LazyImeScrollHost(
+                                    enabled = imeBehavior == SheetImeBehavior.ContentScroll,
+                                    state = lazyListState,
+                                    viewportHeightPx = viewportHeightPx,
+                                    viewportTopInRootPx = viewportTopInRootPx,
+                                    // 终值而不是逐帧值：自动滚动的 effect 才不会每帧重启
+                                    imeTargetInsetPx = imeTargetBottomPx,
+                                    imeVisible = imeVisible,
+                                    // 列表顶部被顶栏盖住的高度：可见区从顶栏下缘开始
+                                    topInsetPx = with(density) { TopBarHeight.roundToPx() },
+                                ) {
+                                    CompositionLocalProvider(
+                                        LocalMenuScrollSignal provides menuScrollSignal,
+                                    ) {
+                                        RubberBandLazyColumn(
+                                            modifier = scrollSourceModifier
+                                                // 点空白（卡片间隙/留白/尾部余量）取消聚焦收起键盘
+                                                .clearFocusOnTap(),
+                                            state = lazyListState,
+                                            contentPadding = PaddingValues(
+                                                start = PageHorizontalSpacing,
+                                                end = PageHorizontalSpacing,
+                                                top = TopBarHeight,
+                                                bottom = bottomInsetDp + SheetBottomSlack +
+                                                    with(density) { tailReservePx.toDp() },
+                                            ),
+                                            content = lazyContent,
+                                        )
+                                    }
+                                }
+                            } else {
+                                Column(
+                                    modifier = scrollSourceModifier
+                                        // 橡皮筋增强版 verticalScroll：内容不足一屏（如课程详情等
+                                        // 短浮层）时也能拉出橡皮筋（ui.motion 的 rubberBandVerticalScroll）
+                                        .rubberBandVerticalScroll(scrollState)
+                                        // 点空白（卡片间隙/留白/尾部余量）取消聚焦收起键盘：
+                                        // SheetTextField / SheetTextArea 一族的通用宿主行为
+                                        .clearFocusOnTap()
+                                        // 横向边距 = 设置页同款页边距（PageHorizontalSpacing），卡片宽度与设置页一致
+                                        .padding(horizontal = PageHorizontalSpacing),
+                                ) {
+                                    // 为叠在上方的顶栏留位；滚动后内容进入顶栏区域，被遮罩淡出或磨砂模糊
+                                    Spacer(Modifier.height(TopBarHeight))
+                                    // 键盘弹起时把正在编辑的输入框滚到键盘上方、收起后把内容滚回原位。
+                                    // 不理会键盘的浮层（IgnoreIme）不接线：字段照旧只渲染
+                                    // 同时下发菜单滚动信号：内容里的弹层菜单在用户滚动时收起（B5）
+                                    CompositionLocalProvider(
+                                        LocalMenuScrollSignal provides menuScrollSignal,
+                                    ) {
+                                        SheetScrollHost(
+                                            enabled = imeBehavior == SheetImeBehavior.ContentScroll,
+                                            scrollState = scrollState,
+                                            viewportHeightPx = viewportHeightPx,
+                                            viewportTopInRootPx = viewportTopInRootPx,
+                                            // 终值而不是逐帧值：自动滚动的 effect 才不会每帧重启
+                                            imeTargetInsetPx = imeTargetBottomPx,
+                                            imeVisible = imeVisible,
+                                            // 滚动列顶部被顶栏盖住的高度：可见区从顶栏下缘开始，
+                                            // 高输入框的上缘对齐必须让开这一截（P3-1）
+                                            topInsetPx = with(density) { TopBarHeight.roundToPx() },
+                                            // 滚动列本体的接收者：这里正处在 Column 的接收者作用域里
+                                            scope = this,
+                                            content = content,
+                                        )
+                                    }
+                                    // 尾部余量 = 导航栏 + 可调滚动余量；键盘让位不在这里
+                                    Spacer(Modifier.height(bottomInsetDp + SheetBottomSlack))
+                                    // 键盘弹起时额外撑出的那一截（收起键盘按 TailReserveMillis
+                                    // 缩回）：在本浮层内容列内这是**唯一**一处键盘让位（AI 钉底槽
+                                    // 用 imePadding，BottomSelectSheet 自己算整卡抬升）。
+                                    // 缩回只减小滚动上限：停在底部的列表随之回落；其他滚动位置
+                                    // 由 ImeScrollTracker 的「滚回原位」同拍动画负责，不是不动
+                                    TailReserveSpacer(tailReservePx)
+                                }
                             }
                             OverlaySheetTopBar(
                                 title = title,

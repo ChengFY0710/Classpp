@@ -45,11 +45,7 @@ fun CardSection(
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         if (title != null) {
-            Text(
-                text = title,
-                modifier = Modifier.padding(start = 6.dp),
-                style = MaterialTheme.classppTextStyles.sectionTitle.settingsRowMetrics(),
-            )
+            CardSectionTitle(text = title)
             // 标题↔首卡用显式留白，好让下面 content 的 spacedBy 只管卡↔卡
             Spacer(Modifier.height(titleSpacing))
         }
@@ -60,4 +56,23 @@ fun CardSection(
             content()
         }
     }
+}
+
+/**
+ * 分组标题：灰色小标题样式的唯一来源（[CardSection] 与 lazy 内容模式的独立标题 item
+ * 共用）。lazy 列表里分组标题不能再借 [CardSection] 的纵向排版（卡片要作为独立 item
+ * 懒组合），用本组件渲染标题即可与普通分组逐像素一致：start 6dp 缩进 +
+ * `sectionTitle.settingsRowMetrics()`。标题↔首卡的间距由调用方按 [CardSectionTitleSpacing]
+ * 给出（lazy 的「标题 item + 卡片 items」结构里间距只能由 item 自身承担）。
+ */
+@Composable
+fun CardSectionTitle(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = text,
+        modifier = modifier.padding(start = 6.dp),
+        style = MaterialTheme.classppTextStyles.sectionTitle.settingsRowMetrics(),
+    )
 }
