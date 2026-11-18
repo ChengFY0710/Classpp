@@ -33,6 +33,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -125,7 +126,7 @@ internal val CardShadowBottomPadding = 48.dp
 /**
  * 周数选择弹窗专用的底部投影留白（其余三边仍用 [CardShadowPadding]）。
  * 该弹窗投影 52dp 比菜单族（36dp）更重，底部需要比 [CardShadowBottomPadding] 更大的缓冲；
- * 左右不能加宽——49dp 方格配 384dp 临界宽后水平余量只剩 1dp 边距，再加会破配套。
+ * 左右不能加宽——60dp 方格配 450dp 临界宽后水平余量只剩 1dp 边距，再加会破配套。
  */
 internal val WeekPickerShadowBottomPadding = 60.dp
 
@@ -133,16 +134,17 @@ internal val WeekPickerCellSpace = 8.dp // 周数选择器里小方块间距
 
 /**
  * 弹窗目标：距屏幕左右两侧各 [WeekPickerEdgeMargin]（按 Popup 窗口边缘计，即含四周投影留白）。
- * 取 1dp：与 [WeekCellSizeMax]=49dp 配套时封顶临界宽恰为 384dp，主流 384dp 档手机正好呈现 49dp 方格。
+ * 取 1dp：与 [WeekCellSizeMax]=60dp 配套时封顶临界宽恰为 450dp；384dp 档手机正好呈现
+ * 49dp 方格，之后随屏宽继续放大到 450dp 的 60dp。
  */
 internal val WeekPickerEdgeMargin = 1.dp
 
 /**
- * 方格边长上限：任意窗口宽度下反推结果一律封顶于此——反推值超过上限的
- * （宽屏手机/横屏/平板）封顶后弹窗保持自然宽度居中；同时也是拿不到宿主窗口宽度时
- * （理论上只在首帧之前）的兜底边长，与旧的固定值一致。
+ * 方格边长上限：450dp 窗口宽时反推值恰好到 60dp，更宽的窗口（宽屏手机/横屏/平板）
+ * 封顶于此——弹窗保持自然宽度居中，留白自然变宽；同时也是拿不到宿主窗口宽度时
+ * （理论上只在首帧之前）的兜底边长。
  */
-internal val WeekCellSizeMax = 49.dp
+internal val WeekCellSizeMax = 60.dp
 
 /**
  * 周数方格边长（dp）：由可用宽度反推，任意窗口宽度档一律封顶在 [maxCellSizeDp]。
@@ -155,7 +157,8 @@ internal val WeekCellSizeMax = 49.dp
  *         边长 = ────────────────────────────────────────────────────────────
  *                                       列数
  *
- * 反推值超上限 [maxCellSizeDp]（宽屏手机/横屏/平板）时封顶，弹窗保持自然宽度
+ * 反推值随屏宽线性增长：384dp 窗口对应 49dp 方格，450dp 窗口对应 60dp 方格；
+ * 超过 450dp（宽屏手机/横屏/平板）后封顶 [maxCellSizeDp]，弹窗保持自然宽度
  * 居中，留白自然变宽——不会出现巨大的方格。
  */
 internal fun weekCellSizeDp(
@@ -613,6 +616,11 @@ private fun WeekPill(
 ) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         var menuExpanded by remember { mutableStateOf(false) }
+        // 点选周后不立刻换周：换周会驱动 Pager 换页 / 整页换入并重写 Haze 采样源结构，
+        // 这一大帧会把 120ms 的退场动画整段吞掉。统一先把目标周记下来，退场播完再换周
+        // （与 PopupActionGate「退场后再执行重写动作」同一原则），相邻周与非相邻周手感一致。
+        var pendingJumpWeek by remember { mutableStateOf<Int?>(null) }
+        val latestOnWeekSelected by rememberUpdatedState(onWeekSelected)
         // 尾部箭头随弹窗开合旋转：同一张 chevron 下箭头转 180° 当上箭头用，
         // 打开与关闭同走固定时长，转角读在 layer 内不触发重组
         val arrowRotation by animateFloatAsState(
@@ -624,6 +632,12 @@ private fun WeekPill(
         // 同一套 motion）：收起动画期间 motion.shown 保持 Popup 在场
         val motion = rememberPopupMotion(
             expanded = menuExpanded,
+            onExitFinished = {
+                pendingJumpWeek?.let { week ->
+                    pendingJumpWeek = null
+                    latestOnWeekSelected(week)
+                }
+            },
             // 起始缩放 0.5：半尺寸小卡收在胶囊正下方，从胶囊中心「涌出」的读感才够强
             // （胶囊中心距卡片顶边仅 36dp，默认 0.8 的锚点差肉眼不可辨）
             enterStartScale = 0.5f,
@@ -635,8 +649,8 @@ private fun WeekPill(
         }
 
         // 弹窗宽度随宿主窗口自适应：方格边长由可用宽度反推（六列/正方形/间距都不变），
-        // 任意窗口宽度档一律封顶 WeekCellSizeMax（49dp）——窄屏满宽铺开贴屏幕两侧，
-        // 宽屏手机/横屏/平板封顶后弹窗保持自然宽度居中。多窗口/分屏下 containerDpSize
+        // 384dp–450dp 继续随屏宽放大（49dp→60dp），450dp 起封顶 WeekCellSizeMax（60dp）——
+        // 窄屏满宽铺开贴屏幕两侧，宽屏手机/横屏/平板封顶后弹窗保持自然宽度居中。多窗口/分屏下 containerDpSize
         // 是当前窗口而非整块屏幕，与定位用的窗口尺寸一致
         val availableWidthDp = LocalWindowInfo.current.containerDpSize.width.value
         val weekCellSize = remember(availableWidthDp) {
@@ -691,6 +705,8 @@ private fun WeekPill(
                     interactionSource = pressInteraction,
                     indication = null,
                     onClick = {
+                        // 新一轮交互作废上一次尚未落地的延后换周
+                        pendingJumpWeek = null
                         menuExpanded = true
                         onMenuExpandedChange(true)
                     },
@@ -835,8 +851,10 @@ private fun WeekPill(
                             )
                         },
                     ),
-                    onWeekSelected = {
-                        onWeekSelected(it)
+                    onWeekSelected = { week ->
+                        // 所有周次都延后到退场播完（onExitFinished）再落地，避免换周帧
+                        // 与退场同帧；点当前周也会先播完退场再写回同值（无副作用）
+                        pendingJumpWeek = week
                         closeMenu()
                     },
                 )
