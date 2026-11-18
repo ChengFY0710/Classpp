@@ -9,7 +9,8 @@ package com.fangyi.classpp.data.shiguang
  *
  * - `saveImportedCourses` / `savePresetTimeSlots` / `saveCourseConfig` /
  *   `saveComboSchedule` 把脚本传入的 JSON（字符串或对象）存进内存并 resolve true；
- * - `showAlert` 自动确认，`showPrompt` 返回默认值，`showSingleSelection` 返回默认索引；
+ * - `showAlert` 自动确认（文案含失败关键词时直接收口为失败，否则脚本 alert 完就返回，
+ *   原生侧只能干等到超时），`showPrompt` 返回默认值，`showSingleSelection` 返回默认索引；
  * - `showToast` 含失败关键词时直接收口为失败（与 Wakeup 执行器同一启发式）；
  * - `notifyTaskCompletion` 把收集到的数据写成 [RESULT_VAR] 的 JSON 字符串；
  * - 未捕获异常 / unhandled rejection 也写成失败结果。
@@ -63,7 +64,9 @@ internal object ShiguangScriptShim {
                     window.__classppShiguang = JSON.stringify({
                         ok: false,
                         errorCode: errorCode || 'SCRIPT_ERROR',
-                        error: String(error || '')
+                        // 脚本给的原因为空时回落到前面弹过的提示：适配脚本常把唯一一句
+                        // 原因放进 showAlert/showToast，不留下来就只剩通用文案
+                        error: String(error || state.lastError || '')
                     });
                 }
             }
@@ -127,7 +130,12 @@ internal object ShiguangScriptShim {
             window.shiguangBridgePromise = {
                 showAlert: function(title, content, confirmText) {
                     var text = String(content || title || '');
-                    if (text) state.lastError = text;
+                    if (!text) return Promise.resolve(true);
+                    state.lastError = text;
+                    // 无头环境里 alert 往往是脚本唯一的报错出口（"未检测到课表"之类）：
+                    // 命中失败关键词就立刻收口，与 showToast 同一启发式。否则脚本 alert
+                    // 完直接 return，原生侧要白等到 60s 超时才失败，脚本文案也一并丢掉
+                    if (isFatalToast(text)) finish(false, text, 'SCRIPT_ERROR');
                     return Promise.resolve(true);
                 },
                 showPrompt: function(title, tip, defaultText, validatorJsFunction) {
