@@ -2,8 +2,8 @@ package com.fangyi.classpp.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Box
@@ -39,12 +39,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
-import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.theme.LiquidGlassStyle
 import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
 import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.fangyi.classpp.ui.theme.glassPressFeedback
+import com.fangyi.classpp.ui.theme.glassSurface
+import com.kyant.backdrop.Backdrop
 
 /**
  * 浮层内搜索输入框：[SheetTextField] 的搜索形态，共用同一套文字规格——
@@ -56,10 +59,16 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  * 与 SheetTextField 的差异（搜索语义）：
  * - 卡高不带 60dp 下限：14×2 上下内距 + 24dp 图标自然撑出 ≈52dp 单行条；
  * - 左侧恒显 ic_search（24dp 灰），有内容时右侧补 ic_dismiss_circle 清空钮
- *   （24dp 灰，按压反馈直接落在图标圆上：按下圆内提亮 + 放大）；
+ *   （24dp 灰，按压反馈直接落在图标圆上：玻璃模式 Q弹放大、普通模式硬节奏缩放提亮）；
  * - singleLine 硬行 + 滤换行符：搜索词永不换行（SheetTextField 是视觉换行、逻辑单行）；
  * - 占位空值即显（聚焦也显示，光标停在占位文字首字前），不学表单框聚焦即藏；
  * - 键盘动作恒 Search，按下搜索键收起焦点；无 label、无 isError（搜索词不参与表单校验）。
+ *
+ * 玻璃材质：宿主按「更高级的玻璃材质」开关下发 [backdrop]（浮层经
+ * LocalOverlayContentGlassBackdrop / LocalOverlayBottomGlassBackdrop 下发，null = 关闭）。
+ * 非空时底材改 [glassSurface]（采样层透出下方滚过的内容，Pill 玻璃参数、surface 染色），
+ * 清空钮改 [glassPressFeedback] Q弹按压；聚焦蓝描边原样叠画在玻璃之上（AiChatInputBar
+ * 的取舍）。null 时底材与按压反馈完全回退实心实现。
  *
  * 键盘行为与 SheetTextField 一致：已聚焦时再点输入区重新 show 一次键盘——Compose
  * 输入框已聚焦时再点不会拉起键盘，键盘一旦被收起就唤不回来（上机踩过）。
@@ -74,8 +83,11 @@ fun SheetSearchField(
     placeholder: String = "",
     /** 清空按钮的无障碍描述（TalkBack 朗读用），空串时按钮对读屏不可见 */
     clearContentDescription: String = "",
+    /** 液态玻璃采样层：null = 普通实心材质（「更高级的玻璃材质」开关关闭或 API < 31） */
+    backdrop: Backdrop? = null,
 ) {
     val focusManager = LocalFocusManager.current
+    val clearInteraction = remember { MutableInteractionSource() }
     var focused by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -101,7 +113,13 @@ fun SheetSearchField(
         modifier = modifier
             .fillMaxWidth()
             .clip(PillShape)
-            .background(MaterialTheme.colorScheme.surface)
+            // 玻璃开启时由 drawBackdrop 出底（采样层透出钉住时下方滚过的内容）；null 回退实心 surface
+            .glassSurface(
+                shape = PillShape,
+                containerColor = MaterialTheme.colorScheme.surface,
+                backdrop = backdrop,
+                style = LiquidGlassStyle.Pill,
+            )
             .then(
                 if (strokeWidth > 0.dp) {
                     Modifier.border(
@@ -163,10 +181,16 @@ fun SheetSearchField(
                 painter = painterResource(R.drawable.ic_dismiss_circle),
                 contentDescription = clearContentDescription.ifEmpty { null },
                 tint = MaterialTheme.classppColors.secondaryText,
-                // 按压反馈直接落在 24dp 图标圆上：按下圆内提亮 + 放大（小图标钮惯例 1.10f）
-                modifier = Modifier
-                    .size(24.dp)
-                    .pressClickable(shape = CircleShape, scale = 1.10f) { onValueChange("") },
+                    // 按压反馈直接落在 24dp 图标圆上：玻璃 + API 31+ 走 pressScale Q弹，
+                    // 否则回退 pressFeedback 硬节奏缩放提亮（glassPressFeedback 内部二选一）
+                    modifier = Modifier
+                        .size(24.dp)
+                        .glassPressFeedback(clearInteraction, CircleShape, backdrop)
+                        .clickable(
+                            interactionSource = clearInteraction,
+                            indication = null,
+                            onClick = { onValueChange("") },
+                        ),
             )
         }
     }

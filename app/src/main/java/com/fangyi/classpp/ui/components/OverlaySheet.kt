@@ -172,6 +172,17 @@ val LocalOverlayBottomGlassBackdrop = staticCompositionLocalOf<Backdrop?> { null
 val LocalOverlayBottomHazeState = staticCompositionLocalOf<HazeState?> { null }
 
 /**
+ * 内容覆盖槽（[OverlaySheet] 的 [contentOverlay]）可用的液态玻璃采样层：与顶栏胶囊、
+ * 钉底槽同源（同一个 `layerBackdrop` 采样节点 = 卡片底色 + 滚动内容），由浮层按
+ * 「更高级的玻璃材质」开关统一下发。玻璃关闭 / API < 31 时为 null；槽内组件把 null
+ * 传给 [glassSurface] / [glassPressFeedback] 即回退原实心材质，无需自己再判开关。
+ *
+ * 覆盖槽画在滚动容器之外、顶栏之下（采样层内没有它）：槽内玻璃组件可直接采样滚动
+ * 内容——钉顶条折射从它下方滚过的行，不会出现读写同一层的 GPU 反馈环。
+ */
+val LocalOverlayContentGlassBackdrop = staticCompositionLocalOf<Backdrop?> { null }
+
+/**
  * 「浮层顶栏模糊」开关的组合本地下发：开启 = OverlaySheet 顶栏恢复 Haze 渐变磨砂，
  * 关闭（默认）= Background 同色渐变遮罩。开关复用于全部浮层，逐层传参会穿透大量调用
  * 签名——组合根部提供（MainActivity 用「个性化 → 外观 → 浮层顶栏模糊」的即时值提供，
@@ -305,6 +316,12 @@ fun OverlaySheet(
     // 内容列对齐时用 [TopBarHeight] 自行偏移（顶栏最后组合，仍盖在其上）。
     // null = 无背景层（现状）
     backgroundContent: (@Composable BoxScope.() -> Unit)? = null,
+    // 内容覆盖槽（可选，lazy 内容模式专用）：渲染在滚动容器之后、顶栏之下——同 Box 内
+    // 且在 LazyImeScrollHost 追踪作用域内，外置输入条（拾光搜索框）既可安全接
+    // [LocalOverlayContentGlassBackdrop] 玻璃采样，又经 imeFieldTracking 参与键盘让位
+    // 与收起回滚（钉顶条位置随列表滚动变化，tracker 的换算对它同样成立）。
+    // 槽内容自行 align / offset 定位、不随内容滚动。null = 无覆盖层（现状）
+    contentOverlay: (@Composable BoxScope.() -> Unit)? = null,
     // lazy 内容模式（可选，见 KDoc）：非 null 时整张卡片的滚动内容改为 LazyColumn，
     // content 不再参与组合；调用方在该模式内自行声明 item / stickyHeader。
     // 模式在单个浮层实例内固定，禁止运行时在 Column 与 LazyColumn 之间切换
@@ -629,6 +646,17 @@ fun OverlaySheet(
                                             ),
                                             content = lazyContent,
                                         )
+                                        // 内容覆盖槽：滚动容器之后、顶栏之前（同 Box 内），
+                                        // 且在 LazyImeScrollHost 的追踪作用域内——外置输入条
+                                        // 的 imeFieldTracking 由此接回键盘让位与收起回滚
+                                        //（钉顶条的位移随列表滚动变化，tracker 对它同样成立）
+                                        contentOverlay?.let { overlay ->
+                                            CompositionLocalProvider(
+                                                LocalOverlayContentGlassBackdrop provides glassButtonBackdrop,
+                                            ) {
+                                                overlay()
+                                            }
+                                        }
                                     }
                                 }
                             } else {
