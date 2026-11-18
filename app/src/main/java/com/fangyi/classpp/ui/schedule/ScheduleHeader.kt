@@ -126,16 +126,16 @@ internal val WeekPickerCellSpace = 8.dp // 周数选择器里小方块间距
 
 /**
  * 弹窗目标：距屏幕左右两侧各 [WeekPickerEdgeMargin]（按 Popup 窗口边缘计，即含四周投影留白）。
- * 取 2.5dp：与 [WeekCellSizeMax]=48.5dp 配套时封顶临界宽恰为 384dp，主流 384dp 档手机正好呈现 48.5dp 方格。
+ * 取 1dp：与 [WeekCellSizeMax]=49dp 配套时封顶临界宽恰为 384dp，主流 384dp 档手机正好呈现 49dp 方格。
  */
-internal val WeekPickerEdgeMargin = 2.5.dp
+internal val WeekPickerEdgeMargin = 1.dp
 
 /**
  * 方格边长上限：任意窗口宽度下反推结果一律封顶于此——反推值超过上限的
  * （宽屏手机/横屏/平板）封顶后弹窗保持自然宽度居中；同时也是拿不到宿主窗口宽度时
  * （理论上只在首帧之前）的兜底边长，与旧的固定值一致。
  */
-internal val WeekCellSizeMax = 48.5.dp
+internal val WeekCellSizeMax = 49.dp
 
 /**
  * 周数方格边长（dp）：由可用宽度反推，任意窗口宽度档一律封顶在 [maxCellSizeDp]。
@@ -628,7 +628,7 @@ private fun WeekPill(
         }
 
         // 弹窗宽度随宿主窗口自适应：方格边长由可用宽度反推（六列/正方形/间距都不变），
-        // 任意窗口宽度档一律封顶 WeekCellSizeMax（48.5dp）——窄屏满宽铺开贴屏幕两侧，
+        // 任意窗口宽度档一律封顶 WeekCellSizeMax（49dp）——窄屏满宽铺开贴屏幕两侧，
         // 宽屏手机/横屏/平板封顶后弹窗保持自然宽度居中。多窗口/分屏下 containerDpSize
         // 是当前窗口而非整块屏幕，与定位用的窗口尺寸一致
         val availableWidthDp = LocalWindowInfo.current.containerDpSize.width.value

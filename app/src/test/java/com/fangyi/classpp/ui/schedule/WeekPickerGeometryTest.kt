@@ -9,7 +9,7 @@ import org.junit.Test
  * 且任意窗口宽度档一律封顶 [WeekCellSizeMax]——
  *
  * - 窗口未到封顶临界宽（自然窗口宽 + 2×边距）：完全按留白反推，弹窗距屏幕两侧恒为 WeekPickerEdgeMargin；
- * - 窗口到达封顶临界宽起（宽屏手机/横屏/平板）：边长封顶 [WeekCellSizeMax]（48.5dp），弹窗保持自然宽度居中。
+ * - 窗口到达封顶临界宽起（宽屏手机/横屏/平板）：边长封顶 [WeekCellSizeMax]（49dp），弹窗保持自然宽度居中。
  *
  * 断言直接引用 ScheduleHeader.kt 里的常量（同为 internal），
  * 调整留白/上限时这里同步生效，不会各写一份数字而悄悄失配。
