@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,14 +21,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableIntState
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.MutableFloatState
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
@@ -41,7 +41,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import kotlin.math.roundToInt
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.shiguang.ShiguangAdapter
 import com.fangyi.classpp.ui.components.AlphabetGroup
@@ -93,7 +92,8 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  * 不垫通栏底色、不做渐变收边，列表内容照常从顶栏下缘渐隐滚过。
  *
  * 位置见 [shiguangSearchPinOffsetPx]：只认占位项的实测坐标，不从滚动状态推算
- *（按滚动量算出来的位移在覆盖槽里会因为拿不到重新放置的机会而冻住）。
+ *（按滚动量算出来的位移在覆盖槽里会因为拿不到重新放置的机会而冻住）。坐标在绘制阶段
+ * 读取、只改图层平移，滚动时不重组也不重排搜索条（组合阶段读会晚一帧、滑动发顿）。
  * 搜索词一变就把列表按回顶部（`scrollToItem`）：结果集换了从第一条看起，搜索条也随之
  * 回到说明卡下方的自然位——空结果那一屏尤其必须，否则短内容会停在末项、条悬在顶栏下。
  *
@@ -172,9 +172,9 @@ internal fun ShiguangImportSheet(
     var searchFieldHeight by remember { mutableStateOf(ShiguangSearchDefaultHeight) }
     // 搜索条占位项在根坐标系里的 y：外置条的定位锚点。取实测坐标、不拿滚动状态推算——
     // 内容怎么动（滚动、橡皮筋回弹、键盘让位抬升）锚点就怎么动，条与内容不会脱节。
-    // 用状态对象传引用、只在最里层的定位壳里读：若在这里读成 Int，滚动时整张浮层都会
-    // 跟着逐帧重组（列表 item provider 也会重建）。
-    val searchAnchorRootY = remember { mutableIntStateOf(0) }
+    // 用状态对象传引用、只在定位壳的**绘制块**里读：在这里读成值或读在组合阶段，滚动时
+    // 整张浮层都会跟着逐帧重组，且位移会晚一帧（状态在布局末尾才写入），快速滑动发顿。
+    val searchAnchorRootY = remember { mutableFloatStateOf(0f) }
     // 搜索词一变就把列表按回顶部：结果集换了就从第一条看起，外置搜索条也随之回到说明卡
     // 下方的自然位。这不只是「体验偏好」，还是空结果那一屏的必需项——
     // 筛选把列表缩短后，LazyColumn 不会自己回顶：键盘在场时尾部余量把可用高度压到
@@ -248,7 +248,7 @@ internal fun ShiguangImportSheet(
                     Modifier
                         .height(searchFieldHeight)
                         .onGloballyPositioned { coords ->
-                            searchAnchorRootY.intValue = coords.positionInRoot().y.roundToInt()
+                            searchAnchorRootY.floatValue = coords.positionInRoot().y
                         },
                 )
             }
@@ -424,7 +424,7 @@ private fun ShiguangAdapterRow(
  */
 @Composable
 private fun BoxScope.ShiguangSearchOverlay(
-    anchorRootY: MutableIntState,
+    anchorRootY: MutableFloatState,
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,
@@ -433,17 +433,17 @@ private fun BoxScope.ShiguangSearchOverlay(
 ) {
     val density = LocalDensity.current
     val backdrop = LocalOverlayContentGlassBackdrop.current
-    // 覆盖槽自己量一次卡片顶端（同样用状态对象：读它的是定位壳，不是本层）：
+    // 覆盖槽自己量一次卡片顶端（同样用状态对象：读它的是定位壳的绘制块，不是本层）：
     // 锚点是根坐标，减掉它才是「相对浮层」的位移
-    val containerTopRootY = remember { mutableIntStateOf(0) }
+    val containerTopRootY = remember { mutableFloatStateOf(0f) }
     Box(
         modifier = Modifier
             .fillMaxSize()
             // 抬到顶栏之上：钉住位置比顶栏下缘高 5dp，默认层级会被顶栏渐变遮罩盖住上缘
             .zIndex(1f)
-            .onGloballyPositioned { containerTopRootY.intValue = it.positionInRoot().y.roundToInt() },
+            .onGloballyPositioned { containerTopRootY.floatValue = it.positionInRoot().y },
     ) {
-        // 定位与内容分开：定位层跟着锚点重组，搜索框走稳定插槽不被带着重组
+        // 定位与内容分开：位移只让定位层的绘制块失效，搜索框走稳定插槽不被带着重组/重排
         PinnedSearchBar(anchorRootY = anchorRootY, containerTopRootY = containerTopRootY) {
             SheetSearchField(
                 value = value,
@@ -469,32 +469,37 @@ private fun BoxScope.ShiguangSearchOverlay(
  * 折到顶栏下缘之后被 [shiguangSearchPinOffsetPx] 钳在顶栏下缘上方 [ShiguangSearchPinLift]
  * 处贴住。
  *
- * 两个坐标都在这里才读：读在上层会把整张浮层（连同列表 item provider）拖进逐帧重组。
- * 搜索框经 [content] 插槽传入，本层重组时插槽实例不变，输入框不会跟着滚动手势重组。
+ * 两个坐标都在这个绘制块里才读：读在上层会把整张浮层（连同列表 item provider）拖进
+ * 逐帧重组；且坐标要到布局末尾才写入，组合阶段读到的值晚一帧，快速滑动时条会落后内容。
+ * 绘制块与布局同帧、写入后立刻可见，位移只改图层平移，不触发重组与重排。
+ * 搜索框经 [content] 插槽传入，滚动手势期间本层不重组，输入框状态不受影响。
  */
 @Composable
 private fun BoxScope.PinnedSearchBar(
-    anchorRootY: MutableIntState,
-    containerTopRootY: MutableIntState,
+    anchorRootY: MutableFloatState,
+    containerTopRootY: MutableFloatState,
     content: @Composable () -> Unit,
 ) {
     val density = LocalDensity.current
     val topBarPx = with(density) { OverlaySheetTopBarHeight.roundToPx() }
     // 钉住位置在顶栏下缘之上再抬 5dp：换算成 px 交给纯逻辑，规则本身在测试里锁住
     val pinLiftPx = with(density) { ShiguangSearchPinLift.roundToPx() }
-    val pinOffsetPx = shiguangSearchPinOffsetPx(
-        anchorRootY = anchorRootY.intValue,
-        containerTopRootY = containerTopRootY.intValue,
-        topBarPx = topBarPx,
-        pinLiftPx = pinLiftPx,
-    )
     Box(
         modifier = Modifier
             .align(Alignment.TopCenter)
             .fillMaxWidth()
             // 横向与列表内容同边距（LazyColumn contentPadding 的水平侧）
             .padding(horizontal = PageHorizontalSpacing)
-            .offset(y = with(density) { pinOffsetPx.toDp() }),
+            // 位移在绘制阶段读取、只改图层平移：滚动时既不重组也不重排搜索条，
+            // 又与占位项同帧取到最新坐标（读在组合阶段会晚一帧，滑动发顿）
+            .graphicsLayer {
+                translationY = shiguangSearchPinOffsetPx(
+                    anchorRootY = anchorRootY.floatValue,
+                    containerTopRootY = containerTopRootY.floatValue,
+                    topBarPx = topBarPx,
+                    pinLiftPx = pinLiftPx,
+                )
+            },
     ) {
         content()
     }
@@ -510,13 +515,15 @@ private fun BoxScope.PinnedSearchBar(
  * 不再上移。
  *
  * 只做一次减法、不掺任何滚动状态的推算：这一项在屏幕上到哪儿，条就到哪儿。
+ * 入参与返回值都用 Float（px）：占位项的位置可以是小数像素，取整会让快速滑动时
+ * 逐帧出现 ±1px 的跳动。
  */
 internal fun shiguangSearchPinOffsetPx(
-    anchorRootY: Int,
-    containerTopRootY: Int,
+    anchorRootY: Float,
+    containerTopRootY: Float,
     topBarPx: Int,
     pinLiftPx: Int,
-): Int = (anchorRootY - containerTopRootY).coerceAtLeast(topBarPx - pinLiftPx)
+): Float = (anchorRootY - containerTopRootY).coerceAtLeast((topBarPx - pinLiftPx).toFloat())
 
 /** 副行：描述优先；多适配学校前置适配名；都缺时退回适配 id，保证行不空 */
 private fun adapterSecondaryText(adapter: ShiguangAdapter, showAdapterName: Boolean): String {
