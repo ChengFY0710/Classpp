@@ -30,8 +30,9 @@ import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
  * Wakeup 入口再叠一层输入浮层（[WakeupImportSheet]），均由调用方挂载；盖上来时本浮层
  * 经 covered 缩小后退。
  *
- * [onImportSchedule] 始终可用：活跃学校未实现教务导入时入口仍显示，点开后的浮层行为
- * 与原来一致（不额外加「未适配」说明）；拾光入口同样始终保留。
+ * [onImportSchedule] 始终可用：活跃学校未实现教务导入时入口仍显示，浮层内以「未适配」
+ * 横幅说明并拦截确认（`SchoolImportSheet` 的 importBlockedReason，由调用方判定）；
+ * 拾光入口同样始终保留，未适配的学校可直接走拾光。
  *
  * 顶栏只有右侧「关闭」胶囊（confirmLabel = null 时自动右对齐、文字在前图标在后）；
  * 列表无输入框，键盘不必让位（IgnoreIme）。

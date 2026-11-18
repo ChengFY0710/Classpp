@@ -546,7 +546,9 @@ fun ScheduleScreen(
             val aiWebTransition = rememberPageOverlayTransitionState()
             val schoolWebTransition = rememberPageOverlayTransitionState()
             // 活跃学校会话（fallback flow 保证 collectAsState 无条件调用，同设置页）：
-            // 教务导入是可选能力——`scheduleImport == null` = 该校不实现，入口隐藏
+            // 教务导入是可选能力——`scheduleImport == null` = 该校不实现。入口仍始终显示
+            //（浮层内以「未适配」横幅说明并拦截确认，见 schoolImportBlockedText），
+            // 不实现的学校照旧可以用同卡里的拾光入口
             val fallbackSchoolSlot = remember { MutableStateFlow<SessionSlot>(SessionSlot.Loading) }
             val activeSchoolSlot by
                 (schools?.activeSession ?: fallbackSchoolSlot).collectAsState()
@@ -610,12 +612,20 @@ fun ScheduleScreen(
                 webPageTransition ?: LocalPageOverlayTransform.current
             // 未连接不额外加横幅：浮层账号行已是「未连接」，与改造前视觉一致；
             // 网页方式导入可用时不显示「不支持」横幅（改用课表页入口）；其余两类给出
-            // 说明并拦截确认
+            // 说明并拦截确认。
+            // 会话已就绪、但该校根本没声明 SCHEDULE_IMPORT（scheduleImport 槽位为 null）时
+            // 同样要说明：入口现在始终显示，缺这条横幅的话浮层里既没有学期列表、也没有任何
+            // 解释，确认胶囊永久禁用，用户只能对着空卡猜。Loading 不判定（会话就绪后
+            // 浮层处的 LaunchedEffect 会重拉学期），Failed 也不判定（账号行已显示未连接，
+            // 会话装配失败不等于学校未适配，不下结论）
+            val schoolImportNotAdapted =
+                activeSchoolSlot is SessionSlot.Ready && schoolScheduleImport == null
             val schoolImportBlockedText: String? = when {
                 schoolWebViewImportMode -> null
                 schoolImportBlockedReason == ImportBlockReason.NoCredentials ||
                     schoolImportBlockedReason == ImportBlockReason.Unsupported ->
                     stringResource(R.string.sync_import_unsupported)
+                schoolImportNotAdapted -> stringResource(R.string.sync_import_unavailable)
                 else -> null
             }
             // 教务导入浮层「账号与同步」：收起整串浮层（教务导入 → 导入 → 切换），编辑态取消
