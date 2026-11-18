@@ -3,6 +3,7 @@ package com.fangyi.classpp.data.shiguang
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -29,9 +30,11 @@ class ShiguangCatalogTest {
         val fetcher = FakeFetcher(ShiguangTestFixtures.indexBytes())
         val catalog = ShiguangCatalog(fetcher, temp.root)
 
+        assertFalse(catalog.hasCache())
         val fresh = catalog.refresh()
         assertEquals(listOf("CQU"), fresh!!.map { it.adapterId })
         assertEquals(listOf(ShiguangWarehouseConfig.INDEX_URL), fetcher.urls)
+        assertTrue(catalog.hasCache())
         assertTrue(File(temp.root, ShiguangWarehouseConfig.INDEX_CACHE_FILE).isFile)
 
         val cached = catalog.loadCached()
@@ -63,7 +66,33 @@ class ShiguangCatalogTest {
         File(temp.root, ShiguangWarehouseConfig.INDEX_CACHE_FILE)
             .writeBytes(ShiguangTestFixtures.indexBytes(protocolVersion = 3))
         val catalog = ShiguangCatalog(FakeFetcher(null), temp.root)
+        assertFalse(catalog.hasCache())
         assertTrue(catalog.loadCached().isEmpty())
+    }
+
+    @Test
+    fun `empty but valid cache still counts as cached`() = runBlocking {
+        val catalog = ShiguangCatalog(
+            FakeFetcher(ShiguangTestFixtures.indexBytes(schools = emptyList())),
+            temp.root,
+        )
+        assertFalse(catalog.hasCache())
+        assertTrue(catalog.refresh()!!.isEmpty())
+        // 空列表也是成功拉取过的索引：后续打开不应再自动联网
+        assertTrue(catalog.hasCache())
+        assertTrue(catalog.loadCached().isEmpty())
+    }
+
+    @Test
+    fun `initial fetch marker is one-shot and survives restart`() = runBlocking {
+        val catalog = ShiguangCatalog(FakeFetcher(null), temp.root)
+        assertFalse(catalog.hasInitialFetchAttempted())
+
+        catalog.markInitialFetchAttempted()
+        assertTrue(catalog.hasInitialFetchAttempted())
+
+        val restarted = ShiguangCatalog(FakeFetcher(null), temp.root)
+        assertTrue(restarted.hasInitialFetchAttempted())
     }
 
     @Test

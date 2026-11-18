@@ -693,6 +693,11 @@
     <string name="shiguang_sheet_header_desc">Adapter scripts come from the open-source Shiguang timetable warehouse. Pick a school and sign in to its academic system, then import</string>
     <string name="shiguang_search_placeholder">Search school or adapter</string>
     <string name="shiguang_search_clear">Clear search</string>
+    <string name="shiguang_refresh_label">Update Adapter List</string>
+    <string name="shiguang_refresh_desc">Fetch the latest schools and adapters</string>
+    <string name="shiguang_refreshing">Updating the adapter list…</string>
+    <string name="shiguang_refresh_done">Adapter list updated</string>
+    <string name="shiguang_refresh_failed">Couldn\'t update the adapter list. Check your connection and retry</string>
     <string name="shiguang_loading">Loading the adapter list…</string>
     <string name="shiguang_load_failed_title">Couldn\'t load the adapter list</string>
     <string name="shiguang_load_failed_desc">Check your connection and retry</string>

@@ -83,6 +83,29 @@ internal class ShiguangCatalog(
         readCachedIndex()?.toAdapters().orEmpty()
     }
 
+    /**
+     * 本地是否已有可解析的索引缓存。入口据此决定「首次打开自动拉取 / 之后只用缓存」：
+     * 缓存存在（即使解析出 0 个适配）就不再自动联网，更新只由浮层的「更新适配列表」触发。
+     */
+    suspend fun hasCache(): Boolean = withContext(Dispatchers.IO) {
+        readCachedIndex() != null
+    }
+
+    /** 是否已经执行过首次自动拉取（成功或失败都算，失败也不在下次打开时自动重试） */
+    suspend fun hasInitialFetchAttempted(): Boolean = withContext(Dispatchers.IO) {
+        File(cacheDir, ShiguangWarehouseConfig.INITIAL_FETCH_MARKER).isFile
+    }
+
+    /** 在首次自动拉取前落标记：即使本次失败，后续打开也只走手动更新 */
+    suspend fun markInitialFetchAttempted() {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                cacheDir.mkdirs()
+                File(cacheDir, ShiguangWarehouseConfig.INITIAL_FETCH_MARKER).writeText("1")
+            }
+        }
+    }
+
     suspend fun refresh(): List<ShiguangAdapter>? = withContext(Dispatchers.IO) {
         val bytes = try {
             fetcher.fetch(ShiguangWarehouseConfig.INDEX_URL)

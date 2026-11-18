@@ -24,6 +24,9 @@ internal object ShiguangWarehouseConfig {
     const val INDEX_CACHE_FILE = "school_index.pb"
     const val ADAPTER_CACHE_DIR = "adapters"
 
+    /** 首次自动拉取标记：只在从未成功/尝试过拉取时自动联网一次，之后只能手动更新 */
+    const val INITIAL_FETCH_MARKER = "initial_fetch_attempted"
+
     /** 下载上限：索引与脚本实际都远小于 1MB，超限视为异常/防盗链响应 */
     const val MAX_BYTES = 8 * 1024 * 1024
 

@@ -7,7 +7,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -83,7 +82,7 @@ internal fun ShiguangImportFlow(
     var adapters by remember { mutableStateOf<List<ShiguangAdapter>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var loadFailed by remember { mutableStateOf(false) }
-    var reloadToken by remember { mutableIntStateOf(0) }
+    var refreshing by remember { mutableStateOf(false) }
 
     var pickedAdapter by remember { mutableStateOf<ShiguangAdapter?>(null) }
     var scriptLoading by remember { mutableStateOf(false) }
@@ -125,21 +124,33 @@ internal fun ShiguangImportFlow(
 
     val scriptLoadingText = stringResource(R.string.shiguang_script_loading)
     val scriptFailedText = stringResource(R.string.shiguang_script_failed)
+    val refreshLoadingText = stringResource(R.string.shiguang_refreshing)
+    val refreshDoneText = stringResource(R.string.shiguang_refresh_done)
+    val refreshFailedText = stringResource(R.string.shiguang_refresh_failed)
     val noCoursesText = stringResource(R.string.shiguang_no_courses)
     val webFailedText = stringResource(R.string.shiguang_web_failed)
     val defaultName = stringResource(R.string.shiguang_default_name)
     val confirmTitle = stringResource(R.string.shiguang_confirm_title)
 
-    // 学校列表：先缓存后网络；网络失败无缓存才进入错误态
-    LaunchedEffect(visible, reloadToken) {
+    // 学校列表：只有「从未拉取过」的首次打开才自动联网一次；之后（包括首次失败）
+    // 一律读缓存 / 错误态，更新只由浮层「更新适配列表」手动触发
+    LaunchedEffect(visible) {
         if (!visible) return@LaunchedEffect
-        loading = adapters.isEmpty()
-        loadFailed = false
-        val cached = catalog.loadCached()
-        if (cached.isNotEmpty()) {
-            adapters = cached
+        if (catalog.hasCache()) {
+            adapters = catalog.loadCached()
             loading = false
+            loadFailed = false
+            return@LaunchedEffect
         }
+        if (catalog.hasInitialFetchAttempted()) {
+            loading = false
+            loadFailed = true
+            return@LaunchedEffect
+        }
+        // 先置 loading，避免标记/网络开始前的极短窗口里手动更新并发再拉一次
+        loading = true
+        loadFailed = false
+        catalog.markInitialFetchAttempted()
         val fresh = catalog.refresh()
         loading = false
         if (fresh != null) {
@@ -147,6 +158,28 @@ internal fun ShiguangImportFlow(
             loadFailed = false
         } else {
             loadFailed = true
+        }
+    }
+
+    // 手动更新：首次自动拉取之外唯一的联网入口；失败保留现有列表并提示
+    fun refreshCatalog() {
+        if (refreshing || loading) return
+        refreshing = true
+        scope.launch {
+            try {
+                val fresh = catalog.refresh()
+                if (!visibleState.value) return@launch
+                if (fresh != null) {
+                    adapters = fresh
+                    loadFailed = false
+                    AppToasts.show(context, refreshDoneText)
+                } else {
+                    loadFailed = true
+                    AppToasts.show(context, refreshFailedText)
+                }
+            } finally {
+                refreshing = false
+            }
         }
     }
 
@@ -221,16 +254,17 @@ internal fun ShiguangImportFlow(
                 adapters = adapters,
                 loading = loading,
                 loadFailed = loadFailed,
-                onRetry = { reloadToken++ },
+                onRefresh = { refreshCatalog() },
                 onPick = onPick,
             )
         }
     }
 
-    // 脚本下载中：盖住学校列表；放在网页层之前，脚本就绪开页时不会压在新页面上
+    // 脚本下载 / 手动更新适配列表期间盖住学校列表；放在网页层之前，
+    // 脚本就绪开页时不会压在新页面上
     LoadingOverlay(
-        visible = scriptLoading,
-        message = scriptLoadingText,
+        visible = refreshing || scriptLoading,
+        message = if (refreshing) refreshLoadingText else scriptLoadingText,
     )
 
     PageSlideOverlay(

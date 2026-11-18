@@ -43,6 +43,8 @@ import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.EmptyState
 import com.fangyi.classpp.ui.components.EmptyStateActionButton
 import com.fangyi.classpp.ui.components.OverlaySheet
+import com.fangyi.classpp.ui.components.SettingsCard
+import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SettingsInfoHeaderCard
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
@@ -74,7 +76,7 @@ internal fun ShiguangImportSheet(
     adapters: List<ShiguangAdapter>,
     loading: Boolean,
     loadFailed: Boolean,
-    onRetry: () -> Unit,
+    onRefresh: () -> Unit,
     onPick: (ShiguangAdapter) -> Unit,
     covered: Boolean = false,
 ) {
@@ -129,6 +131,16 @@ internal fun ShiguangImportSheet(
                     title = stringResource(R.string.shiguang_sheet_header_title),
                     description = stringResource(R.string.shiguang_sheet_header_desc),
                 )
+                // 适配列表只由用户手动更新：首次打开自动拉取后，后续打开只读缓存
+                SettingsCard(
+                    items = listOf(
+                        SettingsCardItem.Nav(
+                            label = stringResource(R.string.shiguang_refresh_label),
+                            description = stringResource(R.string.shiguang_refresh_desc),
+                            onClick = onRefresh,
+                        ),
+                    ),
+                )
             }
             CardSection {
                 ShiguangSearchField(
@@ -170,7 +182,7 @@ internal fun ShiguangImportSheet(
                             action = {
                                 EmptyStateActionButton(
                                     label = stringResource(R.string.shiguang_retry),
-                                    onClick = onRetry,
+                                    onClick = onRefresh,
                                 )
                             },
                         )
