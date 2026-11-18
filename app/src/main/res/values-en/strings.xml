@@ -311,7 +311,6 @@
     <!-- School selection (multi-school): shared by the settings section title and the
          picker sheet title; a single registered school still uses the same sheet -->
     <string name="school_picker_title">Choose school</string>
-    <string name="school_picker_all_schools">All schools</string>
     <string name="school_capability_todo_sync">Todo sync</string>
     <string name="school_capability_schedule_import">Timetable import</string>
     <string name="school_switch_failed">Failed to switch school. Try again.</string>
@@ -706,7 +705,6 @@
     <string name="shiguang_empty_title">No matching schools</string>
     <string name="shiguang_empty_desc">Try a different keyword</string>
     <string name="shiguang_retry">Retry</string>
-    <string name="shiguang_list_title">All schools</string>
     <string name="shiguang_script_loading">Loading the adapter script…</string>
     <string name="shiguang_script_failed">Couldn\'t load the adapter script. Check your connection and retry</string>
     <string name="shiguang_web_hint">Sign in, open your timetable page, then tap Execute Import below</string>

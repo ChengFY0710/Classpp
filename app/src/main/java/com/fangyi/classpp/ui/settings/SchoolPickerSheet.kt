@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.sync.Capability
 import com.fangyi.classpp.data.sync.SchoolSpec
+import com.fangyi.classpp.ui.components.AlphabetOtherLetter
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SettingsCard
@@ -28,6 +29,8 @@ import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTopAction
+import com.fangyi.classpp.ui.components.firstLatinLetter
+import com.fangyi.classpp.ui.components.groupInAlphabetOrder
 import com.fangyi.classpp.ui.schools.schoolText
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
@@ -37,6 +40,9 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
 /**
  * 学校选择浮层（指导 §3.2）：列出 [schools] 注册序，当前学校行文字主色 + 行尾主题色对勾。
  *
+ * - 学校行按显示名首字母分组（A→Z，取不到拉丁首字母的归入 `#` 排在最后），
+ *   每组用独立的 [CardSection]，组标题即字母，与拾光教务导入页同一套字母分组；
+ *   组内保持注册序（首个学校仍是默认活跃学校，分组不改变切校语义）；
  * - 点当前学校 → 仅关浮层；点他校 → 回调 [onSelect]，切换与持久化由宿主（注册表）负责；
  * - 行规格沿用浮层双行列表卡统一规格：72dp 卡高、默认内距、`CardSection` 默认行距、副行单行省略；
  *   副行 = 能力摘要（待办同步 · 教务课表导入）；
@@ -59,6 +65,18 @@ internal fun SchoolPickerSheet(
     BackHandler(enabled = visible) {
         onDismiss()
     }
+
+    // 学校行按显示名首字母分组：名称走 schoolText 随系统语言切换，中文名没有拉丁字母时
+    // 退回学校 id 的首字母（id 按拼音缩写约定）；组标题只由字母决定，与注册序无关
+    val groups = groupInAlphabetOrder(
+        items = schools.map { spec ->
+            SchoolPickerEntry(
+                spec = spec,
+                letter = schoolGroupLetter(schoolText(spec.displayName), spec.id),
+            )
+        },
+        letterOf = { it.letter },
+    )
 
     OverlaySheet(
         title = stringResource(R.string.school_picker_title),
@@ -89,15 +107,16 @@ internal fun SchoolPickerSheet(
                     ),
                 )
             }
-            CardSection(
-                title = stringResource(R.string.school_picker_all_schools),
-            ) {
-                schools.forEach { spec ->
-                    SchoolRow(
-                        spec = spec,
-                        selected = spec.id == activeSchoolId,
-                        onClick = { onSelect(spec.id) },
-                    )
+            // 每个字母一组：组标题即字母，组间沿用内容列统一的 18dp 节奏
+            groups.forEach { group ->
+                CardSection(title = group.letter) {
+                    group.items.forEach { entry ->
+                        SchoolRow(
+                            spec = entry.spec,
+                            selected = entry.spec.id == activeSchoolId,
+                            onClick = { onSelect(entry.spec.id) },
+                        )
+                    }
                 }
             }
         }
@@ -160,6 +179,22 @@ private fun capabilitySummary(spec: SchoolSpec): String {
         }
     }
     return parts.joinToString(" · ")
+}
+
+/** 分组用的中间行：学校声明 + 组标题字母（名称解析只能在组合期做，先落到这里再分组） */
+private data class SchoolPickerEntry(
+    val spec: SchoolSpec,
+    val letter: String,
+)
+
+/**
+ * 学校行的组标题字母：优先取当前显示名里的首个拉丁字母（英文显示名直接给出，
+ * 如 Xiamen University → X）；中文显示名没有拉丁字母时退回学校 id 的首字母
+ *（id 按拼音缩写约定，如 xmu → X）；都没有则归入 `#`。
+ */
+internal fun schoolGroupLetter(displayName: String, schoolId: String): String {
+    val letter = displayName.firstLatinLetter() ?: schoolId.firstLatinLetter()
+    return letter?.uppercaseChar()?.toString() ?: AlphabetOtherLetter
 }
 
 /** 双行列表卡统一卡高 */

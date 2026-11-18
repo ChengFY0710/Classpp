@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.shiguang.ShiguangAdapter
+import com.fangyi.classpp.ui.components.AlphabetGroup
+import com.fangyi.classpp.ui.components.AlphabetOtherLetter
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.CardSectionTitle
 import com.fangyi.classpp.ui.components.EmptyState
@@ -58,6 +60,8 @@ import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetSearchField
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.TopBarHeight as OverlaySheetTopBarHeight
+import com.fangyi.classpp.ui.components.firstLatinLetter
+import com.fangyi.classpp.ui.components.groupInAlphabetOrder
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.CardSectionTitleSpacing
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
@@ -72,7 +76,9 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  *
  * 纯 UI：索引拉取、缓存回退、脚本下载、WebView 导入都由 [ShiguangImportFlow] 负责。
  * 列表是「学校 + 适配」扁平结构（一个学校有本科/研究生多个适配时会出现多行），
- * 搜索匹配学校名/适配名/描述/首字母；点行即选中适配。
+ * 按学校名称首字母分组（A→Z，组标题即字母；取不到拉丁首字母的归入 `#` 排在最后），
+ * 组内保持索引顺序；搜索匹配学校名/适配名/描述/首字母，匹配结果同样按字母分组；
+ * 点行即选中适配。
  *
  * 整页是 LazyColumn（`OverlaySheet` 的 `lazyContent` 模式）：说明卡、搜索框占位、列表
  * 各自作为 lazy item，打开浮层只组合视口内的行。**搜索/过滤始终遍历完整 `adapters`**，
@@ -135,6 +141,10 @@ internal fun ShiguangImportSheet(
     val adapterCountBySchool = remember(adapters) {
         adapters.groupingBy { it.schoolId }.eachCount()
     }
+    // 过滤结果按首字母分组：组标题与行各自是 lazy item（与 CardSection 的「标题 + 卡片」
+    // 排版逐像素一致），因此这里只算分组、不组合；搜索词变化时随 filtered 一起重算，
+    // 没有命中的字母整组不出现
+    val groups = remember(filtered) { groupShiguangAdapters(filtered) }
     // 行样式按主题构造一次后下传：300 行不再各自 .copy()，行参数也因此保持相等、
     // 过滤时更容易整行跳过重组
     val colorScheme = MaterialTheme.colorScheme
@@ -298,19 +308,9 @@ internal fun ShiguangImportSheet(
                             }
                         }
                     }
-                    item(key = ShiguangListTitleKey) {
-                        CardSectionTitle(
-                            text = stringResource(R.string.shiguang_list_title),
-                            modifier = Modifier.padding(
-                                // 缓存提示与列表是两个分段，中间同为 18dp
-                                top = SheetSectionSpacingBetween,
-                                bottom = CardSectionTitleSpacing,
-                            ),
-                        )
-                    }
                     if (filtered.isEmpty()) {
                         item(key = ShiguangNoResultKey) {
-                            CardSection {
+                            CardSection(modifier = Modifier.padding(top = SheetSectionSpacingBetween)) {
                                 EmptyState(
                                     icon = R.drawable.ic_search,
                                     iconTint = MaterialTheme.classppColors.secondaryText,
@@ -320,22 +320,45 @@ internal fun ShiguangImportSheet(
                             }
                         }
                     } else {
-                        // 行按适配身份 key（LazyColumn 据此复用行状态）；过滤仍在完整
-                        // adapters 上执行，搜索输入只影响可见行的重组
-                        items(items = filtered, key = { it.key }) { adapter ->
-                            ShiguangAdapterRow(
-                                adapter = adapter,
-                                showAdapterName = (adapterCountBySchool[adapter.schoolId] ?: 0) > 1,
-                                titleStyle = rowTitleStyle,
-                                descriptionStyle = rowDescriptionStyle,
-                                modifier = Modifier.padding(bottom = CardSectionSpacing),
-                                onClick = remember(adapter) {
-                                    {
-                                        focusManager.clearFocus()
-                                        currentOnPick.value(adapter)
-                                    }
-                                },
-                            )
+                        // 每个字母一组：标题与行都是独立 lazy item，间距按 CardSection 的
+                        // 排版语义拆开——标题承担组间 18dp 与「标题↔首卡」8dp，行承担
+                        // 「卡↔卡」10dp；组末行不再垫 10dp，否则下一组标题前会叠成 28dp
+                        groups.forEach { group ->
+                            item(key = ShiguangGroupKeyPrefix + group.letter) {
+                                CardSectionTitle(
+                                    text = group.letter,
+                                    modifier = Modifier.padding(
+                                        top = SheetSectionSpacingBetween,
+                                        bottom = CardSectionTitleSpacing,
+                                    ),
+                                )
+                            }
+                            // 行按适配身份 key（LazyColumn 据此复用行状态）；过滤仍在完整
+                            // adapters 上执行，搜索输入只影响可见行的重组
+                            itemsIndexed(
+                                items = group.items,
+                                key = { _, adapter -> adapter.key },
+                            ) { index, adapter ->
+                                ShiguangAdapterRow(
+                                    adapter = adapter,
+                                    showAdapterName = (adapterCountBySchool[adapter.schoolId] ?: 0) > 1,
+                                    titleStyle = rowTitleStyle,
+                                    descriptionStyle = rowDescriptionStyle,
+                                    modifier = Modifier.padding(
+                                        bottom = if (index == group.items.lastIndex) {
+                                            0.dp
+                                        } else {
+                                            CardSectionSpacing
+                                        },
+                                    ),
+                                    onClick = remember(adapter) {
+                                        {
+                                            focusManager.clearFocus()
+                                            currentOnPick.value(adapter)
+                                        }
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -352,7 +375,7 @@ private fun ShiguangAdapterRow(
     // 样式由列表统一构造后传入：行本身不做 .copy()，行参数也更容易保持不变而跳过重组
     titleStyle: TextStyle,
     descriptionStyle: TextStyle,
-    // 行间距由 lazy item 的调用点给出（每行底部 CardSectionSpacing）
+    // 行间距由 lazy item 的调用点给出（组内每行底部 CardSectionSpacing，组末行不垫）
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -499,6 +522,24 @@ private fun adapterSecondaryText(adapter: ShiguangAdapter, showAdapterName: Bool
     return text
 }
 
+/**
+ * 按学校名称首字母分组：字母 A→Z 依次排列，取不到拉丁首字母的归入 `#` 排在最后；
+ * 组内保持入参顺序（索引已按 initial/名称排好）。组内行是完整的「学校 + 适配」行，
+ * 同一学校有多个适配时自然落在相邻位置。
+ */
+internal fun groupShiguangAdapters(adapters: List<ShiguangAdapter>): List<AlphabetGroup<ShiguangAdapter>> =
+    groupInAlphabetOrder(adapters, ::shiguangGroupLetter)
+
+/**
+ * 单个适配的组标题字母：优先取 `initial`（上游按名称拼音给出的首字母），
+ * `initial` 没有拉丁字母时退回学校名的拉丁首字母；都没有则归入 `#`。
+ * 大小写与前后空白都归一，`CQU` 这类多字符 initial 取第一个字母。
+ */
+internal fun shiguangGroupLetter(adapter: ShiguangAdapter): String {
+    val letter = adapter.initial.firstLatinLetter() ?: adapter.schoolName.firstLatinLetter()
+    return letter?.uppercaseChar()?.toString() ?: AlphabetOtherLetter
+}
+
 /** 搜索串的字段分隔符：避免「学校名尾 + 学校 id 头」拼出跨字段的假命中 */
 private const val SearchKeySeparator = "\u0000"
 
@@ -509,7 +550,7 @@ private const val ShiguangLoadingKey = "shiguang_loading"
 private const val ShiguangLoadFailedKey = "shiguang_load_failed"
 private const val ShiguangEmptyKey = "shiguang_empty"
 private const val ShiguangCachedBannerKey = "shiguang_cached_banner"
-private const val ShiguangListTitleKey = "shiguang_list_title"
+private const val ShiguangGroupKeyPrefix = "shiguang_group_"
 private const val ShiguangNoResultKey = "shiguang_no_result"
 
 /** 双行列表卡统一卡高（同学校选择浮层） */
