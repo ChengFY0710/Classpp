@@ -131,6 +131,32 @@ private fun SheetTextFieldGroupPreview() = ClassppTheme {
 
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
 @Composable
+private fun SheetSearchFieldPreview() = ClassppTheme {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // 空值：灰色占位文字、无清空钮；点入后蓝色聚焦描边生长
+        SheetSearchField(
+            value = "",
+            onValueChange = {},
+            placeholder = "搜索学校或适配名称",
+            clearContentDescription = "清除搜索",
+        )
+        // 有值：蓝色输入文字 + 右侧清空钮（按压圆内提亮放大）
+        SheetSearchField(
+            value = "厦门大学",
+            onValueChange = {},
+            placeholder = "搜索学校或适配名称",
+            clearContentDescription = "清除搜索",
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
 private fun RowChoiceCardPreview() = ClassppTheme {
     Column(
         modifier = Modifier

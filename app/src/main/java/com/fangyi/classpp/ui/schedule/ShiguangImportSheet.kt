@@ -1,10 +1,6 @@
 package com.fangyi.classpp.ui.schedule
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,11 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,13 +26,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -58,12 +46,11 @@ import com.fangyi.classpp.ui.components.SettingsInfoHeaderCard
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetInfoBanner
+import com.fangyi.classpp.ui.components.SheetSearchField
 import com.fangyi.classpp.ui.components.SheetTopAction
-import com.fangyi.classpp.ui.components.imeFieldTracking
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.CardSectionTitleSpacing
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
-import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -196,10 +183,11 @@ internal fun ShiguangImportSheet(
             // 列表标题与行从它下方滚过；钉住的只有搜索框本身，不垫通栏底色
             stickyHeader(key = ShiguangSearchKey) {
                 ShiguangStickySearchHeader(listState = listState) {
-                    ShiguangSearchField(
+                    SheetSearchField(
                         value = query,
                         onValueChange = { query = it },
                         placeholder = stringResource(R.string.shiguang_search_placeholder),
+                        clearContentDescription = stringResource(R.string.shiguang_search_clear),
                     )
                 }
             }
@@ -407,83 +395,6 @@ private fun adapterSecondaryText(adapter: ShiguangAdapter, showAdapterName: Bool
     return text
 }
 
-/** 搜索框：白底圆角、左对齐输入；空白时显示占位文案，有内容时右侧给清除按钮 */
-@Composable
-private fun ShiguangSearchField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    placeholder: String,
-) {
-    val focusManager = LocalFocusManager.current
-    val clearInteraction = remember { MutableInteractionSource() }
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = ShiguangSearchHeight)
-            .clip(SheetCardShape)
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                painter = painterResource(R.drawable.ic_search),
-                contentDescription = null,
-                tint = MaterialTheme.classppColors.secondaryText,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                textStyle = ClassppTextTokens.secondaryTextLarge.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
-                modifier = Modifier
-                    .weight(1f)
-                    .imeFieldTracking(),
-                decorationBox = { innerTextField ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (value.isEmpty()) {
-                            Text(
-                                text = placeholder,
-                                style = MaterialTheme.classppTextStyles.fieldPlaceholder,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        innerTextField()
-                    }
-                },
-            )
-            if (value.isNotEmpty()) {
-                Spacer(Modifier.width(4.dp))
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clickable(
-                            interactionSource = clearInteraction,
-                            indication = null,
-                            onClick = { onValueChange("") },
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_dismiss_circle),
-                        contentDescription = stringResource(R.string.shiguang_search_clear),
-                        tint = MaterialTheme.classppColors.secondaryText,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
 /** 搜索串的字段分隔符：避免「学校名尾 + 学校 id 头」拼出跨字段的假命中 */
 private const val SearchKeySeparator = "\u0000"
 
@@ -499,6 +410,3 @@ private const val ShiguangNoResultKey = "shiguang_no_result"
 
 /** 双行列表卡统一卡高（同学校选择浮层） */
 private val ShiguangRowHeight = 72.dp
-
-/** 搜索框高度：46dp 单行条（同 AI 网页地址栏） */
-private val ShiguangSearchHeight = 46.dp
