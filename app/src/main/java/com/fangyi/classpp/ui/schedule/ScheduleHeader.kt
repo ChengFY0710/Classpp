@@ -122,6 +122,13 @@ internal val CardShadowPadding = 16.dp
 /** 投影向下延伸最多，底部单独加大透明留白，防止被 Popup 窗口下缘裁切 */
 internal val CardShadowBottomPadding = 48.dp
 
+/**
+ * 周数选择弹窗专用的底部投影留白（其余三边仍用 [CardShadowPadding]）。
+ * 该弹窗投影 56dp 比菜单族（36dp）更重，底部需要比 [CardShadowBottomPadding] 更大的缓冲；
+ * 左右不能加宽——49dp 方格配 384dp 临界宽后水平余量只剩 1dp 边距，再加会破配套。
+ */
+internal val WeekPickerShadowBottomPadding = 60.dp
+
 internal val WeekPickerCellSpace = 8.dp // 周数选择器里小方块间距
 
 /**
@@ -753,7 +760,6 @@ private fun WeekPill(
         val density = LocalDensity.current
         val gapPx = with(density) { (WeekPickerGap - CardShadowPadding).roundToPx() }
         val shadowPaddingPx = with(density) { CardShadowPadding.toPx() }
-        val shadowBottomPaddingPx = with(density) { CardShadowBottomPadding.toPx() }
         // 缩放锚点跟随胶囊实际位置：定位回调存下「弹层落位 + 胶囊实际中心」快照
         // （胶囊会随头部展开/折叠移动，常量推算的固定锚点会脱靶），锚点在 draw 阶段
         // 读快照实时跟随——胶囊动到哪，锚点跟到哪
@@ -873,7 +879,7 @@ private fun WeekPickerCard(
 
 /**
  * 弹窗卡片外壳：[PopupGlassCard] 共享配方（投影 / 毛玻璃 / 分层动画契约都在那里，
- * 参数为 SettingsCardShape、45dp 投影、20% 黑影）+ 周数网格内容；四周
+ * 参数为 SettingsCardShape、56dp 投影、20% 黑影）+ 周数网格内容；四周
  * [CardShadowPadding] 透明留白容纳投影，避免被 Popup 窗口边界裁剪。
  * [hazeState] 非空时在白底之上叠加 Haze 毛玻璃（采样课表网格 hazeSource，跨窗口生效）。
  */
@@ -893,17 +899,17 @@ private fun WeekPickerCardShell(
 ) {
     PopupGlassCard(
         shape = SettingsCardShape,
-        shadowElevation = 45.dp,
+        shadowElevation = 56.dp,
         spotShadowColor = Color.Black.copy(alpha = 0.2f),
         hazeState = hazeState,
         // 投影留白垫在缩放图层之内、卡壳之外（裁切线 = Popup 窗口边缘）：左右上 16dp、
-        // 底部 48dp——45dp 柔影向下坠得最远，没有这层留白投影会整体画在窗口外被裁掉，
-        // 卡片落位也会偏高 16dp（gapPx 按「窗口含留白」反推）
+        // 底部 WeekPickerShadowBottomPadding 60dp——56dp 柔影向下坠得最远，没有这层留白
+        // 投影会整体画在窗口外被裁掉，卡片落位也会偏高 16dp（gapPx 按「窗口含留白」反推）
         modifier = modifier.padding(
             start = CardShadowPadding,
             top = CardShadowPadding,
             end = CardShadowPadding,
-            bottom = CardShadowBottomPadding,
+            bottom = WeekPickerShadowBottomPadding,
         ),
         blurOrigin = blurOrigin,
         blurScale = blurScale,
