@@ -8,25 +8,21 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
@@ -38,6 +34,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.fangyi.classpp.R
+import com.fangyi.classpp.ui.components.EmptyState
 import com.fangyi.classpp.ui.components.MenuGravity
 import com.fangyi.classpp.ui.components.MenuPlacement
 import com.fangyi.classpp.ui.components.OverlaySheet
@@ -49,9 +46,7 @@ import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.pressFeedback
-import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.DayImageCellShape
-import com.fangyi.classpp.ui.theme.classppColors
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.Dispatchers
@@ -78,7 +73,7 @@ private const val MaxPickCount = 20
  * 背景——抽取逻辑（按当天日期做种子）在日程页，本浮层只管开关状态与落盘
  * （[onRandomChange]）；「壁纸视差」控制 01 态背景图随重力倾斜微移（[onParallaxChange]，
  * 逻辑在 ui.motion 的 TiltParallax）——两行都只管开关状态与落盘，效果本体不在浮层；
- * 无图可随机，空态不显示卡片。卡片与下方网格 16dp（对照设计稿）。
+ * 无图可随机，空态不显示卡片，只显示通用 [EmptyState]。卡片与下方网格 16dp（对照设计稿）。
  *
  * 顶栏两颗胶囊走 OverlaySheet 自带规格：左上「导入」= 确认胶囊（同「新建」按钮的
  * 蓝底加号），唤起系统相册（Photo Picker，[ActivityResultContracts.PickVisualMedia.ImageOnly]
@@ -166,7 +161,12 @@ fun DayImageSheet(
         modifier = modifier,
     ) {
         if (images.isEmpty()) {
-            DayImageEmptyHint(modifier = Modifier.fillMaxWidth())
+            // 空图库：复用通用空态（图标 + 标题 + 描述），引导从顶栏「导入」添加
+            EmptyState(
+                icon = R.drawable.ic_image,
+                title = stringResource(R.string.day_image_empty_title),
+                description = stringResource(R.string.day_image_empty_desc),
+            )
         } else {
             // 开关卡（与下方网格 16dp，对照设计稿）；卡片到顶栏的留白由
             // OverlaySheet 的 TopBarHeight 余量承担。整行可点切换，整行按压反馈铺满卡片
@@ -259,18 +259,6 @@ private fun DayImageGrid(
                 )
             }
         }
-    }
-}
-
-/** 空列表态：网格没有内容时给一条引导文案，否则浮层只剩顶栏一片空白 */
-@Composable
-private fun DayImageEmptyHint(modifier: Modifier = Modifier) {
-    Box(modifier = modifier.padding(top = 140.dp), contentAlignment = Alignment.TopCenter) {
-        Text(
-            text = stringResource(R.string.day_image_empty_hint),
-            style = ClassppTextTokens.emptyHintLarge,
-            color = MaterialTheme.classppColors.secondaryText,
-        )
     }
 }
 

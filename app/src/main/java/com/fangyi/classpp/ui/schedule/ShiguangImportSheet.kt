@@ -278,7 +278,6 @@ internal fun ShiguangImportSheet(
                     CardSection(modifier = Modifier.padding(top = SheetSectionSpacingBetween)) {
                         EmptyState(
                             icon = R.drawable.ic_alert,
-                            iconTint = MaterialTheme.colorScheme.error,
                             title = stringResource(R.string.shiguang_load_failed_title),
                             description = stringResource(R.string.shiguang_load_failed_desc),
                             action = {
@@ -294,7 +293,6 @@ internal fun ShiguangImportSheet(
                     CardSection(modifier = Modifier.padding(top = SheetSectionSpacingBetween)) {
                         EmptyState(
                             icon = R.drawable.ic_search,
-                            iconTint = MaterialTheme.classppColors.secondaryText,
                             title = stringResource(R.string.shiguang_empty_title),
                             description = stringResource(R.string.shiguang_empty_desc),
                         )
@@ -312,8 +310,7 @@ internal fun ShiguangImportSheet(
                         item(key = ShiguangNoResultKey) {
                             CardSection(modifier = Modifier.padding(top = SheetSectionSpacingBetween)) {
                                 EmptyState(
-                                    icon = R.drawable.ic_search,
-                                    iconTint = MaterialTheme.classppColors.secondaryText,
+                                    icon = R.drawable.ic_hat_graduation,
                                     title = stringResource(R.string.shiguang_empty_title),
                                     description = stringResource(R.string.shiguang_empty_desc),
                                 )

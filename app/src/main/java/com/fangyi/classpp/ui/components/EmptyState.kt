@@ -53,7 +53,8 @@ private val EmptyStateActionVerticalPadding = 10.dp
 /**
  * 通用空态块：居中图标 + 标题 + 描述，可在末尾附加一个操作（如引导按钮）。
  *
- * 纯展示：无背景、无点击；文案与图标由调用方传入，组件不内置任何文案。
+ * 纯展示：无背景、无点击；文案与图标由调用方传入，组件不内置任何文案。图标统一使用
+ * primary 着色，不开放按场景覆盖——空态之间保持同一视觉语言。
  * 排版固定为上下 48dp；图标 ↔ 标题、标题 ↔ 描述、描述 ↔ 操作三段间距分别由
  * [iconTitleSpacing]（默认 10dp）、[titleDescriptionSpacing]（默认 8dp）、
  * [descriptionActionSpacing]（默认 12dp）独立控制；描述多行时居中换行，左右各留 24dp。
@@ -65,7 +66,6 @@ fun EmptyState(
     title: String,
     description: String,
     modifier: Modifier = Modifier,
-    iconTint: Color = MaterialTheme.colorScheme.primary,
     iconTitleSpacing: Dp = EmptyStateIconTitleSpacing,
     titleDescriptionSpacing: Dp = EmptyStateTitleDescriptionSpacing,
     descriptionActionSpacing: Dp = EmptyStateDescriptionActionSpacing,
@@ -84,7 +84,7 @@ fun EmptyState(
             Icon(
                 painter = painterResource(icon),
                 contentDescription = null,
-                tint = iconTint,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(EmptyStateIconSize),
             )
             Spacer(Modifier.height(iconTitleSpacing))
