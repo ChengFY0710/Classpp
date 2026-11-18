@@ -35,7 +35,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
@@ -45,6 +44,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.shiguang.ShiguangAdapter
 import com.fangyi.classpp.ui.components.CardSection
@@ -81,7 +81,8 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  * 懒加载只影响渲染范围，不影响检索范围。
  *
  * 搜索框是 `stickyHeader`：未滚动时仍在说明卡下方，随内容上滑到顶栏下缘后钉住，
- * 钉住期间保持组合（焦点/光标/键盘状态不丢），列表标题与行从它下方滚过。
+ * 钉住期间保持组合（焦点/光标/键盘状态不丢），列表标题与行从它下方滚过。钉住的只有
+ * 搜索框本身：不垫通栏底色、不做渐变收边，列表内容照常从顶栏下缘渐隐滚过。
  *
  * 列表为空/加载失败/搜索无结果各有独立状态；`loadFailed` 且列表非空时只在顶部补一条
  * 「已显示缓存」提示，不打断选择。
@@ -192,7 +193,7 @@ internal fun ShiguangImportSheet(
                 }
             }
             // 搜索框：滚到顶栏下缘后钉住且保持组合（焦点/光标/键盘状态不丢），
-            // 列表标题与行从它下方滚过
+            // 列表标题与行从它下方滚过；钉住的只有搜索框本身，不垫通栏底色
             stickyHeader(key = ShiguangSearchKey) {
                 ShiguangStickySearchHeader(listState = listState) {
                     ShiguangSearchField(
@@ -204,8 +205,8 @@ internal fun ShiguangImportSheet(
             }
             when {
                 loading && adapters.isEmpty() -> item(key = ShiguangLoadingKey) {
-                    // 搜索条自带 12dp 渐变收边，这里再补 6dp，静止时仍是 18dp 分段间距
-                    CardSection(modifier = Modifier.padding(top = SectionAfterSearchSpacing)) {
+                    // 搜索框与下方内容同属两个分段：静止时保持 18dp 分段间距
+                    CardSection(modifier = Modifier.padding(top = SheetSectionSpacingBetween)) {
                         SheetCard {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -227,7 +228,7 @@ internal fun ShiguangImportSheet(
                     }
                 }
                 adapters.isEmpty() && loadFailed -> item(key = ShiguangLoadFailedKey) {
-                    CardSection(modifier = Modifier.padding(top = SectionAfterSearchSpacing)) {
+                    CardSection(modifier = Modifier.padding(top = SheetSectionSpacingBetween)) {
                         EmptyState(
                             icon = R.drawable.ic_alert,
                             iconTint = MaterialTheme.colorScheme.error,
@@ -243,7 +244,7 @@ internal fun ShiguangImportSheet(
                     }
                 }
                 adapters.isEmpty() -> item(key = ShiguangEmptyKey) {
-                    CardSection(modifier = Modifier.padding(top = SectionAfterSearchSpacing)) {
+                    CardSection(modifier = Modifier.padding(top = SheetSectionSpacingBetween)) {
                         EmptyState(
                             icon = R.drawable.ic_search,
                             iconTint = MaterialTheme.classppColors.secondaryText,
@@ -255,7 +256,7 @@ internal fun ShiguangImportSheet(
                 else -> {
                     if (loadFailed) {
                         item(key = ShiguangCachedBannerKey) {
-                            CardSection(modifier = Modifier.padding(top = SectionAfterSearchSpacing)) {
+                            CardSection(modifier = Modifier.padding(top = SheetSectionSpacingBetween)) {
                                 SheetInfoBanner(text = stringResource(R.string.shiguang_load_failed_cached))
                             }
                         }
@@ -264,13 +265,8 @@ internal fun ShiguangImportSheet(
                         CardSectionTitle(
                             text = stringResource(R.string.shiguang_list_title),
                             modifier = Modifier.padding(
-                                // 缓存提示与列表是两个分段：中间回到 18dp；没有提示时
-                                // 只有搜索条 12dp 收边 + 这里的 6dp
-                                top = if (loadFailed) {
-                                    SheetSectionSpacingBetween
-                                } else {
-                                    SectionAfterSearchSpacing
-                                },
+                                // 缓存提示与列表是两个分段，中间同为 18dp
+                                top = SheetSectionSpacingBetween,
                                 bottom = CardSectionTitleSpacing,
                             ),
                         )
@@ -361,15 +357,23 @@ private fun ShiguangAdapterRow(
  * offset < -TopBarHeight 后把 offset 夹住，补偿值稳定为 TopBarHeight，列表标题与行从
  * 搜索条下方滚过。
  *
- * 背景 = 卡片底色 + 底部 12dp 渐变收边：钉住时行从下方滚过不会透出/硬切；静止时与卡片
- * 同色，视觉零变化。收边占 12dp，紧随其后的 item 另补 6dp，合计仍是 18dp 分段间距。
+ * 只钉搜索框本身：不铺通栏底色、不做收边——列表内容照常从顶栏下缘渐隐滚过，搜索框
+ * 钉住后只由它自己的白底遮挡其矩形范围。搜索框与下方内容的 18dp 分段间距由后续 item
+ * 的顶部留白承担（见 lazyContent 中各 item 的 `top = SheetSectionSpacingBetween`），
+ * 静止时与原来逐像素一致，钉住时也不会带出一块背景色。
+ *
+ * zIndex 必须高于后续 item：视觉补偿从「搜索条到达顶栏下缘」就开始，而 LazyColumn 的
+ * sticky（包含「钉住项最后绘制」这条 z 序保证）要等整个头部滑出**视口顶端**、搜索条成为
+ * firstVisibleItem 后才生效——中间整整隔了一个顶栏高度（78dp）。这段窗口里搜索条还只是
+ * 普通 item，若不抬 zIndex，后面的分组标题与行会按 item 顺序画在钉住的搜索条之上，表现为
+ * 标题盖在搜索框上、内容穿插进搜索框。常驻 zIndex（不随钉住态切换）即可：未重叠时无
+ * 视觉差异，也避免钉住阈值处重组。
  */
 @Composable
 private fun ShiguangStickySearchHeader(
     listState: LazyListState,
     content: @Composable () -> Unit,
 ) {
-    val background = MaterialTheme.colorScheme.background
     // 滚动时 layoutInfo 逐帧变化，但派生值只在 offset 跨过 0 区间时变化；位移在放置阶段
     // 读取（offset 的 lambda 版本），不触发逐帧重组
     val offsetY by remember(listState) {
@@ -382,21 +386,10 @@ private fun ShiguangStickySearchHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .offset { IntOffset(0, offsetY) }
-            .background(background),
+            .zIndex(1f)
+            .offset { IntOffset(0, offsetY) },
     ) {
         content()
-        // 底部渐变收边：与顶栏遮罩同款做法（终点是背景色的透明，不发灰）
-        Spacer(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(SearchHeaderFadeHeight)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(background, background.copy(alpha = 0f)),
-                    ),
-                ),
-        )
     }
 }
 
@@ -493,12 +486,6 @@ private fun ShiguangSearchField(
 
 /** 搜索串的字段分隔符：避免「学校名尾 + 学校 id 头」拼出跨字段的假命中 */
 private const val SearchKeySeparator = "\u0000"
-
-/** sticky 搜索条底部渐变收边高度：钉住时列表行从这里淡入 */
-private val SearchHeaderFadeHeight = 12.dp
-
-/** 搜索条收边之外，下一分段再补的顶部间距：12dp 收边 + 6dp = 18dp 分段间距 */
-private val SectionAfterSearchSpacing = 6.dp
 
 // lazy item / stickyHeader 的稳定 key（也用于在 layoutInfo 里定位钉住的搜索条）
 private const val ShiguangIntroKey = "shiguang_intro"
