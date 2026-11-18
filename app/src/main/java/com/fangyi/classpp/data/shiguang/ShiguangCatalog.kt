@@ -68,28 +68,62 @@ internal fun ShiguangIndex.toAdapters(): List<ShiguangAdapter> = buildList {
 
 /**
  * 拾光索引的拉取与本地缓存：
- * - [loadCached] 只读磁盘，冷启动/离线时先展示上次成功解析的学校列表；
- * - [refresh] 网络优先，成功后原子回写索引；失败返回 null，由调用方回退缓存；
+ * - [loadCached] 只读磁盘，冷启动/离线时先展示上次成功解析的学校列表；解析结果在
+ *   本实例内复用（[cachedAdaptersOrNull]），不做每次打开的重复解析；
+ * - [refresh] 网络优先，成功后原子回写索引并同步内存缓存；失败返回 null，由调用方回退缓存；
  * - 协议版本不符视为失败（不猜测新字段布局）。
  *
  * 阻塞 I/O 都包在 [Dispatchers.IO]；缓存目录由调用方传入，便于 JVM 单测用临时目录。
  */
 internal class ShiguangCatalog(
-    private val fetcher: ShiguangWarehouseFetcher,
+    val fetcher: ShiguangWarehouseFetcher,
     private val cacheDir: File,
 ) {
 
-    suspend fun loadCached(): List<ShiguangAdapter> = withContext(Dispatchers.IO) {
-        readCachedIndex()?.toAdapters().orEmpty()
+    /**
+     * 已解析的适配列表（进程内缓存）：索引缓存命中也只在首次解析，之后打开学校选择浮层
+     * 直接复用同一份不可变列表。
+     *
+     * 这直接决定打开手感：列表 300 行上下的整体组合/测量如果是**入场动画中途**插入的，
+     * 会顶掉数帧；有这份缓存时初值即全量列表，整段组合落在浮层仍在屏幕外的那一帧，
+     * 动画期间不再发生结构性插入。写入只发生在 [loadCachedOrNull] / [refresh] 成功时
+     * （IO 线程）：读路径在主线程（浮层初值）靠 @Volatile 直接读，写入经 [memoryLock]
+     * 串行，避免「读缓存的旧解析结果」晚于「手动更新的新结果」落库。
+     */
+    @Volatile
+    private var memoryAdapters: List<ShiguangAdapter>? = null
+
+    /** 保护 [memoryAdapters] 的判空写入：读缓存与手动更新可能并发（预热 vs 更新适配列表） */
+    private val memoryLock = Any()
+
+    /** 已解析的列表；null = 本进程还没解析过（不代表磁盘没有缓存） */
+    fun cachedAdaptersOrNull(): List<ShiguangAdapter>? = memoryAdapters
+
+    suspend fun loadCached(): List<ShiguangAdapter> = loadCachedOrNull().orEmpty()
+
+    /**
+     * 读本地索引缓存：无有效缓存返回 null，「缓存有效但 0 个适配」返回空列表——
+     * 入口用这个区分「没缓存要报错 / 首次拉取」与「有缓存但确实是空的」。
+     * 命中后结果进内存缓存，重复打开浮层不再解析 protobuf。
+     */
+    suspend fun loadCachedOrNull(): List<ShiguangAdapter>? {
+        memoryAdapters?.let { return it }
+        return withContext(Dispatchers.IO) {
+            val index = readCachedIndex() ?: return@withContext null
+            val adapters = index.toAdapters()
+            synchronized(memoryLock) {
+                // 手动更新可能已在别的线程写入更新的一版：旧解析结果不得覆盖它
+                if (memoryAdapters == null) memoryAdapters = adapters
+            }
+            adapters
+        }
     }
 
     /**
      * 本地是否已有可解析的索引缓存。入口据此决定「首次打开自动拉取 / 之后只用缓存」：
      * 缓存存在（即使解析出 0 个适配）就不再自动联网，更新只由浮层的「更新适配列表」触发。
      */
-    suspend fun hasCache(): Boolean = withContext(Dispatchers.IO) {
-        readCachedIndex() != null
-    }
+    suspend fun hasCache(): Boolean = memoryAdapters != null || loadCachedOrNull() != null
 
     /** 是否已经执行过首次自动拉取（成功或失败都算，失败也不在下次打开时自动重试） */
     suspend fun hasInitialFetchAttempted(): Boolean = withContext(Dispatchers.IO) {
@@ -120,7 +154,10 @@ internal class ShiguangCatalog(
             return@withContext null
         }
         writeCache(bytes)
-        index.toAdapters()
+        // 与磁盘同步更新内存缓存：手动更新成功后，浮层里立刻换成新列表，后续打开也直接复用
+        val adapters = index.toAdapters()
+        synchronized(memoryLock) { memoryAdapters = adapters }
+        adapters
     }
 
     private fun readCachedIndex(): ShiguangIndex? {

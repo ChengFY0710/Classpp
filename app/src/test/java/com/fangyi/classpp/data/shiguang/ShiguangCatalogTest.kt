@@ -123,4 +123,28 @@ class ShiguangCatalogTest {
         assertNull(catalog.refresh())
         assertTrue(catalog.loadCached().isEmpty())
     }
+
+    @Test
+    fun `parsed cache is reused without touching disk again`() = runBlocking {
+        val catalog = ShiguangCatalog(FakeFetcher(ShiguangTestFixtures.indexBytes()), temp.root)
+        catalog.refresh()
+        // 删掉磁盘缓存：本实例已成功解析过一次，后续读取必须命中进程内缓存
+        assertTrue(File(temp.root, ShiguangWarehouseConfig.INDEX_CACHE_FILE).delete())
+        assertEquals(listOf("CQU"), catalog.loadCached().map { it.adapterId })
+        assertTrue(catalog.hasCache())
+        assertTrue(catalog.cachedAdaptersOrNull() != null)
+    }
+
+    @Test
+    fun `loadCachedOrNull distinguishes missing cache from an empty one`() = runBlocking {
+        val catalog = ShiguangCatalog(
+            FakeFetcher(ShiguangTestFixtures.indexBytes(schools = emptyList())),
+            temp.root,
+        )
+        // 没缓存 → null（入口据此走首次拉取 / 错误态）
+        assertNull(catalog.loadCachedOrNull())
+        assertTrue(catalog.refresh()!!.isEmpty())
+        // 缓存有效但 0 个适配 → 空列表（入口据此展示空态，不再联网）
+        assertEquals(emptyList<ShiguangAdapter>(), catalog.loadCachedOrNull())
+    }
 }

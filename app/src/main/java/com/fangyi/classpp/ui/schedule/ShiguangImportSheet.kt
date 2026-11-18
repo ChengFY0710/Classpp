@@ -24,8 +24,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +36,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -82,16 +85,26 @@ internal fun ShiguangImportSheet(
 ) {
     var query by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
-    val filtered = remember(adapters, query) {
+    // 每个适配的可搜索串（小写拼接）随列表只建一次：逐键过滤不再对每行做 4 次
+    // ignoreCase 扫描；首字母仍保持「整串相等」的旧口径，不并入这里
+    val searchKeys = remember(adapters) {
+        adapters.associate { adapter ->
+            adapter.key to listOf(
+                adapter.schoolName,
+                adapter.schoolId,
+                adapter.adapterName,
+                adapter.description,
+            ).joinToString(SearchKeySeparator).lowercase()
+        }
+    }
+    val filtered = remember(adapters, searchKeys, query) {
         val keyword = query.trim()
         if (keyword.isEmpty()) {
             adapters
         } else {
+            val lowerKeyword = keyword.lowercase()
             adapters.filter { adapter ->
-                adapter.schoolName.contains(keyword, ignoreCase = true) ||
-                    adapter.schoolId.contains(keyword, ignoreCase = true) ||
-                    adapter.adapterName.contains(keyword, ignoreCase = true) ||
-                    adapter.description.contains(keyword, ignoreCase = true) ||
+                searchKeys[adapter.key]?.contains(lowerKeyword) == true ||
                     adapter.initial.equals(keyword, ignoreCase = true)
             }
         }
@@ -100,6 +113,20 @@ internal fun ShiguangImportSheet(
     val adapterCountBySchool = remember(adapters) {
         adapters.groupingBy { it.schoolId }.eachCount()
     }
+    // 行样式按主题构造一次后下传：300 行不再各自 .copy()，行参数也因此保持相等、
+    // 过滤时更容易整行跳过重组
+    val colorScheme = MaterialTheme.colorScheme
+    val textStyles = MaterialTheme.classppTextStyles
+    val secondaryTextColor = MaterialTheme.classppColors.secondaryText
+    val rowTitleStyle = remember(colorScheme, textStyles) {
+        textStyles.fieldLabel.copy(color = colorScheme.onSurface)
+    }
+    val rowDescriptionStyle = remember(secondaryTextColor) {
+        ClassppTextTokens.settingsDescription.copy(color = secondaryTextColor)
+    }
+    // 点行回调经 remember(adapter) 固定：过滤时保留下来的行参数不变（配合下方 key()），
+    // 输入搜索词只重组必要的行，不再每次按键重排全部 300 行
+    val currentOnPick = rememberUpdatedState(onPick)
 
     // 返回键关浮层（本浮层在导入浮层之后组合，因此先收到）
     BackHandler(enabled = visible) {
@@ -214,14 +241,22 @@ internal fun ShiguangImportSheet(
                             )
                         } else {
                             filtered.forEach { adapter ->
-                                ShiguangAdapterRow(
-                                    adapter = adapter,
-                                    showAdapterName = (adapterCountBySchool[adapter.schoolId] ?: 0) > 1,
-                                    onClick = {
-                                        focusManager.clearFocus()
-                                        onPick(adapter)
-                                    },
-                                )
+                                // 按适配身份复用行：过滤/重排时同一行跟着 key 走，
+                                // 参数不变即整行跳过重组（搜索输入的逐键成本从 300 行降到 0）
+                                key(adapter.key) {
+                                    ShiguangAdapterRow(
+                                        adapter = adapter,
+                                        showAdapterName = (adapterCountBySchool[adapter.schoolId] ?: 0) > 1,
+                                        titleStyle = rowTitleStyle,
+                                        descriptionStyle = rowDescriptionStyle,
+                                        onClick = remember(adapter) {
+                                            {
+                                                focusManager.clearFocus()
+                                                currentOnPick.value(adapter)
+                                            }
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
@@ -236,9 +271,15 @@ internal fun ShiguangImportSheet(
 private fun ShiguangAdapterRow(
     adapter: ShiguangAdapter,
     showAdapterName: Boolean,
+    // 样式由列表统一构造后传入：行本身不做 .copy()，行参数也更容易保持不变而跳过重组
+    titleStyle: TextStyle,
+    descriptionStyle: TextStyle,
     onClick: () -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
+    // 副行文案只在适配或「是否带适配名」变化时重建（每次重组都拼串没有必要）
+    val secondaryText = remember(adapter, showAdapterName) {
+        adapterSecondaryText(adapter, showAdapterName)
+    }
     SheetCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -248,16 +289,14 @@ private fun ShiguangAdapterRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = adapter.schoolName,
-                style = MaterialTheme.classppTextStyles.fieldLabel.copy(color = colors.onSurface),
+                style = titleStyle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(3.dp))
             Text(
-                text = adapterSecondaryText(adapter, showAdapterName),
-                style = ClassppTextTokens.settingsDescription.copy(
-                    color = MaterialTheme.classppColors.secondaryText,
-                ),
+                text = secondaryText,
+                style = descriptionStyle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -355,6 +394,9 @@ private fun ShiguangSearchField(
         }
     }
 }
+
+/** 搜索串的字段分隔符：避免「学校名尾 + 学校 id 头」拼出跨字段的假命中 */
+private const val SearchKeySeparator = "\u0000"
 
 /** 双行列表卡统一卡高（同学校选择浮层） */
 private val ShiguangRowHeight = 72.dp

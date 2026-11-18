@@ -39,14 +39,51 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
+ * 拾光导入的长生命周期服务（索引缓存 + 适配脚本下载器）：由课表页持有、跨浮层打开复用，
+ * 浮层自身不再重建下载器、也不再重读/重解析索引（[ShiguangCatalog] 内部会缓存解析结果）。
+ * 这样学校选择浮层每次打开都能在第一帧拿到全量列表。
+ */
+internal class ShiguangImportServices(
+    val catalog: ShiguangCatalog,
+    val adapterStore: ShiguangAdapterStore,
+) {
+    /**
+     * 预热学校列表：只读本地磁盘缓存，**不联网**——首次自动拉取仍由浮层打开时的流程负责，
+     * 用户没点「从拾光教务导入」时不产生任何请求。
+     */
+    suspend fun prewarm() {
+        catalog.loadCached()
+    }
+}
+
+/** 在课表页组合层创建一次；构造本身很轻（下载器内部惰性构建 OkHttpClient） */
+@Composable
+internal fun rememberShiguangImportServices(): ShiguangImportServices {
+    val appContext = LocalContext.current.applicationContext
+    return remember(appContext) {
+        val cacheRoot = File(appContext.filesDir, ShiguangWarehouseConfig.CACHE_DIR_NAME)
+        val fetcher = OkHttpShiguangWarehouseFetcher()
+        ShiguangImportServices(
+            catalog = ShiguangCatalog(fetcher, cacheRoot),
+            adapterStore = ShiguangAdapterStore(
+                fetcher = fetcher,
+                cacheDir = File(cacheRoot, ShiguangWarehouseConfig.ADAPTER_CACHE_DIR),
+            ),
+        )
+    }
+}
+
+/**
  * 「拾光教务导入」流程宿主（自包含，避免继续膨胀 ScheduleScreen）：
  *
  * 导入浮层「从拾光教务导入」→ 学校选择浮层（[ShiguangImportSheet]）→ 下载适配脚本 →
  * 全屏 WebView（[ShiguangWebImportSheet]）→ 脚本结果映射 → 导入确认框 → 仓库落库。
  *
  * 状态生命周期：
- * - 学校列表：打开时先读本地缓存立即展示，再后台拉取最新索引；失败且无缓存 → 错误态；
- *   失败但有缓存 → 列表照常可用并提示「已显示缓存」。
+ * - 学校列表：进程内已解析的索引直接作为浮层初值（[ShiguangImportServices] 跨打开复用，
+ *   课表页在导入浮层打开时就预热），首帧即全量列表，入场动画期间不再插入 300 行列表；
+ *   本进程首次打开仍走磁盘缓存 / 首次自动拉取，失败且无缓存 → 错误态，失败但有缓存
+ *   → 列表照常可用并提示「已显示缓存」。
  * - 脚本：按选中适配下载/回退缓存；下载期间 [LoadingOverlay] 阻止重复点击。
  * - 网页：由 [PageSlideOverlay] 承载，退场播完才卸载（WebView 随之销毁）；
  *   网页在场期间上报 [onOverlayOverNavBarChange]，与教务网页页同款隐藏底部导航栏。
@@ -63,24 +100,19 @@ internal fun ShiguangImportFlow(
     onDismissed: () -> Unit,
     onImported: (String) -> Unit,
     repository: ScheduleRepository,
+    services: ShiguangImportServices,
     onOverlayOverNavBarChange: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val fetcher = remember { OkHttpShiguangWarehouseFetcher() }
-    val cacheRoot = remember(context) {
-        File(context.applicationContext.filesDir, ShiguangWarehouseConfig.CACHE_DIR_NAME)
-    }
-    val catalog = remember(fetcher, cacheRoot) { ShiguangCatalog(fetcher, cacheRoot) }
-    val adapterStore = remember(fetcher, cacheRoot) {
-        ShiguangAdapterStore(
-            fetcher = fetcher,
-            cacheDir = File(cacheRoot, ShiguangWarehouseConfig.ADAPTER_CACHE_DIR),
-        )
-    }
+    val catalog = services.catalog
+    val adapterStore = services.adapterStore
 
-    var adapters by remember { mutableStateOf<List<ShiguangAdapter>>(emptyList()) }
-    var loading by remember { mutableStateOf(false) }
+    // 进程内已解析的索引直接作为初值：整段列表组合落在浮层还在屏幕外的那一帧，
+    // 入场动画期间不会再出现「空态 → 300 行列表」的结构性插入（那一次长帧就是打开卡顿）
+    val memoryAdapters = remember { catalog.cachedAdaptersOrNull() }
+    var adapters by remember { mutableStateOf(memoryAdapters.orEmpty()) }
+    var loading by remember { mutableStateOf(memoryAdapters == null) }
     var loadFailed by remember { mutableStateOf(false) }
     var refreshing by remember { mutableStateOf(false) }
 
@@ -132,12 +164,20 @@ internal fun ShiguangImportFlow(
     val defaultName = stringResource(R.string.shiguang_default_name)
     val confirmTitle = stringResource(R.string.shiguang_confirm_title)
 
-    // 学校列表：只有「从未拉取过」的首次打开才自动联网一次；之后（包括首次失败）
-    // 一律读缓存 / 错误态，更新只由浮层「更新适配列表」手动触发
+    // 学校列表：内存缓存命中 = 初值已带全量列表，这里只收尾 loading；否则读一次磁盘缓存，
+    // 只有「从未拉取过」的首次打开才自动联网一次；之后（包括首次失败）一律缓存 / 错误态，
+    // 更新只由浮层「更新适配列表」手动触发
     LaunchedEffect(visible) {
         if (!visible) return@LaunchedEffect
-        if (catalog.hasCache()) {
-            adapters = catalog.loadCached()
+        if (catalog.cachedAdaptersOrNull() != null) {
+            loading = false
+            loadFailed = false
+            return@LaunchedEffect
+        }
+        loading = true
+        val cached = catalog.loadCachedOrNull()
+        if (cached != null) {
+            adapters = cached
             loading = false
             loadFailed = false
             return@LaunchedEffect
@@ -148,7 +188,6 @@ internal fun ShiguangImportFlow(
             return@LaunchedEffect
         }
         // 先置 loading，避免标记/网络开始前的极短窗口里手动更新并发再拉一次
-        loading = true
         loadFailed = false
         catalog.markInitialFetchAttempted()
         val fresh = catalog.refresh()

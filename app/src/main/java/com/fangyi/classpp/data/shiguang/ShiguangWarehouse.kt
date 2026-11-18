@@ -47,10 +47,16 @@ internal fun interface ShiguangWarehouseFetcher {
 /**
  * Gitee raw 下载：手动跟随最多 3 次重定向，且每一跳都必须是 https（与
  * `executeFollowingHttpsRedirects` 同一安全口径）；非 2xx、超限、解析失败都返回 null。
+ *
+ * 客户端按需构建（`by lazy`）：本类在浮层挂载时就在主线程构造，而 OkHttpClient 的构建
+ * 会牵出 OkHttp 平台类初始化；真正的抓取只发生在 [fetch] 的 IO 线程上，放在那里建
+ * 客户端不占主线程，打开浮层的首帧不再为网络栈买单。
  */
 internal class OkHttpShiguangWarehouseFetcher(
-    private val client: OkHttpClient = defaultClient,
+    injectedClient: OkHttpClient? = null,
 ) : ShiguangWarehouseFetcher {
+
+    private val client: OkHttpClient by lazy { injectedClient ?: defaultClient }
 
     override suspend fun fetch(url: String): ByteArray? = withContext(Dispatchers.IO) {
         var current = url

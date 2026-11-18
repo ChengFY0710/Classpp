@@ -531,6 +531,14 @@ fun ScheduleScreen(
             // 拾光教务导入流程：导入浮层「从拾光教务导入」打开，学校列表/网页/确认框
             // 由 ShiguangImportFlow 自包含管理（避免本屏继续膨胀）
             var shiguangImportVisible by rememberSaveable { mutableStateOf(false) }
+            // 拾光服务（索引缓存 + 脚本下载器）由课表页持有、跨浮层打开复用：索引只解析一次。
+            // 导入浮层一打开就预热学校列表（只读磁盘缓存、不联网），用户点到「从拾光教务导入」
+            // 时列表已就绪——学校浮层第一帧就是全量列表，不会在入场动画中途插入 300 行
+            // 列表结构（那一次长帧就是打开时的卡顿来源）
+            val shiguangImportServices = rememberShiguangImportServices()
+            LaunchedEffect(importSheetVisible) {
+                if (importSheetVisible) shiguangImportServices.prewarm()
+            }
             // 教务课表页（WebView 登录模式）：教务导入浮层第二张卡打开，全屏盖住课表页
             var schoolTimetableVisible by rememberSaveable { mutableStateOf(false) }
             // 全屏网页转场进度：设置页同款右滑进出场。AI 网页页的进度上提到这里，
@@ -1673,6 +1681,7 @@ fun ScheduleScreen(
                             requestSwitch(id)
                         },
                         repository = repository,
+                        services = shiguangImportServices,
                         onOverlayOverNavBarChange = onOverlayOverNavBarChange,
                     )
                 }
