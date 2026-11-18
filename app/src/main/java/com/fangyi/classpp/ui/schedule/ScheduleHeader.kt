@@ -124,7 +124,7 @@ internal val CardShadowBottomPadding = 48.dp
 
 /**
  * 周数选择弹窗专用的底部投影留白（其余三边仍用 [CardShadowPadding]）。
- * 该弹窗投影 56dp 比菜单族（36dp）更重，底部需要比 [CardShadowBottomPadding] 更大的缓冲；
+ * 该弹窗投影 52dp 比菜单族（36dp）更重，底部需要比 [CardShadowBottomPadding] 更大的缓冲；
  * 左右不能加宽——49dp 方格配 384dp 临界宽后水平余量只剩 1dp 边距，再加会破配套。
  */
 internal val WeekPickerShadowBottomPadding = 60.dp
@@ -899,11 +899,11 @@ private fun WeekPickerCardShell(
 ) {
     PopupGlassCard(
         shape = SettingsCardShape,
-        shadowElevation = 56.dp,
+        shadowElevation = 52.dp,
         spotShadowColor = Color.Black.copy(alpha = 0.2f),
         hazeState = hazeState,
         // 投影留白垫在缩放图层之内、卡壳之外（裁切线 = Popup 窗口边缘）：左右上 16dp、
-        // 底部 WeekPickerShadowBottomPadding 60dp——56dp 柔影向下坠得最远，没有这层留白
+        // 底部 WeekPickerShadowBottomPadding 60dp——52dp 柔影向下坠得最远，没有这层留白
         // 投影会整体画在窗口外被裁掉，卡片落位也会偏高 16dp（gapPx 按「窗口含留白」反推）
         modifier = modifier.padding(
             start = CardShadowPadding,
