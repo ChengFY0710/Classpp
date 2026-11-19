@@ -1961,6 +1961,7 @@ class AiChatRepository internal constructor(
      * 次数说明——绝不发送半截 assistant.tool_calls / tool_result 配对。
      *
      * 图片附件随消息原样回放；文件可能已被清理时编码失败静默跳过，不阻断整条请求。
+     * 历史正文超长时按 [REPLAY_TEXT_MAX_CHARS] 截断回放（当前轮 user 消息不截断）。
      */
     private suspend fun buildTurns(
         history: List<AiChatMessage>,
@@ -1993,7 +1994,10 @@ class AiChatRepository internal constructor(
             )
     }
 
-    /** 历史窗口：按 user 边界保留最近 N 个逻辑轮，最近两轮精确回放工具 */
+    /**
+     * 历史窗口：按 user 边界保留最近 N 个逻辑轮，最近两轮精确回放工具；单条正文超过
+     * [REPLAY_TEXT_MAX_CHARS] 时截断（防长贴文随 15 轮窗口每轮重付，持久化原文不变）。
+     */
     private suspend fun replayTurns(history: List<AiChatMessage>): List<AiChatTurn> {
         val groups = history.groupByLogicalTurns().takeLast(HISTORY_TURNS)
         val exactFrom = groups.size - EXACT_TOOL_REPLAY_TURNS
@@ -2041,7 +2045,9 @@ class AiChatRepository internal constructor(
         }
         val toolCallCount = toolRounds.sumOf { it.calls.size }
         if (!exact) {
-            return listOf(AiChatTurn(role = "assistant", content = foldedText(toolCallCount)))
+            return listOf(
+                AiChatTurn(role = "assistant", content = foldedText(toolCallCount).truncatedForReplay()),
+            )
         }
         val turns = mutableListOf<AiChatTurn>()
         for (round in toolRounds) {
@@ -2054,14 +2060,18 @@ class AiChatRepository internal constructor(
                 continue
             }
             if (round.results.size != round.calls.size) continue
-            turns += AiChatTurn(role = "assistant", content = round.text, toolCalls = round.calls)
+            turns += AiChatTurn(
+                role = "assistant",
+                content = round.text.truncatedForReplay(),
+                toolCalls = round.calls,
+            )
             turns += AiChatTurn(
                 role = "tool",
                 toolResults = round.results.map { it.truncatedForReplay() },
             )
         }
         val final = finalText()
-        if (final.isNotBlank()) turns += AiChatTurn(role = "assistant", content = final)
+        if (final.isNotBlank()) turns += AiChatTurn(role = "assistant", content = final.truncatedForReplay())
         return turns
     }
 
@@ -2085,16 +2095,24 @@ class AiChatRepository internal constructor(
             copy(contentJson = contentJson.take(REPLAY_RESULT_MAX_CHARS))
         }
 
+    /** 回放截断（正文版）：长消息只保留开头并注明截断；当前轮不走回放，全文保留 */
+    private fun String.truncatedForReplay(): String =
+        if (length <= REPLAY_TEXT_MAX_CHARS) {
+            this
+        } else {
+            take(REPLAY_TEXT_MAX_CHARS) + REPLAY_TEXT_TRUNCATED_NOTE
+        }
+
     /** 持久化消息 → wire 消息：role 落小写串；includeImages=false 时历史图片只回占位文本 */
     private suspend fun AiChatMessage.toTurn(includeImages: Boolean = true): AiChatTurn {
         val turnContent = if (!includeImages && images.isNotEmpty()) {
             if (content.isBlank()) {
                 HISTORY_IMAGE_PLACEHOLDER
             } else {
-                content + "\n" + HISTORY_IMAGE_PLACEHOLDER
+                content.truncatedForReplay() + "\n" + HISTORY_IMAGE_PLACEHOLDER
             }
         } else {
-            content
+            content.truncatedForReplay()
         }
         return AiChatTurn(
             role = role.name.lowercase(),
@@ -2874,6 +2892,15 @@ class AiChatRepository internal constructor(
 
         /** 工具结果回放时的单条字符上限（只影响回放，持久化原文不变） */
         const val REPLAY_RESULT_MAX_CHARS = 2_000
+
+        /**
+         * 单条消息正文回放时的字符上限（只影响回放，持久化原文不变）：工具结果早有 2K
+         * 截断，正文此前无界——用户贴一次长文，之后每轮都按 15 轮窗口原样重付。
+         */
+        const val REPLAY_TEXT_MAX_CHARS = 4_000
+
+        /** 回放截断的尾注：告知模型该条不完整，不要当作全文引用 */
+        const val REPLAY_TEXT_TRUNCATED_NOTE = "\n（此条过长，已截断）"
 
         /** 工具循环预算：总请求轮数（含首次请求） */
         const val MAX_TOOL_ROUNDS = 4

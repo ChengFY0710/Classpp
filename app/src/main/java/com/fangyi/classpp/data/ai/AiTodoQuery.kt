@@ -2,11 +2,13 @@ package com.fangyi.classpp.data.ai
 
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
+import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
+import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.occurrencesBetween
 
 /**
- * 待办与某一天的命中判定：提示词的「今日摘要」与只读工具共用同一口径。
+ * 待办的共享口径（命中判定与时间形态文本）：提示词的「今日摘要」与只读工具共用同一来源。
  *
  * 抽出来的原因（P3）：精简上下文后，今日摘要由 [AiPromptBuilder] 生成、单日明细由
  * [AiReadTools] 生成，两处若各写一份判定，模型会看到「摘要里有、工具里没有」的矛盾数据。
@@ -35,4 +37,25 @@ internal fun Todo.isOverdueOn(date: IsoDate): Boolean {
     val deadline = deadlineDate
     if (deadline != null && deadline.epochDay < date.epochDay) return true
     return overdueOccurrences.any { it.epochDay < date.epochDay }
+}
+
+/**
+ * 待办的时间形态文本：`全天` / `14:00-16:00`；无时刻语义返回 null。
+ *
+ * 提示词的待办行与 `get_todo` 的 `time` 字段共用同一文本（同 [occursOnDate] 的抽取
+ * 理由）：待办行此前不带时段，时段待办与全天待办在注入行里无法区分，用户问
+ * 「下午几点做什么」时模型只能多走一轮工具或干脆答不出。
+ */
+internal fun Todo.timeText(): String? = when (timeKind) {
+    TodoTimeKind.AllDay -> "全天"
+    TodoTimeKind.Period -> {
+        val start = startMinute
+        val end = endMinute
+        if (start != null && end != null) {
+            "${TimeText.formatDisplay(start)}-${TimeText.formatDisplay(end)}"
+        } else {
+            null
+        }
+    }
+    TodoTimeKind.None -> null
 }

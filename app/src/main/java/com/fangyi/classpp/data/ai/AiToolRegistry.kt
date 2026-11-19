@@ -55,42 +55,85 @@ object AiToolRegistry {
 
     // ---------- Schema（wire 的单一来源） ----------
 
-    private val repeatParameters: JsonObject = buildJsonObject {
+    /**
+     * 重复规则 schema：create_todos 用完整描述；update_todos 的 patch 传 terse=true，
+     * 字段含义与 create 侧一致，描述精简为交叉引用——wire 里两份 schema 每次请求都要发。
+     */
+    private fun repeatParameters(terse: Boolean): JsonObject = buildJsonObject {
         put("type", "object")
+        if (terse) put("description", "重复规则（None=取消重复；字段含义同 create_todos 的 repeat）")
         putJsonObject("properties") {
             enumProperty("type", "重复类型", REPEAT_TYPE_VALUES)
-            enumProperty("unit", "Custom 的频率单位", REPEAT_UNIT_VALUES)
-            integerProperty("interval", "Custom 的间隔（每 N 个单位）")
-            integerArrayProperty("marks", "Custom 的标记：周几 1..7 / 几号 1..31 / 几月 1..12")
+            enumProperty("unit", if (terse) "Custom 的单位" else "Custom 的频率单位", REPEAT_UNIT_VALUES)
+            integerProperty("interval", if (terse) "Custom 的间隔" else "Custom 的间隔（每 N 个单位）")
+            integerArrayProperty(
+                "marks",
+                if (terse) "Custom 的标记" else "Custom 的标记：周几 1..7 / 几号 1..31 / 几月 1..12",
+            )
             enumProperty("endType", "结束条件", REPEAT_END_TYPE_VALUES)
-            stringProperty("endDate", "结束日期 yyyy-MM-dd（不含当天）")
-            integerProperty("endCount", "期数或打卡次数 1..999")
-            booleanProperty("merge", "是否在列表中合并为一条滚动卡")
-            booleanProperty("checkIn", "打卡模式（仅 Count 有效）")
+            stringProperty("endDate", if (terse) "结束日期（不含当天）" else "结束日期 yyyy-MM-dd（不含当天）")
+            integerProperty("endCount", if (terse) "期数或打卡次数" else "期数或打卡次数 1..999")
+            booleanProperty("merge", if (terse) "合并为一条滚动卡" else "是否在列表中合并为一条滚动卡")
+            booleanProperty("checkIn", if (terse) "打卡（仅 Count）" else "打卡模式（仅 Count 有效）")
         }
     }
 
-    private fun todoDraftParameters(urgencyValues: List<String>): JsonObject = buildJsonObject {
+    /**
+     * 待办草稿 schema：
+     * - create_todos 的元素传 [nameRequired]：name 无默认值可省，无名草稿会被静默丢弃，
+     *   schema 层标必填让模型在生成时就避开；
+     * - update_todos 的 patch 传 [terse]：patch 是部分更新语义（未写=不变），name 可不写，
+     *   描述精简为交叉引用，避免与 create 侧逐字重复的双份长描述。
+     */
+    private fun todoDraftParameters(
+        urgencyValues: List<String>,
+        nameRequired: Boolean = false,
+        terse: Boolean = false,
+    ): JsonObject = buildJsonObject {
         put("type", "object")
+        if (terse) {
+            put(
+                "description",
+                "只写要改的字段：未写=保持不变，空串/空数组=清空（name 不能为空）。" +
+                    "字段含义同 create_todos 的 todos 元素。",
+            )
+        }
+        if (nameRequired) putJsonArray("required") { add("name") }
         putJsonObject("properties") {
-            stringProperty("name", "待办名称")
-            stringArrayProperty("dates", "日期列表（yyyy-MM-dd）")
-            booleanProperty("allDay", "是否全天；全天待办不要给时段")
-            stringProperty("startTime", "开始时间 HH:mm，与 endTime 成对")
-            stringProperty("endTime", "结束时间 HH:mm，必须晚于 startTime")
-            stringProperty("deadlineDate", "截止日期 yyyy-MM-dd，与 deadlineTime 成对")
+            stringProperty(
+                "name",
+                when {
+                    nameRequired -> "待办名称（必填）"
+                    terse -> "新名称（不能为空）"
+                    else -> "待办名称"
+                },
+            )
+            stringArrayProperty(
+                "dates",
+                if (terse) "新日期列表 yyyy-MM-dd（整体替换原日期）" else "日期列表（yyyy-MM-dd）",
+            )
+            booleanProperty("allDay", if (terse) "是否全天" else "是否全天；全天待办不要给时段")
+            stringProperty("startTime", if (terse) "开始 HH:mm（与 endTime 成对）" else "开始时间 HH:mm，与 endTime 成对")
+            stringProperty("endTime", if (terse) "结束 HH:mm（须晚于 startTime）" else "结束时间 HH:mm，必须晚于 startTime")
+            stringProperty(
+                "deadlineDate",
+                if (terse) "截止日期（与 deadlineTime 成对）" else "截止日期 yyyy-MM-dd，与 deadlineTime 成对",
+            )
             stringProperty("deadlineTime", "截止时刻 HH:mm")
             booleanProperty("deadlineBeforeRepeat", "截止随重复自动取下一次重复开始前")
             integerProperty("deadlineBeforeDays", "截止提前天数")
-            enumProperty("urgency", "紧急度", urgencyValues)
-            stringArrayProperty("tags", "标签列表；库内不存在的标签可先用 create_todo_tags 新建")
-            stringProperty("group", "分组名；须已存在，可先用 create_todo_groups 新建")
-            stringProperty("note", "备注")
-            stringArrayProperty("steps", "步骤标题列表")
-            stringProperty("location", "地点")
-            booleanProperty("countdown", "卡面倒计时开关，仅在有截止时有效")
+            enumProperty("urgency", if (terse) "紧急度（None=清除）" else "紧急度", urgencyValues)
+            stringArrayProperty(
+                "tags",
+                if (terse) "新标签列表（整体替换）" else "标签列表；库内不存在的标签可先用 create_todo_tags 新建",
+            )
+            stringProperty("group", if (terse) "新分组名" else "分组名；须已存在，可先用 create_todo_groups 新建")
+            stringProperty("note", if (terse) "新备注" else "备注")
+            stringArrayProperty("steps", if (terse) "新步骤标题列表（整体替换）" else "步骤标题列表")
+            stringProperty("location", if (terse) "新地点" else "地点")
+            booleanProperty("countdown", if (terse) "倒计时开关（需有截止）" else "卡面倒计时开关，仅在有截止时有效")
             booleanProperty("pinned", "是否置顶")
-            put("repeat", repeatParameters)
+            put("repeat", repeatParameters(terse))
         }
     }
 
@@ -98,7 +141,7 @@ object AiToolRegistry {
         put("type", "object")
         putJsonObject("properties") {
             stringProperty("id", "待办 id，必须原样取自上下文")
-            put("patch", todoDraftParameters(URGENCY_VALUES_WITH_NONE))
+            put("patch", todoDraftParameters(URGENCY_VALUES_WITH_NONE, terse = true))
         }
         putJsonArray("required") {
             add("id")
@@ -126,7 +169,7 @@ object AiToolRegistry {
     private val createTodosParameters: JsonObject = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
-            arrayOfObjectsProperty("todos", "要创建的待办列表", todoDraftParameters(URGENCY_VALUES))
+            arrayOfObjectsProperty("todos", "要创建的待办列表", todoDraftParameters(URGENCY_VALUES, nameRequired = true))
         }
         putJsonArray("required") { add("todos") }
     }
@@ -269,9 +312,7 @@ object AiToolRegistry {
     private val readSpecs: List<AiToolSpec> = listOf(
         AiToolSpec(
             name = GET_CURRENT_TIME,
-            description = "查询当前日期、星期与时刻（本地时区），无参数。" +
-                "排日程或需要判断“现在/今天晚些时候/距离某时刻还有多久”时调用；" +
-                "对话跨过午夜时重新调用一次以刷新日期。",
+            description = "查询当前日期、星期与时刻（本地时区），无参数。调用时机见系统规则。",
             parameters = AiReadTools.currentTimeParameters,
             permission = AiToolPermission.Read,
             execute = AiReadTools::executeCurrentTime,
@@ -286,10 +327,8 @@ object AiToolRegistry {
         ),
         AiToolSpec(
             name = SEARCH_TODOS,
-            description = "按关键词、状态、分组、标签或日期范围查询待办，默认只查活跃待办（不含归档与回收站）。" +
-                "默认一次返回全部匹配（items 条数=total 即完整；compact=true 表示只含精简字段；" +
-                "需要强调完整/精确统计时可显式传 all=true）。只有用户明确只要“最近 N 条/先看几条/下一页”时，" +
-                "才传 limit/offset 走普通浏览。",
+            description = "按关键词、状态、分组、标签或日期范围查待办，默认只查活跃待办（不含归档与回收站）。" +
+                "用户要找、列或统计待办时调用；返回协议与分页规则见系统规则。",
             parameters = AiReadTools.searchTodosParameters,
             permission = AiToolPermission.Read,
             maxResultChars = AiReadTools.MAX_SEARCH_RESULT_CHARS,

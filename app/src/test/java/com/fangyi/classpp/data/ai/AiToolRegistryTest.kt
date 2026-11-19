@@ -230,6 +230,36 @@ class AiToolRegistryTest {
     }
 
     @Test
+    fun `create todos require name but patch stays partial`() {
+        val create = requireNotNull(AiToolRegistry.find(AiToolRegistry.CREATE_TODOS))
+        val createItem = create.parameters.getValue("properties").jsonObject
+            .getValue("todos").jsonObject.getValue("items").jsonObject
+        // name 无默认值可省：无名草稿会被执行层丢弃，schema 层标必填让模型生成时就避开
+        assertEquals(
+            listOf("name"),
+            (createItem.getValue("required") as JsonArray).map { it.jsonPrimitive.content },
+        )
+        assertEquals(
+            "待办名称（必填）",
+            createItem.getValue("properties").jsonObject.getValue("name").jsonObject
+                .getValue("description").jsonPrimitive.content,
+        )
+
+        val update = requireNotNull(AiToolRegistry.find(AiToolRegistry.UPDATE_TODOS))
+        val patch = update.parameters.getValue("properties").jsonObject
+            .getValue("updates").jsonObject.getValue("items").jsonObject
+            .getValue("properties").jsonObject.getValue("patch").jsonObject
+        // patch 是部分更新：name 可不写，不给 required
+        assertNull(patch["required"])
+        // patch 的字段描述精简为交叉引用，不再与 create 侧逐字重复双份长描述
+        assertTrue(patch.getValue("description").jsonPrimitive.content.contains("create_todos"))
+        assertTrue(
+            patch.getValue("properties").jsonObject.getValue("repeat").jsonObject
+                .getValue("description").jsonPrimitive.content.contains("None=取消重复"),
+        )
+    }
+
+    @Test
     fun `get_todo requires id and stays the only detail entry`() {
         val spec = requireNotNull(AiToolRegistry.find(AiToolRegistry.GET_TODO))
         assertEquals(AiToolPermission.Read, spec.permission)

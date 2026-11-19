@@ -3219,6 +3219,45 @@ class AiChatRepositoryTest {
     }
 
     @Test
+    fun `overlong history text is truncated for replay but persisted intact`() = runBlocking {
+        val longText = "长".repeat(AiChatRepository.REPLAY_TEXT_MAX_CHARS + 500)
+        val store = FakeAiChatStore()
+        store.file = AiChatFile(
+            conversations = listOf(
+                AiConversation(
+                    id = "c1",
+                    title = "旧对话",
+                    messages = listOf(
+                        AiChatMessage(role = AiChatRole.User, content = longText),
+                        AiChatMessage(role = AiChatRole.Assistant, content = "收到。"),
+                    ),
+                ),
+            ),
+            activeConversationId = "c1",
+        )
+        val transport = FakeAiTransport(
+            ScriptedResponse(listOf(sse("继续"), "data: [DONE]")),
+        )
+        val repo = repository(store = store, transport = transport)
+
+        repo.send("继续")
+
+        val users = Json.parseToJsonElement(transport.opened.single().jsonBody)
+            .jsonObject["messages"]!!.jsonArray
+            .filter { it.jsonObject["role"]!!.jsonPrimitive.content == "user" }
+        // 历史超长消息：只回放开头并注明截断，不再随 15 轮窗口每轮全量重付
+        assertEquals(
+            longText.take(AiChatRepository.REPLAY_TEXT_MAX_CHARS) +
+                AiChatRepository.REPLAY_TEXT_TRUNCATED_NOTE,
+            users[0].jsonObject["content"]!!.jsonPrimitive.content,
+        )
+        // 当前轮不走回放，全文保留
+        assertEquals("继续", users[1].jsonObject["content"]!!.jsonPrimitive.content)
+        // 持久化原文不变
+        assertEquals(longText, repo.messages.value.first { it.role == AiChatRole.User }.content)
+    }
+
+    @Test
     fun `bootstrap normalizes unfinished tool rounds to cancelled`() = runBlocking {
         val store = FakeAiChatStore()
         store.file = AiChatFile(

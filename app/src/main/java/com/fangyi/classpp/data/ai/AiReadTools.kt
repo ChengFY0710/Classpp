@@ -6,7 +6,6 @@ import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
-import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.isArchived
 import com.fangyi.classpp.data.model.isDeleted
 import com.fangyi.classpp.data.model.nextOccurrenceAfter
@@ -571,21 +570,6 @@ internal object AiReadTools {
         endCount?.let { put("endCount", it) }
         if (checkIn) put("checkIn", true)
         put("merge", merge)
-    }
-
-    /** 时间形态：全天 / `14:00-16:00`；无时刻语义返回 null */
-    private fun Todo.timeText(): String? = when (timeKind) {
-        TodoTimeKind.AllDay -> "全天"
-        TodoTimeKind.Period -> {
-            val start = startMinute
-            val end = endMinute
-            if (start != null && end != null) {
-                "${TimeText.formatDisplay(start)}-${TimeText.formatDisplay(end)}"
-            } else {
-                null
-            }
-        }
-        TodoTimeKind.None -> null
     }
 
     // ---------- 共用 ----------

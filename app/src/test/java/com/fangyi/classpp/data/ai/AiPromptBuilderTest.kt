@@ -10,6 +10,7 @@ import com.fangyi.classpp.data.model.WeekPattern
 import com.fangyi.classpp.data.model.WeekSegment
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoStep
+import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -436,5 +437,87 @@ class AiPromptBuilderTest {
         val empty = AiPromptBuilder.build(now, null, null, emptyList(), emptyList(), emptyList(), nativeTools = true)
         assertTrue(empty.contains("[今日待办] （今天没有待办）"))
         assertTrue(empty.contains("[待办概况] 未完成 0 条（今日 0 条、逾期 0 条）"))
+    }
+
+    // ---------- 有意变更回归：周一口径 / name 必填 / 分组标签上限 ----------
+
+    @Test
+    fun `date rule declares monday-based weeks in both modes`() {
+        val fallback = AiPromptBuilder.build(now, null, null, emptyList(), emptyList(), emptyList())
+        val native = AiPromptBuilder.build(
+            now, null, null, emptyList(), emptyList(), emptyList(), nativeTools = true,
+        )
+        // 模型默认可能按「周日开新周」推算相对日期，与 get_week_schedule 的周一口径错位一周
+        listOf(fallback, native).forEach { prompt ->
+            assertTrue(prompt.contains("一周从周一开始、周日算本周最后一天"))
+        }
+    }
+
+    @Test
+    fun `fallback create contract marks name as required`() {
+        val prompt = AiPromptBuilder.build(now, null, null, emptyList(), emptyList(), emptyList())
+        // 无名草稿会被执行层静默丢弃：契约文本必须声明 name 必填（原生侧由 schema required 表达）
+        assertTrue(prompt.contains("格式（name 必填；其余字段可省略"))
+    }
+
+    @Test
+    fun `group and tag injection caps at limit with total count`() {
+        val groups = (1..AiPromptBuilder.MAX_GROUP_TAG_NAMES + 5).map { "分组$it" }
+        val tags = (1..AiPromptBuilder.MAX_GROUP_TAG_NAMES + 3).map { "标签$it" }
+        val prompt = AiPromptBuilder.build(
+            now, null, null, emptyList(), groups, tags, nativeTools = true,
+        )
+
+        assertTrue(
+            prompt.contains(
+                "[可选分组] ${groups.take(AiPromptBuilder.MAX_GROUP_TAG_NAMES).joinToString("、")}" +
+                    "（共 ${groups.size} 个，列出前 ${AiPromptBuilder.MAX_GROUP_TAG_NAMES} 个）",
+            ),
+        )
+        assertTrue(
+            prompt.contains(
+                "[可选标签] ${tags.take(AiPromptBuilder.MAX_GROUP_TAG_NAMES).joinToString("、")}" +
+                    "（共 ${tags.size} 个，列出前 ${AiPromptBuilder.MAX_GROUP_TAG_NAMES} 个）",
+            ),
+        )
+        // 截断只影响注入名单：第 31 个分组/标签不再出现
+        assertFalse(prompt.contains("分组${AiPromptBuilder.MAX_GROUP_TAG_NAMES + 1}"))
+        assertFalse(prompt.contains("标签${AiPromptBuilder.MAX_GROUP_TAG_NAMES + 1}"))
+
+        // 上限之内保持原样，不带任何注记
+        val small = AiPromptBuilder.build(
+            now, null, null, emptyList(), listOf("学习"), listOf("期末"), nativeTools = true,
+        )
+        assertTrue(small.contains("[可选分组] 学习"))
+        assertTrue(small.contains("[可选标签] 期末"))
+        assertFalse(small.contains("列出前"))
+    }
+
+    @Test
+    fun `todo lines carry time slot and location when present`() {
+        val timed = todo("自习", dates = listOf(now)).copy(
+            timeKind = TodoTimeKind.Period,
+            startMinute = 14 * 60,
+            endMinute = 16 * 60,
+            location = "图书馆三楼",
+        )
+        val allDay = todo("考试日", dates = listOf(now)).copy(timeKind = TodoTimeKind.AllDay)
+        val plain = todo("背单词", dates = listOf(now))
+        val prompt = AiPromptBuilder.build(
+            now, null, null, listOf(timed, allDay, plain), emptyList(), emptyList(),
+        )
+
+        // 有时刻 → 14:00-16:00（与 get_todo 的 time 字段同文本），全天 → 显式标注，
+        // 无时刻语义 → 不加段：三种形态此前在注入行里无法区分，时间线问题答不出
+        assertTrue(prompt.contains("[t-自习] 自习｜日期 $now｜14:00-16:00｜@图书馆三楼"))
+        assertTrue(prompt.contains("[t-考试日] 考试日｜日期 $now｜全天"))
+        assertFalse(prompt.contains("[t-背单词] 背单词｜日期 $now｜全天"))
+
+        // 已归档行同样带时段与地点（指认「昨天下午的自习」需要它们）
+        val stale = AiPromptBuilder.build(
+            now, null, null, emptyList(), emptyList(), emptyList(),
+            archivedTodos = listOf(timed),
+        )
+        assertTrue(stale.contains("[t-自习] 自习｜日期 $now｜14:00-16:00｜@图书馆三楼"))
     }
 }
