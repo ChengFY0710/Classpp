@@ -158,6 +158,19 @@ object ClassppTextTokens {
     val weekPill = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 周数选择卡内数字：23sp Medium，常规阶梯最大档；仅周数选择卡方格使用，行高 24 不变。 */
     val weekGridNumber = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
+
+    /**
+     * [weekGridNumber] 的等比缩放形态：字号与行高同乘 [scale]，供窄窗/矮窗下周数弹窗
+     * 整体等比缩小使用（scale 由 `weekPickerGeometry` 统一计算）。
+     *
+     * 派生只发生在本文件，字号数值仍以 token 为唯一事实源；业务代码只传比例，不碰裸字号。
+     */
+    fun weekGridNumberScaled(scale: Float): TextStyle =
+        weekGridNumber.copy(
+            fontSize = weekGridNumber.fontSize * scale,
+            lineHeight = weekGridNumber.lineHeight * scale,
+        )
+
     /** 周数/重复设置方格：20sp Medium。 */
     val weekCell = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** 选择方格中文标签（星期「一」、月份「1月」）：17sp Medium，中文比数字宽，用特殊展示字号降一档防贴边。 */

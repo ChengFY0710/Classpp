@@ -1,237 +1,299 @@
 package com.fangyi.classpp.ui.schedule
 
+import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 周数弹窗的几何：六列、正方形、列间距与卡片内边距都不变，方格边长随屏宽伸缩，
- * 超过封顶临界宽后一律封顶 [WeekCellSizeMax]；窗口高度低于 [WeekPickerHeightThreshold]
- * 时改由高度钳制（优先于宽度），一律从 [WeekCellSizeHeightBase]（49dp）等比缩小，
- * 缩到 [WeekCellSizeMin] 后不再变化——
+ * 周数弹窗的尺寸模型：
  *
- * - 高度 ≥ 400dp：由宽度决定——窗口未到封顶临界宽（自然卡宽 + 2×反推留白 + 2×边距）时
- *   完全按留白反推，其中 384dp–450dp 这段继续随屏宽等比放大（49dp→60dp）；窗口到达封顶
- *   临界宽起（宽屏手机/横屏/平板），边长封顶 [WeekCellSizeMax]（60dp），卡片保持自然宽度居中；
- * - 高度低于 400dp：不论窗口多宽都从 49dp 基准乘「高度/400」缩小，40dp 封底，
- *   宽窗口不再继承 49–60dp 的放大值；
- * - 窄屏宽度反推值本身低于高度钳制值时仍以宽度为准，保证卡片贴边不横向溢出。
+ * - 宽度 ≤384dp：卡片占满「屏幕 − 两侧 17dp」，方格从 49dp 等比缩小，间距、字号、
+ *   圆角、投影一起乘同一比例；
+ * - 宽度 384–450dp：卡片继续占满「屏幕 − 两侧 17dp」，只放大方格（49→60dp），
+ *   间距 8dp、字号 23sp、圆角、投影保持基准值；
+ * - 宽度 >450dp：卡片封顶 416dp（方格 60dp）居中，投影留白自然变宽；
+ * - 高度：只受「胶囊下缘 → 窗口底部」的预算约束（顶部投影留白向上压进头部区域，
+ *   不占预算），行数参与反推；放不下时整卡（含字号）等比缩小，缩到
+ *   [WeekCellSizeMin] 仍不够就改为内部滚动。
  *
- * 方格反推仍按 [CardShadowPadding]（16dp）留白基准走，尺寸规则与放宽前完全一致；
- * [WeekPickerShadowPadding]（50dp）是目标留白，实际取值受窗口约束：Popup 内容按屏幕
- * AT_MOST 测量、窗口不能越出屏幕（越出会把方格压掉一列），左右留白按「(屏宽 − 卡宽)/2
- * − 边距」封顶（适配段恒为 16dp、窗口距屏幕两侧 1dp，与放宽前一致），顶部同样按可用
- * 高度封顶（空间充足时恒为 50dp）。见 [weekPickerSideShadowPaddingDp] /
- * [weekPickerTopShadowPaddingDp]。
- *
- * 断言直接引用 ScheduleHeader.kt 里的常量（同为 internal），
- * 调整留白/上限/下限时这里同步生效，不会各写一份数字而悄悄失配。
+ * 断言直接引用 ScheduleHeader.kt 里的常量（同为 internal），调整参考值时这里同步生效。
  */
 class WeekPickerGeometryTest {
 
-    private val edgeMargin = WeekPickerEdgeMargin.value
-
-    /** 方格反推的留白基准：尺寸规则与投影留白放宽前完全一致，不随实际留白（50dp）加宽而变 */
-    private val sizingPadding = CardShadowPadding.value
-
-    /** 目标投影留白（左右上）：实际取值按可用空间封顶，屏幕足够时才吃满 */
-    private val actualPadding = WeekPickerShadowPadding.value
-    private val cardPadding = WeekPickerCellSpace.value
-    private val cellSpace = WeekPickerCellSpace.value
+    private val baseCell = WeekCellSizeBase.value
     private val maxCell = WeekCellSizeMax.value
-    private val heightBase = WeekCellSizeHeightBase.value
     private val minCell = WeekCellSizeMin.value
-    private val heightThreshold = WeekPickerHeightThreshold.value
+    private val cellSpace = WeekPickerCellSpace.value
+    private val gap = WeekPickerGap.value
+    private val edge = WeekPickerEdgeMargin.value
+    private val sideMin = WeekPickerSideMinPadding.value
+    private val sideMax = WeekPickerShadowPadding.value
+    private val bottomMax = WeekPickerShadowBottomPadding.value
+    private val shadowMin = WeekPickerShadowMinPadding.value
+    private val numberFont = ClassppTextTokens.weekGridNumber.fontSize.value
+    private val numberLineHeight = ClassppTextTokens.weekGridNumber.lineHeight.value
+    private val shadowElevation = WeekPickerShadowElevation.value
+    private val cardCorner = WeekPickerCardCorner.value
+    private val cellCorner = WeekPickerCellCorner.value
+
     private val columns = 6
 
-    /** 默认高度取充足值（800dp）：不触发高度钳制，等价于只看宽度的旧行为 */
-    private fun cell(availableWidthDp: Float, availableHeightDp: Float = 800f) = weekCellSizeDp(
-        availableWidthDp = availableWidthDp,
-        availableHeightDp = availableHeightDp,
-        edgeMarginDp = edgeMargin,
-        shadowPaddingDp = sizingPadding,
-        cardPaddingDp = cardPadding,
-        cellSpaceDp = cellSpace,
-        maxCellSizeDp = maxCell,
-        heightBaseCellSizeDp = heightBase,
-        minCellSizeDp = minCell,
-        columns = columns,
-    )
+    /** 384dp 宽的参考卡宽：6 列方格 + 7 道间距/内边距 */
+    private val baseCardWidth = columns * baseCell + (columns + 1) * cellSpace
 
-    /** 卡片（含卡内边距）宽度 */
-    private fun cardWidth(availableWidthDp: Float, availableHeightDp: Float = 800f): Float =
-        columns * cell(availableWidthDp, availableHeightDp) + (columns - 1) * cellSpace + 2 * cardPadding
+    /** 450dp 宽的封顶卡宽 */
+    private val maxCardWidth = columns * maxCell + (columns + 1) * cellSpace
 
-    /** 弹窗窗口（卡片＋按屏宽封顶后的实际左右留白）宽度 */
-    private fun windowWidth(availableWidthDp: Float, availableHeightDp: Float = 800f): Float =
-        cardWidth(availableWidthDp, availableHeightDp) +
-            2 * weekPickerSideShadowPaddingDp(availableWidthDp, cell(availableWidthDp, availableHeightDp))
-
-    /** 封顶临界宽：反推值恰好涨到上限的窗口宽度（按反推留白基准计），更宽的窗口一律封顶 */
-    private val capBindingWidth =
-        columns * maxCell + (columns - 1) * cellSpace + 2 * cardPadding + 2 * sizingPadding + 2 * edgeMargin
-
-    /** 384dp → 450dp：方格继续随屏宽等比放大，尺寸规则与投影留白放宽前完全一致 */
-    @Test
-    fun cellsScaleFrom49To60Between384And450() {
-        val startWidth = 384f
-        val endWidth = capBindingWidth
-        assertEquals("384dp", 49f, cell(startWidth), 0.001f)
-        assertEquals("450dp", 60f, cell(endWidth), 0.001f)
-        assertEquals("417dp 中点", 54.5f, cell((startWidth + endWidth) / 2f), 0.001f)
-    }
-
-    /** 临界宽以下：左右留白按屏宽封顶回 16dp 基准，窗口距屏幕两侧恰为 edgeMargin
-     *  （与放宽前完全一致）；卡片到屏幕两侧恒为 17dp——目标 50dp 只在屏幕放得下时才吃满 */
-    @Test
-    fun cardKeepsScreenMarginAndWindowStaysInsideScreenBelowTheBindingWidth() {
-        listOf(320f, 360f, 384f, capBindingWidth * 0.9f, capBindingWidth - 1f).forEach { width ->
-            assertEquals(
-                "availableWidth=$width",
-                edgeMargin + sizingPadding,
-                (width - cardWidth(width)) / 2,
-                0.001f,
-            )
-            assertEquals(
-                "availableWidth=$width",
-                width - 2 * edgeMargin,
-                windowWidth(width),
-                0.001f,
-            )
-            assertEquals(
-                "availableWidth=$width",
-                sizingPadding,
-                weekPickerSideShadowPaddingDp(width, cell(width)),
-                0.001f,
-            )
-        }
-    }
-
-    /** 临界宽起（含宽屏手机/横屏/平板）：边长封顶，卡片保持自然宽度居中，留白自然变宽；
-     *  窗口始终收在屏幕内（越出会压掉方格一列），屏宽足够后才吃满目标留白 */
-    @Test
-    fun cellIsCappedFromTheBindingWidthUp() {
-        listOf(capBindingWidth, capBindingWidth + 1f, capBindingWidth * 1.2f, capBindingWidth * 2f).forEach { width ->
-            assertEquals("availableWidth=$width", maxCell, cell(width), 0.001f)
-            assertTrue("availableWidth=$width", windowWidth(width) <= width + 0.001f)
-            assertTrue("availableWidth=$width", (width - cardWidth(width)) / 2 >= edgeMargin + sizingPadding - 0.001f)
-            assertTrue(
-                "availableWidth=$width",
-                weekPickerSideShadowPaddingDp(width, cell(width)) <= actualPadding + 0.001f,
-            )
-        }
-    }
-
-    /** 左右留白按屏宽封顶：窄屏恒为 16dp 基准（窗口距屏幕 1dp、与放宽前一致），
-     *  屏宽 ≥ 卡片 + 2×(目标留白 + 边距) 时才吃满 50dp */
-    @Test
-    fun sideShadowPaddingIsClampedByScreenWidth() {
-        // 适配段：可分配宽度只有「16dp 反推留白 + 1dp 边距」
-        listOf(320f, 360f, 384f, capBindingWidth - 1f).forEach { width ->
-            assertEquals(
-                "width=$width",
-                sizingPadding,
-                weekPickerSideShadowPaddingDp(width, cell(width)),
-                0.001f,
-            )
-        }
-        // 封顶段：卡片固定 416dp，500dp 屏先分到 (500−416)/2−1 = 41dp，518dp 起才够 50dp
-        assertEquals(
-            "500dp",
-            (500f - cardWidth(500f)) / 2 - edgeMargin,
-            weekPickerSideShadowPaddingDp(500f, cell(500f)),
-            0.001f,
+    private fun geometry(width: Float, belowPill: Float, rows: Int = 4) =
+        weekPickerGeometry(
+            availableWidthDp = width,
+            availableHeightBelowPillDp = belowPill,
+            rows = rows,
         )
-        assertEquals(actualPadding, weekPickerSideShadowPaddingDp(520f, cell(520f)), 0.001f)
-        assertEquals(actualPadding, weekPickerSideShadowPaddingDp(800f, cell(800f)), 0.001f)
-        // 宽度未知（首帧之前/预览）：回落 16dp 基准，避免内容越出未知宽度的窗口
-        assertEquals(sizingPadding, weekPickerSideShadowPaddingDp(0f, cell(384f)), 0.001f)
+
+    private fun cardWidth(g: WeekPickerGeometry): Float =
+        columns * g.cellSize.value + (columns + 1) * g.cellSpace.value
+
+    private fun cardHeight(g: WeekPickerGeometry, rows: Int = 4): Float =
+        rows * g.cellSize.value + (rows + 1) * g.cellSpace.value
+
+    private fun fontOf(g: WeekPickerGeometry): Float =
+        ClassppTextTokens.weekGridNumberScaled(g.visualScale).fontSize.value
+
+    private fun assertRoundedShapesScaleWith(g: WeekPickerGeometry) {
+        assertEquals(cardCorner * g.visualScale, g.cardCorner.value, EPS)
+        assertEquals(cellCorner * g.visualScale, g.cellCorner.value, EPS)
+        assertEquals(shadowElevation * g.visualScale, g.shadowElevation.value, EPS)
+        assertEquals(numberFont * g.visualScale, fontOf(g), EPS)
+        assertEquals(numberLineHeight * g.visualScale,
+            ClassppTextTokens.weekGridNumberScaled(g.visualScale).lineHeight.value, EPS)
     }
 
-    /** 顶部留白按可用高度封顶：空间充足恒为 50dp，内容超高时回落，最低 16dp 基准 */
+    /** 384dp 是正常手机的参考点：49dp 方格、卡片 350dp、两侧各 17dp */
     @Test
-    fun topShadowPaddingIsClampedByAvailableHeight() {
-        assertEquals(actualPadding, weekPickerTopShadowPaddingDp(800f, cell(384f), 3), 0.001f)
-        assertEquals(sizingPadding, weekPickerTopShadowPaddingDp(300f, 40f, 6), 0.001f)
-        // 高度未知（首帧之前/预览）：回落 16dp 基准
-        assertEquals(sizingPadding, weekPickerTopShadowPaddingDp(0f, cell(384f), 3), 0.001f)
+    fun width384IsTheNormalPhoneReference() {
+        val g = geometry(384f, 800f)
+        assertEquals(baseCell, g.cellSize.value, EPS)
+        assertEquals(cellSpace, g.cellSpace.value, EPS)
+        assertEquals(baseCardWidth, cardWidth(g), EPS)
+        assertEquals(sideMin, g.sidePadding.value, EPS)
+        assertEquals(1f, g.visualScale, EPS)
+        assertEquals(numberFont, fontOf(g), EPS)
+        assertEquals(17f, (384f - cardWidth(g)) / 2f, EPS)
+        assertEquals(384f, cardWidth(g) + 2 * g.sidePadding.value + 2 * edge, EPS)
+        assertRoundedShapesScaleWith(g)
     }
 
-    /** 临界处是硬边界：临界宽以下按留白反推（恒小于上限），到临界宽立刻收到上限 */
+    /** 384–450dp：卡片跟着屏宽铺满 17dp 边距，只放大方格，字号/间距/圆角/投影不变 */
     @Test
-    fun theCapStartsExactlyAtTheBindingWidth() {
-        assertTrue("临界宽-1 应小于上限", cell(capBindingWidth - 1f) < maxCell)
-        assertEquals(maxCell, cell(capBindingWidth), 0.001f)
+    fun widths384To450GrowCellsOnly() {
+        listOf(385f, 400f, 425f, 449f, 450f).forEach { width ->
+            val g = geometry(width, 800f)
+            val expectedCell = (width - 2 * edge - 2 * sideMin - 7 * cellSpace) / columns
+            assertEquals("width=$width", expectedCell, g.cellSize.value, EPS)
+            assertEquals("width=$width", cellSpace, g.cellSpace.value, EPS)
+            assertEquals("width=$width", numberFont, fontOf(g), EPS)
+            assertEquals("width=$width", 1f, g.visualScale, EPS)
+            assertEquals("width=$width", 7 * cellSpace + columns * expectedCell,
+                cardWidth(g), EPS)
+            assertEquals("width=$width", sideMin, g.sidePadding.value, EPS)
+            assertEquals("width=$width", 17f, (width - cardWidth(g)) / 2f, EPS)
+            assertRoundedShapesScaleWith(g)
+        }
+        assertEquals(60f, geometry(450f, 800f).cellSize.value, EPS)
     }
 
-    /** 临界宽以下随屏宽单调递增且恒为正；极端窄屏也不会算出负数 */
+    /** 超过 450dp：弹窗不再放大，卡片 416dp 居中，留白随屏宽增长并封顶 50dp */
     @Test
-    fun cellSizeFollowsWidthBelowTheBindingAndStaysPositive() {
-        assertTrue(cell(capBindingWidth * 0.5f) > 0f)
-        assertTrue(cell(capBindingWidth * 0.5f) < cell(capBindingWidth * 0.75f))
-        assertTrue(cell(capBindingWidth * 0.75f) < cell(capBindingWidth * 0.9f))
-        assertTrue(cell(capBindingWidth * 0.9f) < cell(capBindingWidth - 1f))
-        assertEquals(0f, cell(80f), 0.001f)
+    fun widthsAbove450StopGrowing() {
+        listOf(451f, 500f, 518f, 800f, 1200f).forEach { width ->
+            val g = geometry(width, 800f)
+            assertEquals("width=$width", maxCell, g.cellSize.value, EPS)
+            assertEquals("width=$width", cellSpace, g.cellSpace.value, EPS)
+            assertEquals("width=$width", numberFont, fontOf(g), EPS)
+            assertEquals("width=$width", 1f, g.visualScale, EPS)
+            assertEquals("width=$width", maxCardWidth, cardWidth(g), EPS)
+            val expectedSide = ((width - maxCardWidth) / 2f - edge).coerceIn(0f, sideMax)
+            assertEquals("width=$width", expectedSide, g.sidePadding.value, EPS)
+            assertTrue("width=$width", cardWidth(g) + 2 * g.sidePadding.value <= width + EPS)
+        }
     }
 
-    /** 高度达到参考高度起不参与高度钳制：任意 ≥ 400dp 的高度都与只看宽度的结果一致 */
+    /** 384dp 以下：所有 token 按同一比例缩小，卡片仍铺满 17dp 边距 */
     @Test
-    fun heightAtOrAboveThresholdKeepsWidthFit() {
-        listOf(heightThreshold, heightThreshold + 1f, 480f, 800f, 1600f).forEach { height ->
-            listOf(320f, 384f, 450f, 800f).forEach { width ->
-                assertEquals(
-                    "width=$width height=$height",
-                    cell(width),
-                    cell(width, height),
-                    0.001f,
-                )
+    fun widthsBelow384ShrinkEveryTokenProportionally() {
+        listOf(360f, 320f, 280f, 240f).forEach { width ->
+            val expectedScale = (width - 2 * edge - 2 * sideMin) / baseCardWidth
+            val g = geometry(width, 800f)
+            assertEquals("width=$width", baseCell * expectedScale, g.cellSize.value, EPS)
+            assertEquals("width=$width", cellSpace * expectedScale, g.cellSpace.value, EPS)
+            assertEquals("width=$width", expectedScale, g.visualScale, EPS)
+            assertEquals("width=$width", numberFont * expectedScale, fontOf(g), EPS)
+            assertEquals("width=$width", sideMin, g.sidePadding.value, EPS)
+            assertEquals("width=$width", width - 2 * edge,
+                cardWidth(g) + 2 * g.sidePadding.value, EPS)
+            assertEquals("width=$width", 17f, (width - cardWidth(g)) / 2f, EPS)
+            assertRoundedShapesScaleWith(g)
+        }
+    }
+
+    /** 矮窗放不下时整卡等比缩小（含字号），卡片高度正好收进胶囊下方预算 */
+    @Test
+    fun shortWindowsShrinkEverythingProportionally() {
+        // 384dp 宽、4 行的基准卡高 = 4×49 + 5×8 = 236
+        listOf(240f, 212f, 180f, 160f).forEach { belowPill ->
+            val expectedScale = (belowPill - gap - shadowMin) / (4f * baseCell + 5 * cellSpace)
+            val g = geometry(384f, belowPill)
+            assertEquals("below=$belowPill", baseCell * expectedScale, g.cellSize.value, EPS)
+            assertEquals("below=$belowPill", cellSpace * expectedScale, g.cellSpace.value, EPS)
+            assertEquals("below=$belowPill", expectedScale, g.visualScale, EPS)
+            assertEquals("below=$belowPill", numberFont * expectedScale, fontOf(g), EPS)
+            assertFalse("below=$belowPill", g.scrollable)
+            assertEquals("below=$belowPill", belowPill,
+                gap + cardHeight(g) + g.bottomPadding.value, EPS)
+            assertRoundedShapesScaleWith(g)
+        }
+    }
+
+    /** 450dp 宽的手机遇到矮窗：同样按高度等比缩小，字号可以低于 23sp */
+    @Test
+    fun shortWindowShrinksFontEvenAtMaximumWidth() {
+        val tall = geometry(450f, 800f)
+        assertEquals(maxCell, tall.cellSize.value, EPS)
+        assertEquals(numberFont, fontOf(tall), EPS)
+
+        val belowPill = 264f
+        val expectedScale = (belowPill - gap - shadowMin) / (4f * maxCell + 5 * cellSpace)
+        val short = geometry(450f, belowPill)
+        assertEquals(expectedScale, short.visualScale, EPS)
+        assertEquals(maxCell * expectedScale, short.cellSize.value, EPS)
+        assertEquals(numberFont * expectedScale, fontOf(short), EPS)
+        assertTrue(short.cellSize.value < maxCell)
+        assertTrue(fontOf(short) < numberFont)
+        assertEquals(belowPill, gap + cardHeight(short) + short.bottomPadding.value, EPS)
+    }
+
+    /** 行数参与高度反推：2 行短学期在 212dp 预算下仍是满格，4 行才会缩 */
+    @Test
+    fun rowCountParticipatesInHeightFit() {
+        val twoRows = geometry(384f, 212f, rows = 2)
+        assertEquals(baseCell, twoRows.cellSize.value, EPS)
+        assertEquals(numberFont, fontOf(twoRows), EPS)
+        assertTrue(gap + cardHeight(twoRows, 2) + twoRows.bottomPadding.value <= 212f + EPS)
+
+        val fourRows = geometry(384f, 212f, rows = 4)
+        assertTrue(fourRows.cellSize.value < baseCell)
+        assertEquals(212f, gap + cardHeight(fourRows, 4) + fourRows.bottomPadding.value, EPS)
+    }
+
+    /** 缩到 28dp 仍放不下：不再压卡片，改为内部滚动（卡片框锁在预算内） */
+    @Test
+    fun belowReadableFloorScrollsInsteadOfSqueezing() {
+        val belowPill = 144f
+        val g = geometry(384f, belowPill)
+        assertEquals(minCell, g.cellSize.value, EPS)
+        assertTrue(g.scrollable)
+        assertEquals(belowPill - gap - shadowMin, g.maxCardHeight.value, EPS)
+        assertEquals(shadowMin, g.bottomPadding.value, EPS)
+        assertEquals(belowPill, gap + g.maxCardHeight.value + g.bottomPadding.value, EPS)
+        assertTrue(g.maxCardHeight.value < cardHeight(g))
+        assertRoundedShapesScaleWith(g)
+    }
+
+    /** 极端窄窗：宽度绑定时允许跌破可读下限，横向绝不溢出（高度还有空间，不触发滚动） */
+    @Test
+    fun narrowWidthBeatsTheReadabilityFloor() {
+        val g = geometry(120f, 800f)
+        assertFalse(g.scrollable)
+        assertTrue("cell=${g.cellSize.value}", g.cellSize.value < minCell)
+        assertTrue(cardWidth(g) + 2 * g.sidePadding.value <= 120f + EPS)
+        assertEquals(numberFont * (120f - 34f) / baseCardWidth, fontOf(g), EPS)
+    }
+
+    /** 宽度未知（首帧之前/预览）：回落到参考设计，投影留白取上限 */
+    @Test
+    fun unknownWindowFallsBackToReferenceLayout() {
+        val g = geometry(0f, 0f)
+        assertEquals(1f, g.visualScale, EPS)
+        assertEquals(baseCell, g.cellSize.value, EPS)
+        assertEquals(sideMin, g.sidePadding.value, EPS)
+        assertEquals(bottomMax, g.bottomPadding.value, EPS)
+        assertFalse(g.scrollable)
+    }
+
+    /** 任取窗口尺寸与行数：不横向溢出；不滚动时高度收进预算；滚动时卡片框收进预算 */
+    @Test
+    fun everyWindowFitsWithoutOverflow() {
+        val widths = listOf(120f, 200f, 240f, 280f, 320f, 360f, 384f, 400f, 450f, 600f, 1000f)
+        val heights = listOf(80f, 120f, 160f, 212f, 240f, 288f, 400f, 800f)
+        val rowCounts = listOf(1, 2, 3, 4, 6, 10)
+        rowCounts.forEach { rows ->
+            widths.forEach { width ->
+                heights.forEach { belowPill ->
+                    val g = geometry(width, belowPill, rows)
+                    val tag = "width=$width below=$belowPill rows=$rows"
+                    assertRoundedShapesScaleWith(g)
+                    assertTrue(tag, g.cellSize.value >= 0f)
+                    assertTrue("$tag cell=${g.cellSize.value}", g.cellSize.value <= maxCell + EPS)
+                    assertTrue("$tag gap=${g.cellSpace.value}", g.cellSpace.value <= cellSpace + EPS)
+                    assertTrue(tag, g.sidePadding.value >= 0f)
+                    assertTrue(tag, g.sidePadding.value <= sideMax + EPS)
+                    assertTrue(tag, g.bottomPadding.value >= 0f)
+                    assertTrue(tag, g.bottomPadding.value <= bottomMax + EPS)
+                    assertTrue(tag, cardWidth(g) + 2 * g.sidePadding.value <= width + EPS)
+                    if (g.scrollable) {
+                        assertTrue("$tag cell=${g.cellSize.value}", g.cellSize.value <= minCell + EPS)
+                        assertTrue(
+                            tag,
+                            gap + g.maxCardHeight.value + g.bottomPadding.value
+                                <= belowPill + EPS,
+                        )
+                    } else {
+                        assertTrue(
+                            tag,
+                            gap + cardHeight(g, rows) + g.bottomPadding.value
+                                <= belowPill + EPS,
+                        )
+                    }
+                }
             }
         }
     }
 
-    /** 高度低于 400dp：方格按「高度/400」等比缩小，49dp 基准缩到 40dp 后不再变化 */
+    /** 方格随宽度单调不减并在 450dp 封顶；字号在 384dp 后恒为 23sp；高度越小越小 */
     @Test
-    fun cellsShrinkProportionallyBelowThresholdAndStopAt40() {
-        assertEquals("400dp 高", 49f, cell(384f, 400f), 0.001f)
-        assertEquals("360dp 高", heightBase * 0.9f, cell(384f, 360f), 0.001f)
-        assertEquals("340dp 高", heightBase * 0.85f, cell(384f, 340f), 0.001f)
-        // 49 × 0.8 = 39.2 → 40dp 封底
-        assertEquals("320dp 高", minCell, cell(384f, 320f), 0.001f)
-        listOf(300f, 240f, 160f, 80f).forEach { height ->
-            assertEquals("height=$height", minCell, cell(384f, height), 0.001f)
+    fun cellSizeIsMonotonicInBothAxes() {
+        var previousCell = 0f
+        var previousGap = 0f
+        var previousFont = 0f
+        listOf(200f, 240f, 280f, 320f, 360f, 384f, 385f, 400f, 450f, 451f, 800f)
+            .forEach { width ->
+                val g = geometry(width, 800f)
+                assertTrue("width=$width cell=${g.cellSize.value}",
+                    g.cellSize.value >= previousCell - EPS)
+                assertTrue("width=$width gap=${g.cellSpace.value}",
+                    g.cellSpace.value >= previousGap - EPS)
+                assertTrue("width=$width font=${fontOf(g)}", fontOf(g) >= previousFont - EPS)
+                previousCell = g.cellSize.value
+                previousGap = g.cellSpace.value
+                previousFont = fontOf(g)
+            }
+        assertEquals(maxCell, previousCell, EPS)
+        assertEquals(numberFont, previousFont, EPS)
+
+        var previousHeightCell = 0f
+        listOf(140f, 160f, 180f, 212f, 240f, 288f, 400f, 800f).forEach { belowPill ->
+            val cell = geometry(384f, belowPill).cellSize.value
+            assertTrue("below=$belowPill cell=$cell previous=$previousHeightCell",
+                cell >= previousHeightCell - EPS)
+            previousHeightCell = cell
         }
+        assertEquals(baseCell, previousHeightCell, EPS)
     }
 
-    /** 高度钳制优先于宽度：低于 400dp 后不论窗口多宽，一律从 49dp 基准缩小（不再取 60dp） */
-    @Test
-    fun heightClampOverridesWidthBelowThreshold() {
-        // 400dp 高仍走宽度：384dp 宽 49dp、450dp 宽起 60dp
-        assertEquals(49f, cell(384f, 400f), 0.001f)
-        assertEquals(60f, cell(450f, 400f), 0.001f)
-        assertEquals(60f, cell(800f, 400f), 0.001f)
-        // 低于 400dp 立刻切到 49dp 基准，宽度不再参与
-        listOf(384f, 450f, 800f, 1200f).forEach { width ->
-            assertEquals("width=$width", heightBase * 0.9f, cell(width, 360f), 0.001f)
-            assertEquals("width=$width", heightBase * 0.85f, cell(width, 340f), 0.001f)
-            assertEquals("width=$width", minCell, cell(width, 320f), 0.001f)
-        }
-        assertEquals("399dp 高", heightBase * 399f / 400f, cell(800f, 399f), 0.001f)
-    }
-
-    /** 窄屏宽度反推值本身低于 40dp：高度下限不得反过来撑破宽度适配，卡片仍贴边
-     *  （到屏幕边缘恒 17dp，窗口两侧各越出 33dp 属预期） */
-    @Test
-    fun heightFloorNeverBreaksWidthFitOnNarrowWindows() {
-        val widthFit = cell(320f)
-        assertTrue("320dp 宽反推值应低于下限", widthFit < minCell)
-        listOf(400f, 320f, 240f, 120f).forEach { height ->
-            assertEquals("height=$height", widthFit, cell(320f, height), 0.001f)
-            assertEquals(
-                "height=$height",
-                edgeMargin + sizingPadding,
-                (320f - cardWidth(320f, height)) / 2,
-                0.001f,
-            )
-        }
+    private companion object {
+        const val EPS = 1e-3f
     }
 }

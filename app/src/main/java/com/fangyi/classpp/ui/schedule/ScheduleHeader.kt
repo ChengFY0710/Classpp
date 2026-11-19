@@ -18,10 +18,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -44,6 +47,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -57,6 +61,7 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -86,15 +91,16 @@ import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.Correct
 import com.fangyi.classpp.ui.theme.Error
 import com.fangyi.classpp.ui.theme.LiquidGlassStyle
+import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
+import com.fangyi.classpp.ui.theme.LocalStatusBarHeight
 import com.fangyi.classpp.ui.theme.LocalStatusBarInsets
 import com.fangyi.classpp.ui.theme.PillShape
-import com.fangyi.classpp.ui.theme.SettingsCardShape
-import com.fangyi.classpp.ui.theme.WeekCellShape
 import com.fangyi.classpp.ui.theme.glassPressFeedback
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
+import com.kyant.shapes.RoundedRectangle
 import dev.chrisbanes.haze.HazePerformanceMode
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.hazeBlur
@@ -118,7 +124,14 @@ private val TopBarIconTouchWidth = 64.dp
 /** 折叠态胶囊右缘距屏幕右侧的距离（与顶栏设置图标右缘 ~29dp 基本对齐） */
 private val PillEndPadding = 30.dp
 
-private val WeekPickerGap = 16.dp  //周数选择器顶部与胶囊底部的固定垂直间距（展开/折叠态一致）
+/** 周数选择器顶部与胶囊底部的固定垂直间距（展开/折叠态一致），也是高度预算里扣掉的间距。 */
+internal val WeekPickerGap = 16.dp
+
+/**
+ * 高度预算的胶囊下缘预留：顶栏内垂直居中的胶囊底边（展开态 = 48dp，折叠态停在日期行中心、
+ * 更低）。用它而不是整窗高，弹窗高度只看胶囊下方真正可用的空间。
+ */
+private val WeekPickerPillBottomReserve = (TopBarHeight + WeekPillHeight) / 2
 
 internal val CardShadowPadding = 16.dp
 
@@ -126,153 +139,179 @@ internal val CardShadowPadding = 16.dp
 internal val CardShadowBottomPadding = 48.dp
 
 /**
- * 周数选择弹窗的目标投影留白（菜单族仍用 [CardShadowPadding] / [CardShadowBottomPadding]）。
- * 该弹窗投影 52dp 比菜单族（36dp）更重，16dp 留白会在窗口边缘留下硬切：顶部按目标放到 50dp
- * 让柔影自然衰减，底部坠得最远、单独加大到 [WeekPickerShadowBottomPadding]。
- * 左右/顶部实际取值受窗口约束：Popup 内容按窗口尺寸 AT_MOST 测量、窗口不能越出屏幕——
- * 留白越过屏幕会把内容挤压（横向压掉最右一列方格、纵向压扁底行），因此按可用空间封顶
- * （见 [weekPickerSideShadowPaddingDp] / [weekPickerTopShadowPaddingDp]）：适配段左右恒为
- * 16dp（窗口距屏幕两侧 1dp，与放宽前完全一致），屏宽 ≥ 卡片 + 2×(50dp + 1dp) 时才吃满。
- * 方格反推仍按 [CardShadowPadding]（16dp）基准走：方格大小、封顶临界宽（450dp）、
- * 高度钳制等规则分毫不动。
+ * 周数选择弹窗的投影留白上限（菜单族仍用 [CardShadowPadding] / [CardShadowBottomPadding]）：
+ * 52dp 柔影比菜单族更重，左右/顶部最多留 50dp，底部坠得最远、单独用
+ * [WeekPickerShadowBottomPadding]。顶部留白向上压进头部区域，**不占**高度预算；左右/底部
+ * 只做上下限钳制，实际值由剩余空间决定，不再反过来挤压卡片。
  */
 internal val WeekPickerShadowPadding = 50.dp
 
-/** 周数选择弹窗专用的底部投影留白（其余三边用 [WeekPickerShadowPadding]）。 */
+/** 周数选择弹窗专用的底部投影留白上限（其余三边用 [WeekPickerShadowPadding]）。 */
 internal val WeekPickerShadowBottomPadding = 60.dp
+
+/**
+ * 投影留白的最低余量：高度不足时等比缩放会吃掉留白，但始终给投影留 8dp，
+ * 避免卡片贴死在 Popup 窗口边缘（再不足就进入内部滚动，见 [WeekPickerGeometry]）。
+ */
+internal val WeekPickerShadowMinPadding = 8.dp
+
+/** 左右最低留白：宽 384dp 时卡片到屏幕边缘恒为 17dp（1dp 边距 + 16dp 留白）。 */
+internal val WeekPickerSideMinPadding = 16.dp
 
 internal val WeekPickerCellSpace = 8.dp // 周数选择器里小方块间距
 
-/**
- * 弹窗反推边距：方格边长按「窗口宽 − 2×[WeekPickerEdgeMargin] − 2×反推留白」反推。
- * 取 1dp：与 [WeekCellSizeMax]=60dp 配套时封顶临界宽恰为 450dp；384dp 档手机正好呈现
- * 49dp 方格，之后随屏宽继续放大到 450dp 的 60dp。左右实际留白按屏宽封顶时也先扣掉
- * 这 1dp（见 [weekPickerSideShadowPaddingDp]），窗口始终收在屏幕内，卡片到屏幕边缘
- * 恒为 17dp（边距 + 反推留白）。
- */
+/** 弹窗边距：卡片居中后窗口左右各留 1dp，保证窗口收在屏幕内（384dp 时卡片到屏幕 17dp）。 */
 internal val WeekPickerEdgeMargin = 1.dp
 
 /**
- * 方格边长上限：450dp 窗口宽时反推值恰好到 60dp，更宽的窗口（宽屏手机/横屏/平板）
- * 封顶于此——弹窗保持自然宽度居中，留白自然变宽；同时也是拿不到宿主窗口宽度时
- * （理论上只在首帧之前）的兜底边长。
+ * 384dp 宽（正常手机）时的方格边长，也是宽度缩小的参考值：
+ * 6×49 + 7×8 间距/内边距 + 2×16 留白 + 2×1 边距 = 384，卡片到屏幕两侧恒为 17dp。
+ */
+internal val WeekCellSizeBase = 49.dp
+
+/**
+ * 方格边长上限：450dp 宽时格子涨到 60dp（卡片 416dp、两侧仍 17dp），更宽（平板/横屏）
+ * 不再放大，卡片 416dp 居中、投影留白自然变宽——正好也与平板的观感匹配。
  */
 internal val WeekCellSizeMax = 60.dp
 
 /**
- * 高度缩放的参考高度：窗口/设备高度低于 400dp 时，弹窗改由高度钳制——不论窗口多宽，
- * 方格边长一律从 [WeekCellSizeHeightBase]（49dp）开始按「高度 / 400dp」等比缩小，
- * 缩到 [WeekCellSizeMin] 后不再变化；400dp 及以上完全沿用宽度反推值。
+ * 等比缩小的可读下限：28dp 方格约对应 13sp 字号。缩到这里仍放不下时不再压缩，
+ * 改为卡片内部纵向滚动（[WeekPickerGeometry.scrollable]）。
  */
-internal val WeekPickerHeightThreshold = 400.dp
+internal val WeekCellSizeMin = 28.dp
+
+/** 卡片与方格的圆角参考值（[WeekPickerGeometry.visualScale] = 1），实际按它缩放。 */
+internal val WeekPickerCardCorner = 20.dp
+internal val WeekPickerCellCorner = 12.dp
+
+/** 卡片投影高度参考值（[WeekPickerGeometry.visualScale] = 1），实际按它缩放。 */
+internal val WeekPickerShadowElevation = 52.dp
 
 /**
- * 高度钳制的基准边长：高度低于 [WeekPickerHeightThreshold] 时一律从这里开始等比缩小，
- * 不取宽度反推的 49–60dp（高度优先于宽度）。49dp 同时是 384dp 窗口宽的宽度反推值。
+ * 周数选择弹窗的完整尺寸。宽度分三段：
+ *
+ * - ≤384dp：卡片占满「屏幕 − 两侧 17dp」，方格从 49dp 等比缩小，间距、字号、圆角、
+ *   投影一起乘同一比例，窄窗不挤压；
+ * - 384–450dp：卡片继续占满「屏幕 − 两侧 17dp」，只放大方格（49→60dp），
+ *   间距 8dp、字号 23sp、圆角、投影保持基准值——弹窗随屏宽放大但字号不变；
+ * - >450dp：卡片封顶 416dp（方格 60dp），居中显示，投影留白自然变宽，适合平板。
+ *
+ * 高度只受「胶囊下缘 → 窗口底部」的预算约束：卡片顶边固定在胶囊下方
+ * [WeekPickerGap]，顶部投影留白向上压进头部区域，不占预算。行数参与反推，
+ * 2 行的短学期不会被按 4 行缩。矮窗放不下时整张卡片（含字号、圆角、投影）按
+ * 同一比例缩小。
+ *
+ * [scrollable] 为 true 时高度已缩到 [WeekCellSizeMin] 仍放不下：卡片高度锁在
+ * [maxCardHeight]，网格在卡片内部滚动——宁可滚动，也不压扁底行或裁掉内容。
+ *
+ * [visualScale] 只作用于字号、圆角、投影高度：宽度放大段恒为 1（字号不变），
+ * 窄窗/矮窗的等比缩小段才小于 1。
  */
-internal val WeekCellSizeHeightBase = 49.dp
+internal data class WeekPickerGeometry(
+    val visualScale: Float,
+    val cellSize: Dp,
+    val cellSpace: Dp,
+    val sidePadding: Dp,
+    val topPadding: Dp,
+    val bottomPadding: Dp,
+    val shadowElevation: Dp,
+    val cardCorner: Dp,
+    val cellCorner: Dp,
+    val scrollable: Boolean,
+    val maxCardHeight: Dp,
+)
 
 /**
- * 方格边长下限：高度缩放缩到 40dp 后不再变化。窄屏宽度反推值本来就小于 40dp 时仍以宽度
- * 为准（下限不得反过来撑破弹窗贴边），见 [weekCellSizeDp]。
+ * 按可用空间计算周数弹窗尺寸。两个输入都未知（0，首帧之前/预览）时回落到参考设计。
+ *
+ * [availableHeightBelowPillDp] 是胶囊下缘到窗口可用底部的距离（组合期已扣除状态栏、
+ * 顶栏预留与底部导航栏让位）；函数内部再扣 [WeekPickerGap] 与投影最低余量。
+ *
+ * 宽度本身连最低留白都放不下时允许跌破 [WeekCellSizeMin]（横向没有补救空间，
+ * 宁可小也不能溢出）；只有高度不足才触发下限 + 滚动。
  */
-internal val WeekCellSizeMin = 40.dp
-
-/**
- * 高度缩放系数：窗口高度 ≥ [WeekPickerHeightThreshold] 时为 1，低于时按高度等比缩小。
- * 高度未知（首帧之前为 0）时按 1 处理。
- */
-internal fun weekPickerHeightScale(availableHeightDp: Float): Float =
-    if (availableHeightDp <= 0f) {
-        1f
-    } else {
-        (availableHeightDp / WeekPickerHeightThreshold.value).coerceIn(0f, 1f)
-    }
-
-/**
- * 周数方格边长（dp）：高度 ≥ [WeekPickerHeightThreshold] 时由可用宽度反推并封顶在
- * [maxCellSizeDp]；高度低于该值时改由高度钳制，宽度不再参与放大。
- *
- * 六列、正方形、列间距与卡片内边距全部不变，只让边长随屏宽、屏高伸缩：
- *
- * 宽度规则——先按留白反推（下式），窄屏弹窗满宽铺开，距屏幕左右两侧恒为 [edgeMarginDp]
- *
- *         可用宽度 − 2×外边距 − 2×投影留白 − 2×卡片内边距 − (列数−1)×列间距
- *         边长 = ────────────────────────────────────────────────────────────
- *                                       列数
- *
- * 反推值随屏宽线性增长：384dp 窗口对应 49dp 方格，450dp 窗口对应 60dp 方格；
- * 超过 450dp（宽屏手机/横屏/平板）后封顶 [maxCellSizeDp]，弹窗保持自然宽度
- * 居中，留白自然变宽——不会出现巨大的方格。
- *
- * 高度规则——高度低于 400dp（横屏/分屏/小折叠外屏）时**优先于宽度**：不论窗口多宽，
- * 一律以 [heightBaseCellSizeDp]（49dp）为基准乘「高度 / 400dp」等比缩小，缩到
- * [minCellSizeDp]（40dp）后不再变化。宽窗口不再按 49–60dp 放大；更窄的窗口仍受宽度
- * 约束（边长不超过宽度反推值），保证弹窗贴边不横向溢出。
- */
-internal fun weekCellSizeDp(
+internal fun weekPickerGeometry(
     availableWidthDp: Float,
-    availableHeightDp: Float,
-    edgeMarginDp: Float,
-    shadowPaddingDp: Float,
-    cardPaddingDp: Float,
-    cellSpaceDp: Float,
-    maxCellSizeDp: Float,
-    heightBaseCellSizeDp: Float,
-    minCellSizeDp: Float,
-    columns: Int = 6,
-): Float {
-    val cardWidth = availableWidthDp - 2f * edgeMarginDp - 2f * shadowPaddingDp
-    val gridWidth = cardWidth - 2f * cardPaddingDp
-    val fitted = ((gridWidth - (columns - 1) * cellSpaceDp) / columns)
-        .coerceAtMost(maxCellSizeDp)
-        .coerceAtLeast(0f)
-    val heightScale = weekPickerHeightScale(availableHeightDp)
-    // 高度 ≥ 400dp（或高度未知）：只按宽度定尺
-    if (heightScale >= 1f) return fitted
-    // 高度钳制优先：宽窗口也回到 49dp 基准，不继承宽度放大的 49–60dp
-    return (heightBaseCellSizeDp * heightScale)
-        .coerceAtLeast(minCellSizeDp)
-        // 更窄的窗口仍保住贴边：宽度反推值更小时以宽度为准
-        .coerceAtMost(fitted)
-}
-
-/**
- * 周数选择弹窗左右两侧的实际投影留白（dp）：Popup 内容按窗口宽 AT_MOST 测量、窗口不能
- * 越出屏幕——留白越过屏幕会把内容挤压，最右一列方格会被压到 0 宽（实测丢列）。
- * 因此左右留白取「(可用宽度 − 卡片宽) / 2 − [WeekPickerEdgeMargin]」与
- * [WeekPickerShadowPadding] 的较小者，且不低于 [CardShadowPadding]：适配段恒为 16dp
- * （窗口距屏幕两侧 1dp、卡片到屏幕边缘 17dp，与放宽前完全一致），屏宽 ≥ 卡片 +
- * 2×(50dp + 1dp) 时才真正吃到 50dp。可用宽度未知（0，首帧之前/预览）时回落到 16dp。
- * 卡片宽 = 六列方格 + 五道列间距 + 两侧卡内边距（与 [WeekPickerCard] 布局一致）。
- */
-internal fun weekPickerSideShadowPaddingDp(availableWidthDp: Float, cellSizeDp: Float): Float {
-    if (availableWidthDp <= 0f) return CardShadowPadding.value
-    val cardWidth = cellSizeDp * 6 +
-        WeekPickerCellSpace.value * 5 +
-        WeekPickerCellSpace.value * 2
-    val room = (availableWidthDp - cardWidth) / 2f - WeekPickerEdgeMargin.value
-    return room.coerceIn(CardShadowPadding.value, WeekPickerShadowPadding.value)
-}
-
-/**
- * 周数选择弹窗顶部的实际投影留白（dp）：窗口高度同样按屏幕 AT_MOST 测量，留白抬高窗口
- * 上缘会让内容超高、底行被压扁。取「可用高度 − 卡片高 − [WeekPickerShadowBottomPadding]」
- * 封顶 [WeekPickerShadowPadding]，不低于 [CardShadowPadding]（放宽前基准）；高度未知
- * （0，首帧之前/预览）时同样回落到 16dp。卡片高 = 行数×方格 + 行间距 + 上下卡内边距
- * （与 [WeekPickerCard] 一致）。
- */
-internal fun weekPickerTopShadowPaddingDp(
-    availableHeightDp: Float,
-    cellSizeDp: Float,
+    availableHeightBelowPillDp: Float,
     rows: Int,
-): Float {
-    if (availableHeightDp <= 0f) return CardShadowPadding.value
-    val cardHeight = rows * cellSizeDp +
-        (rows - 1) * WeekPickerCellSpace.value +
-        WeekPickerCellSpace.value * 2
-    val room = availableHeightDp - cardHeight - WeekPickerShadowBottomPadding.value
-    return room.coerceIn(CardShadowPadding.value, WeekPickerShadowPadding.value)
+): WeekPickerGeometry {
+    val referenceCell = WeekCellSizeBase.value
+    val maxCell = WeekCellSizeMax.value
+    val referenceSpace = WeekPickerCellSpace.value
+    val rowCount = rows.coerceAtLeast(1)
+    val edge = WeekPickerEdgeMargin.value
+    val sideMin = WeekPickerSideMinPadding.value
+    val baseCardWidth = 6f * referenceCell + 7f * referenceSpace
+    val maxCardWidth = 6f * maxCell + 7f * referenceSpace
+
+    // 宽度：≤450dp 时卡片始终占满「屏幕 − 两侧 17dp」；>450dp 封顶 416dp
+    val cardWidthTarget = if (availableWidthDp > 0f) {
+        (availableWidthDp - 2f * edge - 2f * sideMin).coerceIn(0f, maxCardWidth)
+    } else {
+        baseCardWidth
+    }
+    val widthScale = cardWidthTarget / baseCardWidth
+
+    // 384dp 以下：所有 token 等比缩小；384–450dp：只放大方格，间距与字号保持基准值
+    val baseCell: Float
+    val baseSpace: Float
+    if (cardWidthTarget <= baseCardWidth) {
+        baseCell = referenceCell * widthScale
+        baseSpace = referenceSpace * widthScale
+    } else {
+        baseCell = (cardWidthTarget - 7f * referenceSpace) / 6f
+        baseSpace = referenceSpace
+    }
+    val baseCardHeight = rowCount * baseCell + (rowCount + 1) * baseSpace
+
+    // 高度：只受胶囊下方可用空间约束，行数参与反推；放不下时整卡等比缩小
+    val cardSpace = if (availableHeightBelowPillDp > 0f) {
+        (availableHeightBelowPillDp - WeekPickerGap.value - WeekPickerShadowMinPadding.value)
+            .coerceAtLeast(0f)
+    } else {
+        Float.MAX_VALUE
+    }
+    var heightScale = if (baseCardHeight > cardSpace) {
+        (cardSpace / baseCardHeight).coerceIn(0f, 1f)
+    } else {
+        1f
+    }
+    // 可读下限只约束高度方向：宽度本身放不下时宁可更小，也绝不让卡片横向溢出
+    val floorScale = if (baseCell > 0f) WeekCellSizeMin.value / baseCell else 0f
+    val scrollable = baseCell >= WeekCellSizeMin.value && heightScale < floorScale
+    if (scrollable) heightScale = floorScale
+
+    val cellSize = baseCell * heightScale
+    val cellSpace = baseSpace * heightScale
+    val cardHeight = rowCount * cellSize + (rowCount + 1) * cellSpace
+    val frameHeight = if (scrollable) cardSpace else cardHeight
+    // 宽度放大段字号/圆角/投影不跟着涨；窄窗与矮窗的缩小段才等比缩
+    val visualScale = widthScale.coerceAtMost(1f) * heightScale
+
+    return WeekPickerGeometry(
+        visualScale = visualScale,
+        cellSize = cellSize.dp,
+        cellSpace = cellSpace.dp,
+        sidePadding = if (availableWidthDp > 0f) {
+            ((availableWidthDp - 6f * cellSize - 7f * cellSpace) / 2f - edge)
+                .coerceIn(0f, WeekPickerShadowPadding.value).dp
+        } else {
+            WeekPickerSideMinPadding
+        },
+        topPadding = WeekPickerShadowPadding,
+        bottomPadding = if (availableHeightBelowPillDp > 0f) {
+            (availableHeightBelowPillDp - WeekPickerGap.value - frameHeight)
+                .coerceIn(0f, WeekPickerShadowBottomPadding.value).dp
+        } else {
+            WeekPickerShadowBottomPadding
+        },
+        shadowElevation = WeekPickerShadowElevation * visualScale,
+        cardCorner = WeekPickerCardCorner * visualScale,
+        cellCorner = WeekPickerCellCorner * visualScale,
+        scrollable = scrollable,
+        maxCardHeight = if (scrollable) cardSpace.dp else 0.dp,
+    )
 }
 
 /**
@@ -747,38 +786,24 @@ private fun WeekPill(
             onMenuExpandedChange(false)
         }
 
-        // 弹窗尺寸随宿主窗口自适应：高度 ≥ 400dp 时方格边长由可用宽度反推（六列/正方形/间距都不变），
-        // 384dp–450dp 随屏宽放大（49dp→60dp），450dp 起封顶 WeekCellSizeMax（60dp）；
-        // 反推留白用 CardShadowPadding（16dp）基准——方格规则不随投影留白放宽（50dp）而变
-        // 高度低于 400dp 时改由高度钳制（优先于宽度）：不论窗口多宽一律从 49dp 基准
-        // 按高度等比缩小，缩到 WeekCellSizeMin（40dp）封底。
-        // 多窗口/分屏下 containerDpSize 是当前窗口而非整块屏幕，与定位用的窗口尺寸一致
+        // 弹窗尺寸随宿主窗口自适应（见 weekPickerGeometry）：≤384dp 等比缩小；
+        // 384–450dp 卡片铺满两侧 17dp、只放大方格；>450dp 封顶 416dp 卡片。
+        // 高度预算只算「胶囊下缘 → 窗口底部」：扣掉状态栏让位、胶囊下缘预留
+        // 与底部导航栏让位后，再交给几何函数扣固定间距；顶部投影留白向上压进头部区域，
+        // 不占这份预算。多窗口/分屏下 containerDpSize 是当前窗口而非整块屏幕，与定位一致
         val windowSizeDp = LocalWindowInfo.current.containerDpSize
         val availableWidthDp = windowSizeDp.width.value
-        val availableHeightDp = windowSizeDp.height.value
-        val weekCellSize = remember(availableWidthDp, availableHeightDp) {
-            if (availableWidthDp > 0f) {
-                weekCellSizeDp(
-                    availableWidthDp = availableWidthDp,
-                    availableHeightDp = availableHeightDp,
-                    edgeMarginDp = WeekPickerEdgeMargin.value,
-                    shadowPaddingDp = CardShadowPadding.value,
-                    cardPaddingDp = WeekPickerCellSpace.value,
-                    cellSpaceDp = WeekPickerCellSpace.value,
-                    maxCellSizeDp = WeekCellSizeMax.value,
-                    heightBaseCellSizeDp = WeekCellSizeHeightBase.value,
-                    minCellSizeDp = WeekCellSizeMin.value,
-                ).dp
-            } else {
-                WeekCellSizeMax
-            }
-        }
-
-        // 实际投影留白按可用空间封顶：Popup 内容按窗口 AT_MOST 测量，窗口不能越出屏幕——
-        // 越出会把方格压掉一列（横向）或压扁底行（纵向），放不下时回落到 16dp 基准
+        val availableHeightBelowPillDp =
+            (windowSizeDp.height - LocalStatusBarHeight.current - WeekPickerPillBottomReserve -
+                LocalNavigationBarHeight.current).value
         val weekRows = ((weekRange.last - weekRange.first + 1 + 5) / 6).coerceAtLeast(1)
-        val sideShadowPadding = weekPickerSideShadowPaddingDp(availableWidthDp, weekCellSize.value).dp
-        val topShadowPadding = weekPickerTopShadowPaddingDp(availableHeightDp, weekCellSize.value, weekRows).dp
+        val geometry = remember(availableWidthDp, availableHeightBelowPillDp, weekRows) {
+            weekPickerGeometry(
+                availableWidthDp = availableWidthDp,
+                availableHeightBelowPillDp = availableHeightBelowPillDp,
+                rows = weekRows,
+            )
+        }
 
         // 按压态的唯一来源：glassPressFeedback 与 clickable 共用（涟漪由按压反馈取代，故 clickable 不再要 Indication）
         val pressInteraction = remember { MutableInteractionSource() }
@@ -883,12 +908,12 @@ private fun WeekPill(
 
         // 屏幕水平居中 + 垂直固定：卡片顶部落在胶囊底部下方 WeekPickerGap（展开/折叠态一致）。
         // DropdownMenu 的位置策略锚定胶囊左缘无法满足居中，故用自定义定位器。
-        // 窗口含投影留白（顶部/左右取按屏封顶后的实际值、底部固定），定位按窗口计算需将其
-        // 扣除：卡片顶部仍落在胶囊底部下方 WeekPickerGap
+        // 窗口含投影留白（顶部/左右/底部都按可用空间分配），定位按窗口计算需将其扣除：
+        // 卡片顶部仍落在胶囊底部下方 WeekPickerGap
         val density = LocalDensity.current
-        val gapPx = with(density) { (WeekPickerGap - topShadowPadding).roundToPx() }
-        val sidePaddingPx = with(density) { sideShadowPadding.toPx() }
-        val topPaddingPx = with(density) { topShadowPadding.toPx() }
+        val gapPx = with(density) { (WeekPickerGap - geometry.topPadding).roundToPx() }
+        val sidePaddingPx = with(density) { geometry.sidePadding.toPx() }
+        val topPaddingPx = with(density) { geometry.topPadding.toPx() }
         // 缩放锚点跟随胶囊实际位置：定位回调存下「弹层落位 + 胶囊实际中心」快照
         // （胶囊会随头部展开/折叠移动，常量推算的固定锚点会脱靶），锚点在 draw 阶段
         // 读快照实时跟随——胶囊动到哪，锚点跟到哪
@@ -901,9 +926,15 @@ private fun WeekPill(
                     layoutDirection: LayoutDirection,
                     popupContentSize: IntSize,
                 ): IntOffset {
+                    // 尺寸预算已保证放得下；clamp 是 dp→px 取整 / insets 抖动的兜底，
+                    // 避免窗口贴出屏幕底部后被系统裁切
                     val offset = IntOffset(
                         x = (windowSize.width - popupContentSize.width) / 2,
-                        y = anchorBounds.bottom + gapPx,
+                        y = (anchorBounds.bottom + gapPx).coerceIn(
+                            minimumValue = 0,
+                            maximumValue = (windowSize.height - popupContentSize.height)
+                                .coerceAtLeast(0),
+                        ),
                     )
                     // anchorBounds 即胶囊自身的窗口坐标（本 Popup 挂在胶囊容器上）
                     anchorSnapshot.value = PopupAnchorSnapshot(
@@ -929,9 +960,7 @@ private fun WeekPill(
                     currentWeek = currentWeek,
                     weekRange = weekRange,
                     hazeState = hazeState,
-                    cellSize = weekCellSize,
-                    sidePadding = sideShadowPadding,
-                    topPadding = topShadowPadding,
+                    geometry = geometry,
                     blurOrigin = { size ->
                         // 胶囊中心在卡面坐标下的位置（扣一圈投影留白），随快照实时跟随
                         TransformOrigin(
@@ -986,24 +1015,41 @@ private fun WeekPickerCard(
     selectedWeek: Int,
     currentWeek: Int?,
     weekRange: IntRange,
-    cellSize: Dp,
+    geometry: WeekPickerGeometry,
     onWeekSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val weeks = remember(weekRange) { weekRange.toList() }
+    val cellShape = remember(geometry.cellCorner) { RoundedRectangle(geometry.cellCorner) }
+    // 字号/行高仍只来自 token：等比缩放形态由 TextTokens 提供（业务代码不碰裸字号）
+    val numberStyle = remember(geometry.visualScale) {
+        ClassppTextTokens.weekGridNumberScaled(geometry.visualScale)
+    }
+    // 矮到连可读下限都放不下时：卡片高度锁在预算内、网格内部滚动，绝不靠压缩底行硬塞
+    val scrollModifier = if (geometry.scrollable) {
+        Modifier
+            .heightIn(max = geometry.maxCardHeight)
+            .verticalScroll(rememberScrollState())
+    } else {
+        Modifier
+    }
 
     Column(
-        modifier = modifier.padding(horizontal = WeekPickerCellSpace, vertical = WeekPickerCellSpace),
-        verticalArrangement = Arrangement.spacedBy(WeekPickerCellSpace),
+        modifier = modifier
+            .then(scrollModifier)
+            .padding(horizontal = geometry.cellSpace, vertical = geometry.cellSpace),
+        verticalArrangement = Arrangement.spacedBy(geometry.cellSpace),
     ) {
         weeks.chunked(6).forEach { rowWeeks ->
-            Row(horizontalArrangement = Arrangement.spacedBy(WeekPickerCellSpace)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(geometry.cellSpace)) {
                 rowWeeks.forEach { week ->
                     WeekCell(
                         week = week,
                         selected = week == selectedWeek,
                         isCurrent = week == currentWeek,
-                        size = cellSize,
+                        size = geometry.cellSize,
+                        shape = cellShape,
+                        numberStyle = numberStyle,
                         onClick = { onWeekSelected(week) },
                     )
                 }
@@ -1014,8 +1060,8 @@ private fun WeekPickerCard(
 
 /**
  * 弹窗卡片外壳：[PopupGlassCard] 共享配方（投影 / 毛玻璃 / 分层动画契约都在那里，
- * 参数为 SettingsCardShape、52dp 投影、20% 黑影）+ 周数网格内容；四周透明留白
- * （顶部/左右为按屏封顶后的实际值、底部 [WeekPickerShadowBottomPadding]）容纳投影，
+ * 圆角、投影都随 [WeekPickerGeometry.visualScale] 等比缩放）+ 周数网格内容；四周透明留白
+ * （顶部固定 [WeekPickerShadowPadding]，左右/底部按剩余空间分配）容纳投影，
  * 避免被 Popup 窗口边界裁剪。
  * [hazeState] 非空时在白底之上叠加 Haze 毛玻璃（采样课表网格 hazeSource，跨窗口生效）。
  */
@@ -1025,9 +1071,7 @@ private fun WeekPickerCardShell(
     currentWeek: Int?,
     weekRange: IntRange,
     hazeState: HazeState?,
-    cellSize: Dp,
-    sidePadding: Dp,
-    topPadding: Dp,
+    geometry: WeekPickerGeometry,
     blurOrigin: (Size) -> TransformOrigin,
     blurScale: () -> Float,
     contentAlpha: () -> Float,
@@ -1036,6 +1080,7 @@ private fun WeekPickerCardShell(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val cardShape = remember(geometry.cardCorner) { RoundedRectangle(geometry.cardCorner) }
     Box(modifier = modifier) {
         // 留白层的点按语义等同「点卡片外」→ 收起弹窗：顶部 50dp 留白会盖住胶囊下半，
         // 不接住点击就是「点了没反应」的死区（窗口无法把点击穿透给下层窗口）
@@ -1045,19 +1090,19 @@ private fun WeekPickerCardShell(
                 .pointerInput(Unit) { detectTapGestures { onDismiss() } },
         )
         PopupGlassCard(
-            shape = SettingsCardShape,
-            shadowElevation = 52.dp,
+            shape = cardShape,
+            shadowElevation = geometry.shadowElevation,
             spotShadowColor = Color.Black.copy(alpha = 0.2f),
             hazeState = hazeState,
-            // 投影留白垫在缩放图层之内、卡壳之外（裁切线 = Popup 窗口边缘）：顶部/左右为按屏封顶
-            // 后的实际留白、底部 WeekPickerShadowBottomPadding 60dp——52dp 柔影向下坠得最远，
-            // 没有这层留白投影会整体画在窗口外被裁掉，卡片落位也会偏移（gapPx 按「窗口含留白」反推）
+            // 投影留白垫在缩放图层之内、卡壳之外（裁切线 = Popup 窗口边缘）：顶部固定、
+            // 左右/底部为剩余空间——投影高度也随 scale 缩，留白比例在任何尺寸下都成立；
+            // 没有这层留白投影会整体画在窗口外被裁掉，卡片落位也会偏移（gapPx 按窗口含留白反推）
             modifier = Modifier
                 .padding(
-                    start = sidePadding,
-                    top = topPadding,
-                    end = sidePadding,
-                    bottom = WeekPickerShadowBottomPadding,
+                    start = geometry.sidePadding,
+                    top = geometry.topPadding,
+                    end = geometry.sidePadding,
+                    bottom = geometry.bottomPadding,
                 )
                 // 卡片区域兜住点击：卡内空白/格间距的点击被吞掉，不冒泡到留白层收起弹窗；
                 // 方格点击仍由子级优先处理（子级 click 先消费 down，本层不会触发）
@@ -1073,7 +1118,7 @@ private fun WeekPickerCardShell(
                 selectedWeek = selectedWeek,
                 currentWeek = currentWeek,
                 weekRange = weekRange,
-                cellSize = cellSize,
+                geometry = geometry,
                 onWeekSelected = onWeekSelected,
             )
         }
@@ -1094,13 +1139,15 @@ private data class PopupAnchorSnapshot(
     }
 }
 
-/** 周数网格中的一格：方形圆角；选中态主色底白字，本周（未选中）浅蓝底蓝字 */
+/** 周数网格中的一格：方形圆角（随 scale 缩放）；选中态主色底白字，本周（未选中）浅蓝底蓝字 */
 @Composable
 private fun WeekCell(
     week: Int,
     selected: Boolean,
     isCurrent: Boolean,
     size: Dp,
+    shape: Shape,
+    numberStyle: TextStyle,
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -1111,8 +1158,8 @@ private fun WeekCell(
         modifier = Modifier
             .size(size)
             // 按压反馈接在 clip 之前：缩放/提亮作用于整格，圆角裁剪在其内侧
-            .pressFeedback(press, WeekCellShape)
-            .clip(WeekCellShape)
+            .pressFeedback(press, shape)
+            .clip(shape)
             .background(
                 when {
                     selected -> colors.primary
@@ -1126,7 +1173,7 @@ private fun WeekCell(
     ) {
         Text(
             text = week.toString(),
-            style = ClassppTextTokens.weekGridNumber.copy(
+            style = numberStyle.copy(
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             ),
             color = when {
