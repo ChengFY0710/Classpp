@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +48,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -970,6 +972,8 @@ private fun WeekPill(
                         pendingJumpWeek = week
                         closeMenu()
                     },
+                    // 投影留白区的点按 = 点卡片外：走与 dismissOnClickOutside 相同的收起路径
+                    onDismiss = { closeMenu() },
                 )
             }
         }
@@ -1029,36 +1033,50 @@ private fun WeekPickerCardShell(
     contentAlpha: () -> Float,
     blurProgress: () -> Float,
     onWeekSelected: (Int) -> Unit,
+    onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    PopupGlassCard(
-        shape = SettingsCardShape,
-        shadowElevation = 52.dp,
-        spotShadowColor = Color.Black.copy(alpha = 0.2f),
-        hazeState = hazeState,
-        // 投影留白垫在缩放图层之内、卡壳之外（裁切线 = Popup 窗口边缘）：顶部/左右为按屏封顶
-        // 后的实际留白、底部 WeekPickerShadowBottomPadding 60dp——52dp 柔影向下坠得最远，
-        // 没有这层留白投影会整体画在窗口外被裁掉，卡片落位也会偏移（gapPx 按「窗口含留白」反推）
-        modifier = modifier.padding(
-            start = sidePadding,
-            top = topPadding,
-            end = sidePadding,
-            bottom = WeekPickerShadowBottomPadding,
-        ),
-        blurOrigin = blurOrigin,
-        blurScale = blurScale,
-        contentAlpha = contentAlpha,
-        blurProgress = blurProgress,
-        // 周数网格按内容自适应宽度，不吃外壳最小约束（与原壳行为一致）
-        propagateMinConstraints = false,
-    ) {
-        WeekPickerCard(
-            selectedWeek = selectedWeek,
-            currentWeek = currentWeek,
-            weekRange = weekRange,
-            cellSize = cellSize,
-            onWeekSelected = onWeekSelected,
+    Box(modifier = modifier) {
+        // 留白层的点按语义等同「点卡片外」→ 收起弹窗：顶部 50dp 留白会盖住胶囊下半，
+        // 不接住点击就是「点了没反应」的死区（窗口无法把点击穿透给下层窗口）
+        Box(
+            Modifier
+                .matchParentSize()
+                .pointerInput(Unit) { detectTapGestures { onDismiss() } },
         )
+        PopupGlassCard(
+            shape = SettingsCardShape,
+            shadowElevation = 52.dp,
+            spotShadowColor = Color.Black.copy(alpha = 0.2f),
+            hazeState = hazeState,
+            // 投影留白垫在缩放图层之内、卡壳之外（裁切线 = Popup 窗口边缘）：顶部/左右为按屏封顶
+            // 后的实际留白、底部 WeekPickerShadowBottomPadding 60dp——52dp 柔影向下坠得最远，
+            // 没有这层留白投影会整体画在窗口外被裁掉，卡片落位也会偏移（gapPx 按「窗口含留白」反推）
+            modifier = Modifier
+                .padding(
+                    start = sidePadding,
+                    top = topPadding,
+                    end = sidePadding,
+                    bottom = WeekPickerShadowBottomPadding,
+                )
+                // 卡片区域兜住点击：卡内空白/格间距的点击被吞掉，不冒泡到留白层收起弹窗；
+                // 方格点击仍由子级优先处理（子级 click 先消费 down，本层不会触发）
+                .pointerInput(Unit) { detectTapGestures { /* 卡内空白点按：吞掉 */ } },
+            blurOrigin = blurOrigin,
+            blurScale = blurScale,
+            contentAlpha = contentAlpha,
+            blurProgress = blurProgress,
+            // 周数网格按内容自适应宽度，不吃外壳最小约束（与原壳行为一致）
+            propagateMinConstraints = false,
+        ) {
+            WeekPickerCard(
+                selectedWeek = selectedWeek,
+                currentWeek = currentWeek,
+                weekRange = weekRange,
+                cellSize = cellSize,
+                onWeekSelected = onWeekSelected,
+            )
+        }
     }
 }
 
