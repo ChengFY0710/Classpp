@@ -82,6 +82,13 @@ interface AiSettingsStore {
      */
     fun setActiveModel(model: String): Boolean
 
+    /**
+     * 切换活动连接**当前模型**的推理等级；等级必须在该模型的
+     * [AiModelConfig.reasoningLevels] 中（忽略大小写匹配并保存列表里的写法）。
+     * 只改推理等级，不动模型、API Key 与活动指针。
+     */
+    fun setActiveReasoningLevel(level: String): Boolean
+
     // ---------- 「自定义」槽位（旧版单配置的存储位置） ----------
 
     fun loadCustomConnection(): AiConnection
@@ -248,6 +255,36 @@ class PrefsAiSettingsStore(context: Context) : AiSettingsStore {
         val canonical = connection.modelOptions
             .firstOrNull { it.equals(target, ignoreCase = true) } ?: return false
         return saveCustomConnection(connection.copy(model = canonical))
+    }
+
+    @Synchronized
+    override fun setActiveReasoningLevel(level: String): Boolean {
+        val target = level.trim()
+        if (target.isEmpty()) return false
+        val activeId = loadActiveProfileId()
+        if (activeId != null) {
+            val profile = loadProfiles().firstOrNull { it.id == activeId } ?: return false
+            val connection = profile.connection
+            val config = connection.modelConfig(connection.model)
+            val canonical = config.reasoningLevels
+                .firstOrNull { it.equals(target, ignoreCase = true) } ?: return false
+            return saveProfile(
+                profile.copy(
+                    connection = connection.withModelConfig(
+                        connection.model,
+                        config.copy(reasoningLevel = canonical),
+                    ),
+                ),
+                activate = false,
+            )
+        }
+        val connection = loadCustomConnection()
+        val config = connection.modelConfig(connection.model)
+        val canonical = config.reasoningLevels
+            .firstOrNull { it.equals(target, ignoreCase = true) } ?: return false
+        return saveCustomConnection(
+            connection.withModelConfig(connection.model, config.copy(reasoningLevel = canonical)),
+        )
     }
 
     // ---------- 「自定义」槽位 ----------

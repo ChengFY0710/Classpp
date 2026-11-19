@@ -37,6 +37,8 @@ import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.OverlaySheet
+import com.fangyi.classpp.ui.components.SettingsCard
+import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTextField
@@ -263,6 +265,16 @@ internal fun AiModelConfigSheet(
                     icon = R.drawable.ic_add_circle_regular,
                     enabled = true,
                     onClick = ::openAddLevel,
+                )
+                // 说明卡（纯描述行：无控件与点击）：等级顺序即强度顺序，第一个为「关」；
+                // 对话浮层按等级数量映射友好文案，提醒用户按从低到高排列
+                SettingsCard(
+                    items = listOf(
+                        SettingsCardItem.Custom(
+                            label = stringResource(R.string.ai_model_reasoning_map_title),
+                            description = stringResource(R.string.ai_model_reasoning_map_desc),
+                        ),
+                    ),
                 )
             }
         }

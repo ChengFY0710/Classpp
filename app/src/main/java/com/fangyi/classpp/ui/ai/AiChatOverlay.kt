@@ -12,6 +12,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -827,10 +828,15 @@ fun AiChatOverlay(
         bottomContent = {
             // 与顶栏同源的 Haze 采样状态（供附件菜单 / 模型菜单跨 Popup 窗口做磨砂）
             val bottomHazeState = LocalOverlayBottomHazeState.current
-            // 模型胶囊只在本方案保存了多个模型时出现：单模型保持原输入栏布局
+            // 模型胶囊只在本方案保存了多个模型时出现：单模型保持原输入栏布局；
+            // 思考强度胶囊只在该模型配置了多个推理等级时出现，与模型胶囊同排
             val modelOptions = activeConnection.modelOptions
             val showModelChip = configured && modelOptions.size > 1
-            val modelChipBlockHeight = if (showModelChip) {
+            val reasoningConfig = activeConnection.modelConfig(activeConnection.model)
+            val reasoningLevels = reasoningConfig.reasoningLevels
+            val showReasoningChip = configured && reasoningLevels.size > 1
+            val showChipRow = showModelChip || showReasoningChip
+            val chipBlockHeight = if (showChipRow) {
                 ModelSwitchChipHeight + ModelSwitchChipGap
             } else {
                 0.dp
@@ -880,28 +886,50 @@ fun AiChatOverlay(
                         .padding(horizontal = PageHorizontalSpacing),
                 ) {
                     // 光场在输入栏上方再留出一段可见高度，整体接近设计稿的底部光场带。
-                    // 模型胶囊占用的高度从这段头寸里扣：钉底槽总高度不变，消息列末尾留白
-                    // （Spacer(AuroraHeadroom)）不用跟着模型数量变化
-                    Spacer(Modifier.height(AuroraHeadroom - modelChipBlockHeight))
-                    if (showModelChip) {
-                        AiModelSwitchChip(
-                            models = modelOptions,
-                            currentModel = activeConnection.model,
-                            // 发送中禁用：回答期间不切模型，避免「这条回复用的哪个模型」歧义
-                            enabled = !sending,
-                            hazeState = bottomHazeState,
-                            // 与输入栏同源的玻璃采样层：玻璃关闭 / API<31 时为 null，
-                            // 胶囊回退实心 surface 底
-                            backdrop = auroraBackdrop,
-                            onSwitch = { model ->
-                                scope.launch {
-                                    val repository = aiChatRepository
-                                    if (repository == null || !repository.switchModel(model)) {
-                                        AppToasts.show(context, aiSaveFailedMessage)
-                                    }
-                                }
-                            },
-                        )
+                    // 胶囊行占用的高度从这段头寸里扣：钉底槽总高度不变，消息列末尾留白
+                    // （Spacer(AuroraHeadroom)）不用跟着胶囊显示/隐藏变化
+                    Spacer(Modifier.height(AuroraHeadroom - chipBlockHeight))
+                    if (showChipRow) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(SwitchChipSpacing)) {
+                            if (showModelChip) {
+                                AiModelSwitchChip(
+                                    models = modelOptions,
+                                    currentModel = activeConnection.model,
+                                    // 发送中禁用：回答期间不切模型，避免「这条回复用的哪个模型」歧义
+                                    enabled = !sending,
+                                    hazeState = bottomHazeState,
+                                    // 与输入栏同源的玻璃采样层：玻璃关闭 / API<31 时为 null，
+                                    // 胶囊回退实心 surface 底
+                                    backdrop = auroraBackdrop,
+                                    onSwitch = { model ->
+                                        scope.launch {
+                                            val repository = aiChatRepository
+                                            if (repository == null || !repository.switchModel(model)) {
+                                                AppToasts.show(context, aiSaveFailedMessage)
+                                            }
+                                        }
+                                    },
+                                )
+                            }
+                            if (showReasoningChip) {
+                                AiReasoningSwitchChip(
+                                    levels = reasoningLevels,
+                                    currentLevel = reasoningConfig.reasoningLevel,
+                                    // 发送中禁用：回答期间不切强度，避免这条回复的思考档位歧义
+                                    enabled = !sending,
+                                    hazeState = bottomHazeState,
+                                    backdrop = auroraBackdrop,
+                                    onSwitch = { level ->
+                                        scope.launch {
+                                            val repository = aiChatRepository
+                                            if (repository == null || !repository.setReasoningLevel(level)) {
+                                                AppToasts.show(context, aiSaveFailedMessage)
+                                            }
+                                        }
+                                    },
+                                )
+                            }
+                        }
                         Spacer(Modifier.height(ModelSwitchChipGap))
                     }
                     // 输入状态由本叶子读取：键入只重组输入栏，不失效整个对话浮层

@@ -1709,6 +1709,18 @@ class AiChatRepository internal constructor(
         return saved
     }
 
+    /**
+     * 对话浮层思考强度胶囊的切换入口：只改活动连接**当前模型**的推理等级（必须在该模型的
+     * [AiModelConfig.reasoningLevels] 中），不动模型、API Key 与活动指针。落盘成功后
+     * 刷新 `activeConnection` / `profiles` / `configured`。只影响后续消息，在途流沿用
+     * 发送时捕获的连接。
+     */
+    suspend fun setReasoningLevel(level: String): Boolean {
+        val saved = withContext(Dispatchers.IO) { settings.setActiveReasoningLevel(level) }
+        if (saved) refreshConfigured()
+        return saved
+    }
+
     // ---------- 待确认的修改/删除 ----------
 
     /**

@@ -1,6 +1,7 @@
 package com.fangyi.classpp.ui.ai
 
 import android.os.SystemClock
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -56,31 +57,110 @@ internal val ModelSwitchChipHeight = 36.dp
 /** 胶囊与输入栏之间的间距 */
 internal val ModelSwitchChipGap = 10.dp
 
+/** 同一排两枚胶囊之间的间距（模型 + 思考强度） */
+internal val SwitchChipSpacing = 8.dp
+
 /** 非 focusable 菜单收起后极短窗口内忽略胶囊的「打开」请求（同 SettingsCard.SelectMenu） */
 private const val MenuReopenGuardMillis = 200L
 
-/** 模型胶囊在窗口里的坐标（菜单锚点）：布局回调只写普通字段，不写 snapshot state */
+/** 胶囊在窗口里的坐标（菜单锚点）：布局回调只写普通字段，不写 snapshot state */
 private class ChipAnchorBounds {
     var value: Rect = Rect.Zero
 }
 
 /**
- * 模型胶囊的玻璃外投影：与发送圆球同档（下移 2dp、黑 1%），只走玻璃路径；
+ * 胶囊的玻璃外投影：与发送圆球同档（下移 2dp、黑 1%），只走玻璃路径；
  * 非玻璃回退的实心底不画投影。
  */
-private val ModelChipGlassShadow = Shadow(
+private val SwitchChipGlassShadow = Shadow(
     radius = 24.dp,
     offset = DpOffset(0.dp, 2.dp),
     color = Color.Black.copy(alpha = 0.01f),
 )
 
 /**
- * 对话浮层输入栏上方的模型切换胶囊：行首脑图标 + 当前模型名，点开列出本方案保存的模型。
+ * 对话浮层输入栏上方的模型切换胶囊：行首脑图标 + 当前模型名，点开列出本方案保存的模型
+ * （骨架与交互见 [SwitchChip]）。
  *
  * 只在本方案至少有两个模型时由宿主渲染（见 AI 对话浮层）；切换经
  * [onSwitch] 交给仓库落库，菜单本身不持有配置状态。
+ */
+@Composable
+fun AiModelSwitchChip(
+    models: List<String>,
+    currentModel: String,
+    enabled: Boolean,
+    hazeState: HazeState?,
+    onSwitch: (String) -> Unit,
+    backdrop: Backdrop? = null,
+    modifier: Modifier = Modifier,
+) {
+    val switchDescription = stringResource(R.string.cd_ai_switch_model, currentModel)
+    SwitchChip(
+        label = currentModel,
+        iconRes = R.drawable.ic_brain_sparkle,
+        contentDescription = switchDescription,
+        enabled = enabled,
+        hazeState = hazeState,
+        items = models.map { model ->
+            SwitchChipItem(
+                label = model,
+                selected = model.equals(currentModel, ignoreCase = true),
+                onPick = { onSwitch(model) },
+            )
+        },
+        backdrop = backdrop,
+        modifier = modifier,
+    )
+}
+
+/**
+ * 对话浮层输入栏上方的思考强度胶囊：与 [AiModelSwitchChip] 同款外形与交互
+ * （[SwitchChip]），展示当前模型推理等级的友好文案（按等级数量位置映射，见
+ * [reasoningIntensityLabel]），点开列出该模型的全部等级。第一个等级为「关」，
+ * 选中它时不开启思考（语义见 [com.fangyi.classpp.data.ai.AiModelConfig.isReasoningOff]）。
  *
- * 菜单用 [PopupMenuPopup]（独立 Popup 窗口、白卡 + 磨砂），向上展开：
+ * 只在该模型配置了多个推理等级时由宿主渲染；切换经 [onSwitch] 交给仓库落库。
+ */
+@Composable
+fun AiReasoningSwitchChip(
+    levels: List<String>,
+    currentLevel: String,
+    enabled: Boolean,
+    hazeState: HazeState?,
+    onSwitch: (String) -> Unit,
+    backdrop: Backdrop? = null,
+    modifier: Modifier = Modifier,
+) {
+    val currentLabel = reasoningIntensityLabel(levels, currentLevel)
+    SwitchChip(
+        label = stringResource(R.string.ai_reasoning_chip_value, currentLabel),
+        iconRes = R.drawable.ic_ai,
+        contentDescription = stringResource(R.string.cd_ai_switch_reasoning, currentLabel),
+        enabled = enabled,
+        hazeState = hazeState,
+        items = levels.map { level ->
+            SwitchChipItem(
+                label = reasoningIntensityLabel(levels, level),
+                selected = level.equals(currentLevel, ignoreCase = true),
+                onPick = { onSwitch(level) },
+            )
+        },
+        backdrop = backdrop,
+        modifier = modifier,
+    )
+}
+
+/** 胶囊菜单项：展示文案 + 是否当前选中；[onPick] 只在非当前项被点选时回调 */
+private data class SwitchChipItem(
+    val label: String,
+    val selected: Boolean,
+    val onPick: () -> Unit,
+)
+
+/**
+ * 胶囊骨架（模型 / 思考强度共用）：行首图标 + 当前值文案 + 上下箭头，点开用
+ * [PopupMenuPopup]（独立 Popup 窗口、白卡 + 磨砂）向上展开：
  * - 非 focusable：点胶囊时键盘保持原位，菜单不抢焦点；
  * - 点外部收起与落回胶囊的点击是同一个手势，收起后 [MenuReopenGuardMillis] 内忽略
  *   这次「打开」，避免退场动画播到一半又反向进场；
@@ -93,13 +173,14 @@ private val ModelChipGlassShadow = Shadow(
  * surface 底 + pressFeedback。
  */
 @Composable
-fun AiModelSwitchChip(
-    models: List<String>,
-    currentModel: String,
+private fun SwitchChip(
+    label: String,
+    @DrawableRes iconRes: Int,
+    contentDescription: String,
     enabled: Boolean,
     hazeState: HazeState?,
-    onSwitch: (String) -> Unit,
-    backdrop: Backdrop? = null,
+    items: List<SwitchChipItem>,
+    backdrop: Backdrop?,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -107,14 +188,13 @@ fun AiModelSwitchChip(
     val anchorBounds = remember { ChipAnchorBounds() }
     // 按压态的唯一来源：glassPressFeedback/pressScale 与 clickable 共用（涟漪由按压反馈取代）
     val pressInteraction = remember { MutableInteractionSource() }
-    val switchDescription = stringResource(R.string.cd_ai_switch_model, currentModel)
     val contentColor = if (enabled) {
         MaterialTheme.colorScheme.onSurface
     } else {
         MaterialTheme.classppColors.negative
     }
 
-    // 发送中禁用：菜单若还开着就收起，避免回答期间切模型造成「这条回复到底用哪个模型」的歧义
+    // 发送中禁用：菜单若还开着就收起，避免回答期间切模型 / 切强度造成歧义
     LaunchedEffect(enabled) {
         if (!enabled) expanded = false
     }
@@ -140,7 +220,7 @@ fun AiModelSwitchChip(
                     containerColor = MaterialTheme.colorScheme.surface,
                     backdrop = backdrop,
                     style = LiquidGlassStyle.Pill,
-                    shadow = ModelChipGlassShadow,
+                    shadow = SwitchChipGlassShadow,
                 )
                 .clickable(
                     interactionSource = pressInteraction,
@@ -159,7 +239,7 @@ fun AiModelSwitchChip(
                     }
                 }
                 .semantics(mergeDescendants = true) {
-                    contentDescription = switchDescription
+                    this.contentDescription = contentDescription
                 }
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -168,13 +248,13 @@ fun AiModelSwitchChip(
             // 行首图标固定 16dp（与箭头同档）：胶囊高度由 ModelSwitchChipHeight 锁定，
             // 图标不参与撑高，切换方案 / 字号时胶囊保持原高度
             Icon(
-                painter = painterResource(R.drawable.ic_brain_sparkle),
+                painter = painterResource(iconRes),
                 contentDescription = null,
                 tint = if (enabled) MaterialTheme.colorScheme.primary else contentColor,
                 modifier = Modifier.size(16.dp),
             )
             Text(
-                text = currentModel,
+                text = label,
                 style = ClassppTextTokens.metaText,
                 color = contentColor,
                 maxLines = 1,
@@ -198,17 +278,15 @@ fun AiModelSwitchChip(
             },
             sections = listOf(
                 PopupMenuSection(
-                    items = models.map { model ->
+                    items = items.map { item ->
                         PopupMenuItem(
-                            label = model,
-                            checked = model.equals(currentModel, ignoreCase = true),
+                            label = item.label,
+                            checked = item.selected,
                             onClick = {
                                 // 退场播完前胶囊上的点击不再把菜单反向拉回来
                                 dismissedAtMillis = SystemClock.uptimeMillis()
                                 expanded = false
-                                if (!model.equals(currentModel, ignoreCase = true)) {
-                                    onSwitch(model)
-                                }
+                                if (!item.selected) item.onPick()
                             },
                         )
                     },

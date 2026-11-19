@@ -198,6 +198,26 @@ class AiChatRepositoryTest {
             return true
         }
 
+        override fun setActiveReasoningLevel(level: String): Boolean {
+            fun apply(source: AiConnection): AiConnection? {
+                val config = source.modelConfig(source.model)
+                val canonical = config.reasoningLevels
+                    .firstOrNull { it.equals(level, ignoreCase = true) } ?: return null
+                return source.withModelConfig(source.model, config.copy(reasoningLevel = canonical))
+            }
+            val id = loadActiveProfileId()
+            if (id != null) {
+                val index = profiles.indexOfFirst { it.id == id }
+                if (index < 0) return false
+                val target = profiles[index]
+                val next = apply(target.connection) ?: return false
+                profiles[index] = target.copy(connection = next)
+                return true
+            }
+            connection = apply(connection) ?: return false
+            return true
+        }
+
         override fun loadCustomConnection(): AiConnection = connection
 
         override fun loadCustomKey(): String? = apiKey

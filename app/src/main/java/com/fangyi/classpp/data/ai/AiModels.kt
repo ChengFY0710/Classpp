@@ -52,6 +52,17 @@ data class AiModelConfig(
 
     /** 空配置不落库：没有推理等级 = 该模型不使用推理等级 */
     val isEmpty: Boolean get() = reasoningLevels.isEmpty() && reasoningLevel.isBlank()
+
+    /**
+     * 当前选中等级是否表示「不开启思考」：等级列表按从低到高排列（2~5 个档位），
+     * 第一个即「关」——选中它时请求不发送任何推理参数。其它数量（1 / >5）没有
+     * 「关」档位概念，按原样发送等级。
+     */
+    fun isReasoningOff(): Boolean {
+        if (reasoningLevels.size !in 2..5) return false
+        val first = reasoningLevels.firstOrNull() ?: return false
+        return reasoningLevel.equals(first, ignoreCase = true)
+    }
 }
 
 /**

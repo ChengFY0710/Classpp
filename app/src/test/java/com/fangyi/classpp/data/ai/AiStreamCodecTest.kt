@@ -275,6 +275,73 @@ class AiStreamCodecTest {
 
     // ---------- 推理等级（请求侧生效） ----------
 
+    /** 多等级配置：第一个为「关」档（2~5 个等级按从低到高排列，关 = 不开启思考） */
+    private fun openAiConnectionWithLevels(levels: List<String>, selected: String) = AiConnection(
+        providerId = "openai",
+        baseUrl = "https://api.openai.com/v1",
+        model = "gpt-4o-mini",
+        modelConfigs = mapOf("gpt-4o-mini" to AiModelConfig(levels, selected)),
+    )
+
+    private fun anthropicConnectionWithLevels(levels: List<String>, selected: String) = AiConnection(
+        providerId = "anthropic",
+        baseUrl = "https://api.anthropic.com/v1",
+        model = "claude-sonnet-4-5",
+        modelConfigs = mapOf("claude-sonnet-4-5" to AiModelConfig(levels, selected)),
+        protocol = AiProtocol.Anthropic,
+    )
+
+    @Test
+    fun `openai off level omits reasoning effort`() = runBlocking {
+        // 等级列表第一个即「关」：选中它 = 不开启思考，请求不发任何推理参数
+        val t = transport("data: [DONE]", null)
+        AiClient(t).streamChat(
+            openAiConnectionWithLevels(listOf("none", "high"), "none"),
+            "sk",
+            listOf(AiChatTurn("user", "hi")),
+        )
+
+        assertNull("关档位不得发送 reasoning_effort", bodyOf(t.lastRequest!!)["reasoning_effort"])
+    }
+
+    @Test
+    fun `openai non-off level in list still passes through`() = runBlocking {
+        val t = transport("data: [DONE]", null)
+        AiClient(t).streamChat(
+            openAiConnectionWithLevels(listOf("none", "high"), "high"),
+            "sk",
+            listOf(AiChatTurn("user", "hi")),
+        )
+
+        assertEquals("high", bodyOf(t.lastRequest!!)["reasoning_effort"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `anthropic off level keeps request without thinking`() = runBlocking {
+        val t = transport(messageStop(), null)
+        AiClient(t).streamChat(
+            anthropicConnectionWithLevels(listOf("off", "high"), "off"),
+            "sk",
+            turns,
+            temperature = 0.0,
+        )
+
+        val body = bodyOf(t.lastRequest!!)
+        assertNull("关档位不得发送 thinking", body["thinking"])
+        assertEquals("4096", body["max_tokens"]!!.jsonPrimitive.content)
+        assertEquals("0.0", body["temperature"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `anthropic non-off level in list maps to thinking budget`() = runBlocking {
+        val t = transport(messageStop(), null)
+        AiClient(t).streamChat(anthropicConnectionWithLevels(listOf("off", "high"), "high"), "sk", turns)
+
+        val body = bodyOf(t.lastRequest!!)
+        assertEquals("16384", body["thinking"]!!.jsonObject["budget_tokens"]!!.jsonPrimitive.content)
+        assertEquals("20480", body["max_tokens"]!!.jsonPrimitive.content)
+    }
+
     @Test
     fun `openai reasoning effort passes through verbatim`() = runBlocking {
         val t = transport("data: [DONE]", null)

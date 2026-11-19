@@ -683,9 +683,14 @@ private val requestJson = Json { encodeDefaults = false }
 /**
  * 当前生效模型的推理等级（两个协议编解码器共用的解析口）：配置随模型存在
  * [AiConnection.modelConfigs]，等级为空 = 该模型不使用推理参数（请求不发对应字段）。
+ * 「关」档位（[AiModelConfig.isReasoningOff]）同样返回 null——关即不开启思考，
+ * 请求不发任何推理参数，而不是发送 "none" 之类的占位值。
  */
-private fun AiConnection.activeReasoningLevel(): String? =
-    modelConfig(model).reasoningLevel.trim().takeIf { it.isNotEmpty() }
+private fun AiConnection.activeReasoningLevel(): String? {
+    val config = modelConfig(model)
+    if (config.isReasoningOff()) return null
+    return config.reasoningLevel.trim().takeIf { it.isNotEmpty() }
+}
 
 /** 解析一条 data 载荷为 JSON 对象；null = 非对象或不可解析（调用方跳过，不致命） */
 private fun parseObject(payload: String): JsonObject? = try {

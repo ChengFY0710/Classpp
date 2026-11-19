@@ -1227,6 +1227,8 @@
     <string name="ai_model_reasoning_hint">e.g. low, high</string>
     <string name="ai_model_reasoning_value">Reasoning level: %1$s</string>
     <string name="ai_model_reasoning_duplicate">This reasoning level already exists</string>
+    <string name="ai_model_reasoning_map_title">Level order</string>
+    <string name="ai_model_reasoning_map_desc">Order levels from low to high. Thinking intensity in chat maps by level count: 2 → Off, On; 3 → Off, High, Highest; 4 → Off, Low, High, Highest; 5 → Off, Low, High, Highest, Extreme. The first level is “Off” and does not enable thinking.</string>
     <string name="ai_model_fetch">Fetch models from provider</string>
     <string name="ai_model_fetch_title">Select models</string>
     <string name="ai_model_fetch_add">Add</string>
@@ -1236,6 +1238,14 @@
     <string name="ai_model_fetch_failed">Couldn\'t fetch models — %1$s</string>
     <string name="ai_model_fetch_not_found">This service URL doesn\'t support listing models — check the URL</string>
     <string name="cd_ai_switch_model">Switch model, current: %1$s</string>
+    <string name="cd_ai_switch_reasoning">Switch thinking intensity, current: %1$s</string>
+    <string name="ai_reasoning_chip_value">Thinking %1$s</string>
+    <string name="ai_reasoning_level_off">Off</string>
+    <string name="ai_reasoning_level_on">On</string>
+    <string name="ai_reasoning_level_low">Low</string>
+    <string name="ai_reasoning_level_high">High</string>
+    <string name="ai_reasoning_level_highest">Highest</string>
+    <string name="ai_reasoning_level_extreme">Extreme</string>
     <string name="ai_settings_api_key">API Key</string>
     <string name="ai_settings_api_key_hint">sk-…</string>
     <string name="ai_settings_api_key_saved">Configured — leave blank to keep</string>
