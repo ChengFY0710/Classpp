@@ -256,7 +256,12 @@ internal object OpenAiStreamCodec : AiStreamCodec {
 }
 
 /**
- * Anthropic Messages 协议编解码：`POST {base}/messages`（预设端点已含 `/v1`）。
+ * Anthropic Messages 协议编解码：`POST {base}/v1/messages`。
+ *
+ * 服务地址按 Anthropic 官方与各家兼容网关的公布口径理解——**不含版本段**（官方
+ * `https://api.anthropic.com`、阿里云 MaaS `https://{host}/apps/anthropic`），`/v1`
+ * 属于端点路径。旧配置若已手动带上 `/v1`（如已下架预设的 `api.anthropic.com/v1`）
+ * 则不重复拼接，两种写法兼容。
  *
  * - **认证**：`x-api-key` 头 + `anthropic-version` 头（不是 Bearer）；
  * - **system 是顶层字段**：role=system 的 turn 不进 messages，拼接为顶层 `system`；
@@ -277,7 +282,7 @@ internal object AnthropicStreamCodec : AiStreamCodec {
         temperature: Double?,
         tools: List<AiToolSpec>,
     ): AiHttpRequest = AiHttpRequest(
-        url = connection.baseUrl.trimEnd('/') + MESSAGES_PATH,
+        url = messagesUrl(connection.baseUrl),
         headers = mapOf(
             "x-api-key" to apiKey,
             "anthropic-version" to API_VERSION,
@@ -558,7 +563,23 @@ internal object AnthropicStreamCodec : AiStreamCodec {
         return AiException(classified, detail = error["message"].stringContentOrNull())
     }
 
+    /**
+     * Messages 端点：服务地址未带版本段时补 `/v1`（官方与兼容网关的公布口径）；
+     * 已带 `/v1` 的旧配置只拼 `/messages`；直接粘贴完整端点的也原样使用。
+     * 三种写法都兼容，避免出现 `/v1/v1/messages` 这类 404 路径。
+     */
+    private fun messagesUrl(baseUrl: String): String {
+        val base = baseUrl.trimEnd('/')
+        return when {
+            base.endsWith(MESSAGES_ENDPOINT_SUFFIX) -> base
+            base.endsWith(VERSION_PATH) -> base + MESSAGES_PATH
+            else -> base + MESSAGES_ENDPOINT_SUFFIX
+        }
+    }
+
     private const val MESSAGES_PATH = "/messages"
+    private const val VERSION_PATH = "/v1"
+    private const val MESSAGES_ENDPOINT_SUFFIX = VERSION_PATH + MESSAGES_PATH
     private const val API_VERSION = "2023-06-01"
 
     /** 各在售 Claude 模型输出上限的公共下限（claude-3-haiku = 4096），避免旧模型 400 */

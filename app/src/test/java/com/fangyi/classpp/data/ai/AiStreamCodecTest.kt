@@ -92,6 +92,48 @@ class AiStreamCodecTest {
     }
 
     @Test
+    fun `anthropic appends v1 when base url has no version segment`() = runBlocking {
+        val transport = transport(messageStop(), null)
+        AiClient(transport).streamChat(
+            anthropicConnection(
+                "https://ws-usmipu1b1bhqhywo.cn-beijing.maas.aliyuncs.com/apps/anthropic",
+            ),
+            "sk",
+            turns,
+        )
+
+        assertEquals(
+            "https://ws-usmipu1b1bhqhywo.cn-beijing.maas.aliyuncs.com/apps/anthropic/v1/messages",
+            transport.lastRequest!!.url,
+        )
+    }
+
+    @Test
+    fun `anthropic keeps versioned base url without duplicating v1`() = runBlocking {
+        val transport = transport(messageStop(), null)
+        AiClient(transport).streamChat(anthropicConnection("https://api.anthropic.com/v1/"), "sk", turns)
+
+        assertEquals("https://api.anthropic.com/v1/messages", transport.lastRequest!!.url)
+    }
+
+    @Test
+    fun `anthropic keeps full messages endpoint as is`() = runBlocking {
+        val transport = transport(messageStop(), null)
+        AiClient(transport).streamChat(
+            anthropicConnection(
+                "https://ws-usmipu1b1bhqhywo.cn-beijing.maas.aliyuncs.com/apps/anthropic/v1/messages",
+            ),
+            "sk",
+            turns,
+        )
+
+        assertEquals(
+            "https://ws-usmipu1b1bhqhywo.cn-beijing.maas.aliyuncs.com/apps/anthropic/v1/messages",
+            transport.lastRequest!!.url,
+        )
+    }
+
+    @Test
     fun `anthropic hoists system turn to top level field`() = runBlocking {
         val transport = transport(messageStop(), null)
         AiClient(transport).streamChat(

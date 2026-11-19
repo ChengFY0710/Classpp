@@ -1,5 +1,6 @@
 package com.fangyi.classpp.data.ai
 
+import android.util.Log
 import java.io.IOException
 import java.util.TreeMap
 import java.util.concurrent.Executors
@@ -257,6 +258,16 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
             if (response.status !in 200..299) {
                 // 错误体一次性读完再关；detail 截短供排查，不含敏感请求头
                 val body = response.readRemaining()
+                // 仅 debug 构建：打出实际请求 URL 与错误体，404 时用于区分「路由/地址错」
+                // 与「模型名错」；URL 不含 API Key（Key 只在请求头）
+                if (AiDebugTrace.enabled) {
+                    runCatching {
+                        Log.w(
+                            AI_HTTP_LOG_TAG,
+                            "HTTP ${response.status} ${request.url} ${body.take(DETAIL_MAX)}",
+                        )
+                    }
+                }
                 throw classifyStatus(response.status, body)
             }
             readEventStream(codec, response, cancelled, onDelta, onReasoning)
@@ -345,6 +356,7 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
     private companion object {
         const val DATA_PREFIX = "data:"
         const val DETAIL_MAX = 300
+        const val AI_HTTP_LOG_TAG = "AiHttp"
 
         /**
          * 流式阻塞管线的专用线程池（daemon，进程级共享）：执行线程独立于协程调度器，
