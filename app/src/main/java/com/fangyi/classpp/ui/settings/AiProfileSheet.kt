@@ -22,6 +22,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ai.AiConnection
 import com.fangyi.classpp.data.ai.AiError
 import com.fangyi.classpp.data.ai.AiException
+import com.fangyi.classpp.data.ai.AiFetchedModel
 import com.fangyi.classpp.data.ai.AiModelConfig
 import com.fangyi.classpp.data.ai.AiProfile
 import com.fangyi.classpp.data.ai.AiProtocol
@@ -75,9 +76,10 @@ private data class PendingProfileSave(
  *   当前模型，删除当前模型时回落剩余首个（允许删空，由确认时的非空校验兜底），
  *   对话浮层输入栏上方仍可切换；
  * - 「从服务商拉取模型」：用当前服务地址与 API Key（输入框优先，留空回落当前条目
- *   已保存的 Key）调 `GET /models`（OpenAI 兼容与 Anthropic 各自端点），拉取期间
- *   整屏加载态；结果过滤掉已加入的模型后打开多选浮层，确认只合并进本地草稿
- *   （已有模型与推理等级配置原样保留），父浮层「确认」才随连接落库；
+ *   已保存的 Key）拉取可用模型（端点随服务商预设的拉取方案 AiModelListApi 配置），
+ *   拉取期间整屏加载态；结果过滤掉已加入的模型后打开多选浮层，确认合并进本地草稿
+ *   并回填服务商附带的推理等级配置（如 DeepSeek 的 effort 元数据），已有模型与其
+ *   配置原样保留，父浮层「确认」才随连接落库；
  * - 末尾「提示」分组：纯展示行，说明对话图片需要多模态（视觉）模型；
  * - 确认时先做本地校验（服务地址 http 开头、至少一个模型名），失败 toast 并保留浮层；
  *   Key 缺失由宿主回调判定（保存后仍无可用 Key → 提示并保留浮层）。
@@ -107,8 +109,9 @@ internal fun AiProfileSheet(
     loadProfileKeyPresent: suspend (id: String) -> Boolean,
     // 读取已存 Key（null = 「自定义」槽位）：拉取模型时输入框留空的回落来源
     loadSavedKey: suspend (profileId: String?) -> String?,
-    // 拉取服务商可用模型列表（GET /models）：只读网络，Key 优先用输入框当前值
-    fetchModels: suspend (connection: AiConnection, apiKey: String) -> List<String>,
+    // 拉取服务商可用模型列表（GET /models）：只读网络，Key 优先用输入框当前值；
+    // 结果含服务商附带的模型级配置（如 DeepSeek 的推理等级）
+    fetchModels: suspend (connection: AiConnection, apiKey: String) -> List<AiFetchedModel>,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -155,9 +158,10 @@ internal fun AiProfileSheet(
     var modelSheetMounted by remember { mutableStateOf(false) }
     var modelSheetTarget by remember { mutableStateOf<String?>(null) }
 
-    // 「从服务商拉取模型」：在途加载态 + 拉取结果多选浮层（结果只进本地草稿）
+    // 「从服务商拉取模型」：在途加载态 + 拉取结果多选浮层（结果只进本地草稿，
+    // 含服务商附带的推理等级等模型级配置）
     var fetching by remember { mutableStateOf(false) }
-    var fetchedModels by remember { mutableStateOf(emptyList<String>()) }
+    var fetchedModels by remember { mutableStateOf(emptyList<AiFetchedModel>()) }
     var pickerVisible by remember { mutableStateOf(false) }
     var pickerMounted by remember { mutableStateOf(false) }
 
@@ -419,8 +423,8 @@ internal fun AiProfileSheet(
                 val models = fetchModels(target, apiKey)
                 val existing = draftConnection.modelOptions
                 val fresh = models
-                    .filterNot { id -> existing.any { it.equals(id, ignoreCase = true) } }
-                    .sortedBy { it.lowercase() }
+                    .filterNot { fetched -> existing.any { it.equals(fetched.id, ignoreCase = true) } }
+                    .sortedBy { it.id.lowercase() }
                 if (fresh.isEmpty()) {
                     AppToasts.show(context, fetchEmptyMessage)
                 } else {
@@ -443,14 +447,22 @@ internal fun AiProfileSheet(
         }
     }
 
-    /** 拉取结果合并：只追加勾选的新模型，已有模型与推理等级配置原样保留 */
+    /**
+     * 拉取结果合并：追加勾选的新模型，并把服务商附带的推理等级配置一并写入
+     * （如 DeepSeek 的 effort 元数据）；已有模型与它们的配置原样保留。
+     */
     fun applyFetchedModels(selected: List<String>) {
         if (selected.isEmpty()) return
+        val fetched = fetchedModels
         hazeRetreat.forRewrite {
             val nextCurrent = draftConnection.model.takeIf { it.isNotBlank() } ?: selected.first()
-            updateDraft(
-                draftConnection.withModels(draftConnection.modelOptions + selected, nextCurrent),
-            )
+            var next = draftConnection.withModels(draftConnection.modelOptions + selected, nextCurrent)
+            fetched.forEach { model ->
+                if (!model.config.isEmpty && selected.any { it.equals(model.id, ignoreCase = true) }) {
+                    next = next.withModelConfig(model.id, model.config)
+                }
+            }
+            updateDraft(next)
         }
     }
 

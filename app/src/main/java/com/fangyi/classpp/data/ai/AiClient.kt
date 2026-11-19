@@ -262,20 +262,21 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
      * 端点、认证头与响应形态由 [AiModelCatalog] 按协议/地址判定。
      *
      * 与流式对话共用传输层、执行线程与取消语义：阻塞 I/O 在专用执行线程上完成，
-     * 协程取消即断开底层连接；成功返回去重后的模型 id 列表（保持服务商顺序）。
+     * 协程取消即断开底层连接；成功返回去重后的模型列表（含服务商附带的模型级配置，
+     * 保持服务商顺序）。
      *
      * @throws AiException 分类错误（网络 / HTTP 状态 / 响应不可解析）
      */
     suspend fun fetchModels(
         connection: AiConnection,
         apiKey: String,
-    ): List<String> = suspendCancellableCoroutine { cont ->
+    ): List<AiFetchedModel> = suspendCancellableCoroutine { cont ->
         // 取消标志与在途响应句柄：open() 阻塞期间 inFlight 仍为 null，放行后由标志收口
         val cancelled = AtomicBoolean(false)
         val inFlight = AtomicReference<AiStreamResponse?>(null)
         val future = EXECUTOR.submit {
             try {
-                val models = ArrayList<String>()
+                val models = ArrayList<AiFetchedModel>()
                 var page = 1
                 while (true) {
                     if (cancelled.get()) throw StreamCancelled
@@ -305,8 +306,10 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
                         text
                     }
                     val parsed = AiModelCatalog.parsePage(connection, body)
-                    parsed.models.forEach { id ->
-                        if (models.none { it.equals(id, ignoreCase = true) }) models += id
+                    parsed.models.forEach { fetched ->
+                        if (models.none { it.id.equals(fetched.id, ignoreCase = true) }) {
+                            models += fetched
+                        }
                     }
                     val nextPage = parsed.nextPage ?: break
                     // 防御服务端回显错页：只前进不后退，并限制总页数（分页协议只有百炼）

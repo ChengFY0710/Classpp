@@ -7,9 +7,18 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
-/** 一页模型列表：去重后的模型 id + 下一页页码（null = 没有下一页） */
+/**
+ * 一条拉取到的模型：id + 服务商附带的模型级配置（当前为推理等级）。
+ * [config] 为空配置 = 该模型不使用推理等级（服务商未提供 effort 元数据）。
+ */
+data class AiFetchedModel(
+    val id: String,
+    val config: AiModelConfig = AiModelConfig(),
+)
+
+/** 一页模型列表：去重后的模型 + 下一页页码（null = 没有下一页） */
 internal data class AiModelListPage(
-    val models: List<String>,
+    val models: List<AiFetchedModel>,
     val nextPage: Int? = null,
 )
 
@@ -30,7 +39,9 @@ internal data class AiModelListPage(
  *   按 `page_no` / `page_size` / `total` 分页。origin 取自当前 baseUrl，覆盖官方、
  *   国际站与 Workspace 域名（`https://{WorkspaceId}.{region}.maas.aliyuncs.com`）。
  *
- * 模型 id trim + 忽略大小写去重；结构不合法按 [AiError.BadResponse] 处理。
+ * 模型 id trim + 忽略大小写去重；条目里的 `effort` 元数据（DeepSeek：`supported_levels`
+ * + `default_level`）解析为该模型的推理等级配置（[AiFetchedModel.config]，无则为空配置）。
+ * 结构不合法按 [AiError.BadResponse] 处理。
  */
 internal object AiModelCatalog {
 
@@ -81,7 +92,7 @@ internal object AiModelCatalog {
     private fun parseCompatPage(root: JsonObject): AiModelListPage {
         val data = root["data"] as? JsonArray
             ?: throw AiException(AiError.BadResponse, detail = errorDetail(root) ?: "missing data array")
-        return AiModelListPage(models = parseIds(data, ID_FIELD))
+        return AiModelListPage(models = parseModels(data, ID_FIELD))
     }
 
     /** 百炼原生形态：`{"output":{"total":N,"page_no":p,"page_size":s,"models":[{"model":"..."}]}}` */
@@ -89,7 +100,7 @@ internal object AiModelCatalog {
         val output = root["output"] as? JsonObject
             ?: throw AiException(AiError.BadResponse, detail = errorDetail(root) ?: "missing output")
         val modelsArray = output["models"] as? JsonArray
-        val models = modelsArray?.let { parseIds(it, MODEL_FIELD) }.orEmpty()
+        val models = modelsArray?.let { parseModels(it, MODEL_FIELD) }.orEmpty()
         val pageNo = output.intOrNull("page_no") ?: 1
         // 服务端回显页大小；缺失或异常值按请求页大小兜底，避免除零/原地分页
         val pageSize = output.intOrNull("page_size")?.takeIf { it > 0 } ?: PAGE_SIZE
@@ -103,18 +114,31 @@ internal object AiModelCatalog {
         return AiModelListPage(models = models, nextPage = nextPage)
     }
 
-    private fun parseIds(array: JsonArray, field: String): List<String> {
-        val ids = ArrayList<String>(array.size)
+    /** 解析一页的模型条目：id（或百炼的 model）+ 可选的 effort 推理等级元数据 */
+    private fun parseModels(array: JsonArray, field: String): List<AiFetchedModel> {
+        val models = ArrayList<AiFetchedModel>(array.size)
         array.forEach { element ->
-            val id = ((element as? JsonObject)?.get(field) as? JsonPrimitive)
-                ?.contentOrNull
-                ?.trim()
-                .orEmpty()
-            if (id.isNotEmpty() && ids.none { it.equals(id, ignoreCase = true) }) {
-                ids += id
-            }
+            val entry = element as? JsonObject ?: return@forEach
+            val id = (entry[field] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
+            if (id.isEmpty() || models.any { it.id.equals(id, ignoreCase = true) }) return@forEach
+            models += AiFetchedModel(id = id, config = effortConfig(entry))
         }
-        return ids
+        return models
+    }
+
+    /**
+     * DeepSeek 的 `effort` 元数据（`supported_levels` + `default_level`）直接对应应用的
+     * 推理等级配置；其他服务商/无 effort 字段时为空配置（该模型不使用推理等级）。
+     */
+    private fun effortConfig(entry: JsonObject): AiModelConfig {
+        val effort = entry["effort"] as? JsonObject ?: return AiModelConfig()
+        val levels = (effort["supported_levels"] as? JsonArray)?.let(::parseStrings).orEmpty()
+        val default = (effort["default_level"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+        return AiModelConfig(reasoningLevels = levels, reasoningLevel = default).normalized()
+    }
+
+    private fun parseStrings(array: JsonArray): List<String> = array.mapNotNull { element ->
+        (element as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
     }
 
     /** 拉取方案由预设决定：Anthropic 协议优先按协议处理，其余看预设的 [AiModelListApi] */

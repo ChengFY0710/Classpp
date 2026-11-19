@@ -384,13 +384,23 @@ class AiClientTest {
     // ---------- 模型列表（GET） ----------
 
     @Test
-    fun `fetch models sends a GET request and parses ids`() = runBlocking {
+    fun `fetch models sends a GET request and parses ids with config`() = runBlocking {
         val transport = FakeAiTransport(
-            FakeBodyResponse(200, """{"data":[{"id":"m1"},{"id":"m2"}]}"""),
+            FakeBodyResponse(
+                200,
+                """
+                {"data":[
+                  {"id":"deepseek-reasoner","effort":{"supported_levels":["low","high"],"default_level":"high"}},
+                  {"id":"deepseek-chat"}
+                ]}
+                """.trimIndent(),
+            ),
         )
         val models = AiClient(transport).fetchModels(connection(), "sk-secret")
 
-        assertEquals(listOf("m1", "m2"), models)
+        assertEquals(listOf("deepseek-reasoner", "deepseek-chat"), models.map { it.id })
+        assertEquals("high", models[0].config.reasoningLevel)
+        assertTrue(models[1].config.isEmpty)
         val request = transport.lastRequest!!
         assertEquals(AiHttpMethod.Get, request.method)
         assertEquals("https://api.example.com/v1/models", request.url)
@@ -446,7 +456,7 @@ class AiClientTest {
         )
         val models = AiClient(transport).fetchModels(bailian, "sk-bailian")
 
-        assertEquals(listOf("qwen-max", "qwen-plus", "qwen-turbo"), models)
+        assertEquals(listOf("qwen-max", "qwen-plus", "qwen-turbo"), models.map { it.id })
         assertEquals(2, transport.requests.size)
         assertEquals(
             "https://dashscope.aliyuncs.com/api/v1/models?page_no=1&page_size=100",

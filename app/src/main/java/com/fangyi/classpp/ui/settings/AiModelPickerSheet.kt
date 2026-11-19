@@ -26,6 +26,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.ai.AiFetchedModel
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetTopAction
@@ -37,7 +38,8 @@ import dev.chrisbanes.haze.rememberHazeState
 /**
  * 「选择模型」浮层（AI 配置方案浮层 →「从服务商拉取模型」成功后打开）：
  *
- * - 展示本次拉取到、且尚未加入当前草稿连接的新模型，多选后「添加」；
+ * - 展示本次拉取到、且尚未加入当前草稿连接的新模型（[AiFetchedModel]，含服务商附带
+ *   的推理等级等配置），多选后「添加」；配置随勾选结果一并交回父浮层合并；
  * - 行规格同选择类列表：白卡整行点按切换，选中行文字主色 + 行尾对勾；
  *   对勾恒在组合内（仅透明度/缩放变化），勾选切换不重写采样源结构，Haze 链稳定；
  * - 默认全不选（服务商模型可能很多，避免误加整张列表），未选中时顶栏「添加」置灰；
@@ -51,7 +53,7 @@ import dev.chrisbanes.haze.rememberHazeState
 @Composable
 internal fun AiModelPickerSheet(
     visible: Boolean,
-    models: List<String>,
+    models: List<AiFetchedModel>,
     onDismiss: () -> Unit,
     onDismissed: () -> Unit,
     onConfirm: (List<String>) -> Unit,
@@ -76,7 +78,8 @@ internal fun AiModelPickerSheet(
         confirmAtEnd = true,
         onConfirm = {
             if (selected.isNotEmpty()) {
-                onConfirm(models.filter { it in selected })
+                // 保持列表顺序；配置由父浮层按 id 从拉取结果里取
+                onConfirm(models.filter { it.id in selected }.map { it.id })
                 onDismiss()
             }
         },
@@ -96,18 +99,18 @@ internal fun AiModelPickerSheet(
         lazyContent = {
             itemsIndexed(
                 items = models,
-                key = { _, model -> model },
+                key = { _, model -> model.id },
             ) { index, model ->
-                val isSelected = model in selected
+                val isSelected = model.id in selected
                 ModelPickerRow(
-                    model = model,
+                    model = model.id,
                     selected = isSelected,
                     modifier = Modifier.padding(
                         // 行卡之间留 CardSectionSpacing；末行不垫，避免尾部多一段
                         bottom = if (index == models.lastIndex) 0.dp else CardSectionSpacing,
                     ),
                     onClick = {
-                        selected = if (isSelected) selected - model else selected + model
+                        selected = if (isSelected) selected - model.id else selected + model.id
                     },
                 )
             }

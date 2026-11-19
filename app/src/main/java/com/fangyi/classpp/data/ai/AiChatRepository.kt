@@ -1583,10 +1583,11 @@ class AiChatRepository internal constructor(
     }
 
     /**
-     * 拉取服务商可用模型列表：只读网络，不落库、不改活动配置。
+     * 拉取服务商可用模型列表（含服务商附带的模型级配置，如 DeepSeek 的推理等级）：
+     * 只读网络，不落库、不改活动配置。
      * Key 由调用方提供（配置方案浮层优先用输入框当前值，留空时读取已存 Key）。
      */
-    suspend fun fetchModels(connection: AiConnection, apiKey: String): List<String> =
+    suspend fun fetchModels(connection: AiConnection, apiKey: String): List<AiFetchedModel> =
         client.fetchModels(connection.withNormalizedModels(), apiKey)
 
     /**

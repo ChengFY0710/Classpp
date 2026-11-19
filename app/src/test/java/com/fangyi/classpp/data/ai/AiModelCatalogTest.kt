@@ -141,8 +141,36 @@ class AiModelCatalogTest {
         """.trimIndent()
         assertEquals(
             listOf("deepseek-chat", "deepseek-reasoner"),
-            AiModelCatalog.parsePage(connection("https://api.example.com/v1"), body).models,
+            AiModelCatalog.parsePage(connection("https://api.example.com/v1"), body)
+                .models.map { it.id },
         )
+    }
+
+    @Test
+    fun `parse deepseek effort metadata into reasoning config`() {
+        val body = """
+            {"object":"list","data":[
+              {"id":"deepseek-reasoner","effort":{"supported_levels":["low","high","max"],"default_level":"high"}},
+              {"id":"deepseek-flash","effort":{"supported_levels":["low","high"]}},
+              {"id":"deepseek-chat"}
+            ]}
+        """.trimIndent()
+        val models = AiModelCatalog.parsePage(
+            connection("https://api.deepseek.com"),
+            body,
+        ).models
+        assertEquals(
+            listOf("deepseek-reasoner", "deepseek-flash", "deepseek-chat"),
+            models.map { it.id },
+        )
+        // 默认等级命中 supported_levels
+        assertEquals(listOf("low", "high", "max"), models[0].config.reasoningLevels)
+        assertEquals("high", models[0].config.reasoningLevel)
+        // 缺 default_level 回落首个等级
+        assertEquals(listOf("low", "high"), models[1].config.reasoningLevels)
+        assertEquals("low", models[1].config.reasoningLevel)
+        // 无 effort = 空配置（该模型不使用推理等级）
+        assertTrue(models[2].config.isEmpty)
     }
 
     @Test
@@ -151,7 +179,7 @@ class AiModelCatalogTest {
             connection("https://api.example.com/v1"),
             """{"data":[]}""",
         )
-        assertEquals(emptyList<String>(), page.models)
+        assertEquals(emptyList<AiFetchedModel>(), page.models)
         assertEquals(null, page.nextPage)
     }
 
@@ -168,7 +196,7 @@ class AiModelCatalogTest {
              "models":[{"model":"qwen-max"},{"model":"qwen-plus"}]}}
             """.trimIndent(),
         )
-        assertEquals(listOf("qwen-max", "qwen-plus"), first.models)
+        assertEquals(listOf("qwen-max", "qwen-plus"), first.models.map { it.id })
         assertEquals(2, first.nextPage)
 
         val last = AiModelCatalog.parsePage(
@@ -178,7 +206,7 @@ class AiModelCatalogTest {
              "models":[{"model":"qwen-turbo"}]}}
             """.trimIndent(),
         )
-        assertEquals(listOf("qwen-turbo"), last.models)
+        assertEquals(listOf("qwen-turbo"), last.models.map { it.id })
         assertEquals(null, last.nextPage)
     }
 

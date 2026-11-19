@@ -196,7 +196,7 @@ class OkHttpAiTransportTest {
             // 本地 ServerSocket 只有 http：测试专用开关放行明文，其余行为与生产一致
             val client = AiClient(OkHttpAiTransport(allowCleartextForTests = true))
             val models = client.fetchModels(connection(server.localPort), "sk-test")
-            assertEquals(listOf("m1", "m2"), models)
+            assertEquals(listOf("m1", "m2"), models.map { it.id })
             // GET 元数据请求不发送请求体
             assertEquals("GET /models HTTP/1.1", requestLine.get())
         } finally {
