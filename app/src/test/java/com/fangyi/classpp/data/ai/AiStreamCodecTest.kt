@@ -50,10 +50,17 @@ class AiStreamCodecTest {
 
     // ---------- 脚手架 ----------
 
-    private fun anthropicConnection(baseUrl: String = "https://api.anthropic.com/v1") = AiConnection(
+    private fun anthropicConnection(
+        baseUrl: String = "https://api.anthropic.com/v1",
+        // 模型级推理等级配置（形状与「配置模型」浮层落库一致）：null = 不配置
+        reasoningLevel: String? = null,
+    ) = AiConnection(
         providerId = "anthropic",
         baseUrl = baseUrl,
         model = "claude-sonnet-4-5",
+        modelConfigs = reasoningLevel
+            ?.let { mapOf("claude-sonnet-4-5" to AiModelConfig(listOf(it), it)) }
+            ?: emptyMap(),
         protocol = AiProtocol.Anthropic,
     )
 
@@ -185,10 +192,17 @@ class AiStreamCodecTest {
 
     // ---------- 带图 turn 的 content 形状 ----------
 
-    private fun openAiConnection(baseUrl: String = "https://api.openai.com/v1") = AiConnection(
+    private fun openAiConnection(
+        baseUrl: String = "https://api.openai.com/v1",
+        // 模型级推理等级配置（形状与「配置模型」浮层落库一致）：null = 不配置
+        reasoningLevel: String? = null,
+    ) = AiConnection(
         providerId = "openai",
         baseUrl = baseUrl,
         model = "gpt-4o-mini",
+        modelConfigs = reasoningLevel
+            ?.let { mapOf("gpt-4o-mini" to AiModelConfig(listOf(it), it)) }
+            ?: emptyMap(),
     )
 
     private val image = AiTurnImage(mediaType = "image/jpeg", base64 = "QUJD")
@@ -257,6 +271,79 @@ class AiStreamCodecTest {
         val anthropicContent = bodyOf(anthropic.lastRequest!!)["messages"]!!.jsonArray[0].jsonObject["content"]!!
         assertTrue("无图 content 应保持字符串", anthropicContent is JsonPrimitive)
         assertEquals("你好", anthropicContent.jsonPrimitive.content)
+    }
+
+    // ---------- 推理等级（请求侧生效） ----------
+
+    @Test
+    fun `openai reasoning effort passes through verbatim`() = runBlocking {
+        val t = transport("data: [DONE]", null)
+        AiClient(t).streamChat(openAiConnection(reasoningLevel = "xhigh"), "sk", listOf(AiChatTurn("user", "hi")))
+
+        // 等级原样透传（minimal/low/medium/high/xhigh 及各家自定义值），不做本地校验
+        assertEquals("xhigh", bodyOf(t.lastRequest!!)["reasoning_effort"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `openai request without reasoning level omits reasoning effort`() = runBlocking {
+        val t = transport("data: [DONE]", null)
+        AiClient(t).streamChat(openAiConnection(), "sk", listOf(AiChatTurn("user", "hi")))
+
+        assertNull("未配置等级时不得发送 reasoning_effort（既有请求形状不变）", bodyOf(t.lastRequest!!)["reasoning_effort"])
+    }
+
+    @Test
+    fun `anthropic named reasoning level maps to thinking budget and raises max tokens`() = runBlocking {
+        val t = transport(messageStop(), null)
+        AiClient(t).streamChat(anthropicConnection(reasoningLevel = "medium"), "sk", turns, temperature = 0.0)
+
+        val body = bodyOf(t.lastRequest!!)
+        val thinking = body["thinking"]!!.jsonObject
+        assertEquals("enabled", thinking["type"]!!.jsonPrimitive.content)
+        assertEquals("8192", thinking["budget_tokens"]!!.jsonPrimitive.content)
+        // max_tokens = budget + 默认 4096：答案余量与无思考时持平，且 > budget_tokens
+        assertEquals("12288", body["max_tokens"]!!.jsonPrimitive.content)
+        assertNull("thinking 启用时不得携带 temperature（Anthropic 只接受 1）", body["temperature"])
+    }
+
+    @Test
+    fun `anthropic reasoning level matching ignores case`() = runBlocking {
+        val t = transport(messageStop(), null)
+        AiClient(t).streamChat(anthropicConnection(reasoningLevel = "HIGH"), "sk", turns)
+
+        val body = bodyOf(t.lastRequest!!)
+        assertEquals("16384", body["thinking"]!!.jsonObject["budget_tokens"]!!.jsonPrimitive.content)
+        assertEquals("20480", body["max_tokens"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `anthropic numeric reasoning level passes as budget clamped to minimum`() = runBlocking {
+        val plain = transport(messageStop(), null)
+        AiClient(plain).streamChat(anthropicConnection(reasoningLevel = "4096"), "sk", turns)
+        assertEquals(
+            "4096",
+            bodyOf(plain.lastRequest!!)["thinking"]!!.jsonObject["budget_tokens"]!!.jsonPrimitive.content,
+        )
+
+        // Anthropic 对 budget_tokens 的硬性下限 1024：更小的数字钳到下限
+        val clamped = transport(messageStop(), null)
+        AiClient(clamped).streamChat(anthropicConnection(reasoningLevel = "512"), "sk", turns)
+        val body = bodyOf(clamped.lastRequest!!)
+        assertEquals("1024", body["thinking"]!!.jsonObject["budget_tokens"]!!.jsonPrimitive.content)
+        assertEquals("5120", body["max_tokens"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `anthropic unmapped reasoning level keeps request without thinking`() = runBlocking {
+        // 未知写法不猜（错发预算比不发更糟）：无 thinking、max_tokens 保持默认，
+        // temperature 原样保留（识别路径的 greedy 采样不受影响）
+        val t = transport(messageStop(), null)
+        AiClient(t).streamChat(anthropicConnection(reasoningLevel = "低"), "sk", turns, temperature = 0.0)
+
+        val body = bodyOf(t.lastRequest!!)
+        assertNull("无法映射的等级不得发送 thinking", body["thinking"])
+        assertEquals("4096", body["max_tokens"]!!.jsonPrimitive.content)
+        assertEquals("0.0", body["temperature"]!!.jsonPrimitive.content)
     }
 
     // ---------- SSE 解析 ----------

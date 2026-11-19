@@ -1,5 +1,6 @@
 package com.fangyi.classpp.data.ai
 
+import android.util.Log
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -82,7 +83,8 @@ internal interface AiStreamCodec {
  * OpenAI 兼容 `/chat/completions` 编解码（OpenAI / DeepSeek / 智谱 / 通义 / Kimi /
  * Ollama 同协议）。
  *
- * - 请求：Bearer 认证；体为 `{model, stream, temperature?, messages, tools?}`；
+ * - 请求：Bearer 认证；体为 `{model, stream, temperature?, reasoning_effort?, messages,
+ *   tools?}`（`reasoning_effort` 来自当前模型的推理等级配置，原样透传，未配置不发送）；
  *   assistant 带 `tool_calls` 时同时落 `tool_calls` 数组，tool 轮每个结果一条
  *   `{role:"tool", tool_call_id, content}` 消息；
  * - 解析：`data: [DONE]` 终止；`choices[0].delta.content` 为正文增量；
@@ -105,7 +107,13 @@ internal object OpenAiStreamCodec : AiStreamCodec {
             "Authorization" to "Bearer $apiKey",
             "Accept" to "text/event-stream",
         ),
-        jsonBody = encodeRequest(connection.model, turns, temperature, tools),
+        jsonBody = encodeRequest(
+            model = connection.model,
+            reasoningLevel = connection.activeReasoningLevel(),
+            turns = turns,
+            temperature = temperature,
+            tools = tools,
+        ),
     )
 
     override fun onData(payload: String): List<AiStreamEvent> {
@@ -148,6 +156,7 @@ internal object OpenAiStreamCodec : AiStreamCodec {
 
     private fun encodeRequest(
         model: String,
+        reasoningLevel: String?,
         turns: List<AiChatTurn>,
         temperature: Double?,
         tools: List<AiToolSpec>,
@@ -156,6 +165,9 @@ internal object OpenAiStreamCodec : AiStreamCodec {
             put("model", model)
             put("stream", true)
             temperature?.let { put("temperature", it) }
+            // 推理等级原样透传（minimal/low/medium/high/xhigh 及各家自定义值）；服务商
+            // 不支持该字段时由用户在等级配置里清空即可，编解码层不猜服务商语义
+            reasoningLevel?.let { put("reasoning_effort", it) }
             put("messages", JsonArray(encodeMessages(turns)))
             if (tools.isNotEmpty()) put("tools", AiToolRegistry.openAiTools(tools))
         }
@@ -265,7 +277,13 @@ internal object OpenAiStreamCodec : AiStreamCodec {
  *
  * - **认证**：`x-api-key` 头 + `anthropic-version` 头（不是 Bearer）；
  * - **system 是顶层字段**：role=system 的 turn 不进 messages，拼接为顶层 `system`；
- * - **max_tokens 必填**：取 [DEFAULT_MAX_TOKENS]；
+ * - **max_tokens 必填**：默认取 [DEFAULT_MAX_TOKENS]；推理等级启用 thinking 时取
+ *   `budget_tokens + [DEFAULT_MAX_TOKENS]`（答案余量与无思考时持平，且满足 Anthropic
+ *   对 max_tokens > budget_tokens 的硬性要求）；
+ * - **thinking**：当前模型的推理等级经 [AnthropicStreamCodec.reasoningBudget] 映射为
+ *   预算后发送 `{type: "enabled", budget_tokens}`；无法映射的等级不发送（无思考的原行为）。
+ *   Anthropic 要求 thinking 启用时 temperature 只能为 1，启用思考即**不发送 temperature**
+ *   （课表识别固定传 0.0，混在一起会 400）；
  * - **messages 须以 user 开头且严格交替**：无工具轮次走原字符串拼接路径（既有行为
  *   与回归测试不变）；出现工具轮次时走 block-aware 路径——assistant 的 `tool_use`
  *   编码为 content block，tool 结果编码为紧随其后的 user `tool_result` 块；
@@ -288,7 +306,13 @@ internal object AnthropicStreamCodec : AiStreamCodec {
             "anthropic-version" to API_VERSION,
             "Accept" to "text/event-stream",
         ),
-        jsonBody = encodeRequest(connection.model, turns, temperature, tools),
+        jsonBody = encodeRequest(
+            model = connection.model,
+            reasoningLevel = connection.activeReasoningLevel(),
+            turns = turns,
+            temperature = temperature,
+            tools = tools,
+        ),
     )
 
     override fun onData(payload: String): List<AiStreamEvent> {
@@ -358,6 +382,7 @@ internal object AnthropicStreamCodec : AiStreamCodec {
 
     private fun encodeRequest(
         model: String,
+        reasoningLevel: String?,
         turns: List<AiChatTurn>,
         temperature: Double?,
         tools: List<AiToolSpec>,
@@ -367,11 +392,23 @@ internal object AnthropicStreamCodec : AiStreamCodec {
             .trim()
         val nonSystem = turns.filterNot { it.role == ROLE_SYSTEM }
         val hasToolTurns = nonSystem.any { it.toolCalls.isNotEmpty() || it.toolResults.isNotEmpty() }
+        val thinkingBudget = reasoningLevel?.let(::reasoningBudget)
         val payload = buildJsonObject {
             put("model", model)
-            put("max_tokens", DEFAULT_MAX_TOKENS)
+            put("max_tokens", thinkingBudget?.plus(DEFAULT_MAX_TOKENS) ?: DEFAULT_MAX_TOKENS)
             put("stream", true)
-            temperature?.let { put("temperature", it) }
+            // Anthropic 要求 thinking 启用时 temperature 只能为 1：启用思考即不发送
+            //（课表识别固定传 0.0，混在一起会 400）
+            if (thinkingBudget == null) temperature?.let { put("temperature", it) }
+            if (thinkingBudget != null) {
+                put(
+                    "thinking",
+                    buildJsonObject {
+                        put("type", THINKING_TYPE_ENABLED)
+                        put("budget_tokens", thinkingBudget)
+                    },
+                )
+            }
             if (system.isNotEmpty()) put("system", system)
             if (tools.isNotEmpty()) put("tools", AiToolRegistry.anthropicTools(tools))
             put(
@@ -577,6 +614,23 @@ internal object AnthropicStreamCodec : AiStreamCodec {
         }
     }
 
+    /**
+     * 推理等级 → thinking 预算；null = 无法映射（不发 thinking，保持无思考的原行为）。
+     * 命名等级忽略大小写按 [THINKING_BUDGET_BY_LEVEL] 预设映射；纯数字等级直接作为
+     * 预算（下限钳到 [MIN_THINKING_BUDGET]，Anthropic 硬性要求）；其余写法不猜——
+     * 错发预算比不发更糟，仅 debug 记一条供排查。
+     */
+    private fun reasoningBudget(level: String): Int? {
+        THINKING_BUDGET_BY_LEVEL[level.lowercase()]?.let { return it }
+        val budget = level.toIntOrNull()?.coerceAtLeast(MIN_THINKING_BUDGET)
+        if (budget == null && AiDebugTrace.enabled) {
+            runCatching {
+                Log.w(REASONING_LOG_TAG, "anthropic reasoning level not mapped, ignored: $level")
+            }
+        }
+        return budget
+    }
+
     private const val MESSAGES_PATH = "/messages"
     private const val VERSION_PATH = "/v1"
     private const val MESSAGES_ENDPOINT_SUFFIX = VERSION_PATH + MESSAGES_PATH
@@ -584,6 +638,23 @@ internal object AnthropicStreamCodec : AiStreamCodec {
 
     /** 各在售 Claude 模型输出上限的公共下限（claude-3-haiku = 4096），避免旧模型 400 */
     private const val DEFAULT_MAX_TOKENS = 4096
+
+    private const val THINKING_TYPE_ENABLED = "enabled"
+
+    /** Anthropic 对 thinking.budget_tokens 的硬性下限 */
+    private const val MIN_THINKING_BUDGET = 1024
+
+    /** 推理等级 → thinking 预算的命名预设（忽略大小写；与「配置模型」浮层的快捷预设一致） */
+    private val THINKING_BUDGET_BY_LEVEL = mapOf(
+        "minimal" to 1024,
+        "low" to 2048,
+        "medium" to 8192,
+        "high" to 16384,
+        "xhigh" to 32768,
+    )
+
+    /** 无法映射的推理等级仅在 debug 记一条（与 AiClient 的 HTTP 排查日志同 tag） */
+    private const val REASONING_LOG_TAG = "AiHttp"
 
     private const val ROLE_SYSTEM = "system"
     private const val ROLE_USER = "user"
@@ -608,6 +679,13 @@ private val payloadJson = Json { ignoreUnknownKeys = true }
 
 /** 请求体编码（同原 AiClient.requestJson：不落默认值） */
 private val requestJson = Json { encodeDefaults = false }
+
+/**
+ * 当前生效模型的推理等级（两个协议编解码器共用的解析口）：配置随模型存在
+ * [AiConnection.modelConfigs]，等级为空 = 该模型不使用推理参数（请求不发对应字段）。
+ */
+private fun AiConnection.activeReasoningLevel(): String? =
+    modelConfig(model).reasoningLevel.trim().takeIf { it.isNotEmpty() }
 
 /** 解析一条 data 载荷为 JSON 对象；null = 非对象或不可解析（调用方跳过，不致命） */
 private fun parseObject(payload: String): JsonObject? = try {
