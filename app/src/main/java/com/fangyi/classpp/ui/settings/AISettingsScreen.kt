@@ -479,6 +479,10 @@ fun AISettingsScreen(
                     },
                     loadCustomConfig = { repository.loadCustomConfig() },
                     loadProfileKeyPresent = { id -> repository.loadProfileKeyPresent(id) },
+                    loadSavedKey = { id -> repository.loadSavedKey(id) },
+                    fetchModels = { connection, apiKey ->
+                        repository.fetchModels(connection, apiKey)
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
             }

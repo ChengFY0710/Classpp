@@ -1568,6 +1568,28 @@ class AiChatRepository internal constructor(
     }
 
     /**
+     * 读取指定方案（null = 「自定义」槽位）已保存的 API Key：供「拉取模型」在输入框
+     * 留空时回落使用。未配置或解密失败返回 null，并同步 [secureAvailable]。
+     * Key 只进请求头，不写日志、不改任何持久化状态。
+     */
+    suspend fun loadSavedKey(profileId: String?): String? = withContext(Dispatchers.IO) {
+        val key = if (profileId != null) {
+            settings.loadProfileKey(profileId)
+        } else {
+            settings.loadCustomKey()
+        }
+        _secureAvailable.value = settings.secureAvailable
+        key
+    }
+
+    /**
+     * 拉取服务商可用模型列表：只读网络，不落库、不改活动配置。
+     * Key 由调用方提供（配置方案浮层优先用输入框当前值，留空时读取已存 Key）。
+     */
+    suspend fun fetchModels(connection: AiConnection, apiKey: String): List<String> =
+        client.fetchModels(connection.withNormalizedModels(), apiKey)
+
+    /**
      * 保存为新方案：只入库，**不激活**（当前生效配置不变，需在浮层「确认」后才切换）。
      * API Key 随方案一同保存：优先用 [apiKey]（本次输入），为空时按 [keySource] 沿用
      * 草稿来源条目已存的 Key。来源是「自定义」槽位时整份草稿搬到新方案：Key 迁移成功后

@@ -321,6 +321,10 @@ class AiProviderPresetsTest {
         assertEquals("kimi-k3.1-pro", AiProviderPresets.byId("moonshot").suggestedModel)
         assertEquals("https://api.xiaomimimo.com/v1", AiProviderPresets.byId("mimo").baseUrl)
         assertEquals("mimo-v2.6-pro", AiProviderPresets.byId("mimo").suggestedModel)
+        assertEquals("阿里云百炼", AiProviderPresets.byId("bailian").label)
+        assertEquals(AiModelListApi.DashScope, AiProviderPresets.byId("bailian").modelListApi)
+        // 其他预设的拉取方案不变，仍走通用 OpenAI 兼容路径
+        assertEquals(AiModelListApi.OpenAiCompat, AiProviderPresets.byId("qwen").modelListApi)
     }
 
     @Test

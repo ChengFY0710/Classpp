@@ -1227,6 +1227,14 @@
     <string name="ai_model_reasoning_hint">e.g. low, high</string>
     <string name="ai_model_reasoning_value">Reasoning level: %1$s</string>
     <string name="ai_model_reasoning_duplicate">This reasoning level already exists</string>
+    <string name="ai_model_fetch">Fetch models from provider</string>
+    <string name="ai_model_fetch_title">Select models</string>
+    <string name="ai_model_fetch_add">Add</string>
+    <string name="ai_model_fetch_loading">Fetching models…</string>
+    <string name="ai_model_fetch_empty">No new models to add</string>
+    <string name="ai_model_fetch_key_required">Enter an API key first</string>
+    <string name="ai_model_fetch_failed">Couldn\'t fetch models — %1$s</string>
+    <string name="ai_model_fetch_not_found">This service URL doesn\'t support listing models — check the URL</string>
     <string name="cd_ai_switch_model">Switch model, current: %1$s</string>
     <string name="ai_settings_api_key">API Key</string>
     <string name="ai_settings_api_key_hint">sk-…</string>

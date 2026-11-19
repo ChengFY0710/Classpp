@@ -73,6 +73,29 @@ class AiClientTest {
         }
     }
 
+    /** 元数据 GET 用：一次读完的响应体（无 SSE 行） */
+    private class FakeBodyResponse(
+        override val status: Int,
+        private val body: String,
+    ) : AiStreamResponse {
+        override fun readLine(): String? = null
+        override fun readRemaining(): String = body
+        override fun cancel() = Unit
+        override fun close() = Unit
+    }
+
+    /** 多页拉取用：按调用顺序返回脚本化响应，并记录每次请求 */
+    private class SequenceAiTransport(
+        private val responses: List<AiStreamResponse>,
+    ) : AiHttpTransport {
+        val requests = mutableListOf<AiHttpRequest>()
+
+        override fun open(request: AiHttpRequest): AiStreamResponse {
+            requests += request
+            return responses[requests.size - 1]
+        }
+    }
+
     private fun client(vararg lines: String?): AiClient =
         AiClient(FakeAiTransport(FakeAiStreamResponse(200, lines.toList())))
 
@@ -356,5 +379,82 @@ class AiClientTest {
         val text = client.streamChat(connection(), "sk", turns, onDelta = { newDeltas += it })
         assertEquals("新", text)
         assertEquals(listOf("新"), newDeltas)
+    }
+
+    // ---------- 模型列表（GET） ----------
+
+    @Test
+    fun `fetch models sends a GET request and parses ids`() = runBlocking {
+        val transport = FakeAiTransport(
+            FakeBodyResponse(200, """{"data":[{"id":"m1"},{"id":"m2"}]}"""),
+        )
+        val models = AiClient(transport).fetchModels(connection(), "sk-secret")
+
+        assertEquals(listOf("m1", "m2"), models)
+        val request = transport.lastRequest!!
+        assertEquals(AiHttpMethod.Get, request.method)
+        assertEquals("https://api.example.com/v1/models", request.url)
+        assertEquals("Bearer sk-secret", request.headers["Authorization"])
+        assertTrue(request.jsonBody.isEmpty())
+    }
+
+    @Test
+    fun `fetch models maps http status to classified error`() = runBlocking {
+        val transport = FakeAiTransport(
+            FakeBodyResponse(401, """{"error":{"message":"bad key"}}"""),
+        )
+        val error = runCatching {
+            AiClient(transport).fetchModels(connection(), "sk-bad")
+        }.exceptionOrNull() as AiException
+        assertEquals(AiError.Auth, error.error)
+        assertTrue(error.detail.orEmpty().contains("401"))
+    }
+
+    @Test
+    fun `fetch models maps malformed body to bad response`() = runBlocking {
+        val transport = FakeAiTransport(FakeBodyResponse(200, "{broken"))
+        val error = runCatching {
+            AiClient(transport).fetchModels(connection(), "sk")
+        }.exceptionOrNull() as AiException
+        assertEquals(AiError.BadResponse, error.error)
+    }
+
+    @Test
+    fun `fetch models follows bailian pagination and parses native shape`() = runBlocking {
+        val transport = SequenceAiTransport(
+            listOf(
+                FakeBodyResponse(
+                    200,
+                    """
+                    {"success":true,"output":{"total":3,"page_no":1,"page_size":2,
+                     "models":[{"model":"qwen-max"},{"model":"qwen-plus"}]}}
+                    """.trimIndent(),
+                ),
+                FakeBodyResponse(
+                    200,
+                    """
+                    {"success":true,"output":{"total":3,"page_no":2,"page_size":2,
+                     "models":[{"model":"qwen-turbo"}]}}
+                    """.trimIndent(),
+                ),
+            ),
+        )
+        val bailian = AiConnection(
+            providerId = "bailian",
+            baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            model = "qwen-max",
+        )
+        val models = AiClient(transport).fetchModels(bailian, "sk-bailian")
+
+        assertEquals(listOf("qwen-max", "qwen-plus", "qwen-turbo"), models)
+        assertEquals(2, transport.requests.size)
+        assertEquals(
+            "https://dashscope.aliyuncs.com/api/v1/models?page_no=1&page_size=100",
+            transport.requests[0].url,
+        )
+        assertEquals(
+            "https://dashscope.aliyuncs.com/api/v1/models?page_no=2&page_size=100",
+            transport.requests[1].url,
+        )
     }
 }

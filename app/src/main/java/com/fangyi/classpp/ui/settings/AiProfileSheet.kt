@@ -20,6 +20,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ai.AiConnection
+import com.fangyi.classpp.data.ai.AiError
+import com.fangyi.classpp.data.ai.AiException
 import com.fangyi.classpp.data.ai.AiModelConfig
 import com.fangyi.classpp.data.ai.AiProfile
 import com.fangyi.classpp.data.ai.AiProtocol
@@ -31,6 +33,7 @@ import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.ConfirmDialogCard
 import com.fangyi.classpp.ui.components.DialogPillButton
 import com.fangyi.classpp.ui.components.FadeOverlayDialog
+import com.fangyi.classpp.ui.components.LoadingOverlay
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.PopupMenuItem
 import com.fangyi.classpp.ui.components.SelectCard
@@ -42,6 +45,7 @@ import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import dev.chrisbanes.haze.rememberHazeState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /** 一次「保存为新方案」的挂起信息：保存前的方案 id 集合 + 发起时的草稿 + 草稿来源 */
@@ -70,6 +74,10 @@ private data class PendingProfileSave(
  *   浮层（模型 ID + 推理等级），末尾「添加模型」同一入口；新增 / 编辑后该模型自动成为
  *   当前模型，删除当前模型时回落剩余首个（允许删空，由确认时的非空校验兜底），
  *   对话浮层输入栏上方仍可切换；
+ * - 「从服务商拉取模型」：用当前服务地址与 API Key（输入框优先，留空回落当前条目
+ *   已保存的 Key）调 `GET /models`（OpenAI 兼容与 Anthropic 各自端点），拉取期间
+ *   整屏加载态；结果过滤掉已加入的模型后打开多选浮层，确认只合并进本地草稿
+ *   （已有模型与推理等级配置原样保留），父浮层「确认」才随连接落库；
  * - 末尾「提示」分组：纯展示行，说明对话图片需要多模态（视觉）模型；
  * - 确认时先做本地校验（服务地址 http 开头、至少一个模型名），失败 toast 并保留浮层；
  *   Key 缺失由宿主回调判定（保存后仍无可用 Key → 提示并保留浮层）。
@@ -97,6 +105,10 @@ internal fun AiProfileSheet(
     onDelete: (id: String) -> Unit,
     loadCustomConfig: suspend () -> Pair<AiConnection, Boolean>,
     loadProfileKeyPresent: suspend (id: String) -> Boolean,
+    // 读取已存 Key（null = 「自定义」槽位）：拉取模型时输入框留空的回落来源
+    loadSavedKey: suspend (profileId: String?) -> String?,
+    // 拉取服务商可用模型列表（GET /models）：只读网络，Key 优先用输入框当前值
+    fetchModels: suspend (connection: AiConnection, apiKey: String) -> List<String>,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -105,11 +117,26 @@ internal fun AiProfileSheet(
     val customLabel = stringResource(R.string.ai_profile_custom)
     val invalidMessage = stringResource(R.string.ai_settings_invalid)
     val modelEmptyMessage = stringResource(R.string.ai_settings_model_empty)
+    val fetchKeyRequiredMessage = stringResource(R.string.ai_model_fetch_key_required)
+    val fetchEmptyMessage = stringResource(R.string.ai_model_fetch_empty)
+    val fetchFailedMessage = stringResource(R.string.ai_model_fetch_failed)
     val renameLabel = stringResource(R.string.edit_rename)
     val deleteLabel = stringResource(R.string.edit_delete)
     val defaultName = stringResource(R.string.ai_profile_default_name, profiles.size + 1)
     // 服务商预设名可直接当方案名；自定义服务商的预设名是「自定义」，与槽位行同名，改用序号
     val customProviderLabel = AiProviderPresets.byId(AiProviderPresets.CUSTOM_ID).label
+    // 协程回调里不能调用 stringResource：组合期先把分类错误文案取好。
+    // NotFound 用拉取场景专用文案：404 只说明该地址不提供模型列表，与模型名无关
+    val errorTexts = mapOf(
+        AiError.Auth to stringResource(R.string.ai_error_auth),
+        AiError.Quota to stringResource(R.string.ai_error_quota),
+        AiError.NotFound to stringResource(R.string.ai_model_fetch_not_found),
+        AiError.RateLimited to stringResource(R.string.ai_error_rate_limited),
+        AiError.Server to stringResource(R.string.ai_error_server),
+        AiError.Network to stringResource(R.string.ai_error_network),
+        AiError.BadResponse to stringResource(R.string.ai_error_bad_response),
+    )
+    val badResponseText = errorTexts.getValue(AiError.BadResponse)
 
     // 选中项：null = 自定义；draft/hadKey 只服务「确认」前的本地编辑
     var selectedProfileId by remember { mutableStateOf<String?>(null) }
@@ -127,6 +154,12 @@ internal fun AiProfileSheet(
     var modelSheetVisible by remember { mutableStateOf(false) }
     var modelSheetMounted by remember { mutableStateOf(false) }
     var modelSheetTarget by remember { mutableStateOf<String?>(null) }
+
+    // 「从服务商拉取模型」：在途加载态 + 拉取结果多选浮层（结果只进本地草稿）
+    var fetching by remember { mutableStateOf(false) }
+    var fetchedModels by remember { mutableStateOf(emptyList<String>()) }
+    var pickerVisible by remember { mutableStateOf(false) }
+    var pickerMounted by remember { mutableStateOf(false) }
 
     // 底部名称输入（保存为新方案 / 重命名共用；nameTargetId 非空 = 重命名）
     var nameVisible by remember { mutableStateOf(false) }
@@ -291,9 +324,9 @@ internal fun AiProfileSheet(
     val customIndex = profiles.size
     val selectedIndex = profiles.indexOfFirst { it.id == selectedProfileId }
         .takeIf { it >= 0 } ?: customIndex
-    // 只有底部输入卡让本浮层缩小后退：删除确认是整屏压暗的 FadeOverlayDialog，遮罩本身
-    // 已表达层级，本浮层保持原位（缩小反而是同一动作的重复表达）
-    val covered = nameVisible || modelSheetVisible
+    // 只有底部输入卡与叠层浮层让本浮层缩小后退：删除确认是整屏压暗的 FadeOverlayDialog，
+    // 遮罩本身已表达层级，本浮层保持原位（缩小反而是同一动作的重复表达）
+    val covered = nameVisible || modelSheetVisible || pickerVisible
     val sheetHazeState = rememberHazeState()
 
     // —— Haze 退让窗口（RenderThread SIGSEGV 防御，同 AiChatOverlay 的对话切换退让）——
@@ -353,6 +386,71 @@ internal fun AiProfileSheet(
                 draftConnection.model
             }
             updateDraft(draftConnection.withModels(remaining, nextCurrent))
+        }
+    }
+
+    /**
+     * 拉取服务商模型列表：Key 优先用输入框当前值，留空时回落当前条目已保存的 Key；
+     * 两者都没有才提示先填写。先做地址的本地校验，成功结果过滤掉草稿里已加入的模型
+     *（忽略大小写）后交多选浮层。
+     */
+    fun startFetchModels() {
+        val baseUrl = draftConnection.baseUrl.trim()
+        if (!baseUrl.startsWith("http")) {
+            baseUrlInvalid = true
+            AppToasts.show(context, invalidMessage)
+            return
+        }
+        val typedKey = keyInput.trim()
+        // 发起时的选中条目：协程起跑后即使选择变化，也按当时条目的已存 Key 回落
+        val targetProfileId = selectedProfileId
+        val target = draftConnection.copy(baseUrl = baseUrl.trimEnd('/'))
+        scope.launch {
+            // 读取已存 Key 是本地 I/O：放在加载态之外，缺 Key 时直接提示、不闪加载遮罩
+            val apiKey = typedKey.ifEmpty {
+                loadSavedKey(targetProfileId)?.trim().orEmpty()
+            }
+            if (apiKey.isEmpty()) {
+                AppToasts.show(context, fetchKeyRequiredMessage)
+                return@launch
+            }
+            fetching = true
+            try {
+                val models = fetchModels(target, apiKey)
+                val existing = draftConnection.modelOptions
+                val fresh = models
+                    .filterNot { id -> existing.any { it.equals(id, ignoreCase = true) } }
+                    .sortedBy { it.lowercase() }
+                if (fresh.isEmpty()) {
+                    AppToasts.show(context, fetchEmptyMessage)
+                } else {
+                    fetchedModels = fresh
+                    pickerMounted = true
+                    pickerVisible = true
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: AiException) {
+                AppToasts.show(
+                    context,
+                    fetchFailedMessage.format(errorTexts[e.error] ?: badResponseText),
+                )
+            } catch (_: Exception) {
+                AppToasts.show(context, fetchFailedMessage.format(badResponseText))
+            } finally {
+                fetching = false
+            }
+        }
+    }
+
+    /** 拉取结果合并：只追加勾选的新模型，已有模型与推理等级配置原样保留 */
+    fun applyFetchedModels(selected: List<String>) {
+        if (selected.isEmpty()) return
+        hazeRetreat.forRewrite {
+            val nextCurrent = draftConnection.model.takeIf { it.isNotBlank() } ?: selected.first()
+            updateDraft(
+                draftConnection.withModels(draftConnection.modelOptions + selected, nextCurrent),
+            )
         }
     }
 
@@ -583,6 +681,16 @@ internal fun AiProfileSheet(
                     enabled = true,
                     onClick = ::openAddModel,
                 )
+                // 从服务商拉取可用模型：用当前服务地址 + 当前条目 Key，结果多选后合并进草稿
+                SettingsCard(
+                    items = listOf(
+                        SettingsCardItem.Nav(
+                            label = stringResource(R.string.ai_model_fetch),
+                            onClick = ::startFetchModels,
+                        ),
+                    ),
+                    hazeState = cardHazeState,
+                )
             }
 
             // D. 提示：图片输入需要多模态模型（纯展示行，无操作）
@@ -614,6 +722,23 @@ internal fun AiProfileSheet(
             hazeEnabled = !hazeRetreat.suspended,
             onConfirm = ::applyModelConfig,
             onDelete = editingModel?.let { target -> { deleteModelConfig(target) } },
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+
+    // 「选择模型」子浮层：确认只把勾选的新模型合并进本地草稿（同「配置模型」，
+    // 父浮层确认才落库）；父层合并结果（模型行结构变化）期间本浮层同步卸载 Haze
+    if (pickerMounted) {
+        AiModelPickerSheet(
+            visible = pickerVisible,
+            models = fetchedModels,
+            onDismiss = { pickerVisible = false },
+            onDismissed = {
+                pickerMounted = false
+                fetchedModels = emptyList()
+            },
+            onConfirm = ::applyFetchedModels,
+            hazeEnabled = !hazeRetreat.suspended,
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -710,6 +835,13 @@ internal fun AiProfileSheet(
             }
         }
     }
+
+    // 拉取模型列表的加载态：整屏压暗由 FadeOverlayDialog 自带遮罩表达，不并入 covered
+    //（浮层层级动效规范）；网络请求由传输层 20s 整次上限兜底，不会无限挂起
+    LoadingOverlay(
+        visible = fetching,
+        message = stringResource(R.string.ai_model_fetch_loading),
+    )
 }
 
 /** 接口格式的展示文案（数据层不产文案，与 AiError 的 UI 映射同策略） */

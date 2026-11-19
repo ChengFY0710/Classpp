@@ -270,6 +270,9 @@ fun OverlaySheet(
     title: String,
     confirmLabel: String? = null,
     onConfirm: () -> Unit = {},
+    // 确认胶囊可用态：false 时按钮按项目置灰语义着色、点击与按压反馈一并失效
+    //（同 BottomSelectSheet 的 confirmEnabled）；默认 true，既有调用点行为不变
+    confirmEnabled: Boolean = true,
     rightAction: SheetTopAction,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -709,9 +712,10 @@ fun OverlaySheet(
                             OverlaySheetTopBar(
                                 title = title,
                                 confirmLabel = confirmLabel,
+                                confirmEnabled = confirmEnabled,
                                 confirmIcon = confirmIcon,
                                 confirmIconSize = confirmIconSize,
-                                onConfirm = { if (!closeRequested) onConfirm() },
+                                onConfirm = { if (!closeRequested && confirmEnabled) onConfirm() },
                                 rightAction = guardedRightAction,
                                 confirmAtEnd = confirmAtEnd,
                                 // hazeEnabled = false：本浮层无采样内容，顶栏退回渐变遮罩
@@ -796,6 +800,7 @@ fun OverlaySheet(
 private fun OverlaySheetTopBar(
     title: String,
     confirmLabel: String?,
+    confirmEnabled: Boolean = true,
     confirmIcon: Int,
     confirmIconSize: Dp = 30.dp,
     onConfirm: () -> Unit,
@@ -807,11 +812,17 @@ private fun OverlaySheetTopBar(
     dragModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
 ) {
-    // 玻璃染色后底材偏暗：primary 确认胶囊换玻璃前景色；白色玻璃动作胶囊沿用原内容色
-    val confirmContentColor = if (buttonBackdrop != null) {
-        MaterialTheme.classppColors.onPrimaryGlass
+    // 玻璃染色后底材偏暗：primary 确认胶囊换玻璃前景色；白色玻璃动作胶囊沿用原内容色。
+    // 确认不可用（如选择列表未勾选）时按项目置灰语义：白底 + negative 内容色
+    val confirmContainerColor = if (confirmEnabled) {
+        MaterialTheme.colorScheme.primary
     } else {
-        MaterialTheme.colorScheme.onPrimary
+        MaterialTheme.colorScheme.surface
+    }
+    val confirmContentColor = when {
+        !confirmEnabled -> MaterialTheme.classppColors.negative
+        buttonBackdrop != null -> MaterialTheme.classppColors.onPrimaryGlass
+        else -> MaterialTheme.colorScheme.onPrimary
     }
     val actionContentColor =
         if (buttonBackdrop != null) rightAction.contentColorGlass else rightAction.contentColor
@@ -912,11 +923,12 @@ private fun OverlaySheetTopBar(
                     SheetPillButton(
                         label = confirmLabel,
                         icon = confirmIcon,
-                        containerColor = MaterialTheme.colorScheme.primary,
+                        containerColor = confirmContainerColor,
                         contentColor = confirmContentColor,
                         modifier = Modifier.height(TopBarPillHeight),
                         iconSize = confirmIconSize,
                         iconAtEnd = true,
+                        enabled = confirmEnabled,
                         backdrop = buttonBackdrop,
                         onClick = onConfirm,
                     )
@@ -924,10 +936,11 @@ private fun OverlaySheetTopBar(
                     SheetPillButton(
                         label = confirmLabel,
                         icon = confirmIcon,
-                        containerColor = MaterialTheme.colorScheme.primary,
+                        containerColor = confirmContainerColor,
                         contentColor = confirmContentColor,
                         modifier = Modifier.height(TopBarPillHeight),
                         iconSize = confirmIconSize,
+                        enabled = confirmEnabled,
                         backdrop = buttonBackdrop,
                         onClick = onConfirm,
                     )

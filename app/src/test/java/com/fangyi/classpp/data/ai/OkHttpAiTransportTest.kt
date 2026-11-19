@@ -4,6 +4,7 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
@@ -158,6 +159,48 @@ class OkHttpAiTransportTest {
             }.exceptionOrNull()
             assertTrue(exception is AiException)
             assertEquals(AiError.Auth, (exception as AiException).error)
+        }
+    }
+
+    @Test
+    fun `model fetch sends GET without body over real socket`() = runBlocking {
+        val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
+        val requestLine = AtomicReference<String>()
+        val serverThread = Thread {
+            try {
+                val socket = server.accept()
+                socket.use {
+                    val input = it.getInputStream().bufferedReader()
+                    requestLine.set(input.readLine())
+                    while (true) { // 读完请求头
+                        val line = input.readLine() ?: break
+                        if (line.isEmpty()) break
+                    }
+                    val body = """{"data":[{"id":"m1"},{"id":"m2"}]}"""
+                    val bytes = body.toByteArray(Charsets.UTF_8)
+                    it.getOutputStream().write(
+                        ("HTTP/1.1 200 OK\r\n" +
+                            "Content-Type: application/json\r\n" +
+                            "Content-Length: ${bytes.size}\r\n" +
+                            "Connection: close\r\n\r\n").toByteArray() + bytes,
+                    )
+                    it.getOutputStream().flush()
+                }
+            } catch (_: Exception) {
+                // 测试结束关 server 时 accept/write 失败是常态，静默
+            }
+        }
+        serverThread.isDaemon = true
+        serverThread.start()
+        try {
+            // 本地 ServerSocket 只有 http：测试专用开关放行明文，其余行为与生产一致
+            val client = AiClient(OkHttpAiTransport(allowCleartextForTests = true))
+            val models = client.fetchModels(connection(server.localPort), "sk-test")
+            assertEquals(listOf("m1", "m2"), models)
+            // GET 元数据请求不发送请求体
+            assertEquals("GET /models HTTP/1.1", requestLine.get())
+        } finally {
+            server.close()
         }
     }
 }

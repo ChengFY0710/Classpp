@@ -16,11 +16,15 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 
+/** AI HTTP 方法：流式对话与其余 POST 走 [Post]，模型列表等元数据请求走 [Get]（无请求体） */
+enum class AiHttpMethod { Get, Post }
+
 /** 一条 AI HTTP 请求（形状由协议编解码器决定：端点、认证头、请求体；请求头显式给出，API Key 只进请求不进日志） */
 data class AiHttpRequest(
     val url: String,
     val headers: Map<String, String> = emptyMap(),
-    val jsonBody: String,
+    val jsonBody: String = "",
+    val method: AiHttpMethod = AiHttpMethod.Post,
 )
 
 /**
@@ -57,10 +61,12 @@ interface AiHttpTransport {
 }
 
 /**
- * OkHttp 传输实现（SSE 流式）。
+ * OkHttp 传输实现（SSE 流式 + 元数据 GET）。
  *
- * - **不设整次调用上限**：LLM 长回答可持续数分钟，`callTimeout` 关闭；连接 10s /
+ * - **流式请求不设整次调用上限**：LLM 长回答可持续数分钟，`callTimeout` 关闭；连接 10s /
  *   读 60s（readTimeout 是单次 read 的超时，流式期间按 chunk 到达自然续期）；
+ * - **GET（模型列表等元数据）用 20s 整次调用上限**：短请求不继承流式的无限总时限，
+ *   网络挂起时加载态有界退出；
  * - **取消契约**：本类不做任何协程挂钩——取消由 [AiClient] 的 invokeOnCancellation
  *   统一驱动 [AiStreamResponse.cancel]（call.cancel() 断 socket，阻塞读立刻抛
  *   IOException）。**绝不在 open 返回时动连接**：响应体此刻才开始消费，任何
@@ -76,7 +82,7 @@ class OkHttpAiTransport internal constructor(
     private val allowCleartextForTests: Boolean = false,
 ) : AiHttpTransport {
 
-    private val client = OkHttpClient.Builder()
+    private val streamingClient = OkHttpClient.Builder()
         // AI 请求只走 TLS：为支持用户自填的 http 教务网页，App 在 Manifest 放行了明文
         // WebView，但这不能顺带把 API Key 暴露给 http 端点——OkHttp 默认连接规格含
         // CLEARTEXT，这里收窄到 MODERN_TLS，用户误填 http 服务地址只会得到网络错误
@@ -90,13 +96,22 @@ class OkHttpAiTransport internal constructor(
         .callTimeout(0, TimeUnit.SECONDS)
         .build()
 
+    // GET 元数据请求共用同一套连接规格/超时，只额外加整次调用上限（见类注释）
+    private val metadataClient: OkHttpClient by lazy {
+        streamingClient.newBuilder()
+            .callTimeout(METADATA_CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .build()
+    }
+
     override fun open(request: AiHttpRequest): AiStreamResponse {
-        val body = request.jsonBody.toRequestBody(JSON_MEDIA_TYPE)
-        val builder = Request.Builder()
-            .url(request.url)
-            .post(body)
+        val builder = Request.Builder().url(request.url)
+        when (request.method) {
+            AiHttpMethod.Get -> builder.get()
+            AiHttpMethod.Post -> builder.post(request.jsonBody.toRequestBody(JSON_MEDIA_TYPE))
+        }
         for ((name, value) in request.headers) builder.header(name, value)
 
+        val client = if (request.method == AiHttpMethod.Get) metadataClient else streamingClient
         val call = client.newCall(builder.build())
         return OkHttpAiStreamResponse(call, call.execute())
     }
@@ -124,6 +139,8 @@ class OkHttpAiTransport internal constructor(
         val JSON_MEDIA_TYPE = "application/json; charset=UTF-8".toMediaType()
         const val CONNECT_TIMEOUT_SECONDS = 10L
         const val READ_TIMEOUT_SECONDS = 60L
+        /** GET 元数据请求的整次调用上限：不继承流式的无限 callTimeout */
+        const val METADATA_CALL_TIMEOUT_SECONDS = 20L
     }
 }
 
@@ -237,6 +254,87 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         }
     }
 
+    // ---------- 模型列表（元数据 GET） ----------
+
+    /**
+     * 拉取服务商可用模型列表：OpenAI 兼容 `GET {base}/models`、Anthropic
+     * `GET {base}/v1/models`、百炼原生 `GET {origin}/api/v1/models`（自动分页）。
+     * 端点、认证头与响应形态由 [AiModelCatalog] 按协议/地址判定。
+     *
+     * 与流式对话共用传输层、执行线程与取消语义：阻塞 I/O 在专用执行线程上完成，
+     * 协程取消即断开底层连接；成功返回去重后的模型 id 列表（保持服务商顺序）。
+     *
+     * @throws AiException 分类错误（网络 / HTTP 状态 / 响应不可解析）
+     */
+    suspend fun fetchModels(
+        connection: AiConnection,
+        apiKey: String,
+    ): List<String> = suspendCancellableCoroutine { cont ->
+        // 取消标志与在途响应句柄：open() 阻塞期间 inFlight 仍为 null，放行后由标志收口
+        val cancelled = AtomicBoolean(false)
+        val inFlight = AtomicReference<AiStreamResponse?>(null)
+        val future = EXECUTOR.submit {
+            try {
+                val models = ArrayList<String>()
+                var page = 1
+                while (true) {
+                    if (cancelled.get()) throw StreamCancelled
+                    val request = AiModelCatalog.buildRequest(connection, apiKey, page)
+                    val response = transport.open(request)
+                    inFlight.set(response)
+                    val body = response.use {
+                        if (cancelled.get()) {
+                            response.cancel()
+                            throw StreamCancelled
+                        }
+                        // 元数据响应小，一次读完（非 2xx 时同时充当错误体）
+                        val text = response.readRemaining()
+                        if (response.status !in 200..299) {
+                            // 同流式：仅 debug 构建打出 URL 与错误体，404 时区分路由/地址错；
+                            // URL 不含 API Key（Key 只在请求头）
+                            if (AiDebugTrace.enabled) {
+                                runCatching {
+                                    Log.w(
+                                        AI_HTTP_LOG_TAG,
+                                        "HTTP ${response.status} ${request.url} ${text.take(AI_DETAIL_MAX)}",
+                                    )
+                                }
+                            }
+                            throw classifyAiHttpStatus(response.status, text)
+                        }
+                        text
+                    }
+                    val parsed = AiModelCatalog.parsePage(connection, body)
+                    parsed.models.forEach { id ->
+                        if (models.none { it.equals(id, ignoreCase = true) }) models += id
+                    }
+                    val nextPage = parsed.nextPage ?: break
+                    // 防御服务端回显错页：只前进不后退，并限制总页数（分页协议只有百炼）
+                    if (nextPage <= page || nextPage > MAX_MODEL_PAGES) break
+                    page = nextPage
+                }
+                cont.resume(models, onCancellation = null)
+            } catch (_: StreamCancelled) {
+                // 协程已取消：没有等待者，无需 resume；use 已释放连接
+            } catch (e: Throwable) {
+                when (e) {
+                    is AiException -> cont.resumeWith(Result.failure(e))
+                    is IOException -> cont.resumeWith(
+                        Result.failure(AiException(AiError.Network, detail = e.message)),
+                    )
+                    else -> cont.resumeWith(
+                        Result.failure(AiException(AiError.BadResponse, detail = e.message)),
+                    )
+                }
+            }
+        }
+        cont.invokeOnCancellation {
+            cancelled.set(true)
+            inFlight.get()?.cancel()
+            future.cancel(true) // 仅对尚未开始的任务有效；已开始的任务靠取消标志退出
+        }
+    }
+
     // ---------- 阻塞管线（专用执行线程上运行） ----------
 
     private fun executeAndRead(
@@ -264,11 +362,11 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
                     runCatching {
                         Log.w(
                             AI_HTTP_LOG_TAG,
-                            "HTTP ${response.status} ${request.url} ${body.take(DETAIL_MAX)}",
+                            "HTTP ${response.status} ${request.url} ${body.take(AI_DETAIL_MAX)}",
                         )
                     }
                 }
-                throw classifyStatus(response.status, body)
+                throw classifyAiHttpStatus(response.status, body)
             }
             readEventStream(codec, response, cancelled, onDelta, onReasoning)
         }
@@ -335,18 +433,6 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
 
     // ---------- 错误分类 ----------
 
-    private fun classifyStatus(status: Int, body: String): AiException {
-        val error = when (status) {
-            401 -> AiError.Auth
-            402, 403 -> AiError.Quota // 余额不足 / 无模型权限（各家 403 语义归并此处）
-            404 -> AiError.NotFound
-            429 -> AiError.RateLimited
-            in 500..599 -> AiError.Server
-            else -> AiError.BadResponse
-        }
-        return AiException(error, detail = "HTTP $status: ${body.take(DETAIL_MAX)}")
-    }
-
     /**
      * 内部提前退出信号：协程已取消，阻塞管线不再读取/回调。不是值得 resume 的错误
      * （取消侧已把 continuation 恢复为 CancellationException），任务侧静默收尾即可。
@@ -355,8 +441,10 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
 
     private companion object {
         const val DATA_PREFIX = "data:"
-        const val DETAIL_MAX = 300
         const val AI_HTTP_LOG_TAG = "AiHttp"
+
+        /** 模型列表分页上限（百炼 page_size=100，20 页 = 2000 条，防御异常 total） */
+        const val MAX_MODEL_PAGES = 20
 
         /**
          * 流式阻塞管线的专用线程池（daemon，进程级共享）：执行线程独立于协程调度器，
@@ -369,6 +457,25 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
             Thread(runnable, "classpp-ai-stream").apply { isDaemon = true }
         }
     }
+}
+
+/** 错误体/日志截断长度（流式错误与模型列表错误共用） */
+private const val AI_DETAIL_MAX = 300
+
+/**
+ * HTTP 状态 → 分类错误：流式对话与模型列表等元数据请求共用同一套映射。
+ * 402/403 归并到额度/权限（余额不足 / 无模型权限），错误体只保留截断后的排查信息。
+ */
+internal fun classifyAiHttpStatus(status: Int, body: String): AiException {
+    val error = when (status) {
+        401 -> AiError.Auth
+        402, 403 -> AiError.Quota // 余额不足 / 无模型权限（各家 403 语义归并此处）
+        404 -> AiError.NotFound
+        429 -> AiError.RateLimited
+        in 500..599 -> AiError.Server
+        else -> AiError.BadResponse
+    }
+    return AiException(error, detail = "HTTP $status: ${body.take(AI_DETAIL_MAX)}")
 }
 
 /**

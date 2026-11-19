@@ -1225,6 +1225,14 @@
     <string name="ai_model_reasoning_hint">如 low、high</string>
     <string name="ai_model_reasoning_value">推理等级：%1$s</string>
     <string name="ai_model_reasoning_duplicate">该推理等级已存在</string>
+    <string name="ai_model_fetch">从服务商拉取模型</string>
+    <string name="ai_model_fetch_title">选择模型</string>
+    <string name="ai_model_fetch_add">添加</string>
+    <string name="ai_model_fetch_loading">正在拉取模型…</string>
+    <string name="ai_model_fetch_empty">没有可添加的新模型</string>
+    <string name="ai_model_fetch_key_required">请先填写 API Key</string>
+    <string name="ai_model_fetch_failed">拉取失败，%1$s</string>
+    <string name="ai_model_fetch_not_found">服务地址不支持拉取模型列表，请检查地址</string>
     <string name="cd_ai_switch_model">切换模型，当前 %1$s</string>
     <string name="ai_settings_api_key">API Key</string>
     <string name="ai_settings_api_key_hint">sk-…</string>
