@@ -147,11 +147,42 @@ internal val WeekPickerEdgeMargin = 1.dp
 internal val WeekCellSizeMax = 60.dp
 
 /**
- * 周数方格边长（dp）：由可用宽度反推，任意窗口宽度档一律封顶在 [maxCellSizeDp]。
+ * 高度缩放的参考高度：窗口/设备高度低于 400dp 时，弹窗改由高度钳制——不论窗口多宽，
+ * 方格边长一律从 [WeekCellSizeHeightBase]（49dp）开始按「高度 / 400dp」等比缩小，
+ * 缩到 [WeekCellSizeMin] 后不再变化；400dp 及以上完全沿用宽度反推值。
+ */
+internal val WeekPickerHeightThreshold = 400.dp
+
+/**
+ * 高度钳制的基准边长：高度低于 [WeekPickerHeightThreshold] 时一律从这里开始等比缩小，
+ * 不取宽度反推的 49–60dp（高度优先于宽度）。49dp 同时是 384dp 窗口宽的宽度反推值。
+ */
+internal val WeekCellSizeHeightBase = 49.dp
+
+/**
+ * 方格边长下限：高度缩放缩到 40dp 后不再变化。窄屏宽度反推值本来就小于 40dp 时仍以宽度
+ * 为准（下限不得反过来撑破弹窗贴边），见 [weekCellSizeDp]。
+ */
+internal val WeekCellSizeMin = 40.dp
+
+/**
+ * 高度缩放系数：窗口高度 ≥ [WeekPickerHeightThreshold] 时为 1，低于时按高度等比缩小。
+ * 高度未知（首帧之前为 0）时按 1 处理。
+ */
+internal fun weekPickerHeightScale(availableHeightDp: Float): Float =
+    if (availableHeightDp <= 0f) {
+        1f
+    } else {
+        (availableHeightDp / WeekPickerHeightThreshold.value).coerceIn(0f, 1f)
+    }
+
+/**
+ * 周数方格边长（dp）：高度 ≥ [WeekPickerHeightThreshold] 时由可用宽度反推并封顶在
+ * [maxCellSizeDp]；高度低于该值时改由高度钳制，宽度不再参与放大。
  *
- * 六列、正方形、列间距与卡片内边距全部不变，只让边长随屏宽伸缩：
+ * 六列、正方形、列间距与卡片内边距全部不变，只让边长随屏宽、屏高伸缩：
  *
- * 先按留白反推（下式）——窄屏弹窗满宽铺开，距屏幕左右两侧恒为 [edgeMarginDp]
+ * 宽度规则——先按留白反推（下式），窄屏弹窗满宽铺开，距屏幕左右两侧恒为 [edgeMarginDp]
  *
  *         可用宽度 − 2×外边距 − 2×投影留白 − 2×卡片内边距 − (列数−1)×列间距
  *         边长 = ────────────────────────────────────────────────────────────
@@ -160,20 +191,37 @@ internal val WeekCellSizeMax = 60.dp
  * 反推值随屏宽线性增长：384dp 窗口对应 49dp 方格，450dp 窗口对应 60dp 方格；
  * 超过 450dp（宽屏手机/横屏/平板）后封顶 [maxCellSizeDp]，弹窗保持自然宽度
  * 居中，留白自然变宽——不会出现巨大的方格。
+ *
+ * 高度规则——高度低于 400dp（横屏/分屏/小折叠外屏）时**优先于宽度**：不论窗口多宽，
+ * 一律以 [heightBaseCellSizeDp]（49dp）为基准乘「高度 / 400dp」等比缩小，缩到
+ * [minCellSizeDp]（40dp）后不再变化。宽窗口不再按 49–60dp 放大；更窄的窗口仍受宽度
+ * 约束（边长不超过宽度反推值），保证弹窗贴边不横向溢出。
  */
 internal fun weekCellSizeDp(
     availableWidthDp: Float,
+    availableHeightDp: Float,
     edgeMarginDp: Float,
     shadowPaddingDp: Float,
     cardPaddingDp: Float,
     cellSpaceDp: Float,
     maxCellSizeDp: Float,
+    heightBaseCellSizeDp: Float,
+    minCellSizeDp: Float,
     columns: Int = 6,
 ): Float {
     val cardWidth = availableWidthDp - 2f * edgeMarginDp - 2f * shadowPaddingDp
     val gridWidth = cardWidth - 2f * cardPaddingDp
-    val fitted = (gridWidth - (columns - 1) * cellSpaceDp) / columns
-    return fitted.coerceAtMost(maxCellSizeDp).coerceAtLeast(0f)
+    val fitted = ((gridWidth - (columns - 1) * cellSpaceDp) / columns)
+        .coerceAtMost(maxCellSizeDp)
+        .coerceAtLeast(0f)
+    val heightScale = weekPickerHeightScale(availableHeightDp)
+    // 高度 ≥ 400dp（或高度未知）：只按宽度定尺
+    if (heightScale >= 1f) return fitted
+    // 高度钳制优先：宽窗口也回到 49dp 基准，不继承宽度放大的 49–60dp
+    return (heightBaseCellSizeDp * heightScale)
+        .coerceAtLeast(minCellSizeDp)
+        // 更窄的窗口仍保住贴边：宽度反推值更小时以宽度为准
+        .coerceAtMost(fitted)
 }
 
 /**
@@ -648,20 +696,26 @@ private fun WeekPill(
             onMenuExpandedChange(false)
         }
 
-        // 弹窗宽度随宿主窗口自适应：方格边长由可用宽度反推（六列/正方形/间距都不变），
-        // 384dp–450dp 继续随屏宽放大（49dp→60dp），450dp 起封顶 WeekCellSizeMax（60dp）——
-        // 窄屏满宽铺开贴屏幕两侧，宽屏手机/横屏/平板封顶后弹窗保持自然宽度居中。多窗口/分屏下 containerDpSize
-        // 是当前窗口而非整块屏幕，与定位用的窗口尺寸一致
-        val availableWidthDp = LocalWindowInfo.current.containerDpSize.width.value
-        val weekCellSize = remember(availableWidthDp) {
+        // 弹窗尺寸随宿主窗口自适应：高度 ≥ 400dp 时方格边长由可用宽度反推（六列/正方形/间距都不变），
+        // 384dp–450dp 随屏宽放大（49dp→60dp），450dp 起封顶 WeekCellSizeMax（60dp）；
+        // 高度低于 400dp 时改由高度钳制（优先于宽度）：不论窗口多宽一律从 49dp 基准
+        // 按高度等比缩小，缩到 WeekCellSizeMin（40dp）封底。
+        // 多窗口/分屏下 containerDpSize 是当前窗口而非整块屏幕，与定位用的窗口尺寸一致
+        val windowSizeDp = LocalWindowInfo.current.containerDpSize
+        val availableWidthDp = windowSizeDp.width.value
+        val availableHeightDp = windowSizeDp.height.value
+        val weekCellSize = remember(availableWidthDp, availableHeightDp) {
             if (availableWidthDp > 0f) {
                 weekCellSizeDp(
                     availableWidthDp = availableWidthDp,
+                    availableHeightDp = availableHeightDp,
                     edgeMarginDp = WeekPickerEdgeMargin.value,
                     shadowPaddingDp = CardShadowPadding.value,
                     cardPaddingDp = WeekPickerCellSpace.value,
                     cellSpaceDp = WeekPickerCellSpace.value,
                     maxCellSizeDp = WeekCellSizeMax.value,
+                    heightBaseCellSizeDp = WeekCellSizeHeightBase.value,
+                    minCellSizeDp = WeekCellSizeMin.value,
                 ).dp
             } else {
                 WeekCellSizeMax
