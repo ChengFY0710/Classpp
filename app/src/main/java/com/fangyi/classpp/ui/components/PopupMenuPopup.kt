@@ -608,7 +608,8 @@ fun PopupMenuPopup(
                 focusFirstItem = focusable,
                 maxHeight = maxMenuHeight,
                 // 投影留白垫在卡外（裁切线 = Popup 窗口边缘，留白多大柔影就有多少活动空间）：
-                // 左右上 16dp、底部 48dp——光源在上投影向下坠得最远（WeekPicker 同款配方）；
+                // 左右上 16dp、底部 48dp——光源在上投影向下坠得最远（WeekPicker 同款配方，
+                // 留白取值不同：周数弹窗顶部 50dp、左右按屏宽封顶、底部 60dp）；
                 // 缩放排在其外，整卡（含柔影）一起变换
                 modifier = Modifier
                     // Esc 收起（系统返回键由 Popup / MenuBackHandler 承担）
