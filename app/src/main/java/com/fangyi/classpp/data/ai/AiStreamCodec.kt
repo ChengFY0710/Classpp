@@ -83,8 +83,11 @@ internal interface AiStreamCodec {
  * OpenAI 兼容 `/chat/completions` 编解码（OpenAI / DeepSeek / 智谱 / 通义 / Kimi /
  * Ollama 同协议）。
  *
- * - 请求：Bearer 认证；体为 `{model, stream, temperature?, reasoning_effort?, messages,
- *   tools?}`（`reasoning_effort` 来自当前模型的推理等级配置，原样透传，未配置不发送）；
+ * - 请求：Bearer 认证；体为 `{model, stream, temperature?, reasoning_effort?, thinking?,
+ *   messages, tools?}`（`reasoning_effort` 来自当前模型的推理等级配置，原样透传，
+ *   未配置不发送；`thinking` 仅在服务商预设声明 [AiThinkingControl.ThinkingType] 时
+ *   发送——DeepSeek 等默认开启思考，**「关」档位必须显式 disabled 才真正关闭**，
+ *   未声明该形态的服务商不发送，避免不认识该字段的网关 400）；
  *   assistant 带 `tool_calls` 时同时落 `tool_calls` 数组，tool 轮每个结果一条
  *   `{role:"tool", tool_call_id, content}` 消息；
  * - 解析：`data: [DONE]` 终止；`choices[0].delta.content` 为正文增量；
@@ -101,20 +104,30 @@ internal object OpenAiStreamCodec : AiStreamCodec {
         turns: List<AiChatTurn>,
         temperature: Double?,
         tools: List<AiToolSpec>,
-    ): AiHttpRequest = AiHttpRequest(
-        url = connection.baseUrl.trimEnd('/') + CHAT_COMPLETIONS_PATH,
-        headers = mapOf(
-            "Authorization" to "Bearer $apiKey",
-            "Accept" to "text/event-stream",
-        ),
-        jsonBody = encodeRequest(
-            model = connection.model,
-            reasoningLevel = connection.activeReasoningLevel(),
-            turns = turns,
-            temperature = temperature,
-            tools = tools,
-        ),
-    )
+    ): AiHttpRequest {
+        val config = connection.modelConfig(connection.model)
+        val reasoningOff = config.isReasoningOff()
+        return AiHttpRequest(
+            url = connection.baseUrl.trimEnd('/') + CHAT_COMPLETIONS_PATH,
+            headers = mapOf(
+                "Authorization" to "Bearer $apiKey",
+                "Accept" to "text/event-stream",
+            ),
+            jsonBody = encodeRequest(
+                model = connection.model,
+                reasoningLevel = if (reasoningOff) {
+                    null
+                } else {
+                    config.reasoningLevel.trim().takeIf { it.isNotEmpty() }
+                },
+                reasoningOff = reasoningOff,
+                thinkingControl = AiProviderPresets.byId(connection.providerId).thinkingControl,
+                turns = turns,
+                temperature = temperature,
+                tools = tools,
+            ),
+        )
+    }
 
     override fun onData(payload: String): List<AiStreamEvent> {
         if (payload == DONE_MARKER) return listOf(AiStreamEvent.Done)
@@ -157,6 +170,8 @@ internal object OpenAiStreamCodec : AiStreamCodec {
     private fun encodeRequest(
         model: String,
         reasoningLevel: String?,
+        reasoningOff: Boolean,
+        thinkingControl: AiThinkingControl,
         turns: List<AiChatTurn>,
         temperature: Double?,
         tools: List<AiToolSpec>,
@@ -168,11 +183,23 @@ internal object OpenAiStreamCodec : AiStreamCodec {
             // 推理等级原样透传（minimal/low/medium/high/xhigh 及各家自定义值）；服务商
             // 不支持该字段时由用户在等级配置里清空即可，编解码层不猜服务商语义
             reasoningLevel?.let { put("reasoning_effort", it) }
+            // 思考开关（DeepSeek 等默认开启思考的服务商）：「关」必须显式 disabled，
+            // 省略参数等于继续思考（默认 effort=high）；非关档位显式 enabled，与
+            // DeepSeek 文档的请求示例一致。未声明该形态的服务商不发，避免 400
+            if (thinkingControl == AiThinkingControl.ThinkingType) {
+                when {
+                    reasoningLevel != null -> put("thinking", thinkingElement(THINKING_TYPE_ENABLED))
+                    reasoningOff -> put("thinking", thinkingElement(THINKING_TYPE_DISABLED))
+                }
+            }
             put("messages", JsonArray(encodeMessages(turns)))
             if (tools.isNotEmpty()) put("tools", AiToolRegistry.openAiTools(tools))
         }
         return requestJson.encodeToString(payload)
     }
+
+    /** thinking 开关对象：`{"type": "enabled"|"disabled"}`（DeepSeek 的 OpenAI 兼容形态） */
+    private fun thinkingElement(type: String): JsonObject = buildJsonObject { put("type", type) }
 
     /** tool 轮一条结果一条消息；assistant 带 tool_calls 时 content 保持字符串（建议空串） */
     private fun encodeMessages(turns: List<AiChatTurn>): List<JsonElement> = buildList {
@@ -265,6 +292,10 @@ internal object OpenAiStreamCodec : AiStreamCodec {
     private const val CHAT_COMPLETIONS_PATH = "/chat/completions"
     private const val DONE_MARKER = "[DONE]"
     private const val ROLE_TOOL = "tool"
+
+    /** 思考开关取值（`thinking.type`，DeepSeek 的 OpenAI 兼容形态） */
+    private const val THINKING_TYPE_ENABLED = "enabled"
+    private const val THINKING_TYPE_DISABLED = "disabled"
 }
 
 /**
@@ -681,10 +712,10 @@ private val payloadJson = Json { ignoreUnknownKeys = true }
 private val requestJson = Json { encodeDefaults = false }
 
 /**
- * 当前生效模型的推理等级（两个协议编解码器共用的解析口）：配置随模型存在
- * [AiConnection.modelConfigs]，等级为空 = 该模型不使用推理参数（请求不发对应字段）。
- * 「关」档位（[AiModelConfig.isReasoningOff]）同样返回 null——关即不开启思考，
- * 请求不发任何推理参数，而不是发送 "none" 之类的占位值。
+ * 当前生效模型的推理等级（Anthropic 侧解析口）：配置随模型存在
+ * [AiConnection.modelConfigs]，等级为空或「关」档位（[AiModelConfig.isReasoningOff]）
+ * 均返回 null——Anthropic 的 thinking 默认关闭，不发送即关闭。
+ * （OpenAI 兼容侧在编解码器内自行解析，以区分「关」与「未配置」并下发 thinking 开关。）
  */
 private fun AiConnection.activeReasoningLevel(): String? {
     val config = modelConfig(model)

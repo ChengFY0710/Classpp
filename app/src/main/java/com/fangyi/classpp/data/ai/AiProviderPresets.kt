@@ -12,6 +12,18 @@ package com.fangyi.classpp.data.ai
 enum class AiModelListApi { OpenAiCompat, DashScope }
 
 /**
+ * 思考开关在 OpenAI 兼容请求体里的表达方式（「关」档位的执行语义）：
+ * - [None]：不发送开关字段（默认）。关 = 不发任何推理参数，由服务商默认行为决定；
+ * - [ThinkingType]：发送 `thinking: {"type": "enabled"/"disabled"}`。DeepSeek 的思考
+ *   模式**默认开启**，省略参数等于继续思考，必须显式传 `disabled` 才真正关闭
+ *   （见 DeepSeek 思考模式文档 api-docs.deepseek.com/zh-cn/guides/thinking_mode）。
+ *
+ * 新增支持该开关形态的服务商时在预设表里切换本类型；未配置的预设保持 [None]，
+ * 避免把不认识该字段的网关（如 OpenAI 官方）打到 400。
+ */
+enum class AiThinkingControl { None, ThinkingType }
+
+/**
  * 一个服务商预设：用户在 AI 设置里选预设即回填端点、协议与建议模型，
  * 只需再填自己的 API Key（label 为品牌名，不参与本地化）。
  *
@@ -24,6 +36,7 @@ enum class AiModelListApi { OpenAiCompat, DashScope }
  * @param protocol 选中预设时回填的接口协议（预设自带协议，设置页仅自定义服务商展示选择器）
  * @param modelListApi 该服务商的模型列表拉取方案（见 [AiModelListApi]）；
  *   默认通用 OpenAI 兼容，百炼等端点形态不同的服务商单独配置
+ * @param thinkingControl 思考开关的请求形态（见 [AiThinkingControl]）；默认不发送开关字段
  */
 data class AiProviderPreset(
     val id: String,
@@ -33,6 +46,7 @@ data class AiProviderPreset(
     val requiresManualModel: Boolean = false,
     val protocol: AiProtocol = AiProtocol.OpenAiCompat,
     val modelListApi: AiModelListApi = AiModelListApi.OpenAiCompat,
+    val thinkingControl: AiThinkingControl = AiThinkingControl.None,
 )
 
 /**
@@ -52,6 +66,8 @@ object AiProviderPresets {
             label = "DeepSeek",
             baseUrl = "https://api.deepseek.com",
             suggestedModel = "deepseek-flash",
+            // 思考模式默认开启：关档位必须显式发 thinking.disabled 才真正关闭
+            thinkingControl = AiThinkingControl.ThinkingType,
         ),
         AiProviderPreset(
             id = "zhipu",

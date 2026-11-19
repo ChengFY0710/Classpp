@@ -293,7 +293,7 @@ class AiStreamCodecTest {
 
     @Test
     fun `openai off level omits reasoning effort`() = runBlocking {
-        // 等级列表第一个即「关」：选中它 = 不开启思考，请求不发任何推理参数
+        // 等级列表第一个即「关」：未声明 thinking 开关形态的服务商不发任何推理参数
         val t = transport("data: [DONE]", null)
         AiClient(t).streamChat(
             openAiConnectionWithLevels(listOf("none", "high"), "none"),
@@ -301,7 +301,45 @@ class AiStreamCodecTest {
             listOf(AiChatTurn("user", "hi")),
         )
 
-        assertNull("关档位不得发送 reasoning_effort", bodyOf(t.lastRequest!!)["reasoning_effort"])
+        val body = bodyOf(t.lastRequest!!)
+        assertNull("关档位不得发送 reasoning_effort", body["reasoning_effort"])
+        assertNull("未声明 ThinkingType 的服务商不发 thinking（避免严格网关 400）", body["thinking"])
+    }
+
+    /** DeepSeek 预设：思考默认开启，关档位必须显式 thinking.disabled 才真正关闭 */
+    private fun deepSeekConnectionWithLevels(levels: List<String>, selected: String) = AiConnection(
+        providerId = "deepseek",
+        baseUrl = "https://api.deepseek.com",
+        model = "deepseek-flash",
+        modelConfigs = mapOf("deepseek-flash" to AiModelConfig(levels, selected)),
+    )
+
+    @Test
+    fun `deepseek off level explicitly disables thinking`() = runBlocking {
+        val t = transport("data: [DONE]", null)
+        AiClient(t).streamChat(
+            deepSeekConnectionWithLevels(listOf("off", "high"), "off"),
+            "sk",
+            listOf(AiChatTurn("user", "hi")),
+        )
+
+        val body = bodyOf(t.lastRequest!!)
+        assertEquals("disabled", body["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        assertNull("关档位不发送 reasoning_effort", body["reasoning_effort"])
+    }
+
+    @Test
+    fun `deepseek non-off level enables thinking with effort`() = runBlocking {
+        val t = transport("data: [DONE]", null)
+        AiClient(t).streamChat(
+            deepSeekConnectionWithLevels(listOf("off", "high"), "high"),
+            "sk",
+            listOf(AiChatTurn("user", "hi")),
+        )
+
+        val body = bodyOf(t.lastRequest!!)
+        assertEquals("enabled", body["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals("high", body["reasoning_effort"]!!.jsonPrimitive.content)
     }
 
     @Test
