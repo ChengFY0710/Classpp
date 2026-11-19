@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -19,6 +20,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ai.AiConnection
+import com.fangyi.classpp.data.ai.AiModelConfig
 import com.fangyi.classpp.data.ai.AiProfile
 import com.fangyi.classpp.data.ai.AiProtocol
 import com.fangyi.classpp.data.ai.AiProviderPresets
@@ -64,9 +66,10 @@ private data class PendingProfileSave(
  *   + 末尾「保存为新方案」（只入库不激活，成功后自动选中新方案；API Key 随方案一同保存：
  *   输入框留空时沿用来源条目已存的 Key，来源是「自定义」槽位时整份草稿搬到新方案，
  *   迁移后清空槽位里的 Key 与模型名）；
- * - 「模型」分组：同一服务商 + Key 可保存多个模型名，SelectCard 点选设为当前模型、
- *   长按行呼出删除菜单，末尾「添加模型名」底部输入卡；新增只入列表（当前模型为空时
- *   首个自动选中），对话浮层输入栏上方也可切换；
+ * - 「模型」分组：同一服务商 + Key 可保存多个模型，SettingsCard 行点按打开「配置模型」
+ *   浮层（模型 ID + 推理等级），末尾「添加模型」同一入口；新增 / 编辑后该模型自动成为
+ *   当前模型，删除当前模型时回落剩余首个（允许删空，由确认时的非空校验兜底），
+ *   对话浮层输入栏上方仍可切换；
  * - 末尾「提示」分组：纯展示行，说明对话图片需要多模态（视觉）模型；
  * - 确认时先做本地校验（服务地址 http 开头、至少一个模型名），失败 toast 并保留浮层；
  *   Key 缺失由宿主回调判定（保存后仍无可用 Key → 提示并保留浮层）。
@@ -102,7 +105,6 @@ internal fun AiProfileSheet(
     val customLabel = stringResource(R.string.ai_profile_custom)
     val invalidMessage = stringResource(R.string.ai_settings_invalid)
     val modelEmptyMessage = stringResource(R.string.ai_settings_model_empty)
-    val duplicateModelMessage = stringResource(R.string.ai_settings_model_duplicate)
     val renameLabel = stringResource(R.string.edit_rename)
     val deleteLabel = stringResource(R.string.edit_delete)
     val defaultName = stringResource(R.string.ai_profile_default_name, profiles.size + 1)
@@ -121,10 +123,10 @@ internal fun AiProfileSheet(
     var customKeyInput by remember { mutableStateOf("") }
     var customHadKey by remember { mutableStateOf(false) }
 
-    // 添加模型名的底部输入卡（与方案名输入同一套两段式挂载）
-    var modelInputVisible by remember { mutableStateOf(false) }
-    var modelInputMounted by remember { mutableStateOf(false) }
-    var modelDraft by remember { mutableStateOf("") }
+    // 「配置模型」子浮层（新增 / 编辑共用；target 为 null = 新增）
+    var modelSheetVisible by remember { mutableStateOf(false) }
+    var modelSheetMounted by remember { mutableStateOf(false) }
+    var modelSheetTarget by remember { mutableStateOf<String?>(null) }
 
     // 底部名称输入（保存为新方案 / 重命名共用；nameTargetId 非空 = 重命名）
     var nameVisible by remember { mutableStateOf(false) }
@@ -229,9 +231,15 @@ internal fun AiProfileSheet(
     }
 
     fun openAddModel() {
-        modelDraft = ""
-        modelInputMounted = true
-        modelInputVisible = true
+        modelSheetTarget = null
+        modelSheetMounted = true
+        modelSheetVisible = true
+    }
+
+    fun openModelEditor(model: String) {
+        modelSheetTarget = model
+        modelSheetMounted = true
+        modelSheetVisible = true
     }
 
     // 首次挂载：读自定义槽位，再按当前活动项初始化草稿（活动项不存在则落回自定义）
@@ -269,7 +277,7 @@ internal fun AiProfileSheet(
             // 切回自定义时不回显已迁走的内容，也不会再次写回旧槽位
             customKeyInput = ""
             customHadKey = false
-            customConnection = customConnection.copy(model = "", models = emptyList())
+            customConnection = customConnection.withModels(emptyList(), "")
         }
         if (draftConnection == pending.connection) {
             selectedProfileId = saved.id
@@ -285,7 +293,7 @@ internal fun AiProfileSheet(
         .takeIf { it >= 0 } ?: customIndex
     // 只有底部输入卡让本浮层缩小后退：删除确认是整屏压暗的 FadeOverlayDialog，遮罩本身
     // 已表达层级，本浮层保持原位（缩小反而是同一动作的重复表达）
-    val covered = nameVisible || modelInputVisible
+    val covered = nameVisible || modelSheetVisible
     val sheetHazeState = rememberHazeState()
 
     // —— Haze 退让窗口（RenderThread SIGSEGV 防御，同 AiChatOverlay 的对话切换退让）——
@@ -316,44 +324,35 @@ internal fun AiProfileSheet(
     // 叠层传采样源）
     val cardHazeState = if (hazeRetreat.suspended) null else sheetHazeState
 
-    /** 添加模型名：只入列表，当前模型为空时（新方案）首个模型自动成为当前 */
-    fun addModel() {
-        val trimmed = modelDraft.trim()
-        if (trimmed.isEmpty()) return
-        if (draftConnection.modelOptions.any { it.equals(trimmed, ignoreCase = true) }) {
-            AppToasts.show(context, duplicateModelMessage)
-            return
-        }
-        modelInputVisible = false
+    /** 配置模型浮层确认：新增 / 编辑后该模型自动成为当前模型；只改本地草稿 */
+    fun applyModelConfig(id: String, config: AiModelConfig) {
         hazeRetreat.forRewrite {
+            val target = modelSheetTarget
+            val options = draftConnection.modelOptions
+            val nextModels = if (target == null) {
+                options + id
+            } else {
+                options.map { if (it.equals(target, ignoreCase = true)) id else it }
+            }
             updateDraft(
-                draftConnection.copy(
-                    // 没有当前模型时（新方案）优先选列表首个；列表为空才用刚添加的这个
-                    model = draftConnection.model.ifBlank {
-                        draftConnection.modelOptions.firstOrNull() ?: trimmed
-                    },
-                    models = draftConnection.modelOptions + trimmed,
-                ),
+                draftConnection
+                    .withModels(nextModels, id)
+                    .withModelConfig(id, config),
             )
         }
     }
 
-    /** 删除模型行：删除当前模型时自动选中剩余列表首个（只剩一个时不显示删除入口） */
-    fun deleteModel(model: String) {
-        val remaining = draftConnection.modelOptions
-            .filterNot { it.equals(model, ignoreCase = true) }
-        if (remaining.isEmpty()) return
+    /** 删除模型：删当前模型时回落剩余首个；允许删空（确认时由模型非空校验拦截） */
+    fun deleteModelConfig(model: String) {
         hazeRetreat.forRewrite {
-            updateDraft(
-                draftConnection.copy(
-                    model = if (draftConnection.model.equals(model, ignoreCase = true)) {
-                        remaining.first()
-                    } else {
-                        draftConnection.model
-                    },
-                    models = remaining,
-                ),
-            )
+            val remaining = draftConnection.modelOptions
+                .filterNot { it.equals(model, ignoreCase = true) }
+            val nextCurrent = if (draftConnection.model.equals(model, ignoreCase = true)) {
+                remaining.firstOrNull().orEmpty()
+            } else {
+                draftConnection.model
+            }
+            updateDraft(draftConnection.withModels(remaining, nextCurrent))
         }
     }
 
@@ -404,13 +403,14 @@ internal fun AiProfileSheet(
                                 draftConnection.models
                             }
                             updateDraft(
-                                draftConnection.copy(
-                                    providerId = preset.id,
-                                    baseUrl = preset.baseUrl.ifBlank { draftConnection.baseUrl },
-                                    model = nextModel,
-                                    models = nextModels,
-                                    protocol = preset.protocol,
-                                ),
+                                draftConnection
+                                    // 换服务商时列表收敛：被移除模型的推理等级配置一并裁剪
+                                    .withModels(nextModels, nextModel)
+                                    .copy(
+                                        providerId = preset.id,
+                                        baseUrl = preset.baseUrl.ifBlank { draftConnection.baseUrl },
+                                        protocol = preset.protocol,
+                                    ),
                             )
                         }
                     }
@@ -557,45 +557,24 @@ internal fun AiProfileSheet(
                 )
             }
 
-            // C. 模型列表：点选设为当前模型，长按行呼出菜单删除
+            // C. 模型列表：行点按打开「配置模型」编辑；确认后该模型自动成为当前模型
             CardSection(title = stringResource(R.string.ai_settings_section_models)) {
                 val modelOptions = draftConnection.modelOptions
-                // 空列表不出占位卡：没有模型时只保留下方「添加模型名」入口，
+                // 空列表不出占位卡：没有模型时只保留下方「添加模型」入口，
                 // 缺模型的校验由保存 / 确认时的 toast 提示
                 if (modelOptions.isNotEmpty()) {
-                    val selectedIndex = modelOptions.indexOfFirst {
-                        it.equals(draftConnection.model, ignoreCase = true)
-                    }
-                    SelectCard(
-                        options = modelOptions,
-                        selectedIndices = if (selectedIndex >= 0) setOf(selectedIndex) else emptySet(),
-                        onSelectionChange = { picked ->
-                            val model = picked.firstOrNull()?.let(modelOptions::getOrNull)
-                            if (model != null &&
-                                !model.equals(draftConnection.model, ignoreCase = true)
-                            ) {
-                                // 点选只改草稿；确认 / 保存为新方案时随方案落库
-                                updateDraft(draftConnection.copy(model = model))
-                            }
+                    SettingsCard(
+                        items = modelOptions.map { model ->
+                            val level = draftConnection.modelConfig(model).reasoningLevel
+                            SettingsCardItem.Nav(
+                                label = model,
+                                description = level.takeIf { it.isNotBlank() }?.let {
+                                    stringResource(R.string.ai_model_reasoning_value, it)
+                                },
+                                onClick = { openModelEditor(model) },
+                            )
                         },
-                        // 只剩一个模型时不给菜单，保证方案至少有一个模型
-                        longPressMenuItems = { index ->
-                            val model = modelOptions.getOrNull(index)
-                            if (model == null || modelOptions.size <= 1) {
-                                emptyList()
-                            } else {
-                                listOf(
-                                    PopupMenuItem(
-                                        label = deleteLabel,
-                                        icon = R.drawable.ic_delete,
-                                        // 危险操作：error 色 + 自动分割线（与方案删除同规格）
-                                        destructive = true,
-                                        onClick = { deleteModel(model) },
-                                    ),
-                                )
-                            }
-                        },
-                        menuHazeState = cardHazeState,
+                        hazeState = cardHazeState,
                     )
                 }
                 ActionRowCard(
@@ -619,6 +598,24 @@ internal fun AiProfileSheet(
                 )
             }
         }
+    }
+
+    // 「配置模型」子浮层：确认 / 删除只回写本地草稿，父浮层「确认」才随连接落库；
+    // 父层退让（模型列表重写帧）时本浮层同步卸载 Haze 效果节点
+    if (modelSheetMounted) {
+        val editingModel = modelSheetTarget
+        AiModelConfigSheet(
+            visible = modelSheetVisible,
+            onDismiss = { modelSheetVisible = false },
+            onDismissed = { modelSheetMounted = false },
+            editingModel = editingModel,
+            initialConfig = editingModel?.let(draftConnection::modelConfig) ?: AiModelConfig(),
+            existingModels = draftConnection.modelOptions,
+            hazeEnabled = !hazeRetreat.suspended,
+            onConfirm = ::applyModelConfig,
+            onDelete = editingModel?.let { target -> { deleteModelConfig(target) } },
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 
     // 方案名称输入（保存为新方案 / 重命名共用）：空名禁用确认
@@ -668,22 +665,6 @@ internal fun AiProfileSheet(
                     }
                 }
             },
-        )
-    }
-
-    // 模型名输入：只入列表，当前模型为空时（新方案）首个模型自动成为当前
-    if (modelInputMounted) {
-        BottomTextFieldCard(
-            visible = modelInputVisible,
-            onDismiss = { modelInputVisible = false },
-            onDismissed = { modelInputMounted = false },
-            title = stringResource(R.string.ai_settings_model),
-            value = modelDraft,
-            onValueChange = { modelDraft = it },
-            placeholder = stringResource(R.string.ai_settings_model_hint),
-            confirmEnabled = modelDraft.isNotBlank(),
-            hazeState = cardHazeState,
-            onConfirm = ::addModel,
         )
     }
 

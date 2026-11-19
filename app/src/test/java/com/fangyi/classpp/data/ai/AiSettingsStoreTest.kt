@@ -159,6 +159,154 @@ class AiConnectionTest {
         assertEquals("deepseek-reasoner", normalized.model)
         assertEquals(listOf("deepseek-chat", "deepseek-reasoner"), normalized.models)
     }
+
+    @Test
+    fun `model configs json roundtrip`() {
+        val original = AiConnection(
+            providerId = "deepseek",
+            baseUrl = "https://api.deepseek.com/v1",
+            model = "deepseek-reasoner",
+            models = listOf("deepseek-chat", "deepseek-reasoner"),
+            modelConfigs = mapOf(
+                "deepseek-reasoner" to AiModelConfig(
+                    reasoningLevels = listOf("low", "high"),
+                    reasoningLevel = "high",
+                ),
+            ),
+        )
+        val decoded = AiJson.storage.decodeFromString(
+            AiConnection.serializer(),
+            AiJson.storage.encodeToString(AiConnection.serializer(), original),
+        )
+        assertEquals(original, decoded)
+    }
+
+    @Test
+    fun `legacy connection json without model configs decodes to empty map`() {
+        // 旧版本落盘无 modelConfigs：回落空 map，模型行为与改造前一致
+        val legacy = AiJson.storage.decodeFromString<AiConnection>(
+            AiConnection.serializer(),
+            """{"providerId":"custom","baseUrl":"https://x/v1","model":"m","models":["m"]}""",
+        )
+        assertEquals(emptyMap<String, AiModelConfig>(), legacy.modelConfigs)
+        assertEquals(AiModelConfig(), legacy.modelConfig("m"))
+    }
+
+    @Test
+    fun `modelConfig matches id ignoring case`() {
+        val connection = AiConnection(
+            model = "DeepSeek-Reasoner",
+            modelConfigs = mapOf(
+                "deepseek-reasoner" to AiModelConfig(listOf("high"), "high"),
+            ),
+        )
+        assertEquals("high", connection.modelConfig("DEEPSEEK-REASONER").reasoningLevel)
+    }
+
+    @Test
+    fun `withModelConfig canonicalizes key and drops empty config`() {
+        val connection = AiConnection(
+            model = "m",
+            models = listOf("m", "DeepSeek-Chat"),
+        ).withModelConfig("deepseek-chat", AiModelConfig(listOf(" high "), "HIGH"))
+
+        // key 统一成列表里的写法，等级 trim 并与选中项对齐
+        assertEquals(setOf("DeepSeek-Chat"), connection.modelConfigs.keys)
+        assertEquals(
+            AiModelConfig(listOf("high"), "high"),
+            connection.modelConfig("deepseek-chat"),
+        )
+
+        // 空配置 = 不使用推理等级：不落冗余项
+        val cleared = connection.withModelConfig("DeepSeek-Chat", AiModelConfig())
+        assertEquals(emptyMap<String, AiModelConfig>(), cleared.modelConfigs)
+    }
+
+    @Test
+    fun `withModels prunes configs for removed models`() {
+        val connection = AiConnection(
+            model = "a",
+            models = listOf("a", "b"),
+            modelConfigs = mapOf(
+                "a" to AiModelConfig(listOf("low"), "low"),
+                "b" to AiModelConfig(listOf("high"), "high"),
+            ),
+        ).withModels(listOf("b"), "b")
+
+        assertEquals(listOf("b"), connection.models)
+        assertEquals("b", connection.model)
+        assertEquals(setOf("b"), connection.modelConfigs.keys)
+        assertEquals("high", connection.modelConfig("b").reasoningLevel)
+    }
+
+    @Test
+    fun `renamed model keeps config when attached after withModels`() {
+        // UI 改名路径：先取旧配置，再 withModels(newId) + withModelConfig(newId, config)
+        val original = AiConnection(
+            model = "old",
+            models = listOf("old"),
+            modelConfigs = mapOf("old" to AiModelConfig(listOf("low", "high"), "high")),
+        )
+        val config = original.modelConfig("old")
+        val renamed = original.withModels(listOf("new"), "new").withModelConfig("new", config)
+
+        assertEquals(listOf("new"), renamed.models)
+        assertEquals(setOf("new"), renamed.modelConfigs.keys)
+        assertEquals("high", renamed.modelConfig("new").reasoningLevel)
+    }
+
+    @Test
+    fun `withNormalizedModels normalizes reasoning levels`() {
+        val normalized = AiConnection(
+            model = "m",
+            models = listOf("m"),
+            modelConfigs = mapOf(
+                // key 与等级都带写法差异：统一成列表 / 首次出现的写法
+                "M" to AiModelConfig(
+                    reasoningLevels = listOf(" High ", "low", "high", ""),
+                    reasoningLevel = "LOW",
+                ),
+            ),
+        ).withNormalizedModels()
+
+        val config = normalized.modelConfig("m")
+        assertEquals(listOf("High", "low"), config.reasoningLevels)
+        assertEquals("low", config.reasoningLevel)
+    }
+
+    @Test
+    fun `model config selection falls back to first level`() {
+        // 选中项缺失回落首个；空等级列表回落空串（该模型不使用推理等级）
+        assertEquals("High", AiModelConfig(listOf("High", "low")).normalized().reasoningLevel)
+        assertEquals("", AiModelConfig(reasoningLevel = "high").normalized().reasoningLevel)
+    }
+
+    @Test
+    fun `withNormalizedModels prunes configs outside model list`() {
+        val normalized = AiConnection(
+            model = "a",
+            models = listOf("a"),
+            modelConfigs = mapOf(
+                "a" to AiModelConfig(listOf("low")),
+                "stale" to AiModelConfig(listOf("high")),
+            ),
+        ).withNormalizedModels()
+
+        assertEquals(setOf("a"), normalized.modelConfigs.keys)
+    }
+
+    @Test
+    fun `withModels empty list clears models and configs`() {
+        // 「保存为新方案」迁走自定义槽位 / clearCustomModels 的核心语义
+        val cleared = AiConnection(
+            model = "a",
+            models = listOf("a"),
+            modelConfigs = mapOf("a" to AiModelConfig(listOf("low"), "low")),
+        ).withModels(emptyList(), "")
+
+        assertEquals(AiConnection(), cleared)
+        assertEquals(emptyMap<String, AiModelConfig>(), cleared.modelConfigs)
+    }
 }
 
 /** 预设表：未知 id 一律回落 custom，不抛异常 */
@@ -219,6 +367,12 @@ class AiProfileTest {
                     baseUrl = "https://api.deepseek.com/v1",
                     model = "deepseek-chat",
                     models = listOf("deepseek-chat", "deepseek-reasoner"),
+                    modelConfigs = mapOf(
+                        "deepseek-reasoner" to AiModelConfig(
+                            reasoningLevels = listOf("low", "high"),
+                            reasoningLevel = "high",
+                        ),
+                    ),
                 ),
             ),
             AiProfile(

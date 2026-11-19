@@ -289,11 +289,16 @@ class PrefsAiSettingsStore(context: Context) : AiSettingsStore {
     @Synchronized
     override fun clearCustomModels(): Boolean {
         val connection = loadCustomConnection()
-        if (connection.model.isBlank() && connection.models.isEmpty()) return true
+        // 模型级配置也随模型一起清空：迁移后槽位里不留已迁走模型的推理等级
+        if (connection.model.isBlank() && connection.models.isEmpty() &&
+            connection.modelConfigs.isEmpty()
+        ) {
+            return true
+        }
         return prefs.edit()
             .putString(
                 KEY_CONNECTION,
-                encodeConnection(connection.copy(model = "", models = emptyList())),
+                encodeConnection(connection.withModels(emptyList(), "")),
             )
             .commit()
     }

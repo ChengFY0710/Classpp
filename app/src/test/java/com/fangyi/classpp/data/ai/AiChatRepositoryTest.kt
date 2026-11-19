@@ -214,7 +214,8 @@ class AiChatRepositoryTest {
         }
 
         override fun clearCustomModels(): Boolean {
-            connection = connection.copy(model = "", models = emptyList())
+            // 与生产实现同口径：模型级配置随模型一起清空
+            connection = connection.withModels(emptyList(), "")
             return true
         }
 

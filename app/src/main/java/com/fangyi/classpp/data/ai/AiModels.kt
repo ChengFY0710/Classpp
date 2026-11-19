@@ -21,12 +21,47 @@ const val AI_CHAT_FORMAT_VERSION = 3
 enum class AiProtocol { OpenAiCompat, Anthropic }
 
 /**
+ * 单个模型的附加配置：模型 id 在 [AiConnection.models] 里，这里只存与该模型一起落库的
+ * 模型级参数（当前为推理等级）。
+ *
+ * @param reasoningLevels 可选的推理等级（用户自由填写，忽略大小写去重）
+ * @param reasoningLevel 当前选中的推理等级；等级列表非空时必为其中一项（空列表时为空串）
+ */
+@Serializable
+data class AiModelConfig(
+    val reasoningLevels: List<String> = emptyList(),
+    val reasoningLevel: String = "",
+) {
+    /**
+     * 保存前的规范化：等级 trim、去空串、忽略大小写去重（保留首次出现的写法）；
+     * 列表非空时选中项忽略大小写对齐列表写法，缺失则回落首个——SelectCard 单选必须有值。
+     */
+    fun normalized(): AiModelConfig {
+        val cleaned = ArrayList<String>(reasoningLevels.size)
+        reasoningLevels.forEach { raw ->
+            val candidate = raw.trim()
+            if (candidate.isNotEmpty() && cleaned.none { it.equals(candidate, ignoreCase = true) }) {
+                cleaned += candidate
+            }
+        }
+        val selected = cleaned.firstOrNull { it.equals(reasoningLevel.trim(), ignoreCase = true) }
+            ?: cleaned.firstOrNull()
+            ?: ""
+        return AiModelConfig(reasoningLevels = cleaned, reasoningLevel = selected)
+    }
+
+    /** 空配置不落库：没有推理等级 = 该模型不使用推理等级 */
+    val isEmpty: Boolean get() = reasoningLevels.isEmpty() && reasoningLevel.isBlank()
+}
+
+/**
  * AI 连接配置（BYOK）：服务商预设 id + 端点根路径 + 模型名 + 接口协议。
  *
  * 一份连接可保存多个模型名（[models]），[model] 始终是**当前生效**的那一个：供应商与
  * API Key 配置一次，对话浮层即可在列表里切换，请求层只读 [model]。旧版本落盘的 JSON
  * 只有单模型字段，反序列化后 [models] 为空列表，[modelOptions] 自动回落为 `[model]`，
- * 不需要迁移。
+ * 不需要迁移。模型级参数（推理等级）按模型 id 另存在 [modelConfigs]：带默认值，旧 JSON
+ * 缺字段时为空 map，行为与改造前一致。
  *
  * 这份是**明文可备份**的全部——API Key 永不在此，只存 Keystore 加密后的
  * SharedPreferences（见 [AiSettingsStore]，与 xmu_secure 的凭据策略同源），
@@ -36,6 +71,7 @@ enum class AiProtocol { OpenAiCompat, Anthropic }
  * @param baseUrl 端点根路径（如 https://api.deepseek.com，路径拼接由各协议编解码器负责）
  * @param model 当前生效的模型名（如 deepseek-flash）
  * @param models 方案内保存的模型名列表（含当前模型）；空列表 = 旧配置，按 [model] 单模型解释
+ * @param modelConfigs 模型级配置，key 为模型 id（忽略大小写匹配，统一成 [modelOptions] 的写法）
  * @param protocol 接口协议；带默认值——旧版本落盘的 JSON 无此字段，反序列化得
  *   [AiProtocol.OpenAiCompat]，既有配置行为不变
  */
@@ -45,6 +81,7 @@ data class AiConnection(
     val baseUrl: String = "",
     val model: String = "",
     val models: List<String> = emptyList(),
+    val modelConfigs: Map<String, AiModelConfig> = emptyMap(),
     val protocol: AiProtocol = AiProtocol.OpenAiCompat,
 ) {
     /** 是否已具备发起请求的最低配置；API Key 由 [AiSettingsStore.loadApiKey] 另查 */
@@ -58,16 +95,59 @@ data class AiConnection(
         get() = normalizedModelOptions(models, model)
 
     /**
+     * 某模型的附加配置（忽略大小写匹配模型 id）；不存在 = 空配置。
+     */
+    fun modelConfig(model: String): AiModelConfig {
+        val target = model.trim()
+        return modelConfigs.entries
+            .firstOrNull { it.key.equals(target, ignoreCase = true) }
+            ?.value
+            ?: AiModelConfig()
+    }
+
+    /**
+     * 写入某模型的附加配置：key 统一为模型列表里的写法，空配置自动移除（不留冗余项）。
+     * 模型不在列表时按传入写法入 key——调用方通常先用 [withModels] 把模型写进列表。
+     */
+    fun withModelConfig(model: String, config: AiModelConfig): AiConnection {
+        val target = model.trim()
+        if (target.isEmpty()) return this
+        val canonical = modelOptions.firstOrNull { it.equals(target, ignoreCase = true) } ?: target
+        val next = LinkedHashMap<String, AiModelConfig>(modelConfigs.size + 1)
+        modelConfigs.forEach { (key, value) ->
+            if (!key.equals(canonical, ignoreCase = true)) next[key] = value
+        }
+        val normalized = config.normalized()
+        if (!normalized.isEmpty) next[canonical] = normalized
+        return copy(modelConfigs = next)
+    }
+
+    /**
+     * 换模型列表与当前模型（加 / 删 / 改名共用）：与 [withNormalizedModels] 同一套规范化，
+     * 并按新列表裁剪 [modelConfigs]——被删模型不残留配置，key 统一成列表里的写法。
+     */
+    fun withModels(models: List<String>, current: String): AiConnection {
+        val trimmedCurrent = current.trim()
+        val options = normalizedModelOptions(models, trimmedCurrent)
+        val canonicalCurrent = options.firstOrNull {
+            it.equals(trimmedCurrent, ignoreCase = true)
+        } ?: trimmedCurrent
+        val configs = LinkedHashMap<String, AiModelConfig>(modelConfigs.size)
+        modelConfigs.forEach { (key, value) ->
+            val canonical = options.firstOrNull { it.equals(key.trim(), ignoreCase = true) }
+                ?: return@forEach
+            val normalized = value.normalized()
+            if (!normalized.isEmpty) configs[canonical] = normalized
+        }
+        return copy(model = canonicalCurrent, models = options, modelConfigs = configs)
+    }
+
+    /**
      * 保存前的模型规范化：当前模型与列表某项忽略大小写相同时统一为列表里的写法；
      * 当前模型非空且不在列表时补进列表。当前模型为空时原样保留（由 UI 决定是否补选）。
+     * 模型级配置同步裁剪 / 规范化（见 [withModels]）。
      */
-    fun withNormalizedModels(): AiConnection {
-        val trimmedModel = model.trim()
-        val options = normalizedModelOptions(models, trimmedModel)
-        val canonicalModel = options.firstOrNull { it.equals(trimmedModel, ignoreCase = true) }
-            ?: trimmedModel
-        return copy(model = canonicalModel, models = options)
-    }
+    fun withNormalizedModels(): AiConnection = withModels(models, model)
 }
 
 /** 合并模型列表与当前模型：trim、去空串、忽略大小写去重，保留首次出现的写法 */
