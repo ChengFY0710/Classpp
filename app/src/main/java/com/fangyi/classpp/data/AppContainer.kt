@@ -302,6 +302,11 @@ class AppContainer internal constructor(
                                 deletedTodos = todoRepository.deletedTodos.value,
                                 groups = todoRepository.groups.value.map { it.name },
                                 tags = tagRepository.tags.value.map { it.name },
+                                // 课程标签：课表课程名去重（与 UI 课程标签区/配色同口径），不入标签库
+                                courseTags = activeSchedule?.courses
+                                    ?.distinctBy { it.name }
+                                    ?.map { it.name }
+                                    .orEmpty(),
                             )
                         },
                         // 回复里的待办直接落库（无需确认）：与手建同路径，走全量校验与单次提交

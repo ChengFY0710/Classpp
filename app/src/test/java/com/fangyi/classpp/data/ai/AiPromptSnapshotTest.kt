@@ -18,8 +18,8 @@ import org.junit.Test
 /**
  * system prompt 快照回归（设计稿 §13 P0 验收）。
  *
- * 快照逐字节锁定 fallback 模式的当前基线：有意变更提示词文案时同步重生成并注明原因
- * （v3：新建契约补 name 必填、日期规则补一周从周一开始、分组/标签注入加上限）。
+ * 快照逐字节锁定 fallback 模式的当前基线：有意变更提示词文案时同步重生成并注明原因。
+ * 版本沿革见 git 历史；v4 = 课程标签独立成行注入（与用户标签分命名空间）。
  * 行尾统一按 LF 比较（仓库 `core.autocrlf` 会在检出时改写资源文件的行尾）。
  */
 class AiPromptSnapshotTest {
@@ -171,10 +171,12 @@ class AiPromptSnapshotTest {
             tags = listOf("物理", "英语", "期末"),
             archivedTodos = archived,
             deletedTodos = deleted,
+            // 与装配口径一致：激活课表的课程名去重
+            courseTags = schedule.courses.distinctBy { it.name }.map { it.name },
         )
 
-        val expected = requireNotNull(javaClass.getResourceAsStream("/ai/prompt-snapshot-v3.txt")) {
-            "missing snapshot resource: /ai/prompt-snapshot-v3.txt"
+        val expected = requireNotNull(javaClass.getResourceAsStream("/ai/prompt-snapshot-v4.txt")) {
+            "missing snapshot resource: /ai/prompt-snapshot-v4.txt"
         }.use { it.readBytes().toString(Charsets.UTF_8) }
 
         assertEquals(normalizeLineEndings(expected), normalizeLineEndings(prompt))

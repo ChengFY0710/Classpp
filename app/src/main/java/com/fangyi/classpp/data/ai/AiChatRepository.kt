@@ -51,6 +51,12 @@ data class AiChatContext(
     val deletedTodos: List<Todo> = emptyList(),
     val groups: List<String> = emptyList(),
     val tags: List<String> = emptyList(),
+    /**
+     * 课程标签：激活课表的课程名（按名字去重，保持课表顺序）。与 [tags]（用户标签库）
+     * 是两个命名空间——课程标签由课表派生、不入库（见 TagRepository 注释），但同样是
+     * 合法的 tag 值；装配方按 `courses.distinctBy { it.name }` 取，与 UI 课程标签区同口径。
+     */
+    val courseTags: List<String> = emptyList(),
     /** “今天”：工具执行时由仓库用自身时钟覆盖，与 system prompt 的日期口径一致 */
     val today: IsoDate = IsoDate.today(),
     /**
@@ -1982,6 +1988,7 @@ class AiChatRepository internal constructor(
             tags = context.tags,
             archivedTodos = context.archivedTodos,
             deletedTodos = context.deletedTodos,
+            courseTags = context.courseTags,
             nativeTools = nativeTools,
         )
         val system = if (systemNote.isNullOrBlank()) prompt else prompt + systemNote + "\n"

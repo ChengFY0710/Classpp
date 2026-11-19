@@ -118,6 +118,12 @@ object AiPromptBuilder {
         archivedTodos: List<Todo> = emptyList(),
         deletedTodos: List<Todo> = emptyList(),
         /**
+         * 课程标签：激活课表的课程名（去重，保持课表顺序）。与 [tags]（用户标签库）是
+         * 两个命名空间——课程标签由课表派生、不入库，但同样是合法的 tag 值。单独成行
+         * 注入，让模型既能读懂已有待办上的课程标签，也能在新建课程待办时主动打上。
+         */
+        courseTags: List<String> = emptyList(),
+        /**
          * 原生工具是否可用：
          * - true：上下文只注入「今日摘要 + 计数 + 分组/标签」，契约改由工具 schema 表达；
          * - false：全量上下文 + 现有 JSON 信封契约（逐字节不变，回退模式与旧连接的行为基线）。
@@ -138,6 +144,7 @@ object AiPromptBuilder {
 
         appendLine("[可选分组] ${organizerNamesLine(groups)}")
         appendLine("[可选标签] ${organizerNamesLine(tags)}")
+        appendLine("[课程标签] ${organizerNamesLine(courseTags)}")
         appendLine()
         if (nativeTools) appendNativeToolContract() else appendJsonEnvelopeContract()
     }.trimEnd() + "\n"
@@ -339,7 +346,9 @@ object AiPromptBuilder {
         appendLine("- 截止的日期（deadlineDate）与时刻（deadlineTime）要么都给，要么都不给；")
         appendLine("- 用户要新建分组/标签，或要把待办放进尚不存在的分组、加尚不存在的标签时，先调用 " +
             "create_todo_groups / create_todo_tags，再在 create_todos/update_todos 里引用；" +
-            "其余情况 group/tag 只用【可选分组】【可选标签】里出现的值，没有匹配就省略该字段；")
+            "【课程标签】是课表课程名，本身就是合法 tag（表示该课程的待办），可直接使用、不需要 create_todo_tags；" +
+            "用户为某门课记待办（如作业、复习）时，tag 用对应的课程标签；" +
+            "其余情况 group/tag 只用【可选分组】【可选标签】【课程标签】里出现的值，没有匹配就省略该字段；")
         appendLine("- 一次可以连续调用多个工具，但不要用同一参数重复调用同一个工具；")
         appendLine("- 其余情况正常对话。")
     }
@@ -356,7 +365,7 @@ object AiPromptBuilder {
         appendLine("- 时段只有 startTime 与 endTime 成对出现才成立（endTime 须晚于 startTime）；全天待办用 allDay=true 且不要给时段；")
         appendLine("- 截止的日期（deadlineDate）与时刻（deadlineTime）要么都给，要么都不给；")
         appendLine("- countdown=true 仅在同时给了截止时可用；pinned=true 仅在用户明确要求置顶时使用；")
-        appendLine("- group/tag 只用【可选分组】【可选标签】里出现的值，没有匹配就省略该字段；")
+        appendLine("- 用户为某门课记待办（如作业、复习）时，tag 用【课程标签】里对应的课程名；group/tag 只用【可选分组】【可选标签】【课程标签】里出现的值，没有匹配就省略该字段；")
         appendLine("- 重复：预设档用 type=Daily/Weekly/Monthly/Yearly；自定义用 type=Custom 并给 unit（Day/Week/Month/Year）、interval、marks；")
         appendLine("  marks 合法域：Week=周几 1..7（周一=1）、Month=几号 1..31、Year=几月 1..12，至少给一个；")
         appendLine("  endType=Date 必须给 endDate（该日期当天不含）；endType=Count 必须给 endCount（1..999）；checkIn=true 仅配合 Count；不需要重复就省略 repeat；")

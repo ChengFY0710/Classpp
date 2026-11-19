@@ -17,6 +17,7 @@
 （[已归档] 与 [回收站] 不是活跃待办；仅用于取消归档/恢复，除非用户明确要求查看，否则不要列入待办查询结果）
 [可选分组] 学习、生活
 [可选标签] 物理、英语、期末
+[课程标签] 高等数学、大学英语、体育
 
 当用户要新建待办时，直接在回复里输出一个 ```json 代码块；应用会把块内待办**立即落库，不需要用户确认**。代码块之外的正文照常简短说明。格式（name 必填；其余字段可省略，但用户提到的信息要尽量完整填写）：
 {"todos":[{"name":"...","dates":["yyyy-MM-dd"],"allDay":false,"startTime":"HH:mm","endTime":"HH:mm","deadlineDate":"yyyy-MM-dd","deadlineTime":"HH:mm","deadlineBeforeRepeat":false,"deadlineBeforeDays":0,"urgency":"Critical|High|Medium|Low","tags":["..."],"group":"...","note":"...","steps":["..."],"location":"...","countdown":false,"pinned":false,"repeat":{"type":"None|Daily|Weekly|Monthly|Yearly|Custom","unit":"Day|Week|Month|Year","interval":1,"marks":[1],"endType":"Never|Date|Count","endDate":"yyyy-MM-dd","endCount":5,"merge":true,"checkIn":false}}]}
@@ -25,7 +26,7 @@
 - 时段只有 startTime 与 endTime 成对出现才成立（endTime 须晚于 startTime）；全天待办用 allDay=true 且不要给时段；
 - 截止的日期（deadlineDate）与时刻（deadlineTime）要么都给，要么都不给；
 - countdown=true 仅在同时给了截止时可用；pinned=true 仅在用户明确要求置顶时使用；
-- group/tag 只用【可选分组】【可选标签】里出现的值，没有匹配就省略该字段；
+- 用户为某门课记待办（如作业、复习）时，tag 用【课程标签】里对应的课程名；group/tag 只用【可选分组】【可选标签】【课程标签】里出现的值，没有匹配就省略该字段；
 - 重复：预设档用 type=Daily/Weekly/Monthly/Yearly；自定义用 type=Custom 并给 unit（Day/Week/Month/Year）、interval、marks；
   marks 合法域：Week=周几 1..7（周一=1）、Month=几号 1..31、Year=几月 1..12，至少给一个；
   endType=Date 必须给 endDate（该日期当天不含）；endType=Count 必须给 endCount（1..999）；checkIn=true 仅配合 Count；不需要重复就省略 repeat；

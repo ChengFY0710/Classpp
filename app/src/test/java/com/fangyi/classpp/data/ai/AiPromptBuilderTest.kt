@@ -520,4 +520,30 @@ class AiPromptBuilderTest {
         )
         assertTrue(stale.contains("[t-自习] 自习｜日期 $now｜14:00-16:00｜@图书馆三楼"))
     }
+
+    @Test
+    fun `course tags inject as their own line and stay legal tag values`() {
+        val courseTags = listOf("高等数学", "大学英语")
+        val fallback = AiPromptBuilder.build(
+            now, null, null, emptyList(), emptyList(), emptyList(),
+            courseTags = courseTags,
+        )
+        val native = AiPromptBuilder.build(
+            now, null, null, emptyList(), emptyList(), emptyList(),
+            courseTags = courseTags, nativeTools = true,
+        )
+
+        // 课程标签与用户标签是两个命名空间：单独成行注入（此前只有【可选标签】，模型看不到）
+        listOf(fallback, native).forEach { prompt ->
+            assertTrue(prompt.contains("[课程标签] 高等数学、大学英语"))
+        }
+        // 两种契约都声明：课程名是合法 tag，新建课程待办时直接用，不走 create_todo_tags
+        assertTrue(native.contains("【课程标签】是课表课程名，本身就是合法 tag"))
+        assertTrue(native.contains("tag 用对应的课程标签"))
+        assertTrue(fallback.contains("tag 用【课程标签】里对应的课程名"))
+        assertTrue(fallback.contains("只用【可选分组】【可选标签】【课程标签】里出现的值"))
+        // 无课表时规则里的【课程标签】不悬空：显式空态
+        val empty = AiPromptBuilder.build(now, null, null, emptyList(), emptyList(), emptyList())
+        assertTrue(empty.contains("[课程标签] （无）"))
+    }
 }
