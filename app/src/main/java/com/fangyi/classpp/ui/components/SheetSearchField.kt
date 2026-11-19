@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Box
@@ -29,8 +30,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -61,6 +65,8 @@ import com.kyant.backdrop.Backdrop
  * - 左侧恒显 ic_search（24dp 灰），有内容时右侧补 ic_dismiss_circle 清空钮
  *   （24dp 灰，按压反馈直接落在图标圆上：玻璃模式 Q弹放大、普通模式硬节奏缩放提亮）；
  * - singleLine 硬行 + 滤换行符：搜索词永不换行（SheetTextField 是视觉换行、逻辑单行）；
+ * - 整条点击热区：图标、左右内距与行内空白都算输入区，点任一处聚焦输入框并拉起键盘
+ *   （文本区自身仍由 BasicTextField 处理光标落点，清空钮的点击仍归清空钮）；
  * - 占位空值即显（聚焦也显示，光标停在占位文字首字前），不学表单框聚焦即藏；
  * - 键盘动作恒 Search，按下搜索键收起焦点；无 label、无 isError（搜索词不参与表单校验）。
  *
@@ -70,7 +76,7 @@ import com.kyant.backdrop.Backdrop
  * 清空钮改 [glassPressFeedback] Q弹按压；聚焦蓝描边原样叠画在玻璃之上（AiChatInputBar
  * 的取舍）。null 时底材与按压反馈完全回退实心实现。
  *
- * 键盘行为与 SheetTextField 一致：已聚焦时再点输入区重新 show 一次键盘——Compose
+ * 键盘行为与 SheetTextField 一致：已聚焦时再点搜索条任意处重新 show 一次键盘——Compose
  * 输入框已聚焦时再点不会拉起键盘，键盘一旦被收起就唤不回来（上机踩过）。
  * 「聚焦后点空白取消聚焦（收起键盘）」由宿主容器提供（clearFocusOnTap，
  * OverlaySheet 的内容列、顶栏与钉底槽已内置），字段自身无需处理。
@@ -90,8 +96,10 @@ fun SheetSearchField(
     val clearInteraction = remember { MutableInteractionSource() }
     var focused by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
+    val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    // 已聚焦时再点输入区：Compose 不会重新拉起键盘，键盘一旦被收起就唤不回（上机踩过）
+    // 已聚焦时再点文本区：Compose 不会重新拉起键盘，键盘一旦被收起就唤不回（上机踩过）；
+    // 文本区以外的行内区域由下面的整条热区 pointerInput 兜住
     LaunchedEffect(interactionSource) {
         interactionSource.interactions.collect { interaction ->
             if (interaction is PressInteraction.Release) keyboard?.show()
@@ -132,6 +140,15 @@ fun SheetSearchField(
                 },
             )
             .onFocusChanged { focused = it.hasFocus }
+            // 整条热区：图标、左右内距与行内空白点下去都聚焦输入框并拉起键盘。
+            // 用 pointerInput 而非 clickable——clickable 会把本行合并成单个可点语义节点，
+            // 吞掉内部输入框的可编辑语义；文本区与清空钮的点击被子级先消费，不会走到这里
+            .pointerInput(Unit) {
+                detectTapGestures {
+                    focusRequester.requestFocus()
+                    keyboard?.show()
+                }
+            }
             .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -154,6 +171,7 @@ fun SheetSearchField(
             keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
             modifier = Modifier
                 .weight(1f)
+                .focusRequester(focusRequester)
                 // 参与宿主的「键盘弹起把输入框滚到键盘上方」（OverlaySheet 的 ImeScrollTracker）：
                 // 宿主没这项能力时此修饰符空转
                 .imeFieldTracking(),
