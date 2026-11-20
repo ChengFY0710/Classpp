@@ -33,9 +33,11 @@ class WebSessionDriver(
     private val totalTimeoutMillis: Long,
     private val onDone: (FetchOutcome) -> Unit,
     private val profileValidator: (String) -> Boolean = WebViewPolicy::defaultProfileValidator,
-    // 可见登录浮层的可观测性钩子：加载进度（0..100）与主文档加载失败（SSL/网络错误）
+    // 可见登录浮层的可观测性钩子：加载进度（0..100）、主文档加载失败（SSL/网络错误）
+    // 与主文档每次开始跳转的目标 URL（页面底部地址栏显示当前网址）
     private val onProgress: (Int) -> Unit = {},
     private val onLoadError: () -> Unit = {},
+    private val onUrlChanged: (String?) -> Unit = {},
     /** 可见登录浮层模式：未登录的探活失败复位重试，不向宿主收口 */
     private val awaitInteractiveLogin: Boolean = false,
 ) {
@@ -73,10 +75,11 @@ class WebSessionDriver(
                 schedulePoll()
             },
             onLoadError = onLoadError,
-            onPageStarted = {
+            onPageStarted = { url ->
                 // 主文档跳转（去统一认证登录 / 登录完回数据域）会重建 JS 上下文，
                 // 在途探针随旧页面一起作废：复位等新页面落定后由 onPageFinished 重新探活
                 if (!completed && !destroyed) resetProbe()
+                onUrlChanged(url)
             },
         )
         webView.webChromeClient = WebViewPolicy.createChromeClient(

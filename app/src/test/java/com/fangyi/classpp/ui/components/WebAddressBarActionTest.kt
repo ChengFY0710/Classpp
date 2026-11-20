@@ -14,10 +14,12 @@ class WebAddressBarActionTest {
         value: String,
         openedUrl: String? = null,
         inputFocused: Boolean = false,
+        editable: Boolean = true,
     ): WebAddressBarAction = resolveWebAddressBarAction(
         inputFocused = inputFocused,
         value = value,
         openedUrl = openedUrl,
+        editable = editable,
     )
 
     @Test
@@ -86,5 +88,37 @@ class WebAddressBarActionTest {
                 inputFocused = true,
             ),
         )
+    }
+
+    @Test
+    fun `read only address always offers the ua menu`() {
+        // 固定入口页：地址不可改，右侧始终是更多（UA 切换），不受聚焦 / 地址比较影响
+        assertEquals(
+            WebAddressBarAction.More,
+            action(value = "https://jw.xmu.edu.cn", editable = false),
+        )
+        assertEquals(
+            WebAddressBarAction.More,
+            action(
+                value = "https://jw.xmu.edu.cn/login",
+                openedUrl = "https://jw.xmu.edu.cn",
+                editable = false,
+            ),
+        )
+        assertEquals(
+            WebAddressBarAction.More,
+            action(
+                value = "https://jw.xmu.edu.cn",
+                openedUrl = "https://jw.xmu.edu.cn",
+                inputFocused = true,
+                editable = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `read only blank address shows no right action`() {
+        assertEquals(WebAddressBarAction.None, action(value = "", editable = false))
+        assertEquals(WebAddressBarAction.None, action(value = "   ", editable = false))
     }
 }

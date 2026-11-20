@@ -69,6 +69,8 @@ internal enum class WebAddressBarAction { None, Open, More }
 /**
  * 地址栏右侧按钮的判定规则（纯函数，便于单测）：
  * - 输入为空（含纯空白）→ [WebAddressBarAction.None]，右侧不占位；
+ * - [editable] 为 false（固定入口页的只读地址）→ [WebAddressBarAction.More]：
+ *   地址不可改，右侧只保留 UA 切换菜单；
  * - 输入框未聚焦、且内容与 [openedUrl] 一致（忽略首尾空白）→ [WebAddressBarAction.More]，
  *   表示页面已停在该地址，右侧让位给 UA 切换菜单；
  * - 其余情况（正在输入 / 聚焦 / 内容与已打开地址不一致）→ [WebAddressBarAction.Open]，
@@ -78,9 +80,11 @@ internal fun resolveWebAddressBarAction(
     inputFocused: Boolean,
     value: String,
     openedUrl: String?,
+    editable: Boolean = true,
 ): WebAddressBarAction {
     val input = value.trim()
     if (input.isEmpty()) return WebAddressBarAction.None
+    if (!editable) return WebAddressBarAction.More
     val opened = openedUrl?.trim().orEmpty()
     return if (!inputFocused && opened.isNotEmpty() && input == opened) {
         WebAddressBarAction.More
@@ -126,6 +130,10 @@ internal fun resolveWebAddressBarAction(
  * （[statusText] 优先，否则显示 [value] 或占位），右侧固定为更多按钮但不可点。
  * 状态文案沿用 fieldValue 的 primary 色，与地址文字同视觉；不可点在识别/冻结期间会
  * 重载网页，误触会破坏抓取。
+ *
+ * 固定入口页（教务课表 / 拾光 / 网页登录）用 [addressEditable] = false：地址文字只读，
+ * 但右侧更多按钮保持可点，仍可切换手机 / 电脑版 UA；[readOnly] 才是忙碌期间连 UA
+ * 菜单一起锁死的形态。
  */
 @Composable
 fun WebAddressBar(
@@ -142,6 +150,8 @@ fun WebAddressBar(
     statusText: String? = null,
     /** 只读但继续显示 [value]（网页冻结 / 识别期间锁定地址栏） */
     readOnly: Boolean = false,
+    /** 地址是否可编辑：false = 地址只读展示，右侧仍保留 UA 菜单（固定入口页） */
+    addressEditable: Boolean = true,
     /** 输入框焦点变化（宿主持有「地址栏是否编辑中」时用） */
     onFocusChanged: ((Boolean) -> Unit)? = null,
     /** 当前 UA 模式（true = 电脑版），由宿主持有 */
@@ -171,9 +181,11 @@ fun WebAddressBar(
     }
 
     val locked = readOnly || statusText != null
-    // 锁定瞬间输入框被移出组合：主动归位焦点形态、收起 UA 菜单，并通知宿主
-    LaunchedEffect(locked) {
-        if (locked) {
+    // 可编辑是「地址本身可改」与「未锁定」的交集；只读页仍保留可点的 UA 菜单
+    val editable = addressEditable && !locked
+    // 锁定 / 转为只读瞬间输入框被移出组合：主动归位焦点形态、收起 UA 菜单，并通知宿主
+    LaunchedEffect(locked, addressEditable) {
+        if (locked || !addressEditable) {
             inputFocused = false
             menuExpanded = false
             keyboard?.hide()
@@ -197,7 +209,7 @@ fun WebAddressBar(
             WebAddressBarAction.None
         }
     } else {
-        resolveWebAddressBarAction(inputFocused, value, openedUrl)
+        resolveWebAddressBarAction(inputFocused, value, openedUrl, addressEditable)
     }
     val openLabel = stringResource(R.string.cd_web_address_open)
     val moreLabel = stringResource(R.string.cd_web_address_more)
@@ -239,7 +251,7 @@ fun WebAddressBar(
                 // 吞掉内部输入框的可编辑语义；文本区与右侧按钮的点击被子级先消费。
                 // 只读 / 状态态不挂热区：此时没有可聚焦的输入框
                 .then(
-                    if (!locked) {
+                    if (editable) {
                         Modifier.pointerInput(Unit) {
                             detectTapGestures {
                                 focusRequester.requestFocus()
@@ -281,8 +293,8 @@ fun WebAddressBar(
                         modifier = Modifier.weight(1f),
                     )
                 }
-                // 冻结 / 回弹期间保留地址文字但禁止编辑
-                readOnly -> {
+                // 只读地址 / 冻结 / 回弹期间保留地址文字但禁止编辑
+                !editable -> {
                     Text(
                         text = value.ifEmpty { placeholder },
                         style = if (value.isEmpty()) {

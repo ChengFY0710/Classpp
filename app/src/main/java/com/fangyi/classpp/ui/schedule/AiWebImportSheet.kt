@@ -24,9 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -52,9 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -75,16 +71,13 @@ import com.fangyi.classpp.ui.ai.AiThinkingAurora
 import com.fangyi.classpp.ui.ai.ModelSwitchChipGap
 import com.fangyi.classpp.ui.ai.ModelSwitchChipHeight
 import com.fangyi.classpp.ui.ai.SwitchChipSpacing
-import com.fangyi.classpp.ui.components.DialogPillButton
 import com.fangyi.classpp.ui.components.EmptyState
-import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.WebAddressBar
 import com.fangyi.classpp.ui.components.WebAddressBarHeight
 import com.fangyi.classpp.ui.motion.CardShrinkMotionState
 import com.fangyi.classpp.ui.motion.rememberCardShrinkMotion
 import com.fangyi.classpp.ui.settings.SettingsTopBar
 import com.fangyi.classpp.ui.settings.SettingsTopBarAction
-import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
 import com.fangyi.classpp.ui.theme.LocalNavigationBarInsets
 import com.fangyi.classpp.ui.theme.LocalStatusBarHeight
@@ -92,6 +85,8 @@ import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
 import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
+import com.fangyi.classpp.ui.webview.WebDesktopUserAgent
+import com.fangyi.classpp.ui.webview.rememberWebMobileUserAgent
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.shapes.RoundedRectangle
 import kotlin.coroutines.resume
@@ -130,6 +125,9 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  *   行间距与到地址栏的间距均为 10dp）；切换直接写回同一仓库，本次识别即使用新配置；
  * - 冻结 / 读取 / 识别期间地址栏与胶囊锁定并显示状态文案，避免重载 / 切换破坏抓取结果。
  *
+ * 错误提示：页面读取失败、AI 识别失败、网址校验失败、HTTP 警告与主文档加载失败一律
+ * 走系统 Toast，不再在底部叠信息条 / 红字或整页错误遮罩，网页始终保留可操作状态。
+ *
  * 视口：页面按自身宽视口渲染（[WebSettings.setUseWideViewPort]），不再缩放到设备宽度
  * （[WebSettings.setLoadWithOverviewMode] 关闭），宽课表保持原始尺寸、横向拖动查看；
  * 同时开启 WebView 内置缩放，用户可捏合放大/缩小（不显示悬浮缩放钮）。
@@ -160,7 +158,6 @@ internal fun AiWebImportSheet(
     // 地址栏草稿（WebAddressBar 是受控 String 输入）
     var address by rememberSaveable { mutableStateOf(initialUrl) }
     var addressFocused by remember { mutableStateOf(false) }
-    var addressError by remember { mutableStateOf(false) }
     // 网页抓取：读取中态与本次读取失败的文案；重复点击只清结果变量后重新注入
     var extracting by remember { mutableStateOf(false) }
     var extractAttempt by remember { mutableIntStateOf(0) }
@@ -177,10 +174,7 @@ internal fun AiWebImportSheet(
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
     // 手机 UA 取系统 WebView 默认值：与设备/内核最匹配；电脑 UA 用固定桌面标识
-    val mobileUserAgent = remember(context) {
-        runCatching { WebSettings.getDefaultUserAgent(context) }
-            .getOrDefault(FALLBACK_MOBILE_USER_AGENT)
-    }
+    val mobileUserAgent = rememberWebMobileUserAgent()
     // 默认电脑版：教务系统常按 UA 分流，桌面门户更适合展示完整课表
     var desktopMode by rememberSaveable { mutableStateOf(true) }
 
@@ -199,7 +193,21 @@ internal fun AiWebImportSheet(
     val sheetTitle = stringResource(R.string.import_ai_web_sheet_title)
     val httpWarning = stringResource(R.string.import_ai_web_http_warning)
     val addressInvalidText = stringResource(R.string.import_ai_web_url_invalid)
+    val loadErrorText = stringResource(R.string.sync_login_load_error)
     val isHttp = currentUrl.startsWith("http://", ignoreCase = true)
+
+    // HTTP 入口只提示一次：进入 http 页面时 Toast，同域继续跳转不重复打扰。
+    // 所有错误都走 Toast，网页本身始终保持可操作
+    LaunchedEffect(isHttp) {
+        if (isHttp) AppToasts.show(context, httpWarning)
+    }
+    // 页面读取失败 / 宿主 AI 识别失败：各提示一次（重新尝试时会先清空再置位）
+    LaunchedEffect(readError) {
+        readError?.let { AppToasts.show(context, it) }
+    }
+    LaunchedEffect(errorText) {
+        errorText?.let { AppToasts.show(context, it) }
+    }
 
     // 冻结 / 读取 / 识别共用同一条「页面不可交互」判定：标题、地址栏锁定与底部提示都看它
     val busy = cardVisible || extracting || recognizing
@@ -233,7 +241,7 @@ internal fun AiWebImportSheet(
     // 把当前模式对应的 UA 写进 WebView；切换后必须 reload 才生效
     fun applyUserAgent(wv: WebView) {
         wv.settings.userAgentString =
-            if (desktopMode) DESKTOP_USER_AGENT else mobileUserAgent
+            if (desktopMode) WebDesktopUserAgent else mobileUserAgent
     }
 
     // 打开地址栏输入的新网址：空输入不动作；归一化失败只标错，不改页面
@@ -241,10 +249,9 @@ internal fun AiWebImportSheet(
         if (address.isBlank()) return
         val target = AiWebImportUrl.normalize(address)
         if (target == null) {
-            addressError = true
+            AppToasts.show(context, addressInvalidText)
             return
         }
-        addressError = false
         address = target
         pageUrl = target
         currentUrl = target
@@ -502,7 +509,7 @@ internal fun AiWebImportSheet(
                             // 默认电脑版：UA 由底部地址栏的更多菜单控制，切换时 reload
                             WebViewPolicy.harden(
                                 wv,
-                                if (desktopMode) DESKTOP_USER_AGENT else mobileUserAgent,
+                                if (desktopMode) WebDesktopUserAgent else mobileUserAgent,
                             )
                             // 教务系统多为桌面布局：保留页面自身的宽视口，不缩放到设备宽度。
                             // 宽表格按原始尺寸渲染、左右拖动查看，再配合捏合缩放看清细节
@@ -515,12 +522,14 @@ internal fun AiWebImportSheet(
                             // 登录链路跨多个域跳转：放行跨站 cookie
                             CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
                             wv.webViewClient = WebViewPolicy.createUserPageClient(
-                                onLoadError = { loadError = true },
+                                onLoadError = {
+                                    loadError = true
+                                    AppToasts.show(context, loadErrorText)
+                                },
                                 onPageStarted = { started ->
                                     pageReady = false
                                     if (started != null) {
                                         currentUrl = started
-                                        addressError = false
                                         if (!addressFocused) {
                                             address = started
                                         }
@@ -568,43 +577,6 @@ internal fun AiWebImportSheet(
                         )
                     }
                 }
-                if (loadError) {
-                    // 主文档加载失败（网络/SSL）：遮罩 + 可见错误 + 重试，不留无声白屏
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.96f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_alert),
-                                contentDescription = null,
-                                tint = MaterialTheme.classppColors.secondaryText,
-                                modifier = Modifier.size(28.dp),
-                            )
-                            Spacer(Modifier.height(10.dp))
-                            Text(
-                                text = stringResource(R.string.sync_login_load_error),
-                                style = ClassppTextTokens.settingsDescription,
-                                color = MaterialTheme.classppColors.secondaryText,
-                            )
-                            Spacer(Modifier.height(14.dp))
-                            DialogPillButton(
-                                label = stringResource(R.string.sync_login_retry),
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
-                                onClick = {
-                                    val wv = webView
-                                    if (wv != null && pageUrl.isNotBlank()) {
-                                        CookieManager.getInstance().flush()
-                                        load(wv, pageUrl)
-                                    }
-                                },
-                            )
-                        }
-                    }
-                }
                 if (cardVisible) {
                     // 冻结期间吞掉落到 WebView 上的触摸（页面已不可操作）
                     Box(
@@ -632,34 +604,6 @@ internal fun AiWebImportSheet(
                 .imePadding()
                 .padding(horizontal = PageHorizontalSpacing, vertical = BottomBarVerticalPadding),
         ) {
-            // 本次页面读取失败优先于上一次 AI 失败：先提示「没读到页面」，
-            // 读取成功后的 AI 失败再由宿主 errorText 展示
-            val shownError = readError ?: errorText
-            if (!busy && shownError != null) {
-                SheetInfoBanner(
-                    text = shownError,
-                    isError = true,
-                    modifier = Modifier.padding(bottom = 8.dp),
-                )
-            }
-            if (!busy && addressError) {
-                Text(
-                    text = addressInvalidText,
-                    style = ClassppTextTokens.settingsDescription,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(bottom = 8.dp),
-                )
-            }
-            if (!busy && isHttp) {
-                Text(
-                    text = httpWarning,
-                    style = ClassppTextTokens.settingsDescription,
-                    color = MaterialTheme.colorScheme.error,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(bottom = 8.dp),
-                )
-            }
             // 与 AI 对话浮层同款的模型 / 思考强度胶囊：行间距与到地址栏的间距都是 10dp
             if (showChipRow) {
                 Row(horizontalArrangement = Arrangement.spacedBy(SwitchChipSpacing)) {
@@ -706,7 +650,6 @@ internal fun AiWebImportSheet(
                 value = address,
                 onValueChange = { next ->
                     address = next
-                    addressError = false
                 },
                 onOpen = ::openAddress,
                 modifier = Modifier.fillMaxWidth(),
@@ -815,16 +758,6 @@ private val BottomBarVerticalPadding = 10.dp
 
 /** 识别光场高度：与图片识别浮层同一量级，中心对齐冻结卡 */
 private val AuroraBandHeight = 600.dp
-
-/** 桌面 UA：教务系统常按 UA 分流桌面/移动门户；与项目其它桌面 UA 保持一致 */
-private const val DESKTOP_USER_AGENT =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-
-/** 系统默认 UA 取不到时的手机兜底（极少见；明确带 Mobile 标识） */
-private const val FALLBACK_MOBILE_USER_AGENT =
-    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
 
 /** 抓取轮询超时：脚本同步写回，5s 覆盖大页面表格展开与主线程排队 */
 private const val ExtractTimeoutMillis = 5_000L

@@ -148,7 +148,7 @@ object WebViewPolicy {
 
     /**
      * 白名单客户端：非白名单导航一律吞掉（含外链/协议跳转），SSL 错误不 proceed；
-     * 主文档加载失败经 [onLoadError] 通知 UI（可见登录浮层显示错误态 + 重试，
+     * 主文档加载失败经 [onLoadError] 通知 UI（可见登录浮层用 Toast 提示，
      * 无头取数保持静默等待超时归类）。
      */
     fun createClient(
@@ -165,7 +165,7 @@ object WebViewPolicy {
 
     /**
      * 教务课表页的白名单客户端：只放行声明域，不注入任何脚本、不挂钩数据页回调；
-     * 主文档失败经 [onLoadError] 交给 UI 显示错误态 + 重试。
+     * 主文档失败经 [onLoadError] 交给 UI 用 Toast 提示。
      */
     fun createTimetableClient(
         spec: WebViewTimetableSpec,
@@ -181,7 +181,7 @@ object WebViewPolicy {
     /**
      * 用户自填教务网址的客户端：域名完全由用户决定，无法预先声明白名单，因此只按协议
      * 放行——任意主机的 http/https 导航通过，其余 scheme（file/content/intent/javascript
-     * 等）一律吞掉。SSL 错误仍然不 proceed，主文档失败交给 UI 显示错误态 + 重试。
+     * 等）一律吞掉。SSL 错误仍然不 proceed，主文档失败交给 UI 用 Toast 提示。
      *
      * 这是 [WebViewPolicy] 里唯一的「非白名单」路径，专供 AI 识别教务网页；学校声明路径
      * 仍走 [createClient] / [createTimetableClient] 的 https + 域名白名单。

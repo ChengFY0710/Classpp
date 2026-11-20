@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -234,6 +235,9 @@ internal fun SettingsTopBar(
                 Text(
                     text = title,
                     style = MaterialTheme.classppTextStyles.topBarTitle,
+                    // 网页页标题可能是较长的学校名：强制单行省略，避免顶栏高度被撑破
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     // 绘制期读滚动状态：滚动不触发重组，只让标题图层按透明度重绘
                     modifier = Modifier.graphicsLayer { alpha = titleAlpha() },
                 )

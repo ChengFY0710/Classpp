@@ -212,6 +212,16 @@ private fun WebAddressBarPreview() = ClassppTheme {
             desktopMode = true,
             onDesktopModeChange = {},
         )
+        // 固定入口页：地址只读展示，右侧 more 仍可点（切换手机 / 电脑版 UA）
+        WebAddressBar(
+            value = "https://jw.xmu.edu.cn/student/course",
+            onValueChange = {},
+            onOpen = {},
+            openedUrl = "https://jw.xmu.edu.cn/student/course",
+            addressEditable = false,
+            desktopMode = true,
+            onDesktopModeChange = {},
+        )
     }
 }
 
