@@ -27,7 +27,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -147,7 +146,7 @@ private const val CaptureDirName = "ai_capture"
  *   备注/步骤/倒计时/归档全部落库），侧滑呼出删除动作卡（满色松手即软删）；
  * - 「编辑」打开预填的 [NewTodoSheet]（existing 整体回填），对话浮层随之 covered 后退，
  *   两层动效由 OverlaySheet 的 covered 机制同帧衔接；
- * - 顶栏（同其它浮层的顶栏规格）：左上蓝「对话」= 打开「所有对话」管理浮层
+ * - 顶栏（同其它浮层的顶栏规格）：左上白「对话」= 打开「所有对话」管理浮层
  *   （[AiConversationsSheet]，叠在本浮层之上、covered 后退分层动效）：新建 / 切换 /
  *   删除对话，新建/切换即时落库（管理浮层同步收起，退场动画照播——播完时内容已切
  *   到位、高亮已移到新对话）；没有对话时按钮保持可点但点击无反应（列表空无从管理，发消息会隐式
@@ -160,6 +159,9 @@ private const val CaptureDirName = "ai_capture"
  *   玻璃材质与输入栏同源采样（底部光场层），玻璃关闭 / API<31 时回退实心 surface 底。
  * - 系统分享草稿（[draft]）：图片与提示词由宿主经分享入口投递，进入输入栏后由用户
  *   确认发送，不做自动发送；消费后回调 [onDraftConsumed] 清掉宿主侧待处理草稿。
+ * - 输入草稿（未发送的文字）由 [AiChatRepository.inputDraft] 进程内持有：收起浮层再
+ *   打开仍在，应用被彻底关闭才清空；发送成功后清空。待发送图片不跨浮层保留（退场即删
+ *   副本，见 clearPendingImages）。
  *
  * 未配置（[AiChatRepository.configured] = false）时渲染引导态，输入栏禁用。
  */
@@ -266,7 +268,21 @@ fun AiChatOverlay(
     }
     val todosById = remember(todos) { todos.associateBy { it.id } }
 
-    val inputState = rememberSaveable { mutableStateOf("") }
+    // 输入草稿由仓库进程内持有（不落盘）：收起浮层再打开仍在，应用被彻底关闭才清空。
+    // 初值只在浮层挂载时从仓库取一次，键入与分享草稿都经 setInputText 同步回仓库。
+    val inputState = remember { mutableStateOf(aiChatRepository?.inputDraft?.value.orEmpty()) }
+    fun setInputText(text: String) {
+        inputState.value = text
+        aiChatRepository?.updateInputDraft(text)
+    }
+    // 仓库晚于浮层就绪（冷启动时分享直达）时补写：输入栏里可能已有分享草稿或用户键入，
+    // 而它们发生时仓库还是 null，没有承接方
+    LaunchedEffect(aiChatRepository) {
+        val repository = aiChatRepository ?: return@LaunchedEffect
+        if (repository.inputDraft.value != inputState.value) {
+            repository.updateInputDraft(inputState.value)
+        }
+    }
     // 「所有对话」管理浮层两态口径（同 ScheduleScreen 的 switcherVisible/mounted）：
     // visible 请求进出场，mounted 是挂载快照（出场动画播完才卸载）
     var conversationsVisible by remember { mutableStateOf(false) }
@@ -411,10 +427,12 @@ fun AiChatOverlay(
     LaunchedEffect(draft?.id) {
         val incoming = draft ?: return@LaunchedEffect
         if (incoming.prompt.isNotBlank()) {
-            inputState.value = when {
-                inputState.value.isBlank() -> incoming.prompt
-                else -> inputState.value.trimEnd() + "\n\n" + incoming.prompt
-            }
+            setInputText(
+                when {
+                    inputState.value.isBlank() -> incoming.prompt
+                    else -> inputState.value.trimEnd() + "\n\n" + incoming.prompt
+                },
+            )
         }
         if (incoming.images.isNotEmpty()) {
             val existing = pendingImagesState.value
@@ -652,7 +670,7 @@ fun AiChatOverlay(
                 scroll.maxValue - scroll.value <= with(density) { SendAtBottomSlop.roundToPx() },
             sentAtMillis = System.currentTimeMillis(),
         )
-        inputState.value = ""
+        setInputText("")
         // 图片随消息发出：文件名已由仓库随 user 消息持有，预览条清空但**不删副本**
         pendingImagesState.value = emptyList()
         keyboard?.hide()
@@ -783,9 +801,12 @@ fun AiChatOverlay(
     OverlaySheet(
         // 标题置空：对话浮层不显示顶栏标题，只保留左右两颗胶囊
         title = "",
-        // 左上「对话」= 打开「所有对话」管理浮层；没有对话时按钮保持可点、点击无反应
+        // 左上「对话」= 打开「所有对话」管理浮层；没有对话时按钮保持可点、点击无反应。
+        // 配色与右上「关闭」胶囊同款（白底深色字），不再用确认默认的蓝底白字
         confirmLabel = stringResource(R.string.ai_sheet_chat),
         confirmIcon = R.drawable.ic_add_circle,
+        confirmContainerColor = MaterialTheme.colorScheme.surface,
+        confirmContentColor = MaterialTheme.colorScheme.onSurface,
         onConfirm = ::openConversations,
         // 右上「关闭」：白胶囊深色 ✕，点击即收起浮层（与其它浮层顶栏关闭同一颗胶囊）
         rightAction = SheetTopAction(
@@ -941,7 +962,8 @@ fun AiChatOverlay(
                     }
                     // 输入状态由本叶子读取：键入只重组输入栏，不失效整个对话浮层
                     AiChatComposer(
-                        inputState = inputState,
+                        inputText = inputState,
+                        onInputChange = ::setInputText,
                         pendingImagesState = pendingImagesState,
                         imageStore = imageStore,
                         sending = sending,
@@ -1372,12 +1394,14 @@ private fun AiChatMessageList(
 }
 
 /**
- * 输入栏叶子：键入只读 [inputState]，不把根 Composable 拉进重组；
+ * 输入栏叶子：键入只读 [inputText]，不把根 Composable 拉进重组；
  * 待发送图片同理交给本叶子读取，发送时根回调再取当前值。
+ * 键入经 [onInputChange] 回到根（同步仓库草稿），本叶子不直接持有编辑态。
  */
 @Composable
 private fun AiChatComposer(
-    inputState: MutableState<String>,
+    inputText: State<String>,
+    onInputChange: (String) -> Unit,
     pendingImagesState: State<List<String>>,
     imageStore: AiImageStore?,
     sending: Boolean,
@@ -1391,13 +1415,13 @@ private fun AiChatComposer(
     backdrop: Backdrop?,
 ) {
     AiChatInputBar(
-        value = inputState.value,
-        onValueChange = { inputState.value = it },
+        value = inputText.value,
+        onValueChange = onInputChange,
         placeholder = stringResource(R.string.ai_input_hint),
         sendingPlaceholder = stringResource(R.string.ai_input_sending_hint),
         sending = sending,
         enabled = enabled,
-        onSend = { onSend(inputState.value) },
+        onSend = { onSend(inputText.value) },
         onStop = onStop,
         onTakePhoto = onTakePhoto,
         onAddImage = onAddImage,

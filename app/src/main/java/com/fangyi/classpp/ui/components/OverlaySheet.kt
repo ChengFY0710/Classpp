@@ -286,6 +286,12 @@ fun OverlaySheet(
     confirmIcon: Int = com.fangyi.classpp.R.drawable.ic_checkmark_circle,
     // 左胶囊图标尺寸（默认同 SheetPillButton 的 30dp）；只影响确认胶囊，单独调某浮层时传值
     confirmIconSize: Dp = 30.dp,
+    // 确认胶囊配色覆盖（可选，需成对传）：null = 现有 primary 底 / onPrimary 字
+    //（玻璃模式字色走 onPrimaryGlass）。传值 = 整颗胶囊改用调用方配色，如 AI 对话的
+    //「对话」胶囊与右侧「关闭」动作胶囊同款（surface 底 / onSurface 字）；置灰态仍按
+    // 项目语义覆盖为白底 negative，不受本覆盖影响
+    confirmContainerColor: Color? = null,
+    confirmContentColor: Color? = null,
     // 卡片投影透明度（0f~1f）：投影不走 Surface 的 shadowElevation（不带颜色参数），改由
     // 卡片 graphicsLayer 的 spot/ambientShadowColor 画，透明度才可调；默认 = 原样纯黑
     shadowAlpha: Float = 0.6f,
@@ -715,6 +721,8 @@ fun OverlaySheet(
                                 confirmEnabled = confirmEnabled,
                                 confirmIcon = confirmIcon,
                                 confirmIconSize = confirmIconSize,
+                                confirmContainerColor = confirmContainerColor,
+                                confirmContentColor = confirmContentColor,
                                 onConfirm = { if (!closeRequested && confirmEnabled) onConfirm() },
                                 rightAction = guardedRightAction,
                                 confirmAtEnd = confirmAtEnd,
@@ -803,6 +811,8 @@ private fun OverlaySheetTopBar(
     confirmEnabled: Boolean = true,
     confirmIcon: Int,
     confirmIconSize: Dp = 30.dp,
+    confirmContainerColor: Color? = null,
+    confirmContentColor: Color? = null,
     onConfirm: () -> Unit,
     rightAction: SheetTopAction,
     confirmAtEnd: Boolean = false,
@@ -813,14 +823,16 @@ private fun OverlaySheetTopBar(
     modifier: Modifier = Modifier,
 ) {
     // 玻璃染色后底材偏暗：primary 确认胶囊换玻璃前景色；白色玻璃动作胶囊沿用原内容色。
-    // 确认不可用（如选择列表未勾选）时按项目置灰语义：白底 + negative 内容色
-    val confirmContainerColor = if (confirmEnabled) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.surface
+    // 确认不可用（如选择列表未勾选）时按项目置灰语义：白底 + negative 内容色。
+    // 调用方覆盖配色时优先用覆盖值（如 AI 对话「对话」胶囊与「关闭」胶囊同款）
+    val resolvedConfirmContainerColor = when {
+        !confirmEnabled -> MaterialTheme.colorScheme.surface
+        confirmContainerColor != null -> confirmContainerColor
+        else -> MaterialTheme.colorScheme.primary
     }
-    val confirmContentColor = when {
+    val resolvedConfirmContentColor = when {
         !confirmEnabled -> MaterialTheme.classppColors.negative
+        confirmContentColor != null -> confirmContentColor
         buttonBackdrop != null -> MaterialTheme.classppColors.onPrimaryGlass
         else -> MaterialTheme.colorScheme.onPrimary
     }
@@ -923,8 +935,8 @@ private fun OverlaySheetTopBar(
                     SheetPillButton(
                         label = confirmLabel,
                         icon = confirmIcon,
-                        containerColor = confirmContainerColor,
-                        contentColor = confirmContentColor,
+                        containerColor = resolvedConfirmContainerColor,
+                        contentColor = resolvedConfirmContentColor,
                         modifier = Modifier.height(TopBarPillHeight),
                         iconSize = confirmIconSize,
                         iconAtEnd = true,
@@ -936,8 +948,8 @@ private fun OverlaySheetTopBar(
                     SheetPillButton(
                         label = confirmLabel,
                         icon = confirmIcon,
-                        containerColor = confirmContainerColor,
-                        contentColor = confirmContentColor,
+                        containerColor = resolvedConfirmContainerColor,
+                        contentColor = resolvedConfirmContentColor,
                         modifier = Modifier.height(TopBarPillHeight),
                         iconSize = confirmIconSize,
                         enabled = confirmEnabled,

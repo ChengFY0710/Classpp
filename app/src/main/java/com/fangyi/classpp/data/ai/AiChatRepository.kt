@@ -280,6 +280,13 @@ class AiChatRepository internal constructor(
     private val _messages = MutableStateFlow<List<AiChatMessage>>(emptyList())
     val messages: StateFlow<List<AiChatMessage>> = _messages.asStateFlow()
 
+    /**
+     * 输入栏未发送的草稿：只存进程内存（不落盘、不进备份）——收起 AI 浮层后重新打开
+     * 仍在，应用被彻底关闭（进程结束）才清空。发送成功后由浮层显式清空。
+     */
+    private val _inputDraft = MutableStateFlow("")
+    val inputDraft: StateFlow<String> = _inputDraft.asStateFlow()
+
     private val _loadState = MutableStateFlow(LoadState.Ready)
     val loadState: StateFlow<LoadState> = _loadState.asStateFlow()
 
@@ -526,6 +533,11 @@ class AiChatRepository internal constructor(
     )
 
     // ---------- 对话 ----------
+
+    /** 同步输入栏草稿（浮层键入时调用）：仅进程内存，语义见 [inputDraft] */
+    fun updateInputDraft(text: String) {
+        _inputDraft.value = text
+    }
 
     /**
      * UI 发送入口：Job 归仓库所有（不随浮层卸载/旋转取消），返回 null 表示已有

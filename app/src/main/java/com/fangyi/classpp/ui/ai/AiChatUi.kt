@@ -88,7 +88,7 @@ import com.fangyi.classpp.ui.theme.classppColors
 // ---------- 消息气泡 ----------
 
 /**
- * 一条消息气泡：user 右对齐（primary 底 / onPrimary 字）/ assistant 左对齐（surface 底 / onSurface 字）。
+ * 一条消息气泡：user 右对齐（surface 底 / primary 字）/ assistant 左对齐（surface 底 / onSurface 字）。
  * 正文统一 16sp；assistant 内容按 GFM Markdown 渲染（见 [ChatMarkdown]），user 内容为纯文本。
  * assistant 气泡在页边距内撑满宽度，user 气泡按内容自适应（上限 320dp）。
  * 两种气泡的正文都支持长按选择与复制：每个气泡一个独立的 [SelectionContainer]，
@@ -148,30 +148,18 @@ internal fun AiChatMessageBubble(
     // 有工具轮次时即使正文为空也要渲染工具卡
     if (!hasTools && hasTodos && content.isEmpty() && message.reasoning.isEmpty()) return
     val showBubble = hasTools || !(hasTodos && content.isEmpty())
-    val bubbleColor = if (isUser) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.surface
-    }
+    val bubbleColor = MaterialTheme.colorScheme.surface
     val contentColor = if (isUser) {
-        MaterialTheme.colorScheme.onPrimary
+        MaterialTheme.colorScheme.primary
     } else {
         MaterialTheme.colorScheme.onSurface
     }
     val shape = ChatCardShape
-    // 选中高亮：assistant 白底用 primary 40%（项目「选中用 primary」口径）；
-    // user 蓝底上 primary 40% 与底色同色、几乎看不出，改用 onPrimary 30% 的白晕
-    val selectionColors = if (isUser) {
-        TextSelectionColors(
-            handleColor = contentColor,
-            backgroundColor = contentColor.copy(alpha = 0.3f),
-        )
-    } else {
-        TextSelectionColors(
-            handleColor = MaterialTheme.colorScheme.primary,
-            backgroundColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
-        )
-    }
+    // 选中高亮：user 与 assistant 的白底气泡统一用 primary 40%（项目「选中用 primary」口径）
+    val selectionColors = TextSelectionColors(
+        handleColor = MaterialTheme.colorScheme.primary,
+        backgroundColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+    )
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
