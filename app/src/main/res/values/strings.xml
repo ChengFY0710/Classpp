@@ -1298,4 +1298,11 @@
     <string name="widget_preview_location_1">学武楼 C201</string>
     <string name="widget_preview_location_2">学武楼 A206</string>
     <string name="widget_preview_location_3">学武楼 B101</string>
+
+    <!-- 网页地址栏：UA 切换菜单与无障碍文案 -->
+    <string name="web_address_ua_desktop">电脑版</string>
+    <string name="web_address_ua_mobile">手机版</string>
+    <string name="cd_web_address_open">打开网址</string>
+    <string name="cd_web_address_more">切换手机或电脑版</string>
+    <string name="cd_web_address_loading">正在加载</string>
 </resources>

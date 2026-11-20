@@ -157,6 +157,55 @@ private fun SheetSearchFieldPreview() = ClassppTheme {
 
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
 @Composable
+private fun WebAddressBarPreview() = ClassppTheme {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // 空值：灰色 globe + 占位，右侧不显示按钮；点入后蓝色聚焦描边生长
+        WebAddressBar(
+            value = "",
+            onValueChange = {},
+            onOpen = {},
+            placeholder = "输入网址",
+            desktopMode = true,
+            onDesktopModeChange = {},
+        )
+        // 已输入、尚未跳转：右侧 primary 前往箭头
+        WebAddressBar(
+            value = "https://jw.xmu.edu.cn",
+            onValueChange = {},
+            onOpen = {},
+            placeholder = "输入网址",
+            desktopMode = true,
+            onDesktopModeChange = {},
+        )
+        // 已跳转、未聚焦：右侧 primary 更多按钮（点击弹出 UA 菜单）
+        WebAddressBar(
+            value = "https://jw.xmu.edu.cn",
+            onValueChange = {},
+            onOpen = {},
+            openedUrl = "https://jw.xmu.edu.cn",
+            desktopMode = true,
+            onDesktopModeChange = {},
+        )
+        // 加载中：左侧 globe 换成 primary 加载圆环，右侧保持更多
+        WebAddressBar(
+            value = "https://jw.xmu.edu.cn",
+            onValueChange = {},
+            onOpen = {},
+            openedUrl = "https://jw.xmu.edu.cn",
+            loading = true,
+            desktopMode = true,
+            onDesktopModeChange = {},
+        )
+    }
+}
+
+@Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390)
+@Composable
 private fun RowChoiceCardPreview() = ClassppTheme {
     Column(
         modifier = Modifier

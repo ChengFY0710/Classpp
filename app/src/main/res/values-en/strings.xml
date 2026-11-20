@@ -1296,4 +1296,11 @@
     <string name="widget_preview_location_1">Xuewu Bldg C201</string>
     <string name="widget_preview_location_2">Xuewu Bldg A206</string>
     <string name="widget_preview_location_3">Xuewu Bldg B101</string>
+
+    <!-- Web address bar: UA switch menu and accessibility labels -->
+    <string name="web_address_ua_desktop">Desktop</string>
+    <string name="web_address_ua_mobile">Mobile</string>
+    <string name="cd_web_address_open">Open URL</string>
+    <string name="cd_web_address_more">Switch between mobile and desktop</string>
+    <string name="cd_web_address_loading">Loading</string>
 </resources>
