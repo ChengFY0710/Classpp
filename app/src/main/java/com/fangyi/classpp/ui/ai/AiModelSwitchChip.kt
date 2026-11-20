@@ -58,7 +58,7 @@ internal val ModelSwitchChipHeight = 36.dp
 internal val ModelSwitchChipGap = 10.dp
 
 /** 同一排两枚胶囊之间的间距（模型 + 思考强度） */
-internal val SwitchChipSpacing = 8.dp
+internal val SwitchChipSpacing = 10.dp
 
 /** 非 focusable 菜单收起后极短窗口内忽略胶囊的「打开」请求（同 SettingsCard.SelectMenu） */
 private const val MenuReopenGuardMillis = 200L
@@ -79,7 +79,7 @@ private val SwitchChipGlassShadow = Shadow(
 )
 
 /**
- * 对话浮层输入栏上方的模型切换胶囊：行首脑图标 + 当前模型名，点开列出本方案保存的模型
+ * 对话浮层输入栏上方的模型切换胶囊：行首机器人图标 + 当前模型名，点开列出本方案保存的模型
  * （骨架与交互见 [SwitchChip]）。
  *
  * 只在本方案至少有两个模型时由宿主渲染（见 AI 对话浮层）；切换经
@@ -98,7 +98,7 @@ fun AiModelSwitchChip(
     val switchDescription = stringResource(R.string.cd_ai_switch_model, currentModel)
     SwitchChip(
         label = currentModel,
-        iconRes = R.drawable.ic_brain_sparkle,
+        iconRes = R.drawable.ic_bot_sparkle,
         contentDescription = switchDescription,
         enabled = enabled,
         hazeState = hazeState,
@@ -121,6 +121,9 @@ fun AiModelSwitchChip(
  * 等级为「关」，选中它时不开启思考；始终思考的模型族（Kimi K3、GLM-5.3）首档只是
  * 最低强度，[offSupported] 传 false 后文案不再出现「关」。
  *
+ * 胶囊只展示等级本身（如「最高」），「思考强度」这层含义由无障碍描述
+ * （[R.string.cd_ai_switch_reasoning]）承载，视觉上不重复。
+ *
  * 只在该模型配置了多个推理等级时由宿主渲染；切换经 [onSwitch] 交给仓库落库。
  */
 @Composable
@@ -136,8 +139,8 @@ fun AiReasoningSwitchChip(
 ) {
     val currentLabel = reasoningIntensityLabel(levels, currentLevel, offSupported)
     SwitchChip(
-        label = stringResource(R.string.ai_reasoning_chip_value, currentLabel),
-        iconRes = R.drawable.ic_ai,
+        label = currentLabel,
+        iconRes = R.drawable.ic_brain_sparkle,
         contentDescription = stringResource(R.string.cd_ai_switch_reasoning, currentLabel),
         enabled = enabled,
         hazeState = hazeState,

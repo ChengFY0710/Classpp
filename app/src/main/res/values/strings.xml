@@ -1239,7 +1239,6 @@
     <string name="ai_model_fetch_not_found">服务地址不支持拉取模型列表，请检查地址</string>
     <string name="cd_ai_switch_model">切换模型，当前 %1$s</string>
     <string name="cd_ai_switch_reasoning">切换思考强度，当前 %1$s</string>
-    <string name="ai_reasoning_chip_value">思考强度 %1$s</string>
     <string name="ai_reasoning_level_off">关</string>
     <string name="ai_reasoning_level_on">开启</string>
     <string name="ai_reasoning_level_low">低</string>

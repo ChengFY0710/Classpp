@@ -1241,7 +1241,6 @@
     <string name="ai_model_fetch_not_found">This service URL doesn\'t support listing models — check the URL</string>
     <string name="cd_ai_switch_model">Switch model, current: %1$s</string>
     <string name="cd_ai_switch_reasoning">Switch thinking intensity, current: %1$s</string>
-    <string name="ai_reasoning_chip_value">Thinking %1$s</string>
     <string name="ai_reasoning_level_off">Off</string>
     <string name="ai_reasoning_level_on">On</string>
     <string name="ai_reasoning_level_low">Low</string>
