@@ -16,7 +16,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.ai.ChatMarkdown
-import com.fangyi.classpp.ui.ai.ChatMarkdownMode
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
@@ -40,10 +39,11 @@ internal enum class AboutDocument(
 /**
  * 关于页文档浮层：免责声明 / 开源协议 / 隐私与政策共用。
  *
- * 视觉对齐 AI 回答气泡：正文复用 [ChatMarkdown] 的 Markdown 渲染与
- * [ClassppTextTokens.chatBody] 等字号 token，外层是统一白卡 [SheetCard]
- * （默认 [com.fangyi.classpp.ui.components.SheetCardPadding]，左右 16 / 上下 14）。
- * 整篇文档放在一张卡内，由 [OverlaySheet] 统一滚动；浮层无输入框，键盘不必让位。
+ * 与 AI 回答气泡同源（[ChatMarkdown] 的 Chat 模式）：标题层级、块间距与字距都和
+ * AI 对话的 Markdown 渲染一致，正文复用 [ClassppTextTokens.chatBody] 等字号 token；
+ * 外层是统一白卡 [SheetCard]（默认 [com.fangyi.classpp.ui.components.SheetCardPadding]，
+ * 左右 16 / 上下 14）。整篇文档放在一张卡内，由 [OverlaySheet] 统一滚动；浮层无输入框，
+ * 键盘不必让位。
  */
 @Composable
 internal fun AboutDocumentSheet(
@@ -88,10 +88,10 @@ internal fun AboutDocumentSheet(
                     )
                 } else {
                     SelectionContainer {
+                        // 不传 mode：默认 Chat 模式，与 AI 对话的 Markdown 排版完全一致
                         ChatMarkdown(
                             content = markdown,
                             modifier = Modifier.fillMaxWidth(),
-                            mode = ChatMarkdownMode.Document,
                         )
                     }
                 }

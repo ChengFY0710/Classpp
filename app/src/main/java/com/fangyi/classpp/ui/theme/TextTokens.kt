@@ -15,7 +15,9 @@ import androidx.compose.ui.unit.sp
  *   与选择方格中文标签（[weekCellChinese]）；
  *   `40sp` 仅横向数字滚轮（[horizontalWheelNumber]）。
  * - 中文正文/描述字距统一 `0sp`；只有 ≥20sp 的展示标题保留负字距，
- *   14sp 动作标签（[actionLabel]）用 `0.8sp` 正字距补齐小字可读性。
+ *   14sp 动作标签（[actionLabel]）用 `0.8sp` 正字距补齐小字可读性，
+ * AI 对话与「用前须知」文档的 Markdown（Chat 模式）另经
+ *   [withChatMarkdownLetterSpacing] 派生 `0.3sp` 正字距。
  * - token 只描述字号 / 字重 / 行高 / 字距 / 字体家族，不包含颜色；颜色仍由
  *   `MaterialTheme.colorScheme` / `ClassppColors` 在调用处或 [ClassppTextStyles] 中派生。
  * - `Text` 未显式传 `style` 时会继承 `LocalTextStyle`（[Typography.bodyLarge]：
@@ -206,3 +208,21 @@ object ClassppTextTokens {
  * 时间、倒计时、数字滚轮统一使用。
  */
 fun TextStyle.tabularNumbers(): TextStyle = copy(fontFeatureSettings = "tnum")
+
+/**
+ * AI 对话 Markdown 的统一正字距：0.3sp，仅 Chat 模式使用。
+ *
+ * 对话气泡承载的是中文长段落，token 统一 `0sp` 在连排时略显紧。这里只给自然语言
+ * 文本（段落、标题、列表、引用、表格）加一点正字距；行内代码与围栏代码保持 `0sp`，
+ * 等宽字符本身已有固定步进。关于页文档（Document 模式）不套用。
+ */
+private val ChatMarkdownLetterSpacing = 0.3.sp
+
+/**
+ * 给 AI 对话 Markdown 的自然语言样式补上统一正字距。
+ *
+ * 与 [tabularNumbers] 一样，派生只发生在 `ui/theme`：业务代码禁止裸 `letterSpacing`，
+ * 由 `ChatMarkdown` 按 Chat / Document 模式决定是否调用。
+ */
+fun TextStyle.withChatMarkdownLetterSpacing(): TextStyle =
+    copy(letterSpacing = ChatMarkdownLetterSpacing)

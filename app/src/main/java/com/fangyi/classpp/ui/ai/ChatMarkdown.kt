@@ -15,12 +15,14 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.chatMarkdownExtendedSpans
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.withChatMarkdownLetterSpacing
 import com.mikepenz.markdown.annotator.AnnotatorSettings
 import com.mikepenz.markdown.annotator.DefaultAnnotatorSettings
 import com.mikepenz.markdown.annotator.buildMarkdownAnnotatedString
@@ -48,8 +50,9 @@ private val NoTextSizeAnimation = DefaultMarkdownAnimation(animateTextSize = { t
 
 /**
  * Markdown 渲染的两种排版上下文：
- * - [Chat]：AI 对话气泡，流式、短段落，块间距收紧；
- * - [Document]：关于页法律文档 / 更新日志，长文档，标题层级更重、块间距更松。
+ * - [Chat]：AI 对话气泡与「用前须知」文档浮层（免责声明 / 开源协议 / 隐私与政策），
+ *   标题更轻、块间距收紧，与对话气泡完全同源；
+ * - [Document]：关于页更新日志，长文档，标题层级更重、块间距更松。
  */
 internal enum class ChatMarkdownMode { Chat, Document }
 
@@ -75,6 +78,9 @@ internal fun ChatMarkdown(
     modifier: Modifier = Modifier,
     mode: ChatMarkdownMode = ChatMarkdownMode.Chat,
 ) {
+    // 解析器会把 CRLF 的空白行拆成「EOL + 空 PARAGRAPH + EOL」，空段落按段落行高渲染出
+    // 一整行空白（标题与列表之间因此出现大段空隙）；先规范为 LF 再解析。
+    val markdownContent = remember(content) { content.normalizedLineEndings() }
     val colors = markdownColor(
         // AI 气泡 Surface 的内容色 = onSurface，行内文字/表格/引用统一跟它走
         text = LocalContentColor.current,
@@ -92,38 +98,41 @@ internal fun ChatMarkdown(
             textDecoration = TextDecoration.Underline,
         ),
     )
+    // Chat 模式的自然语言文本补统一正字距（见 [withChatMarkdownLetterSpacing]）：对话气泡里的
+    // 中文长段落连排偏紧；Document 模式（更新日志）是长文档排版，保持 token 原值。
+    // 行内代码与代码块不加，等宽字符本身已有固定步进。
     val typography = markdownTypography(
-        text = ClassppTextTokens.chatBody,
+        text = ClassppTextTokens.chatBody.markdownSpacing(mode),
         code = ClassppTextTokens.chatCodeBlock,
         inlineCode = ClassppTextTokens.chatInlineCode,
         h1 = when (mode) {
             ChatMarkdownMode.Chat -> ClassppTextTokens.chatHeading1
             ChatMarkdownMode.Document -> ClassppTextTokens.detailTitle
-        },
+        }.markdownSpacing(mode),
         h2 = when (mode) {
             ChatMarkdownMode.Chat -> ClassppTextTokens.chatHeading2
             ChatMarkdownMode.Document -> ClassppTextTokens.sheetTitle
-        },
+        }.markdownSpacing(mode),
         h3 = when (mode) {
             ChatMarkdownMode.Chat -> ClassppTextTokens.chatHeading3
             // 文档模式的 ## 是顶层章节，### 提高一档，与正文拉开
             ChatMarkdownMode.Document -> ClassppTextTokens.chatHeading2
-        },
-        h4 = ClassppTextTokens.chatHeading4,
-        h5 = ClassppTextTokens.chatHeading4,
-        h6 = ClassppTextTokens.chatHeading4,
+        }.markdownSpacing(mode),
+        h4 = ClassppTextTokens.chatHeading4.markdownSpacing(mode),
+        h5 = ClassppTextTokens.chatHeading4.markdownSpacing(mode),
+        h6 = ClassppTextTokens.chatHeading4.markdownSpacing(mode),
         // 库只用 quote.color 画引用 bar；引用正文由自定义 blockQuote 在子树内换成 secondaryText
-        quote = ClassppTextTokens.chatBody.copy(
-            color = MaterialTheme.classppColors.secondaryText,
-        ),
-        paragraph = ClassppTextTokens.chatBody,
-        ordered = ClassppTextTokens.chatBody,
-        bullet = ClassppTextTokens.chatBody,
-        list = ClassppTextTokens.chatBody,
-        table = ClassppTextTokens.chatTable,
+        quote = ClassppTextTokens.chatBody
+            .copy(color = MaterialTheme.classppColors.secondaryText)
+            .markdownSpacing(mode),
+        paragraph = ClassppTextTokens.chatBody.markdownSpacing(mode),
+        ordered = ClassppTextTokens.chatBody.markdownSpacing(mode),
+        bullet = ClassppTextTokens.chatBody.markdownSpacing(mode),
+        list = ClassppTextTokens.chatBody.markdownSpacing(mode),
+        table = ClassppTextTokens.chatTable.markdownSpacing(mode),
         // 链接色不能进 token（token 不含颜色），在调用处按主题取 primary
         textLink = textLink,
-        alertTitle = ClassppTextTokens.chatHeading3,
+        alertTitle = ClassppTextTokens.chatHeading3.markdownSpacing(mode),
     )
     val padding = markdownPadding(
         block = when (mode) {
@@ -172,7 +181,7 @@ internal fun ChatMarkdown(
     CompositionLocalProvider(LocalMarkdownA11yLabels provides markdownA11yLabels()) {
         Markdown(
             markdownState = rememberMarkdownState(
-                content = content,
+                content = markdownContent,
                 retainState = true,
                 immediate = true,
                 referenceLinkHandler = referenceLinks,
@@ -191,16 +200,16 @@ internal fun ChatMarkdown(
             // 正常不会走到（immediate + retainState），万一 Loading 也先显示原文而不是空白
             loading = { loadingModifier ->
                 Text(
-                    text = content,
-                    style = ClassppTextTokens.chatBody,
+                    text = markdownContent,
+                    style = ClassppTextTokens.chatBody.markdownSpacing(mode),
                     modifier = loadingModifier,
                 )
             },
             // 解析失败时退回原文：宁可露出标记，也不要让回复消失
             error = { errorModifier ->
                 Text(
-                    text = content,
-                    style = ClassppTextTokens.chatBody,
+                    text = markdownContent,
+                    style = ClassppTextTokens.chatBody.markdownSpacing(mode),
                     modifier = errorModifier,
                 )
             },
@@ -253,6 +262,23 @@ internal fun chatMarkdownAnnotatorSettings(
     linkInteractionListener = linkInteractionListener,
     highlightSpanStyle = highlightStyle,
 )
+
+/**
+ * CRLF / 孤立 CR 统一规范为 LF。
+ *
+ * 解析器会把 CRLF 的空白行解析成「EOL + 空 PARAGRAPH + EOL」，空 PARAGRAPH 会按
+ * `chatBody` 的行高渲染出一整行空白，标题与列表之间因此多出约 24sp 的空隙。
+ * 仓库里的 raw markdown 在 Windows 上会被 checkout 成 CRLF，需在解析前抹平。
+ */
+private fun String.normalizedLineEndings(): String =
+    if ('\r' !in this) this else replace("\r\n", "\n").replace('\r', '\n')
+
+/**
+ * Chat 模式给 Markdown 自然语言样式（段落/标题/列表/引用/表格）补统一正字距；
+ * Document 模式（更新日志）保持 token 原值。
+ */
+internal fun TextStyle.markdownSpacing(mode: ChatMarkdownMode): TextStyle =
+    if (mode == ChatMarkdownMode.Chat) withChatMarkdownLetterSpacing() else this
 
 /** Chat 模式块间距：4dp，段落/代码块/表格之间不再黏连。 */
 private val MarkdownChatBlockSpacing = 4.dp

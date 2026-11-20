@@ -73,7 +73,7 @@ internal fun rememberChatMarkdownComponents(mode: ChatMarkdownMode): MarkdownCom
                 MarkdownCheckBox(model.content, model.node, model.typography.text)
             },
             blockQuote = { model -> ChatMarkdownBlockQuote(model) },
-            table = { model -> ChatMarkdownTable(model) },
+            table = { model -> ChatMarkdownTable(model, mode) },
             heading1 = { model ->
                 ChatMarkdownHeading(model, model.typography.h1, majorHeadingTop)
             },
@@ -143,14 +143,14 @@ private fun ChatMarkdownBlockQuote(model: MarkdownComponentModel) {
  * 行仍复用 `MarkdownTableRow`，只把 `maxLines` 放宽到 3、垂直对齐改为顶部。
  */
 @Composable
-private fun ChatMarkdownTable(model: MarkdownComponentModel) {
+private fun ChatMarkdownTable(model: MarkdownComponentModel, mode: ChatMarkdownMode) {
     MarkdownTable(
         model.content,
         model.node,
         model.typography.table,
         annotatorSettings(),
         headerBlock = { content, header, tableWidth, _ ->
-            ChatMarkdownTableHeader(content, header, tableWidth)
+            ChatMarkdownTableHeader(content, header, tableWidth, mode)
         },
         rowBlock = { content, row, tableWidth, style ->
             MarkdownTableRow(
@@ -180,6 +180,7 @@ private fun ChatMarkdownTableHeader(
     content: String,
     header: ASTNode,
     tableWidth: Dp,
+    mode: ChatMarkdownMode,
 ) {
     val cellPadding = LocalMarkdownDimens.current.tableCellPadding
     Row(
@@ -206,7 +207,7 @@ private fun ChatMarkdownTableHeader(
                 MarkdownTableBasicText(
                     content = content,
                     cell = cell,
-                    style = ClassppTextTokens.chatTableHeader,
+                    style = ClassppTextTokens.chatTableHeader.markdownSpacing(mode),
                     maxLines = MarkdownTableCellMaxLines,
                     overflow = TextOverflow.Ellipsis,
                     annotatorSettings = annotatorSettings(),
