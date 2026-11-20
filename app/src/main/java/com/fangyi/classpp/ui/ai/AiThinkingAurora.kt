@@ -104,9 +104,11 @@ enum class AiAuroraAnchor { Bottom, Center }
  * 可见区域底边（`height - imeReservePx`），键盘弹起时渐隐带不会被 IME 预留撑长。
  *
  * 玻璃采样：本组件不创建 Backdrop。宿主若要让输入栏玻璃透出光场颜色，需把本组件包在
- * 一个挂了 `layerBackdrop` 的节点里（采样层须在输入栏之外，避免读写同一层的反馈环），
- * 再把该 Backdrop 传给玻璃组件；玻璃关闭/API<31 时传 null 即可回退实心底。光场隐藏
- * （reveal = 0）时采样层只剩宿主底色，玻璃自然回退为素色。
+ * 一个挂了 `layerBackdrop` 的节点里（采样层须在输入栏之外，避免读写同一层的反馈环）；
+ * 本组件只画光斑、四周全透明，采样层直接用默认透明记录即可（不要再垫宿主底色），
+ * 再与内容列采样层经 `rememberCombinedBackdrop` 叠起来交给玻璃组件——玻璃后同时透出
+ * 消息内容与光球。玻璃关闭/API<31 时传 null 即可回退实心底；光场隐藏（reveal = 0）
+ * 时该层零绘制，玻璃只剩内容列。
  *
  * 色值只允许经 [ClassppColors.aiAuroraBlue] / [ClassppColors.aiAuroraCyan] /
  * [ClassppColors.aiAuroraMint] / [ClassppColors.aiAuroraLime] 取用；这是全 app 唯一的

@@ -42,6 +42,9 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -73,6 +76,7 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.ui.components.AiChatInputBar
 import com.fangyi.classpp.ui.components.LoadingOverlay
+import com.fangyi.classpp.ui.components.LocalOverlayBottomGlassBackdrop
 import com.fangyi.classpp.ui.components.LocalOverlayBottomHazeState
 import com.fangyi.classpp.ui.components.OverlaySheet
 import com.fangyi.classpp.ui.components.SheetImeBehavior
@@ -94,9 +98,10 @@ import com.fangyi.classpp.ui.theme.LocalNavigationBarInsets
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
-import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import dev.chrisbanes.haze.HazeState
 import java.io.File
 import java.util.UUID
@@ -114,6 +119,16 @@ import kotlinx.coroutines.withContext
  */
 private val AuroraHeadroom = 120.dp
 
+/**
+ * 底部渐变遮罩：整段都是渐隐、没有实心段——从钉底槽顶再往上多画 [BottomScrimExtend]，
+ * 高度比未延展时略高一点；颜色由透明线性过渡到 [BottomScrimMaxAlpha] 的浅底色，
+ * 输入框与胶囊始终落在渐隐段里。
+ */
+private val BottomScrimExtend = 32.dp
+
+/** 底部渐隐遮罩的最大不透明度*/
+private const val BottomScrimMaxAlpha = 1.0f
+
 /** 拍照临时文件目录名（cacheDir 下；FileProvider 只对这一段授权给系统相机写入） */
 private const val CaptureDirName = "ai_capture"
 
@@ -129,8 +144,9 @@ private const val CaptureDirName = "ai_capture"
  * 消息列表走浮层自带滚动列（onScrollStateReady 接管 ScrollState 做自动滚底），
  * 输入栏钉底（bottomScrim = false，底部光场/渐隐/导航栏留白自绘并随键盘上移）——
  * 光场由 [AiThinkingAurora] 绘制，只在 AI 思考 / 回答（sending）期间自输入栏后方上浮
- * 出现并缓慢游动，结束即下沉淡出、空闲完全不绘制；输入栏玻璃采样
- * 光场层（见底部槽的 layerBackdrop），玻璃关闭/API<31 时回退实心底。
+ * 出现并缓慢游动，结束即下沉淡出、空闲完全不绘制；输入栏玻璃同时采样光场层
+ * （底部槽的透明 layerBackdrop）与消息内容列（OverlaySheet 的内容采样层），玻璃后
+ * 同时透出消息与光球，玻璃关闭/API<31 时回退实心底。
  * 无消息空态（含未配置引导）里内容列没有输入框，浮层切 [SheetImeBehavior.IgnoreIme]：
  * 键盘弹起时内容不追加 IME 余量、空态不避让键盘；滚动容器与橡皮筋过滚动保留。
  * 有消息时恢复 [SheetImeBehavior.ContentScroll] 只为尾部余量：「输入框随内容列滚到键盘
@@ -247,11 +263,13 @@ fun AiChatOverlay(
     val tags by tagRepository?.tags?.collectAsState()
         ?: remember { mutableStateOf(emptyList<TagEntry>()) }
 
-    // 底部光场的玻璃采样层：光场节点挂 layerBackdrop，输入栏在该节点之外采样，
-    // 不会出现读写同一层的反馈环。玻璃关闭 / API<31 时为 null，输入栏回退现有实心底。
+    // 底部玻璃采样：光场节点挂一层透明底 layerBackdrop（只录光斑，不录底色），
+    // 内容列（message list）由 OverlaySheet 的 glass backdrop 采样（卡片底色 + 消息内容）。
+    // 输入栏与胶囊在钉底槽里把两层 CombinedBackdrop 叠起来采样，玻璃后同时透出消息内容
+    // 与光球颜色；两层都在消费节点之外，不会出现读写同一层的反馈环。
+    // 玻璃关闭 / API<31 时为 null，输入栏回退现有实心底。
     val glassEnabled = isGlassStyleEnabled()
-    val auroraBackdrop = rememberGlassBackdrop(MaterialTheme.colorScheme.background)
-        .takeIf { glassEnabled }
+    val auroraBackdrop = rememberLayerBackdrop().takeIf { glassEnabled }
     val density = LocalDensity.current
     // 键盘高出导航栏的预留：光场把可见底边锚在键盘上沿，渐隐带不被 IME 预留撑长
     val imeBottomPx = WindowInsets.ime.getBottom(density)
@@ -850,6 +868,15 @@ fun AiChatOverlay(
         bottomContent = {
             // 与顶栏同源的 Haze 采样状态（供附件菜单 / 模型菜单跨 Popup 窗口做磨砂）
             val bottomHazeState = LocalOverlayBottomHazeState.current
+            // 底部玻璃采样层 = 内容列（OverlaySheet 下发：卡片底色 + 消息列表）
+            // + 光场（本层透明采样）。顺序即屏幕 z 序：内容在下、光球在上
+            val contentBackdrop = LocalOverlayBottomGlassBackdrop.current
+            val bottomGlassBackdrop =
+                if (auroraBackdrop != null && contentBackdrop != null) {
+                    rememberCombinedBackdrop(contentBackdrop, auroraBackdrop)
+                } else {
+                    null
+                }
             // 模型胶囊只在本方案保存了多个模型时出现：单模型保持原输入栏布局；
             // 思考强度胶囊只在该模型配置了多个推理等级时出现，与模型胶囊同排
             val modelOptions = activeConnection.modelOptions
@@ -868,22 +895,32 @@ fun AiChatOverlay(
             } else {
                 0.dp
             }
+            // 底部渐隐遮罩：整段只有渐隐、没有实心段，高度比槽本身略高一点；
+            // 用 drawBehind 向上溢出绘制，槽的测量高度与光场构图保持不变，
+            // 输入框与胶囊落在渐隐段里，槽顶以上的部分盖在消息列尾部让文字更早淡出
+            val scrimColor = MaterialTheme.colorScheme.background
+            val scrimExtendPx = with(density) { BottomScrimExtend.toPx() }
             // 钉底光场 + 输入栏：光场画在 scrim 之上、输入栏之下；输入栏玻璃采样光场层。
             // inset 消费顺序：底部导航栏让位先吃掉小白条，imePadding 补键盘高出
             // 导航栏的部分。光场自身不参与 inset，随整个槽一起被键盘顶起。
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // 消息从光场下方淡出：底段到不透明，保证文字不透过彩色光场
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.background.copy(alpha = 0f),
-                                MaterialTheme.colorScheme.background.copy(alpha = 0.55f),
-                                MaterialTheme.colorScheme.background,
+                    // 消息从光场下方淡出：全程渐隐到最后也只有 60% 底色，不出现实心段
+                    .drawBehind {
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                listOf(
+                                    scrimColor.copy(alpha = 0f),
+                                    scrimColor.copy(alpha = BottomScrimMaxAlpha),
+                                ),
+                                startY = -scrimExtendPx,
+                                endY = size.height,
                             ),
-                        ),
-                    ),
+                            topLeft = Offset(0f, -scrimExtendPx),
+                            size = Size(size.width, size.height + scrimExtendPx),
+                        )
+                    },
             ) {
                 Box(
                     modifier = Modifier
@@ -925,9 +962,9 @@ fun AiChatOverlay(
                                     // 发送中禁用：回答期间不切模型，避免「这条回复用的哪个模型」歧义
                                     enabled = !sending,
                                     hazeState = bottomHazeState,
-                                    // 与输入栏同源的玻璃采样层：玻璃关闭 / API<31 时为 null，
-                                    // 胶囊回退实心 surface 底
-                                    backdrop = auroraBackdrop,
+                                    // 与输入栏同源的玻璃采样层（内容列 + 光球）：玻璃关闭 /
+                                    // API<31 时为 null，胶囊回退实心 surface 底
+                                    backdrop = bottomGlassBackdrop,
                                     onSwitch = { model ->
                                         scope.launch {
                                             val repository = aiChatRepository
@@ -945,7 +982,7 @@ fun AiChatOverlay(
                                     // 发送中禁用：回答期间不切强度，避免这条回复的思考档位歧义
                                     enabled = !sending,
                                     hazeState = bottomHazeState,
-                                    backdrop = auroraBackdrop,
+                                    backdrop = bottomGlassBackdrop,
                                     offSupported = reasoningOffSupported,
                                     onSwitch = { level ->
                                         scope.launch {
@@ -974,7 +1011,7 @@ fun AiChatOverlay(
                         onAddImage = ::launchGallery,
                         onRemoveImage = ::removePendingImage,
                         hazeState = bottomHazeState,
-                        backdrop = auroraBackdrop,
+                        backdrop = bottomGlassBackdrop,
                     )
                 }
             }
