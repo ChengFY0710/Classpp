@@ -80,11 +80,11 @@ object ClassppTextTokens {
     val secondaryTextLarge = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** AI 对话气泡正文：16sp Normal，行高 24 与 bodyLarge 同节奏；用户/AI 消息同档。 */
     val chatBody = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal, lineHeight = 24.sp, letterSpacing = 0.sp)
-    /** AI 对话 Markdown 一级标题：20sp SemiBold。 */
-    val chatHeading1 = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp, letterSpacing = 0.sp)
-    /** AI 对话 Markdown 二级标题：16sp SemiBold。 */
-    val chatHeading2 = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp, letterSpacing = 0.sp)
-    /** AI 对话 Markdown 三级标题：16sp Medium；四级及以下走 [chatHeading4]。 */
+    /** AI 对话 / 关于页文档 Markdown 一级标题：23sp SemiBold，与详情页标题同档。 */
+    val chatHeading1 = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.SemiBold, lineHeight = 28.sp, letterSpacing = 0.sp)
+    /** AI 对话 / 关于页文档 Markdown 二级标题：20sp SemiBold，与浮层标题同档。 */
+    val chatHeading2 = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, lineHeight = 24.sp, letterSpacing = 0.sp)
+    /** AI 对话 / 关于页文档 Markdown 三级标题：16sp Medium；四级及以下走 [chatHeading4]。 */
     val chatHeading3 = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium, lineHeight = 24.sp, letterSpacing = 0.sp)
     /** Markdown 四级及以下标题：14sp Medium，h4/h5/h6 共用，靠字号与 h3 分层。 */
     val chatHeading4 = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp, letterSpacing = 0.sp)

@@ -51,8 +51,8 @@ private val NoTextSizeAnimation = DefaultMarkdownAnimation(animateTextSize = { t
 /**
  * Markdown 渲染的两种排版上下文：
  * - [Chat]：AI 对话气泡与「用前须知」文档浮层（免责声明 / 开源协议 / 隐私与政策），
- *   标题更轻、块间距收紧，与对话气泡完全同源；
- * - [Document]：关于页更新日志，长文档，标题层级更重、块间距更松。
+ *   块间距收紧、自然语言文本带正字距，与对话气泡完全同源；
+ * - [Document]：关于页更新日志，长文档，块间距与标题上间距更松，不加正字距。
  */
 internal enum class ChatMarkdownMode { Chat, Document }
 
@@ -105,19 +105,10 @@ internal fun ChatMarkdown(
         text = ClassppTextTokens.chatBody.markdownSpacing(mode),
         code = ClassppTextTokens.chatCodeBlock,
         inlineCode = ClassppTextTokens.chatInlineCode,
-        h1 = when (mode) {
-            ChatMarkdownMode.Chat -> ClassppTextTokens.chatHeading1
-            ChatMarkdownMode.Document -> ClassppTextTokens.detailTitle
-        }.markdownSpacing(mode),
-        h2 = when (mode) {
-            ChatMarkdownMode.Chat -> ClassppTextTokens.chatHeading2
-            ChatMarkdownMode.Document -> ClassppTextTokens.sheetTitle
-        }.markdownSpacing(mode),
-        h3 = when (mode) {
-            ChatMarkdownMode.Chat -> ClassppTextTokens.chatHeading3
-            // 文档模式的 ## 是顶层章节，### 提高一档，与正文拉开
-            ChatMarkdownMode.Document -> ClassppTextTokens.chatHeading2
-        }.markdownSpacing(mode),
+        // 标题层级 23 / 20 / 16 / 14sp：两种模式共用同一套字号，只有块间距与字距不同
+        h1 = ClassppTextTokens.chatHeading1.markdownSpacing(mode),
+        h2 = ClassppTextTokens.chatHeading2.markdownSpacing(mode),
+        h3 = ClassppTextTokens.chatHeading3.markdownSpacing(mode),
         h4 = ClassppTextTokens.chatHeading4.markdownSpacing(mode),
         h5 = ClassppTextTokens.chatHeading4.markdownSpacing(mode),
         h6 = ClassppTextTokens.chatHeading4.markdownSpacing(mode),
