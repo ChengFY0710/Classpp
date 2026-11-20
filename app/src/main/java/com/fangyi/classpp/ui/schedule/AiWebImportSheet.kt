@@ -9,9 +9,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,10 +30,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -54,14 +58,23 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
+import com.fangyi.classpp.data.ai.AiChatRepository
+import com.fangyi.classpp.data.ai.AiConnection
+import com.fangyi.classpp.data.ai.AiProviderPresets
 import com.fangyi.classpp.data.ai.AiWebImportUrl
 import com.fangyi.classpp.data.ai.AiWebPageExtract
 import com.fangyi.classpp.data.destroySafely
 import com.fangyi.classpp.data.sync.webview.WebViewPolicy
 import com.fangyi.classpp.data.sync.webview.unquoteJsResult
 import com.fangyi.classpp.ui.ai.AiAuroraAnchor
+import com.fangyi.classpp.ui.ai.AiModelSwitchChip
+import com.fangyi.classpp.ui.ai.AiReasoningSwitchChip
 import com.fangyi.classpp.ui.ai.AiThinkingAurora
+import com.fangyi.classpp.ui.ai.ModelSwitchChipGap
+import com.fangyi.classpp.ui.ai.ModelSwitchChipHeight
+import com.fangyi.classpp.ui.ai.SwitchChipSpacing
 import com.fangyi.classpp.ui.components.DialogPillButton
 import com.fangyi.classpp.ui.components.EmptyState
 import com.fangyi.classpp.ui.components.SheetInfoBanner
@@ -85,6 +98,7 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
@@ -99,10 +113,11 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * - 确认：抓一张 WebView 可见内容的 Bitmap，冻结成快照卡（原 WebView 保持挂载但
  *   alpha = 0），卡片按 [rememberCardShrinkMotion] 缩小到屏幕中间：先缩过目标再回弹
  *   （复用弹层果冻曲线），圆角从直角渐变为 20dp；
+ * - 缩小动画一开始 [AiThinkingAurora] 就在卡片下方亮起，并保持整个冻结期；
  * - 缩小动画完整播完后才开始抓取页面文本（[AiWebPageExtract]）：抓取期间卡片静止在
- *   缩小态、不亮光效，顶栏标题为「抓取中」；
- * - 抓取成功：文本交给宿主开始 AI 识别，[AiThinkingAurora] 在卡片下方亮起，标题切为
- *   「识别中」，右上角从 ic_checkmark 变为 ic_stop，点击取消识别；
+ *   缩小态、光效保持，顶栏标题为「抓取中」；
+ * - 抓取成功：文本交给宿主开始 AI 识别，标题切为「识别中」，右上角从 ic_checkmark
+ *   变为 ic_stop，点击取消识别；
  * - 抓取失败 / 识别失败 / 停止：卡片只用 320ms 非线性放大回原页面（不回弹），恢复
  *   WebView；成功：沿用宿主的确认弹窗与导入后整页退出流程，不改成功路径。
  *
@@ -111,7 +126,9 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * - 页面跳转 / 重定向时，地址栏在未编辑状态下跟随当前 URL；
  * - 键盘「前往」与右侧箭头同路，先经 [AiWebImportUrl] 归一化校验再加载，成功后回调
  *   [onUrlChanged] 记住地址；UA 切换改由地址栏更多菜单触发，切换后 reload 当前页；
- * - 冻结 / 读取 / 识别期间地址栏锁定并显示状态文案，避免重载破坏抓取结果。
+ * - 地址栏上方接入与 AI 对话浮层同款的模型 / 思考强度胶囊（多模型 / 多推理等级才出现，
+ *   行间距与到地址栏的间距均为 10dp）；切换直接写回同一仓库，本次识别即使用新配置；
+ * - 冻结 / 读取 / 识别期间地址栏与胶囊锁定并显示状态文案，避免重载 / 切换破坏抓取结果。
  *
  * 视口：页面按自身宽视口渲染（[WebSettings.setUseWideViewPort]），不再缩放到设备宽度
  * （[WebSettings.setLoadWithOverviewMode] 关闭），宽课表保持原始尺寸、横向拖动查看；
@@ -122,6 +139,8 @@ internal fun AiWebImportSheet(
     initialUrl: String,
     recognizing: Boolean,
     errorText: String?,
+    // 模型 / 思考强度胶囊的数据与切换入口；null = 不显示胶囊
+    aiRepository: AiChatRepository? = null,
     // 用户明确打开了一个新地址：宿主记住它，下次重开页面直接加载
     onUrlChanged: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -165,6 +184,13 @@ internal fun AiWebImportSheet(
     // 默认电脑版：教务系统常按 UA 分流，桌面门户更适合展示完整课表
     var desktopMode by rememberSaveable { mutableStateOf(true) }
 
+    // 模型 / 思考强度胶囊与 AI 对话浮层同源：读活动连接，切换直接落库到同一仓库。
+    // 网页识别走仓库的当前连接，因此这里切换的模型 / 推理等级就是随后识别使用的配置
+    val activeAiConnection by aiRepository?.activeConnection?.collectAsState()
+        ?: remember { mutableStateOf(AiConnection()) }
+    val aiConfigured by aiRepository?.configured?.collectAsState()
+        ?: remember { mutableStateOf(false) }
+
     val readErrorMessage = stringResource(R.string.import_ai_web_error_empty)
     val readingText = stringResource(R.string.import_ai_web_reading)
     val fetchingTitle = stringResource(R.string.import_ai_web_fetching_title)
@@ -177,9 +203,24 @@ internal fun AiWebImportSheet(
 
     // 冻结 / 读取 / 识别共用同一条「页面不可交互」判定：标题、地址栏锁定与底部提示都看它
     val busy = cardVisible || extracting || recognizing
-    // 冻结卡的居中基准：内容区减去底栏（地址栏 + 上下内距 + 系统导航栏）后的中心
+    // 模型 / 思考强度胶囊：与 AI 对话浮层同一显隐条件（多模型 / 多推理等级才出现）
+    val modelOptions = activeAiConnection.modelOptions
+    val showModelChip = aiConfigured && modelOptions.size > 1
+    val reasoningConfig = activeAiConnection.modelConfig(activeAiConnection.model)
+    val reasoningLevels = reasoningConfig.reasoningLevels
+    val showReasoningChip = aiConfigured && reasoningLevels.size > 1
+    val showChipRow = showModelChip || showReasoningChip
+    val reasoningOffSupported = AiProviderPresets.thinkingControlFor(
+        activeAiConnection.providerId,
+        activeAiConnection.model,
+    ).supportsOff
+    val chipBlockHeight = if (showChipRow) ModelSwitchChipHeight + ModelSwitchChipGap else 0.dp
+    val aiSaveFailedMessage = stringResource(R.string.ai_save_failed)
+    val scope = rememberCoroutineScope()
+    // 冻结卡的居中基准：内容区减去底栏（地址栏 + 胶囊行 + 上下内距 + 系统导航栏）后的中心
     val navigationBarHeight = LocalNavigationBarHeight.current
-    val bottomReserve = WebAddressBarHeight + BottomBarVerticalPadding * 2 + navigationBarHeight
+    val bottomReserve = WebAddressBarHeight + BottomBarVerticalPadding * 2 +
+        navigationBarHeight + chipBlockHeight
 
     fun load(wv: WebView, target: String) {
         loadError = false
@@ -443,10 +484,10 @@ internal fun AiWebImportSheet(
                     .padding(top = topBarHeight)
                     .clipToBounds(),
             ) {
-                // 光场垫在 WebView 之下：冻结时 WebView alpha 0 自然露出；恢复后不透明
-                // WebView 会把光效残余直接盖住，900ms 退场不会被硬切
+                // 光场垫在 WebView 之下：缩小动画开始（cardFrozen）即亮起，抓取 / 识别
+                // 期间保持；回弹时淡出，恢复后的不透明 WebView 会把残余直接盖住
                 AiThinkingAurora(
-                    active = recognizing,
+                    active = cardFrozen,
                     anchor = AiAuroraAnchor.Center,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -618,6 +659,48 @@ internal fun AiWebImportSheet(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
+            }
+            // 与 AI 对话浮层同款的模型 / 思考强度胶囊：行间距与到地址栏的间距都是 10dp
+            if (showChipRow) {
+                Row(horizontalArrangement = Arrangement.spacedBy(SwitchChipSpacing)) {
+                    if (showModelChip) {
+                        AiModelSwitchChip(
+                            models = modelOptions,
+                            currentModel = activeAiConnection.model,
+                            // 冻结 / 抓取 / 识别期间禁用：避免本次识别用的模型产生歧义
+                            enabled = !busy,
+                            hazeState = null,
+                            backdrop = buttonBackdrop,
+                            onSwitch = { model ->
+                                scope.launch {
+                                    val repository = aiRepository
+                                    if (repository == null || !repository.switchModel(model)) {
+                                        AppToasts.show(context, aiSaveFailedMessage)
+                                    }
+                                }
+                            },
+                        )
+                    }
+                    if (showReasoningChip) {
+                        AiReasoningSwitchChip(
+                            levels = reasoningLevels,
+                            currentLevel = reasoningConfig.reasoningLevel,
+                            enabled = !busy,
+                            hazeState = null,
+                            backdrop = buttonBackdrop,
+                            offSupported = reasoningOffSupported,
+                            onSwitch = { level ->
+                                scope.launch {
+                                    val repository = aiRepository
+                                    if (repository == null || !repository.setReasoningLevel(level)) {
+                                        AppToasts.show(context, aiSaveFailedMessage)
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(ModelSwitchChipGap))
             }
             WebAddressBar(
                 value = address,

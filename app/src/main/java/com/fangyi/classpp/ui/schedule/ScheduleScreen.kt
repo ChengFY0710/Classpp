@@ -1924,6 +1924,8 @@ fun ScheduleScreen(
                             initialUrl = aiWebUrl,
                             recognizing = aiWebRecognizing,
                             errorText = aiWebError,
+                            // 底部模型 / 思考强度胶囊与对话浮层同源，切换后网页识别直接使用
+                            aiRepository = aiRepo,
                             // 记住最近一次明确打开的地址，重开页面时直接加载
                             onUrlChanged = { aiWebUrl = it },
                             // 未导入就关闭全屏页：回到下方 AI 识别导入浮层（浮层保持打开）
