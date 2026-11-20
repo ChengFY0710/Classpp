@@ -43,7 +43,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -75,6 +77,9 @@ import com.fangyi.classpp.ui.theme.LocalNavigationBarInsets
 import com.fangyi.classpp.ui.theme.LocalStatusBarHeight
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
+import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.shapes.RoundedRectangle
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellationException
@@ -365,241 +370,278 @@ internal fun AiWebImportSheet(
         }
     }
 
-    Column(
+    val background = MaterialTheme.colorScheme.background
+    val glassEnabled = isGlassStyleEnabled()
+    // 液态玻璃采样层：整页底色 + 顶栏以下的内容（WebView / 空态 / 冻结卡）。
+    // 顶栏圆钮与底部地址栏在采样节点之外，玻璃不会照见自己；关闭开关时该层不挂载
+    val glassBackdrop = rememberGlassBackdrop(background)
+    val buttonBackdrop = if (glassEnabled) glassBackdrop else null
+    val confirmContentColor = if (glassEnabled) {
+        MaterialTheme.classppColors.onPrimaryGlass
+    } else {
+        MaterialTheme.colorScheme.onPrimary
+    }
+    val density = LocalDensity.current
+    // 顶栏实测高度（含状态栏 inset）：初始用稳定 inset + 64dp 估算，测量后校正
+    val initialTopBarHeight = LocalStatusBarHeight.current + SettingsTopBarContentHeight
+    var topBarHeight by remember { mutableStateOf(initialTopBarHeight) }
+
+    val topAction = if (recognizing) {
+        SettingsTopBarAction(
+            icon = R.drawable.ic_stop,
+            contentDescription = stringResource(R.string.import_ai_web_stop),
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = confirmContentColor,
+            onClick = ::stopRecognition,
+        )
+    } else {
+        SettingsTopBarAction(
+            icon = R.drawable.ic_checkmark,
+            contentDescription = stringResource(R.string.import_ai_web_extract),
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = confirmContentColor,
+            enabled = pageReady && !loadError && !busy,
+            onClick = ::startRecognition,
+        )
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             // 统一不避让横向 inset：铺满屏幕宽（左右顶到边缘），状态栏交给顶栏自理
-            .background(MaterialTheme.colorScheme.background),
+            .background(background),
     ) {
-        val topAction = if (recognizing) {
-            SettingsTopBarAction(
-                icon = R.drawable.ic_stop,
-                contentDescription = stringResource(R.string.import_ai_web_stop),
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                onClick = ::stopRecognition,
-            )
-        } else {
-            SettingsTopBarAction(
-                icon = R.drawable.ic_checkmark,
-                contentDescription = stringResource(R.string.import_ai_web_extract),
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                enabled = pageReady && !loadError && !busy,
-                onClick = ::startRecognition,
+        // 玻璃采样层只记录整页底色：WebView 是 AndroidView，放进 Compose 采样层会被
+        // 反复录制，导致页面概率性闪烁；顶栏圆钮 / 地址栏仍采样同色背景，玻璃材质与
+        // 按压反馈不受影响
+        if (glassEnabled) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .layerBackdrop(glassBackdrop),
             )
         }
+        // 内容区在采样层之外：顶栏以下才是 WebView 的加载 / 显示范围
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = topBarHeight)
+                    .clipToBounds(),
+            ) {
+                // 光场垫在 WebView 之下：冻结时 WebView alpha 0 自然露出；恢复后不透明
+                // WebView 会把光效残余直接盖住，900ms 退场不会被硬切
+                AiThinkingAurora(
+                    active = recognizing,
+                    anchor = AiAuroraAnchor.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .requiredHeight(AuroraBandHeight)
+                        .align(Alignment.Center)
+                        .offset(y = bottomReserve * -0.5f),
+                )
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        WebView(ctx).also { wv ->
+                            // 默认电脑版：UA 由底部地址栏的更多菜单控制，切换时 reload
+                            WebViewPolicy.harden(
+                                wv,
+                                if (desktopMode) DESKTOP_USER_AGENT else mobileUserAgent,
+                            )
+                            // 教务系统多为桌面布局：保留页面自身的宽视口，不缩放到设备宽度。
+                            // 宽表格按原始尺寸渲染、左右拖动查看，再配合捏合缩放看清细节
+                            wv.settings.useWideViewPort = true
+                            wv.settings.loadWithOverviewMode = false
+                            wv.settings.setSupportZoom(true)
+                            wv.settings.builtInZoomControls = true
+                            // 只保留捏合手势，不显示悬浮的 +/− 缩放钮
+                            wv.settings.displayZoomControls = false
+                            // 登录链路跨多个域跳转：放行跨站 cookie
+                            CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
+                            wv.webViewClient = WebViewPolicy.createUserPageClient(
+                                onLoadError = { loadError = true },
+                                onPageStarted = { started ->
+                                    pageReady = false
+                                    if (started != null) {
+                                        currentUrl = started
+                                        addressError = false
+                                        if (!addressFocused) {
+                                            address = started
+                                        }
+                                    }
+                                },
+                                onPageFinished = { finished ->
+                                    pageReady = true
+                                    if (finished != null) {
+                                        currentUrl = finished
+                                        if (!addressFocused) {
+                                            address = finished
+                                        }
+                                    }
+                                },
+                            )
+                            wv.webChromeClient = WebViewPolicy.createUserPageChromeClient(
+                                onProgress = { value ->
+                                    if (value > 5) loadError = false
+                                },
+                                // target=_blank / window.open 在当前 WebView 打开
+                                onOpenWindow = { target -> wv.loadUrl(target) },
+                            )
+                            webView = wv
+                        }
+                    },
+                )
+                if (currentUrl.isBlank()) {
+                    // 还没输入网址：盖住空白 WebView，提示用户从底部地址栏开始。
+                    // 高度与课表页「还没有课表」空态对齐：组件顶边距屏幕 250dp（EmptyState
+                    // 自带 48dp 上下内距）；内容区从顶栏下沿开始，故扣掉实测顶栏高度
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background),
+                        contentAlignment = Alignment.TopCenter,
+                    ) {
+                        EmptyState(
+                            icon = R.drawable.ic_globe,
+                            title = stringResource(R.string.import_ai_web_start_title),
+                            description = stringResource(R.string.import_ai_web_start_desc),
+                            modifier = Modifier.padding(
+                                top = (EmptyStateScreenTopPadding - topBarHeight)
+                                    .coerceAtLeast(0.dp),
+                            ),
+                        )
+                    }
+                }
+                if (loadError) {
+                    // 主文档加载失败（网络/SSL）：遮罩 + 可见错误 + 重试，不留无声白屏
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.96f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_alert),
+                                contentDescription = null,
+                                tint = MaterialTheme.classppColors.secondaryText,
+                                modifier = Modifier.size(28.dp),
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                text = stringResource(R.string.sync_login_load_error),
+                                style = ClassppTextTokens.settingsDescription,
+                                color = MaterialTheme.classppColors.secondaryText,
+                            )
+                            Spacer(Modifier.height(14.dp))
+                            DialogPillButton(
+                                label = stringResource(R.string.sync_login_retry),
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                onClick = {
+                                    val wv = webView
+                                    if (wv != null && pageUrl.isNotBlank()) {
+                                        CookieManager.getInstance().flush()
+                                        load(wv, pageUrl)
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+                if (cardVisible) {
+                    // 冻结期间吞掉落到 WebView 上的触摸（页面已不可操作）
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .pointerInput(Unit) { detectTapGestures { } },
+                    )
+                }
+                val snapshot = remember(frozenBitmap) { frozenBitmap?.asImageBitmap() }
+                if (cardVisible && snapshot != null) {
+                    FrozenPageCard(
+                        snapshot = snapshot,
+                        motion = cardMotion,
+                        bottomReserve = bottomReserve,
+                    )
+                }
+            }
+        }
+        // 底部浮层：在采样层之外，玻璃地址栏可以采样页面
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .windowInsetsPadding(LocalNavigationBarInsets.current)
+                .imePadding()
+                .padding(horizontal = PageHorizontalSpacing, vertical = BottomBarVerticalPadding),
+        ) {
+            // 本次页面读取失败优先于上一次 AI 失败：先提示「没读到页面」，
+            // 读取成功后的 AI 失败再由宿主 errorText 展示
+            val shownError = readError ?: errorText
+            if (!busy && shownError != null) {
+                SheetInfoBanner(
+                    text = shownError,
+                    isError = true,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+            if (!busy && addressError) {
+                Text(
+                    text = addressInvalidText,
+                    style = ClassppTextTokens.settingsDescription,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+            if (!busy && isHttp) {
+                Text(
+                    text = httpWarning,
+                    style = ClassppTextTokens.settingsDescription,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+            WebAddressBar(
+                value = address,
+                onValueChange = { next ->
+                    address = next
+                    addressError = false
+                },
+                onOpen = ::openAddress,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = stringResource(R.string.import_ai_web_url_placeholder),
+                openedUrl = currentUrl.ifBlank { null },
+                loading = !busy && currentUrl.isNotBlank() && !pageReady && !loadError,
+                statusText = when {
+                    recognizing -> recognizingHint
+                    extracting -> readingText
+                    else -> null
+                },
+                readOnly = busy,
+                onFocusChanged = { addressFocused = it },
+                desktopMode = desktopMode,
+                onDesktopModeChange = { desktop ->
+                    if (!busy) switchDesktopMode(desktop)
+                },
+                backdrop = buttonBackdrop,
+            )
+        }
+        // 顶栏最后绘制：圆钮投影盖在内容与底栏之上，玻璃圆钮采样整页底色 / 内容
         SettingsTopBar(
             title = if (busy) recognizingTitle else sheetTitle,
             onBack = ::handleBack,
             trailingAction = topAction,
-        )
-        Box(
+            buttonBackdrop = buttonBackdrop,
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .clipToBounds(),
-        ) {
-            // 光场垫在 WebView 之下：冻结时 WebView alpha 0 自然露出；恢复后不透明
-            // WebView 会把光效残余直接盖住，900ms 退场不会被硬切
-            AiThinkingAurora(
-                active = recognizing,
-                anchor = AiAuroraAnchor.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .requiredHeight(AuroraBandHeight)
-                    .align(Alignment.Center)
-                    .offset(y = bottomReserve * -0.5f),
-            )
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { ctx ->
-                    WebView(ctx).also { wv ->
-                        // 默认电脑版：UA 由底部地址栏的更多菜单控制，切换时 reload
-                        WebViewPolicy.harden(
-                            wv,
-                            if (desktopMode) DESKTOP_USER_AGENT else mobileUserAgent,
-                        )
-                        // 教务系统多为桌面布局：保留页面自身的宽视口，不缩放到设备宽度。
-                        // 宽表格按原始尺寸渲染、左右拖动查看，再配合捏合缩放看清细节
-                        wv.settings.useWideViewPort = true
-                        wv.settings.loadWithOverviewMode = false
-                        wv.settings.setSupportZoom(true)
-                        wv.settings.builtInZoomControls = true
-                        // 只保留捏合手势，不显示悬浮的 +/− 缩放钮
-                        wv.settings.displayZoomControls = false
-                        // 登录链路跨多个域跳转：放行跨站 cookie
-                        CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
-                        wv.webViewClient = WebViewPolicy.createUserPageClient(
-                            onLoadError = { loadError = true },
-                            onPageStarted = { started ->
-                                pageReady = false
-                                if (started != null) {
-                                    currentUrl = started
-                                    addressError = false
-                                    if (!addressFocused) {
-                                        address = started
-                                    }
-                                }
-                            },
-                            onPageFinished = { finished ->
-                                pageReady = true
-                                if (finished != null) {
-                                    currentUrl = finished
-                                    if (!addressFocused) {
-                                        address = finished
-                                    }
-                                }
-                            },
-                        )
-                        wv.webChromeClient = WebViewPolicy.createUserPageChromeClient(
-                            onProgress = { value ->
-                                if (value > 5) loadError = false
-                            },
-                            // target=_blank / window.open 在当前 WebView 打开
-                            onOpenWindow = { target -> wv.loadUrl(target) },
-                        )
-                        webView = wv
-                    }
+                .align(Alignment.TopStart)
+                .onGloballyPositioned { coords ->
+                    topBarHeight = with(density) { coords.size.height.toDp() }
                 },
-            )
-            if (currentUrl.isBlank()) {
-                // 还没输入网址：盖住空白 WebView，提示用户从底部地址栏开始。
-                // 高度与课表页「还没有课表」空态对齐：组件顶边距屏幕 250dp（EmptyState 自带
-                // 48dp 上下内距）；内容区已从顶栏下沿开始，故扣掉顶栏高度（状态栏 + 64dp）
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background),
-                    contentAlignment = Alignment.TopCenter,
-                ) {
-                    EmptyState(
-                        icon = R.drawable.ic_globe,
-                        title = stringResource(R.string.import_ai_web_start_title),
-                        description = stringResource(R.string.import_ai_web_start_desc),
-                        modifier = Modifier.padding(
-                            top = (EmptyStateScreenTopPadding -
-                                LocalStatusBarHeight.current -
-                                SettingsTopBarContentHeight)
-                                .coerceAtLeast(0.dp),
-                        ),
-                    )
-                }
-            }
-            if (loadError) {
-                // 主文档加载失败（网络/SSL）：遮罩 + 可见错误 + 重试，不留无声白屏
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background.copy(alpha = 0.96f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_alert),
-                            contentDescription = null,
-                            tint = MaterialTheme.classppColors.secondaryText,
-                            modifier = Modifier.size(28.dp),
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            text = stringResource(R.string.sync_login_load_error),
-                            style = ClassppTextTokens.settingsDescription,
-                            color = MaterialTheme.classppColors.secondaryText,
-                        )
-                        Spacer(Modifier.height(14.dp))
-                        DialogPillButton(
-                            label = stringResource(R.string.sync_login_retry),
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                            onClick = {
-                                val wv = webView
-                                if (wv != null && pageUrl.isNotBlank()) {
-                                    CookieManager.getInstance().flush()
-                                    load(wv, pageUrl)
-                                }
-                            },
-                        )
-                    }
-                }
-            }
-            if (cardVisible) {
-                // 冻结期间吞掉落到 WebView 上的触摸（页面已不可操作）
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .pointerInput(Unit) { detectTapGestures { } },
-                )
-            }
-            val snapshot = remember(frozenBitmap) { frozenBitmap?.asImageBitmap() }
-            if (cardVisible && snapshot != null) {
-                FrozenPageCard(
-                    snapshot = snapshot,
-                    motion = cardMotion,
-                    bottomReserve = bottomReserve,
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .windowInsetsPadding(LocalNavigationBarInsets.current)
-                    .imePadding()
-                    .padding(horizontal = PageHorizontalSpacing, vertical = BottomBarVerticalPadding),
-            ) {
-                // 本次页面读取失败优先于上一次 AI 失败：先提示「没读到页面」，
-                // 读取成功后的 AI 失败再由宿主 errorText 展示
-                val shownError = readError ?: errorText
-                if (!busy && shownError != null) {
-                    SheetInfoBanner(
-                        text = shownError,
-                        isError = true,
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
-                }
-                if (!busy && addressError) {
-                    Text(
-                        text = addressInvalidText,
-                        style = ClassppTextTokens.settingsDescription,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
-                }
-                if (!busy && isHttp) {
-                    Text(
-                        text = httpWarning,
-                        style = ClassppTextTokens.settingsDescription,
-                        color = MaterialTheme.colorScheme.error,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
-                }
-                WebAddressBar(
-                    value = address,
-                    onValueChange = { next ->
-                        address = next
-                        addressError = false
-                    },
-                    onOpen = ::openAddress,
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = stringResource(R.string.import_ai_web_url_placeholder),
-                    openedUrl = currentUrl.ifBlank { null },
-                    loading = !busy && currentUrl.isNotBlank() && !pageReady && !loadError,
-                    statusText = when {
-                        recognizing -> recognizingHint
-                        extracting -> readingText
-                        else -> null
-                    },
-                    readOnly = busy,
-                    onFocusChanged = { addressFocused = it },
-                    desktopMode = desktopMode,
-                    onDesktopModeChange = { desktop ->
-                        if (!busy) switchDesktopMode(desktop)
-                    },
-                )
-            }
-        }
+        )
     }
 }
 
