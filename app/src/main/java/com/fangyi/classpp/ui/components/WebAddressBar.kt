@@ -60,6 +60,9 @@ import com.fangyi.classpp.ui.theme.glassSurface
 import com.kyant.backdrop.Backdrop
 import dev.chrisbanes.haze.HazeState
 
+/** 地址栏自然高度：上下 14dp 内距 + 24dp 图标（与 [SheetSearchField] 同规格） */
+internal val WebAddressBarHeight = 52.dp
+
 /** 地址栏右侧按钮的语义：空输入不显示 / 前往 / 更多 */
 internal enum class WebAddressBarAction { None, Open, More }
 
@@ -117,6 +120,12 @@ internal fun resolveWebAddressBarAction(
  * 菜单与 Haze：菜单打开时把 [hazeState] 透传给 PopupMenuCard 做毛玻璃。切换 UA 会触发
  * 网页重载（采样源结构重写），因此菜单项的 [onDesktopModeChange] 经
  * [rememberPopupActionGate] 延后到弹层退场播完再执行，避免活采样期间同帧重写。
+ *
+ * 只读 / 状态形态：[statusText] 非空或 [readOnly] 为 true 时锁定编辑（网页冻结、读取 /
+ * 识别期间）——不挂整条点击热区、不显示聚焦描边，输入区改为同字阶的只读 Text
+ * （[statusText] 优先，否则显示 [value] 或占位），右侧固定为更多按钮但不可点。
+ * 状态文案沿用 fieldValue 的 primary 色，与地址文字同视觉；不可点在识别/冻结期间会
+ * 重载网页，误触会破坏抓取。
  */
 @Composable
 fun WebAddressBar(
@@ -129,6 +138,12 @@ fun WebAddressBar(
     openedUrl: String? = null,
     /** 网页加载中：左侧 globe 换成 primary 色加载圆环 */
     loading: Boolean = false,
+    /** 只读状态文案：非空时隐藏输入框、显示该文案并锁定编辑（右侧固定为更多按钮） */
+    statusText: String? = null,
+    /** 只读但继续显示 [value]（网页冻结 / 识别期间锁定地址栏） */
+    readOnly: Boolean = false,
+    /** 输入框焦点变化（宿主持有「地址栏是否编辑中」时用） */
+    onFocusChanged: ((Boolean) -> Unit)? = null,
     /** 当前 UA 模式（true = 电脑版），由宿主持有 */
     desktopMode: Boolean,
     onDesktopModeChange: (desktop: Boolean) -> Unit,
@@ -155,15 +170,35 @@ fun WebAddressBar(
         }
     }
 
+    val locked = readOnly || statusText != null
+    // 锁定瞬间输入框被移出组合：主动归位焦点形态、收起 UA 菜单，并通知宿主
+    LaunchedEffect(locked) {
+        if (locked) {
+            inputFocused = false
+            menuExpanded = false
+            keyboard?.hide()
+            onFocusChanged?.invoke(false)
+        }
+    }
+
     // 聚焦蓝描边：宽度与不透明度共用同一条 0→1 动画（与 SheetSearchField 同源同曲线）
     val strokeProgress by animateFloatAsState(
-        targetValue = if (inputFocused) 1f else 0f,
+        targetValue = if (inputFocused && !locked) 1f else 0f,
         animationSpec = tween(durationMillis = Motion.FastMillis, easing = Motion.Decelerate),
         label = "webAddressBarStroke",
     )
     val strokeColor = MaterialTheme.colorScheme.primary
     val strokeWidth = 2.dp * strokeProgress
-    val action = resolveWebAddressBarAction(inputFocused, value, openedUrl)
+    // 锁定态固定为更多（不可点）；正常态按「聚焦 / 输入内容 vs 已打开地址」判定
+    val action = if (locked) {
+        if (statusText != null || value.isNotBlank()) {
+            WebAddressBarAction.More
+        } else {
+            WebAddressBarAction.None
+        }
+    } else {
+        resolveWebAddressBarAction(inputFocused, value, openedUrl)
+    }
     val openLabel = stringResource(R.string.cd_web_address_open)
     val moreLabel = stringResource(R.string.cd_web_address_more)
     val loadingLabel = stringResource(R.string.cd_web_address_loading)
@@ -201,13 +236,20 @@ fun WebAddressBar(
                 )
                 // 整条热区：图标、左右内距与行内空白点下去都聚焦输入框并拉起键盘。
                 // 用 pointerInput 而非 clickable——clickable 会把本行合并成单个可点语义节点，
-                // 吞掉内部输入框的可编辑语义；文本区与右侧按钮的点击被子级先消费
-                .pointerInput(Unit) {
-                    detectTapGestures {
-                        focusRequester.requestFocus()
-                        keyboard?.show()
-                    }
-                }
+                // 吞掉内部输入框的可编辑语义；文本区与右侧按钮的点击被子级先消费。
+                // 只读 / 状态态不挂热区：此时没有可聚焦的输入框
+                .then(
+                    if (!locked) {
+                        Modifier.pointerInput(Unit) {
+                            detectTapGestures {
+                                focusRequester.requestFocus()
+                                keyboard?.show()
+                            }
+                        }
+                    } else {
+                        Modifier
+                    },
+                )
                 .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -228,45 +270,76 @@ fun WebAddressBar(
                 )
             }
             Spacer(Modifier.width(12.dp))
-            BasicTextField(
-                value = value,
-                // 键盘/粘贴带入的换行符一律滤掉：地址是逻辑单行
-                onValueChange = { onValueChange(it.filterNot { ch -> ch == '\n' || ch == '\r' }) },
-                textStyle = MaterialTheme.classppTextStyles.fieldValue,
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                singleLine = true,
-                interactionSource = textInteraction,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Uri,
-                    imeAction = ImeAction.Go,
-                ),
-                keyboardActions = KeyboardActions(onGo = { openAddress() }),
-                modifier = Modifier
-                    .weight(1f)
-                    .focusRequester(focusRequester)
-                    // 只认输入框自身的焦点：右侧按钮（clickable 可聚焦）拿到焦点时
-                    // 不应把描边 / 右侧形态带偏
-                    .onFocusChanged { inputFocused = it.isFocused }
-                    // 参与宿主的「键盘弹起把输入框滚到键盘上方」：宿主没这项能力时此修饰符空转
-                    .imeFieldTracking(),
-                decorationBox = { innerTextField ->
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        // 占位空值即显（聚焦也显示，光标停在占位文字首字前），同搜索框
-                        if (value.isEmpty() && placeholder.isNotEmpty()) {
-                            Text(
-                                text = placeholder,
-                                style = MaterialTheme.classppTextStyles.fieldPlaceholder,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        innerTextField()
-                    }
-                },
-            )
+            when {
+                // 识别 / 读取状态：同字阶的只读文案（primary），不显示光标与手写键盘
+                statusText != null -> {
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.classppTextStyles.fieldValue,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                // 冻结 / 回弹期间保留地址文字但禁止编辑
+                readOnly -> {
+                    Text(
+                        text = value.ifEmpty { placeholder },
+                        style = if (value.isEmpty()) {
+                            MaterialTheme.classppTextStyles.fieldPlaceholder
+                        } else {
+                            MaterialTheme.classppTextStyles.fieldValue
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                else -> {
+                    BasicTextField(
+                        value = value,
+                        // 键盘/粘贴带入的换行符一律滤掉：地址是逻辑单行
+                        onValueChange = { onValueChange(it.filterNot { ch -> ch == '\n' || ch == '\r' }) },
+                        textStyle = MaterialTheme.classppTextStyles.fieldValue,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        singleLine = true,
+                        interactionSource = textInteraction,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Uri,
+                            imeAction = ImeAction.Go,
+                        ),
+                        keyboardActions = KeyboardActions(onGo = { openAddress() }),
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(focusRequester)
+                            // 只认输入框自身的焦点：右侧按钮（clickable 可聚焦）拿到焦点时
+                            // 不应把描边 / 右侧形态带偏
+                            .onFocusChanged {
+                                inputFocused = it.isFocused
+                                onFocusChanged?.invoke(it.isFocused)
+                            }
+                            // 参与宿主的「键盘弹起把输入框滚到键盘上方」：宿主没这项能力时此修饰符空转
+                            .imeFieldTracking(),
+                        decorationBox = { innerTextField ->
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                // 占位空值即显（聚焦也显示，光标停在占位文字首字前），同搜索框
+                                if (value.isEmpty() && placeholder.isNotEmpty()) {
+                                    Text(
+                                        text = placeholder,
+                                        style = MaterialTheme.classppTextStyles.fieldPlaceholder,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        },
+                    )
+                }
+            }
             when (action) {
                 WebAddressBarAction.None -> Unit
                 WebAddressBarAction.Open -> {
@@ -293,13 +366,22 @@ fun WebAddressBar(
                         painter = painterResource(R.drawable.ic_more_circle),
                         contentDescription = moreLabel,
                         tint = MaterialTheme.colorScheme.primary,
+                        // 只读 / 状态态保留 more 图标但不可点：识别期间切 UA 会重载网页，
+                        // 破坏冻结快照与抓取结果
                         modifier = Modifier
                             .size(24.dp)
-                            .glassPressFeedback(actionInteraction, CircleShape, backdrop)
-                            .clickable(
-                                interactionSource = actionInteraction,
-                                indication = null,
-                                onClick = { menuExpanded = true },
+                            .then(
+                                if (locked) {
+                                    Modifier
+                                } else {
+                                    Modifier
+                                        .glassPressFeedback(actionInteraction, CircleShape, backdrop)
+                                        .clickable(
+                                            interactionSource = actionInteraction,
+                                            indication = null,
+                                            onClick = { menuExpanded = true },
+                                        )
+                                },
                             ),
                     )
                 }

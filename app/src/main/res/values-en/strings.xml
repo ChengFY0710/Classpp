@@ -638,11 +638,11 @@
     <string name="import_ai_pick_desc">A photo with as much course info as possible works best</string>
     <string name="import_ai_web_card_title">Scan a Campus Webpage</string>
     <string name="import_ai_web_card_desc">Open the campus URL, sign in, then scan the timetable page</string>
-    <string name="import_ai_web_url_placeholder">https://jw.example.edu.cn</string>
+    <string name="import_ai_web_url_placeholder">Tap to enter a URL</string>
     <string name="import_ai_web_start_title">Enter a Campus URL</string>
     <string name="import_ai_web_start_desc">Type the URL in the bar below, sign in, then open the timetable page</string>
     <string name="import_ai_web_url_invalid">Invalid URL — check it and try again</string>
-    <string name="import_ai_web_sheet_title">Scan Campus Timetable</string>
+    <string name="import_ai_web_sheet_title">Scan Campus Webpage</string>
     <string name="import_ai_web_mode_desktop">Desktop</string>
     <string name="import_ai_web_mode_mobile">Mobile</string>
     <string name="import_ai_web_sheet_hint">Sign in and open the timetable page, then tap Scan Import below</string>
@@ -650,6 +650,8 @@
     <string name="import_ai_web_stop">Stop Scanning</string>
     <string name="import_ai_web_reading">Reading page…</string>
     <string name="import_ai_web_recognizing">Scanning the timetable…</string>
+    <string name="import_ai_web_recognizing_title">Analyzing</string>
+    <string name="import_ai_web_recognizing_hint">AI is analyzing — this may take a while</string>
     <string name="import_ai_web_privacy_hint">Page content will be sent to your AI provider</string>
     <string name="import_ai_web_http_warning">This page uses HTTP — keep your account safe</string>
     <string name="import_ai_web_error_empty">Couldn\'t read the page. Make sure the timetable page is open.</string>

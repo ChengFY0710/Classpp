@@ -1,32 +1,28 @@
 package com.fangyi.classpp.ui.schedule
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.webkit.CookieManager
 import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,24 +37,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.fangyi.classpp.R
@@ -67,22 +58,24 @@ import com.fangyi.classpp.data.ai.AiWebPageExtract
 import com.fangyi.classpp.data.destroySafely
 import com.fangyi.classpp.data.sync.webview.WebViewPolicy
 import com.fangyi.classpp.data.sync.webview.unquoteJsResult
+import com.fangyi.classpp.ui.ai.AiAuroraAnchor
+import com.fangyi.classpp.ui.ai.AiThinkingAurora
 import com.fangyi.classpp.ui.components.DialogPillButton
 import com.fangyi.classpp.ui.components.EmptyState
 import com.fangyi.classpp.ui.components.SheetInfoBanner
-import com.fangyi.classpp.ui.motion.PressShade
-import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.components.WebAddressBar
+import com.fangyi.classpp.ui.components.WebAddressBarHeight
+import com.fangyi.classpp.ui.motion.CardShrinkMotionState
+import com.fangyi.classpp.ui.motion.rememberCardShrinkMotion
+import com.fangyi.classpp.ui.settings.SettingsTopBar
+import com.fangyi.classpp.ui.settings.SettingsTopBarAction
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
+import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
 import com.fangyi.classpp.ui.theme.LocalNavigationBarInsets
-import com.fangyi.classpp.ui.theme.LocalStatusBarInsets
+import com.fangyi.classpp.ui.theme.LocalStatusBarHeight
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
-import com.fangyi.classpp.ui.theme.PillShape
-import com.fangyi.classpp.ui.theme.SheetCardShape
 import com.fangyi.classpp.ui.theme.classppColors
-import com.fangyi.classpp.ui.theme.classppTextStyles
-import com.fangyi.classpp.ui.theme.glassPressFeedback
-import com.fangyi.classpp.ui.theme.glassSurface
-import com.fangyi.classpp.ui.theme.isDarkTheme
+import com.kyant.shapes.RoundedRectangle
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -90,22 +83,28 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
- * AI 识别教务网页的全屏页：打开后**自带底部地址栏**，用户可以随时改网址，不再有单独的
- * 网址输入弹卡。登录与导航完全由页面完成。
+ * AI 识别教务网页的全屏页（从教务网页识别）：打开后**自带底部地址栏**，用户可以随时
+ * 改网址，登录与导航完全由页面完成。与 `SchoolTimetableWebViewSheet` 的区别是**没有
+ * 域名白名单**：目标由用户决定，客户端只按协议放行 http/https（见
+ * [WebViewPolicy.createUserPageClient]），其余加固不变。
  *
- * 与 `SchoolTimetableWebViewSheet` 的区别是**没有域名白名单**：目标由用户决定，客户端只
- * 按协议放行 http/https（见 [WebViewPolicy.createUserPageClient]），其余加固不变。
- *
- * 「识别导入」：注入 [AiWebPageExtract] 的静态脚本，把页面可见文本与表格网格写进约定
- * 变量，原生侧轮询读取；成功回调 [onExtract] 把文本交给宿主发 AI 请求。抓取与识别期间
- * 网页保持打开，失败可在原页重试。返回键：识别中先取消识别，其次地址栏编辑中先收键盘，
- * 再次网页后退，最后关闭。
+ * 页面结构：
+ * - 顶部：设置页同款 [SettingsTopBar]（返回圆钮 + 居中标题），右侧一颗 primary 圆钮；
+ * - 内容区：WebView 只占顶栏以下区域，底部 [WebAddressBar] 浮在页面之上；
+ * - 确认：抓一张 WebView 可见内容的 Bitmap，冻结成快照卡（原 WebView 保持挂载但
+ *   alpha = 0，[AiWebPageExtract] 的 JS 抓取继续工作），卡片按 [rememberCardShrinkMotion]
+ *   缩小到屏幕中间：先缩过目标再回弹（复用弹层果冻曲线），圆角从直角渐变为 20dp；
+ * - 抓取完成后宿主开始 AI 识别（[recognizing]），[AiThinkingAurora] 在卡片下方亮起；
+ *   此时右上角从 ic_checkmark 变为 ic_stop，点击取消识别；
+ * - 停止 / 识别失败：卡片只用 320ms 非线性放大回原页面（不回弹），恢复 WebView；
+ *   成功：沿用宿主的确认弹窗与导入后整页退出流程，不改成功路径。
  *
  * 地址栏行为：
- * - [initialUrl] 非空时直接加载（重开页面记住上次地址）；为空时自动聚焦地址栏并弹键盘；
- * - 页面跳转/重定向时，地址栏在未编辑状态下跟随当前 URL；
- * - 输入框聚焦时全选，便于整段替换；键盘「前往」与右侧箭头同路，先经
- *   [AiWebImportUrl] 归一化校验再加载，成功后回调 [onUrlChanged] 记住地址。
+ * - [initialUrl] 非空时直接加载（重开页面记住上次地址）；为空时显示空态，点击地址栏输入；
+ * - 页面跳转 / 重定向时，地址栏在未编辑状态下跟随当前 URL；
+ * - 键盘「前往」与右侧箭头同路，先经 [AiWebImportUrl] 归一化校验再加载，成功后回调
+ *   [onUrlChanged] 记住地址；UA 切换改由地址栏更多菜单触发，切换后 reload 当前页；
+ * - 冻结 / 读取 / 识别期间地址栏锁定并显示状态文案，避免重载破坏抓取结果。
  *
  * 视口：页面按自身宽视口渲染（[WebSettings.setUseWideViewPort]），不再缩放到设备宽度
  * （[WebSettings.setLoadWithOverviewMode] 关闭），宽课表保持原始尺寸、横向拖动查看；
@@ -121,22 +120,19 @@ internal fun AiWebImportSheet(
     onDismiss: () -> Unit,
     // 抓取成功：页面文本交给宿主发 AI 请求
     onExtract: (String) -> Unit,
-    // 识别中取消（底部按钮 / 返回键）
+    // 识别中取消（右上角停止 / 返回键）
     onStopRecognize: () -> Unit,
 ) {
     var webView by remember { mutableStateOf<WebView?>(null) }
-    // 页面加载进度（0..100）与主文档失败态；进度越过初段即视为恢复，错误遮罩自动退场
-    var progress by remember { mutableIntStateOf(0) }
+    // 主文档失败态；加载进度越过初段即视为恢复，错误遮罩自动退场
     var loadError by remember { mutableStateOf(false) }
     // 首屏加载完成前不开放识别：页面还没渲染出课表
     var pageReady by remember { mutableStateOf(false) }
     // 当前页地址（显示用）与 WebView 应加载的地址（旋转后重载最近一次明确打开的地址）
     var currentUrl by rememberSaveable { mutableStateOf(initialUrl) }
     var pageUrl by rememberSaveable { mutableStateOf(initialUrl) }
-    // 地址栏草稿：TextFieldValue 便于聚焦时全选
-    var address by rememberSaveable(stateSaver = TextFieldValue.Saver) {
-        mutableStateOf(TextFieldValue(initialUrl))
-    }
+    // 地址栏草稿（WebAddressBar 是受控 String 输入）
+    var address by rememberSaveable { mutableStateOf(initialUrl) }
     var addressFocused by remember { mutableStateOf(false) }
     var addressError by remember { mutableStateOf(false) }
     // 网页抓取：读取中态与本次读取失败的文案；重复点击只清结果变量后重新注入
@@ -144,9 +140,15 @@ internal fun AiWebImportSheet(
     var extractAttempt by remember { mutableIntStateOf(0) }
     var readError by remember { mutableStateOf<String?>(null) }
 
+    // 冻结快照：确认时抓一张 WebView 位图；卡片回弹播完后释放并恢复 WebView
+    var frozenBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var cardVisible by remember { mutableStateOf(false) }
+    var cardFrozen by remember { mutableStateOf(false) }
+    // 识别请求是否真正开始过：只在 true → false 的落沿触发回弹，避免首次组合误判
+    var sawRecognizing by remember { mutableStateOf(false) }
+
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    val addressFocusRequester = remember { FocusRequester() }
     val context = LocalContext.current
     // 手机 UA 取系统 WebView 默认值：与设备/内核最匹配；电脑 UA 用固定桌面标识
     val mobileUserAgent = remember(context) {
@@ -157,16 +159,22 @@ internal fun AiWebImportSheet(
     var desktopMode by rememberSaveable { mutableStateOf(true) }
 
     val readErrorMessage = stringResource(R.string.import_ai_web_error_empty)
-    val recognizingText = stringResource(R.string.import_ai_web_recognizing)
     val readingText = stringResource(R.string.import_ai_web_reading)
-    val privacyHint = stringResource(R.string.import_ai_web_privacy_hint)
+    val recognizingHint = stringResource(R.string.import_ai_web_recognizing_hint)
+    val recognizingTitle = stringResource(R.string.import_ai_web_recognizing_title)
+    val sheetTitle = stringResource(R.string.import_ai_web_sheet_title)
     val httpWarning = stringResource(R.string.import_ai_web_http_warning)
     val addressInvalidText = stringResource(R.string.import_ai_web_url_invalid)
     val isHttp = currentUrl.startsWith("http://", ignoreCase = true)
 
+    // 冻结 / 读取 / 识别共用同一条「页面不可交互」判定：标题、地址栏锁定与底部提示都看它
+    val busy = cardVisible || extracting || recognizing
+    // 冻结卡的居中基准：内容区减去底栏（地址栏 + 上下内距 + 系统导航栏）后的中心
+    val navigationBarHeight = LocalNavigationBarHeight.current
+    val bottomReserve = WebAddressBarHeight + BottomBarVerticalPadding * 2 + navigationBarHeight
+
     fun load(wv: WebView, target: String) {
         loadError = false
-        progress = 0
         pageReady = false
         readError = null
         currentUrl = target
@@ -181,27 +189,27 @@ internal fun AiWebImportSheet(
 
     // 打开地址栏输入的新网址：空输入不动作；归一化失败只标错，不改页面
     fun openAddress() {
-        if (address.text.isBlank()) return
-        val target = AiWebImportUrl.normalize(address.text)
+        if (address.isBlank()) return
+        val target = AiWebImportUrl.normalize(address)
         if (target == null) {
             addressError = true
             return
         }
         addressError = false
-        address = TextFieldValue(target, TextRange(target.length))
+        address = target
         pageUrl = target
         currentUrl = target
         onUrlChanged(target)
-        addressFocused = false
         focusManager.clearFocus()
         keyboard?.hide()
         val wv = webView
         if (wv != null) load(wv, target)
     }
 
-    // 手机/电脑版切换：改 UA 后重载当前页，让服务端按新 UA 返回对应门户
-    fun switchUserAgent() {
-        desktopMode = !desktopMode
+    // 手机 / 电脑版切换：改 UA 后重载当前页，让服务端按新 UA 返回对应门户
+    fun switchDesktopMode(desktop: Boolean) {
+        if (desktop == desktopMode) return
+        desktopMode = desktop
         val wv = webView ?: return
         applyUserAgent(wv)
         val target = currentUrl.ifBlank { pageUrl }
@@ -212,11 +220,30 @@ internal fun AiWebImportSheet(
         }
     }
 
-    // 识别请求期间页面可继续滚动；返回键先停识别，地址栏编辑中先收键盘，
-    // 再按才走网页后退/关闭
-    BackHandler {
+    // 确认识别：先冻结当前可见页面，再触发文本抓取。快照失败时降级为「不冻结、照常抓取」
+    fun startRecognition() {
+        if (!pageReady || loadError || busy) return
+        focusManager.clearFocus()
+        keyboard?.hide()
+        val wv = webView
+        val snapshot = wv?.let(::captureWebView)
+        if (snapshot != null) {
+            frozenBitmap = snapshot
+            cardVisible = true
+            cardFrozen = true
+        }
+        extractAttempt++
+    }
+
+    fun stopRecognition() {
+        onStopRecognize()
+        cardFrozen = false
+    }
+
+    fun handleBack() {
         when {
-            recognizing -> onStopRecognize()
+            recognizing -> stopRecognition()
+            cardVisible -> onDismiss()
             addressFocused -> {
                 focusManager.clearFocus()
                 keyboard?.hide()
@@ -225,6 +252,9 @@ internal fun AiWebImportSheet(
             else -> onDismiss()
         }
     }
+
+    // 识别请求期间页面已冻结；返回键先停识别，冻结中直接关闭页面，地址编辑中先收键盘
+    BackHandler(onBack = ::handleBack)
 
     // 组合离场即销毁：WebView 随页面关闭释放；cookie 落盘供下次打开复用登录态
     DisposableEffect(Unit) {
@@ -235,23 +265,44 @@ internal fun AiWebImportSheet(
         }
     }
 
-    // 首次加载：有初始地址直接打开；没有则聚焦地址栏，用户立刻可输入
+    // 首次加载：有初始地址直接打开
     LaunchedEffect(webView) {
         val wv = webView ?: return@LaunchedEffect
         if (pageUrl.isNotBlank()) load(wv, pageUrl)
     }
-    LaunchedEffect(Unit) {
-        if (initialUrl.isBlank()) {
-            addressFocusRequester.requestFocus()
-            keyboard?.show()
-        }
+    // 冻结期间隐藏但保持挂载：JS 抓取继续工作；View 属性比 Compose 图层更可靠地盖住
+    // WebView 的硬件合成内容。读取 / 识别期间同时禁用输入，避免抓取途中点链接换页
+    LaunchedEffect(webView, cardVisible, busy) {
+        val wv = webView ?: return@LaunchedEffect
+        wv.alpha = if (cardVisible) 0f else 1f
+        wv.isEnabled = !busy
     }
-    // 识别开始即收键盘：结果确认弹窗在页内居中，键盘盖住底部按钮会挡住确认/取消
+    // 识别开始即收键盘；识别结束后（成功 / 失败 / 取消）让冻结卡回弹到铺满状态
     LaunchedEffect(recognizing) {
         if (recognizing) {
+            sawRecognizing = true
             focusManager.clearFocus()
             keyboard?.hide()
+        } else if (sawRecognizing) {
+            sawRecognizing = false
+            cardFrozen = false
         }
+    }
+    // 抓取 / AI 失败：立即解除冻结，卡片非线性放大回原页面
+    LaunchedEffect(readError, errorText) {
+        if (readError != null || errorText != null) cardFrozen = false
+    }
+
+    // 冻结卡：active = 冻结中，回弹播完才卸载快照并恢复 WebView 显示。
+    // WebView 的 alpha 在回调里同步复位，保证「快照卡卸载」与「网页重新出现」同帧，
+    // 不依赖下一次组合后的 LaunchedEffect（否则末尾会闪一帧背景 / 光场）
+    val cardMotion = rememberCardShrinkMotion(active = cardFrozen) {
+        webView?.let { wv ->
+            wv.alpha = 1f
+            wv.isEnabled = true
+        }
+        cardVisible = false
+        frozenBitmap = null
     }
 
     val currentOnExtract by rememberUpdatedState(onExtract)
@@ -260,7 +311,13 @@ internal fun AiWebImportSheet(
     // 超时只意味着页面没内容（登录页/跨域 iframe/未渲染完），错误交给 UI 提示重试
     LaunchedEffect(extractAttempt) {
         if (extractAttempt == 0) return@LaunchedEffect
-        val wv = webView ?: return@LaunchedEffect
+        val wv = webView
+        if (wv == null) {
+            extracting = false
+            readError = readErrorMessage
+            cardFrozen = false
+            return@LaunchedEffect
+        }
         extracting = true
         readError = null
         try {
@@ -271,6 +328,7 @@ internal fun AiWebImportSheet(
         } catch (_: Exception) {
             extracting = false
             readError = readErrorMessage
+            cardFrozen = false
             return@LaunchedEffect
         }
         val deadline = System.currentTimeMillis() + ExtractTimeoutMillis
@@ -294,12 +352,14 @@ internal fun AiWebImportSheet(
                     currentOnExtract(capture.content)
                 } else {
                     readError = readErrorMessage
+                    cardFrozen = false
                 }
                 return@LaunchedEffect
             }
             if (System.currentTimeMillis() >= deadline) {
                 extracting = false
                 readError = readErrorMessage
+                cardFrozen = false
                 return@LaunchedEffect
             }
         }
@@ -308,125 +368,54 @@ internal fun AiWebImportSheet(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            // 统一不避让横向 inset：铺满屏幕宽（左右顶到边缘），状态栏交给内容行自理
+            // 统一不避让横向 inset：铺满屏幕宽（左右顶到边缘），状态栏交给顶栏自理
             .background(MaterialTheme.colorScheme.background),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .windowInsetsPadding(LocalStatusBarInsets.current)
-                .padding(horizontal = PageHorizontalSpacing, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.import_ai_web_sheet_title),
-                    style = MaterialTheme.classppTextStyles.fieldLabel,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = stringResource(R.string.import_ai_web_sheet_hint),
-                    style = ClassppTextTokens.settingsDescription,
-                    color = MaterialTheme.classppColors.secondaryText,
-                )
-                if (isHttp) {
-                    Text(
-                        text = httpWarning,
-                        style = ClassppTextTokens.settingsDescription,
-                        color = MaterialTheme.colorScheme.error,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            // 手机/电脑版切换：单颗胶囊显示当前模式，点击切换 UA 并重载当前页
-            val modeLabel = stringResource(
-                if (desktopMode) {
-                    R.string.import_ai_web_mode_desktop
-                } else {
-                    R.string.import_ai_web_mode_mobile
-                },
+        val topAction = if (recognizing) {
+            SettingsTopBarAction(
+                icon = R.drawable.ic_stop,
+                contentDescription = stringResource(R.string.import_ai_web_stop),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                onClick = ::stopRecognition,
             )
-            val modeSwitchCd = stringResource(R.string.cd_ai_web_switch_mode)
-            val modePressShade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
-            Row(
-                modifier = Modifier
-                    .padding(end = 8.dp)
-                    .pressClickable(
-                        shape = PillShape,
-                        shade = modePressShade,
-                        onClick = ::switchUserAgent,
-                    )
-                    .clip(PillShape)
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = modeLabel,
-                    style = ClassppTextTokens.secondaryTextLarge.copy(
-                        color = MaterialTheme.colorScheme.primary,
-                    ),
-                )
-                Spacer(Modifier.width(4.dp))
-                Icon(
-                    painter = painterResource(R.drawable.ic_chevron_up_down),
-                    contentDescription = modeSwitchCd,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(14.dp),
-                )
-            }
-            // 圆形关闭按钮：与设置页返回钮同规格（47dp 圆 + 按压反馈，玻璃关闭时实心底）
-            val press = remember { MutableInteractionSource() }
-            Box(
-                modifier = Modifier
-                    .glassPressFeedback(press, CircleShape, null)
-                    .glassSurface(
-                        shape = CircleShape,
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        backdrop = null,
-                    )
-                    .clickable(interactionSource = press, indication = null, onClick = onDismiss),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_dismiss_circle),
-                    contentDescription = stringResource(R.string.cd_ai_web_close),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(23.dp),
-                )
-            }
+        } else {
+            SettingsTopBarAction(
+                icon = R.drawable.ic_checkmark,
+                contentDescription = stringResource(R.string.import_ai_web_extract),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                enabled = pageReady && !loadError && !busy,
+                onClick = ::startRecognition,
+            )
         }
-        // 加载进度条：跳转身份认证链路时页面持续白底，进度条说明「在加载」而非「卡死」；
-        // 首个进度回包前显示不确定进度（连接阶段），之后随 onProgressChanged 走。
-        // 主文档已加载完成（pageReady）就收起，避免个别页面不报 100 时进度条常驻
-        if (!pageReady && progress in 0..99 && !loadError) {
-            if (progress == 0) {
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = PageHorizontalSpacing),
-                )
-            } else {
-                LinearProgressIndicator(
-                    progress = { progress / 100f },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = PageHorizontalSpacing),
-                )
-            }
-            Spacer(Modifier.height(6.dp))
-        }
+        SettingsTopBar(
+            title = if (busy) recognizingTitle else sheetTitle,
+            onBack = ::handleBack,
+            trailingAction = topAction,
+        )
         Box(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .clipToBounds(),
         ) {
+            // 光场垫在 WebView 之下：冻结时 WebView alpha 0 自然露出；恢复后不透明
+            // WebView 会把光效残余直接盖住，900ms 退场不会被硬切
+            AiThinkingAurora(
+                active = recognizing,
+                anchor = AiAuroraAnchor.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .requiredHeight(AuroraBandHeight)
+                    .align(Alignment.Center)
+                    .offset(y = bottomReserve * -0.5f),
+            )
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
                     WebView(ctx).also { wv ->
-                        // 默认电脑版：UA 由顶栏「电脑版/手机版」切换控制，切换时 reload
+                        // 默认电脑版：UA 由底部地址栏的更多菜单控制，切换时 reload
                         WebViewPolicy.harden(
                             wv,
                             if (desktopMode) DESKTOP_USER_AGENT else mobileUserAgent,
@@ -449,7 +438,7 @@ internal fun AiWebImportSheet(
                                     currentUrl = started
                                     addressError = false
                                     if (!addressFocused) {
-                                        address = TextFieldValue(started, TextRange(started.length))
+                                        address = started
                                     }
                                 }
                             },
@@ -458,14 +447,13 @@ internal fun AiWebImportSheet(
                                 if (finished != null) {
                                     currentUrl = finished
                                     if (!addressFocused) {
-                                        address = TextFieldValue(finished, TextRange(finished.length))
+                                        address = finished
                                     }
                                 }
                             },
                         )
                         wv.webChromeClient = WebViewPolicy.createUserPageChromeClient(
                             onProgress = { value ->
-                                progress = value
                                 if (value > 5) loadError = false
                             },
                             // target=_blank / window.open 在当前 WebView 打开
@@ -476,17 +464,25 @@ internal fun AiWebImportSheet(
                 },
             )
             if (currentUrl.isBlank()) {
-                // 还没输入网址：盖住空白 WebView，提示用户从底部地址栏开始
+                // 还没输入网址：盖住空白 WebView，提示用户从底部地址栏开始。
+                // 高度与课表页「还没有课表」空态对齐：组件顶边距屏幕 250dp（EmptyState 自带
+                // 48dp 上下内距）；内容区已从顶栏下沿开始，故扣掉顶栏高度（状态栏 + 64dp）
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background),
-                    contentAlignment = Alignment.Center,
+                    contentAlignment = Alignment.TopCenter,
                 ) {
                     EmptyState(
                         icon = R.drawable.ic_globe,
                         title = stringResource(R.string.import_ai_web_start_title),
                         description = stringResource(R.string.import_ai_web_start_desc),
+                        modifier = Modifier.padding(
+                            top = (EmptyStateScreenTopPadding -
+                                LocalStatusBarHeight.current -
+                                SettingsTopBarContentHeight)
+                                .coerceAtLeast(0.dp),
+                        ),
                     )
                 }
             }
@@ -527,201 +523,154 @@ internal fun AiWebImportSheet(
                     }
                 }
             }
-        }
-        // 底部操作区：识别状态/错误 + 识别按钮 + 地址栏（最下方，随时可改网址）。
-        // 键盘弹起时整块经 imePadding 抬到键盘上方，WebView 相应缩短
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .windowInsetsPadding(LocalNavigationBarInsets.current)
-                .imePadding()
-                .padding(horizontal = PageHorizontalSpacing, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            if (recognizing) {
-                LinearProgressIndicator(
+            if (cardVisible) {
+                // 冻结期间吞掉落到 WebView 上的触摸（页面已不可操作）
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp),
+                        .matchParentSize()
+                        .pointerInput(Unit) { detectTapGestures { } },
                 )
             }
-            Text(
-                text = when {
-                    recognizing -> recognizingText
-                    extracting -> readingText
-                    else -> privacyHint
-                },
-                style = ClassppTextTokens.settingsDescription,
-                color = MaterialTheme.classppColors.secondaryText,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
-            // 本次页面读取失败优先于上一次 AI 失败：先提示「没读到页面」，
-            // 读取成功后的 AI 失败再由宿主 errorText 展示
-            val shownError = readError ?: errorText
-            if (shownError != null) {
-                SheetInfoBanner(
-                    text = shownError,
-                    isError = true,
-                    modifier = Modifier.padding(bottom = 8.dp),
+            val snapshot = remember(frozenBitmap) { frozenBitmap?.asImageBitmap() }
+            if (cardVisible && snapshot != null) {
+                FrozenPageCard(
+                    snapshot = snapshot,
+                    motion = cardMotion,
+                    bottomReserve = bottomReserve,
                 )
             }
-            DialogPillButton(
-                label = when {
-                    recognizing -> stringResource(R.string.import_ai_web_stop)
-                    extracting -> stringResource(R.string.import_ai_web_reading)
-                    else -> stringResource(R.string.import_ai_web_extract)
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = when {
-                    recognizing -> true
-                    extracting -> false
-                    else -> pageReady && !loadError
-                },
-                onClick = {
-                    when {
-                        recognizing -> onStopRecognize()
-                        extracting -> Unit
-                        else -> extractAttempt++
-                    }
-                },
-            )
-            if (addressError) {
-                Text(
-                    text = addressInvalidText,
-                    style = ClassppTextTokens.settingsDescription,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .windowInsetsPadding(LocalNavigationBarInsets.current)
+                    .imePadding()
+                    .padding(horizontal = PageHorizontalSpacing, vertical = BottomBarVerticalPadding),
             ) {
-                BrowserAddressBar(
+                // 本次页面读取失败优先于上一次 AI 失败：先提示「没读到页面」，
+                // 读取成功后的 AI 失败再由宿主 errorText 展示
+                val shownError = readError ?: errorText
+                if (!busy && shownError != null) {
+                    SheetInfoBanner(
+                        text = shownError,
+                        isError = true,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
+                if (!busy && addressError) {
+                    Text(
+                        text = addressInvalidText,
+                        style = ClassppTextTokens.settingsDescription,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
+                if (!busy && isHttp) {
+                    Text(
+                        text = httpWarning,
+                        style = ClassppTextTokens.settingsDescription,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                }
+                WebAddressBar(
                     value = address,
                     onValueChange = { next ->
-                        // 地址栏是逻辑单行：粘贴带入的换行直接滤掉
-                        val text = next.text.replace("\n", "").replace("\r", "")
-                        address = if (text == next.text) next else next.copy(text = text)
+                        address = next
                         addressError = false
                     },
                     onOpen = ::openAddress,
-                    focusRequester = addressFocusRequester,
-                    onFocusChanged = { focused ->
-                        addressFocused = focused
-                        if (focused) {
-                            address = address.copy(selection = TextRange(0, address.text.length))
-                        }
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = stringResource(R.string.import_ai_web_url_placeholder),
+                    openedUrl = currentUrl.ifBlank { null },
+                    loading = !busy && currentUrl.isNotBlank() && !pageReady && !loadError,
+                    statusText = when {
+                        recognizing -> recognizingHint
+                        extracting -> readingText
+                        else -> null
                     },
-                    isFocused = addressFocused,
-                    isError = addressError,
-                    modifier = Modifier.weight(1f),
+                    readOnly = busy,
+                    onFocusChanged = { addressFocused = it },
+                    desktopMode = desktopMode,
+                    onDesktopModeChange = { desktop ->
+                        if (!busy) switchDesktopMode(desktop)
+                    },
                 )
-                Spacer(Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier
-                        .size(AddressGoSize)
-                        .alpha(if (address.text.isNotBlank()) 1f else 0.4f)
-                        .pressClickable(
-                            shape = CircleShape,
-                            enabled = address.text.isNotBlank(),
-                            onClick = ::openAddress,
-                        )
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_chevron_right),
-                        contentDescription = stringResource(R.string.cd_ai_web_open),
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
             }
         }
     }
 }
 
 /**
- * 底部浏览器地址栏：白底圆角输入框 + 聚焦/错误描边；聚焦时由宿主全选内容。
- * 键盘「前往」与右侧箭头都由宿主接到同一个打开动作。
+ * 冻结网页快照卡：进度 0 = 铺满内容区（与确认前的 WebView 视觉一致），1 = 居中缩小态。
+ *
+ * 尺寸按进度插值（过冲时略小于目标），圆角从 0 渐变到 20dp 连续曲率；卡片中心随进度
+ * 上移到「内容区扣除底栏后的中心」，正好落在设计稿的屏幕中间位置。
  */
 @Composable
-private fun BrowserAddressBar(
-    value: TextFieldValue,
-    onValueChange: (TextFieldValue) -> Unit,
-    onOpen: () -> Unit,
-    focusRequester: FocusRequester,
-    onFocusChanged: (Boolean) -> Unit,
-    isFocused: Boolean,
-    isError: Boolean,
+private fun FrozenPageCard(
+    snapshot: ImageBitmap,
+    motion: CardShrinkMotionState,
+    bottomReserve: Dp,
     modifier: Modifier = Modifier,
 ) {
-    val strokeColor: Color = when {
-        isError -> MaterialTheme.colorScheme.error
-        isFocused -> MaterialTheme.colorScheme.primary
-        else -> Color.Transparent
-    }
-    Box(
-        modifier = modifier
-            .heightIn(min = AddressBarHeight)
-            .clip(SheetCardShape)
-            .background(MaterialTheme.colorScheme.surface)
-            .then(
-                if (strokeColor != Color.Transparent) {
-                    Modifier.border(2.dp, strokeColor, SheetCardShape)
-                } else {
-                    Modifier
-                },
-            )
-            .padding(horizontal = AddressBarHorizontalPadding, vertical = AddressBarVerticalPadding),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            textStyle = ClassppTextTokens.secondaryTextLarge.copy(
-                color = MaterialTheme.colorScheme.onSurface,
-            ),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Uri,
-                imeAction = ImeAction.Go,
-            ),
-            keyboardActions = KeyboardActions(onGo = { onOpen() }),
+    val progress = motion.progress.value.coerceAtLeast(0f)
+    val ramp = progress.coerceIn(0f, 1f)
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val scale = 1f + (FrozenCardScale - 1f) * progress
+        val cardWidth = maxWidth * scale
+        val cardHeight = maxHeight * scale
+        val cornerRadius = FrozenCardCornerRadius * ramp
+        val lift = bottomReserve * 0.5f * ramp
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(focusRequester)
-                .onFocusChanged { state -> onFocusChanged(state.isFocused) },
-            decorationBox = { innerTextField ->
-                Box(contentAlignment = Alignment.CenterStart) {
-                    if (value.text.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.import_ai_web_url_placeholder),
-                            style = MaterialTheme.classppTextStyles.fieldPlaceholder,
-                            textAlign = TextAlign.Start,
-                            maxLines = 1,
-                        )
-                    }
-                    innerTextField()
-                }
-            },
-        )
+                .align(Alignment.Center)
+                .offset(y = lift * -1f)
+                .size(width = cardWidth, height = cardHeight)
+                .clip(RoundedRectangle(cornerRadius)),
+        ) {
+            Image(
+                bitmap = snapshot,
+                contentDescription = null,
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
 
-/** 地址栏高度与内距：46dp 单行条，左右 14dp 让长网址不贴圆角 */
-private val AddressBarHeight = 46.dp
-private val AddressBarHorizontalPadding = 14.dp
-private val AddressBarVerticalPadding = 8.dp
+/**
+ * 抓取 WebView 当前可见内容：`draw(Canvas)` 只截页面本身，不含顶部 / 底部浮层。
+ * 硬件合成视频等极少数内容可能不完整；失败返回 null，调用方降级为不冻结、继续抓取。
+ */
+private fun captureWebView(webView: WebView): Bitmap? {
+    if (webView.width <= 0 || webView.height <= 0) return null
+    return runCatching {
+        Bitmap.createBitmap(webView.width, webView.height, Bitmap.Config.ARGB_8888).also { bitmap ->
+            webView.draw(Canvas(bitmap))
+        }
+    }.getOrNull()
+}
 
-/** 地址栏右侧「前往」圆钮尺寸 */
-private val AddressGoSize = 44.dp
+/** 与课表页无课表空态对齐：空态组件顶边距屏幕顶部 250dp（EmptyState 另带 48dp 内距） */
+private val EmptyStateScreenTopPadding = 250.dp
+
+/** 设置页顶栏内容高度（不含状态栏）：CenterAlignedTopAppBar 默认 64dp */
+private val SettingsTopBarContentHeight = 64.dp
+
+/** 冻结卡目标尺寸占内容区的比例（设计稿约 52%） */
+private const val FrozenCardScale = 0.52f
+
+/** 冻结卡目标圆角：连续曲率 20dp，随进度从直角渐变 */
+private val FrozenCardCornerRadius = 20.dp
+
+/** 底部地址栏上方 / 下方的呼吸量（与底部浮层的 vertical padding 同值） */
+private val BottomBarVerticalPadding = 10.dp
+
+/** 识别光场高度：与图片识别浮层同一量级，中心对齐冻结卡 */
+private val AuroraBandHeight = 600.dp
 
 /** 桌面 UA：教务系统常按 UA 分流桌面/移动门户；与项目其它桌面 UA 保持一致 */
 private const val DESKTOP_USER_AGENT =

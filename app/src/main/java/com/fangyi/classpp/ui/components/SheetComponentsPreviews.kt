@@ -201,6 +201,17 @@ private fun WebAddressBarPreview() = ClassppTheme {
             desktopMode = true,
             onDesktopModeChange = {},
         )
+        // 识别中只读态：状态文案走 fieldValue primary 色，右侧 more 保留但不可点
+        WebAddressBar(
+            value = "https://jw.xmu.edu.cn",
+            onValueChange = {},
+            onOpen = {},
+            openedUrl = "https://jw.xmu.edu.cn",
+            statusText = "AI正在识别，可能会花费较长时间",
+            readOnly = true,
+            desktopMode = true,
+            onDesktopModeChange = {},
+        )
     }
 }
 

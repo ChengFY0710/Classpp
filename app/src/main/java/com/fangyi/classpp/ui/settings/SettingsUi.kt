@@ -1,5 +1,6 @@
 package com.fangyi.classpp.ui.settings
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -167,6 +170,11 @@ internal fun rememberSettingsTitleAlpha(
  * 进入顶栏下方后按 100dp→150dp 有效位移在绘制期淡入、回滚对称淡出（过滚动计入有效
  * 位移）。透明度在 `graphicsLayer` 里求值，滚动过程零重组；标题始终占位，顶栏高度与
  * 内容内缩不随之变化。视觉上隐藏时仍保留语义，TalkBack 可播报页面身份。
+ *
+ * [trailingAction] 非空时在右上角画一颗与返回钮同规格的圆钮（尺寸 / 投影 / 按压反馈
+ * 完全共用 [SettingsTopCircleButton]，仅底色与图标由 [SettingsTopBarAction] 指定；
+ * 禁用时整颗淡到 40% 且不响应点击）。设置页自身不传，教务网页识别等全屏页用它承载
+ * 确认 / 停止动作。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -174,6 +182,7 @@ internal fun SettingsTopBar(
     title: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    trailingAction: SettingsTopBarAction? = null,
     titleAlpha: () -> Float = { 1f },
     hazeState: HazeState? = null,
     buttonBackdrop: Backdrop? = null,
@@ -237,43 +246,125 @@ internal fun SettingsTopBar(
         // 不用 IconButton：其内部涟漪以按压点为圆心、20dp 半径封顶，偏心按压盖不满圆钮。
         // 圆钮改用按压反馈（放大 + 提亮取代涟漪）：反馈放在柔影 graphicsLayer 之前，
         // 缩放连投影一起放大；按压源与点击共用，indication 置 null
-        val press = remember { MutableInteractionSource() }
-        Box(
+        SettingsTopCircleButton(
+            icon = R.drawable.ic_arrow_left,
+            contentDescription = stringResource(R.string.cd_settings_close),
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            backdrop = buttonBackdrop,
+            onClick = onBack,
             modifier = Modifier
                 .align(Alignment.TopStart)
                 //原槽位内垂直居中
                 .windowInsetsPadding(LocalStatusBarInsets.current)
-                .padding(start = 24.dp, top = 8.dp)  // 返回按钮位置
-                .size(47.dp)
-                // 按压反馈接在柔影图层之前：缩放连投影一起放大。玻璃模式换官方 Q弹
-                // 按压放大（软弹簧果冻过冲 + 沿轮廓加色提亮）；非玻璃维持 pressFeedback
-                //（封装见 ui.theme LiquidGlass）。放大两态同取 1.10（不随全局默认）
-                .glassPressFeedback(press, CircleShape, buttonBackdrop)
-                .graphicsLayer {    // 返回按钮投影
-                    shape = CircleShape
-                    clip = true
-                    shadowElevation = 45.dp.toPx()
-                    spotShadowColor = Color.Black.copy(alpha = 0.2f)
-                }
-                // 玻璃模式改由 drawBackdrop 出底（采样内容经模糊/折射裁进圆形，表面叠
-                // surface 染色——白玻璃）；非玻璃实心底
-                .glassSurface(
-                    shape = CircleShape,
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    backdrop = buttonBackdrop,
-                )
-                .clickable(interactionSource = press, indication = null, onClick = onBack),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_arrow_left),
-                contentDescription = stringResource(R.string.cd_settings_close),
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(23.dp),
+                .padding(start = 24.dp, top = 8.dp),  // 返回按钮位置
+        )
+        if (trailingAction != null) {
+            SettingsTopCircleButton(
+                icon = trailingAction.icon,
+                contentDescription = trailingAction.contentDescription,
+                containerColor = trailingAction.containerColor,
+                contentColor = trailingAction.contentColor,
+                enabled = trailingAction.enabled,
+                backdrop = buttonBackdrop,
+                onClick = trailingAction.onClick,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .windowInsetsPadding(LocalStatusBarInsets.current)
+                    .padding(end = 24.dp, top = 8.dp),
             )
         }
     }
 }
+
+/**
+ * 设置页顶栏右侧圆钮的配置（与返回钮同规格，仅图标与配色不同）。
+ *
+ * @param icon 按钮图标（通常 24dp 矢量，绘制时收 23dp）
+ * @param contentDescription 无障碍描述
+ * @param enabled false = 整颗圆钮淡到 40%，且不响应点击 / 按压反馈
+ */
+@Immutable
+internal data class SettingsTopBarAction(
+    @DrawableRes val icon: Int,
+    val contentDescription: String,
+    val containerColor: Color,
+    val contentColor: Color,
+    val enabled: Boolean = true,
+    val onClick: () -> Unit,
+)
+
+/**
+ * 顶栏圆钮（返回 / 右侧确认共用）：47dp 圆、23dp 图标、45dp 黑色 20% 柔影。
+ *
+ * 玻璃模式经 [glassSurface] / [glassPressFeedback] 出底与按压反馈（缩放连投影一起
+ * 放大）；非玻璃为实心底 + 普通按压反馈。禁用态不挂点击与按压反馈，整颗淡到 40%。
+ */
+@Composable
+private fun SettingsTopCircleButton(
+    @DrawableRes icon: Int,
+    contentDescription: String,
+    containerColor: Color,
+    contentColor: Color,
+    backdrop: Backdrop?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val press = remember { MutableInteractionSource() }
+    val feedbackModifier = if (enabled) {
+        Modifier
+            // 按压反馈接在柔影图层之前：缩放连投影一起放大。玻璃模式换官方 Q弹
+            // 按压放大（软弹簧果冻过冲 + 沿轮廓加色提亮）；非玻璃维持 pressFeedback
+            //（封装见 ui.theme LiquidGlass）。放大两态同取 1.10（不随全局默认）
+            .glassPressFeedback(press, CircleShape, backdrop)
+            .graphicsLayer {    // 圆钮投影
+                shape = CircleShape
+                clip = true
+                shadowElevation = 45.dp.toPx()
+                spotShadowColor = Color.Black.copy(alpha = 0.2f)
+            }
+            // 玻璃模式改由 drawBackdrop 出底（采样内容经模糊/折射裁进圆形，表面叠
+            // 染色——白玻璃 / primary 玻璃）；非玻璃实心底
+            .glassSurface(
+                shape = CircleShape,
+                containerColor = containerColor,
+                backdrop = backdrop,
+            )
+            .clickable(interactionSource = press, indication = null, onClick = onClick)
+    } else {
+        Modifier
+            .graphicsLayer {
+                shape = CircleShape
+                clip = true
+                shadowElevation = 45.dp.toPx()
+                spotShadowColor = Color.Black.copy(alpha = 0.2f)
+            }
+            .glassSurface(
+                shape = CircleShape,
+                containerColor = containerColor,
+                backdrop = backdrop,
+            )
+    }
+    Box(
+        modifier = modifier
+            .size(47.dp)
+            // 启用态不加额外 alpha 图层，与改造前的返回钮逐层一致
+            .then(if (enabled) Modifier else Modifier.alpha(DisabledTopActionAlpha))
+            .then(feedbackModifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = painterResource(icon),
+            contentDescription = contentDescription,
+            tint = contentColor,
+            modifier = Modifier.size(23.dp),
+        )
+    }
+}
+
+/** 顶栏圆钮禁用时的整体透明度（与底部「前往」圆钮的 0.4 同值） */
+private const val DisabledTopActionAlpha = 0.4f
 
 /** 设置页身份：冻结键的一部分，保证各屏顶栏的帧绝不互相重放 */
 internal enum class SettingsPage {
