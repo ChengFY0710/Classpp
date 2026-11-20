@@ -651,6 +651,7 @@
     <string name="import_ai_web_reading">Reading page…</string>
     <string name="import_ai_web_recognizing">Scanning the timetable…</string>
     <string name="import_ai_web_recognizing_title">Analyzing</string>
+    <string name="import_ai_web_fetching_title">Fetching page</string>
     <string name="import_ai_web_recognizing_hint">AI is analyzing — this may take a while</string>
     <string name="import_ai_web_privacy_hint">Page content will be sent to your AI provider</string>
     <string name="import_ai_web_http_warning">This page uses HTTP — keep your account safe</string>

@@ -97,12 +97,14 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * - 顶部：设置页同款 [SettingsTopBar]（返回圆钮 + 居中标题），右侧一颗 primary 圆钮；
  * - 内容区：WebView 只占顶栏以下区域，底部 [WebAddressBar] 浮在页面之上；
  * - 确认：抓一张 WebView 可见内容的 Bitmap，冻结成快照卡（原 WebView 保持挂载但
- *   alpha = 0，[AiWebPageExtract] 的 JS 抓取继续工作），卡片按 [rememberCardShrinkMotion]
- *   缩小到屏幕中间：先缩过目标再回弹（复用弹层果冻曲线），圆角从直角渐变为 20dp；
- * - 抓取完成后宿主开始 AI 识别（[recognizing]），[AiThinkingAurora] 在卡片下方亮起；
- *   此时右上角从 ic_checkmark 变为 ic_stop，点击取消识别；
- * - 停止 / 识别失败：卡片只用 320ms 非线性放大回原页面（不回弹），恢复 WebView；
- *   成功：沿用宿主的确认弹窗与导入后整页退出流程，不改成功路径。
+ *   alpha = 0），卡片按 [rememberCardShrinkMotion] 缩小到屏幕中间：先缩过目标再回弹
+ *   （复用弹层果冻曲线），圆角从直角渐变为 20dp；
+ * - 缩小动画完整播完后才开始抓取页面文本（[AiWebPageExtract]）：抓取期间卡片静止在
+ *   缩小态、不亮光效，顶栏标题为「抓取中」；
+ * - 抓取成功：文本交给宿主开始 AI 识别，[AiThinkingAurora] 在卡片下方亮起，标题切为
+ *   「识别中」，右上角从 ic_checkmark 变为 ic_stop，点击取消识别；
+ * - 抓取失败 / 识别失败 / 停止：卡片只用 320ms 非线性放大回原页面（不回弹），恢复
+ *   WebView；成功：沿用宿主的确认弹窗与导入后整页退出流程，不改成功路径。
  *
  * 地址栏行为：
  * - [initialUrl] 非空时直接加载（重开页面记住上次地址）；为空时显示空态，点击地址栏输入；
@@ -165,6 +167,7 @@ internal fun AiWebImportSheet(
 
     val readErrorMessage = stringResource(R.string.import_ai_web_error_empty)
     val readingText = stringResource(R.string.import_ai_web_reading)
+    val fetchingTitle = stringResource(R.string.import_ai_web_fetching_title)
     val recognizingHint = stringResource(R.string.import_ai_web_recognizing_hint)
     val recognizingTitle = stringResource(R.string.import_ai_web_recognizing_title)
     val sheetTitle = stringResource(R.string.import_ai_web_sheet_title)
@@ -225,19 +228,21 @@ internal fun AiWebImportSheet(
         }
     }
 
-    // 确认识别：先冻结当前可见页面，再触发文本抓取。快照失败时降级为「不冻结、照常抓取」
+    // 确认识别：先冻结快照并启动缩小动画；文本抓取在动画完整播完后由 cardMotion.onShrunk
+    // 触发（抓取期间卡片保持缩小态，不亮光效）。快照失败时降级为直接抓取
     fun startRecognition() {
         if (!pageReady || loadError || busy) return
         focusManager.clearFocus()
         keyboard?.hide()
-        val wv = webView
-        val snapshot = wv?.let(::captureWebView)
+        val snapshot = webView?.let(::captureWebView)
         if (snapshot != null) {
             frozenBitmap = snapshot
             cardVisible = true
             cardFrozen = true
+        } else {
+            // 无法冻结：不做缩小动画，直接进入文本抓取（成功后由宿主识别）
+            extractAttempt++
         }
-        extractAttempt++
     }
 
     fun stopRecognition() {
@@ -249,6 +254,8 @@ internal fun AiWebImportSheet(
         when {
             recognizing -> stopRecognition()
             cardVisible -> onDismiss()
+            // 抓取期间页面仍是原尺寸、WebView 可后退：别让返回键在轮询中导航换页
+            extracting -> onDismiss()
             addressFocused -> {
                 focusManager.clearFocus()
                 keyboard?.hide()
@@ -301,7 +308,11 @@ internal fun AiWebImportSheet(
     // 冻结卡：active = 冻结中，回弹播完才卸载快照并恢复 WebView 显示。
     // WebView 的 alpha 在回调里同步复位，保证「快照卡卸载」与「网页重新出现」同帧，
     // 不依赖下一次组合后的 LaunchedEffect（否则末尾会闪一帧背景 / 光场）
-    val cardMotion = rememberCardShrinkMotion(active = cardFrozen) {
+    val cardMotion = rememberCardShrinkMotion(
+        active = cardFrozen,
+        // 缩小动画完整播完后才抓取页面文本：抓取期间卡片静止在缩小态，光效尚未亮起
+        onShrunk = { extractAttempt++ },
+    ) {
         webView?.let { wv ->
             wv.alpha = 1f
             wv.isEnabled = true
@@ -312,8 +323,9 @@ internal fun AiWebImportSheet(
 
     val currentOnExtract by rememberUpdatedState(onExtract)
 
-    // 网页抓取：清空旧结果 → 注入提取脚本 → 轮询约定变量。脚本同步写回，通常一轮即得；
-    // 超时只意味着页面没内容（登录页/跨域 iframe/未渲染完），错误交给 UI 提示重试
+    // 网页抓取：缩小动画完成后由 cardMotion.onShrunk 触发；清空旧结果 → 注入提取脚本 →
+    // 轮询约定变量。脚本同步写回，通常一轮即得；成功才把文本交给宿主发 AI 请求并点亮
+    // 光效，失败 / 超时则回弹卡片、恢复网页原状
     LaunchedEffect(extractAttempt) {
         if (extractAttempt == 0) return@LaunchedEffect
         val wv = webView
@@ -354,9 +366,11 @@ internal fun AiWebImportSheet(
             if (capture != null) {
                 extracting = false
                 if (capture.ok && capture.content.isNotBlank()) {
+                    // 抓取成功：文本交给宿主开始 AI 识别（光效亮起），卡片保持缩小态
                     currentOnExtract(capture.content)
                 } else {
                     readError = readErrorMessage
+                    // 抓取失败：走回弹动画，网页恢复原位
                     cardFrozen = false
                 }
                 return@LaunchedEffect
@@ -632,7 +646,12 @@ internal fun AiWebImportSheet(
         }
         // 顶栏最后绘制：圆钮投影盖在内容与底栏之上，玻璃圆钮采样整页底色 / 内容
         SettingsTopBar(
-            title = if (busy) recognizingTitle else sheetTitle,
+            // 抓取是卡片缩小后的独立阶段（不亮光效）；识别开始后切回「识别中」
+            title = when {
+                extracting -> fetchingTitle
+                recognizing || cardVisible -> recognizingTitle
+                else -> sheetTitle
+            },
             onBack = ::handleBack,
             trailingAction = topAction,
             buttonBackdrop = buttonBackdrop,

@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.isActive
 
 /** 回弹（放大回原页面）时长：只放大不回弹，用 [Motion.Overlay] 的非线性减速收尾 */
 private const val CardRestoreMillis = 320
@@ -33,6 +34,8 @@ class CardShrinkMotionState internal constructor(
  * - 进场 0 → 1：直接复用弹层菜单的果冻曲线 [popupEnterJelly]（`startScale = 0f`，
  *   [PopupEnterDefaultTiming]），先缩过目标（进度峰值 ≈1.05）再回弹到 1，峰值时刻
  *   200ms、总时长 440ms；
+ * - [onShrunk] 在进场动画完整播完（回到目标 1）后回调一次，宿主可据此在缩小完成后
+ *   才开始耗时操作（如网页文本抓取）；进场被取消（提前 `active = false` / 离场）时不回调；
  * - 离场 1 → 0：`tween(320, Motion.Overlay)`，只非线性放大回铺满，不带过冲；
  * - [onRestored] 在离场播完后回调一次，宿主据此卸载快照、恢复 WebView 显示；
  *   首次组合即 `active = false` 时不回调。
@@ -43,9 +46,11 @@ class CardShrinkMotionState internal constructor(
 @Composable
 fun rememberCardShrinkMotion(
     active: Boolean,
+    onShrunk: () -> Unit = {},
     onRestored: () -> Unit = {},
 ): CardShrinkMotionState {
     val progress = remember { Animatable(0f) }
+    val currentOnShrunk = rememberUpdatedState(onShrunk)
     val currentOnRestored = rememberUpdatedState(onRestored)
     // 只在「曾经进入过」之后才允许跑退场 / 回调，避免页面首次组合时误触发恢复
     var started by remember { mutableStateOf(false) }
@@ -60,6 +65,8 @@ fun rememberCardShrinkMotion(
                     timing = PopupEnterDefaultTiming,
                 ),
             )
+            // 动画被取消（active 提前翻转 / 页面离场）时不要触发耗时操作
+            if (isActive) currentOnShrunk.value()
         } else if (started) {
             if (progress.value != 0f) {
                 progress.animateTo(

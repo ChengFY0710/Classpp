@@ -787,6 +787,7 @@
     <string name="import_ai_web_reading">正在读取网页…</string>
     <string name="import_ai_web_recognizing">正在识别网页课表…</string>
     <string name="import_ai_web_recognizing_title">识别中</string>
+    <string name="import_ai_web_fetching_title">抓取中</string>
     <string name="import_ai_web_recognizing_hint">AI正在识别，可能会花费较长时间</string>
     <string name="import_ai_web_privacy_hint">网页内容会发送给你所选的 AI 服务商</string>
     <string name="import_ai_web_http_warning">当前网页未使用 HTTPS，请注意账号安全</string>
