@@ -13,15 +13,39 @@ enum class AiModelListApi { OpenAiCompat, DashScope }
 
 /**
  * 思考开关在 OpenAI 兼容请求体里的表达方式（「关」档位的执行语义）：
- * - [None]：不发送开关字段（默认）。关 = 不发任何推理参数，由服务商默认行为决定；
- * - [ThinkingType]：发送 `thinking: {"type": "enabled"/"disabled"}`。DeepSeek 的思考
- *   模式**默认开启**，省略参数等于继续思考，必须显式传 `disabled` 才真正关闭
- *   （见 DeepSeek 思考模式文档 api-docs.deepseek.com/zh-cn/guides/thinking_mode）。
+ * - [None]：不发送开关字段。关 = 不发任何推理参数，由服务商默认行为决定；
+ *   非关档位仍原样发送 `reasoning_effort`（未知服务商的既有兼容面）；
+ * - [ThinkingType]：发送 `thinking: {"type": "enabled"/"disabled"}` + 非关档位的
+ *   `reasoning_effort`。DeepSeek 的思考模式**默认开启**，省略参数等于继续思考，
+ *   必须显式传 `disabled` 才真正关闭（见 DeepSeek 思考模式文档
+ *   api-docs.deepseek.com/zh-cn/guides/thinking_mode）；
+ * - [ThinkingTypeOnly]：只发 `thinking` 开关，不发 `reasoning_effort`
+ *   （MiMo、GLM 开关族、Kimi K2.6 没有等级参数，档位字符串不落到线上）；
+ * - [EnableThinking]：发送 `enable_thinking: true/false` + 非关档位的
+ *   `reasoning_effort`（千问/百炼的 OpenAI 兼容形态）；
+ * - [EnableThinkingOnly]：只发 `enable_thinking` 开关（千问 hybrid 老模型）；
+ * - [ReasoningEffortOnly]：只发 `reasoning_effort`，没有「关」档——模型始终思考，
+ *   首档是最低强度而不是关闭（Kimi K3、GLM-5.3）。
  *
- * 新增支持该开关形态的服务商时在预设表里切换本类型；未配置的预设保持 [None]，
- * 避免把不认识该字段的网关（如 OpenAI 官方）打到 400。
+ * 控制形态由 [AiProviderPresets.thinkingControlFor] 按「服务商 + 模型族」解析；
+ * 未命中的模型回落预设表里的能力标记，避免把不认识该字段的网关（如 OpenAI 官方）打到 400。
  */
-enum class AiThinkingControl { None, ThinkingType }
+enum class AiThinkingControl {
+    None,
+    ThinkingType,
+    ThinkingTypeOnly,
+    EnableThinking,
+    EnableThinkingOnly,
+    ReasoningEffortOnly,
+    ;
+
+    /** 「关」档是否存在：始终思考的模型族首档就是最低强度，不能按关处理 */
+    val supportsOff: Boolean get() = this != ReasoningEffortOnly
+
+    /** 是否把推理等级原样作为 `reasoning_effort` 发送（纯开关型档位不发） */
+    val sendsEffort: Boolean
+        get() = this != ThinkingTypeOnly && this != EnableThinkingOnly
+}
 
 /**
  * 一个服务商预设：用户在 AI 设置里选预设即回填端点、协议与建议模型，
@@ -36,7 +60,8 @@ enum class AiThinkingControl { None, ThinkingType }
  * @param protocol 选中预设时回填的接口协议（预设自带协议，设置页仅自定义服务商展示选择器）
  * @param modelListApi 该服务商的模型列表拉取方案（见 [AiModelListApi]）；
  *   默认通用 OpenAI 兼容，百炼等端点形态不同的服务商单独配置
- * @param thinkingControl 思考开关的请求形态（见 [AiThinkingControl]）；默认不发送开关字段
+ * @param thinkingControl 该预设下的默认思考开关形态（见 [AiThinkingControl]）；模型族
+ *   有更细的档位/控制规则时由 [AiProviderPresets.thinkingControlFor] 覆盖，未命中模型回落本字段
  */
 data class AiProviderPreset(
     val id: String,
@@ -101,6 +126,8 @@ object AiProviderPresets {
             label = "Xiaomi MiMo",
             baseUrl = "https://api.xiaomimimo.com/v1",
             suggestedModel = "mimo-v2.6-pro",
+            // 文本模型默认开启思考，只有开关没有 reasoning_effort
+            thinkingControl = AiThinkingControl.ThinkingTypeOnly,
         ),
         AiProviderPreset(
             id = CUSTOM_ID,
@@ -116,4 +143,13 @@ object AiProviderPresets {
     /** 按 id 取预设；未知 id（含被下架的旧预设）一律回落 custom，绝不抛异常 */
     fun byId(id: String): AiProviderPreset = all.firstOrNull { it.id == id }
         ?: all.first { it.id == CUSTOM_ID }
+
+    /**
+     * 某服务商下具体模型实际使用的思考控制形态：先按 [AiReasoningProfiles] 的模型族
+     * 档位表解析（GLM/MiMo/Kimi/千问/百炼的模型族各异），未命中时回落到预设自身的能力
+     * 标记（DeepSeek 全系 [AiThinkingControl.ThinkingType]，MiMo 全系
+     * [AiThinkingControl.ThinkingTypeOnly]，其余 [AiThinkingControl.None]）。
+     */
+    fun thinkingControlFor(providerId: String, model: String): AiThinkingControl =
+        AiReasoningProfiles.controlFor(providerId, model)
 }

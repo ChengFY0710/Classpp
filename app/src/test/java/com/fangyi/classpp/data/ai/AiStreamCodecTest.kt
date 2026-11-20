@@ -354,6 +354,132 @@ class AiStreamCodecTest {
         assertEquals("high", bodyOf(t.lastRequest!!)["reasoning_effort"]!!.jsonPrimitive.content)
     }
 
+    // ---------- 服务商 / 模型族思考控制矩阵 ----------
+
+    private fun providerConnection(
+        providerId: String,
+        model: String,
+        levels: List<String>,
+        selected: String,
+    ) = AiConnection(
+        providerId = providerId,
+        baseUrl = "https://api.example.com/v1",
+        model = model,
+        modelConfigs = mapOf(model to AiModelConfig(levels, selected)),
+    )
+
+    private suspend fun openAiBody(
+        providerId: String,
+        model: String,
+        levels: List<String>,
+        selected: String,
+    ): kotlinx.serialization.json.JsonObject {
+        val t = transport("data: [DONE]", null)
+        AiClient(t).streamChat(
+            providerConnection(providerId, model, levels, selected),
+            "sk",
+            listOf(AiChatTurn("user", "hi")),
+        )
+        return bodyOf(t.lastRequest!!)
+    }
+
+    @Test
+    fun `always thinking families send effort without thinking or off`() = runBlocking {
+        // GLM-5.3 与 Kimi K3：思考始终开启，首档是最低强度，必须照常发送
+        val glm = openAiBody("zhipu", "glm-5.3", listOf("low", "high", "max"), "low")
+        assertEquals("low", glm["reasoning_effort"]!!.jsonPrimitive.content)
+        assertNull("始终思考的模型族不发 thinking", glm["thinking"])
+
+        val kimi = openAiBody("moonshot", "kimi-k3.1-pro", listOf("low", "high", "max"), "low")
+        assertEquals("low", kimi["reasoning_effort"]!!.jsonPrimitive.content)
+        assertNull("Kimi K3 不接受 thinking 参数", kimi["thinking"])
+    }
+
+    @Test
+    fun `glm 5_2 off disables thinking and level enables with effort`() = runBlocking {
+        val levels = listOf("none", "low", "medium", "high", "max")
+        val off = openAiBody("zhipu", "glm-5.2", levels, "none")
+        assertEquals("disabled", off["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        assertNull("关档位不发送 reasoning_effort", off["reasoning_effort"])
+
+        val on = openAiBody("zhipu", "glm-5.2", levels, "high")
+        assertEquals("enabled", on["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals("high", on["reasoning_effort"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `switch only families send thinking type without effort`() = runBlocking {
+        // GLM 开关族 / MiMo / Kimi K2.6：档位只用于 UI 映射，线上只发 thinking 开关
+        listOf(
+            "zhipu" to "glm-4.6",
+            "mimo" to "mimo-v2.6-pro",
+            "moonshot" to "kimi-k2.6",
+        ).forEach { (providerId, model) ->
+            val off = openAiBody(providerId, model, listOf("off", "on"), "off")
+            assertEquals(
+                "$model 关档应发 thinking.disabled",
+                "disabled",
+                off["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content,
+            )
+            assertNull("$model 不得发送 reasoning_effort", off["reasoning_effort"])
+
+            val on = openAiBody(providerId, model, listOf("off", "on"), "on")
+            assertEquals(
+                "$model 非关档应发 thinking.enabled",
+                "enabled",
+                on["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content,
+            )
+            assertNull("$model 不得发送 reasoning_effort", on["reasoning_effort"])
+        }
+    }
+
+    @Test
+    fun `qwen families use enable thinking with or without effort`() = runBlocking {
+        val qwen38 = listOf("none", "low", "medium", "xhigh")
+        val off = openAiBody("qwen", "qwen3.8-flash", qwen38, "none")
+        assertEquals("false", off["enable_thinking"]!!.jsonPrimitive.content)
+        assertNull(off["reasoning_effort"])
+
+        val on = openAiBody("qwen", "qwen3.8-flash", qwen38, "medium")
+        assertEquals("true", on["enable_thinking"]!!.jsonPrimitive.content)
+        assertEquals("medium", on["reasoning_effort"]!!.jsonPrimitive.content)
+        assertNull("千问不使用 thinking 对象", on["thinking"])
+
+        // qwen-plus 等 hybrid 只有开关，没有 effort
+        val hybridOn = openAiBody("qwen", "qwen-plus", listOf("off", "on"), "on")
+        assertEquals("true", hybridOn["enable_thinking"]!!.jsonPrimitive.content)
+        assertNull(hybridOn["reasoning_effort"])
+    }
+
+    @Test
+    fun `bailian vendor families use enable thinking`() = runBlocking {
+        val deepseekOff = openAiBody(
+            "bailian",
+            "deepseek-v4-pro",
+            listOf("none", "low", "high", "max"),
+            "none",
+        )
+        assertEquals("false", deepseekOff["enable_thinking"]!!.jsonPrimitive.content)
+        assertNull(deepseekOff["reasoning_effort"])
+
+        val deepseekOn = openAiBody(
+            "bailian",
+            "deepseek-v4-pro",
+            listOf("none", "low", "high", "max"),
+            "high",
+        )
+        assertEquals("true", deepseekOn["enable_thinking"]!!.jsonPrimitive.content)
+        assertEquals("high", deepseekOn["reasoning_effort"]!!.jsonPrimitive.content)
+
+        val glm = openAiBody("bailian", "glm-4.6", listOf("none", "high", "max"), "high")
+        assertEquals("true", glm["enable_thinking"]!!.jsonPrimitive.content)
+        assertEquals("high", glm["reasoning_effort"]!!.jsonPrimitive.content)
+
+        val kimi = openAiBody("bailian", "kimi-k2.6", listOf("off", "on"), "on")
+        assertEquals("true", kimi["enable_thinking"]!!.jsonPrimitive.content)
+        assertNull(kimi["reasoning_effort"])
+    }
+
     @Test
     fun `anthropic off level keeps request without thinking`() = runBlocking {
         val t = transport(messageStop(), null)

@@ -174,6 +174,144 @@ class AiModelCatalogTest {
     }
 
     @Test
+    fun `parse infers provider model family levels when list has no effort`() {
+        val zhipu = AiModelCatalog.parsePage(
+            connection("https://open.bigmodel.cn/api/paas/v4", providerId = "zhipu"),
+            """{"data":[
+              {"id":"glm-5.3-flash"},{"id":"glm-4.6"},{"id":"glm-4.7"}
+            ]}""",
+        ).models
+        assertEquals(listOf("low", "high", "max"), zhipu[0].config.reasoningLevels)
+        assertEquals("max", zhipu[0].config.reasoningLevel)
+        assertEquals(listOf("off", "on"), zhipu[1].config.reasoningLevels)
+        // 强制思考且没有 effort 的模型不写档位
+        assertTrue(zhipu[2].config.isEmpty)
+
+        val kimi = AiModelCatalog.parsePage(
+            connection("https://api.moonshot.cn/v1", providerId = "moonshot"),
+            """{"data":[
+              {"id":"kimi-k3.1-pro","supports_reasoning":true},
+              {"id":"kimi-k2.6","supports_reasoning":true},
+              {"id":"kimi-k3","supports_reasoning":false}
+            ]}""",
+        ).models
+        assertEquals(listOf("low", "high", "max"), kimi[0].config.reasoningLevels)
+        assertEquals(listOf("off", "on"), kimi[1].config.reasoningLevels)
+        // supports_reasoning=false 时不按模型族补档位
+        assertTrue(kimi[2].config.isEmpty)
+
+        val mimo = AiModelCatalog.parsePage(
+            connection("https://api.xiaomimimo.com/v1", providerId = "mimo"),
+            """{"data":[{"id":"mimo-v2.6-pro"},{"id":"mimo-v2.5-asr"}]}""",
+        ).models
+        assertEquals(listOf("off", "on"), mimo[0].config.reasoningLevels)
+        assertTrue(mimo[1].config.isEmpty)
+
+        val qwen = AiModelCatalog.parsePage(
+            connection(
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                providerId = "qwen",
+            ),
+            """{"data":[
+              {"id":"qwen3.8-flash"},{"id":"qwen-plus"},{"id":"qwen-image-3.0-pro"}
+            ]}""",
+        ).models
+        assertEquals(listOf("none", "low", "medium", "xhigh"), qwen[0].config.reasoningLevels)
+        assertEquals("xhigh", qwen[0].config.reasoningLevel)
+        assertEquals("off", qwen[1].config.reasoningLevel)
+        assertTrue(qwen[2].config.isEmpty)
+    }
+
+    @Test
+    fun `parse bailian native page infers aggregated vendor families`() {
+        val models = AiModelCatalog.parsePage(
+            connection(
+                baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                providerId = "bailian",
+            ),
+            """
+            {"output":{"total":4,"page_no":1,"page_size":100,"models":[
+              {"model":"qwen3.8-flash"},
+              {"model":"deepseek-v4-pro"},
+              {"model":"glm-5.3"},
+              {"model":"kimi-k2.6"}
+            ]}}
+            """.trimIndent(),
+        ).models
+        assertEquals(listOf("none", "low", "medium", "xhigh"), models[0].config.reasoningLevels)
+        assertEquals(listOf("none", "low", "high", "max"), models[1].config.reasoningLevels)
+        assertEquals(listOf("low", "high", "max"), models[2].config.reasoningLevels)
+        assertEquals(listOf("off", "on"), models[3].config.reasoningLevels)
+    }
+
+    @Test
+    fun `effort metadata wins over inferred family levels`() {
+        val models = AiModelCatalog.parsePage(
+            connection("https://open.bigmodel.cn/api/paas/v4", providerId = "zhipu"),
+            """{"data":[{"id":"glm-5.3",
+              "effort":{"supported_levels":["low","medium","high"],"default_level":"medium"}}]}""",
+        ).models
+        assertEquals(listOf("low", "medium", "high"), models[0].config.reasoningLevels)
+        assertEquals("medium", models[0].config.reasoningLevel)
+    }
+
+    @Test
+    fun `mergeFetchedModels overwrites duplicate configs and returns only new models`() {
+        val connection = AiConnection(
+            providerId = "deepseek",
+            baseUrl = "https://api.deepseek.com",
+            model = "deepseek-chat",
+            models = listOf("deepseek-chat", "deepseek-reasoner"),
+            modelConfigs = mapOf(
+                "deepseek-chat" to AiModelConfig(listOf("low", "high", "max"), "low"),
+                "deepseek-reasoner" to AiModelConfig(listOf("off", "high"), "high"),
+            ),
+        )
+        val fetched = listOf(
+            AiFetchedModel(
+                "deepseek-chat",
+                AiModelConfig(listOf("minimal", "low", "high"), "high"),
+            ),
+            // 同名但拉取无档位：保留已有配置
+            AiFetchedModel("DeepSeek-Reasoner"),
+            AiFetchedModel("deepseek-v4", AiModelConfig(listOf("low", "high", "max"), "max")),
+            AiFetchedModel("deepseek-flash", AiModelConfig(listOf("low", "high"), "high")),
+        )
+
+        val merge = AiModelCatalog.mergeFetchedModels(connection, fetched)
+
+        assertEquals(1, merge.updated)
+        // 模型列表顺序与当前模型不变
+        assertEquals(listOf("deepseek-chat", "deepseek-reasoner"), merge.connection.models)
+        assertEquals("deepseek-chat", merge.connection.model)
+        // 同名非空配置整体覆盖
+        assertEquals(
+            listOf("minimal", "low", "high"),
+            merge.connection.modelConfig("deepseek-chat").reasoningLevels,
+        )
+        assertEquals("high", merge.connection.modelConfig("deepseek-chat").reasoningLevel)
+        // 同名空配置不覆盖
+        assertEquals(
+            listOf("off", "high"),
+            merge.connection.modelConfig("deepseek-reasoner").reasoningLevels,
+        )
+        // 新鲜模型按 id 排序，且不提前写入连接
+        assertEquals(listOf("deepseek-flash", "deepseek-v4"), merge.fresh.map { it.id })
+        assertTrue(merge.connection.modelConfig("deepseek-v4").isEmpty)
+    }
+
+    @Test
+    fun `parse falls back to model field when id is missing`() {
+        // 少数兼容网关（如智谱）条目用 model 而不是 id
+        val models = AiModelCatalog.parsePage(
+            connection("https://open.bigmodel.cn/api/paas/v4", providerId = "zhipu"),
+            """{"data":[{"model":"glm-4.6"},{"id":"glm-5.3"},{"model":""}]}""",
+        ).models
+        assertEquals(listOf("glm-4.6", "glm-5.3"), models.map { it.id })
+        assertEquals(listOf("off", "on"), models[0].config.reasoningLevels)
+    }
+
+    @Test
     fun `parse accepts empty data list`() {
         val page = AiModelCatalog.parsePage(
             connection("https://api.example.com/v1"),

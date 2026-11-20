@@ -1227,11 +1227,13 @@
     <string name="ai_model_reasoning_duplicate">该推理等级已存在</string>
     <string name="ai_model_reasoning_map_title">等级顺序说明</string>
     <string name="ai_model_reasoning_map_desc">等级请按从低到高排列，对话浮层的思考强度按等级数量映射：2 个为关、开启；3 个为关、高、最高；4 个为关、低、高、最高；5 个为关、低、高、最高、极致。第一个等级为「关」，选中时不开启思考。</string>
+    <string name="ai_model_reasoning_map_desc_always_on">该模型不支持关闭思考，等级请按从低到高排列，对话浮层的思考强度按等级数量映射：2 个为低、高；3 个为低、高、最高；4 个为低、中、高、最高；5 个为低、中、高、最高、极致。第一个等级为最低强度，不会被当成关闭。</string>
     <string name="ai_model_fetch">从服务商拉取模型</string>
     <string name="ai_model_fetch_title">选择模型</string>
     <string name="ai_model_fetch_add">添加</string>
     <string name="ai_model_fetch_loading">正在拉取模型…</string>
     <string name="ai_model_fetch_empty">没有可添加的新模型</string>
+    <string name="ai_model_fetch_updated">已更新 %1$d 个模型的思考强度</string>
     <string name="ai_model_fetch_key_required">请先填写 API Key</string>
     <string name="ai_model_fetch_failed">拉取失败，%1$s</string>
     <string name="ai_model_fetch_not_found">服务地址不支持拉取模型列表，请检查地址</string>
@@ -1241,6 +1243,7 @@
     <string name="ai_reasoning_level_off">关</string>
     <string name="ai_reasoning_level_on">开启</string>
     <string name="ai_reasoning_level_low">低</string>
+    <string name="ai_reasoning_level_medium">中</string>
     <string name="ai_reasoning_level_high">高</string>
     <string name="ai_reasoning_level_highest">最高</string>
     <string name="ai_reasoning_level_extreme">极致</string>

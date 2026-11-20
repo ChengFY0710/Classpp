@@ -23,6 +23,7 @@ import com.fangyi.classpp.data.ai.AiConnection
 import com.fangyi.classpp.data.ai.AiError
 import com.fangyi.classpp.data.ai.AiException
 import com.fangyi.classpp.data.ai.AiFetchedModel
+import com.fangyi.classpp.data.ai.AiModelCatalog
 import com.fangyi.classpp.data.ai.AiModelConfig
 import com.fangyi.classpp.data.ai.AiProfile
 import com.fangyi.classpp.data.ai.AiProtocol
@@ -77,9 +78,9 @@ private data class PendingProfileSave(
  *   对话浮层输入栏上方仍可切换；
  * - 「从服务商拉取模型」：用当前服务地址与 API Key（输入框优先，留空回落当前条目
  *   已保存的 Key）拉取可用模型（端点随服务商预设的拉取方案 AiModelListApi 配置），
- *   拉取期间整屏加载态；结果过滤掉已加入的模型后打开多选浮层，确认合并进本地草稿
- *   并回填服务商附带的推理等级配置（如 DeepSeek 的 effort 元数据），已有模型与其
- *   配置原样保留，父浮层「确认」才随连接落库；
+ *   拉取期间整屏加载态；同名模型直接覆盖草稿里的思考强度配置（拉取无档位时保留已有
+ *   配置），新模型进入多选浮层，确认合并进本地草稿并回填推理等级（DeepSeek 的 effort
+ *   元数据，或 GLM / MiMo / Kimi / 千问 / 百炼的模型族档位），父浮层「确认」才随连接落库；
  * - 末尾「提示」分组：纯展示行，说明对话图片需要多模态（视觉）模型；
  * - 确认时先做本地校验（服务地址 http 开头、至少一个模型名），失败 toast 并保留浮层；
  *   Key 缺失由宿主回调判定（保存后仍无可用 Key → 提示并保留浮层）。
@@ -122,6 +123,7 @@ internal fun AiProfileSheet(
     val modelEmptyMessage = stringResource(R.string.ai_settings_model_empty)
     val fetchKeyRequiredMessage = stringResource(R.string.ai_model_fetch_key_required)
     val fetchEmptyMessage = stringResource(R.string.ai_model_fetch_empty)
+    val fetchUpdatedMessage = stringResource(R.string.ai_model_fetch_updated)
     val fetchFailedMessage = stringResource(R.string.ai_model_fetch_failed)
     val renameLabel = stringResource(R.string.edit_rename)
     val deleteLabel = stringResource(R.string.edit_delete)
@@ -395,8 +397,8 @@ internal fun AiProfileSheet(
 
     /**
      * 拉取服务商模型列表：Key 优先用输入框当前值，留空时回落当前条目已保存的 Key；
-     * 两者都没有才提示先填写。先做地址的本地校验，成功结果过滤掉草稿里已加入的模型
-     *（忽略大小写）后交多选浮层。
+     * 两者都没有才提示先填写。先做地址的本地校验；成功后同名模型直接覆盖草稿里的
+     * 思考强度配置（拉取无档位时保留已有配置），只有新模型交多选浮层。
      */
     fun startFetchModels() {
         val baseUrl = draftConnection.baseUrl.trim()
@@ -421,14 +423,16 @@ internal fun AiProfileSheet(
             fetching = true
             try {
                 val models = fetchModels(target, apiKey)
-                val existing = draftConnection.modelOptions
-                val fresh = models
-                    .filterNot { fetched -> existing.any { it.equals(fetched.id, ignoreCase = true) } }
-                    .sortedBy { it.id.lowercase() }
-                if (fresh.isEmpty()) {
-                    AppToasts.show(context, fetchEmptyMessage)
+                // 同名模型直接覆盖推理等级配置；拉取结果没有档位时保留用户已有配置
+                val merge = AiModelCatalog.mergeFetchedModels(draftConnection, models)
+                if (merge.updated > 0) {
+                    updateDraft(merge.connection)
+                    AppToasts.show(context, fetchUpdatedMessage.format(merge.updated))
+                }
+                if (merge.fresh.isEmpty()) {
+                    if (merge.updated == 0) AppToasts.show(context, fetchEmptyMessage)
                 } else {
-                    fetchedModels = fresh
+                    fetchedModels = merge.fresh
                     pickerMounted = true
                     pickerVisible = true
                 }
@@ -448,8 +452,8 @@ internal fun AiProfileSheet(
     }
 
     /**
-     * 拉取结果合并：追加勾选的新模型，并把服务商附带的推理等级配置一并写入
-     * （如 DeepSeek 的 effort 元数据）；已有模型与它们的配置原样保留。
+     * 拉取结果合并：追加勾选的新模型，并把服务商附带或模型族推断的推理等级配置一并写入；
+     * 同名模型已在拉取阶段直接覆盖，不进入多选列表。
      */
     fun applyFetchedModels(selected: List<String>) {
         if (selected.isEmpty()) return
@@ -731,6 +735,7 @@ internal fun AiProfileSheet(
             editingModel = editingModel,
             initialConfig = editingModel?.let(draftConnection::modelConfig) ?: AiModelConfig(),
             existingModels = draftConnection.modelOptions,
+            providerId = draftConnection.providerId,
             hazeEnabled = !hazeRetreat.suspended,
             onConfirm = ::applyModelConfig,
             onDelete = editingModel?.let { target -> { deleteModelConfig(target) } },

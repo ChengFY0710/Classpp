@@ -83,11 +83,12 @@ internal interface AiStreamCodec {
  * OpenAI 兼容 `/chat/completions` 编解码（OpenAI / DeepSeek / 智谱 / 通义 / Kimi /
  * Ollama 同协议）。
  *
- * - 请求：Bearer 认证；体为 `{model, stream, temperature?, reasoning_effort?, thinking?,
- *   messages, tools?}`（`reasoning_effort` 来自当前模型的推理等级配置，原样透传，
- *   未配置不发送；`thinking` 仅在服务商预设声明 [AiThinkingControl.ThinkingType] 时
- *   发送——DeepSeek 等默认开启思考，**「关」档位必须显式 disabled 才真正关闭**，
- *   未声明该形态的服务商不发送，避免不认识该字段的网关 400）；
+ * - 请求：Bearer 认证；体为 `{model, stream, temperature?, reasoning_effort?,
+ *   thinking? / enable_thinking?, messages, tools?}`（`reasoning_effort` 来自当前模型的
+ *   推理等级配置，按控制形态原样透传或省略；思考开关按服务商 + 模型族下发：
+ *   DeepSeek 用 `thinking.type`，MiMo / GLM 开关族 / Kimi K2.6 用 `thinking.type`
+ *   且不发 effort，千问 / 百炼用 `enable_thinking`，Kimi K3 / GLM-5.3 只发 effort
+ *   且没有「关」档；未声明控制形态的服务商不发开关，避免不认识该字段的网关 400）；
  *   assistant 带 `tool_calls` 时同时落 `tool_calls` 数组，tool 轮每个结果一条
  *   `{role:"tool", tool_call_id, content}` 消息；
  * - 解析：`data: [DONE]` 终止；`choices[0].delta.content` 为正文增量；
@@ -106,7 +107,12 @@ internal object OpenAiStreamCodec : AiStreamCodec {
         tools: List<AiToolSpec>,
     ): AiHttpRequest {
         val config = connection.modelConfig(connection.model)
-        val reasoningOff = config.isReasoningOff()
+        val thinkingControl = AiProviderPresets.thinkingControlFor(
+            connection.providerId,
+            connection.model,
+        )
+        // 始终思考的模型族没有「关」档：首档是最低强度，必须照常发送
+        val reasoningOff = thinkingControl.supportsOff && config.isReasoningOff()
         return AiHttpRequest(
             url = connection.baseUrl.trimEnd('/') + CHAT_COMPLETIONS_PATH,
             headers = mapOf(
@@ -121,7 +127,7 @@ internal object OpenAiStreamCodec : AiStreamCodec {
                     config.reasoningLevel.trim().takeIf { it.isNotEmpty() }
                 },
                 reasoningOff = reasoningOff,
-                thinkingControl = AiProviderPresets.byId(connection.providerId).thinkingControl,
+                thinkingControl = thinkingControl,
                 turns = turns,
                 temperature = temperature,
                 tools = tools,
@@ -180,16 +186,25 @@ internal object OpenAiStreamCodec : AiStreamCodec {
             put("model", model)
             put("stream", true)
             temperature?.let { put("temperature", it) }
-            // 推理等级原样透传（minimal/low/medium/high/xhigh 及各家自定义值）；服务商
-            // 不支持该字段时由用户在等级配置里清空即可，编解码层不猜服务商语义
-            reasoningLevel?.let { put("reasoning_effort", it) }
-            // 思考开关（DeepSeek 等默认开启思考的服务商）：「关」必须显式 disabled，
-            // 省略参数等于继续思考（默认 effort=high）；非关档位显式 enabled，与
-            // DeepSeek 文档的请求示例一致。未声明该形态的服务商不发，避免 400
-            if (thinkingControl == AiThinkingControl.ThinkingType) {
-                when {
+            // 推理等级按控制形态发送：纯开关型档位（MiMo / GLM 开关族 / Kimi K2.6 /
+            // 千问 hybrid）不把档位字符串当 reasoning_effort，避免服务商 400
+            if (thinkingControl.sendsEffort) {
+                reasoningLevel?.let { put("reasoning_effort", it) }
+            }
+            when (thinkingControl) {
+                AiThinkingControl.None,
+                AiThinkingControl.ReasoningEffortOnly -> Unit
+                AiThinkingControl.ThinkingType,
+                AiThinkingControl.ThinkingTypeOnly -> when {
+                    // 非关档位显式 enabled（DeepSeek 等默认开启思考，省略等于继续思考）
                     reasoningLevel != null -> put("thinking", thinkingElement(THINKING_TYPE_ENABLED))
+                    // 「关」档位必须显式 disabled 才真正关闭
                     reasoningOff -> put("thinking", thinkingElement(THINKING_TYPE_DISABLED))
+                }
+                AiThinkingControl.EnableThinking,
+                AiThinkingControl.EnableThinkingOnly -> when {
+                    reasoningLevel != null -> put("enable_thinking", true)
+                    reasoningOff -> put("enable_thinking", false)
                 }
             }
             put("messages", JsonArray(encodeMessages(turns)))

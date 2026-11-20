@@ -68,6 +68,7 @@ import com.fangyi.classpp.data.ai.AiConnection
 import com.fangyi.classpp.data.ai.AiConversation
 import com.fangyi.classpp.data.ai.AiException
 import com.fangyi.classpp.data.ai.AiImageStore
+import com.fangyi.classpp.data.ai.AiProviderPresets
 import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
@@ -835,6 +836,11 @@ fun AiChatOverlay(
             val reasoningConfig = activeConnection.modelConfig(activeConnection.model)
             val reasoningLevels = reasoningConfig.reasoningLevels
             val showReasoningChip = configured && reasoningLevels.size > 1
+            // 始终思考的模型族首档不是「关」：胶囊文案整体后移一位
+            val reasoningOffSupported = AiProviderPresets.thinkingControlFor(
+                activeConnection.providerId,
+                activeConnection.model,
+            ).supportsOff
             val showChipRow = showModelChip || showReasoningChip
             val chipBlockHeight = if (showChipRow) {
                 ModelSwitchChipHeight + ModelSwitchChipGap
@@ -919,6 +925,7 @@ fun AiChatOverlay(
                                     enabled = !sending,
                                     hazeState = bottomHazeState,
                                     backdrop = auroraBackdrop,
+                                    offSupported = reasoningOffSupported,
                                     onSwitch = { level ->
                                         scope.launch {
                                             val repository = aiChatRepository

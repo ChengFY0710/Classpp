@@ -117,8 +117,9 @@ fun AiModelSwitchChip(
 /**
  * 对话浮层输入栏上方的思考强度胶囊：与 [AiModelSwitchChip] 同款外形与交互
  * （[SwitchChip]），展示当前模型推理等级的友好文案（按等级数量位置映射，见
- * [reasoningIntensityLabel]），点开列出该模型的全部等级。第一个等级为「关」，
- * 选中它时不开启思考（语义见 [com.fangyi.classpp.data.ai.AiModelConfig.isReasoningOff]）。
+ * [reasoningIntensityLabel]），点开列出该模型的全部等级。支持关的模型族第一个
+ * 等级为「关」，选中它时不开启思考；始终思考的模型族（Kimi K3、GLM-5.3）首档只是
+ * 最低强度，[offSupported] 传 false 后文案不再出现「关」。
  *
  * 只在该模型配置了多个推理等级时由宿主渲染；切换经 [onSwitch] 交给仓库落库。
  */
@@ -130,9 +131,10 @@ fun AiReasoningSwitchChip(
     hazeState: HazeState?,
     onSwitch: (String) -> Unit,
     backdrop: Backdrop? = null,
+    offSupported: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    val currentLabel = reasoningIntensityLabel(levels, currentLevel)
+    val currentLabel = reasoningIntensityLabel(levels, currentLevel, offSupported)
     SwitchChip(
         label = stringResource(R.string.ai_reasoning_chip_value, currentLabel),
         iconRes = R.drawable.ic_ai,
@@ -141,7 +143,7 @@ fun AiReasoningSwitchChip(
         hazeState = hazeState,
         items = levels.map { level ->
             SwitchChipItem(
-                label = reasoningIntensityLabel(levels, level),
+                label = reasoningIntensityLabel(levels, level, offSupported),
                 selected = level.equals(currentLevel, ignoreCase = true),
                 onPick = { onSwitch(level) },
             )

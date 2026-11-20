@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.AppToasts
 import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ai.AiModelConfig
+import com.fangyi.classpp.data.ai.AiProviderPresets
 import com.fangyi.classpp.ui.components.ActionRowCard
 import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
@@ -66,6 +67,8 @@ import dev.chrisbanes.haze.rememberHazeState
  *   并选中，已在列表中的预设不重复出现；等级可删到空，空列表 = 该模型不使用推理等级，
  *   列表非空时选中项自动回落首个；
  * - 新增等级直接追加卡片，**不走 Haze 源重写退让**（本浮层其余重写动作仍沿用退让接线）；
+ * - 说明卡按服务商 + 模型族区分：始终思考的模型族（Kimi K3、GLM-5.3 等）首档只是
+ *   最低强度，不显示「第一个为关」的旧说明；
  * - 本浮层只改父浮层的**本地草稿**（父浮层「确认」才连同连接一起落库）。
  *
  * 层级：叠在 AI 配置方案浮层之上，打开/关闭时父浮层经 covered 缩小后退。等级增删是
@@ -82,6 +85,8 @@ internal fun AiModelConfigSheet(
     initialConfig: AiModelConfig,
     // 同一方案内已有的模型 id（不含正被编辑的写法差异由本浮层处理）
     existingModels: List<String>,
+    // 当前草稿的服务商预设 id：决定该模型族是否支持「关」档，说明卡文案随之切换
+    providerId: String,
     // 父浮层的 Haze 退让开关：父层源子树重写帧本浮层同步卸载效果节点
     hazeEnabled: Boolean,
     onConfirm: (modelId: String, config: AiModelConfig) -> Unit,
@@ -99,6 +104,10 @@ internal fun AiModelConfigSheet(
     var levels by remember { mutableStateOf(initialConfig.reasoningLevels) }
     var selectedLevel by remember { mutableStateOf(initialConfig.reasoningLevel) }
     var idError by remember { mutableStateOf(false) }
+    // 始终思考的模型族首档不是「关」，说明卡文案需要区分
+    val reasoningOffSupported = AiProviderPresets
+        .thinkingControlFor(providerId, modelId)
+        .supportsOff
 
     // 添加推理等级的底部输入卡（与旧模型列表的底部输入同一套两段式挂载）
     var levelInputVisible by remember { mutableStateOf(false) }
@@ -266,13 +275,19 @@ internal fun AiModelConfigSheet(
                     enabled = true,
                     onClick = ::openAddLevel,
                 )
-                // 说明卡（纯描述行：无控件与点击）：等级顺序即强度顺序，第一个为「关」；
-                // 对话浮层按等级数量映射友好文案，提醒用户按从低到高排列
+                // 说明卡（纯描述行：无控件与点击）：支持关的模型族首档为「关」；
+                // 始终思考的模型族（Kimi K3、GLM-5.3）首档是最低强度，文案随之区分
                 SettingsCard(
                     items = listOf(
                         SettingsCardItem.Custom(
                             label = stringResource(R.string.ai_model_reasoning_map_title),
-                            description = stringResource(R.string.ai_model_reasoning_map_desc),
+                            description = stringResource(
+                                if (reasoningOffSupported) {
+                                    R.string.ai_model_reasoning_map_desc
+                                } else {
+                                    R.string.ai_model_reasoning_map_desc_always_on
+                                },
+                            ),
                         ),
                     ),
                 )

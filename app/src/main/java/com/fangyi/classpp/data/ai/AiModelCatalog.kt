@@ -8,8 +8,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
 /**
- * 一条拉取到的模型：id + 服务商附带的模型级配置（当前为推理等级）。
- * [config] 为空配置 = 该模型不使用推理等级（服务商未提供 effort 元数据）。
+ * 一条拉取到的模型：id + 服务商附带或模型族推断的模型级配置（推理等级）。
+ * [config] 为空配置 = 该模型不使用推理等级（接口未提供 effort 且模型族表未命中）。
  */
 data class AiFetchedModel(
     val id: String,
@@ -39,11 +39,52 @@ internal data class AiModelListPage(
  *   按 `page_no` / `page_size` / `total` 分页。origin 取自当前 baseUrl，覆盖官方、
  *   国际站与 Workspace 域名（`https://{WorkspaceId}.{region}.maas.aliyuncs.com`）。
  *
- * 模型 id trim + 忽略大小写去重；条目里的 `effort` 元数据（DeepSeek：`supported_levels`
- * + `default_level`）解析为该模型的推理等级配置（[AiFetchedModel.config]，无则为空配置）。
+ * 模型 id trim + 忽略大小写去重；通用形态优先读 `id`、缺失时回落同形 `model` 字段
+ * （百炼原生反之），兼容少数网关的列表写法。条目配置优先级：
+ * 1. `effort` 元数据（DeepSeek：`supported_levels` + `default_level`，任何服务商返回都优先）；
+ * 2. 内置模型族档位表 [AiReasoningProfiles]（GLM / MiMo / Kimi / 千问 / 百炼的列表不含
+ *    档位，按模型 id 推断；Kimi 明确 `supports_reasoning=false` 时不推断）；
+ * 3. 空配置（该模型不使用推理等级）。
  * 结构不合法按 [AiError.BadResponse] 处理。
  */
 internal object AiModelCatalog {
+
+    /** 拉取结果与草稿合并的结果：更新后的连接 + 仅含新模型的列表 + 覆盖数量 */
+    data class FetchedMerge(
+        val connection: AiConnection,
+        val fresh: List<AiFetchedModel>,
+        val updated: Int,
+    )
+
+    /**
+     * 把拉取结果并入草稿：与已添加模型同名（忽略大小写）且拉取配置非空时直接覆盖该模型
+     * 的推理等级配置；同名但拉取配置为空时保留已有配置（不让一次拉取清空用户手填档位）。
+     * 只有全新的模型进入 [FetchedMerge.fresh]（按 id 排序），模型列表顺序与当前模型不变。
+     */
+    fun mergeFetchedModels(
+        connection: AiConnection,
+        fetched: List<AiFetchedModel>,
+    ): FetchedMerge {
+        val existing = connection.modelOptions
+        var next = connection
+        var updated = 0
+        val fresh = ArrayList<AiFetchedModel>(fetched.size)
+        fetched.forEach { model ->
+            val isExisting = existing.any { it.equals(model.id, ignoreCase = true) }
+            when {
+                isExisting && !model.config.isEmpty -> {
+                    next = next.withModelConfig(model.id, model.config)
+                    updated++
+                }
+                !isExisting -> fresh += model
+            }
+        }
+        return FetchedMerge(
+            connection = next,
+            fresh = fresh.sortedBy { it.id.lowercase() },
+            updated = updated,
+        )
+    }
 
     fun buildRequest(connection: AiConnection, apiKey: String, page: Int = 1): AiHttpRequest {
         if (usesDashScope(connection)) {
@@ -85,22 +126,31 @@ internal object AiModelCatalog {
             throw AiException(AiError.BadResponse, detail = e.message)
         } ?: throw AiException(AiError.BadResponse, detail = "root is not a json object")
 
-        return if (usesDashScope(connection)) parseDashScopePage(root) else parseCompatPage(root)
+        return if (usesDashScope(connection)) {
+            parseDashScopePage(connection, root)
+        } else {
+            parseCompatPage(connection, root)
+        }
     }
 
     /** OpenAI 兼容 / Anthropic 同形：`{"data":[{"id":"..."}]}`，单页 */
-    private fun parseCompatPage(root: JsonObject): AiModelListPage {
+    private fun parseCompatPage(connection: AiConnection, root: JsonObject): AiModelListPage {
         val data = root["data"] as? JsonArray
             ?: throw AiException(AiError.BadResponse, detail = errorDetail(root) ?: "missing data array")
-        return AiModelListPage(models = parseModels(data, ID_FIELD))
+        // 少数兼容网关（如智谱）条目用 model 而不是 id：主字段缺失时回落同形字段
+        return AiModelListPage(
+            models = parseModels(connection, data, ID_FIELD, fallbackField = MODEL_FIELD),
+        )
     }
 
     /** 百炼原生形态：`{"output":{"total":N,"page_no":p,"page_size":s,"models":[{"model":"..."}]}}` */
-    private fun parseDashScopePage(root: JsonObject): AiModelListPage {
+    private fun parseDashScopePage(connection: AiConnection, root: JsonObject): AiModelListPage {
         val output = root["output"] as? JsonObject
             ?: throw AiException(AiError.BadResponse, detail = errorDetail(root) ?: "missing output")
         val modelsArray = output["models"] as? JsonArray
-        val models = modelsArray?.let { parseModels(it, MODEL_FIELD) }.orEmpty()
+        val models = modelsArray?.let {
+            parseModels(connection, it, MODEL_FIELD, fallbackField = ID_FIELD)
+        }.orEmpty()
         val pageNo = output.intOrNull("page_no") ?: 1
         // 服务端回显页大小；缺失或异常值按请求页大小兜底，避免除零/原地分页
         val pageSize = output.intOrNull("page_size")?.takeIf { it > 0 } ?: PAGE_SIZE
@@ -114,21 +164,53 @@ internal object AiModelCatalog {
         return AiModelListPage(models = models, nextPage = nextPage)
     }
 
-    /** 解析一页的模型条目：id（或百炼的 model）+ 可选的 effort 推理等级元数据 */
-    private fun parseModels(array: JsonArray, field: String): List<AiFetchedModel> {
+    /** 解析一页的模型条目：主字段（id / 百炼的 model）+ 同形字段回退 + 推理等级配置 */
+    private fun parseModels(
+        connection: AiConnection,
+        array: JsonArray,
+        field: String,
+        fallbackField: String? = null,
+    ): List<AiFetchedModel> {
         val models = ArrayList<AiFetchedModel>(array.size)
         array.forEach { element ->
             val entry = element as? JsonObject ?: return@forEach
             val id = (entry[field] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
+                .ifEmpty {
+                    fallbackField
+                        ?.let { (entry[it] as? JsonPrimitive)?.contentOrNull?.trim() }
+                        .orEmpty()
+                }
             if (id.isEmpty() || models.any { it.id.equals(id, ignoreCase = true) }) return@forEach
-            models += AiFetchedModel(id = id, config = effortConfig(entry))
+            models += AiFetchedModel(
+                id = id,
+                config = reasoningConfig(connection, entry, id),
+            )
         }
         return models
     }
 
     /**
+     * 条目配置：接口 `effort` 元数据优先（DeepSeek），否则按服务商模型族表推断
+     * （GLM / MiMo / Kimi / 千问 / 百炼）；Kimi 的 `supports_reasoning=false` 表示
+     * 该模型不支持推理，不再按模型族补档位。
+     */
+    private fun reasoningConfig(
+        connection: AiConnection,
+        entry: JsonObject,
+        id: String,
+    ): AiModelConfig {
+        val fromMetadata = effortConfig(entry)
+        if (!fromMetadata.isEmpty) return fromMetadata
+        return AiReasoningProfiles.configFor(
+            providerId = connection.providerId,
+            model = id,
+            supportsReasoning = entry.booleanOrNull("supports_reasoning"),
+        ) ?: AiModelConfig()
+    }
+
+    /**
      * DeepSeek 的 `effort` 元数据（`supported_levels` + `default_level`）直接对应应用的
-     * 推理等级配置；其他服务商/无 effort 字段时为空配置（该模型不使用推理等级）。
+     * 推理等级配置；无 effort 字段时返回空配置，由 [reasoningConfig] 继续按模型族表推断。
      */
     private fun effortConfig(entry: JsonObject): AiModelConfig {
         val effort = entry["effort"] as? JsonObject ?: return AiModelConfig()
@@ -175,6 +257,10 @@ internal object AiModelCatalog {
 
     private fun JsonObject.intOrNull(key: String): Int? =
         (this[key] as? JsonPrimitive)?.content?.toIntOrNull()
+
+    /** 布尔元数据（Kimi 的 supports_reasoning）：缺失 / 非布尔返回 null */
+    private fun JsonObject.booleanOrNull(key: String): Boolean? =
+        (this[key] as? JsonPrimitive)?.contentOrNull?.toBooleanStrictOrNull()
 
     /** 百炼错误响应常带 code/message（HTTP 可能仍是 200）：拼进排查信息 */
     private fun errorDetail(root: JsonObject): String? = listOfNotNull(

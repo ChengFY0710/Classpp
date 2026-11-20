@@ -57,6 +57,9 @@ data class AiModelConfig(
      * 当前选中等级是否表示「不开启思考」：等级列表按从低到高排列（2~5 个档位），
      * 第一个即「关」——选中它时请求不发送任何推理参数。其它数量（1 / >5）没有
      * 「关」档位概念，按原样发送等级。
+     *
+     * 仅对支持关闭思考的控制形态生效（[AiThinkingControl.supportsOff]）；始终思考的
+     * 模型族（Kimi K3、GLM-5.3）首档是最低强度，请求侧不会把首档当关。
      */
     fun isReasoningOff(): Boolean {
         if (reasoningLevels.size !in 2..5) return false
