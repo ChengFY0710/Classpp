@@ -20,9 +20,12 @@ package com.fangyi.classpp.ui.motion
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.AnimationState
 import androidx.compose.animation.core.AnimationVector
+import androidx.compose.animation.core.DecayAnimationSpec
 import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animateDecay
 import androidx.compose.animation.core.animateTo
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.splineBasedDecay
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.OverscrollEffect
 import androidx.compose.foundation.OverscrollFactory
@@ -76,6 +79,7 @@ import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.RulerScope
 import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.node.LayoutModifierNode
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -571,8 +575,10 @@ fun Modifier.rubberBandVerticalScroll(
  * 剩余量、手动喂给效果实例：
  * - 用户拖动：剩余量经 [OffsetOverscrollEffect.applyToScroll] 拉出；反向拖动时在 pre
  *   阶段先收回拉出量，剩余量照常滚内容（顺序与效果的内部实现一致）；
- * - 惯性帧到边：剩余位移同样并入拉出量（效果自身只为 UserInput 累积），松手后在
- *   post-fling 统一回弹。
+ * - 惯性到边：自定义 [FlingBehavior] 用「本容器实际滚了多少」认边（嵌套滚动里剩余量
+ *   会被外层连接吃掉，返回的 consumed 恒为全量，默认惯性据此判断不出到边，会把整段
+ *   惯性在边缘空跑完，观感是一段很慢的慢动作），一到边立即停下，把剩余速度经
+ *   post-fling 交给效果，做与速度相称的拉出。
  *
  * 只在内容确实超过 [maxHeight]（存在滚动范围）时接管：内容不足一屏时仍是普通滚动容器，
  * 外层列表照常跟手，避免小卡片在列表里变成滑不动的「死区」。
@@ -585,6 +591,11 @@ fun Modifier.containedRubberBandVerticalScroll(
     maxHeight: Dp,
 ): Modifier {
     val effect = rememberOffsetOverscrollEffect()
+    val density = LocalDensity.current
+    // 自收自支的惯性：到边立刻停（判据是本容器实滚量，见 [ContainedFlingBehavior]）
+    val flingBehavior = remember(state, density) {
+        ContainedFlingBehavior(state, splineBasedDecay(density))
+    }
     val connection = remember(state, effect) {
         object : NestedScrollConnection {
             // 内容超出上限才有滚动范围；不足一屏时不接管，保持普通嵌套滚动
@@ -607,12 +618,14 @@ fun Modifier.containedRubberBandVerticalScroll(
                 source: NestedScrollSource,
             ): Offset {
                 if (!scrollable || available.y == 0f) return Offset.Zero
-                // 用户拖动到边：剩余量在卡内拉出橡皮筋，不交给外层列表。
-                // 惯性帧（SideEffect）也按 UserInput 喂入：效果只为 UserInput 累积拉出量，
-                // 甩到边才有与速度相称的拉出手感，且不会把剩余位移透给外层
-                return effect.applyToScroll(available, NestedScrollSource.UserInput) {
-                    Offset.Zero
+                if (source == NestedScrollSource.UserInput) {
+                    // 用户拖动到边：剩余量在卡内拉出橡皮筋，不交给外层列表
+                    return effect.applyToScroll(available, source) { Offset.Zero }
                 }
+                // 惯性帧：只吃掉、不在这里拉出。拉出交给 fling 到边后 post-fling 的
+                // 剩余速度（效果按速度做首帧位移）；在这里逐帧喂会让拉出跟着惯性衰减
+                // 慢慢爬，快速滑动时就是一段很慢的动画
+                return available
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
@@ -633,7 +646,48 @@ fun Modifier.containedRubberBandVerticalScroll(
         .clipToBounds()
         .overscroll(effect)
         .nestedScroll(connection)
-        .verticalScroll(state)
+        .verticalScroll(state, flingBehavior = flingBehavior)
+}
+
+/**
+ * [containedRubberBandVerticalScroll] 的自定义惯性：与默认 spline 惯性同构，唯一区别是
+ * **到边判据**。
+ *
+ * 默认惯性看 `scrollBy` 返回的消费量：嵌套滚动里剩余量会被外层滚动容器在 post 阶段吃掉，
+ * 返回值始终是「全量已消费」，因此它在边缘不会停下，会把剩余惯性按完整衰减时长跑完——
+ * 快速甩动时表现为过滚动拉出跟着那段衰减慢慢爬，像慢动作。这里改为比较本容器
+ * `ScrollState.value` 的前后差值：本容器没把这一帧吃完就是到边，立即取消并把当前速度
+ * 交回 post-fling，由过滚动做速度相称的拉出。
+ *
+ * 内容不足一屏（没有滚动范围）时退回默认判据：此时本就不该接管，惯性应照常传给外层列表。
+ */
+private class ContainedFlingBehavior(
+    private val state: ScrollState,
+    private val decay: DecayAnimationSpec<Float>,
+) : FlingBehavior {
+
+    override suspend fun ScrollScope.performFling(initialVelocity: Float): Float {
+        if (abs(initialVelocity) <= 1f) return initialVelocity
+        val selfContained = state.maxValue > 0
+        var velocityLeft = initialVelocity
+        var lastValue = 0f
+        val animationState = AnimationState(initialValue = 0f, initialVelocity = initialVelocity)
+        animationState.animateDecay(decay) {
+            val delta = value - lastValue
+            lastValue = value
+            val before = state.value
+            val consumed = scrollBy(delta)
+            velocityLeft = this.velocity
+            val hitEdge = if (selfContained) {
+                abs(delta - (state.value - before).toFloat()) > 0.5f
+            } else {
+                abs(delta - consumed) > 0.5f
+            }
+            // 避免舍入误差：有任何未吃完的量就停下（外层接住的那部分不参与本判据）
+            if (hitEdge) cancelAnimation()
+        }
+        return velocityLeft
+    }
 }
 
 /**
