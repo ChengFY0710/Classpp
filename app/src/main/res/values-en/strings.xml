@@ -1244,6 +1244,8 @@
     <string name="ai_settings_api_key">API Key</string>
     <string name="ai_settings_api_key_hint">sk-…</string>
     <string name="ai_settings_api_key_saved">Configured — leave blank to keep</string>
+    <string name="ai_settings_api_key_optional">Optional for local services</string>
+    <string name="ai_settings_base_url_hint_local">http://192.168.1.10:11434/v1</string>
     <string name="ai_settings_invalid">Service URL must start with http</string>
     <string name="ai_settings_saved">Saved</string>
     <string name="ai_settings_privacy">Your messages plus schedule and todo summaries are sent to the provider you configure. The API key is encrypted with system security storage and never included in backups.</string>
@@ -1253,6 +1255,7 @@
     <string name="ai_settings_clear_history_confirm">Tap again to confirm</string>
     <string name="ai_settings_clear_history_done">Chat history cleared</string>
     <string name="ai_settings_key_required">Enter an API key</string>
+    <string name="ai_local_network_denied">Local network permission is required to reach local AI services</string>
     <!-- AI profiles (AI settings entry + profile sheet): save / switch / rename / delete multiple setups -->
     <string name="ai_settings_section_profile">Profiles</string>
     <string name="ai_settings_section_tools">Tool calls</string>

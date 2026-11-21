@@ -100,10 +100,11 @@ internal object AiModelCatalog {
         return when (connection.protocol) {
             AiProtocol.OpenAiCompat -> AiHttpRequest(
                 url = connection.baseUrl.trimEnd('/') + MODELS_PATH,
-                headers = mapOf(
-                    "Authorization" to "Bearer $apiKey",
-                    "Accept" to "application/json",
-                ),
+                headers = buildMap {
+                    // 本地 Ollama 等无 Key 服务商不发认证头（空 Bearer 无意义）
+                    if (apiKey.isNotBlank()) put("Authorization", "Bearer $apiKey")
+                    put("Accept", "application/json")
+                },
                 method = AiHttpMethod.Get,
             )
             AiProtocol.Anthropic -> AiHttpRequest(

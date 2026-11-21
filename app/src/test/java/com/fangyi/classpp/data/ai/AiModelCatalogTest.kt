@@ -1,6 +1,7 @@
 package com.fangyi.classpp.data.ai
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -34,6 +35,16 @@ class AiModelCatalogTest {
         assertEquals("Bearer sk-secret", request.headers["Authorization"])
         assertEquals("application/json", request.headers["Accept"])
         assertTrue(request.jsonBody.isEmpty())
+    }
+
+    @Test
+    fun `openai request omits bearer when api key is blank`() {
+        val request = AiModelCatalog.buildRequest(
+            connection("http://127.0.0.1:11434/v1", providerId = AiProviderPresets.OLLAMA_ID),
+            "",
+        )
+        assertEquals("http://127.0.0.1:11434/v1/models", request.url)
+        assertNull("本地 Ollama 无需认证头", request.headers["Authorization"])
     }
 
     @Test

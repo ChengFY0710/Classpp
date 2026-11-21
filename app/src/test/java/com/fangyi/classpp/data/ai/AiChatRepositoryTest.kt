@@ -2102,6 +2102,28 @@ class AiChatRepositoryTest {
     }
 
     @Test
+    fun `keyless local provider is configured without api key`() = runBlocking {
+        val settings = FakeAiSettingsStore(
+            connection = AiConnection(
+                providerId = AiProviderPresets.OLLAMA_ID,
+                baseUrl = "http://192.168.1.10:11434/v1",
+                model = "qwen3:8b",
+            ),
+            apiKey = null,
+        )
+        val repo = repository(
+            settings = settings,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+
+        assertTrue("本地 Ollama 无 Key 也应视为已配置", repo.configured.value)
+        val outcome = repo.saveCustom(settings.connection, apiKey = null)
+        assertTrue(outcome.configSaved)
+        assertTrue("无 Key 服务商保存不再报缺 Key", outcome.keySaved)
+        assertTrue(repo.configured.value)
+    }
+
+    @Test
     fun `updateProfile reports missing key and unconfigures active profile`() = runBlocking {
         val settings = FakeAiSettingsStore()
         val repo = repository(

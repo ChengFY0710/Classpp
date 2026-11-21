@@ -115,10 +115,12 @@ internal object OpenAiStreamCodec : AiStreamCodec {
         val reasoningOff = thinkingControl.supportsOff && config.isReasoningOff()
         return AiHttpRequest(
             url = connection.baseUrl.trimEnd('/') + CHAT_COMPLETIONS_PATH,
-            headers = mapOf(
-                "Authorization" to "Bearer $apiKey",
-                "Accept" to "text/event-stream",
-            ),
+            headers = buildMap {
+                // 本地 Ollama 等无 Key 服务商不发认证头：空 Bearer 没有意义，
+                // 部分自建网关还会把空值当成非法凭据
+                if (apiKey.isNotBlank()) put("Authorization", "Bearer $apiKey")
+                put("Accept", "text/event-stream")
+            },
             jsonBody = encodeRequest(
                 model = connection.model,
                 reasoningLevel = if (reasoningOff) {

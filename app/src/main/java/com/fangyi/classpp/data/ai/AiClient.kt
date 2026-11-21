@@ -76,32 +76,57 @@ interface AiHttpTransport {
  */
 class OkHttpAiTransport internal constructor(
     /**
-     * 单测专用：本地 `ServerSocket` 只能起 http，传 true 放行明文以便回归真实传输层；
-     * 生产调用方（[AiClient] 默认参数、AppContainer）一律用默认 false，强制仅 TLS。
+     * 单测专用：本地 `ServerSocket` 只能起 http，传 true 放行任意明文以便回归真实传输层；
+     * 生产调用方（[AiClient] 默认参数、AppContainer）一律用默认 false——公网地址强制
+     * 仅 TLS，只有回环 / 私网等本地端点（[AiLocalNetwork]）才额外放行明文。
      */
     private val allowCleartextForTests: Boolean = false,
 ) : AiHttpTransport {
 
-    private val streamingClient = OkHttpClient.Builder()
-        // AI 请求只走 TLS：为支持用户自填的 http 教务网页，App 在 Manifest 放行了明文
-        // WebView，但这不能顺带把 API Key 暴露给 http 端点——OkHttp 默认连接规格含
-        // CLEARTEXT，这里收窄到 MODERN_TLS，用户误填 http 服务地址只会得到网络错误
-        .apply {
-            if (!allowCleartextForTests) {
-                connectionSpecs(listOf(ConnectionSpec.MODERN_TLS))
-            }
-        }
-        .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-        .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-        .callTimeout(0, TimeUnit.SECONDS)
-        .build()
+    /**
+     * 仅 TLS 的客户端（公网 AI 服务）：为支持用户自填的 http 教务网页，App 在 Manifest
+     * 放行了明文 WebView，但这不能顺带把 API Key 暴露给公网 http 端点——OkHttp 默认
+     * 连接规格含 CLEARTEXT，这里收窄到 MODERN_TLS，用户误填公网 http 地址只会得到网络错误。
+     */
+    private val streamingClient = buildClient(
+        allowCleartext = allowCleartextForTests,
+        callTimeoutSeconds = 0,
+    )
 
-    // GET 元数据请求共用同一套连接规格/超时，只额外加整次调用上限（见类注释）
-    private val metadataClient: OkHttpClient by lazy {
-        streamingClient.newBuilder()
-            .callTimeout(METADATA_CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+    /** 本地明文客户端：只用于 [AiLocalNetwork] 判定的回环 / 私网地址（Ollama 等） */
+    private val localStreamingClient = buildClient(
+        allowCleartext = true,
+        callTimeoutSeconds = 0,
+    )
+
+    /** GET 元数据请求共用同一套连接规格/超时，只额外加整次调用上限（见类注释） */
+    private val metadataClient = buildClient(
+        allowCleartext = allowCleartextForTests,
+        callTimeoutSeconds = METADATA_CALL_TIMEOUT_SECONDS,
+    )
+
+    private val localMetadataClient = buildClient(
+        allowCleartext = true,
+        callTimeoutSeconds = METADATA_CALL_TIMEOUT_SECONDS,
+    )
+
+    private fun buildClient(allowCleartext: Boolean, callTimeoutSeconds: Long): OkHttpClient =
+        OkHttpClient.Builder()
+            .connectionSpecs(
+                if (allowCleartext) {
+                    listOf(ConnectionSpec.CLEARTEXT, ConnectionSpec.MODERN_TLS)
+                } else {
+                    listOf(ConnectionSpec.MODERN_TLS)
+                },
+            )
+            .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .callTimeout(callTimeoutSeconds, TimeUnit.SECONDS)
             .build()
-    }
+
+    /** 明文放行策略：仅测试开关或回环 / 私网等本地端点；公网 http 仍走仅 TLS 客户端 */
+    internal fun allowsCleartext(url: String): Boolean =
+        allowCleartextForTests || AiLocalNetwork.isLocalHttpUrl(url)
 
     override fun open(request: AiHttpRequest): AiStreamResponse {
         val builder = Request.Builder().url(request.url)
@@ -111,7 +136,12 @@ class OkHttpAiTransport internal constructor(
         }
         for ((name, value) in request.headers) builder.header(name, value)
 
-        val client = if (request.method == AiHttpMethod.Get) metadataClient else streamingClient
+        // 明文只对本地端点放行：公网 http 仍走仅 TLS 客户端，在 OkHttp 层直接失败
+        val localCleartext = allowsCleartext(request.url)
+        val client = when (request.method) {
+            AiHttpMethod.Get -> if (localCleartext) localMetadataClient else metadataClient
+            AiHttpMethod.Post -> if (localCleartext) localStreamingClient else streamingClient
+        }
         val call = client.newCall(builder.build())
         return OkHttpAiStreamResponse(call, call.execute())
     }

@@ -113,6 +113,9 @@ internal fun AiProfileSheet(
     // 拉取服务商可用模型列表（GET /models）：只读网络，Key 优先用输入框当前值；
     // 结果含服务商附带的模型级配置（如 DeepSeek 的推理等级）
     fetchModels: suspend (connection: AiConnection, apiKey: String) -> List<AiFetchedModel>,
+    // 本地网络权限门：目标为局域网 http 端点时宿主先申请 Android 17 的本地网络权限，
+    // 授权后回调；回环 / 公网 / 低版本系统由宿主直接放行
+    ensureLocalNetworkAccess: (connection: AiConnection, onAllowed: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -411,42 +414,46 @@ internal fun AiProfileSheet(
         // 发起时的选中条目：协程起跑后即使选择变化，也按当时条目的已存 Key 回落
         val targetProfileId = selectedProfileId
         val target = draftConnection.copy(baseUrl = baseUrl.trimEnd('/'))
-        scope.launch {
-            // 读取已存 Key 是本地 I/O：放在加载态之外，缺 Key 时直接提示、不闪加载遮罩
-            val apiKey = typedKey.ifEmpty {
-                loadSavedKey(targetProfileId)?.trim().orEmpty()
-            }
-            if (apiKey.isEmpty()) {
-                AppToasts.show(context, fetchKeyRequiredMessage)
-                return@launch
-            }
-            fetching = true
-            try {
-                val models = fetchModels(target, apiKey)
-                // 同名模型直接覆盖推理等级配置；拉取结果没有档位时保留用户已有配置
-                val merge = AiModelCatalog.mergeFetchedModels(draftConnection, models)
-                if (merge.updated > 0) {
-                    updateDraft(merge.connection)
-                    AppToasts.show(context, fetchUpdatedMessage.format(merge.updated))
+        // 本地 Ollama 走局域网 http：Android 17 需先拿本地网络权限，授权后自动继续
+        ensureLocalNetworkAccess(target) {
+            scope.launch {
+                // 读取已存 Key 是本地 I/O：放在加载态之外，缺 Key 时直接提示、不闪加载遮罩
+                val apiKey = typedKey.ifEmpty {
+                    loadSavedKey(targetProfileId)?.trim().orEmpty()
                 }
-                if (merge.fresh.isEmpty()) {
-                    if (merge.updated == 0) AppToasts.show(context, fetchEmptyMessage)
-                } else {
-                    fetchedModels = merge.fresh
-                    pickerMounted = true
-                    pickerVisible = true
+                // 无 Key 服务商（本地 Ollama）允许空 Key：请求侧不发送认证头
+                if (apiKey.isEmpty() && AiProviderPresets.requiresApiKey(target.providerId)) {
+                    AppToasts.show(context, fetchKeyRequiredMessage)
+                    return@launch
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: AiException) {
-                AppToasts.show(
-                    context,
-                    fetchFailedMessage.format(errorTexts[e.error] ?: badResponseText),
-                )
-            } catch (_: Exception) {
-                AppToasts.show(context, fetchFailedMessage.format(badResponseText))
-            } finally {
-                fetching = false
+                fetching = true
+                try {
+                    val models = fetchModels(target, apiKey)
+                    // 同名模型直接覆盖推理等级配置；拉取结果没有档位时保留用户已有配置
+                    val merge = AiModelCatalog.mergeFetchedModels(draftConnection, models)
+                    if (merge.updated > 0) {
+                        updateDraft(merge.connection)
+                        AppToasts.show(context, fetchUpdatedMessage.format(merge.updated))
+                    }
+                    if (merge.fresh.isEmpty()) {
+                        if (merge.updated == 0) AppToasts.show(context, fetchEmptyMessage)
+                    } else {
+                        fetchedModels = merge.fresh
+                        pickerMounted = true
+                        pickerVisible = true
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: AiException) {
+                    AppToasts.show(
+                        context,
+                        fetchFailedMessage.format(errorTexts[e.error] ?: badResponseText),
+                    )
+                } catch (_: Exception) {
+                    AppToasts.show(context, fetchFailedMessage.format(badResponseText))
+                } finally {
+                    fetching = false
+                }
             }
         }
     }
@@ -480,6 +487,8 @@ internal fun AiProfileSheet(
     }
     val providerRowLabel = stringResource(R.string.ai_settings_provider)
     val providerValue = AiProviderPresets.byId(draftConnection.providerId).label
+    // 本地 Ollama 等预设不需要 API Key：输入框保留（可填自建网关的 Key），但不再必填
+    val requiresApiKey = AiProviderPresets.requiresApiKey(draftConnection.providerId)
     val protocolLabel = stringResource(R.string.ai_settings_protocol)
     val protocolValue = stringResource(draftConnection.protocol.labelRes())
     val protocolItems = listOf(
@@ -636,7 +645,13 @@ internal fun AiProfileSheet(
                                 updateDraft(draftConnection.copy(baseUrl = it))
                                 baseUrlInvalid = false
                             },
-                            placeholder = stringResource(R.string.ai_settings_base_url_hint),
+                            placeholder = stringResource(
+                                if (draftConnection.providerId == AiProviderPresets.OLLAMA_ID) {
+                                    R.string.ai_settings_base_url_hint_local
+                                } else {
+                                    R.string.ai_settings_base_url_hint
+                                },
+                            ),
                             isError = baseUrlInvalid,
                             imeAction = ImeAction.Next,
                         ),
@@ -646,10 +661,10 @@ internal fun AiProfileSheet(
                             value = keyInput,
                             onValueChange = ::updateKeyInput,
                             placeholder = stringResource(
-                                if (hadKey) {
-                                    R.string.ai_settings_api_key_saved
-                                } else {
-                                    R.string.ai_settings_api_key_hint
+                                when {
+                                    !requiresApiKey -> R.string.ai_settings_api_key_optional
+                                    hadKey -> R.string.ai_settings_api_key_saved
+                                    else -> R.string.ai_settings_api_key_hint
                                 },
                             ),
                             imeAction = ImeAction.Done,

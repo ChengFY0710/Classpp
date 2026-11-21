@@ -1,5 +1,7 @@
 package com.fangyi.classpp.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -42,6 +44,7 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiConnection
 import com.fangyi.classpp.data.ai.AiDebugTrace
+import com.fangyi.classpp.data.ai.AiLocalNetworkAccess
 import com.fangyi.classpp.data.ai.AiProfile
 import com.fangyi.classpp.data.ai.AiProfileKeySource
 import com.fangyi.classpp.data.ai.AiToolTrace
@@ -106,6 +109,7 @@ fun AISettingsScreen(
     val secureUnavailableMessage = stringResource(R.string.ai_settings_secure_unavailable)
     val profileSavedMessage = stringResource(R.string.ai_profile_saved)
     val profileDeletedMessage = stringResource(R.string.ai_profile_deleted)
+    val localNetworkDeniedMessage = stringResource(R.string.ai_local_network_denied)
 
     // Keystore 可用性是响应式状态：读取/保存 Key 后仓库会同步，横幅随之出现/消失
     val secureAvailable by aiChatRepository?.secureAvailable?.collectAsState()
@@ -134,7 +138,39 @@ fun AISettingsScreen(
     var profileSheetMounted by remember { mutableStateOf(false) }
     // 工具调用日志（仅 debug 构建）：页内覆盖层，不需要挂载/可见性分离（无进场动画）
     var debugTraceVisible by remember { mutableStateOf(false) }
+    // 本地网络权限（Android 17）：申请期间暂存待继续的保存 / 拉取动作
+    var pendingLocalNetworkAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var runPendingActionOnDenied by remember { mutableStateOf(false) }
+    val localNetworkLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val action = pendingLocalNetworkAction
+        val runOnDenied = runPendingActionOnDenied
+        pendingLocalNetworkAction = null
+        runPendingActionOnDenied = false
+        // 保存配置不依赖网络，被拒也照常落库，只提示权限缺失；拉取模型被拒则直接取消
+        if (granted || runOnDenied) action?.invoke()
+        if (!granted) AppToasts.show(context, localNetworkDeniedMessage)
+    }
     val overlayActive = LocalPageOverlayActive.current
+
+    /**
+     * 本地 Ollama 等局域网端点需要 Android 17 的本地网络权限：未授权时先弹系统授权，
+     * 结果回来后继续 [action]。[runOnDenied] 为 true 的动作（保存配置）在拒绝后也执行。
+     */
+    fun withLocalNetworkAccess(
+        connection: AiConnection,
+        runOnDenied: Boolean = false,
+        action: () -> Unit,
+    ) {
+        if (!AiLocalNetworkAccess.isPermissionRequired(context, connection)) {
+            action()
+            return
+        }
+        pendingLocalNetworkAction = action
+        runPendingActionOnDenied = runOnDenied
+        localNetworkLauncher.launch(AiLocalNetworkAccess.permission)
+    }
 
     // 子页首次打开（或从隐藏态重新展开）时才读方案库/活动连接/解密 Key：
     // 设置子页懒挂载后隐藏态不再执行该副作用，避免冷启动无谓的 Keystore 往返
@@ -426,21 +462,24 @@ fun AISettingsScreen(
                     onDismiss = { profileSheetVisible = false },
                     onDismissed = { profileSheetMounted = false },
                     onApply = { profileId, connection, apiKey ->
-                        scope.launch {
-                            val outcome = if (profileId != null) {
-                                repository.updateProfile(profileId, connection, apiKey)
-                            } else {
-                                repository.saveCustom(connection, apiKey)
-                            }
-                            when {
-                                !outcome.configSaved -> AppToasts.show(context, saveFailedMessage)
-                                // Key 失败优先按真实原因提示（Keystore 不可用 ≠ 没填）
-                                !outcome.keySaved && !repository.secureAvailable.value ->
-                                    AppToasts.show(context, secureUnavailableMessage)
-                                !outcome.keySaved -> AppToasts.show(context, keyRequiredMessage)
-                                else -> {
-                                    AppToasts.show(context, savedMessage)
-                                    profileSheetVisible = false
+                        // 本地端点先拿本地网络权限；保存配置本身不依赖网络，拒绝也继续落库
+                        withLocalNetworkAccess(connection, runOnDenied = true) {
+                            scope.launch {
+                                val outcome = if (profileId != null) {
+                                    repository.updateProfile(profileId, connection, apiKey)
+                                } else {
+                                    repository.saveCustom(connection, apiKey)
+                                }
+                                when {
+                                    !outcome.configSaved -> AppToasts.show(context, saveFailedMessage)
+                                    // Key 失败优先按真实原因提示（Keystore 不可用 ≠ 没填）
+                                    !outcome.keySaved && !repository.secureAvailable.value ->
+                                        AppToasts.show(context, secureUnavailableMessage)
+                                    !outcome.keySaved -> AppToasts.show(context, keyRequiredMessage)
+                                    else -> {
+                                        AppToasts.show(context, savedMessage)
+                                        profileSheetVisible = false
+                                    }
                                 }
                             }
                         }
@@ -482,6 +521,10 @@ fun AISettingsScreen(
                     loadSavedKey = { id -> repository.loadSavedKey(id) },
                     fetchModels = { connection, apiKey ->
                         repository.fetchModels(connection, apiKey)
+                    },
+                    ensureLocalNetworkAccess = { connection, onAllowed ->
+                        // 拉取模型必须有权限：拒绝时不回调，原地提示并保持浮层
+                        withLocalNetworkAccess(connection) { onAllowed() }
                     },
                     modifier = Modifier.fillMaxSize(),
                 )

@@ -498,7 +498,7 @@ class AiChatRepository internal constructor(
         _profiles.value = snapshot.profiles
         _activeProfileId.value = snapshot.activeProfileId
         _activeConnection.value = snapshot.connection
-        _configured.value = snapshot.connection.isConfigured && snapshot.apiKey != null
+        _configured.value = snapshot.connection.isReady(snapshot.apiKey)
     }
 
     /**
@@ -606,8 +606,10 @@ class AiChatRepository internal constructor(
         if (trimmed.isEmpty() && images.isEmpty()) return
         mutex.withLock {
             val (connection, apiKey) = loadCredentials()
-            _configured.value = connection.isConfigured && apiKey != null
-            if (!connection.isConfigured || apiKey == null) return
+            _configured.value = connection.isReady(apiKey)
+            if (!connection.isReady(apiKey)) return
+            // 无 Key 服务商（本地 Ollama）按空串进入请求层：编解码器不发认证头
+            val key = apiKey.orEmpty()
 
             val conversationId = ensureConversationLocked(trimmed)
             activeSendConversationId.set(conversationId)
@@ -642,7 +644,7 @@ class AiChatRepository internal constructor(
                         userText = trimmed,
                         userImages = images,
                         connection = connection,
-                        apiKey = apiKey,
+                        apiKey = key,
                     )
                 } catch (e: CancellationException) {
                     // 停止/退出：半截文本保留，标记 interrupted；取消的协程里 withContext
@@ -658,7 +660,7 @@ class AiChatRepository internal constructor(
                 }
 
                 try {
-                    finalizeLast(conversationId, streamed.text, connection, apiKey, streamed.usedTools)
+                    finalizeLast(conversationId, streamed.text, connection, key, streamed.usedTools)
                     persist()
                 } catch (e: CancellationException) {
                     // 正文已在 finalizeLast 第一步写全：草稿解析（可能含修复请求）阶段被取消
@@ -692,8 +694,10 @@ class AiChatRepository internal constructor(
             val lastUser = bound.lastOrNull { it.role == AiChatRole.User } ?: return
             // 先确认凭据再动消息：未配置时直接返回，不留下「尾巴被摘掉」的坏状态
             val (connection, apiKey) = loadCredentials()
-            _configured.value = connection.isConfigured && apiKey != null
-            if (!connection.isConfigured || apiKey == null) return
+            _configured.value = connection.isReady(apiKey)
+            if (!connection.isReady(apiKey)) return
+            // 无 Key 服务商（本地 Ollama）按空串进入请求层：编解码器不发认证头
+            val key = apiKey.orEmpty()
             activeSendConversationId.set(conversationId)
             // 重试会摘掉整条 assistant 消息（含工具轮次）：若它已经执行过写工具，
             // 模型在历史里看不到，必须补一句提醒，否则会把同一条待办再写一遍
@@ -727,7 +731,7 @@ class AiChatRepository internal constructor(
                         userText = lastUser.content,
                         userImages = lastUser.images,
                         connection = connection,
-                        apiKey = apiKey,
+                        apiKey = key,
                         systemNote = if (writesApplied) AiPromptBuilder.RETRY_WRITE_NOTE else null,
                     )
                 } catch (e: CancellationException) {
@@ -742,7 +746,7 @@ class AiChatRepository internal constructor(
                     return
                 }
                 try {
-                    finalizeLast(conversationId, streamed.text, connection, apiKey, streamed.usedTools)
+                    finalizeLast(conversationId, streamed.text, connection, key, streamed.usedTools)
                     persist()
                 } catch (e: CancellationException) {
                     // 同 send：正文已完整时落盘不能被取消吞掉
@@ -1378,10 +1382,12 @@ class AiChatRepository internal constructor(
      */
     suspend fun recognizeSchedule(imageName: String): AiScheduleRecognition {
         val (connection, apiKey) = loadCredentials()
-        _configured.value = connection.isConfigured && apiKey != null
-        if (!connection.isConfigured || apiKey == null) {
+        _configured.value = connection.isReady(apiKey)
+        if (!connection.isReady(apiKey)) {
             return AiScheduleRecognition.NotConfigured
         }
+        // 无 Key 服务商（本地 Ollama）按空串进入请求层：编解码器不发认证头
+        val key = apiKey.orEmpty()
 
         val image = withContext(Dispatchers.IO) { imageStore.encode(imageName) }
             ?: return AiScheduleRecognition.ImageUnavailable
@@ -1389,7 +1395,7 @@ class AiChatRepository internal constructor(
         val reply = try {
             client.streamChat(
                 connection = connection,
-                apiKey = apiKey,
+                apiKey = key,
                 turns = listOf(
                     AiChatTurn(role = "system", content = AiScheduleImportPrompt.SYSTEM),
                     AiChatTurn(
@@ -1421,15 +1427,17 @@ class AiChatRepository internal constructor(
      */
     suspend fun recognizeScheduleFromWeb(pageContent: String): AiScheduleRecognition {
         val (connection, apiKey) = loadCredentials()
-        _configured.value = connection.isConfigured && apiKey != null
-        if (!connection.isConfigured || apiKey == null) {
+        _configured.value = connection.isReady(apiKey)
+        if (!connection.isReady(apiKey)) {
             return AiScheduleRecognition.NotConfigured
         }
+        // 无 Key 服务商（本地 Ollama）按空串进入请求层：编解码器不发认证头
+        val key = apiKey.orEmpty()
 
         val reply = try {
             client.streamChat(
                 connection = connection,
-                apiKey = apiKey,
+                apiKey = key,
                 turns = listOf(
                     AiChatTurn(role = "system", content = AiScheduleWebImportPrompt.SYSTEM),
                     AiChatTurn(
@@ -1667,7 +1675,9 @@ class AiChatRepository internal constructor(
             val keySaved = if (apiKey != null) {
                 settings.saveProfileKey(id, apiKey)
             } else {
-                settings.loadProfileKey(id) != null
+                // 无 Key 服务商（本地 Ollama）不要求 Key，保存成功即视为已就绪
+                settings.loadProfileKey(id) != null ||
+                    !AiProviderPresets.requiresApiKey(connection.providerId)
             }
             _secureAvailable.value = settings.secureAvailable
             AiConfigSaveOutcome(configSaved = configSaved, keySaved = keySaved)
@@ -1686,7 +1696,9 @@ class AiChatRepository internal constructor(
             val keySaved = if (apiKey != null) {
                 settings.saveCustomKey(apiKey)
             } else {
-                settings.loadCustomKey() != null
+                // 无 Key 服务商（本地 Ollama）不要求 Key，保存成功即视为已就绪
+                settings.loadCustomKey() != null ||
+                    !AiProviderPresets.requiresApiKey(connection.providerId)
             }
             _secureAvailable.value = settings.secureAvailable
             AiConfigSaveOutcome(configSaved = configSaved, keySaved = keySaved)

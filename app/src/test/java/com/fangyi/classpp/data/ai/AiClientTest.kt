@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -174,6 +175,25 @@ class AiClientTest {
         val messages = body["messages"]!!.jsonArray
         assertEquals(1, messages.size)
         assertEquals("user", messages[0].jsonObject["role"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `empty api key omits authorization header for keyless local providers`() = runBlocking {
+        val transport = FakeAiTransport(FakeAiStreamResponse(200, listOf("data: [DONE]", null)))
+        AiClient(transport).streamChat(
+            connection = AiConnection(
+                providerId = AiProviderPresets.OLLAMA_ID,
+                baseUrl = "http://192.168.1.10:11434/v1",
+                model = "qwen3:8b",
+            ),
+            apiKey = "",
+            turns = turns,
+        )
+
+        val request = transport.lastRequest!!
+        assertEquals("http://192.168.1.10:11434/v1/chat/completions", request.url)
+        assertNull("无 Key 服务商不发空的 Bearer", request.headers["Authorization"])
+        assertEquals("text/event-stream", request.headers["Accept"])
     }
 
     // ---------- 正常流 ----------

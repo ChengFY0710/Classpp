@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -90,6 +91,39 @@ class OkHttpAiTransportTest {
             )
             assertEquals("你好", text)
             assertEquals(listOf("你", "好"), deltas)
+        }
+    }
+
+    @Test
+    fun `cleartext policy only allows local endpoints`() {
+        val transport = OkHttpAiTransport()
+        assertTrue(transport.allowsCleartext("http://127.0.0.1:11434/v1/chat/completions"))
+        assertTrue(transport.allowsCleartext("http://192.168.1.10:11434/v1/chat/completions"))
+        assertTrue(transport.allowsCleartext("http://my-pc.local:11434/v1/chat/completions"))
+        // 公网 http 仍强制 TLS：API Key 不落到明文公网请求
+        assertFalse(transport.allowsCleartext("http://api.example.com/v1/chat/completions"))
+        assertFalse(transport.allowsCleartext("http://8.8.8.8/v1/chat/completions"))
+        assertFalse(transport.allowsCleartext("https://api.example.com/v1/chat/completions"))
+    }
+
+    @Test
+    fun `loopback cleartext works with production client without test flag`() = runBlocking {
+        val fullBody = sse("hi") + "data: [DONE]\n\n"
+        withServer(
+            script = { out ->
+                writeResponseHeaders(out, fullBody.toByteArray(Charsets.UTF_8).size)
+                out.write(fullBody.toByteArray(Charsets.UTF_8))
+                out.flush()
+            },
+        ) { server ->
+            // 生产默认构造：只有回环 / 私网端点才放行明文（Ollama 路径）
+            val client = AiClient(OkHttpAiTransport())
+            val text = client.streamChat(
+                connection = connection(server.localPort),
+                apiKey = "",
+                turns = listOf(AiChatTurn("user", "hi")),
+            )
+            assertEquals("hi", text)
         }
     }
 

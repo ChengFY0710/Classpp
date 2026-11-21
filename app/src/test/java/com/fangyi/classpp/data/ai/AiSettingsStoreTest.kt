@@ -4,6 +4,7 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -323,6 +324,7 @@ class AiProviderPresetsTest {
         assertEquals("mimo-v2.6-pro", AiProviderPresets.byId("mimo").suggestedModel)
         assertEquals("阿里云百炼", AiProviderPresets.byId("bailian").label)
         assertEquals(AiModelListApi.DashScope, AiProviderPresets.byId("bailian").modelListApi)
+        assertEquals("qwen3:8b", AiProviderPresets.byId("ollama").suggestedModel)
         // 其他预设的拉取方案不变，仍走通用 OpenAI 兼容路径
         assertEquals(AiModelListApi.OpenAiCompat, AiProviderPresets.byId("qwen").modelListApi)
     }
@@ -344,9 +346,21 @@ class AiProviderPresetsTest {
     }
 
     @Test
+    fun `ollama preset is local and keyless`() {
+        val ollama = AiProviderPresets.byId(AiProviderPresets.OLLAMA_ID)
+        assertEquals("http://127.0.0.1:11434/v1", ollama.baseUrl)
+        assertFalse(ollama.requiresApiKey)
+        assertTrue(AiLocalNetwork.isLocalHttpUrl(ollama.baseUrl))
+        assertFalse(AiProviderPresets.requiresApiKey(AiProviderPresets.OLLAMA_ID))
+        assertTrue(AiProviderPresets.requiresApiKey("deepseek"))
+        // 未知 id 回落 custom：仍按需要 Key 处理
+        assertTrue(AiProviderPresets.requiresApiKey("nope"))
+    }
+
+    @Test
     fun `removed presets fall back to custom`() {
         // 下架的旧预设不能让已存配置失效：providerId 回落 custom，端点与模型仍按原配置
-        listOf("openai", "anthropic", "ollama").forEach { id ->
+        listOf("openai", "anthropic").forEach { id ->
             assertEquals(AiProviderPresets.custom, AiProviderPresets.byId(id))
         }
     }

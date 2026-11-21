@@ -102,6 +102,13 @@ data class AiConnection(
     val isConfigured: Boolean get() = baseUrl.isNotBlank() && model.isNotBlank()
 
     /**
+     * 是否已具备发起请求的完整条件：地址与模型齐全，且服务商需要的 API Key 已配置。
+     * 本地 Ollama 等无需 Key 的预设允许 [apiKey] 为 null（请求侧按空串处理，不发认证头）。
+     */
+    fun isReady(apiKey: String?): Boolean =
+        isConfigured && (!apiKey.isNullOrBlank() || !AiProviderPresets.requiresApiKey(providerId))
+
+    /**
      * 展示与切换用的模型列表：`models` + 当前模型，去首尾空白、去空串，忽略大小写去重
      * （保留首次出现的写法）。旧配置 `models` 为空时即 `[model]`。
      */

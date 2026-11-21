@@ -57,6 +57,7 @@ enum class AiThinkingControl {
  * @param baseUrl 端点根路径（不含资源路径，拼接由各协议编解码器负责）
  * @param suggestedModel 选中预设时回填的建议模型名
  * @param requiresManualModel true = 无公认默认模型（自定义），模型名必手填
+ * @param requiresApiKey true = 必须有 API Key 才能发起请求；本地 Ollama 无需 Key
  * @param protocol 选中预设时回填的接口协议（预设自带协议，设置页仅自定义服务商展示选择器）
  * @param modelListApi 该服务商的模型列表拉取方案（见 [AiModelListApi]）；
  *   默认通用 OpenAI 兼容，百炼等端点形态不同的服务商单独配置
@@ -69,6 +70,7 @@ data class AiProviderPreset(
     val baseUrl: String,
     val suggestedModel: String,
     val requiresManualModel: Boolean = false,
+    val requiresApiKey: Boolean = true,
     val protocol: AiProtocol = AiProtocol.OpenAiCompat,
     val modelListApi: AiModelListApi = AiModelListApi.OpenAiCompat,
     val thinkingControl: AiThinkingControl = AiThinkingControl.None,
@@ -84,6 +86,9 @@ data class AiProviderPreset(
 object AiProviderPresets {
 
     const val CUSTOM_ID = "custom"
+
+    /** 本地 Ollama 预设 id：设置页按它展示局域网连接提示，无需 API Key */
+    const val OLLAMA_ID = "ollama"
 
     val all: List<AiProviderPreset> = listOf(
         AiProviderPreset(
@@ -129,6 +134,16 @@ object AiProviderPresets {
             // 文本模型默认开启思考，只有开关没有 reasoning_effort
             thinkingControl = AiThinkingControl.ThinkingTypeOnly,
         ),
+        // 本地 Ollama：OpenAI 兼容端点（/v1），默认监听回环地址；真机需改成电脑的
+        // 局域网 IP（设置页有专门提示），协议层只对回环/私网地址放行明文 HTTP。
+        // 建议模型只用于切换预设时替换掉上一家的模型名，实际可用模型以本机已拉取为准
+        AiProviderPreset(
+            id = OLLAMA_ID,
+            label = "Ollama",
+            baseUrl = "http://127.0.0.1:11434/v1",
+            suggestedModel = "qwen3:8b",
+            requiresApiKey = false,
+        ),
         AiProviderPreset(
             id = CUSTOM_ID,
             label = "自定义",
@@ -143,6 +158,9 @@ object AiProviderPresets {
     /** 按 id 取预设；未知 id（含被下架的旧预设）一律回落 custom，绝不抛异常 */
     fun byId(id: String): AiProviderPreset = all.firstOrNull { it.id == id }
         ?: all.first { it.id == CUSTOM_ID }
+
+    /** 该服务商是否必须配置 API Key；未知 id 回落 custom（必须） */
+    fun requiresApiKey(providerId: String): Boolean = byId(providerId).requiresApiKey
 
     /**
      * 某服务商下具体模型实际使用的思考控制形态：先按 [AiReasoningProfiles] 的模型族
