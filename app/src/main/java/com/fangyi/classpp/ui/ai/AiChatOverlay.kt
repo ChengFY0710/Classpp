@@ -1425,13 +1425,6 @@ private fun AiChatMessageList(
                 if (message.todoChangeDropped) {
                     AiChatTodoChangeDroppedHint()
                 }
-                if (message.interrupted && message.role == AiChatRole.Assistant) {
-                    Text(
-                        text = stringResource(R.string.ai_interrupted),
-                        style = ClassppTextTokens.secondaryTextSmall,
-                        color = MaterialTheme.classppColors.secondaryText,
-                    )
-                }
             }
         }
         lastError?.let { error ->

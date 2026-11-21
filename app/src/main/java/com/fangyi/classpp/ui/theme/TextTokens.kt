@@ -78,8 +78,10 @@ object ClassppTextTokens {
     val settingsDescription = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal, lineHeight = 20.sp)
     /** 大号次级说明（添加课程/课程详情）：14sp Medium。 */
     val secondaryTextLarge = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp, letterSpacing = 0.sp)
-    /** AI 对话气泡正文：16sp Normal，行高 24 与 bodyLarge 同节奏；用户/AI 消息同档。 */
+    /** AI 对话气泡正文：16sp Normal，行高 24 与 bodyLarge 同节奏；AI 消息与围栏块使用。 */
     val chatBody = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal, lineHeight = 24.sp, letterSpacing = 0.sp)
+    /** AI 对话用户气泡正文：16sp Normal；字距 0.3sp，与 Chat 模式 Markdown 正文同档。 */
+    val chatUserBody = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal, lineHeight = 24.sp, letterSpacing = 0.3.sp)
     /** AI 对话 / 关于页文档 Markdown 一级标题：23sp SemiBold，与详情页标题同档。 */
     val chatHeading1 = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.SemiBold, lineHeight = 28.sp, letterSpacing = 0.sp)
     /** AI 对话 / 关于页文档 Markdown 二级标题：20sp SemiBold，与浮层标题同档。 */

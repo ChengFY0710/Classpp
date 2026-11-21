@@ -1031,7 +1031,7 @@
     <string name="cd_ai_thinking_toggle">展开或收起思考过程</string>
     <string name="ai_thinking_title">思考过程</string>
     <string name="ai_thinking_in_progress">正在思考…</string>
-    <string name="ai_interrupted">回复已中断</string>
+    <string name="ai_interrupted">回答已中断</string>
     <string name="ai_retry">重试</string>
     <string name="ai_error_auth">API Key 无效或已过期，请到 AI 设置检查</string>
     <string name="ai_error_quota">账户余额不足或无该模型权限</string>

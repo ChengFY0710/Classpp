@@ -96,7 +96,8 @@ import com.fangyi.classpp.ui.theme.classppColors
 
 /**
  * 一条消息气泡：user 右对齐（surface 底 / primary 字）/ assistant 左对齐（surface 底 / onSurface 字）。
- * 正文统一 16sp；assistant 内容按 GFM Markdown 渲染（见 [ChatMarkdown]），user 内容为纯文本。
+ * 正文统一 16sp；assistant 内容按 GFM Markdown 渲染（见 [ChatMarkdown]），user 内容为纯文本，
+ * 用 [ClassppTextTokens.chatUserBody]（0.3sp 正字距，与 Chat 模式 Markdown 正文一致）。
  * assistant 气泡在页边距内撑满宽度，user 气泡按内容自适应（上限 320dp）。
  * 两种气泡的正文都支持长按选择与复制：每个气泡一个独立的 [SelectionContainer]，
  * 选区不跨气泡；选中高亮随气泡底材取色（见函数内的 [TextSelectionColors]）。
@@ -115,6 +116,9 @@ import com.fangyi.classpp.ui.theme.classppColors
  * user 消息携带图片时（[AiChatMessage.images] 非空），缩略图渲染在正文上方（单张 160dp、
  * 多张 96dp 换行网格），点缩略图经 [onImageClick] 请求宿主拉全屏预览；纯图无正文的
  * 消息不渲染「正在思考…」占位（那是流式首字未到的 assistant 占位语义）。
+ *
+ * assistant 正文为空且被中断/失败（[AiChatMessage.interrupted]）时，占位文案原地从
+ * 「正在思考…」变为「回答已中断」，中断语义由气泡本身承接，消息下方不再单独提示。
  */
 @Composable
 internal fun AiChatMessageBubble(
@@ -241,7 +245,11 @@ internal fun AiChatMessageBubble(
                                     LocalTextSelectionColors provides selectionColors,
                                 ) {
                                     SelectionContainer {
-                                        Text(text = content, style = ClassppTextTokens.chatBody)
+                                        Text(
+                                            text = content,
+                                            // 用户气泡正文比其他正文稍松，读起来更透气
+                                            style = ClassppTextTokens.chatUserBody,
+                                        )
                                     }
                                 }
                             }
@@ -265,9 +273,13 @@ internal fun AiChatMessageBubble(
                                 }
                             }
                             content.isEmpty() && message.images.isEmpty() -> {
-                                // 占位阶段（流式首字未到 / 只有思考还没有正文）：明确提示正在思考
+                                // 占位阶段：流式中提示正在思考；中断/失败后原地改为中断提示，
+                                // 中断语义并入气泡，不再在消息下方单独占一行
                                 Text(
-                                    text = stringResource(R.string.ai_thinking_in_progress),
+                                    text = stringResource(
+                                        if (message.interrupted) R.string.ai_interrupted
+                                        else R.string.ai_thinking_in_progress,
+                                    ),
                                     style = ClassppTextTokens.chatBody,
                                 )
                             }
