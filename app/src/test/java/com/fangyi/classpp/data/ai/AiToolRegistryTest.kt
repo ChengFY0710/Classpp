@@ -210,6 +210,24 @@ class AiToolRegistryTest {
     }
 
     @Test
+    fun `day plan exposes single day and range arguments with wider result budget`() {
+        val spec = requireNotNull(AiToolRegistry.find(AiToolRegistry.GET_DAY_PLAN))
+        assertEquals(AiToolPermission.Read, spec.permission)
+        val properties = spec.parameters.getValue("properties").jsonObject
+        listOf("date", "from", "to", "dates").forEach { name ->
+            assertTrue("day plan schema must expose $name", properties.containsKey(name))
+        }
+        assertEquals(
+            "string",
+            properties.getValue("dates").jsonObject
+                .getValue("items").jsonObject.getValue("type").jsonPrimitive.content,
+        )
+        assertEquals(AiReadTools.MAX_DAY_PLAN_RESULT_CHARS, spec.maxResultChars)
+        assertTrue(spec.description.contains("from/to"))
+        assertTrue(spec.description.contains("dates"))
+    }
+
+    @Test
     fun `organizer tools require a name array and stay native only`() {
         val groups = requireNotNull(AiToolRegistry.find(AiToolRegistry.CREATE_TODO_GROUPS))
         val tags = requireNotNull(AiToolRegistry.find(AiToolRegistry.CREATE_TODO_TAGS))

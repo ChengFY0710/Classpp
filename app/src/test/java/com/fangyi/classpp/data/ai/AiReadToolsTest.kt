@@ -7,6 +7,7 @@ import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.testCourse
 import com.fangyi.classpp.data.testSchedule
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -212,6 +213,285 @@ class AiReadToolsTest {
 
         assertTrue(result.data().getValue("todos").jsonArray.isNotEmpty())
     }
+
+    @Test
+    fun `day plan range returns consecutive days with courses todos and free slots`() =
+        kotlinx.coroutines.runBlocking {
+            val monday = IsoDate.of(2026, 5, 18)
+            val schedule = testSchedule(
+                courses = listOf(testCourse(day = 3, startSlot = 1, span = 2)),
+            )
+            val context = AiChatContext(
+                schedule = schedule,
+                currentWeek = 12,
+                today = wedWeek12,
+                todos = listOf(
+                    testTodo(
+                        id = "t1",
+                        name = "周一作业",
+                        dates = listOf(monday),
+                        createdAtMillis = 10,
+                    ),
+                    testTodo(
+                        id = "t2",
+                        name = "周三作业",
+                        dates = listOf(wedWeek12),
+                        createdAtMillis = 20,
+                    ),
+                ),
+            )
+
+            val result = AiReadTools.executeDayPlan(
+                args(
+                    "from" to JsonPrimitive("2026-05-18"),
+                    "to" to JsonPrimitive("2026-05-22"),
+                ),
+                context,
+            )
+
+            assertTrue(result.ok())
+            val data = result.data()
+            assertEquals("2026-05-18", data.getValue("from").jsonPrimitive.content)
+            assertEquals("2026-05-22", data.getValue("to").jsonPrimitive.content)
+            val days = data.getValue("days").jsonArray
+            assertEquals(5, days.size)
+            assertEquals(
+                listOf("2026-05-18", "2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22"),
+                days.map { it.jsonObject.getValue("date").jsonPrimitive.content },
+            )
+
+            val mondayPlan = days[0].jsonObject
+            assertEquals("周一", mondayPlan.getValue("weekday").jsonPrimitive.content)
+            assertTrue(mondayPlan.getValue("courses").jsonArray.isEmpty())
+            assertEquals(
+                listOf("t1"),
+                mondayPlan.getValue("todos").jsonArray
+                    .map { it.jsonObject.getValue("id").jsonPrimitive.content },
+            )
+
+            val wednesdayPlan = days[2].jsonObject
+            assertEquals("周三", wednesdayPlan.getValue("weekday").jsonPrimitive.content)
+            assertEquals(12, wednesdayPlan.getValue("week").jsonPrimitive.int)
+            assertEquals(1, wednesdayPlan.getValue("courses").jsonArray.size)
+            assertEquals(
+                listOf("t2"),
+                wednesdayPlan.getValue("todos").jsonArray
+                    .map { it.jsonObject.getValue("id").jsonPrimitive.content },
+            )
+            assertTrue(wednesdayPlan.getValue("freeSlots").jsonArray.isNotEmpty())
+
+            val fridayPlan = days[4].jsonObject
+            assertTrue(fridayPlan.getValue("courses").jsonArray.isEmpty())
+            assertTrue(fridayPlan.getValue("todos").jsonArray.isEmpty())
+        }
+
+    @Test
+    fun `day plan range validates pairing order and span`() = kotlinx.coroutines.runBlocking {
+        val context = AiChatContext(schedule = testSchedule(), currentWeek = 12, today = wedWeek12)
+
+        val oneSided = AiReadTools.executeDayPlan(
+            args("from" to JsonPrimitive("2026-05-18")),
+            context,
+        )
+        assertFalse(oneSided.ok())
+        assertEquals("invalid_arguments", oneSided.errorCode())
+
+        val reversed = AiReadTools.executeDayPlan(
+            args(
+                "from" to JsonPrimitive("2026-05-22"),
+                "to" to JsonPrimitive("2026-05-18"),
+            ),
+            context,
+        )
+        assertFalse(reversed.ok())
+        assertEquals("invalid_arguments", reversed.errorCode())
+
+        val tooLong = AiReadTools.executeDayPlan(
+            args(
+                "from" to JsonPrimitive("2026-05-01"),
+                "to" to JsonPrimitive("2026-05-15"),
+            ),
+            context,
+        )
+        assertFalse(tooLong.ok())
+        assertEquals("invalid_arguments", tooLong.errorCode())
+
+        val invalid = AiReadTools.executeDayPlan(
+            args(
+                "from" to JsonPrimitive("2026-13-01"),
+                "to" to JsonPrimitive("2026-13-02"),
+            ),
+            context,
+        )
+        assertFalse(invalid.ok())
+        assertEquals("invalid_arguments", invalid.errorCode())
+
+        val exactlyMax = AiReadTools.executeDayPlan(
+            args(
+                "from" to JsonPrimitive("2026-05-01"),
+                "to" to JsonPrimitive("2026-05-14"),
+            ),
+            context,
+        )
+        assertTrue(exactlyMax.ok())
+        assertEquals(
+            AiReadTools.MAX_DAY_PLAN_DAYS,
+            exactlyMax.data().getValue("days").jsonArray.size,
+        )
+    }
+
+    @Test
+    fun `day plan range keeps odd even week filtering`() = kotlinx.coroutines.runBlocking {
+        val schedule = testSchedule(courses = listOf(testCourse(weeks = evenWeeks())))
+        val context = AiChatContext(schedule = schedule, currentWeek = 12, today = wedWeek12)
+
+        val result = AiReadTools.executeDayPlan(
+            args(
+                "from" to JsonPrimitive("2026-05-20"),
+                "to" to JsonPrimitive("2026-05-27"),
+            ),
+            context,
+        )
+
+        assertTrue(result.ok())
+        val days = result.data().getValue("days").jsonArray.map { it.jsonObject }
+        assertEquals(8, days.size)
+        assertEquals(1, days[0].getValue("courses").jsonArray.size) // 第 12 周（双周）
+        assertEquals(0, days[7].getValue("courses").jsonArray.size) // 第 13 周（单周）
+    }
+
+    @Test
+    fun `day plan discrete dates returns requested days in input order`() =
+        kotlinx.coroutines.runBlocking {
+            val schedule = testSchedule(
+                courses = listOf(testCourse(day = 3, startSlot = 1, span = 2)),
+            )
+            val context = AiChatContext(
+                schedule = schedule,
+                currentWeek = 12,
+                today = wedWeek12,
+                todos = listOf(
+                    testTodo(
+                        id = "t1",
+                        name = "11月4号作业",
+                        dates = listOf(IsoDate.of(2026, 11, 4)),
+                        createdAtMillis = 10,
+                    ),
+                ),
+            )
+
+            val result = AiReadTools.executeDayPlan(
+                args(
+                    "dates" to JsonArray(
+                        listOf(
+                            JsonPrimitive("2026-11-04"),
+                            JsonPrimitive("2026-05-20"),
+                            JsonPrimitive("2026-06-03"),
+                        ),
+                    ),
+                ),
+                context,
+            )
+
+            assertTrue(result.ok())
+            val days = result.data().getValue("days").jsonArray
+            assertEquals(3, days.size)
+            assertEquals(
+                listOf("2026-11-04", "2026-05-20", "2026-06-03"),
+                days.map { it.jsonObject.getValue("date").jsonPrimitive.content },
+            )
+            // 学期外的日期也返回当天信息（只是没有课）；待办照常列出
+            val november = days[0].jsonObject
+            assertEquals("周三", november.getValue("weekday").jsonPrimitive.content)
+            assertTrue(november.getValue("courses").jsonArray.isEmpty())
+            assertEquals(
+                listOf("t1"),
+                november.getValue("todos").jsonArray
+                    .map { it.jsonObject.getValue("id").jsonPrimitive.content },
+            )
+            // 学期内第 12 周的周三仍有课
+            val may = days[1].jsonObject
+            assertEquals("周三", may.getValue("weekday").jsonPrimitive.content)
+            assertEquals(1, may.getValue("courses").jsonArray.size)
+        }
+
+    @Test
+    fun `day plan discrete dates dedupes and validates arguments`() =
+        kotlinx.coroutines.runBlocking {
+            val context = AiChatContext(schedule = testSchedule(), currentWeek = 12, today = wedWeek12)
+
+            val deduped = AiReadTools.executeDayPlan(
+                args(
+                    "date" to JsonPrimitive("2026-01-01"), // 给了 dates 时忽略
+                    "dates" to JsonArray(
+                        listOf(
+                            JsonPrimitive("2026-11-04"),
+                            JsonPrimitive("2026-11-04"),
+                            JsonPrimitive("2026-11-05"),
+                        ),
+                    ),
+                ),
+                context,
+            )
+            assertTrue(deduped.ok())
+            assertEquals(
+                listOf("2026-11-04", "2026-11-05"),
+                deduped.data().getValue("days").jsonArray
+                    .map { it.jsonObject.getValue("date").jsonPrimitive.content },
+            )
+
+            val notArray = AiReadTools.executeDayPlan(
+                args("dates" to JsonPrimitive("2026-11-04")),
+                context,
+            )
+            assertFalse(notArray.ok())
+            assertEquals("invalid_arguments", notArray.errorCode())
+
+            val empty = AiReadTools.executeDayPlan(
+                args("dates" to JsonArray(emptyList<JsonElement>())),
+                context,
+            )
+            assertFalse(empty.ok())
+            assertEquals("invalid_arguments", empty.errorCode())
+
+            val invalidDate = AiReadTools.executeDayPlan(
+                args("dates" to JsonArray(listOf(JsonPrimitive("2026-13-01")))),
+                context,
+            )
+            assertFalse(invalidDate.ok())
+            assertEquals("invalid_arguments", invalidDate.errorCode())
+
+            val nonString = AiReadTools.executeDayPlan(
+                args("dates" to JsonArray(listOf(JsonPrimitive(1)))),
+                context,
+            )
+            assertFalse(nonString.ok())
+            assertEquals("invalid_arguments", nonString.errorCode())
+
+            val tooMany = AiReadTools.executeDayPlan(
+                args(
+                    "dates" to JsonArray(
+                        (1..AiReadTools.MAX_DAY_PLAN_DAYS + 1).map { day ->
+                            JsonPrimitive(IsoDate.of(2026, 5, day).toString())
+                        },
+                    ),
+                ),
+                context,
+            )
+            assertFalse(tooMany.ok())
+            assertEquals("invalid_arguments", tooMany.errorCode())
+
+            val mixed = AiReadTools.executeDayPlan(
+                args(
+                    "dates" to JsonArray(listOf(JsonPrimitive("2026-11-04"))),
+                    "from" to JsonPrimitive("2026-11-01"),
+                    "to" to JsonPrimitive("2026-11-07"),
+                ),
+                context,
+            )
+            assertFalse(mixed.ok())
+            assertEquals("invalid_arguments", mixed.errorCode())
+        }
 
     // ---------- search_todos ----------
 

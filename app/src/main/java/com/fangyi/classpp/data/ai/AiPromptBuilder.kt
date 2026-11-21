@@ -247,7 +247,8 @@ object AiPromptBuilder {
         } else if (todayCourses.isEmpty()) {
             appendLine("（今天没有课）")
         } else {
-            appendLine("（共 ${todayCourses.size} 节；其他日期用 get_day_plan / get_week_schedule 查）")
+            appendLine("（共 ${todayCourses.size} 节；其他日期用 get_day_plan 的 date/from-to/dates 查，" +
+                "整周课表用 get_week_schedule）")
             for (occurrence in todayCourses) {
                 todayCourseLine(schedule, occurrence)?.let { appendLine(it) }
             }
@@ -330,7 +331,8 @@ object AiPromptBuilder {
         appendLine("上下文只给今日摘要与计数；其余课表/待办具体内容一律先用工具查，不要凭记忆或常识猜测。")
         appendLine("可用工具：")
         appendLine("- 查询：get_current_time（当前日期与时刻，排日程或算“还有多久”时先查）；")
-        appendLine("  get_day_plan（某天课程/待办/空闲）、get_week_schedule（某周课表，week 传绝对周次、" +
+        appendLine("  get_day_plan（单日/from-to 连续多天/dates 离散多天课程/待办/空闲，最多 " +
+            "${AiReadTools.MAX_DAY_PLAN_DAYS} 天）、get_week_schedule（某周课表，week 传绝对周次、" +
             "weekOffset 相对本周，overview 查总周数等概况）；")
         appendLine("  search_todos（按关键词/状态/分组/标签/日期查待办）、get_todo（单个待办的备注/步骤/重复期次等详情）；")
         appendLine("- create_todos：新建待办，立即落库（消息下方可撤销）；")
@@ -364,6 +366,11 @@ object AiPromptBuilder {
             "【课程标签】是课表课程名，本身就是合法 tag（表示该课程的待办），可直接使用、不需要 create_todo_tags；" +
             "用户为某门课记待办（如作业、复习）时，tag 用对应的课程标签；" +
             "其余情况 group/tag 只用【可选分组】【可选标签】【课程标签】里出现的值，没有匹配就省略该字段；")
+        appendLine("- 涉及连续多天（如“下周一到周五/未来三天”）时用 get_day_plan 的 from/to，" +
+            "涉及不连续的多天（如“11月4号、12月14号、2月3号”）时用 dates，一次查完，禁止逐天调用；" +
+            "结果 truncated=true 表示天数被截断，按缺失日期继续查，不要声称已覆盖全部；")
+        appendLine("- 多条同类写操作合并到一次工具调用：新建多条待办用 create_todos 的 todos 数组，" +
+            "完成/归档/修改/删除同理；")
         appendLine("- 一次可以连续调用多个工具，但不要用同一参数重复调用同一个工具；")
         appendLine("- 其余情况正常对话。")
     }

@@ -231,8 +231,17 @@ private fun toolParamSummary(call: AiToolCall): String {
     val args = parseObject(call.argumentsJson) ?: return ""
     return when (call.name) {
         AiToolRegistry.GET_DAY_PLAN -> {
+            val dates = args["dates"] as? JsonArray
+            val from = args["from"].textOrNull()
+            val to = args["to"].textOrNull()
             val date = args["date"].textOrNull()
-            if (date.isNullOrBlank()) "" else stringResource(R.string.ai_tool_arg_date, date)
+            when {
+                dates != null -> stringResource(R.string.ai_tool_arg_days, dates.size)
+                !from.isNullOrBlank() && !to.isNullOrBlank() ->
+                    stringResource(R.string.ai_tool_arg_date_range, from, to)
+                !date.isNullOrBlank() -> stringResource(R.string.ai_tool_arg_date, date)
+                else -> ""
+            }
         }
         AiToolRegistry.GET_WEEK_SCHEDULE -> {
             val week = args["week"].textOrNull()?.toIntOrNull()
@@ -312,14 +321,35 @@ private fun toolResultSummary(name: String, result: AiToolResult?): String {
     return when (name) {
         AiToolRegistry.GET_DAY_PLAN -> {
             val parts = mutableListOf<String>()
-            (data["courses"] as? JsonArray)?.size?.let {
-                parts += stringResource(R.string.ai_tool_result_courses, it)
-            }
-            (data["todos"] as? JsonArray)?.size?.let {
-                parts += stringResource(R.string.ai_tool_result_todos, it)
-            }
-            (data["freeSlots"] as? JsonArray)?.size?.let {
-                parts += stringResource(R.string.ai_tool_result_free_slots, it)
+            val days = data["days"] as? JsonArray
+            if (days != null) {
+                // 多天模式：按天聚合课程/待办/空闲数量，避免卡片只剩“无结果”
+                parts += stringResource(R.string.ai_tool_result_days, days.size)
+                val courses = days.sumOf { day ->
+                    ((day as? JsonObject)?.get("courses") as? JsonArray)?.size ?: 0
+                }
+                val todos = days.sumOf { day ->
+                    ((day as? JsonObject)?.get("todos") as? JsonArray)?.size ?: 0
+                }
+                val freeSlots = days.sumOf { day ->
+                    ((day as? JsonObject)?.get("freeSlots") as? JsonArray)?.size ?: 0
+                }
+                parts += stringResource(R.string.ai_tool_result_courses, courses)
+                parts += stringResource(R.string.ai_tool_result_todos, todos)
+                parts += stringResource(R.string.ai_tool_result_free_slots, freeSlots)
+                if (data["truncated"].textOrNull() == "true") {
+                    parts += stringResource(R.string.ai_tool_result_truncated)
+                }
+            } else {
+                (data["courses"] as? JsonArray)?.size?.let {
+                    parts += stringResource(R.string.ai_tool_result_courses, it)
+                }
+                (data["todos"] as? JsonArray)?.size?.let {
+                    parts += stringResource(R.string.ai_tool_result_todos, it)
+                }
+                (data["freeSlots"] as? JsonArray)?.size?.let {
+                    parts += stringResource(R.string.ai_tool_result_free_slots, it)
+                }
             }
             parts.joinToString(" · ")
         }
@@ -413,26 +443,20 @@ private fun toolResultDetails(name: String, result: AiToolResult?): List<String>
             }
         }
         AiToolRegistry.GET_DAY_PLAN -> {
-            (data["courses"] as? JsonArray)?.forEach { element ->
-                val course = element as? JsonObject ?: return@forEach
-                val title = course["name"].textOrNull().orEmpty()
-                val start = course["startTime"].textOrNull().orEmpty()
-                val end = course["endTime"].textOrNull().orEmpty()
-                val location = course["location"].textOrNull()
-                lines += buildString {
-                    if (start.isNotBlank() || end.isNotBlank()) append("$start-$end ")
-                    append(title)
-                    if (!location.isNullOrBlank()) append(" @$location")
+            val days = data["days"] as? JsonArray
+            if (days != null) {
+                // 多天模式：每天先给日期头，再列当天课程/待办/空闲
+                days.forEach { element ->
+                    val day = element as? JsonObject ?: return@forEach
+                    val weekday = day["weekday"].textOrNull().orEmpty()
+                    val date = day["date"].textOrNull().orEmpty()
+                    lines += listOf(weekday, date)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" ")
+                    appendDayPlanDay(day, lines, appendEmpty = true)
                 }
-            }
-            (data["todos"] as? JsonArray)?.forEach { element ->
-                lines += todoLine(element as? JsonObject)
-            }
-            (data["freeSlots"] as? JsonArray)?.forEach { element ->
-                val slot = element as? JsonObject ?: return@forEach
-                val start = slot["start"].textOrNull().orEmpty()
-                val end = slot["end"].textOrNull().orEmpty()
-                lines += stringResource(R.string.ai_tool_detail_free_slot, start, end)
+            } else {
+                appendDayPlanDay(data, lines, appendEmpty = false)
             }
         }
         AiToolRegistry.SEARCH_TODOS -> {
@@ -558,6 +582,40 @@ private fun toolResultDetails(name: String, result: AiToolResult?): List<String>
     return lines
 }
 
+/** get_day_plan 单日明细：课程/待办/空闲依次追加；多天模式下当天无内容补「（无）」 */
+@Composable
+private fun appendDayPlanDay(
+    day: JsonObject,
+    lines: MutableList<String>,
+    appendEmpty: Boolean,
+) {
+    val before = lines.size
+    (day["courses"] as? JsonArray)?.forEach { element ->
+        val course = element as? JsonObject ?: return@forEach
+        val title = course["name"].textOrNull().orEmpty()
+        val start = course["startTime"].textOrNull().orEmpty()
+        val end = course["endTime"].textOrNull().orEmpty()
+        val location = course["location"].textOrNull()
+        lines += buildString {
+            if (start.isNotBlank() || end.isNotBlank()) append("$start-$end ")
+            append(title)
+            if (!location.isNullOrBlank()) append(" @$location")
+        }
+    }
+    (day["todos"] as? JsonArray)?.forEach { element ->
+        lines += todoLine(element as? JsonObject)
+    }
+    (day["freeSlots"] as? JsonArray)?.forEach { element ->
+        val slot = element as? JsonObject ?: return@forEach
+        val start = slot["start"].textOrNull().orEmpty()
+        val end = slot["end"].textOrNull().orEmpty()
+        lines += stringResource(R.string.ai_tool_detail_free_slot, start, end)
+    }
+    if (appendEmpty && lines.size == before) {
+        lines += stringResource(R.string.ai_tool_detail_empty)
+    }
+}
+
 @Composable
 private fun todoLine(todo: JsonObject?): String {
     if (todo == null) return stringResource(R.string.ai_tool_result_empty)
@@ -658,6 +716,37 @@ private fun ToolCompletedPreview() {
                             """"location":"教学楼A-301"}],"todos":[{"id":"t1","name":"交实验报告",""" +
                             """"completed":false,"deadline":"2026-11-18 18:00"}],""" +
                             """"freeSlots":[{"start":"08:00","end":"14:30","minutes":390}]}}""",
+                    ),
+                ),
+                status = AiToolRoundStatus.Completed,
+            ),
+            expandedByDefault = true,
+        )
+    }
+}
+
+@Preview(name = "工具-多天查询", showBackground = true, widthDp = 360)
+@Composable
+private fun ToolMultiDayPreview() {
+    MaterialTheme {
+        AiChatToolRoundBlock(
+            round = AiToolRound(
+                calls = listOf(
+                    AiToolCall(
+                        id = "call_1",
+                        name = AiToolRegistry.GET_DAY_PLAN,
+                        argumentsJson = """{"dates":["2026-11-04","2026-12-14","2027-02-03"]}""",
+                    ),
+                ),
+                results = listOf(
+                    AiToolResult(
+                        callId = "call_1",
+                        name = AiToolRegistry.GET_DAY_PLAN,
+                        contentJson = """{"ok":true,"data":{"days":[
+                            {"date":"2026-11-04","weekday":"周三","week":12,"courses":[{"name":"高等数学","startTime":"14:30","endTime":"16:10","location":"教学楼A-301"}],"todos":[{"id":"t1","name":"交实验报告","completed":false,"deadline":"2026-11-04 18:00"}],"freeSlots":[{"start":"08:00","end":"14:30","minutes":390}]},
+                            {"date":"2026-12-14","weekday":"周一","week":18,"courses":[],"todos":[],"freeSlots":[{"start":"08:00","end":"16:10","minutes":490}]},
+                            {"date":"2027-02-03","weekday":"周三","week":25,"courses":[],"todos":[],"freeSlots":[]}
+                        ]}}""",
                     ),
                 ),
                 status = AiToolRoundStatus.Completed,

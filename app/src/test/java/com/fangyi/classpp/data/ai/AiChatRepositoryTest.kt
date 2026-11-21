@@ -2963,6 +2963,72 @@ class AiChatRepositoryTest {
     }
 
     @Test
+    fun `discrete day query plus batch create needs only two tool calls`() = runBlocking {
+        val persister = FakeTodoPersister()
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_plan",
+                        name = AiToolRegistry.GET_DAY_PLAN,
+                        arguments = """{"dates":["2026-11-04","2026-12-14","2027-02-03"]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_create",
+                        name = AiToolRegistry.CREATE_TODOS,
+                        arguments = """{"todos":[{"name":"11月4号作业","dates":["2026-11-04"]},""" +
+                            """{"name":"12月14号作业","dates":["2026-12-14"]},""" +
+                            """{"name":"2月3号作业","dates":["2027-02-03"]}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("这几天的作业都建好了。"), "data: [DONE]")),
+        )
+        val context = AiChatContext(
+            schedule = testSchedule(),
+            currentWeek = 12,
+            today = IsoDate.of(2026, 11, 2),
+            todos = emptyList(),
+        )
+        val repo = repository(
+            transport = transport,
+            persister = persister,
+            contextProvider = { context },
+        )
+
+        repo.send("查 11 月 4 号、12 月 14 号、2 月 3 号的安排，再把这几天要交的作业都建好")
+
+        // 一次离散多天查询 + 一次批量新建，共 2 次工具调用、3 次请求（末次为最终回答）
+        assertEquals(3, transport.opened.size)
+        assertEquals(1, persister.batches.size)
+        assertEquals(
+            listOf("11月4号作业", "12月14号作业", "2月3号作业"),
+            persister.batches.single().map { it.name },
+        )
+        val message = repo.messages.value.last()
+        assertEquals(2, message.toolRounds.size)
+        assertEquals(
+            listOf(AiToolRegistry.GET_DAY_PLAN, AiToolRegistry.CREATE_TODOS),
+            message.toolRounds.map { round -> round.calls.single().name },
+        )
+        assertEquals(3, message.todoIds.size)
+        val plan = message.toolRounds[0].results.single().contentJson
+        assertTrue(plan.contains("\"days\""))
+        assertTrue(plan.contains("2026-11-04"))
+        assertTrue(plan.contains("2027-02-03"))
+    }
+
+    @Test
     fun `current time tool takes date and minute from the same clock`() = runBlocking {
         val transport = FakeAiTransport(
             ScriptedResponse(
@@ -3019,10 +3085,7 @@ class AiChatRepositoryTest {
             "data: [DONE]",
         )
         val transport = FakeAiTransport(
-            ScriptedResponse(toolRound),
-            ScriptedResponse(toolRound),
-            ScriptedResponse(toolRound),
-            ScriptedResponse(toolRound),
+            *Array(AiChatRepository.MAX_TOOL_ROUNDS) { ScriptedResponse(toolRound) },
         )
         val repo = repository(settings = settings, transport = transport)
 

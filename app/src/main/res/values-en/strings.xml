@@ -1142,6 +1142,8 @@
     <string name="ai_tool_result_truncated">Result truncated</string>
     <string name="ai_tool_result_cancelled">Last run did not finish</string>
     <string name="ai_tool_arg_date">Date %1$s</string>
+    <string name="ai_tool_arg_days">%1$d days</string>
+    <string name="ai_tool_arg_date_range">Date %1$s to %2$s</string>
     <string name="ai_tool_arg_week">Week %1$d</string>
     <string name="ai_tool_arg_week_offset">Offset %1$d weeks</string>
     <string name="ai_tool_arg_overview">Timetable overview</string>

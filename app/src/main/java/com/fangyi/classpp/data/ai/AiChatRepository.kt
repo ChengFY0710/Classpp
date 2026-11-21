@@ -2968,14 +2968,18 @@ class AiChatRepository internal constructor(
         /** 回放截断的尾注：告知模型该条不完整，不要当作全文引用 */
         const val REPLAY_TEXT_TRUNCATED_NOTE = "\n（此条过长，已截断）"
 
-        /** 工具循环预算：总请求轮数（含首次请求） */
-        const val MAX_TOOL_ROUNDS = 4
+        /**
+         * 工具循环预算：总请求轮数（含首次请求）。
+         * 6 轮 = 最多 5 轮执行工具 + 1 轮最终回答，与 [MAX_TOTAL_CALLS] 配套
+         * （5 × [MAX_TOOL_CALLS_PER_ROUND] = 20）。
+         */
+        const val MAX_TOOL_ROUNDS = 6
 
         /** 单轮最多执行的工具调用数；超出部分返回 limit_exceeded */
         const val MAX_TOOL_CALLS_PER_ROUND = 4
 
         /** 整个用户轮次的总工具调用上限 */
-        const val MAX_TOTAL_CALLS = 10
+        const val MAX_TOTAL_CALLS = 20
 
         /**
          * 整个用户轮次的工具结果总量上限：防止多轮大结果叠加把上下文撑爆。

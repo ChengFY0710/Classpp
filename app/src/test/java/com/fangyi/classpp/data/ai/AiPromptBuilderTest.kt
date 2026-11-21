@@ -298,6 +298,11 @@ class AiPromptBuilderTest {
             AiToolRegistry.CREATE_TODO_GROUPS,
             AiToolRegistry.CREATE_TODO_TAGS,
         ).forEach { name -> assertTrue("native prompt must mention $name", native.contains(name)) }
+        // 多天查询与批量写入引导：从源头减少一次用户轮次里的工具调用次数
+        assertTrue(native.contains("from/to"))
+        assertTrue(native.contains("dates 离散多天"))
+        assertTrue(native.contains("禁止逐天调用"))
+        assertTrue(native.contains("create_todos 的 todos 数组"))
         // 新建分组/标签的引导：不存在时先调工具，再在 create_todos/update_todos 里引用
         assertTrue(native.contains("先调用 create_todo_groups / create_todo_tags"))
         assertTrue(native.contains("尚不存在的分组"))

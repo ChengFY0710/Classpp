@@ -1140,6 +1140,8 @@
     <string name="ai_tool_result_truncated">结果已截断</string>
     <string name="ai_tool_result_cancelled">上次执行未完成</string>
     <string name="ai_tool_arg_date">日期 %1$s</string>
+    <string name="ai_tool_arg_days">日期 %1$d 天</string>
+    <string name="ai_tool_arg_date_range">日期 %1$s 至 %2$s</string>
     <string name="ai_tool_arg_week">第 %1$d 周</string>
     <string name="ai_tool_arg_week_offset">偏移 %1$d 周</string>
     <string name="ai_tool_arg_overview">课表概况</string>

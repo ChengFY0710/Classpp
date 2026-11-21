@@ -12,6 +12,7 @@ import com.fangyi.classpp.data.model.nextOccurrenceAfter
 import com.fangyi.classpp.data.model.occurrencesBetween
 import com.fangyi.classpp.data.occurrencesOn
 import com.fangyi.classpp.data.weekOf
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -22,8 +23,8 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
 /**
- * 只读工具（设计稿 §4.3 + P3 的 `get_todo`）：查当前时刻、查某天、查待办、查某周课表、
- * 查单条详情。
+ * 只读工具（设计稿 §4.3 + P3 的 `get_todo`）：查当前时刻、查单天/连续多天/离散多天、
+ * 查待办、查某周课表、查单条详情。
  *
  * 全部是纯函数：只吃 [AiChatContext] 快照，不碰仓库、不落盘、不读系统时钟
  * （`today`/`nowMinute` 由调用方用同一时钟注入）；结果统一由 [AiToolExecutor] 包成
@@ -47,7 +48,29 @@ internal object AiReadTools {
     val dayPlanParameters: JsonObject = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
-            stringProperty("date", "日期 yyyy-MM-dd；省略 = 今天")
+            stringProperty(
+                "date",
+                "单日日期 yyyy-MM-dd；省略 date 且不给 from/to/dates = 今天；给了其他日期参数时忽略",
+            )
+            stringProperty(
+                "from",
+                "连续多天的起始日期 yyyy-MM-dd（含）；必须与 to 成对使用，跨度最多 " +
+                    "$MAX_DAY_PLAN_DAYS 天；不能与 dates 同时传",
+            )
+            stringProperty(
+                "to",
+                "连续多天的结束日期 yyyy-MM-dd（含）；必须与 from 成对使用，跨度最多 " +
+                    "$MAX_DAY_PLAN_DAYS 天；不能与 dates 同时传",
+            )
+            putJsonObject("dates") {
+                put("type", "array")
+                put(
+                    "description",
+                    "离散日期列表 yyyy-MM-dd；用于不连续的多天（如 11月4号、12月14号、2月3号），" +
+                        "最多 $MAX_DAY_PLAN_DAYS 个，按传入顺序返回；不能与 from/to 同时传",
+                )
+                putJsonObject("items") { put("type", "string") }
+            }
         }
     }
 
@@ -155,6 +178,85 @@ internal object AiReadTools {
     // ---------- get_day_plan ----------
 
     suspend fun executeDayPlan(args: JsonObject, ctx: AiChatContext): JsonObject {
+        val schedule = ctx.schedule
+            ?: return failure("not_found", "未设置课表")
+        val fromText = args.stringOrNull("from")
+        val toText = args.stringOrNull("to")
+        val datesElement = args["dates"]
+        if (datesElement != null && (!fromText.isNullOrBlank() || !toText.isNullOrBlank())) {
+            return failure("invalid_arguments", "dates 与 from/to 不能同时使用")
+        }
+        if (datesElement != null) {
+            // 离散日期模式：一次查不连续的多天（如 11月4号、12月14号、2月3号）
+            val raw = datesElement as? JsonArray
+                ?: return failure("invalid_arguments", "dates 必须是 yyyy-MM-dd 字符串数组")
+            if (raw.isEmpty()) {
+                return failure("invalid_arguments", "dates 不能为空")
+            }
+            val dates = mutableListOf<IsoDate>()
+            val seen = mutableSetOf<Long>()
+            for ((index, element) in raw.withIndex()) {
+                val text = (element as? JsonPrimitive)
+                    ?.takeIf { it.isString }
+                    ?.content
+                    ?: return failure("invalid_arguments", "dates[$index] 必须是 yyyy-MM-dd 字符串")
+                val date = IsoDate.parseOrNull(text)
+                    ?: return failure("invalid_arguments", "dates[$index] 必须是 yyyy-MM-dd")
+                // 去重但保留首次出现的顺序，结果按模型传入顺序返回
+                if (seen.add(date.epochDay)) dates += date
+            }
+            if (dates.size > MAX_DAY_PLAN_DAYS) {
+                return failure(
+                    "invalid_arguments",
+                    "一次最多查询 $MAX_DAY_PLAN_DAYS 天，请拆分日期",
+                )
+            }
+            return success(
+                buildJsonObject {
+                    put(
+                        "days",
+                        buildJsonArray {
+                            dates.forEach { add(dayPlanObject(schedule, it, ctx.todos)) }
+                        },
+                    )
+                },
+            )
+        }
+        if (!fromText.isNullOrBlank() || !toText.isNullOrBlank()) {
+            // 范围模式：一次返回连续多天，避免模型逐天调用
+            if (fromText.isNullOrBlank() || toText.isNullOrBlank()) {
+                return failure("invalid_arguments", "from 与 to 必须成对使用")
+            }
+            val from = IsoDate.parseOrNull(fromText)
+                ?: return failure("invalid_arguments", "from 必须是 yyyy-MM-dd")
+            val to = IsoDate.parseOrNull(toText)
+                ?: return failure("invalid_arguments", "to 必须是 yyyy-MM-dd")
+            if (from.epochDay > to.epochDay) {
+                return failure("invalid_arguments", "from 不能晚于 to")
+            }
+            val dayCount = (to - from).toInt() + 1
+            if (dayCount > MAX_DAY_PLAN_DAYS) {
+                return failure(
+                    "invalid_arguments",
+                    "一次最多查询 $MAX_DAY_PLAN_DAYS 天，请拆分范围",
+                )
+            }
+            return success(
+                buildJsonObject {
+                    put("from", from.toString())
+                    put("to", to.toString())
+                    put(
+                        "days",
+                        buildJsonArray {
+                            for (offset in 0 until dayCount) {
+                                add(dayPlanObject(schedule, from + offset, ctx.todos))
+                            }
+                        },
+                    )
+                },
+            )
+        }
+
         val dateText = args.stringOrNull("date")
         val date = if (dateText.isNullOrBlank()) {
             ctx.today
@@ -162,25 +264,30 @@ internal object AiReadTools {
             IsoDate.parseOrNull(dateText)
                 ?: return failure("invalid_arguments", "date 必须是 yyyy-MM-dd")
         }
-        val schedule = ctx.schedule
-            ?: return failure("not_found", "未设置课表")
+        return success(dayPlanObject(schedule, date, ctx.todos))
+    }
+
+    /** 单日结构；单日与范围模式共用，保证两种返回的每天字段一致 */
+    private fun dayPlanObject(
+        schedule: Schedule,
+        date: IsoDate,
+        todos: List<Todo>,
+    ): JsonObject {
         val week = schedule.weekOf(date)
         val courses = dayCourses(schedule, date)
-        val todos = ctx.todos
+        val dayTodos = todos
             .filter { it.occursOnDate(date) }
             .sortedWith(todoComparator())
             .map { it.toDayPlanItem(date) }
         val freeSlots = freeSlots(schedule, date)
-        return success(
-            buildJsonObject {
-                put("date", date.toString())
-                put("weekday", weekdayZh(date))
-                put("week", week)
-                put("courses", buildJsonArray { courses.forEach { add(it) } })
-                put("todos", buildJsonArray { todos.forEach { add(it) } })
-                put("freeSlots", buildJsonArray { freeSlots.forEach { add(it) } })
-            },
-        )
+        return buildJsonObject {
+            put("date", date.toString())
+            put("weekday", weekdayZh(date))
+            put("week", week)
+            put("courses", buildJsonArray { courses.forEach { add(it) } })
+            put("todos", buildJsonArray { dayTodos.forEach { add(it) } })
+            put("freeSlots", buildJsonArray { freeSlots.forEach { add(it) } })
+        }
     }
 
     private fun dayCourses(schedule: Schedule, date: IsoDate): List<JsonObject> =
@@ -723,6 +830,15 @@ internal object AiReadTools {
      * 而不是悄悄截断成“看起来完整”的列表。
      */
     internal const val MAX_SEARCH_RESULT_CHARS = 120_000
+
+    /** get_day_plan 一次最多覆盖的天数（连续范围或离散日期）；超过则要求模型拆分 */
+    internal const val MAX_DAY_PLAN_DAYS = 14
+
+    /**
+     * get_day_plan 的结果上限：多天模式每天含课程/待办/空闲时段，默认 8K 不够。
+     * 40K 覆盖 14 天常见密度；超限时执行器按 `days` 数组截断并标记 `truncated`。
+     */
+    internal const val MAX_DAY_PLAN_RESULT_CHARS = 40_000
 
     /** 结果信封 `{ok,data}` 的余量，保证 executor 的最终字符串仍在上限内 */
     private const val RESULT_ENVELOPE_MARGIN = 64

@@ -337,10 +337,13 @@ object AiToolRegistry {
         ),
         AiToolSpec(
             name = GET_DAY_PLAN,
-            description = "查询某一天的课程、待办与空闲时段。用户问“某天有没有空/那天有什么课”时调用；" +
-                "省略 date = 今天。",
+            description = "查询一天或多天的课程、待办与空闲时段。date 查单日；from/to 查连续多天" +
+                "（含首尾）；dates 查不连续的多天（如 11月4号、12月14号、2月3号）。" +
+                "三种方式任选其一，最多 ${AiReadTools.MAX_DAY_PLAN_DAYS} 天；" +
+                "多天必须一次查完，不要逐天调用。",
             parameters = AiReadTools.dayPlanParameters,
             permission = AiToolPermission.Read,
+            maxResultChars = AiReadTools.MAX_DAY_PLAN_RESULT_CHARS,
             execute = AiReadTools::executeDayPlan,
         ),
         AiToolSpec(
@@ -377,6 +380,7 @@ object AiToolRegistry {
         AiToolSpec(
             name = CREATE_TODOS,
             description = "新建待办。用户要求记录要做的事（可带日期、截止、重复）时调用；" +
+                "多条待办一次全部放进 todos 数组提交，不要拆成多次调用；" +
                 "用户只给一个时间点默认作截止，给时间段默认作待办时段；创建立即生效，可在消息下方撤销。",
             parameters = createTodosParameters,
             permission = AiToolPermission.WriteReversible,
