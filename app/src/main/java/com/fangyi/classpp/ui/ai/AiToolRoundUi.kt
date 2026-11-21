@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -42,6 +43,7 @@ import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.ChatCardShape
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.classppTextStyles
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -129,22 +131,21 @@ private fun AiChatToolCallCard(
                         .padding(end = 6.dp)
                         .size(24.dp),
                 )
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = toolDisplayName(call.name),
-                        style = ClassppTextTokens.sectionTitle,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.classppTextStyles.fieldLabel,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (description.isNotBlank()) {
+                        // 标题↔描述间距与 SettingsCard 行内文字块一致
+                        Spacer(Modifier.size(3.dp))
                         Text(
                             text = description,
-                            style = ClassppTextTokens.secondaryTextSmall,
-                            color = MaterialTheme.classppColors.secondaryText,
+                            style = ClassppTextTokens.settingsDescription.copy(
+                                color = MaterialTheme.classppColors.secondaryText,
+                            ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
