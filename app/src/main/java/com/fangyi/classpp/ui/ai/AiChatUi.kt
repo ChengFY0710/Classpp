@@ -24,16 +24,20 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -99,7 +103,8 @@ import com.fangyi.classpp.ui.theme.classppColors
  *
  * 推理模型的思考过程（[AiChatMessage.reasoning] 非空）渲染在气泡**上方**的可折叠块里；
  * [thinkingInProgress] = true（思考阶段、正文未开始）时默认展开，正文开始/结束后自动收起，
- * 用户手动点过标题行后不再自动切换（见 [AiChatThinkingBlock]）。
+ * 用户手动点过标题行后不再自动切换（见 [AiChatThinkingBlock]）。思考正文超出高度上限后
+ * 在卡内滚动，流式期间粘底跟随最新内容，用户上滑阅读时暂停、回到底部恢复。
  *
  * 本条回复已创建待办、执行了完成/取消完成，或生成了待确认的修改/删除时
  * （[AiChatMessage.todoIds] 非空、落库失败、[AiChatMessage.todoChanges] 非空、
@@ -195,6 +200,7 @@ internal fun AiChatMessageBubble(
                 AiChatThinkingBlock(
                     reasoning = message.reasoning,
                     thinkingInProgress = thinkingInProgress,
+                    streamingTail = streamingTail,
                 )
             }
             if (showBubble) {
@@ -379,6 +385,15 @@ private fun AiChatImageThumb(
  */
 private val ThinkingBlockMaxBodyHeight = 240.dp
 
+/** 智能跟底：认定「在底部」的容差（与消息列流式跟底同口径） */
+private val ThinkingFollowBottomSlop = 8.dp
+
+/** 智能跟底：单帧最大步长（同消息列流式跟底） */
+private val ThinkingFollowMaxStep = 24.dp
+
+/** 智能跟底：每帧补齐剩余差值的比例，约 8~12 帧收敛到底 */
+private const val ThinkingFollowFraction = 0.28f
+
 /**
  * 推理模型的思考过程折叠块：弱化容器（surface 底，无描边）+ 标题行（sparkle 图标 /
  * 文案 / 折叠箭头），点标题行切换展开。
@@ -390,11 +405,17 @@ private val ThinkingBlockMaxBodyHeight = 240.dp
  * 展开后正文最高 [ThinkingBlockMaxBodyHeight]，超出部分在卡内纵向滚动：滚到边继续拖或
  * 惯性甩到边时，由卡内自己的橡皮筋过滚动拉出（[containedRubberBandVerticalScroll]），
  * 剩余滚动量与甩动速度不交给消息列表，手感和整页过滚动一致。
+ *
+ * 正文是「粘底」的（Stick to Bottom，[streamingTail] 时默认开启）：流式思考内容增长时
+ * 自动滚到最新一行；用户上滑读历史立即暂停跟随，自己滑回底部（或在底部松手）后恢复；
+ * 历史消息手动展开时初始不跟底，从第一行开始读。
  */
 @Composable
 internal fun AiChatThinkingBlock(
     reasoning: String,
     thinkingInProgress: Boolean,
+    /** 正在流式增长的尾部消息：思考正文默认粘底跟随 */
+    streamingTail: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     var expanded by rememberSaveable { mutableStateOf(thinkingInProgress) }
@@ -403,6 +424,49 @@ internal fun AiChatThinkingBlock(
     // 与自动收合差一帧（正文已出现、思考仍展开），气泡先冲高再缩回，读感是上下抖一下。
     val shownExpanded = if (userToggled) expanded else thinkingInProgress
     val tint = MaterialTheme.classppColors.secondaryText
+    val scrollState = rememberScrollState()
+    // 粘底状态：流式消息默认跟随；用户上滑置 false，回到底部（或松手停在底部）恢复
+    var autoFollow by remember { mutableStateOf(streamingTail) }
+    val density = LocalDensity.current
+    val bottomSlopPx = with(density) { ThinkingFollowBottomSlop.roundToPx() }
+    val maxStepPx = with(density) { ThinkingFollowMaxStep.roundToPx() }
+
+    // 手势/惯性接管期间：离开底部即暂停跟随，处在本页内回到底部即恢复。
+    // 程序化的跟底位移走 dispatchRawDelta（不置 isScrollInProgress），不会被误判成用户滚动
+    LaunchedEffect(scrollState, shownExpanded) {
+        if (!shownExpanded) return@LaunchedEffect
+        snapshotFlow { scrollState.isScrollInProgress to (scrollState.maxValue - scrollState.value) }
+            .collect { (scrolling, gap) ->
+                if (scrolling) {
+                    autoFollow = gap <= bottomSlopPx
+                } else if (gap <= bottomSlopPx) {
+                    autoFollow = true
+                }
+            }
+    }
+
+    // 正文变长（maxValue 上涨）后分帧补齐到底：一帧瞬移会把整段 chunk 读成一次猛跳，
+    // 与消息列的流式跟底同款逐帧逼近；用户接管时立即让出控制权
+    LaunchedEffect(scrollState, shownExpanded) {
+        if (!shownExpanded) return@LaunchedEffect
+        snapshotFlow { scrollState.maxValue }.collect {
+            if (!autoFollow) return@collect
+            // 等新内容完成布局，再开始逼近新的底部
+            withFrameNanos { }
+            while (autoFollow && !scrollState.isScrollInProgress) {
+                val gap = scrollState.maxValue - scrollState.value
+                if (gap <= 0) break
+                val step = if (gap <= 1) {
+                    gap
+                } else {
+                    minOf(maxStepPx, (gap * ThinkingFollowFraction).toInt().coerceAtLeast(1))
+                }
+                scrollState.dispatchRawDelta(step.toFloat())
+                withFrameNanos { }
+            }
+        }
+    }
+
     Surface(
         color = MaterialTheme.colorScheme.surface,
         contentColor = tint,
@@ -450,7 +514,7 @@ internal fun AiChatThinkingBlock(
                         .fillMaxWidth()
                         // 高度上限 + 卡内滚动：到边的拖拽/甩动在卡内过滚动，不回传消息列表
                         .containedRubberBandVerticalScroll(
-                            state = rememberScrollState(),
+                            state = scrollState,
                             maxHeight = ThinkingBlockMaxBodyHeight,
                         )
                         .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
