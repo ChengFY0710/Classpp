@@ -776,25 +776,17 @@
     <!-- Empty state for a tag page -->
     <string name="todo_empty_tag">No todos under this tag yet</string>
     <string name="todo_error_save_failed">Save failed, please try again later</string>
-    <!-- Todo overview sheet (TodoOverviewSheet): today's wrap-up ring, stat cards, reminders, distribution, recent completions -->
+    <!-- Todo overview sheet (TodoOverviewSheet): today's wrap-up ring, stat cards, weekly rhythm chart, reminders, distribution, recent completions -->
     <string name="todo_overview_title">Todo overview</string>
     <string name="todo_overview_week_completed">Completed this week</string>
     <string name="todo_overview_items">%1$d item(s)</string>
     <string name="todo_overview_today_fraction">%1$d/%2$d</string>
-    <string name="todo_overview_today_percent">Today %1$d%%</string>
-    <string name="todo_overview_today_progress">%1$d done, %2$d to go before wrapping up</string>
-    <string name="todo_overview_today_all_done">All done for today, wrapping up!</string>
-    <string name="todo_overview_today_clear">Nothing due today, take a rest</string>
     <string name="todo_overview_streak_short">Day streak</string>
     <string name="todo_overview_week_section">This week</string>
-    <string name="todo_overview_week_summary">%1$d completed · %2$d day(s)</string>
-    <string name="todo_overview_week_empty">No completions this week yet</string>
     <string name="todo_overview_attention">Needs attention</string>
     <string name="todo_overview_due_today">Due today</string>
     <string name="todo_overview_due_next7">Next 7 days</string>
-    <string name="todo_overview_none_attention">No overdue or upcoming deadlines</string>
     <string name="todo_overview_all">All todos</string>
-    <string name="todo_overview_total">%1$d todo(s) in total</string>
     <string name="todo_overview_recent">Recently completed</string>
     <string name="todo_overview_days_ago">%1$d days ago</string>
     <string name="todo_overview_empty_title">No todos yet</string>

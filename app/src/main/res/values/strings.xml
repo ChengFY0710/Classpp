@@ -65,25 +65,17 @@
     <!-- 常规分组页（全部/未分组/用户分组）无待办时的整页空态 -->
     <string name="todo_empty_group_title">还没有待办</string>
     <string name="todo_empty_group_hint">先记下一件想做的事</string>
-    <!-- 待办概览浮层（TodoOverviewSheet）：今日收工环形 + 三统计卡 + 提醒 + 分布 + 最近完成 -->
+    <!-- 待办概览浮层（TodoOverviewSheet）：今日收工环形 + 三统计卡 + 周节奏图表 + 提醒 + 分布 + 最近完成 -->
     <string name="todo_overview_title">待办概览</string>
     <string name="todo_overview_week_completed">本周完成</string>
     <string name="todo_overview_items">%1$d 项</string>
     <string name="todo_overview_today_fraction">%1$d/%2$d</string>
-    <string name="todo_overview_today_percent">今日完成 %1$d%%</string>
-    <string name="todo_overview_today_progress">已完成 %1$d 件，还差 %2$d 件就收工</string>
-    <string name="todo_overview_today_all_done">今天的事都做完了，收工！</string>
-    <string name="todo_overview_today_clear">今天没有要做的，好好休息</string>
     <string name="todo_overview_streak_short">连续天数</string>
     <string name="todo_overview_week_section">本周节奏</string>
-    <string name="todo_overview_week_summary">这周完成 %1$d 项 · %2$d 天</string>
-    <string name="todo_overview_week_empty">这周还没有完成记录</string>
     <string name="todo_overview_attention">需要留意</string>
     <string name="todo_overview_due_today">今天截止</string>
     <string name="todo_overview_due_next7">未来 7 天</string>
-    <string name="todo_overview_none_attention">没有逾期，也没有临近截止的待办</string>
     <string name="todo_overview_all">全部待办</string>
-    <string name="todo_overview_total">共 %1$d 项待办</string>
     <string name="todo_overview_recent">最近完成</string>
     <string name="todo_overview_days_ago">%1$d 天前</string>
     <string name="todo_overview_empty_title">还没有待办</string>
