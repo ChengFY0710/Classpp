@@ -71,6 +71,7 @@ import com.fangyi.classpp.data.ai.AiConversation
 import com.fangyi.classpp.data.ai.AiException
 import com.fangyi.classpp.data.ai.AiImageStore
 import com.fangyi.classpp.data.ai.AiProviderPresets
+import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoGroup
@@ -91,12 +92,14 @@ import com.fangyi.classpp.ui.note.TodoDetailSheet
 import com.fangyi.classpp.ui.note.rememberAddToAlarm
 import com.fangyi.classpp.ui.note.rememberTodoAttachmentOpener
 import com.fangyi.classpp.ui.note.todoAttachmentSources
+import com.fangyi.classpp.ui.schedule.courseTagColors
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
 import com.fangyi.classpp.ui.theme.LocalNavigationBarInsets
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -108,6 +111,7 @@ import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -278,11 +282,20 @@ fun AiChatOverlay(
     // 键盘可见性：消息列表跟随键盘的触发源（输入栏在钉底槽，不参与内容列的滚动追踪）
     val imeVisible = rememberImeVisible()
 
-    // 标签配色表（标签名 → 颜色）：用户标签取 TagEntry.colorArgb，未挑色回落主题 Primary；
-    // 与待办页列表卡/详情浮层同一份口径（表里没有的名字由 NoteCard 自己兜底）
+    // 标签配色表（标签名 → 颜色）：用户标签取 TagEntry.colorArgb、未挑色回落主题 Primary；
+    // 课程标签取课程卡配色（与主题相反，见 courseTagColors）——与待办页列表卡/详情浮层
+    // 同一份口径。课程标签优先：AI 直接给课程待办打的课程名标签不在标签库里，不合并这张表
+    // 就会整体回落成主题 Primary
     val primaryColor = MaterialTheme.colorScheme.primary
-    val tagColors = remember(tags, primaryColor) {
-        tags.associate { it.name to (it.colorArgb?.let(::Color) ?: primaryColor) }
+    val activeSchedule by remember(scheduleRepository) {
+        scheduleRepository?.activeSchedule ?: MutableStateFlow<Schedule?>(null)
+    }.collectAsState()
+    val darkTheme = MaterialTheme.isDarkTheme
+    val courseTagColorMap = remember(activeSchedule, darkTheme) {
+        activeSchedule?.courseTagColors(darkTheme) ?: emptyMap()
+    }
+    val tagColors = remember(tags, primaryColor, courseTagColorMap) {
+        tags.associate { it.name to (it.colorArgb?.let(::Color) ?: primaryColor) } + courseTagColorMap
     }
     val todosById = remember(todos) { todos.associateBy { it.id } }
 
