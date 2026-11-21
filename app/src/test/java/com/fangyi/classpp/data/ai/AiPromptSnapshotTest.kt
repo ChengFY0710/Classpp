@@ -19,7 +19,8 @@ import org.junit.Test
  * system prompt 快照回归（设计稿 §13 P0 验收）。
  *
  * 快照逐字节锁定 fallback 模式的当前基线：有意变更提示词文案时同步重生成并注明原因。
- * 版本沿革见 git 历史；v4 = 课程标签独立成行注入（与用户标签分命名空间）。
+ * 版本沿革见 git 历史；v4 = 课程标签独立成行注入（与用户标签分命名空间），
+ * v5 = 单时间点默认作截止、时间段默认作待办时段。
  * 行尾统一按 LF 比较（仓库 `core.autocrlf` 会在检出时改写资源文件的行尾）。
  */
 class AiPromptSnapshotTest {
@@ -175,8 +176,8 @@ class AiPromptSnapshotTest {
             courseTags = schedule.courses.distinctBy { it.name }.map { it.name },
         )
 
-        val expected = requireNotNull(javaClass.getResourceAsStream("/ai/prompt-snapshot-v4.txt")) {
-            "missing snapshot resource: /ai/prompt-snapshot-v4.txt"
+        val expected = requireNotNull(javaClass.getResourceAsStream("/ai/prompt-snapshot-v5.txt")) {
+            "missing snapshot resource: /ai/prompt-snapshot-v5.txt"
         }.use { it.readBytes().toString(Charsets.UTF_8) }
 
         assertEquals(normalizeLineEndings(expected), normalizeLineEndings(prompt))

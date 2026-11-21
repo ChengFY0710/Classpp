@@ -110,16 +110,34 @@ object AiToolRegistry {
             )
             stringArrayProperty(
                 "dates",
-                if (terse) "新日期列表 yyyy-MM-dd（整体替换原日期）" else "日期列表（yyyy-MM-dd）",
+                if (terse) {
+                    "新日期列表 yyyy-MM-dd（整体替换原日期）"
+                } else {
+                    "日期列表（yyyy-MM-dd）；时段或截止所在的那天也要列入"
+                },
             )
             booleanProperty("allDay", if (terse) "是否全天" else "是否全天；全天待办不要给时段")
-            stringProperty("startTime", if (terse) "开始 HH:mm（与 endTime 成对）" else "开始时间 HH:mm，与 endTime 成对")
+            stringProperty(
+                "startTime",
+                if (terse) {
+                    "开始 HH:mm（与 endTime 成对）"
+                } else {
+                    "开始时间 HH:mm，与 endTime 成对；用户给时间段时填时段"
+                },
+            )
             stringProperty("endTime", if (terse) "结束 HH:mm（须晚于 startTime）" else "结束时间 HH:mm，必须晚于 startTime")
             stringProperty(
                 "deadlineDate",
-                if (terse) "截止日期（与 deadlineTime 成对）" else "截止日期 yyyy-MM-dd，与 deadlineTime 成对",
+                if (terse) {
+                    "截止日期（与 deadlineTime 成对）"
+                } else {
+                    "截止日期 yyyy-MM-dd，与 deadlineTime 成对；用户只给一个时间点时作截止"
+                },
             )
-            stringProperty("deadlineTime", "截止时刻 HH:mm")
+            stringProperty(
+                "deadlineTime",
+                if (terse) "截止时刻 HH:mm" else "截止时刻 HH:mm；用户只给一个时间点时作截止",
+            )
             booleanProperty("deadlineBeforeRepeat", "截止随重复自动取下一次重复开始前")
             integerProperty("deadlineBeforeDays", "截止提前天数")
             enumProperty("urgency", if (terse) "紧急度（None=清除）" else "紧急度", urgencyValues)
@@ -359,7 +377,7 @@ object AiToolRegistry {
         AiToolSpec(
             name = CREATE_TODOS,
             description = "新建待办。用户要求记录要做的事（可带日期、截止、重复）时调用；" +
-                "创建立即生效，可在消息下方撤销。",
+                "用户只给一个时间点默认作截止，给时间段默认作待办时段；创建立即生效，可在消息下方撤销。",
             parameters = createTodosParameters,
             permission = AiToolPermission.WriteReversible,
             envelope = listOf(AiToolEnvelopeSection("todos", todosEnvelopeExample)),

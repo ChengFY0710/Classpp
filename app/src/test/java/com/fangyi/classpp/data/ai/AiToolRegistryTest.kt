@@ -260,6 +260,22 @@ class AiToolRegistryTest {
     }
 
     @Test
+    fun `create todos schema explains time defaults`() {
+        val create = requireNotNull(AiToolRegistry.find(AiToolRegistry.CREATE_TODOS))
+        assertTrue(create.description.contains("只给一个时间点默认作截止"))
+        val properties = create.parameters.getValue("properties").jsonObject
+            .getValue("todos").jsonObject.getValue("items").jsonObject.getValue("properties").jsonObject
+        assertTrue(
+            properties.getValue("deadlineDate").jsonObject.getValue("description").jsonPrimitive.content
+                .contains("只给一个时间点时作截止"),
+        )
+        assertTrue(
+            properties.getValue("startTime").jsonObject.getValue("description").jsonPrimitive.content
+                .contains("给时间段"),
+        )
+    }
+
+    @Test
     fun `get_todo requires id and stays the only detail entry`() {
         val spec = requireNotNull(AiToolRegistry.find(AiToolRegistry.GET_TODO))
         assertEquals(AiToolPermission.Read, spec.permission)

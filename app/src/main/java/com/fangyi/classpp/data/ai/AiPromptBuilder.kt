@@ -99,6 +99,19 @@ object AiPromptBuilder {
     internal val TODO_LIFECYCLE_JSON_SHAPE: String
         get() = AiToolRegistry.fallbackContracts.lifecycle
 
+    /**
+     * 新建待办的时间语义默认值（原生工具与 JSON 回退共用，避免两种模式漂移）：
+     * 单时间点 → 截止；时间段 → 待办时段，是否再补截止由内容决定。
+     */
+    private const val TIME_POINT_AS_DEADLINE_RULE =
+        "- 用户只给一个时间点（如“明天早上八点”“周五下午三点前”）时，默认作为截止：" +
+            "deadlineDate 与 deadlineTime 填该时间，dates 含该天，不要给时段；"
+
+    private const val TIME_RANGE_AS_PERIOD_RULE =
+        "- 用户给的是时间段（如“明天八点到十点”）时，默认作为待办时段：startTime 与 endTime 填该时段，" +
+            "dates 含该天；是否再补截止按待办内容权衡——内容另有明确时限（如“五点前交”）或用户另给了时间点时补截止，" +
+            "只是安排做事的时段不补截止；"
+
     private val WEEKDAY_ZH = arrayOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
     private val URGENCY_ZH = mapOf(
@@ -344,6 +357,8 @@ object AiPromptBuilder {
         appendLine("- 需要精确的当前时刻（现在几点、距离某时刻还有多久）或对话可能跨过午夜时，先调用 get_current_time；")
         appendLine("- 时段只有 startTime 与 endTime 成对出现才成立（endTime 须晚于 startTime）；全天待办用 allDay=true 且不要给时段；")
         appendLine("- 截止的日期（deadlineDate）与时刻（deadlineTime）要么都给，要么都不给；")
+        appendLine(TIME_POINT_AS_DEADLINE_RULE)
+        appendLine(TIME_RANGE_AS_PERIOD_RULE)
         appendLine("- 用户要新建分组/标签，或要把待办放进尚不存在的分组、加尚不存在的标签时，先调用 " +
             "create_todo_groups / create_todo_tags，再在 create_todos/update_todos 里引用；" +
             "【课程标签】是课表课程名，本身就是合法 tag（表示该课程的待办），可直接使用、不需要 create_todo_tags；" +
@@ -364,6 +379,8 @@ object AiPromptBuilder {
         appendLine("- 日期从今天的日期与星期推算（一周从周一开始、周日算本周最后一天；含“下周三”这类相对说法），不要编造具体日期；")
         appendLine("- 时段只有 startTime 与 endTime 成对出现才成立（endTime 须晚于 startTime）；全天待办用 allDay=true 且不要给时段；")
         appendLine("- 截止的日期（deadlineDate）与时刻（deadlineTime）要么都给，要么都不给；")
+        appendLine(TIME_POINT_AS_DEADLINE_RULE)
+        appendLine(TIME_RANGE_AS_PERIOD_RULE)
         appendLine("- countdown=true 仅在同时给了截止时可用；pinned=true 仅在用户明确要求置顶时使用；")
         appendLine("- 用户为某门课记待办（如作业、复习）时，tag 用【课程标签】里对应的课程名；group/tag 只用【可选分组】【可选标签】【课程标签】里出现的值，没有匹配就省略该字段；")
         appendLine("- 重复：预设档用 type=Daily/Weekly/Monthly/Yearly；自定义用 type=Custom 并给 unit（Day/Week/Month/Year）、interval、marks；")

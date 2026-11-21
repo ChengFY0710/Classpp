@@ -454,6 +454,22 @@ class AiPromptBuilderTest {
     }
 
     @Test
+    fun `time point defaults to deadline and time range to period in both modes`() {
+        val fallback = AiPromptBuilder.build(now, null, null, emptyList(), emptyList(), emptyList())
+        val native = AiPromptBuilder.build(
+            now, null, null, emptyList(), emptyList(), emptyList(), nativeTools = true,
+        )
+        // 新建待办的时间语义：单时间点=截止；时间段=待办时段，截止按内容权衡
+        listOf(fallback, native).forEach { prompt ->
+            assertTrue(prompt.contains("用户只给一个时间点"))
+            assertTrue(prompt.contains("默认作为截止"))
+            assertTrue(prompt.contains("用户给的是时间段"))
+            assertTrue(prompt.contains("默认作为待办时段"))
+            assertTrue(prompt.contains("只是安排做事的时段不补截止"))
+        }
+    }
+
+    @Test
     fun `fallback create contract marks name as required`() {
         val prompt = AiPromptBuilder.build(now, null, null, emptyList(), emptyList(), emptyList())
         // 无名草稿会被执行层静默丢弃：契约文本必须声明 name 必填（原生侧由 schema required 表达）
