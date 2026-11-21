@@ -47,8 +47,8 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  *
  * 内容收进一个无题 [CardSection]（组内卡间露灰底），自上下依次：
  * - 账号与同步行（[SettingsCardwithIcon]）：照搬设置页「账号与同步」入口（设计稿漏画图标，
- *   行首取设置页同款 ic_arrow_sync_circle），行值随连接状态展示（未连接 / 已连接 / 已连接：
- *   姓名，文案由调用方解析后经 [accountStatus] 传入）；点击后由调用方收起整串浮层、编辑态
+ *   行首取设置页同款 ic_arrow_sync_circle），行值随连接状态展示（未连接 / 已连接，
+ *   文案由调用方解析后经 [accountStatus] 传入）；点击后由调用方收起整串浮层、编辑态
  *   取消更改并转到设置页-账号与同步（[onOpenAccountSync]）。
  *   已连接时其下方再复用设置页同款「带头像的账号状态卡」（[account] 非空，同组内）：
  *   账户名 + 上次同步 + 头像圆，未连接不渲染。

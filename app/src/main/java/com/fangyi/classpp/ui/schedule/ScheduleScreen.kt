@@ -553,7 +553,7 @@ fun ScheduleScreen(
             val activeSchoolSlot by
                 (schools?.activeSession ?: fallbackSchoolSlot).collectAsState()
             val schoolSession = (activeSchoolSlot as? SessionSlot.Ready)?.session
-            // 教务账号连接状态文案（与设置页同口径：uid 非空即已连接，姓名缺省只显示「已连接」）
+            // 教务账号连接状态文案（与设置页同口径：uid 非空即已连接，统一显示「已连接」）
             val schoolSyncState = schoolSession?.sync?.state?.collectAsState()?.value
             // 已连接账户状态卡（设置页同款）：头像随同步下载。fallback flow 保证
             // collectAsState 无条件调用（同上面的 slot）
@@ -576,9 +576,7 @@ fun ScheduleScreen(
                     stringResource(R.string.settings_value_loading)
                 schoolSyncState == null || schoolSyncState.uid.isEmpty() ->
                     stringResource(R.string.sync_not_connected_label)
-                schoolSyncState.accountName.isBlank() ->
-                    stringResource(R.string.sync_connected_label)
-                else -> stringResource(R.string.sync_connected_name, schoolSyncState.accountName)
+                else -> stringResource(R.string.sync_connected_label)
             }
             // 教务导入服务（可选槽位）与阻断原因：不再由 UI 自己拼 hasCredentials
             val schoolScheduleImport: ScheduleImportService? = schoolSession?.scheduleImport

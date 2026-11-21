@@ -82,7 +82,7 @@ private enum class SettingsSubPage {
 }
 
 /**
- * 「账号与同步」入口卡的行值：未连接 / 已连接 姓名 / 登录已过期。
+ * 「账号与同步」入口卡的行值：未连接 / 已连接 / 登录已过期。
  * 状态流在这一行内 collect（活跃会话未就绪时显示未连接）；过期态没有独立落盘标志，
  * 仅由同步流程的探活结果驱动（子页横幅同一份判定），这里只呈现「已连接与否」。
  *
@@ -101,9 +101,7 @@ private fun SettingsAccountSyncCard(
         // 容器/会话尚未就绪：不能误显示“未连接”
         slot == null || slot is SessionSlot.Loading ->
             stringResource(R.string.settings_value_loading)
-        sync != null && sync.uid.isNotEmpty() ->
-            if (sync.accountName.isBlank()) stringResource(R.string.sync_connected_label)
-            else stringResource(R.string.sync_connected_name, sync.accountName)
+        sync != null && sync.uid.isNotEmpty() -> stringResource(R.string.sync_connected_label)
         else -> stringResource(R.string.sync_not_connected_label)
     }
     val items = remember(label, valueText, onClick) {

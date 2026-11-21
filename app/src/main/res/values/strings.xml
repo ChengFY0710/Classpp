@@ -344,7 +344,6 @@
     <string name="xmu_group_homework">作业</string>
     <string name="xmu_group_quiz">测验</string>
     <string name="sync_connected_label">已连接</string>
-    <string name="sync_connected_name">已连接：%1$s</string>
     <string name="sync_not_connected_label">未连接</string>
     <string name="settings_value_loading">加载中…</string>
     <string name="sync_last_sync_at">上次同步：%1$s</string>
