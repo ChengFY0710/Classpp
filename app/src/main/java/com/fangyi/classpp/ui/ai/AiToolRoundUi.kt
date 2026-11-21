@@ -99,10 +99,12 @@ private fun AiChatToolCallCard(
 ) {
     val status = toolStatus(result, roundStatus)
     var expanded by rememberSaveable { mutableStateOf(expandedByDefault) }
-    val summary = toolResultSummary(call.name, result)
+    // 折叠态只留一行描述：参数与结果合并，重复的数量信息只保留结果侧
+    val description = toolDescription(call, result)
     val details = if (expanded) toolResultDetails(call.name, result) else emptyList()
     val statusColor = when (status) {
         ToolStatus.Failed -> MaterialTheme.colorScheme.error
+        ToolStatus.Completed -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.classppColors.secondaryText
     }
     Surface(
@@ -115,15 +117,18 @@ private fun AiChatToolCallCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(role = Role.Button) { expanded = !expanded }
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                    .padding(vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.ic_ai),
+                    painter = painterResource(toolIconRes(call.name)),
                     contentDescription = null,
-                    tint = MaterialTheme.classppColors.secondaryText,
-                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                    // Row 基础间距 8dp，额外补 6dp，让 icon ↔ 文字列到 14dp
+                    modifier = Modifier
+                        .padding(end = 6.dp)
+                        .size(24.dp),
                 )
                 Column(
                     modifier = Modifier.weight(1f),
@@ -133,20 +138,12 @@ private fun AiChatToolCallCard(
                         text = toolDisplayName(call.name),
                         style = ClassppTextTokens.sectionTitle,
                         color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                    val params = toolParamSummary(call)
-                    if (params.isNotBlank()) {
+                    if (description.isNotBlank()) {
                         Text(
-                            text = params,
-                            style = ClassppTextTokens.secondaryTextSmall,
-                            color = MaterialTheme.classppColors.secondaryText,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    if (summary.isNotBlank()) {
-                        Text(
-                            text = summary,
+                            text = description,
                             style = ClassppTextTokens.secondaryTextSmall,
                             color = MaterialTheme.classppColors.secondaryText,
                             maxLines = 1,
@@ -180,12 +177,13 @@ private fun AiChatToolCallCard(
                         if (expanded) R.string.ai_tool_collapse else R.string.ai_tool_expand,
                     ),
                     tint = MaterialTheme.classppColors.secondaryText,
-                    modifier = Modifier.size(16.dp),
+                    // 与思考卡右侧展开箭头保持同尺寸
+                    modifier = Modifier.size(18.dp),
                 )
             }
             AnimatedVisibility(visible = expanded) {
                 Column(
-                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
+                    modifier = Modifier.padding(bottom = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     if (details.isEmpty()) {
@@ -206,6 +204,54 @@ private fun AiChatToolCallCard(
                 }
             }
         }
+    }
+}
+
+/** 工具卡左侧图标：查询类用搜索，编辑/新建类（含完成 / 归档等写操作）用撰写 */
+private fun toolIconRes(name: String): Int = when (name) {
+    AiToolRegistry.GET_CURRENT_TIME,
+    AiToolRegistry.GET_DAY_PLAN,
+    AiToolRegistry.SEARCH_TODOS,
+    AiToolRegistry.GET_WEEK_SCHEDULE,
+    AiToolRegistry.GET_TODO,
+    -> R.drawable.ic_search
+    else -> R.drawable.ic_compose
+}
+
+/** 写操作：参数里的条目数与结果里的数量重复，折叠态只留结果侧 */
+private val AiToolWriteNames = setOf(
+    AiToolRegistry.CREATE_TODOS,
+    AiToolRegistry.UPDATE_TODOS,
+    AiToolRegistry.DELETE_TODOS,
+    AiToolRegistry.COMPLETE_TODOS,
+    AiToolRegistry.ARCHIVE_TODOS,
+    AiToolRegistry.CREATE_TODO_GROUPS,
+    AiToolRegistry.CREATE_TODO_TAGS,
+)
+
+/**
+ * 折叠态的单行描述：查询类合并「查了什么 · 结果概况」，写操作只留结果数。
+ * 结果已包含同一信息时不重复（周视图的周数、多天查询的天数、写操作的条目数）；
+ * 失败时只显示错误原因，不再带参数。
+ */
+@Composable
+private fun toolDescription(call: AiToolCall, result: AiToolResult?): String {
+    val summary = toolResultSummary(call.name, result)
+    if (result?.isError == true) return summary
+    val params = toolParamSummary(call)
+    val resultCoversParams = when (call.name) {
+        // 结果里已有实际周数，参数里的周数 / 偏移不再重复
+        AiToolRegistry.GET_WEEK_SCHEDULE -> true
+        // 多天查询结果自身带天数，避免「日期 3 天 · 3 天」
+        AiToolRegistry.GET_DAY_PLAN ->
+            parseObject(call.argumentsJson)?.containsKey("dates") == true
+        in AiToolWriteNames -> true
+        else -> false
+    }
+    return when {
+        summary.isBlank() -> params
+        params.isBlank() || resultCoversParams -> summary
+        else -> "$params · $summary"
     }
 }
 
@@ -254,30 +300,16 @@ private fun toolParamSummary(call: AiToolCall): String {
             }
         }
         AiToolRegistry.SEARCH_TODOS -> {
-            val parts = mutableListOf<String>()
-            args["query"].textOrNull()?.takeIf { it.isNotBlank() }?.let {
-                parts += stringResource(R.string.ai_tool_arg_query, it)
-            }
-            args["status"].textOrNull()?.takeIf { it.isNotBlank() }?.let {
-                parts += stringResource(R.string.ai_tool_arg_status, it)
-            }
-            if (args["all"].textOrNull() == "true") {
-                parts += stringResource(R.string.ai_tool_arg_all)
-            } else {
-                args["offset"].textOrNull()?.toIntOrNull()?.takeIf { it > 0 }?.let {
-                    parts += stringResource(R.string.ai_tool_arg_offset, it + 1)
-                }
-                args["limit"].textOrNull()?.toIntOrNull()?.let {
-                    parts += stringResource(R.string.ai_tool_arg_limit, it)
-                }
-            }
-            parts.joinToString(" · ")
+            // 只留「查什么」：分页 / 全部等执行细节不属于卡片需要展示的信息
+            listOfNotNull(
+                args["query"].textOrNull()?.takeIf { it.isNotBlank() }?.let {
+                    stringResource(R.string.ai_tool_arg_query, it)
+                },
+                args["status"].textOrNull()?.takeIf { it.isNotBlank() }?.let {
+                    stringResource(R.string.ai_tool_arg_status, it)
+                },
+            ).joinToString(" · ")
         }
-        // 待办 id 是 UUID：卡片上只留前 8 位做识别，完整值在模型侧
-        AiToolRegistry.GET_TODO -> args["id"].textOrNull()
-            ?.takeIf { it.isNotBlank() }
-            ?.let { stringResource(R.string.ai_tool_arg_todo_id, it.take(TODO_ID_PREVIEW_CHARS)) }
-            .orEmpty()
         AiToolRegistry.CREATE_TODOS -> itemsSummary(args, "todos")
         AiToolRegistry.UPDATE_TODOS -> itemsSummary(args, "updates")
         AiToolRegistry.DELETE_TODOS -> itemsSummary(args, "deletes")
@@ -319,11 +351,12 @@ private fun toolResultSummary(name: String, result: AiToolResult?): String {
     }
     val data = obj["data"] as? JsonObject ?: return ""
     return when (name) {
+        AiToolRegistry.GET_CURRENT_TIME -> currentTimeText(data)
         AiToolRegistry.GET_DAY_PLAN -> {
             val parts = mutableListOf<String>()
             val days = data["days"] as? JsonArray
             if (days != null) {
-                // 多天模式：按天聚合课程/待办/空闲数量，避免卡片只剩“无结果”
+                // 多天模式：按天聚合课程/待办/空闲数量；为 0 的类别不占版面
                 parts += stringResource(R.string.ai_tool_result_days, days.size)
                 val courses = days.sumOf { day ->
                     ((day as? JsonObject)?.get("courses") as? JsonArray)?.size ?: 0
@@ -334,21 +367,32 @@ private fun toolResultSummary(name: String, result: AiToolResult?): String {
                 val freeSlots = days.sumOf { day ->
                     ((day as? JsonObject)?.get("freeSlots") as? JsonArray)?.size ?: 0
                 }
-                parts += stringResource(R.string.ai_tool_result_courses, courses)
-                parts += stringResource(R.string.ai_tool_result_todos, todos)
-                parts += stringResource(R.string.ai_tool_result_free_slots, freeSlots)
+                if (courses > 0) parts += stringResource(R.string.ai_tool_result_courses, courses)
+                if (todos > 0) parts += stringResource(R.string.ai_tool_result_todos, todos)
+                if (freeSlots > 0) {
+                    parts += stringResource(R.string.ai_tool_result_free_slots, freeSlots)
+                }
+                if (courses + todos + freeSlots == 0) {
+                    parts += stringResource(R.string.ai_tool_result_empty)
+                }
                 if (data["truncated"].textOrNull() == "true") {
                     parts += stringResource(R.string.ai_tool_result_truncated)
                 }
             } else {
-                (data["courses"] as? JsonArray)?.size?.let {
-                    parts += stringResource(R.string.ai_tool_result_courses, it)
+                val courses = (data["courses"] as? JsonArray)?.size
+                val todos = (data["todos"] as? JsonArray)?.size
+                val freeSlots = (data["freeSlots"] as? JsonArray)?.size
+                if (courses != null && courses > 0) {
+                    parts += stringResource(R.string.ai_tool_result_courses, courses)
                 }
-                (data["todos"] as? JsonArray)?.size?.let {
-                    parts += stringResource(R.string.ai_tool_result_todos, it)
+                if (todos != null && todos > 0) {
+                    parts += stringResource(R.string.ai_tool_result_todos, todos)
                 }
-                (data["freeSlots"] as? JsonArray)?.size?.let {
-                    parts += stringResource(R.string.ai_tool_result_free_slots, it)
+                if (freeSlots != null && freeSlots > 0) {
+                    parts += stringResource(R.string.ai_tool_result_free_slots, freeSlots)
+                }
+                if (listOfNotNull(courses, todos, freeSlots).let { it.isNotEmpty() && it.sum() == 0 }) {
+                    parts += stringResource(R.string.ai_tool_result_empty)
                 }
             }
             parts.joinToString(" · ")
@@ -435,12 +479,7 @@ private fun toolResultDetails(name: String, result: AiToolResult?): List<String>
     when (name) {
         // 展开后就是这次查询得到的“当前时间”，一屏即可读完
         AiToolRegistry.GET_CURRENT_TIME -> {
-            val dateTime = data["dateTime"].textOrNull()
-                ?: listOfNotNull(data["date"].textOrNull(), data["time"].textOrNull())
-                    .joinToString(" ")
-            if (dateTime.isNotBlank()) {
-                lines += listOfNotNull(data["weekday"].textOrNull(), dateTime).joinToString(" ")
-            }
+            currentTimeText(data).takeIf { it.isNotBlank() }?.let { lines += it }
         }
         AiToolRegistry.GET_DAY_PLAN -> {
             val days = data["days"] as? JsonArray
@@ -641,6 +680,17 @@ private fun todoStatusText(data: JsonObject): String = when {
     else -> stringResource(R.string.ai_tool_todo_status_active)
 }
 
+/** get_current_time 的结果文本：星期 + 日期时间，摘要与展开明细共用 */
+private fun currentTimeText(data: JsonObject): String {
+    val dateTime = data["dateTime"].textOrNull()
+        ?: listOfNotNull(data["date"].textOrNull(), data["time"].textOrNull())
+            .joinToString(" ")
+    return listOfNotNull(
+        data["weekday"].textOrNull(),
+        dateTime.takeIf { it.isNotBlank() },
+    ).joinToString(" ")
+}
+
 private enum class ToolStatus { Running, Completed, Failed, Cancelled }
 
 private fun toolStatus(result: AiToolResult?, roundStatus: AiToolRoundStatus): ToolStatus = when {
@@ -668,9 +718,6 @@ private fun parseObject(raw: String): JsonObject? = try {
 
 /** 展开态最多显示的明细行数，超出后只留省略提示 */
 private const val MAX_DETAIL_LINES = 100
-
-/** get_todo 卡片上展示的 id 前缀长度（完整 id 只给模型，气泡里不需要） */
-private const val TODO_ID_PREVIEW_CHARS = 8
 
 // ---------- Preview ----------
 
