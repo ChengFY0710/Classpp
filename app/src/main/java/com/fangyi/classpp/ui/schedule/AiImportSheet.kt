@@ -6,21 +6,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,30 +29,27 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.ai.AiAuroraAnchor
 import com.fangyi.classpp.ui.ai.AiChatNotConfigured
 import com.fangyi.classpp.ui.ai.AiThinkingAurora
+import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.EmptyState
 import com.fangyi.classpp.ui.components.OverlaySheet
+import com.fangyi.classpp.ui.components.SettingsCardwithIcon
+import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
+import com.fangyi.classpp.ui.components.SettingsInfoHeaderCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.TopBarHeight
-import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.pressClickable
-import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.SettingsCardShape
-import com.fangyi.classpp.ui.theme.classppColors
-import com.fangyi.classpp.ui.theme.classppTextStyles
-import com.fangyi.classpp.ui.theme.isDarkTheme
 
-/** 舞台高度下限：选图卡 / 图片在上半区垂直居中的定位基准（设计稿量取）。 */
+/** 舞台高度下限：预览图垂直居中的定位基准（设计稿量取），光场中心也与它对齐。 */
 private val AiImportStageHeight = 380.dp
 
 /**
@@ -68,7 +58,7 @@ private val AiImportStageHeight = 380.dp
  */
 private val AiImportAuroraHeight = 600.dp
 
-/** 选图卡与预览图的左右留白：叠加浮层内容的 12dp 页边距后约等于设计稿的 48dp。 */
+/** 预览图的左右留白：叠加浮层内容的 12dp 页边距后约等于设计稿的 48dp。 */
 private val AiImportSidePadding = 36.dp
 
 /** 预览图容器宽高比（设计稿约 3:2）。 */
@@ -93,18 +83,6 @@ private val AiImportAuroraTopFadeStart =
 private val AiImportAuroraTopFadeEnd =
     AiImportAuroraTopFadeStart + 64f / AiImportAuroraHeight.value
 
-// 选图卡的内距与间距：镜像 SettingsInfoHeaderCard 的首屏规格（组件本身不为本浮层加参数，
-// 这里独立维护；若共享组件规格调整，按需同步）。
-private val PickCardTopPadding = 24.dp
-private val PickCardBottomPadding = 20.dp
-private val PickCardHorizontalPadding = 32.dp
-private val PickCardIconSize = 40.dp
-private val PickCardIconTitleGap = 8.dp
-private val PickCardTitleDescriptionGap = 3.dp
-
-/** 两张入口卡之间的间距（图片识别 / 从教务网页识别） */
-private val PickCardGap = 12.dp
-
 /**
  * 「AI 识别导入」浮层：导入课表浮层的第一张入口卡打开，叠在其上（本浮层在场时导入浮层经
  * covered 缩小后退）。浮层只做展示与交互，识别请求 / 结果 / 临时图片生命周期都由宿主
@@ -113,9 +91,10 @@ private val PickCardGap = 12.dp
  * 状态与顶栏（胶囊排布由 [OverlaySheet] 的 confirmAtEnd 规则给出）：
  * - 未配置 AI 服务商：正文复用 AI 对话浮层的 [AiChatNotConfigured]（「先配置 AI 服务商」+
  *   去 AI 设置），右上只有「关闭」；
- * - 未选图：白底两张入口卡（[AiImportActionCard]：图片识别 + 从教务网页识别），点图片卡
- *   拉起系统相册（Photo Picker，无需权限），点网页卡回调 [onOpenWebImport] 打开全屏网页页
- *   （地址栏在页内，可随时改网址）；右上只有「关闭」；
+ * - 未选图：无题 [CardSection]（信息头部卡 [SettingsInfoHeaderCard] + 两张单行
+ *   [SettingsCardwithIcon]，一个选项一张卡），两张卡分别是图片识别与从教务网页识别。
+ *   点图片卡拉起系统相册（Photo Picker，无需权限），点网页卡回调 [onOpenWebImport]
+ *   打开全屏网页页（地址栏在页内，可随时改网址）；右上只有「关闭」；
  * - 已选图：预览图替换入口卡（点图可重选），左上「取消」+ 右上「开始」；
  * - 分析中（[analyzing]）：右上「取消」回调 [onStopAnalyze]；图片背后浮出
  *   [AiThinkingAurora] 的 [AiAuroraAnchor.Center] 光场（与 AI 对话浮层同一实现，走
@@ -250,56 +229,67 @@ internal fun AiImportSheet(
             ) {
                 AiChatNotConfigured(onOpenSettings = onOpenSettings)
             }
+        } else if (imageUri == null) {
+            // 未选图：信息头部卡（与设置页 / 导入课表浮层同款）+ 两张单行入口卡
+            // （一个选项一张卡）。整列收进无题 CardSection，卡间距由 CardSectionSpacing
+            // 统一给出，调用点不覆盖
+            CardSection {
+                SettingsInfoHeaderCard(
+                    icon = R.drawable.ic_ai,
+                    title = stringResource(R.string.import_ai_label),
+                    description = stringResource(R.string.import_ai_desc),
+                )
+                SettingsCardwithIcon(
+                    items = listOf(
+                        SettingsCardwithIconItem(
+                            icon = R.drawable.ic_image_add,
+                            label = stringResource(R.string.import_ai_pick_title),
+                            description = stringResource(R.string.import_ai_pick_desc),
+                            onClick = launchPicker,
+                        ),
+                    ),
+                )
+                SettingsCardwithIcon(
+                    items = listOf(
+                        SettingsCardwithIconItem(
+                            icon = R.drawable.ic_globe,
+                            label = stringResource(R.string.import_ai_web_card_title),
+                            description = stringResource(R.string.import_ai_web_card_desc),
+                            onClick = onOpenWebImport,
+                        ),
+                    ),
+                )
+            }
         } else {
-            // 舞台：选图卡 / 预览图在同一条中线上，与背景层的光场中心对齐
+            // 舞台：预览图在同一条中线上，与背景层的光场中心对齐
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = AiImportStageHeight),
                 contentAlignment = Alignment.Center,
             ) {
-                if (imageUri == null) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = AiImportSidePadding),
-                        verticalArrangement = Arrangement.spacedBy(PickCardGap),
-                    ) {
-                        AiImportActionCard(
-                            iconRes = R.drawable.ic_image_add,
-                            title = stringResource(R.string.import_ai_pick_title),
-                            description = stringResource(R.string.import_ai_pick_desc),
-                            onClick = launchPicker,
+                AsyncImage(
+                    model = imageUri,
+                    contentDescription = stringResource(R.string.cd_ai_import_image),
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .padding(horizontal = AiImportSidePadding)
+                        .fillMaxWidth()
+                        .aspectRatio(AiImportPreviewAspectRatio)
+                        // 分析中不再接受换图；点图重选只在「已选图」态可用
+                        .then(
+                            if (analyzing) {
+                                Modifier
+                            } else {
+                                Modifier.pressClickable(
+                                    shape = SettingsCardShape,
+                                    onClick = launchPicker,
+                                )
+                            },
                         )
-                        AiImportActionCard(
-                            iconRes = R.drawable.ic_globe,
-                            title = stringResource(R.string.import_ai_web_card_title),
-                            description = stringResource(R.string.import_ai_web_card_desc),
-                            onClick = onOpenWebImport,
-                        )
-                    }
-                } else {
-                    AsyncImage(
-                        model = imageUri,
-                        contentDescription = stringResource(R.string.cd_ai_import_image),
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .padding(horizontal = AiImportSidePadding)
-                            .fillMaxWidth()
-                            .aspectRatio(AiImportPreviewAspectRatio)
-                            // 分析中不再接受换图；点图重选只在「已选图」态可用
-                            .then(
-                                if (analyzing) {
-                                    Modifier
-                                } else {
-                                    Modifier.pressClickable(
-                                        shape = SettingsCardShape,
-                                        onClick = launchPicker,
-                                    )
-                                },
-                            )
-                            .clip(SettingsCardShape)
-                            .background(MaterialTheme.colorScheme.surface),
-                    )
-                }
+                        .clip(SettingsCardShape)
+                        .background(MaterialTheme.colorScheme.surface),
+                )
             }
             if (analyzing) {
                 // 分析提示：与 AI 对话浮层同一个空态组件；其上留白由 EmptyState 自带的
@@ -313,66 +303,6 @@ internal fun AiImportSheet(
                 // 识别失败：错误条替代分析提示；图片与「开始」都保留，点开始重试
                 SheetInfoBanner(text = errorText, isError = true)
             }
-        }
-    }
-}
-
-/**
- * 入口卡：白底 [SettingsCardShape] + 纯色主题色图标/标题 + 说明，整卡可点。
- *
- * 间距与排版沿用 `SettingsInfoHeaderCard` 的首屏规格（上下 24/20、左右 32、图标 40dp、
- * 图标↔标题 8dp、标题↔说明 3dp），但不改动那个共享组件：本卡只需要纯色图标与可点语义，
- * 且文案固定属于本浮层。图片识别与教务网页识别共用同一张卡。
- */
-@Composable
-private fun AiImportActionCard(
-    iconRes: Int,
-    title: String,
-    description: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val pressShade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .pressClickable(shape = SettingsCardShape, shade = pressShade, onClick = onClick)
-            .clip(SettingsCardShape)
-            .background(MaterialTheme.colorScheme.surface),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            modifier = Modifier.padding(
-                start = PickCardHorizontalPadding,
-                top = PickCardTopPadding,
-                end = PickCardHorizontalPadding,
-                bottom = PickCardBottomPadding,
-            ),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(PickCardIconSize),
-            )
-            Spacer(Modifier.height(PickCardIconTitleGap))
-            Text(
-                text = title,
-                style = MaterialTheme.classppTextStyles.fieldLabel,
-                color = MaterialTheme.colorScheme.primary,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(PickCardTitleDescriptionGap))
-            Text(
-                text = description,
-                style = ClassppTextTokens.settingsDescription.copy(
-                    color = MaterialTheme.classppColors.secondaryText,
-                ),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
         }
     }
 }
