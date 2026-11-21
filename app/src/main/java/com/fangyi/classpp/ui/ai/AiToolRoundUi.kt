@@ -1,6 +1,5 @@
 package com.fangyi.classpp.ui.ai
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -38,6 +37,7 @@ import com.fangyi.classpp.data.ai.AiToolRegistry
 import com.fangyi.classpp.data.ai.AiToolResult
 import com.fangyi.classpp.data.ai.AiToolRound
 import com.fangyi.classpp.data.ai.AiToolRoundStatus
+import com.fangyi.classpp.ui.motion.Expandable
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.ChatCardShape
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
@@ -101,7 +101,6 @@ private fun AiChatToolCallCard(
     var expanded by rememberSaveable { mutableStateOf(expandedByDefault) }
     // 折叠态只留一行描述：参数与结果合并，重复的数量信息只保留结果侧
     val description = toolDescription(call, result)
-    val details = if (expanded) toolResultDetails(call.name, result) else emptyList()
     val statusColor = when (status) {
         ToolStatus.Failed -> MaterialTheme.colorScheme.error
         ToolStatus.Completed -> MaterialTheme.colorScheme.primary
@@ -181,7 +180,10 @@ private fun AiChatToolCallCard(
                     modifier = Modifier.size(18.dp),
                 )
             }
-            AnimatedVisibility(visible = expanded) {
+            Expandable(expanded = expanded) {
+                // 明细在展开区内部求值：收起动画期间内容保持原样，高度才能从完整高度
+                // 连续收缩；若在外部按 expanded 清空，内容会先塌成空态，看起来像瞬间关闭
+                val details = toolResultDetails(call.name, result)
                 Column(
                     modifier = Modifier.padding(bottom = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
