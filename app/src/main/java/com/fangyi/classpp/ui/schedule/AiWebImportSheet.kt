@@ -558,22 +558,19 @@ internal fun AiWebImportSheet(
                 )
                 if (currentUrl.isBlank()) {
                     // 还没输入网址：盖住空白 WebView，提示用户从底部地址栏开始。
-                    // 高度与课表页「还没有课表」空态对齐：组件顶边距屏幕 250dp（EmptyState
-                    // 自带 48dp 上下内距）；内容区从顶栏下沿开始，故扣掉实测顶栏高度
+                    // 空态落在窗口正中间（横向、纵向都居中）：内容区从顶栏下沿开始，
+                    // 其中心比窗口中心低 topBarHeight / 2，故上移半个顶栏高度归位
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .background(MaterialTheme.colorScheme.background),
-                        contentAlignment = Alignment.TopCenter,
+                        contentAlignment = Alignment.Center,
                     ) {
                         EmptyState(
                             icon = R.drawable.ic_globe,
                             title = stringResource(R.string.import_ai_web_start_title),
                             description = stringResource(R.string.import_ai_web_start_desc),
-                            modifier = Modifier.padding(
-                                top = (EmptyStateScreenTopPadding - topBarHeight)
-                                    .coerceAtLeast(0.dp),
-                            ),
+                            modifier = Modifier.offset(y = -(topBarHeight / 2)),
                         )
                     }
                 }
@@ -740,9 +737,6 @@ private fun captureWebView(webView: WebView): Bitmap? {
         }
     }.getOrNull()
 }
-
-/** 与课表页无课表空态对齐：空态组件顶边距屏幕顶部 250dp（EmptyState 另带 48dp 内距） */
-private val EmptyStateScreenTopPadding = 250.dp
 
 /** 设置页顶栏内容高度（不含状态栏）：CenterAlignedTopAppBar 默认 64dp */
 private val SettingsTopBarContentHeight = 64.dp

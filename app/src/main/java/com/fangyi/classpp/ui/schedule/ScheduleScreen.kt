@@ -2606,15 +2606,16 @@ private fun EmptyScheduleContent(
     onCreateSchedule: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 空态落在窗口正中间：纵向居中、横向居中（EmptyState 自带 48dp 对称内距，
+    // 不影响内容块的视觉中心）
     Box(
         modifier = modifier,
-        contentAlignment = Alignment.TopCenter,
+        contentAlignment = Alignment.Center,
     ) {
         EmptyState(
             icon = R.drawable.ic_calendar_regular,
             title = stringResource(R.string.empty_title),
             description = stringResource(R.string.empty_desc),
-            modifier = Modifier.padding(top = 250.dp),
         ) {
             EmptyStateActionButton(
                 label = stringResource(R.string.create_schedule),

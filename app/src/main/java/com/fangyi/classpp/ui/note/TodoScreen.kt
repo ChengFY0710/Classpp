@@ -903,20 +903,20 @@ fun TodoScreen(
                     // 但并不是「没有待办」，仍维持原空白行为
                     if (page.special == null && page.tag == null && pageTodos.isEmpty()) {
                         // 空态也放进橡皮筋滚动容器：内容不足一屏时 RubberBandLazyColumn
-                        // 走兜底面，整页下拉/上推都能拉出回弹，与有卡片时的列表手感一致
+                        // 走兜底面，整页下拉/上推都能拉出回弹，与有卡片时的列表手感一致。
+                        // 空态落在窗口正中间（横向、纵向都居中）
                         RubberBandLazyColumn(
                             modifier = Modifier.fillMaxSize(),
                         ) {
                             item(key = "groupEmptyState") {
                                 Box(
                                     modifier = Modifier.fillParentMaxSize(),
-                                    contentAlignment = Alignment.TopCenter,
+                                    contentAlignment = Alignment.Center,
                                 ) {
                                     EmptyState(
                                         icon = R.drawable.ic_note_regular,
                                         title = stringResource(R.string.todo_empty_group_title),
                                         description = stringResource(R.string.todo_empty_group_hint),
-                                        modifier = Modifier.padding(top = 250.dp),
                                     )
                                 }
                             }
@@ -949,13 +949,12 @@ fun TodoScreen(
                                                 ),
                                         )
                                     }
+                                    // 空态与常规分组页同位置：窗口正中间；回收站提示条仍贴顶
                                     EmptyState(
                                         icon = emptySection.iconRes,
                                         title = stringResource(emptySection.labelRes),
                                         description = stringResource(emptySection.emptyHintRes),
-                                        modifier = Modifier
-                                            .align(Alignment.TopCenter)
-                                            .padding(top = 250.dp),
+                                        modifier = Modifier.align(Alignment.Center),
                                     )
                                 }
                             }
