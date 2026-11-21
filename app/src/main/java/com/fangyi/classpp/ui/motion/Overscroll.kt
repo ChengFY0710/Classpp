@@ -36,6 +36,7 @@ import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
@@ -57,13 +58,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.AlignmentLine
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.MeasureResult
@@ -553,6 +557,83 @@ fun Modifier.rubberBandVerticalScroll(
     } else {
         this.verticalScroll(state)
     }
+}
+
+/**
+ * 「自包含」橡皮筋纵向滚动：内容超过 [maxHeight] 后在自身视口内滚动；滚到边继续拖动、
+ * 或惯性甩到边时，剩余量留在本容器里由独立的过滚动效果拉出，**不再交给外层滚动容器**
+ * （如聊天消息列）——外层列表在这块区域上不跟手、也不接力甩动速度。
+ *
+ * 与 [rubberBandVerticalScroll] 的分工：那个是页面级容器，边缘剩余量本来就该由外层或
+ * 页面过滚动承接；本容器嵌在另一个滚动列里，过滚动必须自收自支，否则会表现为「小卡片
+ * 拉着拉着把整页列表带走了」。因此不走 scrollable 自带的 overscroll 派发（它是在父级
+ * post-scroll **之后**才拿到剩余量），而是用 [NestedScrollConnection] 在 post 阶段截住
+ * 剩余量、手动喂给效果实例：
+ * - 用户拖动：剩余量经 [OffsetOverscrollEffect.applyToScroll] 拉出；反向拖动时在 pre
+ *   阶段先收回拉出量，剩余量照常滚内容（顺序与效果的内部实现一致）；
+ * - 惯性帧到边：剩余位移同样并入拉出量（效果自身只为 UserInput 累积），松手后在
+ *   post-fling 统一回弹。
+ *
+ * 只在内容确实超过 [maxHeight]（存在滚动范围）时接管：内容不足一屏时仍是普通滚动容器，
+ * 外层列表照常跟手，避免小卡片在列表里变成滑不动的「死区」。
+ * 拉出位移被 [clipToBounds] 裁在视口内，露出的底色来自容器背后（调用方应保证与卡片
+ * 底色一致），不会盖到相邻内容。
+ */
+@Composable
+fun Modifier.containedRubberBandVerticalScroll(
+    state: ScrollState,
+    maxHeight: Dp,
+): Modifier {
+    val effect = rememberOffsetOverscrollEffect()
+    val connection = remember(state, effect) {
+        object : NestedScrollConnection {
+            // 内容超出上限才有滚动范围；不足一屏时不接管，保持普通嵌套滚动
+            val scrollable: Boolean get() = state.maxValue > 0
+
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (!scrollable || source != NestedScrollSource.UserInput) return Offset.Zero
+                val offset = effect.currentOffset.y
+                val delta = available.y
+                if (offset == 0f || delta == 0f || delta.sign == offset.sign) return Offset.Zero
+                // 反向拖动先把拉出量收回到零（夹住拖动量，避免效果把它当成反向拉出），
+                // 剩余量照常进入内容滚动
+                val contract = if (abs(delta) <= abs(offset)) delta else -offset
+                return effect.applyToScroll(Offset(0f, contract), source) { Offset.Zero }
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                if (!scrollable || available.y == 0f) return Offset.Zero
+                // 用户拖动到边：剩余量在卡内拉出橡皮筋，不交给外层列表。
+                // 惯性帧（SideEffect）也按 UserInput 喂入：效果只为 UserInput 累积拉出量，
+                // 甩到边才有与速度相称的拉出手感，且不会把剩余位移透给外层
+                return effect.applyToScroll(available, NestedScrollSource.UserInput) {
+                    Offset.Zero
+                }
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (!scrollable) {
+                    effect.reset()
+                    return Velocity.Zero
+                }
+                // 速度留在卡内：拉出量回弹（没有拉出量时是空操作），外层列表不接力
+                effect.applyToFling(available) { Velocity.Zero }
+                return available
+            }
+        }
+    }
+    return this
+        // 视口上限必须在效果节点之外：效果用测量约束的高算阻尼上限，高度无界时
+        // 会退化成「一帧上百像素」的台阶位移（同 [rubberBandVerticalScroll] 的注释）
+        .heightIn(max = maxHeight)
+        .clipToBounds()
+        .overscroll(effect)
+        .nestedScroll(connection)
+        .verticalScroll(state)
 }
 
 /**

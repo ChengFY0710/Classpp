@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.TextSelectionColors
@@ -68,6 +70,7 @@ import com.fangyi.classpp.ui.components.SwipeAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.components.labelText
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.containedRubberBandVerticalScroll
 import com.fangyi.classpp.ui.note.cardTimeText
 import com.fangyi.classpp.ui.note.deadlineCardText
 import com.fangyi.classpp.ui.note.deadlineColor
@@ -371,12 +374,22 @@ private fun AiChatImageThumb(
 // ---------- 思考过程 ----------
 
 /**
+ * 思考正文的可视高度上限：超出部分在卡内滚动查看。不设上限时长推理会把消息列表顶满，
+ * 把下方回复挤出视口。上限只作用于正文，标题行常驻（随时可点收起）。
+ */
+private val ThinkingBlockMaxBodyHeight = 240.dp
+
+/**
  * 推理模型的思考过程折叠块：弱化容器（surface 底，无描边）+ 标题行（sparkle 图标 /
  * 文案 / 折叠箭头），点标题行切换展开。
  *
  * 展开态由 [thinkingInProgress] 自动驱动：思考阶段（正文还没开始）默认展开，正文开始或
  * 回复结束后自动收起；用户手动点过之后 [userToggled] 置位，不再自动改变——避免正文开始时
  * 把用户主动展开的内容强行收走。历史消息（非流式）初始收起。
+ *
+ * 展开后正文最高 [ThinkingBlockMaxBodyHeight]，超出部分在卡内纵向滚动：滚到边继续拖或
+ * 惯性甩到边时，由卡内自己的橡皮筋过滚动拉出（[containedRubberBandVerticalScroll]），
+ * 剩余滚动量与甩动速度不交给消息列表，手感和整页过滚动一致。
  */
 @Composable
 internal fun AiChatThinkingBlock(
@@ -432,12 +445,22 @@ internal fun AiChatThinkingBlock(
                 )
             }
             AnimatedVisibility(visible = shownExpanded) {
-                Text(
-                    text = reasoning.trim(),
-                    style = ClassppTextTokens.secondaryTextSmall,
-                    color = tint,
-                    modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // 高度上限 + 卡内滚动：到边的拖拽/甩动在卡内过滚动，不回传消息列表
+                        .containedRubberBandVerticalScroll(
+                            state = rememberScrollState(),
+                            maxHeight = ThinkingBlockMaxBodyHeight,
+                        )
+                        .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+                ) {
+                    Text(
+                        text = reasoning.trim(),
+                        style = ClassppTextTokens.secondaryTextSmall,
+                        color = tint,
+                    )
+                }
             }
         }
     }
