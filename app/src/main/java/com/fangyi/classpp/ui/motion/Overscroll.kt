@@ -88,6 +88,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastRoundToInt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.android.awaitFrame
@@ -655,9 +656,12 @@ fun Modifier.containedRubberBandVerticalScroll(
  *
  * 默认惯性看 `scrollBy` 返回的消费量：嵌套滚动里剩余量会被外层滚动容器在 post 阶段吃掉，
  * 返回值始终是「全量已消费」，因此它在边缘不会停下，会把剩余惯性按完整衰减时长跑完——
- * 快速甩动时表现为过滚动拉出跟着那段衰减慢慢爬，像慢动作。这里改为比较本容器
- * `ScrollState.value` 的前后差值：本容器没把这一帧吃完就是到边，立即取消并把当前速度
- * 交回 post-fling，由过滚动做速度相称的拉出。
+ * 快速甩动时表现为过滚动拉出跟着那段衰减慢慢爬，像慢动作。这里改为在每帧滚动前看本容器
+ * 的位置：已经贴边（正向在 [ScrollState.maxValue]、反向在 0）还继续同向甩，才算到边，
+ * 立即取消并把当前速度交回 post-fling，由过滚动做速度相称的拉出。
+ *
+ * 不能改用 `ScrollState.value` 的前后差值判边：value 是整数，内部带小数累加器，每帧
+ * 舍入差就可能超过 0.5px，正常惯性会被误判成到边并凭空拉出过滚动。
  *
  * 内容不足一屏（没有滚动范围）时退回默认判据：此时本就不该接管，惯性应照常传给外层列表。
  */
@@ -672,19 +676,28 @@ private class ContainedFlingBehavior(
         var velocityLeft = initialVelocity
         var lastValue = 0f
         val animationState = AnimationState(initialValue = 0f, initialVelocity = initialVelocity)
-        animationState.animateDecay(decay) {
-            val delta = value - lastValue
-            lastValue = value
-            val before = state.value
-            val consumed = scrollBy(delta)
-            velocityLeft = this.velocity
-            val hitEdge = if (selfContained) {
-                abs(delta - (state.value - before).toFloat()) > 0.5f
-            } else {
-                abs(delta - consumed) > 0.5f
+        try {
+            animationState.animateDecay(decay) {
+                val delta = value - lastValue
+                lastValue = value
+                val before = state.value
+                val consumed = scrollBy(delta)
+                velocityLeft = this.velocity
+                val hitEdge = if (selfContained) {
+                    // 本帧开始前就贴边、且继续朝同方向甩：本容器这一帧吃不下任何量
+                    when {
+                        delta > 0f -> before >= state.maxValue
+                        delta < 0f -> before <= 0
+                        else -> false
+                    }
+                } else {
+                    abs(delta - consumed) > 0.5f
+                }
+                if (hitEdge) cancelAnimation()
             }
-            // 避免舍入误差：有任何未吃完的量就停下（外层接住的那部分不参与本判据）
-            if (hitEdge) cancelAnimation()
+        } catch (exception: CancellationException) {
+            // 新手势打断惯性：把打断瞬间的速度交回，保证 post-fling 的交接与默认惯性一致
+            velocityLeft = animationState.velocity
         }
         return velocityLeft
     }
