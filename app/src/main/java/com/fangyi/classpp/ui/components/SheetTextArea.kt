@@ -45,7 +45,8 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  * - 空态最小 3 行高（minLines），内容超出后卡片随行数长高；
  * - 已输入文字与 [SheetTextField] 的值同款（fieldValue 角色样式：16sp Medium primary 蓝）。
  *
- * 同样做「点了就重新 show 一次键盘」：Compose 输入框已聚焦时再点不会拉起键盘，
+ * 同样做两件事：**整行热区**（卡壳内距与留白点下去也聚焦，见 [fieldTapHotZone]）与
+ * 「点了就重新 show 一次键盘」：Compose 输入框已聚焦时再点不会拉起键盘，
  * 键盘一旦被收起就唤不回来（上机踩过）。
  *
  * 「聚焦后点空白取消聚焦（收起键盘）」与 [SheetTextField] 同款，由宿主容器的
@@ -63,6 +64,9 @@ fun SheetTextArea(
     var focused by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
     val keyboard = LocalSoftwareKeyboardController.current
+    // 整行热区用的内部 requester：调用点另传 focusRequester 时两个都挂在本输入框上，
+    // 谁请求都落到同一目标
+    val tapFocusRequester = remember { FocusRequester() }
     LaunchedEffect(interactionSource) {
         interactionSource.interactions.collect { interaction ->
             if (interaction is PressInteraction.Release) keyboard?.show()
@@ -111,8 +115,12 @@ fun SheetTextArea(
                     Modifier
                 },
             )
+            // 整行热区（padding 之前）：16 / 14 内距点下去也聚焦，不必点中文字
+            .fieldTapHotZone(tapFocusRequester, keyboard)
             .padding(SheetCardPadding)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            // 整行热区的聚焦目标（与调用点的 focusRequester 并存，互不干扰）
+            .focusRequester(tapFocusRequester)
             // 参与宿主的「键盘弹起把输入框滚到键盘上方」（OverlaySheet 的 ImeScrollTracker）：
             // 宿主没这项能力时此修饰符空转
             .imeFieldTracking()

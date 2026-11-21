@@ -37,6 +37,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -175,6 +177,8 @@ fun TagChoosingCard(
 
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    // 整行热区的聚焦目标：输入行的内距 / 留白点下去都落到本输入框
+    val inputFocusRequester = remember { FocusRequester() }
 
     // 提交当前输入：trim 非空且不与现有标签（用户/课程）重名才回调，随后清空输入。
     // 重名静默忽略：标签本质是字符串（Todo.tags），同名再建一份没有意义。
@@ -242,6 +246,9 @@ fun TagChoosingCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = SheetFieldHeight)
+                    // 整行热区（padding 之前）：60dp 输入行的内距与留白点下去也聚焦。
+                    // 色球的点击被子级先消费，不会落到这里
+                    .fieldTapHotZone(inputFocusRequester, keyboard)
                     .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -259,6 +266,8 @@ fun TagChoosingCard(
                     interactionSource = interactionSource,
                     modifier = Modifier
                         .weight(1f)
+                        // 整行热区的聚焦目标
+                        .focusRequester(inputFocusRequester)
                         // 参与宿主的「键盘弹起把输入框滚到键盘上方」（OverlaySheet 的 ImeScrollTracker）
                         .imeFieldTracking()
                         .onFocusChanged { focused = it.isFocused },

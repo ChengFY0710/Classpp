@@ -63,7 +63,9 @@ import com.fangyi.classpp.ui.theme.classppTextStyles
  * 颜色恒取目标色、浓度由进度控制——若中途切透明，收回途中描边会先隐身，萎缩过程看不见；
  * 进度归 0 后干脆不挂 border（0 宽描边会画成 1px 发丝线）。
  *
- * 除键盘动作外还做两件事：
+ * 除键盘动作外还做三件事：
+ * - **整行热区**——label、上下内距与卡片留白点下去都聚焦本行输入框并拉起键盘
+ *   （见 [fieldTapHotZone]），与搜索框 / 地址栏同口径；
  * - **点了就重新 show 一次键盘**——Compose 输入框已聚焦时再点不会拉起键盘，
  *   键盘一旦被收起就唤不回来（上机踩过）；
  * - **值区宽度固定 + 超宽自动换行**——值区宽度恒为 label 之外的剩余宽度，
@@ -144,8 +146,8 @@ data class SheetTextFieldItem(
  *   红色（红压过蓝），动画与单行版同源。卡级 hasFocus 聚合子节点，行间切换焦点
  *   描边不会闪断。
  *
- * 逐行能力与单行版一致：占位、蓝色值、聚焦光标、点击重新唤起键盘、逻辑单行（过滤换行符）、
- * 逐行 `imeFieldTracking()` 把正在编辑的输入框回报给宿主的键盘让位。
+ * 逐行能力与单行版一致：整行热区、占位、蓝色值、聚焦光标、点击重新唤起键盘、逻辑单行
+ * （过滤换行符）、逐行 `imeFieldTracking()` 把正在编辑的输入框回报给宿主的键盘让位。
  */
 @Composable
 fun SheetTextFieldGroup(
@@ -218,6 +220,9 @@ private fun SheetTextFieldRow(item: SheetTextFieldItem) {
     var focused by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
     val keyboard = LocalSoftwareKeyboardController.current
+    // 整行热区用的内部 requester：调用点另传 focusRequester 时两个都挂在本行输入框上，
+    // 谁请求都落到同一目标
+    val tapFocusRequester = remember { FocusRequester() }
     LaunchedEffect(interactionSource) {
         interactionSource.interactions.collect { interaction ->
             if (interaction is PressInteraction.Release) keyboard?.show()
@@ -228,6 +233,8 @@ private fun SheetTextFieldRow(item: SheetTextFieldItem) {
     Row(
         modifier = item.modifier
             .fillMaxWidth()
+            // 整行热区（padding 之前）：label、左右内距与行内留白点下去都聚焦本行输入框
+            .fieldTapHotZone(tapFocusRequester, keyboard)
             .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -265,6 +272,8 @@ private fun SheetTextFieldRow(item: SheetTextFieldItem) {
                         Modifier
                     },
                 )
+                // 整行热区的聚焦目标（与调用点的 focusRequester 并存，互不干扰）
+                .focusRequester(tapFocusRequester)
                 // 参与宿主的「键盘弹起把输入框滚到键盘上方」（OverlaySheet 的 ImeScrollTracker）：
                 // 宿主没这项能力时（设置页等直排表单）此修饰符空转
                 .imeFieldTracking()

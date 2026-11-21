@@ -4,7 +4,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Box
@@ -34,7 +33,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -99,7 +97,7 @@ fun SheetSearchField(
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     // 已聚焦时再点文本区：Compose 不会重新拉起键盘，键盘一旦被收起就唤不回（上机踩过）；
-    // 文本区以外的行内区域由下面的整条热区 pointerInput 兜住
+    // 文本区以外的行内区域由下面的整行热区兜住
     LaunchedEffect(interactionSource) {
         interactionSource.interactions.collect { interaction ->
             if (interaction is PressInteraction.Release) keyboard?.show()
@@ -140,15 +138,9 @@ fun SheetSearchField(
                 },
             )
             .onFocusChanged { focused = it.hasFocus }
-            // 整条热区：图标、左右内距与行内空白点下去都聚焦输入框并拉起键盘。
-            // 用 pointerInput 而非 clickable——clickable 会把本行合并成单个可点语义节点，
-            // 吞掉内部输入框的可编辑语义；文本区与清空钮的点击被子级先消费，不会走到这里
-            .pointerInput(Unit) {
-                detectTapGestures {
-                    focusRequester.requestFocus()
-                    keyboard?.show()
-                }
-            }
+            // 整行热区（padding 之前）：图标、左右内距与行内空白点下去都聚焦输入框
+            // 并拉起键盘；文本区与清空钮的点击被子级先消费，不会走到这里
+            .fieldTapHotZone(focusRequester, keyboard)
             .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
         verticalAlignment = Alignment.CenterVertically,
     ) {

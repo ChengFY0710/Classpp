@@ -142,6 +142,9 @@ private fun BottomCardTextField(
     var focused by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
     val keyboard = LocalSoftwareKeyboardController.current
+    // 整行热区用的内部 requester：调用点另传 focusRequester 时两个都挂在本输入框上，
+    // 谁请求都落到同一目标
+    val tapFocusRequester = remember { FocusRequester() }
     LaunchedEffect(interactionSource) {
         interactionSource.interactions.collect { interaction ->
             if (interaction is PressInteraction.Release) keyboard?.show()
@@ -180,6 +183,8 @@ private fun BottomCardTextField(
                     Modifier
                 },
             )
+            // 整行热区（padding 之前）：60dp 卡壳的内距与留白点下去也聚焦
+            .fieldTapHotZone(tapFocusRequester, keyboard)
             .padding(horizontal = RowCardPaddingHorizontal, vertical = RowCardPaddingVertical),
         // 内容垂直居中（原件的外层 Row 用 CenterVertically，Row 改 Box 后同义补齐）：
         // 单行在 SheetFieldHeight 最小高度内居中；多行内容撑高卡片后自然以整块居中
@@ -207,6 +212,8 @@ private fun BottomCardTextField(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+                // 整行热区的聚焦目标（与调用点的 focusRequester 并存，互不干扰）
+                .focusRequester(tapFocusRequester)
                 // 参与宿主的「键盘弹起把输入框滚到键盘上方」（OverlaySheet 的 ImeScrollTracker）：
                 // 宿主没这项能力时（如本弹卡自身）此修饰符空转
                 .imeFieldTracking()

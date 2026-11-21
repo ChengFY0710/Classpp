@@ -36,6 +36,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -206,6 +208,8 @@ fun AiChatInputBar(
     var menuDismissedAtMillis by remember { mutableLongStateOf(0L) }
     val interactionSource = remember { MutableInteractionSource() }
     val sendInteractionSource = remember { MutableInteractionSource() }
+    // 整行热区的聚焦目标：输入卡内距 / 留白点下去都落到本输入框
+    val tapFocusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(interactionSource) {
         interactionSource.interactions.collect { interaction ->
@@ -270,6 +274,15 @@ fun AiChatInputBar(
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = strokeProgress),
                                 shape = SheetCardShape,
                             )
+                        } else {
+                            Modifier
+                        },
+                    )
+                    // 整行热区（padding 之前）：60dp 输入卡的内距与留白点下去也聚焦。
+                    // 发送中 / 禁用时没有可聚焦的输入框，不挂热区
+                    .then(
+                        if (enabled && !sending) {
+                            Modifier.fieldTapHotZone(tapFocusRequester, keyboard)
                         } else {
                             Modifier
                         },
@@ -350,6 +363,8 @@ fun AiChatInputBar(
                         ),
                         modifier = Modifier
                             .weight(1f)
+                            // 整行热区的聚焦目标
+                            .focusRequester(tapFocusRequester)
                             // 参与宿主的「键盘弹起把输入框滚到键盘上方」；无 tracker 时空转
                             .imeFieldTracking(),
                         decorationBox = { innerTextField ->
