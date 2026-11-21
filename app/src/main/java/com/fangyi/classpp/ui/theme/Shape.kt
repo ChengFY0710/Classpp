@@ -93,6 +93,9 @@ val AppIconShape = RoundedRectangle(16.dp)
  */
 val ChatCardShape = RoundedRectangle(20.dp)
 
+/** AI 对话里的图片缩略图（气泡内消息图、输入栏待发送图）：10dp 平滑圆角 */
+val ChatImageShape = RoundedRectangle(10.dp)
+
 /** 顶栏胶囊按钮（全圆角）；投影与背景共用同一个形状 */
 val PillShape = Capsule()
 

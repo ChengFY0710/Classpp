@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.TextSelectionColors
@@ -77,7 +75,9 @@ import com.fangyi.classpp.ui.note.deadlineDaysLeft
 import com.fangyi.classpp.ui.note.repeatCardText
 import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.ChatCardShape
+import com.fangyi.classpp.ui.theme.ChatImageShape
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
+import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
 
 /**
@@ -309,7 +309,6 @@ private fun AiChatMessage.assistantSegments(displayContent: String): List<AiAssi
 /** 气泡内缩略图尺寸：单张放大（看得清内容），多张小格换行 */
 private val SingleImageSize = 160.dp
 private val GridImageSize = 96.dp
-private val ImageCorner = 10.dp
 private val ImageSpacing = 6.dp
 
 /**
@@ -364,7 +363,7 @@ private fun AiChatImageThumb(
         contentScale = ContentScale.Crop,
         modifier = modifier
             .size(size)
-            .clip(RoundedCornerShape(ImageCorner))
+            .clip(ChatImageShape)
             .clickable { onImageClick(name) },
     )
 }
@@ -583,7 +582,7 @@ internal fun AiChatTodoChangeCard(
                         style = ClassppTextTokens.sectionAction,
                         color = tint,
                         modifier = Modifier
-                            .clip(CircleShape)
+                            .clip(PillShape)
                             .clickable(enabled = !applying, onClick = onDismiss)
                             .padding(horizontal = 8.dp, vertical = 4.dp),
                     )
@@ -911,7 +910,7 @@ private fun AiChatTodoCompletionRow(
                         MaterialTheme.colorScheme.primary
                     },
                     modifier = Modifier
-                        .clip(CircleShape)
+                        .clip(PillShape)
                         .clickable(enabled = !undoing, onClick = onUndo)
                         .padding(horizontal = 8.dp, vertical = 2.dp),
                 )
@@ -1022,7 +1021,7 @@ private fun AiChatTodoLifecycleRow(
                         MaterialTheme.colorScheme.primary
                     },
                     modifier = Modifier
-                        .clip(CircleShape)
+                        .clip(PillShape)
                         .clickable(enabled = !undoing, onClick = onUndo)
                         .padding(horizontal = 8.dp, vertical = 2.dp),
                 )
@@ -1099,7 +1098,7 @@ internal fun AiChatErrorBanner(
             style = ClassppTextTokens.sectionAction,
             color = MaterialTheme.colorScheme.onErrorContainer,
             modifier = Modifier
-                .clip(CircleShape)
+                .clip(PillShape)
                 .clickable(onClick = onRetry)
                 .padding(horizontal = 8.dp, vertical = 4.dp),
         )

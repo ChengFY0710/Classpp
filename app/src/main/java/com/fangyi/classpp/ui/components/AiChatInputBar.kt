@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -60,6 +59,7 @@ import coil3.compose.AsyncImage
 import com.fangyi.classpp.R
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.pressClickable
+import com.fangyi.classpp.ui.theme.ChatImageShape
 import com.fangyi.classpp.ui.theme.ClassppTheme
 import com.fangyi.classpp.ui.theme.LiquidGlassStyle
 import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
@@ -295,7 +295,7 @@ fun AiChatInputBar(
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
                                         .matchParentSize()
-                                        .clip(RoundedCornerShape(10.dp)),
+                                        .clip(ChatImageShape),
                                 )
                                 Surface(
                                     onClick = { onRemoveImage(image) },

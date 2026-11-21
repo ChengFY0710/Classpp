@@ -27,8 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -104,7 +102,8 @@ val NavBarTransitionHeadroom = 20.dp
  *
  * [onTabLongPress] 只为**当前选中**的胶囊注册长按（日程/课表/待办任一选中态），
  * 未选中胶囊长按无反应；传 null（设置关闭）时长按动作与触感都不挂。
- * 长按触发时先播 [HapticFeedbackType.LongPress] 触感再回调。
+ * 长按触感由 combinedClickable 自带（hapticFeedbackEnabled 默认开启），调用点不再手动补播——
+ * Compose 1.12 起 combinedClickable 在 onLongClick 后自动播 LongPress 触感，手动再播会连震两下。
  *
  * 玻璃样式（[backdrop] 非空时启用，与全 app 玻璃按钮同一判定——调用方经
  * isGlassStyleEnabled 门控、关闭传 null）：胶囊白底改由 Backdrop 液态
@@ -201,7 +200,6 @@ private fun NavPill(
     } else {
         null
     }
-    val haptics = LocalHapticFeedback.current
     Box(
         modifier = modifier
             .height(PillHeight)
@@ -243,12 +241,9 @@ private fun NavPill(
                 interactionSource = pressInteraction,
                 indication = null,
                 onLongClickLabel = longClickLabel,
-                onLongClick = onLongClick?.let { action ->
-                    {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        action()
-                    }
-                },
+                // 长按触感交给 combinedClickable 默认行为（hapticFeedbackEnabled 默认 true）：
+                // 这里再手动 performHapticFeedback 会与框架内置的一起连震两下
+                onLongClick = onLongClick,
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,

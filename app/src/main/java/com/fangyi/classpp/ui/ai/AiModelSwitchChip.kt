@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -44,6 +43,7 @@ import com.fangyi.classpp.ui.components.PopupMenuPopup
 import com.fangyi.classpp.ui.components.PopupMenuSection
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.LiquidGlassStyle
+import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.glassPressFeedback
 import com.fangyi.classpp.ui.theme.glassSurface
@@ -216,12 +216,13 @@ private fun SwitchChip(
                 // pressScale Q 弹，否则 pressFeedback，封装见 ui.theme LiquidGlass）
                 .glassPressFeedback(
                     interactionSource = pressInteraction,
-                    shape = CircleShape,
+                    // 与全局胶囊同源：shapes 库 Capsule 的连续曲率圆角，替代 CircleShape
+                    shape = PillShape,
                     backdrop = backdrop,
                 )
                 // 玻璃开关开启时由 drawBackdrop 出底；backdrop = null 回退实心 surface
                 .glassSurface(
-                    shape = CircleShape,
+                    shape = PillShape,
                     containerColor = MaterialTheme.colorScheme.surface,
                     backdrop = backdrop,
                     style = LiquidGlassStyle.Pill,

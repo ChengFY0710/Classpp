@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,6 +35,8 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.ui.motion.detectHorizontalSwipeGestures
 import com.fangyi.classpp.ui.motion.pressFeedback
+import com.fangyi.classpp.ui.theme.DialogShape
+import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.RowShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.classppTextStyles
@@ -338,13 +339,15 @@ fun TimeRangeSlider(
             )
             AlertDialog(
                 onDismissRequest = { editingIsStart = null },
+                // 与项目其它对话框同源：默认 M3 形状是 androidx 的 28dp 圆角
+                shape = DialogShape,
                 title = {
                     Text(stringResource(if (isStart) R.string.time_range_start else R.string.time_range_end))
                 },
                 text = { TimePicker(state = timeState) },
                 confirmButton = {
                     // M3 按钮的涟漪在组件内部硬编码、调用侧置不了 null：本阶段只叠加按压反馈——
-                    // 按压源交给按钮形参，pressFeedback 接在 modifier 链末尾（贴按钮本体，对齐 textShape）
+                    // 按压源交给按钮形参，pressFeedback 接在 modifier 链末尾（贴按钮本体，对齐胶囊形状）
                     val press = remember { MutableInteractionSource() }
                     TextButton(
                         onClick = {
@@ -360,7 +363,7 @@ fun TimeRangeSlider(
                             editingIsStart = null
                         },
                         interactionSource = press,
-                        modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                        modifier = Modifier.pressFeedback(press, PillShape),
                     ) {
                         Text(stringResource(R.string.settings_confirm))
                     }
@@ -371,7 +374,7 @@ fun TimeRangeSlider(
                     TextButton(
                         onClick = { editingIsStart = null },
                         interactionSource = press,
-                        modifier = Modifier.pressFeedback(press, ButtonDefaults.textShape),
+                        modifier = Modifier.pressFeedback(press, PillShape),
                     ) {
                         Text(stringResource(R.string.settings_cancel))
                     }

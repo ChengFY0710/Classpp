@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,6 +59,7 @@ import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
 import com.fangyi.classpp.ui.theme.tabularNumbers
+import com.kyant.shapes.RoundedRectangle
 import dev.chrisbanes.haze.rememberHazeState
 
 /**
@@ -68,7 +68,7 @@ import dev.chrisbanes.haze.rememberHazeState
  */
 private val ChipRowHeight = 24.dp
 
-private val ChipShape = RoundedCornerShape(8.dp)
+private val ChipShape = RoundedRectangle(8.dp)
 
 /** 一次保存方案的挂起信息：保存前的方案 id 集合 + 发起时的草稿，回流后据此判断并选中新增方案 */
 private data class PendingSchemeSave(

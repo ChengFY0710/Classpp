@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -49,6 +48,7 @@ import com.fangyi.classpp.ui.motion.pressFeedback
 import com.fangyi.classpp.ui.motion.rememberOffsetOverscrollEffect
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
+import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.fangyi.classpp.ui.theme.themeAccent
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -279,7 +279,7 @@ fun NotificationScreen(
                                             }
                                         },
                                         interactionSource = testPress,
-                                        modifier = Modifier.pressFeedback(testPress, ButtonDefaults.textShape),
+                                        modifier = Modifier.pressFeedback(testPress, PillShape),
                                     ) {
                                         Text(
                                             text = stringResource(R.string.notification_test_publish),
