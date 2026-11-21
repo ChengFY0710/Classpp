@@ -2,6 +2,8 @@ package com.fangyi.classpp.ui.components
 
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.ime
@@ -15,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -31,6 +34,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -392,6 +396,10 @@ fun Modifier.menuScrollDismiss(signal: MenuScrollSignal): Modifier {
  * ACTION_OUTSIDE 收起（触摸同时也会落到下层窗口，需要下层自行防重入），返回键由
  * [MenuBackHandler] 在宿主组合里兜底。
  *
+ * 投影留白区（弹窗窗口内、卡外的透明圈）的点按同样收起：ACTION_OUTSIDE 只覆盖窗口**外**
+ * 的触摸，窗口内留白是框架层死区。AI 附件菜单贴输入卡上方 8dp 弹出，底部 48dp 留白会压住
+ * 输入卡上半截——不补这层，点输入卡那段区域既关不掉菜单也不透到下层。
+ *
  * [dismissOnScroll] 默认 true：宿主经 [LocalMenuScrollSignal] / [menuScrollDismiss] 接线后，
  * 打开期间一旦宿主动手滚动就收起（见 [MenuScrollSignal]）。无信号时无副作用。
  *
@@ -575,6 +583,8 @@ fun PopupMenuPopup(
     }
 
     val resolvedPaneTitle = paneTitle ?: stringResource(R.string.cd_popup_menu)
+    // 投影留白圈的点按要用最新的收起回调（宿主 lambda 每次重组都可能换实例）
+    val currentOnDismiss by rememberUpdatedState(onDismiss)
 
     if (motion.shown) {
         Popup(
@@ -589,57 +599,73 @@ fun PopupMenuPopup(
             // params 的坐标空间一致；越界仍由 clampCard 按安全区兜住
             properties = PopupProperties(focusable = focusable, clippingEnabled = false),
         ) {
-            PopupMenuCard(
-                sections = sections,
-                // 退场全程活采样毛玻璃（WeekPicker 同款）：纯收起与延后/退让过的重写动作
-                // 不构成「活引用 × 源重写」同帧，防护约定见上方 KDoc 与 PopupActionGate
-                hazeState = hazeState,
-                // 投影随缩放渐入（果冻回弹段恒满强度）；毛玻璃子层绕同一生长锚点反向
-                // 缩放，生长/回弹全程与真实背景 1:1 对位——联动进度均在 draw 阶段读值
-                blurProgress = motion::blurProgress,
-                contentAlpha = { motion.contentAlpha.value },
-                blurScale = motion::blurScale,
-                // 生长锚点 = 最终卡片矩形上的锚点投影（翻转 / 钳位后自动正确）
-                blurOrigin = { menuAnchorFraction(geometry.cardRect, geometry.anchorCenter) ?: TransformOrigin(0f, 0f) },
-                // A2：退场期间行不可点、内容列不可滚
-                interactive = expanded,
-                paneTitle = resolvedPaneTitle,
-                selectionMode = selectionMode,
-                focusFirstItem = focusable,
-                maxHeight = maxMenuHeight,
-                // 投影留白垫在卡外（裁切线 = Popup 窗口边缘，留白多大柔影就有多少活动空间）：
-                // 左右上 16dp、底部 48dp——光源在上投影向下坠得最远（WeekPicker 同款配方，
-                // 留白取值不同：周数弹窗顶部 50dp、左右按屏宽封顶、底部 60dp）；
-                // 缩放排在其外，整卡（含柔影）一起变换
-                modifier = Modifier
-                    // Esc 收起（系统返回键由 Popup / MenuBackHandler 承担）
-                    .onPreviewKeyEvent { event ->
-                        if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                            onDismiss()
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    .popupMotionScale(
-                        motion,
-                        origin = { size ->
-                            menuAnchorOrigin(
-                                layerSize = size,
-                                cardRect = geometry.cardRect,
-                                anchorCenter = geometry.anchorCenter,
-                                padStart = shadowPaddingPx.toFloat(),
-                                padTop = shadowPaddingPx.toFloat(),
-                            )
-                        },
+            Box {
+                // 投影留白区（弹窗窗口内、卡外的透明圈）点按 = 点卡片外：
+                // ACTION_OUTSIDE 只覆盖窗口「外」的触摸，窗口内留白原本是死区——
+                // AI 附件菜单贴输入卡上方 8dp 弹出，底部 48dp 留白压住输入卡上半截，
+                // 点输入卡这段区域既关不掉菜单、也不透到下层（整行热区因此点不动）。
+                // 垫在卡后面：卡内容自带滚动与行点击，点卡上的事件被子级先消费，不会误触
+                if (expanded) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .pointerInput(Unit) {
+                                detectTapGestures { currentOnDismiss() }
+                            },
                     )
-                    .padding(
-                        start = CardShadowPadding,
-                        top = CardShadowPadding,
-                        end = CardShadowPadding,
-                        bottom = CardShadowBottomPadding,
-                    ),
-            )
+                }
+                PopupMenuCard(
+                    sections = sections,
+                    // 退场全程活采样毛玻璃（WeekPicker 同款）：纯收起与延后/退让过的重写动作
+                    // 不构成「活引用 × 源重写」同帧，防护约定见上方 KDoc 与 PopupActionGate
+                    hazeState = hazeState,
+                    // 投影随缩放渐入（果冻回弹段恒满强度）；毛玻璃子层绕同一生长锚点反向
+                    // 缩放，生长/回弹全程与真实背景 1:1 对位——联动进度均在 draw 阶段读值
+                    blurProgress = motion::blurProgress,
+                    contentAlpha = { motion.contentAlpha.value },
+                    blurScale = motion::blurScale,
+                    // 生长锚点 = 最终卡片矩形上的锚点投影（翻转 / 钳位后自动正确）
+                    blurOrigin = { menuAnchorFraction(geometry.cardRect, geometry.anchorCenter) ?: TransformOrigin(0f, 0f) },
+                    // A2：退场期间行不可点、内容列不可滚
+                    interactive = expanded,
+                    paneTitle = resolvedPaneTitle,
+                    selectionMode = selectionMode,
+                    focusFirstItem = focusable,
+                    maxHeight = maxMenuHeight,
+                    // 投影留白垫在卡外（裁切线 = Popup 窗口边缘，留白多大柔影就有多少活动空间）：
+                    // 左右上 16dp、底部 48dp——光源在上投影向下坠得最远（WeekPicker 同款配方，
+                    // 留白取值不同：周数弹窗顶部 50dp、左右按屏宽封顶、底部 60dp）；
+                    // 缩放排在其外，整卡（含柔影）一起变换
+                    modifier = Modifier
+                        // Esc 收起（系统返回键由 Popup / MenuBackHandler 承担）
+                        .onPreviewKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                                onDismiss()
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        .popupMotionScale(
+                            motion,
+                            origin = { size ->
+                                menuAnchorOrigin(
+                                    layerSize = size,
+                                    cardRect = geometry.cardRect,
+                                    anchorCenter = geometry.anchorCenter,
+                                    padStart = shadowPaddingPx.toFloat(),
+                                    padTop = shadowPaddingPx.toFloat(),
+                                )
+                            },
+                        )
+                        .padding(
+                            start = CardShadowPadding,
+                            top = CardShadowPadding,
+                            end = CardShadowPadding,
+                            bottom = CardShadowBottomPadding,
+                        ),
+                )
+            }
         }
     }
 }
