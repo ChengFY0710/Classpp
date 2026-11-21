@@ -3,7 +3,6 @@ package com.fangyi.classpp.ui.schedule
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.webkit.CookieManager
-import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
@@ -86,6 +85,7 @@ import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
 import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.fangyi.classpp.ui.webview.WebDesktopUserAgent
+import com.fangyi.classpp.ui.webview.applyPageViewport
 import com.fangyi.classpp.ui.webview.rememberWebMobileUserAgent
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.shapes.RoundedRectangle
@@ -128,9 +128,9 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * 错误提示：页面读取失败、AI 识别失败、网址校验失败、HTTP 警告与主文档加载失败一律
  * 走系统 Toast，不再在底部叠信息条 / 红字或整页错误遮罩，网页始终保留可操作状态。
  *
- * 视口：页面按自身宽视口渲染（[WebSettings.setUseWideViewPort]），不再缩放到设备宽度
- * （[WebSettings.setLoadWithOverviewMode] 关闭），宽课表保持原始尺寸、横向拖动查看；
- * 同时开启 WebView 内置缩放，用户可捏合放大/缩小（不显示悬浮缩放钮）。
+ * 视口：页面按自身宽视口渲染（[applyPageViewport] + fitWidth = false），不再缩放到设备
+ * 宽度，宽课表保持原始尺寸、横向拖动查看；同时开启 WebView 内置缩放，用户可捏合
+ * 放大/缩小（不显示悬浮缩放钮）。
  */
 @Composable
 internal fun AiWebImportSheet(
@@ -511,14 +511,9 @@ internal fun AiWebImportSheet(
                                 wv,
                                 if (desktopMode) WebDesktopUserAgent else mobileUserAgent,
                             )
-                            // 教务系统多为桌面布局：保留页面自身的宽视口，不缩放到设备宽度。
-                            // 宽表格按原始尺寸渲染、左右拖动查看，再配合捏合缩放看清细节
-                            wv.settings.useWideViewPort = true
-                            wv.settings.loadWithOverviewMode = false
-                            wv.settings.setSupportZoom(true)
-                            wv.settings.builtInZoomControls = true
-                            // 只保留捏合手势，不显示悬浮的 +/− 缩放钮
-                            wv.settings.displayZoomControls = false
+                            // 教务系统多为桌面布局：保留页面自身的宽视口、按原始尺寸渲染，
+                            // 宽表格左右拖动查看，再配合捏合缩放看清细节
+                            wv.applyPageViewport(fitWidth = false)
                             // 登录链路跨多个域跳转：放行跨站 cookie
                             CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
                             wv.webViewClient = WebViewPolicy.createUserPageClient(

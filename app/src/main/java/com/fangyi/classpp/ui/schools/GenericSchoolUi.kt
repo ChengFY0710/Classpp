@@ -28,6 +28,7 @@ import com.fangyi.classpp.data.sync.engine.FetchOutcome
 import com.fangyi.classpp.data.sync.webview.WebSessionDriver
 import com.fangyi.classpp.data.sync.webview.WebViewPolicy
 import com.fangyi.classpp.ui.webview.WebViewPageScaffold
+import com.fangyi.classpp.ui.webview.applyPageViewport
 import com.fangyi.classpp.ui.webview.isDesktopUserAgent
 import com.fangyi.classpp.ui.webview.rememberWebMobileUserAgent
 import com.fangyi.classpp.ui.webview.resolveWebUserAgent
@@ -186,6 +187,8 @@ private fun GenericWebViewLoginSheet(
                         wv,
                         resolveWebUserAgent(userAgentChoice, spec.userAgent, mobileUserAgent),
                     )
+                    // 登录页按桌面 UA 返回宽布局：宽视口按宽度整体缩放，避免被压进控件宽度
+                    wv.applyPageViewport(fitWidth = true)
                     // 登录链路跨多个声明域跳转：放行跨站 cookie
                     CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
                     webView = wv

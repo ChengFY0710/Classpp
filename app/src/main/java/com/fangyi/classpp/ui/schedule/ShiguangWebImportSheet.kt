@@ -1,7 +1,6 @@
 package com.fangyi.classpp.ui.schedule
 
 import android.webkit.CookieManager
-import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +26,7 @@ import com.fangyi.classpp.data.sync.webview.WebViewPolicy
 import com.fangyi.classpp.data.sync.webview.unquoteJsResult
 import com.fangyi.classpp.ui.webview.WebViewPageAction
 import com.fangyi.classpp.ui.webview.WebViewPageScaffold
+import com.fangyi.classpp.ui.webview.applyPageViewport
 import com.fangyi.classpp.ui.webview.rememberWebMobileUserAgent
 import com.fangyi.classpp.ui.webview.resolveWebUserAgent
 import kotlin.coroutines.resume
@@ -232,16 +232,9 @@ internal fun ShiguangWebImportSheet(
                         wv,
                         resolveWebUserAgent(userAgentChoice, null, mobileUserAgent),
                     )
-                    // 与拾光官方客户端手机模式对齐：宽视口 + 概览缩放 + 双指缩放，
+                    // 与拾光官方客户端手机模式对齐：宽视口 + 按宽度整体缩放 + 双指缩放，
                     // 教务页面（尤其桌面布局）不会缩成一条窄内容
-                    with(wv.settings) {
-                        layoutAlgorithm = WebSettings.LayoutAlgorithm.NORMAL
-                        useWideViewPort = true
-                        loadWithOverviewMode = true
-                        setSupportZoom(true)
-                        builtInZoomControls = true
-                        displayZoomControls = false
-                    }
+                    wv.applyPageViewport(fitWidth = true)
                     // 登录链路跨多个未知域：放行跨站 cookie
                     CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
                     wv.webViewClient = WebViewPolicy.createUserPageClient(

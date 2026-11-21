@@ -27,6 +27,7 @@ import com.fangyi.classpp.data.sync.webview.WebViewTimetableJs
 import com.fangyi.classpp.data.sync.webview.unquoteJsResult
 import com.fangyi.classpp.ui.webview.WebViewPageAction
 import com.fangyi.classpp.ui.webview.WebViewPageScaffold
+import com.fangyi.classpp.ui.webview.applyPageViewport
 import com.fangyi.classpp.ui.webview.isDesktopUserAgent
 import com.fangyi.classpp.ui.webview.rememberWebMobileUserAgent
 import com.fangyi.classpp.ui.webview.resolveWebUserAgent
@@ -55,6 +56,9 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  *
  * 加固与导航白名单由 [WebViewPolicy] 锁死（spec 无法关闭）：仅 https + 声明域放行、
  * SSL 错误不 proceed、file/content 与混合内容全禁；登录链路跨域跳转放行第三方 cookie。
+ *
+ * 视口：宽视口 + 按宽度整体缩放（[applyPageViewport]），桌面教务页不会被压进控件宽度，
+ * 用户可捏合放大看清细节。
  *
  * 生命周期与 `GenericSchoolUi` 的可见登录浮层一致：WebView 由组合持有（AndroidView
  * factory 创建、onDispose flush cookie 后销毁）；关闭经 [onDismiss]（返回键同关闭）。
@@ -239,6 +243,8 @@ internal fun SchoolTimetableWebViewSheet(
                         wv,
                         resolveWebUserAgent(userAgentChoice, spec.userAgent, mobileUserAgent),
                     )
+                    // 教务课表按桌面 UA 返回宽布局：宽视口按宽度整体缩放，避免被压进控件宽度
+                    wv.applyPageViewport(fitWidth = true)
                     // 登录链路跨多个声明域跳转：放行跨站 cookie
                     CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
                     wv.webViewClient = WebViewPolicy.createTimetableClient(
