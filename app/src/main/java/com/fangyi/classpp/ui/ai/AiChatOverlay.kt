@@ -8,8 +8,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,7 +47,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -360,9 +357,6 @@ fun AiChatOverlay(
     var captureFile by remember { mutableStateOf<File?>(null) }
     // 全屏预览的已发送图片文件名（气泡缩略图点开）；null = 无预览
     var previewImageName by remember { mutableStateOf<String?>(null) }
-    // 输入栏附件菜单展开态（由 AiChatInputBar 提升上来）：菜单在场时浮层最上层垫一层
-    // 「点空白收起」的拦截层，见下方 catch layer 与 AiChatInputBar 的 KDoc
-    var attachmentMenuExpanded by remember { mutableStateOf(false) }
 
     /** 相册多选导入：Photo Picker 的 URI 是临时授权，先导入压缩副本（IO），超额度截断 */
     fun importImages(uris: List<Uri>) {
@@ -1031,8 +1025,6 @@ fun AiChatOverlay(
                         onRemoveImage = ::removePendingImage,
                         hazeState = bottomHazeState,
                         backdrop = bottomGlassBackdrop,
-                        menuExpanded = attachmentMenuExpanded,
-                        onMenuExpandedChange = { attachmentMenuExpanded = it },
                     )
                 }
             }
@@ -1300,26 +1292,6 @@ fun AiChatOverlay(
             )
         }
     }
-
-    // ——— 附件菜单「点空白收起」拦截层 ———
-    // 非 focusable 弹层本应由 ACTION_OUTSIDE 承担点外部收起，但部分系统上非焦点窗口收不到
-    // 该事件（菜单会一直挂着）。菜单在场时在浮层最上层垫一层全屏透明拦截层：菜单外的任何
-    // 按压都收起菜单，并消费本次手势（不再落到下层——避免「收起菜单」与「点到下层按钮」
-    // 是同一个手势而触发二次动作）。Popup 是独立且更高的窗口，菜单卡与投影留白区的点按
-    // 不受本层影响。
-    if (attachmentMenuExpanded) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    awaitEachGesture {
-                        // 不要求「未消费」：本层就是最上层命中节点，按下即收菜单
-                        awaitFirstDown(requireUnconsumed = false)
-                        attachmentMenuExpanded = false
-                    }
-                },
-        )
-    }
 }
 
 /**
@@ -1491,8 +1463,6 @@ private fun AiChatComposer(
     onRemoveImage: (File) -> Unit,
     hazeState: HazeState?,
     backdrop: Backdrop?,
-    menuExpanded: Boolean,
-    onMenuExpandedChange: (Boolean) -> Unit,
 ) {
     AiChatInputBar(
         value = inputText.value,
@@ -1511,8 +1481,6 @@ private fun AiChatComposer(
         onRemoveImage = onRemoveImage,
         hazeState = hazeState,
         backdrop = backdrop,
-        menuExpanded = menuExpanded,
-        onMenuExpandedChange = onMenuExpandedChange,
     )
 }
 

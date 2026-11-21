@@ -400,6 +400,11 @@ fun Modifier.menuScrollDismiss(signal: MenuScrollSignal): Modifier {
  * 的触摸，窗口内留白是框架层死区。AI 附件菜单贴输入卡上方 8dp 弹出，底部 48dp 留白会压住
  * 输入卡上半截——不补这层，点输入卡那段区域既关不掉菜单也不透到下层。
  *
+ * 非 focusable 菜单另外经 [MenuOutsideTapRegistry] 在应用窗口根部兜底：部分系统 / 机型上
+ * 非焦点窗口收不到 ACTION_OUTSIDE，没有这层时点菜单外不会收起。宿主须在整窗根部挂
+ * [menuOutsideTapDismiss] 并下发 [LocalMenuOutsideTap]；未接线时退回仅靠 ACTION_OUTSIDE。
+ * focusable 菜单不注册（系统自己收起），两套机制不会对同一次点击各收一次。
+ *
  * [dismissOnScroll] 默认 true：宿主经 [LocalMenuScrollSignal] / [menuScrollDismiss] 接线后，
  * 打开期间一旦宿主动手滚动就收起（见 [MenuScrollSignal]）。无信号时无副作用。
  *
@@ -585,6 +590,18 @@ fun PopupMenuPopup(
     val resolvedPaneTitle = paneTitle ?: stringResource(R.string.cd_popup_menu)
     // 投影留白圈的点按要用最新的收起回调（宿主 lambda 每次重组都可能换实例）
     val currentOnDismiss by rememberUpdatedState(onDismiss)
+
+    // 非 focusable 菜单的「点外部收起」：部分机型 / 系统上非焦点窗口收不到 ACTION_OUTSIDE，
+    // 由应用窗口根部的按下观察层兜底（见 [MenuOutsideTapRegistry]）。focusable 菜单由系统
+    // 自己消费外部触摸并收起，不注册，避免同一次点击被两套机制各收一次
+    val outsideTapRegistry = LocalMenuOutsideTap.current
+    if (!focusable && outsideTapRegistry != null) {
+        val dismissOwner = remember { Any() }
+        DisposableEffect(outsideTapRegistry, expanded, dismissOwner) {
+            if (expanded) outsideTapRegistry.attach(dismissOwner) { currentOnDismiss() }
+            onDispose { outsideTapRegistry.detach(dismissOwner) }
+        }
+    }
 
     if (motion.shown) {
         Popup(

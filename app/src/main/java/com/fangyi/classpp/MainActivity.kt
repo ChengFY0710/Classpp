@@ -56,7 +56,10 @@ import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.ai.AiChatDraft
 import com.fangyi.classpp.ui.ai.AiChatOverlay
 import com.fangyi.classpp.ui.ai.MaxImagesPerMessage
+import com.fangyi.classpp.ui.components.LocalMenuOutsideTap
 import com.fangyi.classpp.ui.components.LocalOverlayTopBarBlur
+import com.fangyi.classpp.ui.components.MenuOutsideTapRegistry
+import com.fangyi.classpp.ui.components.menuOutsideTapDismiss
 import com.fangyi.classpp.ui.day.DayInitialData
 import com.fangyi.classpp.ui.day.DayScreen
 import com.fangyi.classpp.ui.motion.LocalPageOverlayTransform
@@ -353,9 +356,14 @@ class MainActivity : ComponentActivity() {
             // 玻璃材质开关（更高级的玻璃材质）与浮层顶栏模糊开关：组合根部下发，浮层
             // 顶栏等共享组件经 LocalGlassStyle / LocalOverlayTopBarBlur 读取；读 .value，
             // 翻转自根部重组（与 themeMode 同拍）
+            // 非 focusable 菜单的「点外部收起」注册表：菜单展开时向窗口根部的按下观察层
+            // 登记，窗口内任意按下即收起（部分机型非焦点弹窗收不到 ACTION_OUTSIDE，
+            // 见 MenuOutsideTap 的 KDoc）
+            val menuOutsideTap = remember { MenuOutsideTapRegistry() }
             CompositionLocalProvider(
                 LocalGlassStyle provides glassStyleState.value,
                 LocalOverlayTopBarBlur provides overlayTopBarBlurState.value,
+                LocalMenuOutsideTap provides menuOutsideTap,
             ) {
                 ClassppTheme(darkTheme = darkTheme, accent = themeAccent) {
                     // 主题切换（含设置页即时改选）后重设系统栏外观；enableEdgeToEdge 幂等
@@ -770,7 +778,10 @@ class MainActivity : ComponentActivity() {
                             // 主题）只在 Activity 重建时更新，应用内切颜色模式后仍是旧色；
                             // tab 转场旧页淡出、设置页转场视差让位时都会露出页面背后的底色，
                             // 用这层 Compose background 兜住，转场底色才跟着主题走
-                            .background(MaterialTheme.colorScheme.background),
+                            .background(MaterialTheme.colorScheme.background)
+                            // 非 focusable 菜单的「点外部收起」：整窗内容都在本层之下，
+                            // 按下观察覆盖三屏、底部导航与所有浮层（见 MenuOutsideTap）
+                            .menuOutsideTapDismiss(),
                         behind = {
                             // 已挂载的页面层（惰性挂载与常驻机制见 TabPagerState/TabPager）：
                             // 每页由 TabPager 包一层 Box 承载转场变换，页面内容仅组合一次、

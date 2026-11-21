@@ -110,10 +110,10 @@ private val SendGlassShadow = Shadow(
 private val TextSentSapcing = 10.dp
 
 /**
- * 非 focusable 菜单收起后，极短窗口内忽略「+」的打开请求：能收到 ACTION_OUTSIDE 的系统上，
- * 点 + 收起菜单时收起事件与落到 + 上的点击是同一个手势（非 focusable 窗口不消费外部触摸），
- * 不拦的话菜单会「刚收起又立刻重开」。宿主的拦截层正常工作时不走这条路径（点击被拦截层
- * 消费，+ 收不到），本闸门只作系统行为差异下的兜底。
+ * 非 focusable 菜单收起后，极短窗口内忽略「+」的打开请求：点 + 收起菜单时，收起动作
+ * （系统的 ACTION_OUTSIDE，或窗口根部按下观察层的兜底，见 [MenuOutsideTapRegistry]）
+ * 与落到 + 上的点击是同一个手势（非 focusable 窗口不消费外部触摸），不拦的话菜单会
+ * 「刚收起又立刻重开」。
  */
 private const val MenuReopenGuardMillis = 200L
 
@@ -164,10 +164,6 @@ private fun Rect.toIntRect(): IntRect = IntRect(
  * 锚点固定在点 + 那一刻，inset 变化时菜单也不漂移；返回键由 [MenuBackHandler] 兜底收起。
  * 文本状态由宿主提升，不会丢失。
  *
- * 展开态经 [menuExpanded] / [onMenuExpandedChange] 提升给宿主：非 focusable 弹层在部分
- * 系统上收不到 `ACTION_OUTSIDE`，点菜单外不会收起。宿主（AiChatOverlay）据此在菜单外垫
- * 一层「点空白收起」的拦截层，两边共用同一个状态。
- *
  * 输入框带 `imeFieldTracking()`：AI 浮层里输入栏位于钉底槽、不在内容列 ImeScrollTracker
  * 的作用域内，此修饰符空转（键盘弹起时消息列表的跟随由 AiChatOverlay 的 IME 补偿负责）；
  * 直排宿主里同样空转。
@@ -199,13 +195,10 @@ fun AiChatInputBar(
     // 附件菜单的磨砂采样源：非空时 PopupMenuCard 走 Haze 磨砂，null 为不透明白卡
     hazeState: HazeState? = null,
     backdrop: Backdrop? = null,
-    // 附件菜单展开态提升给宿主：非 focusable 弹层在部分系统上收不到 ACTION_OUTSIDE，
-    // 宿主（AI 浮层）要在菜单外垫一层「点空白收起」的拦截层，两边必须共用一个状态
-    menuExpanded: Boolean = false,
-    onMenuExpandedChange: (Boolean) -> Unit = {},
 ) {
     // 卡级焦点：聚焦描边、占位显隐共用；输入框禁用（发送中）时自然回落 false
     var cardFocused by remember { mutableStateOf(false) }
+    var menuExpanded by remember { mutableStateOf(false) }
     // 输入卡在窗口里的实时坐标：点 + 时快照成菜单锚点（见 frozenMenuAnchor）
     val anchorBounds = remember { MenuAnchorBounds() }
     // 菜单展开期间的固定锚点：非 focusable 菜单不会让键盘收起；但用户若按返回键收键盘、
@@ -408,7 +401,7 @@ fun AiChatInputBar(
                                     MenuReopenGuardMillis
                                 ) {
                                     frozenMenuAnchor = anchorBounds.value.toIntRect()
-                                    onMenuExpandedChange(true)
+                                    menuExpanded = true
                                 }
                             },
                         contentAlignment = Alignment.Center,
@@ -430,7 +423,7 @@ fun AiChatInputBar(
                 expanded = menuExpanded,
                 onDismiss = {
                     menuDismissedAtMillis = SystemClock.uptimeMillis()
-                    onMenuExpandedChange(false)
+                    menuExpanded = false
                 },
                 // 退场播完才清锚点：退场期间沿用固定位置，菜单不会在收起时跳一下
                 onExitFinished = { frozenMenuAnchor = null },
@@ -444,7 +437,7 @@ fun AiChatInputBar(
                                 label = takePhotoLabel,
                                 icon = R.drawable.ic_camera,
                                 onClick = {
-                                    onMenuExpandedChange(false)
+                                    menuExpanded = false
                                     onTakePhoto()
                                 },
                             ),
@@ -452,7 +445,7 @@ fun AiChatInputBar(
                                 label = addImageLabel,
                                 icon = R.drawable.ic_image_add,
                                 onClick = {
-                                    onMenuExpandedChange(false)
+                                    menuExpanded = false
                                     onAddImage()
                                 },
                             ),
