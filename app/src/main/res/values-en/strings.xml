@@ -667,6 +667,7 @@
     <string name="import_ai_confirm_detail">AI-generated results may be inaccurate — review the schedule before importing.</string>
     <string name="import_ai_error_no_json">AI did not return a readable schedule. Try again or use a clearer photo.</string>
     <string name="import_ai_error_no_courses">No courses were recognized. Try a clearer timetable image.</string>
+    <string name="import_ai_error_truncated">Reply hit the output limit — try again or use a smaller screenshot area.</string>
     <string name="import_ai_error_invalid">AI returned a schedule that couldn\'t be parsed — try again</string>
     <string name="import_ai_error_unreadable">Couldn\'t read the image — pick it again</string>
     <string name="import_ai_error_vision_hint">If the current model doesn\'t accept images, add a vision model in AI settings, then switch above the chat input bar</string>
@@ -1037,6 +1038,7 @@
     <string name="ai_thinking_title">Reasoning</string>
     <string name="ai_thinking_in_progress">Thinking…</string>
     <string name="ai_interrupted">Reply interrupted</string>
+    <string name="ai_reply_truncated">Reply truncated at the output limit</string>
     <string name="ai_retry">Retry</string>
     <string name="ai_error_auth">API key is invalid or expired — check it in AI settings</string>
     <string name="ai_error_quota">Insufficient balance or no access to this model</string>
@@ -1046,6 +1048,7 @@
     <string name="ai_error_network">Network error — check your connection</string>
     <string name="ai_error_bad_response">Provider returned unparseable data</string>
     <string name="ai_error_empty_response">AI returned an empty reply — try again</string>
+    <string name="ai_error_input_too_long">Message is too long — split it or shorten it before sending</string>
     <string name="ai_not_configured_title">Set up an AI provider first</string>
     <string name="ai_not_configured_hint">Bring your own API key (DeepSeek, Zhipu, Qwen, Claude, and more). Your messages plus schedule and todo summaries are sent to the provider you choose</string>
     <string name="ai_go_settings">Open AI settings</string>
@@ -1222,13 +1225,19 @@
     <string name="ai_model_id_label">Model ID</string>
     <string name="ai_model_reasoning_section">Reasoning levels</string>
     <string name="ai_model_reasoning_add">Add reasoning level</string>
-    <string name="ai_model_reasoning_hint">e.g. low, high</string>
+    <string name="ai_model_reasoning_hint">e.g. low, high; numbers set the thinking budget (1024–32000)</string>
     <string name="ai_model_reasoning_value">Reasoning level: %1$s</string>
     <string name="ai_model_reasoning_duplicate">This reasoning level already exists</string>
     <string name="ai_model_reasoning_map_title">Level order</string>
     <string name="ai_model_reasoning_map_desc">Order levels from low to high. Thinking intensity in chat maps by level count: 2 → Off, On; 3 → Off, High, Highest; 4 → Off, Low, High, Highest; 5 → Off, Low, High, Highest, Extreme. The first level is “Off” and does not enable thinking.</string>
     <string name="ai_model_reasoning_map_desc_always_on">This model can\'t disable thinking. Order levels from low to high. Thinking intensity in chat maps by level count: 2 → Low, High; 3 → Low, High, Highest; 4 → Low, Medium, High, Highest; 5 → Low, Medium, High, Highest, Extreme. The first level is the lowest intensity, not Off.</string>
     <string name="ai_model_fetch">Fetch models from provider</string>
+    <string name="ai_model_budget_section">Context and output</string>
+    <string name="ai_model_context_window_label">Context window (tokens)</string>
+    <string name="ai_model_max_output_label">Max output tokens</string>
+    <string name="ai_model_budget_unknown">Leave empty or 0 for unknown</string>
+    <string name="ai_model_supports_temperature">Accept temperature</string>
+    <string name="ai_model_supports_temperature_desc">Turn off if the model (o1/o3 and similar) or gateway rejects the temperature parameter</string>
     <string name="ai_model_fetch_title">Select models</string>
     <string name="ai_model_fetch_add">Add</string>
     <string name="ai_model_fetch_loading">Fetching models…</string>

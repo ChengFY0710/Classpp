@@ -2617,6 +2617,33 @@ class AiChatRepositoryTest {
     }
 
     @Test
+    fun `check-in completion rejects far future dates`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val checkIn = repeatingTodo("checkin-1", "喝水").copy(
+            repeat = RepeatRule(
+                type = RepeatType.Weekly,
+                endType = RepeatEndType.Count,
+                endCount = 7,
+                checkIn = true,
+            ),
+        )
+        val reply = "```json\n" +
+            """{"completes":[{"id":"checkin-1","date":"2099-01-01"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(checkIn)) },
+        )
+
+        repo.send("补个远期打卡")
+
+        val completion = repo.messages.value.last().todoCompletions.single()
+        assertEquals(AiTodoCompletionStatus.Failed, completion.status)
+        assertEquals(AiTodoChangeFailure.InvalidDate, completion.failure)
+        assertTrue(writer.completionCalls.isEmpty())
+    }
+
+    @Test
     fun `unknown completion target is recorded as failed`() = runBlocking {
         val writer = FakeTodoChangeWriter()
         val reply = "```json\n" + """{"completes":[{"id":"missing"}]}""" + "\n```"
@@ -3982,6 +4009,147 @@ class AiChatRepositoryTest {
         assertEquals("todo-1", last.todoCompletions.single().todoId)
         // 确实落库了：仍提醒模型不要重复完成
         assertTrue(transport.opened[2].jsonBody.contains("不要重复创建、完成或归档"))
+    }
+
+    @Test
+    fun `truncated reply is marked and retryable without parsing json`() = runBlocking {
+        val persister = FakeTodoPersister()
+        val reply = "```json\n" + """{"todos":[{"name":"不该落库"}]}""" + "\n```"
+        val transport = FakeAiTransport(
+            ScriptedResponse(listOf(sse(reply), finishSse("length"), "data: [DONE]")),
+            ScriptedResponse(listOf(sse("完整回答"), "data: [DONE]")),
+        )
+        val repo = repository(transport = transport, persister = persister)
+
+        repo.send("记一下")
+
+        val truncated = repo.messages.value.last()
+        assertTrue("finish_reason=length 必须标记 truncated", truncated.truncated)
+        assertEquals(reply, truncated.content)
+        // 截断的 JSON 不解析：不能把半截动作落库
+        assertTrue(persister.batches.isEmpty())
+
+        repo.retryLast()
+
+        val retried = repo.messages.value.last()
+        assertFalse(retried.truncated)
+        assertEquals("完整回答", retried.content)
+        assertEquals(2, transport.opened.size)
+    }
+
+    @Test
+    fun `anthropic max tokens stop reason marks truncated`() = runBlocking {
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    """data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"半截"}}""",
+                    """data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"}}""",
+                    """data: {"type":"message_stop"}""",
+                ),
+            ),
+        )
+        val repo = repository(
+            settings = FakeAiSettingsStore(
+                connection = AiConnection(
+                    providerId = "anthropic",
+                    baseUrl = "https://api.anthropic.com",
+                    model = "claude-sonnet-4-5",
+                    protocol = AiProtocol.Anthropic,
+                ),
+            ),
+            transport = transport,
+        )
+
+        repo.send("hi")
+
+        assertTrue(repo.messages.value.last().truncated)
+    }
+
+    @Test
+    fun `tools disabled ignores tool calls from response`() = runBlocking {
+        val persister = FakeTodoPersister()
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.CREATE_TODOS,
+                        arguments = """{"todos":[{"name":"不该创建"}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+        )
+        val repo = repository(transport = transport, persister = persister)
+        repo.setToolsEnabled(false)
+
+        repo.send("记一下")
+
+        // 总开关关闭时响应里的 tool_calls 不执行、不回填配对，也不发起第二轮请求
+        assertTrue(persister.batches.isEmpty())
+        assertEquals(1, transport.opened.size)
+        assertTrue(repo.messages.value.last().toolRounds.isEmpty())
+    }
+
+    @Test
+    fun `send rejects oversized user text`() = runBlocking {
+        val transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]")))
+        val repo = repository(transport = transport)
+
+        repo.send("长".repeat(AiChatRepository.MAX_USER_TEXT_CHARS + 1))
+
+        assertEquals(AiError.InputTooLong, repo.lastError.value?.error)
+        assertTrue(repo.messages.value.isEmpty())
+        assertEquals(0, transport.opened.size)
+    }
+
+    @Test
+    fun `context window trims oldest history turns`() = runBlocking {
+        val longText = "长".repeat(2_000)
+        val messages = (1..20).flatMap { index ->
+            listOf(
+                AiChatMessage(
+                    role = AiChatRole.User,
+                    content = "$longText#$index",
+                    createdAtMillis = index * 2L,
+                    id = "u$index",
+                ),
+                AiChatMessage(
+                    role = AiChatRole.Assistant,
+                    content = "$longText#$index",
+                    createdAtMillis = index * 2L + 1,
+                    id = "a$index",
+                ),
+            )
+        }
+        val store = FakeAiChatStore()
+        store.file = AiChatFile(
+            conversations = listOf(
+                AiConversation(id = "c1", createdAtMillis = 0, updatedAtMillis = 1, messages = messages),
+            ),
+            activeConversationId = "c1",
+        )
+        val settings = FakeAiSettingsStore(
+            connection = AiConnection(
+                baseUrl = "https://api.example.com/v1",
+                model = "test",
+                modelConfigs = mapOf("test" to AiModelConfig(contextWindowTokens = 3_000)),
+            ),
+        )
+        val transport = FakeAiTransport(ScriptedResponse(listOf(sse("好"), "data: [DONE]")))
+        val repo = repository(store = store, settings = settings, transport = transport)
+
+        repo.send("新问题")
+
+        val userTurns = Json.parseToJsonElement(transport.opened.single().jsonBody)
+            .jsonObject["messages"]!!.jsonArray
+            .map { it.jsonObject }
+            .filter { it["role"]!!.jsonPrimitive.content == "user" }
+        // 小窗口：20 轮历史必须被裁到极少数，但本轮 user 一定保留
+        assertTrue("旧历史应被裁剪，实际 ${userTurns.size} 轮", userTurns.size < 21)
+        assertEquals("新问题", userTurns.last()["content"]!!.jsonPrimitive.content)
     }
 
     @Test

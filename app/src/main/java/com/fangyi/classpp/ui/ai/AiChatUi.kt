@@ -140,6 +140,8 @@ internal fun AiChatMessageBubble(
     // 图片附件库（仓库出借）：null = 无仓库（预览态），图片不渲染
     imageStore: AiImageStore? = null,
     onImageClick: (String) -> Unit = {},
+    /** 截断提示里的重试入口：null = 不显示（非尾部消息没有可重试的上下文） */
+    onRetry: (() -> Unit)? = null,
 ) {
     val isUser = message.role == AiChatRole.User
     val hasTodos = !isUser && (
@@ -303,6 +305,11 @@ internal fun AiChatMessageBubble(
                                     ChatMarkdown(content = content)
                                 }
                             }
+                        }
+                        // 输出被 token 上限截断：明确提示并提供原地重试（截断的 JSON 不会被
+                        // 解析成待办，重试是唯一恢复路径）
+                        if (!isUser && message.truncated) {
+                            AiChatTruncatedHint(onRetry = onRetry)
                         }
                     }
                 }
@@ -1234,8 +1241,40 @@ private fun AiChatTodoLifecycleRow(
     }
 }
 
-// ---------- 错误条 ----------
+// ---------- 截断提示 ----------
 
+/**
+ * 输出被 token 上限截断时的气泡内提示：尾部消息可原地重试；截断回复里的 JSON 不完整，
+ * 不会被解析成待办，重试是恢复路径。
+ */
+@Composable
+private fun AiChatTruncatedHint(onRetry: (() -> Unit)?) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.ai_reply_truncated),
+            style = ClassppTextTokens.secondaryTextSmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.weight(1f),
+        )
+        if (onRetry != null) {
+            Text(
+                text = stringResource(R.string.ai_retry),
+                style = ClassppTextTokens.sectionAction,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clip(PillShape)
+                    .clickable(onClick = onRetry)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
+    }
+}
+
+// ---------- 错误条 ----------
 /** 分类错误条：文案 + 重试。重试对最后一场失败的对话重新发起（不重复追加用户消息） */
 @Composable
 internal fun AiChatErrorBanner(
@@ -1252,6 +1291,7 @@ internal fun AiChatErrorBanner(
         AiError.Network -> stringResource(R.string.ai_error_network)
         AiError.BadResponse -> stringResource(R.string.ai_error_bad_response)
         AiError.EmptyResponse -> stringResource(R.string.ai_error_empty_response)
+        AiError.InputTooLong -> stringResource(R.string.ai_error_input_too_long)
     }
     Row(
         modifier = modifier
@@ -1274,15 +1314,18 @@ internal fun AiChatErrorBanner(
             color = MaterialTheme.colorScheme.onErrorContainer,
             modifier = Modifier.weight(1f),
         )
-        Text(
-            text = stringResource(R.string.ai_retry),
-            style = ClassppTextTokens.sectionAction,
-            color = MaterialTheme.colorScheme.onErrorContainer,
-            modifier = Modifier
-                .clip(PillShape)
-                .clickable(onClick = onRetry)
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-        )
+        // 输入过长是确定性错误：重发同一段文本不会有不同结果，不提供重试入口
+        if (error != AiError.InputTooLong) {
+            Text(
+                text = stringResource(R.string.ai_retry),
+                style = ClassppTextTokens.sectionAction,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier
+                    .clip(PillShape)
+                    .clickable(onClick = onRetry)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
     }
 }
 

@@ -1763,6 +1763,7 @@ fun ScheduleScreen(
                     )
                     val aiVisionHint = stringResource(R.string.import_ai_error_vision_hint)
                     val aiNoJsonText = stringResource(R.string.import_ai_error_no_json)
+                    val aiTruncatedText = stringResource(R.string.import_ai_error_truncated)
                     val aiNoCoursesText = stringResource(R.string.import_ai_error_no_courses)
                     val aiFormatText = stringResource(R.string.import_ai_error_invalid)
                     val aiUnreadableText = stringResource(R.string.import_ai_error_unreadable)
@@ -1826,6 +1827,7 @@ fun ScheduleScreen(
                                             is AiScheduleRecognition.Invalid ->
                                                 aiInvalidText(recognition.error)
                                             AiScheduleRecognition.NoJson -> aiNoJsonText
+                                            AiScheduleRecognition.Truncated -> aiTruncatedText
                                             AiScheduleRecognition.NoCourses -> aiNoCoursesText
                                             AiScheduleRecognition.ImageUnavailable -> aiUnreadableText
                                             AiScheduleRecognition.NotConfigured -> aiNotConfiguredText
@@ -1863,6 +1865,7 @@ fun ScheduleScreen(
                                         is AiScheduleRecognition.Invalid ->
                                             aiInvalidText(recognition.error)
                                         AiScheduleRecognition.NoJson -> aiWebNoCourseText
+                                        AiScheduleRecognition.Truncated -> aiTruncatedText
                                         AiScheduleRecognition.NoCourses -> aiWebNoCourseText
                                         AiScheduleRecognition.ImageUnavailable -> aiWebReadErrorText
                                         AiScheduleRecognition.NotConfigured -> aiNotConfiguredText

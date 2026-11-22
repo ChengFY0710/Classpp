@@ -23,6 +23,9 @@ sealed interface AiScheduleRecognition {
     /** 模型回复里没有 JSON 代码块（纯文字 / 拒答） */
     data object NoJson : AiScheduleRecognition
 
+    /** 输出被 token 上限截断：JSON 必然不完整，应重试或缩小截图/页面范围 */
+    data object Truncated : AiScheduleRecognition
+
     /** JSON 合法但没有任何课程 */
     data object NoCourses : AiScheduleRecognition
 

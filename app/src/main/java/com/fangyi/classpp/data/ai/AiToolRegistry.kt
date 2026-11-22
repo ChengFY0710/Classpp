@@ -349,7 +349,8 @@ object AiToolRegistry {
         AiToolSpec(
             name = SEARCH_TODOS,
             description = "按关键词、状态、分组、标签或日期范围查待办，默认只查活跃待办（不含归档与回收站）。" +
-                "用户要找、列或统计待办时调用；返回协议与分页规则见系统规则。",
+                "用户要找、列或统计待办时调用；返回协议与分页规则见系统规则。" +
+                "结果可能很大，必要时用 limit/offset 分页或缩小查询范围。",
             parameters = AiReadTools.searchTodosParameters,
             permission = AiToolPermission.Read,
             maxResultChars = AiReadTools.MAX_SEARCH_RESULT_CHARS,
@@ -360,9 +361,10 @@ object AiToolRegistry {
             description = "查询某一周的课表（按天分组），课表全部周都可查；overview=true 只返回课表概况" +
                 "（总周数、当前周、学期起止）。用户问“下周怎么安排/这周有什么课/第几周上什么/一共几周”" +
                 "时调用；week 传绝对周次（1 起），weekOffset 相对本周（-1=上周，0=本周，1=下周），" +
-                "都省略 = 本周。",
+                "都省略 = 本周。结果中 truncated=true 表示 days 不完整，按 missingDates 用 get_day_plan 补齐。",
             parameters = AiReadTools.weekScheduleParameters,
             permission = AiToolPermission.Read,
+            maxResultChars = AiReadTools.MAX_WEEK_RESULT_CHARS,
             execute = AiReadTools::executeWeekSchedule,
         ),
         AiToolSpec(
@@ -452,6 +454,11 @@ object AiToolRegistry {
 
     /** 可原生执行的工具（P3 起 = 全部：4 个只读 + 5 个写）；wire 只发送这些 */
     val nativeSpecs: List<AiToolSpec> = specs.filter { it.execute != null }
+
+    /** 原生 tools 的 JSON schema 粗估 token（上下文预算裁剪用，避免每次请求重算） */
+    val nativeSpecsTokenEstimate: Int by lazy {
+        AiDebugTrace.estimateTokens(openAiTools(nativeSpecs).toString())
+    }
 
     /** 按名称查找工具；未注册返回 null（未知工具名由执行层转成 `unknown_tool` 结果） */
     fun find(name: String): AiToolSpec? = specs.firstOrNull { it.name == name }

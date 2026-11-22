@@ -71,6 +71,11 @@ data class AiChatContext(
      * null = 当前调用不支持写工具（如 JSON 回退模式），写工具会返回 `wrong_state`。
      */
     val writes: AiToolWriteGateway? = null,
+    /**
+     * 当前模型声明的上下文窗口（token）；0 = 未知。只影响工具结果的预算缩放，
+     * 不进提示词。仓库在工具执行前按当前连接配置覆盖。
+     */
+    val modelContextWindowTokens: Int = 0,
 )
 
 /**
@@ -615,6 +620,19 @@ class AiChatRepository internal constructor(
             val conversationId = ensureConversationLocked(trimmed)
             activeSendConversationId.set(conversationId)
 
+            // 当前轮 user 文本超过上限：不静默截断（会改变用户意图），显式报错让用户拆分
+            if (trimmed.length > MAX_USER_TEXT_CHARS) {
+                storeLastError(
+                    AiException(
+                        AiError.InputTooLong,
+                        detail = "user text ${trimmed.length} chars > $MAX_USER_TEXT_CHARS",
+                    ),
+                    conversationId,
+                )
+                persist()
+                return
+            }
+
             clearLastError()
             _sending.value = true
             try {
@@ -674,7 +692,14 @@ class AiChatRepository internal constructor(
                 }
 
                 try {
-                    finalizeLast(conversationId, streamed.text, connection, key, streamed.usedTools)
+                    finalizeLast(
+                        conversationId,
+                        streamed.text,
+                        connection,
+                        key,
+                        streamed.usedTools,
+                        streamed.truncated,
+                    )
                     persist()
                 } catch (e: CancellationException) {
                     // 正文已在 finalizeLast 第一步写全：草稿解析（可能含修复请求）阶段被取消
@@ -703,7 +728,9 @@ class AiChatRepository internal constructor(
         mutex.withLock {
             val conversationId = _activeConversationId.value ?: return
             val bound = boundMessages(conversationId)
-            if (bound.lastOrNull()?.takeIf { it.role == AiChatRole.Assistant }?.interrupted != true) {
+            val tail = bound.lastOrNull()?.takeIf { it.role == AiChatRole.Assistant }
+            // 可重试状态：中断的尾巴，或因输出上限被截断的完整回复
+            if (tail == null || (!tail.interrupted && !tail.truncated)) {
                 return
             }
             // 尾部 user 消息整体重发（正文 + 图片附件；图片文件可能已被清理，编码侧跳过）
@@ -787,7 +814,14 @@ class AiChatRepository internal constructor(
                     return
                 }
                 try {
-                    finalizeLast(conversationId, streamed.text, connection, key, streamed.usedTools)
+                    finalizeLast(
+                        conversationId,
+                        streamed.text,
+                        connection,
+                        key,
+                        streamed.usedTools,
+                        streamed.truncated,
+                    )
                     persist()
                 } catch (e: CancellationException) {
                     // 同 send：正文已完整时落盘不能被取消吞掉
@@ -800,8 +834,19 @@ class AiChatRepository internal constructor(
         }
     }
 
-    /** 一次用户轮次的流式结果：最终正文 + 本轮是否执行过工具（决定 finalize 是否覆盖 content） */
-    private data class StreamedTurn(val text: String, val usedTools: Boolean)
+    /**
+     * 一次用户轮次的流式结果：最终正文 + 本轮是否执行过工具（决定 finalize 是否覆盖
+     * content）+ 是否因输出上限被截断（`finish_reason=length` / `stop_reason=max_tokens`）。
+     */
+    private data class StreamedTurn(
+        val text: String,
+        val usedTools: Boolean,
+        val truncated: Boolean = false,
+    )
+
+    /** 输出被 token 上限截断：OpenAI `finish_reason=length`、Anthropic `stop_reason=max_tokens` */
+    private fun AiStreamResult.isTruncated(): Boolean =
+        finishReason?.lowercase() in TRUNCATED_FINISH_REASONS
 
     /**
      * 流式 + 工具循环（send / retryLast 共用）。
@@ -850,6 +895,7 @@ class AiChatRepository internal constructor(
                 nativeTools = native,
                 systemNote = systemNote,
                 encodedUserImages = encoded,
+                contextWindowTokens = connection.modelConfig(connection.model).contextWindowTokens,
             ).also { built ->
                 val text = built.joinToString("") { it.content }
                 promptChars = text.length
@@ -928,7 +974,11 @@ class AiChatRepository internal constructor(
                         capability = AiToolCapability.Unsupported
                         toolsMode = false
                         // 无 tools 请求不应产生 tool_calls；即便网关乱回也按纯文本处理
-                        return StreamedTurn(fallback.text, usedTools = false)
+                        return StreamedTurn(
+                            text = fallback.text,
+                            usedTools = false,
+                            truncated = fallback.isTruncated(),
+                        )
                     }
                     throw e
                 }
@@ -942,10 +992,19 @@ class AiChatRepository internal constructor(
                         }
                         capability = AiToolCapability.Supported
                     }
-                    return StreamedTurn(round.text, usedTools)
+                    return StreamedTurn(round.text, usedTools, truncated = round.isTruncated())
                 }
 
                 usedTools = true
+                // 总开关关闭 / 能力缓存 Unsupported 时只是请求不带 tools；网关仍可能回
+                // tool_calls（缓存回包、忽略 tools 的代理）。不执行、不回填配对，按纯文本
+                // 处理——总开关必须构成安全边界。
+                if (!toolsMode) {
+                    round.toolCalls.forEach { call ->
+                        callTraces += AiToolTrace(call.name, false, "tools_disabled", 0, 0L)
+                    }
+                    return StreamedTurn(round.text, usedTools = false)
+                }
                 if (toolsMode) {
                     withContext(Dispatchers.IO) {
                         settings.saveToolCapability(capabilityKey, AiToolCapability.Supported)
@@ -967,7 +1026,7 @@ class AiChatRepository internal constructor(
                     completeToolRound(conversationId, roundIndex, results, AiToolRoundStatus.Failed)
                     markToolLoopCapped(conversationId)
                     maybeCheckpoint(force = true)
-                    return StreamedTurn(round.text, usedTools = true)
+                    return StreamedTurn(round.text, usedTools = true, truncated = round.isTruncated())
                 }
                 if (totalCalls + round.toolCalls.size > MAX_TOTAL_CALLS) {
                     capped = true
@@ -978,7 +1037,7 @@ class AiChatRepository internal constructor(
                     completeToolRound(conversationId, roundIndex, results, AiToolRoundStatus.Failed)
                     markToolLoopCapped(conversationId)
                     maybeCheckpoint(force = true)
-                    return StreamedTurn(round.text, usedTools = true)
+                    return StreamedTurn(round.text, usedTools = true, truncated = round.isTruncated())
                 }
                 totalCalls += round.toolCalls.size
 
@@ -988,6 +1047,8 @@ class AiChatRepository internal constructor(
                     calls = round.toolCalls,
                     traces = callTraces,
                     carriedChars = turnResultChars,
+                    // 工具结果预算按模型窗口缩放（0 = 未知，保持既有字符级上限）
+                    contextWindowTokens = connection.modelConfig(connection.model).contextWindowTokens,
                 )
                 turnResultChars += results.sumOf { it.contentJson.length }
                 val status = if (results.any { it.isError }) {
@@ -1049,11 +1110,13 @@ class AiChatRepository internal constructor(
         calls: List<AiToolCall>,
         traces: MutableList<AiToolTrace>,
         carriedChars: Int,
+        contextWindowTokens: Int = 0,
     ): List<AiToolResult> {
         val context = contextProvider().copy(
             today = clock.today(),
             nowMinute = clock.minuteOfDay(),
             writes = toolWriteGateway(conversationId),
+            modelContextWindowTokens = contextWindowTokens,
         )
         val results = mutableListOf<AiToolResult>()
         var totalChars = carriedChars
@@ -1502,8 +1565,8 @@ class AiChatRepository internal constructor(
         val image = withContext(Dispatchers.IO) { imageStore.encode(imageName) }
             ?: return AiScheduleRecognition.ImageUnavailable
 
-        val reply = try {
-            client.streamChat(
+        val result = try {
+            client.streamChatWithTools(
                 connection = connection,
                 apiKey = key,
                 turns = listOf(
@@ -1514,6 +1577,7 @@ class AiChatRepository internal constructor(
                         images = listOf(image),
                     ),
                 ),
+                tools = emptyList(),
                 // 识别是确定性任务：greedy 采样，避免模型在多种排版假设间反复权衡
                 temperature = 0.0,
             )
@@ -1522,8 +1586,10 @@ class AiChatRepository internal constructor(
         } catch (e: AiException) {
             return AiScheduleRecognition.AiFailed(e.error)
         }
+        // 输出被截断时 JSON 不完整，不能落到「没有可识别课表」的误导文案
+        if (result.isTruncated()) return AiScheduleRecognition.Truncated
 
-        return parseRecognition(reply)
+        return parseRecognition(result.text)
     }
 
     /**
@@ -1544,8 +1610,8 @@ class AiChatRepository internal constructor(
         // 无 Key 服务商（本地 Ollama）按空串进入请求层：编解码器不发认证头
         val key = apiKey.orEmpty()
 
-        val reply = try {
-            client.streamChat(
+        val result = try {
+            client.streamChatWithTools(
                 connection = connection,
                 apiKey = key,
                 turns = listOf(
@@ -1555,6 +1621,7 @@ class AiChatRepository internal constructor(
                         content = AiScheduleWebImportPrompt.userMessage(clock.today(), pageContent),
                     ),
                 ),
+                tools = emptyList(),
                 // 识别是确定性任务：greedy 采样，避免模型在多种排版假设间反复权衡
                 temperature = 0.0,
             )
@@ -1563,8 +1630,9 @@ class AiChatRepository internal constructor(
         } catch (e: AiException) {
             return AiScheduleRecognition.AiFailed(e.error)
         }
+        if (result.isTruncated()) return AiScheduleRecognition.Truncated
 
-        return parseRecognition(reply)
+        return parseRecognition(result.text)
     }
 
     /** 识别回复的统一解析：截图与网页两条入口共用同一套代码块提取与导入校验 */
@@ -2146,6 +2214,8 @@ class AiChatRepository internal constructor(
         systemNote: String? = null,
         /** 已编码的当前轮图片（能力回退重建 turns 时复用，避免重复读盘/base64） */
         encodedUserImages: List<AiTurnImage>? = null,
+        /** 模型声明的上下文窗口（token）；0 = 未知，沿用固定字符级历史预算 */
+        contextWindowTokens: Int = 0,
     ): List<AiChatTurn> {
         val context = contextProvider()
         val prompt = AiPromptBuilder.build(
@@ -2161,21 +2231,50 @@ class AiChatRepository internal constructor(
             nativeTools = nativeTools,
         )
         val system = if (systemNote.isNullOrBlank()) prompt else prompt + systemNote + "\n"
-        return listOf(AiChatTurn(role = "system", content = system)) +
-            replayTurns(history) +
-            AiChatTurn(
-                role = "user",
-                content = userText,
-                images = encodedUserImages ?: encodeImages(userImages),
-            )
+        val systemTurn = AiChatTurn(role = "system", content = system)
+        val userTurn = AiChatTurn(
+            role = "user",
+            content = userText,
+            images = encodedUserImages ?: encodeImages(userImages),
+        )
+        val groups = history.groupByLogicalTurns()
+        suspend fun assemble(keep: Int): List<AiChatTurn> =
+            listOf(systemTurn) + replayGroups(groups.takeLast(keep)) + userTurn
+
+        if (contextWindowTokens <= 0) return assemble(HISTORY_TURNS)
+        // 预算口径：窗口的 70%（给输出与工具 schema 留余量），估算沿用 debug 面板的
+        // estimateTokens；从最旧的历史轮开始丢，工具配对按逻辑轮整体保留。
+        val budgetTokens = (contextWindowTokens * 0.7).toInt()
+        val schemaTokens = if (nativeTools) AiToolRegistry.nativeSpecsTokenEstimate else 0
+        var keep = minOf(HISTORY_TURNS, groups.size)
+        var turns = assemble(keep)
+        while (keep > 1 && estimateTurnTokens(turns) + schemaTokens > budgetTokens) {
+            keep--
+            turns = assemble(keep)
+        }
+        return turns
     }
 
-    /**
-     * 历史窗口：按 user 边界保留最近 N 个逻辑轮，最近两轮精确回放工具；单条正文超过
-     * [REPLAY_TEXT_MAX_CHARS] 时截断（防长贴文随 15 轮窗口每轮重付，持久化原文不变）。
-     */
-    private suspend fun replayTurns(history: List<AiChatMessage>): List<AiChatTurn> {
-        val groups = history.groupByLogicalTurns().takeLast(HISTORY_TURNS)
+    /** 一次请求的 token 粗估（正文 + 工具参数/结果 + 图片 base64），口径同 [AiDebugTrace] */
+    private fun estimateTurnTokens(turns: List<AiChatTurn>): Int {
+        var tokens = 0
+        turns.forEach { turn ->
+            tokens += AiDebugTrace.estimateTokens(turn.content)
+            turn.toolCalls.forEach { call ->
+                tokens += AiDebugTrace.estimateTokens(call.name) + 8
+                tokens += AiDebugTrace.estimateTokens(call.argumentsJson)
+            }
+            turn.toolResults.forEach { result ->
+                tokens += AiDebugTrace.estimateTokens(result.contentJson)
+            }
+            // base64 用 ASCII 计：4 字符约 1 token
+            turn.images.forEach { image -> tokens += image.base64.length / 4 }
+        }
+        return tokens
+    }
+
+    /** 按已分组的逻辑轮回放（窗口裁剪时复用同一份分组，避免重复分组） */
+    private suspend fun replayGroups(groups: List<List<AiChatMessage>>): List<AiChatTurn> {
         val exactFrom = groups.size - EXACT_TOOL_REPLAY_TURNS
         val turns = mutableListOf<AiChatTurn>()
         groups.forEachIndexed { index, group ->
@@ -2457,16 +2556,19 @@ class AiChatRepository internal constructor(
         connection: AiConnection,
         apiKey: String,
         isToolRun: Boolean = false,
+        truncated: Boolean = false,
     ) {
         // 有工具轮次时 content 已是各轮文本的顺序拼接，最后一段正文也经 onDelta 追加过；
         // 不能用最后一轮文本回写，否则会把前几轮正文覆盖掉。
         updateLastMessage(conversationId) {
-            if (isToolRun) it.copy(interrupted = false)
-            else it.copy(content = full, interrupted = false)
+            if (isToolRun) it.copy(interrupted = false, truncated = truncated)
+            else it.copy(content = full, interrupted = false, truncated = truncated)
         }
         // 原生模式本轮已执行过工具：写操作已经通过 create_todos / update_todos 等工具完成，
         // 正文里的 JSON 代码块不再解析，避免同一动作执行两次（设计稿 §7.2）。
         if (isToolRun) return
+        // 输出被截断时 JSON 必然不完整：不解析、不发起修复重试（UI 已提示 + 提供重试）
+        if (truncated) return
         val payload = extractActions(full, connection, apiKey) ?: return
         // 只有 updates/deletes/completes/reopens 时不能走 addTodos（空批次会误报创建失败）
         val created = if (payload.todos.isNotEmpty()) {
@@ -2592,16 +2694,17 @@ class AiChatRepository internal constructor(
      */
     private suspend fun applyCompletions(payload: AiTodoDraftPayload): List<AiTodoCompletion> {
         if (payload.completes.isEmpty() && payload.reopens.isEmpty()) return emptyList()
-        val todosById = contextProvider().todos.associateBy { it.id }
+        val context = contextProvider()
+        val todosById = context.todos.associateBy { it.id }
         val results = mutableListOf<AiTodoCompletion>()
         val seen = mutableSetOf<Triple<String, String?, Boolean>>()
         for (draft in payload.completes) {
             val key = Triple(draft.id.trim(), draft.date?.trim()?.takeIf { it.isNotEmpty() }, true)
-            if (seen.add(key)) results += executeCompletion(draft, completed = true, todosById)
+            if (seen.add(key)) results += executeCompletion(draft, completed = true, todosById, context.today)
         }
         for (draft in payload.reopens) {
             val key = Triple(draft.id.trim(), draft.date?.trim()?.takeIf { it.isNotEmpty() }, false)
-            if (seen.add(key)) results += executeCompletion(draft, completed = false, todosById)
+            if (seen.add(key)) results += executeCompletion(draft, completed = false, todosById, context.today)
         }
         return results
     }
@@ -2610,6 +2713,7 @@ class AiChatRepository internal constructor(
         draft: AiTodoCompletionDraft,
         completed: Boolean,
         todosById: Map<String, Todo>,
+        today: IsoDate,
     ): AiTodoCompletion {
         val id = draft.id.trim()
         val requestedDate = parseDate(draft.date)
@@ -2622,7 +2726,7 @@ class AiChatRepository internal constructor(
                 failure = AiTodoChangeFailure.NotFound,
             )
         if (todo.repeat.type != RepeatType.None) {
-            if (requestedDate == null || !isValidOccurrence(todo, requestedDate)) {
+            if (requestedDate == null || !isValidOccurrence(todo, requestedDate, today)) {
                 return AiTodoCompletion(
                     todoId = id,
                     todoName = todo.name,
@@ -2664,14 +2768,17 @@ class AiChatRepository internal constructor(
 
     /**
      * 期次日期是否可勾：非打卡重复必须是规则期次（与仓库同一套展开规则，日期档/次数档
-     * 一并生效）；打卡模式的补勾位是「待办起始日至今」的整段日期（同 UI 完成情况浮层的
-     * [checkInBackfillDates] 口径）——漏掉的灰点日期也放行，不要求是规则期次。不设
-     * 上界：打卡的当前期卡可能是未来的规则日（如每周打卡、今天在周中），限到今天会把
-     * 合法的当前期勾选判成 InvalidDate。
+     * 一并生效）；打卡模式的补勾位是「待办起始日 .. 今天 + 7 天」的整段日期（同 UI
+     * 完成情况浮层的 [checkInBackfillDates] 口径）——漏掉的灰点日期也放行，不要求是
+     * 规则期次。上界留一周余量：当前期卡可能是未来的规则日（如每周打卡、今天在周中），
+     * 但 `9999-12-31` 这类远期日期会虚增打卡次数、污染完成期次，必须拒绝。
      */
-    private fun isValidOccurrence(todo: Todo, date: IsoDate): Boolean {
+    private fun isValidOccurrence(todo: Todo, date: IsoDate, today: IsoDate): Boolean {
         val anchor = todo.dates.minByOrNull { it.epochDay } ?: return false
-        if (todo.isCheckInMode) return date.epochDay >= anchor.epochDay
+        if (todo.isCheckInMode) {
+            val upper = today.epochDay + CHECK_IN_FUTURE_GRACE_DAYS
+            return date.epochDay in anchor.epochDay..upper
+        }
         return todo.repeat.occurrencesBetween(anchor, date, date + 1).contains(date)
     }
 
@@ -2719,7 +2826,8 @@ class AiChatRepository internal constructor(
         if (completion.status != AiTodoCompletionStatus.Applied) return
         // 无实际变化的记录本来就没有可撤销的写入
         if (!completion.changed) return
-        val todo = contextProvider().todos.firstOrNull { it.id == completion.todoId }
+        val context = contextProvider()
+        val todo = context.todos.firstOrNull { it.id == completion.todoId }
         val next = if (todo == null) {
             completion.copy(
                 status = AiTodoCompletionStatus.UndoFailed,
@@ -2727,7 +2835,7 @@ class AiChatRepository internal constructor(
             )
         } else if (todo.repeat.type != RepeatType.None) {
             val date = completion.date
-            if (date == null || !isValidOccurrence(todo, date)) {
+            if (date == null || !isValidOccurrence(todo, date, context.today)) {
                 completion.copy(
                     status = AiTodoCompletionStatus.UndoFailed,
                     failure = AiTodoChangeFailure.InvalidDate,
@@ -3135,6 +3243,18 @@ class AiChatRepository internal constructor(
 
         /** 历史回放时图片消息的文本占位：当前轮图片仍正常编码 */
         const val HISTORY_IMAGE_PLACEHOLDER = "[图片]"
+
+        /** 输出被上限截断的 finish/stop reason（OpenAI length / Anthropic max_tokens） */
+        private val TRUNCATED_FINISH_REASONS = setOf("length", "max_tokens")
+
+        /** 打卡模式补勾日期允许的「未来余量」：当前期可能是本周晚些时候的规则日 */
+        const val CHECK_IN_FUTURE_GRACE_DAYS = 7
+
+        /**
+         * 当前轮用户文本的字符上限：超过直接报错要求拆分，不静默截断。长贴文按 32K
+         * 字符估算约 1.6~3 万 token，已接近常见小窗口模型的一半上下文。
+         */
+        const val MAX_USER_TEXT_CHARS = 32_000
 
         /** 流式期间半截 checkpoint 的节流间隔（进程被杀时尽量少丢内容；写放大下降 2.5 倍） */
         const val CHECKPOINT_INTERVAL_MILLIS = 5_000L

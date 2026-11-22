@@ -52,6 +52,11 @@ object AiPromptBuilder {
     /** 重复待办注入的「待完成期次 / 已完成期次」条数上限（token 预算控制） */
     private const val MAX_OCCURRENCE_LINES = 5
 
+    /** 待办行里日期/标签/步骤的最大展示条数（其余折叠成「等 N 个」） */
+    private const val MAX_PROMPT_DATES = 30
+    private const val MAX_PROMPT_TAGS = 10
+    private const val MAX_PROMPT_STEPS = 10
+
     /** 期次注入窗口：最近 14 天（含漏期）到未来 30 天 */
     private const val OCCURRENCE_PAST_DAYS = 14
     private const val OCCURRENCE_FUTURE_DAYS = 30
@@ -485,8 +490,8 @@ object AiPromptBuilder {
      * 某一期时必须引用这里列出的日期，不能自行推算。
      */
     private fun todoLine(todo: Todo, now: IsoDate): String = buildString {
-        append('[').append(todo.id).append("] ")
-        append(todo.name.ifBlank { "（未命名）" })
+        append('[').append(todo.id.oneLine(80)).append("] ")
+        append(todo.name.ifBlank { "（未命名）" }.oneLine())
         // 随重复的截止按当前期折算（与列表卡、get_todo 同口径），不输出会误导的载体日期
         val deadlineDate = todo.currentOccurrenceDeadline(now) ?: todo.deadlineDate
         val deadline = deadlineDate?.let { date ->
@@ -494,14 +499,24 @@ object AiPromptBuilder {
             if (minute != null) "截止 ${date} ${minute / 60}:${(minute % 60).toString().padStart(2, '0')}" else "截止 $date"
         }
         if (deadline != null) append("｜$deadline")
-        if (todo.dates.isNotEmpty()) append("｜日期 ${todo.dates.joinToString("、")}")
+        if (todo.dates.isNotEmpty()) {
+            append("｜日期 ")
+            append(todo.dates.take(MAX_PROMPT_DATES).joinToString("、"))
+            if (todo.dates.size > MAX_PROMPT_DATES) append(" 等 ${todo.dates.size} 个")
+        }
         todo.timeText()?.let { append("｜$it") }
-        if (todo.location.isNotBlank()) append("｜@${todo.location}")
+        if (todo.location.isNotBlank()) append("｜@${todo.location.oneLine()}")
         URGENCY_ZH[todo.urgency]?.let { append("｜$it") }
-        todo.group?.let { append("｜组：$it") }
-        if (todo.tags.isNotEmpty()) append("｜标签：${todo.tags.joinToString("、")}")
+        todo.group?.let { append("｜组：${it.oneLine(80)}") }
+        if (todo.tags.isNotEmpty()) {
+            append("｜标签：")
+            append(todo.tags.take(MAX_PROMPT_TAGS).joinToString("、") { it.oneLine(80) })
+            if (todo.tags.size > MAX_PROMPT_TAGS) append(" 等 ${todo.tags.size} 个")
+        }
         if (todo.steps.isNotEmpty()) {
-            append("｜步骤：${todo.steps.joinToString("、") { it.title }}")
+            append("｜步骤：")
+            append(todo.steps.take(MAX_PROMPT_STEPS).joinToString("、") { it.title.oneLine(80) })
+            if (todo.steps.size > MAX_PROMPT_STEPS) append(" 等 ${todo.steps.size} 个")
         }
         if (todo.repeat.type != RepeatType.None) {
             append("｜重复：${repeatText(todo.repeat)}")
@@ -518,8 +533,8 @@ object AiPromptBuilder {
      * （这些待办已冻结）。
      */
     private fun staleTodoLine(todo: Todo): String = buildString {
-        append('[').append(todo.id).append("] ")
-        append(todo.name.ifBlank { "（未命名）" })
+        append('[').append(todo.id.oneLine(80)).append("] ")
+        append(todo.name.ifBlank { "（未命名）" }.oneLine())
         todo.deadlineDate?.let { date ->
             val minute = todo.deadlineMinute
             append("｜截止 $date")
@@ -527,15 +542,35 @@ object AiPromptBuilder {
                 append(" ${minute / 60}:${(minute % 60).toString().padStart(2, '0')}")
             }
         }
-        if (todo.dates.isNotEmpty()) append("｜日期 ${todo.dates.joinToString("、")}")
+        if (todo.dates.isNotEmpty()) {
+            append("｜日期 ")
+            append(todo.dates.take(MAX_PROMPT_DATES).joinToString("、"))
+            if (todo.dates.size > MAX_PROMPT_DATES) append(" 等 ${todo.dates.size} 个")
+        }
         todo.timeText()?.let { append("｜$it") }
-        if (todo.location.isNotBlank()) append("｜@${todo.location}")
-        todo.group?.let { append("｜组：$it") }
-        if (todo.tags.isNotEmpty()) append("｜标签：${todo.tags.joinToString("、")}")
+        if (todo.location.isNotBlank()) append("｜@${todo.location.oneLine()}")
+        todo.group?.let { append("｜组：${it.oneLine(80)}") }
+        if (todo.tags.isNotEmpty()) {
+            append("｜标签：")
+            append(todo.tags.take(MAX_PROMPT_TAGS).joinToString("、") { it.oneLine(80) })
+            if (todo.tags.size > MAX_PROMPT_TAGS) append(" 等 ${todo.tags.size} 个")
+        }
         if (todo.completed) append("｜已完成")
         if (todo.isArchived) append("｜已归档")
         if (todo.isDeleted) append("｜已删除")
     }
+
+    /**
+     * 注入行的单行化：待办名称/地点等可以来自 AI 自写、分享导入、学校同步，含换行与
+     * 方括号时会伪造出 `[id] …` 结构、篡改 system prompt。这里统一压成单行并把方括号
+     * 替换成全角，保证注入行结构不被用户数据破坏。
+     */
+    private fun String.oneLine(max: Int = 300): String =
+        replace('\r', ' ')
+            .replace('\n', ' ')
+            .replace('[', '［')
+            .replace(']', '］')
+            .take(max)
 
     /** 重复规则的紧凑文本：`每周（周1、3）`、`每2周`、`每天，共5期`、`每周，打卡10次` */
     internal fun repeatText(rule: RepeatRule): String {

@@ -9,6 +9,7 @@ import com.fangyi.classpp.data.testCourse
 import com.fangyi.classpp.data.testSchedule
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
@@ -1084,6 +1085,121 @@ class AiReadToolsTest {
         assertEquals("not_found", missing.errorCode())
     }
 
+    // ---------- 显式 null / 详情限长 / 周课表预算 ----------
+
+    @Test
+    fun `explicit null arguments behave as absent`() = kotlinx.coroutines.runBlocking {
+        val dayContext = AiChatContext(schedule = testSchedule(), currentWeek = 12, today = wedWeek12)
+
+        // date:null → 按默认「今天」处理（不能报 yyyy-MM-dd 格式错）
+        val day = AiReadTools.executeDayPlan(args("date" to JsonNull), dayContext)
+        assertTrue(day.ok())
+        assertEquals(wedWeek12.toString(), day.data().getValue("date").jsonPrimitive.content)
+
+        // dates:null + from/to:null → 不误报「不能同时使用」
+        val mixed = AiReadTools.executeDayPlan(
+            args("dates" to JsonNull, "from" to JsonNull, "to" to JsonNull),
+            dayContext,
+        )
+        assertTrue(mixed.ok())
+
+        // status:null / limit:null → 默认完整返回（不能因为「显式给了 limit」只回 10 条）
+        val search = AiReadTools.executeSearchTodos(
+            args("status" to JsonNull, "limit" to JsonNull),
+            searchContext(),
+        )
+        assertTrue(search.ok())
+        val data = search.data()
+        assertEquals(3, data.getValue("items").jsonArray.size)
+        assertFalse(data.getValue("truncated").jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `search includeDetail caps note and steps and marks truncation`() =
+        kotlinx.coroutines.runBlocking {
+            val todo = testTodo(
+                id = "long",
+                name = "长详情",
+                note = "备".repeat(2_000),
+                steps = (1..30).map { index ->
+                    com.fangyi.classpp.data.model.TodoStep(
+                        id = "s$index",
+                        title = "步".repeat(300),
+                    )
+                },
+            )
+            val result = AiReadTools.executeSearchTodos(
+                args("includeDetail" to JsonPrimitive(true), "all" to JsonPrimitive(true)),
+                AiChatContext(today = wedWeek12, todos = listOf(todo)),
+            )
+
+            val item = result.data().getValue("items").jsonArray.single().jsonObject
+            assertEquals(800, item.getValue("note").jsonPrimitive.content.length)
+            assertTrue(item.getValue("noteTruncated").jsonPrimitive.boolean)
+            assertEquals(20, item.getValue("steps").jsonArray.size)
+            assertTrue(item.getValue("stepsTruncated").jsonPrimitive.boolean)
+            // 详情被截断但条目本身仍在（不能把 items 砍空）
+            assertEquals(1, result.data().getValue("total").jsonPrimitive.int)
+        }
+
+    @Test
+    fun `search result budget scales with small context window`() = kotlinx.coroutines.runBlocking {
+        // 100 条带长名称的待办：完整结果远超小窗口预算
+        val todos = (1..100).map { index ->
+            testTodo(
+                id = "t$index",
+                name = "待办${index}" + "长".repeat(100),
+                createdAtMillis = index.toLong(),
+            )
+        }
+        val result = AiReadTools.executeSearchTodos(
+            args("all" to JsonPrimitive(true)),
+            AiChatContext(
+                today = wedWeek12,
+                todos = todos,
+                modelContextWindowTokens = 9_000,
+            ),
+        )
+
+        // 小窗口不能一次返回完整字段：要么降级 compact，要么显式 limit_exceeded
+        val data = result["data"] as? JsonObject
+        val compact = data?.get("compact")?.jsonPrimitive?.boolean == true
+        val rejected = result["error"] != null && result.errorCode() == "limit_exceeded"
+        assertTrue(
+            "小窗口应压缩或拒绝，实际：${result.toString().take(120)}",
+            compact || rejected,
+        )
+    }
+
+    @Test
+    fun `week schedule reports missing dates when over budget`() = kotlinx.coroutines.runBlocking {
+        val longText = "课".repeat(200)
+        val courses = (1..7).flatMap { day ->
+            (1..10).map { index ->
+                testCourse(
+                    id = "c-$day-$index",
+                    name = "$longText$index",
+                    day = day,
+                    startSlot = ((index - 1) % 5) + 1,
+                ).copy(location = longText)
+            }
+        }
+        val schedule = testSchedule(daysPerWeek = 7, courses = courses)
+        val context = AiChatContext(
+            schedule = schedule,
+            currentWeek = 1,
+            today = com.fangyi.classpp.data.TestTermStart,
+        )
+
+        val result = AiReadTools.executeWeekSchedule(args("week" to JsonPrimitive(1)), context)
+
+        val data = result.data()
+        assertTrue("超预算时必须显式标记截断", data.getValue("truncated").jsonPrimitive.boolean)
+        val returned = data.getValue("returnedDays").jsonPrimitive.int
+        assertTrue(returned < 7)
+        assertEquals(7 - returned, data.getValue("missingDates").jsonArray.size)
+    }
+
     /** 本地时区某天中午的 epoch millis：用于构造稳定的 completedAtMillis */
     private fun millisOf(year: Int, month: Int, day: Int): Long =
         java.util.GregorianCalendar(year, month - 1, day, 12, 0).timeInMillis
@@ -1105,6 +1221,7 @@ class AiReadToolsTest {
         group: String? = null,
         note: String = "",
         location: String = "",
+        steps: List<com.fangyi.classpp.data.model.TodoStep> = emptyList(),
         completed: Boolean = false,
         completedAtMillis: Long? = null,
         createdAtMillis: Long = 0,
@@ -1121,6 +1238,7 @@ class AiReadToolsTest {
         group = group,
         note = note,
         location = location,
+        steps = steps,
         completed = completed,
         completedAtMillis = completedAtMillis,
         createdAtMillis = createdAtMillis,

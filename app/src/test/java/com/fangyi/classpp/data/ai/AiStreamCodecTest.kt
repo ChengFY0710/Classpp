@@ -190,6 +190,92 @@ class AiStreamCodecTest {
         )
     }
 
+    // ---------- 输出上限与 thinking 预算 ----------
+
+    private fun anthropicWithConfig(
+        level: String,
+        maxOutputTokens: Int = 0,
+    ) = AiConnection(
+        providerId = "anthropic",
+        baseUrl = "https://api.anthropic.com/v1",
+        model = "claude-sonnet-4-5",
+        modelConfigs = mapOf(
+            "claude-sonnet-4-5" to AiModelConfig(
+                reasoningLevels = listOf(level),
+                reasoningLevel = level,
+                maxOutputTokens = maxOutputTokens,
+            ),
+        ),
+        protocol = AiProtocol.Anthropic,
+    )
+
+    @Test
+    fun `anthropic max output caps thinking budget`() = runBlocking {
+        val t = transport(messageStop(), null)
+        AiClient(t).streamChat(anthropicWithConfig("xhigh", maxOutputTokens = 8_192), "sk", turns)
+
+        val body = bodyOf(t.lastRequest!!)
+        assertEquals("8192", body["max_tokens"]!!.jsonPrimitive.content)
+        assertEquals(
+            "thinking 预算必须给答案留出余量",
+            "7168",
+            body["thinking"]!!.jsonObject["budget_tokens"]!!.jsonPrimitive.content,
+        )
+    }
+
+    @Test
+    fun `anthropic numeric reasoning level is clamped`() = runBlocking {
+        val t = transport(messageStop(), null)
+        AiClient(t).streamChat(anthropicWithConfig("100000"), "sk", turns)
+
+        val body = bodyOf(t.lastRequest!!)
+        assertEquals("32000", body["thinking"]!!.jsonObject["budget_tokens"]!!.jsonPrimitive.content)
+        // 未配置 maxOutputTokens：沿用「预算 + 4096」的旧口径
+        assertEquals("36096", body["max_tokens"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `anthropic tiny max output disables thinking`() = runBlocking {
+        val t = transport(messageStop(), null)
+        AiClient(t).streamChat(anthropicWithConfig("high", maxOutputTokens = 2_048), "sk", turns)
+
+        val body = bodyOf(t.lastRequest!!)
+        assertEquals("2048", body["max_tokens"]!!.jsonPrimitive.content)
+        assertNull("放不下最小思考预算时不启用 thinking", body["thinking"])
+    }
+
+    @Test
+    fun `openai skips temperature when model rejects it`() = runBlocking {
+        val t = transport("data: [DONE]", null)
+        val connection = AiConnection(
+            providerId = "openai",
+            baseUrl = "https://api.openai.com/v1",
+            model = "o3",
+            modelConfigs = mapOf("o3" to AiModelConfig(supportsTemperature = false)),
+        )
+        AiClient(t).streamChat(
+            connection,
+            "sk",
+            listOf(AiChatTurn("user", "hi")),
+            temperature = 0.0,
+        )
+
+        assertNull("模型不接受 temperature 时请求体不得携带该字段", bodyOf(t.lastRequest!!)["temperature"])
+    }
+
+    @Test
+    fun `openai sends temperature by default`() = runBlocking {
+        val t = transport("data: [DONE]", null)
+        AiClient(t).streamChat(
+            openAiConnection(),
+            "sk",
+            listOf(AiChatTurn("user", "hi")),
+            temperature = 0.0,
+        )
+
+        assertEquals("0.0", bodyOf(t.lastRequest!!)["temperature"]!!.jsonPrimitive.content)
+    }
+
     // ---------- 带图 turn 的 content 形状 ----------
 
     private fun openAiConnection(

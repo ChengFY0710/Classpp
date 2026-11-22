@@ -183,7 +183,8 @@ internal object AiReadTools {
             ?: return failure("not_found", "未设置课表")
         val fromText = args.stringOrNull("from")
         val toText = args.stringOrNull("to")
-        val datesElement = args["dates"]
+        // 显式 null 视为没给：{dates:null, from:null} 不能误报「不能同时使用」
+        val datesElement = args.elementOrNull("dates")
         if (datesElement != null && (!fromText.isNullOrBlank() || !toText.isNullOrBlank())) {
             return failure("invalid_arguments", "dates 与 from/to 不能同时使用")
         }
@@ -371,8 +372,8 @@ internal object AiReadTools {
         if (status !in STATUS_VALUES) {
             return failure("invalid_arguments", "status 只能是 ${STATUS_VALUES.joinToString("/")}")
         }
-        // 显式给出的分页参数始终要合法（即使 all=true 会忽略它们）
-        val limitProvided = args.containsKey("limit")
+        // 显式给出的分页参数始终要合法（即使 all=true 会忽略它们）；显式 null = 没给
+        val limitProvided = args.hasArg("limit")
         val limit = args.intOrNull("limit") ?: DEFAULT_SEARCH_LIMIT
         if (limitProvided && limit !in 1..MAX_SEARCH_LIMIT) {
             return failure("invalid_arguments", "limit 必须在 1..$MAX_SEARCH_LIMIT")
@@ -425,6 +426,9 @@ internal object AiReadTools {
             candidates.sortedWith(todoComparator())
         }
         val shown = if (all) sorted else sorted.drop(offset).take(limit)
+        // 单条结果预算按模型窗口缩放：未配置窗口时保持既有 120K；小窗口模型不能一次
+        // 灌入完整集合，先走 compact，再不行才显式 limit_exceeded
+        val resultBudget = ctx.searchResultBudget()
         val data = buildJsonObject {
             put("total", sorted.size)
             put("offset", if (all) 0 else offset)
@@ -434,7 +438,7 @@ internal object AiReadTools {
         }
         if (all) {
             val chars = data.toString().length
-            if (chars + RESULT_ENVELOPE_MARGIN > MAX_SEARCH_RESULT_CHARS) {
+            if (chars + RESULT_ENVELOPE_MARGIN > resultBudget) {
                 // 完整集合装不下完整字段时，降级为精简字段（id/name/时间），
                 // 优先保证「条数完整」；详情仍可用 get_todo 单条取。
                 val compact = buildJsonObject {
@@ -447,18 +451,29 @@ internal object AiReadTools {
                     })
                 }
                 val compactChars = compact.toString().length
-                if (compactChars + RESULT_ENVELOPE_MARGIN <= MAX_SEARCH_RESULT_CHARS) {
+                if (compactChars + RESULT_ENVELOPE_MARGIN <= resultBudget) {
                     return success(compact)
                 }
                 // 连精简字段都装不下：显式失败，至少让模型拿到准确 total 并请用户缩小范围
                 return failure(
                     "limit_exceeded",
-                    "共 ${sorted.size} 条，精简结果 $compactChars 字符，超过单次上限 $MAX_SEARCH_RESULT_CHARS；" +
+                    "共 ${sorted.size} 条，精简结果 $compactChars 字符，超过单次上限 $resultBudget；" +
                         "请用 completedFrom/completedTo、dueFrom/dueTo、group 或 tag 缩小范围",
                 )
             }
         }
         return success(data)
+    }
+
+    /**
+     * 单条 search_todos 结果的字符预算：模型声明了上下文窗口时按窗口的约 1/3 缩放
+     * （2 字符/token 保守估算）；未知窗口保持 120K 的既有完整返回口径。
+     */
+    private fun AiChatContext.searchResultBudget(): Int {
+        if (modelContextWindowTokens <= 0) return MAX_SEARCH_RESULT_CHARS
+        return (modelContextWindowTokens.toLong() * 2 / 3)
+            .toInt()
+            .coerceIn(MIN_SEARCH_RESULT_CHARS, MAX_SEARCH_RESULT_CHARS)
     }
 
     /**
@@ -512,18 +527,28 @@ internal object AiReadTools {
             put("repeat", AiPromptBuilder.repeatText(repeat))
         }
         if (includeDetail) {
-            if (note.isNotBlank()) put("note", note)
+            // 详情字段与 get_todo 共用同一组限额：长备注/长步骤不能把 items 挤到被截空，
+            // 截断时显式标注，模型据此改用 get_todo 看单条完整内容
+            if (note.isNotBlank()) {
+                put("note", note.take(MAX_NOTE_CHARS))
+                if (note.length > MAX_NOTE_CHARS) put("noteTruncated", true)
+            }
             if (location.isNotBlank()) put("location", location)
             if (steps.isNotEmpty()) {
                 putJsonArray("steps") {
-                    steps.forEach { step ->
+                    steps.take(MAX_STEP_LINES).forEach { step ->
                         add(
                             buildJsonObject {
-                                put("title", step.title)
+                                put("title", step.title.take(MAX_STEP_TITLE_CHARS))
                                 put("done", step.done)
                             },
                         )
                     }
+                }
+                if (steps.size > MAX_STEP_LINES ||
+                    steps.any { it.title.length > MAX_STEP_TITLE_CHARS }
+                ) {
+                    put("stepsTruncated", true)
                 }
             }
         }
@@ -599,14 +624,29 @@ internal object AiReadTools {
                 put("courses", buildJsonArray { dayCourses(schedule, date).forEach { add(it) } })
             }
         }
-        return success(
-            buildJsonObject {
-                put("week", targetWeek)
-                put("totalWeeks", totalWeeks)
-                putJsonArray("dates") { days.forEach { add(it["date"] ?: JsonPrimitive("")) } }
-                put("days", buildJsonArray { days.forEach { add(it) } })
-            },
-        )
+        // 满周课表（7 天 × 多门课）可能超过单条结果预算：按天收缩并显式给出缺失日期，
+        // 让模型用 get_day_plan 补齐，而不是把 3 天当成整周
+        val maxChars = MAX_WEEK_RESULT_CHARS - RESULT_ENVELOPE_MARGIN
+        fun weekPayload(keep: Int): JsonObject = buildJsonObject {
+            put("week", targetWeek)
+            put("totalWeeks", totalWeeks)
+            putJsonArray("dates") { days.forEach { add(it["date"] ?: JsonPrimitive("")) } }
+            putJsonArray("days") { days.take(keep).forEach { add(it) } }
+            if (keep < days.size) {
+                put("truncated", true)
+                put("returnedDays", keep)
+                putJsonArray("missingDates") {
+                    days.drop(keep).forEach { add(it["date"] ?: JsonPrimitive("")) }
+                }
+            }
+        }
+        var keep = days.size
+        var payload = weekPayload(keep)
+        while (payload.toString().length > maxChars && keep > 1) {
+            keep -= 1
+            payload = weekPayload(keep)
+        }
+        return success(payload)
     }
 
     // ---------- get_todo ----------
@@ -659,7 +699,7 @@ internal object AiReadTools {
                 steps.take(MAX_STEP_LINES).forEach { step ->
                     add(
                         buildJsonObject {
-                            put("title", step.title)
+                            put("title", step.title.take(MAX_STEP_TITLE_CHARS))
                             put("done", step.done)
                         },
                     )
@@ -794,15 +834,6 @@ internal object AiReadTools {
         })
     }
 
-    private fun JsonObject.stringOrNull(name: String): String? =
-        (this[name] as? JsonPrimitive)?.content
-
-    private fun JsonObject.intOrNull(name: String): Int? =
-        (this[name] as? JsonPrimitive)?.content?.toIntOrNull()
-
-    private fun JsonObject.booleanOrNull(name: String): Boolean? =
-        (this[name] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
-
     private fun kotlinx.serialization.json.JsonObjectBuilder.stringProperty(
         name: String,
         description: String,
@@ -878,6 +909,9 @@ internal object AiReadTools {
      */
     internal const val MAX_SEARCH_RESULT_CHARS = 120_000
 
+    /** 窗口缩放下限：再小就连一页紧凑结果都装不下，不如让模型直接缩小查询范围 */
+    private const val MIN_SEARCH_RESULT_CHARS = 4_000
+
     /** get_day_plan 一次最多覆盖的天数（连续范围或离散日期）；超过则要求模型拆分 */
     internal const val MAX_DAY_PLAN_DAYS = 14
 
@@ -887,11 +921,18 @@ internal object AiReadTools {
      */
     internal const val MAX_DAY_PLAN_RESULT_CHARS = 40_000
 
+    /**
+     * get_week_schedule 的结果上限：7 天 × 每天多门课带地点/教师约 21K，默认 8K 会把
+     * `days` 对半砍到 3 天甚至 1 天。超限时改为按天收缩并给出 `missingDates`。
+     */
+    internal const val MAX_WEEK_RESULT_CHARS = 24_000
+
     /** 结果信封 `{ok,data}` 的余量，保证 executor 的最终字符串仍在上限内 */
     private const val RESULT_ENVELOPE_MARGIN = 64
 
     /** get_todo 的详情上限：备注/步骤/期次都截断，避免单条结果撑爆 8KB 预算 */
     private const val MAX_NOTE_CHARS = 800
     private const val MAX_STEP_LINES = 20
+    private const val MAX_STEP_TITLE_CHARS = 200
     private const val MAX_OCCURRENCE_LINES = 5
 }

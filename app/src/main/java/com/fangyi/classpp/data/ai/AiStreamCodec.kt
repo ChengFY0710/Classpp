@@ -139,7 +139,8 @@ internal object OpenAiStreamCodec : AiStreamCodec {
                 reasoningOff = reasoningOff,
                 thinkingControl = thinkingControl,
                 turns = turns,
-                temperature = temperature,
+                // o1/o3 等推理模型与部分网关不接受 temperature：配置关闭时不发送
+                temperature = temperature.takeIf { config.supportsTemperature },
                 tools = tools,
             ),
         )
@@ -333,9 +334,10 @@ internal object OpenAiStreamCodec : AiStreamCodec {
  *
  * - **认证**：`x-api-key` 头 + `anthropic-version` 头（不是 Bearer）；
  * - **system 是顶层字段**：role=system 的 turn 不进 messages，拼接为顶层 `system`；
- * - **max_tokens 必填**：默认取 [DEFAULT_MAX_TOKENS]；推理等级启用 thinking 时取
- *   `budget_tokens + [DEFAULT_MAX_TOKENS]`（答案余量与无思考时持平，且满足 Anthropic
- *   对 max_tokens > budget_tokens 的硬性要求）；
+ * - **max_tokens 必填**：模型配置了 `maxOutputTokens` 时以它为上限（思考预算夹到
+ *   `max_tokens - 1024`，放不下最小预算时不启用 thinking）；未配置时保持默认
+ *   [DEFAULT_MAX_TOKENS]，启用思考时取 `budget_tokens + [DEFAULT_MAX_TOKENS]`（答案
+ *   余量与无思考时持平，且满足 Anthropic 对 max_tokens > budget_tokens 的硬性要求）；
  * - **thinking**：当前模型的推理等级经 [AnthropicStreamCodec.reasoningBudget] 映射为
  *   预算后发送 `{type: "enabled", budget_tokens}`；无法映射的等级不发送（无思考的原行为）。
  *   Anthropic 要求 thinking 启用时 temperature 只能为 1，启用思考即**不发送 temperature**
@@ -367,6 +369,7 @@ internal object AnthropicStreamCodec : AiStreamCodec {
         jsonBody = encodeRequest(
             model = connection.model,
             reasoningLevel = connection.activeReasoningLevel(),
+            maxOutputTokens = connection.modelConfig(connection.model).maxOutputTokens,
             turns = turns,
             temperature = temperature,
             tools = tools,
@@ -441,6 +444,7 @@ internal object AnthropicStreamCodec : AiStreamCodec {
     private fun encodeRequest(
         model: String,
         reasoningLevel: String?,
+        maxOutputTokens: Int,
         turns: List<AiChatTurn>,
         temperature: Double?,
         tools: List<AiToolSpec>,
@@ -450,10 +454,27 @@ internal object AnthropicStreamCodec : AiStreamCodec {
             .trim()
         val nonSystem = turns.filterNot { it.role == ROLE_SYSTEM }
         val hasToolTurns = nonSystem.any { it.toolCalls.isNotEmpty() || it.toolResults.isNotEmpty() }
-        val thinkingBudget = reasoningLevel?.let(::reasoningBudget)
+        val requestedMax = maxOutputTokens.takeIf { it > 0 }
+        val rawBudget = reasoningLevel?.let(::reasoningBudget)
+        // max_tokens 与 thinking 预算的关系：
+        // - 未配置 maxOutputTokens（旧配置）保持原行为：无思考 4096，有思考 budget+4096；
+        // - 配置后以配置值为上限，思考预算夹到 max_tokens-1024（必须 max_tokens > budget），
+        //   max_tokens 小到放不下最小预算时不启用 thinking。
+        val maxTokens = if (requestedMax == null) {
+            rawBudget?.plus(DEFAULT_MAX_TOKENS) ?: DEFAULT_MAX_TOKENS
+        } else {
+            requestedMax
+        }
+        val thinkingBudget = when {
+            rawBudget == null -> null
+            requestedMax == null -> rawBudget
+            maxTokens > MIN_THINKING_BUDGET * 2 ->
+                rawBudget.coerceIn(MIN_THINKING_BUDGET, maxTokens - MIN_THINKING_BUDGET)
+            else -> null
+        }
         val payload = buildJsonObject {
             put("model", model)
-            put("max_tokens", thinkingBudget?.plus(DEFAULT_MAX_TOKENS) ?: DEFAULT_MAX_TOKENS)
+            put("max_tokens", maxTokens)
             put("stream", true)
             // Anthropic 要求 thinking 启用时 temperature 只能为 1：启用思考即不发送
             //（课表识别固定传 0.0，混在一起会 400）
@@ -675,12 +696,14 @@ internal object AnthropicStreamCodec : AiStreamCodec {
     /**
      * 推理等级 → thinking 预算；null = 无法映射（不发 thinking，保持无思考的原行为）。
      * 命名等级忽略大小写按 [THINKING_BUDGET_BY_LEVEL] 预设映射；纯数字等级直接作为
-     * 预算（下限钳到 [MIN_THINKING_BUDGET]，Anthropic 硬性要求）；其余写法不猜——
+     * 预算并夹到 [MIN_THINKING_BUDGET]..[MAX_NUMERIC_THINKING_BUDGET]（上下限都是
+     * Anthropic 的硬性约束：过小 400，过大必然超过模型输出上限）；其余写法不猜——
      * 错发预算比不发更糟，仅 debug 记一条供排查。
      */
     private fun reasoningBudget(level: String): Int? {
         THINKING_BUDGET_BY_LEVEL[level.lowercase()]?.let { return it }
-        val budget = level.toIntOrNull()?.coerceAtLeast(MIN_THINKING_BUDGET)
+        val budget = level.toIntOrNull()
+            ?.coerceIn(MIN_THINKING_BUDGET, MAX_NUMERIC_THINKING_BUDGET)
         if (budget == null && AiDebugTrace.enabled) {
             runCatching {
                 Log.w(REASONING_LOG_TAG, "anthropic reasoning level not mapped, ignored: $level")
@@ -701,6 +724,9 @@ internal object AnthropicStreamCodec : AiStreamCodec {
 
     /** Anthropic 对 thinking.budget_tokens 的硬性下限 */
     private const val MIN_THINKING_BUDGET = 1024
+
+    /** 纯数字推理等级的预算上限：再大必然超过常见模型输出上限（xhigh 预设为 32768） */
+    private const val MAX_NUMERIC_THINKING_BUDGET = 32_000
 
     /** 推理等级 → thinking 预算的命名预设（忽略大小写；与「配置模型」浮层的快捷预设一致） */
     private val THINKING_BUDGET_BY_LEVEL = mapOf(

@@ -43,6 +43,9 @@ object AiTodoPatchMapper {
         knownGroups: List<String> = emptyList(),
         knownTags: List<String> = emptyList(),
     ): AiTodoPatchMapping {
+        // 长度上限：用户已确认的补丁遇到超长字段整条拒绝，不静默截断
+        if (patch.exceedsFieldLimits()) return invalid()
+
         // 名称：空白是非法值（TodoValidator.BlankName），不静默沿用旧名
         val name = patch.name?.trim() ?: existing.name
         if (name.isBlank()) return invalid()
@@ -123,6 +126,18 @@ object AiTodoPatchMapper {
             if (repeatType.equals("None", ignoreCase = true)) {
                 repeat = RepeatRule()
             } else {
+                // 显式给出的 unit/endType 必须能识别：mapRepeat 对非法值会静默回落默认，
+                // 用户确认的「每两周 / 到某日结束」就变成了别的规则
+                if (!patch.repeat.unit.isNullOrBlank() &&
+                    AiTodoMapper.repeatUnitOrNull(patch.repeat.unit) == null
+                ) {
+                    return invalid()
+                }
+                if (!patch.repeat.endType.isNullOrBlank() &&
+                    AiTodoMapper.repeatEndTypeOrNull(patch.repeat.endType) == null
+                ) {
+                    return invalid()
+                }
                 val invalidFields = mutableSetOf<AiDraftField>()
                 val mapped = AiTodoMapper.mapRepeat(patch.repeat, invalidFields)
                 if (invalidFields.isNotEmpty()) return invalid()
@@ -158,8 +173,14 @@ object AiTodoPatchMapper {
         } ?: existing.tags
 
         val group = if (patch.group != null) {
-            patch.group.trim().takeIf { it.isNotEmpty() }
-                ?.let { AiTodoMapper.fuzzyMatch(it, knownGroups) ?: it }
+            val trimmed = patch.group.trim()
+            if (trimmed.isEmpty()) {
+                null
+            } else {
+                // 不存在的分组直接拒绝：仓库归一化会把未知分组清空，静默"应用成功"会让
+                // 待办从原分组消失却没进新分组。先 create_todo_groups 再引用。
+                AiTodoMapper.fuzzyMatch(trimmed, knownGroups) ?: return invalid()
+            }
         } else {
             existing.group
         }
@@ -204,6 +225,30 @@ object AiTodoPatchMapper {
             pinned = patch.pinned ?: existing.pinned,
         )
         return AiTodoPatchMapping(todo = next, changed = next != existing)
+    }
+
+    /** 补丁字段超长：用户已确认的修改不静默截断，整条不可应用 */
+    private fun AiTodoPatch.exceedsFieldLimits(): Boolean {
+        if (name != null && name.trim().length > AiFieldLimits.Name) return true
+        if (dates != null && dates.size > AiFieldLimits.Dates) return true
+        if (note != null && note.length > AiFieldLimits.Note) return true
+        if (location != null && location.trim().length > AiFieldLimits.Location) return true
+        if (group != null && group.trim().length > AiFieldLimits.Group) return true
+        if (tags != null && (
+                tags.size > AiFieldLimits.Tags ||
+                    tags.any { it.trim().length > AiFieldLimits.Tag }
+                )
+        ) {
+            return true
+        }
+        if (steps != null && (
+                steps.size > AiFieldLimits.Steps ||
+                    steps.any { it.trim().length > AiFieldLimits.StepTitle }
+                )
+        ) {
+            return true
+        }
+        return false
     }
 
     private fun invalid(): AiTodoPatchMapping = AiTodoPatchMapping(todo = null, changed = false)

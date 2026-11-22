@@ -17,7 +17,7 @@ import com.fangyi.classpp.data.model.markRange
 import com.fangyi.classpp.data.model.newUuid
 
 /** 草稿里没解析出来的字段；仅用于测试与诊断（落库路径只关心 [AiTodoDraftMapping.canSave]） */
-enum class AiDraftField { Name, Dates, PeriodTime, Deadline, Repeat }
+enum class AiDraftField { Name, Dates, PeriodTime, Deadline, Repeat, Length }
 
 /**
  * 一条草稿的映射结果。
@@ -78,14 +78,23 @@ object AiTodoMapper {
     ): AiTodoDraftMapping {
         val invalid = mutableSetOf<AiDraftField>()
 
-        // 名称：TodoValidator 的第一条硬约束（BlankName），空白 = 该行不可落库
-        val name = draft.name.trim()
+        // 名称：TodoValidator 的第一条硬约束（BlankName），空白 = 该行不可落库；
+        // 超长截断并标注（AI 新建免确认，不能因长度让整批落库失败）
+        val rawName = draft.name.trim()
+        val name = rawName.take(AiFieldLimits.Name)
         if (name.isBlank()) invalid += AiDraftField.Name
+        if (name.length < rawName.length) invalid += AiDraftField.Length
 
         // 日期：单条解析失败只丢坏值并标注，好值保留
         val parsedDates = draft.dates.mapNotNull { IsoDate.parseOrNull(it.trim()) }
         if (parsedDates.size < draft.dates.size) invalid += AiDraftField.Dates
-        val dates = parsedDates.distinct().sortedBy { it.epochDay }
+        val distinctDates = parsedDates.distinct().sortedBy { it.epochDay }
+        val dates = if (distinctDates.size > AiFieldLimits.Dates) {
+            invalid += AiDraftField.Dates
+            distinctDates.take(AiFieldLimits.Dates)
+        } else {
+            distinctDates
+        }
 
         // 时段：成对有效才成立；非法组合标注后由全天/无时刻兜底
         val startMinute = parseMinutes(draft.startTime)
@@ -145,6 +154,15 @@ object AiTodoMapper {
         }
 
         val hasDeadline = deadlineValid
+        val rawLocation = draft.location.trim()
+        val rawNote = draft.note
+        val rawGroup = draft.group?.trim()?.takeIf { it.isNotEmpty() }
+        if (rawLocation.length > AiFieldLimits.Location ||
+            rawNote.length > AiFieldLimits.Note ||
+            (rawGroup?.length ?: 0) > AiFieldLimits.Group
+        ) {
+            invalid += AiDraftField.Length
+        }
         val todo = Todo(
             id = newUuid(),
             name = name,
@@ -159,14 +177,17 @@ object AiTodoMapper {
                 effectiveRepeat.type != RepeatType.None &&
                 draft.deadlineBeforeRepeat,
             deadlineBeforeDays = draft.deadlineBeforeDays.coerceAtLeast(0),
-            location = draft.location.trim(),
-            tags = normalizeList(draft.tags).map { fuzzyMatch(it, knownTags) ?: it }.distinct(),
+            location = rawLocation.take(AiFieldLimits.Location),
+            tags = limitedList(draft.tags, AiFieldLimits.Tags, AiFieldLimits.Tag, invalid)
+                .map { fuzzyMatch(it, knownTags) ?: it }
+                .distinct(),
             urgency = draft.urgency?.trim()?.let { value ->
                 TodoUrgency.entries.firstOrNull { it.name.equals(value, ignoreCase = true) }
             } ?: TodoUrgency.None,
-            note = draft.note,
-            steps = normalizeList(draft.steps).map { TodoStep(id = newUuid(), title = it) },
-            group = draft.group?.trim()?.takeIf { it.isNotEmpty() }
+            note = rawNote.take(AiFieldLimits.Note),
+            steps = limitedList(draft.steps, AiFieldLimits.Steps, AiFieldLimits.StepTitle, invalid)
+                .map { TodoStep(id = newUuid(), title = it) },
+            group = rawGroup?.take(AiFieldLimits.Group)
                 ?.let { fuzzyMatch(it, knownGroups) ?: it },
             countdown = draft.countdown && hasDeadline,
             pinned = draft.pinned,
@@ -241,6 +262,12 @@ object AiTodoMapper {
         return enumValues<T>().firstOrNull { it.name.equals(text, ignoreCase = true) }
     }
 
+    /** 重复单位识别（补丁严格校验用）：空白/非法返回 null */
+    internal fun repeatUnitOrNull(value: String?): RepeatUnit? = matchEnum(value)
+
+    /** 重复结束条件识别（补丁严格校验用）：空白/非法返回 null */
+    internal fun repeatEndTypeOrNull(value: String?): RepeatEndType? = matchEnum(value)
+
     /** "HH:mm"（或 "H:mm"）→ 当天分钟数；非法返回 null */
     internal fun parseMinutes(text: String?): Int? {
         val t = text?.trim() ?: return null
@@ -252,9 +279,22 @@ object AiTodoMapper {
         return h * 60 + m
     }
 
-    /** 逐条 trim、去空；原样序保持 */
-    private fun normalizeList(values: List<String>): List<String> =
-        values.map { it.trim() }.filter { it.isNotEmpty() }
+    /**
+     * 列表字段统一限长：逐项 trim 去空，超过条数/单项长度就截断并标注
+     * [AiDraftField.Length]（新建免确认，截断比整批失败更合适）。
+     */
+    private fun limitedList(
+        values: List<String>,
+        maxItems: Int,
+        maxLength: Int,
+        invalid: MutableSet<AiDraftField>,
+    ): List<String> {
+        val cleaned = values.map { it.trim() }.filter { it.isNotEmpty() }
+        if (cleaned.size > maxItems || cleaned.any { it.length > maxLength }) {
+            invalid += AiDraftField.Length
+        }
+        return cleaned.take(maxItems).map { it.take(maxLength) }
+    }
 
     /**
      * 包含匹配：精确相等直接命中；否则取「清单项包含它或它包含清单项」的第一个命中

@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.AppToasts
@@ -43,6 +44,8 @@ import com.fangyi.classpp.ui.components.SettingsCardItem
 import com.fangyi.classpp.ui.components.SheetCard
 import com.fangyi.classpp.ui.components.SheetImeBehavior
 import com.fangyi.classpp.ui.components.SheetTextField
+import com.fangyi.classpp.ui.components.SheetTextFieldGroup
+import com.fangyi.classpp.ui.components.SheetTextFieldItem
 import com.fangyi.classpp.ui.components.SheetTopAction
 import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.motion.pressClickable
@@ -103,6 +106,10 @@ internal fun AiModelConfigSheet(
     var modelId by remember { mutableStateOf(editingModel.orEmpty()) }
     var levels by remember { mutableStateOf(initialConfig.reasoningLevels) }
     var selectedLevel by remember { mutableStateOf(initialConfig.reasoningLevel) }
+    // 0 = 未知：输入框留空即落 0（沿用旧行为）
+    var contextWindowText by remember { mutableStateOf("") }
+    var maxOutputText by remember { mutableStateOf("") }
+    var supportsTemperature by remember { mutableStateOf(initialConfig.supportsTemperature) }
     var idError by remember { mutableStateOf(false) }
     // 始终思考的模型族首档不是「关」，说明卡文案需要区分
     val reasoningOffSupported = AiProviderPresets
@@ -121,6 +128,9 @@ internal fun AiModelConfigSheet(
         modelId = editingModel.orEmpty()
         levels = normalized.reasoningLevels
         selectedLevel = normalized.reasoningLevel
+        contextWindowText = normalized.contextWindowTokens.takeIf { it > 0 }?.toString().orEmpty()
+        maxOutputText = normalized.maxOutputTokens.takeIf { it > 0 }?.toString().orEmpty()
+        supportsTemperature = normalized.supportsTemperature
         idError = false
         levelInputVisible = false
         levelInputMounted = false
@@ -149,7 +159,16 @@ internal fun AiModelConfigSheet(
             return
         }
         idError = false
-        onConfirm(trimmed, AiModelConfig(levels, selectedLevel))
+        onConfirm(
+            trimmed,
+            AiModelConfig(
+                reasoningLevels = levels,
+                reasoningLevel = selectedLevel,
+                contextWindowTokens = contextWindowText.toIntOrNull() ?: 0,
+                maxOutputTokens = maxOutputText.toIntOrNull() ?: 0,
+                supportsTemperature = supportsTemperature,
+            ),
+        )
         onDismiss()
     }
 
@@ -288,6 +307,43 @@ internal fun AiModelConfigSheet(
                                     R.string.ai_model_reasoning_map_desc_always_on
                                 },
                             ),
+                        ),
+                    ),
+                )
+            }
+
+            // C. 上下文与输出预算：0 / 留空 = 未知（沿用既有字符级预算与默认输出上限）
+            CardSection(title = stringResource(R.string.ai_model_budget_section)) {
+                SheetTextFieldGroup(
+                    fields = listOf(
+                        SheetTextFieldItem(
+                            label = stringResource(R.string.ai_model_context_window_label),
+                            value = contextWindowText,
+                            onValueChange = { input ->
+                                contextWindowText = input.filter(Char::isDigit).take(7)
+                            },
+                            placeholder = stringResource(R.string.ai_model_budget_unknown),
+                            keyboardType = KeyboardType.Number,
+                        ),
+                        SheetTextFieldItem(
+                            label = stringResource(R.string.ai_model_max_output_label),
+                            value = maxOutputText,
+                            onValueChange = { input ->
+                                maxOutputText = input.filter(Char::isDigit).take(7)
+                            },
+                            placeholder = stringResource(R.string.ai_model_budget_unknown),
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Done,
+                        ),
+                    ),
+                )
+                SettingsCard(
+                    items = listOf(
+                        SettingsCardItem.Toggle(
+                            label = stringResource(R.string.ai_model_supports_temperature),
+                            description = stringResource(R.string.ai_model_supports_temperature_desc),
+                            checked = supportsTemperature,
+                            onCheckedChange = { supportsTemperature = it },
                         ),
                     ),
                 )

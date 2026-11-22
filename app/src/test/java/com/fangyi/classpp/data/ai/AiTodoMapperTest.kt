@@ -423,6 +423,51 @@ class AiTodoMapperTest {
     }
 
     @Test
+    fun `over long draft fields are truncated and marked`() {
+        val mapping = AiTodoMapper.map(
+            listOf(
+                draft(
+                    name = "名".repeat(AiFieldLimits.Name + 50),
+                    tags = List(AiFieldLimits.Tags + 5) {
+                        ("t$it").padEnd(AiFieldLimits.Tag + 10, 'x')
+                    },
+                    steps = List(AiFieldLimits.Steps + 5) {
+                        "s".repeat(AiFieldLimits.StepTitle + 10) + it
+                    },
+                    note = "备".repeat(AiFieldLimits.Note + 100),
+                    location = "地".repeat(AiFieldLimits.Location + 100),
+                    group = "组".repeat(AiFieldLimits.Group + 10),
+                ),
+            ),
+        ).single()
+
+        assertEquals(AiFieldLimits.Name, mapping.todo.name.length)
+        assertEquals(AiFieldLimits.Tags, mapping.todo.tags.size)
+        assertTrue(mapping.todo.tags.all { it.length <= AiFieldLimits.Tag })
+        assertEquals(AiFieldLimits.Steps, mapping.todo.steps.size)
+        assertTrue(mapping.todo.steps.all { it.title.length <= AiFieldLimits.StepTitle })
+        assertEquals(AiFieldLimits.Note, mapping.todo.note.length)
+        assertEquals(AiFieldLimits.Location, mapping.todo.location.length)
+        assertEquals(AiFieldLimits.Group, mapping.todo.group!!.length)
+        assertTrue(AiDraftField.Length in mapping.invalidFields)
+        // 截断后的结果仍可落库（新建免确认，不能因为超长整批失败）
+        assertTrue(mapping.canSave)
+        assertTrue(TodoValidator.validate(mapping.todo).isEmpty())
+    }
+
+    @Test
+    fun `draft date list is capped`() {
+        val manyDates = (0 until AiFieldLimits.Dates + 10).map {
+            (com.fangyi.classpp.data.model.IsoDate.of(2026, 1, 1) + it).toString()
+        }
+        val mapping = AiTodoMapper.map(listOf(draft(dates = manyDates))).single()
+
+        assertEquals(AiFieldLimits.Dates, mapping.todo.dates.size)
+        assertTrue(AiDraftField.Dates in mapping.invalidFields)
+        assertTrue(TodoValidator.validate(mapping.todo).isEmpty())
+    }
+
+    @Test
     fun `parseMinutes covers valid range and rejects garbage`() {
         assertEquals(0, AiTodoMapper.parseMinutes("0:00"))
         assertEquals(8 * 60, AiTodoMapper.parseMinutes("8:00"))

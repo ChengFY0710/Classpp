@@ -29,19 +29,27 @@ enum class AiProtocol { OpenAiCompat, Anthropic }
 
 /**
  * 单个模型的附加配置：模型 id 在 [AiConnection.models] 里，这里只存与该模型一起落库的
- * 模型级参数（当前为推理等级）。
+ * 模型级参数（推理等级 + 上下文/输出预算 + temperature 兼容性）。
  *
  * @param reasoningLevels 可选的推理等级（用户自由填写，忽略大小写去重）
  * @param reasoningLevel 当前选中的推理等级；等级列表非空时必为其中一项（空列表时为空串）
+ * @param contextWindowTokens 模型上下文窗口（token）；0 = 未知，沿用字符级固定预算
+ * @param maxOutputTokens 单次输出上限（token）；0 = 未知（Anthropic 侧回落 4096）
+ * @param supportsTemperature 是否接受 `temperature` 参数：o1/o3 等推理模型与部分网关
+ *   会因该字段直接 400，配置为 false 时请求体不发送
  */
 @Serializable
 data class AiModelConfig(
     val reasoningLevels: List<String> = emptyList(),
     val reasoningLevel: String = "",
+    val contextWindowTokens: Int = 0,
+    val maxOutputTokens: Int = 0,
+    val supportsTemperature: Boolean = true,
 ) {
     /**
      * 保存前的规范化：等级 trim、去空串、忽略大小写去重（保留首次出现的写法）；
      * 列表非空时选中项忽略大小写对齐列表写法，缺失则回落首个——SelectCard 单选必须有值。
+     * 数字字段负数按 0（未知）处理。
      */
     fun normalized(): AiModelConfig {
         val cleaned = ArrayList<String>(reasoningLevels.size)
@@ -54,11 +62,22 @@ data class AiModelConfig(
         val selected = cleaned.firstOrNull { it.equals(reasoningLevel.trim(), ignoreCase = true) }
             ?: cleaned.firstOrNull()
             ?: ""
-        return AiModelConfig(reasoningLevels = cleaned, reasoningLevel = selected)
+        return AiModelConfig(
+            reasoningLevels = cleaned,
+            reasoningLevel = selected,
+            contextWindowTokens = contextWindowTokens.coerceAtLeast(0),
+            maxOutputTokens = maxOutputTokens.coerceAtLeast(0),
+            supportsTemperature = supportsTemperature,
+        )
     }
 
-    /** 空配置不落库：没有推理等级 = 该模型不使用推理等级 */
-    val isEmpty: Boolean get() = reasoningLevels.isEmpty() && reasoningLevel.isBlank()
+    /** 空配置不落库：没有推理等级、没有预算、且保持 temperature 默认时才算空 */
+    val isEmpty: Boolean
+        get() = reasoningLevels.isEmpty() &&
+            reasoningLevel.isBlank() &&
+            contextWindowTokens <= 0 &&
+            maxOutputTokens <= 0 &&
+            supportsTemperature
 
     /**
      * 当前选中等级是否表示「不开启思考」：等级列表按从低到高排列（2~5 个档位），
@@ -286,6 +305,8 @@ data class AiToolRound(
  * @param createdAtMillis 创建时刻（epoch millis），由仓库在追加时补齐
  * @param interrupted 流式中断标记：true = 这条 assistant 消息收到一半被停止/失败，
  *   UI 显示「已中断 + 重试」；user 消息恒 false
+ * @param truncated 回答因输出上限被截断（`finish_reason=length` / `stop_reason=max_tokens`）：
+ *   UI 在气泡底部提示并提供重试；截断的回复不解析待办 JSON。旧文件无此字段时默认 false
  * @param todoIds 本条回复中 AI 创建成功的待办 id（按生成顺序落盘）：重进对话仍以
  *   NoteCard 卡片展示；卡片内容从 TodoRepository 现取，待办被删除/归档后自然消失
  * @param todoSaveFailed 解析出了草稿但落库失败（I/O 等异常）；UI 在原处提示重试
@@ -312,6 +333,7 @@ data class AiChatMessage(
     val content: String,
     val createdAtMillis: Long = 0,
     val interrupted: Boolean = false,
+    val truncated: Boolean = false,
     val todoIds: List<String> = emptyList(),
     val todoSaveFailed: Boolean = false,
     val reasoning: String = "",
@@ -331,7 +353,19 @@ data class AiChatMessage(
  * 随 [AiConversation.lastError] 落盘，故需序列化。
  */
 @Serializable
-enum class AiError { Auth, Quota, NotFound, RateLimited, Server, Network, BadResponse, EmptyResponse }
+enum class AiError {
+    Auth,
+    Quota,
+    NotFound,
+    RateLimited,
+    Server,
+    Network,
+    BadResponse,
+    EmptyResponse,
+
+    /** 当前轮用户文本超过上限：不静默截断，提示拆分或精简 */
+    InputTooLong,
+}
 
 /**
  * 携带分类的 AI 调用异常；[detail] 供日志/排查，内容来自服务商响应体或 IO 消息，

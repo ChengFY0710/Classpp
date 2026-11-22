@@ -13,6 +13,7 @@ import com.fangyi.classpp.data.model.TodoUrgency
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -322,5 +323,67 @@ class AiTodoPatchMapperTest {
         ).todo!!
         assertNull(noDeadline.deadlineDate)
         assertFalse(noDeadline.countdown)
+    }
+
+    @Test
+    fun `patch repeat rejects unknown unit and end type`() {
+        // 非法 unit 以前会被静默回落成 Week（用户确认的「每两周」变成每周）
+        assertNull(
+            apply(
+                todo(),
+                AiTodoPatch(
+                    repeat = AiRepeatDraft(type = "Custom", unit = "Fortnight", interval = 2),
+                ),
+            ).todo,
+        )
+        // 非法 endType 以前会被静默回落成 Never（用户确认的「到某日结束」失效）
+        assertNull(
+            apply(
+                todo(),
+                AiTodoPatch(repeat = AiRepeatDraft(type = "Weekly", endType = "Until")),
+            ).todo,
+        )
+        // 缺省 unit/endType 仍按默认，不误伤
+        val weekly = apply(
+            todo(),
+            AiTodoPatch(repeat = AiRepeatDraft(type = "Weekly")),
+        ).todo!!
+        assertEquals(RepeatType.Weekly, weekly.repeat.type)
+        assertEquals(RepeatEndType.Never, weekly.repeat.endType)
+    }
+
+    @Test
+    fun `patch group must exist in known groups`() {
+        // 不存在的分组：仓库归一化会清空它，静默应用等于把待办从原分组移出且没进新分组
+        assertNull(apply(todo(), AiTodoPatch(group = "临时组")).todo)
+        // 模糊匹配仍生效
+        assertEquals("学习", apply(todo(), AiTodoPatch(group = "习")).todo!!.group)
+        // 不传 group 时保留原分组
+        assertEquals("学习", apply(todo(), AiTodoPatch(name = "新名字")).todo!!.group)
+        // 空串仍是「取消分组」
+        assertNull(apply(todo(), AiTodoPatch(group = "")).todo!!.group)
+    }
+
+    @Test
+    fun `patch rejects over long fields`() {
+        assertNull(apply(todo(), AiTodoPatch(name = "名".repeat(AiFieldLimits.Name + 1))).todo)
+        assertNull(apply(todo(), AiTodoPatch(note = "备".repeat(AiFieldLimits.Note + 1))).todo)
+        assertNull(
+            apply(todo(), AiTodoPatch(location = "地".repeat(AiFieldLimits.Location + 1))).todo,
+        )
+        assertNull(
+            apply(todo(), AiTodoPatch(tags = List(AiFieldLimits.Tags + 1) { "t$it" })).todo,
+        )
+        assertNull(
+            apply(todo(), AiTodoPatch(steps = List(AiFieldLimits.Steps + 1) { "s$it" })).todo,
+        )
+        assertNull(
+            apply(
+                todo(),
+                AiTodoPatch(dates = List(AiFieldLimits.Dates + 1) { date.toString() }),
+            ).todo,
+        )
+        // 边界值本身合法
+        assertNotNull(apply(todo(), AiTodoPatch(name = "名".repeat(AiFieldLimits.Name))).todo)
     }
 }

@@ -1363,6 +1363,8 @@ private fun AiChatMessageList(
                         message.content.isEmpty(),
                     // 流式尾部不挂尺寸 tween：合并批次本身就是平滑的
                     streamingTail = sending && isTail && message.role == AiChatRole.Assistant,
+                    // 重试只对尾部消息有意义（retryLast 绑定活跃对话的失败尾巴）
+                    onRetry = if (isTail) onRetry else null,
                     modifier = if (entering) {
                         Modifier.chatBubbleEntrance(message.id, riseDp)
                     } else {

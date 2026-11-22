@@ -795,6 +795,7 @@
     <string name="import_ai_confirm_detail">识别结果由 AI 生成，请核对课表内容后再导入</string>
     <string name="import_ai_error_no_json">AI 没有返回可识别的课表，请重试或换一张更清晰的图片</string>
     <string name="import_ai_error_no_courses">没有识别到课程，请换一张更清晰的课表图片</string>
+    <string name="import_ai_error_truncated">输出过长被截断，请重试或缩小截图范围</string>
     <string name="import_ai_error_invalid">AI 返回的课表格式无法解析，请重试</string>
     <string name="import_ai_error_unreadable">图片读取失败，请重新选择</string>
     <string name="import_ai_error_vision_hint">若当前模型不支持图片输入，请在 AI 设置中添加视觉模型，再到对话输入栏上方切换</string>
@@ -1034,6 +1035,7 @@
     <string name="ai_thinking_title">思考过程</string>
     <string name="ai_thinking_in_progress">正在思考…</string>
     <string name="ai_interrupted">回答已中断</string>
+    <string name="ai_reply_truncated">回答过长被截断</string>
     <string name="ai_retry">重试</string>
     <string name="ai_error_auth">API Key 无效或已过期，请到 AI 设置检查</string>
     <string name="ai_error_quota">账户余额不足或无该模型权限</string>
@@ -1043,6 +1045,7 @@
     <string name="ai_error_network">网络连接失败，请检查网络</string>
     <string name="ai_error_bad_response">服务商返回了无法解析的数据</string>
     <string name="ai_error_empty_response">AI 没有返回内容，请重试</string>
+    <string name="ai_error_input_too_long">内容过长，请拆分或精简后再发送</string>
     <string name="ai_not_configured_title">先配置 AI 服务商</string>
     <string name="ai_not_configured_hint">填入你自己的 API Key（DeepSeek、智谱、通义、Claude 等均可），对话内容与课表、待办摘要会发送给你所选的服务商</string>
     <string name="ai_go_settings">去 AI 设置</string>
@@ -1220,13 +1223,19 @@
     <string name="ai_model_id_label">模型 ID</string>
     <string name="ai_model_reasoning_section">推理等级</string>
     <string name="ai_model_reasoning_add">添加推理等级</string>
-    <string name="ai_model_reasoning_hint">如 low、high</string>
+    <string name="ai_model_reasoning_hint">如 low、high，纯数字表示思考预算（1024–32000）</string>
     <string name="ai_model_reasoning_value">推理等级：%1$s</string>
     <string name="ai_model_reasoning_duplicate">该推理等级已存在</string>
     <string name="ai_model_reasoning_map_title">等级顺序说明</string>
     <string name="ai_model_reasoning_map_desc">等级请按从低到高排列，对话浮层的思考强度按等级数量映射：2 个为关、开启；3 个为关、高、最高；4 个为关、低、高、最高；5 个为关、低、高、最高、极致。第一个等级为「关」，选中时不开启思考。</string>
     <string name="ai_model_reasoning_map_desc_always_on">该模型不支持关闭思考，等级请按从低到高排列，对话浮层的思考强度按等级数量映射：2 个为低、高；3 个为低、高、最高；4 个为低、中、高、最高；5 个为低、中、高、最高、极致。第一个等级为最低强度，不会被当成关闭。</string>
     <string name="ai_model_fetch">从服务商拉取模型</string>
+    <string name="ai_model_budget_section">上下文与输出</string>
+    <string name="ai_model_context_window_label">上下文窗口（token）</string>
+    <string name="ai_model_max_output_label">单次输出上限（token）</string>
+    <string name="ai_model_budget_unknown">留空或 0 表示未知</string>
+    <string name="ai_model_supports_temperature">接受 temperature 参数</string>
+    <string name="ai_model_supports_temperature_desc">推理模型（o1/o3 等）或部分网关不接受该参数时关闭，避免请求直接报错</string>
     <string name="ai_model_fetch_title">选择模型</string>
     <string name="ai_model_fetch_add">添加</string>
     <string name="ai_model_fetch_loading">正在拉取模型…</string>
