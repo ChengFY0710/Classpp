@@ -520,6 +520,7 @@
     <string name="settings_cancel">Cancel</string>
     <string name="error_term_range">Term end must not be before term start</string>
     <string name="error_term_end_short">These courses no longer fit in the last week — shorten their weeks or move the term end later</string>
+    <string name="error_weeks_shrink_blocked">Week %1$d still has classes, change rejected</string>
     <string name="error_days_per_week">Days per week must be 5 or 7</string>
     <string name="error_slot_count">Period count must be 1–30</string>
     <string name="error_slot_duration">Each period must be 10–200 minutes</string>

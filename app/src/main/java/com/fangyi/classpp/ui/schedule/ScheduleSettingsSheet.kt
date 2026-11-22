@@ -33,6 +33,7 @@ import com.fangyi.classpp.data.model.DEFAULT_SLOT_DURATION_MINUTES
 import com.fangyi.classpp.data.model.DEFAULT_TIME_SCHEME_ID
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.adjustmentsForSlotChange
+import com.fangyi.classpp.data.model.termEndForFewerWeeks
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeScheme
 import com.fangyi.classpp.data.model.TimeSlotDef
@@ -365,9 +366,11 @@ internal fun ScheduleSettingsSheet(
         )
     }
 
-    // 学期周数横向滚轮弹窗（BottomNumberSelectCard）画在浮层之后（组合顺序即绘制顺序）；
-    // 确认把结束日整周平移到目标周数（endForTotalWeeks），先走与「学期起止」同一条
-    // 草稿预校验（失败 toast 后滚轮保持可见可重试，不出现「设置已生效、保存编辑才报错」），
+    // 学期周数横向滚轮弹窗（BottomNumberSelectCard）画在浮层之后（组合顺序即绘制顺序）。
+    // 确认分两条口径：扩大学期 → 结束日整周平移（星期几不变）；缩小学期 → 在目标周内找
+    // 「最早没课的一天」作新结束日（termEndForFewerWeeks），被剪掉的日期里还有课时点名
+    // 阻塞周并保持滚轮可见可重试——末周只上到周中的学期可以直接收成整周数，不再因固定
+    // 平移到某个仍有课的周中而失败。两条口径都先走草稿预校验（调课等仍由整表校验把关），
     // 再整表提交仓库。取消/遮罩/返回只请求关闭，播完退场才卸载（两段式，同日期轮）
     if (weeksMounted) {
         BottomNumberSelectCard(
@@ -380,7 +383,24 @@ internal fun ScheduleSettingsSheet(
             unit = stringResource(R.string.unit_week),
             hazeState = sheetHazeState,
             onConfirm = { weeks ->
-                val end = endForTotalWeeks(schedule.termStart, schedule.termEnd, weeks)
+                val end = if (weeks < totalWeeks(schedule.termStart, schedule.termEnd)) {
+                    // 缩小学期：目标周内找「最早没课的一天」；放不下即点名阻塞周
+                    val outcome = termEndForFewerWeeks(schedule.termStart, weeks, mergeCourses)
+                    val candidate = outcome.candidateEnd
+                    if (candidate == null) {
+                        AppToasts.show(
+                            context,
+                            context.getString(
+                                R.string.error_weeks_shrink_blocked,
+                                outcome.blockingWeek ?: weeks,
+                            ),
+                        )
+                        return@BottomNumberSelectCard
+                    }
+                    candidate
+                } else {
+                    endForTotalWeeks(schedule.termStart, schedule.termEnd, weeks)
+                }
                 if (!validateWithDraft(start = schedule.termStart, end = end)) {
                     return@BottomNumberSelectCard
                 }
@@ -564,6 +584,8 @@ internal fun ScheduleError.toMessage(context: Context): String = when (this) {
         affected.size,
         affected.take(3).joinToString { it.name },
     )
+    // 末周被收掉后放不下的课：与编辑流程同文案（此前未映射，直选结束日时只剩通用提示）
+    is ScheduleError.TermEndInvalid -> context.getString(R.string.error_term_end_short)
 
     is ScheduleError.AdjustmentSourceInvalid ->
         context.getString(R.string.error_adjust_source_invalid, courseName, fromWeek)

@@ -648,6 +648,7 @@
     <string name="settings_cancel">取消</string>
     <string name="error_term_range">学期结束不能早于学期开始</string>
     <string name="error_term_end_short">学期末周放不下这些课，请缩短课程周数或把学期结束往后调</string>
+    <string name="error_weeks_shrink_blocked">第%1$d周有课程占用，调整失败</string>
     <string name="error_days_per_week">每周天数只能是 5 或 7</string>
     <string name="error_slot_count">节数须在 1–30 之间</string>
     <string name="error_slot_duration">每节课时间须在 10–200 分钟之间</string>

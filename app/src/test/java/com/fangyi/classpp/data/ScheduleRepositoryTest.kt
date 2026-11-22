@@ -11,10 +11,12 @@ import com.fangyi.classpp.data.model.appendSlot
 import com.fangyi.classpp.data.model.defaultSlotsFor
 import com.fangyi.classpp.data.model.previewSlotMerge
 import com.fangyi.classpp.data.model.remapAdjustmentsByTime
+import com.fangyi.classpp.data.model.termEndForFewerWeeks
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.ScheduleStore
 import com.fangyi.classpp.data.store.StoreResult
+import com.fangyi.classpp.ui.schedule.endForTotalWeeks
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -270,6 +272,30 @@ class ScheduleRepositoryTest {
         ok.setTerm(okId, TestTermStart, IsoDate.parse("2026-06-17")).assertOk()
         // run 块里的仓库从同一磁盘目录重载（已含第一份 A），按 id 定位断言
         assertEquals(IsoDate.parse("2026-06-17"), ok.schedules.value.first { it.id == okId }.termEnd)
+    }
+
+    @Test
+    fun `shrinking weeks to the first free tail day succeeds where whole week shift fails`() = runBlocking {
+        // 17 周学期收在周四 12-24，16 周的课上到周五 12-18：整周平移会停在 12-17（周四）
+        // 被 12-18 的课挡住；新口径取最早没课的一天（12-19 周六），缩成 16 周成功落盘
+        val start = IsoDate.parse("2026-08-31")
+        val r = repo()
+        val id = r.createSchedule("A", start, IsoDate.parse("2026-12-24")).okId()
+        r.upsertCourse(id, testCourse(id = "thu", day = 4, weeks = WeekPattern(listOf(WeekSegment(1, 16))))).assertOk()
+        r.upsertCourse(id, testCourse(id = "fri", day = 5, weeks = WeekPattern(listOf(WeekSegment(1, 16))))).assertOk()
+
+        val shifted = endForTotalWeeks(start, IsoDate.parse("2026-12-24"), 16)
+        assertEquals(IsoDate.parse("2026-12-17"), shifted)
+        assertTrue(
+            r.setTerm(id, start, shifted).assertErr() is ScheduleError.CoursesOutOfRange,
+        )
+
+        val outcome = termEndForFewerWeeks(start, 16, r.schedules.value.single().courses)
+        assertEquals(IsoDate.parse("2026-12-19"), outcome.candidateEnd)
+        r.setTerm(id, start, outcome.candidateEnd!!).assertOk()
+
+        assertEquals(16, r.schedules.value.single().totalWeeks)
+        assertEquals(16, repo().schedules.value.single().totalWeeks)
     }
 
     @Test
