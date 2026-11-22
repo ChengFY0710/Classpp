@@ -109,12 +109,13 @@ internal fun NewScheduleSheet(
             TermDatesCard(
                 start = start,
                 end = end,
-                // 改开始日 → 结束日整周平移（星期几不变），与设置页同一联动；
-                // 闭包捕获 var 本体，确认时读到的就是最新值
+                // 改开始日 → 结束日随日历周锚点整周平移（周数与星期几都不变，见
+                // [endForShiftedStart]），与设置页同一联动；闭包捕获 var 本体，
+                // 确认时读到的就是最新值
                 onPickStart = {
                     pickerInitial = start
                     pickerCallback = { picked ->
-                        end = end + (picked - start).toInt()
+                        end = endForShiftedStart(start, picked, end)
                         start = picked
                     }
                     pickerMounted = true

@@ -112,4 +112,47 @@ class TermDateSnapTest {
         assertEquals(IsoDate.parse("2026-06-19"), defaultTermEnd(IsoDate.parse("2026-03-04")))
         assertEquals(IsoDate.parse("2026-06-19"), defaultTermEnd(IsoDate.parse("2026-03-08")))
     }
+
+    /**
+     * 改开学日的结束日联动：随开学日的日历周锚点**整周**平移，周数与结束日星期几都
+     * 保持。样本学期 9-4（周五）~ 12-19（周六）共 16 周。
+     */
+    @Test
+    fun `shifting the start to the next week shifts the end by one whole week`() {
+        // 9-4(周五) → 9-7(周一)：锚点跨了一整周，结束日随之 +7（12-26 周六），
+        // 学期仍是 16 周——按天平移只会 +3（12-22），末周周五的课（12-25）被甩出学期外
+        val oldStart = IsoDate.parse("2026-09-04")
+        val end = IsoDate.parse("2026-12-19")
+
+        val newEnd = endForShiftedStart(oldStart, IsoDate.parse("2026-09-07"), end)
+
+        assertEquals(IsoDate.parse("2026-12-26"), newEnd)
+        assertEquals(6, newEnd.isoDayOfWeek()) // 结束日仍是周六（isoDayOfWeek: 1=周一 … 6=周六）
+        assertEquals(16, totalWeeks(IsoDate.parse("2026-09-07"), newEnd))
+    }
+
+    @Test
+    fun `shifting the start within the same week keeps the end untouched`() {
+        // 9-4(周五) → 9-1(周二)：仍在同一日历周，锚点不动、结束日不动，周数不变
+        val oldStart = IsoDate.parse("2026-09-04")
+        val end = IsoDate.parse("2026-12-19")
+
+        val newEnd = endForShiftedStart(oldStart, IsoDate.parse("2026-09-01"), end)
+
+        assertEquals(end, newEnd)
+        assertEquals(16, totalWeeks(IsoDate.parse("2026-09-01"), newEnd))
+    }
+
+    @Test
+    fun `shifting the start back whole weeks shifts the end back too`() {
+        // 9-4(周五) → 8-21(周五)：提前两周开学，结束日同步前移两周（12-5 周六）
+        val oldStart = IsoDate.parse("2026-09-04")
+        val end = IsoDate.parse("2026-12-19")
+
+        val newEnd = endForShiftedStart(oldStart, IsoDate.parse("2026-08-21"), end)
+
+        assertEquals(IsoDate.parse("2026-12-05"), newEnd)
+        assertEquals(6, newEnd.isoDayOfWeek())
+        assertEquals(16, totalWeeks(IsoDate.parse("2026-08-21"), newEnd))
+    }
 }

@@ -451,11 +451,11 @@ private fun SettingsContent(
         TermDatesCard(
             start = schedule.termStart,
             end = schedule.termEnd,
-            // 改开始日 → 平移结束日保持学期长度（星期几不变）；结束日任意一天都合法
-            //（可停在周中，末周就只上到那一天）
+            // 改开始日 → 结束日随日历周锚点整周平移（周数与星期几都不变，见
+            // [endForShiftedStart]）；结束日任意一天都合法（可停在周中，末周就只上到那一天）
             onPickStart = {
                 onDatePickRequest(schedule.termStart) { picked ->
-                    onTerm(picked, schedule.termEnd + (picked - schedule.termStart).toInt())
+                    onTerm(picked, endForShiftedStart(schedule.termStart, picked, schedule.termEnd))
                 }
             },
             onPickEnd = {

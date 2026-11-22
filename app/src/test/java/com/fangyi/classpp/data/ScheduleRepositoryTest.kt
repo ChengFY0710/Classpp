@@ -16,6 +16,7 @@ import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.ScheduleStore
 import com.fangyi.classpp.data.store.StoreResult
+import com.fangyi.classpp.ui.schedule.endForShiftedStart
 import com.fangyi.classpp.ui.schedule.endForTotalWeeks
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -296,6 +297,32 @@ class ScheduleRepositoryTest {
 
         assertEquals(16, r.schedules.value.single().totalWeeks)
         assertEquals(16, repo().schedules.value.single().totalWeeks)
+    }
+
+    @Test
+    fun `moving the start date by whole week anchors keeps courses in term`() = runBlocking {
+        // 9-4(周五)~12-19(周六) 16 周、周五有课：开学调到 9-7(周一)。按天平移结束日到
+        // 12-22，末周周五课（12-25）被甩出学期外而整体拒绝；按周锚点整周平移到 12-26
+        // 后学期形状原样保留，调整放行
+        val oldStart = IsoDate.parse("2026-09-04")
+        val end = IsoDate.parse("2026-12-19")
+        val r = repo()
+        val id = r.createSchedule("A", oldStart, end).okId()
+        r.upsertCourse(id, testCourse(id = "fri", day = 5, weeks = WeekPattern(listOf(WeekSegment(1, 16))))).assertOk()
+
+        val newStart = IsoDate.parse("2026-09-07")
+        val dayShifted = end + (newStart - oldStart).toInt()
+        assertEquals(IsoDate.parse("2026-12-22"), dayShifted)
+        assertTrue(
+            r.setTerm(id, newStart, dayShifted).assertErr() is ScheduleError.CoursesOutOfRange,
+        )
+
+        val weekAnchored = endForShiftedStart(oldStart, newStart, end)
+        assertEquals(IsoDate.parse("2026-12-26"), weekAnchored)
+        r.setTerm(id, newStart, weekAnchored).assertOk()
+
+        assertEquals(16, r.schedules.value.single().totalWeeks)
+        assertEquals(weekAnchored, r.schedules.value.single().termEnd)
     }
 
     @Test

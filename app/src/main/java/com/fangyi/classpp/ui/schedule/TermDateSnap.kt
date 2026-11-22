@@ -30,3 +30,16 @@ fun totalWeeks(start: IsoDate, end: IsoDate): Int =
  */
 fun endForTotalWeeks(start: IsoDate, end: IsoDate, weeks: Int): IsoDate =
     end + (weeks - totalWeeks(start, end)) * 7
+
+/**
+ * 改开学日时结束日的联动：随开学日的**日历周锚点**整周平移——学期周数与结束日的
+ * 星期几都原样保持。
+ *
+ * 课程与调课的日期全部按开学周锚点推算，锚点平移几整周、结束日就跟着平移几整周，
+ * 彼此关系不变，调整开学日永远不会把末周的课甩出学期外。按**天**平移做不到这一点：
+ * 开学日跨到下一个日历周时课程日期移了整周、结束日却只移了几天，末周仍在上的课
+ * 立刻越界（R14 拦截，表现为「调个开学日也被挡」）；开学日在同一周内挪动时结束日
+ * 则原样不动。
+ */
+fun endForShiftedStart(oldStart: IsoDate, newStart: IsoDate, end: IsoDate): IsoDate =
+    end + (newStart.mondayOfWeek() - oldStart.mondayOfWeek()).toInt()
