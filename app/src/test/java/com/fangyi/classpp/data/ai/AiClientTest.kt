@@ -196,6 +196,58 @@ class AiClientTest {
         assertEquals("text/event-stream", request.headers["Accept"])
     }
 
+    // ---------- 会话路由头（OpenCode Go） ----------
+
+    @Test
+    fun `opencode go request carries session header and v1 endpoint`() = runBlocking {
+        val transport = FakeAiTransport(FakeAiStreamResponse(200, listOf("data: [DONE]", null)))
+        AiClient(transport).streamChat(
+            connection = AiConnection(
+                providerId = "opencode-go",
+                baseUrl = AiProviderPresets.byId("opencode-go").baseUrl,
+                model = "deepseek-v4.1-flash",
+            ),
+            apiKey = "sk-secret",
+            turns = turns,
+            sessionId = "conversation-123",
+        )
+
+        val request = transport.lastRequest!!
+        assertEquals("https://opencode.ai/inference/go/v1/chat/completions", request.url)
+        // 缺失该头时服务端直接 400 MissingSessionID
+        assertEquals("conversation-123", request.headers["x-opencode-session"])
+    }
+
+    @Test
+    fun `session header falls back to stable value without conversation`() = runBlocking {
+        val opencode = AiConnection(
+            providerId = "opencode-go",
+            baseUrl = AiProviderPresets.byId("opencode-go").baseUrl,
+            model = "deepseek-v4.1-flash",
+        )
+        val first = FakeAiTransport(FakeAiStreamResponse(200, listOf("data: [DONE]", null)))
+        val second = FakeAiTransport(FakeAiStreamResponse(200, listOf("data: [DONE]", null)))
+        AiClient(first).streamChat(opencode, "sk", turns)
+        AiClient(second).streamChat(opencode, "sk", turns)
+
+        val fallback = first.lastRequest!!.headers["x-opencode-session"]
+        assertTrue(!fallback.isNullOrBlank())
+        // 一次性任务没有对话上下文：同一配置的请求必须保持同一会话标识
+        assertEquals(fallback, second.lastRequest!!.headers["x-opencode-session"])
+    }
+
+    @Test
+    fun `other providers do not send session header`() = runBlocking {
+        val transport = FakeAiTransport(FakeAiStreamResponse(200, listOf("data: [DONE]", null)))
+        AiClient(transport).streamChat(
+            connection = connection(),
+            apiKey = "sk",
+            turns = turns,
+            sessionId = "conversation-123",
+        )
+        assertNull(transport.lastRequest!!.headers["x-opencode-session"])
+    }
+
     // ---------- 正常流 ----------
 
     @Test

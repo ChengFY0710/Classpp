@@ -295,6 +295,29 @@ class AiModelCatalogTest {
     }
 
     @Test
+    fun `nested capability effort metadata is parsed for opencode go`() {
+        val models = AiModelCatalog.parsePage(
+            connection(
+                "https://opencode.ai/inference/go/v1",
+                providerId = "opencode-go",
+            ),
+            """{"data":[
+              {"id":"deepseek-v4.1-flash","capabilities":{"reasoning":{"supported":true,"effort":["low","high","max"]}}},
+              {"id":"gpt-5.6-luna","capabilities":{"reasoning":{"supported":true,"effort":["none","low","medium","high","xhigh","max"]}}}
+            ]}""",
+        ).models
+        // 嵌套元数据没有默认档：补「关」首档后首档即默认（off）
+        assertEquals(listOf("off", "low", "high", "max"), models[0].config.reasoningLevels)
+        assertEquals("off", models[0].config.reasoningLevel)
+        // 自带 none 档不重复补；6 档超出位置映射上限时保持原样
+        assertEquals(
+            listOf("none", "low", "medium", "high", "xhigh", "max"),
+            models[1].config.reasoningLevels,
+        )
+        assertEquals("none", models[1].config.reasoningLevel)
+    }
+
+    @Test
     fun `mergeFetchedModels overwrites duplicate configs and returns only new models`() {
         val connection = AiConnection(
             providerId = "deepseek",

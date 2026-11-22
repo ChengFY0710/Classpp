@@ -839,6 +839,8 @@ class AiChatRepository internal constructor(
                         apiKey = apiKey,
                         turns = turns,
                         tools = if (toolsMode) AiToolRegistry.nativeSpecs else emptyList(),
+                        // 会话路由头按对话稳定：同一场对话的工具循环复用同一会话
+                        sessionId = conversationId,
                         onDelta = { chunk ->
                             delivered = true
                             markDelivered()
@@ -863,6 +865,8 @@ class AiChatRepository internal constructor(
                                 apiKey = apiKey,
                                 turns = turns,
                                 tools = emptyList(),
+                                // 去掉 tools 的重试仍是同一场对话：会话标识保持一致
+                                sessionId = conversationId,
                                 onDelta = { chunk ->
                                     markDelivered()
                                     appendToLast(conversationId, chunk)

@@ -41,9 +41,10 @@ internal data class AiModelListPage(
  *
  * 模型 id trim + 忽略大小写去重；通用形态优先读 `id`、缺失时回落同形 `model` 字段
  * （百炼原生反之），兼容少数网关的列表写法。条目配置优先级：
- * 1. `effort` 元数据（DeepSeek：`supported_levels` + `default_level`，任何服务商返回都优先）；
- *    DeepSeek 的元数据只列思考开启后的强度档，「关」由 `thinking.type` 独立控制，
- *    拉取时按控制形态补一个 off 占位首档（见 [withOffLevel]）；
+ * 1. `effort` 元数据：DeepSeek 顶层 `supported_levels` + `default_level`；OpenCode Go
+ *    等网关放在 `capabilities.reasoning.effort`（只有档位、无默认档）。任何服务商返回
+ *    都优先。DeepSeek 的元数据只列思考开启后的强度档，「关」由 `thinking.type` 独立
+ *    控制，拉取时按控制形态补一个 off 占位首档（见 [withOffLevel]）；
  * 2. 内置模型族档位表 [AiReasoningProfiles]（GLM / MiMo / Kimi / 千问 / 百炼的列表不含
  *    档位，按模型 id 推断；Kimi 明确 `supports_reasoning=false` 时不推断）；
  * 3. 空配置（该模型不使用推理等级）。
@@ -248,15 +249,26 @@ internal object AiModelCatalog {
         equals(OFF_LEVEL, ignoreCase = true) || equals(NONE_LEVEL, ignoreCase = true)
 
     /**
-     * DeepSeek 的 `effort` 元数据（`supported_levels` + `default_level`）直接对应应用的
-     * 推理等级配置；无 effort 字段时返回空配置，由 [reasoningConfig] 继续按模型族表推断。
-     * 这里不做 normalized：缺 `default_level` 时首档回落必须发生在补「关」首档之后。
+     * 模型元数据里的推理档位，两种形态都收：
+     * - DeepSeek 顶层 `effort.supported_levels` + `default_level`；
+     * - OpenCode Go 等 OpenAI 兼容网关的 `capabilities.reasoning.effort`（仅档位数组，
+     *   无默认档）。
+     * 都没有时返回空配置，由 [reasoningConfig] 继续按模型族表推断。这里不做 normalized：
+     * 缺默认档时首档回落必须发生在补「关」首档之后。
      */
     private fun effortConfig(entry: JsonObject): AiModelConfig {
-        val effort = entry["effort"] as? JsonObject ?: return AiModelConfig()
-        val levels = (effort["supported_levels"] as? JsonArray)?.let(::parseStrings).orEmpty()
-        val default = (effort["default_level"] as? JsonPrimitive)?.contentOrNull.orEmpty()
-        return AiModelConfig(reasoningLevels = levels, reasoningLevel = default)
+        (entry["effort"] as? JsonObject)?.let { effort ->
+            val levels = (effort["supported_levels"] as? JsonArray)?.let(::parseStrings).orEmpty()
+            if (levels.isNotEmpty()) {
+                val default = (effort["default_level"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+                return AiModelConfig(reasoningLevels = levels, reasoningLevel = default)
+            }
+        }
+        val capabilityEffort = ((entry["capabilities"] as? JsonObject)
+            ?.get("reasoning") as? JsonObject)
+            ?.get("effort") as? JsonArray
+        val levels = capabilityEffort?.let(::parseStrings).orEmpty()
+        return if (levels.isEmpty()) AiModelConfig() else AiModelConfig(reasoningLevels = levels)
     }
 
     private fun parseStrings(array: JsonArray): List<String> = array.mapNotNull { element ->

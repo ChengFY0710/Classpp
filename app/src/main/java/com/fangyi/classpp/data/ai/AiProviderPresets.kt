@@ -63,6 +63,8 @@ enum class AiThinkingControl {
  *   默认通用 OpenAI 兼容，百炼等端点形态不同的服务商单独配置
  * @param thinkingControl 该预设下的默认思考开关形态（见 [AiThinkingControl]）；模型族
  *   有更细的档位/控制规则时由 [AiProviderPresets.thinkingControlFor] 覆盖，未命中模型回落本字段
+ * @param sessionHeader 会话路由头名：部分网关（OpenCode Go）要求每次对话请求携带稳定会话
+ *   标识，缺失直接 400 拒绝。null = 不发送；值由请求侧传入，未传时按端点生成稳定回退值
  */
 data class AiProviderPreset(
     val id: String,
@@ -74,6 +76,7 @@ data class AiProviderPreset(
     val protocol: AiProtocol = AiProtocol.OpenAiCompat,
     val modelListApi: AiModelListApi = AiModelListApi.OpenAiCompat,
     val thinkingControl: AiThinkingControl = AiThinkingControl.None,
+    val sessionHeader: String? = null,
 )
 
 /**
@@ -134,6 +137,16 @@ object AiProviderPresets {
             // 文本模型默认开启思考，只有开关没有 reasoning_effort
             thinkingControl = AiThinkingControl.ThinkingTypeOnly,
         ),
+        // OpenCode Go：文档公布的根地址是 /inference/go，但对话与模型列表都必须走 /v1
+        // （不带 /v1 的对话路径 404）。对话端点强制要求 x-opencode-session，否则 400
+        // MissingSessionID；该头不是开关字段，统一按 OpenAI 兼容形态发送档位即可
+        AiProviderPreset(
+            id = "opencode-go",
+            label = "OpenCode Go",
+            baseUrl = "https://opencode.ai/inference/go/v1",
+            suggestedModel = "deepseek-v4.1-flash",
+            sessionHeader = "x-opencode-session",
+        ),
         // 本地 Ollama：OpenAI 兼容端点（/v1），默认监听回环地址；真机需改成电脑的
         // 局域网 IP（设置页有专门提示），协议层只对回环/私网地址放行明文 HTTP。
         // 建议模型只用于切换预设时替换掉上一家的模型名，实际可用模型以本机已拉取为准
@@ -161,6 +174,9 @@ object AiProviderPresets {
 
     /** 该服务商是否必须配置 API Key；未知 id 回落 custom（必须） */
     fun requiresApiKey(providerId: String): Boolean = byId(providerId).requiresApiKey
+
+    /** 该服务商要求的会话路由头名；null = 不需要（未知 id 回落 custom，同样不需要） */
+    fun sessionHeaderFor(providerId: String): String? = byId(providerId).sessionHeader
 
     /**
      * 某服务商下具体模型实际使用的思考控制形态：先按 [AiReasoningProfiles] 的模型族

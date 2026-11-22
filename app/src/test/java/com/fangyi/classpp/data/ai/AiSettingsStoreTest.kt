@@ -330,6 +330,19 @@ class AiProviderPresetsTest {
     }
 
     @Test
+    fun `opencode go preset targets v1 endpoint and declares session header`() {
+        val preset = AiProviderPresets.byId("opencode-go")
+        assertEquals("OpenCode Go", preset.label)
+        // 文档根地址不带 /v1 时对话路径会 404：预设必须带版本段
+        assertEquals("https://opencode.ai/inference/go/v1", preset.baseUrl)
+        assertEquals("deepseek-v4.1-flash", preset.suggestedModel)
+        assertEquals(AiModelListApi.OpenAiCompat, preset.modelListApi)
+        assertEquals("x-opencode-session", preset.sessionHeader)
+        assertEquals("x-opencode-session", AiProviderPresets.sessionHeaderFor("opencode-go"))
+        assertNull(AiProviderPresets.sessionHeaderFor("deepseek"))
+    }
+
+    @Test
     fun `unknown id falls back to custom`() {
         assertEquals(AiProviderPresets.CUSTOM_ID, AiProviderPresets.byId("nope").id)
         assertEquals(AiProviderPresets.custom, AiProviderPresets.byId("nope"))

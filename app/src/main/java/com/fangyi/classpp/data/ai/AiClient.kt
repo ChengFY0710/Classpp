@@ -212,6 +212,7 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
     /**
      * 发起一次流式对话（不发送原生工具；JSON 回退路径与既有调用方使用）。
      *
+     * @param sessionId 会话路由标识（OpenCode Go 等网关要求）；null = 按端点生成稳定回退值
      * @return 完整回复正文（全部正文增量拼接；思考与工具调用不计入）
      * @throws AiException 分类错误（UI 按 [AiError] 展示）；协程取消时在挂起点
      *   原样传播 CancellationException（半截文本已通过 onDelta 交给调用方，不随异常丢失）
@@ -223,6 +224,7 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         temperature: Double? = null,
         onDelta: (String) -> Unit = {},
         onReasoning: (String) -> Unit = {},
+        sessionId: String? = null,
     ): String = streamChatWithTools(
         connection = connection,
         apiKey = apiKey,
@@ -231,6 +233,7 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         temperature = temperature,
         onDelta = onDelta,
         onReasoning = onReasoning,
+        sessionId = sessionId,
     ).text
 
     /**
@@ -241,6 +244,8 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
      *   保证不再回调（读取循环与交付前各检查一次本次调用的取消标志）
      * @param onReasoning 每收到一段思考增量回调一次（推理模型才有；同样在执行线程、
      *   取消后不再回调）。思考内容不参与返回值，由调用方单独累积与展示
+     * @param sessionId 会话路由标识（OpenCode Go 等网关要求）：对话场景传对话 id，
+     *   一次工具循环内的多次请求保持一致；null = 按端点生成稳定回退值
      * @throws AiException 分类错误；协程取消时原样传播 CancellationException
      */
     suspend fun streamChatWithTools(
@@ -251,6 +256,7 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         temperature: Double? = null,
         onDelta: (String) -> Unit = {},
         onReasoning: (String) -> Unit = {},
+        sessionId: String? = null,
     ): AiStreamResult = suspendCancellableCoroutine { cont ->
         // 每次调用一份取消标志：open() 阻塞期间 inFlight 还是 null，取消只能靠它在
         // 放行后立即断流（OkHttp 的阻塞 socket 读不响应线程中断）
@@ -260,7 +266,14 @@ class AiClient(private val transport: AiHttpTransport = OkHttpAiTransport()) {
         val future = EXECUTOR.submit {
             try {
                 val codec = AiStreamCodec.of(connection.protocol)
-                val request = codec.buildRequest(connection, apiKey, turns, temperature, tools)
+                val request = codec.buildRequest(
+                    connection = connection,
+                    apiKey = apiKey,
+                    turns = turns,
+                    temperature = temperature,
+                    tools = tools,
+                    sessionId = sessionId,
+                )
                 val result = executeAndRead(codec, request, cancelled, inFlight, onDelta, onReasoning)
                 cont.resume(result, onCancellation = null)
             } catch (_: StreamCancelled) {

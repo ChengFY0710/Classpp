@@ -57,12 +57,18 @@ internal sealed interface AiStreamEvent {
  */
 internal interface AiStreamCodec {
 
+    /**
+     * @param sessionId 会话标识：预设声明了会话路由头（[AiProviderPreset.sessionHeader]）
+     *   时随请求下发（OpenCode Go 缺它直接 400）；对话场景传对话 id，一次性任务可省略，
+     *   由编解码器生成稳定回退值
+     */
     fun buildRequest(
         connection: AiConnection,
         apiKey: String,
         turns: List<AiChatTurn>,
         temperature: Double?,
         tools: List<AiToolSpec> = emptyList(),
+        sessionId: String? = null,
     ): AiHttpRequest
 
     /**
@@ -105,6 +111,7 @@ internal object OpenAiStreamCodec : AiStreamCodec {
         turns: List<AiChatTurn>,
         temperature: Double?,
         tools: List<AiToolSpec>,
+        sessionId: String?,
     ): AiHttpRequest {
         val config = connection.modelConfig(connection.model)
         val thinkingControl = AiProviderPresets.thinkingControlFor(
@@ -120,6 +127,7 @@ internal object OpenAiStreamCodec : AiStreamCodec {
                 // 部分自建网关还会把空值当成非法凭据
                 if (apiKey.isNotBlank()) put("Authorization", "Bearer $apiKey")
                 put("Accept", "text/event-stream")
+                putAll(sessionHeaders(connection, sessionId))
             },
             jsonBody = encodeRequest(
                 model = connection.model,
@@ -347,13 +355,15 @@ internal object AnthropicStreamCodec : AiStreamCodec {
         turns: List<AiChatTurn>,
         temperature: Double?,
         tools: List<AiToolSpec>,
+        sessionId: String?,
     ): AiHttpRequest = AiHttpRequest(
         url = messagesUrl(connection.baseUrl),
-        headers = mapOf(
-            "x-api-key" to apiKey,
-            "anthropic-version" to API_VERSION,
-            "Accept" to "text/event-stream",
-        ),
+        headers = buildMap {
+            put("x-api-key", apiKey)
+            put("anthropic-version", API_VERSION)
+            put("Accept", "text/event-stream")
+            putAll(sessionHeaders(connection, sessionId))
+        },
         jsonBody = encodeRequest(
             model = connection.model,
             reasoningLevel = connection.activeReasoningLevel(),
@@ -720,6 +730,19 @@ internal object AnthropicStreamCodec : AiStreamCodec {
     private const val TYPE_TOOL_USE = "tool_use"
     private const val TYPE_TOOL_RESULT = "tool_result"
     private const val TYPE_IMAGE = "image"
+}
+
+/**
+ * 会话路由头（[AiProviderPreset.sessionHeader]）：预设声明了头名时下发稳定会话标识。
+ * 对话请求传入对话 id；一次性识别 / 修复请求没有对话上下文，按「端点 + 模型」生成
+ * 稳定回退值——同一配置的多次请求保持一致，满足网关对“稳定会话”的要求。
+ */
+private fun sessionHeaders(connection: AiConnection, sessionId: String?): Map<String, String> {
+    val header = AiProviderPresets.sessionHeaderFor(connection.providerId) ?: return emptyMap()
+    val value = sessionId?.trim()?.takeIf { it.isNotEmpty() }
+        ?: "classpp-" + (connection.baseUrl.trim() + "|" + connection.model.trim())
+            .hashCode().toUInt().toString(16)
+    return mapOf(header to value)
 }
 
 /** 流内载荷宽容读取（同原 AiClient.JSON）；结构错误由逐字段判空兜住 */
