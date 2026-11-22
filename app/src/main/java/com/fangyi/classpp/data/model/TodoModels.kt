@@ -56,8 +56,10 @@ data class TodoAttachment(
  * 忽略（前向兼容，无版本号变更），与 CourseEntry.note 同策略。
  *
  * @param dates 待办日期，可不连续多天；多天共用同一套时刻设置（如"周三和周五 14:00-16:00"），
- *   写入前由仓库 distinct + 排序归一化
- * @param repeat 重复规则（自定义日期的重复），见 [RepeatRule]；无重复语义时为默认值
+ *   写入前由仓库 distinct + 排序归一化。带重复规则时只允许一个锚日期（系列自锚日展开，
+ *   多余日期展不出来，校验器拒收）
+ * @param repeat 重复规则（自定义日期的重复），见 [RepeatRule]；无重复语义时为默认值。
+ *   规则生效时 [dates] 必须恰好一个锚日期（校验器硬约束）
  * @param timeKind 时刻形态；[TodoTimeKind.Period] 时 [startMinute]/[endMinute] 必须有效
  * @param startMinute 时段开始（当天分钟数 0..1439，展示用 TimeText.format）
  * @param endMinute 时段结束，须大于 [startMinute]
@@ -98,7 +100,8 @@ data class Todo(
     // 重复待办不整体进已完成，旧的整条完成态由仓库归一化折算成分期完成（见 TodoRepository）
     /** 已完成的分期日期（勾选列表里的分期卡即记当期日期；完成次数 = 集合大小） */
     val completedOccurrences: List<IsoDate> = emptyList(),
-    /** 已逾期（错过、未在当期完成）的分期日期；拖欠不因事后补完成而消失，逾期次数 = 集合大小 */
+    /** 漏期（错过、未在当期完成）的分期日期；拖欠不因事后补完成而消失，漏期次数 = 集合大小。
+     *  产品口径「逾期 = 已过截止」，错过的期次叫漏期不叫逾期；持久化字段名沿用历史命名 */
     val overdueOccurrences: List<IsoDate> = emptyList(),
     val timeKind: TodoTimeKind = TodoTimeKind.None,
     val startMinute: Int? = null,

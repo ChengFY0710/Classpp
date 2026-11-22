@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -130,8 +131,8 @@ private data class TagRow(
  * [todos]（原始系列）计——回答「有多少条待办」；**状态计数**（已完成/未完成/已逾期）按
  * [statusTodos]（展开卡片）计——回答「点进去能看到多少张卡」，重复待办的分期卡各算
  * 一张（打卡达标的系列在已完成里是 1 张卡、拆分口径多个逾期期次是 N 张卡），与各
- * 专项页的卡片数一致；逾期判定与列表同一份（[LocalToday] + [currentMinuteOfDay]，经
- * [buildTodoStatusCounts]）；最近删除 = 回收站条目数（[deletedCount]，仓库 deletedTodos
+ * 专项页的卡片数一致；逾期判定与列表同一份（[LocalToday] + 宿主分钟级对表的
+ * [nowMinute]，经 [buildTodoStatusCounts]）；最近删除 = 回收站条目数（[deletedCount]，仓库 deletedTodos
  * 流），点入即可撤回或彻底删除；已归档数据层暂无该概念，恒 0；未分组 = `group == null`
  * 的待办数、全部 = 待办总数、自定义分组 = 该组名的待办数（分组数据已入 [TodoFile.groups]，
  * 引用完整性由仓库归一化维护）。
@@ -173,6 +174,8 @@ internal fun TodoGroupsSheet(
     // 状态行的展开口径：经 expandRepeatOccurrences 展开的卡片列表——已完成/未完成/已逾期
     // 计数按它算（回答「点进去能看到多少张卡」，与各专项页的卡片数一致，重复分期各算一张）
     statusTodos: List<Todo>,
+    // 分钟级对表的当前分钟（宿主 60 秒推进一次）：逾期计数与列表同一时刻口径
+    nowMinute: Int,
     deletedCount: Int,
     archivedCount: Int,
     groups: List<TodoGroup>,
@@ -265,6 +268,16 @@ internal fun TodoGroupsSheet(
         editing = true
     }
 
+    // 编辑态打开期间后台同步可能新增自动分组（applyGroupAssignments 追加到真实表）：
+    // 草稿按名合并（新增组追加到非置顶尾部），确认写回时不覆盖它们——没有这步，快照
+    // 写回会把同步新增的组级联掉（该组待办被置回未分组）
+    LaunchedEffect(editing, groups) {
+        if (editing) {
+            val merged = mergeDraftWithIncoming(draft, groups)
+            if (merged != draft) draft = merged
+        }
+    }
+
     fun confirmEdit() {
         // 草稿写回无重命名映射（重命名在弹卡确认时已立即生效）
         onGroupsChange(draft, emptyMap())
@@ -304,9 +317,9 @@ internal fun TodoGroupsSheet(
     // 返回键先到它（先关确认框、留在浮层），同 TodoDetailSheet
     BackHandler(enabled = visible, onBack = requestClose)
 
-    // 逾期判定的"此刻"：当天日期取 [LocalToday]（跨零点自动跳天，同 TodoList）；分钟口径重组时现取
+    // 逾期判定的"此刻"：当天日期取 [LocalToday]（跨零点自动跳天，同 TodoList）；分钟由宿主
+    // 分钟级对表下发（页面停留跨过截止分钟，逾期计数也随之更新）
     val today = LocalToday
-    val nowMinute = currentMinuteOfDay()
     // 状态行计数用展开口径（[statusTodos]，见参数注释）：数字与点入专项页看到的卡片数一致
     val statusCounts = buildTodoStatusCounts(statusTodos, today, nowMinute)
     val completedCount = statusCounts.completed
@@ -966,6 +979,24 @@ internal fun pinAction(groups: List<TodoGroup>, selected: Set<String>): PinActio
 internal fun applyPin(groups: List<TodoGroup>, selected: Set<String>, pinned: Boolean): List<TodoGroup> {
     val flagged = groups.map { if (it.name in selected) it.copy(pinned = pinned) else it }
     return flagged.filter { it.pinned } + flagged.filter { !it.pinned }
+}
+
+/**
+ * 编辑草稿与后台同步新增分组的合并（编辑态打开期间宿主 [TodoGroupsSheet.groups] 参数
+ * 可能被每日/手动同步经 applyGroupAssignments 推进）：草稿条目原样保留（顺序、置顶、
+ * 删除/重命名意图优先），incoming 里的新增组（按名不在草稿里的）追加到非置顶尾部，
+ * 同名不重复。新增组一律落非置顶区，草稿的置顶前缀原样保留、不变式不被打破——
+ * 确认写回因此不会覆盖同步新增的组（快照写回曾把它们级联成未分组）。
+ */
+internal fun mergeDraftWithIncoming(draft: List<TodoGroup>, incoming: List<TodoGroup>): List<TodoGroup> {
+    val draftNames = draft.mapTo(mutableSetOf()) { it.name }
+    val additions = incoming
+        .map { it.copy(name = it.name.trim()) }
+        .filter { it.name.isNotEmpty() && it.name !in draftNames }
+        .map { it.copy(pinned = false) }
+        .distinctBy { it.name }
+    if (additions.isEmpty()) return draft
+    return draft + additions
 }
 
 /** 列表重排（[GroupCard] 的 onMove 契约：调用方同步重排，分组表与标签表共用）；下标越界或原地则原样返回 */

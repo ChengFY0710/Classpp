@@ -679,9 +679,11 @@ internal object AiReadTools {
             if (completedDates.isNotEmpty()) {
                 putJsonArray("completedOccurrences") { completedDates.forEach { add(it.toString()) } }
             }
-            val overdueDates = overdueOccurrences.sortedBy { it.epochDay }.takeLast(MAX_OCCURRENCE_LINES)
-            if (overdueDates.isNotEmpty()) {
-                putJsonArray("overdueOccurrences") { overdueDates.forEach { add(it.toString()) } }
+            // 漏期（错过未完成的期次）：产品口径「逾期 = 已过截止」，这些日期不叫逾期，
+            // 仓库字段沿用历史名 overdueOccurrences
+            val missedDates = overdueOccurrences.sortedBy { it.epochDay }.takeLast(MAX_OCCURRENCE_LINES)
+            if (missedDates.isNotEmpty()) {
+                putJsonArray("missedOccurrences") { missedDates.forEach { add(it.toString()) } }
             }
         }
     }

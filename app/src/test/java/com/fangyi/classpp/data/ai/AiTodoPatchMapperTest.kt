@@ -279,6 +279,20 @@ class AiTodoPatchMapperTest {
     }
 
     @Test
+    fun `multi date repeat fails the whole patch`() {
+        // 多日期 + 重复（系列单锚语义，校验器拒收）：显式给的组合或沿用既有规则都整条失败，
+        // 不静默截断用户已确认的日期列表
+        assertNull(
+            apply(
+                todo(),
+                AiTodoPatch(dates = listOf("2026-11-05", "2026-11-08"), repeat = AiRepeatDraft(type = "Weekly")),
+            ).todo,
+        )
+        val existing = todo(repeat = RepeatRule(type = RepeatType.Weekly))
+        assertNull(apply(existing, AiTodoPatch(dates = listOf("2026-11-05", "2026-11-08"))).todo)
+    }
+
+    @Test
     fun `deadline before repeat is normalized against deadline and repeat`() {
         val existing = todo(repeat = RepeatRule(type = RepeatType.Daily))
         val next = apply(

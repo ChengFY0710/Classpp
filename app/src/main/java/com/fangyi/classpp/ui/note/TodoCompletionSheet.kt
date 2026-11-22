@@ -40,22 +40,26 @@ import com.fangyi.classpp.ui.theme.SheetSectionSpacingBetween
  * 重复待办的「完成情况」浮层：详情页「重复」分组里的「完成情况」导航行唤起，
  * 叠在详情浮层之上（[TodoDetailSheet] 负责两段式挂载与 covered 动效）。
  *
+ * 产品口径（3.1 已定）：**逾期 = 已过截止**——错过的应完成日期是「漏期」，不再叫逾期；
+ * 漏期不进任何「逾期」分组/计数，只在本浮层的日历红球与「漏期次数」里体现。
+ *
  * 内容是一组无题 [CardSection]，包两个组件：
  * 1. [DayCalendar]（复用日历卡，向后兼容扩展）：重复规则涉及的天数带 secondaryText 小灰球；
- *    已完成/已逾期日期的圆球按状态上色——已完成 urgentGreen 底 + 白字、已逾期未完成
+ *    已完成/漏期日期的圆球按状态上色——已完成 urgentGreen 底 + 白字、漏期未完成
  *    error 底 + 白字（状态色覆盖所有已完成期，含今天与未来的提前完成；合并口径下勾选
  *    的就是当期，常常落在今天或下一期），只有本月日期上状态色（前后月补位保持灰字 +
  *    小点）。底栏回跳按钮改成「回到本月」（浏览其他月份时出现，点击收回今天所在月）。
  *    状态球可点：绿球点一下取消完成（回落红球/常规色）、红球点一下补完成（变绿），经
- *    [onOccurrenceCompletedChange] 交宿主落库（仓库按逐期集合结算，迟到补完成不撤销已落账逾期）。
- *    打卡模式另给补勾位：漏期不记逾期（没有红球），展示月内从待办起始日到今天的整段日期由
+ *    [onOccurrenceCompletedChange] 交宿主落库（仓库按逐期集合结算，迟到补完成不撤销已落账漏期）。
+ *    打卡模式另给补勾位：漏掉的期不记漏期（没有红球），展示月内从待办起始日到今天的整段日期由
  *    [checkInBackfillDates] 并进可点集合，点日期球即补完成、再点取消。
- * 2. [SheetInfoCard]：统计**已结算的期数**——已完成（含今天与未来的提前完成）+ 已逾期；
- *    完成率 = 已完成 /（已完成 + 已逾期）。今天的应完成日期既未完成、也未逾期时不进分母
- *    （仍可能完成/逾期）。打卡模式没有逾期结算，改按打卡口径：完成率 = 完成次数 / 目标次数，
- *    第三行「逾期次数」换成「重复次数」（目标值）。值色走默认 Primary。
+ * 2. [SheetInfoCard]：统计**已结算的期数**——已完成（含今天与未来的提前完成）+ 漏期；
+ *    完成率 = 已完成 /（已完成 + 漏期），即已结算期里按期完成的比例（迟到补完成既计完成
+ *    也留漏期账）。今天的应完成日期既未完成、也未漏期时不进分母（仍可能完成/漏期）。
+ *    打卡模式没有漏期结算，改按打卡口径：完成率 = 完成次数 / 目标次数，
+ *    第三行「漏期次数」换成「重复次数」（目标值）。值色走默认 Primary。
  *
- * 逾期数据走展示口径（[displayOverdueOccurrences]）：仓库落账集合 + 锚日到昨天的实时补算，
+ * 漏期数据走展示口径（[displayOverdueOccurrences]）：仓库落账集合 + 锚日到昨天的实时补算，
  * 跨天驻留不用等下一次写库刷新。日历不挂折叠手势（传入宿主 [rememberDayCalendarFoldState]），
  * 竖向拖拽只滚浮层内容。
  *
@@ -108,13 +112,14 @@ internal fun TodoCompletionSheet(
     val backfillDates = remember(todo, monthStart, monthEnd, today) {
         todo.checkInBackfillDates(monthStart, monthEnd, today)
     }
-    // 完成情况统计已结算的期数：已完成（含今天与未来的提前完成）+ 已逾期；完成率 =
-    // 已完成 / 已结算。今天的应完成日期既未完成、也未逾期时不进分母（仍可能完成/逾期）。
-    // 打卡模式没有「逾期结算」可言：条数仍数完成次数，完成率与目标次数按打卡口径给
+    // 完成情况统计已结算的期数：已完成（含今天与未来的提前完成）+ 漏期；完成率 =
+    // 已完成 /（已完成 + 漏期）——已结算期里按期完成的比例（迟到补完成既计完成也留漏期账）。
+    // 今天的应完成日期既未完成、也未漏期时不进分母（仍可能完成/漏期）。
+    // 打卡模式没有「漏期结算」可言：条数仍数完成次数，完成率与目标次数按打卡口径给
     val targetCount = todo.repeat.endCount
     val completedCount = dayStates.count { it.value == DayCalendarDayStatus.Completed }
-    val overdueCount = dayStates.count { it.value == DayCalendarDayStatus.Overdue }
-    val settledTotal = completedCount + overdueCount
+    val missedCount = dayStates.count { it.value == DayCalendarDayStatus.Overdue }
+    val settledTotal = completedCount + missedCount
     val percent = if (checkInMode) {
         todo.checkInPercent() ?: 0
     } else {
@@ -144,9 +149,9 @@ internal fun TodoCompletionSheet(
                 DayCalendar(
                     markedDates = markedDates,
                     dayStates = dayStates,
-                    // 只有带状态的球可点（已完成/已逾期，含今天与未来的提前完成）：点按
+                    // 只有带状态的球可点（已完成/漏期，含今天与未来的提前完成）：点按
                     // 在完成/未完成间切换；打卡模式再并上展示月内「待办起始日～今天」的
-                    // 整段日期（见 [checkInBackfillDates]）——打卡漏期没有红球，不并连补
+                    // 整段日期（见 [checkInBackfillDates]）——打卡漏掉的期没有红球，不并连补
                     // 打卡都点不动。无状态且非补勾位的日期不出现按压反馈
                     clickableDates = dayStates.keys + backfillDates,
                     onDateClick = { date ->
@@ -181,7 +186,7 @@ internal fun TodoCompletionSheet(
                                 value = stringResource(R.string.todo_count_times, completedCount),
                             ),
                         )
-                        // 打卡模式没有逾期结算：第三行换成目标次数（完成率的分母）
+                        // 打卡模式没有漏期结算：第三行换成目标次数（完成率的分母）
                         add(
                             if (checkInMode) {
                                 SheetInfoEntry(
@@ -194,7 +199,7 @@ internal fun TodoCompletionSheet(
                             } else {
                                 SheetInfoEntry(
                                     label = stringResource(R.string.todo_detail_overdue_count),
-                                    value = stringResource(R.string.todo_count_times, overdueCount),
+                                    value = stringResource(R.string.todo_count_times, missedCount),
                                 )
                             },
                         )
@@ -208,8 +213,8 @@ internal fun TodoCompletionSheet(
 /**
  * 完成情况浮层的状态口径：所有已完成期（含今天与未来的提前完成——合并口径下勾选的当期
  * 常常落在今天/下一期）标 [DayCalendarDayStatus.Completed]，锚日到今天之间错过未完成的分期
- * 标 [DayCalendarDayStatus.Overdue]（展示口径，含实时补算）；完成优先——迟到补完成同时
- * 留在逾期集合里的日期仍显完成。
+ * 标 [DayCalendarDayStatus.Overdue]（漏期球：产品口径「逾期 = 已过截止」，错过的期次不叫
+ * 逾期，展示口径含实时补算）；完成优先——迟到补完成同时留在漏期集合里的日期仍显完成。
  */
 internal fun Todo.completionDayStates(today: IsoDate): Map<IsoDate, DayCalendarDayStatus> {
     val completed = completedOccurrences.toSet()
@@ -224,7 +229,7 @@ internal fun Todo.completionDayStates(today: IsoDate): Map<IsoDate, DayCalendarD
 
 // ---------- 预览 ----------
 
-/** 完成情况浮层预览：每日重复，已完成/逾期由示例数据现算（含今天与提前完成的一期） */
+/** 完成情况浮层预览：每日重复，已完成/漏期由示例数据现算（含今天与提前完成的一期） */
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 900)
 @Composable
 private fun TodoCompletionSheetPreview() = ClassppTheme {
@@ -237,7 +242,7 @@ private fun TodoCompletionSheetPreview() = ClassppTheme {
             dates = listOf(today - 25),
             repeat = RepeatRule(type = RepeatType.Daily),
             completedOccurrences = listOf(today - 24, today - 22, today - 21, today, today + 1),
-            // 其余逾期由 displayOverdueOccurrences 实时补算
+            // 其余漏期由 displayOverdueOccurrences 实时补算
             overdueOccurrences = listOf(today - 20),
         ),
         onOccurrenceCompletedChange = { _, _ -> },

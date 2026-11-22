@@ -116,4 +116,56 @@ class TodoGroupsPinTest {
         assertEquals(list, list.move(0, 4))
         assertEquals(list, list.move(2, 99))
     }
+
+    // ---------- 编辑草稿与后台同步新增的合并（mergeDraftWithIncoming） ----------
+
+    /**
+     * 编辑态打开期间同步可能新增自动分组：草稿保持顺序与置顶不变、新增组追加到非置顶
+     * 尾部、同名不重复——确认写回不覆盖同步新增的组。
+     */
+    @Test
+    fun mergeDraftAppendsIncomingAdditionsToTheUnpinnedTail() {
+        // 草稿：A、B 置顶（用户刚重排过），C 在非置顶区；同步新增「作业」「测验」
+        val draft = listOf(
+            TodoGroup("B", pinned = true),
+            TodoGroup("A", pinned = true),
+            TodoGroup("C"),
+        )
+        val incoming = listOf(
+            TodoGroup("A", pinned = true),
+            TodoGroup("C"),
+            TodoGroup("作业"),
+            TodoGroup("测验"),
+        )
+        val merged = mergeDraftWithIncoming(draft, incoming)
+        // 草稿条目原样保留（顺序/置顶不动），新增组按 incoming 序追加到非置顶尾部
+        assertEquals(listOf("B", "A", "C", "作业", "测验"), names(merged))
+        assertEquals(listOf(true, true, false, false, false), merged.map { it.pinned })
+        assertPrefixInvariant(merged)
+
+        // 同名不重复：incoming 里的既有组（置顶态与草稿不同的也不抢）不进草稿——
+        // 草稿的顺序/置顶优先；只有按名不在草稿里的才追加
+        val withExisting = mergeDraftWithIncoming(
+            draft = listOf(TodoGroup("学习方法")),
+            incoming = listOf(TodoGroup("学习方法", pinned = true), TodoGroup("作业")),
+        )
+        assertEquals(listOf("学习方法", "作业"), names(withExisting))
+        assertEquals(listOf(false, false), withExisting.map { it.pinned })
+
+        // incoming 无新增组时原样返回；已合并过的草稿再合一次同一 incoming 也原样（幂等，
+        // LaunchedEffect 不会因重复合并而误标脏）
+        assertEquals(draft, mergeDraftWithIncoming(draft, incoming.dropLast(2)))
+        assertEquals(merged, mergeDraftWithIncoming(merged, incoming))
+    }
+
+    @Test
+    fun mergeDraftDropsBlankAndDuplicateIncomingNames() {
+        // 空名丢弃、incoming 自身同名去重，置顶态收编为非置顶（追加不破坏前缀）
+        val draft = listOf(TodoGroup("A", pinned = true))
+        val incoming = listOf(TodoGroup("  "), TodoGroup("X", pinned = true), TodoGroup("X"))
+        val merged = mergeDraftWithIncoming(draft, incoming)
+        assertEquals(listOf("A", "X"), names(merged))
+        assertEquals(listOf(true, false), merged.map { it.pinned })
+        assertPrefixInvariant(merged)
+    }
 }

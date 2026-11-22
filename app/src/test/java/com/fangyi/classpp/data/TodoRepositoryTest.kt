@@ -226,6 +226,92 @@ class TodoRepositoryTest {
     }
 
     @Test
+    fun `addTodos rejects duplicate ids within the same batch`() = runBlocking {
+        // 批内两条相同 id：整批失败、内存零变更、不落盘（两条落盘后反查只命中第一条、
+        // 更新双写、删除同删——与撞既有 id 同一类破坏）
+        val store = CountingTodoStore(com.fangyi.classpp.data.store.FileTodoStore(folder.root))
+        val r = repo(store)
+        val result = r.addTodos(
+            listOf(
+                testTodo(id = "dup", name = "第一条"),
+                testTodo(id = "dup", name = "第二条"),
+            ),
+        )
+        assertTrue(result is TodoReadResult.Err && (result as TodoReadResult.Err).error is TodoError.DuplicateId)
+        assertTrue(r.todos.value.isEmpty())
+        assertEquals(0, store.saves)
+    }
+
+    @Test
+    fun `overdue settlement uses the normalized repeat rule`() = runBlocking {
+        // 外来脏数据 Count 档缺 endCount：归一化先兜默认 5，漏期归账按有效窗口结算——
+        // 修复前用未消洗规则按无限系列展开，10 周前的锚会把 10 期都记成漏期
+        now.millis = millisOf(IsoDate.parse("2026-03-20"))
+        val r = repo()
+        val id = r.addTodo(
+            testTodo(
+                name = "周报",
+                dates = listOf(IsoDate.parse("2026-01-12")), // 10 周前的周一
+                repeat = RepeatRule(type = RepeatType.Weekly, endType = RepeatEndType.Count),
+            ),
+        ).okId()
+        val stored = r.todos.value.single { it.id == id }
+        // 规则有效期 = 前 5 期（1/12..2/9），规则外日期不进漏期集合；规则本身补上兜底次数
+        assertEquals(
+            listOf("2026-01-12", "2026-01-19", "2026-01-26", "2026-02-02", "2026-02-09"),
+            stored.overdueOccurrences.map { it.toString() },
+        )
+        assertEquals(5, stored.repeat.endCount)
+    }
+
+    @Test
+    fun `deadline before days clamps to the cycle length and clears when off`() = runBlocking {
+        now.millis = millisOf(IsoDate.parse("2026-03-20"))
+        val r = repo()
+        // 每周重复 + 开始前 99 天：按真实周期 7 夹紧（AI/导入可越界，UI 滚轮本就限选）
+        val id = r.addTodo(
+            testTodo(
+                name = "周报",
+                dates = listOf(IsoDate.parse("2026-03-23")),
+                repeat = RepeatRule(type = RepeatType.Weekly),
+                deadlineDate = IsoDate.parse("2026-03-20"),
+                deadlineMinute = 600,
+                deadlineBeforeRepeat = true,
+                deadlineBeforeDays = 99,
+            ),
+        ).okId()
+        assertEquals(7, r.todos.value.single { it.id == id }.deadlineBeforeDays)
+
+        // 开关关闭：天数归 0，不留让截止设置下次打开时带上无意义的值
+        val plain = r.addTodo(testTodo(name = "普通", deadlineBeforeDays = 3)).okId()
+        assertEquals(0, r.todos.value.single { it.id == plain }.deadlineBeforeDays)
+    }
+
+    @Test
+    fun `overdue occurrences are deduped and sorted even without new misses`() = runBlocking {
+        // 外来乱序/重复的历史漏期：写入归一即消洗（修复前无新增漏期时原样透传）
+        now.millis = millisOf(IsoDate.parse("2026-03-20"))
+        val r = repo()
+        val id = r.addTodo(
+            testTodo(
+                name = "脏数据",
+                dates = listOf(IsoDate.parse("2026-03-23")), // 未来锚：结算无新增漏期
+                repeat = RepeatRule(type = RepeatType.Weekly),
+            ).copy(
+                overdueOccurrences = listOf(
+                    IsoDate.parse("2026-03-09"),
+                    IsoDate.parse("2026-03-02"),
+                    IsoDate.parse("2026-03-02"),
+                ),
+            ),
+        ).okId()
+        assertEquals(
+            listOf("2026-03-02", "2026-03-09"),
+            r.todos.value.single { it.id == id }.overdueOccurrences.map { it.toString() },
+        )
+    }
+
+    @Test
     fun `updateTodoNotes overwrites only note with one commit and ignores unknown ids`() = runBlocking {
         val store = CountingTodoStore(com.fangyi.classpp.data.store.FileTodoStore(folder.root))
         val r = repo(store)

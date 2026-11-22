@@ -331,6 +331,29 @@ class AiTodoMapperTest {
     }
 
     @Test
+    fun `multi date repeat keeps only the earliest anchor`() {
+        // 多日期 + 重复：只保留最早日期作锚（系列单锚语义，校验器拒收多锚）并标注
+        // Dates/Repeat；映射结果仍可整批落库
+        val mapping = AiTodoMapper.map(
+            listOf(
+                draft(
+                    dates = listOf("2026-11-09", "2026-11-05"),
+                    repeat = AiRepeatDraft(type = "Weekly"),
+                ),
+            ),
+        ).single()
+        assertEquals(listOf("2026-11-05"), mapping.todo.dates.map { it.toString() })
+        assertEquals(RepeatType.Weekly, mapping.todo.repeat.type)
+        assertTrue(AiDraftField.Dates in mapping.invalidFields)
+        assertTrue(AiDraftField.Repeat in mapping.invalidFields)
+        assertTrue(mapping.canSave)
+        assertTrue(
+            "${mapping.todo.name}: ${TodoValidator.validate(mapping.todo)}",
+            TodoValidator.validate(mapping.todo).isEmpty(),
+        )
+    }
+
+    @Test
     fun `invalid repeat type falls back to none`() {
         val mapping = AiTodoMapper.map(
             listOf(draft(dates = listOf("2026-11-02"), repeat = AiRepeatDraft(type = "Sometimes"))),

@@ -1776,13 +1776,18 @@ internal fun DayScreen(
                         todoDetailTargetDate = ""
                     },
                     onDismissed = { todoDetailMounted = null },
-                    // 备注随任意关闭路径落盘：未改动零开销；Err 仅剩校验不过等异常（Toast 提示）
+                    // 备注随任意关闭路径落盘：未改动零开销；Err 仅剩校验不过等异常（Toast 提示）。
+                    // 写路径按 id 从原始列表取——todos 是带派生课程标签的展示列表，直接写回
+                    // 会把课程标签固化成用户标签；只改 note、其余字段原样
                     onNoteSave = { note ->
                         val cleaned = note.trim()
                         if (cleaned != detail.note) {
-                            scope.launch {
-                                if (repository.updateTodo(detail.copy(note = cleaned)) is TodoOpResult.Err) {
-                                    AppToasts.show(context, todoSaveFailedMessage)
+                            val raw = rawTodos.firstOrNull { it.id == detail.id }
+                            if (raw != null) {
+                                scope.launch {
+                                    if (repository.updateTodo(raw.copy(note = cleaned)) is TodoOpResult.Err) {
+                                        AppToasts.show(context, todoSaveFailedMessage)
+                                    }
                                 }
                             }
                         }

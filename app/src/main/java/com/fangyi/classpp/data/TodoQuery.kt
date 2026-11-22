@@ -145,7 +145,7 @@ fun Todo.isOverdue(today: IsoDate, nowMinute: Int): Boolean {
  *
  * 展开口径由 [RepeatRule.merge] 切换：
  * - **打卡模式（[RepeatRule.checkIn]，优先于 [RepeatRule.merge]）**：整条系列恒出一条卡——
- *   未完成时是「今天起（含今天）最近一期未完成分期」，漏掉的期不成拖欠卡、不记逾期；完成
+ *   未完成时是「今天起（含今天）最近一期未完成分期」，漏掉的期不成拖欠卡、不记漏期；完成
  *   次数达 [RepeatRule.endCount] 后停在最后一期（完成态照实，进已完成组），系列收口；
  * - **合并（默认开）**：整条系列只出一条卡，显示今天起（含今天）最近一期未完成分期——
  *   过去的已完成/拖欠期不再逐期成卡（"过去的就过去吧"），完成当期自动前移到下一期；
@@ -174,7 +174,7 @@ fun List<Todo>.expandRepeatOccurrences(today: IsoDate): List<Todo> = buildList {
             continue
         }
         val completed = todo.completedOccurrences.toSet()
-        // 打卡模式：只出一条「当前期」卡（漏期不记逾期、不逐期成卡），优先于合并开关
+        // 打卡模式：只出一条「当前期」卡（漏掉的期不记漏期、不逐期成卡），优先于合并开关
         if (todo.isCheckInMode) {
             addCheckInOccurrence(todo, anchor, today, completed)
             continue
@@ -237,7 +237,7 @@ fun List<Todo>.expandTimelineOccurrences(day: IsoDate): List<Todo> = buildList {
 /**
  * 合并口径的单条副本：今天起（含今天）最近一期未完成分期；系列走完（次数/日期档到头）
  * 或未来期全部已完成时，回退到最后一期（完成态照实），保证整条待办始终有一张入口卡，
- * 不因合并从列表消失。逾期/已完成的历史分期不再逐期成卡。
+ * 不因合并从列表消失。漏期/已完成的历史分期不再逐期成卡。
  *
  * 回退链的最后一级是「已完成的最后一期」：未来锚点 + 全部期次已提前完成时，
  * `nextOccurrenceAfter`（全在 skip 里）与 `occurrencesBetween`（锚日 > 今天 + 1）
@@ -267,7 +267,7 @@ private fun MutableList<Todo>.addMergedOccurrence(
 
 /**
  * 打卡口径的单条副本：未达标时取今天起（含今天）最近一期未完成分期（漏掉的期不补卡、
- * 不记逾期——打卡只数完成次数，不问期数）；完成次数达 [RepeatRule.endCount] 后停在最后
+ * 不记漏期——打卡只数完成次数，不问期数）；完成次数达 [RepeatRule.endCount] 后停在最后
  * 一期并标完成（进已完成组，进度 100%）。目标次数缺失（外来脏数据）或系列展不开时不出卡。
  */
 private fun MutableList<Todo>.addCheckInOccurrence(
@@ -307,7 +307,7 @@ val Todo.isCheckInMode: Boolean
  * 打卡模式在 `[fromInclusive, toInclusive]` 内可「补勾 / 取消」的日期：待办时间起始日
  * 至今（含今天）的**整段**日期。
  *
- * 打卡漏期不记逾期（没有红色状态球可点），所以灰点日期也得能补打卡——补勾位取
+ * 打卡漏掉的期不记漏期（没有红色状态球可点），所以灰点日期也得能补打卡——补勾位取
  * 「窗口 ∩ [待办时间起始, 今天]」的连续区间，不按重复规则逐期取（锚日前、未来日期都
  * 不给补勾）。非打卡模式或无待办时间返回空集。纯函数，完成情况浮层与单测共用。
  */
@@ -350,15 +350,18 @@ fun Todo.withOccurrenceDeadline(anchor: IsoDate, date: IsoDate): Todo {
 }
 
 /**
- * 展示口径的逾期分期：落账集合 + 锚日到今天（不含）之间尚未完成、尚未落账的分期。
+ * 展示口径的漏期分期：落账集合 + 锚日到今天（不含）之间尚未完成、尚未落账的分期。
+ * 产品口径（3.1 已定）：**逾期 = 已过截止**——错过的应完成日期叫「漏期」，不进任何
+ * 「逾期」分组/计数（列表/概览/分组浮层只按 [isOverdue] 的截止口径），只有完成情况
+ * 浮层（日历红球与「漏期次数」）消费这份集合。
  *
- * 仓库只在写库时结算逾期（TodoRepository.sweepOverdue），浮层跨天驻留或长时间不操作时，
- * 界面靠这份实时补算就能看到新逾期，不用等下一次写库。迟到补完成不撤销已落账拖欠——
+ * 仓库只在写库时结算漏期（TodoRepository.sweepOverdue），浮层跨天驻留或长时间不操作时，
+ * 界面靠这份实时补算就能看到新漏期，不用等下一次写库。迟到补完成不撤销已落账拖欠——
  * 完成集合只把实时补算部分排除在外，落账集合原样保留（与仓库口径一致）。
  */
 fun Todo.displayOverdueOccurrences(today: IsoDate): List<IsoDate> {
     if (repeat.type == RepeatType.None) return overdueOccurrences
-    // 打卡模式漏期不算逾期：只认落账集合（仓库也不会再结算新拖欠），不做实时补算
+    // 打卡模式漏掉的期不记漏期：只认落账集合（仓库也不会再结算新拖欠），不做实时补算
     if (isCheckInMode) return overdueOccurrences
     val anchor = dates.minByOrNull { it.epochDay } ?: return overdueOccurrences
     val known = overdueOccurrences.toSet() + completedOccurrences.toSet()
@@ -368,35 +371,19 @@ fun Todo.displayOverdueOccurrences(today: IsoDate): List<IsoDate> {
 }
 
 /**
- * 当前仍欠着的逾期期次：落账集合减去已完成集合，再补算锚日到 [today]（不含）之间
- * 尚未完成、尚未落账的漏期（仓库只在写库时结算，跨天驻留不写库也能看到新漏期）。
- * 迟到补完成不再算「当前逾期」——仓库的落账集合不动（完成情况统计的有意口径，
- * 拖欠不因事后补完成而消失），只有这里的「当前仍欠」把它排除。打卡模式漏期不记
- * 逾期，只认落账集合减完成；非重复返回空。纯函数，AI 逾期判定等消费方共用。
- */
-fun Todo.outstandingOverdueOccurrences(today: IsoDate): List<IsoDate> {
-    if (repeat.type == RepeatType.None) return emptyList()
-    if (isCheckInMode) {
-        return overdueOccurrences.filterNot { it in completedOccurrences }.sortedBy { it.epochDay }
-    }
-    val anchor = dates.minByOrNull { it.epochDay } ?: return emptyList()
-    val known = overdueOccurrences.toSet() + completedOccurrences.toSet()
-    val missed = repeat.occurrencesBetween(anchor, anchor, today).filter { it !in known }
-    return (overdueOccurrences.filterNot { it in completedOccurrences } + missed)
-        .distinct()
-        .sortedBy { it.epochDay }
-}
-
-/**
- * 重复待办的「当前期」：今天起（含今天）最近一期未完成分期——合并口径滚动卡的取值
- * （提前勾掉未来某期后自动前移）。非重复、打卡模式（恒出今天起最近一期，不受完成集
- * 影响的收口另有口径）、无锚日期或系列已走完（未来没有未完成期）时返回 null。
- * 列表滚动卡、详情截止行与 AI 的当前期截止共用，三处口径一致。
+ * 重复待办的「当前期」：与合并口径滚动卡**同一取值**（含回退链）——今天起（含今天）
+ * 最近一期未完成分期（提前勾掉未来某期后自动前移）；系列走完（次数/日期档到头）回退
+ * 到最后一期，未来期全部提前完成时回退到已完成的最后一期。非重复、打卡模式（收口只看
+ * 完成次数）或无锚日期时返回 null。列表滚动卡、详情截止行与 AI 的当前期截止/逾期判定
+ * 共用，三处口径一致。
  */
 fun Todo.currentOccurrence(today: IsoDate): IsoDate? {
     if (repeat.type == RepeatType.None || isCheckInMode) return null
     val anchor = dates.minByOrNull { it.epochDay } ?: return null
-    return repeat.nextOccurrenceAfter(anchor, today, skip = completedOccurrences.toSet())
+    val completed = completedOccurrences.toSet()
+    return repeat.nextOccurrenceAfter(anchor, today, skip = completed)
+        ?: repeat.occurrencesBetween(anchor, anchor, today + 1).lastOrNull()
+        ?: completed.maxByOrNull { it.epochDay }
 }
 
 /**
@@ -415,7 +402,7 @@ fun Todo.currentOccurrenceDeadline(today: IsoDate): IsoDate? {
 /**
  * 待办时间在 `[startInclusive, endInclusive]` 窗口内覆盖的日期（日历待办小点取数）：
  * 待办时间 = 显式日期 [Todo.dates] ∪ 重复规则自锚日期展开的分期日期 ∪ 已记账的
- * 完成/逾期分期（规则修改后不再产生的历史分期仍算数）；截止日期是「什么时候要交」
+ * 完成/漏期分期（规则修改后不再产生的历史分期仍算数）；截止日期是「什么时候要交」
  * 而非「待办时间」，有待办时间时不参与覆盖。完成态不影响覆盖——已完成的待办仍是
  * 那天的待办。
  *

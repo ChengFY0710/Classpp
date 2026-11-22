@@ -18,6 +18,9 @@ enum class TodoRepeatReason {
 
     /** 日期档结束日期早于首个应完成日期——空窗口，写入成功也永远出不了卡 */
     EmptyWindow,
+
+    /** 重复待办带多个日期——系列只有单锚语义，展开只认最早日期，其余日期永不展示 */
+    MultipleDates,
 }
 
 /**

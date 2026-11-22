@@ -52,7 +52,7 @@ object AiPromptBuilder {
     /** 重复待办注入的「待完成期次 / 已完成期次」条数上限（token 预算控制） */
     private const val MAX_OCCURRENCE_LINES = 5
 
-    /** 期次注入窗口：最近 14 天（含逾期）到未来 30 天 */
+    /** 期次注入窗口：最近 14 天（含漏期）到未来 30 天 */
     private const val OCCURRENCE_PAST_DAYS = 14
     private const val OCCURRENCE_FUTURE_DAYS = 30
 
@@ -577,7 +577,7 @@ object AiPromptBuilder {
     }
 
     /**
-     * 重复待办近期未完成的期次（含最近逾期）：窗口 [now-14, now+30]；系列锚在更远的未来
+     * 重复待办近期未完成的期次（含最近漏期）：窗口 [now-14, now+30]；系列锚在更远的未来
      * 时把窗口后移，保证至少能看到开头几期。条数由 [MAX_OCCURRENCE_LINES] 控制。
      *
      * 提示词行与 `get_todo` 工具共用：两边列出的期次必须一致，否则完成某一期时会给出

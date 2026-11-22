@@ -105,7 +105,7 @@
     <string name="todo_detail_time_label">待办时间</string>
     <!-- 待办详情浮层：更多信息分组 -->
     <string name="todo_section_more_info">更多信息</string>
-    <!-- 重复信息组（TodoDetailSheet）：重复类型 + 虚拟独立待办序列的完成/逾期统计 -->
+    <!-- 重复信息组（TodoDetailSheet）：重复类型 + 虚拟独立待办序列的完成/漏期统计 -->
     <string name="todo_section_repeat">重复</string>
     <string name="todo_detail_repeat_type">重复类型</string>
     <string name="todo_detail_repeat_rule">重复规则</string>
@@ -115,7 +115,7 @@
     <!-- 待办卡片打卡进度（NoteCard）：只有单位「%」，数字由代码拼接（混排字号） -->
     <string name="check_in_percent_unit" formatted="false">%</string>
     <string name="todo_detail_completed_count">完成次数</string>
-    <string name="todo_detail_overdue_count">逾期次数</string>
+    <string name="todo_detail_overdue_count">漏期次数</string>
     <string name="todo_count_times">%1$d 次</string>
     <string name="todo_detail_group_label">待办分组</string>
     <string name="todo_created_label">创建时间</string>
@@ -959,7 +959,7 @@
     <string name="repeat_unit_count">次</string>
     <string name="repeat_end_invalid">结束日期过早，请选择更晚的日期</string>
     <string name="repeat_merge_title">重复待办合并</string>
-    <string name="repeat_merge_desc">开启后重复待办合并显示，关闭后逾期或完成时将拆分为多条，长周期建议开启，防止渲染过多重复待办导致卡顿</string>
+    <string name="repeat_merge_desc">开启后重复待办合并显示，关闭后漏期或完成时将拆分为多条，长周期建议开启，防止渲染过多重复待办导致卡顿</string>
     <string name="repeat_check_in_title">打卡模式</string>
     <string name="repeat_check_in_desc">开启后待办持续显示，直至完成设定次数</string>
     <string name="repeat_check_in_label">打卡</string>

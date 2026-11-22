@@ -111,7 +111,8 @@ fun DateSelectionCard(
     val keyboard = LocalSoftwareKeyboardController.current
     val custom = value as? DateSelection.Custom
     // 收起动画当帧 value 可能已被切成非自定义（子行正在退场）：记住上一份自定义值把
-    // 子行撑到行块平滑缩完；展示用快照，交互回调仍以当前 custom 守卫
+    // 子行撑到行块平滑缩完；展示用快照，交互回调仍以当前 custom 守卫。这份快照同时是
+    // 选「自定义」时的回填源（沿用上次的日期与重复，见快捷选项）
     var lastCustom by remember { mutableStateOf(custom) }
     if (custom != null) lastCustom = custom
 
@@ -167,12 +168,15 @@ fun DateSelectionCard(
                     QuickOptionText(
                         label = stringResource(R.string.date_card_custom),
                         onClick = {
-                            // 选「自定义」：沿用上一次的自定义日期与重复（没有则今天 / 无重复），
-                            // 退回值模式让自定义子行展开
+                            // 选「自定义」：沿用上一次的自定义日期与重复——current 值可能已被
+                            // 切成「无」/「今天」/「明天」（custom 为 null），此时取退场动画用的
+                            // 上一份快照回填（先配好重复、再点「今天」又回到「自定义」不丢配置），
+                            // 两边都没有则今天 / 无重复
+                            val fallback = custom ?: lastCustom
                             onValueChange(
                                 DateSelection.Custom(
-                                    date = custom?.date ?: IsoDate.today(),
-                                    repeat = custom?.repeat ?: RepeatRule(),
+                                    date = fallback?.date ?: IsoDate.today(),
+                                    repeat = fallback?.repeat ?: RepeatRule(),
                                 ),
                             )
                             onExpandedChange(false)

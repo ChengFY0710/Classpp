@@ -829,7 +829,7 @@
     <!-- NoteCard check-in progress: only the "%" unit, the number is concatenated in code -->
     <string name="check_in_percent_unit" formatted="false">%</string>
     <string name="todo_detail_completed_count">Completed</string>
-    <string name="todo_detail_overdue_count">Overdue</string>
+    <string name="todo_detail_overdue_count">Missed</string>
     <string name="todo_count_times">%1$d times</string>
     <string name="todo_detail_group_label">Group</string>
     <string name="todo_created_label">Created</string>
@@ -950,7 +950,7 @@
     <string name="repeat_unit_count">times</string>
     <string name="repeat_end_invalid">The end date is too early. Please choose a later date</string>
     <string name="repeat_merge_title">Merge repeating todos</string>
-    <string name="repeat_merge_desc">When on, repeating todos are shown as a single merged todo; when off, overdue or completed occurrences split into multiple entries. Recommended for long-running repeats to avoid lag from rendering too many items.</string>
+    <string name="repeat_merge_desc">When on, repeating todos are shown as a single merged todo; when off, missed or completed occurrences split into multiple entries. Recommended for long-running repeats to avoid lag from rendering too many items.</string>
     <string name="repeat_check_in_title">Check-in mode</string>
     <string name="repeat_check_in_desc">When on, the todo stays visible until the set number of check-ins is reached</string>
     <string name="repeat_check_in_label">Check-in</string>

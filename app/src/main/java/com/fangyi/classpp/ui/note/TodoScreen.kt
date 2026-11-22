@@ -553,7 +553,17 @@ fun TodoScreen(
     // 退场中的旧页继续渲染自己的口径，不读当前选中态。最近删除页例外：条目不在活跃列表里
     // （仓库单列 deletedTodos 流），整条待办一张卡、不做分期展开，并按删除时刻倒序（最近删的在最前）
     val today = LocalToday
-    val nowMinute = currentMinuteOfDay()
+    // 分钟级对表（60 秒粒度，同截止判定的分钟粒度）：LocalToday 的定时器只写「日期」，
+    // 分钟不随时间推进——今天截止的待办跨过截止分钟后自动移进「已逾期」组，不等下一次
+    // 交互。mutableIntStateOf 写同值不触发重组，整页每分钟至多重算一次；下方列表与
+    // 分组浮层读同一份状态，口径一致
+    var nowMinute by remember { mutableIntStateOf(currentMinuteOfDay()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            nowMinute = currentMinuteOfDay()
+            delay(60_000L)
+        }
+    }
     val special = if (specialActive) specialSection else null
     val activeTag = if (tagActive) selectedTag else null
     // 顶栏当前页签的排序规则（排序菜单的勾选态与点击都读它）：常规分组页取本页规则、
@@ -726,7 +736,9 @@ fun TodoScreen(
     // 选中保留可重试
     val onMovePick: (String?) -> Unit = { target ->
         movePickVisible = false
-        val movable = todos.filter { it.id in selectedTodoIds && it.group != target }
+        // 写路径按 id 从原始列表取：todos 是带派生课程标签的展示列表，直接写回会把课程
+        // 标签固化成用户标签（课程改名/删除后变孤立标签）；只改 group、其余字段原样
+        val movable = rawTodos.filter { it.id in selectedTodoIds && it.group != target }
         if (movable.isNotEmpty()) {
             scope.launch {
                 var failed = false
@@ -977,6 +989,7 @@ fun TodoScreen(
                             todos = pageTodos,
                             sort = pageSortRule.sort,
                             sortDescending = pageSortRule.descending,
+                            nowMinute = nowMinute,
                             visibleSections = pageVisibleSections,
                             emptyHint = pageEmptyHint,
                             topBarExtraSpace = topBarExtraSpace,
@@ -996,6 +1009,7 @@ fun TodoScreen(
                         todos = pageTodos,
                         sort = pageSortRule.sort,
                         sortDescending = pageSortRule.descending,
+                        nowMinute = nowMinute,
                         // 标签配色表（用户标签所选颜色）：透传给列表卡的 NoteCard
                         tagColors = tagColorMap,
                         // 特殊分组页 = 该页本身就是过滤口径，分类菜单的分组显隐不再参与（全组可见）；
@@ -1440,13 +1454,18 @@ fun TodoScreen(
                     detailTargetDate = ""
                 },
                 onDismissed = { detailMounted = null },
-                // 备注随任意关闭路径落盘：未改动零开销；Err 仅剩校验不过等异常（Toast 提示）
+                // 备注随任意关闭路径落盘：未改动零开销；Err 仅剩校验不过等异常（Toast 提示）。
+                // 写路径按 id 从原始列表取——detail 是带派生课程标签的展示副本，直接写回
+                // 会把课程标签固化成用户标签；只改 note、其余字段原样
                 onNoteSave = { note ->
                     val cleaned = note.trim()
                     if (cleaned != detail.note) {
-                        scope.launch {
-                            val result = repository.updateTodo(detail.copy(note = cleaned))
-                            if (result is TodoOpResult.Err) AppToasts.show(context, saveFailedMessage)
+                        val raw = rawTodos.firstOrNull { it.id == detail.id }
+                        if (raw != null) {
+                            scope.launch {
+                                val result = repository.updateTodo(raw.copy(note = cleaned))
+                                if (result is TodoOpResult.Err) AppToasts.show(context, saveFailedMessage)
+                            }
                         }
                     }
                 },
@@ -1622,6 +1641,7 @@ fun TodoScreen(
             todos = todos,
             // 展开卡片：已完成/未完成/已逾期计数按卡片计，与专项页的卡片数一致
             statusTodos = displayTodos,
+            nowMinute = nowMinute,
             deletedCount = deletedTodos.size,
             archivedCount = archivedTodos.size,
             groups = groups,
@@ -1713,7 +1733,7 @@ fun TodoScreen(
 }
 
 /** 列表分组：已置顶在最上（无置顶待办整组不渲染）、已逾期次之、未完成居中、已完成在下（默认收起），空组不渲染 */
-private enum class TodoSection { Pinned, Overdue, Active, Done }
+internal enum class TodoSection { Pinned, Overdue, Active, Done }
 
 /** 分组 → 分组标题文案资源（标题在组合期经 stringResource 解析，故只存资源 id） */
 private val TodoSection.titleRes: Int
@@ -1731,8 +1751,10 @@ private val TodoSection.titleRes: Int
  * - 组内按本页排序规则 [sort]/[sortDescending] 排（宿主按页面身份解析：常规分组页取
  *   该分组的规则、没设置回落全局，特殊分组页/标签页恒用全局）；
  * - 空组不返回（列表不渲染空分区头、收集箱不渲染空卡）。
+ *
+ * 纯函数（[today]/[nowMinute] 注入，nowMinute 由宿主分钟级对表推进）：internal 供单测。
  */
-private fun buildTodoSections(
+internal fun buildTodoSections(
     todos: List<Todo>,
     sort: TodoSort,
     sortDescending: Boolean,
@@ -1792,6 +1814,8 @@ private fun TodoInboxContent(
     todos: List<Todo>,
     sort: TodoSort,
     sortDescending: Boolean,
+    // 分钟级对表的当前分钟（宿主 60 秒推进一次）：跨过截止分钟的卡片随它自动换组
+    nowMinute: Int,
     visibleSections: Set<TodoSection>,
     emptyHint: String?,
     topBarExtraSpace: Dp,
@@ -1806,7 +1830,6 @@ private fun TodoInboxContent(
     modifier: Modifier = Modifier,
 ) {
     val today = LocalToday
-    val nowMinute = currentMinuteOfDay()
     val sections = remember(todos, sort, sortDescending, today, nowMinute, visibleSections) {
         buildTodoSections(todos, sort, sortDescending, today, nowMinute, visibleSections)
     }
@@ -2241,6 +2264,8 @@ private fun TodoList(
     todos: List<Todo>,
     sort: TodoSort,
     sortDescending: Boolean,
+    // 分钟级对表的当前分钟（宿主 60 秒推进一次）：跨过截止分钟的卡片随它自动换组
+    nowMinute: Int,
     // 标签配色表（标签名 → 颜色）：透传给每张卡的 NoteCard，标签胶囊据此着色
     tagColors: Map<String, Color>,
     visibleSections: Set<TodoSection>,
@@ -2286,9 +2311,8 @@ private fun TodoList(
     modifier: Modifier = Modifier,
 ) {
     // 逾期判定的"此刻"：当天日期取 [LocalToday]（跨零点自动跳天）——零点多后即使没有别的
-    // 交互，逾期分组也会自己重算；分钟口径仍是重组时现取
+    // 交互，逾期分组也会自己重算；分钟口径由宿主分钟级对表下发，跨过截止分钟自动换组
     val today = LocalToday
-    val nowMinute = currentMinuteOfDay()
     val sections = remember(todos, sort, sortDescending, today, nowMinute, visibleSections) {
         buildTodoSections(todos, sort, sortDescending, today, nowMinute, visibleSections)
     }

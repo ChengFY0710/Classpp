@@ -52,8 +52,8 @@ data class AiTodoDraftMapping(
  * - 截止：日期与时刻**成对**出现（TodoValidator 硬约束），只有其一 → 两者皆空并标注；
  * - 重复：类型/单位/结束条件大小写不敏感匹配，越界值夹紧；Custom 的 marks 按单位
  *   合法域过滤；无有效日期时重复整体取消（没有锚日期的系列无法展开）；日期档窗口
- *   早于首期（空窗口）同样取消并标注——两种形态都过不了 TodoValidator，保留会让
- *   `addTodos` 整批零落盘；
+ *   早于首期（空窗口）同样取消并标注；多日期 + 重复只保留最早日期作锚（系列单锚
+ *   语义）并标注——这三种形态都过不了 TodoValidator，保留会让 `addTodos` 整批零落盘；
  * - 截止随重复：仅在有重复且截止成立时保留，其余置 false（仓库归一化同口径）；
  * - 倒计时：仅在有截止时保留；
  * - 分组/标签：与现有清单做**包含匹配**（"学习"↔"学习方法"）优先取清单项；分组
@@ -114,26 +114,41 @@ object AiTodoMapper {
         if (deadlineProvided && !deadlineValid) invalid += AiDraftField.Deadline
 
         // 重复：没有日期的系列无法展开、日期档窗口早于首期永远出不了卡（TodoValidator 的
-        // 两条硬约束）——都降级为普通待办并标注对应字段，否则 addTodos 整批零落盘
+        // 硬约束）——都降级为普通待办并标注对应字段，否则 addTodos 整批零落盘；多日期 +
+        // 重复只保留最早日期作锚（系列单锚语义，校验器拒收多锚）并标注两个字段
         val repeat = mapRepeat(draft.repeat, invalid)
         val anchor = dates.minByOrNull { it.epochDay }
-        val effectiveRepeat = when {
+        val effectiveRepeat: RepeatRule
+        val effectiveDates: List<IsoDate>
+        when {
             dates.isEmpty() && repeat.type != RepeatType.None -> {
                 invalid += AiDraftField.Dates
-                RepeatRule()
+                effectiveRepeat = RepeatRule()
+                effectiveDates = dates
             }
             anchor != null && repeat.hasEmptyWindow(anchor) -> {
                 invalid += AiDraftField.Repeat
-                RepeatRule()
+                effectiveRepeat = RepeatRule()
+                effectiveDates = dates
             }
-            else -> repeat
+            dates.size > 1 && repeat.type != RepeatType.None -> {
+                invalid += AiDraftField.Dates
+                invalid += AiDraftField.Repeat
+                effectiveRepeat = repeat
+                // dates 已升序：最早即锚，其余日期展开不认、写入也过不了校验
+                effectiveDates = listOf(dates.first())
+            }
+            else -> {
+                effectiveRepeat = repeat
+                effectiveDates = dates
+            }
         }
 
         val hasDeadline = deadlineValid
         val todo = Todo(
             id = newUuid(),
             name = name,
-            dates = dates,
+            dates = effectiveDates,
             repeat = effectiveRepeat,
             timeKind = timeKind,
             startMinute = if (timeKind == TodoTimeKind.Period) startMinute else null,

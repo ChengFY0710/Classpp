@@ -48,14 +48,17 @@ object TodoValidator {
             errors += TodoError.DeadlineInvalid(TodoDeadlineReason.MinuteOutOfRange)
         }
 
-        // 重复：有规则就必须能展开出至少一期——无锚日期（MissingDates）或日期档窗口早于
-        // 首期（EmptyWindow，见 hasEmptyWindow）的规则写入成功后永远出不了卡，列表、详情、
-        // 统计都看不到，也没有入口再编辑它。endType=Date 且 endDate 缺失已被仓库归一化回退
-        // 成 Never，次数档归一化后 endCount >= 1，锚日存在即至少有一期，均无需在此重复报错
+        // 重复：有规则就必须能展开出至少一期——无锚日期（MissingDates）、多锚日期
+        //（MultipleDates，系列单锚语义：展开只认最早日期，其余日期永不展示）或日期档
+        // 窗口早于首期（EmptyWindow，见 hasEmptyWindow）的规则写入成功后出不了完整的卡，
+        // 列表、详情、统计都看不到，也没有入口再编辑它。endType=Date 且 endDate 缺失已被
+        // 仓库归一化回退成 Never，次数档归一化后 endCount >= 1，锚日存在即至少有一期，
+        // 均无需在此重复报错
         if (todo.repeat.type != RepeatType.None) {
             val anchor = todo.dates.minByOrNull { it.epochDay }
             when {
                 anchor == null -> errors += TodoError.RepeatInvalid(TodoRepeatReason.MissingDates)
+                todo.dates.size > 1 -> errors += TodoError.RepeatInvalid(TodoRepeatReason.MultipleDates)
                 todo.repeat.hasEmptyWindow(anchor) ->
                     errors += TodoError.RepeatInvalid(TodoRepeatReason.EmptyWindow)
             }

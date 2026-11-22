@@ -199,6 +199,19 @@ class TodoValidatorTest {
     }
 
     @Test
+    fun `repeat with multiple dates is rejected`() {
+        // 系列单锚语义：展开只认最早日期，其余日期永不展示（多日期 + 重复只允许单锚）
+        val todo = testTodo(
+            dates = listOf(d1, d2),
+            repeat = RepeatRule(type = RepeatType.Weekly),
+        )
+        assertTrue(todo.anyErrIs(TodoError.RepeatInvalid(TodoRepeatReason.MultipleDates)))
+        // 非重复的多日期不受影响
+        val plain = testTodo(dates = listOf(d1, d2))
+        assertEquals(emptyList<TodoError>(), TodoValidator.validate(plain))
+    }
+
+    @Test
     fun `repeat end date missing is not an empty window`() {
         // 日期档缺结束日期由仓库归一化回退成 Never，不在此重复报错（校验器只看值本身）
         val todo = testTodo(

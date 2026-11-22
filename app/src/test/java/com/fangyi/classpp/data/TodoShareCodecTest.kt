@@ -149,6 +149,22 @@ class TodoShareCodecTest {
     }
 
     @Test
+    fun `decode rejects multi date repeats`() {
+        // 多日期 + 重复（系列单锚语义，多余日期展不出来）：导入整体拒绝
+        val json = TodoShareCodec.encode(
+            listOf(
+                testTodo(
+                    id = "t1",
+                    dates = listOf(IsoDate.parse("2026-06-18"), IsoDate.parse("2026-06-20")),
+                    repeat = RepeatRule(type = RepeatType.Weekly),
+                ),
+            ),
+            exportedAtMillis = 1,
+        )
+        assertTrue(TodoShareCodec.decodeForImport(json).readErr() is TodoError.RepeatInvalid)
+    }
+
+    @Test
     fun `attachments are stripped from share payload`() {
         val todo = testTodo(
             id = "t1",

@@ -1,12 +1,13 @@
 package com.fangyi.classpp.data.ai
 
+import com.fangyi.classpp.data.currentOccurrence
+import com.fangyi.classpp.data.currentOccurrenceDeadline
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.occurrencesBetween
-import com.fangyi.classpp.data.outstandingOverdueOccurrences
 
 /**
  * 待办的共享口径（命中判定与时间形态文本）：提示词的「今日摘要」与只读工具共用同一来源。
@@ -29,20 +30,26 @@ internal fun Todo.isCompletedOnDate(date: IsoDate): Boolean =
     completed || (repeat.type != RepeatType.None && date in completedOccurrences)
 
 /**
- * 到 [date] 为止仍未完成且已过期：
- * - 未完成且有**不随重复**的截止日，截止日早于 [date]——随重复的 `deadlineDate` 只是
- *   折算载体（可能是早已过期的初始值），不参与整条逾期判定，逐期口径由列表/详情持有；
- * - 重复待办有仍欠着的逾期期次（[outstandingOverdueOccurrences]：落账减去已完成、再
- *   补算尚未落账的漏期——迟到补完成不再算逾期，跨天未写库也能算出新漏期）。
+ * 到 [date] 为止仍未完成且已过期。产品口径（3.1 已定）：**逾期 = 已过截止**——与列表
+ * 「已逾期」分组、概览计数同一判定，漏掉的期次（漏期）不算逾期，只在完成情况浮层与
+ * `get_todo` 的 `missedOccurrences` 里体现。
+ *
+ * - 非重复或不随重复：看存储截止日是否早于 [date]；
+ * - 随重复：`deadlineDate` 只是折算载体（可能是早已过期的初始值），按当前期折算截止
+ *   （[currentOccurrenceDeadline]，与列表滚动卡同口径）判定；当前期已完成的（合并卡
+ *   已落已完成组）不再算逾期，展不出当前期的同样不算。
  */
 internal fun Todo.isOverdueOn(date: IsoDate): Boolean {
     if (completed) return false
-    if (!deadlineBeforeRepeat) {
-        val deadline = deadlineDate
-        if (deadline != null && deadline.epochDay < date.epochDay) return true
+    val deadline = if (deadlineBeforeRepeat) {
+        // 随重复：当前期已完成 → 合并卡在已完成组，不算逾期
+        val occurrence = currentOccurrence(date) ?: return false
+        if (occurrence in completedOccurrences) return false
+        currentOccurrenceDeadline(date)
+    } else {
+        deadlineDate
     }
-    if (repeat.type == RepeatType.None) return false
-    return outstandingOverdueOccurrences(date).any { it.epochDay < date.epochDay }
+    return deadline != null && deadline.epochDay < date.epochDay
 }
 
 /**

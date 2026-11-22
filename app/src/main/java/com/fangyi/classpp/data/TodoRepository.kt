@@ -17,6 +17,7 @@ import com.fangyi.classpp.data.model.TodoFile
 import com.fangyi.classpp.data.model.TodoGroup
 import com.fangyi.classpp.data.model.TodoStep
 import com.fangyi.classpp.data.model.activeTodos
+import com.fangyi.classpp.data.model.cycleDays
 import com.fangyi.classpp.data.model.isDeleted
 import com.fangyi.classpp.data.model.isArchived
 import com.fangyi.classpp.data.model.newUuid
@@ -203,11 +204,12 @@ class TodoRepository internal constructor(
      * 完成不变式：completed=true 时 completedAtMillis 缺省补当前，false 时清空；
      * 倒计时不变式：无截止日期时开关回 false（清掉截止日期后不留悬挂的开启态）；
      * 截止随重复不变式：无截止日期或无重复规则时开关回 false（同理不留悬挂开启态），
-     * 提前天数非负夹紧；
+     * 提前天数按重复的真实周期夹紧（[RepeatRule.cycleDays]，开关关闭时归 0）；
      * 分组引用完整性：group trim、空串与引用不存在的组一律清回 null（未分组）——
      * 由此读侧只需判 `group == null`，导入的带组名待办同此规则落为未分组；
-     * 重复规则消洗见 [normalizeRepeat]、分期集合与迁移见本函数体、逾期归账见 [sweepOverdue]。
-     * 在 mutex 内调用，读 [fileState] 的分组表安全。
+     * 重复规则消洗见 [normalizeRepeat]、分期集合与迁移见本函数体、漏期归账见 [sweepOverdue]。
+     * 归账在规则消洗**之后**进行（外来脏数据如次数档缺 endCount 先兜默认，才不会按
+     * 无限系列展开出规则有效期之外的漏期）。在 mutex 内调用，读 [fileState] 的分组表安全。
      */
     private fun normalize(todo: Todo): Todo {
         val groupNames = fileState.value.groups.mapTo(mutableSetOf()) { it.name }
@@ -219,12 +221,22 @@ class TodoRepository internal constructor(
             todo
         }
         val repeat = normalizeRepeat(migrated.repeat)
-        return migrated.copy(
+        val anchor = migrated.dates.minByOrNull { it.epochDay }
+        // 「下一次重复开始前」的天数按真实周期夹紧（前两期实际间隔，UI 滚轮本就限选，
+        // AI/导入可越界）；开关关闭时归 0，不留让截止设置下次打开带上无意义的值
+        val maxBeforeDays = if (repeat.type != RepeatType.None && anchor != null) {
+            repeat.cycleDays(anchor)
+        } else {
+            0
+        }
+        val deadlineBeforeRepeat = migrated.deadlineBeforeRepeat &&
+            migrated.deadlineDate != null && repeat.type != RepeatType.None && !repeat.checkIn
+        // 先归一化除漏期外的全部字段，再用消洗后的规则结算漏期
+        val normalized = migrated.copy(
             name = migrated.name.trim(),
             dates = migrated.dates.distinct().sortedBy { it.epochDay },
             repeat = repeat,
             completedOccurrences = migrated.completedOccurrences.distinct().sortedBy { it.epochDay },
-            overdueOccurrences = sweepOverdue(migrated, migrated.dates.minByOrNull { it.epochDay }),
             tags = migrated.tags.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
             steps = migrated.steps.map { it.copy(title = it.title.trim()) },
             attachments = migrated.attachments.map {
@@ -239,22 +251,27 @@ class TodoRepository internal constructor(
             completedAtMillis = if (migrated.completed) migrated.completedAtMillis ?: nowMillis() else null,
             countdown = migrated.countdown && migrated.deadlineDate != null,
             // 打卡模式的截止只能是固定日期（「下一次重复开始前」在设置页置灰），悬挂开关归 false
-            deadlineBeforeRepeat = migrated.deadlineBeforeRepeat &&
-                migrated.deadlineDate != null && repeat.type != RepeatType.None && !repeat.checkIn,
-            deadlineBeforeDays = migrated.deadlineBeforeDays.coerceAtLeast(0),
+            deadlineBeforeRepeat = deadlineBeforeRepeat,
+            deadlineBeforeDays = if (deadlineBeforeRepeat) {
+                migrated.deadlineBeforeDays.coerceIn(0, maxBeforeDays)
+            } else {
+                0
+            },
             group = migrated.group?.trim()?.takeIf { it.isNotEmpty() && it in groupNames },
         )
+        return normalized.copy(overdueOccurrences = sweepOverdue(normalized, anchor))
     }
 
     /**
-     * 重复待办的逾期归账（写库路径顺带结算，按集合去重）：应完成日期在今天之前、既不在完成
-     * 集合也不在逾期集合的分期收进逾期集合——取消完成不会重复计账（该期早已在集合里），
+     * 重复待办的漏期归账（写库路径顺带结算）：应完成日期在今天之前、既不在完成
+     * 集合也不在漏期集合的分期收进漏期集合——取消完成不会重复计账（该期早已在集合里），
      * 迟到的补完成也不撤销拖欠（勾选完成时先归账后入集，见 [setOccurrenceCompleted]）。
      * 当天的应完成日期还不算错过（与 [Todo.isOverdue] 同为日期粒度）；整条完成的待办不参与
-     * 分期统计。在 mutex 内调用（nowMillis 时钟一致）。
+     * 分期统计。返回值始终去重 + 升序归一（外来乱序/重复数据写一次就被消洗）。在 mutex 内
+     * 调用（nowMillis 时钟一致），规则必须是消洗后的（见 [normalize] 的结算顺序）。
      */
     private fun sweepOverdue(todo: Todo, anchor: IsoDate?): List<IsoDate> {
-        val settled = todo.overdueOccurrences
+        val settled = todo.overdueOccurrences.distinct().sortedBy { it.epochDay }
         if (todo.completed || todo.repeat.type == RepeatType.None || anchor == null) return settled
         // 打卡模式只数完成次数：漏掉的期不记拖欠，已落账集合原样保留
         if (todo.repeat.checkIn && todo.repeat.endType == RepeatEndType.Count) return settled
@@ -558,8 +575,9 @@ class TodoRepository internal constructor(
     /**
      * 批量新增（课程中心等外部同步导入走这条）：id/createdAt 补齐 → 全量归一化 → 逐条
      * 校验 → 查重 → **单次 commit**（导入 N 条只落盘一次，区别于逐条 addTodo）。
-     * 任意一条非法或 id 与现有待办重复则整体失败、零落盘——同步层应先过滤非法项与
-     * 已存在项（active + 回收站）再调用。
+     * 任意一条非法、批内 id 重复或 id 与现有待办重复则整体失败、零落盘——同步层应先
+     * 过滤非法项与已存在项（active + 回收站）再调用。批内查重与文件查重同一类破坏：
+     * 两条同 id 落盘后反查只命中第一条、更新会双写、删除会同时删两条。
      */
     suspend fun addTodos(todos: List<Todo>): TodoReadResult<List<String>> = mutex.withLock {
         if (todos.isEmpty()) return@withLock TodoReadResult.Ok(emptyList())
@@ -574,6 +592,11 @@ class TodoRepository internal constructor(
         prepared.forEach { todo ->
             val errors = TodoValidator.validate(todo)
             if (errors.isNotEmpty()) return@withLock TodoReadResult.Err(errors.first())
+        }
+        // 批内查重（同批两条相同 id）先于文件查重：两条都落盘的破坏面与撞既有 id 相同
+        val seen = mutableSetOf<String>()
+        prepared.forEach { todo ->
+            if (!seen.add(todo.id)) return@withLock TodoReadResult.Err(TodoError.DuplicateId(todo.id))
         }
         val existing = fileState.value.todos.mapTo(mutableSetOf()) { it.id }
         prepared.firstOrNull { it.id in existing }?.let {
