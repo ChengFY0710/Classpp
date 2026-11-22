@@ -178,4 +178,62 @@ class ScheduleEditSessionTest {
 
         assertEquals(listOf("adj1", "adj2"), restored!!.adjustments.map { it.id })
     }
+
+    // ---------- 脏检查（切课表的丢弃确认共用） ----------
+
+    @Test
+    fun cleanDraftHasNoChanges() {
+        val session = ScheduleEditSession(
+            draft = listOf(entry("a", "已有")),
+            draftAdjustments = listOf(adjustment(id = "adj1")),
+        )
+        val schedule = com.fangyi.classpp.data.model.Schedule(
+            id = "s1",
+            name = "2026春",
+            termStart = com.fangyi.classpp.data.model.IsoDate.parse("2026-03-02"),
+            termEnd = com.fangyi.classpp.data.model.IsoDate.parse("2026-06-19"),
+            courses = session.courses,
+            adjustments = session.adjustments,
+        )
+
+        assertTrue(!session.hasChanges(schedule))
+    }
+
+    @Test
+    fun adjustmentOnlyEditsCountAsDirty() {
+        val base = com.fangyi.classpp.data.model.Schedule(
+            id = "s1",
+            name = "2026春",
+            termStart = com.fangyi.classpp.data.model.IsoDate.parse("2026-03-02"),
+            termEnd = com.fangyi.classpp.data.model.IsoDate.parse("2026-06-19"),
+            courses = listOf(entry("a", "已有")),
+            adjustments = listOf(adjustment(id = "adj1")),
+        )
+        val session = ScheduleEditSession(
+            draft = base.courses,
+            // 只多了一条调课草稿：课程未动也必须算「未保存的修改」——
+            // 否则切换课表不弹丢弃确认，调课草稿被静默丢掉
+            draftAdjustments = listOf(adjustment(id = "adj1"), adjustment(id = "adj2", fromWeek = 2)),
+        )
+
+        assertTrue(session.hasChanges(base))
+    }
+
+    @Test
+    fun courseOnlyEditsCountAsDirty() {
+        val base = com.fangyi.classpp.data.model.Schedule(
+            id = "s1",
+            name = "2026春",
+            termStart = com.fangyi.classpp.data.model.IsoDate.parse("2026-03-02"),
+            termEnd = com.fangyi.classpp.data.model.IsoDate.parse("2026-06-19"),
+            courses = listOf(entry("a", "已有")),
+            adjustments = listOf(adjustment(id = "adj1")),
+        )
+        val session = ScheduleEditSession(
+            draft = listOf(entry("a", "已有"), entry("b", "新增")),
+            draftAdjustments = base.adjustments,
+        )
+
+        assertTrue(session.hasChanges(base))
+    }
 }

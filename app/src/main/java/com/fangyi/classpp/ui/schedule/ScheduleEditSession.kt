@@ -10,6 +10,8 @@ import com.fangyi.classpp.data.ScheduleJson
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.model.CourseAdjustment
 import com.fangyi.classpp.data.model.CourseEntry
+import com.fangyi.classpp.data.model.Schedule
+import com.fangyi.classpp.data.model.prunedForCourse
 import kotlinx.serialization.Serializable
 
 /**
@@ -46,11 +48,18 @@ class ScheduleEditSession internal constructor(
         courses = courses + course
     }
 
-    /** 编辑确认：同 id 的新内容替换草稿条目；周规律改小后失效的调课同步清理 */
+    /** 编辑确认：同 id 的新内容替换草稿条目；周规律改小后失效的调课同步清理（口径见 [prunedForCourse]） */
     fun update(id: String, entry: CourseEntry) {
         courses = courses.map { if (it.id == id) entry else it }
-        adjustments = adjustments.filterNot { it.courseId == id && !entry.weeks.contains(it.fromWeek) }
+        adjustments = adjustments.prunedForCourse(id, entry)
     }
+
+    /**
+     * 草稿是否偏离仓库课表（课程或调课任一有改动）：切换课表/放弃编辑的脏检查共用。
+     * 只比课程会漏掉「本次编辑只调了课/调了休」的草稿——切换会静默丢弃它们。
+     */
+    fun hasChanges(schedule: Schedule): Boolean =
+        courses != schedule.courses || adjustments != schedule.adjustments
 
     /** 删除确认：仅移出草稿（保存时才写回仓库，取消编辑即整体还原），调课一并清理 */
     fun remove(id: String) {

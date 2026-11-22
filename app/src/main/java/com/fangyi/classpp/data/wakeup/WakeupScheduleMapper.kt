@@ -86,7 +86,9 @@ object WakeupScheduleMapper {
             name = WakeupShareText.extractScheduleName(shareText)
                 .ifBlank { fallbackName.ifBlank { "Wakeup" } },
             termStart = termStart,
-            termEnd = termStart + (totalWeeks - 1) * 7 + 6, // 末周周日，R14 恒可满足
+            // 末周周日（按日历周对齐）：semesterStartDate 可为任意星期几，从 termStart
+            // 本身起算会落到第 N+1 周、学期凭空多出一周；与 Xmu/Remote 同按所在周的周一锚定
+            termEnd = termStart.mondayOfWeek() + (totalWeeks - 1) * 7 + 6,
             daysPerWeek = if (courses.any { it.dayOfWeek > 5 }) 7 else 5,
             slots = slots,
             slotDurationMinutes = slotDurationOf(payload.config),
@@ -193,14 +195,15 @@ object WakeupScheduleMapper {
 
         val target = maxEndSection.coerceAtMost(MAX_SLOTS)
         if (slots.size < target) {
-            // 空表从默认作息起步（defaultSlotsFor 对大节数会生成 1 分钟的节，钳到 29）
+            // 空表从默认作息起步（defaultSlotsFor 对大节数会生成 1 分钟的节，钳到 29；
+            // 窗口放不下时返回 null，交给下方按配置课间续生成）
             if (slots.isEmpty()) {
-                slots = defaultSlotsFor(target.coerceAtMost(MAX_SLOTS - 1))
+                slots = defaultSlotsFor(target.coerceAtMost(MAX_SLOTS - 1)).orEmpty()
             }
             val breakMinutes = payload.config.defaultBreakDuration.takeIf { it in 0..120 } ?: 30
             val durationMinutes = slotDurationOf(payload.config)
             while (slots.size < target && slots.size < MAX_SLOTS) {
-                val lastEnd = TimeText.parseMinutes(slots.last().endTime) ?: break
+                val lastEnd = slots.lastOrNull()?.let { TimeText.parseMinutes(it.endTime) } ?: break
                 val start = lastEnd + breakMinutes
                 val end = start + durationMinutes
                 if (end > LAST_MINUTE_OF_DAY) break

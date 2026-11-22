@@ -32,10 +32,10 @@ class TimeSchemeMergeGateTest {
     )
 
     /** 有一门占用 2 节的课 → 合并预览本身放行 */
-    private val mergeable = previewSlotMerge(smallSlots, listOf(course(span = 2)), 5)
+    private val mergeable = previewSlotMerge(smallSlots, listOf(course(span = 2)))
 
     /** 空课表 → 合并预览阻断（没有课程占用 ≥2 节） */
-    private val notMergeable = previewSlotMerge(smallSlots, emptyList(), 5)
+    private val notMergeable = previewSlotMerge(smallSlots, emptyList())
 
     @Test
     fun `custom scheme enables merge when plan allows`() {
@@ -67,7 +67,7 @@ class TimeSchemeMergeGateTest {
     fun `reported repro default slots with no courses stays grey`() {
         // 实测问题：默认 5 节 × 100 分钟 + 没有任何课程 → 按钮曾可点并崩溃。
         // 现在两条门控都拦：没有课程占用 ≥2 节，且选中的是「默认」方案
-        val plan = previewSlotMerge(DEFAULT_SLOTS, emptyList(), 5)
+        val plan = previewSlotMerge(DEFAULT_SLOTS, emptyList())
 
         assertFalse(plan.hasMultiSlotCourse)
         assertFalse(canMergeTimeScheme(plan, selectedSchemeId = DEFAULT_TIME_SCHEME_ID))
@@ -79,7 +79,7 @@ class TimeSchemeMergeGateTest {
     fun `default schedule with multi slot courses is blocked only by the default option`() {
         // 默认作息里 1-2 节可配对（100+30+100 = 230 分钟）——预览本身可合并，
         // 但「默认」方案不支持合并；切到「自定义」后才放行
-        val plan = previewSlotMerge(DEFAULT_SLOTS, listOf(course(span = 2)), 5)
+        val plan = previewSlotMerge(DEFAULT_SLOTS, listOf(course(span = 2)))
 
         assertTrue(plan.canMerge)
         assertFalse(canMergeTimeScheme(plan, selectedSchemeId = DEFAULT_TIME_SCHEME_ID))

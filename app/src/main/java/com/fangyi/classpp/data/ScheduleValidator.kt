@@ -1,6 +1,8 @@
 package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.model.CourseAdjustment
+import com.fangyi.classpp.data.model.MAX_SLOT_DURATION
+import com.fangyi.classpp.data.model.MIN_SLOT_DURATION
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeText
 
@@ -11,9 +13,10 @@ import com.fangyi.classpp.data.model.TimeText
  * 规则一览：
  *  R2 termEnd 可落在任意一天（可半个教学周；termStart 同样可为任意星期几）
  *  R3 end≥start                     R4 daysPerWeek ∈ {5,7}
- *  R5 节数 ∈ [MIN_SLOTS]..[MAX_SLOTS]   R6 时间格式
- *  R7 时间有序不重叠                R8 课表名非空白
- *  R9-R12 课程字段/周数范围          R13 同一天 span 相交且周数相交 ⇒ 冲突
+ *  R5 节数 ∈ [MIN_SLOTS]..[MAX_SLOTS]   R5b 每节课时长 ∈ [MIN_SLOT_DURATION]..[MAX_SLOT_DURATION]
+ *  R6 时间格式                       R7 时间有序不重叠
+ *  R8 课表名非空白                   R9-R12 课程字段/周数范围（星期 ∈ 1..7）
+ *  R13 同一天 span 相交且周数相交 ⇒ 冲突
  *  R14 课程最后一次上课不得晚于 termEnd（按**日期**判定；termEnd 可停在周中）
  *  R15 单次调课：源课次成立、目标越界/无变化、同课次唯一、目标格与常规课/其他调课冲突
  * （原 R1「termStart 必须周一」已取消：开学日可为任意一天，周数一律按日历周对齐。）
@@ -21,8 +24,11 @@ import com.fangyi.classpp.data.model.TimeText
  * 另有两条"视图切换友好"约定：
  *  · termEnd 用**真实日期**判定课程落点，不再要求它是周五/周日；
  *  · 落在当前每周天数之外的课（5 天课表里的周六/周日课）视为"当前视图看不到"，
- *    **保留在数据里**且不参与 R10/R11/R14——5 天视图只是不画它们，切回 7 天即原样出现，
- *    所以 5/7 天切换永远不会因为课程而失败。
+ *    **保留在数据里**且默认不参与 R10/R11/R14——5 天视图只是不画它们，切回 7 天即
+ *    原样出现，所以 5/7 天切换永远不会因为课程而失败（daysPerWeek 是纯视图设置，
+ *    [ScheduleRepository.setDaysPerWeek] 不做全量课程校验）。
+ *    但"设置类" mutator（改学期/节表/时长）必须传 [includeHidden] = true 走**严格口径**：
+ *    隐藏课照常参与全部校验，禁止制造"切回 7 天视图就非法"的数据。
  */
 object ScheduleValidator {
 
@@ -30,14 +36,20 @@ object ScheduleValidator {
     const val MAX_SLOTS = 30
     const val MAX_SPAN = 5
 
-    /** 全量校验：设置 + 课程（含同格周数重叠）+ 单次调课 */
-    fun validate(schedule: Schedule): List<ScheduleError> {
+    /**
+     * 全量校验：设置 + 课程（含同格周数重叠）+ 单次调课。
+     *
+     * [includeHidden] = false（默认，课程 CRUD / 编辑保存 / 导入的宽容口径）：落在当前
+     * 每周天数之外的课不参与学期/节次边界校验；true（设置类 mutator 的严格口径）：隐藏课
+     * 与可见课同口径校验。
+     */
+    fun validate(schedule: Schedule, includeHidden: Boolean = false): List<ScheduleError> {
         val settings = validateSettingsOnly(schedule)
         val settingsValid = settings.isEmpty()
-        return settings + courses(schedule, settingsValid) + adjustments(schedule, settingsValid)
+        return settings + courses(schedule, settingsValid, includeHidden) + adjustments(schedule, settingsValid)
     }
 
-    /** 只校验设置（学期/天数/节次/课表名），不查课程 —— 供 setTerm/setSlots 等快速路径 */
+    /** 只校验设置（学期/天数/节次/时长/课表名），不查课程 —— 供 setTerm/setSlots 等快速路径 */
     fun validateSettingsOnly(schedule: Schedule): List<ScheduleError> {
         val errors = mutableListOf<ScheduleError>()
         val s = schedule
@@ -59,6 +71,11 @@ object ScheduleValidator {
         // R5 节数
         if (s.slotCount !in MIN_SLOTS..MAX_SLOTS) {
             errors += ScheduleError.SlotCountInvalid(s.slotCount)
+        }
+
+        // R5b 每节课时长范围：分享/AI 导入经 [validate] 一并拦截非法时长
+        if (s.slotDurationMinutes !in MIN_SLOT_DURATION..MAX_SLOT_DURATION) {
+            errors += ScheduleError.SlotDurationInvalid(s.slotDurationMinutes)
         }
 
         // R6/R7 时间格式与顺序
@@ -90,12 +107,16 @@ object ScheduleValidator {
     }
 
     /** 只校验课程字段/同格冲突与调课（依赖设置的周界检查在设置非法时自动跳过） */
-    fun validateCourses(schedule: Schedule): List<ScheduleError> {
+    fun validateCourses(schedule: Schedule, includeHidden: Boolean = false): List<ScheduleError> {
         val settingsValid = validateSettingsOnly(schedule).isEmpty()
-        return courses(schedule, settingsValid) + adjustments(schedule, settingsValid)
+        return courses(schedule, settingsValid, includeHidden) + adjustments(schedule, settingsValid)
     }
 
-    private fun courses(schedule: Schedule, settingsValid: Boolean): List<ScheduleError> {
+    private fun courses(
+        schedule: Schedule,
+        settingsValid: Boolean,
+        includeHidden: Boolean,
+    ): List<ScheduleError> {
         val errors = mutableListOf<ScheduleError>()
 
         for (course in schedule.courses) {
@@ -103,10 +124,17 @@ object ScheduleValidator {
             if (course.name.isBlank()) {
                 errors += ScheduleError.CourseFieldInvalid(course.id, FieldReason.BlankName)
             }
-            // 落在当前每周天数之外的课（5 天课表里的周六/周日课）：切视图时**保留不删**，
-            // 只是当前视图看不到，故不参与任何与天数/学期边界相关的校验——
-            // 否则 7→5 的切换会被这些"藏起来的课"挡住，再切回 7 天就永远看不到了。
-            val hidden = course.dayOfWeek !in 1..schedule.daysPerWeek
+            // R9 星期合法域：dayOfWeek 只能 1..7。0/8 这类 0-index 脏数据不再借"隐藏"
+            // 豁免溜进来（此前它们永远不可见也删不掉）；隐藏仅指 1..7 内、落在当前
+            // 视图列数之外的可切换课
+            if (course.dayOfWeek !in 1..7) {
+                errors += ScheduleError.CourseFieldInvalid(course.id, FieldReason.DayOutOfRange)
+            }
+            // 落在当前每周天数之外的课（5 天课表里的周六/周日课）：默认口径（includeHidden
+            // = false）切视图时**保留不删**、不参与学期/节次边界校验——否则 7→5 的切换会被
+            // 这些"藏起来的课"挡住，再切回 7 天就永远看不到了。设置类 mutator 传
+            // includeHidden = true，隐藏课照常校验，不留"切回 7 天即非法"的死角
+            val hidden = !includeHidden && course.dayOfWeek > schedule.daysPerWeek
             if (settingsValid && !hidden) {
                 // R10 起始节/跨度/末节
                 val spanOk = course.span in 1..MAX_SPAN &&
@@ -123,7 +151,7 @@ object ScheduleValidator {
                     errors += ScheduleError.WeekSegmentInvalid(course.id, index)
                 }
             }
-            // R11/R14 周数与学期边界（依赖合法学期）：藏起来的课不校验（见上）
+            // R11/R14 周数与学期边界（依赖合法学期）：默认口径下藏起来的课不校验（见上）
             if (settingsValid && !hidden) {
                 val maxWeek = course.weeks.maxWeek()
                 if (maxWeek != null && maxWeek > schedule.totalWeeks) {

@@ -47,7 +47,8 @@ internal fun NewScheduleSheet(
     var name by remember { mutableStateOf("") }
     val defaultStart = remember { IsoDate.today() }
     var start by remember { mutableStateOf(defaultStart) }
-    var end by remember { mutableStateOf(defaultStart + TERM_DEFAULT_DAYS) }
+    // 默认结束日按日历周锚定（第 16 周周五）：任一星期几开学，默认总周数都是 16 周
+    var end by remember { mutableStateOf(defaultTermEnd(defaultStart)) }
 
     // 开学/结束日期滚轮弹窗（BottomDateSelectCard）：期望态 + 挂载态两段式（同新建待办
     // 的各滚轮弹窗），声明在 OverlaySheet 之前——弹窗在场时经 covered 让本浮层缩小后退

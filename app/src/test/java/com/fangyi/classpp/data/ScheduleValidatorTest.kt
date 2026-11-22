@@ -13,6 +13,7 @@ import com.fangyi.classpp.data.model.Parity
 import com.fangyi.classpp.data.model.defaultSlotsFor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -231,8 +232,8 @@ class ScheduleValidatorTest {
 
     /**
      * 节数边界样本：只看条数、不看时间内容（时间格式与顺序由 R6/R7 专测）。
-     * 不用 [defaultSlotsFor]——它在 8:00–22:30 + 30 分钟课间的窗口里最多只能生成 28 节，
-     * 撑不到 30 的上界，再高会 `require` 抛异常。
+     * 不用 [defaultSlotsFor]——它在 8:00–22:30 + 30 分钟课间的窗口里最多只能生成 29 节，
+     * 撑不到 30 的上界，再高会返回 null（放不下）。
      */
     private fun slotsOf(count: Int) = List(count) { TimeSlotDef("8:00", "9:00") }
 
@@ -250,6 +251,24 @@ class ScheduleValidatorTest {
         assertNo<ScheduleError.SlotCountInvalid>(
             ScheduleValidator.validate(schedule(slots = slotsOf(ScheduleValidator.MIN_SLOTS))),
         )
+    }
+
+    @Test
+    fun `R5b slot duration bounds`() {
+        // 分享/AI 导入经全量校验拦截非法时长：0/负数/超上界一律拒绝
+        for (bad in listOf(0, -5, 9, 201)) {
+            val errors = ScheduleValidator.validate(schedule().copy(slotDurationMinutes = bad))
+            assertTrue(
+                "duration $bad should be rejected, got: $errors",
+                errors.any { it is ScheduleError.SlotDurationInvalid },
+            )
+        }
+        // 边界值 10/200 合法
+        for (good in listOf(10, 200)) {
+            assertNo<ScheduleError.SlotDurationInvalid>(
+                ScheduleValidator.validate(schedule().copy(slotDurationMinutes = good)),
+            )
+        }
     }
 
     @Test
@@ -312,12 +331,15 @@ class ScheduleValidatorTest {
     }
 
     /**
-     * 藏起来的课（落在当前天数之外）连学期边界都不校验：
-     * 7 天课表把结束日收成周三后切 5 天，周日那门课的"最后一天"其实晚于 termEnd，
-     * 但它当前视图看不到 —— 若照常报错，7→5 就会被自己的课挡住，再也切不回去。
+     * 藏起来的课（落在当前天数之外）在**默认宽容口径**下连学期边界都不校验——这是
+     * 「视图豁免」而非全局豁免：7 天课表把结束日收成周三后切 5 天，周日那门课的
+     * "最后一天"晚于 termEnd，若照常报错，7→5 会被自己的课挡住再也切不回去
+     * （daysPerWeek 是纯视图设置，setDaysPerWeek 不走全量校验）。
+     * 设置类 mutator 传 includeHidden = true 走**严格口径**：藏起来的课照常参与
+     * R10/R11/R14，禁止制造"切回 7 天视图才暴露"的非法数据。
      */
     @Test
-    fun `R14 hidden weekend courses are exempt from term end checks`() {
+    fun `R14 hidden weekend courses are exempt in the lenient scope but strict in settings mutators`() {
         val sevenDayEndWednesday = schedule(
             daysPerWeek = 7,
             end = IsoDate.parse("2026-06-17"),
@@ -325,10 +347,22 @@ class ScheduleValidatorTest {
         )
         assertHas<ScheduleError.TermEndInvalid>(ScheduleValidator.validate(sevenDayEndWednesday))
 
-        // 同一个课表切到 5 天：该课被藏起来，不再有任何错误（切换因此永远可逆）
+        // 同一个课表切到 5 天：默认口径下该课被藏起来，不再有任何错误（视图切换因此可逆）
+        val fiveDay = sevenDayEndWednesday.copy(daysPerWeek = 5)
+        assertEquals(emptyList<ScheduleError>(), ScheduleValidator.validate(fiveDay))
+
+        // 严格口径（setTerm/setSlots 等设置类 mutator 用）：同一条非法数据现形
+        assertHas<ScheduleError.TermEndInvalid>(
+            ScheduleValidator.validate(fiveDay, includeHidden = true),
+        )
+        // 数据本身合法时，严格口径对隐藏课也放行（周末课 ≠ 非法）
+        val validHidden = schedule(
+            end = IsoDate.parse("2026-06-21"),
+            courses = listOf(course(day = 7, weeks = WeekPattern.everyWeek(16))),
+        )
         assertEquals(
             emptyList<ScheduleError>(),
-            ScheduleValidator.validate(sevenDayEndWednesday.copy(daysPerWeek = 5)),
+            ScheduleValidator.validate(validHidden, includeHidden = true),
         )
     }
 
@@ -341,7 +375,7 @@ class ScheduleValidatorTest {
         // span 上限 5（6 节制下也不允许 span=6）
         val sixSlots = schedule(
             courses = listOf(course(startSlot = 1, span = 6)),
-            slots = defaultSlotsFor(6),
+            slots = defaultSlotsFor(6)!!,
         )
         assertHas<ScheduleError.CourseFieldInvalid>(ScheduleValidator.validate(sixSlots))
         // startSlot=0 非法
@@ -385,6 +419,30 @@ class ScheduleValidatorTest {
     fun `R8 blank course name`() {
         assertHas<ScheduleError.CourseFieldInvalid>(
             ScheduleValidator.validate(schedule(courses = listOf(course(name = "   ")))),
+        )
+    }
+
+    /**
+     * R9 星期合法域：dayOfWeek 只能 1..7。0/8 这类 0-index 脏数据不再借"隐藏"豁免
+     * 溜进库（此前它们永远不可见也删不掉）；1..7 内落在视图列数之外的课仍是合法隐藏课。
+     */
+    @Test
+    fun `R9 dayOfWeek outside 1-7 is rejected`() {
+        for (bad in listOf(0, 8)) {
+            val errors = ScheduleValidator.validate(schedule(courses = listOf(course(day = bad))))
+            val fieldError = errors.filterIsInstance<ScheduleError.CourseFieldInvalid>()
+                .firstOrNull { it.reason == FieldReason.DayOutOfRange }
+            assertNotNull("dayOfWeek $bad should be rejected, got: $errors", fieldError)
+        }
+        // 5 天模式下的周六/周日课仍合法（视图隐藏，非脏数据）
+        assertEquals(
+            emptyList<ScheduleError>(),
+            ScheduleValidator.validate(
+                schedule(
+                    end = IsoDate.parse("2026-06-21"),
+                    courses = listOf(course(day = 6), course(day = 7)),
+                ),
+            ),
         )
     }
 
@@ -443,6 +501,29 @@ class ScheduleValidatorTest {
         val second = course(id = "b", day = 3, startSlot = 1,
             weeks = WeekPattern(listOf(WeekSegment(9, 16))))
         assertNo<ScheduleError.GridConflict>(ScheduleValidator.validate(schedule(courses = listOf(first, second))))
+    }
+
+    /**
+     * R13 已知设计限制（现状文档化，产品决策未定，勿当作缺陷静默"修复"）：
+     * R13 只按「同格 + 周数相交」判常规冲突，不考虑单次调课已把某个重叠课次移走。
+     * 下例中 a、b 仅第 5 周同格重叠，而 b 的第 5 周已调去周四——最终课表实际无冲突，
+     * 但 R13 仍报 GridConflict。若未来产品决定支持「调课解除同格冲突」，R13 需改为
+     * 按实际 occurrence 逐周判定，复杂度较高，应单独立项。
+     */
+    @Test
+    fun `R13 does not consider an adjustment moving the only overlapping occurrence away`() {
+        val a = course(id = "a", day = 3, startSlot = 1,
+            weeks = WeekPattern(listOf(WeekSegment(1, 5, Parity.ODD)))) // {1, 3, 5}
+        val b = course(id = "b", day = 3, startSlot = 1,
+            weeks = WeekPattern(listOf(WeekSegment(5, 16))))            // {5..16}
+        // b 的第 5 周课次调到周四第 1 节：调课本身完全合法
+        val movedToThursday = adjust(courseId = "b", fromWeek = 5, toWeek = 5, toDay = 4, toStartSlot = 1)
+
+        val errors = ScheduleValidator.validate(
+            schedule(courses = listOf(a, b), adjustments = listOf(movedToThursday)),
+        )
+        // 现状：重叠周已被调走，R13 仍报同格冲突（R15 跳过被调走的课次，口径未同步到 R13）
+        assertHas<ScheduleError.GridConflict>(errors)
     }
 
     // ---------- 整体行为 ----------

@@ -28,14 +28,16 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.FieldReason
 import com.fangyi.classpp.data.ScheduleError
 import com.fangyi.classpp.data.ScheduleValidator
+import com.fangyi.classpp.data.model.CourseAdjustment
 import com.fangyi.classpp.data.model.CourseColor as DataCourseColor
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.Parity
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.WeekPattern
+import com.fangyi.classpp.data.model.buildCourseEntry
 import com.fangyi.classpp.data.model.firstUnusedColor
-import com.fangyi.classpp.data.model.newUuid
 import com.fangyi.classpp.data.model.overlappingCourses
+import com.fangyi.classpp.data.model.prunedForCourse
 import com.fangyi.classpp.data.model.weeksFromSelection
 import com.fangyi.classpp.data.model.weeksTakenByOthers
 import com.fangyi.classpp.ui.components.CardSection
@@ -59,12 +61,15 @@ import dev.chrisbanes.haze.rememberHazeState
 
 /**
  * 添加/编辑课程面板：[day] / [slot] 是点中的那一格（编辑态传被编辑课的星期与起始节）；
- * [schedule] 提供总周数与校验上下文；[draftCourses] 是编辑态草稿——冲突校验针对
- * "草稿 + 面板内容"，所以刚加、还没保存的课也能立刻报出冲突。
+ * [schedule] 提供总周数与校验上下文；[draftCourses] / [adjustments] 是编辑态草稿——
+ * 冲突校验针对"草稿 + 面板内容"，所以刚加、还没保存的课/调课也能立刻报出冲突。
+ * 校验用草稿调课并按确认后的清理规则预演（[prunedForCourse]），与 [ScheduleEditSession]
+ * 的保存口径一致；仓库已保存的旧调课不参与判定。
  *
  * [existing] 非空 = 编辑已有课程：字段预填、星期/起始节次锁定（仅内容可改）、
  * 标题切换、显示删除按钮；[onDelete] 点删除即回调（直接删草稿，无二次确认——
- * 取消编辑即可整体撤销）。两者都只作用于草稿，保存时才落库。
+ * 取消编辑即可整体撤销）。两者都只作用于草稿，保存时才落库。确认构造条目时
+ * 面板外字段（如备注）从 [existing] 原样保留（见 [buildCourseEntry]）。
  *
  * [alternateFrom] 非空 = 长按已有课新建**交替课程**（与 [existing] 互斥）：默认与源课同起止，
  * 结束节次可往下延伸，与范围有交集的课程都一起成为交替课程（不要求完整包住，只要周数不冲突）。
@@ -105,6 +110,8 @@ fun AddCoursePanel(
     onDismiss: () -> Unit,
     onDismissed: () -> Unit,
     onConfirm: (CourseEntry) -> Unit,
+    // 编辑态调课草稿：预校验与 [ScheduleEditSession.update] 同口径（含失效调课清理）
+    adjustments: List<CourseAdjustment> = emptyList(),
     existing: CourseEntry? = null,
     onDelete: (() -> Unit)? = null,
     alternateFrom: CourseEntry? = null,
@@ -212,6 +219,11 @@ fun AddCoursePanel(
     val errorTermEndFormat = stringResource(R.string.error_term_end_course)
     val errorSpanFormat = stringResource(R.string.error_span_out_of_range)
     val errorConflictFormat = stringResource(R.string.error_grid_conflict)
+    val errorCourseAdjustConflictFormat = stringResource(R.string.error_course_adjust_conflict)
+    val errorAdjustSourceFormat = stringResource(R.string.error_adjust_source_invalid)
+    val errorAdjustTarget = stringResource(R.string.error_adjust_target_invalid)
+    val errorAdjustUnchanged = stringResource(R.string.error_adjust_unchanged)
+    val errorAdjustDuplicateFormat = stringResource(R.string.error_adjust_duplicate)
     val errorUnexpected = stringResource(R.string.error_unexpected)
 
     // 节次选择校验：普通新建/编辑时，范围调整后若与某门被涉课的周数重合，点名报冲突——
@@ -280,12 +292,11 @@ fun AddCoursePanel(
             start,
             minOf(schedule.slotCount, start + ScheduleValidator.MAX_SPAN - 1),
         )
-        val entry = CourseEntry(
-            // 编辑态沿用原 id（写回时按 id 覆盖），添加态生成新 id
-            id = existing?.id ?: newUuid(),
-            name = name.trim(),
-            teacher = teacher.trim(),
-            location = location.trim(),
+        val entry = buildCourseEntry(
+            existing = existing,
+            name = name,
+            teacher = teacher,
+            location = location,
             dayOfWeek = day,
             startSlot = start,
             span = end - start + 1,
@@ -295,7 +306,14 @@ fun AddCoursePanel(
         )
         // 校验集合排除被编辑的课自己：草稿里它还是旧内容，不排除会跟新内容自相冲突
         val others = draftCourses.filterNot { it.id == existing?.id }
-        val draft = schedule.copy(courses = others + entry)
+        // 预演确认后的调课清理（ScheduleEditSession.update 同一规则）：新周规律不含
+        // 原课次的调课确认时会被清掉，校验也必须按清理后的口径——否则旧调课会把
+        // 合法的缩周编辑误报成「未知错误」。草稿里新加/改过的调课同样参与判定
+        val candidateAdjustments = adjustments.prunedForCourse(entry.id, entry)
+        val draft = schedule.copy(
+            courses = others + entry,
+            adjustments = candidateAdjustments,
+        )
         val conflict = ScheduleValidator.validateCourses(draft).firstOrNull()
         // 课程类错误一律点名到课程，别把内部 id / 英文 message 漏给用户；
         // 报错的那门不一定是面板正在编辑的这门——学期被改短后，可能是草稿里另一门先越界，
@@ -314,6 +332,8 @@ fun AddCoursePanel(
                 is ScheduleError.CourseFieldInvalid -> when (e.reason) {
                     FieldReason.BlankName -> errorNameBlank
                     FieldReason.SpanOutOfRange -> errorSpanFormat.format(courseName)
+                    // 星期越界在面板里点不出来（菜单层已约束），到达即脏数据：给通用提示
+                    FieldReason.DayOutOfRange -> errorUnexpected
                 }
                 is ScheduleError.WeeksBeyondTerm ->
                     errorWeeksBeyondTermFormat.format(courseName, e.lastDate, schedule.totalWeeks)
@@ -325,6 +345,14 @@ fun AddCoursePanel(
                     val other = if (e.a.id == entry.id) e.b else e.a
                     errorConflictFormat.format(other.name)
                 }
+                // 调课类错误：点名到被调的课，别让「与自己的调课冲突」读成未知错误
+                is ScheduleError.AdjustmentSourceInvalid ->
+                    errorAdjustSourceFormat.format(e.courseName, e.fromWeek)
+                is ScheduleError.AdjustmentTargetInvalid -> errorAdjustTarget
+                is ScheduleError.AdjustmentUnchanged -> errorAdjustUnchanged
+                is ScheduleError.AdjustmentConflict -> errorCourseAdjustConflictFormat.format(e.courseName)
+                is ScheduleError.AdjustmentDuplicate ->
+                    errorAdjustDuplicateFormat.format(e.courseName, e.fromWeek)
                 else -> errorUnexpected
             }
         }

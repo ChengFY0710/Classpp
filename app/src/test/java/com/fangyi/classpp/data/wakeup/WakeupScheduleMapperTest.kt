@@ -221,6 +221,25 @@ class WakeupScheduleMapperTest {
         assertEquals(IsoDate.of(2026, 3, 2), schedule.termStart)
     }
 
+    /**
+     * semesterStartDate 可为任意星期几：termEnd 按「开学日所在日历周的周一」锚定到末周周日。
+     * 此前从 termStart 直接起算（`+ (N-1)*7 + 6`），周二~周日开学会落到第 N+1 周，
+     * 学期凭空多出一周。
+     */
+    @Test
+    fun `non monday semester start keeps the configured total weeks`() {
+        for (startDate in listOf("2026-03-03", "2026-03-05", "2026-03-07", "2026-03-08")) {
+            val payload = fullPayload().copy(
+                config = fullPayload().config.copy(semesterStartDate = startDate),
+            )
+            val schedule = WakeupScheduleMapper.toScheduleOrNull(payload, "", "Wakeup 课表")!!
+
+            assertEquals("start=$startDate", 16, schedule.totalWeeks)
+            // 末周周日：与周一开学同口径（Xmu/Remote 同式）
+            assertEquals("start=$startDate", IsoDate.of(2026, 6, 21), schedule.termEnd)
+        }
+    }
+
     @Test
     fun `five day view when all courses within weekdays`() {
         val payload = fullPayload().copy(

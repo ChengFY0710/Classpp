@@ -363,10 +363,12 @@ internal fun DayScreen(
     // 浮层两段式：mounted 决定是否在组合里，visible 管进出场——出场播完才移出组合
     var sheetMounted by remember { mutableStateOf(false) }
     var sheetVisible by remember { mutableStateOf(false) }
-    // 课程详情浮层：被点课程 id（点上课提醒卡/时间轴上课卡进入）；空 = 未打开。
-    // 条目从当前课表反查，课程被删/切课表后反查落空 → 请求清空 → 浮层自动关闭
+    // 课程详情浮层：被点课程 id + 被点课次的调课 id（点上课提醒卡/时间轴上课卡进入，
+    // 从调课卡进入时详情的位置胶囊要显示目标时间）；空 = 未打开。条目从当前课表反查，
+    // 课程被删/切课表后反查落空 → 请求清空 → 浮层自动关闭
     //（两段式约定同课表页，宿主块见底部挂载处）
     var detailTargetId by rememberSaveable { mutableStateOf("") }
+    var detailAdjustmentId by rememberSaveable { mutableStateOf("") }
     var detailMounted by remember { mutableStateOf<CourseEntry?>(null) }
     // 待办详情浮层：被点待办 id + 所点条目的分期日期（ISO 文本，空 = 非逐期卡）——
     // 点待办提醒卡行/时间轴待办卡进入；条目从原始待办列表反查（id 不随分期展开变化），
@@ -1602,7 +1604,10 @@ internal fun DayScreen(
                                         onCompleteTodo = completeAlertTodo,
                                         onToggleTodo = toggleTaskTodo,
                                         onTodoClick = openTodoDetail,
-                                        onCourseClick = { detailTargetId = it },
+                                        onCourseClick = { courseId, adjustmentId ->
+                                            detailTargetId = courseId
+                                            detailAdjustmentId = adjustmentId.orEmpty()
+                                        },
                                     )
                                 }
                             }
@@ -1648,9 +1653,12 @@ internal fun DayScreen(
 
         // 10.5) 课程详情浮层：点上课提醒卡/时间轴上课卡唤起，与课表页（ScheduleScreen）
         // 同款接线。条目从当前课表反查（课程被删/切课表后反查落空 → 请求清空 → 浮层自动
-        // 关闭）；挂载/可见两段式：收场动画期间 detailMounted 保持内容稳定不闪空。
+        // 关闭）；从调课卡点进来时按 id 反查调课记录传给详情，位置胶囊显示目标时间。
+        // 挂载/可见两段式：收场动画期间 detailMounted 保持内容稳定不闪空。
         // 画在顶栏之后、图片浮层之前——图片浮层保持最顶层（盖住整个页面，含浮层）。
         val activeSchedule = scheduleState?.value
+        val detailAdjustment = activeSchedule?.adjustments
+            ?.firstOrNull { it.id == detailAdjustmentId }
         val detailEntry = activeSchedule?.courses?.firstOrNull { it.id == detailTargetId }
         if (detailEntry != null) detailMounted = detailEntry
         detailMounted?.let { detail ->
@@ -1678,6 +1686,8 @@ internal fun DayScreen(
                     entry = detail,
                     schedule = schedule,
                     todos = courseTodos,
+                    // 调课卡进入：位置胶囊显示目标周/节次，信息卡补「原 周X 第a-b节」
+                    adjustment = detailAdjustment,
                     covered = courseTodoVisible,
                     // 同时间轴待办卡：勾选结算走 toggleTaskTodo（分期/整条 + 失败 Toast）
                     onTodoCheckedChange = toggleTaskTodo,
@@ -1701,7 +1711,10 @@ internal fun DayScreen(
                         courseTodoMounted = true
                         courseTodoVisible = true
                     },
-                    onDismiss = { detailTargetId = "" },
+                    onDismiss = {
+                        detailTargetId = ""
+                        detailAdjustmentId = ""
+                    },
                     onDismissed = { detailMounted = null },
                 )
             }
@@ -2013,12 +2026,13 @@ private fun DayDateContent(
     onCompleteTodo: (Todo) -> Unit,
     onToggleTodo: (Todo, Boolean) -> Unit,
     onTodoClick: (Todo) -> Unit,
-    onCourseClick: (String) -> Unit,
+    // 上课卡点击上报（课程 id + 被点课次的调课 id，后者非空 = 点的是调课卡）
+    onCourseClick: (courseId: String, adjustmentId: String?) -> Unit,
 ) {
     val isToday = viewDate == today
     // 非今天整天概览卡的节数：同一取课口径（周号 + 星期 + 周规律，开学前/学期外 0 节）
     val dayCourseCount = remember(schedule, viewDate) {
-        schedule?.let { todayCourseEntries(it, viewDate).size } ?: 0
+        schedule?.let { todayCourses(it, viewDate).size } ?: 0
     }
     // 时间轴任务卡：该日有起止时刻的课程 + 待办（口径见 dayTasks），装配成 DayTask 列表。
     // 截止取色是 @Composable 口径（读 LocalToday），故在组合期装配而非 remember 块里；
@@ -2117,7 +2131,7 @@ private fun DayTodayCourseAlert(
     schedule: Schedule?,
     today: IsoDate,
     nowMinute: State<Int>,
-    onCourseClick: (String) -> Unit,
+    onCourseClick: (courseId: String, adjustmentId: String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val minute = nowMinute.value
@@ -2134,7 +2148,10 @@ private fun DayTodayCourseAlert(
         teacher = courseAlert.course?.teacher,
         location = courseAlert.course?.location,
         note = courseAlert.course?.note,
-        onClick = courseAlert.course?.let { course -> { onCourseClick(course.id) } },
+        // 从调课卡点进详情也要带调课 id：详情位置胶囊显示目标时间而非原课次
+        onClick = courseAlert.course?.let { course ->
+            { onCourseClick(course.id, courseAlert.adjustmentId) }
+        },
         modifier = modifier,
     )
 }
@@ -2410,6 +2427,8 @@ private data class DayCourseAlertData(
     val course: CourseEntry? = null,
     val startTimeText: String = "",
     val endTimeText: String = "",
+    /** 被点课次的调课 id（点进详情显示目标位置用）；非空 = 当前这张卡是调课卡 */
+    val adjustmentId: String? = null,
 )
 
 /**
@@ -2423,11 +2442,12 @@ private data class DayCourseAlertData(
  */
 private fun dayCourseAlertData(schedule: Schedule?, today: IsoDate, nowMinute: Int): DayCourseAlertData {
     if (schedule == null) return DayCourseAlertData(DayCourseAlertState.NoCourse)
-    val todayCourses = todayCourseEntries(schedule, today)
-    if (todayCourses.isEmpty()) return DayCourseAlertData(DayCourseAlertState.NoCourse)
+    val courses = todayCourses(schedule, today)
+    if (courses.isEmpty()) return DayCourseAlertData(DayCourseAlertState.NoCourse)
 
-    var next: Triple<CourseEntry, Pair<String, String>, Int>? = null
-    for (course in todayCourses) {
+    var next: Triple<TodayCourse, Pair<String, String>, Int>? = null
+    for (item in courses) {
+        val course = item.entry
         val startSlot = schedule.slots.getOrNull(course.startSlot - 1) ?: continue
         val endSlot = schedule.slots.getOrNull(course.endSlot - 1) ?: startSlot
         val startMinute = TimeText.parseMinutes(startSlot.startTime) ?: continue
@@ -2438,46 +2458,57 @@ private fun dayCourseAlertData(schedule: Schedule?, today: IsoDate, nowMinute: I
                 course = course,
                 startTimeText = startSlot.startTime,
                 endTimeText = endSlot.endTime,
+                adjustmentId = item.adjustmentId,
             )
         }
         if (next == null && startMinute > nowMinute) {
-            next = Triple(course, startSlot.startTime to endSlot.endTime, startMinute)
+            next = Triple(item, startSlot.startTime to endSlot.endTime, startMinute)
         }
     }
-    val (course, times, startMinute) = next ?: return DayCourseAlertData(DayCourseAlertState.DayDone)
+    val (courseItem, times, startMinute) = next ?: return DayCourseAlertData(DayCourseAlertState.DayDone)
     return DayCourseAlertData(
         state = DayCourseAlertState.Countdown(startMinute - nowMinute),
-        course = course,
+        course = courseItem.entry,
         startTimeText = times.first,
         endTimeText = times.second,
+        adjustmentId = courseItem.adjustmentId,
     )
 }
+
+/** 当天一次课的点击载荷：有效位置已写入 [entry]，另带被点课次的调课 id（详情定位用） */
+private data class TodayCourse(
+    val entry: CourseEntry,
+    val adjustmentId: String?,
+)
 
 /**
  * 今天该上的课（周号 + 星期 + 周规律 + 单次调课，开学前/学期外整段跳过）。
  * **不按 daysPerWeek 跳过周末**：那只是网格的显示列数，周末真实排了课仍要提醒/上时间轴。
  *
  * 调课口径统一走 [occurrencesOn]：源课次在源日期消失，调课卡在目标日期以目标节次出现。
- * 返回的 [CourseEntry] 已把 dayOfWeek/startSlot/span 改写成当天有效值——下游
- * （上课提醒卡、时间轴）只认这三个字段。
+ * 返回的 [TodayCourse.entry] 已把 dayOfWeek/startSlot/span 改写成当天有效值——下游
+ * （上课提醒卡、时间轴）只认这三个字段；调课 id 一并带出，点进详情显示目标位置。
  *
  * 上课提醒卡（[dayCourseAlertData]）与时间轴任务卡（[dayTasks]）共用同一取课口径。
  */
-private fun todayCourseEntries(schedule: Schedule, today: IsoDate): List<CourseEntry> =
+private fun todayCourses(schedule: Schedule, today: IsoDate): List<TodayCourse> =
     schedule.occurrencesOn(today).map { occurrence ->
-        occurrence.course.copy(
-            dayOfWeek = occurrence.dayOfWeek,
-            startSlot = occurrence.startSlot,
-            span = occurrence.span,
+        TodayCourse(
+            entry = occurrence.course.copy(
+                dayOfWeek = occurrence.dayOfWeek,
+                startSlot = occurrence.startSlot,
+                span = occurrence.span,
+            ),
+            adjustmentId = occurrence.adjustment?.id,
         )
     }
 
 /**
  * 时间轴任务卡取数（组合期调用——截止取色是 @Composable 口径，读 LocalToday）：
  * 今天该上的课 + 当天有起止时刻（Period 档）的待办。
- * 课程口径同 [todayCourseEntries]，时刻经大节定义解析（跨节 span > 1 = 末节下课时刻）；
- * 上课卡经 [onCourseClick]（课程 id）、待办卡经 [onTodoClick]（分期副本，宿主取 id + 分期
- * 日期）接详情浮层的唤起；待办先按 [expandTimelineOccurrences] 展开分期再取落在今天的，
+ * 课程口径同 [todayCourses]，时刻经大节定义解析（跨节 span > 1 = 末节下课时刻）；
+ * 上课卡经 [onCourseClick]（课程 id + 调课 id）、待办卡经 [onTodoClick]（分期副本，宿主取
+ * id + 分期日期）接详情浮层的唤起；待办先按 [expandTimelineOccurrences] 展开分期再取落在今天的，
  * 已完成分期也上轴（卡片内置灰划线呈现）——合并/打卡口径勾选完成后滚动卡会前移到下一
  * 期，时间轴靠该口径把当天这一张补回、原地保留完成态；AllDay/无时刻的待办在比例时间轴
  * 上无处安放、不上轴；截止文案取绝对日期（如「10/27 6:00」），重复规则取档位名
@@ -2489,11 +2520,12 @@ private fun dayTasks(
     todos: List<Todo>,
     today: IsoDate,
     onToggleTodo: (Todo, Boolean) -> Unit,
-    onCourseClick: (String) -> Unit = {},
+    onCourseClick: (courseId: String, adjustmentId: String?) -> Unit = { _, _ -> },
     onTodoClick: (Todo) -> Unit = {},
 ): List<DayTask> = buildList {
     if (schedule != null) {
-        for (course in todayCourseEntries(schedule, today)) {
+        for (item in todayCourses(schedule, today)) {
+            val course = item.entry
             val startSlot = schedule.slots.getOrNull(course.startSlot - 1) ?: continue
             val endSlot = schedule.slots.getOrNull(course.endSlot - 1) ?: startSlot
             val startMinute = TimeText.parseMinutes(startSlot.startTime) ?: continue
@@ -2508,7 +2540,8 @@ private fun dayTasks(
                     color = CourseColor.valueOf(course.color.name),
                     startMinute = startMinute,
                     endMinute = endMinute,
-                    onClick = { onCourseClick(course.id) },
+                    // 调课卡点进详情带调课 id：位置胶囊显示目标时间而非原课次
+                    onClick = { onCourseClick(course.id, item.adjustmentId) },
                 ),
             )
         }

@@ -215,8 +215,8 @@ internal fun TimeSchemeSheet(
     // 合并预览与门控：固定两两配对 + 30 分钟间隙；至少有一门课真正占用 ≥2 节、所有课程
     // span≥2、能精确对齐且至少有一对可合并时按钮才可点。纯计算，草稿每次变化重算一次
     // （课表规模很小）
-    val mergePlan = remember(draftSlots, draftCourses, schedule.daysPerWeek) {
-        previewSlotMerge(draftSlots, draftCourses, schedule.daysPerWeek)
+    val mergePlan = remember(draftSlots, draftCourses) {
+        previewSlotMerge(draftSlots, draftCourses)
     }
     // 内置「默认」方案不支持合并（大节模板，合并只会把 100 分钟一节并成 230 分钟的大节）；
     // 切到其它方案或改动任一明细自动落到「自定义」后，合并才按 mergePlan 的条件放行

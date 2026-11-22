@@ -662,6 +662,8 @@ fun ScheduleScreen(
                                 // （第 0 周 = 开学前的当今周，整页课程全部置灰）
                                 courses = editSession.courses.toWeekCards(
                                     pageWeek,
+                                    schedule.termStart,
+                                    schedule.termEnd,
                                     editSession.adjustments,
                                 ),
                                 dates = dates.map { it.toUiDate() },
@@ -853,11 +855,21 @@ fun ScheduleScreen(
             }
 
             // 点顶栏星期行 = 5 天 / 7 天视图互切（等价于设置页的「每周上课天数」）。
-            // 只改天数：周六/周日的课保留在数据里、5 天视图只是不画它们，切回 7 天原样出现，
-            // 故切换永远不会失败，也不必弹任何提示。
+            // daysPerWeek 是纯视图设置：周六/周日的课保留在数据里、5 天视图只是不画它们，
+            // 切回 7 天原样出现，仓库只校验取值本身，切换永不因课程数据失败。
+            // 万一 Err（NotFound/非法取值）也照设置页口径 toast，绝不静默没反应
             val onToggleDaysPerWeek: () -> Unit = {
                 val targetDays = if (schedule.daysPerWeek == 7) 5 else 7
-                scope.launch { repository.setDaysPerWeek(schedule.id, targetDays) }
+                scope.launch {
+                    val result = repository.setDaysPerWeek(schedule.id, targetDays)
+                    if (result is OpResult.Err) {
+                        Toast.makeText(
+                            context,
+                            result.error.toEditMessage(context),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
             }
 
             // 保存：先拿"草稿 + 快照"整份预检（给用户可读的原因），再整份写回仓库。
@@ -934,10 +946,12 @@ fun ScheduleScreen(
                     }
                 }
             }
-            // 统一切换入口（行点击 / 导入 / 新建成功）：草稿有改动先弹丢弃确认
+            // 统一切换入口（行点击 / 导入 / 新建成功）：草稿有改动先弹丢弃确认。
+            // 脏检查同时看课程与调课草稿——只改了调课/调休也算未保存的修改，
+            // 否则切换会静默丢掉它们（重建会话后调课草稿不复存在）
             val requestSwitch: (String) -> Unit = { id ->
                 if (id != schedule.id) {
-                    if (editSession != null && editSession.courses != schedule.courses) {
+                    if (editSession?.hasChanges(schedule) == true) {
                         pendingSwitchId = id
                     } else {
                         performSwitch(id)
@@ -1459,6 +1473,9 @@ fun ScheduleScreen(
                         slot = request.slot,
                         schedule = schedule,
                         draftCourses = editSession?.courses.orEmpty(),
+                        // 草稿调课：校验口径与 ScheduleEditSession 一致，仓库已保存的
+                        // 旧调课不参与判定
+                        adjustments = editSession?.adjustments.orEmpty(),
                         existing = request.existing,
                         alternateFrom = request.alternateFrom,
                         onDismiss = {
@@ -2582,6 +2599,7 @@ internal fun ScheduleError.toEditMessage(context: Context): String = when (this)
     is ScheduleError.TermRangeInvalid -> context.getString(R.string.error_term_range)
     is ScheduleError.DaysPerWeekInvalid -> context.getString(R.string.error_days_per_week)
     is ScheduleError.SlotCountInvalid -> context.getString(R.string.error_slot_count)
+    is ScheduleError.SlotDurationInvalid -> context.getString(R.string.error_slot_duration)
     is ScheduleError.SlotTimeFormatInvalid -> context.getString(R.string.error_slot_time_format)
     is ScheduleError.SlotOrderInvalid -> context.getString(R.string.error_slot_order)
     // 真正没覆盖到的形态：不把内部 message 抛给用户

@@ -226,16 +226,18 @@ val DEFAULT_SLOTS: List<TimeSlotDef> = listOf(
 /**
  * 用户调整每天节数时的默认作息生成：
  * N ≤ 5 取 [DEFAULT_SLOTS] 前 N 条；N > 5 按**等时长**在 8:00–22:30 窗口内均匀重新生成
- * （课间 30 分钟，永不越过 23:59）。纯启发式，调用方（未来 UI）可再让用户逐节修改。
+ * （课间 30 分钟，永不越过 23:59）。窗口放不下（如 30 节 × 课间 30 分钟已占满全天）返回
+ * null，由调用方决定提示或放弃——公开 helper 不把上限藏在运行时异常里。
+ * 纯启发式，调用方可再让用户逐节修改。
  */
-fun defaultSlotsFor(count: Int): List<TimeSlotDef> {
+fun defaultSlotsFor(count: Int): List<TimeSlotDef>? {
     if (count <= 0) return emptyList()
     if (count <= DEFAULT_SLOTS.size) return DEFAULT_SLOTS.take(count)
     val windowStart = 8 * 60
     val windowEnd = 22 * 60 + 30
     val breaks = DEFAULT_BREAK_MINUTES * (count - 1)
     val duration = (windowEnd - windowStart - breaks) / count
-    require(duration >= 1) { "slot count too large: $count" }
+    if (duration < 1) return null
     return (0 until count).map { i ->
         val start = windowStart + i * (duration + DEFAULT_BREAK_MINUTES)
         TimeSlotDef(TimeText.format(start), TimeText.format(start + duration))
@@ -420,7 +422,7 @@ data class SlotMergePlan(
     val newDurationMinutes: Int,
     /**
      * 是否存在至少一门「实际占用 ≥2 节」的课程（起止节次都落在当前节表内）。
-     * 越界的隐藏课（5 天课表里的周末课且节次已越界）不参与：它们本就不会被重映射。
+     * 越界的课（含隐藏课）一律阻断合并、不会出现在 newCourses 里，故不参与此标记。
      */
     val hasMultiSlotCourse: Boolean,
 ) {
@@ -439,11 +441,12 @@ data class SlotMergePlan(
  *   合并节的起止 = 首节开始 ~ 次节结束，完全实算；
  * - 课程映射以「起点/终点时间不变」为准：起点落在合并对的次节、或终点落在首节时
  *   无法精确对齐，计入 [SlotMergePlan.unalignedCourses] 阻断合并；
+ * - 索引越界的课（含隐藏课，如 5 天课表里节次本就越界的周末课）一律计入
+ *   [SlotMergePlan.unalignedCourses] 阻断：设置类 mutator 已按严格口径校验隐藏课，
+ *   放行只会留下"UI 说能合并、落库必然拒绝"的错位；
  * - span < 2 的课程一律计入 [SlotMergePlan.singleSlotCourses] 阻断（产品规则：所有
  *   课程都占用 ≥2 节时才允许合并）；空课表或全是单节课时没有课程可重映射，合并只会
  *   把节表缩小一半，同样阻断（[SlotMergePlan.hasMultiSlotCourse]）；
- * - 落在当前每周天数之外、且索引已越界的隐藏课（5 天课表里的周末课）原样保留、
- *   不参与阻断：校验器本就跳过它们，保留旧映射不会让可见数据变错；
  * - 新节表的「每节课时间」取各节实际时长的众数（并列取较大），它仅作后续改开始时间
  *   级联顺延的推算依据，不写死 45/100。
  *
@@ -452,7 +455,6 @@ data class SlotMergePlan(
 fun previewSlotMerge(
     slots: List<TimeSlotDef>,
     courses: List<CourseEntry>,
-    daysPerWeek: Int,
 ): SlotMergePlan {
     val newSlots = mutableListOf<TimeSlotDef>()
     // 旧节索引（0-based）→ 新节索引
@@ -490,8 +492,9 @@ fun previewSlotMerge(
         val oldStart = course.startSlot - 1
         val oldEnd = course.endSlot - 1
         if (oldStart !in slots.indices || oldEnd !in slots.indices) {
-            // 可见课越界属于非法草稿，阻断；隐藏课的旧映射本就越界，原样保留
-            if (course.dayOfWeek <= daysPerWeek) unaligned += course else newCourses += course
+            // 越界的课（含隐藏课）一律阻断：设置类 mutator 已按严格口径校验隐藏课，
+            // 放行只会留下「UI 说能合并、落库必然拒绝」的错位
+            unaligned += course
             continue
         }
         if (course.span < 2) singleSlot += course else hasMultiSlotCourse = true

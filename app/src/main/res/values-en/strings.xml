@@ -473,7 +473,8 @@
     <string name="error_adjust_conflict">The target conflicts with \"%1$s\"</string>
     <string name="error_adjust_duplicate">\"%1$s\" already has a reschedule for week %2$d</string>
     <string name="error_adjust_course_missing">The course for this reschedule no longer exists</string>
-    <string name="error_adjust_slot_merge_blocked">Some rescheduled classes cannot align with the new periods. Remove or adjust them first.</string>
+    <string name="error_adjust_slot_merge_blocked">Some rescheduled classes cannot align with the merged periods. Remove or adjust them first.</string>
+    <string name="error_course_adjust_conflict">Conflicts with a rescheduled \"%1$s\" class — adjust the period or weeks</string>
     <string name="course_adjusted_badge">Moved</string>
     <string name="course_adjusted_badge_description">Rescheduled class</string>
     <string name="course_adjusted_badge_description_full">Rescheduled class, originally %1$s %2$s</string>
@@ -521,6 +522,7 @@
     <string name="error_term_end_short">These courses no longer fit in the last week — shorten their weeks or move the term end later</string>
     <string name="error_days_per_week">Days per week must be 5 or 7</string>
     <string name="error_slot_count">Period count must be 1–30</string>
+    <string name="error_slot_duration">Each period must be 10–200 minutes</string>
     <string name="error_slot_time_format">Time must look like 8:00</string>
     <string name="error_slot_order">Periods must be ordered without overlap</string>
     <string name="error_slot_day_overflow">Adjusted times exceed the day</string>

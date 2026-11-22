@@ -5,9 +5,12 @@ import com.fangyi.classpp.data.model.DEFAULT_SLOTS
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeSlotDef
+import com.fangyi.classpp.data.model.WeekPattern
+import com.fangyi.classpp.data.model.WeekSegment
 import com.fangyi.classpp.data.model.appendSlot
 import com.fangyi.classpp.data.model.defaultSlotsFor
 import com.fangyi.classpp.data.model.previewSlotMerge
+import com.fangyi.classpp.data.model.remapAdjustmentsByTime
 import com.fangyi.classpp.data.store.LoadIssue
 import com.fangyi.classpp.data.store.LoadOutcome
 import com.fangyi.classpp.data.store.ScheduleStore
@@ -143,7 +146,7 @@ class ScheduleRepositoryTest {
         r.upsertCourse(id, testCourse(id = "c4", startSlot = 4)).assertOk()
         r.upsertCourse(id, testCourse(id = "c5", startSlot = 5)).assertOk()
 
-        val err = r.setSlots(id, defaultSlotsFor(3)).assertErr()
+        val err = r.setSlots(id, defaultSlotsFor(3)!!).assertErr()
         assertTrue(err is ScheduleError.CoursesOutOfRange)
         assertEquals(2, (err as ScheduleError.CoursesOutOfRange).affected.size)
 
@@ -211,6 +214,87 @@ class ScheduleRepositoryTest {
         r.removeCourse(id, "sun").assertOk()
 
         assertEquals(0, r.schedules.value.single().courses.size)
+    }
+
+    // ---------- daysPerWeek 纯视图化：隐藏课不挡切换，设置类 mutator 严格把关 ----------
+
+    /**
+     * 5 天课表里藏着一门「切回 7 天即非法」的周日课（末次上课 06-21 晚于 termEnd 06-19）：
+     * 视图切换不因课程数据失败（否则用户被自己的课挡死，且 5 天视图里根本看不到它）；
+     * 改学期/节表的 mutator 则按严格口径拒绝，不再制造或保留这类数据。
+     */
+    private suspend fun repoWithInvalidHiddenWeekendCourse(): Pair<ScheduleRepository, String> {
+        val r = repo()
+        // 5 天课表 + 周日课（隐藏）：宽容口径放行入库
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd, daysPerWeek = 5).okId()
+        r.upsertCourse(id, testCourse(id = "sun", name = "工程训练", day = 7)).assertOk()
+        return r to id
+    }
+
+    @Test
+    fun `setDaysPerWeek never fails due to courses even when hidden data is stale`() = runBlocking {
+        val (r, id) = repoWithInvalidHiddenWeekendCourse()
+
+        r.setDaysPerWeek(id, 7).assertOk()
+        assertEquals(7, r.schedules.value.single().daysPerWeek)
+        r.setDaysPerWeek(id, 5).assertOk()
+        assertEquals(5, r.schedules.value.single().daysPerWeek)
+
+        // 非法取值仍拒绝（设置本身的校验保留）
+        val err = r.setDaysPerWeek(id, 6).assertErr()
+        assertTrue(err is ScheduleError.DaysPerWeekInvalid)
+    }
+
+    @Test
+    fun `setTerm with hidden weekend course is judged under the strict scope`() = runBlocking {
+        val (r, id) = repoWithInvalidHiddenWeekendCourse()
+
+        // 缩学期到周三：隐藏的周日课末次上课晚于 termEnd → 严格口径整体拒绝、零变更
+        val err = r.setTerm(id, TestTermStart, IsoDate.parse("2026-06-17")).assertErr()
+        assertTrue("expected CoursesOutOfRange, got $err", err is ScheduleError.CoursesOutOfRange)
+        assertEquals(listOf("工程训练"), (err as ScheduleError.CoursesOutOfRange).affected.map { it.name })
+        assertEquals(TestTermEnd, r.schedules.value.single().termEnd)
+        assertEquals(TestTermEnd, repo().schedules.value.single().termEnd)
+
+        // 隐藏课本身合法时同一操作照常通过
+        val (ok, okId) = run {
+            val r2 = repo()
+            val id2 = r2.createSchedule("A", TestTermStart, TestTermEnd, daysPerWeek = 5).okId()
+            // 周日课只上到第 14 周（06-07），任何 termEnd 都放得下
+            r2.upsertCourse(
+                id2,
+                testCourse(id = "sun", day = 7, weeks = WeekPattern(listOf(WeekSegment(1, 14)))),
+            ).assertOk()
+            r2 to id2
+        }
+        ok.setTerm(okId, TestTermStart, IsoDate.parse("2026-06-17")).assertOk()
+        // run 块里的仓库从同一磁盘目录重载（已含第一份 A），按 id 定位断言
+        assertEquals(IsoDate.parse("2026-06-17"), ok.schedules.value.first { it.id == okId }.termEnd)
+    }
+
+    @Test
+    fun `setSlots shrink with hidden weekend course is rejected losslessly`() = runBlocking {
+        val (r, id) = repoWithInvalidHiddenWeekendCourse()
+
+        // 缩到 3 节：隐藏课在第 5 节 → 严格口径拒绝，不留下「切回 7 天即越界」的数据
+        val err = r.setSlots(id, defaultSlotsFor(3)!!).assertErr()
+        assertTrue(err is ScheduleError.CoursesOutOfRange)
+        assertEquals(5, r.schedules.value.single().slotCount)
+        assertEquals(5, repo().schedules.value.single().slotCount)
+    }
+
+    @Test
+    fun `setSlotDuration validates the range`() = runBlocking {
+        val r = repo()
+        val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
+
+        assertTrue(r.setSlotDuration(id, 0).assertErr() is ScheduleError.SlotDurationInvalid)
+        assertTrue(r.setSlotDuration(id, 201).assertErr() is ScheduleError.SlotDurationInvalid)
+        assertEquals(100, r.schedules.value.single().slotDurationMinutes)
+
+        r.setSlotDuration(id, 200).assertOk()
+        assertEquals(200, r.schedules.value.single().slotDurationMinutes)
+        assertEquals(200, repo().schedules.value.single().slotDurationMinutes)
     }
 
     @Test
@@ -724,12 +808,14 @@ class ScheduleRepositoryTest {
     }
 
     @Test
-    fun `setSlotsAndDuration applies both atomically and persists`() = runBlocking {
+    fun `setSlotsDurationCoursesAndAdjustments applies all parts atomically and persists`() = runBlocking {
         val r = repo()
         val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
         val slots = listOf(TimeSlotDef("8:00", "9:30"), TimeSlotDef("10:00", "11:30"))
 
-        r.setSlotsAndDuration(id, slots, 90).assertOk()
+        val before = r.schedules.value.first { it.id == id }
+        r.setSlotsDurationCoursesAndAdjustments(id, slots, 90, before.courses, emptyList())
+            .assertOk()
 
         val updated = r.schedules.value.first { it.id == id }
         assertEquals(slots, updated.slots)
@@ -742,12 +828,19 @@ class ScheduleRepositoryTest {
     }
 
     @Test
-    fun `setSlotsAndDuration rejects out of range courses losslessly`() = runBlocking {
+    fun `setSlotsDurationCoursesAndAdjustments rejects out of range courses losslessly`() = runBlocking {
         val r = repo()
         val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
         r.upsertCourse(id, testCourse(startSlot = 5)).assertOk()
 
-        val error = r.setSlotsAndDuration(id, listOf(TimeSlotDef("8:00", "9:30")), 90).assertErr()
+        val before = r.schedules.value.first { it.id == id }
+        val error = r.setSlotsDurationCoursesAndAdjustments(
+            id,
+            listOf(TimeSlotDef("8:00", "9:30")),
+            90,
+            before.courses,
+            emptyList(),
+        ).assertErr()
         assertTrue(error is ScheduleError.CoursesOutOfRange)
 
         val untouched = r.schedules.value.first { it.id == id }
@@ -756,52 +849,79 @@ class ScheduleRepositoryTest {
     }
 
     @Test
-    fun `setSlotsDurationAndCourses applies slots duration and courses atomically and persists`() = runBlocking {
+    fun `setSlotsDurationCoursesAndAdjustments merges slots courses and adjustments atomically`() = runBlocking {
         val r = repo()
         val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
         r.upsertCourse(id, testCourse(span = 2)).assertOk()
+        // 目标在旧表第 3-4 节的调课：合并后应按「起止时刻不变」落到新表第 2 节
+        r.replaceCoursesAndAdjustments(
+            id,
+            r.schedules.value.single().courses,
+            listOf(testAdjustment(toStartSlot = 3, toSpan = 2)),
+        ).assertOk()
         val smallSlots = listOf(
             TimeSlotDef("8:00", "8:45"),
             TimeSlotDef("8:55", "9:40"),
+            TimeSlotDef("10:10", "10:55"),
+            TimeSlotDef("11:05", "11:50"),
         )
         val before = r.schedules.value.first { it.id == id }
-        val plan = previewSlotMerge(smallSlots, before.courses, before.daysPerWeek)
+        val plan = previewSlotMerge(smallSlots, before.courses)
         assertTrue(plan.canMerge)
 
-        r.setSlotsDurationAndCourses(id, plan.newSlots, plan.newDurationMinutes, plan.newCourses)
-            .assertOk()
+        // 目标时刻在合并后的新节上仍精确存在 → 重映射成功，与节表同批落库
+        val remapped = remapAdjustmentsByTime(smallSlots, plan.newSlots, before.adjustments)
+        assertTrue("目标应能对齐合并后的节表", remapped != null)
+        r.setSlotsDurationCoursesAndAdjustments(
+            id,
+            plan.newSlots,
+            plan.newDurationMinutes,
+            plan.newCourses,
+            remapped!!,
+        ).assertOk()
 
         val updated = r.schedules.value.first { it.id == id }
         assertEquals(plan.newSlots, updated.slots)
         assertEquals(plan.newDurationMinutes, updated.slotDurationMinutes)
         assertEquals(plan.newCourses, updated.courses)
         assertEquals(1, updated.courses.single().span)
+        // 调课目标按新表下标保存：切课表/重启后仍指向正确时段，不再是「新节表 + 旧下标」
+        val savedAdjustment = updated.adjustments.single()
+        assertEquals(2, savedAdjustment.toStartSlot)
+        assertEquals(1, savedAdjustment.toSpan)
 
         val reopened = repo().schedules.value.first { it.id == id }
-        assertEquals(plan.newSlots, reopened.slots)
-        assertEquals(plan.newCourses, reopened.courses)
+        assertEquals(savedAdjustment, reopened.adjustments.single())
     }
 
     @Test
-    fun `setSlotsDurationAndCourses rejects out of range courses losslessly`() = runBlocking {
+    fun `setSlotsDurationCoursesAndAdjustments rejects stale adjustments losslessly`() = runBlocking {
         val r = repo()
         val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
-        r.upsertCourse(id, testCourse(startSlot = 5)).assertOk()
+        r.upsertCourse(id, testCourse(span = 2)).assertOk()
+        r.replaceCoursesAndAdjustments(
+            id,
+            r.schedules.value.single().courses,
+            listOf(testAdjustment(toStartSlot = 3)),
+        ).assertOk()
         val before = r.schedules.value.first { it.id == id }
 
-        val error = r.setSlotsDurationAndCourses(
+        // 旧调课目标（第 3 节起）直接随 2 节新表提交：必然越界 → 整批拒绝、零变更
+        val error = r.setSlotsDurationCoursesAndAdjustments(
             id,
-            listOf(TimeSlotDef("8:00", "9:30")),
-            90,
+            listOf(TimeSlotDef("8:00", "9:40"), TimeSlotDef("10:10", "11:50")),
+            100,
             before.courses,
+            before.adjustments,
         ).assertErr()
-        assertTrue(error is ScheduleError.CoursesOutOfRange)
+        assertTrue("expected AdjustmentTargetInvalid, got $error", error is ScheduleError.AdjustmentTargetInvalid)
 
         assertEquals(before, r.schedules.value.first { it.id == id })
+        assertEquals(before, repo().schedules.value.first { it.id == id })
     }
 
     @Test
-    fun `setSlotsDurationAndCourses judges the passed courses not the saved ones`() = runBlocking {
+    fun `setSlotsDurationCoursesAndAdjustments judges the passed courses not the saved ones`() = runBlocking {
         val r = repo()
         val id = r.createSchedule("A", TestTermStart, TestTermEnd).okId()
         // 仓库里的课还伸到第 5 节（DEFAULT_SLOTS 末节）
@@ -811,7 +931,7 @@ class ScheduleRepositoryTest {
         val shortened = saved.courses.map { it.copy(startSlot = 2, span = 1) }
         val twoSlots = listOf(TimeSlotDef("8:00", "9:30"), TimeSlotDef("10:00", "11:30"))
 
-        r.setSlotsDurationAndCourses(id, twoSlots, 90, shortened).assertOk()
+        r.setSlotsDurationCoursesAndAdjustments(id, twoSlots, 90, shortened, emptyList()).assertOk()
 
         val updated = r.schedules.value.first { it.id == id }
         assertEquals(twoSlots, updated.slots)
@@ -830,14 +950,16 @@ class ScheduleRepositoryTest {
         courseId: String = "c1",
         fromWeek: Int = 1,
         toWeek: Int = 2,
+        toStartSlot: Int = 2,
+        toSpan: Int = 1,
     ) = CourseAdjustment(
         id = id,
         courseId = courseId,
         fromWeek = fromWeek,
         toWeek = toWeek,
         toDayOfWeek = 4,
-        toStartSlot = 2,
-        toSpan = 1,
+        toStartSlot = toStartSlot,
+        toSpan = toSpan,
     )
 
     @Test

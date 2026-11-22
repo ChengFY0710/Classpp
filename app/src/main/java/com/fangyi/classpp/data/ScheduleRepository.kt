@@ -5,6 +5,8 @@ import com.fangyi.classpp.data.model.CourseAdjustment
 import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.DEFAULT_SLOTS
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.MAX_SLOT_DURATION
+import com.fangyi.classpp.data.model.MIN_SLOT_DURATION
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.ScheduleFile
 import com.fangyi.classpp.data.model.TimeScheme
@@ -199,37 +201,43 @@ class ScheduleRepository internal constructor(
     suspend fun setTerm(id: String, start: IsoDate, end: IsoDate): OpResult = mutex.withLock {
         val target = scheduleOrNull(id) ?: return@withLock OpResult.Err(ScheduleError.NotFound(id))
         val updated = target.copy(termStart = start, termEnd = end)
-        val errors = ScheduleValidator.validate(updated)
+        // 严格口径（含隐藏课）：缩短学期不能制造"切回 7 天视图才暴露"的越界课
+        val errors = ScheduleValidator.validate(updated, includeHidden = true)
         if (errors.isNotEmpty()) return@withLock OpResult.Err(rejection(updated, errors))
         commit(fileState.value.replace(target, updated))
     }
 
     /**
-     * 切换每周天数：只改 [Schedule.daysPerWeek]，**不碰学期结束日、也不拒绝任何课程**。
+     * 切换每周天数：**纯视图设置**——只校验取值本身（5/7），不校验课程、不碰学期结束日。
      *
-     * 5 天视图只是少画周六/周日两列——那两天的课留在数据里（校验也放行，见 ScheduleValidator
-     * 的"视图切换友好"约定），切回 7 天即原样出现。故 5 ⇄ 7 的切换永远可逆、永远无损，
-     * 也不会出现"想切回去却被自己的课挡住"的死角。
+     * 5 天视图只是少画周六/周日两列——那两天的课留在数据里（默认校验口径也放行，见
+     * ScheduleValidator 的"视图切换友好"约定），切回 7 天即原样出现。故 5 ⇄ 7 的切换
+     * 永远可逆、永远无损，也不会出现"想切回去却被自己的课挡住"的死角。会不会让数据
+     * 非法由其余设置类 mutator（严格口径）把关，这里绝不因课程失败。
      */
     suspend fun setDaysPerWeek(id: String, days: Int): OpResult = mutex.withLock {
         val target = scheduleOrNull(id) ?: return@withLock OpResult.Err(ScheduleError.NotFound(id))
-        val updated = target.copy(daysPerWeek = days)
-        val errors = ScheduleValidator.validate(updated)
-        if (errors.isNotEmpty()) return@withLock OpResult.Err(rejection(updated, errors))
-        commit(fileState.value.replace(target, updated))
+        if (days != 5 && days != 7) {
+            return@withLock OpResult.Err(ScheduleError.DaysPerWeekInvalid(days))
+        }
+        commit(fileState.value.replace(target, target.copy(daysPerWeek = days)))
     }
 
     suspend fun setSlots(id: String, slots: List<TimeSlotDef>): OpResult = mutex.withLock {
         val target = scheduleOrNull(id) ?: return@withLock OpResult.Err(ScheduleError.NotFound(id))
         val updated = target.copy(slots = normalizeSlots(slots))
-        val errors = ScheduleValidator.validate(updated)
+        // 严格口径（含隐藏课）：缩节数不能让隐藏课的节次越界
+        val errors = ScheduleValidator.validate(updated, includeHidden = true)
         if (errors.isNotEmpty()) return@withLock OpResult.Err(rejection(updated, errors))
         commit(fileState.value.replace(target, updated))
     }
 
-    /** 每节课时长（分钟）：改开始时间自动推算结束/级联顺延的依据（范围由 UI 侧约束 10..200） */
+    /** 每节课时长（分钟）：改开始时间自动推算结束/级联顺延的依据；合法范围 10..200 */
     suspend fun setSlotDuration(id: String, minutes: Int): OpResult = mutex.withLock {
         val target = scheduleOrNull(id) ?: return@withLock OpResult.Err(ScheduleError.NotFound(id))
+        if (minutes !in MIN_SLOT_DURATION..MAX_SLOT_DURATION) {
+            return@withLock OpResult.Err(ScheduleError.SlotDurationInvalid(minutes))
+        }
         commit(fileState.value.replace(target, target.copy(slotDurationMinutes = minutes)))
     }
 
@@ -239,42 +247,31 @@ class ScheduleRepository internal constructor(
     }
 
     /**
-     * 整套应用时间方案：节次表与每节课时长一次校验、一次提交——「课程时间方案」浮层的
-     * 确认出口。课程越界仍整体拒绝（[rejection]），不产生部分生效的中间态。
+     * 「课程时间方案」确认的统一落库出口：节次表、每节课时长、当前有效课程与调课
+     * 一次校验、一次提交（合并两小节也走这里）。
+     *
+     * 合并会改写课程的 startSlot/span 与调课的目标节次，四者必须同批落盘——调课若只写进
+     * 编辑草稿而不同批持久化，切换课表/放弃草稿/进程被杀后，仓库就是"新节表 + 旧目标
+     * 下标"的错位数据。课程越界仍整体拒绝（[rejection]），不产生部分生效的中间态；
+     * 隐藏课按严格口径校验，不留"切回 7 天即非法"的数据。
      */
-    suspend fun setSlotsAndDuration(
-        id: String,
-        slots: List<TimeSlotDef>,
-        durationMinutes: Int,
-    ): OpResult = mutex.withLock {
-        val target = scheduleOrNull(id) ?: return@withLock OpResult.Err(ScheduleError.NotFound(id))
-        val updated = target.copy(
-            slots = normalizeSlots(slots),
-            slotDurationMinutes = durationMinutes,
-        )
-        val errors = ScheduleValidator.validate(updated)
-        if (errors.isNotEmpty()) return@withLock OpResult.Err(rejection(updated, errors))
-        commit(fileState.value.replace(target, updated))
-    }
-
-    /**
-     * 「合并两小节为一大节」的落库出口：节表、每节课时长与**重映射后的课程**一次校验、
-     * 一次提交。合并会改写课程的 startSlot/span，必须与节表同批落盘；课程越界仍整体
-     * 拒绝（[rejection]），不产生部分生效的中间态。
-     */
-    suspend fun setSlotsDurationAndCourses(
+    suspend fun setSlotsDurationCoursesAndAdjustments(
         id: String,
         slots: List<TimeSlotDef>,
         durationMinutes: Int,
         courses: List<CourseEntry>,
+        adjustments: List<CourseAdjustment>,
     ): OpResult = mutex.withLock {
         val target = scheduleOrNull(id) ?: return@withLock OpResult.Err(ScheduleError.NotFound(id))
+        val courseIds = courses.mapTo(HashSet()) { it.id }
         val updated = target.copy(
             slots = normalizeSlots(slots),
             slotDurationMinutes = durationMinutes,
             courses = courses,
+            // 达到草稿里已删除课程的调课防御性清理（同 replaceCoursesAndAdjustments）
+            adjustments = adjustments.filter { it.courseId in courseIds },
         )
-        val errors = ScheduleValidator.validate(updated)
+        val errors = ScheduleValidator.validate(updated, includeHidden = true)
         if (errors.isNotEmpty()) return@withLock OpResult.Err(rejection(updated, errors))
         commit(fileState.value.replace(target, updated))
     }
@@ -465,7 +462,7 @@ class ScheduleRepository internal constructor(
     fun coursesForWeek(scheduleId: String, week: Int): List<CourseOccurrence> {
         val s = scheduleOrNull(scheduleId) ?: return emptyList()
         if (week > s.totalWeeks) return emptyList()
-        return s.courses.occurrencesForWeek(week, s.adjustments)
+        return s.occurrencesForWeek(week)
     }
 
     /** 占据 (day, slot) 格子的课程；span 覆盖该节即命中，含本周不活跃的（灰显候选）与调课卡 */

@@ -82,6 +82,21 @@ class DayAgendaTest {
         assertTrue(schedule.agendaOn(IsoDate.of(2027, 2, 4)).isEmpty())
     }
 
+    @Test
+    fun preTermStartDateInFirstWeekHasNoAgenda() {
+        // 开学日是周三：第 1 周的周一早于开学日，不该再当"要上的课"（此前周号判中即上轴）
+        val wednesdayStart = Schedule(
+            id = "s",
+            name = "周中开学",
+            termStart = IsoDate.of(2026, 9, 9), // 周三
+            termEnd = IsoDate.of(2026, 12, 27),
+            courses = listOf(course(id = "mon", name = "周一课", day = 1)),
+        )
+
+        assertTrue(wednesdayStart.agendaOn(IsoDate.of(2026, 9, 7)).isEmpty()) // 开学前的周一
+        assertEquals(1, wednesdayStart.agendaOn(IsoDate.of(2026, 9, 14)).size) // 第 2 周周一照常
+    }
+
     private fun schedule(
         slots: List<TimeSlotDef> = com.fangyi.classpp.data.model.DEFAULT_SLOTS,
         courses: List<CourseEntry>,

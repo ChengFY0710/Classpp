@@ -43,15 +43,25 @@ fun Schedule.weekOf(date: IsoDate): Int =
  * 第 [week] 周的全部课次：常规课 + 调入的调课卡，**源课次被调走则整条不再出现**。
  *
  * - `week < 1`（开学前）保持旧口径：全部课程 `active = false`，不应用调课；
- * - 常规课仍按 [CourseEntry.weeks] 决定 active；调课卡恒为 active（它是一次真实要上的课）；
+ * - **学期日期边界**：开学日是周中某天时，第 1 周里早于 termStart 的那几天尚未开学；
+ *   termEnd 停在周中时，末周里晚于它的那几天已放假。每门课按真实日期判定
+ *   （第 N 周周一 + 星期偏移，与 R14 同口径）：落在 `termStart..termEnd` 之外的一律
+ *   `active = false`，网格置灰或隐藏、日视图/通知/小组件不再把它们当"要上的课"；
+ * - 常规课仍按 [CourseEntry.weeks] 决定 active；调课卡恒为 active（它是一次真实要上的课），
+ *   目标日期越出学期（正常数据被 R15 拦住，不会出现）时不加入；
  * - 顺序沿用原课程列表顺序，调课卡追加在后。交替课的"先添加者补位"规则因此不受影响
  *   （调课卡是在课卡，解析时先占位）。
  */
 fun List<CourseEntry>.occurrencesForWeek(
     week: Int,
+    termStart: IsoDate,
+    termEnd: IsoDate,
     adjustments: List<CourseAdjustment> = emptyList(),
 ): List<CourseOccurrence> {
     if (week < 1) return map { CourseOccurrence(it, active = false) }
+
+    // 第 N 周的日历锚点：与 datesForWeek 同式（第 1 周 = termStart 所在日历周）
+    val weekMonday = termStart.mondayOfWeek() + (week - 1) * 7
 
     val movedSources = adjustments
         .filter { it.fromWeek == week }
@@ -60,21 +70,36 @@ fun List<CourseEntry>.occurrencesForWeek(
     val result = ArrayList<CourseOccurrence>(size + adjustments.size)
     for (course in this) {
         if (course.id in movedSources) continue
-        result += CourseOccurrence(course, active = course.weeks.contains(week))
+        val courseDate = weekMonday + (course.dayOfWeek - 1)
+        val inTerm = courseDate.epochDay in termStart.epochDay..termEnd.epochDay
+        result += CourseOccurrence(course, active = course.weeks.contains(week) && inTerm)
     }
     for (adjustment in adjustments) {
         if (adjustment.toWeek != week) continue
+        val targetDate = weekMonday + (adjustment.toDayOfWeek - 1)
+        if (targetDate.epochDay !in termStart.epochDay..termEnd.epochDay) continue
         val course = firstOrNull { it.id == adjustment.courseId } ?: continue
         result += CourseOccurrence(course, active = true, adjustment = adjustment)
     }
     return result
 }
 
+/** 第 [week] 周的全部课次（学期边界与调课规则见列表版同名扩展），课表自带起止日 */
+fun Schedule.occurrencesForWeek(week: Int): List<CourseOccurrence> =
+    courses.occurrencesForWeek(week, termStart, termEnd, adjustments)
+
 /**
  * [date] 这一天真正要上的课（含调课），按起始节排序。日视图、上课提醒与"下一节课"
  * 共用这一口径：源课次在源日期消失，调课卡在目标日期以目标节次出现。
+ *
+ * 日期边界先于周号判断：早于 termStart 或晚于 termEnd 的日期一律无课——周号只对齐
+ * 日历周（开学日是周中时，第 1 周里开学前的那几天、末周里 termEnd 之后的那几天
+ * 都不再产出课次），学期结束后的隐藏周末课也不会再被日视图计为"这天有课"。
  */
 fun Schedule.occurrencesOn(date: IsoDate): List<CourseOccurrence> {
+    if (date.epochDay < termStart.epochDay || date.epochDay > termEnd.epochDay) {
+        return emptyList()
+    }
     val week = weekOf(date)
     if (week !in 1..totalWeeks) return emptyList()
     val day = date.isoDayOfWeek()

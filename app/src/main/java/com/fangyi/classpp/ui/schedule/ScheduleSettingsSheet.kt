@@ -32,6 +32,7 @@ import com.fangyi.classpp.data.model.DEFAULT_SLOTS
 import com.fangyi.classpp.data.model.DEFAULT_SLOT_DURATION_MINUTES
 import com.fangyi.classpp.data.model.DEFAULT_TIME_SCHEME_ID
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.adjustmentsForSlotChange
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeScheme
 import com.fangyi.classpp.data.model.TimeSlotDef
@@ -68,7 +69,9 @@ import kotlinx.coroutines.launch
  *
  * 合并两小节会同时改写节表与课程映射：[mergeCourses] 是合并输入（编辑态传课程草稿，
  * 保证网格看到的就是被合并的课程），确认成功后再经 [onCoursesMerged] 把重映射后的
- * 课程同步回草稿——否则后续「保存编辑」会用旧 span 覆盖合并结果。
+ * 课程同步回草稿——否则后续「保存编辑」会用旧 span 覆盖合并结果。调课的目标节次与
+ * 节表同批落库（仓库统一出口见 [ScheduleRepository.setSlotsDurationCoursesAndAdjustments]），
+ * 草稿同步只作展示对齐，不再是第二真源。
  *
  * 确认时的课程口径同样取 [mergeCourses]：用户刚调的结束节次只落在课程草稿里，若拿仓库
  * 已保存的旧跨度做越界判定，「草稿改短 + 缩节数」会被误报成课程冲突。草稿与已保存课程
@@ -280,10 +283,17 @@ internal fun ScheduleSettingsSheet(
                     // 只落在草稿里），仓库中已保存的旧跨度不参与判定——否则草稿已把课改短、
                     // 仓库还停在旧末节时，缩节数会被旧数据误判成课程越界
                     val effectiveCourses = mergedCourses ?: mergeCourses
-                    // 调课目标节次按「起止时间不变」对齐到新节表；对不齐就整体拒绝，
-                    // 不让调课悄悄指到别的时段（与合并课程的对齐口径一致）
-                    val remappedAdjustments = remapAdjustments(schedule.slots, slots, adjustments)
-                    if (remappedAdjustments == null) {
+                    // 调课目标口径按「节表结构是否被合并改写」分流（mergedCourses 非空 =
+                    // 本次合并过课程映射）：只有合并会让节次下标整体平移，才按「起止时刻
+                    // 不变」重映射；纯时长/节数变化不动下标，调课记录原样保留、边界由
+                    // 整表校验把关——此前对任何变更都做时间匹配，改「每节课时间」必被误拦
+                    val effectiveAdjustments = adjustmentsForSlotChange(
+                        oldSlots = schedule.slots,
+                        newSlots = slots,
+                        adjustments = adjustments,
+                        coursesRewritten = mergedCourses != null,
+                    )
+                    if (effectiveAdjustments == null) {
                         AppToasts.show(context, context.getString(R.string.error_adjust_slot_merge_blocked))
                         return@TimeSchemeSheet
                     }
@@ -293,31 +303,27 @@ internal fun ScheduleSettingsSheet(
                             slots = slots,
                             duration = duration,
                             courses = effectiveCourses,
-                            adjustmentsOverride = remappedAdjustments,
+                            adjustmentsOverride = effectiveAdjustments,
                         )
                     ) {
                         return@TimeSchemeSheet
                     }
                     scope.launch {
-                        val result = if (effectiveCourses == schedule.courses) {
-                            // 与已保存课程一致：只动设置
-                            repository.setSlotsAndDuration(schedule.id, slots, duration)
-                        } else {
-                            // 合并改写课程映射 / 草稿与已保存课程不同：节表、时长与课程
-                            // 一次校验、一次提交——否则会留下「节数已缩小、课程还伸到旧末节」
-                            // 的非法中间态（切换课表会丢弃草稿，该态无人修正）
-                            repository.setSlotsDurationAndCourses(
-                                schedule.id,
-                                slots,
-                                duration,
-                                effectiveCourses,
-                            )
-                        }
+                        // 节表、时长、课程与调课一次校验、一次提交：调课若只写进编辑草稿
+                        // 而不同批落库，合并后切课表/放弃草稿/进程被杀都会留下
+                        // 「新节表 + 旧目标下标」的错位数据
+                        val result = repository.setSlotsDurationCoursesAndAdjustments(
+                            schedule.id,
+                            slots,
+                            duration,
+                            effectiveCourses,
+                            effectiveAdjustments,
+                        )
                         when (result) {
                             OpResult.Ok -> {
                                 mergedCourses?.let(onCoursesMerged)
-                                if (remappedAdjustments != adjustments) {
-                                    onAdjustmentsMerged(remappedAdjustments)
+                                if (effectiveAdjustments != adjustments) {
+                                    onAdjustmentsMerged(effectiveAdjustments)
                                 }
                                 schemeSheetVisible = false
                             }
@@ -360,8 +366,9 @@ internal fun ScheduleSettingsSheet(
     }
 
     // 学期周数横向滚轮弹窗（BottomNumberSelectCard）画在浮层之后（组合顺序即绘制顺序）；
-    // 确认把结束日整周平移到目标周数（endForTotalWeeks）并整表提交仓库（学期起止同一条
-    // 提交通道），取消/遮罩/返回只请求关闭，播完退场才卸载（两段式，同日期轮）
+    // 确认把结束日整周平移到目标周数（endForTotalWeeks），先走与「学期起止」同一条
+    // 草稿预校验（失败 toast 后滚轮保持可见可重试，不出现「设置已生效、保存编辑才报错」），
+    // 再整表提交仓库。取消/遮罩/返回只请求关闭，播完退场才卸载（两段式，同日期轮）
     if (weeksMounted) {
         BottomNumberSelectCard(
             visible = weeksVisible,
@@ -373,15 +380,13 @@ internal fun ScheduleSettingsSheet(
             unit = stringResource(R.string.unit_week),
             hazeState = sheetHazeState,
             onConfirm = { weeks ->
+                val end = endForTotalWeeks(schedule.termStart, schedule.termEnd, weeks)
+                if (!validateWithDraft(start = schedule.termStart, end = end)) {
+                    return@BottomNumberSelectCard
+                }
                 weeksVisible = false
                 scope.launch {
-                    submit(
-                        repository.setTerm(
-                            schedule.id,
-                            schedule.termStart,
-                            endForTotalWeeks(schedule.termStart, schedule.termEnd, weeks),
-                        ),
-                    )
+                    submit(repository.setTerm(schedule.id, schedule.termStart, end))
                 }
             },
         )
@@ -539,31 +544,6 @@ private fun ScheduleNameField(name: String, onRename: (String) -> Unit) {
 }
 
 /**
- * 节表变更时把调课目标按「起止时间不变」对齐到新节表；任一条对不齐返回 null。
- *
- * 与 [previewSlotMerge] 对课程的口径一致：合并后的新节必须保留原来的开始/结束时刻，
- * 否则调课会悄悄指到另一个时段。返回 null 由调用方整体拒绝本次节表变更。
- */
-private fun remapAdjustments(
-    oldSlots: List<TimeSlotDef>,
-    newSlots: List<TimeSlotDef>,
-    adjustments: List<CourseAdjustment>,
-): List<CourseAdjustment>? {
-    if (oldSlots == newSlots || adjustments.isEmpty()) return adjustments
-    return adjustments.map { adjustment ->
-        val oldStart = oldSlots.getOrNull(adjustment.toStartSlot - 1) ?: return null
-        val oldEnd = oldSlots.getOrNull(adjustment.toStartSlot + adjustment.toSpan - 2) ?: return null
-        val newStart = newSlots.indexOfFirst { it.startTime == oldStart.startTime }
-        val newEnd = newSlots.indexOfFirst { it.endTime == oldEnd.endTime }
-        if (newStart < 0 || newEnd < newStart) return null
-        adjustment.copy(
-            toStartSlot = newStart + 1,
-            toSpan = newEnd - newStart + 1,
-        )
-    }
-}
-
-/**
  * [ScheduleError] → 本地化文案。课程类错误正常都经仓库 rejection() 归并为 CoursesOutOfRange，
  * 但兜底分支同样给中文结论，绝不把内部 id / 英文 message 直接显示给用户。
  * 非 Composable（context 版）：供 showError 在回调/协程里调用，结果走系统 Toast。
@@ -574,6 +554,7 @@ internal fun ScheduleError.toMessage(context: Context): String = when (this) {
     is ScheduleError.TermRangeInvalid -> context.getString(R.string.error_term_range)
     is ScheduleError.DaysPerWeekInvalid -> context.getString(R.string.error_days_per_week)
     is ScheduleError.SlotCountInvalid -> context.getString(R.string.error_slot_count)
+    is ScheduleError.SlotDurationInvalid -> context.getString(R.string.error_slot_duration)
     is ScheduleError.SlotTimeFormatInvalid -> context.getString(R.string.error_slot_time_format)
     is ScheduleError.SlotOrderInvalid -> context.getString(R.string.error_slot_order)
     ScheduleError.InvalidScheduleName -> context.getString(R.string.error_schedule_name)

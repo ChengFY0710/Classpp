@@ -85,4 +85,31 @@ class TermDateSnapTest {
         )
         assertEquals(5, endForTotalWeeks(wednesdayStart, fridayEnd, 16).isoDayOfWeek())
     }
+
+    /**
+     * 新建课表的默认结束日按日历周锚定（末周周五）：任一星期几开学，默认总周数都恰为
+     * 16 整周。此前用固定天数 `start + 109` 推默认值，周四~周日开学时会落到第 17 周。
+     */
+    @Test
+    fun `default term end yields sixteen weeks for any start weekday`() {
+        for (sample in listOf(
+            IsoDate.parse("2026-03-02"), // 周一
+            IsoDate.parse("2026-03-03"), // 周二
+            IsoDate.parse("2026-03-04"), // 周三
+            IsoDate.parse("2026-03-05"), // 周四
+            IsoDate.parse("2026-03-07"), // 周六
+            IsoDate.parse("2026-03-08"), // 周日
+        )) {
+            val end = defaultTermEnd(sample)
+            assertEquals(
+                "start=$sample 默认总周数应为 ${TERM_DEFAULT_WEEKS}",
+                TERM_DEFAULT_WEEKS,
+                totalWeeks(sample, end),
+            )
+        }
+        // 默认结束日一律落在末周周五（与「周一开学 + 109 天」的旧观感一致）
+        assertEquals(IsoDate.parse("2026-06-19"), defaultTermEnd(IsoDate.parse("2026-03-02")))
+        assertEquals(IsoDate.parse("2026-06-19"), defaultTermEnd(IsoDate.parse("2026-03-04")))
+        assertEquals(IsoDate.parse("2026-06-19"), defaultTermEnd(IsoDate.parse("2026-03-08")))
+    }
 }

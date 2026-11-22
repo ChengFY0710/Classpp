@@ -86,12 +86,15 @@ internal fun Schedule.courseTagColors(darkTheme: Boolean): Map<String, Color> =
 /**
  * 编辑态草稿路径：与仓库路径共用同一套解析（编辑态一律显示全部课，不受显示开关影响）。
  * 调课与常规课一样先合成 occurrence 再解析，保证源课次当周消失、目标格出现调课卡。
+ * 学期起止参与「开学前/结束后列不活跃」的日期边界判定（同仓库路径）。
  */
 internal fun List<CourseEntry>.toWeekCards(
     week: Int,
+    termStart: IsoDate,
+    termEnd: IsoDate,
     adjustments: List<CourseAdjustment> = emptyList(),
 ): List<Course> =
-    occurrencesForWeek(week, adjustments)
+    occurrencesForWeek(week, termStart, termEnd, adjustments)
         .map { it.toUiCourse() }
         .resolveWeekCards()
 

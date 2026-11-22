@@ -99,6 +99,21 @@ class ShareCodecTest {
     }
 
     @Test
+    fun `out of range slot duration is rejected on import`() {
+        // 分享/AI 导入经全量校验拦截非法时长，不再让 0/负值进库破坏节表推算
+        for (badMinutes in listOf(0, -5, 201)) {
+            val bad = testSchedule().copy(slotDurationMinutes = badMinutes)
+            val json = ShareCodec.encode(bad, exportedAtMillis = 1L)
+            val r = ShareCodec.decodeForImport(json)
+            assertTrue(r is ReadResult.Err)
+            assertTrue(
+                "duration $badMinutes should be rejected",
+                (r as ReadResult.Err).error is ScheduleError.SlotDurationInvalid,
+            )
+        }
+    }
+
+    @Test
     fun `duplicate ids inside payload are rebuilt to fresh uuids`() {
         val dup = testCourse(id = "same-id", name = "课A")
         val dup2 = testCourse(id = "same-id", name = "课B", day = 4)

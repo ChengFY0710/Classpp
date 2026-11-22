@@ -83,7 +83,7 @@ class RepositoryBehaviorScriptTest {
 
         // 4. 尾部（第 4 节）有课时 5→3 节 → 拒绝且课程无损
         repo.upsertCourse(idA, testCourse(id = "tail", day = 5, startSlot = 4)).okOrThrow()
-        err = repo.setSlots(idA, defaultSlotsFor(3)).errOrThrow()
+        err = repo.setSlots(idA, defaultSlotsFor(3)!!).errOrThrow()
         assertTrue(err is ScheduleError.CoursesOutOfRange)
         assertEquals(3, repo.schedules.value.single().courses.size)
         assertEquals("磁盘同样无损", 3, open().schedules.value.single().courses.size)

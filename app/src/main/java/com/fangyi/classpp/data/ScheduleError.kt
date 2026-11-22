@@ -19,7 +19,7 @@ data class CourseRef(
 }
 
 /** [ScheduleError.CourseFieldInvalid] 的具体原因 */
-enum class FieldReason { BlankName, SpanOutOfRange }
+enum class FieldReason { BlankName, SpanOutOfRange, DayOutOfRange }
 
 /**
  * 数据层全部结构化错误。message 供日志/断言，未来 UI 按子类模式匹配出文案。
@@ -39,6 +39,10 @@ sealed class ScheduleError(val message: String) {
 
     data class SlotCountInvalid(val size: Int) :
         ScheduleError("slot count must be in 1..12, got $size")
+
+    /** 每节课时长（分钟）越出 MIN_SLOT_DURATION..MAX_SLOT_DURATION（分享/AI 导入拦截） */
+    data class SlotDurationInvalid(val minutes: Int) :
+        ScheduleError("slotDurationMinutes must be in 10..200, got $minutes")
 
     data class SlotTimeFormatInvalid(val index: Int, val raw: String) :
         ScheduleError("slot #$index time '$raw' is not H:mm")
