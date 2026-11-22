@@ -1045,6 +1045,7 @@
     <string name="ai_error_server">Provider is temporarily down — try again later</string>
     <string name="ai_error_network">Network error — check your connection</string>
     <string name="ai_error_bad_response">Provider returned unparseable data</string>
+    <string name="ai_error_empty_response">AI returned an empty reply — try again</string>
     <string name="ai_not_configured_title">Set up an AI provider first</string>
     <string name="ai_not_configured_hint">Bring your own API key (DeepSeek, Zhipu, Qwen, Claude, and more). Your messages plus schedule and todo summaries are sent to the provider you choose</string>
     <string name="ai_go_settings">Open AI settings</string>

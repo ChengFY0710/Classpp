@@ -459,6 +459,20 @@ object AiToolRegistry {
     /** 写工具（会改待办库或生成确认卡）：重试时据此判断上一轮是否已经执行过写操作 */
     fun isWriteTool(name: String): Boolean = writeSpecs.any { it.name == name }
 
+    /**
+     * 已落库的写工具：排除只生成确认卡的 update/delete。重试提示只对真正改变数据的
+     * 工具成立——把待确认的修改当成「已生效」，重试时会让模型放弃重新生成确认卡。
+     */
+    fun isPersistedWriteTool(name: String): Boolean = when (name) {
+        CREATE_TODOS,
+        COMPLETE_TODOS,
+        ARCHIVE_TODOS,
+        CREATE_TODO_GROUPS,
+        CREATE_TODO_TAGS,
+        -> true
+        else -> false
+    }
+
     // ---------- JSON 回退契约 ----------
 
     /**

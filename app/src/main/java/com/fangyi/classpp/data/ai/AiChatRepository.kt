@@ -660,6 +660,19 @@ class AiChatRepository internal constructor(
                     return
                 }
 
+                // HTTP 200 + [DONE] 但正文、工具调用全空（网关内容过滤、纯推理无正文、
+                // 代理空包）：不能当成功收尾——否则气泡永久停在「正在思考…」且重试闸门
+                // 不认（尾部不是 interrupted）。工具轮有结果时正文可以为空。
+                if (streamed.text.isBlank() && !streamed.usedTools) {
+                    markLastInterrupted(conversationId)
+                    storeLastError(
+                        AiException(AiError.EmptyResponse, detail = "empty response"),
+                        conversationId,
+                    )
+                    persist()
+                    return
+                }
+
                 try {
                     finalizeLast(conversationId, streamed.text, connection, key, streamed.usedTools)
                     persist()
@@ -680,9 +693,11 @@ class AiChatRepository internal constructor(
      * 消息重新流式（不重复追加 user 消息）。无可重试状态（没有 interrupted 尾巴）
      * 时静默返回。绑定当前活跃对话——重试入口只存在于正在查看的对话里。
      *
-     * 被摘掉的尾巴若执行过写工具（P2），本次请求的 system prompt 末尾会补一句
-     * [AiPromptBuilder.RETRY_WRITE_NOTE]：工具轮次随消息一起消失，不提醒的话模型可能
-     * 把同一条待办再写一遍。该说明只影响本次请求，不落盘。
+     * 被摘掉的尾巴上的结果卡片（待确认变更、完成/归档撤销入口）会搬到新的占位消息，
+     * 不会随旧消息一起丢失。若旧尾巴执行过**已落库**的写工具，本次请求的 system prompt
+     * 末尾会补一句 [AiPromptBuilder.RETRY_WRITE_NOTE]：工具轮次随消息一起消失，不提醒的
+     * 话模型可能把同一条待办再写一遍。update/delete 只生成确认卡，不算已生效。
+     * 该说明只影响本次请求，不落盘。
      */
     suspend fun retryLast() {
         mutex.withLock {
@@ -700,14 +715,35 @@ class AiChatRepository internal constructor(
             // 无 Key 服务商（本地 Ollama）按空串进入请求层：编解码器不发认证头
             val key = apiKey.orEmpty()
             activeSendConversationId.set(conversationId)
-            // 重试会摘掉整条 assistant 消息（含工具轮次）：若它已经执行过写工具，
-            // 模型在历史里看不到，必须补一句提醒，否则会把同一条待办再写一遍
-            val writesApplied = bound.takeLastWhile { it.role == AiChatRole.Assistant }.any { message ->
+            // 重试会摘掉整条 assistant 消息（含工具轮次）：若它已经执行过**落库**的写工具，
+            // 模型在历史里看不到，必须补一句提醒，否则会把同一条待办再写一遍。
+            // update/delete 只生成了待确认卡，不能算「已生效」。
+            val dropped = bound.takeLastWhile { it.role == AiChatRole.Assistant }
+            val writesApplied = dropped.any { message ->
                 message.toolRounds.any { round ->
                     round.results.any { result ->
-                        !result.isError && AiToolRegistry.isWriteTool(result.name)
+                        !result.isError && AiToolRegistry.isPersistedWriteTool(result.name)
                     }
                 }
+            }
+            // 结果卡片（新建/完成/归档的撤销入口、待确认的修改/删除）不能随旧消息丢失：
+            // 搬到新的占位消息上，重试完成后仍可应用变更 / 撤销。
+            val carried = dropped.fold(
+                AiChatMessage(
+                    role = AiChatRole.Assistant,
+                    content = "",
+                    createdAtMillis = nowMillis(),
+                    id = newMessageId(),
+                ),
+            ) { acc, message ->
+                acc.copy(
+                    todoIds = acc.todoIds + message.todoIds,
+                    todoSaveFailed = acc.todoSaveFailed || message.todoSaveFailed,
+                    todoChanges = acc.todoChanges + message.todoChanges,
+                    todoChangeDropped = acc.todoChangeDropped || message.todoChangeDropped,
+                    todoCompletions = acc.todoCompletions + message.todoCompletions,
+                    todoLifecycles = acc.todoLifecycles + message.todoLifecycles,
+                )
             }
             updateConversation(conversationId) { conversation ->
                 conversation.copy(messages = conversation.messages.dropLastWhile { it.role == AiChatRole.Assistant })
@@ -717,13 +753,7 @@ class AiChatRepository internal constructor(
             clearLastError()
             _sending.value = true
             try {
-                val placeholder = AiChatMessage(
-                    role = AiChatRole.Assistant,
-                    content = "",
-                    createdAtMillis = nowMillis(),
-                    id = newMessageId(),
-                )
-                appendMessages(conversationId) { it + placeholder }
+                appendMessages(conversationId) { it + carried }
                 lastCheckpointAt = nowMillis()
                 val streamed = try {
                     streamConversationTurn(
@@ -743,6 +773,16 @@ class AiChatRepository internal constructor(
                 } catch (e: AiException) {
                     markLastInterrupted(conversationId)
                     storeLastError(e, conversationId)
+                    persist()
+                    return
+                }
+                // 空回复同 send：标记中断 + 空回复错误，重试闸门才能再次发起
+                if (streamed.text.isBlank() && !streamed.usedTools) {
+                    markLastInterrupted(conversationId)
+                    storeLastError(
+                        AiException(AiError.EmptyResponse, detail = "empty response"),
+                        conversationId,
+                    )
                     persist()
                     return
                 }
@@ -1131,7 +1171,7 @@ class AiChatRepository internal constructor(
     private fun toolWriteGateway(conversationId: String): AiToolWriteGateway =
         object : AiToolWriteGateway {
 
-            override suspend fun createTodos(drafts: List<AiTodoDraft>): JsonObject {
+            override suspend fun createTodos(drafts: List<AiTodoDraft>, dropped: Int): JsonObject {
                 val outcome = createTodos(AiTodoDraftPayload(todos = drafts))
                 updateLastMessage(conversationId) { message ->
                     message.copy(
@@ -1139,10 +1179,15 @@ class AiChatRepository internal constructor(
                         todoSaveFailed = message.todoSaveFailed || outcome.failed,
                     )
                 }
+                val totalDropped = dropped + outcome.dropped
                 if (outcome.created.isEmpty()) {
                     return toolFailure(
                         code = if (outcome.failed) "internal_error" else "invalid_arguments",
-                        message = "没有创建任何待办：名称为空或落库失败",
+                        message = if (totalDropped > 0) {
+                            "没有创建任何待办：$totalDropped 条参数无法解析或名称为空"
+                        } else {
+                            "没有创建任何待办：名称为空或落库失败"
+                        },
                     )
                 }
                 return toolSuccess(
@@ -1158,21 +1203,35 @@ class AiChatRepository internal constructor(
                                 )
                             }
                         }
-                        if (outcome.dropped) put("dropped", true)
-                        put("message", "已创建，可在消息下方撤销")
+                        if (totalDropped > 0) put("dropped", totalDropped)
+                        put(
+                            "message",
+                            if (totalDropped > 0) {
+                                "已创建 ${outcome.created.size} 条，另有 $totalDropped 条未能解析或未生效"
+                            } else {
+                                "已创建，可在消息下方撤销"
+                            },
+                        )
                     },
                 )
             }
 
-            override suspend fun updateTodos(drafts: List<AiTodoUpdateDraft>): JsonObject =
-                recordPendingChanges(conversationId, AiTodoDraftPayload(updates = drafts))
+            override suspend fun updateTodos(
+                drafts: List<AiTodoUpdateDraft>,
+                dropped: Int,
+            ): JsonObject =
+                recordPendingChanges(conversationId, AiTodoDraftPayload(updates = drafts), dropped)
 
-            override suspend fun deleteTodos(drafts: List<AiTodoDeleteDraft>): JsonObject =
-                recordPendingChanges(conversationId, AiTodoDraftPayload(deletes = drafts))
+            override suspend fun deleteTodos(
+                drafts: List<AiTodoDeleteDraft>,
+                dropped: Int,
+            ): JsonObject =
+                recordPendingChanges(conversationId, AiTodoDraftPayload(deletes = drafts), dropped)
 
             override suspend fun completeTodos(
                 completes: List<AiTodoCompletionDraft>,
                 reopens: List<AiTodoCompletionDraft>,
+                dropped: Int,
             ): JsonObject {
                 val results = applyCompletions(
                     AiTodoDraftPayload(completes = completes, reopens = reopens),
@@ -1180,13 +1239,14 @@ class AiChatRepository internal constructor(
                 updateLastMessage(conversationId) { message ->
                     message.copy(todoCompletions = message.todoCompletions + results)
                 }
-                return completionEnvelope(results)
+                return completionEnvelope(results, dropped)
             }
 
             override suspend fun archiveTodos(
                 archives: List<AiTodoLifecycleDraft>,
                 unarchives: List<AiTodoLifecycleDraft>,
                 restores: List<AiTodoLifecycleDraft>,
+                dropped: Int,
             ): JsonObject {
                 val results = applyLifecycleActions(
                     AiTodoDraftPayload(
@@ -1198,14 +1258,24 @@ class AiChatRepository internal constructor(
                 updateLastMessage(conversationId) { message ->
                     message.copy(todoLifecycles = message.todoLifecycles + results)
                 }
-                return lifecycleEnvelope(results)
+                return lifecycleEnvelope(results, dropped)
             }
 
-            override suspend fun createGroups(names: List<String>): JsonObject =
-                createOrganizers(names, kindLabel = "分组", ensure = organizerWriter::ensureGroup)
+            override suspend fun createGroups(names: List<String>, dropped: Int): JsonObject =
+                createOrganizers(
+                    names,
+                    kindLabel = "分组",
+                    dropped = dropped,
+                    ensure = organizerWriter::ensureGroup,
+                )
 
-            override suspend fun createTags(names: List<String>): JsonObject =
-                createOrganizers(names, kindLabel = "标签", ensure = organizerWriter::ensureTag)
+            override suspend fun createTags(names: List<String>, dropped: Int): JsonObject =
+                createOrganizers(
+                    names,
+                    kindLabel = "标签",
+                    dropped = dropped,
+                    ensure = organizerWriter::ensureTag,
+                )
         }
 
     /**
@@ -1218,6 +1288,7 @@ class AiChatRepository internal constructor(
     private suspend fun createOrganizers(
         names: List<String>,
         kindLabel: String,
+        dropped: Int,
         ensure: suspend (String) -> AiOrganizerWriteOutcome,
     ): JsonObject {
         val created = mutableListOf<String>()
@@ -1231,7 +1302,14 @@ class AiChatRepository internal constructor(
             }
         }
         if (created.isEmpty() && existing.isEmpty()) {
-            return toolFailure("internal_error", "没有新建任何${kindLabel}：写入失败")
+            return toolFailure(
+                "internal_error",
+                if (dropped > 0) {
+                    "没有新建任何${kindLabel}：写入失败，另有 $dropped 条参数无法解析"
+                } else {
+                    "没有新建任何${kindLabel}：写入失败"
+                },
+            )
         }
         return toolSuccess(
             buildJsonObject {
@@ -1241,6 +1319,7 @@ class AiChatRepository internal constructor(
                 if (failed.isNotEmpty()) {
                     putJsonArray("failed") { failed.forEach { add(it) } }
                 }
+                if (dropped > 0) put("dropped", dropped)
                 put(
                     "message",
                     buildString {
@@ -1250,6 +1329,7 @@ class AiChatRepository internal constructor(
                             else -> append("已新建 ${created.size} 个${kindLabel}，${existing.size} 个已存在")
                         }
                         if (failed.isNotEmpty()) append("；${failed.size} 个写入失败")
+                        if (dropped > 0) append("；$dropped 条参数无法解析，未执行")
                     },
                 )
             },
@@ -1263,24 +1343,33 @@ class AiChatRepository internal constructor(
     private fun recordPendingChanges(
         conversationId: String,
         payload: AiTodoDraftPayload,
+        dropped: Int,
     ): JsonObject {
-        val (changes, dropped) = buildTodoChanges(payload)
+        val (changes, invalid) = buildTodoChanges(payload)
+        val totalDropped = dropped + invalid
         updateLastMessage(conversationId) { message ->
             message.copy(
                 todoChanges = message.todoChanges + changes,
-                todoChangeDropped = message.todoChangeDropped || dropped,
+                todoChangeDropped = message.todoChangeDropped || totalDropped > 0,
             )
         }
         if (changes.isEmpty()) {
-            return toolFailure(
-                code = "not_found",
-                message = "没有生成任何待确认变更：目标待办不存在、状态不符或补丁非法",
-            )
+            return if (dropped > 0) {
+                toolFailure(
+                    code = "invalid_arguments",
+                    message = "没有生成任何待确认变更：$dropped 条参数无法解析，未执行",
+                )
+            } else {
+                toolFailure(
+                    code = "not_found",
+                    message = "没有生成任何待确认变更：目标待办不存在、状态不符或补丁非法",
+                )
+            }
         }
-        return pendingConfirmationResult(changes, dropped)
+        return pendingConfirmationResult(changes, totalDropped)
     }
 
-    private fun completionEnvelope(results: List<AiTodoCompletion>): JsonObject {
+    private fun completionEnvelope(results: List<AiTodoCompletion>, dropped: Int): JsonObject {
         val applied = results.filter { it.status == AiTodoCompletionStatus.Applied }
         val failed = results.filter { it.status != AiTodoCompletionStatus.Applied }
         if (applied.isEmpty() && failed.isNotEmpty()) {
@@ -1316,12 +1405,20 @@ class AiChatRepository internal constructor(
                         )
                     }
                 }
-                put("message", "已生效，可在消息下方撤销")
+                if (dropped > 0) put("dropped", dropped)
+                put(
+                    "message",
+                    if (dropped > 0) {
+                        "已生效，可在消息下方撤销；另有 $dropped 条参数无法解析，未执行"
+                    } else {
+                        "已生效，可在消息下方撤销"
+                    },
+                )
             },
         )
     }
 
-    private fun lifecycleEnvelope(results: List<AiTodoLifecycle>): JsonObject {
+    private fun lifecycleEnvelope(results: List<AiTodoLifecycle>, dropped: Int): JsonObject {
         val applied = results.filter { it.status == AiTodoLifecycleStatus.Applied }
         val failed = results.filter { it.status != AiTodoLifecycleStatus.Applied }
         if (applied.isEmpty() && failed.isNotEmpty()) {
@@ -1356,7 +1453,15 @@ class AiChatRepository internal constructor(
                         )
                     }
                 }
-                put("message", "已生效，可在消息下方撤销")
+                if (dropped > 0) put("dropped", dropped)
+                put(
+                    "message",
+                    if (dropped > 0) {
+                        "已生效，可在消息下方撤销；另有 $dropped 条参数无法解析，未执行"
+                    } else {
+                        "已生效，可在消息下方撤销"
+                    },
+                )
             },
         )
     }
@@ -2378,7 +2483,7 @@ class AiChatRepository internal constructor(
                 todoIds = created.ids,
                 todoSaveFailed = created.failed,
                 todoChanges = changes,
-                todoChangeDropped = dropped,
+                todoChangeDropped = dropped > 0,
                 todoCompletions = completions,
                 todoLifecycles = lifecycles,
             )
@@ -2390,12 +2495,12 @@ class AiChatRepository internal constructor(
 
     /**
      * 一次落库的结果：成功创建的待办 + 是否失败（草稿非空却零落库 / 写库异常）+
-     * 是否丢弃了部分草稿（缺名称等被映射器滤掉，只影响工具结果的 `dropped` 提示）。
+     * 丢弃的草稿条数（缺名称等被映射器滤掉，与工具层的解码丢弃数合并进结果的 `dropped`）。
      */
     private data class CreateTodosOutcome(
         val created: List<CreatedTodo> = emptyList(),
         val failed: Boolean = false,
-        val dropped: Boolean = false,
+        val dropped: Int = 0,
     ) {
         val ids: List<String> get() = created.map { it.id }
     }
@@ -2409,7 +2514,7 @@ class AiChatRepository internal constructor(
         val context = contextProvider()
         val mappings = AiTodoMapper.map(payload.todos, context.groups, context.tags)
         val todos = mappings.filter { it.canSave }.map { it.todo }
-        val dropped = todos.size < mappings.size
+        val dropped = mappings.count { !it.canSave }
         if (todos.isEmpty()) return CreateTodosOutcome(failed = true, dropped = dropped)
         val saved = try {
             persister.addAll(todos)
@@ -2433,23 +2538,23 @@ class AiChatRepository internal constructor(
      * 任何一条不成立都丢弃并置 dropped——确认卡只展示真正可应用的变更，避免用户确认后
      * 才发现失败。删除按 id 去重。
      */
-    private fun buildTodoChanges(payload: AiTodoDraftPayload): Pair<List<AiTodoChange>, Boolean> {
+    private fun buildTodoChanges(payload: AiTodoDraftPayload): Pair<List<AiTodoChange>, Int> {
         val context = contextProvider()
         val todosById = context.todos.associateBy { it.id }
         val changes = mutableListOf<AiTodoChange>()
-        var dropped = false
+        var dropped = 0
 
         for (draft in payload.updates) {
             val id = draft.id.trim()
             val existing = todosById[id]
             if (id.isEmpty() || existing == null) {
-                dropped = true
+                dropped++
                 continue
             }
             val mapping = AiTodoPatchMapper.apply(existing, draft.patch, context.groups, context.tags)
             val next = mapping.todo
             if (next == null || !mapping.changed || TodoValidator.validate(next).isNotEmpty()) {
-                dropped = true
+                dropped++
                 continue
             }
             changes += AiTodoChange(
@@ -2465,7 +2570,7 @@ class AiChatRepository internal constructor(
             val id = draft.id.trim()
             val existing = todosById[id]
             if (id.isEmpty() || existing == null) {
-                dropped = true
+                dropped++
                 continue
             }
             if (!seenDeletes.add(id)) continue
@@ -2627,7 +2732,7 @@ class AiChatRepository internal constructor(
                     status = AiTodoCompletionStatus.UndoFailed,
                     failure = AiTodoChangeFailure.InvalidDate,
                 )
-            } else if ((date in todo.completedOccurrences) != !completion.completed) {
+            } else if (isUndoTargetReached(todo, completion, date)) {
                 // 已经是撤销后的目标状态（用户可能在别处手动改回）：不重复写库
                 completion.copy(
                     status = AiTodoCompletionStatus.Undone,
@@ -2644,7 +2749,7 @@ class AiChatRepository internal constructor(
             }
         } else {
             val target = !completion.completed
-            if (todo.completed == target) {
+            if (isUndoTargetReached(todo, completion, date = null)) {
                 // 已经是撤销后的目标状态：不重复写库
                 completion.copy(
                     status = AiTodoCompletionStatus.Undone,
@@ -2665,6 +2770,23 @@ class AiChatRepository internal constructor(
         }
         updateMessageById(conversationId, messageId) { it.copy(todoCompletions = updated) }
         persist()
+    }
+
+    /**
+     * 撤销目标态是否已经成立：重复待办按记录里的期次判断，普通待办看整条完成标记。
+     * 成立时不再写库（用户可能在别处手动改回），只把记录标成 Undone。
+     */
+    private fun isUndoTargetReached(
+        todo: Todo,
+        completion: AiTodoCompletion,
+        date: IsoDate?,
+    ): Boolean {
+        val target = !completion.completed
+        return if (date != null) {
+            (date in todo.completedOccurrences) == target
+        } else {
+            todo.completed == target
+        }
     }
 
     // ---------- 归档 / 取消归档 / 恢复（直接生效，可撤销） ----------

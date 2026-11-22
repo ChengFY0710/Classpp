@@ -52,6 +52,12 @@ class AiChatRepositoryTest {
     /** 每个用例独立的图片附件临时目录（真实 AiImageStore，只测文件名到编码的通路） */
     private fun tempImageDir(): File = Files.createTempDirectory("ai_images").toFile()
 
+    /** JVM 编码器实现：生产默认是 android.util.Base64，JVM 单测不可用 */
+    private fun testImageStore(dir: File = tempImageDir()): AiImageStore = AiImageStore(
+        dir,
+        base64Encode = { java.util.Base64.getEncoder().encodeToString(it) },
+    )
+
     private class FakeAiChatStore : AiChatStore {
         @Volatile
         var file: AiChatFile = AiChatFile()
@@ -501,7 +507,7 @@ class AiChatRepositoryTest {
             persister = persister,
             changeWriter = changeWriter,
             organizerWriter = organizerWriter,
-            imageStore = AiImageStore(tempImageDir()),
+            imageStore = testImageStore(),
             clock = Clock { IsoDate.of(2026, 11, 1) },
             nowMillis = nowMillis,
         )
@@ -515,7 +521,7 @@ class AiChatRepositoryTest {
         settings: FakeAiSettingsStore = FakeAiSettingsStore(),
         imageBytes: ByteArray = byteArrayOf(1),
     ): AiChatRepository {
-        val imageStore = AiImageStore(tempImageDir())
+        val imageStore = testImageStore()
         imageStore.file("page.jpg").parentFile?.mkdirs()
         imageStore.file("page.jpg").writeBytes(imageBytes)
         val repo = AiChatRepository(
@@ -561,7 +567,7 @@ class AiChatRepositoryTest {
 
     @Test
     fun `history images become text placeholder while current turn keeps image blocks`() = runBlocking {
-        val imageStore = AiImageStore(tempImageDir())
+        val imageStore = testImageStore()
         imageStore.file("a.jpg").parentFile.mkdirs()
         imageStore.file("a.jpg").writeBytes(byteArrayOf(1))
         val transport = FakeAiTransport(
@@ -604,7 +610,7 @@ class AiChatRepositoryTest {
 
     @Test
     fun `send with images persists filenames and encodes them into wire turns`() = runBlocking {
-        val imageStore = AiImageStore(tempImageDir())
+        val imageStore = testImageStore()
         // 预置两张副本文件（模拟 UI 已导入完毕，文件名来自导入返回值）
         val payloads = mapOf("a.jpg" to byteArrayOf(1), "b.jpg" to byteArrayOf(2, 3))
         payloads.forEach { (name, bytes) ->
@@ -825,7 +831,7 @@ class AiChatRepositoryTest {
 
     @Test
     fun `send supports image only message with missing file skipped`() = runBlocking {
-        val imageStore = AiImageStore(tempImageDir())
+        val imageStore = testImageStore()
         imageStore.file("kept.jpg").parentFile.mkdirs()
         imageStore.file("kept.jpg").writeBytes(byteArrayOf(9))
         // gone.jpg 从未落盘：编码侧应跳过而不是让整条请求失败
@@ -981,13 +987,64 @@ class AiChatRepositoryTest {
 
     @Test
     fun `retryLast without interrupted tail is a no-op`() = runBlocking {
-        val transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]")))
+        val transport = FakeAiTransport(ScriptedResponse(listOf(sse("完成"), "data: [DONE]")))
         val repo = repository(transport = transport)
         repo.send("hi")
 
         repo.retryLast()
 
         assertEquals(1, transport.opened.size) // 没有可重试状态，不再发请求
+    }
+
+    @Test
+    fun `empty reply marks interrupted and surfaces error so retry works`() = runBlocking {
+        val transport = FakeAiTransport(
+            ScriptedResponse(listOf("data: [DONE]")),
+            ScriptedResponse(listOf(sse("补上的回答"), "data: [DONE]")),
+        )
+        val repo = repository(transport = transport)
+
+        repo.send("hi")
+
+        val last = repo.messages.value.last()
+        assertEquals("", last.content)
+        assertTrue("空回复必须标记中断，否则重试入口不可用", last.interrupted)
+        assertEquals(AiError.EmptyResponse, repo.lastError.value?.error)
+
+        repo.retryLast()
+
+        assertEquals("补上的回答", repo.messages.value.last().content)
+        assertFalse(repo.messages.value.last().interrupted)
+        assertNull(repo.lastError.value)
+        assertEquals(2, transport.opened.size)
+    }
+
+    @Test
+    fun `tool round with empty final text is not treated as empty reply`() = runBlocking {
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.GET_CURRENT_TIME,
+                        arguments = "{}",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            // 工具轮之后的最终回答正文为空：工具结果本身是有效内容，不能报空回复
+            ScriptedResponse(listOf("data: [DONE]")),
+        )
+        val repo = repository(transport = transport)
+
+        repo.send("现在几点了")
+
+        val last = repo.messages.value.last()
+        assertFalse(last.interrupted)
+        assertNull(repo.lastError.value)
+        assertEquals(1, last.toolRounds.size)
     }
 
     @Test
@@ -1099,7 +1156,7 @@ class AiChatRepositoryTest {
             contextProvider = { AiChatContext() },
             persister = FakeTodoPersister(),
             changeWriter = FakeTodoChangeWriter(),
-            imageStore = AiImageStore(tempImageDir()),
+            imageStore = testImageStore(),
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
         assertEquals(LoadState.Ready, repo.loadState.value)
@@ -1138,7 +1195,7 @@ class AiChatRepositoryTest {
             contextProvider = { context },
             persister = FakeTodoPersister(),
             changeWriter = FakeTodoChangeWriter(),
-            imageStore = AiImageStore(tempImageDir()),
+            imageStore = testImageStore(),
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
         repo.bootstrap()
@@ -1428,7 +1485,7 @@ class AiChatRepositoryTest {
             contextProvider = { AiChatContext() },
             persister = FakeTodoPersister(),
             changeWriter = FakeTodoChangeWriter(),
-            imageStore = AiImageStore(tempImageDir()),
+            imageStore = testImageStore(),
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
         repo.bootstrap()
@@ -1462,7 +1519,7 @@ class AiChatRepositoryTest {
             contextProvider = { AiChatContext() },
             persister = FakeTodoPersister(),
             changeWriter = FakeTodoChangeWriter(),
-            imageStore = AiImageStore(tempImageDir()),
+            imageStore = testImageStore(),
             clock = Clock { IsoDate.of(2026, 11, 1) },
             // 6s 步进：checkpoint 间隔 5s，第二个增量后的 flush 触发半截落盘
             nowMillis = { tick += 6_000; tick },
@@ -1674,7 +1731,7 @@ class AiChatRepositoryTest {
             contextProvider = { AiChatContext() },
             persister = FakeTodoPersister(),
             changeWriter = FakeTodoChangeWriter(),
-            imageStore = AiImageStore(tempImageDir()),
+            imageStore = testImageStore(),
             clock = Clock { IsoDate.of(2026, 11, 1) },
         )
 
@@ -2684,6 +2741,109 @@ class AiChatRepositoryTest {
     }
 
     @Test
+    fun `undo reverses applied occurrence completion`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val date = IsoDate.of(2026, 11, 9)
+        var context = AiChatContext(todos = listOf(repeatingTodo("repeat-1", "跑步")))
+        val reply = "```json\n" +
+            """{"completes":[{"id":"repeat-1","date":"2026-11-09"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { context },
+        )
+        repo.send("这周一的跑步完成了")
+        val messageId = repo.messages.value.last().id
+        // 模拟完成态已落库：撤销时基于最新待办判断当前状态
+        context = AiChatContext(
+            todos = listOf(
+                repeatingTodo("repeat-1", "跑步").copy(completedOccurrences = listOf(date)),
+            ),
+        )
+
+        repo.undoTodoCompletionInBackground(messageId, 0)
+        awaitCompletionSettled(repo, messageId, 0)
+
+        assertEquals(
+            AiTodoCompletionStatus.Undone,
+            repo.messages.value.last().todoCompletions.single().status,
+        )
+        assertEquals(
+            listOf(
+                FakeTodoChangeWriter.CompletionCall("repeat-1", date, true),
+                FakeTodoChangeWriter.CompletionCall("repeat-1", date, false),
+            ),
+            writer.completionCalls,
+        )
+    }
+
+    @Test
+    fun `undo reverses applied occurrence reopen`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val date = IsoDate.of(2026, 11, 9)
+        // 起初该期已完成：取消完成会真正写库
+        var context = AiChatContext(
+            todos = listOf(
+                repeatingTodo("repeat-1", "跑步").copy(completedOccurrences = listOf(date)),
+            ),
+        )
+        val reply = "```json\n" +
+            """{"reopens":[{"id":"repeat-1","date":"2026-11-09"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { context },
+        )
+        repo.send("取消完成这周一的跑步")
+        val messageId = repo.messages.value.last().id
+        // 模拟取消完成已落库：期次从完成集合移除
+        context = AiChatContext(todos = listOf(repeatingTodo("repeat-1", "跑步")))
+
+        repo.undoTodoCompletionInBackground(messageId, 0)
+        awaitCompletionSettled(repo, messageId, 0)
+
+        assertEquals(
+            AiTodoCompletionStatus.Undone,
+            repo.messages.value.last().todoCompletions.single().status,
+        )
+        assertEquals(
+            listOf(
+                FakeTodoChangeWriter.CompletionCall("repeat-1", date, false),
+                FakeTodoChangeWriter.CompletionCall("repeat-1", date, true),
+            ),
+            writer.completionCalls,
+        )
+    }
+
+    @Test
+    fun `undo occurrence is a no-op when target already reversed elsewhere`() = runBlocking {
+        val writer = FakeTodoChangeWriter()
+        val date = IsoDate.of(2026, 11, 9)
+        var context = AiChatContext(todos = listOf(repeatingTodo("repeat-1", "跑步")))
+        val reply = "```json\n" +
+            """{"completes":[{"id":"repeat-1","date":"2026-11-09"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { context },
+        )
+        repo.send("这周一的跑步完成了")
+        val messageId = repo.messages.value.last().id
+        // 上下文仍是未完成态：用户已在别处把该期改回
+
+        repo.undoTodoCompletionInBackground(messageId, 0)
+        awaitCompletionSettled(repo, messageId, 0)
+
+        assertEquals(
+            AiTodoCompletionStatus.Undone,
+            repo.messages.value.last().todoCompletions.single().status,
+        )
+        // 只发生一次「完成」写入；撤销发现已处于目标状态，不再写库
+        assertEquals(1, writer.completionCalls.size)
+        assertTrue(writer.completionCalls.single().completed)
+    }
+
+    @Test
     fun `undo failure keeps completion applied and marks undo failed`() = runBlocking {
         val writer = FakeTodoChangeWriter()
         var context = AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告")))
@@ -3087,7 +3247,7 @@ class AiChatRepositoryTest {
             contextProvider = { AiChatContext(currentWeek = 12) },
             persister = FakeTodoPersister(),
             changeWriter = FakeTodoChangeWriter(),
-            imageStore = AiImageStore(tempImageDir()),
+            imageStore = testImageStore(),
             // 日期与时刻必须来自同一时钟，跨午夜时不能一个旧一个新
             clock = object : Clock {
                 override fun today(): IsoDate = IsoDate.of(2026, 11, 1)
@@ -3545,6 +3705,66 @@ class AiChatRepositoryTest {
     }
 
     @Test
+    fun `update tool with null patch reports invalid arguments`() = runBlocking {
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.UPDATE_TODOS,
+                        arguments = """{"updates":[{"id":"todo-1","patch":null}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("补丁是空的。"), "data: [DONE]")),
+        )
+        val repo = repository(
+            transport = transport,
+            contextProvider = { AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告"))) },
+        )
+
+        repo.send("改一下实验报告")
+
+        assertTrue(repo.messages.value.last().todoChanges.isEmpty())
+        val result = repo.messages.value.last().toolRounds.single().results.single()
+        assertTrue(result.isError)
+        assertTrue(result.contentJson.contains("invalid_arguments"))
+        assertFalse(result.contentJson.contains("not_found"))
+    }
+
+    @Test
+    fun `create tool reports dropped entries in result envelope`() = runBlocking {
+        val persister = FakeTodoPersister()
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.CREATE_TODOS,
+                        arguments = """{"todos":[{"name":"A"},{"name":null}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("建好了。"), "data: [DONE]")),
+        )
+        val repo = repository(transport = transport, persister = persister)
+
+        repo.send("建两个待办")
+
+        assertEquals(listOf("A"), persister.batches.single().map { it.name })
+        val result = repo.messages.value.last().toolRounds.single().results.single()
+        assertFalse(result.isError)
+        assertTrue(result.contentJson.contains("\"dropped\":1"))
+        assertTrue(result.contentJson.contains("未能解析或未生效"))
+    }
+
+    @Test
     fun `delete tool with unknown id returns failure result`() = runBlocking {
         val transport = FakeAiTransport(
             ScriptedResponse(
@@ -3677,6 +3897,90 @@ class AiChatRepositoryTest {
         // 工具轮次随消息被摘掉：靠一句提醒挡住重复创建（脚本本身不会再调工具）
         assertEquals(1, persister.batches.size)
         assertEquals("完整回答", repo.messages.value.last().content)
+        assertTrue(transport.opened[2].jsonBody.contains("不要重复创建、完成或归档"))
+    }
+
+    @Test
+    fun `retry keeps pending change cards and does not claim writes applied`() = runBlocking {
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.UPDATE_TODOS,
+                        arguments = """{"updates":[{"id":"todo-1","patch":{"name":"新名字"}}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            // 工具轮之后继续请求，流断开：尾部消息 interrupted，确认卡留在消息上
+            ScriptedResponse(listOf(sse("半截")), failAfterLines = true),
+            ScriptedResponse(listOf(sse("完整回答"), "data: [DONE]")),
+        )
+        val repo = repository(
+            transport = transport,
+            contextProvider = {
+                AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告")))
+            },
+        )
+
+        repo.send("把实验报告改名为新名字")
+        assertTrue(repo.messages.value.last().interrupted)
+        assertEquals(
+            AiTodoChangeStatus.Pending,
+            repo.messages.value.last().todoChanges.single().status,
+        )
+
+        repo.retryLast()
+
+        val last = repo.messages.value.last()
+        assertEquals("完整回答", last.content)
+        // 修改没有落库：确认卡搬到新消息上，仍可点「应用变更」
+        assertEquals(1, last.todoChanges.size)
+        assertEquals(AiTodoChangeStatus.Pending, last.todoChanges.single().status)
+        assertEquals("todo-1", last.todoChanges.single().todoId)
+        // update/delete 只生成确认卡，不能提示模型「写操作已生效」
+        assertFalse(transport.opened[2].jsonBody.contains("不要重复创建、完成或归档"))
+    }
+
+    @Test
+    fun `retry keeps undo entry for applied completion`() = runBlocking {
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.COMPLETE_TODOS,
+                        arguments = """{"completes":[{"id":"todo-1"}]}""",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("半截")), failAfterLines = true),
+            ScriptedResponse(listOf(sse("完整回答"), "data: [DONE]")),
+        )
+        val repo = repository(
+            transport = transport,
+            contextProvider = {
+                AiChatContext(todos = listOf(existingTodo("todo-1", "实验报告")))
+            },
+        )
+
+        repo.send("完成实验报告")
+        assertTrue(repo.messages.value.last().interrupted)
+
+        repo.retryLast()
+
+        val last = repo.messages.value.last()
+        assertEquals("完整回答", last.content)
+        // 已落库的完成记录随卡片搬到新消息：撤销入口仍在
+        assertEquals(AiTodoCompletionStatus.Applied, last.todoCompletions.single().status)
+        assertEquals("todo-1", last.todoCompletions.single().todoId)
+        // 确实落库了：仍提醒模型不要重复完成
         assertTrue(transport.opened[2].jsonBody.contains("不要重复创建、完成或归档"))
     }
 

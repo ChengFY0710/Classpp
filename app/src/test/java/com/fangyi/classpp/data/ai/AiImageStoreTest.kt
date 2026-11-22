@@ -13,9 +13,16 @@ import org.junit.Test
  */
 class AiImageStoreTest {
 
+    /**
+     * 生产默认参数用 `android.util.Base64`（minSdk 24 不支持 `java.util.Base64`），
+     * JVM 上不可用——测试必须显式注入 JDK 编码器。
+     */
     private fun newStore(): AiImageStore {
         val dir = Files.createTempDirectory("ai_images").toFile()
-        return AiImageStore(dir)
+        return AiImageStore(
+            dir,
+            base64Encode = { java.util.Base64.getEncoder().encodeToString(it) },
+        )
     }
 
     @Test
@@ -29,6 +36,22 @@ class AiImageStoreTest {
 
         assertEquals("image/jpeg", image!!.mediaType)
         assertEquals("AQID", image.base64)
+    }
+
+    @Test
+    fun `encode base64 round trips to original bytes`() {
+        val store = newStore()
+        val payload = byteArrayOf(0, 1, 2, 3, 127, -1, -128, 42)
+        val file = store.file("roundtrip.jpg")
+        file.parentFile.mkdirs()
+        file.writeBytes(payload)
+
+        val image = store.encode("roundtrip.jpg")
+
+        assertTrue(
+            "base64 应可还原为原字节",
+            java.util.Base64.getDecoder().decode(image!!.base64).contentEquals(payload),
+        )
     }
 
     @Test

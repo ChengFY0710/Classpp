@@ -1251,6 +1251,7 @@ internal fun AiChatErrorBanner(
         AiError.Server -> stringResource(R.string.ai_error_server)
         AiError.Network -> stringResource(R.string.ai_error_network)
         AiError.BadResponse -> stringResource(R.string.ai_error_bad_response)
+        AiError.EmptyResponse -> stringResource(R.string.ai_error_empty_response)
     }
     Row(
         modifier = modifier

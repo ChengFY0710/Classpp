@@ -331,7 +331,7 @@ data class AiChatMessage(
  * 随 [AiConversation.lastError] 落盘，故需序列化。
  */
 @Serializable
-enum class AiError { Auth, Quota, NotFound, RateLimited, Server, Network, BadResponse }
+enum class AiError { Auth, Quota, NotFound, RateLimited, Server, Network, BadResponse, EmptyResponse }
 
 /**
  * 携带分类的 AI 调用异常；[detail] 供日志/排查，内容来自服务商响应体或 IO 消息，
@@ -377,6 +377,19 @@ internal object AiJson {
         ignoreUnknownKeys = true
         encodeDefaults = false
         isLenient = false
+        prettyPrint = false
+    }
+
+    /**
+     * 工具参数解析：比 [storage] 宽容——模型常给显式 `null` 表示「没填这个字段」，
+     * `coerceInputValues` 让非空字段（有默认值）回落到默认值，非法枚举同样回落，
+     * 避免整条动作被解码异常吞掉。持久化读取继续用 [storage]，不静默修复损坏文件。
+     */
+    val toolArgs: Json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+        isLenient = true
+        coerceInputValues = true
         prettyPrint = false
     }
 }

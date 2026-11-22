@@ -7,7 +7,6 @@ import android.graphics.Matrix
 import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
-import java.util.Base64
 import java.util.UUID
 
 /**
@@ -19,9 +18,19 @@ import java.util.UUID
  * 同构（边界解码定采样率 → EXIF 转正 → 最长边压缩 → JPEG 落盘）；上限压到
  * [MaxDimension]：AI 输入不需要壁纸级分辨率，控制单条请求体积（多图上限 4 张）。
  *
- * encode/delete 不触碰 Android API（纯 JVM），单测直接用临时目录验证。
+ * encode/delete 不直接依赖 Android API（base64 编码器由构造参数注入），单测用临时目录 +
+ * JDK 编码器验证。
+ *
+ * @param base64Encode base64 编码器注入以保持纯 JVM 可测：生产用默认的
+ *   `android.util.Base64`（minSdk 24 不能用 `java.util.Base64`），JVM 单测必须显式传入
+ *   JDK 实现；默认参数只在 Android 运行时被调用。
  */
-class AiImageStore(private val dir: File) {
+class AiImageStore(
+    private val dir: File,
+    private val base64Encode: (ByteArray) -> String = { bytes ->
+        android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+    },
+) {
 
     fun file(name: String): File = File(dir, name)
 
@@ -112,7 +121,7 @@ class AiImageStore(private val dir: File) {
         val bytes = file(name).takeIf { it.isFile }?.readBytes() ?: return null
         return AiTurnImage(
             mediaType = JPEG_MEDIA_TYPE,
-            base64 = Base64.getEncoder().encodeToString(bytes),
+            base64 = base64Encode(bytes),
         )
     }
 

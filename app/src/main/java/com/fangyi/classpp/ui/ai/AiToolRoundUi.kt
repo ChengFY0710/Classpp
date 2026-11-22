@@ -438,7 +438,9 @@ private fun toolResultSummary(name: String, result: AiToolResult?): String {
                 ?: (data["created"] as? JsonArray)?.size
                 ?: 0
             val text = stringResource(R.string.ai_tool_result_created, count)
-            if (data["dropped"].textOrNull() == "true") {
+            // 新结果给丢弃条数（数字），旧对话里可能仍是 true，两种都要认
+            val dropped = data["dropped"].textOrNull()
+            if (dropped == "true" || (dropped?.toIntOrNull() ?: 0) > 0) {
                 "$text · ${stringResource(R.string.ai_tool_result_skipped)}"
             } else {
                 text

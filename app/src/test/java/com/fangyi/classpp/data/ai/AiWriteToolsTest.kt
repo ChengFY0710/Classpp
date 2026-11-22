@@ -31,29 +31,35 @@ class AiWriteToolsTest {
         var restores: List<AiTodoLifecycleDraft> = emptyList()
         var groups: List<String> = emptyList()
         var tags: List<String> = emptyList()
+        var dropped = 0
         var result: JsonObject = toolSuccess(buildJsonObject { put("count", 1) })
 
-        override suspend fun createTodos(drafts: List<AiTodoDraft>): JsonObject {
+        override suspend fun createTodos(drafts: List<AiTodoDraft>, dropped: Int): JsonObject {
             creates = drafts
+            this.dropped = dropped
             return result
         }
 
-        override suspend fun updateTodos(drafts: List<AiTodoUpdateDraft>): JsonObject {
+        override suspend fun updateTodos(drafts: List<AiTodoUpdateDraft>, dropped: Int): JsonObject {
             updates = drafts
+            this.dropped = dropped
             return result
         }
 
-        override suspend fun deleteTodos(drafts: List<AiTodoDeleteDraft>): JsonObject {
+        override suspend fun deleteTodos(drafts: List<AiTodoDeleteDraft>, dropped: Int): JsonObject {
             deletes = drafts
+            this.dropped = dropped
             return result
         }
 
         override suspend fun completeTodos(
             completes: List<AiTodoCompletionDraft>,
             reopens: List<AiTodoCompletionDraft>,
+            dropped: Int,
         ): JsonObject {
             this.completes = completes
             this.reopens = reopens
+            this.dropped = dropped
             return result
         }
 
@@ -61,20 +67,24 @@ class AiWriteToolsTest {
             archives: List<AiTodoLifecycleDraft>,
             unarchives: List<AiTodoLifecycleDraft>,
             restores: List<AiTodoLifecycleDraft>,
+            dropped: Int,
         ): JsonObject {
             this.archives = archives
             this.unarchives = unarchives
             this.restores = restores
+            this.dropped = dropped
             return result
         }
 
-        override suspend fun createGroups(names: List<String>): JsonObject {
+        override suspend fun createGroups(names: List<String>, dropped: Int): JsonObject {
             groups = names
+            this.dropped = dropped
             return result
         }
 
-        override suspend fun createTags(names: List<String>): JsonObject {
+        override suspend fun createTags(names: List<String>, dropped: Int): JsonObject {
             tags = names
+            this.dropped = dropped
             return result
         }
     }
@@ -215,6 +225,91 @@ class AiWriteToolsTest {
         assertEquals("invalid_arguments", errorCode(result))
     }
 
+    @Test
+    fun `create tolerates explicit null in optional fields`() = kotlinx.coroutines.runBlocking {
+        val gateway = FakeGateway()
+        val result = AiWriteTools.executeCreateTodos(
+            args(
+                """{"todos":[{"name":"A","tags":null,"dates":null,"steps":null},""" +
+                    """{"name":"B"}]}""",
+            ),
+            context(gateway),
+        )
+
+        assertTrue(ok(result))
+        assertEquals(2, gateway.creates.size)
+        assertEquals(emptyList<String>(), gateway.creates[0].tags)
+        assertEquals(emptyList<String>(), gateway.creates[0].dates)
+        assertEquals(emptyList<String>(), gateway.creates[0].steps)
+        assertEquals(0, gateway.dropped)
+    }
+
+    @Test
+    fun `create keeps valid entry and counts undecodable entries`() =
+        kotlinx.coroutines.runBlocking {
+            val gateway = FakeGateway()
+            val result = AiWriteTools.executeCreateTodos(
+                // 第二条不是对象：解码失败，但不能让第一条一起消失
+                args("""{"todos":[{"name":"A"},42]}"""),
+                context(gateway),
+            )
+
+            assertTrue(ok(result))
+            assertEquals(listOf("A"), gateway.creates.map { it.name })
+            assertEquals(1, gateway.dropped)
+        }
+
+    @Test
+    fun `create rejects payload when every entry is undecodable`() =
+        kotlinx.coroutines.runBlocking {
+            val gateway = FakeGateway()
+            val result = AiWriteTools.executeCreateTodos(args("""{"todos":[1,2]}"""), context(gateway))
+
+            assertEquals("invalid_arguments", errorCode(result))
+            assertTrue(gateway.creates.isEmpty())
+            assertTrue(result.toString().contains("2 条参数无法解析"))
+        }
+
+    @Test
+    fun `update with null patch is invalid arguments instead of not found`() =
+        kotlinx.coroutines.runBlocking {
+            val gateway = FakeGateway()
+            val result = AiWriteTools.executeUpdateTodos(
+                args("""{"updates":[{"id":"todo-1","patch":null}]}"""),
+                context(gateway),
+            )
+
+            assertEquals("invalid_arguments", errorCode(result))
+            assertTrue(gateway.updates.isEmpty())
+        }
+
+    @Test
+    fun `complete counts dropped entries and keeps the rest`() = kotlinx.coroutines.runBlocking {
+        val gateway = FakeGateway()
+        val result = AiWriteTools.executeCompleteTodos(
+            args("""{"completes":[{"id":"a"},42]}"""),
+            context(gateway),
+        )
+
+        assertTrue(ok(result))
+        assertEquals(listOf("a"), gateway.completes.map { it.id })
+        assertEquals(1, gateway.dropped)
+    }
+
+    @Test
+    fun `organizer names count non string entries as dropped`() =
+        kotlinx.coroutines.runBlocking {
+            val gateway = FakeGateway()
+            val result = AiWriteTools.executeCreateTodoGroups(
+                args("""{"groups":[" 学习 ",42,"生活"]}"""),
+                context(gateway),
+            )
+
+            assertTrue(ok(result))
+            assertEquals(listOf("学习", "生活"), gateway.groups)
+            assertEquals(1, gateway.dropped)
+        }
+
     // ---------- create_todo_groups / create_todo_tags ----------
 
     @Test
@@ -300,7 +395,7 @@ class AiWriteToolsTest {
                     todoName = "跑步",
                 ),
             ),
-            dropped = true,
+            dropped = 2,
         )
 
         assertTrue(ok(result))
@@ -310,7 +405,7 @@ class AiWriteToolsTest {
             data.getValue("status").jsonPrimitive.content,
         )
         assertEquals("2", data.getValue("count").jsonPrimitive.content)
-        assertEquals("true", data.getValue("dropped").jsonPrimitive.content)
+        assertEquals("2", data.getValue("dropped").jsonPrimitive.content)
         assertTrue(data.toString().contains("\"kind\":\"delete\""))
     }
 
