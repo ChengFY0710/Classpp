@@ -58,8 +58,8 @@ object ClassppTextTokens {
     val listRowTitle = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 交替课选择行标题：16sp SemiBold。 */
     val alternateRowTitle = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
-    /** 分组标题：14sp Medium。 */
-    val sectionTitle = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium)
+    /** 分组标题 / AI 对话思考过程卡标题：14sp Medium，行高 20 与 14sp 档统一。 */
+    val sectionTitle = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp, letterSpacing = 0.sp)
     /** 分组头「全选/取消全选」文字按钮：14sp SemiBold，行高 20；与 [sectionTitle] 同字号，仅字重提高一档。 */
     val sectionAction = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, letterSpacing = 0.sp)
 

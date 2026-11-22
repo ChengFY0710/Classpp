@@ -23,8 +23,8 @@ import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.tabularNumbers
 import com.kyant.shapes.RoundedRectangle
 
-/** 图标尺寸：20dp，约为单行条高的一半，小于行卡 24dp 图标槽。 */
-private val InfoBannerIconSize = 20.dp
+/** 图标尺寸：18dp，与浮层卡片标题图标同档，小于行卡 24dp 图标槽。 */
+private val InfoBannerIconSize = 18.dp
 
 /** 图标与文字间距：8dp。 */
 private val InfoBannerIconGap = 8.dp

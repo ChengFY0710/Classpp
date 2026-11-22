@@ -70,6 +70,7 @@ import com.fangyi.classpp.ui.components.EmptyState
 import com.fangyi.classpp.ui.components.EmptyStateActionButton
 import com.fangyi.classpp.ui.components.NoteCard
 import com.fangyi.classpp.ui.components.NoteCardSwipe
+import com.fangyi.classpp.ui.components.SheetInfoBanner
 import com.fangyi.classpp.ui.components.SwipeAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.components.labelText
@@ -612,11 +613,10 @@ internal fun AiChatCreatedTodoList(
 /** 草稿解析出来但落库失败的提示（正文与卡片都不丢，只提示重试） */
 @Composable
 internal fun AiChatTodoSaveFailedHint(modifier: Modifier = Modifier) {
-    Text(
+    SheetInfoBanner(
         text = stringResource(R.string.ai_todo_save_failed),
-        style = ClassppTextTokens.secondaryTextSmall,
-        color = MaterialTheme.colorScheme.error,
         modifier = modifier,
+        isError = true,
     )
 }
 
@@ -927,11 +927,10 @@ private fun TodoUrgency.labelRes(): Int = when (this) {
 /** 有修改/删除动作被丢弃（目标不存在或补丁非法）时的提示 */
 @Composable
 internal fun AiChatTodoChangeDroppedHint(modifier: Modifier = Modifier) {
-    Text(
+    SheetInfoBanner(
         text = stringResource(R.string.ai_todo_change_dropped),
-        style = ClassppTextTokens.secondaryTextSmall,
-        color = MaterialTheme.colorScheme.error,
         modifier = modifier,
+        isError = true,
     )
 }
 

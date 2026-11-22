@@ -126,14 +126,14 @@ val Typography = Typography(
  *
  * 字面值来自 [ClassppTextTokens]（唯一来源）；颜色取自当前主题
  * （onSurface / primary / secondaryText），随 [ClassppTheme] 深浅切换。
- * 角色样式本身不含行高与字距：行卡 label/value 继承 [Typography.bodyLarge]
- * 的 24sp / 0sp；分组标题用 [settingsRowMetrics] 补 20sp / 0sp。
+ * 行卡 label/value 不写行高，继承 [Typography.bodyLarge] 的 24sp / 0sp；
+ * 分组标题的 20sp / 0sp 由 [ClassppTextTokens.sectionTitle] 自带。
  */
 @Immutable
 class ClassppTextStyles(
     /** 顶栏居中标题：20sp SemiBold onSurface（设置页顶栏与浮层顶栏同款） */
     val topBarTitle: TextStyle,
-    /** 分组标题（卡片外的次级灰字）：14sp Medium secondaryText */
+    /** 分组标题（卡片外的次级灰字）：14sp Medium / 行高 20 secondaryText */
     val sectionTitle: TextStyle,
     /** 行卡左侧 label：16sp SemiBold onSurface */
     val fieldLabel: TextStyle,
