@@ -543,7 +543,7 @@ class AiReadToolsTest {
         assertTrue(result.ok())
         val data = result.data()
         assertEquals(3, data.getValue("total").jsonPrimitive.int)
-        assertFalse(data.getValue("truncated").jsonPrimitive.boolean)
+        assertFalse(data.getValue("hasMore").jsonPrimitive.boolean)
         val ids = data.getValue("items").jsonArray.map { it.jsonObject.getValue("id").jsonPrimitive.content }
         assertEquals(listOf("t1", "t3", "t2"), ids)
     }
@@ -616,7 +616,7 @@ class AiReadToolsTest {
         val first = AiReadTools.executeSearchTodos(args("limit" to JsonPrimitive(30)), context).data()
         assertEquals(35, first.getValue("total").jsonPrimitive.int)
         assertEquals(0, first.getValue("offset").jsonPrimitive.int)
-        assertTrue(first.getValue("truncated").jsonPrimitive.boolean)
+        assertTrue(first.getValue("hasMore").jsonPrimitive.boolean)
         val firstIds = first.itemIds()
         assertEquals(30, firstIds.size)
 
@@ -626,7 +626,7 @@ class AiReadToolsTest {
         ).data()
         assertEquals(35, second.getValue("total").jsonPrimitive.int)
         assertEquals(30, second.getValue("offset").jsonPrimitive.int)
-        assertFalse(second.getValue("truncated").jsonPrimitive.boolean)
+        assertFalse(second.getValue("hasMore").jsonPrimitive.boolean)
         val secondIds = second.itemIds()
         assertEquals(5, secondIds.size)
         // 两页无重叠：offset 以排序后的稳定顺序切分，不会重复或漏条
@@ -638,7 +638,7 @@ class AiReadToolsTest {
         ).data()
         assertEquals(35, beyond.getValue("total").jsonPrimitive.int)
         assertTrue(beyond.itemIds().isEmpty())
-        assertFalse(beyond.getValue("truncated").jsonPrimitive.boolean)
+        assertFalse(beyond.getValue("hasMore").jsonPrimitive.boolean)
     }
 
     @Test
@@ -657,7 +657,7 @@ class AiReadToolsTest {
 
         assertEquals(35, data.getValue("total").jsonPrimitive.int)
         assertEquals(35, data.getValue("items").jsonArray.size)
-        assertFalse(data.getValue("truncated").jsonPrimitive.boolean)
+        assertFalse(data.getValue("hasMore").jsonPrimitive.boolean)
     }
 
     @Test
@@ -683,7 +683,7 @@ class AiReadToolsTest {
 
         assertEquals(35, data.getValue("total").jsonPrimitive.int)
         assertEquals(10, data.getValue("items").jsonArray.size)
-        assertTrue(data.getValue("truncated").jsonPrimitive.boolean)
+        assertTrue(data.getValue("hasMore").jsonPrimitive.boolean)
     }
 
     @Test
@@ -702,7 +702,7 @@ class AiReadToolsTest {
 
         assertEquals(35, data.getValue("total").jsonPrimitive.int)
         assertEquals(0, data.getValue("offset").jsonPrimitive.int)
-        assertFalse(data.getValue("truncated").jsonPrimitive.boolean)
+        assertFalse(data.getValue("hasMore").jsonPrimitive.boolean)
         assertEquals(35, data.getValue("items").jsonArray.size)
     }
 
@@ -726,7 +726,7 @@ class AiReadToolsTest {
 
         assertEquals(35, data.getValue("total").jsonPrimitive.int)
         assertEquals(35, data.getValue("items").jsonArray.size)
-        assertFalse(data.getValue("truncated").jsonPrimitive.boolean)
+        assertFalse(data.getValue("hasMore").jsonPrimitive.boolean)
     }
 
     @Test
@@ -750,7 +750,7 @@ class AiReadToolsTest {
         assertEquals(800, data.getValue("total").jsonPrimitive.int)
         assertEquals(800, data.getValue("items").jsonArray.size)
         assertTrue(data.getValue("compact").jsonPrimitive.boolean)
-        assertFalse(data.getValue("truncated").jsonPrimitive.boolean)
+        assertFalse(data.getValue("hasMore").jsonPrimitive.boolean)
     }
 
     @Test
@@ -870,7 +870,7 @@ class AiReadToolsTest {
         val limited = AiReadTools.executeSearchTodos(args("limit" to JsonPrimitive(1)), searchContext())
         val data = limited.data()
         assertEquals(3, data.getValue("total").jsonPrimitive.int)
-        assertTrue(data.getValue("truncated").jsonPrimitive.boolean)
+        assertTrue(data.getValue("hasMore").jsonPrimitive.boolean)
         assertEquals(1, data.getValue("items").jsonArray.size)
 
         val detailed = AiReadTools.executeSearchTodos(
@@ -1111,7 +1111,7 @@ class AiReadToolsTest {
         assertTrue(search.ok())
         val data = search.data()
         assertEquals(3, data.getValue("items").jsonArray.size)
-        assertFalse(data.getValue("truncated").jsonPrimitive.boolean)
+        assertFalse(data.getValue("hasMore").jsonPrimitive.boolean)
     }
 
     @Test

@@ -33,6 +33,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -77,6 +78,18 @@ data class AiChatContext(
      */
     val modelContextWindowTokens: Int = 0,
 )
+
+/**
+ * UI 发送入口的受理结果：只有 [Accepted] 才清空输入与待发图片；[Busy] 保留草稿并轻提示；
+ * [NotConfigured] 保留草稿并打开配置引导。拒绝时绝不能静默吞掉用户内容。
+ */
+sealed interface SendAcceptance {
+    data class Accepted(val job: Job) : SendAcceptance
+
+    data object Busy : SendAcceptance
+
+    data object NotConfigured : SendAcceptance
+}
 
 /**
  * 待办落库回调：AI 回复解析出的待办由仓库直接写入 TodoRepository（无需用户确认）。
@@ -377,6 +390,10 @@ class AiChatRepository internal constructor(
     private val _secureAvailable = MutableStateFlow(settings.secureAvailable)
     val secureAvailable: StateFlow<Boolean> = _secureAvailable.asStateFlow()
 
+    /** 方案库解析曾失败（原始 JSON 已留证）：设置页提示重新保存配置 */
+    private val _profilesCorrupt = MutableStateFlow(false)
+    val profilesCorrupt: StateFlow<Boolean> = _profilesCorrupt.asStateFlow()
+
     /** 原生只读工具总开关（设置页可见；关闭后完全走 JSON 回退） */
     private val _toolsEnabled = MutableStateFlow(true)
     val toolsEnabled: StateFlow<Boolean> = _toolsEnabled.asStateFlow()
@@ -403,10 +420,12 @@ class AiChatRepository internal constructor(
         val (migratedFile, migrated) = migrateFile(file)
         // 上次进程在工具执行中途被杀：Pending/Running 的轮次在装载时视为已取消
         val (normalized, roundsNormalized) = normalizeToolRounds(migratedFile)
-        _conversations.value = normalized.conversations
-        _activeConversationId.value = normalized.activeConversationId
-            ?.takeIf { id -> normalized.conversations.any { it.id == id } }
-            ?: normalized.conversations.maxByOrNull { it.updatedAtMillis }?.id
+        // 旧消息可能没有 id（v1/v2 早期文件）：补 UUID，确认卡定位与 UI key 都依赖它
+        val (identified, idsFilled) = ensureMessageIds(normalized)
+        _conversations.value = identified.conversations
+        _activeConversationId.value = identified.activeConversationId
+            ?.takeIf { id -> identified.conversations.any { it.id == id } }
+            ?: identified.conversations.maxByOrNull { it.updatedAtMillis }?.id
         _messages.value = activeConversation()?.messages ?: emptyList()
         // 错误随对话落盘：重新装载后按活跃对话镜像恢复（退出浮层 / 重启后错误条仍在）
         mirrorLastError()
@@ -420,8 +439,31 @@ class AiChatRepository internal constructor(
                 .flatMap { conversation -> conversation.messages.flatMap { it.images } }
             imageStore.deleteExcept(referenced.toHashSet(), minAgeMillis = ORPHAN_IMAGE_GRACE_MILLIS)
         }
-        if (migrated || roundsNormalized) persist()
+        if (migrated || roundsNormalized || idsFilled) persist()
         refreshConfigured()
+    }
+
+    /**
+     * 旧文件的消息没有 id（v1 迁移前 / v2 早期）：补 UUID 并重写落盘。
+     * 确认卡的应用/忽略按消息 id 定位、UI 的 `key(message.id)` 也要求唯一——空串会在
+     * 同一列表里产生重复 key。
+     */
+    private fun ensureMessageIds(file: AiChatFile): Pair<AiChatFile, Boolean> {
+        var changed = false
+        val conversations = file.conversations.map { conversation ->
+            var conversationChanged = false
+            val messages = conversation.messages.map { message ->
+                if (message.id.isBlank()) {
+                    changed = true
+                    conversationChanged = true
+                    message.copy(id = newMessageId())
+                } else {
+                    message
+                }
+            }
+            if (conversationChanged) conversation.copy(messages = messages) else conversation
+        }
+        return if (changed) file.copy(conversations = conversations) to true else file to false
     }
 
     /**
@@ -482,13 +524,15 @@ class AiChatRepository internal constructor(
 
     /**
      * 读凭据：SharedPreferences 读与 Keystore 解密都是阻塞 I/O，调用方可能在 Main
-     * （对话浮层直接触发 send）——统一经 Dispatchers.IO，且一次读齐两项。
+     * （对话浮层直接触发 send）——统一经 Dispatchers.IO。连接与 Key 必须走
+     * [AiSettingsStore.loadActiveCredentials] 原子快照：分两次读会和「切换方案」交错成
+     * A 端点 + B Key。
      */
     private suspend fun loadCredentials(): Pair<AiConnection, String?> =
         withContext(Dispatchers.IO) {
-            val credentials = settings.loadConnection() to settings.loadApiKey()
+            val credentials = settings.loadActiveCredentials()
             _secureAvailable.value = settings.secureAvailable
-            credentials
+            credentials.connection to credentials.apiKey
         }
 
     /** 设置页保存/清除配置后调用；发送前也兜底刷新一次 */
@@ -499,11 +543,13 @@ class AiChatRepository internal constructor(
                 activeProfileId = settings.loadActiveProfileId(),
                 connection = settings.loadConnection(),
                 apiKey = settings.loadApiKey(),
+                profilesCorrupt = settings.hasCorruptProfiles(),
             ).also { _secureAvailable.value = settings.secureAvailable }
         }
         _profiles.value = snapshot.profiles
         _activeProfileId.value = snapshot.activeProfileId
         _activeConnection.value = snapshot.connection
+        _profilesCorrupt.value = snapshot.profilesCorrupt
         _configured.value = snapshot.connection.isReady(snapshot.apiKey)
     }
 
@@ -536,6 +582,7 @@ class AiChatRepository internal constructor(
         val activeProfileId: String?,
         val connection: AiConnection,
         val apiKey: String?,
+        val profilesCorrupt: Boolean = false,
     )
 
     // ---------- 对话 ----------
@@ -546,13 +593,18 @@ class AiChatRepository internal constructor(
     }
 
     /**
-     * UI 发送入口：Job 归仓库所有（不随浮层卸载/旋转取消），返回 null 表示已有
-     * 发送在进行。异常不外抛——分类错误经 [lastError] 发布，停止走 [cancelSending]。
+     * UI 发送入口：Job 归仓库所有（不随浮层卸载/旋转取消）。返回 [SendAcceptance]：
+     * UI 只在 [SendAcceptance.Accepted] 时清空输入与待发图片，闸门被占用或未配置时
+     * 草稿必须保留。异常不外抛——分类错误经 [lastError] 发布，停止走 [cancelSending]。
      *
      * @param images 随消息发送的图片附件（[AiImageStore] 目录内的文件名，UI 已导入完毕）
      */
-    fun sendInBackground(text: String, images: List<String> = emptyList()): Job? =
-        launchSend { send(text, images) }
+    fun sendInBackground(text: String, images: List<String> = emptyList()): SendAcceptance {
+        // 同步预检：未配置直接返回（不做异步翻转的 sending 判断，避免「可点但被吞」）
+        if (!_configured.value) return SendAcceptance.NotConfigured
+        val job = launchSend { send(text, images) } ?: return SendAcceptance.Busy
+        return SendAcceptance.Accepted(job)
+    }
 
     /** 同 [sendInBackground]，重试最后一场失败的对话 */
     fun retryInBackground(): Job? = launchSend { retryLast() }
@@ -565,6 +617,10 @@ class AiChatRepository internal constructor(
     /**
      * 后台发送的统一收口：Job 的异常绝不能漏到 [scope]（SupervisorJob 下会进全局
      * 异常处理器，Android 上表现为崩溃）；发送自身的分类错误已在内部发布。
+     *
+     * 释放顺序：**先清在途绑定与 sending，再放闸门**——反过来的话 UI 可能先看到
+     * 闸门空闲、后看到 sending=false，出现「可点但被吞」的窗口。兜底完成回调只负责
+     * 协程体未启动（开跑前被取消）的情况。
      */
     private fun launchSend(block: suspend () -> Unit): Job? {
         if (!sendGate.compareAndSet(false, true)) return null
@@ -574,18 +630,24 @@ class AiChatRepository internal constructor(
             } catch (_: CancellationException) {
                 // 停止：半截已由 send/retryLast 标记 interrupted 并（NonCancellable）落盘
             } catch (e: Exception) {
-                // 非分类的意外异常：归到本次发送绑定的对话（尚未绑定则不挂到任何对话）
-                storeLastError(AiException(AiError.BadResponse, detail = e.message), activeSendConversationId.get())
+                // 非分类的意外异常：先补中断标记，重试入口才可用
+                val conversationId = activeSendConversationId.get()
+                conversationId?.let { markLastInterrupted(it) }
+                storeLastError(AiException(AiError.BadResponse, detail = e.message), conversationId)
                 // 错误随对话落盘：退出浮层 / 重启后仍能看到失败提示
                 persist()
+            } finally {
+                // 先解除在途绑定（checkpoint 快照据此不再标 interrupted）与 sending，
+                // 最后放闸门：新发送被受理时不会撞见旧 job 的收尾
+                activeSendConversationId.set(null)
+                _sending.value = false
+                sendGate.set(false)
             }
         }
         activeSend.set(job)
-        // 闸门只在完成回调里放行：任务「开跑前就被取消」时协程体不会执行，
-        // 放在 finally 会把闸门永久卡死；完成回调对取消同样会触发
+        // 兜底：任务「开跑前就被取消」时协程体不会执行，finally 也不会跑
         job.invokeOnCompletion {
             activeSend.compareAndSet(job, null)
-            activeSendConversationId.set(null)
             sendGate.set(false)
         }
         return job
@@ -618,7 +680,6 @@ class AiChatRepository internal constructor(
             val key = apiKey.orEmpty()
 
             val conversationId = ensureConversationLocked(trimmed)
-            activeSendConversationId.set(conversationId)
 
             // 当前轮 user 文本超过上限：不静默截断（会改变用户意图），显式报错让用户拆分
             if (trimmed.length > MAX_USER_TEXT_CHARS) {
@@ -632,6 +693,9 @@ class AiChatRepository internal constructor(
                 persist()
                 return
             }
+            // 输入已受理，才把对话标记为「有在途流」：checkpoint 快照据此给尾部 assistant
+            // 打 interrupted（见 persist）
+            activeSendConversationId.set(conversationId)
 
             clearLastError()
             _sending.value = true
@@ -678,6 +742,10 @@ class AiChatRepository internal constructor(
                     return
                 }
 
+                // 主流式已结束：解除在途标记。此后 finalize / 修复重试被取消时正文已完整，
+                // 落盘快照不能再把这条回答标成 interrupted
+                activeSendConversationId.set(null)
+
                 // HTTP 200 + [DONE] 但正文、工具调用全空（网关内容过滤、纯推理无正文、
                 // 代理空包）：不能当成功收尾——否则气泡永久停在「正在思考…」且重试闸门
                 // 不认（尾部不是 interrupted）。工具轮有结果时正文可以为空。
@@ -691,22 +759,22 @@ class AiChatRepository internal constructor(
                     return
                 }
 
-                try {
-                    finalizeLast(
-                        conversationId,
-                        streamed.text,
-                        connection,
-                        key,
-                        streamed.usedTools,
-                        streamed.truncated,
-                    )
-                    persist()
-                } catch (e: CancellationException) {
-                    // 正文已在 finalizeLast 第一步写全：草稿解析（可能含修复请求）阶段被取消
-                    // 时，落盘要抢在取消传播前完成，否则重启后整段回复消失
-                    withContext(NonCancellable) { persist() }
-                    throw e
-                }
+        try {
+            finalizeLast(
+                conversationId,
+                streamed.text,
+                connection,
+                key,
+                streamed.usedTools,
+                streamed.truncated,
+            )
+            persist()
+        } catch (e: CancellationException) {
+            // 正文已在 finalizeLast 第一步写全：草稿解析（可能含修复请求）阶段被取消
+            // 时，落盘要抢在取消传播前完成，否则重启后整段回复消失
+            withContext(NonCancellable) { persist() }
+            throw e
+        }
             } finally {
                 _sending.value = false
             }
@@ -725,13 +793,21 @@ class AiChatRepository internal constructor(
      * 该说明只影响本次请求，不落盘。
      */
     suspend fun retryLast() {
+        // 尾部没有可重试标记但有错误时，退化为重发最后一条 user 消息（见下方 gate）
+        var resend: Pair<String, List<String>>? = null
         mutex.withLock {
             val conversationId = _activeConversationId.value ?: return
             val bound = boundMessages(conversationId)
             val tail = bound.lastOrNull()?.takeIf { it.role == AiChatRole.Assistant }
             // 可重试状态：中断的尾巴，或因输出上限被截断的完整回复
             if (tail == null || (!tail.interrupted && !tail.truncated)) {
-                return
+                // 非分类异常等场景尾部没有中断标记：错误条上的「重试」不能没反应。
+                // 退化为重发最后一条 user 消息（不能持锁调用 send，退出锁后执行）。
+                val lastUser = bound.lastOrNull { it.role == AiChatRole.User }
+                if (activeConversation()?.lastError != null && lastUser != null) {
+                    resend = lastUser.content to lastUser.images
+                }
+                return@withLock
             }
             // 尾部 user 消息整体重发（正文 + 图片附件；图片文件可能已被清理，编码侧跳过）
             val lastUser = bound.lastOrNull { it.role == AiChatRole.User } ?: return
@@ -803,6 +879,8 @@ class AiChatRepository internal constructor(
                     persist()
                     return
                 }
+                // 主流式结束：解除在途标记（同 send），修复阶段被取消不标 interrupted
+                activeSendConversationId.set(null)
                 // 空回复同 send：标记中断 + 空回复错误，重试闸门才能再次发起
                 if (streamed.text.isBlank() && !streamed.usedTools) {
                     markLastInterrupted(conversationId)
@@ -832,6 +910,8 @@ class AiChatRepository internal constructor(
                 _sending.value = false
             }
         }
+        // 无中断尾巴但有错误：重发最后一条 user 消息（send 会重新取锁，不能在上面的锁内调用）
+        resend?.let { (text, images) -> send(text, images) }
     }
 
     /**
@@ -847,6 +927,19 @@ class AiChatRepository internal constructor(
     /** 输出被 token 上限截断：OpenAI `finish_reason=length`、Anthropic `stop_reason=max_tokens` */
     private fun AiStreamResult.isTruncated(): Boolean =
         finishReason?.lowercase() in TRUNCATED_FINISH_REASONS
+
+    /**
+     * 错误是否明确指向「不支持 tools/function calling」：只有这类 400 才值得缓存
+     * Unsupported；鉴权、额度、模型名等同样可能回 400，不能一次性永久降级。
+     */
+    private fun AiException.indicatesToolsUnsupported(): Boolean {
+        val text = detail?.lowercase() ?: return false
+        return TOOL_UNSUPPORTED_HINTS.any { it in text }
+    }
+
+    /** JSON 里是否出现已注册的动作段键（用于区分「显式空信封」与「完全无动作的普通对象」） */
+    private fun String.hasActionEnvelopeKey(): Boolean =
+        ACTION_ENVELOPE_KEYS.any { contains("\"$it\"") }
 
     /**
      * 流式 + 工具循环（send / retryLast 共用）。
@@ -968,10 +1061,17 @@ class AiChatRepository internal constructor(
                         } catch (_: AiException) {
                             throw e // 重试也失败：按原错误分类展示，不改能力缓存
                         }
-                        withContext(Dispatchers.IO) {
-                            settings.saveToolCapability(capabilityKey, AiToolCapability.Unsupported)
+                        // 只有错误明确指向 tools 才缓存 Unsupported：鉴权/额度/普通参数错误
+                        // 也常是 400，缓存下来会让一次偶发失败永久退化为 JSON 回退
+                        if (e.indicatesToolsUnsupported()) {
+                            withContext(Dispatchers.IO) {
+                                settings.saveToolCapability(
+                                    capabilityKey,
+                                    AiToolCapability.Unsupported,
+                                )
+                            }
+                            capability = AiToolCapability.Unsupported
                         }
-                        capability = AiToolCapability.Unsupported
                         toolsMode = false
                         // 无 tools 请求不应产生 tool_calls；即便网关乱回也按纯文本处理
                         return StreamedTurn(
@@ -1642,7 +1742,10 @@ class AiChatRepository internal constructor(
             is ReadResult.Ok -> if (parsed.value.courses.isEmpty()) {
                 AiScheduleRecognition.NoCourses
             } else {
-                AiScheduleRecognition.Ok(parsed.value)
+                AiScheduleRecognition.Ok(
+                    schedule = parsed.value,
+                    notes = AiScheduleImportCodec.extractNotes(reply),
+                )
             }
             is ReadResult.Err -> AiScheduleRecognition.Invalid(parsed.error)
         }
@@ -1930,9 +2033,10 @@ class AiChatRepository internal constructor(
      * 一批。待办写入在**应用时**基于最新状态重新套补丁——确认前用户可能在别处改过
      * 同一待办，未涉及字段不会被旧快照覆盖。
      */
-    fun applyTodoChangesInBackground(messageId: String) {
-        if (messageId.isBlank()) return
-        if (!applyChangesGate.compareAndSet(false, true)) return
+    fun applyTodoChangesInBackground(messageId: String): Boolean {
+        if (messageId.isBlank()) return false
+        // 闸门占用返回 false：UI 给一次轻提示，不能静默忽略连点
+        if (!applyChangesGate.compareAndSet(false, true)) return false
         _todoChangesApplyingMessageId.value = messageId
         scope.launch {
             try {
@@ -1946,6 +2050,7 @@ class AiChatRepository internal constructor(
                 applyChangesGate.set(false)
             }
         }
+        return true
     }
 
     /** UI「忽略」入口：只把待确认标记为已忽略（不触碰待办库），并落盘 */
@@ -2029,12 +2134,12 @@ class AiChatRepository internal constructor(
             }
         }
 
-        // pending 是 todoChanges 里 Pending 的有序子集：按顺序把结果回填到原列表
-        var cursor = 0
-        val merged = message.todoChanges.map { change ->
-            if (change.status == AiTodoChangeStatus.Pending) results[cursor++] else change
+        // 按稳定 id 合并回**当前**列表：应用期间的挂起点内模型可能又追加了新的
+        // Pending，旧快照整体回写会把它们抹掉（工具结果却告诉模型「已生成确认卡」）
+        val appliedByKey = pending.indices.associate { pending[it].stableKey() to results[it] }
+        updateMessageById(conversationId, messageId) { current ->
+            current.copy(todoChanges = mergeTodoChangeResults(current.todoChanges, appliedByKey))
         }
-        updateMessageById(conversationId, messageId) { it.copy(todoChanges = merged) }
         persist()
     }
 
@@ -2367,7 +2472,7 @@ class AiChatRepository internal constructor(
         if (contentJson.length <= REPLAY_RESULT_MAX_CHARS) {
             this
         } else {
-            copy(contentJson = contentJson.take(REPLAY_RESULT_MAX_CHARS))
+            copy(contentJson = truncateJsonForReplay(contentJson, REPLAY_RESULT_MAX_CHARS))
         }
 
     /** 回放截断（正文版）：长消息只保留开头并注明截断；当前轮不走回放，全文保留 */
@@ -2569,7 +2674,22 @@ class AiChatRepository internal constructor(
         if (isToolRun) return
         // 输出被截断时 JSON 必然不完整：不解析、不发起修复重试（UI 已提示 + 提供重试）
         if (truncated) return
-        val payload = extractActions(full, connection, apiKey) ?: return
+        val payload = when (val extraction = extractActions(full, connection, apiKey)) {
+            ActionExtraction.None -> return
+            ActionExtraction.Failed -> {
+                // 有动作 JSON 但解析/修复都失败：不能静默无动作（用户以为已经创建）
+                updateLastMessage(conversationId) { it.copy(todoParseFailed = true) }
+                return
+            }
+            ActionExtraction.Empty -> {
+                // 合法但没有任何动作：模型正文却声称已经创建时给出可见提示
+                if (CLAIMS_CREATION.containsMatchIn(full)) {
+                    updateLastMessage(conversationId) { it.copy(todoParseFailed = true) }
+                }
+                return
+            }
+            is ActionExtraction.Parsed -> extraction.payload
+        }
         // 只有 updates/deletes/completes/reopens 时不能走 addTodos（空批次会误报创建失败）
         val created = if (payload.todos.isNotEmpty()) {
             createTodos(payload)
@@ -2664,6 +2784,7 @@ class AiChatRepository internal constructor(
                 todoId = id,
                 todoName = existing.name,
                 patch = draft.patch,
+                id = newMessageId(),
             )
         }
 
@@ -2680,6 +2801,7 @@ class AiChatRepository internal constructor(
                 kind = AiTodoChangeKind.Delete,
                 todoId = id,
                 todoName = existing.name,
+                id = newMessageId(),
             )
         }
         return changes to dropped
@@ -2797,9 +2919,9 @@ class AiChatRepository internal constructor(
     /**
      * UI「撤销」入口：把一条已执行的完成/取消完成反向写回。Job 归仓库自有 scope。
      */
-    fun undoTodoCompletionInBackground(messageId: String, completionIndex: Int) {
-        if (messageId.isBlank()) return
-        if (!undoCompletionGate.compareAndSet(false, true)) return
+    fun undoTodoCompletionInBackground(messageId: String, completionIndex: Int): Boolean {
+        if (messageId.isBlank()) return false
+        if (!undoCompletionGate.compareAndSet(false, true)) return false
         _todoCompletionUndoingMessageId.value = messageId
         scope.launch {
             try {
@@ -2813,6 +2935,7 @@ class AiChatRepository internal constructor(
                 undoCompletionGate.set(false)
             }
         }
+        return true
     }
 
     /**
@@ -3026,9 +3149,9 @@ class AiChatRepository internal constructor(
     )
 
     /** UI「撤销」入口：归档↔取消归档；恢复→重新软删除。Job 归仓库自有 scope。 */
-    fun undoTodoLifecycleInBackground(messageId: String, lifecycleIndex: Int) {
-        if (messageId.isBlank()) return
-        if (!undoLifecycleGate.compareAndSet(false, true)) return
+    fun undoTodoLifecycleInBackground(messageId: String, lifecycleIndex: Int): Boolean {
+        if (messageId.isBlank()) return false
+        if (!undoLifecycleGate.compareAndSet(false, true)) return false
         _todoLifecycleUndoingMessageId.value = messageId
         scope.launch {
             try {
@@ -3042,6 +3165,7 @@ class AiChatRepository internal constructor(
                 undoLifecycleGate.set(false)
             }
         }
+        return true
     }
 
     private suspend fun undoTodoLifecycle(messageId: String, lifecycleIndex: Int) {
@@ -3124,8 +3248,20 @@ class AiChatRepository internal constructor(
     }
 
     /**
-     * 从回复文本提取动作信封（无块或空动作 = null）；解析失败带错误自动重试一次
-     * （把上次输出原样附回，请模型修正后重新输出），仍失败返回 null（视为纯对话）。
+     * 动作块解析结果：没有动作块（纯对话）/ 结构解析失败（含修复重试）/ 合法但没有动作 /
+     * 解析出的动作信封。区分这四种形态才能在失败与空信封时给用户可见反馈。
+     */
+    private sealed interface ActionExtraction {
+        data object None : ActionExtraction
+        data object Failed : ActionExtraction
+        data object Empty : ActionExtraction
+        data class Parsed(val payload: AiTodoDraftPayload) : ActionExtraction
+    }
+
+    /**
+     * 从回复文本提取动作信封（无块 = [ActionExtraction.None]）。解析失败带修复重试一次
+     * （把动作 JSON 块原样附回，请模型修正后重新输出）；仍失败返回 [ActionExtraction.Failed]，
+     * 由 finalizeLast 在消息上标记 `todoParseFailed`，不再静默当作纯对话。
      *
      * 信封可同时包含新建（todos）、修改（updates）与删除（deletes）；后者只生成待确认
      * 变更，不会直接写库。凭据由本次发送一路传入（同一场对话内不会变），省掉每次回复的
@@ -3135,11 +3271,18 @@ class AiChatRepository internal constructor(
         reply: String,
         connection: AiConnection,
         apiKey: String,
-    ): AiTodoDraftPayload? {
-        if (!connection.isConfigured) return null
+    ): ActionExtraction {
+        if (!connection.isConfigured) return ActionExtraction.None
 
-        val json = AiTodoDraftCodec.extractJsonBlock(reply) ?: return null
-        AiTodoDraftCodec.parseTodoDrafts(json)?.let { return it }
+        val json = AiTodoDraftCodec.extractJsonBlock(reply) ?: return ActionExtraction.None
+        val direct = AiTodoDraftCodec.parseEnvelope(json)
+        if (direct != null && direct.hasActions) return ActionExtraction.Parsed(direct)
+        // 显式空动作信封（含动作键但数组为空）：结构合法，不再浪费一次修复请求
+        if (direct != null && json.hasActionEnvelopeKey()) return ActionExtraction.Empty
+        // 超过修复预算：不再截断携带（切坏的 JSON 只会得到另一份坏输出），直接失败
+        if (json.length > REPAIR_CONTEXT_MAX) {
+            return if (direct == null) ActionExtraction.Failed else ActionExtraction.Empty
+        }
 
         // 修复重试：非流式轻量收口——复用流式通道但整块收，UI 无感（增量丢弃）。
         // system 同时带上新建与修改/删除的契约：修复请求里说「严格遵循格式」必须真的有声明可循。
@@ -3155,17 +3298,25 @@ class AiChatRepository internal constructor(
                         // 契约文本由注册表统一生成（与 system prompt 同一份），避免两处手写漂移
                         content = AiToolRegistry.repairSystemPrompt,
                     ),
-                    AiChatTurn(role = "user", content = reply.take(REPAIR_CONTEXT_MAX)),
+                    // 携带动作 JSON 块本身（不是截断的整段回复）：长 JSON 不会被切在半截
+                    AiChatTurn(role = "user", content = json),
                     AiChatTurn(role = "user", content = repairPrompt),
                 ),
             )
         } catch (e: CancellationException) {
             throw e // 取消语义不能吞：吞掉会让「正文已完整」的落盘被跳过
         } catch (_: Exception) {
-            null // 修复失败按「无动作」处理
-        } ?: return null
-        val repairedJson = AiTodoDraftCodec.extractJsonBlock(repaired) ?: return null
-        return AiTodoDraftCodec.parseTodoDrafts(repairedJson)
+            null // 修复失败按解析失败处理
+        } ?: return if (direct == null) ActionExtraction.Failed else ActionExtraction.Empty
+        val repairedJson = AiTodoDraftCodec.extractJsonBlock(repaired)
+            ?: return if (direct == null) ActionExtraction.Failed else ActionExtraction.Empty
+        val repairedPayload = AiTodoDraftCodec.parseEnvelope(repairedJson)
+        return when {
+            repairedPayload != null && repairedPayload.hasActions ->
+                ActionExtraction.Parsed(repairedPayload)
+            direct == null && repairedPayload == null -> ActionExtraction.Failed
+            else -> ActionExtraction.Empty
+        }
     }
 
     /**
@@ -3179,10 +3330,26 @@ class AiChatRepository internal constructor(
     private suspend fun persist(durable: Boolean = true) {
         withContext(Dispatchers.IO) {
             persistMutex.withLock {
+                val inFlight = activeSendConversationId.get()
                 // 每场对话各自截最旧：上限是单对话语义（一场长对话不会挤掉别的对话）
                 val file = AiChatFile(
                     conversations = _conversations.value.map { conversation ->
-                        conversation.copy(messages = conversation.messages.takeLast(MAX_PERSISTED_MESSAGES))
+                        val recent = conversation.messages.takeLast(MAX_PERSISTED_MESSAGES)
+                        val messages = if (conversation.id == inFlight) {
+                            // 在途流的尾部 assistant 只可能在流式中（还没经过 finalize）：
+                            // 快照里标 interrupted，进程被杀后重装载按中断回放且可重试，
+                            // 不会把半截回答当完整回答。内存态不动，正常收尾前会先解除
+                            // 在途标记再落盘。
+                            val tail = recent.lastOrNull()
+                            if (tail != null && tail.role == AiChatRole.Assistant) {
+                                recent.dropLast(1) + tail.copy(interrupted = true)
+                            } else {
+                                recent
+                            }
+                        } else {
+                            recent
+                        }
+                        conversation.copy(messages = messages)
                     },
                     activeConversationId = _activeConversationId.value,
                 )
@@ -3235,8 +3402,12 @@ class AiChatRepository internal constructor(
         /** 对话名截断长度：取首条用户消息开头自动命名 */
         const val TITLE_MAX_LENGTH = 16
 
-        /** 修复重试时携带的原文上限（防超长回复撑爆重试请求） */
-        const val REPAIR_CONTEXT_MAX = 4000
+        /** 修复重试时携带的动作 JSON 上限：超过则不再修复（切坏的 JSON 只会得到坏输出） */
+        const val REPAIR_CONTEXT_MAX = 16_000
+
+        /** 空信封时判断正文是否声称已经创建：只有声称了才提示解析失败 */
+        private val CLAIMS_CREATION =
+            Regex("已(创建|添加|记下|记录|新建)|帮你(创建|添加|记下)")
 
         /** 孤儿图片清理的宽限期：比它新的未引用文件（已导入未发送的待发送图片）不删 */
         const val ORPHAN_IMAGE_GRACE_MILLIS = 24 * 60 * 60 * 1000L
@@ -3246,6 +3417,21 @@ class AiChatRepository internal constructor(
 
         /** 输出被上限截断的 finish/stop reason（OpenAI length / Anthropic max_tokens） */
         private val TRUNCATED_FINISH_REASONS = setOf("length", "max_tokens")
+
+        /** 明确表示「不支持 tools」的错误体关键词（能力缓存只认这些） */
+        private val TOOL_UNSUPPORTED_HINTS = listOf(
+            "tool",
+            "function calling",
+            "function_call",
+            "unsupported",
+            "not support",
+        )
+
+        /** 回退信封的动作段键（判断显式空信封用） */
+        private val ACTION_ENVELOPE_KEYS = listOf(
+            "todos", "updates", "deletes", "completes", "reopens",
+            "archives", "unarchives", "restores",
+        )
 
         /** 打卡模式补勾日期允许的「未来余量」：当前期可能是本周晚些时候的规则日 */
         const val CHECK_IN_FUTURE_GRACE_DAYS = 7
@@ -3283,5 +3469,58 @@ class AiChatRepository internal constructor(
                 organizerWriter,
                 imageStore,
             ).also { it.bootstrap() }
+    }
+}
+
+/**
+ * 历史回放的工具结果截断：必须保持外层 JSON 合法。旧实现直接 `take(2000)` 把 JSON
+ * 切在半截，下一次请求里模型收到的 tool 消息是非法 JSON。这里按执行器同一套「对半
+ * 砍最大数组」策略缩到预算内并标记 `truncated=true`；实在缩不下就给一个最小合法信封。
+ */
+internal fun truncateJsonForReplay(raw: String, limit: Int): String {
+    val obj = runCatching {
+        AiJson.storage.parseToJsonElement(raw) as? JsonObject
+    }.getOrNull() ?: return raw.take(limit) + "…（已截断）"
+
+    fun envelope(data: JsonObject): JsonObject = JsonObject(
+        mapOf("ok" to JsonPrimitive(true), "data" to data),
+    )
+
+    val data: JsonObject = (obj["data"] as? JsonObject)
+        ?: run {
+            // 错误信封：截短 message，保持 {ok:false,error:{code,message}} 结构
+            val error = obj["error"] as? JsonObject ?: return raw.take(limit) + "…（已截断）"
+            val code = (error["code"] as? JsonPrimitive) ?: JsonPrimitive("internal_error")
+            val message = (error["message"] as? JsonPrimitive)?.content.orEmpty()
+            return JsonObject(
+                mapOf(
+                    "ok" to JsonPrimitive(false),
+                    "error" to JsonObject(
+                        mapOf(
+                            "code" to code,
+                            "message" to JsonPrimitive(message.take(limit / 2) + "…（已截断）"),
+                        ),
+                    ),
+                ),
+            ).toString()
+        }
+
+    var current = data
+    var guard = 0
+    while (envelope(current).toString().length > limit && guard++ < 16) {
+        val largest = current.entries
+            .filter { it.value is JsonArray }
+            .maxByOrNull { (it.value as JsonArray).size }
+            ?: break
+        val array = largest.value as JsonArray
+        if (array.isEmpty()) break
+        current = JsonObject(current + (largest.key to JsonArray(array.take(array.size / 2))))
+    }
+    val withFlag = JsonObject(current + ("truncated" to JsonPrimitive(true)))
+    val candidate = envelope(withFlag).toString()
+    return if (candidate.length <= limit) {
+        candidate
+    } else {
+        """{"ok":true,"data":{"truncated":true,"message":"…（已截断）"}}"""
     }
 }

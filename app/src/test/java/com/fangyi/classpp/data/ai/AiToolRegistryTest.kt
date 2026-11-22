@@ -21,29 +21,29 @@ import org.junit.Test
  */
 class AiToolRegistryTest {
 
-    // ---------- 回退契约：与重构前文本逐字节一致 ----------
+    // ---------- 回退契约：锁定当前文本（示例用真实枚举值，枚举范围单列一行） ----------
+
+    private val enumNote =
+        "枚举取值：repeat.type=None/Daily/Weekly/Monthly/Yearly/Custom，" +
+            "repeat.unit=Day/Week/Month/Year，repeat.endType=Never/Date/Count，" +
+            "urgency=Critical/High/Medium/Low/None"
+
+    private fun draftJson(allDay: Boolean) =
+        """{"name":"示例待办","dates":["2026-11-18"],"allDay":$allDay,""" +
+            """"startTime":"14:00","endTime":"16:00",""" +
+            """"deadlineDate":"2026-11-18","deadlineTime":"18:00",""" +
+            """"deadlineBeforeRepeat":false,"deadlineBeforeDays":0,"urgency":"Medium",""" +
+            """"tags":["期末"],"group":"学习","note":"示例备注","steps":["示例步骤"],""" +
+            """"location":"图书馆","countdown":false,"pinned":false,""" +
+            """"repeat":{"type":"Weekly","unit":"Week","interval":1,"marks":[1],""" +
+            """"endType":"Never","endDate":"2026-11-30","endCount":5,"merge":true,"checkIn":false}}"""
 
     private val legacyCreateTodos =
-        """{"todos":[{"name":"...","dates":["yyyy-MM-dd"],"allDay":false,"startTime":"HH:mm",""" +
-            """"endTime":"HH:mm","deadlineDate":"yyyy-MM-dd","deadlineTime":"HH:mm",""" +
-            """"deadlineBeforeRepeat":false,"deadlineBeforeDays":0,""" +
-            """"urgency":"Critical|High|Medium|Low","tags":["..."],"group":"...",""" +
-            """"note":"...","steps":["..."],"location":"...","countdown":false,"pinned":false,""" +
-            """"repeat":{"type":"None|Daily|Weekly|Monthly|Yearly|Custom","unit":"Day|Week|Month|Year",""" +
-            """"interval":1,"marks":[1],"endType":"Never|Date|Count","endDate":"yyyy-MM-dd",""" +
-            """"endCount":5,"merge":true,"checkIn":false}}]}"""
+        """{"todos":[${draftJson(allDay = false)}]}""" + "\n" + enumNote
 
     private val legacyUpdateAndDelete =
-        """{"updates":[{"id":"<待办 id>","patch":{"name":"...","dates":["yyyy-MM-dd"],""" +
-            """"allDay":true,"startTime":"HH:mm","endTime":"HH:mm",""" +
-            """"deadlineDate":"yyyy-MM-dd","deadlineTime":"HH:mm",""" +
-            """"deadlineBeforeRepeat":false,"deadlineBeforeDays":0,""" +
-            """"urgency":"Critical|High|Medium|Low|None","tags":["..."],"group":"...",""" +
-            """"note":"...","steps":["..."],"location":"...","countdown":false,"pinned":false,""" +
-            """"repeat":{"type":"None|Daily|Weekly|Monthly|Yearly|Custom","unit":"Day|Week|Month|Year",""" +
-            """"interval":1,"marks":[1],"endType":"Never|Date|Count","endDate":"yyyy-MM-dd",""" +
-            """"endCount":5,"merge":true,"checkIn":false}}}],""" +
-            """"deletes":[{"id":"<待办 id>"}]}"""
+        """{"updates":[{"id":"<待办 id>","patch":${draftJson(allDay = true)}}],""" +
+            """"deletes":[{"id":"<待办 id>"}]}""" + "\n" + enumNote
 
     private val legacyComplete =
         """{"completes":[{"id":"<待办 id>","date":"yyyy-MM-dd"}],""" +

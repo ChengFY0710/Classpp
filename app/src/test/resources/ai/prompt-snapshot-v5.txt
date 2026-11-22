@@ -20,7 +20,8 @@
 [课程标签] 高等数学、大学英语、体育
 
 当用户要新建待办时，直接在回复里输出一个 ```json 代码块；应用会把块内待办**立即落库，不需要用户确认**。代码块之外的正文照常简短说明。格式（name 必填；其余字段可省略，但用户提到的信息要尽量完整填写）：
-{"todos":[{"name":"...","dates":["yyyy-MM-dd"],"allDay":false,"startTime":"HH:mm","endTime":"HH:mm","deadlineDate":"yyyy-MM-dd","deadlineTime":"HH:mm","deadlineBeforeRepeat":false,"deadlineBeforeDays":0,"urgency":"Critical|High|Medium|Low","tags":["..."],"group":"...","note":"...","steps":["..."],"location":"...","countdown":false,"pinned":false,"repeat":{"type":"None|Daily|Weekly|Monthly|Yearly|Custom","unit":"Day|Week|Month|Year","interval":1,"marks":[1],"endType":"Never|Date|Count","endDate":"yyyy-MM-dd","endCount":5,"merge":true,"checkIn":false}}]}
+{"todos":[{"name":"示例待办","dates":["2026-11-18"],"allDay":false,"startTime":"14:00","endTime":"16:00","deadlineDate":"2026-11-18","deadlineTime":"18:00","deadlineBeforeRepeat":false,"deadlineBeforeDays":0,"urgency":"Medium","tags":["期末"],"group":"学习","note":"示例备注","steps":["示例步骤"],"location":"图书馆","countdown":false,"pinned":false,"repeat":{"type":"Weekly","unit":"Week","interval":1,"marks":[1],"endType":"Never","endDate":"2026-11-30","endCount":5,"merge":true,"checkIn":false}}]}
+枚举取值：repeat.type=None/Daily/Weekly/Monthly/Yearly/Custom，repeat.unit=Day/Week/Month/Year，repeat.endType=Never/Date/Count，urgency=Critical/High/Medium/Low/None
 规则：
 - 日期从今天的日期与星期推算（一周从周一开始、周日算本周最后一天；含“下周三”这类相对说法），不要编造具体日期；
 - 时段只有 startTime 与 endTime 成对出现才成立（endTime 须晚于 startTime）；全天待办用 allDay=true 且不要给时段；
@@ -36,7 +37,8 @@
 - 新建待办一律带上用户指定的日期；用户表达含糊时先在回答里问清，再输出代码块；
 
 当用户要修改或删除已有待办时，仍输出一个 ```json 代码块：
-{"updates":[{"id":"<待办 id>","patch":{"name":"...","dates":["yyyy-MM-dd"],"allDay":true,"startTime":"HH:mm","endTime":"HH:mm","deadlineDate":"yyyy-MM-dd","deadlineTime":"HH:mm","deadlineBeforeRepeat":false,"deadlineBeforeDays":0,"urgency":"Critical|High|Medium|Low|None","tags":["..."],"group":"...","note":"...","steps":["..."],"location":"...","countdown":false,"pinned":false,"repeat":{"type":"None|Daily|Weekly|Monthly|Yearly|Custom","unit":"Day|Week|Month|Year","interval":1,"marks":[1],"endType":"Never|Date|Count","endDate":"yyyy-MM-dd","endCount":5,"merge":true,"checkIn":false}}}],"deletes":[{"id":"<待办 id>"}]}
+{"updates":[{"id":"<待办 id>","patch":{"name":"示例待办","dates":["2026-11-18"],"allDay":true,"startTime":"14:00","endTime":"16:00","deadlineDate":"2026-11-18","deadlineTime":"18:00","deadlineBeforeRepeat":false,"deadlineBeforeDays":0,"urgency":"Medium","tags":["期末"],"group":"学习","note":"示例备注","steps":["示例步骤"],"location":"图书馆","countdown":false,"pinned":false,"repeat":{"type":"Weekly","unit":"Week","interval":1,"marks":[1],"endType":"Never","endDate":"2026-11-30","endCount":5,"merge":true,"checkIn":false}}}],"deletes":[{"id":"<待办 id>"}]}
+枚举取值：repeat.type=None/Daily/Weekly/Monthly/Yearly/Custom，repeat.unit=Day/Week/Month/Year，repeat.endType=Never/Date/Count，urgency=Critical/High/Medium/Low/None
 规则：
 - id 必须原样取自 [待办] 行首方括号里的值，禁止编造；列表里找不到目标就先在正文追问，不要猜；
 - patch 只写要改的字段，未写的字段保持不变；字符串给空串=清空（name 不能为空），数组给 [] =清空；

@@ -71,6 +71,7 @@ import com.fangyi.classpp.data.ai.AiConversation
 import com.fangyi.classpp.data.ai.AiException
 import com.fangyi.classpp.data.ai.AiImageStore
 import com.fangyi.classpp.data.ai.AiProviderPresets
+import com.fangyi.classpp.data.ai.SendAcceptance
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TagEntry
 import com.fangyi.classpp.data.model.Todo
@@ -203,6 +204,8 @@ fun AiChatOverlay(
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
     val saveFailedMessage = stringResource(R.string.todo_error_save_failed)
+    val sendBusyMessage = stringResource(R.string.ai_send_busy)
+    val actionBusyMessage = stringResource(R.string.ai_action_busy)
     val aiSaveFailedMessage = stringResource(R.string.ai_save_failed)
     val stepDeletedMessage = stringResource(R.string.toast_todo_step_deleted)
     val archivedMessage = stringResource(R.string.toast_todo_archived)
@@ -701,12 +704,21 @@ fun AiChatOverlay(
                 scroll.maxValue - scroll.value <= with(density) { SendAtBottomSlop.roundToPx() },
             sentAtMillis = System.currentTimeMillis(),
         )
-        setInputText("")
-        // 图片随消息发出：文件名已由仓库随 user 消息持有，预览条清空但**不删副本**
-        pendingImagesState.value = emptyList()
-        keyboard?.hide()
-        // Job 归仓库所有：收起浮层/旋转不中断；停止走 cancelSending
-        repository.sendInBackground(text, images)
+        // 只在仓库受理后才清空输入与待发图片：Busy / 未配置时草稿必须保留
+        when (repository.sendInBackground(text, images)) {
+            is SendAcceptance.Accepted -> {
+                setInputText("")
+                // 图片随消息发出：文件名已由仓库随 user 消息持有，预览条清空但**不删副本**
+                pendingImagesState.value = emptyList()
+                keyboard?.hide()
+            }
+            SendAcceptance.Busy -> {
+                // 闸门占用时给一次轻提示，不静默吞掉用户输入
+                AppToasts.show(context, sendBusyMessage)
+                keyboard?.hide()
+            }
+            SendAcceptance.NotConfigured -> onOpenSettings()
+        }
     }
 
     fun stopSending() {
@@ -1054,15 +1066,24 @@ fun AiChatOverlay(
                 onOpenTodo = ::openTodo,
                 onDeleteTodo = ::deleteTodo,
                 onToggleCompleted = ::toggleCompleted,
-                onApplyChanges = { id -> aiChatRepository.applyTodoChangesInBackground(id) },
+                onApplyChanges = { id ->
+                    if (!aiChatRepository.applyTodoChangesInBackground(id)) {
+                        AppToasts.show(context, actionBusyMessage)
+                    }
+                },
                 onDismissChanges = { id -> aiChatRepository.dismissTodoChanges(id) },
                 onUndoCompletion = { id, index ->
-                    aiChatRepository.undoTodoCompletionInBackground(id, index)
+                    if (!aiChatRepository.undoTodoCompletionInBackground(id, index)) {
+                        AppToasts.show(context, actionBusyMessage)
+                    }
                 },
                 onUndoLifecycle = { id, index ->
-                    aiChatRepository.undoTodoLifecycleInBackground(id, index)
+                    if (!aiChatRepository.undoTodoLifecycleInBackground(id, index)) {
+                        AppToasts.show(context, actionBusyMessage)
+                    }
                 },
                 onRetry = ::retryLast,
+                onDismissError = { aiChatRepository?.dismissError() },
             )
         }
         // 底部光场带比原输入栏高出一截：滚动内容末尾补同样高度，
@@ -1323,6 +1344,7 @@ private fun AiChatMessageList(
     onUndoCompletion: (String, Int) -> Unit,
     onUndoLifecycle: (String, Int) -> Unit,
     onRetry: () -> Unit,
+    onDismissError: () -> Unit,
 ) {
     val messages = messagesState.value
     // 消息之间（含回复气泡与下方待办卡）统一走全局「卡↔卡」节奏（10dp）
@@ -1427,12 +1449,16 @@ private fun AiChatMessageList(
                 if (message.todoChangeDropped) {
                     AiChatTodoChangeDroppedHint()
                 }
+                if (message.todoParseFailed) {
+                    AiChatTodoParseFailedHint()
+                }
             }
         }
         lastError?.let { error ->
             AiChatErrorBanner(
                 error = error.error,
                 onRetry = onRetry,
+                onDismiss = onDismissError,
             )
         }
     }

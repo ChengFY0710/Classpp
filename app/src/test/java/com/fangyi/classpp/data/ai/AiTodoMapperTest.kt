@@ -397,6 +397,39 @@ class AiTodoMapperTest {
     }
 
     @Test
+    fun `fuzzy match never rebinds input to a shorter known value`() {
+        // 「输入包含库内项」方向被禁止："学习计划" 不能改绑到 "学习"
+        assertNull(AiTodoMapper.fuzzyMatch("学习计划", listOf("学习")))
+        // 「库内项包含输入」仍允许（简称可命中全称）
+        assertEquals("学习方法", AiTodoMapper.fuzzyMatch("学习", listOf("学习方法")))
+        assertEquals("期末", AiTodoMapper.fuzzyMatch("期末", listOf("期末")))
+    }
+
+    @Test
+    fun `check-in repeat never uses deadline before repeat`() {
+        val mapping = AiTodoMapper.map(
+            listOf(
+                draft(
+                    dates = listOf("2026-11-02"),
+                    deadlineDate = "2026-11-02",
+                    deadlineTime = "22:00",
+                    deadlineBeforeRepeat = true,
+                    repeat = AiRepeatDraft(
+                        type = "Weekly",
+                        endType = "Count",
+                        endCount = 7,
+                        checkIn = true,
+                    ),
+                ),
+            ),
+        ).single()
+
+        assertTrue(mapping.todo.repeat.checkIn)
+        // 与 AiTodoPatchMapper 同口径：打卡模式的截止不随重复
+        assertTrue(!mapping.todo.deadlineBeforeRepeat)
+    }
+
+    @Test
     fun `saveable mappings always pass the todo validator`() {
         // 直接落库没有「改完再存」的机会：映射输出必须能整批通过校验，否则 addTodos 零落盘
         val drafts = listOf(

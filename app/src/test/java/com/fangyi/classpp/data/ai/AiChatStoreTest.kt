@@ -275,4 +275,23 @@ class AiChatStoreTest {
         assertFalse("checkpoint 不应更新 bak", bakFile().readText().contains("半截"))
         assertFalse("tmp must not remain", tmpFile().exists())
     }
+
+    @Test
+    fun `corrupt quarantine keeps only newest two files`() {
+        // 已有 3 份历史隔离文件 + 本次再损坏主文件：只保留最近 2 份（含本次新增）
+        File(folder.root, FileAiChatStore.CORRUPT_PREFIX + "1.json").writeText("old-1")
+        File(folder.root, FileAiChatStore.CORRUPT_PREFIX + "2.json").writeText("old-2")
+        File(folder.root, FileAiChatStore.CORRUPT_PREFIX + "3.json").writeText("old-3")
+        mainFile().writeText("{ broken json")
+
+        val outcome = store().load()
+
+        assertEquals(LoadIssue.ResetAfterCorruption, outcome.issue)
+        val corrupts = folder.root.listFiles()
+            ?.filter { it.name.startsWith(FileAiChatStore.CORRUPT_PREFIX) }
+            .orEmpty()
+        assertEquals(2, corrupts.size)
+        assertFalse("最旧的隔离文件应被清理", corrupts.any { it.name.endsWith("1.json") })
+        assertTrue("本次损坏的主文件必须留证", corrupts.any { it.name.contains(FileAiChatStore.CORRUPT_PREFIX) && it.name != "${FileAiChatStore.CORRUPT_PREFIX}1.json" })
+    }
 }

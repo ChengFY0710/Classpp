@@ -112,6 +112,11 @@ class OkHttpAiTransport internal constructor(
 
     private fun buildClient(allowCleartext: Boolean, callTimeoutSeconds: Long): OkHttpClient =
         OkHttpClient.Builder()
+            // AI 端点（对话/模型列表）不需要重定向：跟随 30x 会把请求体与 x-api-key
+            // 明文发往新目标（OkHttp 只剥离 Authorization/Cookie，不剥离 x-api-key），
+            // 本地明文 client 更可能被跳到公网明文地址。3xx 由状态分类归为 BadResponse。
+            .followRedirects(false)
+            .followSslRedirects(false)
             .connectionSpecs(
                 if (allowCleartext) {
                     listOf(ConnectionSpec.CLEARTEXT, ConnectionSpec.MODERN_TLS)

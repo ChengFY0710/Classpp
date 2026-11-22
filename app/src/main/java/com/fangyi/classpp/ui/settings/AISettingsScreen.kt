@@ -127,6 +127,9 @@ fun AISettingsScreen(
     // 长按已选中的底部导航胶囊呼出 AI 对话：默认开启
     val navAiLongPressEnabled by aiChatRepository?.navAiLongPressEnabled?.collectAsState()
         ?: remember { mutableStateOf(true) }
+    // 方案库解析失败过：提示重新保存，不静默清空
+    val profilesCorrupt by aiChatRepository?.profilesCorrupt?.collectAsState()
+        ?: remember { mutableStateOf(false) }
 
     // 仓库非空即 bootstrap 已完成（含 refreshConfigured），首帧可直接展示；
     // null（后台预热未完成）才走加载态
@@ -293,6 +296,9 @@ fun AISettingsScreen(
                         // Keystore 不可用：置顶提示（Key 无法保存，连接与方案仍可落盘）
                         if (!secureAvailable) {
                             SheetInfoBanner(text = stringResource(R.string.ai_settings_secure_unavailable))
+                        }
+                        if (profilesCorrupt) {
+                            SheetInfoBanner(text = stringResource(R.string.ai_settings_profiles_corrupt))
                         }
 
                         CardSection {

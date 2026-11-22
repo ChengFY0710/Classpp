@@ -46,6 +46,18 @@ internal object AiReasoningProfiles {
         profileFor(providerId, model)?.control
             ?: AiProviderPresets.byId(providerId).thinkingControl
 
+    /**
+     * OpenAI 兼容侧的 `reasoning_effort` 白名单：档位字符串原样透传会被严格网关
+     * 400（例如用户把等级填成「高」或自定义文案）。不在白名单的等级不发 effort，
+     * 保持服务商默认。
+     */
+    fun isKnownEffort(level: String): Boolean =
+        level.trim().lowercase() in KNOWN_EFFORTS
+
+    private val KNOWN_EFFORTS = setOf(
+        "minimal", "low", "medium", "high", "xhigh", "max", "none",
+    )
+
     private fun profileFor(providerId: String, model: String): Profile? {
         val id = model.trim().lowercase()
         if (id.isEmpty()) return null

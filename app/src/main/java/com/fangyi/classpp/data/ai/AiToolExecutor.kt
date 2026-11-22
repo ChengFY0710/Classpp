@@ -58,15 +58,36 @@ internal object AiToolExecutor {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            failure("internal_error", e.message ?: "工具执行失败")
+            // 详细原因只进 debug 诊断（可能含用户数据），回给模型/UI 的是通用文案
+            if (AiDebugTrace.enabled) {
+                android.util.Log.w("AiTool", "tool ${call.name} failed: ${e.message}")
+            }
+            failure("internal_error", "工具执行失败")
         }
-        val bounded = truncateResult(result, spec.maxResultChars)
+        // permission 不是死元数据：WriteConfirm 工具的成功结果必须是待确认记录，
+        // 防止未来某个写工具绕过确认卡直接落库
+        val bounded = enforcePermission(spec, truncateResult(result, spec.maxResultChars))
         return AiToolResult(
             callId = call.id,
             name = call.name,
             contentJson = bounded.toString(),
             isError = (bounded["ok"] as? JsonPrimitive)?.booleanOrNull != true,
         )
+    }
+
+    /**
+     * 按 [AiToolSpec.permission] 兜底校验：确认类写工具（update/delete）成功时结果必须
+     * 声明 `pending_user_confirmation`，否则视为实现违约并按内部错误回给模型。
+     */
+    private fun enforcePermission(spec: AiToolSpec, result: JsonObject): JsonObject {
+        if (spec.permission != AiToolPermission.WriteConfirm) return result
+        if ((result["ok"] as? JsonPrimitive)?.booleanOrNull != true) return result
+        val status = ((result["data"] as? JsonObject)?.get("status") as? JsonPrimitive)?.content
+        return if (status == "pending_user_confirmation") {
+            result
+        } else {
+            failure("internal_error", "确认类写工具没有生成待确认记录，已阻止")
+        }
     }
 
     /** 预算超限时给模型看的失败结果（仍需成对回填，保证 wire 配对完整） */
@@ -136,7 +157,9 @@ internal object AiToolExecutor {
     }
 
     private fun matchesType(type: String, value: JsonElement): Boolean = when (type) {
-        "string" -> value is JsonPrimitive
+        // 只接受真正的 JSON 字符串：数字/布尔此前也会通过（isLenient 的网关把
+        // `{"date": 20261118}` 这类值当字符串收下，后续解析得到误导性错误）
+        "string" -> (value as? JsonPrimitive)?.isString == true
         "boolean" -> (value as? JsonPrimitive)?.content?.toBooleanStrictOrNull() != null
         "integer" -> (value as? JsonPrimitive)?.content?.toIntOrNull() != null
         "number" -> (value as? JsonPrimitive)?.content?.toDoubleOrNull() != null

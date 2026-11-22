@@ -32,6 +32,35 @@ class AiScheduleImportCodecTest {
     }
 
     @Test
+    fun `extracts assumptions outside the fenced block`() {
+        val reply = """
+            已识别，共 1 门课。
+            假设一：学期起点按截图第 7 周反推。
+            假设二：第 18 周之后无课。
+            ```json
+            $AI_SCHEDULE_IMPORT_VALID_JSON
+            ```
+            假设三：两小节合并为一大节。
+        """.trimIndent()
+
+        val notes = AiScheduleImportCodec.extractNotes(reply)
+
+        assertTrue(notes.contains("假设一"))
+        assertTrue(notes.contains("假设三"))
+        // JSON 块本身不进入假设说明
+        assertTrue(!notes.contains("formatVersion"))
+    }
+
+    @Test
+    fun `extracts prose before bare json`() {
+        val reply = "假设：学期起点按今天推断。\n$AI_SCHEDULE_IMPORT_VALID_JSON"
+
+        val notes = AiScheduleImportCodec.extractNotes(reply)
+
+        assertEquals("假设：学期起点按今天推断。", notes)
+    }
+
+    @Test
     fun `takes the last fenced block`() {
         val reply = """
             ```json

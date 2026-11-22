@@ -11,8 +11,13 @@ import com.fangyi.classpp.data.model.Schedule
  */
 sealed interface AiScheduleRecognition {
 
-    /** 识别成功且课表通过导入校验（id 已重铸、可直接走 `importSchedule`） */
-    data class Ok(val schedule: Schedule) : AiScheduleRecognition
+    /**
+     * 识别成功且课表通过导入校验（id 已重铸、可直接走 `importSchedule`）。
+     *
+     * @param notes JSON 块外的「假设说明」（模型对学期起点/总周数/节次合并等推断的说明）；
+     *   确认框展示给用户核对，空串 = 模型没有写
+     */
+    data class Ok(val schedule: Schedule, val notes: String = "") : AiScheduleRecognition
 
     /** AI 通道失败（鉴权 / 额度 / 模型不存在 / 限流 / 服务端 / 网络 / 返回无法解析） */
     data class AiFailed(val error: AiError) : AiScheduleRecognition

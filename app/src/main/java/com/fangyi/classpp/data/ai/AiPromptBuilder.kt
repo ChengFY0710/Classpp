@@ -354,7 +354,7 @@ object AiPromptBuilder {
         appendLine("  回收站只在用户明确要求查看或恢复时用 status=deleted 查，已归档只在用户明确要求时用 status=archived 查；")
         appendLine("- 查待办默认就是完整返回：不传 limit/offset 即可（不必额外传 all=true），items 条数=total 即完整；")
         appendLine("  只有用户明确只要“最近 N 条/先看几条/下一页”时才传 limit/offset 走普通浏览；")
-        appendLine("  普通浏览 truncated=true 表示还有下一页，按 offset=上一次 offset+本页条数 继续；")
+        appendLine("  普通浏览 hasMore=true 表示还有下一页，按 offset=上一次 offset+本页条数 继续；")
         appendLine("- 完整返回 compact=true 表示条数已完整、但只含 id/名称/时间字段；需要备注/标签等详情再用 get_todo；")
         appendLine("- 完整返回若 limit_exceeded，说明总数并请用户按完成时间（completedFrom/completedTo）、日期/分组/标签缩小范围，")
         appendLine("  禁止声称已经列全；查询已完成待办可用 completedFrom/completedTo 限定完成日期；")

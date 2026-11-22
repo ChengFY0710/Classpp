@@ -1,6 +1,8 @@
 package com.fangyi.classpp.data.backup
 
 import com.fangyi.classpp.data.ScheduleJson
+import com.fangyi.classpp.data.ai.AiChatFile
+import com.fangyi.classpp.data.ai.AiChatMessage
 import com.fangyi.classpp.data.store.TodoAttachmentStore
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
@@ -250,3 +252,20 @@ object BackupArchive {
         return out.toByteArray()
     }
 }
+
+/**
+ * 手动备份的 AI 对话副本：清空全部图片引用。图片只存在本机 `ai_chat_images/`，
+ * 不随手动备份迁移（产品口径：3.19 方案 B）——保留文件名会让恢复后的对话指向不存在
+ * 的文件，编码时静默跳过、UI 露出破图位。
+ */
+internal fun AiChatFile.withoutAiImages(): AiChatFile = copy(
+    conversations = conversations.map { conversation ->
+        conversation.copy(
+            messages = conversation.messages.map { it.withoutImages() },
+        )
+    },
+    messages = messages.map { it.withoutImages() },
+)
+
+private fun AiChatMessage.withoutImages(): AiChatMessage =
+    if (images.isEmpty()) this else copy(images = emptyList())

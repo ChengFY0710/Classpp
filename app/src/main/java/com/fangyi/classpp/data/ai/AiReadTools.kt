@@ -432,8 +432,9 @@ internal object AiReadTools {
         val data = buildJsonObject {
             put("total", sorted.size)
             put("offset", if (all) 0 else offset)
-            // 还有下一页（而不是「本页被 limit 截断」）：模型按 offset + items.size 继续取
-            put("truncated", if (all) false else offset.toLong() + shown.size < sorted.size)
+            // 还有下一页（而不是「本页被 limit 截断」）：模型按 offset + items.size 继续取。
+            // 分页语义用 hasMore，与预算截断的 truncated 分开（两者此前同名，模型分不清）
+            put("hasMore", if (all) false else offset.toLong() + shown.size < sorted.size)
             put("items", buildJsonArray { shown.forEach { add(it.toSearchItem(includeDetail, ctx.today)) } })
         }
         if (all) {
@@ -444,7 +445,7 @@ internal object AiReadTools {
                 val compact = buildJsonObject {
                     put("total", sorted.size)
                     put("offset", 0)
-                    put("truncated", false)
+                    put("hasMore", false)
                     put("compact", true)
                     put("items", buildJsonArray {
                         sorted.forEach { add(it.toCompactSearchItem(ctx.today)) }

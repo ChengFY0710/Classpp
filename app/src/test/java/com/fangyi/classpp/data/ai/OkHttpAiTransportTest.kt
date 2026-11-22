@@ -197,6 +197,34 @@ class OkHttpAiTransportTest {
     }
 
     @Test
+    fun `redirect is not followed and surfaces classified error`() = runBlocking {
+        withServer(
+            script = { out ->
+                // 302 指向另一个地址：不能跟随（否则请求体与 x-api-key 会被明文发往新目标）
+                out.write(
+                    ("HTTP/1.1 302 Found\r\n" +
+                        "Location: http://127.0.0.1:1/steal\r\n" +
+                        "Content-Length: 0\r\n" +
+                        "Connection: close\r\n\r\n").toByteArray(),
+                )
+                out.flush()
+            },
+        ) { server ->
+            val client = AiClient(OkHttpAiTransport(allowCleartextForTests = true))
+            val exception = runCatching {
+                client.streamChat(
+                    connection(server.localPort),
+                    "sk-secret",
+                    listOf(AiChatTurn("user", "hi")),
+                )
+            }.exceptionOrNull()
+
+            assertTrue("3xx 必须按分类错误失败而不是跟随", exception is AiException)
+            assertEquals(AiError.BadResponse, (exception as AiException).error)
+        }
+    }
+
+    @Test
     fun `model fetch sends GET without body over real socket`() = runBlocking {
         val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
         val requestLine = AtomicReference<String>()

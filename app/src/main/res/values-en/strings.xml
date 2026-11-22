@@ -164,7 +164,7 @@
     <string name="about_thanks_source_han_serif">Serif display font for calendar dates (SIL OFL 1.1)</string>
     <!-- Data management (storage usage / full backup export & import) -->
     <string name="data_management_header_title">Data management</string>
-    <string name="data_management_header_description">Back up schedules, todos, tags, agenda wallpapers, and AI chat history, and review storage usage</string>
+    <string name="data_management_header_description">Back up schedules, todos, tags, agenda wallpapers, and AI chat history (AI chat images are not included), and review storage usage</string>
     <string name="data_management_section_storage">Storage usage</string>
     <string name="data_management_storage_app">App size</string>
     <string name="data_management_storage_user">User data</string>
@@ -665,6 +665,9 @@
     <string name="import_ai_analyzing_desc">AI-generated results may be inaccurate. Please double-check.</string>
     <string name="import_ai_confirm_title">Import AI Scan Result</string>
     <string name="import_ai_confirm_detail">AI-generated results may be inaccurate — review the schedule before importing.</string>
+    <string name="import_ai_confirm_term">Term %1$s to %2$s, %3$d weeks</string>
+    <string name="import_ai_confirm_day_count">%1$s %2$d</string>
+    <string name="import_ai_confirm_notes">Assumptions: %1$s</string>
     <string name="import_ai_error_no_json">AI did not return a readable schedule. Try again or use a clearer photo.</string>
     <string name="import_ai_error_no_courses">No courses were recognized. Try a clearer timetable image.</string>
     <string name="import_ai_error_truncated">Reply hit the output limit — try again or use a smaller screenshot area.</string>
@@ -1040,6 +1043,8 @@
     <string name="ai_interrupted">Reply interrupted</string>
     <string name="ai_reply_truncated">Reply truncated at the output limit</string>
     <string name="ai_retry">Retry</string>
+    <string name="ai_send_busy">The previous message is still sending</string>
+    <string name="ai_action_busy">Another change is being applied — try again shortly</string>
     <string name="ai_error_auth">API key is invalid or expired — check it in AI settings</string>
     <string name="ai_error_quota">Insufficient balance or no access to this model</string>
     <string name="ai_error_not_found">Incorrect model name or service URL</string>
@@ -1047,6 +1052,7 @@
     <string name="ai_error_server">Provider is temporarily down — try again later</string>
     <string name="ai_error_network">Network error — check your connection</string>
     <string name="ai_error_bad_response">Provider returned unparseable data</string>
+    <string name="ai_error_dismiss">Dismiss error</string>
     <string name="ai_error_empty_response">AI returned an empty reply — try again</string>
     <string name="ai_error_input_too_long">Message is too long — split it or shorten it before sending</string>
     <string name="ai_not_configured_title">Set up an AI provider first</string>
@@ -1073,6 +1079,7 @@
     <string name="ai_todo_change_delete_hint">Moved to trash — you can restore it</string>
     <string name="ai_todo_change_sync_hint">Synced todo — the next sync may restore it</string>
     <string name="ai_todo_change_dropped">Some changes couldn\'t be recognized and were skipped</string>
+    <string name="ai_todo_parse_failed">Couldn\'t parse the todo content — ask AI to send it again</string>
     <string name="ai_todo_change_line">%1$s: %2$s</string>
     <string name="ai_todo_change_clear">Clear</string>
     <string name="ai_todo_change_all_day">All day</string>
@@ -1135,6 +1142,7 @@
     <string name="ai_tool_status_completed">Done</string>
     <string name="ai_tool_status_failed">Failed</string>
     <string name="ai_tool_status_cancelled">Cancelled</string>
+    <string name="ai_tool_result_failed_code">Failed: %1$s</string>
     <string name="ai_tool_expand">Expand tool result</string>
     <string name="ai_tool_collapse">Collapse tool result</string>
     <string name="ai_tool_loop_capped">Tool call limit reached. Ask a follow-up to continue.</string>
@@ -1264,6 +1272,7 @@
     <string name="ai_settings_saved">Saved</string>
     <string name="ai_settings_privacy">Your messages plus schedule and todo summaries are sent to the provider you configure. The API key is encrypted with system security storage and never included in backups.</string>
     <string name="ai_settings_secure_unavailable">System secure storage is unavailable — the API key cannot be saved (try restarting)</string>
+    <string name="ai_settings_profiles_corrupt">Saved profiles could not be read — the original data was kept. Save a profile again to recover</string>
     <string name="ai_settings_clear_history">Clear chat history</string>
     <string name="ai_settings_clear_history_desc">Deletes the chat history stored on this device; saved todos are unaffected</string>
     <string name="ai_settings_clear_history_confirm">Tap again to confirm</string>

@@ -482,6 +482,14 @@ class AiStreamCodecTest {
     }
 
     @Test
+    fun `unknown effort level is not sent verbatim`() = runBlocking {
+        // 自定义文案透传会被严格网关 400：白名单外不发 effort，保持服务商默认
+        val body = openAiBody("zhipu", "glm-5.3", listOf("banana", "high"), "banana")
+
+        assertNull(body["reasoning_effort"])
+    }
+
+    @Test
     fun `glm 5_2 off disables thinking and level enables with effort`() = runBlocking {
         val levels = listOf("none", "low", "medium", "high", "max")
         val off = openAiBody("zhipu", "glm-5.2", levels, "none")

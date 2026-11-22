@@ -74,6 +74,8 @@ enum class AiTodoChangeFailure { None, NotFound, InvalidPatch, InvalidDate, Wron
  *
  * @param todoName 生成草稿时的名称快照：删除后目标从活跃流消失，确认卡仍需要显示名称
  * @param patch 修改补丁；删除时为 null
+ * @param id 变更的稳定标识（创建时 UUID）：应用结果按它合并，避免流式期间新追加的
+ *   待确认项被旧快照整体回写抹掉。旧文件无此字段时为空串，按 [stableKey] 的复合键处理
  */
 @Serializable
 data class AiTodoChange(
@@ -83,7 +85,25 @@ data class AiTodoChange(
     val patch: AiTodoPatch? = null,
     val status: AiTodoChangeStatus = AiTodoChangeStatus.Pending,
     val failure: AiTodoChangeFailure = AiTodoChangeFailure.None,
+    val id: String = "",
 )
+
+/** 应用结果合并的稳定键：有 id 用 id，旧数据退化为 (kind, todoId, patch) 复合键 */
+internal fun AiTodoChange.stableKey(): String =
+    if (id.isNotBlank()) {
+        "id:$id"
+    } else {
+        "legacy:${kind.name}:$todoId:${patch?.hashCode() ?: 0}"
+    }
+
+/**
+ * 把应用结果按稳定键合并回**当前**列表：只替换命中的项，流式期间新追加的 Pending
+ * 原样保留（不能拿应用开始时的旧快照整体覆盖）。
+ */
+internal fun mergeTodoChangeResults(
+    current: List<AiTodoChange>,
+    applied: Map<String, AiTodoChange>,
+): List<AiTodoChange> = current.map { applied[it.stableKey()] ?: it }
 
 /**
  * 完成/取消完成的草稿：与修改/删除不同，这类动作**解析后直接执行**（可撤销），

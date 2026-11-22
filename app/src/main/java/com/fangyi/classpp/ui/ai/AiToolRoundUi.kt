@@ -353,7 +353,13 @@ private fun toolResultSummary(name: String, result: AiToolResult?): String {
     if (result == null) return ""
     val obj = parseObject(result.contentJson) ?: return ""
     if (obj["ok"].textOrNull() == "false") {
-        return (obj["error"] as? JsonObject)?.get("message").textOrNull().orEmpty()
+        // 折叠态只显示稳定错误码；详细原因（可能含原始参数）留在展开区
+        val code = ((obj["error"] as? JsonObject)?.get("code")).textOrNull().orEmpty()
+        return if (code.isBlank()) {
+            stringResource(R.string.ai_tool_status_failed)
+        } else {
+            stringResource(R.string.ai_tool_result_failed_code, code)
+        }
     }
     val data = obj["data"] as? JsonObject ?: return ""
     return when (name) {

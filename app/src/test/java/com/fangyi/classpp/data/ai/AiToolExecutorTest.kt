@@ -92,6 +92,29 @@ class AiToolExecutorTest {
     }
 
     @Test
+    fun `string schema rejects numbers and booleans`() = runBlocking {
+        val asNumber = AiToolExecutor.executeSafely(
+            AiToolCall(
+                id = "c1",
+                name = AiToolRegistry.GET_DAY_PLAN,
+                argumentsJson = """{"date":20261118}""",
+            ),
+            context,
+        )
+        assertEquals("invalid_arguments", asNumber.errorCode())
+
+        val asBoolean = AiToolExecutor.executeSafely(
+            AiToolCall(
+                id = "c2",
+                name = AiToolRegistry.GET_DAY_PLAN,
+                argumentsJson = """{"date":true}""",
+            ),
+            context,
+        )
+        assertEquals("invalid_arguments", asBoolean.errorCode())
+    }
+
+    @Test
     fun `successful execution returns ok envelope and parses as json`() = runBlocking {
         val result = AiToolExecutor.executeSafely(
             AiToolCall(

@@ -274,4 +274,44 @@ class BackupArchiveTest {
         assertTrue(!manifest.isSupported())
         assertTrue(!BackupManifest(kind = "other").isSupported())
     }
+
+    @Test
+    fun `backup copy strips ai chat image references`() {
+        val original = AiChatFile(
+            conversations = listOf(
+                AiConversation(
+                    id = "c1",
+                    messages = listOf(
+                        AiChatMessage(
+                            role = AiChatRole.User,
+                            content = "看图",
+                            images = listOf("a.jpg", "b.jpg"),
+                            id = "m1",
+                        ),
+                        AiChatMessage(role = AiChatRole.Assistant, content = "好", id = "m2"),
+                    ),
+                ),
+            ),
+            // v1 顶层消息同样清理（迁移前旧库兜底）
+            messages = listOf(
+                AiChatMessage(
+                    role = AiChatRole.User,
+                    content = "旧消息",
+                    images = listOf("old.jpg"),
+                    id = "m3",
+                ),
+            ),
+        )
+
+        val stripped = original.withoutAiImages()
+
+        assertTrue(stripped.conversations.single().messages.all { it.images.isEmpty() })
+        assertTrue(stripped.messages.all { it.images.isEmpty() })
+        assertEquals("看图", stripped.conversations.single().messages.first().content)
+        // 原对象不被修改
+        assertEquals(
+            listOf("a.jpg", "b.jpg"),
+            original.conversations.single().messages.first().images,
+        )
+    }
 }

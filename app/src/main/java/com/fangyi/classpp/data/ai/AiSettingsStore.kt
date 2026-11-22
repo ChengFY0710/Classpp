@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import java.io.File
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -12,6 +13,34 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
+
+/**
+ * 活动连接 + Key 的一次性快照（同一把锁内解析，绝不混搭配对）。
+ */
+data class AiActiveCredentials(
+    val connection: AiConnection,
+    val apiKey: String?,
+)
+
+/**
+ * 活动连接与 Key 的一致解析：活动指针有效时取该方案（连接 + 方案 Key），否则回落
+ * 「自定义」槽位。抽成纯函数便于 JVM 测试；生产实现调用方持有同一把锁。
+ */
+internal fun resolveActiveCredentials(
+    activeProfileId: String?,
+    profiles: List<AiProfile>,
+    profileKey: (String) -> String?,
+    customConnection: () -> AiConnection,
+    customKey: () -> String?,
+): AiActiveCredentials {
+    if (activeProfileId != null) {
+        val profile = profiles.firstOrNull { it.id == activeProfileId }
+        if (profile != null) {
+            return AiActiveCredentials(profile.connection, profileKey(activeProfileId))
+        }
+    }
+    return AiActiveCredentials(customConnection(), customKey())
+}
 
 /**
  * AI 连接设置持久化：方案库 + 「自定义」槽位 + 活动指针。
@@ -37,6 +66,16 @@ interface AiSettingsStore {
     /** Keystore 是否可用；任何加解密异常后置 false，本次进程内不再尝试 */
     val secureAvailable: Boolean
 
+    /**
+     * 活动连接 + Key 的一次性快照：发送路径必须用它，**不要**分两次调
+     * [loadConnection] / [loadApiKey]——与设置页切换方案并发时，两次加锁读取可能
+     * 拿到「A 方案的端点 + B 方案的 Key」。
+     *
+     * 默认实现留给无并发的测试 fake；生产实现同一把锁内解析。
+     */
+    fun loadActiveCredentials(): AiActiveCredentials =
+        AiActiveCredentials(loadConnection(), loadApiKey())
+
     // ---------- 工具调用（非敏感，明文段） ----------
 
     /** 原生只读工具总开关；默认开启，关闭后完全走现有 JSON 回退 */
@@ -59,6 +98,9 @@ interface AiSettingsStore {
     // ---------- 方案库 ----------
 
     fun loadProfiles(): List<AiProfile>
+
+    /** 方案库曾经解析失败并留有取证文件：设置页据此提示用户重新保存配置 */
+    fun hasCorruptProfiles(): Boolean = false
 
     /** 当前激活的方案 id；null = 使用「自定义」槽位。悬空指针按 null 处理 */
     fun loadActiveProfileId(): String?
@@ -177,10 +219,19 @@ class PrefsAiSettingsStore(context: Context) : AiSettingsStore {
                 // 旧配置无 models 字段：读出来即补成 [当前模型]，口径与写入一致
                 .map { it.copy(connection = it.connection.withNormalizedModels()) }
         } catch (_: Exception) {
-            // 单字段损坏不放大成功能故障：方案库回落空列表，用户重存即可
+            // 单字段损坏不放大成功能故障：方案库回落空列表；但原始 JSON 先留一份取证，
+            // 避免下次保存把用户方案永久覆盖成空
+            runCatching {
+                appContext.openFileOutput(PROFILES_CORRUPT_FILE, Context.MODE_PRIVATE)
+                    .use { it.write(raw.toByteArray(Charsets.UTF_8)) }
+            }
             emptyList()
         }
     }
+
+    @Synchronized
+    override fun hasCorruptProfiles(): Boolean =
+        File(appContext.filesDir, PROFILES_CORRUPT_FILE).isFile
 
     @Synchronized
     override fun loadActiveProfileId(): String? {
@@ -378,6 +429,16 @@ class PrefsAiSettingsStore(context: Context) : AiSettingsStore {
         return loadCustomKey()
     }
 
+    @Synchronized
+    override fun loadActiveCredentials(): AiActiveCredentials =
+        resolveActiveCredentials(
+            activeProfileId = prefs.getString(KEY_ACTIVE_PROFILE, null),
+            profiles = loadProfiles(),
+            profileKey = ::loadProfileKey,
+            customConnection = ::loadCustomConnection,
+            customKey = ::loadCustomKey,
+        )
+
     private fun encodeProfiles(profiles: List<AiProfile>): String =
         AiJson.storage.encodeToString(profiles)
 
@@ -388,6 +449,9 @@ class PrefsAiSettingsStore(context: Context) : AiSettingsStore {
 
     private companion object {
         const val FILE_NAME = "ai_secure"
+
+        /** 方案库 JSON 解析失败时的原始内容取证文件（filesDir 下；下次解析失败覆盖） */
+        const val PROFILES_CORRUPT_FILE = "ai_profiles.corrupt.json"
 
         /** 「自定义」槽位（旧版单配置） */
         const val KEY_CONNECTION = "connection"
@@ -433,6 +497,7 @@ class AiKeystoreCipher(
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
             val ciphertext = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
+            available = true
             Base64.encodeToString(
                 AiKeystoreEnvelope.pack(cipher.iv, ciphertext),
                 Base64.NO_WRAP,
@@ -447,14 +512,20 @@ class AiKeystoreCipher(
     fun decrypt(encoded: String): String? {
         return try {
             val parts = AiKeystoreEnvelope.unpack(Base64.decode(encoded, Base64.NO_WRAP))
-                ?: return null
+                ?: run {
+                    // 信封损坏与加解密异常同一语义：标记不可用，绝不静默重生成密钥
+                    available = false
+                    return null
+                }
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(
                 Cipher.DECRYPT_MODE,
                 getOrCreateKey(),
                 GCMParameterSpec(GCM_TAG_BITS, parts.iv),
             )
-            String(cipher.doFinal(parts.ciphertext), Charsets.UTF_8)
+            String(cipher.doFinal(parts.ciphertext), Charsets.UTF_8).also {
+                available = true
+            }
         } catch (_: Exception) {
             available = false
             null

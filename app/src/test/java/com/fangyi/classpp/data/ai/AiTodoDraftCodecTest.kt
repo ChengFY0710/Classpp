@@ -2,6 +2,7 @@ package com.fangyi.classpp.data.ai
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** 围栏提取 + 草稿解析：多块取最后、宽容形态、脏输入 */
@@ -175,5 +176,34 @@ class AiTodoDraftCodecTest {
         )!!
         assertEquals("宽容", payload.todos[0].name)
         assertEquals(emptyList<String>(), payload.todos[0].dates)
+    }
+
+    @Test
+    fun `fence marker is case insensitive and tolerates spaces`() {
+        val expected = """{"todos":[{"name":"大写围栏"}]}"""
+
+        assertEquals(expected, AiTodoDraftCodec.extractJsonBlock("```JSON\n$expected\n```"))
+        assertEquals(expected, AiTodoDraftCodec.extractJsonBlock("``` json \n$expected\n```"))
+    }
+
+    @Test
+    fun `bare json outside fences is accepted`() {
+        assertEquals(
+            """{"todos":[{"name":"裸 JSON"}]}""",
+            AiTodoDraftCodec.extractJsonBlock("""好的，结果如下：{"todos":[{"name":"裸 JSON"}]}"""),
+        )
+        assertEquals(
+            """[{"name":"裸数组"}]""",
+            AiTodoDraftCodec.extractJsonBlock("""直接给数组：[{"name":"裸数组"}]"""),
+        )
+    }
+
+    @Test
+    fun `parse envelope keeps empty payload so callers can flag it`() {
+        // 空信封是合法结构：调用方需要区分「解析失败」与「合法但没有动作」
+        val payload = AiTodoDraftCodec.parseEnvelope("""{"todos":[]}""")
+        assertTrue(payload != null && !payload.hasActions)
+        // 旧入口仍把空信封视为无动作
+        assertNull(AiTodoDraftCodec.parseTodoDrafts("""{"todos":[]}"""))
     }
 }

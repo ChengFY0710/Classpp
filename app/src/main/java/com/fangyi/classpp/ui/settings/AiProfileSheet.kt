@@ -28,6 +28,7 @@ import com.fangyi.classpp.data.ai.AiModelConfig
 import com.fangyi.classpp.data.ai.AiProfile
 import com.fangyi.classpp.data.ai.AiProtocol
 import com.fangyi.classpp.data.ai.AiProviderPresets
+import com.fangyi.classpp.data.ai.isValidAiBaseUrl
 import com.fangyi.classpp.ui.components.ActionRowCard
 import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
 import com.fangyi.classpp.ui.components.BottomTextFieldCard
@@ -214,7 +215,7 @@ internal fun AiProfileSheet(
         // 规范化结果写回草稿：后续「保存为新方案」的 pendingSave 比较才能与落库值一致
         updateDraft(normalized)
         // 两类必填分开提示：合并成一条文案时，用户看不出到底缺的是哪一项
-        baseUrlInvalid = !trimmedUrl.startsWith("http")
+        baseUrlInvalid = !isValidAiBaseUrl(trimmedUrl)
         if (baseUrlInvalid) {
             AppToasts.show(context, invalidMessage)
             return null
@@ -405,7 +406,7 @@ internal fun AiProfileSheet(
      */
     fun startFetchModels() {
         val baseUrl = draftConnection.baseUrl.trim()
-        if (!baseUrl.startsWith("http")) {
+        if (!isValidAiBaseUrl(baseUrl)) {
             baseUrlInvalid = true
             AppToasts.show(context, invalidMessage)
             return

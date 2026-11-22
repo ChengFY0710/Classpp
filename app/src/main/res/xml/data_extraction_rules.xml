@@ -6,7 +6,8 @@
    sharedpref/xmu_secure.xml 是自动续期凭据密文，同样排除（Keystore 密钥不随备份迁移）；
    sharedpref/sync_secure.xml 是新校共用凭据（按校分键、Keystore 密文），同因排除；
    sharedpref/sync_prefs.xml 是新校共用每日同步开关与同步行为偏好（与账号状态成对，排除避免带旧开关）；
-   sharedpref/ai_secure.xml 是 AI 连接配置与 API Key 密文，同因同果排除。
+   sharedpref/ai_secure.xml 是 AI 连接配置与 API Key 密文，同因同果排除；
+   files/ai_chat_images 是 AI 对话图片副本（隐私 + 25MB 云备份配额），同样排除。
    school_prefs.xml 不排除；todos.json 不排除。
 -->
 <data-extraction-rules>
@@ -20,6 +21,7 @@
         <exclude domain="sharedpref" path="sync_secure.xml" />
         <exclude domain="sharedpref" path="sync_prefs.xml" />
         <exclude domain="sharedpref" path="ai_secure.xml" />
+        <exclude domain="file" path="ai_chat_images" />
         <exclude domain="root" path="app_webview" />
     </cloud-backup>
     <device-transfer>
@@ -32,6 +34,7 @@
         <exclude domain="sharedpref" path="sync_secure.xml" />
         <exclude domain="sharedpref" path="sync_prefs.xml" />
         <exclude domain="sharedpref" path="ai_secure.xml" />
+        <exclude domain="file" path="ai_chat_images" />
         <exclude domain="root" path="app_webview" />
     </device-transfer>
 </data-extraction-rules>

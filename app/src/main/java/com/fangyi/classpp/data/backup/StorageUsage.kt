@@ -1,6 +1,7 @@
 package com.fangyi.classpp.data.backup
 
 import android.content.Context
+import com.fangyi.classpp.data.ai.AiImageStore
 import com.fangyi.classpp.data.store.TodoAttachmentStore
 import com.fangyi.classpp.ui.day.DayImageStore
 import java.io.File
@@ -11,9 +12,9 @@ import java.io.File
  * 口径：
  * - [appBytes]：安装包本体（base APK + split APK）；原生库与 dex 都在 APK 内，不另计。
  * - [userBytes]：用户内容 = 4 个整库 JSON + `day_images/` + `todo_attachments/` +
- *   `shared_prefs/`。整库的 `.tmp` / `.bak` / `.corrupt-*` 是恢复副本与损坏隔离，不计入
- *   （避免同一份数据被重复统计）；`xmu/`（账号头像、同步状态）与 `wakeup/`
- *   （可再下载的脚本缓存）不计入。
+ *   `ai_chat_images/` + `shared_prefs/`。整库的 `.tmp` / `.bak` / `.corrupt-*` 是恢复副本与
+ *   损坏隔离，不计入（避免同一份数据被重复统计）；`xmu/`（账号头像、同步状态）与
+ *   `wakeup/`（可再下载的脚本缓存）不计入。
  * - [cacheBytes]：`cacheDir` + `codeCacheDir`（Coil 图片缓存落在 cacheDir）。
  */
 data class StorageUsage(
@@ -45,6 +46,8 @@ object StorageUsageReader {
         return UserDataFiles.sumOf { File(filesDir, it).length() } +
             dirBytes(File(filesDir, TodoAttachmentStore.DIRECTORY_NAME)) +
             dirBytes(DayImageStore.imageDir(context)) +
+            // AI 对话图片副本：不随备份迁移，但确实占用本机空间，用量必须一致
+            dirBytes(File(filesDir, AiImageStore.DirectoryName)) +
             dirBytes(sharedPrefsDir(context))
     }
 

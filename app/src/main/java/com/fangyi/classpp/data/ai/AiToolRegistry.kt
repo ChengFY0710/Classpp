@@ -244,33 +244,34 @@ object AiToolRegistry {
     // ---------- 回退信封示例（提示词契约的单一来源） ----------
 
     private fun repeatExample(): JsonObject = buildJsonObject {
-        put("type", REPEAT_TYPE_VALUES.joinToString("|"))
-        put("unit", REPEAT_UNIT_VALUES.joinToString("|"))
+        // 示例全部用真实可取的值：`None|Daily|…` 这类占位会被模型原样照抄成非法枚举
+        put("type", "Weekly")
+        put("unit", "Week")
         put("interval", 1)
         putJsonArray("marks") { add(1) }
-        put("endType", REPEAT_END_TYPE_VALUES.joinToString("|"))
-        put("endDate", "yyyy-MM-dd")
+        put("endType", "Never")
+        put("endDate", "2026-11-30")
         put("endCount", 5)
         put("merge", true)
         put("checkIn", false)
     }
 
     private fun todoDraftExample(allDay: Boolean, urgencyValues: List<String>): JsonObject = buildJsonObject {
-        put("name", "...")
-        putJsonArray("dates") { add("yyyy-MM-dd") }
+        put("name", "示例待办")
+        putJsonArray("dates") { add("2026-11-18") }
         put("allDay", allDay)
-        put("startTime", "HH:mm")
-        put("endTime", "HH:mm")
-        put("deadlineDate", "yyyy-MM-dd")
-        put("deadlineTime", "HH:mm")
+        put("startTime", "14:00")
+        put("endTime", "16:00")
+        put("deadlineDate", "2026-11-18")
+        put("deadlineTime", "18:00")
         put("deadlineBeforeRepeat", false)
         put("deadlineBeforeDays", 0)
-        put("urgency", urgencyValues.joinToString("|"))
-        putJsonArray("tags") { add("...") }
-        put("group", "...")
-        put("note", "...")
-        putJsonArray("steps") { add("...") }
-        put("location", "...")
+        put("urgency", urgencyValues.firstOrNull { it == "Medium" } ?: urgencyValues.firstOrNull().orEmpty())
+        putJsonArray("tags") { add("期末") }
+        put("group", "学习")
+        put("note", "示例备注")
+        putJsonArray("steps") { add("示例步骤") }
+        put("location", "图书馆")
         put("countdown", false)
         put("pinned", false)
         put("repeat", repeatExample())
@@ -517,10 +518,22 @@ object AiToolRegistry {
                 ?: throw IllegalArgumentException("unknown tool envelope section: $key")
             key to section.example
         }
-        return buildJsonObject {
+        val json = buildJsonObject {
             picked.forEach { (key, example) -> put(key, example) }
         }.toString()
+        // 枚举取值从示例里移出（示例用真实值）：照抄 `a|b` 占位曾产生非法枚举并静默降级
+        return if (sectionKeys.any { it == "todos" || it == "updates" }) {
+            json + "\n" + ENUM_VALUES_NOTE
+        } else {
+            json
+        }
     }
+
+    /** 回退契约的枚举取值范围（提示词里跟在 JSON 示例之后） */
+    private const val ENUM_VALUES_NOTE =
+        "枚举取值：repeat.type=None/Daily/Weekly/Monthly/Yearly/Custom，" +
+            "repeat.unit=Day/Week/Month/Year，repeat.endType=Never/Date/Count，" +
+            "urgency=Critical/High/Medium/Low/None"
 
     private val fallbackSections: List<AiToolEnvelopeSection>
         get() = specs.flatMap { it.envelope }

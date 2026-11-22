@@ -79,12 +79,24 @@ class FileAiChatStore(private val dir: File) : AiChatStore {
             return LoadOutcome.Loaded(bakParsed, LoadIssue.RestoredFromBackup)
         }
 
-        // 双坏：保留主文件取证，返回空库
+        // 双坏：保留主文件取证，返回空库。隔离文件只留最近 2 份：每份都是完整对话内容，
+        // 只增不删既占空间也扩大隐私面
         if (main.exists()) {
+            pruneCorruptFiles(keep = 2)
             val quarantine = File(dir, "$CORRUPT_PREFIX${System.currentTimeMillis()}.json")
             main.renameTo(quarantine)
+            pruneCorruptFiles(keep = 2)
         }
         return LoadOutcome.Fresh(AiChatFile(), LoadIssue.ResetAfterCorruption)
+    }
+
+    /** 只保留最近 [keep] 份损坏隔离文件（按文件名时间戳排序），其余删除 */
+    private fun pruneCorruptFiles(keep: Int) {
+        val files = dir.listFiles { file -> file.isFile && file.name.startsWith(CORRUPT_PREFIX) }
+            ?: return
+        files.sortedByDescending { it.name }
+            .drop(keep)
+            .forEach { runCatching { it.delete() } }
     }
 
     override fun save(file: AiChatFile): StoreResult = saveInternal(file, durable = true)

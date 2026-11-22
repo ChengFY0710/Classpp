@@ -33,6 +33,22 @@ internal object AiScheduleImportCodec {
     }
 
     /**
+     * 提取 JSON 块外的正文（模型的假设说明）：围栏块整体剔除；没有围栏时取首个 `{`
+     * 之前的文字。截断到 [maxChars]，供确认框展示——用户需要知道模型推断了哪些东西
+     * （学期起点、总周数、节次合并）才能核对。
+     */
+    fun extractNotes(reply: String, maxChars: Int = 2_000): String {
+        val notes = if (FENCE.containsMatchIn(reply)) {
+            // 去掉全部围栏块（可能有多份修正版），剩余正文就是假设说明
+            FENCE.replace(reply, " ").trim()
+        } else {
+            val start = reply.indexOf('{')
+            if (start < 0) reply.trim() else reply.substring(0, start).trim()
+        }
+        return notes.take(maxChars)
+    }
+
+    /**
      * 解析回复；null = 回复里没有 JSON（模型纯文字回复），否则返回导入管线的结果。
      * 错误只承载解析/校验原因，网络与通道错误由仓库层另行映射。
      *

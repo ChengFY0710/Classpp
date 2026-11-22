@@ -102,6 +102,9 @@ class BackupManager(private val context: Context) {
         val todos = FileTodoStore(filesDir).load().asFile()
         val tags = FileTagStore(filesDir).load().asFile()
         val aiChat = FileAiChatStore(filesDir).load().asFile()
+        // 手动备份不含 AI 对话图片（产品口径：图片只留在本机，见 3.19 方案 B）：
+        // 清空消息里的文件名引用，避免换机恢复后出现悬空引用/破图
+        val backupAiChat = aiChat.withoutAiImages()
         val attachmentDir = File(filesDir, TodoAttachmentStore.DIRECTORY_NAME)
         val attachmentStore = TodoAttachmentStore(attachmentDir)
         // 只打包仍存在的附件文件；元数据里的悬空项从备份内剔除（本机数据不动）
@@ -152,7 +155,7 @@ class BackupManager(private val context: Context) {
             schedulesJson = ScheduleJson.encodeStorage(schedules),
             todosJson = ScheduleJson.encodeStorage(backupTodos),
             tagsJson = ScheduleJson.encodeStorage(tags),
-            aiChatJson = ScheduleJson.encodeStorage(aiChat),
+            aiChatJson = ScheduleJson.encodeStorage(backupAiChat),
             dayImagesJson = ScheduleJson.encodeStorage(dayImages),
             imageDir = DayImageStore.imageDir(context),
             imageNames = dayImageNames,

@@ -321,6 +321,8 @@ data class AiToolRound(
  *   状态（待确认/已应用/失败/已忽略）随消息落盘
  * @param todoChangeDropped 解析出了修改/删除动作，但目标不存在或 patch 非法被丢弃；
  *   UI 在原处提示「部分变更无法识别」
+ * @param todoParseFailed 回复里出现了动作 JSON，但结构解析/修复都失败（或空信封却声称已创建）：
+ *   UI 提示用户让模型重新输出，不再静默无动作
  * @param todoCompletions AI 直接执行的完成/取消完成记录：可撤销，状态随消息落盘
  * @param todoLifecycles AI 直接执行的归档/取消归档/恢复记录：可撤销，状态随消息落盘
  * @param toolRounds 本条回复内的工具轮次（按发生顺序；v2 消息为空列表）：只读查询的
@@ -341,6 +343,7 @@ data class AiChatMessage(
     val id: String = "",
     val todoChanges: List<AiTodoChange> = emptyList(),
     val todoChangeDropped: Boolean = false,
+    val todoParseFailed: Boolean = false,
     val todoCompletions: List<AiTodoCompletion> = emptyList(),
     val todoLifecycles: List<AiTodoLifecycle> = emptyList(),
     val toolRounds: List<AiToolRound> = emptyList(),

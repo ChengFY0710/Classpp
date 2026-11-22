@@ -112,12 +112,43 @@ data class AiTodoDraftPayload(
  */
 object AiTodoDraftCodec {
 
-    /** ```json …```（json 标记可省）；非贪婪匹配，取最后一个块 */
-    private val FENCE = Regex("```(?:json)?\\s*([\\s\\S]*?)\\s*```")
+    /**
+     * ```json …```（json 标记可省、大小写不敏感、标记前可有空白）；非贪婪匹配，取最后一个块。
+     * 此前只认小写闭合围栏：` ```JSON ` / ` ``` json ` 会让整段动作静默丢失。
+     */
+    private val FENCE = Regex(
+        "```\\s*(?:json)?\\s*([\\s\\S]*?)\\s*```",
+        RegexOption.IGNORE_CASE,
+    )
 
-    /** 提取回复里最后一个围栏块的内容；无块返回 null */
-    fun extractJsonBlock(reply: String): String? =
-        FENCE.findAll(reply).lastOrNull()?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() }
+    /** 提取回复里最后一个围栏块的内容；无块时回退裸 JSON（首个 `{`/`[` 到末个 `}`/`]`） */
+    fun extractJsonBlock(reply: String): String? {
+        FENCE.findAll(reply).lastOrNull()
+            ?.groupValues?.getOrNull(1)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { return it }
+        return extractBareJson(reply)
+    }
+
+    /** 裸 JSON 兜底：与课表 codec 同口径，取首个 `{`..末个 `}`（或 `[`..`]`） */
+    private fun extractBareJson(reply: String): String? {
+        val objectText = extractRange(reply, '{', '}')
+        val arrayText = extractRange(reply, '[', ']')
+        return when {
+            objectText == null -> arrayText
+            arrayText == null -> objectText
+            // 两个都像 JSON 时取出现更早的那段（正文里先出现的那个才是动作块）
+            else -> if (reply.indexOf('{') <= reply.indexOf('[')) objectText else arrayText
+        }
+    }
+
+    private fun extractRange(text: String, open: Char, close: Char): String? {
+        val start = text.indexOf(open)
+        val end = text.lastIndexOf(close)
+        if (start < 0 || end <= start) return null
+        return text.substring(start, end + 1).trim().takeIf { it.isNotEmpty() }
+    }
 
     /**
      * 去掉回复里最后一个围栏块（待办已落库、改由卡片呈现时，正文不再展示原始 JSON）；
@@ -137,9 +168,16 @@ object AiTodoDraftCodec {
      * `{"name":...}`——都收，降低对模型遵循度的要求（裸对象须含 "name" 键且不含
      * 动作键才收，避免把模型偶尔围起来的错误对象包成无名草稿）。
      */
-    fun parseTodoDrafts(json: String): AiTodoDraftPayload? {
+    fun parseTodoDrafts(json: String): AiTodoDraftPayload? =
+        parseEnvelope(json)?.takeIf { it.hasActions }
+
+    /**
+     * 宽容解析信封但不要求有动作：用于区分「结构解析失败」与「空信封（合法但没有动作）」。
+     * 空信封此前和纯对话一样静默无动作，模型声称已创建时用户完全看不出问题。
+     */
+    internal fun parseEnvelope(json: String): AiTodoDraftPayload? {
         val text = json.trim()
-        val payload = runCatching {
+        return runCatching {
             when {
                 text.startsWith("[") ->
                     AiJson.storage.decodeFromString(
@@ -159,6 +197,5 @@ object AiTodoDraftCodec {
                 else -> null
             }
         }.getOrNull()
-        return payload?.takeIf { it.hasActions }
     }
 }

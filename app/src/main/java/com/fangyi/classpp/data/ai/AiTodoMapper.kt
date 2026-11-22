@@ -175,6 +175,8 @@ object AiTodoMapper {
             deadlineMinute = if (hasDeadline) deadlineMinute else null,
             deadlineBeforeRepeat = deadlineValid &&
                 effectiveRepeat.type != RepeatType.None &&
+                // 打卡模式的截止不随重复（与补丁侧 AiTodoPatchMapper 同一口径）
+                !effectiveRepeat.checkIn &&
                 draft.deadlineBeforeRepeat,
             deadlineBeforeDays = draft.deadlineBeforeDays.coerceAtLeast(0),
             location = rawLocation.take(AiFieldLimits.Location),
@@ -297,13 +299,14 @@ object AiTodoMapper {
     }
 
     /**
-     * 包含匹配：精确相等直接命中；否则取「清单项包含它或它包含清单项」的第一个命中
-     * （如"学习"命中"学习方法"）。无命中返回 null，由调用方决定保留原文或置空。
+     * 包含匹配：精确相等直接命中；否则只允许「清单项包含输入」（如"习"命中"学习"）。
+     * 禁止反向的「输入包含清单项」——"学习计划" 会被错误改绑到更短的库内标签"学习"。
+     * 无命中返回 null，由调用方决定保留原文或置空。
      */
     internal fun fuzzyMatch(value: String, known: List<String>): String? {
         if (known.isEmpty()) return null
         known.firstOrNull { it == value }?.let { return it }
-        return known.firstOrNull { it.contains(value) || value.contains(it) }
+        return known.firstOrNull { it.contains(value) }
     }
 
     /** Todo.source 的 AI 来源标识（与 "xmu" 同层的取值，见 Todo.source KDoc） */

@@ -54,6 +54,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -1721,6 +1722,8 @@ fun ScheduleScreen(
                     var aiAnalyzing by remember { mutableStateOf(false) }
                     var aiError by remember { mutableStateOf<String?>(null) }
                     var aiParsed by remember { mutableStateOf<Schedule?>(null) }
+                    // JSON 块外的模型假设说明：确认框展示，便于核对学期/周次/节次推断
+                    var aiNotes by remember { mutableStateOf("") }
                     var aiJob by remember { mutableStateOf<Job?>(null) }
                     var aiImageName by remember { mutableStateOf<String?>(null) }
                     // 请求代号：取消后立刻重开时，旧协程的 finally / 迟到结果不得改写新请求的状态
@@ -1769,6 +1772,42 @@ fun ScheduleScreen(
                     val aiUnreadableText = stringResource(R.string.import_ai_error_unreadable)
                     val aiNotConfiguredText = stringResource(R.string.ai_not_configured_hint)
                     val aiConfirmDetail = stringResource(R.string.import_ai_confirm_detail)
+                    val aiWeekdayLabels = stringArrayResource(R.array.weekdays)
+                    // 确认框明细：学期起止/总周数 + 每天课程数 + 模型假设说明（JSON 块外正文）
+                    val aiConfirmDetailText = aiParsed?.let { parsed ->
+                        buildString {
+                            append(aiConfirmDetail)
+                            append('\n')
+                            append(
+                                stringResource(
+                                    R.string.import_ai_confirm_term,
+                                    parsed.termStart.toString(),
+                                    parsed.termEnd.toString(),
+                                    parsed.totalWeeks,
+                                ),
+                            )
+                            val dayCounts = (1..parsed.daysPerWeek.coerceIn(1, 7)).mapNotNull { day ->
+                                val count = parsed.courses.count { it.dayOfWeek == day }
+                                if (count == 0) {
+                                    null
+                                } else {
+                                    stringResource(
+                                        R.string.import_ai_confirm_day_count,
+                                        aiWeekdayLabels[day - 1],
+                                        count,
+                                    )
+                                }
+                            }
+                            if (dayCounts.isNotEmpty()) {
+                                append('\n')
+                                append(dayCounts.joinToString(" · "))
+                            }
+                            if (aiNotes.isNotBlank()) {
+                                append('\n')
+                                append(stringResource(R.string.import_ai_confirm_notes, aiNotes))
+                            }
+                        }
+                    } ?: aiConfirmDetail
                     // 网页识别的专属失败文案：网页/登录页里没有课表，与截图版的「换一张图」区分
                     val aiWebNoCourseText = stringResource(R.string.import_ai_web_error_no_course)
                     val aiWebReadErrorText = stringResource(R.string.import_ai_web_error_empty)
@@ -1813,6 +1852,7 @@ fun ScheduleScreen(
                                         aiError = when (recognition) {
                                             is AiScheduleRecognition.Ok -> {
                                                 aiParsed = recognition.schedule
+                                                aiNotes = recognition.notes
                                                 null
                                             }
                                             is AiScheduleRecognition.AiFailed -> {
@@ -1857,6 +1897,7 @@ fun ScheduleScreen(
                                     aiWebError = when (recognition) {
                                         is AiScheduleRecognition.Ok -> {
                                             aiParsed = recognition.schedule
+                                            aiNotes = recognition.notes
                                             null
                                         }
                                         // 网页识别是纯文本，BadResponse 不再补「换视觉模型」提示
@@ -1978,16 +2019,18 @@ fun ScheduleScreen(
                             title = stringResource(R.string.import_ai_confirm_title),
                             courseCount = aiParsed?.courses?.size ?: 0,
                             scheduleName = aiParsed?.name.orEmpty(),
-                            detailLine = aiConfirmDetail,
+                            detailLine = aiConfirmDetailText,
                             visible = aiConfirmVisible,
                             onDismissed = { aiConfirmMounted = false },
                             onCancel = {
                                 aiParsed = null
+                                aiNotes = ""
                                 clearAiImage()
                             },
                             onConfirm = {
                                 val parsed = aiParsed
                                 aiParsed = null
+                                aiNotes = ""
                                 if (parsed != null) {
                                     scope.launch {
                                         when (

@@ -62,6 +62,7 @@ import com.fangyi.classpp.data.ai.AiTodoDraftCodec
 import com.fangyi.classpp.data.ai.AiTodoLifecycle
 import com.fangyi.classpp.data.ai.AiTodoLifecycleAction
 import com.fangyi.classpp.data.ai.AiTodoLifecycleStatus
+import com.fangyi.classpp.data.ai.AiTodoMapper
 import com.fangyi.classpp.data.ai.AiTodoPatch
 import com.fangyi.classpp.data.ai.AiToolRound
 import com.fangyi.classpp.data.checkInPercent
@@ -845,7 +846,10 @@ private fun AiChatTodoChangeRow(
                         style = descriptionStyle.copy(color = error),
                     )
                 }
-                if (pending && isDelete && target?.source != null) {
+                // 同步来源（xmu 等）的删除才提示「下次同步可能恢复」；AI 自己创建的不要吓用户
+                if (pending && isDelete &&
+                    target?.source?.let { it.isNotBlank() && it != AiTodoMapper.SOURCE_AI } == true
+                ) {
                     Text(
                         text = stringResource(R.string.ai_todo_change_sync_hint),
                         style = descriptionStyle,
@@ -1018,6 +1022,16 @@ private fun TodoUrgency.labelRes(): Int = when (this) {
 internal fun AiChatTodoChangeDroppedHint(modifier: Modifier = Modifier) {
     SheetInfoBanner(
         text = stringResource(R.string.ai_todo_change_dropped),
+        modifier = modifier,
+        isError = true,
+    )
+}
+
+/** 动作 JSON 解析/修复失败或空信封却声称已创建：不再静默无动作 */
+@Composable
+internal fun AiChatTodoParseFailedHint(modifier: Modifier = Modifier) {
+    SheetInfoBanner(
+        text = stringResource(R.string.ai_todo_parse_failed),
         modifier = modifier,
         isError = true,
     )
@@ -1275,11 +1289,12 @@ private fun AiChatTruncatedHint(onRetry: (() -> Unit)?) {
 }
 
 // ---------- 错误条 ----------
-/** 分类错误条：文案 + 重试。重试对最后一场失败的对话重新发起（不重复追加用户消息） */
+/** 分类错误条：文案 + 重试 + 关闭。重试对最后一场失败的对话重新发起（不重复追加用户消息） */
 @Composable
 internal fun AiChatErrorBanner(
     error: AiError,
     onRetry: () -> Unit,
+    onDismiss: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val messageText = when (error) {
@@ -1324,6 +1339,17 @@ internal fun AiChatErrorBanner(
                     .clip(PillShape)
                     .clickable(onClick = onRetry)
                     .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
+        if (onDismiss != null) {
+            Icon(
+                painter = painterResource(R.drawable.ic_dismiss_circle),
+                contentDescription = stringResource(R.string.ai_error_dismiss),
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier
+                    .size(20.dp)
+                    .clip(PillShape)
+                    .clickable(onClick = onDismiss),
             )
         }
     }

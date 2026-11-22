@@ -40,6 +40,47 @@ class AiKeystoreEnvelopeTest {
     }
 }
 
+/** 活动凭据的一致解析：连接与 Key 必须同源，不能取到「A 端点 + B Key」 */
+class AiActiveCredentialsTest {
+
+    private fun profile(id: String, model: String) = AiProfile(
+        id = id,
+        name = id,
+        connection = AiConnection(baseUrl = "https://$id.example", model = model),
+    )
+
+    @Test
+    fun `active profile resolves its own connection and key`() {
+        val a = profile("a", "model-a")
+        val b = profile("b", "model-b")
+
+        val credentials = resolveActiveCredentials(
+            activeProfileId = "a",
+            profiles = listOf(a, b),
+            profileKey = { id -> "key-$id" },
+            customConnection = { AiConnection(baseUrl = "https://custom", model = "custom") },
+            customKey = { "custom-key" },
+        )
+
+        assertEquals(a.connection, credentials.connection)
+        assertEquals("key-a", credentials.apiKey)
+    }
+
+    @Test
+    fun `missing active profile falls back to custom slot`() {
+        val credentials = resolveActiveCredentials(
+            activeProfileId = "gone",
+            profiles = emptyList(),
+            profileKey = { id -> "key-$id" },
+            customConnection = { AiConnection(baseUrl = "https://custom", model = "custom") },
+            customKey = { "custom-key" },
+        )
+
+        assertEquals("https://custom", credentials.connection.baseUrl)
+        assertEquals("custom-key", credentials.apiKey)
+    }
+}
+
 /** 连接配置的 JSON 回环与语义（PrefsAiSettingsStore 的可测内核） */
 class AiConnectionTest {
 

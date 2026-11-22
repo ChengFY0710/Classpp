@@ -198,9 +198,12 @@ internal object OpenAiStreamCodec : AiStreamCodec {
             put("stream", true)
             temperature?.let { put("temperature", it) }
             // 推理等级按控制形态发送：纯开关型档位（MiMo / GLM 开关族 / Kimi K2.6 /
-            // 千问 hybrid）不把档位字符串当 reasoning_effort，避免服务商 400
+            // 千问 hybrid）不把档位字符串当 reasoning_effort，避免服务商 400；effort 型
+            // 也只发送白名单内的标准档位（自定义文案透传同样会 400）
             if (thinkingControl.sendsEffort) {
-                reasoningLevel?.let { put("reasoning_effort", it) }
+                reasoningLevel
+                    ?.takeIf { AiReasoningProfiles.isKnownEffort(it) }
+                    ?.let { put("reasoning_effort", it) }
             }
             when (thinkingControl) {
                 AiThinkingControl.None,

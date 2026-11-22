@@ -197,8 +197,8 @@ class AiTodoPatchMapperTest {
                 steps = listOf("查资料", "排版", "写正文"),
             ),
         ).todo!!
-        // 包含匹配命中清单项「期末」
-        assertEquals(listOf("期末"), next.tags)
+        // 只允许「库内项包含输入」：输入「期末考」不会被改绑到更短的库内标签「期末」
+        assertEquals(listOf("期末考"), next.tags)
         assertNull(next.group)
         assertEquals("", next.note)
         assertEquals("", next.location)

@@ -69,6 +69,9 @@ class AiChatRepositoryTest {
         @Volatile
         var checkpointCount = 0
 
+        /** 每次落盘的文件快照（durable 与 checkpoint 都收）：用于断言在途标记 */
+        val snapshots = mutableListOf<AiChatFile>()
+
         override fun load(): LoadOutcome<AiChatFile> =
             if (file.messages.isEmpty() && file.conversations.isEmpty()) {
                 LoadOutcome.Fresh(AiChatFile(), LoadIssue.None)
@@ -79,6 +82,7 @@ class AiChatRepositoryTest {
         override fun save(file: AiChatFile): StoreResult {
             this.file = file
             saveCount++
+            snapshots += file
             return StoreResult.Ok
         }
 
@@ -86,6 +90,7 @@ class AiChatRepositoryTest {
         override fun saveCheckpoint(file: AiChatFile): StoreResult {
             this.file = file
             checkpointCount++
+            snapshots += file
             return StoreResult.Ok
         }
 
@@ -357,6 +362,7 @@ class AiChatRepositoryTest {
         private val lines: List<String?>,
         private val failAfterLines: Boolean = false,
         override val status: Int = 200,
+        private val errorBody: String = "",
     ) : AiStreamResponse {
         val gate = CountDownLatch(1)
         var cancelled = false
@@ -371,7 +377,7 @@ class AiChatRepositoryTest {
             return null
         }
 
-        override fun readRemaining(): String = ""
+        override fun readRemaining(): String = errorBody
         override fun cancel() {
             cancelled = true
             gate.countDown()
@@ -1429,6 +1435,43 @@ class AiChatRepositoryTest {
         // 收尾回到 durable 写；正文恰好是两段拼接（不丢、不重复）
         assertTrue(store.saveCount > durableBefore)
         assertEquals("半截正文", store.persistedMessages().last().content)
+    }
+
+    @Test
+    fun `checkpoint snapshot marks in-flight assistant interrupted`() = runBlocking {
+        val store = FakeAiChatStore()
+        val transport = FakeAiTransport(
+            // 工具轮结束会强制 checkpoint：此时尾部 assistant 仍在途
+            ScriptedResponse(
+                listOf(
+                    toolCallSse(
+                        index = 0,
+                        id = "call_1",
+                        name = AiToolRegistry.GET_CURRENT_TIME,
+                        arguments = "{}",
+                    ),
+                    finishSse("tool_calls"),
+                    "data: [DONE]",
+                ),
+            ),
+            ScriptedResponse(listOf(sse("完成回答"), "data: [DONE]")),
+        )
+        val repo = repository(store = store, transport = transport)
+
+        repo.send("现在几点了")
+
+        assertTrue(store.checkpointCount > 0)
+        // 在途快照：尾部 assistant 必须标 interrupted（进程被杀后重装载可重试）
+        assertTrue(
+            "checkpoint 快照应把在途 assistant 标成 interrupted",
+            store.snapshots.any { snapshot ->
+                snapshot.conversations.singleOrNull()
+                    ?.messages?.lastOrNull()
+                    ?.let { it.role == AiChatRole.Assistant && it.interrupted } == true
+            },
+        )
+        // 正常收尾后的 durable 落盘不是 interrupted
+        assertFalse(store.persistedMessages().last().interrupted)
     }
 
     @Test
@@ -3357,7 +3400,11 @@ class AiChatRepositoryTest {
     fun `send falls back when provider rejects tools`() = runBlocking {
         val settings = FakeAiSettingsStore()
         val transport = FakeAiTransport(
-            ScriptedResponse(lines = emptyList(), status = 400),
+            ScriptedResponse(
+                lines = emptyList(),
+                status = 400,
+                errorBody = """{"error":"tools are not supported by this gateway"}""",
+            ),
             ScriptedResponse(listOf(sse("回退回答"), "data: [DONE]")),
         )
         val context = AiChatContext()
@@ -4150,6 +4197,144 @@ class AiChatRepositoryTest {
         // 小窗口：20 轮历史必须被裁到极少数，但本轮 user 一定保留
         assertTrue("旧历史应被裁剪，实际 ${userTurns.size} 轮", userTurns.size < 21)
         assertEquals("新问题", userTurns.last()["content"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `sendInBackground reports busy while previous send is in flight`() = runBlocking {
+        val response = ScriptedResponse(listOf(sse("半截")))
+        val repo = repository(transport = FakeAiTransport(response))
+
+        assertTrue(repo.sendInBackground("hi") is SendAcceptance.Accepted)
+        // 闸门占用：返回 Busy（UI 据此保留草稿并轻提示），而不是静默返回 null
+        assertTrue(repo.sendInBackground("again") is SendAcceptance.Busy)
+
+        response.gate.countDown()
+        withTimeout(5000) { while (repo.sending.value) delay(10) }
+    }
+
+    @Test
+    fun `sendInBackground reports not configured without consuming draft`() = runBlocking {
+        val transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]")))
+        val repo = repository(
+            settings = FakeAiSettingsStore(apiKey = null),
+            transport = transport,
+        )
+
+        val acceptance = repo.sendInBackground("hi")
+
+        assertTrue(acceptance is SendAcceptance.NotConfigured)
+        assertEquals(0, transport.opened.size)
+        assertTrue(repo.messages.value.isEmpty())
+    }
+
+    @Test
+    fun `unexpected failure marks interrupted and retry can resend`() = runBlocking {
+        var failNextContext = true
+        val transport = FakeAiTransport(ScriptedResponse(listOf(sse("补上的回答"), "data: [DONE]")))
+        val repo = repository(
+            transport = transport,
+            contextProvider = {
+                if (failNextContext) {
+                    failNextContext = false
+                    error("context boom")
+                }
+                AiChatContext()
+            },
+        )
+
+        repo.sendInBackground("hi")
+        withTimeout(5000) {
+            while (repo.lastError.value == null) delay(10)
+        }
+
+        val interrupted = repo.messages.value.last()
+        assertTrue("非分类异常也要标记中断，重试入口才可用", interrupted.interrupted)
+        assertEquals(AiError.BadResponse, repo.lastError.value?.error)
+
+        repo.retryLast()
+
+        assertEquals("补上的回答", repo.messages.value.last().content)
+        assertFalse(repo.messages.value.last().interrupted)
+        assertNull(repo.lastError.value)
+    }
+
+    @Test
+    fun `unparseable action block marks todoParseFailed after repair attempt`() = runBlocking {
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(sse("请稍等：\n```json\n{\"todos\": [坏掉的\n```"), "data: [DONE]"),
+            ),
+            // 修复响应同样不可解析
+            ScriptedResponse(listOf(sse("```json\n仍不是 JSON\n```"), "data: [DONE]")),
+        )
+        val repo = repository(transport = transport)
+
+        repo.send("记一下")
+
+        assertTrue(repo.messages.value.last().todoParseFailed)
+        // 发起过一次修复请求
+        assertEquals(2, transport.opened.size)
+    }
+
+    @Test
+    fun `empty envelope with creation claim marks todoParseFailed`() = runBlocking {
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                listOf(sse("好的，已创建：\n```json\n{\"todos\":[]}\n```"), "data: [DONE]"),
+            ),
+            // 修复仍然给空信封
+            ScriptedResponse(listOf(sse("```json\n{\"todos\":[]}\n```"), "data: [DONE]")),
+        )
+        val repo = repository(transport = transport)
+
+        repo.send("记一下")
+
+        assertTrue("正文声称已创建但信封为空时必须提示", repo.messages.value.last().todoParseFailed)
+    }
+
+    @Test
+    fun `non tool related 400 does not permanently disable tools`() = runBlocking {
+        val settings = FakeAiSettingsStore()
+        val transport = FakeAiTransport(
+            ScriptedResponse(
+                lines = emptyList(),
+                status = 400,
+                errorBody = """{"error":"invalid api key"}""",
+            ),
+            ScriptedResponse(listOf(sse("回退回答"), "data: [DONE]")),
+        )
+        val repo = repository(settings = settings, transport = transport)
+
+        repo.send("你好")
+
+        // 本次请求已回退，但能力缓存不写 Unsupported：下次发送重新探测
+        assertEquals(2, transport.opened.size)
+        val cached = settings.toolCapabilities[settings.connection.toolCapabilityKey()]
+        assertTrue(
+            "非 tools 相关 400 不能缓存 Unsupported，实际：$cached",
+            cached == null || cached == AiToolCapability.Unknown,
+        )
+    }
+
+    @Test
+    fun `bootstrap fills missing message ids`() = runBlocking {
+        val store = FakeAiChatStore()
+        store.file = AiChatFile(
+            messages = listOf(
+                AiChatMessage(role = AiChatRole.User, content = "旧问题"),
+                AiChatMessage(role = AiChatRole.Assistant, content = "旧回答"),
+            ),
+        )
+        val repo = repository(
+            store = store,
+            transport = FakeAiTransport(ScriptedResponse(listOf("data: [DONE]"))),
+        )
+
+        val ids = repo.messages.value.map { it.id }
+        assertTrue("旧消息必须补 id", ids.all { it.isNotBlank() })
+        assertEquals("id 必须唯一", ids.size, ids.toSet().size)
+        // 补 id 后立即重写落盘
+        assertTrue(store.persistedMessages().all { it.id.isNotBlank() })
     }
 
     @Test
