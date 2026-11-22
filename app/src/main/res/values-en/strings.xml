@@ -1284,6 +1284,10 @@
     <string name="ai_settings_section_tools">Tool calls</string>
     <string name="ai_settings_tools_toggle">Let AI query and edit todos</string>
     <string name="ai_settings_tools_desc">When on, AI can query your timetable, todos and free slots on demand, and create/complete/archive todos plus create groups and tags with tools (updates and deletes still need your confirmation); unsupported providers fall back automatically</string>
+    <string name="ai_settings_section_interaction">Interaction</string>
+    <string name="ai_settings_nav_ai_long_press_toggle">Long-press the selected nav button to open AI</string>
+    <string name="ai_settings_nav_ai_long_press_desc">When on, long-press the selected button in the bottom nav to open the AI chat overlay</string>
+    <string name="cd_nav_ai_long_press">Open AI chat</string>
     <string name="ai_profile_title">AI profiles</string>
     <string name="ai_profile_entry_desc">Save multiple provider and model setups and switch anytime</string>
     <string name="ai_profile_custom">Custom</string>
