@@ -113,8 +113,35 @@ internal val TopBarHeight = 78.dp
 /**
  * 顶栏（[OverlaySheetTopBar]）渐变遮罩态的底缘渐隐高度：内容从顶栏下滚过时被同色
  * 渐变遮罩柔和淡出，是遮罩的视觉收边（磨砂态由 hazeBlur 自己的 progressive 收边）。
+ * 只定渐隐带的高度，形状由 [topBarScrimColorStops] 的平滑曲线决定。
+ * 78dp 顶栏里留 20dp 不透明段（拖拽条一带），渐隐从按钮行上沿就开始。
  */
-private val TopBarFadeHeight = 50.dp
+private val TopBarFadeHeight = 58.dp
+
+/**
+ * 顶栏渐变遮罩的采样段数：把 smoothstep 曲线采成多段线性。段数够密时相邻段斜率差
+ * 不足一像素，看不出接缝；20 段摊在 [TopBarFadeHeight] 里每段不足 3dp。
+ */
+private const val TopBarFadeStepCount = 20
+
+/**
+ * 顶栏渐变遮罩的色标：顶段 Background 实色（按钮/标题可读），渐隐带内 alpha 按
+ * smoothstep 从 1 收到 0。
+ *
+ * 不用「实色 → 实色 → 透明」的三点线性渐变：线性渐变的渐隐起点斜率突变成 -1，
+ * 文字从下面滚过时会在起点读出一条横线（Mach band），收尾处又按满速掉到 0，
+ * 遮罩底缘更显硬。smoothstep 两端斜率都为零，起止都看不出边界；末标 alpha 仍取 0、
+ * RGB 保持 background（只降 alpha，避免渐透过程发灰），文字到顶栏底缘完整淡出、
+ * 不留半截。
+ */
+private fun topBarScrimColorStops(background: Color): Array<Pair<Float, Color>> {
+    val fadeStart = 1f - TopBarFadeHeight / TopBarHeight
+    return Array(TopBarFadeStepCount + 1) { index ->
+        val y = index / TopBarFadeStepCount.toFloat()
+        val t = ((y - fadeStart) / (1f - fadeStart)).coerceIn(0f, 1f)
+        y to background.copy(alpha = 1f - t * t * (3f - 2f * t))
+    }
+}
 
 /**
  * 顶栏胶囊固定高度 = 默认图标 30dp + 上下 padding 各 8dp（[SheetPillButton] 的自然高）。
@@ -197,7 +224,7 @@ val LocalOverlayTopBarBlur = staticCompositionLocalOf { false }
  * 结构：全屏遮罩（点按关闭）→ 距顶 [topInset] 定位 → 上圆角 [SheetShape] 卡片撑到屏幕底。
  * 顶栏（拖拽条 + 居中标题 + 确认/动作双胶囊，[confirmAtEnd] 可对调左右）叠在滚动内容之上，
  * 两种收边效果随 [LocalOverlayTopBarBlur] 开关切换：关闭（默认）= Background 同色渐变
- * 遮罩，顶段不透明、底缘渐隐（[TopBarFadeHeight]）；开启且本浮层参与 Haze 时 = 原来的
+ * 遮罩，顶段不透明、底缘按 smoothstep 平滑渐隐（[TopBarFadeHeight]）；开启且本浮层参与 Haze 时 = 原来的
  * 渐变磨砂（不透明兜底 + hazeBlur，与设置页顶栏同规格）。滚动内容从顶栏下滚过时柔和
  * 淡出/模糊，由 Surface 的 shape clip 收敛在圆角内，不溢出卡片。
  *
@@ -799,7 +826,8 @@ fun OverlaySheet(
  * 底材随「浮层顶栏模糊」开关（[LocalOverlayTopBarBlur]）二选一：
  * - 开启且 [hazeState] 非空：原来的 Haze 渐变磨砂（不透明兜底 + hazeBlur，1→0 渐变，
  *   tint 见 [hazeTopBarStyle]）；
- * - 其余（默认）：Background 同色渐变遮罩（顶段不透明、底缘 [TopBarFadeHeight] 渐隐）。
+ * - 其余（默认）：Background 同色渐变遮罩（顶段不透明、底缘 [TopBarFadeHeight] 内按
+ *   smoothstep 平滑收干净）。
  * 按钮与标题画在底材之上保持清晰；整层被 Surface 裁进浮层圆角。
  * 整条顶栏是下拉关闭的手势区（[dragModifier] 挂垂直拖拽），按钮点击不受影响。
  * [buttonBackdrop] 非空时两侧胶囊改液态玻璃底（见 [SheetPillButton]）。
@@ -839,15 +867,11 @@ private fun OverlaySheetTopBar(
     val actionContentColor =
         if (buttonBackdrop != null) rightAction.contentColorGlass else rightAction.contentColor
     // 顶栏底材二选一（见 KDoc）：开关开启且本浮层参与 Haze → 渐变磨砂；否则渐变遮罩。
-    // 遮罩：顶段不透明保证按钮/标题可读，底缘 TopBarFadeHeight 渐隐，滚动内容从顶栏下
-    // 滚过时柔和淡出；渐隐终点 RGB 仍取 background，避免渐透过程发灰（同钉底槽渐变的做法）
+    // 遮罩：顶段不透明保证按钮/标题可读，底缘 [TopBarFadeHeight] 内按 smoothstep 平滑
+    // 收干净（[topBarScrimColorStops]），滚动内容从顶栏下滚过时完整淡出、起止处无硬边
     val background = MaterialTheme.colorScheme.background
     val topBarScrim = remember(background) {
-        Brush.verticalGradient(
-            0f to background,
-            (1f - TopBarFadeHeight / TopBarHeight) to background,
-            1f to background.copy(alpha = 0f),
-        )
+        Brush.verticalGradient(colorStops = topBarScrimColorStops(background))
     }
     val blurHazeState = if (LocalOverlayTopBarBlur.current) hazeState else null
     Column(

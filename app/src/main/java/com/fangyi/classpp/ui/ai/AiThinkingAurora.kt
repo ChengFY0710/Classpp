@@ -140,10 +140,11 @@ private const val CenterRevealSlideFraction = 0.15f
 /**
  * 整片配色轮换节奏（真实秒）：每组配色停留 [PaletteHoldSeconds]，再用
  * [PaletteBlendSeconds] 与下一组交叉淡化。phase 是 1× 秒的 [AuroraSpeed] 倍，
- * 绘制时除以 [AuroraSpeed] 换回真实秒；当前约 6.5 秒换一组，想更快就调小。
+ * 绘制时除以 [AuroraSpeed] 换回真实秒；当前每组 2.5s 驻留 + 4s 长过渡，
+ * 让「正在变色」的过程成为主要观感。
  */
-private const val PaletteHoldSeconds = 5f
-private const val PaletteBlendSeconds = 1.5f
+private const val PaletteHoldSeconds = 2.5f
+private const val PaletteBlendSeconds = 4f
 
 /**
  * 光场构图锚点：
@@ -169,7 +170,7 @@ enum class AiAuroraAnchor { Full, Center }
  *   四颗光斑同时向外散开一段（thinkX/thinkY，观感上像光场「醒过来」）；
  * - 在场期间：光斑各自沿 Lissajous 路径游动（x/y 周期互质，避免机械的短循环；
  *   实际节奏 = 1× 周期 ÷ [AuroraSpeed]）；Full 模式另外按「蓝绿 → 蓝紫 → 红粉 →
- *   橙黄」整片交叉轮换配色（每组停留 5s、1.5s 平滑淡化），alpha 错相起伏形成视觉
+ *   橙黄」整片交叉轮换配色（每组停留 2.5s、4s 长过渡），alpha 错相起伏形成视觉
  *   重心交替；
  * - 退场（[Motion.AiAuroraExitMillis]，[Motion.Accelerate]）：光斑回落到基准位，
  *   整片光场下沉并淡出，相位冻结、不留跳变；退场播完卸载本层，空闲不保留全屏

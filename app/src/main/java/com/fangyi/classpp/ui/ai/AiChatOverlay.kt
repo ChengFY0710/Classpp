@@ -128,8 +128,8 @@ private val AuroraHeadroom = 120.dp
  */
 private val BottomScrimExtend = 32.dp
 
-/** 底部渐隐遮罩的最大不透明度：保持 1.0f，保证文字完整淡出；横带问题由曲线形状解决 */
-private const val BottomScrimMaxAlpha = 1.0f
+/** 底部渐隐遮罩的最大不透明度：0.6f，保留部分底部光场颜色，文字仍柔和淡出 */
+private const val BottomScrimMaxAlpha = 0.6f
 
 /**
  * 底部渐隐的平滑采样：alpha 从 0 平滑升到 [BottomScrimMaxAlpha]，两端斜率为零。
@@ -956,7 +956,7 @@ fun AiChatOverlay(
             // 底部渐隐遮罩：整段只有渐隐、没有实心段，高度比槽本身略高一点；
             // 用 drawBehind 向上溢出绘制，槽的测量高度与输入栏布局保持不变，
             // 输入框与胶囊落在渐隐段里，槽顶以上的部分盖在消息列尾部让文字更早淡出。
-            // 底部遮罩最大 1.0f：文字完整淡出；起始段走平滑曲线，不形成横向亮带
+            // 底部遮罩最大 0.6f：保留部分光场颜色，文字仍柔和淡出；起始段走平滑曲线
             val scrimColor = MaterialTheme.colorScheme.background
             val scrimExtendPx = with(density) { BottomScrimExtend.toPx() }
             val scrimStops = remember(scrimColor) { bottomScrimStops(scrimColor) }
@@ -966,7 +966,7 @@ fun AiChatOverlay(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // 消息向输入栏后方淡出：平滑渐隐，最底部满底色，文字完整不可见
+                    // 消息向输入栏后方淡出：平滑渐隐，最底部叠 60% 底色
                     .drawBehind {
                         drawRect(
                             brush = Brush.verticalGradient(
