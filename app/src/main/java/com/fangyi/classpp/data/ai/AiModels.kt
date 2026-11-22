@@ -12,6 +12,13 @@ import kotlinx.serialization.json.Json
 const val AI_CHAT_FORMAT_VERSION = 3
 
 /**
+ * 推理等级按位置映射的档位范围（含首档「关」）：2~5 个。
+ * 超出范围的等级列表不识别「关」档，展示也回退为等级原文（见 [AiModelConfig.isReasoningOff]）；
+ * 拉取模型补「关」占位档时同样受此上限约束。
+ */
+internal val ReasoningLevelCountRange = 2..5
+
+/**
  * 请求协议（协议差异的编解码见 [AiStreamCodec]）：
  * - [OpenAiCompat]：OpenAI 兼容 `/chat/completions`（DeepSeek/智谱/通义/Kimi/Ollama 同协议），
  *   旧持久化配置无此字段时回落此默认值；
@@ -62,7 +69,7 @@ data class AiModelConfig(
      * 模型族（Kimi K3、GLM-5.3）首档是最低强度，请求侧不会把首档当关。
      */
     fun isReasoningOff(): Boolean {
-        if (reasoningLevels.size !in 2..5) return false
+        if (reasoningLevels.size !in ReasoningLevelCountRange) return false
         val first = reasoningLevels.firstOrNull() ?: return false
         return reasoningLevel.equals(first, ignoreCase = true)
     }

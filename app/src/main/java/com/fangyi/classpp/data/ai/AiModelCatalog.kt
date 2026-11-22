@@ -42,6 +42,8 @@ internal data class AiModelListPage(
  * 模型 id trim + 忽略大小写去重；通用形态优先读 `id`、缺失时回落同形 `model` 字段
  * （百炼原生反之），兼容少数网关的列表写法。条目配置优先级：
  * 1. `effort` 元数据（DeepSeek：`supported_levels` + `default_level`，任何服务商返回都优先）；
+ *    DeepSeek 的元数据只列思考开启后的强度档，「关」由 `thinking.type` 独立控制，
+ *    拉取时按控制形态补一个 off 占位首档（见 [withOffLevel]）；
  * 2. 内置模型族档位表 [AiReasoningProfiles]（GLM / MiMo / Kimi / 千问 / 百炼的列表不含
  *    档位，按模型 id 推断；Kimi 明确 `supports_reasoning=false` 时不推断）；
  * 3. 空配置（该模型不使用推理等级）。
@@ -201,7 +203,9 @@ internal object AiModelCatalog {
         id: String,
     ): AiModelConfig {
         val fromMetadata = effortConfig(entry)
-        if (!fromMetadata.isEmpty) return fromMetadata
+        if (fromMetadata.reasoningLevels.isNotEmpty()) {
+            return withOffLevel(connection, id, fromMetadata)
+        }
         return AiReasoningProfiles.configFor(
             providerId = connection.providerId,
             model = id,
@@ -210,14 +214,49 @@ internal object AiModelCatalog {
     }
 
     /**
+     * 给 `effort` 档位补「关」首档：DeepSeek 的 `supported_levels` 只列思考开启后的强度档
+     * （如 low / high / max），「关」由 `thinking.type` 独立控制，不会出现在列表里。应用按
+     * 位置把首档当「关」（[AiModelConfig.isReasoningOff]），不补的话真实的最低强度
+     * （low）会被误当成关。
+     *
+     * - 始终思考的模型族（[AiThinkingControl.ReasoningEffortOnly]）没有「关」，不补；
+     * - 首档已经是 off / none 时不重复补（千问 / 百炼的元数据可能自带关闭档）；
+     * - 补完会超过 [ReasoningLevelCountRange] 上限时不补：超出后应用不再识别首位为「关」，
+     *   保持原档位至少不改变请求语义。
+     */
+    private fun withOffLevel(
+        connection: AiConnection,
+        model: String,
+        config: AiModelConfig,
+    ): AiModelConfig {
+        val levels = config.reasoningLevels
+        if (levels.isEmpty()) return config.normalized()
+        val supportsOff = AiProviderPresets
+            .thinkingControlFor(connection.providerId, model)
+            .supportsOff
+        // 必须在 normalized 之前补首档：缺 default_level 时 normalized 会把首档选中，
+        // 补档后首档才是「关」而不是真实的最低强度
+        if (!supportsOff || levels.size >= ReasoningLevelCountRange.last) {
+            return config.normalized()
+        }
+        if (levels.first().isOffLike()) return config.normalized()
+        return config.copy(reasoningLevels = listOf(OFF_LEVEL) + levels).normalized()
+    }
+
+    /** `effort` 首档是否已经表示关闭（各服务商写法：off / none） */
+    private fun String.isOffLike(): Boolean =
+        equals(OFF_LEVEL, ignoreCase = true) || equals(NONE_LEVEL, ignoreCase = true)
+
+    /**
      * DeepSeek 的 `effort` 元数据（`supported_levels` + `default_level`）直接对应应用的
      * 推理等级配置；无 effort 字段时返回空配置，由 [reasoningConfig] 继续按模型族表推断。
+     * 这里不做 normalized：缺 `default_level` 时首档回落必须发生在补「关」首档之后。
      */
     private fun effortConfig(entry: JsonObject): AiModelConfig {
         val effort = entry["effort"] as? JsonObject ?: return AiModelConfig()
         val levels = (effort["supported_levels"] as? JsonArray)?.let(::parseStrings).orEmpty()
         val default = (effort["default_level"] as? JsonPrimitive)?.contentOrNull.orEmpty()
-        return AiModelConfig(reasoningLevels = levels, reasoningLevel = default).normalized()
+        return AiModelConfig(reasoningLevels = levels, reasoningLevel = default)
     }
 
     private fun parseStrings(array: JsonArray): List<String> = array.mapNotNull { element ->
@@ -278,6 +317,10 @@ internal object AiModelCatalog {
     private const val PAGE_SIZE = 100
     private const val ID_FIELD = "id"
     private const val MODEL_FIELD = "model"
+    /** 「关」占位档：只参与位置映射，选中时不会作为 `reasoning_effort` 发送 */
+    private const val OFF_LEVEL = "off"
+    /** 千问 / 百炼的元数据用 none 表示关闭 */
+    private const val NONE_LEVEL = "none"
     private const val MODELS_PATH = "/models"
     private const val VERSION_PATH = "/v1"
     private const val MESSAGES_PATH = "/messages"

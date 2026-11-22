@@ -167,19 +167,19 @@ class AiModelCatalogTest {
             ]}
         """.trimIndent()
         val models = AiModelCatalog.parsePage(
-            connection("https://api.deepseek.com"),
+            connection("https://api.deepseek.com", providerId = "deepseek"),
             body,
         ).models
         assertEquals(
             listOf("deepseek-reasoner", "deepseek-flash", "deepseek-chat"),
             models.map { it.id },
         )
-        // 默认等级命中 supported_levels
-        assertEquals(listOf("low", "high", "max"), models[0].config.reasoningLevels)
+        // effort 只列强度档，拉取时补「关」占位首档；默认等级仍按 default_level
+        assertEquals(listOf("off", "low", "high", "max"), models[0].config.reasoningLevels)
         assertEquals("high", models[0].config.reasoningLevel)
-        // 缺 default_level 回落首个等级
-        assertEquals(listOf("low", "high"), models[1].config.reasoningLevels)
-        assertEquals("low", models[1].config.reasoningLevel)
+        // 缺 default_level 回落首个等级（即「关」）
+        assertEquals(listOf("off", "low", "high"), models[1].config.reasoningLevels)
+        assertEquals("off", models[1].config.reasoningLevel)
         // 无 effort = 空配置（该模型不使用推理等级）
         assertTrue(models[2].config.isEmpty)
     }
@@ -257,6 +257,7 @@ class AiModelCatalogTest {
 
     @Test
     fun `effort metadata wins over inferred family levels`() {
+        // 始终思考的模型族没有「关」档：即使元数据带 effort 也不补 off 首档
         val models = AiModelCatalog.parsePage(
             connection("https://open.bigmodel.cn/api/paas/v4", providerId = "zhipu"),
             """{"data":[{"id":"glm-5.3",
@@ -264,6 +265,33 @@ class AiModelCatalogTest {
         ).models
         assertEquals(listOf("low", "medium", "high"), models[0].config.reasoningLevels)
         assertEquals("medium", models[0].config.reasoningLevel)
+    }
+
+    @Test
+    fun `effort off level is not duplicated and over-cap levels stay unchanged`() {
+        // 元数据自带关闭档（none / off）：不重复补
+        val withOff = AiModelCatalog.parsePage(
+            connection("https://api.deepseek.com", providerId = "deepseek"),
+            """{"data":[
+              {"id":"deepseek-a","effort":{"supported_levels":["none","low","high"],"default_level":"low"}},
+              {"id":"deepseek-b","effort":{"supported_levels":["OFF","low","high"],"default_level":"low"}}
+            ]}""",
+        ).models
+        assertEquals(listOf("none", "low", "high"), withOff[0].config.reasoningLevels)
+        assertEquals("low", withOff[0].config.reasoningLevel)
+        assertEquals(listOf("OFF", "low", "high"), withOff[1].config.reasoningLevels)
+
+        // 已占满 2~5 档位置映射上限：不再补 off，避免变成 6 档后关档识别失效
+        val atCap = AiModelCatalog.parsePage(
+            connection("https://api.deepseek.com", providerId = "deepseek"),
+            """{"data":[{"id":"deepseek-c",
+              "effort":{"supported_levels":["minimal","low","medium","high","max"],"default_level":"high"}}]}""",
+        ).models
+        assertEquals(
+            listOf("minimal", "low", "medium", "high", "max"),
+            atCap[0].config.reasoningLevels,
+        )
+        assertEquals("high", atCap[0].config.reasoningLevel)
     }
 
     @Test

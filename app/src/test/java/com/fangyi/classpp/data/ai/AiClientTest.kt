@@ -419,6 +419,8 @@ class AiClientTest {
         val models = AiClient(transport).fetchModels(connection(), "sk-secret")
 
         assertEquals(listOf("deepseek-reasoner", "deepseek-chat"), models.map { it.id })
+        // effort 档位补「关」占位首档，默认等级仍按 default_level
+        assertEquals(listOf("off", "low", "high"), models[0].config.reasoningLevels)
         assertEquals("high", models[0].config.reasoningLevel)
         assertTrue(models[1].config.isEmpty)
         val request = transport.lastRequest!!
