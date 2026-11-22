@@ -51,7 +51,7 @@ import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.shadow.Shadow
 import dev.chrisbanes.haze.HazeState
 
-/** 胶囊高度：固定在底部光场头寸内，切换显示/隐藏不改变钉底槽总高度 */
+/** 胶囊高度：固定在输入栏上方头寸内，切换显示/隐藏不改变钉底槽总高度 */
 internal val ModelSwitchChipHeight = 36.dp
 
 /** 胶囊与输入栏之间的间距 */
@@ -172,7 +172,7 @@ private data class SwitchChipItem(
  * - 锚点取点开那一刻的胶囊窗口坐标，键盘让位/inset 变化时菜单不跟着漂。
  *
  * 玻璃材质：宿主按「更高级的玻璃材质」开关下发 [backdrop]（null = 普通材质），与输入栏
- * 同源（底部光场采样层）。非空时胶囊改 [glassSurface] 出底（通用 Pill 玻璃参数，染色
+ * 同源（整卡光场背景采样层）。非空时胶囊改 [glassSurface] 出底（通用 Pill 玻璃参数，染色
  * 70%），按压走 [glassPressFeedback]——玻璃 + API 31+ 为 pressScale Q 弹放大，否则
  * 维持 pressFeedback，两者都是整体放大提亮；null 时底材与按压反馈完全回退：实心
  * surface 底 + pressFeedback。

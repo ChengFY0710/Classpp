@@ -74,14 +74,52 @@ val StorageApp = Color(0xFF006FEF)
 val StorageUser = Color(0xFFF2B93E)
 val StorageCache = Color(0xFF4CC38A)
 
-// ===== AI 对话浮层底部光场（AiThinkingAurora 专用，全 app 唯一多色装饰性渐变）=====
-// 左蓝 → 青 → 薄荷 → 右黄绿，四颗软边光斑叠成设计稿的极光场；只由 AiThinkingAurora
-// 经 classppColors.aiAurora* 消费，不得挪作其它背景或业务强调色。
-// 浅色取设计稿输入区实测的柔和色，不取高饱和原色——光场由多个光斑叠加后再经白玻璃提亮。
-val AiAuroraBlue = Color(0xFF5FA4F6)
-val AiAuroraCyan = Color(0xFF7FCBE4)
-val AiAuroraMint = Color(0xFFA0D7C4)
-val AiAuroraLime = Color(0xFFD8EE9F)
+// ===== AI 思考光场（AiThinkingAurora 专用，全 app 唯一多色装饰性渐变）=====
+// 四组配色按「蓝绿 → 蓝紫 → 红粉 → 橙黄」轮换（冷色相邻、暖色相邻），每组四色
+// 对应四颗光斑；浅色取设计稿实测的柔和色，不取高饱和原色——光场由多个光斑叠加
+// 后再经白玻璃提亮。只由 AiThinkingAurora 经 classppColors.aiAuroraPalettes 消费，
+// 不得挪作其它背景或强调色。
+//
+// 一组四色按光斑从左到右（或从下到上）的顺序取色；只在 AiThinkingAurora 内部按
+// 索引插值，不参与业务语义。
+class AiAuroraPalette(
+    val leading: Color,
+    val midLeft: Color,
+    val midRight: Color,
+    val trailing: Color,
+) {
+    operator fun get(index: Int): Color = when (index) {
+        0 -> leading
+        1 -> midLeft
+        2 -> midRight
+        else -> trailing
+    }
+}
+
+val AiAuroraPaletteBlueGreen = AiAuroraPalette(
+    leading = Color(0xFF5AA6FF), // 蓝
+    midLeft = Color(0xFF5BD8F5), // 青
+    midRight = Color(0xFF5FE4CC), // 青绿
+    trailing = Color(0xFF9DEFD6), // 浅水绿
+)
+val AiAuroraPaletteRose = AiAuroraPalette(
+    leading = Color(0xFFFFA6C0), // 玫瑰
+    midLeft = Color(0xFFFFB7C9), // 粉
+    midRight = Color(0xFFFFC6BD), // 珊瑚
+    trailing = Color(0xFFFFD6B8), // 蜜桃
+)
+val AiAuroraPaletteAmber = AiAuroraPalette(
+    leading = Color(0xFFFFB866), // 琥珀
+    midLeft = Color(0xFFFFC984), // 杏
+    midRight = Color(0xFFFFD9A0), // 奶油
+    trailing = Color(0xFFFFE6A8), // 浅金
+)
+val AiAuroraPaletteViolet = AiAuroraPalette(
+    leading = Color(0xFF93A6FF), // 长春花蓝
+    midLeft = Color(0xFFAC9BFF), // 紫罗兰
+    midRight = Color(0xFFC6B2FF), // 薰衣草
+    trailing = Color(0xFFDAC8FF), // 淡丁香
+)
 
 // ===== ClassppColors 扩展色的深浅取值（装配见 Theme.kt，语义注释也在装配处）=====
 
@@ -148,10 +186,30 @@ val DarkStorageUser = Color(0xFFF6CE52)
 val DarkStorageCache = Color(0xFF67D257)
 
 // 深色光场 = 同色相压暗（明度 35–45%），在深底上呈现低亮度极光，不采用浅色值直接发光
-val DarkAiAuroraBlue = Color(0xFF2E6FB8)
-val DarkAiAuroraCyan = Color(0xFF2A7E8C)
-val DarkAiAuroraMint = Color(0xFF357A52)
-val DarkAiAuroraLime = Color(0xFF8A9A3A)
+val DarkAiAuroraPaletteBlueGreen = AiAuroraPalette(
+    leading = Color(0xFF2E6FB8),
+    midLeft = Color(0xFF2A7E8C),
+    midRight = Color(0xFF2C7A6B),
+    trailing = Color(0xFF498F78),
+)
+val DarkAiAuroraPaletteRose = AiAuroraPalette(
+    leading = Color(0xFFA34862),
+    midLeft = Color(0xFF994F63),
+    midRight = Color(0xFF95604F),
+    trailing = Color(0xFF8A6B49),
+)
+val DarkAiAuroraPaletteAmber = AiAuroraPalette(
+    leading = Color(0xFFA26629),
+    midLeft = Color(0xFF9C7134),
+    midRight = Color(0xFF8F7B38),
+    trailing = Color(0xFF7F7D3A),
+)
+val DarkAiAuroraPaletteViolet = AiAuroraPalette(
+    leading = Color(0xFF3D55A8),
+    midLeft = Color(0xFF544D9C),
+    midRight = Color(0xFF665B9A),
+    trailing = Color(0xFF5E5890),
+)
 
 // 默认蓝档深色压暗遮罩（alpha 固定 75%）；其余主题色在 ThemeAccent.kt
 val DarkScrim = Color(0xBF000000)

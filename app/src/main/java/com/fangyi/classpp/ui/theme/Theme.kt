@@ -129,14 +129,13 @@ data class ClassppColors(
     val storageUser: Color,
     val storageCache: Color,
     /**
-     * AI 对话浮层底部「思考光场」四色（AiThinkingAurora 专用）：浅色 = 蓝 → 青 → 薄荷
-     * → 黄绿；深色 = 同色相压暗的深极光。全 app 唯一的多色装饰性渐变，只允许
+     * AI 思考光场四组配色（AiThinkingAurora 专用）：顺序固定为蓝绿（现有）/ 蓝紫 /
+     * 红粉 / 橙黄，思考/回答期间整片交叉轮换（冷色相邻、暖色相邻，减少整片换色时
+     * 的灰调过渡）；浅色为柔和光斑，深色为同色相压暗的深极光。全 app 唯一的多色
+     * 装饰性渐变，只允许
      * [com.fangyi.classpp.ui.ai.AiThinkingAurora] 消费，不得挪作其它背景或强调色。
      */
-    val aiAuroraBlue: Color,
-    val aiAuroraCyan: Color,
-    val aiAuroraMint: Color,
-    val aiAuroraLime: Color,
+    val aiAuroraPalettes: List<AiAuroraPalette>,
 )
 
 private val LightClassppColors = ClassppColors(
@@ -155,10 +154,12 @@ private val LightClassppColors = ClassppColors(
     storageApp = StorageApp,
     storageUser = StorageUser,
     storageCache = StorageCache,
-    aiAuroraBlue = AiAuroraBlue,
-    aiAuroraCyan = AiAuroraCyan,
-    aiAuroraMint = AiAuroraMint,
-    aiAuroraLime = AiAuroraLime,
+    aiAuroraPalettes = listOf(
+        AiAuroraPaletteBlueGreen,
+        AiAuroraPaletteViolet,
+        AiAuroraPaletteRose,
+        AiAuroraPaletteAmber,
+    ),
 )
 
 private val DarkClassppColors = ClassppColors(
@@ -177,10 +178,12 @@ private val DarkClassppColors = ClassppColors(
     storageApp = DarkStorageApp,
     storageUser = DarkStorageUser,
     storageCache = DarkStorageCache,
-    aiAuroraBlue = DarkAiAuroraBlue,
-    aiAuroraCyan = DarkAiAuroraCyan,
-    aiAuroraMint = DarkAiAuroraMint,
-    aiAuroraLime = DarkAiAuroraLime,
+    aiAuroraPalettes = listOf(
+        DarkAiAuroraPaletteBlueGreen,
+        DarkAiAuroraPaletteViolet,
+        DarkAiAuroraPaletteRose,
+        DarkAiAuroraPaletteAmber,
+    ),
 )
 
 private val LocalClassppColors = staticCompositionLocalOf { LightClassppColors }
