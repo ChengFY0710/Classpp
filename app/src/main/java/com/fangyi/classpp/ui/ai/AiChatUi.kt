@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.TextSelectionColors
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -36,10 +37,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -75,7 +78,9 @@ import com.fangyi.classpp.ui.components.SwipeAction
 import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.components.labelText
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.PressShade
 import com.fangyi.classpp.ui.motion.containedRubberBandVerticalScroll
+import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.note.cardTimeText
 import com.fangyi.classpp.ui.note.deadlineCardText
 import com.fangyi.classpp.ui.note.deadlineColor
@@ -86,7 +91,11 @@ import com.fangyi.classpp.ui.theme.ChatCardShape
 import com.fangyi.classpp.ui.theme.ChatImageShape
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.PillShape
+import com.fangyi.classpp.ui.theme.RowCardPaddingHorizontal
+import com.fangyi.classpp.ui.theme.RowCardPaddingVertical
 import com.fangyi.classpp.ui.theme.classppColors
+import com.fangyi.classpp.ui.theme.classppTextStyles
+import com.fangyi.classpp.ui.theme.isDarkTheme
 
 /**
  * AI 对话浮层的子组件（气泡 / 已创建待办卡 / 错误条 / 空态）。
@@ -632,6 +641,18 @@ private const val NotePreviewMaxLength = 40
  * AI 生成的修改/删除确认卡：确认前不写待办库，用户点「应用变更」整批执行，
  * 点「忽略」整批作废。每条变更展示目标名称、变更摘要与状态（已应用/失败/已忽略）。
  *
+ * 规格：卡内距 [RowCardPaddingHorizontal] / [RowCardPaddingVertical]（16/14）；标题行前置
+ * ic_checkmark_circle_regular（18dp，图标↔标题 6dp，同 AI 思考卡标题行），文字用
+ * classppTextStyles.sectionTitle（分组小标题同款 14sp Medium / 20sp 行高 secondaryText，
+ * 不带 CardSectionTitle 的 6dp 缩进，与变更行左对齐）；每条变更的名称走 fieldLabel
+ * （16sp SemiBold onSurface），变更摘要与提示对齐 SettingsCard 描述
+ * （settingsDescription 14sp / 20sp 行高 secondaryText），名称↔描述 3dp，多条摘要连排。
+ *
+ * 待确认时的底部动作条：内容与动作条之间用 onSurfaceCard 分割线（左右随卡内距内缩），
+ * 下方两颗等宽文字动作各占半张卡宽，文字与 SettingsCard 行标题同款 fieldLabel
+ * （16sp SemiBold），上下内距 [RowCardPaddingVertical]（14dp）；按压反馈用项目统一的
+ * 整体放大 + 明暗，放大溢出随卡片圆角裁剪。
+ *
  * [todosById] 用于判断目标是否仍存在、是否为学校同步待办；删除后目标从活跃流消失，
  * 卡片仍按落盘时的名称快照展示，不会凭空消失。
  */
@@ -652,42 +673,97 @@ internal fun AiChatTodoChangeCard(
         shape = ChatCardShape,
         modifier = modifier.fillMaxWidth(),
     ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.ai_todo_change_title),
-                style = ClassppTextTokens.sectionAction,
-                color = tint,
-            )
-            changes.forEach { change ->
-                AiChatTodoChangeRow(change = change, todosById = todosById)
-            }
-            if (pending) {
+        Column {
+            Column(
+                modifier = Modifier.padding(
+                    horizontal = RowCardPaddingHorizontal,
+                    vertical = RowCardPaddingVertical,
+                ),
+                verticalArrangement = Arrangement.spacedBy(CardSectionSpacing),
+            ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    // 图标↔标题 6dp：与 AI 思考卡标题行同款
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    EmptyStateActionButton(
+                    Icon(
+                        painter = painterResource(R.drawable.ic_checkmark_circle_regular),
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.ai_todo_change_title),
+                        // 与分组标题同款文字样式，但不带 CardSectionTitle 的 6dp 起始缩进：
+                        // 卡内标题行与下方变更行左对齐
+                        style = MaterialTheme.classppTextStyles.sectionTitle,
+                    )
+                }
+                changes.forEach { change ->
+                    AiChatTodoChangeRow(change = change, todosById = todosById)
+                }
+            }
+            if (pending) {
+                HorizontalDivider(
+                    thickness = 1.dp,
+                    color = MaterialTheme.classppColors.onSurfaceCard,
+                    modifier = Modifier.padding(horizontal = RowCardPaddingHorizontal),
+                )
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    AiChatTodoChangeAction(
+                        label = stringResource(R.string.ai_todo_change_dismiss),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        enabled = !applying,
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                    )
+                    AiChatTodoChangeAction(
                         label = stringResource(
                             if (applying) R.string.ai_todo_change_applying
                             else R.string.ai_todo_change_apply,
                         ),
-                        onClick = { if (!applying) onApply() },
-                    )
-                    Text(
-                        text = stringResource(R.string.ai_todo_change_dismiss),
-                        style = ClassppTextTokens.sectionAction,
-                        color = tint,
-                        modifier = Modifier
-                            .clip(PillShape)
-                            .clickable(enabled = !applying, onClick = onDismiss)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        enabled = !applying,
+                        onClick = onApply,
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
         }
+    }
+}
+
+/**
+ * 确认卡底部动作单元：占半张卡宽，文字上下内距 [RowCardPaddingVertical]（14dp），
+ * 样式与 SettingsCard 行标题同款（fieldLabel）。按压反馈走项目统一的 pressFeedback
+ * （整体放大 + 明暗）：浅色模式压暗、深色模式提亮，放大溢出由卡片圆角裁剪。
+ */
+@Composable
+private fun AiChatTodoChangeAction(
+    label: String,
+    color: Color,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
+    Box(
+        modifier = modifier
+            .pressClickable(
+                shape = RectangleShape,
+                shade = shade,
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .padding(vertical = RowCardPaddingVertical),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.classppTextStyles.fieldLabel,
+            color = color,
+        )
     }
 }
 
@@ -701,6 +777,14 @@ private fun AiChatTodoChangeRow(
     val isDelete = change.kind == AiTodoChangeKind.Delete
     val target = todosById[change.todoId]
     val pending = change.status == AiTodoChangeStatus.Pending
+    // 描述统一走 SettingsCard 行内描述样式：14sp Normal / 20sp 行高 / secondaryText
+    val descriptionStyle = ClassppTextTokens.settingsDescription.copy(color = tint)
+    val lines = if (!isDelete && change.patch != null) {
+        aiTodoChangeLines(change.patch)
+    } else {
+        emptyList()
+    }
+    val hasDescription = isDelete || change.patch != null || (pending && target == null)
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -715,54 +799,52 @@ private fun AiChatTodoChangeRow(
             )
             Text(
                 text = change.todoName.ifBlank { "—" },
-                style = ClassppTextTokens.cardTitle,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.classppTextStyles.fieldLabel,
                 modifier = Modifier.weight(1f),
             )
             AiChatTodoChangeStatusLabel(change)
         }
-        if (!isDelete && change.patch != null) {
-            val lines = aiTodoChangeLines(change.patch)
-            if (lines.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.ai_todo_change_updated),
-                    style = ClassppTextTokens.secondaryTextSmall,
-                    color = tint,
-                )
-            } else {
-                lines.forEach { line ->
+        if (hasDescription) {
+            // 摘要连排：每行自带 20sp 行高，不再在行间叠 3dp（与 SettingsCard 描述块一致）
+            Column {
+                if (!isDelete && change.patch != null) {
+                    if (lines.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.ai_todo_change_updated),
+                            style = descriptionStyle,
+                        )
+                    } else {
+                        lines.forEach { line ->
+                            Text(
+                                text = stringResource(
+                                    R.string.ai_todo_change_line,
+                                    stringResource(line.labelRes),
+                                    line.value,
+                                ),
+                                style = descriptionStyle,
+                            )
+                        }
+                    }
+                }
+                if (isDelete) {
                     Text(
-                        text = stringResource(
-                            R.string.ai_todo_change_line,
-                            stringResource(line.labelRes),
-                            line.value,
-                        ),
-                        style = ClassppTextTokens.secondaryTextSmall,
-                        color = tint,
+                        text = stringResource(R.string.ai_todo_change_delete_hint),
+                        style = descriptionStyle,
+                    )
+                }
+                if (pending && target == null) {
+                    Text(
+                        text = stringResource(R.string.ai_todo_change_not_found),
+                        style = descriptionStyle.copy(color = error),
+                    )
+                }
+                if (pending && isDelete && target?.source != null) {
+                    Text(
+                        text = stringResource(R.string.ai_todo_change_sync_hint),
+                        style = descriptionStyle,
                     )
                 }
             }
-        }
-        if (isDelete) {
-            Text(
-                text = stringResource(R.string.ai_todo_change_delete_hint),
-                style = ClassppTextTokens.secondaryTextSmall,
-                color = tint,
-            )
-        }
-        if (pending && target == null) {
-            Text(
-                text = stringResource(R.string.ai_todo_change_not_found),
-                style = ClassppTextTokens.secondaryTextSmall,
-                color = error,
-            )
-        }
-        if (pending && isDelete && target?.source != null) {
-            Text(
-                text = stringResource(R.string.ai_todo_change_sync_hint),
-                style = ClassppTextTokens.secondaryTextSmall,
-                color = tint,
-            )
         }
     }
 }
