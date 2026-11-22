@@ -1349,20 +1349,25 @@ private fun AiChatMessageList(
     val messages = messagesState.value
     // 消息之间（含回复气泡与下方待办卡）统一走全局「卡↔卡」节奏（10dp）
     Column(verticalArrangement = Arrangement.spacedBy(CardSectionSpacing)) {
-        // 尾部 user 消息的 id：气泡落位只认这一条（发送后追加的第一条用户消息）
+        // 尾部 user 消息与尾部消息的 id：入场只认这次发送追加的 user 条，以及同帧追加的
+        // assistant 占位（发送的产物；重试不设 sendEntrance，不会误播）
         val lastUserId = messages.lastOrNull { it.role == AiChatRole.User }?.id
+        val lastMessageId = messages.lastOrNull()?.id
         messages.forEachIndexed { index, message ->
             // key 让入场状态跟着消息 id 走：切对话 / 删除导致槽位复用时，上一条的
             // 「正在入场」不会串到别的气泡上（key 不产生布局节点，spacedBy 不变）
             key(message.id) {
                 // 入场判定只在首次组合时求一次：之后清 sendEntrance 既不撤图层、也不重播。
-                // 只给 user 条入场——assistant 占位与它同帧追加，两条一起抬读不出因果
+                // user 条与同一批追加的 assistant 占位一起淡入上抬：「正在思考」的占位也是
+                // 这次发送的产物，直接弹出会和上方的 user 气泡脱节
                 val entering = remember {
                     val request = sendEntrance
                     request != null &&
-                        message.role == AiChatRole.User &&
-                        message.id == lastUserId &&
-                        message.createdAtMillis >= request.sentAtMillis
+                        message.createdAtMillis >= request.sentAtMillis &&
+                        when (message.role) {
+                            AiChatRole.User -> message.id == lastUserId
+                            AiChatRole.Assistant -> message.id == lastMessageId
+                        }
                 }
                 // 不在底部（用户正在翻历史）时位移减半：这次滚动仍是硬跳，
                 // 大幅抬升会和它叠成两段方向相反的运动
@@ -1534,8 +1539,9 @@ private data class ChatScrollSignal(
  *
  * [atBottom] 在按下发送那一刻读定——为 true 时列表用 [Motion.ChatScrollCatchMillis] 缓动
  * 接住新气泡、气泡抬升满幅；为 false（用户正在翻历史）时沿用原来的立即到底、抬升减半。
- * [sentAtMillis] 用来认领「这一条」用户消息：只有创建时刻不早于本次发送的消息才算刚落位，
- * 请求在窗口内没被消费就切了对话时，新对话尾部那条旧消息不会误播入场。
+ * [sentAtMillis] 用来认领「这一条」发送追加的气泡（user 条与同帧追加的 assistant 占位）：
+ * 只有创建时刻不早于本次发送的消息才算刚落位，请求在窗口内没被消费就切了对话时，
+ * 新对话尾部那条旧消息不会误播入场。
  */
 private class SendEntrance(val atBottom: Boolean, val sentAtMillis: Long)
 

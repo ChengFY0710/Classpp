@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -33,6 +35,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -150,8 +153,9 @@ private fun Rect.toIntRect(): IntRect = IntRect(
  * primary 底 + onPrimary 停止图标、点击 [onStop]。空白字符不算可发送（有图可发）。
  *
  * 待发送图片预览条（[pendingImages] 非空时）：输入卡内文本行上方一排 64dp 圆角缩略图
- * （Coil 本地加载），右上角小删除圆钮点击 [onRemoveImage]；纯图无文字也允许发送
- * （图片即提问）。
+ * （Coil 本地加载），右上角小删除圆钮点击 [onRemoveImage]。缩略图固定 64dp 不压缩，
+ * 单行排布、总宽超出输入卡时横向滑动查看；新增图片后自动滚到末尾（只是删除时不滚），
+ * 保证刚加入的图片可见。纯图无文字也允许发送（图片即提问）。
  *
  * + 号点击经 [PopupMenuPopup] 弹出 [PopupMenuCard]：菜单向上浮在输入卡外、右对齐 + 号，
  * 行首带图标（拍照 / 添加图片）；选中项只收起菜单并回调 [onTakePhoto] /
@@ -216,6 +220,21 @@ fun AiChatInputBar(
         interactionSource.interactions.collect { interaction ->
             // 已聚焦时再点输入框不会拉起键盘，键盘被收起后靠这里唤回（同 SheetTextField）
             if (interaction is PressInteraction.Release) keyboard?.show()
+        }
+    }
+
+    // 待发送图片预览条的横向滚动：图片保持 64dp 全尺寸，超出卡宽后滑动查看
+    val imagePreviewScroll = rememberScrollState()
+    // 上一次的图片数：只在「新增」时滚到末尾，移除图片不改变当前阅读位置
+    var lastPendingImageCount by remember { mutableStateOf(pendingImages.size) }
+    LaunchedEffect(pendingImages.size) {
+        val grew = pendingImages.size > lastPendingImageCount
+        lastPendingImageCount = pendingImages.size
+        if (grew) {
+            // 与消息列表滚底同款：等下一帧布局把新图计入内容宽度后再取 maxValue，
+            // 否则会滚到旧的末尾、刚加入的图片漏出来一小截
+            withFrameNanos { }
+            imagePreviewScroll.animateScrollTo(imagePreviewScroll.maxValue)
         }
     }
 
@@ -292,12 +311,14 @@ fun AiChatInputBar(
                 // 单行时把 60dp 下限多出的高度上下均摊，文本与 + 号居中；多行无余量时不生效
                 verticalArrangement = Arrangement.Center,
             ) {
-                // 待发送图片预览条：64dp 圆角缩略图一排，右上角删除圆钮（悬出 4dp，
-                // 行的上内距让出空间避免被卡壳裁掉）
+                // 待发送图片预览条：64dp 圆角缩略图横向一排，右上角删除圆钮（悬出 4dp，
+                // 行的上内距让出空间避免被卡壳裁掉）。图片固定 64dp 不被挤压，超出卡宽后
+                // 横向滑动查看；左右内距放进滚动内容，滚到末尾时末图的删除钮仍完整可见
                 if (pendingImages.isNotEmpty()) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .horizontalScroll(imagePreviewScroll)
                             .padding(start = RowCardPaddingHorizontal, end = RowCardPaddingHorizontal, top = 14.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
