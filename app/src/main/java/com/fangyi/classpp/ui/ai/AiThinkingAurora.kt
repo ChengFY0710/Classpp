@@ -42,8 +42,8 @@ private const val TwoPi = 2f * 3.1415927f
 
 /**
  * 游动的整体倍速：光斑周期/明暗/呼吸都按 1× 书写，运行时统一乘以本值。
- * 8× 对应现有动效节奏（Center 导入光场约 1.75–3s 走完一条 Lissajous 路径）；
- * Full 整卡光场的周期按 30–40 书写，实际约 3.75–5s，配合更大的振幅持续交替位置。
+ * 8× 对应现有动效节奏；Full / Center 的游走周期都按 30–40 书写，
+ * 实际约 3.75–5s，配合较大的振幅持续交替位置。
  */
 private const val AuroraSpeed = 8f
 
@@ -64,9 +64,9 @@ private const val FullPulseDepth = 0.10f
 private const val FullBreatheDepth = 0.03f
 
 /**
- * Full 整卡光场的公共漂移：四颗光斑共享同一个缓慢位移，整片光球作为一个整体
- * 左右/上下游走；再叠加各自幅度更大的 Lissajous，形成「位置不断交替」的灵动感。
- * 比例以卡宽/卡高计，周期单位为 1× 秒（运行时除以 [AuroraSpeed]）。
+ * 光场的公共漂移：四颗光斑共享同一个缓慢位移，整片光晕作为一个整体左右/上下游走；
+ * 再叠加各自幅度更大的 Lissajous，形成「位置不断交替」的灵动感。
+ * 比例以组件宽/高计，周期单位为 1× 秒（运行时除以 [AuroraSpeed]）。
  */
 private const val SwayXAmplitude = 0.05f
 private const val SwayYAmplitude = 0.035f
@@ -151,7 +151,7 @@ private const val PaletteBlendSeconds = 4f
  * - [Full]：铺满整张浮层卡片、主体落在下方约 2/3，顶部渐隐——AI 对话浮层的思考背景
  *   （默认）；四组配色整片交叉轮换；
  * - [Center]：以组件中线为基准向上下扩散、上下双向渐隐——AI 识别导入浮层图片背后的
- *   环绕光场；固定取第一组蓝绿配色，沿用原构图与游动参数。
+ *   环绕光场；同样轮换四组配色、叠加公共漂移与错相游走，构图/半径/衰减保持原样。
  */
 enum class AiAuroraAnchor { Full, Center }
 
@@ -162,8 +162,8 @@ enum class AiAuroraAnchor { Full, Center }
  * - [AiAuroraAnchor.Full]（默认，AI 对话浮层）：铺满整张浮层卡片、主体落在下方约 2/3，
  *   顶部用垂直 alpha 遮罩淡出到浮层底色；四颗光斑半径约 0.88–1.18 倍卡宽，相位错开、
  *   叠加整片公共漂移，位置持续交替，观感是一整片缓慢呼吸又不断换位的弥散光球；
- * - [AiAuroraAnchor.Center]（AI 识别导入浮层）：以组件中线为基准上下双向渐隐，固定
- *   蓝绿配色，颜色与构图与旧版逐位一致。
+ * - [AiAuroraAnchor.Center]（AI 识别导入浮层）：以组件中线为基准上下双向渐隐，构图、
+ *   半径、衰减与旧版一致；同样轮换四组配色，并接入公共漂移与错相游走。
  *
  * 只在 AI 思考 / 回答期间（[active] = true）出现：
  * - 进场（[Motion.AiAuroraEnterMillis]，[Motion.Decelerate]）：整片光场轻微上浮并淡入，
@@ -253,8 +253,6 @@ fun AiThinkingAurora(
         AiAuroraAnchor.Full -> FullBreatheDepth
         AiAuroraAnchor.Center -> BreatheDepth
     }
-    // Center 固定取第一组蓝绿配色；Full 在 draw 里按相位取相邻两组插值
-    val fixedPalette = palettes[0]
     // 遮罩曲线：Full = 顶部渐隐、主体压在下方约 2/3；Center = 上下双向渐隐
     val maskStops = remember(anchor, maskColor) {
         when (anchor) {
@@ -316,17 +314,9 @@ fun AiThinkingAurora(
                 val fromPalette = palettes[paletteIndex]
                 val toPalette = palettes[(paletteIndex + 1) % paletteCount]
                 val isFull = anchor == AiAuroraAnchor.Full
-                // 整片公共漂移：让光球整体在卡内交替游走；Center 保持原构图
-                val swayX = if (isFull) {
-                    SwayXAmplitude * sin(TwoPi * t / SwayXPeriod + SwayXPhase)
-                } else {
-                    0f
-                }
-                val swayY = if (isFull) {
-                    SwayYAmplitude * cos(TwoPi * t / SwayYPeriod + SwayYPhase)
-                } else {
-                    0f
-                }
+                // 整片公共漂移：两种锚点都让光场作为一个整体交替游走
+                val swayX = SwayXAmplitude * sin(TwoPi * t / SwayXPeriod + SwayXPhase)
+                val swayY = SwayYAmplitude * cos(TwoPi * t / SwayYPeriod + SwayYPhase)
 
                 blobs.forEach { blob ->
                     val center = Offset(
@@ -335,11 +325,12 @@ fun AiThinkingAurora(
                         y = (blob.baseY + reveal * (swayY + blob.thinkY + blob.moveY *
                             cos(TwoPi * t / blob.periodY + blob.phase))) * visibleHeight,
                     )
-                    val color = if (isFull) {
-                        lerp(fromPalette[blob.colorIndex], toPalette[blob.colorIndex], blend)
-                    } else {
-                        fixedPalette[blob.colorIndex]
-                    }
+                    // 两种锚点都按相位在相邻两组配色之间插值，整片颜色持续轮换
+                    val color = lerp(
+                        fromPalette[blob.colorIndex],
+                        toPalette[blob.colorIndex],
+                        blend,
+                    )
                     val pulse = 1f + reveal * pulseDepth *
                         sin(TwoPi * t / blob.pulsePeriod + blob.pulsePhase)
                     val alpha = (blob.baseAlpha * pulse).coerceIn(0f, 1f)
@@ -494,10 +485,11 @@ private fun fullAuroraBlobs(): List<AuroraBlob> = listOf(
 
 /**
  * 中部光带：光斑围绕组件中线（baseY ≈ 0.5）分布，上下遮罩对称渐隐，用于图片背后的
- * 环绕光场——图片本身盖住中心，四周留下蓝 → 青 → 薄荷 → 黄绿的呼吸光晕。
+ * 环绕光场。游走参数与 Full 一致（公共漂移 + 错相 Lissajous），尺寸、亮度与衰减保持
+ * 原样；配色同样按四组轮换，图片周围留下不断换色的呼吸光晕。
  */
 private fun centerAuroraBlobs(): List<AuroraBlob> = listOf(
-    // 左：蓝，最饱和、略压出左缘
+    // 左：第 1 色，最饱和、略压出左缘
     AuroraBlob(
         colorIndex = 0,
         baseX = 0.02f,
@@ -505,16 +497,16 @@ private fun centerAuroraBlobs(): List<AuroraBlob> = listOf(
         radius = 0.62f,
         thinkX = 0.10f,
         thinkY = -0.05f,
-        moveX = 0.10f,
-        moveY = 0.04f,
-        periodX = 14f,
-        periodY = 20f,
+        moveX = 0.13f,
+        moveY = 0.07f,
+        periodX = 30f,
+        periodY = 38f,
         phase = 0f,
         baseAlpha = 0.92f,
         pulsePeriod = 13f,
         pulsePhase = 0f,
     ),
-    // 左中：青，衔接蓝与薄荷
+    // 左中：第 2 色，衔接左右
     AuroraBlob(
         colorIndex = 1,
         baseX = 0.44f,
@@ -522,16 +514,16 @@ private fun centerAuroraBlobs(): List<AuroraBlob> = listOf(
         radius = 0.34f,
         thinkX = -0.08f,
         thinkY = -0.04f,
-        moveX = 0.12f,
-        moveY = 0.05f,
-        periodX = 18f,
-        periodY = 15f,
-        phase = 1.9f,
+        moveX = 0.11f,
+        moveY = 0.09f,
+        periodX = 36f,
+        periodY = 30f,
+        phase = 1.57f,
         baseAlpha = 0.88f,
         pulsePeriod = 16f,
         pulsePhase = 1.6f,
     ),
-    // 右中：薄荷绿
+    // 右中：第 3 色
     AuroraBlob(
         colorIndex = 2,
         baseX = 0.70f,
@@ -540,15 +532,15 @@ private fun centerAuroraBlobs(): List<AuroraBlob> = listOf(
         thinkX = 0.08f,
         thinkY = 0.04f,
         moveX = 0.12f,
-        moveY = 0.05f,
-        periodX = 22f,
-        periodY = 17f,
-        phase = 3.4f,
+        moveY = 0.07f,
+        periodX = 32f,
+        periodY = 40f,
+        phase = 3.14f,
         baseAlpha = 0.92f,
         pulsePeriod = 11f,
         pulsePhase = 3.0f,
     ),
-    // 右：黄绿，右侧最亮的一档
+    // 右：第 4 色，右侧最亮的一档
     AuroraBlob(
         colorIndex = 3,
         baseX = 1.02f,
@@ -557,10 +549,10 @@ private fun centerAuroraBlobs(): List<AuroraBlob> = listOf(
         thinkX = -0.10f,
         thinkY = -0.05f,
         moveX = 0.10f,
-        moveY = 0.04f,
-        periodX = 24f,
-        periodY = 19f,
-        phase = 4.8f,
+        moveY = 0.08f,
+        periodX = 40f,
+        periodY = 34f,
+        phase = 4.71f,
         baseAlpha = 0.82f,
         pulsePeriod = 17f,
         pulsePhase = 4.4f,
@@ -595,7 +587,7 @@ private fun AiThinkingAuroraDarkFullPreview() = ClassppTheme(darkTheme = true) {
     }
 }
 
-/** 中部环绕光场（导入浮层）：固定蓝绿配色，构图与旧版一致 */
+/** 中部环绕光场（导入浮层）：同样轮换配色并接入公共漂移，构图与旧版一致 */
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 240)
 @Composable
 private fun AiThinkingAuroraCenterPreview() = ClassppTheme {
