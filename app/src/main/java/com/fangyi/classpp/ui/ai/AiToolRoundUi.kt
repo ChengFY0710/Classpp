@@ -210,7 +210,7 @@ private fun AiChatToolCallCard(
     }
 }
 
-/** 工具卡左侧图标：查询类用搜索，编辑/新建类（含完成 / 归档等写操作）用撰写 */
+/** 工具卡左侧图标：查询类用搜索，新建待办/分组/标签各用其专属图标，其余写操作用撰写 */
 private fun toolIconRes(name: String): Int = when (name) {
     AiToolRegistry.GET_CURRENT_TIME,
     AiToolRegistry.GET_DAY_PLAN,
@@ -218,6 +218,9 @@ private fun toolIconRes(name: String): Int = when (name) {
     AiToolRegistry.GET_WEEK_SCHEDULE,
     AiToolRegistry.GET_TODO,
     -> R.drawable.ic_search
+    AiToolRegistry.CREATE_TODOS -> R.drawable.ic_note_add_regular
+    AiToolRegistry.CREATE_TODO_GROUPS -> R.drawable.ic_folder_add
+    AiToolRegistry.CREATE_TODO_TAGS -> R.drawable.ic_tag_add
     else -> R.drawable.ic_compose
 }
 
