@@ -475,9 +475,9 @@
     <string name="error_adjust_course_missing">The course for this reschedule no longer exists</string>
     <string name="error_adjust_slot_merge_blocked">Some rescheduled classes cannot align with the merged periods. Remove or adjust them first.</string>
     <string name="error_course_adjust_conflict">Conflicts with a rescheduled \"%1$s\" class — adjust the period or weeks</string>
-    <string name="course_adjusted_badge">Moved</string>
-    <string name="course_adjusted_badge_description">Rescheduled class</string>
-    <string name="course_adjusted_badge_description_full">Rescheduled class, originally %1$s %2$s</string>
+    <string name="course_adjusted_prefix">"Moved "</string>
+    <string name="course_adjusted_name_description">%1$s, rescheduled class</string>
+    <string name="course_adjusted_name_description_full">%1$s, rescheduled class, originally %2$s %3$s</string>
     <string name="detail_adjust_label">Rescheduled</string>
     <string name="detail_adjust_from">Originally %1$s %2$s</string>
     <!-- Day move (schedule edit mode): Settings → Rescheduling & Holidays → Adjust Holidays -->

@@ -35,8 +35,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -62,12 +65,6 @@ private val CardBudgetSafety = 1.dp
 
 /** 卡内文本行之间的间距：课程名↔教师、教师↔地点（教师行显示时计入内容高度） */
 private val CardLineGap = 1.dp
-
-/**
- * 调课角标占宽（含与课程名的 2dp 间距）：行预算测课程名自然行数时扣掉这段，
- * 否则长课名被角标挤出的额外行不在预算里，紧凑卡会裁掉地点/结束时间。
- */
-private val AdjustedBadgeWidth = 34.dp
 
 /**
  * 可见行（起止时间、教师按需）对应的内容高度：与行预算的固定开销同源——
@@ -233,12 +230,12 @@ internal fun allocateCardLines(
  * 测量器随卡片私有、只缓存本卡两段文本，避免整屏卡片挤同一个 LRU。
  */
 @Composable
-private fun rememberNaturalLineCount(text: String, style: TextStyle, widthPx: Float): Int {
+private fun rememberNaturalLineCount(text: AnnotatedString, style: TextStyle, widthPx: Float): Int {
     val measurer = rememberTextMeasurer(cacheSize = 4)
     val fontScale = LocalDensity.current.fontScale
     return remember(text, style, widthPx, fontScale, measurer) {
         measurer.measure(
-            text = AnnotatedString(text),
+            text = text,
             style = style,
             constraints = Constraints(maxWidth = widthPx.toInt().coerceAtLeast(1)),
         ).lineCount
@@ -287,6 +284,30 @@ fun CourseCard(
         inactiveColor
     }
     val secondaryColor = if (course.active) MaterialTheme.classppColors.secondaryText else inactiveColor
+    // 调课卡在课程名前内联一个 Primary 色的「调」字：与课名同排同行，不再占角标宽度；
+    // 无障碍描述带上原名次，视障用户也能知道这张卡是从哪次课调过来的
+    val adjustedDescription = if (course.adjustmentId != null) {
+        adjustedCourseDescription(course)
+    } else {
+        null
+    }
+    val nameColor = if (course.active) MaterialTheme.colorScheme.onSurface else inactiveColor
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val namePrefix = if (course.adjustmentId != null) {
+        stringResource(R.string.course_adjusted_prefix)
+    } else {
+        null
+    }
+    val courseName = remember(course.name, namePrefix, primaryColor) {
+        if (namePrefix == null) {
+            AnnotatedString(course.name)
+        } else {
+            buildAnnotatedString {
+                withStyle(SpanStyle(color = primaryColor)) { append(namePrefix) }
+                append(course.name)
+            }
+        }
+    }
     // 长按与点击同源：都在 clip 之内（圆角外的点击被裁掉），按压反馈与它们共用按压源
     val pressInteraction = remember { MutableInteractionSource() }
     val clickModifier = when {
@@ -378,20 +399,18 @@ fun CourseCard(
                 val fixedPx = visibleContentPx - nameLinePx - locationLinePx
                 val textWidthPx = constraints.maxWidth -
                     with(localDensity) { (CardPaddingStart + CardPaddingEnd).toPx() }
-                // 调课卡的课程名与角标同一行：测宽时扣掉角标，行数与实际排版一致
-                val nameWidthPx = textWidthPx - if (course.adjustmentId != null) {
-                    with(localDensity) { AdjustedBadgeWidth.toPx() }
-                } else {
-                    0f
-                }
                 CardPlan(
                     visibility = visibility,
                     lines = allocateCardLines(
                         budgetPx = constraints.maxHeight - fixedPx,
                         nameLinePx = nameLinePx,
                         locationLinePx = locationLinePx,
-                        wantedName = rememberNaturalLineCount(course.name, nameStyle, nameWidthPx),
-                        wantedLocation = rememberNaturalLineCount(course.location, locationStyle, textWidthPx),
+                        wantedName = rememberNaturalLineCount(courseName, nameStyle, textWidthPx),
+                        wantedLocation = rememberNaturalLineCount(
+                            AnnotatedString(course.location),
+                            locationStyle,
+                            textWidthPx,
+                        ),
                     ),
                 )
             }
@@ -423,24 +442,18 @@ fun CourseCard(
                         )
                     }
                     Column() {
-                        Row(verticalAlignment = Alignment.Top) {
-                            Text(
-                                text = course.name,
-                                style = ClassppTextTokens.compactCardTitle,
-                                color = if (course.active) {
-                                    MaterialTheme.colorScheme.onSurface
-                                } else {
-                                    inactiveColor
-                                },
-                                maxLines = plan.lines.name,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false),
-                            )
-                            if (course.adjustmentId != null) {
-                                Spacer(modifier = Modifier.width(2.dp))
-                                AdjustedBadge(course)
-                            }
-                        }
+                        Text(
+                            text = courseName,
+                            style = ClassppTextTokens.compactCardTitle,
+                            color = nameColor,
+                            maxLines = plan.lines.name,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = if (adjustedDescription != null) {
+                                Modifier.semantics { contentDescription = adjustedDescription }
+                            } else {
+                                Modifier
+                            },
+                        )
                         Spacer(modifier = Modifier.size(CardLineGap))
                         // 教师留空时不占位，地点直接上移
                         if (hasTeacher) {
@@ -480,16 +493,14 @@ fun CourseCard(
 }
 
 /**
- * 调课卡角标：课程名右侧的小号「调」胶囊。刻意做成内联元素而非角标浮层——
- * 紧凑卡的文字行宽很紧，内联会参与测量，不会盖住课程名。
+ * 调课卡课程名的无障碍描述：带上课程名与原课次，替换课程名 Text 默认的文字朗读。
  */
 @Composable
-private fun AdjustedBadge(course: Course, modifier: Modifier = Modifier) {
-    // 无障碍描述带上原课次，视障用户也能知道这张卡是从哪次课调过来的
+private fun adjustedCourseDescription(course: Course): String {
     val weekday = course.adjustedFromDayOfWeek
     val start = course.adjustedFromSlot
     val end = course.adjustedFromEndSlot
-    val description = if (weekday != null && start != null && end != null) {
+    return if (weekday != null && start != null && end != null) {
         val weekdays = stringArrayResource(R.array.weekdays)
         val dayName = weekdays[(weekday - 1).coerceIn(weekdays.indices)]
         val slotText = if (start == end) {
@@ -497,21 +508,10 @@ private fun AdjustedBadge(course: Course, modifier: Modifier = Modifier) {
         } else {
             stringResource(R.string.slot_range_format, start, end)
         }
-        stringResource(R.string.course_adjusted_badge_description_full, dayName, slotText)
+        stringResource(R.string.course_adjusted_name_description_full, course.name, dayName, slotText)
     } else {
-        stringResource(R.string.course_adjusted_badge_description)
+        stringResource(R.string.course_adjusted_name_description, course.name)
     }
-    Text(
-        text = stringResource(R.string.course_adjusted_badge),
-        style = ClassppTextTokens.courseAdjustedBadge,
-        color = MaterialTheme.colorScheme.onPrimary,
-        maxLines = 1,
-        modifier = modifier
-            .semantics { contentDescription = description }
-            .clip(RoundedCornerShape(3.dp))
-            .background(MaterialTheme.colorScheme.primary)
-            .padding(horizontal = 3.dp, vertical = 1.dp),
-    )
 }
 
 /** 添加卡片中间加号的尺寸（设计稿里占卡片中部一大块） */

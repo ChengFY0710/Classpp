@@ -603,9 +603,9 @@
     <string name="error_adjust_course_missing">调课对应的课程已不存在</string>
     <string name="error_adjust_slot_merge_blocked">有调课无法对齐合并后的节次，请先删除或调整调课</string>
     <string name="error_course_adjust_conflict">与「%1$s」的调课时间冲突，请调整节次或周数</string>
-    <string name="course_adjusted_badge">调</string>
-    <string name="course_adjusted_badge_description">已调课</string>
-    <string name="course_adjusted_badge_description_full">已调课，原 %1$s %2$s</string>
+    <string name="course_adjusted_prefix">调</string>
+    <string name="course_adjusted_name_description">%1$s，已调课</string>
+    <string name="course_adjusted_name_description_full">%1$s，已调课，原 %2$s %3$s</string>
     <string name="detail_adjust_label">调课</string>
     <string name="detail_adjust_from">原 %1$s %2$s</string>
     <!-- 调休（课表编辑态）：设置 → 调课与调休 → 设置调休 -->
