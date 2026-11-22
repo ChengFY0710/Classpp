@@ -1,11 +1,14 @@
 package com.fangyi.classpp.data.notification
 
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.TodoTimeKind
+import com.fangyi.classpp.data.model.occurrencesBetween
 import com.fangyi.classpp.data.occurrencesOn
+import com.fangyi.classpp.data.withOccurrenceDeadline
 import com.fangyi.classpp.ui.settings.NotificationSettings
 import java.util.GregorianCalendar
 import java.util.TimeZone
@@ -73,6 +76,7 @@ data class NotificationTexts(
  * - 待办：完成的排除；[NotificationSettings.todoType] 单选口径下——截止提醒看
  *   `deadlineDate + deadlineMinute`（validator 保证成对、必带精确时刻）；开始/结束提醒
  *   仅 [TodoTimeKind.Period] 有精确分钟，**AllDay/None 无时刻语义、不参与**（截止提醒不受影响）；
+ *   重复待办按期次序列逐期排点（已完成的期次跳过、截止随重复按期折算，见 [planTodos]）；
  * - 提前量直接从事件时刻前移，可为负偏移（跨天）：0:30 的课提前 60 分钟 = 前一天 23:30 触发；
  * - 触发时刻已过（≤ now）的不再补发。
  */
@@ -165,7 +169,16 @@ object NotificationPlanner {
         return result.sortedBy { it.triggerAtMillis }.take(CATEGORY_CAP)
     }
 
-    /** 待办提醒：按 [NotificationSettings.todoType] 口径产出截止/开始/结束三类触发点 */
+    /**
+     * 待办提醒：按 [NotificationSettings.todoType] 口径产出截止/开始/结束三类触发点。
+     *
+     * 非重复待办按存储字段排一次。重复待办按「期次序列」逐期排点：窗口内每个应完成日期
+     * 都是独立触发点（`occurrencesBetween` 已消化日期/次数档与打卡模式；窗口从今天起，
+     * 过去期次不补发），已完成的期次整期跳过——该期的开始/结束/折算截止都不再触发。
+     * 「截止随重复」经 [withOccurrenceDeadline] 按期折算（不早于期日）、截止提醒 key 用
+     * 期次日期（多标记等规则折算后两期可能收拢到同一天，用截止日做 key 会互相覆盖）；
+     * 固定截止是整条系列共享的一次性事件，按存储日期只排一次、不随期次重复。
+     */
     private fun planTodos(
         todos: List<Todo>,
         todoType: Int,
@@ -175,75 +188,117 @@ object NotificationPlanner {
         today: IsoDate,
     ): List<PlannedNotification> {
         val result = ArrayList<PlannedNotification>()
+        // 窗口终点（不含）：今天起 WINDOW_DAYS 天，重复期次只排窗口内的触发点
+        val windowEnd = today + WINDOW_DAYS
         for (todo in todos) {
             if (todo.completed) continue
+            if (todo.repeat.type == RepeatType.None) {
+                addTodoReminders(todo, todo.dates, todo.deadlineDate, todo.deadlineMinute, todo.deadlineDate,
+                    todoType, leadMinutes, texts, nowMillis, today, result)
+                continue
+            }
+            // 重复待办：锚日期缺失的异常形态展不出期次（TodoValidator 已拦写入），防御跳过
+            val anchor = todo.dates.minByOrNull { it.epochDay } ?: continue
+            val completed = todo.completedOccurrences.toSet()
+            // 期次序列：不经展示口径（expandRepeatOccurrences 依赖 today 并按 merge/拆分/打卡
+            // 收口，只出一张卡或逐期成卡，不适合「窗口内全部触发点」）
+            val occurrences = todo.repeat.occurrencesBetween(anchor, today, windowEnd)
+                .filter { it !in completed }
+            if (occurrences.isEmpty()) continue
+            if (todo.deadlineBeforeRepeat) {
+                for (occurrence in occurrences) {
+                    val view = todo.withOccurrenceDeadline(anchor, occurrence)
+                    addTodoReminders(todo, listOf(occurrence), view.deadlineDate, view.deadlineMinute,
+                        occurrence, todoType, leadMinutes, texts, nowMillis, today, result)
+                }
+            } else {
+                addTodoReminders(todo, occurrences, todo.deadlineDate, todo.deadlineMinute, todo.deadlineDate,
+                    todoType, leadMinutes, texts, nowMillis, today, result)
+            }
+        }
+        return result.sortedBy { it.triggerAtMillis }.take(CATEGORY_CAP)
+    }
+
+    /**
+     * 一组触发日期上的待办提醒：截止提醒至多一条（[deadlineDate]/[deadlineMinute] 成对
+     * 才成立，[deadlineKey] 是 key 的日期段），开始/结束提醒按 [dates] 每个日期各一条。
+     */
+    private fun addTodoReminders(
+        todo: Todo,
+        dates: List<IsoDate>,
+        deadlineDate: IsoDate?,
+        deadlineMinute: Int?,
+        deadlineKey: IsoDate?,
+        todoType: Int,
+        leadMinutes: Int,
+        texts: NotificationTexts,
+        nowMillis: Long,
+        today: IsoDate,
+        result: MutableList<PlannedNotification>,
+    ) {
+        if (todoType == NotificationSettings.TODO_TYPE_ALL ||
+            todoType == NotificationSettings.TODO_TYPE_DEADLINE
+        ) {
+            if (deadlineDate != null && deadlineMinute != null && deadlineKey != null) {
+                val eventAt = localMillis(deadlineDate, deadlineMinute)
+                val trigger = localMillis(deadlineDate, deadlineMinute - leadMinutes)
+                if (trigger > nowMillis) {
+                    result += PlannedNotification(
+                        key = "T:${todo.id}:${deadlineKey.epochDay}:D",
+                        triggerAtMillis = trigger,
+                        eventAtMillis = eventAt,
+                        kind = NotificationKind.TodoDeadline,
+                        title = todo.name,
+                        text = texts.todoDeadlineText.format(timeText(deadlineDate, deadlineMinute, texts, today)),
+                        chipText = todo.name,
+                    )
+                }
+            }
+        }
+        // 开始/结束提醒：仅时段（Period）待办有精确分钟；AllDay/None 无时刻语义不参与。
+        // dates 可多天共用同一套时刻，每个日期都是独立触发点
+        val startMinute = if (todo.timeKind == TodoTimeKind.Period) todo.startMinute else null
+        val endMinute = if (todo.timeKind == TodoTimeKind.Period) todo.endMinute else null
+        for (date in dates) {
             if (todoType == NotificationSettings.TODO_TYPE_ALL ||
-                todoType == NotificationSettings.TODO_TYPE_DEADLINE
+                todoType == NotificationSettings.TODO_TYPE_START
             ) {
-                val date = todo.deadlineDate
-                val minute = todo.deadlineMinute
-                if (date != null && minute != null) {
-                    val eventAt = localMillis(date, minute)
-                    val trigger = localMillis(date, minute - leadMinutes)
+                if (startMinute != null) {
+                    val eventAt = localMillis(date, startMinute)
+                    val trigger = localMillis(date, startMinute - leadMinutes)
                     if (trigger > nowMillis) {
                         result += PlannedNotification(
-                            key = "T:${todo.id}:${date.epochDay}:D",
+                            key = "T:${todo.id}:${date.epochDay}:S",
                             triggerAtMillis = trigger,
                             eventAtMillis = eventAt,
-                            kind = NotificationKind.TodoDeadline,
+                            kind = NotificationKind.TodoStart,
                             title = todo.name,
-                            text = texts.todoDeadlineText.format(timeText(date, minute, texts, today)),
+                            text = texts.todoStartText.format(timeText(date, startMinute, texts, today)),
                             chipText = todo.name,
                         )
                     }
                 }
             }
-            // 开始/结束提醒：仅时段（Period）待办有精确分钟；AllDay/None 无时刻语义不参与。
-            // dates 可多天共用同一套时刻，每个日期都是独立触发点
-            val startMinute = if (todo.timeKind == TodoTimeKind.Period) todo.startMinute else null
-            val endMinute = if (todo.timeKind == TodoTimeKind.Period) todo.endMinute else null
-            for (date in todo.dates) {
-                if (todoType == NotificationSettings.TODO_TYPE_ALL ||
-                    todoType == NotificationSettings.TODO_TYPE_START
-                ) {
-                    if (startMinute != null) {
-                        val eventAt = localMillis(date, startMinute)
-                        val trigger = localMillis(date, startMinute - leadMinutes)
-                        if (trigger > nowMillis) {
-                            result += PlannedNotification(
-                                key = "T:${todo.id}:${date.epochDay}:S",
-                                triggerAtMillis = trigger,
-                                eventAtMillis = eventAt,
-                                kind = NotificationKind.TodoStart,
-                                title = todo.name,
-                                text = texts.todoStartText.format(timeText(date, startMinute, texts, today)),
-                                chipText = todo.name,
-                            )
-                        }
-                    }
-                }
-                if (todoType == NotificationSettings.TODO_TYPE_ALL ||
-                    todoType == NotificationSettings.TODO_TYPE_END
-                ) {
-                    if (endMinute != null) {
-                        val eventAt = localMillis(date, endMinute)
-                        val trigger = localMillis(date, endMinute - leadMinutes)
-                        if (trigger > nowMillis) {
-                            result += PlannedNotification(
-                                key = "T:${todo.id}:${date.epochDay}:E",
-                                triggerAtMillis = trigger,
-                                eventAtMillis = eventAt,
-                                kind = NotificationKind.TodoEnd,
-                                title = todo.name,
-                                text = texts.todoEndText.format(timeText(date, endMinute, texts, today)),
-                                chipText = todo.name,
-                            )
-                        }
+            if (todoType == NotificationSettings.TODO_TYPE_ALL ||
+                todoType == NotificationSettings.TODO_TYPE_END
+            ) {
+                if (endMinute != null) {
+                    val eventAt = localMillis(date, endMinute)
+                    val trigger = localMillis(date, endMinute - leadMinutes)
+                    if (trigger > nowMillis) {
+                        result += PlannedNotification(
+                            key = "T:${todo.id}:${date.epochDay}:E",
+                            triggerAtMillis = trigger,
+                            eventAtMillis = eventAt,
+                            kind = NotificationKind.TodoEnd,
+                            title = todo.name,
+                            text = texts.todoEndText.format(timeText(date, endMinute, texts, today)),
+                            chipText = todo.name,
+                        )
                     }
                 }
             }
         }
-        return result.sortedBy { it.triggerAtMillis }.take(CATEGORY_CAP)
     }
 
     /** 待办正文里的时刻：今天只写时刻，非今天补日期前缀（跨天的截止一眼能认出是哪天） */

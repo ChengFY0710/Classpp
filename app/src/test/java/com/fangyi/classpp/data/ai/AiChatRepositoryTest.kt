@@ -3,6 +3,7 @@ package com.fangyi.classpp.data.ai
 import com.fangyi.classpp.data.Clock
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatEndType
 import com.fangyi.classpp.data.model.RepeatRule
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Todo
@@ -2522,6 +2523,40 @@ class AiChatRepositoryTest {
         assertTrue(completions.all { it.status == AiTodoCompletionStatus.Failed })
         assertTrue(completions.all { it.failure == AiTodoChangeFailure.InvalidDate })
         assertTrue(writer.completionCalls.isEmpty())
+    }
+
+    @Test
+    fun `check-in completion accepts backfill dates beyond the rule schedule`() = runBlocking {
+        // 打卡模式的补勾位是「待办起始日至今」整段（同 UI 完成情况浮层）：11-03（周二）不是
+        // 每周（周一）规则的期次也放行——修复前会被 isValidOccurrence 判成 InvalidDate，
+        // UI 里却点得动
+        val writer = FakeTodoChangeWriter()
+        val checkIn = repeatingTodo("checkin-1", "喝水").copy(
+            repeat = RepeatRule(
+                type = RepeatType.Weekly,
+                endType = RepeatEndType.Count,
+                endCount = 7,
+                checkIn = true,
+            ),
+        )
+        val reply = "```json\n" +
+            """{"completes":[{"id":"checkin-1","date":"2026-11-03"}]}""" + "\n```"
+        val repo = repository(
+            transport = FakeAiTransport(ScriptedResponse(listOf(sse(reply), "data: [DONE]"))),
+            changeWriter = writer,
+            contextProvider = { AiChatContext(todos = listOf(checkIn)) },
+        )
+
+        repo.send("把周二的喝水打卡补上")
+
+        assertEquals(
+            FakeTodoChangeWriter.CompletionCall("checkin-1", IsoDate.of(2026, 11, 3), true),
+            writer.completionCalls.single(),
+        )
+        assertEquals(
+            AiTodoCompletionStatus.Applied,
+            repo.messages.value.last().todoCompletions.single().status,
+        )
     }
 
     @Test

@@ -10,6 +10,7 @@ import com.fangyi.classpp.data.model.isArchived
 import com.fangyi.classpp.data.model.isDeleted
 import com.fangyi.classpp.data.model.nextOccurrenceAfter
 import com.fangyi.classpp.data.model.occurrencesBetween
+import com.fangyi.classpp.data.currentOccurrenceDeadline
 import com.fangyi.classpp.data.occurrencesOn
 import com.fangyi.classpp.data.weekOf
 import kotlinx.serialization.json.JsonArray
@@ -216,7 +217,7 @@ internal object AiReadTools {
                     put(
                         "days",
                         buildJsonArray {
-                            dates.forEach { add(dayPlanObject(schedule, it, ctx.todos)) }
+                            dates.forEach { add(dayPlanObject(schedule, it, ctx.todos, ctx.today)) }
                         },
                     )
                 },
@@ -249,7 +250,7 @@ internal object AiReadTools {
                         "days",
                         buildJsonArray {
                             for (offset in 0 until dayCount) {
-                                add(dayPlanObject(schedule, from + offset, ctx.todos))
+                                add(dayPlanObject(schedule, from + offset, ctx.todos, ctx.today))
                             }
                         },
                     )
@@ -264,7 +265,7 @@ internal object AiReadTools {
             IsoDate.parseOrNull(dateText)
                 ?: return failure("invalid_arguments", "date 必须是 yyyy-MM-dd")
         }
-        return success(dayPlanObject(schedule, date, ctx.todos))
+        return success(dayPlanObject(schedule, date, ctx.todos, ctx.today))
     }
 
     /** 单日结构；单日与范围模式共用，保证两种返回的每天字段一致 */
@@ -272,13 +273,14 @@ internal object AiReadTools {
         schedule: Schedule,
         date: IsoDate,
         todos: List<Todo>,
+        now: IsoDate,
     ): JsonObject {
         val week = schedule.weekOf(date)
         val courses = dayCourses(schedule, date)
         val dayTodos = todos
             .filter { it.occursOnDate(date) }
             .sortedWith(todoComparator())
-            .map { it.toDayPlanItem(date) }
+            .map { it.toDayPlanItem(date, now) }
         val freeSlots = freeSlots(schedule, date)
         return buildJsonObject {
             put("date", date.toString())
@@ -355,11 +357,11 @@ internal object AiReadTools {
     }
 
     /** 当天待办条目：只保留 id/name/completed/deadline，控制 token */
-    private fun Todo.toDayPlanItem(date: IsoDate): JsonObject = buildJsonObject {
+    private fun Todo.toDayPlanItem(date: IsoDate, now: IsoDate): JsonObject = buildJsonObject {
         put("id", id)
         put("name", name)
         put("completed", isCompletedOnDate(date))
-        deadlineText()?.let { put("deadline", it) }
+        deadlineText(now)?.let { put("deadline", it) }
     }
 
     // ---------- search_todos ----------
@@ -428,7 +430,7 @@ internal object AiReadTools {
             put("offset", if (all) 0 else offset)
             // 还有下一页（而不是「本页被 limit 截断」）：模型按 offset + items.size 继续取
             put("truncated", if (all) false else offset.toLong() + shown.size < sorted.size)
-            put("items", buildJsonArray { shown.forEach { add(it.toSearchItem(includeDetail)) } })
+            put("items", buildJsonArray { shown.forEach { add(it.toSearchItem(includeDetail, ctx.today)) } })
         }
         if (all) {
             val chars = data.toString().length
@@ -440,7 +442,9 @@ internal object AiReadTools {
                     put("offset", 0)
                     put("truncated", false)
                     put("compact", true)
-                    put("items", buildJsonArray { sorted.forEach { add(it.toCompactSearchItem()) } })
+                    put("items", buildJsonArray {
+                        sorted.forEach { add(it.toCompactSearchItem(ctx.today)) }
+                    })
                 }
                 val compactChars = compact.toString().length
                 if (compactChars + RESULT_ENVELOPE_MARGIN <= MAX_SEARCH_RESULT_CHARS) {
@@ -460,32 +464,48 @@ internal object AiReadTools {
     /**
      * 候选集：默认与 `all` 都只取活跃待办（未归档未删除，含已完成）。
      *
+     * `completed` 对重复待办按期次口径：整条 `completed` 恒 false，期次有完成记录即入列
+     * （部分完成的系列不是整条完成，结果项带 `completedOccurrences` 供模型区分）。
+     *
      * `all` **不**并入归档/回收站：这两个空间只在 status 显式指定时返回，否则模型
      * 会把回收站条目当成活跃待办列进查询结果（`all` 是最容易被误用的取值）。
      */
     private fun candidates(ctx: AiChatContext, status: String): List<Todo> = when (status) {
         STATUS_ACTIVE, STATUS_ALL -> ctx.todos.filterNot { it.isDeleted || it.isArchived }
         STATUS_INCOMPLETE -> ctx.todos.filter { !it.completed && !it.isDeleted && !it.isArchived }
-        STATUS_COMPLETED -> ctx.todos.filter { it.completed && !it.isDeleted && !it.isArchived }
+        STATUS_COMPLETED -> ctx.todos.filter {
+            !it.isDeleted && !it.isArchived && (
+                it.completed ||
+                    (it.repeat.type != RepeatType.None && it.completedOccurrences.isNotEmpty())
+                )
+        }
         STATUS_ARCHIVED -> ctx.archivedTodos.filterNot { it.isDeleted }
         STATUS_DELETED -> ctx.deletedTodos
         else -> error("unreachable: status already validated")
     }
 
-    private fun Todo.toSearchItem(includeDetail: Boolean): JsonObject = buildJsonObject {
+    private fun Todo.toSearchItem(includeDetail: Boolean, now: IsoDate): JsonObject = buildJsonObject {
         put("id", id)
         put("name", name)
         putJsonArray("dates") { dates.forEach { add(it.toString()) } }
-        deadlineText()?.let { put("deadline", it) }
+        deadlineText(now)?.let { put("deadline", it) }
         put("urgency", urgency.name)
         group?.let { put("group", it) }
         if (tags.isNotEmpty()) {
-            putJsonArray("tags") { tags.forEach { add(it) } }
+            putJsonArray("tags") { tags.forEach { add(it.toString()) } }
         }
         put("completed", completed)
         if (completed) {
             // 完成日期按本地时区落天（与 TodoOverviewSheet 的完成记录口径一致）
             completedAtMillis?.let { put("completedAt", IsoDate.today(it).toString()) }
+        } else if (repeat.type != RepeatType.None && completedOccurrences.isNotEmpty()) {
+            // 重复待办部分完成：整条 completed 恒 false，已完成期次单独列出——
+            // status=completed 的候选据此判断「哪些期做完了」，不会误读成整条完成
+            putJsonArray("completedOccurrences") {
+                completedOccurrences.sortedBy { it.epochDay }
+                    .takeLast(MAX_OCCURRENCE_LINES)
+                    .forEach { add(it.toString()) }
+            }
         }
         put("pinned", pinned)
         if (repeat.type != RepeatType.None) {
@@ -515,7 +535,7 @@ internal object AiReadTools {
      * 目标是把「完整条数」优先带回（`compact=true`），字段细节交给 `get_todo` 单条取；
      * 模型不能把精简结果当成包含备注/标签的完整详情。
      */
-    private fun Todo.toCompactSearchItem(): JsonObject = buildJsonObject {
+    private fun Todo.toCompactSearchItem(now: IsoDate): JsonObject = buildJsonObject {
         put("id", id)
         put("name", name)
         group?.let { put("group", it) }
@@ -523,7 +543,9 @@ internal object AiReadTools {
             put("completed", true)
             completedAtMillis?.let { put("completedAt", IsoDate.today(it).toString()) }
         } else {
-            (deadlineDate ?: dates.minByOrNull { it.epochDay })?.let { put("date", it.toString()) }
+            // 随重复的截止按当前期折算（同 toSearchItem 的 deadline 口径）
+            (currentOccurrenceDeadline(now) ?: deadlineDate ?: dates.minByOrNull { it.epochDay })
+                ?.let { put("date", it.toString()) }
         }
     }
 
@@ -620,7 +642,7 @@ internal object AiReadTools {
             putJsonArray("dates") { dates.forEach { add(it.toString()) } }
         }
         timeText()?.let { put("time", it) }
-        deadlineText()?.let { put("deadline", it) }
+        deadlineText(now)?.let { put("deadline", it) }
         if (deadlineDate != null) {
             put("deadlineBeforeRepeat", deadlineBeforeRepeat)
             if (deadlineBeforeRepeat) put("deadlineBeforeDays", deadlineBeforeDays)
@@ -706,13 +728,24 @@ internal object AiReadTools {
         }
     }
 
-    /** 完成日期是否落在 [from, to]（端点含）；没有完成时刻的旧数据不算命中 */
+    /** 完成日期是否落在 [from, to]（端点含）；重复待办任一分期完成日期命中即算——
+     *  它们没有整条完成时刻（completedAtMillis 恒 null），按完成时刻搜永远搜不到 */
     private fun Todo.completedWithin(from: IsoDate?, to: IsoDate?): Boolean {
         if (from == null && to == null) return true
-        val millis = completedAtMillis ?: return false
-        val date = IsoDate.today(millis)
-        return (from == null || date.epochDay >= from.epochDay) &&
-            (to == null || date.epochDay <= to.epochDay)
+        val millis = completedAtMillis
+        if (millis != null) {
+            val date = IsoDate.today(millis)
+            if ((from == null || date.epochDay >= from.epochDay) &&
+                (to == null || date.epochDay <= to.epochDay)
+            ) {
+                return true
+            }
+        }
+        if (repeat.type == RepeatType.None) return false
+        return completedOccurrences.any { date ->
+            (from == null || date.epochDay >= from.epochDay) &&
+                (to == null || date.epochDay <= to.epochDay)
+        }
     }
 
     /** 未完成在前 → 截止/首个日期升序 → 创建时间倒序 */
@@ -722,13 +755,22 @@ internal object AiReadTools {
         }
         .thenByDescending { it.createdAtMillis }
 
-    /** 完成相关查询：完成时刻倒序（没有完成时刻的旧数据垫底）→ 创建时间倒序 */
+    /**
+     * 完成相关查询：完成时刻倒序（没有完成时刻的旧数据垫底）→ 创建时间倒序。
+     * 重复待办没有整条完成时刻，取最近完成分期的日期（日粒度换算成毫秒）作排序键——
+     * 「最近完成了什么」的直觉与分期完成对齐。
+     */
     private fun completedComparator(): Comparator<Todo> =
-        compareByDescending<Todo> { it.completedAtMillis ?: Long.MIN_VALUE }
-            .thenByDescending { it.createdAtMillis }
+        compareByDescending<Todo> { todo ->
+            todo.completedAtMillis
+                ?: todo.completedOccurrences.maxByOrNull { it.epochDay }
+                    ?.let { it.epochDay * MILLIS_PER_DAY }
+                ?: Long.MIN_VALUE
+        }.thenByDescending { it.createdAtMillis }
 
-    private fun Todo.deadlineText(): String? {
-        val date = deadlineDate ?: return null
+    /** 截止文本：随重复的按当前期折算（与列表卡一致，载体日期会误导），其余按存储截止 */
+    private fun Todo.deadlineText(now: IsoDate): String? {
+        val date = currentOccurrenceDeadline(now) ?: deadlineDate ?: return null
         val minute = deadlineMinute ?: return date.toString()
         return "$date ${TimeText.formatDisplay(minute)}"
     }
@@ -822,6 +864,9 @@ internal object AiReadTools {
     private const val DEFAULT_SEARCH_LIMIT = 10
     private const val MAX_SEARCH_LIMIT = 30
     private const val MINUTES_PER_DAY = 24 * 60
+
+    /** 重复待办按「最近完成分期」排序的日期→毫秒换算（日粒度，completedComparator 用） */
+    private const val MILLIS_PER_DAY = 86_400_000L
 
     /**
      * all=true 一次返回完整集合的字符上限（比普通工具结果的 8K 宽得多）。

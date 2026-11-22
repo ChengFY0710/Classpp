@@ -43,6 +43,7 @@ import com.fangyi.classpp.data.model.TimeText
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoAttachment
 import com.fangyi.classpp.data.model.TodoTimeKind
+import com.fangyi.classpp.data.currentOccurrence
 import com.fangyi.classpp.data.withOccurrenceDeadline
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.components.BackHandlerHidesKeyboard
@@ -332,14 +333,17 @@ internal fun TodoDetailSheet(
                 // 值一律右对齐走 fieldValue，空值占位灰字「无」（noneText 见上方共用声明）；
                 // 行首图标同 NoteCard 属性行（闹钟/旗/时钟/定位针），尺寸与着色见 [InfoRowIcon]
                 // 截止行的展示视图：随重复的待办按所点条目的分期折算出该条目的具体截止
-                // （下一期开始前 N 天，见 [withOccurrenceDeadline]），无逐期上下文按首期折算；
-                // 值与色同源都取折算视图，存储的载体截止不外显
-                val deadlineView = remember(todo, occurrenceDate) {
+                // （下一期开始前 N 天，见 [withOccurrenceDeadline]）；无逐期上下文（AI 对话
+                // 浮层）按当前期折算（与列表滚动卡、AI 工具同口径，不按锚日期折出早已过期的
+                // 首期截止）；值与色同源都取折算视图，存储的载体截止不外显
+                val deadlineView = remember(todo, occurrenceDate, today) {
                     val anchor = todo.dates.minByOrNull { it.epochDay }
-                    if (anchor != null) {
-                        todo.withOccurrenceDeadline(anchor, occurrenceDate ?: anchor)
-                    } else {
-                        todo
+                    when {
+                        anchor == null -> todo
+                        occurrenceDate != null -> todo.withOccurrenceDeadline(anchor, occurrenceDate)
+                        else -> todo.currentOccurrence(today)
+                            ?.let { todo.withOccurrenceDeadline(anchor, it) }
+                            ?: todo
                     }
                 }
                 SheetInfoCard(
@@ -360,7 +364,8 @@ internal fun TodoDetailSheet(
                         ),
                         SheetInfoEntry(
                             label = stringResource(R.string.todo_detail_time_label),
-                            value = todo.scheduledText() ?: noneText,
+                            // 重复待办有所点期次时只显示该期（与所点列表卡一致），否则显示存储日期
+                            value = todo.scheduledText(occurrenceDate) ?: noneText,
                             icon = { InfoRowIcon(R.drawable.ic_clock) },
                         ),
                         SheetInfoEntry(
@@ -762,11 +767,15 @@ private fun Todo.deadlineText(): String? {
  * 待办时间：时段 `10/14 8:00 - 9:00`（本年）/ `2027/10/14 8:00 - 9:00`（非本年），
  * 全天 `10/14 全天` / `2027/10/14 全天`，多日 `10/14、10/20 全天`；无日期也无时刻返回 null。
  *
+ * 重复待办带所点期次（[occurrenceDate]）时日期段只显示该期——列表分期卡（如显示 3/23）
+ * 进详情，时间行必须与所点卡片一致，而不是存储的锚日期；无逐期上下文（null）按存储
+ * 日期显示。日期段取值抽成 [todoScheduledDateText] 纯函数（可单测）。
+ *
  * 与列表卡片的 [cardTimeText] 分工：这里不省略"今天"的日期段（详情页要给出确定的日期），
  * 日期段走 [toAbsoluteDateText]（本年省年份、月日不补零），也不兜底截止值（截止日期有自己的行）。
  */
 @Composable
-private fun Todo.scheduledText(): String? {
+private fun Todo.scheduledText(occurrenceDate: IsoDate?): String? {
     val timePart = when (timeKind) {
         TodoTimeKind.Period -> {
             val start = startMinute
@@ -781,7 +790,7 @@ private fun Todo.scheduledText(): String? {
     }
     // 「今天」在组合期取一次：joinToString 的变换 lambda 不是组合上下文，值先落地
     val today = LocalToday
-    val datePart = dates.joinToString("、") { it.toAbsoluteDateText(today) }.takeIf { it.isNotEmpty() }
+    val datePart = todoScheduledDateText(this, occurrenceDate, today).takeIf { it.isNotEmpty() }
     return listOfNotNull(datePart, timePart)
         .joinToString(" ")
         .takeIf { it.isNotEmpty() }

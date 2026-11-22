@@ -291,6 +291,8 @@ internal fun IsoDate.toDeadlineDateText(): String {
 @Preview(showBackground = true, backgroundColor = 0xFFF2F4F6, widthDp = 390, heightDp = 900)
 @Composable
 private fun DeadlineSettingsSheetPreview() = ClassppTheme {
+    // 预览没有真实待办可取规则：天数轮上限按「每周」的实际周期硬编码（真实调用方经
+    // RepeatRule.cycleDays 按前两期实际间隔计算，见 NewTodoSheet 的取值处）
     DeadlineSettingsSheet(
         visible = true,
         initialEnabled = true,

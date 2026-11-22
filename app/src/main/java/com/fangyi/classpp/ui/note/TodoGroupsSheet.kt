@@ -126,9 +126,12 @@ private data class TagRow(
  *   系统返回 = 丢草稿退编辑（[requestClose] 三分支合一）；编辑态下拉关闭被 dragDismissEnabled
  *   禁用（松手回弹，不关浮层——只拦回调会把浮层卡在半拖出位置）。
  *
- * **计数口径**：已完成 / 未完成 / 已逾期 实时从 [todos]（活跃待办，仓库已剔除最近删除）
- * 统计，逾期判定与列表同一份（[IsoDate.today] + [currentMinuteOfDay]）；已置顶同为实时
- * 统计（`pinned` 标记计数）；最近删除 = 回收站条目数（[deletedCount]，仓库 deletedTodos
+ * **计数口径（两套，见参数注释）**：**分组计数**（全部/未分组/自定义分组/标签/已置顶）按
+ * [todos]（原始系列）计——回答「有多少条待办」；**状态计数**（已完成/未完成/已逾期）按
+ * [statusTodos]（展开卡片）计——回答「点进去能看到多少张卡」，重复待办的分期卡各算
+ * 一张（打卡达标的系列在已完成里是 1 张卡、拆分口径多个逾期期次是 N 张卡），与各
+ * 专项页的卡片数一致；逾期判定与列表同一份（[LocalToday] + [currentMinuteOfDay]，经
+ * [buildTodoStatusCounts]）；最近删除 = 回收站条目数（[deletedCount]，仓库 deletedTodos
  * 流），点入即可撤回或彻底删除；已归档数据层暂无该概念，恒 0；未分组 = `group == null`
  * 的待办数、全部 = 待办总数、自定义分组 = 该组名的待办数（分组数据已入 [TodoFile.groups]，
  * 引用完整性由仓库归一化维护）。
@@ -164,7 +167,12 @@ private data class TagRow(
  */
 @Composable
 internal fun TodoGroupsSheet(
+    // 原始活跃待办（未展开的系列）：全部/未分组/自定义分组/标签的分组计数按它算
+    //（回答「有多少条待办」，置顶是分组属性同样按系列计）
     todos: List<Todo>,
+    // 状态行的展开口径：经 expandRepeatOccurrences 展开的卡片列表——已完成/未完成/已逾期
+    // 计数按它算（回答「点进去能看到多少张卡」，与各专项页的卡片数一致，重复分期各算一张）
+    statusTodos: List<Todo>,
     deletedCount: Int,
     archivedCount: Int,
     groups: List<TodoGroup>,
@@ -299,9 +307,11 @@ internal fun TodoGroupsSheet(
     // 逾期判定的"此刻"：当天日期取 [LocalToday]（跨零点自动跳天，同 TodoList）；分钟口径重组时现取
     val today = LocalToday
     val nowMinute = currentMinuteOfDay()
-    val completedCount = todos.count { it.completed }
-    val incompleteCount = todos.count { !it.completed }
-    val overdueCount = todos.count { it.isOverdue(today, nowMinute) }
+    // 状态行计数用展开口径（[statusTodos]，见参数注释）：数字与点入专项页看到的卡片数一致
+    val statusCounts = buildTodoStatusCounts(statusTodos, today, nowMinute)
+    val completedCount = statusCounts.completed
+    val incompleteCount = statusCounts.incomplete
+    val overdueCount = statusCounts.overdue
     val totalCount = todos.size
     // 已置顶 = pinned 标记计数（数据层已有该字段，与归档/最近删除的恒 0 占位不同）
     val pinnedCount = todos.count { it.pinned }
@@ -963,3 +973,25 @@ internal fun <T> List<T>.move(from: Int, to: Int): List<T> {
     if (from == to || from !in indices || to !in indices) return this
     return toMutableList().apply { add(to, removeAt(from)) }
 }
+
+/** 分组浮层状态行（已完成/未完成/已逾期）的展开口径计数结果 */
+internal data class TodoStatusCounts(
+    val completed: Int,
+    val incomplete: Int,
+    val overdue: Int,
+)
+
+/**
+ * 状态行的展开口径计数：[statusTodos] 是经 [expandRepeatOccurrences] 展开的卡片列表——
+ * 重复待办的分期卡各算一张，数字与点入专项页看到的卡片数一致（不是系列数）。逾期判定
+ * 与列表同一份（[isOverdue]，[today]/[nowMinute] 注入）。纯函数，浮层与单测共用。
+ */
+internal fun buildTodoStatusCounts(
+    statusTodos: List<Todo>,
+    today: IsoDate,
+    nowMinute: Int,
+): TodoStatusCounts = TodoStatusCounts(
+    completed = statusTodos.count { it.completed },
+    incomplete = statusTodos.count { !it.completed },
+    overdue = statusTodos.count { it.isOverdue(today, nowMinute) },
+)

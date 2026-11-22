@@ -7,6 +7,7 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoStep
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
+import com.fangyi.classpp.data.model.hasEmptyWindow
 import com.fangyi.classpp.data.model.newUuid
 
 /**
@@ -29,7 +30,8 @@ data class AiTodoPatchMapping(val todo: Todo?, val changed: Boolean)
  * - 时段必须 start/end 成对且 end > start；allDay 与时段不可同时给；
  * - 截止必须日期+时刻成对；任一给空串即清除截止；
  * - 重复规则复用 [AiTodoMapper.mapRepeat]（大小写不敏感、越界夹紧），非法类型/单位
- *   整条补丁失败；无日期的重复请求失败；
+ *   整条补丁失败；无日期的重复请求失败；日期档窗口早于首期（空窗口，展不出任何一期）
+ *   同样整条失败，不静默降级；
  * - 步骤按标题保留旧 id 与完成态，新标题生成新 id；
  * - 状态字段（id/完成态/创建时间/来源/回收站与归档标记）一律保留。
  */
@@ -130,6 +132,12 @@ object AiTodoPatchMapper {
         if (dates.isEmpty() && repeat.type != RepeatType.None) {
             if (patch.repeat != null) return invalid()
             repeat = RepeatRule()
+        }
+        // 空窗口重复（日期档结束早于首期，展不出任何一期）同属非法值：整条补丁失败，
+        // 不静默把用户已确认的重复清掉（新建草稿降级、修改补丁拒绝，两端口径见 AiTodoMapper）
+        if (repeat.type != RepeatType.None) {
+            val anchor = dates.minByOrNull { it.epochDay }
+            if (anchor != null && repeat.hasEmptyWindow(anchor)) return invalid()
         }
 
         // 紧急度：枚举名大小写不敏感；空串/非法值整条失败

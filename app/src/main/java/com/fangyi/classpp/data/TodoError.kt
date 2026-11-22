@@ -11,6 +11,15 @@ enum class TodoAttachmentReason { BlankName, InvalidId, InvalidFileName, Duplica
 /** [TodoError.DeadlineInvalid] 的具体原因 */
 enum class TodoDeadlineReason { MissingMinute, MissingDate, MinuteOutOfRange }
 
+/** [TodoError.RepeatInvalid] 的具体原因 */
+enum class TodoRepeatReason {
+    /** 有重复规则却没有任何日期——系列没有锚日期，展不出任何一期 */
+    MissingDates,
+
+    /** 日期档结束日期早于首个应完成日期——空窗口，写入成功也永远出不了卡 */
+    EmptyWindow,
+}
+
 /**
  * 待办数据层全部结构化错误。message 供日志/断言，未来 UI 按子类模式匹配出文案。
  * 校验返回全部错误而非 fail-fast（[TodoValidator.validate]），便于 UI 一次展示。
@@ -28,6 +37,10 @@ sealed class TodoError(val message: String) {
 
     data class DeadlineInvalid(val reason: TodoDeadlineReason) :
         TodoError("deadline invalid: $reason")
+
+    /** 重复规则展不开任何一期（无锚日期 / 空窗口），写入会生成列表里永远不可见的死数据 */
+    data class RepeatInvalid(val reason: TodoRepeatReason) :
+        TodoError("repeat invalid: $reason")
 
     data class StepInvalid(val index: Int, val reason: TodoStepReason) :
         TodoError("step #$index invalid: $reason")

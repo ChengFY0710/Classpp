@@ -211,6 +211,86 @@ class TodoRepeatDisplayTest {
     }
 
     @Test
+    fun `merge keeps the series visible after a future anchor is fully completed early`() {
+        // 锚 3/23（未来）每周 3 期、今天 3/16：依次提前勾完全部 3 期——回退分支
+        // occurrencesBetween(锚, 锚, 今天+1) 因锚在未来而落空，没有最后一级兜底整条系列会消失
+        val rule = RepeatRule(
+            type = RepeatType.Weekly,
+            endType = RepeatEndType.Count,
+            endCount = 3,
+        )
+        val completed = listOf("2026-03-23", "2026-03-30", "2026-04-06").map { IsoDate.parse(it) }
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-23")),
+            repeat = rule,
+            completedOccurrences = completed,
+        )
+        val shown = expand(todo, "2026-03-16")
+        // 仍有一张入口卡：回退到已完成的最后一期（完成态照实，进已完成组）
+        assertEquals(listOf("2026-04-06"), shown.map { it.dates.single().toString() })
+        assertEquals(listOf("2026-04-06"), done(shown))
+    }
+
+    @Test
+    fun `merge still shows the pending occurrence of a future anchor after partial completion`() {
+        // 未来锚点只提前勾完 2 期：nextOccurrenceAfter 正常路径仍显示第 3 期未完成卡，
+        // 新兜底不影响有未来未完成期次的系列
+        val rule = RepeatRule(
+            type = RepeatType.Weekly,
+            endType = RepeatEndType.Count,
+            endCount = 3,
+        )
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-23")),
+            repeat = rule,
+            completedOccurrences = listOf(
+                IsoDate.parse("2026-03-23"),
+                IsoDate.parse("2026-03-30"),
+            ),
+        )
+        val shown = expand(todo, "2026-03-16")
+        assertEquals(listOf("2026-04-06"), active(shown))
+        assertTrue(done(shown).isEmpty())
+    }
+
+    @Test
+    fun `split mode is unaffected by the merged fallback`() {
+        // 拆分口径仍逐期输出完成卡、不补未来卡，不因合并口径的兜底变化
+        val rule = RepeatRule(
+            type = RepeatType.Weekly,
+            endType = RepeatEndType.Count,
+            endCount = 3,
+            merge = false,
+        )
+        val completed = listOf("2026-03-23", "2026-03-30", "2026-04-06").map { IsoDate.parse(it) }
+        val todo = testTodo(
+            dates = listOf(IsoDate.parse("2026-03-23")),
+            repeat = rule,
+            completedOccurrences = completed,
+        )
+        val shown = expand(todo, "2026-03-16")
+        assertEquals(completed.map { it.toString() }, done(shown))
+        assertTrue(active(shown).isEmpty())
+    }
+
+    @Test
+    fun `empty window repeat yields no card and does not crash`() {
+        // 日期档结束早于锚日的空窗口（TodoValidator 已拒新写入；历史脏数据读取仍宽容）：
+        // 三种口径都展不出任何期次，不出卡也不抛异常
+        val rule = RepeatRule(
+            type = RepeatType.Weekly,
+            endType = RepeatEndType.Date,
+            endDate = IsoDate.parse("2026-03-01"),
+        )
+        val todo = testTodo(dates = listOf(IsoDate.parse("2026-03-02")), repeat = rule)
+        assertTrue(expand(todo, "2026-03-20").isEmpty())
+        assertTrue(expand(todo.copy(repeat = rule.copy(merge = false)), "2026-03-20").isEmpty())
+        assertTrue(
+            listOf(todo).expandTimelineOccurrences(IsoDate.parse("2026-03-16")).isEmpty(),
+        )
+    }
+
+    @Test
     fun `timeline keeps today's completed occurrence when merge rolls forward`() {
         // 每周锚 3/16、今天 3/16 完成后：列表卡前移到 3/23（合并口径「过去的就过去吧」）；
         // 时间轴口径额外补回 3/16 的完成态副本，勾选瞬间卡片原地划线置灰而不消失

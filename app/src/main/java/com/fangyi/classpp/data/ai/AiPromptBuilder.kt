@@ -14,6 +14,7 @@ import com.fangyi.classpp.data.model.TodoUrgency
 import com.fangyi.classpp.data.model.isArchived
 import com.fangyi.classpp.data.model.isDeleted
 import com.fangyi.classpp.data.model.occurrencesBetween
+import com.fangyi.classpp.data.currentOccurrenceDeadline
 import com.fangyi.classpp.data.occurrencesOn
 
 /**
@@ -486,7 +487,9 @@ object AiPromptBuilder {
     private fun todoLine(todo: Todo, now: IsoDate): String = buildString {
         append('[').append(todo.id).append("] ")
         append(todo.name.ifBlank { "（未命名）" })
-        val deadline = todo.deadlineDate?.let { date ->
+        // 随重复的截止按当前期折算（与列表卡、get_todo 同口径），不输出会误导的载体日期
+        val deadlineDate = todo.currentOccurrenceDeadline(now) ?: todo.deadlineDate
+        val deadline = deadlineDate?.let { date ->
             val minute = todo.deadlineMinute
             if (minute != null) "截止 ${date} ${minute / 60}:${(minute % 60).toString().padStart(2, '0')}" else "截止 $date"
         }

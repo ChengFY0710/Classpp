@@ -229,4 +229,72 @@ class RepeatScheduleTest {
         assertEquals(d("2026-03-10"), rule.nextOccurrenceAfter(anchor, anchor - 1))
         assertEquals(d("2026-03-12"), rule.nextOccurrenceAfter(anchor, d("2026-03-12")))
     }
+
+    // ---------- 周期天数（cycleDays，「下一次重复开始前」滚轮上限） ----------
+
+    @Test
+    fun `cycle days takes the actual gap of the first two occurrences`() {
+        // 第二次取值必须严格晚于首期（起点含端点），否则差值恒 0、被兜成 1
+        assertEquals(1, RepeatRule(type = RepeatType.Daily).cycleDays(d("2026-03-02")))
+        assertEquals(7, RepeatRule(type = RepeatType.Weekly).cycleDays(d("2026-03-02")))
+        // 每月 12 号：1/12 → 2/12 相差 31 天
+        assertEquals(31, RepeatRule(type = RepeatType.Monthly).cycleDays(d("2026-01-12")))
+        // 多标记周规则取相邻两期实际间隔（周一 → 周三 = 2），比固定 7 更准
+        val mondayWednesday = RepeatRule(
+            type = RepeatType.Custom,
+            unit = RepeatUnit.Week,
+            interval = 1,
+            marks = setOf(1, 3),
+        )
+        assertEquals(2, mondayWednesday.cycleDays(d("2026-03-02")))
+        // 多标记月规则：1/1 → 1/15 相差 14 天
+        val firstAndFifteenth = RepeatRule(
+            type = RepeatType.Custom,
+            unit = RepeatUnit.Month,
+            interval = 1,
+            marks = setOf(1, 15),
+        )
+        assertEquals(14, firstAndFifteenth.cycleDays(d("2026-01-01")))
+    }
+
+    @Test
+    fun `cycle days falls back to unit conversion for single-occurrence series`() {
+        // Count=1 的单期系列展不出第二期：按单位回退（周 7、月 30、年 365、自定义按 interval）
+        assertEquals(
+            7,
+            RepeatRule(type = RepeatType.Weekly, endType = RepeatEndType.Count, endCount = 1)
+                .cycleDays(d("2026-03-02")),
+        )
+        assertEquals(
+            30,
+            RepeatRule(type = RepeatType.Monthly, endType = RepeatEndType.Count, endCount = 1)
+                .cycleDays(d("2026-03-02")),
+        )
+        assertEquals(
+            365,
+            RepeatRule(type = RepeatType.Yearly, endType = RepeatEndType.Count, endCount = 1)
+                .cycleDays(d("2026-03-02")),
+        )
+        assertEquals(
+            6,
+            RepeatRule(
+                type = RepeatType.Custom,
+                unit = RepeatUnit.Day,
+                interval = 6,
+                endType = RepeatEndType.Count,
+                endCount = 1,
+            ).cycleDays(d("2026-03-02")),
+        )
+    }
+
+    @Test
+    fun `cycle days falls back for empty windows without throwing`() {
+        // 结束日期早于锚日（空窗口，校验器会拒收的形态）：仍回退单位换算值，不抛异常
+        val rule = RepeatRule(
+            type = RepeatType.Weekly,
+            endType = RepeatEndType.Date,
+            endDate = d("2026-03-01"),
+        )
+        assertEquals(7, rule.cycleDays(d("2026-03-02")))
+    }
 }

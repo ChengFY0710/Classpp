@@ -1859,9 +1859,18 @@ internal fun DayScreen(
                         }
                     },
                     // 「添加到日历」（详情菜单项）：权限/账户选择/写入由 calendarAdd 编排；
-                    // 传详情快照 detail（单元素列表，流程本身按待办列表批量写入），
-                    // 写入目标锁定点菜单那一刻的内容
-                    onAddToCalendar = { calendarAdd.begin(listOf(detail)) },
+                    // 重复待办把「当期副本」（dates = 所点期次，由时间轴/提醒卡带入）交给
+                    // 日历——事件落在所点期次而不是锚日期；副本只供日历规划，不进落库路径。
+                    // 非重复待办或无逐期上下文时维持原始 detail
+                    onAddToCalendar = {
+                        val occurrence = IsoDate.parseOrNull(todoDetailTargetDate)
+                        val calendarTodo = if (detail.repeat.type != RepeatType.None && occurrence != null) {
+                            detail.copy(dates = listOf(occurrence))
+                        } else {
+                            detail
+                        }
+                        calendarAdd.begin(listOf(calendarTodo))
+                    },
                     // 「添加到闹钟」（详情菜单项）：按截止时刻（优先）或开始时刻把待办
                     // 写入系统时钟的一次性闹钟，跳转与 Toast 由 AddToAlarmFlow 编排
                     onAddToAlarm = { addToAlarm(detail) },

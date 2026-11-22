@@ -12,6 +12,7 @@ import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoStep
 import com.fangyi.classpp.data.model.TodoTimeKind
 import com.fangyi.classpp.data.model.TodoUrgency
+import com.fangyi.classpp.data.model.hasEmptyWindow
 import com.fangyi.classpp.data.model.markRange
 import com.fangyi.classpp.data.model.newUuid
 
@@ -50,7 +51,9 @@ data class AiTodoDraftMapping(
  *   [AiDraftField.PeriodTime]，此时 allDay = true 可退化为全天；
  * - 截止：日期与时刻**成对**出现（TodoValidator 硬约束），只有其一 → 两者皆空并标注；
  * - 重复：类型/单位/结束条件大小写不敏感匹配，越界值夹紧；Custom 的 marks 按单位
- *   合法域过滤；无有效日期时重复整体取消（没有锚日期的系列无法展开）；
+ *   合法域过滤；无有效日期时重复整体取消（没有锚日期的系列无法展开）；日期档窗口
+ *   早于首期（空窗口）同样取消并标注——两种形态都过不了 TodoValidator，保留会让
+ *   `addTodos` 整批零落盘；
  * - 截止随重复：仅在有重复且截止成立时保留，其余置 false（仓库归一化同口径）；
  * - 倒计时：仅在有截止时保留；
  * - 分组/标签：与现有清单做**包含匹配**（"学习"↔"学习方法"）优先取清单项；分组
@@ -110,13 +113,20 @@ object AiTodoMapper {
         val deadlineValid = deadlineDate != null && deadlineMinute != null
         if (deadlineProvided && !deadlineValid) invalid += AiDraftField.Deadline
 
-        // 重复：没有日期的系列无法展开，直接取消（否则用户在列表里看不到任何一期）
+        // 重复：没有日期的系列无法展开、日期档窗口早于首期永远出不了卡（TodoValidator 的
+        // 两条硬约束）——都降级为普通待办并标注对应字段，否则 addTodos 整批零落盘
         val repeat = mapRepeat(draft.repeat, invalid)
-        val effectiveRepeat = if (dates.isEmpty() && repeat.type != RepeatType.None) {
-            invalid += AiDraftField.Dates
-            RepeatRule()
-        } else {
-            repeat
+        val anchor = dates.minByOrNull { it.epochDay }
+        val effectiveRepeat = when {
+            dates.isEmpty() && repeat.type != RepeatType.None -> {
+                invalid += AiDraftField.Dates
+                RepeatRule()
+            }
+            anchor != null && repeat.hasEmptyWindow(anchor) -> {
+                invalid += AiDraftField.Repeat
+                RepeatRule()
+            }
+            else -> repeat
         }
 
         val hasDeadline = deadlineValid

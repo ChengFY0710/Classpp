@@ -2,6 +2,8 @@ package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.calendar.CalendarEventPlanner
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatRule
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TodoTimeKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -120,5 +122,27 @@ class CalendarEventPlannerTest {
     fun `no steps and no note gives empty description`() {
         val todo = testTodo(name = "实验", dates = listOf(d1), timeKind = TodoTimeKind.AllDay)
         assertEquals("", CalendarEventPlanner.drafts(todo).single().description)
+    }
+
+    @Test
+    fun `occurrence copy from a repeat detail lands the event on the occurrence`() {
+        // 详情「添加到日历」的当期副本：dates 换成所点期次后，事件落在期次日期（不是锚日期）
+        val repeat = testTodo(
+            name = "周报",
+            dates = listOf(d1),
+            repeat = RepeatRule(type = RepeatType.Weekly),
+            timeKind = TodoTimeKind.Period,
+            startMinute = 540,
+            endMinute = 600,
+        )
+        val occurrence = IsoDate.parse("2026-07-02")
+        val drafts = CalendarEventPlanner.drafts(repeat.copy(dates = listOf(occurrence)), today = d1)
+
+        assertEquals(listOf(occurrence), drafts.map { it.date })
+        drafts.forEach {
+            assertFalse(it.allDay)
+            assertEquals(540, it.startMinute)
+            assertEquals(600, it.endMinute)
+        }
     }
 }

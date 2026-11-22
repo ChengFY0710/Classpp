@@ -314,6 +314,23 @@ class AiTodoMapperTest {
     }
 
     @Test
+    fun `repeat with empty window degrades to plain todo`() {
+        // 锚 11-09、日期档结束 11-01：展不出任何一期——降级为普通待办（TodoValidator 拒收，
+        // 保留会让 addTodos 整批零落盘），标注 Repeat 供诊断
+        val mapping = AiTodoMapper.map(
+            listOf(
+                draft(
+                    dates = listOf("2026-11-09"),
+                    repeat = AiRepeatDraft(type = "Weekly", endType = "Date", endDate = "2026-11-01"),
+                ),
+            ),
+        ).single()
+        assertEquals(RepeatType.None, mapping.todo.repeat.type)
+        assertTrue(AiDraftField.Repeat in mapping.invalidFields)
+        assertTrue(mapping.canSave)
+    }
+
+    @Test
     fun `invalid repeat type falls back to none`() {
         val mapping = AiTodoMapper.map(
             listOf(draft(dates = listOf("2026-11-02"), repeat = AiRepeatDraft(type = "Sometimes"))),

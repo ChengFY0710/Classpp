@@ -811,6 +811,60 @@ class AiReadToolsTest {
     }
 
     @Test
+    fun `search completed includes repeating todos by occurrence`() = kotlinx.coroutines.runBlocking {
+        // 重复待办整条 completed 恒 false：期次有完成记录即入已完成候选；完成日期过滤按
+        // 分期命中（completedAtMillis 恒 null，按完成时刻搜修复前永远不命中）
+        val today = IsoDate.of(2026, 5, 20)
+        val withDonePeriods = testTodo(
+            id = "r1",
+            name = "每日打卡",
+            dates = listOf(IsoDate.of(2026, 5, 18)),
+            repeat = RepeatRule(type = RepeatType.Daily),
+            createdAtMillis = 9,
+        ).copy(completedOccurrences = listOf(IsoDate.of(2026, 5, 18), IsoDate.of(2026, 5, 19)))
+        val withoutDonePeriods = testTodo(
+            id = "r2",
+            name = "没有完成期次",
+            dates = listOf(IsoDate.of(2026, 5, 18)),
+            repeat = RepeatRule(type = RepeatType.Daily),
+            createdAtMillis = 8,
+        )
+        val wholeCompleted = testTodo(
+            id = "t2",
+            name = "整条完成",
+            completed = true,
+            completedAtMillis = millisOf(2026, 5, 19),
+            createdAtMillis = 5,
+        )
+        val context = AiChatContext(today = today, todos = listOf(withDonePeriods, withoutDonePeriods, wholeCompleted))
+
+        // status=completed：整条完成 + 有完成期次的重复入列，r2 不入
+        val completed = AiReadTools.executeSearchTodos(args("status" to JsonPrimitive("completed")), context)
+        assertEquals(listOf("t2", "r1"), completed.data().itemIds())
+
+        // 完成日期过滤：r1 的完成分期 5/19 落在区间内 → 命中
+        val byDate = AiReadTools.executeSearchTodos(
+            args(
+                "status" to JsonPrimitive("completed"),
+                "completedFrom" to JsonPrimitive("2026-05-19"),
+                "completedTo" to JsonPrimitive("2026-05-19"),
+            ),
+            context,
+        )
+        assertEquals(listOf("t2", "r1"), byDate.data().itemIds())
+
+        // 部分完成的重复在结果项里带完成期次列表，completed 仍是 false（不误读成整条完成）
+        val item = completed.data().getValue("items").jsonArray
+            .single { it.jsonObject.getValue("id").jsonPrimitive.content == "r1" }
+            .jsonObject
+        assertFalse(item.getValue("completed").jsonPrimitive.boolean)
+        assertEquals(
+            listOf("2026-05-18", "2026-05-19"),
+            item.getValue("completedOccurrences").jsonArray.map { it.jsonPrimitive.content },
+        )
+    }
+
+    @Test
     fun `search limit truncates and includeDetail adds fields`() = kotlinx.coroutines.runBlocking {
         val limited = AiReadTools.executeSearchTodos(args("limit" to JsonPrimitive(1)), searchContext())
         val data = limited.data()

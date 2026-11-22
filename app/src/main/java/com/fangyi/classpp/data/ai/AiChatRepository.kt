@@ -4,6 +4,7 @@ import com.fangyi.classpp.data.Clock
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.ReadResult
 import com.fangyi.classpp.data.TodoValidator
+import com.fangyi.classpp.data.isCheckInMode
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
@@ -2556,9 +2557,16 @@ class AiChatRepository internal constructor(
         failure = if (ok) AiTodoChangeFailure.None else AiTodoChangeFailure.SaveFailed,
     )
 
-    /** 期次日期必须属于当前重复系列（与仓库同一套展开规则，日期档/次数档一并生效） */
+    /**
+     * 期次日期是否可勾：非打卡重复必须是规则期次（与仓库同一套展开规则，日期档/次数档
+     * 一并生效）；打卡模式的补勾位是「待办起始日至今」的整段日期（同 UI 完成情况浮层的
+     * [checkInBackfillDates] 口径）——漏掉的灰点日期也放行，不要求是规则期次。不设
+     * 上界：打卡的当前期卡可能是未来的规则日（如每周打卡、今天在周中），限到今天会把
+     * 合法的当前期勾选判成 InvalidDate。
+     */
     private fun isValidOccurrence(todo: Todo, date: IsoDate): Boolean {
         val anchor = todo.dates.minByOrNull { it.epochDay } ?: return false
+        if (todo.isCheckInMode) return date.epochDay >= anchor.epochDay
         return todo.repeat.occurrencesBetween(anchor, date, date + 1).contains(date)
     }
 

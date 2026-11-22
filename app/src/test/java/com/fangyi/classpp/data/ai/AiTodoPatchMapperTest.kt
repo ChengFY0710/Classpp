@@ -267,6 +267,18 @@ class AiTodoPatchMapperTest {
     }
 
     @Test
+    fun `repeat with empty window fails the whole patch`() {
+        // 锚 11-05、日期档结束 11-01：展不出任何一期的规则是用户已确认变更里的非法值——
+        // 整条补丁失败，不静默降级（新建草稿才降级，两端口径见 AiTodoMapper）
+        assertNull(
+            apply(
+                todo(),
+                AiTodoPatch(repeat = AiRepeatDraft(type = "Weekly", endType = "Date", endDate = "2026-11-01")),
+            ).todo,
+        )
+    }
+
+    @Test
     fun `deadline before repeat is normalized against deadline and repeat`() {
         val existing = todo(repeat = RepeatRule(type = RepeatType.Daily))
         val next = apply(

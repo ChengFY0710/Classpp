@@ -191,8 +191,10 @@ fun RepeatRule.nextOccurrenceAfter(
 fun RepeatRule.cycleDays(anchor: IsoDate): Int {
     if (type == RepeatType.None) return 1
     val first = nextOccurrenceAfter(anchor, anchor - 1)
+    // 第二次取值须严格晚于 first：nextOccurrenceAfter 起点含端点，传 first 会原样返回
+    // first 自己（差值恒 0），周期会被兜成 1
     val fromSchedule = first?.let { first ->
-        nextOccurrenceAfter(anchor, first)?.let { (it.epochDay - first.epochDay).toInt() }
+        nextOccurrenceAfter(anchor, first + 1)?.let { (it.epochDay - first.epochDay).toInt() }
     }
     if (fromSchedule != null) return fromSchedule.coerceAtLeast(1)
     // 回退：预设档位映射到固定单位（同 occurrencesBetween 的展开口径），自定义档位读自身字段
@@ -212,6 +214,16 @@ fun RepeatRule.cycleDays(anchor: IsoDate): Int {
         RepeatUnit.Year -> 365 * step
     }.coerceAtLeast(1)
 }
+
+/**
+ * 重复窗口是否展不开任何一期：日期档结束日期早于首个应完成日期（锚日或方格首期）。
+ * 这种规则写入成功后永远出不了卡——列表、详情、统计都看不到，也没有入口再编辑它
+ * （见 TodoValidator 的重复不变式与 AI 映射的降级/拒绝）。其余结束档（次数/永不）只要
+ * 锚日期存在就至少有一期，不适用本判定。
+ */
+fun RepeatRule.hasEmptyWindow(anchor: IsoDate): Boolean =
+    endType == RepeatEndType.Date && endDate != null &&
+        occurrencesBetween(anchor, anchor, endDate).isEmpty()
 
 // ---------- 日历运算辅助（UTC 日历日期，语义同 IsoDate；项目惯例规避 java.time） ----------
 

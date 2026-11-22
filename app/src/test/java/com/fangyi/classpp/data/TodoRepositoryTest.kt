@@ -176,6 +176,56 @@ class TodoRepositoryTest {
     }
 
     @Test
+    fun `addTodo and updateTodo reject repeats that cannot expand`() = runBlocking {
+        val r = repo()
+        // 空窗口（日期档早于锚日）与无锚日期的重复：写入成功也展不出任何卡
+        // （列表/详情/统计不可见的死数据），校验在写入前拦下
+        val emptyWindow = testTodo(
+            name = "空窗口",
+            dates = listOf(IsoDate.parse("2026-06-18")),
+            repeat = RepeatRule(
+                type = RepeatType.Weekly,
+                endType = RepeatEndType.Date,
+                endDate = IsoDate.parse("2026-06-10"),
+            ),
+        )
+        val addErr = r.addTodo(emptyWindow)
+        assertTrue(addErr is TodoReadResult.Err && addErr.error is TodoError.RepeatInvalid)
+
+        val noAnchor = testTodo(name = "无锚", repeat = RepeatRule(type = RepeatType.Daily))
+        val noAnchorErr = r.addTodo(noAnchor)
+        assertTrue(noAnchorErr is TodoReadResult.Err && noAnchorErr.error is TodoError.RepeatInvalid)
+
+        val id = r.addTodo(testTodo(name = "正常")).okId()
+        assertTrue(r.updateTodo(emptyWindow.copy(id = id)).assertErr() is TodoError.RepeatInvalid)
+        // 写入失败内存零变更，活跃列表不受影响
+        assertEquals(listOf("正常"), r.todos.value.map { it.name })
+    }
+
+    @Test
+    fun `restoreTodo rejects trashed todos with invalid repeats`() = runBlocking {
+        // 回收站里的历史脏数据（空窗口重复，旧版本落库）：恢复走同一校验器，不放行
+        val bad = testTodo(
+            id = "legacy-bad",
+            name = "脏数据",
+            dates = listOf(IsoDate.parse("2026-06-18")),
+            repeat = RepeatRule(
+                type = RepeatType.Weekly,
+                endType = RepeatEndType.Date,
+                endDate = IsoDate.parse("2026-06-10"),
+            ),
+            deletedAtMillis = 123L,
+        )
+        val store = com.fangyi.classpp.data.store.FileTodoStore(folder.newFolder("legacy"))
+        store.save(TodoFile(todos = listOf(bad)))
+        val r = repo(store)
+
+        assertTrue(r.restoreTodo(bad.id).assertErr() is TodoError.RepeatInvalid)
+        // 未放行：条目仍留在回收站流，读取宽容不崩
+        assertEquals(listOf("legacy-bad"), r.deletedTodos.value.map { it.id })
+    }
+
+    @Test
     fun `updateTodoNotes overwrites only note with one commit and ignores unknown ids`() = runBlocking {
         val store = CountingTodoStore(com.fangyi.classpp.data.store.FileTodoStore(folder.root))
         val r = repo(store)
@@ -492,7 +542,12 @@ class TodoRepositoryTest {
         val archived = r.addTodo(testTodo(name = "归档")).okId()
         val trashed = r.addTodo(testTodo(name = "回收站")).okId()
         val repeating = r.addTodo(
-            testTodo(name = "重复", repeat = RepeatRule(type = RepeatType.Weekly)),
+            // 重复待办必须带锚日期（TodoValidator 的重复不变式），同步完成对它跳过不整条完成
+            testTodo(
+                name = "重复",
+                dates = listOf(IsoDate.parse("2026-06-18")),
+                repeat = RepeatRule(type = RepeatType.Weekly),
+            ),
         ).okId()
         r.archiveTodo(archived).assertOk()
         r.removeTodos(listOf(trashed)).assertOk()

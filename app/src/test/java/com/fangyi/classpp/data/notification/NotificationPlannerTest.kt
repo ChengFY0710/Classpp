@@ -6,6 +6,8 @@ import com.fangyi.classpp.data.model.CourseEntry
 import com.fangyi.classpp.data.model.DEFAULT_SLOTS
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.Parity
+import com.fangyi.classpp.data.model.RepeatRule
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
 import com.fangyi.classpp.data.model.TimeSlotDef
 import com.fangyi.classpp.data.model.Todo
@@ -328,6 +330,116 @@ class NotificationPlannerTest {
             settings = settings(),
         )
         assertTrue(planned.isEmpty())
+    }
+
+    // ——— 重复待办（按期次序列逐期排点） ———
+
+    @Test
+    fun repeatingTodosPlanStartAndEndPerOccurrence() {
+        // 每周锚 10/5（上周一）、今天 10/12：窗口 14 天（10/12–10/25）内 10/12 与 10/19
+        // 两期各排开始/结束；锚日 10/5 已过不补发（窗口从今天起）
+        val repeating = todo(
+            id = "r1",
+            timeKind = TodoTimeKind.Period,
+            dates = listOf(IsoDate.of(2026, 10, 5)),
+            startMinute = 9 * 60,
+            endMinute = 10 * 60,
+        ).copy(repeat = RepeatRule(type = RepeatType.Weekly))
+        val planned = plan(
+            schedule = null,
+            todos = listOf(repeating),
+            settings = settings(todoType = NotificationSettings.TODO_TYPE_ALL),
+        )
+        assertEquals(
+            listOf(
+                "T:r1:${IsoDate.of(2026, 10, 12).epochDay}:S",
+                "T:r1:${IsoDate.of(2026, 10, 12).epochDay}:E",
+                "T:r1:${IsoDate.of(2026, 10, 19).epochDay}:S",
+                "T:r1:${IsoDate.of(2026, 10, 19).epochDay}:E",
+            ),
+            planned.map { it.key },
+        )
+        assertEquals(localMillis(IsoDate.of(2026, 10, 12), 9 * 60 - 30), planned[0].triggerAtMillis)
+        assertEquals(localMillis(IsoDate.of(2026, 10, 19), 10 * 60 - 30), planned[3].triggerAtMillis)
+    }
+
+    @Test
+    fun completedOccurrencesAreSkippedWhileOthersStillRemind() {
+        // 10/12 期已完成：该期开始/结束全跳过，10/19 期照常提醒
+        val repeating = todo(
+            id = "r1",
+            timeKind = TodoTimeKind.Period,
+            dates = listOf(IsoDate.of(2026, 10, 5)),
+            startMinute = 9 * 60,
+            endMinute = 10 * 60,
+        ).copy(
+            repeat = RepeatRule(type = RepeatType.Weekly),
+            completedOccurrences = listOf(IsoDate.of(2026, 10, 12)),
+        )
+        val planned = plan(
+            schedule = null,
+            todos = listOf(repeating),
+            settings = settings(todoType = NotificationSettings.TODO_TYPE_ALL),
+        )
+        assertEquals(
+            listOf(
+                "T:r1:${IsoDate.of(2026, 10, 19).epochDay}:S",
+                "T:r1:${IsoDate.of(2026, 10, 19).epochDay}:E",
+            ),
+            planned.map { it.key },
+        )
+    }
+
+    @Test
+    fun deadlineBeforeRepeatFoldsTheDeadlinePerOccurrence() {
+        // 每周锚 10/5、开始前 2 天：10/12 期的截止 = 下一期 10/19 − 2 = 10/17，
+        // 10/19 期 = 10/26 − 2 = 10/24（不是存储的载体 10/7，它早已过期、修复前永远不提醒）；
+        // key 用期次日期，折算后即使两期收拢到同一天也不会互相覆盖
+        val repeating = todo(
+            id = "r1",
+            dates = listOf(IsoDate.of(2026, 10, 5)),
+            deadlineDate = IsoDate.of(2026, 10, 7),
+            deadlineMinute = 18 * 60,
+        ).copy(
+            repeat = RepeatRule(type = RepeatType.Weekly),
+            deadlineBeforeRepeat = true,
+            deadlineBeforeDays = 2,
+        )
+        val planned = plan(
+            schedule = null,
+            todos = listOf(repeating),
+            settings = settings(todoType = NotificationSettings.TODO_TYPE_DEADLINE),
+        )
+        assertEquals(
+            listOf(
+                "T:r1:${IsoDate.of(2026, 10, 12).epochDay}:D",
+                "T:r1:${IsoDate.of(2026, 10, 19).epochDay}:D",
+            ),
+            planned.map { it.key },
+        )
+        assertEquals(localMillis(IsoDate.of(2026, 10, 17), 18 * 60 - 30), planned[0].triggerAtMillis)
+        assertEquals(localMillis(IsoDate.of(2026, 10, 24), 18 * 60 - 30), planned[1].triggerAtMillis)
+    }
+
+    @Test
+    fun repeatingTodoWithFixedDeadlinePlansOneDeadlineReminder() {
+        // 固定截止（不随重复）是整条系列共享的一次性事件：按存储日期只排一条，
+        // 不随窗口内的期次重复
+        val repeating = todo(
+            id = "r1",
+            dates = listOf(IsoDate.of(2026, 10, 5)),
+            deadlineDate = IsoDate.of(2026, 10, 20),
+            deadlineMinute = 17 * 60,
+        ).copy(repeat = RepeatRule(type = RepeatType.Weekly))
+        val planned = plan(
+            schedule = null,
+            todos = listOf(repeating),
+            settings = settings(todoType = NotificationSettings.TODO_TYPE_DEADLINE),
+        )
+        assertEquals(
+            listOf("T:r1:${IsoDate.of(2026, 10, 20).epochDay}:D"),
+            planned.map { it.key },
+        )
     }
 
     @Test

@@ -1,7 +1,9 @@
 package com.fangyi.classpp.data
 
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Todo
 import com.fangyi.classpp.data.model.TodoTimeKind
+import com.fangyi.classpp.data.model.hasEmptyWindow
 import com.fangyi.classpp.data.store.TodoAttachmentStore
 
 /**
@@ -44,6 +46,19 @@ object TodoValidator {
         }
         if (todo.deadlineMinute != null && todo.deadlineMinute !in 0..MAX_MINUTE_OF_DAY) {
             errors += TodoError.DeadlineInvalid(TodoDeadlineReason.MinuteOutOfRange)
+        }
+
+        // 重复：有规则就必须能展开出至少一期——无锚日期（MissingDates）或日期档窗口早于
+        // 首期（EmptyWindow，见 hasEmptyWindow）的规则写入成功后永远出不了卡，列表、详情、
+        // 统计都看不到，也没有入口再编辑它。endType=Date 且 endDate 缺失已被仓库归一化回退
+        // 成 Never，次数档归一化后 endCount >= 1，锚日存在即至少有一期，均无需在此重复报错
+        if (todo.repeat.type != RepeatType.None) {
+            val anchor = todo.dates.minByOrNull { it.epochDay }
+            when {
+                anchor == null -> errors += TodoError.RepeatInvalid(TodoRepeatReason.MissingDates)
+                todo.repeat.hasEmptyWindow(anchor) ->
+                    errors += TodoError.RepeatInvalid(TodoRepeatReason.EmptyWindow)
+            }
         }
 
         // 步骤：标题非空、id 唯一

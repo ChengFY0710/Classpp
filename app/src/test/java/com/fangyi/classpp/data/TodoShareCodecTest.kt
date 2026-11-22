@@ -2,6 +2,9 @@ package com.fangyi.classpp.data
 
 import com.fangyi.classpp.data.export.TodoShareCodec
 import com.fangyi.classpp.data.model.IsoDate
+import com.fangyi.classpp.data.model.RepeatEndType
+import com.fangyi.classpp.data.model.RepeatRule
+import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.TodoAttachment
 import com.fangyi.classpp.data.model.TodoSharePayload
 import com.fangyi.classpp.data.model.TodoTimeKind
@@ -117,6 +120,32 @@ class TodoShareCodecTest {
     fun `decode validates todos`() {
         val json = TodoShareCodec.encode(listOf(testTodo(id = "t1", name = "  ")), exportedAtMillis = 1)
         assertTrue(TodoShareCodec.decodeForImport(json).readErr() is TodoError.BlankName)
+    }
+
+    @Test
+    fun `decode rejects repeats that cannot expand`() {
+        // 空窗口（日期档早于锚日）/ 无锚日期的重复：导入后永远展不出卡（不可见死数据），拒绝
+        val emptyWindow = TodoShareCodec.encode(
+            listOf(
+                testTodo(
+                    id = "t1",
+                    dates = listOf(IsoDate.parse("2026-06-18")),
+                    repeat = RepeatRule(
+                        type = RepeatType.Weekly,
+                        endType = RepeatEndType.Date,
+                        endDate = IsoDate.parse("2026-06-10"),
+                    ),
+                ),
+            ),
+            exportedAtMillis = 1,
+        )
+        assertTrue(TodoShareCodec.decodeForImport(emptyWindow).readErr() is TodoError.RepeatInvalid)
+
+        val missingDates = TodoShareCodec.encode(
+            listOf(testTodo(id = "t2", repeat = RepeatRule(type = RepeatType.Weekly))),
+            exportedAtMillis = 1,
+        )
+        assertTrue(TodoShareCodec.decodeForImport(missingDates).readErr() is TodoError.RepeatInvalid)
     }
 
     @Test

@@ -1519,9 +1519,19 @@ fun TodoScreen(
                     }
                 },
                 // 「添加到日历」（详情菜单项）：权限/账户选择/写入由 calendarAdd 编排；
-                // 传详情快照 detail（单元素列表，批量入口见编辑顶栏「同步」），写入目标
-                // 锁定点菜单那一刻的内容
-                onAddToCalendar = { calendarAdd.begin(listOf(detail)) },
+                // 重复待办把「当期副本」（dates = 所点期次）交给日历——事件落在所点期次
+                // 而不是锚日期；副本只供日历规划（CalendarEventPlanner 优先取 dates），
+                // 不进 updateTodo/NewTodoSheet 等落库路径（否则会丢锚日期与完成历史）。
+                // 非重复待办或无逐期上下文时维持原始 detail
+                onAddToCalendar = {
+                    val occurrence = IsoDate.parseOrNull(detailTargetDate)
+                    val calendarTodo = if (detail.repeat.type != RepeatType.None && occurrence != null) {
+                        detail.copy(dates = listOf(occurrence))
+                    } else {
+                        detail
+                    }
+                    calendarAdd.begin(listOf(calendarTodo))
+                },
                 // 「添加到闹钟」（详情菜单项）：按截止时刻（优先）或开始时刻把待办写入
                 // 系统时钟的一次性闹钟，跳转与 Toast 由 AddToAlarmFlow 编排
                 onAddToAlarm = { addToAlarm(detail) },
@@ -1608,7 +1618,10 @@ fun TodoScreen(
     if (groupsVisible) groupsMounted = true
     if (groupsMounted) {
         TodoGroupsSheet(
+            // 原始活跃待办：分组/标签/置顶计数按系列计
             todos = todos,
+            // 展开卡片：已完成/未完成/已逾期计数按卡片计，与专项页的卡片数一致
+            statusTodos = displayTodos,
             deletedCount = deletedTodos.size,
             archivedCount = archivedTodos.size,
             groups = groups,
@@ -2849,6 +2862,19 @@ internal fun IsoDate.toAbsoluteDateText(today: IsoDate = IsoDate.today()): Strin
         String.format(Locale.ROOT, "%d/%d/%d", year, month, day)
     }
 }
+
+/**
+ * 详情浮层「待办时间」的日期段：重复待办带所点期次（[occurrenceDate]，列表分期卡带入）
+ * 时只显示该期——从显示 3/23 的分期卡进详情，时间行也必须是 3/23，不是存储的锚日期；
+ * 无逐期上下文（null，如 AI 对话浮层）与非重复待办显示存储的全部日期（多日期逐个列出）。
+ * 纯函数（[today] 注入），TodoDetailSheet 的 scheduledText 与单测共用。
+ */
+internal fun todoScheduledDateText(todo: Todo, occurrenceDate: IsoDate?, today: IsoDate): String =
+    if (todo.repeat.type != RepeatType.None && occurrenceDate != null) {
+        occurrenceDate.toAbsoluteDateText(today)
+    } else {
+        todo.dates.joinToString("、") { it.toAbsoluteDateText(today) }
+    }
 
 /**
  * 时刻戳文本（待办创建/完成时间）：`3/12 8:00`（本年）/ `2027/3/12 8:00`（非本年）——
