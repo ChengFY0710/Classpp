@@ -2284,14 +2284,14 @@ private fun DayImageLayer(
             model = file,
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            error = painterResource(R.drawable.bg_day_test),
+            error = painterResource(R.drawable.bg_day_default),
             onSuccess = { onReady?.invoke(image) },
             onError = { onReady?.invoke(image) },
             modifier = modifier,
         )
     } else {
         Image(
-            painter = painterResource(R.drawable.bg_day_test),
+            painter = painterResource(R.drawable.bg_day_default),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = modifier,
