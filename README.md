@@ -2,24 +2,36 @@
   <img src=".materials/图标.png" alt="Classpp 图标" width="120">
 </p>
 
-# Class Plus Plus（Classpp / Class++）
+<h1 align="center">Class Plus Plus（Classpp / Class++）</h1>
 
-**一款简洁高颜值的安卓课表 App，集课表、日程与待办于一体。**
+<p align="center"><strong>一款简洁高颜值安卓课表 App，集课表、日程与待办于一体。</strong></p>
 
-> 当前版本：`v1.0.0-beta` · 最低支持 Android 7.0（API 24） · 单 Activity + 100% Kotlin / Jetpack Compose
+<p align="center">
+  <a href="https://github.com/ChengFY0710/Classpp/stargazers"><img src="https://img.shields.io/github/stars/ChengFY0710/Classpp?style=flat-square&amp;color=yellow" alt="Stars"></a>
+  <a href="https://github.com/ChengFY0710/Classpp/releases"><img src="https://img.shields.io/github/downloads/ChengFY0710/Classpp/total?style=flat-square&amp;color=green" alt="Downloads"></a>
+  <a href="https://github.com/ChengFY0710/Classpp/releases/latest"><img src="https://img.shields.io/github/v/release/ChengFY0710/Classpp?style=flat-square&amp;color=blue" alt="Latest Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm--NC--1.0.0-black?style=flat-square" alt="License"></a>
+</p>
 
-起初这只是一份设计稿，装着作者对「安卓端简洁好看的课表 App」的全部幻想。在 Vibe Coding 工具的帮助下，这些想法被一点一点变成了现实——现在它不只是一张课表，而是把上课、安排日程和完成任务放在同一处的学习生活工作台。
+<p align="center">起初这只是一份设计稿，装着作者对「安卓端简洁好看的课表 App」的全部幻想。在 Vibe Coding 工具的帮助下，这些想法被一点一点变成了现实——现在它不只是一张课表，而是把上课、安排日程和完成任务放在同一处的学习生活工作台。</p>
+
+
 
 ---
 
 ## 功能亮点
 
+<p align="center">
+  <img src=".materials/介绍1.png" alt="Classpp 介绍1">
+</p>
+
 ### 课表：一眼看清这周上什么
 
 - 周课表网格视图，支持单双周 / 交替周等排课规则，可自定义节次时间方案
 - 课程详情、临时调课、课程颜色与教师显示偏好都能按自己的习惯调整
-- 多种导入方式：手动编辑、文本粘贴、图片或文字交给 AI 识别，以及学校教务同步
-- 支持 Wakeup 口令导入与拾光教务适配脚本；学校适配可按声明接入，无需改客户端代码
+- 课表导入方式：手动新建 / 编辑、教务同步、AI 识别、Wakeup 口令、拾光适配脚本、Classpp JSON 文件与剪贴板分享码
+- 教务同步支持原生凭据选学期导入，也可在 WebView 里登录课表页导入；远端声明学校可按 `timetable` 脚本接入网页导入，无需改客户端代码
+- AI 识别支持课表截图，以及由 App 打开教务网页抓取表格文本后解析，确认后再导入
 - 「今日课程」桌面小组件（4×2），抬眼就知道下一节在哪
 
 ### 日程：把日子过成自己喜欢的样子
@@ -35,12 +47,27 @@
 - 待办概览提供今日收工统计与周节奏图表，侧滑即可快速处理卡片
 - 支持通过分享码导入 / 导出待办内容
 
+### AI 助手：把课表和待办交给它打理
+
+- 多会话流式对话：逐字输出、思考过程可折叠展示，支持中途停止、重试与半截回复保留
+- 图片输入：相册选图、拍照或系统分享均可作为提问附件，每条消息最多 4 张，压缩后随对话发送
+- 工具调用闭环：**待办**可新建 / 修改 / 删除 / 完成 / 归档，并管理分组与标签；**课表与日程**作为只读上下文参与回答。修改和删除先出确认卡，新建 / 完成 / 归档立即生效且可撤销
+- 课表识别导入：把课表截图交给 AI，或让 App 在内置 WebView 打开教务网页抓取表格文本，解析成课表后确认导入
+- 服务商：内置 DeepSeek、智谱 GLM、通义千问、阿里云百炼、Kimi、Xiaomi MiMo、OpenCode Go、Ollama 与自定义端点；可在线拉取模型列表，按模型切换 2–5 档推理强度，兼容 OpenAI 与 Anthropic 双协议
+- 配置与隐私：多套配置方案独立保存，API Key 经 Android Keystore AES-256/GCM 加密；公网强制 HTTPS，仅本地 / 局域网端点允许明文 HTTP
+- 入口：长按底部已选中的导航胶囊即可呼出 AI；设置里可关闭工具调用，退回 JSON 契约模式
+
 ### 更多细节
 
-- **AI 助手**：自带工具调用，能读写课表与待办；支持 OpenAI 兼容与 Anthropic 协议、多家预设服务与自定义端点，API Key 由 Android Keystore 加密保存
 - **高颜值界面**：毛玻璃、液态玻璃底栏、连续曲率形状、自研动效与深浅主题；颜色 / 间距 / 字号均由设计 token 统一管理
+- **厦大适配**：支持厦门大学课程中心待办同步（含作业要求与附件）与教务系统课表导入
 - **本地优先**：课表、待办、标签等默认保存在设备本地；提供未加密 ZIP 备份与恢复
 - **中英双语**：界面文案支持中文与英文
+
+<p align="center">
+  <img src=".materials/介绍2.png" alt="Classpp 介绍2">
+</p>
+
 
 ---
 
