@@ -18,12 +18,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.tooling.preview.Preview
@@ -49,6 +52,17 @@ private const val AuroraSpeed = 8f
 
 /** 相位累计上限（1× 秒）：按 8× 速度约 30 小时归零一次，避免 Float 精度导致游动发涩。 */
 private const val PhaseWrapSeconds = 864_000f
+
+/**
+ * 相位推进的最小步长（1/30s）。光场是极慢的弥散运动（游走周期 3.75–6.5s），30fps 与
+ * 60/120fps 的观感差异极小；而本组件每推进一次就要重绘一次整卡离屏光场，且思考/工具
+ * 循环可持续数分钟——限到 30fps 直接把这段持续成本砍半。
+ * `withFrameNanos` 仍按屏幕刷新率回调，只是不足一步时不写 phase，绘制因此不失效。
+ */
+private const val PhaseStepNanos = 33_333_333L
+
+/** 单帧最大计时跨度：掉帧或从后台回来时不让光斑瞬移一截（沿用原 50ms 上限）。 */
+private const val MaxFrameDeltaNanos = 50_000_000L
 
 /** Center 模式每颗光斑叠加的明暗起伏幅度：alpha = 基值 × (1 ± 0.20 × reveal)。 */
 private const val PulseDepth = 0.20f
@@ -126,6 +140,72 @@ private val FalloffFactors: FloatArray =
     }
 
 /**
+ * 光斑画刷：白色 + 固定衰减 alpha，半径按单位 1 建。绘制时用 [withTransform] 缩放到实际
+ * 半径、用 [ColorFilter.tint] 乘上当前配色、用 drawCircle 的 alpha 乘上明暗起伏——画刷
+ * 因此与配色、相位解耦，逐帧只做几次浮点运算。
+ *
+ * 两个工厂都在宿主 `drawWithCache` 的缓存块里调用（按绘制尺寸各建一份）：`ShaderBrush`
+ * 内部以「创建时的尺寸」缓存 shader，若跨尺寸共享同一个实例（Full 浮层与 Center 光带
+ * 并存时），每次绘制都会因尺寸不匹配重建 shader；放进缓存块则只在尺寸 / 主题变化时建一次。
+ *
+ * 此前每帧为 4 颗光斑各建 17 段 colorStops（约 100 个 Color），60fps 下每秒约 6000 个
+ * 临时对象；流式思考可持续数分钟，是这条路径最主要的分配与 GC 来源。
+ *
+ * 白色只作 alpha 载体（可见 RGB 全部来自调色板经 [ColorFilter.tint] 的着色），
+ * 不构成新的装饰色值，仍符合《颜色使用规范》的取色口径。
+ */
+private fun fullBlobBrush(): Brush = Brush.radialGradient(
+    colorStops = Array(FalloffStepCount + 1) { index ->
+        FalloffFractions[index] to Color.White.copy(alpha = FalloffFactors[index])
+    },
+    center = Offset.Zero,
+    radius = 1f,
+)
+
+/** Center 档的 4 段线性衰减画刷（配方同 [CenterFalloffMid] / [CenterFalloffOuter]）。 */
+private fun centerBlobBrush(): Brush = Brush.radialGradient(
+    colorStops = arrayOf(
+        0f to Color.White,
+        0.5f to Color.White.copy(alpha = CenterFalloffMid),
+        0.8f to Color.White.copy(alpha = CenterFalloffOuter),
+        1f to Color.White.copy(alpha = 0f),
+    ),
+    center = Offset.Zero,
+    radius = 1f,
+)
+
+/**
+ * 画一颗光斑：把画布原点搬到 [center]、再按 [radius] 缩放，画出单位半径的 [brush]。
+ *
+ * 圆心**必须**显式传 [Offset.Zero]：`DrawScope.drawCircle` 的默认圆心是画布中心
+ * （`center: Offset = this.center`），在缩放约 10³ 倍的画布上会被映射到屏幕外几万像素处，
+ * 结果就是整层只剩竖向遮罩、光效完全不可见。把这条不变量收在本函数里，调用方不必再记。
+ *
+ * 颜色走 [ColorFilter.tint]（SrcIn：保留画刷的衰减 alpha、只换 RGB），明暗走 drawCircle
+ * 的 alpha——三者相乘与原先逐帧重建 colorStops 的结果等价，但逐帧零分配。
+ */
+private inline fun DrawScope.drawAuroraBlob(
+    brush: Brush,
+    center: Offset,
+    radius: Float,
+    alpha: Float,
+    color: Color,
+) {
+    withTransform({
+        translate(center.x, center.y)
+        scale(radius, radius, pivot = Offset.Zero)
+    }) {
+        drawCircle(
+            brush = brush,
+            radius = 1f,
+            center = Offset.Zero,
+            alpha = alpha,
+            colorFilter = ColorFilter.tint(color),
+        )
+    }
+}
+
+/**
  * [AiAuroraAnchor.Full] 的出现 / 退出纵向位移比例（以卡片高度计）：整片光场只轻微
  * 上浮 12% 后落位，不再像底部光带那样从输入栏后方整段升起。
  */
@@ -179,9 +259,13 @@ enum class AiAuroraAnchor { Full, Center }
  *
  * 实现约束：
  * - 不挂 `Modifier.blur`：径向渐变自带软边，避免 API 31+ 与整层离屏的开销；
- * - 只在 active 时跑 `withFrameNanos` 帧循环，退场与空闲不推进相位；系统关闭动画
+ * - 只在 active 时跑 `withFrameNanos` 帧循环，退场与空闲不推进相位；相位按 1/30s
+ *   步进（[PhaseStepNanos]），把持续数分钟的整卡离屏重绘成本减半；系统关闭动画
  *   （`rememberSystemAnimationsEnabled`，与对话气泡落位共用同一处判定）时直接
  *   呈现 / 收起，不做位移过渡；
+ * - 画刷与尺寸/配色/相位解耦：光斑用单位半径白色画刷 + 画布缩放 + [ColorFilter.tint]，
+ *   竖向遮罩在 `drawWithCache` 里按尺寸建一次；逐帧只做几次浮点运算与 tint，
+ *   不再重建 colorStops 数组；
  * - 绘制走 `graphicsLayer(compositingStrategy = Offscreen)` + `BlendMode.DstIn` 遮罩，
  *   只影响本组件这一层；
  * - 色值只允许经 `MaterialTheme.classppColors.aiAuroraPalettes` 取用（四组浅/深成对
@@ -272,11 +356,16 @@ fun AiThinkingAurora(
     LaunchedEffect(active, animationsEnabled) {
         if (!active || !animationsEnabled) return@LaunchedEffect
         var last = withFrameNanos { it }
+        var pendingNanos = 0L
         while (true) {
             withFrameNanos { now ->
-                // 掉帧时最多推进 50ms：从后台切回来不会让光斑瞬移一截
-                val dt = ((now - last) / 1_000_000_000f).coerceIn(0f, 0.05f)
+                // 掉帧时单帧最多计 50ms：从后台切回来不会让光斑瞬移一截。
+                // 累计不足一个 1/30s 步长时不写 phase——绘制不失效，这一帧零重绘。
+                pendingNanos += (now - last).coerceIn(0L, MaxFrameDeltaNanos)
                 last = now
+                if (pendingNanos < PhaseStepNanos) return@withFrameNanos
+                val dt = (pendingNanos / 1_000_000_000f).coerceAtMost(0.05f)
+                pendingNanos = 0L
                 val next = phase.floatValue + dt * AuroraSpeed
                 phase.floatValue = if (next > PhaseWrapSeconds) next - PhaseWrapSeconds else next
             }
@@ -294,85 +383,82 @@ fun AiThinkingAurora(
                 // DstIn 遮罩需要独立图层；Full 为整卡背景，只在思考期间挂载
                 compositingStrategy = CompositingStrategy.Offscreen
             }
-            .drawBehind {
-                // 完全隐藏后不画任何像素：退场末帧与空闲时该层零绘制
-                if (reveal <= 0f) return@drawBehind
-                val visibleHeight = size.height.coerceAtLeast(1f)
-                val t = phase.floatValue
-                // 整片配色轮换：phase / AuroraSpeed = 真实秒；每组停留 + 交叉淡化循环。
-                // palettes 顺序固定为蓝绿 → 蓝紫 → 红粉 → 橙黄（见 Theme.kt 装配）
-                val paletteCount = palettes.size
-                val cycleSeconds = PaletteHoldSeconds + PaletteBlendSeconds
-                val palettePosition = (t / AuroraSpeed) % (cycleSeconds * paletteCount)
-                val paletteIndex = (palettePosition / cycleSeconds).toInt()
-                    .coerceIn(0, paletteCount - 1)
-                val withinPalette = palettePosition - paletteIndex * cycleSeconds
-                val blendRaw = ((withinPalette - PaletteHoldSeconds) / PaletteBlendSeconds)
-                    .coerceIn(0f, 1f)
-                // smoothstep：两端速度为零，整片换色不会出现起止顿挫
-                val blend = blendRaw * blendRaw * (3f - 2f * blendRaw)
-                val fromPalette = palettes[paletteIndex]
-                val toPalette = palettes[(paletteIndex + 1) % paletteCount]
-                val isFull = anchor == AiAuroraAnchor.Full
-                // 整片公共漂移：两种锚点都让光场作为一个整体交替游走
-                val swayX = SwayXAmplitude * sin(TwoPi * t / SwayXPeriod + SwayXPhase)
-                val swayY = SwayYAmplitude * cos(TwoPi * t / SwayYPeriod + SwayYPhase)
+            // 缓存块只依赖尺寸与锚点：竖向遮罩画刷建一次，逐帧绘制直接复用。
+            // 相位/配色/明暗都在 onDrawBehind 里读，逐帧失效的只有绘制阶段。
+            .drawWithCache {
+                val maskBrush = Brush.verticalGradient(
+                    colorStops = maskStops,
+                    startY = 0f,
+                    endY = size.height.coerceAtLeast(1f),
+                )
+                // Full 用多段平滑衰减，避免大半径光斑上出现环状/横向亮带；
+                // Center 保持原来的 4 段线性衰减。画刷按本次尺寸建一份，尺寸/主题
+                // 不变时缓存复用，逐帧绘制零分配
+                val blobBrush = if (anchor == AiAuroraAnchor.Full) {
+                    fullBlobBrush()
+                } else {
+                    centerBlobBrush()
+                }
+                onDrawBehind {
+                    // 完全隐藏后不画任何像素：退场末帧与空闲时该层零绘制
+                    if (reveal <= 0f) return@onDrawBehind
+                    val visibleHeight = size.height.coerceAtLeast(1f)
+                    val t = phase.floatValue
+                    // 整片配色轮换：phase / AuroraSpeed = 真实秒；每组停留 + 交叉淡化循环。
+                    // palettes 顺序固定为蓝绿 → 蓝紫 → 红粉 → 橙黄（见 Theme.kt 装配）
+                    val paletteCount = palettes.size
+                    val cycleSeconds = PaletteHoldSeconds + PaletteBlendSeconds
+                    val palettePosition = (t / AuroraSpeed) % (cycleSeconds * paletteCount)
+                    val paletteIndex = (palettePosition / cycleSeconds).toInt()
+                        .coerceIn(0, paletteCount - 1)
+                    val withinPalette = palettePosition - paletteIndex * cycleSeconds
+                    val blendRaw = ((withinPalette - PaletteHoldSeconds) / PaletteBlendSeconds)
+                        .coerceIn(0f, 1f)
+                    // smoothstep：两端速度为零，整片换色不会出现起止顿挫
+                    val blend = blendRaw * blendRaw * (3f - 2f * blendRaw)
+                    val fromPalette = palettes[paletteIndex]
+                    val toPalette = palettes[(paletteIndex + 1) % paletteCount]
+                    // 整片公共漂移：两种锚点都让光场作为一个整体交替游走
+                    val swayX = SwayXAmplitude * sin(TwoPi * t / SwayXPeriod + SwayXPhase)
+                    val swayY = SwayYAmplitude * cos(TwoPi * t / SwayYPeriod + SwayYPhase)
 
-                blobs.forEach { blob ->
-                    val center = Offset(
-                        x = (blob.baseX + reveal * (swayX + blob.thinkX + blob.moveX *
-                            sin(TwoPi * t / blob.periodX + blob.phase))) * size.width,
-                        y = (blob.baseY + reveal * (swayY + blob.thinkY + blob.moveY *
-                            cos(TwoPi * t / blob.periodY + blob.phase))) * visibleHeight,
-                    )
-                    // 两种锚点都按相位在相邻两组配色之间插值，整片颜色持续轮换
-                    val color = lerp(
-                        fromPalette[blob.colorIndex],
-                        toPalette[blob.colorIndex],
-                        blend,
-                    )
-                    val pulse = 1f + reveal * pulseDepth *
-                        sin(TwoPi * t / blob.pulsePeriod + blob.pulsePhase)
-                    val alpha = (blob.baseAlpha * pulse).coerceIn(0f, 1f)
-                    val radius = (blob.radius * size.width *
-                        (1f + reveal * breatheDepth *
-                            sin(TwoPi * t / blob.periodX + blob.phase + 1.1f)))
-                        .coerceAtLeast(1f)
-                    // Full 用多段平滑衰减，避免大半径光斑上出现环状/横向亮带；
-                    // Center 保持原来的 4 段线性衰减
-                    val colorStops = if (isFull) {
-                        Array(FalloffFactors.size) { index ->
-                            FalloffFractions[index] to
-                                color.copy(alpha = alpha * FalloffFactors[index])
-                        }
-                    } else {
-                        arrayOf(
-                            0f to color.copy(alpha = alpha),
-                            0.5f to color.copy(alpha = alpha * CenterFalloffMid),
-                            0.8f to color.copy(alpha = alpha * CenterFalloffOuter),
-                            1f to color.copy(alpha = 0f),
+                    blobs.forEach { blob ->
+                        val center = Offset(
+                            x = (blob.baseX + reveal * (swayX + blob.thinkX + blob.moveX *
+                                sin(TwoPi * t / blob.periodX + blob.phase))) * size.width,
+                            y = (blob.baseY + reveal * (swayY + blob.thinkY + blob.moveY *
+                                cos(TwoPi * t / blob.periodY + blob.phase))) * visibleHeight,
                         )
-                    }
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colorStops = colorStops,
+                        // 两种锚点都按相位在相邻两组配色之间插值，整片颜色持续轮换
+                        val color = lerp(
+                            fromPalette[blob.colorIndex],
+                            toPalette[blob.colorIndex],
+                            blend,
+                        )
+                        val pulse = 1f + reveal * pulseDepth *
+                            sin(TwoPi * t / blob.pulsePeriod + blob.pulsePhase)
+                        val alpha = (blob.baseAlpha * pulse).coerceIn(0f, 1f)
+                        val radius = (blob.radius * size.width *
+                            (1f + reveal * breatheDepth *
+                                sin(TwoPi * t / blob.periodX + blob.phase + 1.1f)))
+                            .coerceAtLeast(1f)
+                        // 单位半径画刷 + 画布缩放：画刷与半径/位置解耦，逐帧零分配
+                        // （圆心必须给原点，见 drawAuroraBlob）
+                        drawAuroraBlob(
+                            brush = blobBrush,
                             center = center,
                             radius = radius,
-                        ),
-                        radius = radius,
-                        center = center,
+                            alpha = alpha,
+                            color = color,
+                        )
+                    }
+
+                    // 竖向遮罩：Full 顶部淡出到浮层底色；Center 上下双向淡出成一条光带
+                    drawRect(
+                        brush = maskBrush,
+                        blendMode = BlendMode.DstIn,
                     )
                 }
-
-                // 竖向遮罩：Full 顶部淡出到浮层底色；Center 上下双向淡出成一条光带
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colorStops = maskStops,
-                        startY = 0f,
-                        endY = visibleHeight,
-                    ),
-                    blendMode = BlendMode.DstIn,
-                )
             },
     )
 }
