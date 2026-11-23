@@ -14,8 +14,8 @@ android {
         applicationId = "com.fangyi.classpp"
         minSdk = 24
         targetSdk = 37
-        versionCode = 7
-        versionName = "0.1.8-alpha"
+        versionCode = 8
+        versionName = "1.0.0-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
