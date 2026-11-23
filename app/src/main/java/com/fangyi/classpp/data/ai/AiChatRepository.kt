@@ -1791,9 +1791,12 @@ class AiChatRepository internal constructor(
             createdAtMillis = nowMillis(),
             updatedAtMillis = nowMillis(),
         )
+        val previousId = _activeConversationId.value
         _conversations.update { it + conversation }
         _activeConversationId.value = conversation.id
         _messages.value = emptyList()
+        // 旧对话同样已离屏，顺手裁到内存上限（调用方处于 Haze 退让窗口内）
+        previousId?.takeIf { it != conversation.id }?.let(::trimConversationMessages)
         mirrorLastError()
         persist()
         return conversation.id
@@ -1808,10 +1811,38 @@ class AiChatRepository internal constructor(
     suspend fun switchConversation(id: String) {
         if (id == _activeConversationId.value) return
         val target = _conversations.value.firstOrNull { it.id == id } ?: return
+        val previousId = _activeConversationId.value
         _activeConversationId.value = target.id
         _messages.value = target.messages
+        // 切走的对话已不在屏幕上、也不是采样源：顺手把它的内存消息裁到上限。
+        // 调用方（浮层）在 Haze 退让窗口内执行本方法，结构重写不会撞上采样源
+        previousId?.takeIf { it != target.id }?.let(::trimConversationMessages)
         mirrorLastError()
         persist()
+    }
+
+    /**
+     * 把指定对话的内存消息裁到 [MAX_IN_MEMORY_MESSAGES]；活跃对话同步镜像。
+     * 只在目标已离屏（切走 / 新建后）时调用：消息列在场期间它是 Haze 采样源，
+     * 顶部裁剪属结构重写（见 [MAX_IN_MEMORY_MESSAGES] 的 KDoc）。
+     */
+    private fun trimConversationMessages(id: String) {
+        val target = _conversations.value.firstOrNull { it.id == id } ?: return
+        if (target.messages.size <= MAX_IN_MEMORY_MESSAGES) return
+        _conversations.update { list ->
+            list.map { conversation ->
+                if (conversation.id == id) {
+                    conversation.copy(
+                        messages = conversation.messages.takeLast(MAX_IN_MEMORY_MESSAGES),
+                    )
+                } else {
+                    conversation
+                }
+            }
+        }
+        if (id == _activeConversationId.value) {
+            _messages.value = activeConversation()?.messages ?: emptyList()
+        }
     }
 
     /**
@@ -2218,8 +2249,17 @@ class AiChatRepository internal constructor(
         transform: (List<AiChatMessage>) -> List<AiChatMessage>,
     ) {
         updateConversation(conversationId) { conversation ->
+            val next = transform(conversation.messages)
+            // 只裁非活跃对话：它的消息不在屏幕上、也不是 Haze 采样源，裁剪安全。
+            // 活跃对话在切走 / 新建时才裁（调用方处于 Haze 退让窗口内）；
+            // 在场期间从采样源顶部抽条属结构重写（见 MAX_IN_MEMORY_MESSAGES 的 KDoc）
+            val background = conversationId != _activeConversationId.value
             conversation.copy(
-                messages = transform(conversation.messages),
+                messages = if (background && next.size > MAX_IN_MEMORY_MESSAGES) {
+                    next.takeLast(MAX_IN_MEMORY_MESSAGES)
+                } else {
+                    next
+                },
                 updatedAtMillis = nowMillis(),
             )
         }
@@ -3398,6 +3438,16 @@ class AiChatRepository internal constructor(
 
         /** 落盘的消息上限（每场对话各自截最旧，见计划 §4.3） */
         const val MAX_PERSISTED_MESSAGES = 200
+
+        /**
+         * 内存里单场对话保留的消息上限。落盘上限只约束磁盘，长会话在内存里仍可增长；
+         * 裁剪只在目标对话**已离屏**时做：后台对话的流式追加、切走 / 新建对话之后
+         * （调用方处于 Haze 退让窗口内）。活跃对话在场期间不裁剪——消息列是 Haze 采样源，
+         * 从顶部抽条属结构重写（见 docs/AGENTS.md 的 Haze 磨砂规范）；它的内存由
+         * 落盘上限 200 条 + 本次会话的新增消息构成，消息列本身也只渲染有界窗口。
+         * AI 回放本身只取最近 [HISTORY_TURNS] 轮，裁掉的是翻阅价值最低的旧消息。
+         */
+        const val MAX_IN_MEMORY_MESSAGES = 300
 
         /** 对话名截断长度：取首条用户消息开头自动命名 */
         const val TITLE_MAX_LENGTH = 16

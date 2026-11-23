@@ -1012,6 +1012,8 @@
     <string name="ai_sheet_title">AI 助手</string>
     <string name="ai_sheet_chat">对话</string>
     <string name="ai_sheet_close">关闭</string>
+    <!-- 消息列渲染窗口：只组合最近若干条，更早的历史按批展开 -->
+    <string name="ai_history_window_earlier">显示更早的消息（还有 %1$d 条）</string>
 
     <!-- 系统分享入口：只预填输入栏，用户确认后发送 -->
     <string name="ai_share_todo_prompt">根据截图中的内容帮我新建待办</string>

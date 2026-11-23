@@ -1015,6 +1015,8 @@
     <string name="ai_sheet_title">AI Assistant</string>
     <string name="ai_sheet_chat">Chat</string>
     <string name="ai_sheet_close">Close</string>
+    <!-- Message list render window: only the latest messages are composed; older ones load in batches -->
+    <string name="ai_history_window_earlier">Show earlier messages (%1$d left)</string>
 
     <!-- System share entry: prefills the composer only; the user confirms sending -->
     <string name="ai_share_todo_prompt">Create todos from what\'s in the screenshot</string>

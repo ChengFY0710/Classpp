@@ -30,6 +30,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -50,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -85,6 +87,8 @@ import com.fangyi.classpp.ui.components.SwipeCoordinator
 import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.components.rememberImeVisible
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.PressShade
+import com.fangyi.classpp.ui.motion.pressClickable
 import com.fangyi.classpp.ui.motion.rememberSystemAnimationsEnabled
 import com.fangyi.classpp.ui.note.NewTodoSheet
 import com.fangyi.classpp.ui.note.TodoDetailSheet
@@ -96,6 +100,7 @@ import com.fangyi.classpp.ui.theme.CardSectionSpacing
 import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.LocalNavigationBarInsets
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
+import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
@@ -339,6 +344,10 @@ fun AiChatOverlay(
     // （删光为 N→0）与活动对话被删时的消息列整块换写都发生在窗口内，两层顶栏磨砂
     // 一起退让（崩溃史同 applyConversationChange / tombstone_05；机制见 HazeRetreatState）
     val deleteHazeRetreat = rememberHazeRetreat()
+    // 「显示更早消息」的展开窗口：一次向消息列顶部补一批历史，属采样源的结构重写。
+    // 按《AGENTS.md》的 Haze 规范（弹层在场期间采样源不得结构重写），展开与源卸载必须
+    // 落同帧：forRewrite 同步置 suspended 后执行展开，两帧后再挂回（崩溃史同 tombstone_05）
+    val historyRetreat = rememberHazeRetreat()
     // 详情/编辑目标两态口径（同 TodoScreen 的 detail/edit）：id 是期望目标，mounted 是
     // 挂载快照（详情随仓库回流刷新，编辑表单只取一次初值）
     var detailTodoId by remember { mutableStateOf("") }
@@ -699,6 +708,33 @@ fun AiChatOverlay(
 
     // ——— 动作集合 ———
 
+    // 「显示更早消息」已展开的批次数（按对话重置）：每批 = MessageWindowStep 条
+    var earlierBatches by remember(activeConversationId) { mutableIntStateOf(0) }
+
+    /**
+     * 展开一批更早消息，并把视口锚回展开前的那条：新增内容在顶部，若只增大窗口，
+     * ScrollState 的数值不变会把视口留在新内容的开头（观感是往回跳一批）。等布局把
+     * 新增高度写进 maxValue 后，把滚动值加上这段高度，用户当前读的那条保持不动。
+     *
+     * 展开属消息列（Haze 采样源）的结构重写，按《AGENTS.md》的 Haze 规范经
+     * [historyRetreat] 让源与重写落同帧，两帧后再挂回。
+     */
+    fun loadEarlierMessages() {
+        val scroll = chatScroll.value ?: return
+        if (scroll.isScrollInProgress) return
+        val beforeMax = scroll.maxValue
+        historyRetreat.forRewrite { earlierBatches += 1 }
+        scope.launch {
+            // 两帧：第一帧完成重组与测量，第二帧 maxValue 已稳定
+            withFrameNanos { }
+            withFrameNanos { }
+            val added = scroll.maxValue - beforeMax
+            if (added > 0 && !scroll.isScrollInProgress) {
+                scroll.scrollTo((scroll.value + added).coerceAtMost(scroll.maxValue))
+            }
+        }
+    }
+
     fun sendMessage(text: String) {
         val repository = aiChatRepository ?: return
         if (sending) return
@@ -886,9 +922,10 @@ fun AiChatOverlay(
         } else {
             SheetImeBehavior.ContentScroll
         },
-        // 切换 / 删除对话的落库与绘制窗口内整条 Haze 链退让（崩溃史见 applyConversationChange
-        // 与 deleteConversation）；平时保持挂载，稳态磨砂不变
-        hazeEnabled = !conversationHazeSuspended && !deleteHazeRetreat.suspended,
+        // 切换 / 删除对话、「显示更早消息」展开的落库与绘制窗口内整条 Haze 链退让
+        // （崩溃史见 applyConversationChange 与 deleteConversation）；平时保持挂载，稳态磨砂不变
+        hazeEnabled = !conversationHazeSuspended && !deleteHazeRetreat.suspended &&
+            !historyRetreat.suspended,
         // 崩溃与修复史（ec9fa71 退让 → f958dbb 改 Behind → 本次再复现）：消息列是采样源，
         // 切换对话时内容从长列表塌缩成空态、流式期间逐字重写——「内容结构频繁重写采样源」
         // 曾触发 RenderThread SIGSEGV（切换到空对话必崩）。All→Behind 修复了效果位于源子树
@@ -1065,6 +1102,10 @@ fun AiChatOverlay(
             }
             else -> AiChatMessageList(
                 messagesState = messagesState,
+                // 渲染窗口的身份与已展开批次：切对话重置窗口，展开由宿主包 Haze 退让
+                conversationId = activeConversationId,
+                earlierBatches = earlierBatches,
+                onLoadEarlier = ::loadEarlierMessages,
                 sending = sending,
                 sendEntrance = sendEntrance,
                 lastError = lastError,
@@ -1334,10 +1375,25 @@ fun AiChatOverlay(
  * 每批合并只有尾部一条消息换了实例，其余消息按下标槽位跳过重组——**前提是卡片段的
  * 入参也保持稳定**，所以待办卡的反查列表与撤销/应用回调都在各自 `if` 里用 remember 固定
  * （见下方注释）。列本身仍会随每批重组（它要读新内容），这是「批发布」的固有成本。
+ *
+ * 为把这份固有成本从「历史长度」里解耦，本列在挂载时只组合最近 [MessageWindowInitial] 条
+ * 消息，顶部一行「更早消息」按 [MessageWindowStep] 逐批向前展开。窗口起点挂载后不再移动：
+ * 之后只有尾部追加（窗口向下生长），不会从顶部抽走消息——消息列是 Haze 采样源，
+ * 在场期间的结构重写只允许「显示更早」这一处，且由宿主经 `HazeRetreatState` 让源与
+ * 重写落同帧（《AGENTS.md》Haze 磨砂规范）。选择有界窗口而不是换 LazyColumn，是因为
+ * 消息列同时是 Haze 采样源、流式钉底与键盘让位都建立在同一个 ScrollState 上
+ * （见上方钉底/IME 跟随的注释），换容器会连带重写这些时序；窗口方案拿到同等的
+ * 组合/测量收益，滚动语义零改动。
  */
 @Composable
 private fun AiChatMessageList(
     messagesState: State<List<AiChatMessage>>,
+    /** 对话身份：切换对话时重置渲染窗口（窗口按对话独立） */
+    conversationId: String?,
+    /** 已展开的更早消息批次数（每批 [MessageWindowStep] 条，宿主在 Haze 退让窗口内推进） */
+    earlierBatches: Int,
+    /** 顶部「显示更早消息」的点击回调（宿主负责扩大窗口并锚回视口） */
+    onLoadEarlier: () -> Unit,
     sending: Boolean,
     sendEntrance: SendEntrance?,
     lastError: AiException?,
@@ -1360,13 +1416,37 @@ private fun AiChatMessageList(
     onDismissError: () -> Unit,
 ) {
     val messages = messagesState.value
+    // ——— 渲染窗口 ———
+    // 消息列是非 lazy 的 Column（Haze 采样源 + 流式钉底/键盘让位都建立在同一个
+    // ScrollState 上，见函数 KDoc），长会话若整列组合，打开 / 滚动 / 每批流式都是
+    // O(全部消息)。挂载时只组合最近 [MessageWindowInitial] 条，顶部一行可每次再向前
+    // 展开一批：组合与测量成本变成常数级，滚动语义、采样源与钉底逻辑一概不动。
+    // 起点在挂载后不再移动（只有尾部追加让窗口向下生长）——从顶部抽条属采样源结构重写，
+    // 只允许「显示更早」这一处，由宿主包 Haze 退让（见 loadEarlierMessages）。
+    val initialStart = remember(conversationId) {
+        (messages.size - MessageWindowInitial).coerceAtLeast(0)
+    }
+    val windowStart = (initialStart - earlierBatches * MessageWindowStep)
+        .coerceAtLeast(0)
+        .coerceAtMost(messages.lastIndex.coerceAtLeast(0))
+    val visibleMessages = if (windowStart == 0) {
+        messages
+    } else {
+        messages.subList(windowStart, messages.size)
+    }
     // 消息之间（含回复气泡与下方待办卡）统一走全局「卡↔卡」节奏（10dp）
     Column(verticalArrangement = Arrangement.spacedBy(CardSectionSpacing)) {
+        if (windowStart > 0) {
+            AiChatEarlierMessagesHint(
+                hiddenCount = windowStart,
+                onLoadEarlier = onLoadEarlier,
+            )
+        }
         // 尾部 user 消息与尾部消息的 id：入场只认这次发送追加的 user 条，以及同帧追加的
         // assistant 占位（发送的产物；重试不设 sendEntrance，不会误播）
         val lastUserId = messages.lastOrNull { it.role == AiChatRole.User }?.id
         val lastMessageId = messages.lastOrNull()?.id
-        messages.forEachIndexed { index, message ->
+        visibleMessages.forEachIndexed { index, message ->
             // key 让入场状态跟着消息 id 走：切对话 / 删除导致槽位复用时，上一条的
             // 「正在入场」不会串到别的气泡上（key 不产生布局节点，spacedBy 不变）
             key(message.id) {
@@ -1391,7 +1471,7 @@ private fun AiChatMessageList(
                         BubbleRiseAtBottom
                     }
                 }
-                val isTail = index == messages.lastIndex
+                val isTail = index == visibleMessages.lastIndex
                 AiChatMessageBubble(
                     message = message,
                     imageStore = imageStore,
@@ -1483,6 +1563,42 @@ private fun AiChatMessageList(
 }
 
 /**
+ * 消息窗口顶部的「更早消息」入口：窗口只组合最近若干条，点一次向前多展开一批。
+ * 视觉是一条低对比度的文字胶囊（与气泡同宽节奏），不抢内容注意力；只有窗口确实截断时
+ * 才出现，短会话看不到它。
+ */
+@Composable
+private fun AiChatEarlierMessagesHint(
+    hiddenCount: Int,
+    onLoadEarlier: () -> Unit,
+) {
+    val shade = if (MaterialTheme.isDarkTheme) PressShade.Brighten else PressShade.Darken
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center,
+    ) {
+        // 点按热区只包住文字（不是整行）：胶囊按压反馈不会在整行铺开一条深色带
+        Box(
+            modifier = Modifier
+                .pressClickable(
+                    shape = PillShape,
+                    shade = shade,
+                    role = Role.Button,
+                    onClick = onLoadEarlier,
+                )
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(R.string.ai_history_window_earlier, hiddenCount),
+                style = ClassppTextTokens.secondaryText,
+                color = MaterialTheme.classppColors.secondaryText,
+            )
+        }
+    }
+}
+
+/**
  * 输入栏叶子：键入只读 [inputText]，不把根 Composable 拉进重组；
  * 待发送图片同理交给本叶子读取，发送时根回调再取当前值。
  * 键入经 [onInputChange] 回到根（同步仓库草稿），本叶子不直接持有编辑态。
@@ -1568,6 +1684,16 @@ private class StreamFollowState {
     var following = true
     var settleNeeded = false
 }
+
+/**
+ * 消息列首屏渲染的消息条数：更早的历史按 [MessageWindowStep] 手动展开（见
+ * [AiChatEarlierMessagesHint]）。非 lazy 列里这是把「历史长度」从成本公式里拿掉的
+ * 关键参数——默认 60 条足够覆盖当前对话轮次与待办卡，长会话的打开/滚动成本因此有界。
+ */
+private const val MessageWindowInitial = 60
+
+/** 「更早消息」每次展开的条数 */
+private const val MessageWindowStep = 60
 
 /** 气泡抬升幅度（列表在底部）：末尾 [AuroraHeadroom] 空带足够容纳，不会压到上一条消息。 */
 private val BubbleRiseAtBottom = 10.dp
