@@ -1,8 +1,8 @@
 # 免责声明
 
-**Class Plus Plus（Classpp / Class++，以下简称"本项目"）**
+**Class Plus Plus（Classpp / Class++，以下简称“本项目”）**
 
-最后更新：2026-11-08
+最后更新：2026-11-23
 
 > **请在使用本项目之前完整阅读本声明。您下载、安装、编译、运行或以其他方式使用本项目，即视为您已阅读、理解并同意本声明的全部内容。如不同意，请立即停止使用并删除本项目及其全部副本。**
 
@@ -10,83 +10,93 @@
 
 ## 1. 项目性质
 
-本项目是一个由个人开发者出于兴趣爱好发起的**非商业开源项目**，其代码主要由 AI 编程工具通过 Vibe Coding 方式生成与迭代，**并非专业软件工程产物**，未经正规的架构评审、代码审查、安全审计、渗透测试或完整的质量保证流程。项目中的功能设计、界面文案与文档也可能包含 AI 生成内容，可能存在错误、遗漏或不准确之处。
-
-本项目按"现状"（AS IS）与"现有可用"（AS AVAILABLE）提供，作者不保证其正确性、完整性、稳定性、安全性或适用于任何特定用途。
+- 本项目是一个由个人开发者出于兴趣爱好发起的**非商业开源项目**，代码主要由 AI 编程工具通过 Vibe Coding 方式生成与迭代，**并非专业软件工程产物**，未经正规的架构评审、代码审查、安全审计、渗透测试或完整的质量保证流程。
+- 项目中的功能设计、界面文案与文档也可能包含 AI 生成内容，可能存在错误、遗漏或不准确之处。
+- 本项目按“现状”（AS IS）与“现有可用”（AS AVAILABLE）提供，作者不保证其正确性、完整性、稳定性、安全性或适用于任何特定用途。
 
 ## 2. 安全风险由用户自行承担
 
-+ 本项目**未经过任何形式的安全审计**，可能存在（并很可能确实存在）程序缺陷、逻辑漏洞、权限处理不当、数据校验缺失、第三方依赖漏洞等安全问题。
-+ 本项目包含联网、动态下发与网页执行能力：手动拉取远端学校声明、下载并执行第三方 Wakeup 适配脚本、在 WebView 中登录教务/课程中心并执行取数脚本、直连第三方 AI 服务等。这些能力会扩大攻击面，也可能因第三方内容、网络环境或设备状态产生不可预期的行为。
-+ 您理解并同意：**使用本项目产生的任何安全风险及后果，均由您自行承担，作者概不负责。**
-+ 请勿在涉及敏感数据、生产环境、他人设备或您无法承担后果的场景中使用本项目。
-+ 若您将本项目用于任何重要场景，应自行完成独立的安全评估与加固。
-+ 建议为教务/课程中心使用独立密码，避免在不受信任的网络环境（如公共 Wi-Fi）下登录或导入；如发现异常登录、密码变更或账号被限制，请立即自行处理。
+- 本项目**未经过任何形式的安全审计**，可能存在程序缺陷、逻辑漏洞、权限处理不当、数据校验缺失、第三方依赖漏洞等安全问题。
+- 本项目包含联网、动态下发与网页执行能力：手动拉取远端学校声明与更新清单、下载并执行第三方 Wakeup 适配脚本、在 WebView 中登录教务/课程中心并执行取数脚本、提取教务网页文本或截图交给 AI 识别、直连第三方或本地 AI 服务、下载并安装应用更新等。这些能力会扩大攻击面，也可能因第三方内容、网络环境或设备状态产生不可预期的行为。
+- **使用本项目产生的任何安全风险及后果，均由您自行承担，作者概不负责。**
+- 请勿在涉及敏感数据、生产环境、他人设备或您无法承担后果的场景中使用本项目；若用于重要场景，应自行完成独立的安全评估与加固。
+- 建议为教务/课程中心使用独立密码，避免在不受信任的网络环境（如公共 Wi-Fi）下登录或导入；如发现异常登录、密码变更或账号被限制，请立即自行处理。
+- AI 对网页文本或截图的解析结果可能受页面内容、图片清晰度与模型能力影响，页面内嵌的误导性文字也可能干扰识别。请在导入前自行核对课表内容，不要在来源不明或不可信的网页上使用识别导入。
 
 ## 3. 数据、隐私与备份
 
 ### 3.1 本地数据
 
-+ 课表、时间方案、待办、标签、日程背景图、AI 对话记录与对话图片副本、应用设置等数据默认存储在您的设备本地。
-+ 您为教务/课程中心保存的账号密码与 AI 服务 API Key 会经 Android Keystore 加密后保存（保存凭据仅部分学校支持）；WebView 登录产生的会话 Cookie 由 WebView 保存在应用私有目录。加密可以降低明文泄露风险，但**无法保证**在设备被 root/越狱、被解锁、植入恶意软件、系统漏洞被利用或备份文件被他人获取等情况下绝对安全。
-+ 作者不运营用于收集用户数据的服务器；除您主动触发的联网功能外，应用不会向作者上传您的数据。
+- 课表、时间方案、待办（含待办附件）、标签、日程背景图、AI 对话记录与对话图片副本、AI 识别导入的截图副本、应用设置、远端学校声明缓存、拾光索引与适配脚本缓存等数据默认存储在您的设备本地。
+- 您为教务/课程中心保存的账号密码与 AI 服务 API Key 会经 Android Keystore 加密后保存（保存凭据仅部分学校支持）；WebView 登录产生的会话 Cookie 由 WebView 保存在应用私有目录。加密可以降低明文泄露风险，但**无法保证**在设备被 root/越狱、被解锁、植入恶意软件、系统漏洞被利用或备份文件被他人获取等情况下绝对安全。
+- 作者不运营用于收集用户数据的服务器；除您主动触发的联网功能外，应用不会向作者上传您的数据。
 
 ### 3.2 系统备份
 
-+ 本项目开启了 Android 系统备份（`allowBackup`），并配置了云备份与换机迁移规则。凭据、Cookie、API Key 等敏感文件已被排除在备份之外；但课表、待办、标签、日程背景图、AI 对话记录与对话图片等仍可能被系统同步至您的云端备份或随换机迁移。
-+ 系统备份的范围与行为由操作系统、设备厂商及您的账号设置决定，作者无法控制。若您不希望数据进入云端备份，请自行关闭系统备份或使用工作资料/独立设备隔离。
+- 本项目开启了 Android 系统备份（`allowBackup`），并配置了云备份与换机迁移规则。凭据、Cookie、API Key 等敏感文件以及 AI 图片副本（对话与识别导入）已被排除在备份之外；但课表、待办（含待办附件）、标签、日程背景图、AI 对话记录等仍可能被系统同步至您的云端备份或随换机迁移。
+- 系统备份的范围与行为由操作系统、设备厂商及您的账号设置决定，作者无法控制。若您不希望数据进入云端备份，请自行关闭系统备份或使用工作资料/独立设备隔离。
 
 ### 3.3 手动导出与恢复
 
-+ 「数据管理」中的导出备份会生成一个**未加密的 ZIP 包**，其中包含课表、待办、标签、背景图、AI 对话文本等内容（不含凭据、API Key 与 AI 对话图片附件）。请自行妥善保管，避免上传至公开网盘、聊天工具或其他可能被他人访问的位置。
-+ 导入备份为**覆盖恢复**，会覆盖当前设备上的对应数据。损坏、被篡改、版本不兼容或来自不可信来源的备份包可能导致数据丢失、错误或异常行为，请仅导入您自己生成且确认可信的备份。
+- 「数据管理」中的导出备份会生成一个**未加密的 ZIP 包**，其中包含课表、待办（含待办附件）、标签、背景图、AI 对话文本等内容（不含凭据、API Key 与 AI 图片副本）。请自行妥善保管，避免上传至公开网盘、聊天工具或其他可能被他人访问的位置。
+- 导入备份为**覆盖恢复**，会覆盖当前设备上的对应数据。损坏、被篡改、版本不兼容或来自不可信来源的备份包可能导致数据丢失、错误或异常行为，请仅导入您自己生成且确认可信的备份。
 
 ### 3.4 数据丢失风险
 
-+ 系统备份/恢复、换机迁移、清除数据、卸载应用、存储损坏、覆盖恢复或程序缺陷均可能导致数据**丢失、损坏或泄露**。
-+ **请务必自行定期备份重要数据。** 因数据丢失、损坏或泄露造成的任何直接或间接损失，作者不承担责任。
+- 系统备份/恢复、换机迁移、清除数据、卸载应用、存储损坏、覆盖恢复或程序缺陷均可能导致数据**丢失、损坏或泄露**。
+- **请务必自行定期备份重要数据。** 因数据丢失、损坏或泄露造成的任何直接或间接损失，作者不承担责任。
 
 ## 4. 第三方服务、网络功能与导入
 
 本项目并非纯离线应用。下列功能依赖**第三方服务、第三方接口、第三方脚本或第三方内容**；作者与这些第三方**没有任何隶属、合作或授权关系**，也无法控制其可用性、安全性、数据准确性或条款变更。
 
-### 4.1 教务/课程中心同步与网页登录
+### 4.1 教务 / 课程中心同步与网页登录
 
-+ 本项目支持多所学校的课程中心/教务系统同步，并允许在应用内嵌 WebView 中直接登录学校系统。登录过程与数据请求由您的设备直接发往学校域名；应用仅在本机保存会话 Cookie，并在您主动开启「保存凭据/自动续期」（部分学校支持）时，将账号密码加密保存在本机。
-+ 自动同步、每日同步与相关通知会按您的设置定期访问学校系统。同步结果可能出现**重复、遗漏、延迟、字段或时间解析错误**，请以学校系统展示的内容为准。
-+ 使用此类功能可能需要向学校系统提供账号、密码、Cookie 或其他凭据。**请自行确认该行为是否符合学校规定、第三方服务条款及您本人的风险承受能力。** 因账号被限制、封禁、密码泄露、学校系统变更或数据错误产生的任何后果，作者不承担责任。
-+ 作者不收集、不上传您的凭据；但学校系统、网络运营商及您的设备环境如何处理数据，作者无法控制。
+- 本项目支持多所学校的课程中心/教务系统同步，并允许在应用内嵌 WebView 中直接登录学校系统。登录过程与数据请求由您的设备直接发往学校域名；应用仅在本机保存会话 Cookie，并在您主动开启「保存凭据/自动续期」（部分学校支持）时，将账号密码加密保存在本机。
+- 自动同步、每日同步与相关通知会按您的设置定期访问学校系统。同步结果可能出现**重复、遗漏、延迟、字段或时间解析错误**，请以学校系统展示的内容为准。
+- 使用此类功能可能需要向学校系统提供账号、密码、Cookie 或其他凭据。**请自行确认该行为是否符合学校规定、第三方服务条款及您本人的风险承受能力。** 因账号被限制、封禁、密码泄露、学校系统变更或数据错误产生的任何后果，作者不承担责任。
+- 作者不收集、不上传您的凭据；但学校系统、网络运营商及您的设备环境如何处理数据，作者无法控制。
+- 若您自行填写 `http` 教务地址，页面加载、登录与取数将在明文 HTTP 下进行，存在被窃听或篡改的风险；请优先使用学校提供的 `https` 地址。
 
 ### 4.2 Wakeup 口令导入
 
-+ 口令/分享码导入功能依赖 **Wakeup 及其相关服务**。使用该功能时，您提供的口令会被发送至 `api.wakeup.fun`，应用还会从公开开源仓库下载适配脚本（`wake_up.js`）并在无头 WebView 中执行。
-+ 该脚本由第三方作者维护，作者无法保证其内容、安全性或持续可用性。执行第三方脚本存在访问或修改页面数据、向第三方传输数据、因脚本更新导致功能异常等风险。
-+ 因 Wakeup 服务变更、封禁、数据错误、接口失效、脚本行为或条款纠纷产生的任何后果，作者不承担责任。请自行确认使用行为符合第三方服务条款与学校规定。
+- 口令/分享码导入功能依赖 **Wakeup 及其相关服务**。使用该功能时，您提供的口令会被发送至 `api.wakeup.fun`，应用还会从公开开源仓库下载适配脚本（`wake_up.js`）并在无头 WebView 中执行。
+- 该脚本由第三方作者维护，作者无法保证其内容、安全性或持续可用性。执行第三方脚本存在访问或修改页面数据、向第三方传输数据、因脚本更新导致功能异常等风险。
+- 因 Wakeup 服务变更、封禁、数据错误、接口失效、脚本行为或条款纠纷产生的任何后果，作者不承担责任。请自行确认使用行为符合第三方服务条款与学校规定。
 
 ### 4.3 远端学校列表（声明式适配）
 
-+ 学校选择页的「更新学校列表」为**纯手动操作**。应用默认关闭该能力，不会在启动时或后台自动拉取；更新成功后声明缓存在本机，冷启动仅读取本地缓存。
-+ 远端列表与各校声明来自作者维护的 Gitee 仓库（`classpp_schoolsync`）。该仓库另附专门的 [仓库免责声明](https://gitee.com/ChengFY0710/classpp_schoolsync/blob/main/DISCLAIMER.md)，说明其内容边界、贡献纪律与责任限制。声明内容为 JSON 数据，包含登录域名、取数路径、字段映射与界面文案，**不包含远端 JavaScript**；应用会对声明做硬校验（域名须属于 `.edu.cn`、仅 https/默认端口/无通配符等），首次连接某所远端学校时还会展示学校名与登录域，要求您确认。
-+ 尽管如此，声明仍可能过时、错误、被第三方镜像修改，或与学校系统的实际行为不一致；Gitee 的可用性与内容完整性也不受作者完全控制。因远端声明、第三方仓库、网络环境或学校系统变更导致的同步失败、数据错误或其他后果，作者不承担责任。
+- 学校选择页的「更新学校列表」为**纯手动操作**。应用默认关闭该能力，不会在启动时或后台自动拉取；更新成功后声明缓存在本机，冷启动仅读取本地缓存。
+- 远端列表与各校声明来自作者维护的 Gitee 仓库（`classpp_schoolsync`）。该仓库另附专门的 [仓库免责声明](https://gitee.com/ChengFY0710/classpp_schoolsync/blob/main/DISCLAIMER.md)，说明其内容边界、贡献纪律与责任限制。声明内容为 JSON 数据，包含登录域名、取数路径、字段映射与界面文案，**不包含远端 JavaScript**；应用会对声明做硬校验（域名须属于 `.edu.cn`、仅 https/默认端口/无通配符等），首次连接某所远端学校时还会展示学校名与登录域，要求您确认。
+- 尽管如此，声明仍可能过时、错误、被第三方镜像修改，或与学校系统的实际行为不一致；Gitee 的可用性与内容完整性也不受作者完全控制。因远端声明、第三方仓库、网络环境或学校系统变更导致的同步失败、数据错误或其他后果，作者不承担责任。
 
-### 4.4 AI 对话（BYOK，自带密钥）
+### 4.4 AI 对话与 AI 识别导入（BYOK，自带密钥）
 
-+ AI 对话功能需要您自行提供服务商的 API Key、端点与模型。应用会将您的聊天内容、随消息发送的图片，以及**自动注入的上下文**（课表、作息、最多 30 条未完成待办、分组、标签）发送至您选择的服务商；上下文可能包含课程、教师、地点、个人安排等信息。
-+ 请求由您的设备**直连**您选择的服务商（包括您自定义的端点），作者不参与、不中转、不记录这些请求。服务商的隐私政策、数据留存、内容审核、计费、限流与可用性均由该服务商决定；不同服务商可能记录、分析甚至用于模型训练，请在使用前阅读其政策。
-+ **请勿向 AI 发送身份证号、密码、银行卡、健康信息等敏感内容。** 若服务商位于境外，跨境传输风险及合规责任由您自行判断和承担。
-+ AI 输出可能**错误、过时、不完整或具有误导性**，不代表作者观点。AI 回复中解析出的待办草稿会直接写入待办库，无需额外确认，请务必自行核对；不要把 AI 输出作为医疗、法律、财务等专业决策的依据。
-+ 您应自行保管 API Key、控制额度并承担相应费用。因 Key 泄露、被盗刷、服务商封禁或配置错误造成的损失，作者不承担责任；使用自定义端点或非官方代理的风险由您自行承担。
+- AI 功能需要您自行提供服务商的 API Key、端点与模型；本地 Ollama 等服务无需 API Key。应用会将您的聊天内容与历史记录、随消息发送的图片，以及**自动注入的上下文**（课表、作息、待办与已归档/回收站摘要、分组、标签、课程标签）发送至您选择的服务商；对话中 AI 通过工具查询到的多天日程、待办详情等结果也会回传给服务商。上下文可能包含课程、教师、地点、个人安排等信息。
+- 「AI 识别导入」是独立的一次性请求，不写入对话记录：选择课表截图时，图片会发送至所选服务商；「从教务网页识别」会由应用在 WebView 页面内提取地址与标题、表格网格、页面可见文本及下拉框当前选项，并将这些文本发送至服务商。**页面可见文本可能包含您的姓名、学号、成绩等页面展示的信息**，请自行确认是否使用。页面 Cookie 与登录态不会发送给服务商，识别结果在导入前会展示确认信息，请您核对。
+- 若使用本机或局域网内的本地模型（如 Ollama），请求会发往您填写的端点，作者同样不参与、不中转、不记录；本地端点可能使用明文 `http`，局域网内其他设备有机会看到传输内容，请自行评估网络环境。Android 17 及以上访问局域网端点需要「本地网络」权限，回环地址（如本机 `127.0.0.1`）不需要。
+- 请求由您的设备**直连**您选择的服务商（包括您自定义的端点）。作者不参与、不中转、不记录这些请求。服务商的隐私政策、数据留存、内容审核、计费、限流与可用性均由该服务商决定；不同服务商可能记录、分析甚至用于模型训练，请在使用前阅读其政策。
+- **请勿向 AI 发送身份证号、密码、银行卡、健康信息等敏感内容。** 若服务商位于境外，跨境传输风险及合规责任由您自行判断和承担。
+- AI 输出可能**错误、过时、不完整或具有误导性**，不代表作者观点。AI 通过工具执行的新建待办、完成、归档会立即在本机生效，可在消息下方撤销；新建分组/标签同样立即生效，但不提供消息内撤销；修改与删除只生成确认卡，需您点「应用变更」后才会写入。AI 也可能被网页文本、待办备注等外部内容误导而生成错误的写入动作，请务必自行核对写入结果；不要把 AI 输出作为医疗、法律、财务等专业决策的依据。
+- 您应自行保管 API Key、控制额度并承担相应费用。因 Key 泄露、被盗刷、服务商封禁或配置错误造成的损失，作者不承担责任；使用自定义端点或非官方代理的风险由您自行承担。
 
 ### 4.5 拾光教务导入
 
-+ 「从拾光教务导入」会从公开的拾光课表适配仓库（`shiguang_warehouse`，Gitee）下载学校索引与对应适配脚本，并在你登录学校教务系统的 WebView 页面内执行。
-+ 适配脚本由第三方作者维护，作者无法保证其内容、安全性或持续可用性。脚本在你点「执行导入」后运行，可读取当前页面与登录态并发起同源请求；执行第三方脚本存在数据被读取、传输或功能异常等风险。
-+ 应用只在本机缓存索引与脚本，不向拾光仓库上传课表或个人数据。因脚本行为、仓库变更、学校系统变更或第三方条款产生的后果，作者不承担责任。
+- 「从拾光教务导入」会从公开的拾光课表适配仓库（`shiguang_warehouse`，Gitee）下载学校索引与对应适配脚本，并在您登录学校教务系统的 WebView 页面内执行。
+- 在本机尚无索引缓存时，首次打开拾光导入入口会自动联网拉取一次学校索引（成功或失败都只尝试这一次），此后索引只在您手动「更新适配列表」时刷新。选择学校执行导入时，应用会从同一仓库获取对应适配脚本（优先联网，失败回退本机缓存）。索引与脚本均缓存在本机。
+- 适配脚本由第三方作者维护，作者无法保证其内容、安全性或持续可用性。脚本在您点「执行导入」后运行，可读取当前页面与登录态并发起同源请求；执行第三方脚本存在数据被读取、传输或功能异常等风险。
+- 应用只在本机缓存索引与脚本，不向拾光仓库上传课表或个人数据。因脚本行为、仓库变更、学校系统变更或第三方条款产生的后果，作者不承担责任。
 
-### 4.6 其他第三方依赖
+### 4.6 应用内检查更新
 
-+ 本项目依赖若干开源组件（见 README 致谢），它们遵循各自的许可证。第三方服务的变更、封禁、数据错误、接口失效或条款纠纷所导致的任何后果，作者不承担责任。
-+ 第三方服务的名称、标识如涉及商标，其权利归各自权利人所有。
+- 关于页的「检查更新」与「更新日志」均为**手动操作**，应用不会在启动、后台或定时检查更新。
+- 更新清单（`update.json`）来自作者维护的 Gitee 仓库（`classpp_schoolsync`），其中的 APK 直链只接受 https；应用会按清单提供的大小与 SHA-256 校验下载的 APK，再交给系统安装器，是否允许「安装未知应用」由系统设置与您本人决定。
+- 作者无法保证 Gitee、第三方镜像或下载链路的可用性与完整性；校验值同样来自远端清单。若清单或链路被篡改，应用内的校验无法完全防御。**请只从项目官方仓库或您信任的来源获取安装包，并在系统安装器中确认应用签名。**
+
+### 4.7 其他第三方依赖
+
+- 本项目依赖若干开源组件（见 [README](README.md) 致谢），它们遵循各自的许可证。第三方服务的变更、封禁、数据错误、接口失效或条款纠纷所导致的任何后果，作者不承担责任。
+- 第三方服务的名称、标识如涉及商标，其权利归各自权利人所有。
 
 ## 5. 非官方声明
 
@@ -96,36 +106,39 @@
 
 本项目会请求或使用以下系统能力，是否授予由您自行判断：
 
-+ **网络访问**：访问学校系统、Gitee 远端学校仓库、拾光课表适配仓库、Wakeup 服务及您配置的 AI 服务商；
-+ **通知**：课程/待办提醒与同步结果通知；部分 Android 版本会使用 promoted ongoing（Live Updates）样式；
-+ **日历读写**：读取日历账户列表以选择写入目标，并向您选择的日历写入待办事件；
-+ **精确闹钟与开机自启**：重排提醒闹钟与每日同步任务；
-+ **`SET_ALARM`**：拉起系统时钟应用创建一次性闹钟（普通权限，安装即授予，无运行时弹窗），实际行为取决于设备时钟应用；
-+ **相机**：AI 对话拍照通过系统相机应用完成，应用不直接申请相机权限；拍摄结果会导入为对话附件，并可能在发送时传给 AI 服务商；
-+ **文件选择/Photo Picker**：用于选择图片、导入导出备份，不额外申请存储权限。
+- **网络访问**：访问学校系统、Gitee 远端学校仓库与更新清单/安装包、拾光课表适配仓库、Wakeup 服务及您配置的 AI 服务商；
+- **本地网络**（Android 17+ 运行时权限）：仅在您使用局域网内的本地 AI 服务（如 Ollama）时申请，回环地址不需要；
+- **通知**：课程/待办提醒与同步结果通知；部分 Android 版本会使用 promoted ongoing（Live Updates）样式；
+- **日历读写**：读取日历账户列表以选择写入目标，并向您选择的日历写入待办事件；
+- **精确闹钟与开机自启**：重排提醒闹钟与每日同步任务；
+- **`SET_ALARM`**：拉起系统时钟应用创建一次性闹钟（普通权限，安装即授予，无运行时弹窗），实际行为取决于设备时钟应用；
+- **相机**：AI 对话拍照通过系统相机应用完成，应用不直接申请相机权限；拍摄结果会导入为对话附件，并可能在发送时传给 AI 服务商；
+- **文件选择 / Photo Picker**：用于选择图片、待办附件、导入导出备份，不额外申请存储权限；
+- **安装未知应用**（`REQUEST_INSTALL_PACKAGES`）：用于应用内下载更新后交给系统安装器，最终仍由系统安装器与签名校验把关；
+- **明文网络**：应用级允许明文 HTTP，用于您自行填写的 `http` 教务网页与本地 AI 端点；公网 AI 端点仍强制 HTTPS。
 
-因授权行为导致的隐私泄露、误提醒、日历数据被修改、照片被发送给第三方等后果，由您自行承担；拒绝授权可能导致对应功能不可用。
+因授权行为导致的隐私泄露、误提醒、日历数据被修改、照片或网页文本被发送给第三方等后果，由您自行承担；拒绝授权可能导致对应功能不可用。
 
 ## 7. 责任限制
 
 在适用法律允许的最大范围内：
 
-+ 作者不对因使用或无法使用本项目而导致的任何直接、间接、偶然、特殊、惩罚性或后果性损害承担责任，包括但不限于数据丢失、设备损坏、账号封禁、学业或工作损失、利润损失、AI 输出或第三方数据导致的损失、第三方索赔等；
-+ 无论该等损害基于合同、侵权、严格责任或其他任何法律理论，亦无论作者是否已被告知该等损害的可能性；
-+ 本声明不排除或限制依法不可排除或限制的责任（例如因故意或重大过失造成的人身损害）。若您所在司法辖区不允许上述部分排除，则相应条款在该辖区内不适用，其余条款仍然有效。
+- 作者不对因使用或无法使用本项目而导致的任何直接、间接、偶然、特殊、惩罚性或后果性损害承担责任，包括但不限于数据丢失、设备损坏、账号封禁、学业或工作损失、利润损失、AI 输出或第三方数据导致的损失、第三方索赔等；
+- 无论该等损害基于合同、侵权、严格责任或其他任何法律理论，亦无论作者是否已被告知该等损害的可能性；
+- 本声明不排除或限制依法不可排除或限制的责任（例如因故意或重大过失造成的人身损害）。若您所在司法辖区不允许上述部分排除，则相应条款在该辖区内不适用，其余条款仍然有效。
 
 ## 8. 开源、修改与衍生作品
 
-+ 本项目采用 [PolyForm Noncommercial License 1.0.0](LICENSE) 发布，仅允许非商业用途。
-+ 任何人基于本项目进行的修改、二次开发、打包分发或衍生作品，均由其自行负责。**由第三方修改版、衍生版、非官方构建包引发的任何问题（含安全问题），与原作者无关，作者不承担任何责任。**
-+ 作者维护的远端学校声明仓库同样按"现状"提供；第三方镜像、修改后的声明或非官方分发的声明内容，与作者无关。
-+ 作者没有义务提供技术支持、安全更新或缺陷修复，亦无义务对任何 issue、pull request 作出回应。
+- 本项目采用 [PolyForm Noncommercial License 1.0.0](LICENSE) 发布，仅允许非商业用途。
+- 任何人基于本项目进行的修改、二次开发、打包分发或衍生作品，均由其自行负责。**由第三方修改版、衍生版、非官方构建包引发的任何问题（含安全问题），与原作者无关，作者不承担任何责任。**
+- 作者维护的远端学校声明仓库与更新清单同样按“现状”提供；第三方镜像、修改后的声明或非官方分发的安装包，与作者无关。
+- 作者没有义务提供技术支持、安全更新或缺陷修复，亦无义务对任何 issue、pull request 作出回应。
 
 ## 9. 其他
 
-+ 本声明可能随时更新，更新后自发布之时起生效，不另行通知。
-+ 如本声明的任何条款被认定为无效或不可执行，不影响其余条款的效力。
-+ 本声明的解释与适用，以适用法律允许的最大范围为限。
+- 本声明可能随时更新，更新后自发布之时起生效，不另行通知。
+- 如本声明的任何条款被认定为无效或不可执行，不影响其余条款的效力。
+- 本声明的解释与适用，以适用法律允许的最大范围为限。
 
 ---
 
@@ -133,7 +146,7 @@
 
 Classpp is a personal, non-commercial open-source project developed with the help of AI coding tools ("Vibe Coding"). It is provided **"AS IS", without warranty of any kind**, and has **not been security-audited**. You use it **entirely at your own risk**. To the maximum extent permitted by applicable law, the author is **not liable for any security issues, data loss, damages, or losses** arising from the use of this project.
 
-The app includes network and import features that rely on third parties: school LMS/academic systems accessed through an in-app WebView, Wakeup share-key import (which sends the key to Wakeup and executes a third-party script), Shiguang academic import (which downloads a public school index and adapter scripts and runs a script in the login WebView only after you tap Execute Import), an optional manually-fetched remote school catalog (JSON declarations only, no remote JavaScript, restricted to `.edu.cn` hosts), and bring-your-own-key AI chat. **AI chat sends your messages, images, timetable, and up to 30 unfinished todos to the AI provider you choose**; the author does not operate a server that collects your data and does not relay these requests. Third-party terms, privacy policies, availability, and data accuracy are outside the author's control. Backups you export are unencrypted ZIP files; keep them safe. Sensitive data (credentials, cookies, and API keys) is excluded from system backup, but other local data may be included depending on your system settings. Please back up your data, review the full Chinese text above, and do not use this project in sensitive or production environments. If you do not agree, do not use this project.
+The app includes network and import features that rely on third parties: school LMS/academic systems accessed through an in-app WebView, Wakeup share-key import (which sends the key to Wakeup and executes a third-party script), Shiguang academic import (which automatically fetches a public school index once on first open when no cache exists, then only on manual refresh; adapter scripts are fetched from the same repository when you run an import, network first with cached fallback, and run in the login WebView only after you tap Execute Import), an optional manually-fetched remote school catalog (JSON declarations only, no remote JavaScript, restricted to `.edu.cn` hosts), a manually-triggered in-app update check and APK download from Gitee with size/SHA-256 verification, and bring-your-own-key AI chat. **AI chat sends your messages, conversation history, images, timetable, todo summaries (including archived and trash summaries), groups, tags, and any tool query results to the AI provider you choose.** AI schedule import separately sends either a screenshot you select or text extracted from an academic web page (URL, title, tables, visible text, and selected dropdown values — which may include your name, student ID, or grades); cookies are not sent. Local models such as Ollama receive requests at the endpoint you configure, which may use plaintext HTTP on your LAN. AI tool calls can create, complete, or archive todos immediately on your device with undo, and can create groups/tags immediately without an in-message undo; updates and deletions require your confirmation. The author does not operate a server that collects your data and does not relay these requests. Third-party terms, privacy policies, availability, and data accuracy are outside the author's control. Backups you export are unencrypted ZIP files and include todo attachments; keep them safe. Sensitive data (credentials, cookies, and API keys) and AI image copies (chat and import) are excluded from system backup, but other local data may be included depending on your system settings. Please back up your data, review the full Chinese text above, and do not use this project in sensitive or production environments. If you do not agree, do not use this project.
 
 ---
 
