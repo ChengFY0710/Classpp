@@ -123,7 +123,7 @@ fun ScheduleEditBar(
                     // 进度变化只让效果重解析 + 重绘，不重建 Style、不重组编辑栏
                     Modifier.hazeBlur(
                         input = hazeSources(hazeState),
-                        style = hazeTopBarStyle(radius = 32.dp, opacity = blurProgress),
+                        style = hazeTopBarStyle(radius = 25.dp, opacity = blurProgress),
                         performanceMode = HazePerformanceMode.Quality,
                     )
                 } else {

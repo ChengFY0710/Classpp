@@ -217,8 +217,8 @@ internal fun SettingsTopBar(
                 .background(MaterialTheme.colorScheme.background)
                 .then(
                     if (hazeState != null) {
-                        // 转场性能规格：25dp + 下采样档（Balanced = Fixed(0.5)）——整页覆盖层
-                        // 转场逐帧重合成毛玻璃，模糊预算必须收紧（32dp 全分辨率 progressive
+                        // 转场性能规格：18dp + 下采样档（Balanced = Fixed(0.5)）——整页覆盖层
+                        // 转场逐帧重合成毛玻璃，模糊预算必须收紧（高半径 + 全分辨率 progressive
                         // 的 GPU 成本压不住帧预算）
                         Modifier.hazeBlur(
                             input = hazeSources(hazeState),

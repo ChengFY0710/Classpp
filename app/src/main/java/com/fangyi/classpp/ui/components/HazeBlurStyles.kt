@@ -52,7 +52,7 @@ private const val HazeTopBarTintAlpha = 0.30f
  */
 @Composable
 internal fun hazeTopBarStyle(
-    radius: Dp = 25.dp,
+    radius: Dp = 18.dp,
     opacity: State<Float>? = null,
 ): HazeBlurStyle {
     val tint = MaterialTheme.classppColors.hazeTint

@@ -264,7 +264,7 @@ internal enum class TodoSpecialSection(
  * horizontalScroll（[rubberBandHorizontalScroll]）——分组不足一行、本无滚动范围时
  * 也能拉出橡皮筋，任何状态下滑动都有反馈。
  *
- * 材质：顶栏容器叠设置页同款的整条渐变模糊（SettingsTopBar 配方：25dp + 半分辨率
+ * 材质：顶栏容器叠设置页同款的整条渐变模糊（SettingsTopBar 配方：18dp + 半分辨率
  * 输入 + 垂直渐变 mask，顶部最强向下渐弱，兜底色 background 画在模糊层之下）——
  * 模糊层从屏幕顶铺下，状态栏区域沉浸式覆盖；[pillBackdrop] 为 null（默认，如
  * @Preview / 玻璃开关关闭）时胶囊一律实心 surface（选中 primary），与课表页 WeekPill
@@ -385,7 +385,7 @@ internal fun TodoTopBar(
                 .background(MaterialTheme.colorScheme.background)
                 .then(
                     if (hazeState != null) {
-                        // 设置页顶栏同款渐变模糊：25dp + 下采样档（Balanced = Fixed(0.5)）
+                        // 设置页顶栏同款渐变模糊：18dp + 下采样档（Balanced = Fixed(0.5)）
                         // ——整页覆盖层转场逐帧重合成毛玻璃，模糊预算必须收紧
                         Modifier.hazeBlur(
                             input = hazeSources(hazeState),

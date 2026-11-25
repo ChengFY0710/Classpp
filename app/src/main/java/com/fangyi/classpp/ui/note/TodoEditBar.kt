@@ -93,7 +93,7 @@ internal fun TodoEditBar(
             .background(MaterialTheme.colorScheme.background)
             .then(
                 if (hazeState != null) {
-                    // TodoTopBar 同款渐变模糊：25dp + 下采样档（Balanced = Fixed(0.5)）
+                    // TodoTopBar 同款渐变模糊：18dp + 下采样档（Balanced = Fixed(0.5)）
                     Modifier.hazeBlur(
                         input = hazeSources(hazeState),
                         style = hazeTopBarStyle(),
