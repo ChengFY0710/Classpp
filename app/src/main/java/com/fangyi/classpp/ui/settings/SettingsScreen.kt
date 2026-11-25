@@ -218,8 +218,8 @@ fun SettingsScreen(
     // 课程卡片「显示教师」开关（同 cardHeights 的透传纪律）
     showTeacher: State<Boolean> = mutableStateOf(true),
     onShowTeacherChange: (Boolean) -> Unit = {},
-    // 玻璃材质开关（同 cardHeights 的透传纪律）
-    glassStyle: State<Boolean> = mutableStateOf(false),
+    // 玻璃材质开关（同 cardHeights 的透传纪律；兜底值与 GlassPreferences 默认一致为开启）
+    glassStyle: State<Boolean> = mutableStateOf(true),
     onGlassStyleChange: (Boolean) -> Unit = {},
     // 待办收集箱「瀑布流视图」开关（同 cardHeights 的透传纪律）
     todoMasonry: State<Boolean> = mutableStateOf(true),

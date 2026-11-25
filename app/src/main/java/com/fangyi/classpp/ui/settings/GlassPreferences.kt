@@ -7,7 +7,8 @@ import android.content.Context
  *
  * 开关开启时玻璃材质应用于底部导航栏三胶囊、待办页顶栏胶囊、设置页顶栏返回按钮、
  * 课表页顶栏周数胶囊与 OverlaySheet / BottomSelectSheet 顶栏按钮（Backdrop
- * 液态玻璃渲染 + Q弹按压）；关闭即各自的原实现。默认关闭——老用户升级后观感不变。
+ * 液态玻璃渲染 + Q弹按压）；关闭即各自的原实现。默认开启——新装即用玻璃观感，
+ * 已手动关闭过的用户仍读到自己存的 false。
  * 样式参数与组合本地（[com.fangyi.classpp.ui.theme.LocalGlassStyle]）收在 ui.theme
  * 的 LiquidGlass.kt，此处只管持久化。
  *
@@ -20,10 +21,10 @@ object GlassPreferences {
     private const val FILE_NAME = "nav_glass_prefs"
     private const val KEY_GLASS_STYLE = "glass_style"
 
-    /** 读取玻璃样式开关；无记录时回退关闭（原白底实现） */
+    /** 读取玻璃样式开关；无记录时回退开启（玻璃材质为默认观感） */
     fun load(context: Context): Boolean =
         context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_GLASS_STYLE, false)
+            .getBoolean(KEY_GLASS_STYLE, true)
 
     /** 保存玻璃样式开关（apply 异步落盘；UI 状态由调用方同步更新，不等落盘） */
     fun save(context: Context, enabled: Boolean) {
