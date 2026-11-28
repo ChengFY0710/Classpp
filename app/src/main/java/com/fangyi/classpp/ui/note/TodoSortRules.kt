@@ -44,6 +44,24 @@ internal fun sortRuleKey(groupIndex: Int, groups: List<TodoGroup>): String? = wh
 }
 
 /**
+ * 页签 token（[sortRuleKey] 编码）→ 顶栏分组下标的逆映射：冷启动恢复「上次选中的分组」
+ * 用（token 由 [TodoTopBarPreferences] 落盘，与排序规则共用同一套分组身份编码，重排/
+ * 改名不漂移）。组已删（组名找不到）与不认识的 token（旧版本写入等）回落 0（全部），
+ * 与 [filterTodosByGroup] 的下标越界兜底同口径。
+ */
+internal fun selectedGroupIndexOf(token: String?, groups: List<TodoGroup>): Int = when {
+    token == null || token == AllSortRuleKey -> 0
+    token == UngroupedSortRuleKey -> 1
+    else -> if (token.startsWith(GroupSortKeyPrefix)) {
+        val name = token.removePrefix(GroupSortKeyPrefix)
+        val index = groups.indexOfFirst { it.name == name }
+        if (index >= 0) index + 2 else 0
+    } else {
+        0
+    }
+}
+
+/**
  * 取 [groupIndex] 对应页签的排序规则：有单独设置用设置，没有（新建分组、升级前的
  * 老数据）回落 [fallback]——调用方传全局排序，其默认值即截止日期降序，所以没单独
  * 设置过的页签行为与升级前完全一致。

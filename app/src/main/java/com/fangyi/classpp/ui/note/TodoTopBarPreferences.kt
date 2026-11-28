@@ -30,6 +30,10 @@ import com.fangyi.classpp.data.TodoSort
  * - **列表/收集箱视图选择**（[loadInboxView] / [saveInboxView]）：默认列表；新文件
  *   无记录时回读旧位置（本对象接管前存在 [TodoInboxPreferences] 的同名键），老用户
  *   的选择不因换文件重置。
+ * - **选中分组**（[loadSelectedGroupToken] / [saveSelectedGroupToken]）：存顶栏常规分组
+ *   页签的 token（[sortRuleKey] 编码：all / ungrouped / group:<组名>，按分组身份存，
+ *   重排/改名不漂移）。冷启动由宿主折算回下标（[selectedGroupIndexOf]），组已删或无
+ *   记录回落「全部」；特殊分组页与标签页独立保存，不写这个键。
  */
 object TodoTopBarPreferences {
     private const val FILE_NAME = "todo_top_bar_prefs"
@@ -38,6 +42,7 @@ object TodoTopBarPreferences {
     private const val KEY_SORT_RULES = "sort_rules"
     private const val KEY_VISIBLE_SECTIONS = "visible_sections"
     private const val KEY_INBOX_VIEW = "inbox_view"
+    private const val KEY_SELECTED_GROUP = "selected_group"
 
     /** 视图选择的旧存储文件（[TodoInboxPreferences] 的 FILE_NAME），仅作迁移回读 */
     private const val LEGACY_INBOX_FILE_NAME = "todo_inbox_prefs"
@@ -116,6 +121,20 @@ object TodoTopBarPreferences {
     fun saveInboxView(context: Context, inbox: Boolean) {
         prefs(context).edit()
             .putBoolean(KEY_INBOX_VIEW, inbox)
+            .apply()
+    }
+
+    /**
+     * 读取上次选中的常规分组页签 token；无记录返回 null（宿主回落「全部」）。
+     * 编码同 [sortRuleKey]——按分组身份存而非下标，重排/改名后选择不漂移。
+     */
+    fun loadSelectedGroupToken(context: Context): String? =
+        prefs(context).getString(KEY_SELECTED_GROUP, null)
+
+    /** 保存上次选中的常规分组页签 token（apply 异步落盘，不阻塞点击） */
+    fun saveSelectedGroupToken(context: Context, token: String) {
+        prefs(context).edit()
+            .putString(KEY_SELECTED_GROUP, token)
             .apply()
     }
 }

@@ -242,7 +242,28 @@ fun TodoScreen(
     // 返回）时还原——编辑顶栏只是临时接管，不因一次编辑丢掉用户的展开偏好。
     // rememberSaveable：与 todoEditing 同口径，进程重建恢复编辑态后退出照样还原
     var menuExpandedBeforeEdit by rememberSaveable { mutableStateOf(false) }
-    var selectedGroupIndex by rememberSaveable { mutableIntStateOf(0) }
+    // 分组列表（顺序 + 置顶标记）：仓库 todos.json 持久化，顶栏胶囊与分组浮层共享同一份；
+    // 分组写回失败的 Toast 文案在组合期解析（commitGroups 回调里非组合上下文，同编辑浮层约定）。
+    // 声明提前到选中分组之前——冷启动初值要按 groups 折算（get() 返回即 bootstrap 完成，
+    // 此处读到的已是装载后的分组表）
+    val groups by repository.groups.collectAsState()
+    // 顶栏选中分组：rememberSaveable 管旋转/切 tab/进程重建，初值取偏好里的上次选择
+    //（token 按分组身份存，重排/改名不漂移；组已删或无记录回落「全部」）——普通冷启动
+    // 默认停留上次选中的分组（与排序/视图/分类同源，见 TodoTopBarPreferences）
+    var selectedGroupIndex by rememberSaveable {
+        mutableIntStateOf(
+            selectedGroupIndexOf(TodoTopBarPreferences.loadSelectedGroupToken(context), groups),
+        )
+    }
+    // 选中分组即时落盘（冷启动默认停留该分组）：顶栏胶囊/分组浮层/改名跟随等入口都只改
+    // selectedGroupIndex，统一由 LaunchedEffect 收口，首帧写入与读到的值相同（幂等）；
+    // token 随 [groups] 重算——重命名/重排后落盘的仍是分组身份。下标越界（备份恢复后
+    // 组表整体重读等残留态）token 为 null，不写盘，保留上次的有效选择
+    LaunchedEffect(selectedGroupIndex, groups) {
+        sortRuleKey(selectedGroupIndex, groups)?.let { token ->
+            TodoTopBarPreferences.saveSelectedGroupToken(context, token)
+        }
+    }
     // 特殊分组页（已完成/未完成/已逾期/已置顶/已归档/最近删除）：分组浮层第一部分跳转进入，
     // 顶栏分组条首位出现对应胶囊并**常驻**——specialSection 记胶囊存在，specialActive 记
     // 页面在场（胶囊选中态）：切常规分组只离页不清胶囊（转未选态），再点未选胶囊回页、
@@ -441,9 +462,6 @@ fun TodoScreen(
     var overviewMounted by remember { mutableStateOf(false) }
     val anyOverlayMounted = newTodoMounted || detailMounted != null || editMounted != null ||
         groupsMounted || movePickMounted || overviewMounted
-    // 分组列表（顺序 + 置顶标记）：仓库 todos.json 持久化，顶栏胶囊与分组浮层共享同一份；
-    // 分组写回失败的 Toast 文案在组合期解析（commitGroups 回调里非组合上下文，同编辑浮层约定）
-    val groups by repository.groups.collectAsState()
     // 分组页排序规则（页签身份 → 规则）：全部/未分组/每个自定义分组各自一套，按组名而非
     // 下标存——重排/置顶不丢；重命名在 commitGroups 里搬 key、删除清 key（见 remapSortRules）。
     // 没单独设置过的页签回落全局 sort/sortDescending（默认截止日期降序），升级后行为不变；
