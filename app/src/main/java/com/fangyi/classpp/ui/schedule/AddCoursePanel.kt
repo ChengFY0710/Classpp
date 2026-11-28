@@ -365,15 +365,21 @@ fun AddCoursePanel(
         }
     }
 
-    // 行选择卡片高亮：跟随实际周数选择——全部 / 全奇数 / 全偶数，自定义组合不高亮
-    val weekChoiceIndex = when {
-        selectedWeeks.isEmpty() -> null
-        selectedWeeks.size == schedule.totalWeeks -> 0
-        selectedWeeks.size == (schedule.totalWeeks + 1) / 2 &&
-            selectedWeeks.all { it % 2 == 1 } -> 1
-        selectedWeeks.size == schedule.totalWeeks / 2 &&
-            selectedWeeks.all { it % 2 == 0 } && schedule.totalWeeks >= 2 -> 2
-        else -> null
+    // 行选择卡片高亮：跟随实际周数选择——全部 / 全奇数 / 全偶数，自定义组合不高亮。
+    // 组内有占用周时快捷选的是「可选周里的全部/单周/双周」（applyShortcut 已剔除占用），
+    // 因此按可选周集合比对，占用周不参与匹配——按总周数比会导致选中后蓝底出不来
+    val weekChoiceIndex = run {
+        val selected = selectedWeeks.toSet()
+        val selectable = (1..schedule.totalWeeks).filterNot { it in blockedWeeks }
+        val odd = selectable.filter { it % 2 == 1 }.toSet()
+        val even = selectable.filter { it % 2 == 0 }.toSet()
+        when {
+            selected.isEmpty() -> null
+            selected == selectable.toSet() -> 0
+            selected == odd -> 1
+            selected == even -> 2
+            else -> null
+        }
     }
 
     // 共享采样源：浮层滚动列是它的采样源，叠在本浮层上的选择行菜单（起止节次）拿同一份
