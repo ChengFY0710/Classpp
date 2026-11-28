@@ -302,7 +302,7 @@ fun TodoScreen(
             TodoTopBarPreferences.saveSelectedGroupToken(context, token)
         }
     }
-    // 特殊分组页（已完成/未完成/已逾期/已置顶/已归档/最近删除）：分组浮层第一部分跳转进入，
+    // 特殊分组页（已完成/未完成/已逾期/已置顶/已归档/最近删除）：分组浮层第二部分跳转进入，
     // 顶栏分组条首位出现对应胶囊并**常驻**——specialSection 记胶囊存在，specialActive 记
     // 页面在场（胶囊选中态）：切常规分组只离页不清胶囊（转未选态），再点未选胶囊回页、
     // 点已选胶囊才退出关闭。二者独立于 [selectedGroupIndex] 保存——进入不动常规选中，
@@ -1869,7 +1869,7 @@ fun TodoScreen(
     // 标签编辑态同构自治：「确认」经 onTagsChange 写回重排，「重命名/删除」经
     // onRenameTag/onDeleteTags 立即生效（待办侧回写由宿主完成）；两种编辑态互斥；
     // 普通态点击分组/「未分组」/「全部」经 onOpen* 跳转：顶栏胶囊切到对应下标 + 收起浮层；
-    // 第一部分（状态/留存）行经 onOpenSpecial 打开对应特殊分组页（顶栏首位出胶囊，收起浮层）
+    // 第二部分（状态/留存）行经 onOpenSpecial 打开对应特殊分组页（顶栏首位出胶囊，收起浮层）
     // ——切常规分组只离页（胶囊保留、转未选态），再点未选胶囊回页、点已选胶囊才退出关闭
     if (groupsVisible) groupsMounted = true
     if (groupsMounted) {
@@ -1919,7 +1919,7 @@ fun TodoScreen(
                 tagActive = false
                 groupsVisible = false
             },
-            // 第一部分（状态/留存）行：打开对应特殊分组页（顶栏首位出胶囊并置为选中），收起浮层
+            // 第二部分（状态/留存）行：打开对应特殊分组页（顶栏首位出胶囊并置为选中），收起浮层
             onOpenSpecial = { section ->
                 specialSection = section
                 specialActive = true
@@ -2510,7 +2510,7 @@ internal fun filterTodosByTag(todos: List<Todo>, tag: String): List<Todo> =
  * 互斥），展开态按系统返回自动收起（页面层 BackHandler）。列表从顶栏与浮动导航栏下滚过，
  * 上下各留出让位；顶栏展开动作行时按 [topBarExtraSpace] 额外让位（宿主动画下发）。
  *
- * 特殊分组页（分组浮层第一部分跳转）复用同一渲染：[expandAllSections] = 分组头全部
+ * 特殊分组页（分组浮层第二部分跳转）复用同一渲染：[expandAllSections] = 分组头全部
  * 默认展开（规避「已完成默认收起」把整页收起来）；[emptyHint] = 过滤结果为空时的
  * 居中占位文案。「已置顶」页的卡片照常支持侧滑——单卡撤销置顶即从该页消失。
  *

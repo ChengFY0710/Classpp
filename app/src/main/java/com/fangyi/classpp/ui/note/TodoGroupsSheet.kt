@@ -66,13 +66,13 @@ private data class TagRow(
 )
 
 /**
- * 待办分组浮层：待办页顶栏「更多 → 分组」进入，内容分两部分——
+ * 待办分组浮层：待办页顶栏「更多 → 分组」进入，内容分三部分——
  *
- * - **第一部分（状态与留存，无标题 [CardSection]）**：已完成 / 未完成 / 已逾期 一张三行卡，
- *   已置顶 + 已归档一张两行卡、最近删除一张单行卡；
- * - **第二部分（带「分组」小标题的 [CardSection]）**：未分组、全部各一张单行卡，
+ * - **第一部分（带「分组」小标题的 [CardSection]）**：未分组、全部各一张单行卡，
  *   用户自定义分组一张 [GroupCard]——自定义分组无行首图标，与带图标的固定行区分
  *   （正是 [GroupCard] 与 [SettingsCardwithIcon] 的行型差异）；
+ * - **第二部分（带「状态」小标题的 [CardSection]）**：已完成 / 未完成 / 已逾期 一张三行卡，
+ *   已置顶 + 已归档一张两行卡、最近删除一张单行卡；
  * - **第三部分（带「标签」小标题的 [CardSection]）**：全部标签一张 [GroupCard]——课程标签
  *   （[courseTags]，宿主按激活课表派生）作只读锁定前缀、用户标签随后，行首挂 `ic_tag`、
  *   颜色跟随标签色（用户标签 colorArgb null 取主题 primary；课程标签取与主题相反的课程卡
@@ -137,7 +137,7 @@ private data class TagRow(
  * 的待办数、全部 = 待办总数、自定义分组 = 该组名的待办数（分组数据已入 [TodoFile.groups]，
  * 引用完整性由仓库归一化维护）。
  *
- * 第一部分（状态/留存）各行点击 = 跳转对应特殊分组页（[onOpenSpecial]：宿主收起浮层、
+ * 第二部分（状态/留存）各行点击 = 跳转对应特殊分组页（[onOpenSpecial]：宿主收起浮层、
  * 顶栏分组条首位出现对应胶囊并常驻——再点已选胶囊退出关闭、点未选胶囊回页；已归档
  * 本期仅 UI）；普通态点击
  * 自定义分组 /「未分组」/「全部」/ 标签行 = 跳转对应过滤（[onOpenGroup] / [onOpenUngrouped] /
@@ -163,7 +163,7 @@ private data class TagRow(
  * @param onOpenGroup 普通态点击自定义分组：宿主收起浮层并把顶栏胶囊切到该分组
  * @param onOpenUngrouped 普通态点击「未分组」行：宿主收起浮层并把顶栏胶囊切到「未分组」
  * @param onOpenAll 普通态点击「全部」行：宿主收起浮层并把顶栏胶囊切回「全部」
- * @param onOpenSpecial 点击第一部分（状态/留存）行：宿主收起浮层并打开对应特殊分组页
+ * @param onOpenSpecial 点击第二部分（状态/留存）行：宿主收起浮层并打开对应特殊分组页
  *   （编辑态不触发——同第二部分行，避免静默丢弃草稿）
  */
 @Composable
@@ -448,8 +448,61 @@ internal fun TodoGroupsSheet(
     ) {
         // 部分间 12dp；每部分内部的卡间 10dp 由 CardSection 的 spacing 默认值负责
         Column(verticalArrangement = Arrangement.spacedBy(SheetSectionSpacingBetween)) {
-            // 第一部分：状态与留存。设计稿无小标题，CardSection 退化为纯分组容器
-            CardSection {
+            // 第一部分：分组。标题复用顶栏动作块的「分组」文案（同一语义词）
+            CardSection(title = stringResource(R.string.todo_action_group)) {
+                // 未分组单行卡：group == null 的待办数（引用完整性由仓库归一化维护）；
+                // 点击 = 跳转「未分组」过滤（宿主收起浮层并切顶栏胶囊）——编辑态不触发
+                // （与 GroupCard 编辑态点击 = 多选对齐，避免静默丢弃草稿）
+                SettingsCardwithIcon(
+                    items = listOf(
+                        SettingsCardwithIconItem(
+                            icon = R.drawable.ic_folder_hint,
+                            label = stringResource(R.string.todo_group_ungrouped),
+                            value = ungroupedCount.toString(),
+                            onClick = { if (!editing && !tagEditing) onOpenUngrouped() },
+                        ),
+                    ),
+                )
+                // 全部单行卡：待办总数；点击 = 跳转「全部」过滤（同未分组，编辑态不触发）
+                SettingsCardwithIcon(
+                    items = listOf(
+                        SettingsCardwithIconItem(
+                            icon = R.drawable.ic_folder,
+                            label = stringResource(R.string.todo_group_all),
+                            value = totalCount.toString(),
+                            onClick = { if (!editing && !tagEditing) onOpenAll() },
+                        ),
+                    ),
+                )
+                // 用户自定义分组：GroupCard（无图标行），计数 = 该组名的待办数；
+                // 编辑态显示草稿、普通态显示真实列表
+                if (displayGroups.isNotEmpty()) {
+                    GroupCard(
+                        items = displayGroups.map { group ->
+                            // 分组以名字为身份键：多选/拖拽/删除时按 id 跟随
+                            GroupCardItem(
+                                id = group.name,
+                                label = group.name,
+                                value = todos.count { it.group == group.name }.toString(),
+                                pinned = group.pinned,
+                            )
+                        },
+                        editing = editing,
+                        selectedIds = selectedIds,
+                        // 标签编辑态在场时分组行不可再进编辑、点击不跳转（避免静默丢弃标签草稿）
+                        onEnterEdit = { if (!tagEditing) enterEdit(it) },
+                        // 普通态点击 = 跳转该分组（宿主收起浮层并切顶栏胶囊）；编辑态点击是多选切换
+                        onItemClick = { if (!tagEditing) onOpenGroup(it) },
+                        onToggleSelect = { id ->
+                            selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
+                        },
+                        // 拖拽落位同步重排草稿（GroupCard 契约）；置顶项由组件内锁序
+                        onMove = { from, to -> draft = draft.move(from, to) },
+                    )
+                }
+            }
+            // 第二部分：状态与留存。带「状态」小标题
+            CardSection(title = stringResource(R.string.todo_section_status)) {
                 // 状态三行同卡：计数实时来自待办列表（值右对齐走 fieldValue）；
                 // 点击 = 跳转对应特殊分组页（已完成/未完成/已逾期，编辑态不触发）
                 SettingsCardwithIcon(
@@ -505,59 +558,6 @@ internal fun TodoGroupsSheet(
                         ),
                     ),
                 )
-            }
-            // 第二部分：分组。标题复用顶栏动作块的「分组」文案（同一语义词）
-            CardSection(title = stringResource(R.string.todo_action_group)) {
-                // 未分组单行卡：group == null 的待办数（引用完整性由仓库归一化维护）；
-                // 点击 = 跳转「未分组」过滤（宿主收起浮层并切顶栏胶囊）——编辑态不触发
-                // （与 GroupCard 编辑态点击 = 多选对齐，避免静默丢弃草稿）
-                SettingsCardwithIcon(
-                    items = listOf(
-                        SettingsCardwithIconItem(
-                            icon = R.drawable.ic_folder_hint,
-                            label = stringResource(R.string.todo_group_ungrouped),
-                            value = ungroupedCount.toString(),
-                            onClick = { if (!editing && !tagEditing) onOpenUngrouped() },
-                        ),
-                    ),
-                )
-                // 全部单行卡：待办总数；点击 = 跳转「全部」过滤（同未分组，编辑态不触发）
-                SettingsCardwithIcon(
-                    items = listOf(
-                        SettingsCardwithIconItem(
-                            icon = R.drawable.ic_folder,
-                            label = stringResource(R.string.todo_group_all),
-                            value = totalCount.toString(),
-                            onClick = { if (!editing && !tagEditing) onOpenAll() },
-                        ),
-                    ),
-                )
-                // 用户自定义分组：GroupCard（无图标行），计数 = 该组名的待办数；
-                // 编辑态显示草稿、普通态显示真实列表
-                if (displayGroups.isNotEmpty()) {
-                    GroupCard(
-                        items = displayGroups.map { group ->
-                            // 分组以名字为身份键：多选/拖拽/删除时按 id 跟随
-                            GroupCardItem(
-                                id = group.name,
-                                label = group.name,
-                                value = todos.count { it.group == group.name }.toString(),
-                                pinned = group.pinned,
-                            )
-                        },
-                        editing = editing,
-                        selectedIds = selectedIds,
-                        // 标签编辑态在场时分组行不可再进编辑、点击不跳转（避免静默丢弃标签草稿）
-                        onEnterEdit = { if (!tagEditing) enterEdit(it) },
-                        // 普通态点击 = 跳转该分组（宿主收起浮层并切顶栏胶囊）；编辑态点击是多选切换
-                        onItemClick = { if (!tagEditing) onOpenGroup(it) },
-                        onToggleSelect = { id ->
-                            selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
-                        },
-                        // 拖拽落位同步重排草稿（GroupCard 契约）；置顶项由组件内锁序
-                        onMove = { from, to -> draft = draft.move(from, to) },
-                    )
-                }
             }
             // 第三部分：标签。分组内容之后；无任何标签时整组（含标题）不渲染。课程标签
             // （只读）作锁定前缀、用户标签随后，行首挂 ic_tag、颜色跟随标签色（用户标签

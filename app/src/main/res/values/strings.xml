@@ -52,6 +52,8 @@
     <string name="todo_section_overdue">已逾期</string>
     <string name="todo_section_archived">已归档</string>
     <string name="todo_section_trash">最近删除</string>
+    <!-- 待办分组浮层第二部分（状态与留存卡）的小标题 -->
+    <string name="todo_section_status">状态</string>
     <!-- 待办特殊分组页（顶栏首位胶囊跳转）空列表占位 -->
     <string name="todo_empty_completed">还没有已完成的待办</string>
     <string name="todo_empty_incomplete">所有待办都已完成</string>
