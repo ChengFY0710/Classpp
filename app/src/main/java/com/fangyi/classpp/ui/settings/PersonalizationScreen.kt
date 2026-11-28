@@ -229,6 +229,7 @@ fun PersonalizationScreen(
                 GeneralSection(
                     defaultHome = defaultHome,
                     onDefaultHomeChange = onDefaultHomeChange,
+                    hazeState = hazeState,
                 )
                 ScheduleSection(
                     daysPerWeek = daysPerWeek,
@@ -318,16 +319,21 @@ fun PersonalizationScreen(
  * State 实例由调用方透传、值只在本叶子读取：切换选择只重组本卡片，不牵动整页
  * （同 ScheduleSection / TodoSection 的透传纪律）。菜单选值随选重写本行内容，
  * 防护内建于 [SettingsCardItem.Select]（重写延后到菜单退场播完，见 SelectMenu）。
+ * [hazeState] 转给选择行菜单做背景模糊（页面滚动内容即其采样源）。
  */
 @Composable
 private fun GeneralSection(
     defaultHome: State<DefaultHomePage>,
     onDefaultHomeChange: (DefaultHomePage) -> Unit,
+    hazeState: HazeState,
 ) {
     // 值读取点（叶子）：切换选择只重组本卡片
     val current = defaultHome.value
     CardSection(title = stringResource(R.string.section_general)) {
         SettingsCard(
+            // 选择行菜单的磨砂采样源：页面自己的 hazeState（正文列即其采样源，
+            // 与通知页 Select 行同款接线）；不传菜单退化为不透明白卡
+            hazeState = hazeState,
             items = listOf(
                 SettingsCardItem.Select(
                     label = stringResource(R.string.default_home_page),
