@@ -80,7 +80,8 @@ data class AvailableUpdate(
  *
  * - [check]：`versionCode` 比对，返回是否有新版本及下载所需元数据；
  * - [loadChangelog]：只返回当前安装版本及更早版本的更新说明，不做版本比对；
- * - **只由 UI 手动调用**，不做启动/后台/定时检查，也没有本地缓存或自动重试；
+ * - **只由 UI 调用**（关于页手动入口，以及「启动时检查更新」开启时的冷启动静默检查），
+ *   不做后台/定时检查，也没有本地缓存或自动重试；
  * - [versionCode][AppUpdateManifest.versionCode] 是更新与否的唯一依据（versionName 只用于展示）；
  * - 清单层失败返回 `Failed`，不抛出异常；
  * - APK 直链只保留 https；大小与 SHA-256 不合法时降级为「只打开发布页」，

@@ -46,12 +46,17 @@ import androidx.core.content.IntentCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
+import com.fangyi.classpp.appVersionCode
 import com.fangyi.classpp.data.AppContainer
 import com.fangyi.classpp.data.LoadState
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.ai.AiImageStore
 import com.fangyi.classpp.data.notification.NotificationAlarmReceiver
 import com.fangyi.classpp.data.notification.NotificationScheduler
+import com.fangyi.classpp.data.update.AppUpdateChecker
+import com.fangyi.classpp.data.update.AppUpdatePreferences
+import com.fangyi.classpp.data.update.AvailableUpdate
+import com.fangyi.classpp.data.update.UpdateCheckResult
 import com.fangyi.classpp.ui.LocalToday
 import com.fangyi.classpp.ui.ai.AiChatDraft
 import com.fangyi.classpp.ui.ai.AiChatOverlay
@@ -78,6 +83,7 @@ import com.fangyi.classpp.ui.schedule.CardHeightPreferences
 import com.fangyi.classpp.ui.schedule.CardHeightScales
 import com.fangyi.classpp.ui.schedule.ScheduleScreen
 import com.fangyi.classpp.ui.schedule.TeacherDisplayPreferences
+import com.fangyi.classpp.ui.settings.AboutUpdateSheet
 import com.fangyi.classpp.ui.settings.AgendaPreferences
 import com.fangyi.classpp.ui.settings.DefaultHomePage
 import com.fangyi.classpp.ui.settings.DefaultHomePagePreferences
@@ -123,6 +129,12 @@ private const val SettingsPrewarmDelayMillis = 1000L
  * 的 debounce 正好撞上同一批绘制。之后的数据变更仍按 debounce 合并，不重复延迟。
  */
 private const val NotificationInitialDelayMillis = 1000L
+
+/**
+ * 冷启动自动检查更新的延迟：等首帧与 tab/设置预热落定后再访问远端清单（检查本身在
+ * IO 完成，不占主线程），也让「启动时自动同步」先走，两个启动期网络请求不挤同一拍。
+ */
+private const val UpdateCheckStartupDelayMillis = 1500L
 
 /** 系统分享草稿的实例状态键：旋转重建后继续预填，不重新读分享 URI */
 private const val AiShareStateId = "ai_share_state_id"
@@ -313,6 +325,9 @@ class MainActivity : ComponentActivity() {
         } else {
             restorePendingAiShare(savedInstanceState)
         }
+        // 真冷启动标记：除了通知落页/分享，启动时自动检查更新也以此为准入——
+        // 旋转等重建不重查，也不把用户已关掉的更新弹窗复活
+        val coldStart = savedInstanceState == null
         setContent {
             // 外观模式状态：prefs 是真源，旋转/系统深色切换等重建时 onCreate 重读，无需 saveable
             var themeMode by remember { mutableStateOf(savedThemeMode) }
@@ -693,6 +708,35 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    // 启动时检查更新：开关（检查更新浮层结果卡内的「启动时检查更新」）开启
+                    // 且真冷启动时，等首帧/预热落定后静默检查一次远端清单——命中新版本弹
+                    // 「检查更新」浮层（下方根级挂载，复用关于页同一层浮层），已是最新、
+                    // 检查失败或开关关闭都零提示，不打扰启动。旋转等重建（coldStart = false）不重查
+                    var startupUpdate by remember { mutableStateOf<AvailableUpdate?>(null) }
+                    val onStartupUpdateConsumed = remember { { startupUpdate = null } }
+                    LaunchedEffect(coldStart) {
+                        if (!coldStart) return@LaunchedEffect
+                        delay(UpdateCheckStartupDelayMillis)
+                        val appContext = applicationContext
+                        if (!AppUpdatePreferences.loadCheckOnStartup(appContext)) {
+                            return@LaunchedEffect
+                        }
+                        try {
+                            val result = AppUpdateChecker(
+                                packageName = packageName,
+                                currentVersionCode = appVersionCode(appContext),
+                                language = resources.configuration.locales[0].language,
+                            ).check()
+                            if (result is UpdateCheckResult.Available) {
+                                startupUpdate = result.update
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            // 检查链路自身不抛异常，这里只兜底：启动期检查失败零提示
+                        }
+                    }
+
                     // 容器就绪后的后台预热：AI 历史延后 300ms 装配（不阻塞首帧）；
                     // 学校会话立即在后台装配（ScheduleScreen/设置页读 activeSession 槽位）
                     LaunchedEffect(container) {
@@ -1017,6 +1061,15 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
+
+                    // 启动自动检查命中的更新浮层：组合在设置页覆盖层之后（画在其上），
+                    // 复用关于页同一层「发现新版本 → 下载 → 安装」浮层；手动入口仍由
+                    // AboutScreen 自持，两层实例互不干扰
+                    AboutUpdateSheet(
+                        request = null,
+                        startupUpdate = startupUpdate,
+                        onStartupUpdateConsumed = onStartupUpdateConsumed,
+                    )
                 }
             }
         }

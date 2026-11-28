@@ -40,6 +40,7 @@ import com.fangyi.classpp.data.update.ApkDownloadResult
 import com.fangyi.classpp.data.update.ApkDownloader
 import com.fangyi.classpp.data.update.ApkInstaller
 import com.fangyi.classpp.data.update.AppUpdateChecker
+import com.fangyi.classpp.data.update.AppUpdatePreferences
 import com.fangyi.classpp.data.update.AppUpdateRelease
 import com.fangyi.classpp.data.update.AvailableUpdate
 import com.fangyi.classpp.data.update.ChangelogResult
@@ -139,9 +140,13 @@ private data class UpdateSheetSpec(
  * - 检查更新：浮层标题恒为「检查更新」；已是最新时顶栏只有右侧关闭，有更新时
  *   左侧「取消」、右侧「更新」（图标沿用更新动作），可应用内下载并校验 APK，
  *   失败回退发布页；`forced`（当前版本低于 `minSupportedVersionCode`）时浮层
- *   不可关闭，只保留更新动作；
+ *   不可关闭，只保留更新动作。「已是最新 / 非强制发现新版本」结果卡的 CardSection
+ *   末位带「启动时检查更新」开关（见 [UpdateStartupCheckToggle]）；
  * - 更新日志：只加载并展示**当前安装版本及更早版本**的更新说明，不做版本比对、
  *   不出现「发现新版本」，也不提供任何下载/安装动作；
+ * - 启动自动检查（[startupUpdate] 非空，宿主在根级挂载本浮层）：冷启动静默检查已命中
+ *   新版本，跳过「检查中」直接落到「发现新版本」；已是最新或检查失败宿主根本不挂载，
+ *   不打扰启动。关闭/安装转场结束后经 [onStartupUpdateConsumed] 通知宿主清掉待展示数据；
  * - 检查/加载协程由本组件持有，关闭或取消时一并取消，不把结果写回已关闭的浮层。
  *
  * 明确的信任边界：清单与 APK 直链只接受 https；APK 下载后必须同时通过大小与 SHA-256；
@@ -151,6 +156,10 @@ private data class UpdateSheetSpec(
 internal fun AboutUpdateSheet(
     request: AboutUpdateRequest?,
     modifier: Modifier = Modifier,
+    // 启动自动检查命中并已通过校验的更新：非空时浮层直接以「发现新版本」进场
+    startupUpdate: AvailableUpdate? = null,
+    // 启动更新的浮层退场播完后回调：宿主据此清掉待展示数据，旋转重建后不会复活弹窗
+    onStartupUpdateConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
     // 配置感知语言：随系统/应用语言切换重组，不用 LocalContext 里可能过期的 configuration
@@ -290,6 +299,15 @@ internal fun AboutUpdateSheet(
             AboutUpdateAction.Check -> runUpdateCheck()
             AboutUpdateAction.Changelog -> runChangelogLoad()
         }
+    }
+
+    // 启动自动检查命中：检查已在宿主静默完成，跳过「检查中」直接落到「发现新版本」。
+    // 与手动入口互斥（分属不同浮层实例），本实例只消费启动数据
+    LaunchedEffect(startupUpdate) {
+        if (startupUpdate == null) return@LaunchedEffect
+        currentJob?.cancel()
+        state = UpdateSheetState.Available(startupUpdate)
+        visible = true
     }
 
     val current = state ?: return
@@ -458,6 +476,9 @@ internal fun AboutUpdateSheet(
             if (!visible) {
                 state = null
                 currentJob = null
+                // 启动更新已展示完（关闭/装包转场交出系统安装器）：通知宿主清掉待展示数据，
+                // 之后的旋转重建不再复活弹窗
+                if (startupUpdate != null) onStartupUpdateConsumed()
             }
         },
         dragDismissEnabled = spec.dismissible,
@@ -535,7 +556,7 @@ private fun UpdateLoadingContent(text: String) {
     }
 }
 
-/** 已是最新：只给版本状态，不展示历史说明（历史说明走「更新日志」入口） */
+/** 已是最新：只给版本状态 + 末位启动自动检查开关，不展示历史说明（历史说明走「更新日志」入口） */
 @Composable
 private fun UpdateUpToDateContent(localVersionName: String) {
     CardSection {
@@ -547,6 +568,7 @@ private fun UpdateUpToDateContent(localVersionName: String) {
                 localVersionName,
             ),
         )
+        UpdateStartupCheckToggle()
     }
 }
 
@@ -571,7 +593,7 @@ private fun UpdateReleaseHistory(releases: List<AppUpdateRelease>) {
     }
 }
 
-/** 有新版本：版本头部 + 强制提示 + 目标版本说明；不展示历史列表 */
+/** 有新版本：版本头部 + 强制提示（强制时不放设置项）+ 末位启动自动检查开关 + 目标版本说明 */
 @Composable
 private fun UpdateAvailableContent(update: AvailableUpdate) {
     CardSection {
@@ -585,11 +607,37 @@ private fun UpdateAvailableContent(update: AvailableUpdate) {
                 text = stringResource(R.string.about_update_forced_hint),
                 isError = true,
             )
+        } else {
+            UpdateStartupCheckToggle()
         }
     }
     CardSection(title = stringResource(R.string.about_update_section_changelog)) {
         UpdateChangelogCard(update.changelog)
     }
+}
+
+/**
+ * 「启动时检查更新」开关行：放在「已是最新 / 非强制发现新版本」结果卡的 CardSection
+ * 末位，浮层内即改即存（prefs 真源，MainActivity 冷启动检查读同一份）；每次浮层进场
+ * 重新读 prefs，两个宿主实例（关于页 / 启动根级）各自打开时都拿到最新值。
+ */
+@Composable
+private fun UpdateStartupCheckToggle() {
+    val context = LocalContext.current
+    var checked by remember { mutableStateOf(AppUpdatePreferences.loadCheckOnStartup(context)) }
+    SettingsCard(
+        items = listOf(
+            SettingsCardItem.Toggle(
+                label = stringResource(R.string.about_update_check_on_startup),
+                description = stringResource(R.string.about_update_check_on_startup_desc),
+                checked = checked,
+                onCheckedChange = { enabled ->
+                    checked = enabled
+                    AppUpdatePreferences.saveCheckOnStartup(context, enabled)
+                },
+            ),
+        ),
+    )
 }
 
 /** 下载中：百分比 + 确定进度条 + 已下载/总大小 */

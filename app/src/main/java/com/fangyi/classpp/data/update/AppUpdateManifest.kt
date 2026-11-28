@@ -9,8 +9,9 @@ import kotlinx.serialization.Serializable
  * App 更新清单的地址与硬上限（清单由远端分发仓库 classpp_schoolsync 维护，
  * 与远端学校声明同一个仓库根地址，见 README §7）。
  *
- * 检查是**纯手动**的：只有用户在关于页点「检查更新 / 更新日志」时才请求清单，
- * 启动、后台与定时任务都不访问这里。
+ * 检查入口只有两个：关于页手动点「检查更新 / 更新日志」，以及「启动时检查更新」开关
+ * 开启时冷启动的静默检查（MainActivity 读 [AppUpdatePreferences] 决定是否发起）；
+ * 后台与定时任务始终不访问这里。
  */
 object AppUpdateConfig {
     /** `update.json`（main 分支）：版本、APK 直链与校验值、发布页、分语言更新说明 */
