@@ -26,8 +26,11 @@ interface SyncPreferences {
     val syncHomeworkNotes: StateFlow<Boolean>
 
     /**
-     * 待办页下拉同步开关（默认关闭）：开启后在待办页下拉即可唤起一次同步
+     * 待办页下拉同步开关（默认开启）：开启后在待办页下拉即可唤起一次同步
      * （静默自动导入，结果 toast 反馈）。纯 UI 手势开关，不影响其它同步路径。
+     *
+     * 未登录时功能等效关闭：下拉手势只在已连接（uid 非空）时接线，设置页开关也仅
+     * 已连接时显示；存储默认值只决定「登录后」开关的初始态。
      */
     val todoPullSync: StateFlow<Boolean>
 
@@ -38,11 +41,11 @@ interface SyncPreferences {
     fun setTodoPullSync(enabled: Boolean)
 }
 
-/** 内存实现：测试或未接入持久化的场景；作业要求同步默认开启，其余默认关闭 */
+/** 内存实现：测试或未接入持久化的场景；默认与 [PrefsSyncPreferences] 同向（作业要求同步与下拉同步默认开启，远端消失自动完成默认关闭） */
 class MutableSyncPreferences(
     initialAutoCompleteOnVanish: Boolean = false,
     initialSyncHomeworkNotes: Boolean = true,
-    initialTodoPullSync: Boolean = false,
+    initialTodoPullSync: Boolean = true,
 ) : SyncPreferences {
 
     private val _autoCompleteOnVanish = MutableStateFlow(initialAutoCompleteOnVanish)

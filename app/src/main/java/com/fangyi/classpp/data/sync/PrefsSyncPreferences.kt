@@ -11,7 +11,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * `<id>/sync_homework_notes`、`<id>/todo_pull_sync_enabled` 分键。
  *
  * 「远端消失自动完成」默认关闭；「同步作业要求与附件」默认开启（新增能力按默认有用的方向）；
- * 「待办页下拉同步」默认关闭（新增手势按默认不打扰的方向）。
+ * 「待办页下拉同步」默认开启（与「启动时自动同步」同向：登录后即可用，未登录时各触发
+ * 路径按连接状态门控，等效关闭）。
  * 单值不值得引入 DataStore，apply 异步落盘，冷进程可直接读。
  * 与 [PrefsDailySyncToggle] 同模式：provider 装配 session 时创建，UI 与引擎共用同一实例。
  */
@@ -35,7 +36,7 @@ class PrefsSyncPreferences(
         readBoolean(appContext, homeworkNotesKey, default = true),
     )
     private val _todoPullSync = MutableStateFlow(
-        readBoolean(appContext, todoPullSyncKey, default = false),
+        readBoolean(appContext, todoPullSyncKey, default = true),
     )
 
     override val autoCompleteOnVanish: StateFlow<Boolean> =

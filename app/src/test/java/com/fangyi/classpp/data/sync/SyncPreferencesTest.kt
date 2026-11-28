@@ -29,13 +29,13 @@ class SyncPreferencesTest {
     }
 
     @Test
-    fun `todo pull sync defaults off and can toggle`() {
+    fun `todo pull sync defaults on and can toggle`() {
         val preferences = MutableSyncPreferences()
 
-        assertFalse(preferences.todoPullSync.value)
-        preferences.setTodoPullSync(true)
         assertTrue(preferences.todoPullSync.value)
         preferences.setTodoPullSync(false)
         assertFalse(preferences.todoPullSync.value)
+        preferences.setTodoPullSync(true)
+        assertTrue(preferences.todoPullSync.value)
     }
 }

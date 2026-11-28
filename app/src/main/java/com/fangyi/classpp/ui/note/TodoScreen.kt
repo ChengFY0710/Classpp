@@ -82,6 +82,7 @@ import com.fangyi.classpp.data.sync.DailySyncController
 import com.fangyi.classpp.data.sync.DailySyncRunner
 import com.fangyi.classpp.data.sync.SchoolRegistry
 import com.fangyi.classpp.data.sync.SessionSlot
+import com.fangyi.classpp.data.sync.SyncState
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
@@ -535,6 +536,12 @@ fun TodoScreen(
     val pullSyncEnabled by (
         pullSession?.sync?.preferences?.todoPullSync ?: fallbackPullSyncEnabled
         ).collectAsState()
+    // 连接状态（uid 非空 = 已登录）必须响应式收集：退出登录/换号只清会话引擎的 state，
+    // 不翻转 SessionSlot、也不动偏好流——本页没有其它收集项变化就不重组，组合期直读
+    // state.value 会让 pullSyncActive 停在旧值，「松手后同步」提示在未登录态仍然出现
+    // （松手回调的新鲜 uid 校验拦住同步，表现为「有提示但不同步」）
+    val fallbackSyncState = remember { MutableStateFlow(SyncState()) }
+    val pullSyncState by (pullSession?.sync?.state ?: fallbackSyncState).collectAsState()
     // 同步结果 toast 文案（组合期解析——回调/协程里非组合上下文，同上方侧滑文案约定）
     val pullSyncDoneFormat = stringResource(R.string.sync_pull_done)
     val pullSyncUpToDateMessage = stringResource(R.string.sync_up_to_date)
@@ -567,9 +574,10 @@ fun TodoScreen(
     }
     // 「松手后同步」提示文案（组合期解析，绘制期直接引用）
     val pullHintText = stringResource(R.string.sync_pull_hint)
-    // 组合期读一次开关与接线条件（订阅变化）：关着时各列表不挂回调，下拉只有普通回弹
+    // 组合期读一次开关与接线条件（订阅变化）：关着或未登录时各列表不挂回调，
+    // 下拉只有普通回弹；连接态经上方 pullSyncState 响应式跟随（登出即撤提示与接线）
     val pullSyncActive = pullSyncEnabled && schools != null && dailySync != null &&
-        pullSession != null && pullSession.sync.state.value.uid.isNotEmpty()
+        pullSession != null && pullSyncState.uid.isNotEmpty()
     // 松手回调：拉距达到阈值即定格在展示位并触发一次静默同步（引擎单飞互斥），
     // 结果 toast 反馈（有更新报条数、无更新「已最新」、未连接/失败给对应提示），
     // 完成后回弹收起。门控条件在回调内复读一遍，与组合期接线条件同口径
