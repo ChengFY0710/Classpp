@@ -1297,7 +1297,7 @@ fun TodoScreen(
             ) {
                 Text(
                     text = pullHintText,
-                    style = ClassppTextTokens.hintText,
+                    style = ClassppTextTokens.secondaryTextLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
