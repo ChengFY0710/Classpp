@@ -164,7 +164,10 @@ internal class XmuLegacyMigrator(
         /**
          * 每日开关迁移（`xmu_sync_prefs` → `sync_prefs` 按 `<id>/` 分键）：provider 的
          * `dailySyncToggle` 是冷启动与后台重排的共同入口，新键已存在（迁移完成或用户已改）
-         * 则跳过。写动作幂等，旧 prefs 文件保留不删（单个布尔键，备份已排除）。
+         * 则跳过。旧开关**显式落盘过**则无损迁移用户选择；从未动过（旧键不存在）按新默认
+         * （[PrefsDailySyncToggle.DEFAULT_ENABLED]，开）落盘，与新校/新用户一致——不再把
+         * 这批用户钉在旧默认「关」上。写动作幂等，旧 prefs 文件保留不删（单个布尔键，
+         * 备份已排除）。
          */
         fun migrateDailySyncToggle(context: Context) {
             val appContext = context.applicationContext
@@ -174,8 +177,10 @@ internal class XmuLegacyMigrator(
             )
             val newKey = PrefsDailySyncToggle.enabledKey(XmuTodoMapper.SOURCE_XMU)
             if (prefs.contains(newKey)) return
+            val migrated = XmuSyncPreferences.explicitDailySyncEnabled(appContext)
+                ?: PrefsDailySyncToggle.DEFAULT_ENABLED
             prefs.edit()
-                .putBoolean(newKey, XmuSyncPreferences.isDailySyncEnabled(appContext))
+                .putBoolean(newKey, migrated)
                 .apply()
         }
     }

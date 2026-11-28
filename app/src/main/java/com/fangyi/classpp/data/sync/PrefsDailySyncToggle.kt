@@ -12,7 +12,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * 一次覆盖所有未来学校。
  *
  * 与既有开关同模式（单值不值得引入 DataStore，apply 异步落盘）：冷启动同步门控与
- * 同步页两侧读写，无 Compose 依赖，冷进程可直接读。
+ * 同步页两侧读写，无 Compose 依赖，冷进程可直接读。无记录时默认**开启**（见
+ * [DEFAULT_ENABLED]，迁移侧共用同一常量，避免两处默认漂移）。
  *
  * provider 级与 session 级必须返回同一实例（注册表保证）：冷启动门控只读开关时不会
  * 装配完整会话。
@@ -44,12 +45,15 @@ class PrefsDailySyncToggle(
         /** 所有新校共用的开关 prefs 文件（备份固定排除一条） */
         const val FILE_NAME = "sync_prefs"
 
+        /** 「启动时自动同步」默认开启：无记录（新校 / 新用户 / 从未动过开关）即视为开 */
+        const val DEFAULT_ENABLED = true
+
         fun enabledKey(schoolId: String): String = "$schoolId/daily_sync_enabled"
 
         private val SAFE_ID = Regex("^[a-z][a-z0-9_]{0,31}$")
 
         private fun read(context: Context, key: String): Boolean =
             context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
-                .getBoolean(key, false)
+                .getBoolean(key, DEFAULT_ENABLED)
     }
 }

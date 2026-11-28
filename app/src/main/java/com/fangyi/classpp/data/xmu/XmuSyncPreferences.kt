@@ -17,6 +17,17 @@ object XmuSyncPreferences {
         context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
             .getBoolean(KEY_DAILY_SYNC_ENABLED, false)
 
+    /**
+     * 旧开关的**显式落盘值**：旧键存在才返回，从未写入（用户从未动过开关）返回 null。
+     * 供迁移区分「用户明确选过关/开」与「默认态」——后者不应被钉在旧默认上，
+     * 应随新默认走（见 [com.fangyi.classpp.data.sync.PrefsDailySyncToggle.DEFAULT_ENABLED]）。
+     */
+    fun explicitDailySyncEnabled(context: Context): Boolean? {
+        val prefs = context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+        if (!prefs.contains(KEY_DAILY_SYNC_ENABLED)) return null
+        return prefs.getBoolean(KEY_DAILY_SYNC_ENABLED, false)
+    }
+
     /** 落盘每日自动同步开关（apply 异步，不阻塞切换） */
     fun setDailySyncEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
