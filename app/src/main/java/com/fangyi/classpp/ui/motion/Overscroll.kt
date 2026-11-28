@@ -57,6 +57,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -475,11 +476,19 @@ class OffsetOverscrollEffect(
  * 的 `pullProgress` 参数），容器把效果实例登记进来、卸载时注销；宿主在**绘制期**读
  * [maxPullY] 取活跃实例的原始拉距（未拉动的实例恒为 0，取最大值即当前手势的拉距），
  * 驱动「松手后同步」一类的下拉进度提示（同 SettingsUi 的 graphicsLayer 零重组读法）。
- * 主线程专用（登记走 SideEffect、读取走绘制阶段），不加锁。
+ * 绘制期读 [maxPullY] 的读者只订阅「读取那一刻登记在册的实例」，所以**注册/注销本身必须
+ * 可被观测**（见下方登记表字段），否则切页换实例后读者仍盯着旧实例，拉距变化收不到。
+ * 主线程专用（登记走 DisposableEffect、读取走绘制阶段），不加锁。
  */
 class OverscrollPullProgress {
 
-    private val effects = mutableListOf<OffsetOverscrollEffect>()
+    // 登记表必须是快照列表：绘制期读者（graphicsLayer 的延迟读取）只观测「它上一次执行
+    // 那一刻登记在册的实例」，普通集合的增删不产生任何失效——切分组/切视图后新页的实例
+    // 注册进来、旧页注销，提示的图层块仍挂着上一页那批实例（拉距恒为 0），新实例的拉距
+    // 变化一概收不到，表现为「切页后的第一次下拉，提示恒透明、文案不出现」，要等别的
+    // 重组把图层块重跑一遍才恢复。快照列表的读（含读空表）会被观测，注册/注销本身
+    // 即让绘制期读者失效、重新读取当册实例
+    private val effects = mutableStateListOf<OffsetOverscrollEffect>()
 
     fun register(effect: OffsetOverscrollEffect) {
         if (effects.none { it === effect }) effects += effect
@@ -490,7 +499,11 @@ class OverscrollPullProgress {
     }
 
     /** 当前最大原始拉距（px，未阻尼；向下拉为正）。无活跃实例时为 0 */
-    fun maxPullY(): Float = effects.maxOfOrNull { it.currentOffset.y } ?: 0f
+    fun maxPullY(): Float {
+        // 空表也要读一次登记表（快照读）：读者据此在实例注册/注销时收到失效通知
+        if (effects.isEmpty()) return 0f
+        return effects.maxOfOrNull { it.currentOffset.y } ?: 0f
+    }
 }
 
 private object NoOpShape : Shape {
