@@ -24,6 +24,9 @@ enum class NotificationKind { Course, TodoDeadline, TodoStart, TodoEnd }
  * 的差即提前量。通知方式为 Live Updates 时，它是持续通知的移除时刻（见
  * [NotificationAlarmReceiver] 的 ACTION_CANCEL）。
  *
+ * [triggerAtMillis] 已过（≤ 重排时的 now）而 [eventAtMillis] 未到的条目是「补发」：
+ * 不再排触发闹钟（排了会立即误触发），由调度器在重排时立即补弹。
+ *
  * [chipText] = 实况状态栏 chip 上的文字（[Notification.Builder.setShortCriticalText]），
  * 口径由 [NotificationSettings.liveInfo] 决定且仅对课程提醒生效（课程名 / 上课地点，
  * 地点为空回退课程名）；待办提醒恒为待办名。
@@ -78,7 +81,9 @@ data class NotificationTexts(
  *   仅 [TodoTimeKind.Period] 有精确分钟，**AllDay/None 无时刻语义、不参与**（截止提醒不受影响）；
  *   重复待办按期次序列逐期排点（已完成的期次跳过、截止随重复按期折算，见 [planTodos]）；
  * - 提前量直接从事件时刻前移，可为负偏移（跨天）：0:30 的课提前 60 分钟 = 前一天 23:30 触发；
- * - 触发时刻已过（≤ now）的不再补发。
+ * - 事件时刻已过（≤ now）的不产出（上课/截止已发生，提醒无意义）；触发时刻已过但事件
+ *   未到的照常产出，调度器重排时视为「补发」立即弹通知（见 [NotificationScheduler]），
+ *   保证「提前 X 分钟」窗口内进 app / 开机也能收到错过的提醒。
  */
 object NotificationPlanner {
 
@@ -135,7 +140,7 @@ object NotificationPlanner {
                 val endMinute = TimeText.parseMinutes(endSlot.endTime) ?: continue
                 val eventAt = localMillis(date, startMinute)
                 val trigger = localMillis(date, startMinute - leadMinutes)
-                if (trigger <= nowMillis) continue
+                if (eventAt <= nowMillis) continue
                 val timeRange = TimeText.format(startMinute) + "-" + TimeText.format(endMinute)
                 val text = if (course.location.isBlank()) {
                     texts.courseTextNoLocation.format(timeRange)
@@ -166,7 +171,10 @@ object NotificationPlanner {
                 )
             }
         }
-        return result.sortedBy { it.triggerAtMillis }.take(CATEGORY_CAP)
+        // 未触发的排前、补发的垫后：上限截断优先保住还没发生的闹钟（补发在重排时已即时处理）
+        return result
+            .sortedWith(compareBy({ it.triggerAtMillis <= nowMillis }, { it.triggerAtMillis }))
+            .take(CATEGORY_CAP)
     }
 
     /**
@@ -216,7 +224,10 @@ object NotificationPlanner {
                     todoType, leadMinutes, texts, nowMillis, today, result)
             }
         }
-        return result.sortedBy { it.triggerAtMillis }.take(CATEGORY_CAP)
+        // 未触发的排前、补发的垫后（同 planCourses）
+        return result
+            .sortedWith(compareBy({ it.triggerAtMillis <= nowMillis }, { it.triggerAtMillis }))
+            .take(CATEGORY_CAP)
     }
 
     /**
@@ -242,7 +253,7 @@ object NotificationPlanner {
             if (deadlineDate != null && deadlineMinute != null && deadlineKey != null) {
                 val eventAt = localMillis(deadlineDate, deadlineMinute)
                 val trigger = localMillis(deadlineDate, deadlineMinute - leadMinutes)
-                if (trigger > nowMillis) {
+                if (eventAt > nowMillis) {
                     result += PlannedNotification(
                         key = "T:${todo.id}:${deadlineKey.epochDay}:D",
                         triggerAtMillis = trigger,
@@ -266,7 +277,7 @@ object NotificationPlanner {
                 if (startMinute != null) {
                     val eventAt = localMillis(date, startMinute)
                     val trigger = localMillis(date, startMinute - leadMinutes)
-                    if (trigger > nowMillis) {
+                    if (eventAt > nowMillis) {
                         result += PlannedNotification(
                             key = "T:${todo.id}:${date.epochDay}:S",
                             triggerAtMillis = trigger,
@@ -285,7 +296,7 @@ object NotificationPlanner {
                 if (endMinute != null) {
                     val eventAt = localMillis(date, endMinute)
                     val trigger = localMillis(date, endMinute - leadMinutes)
-                    if (trigger > nowMillis) {
+                    if (eventAt > nowMillis) {
                         result += PlannedNotification(
                             key = "T:${todo.id}:${date.epochDay}:E",
                             triggerAtMillis = trigger,

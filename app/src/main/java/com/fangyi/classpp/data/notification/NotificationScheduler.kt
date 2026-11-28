@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Build
 import androidx.core.app.NotificationManagerCompat
 import com.fangyi.classpp.R
@@ -38,11 +39,23 @@ import kotlinx.coroutines.withContext
  * - 开机完成 / 系统时间·时区·日期变化（receiver）；
  * - 进 app：仓库数据流首次与每次变化（MainActivity 的 combine 收集）；
  * - 通知设置变化（NotificationScreen 每次落盘后）。
+ *
+ * 补发语义：闹钟到点属系统行为，杀进程 / 关机 / 非精确降级也可能错过触发点。排期里
+ * 「触发时刻已过但事件未到」的条目（还困在「提前 X 分钟」窗口内）不排触发闹钟，由
+ * [reschedule] 在每次重排时立即补弹，弹过即记入补发表（[KEY_FIRED]）——到点正常弹出
+ * 的也由 receiver 随续排记入。因此上述任何重排时机都会把窗口内错过的提醒补上，且同一
+ * 提醒在窗口内只弹一次。
  */
 object NotificationScheduler {
 
     private const val PREFS_NAME = "notification_alarms"
     private const val KEY_SCHEDULED = "scheduled_keys"
+
+    /** 补发去重表（「已弹出」标记）的持久化 key：条目为 key|eventAtMillis */
+    private const val KEY_FIRED = "fired_keys"
+
+    /** 补发条目的字段分隔（提醒 key 本身不含「|」） */
+    private const val FIRED_SEPARATOR = "|"
 
     /** cancel 闹钟在持久化 key 集里的前缀（与 fire key 同源加前缀，requestCode 同 hash） */
     private const val CANCEL_KEY_PREFIX = "X:"
@@ -54,20 +67,29 @@ object NotificationScheduler {
      * 读设置与数据 → 排期 → 整体替换系统闹钟。全程 IO：AlarmManager/PendingIntent/
      * SharedPreferences 都不要求主线程，调用方（Compose effect / receiver）无需再切线程。
      *
+     * [justFired]：receiver 刚以系统闹钟正常弹出的一条提醒（key 到事件时刻），随本次重排
+     * 记入补发表——窗口内的后续重排据此跳过本条，已弹过的提醒不会被补发再弹一遍。
+     *
      * 通知关闭（或课程/待办两类都关）时只做一次“取消旧闹钟”短路：不装配容器、不读
      * JSON、不执行计划。默认安装即走此分支，成本约等于一次 SharedPreferences 读。
      */
-    suspend fun reschedule(context: Context) {
+    suspend fun reschedule(context: Context, justFired: Pair<String, Long>? = null) {
         val appContext = context.applicationContext
         rescheduleMutex.withLock {
-            withContext(Dispatchers.IO) { rescheduleLocked(appContext) }
+            withContext(Dispatchers.IO) { rescheduleLocked(appContext, justFired) }
         }
     }
 
-    private fun rescheduleLocked(appContext: Context) {
+    private fun rescheduleLocked(appContext: Context, justFired: Pair<String, Long>?) {
+        val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val settings: NotificationSettings = NotificationPreferences.load(appContext)
+        val nowMillis = System.currentTimeMillis()
         if (!settings.enabled || (!settings.courseEnabled && !settings.todoEnabled)) {
-            replaceAll(appContext, emptyList())
+            // 补发表顺手按窗口清理（事件已过即失效），长期关闭也不积留旧条目；
+            // 无记录可清时不落盘，保住默认安装「零写入」的短路成本
+            val fired = loadFired(prefs, nowMillis)
+            if (fired.isNotEmpty() || prefs.contains(KEY_FIRED)) saveFired(prefs, fired)
+            replaceAll(appContext, emptyList(), nowMillis)
             return
         }
         val (schedule, todos) = loadData(appContext)
@@ -76,9 +98,70 @@ object NotificationScheduler {
             todos = todos,
             settings = settings,
             texts = NotificationTexts.from(appContext),
-            nowMillis = System.currentTimeMillis(),
+            nowMillis = nowMillis,
         )
-        replaceAll(appContext, planned)
+        postCatchUps(appContext, planned, settings, justFired, nowMillis)
+        replaceAll(appContext, planned, nowMillis)
+    }
+
+    /**
+     * 补发：把「触发时刻已过但事件未到」的排期立即弹出来（提前 X 分钟窗口内进 app /
+     * 开机 / 改时间等任何重排时机都补上错过的提醒）。已弹过的（补发表：到点正常弹出与
+     * 此前的补发都记入）直接跳过，同一提醒在窗口内只弹一次。
+     */
+    private fun postCatchUps(
+        appContext: Context,
+        planned: List<PlannedNotification>,
+        settings: NotificationSettings,
+        justFired: Pair<String, Long>?,
+        nowMillis: Long,
+    ) {
+        val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val fired = loadFired(prefs, nowMillis).toMutableMap()
+        var changed = false
+        if (justFired != null) {
+            fired[justFired.first] = justFired.second
+            changed = true
+        }
+        for (item in planned) {
+            if (item.triggerAtMillis > nowMillis || item.key in fired) continue
+            if (NotificationPoster.post(appContext, item, settings)) {
+                fired[item.key] = item.eventAtMillis
+                changed = true
+            }
+        }
+        if (changed) saveFired(prefs, fired)
+    }
+
+    /**
+     * 补发表：key → 事件时刻。读取时顺手清掉事件已过的条目——补发窗口随事件到点关闭，
+     * 记录不再有去重价值。条目格式 `key|eventAtMillis`（提醒 key 不含「|」）。
+     */
+    private fun loadFired(prefs: SharedPreferences, nowMillis: Long): Map<String, Long> {
+        val entries = prefs.getStringSet(KEY_FIRED, emptySet()).orEmpty()
+        if (entries.isEmpty()) return emptyMap()
+        val fired = HashMap<String, Long>(entries.size)
+        for (entry in entries) {
+            val separator = entry.lastIndexOf(FIRED_SEPARATOR)
+            val eventAt = separator.takeIf { it > 0 }
+                ?.let { entry.substring(it + 1).toLongOrNull() }
+                ?: continue
+            if (eventAt > nowMillis) fired[entry.substring(0, separator)] = eventAt
+        }
+        return fired
+    }
+
+    private fun saveFired(prefs: SharedPreferences, fired: Map<String, Long>) {
+        val editor = prefs.edit()
+        if (fired.isEmpty()) {
+            editor.remove(KEY_FIRED)
+        } else {
+            editor.putStringSet(
+                KEY_FIRED,
+                fired.entries.map { "${it.key}${FIRED_SEPARATOR}${it.value}" }.toSet(),
+            )
+        }
+        editor.apply()
     }
 
     /**
@@ -105,8 +188,11 @@ object NotificationScheduler {
      * 取消用的 PendingIntent 与注册的 filterEquals（action + 组件）一致、requestCode 同源
      * （extras 不参与匹配），旧闹钟必能精确命中取消。key 集混合 fire / cancel 两类
      * （cancel 带 [CANCEL_KEY_PREFIX] 前缀），按前缀分派取消。
+     *
+     * 补发条目（[nowMillis] 时触发时刻已过）只排事件到点的清理闹钟，不排触发闹钟——
+     * 过去时刻的闹钟注册即触发，会拿排期快照再弹一条与补发重复的通知。
      */
-    private fun replaceAll(context: Context, planned: List<PlannedNotification>) {
+    private fun replaceAll(context: Context, planned: List<PlannedNotification>, nowMillis: Long) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val oldKeys = prefs.getStringSet(KEY_SCHEDULED, emptySet()).orEmpty()
@@ -123,20 +209,24 @@ object NotificationScheduler {
         }
         val scheduledKeys = HashSet<String>(planned.size * 2)
         for (item in planned) {
-            scheduleExact(
-                alarmManager,
-                item.triggerAtMillis,
-                firePendingIntent(context, item.key.hashCode(), item),
-                showPendingIntent(context),
-            )
+            if (item.triggerAtMillis > nowMillis) {
+                scheduleExact(
+                    alarmManager,
+                    item.triggerAtMillis,
+                    firePendingIntent(context, item.key.hashCode(), item),
+                    showPendingIntent(context),
+                )
+            }
             // 倒计时实况的到点清理：事件时刻移除持续通知。两种通知方式都常排此闹钟
             // （method 可随时切换，到点行为由 receiver 按当前设置决定；普通方式下空转无害）
-            scheduleExact(
-                alarmManager,
-                item.eventAtMillis,
-                cancelPendingIntent(context, item.key.hashCode()),
-                showPi = null,
-            )
+            if (item.eventAtMillis > nowMillis) {
+                scheduleExact(
+                    alarmManager,
+                    item.eventAtMillis,
+                    cancelPendingIntent(context, item.key.hashCode()),
+                    showPi = null,
+                )
+            }
             scheduledKeys += item.key
             scheduledKeys += cancelKey(item.key)
         }
@@ -254,7 +344,7 @@ object NotificationScheduler {
         return true
     }
 
-    /** 到点广播：extras 携带文案快照（排期即定格，后续编辑经重排刷新），key 供取消/去重 */
+    /** 到点广播：extras 携带文案快照（排期即定格，后续编辑经重排刷新），key 供取消/去重，事件时刻供补发去重与迟到弃弹 */
     private fun firePendingIntent(
         context: Context,
         requestCode: Int,
@@ -268,6 +358,7 @@ object NotificationScheduler {
                 .putExtra(NotificationAlarmReceiver.EXTRA_KIND, item.kind.name)
                 .putExtra(NotificationAlarmReceiver.EXTRA_TITLE, item.title)
                 .putExtra(NotificationAlarmReceiver.EXTRA_TEXT, item.text)
+                .putExtra(NotificationAlarmReceiver.EXTRA_EVENT_AT, item.eventAtMillis)
                 .putExtra(NotificationAlarmReceiver.EXTRA_CHIP_TEXT, item.chipText)
         }
         return PendingIntent.getBroadcast(

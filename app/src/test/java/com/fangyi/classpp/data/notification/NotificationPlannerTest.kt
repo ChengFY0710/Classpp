@@ -111,8 +111,38 @@ class NotificationPlannerTest {
             termEnd = IsoDate.of(2026, 11, 8),
             course = course(name = "数学", dayOfWeek = 1, weeks = WeekPattern.everyWeek(4)),
         )
-        // 现在 = 9:00：今天 7:30 的提醒时刻已过，只排下周
+        // 现在 = 9:00：今天 8:00 已上课（事件时刻也过了），不补发，只排下周
         val planned = plan(schedule, emptyList(), settings(), localMillis(today, 9 * 60))
+        assertEquals(listOf("C:c1:${today.plus(7).epochDay}"), planned.map { it.key })
+    }
+
+    @Test
+    fun missedTriggerWithinWindowStillPlannedAsCatchUp() {
+        val schedule = schedule(
+            termStart = IsoDate.of(2026, 10, 12),
+            termEnd = IsoDate.of(2026, 11, 8),
+            course = course(name = "数学", dayOfWeek = 1, weeks = WeekPattern.everyWeek(4)),
+        )
+        // 现在 = 7:45：今天 7:30 的提醒时刻已过（闹钟错过），但 8:00 还没上课——
+        // 补发窗口内照常产出，由调度器立即补弹；排序垫在未触发的下周条目之后
+        val planned = plan(schedule, emptyList(), settings(), localMillis(today, 7 * 60 + 45))
+        assertEquals(
+            listOf("C:c1:${today.plus(7).epochDay}", "C:c1:${today.epochDay}"),
+            planned.map { it.key },
+        )
+        assertEquals(localMillis(today, 7 * 60 + 30), planned[1].triggerAtMillis)
+        assertEquals(localMillis(today, 8 * 60), planned[1].eventAtMillis)
+    }
+
+    @Test
+    fun leadZeroNeverCatchUp() {
+        val schedule = schedule(
+            termStart = IsoDate.of(2026, 10, 12),
+            termEnd = IsoDate.of(2026, 11, 8),
+            course = course(name = "数学", dayOfWeek = 1, weeks = WeekPattern.everyWeek(4)),
+        )
+        // 提前 0 分钟 = 届时通知：触发时刻与事件时刻重合，错过即事件已过，无补发窗口
+        val planned = plan(schedule, emptyList(), settings(lead = 0), localMillis(today, 8 * 60 + 30))
         assertEquals(listOf("C:c1:${today.plus(7).epochDay}"), planned.map { it.key })
     }
 
@@ -257,6 +287,22 @@ class NotificationPlannerTest {
         assertEquals("测试待办", planned[0].chipText) // 待办实况 chip 恒为待办名
         assertEquals(NotificationKind.TodoDeadline, planned[0].kind)
         assertEquals("10月14日 17:00 截止", planned[0].text)
+    }
+
+    @Test
+    fun missedTodoDeadlineWithinWindowStillPlanned() {
+        // 现在 = 今天 16:45：截止提醒 16:30 的触发时刻已过，但 17:00 还没截止——
+        // 补发窗口内照常产出，由调度器立即补弹
+        val todos = listOf(todo(id = "t1", deadlineDate = today, deadlineMinute = 17 * 60))
+        val planned = plan(
+            schedule = null,
+            todos = todos,
+            settings = settings(todoType = NotificationSettings.TODO_TYPE_DEADLINE),
+            nowMillis = localMillis(today, 16 * 60 + 45),
+        )
+        assertEquals(listOf("T:t1:${today.epochDay}:D"), planned.map { it.key })
+        assertEquals(localMillis(today, 16 * 60 + 30), planned[0].triggerAtMillis)
+        assertEquals(localMillis(today, 17 * 60), planned[0].eventAtMillis)
     }
 
     @Test
