@@ -497,6 +497,10 @@
     <string name="error_day_adjust_unchanged">Source and target days are the same</string>
     <string name="error_day_adjust_conflict">The target day conflicts with "%1$s"</string>
     <string name="error_day_adjust_target_invalid">The target is outside the term</string>
+    <!-- General (Personalization) -->
+    <string name="section_general">General</string>
+    <string name="default_home_page">Default home page</string>
+    <string name="default_home_page_desc">Page opened when the app starts</string>
     <!-- Timetable (Personalization) -->
     <string name="section_schedule">Timetable</string>
     <string name="card_height_label">Course card height</string>

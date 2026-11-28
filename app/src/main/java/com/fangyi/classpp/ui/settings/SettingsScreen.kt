@@ -227,6 +227,9 @@ fun SettingsScreen(
     // 日程页「其他日期显示逾期待办」开关（同 cardHeights 的透传纪律）
     showOverdueTodos: State<Boolean> = mutableStateOf(false),
     onShowOverdueTodosChange: (Boolean) -> Unit = {},
+    // 「默认首页」三选一（同 cardHeights 的透传纪律）
+    defaultHome: State<DefaultHomePage> = mutableStateOf(DefaultHomePage.Timetable),
+    onDefaultHomeChange: (DefaultHomePage) -> Unit = {},
     // 浮层顶栏模糊开关（同 cardHeights 的透传纪律）
     overlayTopBarBlur: State<Boolean> = mutableStateOf(false),
     onOverlayTopBarBlurChange: (Boolean) -> Unit = {},
@@ -541,6 +544,8 @@ fun SettingsScreen(
                                                 onTodoMasonryChange = onTodoMasonryChange,
                                                 showOverdueTodos = showOverdueTodos,
                                                 onShowOverdueTodosChange = onShowOverdueTodosChange,
+                                                defaultHome = defaultHome,
+                                                onDefaultHomeChange = onDefaultHomeChange,
                                                 overlayTopBarBlur = overlayTopBarBlur,
                                                 onOverlayTopBarBlurChange = onOverlayTopBarBlurChange,
                                                 settingsTransforming = settingsTransforming,

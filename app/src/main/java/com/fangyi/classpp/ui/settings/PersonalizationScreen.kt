@@ -87,6 +87,10 @@ import kotlin.math.roundToInt
  * 「待办」分组为收集箱「瀑布流视图」开关（[todoMasonry] / [onTodoMasonryChange]）：
  * 开启时收集箱非空分组达 3 个后自动两列瀑布流，关闭后始终整宽竖排（默认开启，
  * 保持既有布局行为，设置项只提供关闭入口）。
+ * 「通用」分组为「默认首页」选择行（[defaultHome] / [onDefaultHomeChange]）：点行弹出
+ * 三选一菜单（日程/课表/待办），选中即落盘，下一次冷启动以该页为初始落页（旋转等
+ * 进程内重建由 TabPagerState 的 Saver 恢复上次选中页，不受它影响；持久化见
+ * [DefaultHomePagePreferences]）。
  * 「日程」分组（页末）为「显示逾期待办」开关（[showOverdueTodos] /
  * [onShowOverdueTodosChange]）：决定日程页是否显示相对查看日已逾期的待办。关闭（默认）
  * 时只显示查看日起 2 天内截止的（查看日当天未逾期的照常显示），开启后恢复「逾期始终
@@ -119,6 +123,9 @@ fun PersonalizationScreen(
     // 日程页「其他日期显示逾期待办」开关（State 实例透传纪律同上，值只在 AgendaSection 叶子内读）
     showOverdueTodos: State<Boolean> = mutableStateOf(false),
     onShowOverdueTodosChange: (Boolean) -> Unit = {},
+    // 「默认首页」三选一（State 实例透传纪律同上，值只在 GeneralSection 叶子内读）
+    defaultHome: State<DefaultHomePage> = mutableStateOf(DefaultHomePage.Timetable),
+    onDefaultHomeChange: (DefaultHomePage) -> Unit = {},
     // 浮层顶栏模糊开关（State 实例透传纪律同上，值只在 ColorModeSection 叶子内读）
     overlayTopBarBlur: State<Boolean> = mutableStateOf(false),
     onOverlayTopBarBlurChange: (Boolean) -> Unit = {},
@@ -184,6 +191,7 @@ fun PersonalizationScreen(
                             overlayTopBarBlur.value,
                             todoMasonry.value,
                             showOverdueTodos.value,
+                            defaultHome.value,
                             themeMode,
                             themeAccent,
                         ),
@@ -217,6 +225,10 @@ fun PersonalizationScreen(
                     onGlassStyleChange = onGlassStyleChange,
                     overlayTopBarBlur = overlayTopBarBlur,
                     onOverlayTopBarBlurChange = onOverlayTopBarBlurChange,
+                )
+                GeneralSection(
+                    defaultHome = defaultHome,
+                    onDefaultHomeChange = onDefaultHomeChange,
                 )
                 ScheduleSection(
                     daysPerWeek = daysPerWeek,
@@ -293,6 +305,45 @@ fun PersonalizationScreen(
                 accentPickerVisible = false
                 onThemeAccentChange(ThemeAccent.entries.getOrElse(index) { ThemeAccent.Blue })
             },
+        )
+    }
+}
+
+/**
+ * 「通用」分组：「默认首页」选择行单独一张卡（[defaultHome] / [onDefaultHomeChange]），
+ * 行尾显示当前选择，点行弹出三选一菜单（日程/课表/待办，行文案复用底部导航页签标签）。
+ * 选中即落盘（[DefaultHomePagePreferences]），下一次冷启动以该页为初始落页；旋转等
+ * 进程内重建由 TabPagerState 的 Saver 恢复上次选中页，通知点击落页也不受它影响。
+ *
+ * State 实例由调用方透传、值只在本叶子读取：切换选择只重组本卡片，不牵动整页
+ * （同 ScheduleSection / TodoSection 的透传纪律）。菜单选值随选重写本行内容，
+ * 防护内建于 [SettingsCardItem.Select]（重写延后到菜单退场播完，见 SelectMenu）。
+ */
+@Composable
+private fun GeneralSection(
+    defaultHome: State<DefaultHomePage>,
+    onDefaultHomeChange: (DefaultHomePage) -> Unit,
+) {
+    // 值读取点（叶子）：切换选择只重组本卡片
+    val current = defaultHome.value
+    CardSection(title = stringResource(R.string.section_general)) {
+        SettingsCard(
+            items = listOf(
+                SettingsCardItem.Select(
+                    label = stringResource(R.string.default_home_page),
+                    description = stringResource(R.string.default_home_page_desc),
+                    value = stringResource(current.labelRes),
+                    // 选项 id 用 labelRes：三档各占一个字符串资源，天然互异且随语言切换
+                    items = DefaultHomePage.entries.map { page ->
+                        page.labelRes to stringResource(page.labelRes)
+                    },
+                    selectedId = current.labelRes,
+                    onPick = { labelRes ->
+                        DefaultHomePage.entries.firstOrNull { it.labelRes == labelRes }
+                            ?.let(onDefaultHomeChange)
+                    },
+                ),
+            ),
         )
     }
 }

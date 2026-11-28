@@ -79,6 +79,8 @@ import com.fangyi.classpp.ui.schedule.CardHeightScales
 import com.fangyi.classpp.ui.schedule.ScheduleScreen
 import com.fangyi.classpp.ui.schedule.TeacherDisplayPreferences
 import com.fangyi.classpp.ui.settings.AgendaPreferences
+import com.fangyi.classpp.ui.settings.DefaultHomePage
+import com.fangyi.classpp.ui.settings.DefaultHomePagePreferences
 import com.fangyi.classpp.ui.settings.GlassPreferences
 import com.fangyi.classpp.ui.settings.LocalSettingsFreezeEpoch
 import com.fangyi.classpp.ui.settings.OverlayTopBarPreferences
@@ -280,6 +282,8 @@ class MainActivity : ComponentActivity() {
         val savedOverlayTopBarBlur = OverlayTopBarPreferences.load(this)
         // 日程页「其他日期显示逾期待办」开关：同为 SharedPreferences 真源，冷启动读一次
         val savedShowOverdueTodos = AgendaPreferences.loadShowOverdueTodos(this)
+        // 「默认首页」三选一：同为 SharedPreferences 真源，冷启动读一次（决定初始落页）
+        val savedDefaultHome = DefaultHomePagePreferences.load(this)
         super.onCreate(savedInstanceState)
         // 系统栏外观随主题：状态栏/导航栏全透明、前景图标深浅按模式切换。
         // 必须显式 light 而非 auto：auto 会把 isNavigationBarContrastEnforced 置为 true，
@@ -348,6 +352,8 @@ class MainActivity : ComponentActivity() {
             // 日程页「其他日期显示逾期待办」开关状态：同 showTeacher（prefs 真源、
             // 回调即时落盘）；State 实例同时喂个性化页开关与日程页两张提醒卡的候选口径
             val showOverdueTodosState = remember { mutableStateOf(savedShowOverdueTodos) }
+            // 「默认首页」三选一状态：同 showTeacher（prefs 真源、回调即时落盘）
+            val defaultHomeState = remember { mutableStateOf(savedDefaultHome) }
             val darkTheme = when (themeMode) {
                 ThemeMode.System -> isSystemInDarkTheme()
                 ThemeMode.Light -> false
@@ -433,8 +439,10 @@ class MainActivity : ComponentActivity() {
                         ?.collectAsState()
                         ?: remember { mutableStateOf(true) }
                     // tab 页转场状态机：惰性挂载/常驻/切页动画/停靠页冻结帧回位的全部机制
-                    // 见 ui.navigation 的 TabPagerState（原内联于此，纯搬移）
-                    val pagerState = rememberTabPagerState()
+                    // 见 ui.navigation 的 TabPagerState（原内联于此，纯搬移）。
+                    // 初始落页 = 个性化页「默认首页」偏好：只在冷启动建态时生效，旋转等
+                    // 重建由 Saver 恢复上次选中页，通知点击落页随后 selectTab 覆盖
+                    val pagerState = rememberTabPagerState(initialTab = savedDefaultHome.appTab)
 
                     // 日程页首挂载所需的持久化快照：启动协程在 IO 线程预读，首次切到
                     // 日程页时不再在主线程组合期读 5 项 prefs + 解析图片列表 JSON
@@ -561,6 +569,12 @@ class MainActivity : ComponentActivity() {
                         { enabled: Boolean ->
                             showOverdueTodosState.value = enabled
                             AgendaPreferences.saveShowOverdueTodos(this@MainActivity, enabled)
+                        }
+                    }
+                    val onSettingsDefaultHomeChange = remember {
+                        { page: DefaultHomePage ->
+                            defaultHomeState.value = page
+                            DefaultHomePagePreferences.save(this@MainActivity, page)
                         }
                     }
                     val settingsModifier = remember { Modifier.fillMaxSize() }
@@ -998,6 +1012,10 @@ class MainActivity : ComponentActivity() {
                                 showOverdueTodos = showOverdueTodosState,
                                 // 只改内存即时生效 + 即时落盘（同 showTeacher）
                                 onShowOverdueTodosChange = onSettingsShowOverdueTodosChange,
+                                defaultHome = defaultHomeState,
+                                // 只改内存即时生效 + 即时落盘（同 showTeacher）；冷启动落页由
+                                // rememberTabPagerState 的 initialTab 读同一份偏好
+                                onDefaultHomeChange = onSettingsDefaultHomeChange,
                                 // 设置页根页顶栏的冻结层要读外层覆盖层进度
                                 overlayTransitionState = settingsOverlayState,
                                 modifier = settingsModifier,
