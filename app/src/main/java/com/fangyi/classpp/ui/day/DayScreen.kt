@@ -572,8 +572,9 @@ internal fun DayScreen(
             }
         }
     }
-    // 待办详情唤起统一入口（待办提醒卡行 + 时间轴待办卡共用）：记 id 与分期日期——
-    // 详情浮层按 id 反查原始待办，逐期上下文只由点击带入（同待办页两态口径，宿主块见底部挂载处）
+    // 待办详情唤起统一入口（待办提醒卡行 + 时间轴待办卡 + 课程详情浮层的待办卡共用）：
+    // 记 id 与分期日期——详情浮层按 id 反查原始待办，逐期上下文只由点击带入
+    // （同待办页两态口径，宿主块见底部挂载处）
     val openTodoDetail: (Todo) -> Unit = { todo ->
         todoDetailTargetId = todo.id
         todoDetailTargetDate = todo.dates.firstOrNull()?.toString().orEmpty()
@@ -1688,9 +1689,14 @@ internal fun DayScreen(
                     todos = courseTodos,
                     // 调课卡进入：位置胶囊显示目标周/节次，信息卡补「原 周X 第a-b节」
                     adjustment = detailAdjustment,
-                    covered = courseTodoVisible,
+                    // 新建课程待办浮层、待办详情浮层（待办卡点进，走下方 10.6 的宿主块）
+                    // 盖上来时本层缩小后退；covered 用期望态，收上层时同帧反向恢复
+                    covered = courseTodoVisible || todoDetailTargetId != "",
                     // 同时间轴待办卡：勾选结算走 toggleTaskTodo（分期/整条 + 失败 Toast）
                     onTodoCheckedChange = toggleTaskTodo,
+                    // 待办卡整卡点击进待办详情：与时间轴待办卡同一唤起入口（记 id + 分期
+                    // 日期，宿主块按 id 反查原始待办、按分期日期折算当期截止）
+                    onTodoClick = openTodoDetail,
                     onNoteSave = { note ->
                         val cleaned = note.trim()
                         if (cleaned != detail.note) {
@@ -1741,10 +1747,12 @@ internal fun DayScreen(
             }
         }
 
-        // 10.6) 待办详情浮层：点待办提醒卡行/时间轴待办卡唤起，与待办页（TodoScreen）
-        // 同款接线。条目从原始待办列表反查（id 不随分期展开变化），待办被删后反查落空 →
-        // 请求清空 → 浮层自动关闭；分期日期由点击带入，随重复的截止行据此折算。
-        // 画在课程详情浮层之后、图片浮层之前——图片浮层保持最顶层（盖住整个页面）。
+        // 10.6) 待办详情浮层：点待办提醒卡行/时间轴待办卡/课程详情浮层的待办卡唤起，
+        // 与待办页（TodoScreen）同款接线。条目从原始待办列表反查（id 不随分期展开变化），
+        // 待办被删后反查落空 → 请求清空 → 浮层自动关闭；分期日期由点击带入，随重复的
+        // 截止行据此折算。画在课程详情浮层之后（组合顺序即绘制顺序：从课程详情点待办卡
+        // 进入时盖在其上，课程详情经 covered 同帧缩小后退）、图片浮层之前——图片浮层
+        // 保持最顶层（盖住整个页面）。
         val todoDetailEntry = todos.firstOrNull { it.id == todoDetailTargetId }
         if (todoDetailEntry != null) todoDetailMounted = todoDetailEntry
         todoDetailMounted?.let { detail ->

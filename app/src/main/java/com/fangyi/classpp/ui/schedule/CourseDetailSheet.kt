@@ -52,10 +52,13 @@ import com.fangyi.classpp.ui.theme.isDarkTheme
  * 不出现）。默认只显未完成；勾选框可切换完成（经 [onTodoCheckedChange] 交调用方对所勾
  * 分期落盘），**本次打开期间勾选的**卡片原地变划线置灰并保留到关闭，重开才消失（重复
  * 待办勾选后下一期照常出现为新的未完成卡，与列表页一致）；打开时即已完成的不显示。
- * 卡片整卡点击无动作（不进待办详情）。
  *
  * 待办卡随该待办的倒计时开关（`Todo.countdown`）在左区显示距截止剩余天数（[deadlineDaysLeft]，
  * 与待办列表页同口径）；完成态由 [NoteCard] 自行隐藏倒计时。
+ *
+ * 待办卡整卡可点（[onTodoClick] 非空时）：交调用方唤起待办详情浮层（叠在本浮层之上，
+ * 本层经 covered 缩小后退）——所点副本的分期日期随 todo.dates 首位带入，详情浮层的截止行
+ * 按它折算当期口径；null（预览等无宿主场景）保持不可点。
  *
  * 正文按浮层内容规范排版：课程名与位置信息胶囊行（星期 / 节次 / 起止时间，
  * [SheetInfoPillRow]）保持裸元素，信息卡、备注、待办卡列表各收进
@@ -85,6 +88,8 @@ fun CourseDetailSheet(
     onNoteSave: (String) -> Unit,
     todos: List<Todo> = emptyList(),
     onTodoCheckedChange: ((todo: Todo, checked: Boolean) -> Unit)? = null,
+    // 待办卡整卡点击交调用方唤起待办详情浮层；null（预览等无宿主场景）保持不可点
+    onTodoClick: ((todo: Todo) -> Unit)? = null,
     covered: Boolean = false,
     onCreateTodoClick: () -> Unit = {},
     // 非空 = 从调课卡点进来的：位置胶囊显示目标时间，信息卡补一行「原 周X 第a-b节」
@@ -248,7 +253,9 @@ fun CourseDetailSheet(
                                     if (checked) checkedThisSession = checkedThisSession + todo.occurrenceKey()
                                     onTodoCheckedChange?.invoke(todo, checked)
                                 },
-                                onClick = null,
+                                // 整卡点击进待办详情：所点分期副本的日期随 todo.dates 首位
+                                // 带回宿主（详情浮层的截止行据此折算当期口径）
+                                onClick = onTodoClick?.let { onTodoClick -> { onTodoClick(todo) } },
                             )
                         }
                     }

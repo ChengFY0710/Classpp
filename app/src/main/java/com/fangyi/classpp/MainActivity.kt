@@ -907,6 +907,8 @@ class MainActivity : ComponentActivity() {
                                                 modifier = pageModifier,
                                                 repository = repository,
                                                 todoRepository = todoRepository,
+                                                // 课程详情内待办详情的标签配色与编辑浮层的标签选择
+                                                tagRepository = tagRepository,
                                                 editing = editing,
                                                 onEditingChange = onEditingChange,
                                                 onOverlayOverNavBarChange = onOverlayOverNavBarChange,
