@@ -423,7 +423,7 @@
     <string name="sync_auto_login_disable_confirm">关闭并删除密码</string>
     <!-- 启动时自动同步：沿用原「每日自动同步」的存储键，开启状态无损保留 -->
     <string name="sync_daily_title">启动时自动同步</string>
-    <string name="sync_daily_desc">开启后，应用启动时自动同步一次，有更新时通知</string>
+    <string name="sync_daily_desc">开启后，应用启动时自动同步一次</string>
     <!-- 偏好设置：远端消失时自动标记完成 -->
     <string name="sync_auto_complete_title">远端消失时标记完成</string>
     <string name="sync_auto_complete_desc">同步的待办若在远端消失，自动标记为已完成，已逾期的待办保持未完成</string>

@@ -291,7 +291,7 @@
     <string name="sync_auto_login_disable_confirm">Turn off and delete password</string>
     <!-- Auto sync on launch: reuses the former daily auto sync storage key, existing toggles carry over -->
     <string name="sync_daily_title">Auto sync on launch</string>
-    <string name="sync_daily_desc">When enabled, syncs once at app startup, and notifies if there are updates</string>
+    <string name="sync_daily_desc">When enabled, syncs once at app startup</string>
     <!-- Preferences: mark completed when the remote item disappears -->
     <string name="sync_auto_complete_title">Mark completed when removed remotely</string>
     <string name="sync_auto_complete_desc">Synced todos that disappear from the remote are marked completed automatically. Overdue todos are left unchanged.</string>
