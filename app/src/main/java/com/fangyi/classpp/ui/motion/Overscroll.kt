@@ -54,6 +54,7 @@ import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -215,19 +216,22 @@ class OffsetOverscrollEffect(
         }
     }
 
-    /** 退出保持态：从展示位按弹簧回弹归零收起。未在保持态时是空操作 */
-    fun releaseHold() {
-        if (!held) return
+    /**
+     * 退出保持态：从展示位按弹簧回弹归零收起，返回回弹动画（调用方可 [Job.join]
+     * 等待收尾，如「松手后同步」提示要在回弹全程保持隐藏）。未在保持态时返回 null。
+     */
+    fun releaseHold(): Job? {
+        if (!held) return null
         held = false
         springJob?.cancel()
         val from = offset.toFloat()
-        if (from == 0f) return
-        springJob = animationScope.launch {
+        if (from == 0f) return null
+        return animationScope.launch {
             AnimationState(from, 0f)
                 .animateTo(0f, animationSpec) {
                     offset = offset.copyWith(value)
                 }
-        }
+        }.also { springJob = it }
     }
 
     override fun applyToScroll(
@@ -463,6 +467,30 @@ class OffsetOverscrollEffect(
         // 仍纠结时按主分量定轴。触摸输入的 delta 恒为纯轴分量，不会走到该兜底
         private const val AxisFallbackPathPx = 48f
     }
+}
+
+/**
+ * 下拉进度登记表：一个页面里同时存在多个橡皮筋效果实例（分组页每页两实例、多页并存），
+ * 下拉只发生在其中活跃的一个上。宿主把登记表传给各滚动容器（[RubberBandLazyColumn] 等
+ * 的 `pullProgress` 参数），容器把效果实例登记进来、卸载时注销；宿主在**绘制期**读
+ * [maxPullY] 取活跃实例的原始拉距（未拉动的实例恒为 0，取最大值即当前手势的拉距），
+ * 驱动「松手后同步」一类的下拉进度提示（同 SettingsUi 的 graphicsLayer 零重组读法）。
+ * 主线程专用（登记走 SideEffect、读取走绘制阶段），不加锁。
+ */
+class OverscrollPullProgress {
+
+    private val effects = mutableListOf<OffsetOverscrollEffect>()
+
+    fun register(effect: OffsetOverscrollEffect) {
+        if (effects.none { it === effect }) effects += effect
+    }
+
+    fun unregister(effect: OffsetOverscrollEffect) {
+        effects.removeAll { it === effect }
+    }
+
+    /** 当前最大原始拉距（px，未阻尼；向下拉为正）。无活跃实例时为 0 */
+    fun maxPullY(): Float = effects.maxOfOrNull { it.currentOffset.y } ?: 0f
 }
 
 private object NoOpShape : Shape {
@@ -841,6 +869,8 @@ fun RubberBandLazyColumn(
     userScrollEnabled: Boolean = true,
     /** 下拉刷新松手回调（见 [OffsetOverscrollEffect.onPullRelease]）；null = 不监听 */
     onPullRelease: ((effect: OffsetOverscrollEffect, pullPx: Float) -> Unit)? = null,
+    /** 下拉进度登记（见 [OverscrollPullProgress]）；null = 不登记 */
+    pullProgress: OverscrollPullProgress? = null,
     content: LazyListScope.() -> Unit,
 ) {
     val effect = rememberOverscrollEffect()
@@ -854,6 +884,17 @@ fun RubberBandLazyColumn(
     SideEffect {
         (effect as? OffsetOverscrollEffect)?.onPullRelease = onPullRelease
         (listEffect as? OffsetOverscrollEffect)?.onPullRelease = onPullRelease
+    }
+    // 下拉进度登记：两实例都登记（同一时刻只有活跃实例有拉距），容器卸载时注销防悬空
+    DisposableEffect(pullProgress) {
+        val ambient = effect as? OffsetOverscrollEffect
+        val list = listEffect as? OffsetOverscrollEffect
+        if (pullProgress != null && ambient != null) pullProgress.register(ambient)
+        if (pullProgress != null && list != null) pullProgress.register(list)
+        onDispose {
+            if (pullProgress != null && ambient != null) pullProgress.unregister(ambient)
+            if (pullProgress != null && list != null) pullProgress.unregister(list)
+        }
     }
     val unscrollable = !state.canScrollForward && !state.canScrollBackward
     // 兜底判据：有环境效果实例、调用方允许手势、且列表上下都不可滚
@@ -936,6 +977,8 @@ fun RubberBandLazyVerticalStaggeredGrid(
     userScrollEnabled: Boolean = true,
     /** 下拉刷新松手回调（见 [OffsetOverscrollEffect.onPullRelease]）；null = 不监听 */
     onPullRelease: ((effect: OffsetOverscrollEffect, pullPx: Float) -> Unit)? = null,
+    /** 下拉进度登记（见 [OverscrollPullProgress]）；null = 不登记 */
+    pullProgress: OverscrollPullProgress? = null,
     content: LazyStaggeredGridScope.() -> Unit,
 ) {
     val effect = rememberOverscrollEffect()
@@ -948,6 +991,17 @@ fun RubberBandLazyVerticalStaggeredGrid(
     SideEffect {
         (effect as? OffsetOverscrollEffect)?.onPullRelease = onPullRelease
         (gridEffect as? OffsetOverscrollEffect)?.onPullRelease = onPullRelease
+    }
+    // 下拉进度登记：同 RubberBandLazyColumn，卸载时注销防悬空
+    DisposableEffect(pullProgress) {
+        val ambient = effect as? OffsetOverscrollEffect
+        val grid = gridEffect as? OffsetOverscrollEffect
+        if (pullProgress != null && ambient != null) pullProgress.register(ambient)
+        if (pullProgress != null && grid != null) pullProgress.register(grid)
+        onDispose {
+            if (pullProgress != null && ambient != null) pullProgress.unregister(ambient)
+            if (pullProgress != null && grid != null) pullProgress.unregister(grid)
+        }
     }
     val unscrollable = !state.canScrollForward && !state.canScrollBackward
     // 兜底判据：有环境效果实例、调用方允许手势、且网格上下都不可滚

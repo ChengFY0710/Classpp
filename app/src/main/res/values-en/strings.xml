@@ -243,6 +243,7 @@
     <string name="sync_pull_sync_title">Pull to sync on todo page</string>
     <string name="sync_pull_sync_desc">When enabled, pull down on the todo page to sync</string>
     <string name="sync_pull_syncing">Syncing</string>
+    <string name="sync_pull_hint">Release to sync</string>
     <string name="sync_pull_done">Synced %1$d updates</string>
     <string name="sync_pull_not_connected">School account is not connected</string>
     <string name="sync_pull_failed">Sync failed, try again later</string>

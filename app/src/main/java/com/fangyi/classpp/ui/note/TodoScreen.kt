@@ -3,6 +3,7 @@ package com.fangyi.classpp.ui.note
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -50,7 +51,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -109,6 +113,8 @@ import com.fangyi.classpp.ui.components.rememberPopupActionGate
 import com.fangyi.classpp.ui.motion.CrossPages
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.OffsetOverscrollEffect
+import com.fangyi.classpp.ui.motion.OverscrollPullProgress
+import com.fangyi.classpp.ui.motion.ProgressConverter
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.motion.RubberBandLazyVerticalStaggeredGrid
@@ -154,8 +160,14 @@ private val TodoPullTriggerDistance = 96.dp
 /** 下拉同步的定格展示位（原始未阻尼拉距，视觉约 60dp）：顶栏下方露出的空隙容纳「同步中」指示 */
 private val TodoPullRestDistance = 96.dp
 
-/** 「同步中」指示胶囊与顶栏底边的间距（动作行展开时随 topBarExtraSpace 一同避让） */
-private val TodoPullIndicatorTopGap = 6.dp
+/** 「松手后同步」提示触发后的退场时长：淡出 + 上移，播完让位给「同步中」胶囊 */
+private const val TodoPullHintExitMillis = 180
+
+/** 「同步中」胶囊自下方渐隐上移的入场时长（延迟与提示退场衔接） */
+private const val TodoPullPillEnterMillis = 200
+
+/** 「同步中」胶囊随回弹淡出的退场时长 */
+private const val TodoPullPillExitMillis = 160
 
 /**
  * 待办页：页面底色铺 background（tab 转场缩小淡出时不透出其他层）。
@@ -511,6 +523,8 @@ fun TodoScreen(
     val todoMovedMessage = stringResource(R.string.toast_todo_moved)
 
     // ---------- 待办页下拉同步 ----------
+    // 状态栏高度（下拉空档的顶栏底边基线、提示/胶囊定位都用它）
+    val topInset = LocalStatusBarHeight.current
     // 开关来自活跃学校会话的同步偏好（与「账号与同步」设置页同一存储，按校持久化）。
     // fallback flow 保证 collectAsState 是无条件 composable 调用（无同步能力或会话未
     // 装配时各占一个稳定槽，同 AccountSyncScreen 的 fallback 约定）
@@ -530,10 +544,29 @@ fun TodoScreen(
     // 同步进行中标记：进行中忽略再次下拉触发；定格的橡皮筋实例（releaseHold 兜底用）
     var pullSyncing by remember { mutableStateOf(false) }
     var pullHeldEffect by remember { mutableStateOf<OffsetOverscrollEffect?>(null) }
+    // 回弹中标记：同步完成后 releaseHold 的回弹动画期间置真——拉距尚未归零，若不拦住，
+    // 「松手后同步」提示会按透明度公式再次浮现（回弹全程提示/胶囊都应保持退场）
+    var pullReleasing by remember { mutableStateOf(false) }
+    // 下拉进度登记表：各分组页的橡皮筋实例在此登记（同一时刻只有活跃实例有拉距），
+    // 「松手后同步」提示在绘制期经它读当前拉距
+    val pullProgress = remember { OverscrollPullProgress() }
+    // 内容层高度（px）：把原始拉距换算成视觉位移用（与橡皮筋阻尼曲线同口径）
+    var pullContainerHeightPx by remember { mutableIntStateOf(0) }
     // 触发阈值与定格展示位都取原始未阻尼拉距（px，与手势距离同口径，随屏幕密度换算）；
     // 展示位的视觉高度约 60dp，顶栏下方露出的空隙足够容纳「同步中」指示胶囊
     val pullTriggerPx = with(LocalDensity.current) { TodoPullTriggerDistance.toPx() }
     val pullRestPx = with(LocalDensity.current) { TodoPullRestDistance.toPx() }
+    // 绘制期共用：「顶栏底边 ↔ 首卡上沿」露出的下拉空档里垂直居中所需的 translationY
+    // （px）。空档高度 = 首卡让位间距（ListTopSpacing）+ 视觉位移；动作行/编辑顶栏的
+    // 让位（topBarExtraSpace/editBarExtraSpace）一并计入，「松手后同步」提示与「同步中」
+    // 胶囊共用同一居中口径
+    val pullGapCenterY: GraphicsLayerScope.(visualPx: Float) -> Float = { visualPx ->
+        val gapTop = (topInset + TopBarRowSpace + topBarExtraSpace + editBarExtraSpace).toPx()
+        val gapHeight = ListTopSpacing.toPx() + visualPx
+        gapTop + (gapHeight - size.height) / 2f
+    }
+    // 「松手后同步」提示文案（组合期解析，绘制期直接引用）
+    val pullHintText = stringResource(R.string.sync_pull_hint)
     // 组合期读一次开关与接线条件（订阅变化）：关着时各列表不挂回调，下拉只有普通回弹
     val pullSyncActive = pullSyncEnabled && schools != null && dailySync != null &&
         pullSession != null && pullSession.sync.state.value.uid.isNotEmpty()
@@ -567,7 +600,11 @@ fun TodoScreen(
                         DailySyncRunner.Outcome.Failed -> pullSyncFailedMessage
                     },
                 )
-                effect.releaseHold()
+                // 回弹全程保持提示/胶囊退场（拉距未归零前按透明度公式会复现提示），
+                // join 到回弹播完再复位——此刻拉距已归零，状态复位后不会复发
+                pullReleasing = true
+                effect.releaseHold()?.join()
+                pullReleasing = false
                 pullHeldEffect = null
                 pullSyncing = false
             }
@@ -930,7 +967,6 @@ fun TodoScreen(
     // ProvideOverscroll）：列表滚到顶/底后继续拖动，内容整块被拉出边缘、越拉越硬，
     // 松手无过冲弹回；顶栏分组胶囊（rubberBandHorizontalScroll）同享。平移露出的是
     // 页面底色（background 同色，边缘看不出破绽）
-    val topInset = LocalStatusBarHeight.current
     ProvideOverscroll {
         Box(
             modifier = modifier
@@ -954,6 +990,8 @@ fun TodoScreen(
             Box(
                 Modifier
                     .matchParentSize()
+                    // 内容层高度：下拉提示把原始拉距换算成视觉位移用（与橡皮筋阻尼分母一致）
+                    .onSizeChanged { pullContainerHeightPx = it.height }
                     // 分类开关的重写窗口（categoryRetreat.forRewrite）源侧退让：采样源
                     // 卸载两帧，重写帧内活采样效果节点零源可引；挂回后照常采样
                     .then(
@@ -1032,6 +1070,7 @@ fun TodoScreen(
                         RubberBandLazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             onPullRelease = if (pullSyncActive) onPullRelease else null,
+                            pullProgress = pullProgress,
                         ) {
                             item(key = "groupEmptyState") {
                                 Box(
@@ -1055,6 +1094,7 @@ fun TodoScreen(
                         RubberBandLazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             onPullRelease = if (pullSyncActive) onPullRelease else null,
+                            pullProgress = pullProgress,
                         ) {
                             item(key = "specialEmptyState") {
                                 Box(modifier = Modifier.fillParentMaxSize()) {
@@ -1112,6 +1152,7 @@ fun TodoScreen(
                             masonryView = masonryView,
                             tagColors = tagColorMap,
                             onPullRelease = if (pullSyncActive) onPullRelease else null,
+                            pullProgress = pullProgress,
                             onTodoClick = openTodoDetail,
                             onToggleCompleted = { todo, completed ->
                                 toggleTodoCompleted(todo, completed, false)
@@ -1206,6 +1247,7 @@ fun TodoScreen(
                             }
                         },
                         onPullRelease = if (pullSyncActive) onPullRelease else null,
+                        pullProgress = pullProgress,
                         onTodoClick = openTodoDetail,
                     )
                 }
@@ -1218,21 +1260,76 @@ fun TodoScreen(
                 visible = !anyOverlayMounted && !todoEditing,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
-            // 下拉同步「同步中」指示：橡皮筋定格（holdAt）期间内容层下移，顶栏下方让出的
-            // 空隙里浮一枚小胶囊（转圈 + 文案），随定格淡入、随回弹淡出；画在内容层之上、
-            // 顶栏之下，位置贴顶栏底边（动作行展开时随 topBarExtraSpace 下移避让）
+            // 「松手后同步」提示：下拉中随拉距渐显（原始拉距 0 → 触发阈值映射透明度
+            // 0 → 1），并在「顶栏底边 ↔ 首卡上沿」空档里垂直居中（位移在绘制期骑真实
+            // 拉距，经阻尼曲线换算，零重组）。松手触发后仅淡出——上移完全由收敛/回弹
+            // 的真实位移驱动（exit 不叠加固定滑出），定格同步与回弹全程不可见——同步
+            // 完成复位时拉距已归零，不会复现；开关关闭时恒隐（下拉只有普通回弹）
+            //
+            // 定位/渐显的 graphicsLayer 必须挂在 AnimatedVisibility 自身（层级在它的
+            // fade 图层之外），不能挂内容：fade 是「内容布局框」上的图层 alpha，alpha < 1
+            // 时 Compose 会为该图层建离屏缓冲并裁到布局框大小；而提示的真实位置靠
+            // translationY 平移出框（顶栏下方空档），挂内容上会让它在淡出第一帧就被整块
+            // 裁掉——表现为「瞬间消失，既不上移也不淡出」（同理，内容上的 slide 也会被裁）
             AnimatedVisibility(
-                visible = pullSyncing,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.TopCenter),
+                visible = pullSyncActive && !pullSyncing && !pullReleasing,
+                enter = EnterTransition.None,
+                exit = fadeOut(tween(TodoPullHintExitMillis, easing = Motion.Accelerate)),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .graphicsLayer {
+                        val rawY = pullProgress.maxPullY()
+                        alpha = (rawY / pullTriggerPx).coerceIn(0f, 1f)
+                        if (alpha > 0f) {
+                            val heightPx = pullContainerHeightPx.toFloat()
+                            if (heightPx > 0f) {
+                                // 原始拉距 → 视觉位移（与效果实例的阻尼曲线同参同口径）
+                                val visual = ProgressConverter.convert(
+                                    rawY / heightPx,
+                                    OffsetOverscrollEffect.DefaultMaxFraction,
+                                ) * heightPx
+                                translationY = pullGapCenterY(visual)
+                            } else {
+                                alpha = 0f
+                            }
+                        }
+                    },
             ) {
-                PullSyncingPill(
-                    text = pullSyncingText,
-                    modifier = Modifier.padding(
-                        top = topInset + TopBarRowSpace + topBarExtraSpace + TodoPullIndicatorTopGap,
-                    ),
+                Text(
+                    text = pullHintText,
+                    style = ClassppTextTokens.hintText,
+                    color = MaterialTheme.colorScheme.primary,
                 )
+            }
+            // 下拉同步「同步中」指示：与提示退场同步（不延迟），渐显出现（fadeIn；「上移」
+            // 由松手 → 展示位的收敛驱动，见下），定格期间在空档里垂直居中（绘制期骑定格
+            // 拉距，含收敛与回弹全程），同步完成后随回弹上移渐隐淡出（exit 淡出，位移骑
+            // 回弹）；画在内容层之上、顶栏之下
+            //
+            // 同提示：定位 graphicsLayer 挂 AnimatedVisibility 自身（在 fade 图层之外），
+            // 挂内容上会在 alpha < 1 时被裁到布局框、表现为瞬间消失。enter 也不再叠
+            // slideInVertically——它同样在 fade 图层内会被裁，且真正的上移已由拉距收敛
+            // 驱动，叠加只会把同一段位移走两遍
+            AnimatedVisibility(
+                visible = pullSyncing && !pullReleasing,
+                enter = fadeIn(tween(TodoPullPillEnterMillis, easing = Motion.Decelerate)),
+                exit = fadeOut(tween(TodoPullPillExitMillis, easing = Motion.Accelerate)),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .graphicsLayer {
+                        val heightPx = pullContainerHeightPx.toFloat()
+                        if (heightPx > 0f) {
+                            // 定格期间 maxPullY 即展示位（含松手 → 展示位的收敛动画）
+                            val rawY = pullProgress.maxPullY()
+                            val visual = ProgressConverter.convert(
+                                rawY / heightPx,
+                                OffsetOverscrollEffect.DefaultMaxFraction,
+                            ) * heightPx
+                            translationY = pullGapCenterY(visual)
+                        }
+                    },
+            ) {
+                PullSyncingPill(text = pullSyncingText)
             }
             // 顶栏换场：常规顶栏上移淡出、编辑顶栏自上方下移淡入——课表编辑（ScheduleScreen
             // 的 topBarSwap）同规格：同一个 todoEditing 翻转同帧启动、450ms，顶栏换场另配
@@ -1990,6 +2087,8 @@ private fun TodoInboxContent(
     tagColors: Map<String, Color>,
     // 下拉同步松手回调（null = 不接线）：透传给瀑布流容器
     onPullRelease: ((effect: OffsetOverscrollEffect, pullPx: Float) -> Unit)? = null,
+    // 下拉进度登记：透传给瀑布流容器（「松手后同步」提示绘制期读取）
+    pullProgress: OverscrollPullProgress? = null,
     onTodoClick: (Todo) -> Unit,
     onToggleCompleted: (Todo, Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -2037,6 +2136,7 @@ private fun TodoInboxContent(
         horizontalArrangement = Arrangement.spacedBy(InboxCardSpacing),
         verticalItemSpacing = InboxCardSpacing,
         onPullRelease = onPullRelease,
+        pullProgress = pullProgress,
     ) {
         sections.forEach { (section, group) ->
             item(
@@ -2475,6 +2575,8 @@ private fun TodoList(
     onPurgeTodo: (id: String) -> Unit = {},
     // 下拉同步松手回调（null = 不接线）：透传给橡皮筋列表容器
     onPullRelease: ((effect: OffsetOverscrollEffect, pullPx: Float) -> Unit)? = null,
+    // 下拉进度登记：透传给橡皮筋列表容器（「松手后同步」提示绘制期读取）
+    pullProgress: OverscrollPullProgress? = null,
     onTodoClick: (todo: Todo) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -2553,6 +2655,7 @@ private fun TodoList(
             end = PageHorizontalSpacing,
         ),
         onPullRelease = onPullRelease,
+        pullProgress = pullProgress,
     ) {
         if (deletedCards) {
             // 最近删除页：顶部固定一条保留期说明（满 30 天自动彻底删除，见仓库

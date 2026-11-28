@@ -375,6 +375,7 @@
     <string name="sync_pull_sync_title">待办页下拉同步</string>
     <string name="sync_pull_sync_desc">开启后，在待办页下拉即可同步</string>
     <string name="sync_pull_syncing">同步中</string>
+    <string name="sync_pull_hint">松手后同步</string>
     <string name="sync_pull_done">已同步 %1$d 条更新</string>
     <string name="sync_pull_not_connected">尚未连接学校账号</string>
     <string name="sync_pull_failed">同步失败，请稍后重试</string>
