@@ -25,19 +25,29 @@ interface SyncPreferences {
      */
     val syncHomeworkNotes: StateFlow<Boolean>
 
+    /**
+     * 待办页下拉同步开关（默认关闭）：开启后在待办页下拉即可唤起一次同步
+     * （静默自动导入，结果 toast 反馈）。纯 UI 手势开关，不影响其它同步路径。
+     */
+    val todoPullSync: StateFlow<Boolean>
+
     fun setAutoCompleteOnVanish(enabled: Boolean)
 
     fun setSyncHomeworkNotes(enabled: Boolean)
+
+    fun setTodoPullSync(enabled: Boolean)
 }
 
 /** 内存实现：测试或未接入持久化的场景；作业要求同步默认开启，其余默认关闭 */
 class MutableSyncPreferences(
     initialAutoCompleteOnVanish: Boolean = false,
     initialSyncHomeworkNotes: Boolean = true,
+    initialTodoPullSync: Boolean = false,
 ) : SyncPreferences {
 
     private val _autoCompleteOnVanish = MutableStateFlow(initialAutoCompleteOnVanish)
     private val _syncHomeworkNotes = MutableStateFlow(initialSyncHomeworkNotes)
+    private val _todoPullSync = MutableStateFlow(initialTodoPullSync)
 
     override val autoCompleteOnVanish: StateFlow<Boolean> =
         _autoCompleteOnVanish.asStateFlow()
@@ -45,11 +55,18 @@ class MutableSyncPreferences(
     override val syncHomeworkNotes: StateFlow<Boolean> =
         _syncHomeworkNotes.asStateFlow()
 
+    override val todoPullSync: StateFlow<Boolean> =
+        _todoPullSync.asStateFlow()
+
     override fun setAutoCompleteOnVanish(enabled: Boolean) {
         _autoCompleteOnVanish.value = enabled
     }
 
     override fun setSyncHomeworkNotes(enabled: Boolean) {
         _syncHomeworkNotes.value = enabled
+    }
+
+    override fun setTodoPullSync(enabled: Boolean) {
+        _todoPullSync.value = enabled
     }
 }

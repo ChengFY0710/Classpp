@@ -240,6 +240,12 @@
     <string name="sync_preview_empty">No new todos</string>
     <string name="sync_deadline_unparseable">%1$d entries have an unrecognized deadline format; the remote interface may have changed</string>
     <string name="sync_import_done">Imported %1$d, restored %2$d, completed %3$d, reopened %4$d</string>
+    <string name="sync_pull_sync_title">Pull to sync on todo page</string>
+    <string name="sync_pull_sync_desc">When enabled, pull down on the todo page to sync</string>
+    <string name="sync_pull_syncing">Syncing</string>
+    <string name="sync_pull_done">Synced %1$d updates</string>
+    <string name="sync_pull_not_connected">School account is not connected</string>
+    <string name="sync_pull_failed">Sync failed, try again later</string>
     <string name="sync_deadline_format">%3$02d:%4$02d, %1$d/%2$d</string>
     <string name="sync_error_expired">Session expired, please sign in again</string>
     <string name="xmu_error_busy">Course Center is busy, try again later</string>
@@ -282,9 +288,9 @@
     <string name="sync_auto_login_disable_title">Turn off auto renewal</string>
     <string name="xmu_auto_login_disable_message">Turning this off deletes the saved student ID and password. The current sign-in is kept; after the session expires you will need to sign in manually.</string>
     <string name="sync_auto_login_disable_confirm">Turn off and delete password</string>
-    <!-- Daily auto sync -->
-    <string name="sync_daily_title">Daily auto sync</string>
-    <string name="sync_daily_desc">When enabled, syncs daily at 6:00</string>
+    <!-- Auto sync on launch: reuses the former daily auto sync storage key, existing toggles carry over -->
+    <string name="sync_daily_title">Auto sync on launch</string>
+    <string name="sync_daily_desc">When enabled, syncs once at app startup, and notifies if there are updates</string>
     <!-- Preferences: mark completed when the remote item disappears -->
     <string name="sync_auto_complete_title">Mark completed when removed remotely</string>
     <string name="sync_auto_complete_desc">Synced todos that disappear from the remote are marked completed automatically. Overdue todos are left unchanged.</string>

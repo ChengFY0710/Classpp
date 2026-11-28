@@ -415,7 +415,7 @@ class MainActivity : ComponentActivity() {
                     val repository = container?.scheduleRepository
                     val todoRepository = container?.todoRepository
                     val tagRepository = container?.tagRepository
-                    // 学校注册表与每日同步入口（校无关契约）：三屏只通过它们接触学校能力，
+                    // 学校注册表与自动同步入口（校无关契约）：三屏只通过它们接触学校能力，
                     // 不再穿学校内部对象（Phase 2 删除三层穿透参数）
                     val schools = container?.schools
                     val dailySync = container?.dailySync
@@ -678,25 +678,18 @@ class MainActivity : ComponentActivity() {
                             }
                     }
 
-                    // 每日自动同步：进 App 幂等续排闹钟（自愈一切漏排）+ 补漏判定——
-                    // 当天 6:00 已过且还没同步过就当场同步一次，与后台闹钟同一条静默路径。
-                    // 学校会话改为惰性装配后，失败只影响本次同步（runCatching），不拖垮 UI
+                    // 启动时自动同步：每次冷启动静默同步一次（开关关则跳过），
+                    // 有更新发系统通知汇报，无更新零提示。学校会话惰性装配，
+                    // 失败只影响本次同步（runCatching），不拖垮 UI
                     LaunchedEffect(dailySync) {
                         val controller = dailySync ?: return@LaunchedEffect
                         val appContext = applicationContext
                         try {
-                            controller.scheduleNext(appContext)
+                            controller.runAtStartup(appContext)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (_: Exception) {
                             // 学校适配失败只影响本次同步，不影响其它页面
-                        }
-                        try {
-                            controller.runIfDue(appContext)
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (_: Exception) {
-                            // 同上：错过的同步由下一次触发时机自愈
                         }
                     }
 
@@ -884,6 +877,9 @@ class MainActivity : ComponentActivity() {
                                                     tabTransition = transition,
                                                     // 收集箱「瀑布流视图」开关（个性化页写入，默认开启）
                                                     masonryView = todoMasonryState,
+                                                    // 学校注册表与自动同步入口（待办页下拉同步用）
+                                                    schools = schools,
+                                                    dailySync = dailySync,
                                                 )
                                             }
                                         }
@@ -979,7 +975,6 @@ class MainActivity : ComponentActivity() {
                                 onClose = onCloseSettings,
                                 repository = repository,
                                 schools = schools,
-                                dailySync = dailySync,
                                 // 数据管理子页：备份导入后重载待办/标签内存态，并回调重读日程页快照
                                 todoRepository = todoRepository,
                                 tagRepository = tagRepository,

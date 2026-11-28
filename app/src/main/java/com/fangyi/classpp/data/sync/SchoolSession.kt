@@ -39,7 +39,7 @@ interface SchoolSession {
     val webViewProfileValidator: ((String) -> Boolean)?
         get() = null
 
-    /** 每日同步开关（与 [SchoolProvider.dailySyncToggle] 同一存储） */
+    /** 启动时自动同步开关（与 [SchoolProvider.dailySyncToggle] 同一存储） */
     val dailySync: DailySyncToggle
 }
 
@@ -52,17 +52,10 @@ interface SchoolProvider {
     val spec: SchoolSpec
 
     /**
-     * 轻量开关读写：后台重排不装配完整 session（与 [SchoolSession.dailySync] 共用同一存储，
-     * 实现应让两者返回同一实例/同一份状态）。
+     * 轻量开关读写：冷启动同步的门控不装配完整 session（与 [SchoolSession.dailySync]
+     * 共用同一存储，实现应让两者返回同一实例/同一份状态）。
      */
     fun dailySyncToggle(context: Context): DailySyncToggle
-
-    /**
-     * 每日同步的到点广播 PendingIntent 工厂（学校适配层声明）：接收类 + requestCode + action
-     * 是已发布闹钟的冻结锚点，由各校薄壳持有，通用层不引用任何 receiver 类。
-     * null = 本校不参与每日同步闹钟（[DailySyncController] 对该校跳过排期）。
-     */
-    val dailySyncFireIntent: ((Context) -> PendingIntent)? get() = null
 
     /**
      * WebView 登录声明的轻量访问（不装配完整会话）：远端声明学校在首次连接确认浮层里
@@ -87,7 +80,7 @@ interface SchoolProvider {
     suspend fun createSession(deps: SessionDeps): SchoolSession
 }
 
-/** 每日同步开关（按校持久化；写操作的闹钟重排由通用 scheduler 负责） */
+/** 启动时自动同步开关（按校持久化；存储键沿用原「每日自动同步」，用户开关无损保留） */
 interface DailySyncToggle {
     val enabled: StateFlow<Boolean>
     fun setEnabled(enabled: Boolean)

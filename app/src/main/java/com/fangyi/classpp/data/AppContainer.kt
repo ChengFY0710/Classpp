@@ -65,7 +65,7 @@ class AppContainer internal constructor(
     val tagRepository: TagRepository,
     /** 学校注册表：多校适配的唯一装配点与活跃会话入口 */
     val schools: SchoolRegistry,
-    /** 每日同步的调度/补漏入口（校无关契约；学校适配层提供实现） */
+    /** 自动同步的执行入口（冷启动 / 待办页下拉；校无关契约，学校适配层提供实现） */
     val dailySync: DailySyncController,
     /** AI 仓库工厂：容器发布时不读 ai_chat.json，首次 ensure/后台预热时才装配 */
     private val aiChatFactory: suspend () -> AiChatRepository,
@@ -162,25 +162,6 @@ class AppContainer internal constructor(
          */
         fun peek(): AppContainer? = instance
 
-        /**
-         * 系统事件（开机 / 时间·时区·日期变化）只重排每日闹钟的轻量入口：
-         * 只读 `school_prefs` 的活跃学校与各校开关，不载入数据仓库、不装配完整会话
-         * （指导 §2.7）。到点执行仍走 [get] 的完整容器。
-         */
-        fun scheduleDailySyncInBackground(context: Context) {
-            val appContext = context.applicationContext
-            // 轻量路径同样并入本地缓存的远端校：活跃校可能是手动更新后切过去的远端校，
-            // 闹钟必须按它重排。只读缓存，不联网、不装配会话。
-            val registry = SchoolRegistry(
-                providers = mergedProviders(loadCachedRemoteProviders(appContext)),
-                // 轻量路径不应装配会话：真被调用即接线错误，直接失败暴露
-                assembler = { error("background daily sync must not assemble a session") },
-                toggleOf = { provider -> provider.dailySyncToggle(appContext) },
-                activeStore = PrefsActiveSchoolStore(appContext),
-            )
-            SchoolDailySyncController(registry).scheduleNext(appContext)
-        }
-
         /** 学校注册列表：新校接入 = 在此加一行（指导 §2.5 装配点唯一） */
         private fun schoolProviders(): List<SchoolProvider> = listOf(XmuSchoolProvider())
 
@@ -248,10 +229,9 @@ class AppContainer internal constructor(
 
             // 学校注册表：装配点唯一。这里只提供共享依赖与 provider 列表（新校注册 = 加一行）；
             // 厦大的全部装配逻辑在其 provider 内（搬移自本文件的历史实现，逻辑与注释保留）。
-            // 活跃学校 id 落 school_prefs；切校成功后的闹钟重排经 onActiveSchoolChanged 接线。
-            // 会话装配不再 eager：容器先发布，宿主/ScheduleScreen 读 activeSession 的
-            // Loading/Ready/Failed 槽位，后台预热与每日同步补漏共享同一单飞装配。
-            var dailySyncController: DailySyncController? = null
+            // 活跃学校 id 落 school_prefs。会话装配不再 eager：容器先发布，
+            // 宿主/ScheduleScreen 读 activeSession 的 Loading/Ready/Failed 槽位，
+            // 后台预热与冷启动同步共享同一单飞装配。
             // 注册表 init 会读 school_prefs（活跃校 id）：下沉 IO，避免容器返回前
             // 在 Main 上做一次 SharedPreferences 冷读
             val schools = withContext(Dispatchers.IO) {
@@ -269,21 +249,17 @@ class AppContainer internal constructor(
                     },
                     toggleOf = { provider -> provider.dailySyncToggle(appContext) },
                     activeStore = PrefsActiveSchoolStore(appContext),
-                    onActiveSchoolChanged = {
-                        // 切校后闹钟必须按新校开关重排，否则会停留在旧校状态
-                        dailySyncController?.scheduleNext(appContext)
-                    },
                 )
             }
 
-            val dailySync = SchoolDailySyncController(schools).also { dailySyncController = it }
+            // 自动同步实现：冷启动 / 待办页下拉共用同一条静默导入路径
+            val dailySync = SchoolDailySyncController(schools)
 
             AppContainer(
                 scheduleRepository = scheduleRepository,
                 todoRepository = todoRepository,
                 tagRepository = tagRepository,
                 schools = schools,
-                // 每日同步实现：通用 scheduler/runner 接活跃学校声明的闹钟锚点
                 dailySync = dailySync,
                 aiChatFactory = {
                     AiChatRepository.create(

@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.note
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -22,9 +23,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,9 +48,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -69,6 +74,10 @@ import com.fangyi.classpp.data.comparator
 import com.fangyi.classpp.data.checkInPercent
 import com.fangyi.classpp.data.expandRepeatOccurrences
 import com.fangyi.classpp.data.withMatchedCourseTag
+import com.fangyi.classpp.data.sync.DailySyncController
+import com.fangyi.classpp.data.sync.DailySyncRunner
+import com.fangyi.classpp.data.sync.SchoolRegistry
+import com.fangyi.classpp.data.sync.SessionSlot
 import com.fangyi.classpp.data.model.IsoDate
 import com.fangyi.classpp.data.model.RepeatType
 import com.fangyi.classpp.data.model.Schedule
@@ -99,6 +108,7 @@ import com.fangyi.classpp.ui.components.rememberHazeRetreat
 import com.fangyi.classpp.ui.components.rememberPopupActionGate
 import com.fangyi.classpp.ui.motion.CrossPages
 import com.fangyi.classpp.ui.motion.Motion
+import com.fangyi.classpp.ui.motion.OffsetOverscrollEffect
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
 import com.fangyi.classpp.ui.motion.RubberBandLazyVerticalStaggeredGrid
@@ -110,6 +120,7 @@ import com.fangyi.classpp.ui.theme.ClassppTextTokens
 import com.fangyi.classpp.ui.theme.LocalNavigationBarHeight
 import com.fangyi.classpp.ui.theme.LocalStatusBarHeight
 import com.fangyi.classpp.ui.theme.PageHorizontalSpacing
+import com.fangyi.classpp.ui.theme.PillShape
 import com.fangyi.classpp.ui.theme.classppColors
 import com.fangyi.classpp.ui.theme.isDarkTheme
 import com.fangyi.classpp.ui.theme.isGlassStyleEnabled
@@ -117,6 +128,7 @@ import com.fangyi.classpp.ui.theme.rememberGlassBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -135,6 +147,15 @@ private val ListBottomSlack = 96.dp
 
 /** 相邻两组卡片（已置顶/已逾期/未完成/已完成）之间的间距 */
 private val SectionSpacing = 20.dp
+
+/** 下拉同步的触发阈值（原始未阻尼拉距）：松手拉到它以上即定格同步，以下普通回弹 */
+private val TodoPullTriggerDistance = 96.dp
+
+/** 下拉同步的定格展示位（原始未阻尼拉距，视觉约 60dp）：顶栏下方露出的空隙容纳「同步中」指示 */
+private val TodoPullRestDistance = 96.dp
+
+/** 「同步中」指示胶囊与顶栏底边的间距（动作行展开时随 topBarExtraSpace 一同避让） */
+private val TodoPullIndicatorTopGap = 6.dp
 
 /**
  * 待办页：页面底色铺 background（tab 转场缩小淡出时不透出其他层）。
@@ -210,6 +231,10 @@ fun TodoScreen(
     // 收集箱「瀑布流视图」开关（个性化页的 State 实例透传，默认开启）：关闭时收集箱
     // 无论几组都整宽竖排；值只在 TodoInboxContent 叶子内读，切换开关不牵动整页
     masonryView: State<Boolean> = mutableStateOf(true),
+    // 学校注册表与自动同步入口（待办页下拉同步用，同课表页的 schools 传参先例）：
+    // null = 不接线，下拉只有普通橡皮筋回弹
+    schools: SchoolRegistry? = null,
+    dailySync: DailySyncController? = null,
 ) {
     // get() 返回即 bootstrap 完成，此分支仅首帧毫秒级；早返回后下方 smart cast 为非空
     if (repository == null) {
@@ -484,6 +509,74 @@ fun TodoScreen(
     val todoPinnedMessage = stringResource(R.string.toast_todo_pinned)
     val todoUnpinnedMessage = stringResource(R.string.toast_todo_unpinned)
     val todoMovedMessage = stringResource(R.string.toast_todo_moved)
+
+    // ---------- 待办页下拉同步 ----------
+    // 开关来自活跃学校会话的同步偏好（与「账号与同步」设置页同一存储，按校持久化）。
+    // fallback flow 保证 collectAsState 是无条件 composable 调用（无同步能力或会话未
+    // 装配时各占一个稳定槽，同 AccountSyncScreen 的 fallback 约定）
+    val fallbackSessionSlot = remember { MutableStateFlow<SessionSlot?>(null) }
+    val sessionSlot by (schools?.activeSession ?: fallbackSessionSlot).collectAsState()
+    val pullSession = (sessionSlot as? SessionSlot.Ready)?.session
+    val fallbackPullSyncEnabled = remember { MutableStateFlow(false) }
+    val pullSyncEnabled by (
+        pullSession?.sync?.preferences?.todoPullSync ?: fallbackPullSyncEnabled
+        ).collectAsState()
+    // 同步结果 toast 文案（组合期解析——回调/协程里非组合上下文，同上方侧滑文案约定）
+    val pullSyncDoneFormat = stringResource(R.string.sync_pull_done)
+    val pullSyncUpToDateMessage = stringResource(R.string.sync_up_to_date)
+    val pullSyncNotConnectedMessage = stringResource(R.string.sync_pull_not_connected)
+    val pullSyncFailedMessage = stringResource(R.string.sync_pull_failed)
+    val pullSyncingText = stringResource(R.string.sync_pull_syncing)
+    // 同步进行中标记：进行中忽略再次下拉触发；定格的橡皮筋实例（releaseHold 兜底用）
+    var pullSyncing by remember { mutableStateOf(false) }
+    var pullHeldEffect by remember { mutableStateOf<OffsetOverscrollEffect?>(null) }
+    // 触发阈值与定格展示位都取原始未阻尼拉距（px，与手势距离同口径，随屏幕密度换算）；
+    // 展示位的视觉高度约 60dp，顶栏下方露出的空隙足够容纳「同步中」指示胶囊
+    val pullTriggerPx = with(LocalDensity.current) { TodoPullTriggerDistance.toPx() }
+    val pullRestPx = with(LocalDensity.current) { TodoPullRestDistance.toPx() }
+    // 组合期读一次开关与接线条件（订阅变化）：关着时各列表不挂回调，下拉只有普通回弹
+    val pullSyncActive = pullSyncEnabled && schools != null && dailySync != null &&
+        pullSession != null && pullSession.sync.state.value.uid.isNotEmpty()
+    // 松手回调：拉距达到阈值即定格在展示位并触发一次静默同步（引擎单飞互斥），
+    // 结果 toast 反馈（有更新报条数、无更新「已最新」、未连接/失败给对应提示），
+    // 完成后回弹收起。门控条件在回调内复读一遍，与组合期接线条件同口径
+    val onPullRelease: (OffsetOverscrollEffect, Float) -> Unit = { effect, pullPx ->
+        val connected = pullSession?.sync?.state?.value?.uid?.isNotEmpty() == true
+        if (!pullSyncing && pullSyncEnabled && connected && pullPx >= pullTriggerPx) {
+            pullSyncing = true
+            pullHeldEffect = effect
+            effect.holdAt(pullRestPx)
+            scope.launch {
+                val outcome = try {
+                    dailySync?.runOnPull(context) ?: DailySyncRunner.Outcome.Skipped
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    DailySyncRunner.Outcome.Failed
+                }
+                AppToasts.show(
+                    context,
+                    when (outcome) {
+                        is DailySyncRunner.Outcome.Imported ->
+                            pullSyncDoneFormat.format(
+                                outcome.imported + outcome.restored +
+                                    outcome.completed + outcome.reopened,
+                            )
+                        DailySyncRunner.Outcome.UpToDate -> pullSyncUpToDateMessage
+                        DailySyncRunner.Outcome.Skipped -> pullSyncNotConnectedMessage
+                        DailySyncRunner.Outcome.Failed -> pullSyncFailedMessage
+                    },
+                )
+                effect.releaseHold()
+                pullHeldEffect = null
+                pullSyncing = false
+            }
+        }
+    }
+    // 页面卸载兜底：定格中的橡皮筋回弹收起（同步协程随 scope 取消，引擎单飞保证一致性）
+    DisposableEffect(Unit) {
+        onDispose { pullHeldEffect?.releaseHold() }
+    }
     // 分组写回统一入口：新建（浮层追加）、确认（置顶/重排草稿）、删除（滤除）、重命名
     // （立即生效）共用——整表连 renames 交仓库 setGroups 落盘：被删组的待办由仓库级联回
     // 未分组，重命名组（renames 映射，原名 → 新名）的待办归属同一次提交跟随到新名；
@@ -837,6 +930,7 @@ fun TodoScreen(
     // ProvideOverscroll）：列表滚到顶/底后继续拖动，内容整块被拉出边缘、越拉越硬，
     // 松手无过冲弹回；顶栏分组胶囊（rubberBandHorizontalScroll）同享。平移露出的是
     // 页面底色（background 同色，边缘看不出破绽）
+    val topInset = LocalStatusBarHeight.current
     ProvideOverscroll {
         Box(
             modifier = modifier
@@ -937,6 +1031,7 @@ fun TodoScreen(
                         // 空态落在窗口正中间（横向、纵向都居中）
                         RubberBandLazyColumn(
                             modifier = Modifier.fillMaxSize(),
+                            onPullRelease = if (pullSyncActive) onPullRelease else null,
                         ) {
                             item(key = "groupEmptyState") {
                                 Box(
@@ -959,6 +1054,7 @@ fun TodoScreen(
                     if (emptySection != null && pageTodos.isEmpty()) {
                         RubberBandLazyColumn(
                             modifier = Modifier.fillMaxSize(),
+                            onPullRelease = if (pullSyncActive) onPullRelease else null,
                         ) {
                             item(key = "specialEmptyState") {
                                 Box(modifier = Modifier.fillParentMaxSize()) {
@@ -1015,6 +1111,7 @@ fun TodoScreen(
                             flyDoneKeys = flyDoneKeys,
                             masonryView = masonryView,
                             tagColors = tagColorMap,
+                            onPullRelease = if (pullSyncActive) onPullRelease else null,
                             onTodoClick = openTodoDetail,
                             onToggleCompleted = { todo, completed ->
                                 toggleTodoCompleted(todo, completed, false)
@@ -1108,6 +1205,7 @@ fun TodoScreen(
                                 }
                             }
                         },
+                        onPullRelease = if (pullSyncActive) onPullRelease else null,
                         onTodoClick = openTodoDetail,
                     )
                 }
@@ -1120,6 +1218,22 @@ fun TodoScreen(
                 visible = !anyOverlayMounted && !todoEditing,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
+            // 下拉同步「同步中」指示：橡皮筋定格（holdAt）期间内容层下移，顶栏下方让出的
+            // 空隙里浮一枚小胶囊（转圈 + 文案），随定格淡入、随回弹淡出；画在内容层之上、
+            // 顶栏之下，位置贴顶栏底边（动作行展开时随 topBarExtraSpace 下移避让）
+            AnimatedVisibility(
+                visible = pullSyncing,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter),
+            ) {
+                PullSyncingPill(
+                    text = pullSyncingText,
+                    modifier = Modifier.padding(
+                        top = topInset + TopBarRowSpace + topBarExtraSpace + TodoPullIndicatorTopGap,
+                    ),
+                )
+            }
             // 顶栏换场：常规顶栏上移淡出、编辑顶栏自上方下移淡入——课表编辑（ScheduleScreen
             // 的 topBarSwap）同规格：同一个 todoEditing 翻转同帧启动、450ms，顶栏换场另配
             // 更缓的 Motion.Standard（Overlay 前重后轻，顶栏会在前 ~100ms 窜完大半行程，
@@ -1750,6 +1864,37 @@ fun TodoScreen(
     }
 }
 
+/**
+ * 下拉同步的「同步中」指示胶囊：白底 [PillShape]（Capsule，与顶栏胶囊同款圆滑圆角），
+ * 转圈 + 文案水平居中，配色与 [com.fangyi.classpp.ui.components.SheetInfoBanner] 同源
+ * （surface 底、secondaryText 前景）。纯展示，画在内容层之上、顶栏之下（挂载点见
+ * TodoScreen 页根 Box）——橡皮筋定格期间顶栏下方露出的空隙即它的容身之处。
+ */
+@Composable
+private fun PullSyncingPill(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clip(PillShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(16.dp),
+            strokeWidth = 2.dp,
+        )
+        Text(
+            text = text,
+            style = ClassppTextTokens.secondaryTextLarge,
+            color = MaterialTheme.classppColors.secondaryText,
+        )
+    }
+}
+
 /** 列表分组：已置顶在最上（无置顶待办整组不渲染）、已逾期次之、未完成居中、已完成在下（默认收起），空组不渲染 */
 internal enum class TodoSection { Pinned, Overdue, Active, Done }
 
@@ -1843,6 +1988,8 @@ private fun TodoInboxContent(
     masonryView: State<Boolean>,
     // 标签配色表（标签名 → 颜色）：透传给卡片内的标签纯文字
     tagColors: Map<String, Color>,
+    // 下拉同步松手回调（null = 不接线）：透传给瀑布流容器
+    onPullRelease: ((effect: OffsetOverscrollEffect, pullPx: Float) -> Unit)? = null,
     onTodoClick: (Todo) -> Unit,
     onToggleCompleted: (Todo, Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -1889,6 +2036,7 @@ private fun TodoInboxContent(
         ),
         horizontalArrangement = Arrangement.spacedBy(InboxCardSpacing),
         verticalItemSpacing = InboxCardSpacing,
+        onPullRelease = onPullRelease,
     ) {
         sections.forEach { (section, group) ->
             item(
@@ -2325,6 +2473,8 @@ private fun TodoList(
     onRestoreTodo: (id: String) -> Unit = {},
     onUnarchiveTodo: (id: String) -> Unit = {},
     onPurgeTodo: (id: String) -> Unit = {},
+    // 下拉同步松手回调（null = 不接线）：透传给橡皮筋列表容器
+    onPullRelease: ((effect: OffsetOverscrollEffect, pullPx: Float) -> Unit)? = null,
     onTodoClick: (todo: Todo) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -2402,6 +2552,7 @@ private fun TodoList(
             start = PageHorizontalSpacing,
             end = PageHorizontalSpacing,
         ),
+        onPullRelease = onPullRelease,
     ) {
         if (deletedCards) {
             // 最近删除页：顶部固定一条保留期说明（满 30 天自动彻底删除，见仓库

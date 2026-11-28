@@ -1,6 +1,5 @@
 package com.fangyi.classpp.data.xmu
 
-import com.fangyi.classpp.data.sync.DailySyncScheduler
 import com.fangyi.classpp.data.sync.PrefsActiveSchoolStore
 import com.fangyi.classpp.schools.xmu.XmuSchoolProvider
 import java.io.File
@@ -10,11 +9,12 @@ import org.junit.Test
 
 /**
  * 冻结常量快照（指导 §四 Phase 1 / 评审红线 §五.12）：持久化目录/文件名、prefs 键、
- * Keystore alias、todo source/id 前缀、每日同步 requestCode/触发时刻/receiver 类名
- * 逐条落断言，评审不依赖记忆。
+ * Keystore alias、todo source/id 前缀逐条落断言，评审不依赖记忆。
  *
- * 私有常量（alias、prefs 名、requestCode）通过读取冻结源码文本断言：`data/xmu` 本阶段
+ * 私有常量（alias、prefs 名）通过读取冻结源码文本断言：`data/xmu` 本阶段
  * 零改动，测试不改可见性，只锁值。
+ * 每日同步闹钟机制已移除（改为启动时自动同步），其 requestCode/触发时刻/receiver
+ * 类名的冻结断言随之撤销。
  */
 class XmuFrozenConstantsTest {
 
@@ -67,33 +67,13 @@ class XmuFrozenConstantsTest {
         assertTrue(source.contains("const val KEY_COOKIE = \"cookie_header\""))
     }
 
-    // ---------- 每日同步开关 / 闹钟 ----------
+    // ---------- 每日同步开关 ----------
 
     @Test
     fun `daily sync prefs storage is frozen`() {
         val source = frozenSource("XmuSyncPreferences.kt")
         assertTrue(source.contains("const val FILE_NAME = \"xmu_sync_prefs\""))
         assertTrue(source.contains("const val KEY_DAILY_SYNC_ENABLED = \"daily_sync_enabled\""))
-    }
-
-    @Test
-    fun `daily sync alarm contract is frozen`() {
-        assertEquals(6, DailySyncScheduler.TRIGGER_HOUR)
-        assertEquals(
-            "com.fangyi.classpp.data.xmu.XmuDailySyncAlarmReceiver",
-            XmuDailySyncAlarmReceiver::class.java.name,
-        )
-        assertEquals(
-            "com.fangyi.classpp.xmu.action.DAILY_SYNC_FIRE",
-            XmuDailySyncAlarmReceiver.ACTION_FIRE,
-        )
-        // requestCode 与接收类由厦大薄壳注入（provider 声明 dailySyncFireIntent 槽位）：
-        // 锁源码文本
-        assertTrue(xmuSchoolsSource("XmuSchoolProvider.kt").contains("REQUEST_CODE = 1001"))
-        // Manifest 锚点：已发布的 PendingIntent 与系统广播继续命中
-        assertTrue(
-            frozenManifest().contains("android:name=\".data.xmu.XmuDailySyncAlarmReceiver\""),
-        )
     }
 
     @Test
@@ -158,16 +138,6 @@ class XmuFrozenConstantsTest {
         )
         val file = dirs.map { File(it, name) }.firstOrNull { it.isFile }
             ?: error("schools/xmu source not found: $name")
-        return file.readText(Charsets.UTF_8)
-    }
-
-    private fun frozenManifest(): String {
-        val candidates = listOf(
-            File("src/main/AndroidManifest.xml"),
-            File("app/src/main/AndroidManifest.xml"),
-        )
-        val file = candidates.firstOrNull { it.isFile }
-            ?: error("AndroidManifest.xml not found")
         return file.readText(Charsets.UTF_8)
     }
 }

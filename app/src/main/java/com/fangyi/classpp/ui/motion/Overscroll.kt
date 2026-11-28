@@ -54,6 +54,7 @@ import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -162,8 +163,18 @@ class OffsetOverscrollEffect(
     private var pendingAxisY = 0f
     private var springJob: Job? = null
     private var flingToScrollOffset = Offset.Zero
+    // 保持态（下拉刷新的「同步中」展示位）：true 时吞掉全部滚动与甩动，见 holdAt
+    private var held = false
 
     override val isInProgress: Boolean = false
+
+    /**
+     * 下拉刷新的松手回调：竖向、向下过滚动（offset.y > 0）且用户拖拽结束（applyToFling
+     * 入口）时触发，[pullPx] 为原始未阻尼拉距 px（与 [currentOffset] 同口径）。宿主在
+     * 回调内判定是否达到触发阈值并同步调用 [holdAt]（它会抢在本回调返回后的既有回弹
+     * 逻辑之前接管动画）；不要在回调内挂起等待网络等长操作。null = 无监听（默认）。
+     */
+    var onPullRelease: ((effect: OffsetOverscrollEffect, pullPx: Float) -> Unit)? = null
 
     /**
      * 当前原始过滚动偏移（px，未阻尼）；节点渲染时再按容器尺寸换算成视觉位移。
@@ -176,6 +187,7 @@ class OffsetOverscrollEffect(
     fun reset() {
         springJob?.cancel()
         springJob = null
+        held = false
         offset = Offset.Zero
         flingToScrollOffset = Offset.Zero
         axis = Axis.None
@@ -183,11 +195,48 @@ class OffsetOverscrollEffect(
         pendingAxisY = 0f
     }
 
+    /**
+     * 定格展示（下拉刷新语义，配 [onPullRelease] 使用）：从当前偏移按弹簧收敛到
+     * [restOffsetPx]（同步中展示位，原始未阻尼拉距 px，与 [onPullRelease] 的 pullPx
+     * 同口径），到位后停在展示位——后续滚动与甩动全部被吞（内容停在展示位，
+     * 不随手势移动），直到 [releaseHold] 回弹归零。
+     */
+    fun holdAt(restOffsetPx: Float) {
+        held = true
+        springJob?.cancel()
+        if (axis == Axis.None) axis = Axis.Vertical
+        val from = offset.toFloat()
+        if (from == restOffsetPx) return
+        springJob = animationScope.launch {
+            AnimationState(from, 0f)
+                .animateTo(restOffsetPx, animationSpec) {
+                    offset = offset.copyWith(value)
+                }
+        }
+    }
+
+    /** 退出保持态：从展示位按弹簧回弹归零收起。未在保持态时是空操作 */
+    fun releaseHold() {
+        if (!held) return
+        held = false
+        springJob?.cancel()
+        val from = offset.toFloat()
+        if (from == 0f) return
+        springJob = animationScope.launch {
+            AnimationState(from, 0f)
+                .animateTo(0f, animationSpec) {
+                    offset = offset.copyWith(value)
+                }
+        }
+    }
+
     override fun applyToScroll(
         delta: Offset,
         source: NestedScrollSource,
         performScroll: (Offset) -> Offset
     ): Offset {
+        // 保持态（下拉同步展示位）：吞掉全部滚动量，手势与惯性都不动内容
+        if (held) return delta
         if (axis == Axis.None) {
             // 未定轴期间累积双轴分量，主方向达到占比阈值（[DirectionRatio]，同手势方向
             // 仲裁的阈值）才定轴——混合 delta 的首帧不再一锤定音，也消除原「平局偏竖向」
@@ -233,6 +282,15 @@ class OffsetOverscrollEffect(
         velocity: Velocity,
         performFling: suspend (Velocity) -> Velocity
     ) {
+        // 下拉刷新的松手判定：拖拽结束且处于向下过滚动（含甩速场景）时通知宿主，
+        // 宿主在回调内判定阈值并 holdAt 定格（holdAt 先于下方既有回弹逻辑接管动画）
+        if (axis == Axis.Vertical && offset.y > 0f) {
+            onPullRelease?.invoke(this, offset.y)
+        }
+
+        // 保持态（下拉同步展示位）：吞掉全部甩动，等 releaseHold 收尾
+        if (held) return
+
         var unconsumed = velocity
 
         // 已处于 overscroll 状态：spring 回弹，残余偏移反哺给列表滚动
@@ -781,12 +839,22 @@ fun RubberBandLazyColumn(
     horizontalAlignment: Alignment.Horizontal = Alignment.Start,
     flingBehavior: FlingBehavior = ScrollableDefaults.flingBehavior(),
     userScrollEnabled: Boolean = true,
+    /** 下拉刷新松手回调（见 [OffsetOverscrollEffect.onPullRelease]）；null = 不监听 */
+    onPullRelease: ((effect: OffsetOverscrollEffect, pullPx: Float) -> Unit)? = null,
     content: LazyListScope.() -> Unit,
 ) {
     val effect = rememberOverscrollEffect()
     // 兜底路径之外、列表自带手势层用的效果实例：与兜底实例分开持有（两个 remember 各
     // 建一个），两条路径切换时不会出现同一实例被两处同时挂载
     val listEffect = rememberOverscrollEffect()
+    // 下拉刷新松手回调：同一时刻只有活跃实例（兜底层或列表自带层）会收到拖拽，
+    // 两个实例都接线；SideEffect 每次组合刷新引用，回调方拿到的 lambda 永远最新。
+    // 环境实例的静态类型是 foundation 基类，ProvideOverscroll 作用域内必为
+    // OffsetOverscrollEffect（其余工厂/无工厂时安全跳过——该手势只支持自家的橡皮筋）
+    SideEffect {
+        (effect as? OffsetOverscrollEffect)?.onPullRelease = onPullRelease
+        (listEffect as? OffsetOverscrollEffect)?.onPullRelease = onPullRelease
+    }
     val unscrollable = !state.canScrollForward && !state.canScrollBackward
     // 兜底判据：有环境效果实例、调用方允许手势、且列表上下都不可滚
     val fallbackEffect = effect?.takeIf { userScrollEnabled && unscrollable }
@@ -866,12 +934,21 @@ fun RubberBandLazyVerticalStaggeredGrid(
         if (!reverseLayout) Arrangement.Start else Arrangement.End,
     flingBehavior: FlingBehavior = ScrollableDefaults.flingBehavior(),
     userScrollEnabled: Boolean = true,
+    /** 下拉刷新松手回调（见 [OffsetOverscrollEffect.onPullRelease]）；null = 不监听 */
+    onPullRelease: ((effect: OffsetOverscrollEffect, pullPx: Float) -> Unit)? = null,
     content: LazyStaggeredGridScope.() -> Unit,
 ) {
     val effect = rememberOverscrollEffect()
     // 兜底路径之外、网格自带手势层用的效果实例：与兜底实例分开持有（两个 remember 各
     // 建一个），两条路径切换时不会出现同一实例被两处同时挂载
     val gridEffect = rememberOverscrollEffect()
+    // 下拉刷新松手回调：同一时刻只有活跃实例（兜底层或网格自带层）会收到拖拽，
+    // 两个实例都接线；SideEffect 每次组合刷新引用，回调方拿到的 lambda 永远最新
+    //（环境实例静态类型为 foundation 基类，同 RubberBandLazyColumn 的转型说明）
+    SideEffect {
+        (effect as? OffsetOverscrollEffect)?.onPullRelease = onPullRelease
+        (gridEffect as? OffsetOverscrollEffect)?.onPullRelease = onPullRelease
+    }
     val unscrollable = !state.canScrollForward && !state.canScrollBackward
     // 兜底判据：有环境效果实例、调用方允许手势、且网格上下都不可滚
     val fallbackEffect = effect?.takeIf { userScrollEnabled && unscrollable }

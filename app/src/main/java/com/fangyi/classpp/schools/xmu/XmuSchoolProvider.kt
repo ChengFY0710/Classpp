@@ -1,8 +1,6 @@
 package com.fangyi.classpp.schools.xmu
 
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.util.Base64
 import android.webkit.CookieManager
 import com.fangyi.classpp.R
@@ -61,7 +59,6 @@ import com.fangyi.classpp.data.xmu.XmuLoginClient
 import com.fangyi.classpp.data.xmu.XmuPasswordCipher
 import com.fangyi.classpp.data.xmu.XmuProfileDto
 import com.fangyi.classpp.data.xmu.XmuWebViewPolicy
-import com.fangyi.classpp.data.xmu.XmuDailySyncAlarmReceiver
 import java.io.File
 import kotlinx.coroutines.flow.StateFlow
 
@@ -73,7 +70,7 @@ import kotlinx.coroutines.flow.StateFlow
  *
  * 厦大保留自己的部分只有协议与网络特化：CAS/OAuth 登录链路（[XmuLoginClient]）、
  * IPv4 优先 DNS（[Ipv4FirstXmuDns]，XMU 主机发布不可达 AAAA 记录，先试 v6 会黑洞）、
- * 教务站独立登录链路、每日同步的冻结闹钟锚点（[XmuDailySyncAlarmReceiver]）。
+ * 教务站独立登录链路。
  */
 class XmuSchoolProvider : SchoolProvider {
 
@@ -92,14 +89,8 @@ class XmuSchoolProvider : SchoolProvider {
     private val toggleLock = Any()
 
     /**
-     * 每日同步的到点广播锚点：接收类、requestCode、action 三项是已发布闹钟的冻结锚点，
-     * 不得改动（[SchoolDailySyncController] 按活跃学校取用，通用层不引用 receiver 类）。
-     */
-    override val dailySyncFireIntent: ((Context) -> PendingIntent)? = ::firePendingIntent
-
-    /**
      * provider 级与 session 级共用同一 toggle 实例（同一 `sync_prefs` 分键）：
-     * 后台重排只读开关时不会装配完整会话。
+     * 冷启动同步门控只读开关时不会装配完整会话。
      */
     override fun dailySyncToggle(context: Context): DailySyncToggle {
         XmuLegacyMigrator.migrateDailySyncToggle(context)
@@ -230,19 +221,6 @@ class XmuSchoolProvider : SchoolProvider {
         false
     }
 }
-
-/** 到点执行广播：接收类、requestCode、action 三项是已发布闹钟的冻结锚点，不得改动 */
-private fun firePendingIntent(context: Context): PendingIntent =
-    PendingIntent.getBroadcast(
-        context,
-        REQUEST_CODE,
-        Intent(context, XmuDailySyncAlarmReceiver::class.java)
-            .setAction(XmuDailySyncAlarmReceiver.ACTION_FIRE),
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
-
-/** 单条闹钟的固定 requestCode（本功能只有一个闹钟位） */
-private const val REQUEST_CODE = 1001
 
 /** XMU 域（含子域）才携带会话 cookie 的判定域（与冻结头像加载器的口径一致） */
 private const val XMU_DOMAIN = "xmu.edu.cn"

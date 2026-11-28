@@ -35,7 +35,6 @@ import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.TagRepository
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.ai.AiChatRepository
-import com.fangyi.classpp.data.sync.DailySyncController
 import com.fangyi.classpp.data.sync.SchoolRegistry
 import com.fangyi.classpp.data.sync.SessionSlot
 import com.fangyi.classpp.ui.components.SettingsCardwithIcon
@@ -192,8 +191,6 @@ fun SettingsScreen(
     // 学校注册表：账号与同步子页与入口卡只读活跃会话（SessionSlot）/活跃学校 id，
     // 不再穿学校内部对象（Phase 2 删除三层穿透参数）
     schools: SchoolRegistry? = null,
-    // 每日同步调度入口（校无关）：开关变化后重排闹钟并跑一次补漏
-    dailySync: DailySyncController? = null,
     // 待办/标签仓库：数据管理子页导入备份后需要整体重载内存态
     todoRepository: TodoRepository? = null,
     tagRepository: TagRepository? = null,
@@ -582,8 +579,7 @@ fun SettingsScreen(
                         onBack = closeAccountSync,
                         // 学校 UI 绑定（目前是网页登录浮层）；未绑定 = 不显示网页登录入口
                         schoolUi = activeSchoolUi,
-                        dailySync = dailySync,
-                        // 学校选择入口/浮层：列表与切换都经注册表（切校后闹钟由注册表重排）
+                        // 学校选择入口/浮层：列表与切换都经注册表
                         schools = schools,
                         settingsTransforming = settingsTransforming,
                         modifier = fullSizeModifier,

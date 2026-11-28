@@ -1,8 +1,6 @@
 package com.fangyi.classpp.data.sync.remote
 
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.webkit.CookieManager
 import com.fangyi.classpp.data.sync.DailySyncToggle
 import com.fangyi.classpp.data.sync.PrefsDailySyncToggle
@@ -31,10 +29,7 @@ import java.io.File
  *
  * 能力集：登录恒为 {WEBVIEW_LOGIN}；声明带可选 `timetable` 块时追加
  * {SCHEDULE_IMPORT} 并装配 [RemoteScheduleImportService]（WebView-only，无凭据保存/
- * 自动续期）。对应槽位按能力显隐，全部远端学校**共享同一个**每日同步锚点
- * （[SchoolDailySyncReceiver]，requestCode 2002 与厦大冻结锚点 1001 区分）——
- * 单活语义下同一时刻只有一个活跃学校、一个闹钟位，换校锚点切换由
- * `SchoolDailySyncController` 的换轨逻辑兜住。
+ * 自动续期）。对应槽位按能力显隐。
  */
 class RemoteSchoolProvider(private val declaration: SchoolDeclaration) : SchoolProvider {
 
@@ -54,8 +49,6 @@ class RemoteSchoolProvider(private val declaration: SchoolDeclaration) : SchoolP
     private var toggle: DailySyncToggle? = null
 
     private val toggleLock = Any()
-
-    override val dailySyncFireIntent: ((Context) -> PendingIntent)? = ::fireRemoteDailySync
 
     /** 首次连接确认浮层读取登录域：声明在构造期已校验，这里直接暴露 */
     override val webViewLoginSpec: WebViewLoginSpec = declaration.toWebViewLoginSpec()
@@ -155,16 +148,3 @@ internal class RemoteSchoolSession(
 ) : SchoolSession {
     override val autoRenew = null
 }
-
-/** 到点执行广播：全部远端学校共享的通用锚点（接收类 + requestCode + action 由本文件锁定） */
-private fun fireRemoteDailySync(context: Context): PendingIntent =
-    PendingIntent.getBroadcast(
-        context,
-        REQUEST_CODE,
-        Intent(context, SchoolDailySyncReceiver::class.java)
-            .setAction(SchoolDailySyncReceiver.ACTION_FIRE),
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
-
-/** 单条闹钟的固定 requestCode（与厦大冻结锚点 1001、进 App 通知 1002 区分） */
-private const val REQUEST_CODE = 2002

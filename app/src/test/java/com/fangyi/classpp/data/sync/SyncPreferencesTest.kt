@@ -27,4 +27,15 @@ class SyncPreferencesTest {
         preferences.setSyncHomeworkNotes(true)
         assertTrue(preferences.syncHomeworkNotes.value)
     }
+
+    @Test
+    fun `todo pull sync defaults off and can toggle`() {
+        val preferences = MutableSyncPreferences()
+
+        assertFalse(preferences.todoPullSync.value)
+        preferences.setTodoPullSync(true)
+        assertTrue(preferences.todoPullSync.value)
+        preferences.setTodoPullSync(false)
+        assertFalse(preferences.todoPullSync.value)
+    }
 }

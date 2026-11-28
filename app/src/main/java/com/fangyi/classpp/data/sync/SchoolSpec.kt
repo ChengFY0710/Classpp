@@ -90,7 +90,7 @@ data class SchoolSpec(
     val groupQuiz: SchoolText,
     /** 教务导入默认课表名（「教务课表」） */
     val defaultScheduleName: SchoolText,
-    /** 每日同步通知标题（「课程中心自动同步完成」） */
+    /** 自动同步完成的通知标题（「课程中心自动同步完成」） */
     val syncNotifTitle: SchoolText,
     /** 换号提示；null = 使用中性默认键 `sync_error_account_changed` */
     val accountChanged: SchoolText? = null,

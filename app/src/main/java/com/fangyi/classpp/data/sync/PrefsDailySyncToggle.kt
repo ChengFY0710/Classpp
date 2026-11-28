@@ -6,14 +6,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * 新校「每日自动同步」开关：所有学校**共用一个** `sync_prefs` prefs 文件，按
- * `<id>/daily_sync_enabled` 分键（指导 §2.6）。备份排除固定加一条
- * `sharedpref/sync_prefs.xml`，一次覆盖所有未来学校。
+ * 「启动时自动同步」开关：所有学校**共用一个** `sync_prefs` prefs 文件，按
+ * `<id>/daily_sync_enabled` 分键（指导 §2.6，键名沿用原「每日自动同步」，用户的
+ * 开启状态跨版本无损保留）。备份排除固定加一条 `sharedpref/sync_prefs.xml`，
+ * 一次覆盖所有未来学校。
  *
- * 与既有开关同模式（单值不值得引入 DataStore，apply 异步落盘）：后台 receiver（闹钟
- * 到点）与同步页两侧读写，无 Compose 依赖，冷进程可直接读。
+ * 与既有开关同模式（单值不值得引入 DataStore，apply 异步落盘）：冷启动同步门控与
+ * 同步页两侧读写，无 Compose 依赖，冷进程可直接读。
  *
- * provider 级与 session 级必须返回同一实例（注册表保证）：后台重排只读开关时不会
+ * provider 级与 session 级必须返回同一实例（注册表保证）：冷启动门控只读开关时不会
  * 装配完整会话。
  */
 class PrefsDailySyncToggle(

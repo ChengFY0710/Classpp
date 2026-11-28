@@ -9,18 +9,19 @@ import com.fangyi.classpp.R
 import com.fangyi.classpp.data.notification.CHANNEL_SYNC
 import com.fangyi.classpp.data.notification.NotificationPoster
 import com.fangyi.classpp.data.notification.ensureNotificationChannels
+import kotlinx.coroutines.CancellationException
 
 /**
- * 每日自动同步的执行体（校无关）：后台闹钟到点与进 App 补漏共用同一条路径。
+ * 自动同步的执行体（校无关）：应用冷启动同步与待办页下拉同步共用同一条路径。
  *
- * 依赖来源是**活跃学校的通用会话**（[SchoolRegistry.session]）：开关读
- * `session.dailySync`（与设置页/调度器同一存储），连接与上次同步读 `session.sync.state`，
+ * 依赖来源是**活跃学校的通用会话**（[SchoolRegistry.session]）：启动开关读
+ * `session.dailySync`（与设置页同一存储），连接状态读 `session.sync.state`，
  * 同步走 [SyncService] 的通用契约。不变量与验收（指导 §2.4/§2.7）：
  *
- * 与手动同步的差异是**静默语义**：不开预览、不问确认——到期后按预览页「默认全选」
+ * 与手动同步的差异是**静默语义**：不开预览、不问确认——触发后按预览页「默认全选」
  * 的口径导入全部新条目（restoreItems 在 commitSync 内必然全部恢复，远端消失/重新出现
- * 的完成/回滚也一并落库），完成发系统通知汇报；无任何变更仅补基线（markSynced，
- * 与手动同步「已是最新」分支同口径）；
+ * 的完成/回滚也一并落库），完成发系统通知汇报（仅冷启动路径）；无任何变更仅补基线
+ * （markSynced，与手动同步「已是最新」分支同口径）；
  * **所有失败一律静默**——登录过期（未开自动续期无法后台重登）、账号变化（清空记录
  * 必须用户确认）、服务/网络问题都只留诊断日志，下次触发自愈，绝不自动 resetSyncData。
  *
@@ -32,9 +33,9 @@ class DailySyncRunner(
     private val logger: (String) -> Unit = {},
 ) {
 
-    /** 执行结果（诊断/测试用，UI 不消费） */
+    /** 执行结果（诊断/UI 反馈用） */
     sealed interface Outcome {
-        /** 开关关 / 未连接 / 今天已同步：无需执行 */
+        /** 启动开关关 / 未连接：无需执行 */
         data object Skipped : Outcome
 
         /** 同步成功，无新增无恢复，仅补映射基线 */
@@ -53,32 +54,53 @@ class DailySyncRunner(
     }
 
     /**
-     * 到点执行入口：[DailySyncScheduler.shouldRun] 判定 → prepareSync(force=true)
-     * （绕过 3 秒去抖；路由按自动续期状态自动选原生/WebView 路径）→ 全量导入或补基线
-     * → 发通知汇报。活跃学校的会话由注册表装配/复用。
+     * 冷启动执行入口：轻量门控（启动同步开关关时不装配会话，避免 Keystore/凭据解密
+     * 拉进启动窗口）→ prepareSync(force=true)（绕过 3 秒去抖；路由按自动续期状态自动
+     * 选原生/WebView 路径）→ 全量导入或补基线 → 有更新发通知汇报。
      */
-    suspend fun runIfDue(context: Context): Outcome {
-        val appContext = context.applicationContext
-        // 轻量门控先行：每日同步关闭时（默认安装即如此）不触发 registry.session()，
-        // 避免进 App 补漏路径把 Keystore/凭据解密拉进启动窗口
-        if (!registry.dailySyncToggle().enabled.value) return Outcome.Skipped
-        val session = registry.session()
-        val sync = session.sync
-        val state = sync.state.value
-        if (!DailySyncScheduler.shouldRun(
-                enabled = session.dailySync.enabled.value,
-                connected = state.uid.isNotEmpty(),
-                lastSyncAtMillis = state.lastSyncAtMillis,
-                nowMillis = System.currentTimeMillis(),
-            )
-        ) {
-            return Outcome.Skipped
+    suspend fun runAtStartup(context: Context): Outcome {
+        if (startupGateBlocks()) return Outcome.Skipped
+        return execute(context.applicationContext, notify = true)
+    }
+
+    /**
+     * 待办页下拉执行入口：不看启动同步开关（下拉开关由 UI 检查），未连接跳过。
+     * 不发通知——用户正盯着待办页，结果经返回值 toast 反馈。
+     */
+    suspend fun runOnPull(context: Context): Outcome =
+        execute(context.applicationContext, notify = false)
+
+    /**
+     * 轻量门控（internal 供 JVM 单测直接覆盖）：「启动时自动同步」开关关 = true，
+     * 调用方直接 Skipped——不触发 registry.session()，冷启动窗口不拉起 Keystore/
+     * 凭据解密（默认安装即开关关）。
+     */
+    internal fun startupGateBlocks(): Boolean =
+        !registry.dailySyncToggle().enabled.value
+
+    /**
+     * 门控后的共用执行体（internal，[appContext] 允许 null 供 JVM 单测绕过 Android
+     * 运行时，仅 notify=true 的通知路径解引用它）：会话装配兜底 → 已连接判定 →
+     * prepareSync → importAll。装配失败静默返回 Failed——下拉路径不得把异常抛回
+     * 手势协程，冷启动路径不得拖垮 UI。
+     */
+    internal suspend fun execute(appContext: Context?, notify: Boolean): Outcome {
+        val session = try {
+            registry.session()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // 会话装配失败（含未声明同步能力的学校）只影响本次同步，下次触发自愈
+            logger("autoSync session failed $e")
+            return Outcome.Failed
         }
-        logger("dailySync begin")
+        val sync = session.sync
+        if (sync.state.value.uid.isEmpty()) return Outcome.Skipped
+        logger("autoSync begin")
         return when (val outcome = sync.prepareSync(force = true)) {
-            is PrepareOutcome.Ready -> importAll(appContext, session, outcome.plan)
+            is PrepareOutcome.Ready -> importAll(appContext!!, session, outcome.plan, notify)
             is PrepareOutcome.Failed -> {
-                logger("dailySync prepare failed ${outcome.error}")
+                logger("autoSync prepare failed ${outcome.error}")
                 Outcome.Failed
             }
         }
@@ -88,6 +110,7 @@ class DailySyncRunner(
         context: Context,
         session: SchoolSession,
         plan: SyncPlan,
+        notify: Boolean,
     ): Outcome {
         val sync = session.sync
         // 无新增无恢复、也无消失/回滚：与手动同步「已是最新」分支同口径，只补映射基线
@@ -102,10 +125,10 @@ class DailySyncRunner(
         ) {
             is CommitOutcome.Done -> {
                 logger(
-                    "dailySync imported=${result.report.imported} restored=${result.report.restored} " +
+                    "autoSync imported=${result.report.imported} restored=${result.report.restored} " +
                         "completed=${result.report.completed} reopened=${result.report.reopened}",
                 )
-                if (result.report.imported + result.report.restored +
+                if (notify && result.report.imported + result.report.restored +
                     result.report.completed + result.report.reopened > 0
                 ) {
                     notifyResult(
@@ -125,15 +148,16 @@ class DailySyncRunner(
                 )
             }
             is CommitOutcome.Failed -> {
-                logger("dailySync commit failed ${result.error}")
+                logger("autoSync commit failed ${result.error}")
                 Outcome.Failed
             }
         }
     }
 
     /**
-     * 结果汇报通知：单 id 覆盖式；点按进 App 主页（落默认 tab），用户自行查看待办。
-     * 标题来自 `SchoolSpec.syncNotifTitle`（双源文案，见 SchoolText），正文用中性键。
+     * 结果汇报通知（仅冷启动路径）：单 id 覆盖式；点按进 App 主页（落默认 tab），
+     * 用户自行查看待办。标题来自 `SchoolSpec.syncNotifTitle`（双源文案，见 SchoolText），
+     * 正文用中性键。
      */
     private fun notifyResult(
         context: Context,

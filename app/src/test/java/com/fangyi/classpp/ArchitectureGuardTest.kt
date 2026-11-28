@@ -147,7 +147,6 @@ class ArchitectureGuardTest {
             "remote/SchoolRemoteCatalog.kt",
             "remote/RemoteSchoolPrefs.kt",
             "remote/RemoteSchoolManager.kt",
-            "remote/SchoolDailySyncReceiver.kt",
             "remote/SchoolTimetableDeclaration.kt",
             "remote/RemoteTimetableScript.kt",
             "remote/RemoteTimetableMapper.kt",

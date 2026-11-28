@@ -1,6 +1,5 @@
 package com.fangyi.classpp.data.sync
 
-import android.app.PendingIntent
 import android.content.Context
 import com.fangyi.classpp.data.sync.webview.WebViewPolicy
 import java.util.concurrent.ConcurrentHashMap
@@ -42,9 +41,9 @@ data class RemoteRegistrationResult(
  * - 启动硬校验：id 唯一且匹配 `^[a-z][a-z0-9_]{0,31}$`、至少一种登录方式、
  *   `timetableIntro ⇔ SCHEDULE_IMPORT`；会话装配后再校验 capabilities 与槽位一致；
  * - [session] 惰性装配 + 进程级缓存：同 id 同实例，并发首创只装配一次；
- * - [activeSession] 是 UI 的唯一入口；[dailySyncToggle] 不装配完整会话，供后台重排闹钟读取；
+ * - [activeSession] 是 UI 的唯一入口；[dailySyncToggle] 不装配完整会话，供冷启动同步门控读取；
  * - 单活切换 [switchSchool]：先装配目标学校（失败保持原校），再持久化、更新 flow、
- *   通知宿主重排每日同步（指导 §2.5）。
+ *   回调宿主（[onActiveSchoolChanged] 钩子）。
  *
  * 装配动作由构造参数注入（生产 = `provider.createSession(deps)`），使注册表本身不持有
  * Android Context，纯 JVM 可测；`data/sync` 因此不依赖任何学校实现。活跃学校 id 的持久化
@@ -149,13 +148,13 @@ class SchoolRegistry internal constructor(
 
     /**
      * 切到指定学校（单活账号，指导 §2.5）：校验 → IO 装配 → 持久化 → 更新 flow →
-     * 通知宿主重排每日同步。
+     * 回调宿主。
      *
      * 装配在切换生效**之前**完成，因此：
      * - 装配失败时活跃学校、持久化值与 [activeSession] 全部保持原样（可继续用旧校）；
      * - 装配期间 UI 仍显示旧校（不闪 Loading），成功后一次切成新校 Ready。
      *
-     * 切换到当前学校是幂等空操作（不重复装配、不写盘、不重排闹钟）。busy 状态由 UI 侧
+     * 切换到当前学校是幂等空操作（不重复装配、不写盘、不回调宿主）。busy 状态由 UI 侧
      * 用 [canSwitchSchool] 拦截；这里不做静默拒绝，避免调用方误以为切换成功。
      */
     suspend fun switchSchool(id: String) {
@@ -173,23 +172,13 @@ class SchoolRegistry internal constructor(
     }
 
     /**
-     * 每日同步开关：只读轻量状态，不装配完整 session（后台重排闹钟用）。
+     * 启动时自动同步开关：只读轻量状态，不装配完整 session（冷启动同步门控读取用）。
      * 同 id 恒返回同一实例，与 [SchoolSession.dailySync] 共用同一存储。
      */
     fun dailySyncToggle(id: String = activeSchoolId.value): DailySyncToggle {
         val provider = providersById[id]
             ?: throw IllegalArgumentException("unknown school id: '$id'")
         return toggles.computeIfAbsent(id) { toggleOf(provider) }
-    }
-
-    /**
-     * 每日同步的到点广播锚点工厂：读活跃学校 [SchoolProvider.dailySyncFireIntent] 的声明
-     * （不装配完整 session，与 [dailySyncToggle] 同级轻量）。null = 该校不参与每日闹钟。
-     */
-    fun dailySyncFireIntent(id: String = activeSchoolId.value): ((Context) -> PendingIntent)? {
-        val provider = providersById[id]
-            ?: throw IllegalArgumentException("unknown school id: '$id'")
-        return provider.dailySyncFireIntent
     }
 
     /**

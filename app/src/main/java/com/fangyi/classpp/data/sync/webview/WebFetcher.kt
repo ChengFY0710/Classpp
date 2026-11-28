@@ -19,7 +19,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
 /**
- * 无头 WebView 取数器（[SessionApi] 的生产实现）：已连接用户点「立即同步」或每日同步时用。
+ * 无头 WebView 取数器（[SessionApi] 的生产实现）：已连接用户点「立即同步」或自动同步时用。
  *
  * 与应用内既有无头取数同构：应用级上下文创建 WebView（不入视图树）、主线程驱动、
  * 总超时看门狗、finally NonCancellable 销毁不泄漏。

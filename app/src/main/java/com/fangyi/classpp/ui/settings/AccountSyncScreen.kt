@@ -41,7 +41,6 @@ import com.fangyi.classpp.data.sync.AutoRenewPolicy
 import com.fangyi.classpp.data.sync.AutoRenewState
 import com.fangyi.classpp.data.sync.Capability
 import com.fangyi.classpp.data.sync.CommitOutcome
-import com.fangyi.classpp.data.sync.DailySyncController
 import com.fangyi.classpp.data.sync.EnableOutcome
 import com.fangyi.classpp.data.sync.LoginError
 import com.fangyi.classpp.data.sync.LoginRaw
@@ -107,7 +106,8 @@ import kotlinx.coroutines.withTimeout
  *   至少一种登录方式）；
  * - 「备用登录方式」分组：原生登录与 WebView 登录**都**支持时显示（`available=false` 仍显示，
  *   默认入口回退 WebView，用户仍可直达备用入口）；
- * - 「自动续期」开关：仅 `autoRenew != null`；「每日同步」开关：已连接时；
+ * - 「自动续期」开关：仅 `autoRenew != null`；两个同步开关（启动时自动同步 +
+ *   待办页下拉同步）合一张卡，已连接时显示；
  * - 头部/介绍/错误文案：学校专属部分来自 [SchoolSession.spec]，其余走 `sync_*` 中性键
  *   （文案纪律：含校名/学号/服务名的文案只能由 spec 覆盖，指导 §2.3）；
  * - 退出登录只清本校数据：同步记录按 source/id 前缀过滤（会话实现保证），网页 cookie 按
@@ -133,7 +133,6 @@ fun AccountSyncScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     schoolUi: SchoolUi? = null,
-    dailySync: DailySyncController? = null,
     schools: SchoolRegistry? = null,
     settingsTransforming: () -> Boolean = { false },
 ) {
@@ -157,7 +156,6 @@ fun AccountSyncScreen(
                 onBack = onBack,
                 modifier = modifier,
                 schoolUi = schoolUi,
-                dailySync = dailySync,
                 schools = schools,
                 settingsTransforming = settingsTransforming,
             )
@@ -223,7 +221,6 @@ private fun AccountSyncContent(
     onBack: () -> Unit,
     modifier: Modifier,
     schoolUi: SchoolUi?,
-    dailySync: DailySyncController?,
     schools: SchoolRegistry?,
     settingsTransforming: () -> Boolean,
 ) {
@@ -292,12 +289,15 @@ private fun AccountSyncContent(
     var disableAutoMounted by remember { mutableStateOf(false) }
     if (disableAutoVisible) disableAutoMounted = true
 
-    // 每日自动同步：开关状态来自会话（与后台 receiver 同一存储）；切换即落盘 + 重排闹钟
+    // 启动时自动同步：开关状态来自会话（与 MainActivity 冷启动门控同一存储）
     val dailySyncEnabled by session.dailySync.enabled.collectAsState()
 
     // 同步行为偏好：远端消失时自动标记完成（与引擎共用同一实例，下一次 prepare 生效）
     val autoCompleteOnVanish by syncPreferences.autoCompleteOnVanish.collectAsState()
     val syncHomeworkNotes by syncPreferences.syncHomeworkNotes.collectAsState()
+
+    // 待办页下拉同步：开关状态来自会话偏好（与待办页手势读同一存储）
+    val todoPullSync by syncPreferences.todoPullSync.collectAsState()
 
     // 学校选择（Phase 3）：入口卡常驻页面最底部，连接/未连接两态都显示。
     // 同步或自动续期在途时整行不响应（不弹 toast，指导 §3.2）；fallback flow 保证
@@ -507,15 +507,10 @@ private fun AccountSyncContent(
         }
     }
 
-    // 每日自动同步开关：先落盘再调度（scheduleNext 读开关决定排或取消）；开启时
-    // 立即跑一次补漏判定——当天 6:00 已过且还没同步过就当场同步，与「进 App 补漏」
-    // 同一条静默路径（导入不问确认、失败只留日志）
+    // 启动时自动同步开关：只落盘，冷启动时由 MainActivity 调 runAtStartup 按开关执行，
+    // 切换当下不触发同步（下一次启动生效，行为可预期）
     val onDailySyncToggle: (Boolean) -> Unit = { wantOn ->
         session.dailySync.setEnabled(wantOn)
-        scope.launch {
-            if (wantOn) dailySync?.runIfDue(context)
-            dailySync?.scheduleNext(context)
-        }
     }
 
     // 远端学校（选择浮层顶部）：唯一的联网入口，纯手动触发；失败/成功都由这里提示
@@ -834,59 +829,70 @@ private fun AccountSyncContent(
                     }
                 }
 
-                // 「自动续期和同步」分组：两个开关合并一张卡，能力缺失时逐行隐藏。
+                // 「自动续期和同步」分组：自动续期一张卡，两个同步开关合一张卡。
                 // 自动续期未连接时置灰（原生登录即保存凭据并自动开启，无需先开），
                 // 关闭/暂停/不可用时同步仍走 WebView 路径，开启需要现场输入凭据完成
-                // 一次原生登录；自动同步每天 6:00 后台跑一次并自动导入（需已连接），
-                // 未开自动续期时登录过期该次静默跳过（行为不变，文案统一不区分）
+                // 一次原生登录；启动时自动同步在应用冷启动时跑一次并自动导入（需已
+                // 连接），未开自动续期时登录过期该次静默跳过（行为不变，文案统一不
+                // 区分）；待办页下拉同步在待办页下拉触发同一条静默导入，结果 toast 反馈
                 if (canNativeLogin || connected) {
                     CardSection(
                         title = stringResource(R.string.sync_section_auto_login),
                     ) {
-                        SettingsCard(
-                            items = buildList {
-                                if (autoRenew != null) {
-                                    add(
-                                        SettingsCardItem.Toggle(
-                                            label = stringResource(R.string.sync_auto_login_title),
-                                            // 正常态（开/关）共用同一句描述；
-                                            // 暂停/不可用保留原因与操作提示
-                                            description = when {
-                                                !autoRenewState.available -> stringResource(
-                                                    R.string.sync_auto_login_desc_unavailable,
-                                                )
-                                                autoRenewState.policy ==
-                                                    AutoRenewPolicy.BLOCKED -> stringResource(
-                                                    R.string.sync_auto_login_desc_blocked,
-                                                )
-                                                else -> stringResource(
-                                                    R.string.sync_auto_login_desc,
-                                                )
-                                            },
-                                            checked = autoRenewState.policy ==
-                                                AutoRenewPolicy.ENABLED,
-                                            onCheckedChange = onAutoLoginToggle,
-                                            // 未连接时置灰：登录（原生 OAuth）即保存
-                                            // 凭据并自动开启，没有「先开开关再登录」
-                                            enabled = !autoLoginBusy &&
-                                                autoRenewState.available &&
-                                                connected,
-                                        ),
-                                    )
-                                }
-                                if (connected) {
-                                    add(
-                                        SettingsCardItem.Toggle(
-                                            label = stringResource(R.string.sync_daily_title),
-                                            description =
-                                                stringResource(R.string.sync_daily_desc),
-                                            checked = dailySyncEnabled,
-                                            onCheckedChange = onDailySyncToggle,
-                                        ),
-                                    )
-                                }
-                            },
-                        )
+                        // 自动续期：仅声明原生登录的学校显示（凭据浮层开关）
+                        if (autoRenew != null) {
+                            SettingsCard(
+                                items = listOf(
+                                    SettingsCardItem.Toggle(
+                                        label = stringResource(R.string.sync_auto_login_title),
+                                        // 正常态（开/关）共用同一句描述；
+                                        // 暂停/不可用保留原因与操作提示
+                                        description = when {
+                                            !autoRenewState.available -> stringResource(
+                                                R.string.sync_auto_login_desc_unavailable,
+                                            )
+                                            autoRenewState.policy ==
+                                                AutoRenewPolicy.BLOCKED -> stringResource(
+                                                R.string.sync_auto_login_desc_blocked,
+                                            )
+                                            else -> stringResource(
+                                                R.string.sync_auto_login_desc,
+                                            )
+                                        },
+                                        checked = autoRenewState.policy ==
+                                            AutoRenewPolicy.ENABLED,
+                                        onCheckedChange = onAutoLoginToggle,
+                                        // 未连接时置灰：登录（原生 OAuth）即保存
+                                        // 凭据并自动开启，没有「先开开关再登录」
+                                        enabled = !autoLoginBusy &&
+                                            autoRenewState.available &&
+                                            connected,
+                                    ),
+                                ),
+                            )
+                        }
+                        // 同步开关：启动时自动同步 + 待办页下拉同步，仅已连接时显示
+                        if (connected) {
+                            SettingsCard(
+                                items = listOf(
+                                    SettingsCardItem.Toggle(
+                                        label = stringResource(R.string.sync_daily_title),
+                                        description =
+                                            stringResource(R.string.sync_daily_desc),
+                                        checked = dailySyncEnabled,
+                                        onCheckedChange = onDailySyncToggle,
+                                    ),
+                                    SettingsCardItem.Toggle(
+                                        label = stringResource(R.string.sync_pull_sync_title),
+                                        description = stringResource(R.string.sync_pull_sync_desc),
+                                        checked = todoPullSync,
+                                        onCheckedChange = {
+                                            syncPreferences.setTodoPullSync(it)
+                                        },
+                                    ),
+                                ),
+                            )
+                        }
                     }
                 }
 

@@ -612,7 +612,7 @@ class SchoolSyncEngine<R : Any>(
     }
 
     private suspend fun markSyncedLocked(plan: EngineSyncPlan<R>): Boolean {
-        // 「无新增」同样要回填存量分组：每日自动同步/手动同步的已是最新分支都走这里
+        // 「无新增」同样要回填存量分组：自动同步（冷启动/下拉）/手动同步的已是最新分支都走这里
         if (!applyGroupBackfill(plan)) return false
         // 只有内容发生变化时才走 repository；失败返回 false，映射基线保持旧值
         if (plan.noteRefresh.isNotEmpty() || plan.attachmentRefresh.isNotEmpty()) {
