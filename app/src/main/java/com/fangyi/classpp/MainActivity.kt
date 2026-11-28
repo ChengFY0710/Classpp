@@ -328,6 +328,9 @@ class MainActivity : ComponentActivity() {
         // 真冷启动标记：除了通知落页/分享，启动时自动检查更新也以此为准入——
         // 旋转等重建不重查，也不把用户已关掉的更新弹窗复活
         val coldStart = savedInstanceState == null
+        // 「已知新版本」徽标（设置根页「关于」入口卡 / 关于页检查更新行）磁盘播种：
+        // 之后冷启动/手动检查经 saveKnownAvailableVersionCode 读写，UI collect 即时跟上
+        AppUpdatePreferences.loadKnownAvailableVersionCode(this)
         setContent {
             // 外观模式状态：prefs 是真源，旋转/系统深色切换等重建时 onCreate 重读，无需 saveable
             var themeMode by remember { mutableStateOf(savedThemeMode) }
@@ -727,8 +730,20 @@ class MainActivity : ComponentActivity() {
                                 currentVersionCode = appVersionCode(appContext),
                                 language = resources.configuration.locales[0].language,
                             ).check()
-                            if (result is UpdateCheckResult.Available) {
-                                startupUpdate = result.update
+                            when (result) {
+                                is UpdateCheckResult.Available -> {
+                                    startupUpdate = result.update
+                                    // 命中即记录：设置根页「关于」入口卡 / 关于页检查更新行
+                                    // 右侧补「新版本」徽标
+                                    AppUpdatePreferences.saveKnownAvailableVersionCode(
+                                        appContext,
+                                        result.update.versionCode,
+                                    )
+                                }
+                                is UpdateCheckResult.UpToDate ->
+                                    // 已是最新：清掉徽标记录（含清单撤版回退的情形）
+                                    AppUpdatePreferences.saveKnownAvailableVersionCode(appContext, 0L)
+                                is UpdateCheckResult.Failed -> Unit
                             }
                         } catch (e: CancellationException) {
                             throw e

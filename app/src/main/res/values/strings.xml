@@ -234,6 +234,7 @@
     <string name="about_changelog">更新日志</string>
     <string name="about_update_check_on_startup">启动时检查更新</string>
     <string name="about_update_check_on_startup_desc">开启后，应用冷启动时自动检查更新</string>
+    <string name="about_update_badge_new_version">新版本</string>
     <!-- 应用内更新：检查更新 / 更新日志各自独立（清单见远端 classpp_schoolsync/update.json）；
          更新日志只展示当前安装版本及更早版本，不做版本比对 -->
     <string name="about_changelog_loading">正在加载更新日志…</string>

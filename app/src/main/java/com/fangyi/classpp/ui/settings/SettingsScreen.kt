@@ -27,16 +27,19 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.appVersionCode
 import com.fangyi.classpp.data.ScheduleRepository
 import com.fangyi.classpp.data.TagRepository
 import com.fangyi.classpp.data.TodoRepository
 import com.fangyi.classpp.data.ai.AiChatRepository
 import com.fangyi.classpp.data.sync.SchoolRegistry
 import com.fangyi.classpp.data.sync.SessionSlot
+import com.fangyi.classpp.data.update.AppUpdatePreferences
 import com.fangyi.classpp.ui.components.SettingsCardwithIcon
 import com.fangyi.classpp.ui.components.SettingsCardwithIconItem
 import com.fangyi.classpp.ui.components.SheetBottomSlack
@@ -161,6 +164,30 @@ private fun rememberSettingsEntryItem(
     val label = stringResource(labelRes)
     return remember(icon, label, onClick) {
         listOf(SettingsCardwithIconItem(icon = icon, label = label, onClick = onClick))
+    }
+}
+
+/**
+ * 「关于」入口卡的 item 列表：[updateAvailable] = 已知有新版本（启动 / 手动检查命中且
+ * 尚未升级）时行值补「新版本」徽标（primary 色，与关于页「检查更新」行同源同款）。
+ * 列表按徽标与回调记忆化，无变化时卡片可整体 skip。
+ */
+@Composable
+private fun rememberSettingsAboutItem(
+    updateAvailable: Boolean,
+    onClick: () -> Unit,
+): List<SettingsCardwithIconItem> {
+    val label = stringResource(R.string.settings_about)
+    val badge = stringResource(R.string.about_update_badge_new_version)
+    return remember(label, badge, updateAvailable, onClick) {
+        listOf(
+            SettingsCardwithIconItem(
+                icon = R.drawable.ic_info,
+                label = label,
+                value = if (updateAvailable) badge else null,
+                onClick = onClick,
+            ),
+        )
     }
 }
 
@@ -675,6 +702,14 @@ private fun SettingsHomePage(
             // 手势条（小白条）区域：内容可铺到屏幕底，末尾留出这段避免被遮挡
             val navBarPadding = LocalNavigationBarHeight.current
 
+            // 已知有新版本徽标：启动 / 手动检查命中且尚未升级（记录 versionCode 仍高于当前
+            // 安装）——「关于」入口卡行值补「新版本」；手动检查已是最新即清零，升级后比对
+            // 自动失效。状态来自 AppUpdatePreferences 的共享流，collect 即时跟上
+            val context = LocalContext.current
+            val aboutUpdateBadge =
+                AppUpdatePreferences.knownAvailableVersionCode.collectAsState().value >
+                    remember(context) { appVersionCode(context) }
+
             when {
                 // 采样源始终存在：加载态也挂 hazeSource，避免顶栏背后无源可采
                 repository == null -> Box(
@@ -751,9 +786,8 @@ private fun SettingsHomePage(
                             ),
                         )
                         SettingsCardwithIcon(
-                            items = rememberSettingsEntryItem(
-                                icon = R.drawable.ic_info,
-                                labelRes = R.string.settings_about,
+                            items = rememberSettingsAboutItem(
+                                updateAvailable = aboutUpdateBadge,
                                 onClick = onOpenAbout,
                             ),
                         )

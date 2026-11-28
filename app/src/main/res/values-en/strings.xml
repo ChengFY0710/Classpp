@@ -102,6 +102,7 @@
     <string name="about_changelog">Changelog</string>
     <string name="about_update_check_on_startup">Check for updates on startup</string>
     <string name="about_update_check_on_startup_desc">When on, the app automatically checks for updates at cold start</string>
+    <string name="about_update_badge_new_version">New version</string>
     <!-- In-app updates: check for updates and changelog are independent
          (manifest: classpp_schoolsync/update.json on the remote distribution repo);
          the changelog shows the installed version and older releases only -->

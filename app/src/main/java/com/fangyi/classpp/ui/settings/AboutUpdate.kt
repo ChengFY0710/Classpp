@@ -141,7 +141,9 @@ private data class UpdateSheetSpec(
  *   左侧「取消」、右侧「更新」（图标沿用更新动作），可应用内下载并校验 APK，
  *   失败回退发布页；`forced`（当前版本低于 `minSupportedVersionCode`）时浮层
  *   不可关闭，只保留更新动作。「已是最新 / 非强制发现新版本」结果卡的 CardSection
- *   末位带「启动时检查更新」开关（见 [UpdateStartupCheckToggle]）；
+ *   末位带「启动时检查更新」开关（见 [UpdateStartupCheckToggle]）；命中 / 已是最新的
+ *   检查结果同步维护「已知新版本」记录（[AppUpdatePreferences]，供设置根页「关于」
+ *   入口卡与关于页「检查更新」行右侧的「新版本」徽标）；
  * - 更新日志：只加载并展示**当前安装版本及更早版本**的更新说明，不做版本比对、
  *   不出现「发现新版本」，也不提供任何下载/安装动作；
  * - 启动自动检查（[startupUpdate] 非空，宿主在根级挂载本浮层）：冷启动静默检查已命中
@@ -268,8 +270,20 @@ internal fun AboutUpdateSheet(
         visible = true
         currentJob = scope.launch {
             when (val result = checker.check()) {
-                is UpdateCheckResult.UpToDate -> state = UpdateSheetState.UpToDate
-                is UpdateCheckResult.Available -> state = UpdateSheetState.Available(result.update)
+                is UpdateCheckResult.UpToDate -> {
+                    // 已是最新：清掉「已知新版本」记录（设置根页「关于」入口卡与
+                    // 本页检查更新行右侧的「新版本」徽标随之消失）
+                    AppUpdatePreferences.saveKnownAvailableVersionCode(context, 0L)
+                    state = UpdateSheetState.UpToDate
+                }
+                is UpdateCheckResult.Available -> {
+                    // 命中新版本：记录 versionCode 供两处入口卡徽标展示（升级后比对自动失效）
+                    AppUpdatePreferences.saveKnownAvailableVersionCode(
+                        context,
+                        result.update.versionCode,
+                    )
+                    state = UpdateSheetState.Available(result.update)
+                }
                 is UpdateCheckResult.Failed -> state = UpdateSheetState.Failed(
                     kind = UpdateFailureKind.Check,
                     update = null,

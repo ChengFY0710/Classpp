@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,7 +29,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.fangyi.classpp.R
+import com.fangyi.classpp.appVersionCode
 import com.fangyi.classpp.appVersionName
+import com.fangyi.classpp.data.update.AppUpdatePreferences
 import com.fangyi.classpp.ui.components.AccountAvatarSize
 import com.fangyi.classpp.ui.components.CardSection
 import com.fangyi.classpp.ui.components.Chevron
@@ -101,6 +104,11 @@ fun AboutScreen(
             val context = LocalContext.current
             // 版本名运行时读取：Gradle versionName 是唯一来源，不依赖 BuildConfig 生成类
             val versionName = remember(context) { appVersionName(context) }
+            // 已知有新版本（启动 / 手动检查命中且尚未升级）：「检查更新」行右侧补「新版本」；
+            // 手动检查已是最新即清零，升级后比对自动失效（与设置根页「关于」入口卡同源）
+            val aboutUpdateBadge =
+                AppUpdatePreferences.knownAvailableVersionCode.collectAsState().value >
+                    remember(context) { appVersionCode(context) }
             val freezeKey: () -> Any = remember(darkTheme, themeAccent, scrollState, freezeEpoch) {
                 {
                     SettingsTopBarFreezeKey(
@@ -179,6 +187,12 @@ fun AboutScreen(
                                     R.string.about_current_version,
                                     versionName,
                                 ),
+                                // 已知有新版本时行值（primary 色）补「新版本」，与「关于」入口卡同源
+                                value = if (aboutUpdateBadge) {
+                                    stringResource(R.string.about_update_badge_new_version)
+                                } else {
+                                    null
+                                },
                                 onClick = { openUpdate(AboutUpdateAction.Check) },
                             ),
                             // 与检查更新同卡同款行型：右侧统一主题色箭头，展示远端清单的更新说明
