@@ -2,6 +2,7 @@ package com.fangyi.classpp.ui.components
 
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -91,6 +92,7 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.rememberHazeState
 import dev.chrisbanes.haze.hazeSource
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -458,8 +460,14 @@ fun OverlaySheet(
     val cardInteraction = remember { MutableInteractionSource() }
 
     // ——— 进出场与拖拽共用一条进度：0 = 完全显示，1 = 完全滑出屏幕下方 ———
-    // 拖拽直接改写它（跟手），浮层位移与遮罩透明度都从它派生，各段动画之间天然连续
+    // 拖拽直接改写它（跟手），浮层位移从它派生，各段动画之间天然连续
     val hiddenFraction = remember { Animatable(1f) }
+    // ——— 遮罩压暗独立进度：0 = 全透明，1 = 完全压暗 ———
+    // 不再从 hiddenFraction 派生（那条动画用 Motion.Overlay 前重后轻，遮罩跟着走会在
+    // 进场约半程就基本压满，视觉上比浮层先到位）。独立后压暗用与进场**等长**的匀速
+    // tween 铺满全程，遮罩从暗到深与浮层滑入同刻落定；拖拽时跟手同步 snapTo
+    //（= 1 − hidden 权威目标值），回弹/退场与浮层轴同 spec 同初速并行收尾
+    val scrimFraction = remember { Animatable(0f) }
     // 拖拽的权威目标值：增量在事件线程上同步累加（不走协程），snapTo 只负责把它画出来。
     // 松手时以它为准——Animatable 的值可能落后（末帧 snapTo 还在排队），拿它判断阈值、
     // 回弹前先落地，回弹起点才与松手时的视觉位置严格一致
@@ -493,9 +501,17 @@ fun OverlaySheet(
     // 浮层恰占下半屏；展开行程 = 两档 inset 之差 = 可用高度一半，见布局分叉与手势换算
     val statusBarPx = with(density) { resolvedTopInset.roundToPx() }
 
-    // 收场动画本体：从当前进度继续滑到全隐（拖拽中断后重入，也是从当前位置接着走）
+    // 收场动画本体：从当前进度继续滑到全隐（拖拽中断后重入，也是从当前位置接着走）。
+    // 遮罩轴与浮层轴并行同长（各自铺满整个出场时长），两条都播完才回调 onDismissed
     suspend fun runExit() {
-        hiddenFraction.animateTo(1f, tween(Motion.SheetExitMillis, easing = Motion.Overlay))
+        coroutineScope {
+            launch {
+                hiddenFraction.animateTo(1f, tween(Motion.SheetExitMillis, easing = Motion.Overlay))
+            }
+            launch {
+                scrimFraction.animateTo(0f, tween(Motion.ScrimExitMillis, easing = LinearEasing))
+            }
+        }
         onDismissed()
     }
 
@@ -508,7 +524,9 @@ fun OverlaySheet(
         scope.launch { runExit() }
     }
 
-    // 打开滑入 / 关闭滑出；关闭入口全部汇到 beginExit，调用方只负责清状态
+    // 打开滑入 / 关闭滑出；关闭入口全部汇到 beginExit，调用方只负责清状态。
+    // 遮罩轴与浮层轴并行进场：同为 SheetEnterMillis，遮罩匀速铺满全程、浮层走 Overlay
+    // 曲线，同刻起步同刻落定（被中途翻回的进场从此刻进度接续，同样铺满剩余全程）
     LaunchedEffect(visible) {
         if (visible) {
             exiting = false
@@ -517,7 +535,12 @@ fun OverlaySheet(
             // 无动画，进场本身已经是一条完整滑入曲线，复位不该再叠一段）
             expandFraction.snapTo(0f)
             expandTargetFraction = 0f
-            hiddenFraction.animateTo(0f, tween(Motion.SheetEnterMillis, easing = Motion.Overlay))
+            launch {
+                hiddenFraction.animateTo(0f, tween(Motion.SheetEnterMillis, easing = Motion.Overlay))
+            }
+            launch {
+                scrimFraction.animateTo(1f, tween(Motion.ScrimEnterMillis, easing = LinearEasing))
+            }
         } else {
             beginExit()
         }
@@ -566,6 +589,7 @@ fun OverlaySheet(
                 scope.launch {
                     hiddenFraction.snapTo(dragTargetFraction)
                     expandFraction.snapTo(expandTargetFraction)
+                    scrimFraction.snapTo(1f - dragTargetFraction)
                 }
             } else {
                 // 下拉：展开轴先回收（全屏/途中 → 半屏），触底后的剩余量进 hidden 轴
@@ -581,6 +605,7 @@ fun OverlaySheet(
                 scope.launch {
                     expandFraction.snapTo(expandTargetFraction)
                     hiddenFraction.snapTo(dragTargetFraction)
+                    scrimFraction.snapTo(1f - dragTargetFraction)
                 }
             }
         } else {
@@ -588,6 +613,7 @@ fun OverlaySheet(
             dragTargetFraction = (dragTargetFraction + delta / travelPx.coerceAtLeast(1)).coerceIn(0f, 1f)
             scope.launch {
                 hiddenFraction.snapTo(dragTargetFraction)
+                scrimFraction.snapTo(1f - dragTargetFraction)
             }
         }
     }
@@ -608,6 +634,7 @@ fun OverlaySheet(
                 // 直接启动后续动画会把它抢占掉——回弹/收场就会从落后一截的旧位置起跳
                 hiddenFraction.snapTo(dragTargetFraction)
                 expandFraction.snapTo(expandTargetFraction)
+                scrimFraction.snapTo(1f - dragTargetFraction)
                 when {
                     // 收场途中被拖拽打断：从当前位置续播收场
                     exiting -> runExit()
@@ -647,12 +674,23 @@ fun OverlaySheet(
                         // 带上松手速度（px/s → 比例/s）让弹簧顺着甩势收，而不是瞬间停住再反向；
                         // 进度不为负，向上甩出的负速度钳成 0（回弹起点在 0 时保持原位不动）。
                         // 可见阈值取「不足一像素」的比例值：阈值决定末帧吸附幅度（≈1.4×阈值），
-                        // 默认 0.01 在「浮层高度比例」单位下 ≈ 30px，回弹尾段会肉眼可见地窜一下
-                        hiddenFraction.animateTo(
-                            0f,
-                            Motion.settle(1f / travelPx.coerceAtLeast(1)),
-                            initialVelocity = velocity.coerceAtLeast(0f) / travelPx.coerceAtLeast(1),
-                        )
+                        // 默认 0.01 在「浮层高度比例」单位下 ≈ 30px，回弹尾段会肉眼可见地窜一下。
+                        // 遮罩轴与浮层轴同 spec 并行弹回：scrim = 1 − hidden 互补映射，初速取反、
+                        // 可见阈值 0.01 在透明度单位下（≈1% alpha 一帧）不可见
+                        launch {
+                            hiddenFraction.animateTo(
+                                0f,
+                                Motion.settle(1f / travelPx.coerceAtLeast(1)),
+                                initialVelocity = velocity.coerceAtLeast(0f) / travelPx.coerceAtLeast(1),
+                            )
+                        }
+                        launch {
+                            scrimFraction.animateTo(
+                                1f,
+                                Motion.settle(0.01f),
+                                initialVelocity = -velocity.coerceAtLeast(0f) / travelPx.coerceAtLeast(1),
+                            )
+                        }
                     }
                 }
             }
@@ -667,10 +705,10 @@ fun OverlaySheet(
     Box(
         modifier = modifier
             .fillMaxSize()
-            // 遮罩随进度压暗：完全显示时用 scrim 色自带的透明度（强度已按深浅模式烘进
+            // 遮罩随独立进度压暗：完全显示时用 scrim 色自带的透明度（强度已按深浅模式烘进
             // 色值，此处不再叠加），拖拽下拉/滑出时跟手变淡到全透明
             .drawBehind {
-                val alpha = 1f - hiddenFraction.value
+                val alpha = scrimFraction.value
                 if (alpha > 0f) drawRect(color = scrimColor, alpha = alpha)
             }
             .clickable(
