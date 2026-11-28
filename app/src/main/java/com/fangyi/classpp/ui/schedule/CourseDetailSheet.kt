@@ -152,8 +152,6 @@ fun CourseDetailSheet(
         visible = visible,
         covered = covered,
         onDismissed = onDismissed,
-        // 课程详情内容短，接入半屏展开：默认只占半屏，需要更大空间时上滑顶栏展开至全屏
-        halfScreenEnabled = true,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(/**SheetSectionSpacingBetween 课程详情卡片单独设置，其余统一使用SheetSectionSpacingBetween变量**/10.dp)) {
             Text(
