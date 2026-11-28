@@ -57,6 +57,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
@@ -65,6 +66,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.lerp
 import com.fangyi.classpp.ui.motion.Motion
 import com.fangyi.classpp.ui.motion.ProvideOverscroll
 import com.fangyi.classpp.ui.motion.RubberBandLazyColumn
@@ -90,6 +92,7 @@ import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.rememberHazeState
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * 内容末尾的额外滚动余量（对应设置页 `BottomScrollSlack = 120.dp`）：
@@ -102,6 +105,13 @@ private const val DragDismissFraction = 0.25f
 
 /** 拖拽关闭的速度阈值：松手时下滑速度超过它（快速一甩）也直接关闭 */
 private val DragDismissVelocity: Dp = 800.dp
+
+/**
+ * 半屏展开（[halfScreenEnabled]）的位移阈值：相对**展开行程**（全屏高 − 半屏高）。
+ * 半屏态上滑超过它吸附全屏、不足弹回半屏；全屏态下拉超过它回落半屏。速度阈值复用
+ * [DragDismissVelocity]（上滑取负方向）。与关闭轴的 [DragDismissFraction] 保持同一手感。
+ */
+private const val DragExpandFraction = 0.25f
 
 /** 顶栏总高（拖拽条 + 按钮行），滚动内容顶部为它留位。 */
 /**
@@ -237,6 +247,11 @@ val LocalOverlayTopBarBlur = staticCompositionLocalOf { false }
  *   收场期间内容保持原样不闪空；
  * - 顶栏整条可垂直拖拽、浮层跟手下移，遮罩跟着变淡；松手超过位移/速度阈值走关闭，否则弹回
  *   （回弹先落地松手位置、再顺松手速度收尾，起点与甩势都连续，无跳变）。
+ * - [halfScreenEnabled] = true 时为「半屏展开」三档形态：打开时浮层只占可用区域下半
+ *   （高度 = 全屏的一半，底边仍贴屏幕底，[bottomContent] 照常贴底），上滑顶栏跟手展开、
+ *   超过展开行程的位移/速度阈值吸附全屏、不足弹回半屏；全屏态下拉超过阈值回落半屏；
+ *   半屏态下拉关闭（阈值与关闭轴同一手感）。展开手势只受本开关控制，不受
+ *   [dragDismissEnabled] 影响（后者只管「关闭」）。默认 false，既有调用零变化。
  * - 被上层盖住（[covered]）：本层卡片以底边为锚缩小后退（[CoveredCardScale]），与上层滑入/
  *   滑出**同帧启动、同一条 [Motion.Overlay] 曲线**（进 400ms / 出 340ms），两层像一个整体在动；
  *   上层的遮罩本就压在本层之上，无需再叠压暗。无叠层场景恒不触发，现有浮层零变化。
@@ -309,6 +324,11 @@ fun OverlaySheet(
     // false = 下拉超过阈值也不触发关闭（松手原路弹回，不置闸门）：编辑态等需要把下拉
     // 拦成「退出编辑而非关浮层」的场景传——拦了 onDismiss 却不复位闸门会让浮层卡在半拖出位置
     dragDismissEnabled: Boolean = true,
+    // 半屏展开（可选，默认关）：true = 打开时浮层只占可用区域下半（高度 = 全屏的一半、
+    // 底边仍贴屏幕底，钉底槽/bottomContent 照常贴底），顶栏上滑跟手展开、超过展开行程的
+    // 位移/速度阈值吸附全屏，全屏态下拉超过阈值回落半屏，半屏态下拉关闭（三档闭环）。
+    // false = 现状全屏形态，布局与手势路径完全不变；参数应静态传入（单个浮层实例内不切换）
+    halfScreenEnabled: Boolean = false,
     onDismissed: () -> Unit = {},
     confirmIcon: Int = com.fangyi.classpp.R.drawable.ic_checkmark_circle,
     // 左胶囊图标尺寸（默认同 SheetPillButton 的 30dp）；只影响确认胶囊，单独调某浮层时传值
@@ -444,6 +464,20 @@ fun OverlaySheet(
     // 松手时以它为准——Animatable 的值可能落后（末帧 snapTo 还在排队），拿它判断阈值、
     // 回弹前先落地，回弹起点才与松手时的视觉位置严格一致
     var dragTargetFraction by remember { mutableFloatStateOf(0f) }
+    // ——— 半屏展开轴（halfScreenEnabled 才参与手势与布局）：0 = 半屏，1 = 全屏 ———
+    // 与 hiddenFraction 同款模式：拖拽跟手 snapTo，吸附/回落动画共用一条进度，两档间
+    // （含松手吸附途中）再次拖拽都从当前值接续。inset 插值只在布局阶段读它（不进重组）
+    val expandFraction = remember { Animatable(0f) }
+    // 展开轴的权威目标值：语义与 dragTargetFraction 相同（事件线程累加、松手以它判阈值）
+    var expandTargetFraction by remember { mutableFloatStateOf(0f) }
+    // 拖拽起手时展开轴的值：松手判定「净位移是否过阈值」「回哪一档」的基准
+    //（起手在半屏侧看上滑量、全屏侧看下拉量——阈值只对想去的方向有意义）
+    var gestureStartExpandFraction by remember { mutableFloatStateOf(0f) }
+    // 可用高度 = 父约束总高 − 状态栏，由定位 Box 的 layout 修饰符在布局阶段写入（写同值
+    // 不触发任何重组/重布局），只被手势回调（事件线程）读取换算展开行程，不进组合
+    var usableHeightPx by remember { mutableIntStateOf(0) }
+    // 展开行程（px）= 可用高度一半 = 半屏 ↔ 全屏的顶边位移差；未量到布局前钳 1 防除零
+    fun expandTravelPx(): Float = (usableHeightPx / 2).coerceAtLeast(1).toFloat()
     // 滑动全程 = 浮层自身高度；layout 先于 draw 测出，首帧不会闪现在最终位置
     var travelPx by remember { mutableStateOf(0) }
     // 已决定关闭（收场动画可能被中途拖拽打断，打断后松手要能续播而不是卡死在半路）
@@ -455,6 +489,9 @@ fun OverlaySheet(
     val keyboard = LocalSoftwareKeyboardController.current
     val scrimColor = MaterialTheme.colorScheme.scrim
     val dismissVelocityPx = with(density) { DragDismissVelocity.toPx() }
+    // 全屏态浮层顶边 inset（px，= resolvedTopInset）：半屏态顶边 inset = 它 + 可用高度一半，
+    // 浮层恰占下半屏；展开行程 = 两档 inset 之差 = 可用高度一半，见布局分叉与手势换算
+    val statusBarPx = with(density) { resolvedTopInset.roundToPx() }
 
     // 收场动画本体：从当前进度继续滑到全隐（拖拽中断后重入，也是从当前位置接着走）
     suspend fun runExit() {
@@ -476,6 +513,10 @@ fun OverlaySheet(
         if (visible) {
             exiting = false
             closeRequested = false
+            // 半屏展开轴同步归零：半屏起步进场，也清掉上次在场期间遗留的展开态（snapTo
+            // 无动画，进场本身已经是一条完整滑入曲线，复位不该再叠一段）
+            expandFraction.snapTo(0f)
+            expandTargetFraction = 0f
             hiddenFraction.animateTo(0f, tween(Motion.SheetEnterMillis, easing = Motion.Overlay))
         } else {
             beginExit()
@@ -495,32 +536,103 @@ fun OverlaySheet(
         )
     }
 
-    // 顶栏整条可拖拽：跟手改写进度；松手超过位移/速度阈值 → 走关闭（清状态 → 统一出场），
-    // 否则弹回。拖拽与顶栏按钮点击互不干扰（点击不产生滑动位移）
+    // 顶栏整条可拖拽：跟手改写进度；松手超过位移/速度阈值 → 分派目标档位（关闭/半屏/全屏）。
+    // 拖拽与顶栏按钮点击互不干扰（点击不产生滑动位移）
     //
     // snapTo 瞄向绝对目标值而非「当前值 + 增量」：每个 snapTo 在 Animatable 的互斥锁上
     // 会等帧落地、也可能被下一个动画抢占，增量式写法一旦被抢占，那截位移就永久丢失；
     // 绝对目标值自愈——无论前面丢了多少帧，后面的 snapTo 一律补齐到最新目标
+    //
+    // 半屏启用时是三档连续模型：一次手势内的位移沿「当前可达轴」顺序消耗——上滑先把
+    // hidden 轴跟手归零（入场/回弹途中起手也连续接续），归零后的剩余量推进展开轴；下拉
+    // 先回收展开轴（全屏 → 半屏），触底后的剩余量才进 hidden 轴。两轴行程不同（hidden 轴
+    // = 浮层自身高度，展开轴 = 可用高度一半），逐帧残差按各自行程折算回 px 再进下一轴
     val dragState = rememberDraggableState { delta ->
-        dragTargetFraction = (dragTargetFraction + delta / travelPx.coerceAtLeast(1)).coerceIn(0f, 1f)
-        scope.launch {
-            hiddenFraction.snapTo(dragTargetFraction)
+        if (halfScreenEnabled && !exiting) {
+            var remaining = delta
+            if (remaining < 0) {
+                // 上滑：hidden 轴先跟手归零，把已消耗的量换回 px
+                if (dragTargetFraction > 0f) {
+                    val travel = travelPx.coerceAtLeast(1).toFloat()
+                    val consumed = minOf(dragTargetFraction, -remaining / travel)
+                    dragTargetFraction -= consumed
+                    remaining += consumed * travel
+                }
+                // 已在显示位（hidden = 0）：剩余上滑推进展开轴（半屏 → 全屏，钳在 1）
+                if (remaining < 0f) {
+                    expandTargetFraction =
+                        (expandTargetFraction - remaining / expandTravelPx()).coerceIn(0f, 1f)
+                }
+                scope.launch {
+                    hiddenFraction.snapTo(dragTargetFraction)
+                    expandFraction.snapTo(expandTargetFraction)
+                }
+            } else {
+                // 下拉：展开轴先回收（全屏/途中 → 半屏），触底后的剩余量进 hidden 轴
+                if (expandTargetFraction > 0f) {
+                    val consumed = minOf(expandTargetFraction, remaining / expandTravelPx())
+                    expandTargetFraction -= consumed
+                    remaining -= consumed * expandTravelPx()
+                }
+                if (remaining > 0f) {
+                    dragTargetFraction =
+                        (dragTargetFraction + remaining / travelPx.coerceAtLeast(1)).coerceIn(0f, 1f)
+                }
+                scope.launch {
+                    expandFraction.snapTo(expandTargetFraction)
+                    hiddenFraction.snapTo(dragTargetFraction)
+                }
+            }
+        } else {
+            // 单轴路径（未启用半屏 / 收场途中）：既有行为，保持原样
+            dragTargetFraction = (dragTargetFraction + delta / travelPx.coerceAtLeast(1)).coerceIn(0f, 1f)
+            scope.launch {
+                hiddenFraction.snapTo(dragTargetFraction)
+            }
         }
     }
     val topBarDragModifier = Modifier.draggable(
         orientation = Orientation.Vertical,
         state = dragState,
-        // 每次拖拽起步都把目标值重新对齐到当前真实进度：上次回弹可能还没播完就再次拖拽、
-        // 或入场动画进行中就开拖，从这里接续才不会跳
-        onDragStarted = { dragTargetFraction = hiddenFraction.value },
+        // 每次拖拽起步都把目标值重新对齐到当前真实进度：上次回弹/回落动画可能还没播完就
+        // 再次拖拽、或入场动画进行中就开拖，从这里接续才不会跳；展开轴同样对齐，并记录
+        // 起手档位（松手判定「净位移是否过阈值」与「回哪一档」的基准）
+        onDragStarted = {
+            dragTargetFraction = hiddenFraction.value
+            gestureStartExpandFraction = expandFraction.value
+            expandTargetFraction = expandFraction.value
+        },
         onDragStopped = { velocity ->
             scope.launch {
                 // 先把松手位置精确落地再分派：拖拽期间的末帧 snapTo 可能还在等帧排队，
                 // 直接启动后续动画会把它抢占掉——回弹/收场就会从落后一截的旧位置起跳
                 hiddenFraction.snapTo(dragTargetFraction)
+                expandFraction.snapTo(expandTargetFraction)
                 when {
                     // 收场途中被拖拽打断：从当前位置续播收场
                     exiting -> runExit()
+                    // 展开轴在场（半屏启用、松手时轴值非 0）：甩势优先定档，位移阈值兜底
+                    // 慢松手——起手在半屏侧看上滑量、全屏侧看下拉量（阈值只对想去的方向
+                    // 有意义，与关闭轴同一手感）。吸附/回落与 hidden 回弹同一颗 Motion.settle
+                    // 弹簧；展开轴的 fraction 正方向 = 浮层上移 = 上滑，与 velocity（上滑为
+                    // 负）符号相反，换算初速要取反才能顺甩势收
+                    halfScreenEnabled && expandTargetFraction > 0f -> {
+                        val fromHalf = gestureStartExpandFraction < 0.5f
+                        val expandTo = when {
+                            velocity <= -dismissVelocityPx -> 1f
+                            velocity >= dismissVelocityPx -> 0f
+                            fromHalf &&
+                                expandTargetFraction >= gestureStartExpandFraction + DragExpandFraction -> 1f
+                            !fromHalf &&
+                                expandTargetFraction <= gestureStartExpandFraction - DragExpandFraction -> 0f
+                            else -> if (fromHalf) 0f else 1f
+                        }
+                        expandFraction.animateTo(
+                            expandTo,
+                            Motion.settle(1f / expandTravelPx()),
+                            initialVelocity = -velocity / expandTravelPx(),
+                        )
+                    }
                     // 下拉关闭被禁用（编辑态拦成「退出编辑」的场景）：超阈值也走回弹，
                     // 不置 closeRequested、不回调——否则闸门落下却没人真的关浮层，整层卡死
                     dragDismissEnabled &&
@@ -567,10 +679,44 @@ fun OverlaySheet(
                 onClick = { if (!closeRequested) onDismiss() },
             ),
     ) {
+        // 浮层定位 Box：距顶 inset 随展开轴在「状态栏 ↔ 可用高度中点」之间插值（半屏启用时）。
+        // 插值在布局阶段读取（Modifier.layout 的 lambda 里读 State 只触发重布局，不重组），
+        // 拖拽/吸附动画期间零重组；测量约束随 inset 同步收缩——浮层高度真正变化，滚动内容
+        // 与钉底槽随高度正确重排，下面 onSizeChanged 量得的 travelPx（= 浮层自身高度）自动
+        // 跟随，拖拽/退场的滑出距离在两档下都正确。未启用半屏时走原 padding 路径，inset
+        // 恒定，行为与既有浮层完全一致
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = resolvedTopInset)
+                .then(
+                    if (halfScreenEnabled) {
+                        Modifier.layout { measurable, constraints ->
+                            // 可用高度 = 父约束总高 − 状态栏：半屏 = 可用区域下半，
+                            // 顶边钉在「状态栏下方可用区中点」，浮层恰为全屏高的一半；
+                            // 展开行程 = 可用高度一半，与手势换算共用同一基准
+                            usableHeightPx = constraints.maxHeight - statusBarPx
+                            val inset = lerp(
+                                statusBarPx + usableHeightPx / 2f,
+                                statusBarPx.toFloat(),
+                                expandFraction.value,
+                            ).roundToInt()
+                            // 语义同 padding(top)：max/min 都减 inset（min 钳 0、max 钳到
+                            // ≥ min），约束保持合法；自身尺寸回报不变（全屏高），graphicsLayer
+                            // 的滑出位移坐标系不受影响，遮罩也留在原地
+                            val childMinHeight = (constraints.minHeight - inset).coerceAtLeast(0)
+                            val childMaxHeight = (constraints.maxHeight - inset)
+                                .coerceAtLeast(childMinHeight)
+                            val placeable = measurable.measure(
+                                constraints.copy(minHeight = childMinHeight, maxHeight = childMaxHeight),
+                            )
+                            layout(constraints.maxWidth, constraints.maxHeight) {
+                                placeable.placeRelative(0, inset)
+                            }
+                        }
+                    } else {
+                        Modifier.padding(top = resolvedTopInset)
+                    },
+                )
                 .onSizeChanged { travelPx = it.height }
                 // 滑动位移只打在浮层这层：遮罩留在原地，卡片连阴影带顶栏遮罩一起动
                 .graphicsLayer {
@@ -895,7 +1041,8 @@ private fun OverlaySheetTopBar(
             )
             .then(dragModifier),
     ) {
-        // 拖拽小横条：提示整条顶栏可下拉关闭（手势区域为整条顶栏）
+        // 拖拽小横条：提示整条顶栏可拖拽（手势区域为整条顶栏）。半屏启用（halfScreenEnabled）
+        // 的浮层上它同时提示两个方向：上滑展开至全屏、下拉回落半屏/关闭
         Box(
             modifier = Modifier
                 .fillMaxWidth()
