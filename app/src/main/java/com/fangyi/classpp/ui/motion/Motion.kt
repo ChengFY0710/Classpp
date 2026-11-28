@@ -103,13 +103,17 @@ object Motion {
     const val SheetExitMillis = 360
 
     /**
-     * 浮层（OverlaySheet）遮罩压暗/变淡时长：遮罩轴独立于浮层轴后自己的节奏（匀速铺满
-     * 全程，不随浮层的 [Overlay] 曲线提前压满/提前变淡）。都比浮层轴短一拍——浮层还在
-     * 滑入途中遮罩先落定、浮层还在滑出途中遮罩先收干净。独立成 token——调遮罩节奏不动
-     * 浮层，反之亦然。
+     * 半屏浮层（OverlaySheet 的 [halfScreenEnabled] 形态）入场时长：配合 [Overlay]。
+     * 内容短的半屏浮层轻快来去，节奏比全屏浮层（[SheetEnterMillis]）快一档。
+     * 独立成 token——调半屏节奏不动全屏浮层，反之亦然。
      */
-    const val ScrimEnterMillis = 300
-    const val ScrimExitMillis = 240
+    const val HalfScreenEnterMillis = 240
+
+    /**
+     * 半屏浮层出场时长：配合 [Overlay]。独立于 [HalfScreenEnterMillis]；
+     * 比全屏浮层（[SheetExitMillis]）短一拍的收场节奏。
+     */
+    const val HalfScreenExitMillis = 200
 
     /**
      * 底部弹出选择卡（BottomSelectSheet）入场时长：从屏幕底部滑入，配合 [Overlay]。
